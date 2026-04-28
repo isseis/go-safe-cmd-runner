@@ -15,6 +15,7 @@ import (
 
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
+	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 )
 
 // TestCollectTOCTOUCheckDirs verifies that directory collection covers all required
@@ -74,7 +75,7 @@ func TestCollectTOCTOUCheckDirs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CollectTOCTOUCheckDirs(tt.verifyFiles, tt.commandPaths, tt.hashDir)
+			got := isec.CollectTOCTOUCheckDirs(tt.verifyFiles, tt.commandPaths, tt.hashDir)
 
 			// Sort both slices for comparison
 			gotSet := make(map[string]struct{}, len(got))
@@ -106,7 +107,7 @@ func TestRunTOCTOUPermissionCheck_NoViolations(t *testing.T) {
 	v, err := NewValidator(nil, WithGroupMembership(gm))
 	require.NoError(t, err)
 
-	violations := RunTOCTOUPermissionCheck(v, []string{tmpDir}, slog.Default())
+	violations := isec.RunTOCTOUPermissionCheck(v, []string{tmpDir}, slog.Default())
 	assert.Empty(t, violations, "no violations expected for secure directory")
 }
 
@@ -128,7 +129,7 @@ func TestRunTOCTOUPermissionCheck_ViolationDetected(t *testing.T) {
 	v, err := NewValidator(nil, WithGroupMembership(gm))
 	require.NoError(t, err)
 
-	violations := RunTOCTOUPermissionCheck(v, []string{tmpDir}, slog.Default())
+	violations := isec.RunTOCTOUPermissionCheck(v, []string{tmpDir}, slog.Default())
 	require.Len(t, violations, 1, "expected exactly one violation for world-writable directory")
 	assert.Equal(t, filepath.Clean(tmpDir), violations[0].Path)
 	assert.True(t, errors.Is(violations[0].Err, ErrInvalidDirPermissions), "violation error should be about directory permissions")
@@ -154,7 +155,7 @@ func TestRunTOCTOUPermissionCheck_MultipleViolations(t *testing.T) {
 	v, err := NewValidator(nil, WithGroupMembership(gm))
 	require.NoError(t, err)
 
-	violations := RunTOCTOUPermissionCheck(v, []string{dir1, dir2}, slog.Default())
+	violations := isec.RunTOCTOUPermissionCheck(v, []string{dir1, dir2}, slog.Default())
 	assert.Len(t, violations, 2, "expected two violations")
 }
 
@@ -166,6 +167,6 @@ func TestRunTOCTOUPermissionCheck_EmptyDirs(t *testing.T) {
 	v, err := NewValidator(nil, WithGroupMembership(gm))
 	require.NoError(t, err)
 
-	violations := RunTOCTOUPermissionCheck(v, []string{}, slog.Default())
+	violations := isec.RunTOCTOUPermissionCheck(v, []string{}, slog.Default())
 	assert.Empty(t, violations)
 }

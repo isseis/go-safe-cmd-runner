@@ -25,6 +25,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
@@ -304,7 +305,7 @@ func resolveStaticAbsPath(p string) (string, bool) {
 	if strings.Contains(p, "%{") {
 		return "", false
 	}
-	return security.ResolveAbsPathForTOCTOU(p)
+	return isec.ResolveAbsPathForTOCTOU(p)
 }
 
 // runTOCTOUCheck collects directory paths referenced by the configuration and runs a
@@ -344,9 +345,9 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 	// DefaultHashDirectory is already validated to be absolute; the fallback in
 	// ResolveAbsPathForTOCTOU preserves the original path when EvalSymlinks fails
 	// (e.g. directory not yet created), so the check is still performed.
-	resolvedHashDir, _ := security.ResolveAbsPathForTOCTOU(cmdcommon.DefaultHashDirectory)
-	toctouDirs := security.CollectTOCTOUCheckDirs(verifyFilePaths, commandPaths, resolvedHashDir)
-	violations := security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
+	resolvedHashDir, _ := isec.ResolveAbsPathForTOCTOU(cmdcommon.DefaultHashDirectory)
+	toctouDirs := isec.CollectTOCTOUCheckDirs(verifyFilePaths, commandPaths, resolvedHashDir)
+	violations := isec.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
 	if len(violations) > 0 {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,

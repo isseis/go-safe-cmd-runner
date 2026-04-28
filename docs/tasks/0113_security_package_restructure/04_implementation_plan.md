@@ -41,25 +41,25 @@
 ### Phase 1: `internal/security` の基盤導入
 
 **対象ファイル（新規）**:
-- [ ] `internal/security/errors.go`
-- [ ] `internal/security/dir_permissions.go`
-- [ ] `internal/security/toctou.go`
+- [x] `internal/security/errors.go`
+- [x] `internal/security/dir_permissions.go`
+- [x] `internal/security/toctou.go`
 
 **対象ファイル（更新）**:
-- [ ] `internal/runner/security/toctou_check.go`
+- [x] `internal/runner/security/toctou_check.go`
 
 **作業内容**:
-- [ ] `DirectoryPermChecker` インタフェースを追加
-- [ ] standalone 実装のディレクトリ権限チェッカーを実装
-- [ ] TOCTOU ユーティリティを `internal/security` へ移動
-- [ ] `internal/runner/security/toctou_check.go` は `NewValidatorForTOCTOU()` のみに整理
+- [x] `DirectoryPermChecker` インタフェースを追加
+- [x] standalone 実装のディレクトリ権限チェッカーを実装
+- [x] TOCTOU ユーティリティを `internal/security` へ移動
+- [x] `internal/runner/security/toctou_check.go` は `NewValidatorForTOCTOU()` のみに整理
 
 **成功条件**:
-- [ ] `go test ./internal/security/...` が成功
-- [ ] `RunTOCTOUPermissionCheck` が `DirectoryPermChecker` 引数で動作
+- [x] `go test ./internal/security/...` が成功
+- [x] `RunTOCTOUPermissionCheck` が `DirectoryPermChecker` 引数で動作
 
 **推定工数**: 1.0日
-**実績**: [ ] 未着手
+**実績**: [x] 完了
 
 ---
 
