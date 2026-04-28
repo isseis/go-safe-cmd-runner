@@ -60,6 +60,7 @@ var knownSyscallImpls = map[string]struct{}{
 	"syscall.rawVforkSyscall":                 {},
 	"syscall.rawSyscallNoError":               {},
 	"internal/runtime/syscall/linux.Syscall6": {}, // Go 1.22 and earlier / x86_64
+	"runtime/internal/syscall.Syscall6":       {}, // Go 1.22 x86_64 (pclntab naming variant)
 	"internal/runtime/syscall.Syscall6":       {}, // Go 1.23+ / arm64 (pclntab name, no .abi0 suffix)
 }
 
