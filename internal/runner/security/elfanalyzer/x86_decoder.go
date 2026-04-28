@@ -14,13 +14,49 @@ const (
 	// minArgsForImmediateMove is the minimum number of arguments
 	// required to check for an immediate move instruction (destination + source).
 	minArgsForImmediateMove = 2
-
-	// x86LoadSize32 is the byte count for 32-bit MOV EAX, [RIP+disp32] loads.
-	x86LoadSize32 = 4
-
-	// x86LoadSize64 is the byte count for 64-bit MOV RAX, [RIP+disp32] loads.
-	x86LoadSize64 = 8
 )
+
+const (
+	x86ByteWidth32 = 4 // byte width of a 32-bit (EAX) load
+	x86ByteWidth64 = 8 // byte width of a 64-bit (RAX) load
+)
+
+// x86LoadOp encodes the byte width and little-endian extraction logic for a
+// global memory load. Construct via newX86LoadOp; the zero value is invalid.
+type x86LoadOp struct {
+	byteWidth int
+}
+
+// newX86LoadOp returns the load operation for a MOV EAX/RAX, [mem] instruction.
+// EAX maps to a 32-bit zero-extending load; RAX maps to a 64-bit load.
+// Returns (zero, false) for any other register.
+func newX86LoadOp(reg x86asm.Reg) (x86LoadOp, bool) {
+	switch reg {
+	case x86asm.EAX:
+		return x86LoadOp{byteWidth: x86ByteWidth32}, true
+	case x86asm.RAX:
+		return x86LoadOp{byteWidth: x86ByteWidth64}, true
+	default:
+		return x86LoadOp{}, false
+	}
+}
+
+// readLE reads a little-endian integer of op's width from data[off:] and
+// returns it as a signed int64.
+func (op x86LoadOp) readLE(data []byte, off int) (int64, bool) {
+	switch op.byteWidth {
+	case x86ByteWidth32:
+		return int64(binary.LittleEndian.Uint32(data[off : off+x86ByteWidth32])), true
+	case x86ByteWidth64:
+		val := binary.LittleEndian.Uint64(data[off : off+x86ByteWidth64])
+		if val > math.MaxInt64 {
+			return 0, false
+		}
+		return int64(val), true
+	default:
+		panic("unreachable: invalid x86LoadOp")
+	}
+}
 
 // x86DataSection holds the virtual address and raw bytes of an ELF section
 // used by ResolveFirstArgGlobal to read global variable values.
@@ -422,29 +458,19 @@ func (d *X86Decoder) SetDataSections(sections []x86DataSection) {
 	d.dataSections = sections
 }
 
-// readGlobal reads a little-endian uint32/uint64 from the data sections at addr.
-func (d *X86Decoder) readGlobal(addr uint64, loadSize uint64) (int64, bool) {
+// readGlobal reads a little-endian integer from the data sections at addr
+// using the width and extraction logic encoded in op.
+func (d *X86Decoder) readGlobal(addr uint64, op x86LoadOp) (int64, bool) {
 	for _, sec := range d.dataSections {
 		if addr < sec.Addr {
 			continue
 		}
 		off := addr - sec.Addr
-		secLen := uint64(len(sec.Data)) //nolint:gosec // G115: section sizes are bounded by binary size
-		if off > secLen || loadSize > secLen-off {
+		secLen := uint64(len(sec.Data))                        //nolint:gosec // G115: section sizes are bounded by binary size
+		if off > secLen || uint64(op.byteWidth) > secLen-off { //nolint:gosec // G115: byteWidth is 4 or 8
 			continue
 		}
-		start := int(off) //nolint:gosec // G115: off <= secLen-loadSize, so off fits in int
-		if loadSize == x86LoadSize32 {
-			return int64(binary.LittleEndian.Uint32(sec.Data[start : start+x86LoadSize32])), true
-		}
-		if loadSize == x86LoadSize64 {
-			val := binary.LittleEndian.Uint64(sec.Data[start : start+x86LoadSize64])
-			if val > math.MaxInt64 {
-				return 0, false
-			}
-			return int64(val), true
-		}
-		return 0, false
+		return op.readLE(sec.Data, int(off)) //nolint:gosec // G115: off <= secLen-uint64(op), so off fits in int
 	}
 	return 0, false
 }
@@ -480,9 +506,9 @@ func (d *X86Decoder) ResolveFirstArgGlobal(recentInstructions []DecodedInstructi
 	if !ok || !sameFamily(destReg, x86asm.RAX) || !isFullWidthWrite(destReg) {
 		return false, 0
 	}
-	loadSize := uint64(x86LoadSize64)
-	if destReg == x86asm.EAX {
-		loadSize = x86LoadSize32
+	op, ok := newX86LoadOp(destReg)
+	if !ok {
+		return false, 0
 	}
 
 	mem, ok := args[1].(x86asm.Mem)
@@ -495,7 +521,7 @@ func (d *X86Decoder) ResolveFirstArgGlobal(recentInstructions []DecodedInstructi
 		return false, 0
 	}
 
-	val, ok := d.readGlobal(target, loadSize)
+	val, ok := d.readGlobal(target, op)
 	return ok, val
 }
 
