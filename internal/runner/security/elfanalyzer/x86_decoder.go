@@ -1,6 +1,7 @@
 package elfanalyzer
 
 import (
+	"encoding/binary"
 	"math"
 
 	"golang.org/x/arch/x86/x86asm"
@@ -15,8 +16,59 @@ const (
 	minArgsForImmediateMove = 2
 )
 
+const (
+	x86ByteWidth32 = 4 // byte width of a 32-bit (EAX) load
+	x86ByteWidth64 = 8 // byte width of a 64-bit (RAX) load
+)
+
+// x86LoadOp encodes the byte width and little-endian extraction logic for a
+// global memory load. Construct via newX86LoadOp; the zero value is invalid.
+type x86LoadOp struct {
+	byteWidth int
+}
+
+// newX86LoadOp returns the load operation for a MOV EAX/RAX, [mem] instruction.
+// EAX maps to a 32-bit zero-extending load; RAX maps to a 64-bit load.
+// Returns (zero, false) for any other register.
+func newX86LoadOp(reg x86asm.Reg) (x86LoadOp, bool) {
+	switch reg {
+	case x86asm.EAX:
+		return x86LoadOp{byteWidth: x86ByteWidth32}, true
+	case x86asm.RAX:
+		return x86LoadOp{byteWidth: x86ByteWidth64}, true
+	default:
+		return x86LoadOp{}, false
+	}
+}
+
+// readLE reads a little-endian integer of op's width from data[off:] and
+// returns it as a signed int64.
+func (op x86LoadOp) readLE(data []byte, off int) (int64, bool) {
+	switch op.byteWidth {
+	case x86ByteWidth32:
+		return int64(binary.LittleEndian.Uint32(data[off : off+x86ByteWidth32])), true
+	case x86ByteWidth64:
+		val := binary.LittleEndian.Uint64(data[off : off+x86ByteWidth64])
+		if val > math.MaxInt64 {
+			return 0, false
+		}
+		return int64(val), true
+	default:
+		panic("unreachable: invalid x86LoadOp")
+	}
+}
+
+// x86DataSection holds the virtual address and raw bytes of an ELF section
+// used by ResolveFirstArgGlobal to read global variable values.
+type x86DataSection struct {
+	Addr uint64
+	Data []byte
+}
+
 // X86Decoder implements MachineCodeDecoder for x86_64.
-type X86Decoder struct{}
+type X86Decoder struct {
+	dataSections []x86DataSection
+}
 
 // NewX86Decoder creates a new X86Decoder.
 func NewX86Decoder() *X86Decoder {
@@ -409,10 +461,108 @@ func (d *X86Decoder) ModifiesFirstArg(inst DecodedInstruction) bool {
 	return d.WritesSyscallReg(inst)
 }
 
-// ResolveFirstArgGlobal returns unresolved on x86_64.
-// The current Go wrapper resolution path only uses immediate assignments.
-func (d *X86Decoder) ResolveFirstArgGlobal(_ []DecodedInstruction, _ int) (bool, int64) {
-	return false, 0
+// SetDataSections supplies read-only and read-write ELF data sections used
+// by ResolveFirstArgGlobal to read global variable values.
+func (d *X86Decoder) SetDataSections(sections []x86DataSection) {
+	d.dataSections = sections
+}
+
+// readGlobal reads a little-endian integer from the data sections at addr
+// using the width and extraction logic encoded in op.
+func (d *X86Decoder) readGlobal(addr uint64, op x86LoadOp) (int64, bool) {
+	for _, sec := range d.dataSections {
+		if addr < sec.Addr {
+			continue
+		}
+		off := addr - sec.Addr
+		secLen := uint64(len(sec.Data))                        //nolint:gosec // G115: section sizes are bounded by binary size
+		if off > secLen || uint64(op.byteWidth) > secLen-off { //nolint:gosec // G115: byteWidth is 4 or 8
+			continue
+		}
+		return op.readLE(sec.Data, int(off)) //nolint:gosec // G115: off <= secLen-uint64(op), so off fits in int
+	}
+	return 0, false
+}
+
+// ResolveFirstArgGlobal resolves the syscall number when it is loaded into
+// RAX/EAX via a RIP-relative memory read, i.e. the pattern:
+//
+//	MOV RAX, [RIP + disp32]
+//
+// This occurs in Go's syscall package when the syscall number is stored in a
+// package-level variable (e.g. syscall.fcntl64Syscall in forkAndExecInChild1).
+// SetDataSections must be called before this method returns useful results.
+func (d *X86Decoder) ResolveFirstArgGlobal(recentInstructions []DecodedInstruction, idx int) (bool, int64) {
+	if len(d.dataSections) == 0 || idx < 0 || idx >= len(recentInstructions) {
+		return false, 0
+	}
+
+	inst := recentInstructions[idx]
+	x86inst, ok := inst.arch.(x86asm.Inst)
+	if !ok || x86inst.Op != x86asm.MOV {
+		return false, 0
+	}
+
+	args := x86inst.Args[:]
+	for len(args) > 0 && args[len(args)-1] == nil {
+		args = args[:len(args)-1]
+	}
+	if len(args) < minArgsForImmediateMove {
+		return false, 0
+	}
+
+	destReg, ok := args[0].(x86asm.Reg)
+	if !ok || !sameFamily(destReg, x86asm.RAX) || !isFullWidthWrite(destReg) {
+		return false, 0
+	}
+	op, ok := newX86LoadOp(destReg)
+	if !ok {
+		return false, 0
+	}
+
+	mem, ok := args[1].(x86asm.Mem)
+	if !ok || mem.Base != x86asm.RIP || mem.Index != 0 || mem.Scale != 0 {
+		return false, 0
+	}
+
+	target, ok := x86RIPRelAddr(inst.Offset, inst.Len, mem.Disp)
+	if !ok {
+		return false, 0
+	}
+
+	val, ok := d.readGlobal(target, op)
+	return ok, val
+}
+
+// x86RIPRelAddr computes the effective address for a RIP-relative memory
+// operand, guarding against uint64 wraparound and int64 overflow/underflow.
+//
+// nextPC = instOffset + instLen
+// target = nextPC + sign_extend(disp32)
+func x86RIPRelAddr(instOffset uint64, instLen int, rawDisp int64) (uint64, bool) {
+	// Guard uint64 overflow on nextPC.
+	if instOffset > math.MaxUint64-uint64(instLen) { //nolint:gosec // G115: instLen validated non-negative
+		return 0, false
+	}
+	nextPC := instOffset + uint64(instLen) //nolint:gosec // G115: overflow checked above
+	// nextPC must fit in int64 for signed displacement arithmetic.
+	if nextPC > math.MaxInt64 {
+		return 0, false
+	}
+
+	// x86asm stores disp32 as zero-extended in int64, not sign-extended.
+	// Re-interpret through int32 to recover the correct signed value.
+	dispSigned := int64(int32(rawDisp)) //nolint:gosec // G115: intentional int32 reinterpretation for sign extension
+
+	// In Go, signed int64 arithmetic wraps on overflow. Both positive overflow
+	// (nextPC near MaxInt64, large positive disp) and negative underflow
+	// (disp too negative) produce a negative result, so a single < 0 check
+	// catches both cases.
+	target := int64(nextPC) + dispSigned
+	if target < 0 {
+		return 0, false
+	}
+	return uint64(target), true
 }
 
 // writesRDXImplicitly reports whether the instruction unconditionally writes

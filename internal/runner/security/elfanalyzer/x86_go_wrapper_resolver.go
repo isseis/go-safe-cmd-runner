@@ -21,8 +21,28 @@ func NewX86GoWrapperResolver(elfFile *elf.File) (*X86GoWrapperResolver, error) {
 	if err := r.loadFromPclntab(elfFile); err != nil {
 		return r, err
 	}
+	r.decoder.SetDataSections(loadX86DataSections(elfFile))
 	r.hasSymbols = len(r.symbols) > 0
 	return r, nil
+}
+
+// loadX86DataSections reads ELF sections that may contain package-level
+// variables used as syscall numbers (e.g. syscall.fcntl64Syscall).
+func loadX86DataSections(elfFile *elf.File) []x86DataSection {
+	sectionNames := []string{".noptrdata", ".rodata", ".data"}
+	sections := make([]x86DataSection, 0, len(sectionNames))
+	for _, name := range sectionNames {
+		sec := elfFile.Section(name)
+		if sec == nil {
+			continue
+		}
+		data, err := sec.Data()
+		if err != nil || len(data) == 0 {
+			continue
+		}
+		sections = append(sections, x86DataSection{Addr: sec.Addr, Data: data})
+	}
+	return sections
 }
 
 // newX86GoWrapperResolver creates an empty X86GoWrapperResolver without loading symbols.
