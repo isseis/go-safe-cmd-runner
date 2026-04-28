@@ -180,7 +180,7 @@ type Validator struct {
 
 #### セッターメソッド
 
-```go
+2. 詳細仕様書の作成（03_detailed_specification.ja.md）
 func (v *Validator) SetIncludeDebugInfo(b bool) {
     v.includeDebugInfo = b
 }
