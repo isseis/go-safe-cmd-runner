@@ -1125,7 +1125,10 @@ func (v *Validator) analyzeELFSyscalls(record *fileanalysis.Record, filePath str
 	allSyscalls := mergeSyscallInfos(libcSyscalls, directSyscalls)
 	argEvalResults := buildArgEvalResults(libcSyscalls, directArgEvalResults, elfFile, v.syscallAnalyzer)
 	slices.SortFunc(argEvalResults, func(a, b common.SyscallArgEvalResult) int {
-		return cmp.Compare(a.SyscallName, b.SyscallName)
+		if c := cmp.Compare(a.SyscallName, b.SyscallName); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Status, b.Status)
 	})
 	if len(allSyscalls) > 0 || len(argEvalResults) > 0 {
 		record.SyscallAnalysis = buildSyscallData(allSyscalls, argEvalResults, elfFile.Machine)
