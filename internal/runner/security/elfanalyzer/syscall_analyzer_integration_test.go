@@ -36,7 +36,7 @@ func hasNetworkSyscall(arch string, syscalls []SyscallInfo) bool {
 	return false
 }
 
-func TestSyscallAnalyzer_RealCBinary(t *testing.T) {
+func TestSyscallAnalyzer_StaticCBinary_SocketSyscallDetected(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("ELF syscall analysis requires Linux")
 	}
@@ -92,7 +92,7 @@ int main() {
 	assert.True(t, found, "socket syscall should be detected")
 }
 
-func TestSyscallAnalyzer_RealGoBinary(t *testing.T) {
+func TestSyscallAnalyzer_GoBinary_NetDialGoWrappersDetected(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("ELF syscall analysis requires Linux")
 	}
@@ -162,7 +162,7 @@ func main() {
 		"Go binary using net package should have detectable Go wrapper calls")
 }
 
-func TestSyscallAnalyzer_RealGoBinary_NoNetwork(t *testing.T) {
+func TestSyscallAnalyzer_GoBinary_NoNetworkSyscallsWithoutNetPackage(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("ELF syscall analysis requires Linux")
 	}
@@ -205,12 +205,13 @@ func main() {
 	assert.False(t, hasNetworkSyscall(result.Architecture, result.DetectedSyscalls), "hello-world Go binary should not have network syscalls")
 }
 
-// TestE2E_RecordToRunnerFallbackChain tests the full pipeline:
+// TestE2E_RecordToRunnerFallbackChain tests the full pipeline from binary recording to runner:
 // compile Go binary → analyze with SyscallAnalyzer → save to FileAnalysisStore
 // → load via fileanalysis.SyscallAnalysisStore → verify correct AnalysisOutput
 // via StandardELFAnalyzer.convertSyscallResult.
 //
-// This verifies AC-8: the fallback chain from record command to runner.
+// Verifies that the runner correctly recovers network capability information from
+// the stored syscall analysis when the record command has pre-analyzed the binary.
 func TestE2E_RecordToRunnerFallbackChain(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("ELF syscall analysis requires Linux")
@@ -311,7 +312,7 @@ func main() {
 //	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
 //	  -o testdata/arm64_network_program/arm64_network_program.elf \
 //	  ./testdata/arm64_network_program/
-func TestSyscallAnalyzer_IntegrationARM64_NetworkSyscalls(t *testing.T) {
+func TestSyscallAnalyzer_ARM64PrecompiledBinary_NetworkSyscallsDetected(t *testing.T) {
 	const binaryPath = "testdata/arm64_network_program/arm64_network_program.elf"
 
 	elfFile, err := elf.Open(binaryPath)
@@ -341,10 +342,11 @@ func TestSyscallAnalyzer_IntegrationARM64_NetworkSyscalls(t *testing.T) {
 		"socket syscall (number 198) should be detected in the arm64 binary")
 }
 
-// TestAC1_CgoBinaryNetworkDetection verifies AC-1 (third condition) for arm64:
-// After Pass 1 fix (knownSyscallImpls updated) and Pass 2 fix, a CGO binary
-// that calls syscall.Socket() directly should return HasNetworkSyscalls: true.
-func TestAC1_CgoBinaryNetworkDetection(t *testing.T) {
+// TestSyscallAnalyzer_ARM64CGO_SocketDetectedViaSyscallAnalysis verifies that on arm64,
+// a CGO binary calling syscall.Socket() is detected as using network syscalls via the
+// syscall analysis passes (Pass 1 + Pass 2), even though .dynsym does not expose the
+// socket symbol directly (a known blind spot of symbol-only analysis).
+func TestSyscallAnalyzer_ARM64CGO_SocketDetectedViaSyscallAnalysis(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("this test targets Linux ELF binaries and Linux arm64 syscall numbering")
 	}
@@ -398,7 +400,8 @@ func main() {
 	})
 
 	t.Run("syscall_analysis_detects_socket", func(t *testing.T) {
-		// AC-1 third condition: after Pass 1 + Pass 2 fixes, HasNetworkSyscalls must be true.
+		// After Pass 1 + Pass 2 analysis, HasNetworkSyscalls must be true even for CGO binaries
+		// whose socket call is not visible in .dynsym.
 		elfFile, err := elf.Open(binaryPath)
 		require.NoError(t, err)
 		defer elfFile.Close()
@@ -439,10 +442,12 @@ func main() {
 	})
 }
 
-// TestAC1_X86CgoBinaryLowLevelImplExcluded verifies that x86_64 CGO binaries
-// do not report unknown:control_flow_boundary from low-level syscall
-// implementation bodies where syscall numbers are caller-supplied.
-func TestAC1_X86CgoBinaryLowLevelImplExcluded(t *testing.T) {
+// TestSyscallAnalyzer_X86_64CGO_LowLevelImplBodiesExcluded verifies that on x86_64,
+// low-level syscall implementation bodies (where syscall numbers are caller-supplied)
+// are excluded from the direct-syscall pass, so unknown:control_flow_boundary is not
+// falsely reported. The actual network syscall (SYS_SOCKET via RawSyscall) must still
+// be detected correctly.
+func TestSyscallAnalyzer_X86_64CGO_LowLevelImplBodiesExcluded(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("this test targets Linux ELF binaries")
 	}
@@ -504,9 +509,9 @@ func main() {
 	}
 }
 
-// TestSyscallAnalyzer_IntegrationARM64_Architecture verifies that the
-// Architecture field in the analysis result is set to "arm64".
-func TestSyscallAnalyzer_IntegrationARM64_Architecture(t *testing.T) {
+// TestSyscallAnalyzer_ARM64PrecompiledBinary_ArchitectureFieldIsArm64 verifies that the
+// Architecture field in the analysis result is set to "arm64" for a pre-compiled arm64 binary.
+func TestSyscallAnalyzer_ARM64PrecompiledBinary_ArchitectureFieldIsArm64(t *testing.T) {
 	const binaryPath = "testdata/arm64_network_program/arm64_network_program.elf"
 
 	elfFile, err := elf.Open(binaryPath)
