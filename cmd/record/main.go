@@ -69,6 +69,7 @@ type recordConfig struct {
 	hashDir        string
 	force          bool
 	usedDeprecated bool
+	debugInfo      bool
 }
 
 func main() {
@@ -152,6 +153,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 			return 1
 		}
 		fv.SetLibcCache(libccache.NewCacheAdapter(cacheMgr, syscallAnalyzer))
+		fv.SetIncludeDebugInfo(cfg.debugInfo)
 
 		// Inject MachoLibSystemAdapter for Mach-O libSystem import-symbol matching.
 		machoCacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
@@ -172,6 +174,7 @@ func parseArgs(args []string, d deps, stderr io.Writer) (*recordConfig, *flag.Fl
 		deprecatedFile string
 		hashDir        string
 		force          bool
+		debugInfo      bool
 	}{}
 
 	fs := flag.NewFlagSet("record", flag.ContinueOnError)
@@ -181,6 +184,7 @@ func parseArgs(args []string, d deps, stderr io.Writer) (*recordConfig, *flag.Fl
 	fs.StringVar(&options.hashDir, "hash-dir", "", "Directory containing hash files (default: current working directory)")
 	fs.StringVar(&options.hashDir, "d", "", "Short alias for -hash-dir")
 	fs.BoolVar(&options.force, "force", false, "Force overwrite existing hash files")
+	fs.BoolVar(&options.debugInfo, "debug-info", false, "Include debug information (Occurrences, DeterminationStats) in output")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, fs, err
@@ -208,6 +212,7 @@ func parseArgs(args []string, d deps, stderr io.Writer) (*recordConfig, *flag.Fl
 		hashDir:        dir,
 		force:          options.force,
 		usedDeprecated: options.deprecatedFile != "",
+		debugInfo:      options.debugInfo,
 	}, fs, nil
 }
 

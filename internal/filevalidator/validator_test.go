@@ -1325,7 +1325,7 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 			{Number: -1, Occurrences: []common.SyscallOccurrence{{Source: "", DeterminationMethod: "unknown:decode_failed"}}},
 			{Number: 42, Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
 		}
-		data := buildSyscallData(all, nil, elf.EM_X86_64)
+		data := buildSyscallData(all, nil, elf.EM_X86_64, nil, true)
 		assert.Equal(t, "x86_64", data.Architecture)
 		// All syscalls are retained (no filtering): Number=-1 and Number=42 both present.
 		assert.Len(t, data.DetectedSyscalls, 2)
@@ -1335,7 +1335,7 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 		all := []common.SyscallInfo{
 			{Number: -1, Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
 		}
-		data := buildSyscallData(all, nil, elf.EM_AARCH64)
+		data := buildSyscallData(all, nil, elf.EM_AARCH64, nil, true)
 		assert.Equal(t, "arm64", data.Architecture)
 	})
 
@@ -1344,7 +1344,7 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 			{Number: 1, Name: "write", Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
 			{Number: 3, Name: "read", Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
 		}
-		data := buildSyscallData(all, nil, elf.EM_X86_64)
+		data := buildSyscallData(all, nil, elf.EM_X86_64, nil, true)
 		// Non-network, resolved syscalls must be retained (no filtering).
 		assert.Len(t, data.DetectedSyscalls, 2)
 		numbers := make([]int, len(data.DetectedSyscalls))
@@ -1354,6 +1354,99 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 		assert.Contains(t, numbers, 1)
 		assert.Contains(t, numbers, 3)
 	})
+}
+
+func TestBuildSyscallData_DebugInfo(t *testing.T) {
+	all := []common.SyscallInfo{
+		{
+			Number: 1,
+			Name:   "write",
+			Occurrences: []common.SyscallOccurrence{{
+				Location:            0x1000,
+				DeterminationMethod: "immediate",
+				Source:              "immediate",
+			}},
+		},
+	}
+	stats := &common.SyscallDeterminationStats{ImmediateTotal: 1}
+
+	withoutDebug := buildSyscallData(all, nil, elf.EM_X86_64, stats, false)
+	require.NotNil(t, withoutDebug)
+	require.Len(t, withoutDebug.DetectedSyscalls, 1)
+	assert.Nil(t, withoutDebug.DetectedSyscalls[0].Occurrences)
+	assert.Nil(t, withoutDebug.DeterminationStats)
+
+	withDebug := buildSyscallData(all, nil, elf.EM_X86_64, stats, true)
+	require.NotNil(t, withDebug)
+	require.Len(t, withDebug.DetectedSyscalls, 1)
+	require.Len(t, withDebug.DetectedSyscalls[0].Occurrences, 1)
+	assert.Equal(t, uint64(0x1000), withDebug.DetectedSyscalls[0].Occurrences[0].Location)
+	require.NotNil(t, withDebug.DeterminationStats)
+	assert.Equal(t, 1, withDebug.DeterminationStats.ImmediateTotal)
+}
+
+func TestRecord_DebugInfo_ELF(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	targetFile := filepath.Join(tempDir, "target.bin")
+	elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+	v.SetSyscallAnalyzer(&stubSyscallAnalyzerWithDebugInfo{})
+
+	_, _, err = v.SaveRecord(targetFile, false)
+	require.NoError(t, err)
+
+	withoutDebug, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	require.NotNil(t, withoutDebug.SyscallAnalysis)
+	require.Len(t, withoutDebug.SyscallAnalysis.DetectedSyscalls, 1)
+	assert.Nil(t, withoutDebug.SyscallAnalysis.DetectedSyscalls[0].Occurrences)
+
+	v.SetIncludeDebugInfo(true)
+	_, _, err = v.SaveRecord(targetFile, true)
+	require.NoError(t, err)
+
+	withDebug, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	require.NotNil(t, withDebug.SyscallAnalysis)
+	require.Len(t, withDebug.SyscallAnalysis.DetectedSyscalls, 1)
+	require.Len(t, withDebug.SyscallAnalysis.DetectedSyscalls[0].Occurrences, 1)
+	assert.Equal(t, uint64(0x1000), withDebug.SyscallAnalysis.DetectedSyscalls[0].Occurrences[0].Location)
+}
+
+func TestRecord_DebugInfo_DeterminationStats(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	targetFile := filepath.Join(tempDir, "target.bin")
+	elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+	v.SetSyscallAnalyzer(&stubSyscallAnalyzerWithDebugInfo{})
+
+	_, _, err = v.SaveRecord(targetFile, false)
+	require.NoError(t, err)
+
+	withoutDebug, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	require.NotNil(t, withoutDebug.SyscallAnalysis)
+	assert.Nil(t, withoutDebug.SyscallAnalysis.DeterminationStats)
+
+	v.SetIncludeDebugInfo(true)
+	_, _, err = v.SaveRecord(targetFile, true)
+	require.NoError(t, err)
+
+	withDebug, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	require.NotNil(t, withDebug.SyscallAnalysis)
+	require.NotNil(t, withDebug.SyscallAnalysis.DeterminationStats)
+	assert.Equal(t, 1, withDebug.SyscallAnalysis.DeterminationStats.ImmediateTotal)
 }
 
 // ---------------------------------------------------------------------------
@@ -1477,8 +1570,8 @@ func TestRecord_Force_ELFToNonELF_ClearsSyscallAnalysis(t *testing.T) {
 // fake syscall for any ELF file, used to seed SyscallAnalysis in test records.
 type stubSyscallAnalyzerReturnsOne struct{}
 
-func (s *stubSyscallAnalyzerReturnsOne) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, error) {
-	return []common.SyscallInfo{{Number: 1, Name: "write"}}, nil, nil
+func (s *stubSyscallAnalyzerReturnsOne) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, *common.SyscallDeterminationStats, error) {
+	return []common.SyscallInfo{{Number: 1, Name: "write"}}, nil, nil, nil
 }
 
 func (s *stubSyscallAnalyzerReturnsOne) EvaluatePLTCallArgs(_ *elf.File, _ string) (*common.SyscallArgEvalResult, error) {
@@ -1527,8 +1620,8 @@ func TestRecord_Force_SyscallsToNone_ClearsSyscallAnalysis(t *testing.T) {
 // stubSyscallAnalyzerReturnsNone is a SyscallAnalyzerInterface that returns no syscalls.
 type stubSyscallAnalyzerReturnsNone struct{}
 
-func (s *stubSyscallAnalyzerReturnsNone) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, error) {
-	return nil, nil, nil
+func (s *stubSyscallAnalyzerReturnsNone) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, *common.SyscallDeterminationStats, error) {
+	return nil, nil, nil, nil
 }
 
 func (s *stubSyscallAnalyzerReturnsNone) EvaluatePLTCallArgs(_ *elf.File, _ string) (*common.SyscallArgEvalResult, error) {
@@ -1536,6 +1629,28 @@ func (s *stubSyscallAnalyzerReturnsNone) EvaluatePLTCallArgs(_ *elf.File, _ stri
 }
 
 func (s *stubSyscallAnalyzerReturnsNone) GetSyscallTable(_ elf.Machine) (SyscallNumberTable, bool) {
+	return nil, false
+}
+
+type stubSyscallAnalyzerWithDebugInfo struct{}
+
+func (s *stubSyscallAnalyzerWithDebugInfo) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, *common.SyscallDeterminationStats, error) {
+	return []common.SyscallInfo{{
+		Number: 1,
+		Name:   "write",
+		Occurrences: []common.SyscallOccurrence{{
+			Location:            0x1000,
+			DeterminationMethod: "immediate",
+			Source:              "immediate",
+		}},
+	}}, nil, &common.SyscallDeterminationStats{ImmediateTotal: 1}, nil
+}
+
+func (s *stubSyscallAnalyzerWithDebugInfo) EvaluatePLTCallArgs(_ *elf.File, _ string) (*common.SyscallArgEvalResult, error) {
+	return nil, nil
+}
+
+func (s *stubSyscallAnalyzerWithDebugInfo) GetSyscallTable(_ elf.Machine) (SyscallNumberTable, bool) {
 	return nil, false
 }
 
@@ -1800,8 +1915,8 @@ type stubPLTAnalyzer struct {
 	err    error
 }
 
-func (s *stubPLTAnalyzer) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, error) {
-	return nil, nil, nil
+func (s *stubPLTAnalyzer) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, *common.SyscallDeterminationStats, error) {
+	return nil, nil, nil, nil
 }
 
 func (s *stubPLTAnalyzer) EvaluatePLTCallArgs(_ *elf.File, _ string) (*common.SyscallArgEvalResult, error) {

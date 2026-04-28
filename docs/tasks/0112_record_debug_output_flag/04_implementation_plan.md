@@ -21,79 +21,79 @@
 
 ### 4.1 仕様同期タスク
 
-- [ ] P-01: 変更対象ファイル一覧を最終確定する
+- [x] P-01: 変更対象ファイル一覧を最終確定する
   - 完了条件: 実装対象とテスト対象が 01/02/03 で矛盾しない
-- [ ] P-02: 受け入れ条件 AC-1 から AC-9 のトレーサビリティ表を更新する
+- [x] P-02: 受け入れ条件 AC-1 から AC-9 のトレーサビリティ表を更新する
   - 完了条件: すべての AC に対して実装箇所とテスト名が紐づく
 
 ### 4.2 実装タスク（CLI 層）
 
-- [ ] I-01: `cmd/record/main.go` の `recordConfig` に `debugInfo` を追加する
+- [x] I-01: `cmd/record/main.go` の `recordConfig` に `debugInfo` を追加する
   - 完了条件: 構造体でフラグ値を保持できる
-- [ ] I-02: `parseArgs` に `--debug-info` を追加する
+- [x] I-02: `parseArgs` に `--debug-info` を追加する
   - 完了条件: ヘルプにフラグが表示され、引数解析で値を受け取れる
-- [ ] I-03: `run` で `SetIncludeDebugInfo` を呼び出す
+- [x] I-03: `run` で `SetIncludeDebugInfo` を呼び出す
   - 完了条件: `record` 実行時に Validator にフラグ値が伝搬する
 
 ### 4.3 実装タスク（Validator 層）
 
-- [ ] I-04: `SyscallAnalyzerInterface` の `AnalyzeSyscallsFromELF` 戻り値を拡張する
+- [x] I-04: `SyscallAnalyzerInterface` の `AnalyzeSyscallsFromELF` 戻り値を拡張する
   - 完了条件: `*common.SyscallDeterminationStats` を受け渡しできる
-- [ ] I-05: `Validator` に `includeDebugInfo` フィールドと `SetIncludeDebugInfo` を追加する
+- [x] I-05: `Validator` に `includeDebugInfo` フィールドと `SetIncludeDebugInfo` を追加する
   - 完了条件: 出力制御の状態を保持できる
-- [ ] I-06: `stripOccurrences` ヘルパーを追加する
+- [x] I-06: `stripOccurrences` ヘルパーを追加する
   - 完了条件: `DetectedSyscalls` のコピーを作り `Occurrences` を除去できる
-- [ ] I-07: `buildSyscallData` を拡張する
+- [x] I-07: `buildSyscallData` を拡張する
   - 完了条件: `includeDebugInfo=false` で `Occurrences` と `DeterminationStats` が出力されない
   - 完了条件: `includeDebugInfo=true` で両方が保持される
-- [ ] I-08: `buildMachoSyscallData` を拡張する
+- [x] I-08: `buildMachoSyscallData` を拡張する
   - 完了条件: `includeDebugInfo=false` で `Occurrences` が出力されない
   - 完了条件: 警告判定は `Occurrences` 除去前の情報で維持される
-- [ ] I-09: ELF 解析経路で `stats` を `buildSyscallData` へ連携する
+- [x] I-09: ELF 解析経路で `stats` を `buildSyscallData` へ連携する
   - 完了条件: direct syscall 解析時の `DeterminationStats` が debug 有効時に出力される
-- [ ] I-10: Mach-O 解析経路で `includeDebugInfo` を `buildMachoSyscallData` へ連携する
+- [x] I-10: Mach-O 解析経路で `includeDebugInfo` を `buildMachoSyscallData` へ連携する
   - 完了条件: Mach-O でも同じ制御方針が適用される
 
 ### 4.4 実装タスク（Adapter 層）
 
-- [ ] I-11: `internal/libccache/adapters.go` の戻り値を拡張する
+- [x] I-11: `internal/libccache/adapters.go` の戻り値を拡張する
   - 完了条件: analyzer の `DeterminationStats` を validator へ pass-through できる
   - 完了条件: Unsupported Architecture 変換時のエラーハンドリングは維持される
 
 ### 4.5 テストタスク
 
-- [ ] T-01: `validator_test.go` の既存 stub を新シグネチャへ更新する
+- [x] T-01: `validator_test.go` の既存 stub を新シグネチャへ更新する
   - 完了条件: 既存テストがコンパイルエラーなく実行可能
-- [ ] T-02: `validator_test.go` に debug 情報付き stub を追加する
+- [x] T-02: `validator_test.go` に debug 情報付き stub を追加する
   - 完了条件: `Occurrences` と `DeterminationStats` を含む入力を再現できる
-- [ ] T-03: `TestRecord_DebugInfo_ELF` を追加する
+- [x] T-03: `TestRecord_DebugInfo_ELF` を追加する
   - 完了条件: `includeDebugInfo=false/true` の `Occurrences` 制御差分を検証できる
   - 対応 AC: AC-1, AC-3, AC-5, AC-7
-- [ ] T-04: `TestRecord_DebugInfo_DeterminationStats` を追加する
+- [x] T-04: `TestRecord_DebugInfo_DeterminationStats` を追加する
   - 完了条件: `includeDebugInfo=false/true` の `DeterminationStats` 制御差分を検証できる
   - 対応 AC: AC-2, AC-4, AC-5, AC-7
-- [ ] T-05: `TestBuildSyscallData_DebugInfo` を追加する
+- [x] T-05: `TestBuildSyscallData_DebugInfo` を追加する
   - 完了条件: ヘルパー関数単体で出力差分を検証できる
   - 対応 AC: AC-1, AC-2, AC-3, AC-4
-- [ ] T-06: `validator_macho_test.go` に `TestBuildMachoSyscallData_DebugInfo` を追加する
+- [x] T-06: `validator_macho_test.go` に `TestBuildMachoSyscallData_DebugInfo` を追加する
   - 完了条件: Mach-O パスで `Occurrences` 制御差分を検証できる
   - 対応 AC: AC-6
-- [ ] T-07: 既存の `buildSyscallData` / `buildMachoSyscallData` 呼び出しテストを新シグネチャへ更新する
+- [x] T-07: 既存の `buildSyscallData` / `buildMachoSyscallData` 呼び出しテストを新シグネチャへ更新する
   - 完了条件: 既存テスト意図を維持しつつ全件パスする
-- [ ] T-08: `internal/libccache/adapters_test.go` を新シグネチャに追従させる
+- [x] T-08: `internal/libccache/adapters_test.go` を新シグネチャに追従させる
   - 完了条件: Adapter 層の回帰がないことを確認できる
-- [ ] T-09: `cmd/record` 側の引数解析テストを必要に応じて追加または更新する
+- [x] T-09: `cmd/record` 側の引数解析テストを必要に応じて追加または更新する
   - 完了条件: `--debug-info` が正しく解釈されることを確認できる
 
 ### 4.6 検証タスク
 
-- [ ] V-01: `make fmt` を実行する
+- [x] V-01: `make fmt` を実行する
   - 完了条件: 差分がフォーマット規約に一致する
-- [ ] V-02: `make test` を実行する
+- [x] V-02: `make test` を実行する
   - 完了条件: 全テストが通過する
-- [ ] V-03: `make lint` を実行する
+- [x] V-03: `make lint` を実行する
   - 完了条件: 新規 lint エラーがない
-- [ ] V-04: 受け入れ条件チェックを実施する
+- [x] V-04: 受け入れ条件チェックを実施する
   - 完了条件: AC-1 から AC-9 まで満足を確認できる
 
 ### 4.7 レビュータスク（重点観点）

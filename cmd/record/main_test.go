@@ -126,6 +126,20 @@ func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
 	assert.Equal(t, cmdcommon.DefaultHashDirectory, cfg.hashDir)
 	assert.Equal(t, []string{"file1.txt"}, cfg.files)
 	assert.False(t, cfg.force)
+	assert.False(t, cfg.debugInfo)
+}
+
+func TestParseArgsDebugInfoFlag(t *testing.T) {
+	d := deps{
+		mkdirAll: func(_ string, _ os.FileMode) error { return nil },
+	}
+
+	stderr := &bytes.Buffer{}
+
+	cfg, _, err := parseArgs([]string{"--debug-info", "file1.txt"}, d, stderr)
+
+	require.NoError(t, err)
+	assert.True(t, cfg.debugInfo)
 }
 
 func TestRunWithSyscallAnalysis(t *testing.T) {

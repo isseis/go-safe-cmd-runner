@@ -84,10 +84,11 @@ var ErrUnsupportedArch = errors.New("unsupported ELF architecture")
 // Implementations must convert elfanalyzer.UnsupportedArchitectureError to ErrUnsupportedArch.
 type SyscallAnalyzerInterface interface {
 	// AnalyzeSyscallsFromELF analyzes the ELF file for direct syscall instructions.
-	// Returns detected syscalls and argument evaluation results (e.g., mprotect PROT_EXEC).
+	// Returns detected syscalls, argument evaluation results (e.g., mprotect PROT_EXEC),
+	// and determination stats for debug use.
 	// Returns an error wrapping ErrUnsupportedArch (detectable via errors.Is) for
 	// unsupported architectures.
-	AnalyzeSyscallsFromELF(elfFile *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, error)
+	AnalyzeSyscallsFromELF(elfFile *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, *common.SyscallDeterminationStats, error)
 	// EvaluatePLTCallArgs scans .text for CALL/BL instructions targeting funcName's
 	// PLT stub and backward-scans the third argument register at each call site.
 	// Returns (nil, nil) if funcName has no PLT entry or no call sites are found.
@@ -152,6 +153,7 @@ type Validator struct {
 	libSystemCache      LibSystemCacheInterface         // nil if Mach-O libSystem cache is disabled
 	syscallAnalyzer     SyscallAnalyzerInterface        // nil if syscall analysis is disabled
 	machoSyscallTable   SyscallNumberTable              // nil falls back to noop table in ScanSyscallInfos
+	includeDebugInfo    bool
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
@@ -528,6 +530,12 @@ func (v *Validator) SetSyscallAnalyzer(a SyscallAnalyzerInterface) {
 	v.syscallAnalyzer = a
 }
 
+// SetIncludeDebugInfo controls whether debug information (Occurrences,
+// DeterminationStats) is included in saved JSON output.
+func (v *Validator) SetIncludeDebugInfo(b bool) {
+	v.includeDebugInfo = b
+}
+
 // Verify checks if the file at filePath matches its recorded hash.
 // Returns ErrMismatch if the hashes don't match, or ErrHashFileNotFound if no hash is recorded.
 func (v *Validator) Verify(filePath string) error {
@@ -803,6 +811,7 @@ func buildMachoSyscallData(
 	svcEntries []common.SyscallInfo,
 	libsysEntries []common.SyscallInfo,
 	arch string,
+	includeDebugInfo bool,
 ) *fileanalysis.SyscallAnalysisData {
 	merged := mergeMachoSyscallInfos(svcEntries, libsysEntries)
 
@@ -822,11 +831,16 @@ func buildMachoSyscallData(
 		}
 	}
 
+	syscalls := merged
+	if !includeDebugInfo {
+		syscalls = stripOccurrences(merged)
+	}
+
 	return &fileanalysis.SyscallAnalysisData{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			Architecture:     arch,
 			AnalysisWarnings: warnings,
-			DetectedSyscalls: merged,
+			DetectedSyscalls: syscalls,
 		},
 	}
 }
@@ -882,7 +896,7 @@ func (v *Validator) analyzeMachoSyscalls(record *fileanalysis.Record, filePath s
 		if arch == "" {
 			arch = archNameArm64
 		}
-		record.SyscallAnalysis = buildMachoSyscallData(svcEntries, combinedLibEntries, arch)
+		record.SyscallAnalysis = buildMachoSyscallData(svcEntries, combinedLibEntries, arch, v.includeDebugInfo)
 	}
 	return nil
 }
@@ -1109,8 +1123,9 @@ func (v *Validator) analyzeELFSyscalls(record *fileanalysis.Record, filePath str
 	// Scan ELF instructions directly for syscall invocations.
 	var directSyscalls []common.SyscallInfo
 	var directArgEvalResults []common.SyscallArgEvalResult
+	var directStats *common.SyscallDeterminationStats
 	if v.syscallAnalyzer != nil {
-		detected, evalResults, analyzeErr := v.syscallAnalyzer.AnalyzeSyscallsFromELF(elfFile)
+		detected, evalResults, stats, analyzeErr := v.syscallAnalyzer.AnalyzeSyscallsFromELF(elfFile)
 		if analyzeErr != nil {
 			if !errors.Is(analyzeErr, ErrUnsupportedArch) {
 				return fmt.Errorf("syscall analysis failed: %w", analyzeErr)
@@ -1118,6 +1133,7 @@ func (v *Validator) analyzeELFSyscalls(record *fileanalysis.Record, filePath str
 		} else {
 			directSyscalls = detected
 			directArgEvalResults = evalResults
+			directStats = stats
 		}
 	}
 
@@ -1131,7 +1147,7 @@ func (v *Validator) analyzeELFSyscalls(record *fileanalysis.Record, filePath str
 		return cmp.Compare(a.Status, b.Status)
 	})
 	if len(allSyscalls) > 0 || len(argEvalResults) > 0 {
-		record.SyscallAnalysis = buildSyscallData(allSyscalls, argEvalResults, elfFile.Machine)
+		record.SyscallAnalysis = buildSyscallData(allSyscalls, argEvalResults, elfFile.Machine, directStats, v.includeDebugInfo)
 	} else {
 		record.SyscallAnalysis = nil
 	}
@@ -1333,12 +1349,35 @@ func mprotectStatusPriority(status common.SyscallArgEvalStatus) int {
 }
 
 // buildSyscallData constructs a SyscallAnalysisData from the merged syscall infos.
-func buildSyscallData(all []common.SyscallInfo, argEvalResults []common.SyscallArgEvalResult, machine elf.Machine) *fileanalysis.SyscallAnalysisData {
+// stripOccurrences returns a copy of syscalls with Occurrences removed from each entry.
+func stripOccurrences(syscalls []common.SyscallInfo) []common.SyscallInfo {
+	result := make([]common.SyscallInfo, len(syscalls))
+	for i, s := range syscalls {
+		result[i] = s
+		result[i].Occurrences = nil
+	}
+	return result
+}
+
+func buildSyscallData(
+	all []common.SyscallInfo,
+	argEvalResults []common.SyscallArgEvalResult,
+	machine elf.Machine,
+	stats *common.SyscallDeterminationStats,
+	includeDebugInfo bool,
+) *fileanalysis.SyscallAnalysisData {
+	syscalls := all
+	if !includeDebugInfo {
+		syscalls = stripOccurrences(all)
+		stats = nil
+	}
+
 	return &fileanalysis.SyscallAnalysisData{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-			Architecture:     elfArchName(machine),
-			DetectedSyscalls: all,
-			ArgEvalResults:   argEvalResults,
+			Architecture:       elfArchName(machine),
+			DetectedSyscalls:   syscalls,
+			ArgEvalResults:     argEvalResults,
+			DeterminationStats: stats,
 		},
 	}
 }
