@@ -15,6 +15,7 @@
 | `internal/libccache/adapters.go` | 拡張 |
 | `internal/filevalidator/validator_test.go` | 拡張 |
 | `internal/filevalidator/validator_macho_test.go` | 拡張 |
+| `internal/libccache/adapters_test.go` | 拡張 |
 
 ## 3. `cmd/record/main.go`
 
@@ -337,6 +338,14 @@ data := buildSyscallData(all, nil, elf.EM_X86_64, nil, true)
 result := buildMachoSyscallData(svcEntries, nil, "arm64", true)
 ```
 
+#### `internal/libccache/adapters_test.go` の既存テスト
+
+`SyscallAdapter.AnalyzeSyscallsFromELF` の戻り値シグネチャ変更に追従して、
+stub とアサーションを更新する。
+
+**意図**: `DeterminationStats` の pass-through と既存のエラーハンドリングが
+維持されることを確認し、AC-7 / AC-9 の回帰を防ぐ。
+
 ### 6.5 テストで使用する stub 設計
 
 `Occurrences` と `DeterminationStats` を返す stub を追加する。
@@ -372,4 +381,4 @@ func (s *stubSyscallAnalyzerWithDebugInfo) AnalyzeSyscallsFromELF(_ *elf.File) (
 | AC-6 | Mach-O バイナリで除去が機能する | `analyzeMachoSyscalls` → `buildMachoSyscallData` |
 | AC-7 | libc キャッシュ経由でも除去が機能する | `buildSyscallData`（libc 由来 syscall も `all` に含まれる） |
 | AC-8 | デバッグ情報なしで記録したファイルを `verify` で検証できる | `verify` コマンドは `Occurrences` を参照しない（変更なし） |
-| AC-9 | 既存テストが成功する | stub 更新のみで動作を変えない |
+| AC-9 | 既存テストが成功する | 既存テストのシグネチャ追従更新で回帰を防ぐ |
