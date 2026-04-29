@@ -175,7 +175,10 @@ func (v *Validator) validateOutputDirectoryAccess(dirPath string, realUID int) e
 			}
 
 			// Directory exists, validate security for complete path with realUID context.
-			if err := isec.ValidateDirectoryPermissionsWithOptions(resolvedPath, v.buildDirPermOpts(realUID)); err != nil {
+			// Pass resolvedInfo to avoid a redundant Lstat on resolvedPath.
+			opts := v.buildDirPermOpts(realUID)
+			opts.FirstFileInfo = resolvedInfo
+			if err := isec.ValidateDirectoryPermissionsWithOptions(resolvedPath, opts); err != nil {
 				return fmt.Errorf("directory security validation failed for %s: %w", currentPath, err)
 			}
 
