@@ -72,7 +72,7 @@
 
 ### Phase 6: `internal/safefileio/safe_file.go` のコメント更新
 
-`io.Seeker` の説明コメントが削除済み `VerifyFromHandle` を参照しているため更新する。
+`io.Seeker` の説明コメントが削除対象の `VerifyFromHandle` を参照しているため更新する。
 `io.Seeker` は `openELFFile` でも引き続き使用されるためインターフェース定義は変更しない。
 
 - [ ] `io.Seeker` の行コメントを `VerifyFromHandle` への言及から更新する
@@ -99,7 +99,8 @@
 - [ ] AC-1: `go list -deps ./cmd/record | grep internal/runner` が 0 件
 - [ ] AC-2: `go list -deps ./cmd/verify | grep internal/runner` が 0 件
 - [ ] AC-4: `make test` が全件パス
-- [ ] AC-5: `go list -deps ./cmd/runner | grep internal/runner` が引き続き存在する（runner 側の特権昇格は維持）
+- [ ] AC-5: execute-only バイナリ検証をカバーする既存の `cmd/runner` / `internal/runner` / `internal/verification` テストを特定して実行する
+- [ ] AC-5: 既存テストで execute-only バイナリ検証を明示的に確認できない場合は、最小の回帰テストを追加してからそのテストを実行する
 
 ## 受け入れ基準との対応
 
@@ -109,7 +110,7 @@
 | AC-2 | `go list -deps ./cmd/verify \| grep internal/runner` が 0 件 | Phase 2–3 |
 | AC-3 | `go build ./cmd/record ./cmd/verify ./cmd/runner` が成功 | Phase 2–8 全体 |
 | AC-4 | `make test` が全件パス | Phase 2–8 全体 |
-| AC-5 | `cmd/runner` の特権昇格が引き続き動作する | Phase 2–3（filevalidator への変更は runner 側の実装に影響しない） |
+| AC-5 | `cmd/runner` の特権昇格が引き続き動作する | Phase 2–8 と Phase 10 |
 
 ## 注意事項
 

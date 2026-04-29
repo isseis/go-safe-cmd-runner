@@ -79,7 +79,7 @@ func (v *Validator) VerifyFromHandle(file io.ReadSeeker, targetPath common.Resol
 | AC-2 | `go list -deps ./cmd/verify \| grep internal/runner` が 0 件 |
 | AC-3 | `go build ./cmd/record ./cmd/verify ./cmd/runner` が成功 |
 | AC-4 | `make test` が全件パス |
-| AC-5 | `cmd/runner` の特権昇格（execute-only バイナリの検証）が引き続き動作する |
+| AC-5 | `cmd/runner` の特権昇格（execute-only バイナリの検証）が、既存または本タスクで追加した runner 向けテストで引き続き検証される |
 
 ## 設計方針
 
