@@ -2,15 +2,15 @@ package verification
 
 import (
 	"log/slog"
-	"reflect"
 	"runtime"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 // NewManagerForProduction creates a production verification manager.
 func NewManagerForProduction(validator DirectoryValidator) (*Manager, error) {
-	if isNilDirectoryValidator(validator) {
+	if common.IsNilInterfaceValue(validator) {
 		return nil, ErrSecurityValidatorNotInitialized
 	}
 
@@ -26,20 +26,6 @@ func NewManagerForProduction(validator DirectoryValidator) (*Manager, error) {
 		withSecurityLevel(SecurityLevelStrict),
 		withDirectoryValidatorInternal(validator),
 	)
-}
-
-func isNilDirectoryValidator(validator DirectoryValidator) bool {
-	if validator == nil {
-		return true
-	}
-
-	v := reflect.ValueOf(validator)
-	switch v.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return v.IsNil()
-	default:
-		return false
-	}
 }
 
 // NewManagerForDryRun creates a new verification manager for dry-run mode
