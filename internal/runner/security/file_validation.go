@@ -87,25 +87,24 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 }
 
 // ValidateDirectoryPermissions validates that a directory has appropriate permissions
-// and checks the complete path from root to target for security
+// and checks the complete path from root to target for security.
 func (v *Validator) ValidateDirectoryPermissions(dirPath string) error {
-	cleanDir, dirInfo, err := v.validatePathAndGetInfo(dirPath, "directory")
-	if err != nil {
-		return err
-	}
-
-	// Check if it's a directory
-	if !dirInfo.Mode().IsDir() {
-		err := fmt.Errorf("%w: %s is not a directory", isec.ErrInvalidDirPermissions, dirPath)
-		slog.Warn("Invalid directory type", slog.String("path", dirPath), slog.String("mode", dirInfo.Mode().String()))
-		return err
-	}
-
-	// SECURITY: Validate complete path from root to target directory
-	// This prevents attacks through compromised intermediate directories
-	// Use actual UID for proper permission validation
 	realUID := os.Getuid()
-	return v.validateCompletePath(cleanDir, dirPath, realUID)
+	opts := isec.DirectoryPermCheckOptions{
+		Lstat:              v.fs.Lstat,
+		MaxPathLength:      v.config.MaxPathLength,
+		RealUID:            realUID,
+		TestPermissiveMode: v.config.testPermissiveMode,
+		IsTrustedGroup: func(gid uint32) bool {
+			return v.isTrustedGroup(gid)
+		},
+	}
+	if v.groupMembership != nil {
+		opts.CanUserSafelyWrite = func(uid int, ownerUID uint32, groupGID uint32, mode os.FileMode) (bool, error) {
+			return v.groupMembership.CanUserSafelyWriteFile(uid, ownerUID, groupGID, mode)
+		}
+	}
+	return isec.ValidateDirectoryPermissionsWithOptions(dirPath, opts)
 }
 
 // validateCompletePath validates the security of the complete path from root to target
