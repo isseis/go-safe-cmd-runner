@@ -15,7 +15,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
@@ -156,9 +155,9 @@ func (m *Manager) ensureHashDirectoryValidated() error {
 	return nil
 }
 
-// VerifyGlobalFiles verifies the integrity of global files
-func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*Result, error) {
-	if runtimeGlobal == nil {
+// VerifyGlobalFiles verifies the integrity of global files.
+func (m *Manager) VerifyGlobalFiles(input *GlobalVerificationInput) (*Result, error) {
+	if input == nil {
 		return nil, ErrConfigNil
 	}
 
@@ -168,7 +167,7 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 	}
 
 	result := &Result{
-		TotalFiles:  len(runtimeGlobal.ExpandedVerifyFiles),
+		TotalFiles:  len(input.ExpandedVerifyFiles),
 		FailedFiles: []string{},
 	}
 
@@ -177,7 +176,7 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 		result.Duration = time.Since(start)
 	}()
 
-	for _, filePath := range runtimeGlobal.ExpandedVerifyFiles {
+	for _, filePath := range input.ExpandedVerifyFiles {
 		// Verify file hash (try normal verification first, then with privileges if needed)
 		if err := m.verifyFile(filePath, "global"); err != nil {
 			result.FailedFiles = append(result.FailedFiles, filePath)
@@ -213,9 +212,9 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 	return result, nil
 }
 
-// VerifyGroupFiles verifies the integrity of group files
-func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Result, error) {
-	if runtimeGroup == nil {
+// VerifyGroupFiles verifies the integrity of group files.
+func (m *Manager) VerifyGroupFiles(input *GroupVerificationInput) (*Result, error) {
+	if input == nil {
 		return nil, ErrConfigNil
 	}
 
@@ -225,7 +224,7 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 	}
 
 	// Collect all files to verify (explicit files + command files)
-	allFiles := m.collectVerificationFiles(runtimeGroup)
+	allFiles := m.collectVerificationFiles(input)
 
 	result := &Result{
 		TotalFiles:    len(allFiles),
@@ -238,7 +237,7 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 		result.Duration = time.Since(start)
 	}()
 
-	groupName := runnertypes.ExtractGroupName(runtimeGroup)
+	groupName := input.Name
 
 	for file := range allFiles {
 		// Verify file hash and collect the computed hash for downstream consumers.
@@ -278,31 +277,29 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 	return result, nil
 }
 
-// collectVerificationFiles collects all files to verify for a group
-func (m *Manager) collectVerificationFiles(runtimeGroup *runnertypes.RuntimeGroup) map[string]struct{} {
-	if runtimeGroup == nil || runtimeGroup.Spec == nil {
+// collectVerificationFiles collects all files to verify for a group.
+func (m *Manager) collectVerificationFiles(input *GroupVerificationInput) map[string]struct{} {
+	if input == nil {
 		return make(map[string]struct{})
 	}
 
-	groupSpec := runtimeGroup.Spec
-
 	// Use map to automatically eliminate duplicates
-	fileSet := make(map[string]struct{}, len(runtimeGroup.ExpandedVerifyFiles)+len(runtimeGroup.Commands))
+	fileSet := make(map[string]struct{}, len(input.ExpandedVerifyFiles)+len(input.Commands))
 
 	// Add explicit files with variables expanded
-	for _, file := range runtimeGroup.ExpandedVerifyFiles {
+	for _, file := range input.ExpandedVerifyFiles {
 		fileSet[file] = struct{}{}
 	}
 
 	// Add command files from pre-expanded runtime commands
-	if m.pathResolver != nil && len(runtimeGroup.Commands) > 0 {
-		for _, runtimeCmd := range runtimeGroup.Commands {
+	if m.pathResolver != nil && len(input.Commands) > 0 {
+		for _, command := range input.Commands {
 			// Use pre-expanded command path
-			resolvedPath, err := m.pathResolver.ResolvePath(runtimeCmd.ExpandedCmd)
+			resolvedPath, err := m.pathResolver.ResolvePath(command.ExpandedCmd)
 			if err != nil {
 				slog.Warn("Failed to resolve command path",
-					"group", groupSpec.Name,
-					"command", runtimeCmd.ExpandedCmd,
+					"group", input.Name,
+					"command", command.ExpandedCmd,
 					"error", err.Error())
 				continue
 			}

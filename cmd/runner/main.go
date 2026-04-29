@@ -267,7 +267,9 @@ func run(runID string) error {
 	}
 
 	// Perform global file verification (using verification manager directly)
-	result, err := verificationManager.VerifyGlobalFiles(runtimeGlobal)
+	result, err := verificationManager.VerifyGlobalFiles(&verification.GlobalVerificationInput{
+		ExpandedVerifyFiles: runtimeGlobal.ExpandedVerifyFiles,
+	})
 	if err != nil {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,

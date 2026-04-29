@@ -24,22 +24,22 @@
 
 対象: `internal/verification` に runner 非依存の入力 DTO と最小インターフェースを定義する。
 
-- [ ] `internal/verification` に `GroupVerificationInput` を追加
-- [ ] `internal/verification` に `GlobalVerificationInput` を追加
-- [ ] `internal/verification` に `CommandEntry` を追加
-- [ ] `internal/verification` に `DirectoryValidator` インターフェースを追加
-- [ ] `verification.ManagerInterface` から `runnertypes.RuntimeGroup` / `runnertypes.RuntimeGlobal` 参照を除去
-- [ ] `internal/verification` から `internal/runner/runnertypes` import を除去
+- [x] `internal/verification` に `GroupVerificationInput` を追加
+- [x] `internal/verification` に `GlobalVerificationInput` を追加
+- [x] `internal/verification` に `CommandEntry` を追加
+- [x] `internal/verification` に `DirectoryValidator` インターフェースを追加
+- [x] `verification.ManagerInterface` から `runnertypes.RuntimeGroup` / `runnertypes.RuntimeGlobal` 参照を除去
+- [x] `internal/verification` から `internal/runner/runnertypes` import を除去
 
 ### Phase 3: verification.Manager の本体を DTO ベースへ置換
 
 対象: manager 本体のシグネチャと内部処理を DTO ベースへ切り替える。
 
-- [ ] `VerifyGroupFiles` の引数を `*GroupVerificationInput` に変更
-- [ ] `VerifyGlobalFiles` の引数を `*GlobalVerificationInput` に変更
-- [ ] `collectVerificationFiles` の引数を `*GroupVerificationInput` に変更
-- [ ] グループ名取得を `runnertypes.ExtractGroupName` 依存から `input.Name` 利用へ置換
-- [ ] コマンド展開文字列の走査を `CommandEntry.ExpandedCmd` 利用へ置換
+- [x] `VerifyGroupFiles` の引数を `*GroupVerificationInput` に変更
+- [x] `VerifyGlobalFiles` の引数を `*GlobalVerificationInput` に変更
+- [x] `collectVerificationFiles` の引数を `*GroupVerificationInput` に変更
+- [x] グループ名取得を `runnertypes.ExtractGroupName` 依存から `input.Name` 利用へ置換
+- [x] コマンド展開文字列の走査を `CommandEntry.ExpandedCmd` 利用へ置換
 - [ ] `ValidateHashDirectory` の分岐順をスキップ判定優先へ整理
 
 ### Phase 4: security 依存を抽象化しデッドコードを削除
@@ -68,21 +68,21 @@
 
 対象: 上位レイヤーで `RuntimeGroup` / `RuntimeGlobal` から DTO へ変換する。
 
-- [ ] `internal/runner/group_executor.go` で `GroupVerificationInput` 生成を追加
-- [ ] `internal/runner/group_executor.go` でコマンド一覧を `[]verification.CommandEntry` に変換
-- [ ] `cmd/runner/main.go` で `GlobalVerificationInput` 生成を追加
-- [ ] 既存の呼び出しシーケンスとエラーハンドリングを維持
+- [x] `internal/runner/group_executor.go` で `GroupVerificationInput` 生成を追加
+- [x] `internal/runner/group_executor.go` でコマンド一覧を `[]verification.CommandEntry` に変換
+- [x] `cmd/runner/main.go` で `GlobalVerificationInput` 生成を追加
+- [x] 既存の呼び出しシーケンスとエラーハンドリングを維持
 
 ### Phase 7: テストダブルとヘルパーを DTO ベースへ更新
 
 対象: verification / runner テストヘルパーを新シグネチャへ追従させる。
 
-- [ ] `internal/verification/testing/testify_mocks.go` の `MockManager.VerifyGroupFiles` を DTO シグネチャへ変更
-- [ ] `internal/verification/testing/helpers.go` のマッチャを `GroupVerificationInput.Name` ベースへ変更
-- [ ] `internal/runner/test_helpers.go` のマッチャを DTO ベースへ変更
-- [ ] `internal/verification/manager_test.go` の入力ヘルパーを DTO 型へ置換
-- [ ] `internal/verification/testing/testify_mocks_test.go` のテスト入力を DTO 型へ置換
-- [ ] テストコードから不要になった `runnertypes` import を削除
+- [x] `internal/verification/testing/testify_mocks.go` の `MockManager.VerifyGroupFiles` を DTO シグネチャへ変更
+- [x] `internal/verification/testing/helpers.go` のマッチャを `GroupVerificationInput.Name` ベースへ変更
+- [x] `internal/runner/test_helpers.go` のマッチャを DTO ベースへ変更
+- [x] `internal/verification/manager_test.go` の入力ヘルパーを DTO 型へ置換
+- [x] `internal/verification/testing/testify_mocks_test.go` のテスト入力を DTO 型へ置換
+- [x] テストコードから不要になった `runnertypes` import を削除
 
 ### Phase 8: 回帰テストの妥当性確認と最小補強
 

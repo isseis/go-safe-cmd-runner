@@ -15,22 +15,15 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 const testHashDir = "/usr/local/etc/go-safe-cmd-runner/hashes"
 
-// Helper function to create RuntimeGlobal for testing
-func createRuntimeGlobal(verifyFiles []string) *runnertypes.RuntimeGlobal {
-	spec := &runnertypes.GlobalSpec{
-		VerifyFiles: verifyFiles,
-	}
-	runtime, err := runnertypes.NewRuntimeGlobal(spec)
-	require.NoError(nil, err)
-	runtime.ExpandedVerifyFiles = verifyFiles
-	return runtime
+// Helper function to create GlobalVerificationInput for testing.
+func createRuntimeGlobal(verifyFiles []string) *GlobalVerificationInput {
+	return &GlobalVerificationInput{ExpandedVerifyFiles: verifyFiles}
 }
 
 // Helper to create a hash record file with wrong hash value in FileAnalysisRecord format.
@@ -70,23 +63,12 @@ func createWrongHashRecord(hashDir, filePath, wrongHash string) (string, error) 
 	return hashFile, nil
 }
 
-// Helper function to create GroupSpec for testing
-// Name and Description are fixed for tests to avoid unparam lint warnings
-func createGroupSpec(verifyFiles []string) *runnertypes.GroupSpec {
-	return &runnertypes.GroupSpec{
-		Name:        "test-group",
-		Description: "",
-		VerifyFiles: verifyFiles,
+// Helper function to create GroupVerificationInput for testing.
+func createRuntimeGroup(verifyFiles []string) *GroupVerificationInput {
+	return &GroupVerificationInput{
+		Name:                "test-group",
+		ExpandedVerifyFiles: verifyFiles,
 	}
-}
-
-// Helper function to create RuntimeGroup for testing
-func createRuntimeGroup(verifyFiles []string) *runnertypes.RuntimeGroup {
-	spec := createGroupSpec(verifyFiles)
-	runtime, err := runnertypes.NewRuntimeGroup(spec)
-	require.NoError(nil, err)
-	runtime.ExpandedVerifyFiles = verifyFiles
-	return runtime
 }
 
 func TestNewManager(t *testing.T) {
@@ -771,28 +753,12 @@ func TestCollectVerificationFiles(t *testing.T) {
 		manager, err := NewManagerForTest(tmpDir, WithPathResolver(pathResolver))
 		require.NoError(t, err)
 
-		// Create runtime group with command using variable reference
-		spec := &runnertypes.GroupSpec{
+		runtimeGroup := &GroupVerificationInput{
 			Name: "test-group",
-			Commands: []runnertypes.CommandSpec{
-				{
-					Name: "test-command",
-					Cmd:  "%{bindir}/testcmd",
-					Args: []string{},
-				},
+			Commands: []CommandEntry{
+				{ExpandedCmd: filepath.Join(binDir, "testcmd")},
 			},
 		}
-		runtimeGroup, err := runnertypes.NewRuntimeGroup(spec)
-		require.NoError(t, err)
-		runtimeGroup.ExpandedVars = map[string]string{
-			"bindir": binDir,
-		}
-
-		// Create pre-expanded RuntimeCommand (simulating preExpandCommands behavior)
-		runtimeCmd, err := runnertypes.NewRuntimeCommand(&spec.Commands[0], common.NewUnsetTimeout(), commontesting.NewUnlimitedOutputSizeLimit(), spec.Name)
-		require.NoError(t, err)
-		runtimeCmd.ExpandedCmd = filepath.Join(binDir, "testcmd")
-		runtimeGroup.Commands = []*runnertypes.RuntimeCommand{runtimeCmd}
 
 		// Collect files (should use pre-expanded command)
 		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
@@ -808,20 +774,12 @@ func TestCollectVerificationFiles(t *testing.T) {
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
 
-		// Create runtime group with command using undefined variable
-		spec := &runnertypes.GroupSpec{
+		runtimeGroup := &GroupVerificationInput{
 			Name: "test-group",
-			Commands: []runnertypes.CommandSpec{
-				{
-					Name: "test-command",
-					Cmd:  "%{undefined_var}/testcmd",
-					Args: []string{},
-				},
+			Commands: []CommandEntry{
+				{ExpandedCmd: "%{undefined_var}/testcmd"},
 			},
 		}
-		runtimeGroup, err := runnertypes.NewRuntimeGroup(spec)
-		require.NoError(t, err)
-		runtimeGroup.ExpandedVars = map[string]string{} // Empty - no variables defined
 
 		// Collect files (should skip command with expansion error)
 		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
@@ -838,20 +796,12 @@ func TestCollectVerificationFiles(t *testing.T) {
 		manager, err := NewManagerForTest(tmpDir, WithPathResolver(pathResolver))
 		require.NoError(t, err)
 
-		// Create runtime group with command that can't be resolved
-		spec := &runnertypes.GroupSpec{
+		runtimeGroup := &GroupVerificationInput{
 			Name: "test-group",
-			Commands: []runnertypes.CommandSpec{
-				{
-					Name: "test-command",
-					Cmd:  "/nonexistent/command",
-					Args: []string{},
-				},
+			Commands: []CommandEntry{
+				{ExpandedCmd: "/nonexistent/command"},
 			},
 		}
-		runtimeGroup, err := runnertypes.NewRuntimeGroup(spec)
-		require.NoError(t, err)
-		runtimeGroup.ExpandedVars = map[string]string{}
 
 		// Collect files (should skip command with resolution error)
 		collectedFiles := manager.collectVerificationFiles(runtimeGroup)

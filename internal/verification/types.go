@@ -73,6 +73,28 @@ func newInternalOptions() *managerInternalOptions {
 // InternalOption is a function type for configuring Manager instances internally
 type InternalOption func(*managerInternalOptions)
 
+// GroupVerificationInput contains the minimum group data needed for verification.
+type GroupVerificationInput struct {
+	Name                string
+	ExpandedVerifyFiles []string
+	Commands            []CommandEntry
+}
+
+// CommandEntry represents a command input that may resolve to a file to verify.
+type CommandEntry struct {
+	ExpandedCmd string
+}
+
+// GlobalVerificationInput contains the minimum global data needed for verification.
+type GlobalVerificationInput struct {
+	ExpandedVerifyFiles []string
+}
+
+// DirectoryValidator validates hash directory permissions.
+type DirectoryValidator interface {
+	ValidateDirectoryPermissions(dirPath string) error
+}
+
 // withCreationMode sets the creation mode
 func withCreationMode(mode CreationMode) InternalOption {
 	return func(opts *managerInternalOptions) {
