@@ -156,9 +156,9 @@ func (v *Validator) buildDirPermOpts(realUID int) isec.DirectoryPermCheckOptions
 
 ### Step 3: ビルド・テスト・lint の確認
 
-- [ ] `go build ./cmd/record ./cmd/verify ./cmd/runner` が成功することを確認する（AC-8）
-- [ ] `make test` が全件パスすることを確認する（AC-9）
-- [ ] `make lint` がエラーなしで完了することを確認する（AC-10）
+- [x] `go build ./cmd/record ./cmd/verify ./cmd/runner` が成功することを確認する（AC-8）
+- [x] `make test` が全件パスすることを確認する（AC-9）
+- [x] `make lint` がエラーなしで完了することを確認する（AC-10）
 
 ---
 
