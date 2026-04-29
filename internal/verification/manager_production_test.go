@@ -21,8 +21,30 @@ func (s stubDirectoryValidator) ValidateDirectoryPermissions(string) error {
 	return s.err
 }
 
+type ptrDirectoryValidator struct{}
+
+func (*ptrDirectoryValidator) ValidateDirectoryPermissions(string) error {
+	return nil
+}
+
 // TestProductionNewManager tests the production NewManager API
 func TestProductionNewManager(t *testing.T) {
+	t.Run("fails_when_validator_is_nil", func(t *testing.T) {
+		manager, err := NewManagerForProduction(nil)
+
+		assert.ErrorIs(t, err, ErrSecurityValidatorNotInitialized)
+		assert.Nil(t, manager)
+	})
+
+	t.Run("fails_when_validator_is_typed_nil_pointer", func(t *testing.T) {
+		var validator *ptrDirectoryValidator
+
+		manager, err := NewManagerForProduction(validator)
+
+		assert.ErrorIs(t, err, ErrSecurityValidatorNotInitialized)
+		assert.Nil(t, manager)
+	})
+
 	t.Run("successful_manager_creation", func(t *testing.T) {
 		// Create a temporary directory to act as hash directory
 		tmpDir := commontesting.SafeTempDir(t)
@@ -89,7 +111,7 @@ func TestProductionNewManager(t *testing.T) {
 
 		logOutput := logBuffer.String()
 		assert.Contains(t, logOutput, "Production verification manager created")
-		assert.Contains(t, logOutput, "api=NewManager")
+		assert.Contains(t, logOutput, "api=NewManagerForProduction")
 		assert.Contains(t, logOutput, hashDir)
 		assert.Contains(t, logOutput, "security_level=strict")
 	})
@@ -201,7 +223,7 @@ func TestProductionManagerLogging(t *testing.T) {
 		// Verify log content
 		logOutput := logBuffer.String()
 		assert.Contains(t, logOutput, "Production verification manager created")
-		assert.Contains(t, logOutput, "api=NewManager")
+		assert.Contains(t, logOutput, "api=NewManagerForProduction")
 		assert.Contains(t, logOutput, "security_level=strict")
 		assert.Contains(t, logOutput, "caller_file=")
 		assert.Contains(t, logOutput, "caller_line=")
