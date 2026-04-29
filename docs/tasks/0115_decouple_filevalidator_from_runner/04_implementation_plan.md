@@ -13,10 +13,10 @@
 
 ### Phase 1: 前提確認
 
-- [ ] 現状の runner 依存を確認: `go list -deps ./cmd/record | grep internal/runner`
-- [ ] 現状の runner 依存を確認: `go list -deps ./cmd/verify | grep internal/runner`
-- [ ] ベースラインビルドの確認: `go build ./cmd/record ./cmd/verify ./cmd/runner`
-- [ ] ベースラインテストの確認: `make test`
+- [x] 現状の runner 依存を確認: `go list -deps ./cmd/record | grep internal/runner`
+- [x] 現状の runner 依存を確認: `go list -deps ./cmd/verify | grep internal/runner`
+- [x] ベースラインビルドの確認: `go build ./cmd/record ./cmd/verify ./cmd/runner`
+- [x] ベースラインテストの確認: `make test`
 
 ### Phase 2: `internal/filevalidator/privileged_file.go` の削除
 
