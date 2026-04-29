@@ -14,11 +14,11 @@
 
 ### Phase 1: 前提確認
 
-- [ ] 現状の依存を確認: `go list -deps github.com/isseis/go-safe-cmd-runner/internal/verification | grep internal/runner`
-- [ ] task 0115 の継続条件を確認: `go list -deps ./cmd/record | grep internal/runner`
-- [ ] task 0115 の継続条件を確認: `go list -deps ./cmd/verify | grep internal/runner`
-- [ ] ベースラインビルドを確認: `go build ./cmd/record ./cmd/verify ./cmd/runner`
-- [ ] ベースラインテストを確認: `make test`
+- [x] 現状の依存を確認: `go list -deps github.com/isseis/go-safe-cmd-runner/internal/verification | grep internal/runner`
+- [x] task 0115 の継続条件を確認: `go list -deps ./cmd/record | grep internal/runner`
+- [x] task 0115 の継続条件を確認: `go list -deps ./cmd/verify | grep internal/runner`
+- [x] ベースラインビルドを確認: `go build ./cmd/record ./cmd/verify ./cmd/runner`
+- [x] ベースラインテストを確認: `make test`
 
 ### Phase 2: verification の入力境界を runner 非依存化
 
