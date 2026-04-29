@@ -51,14 +51,23 @@
 
 - [ ] `internal/security/directory_perm_checker.go` で実装する処理
   - `ValidateDirectoryPermissions(dirPath string) error` メソッド
-  - `validateCompletePath()` ヘルパー
-  - `validateDirectoryComponentMode()` ヘルパー
-  - `validateDirectoryComponentPermissions()` ヘルパー
-  - `validateGroupWritePermissions()` ヘルパー
-  - `isStickyDirectory()` ヘルパー
-  - `isTrustedGroup()` ヘルパー
+  - struct フィールドへのアクセスのため、ヘルパー関数を呼び出す
 
-- [ ] 実装は `internal/runner/security/file_validation.go` の既存ロジックを **完全にコピー** して、struct 関連の部分のみ調整
+- [ ] 共通のロジック関数を `internal/security/` にパッケージレベル関数として抽出
+  - `validateCompletePath(fs FileSystem, groupMembership *GroupMembership, config *permValidationConfig, cleanPath, originalPath string, realUID int) error`
+  - `validateDirectoryComponentMode(fs FileSystem, dirPath string, info os.FileInfo) error`
+  - `validateDirectoryComponentPermissions(fs FileSystem, groupMembership *GroupMembership, config *permValidationConfig, dirPath string, info os.FileInfo, realUID int) error`
+  - `validateGroupWritePermissions(groupMembership *GroupMembership, config *permValidationConfig, dirPath string, info os.FileInfo, realUID int) error`
+  - `isStickyDirectory(info os.FileInfo) bool`
+  - `isTrustedGroup(config *permValidationConfig, gid uint32) bool`
+
+- [ ] 設定構造体 `permValidationConfig` を定義
+  ```go
+  type permValidationConfig struct {
+      trustedGIDs       map[uint32]struct{}
+      testPermissiveMode bool
+  }
+  ```
 
 ### 2. `toctou_check.go` の更新
 
@@ -116,11 +125,14 @@ type DirectoryValidator interface {
 - 既に `internal/verification/manager.go` で使用されている
 - 新しい実装も同じインタフェースを実装することで統一性を確保
 
-### 2. ロジックの完全複製
+### 2. ロジック重複の回避（共通関数への抽出）
 
-- `internal/runner/security/file_validation.go` の既存ロジックを新しい `dirPermChecker` struct で完全にコピー
-- 理由: TOCTOU チェック用に最小限のセット構成にすることが目的であり、ロジックの重複は許容
-- 将来的には共通関数への抽出を検討
+- `internal/runner/security/file_validation.go` の既存メソッドロジックを、パッケージレベルの共通関数として抽出
+- `Validator` と `dirPermChecker` の両方で同じ関数を呼び出す
+- 利点:
+  - コード保守性向上（バグ修正は 1 箇所で完結）
+  - 一貫性確保（両実装で同じセキュリティチェック）
+  - テスト効率化（共通関数単位でテスト可能）
 
 ### 3. テストコードへの影響最小化
 
@@ -130,8 +142,25 @@ type DirectoryValidator interface {
 
 ## 実装のステップ
 
-1. **Phase 1**: `internal/security/directory_perm_checker.go` の新規作成
-2. **Phase 2**: `toctou_check.go` の更新
-3. **Phase 3**: `cmd/runner/main.go` の更新
-4. **Phase 4**: `Validator.NewValidator()` の簡略化（config = nil チェック削除）
-5. **Phase 5**: テストの追加・検証
+1. **Phase 1**: `internal/runner/security/file_validation.go` から共通ロジック関数を抽出
+   - パッケージレベル関数として定義
+   - `permValidationConfig` 構造体を定義
+   - 既存の `Validator` メソッドを新しい共通関数で置き換え（リファクタリング）
+
+2. **Phase 2**: `internal/security/directory_perm_checker.go` の新規作成
+   - `dirPermChecker` struct 定義
+   - `ValidateDirectoryPermissions()` メソッド実装
+   - Phase 1 で抽出した共通関数を呼び出す
+
+3. **Phase 3**: `toctou_check.go` の更新
+   - `NewDirectoryPermCheckerForTOCTOU()` を実装
+   - 戻り値型を `DirectoryValidator` に変更
+   - 古い `NewValidatorForTOCTOU()` は deprecated とマーク
+
+4. **Phase 4**: `cmd/runner/main.go` の更新
+   - `NewDirectoryPermCheckerForTOCTOU()` に切り替え
+
+5. **Phase 5**: `Validator.NewValidator()` の簡略化
+   - `config = nil` チェック削除
+
+6. **Phase 6**: テスト追加・検証
