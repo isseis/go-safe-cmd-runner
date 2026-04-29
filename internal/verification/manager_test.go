@@ -2,6 +2,7 @@ package verification
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -148,9 +149,9 @@ func TestManager_ValidateHashDirectory_NoSecurityValidator(t *testing.T) {
 		security: nil, // No security validator
 	}
 
-	err := manager.ValidateHashDirectory()
-	assert.Error(t, err)
-	assert.ErrorIs(t, err, ErrSecurityValidatorNotInitialized)
+	assert.Panics(t, func() {
+		_ = manager.ValidateHashDirectory()
+	})
 }
 
 func TestManager_ValidateHashDirectory_SkipsWithoutSecurityValidator(t *testing.T) {
@@ -417,8 +418,9 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 // tests.
 func invalidHashDirManager() *Manager {
 	return &Manager{
-		hashDir: "/non/existent/hash/directory",
-		fs:      common.NewDefaultFileSystem(),
+		hashDir:  "/non/existent/hash/directory",
+		fs:       common.NewDefaultFileSystem(),
+		security: stubDirectoryValidator{err: errors.New("directory not found")},
 	}
 }
 
@@ -480,7 +482,7 @@ func TestVerifyAndReadConfigFile(t *testing.T) {
 		// Should fail hash directory validation
 		assert.Error(t, err)
 		assert.Nil(t, content)
-		assert.Contains(t, err.Error(), "security validator not initialized")
+		assert.Contains(t, err.Error(), "hash directory validation failed")
 	})
 }
 
@@ -536,7 +538,7 @@ func TestVerifyEnvironmentFile(t *testing.T) {
 
 		// Should fail hash directory validation
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "security validator not initialized")
+		assert.Contains(t, err.Error(), "hash directory validation failed")
 	})
 }
 
@@ -588,7 +590,7 @@ func TestVerifyGlobalFiles(t *testing.T) {
 		// Should fail hash directory validation
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "security validator not initialized")
+		assert.Contains(t, err.Error(), "hash directory validation failed")
 	})
 }
 
@@ -640,7 +642,7 @@ func TestVerifyGroupFiles(t *testing.T) {
 		// Should fail hash directory validation
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "security validator not initialized")
+		assert.Contains(t, err.Error(), "hash directory validation failed")
 	})
 }
 

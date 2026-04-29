@@ -16,8 +16,6 @@ var (
 	ErrHashDirectoryInvalid = errors.New("hash directory is invalid")
 	// ErrConfigNil is returned when config is nil
 	ErrConfigNil = errors.New("config cannot be nil")
-	// ErrSecurityValidatorNotInitialized is returned when security validator is not initialized
-	ErrSecurityValidatorNotInitialized = errors.New("security validator not initialized")
 	// ErrGlobalVerificationFailed is returned when global file verification fails
 	ErrGlobalVerificationFailed = errors.New("global file verification failed")
 	// ErrGroupVerificationFailed is returned when group file verification fails

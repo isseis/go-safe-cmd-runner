@@ -129,8 +129,8 @@ func (m *Manager) ValidateHashDirectory() error {
 		return nil
 	}
 
-	if m.security == nil {
-		return ErrSecurityValidatorNotInitialized
+	if common.IsNilInterfaceValue(m.security) {
+		panic("verification.Manager: DirectoryValidator is nil in production mode (programming error)")
 	}
 
 	// Validate directory permissions using security validator

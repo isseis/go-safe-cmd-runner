@@ -29,20 +29,17 @@ func (*ptrDirectoryValidator) ValidateDirectoryPermissions(string) error {
 
 // TestProductionNewManager tests the production NewManager API
 func TestProductionNewManager(t *testing.T) {
-	t.Run("fails_when_validator_is_nil", func(t *testing.T) {
-		manager, err := NewManagerForProduction(nil)
-
-		assert.ErrorIs(t, err, ErrSecurityValidatorNotInitialized)
-		assert.Nil(t, manager)
+	t.Run("panics_when_validator_is_nil", func(t *testing.T) {
+		assert.Panics(t, func() {
+			_, _ = NewManagerForProduction(nil)
+		})
 	})
 
-	t.Run("fails_when_validator_is_typed_nil_pointer", func(t *testing.T) {
+	t.Run("panics_when_validator_is_typed_nil_pointer", func(t *testing.T) {
 		var validator *ptrDirectoryValidator
-
-		manager, err := NewManagerForProduction(validator)
-
-		assert.ErrorIs(t, err, ErrSecurityValidatorNotInitialized)
-		assert.Nil(t, manager)
+		assert.Panics(t, func() {
+			_, _ = NewManagerForProduction(validator)
+		})
 	})
 
 	t.Run("successful_manager_creation", func(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 // NewManagerForProduction creates a production verification manager.
 func NewManagerForProduction(validator DirectoryValidator) (*Manager, error) {
 	if common.IsNilInterfaceValue(validator) {
-		return nil, ErrSecurityValidatorNotInitialized
+		panic("verification.NewManagerForProduction: DirectoryValidator must not be nil (programming error)")
 	}
 
 	// Log production manager creation for security audit trail
