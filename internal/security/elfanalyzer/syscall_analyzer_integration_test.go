@@ -292,7 +292,7 @@ func main() {
 	}
 
 	// Step 5: Verify StandardELFAnalyzer's convertSyscallResult produces correct output
-	stdAnalyzer := NewStandardELFAnalyzer(nil, nil)
+	stdAnalyzer := NewStandardELFAnalyzer(nil)
 	analysisOutput := stdAnalyzer.convertSyscallResult(eaResult)
 
 	// The binary uses net.Dial → socket syscall → should detect network

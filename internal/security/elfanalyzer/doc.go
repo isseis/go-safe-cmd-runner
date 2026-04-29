@@ -45,7 +45,7 @@
 //
 // # Usage
 //
-//	analyzer := elfanalyzer.NewStandardELFAnalyzer(nil, nil)
+//	analyzer := elfanalyzer.NewStandardELFAnalyzer(nil)
 //	output, err := analyzer.Analyze("/usr/bin/curl", "sha256:abc123...")
 //
 //	if output.IsNetworkCapable() {
@@ -63,6 +63,4 @@
 // # Security Considerations
 //
 // File access uses safefileio to prevent symlink attacks and TOCTOU races.
-// When analyzing execute-only binaries, supply a PrivilegeManager to
-// NewStandardELFAnalyzer for temporary privilege escalation during reads.
 package elfanalyzer

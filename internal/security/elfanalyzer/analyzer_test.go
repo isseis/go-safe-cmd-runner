@@ -23,7 +23,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 		t.Skip("testdata directory not found, skipping ELF analysis tests")
 	}
 
-	analyzer := NewStandardELFAnalyzer(nil, nil)
+	analyzer := NewStandardELFAnalyzer(nil)
 
 	tests := []struct {
 		name           string
@@ -100,7 +100,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 }
 
 func TestStandardELFAnalyzer_NonexistentFile(t *testing.T) {
-	analyzer := NewStandardELFAnalyzer(nil, nil)
+	analyzer := NewStandardELFAnalyzer(nil)
 
 	output := analyzer.AnalyzeNetworkSymbols("/nonexistent/path/to/binary", "sha256:dummy")
 
@@ -111,7 +111,7 @@ func TestStandardELFAnalyzer_NonexistentFile(t *testing.T) {
 // TestHasDynamicLoad_ELF verifies that a binary importing dlopen is detected
 // with non-empty DynamicLoadSymbols, independently of network symbol detection.
 func TestHasDynamicLoad_ELF(t *testing.T) {
-	analyzer := NewStandardELFAnalyzer(nil, nil)
+	analyzer := NewStandardELFAnalyzer(nil)
 
 	// Use a real system binary that is known to import dlopen.
 	// python3 uses dlopen for extension loading on Linux.
@@ -147,7 +147,7 @@ func TestHasDynamicLoad_ELF(t *testing.T) {
 //   - symbols from non-libc libraries (e.g. SSL_CTX_new from libssl) are not recorded
 func TestStandardELFAnalyzer_LibcSymbolFiltering(t *testing.T) {
 	testdataDir := "testdata"
-	analyzer := NewStandardELFAnalyzer(nil, nil)
+	analyzer := NewStandardELFAnalyzer(nil)
 
 	t.Run("libc network symbol has socket category", func(t *testing.T) {
 		path := filepath.Join(testdataDir, "with_socket.elf")
@@ -225,7 +225,7 @@ func TestStandardELFAnalyzer_WithCustomSymbols(t *testing.T) {
 	customSymbols := map[string]binaryanalyzer.SymbolCategory{
 		"my_network_func": binaryanalyzer.CategorySocket,
 	}
-	analyzer := NewStandardELFAnalyzerWithSymbols(nil, nil, customSymbols)
+	analyzer := NewStandardELFAnalyzerWithSymbols(nil, customSymbols)
 
 	// Test with a real binary that has network symbols not in our custom set
 	testdataDir := "testdata"
@@ -290,7 +290,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 		},
 	}
 
-	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, mockStore)
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
@@ -321,7 +321,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 		},
 	}
 
-	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, mockStore)
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
@@ -352,7 +352,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 		},
 	}
 
-	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, mockStore)
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
@@ -393,7 +393,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t 
 		},
 	}
 
-	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, mockStore)
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	// Risk must take precedence over HasNetworkSyscalls
@@ -412,7 +412,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
 		err: fileanalysis.ErrRecordNotFound,
 	}
 
-	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, mockStore)
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	// Should fallback to StaticBinary when no analysis found
@@ -436,7 +436,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 		expectedHash: "sha256:differenthash", // This won't match the actual file hash
 	}
 
-	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, mockStore)
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	// Hash mismatch means the binary has changed since record time: treat as AnalysisError.
@@ -450,7 +450,7 @@ func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
 	// Create analyzer without syscall store (nil)
-	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, nil)
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil)
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	// Should behave like regular analyzer - return StaticBinary for static ELF
@@ -481,7 +481,7 @@ func TestDynamicELF_SyscallFallback_NetworkDetected(t *testing.T) {
 		},
 	}
 
-	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, mockStore)
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
@@ -510,7 +510,7 @@ func TestDynamicELF_SyscallFallback_NotRecorded(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockStore := &mockSyscallAnalysisStore{result: tt.result, err: tt.err}
-			analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+			analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, mockStore)
 			output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 			// Should remain NoNetworkSymbols (dynsym result) when no store entry
@@ -532,7 +532,7 @@ func TestDynamicELF_SyscallFallback_HashMismatch(t *testing.T) {
 		expectedHash: "sha256:differenthash", // won't match "sha256:dummy"
 	}
 
-	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, mockStore)
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
@@ -558,7 +558,7 @@ func TestDynamicELF_SyscallFallback_HighRisk(t *testing.T) {
 		},
 	}
 
-	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, mockStore)
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
@@ -574,7 +574,7 @@ func TestDynamicELF_WithoutSyscallStore(t *testing.T) {
 	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
 
 	// No syscall store: fallback disabled
-	analyzer := NewStandardELFAnalyzer(nil, nil)
+	analyzer := NewStandardELFAnalyzer(nil)
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)

@@ -11,6 +11,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
+	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 )
@@ -20,7 +21,7 @@ type syscallTableInterface interface {
 }
 
 func syscallTableForArch(goos, arch string) syscallTableInterface {
-	if goos == gosDarwin {
+	if goos == isec.GosDarwin {
 		return libccache.MacOSSyscallTable{}
 	}
 	return elfanalyzer.SyscallTableForArchitecture(arch)
@@ -36,12 +37,12 @@ type NetworkAnalyzer struct {
 // NewNetworkAnalyzer creates a new NetworkAnalyzer.
 // The caller must inject the target GOOS.
 func NewNetworkAnalyzer(goos string) *NetworkAnalyzer {
-	return &NetworkAnalyzer{goos: requireGOOS(goos)}
+	return &NetworkAnalyzer{goos: isec.RequireGOOS(goos)}
 }
 
 // NewNetworkAnalyzerWithStore creates a NetworkAnalyzer with a store for cache-based analysis.
 func NewNetworkAnalyzerWithStore(goos string, store fileanalysis.NetworkSymbolStore) *NetworkAnalyzer {
-	return &NetworkAnalyzer{goos: requireGOOS(goos), store: store}
+	return &NetworkAnalyzer{goos: isec.RequireGOOS(goos), store: store}
 }
 
 // NewNetworkAnalyzerWithStores creates a NetworkAnalyzer with both
@@ -53,7 +54,7 @@ func NewNetworkAnalyzerWithStores(
 	svcStore fileanalysis.SyscallAnalysisStore,
 ) *NetworkAnalyzer {
 	return &NetworkAnalyzer{
-		goos:         requireGOOS(goos),
+		goos:         isec.RequireGOOS(goos),
 		store:        symStore,
 		syscallStore: svcStore,
 	}

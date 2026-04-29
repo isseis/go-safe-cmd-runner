@@ -1693,7 +1693,7 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 			realUID:     currentUID,
 			// On macOS, the default group (staff, GID 20) has multiple members,
 			// so the security check correctly denies group-writable access.
-			wantErr: runtime.GOOS == gosDarwin,
+			wantErr: runtime.GOOS == isec.GosDarwin,
 		},
 		{
 			name: "group_write_unsafe_with_multiple_members",
@@ -1729,7 +1729,7 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 			realUID:     currentUID,
 			// On macOS, the default group (staff, GID 20) has multiple members,
 			// so the security check correctly denies group-writable access.
-			wantErr: runtime.GOOS == gosDarwin,
+			wantErr: runtime.GOOS == isec.GosDarwin,
 		},
 	}
 
@@ -1795,7 +1795,7 @@ func TestValidator_validateGroupWritePermissions_TrustedOwnershipScenarios(t *te
 	})
 
 	t.Run("allows_group_write_for_root_owned_directory_with_macos_admin_gid", func(t *testing.T) {
-		if runtime.GOOS != gosDarwin {
+		if runtime.GOOS != isec.GosDarwin {
 			t.Skip("macOS only")
 		}
 

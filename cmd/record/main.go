@@ -17,7 +17,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
 	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
-	rsec "github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
@@ -140,7 +139,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		if d.machoDynlibAnalyzerFactory != nil {
 			fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
 		}
-		fv.SetBinaryAnalyzer(rsec.NewBinaryAnalyzer(runtime.GOOS))
+		fv.SetBinaryAnalyzer(isec.NewBinaryAnalyzer(runtime.GOOS))
 
 		syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
 		fv.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))

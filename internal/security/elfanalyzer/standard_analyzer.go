@@ -48,7 +48,6 @@ var _ binaryanalyzer.BinaryAnalyzer = (*StandardELFAnalyzer)(nil)
 type StandardELFAnalyzer struct {
 	fs             safefileio.FileSystem
 	networkSymbols map[string]binaryanalyzer.SymbolCategory
-	opener         PrivilegedFileOpener // optional, for execute-only binaries
 
 	// syscallStore is the optional syscall analysis store for static binary analysis.
 	// When set, the analyzer will lookup pre-computed syscall analysis results
@@ -58,28 +57,25 @@ type StandardELFAnalyzer struct {
 
 // NewStandardELFAnalyzer creates a new StandardELFAnalyzer with the given file system.
 // If fs is nil, the default safefileio.FileSystem is used.
-// opener is optional (nil = no privilege escalation for execute-only binaries).
-func NewStandardELFAnalyzer(fs safefileio.FileSystem, opener PrivilegedFileOpener) *StandardELFAnalyzer {
+func NewStandardELFAnalyzer(fs safefileio.FileSystem) *StandardELFAnalyzer {
 	if fs == nil {
 		fs = safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	}
 	return &StandardELFAnalyzer{
 		fs:             fs,
 		networkSymbols: binaryanalyzer.GetNetworkSymbols(),
-		opener:         opener,
 	}
 }
 
 // NewStandardELFAnalyzerWithSymbols creates an analyzer with custom network symbols.
 // This is primarily for testing purposes.
-func NewStandardELFAnalyzerWithSymbols(fs safefileio.FileSystem, opener PrivilegedFileOpener, symbols map[string]binaryanalyzer.SymbolCategory) *StandardELFAnalyzer {
+func NewStandardELFAnalyzerWithSymbols(fs safefileio.FileSystem, symbols map[string]binaryanalyzer.SymbolCategory) *StandardELFAnalyzer {
 	if fs == nil {
 		fs = safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	}
 	return &StandardELFAnalyzer{
 		fs:             fs,
 		networkSymbols: symbols,
-		opener:         opener,
 	}
 }
 
@@ -91,10 +87,9 @@ func NewStandardELFAnalyzerWithSymbols(fs safefileio.FileSystem, opener Privileg
 // If store is nil, the analyzer behaves like NewStandardELFAnalyzer.
 func NewStandardELFAnalyzerWithSyscallStore(
 	fs safefileio.FileSystem,
-	opener PrivilegedFileOpener,
 	store SyscallAnalysisStore,
 ) *StandardELFAnalyzer {
-	analyzer := NewStandardELFAnalyzer(fs, opener)
+	analyzer := NewStandardELFAnalyzer(fs)
 
 	if store != nil {
 		analyzer.syscallStore = store
@@ -109,22 +104,9 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	// This prevents symlink attacks and TOCTOU race conditions.
 	file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
-		// If it's a permission error and we have opener, try privileged access.
-		// OpenFileWithPrivileges now uses safefileio internally, providing full
-		// symlink/TOCTOU protection even during privilege escalation.
-		if errors.Is(err, os.ErrPermission) && a.opener != nil {
-			file, err = a.opener.OpenWithPrivileges(path)
-			if err != nil {
-				return binaryanalyzer.AnalysisOutput{
-					Result: binaryanalyzer.AnalysisError,
-					Error:  fmt.Errorf("failed to open file with privileges: %w", err),
-				}
-			}
-		} else {
-			return binaryanalyzer.AnalysisOutput{
-				Result: binaryanalyzer.AnalysisError,
-				Error:  fmt.Errorf("failed to open file: %w", err),
-			}
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.AnalysisError,
+			Error:  fmt.Errorf("failed to open file: %w", err),
 		}
 	}
 	defer func() {
