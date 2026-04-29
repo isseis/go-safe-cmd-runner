@@ -18,7 +18,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
 	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
-	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 )
 
@@ -95,7 +95,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	// record does not have a config with verify_files or commands; check the files being
 	// recorded and the hash directory. Violations are logged as warnings only — record
 	// continues even if the check fails.
-	secValidator, secErr := isec.NewDirectoryPermChecker()
+	secValidator, secErr := security.NewDirectoryPermChecker()
 	if secErr != nil {
 		// NewDirectoryPermChecker only fails when standalone checker setup fails,
 		// which is not recoverable in this startup path.
@@ -121,8 +121,8 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 			absHashDir = abs
 		}
 	}
-	toctouDirs := isec.CollectTOCTOUCheckDirs(absFiles, nil, absHashDir)
-	isec.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
+	toctouDirs := security.CollectTOCTOUCheckDirs(absFiles, nil, absHashDir)
+	security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
 
 	validator, err := d.validatorFactory(cfg.hashDir)
 	if err != nil {
@@ -139,7 +139,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		if d.machoDynlibAnalyzerFactory != nil {
 			fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
 		}
-		fv.SetBinaryAnalyzer(isec.NewBinaryAnalyzer(runtime.GOOS))
+		fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer(runtime.GOOS))
 
 		syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
 		fv.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))
