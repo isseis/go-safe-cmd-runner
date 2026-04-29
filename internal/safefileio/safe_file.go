@@ -65,7 +65,7 @@ type FileSystem interface {
 type File interface {
 	io.Reader
 	io.Writer
-	io.Seeker   // Required for VerifyFromHandle and similar operations
+	io.Seeker   // Required for file offset operations (seek/read from specific positions)
 	io.ReaderAt // Required for debug/elf.NewFile and similar operations
 	Chmod(mode os.FileMode) error
 	Close() error
