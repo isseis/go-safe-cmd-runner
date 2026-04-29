@@ -1,28 +1,18 @@
 package security
 
 import (
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/machoanalyzer"
 )
-
-// gosDarwin is the GOOS value for macOS.
-const gosDarwin = "darwin"
-
-func requireGOOS(goos string) string {
-	if goos == "" {
-		panic("goos must not be empty")
-	}
-	return goos
-}
 
 // NewBinaryAnalyzer creates a BinaryAnalyzer appropriate for the specified OS.
 // On macOS, returns StandardMachOAnalyzer; on Linux and other platforms, returns StandardELFAnalyzer.
 func NewBinaryAnalyzer(goos string) binaryanalyzer.BinaryAnalyzer {
-	switch requireGOOS(goos) {
-	case gosDarwin:
+	switch RequireGOOS(goos) {
+	case GosDarwin:
 		return machoanalyzer.NewStandardMachOAnalyzer(nil)
 	default: // "linux", etc.
-		return elfanalyzer.NewStandardELFAnalyzer(nil, nil)
+		return elfanalyzer.NewStandardELFAnalyzer(nil)
 	}
 }

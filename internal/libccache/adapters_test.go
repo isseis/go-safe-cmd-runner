@@ -11,7 +11,7 @@ import (
 )
 
 func TestSyscallAdapterAnalyzeSyscallsFromELF_PassesThroughDeterminationStats(t *testing.T) {
-	elfPath := filepath.Join("..", "runner", "security", "elfanalyzer", "testdata", "arm64_network_program", "arm64_network_program.elf")
+	elfPath := filepath.Join("..", "security", "elfanalyzer", "testdata", "arm64_network_program", "arm64_network_program.elf")
 
 	ef, err := elf.Open(elfPath)
 	require.NoError(t, err)

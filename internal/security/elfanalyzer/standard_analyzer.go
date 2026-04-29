@@ -13,15 +13,9 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
-	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
-	secelfanalyzer "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 )
-
-// SyscallAnalysisStore aliases the shared syscall analysis store interface.
-type SyscallAnalysisStore = secelfanalyzer.SyscallAnalysisStore
 
 // elfMagicStr is the ELF magic number string literal.
 const elfMagicStr = "\x7fELF"
@@ -47,12 +41,13 @@ var (
 	ErrSyscallAnalysisHighRisk = errors.New("syscall analysis high risk")
 )
 
+// Compile-time check: StandardELFAnalyzer implements binaryanalyzer.BinaryAnalyzer.
+var _ binaryanalyzer.BinaryAnalyzer = (*StandardELFAnalyzer)(nil)
+
 // StandardELFAnalyzer implements ELFAnalyzer using Go's debug/elf package.
 type StandardELFAnalyzer struct {
 	fs             safefileio.FileSystem
 	networkSymbols map[string]binaryanalyzer.SymbolCategory
-	privManager    runnertypes.PrivilegeManager           // optional, for execute-only binaries
-	pfv            *filevalidator.PrivilegedFileValidator // used for privileged file access
 
 	// syscallStore is the optional syscall analysis store for static binary analysis.
 	// When set, the analyzer will lookup pre-computed syscall analysis results
@@ -62,30 +57,25 @@ type StandardELFAnalyzer struct {
 
 // NewStandardELFAnalyzer creates a new StandardELFAnalyzer with the given file system.
 // If fs is nil, the default safefileio.FileSystem is used.
-// privManager is optional (nil = no privilege escalation for execute-only binaries).
-func NewStandardELFAnalyzer(fs safefileio.FileSystem, privManager runnertypes.PrivilegeManager) *StandardELFAnalyzer {
+func NewStandardELFAnalyzer(fs safefileio.FileSystem) *StandardELFAnalyzer {
 	if fs == nil {
 		fs = safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	}
 	return &StandardELFAnalyzer{
 		fs:             fs,
 		networkSymbols: binaryanalyzer.GetNetworkSymbols(),
-		privManager:    privManager,
-		pfv:            filevalidator.NewPrivilegedFileValidator(fs),
 	}
 }
 
 // NewStandardELFAnalyzerWithSymbols creates an analyzer with custom network symbols.
 // This is primarily for testing purposes.
-func NewStandardELFAnalyzerWithSymbols(fs safefileio.FileSystem, privManager runnertypes.PrivilegeManager, symbols map[string]binaryanalyzer.SymbolCategory) *StandardELFAnalyzer {
+func NewStandardELFAnalyzerWithSymbols(fs safefileio.FileSystem, symbols map[string]binaryanalyzer.SymbolCategory) *StandardELFAnalyzer {
 	if fs == nil {
 		fs = safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	}
 	return &StandardELFAnalyzer{
 		fs:             fs,
 		networkSymbols: symbols,
-		privManager:    privManager,
-		pfv:            filevalidator.NewPrivilegedFileValidator(fs),
 	}
 }
 
@@ -97,10 +87,9 @@ func NewStandardELFAnalyzerWithSymbols(fs safefileio.FileSystem, privManager run
 // If store is nil, the analyzer behaves like NewStandardELFAnalyzer.
 func NewStandardELFAnalyzerWithSyscallStore(
 	fs safefileio.FileSystem,
-	privManager runnertypes.PrivilegeManager,
 	store SyscallAnalysisStore,
 ) *StandardELFAnalyzer {
-	analyzer := NewStandardELFAnalyzer(fs, privManager)
+	analyzer := NewStandardELFAnalyzer(fs)
 
 	if store != nil {
 		analyzer.syscallStore = store
@@ -115,22 +104,9 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	// This prevents symlink attacks and TOCTOU race conditions.
 	file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
-		// If it's a permission error and we have privilege manager, try privileged access.
-		// OpenFileWithPrivileges now uses safefileio internally, providing full
-		// symlink/TOCTOU protection even during privilege escalation.
-		if errors.Is(err, os.ErrPermission) && a.privManager != nil {
-			file, err = a.pfv.OpenFileWithPrivileges(path, a.privManager)
-			if err != nil {
-				return binaryanalyzer.AnalysisOutput{
-					Result: binaryanalyzer.AnalysisError,
-					Error:  fmt.Errorf("failed to open file with privileges: %w", err),
-				}
-			}
-		} else {
-			return binaryanalyzer.AnalysisOutput{
-				Result: binaryanalyzer.AnalysisError,
-				Error:  fmt.Errorf("failed to open file: %w", err),
-			}
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.AnalysisError,
+			Error:  fmt.Errorf("failed to open file: %w", err),
 		}
 	}
 	defer func() {
@@ -356,7 +332,7 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.Fi
 			// silently assuming no network capability.
 			return binaryanalyzer.AnalysisOutput{
 				Result: binaryanalyzer.AnalysisError,
-				Error:  fmt.Errorf("%w: %s", secelfanalyzer.ErrSyscallHashMismatch, path),
+				Error:  fmt.Errorf("%w: %s", ErrSyscallHashMismatch, path),
 			}
 		default:
 			// Unexpected error, log it before falling back.
@@ -379,7 +355,7 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.Fi
 // convertSyscallResult converts SyscallAnalysisResult to AnalysisOutput.
 // Risk is derived by scanning DetectedSyscalls for unknown syscall numbers and
 // checking ArgEvalResults for mprotect PROT_EXEC risk.
-func (a *StandardELFAnalyzer) convertSyscallResult(result *secelfanalyzer.SyscallAnalysisResult) binaryanalyzer.AnalysisOutput {
+func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult) binaryanalyzer.AnalysisOutput {
 	// Risk takes precedence over NetworkDetected: when unknown syscalls are present
 	// or mprotect PROT_EXEC risk is detected, the analysis is incomplete and unreliable,
 	// so we must treat the result as an error even if network syscalls were also detected.
@@ -388,10 +364,10 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *secelfanalyzer.Syscal
 	// appears in direct-syscall entries (Source == ""). libc_symbol_import entries
 	// always have Number >= 0 (enforced by validateInfos at cache-build time), so
 	// they are never mistaken for unknown syscalls here.
-	hasUnknown := slices.ContainsFunc(result.DetectedSyscalls, func(info secelfanalyzer.SyscallInfo) bool {
+	hasUnknown := slices.ContainsFunc(result.DetectedSyscalls, func(info SyscallInfo) bool {
 		return info.Number == -1
 	})
-	if hasUnknown || secelfanalyzer.EvalMprotectRisk(result.ArgEvalResults) {
+	if hasUnknown || EvalMprotectRisk(result.ArgEvalResults) {
 		return binaryanalyzer.AnalysisOutput{
 			Result: binaryanalyzer.AnalysisError,
 			Error:  fmt.Errorf("%w: %v", ErrSyscallAnalysisHighRisk, result.AnalysisWarnings),
@@ -399,7 +375,7 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *secelfanalyzer.Syscal
 	}
 
 	var symbols []binaryanalyzer.DetectedSymbol
-	table := secelfanalyzer.SyscallTableForArchitecture(result.Architecture)
+	table := SyscallTableForArchitecture(result.Architecture)
 	for _, info := range result.DetectedSyscalls {
 		if table != nil && info.Number >= 0 && table.IsNetworkSyscall(info.Number) {
 			symbols = append(symbols, binaryanalyzer.DetectedSymbol{
