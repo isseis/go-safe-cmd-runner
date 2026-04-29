@@ -13,10 +13,10 @@ import (
 	"runtime"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
-	"github.com/isseis/go-safe-cmd-runner/internal/elfdynlib"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
-	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
