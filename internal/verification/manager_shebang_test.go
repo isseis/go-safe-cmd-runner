@@ -11,7 +11,6 @@ import (
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -64,13 +63,7 @@ func (m *mockFVForShebang) VerifyWithHash(path string) (string, error) {
 	return "sha256:abc", nil
 }
 
-func (m *mockFVForShebang) VerifyWithPrivileges(_ string, _ runnertypes.PrivilegeManager) error {
-	return nil
-}
 func (m *mockFVForShebang) VerifyAndRead(_ string) ([]byte, error) { return nil, nil }
-func (m *mockFVForShebang) VerifyAndReadWithPrivileges(_ string, _ runnertypes.PrivilegeManager) ([]byte, error) {
-	return nil, nil
-}
 
 func (m *mockFVForShebang) LoadRecord(path string) (*fileanalysis.Record, error) {
 	if err, ok := m.schemaErr[path]; ok {

@@ -3,8 +3,6 @@ package filevalidator
 import (
 	"os"
 	"testing"
-
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 // BenchmarkValidator_Verify benchmarks the standard Verify method
@@ -33,49 +31,6 @@ func BenchmarkValidator_Verify(b *testing.B) {
 	}
 }
 
-// BenchmarkValidator_VerifyFromHandle benchmarks the new VerifyFromHandle method
-func BenchmarkValidator_VerifyFromHandle(b *testing.B) {
-	tempDir := b.TempDir()
-	validator, err := New(&SHA256{}, tempDir)
-	if err != nil {
-		b.Fatalf("Failed to create validator: %v", err)
-	}
-
-	// Create test file
-	testFile := createBenchmarkTestFile(b, "benchmark test content")
-
-	// Save record
-	_, _, err = validator.SaveRecord(testFile, false)
-	if err != nil {
-		b.Fatalf("Failed to record hash: %v", err)
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		// Open file manually (simulating the privilege-separated approach)
-		file, err := openTestFile(testFile)
-		if err != nil {
-			b.Fatalf("Failed to open file: %v", err)
-		}
-
-		rp, rpErr := common.NewResolvedPath(testFile)
-		if rpErr != nil {
-			b.Fatalf("NewResolvedPath failed: %v", rpErr)
-		}
-		err = validator.VerifyFromHandle(file, rp)
-		file.Close()
-
-		if err != nil {
-			b.Fatalf("VerifyFromHandle failed: %v", err)
-		}
-	}
-}
-
-// Helper function for benchmarks
-func openTestFile(path string) (*os.File, error) {
-	return os.Open(path)
-}
-
 // createBenchmarkTestFile creates a temporary test file for benchmarks
 func createBenchmarkTestFile(b *testing.B, content string) string {
 	b.Helper()
@@ -95,20 +50,4 @@ func createBenchmarkTestFile(b *testing.B, content string) string {
 	}
 
 	return tmpFile.Name()
-}
-
-// BenchmarkOpenFileWithPrivileges benchmarks the privilege file opening
-func BenchmarkOpenFileWithPrivileges(b *testing.B) {
-	testFile := createBenchmarkTestFile(b, "benchmark test content")
-	pfv := NewPrivilegedFileValidator(nil) // Use default FileSystem
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		// Test normal file access (fast path)
-		file, err := pfv.OpenFileWithPrivileges(testFile, nil)
-		if err != nil {
-			b.Fatalf("OpenFileWithPrivileges failed: %v", err)
-		}
-		file.Close()
-	}
 }

@@ -22,85 +22,85 @@
 
 対象: `PrivilegedFileValidator` 型の全コードをパッケージ外へ影響なく削除する。
 
-- [ ] `internal/filevalidator/privileged_file.go` を削除
-- [ ] `internal/filevalidator/privileged_file_test.go` を削除
+- [x] `internal/filevalidator/privileged_file.go` を削除
+- [x] `internal/filevalidator/privileged_file_test.go` を削除
 
 ### Phase 3: `internal/filevalidator/validator.go` の変更
 
 #### 3-1: FileValidator インターフェースから特権メソッドを除去
 
-- [ ] `FileValidator` インターフェースから `VerifyWithPrivileges` のシグネチャを削除
-- [ ] `FileValidator` インターフェースから `VerifyAndReadWithPrivileges` のシグネチャを削除
+- [x] `FileValidator` インターフェースから `VerifyWithPrivileges` のシグネチャを削除
+- [x] `FileValidator` インターフェースから `VerifyAndReadWithPrivileges` のシグネチャを削除
 
 #### 3-2: Validator 構造体から privilegedFileValidator を除去
 
-- [ ] `Validator` 構造体から `privilegedFileValidator *PrivilegedFileValidator` フィールドを削除
-- [ ] `newValidator` 関数から `privilegedFileValidator: DefaultPrivilegedFileValidator()` 初期化を削除
+- [x] `Validator` 構造体から `privilegedFileValidator *PrivilegedFileValidator` フィールドを削除
+- [x] `newValidator` 関数から `privilegedFileValidator: DefaultPrivilegedFileValidator()` 初期化を削除
 
 #### 3-3: デッドコードとなったメソッドの削除
 
-- [ ] `Validator.VerifyWithPrivileges` メソッドを削除（本番コードからの呼び出しなし）
-- [ ] `Validator.VerifyAndReadWithPrivileges` メソッドを削除（本番コードからの呼び出しなし）
-- [ ] `Validator.VerifyFromHandle` メソッドを削除（`VerifyWithPrivileges` 削除後は呼び出しなし）
+- [x] `Validator.VerifyWithPrivileges` メソッドを削除（本番コードからの呼び出しなし）
+- [x] `Validator.VerifyAndReadWithPrivileges` メソッドを削除（本番コードからの呼び出しなし）
+- [x] `Validator.VerifyFromHandle` メソッドを削除（`VerifyWithPrivileges` 削除後は呼び出しなし）
 
 #### 3-4: デッドコードとなったエラー変数と import の削除
 
-- [ ] `ErrPrivilegeManagerNotAvailable` エラー変数を削除（削除したメソッド内のみで使用）
-- [ ] `ErrPrivilegedExecutionNotSupported` エラー変数を削除（削除したメソッド内のみで使用）
-- [ ] `import "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"` を削除
+- [x] `ErrPrivilegeManagerNotAvailable` エラー変数を削除（削除したメソッド内のみで使用）
+- [x] `ErrPrivilegedExecutionNotSupported` エラー変数を削除（削除したメソッド内のみで使用）
+- [x] `import "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"` を削除
 
 ### Phase 4: `internal/filevalidator/validator_test.go` の変更
 
 削除したメソッドのテストを除去する。残るテストは削除後も有効であることを確認する。
 
-- [ ] `TestValidator_VerifyWithPrivileges` を削除
-- [ ] `TestValidator_VerifyWithPrivileges_NoPrivilegeManager` を削除
-- [ ] `TestValidator_VerifyWithPrivileges_MockPrivilegeManager` を削除
-- [ ] `TestValidator_VerifyAndReadWithPrivileges` を削除（全サブテスト含む）
-- [ ] `TestValidator_VerifyFromHandle` を削除
-- [ ] `TestValidator_VerifyFromHandle_Mismatch` を削除
+- [x] `TestValidator_VerifyWithPrivileges` を削除
+- [x] `TestValidator_VerifyWithPrivileges_NoPrivilegeManager` を削除
+- [x] `TestValidator_VerifyWithPrivileges_MockPrivilegeManager` を削除
+- [x] `TestValidator_VerifyAndReadWithPrivileges` を削除（全サブテスト含む）
+- [x] `TestValidator_VerifyFromHandle` を削除
+- [x] `TestValidator_VerifyFromHandle_Mismatch` を削除
 - [ ] `TestValidator_VerifyAndRead_TOCTOUPrevention` から以下のサブテストを削除:
-  - [ ] `t.Run("VerifyAndReadWithPrivileges atomic operation", ...)` を削除
-  - [ ] `t.Run("verify read consistency", ...)` を削除（`VerifyAndReadWithPrivileges` を参照）
-- [ ] `privtesting` import を削除（削除後、参照がなくなるため）
+  - [x] `t.Run("VerifyAndReadWithPrivileges atomic operation", ...)` を削除
+  - [-] `t.Run("verify read consistency", ...)` を削除（`VerifyAndReadWithPrivileges` を参照）
+- [x] `privtesting` import を削除（削除後、参照がなくなるため）
 
 ### Phase 5: `internal/filevalidator/benchmark_test.go` の変更
 
-- [ ] `BenchmarkValidator_VerifyFromHandle` を削除
-- [ ] `BenchmarkOpenFileWithPrivileges` を削除
-- [ ] `openTestFile` ヘルパー関数を削除（`BenchmarkValidator_VerifyFromHandle` のみが使用）
+- [x] `BenchmarkValidator_VerifyFromHandle` を削除
+- [x] `BenchmarkOpenFileWithPrivileges` を削除
+- [x] `openTestFile` ヘルパー関数を削除（`BenchmarkValidator_VerifyFromHandle` のみが使用）
 
 ### Phase 6: `internal/safefileio/safe_file.go` のコメント更新
 
 `io.Seeker` の説明コメントが削除対象の `VerifyFromHandle` を参照しているため更新する。
 `io.Seeker` は `openELFFile` でも引き続き使用されるためインターフェース定義は変更しない。
 
-- [ ] `io.Seeker` の行コメントを `VerifyFromHandle` への言及から更新する
+- [x] `io.Seeker` の行コメントを `VerifyFromHandle` への言及から更新する
 
 ### Phase 7: `internal/verification/testing/testify_mocks.go` の変更
 
-- [ ] `MockFileValidator` 構造体を完全に削除（本番・テストいずれからも参照なし）
-- [ ] `runnertypes` import を削除（`MockFileValidator` 削除後に参照なし）
+- [x] `MockFileValidator` 構造体を完全に削除（本番・テストいずれからも参照なし）
+- [-] `runnertypes` import を削除（`MockFileValidator` 削除後に参照なし）
 
 ### Phase 8: `internal/verification/manager_shebang_test.go` の変更
 
-- [ ] `mockFVForShebang` から `VerifyWithPrivileges` スタブ実装を削除
-- [ ] `mockFVForShebang` から `VerifyAndReadWithPrivileges` スタブ実装を削除
-- [ ] `runnertypes` import を削除（上記削除後に参照なし）
+- [x] `mockFVForShebang` から `VerifyWithPrivileges` スタブ実装を削除
+- [x] `mockFVForShebang` から `VerifyAndReadWithPrivileges` スタブ実装を削除
+- [x] `runnertypes` import を削除（上記削除後に参照なし）
 
 ### Phase 9: 整形・静的解析
 
-- [ ] `make fmt` を実行してコードを整形
-- [ ] `make lint` を実行してリントエラーがないことを確認
+- [x] `make fmt` を実行してコードを整形
+- [x] `make lint` を実行してリントエラーがないことを確認
 
 ### Phase 10: 受け入れ基準の検証
 
-- [ ] AC-3: `go build ./cmd/record ./cmd/verify ./cmd/runner` が成功
-- [ ] AC-1: `go list -deps ./cmd/record | grep internal/runner` が 0 件
-- [ ] AC-2: `go list -deps ./cmd/verify | grep internal/runner` が 0 件
-- [ ] AC-4: `make test` が全件パス
-- [ ] AC-5: execute-only バイナリ検証をカバーする既存の `cmd/runner` / `internal/runner` / `internal/verification` テストを特定して実行する
-- [ ] AC-5: 既存テストで execute-only バイナリ検証を明示的に確認できない場合は、最小の回帰テストを追加してからそのテストを実行する
+- [x] AC-3: `go build ./cmd/record ./cmd/verify ./cmd/runner` が成功
+- [x] AC-1: `go list -deps ./cmd/record | grep internal/runner` が 0 件
+- [x] AC-2: `go list -deps ./cmd/verify | grep internal/runner` が 0 件
+- [x] AC-4: `make test` が全件パス
+- [x] AC-5: execute-only バイナリ検証をカバーする既存の `cmd/runner` / `internal/runner` / `internal/verification` テストを特定して実行する
+- [-] AC-5: 既存テストで execute-only バイナリ検証を明示的に確認できない場合は、最小の回帰テストを追加してからそのテストを実行する
 
 ## 受け入れ基準との対応
 

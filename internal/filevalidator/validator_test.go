@@ -11,7 +11,6 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
-	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer/testing"
 	"github.com/stretchr/testify/assert"
@@ -272,146 +271,6 @@ func TestValidator_FileAnalysisRecordFormat(t *testing.T) {
 		"ContentHash should have sha256: prefix, got: %s", record.ContentHash)
 }
 
-// TestValidator_VerifyFromHandle tests the VerifyFromHandle method
-func TestValidator_VerifyFromHandle(t *testing.T) {
-	tempDir := safeTempDir(t)
-
-	// Create a validator
-	validator, err := New(&SHA256{}, tempDir)
-	require.NoError(t, err, "Failed to create validator")
-
-	// Create a test file
-	testFile := createTestFile(t, "test content for VerifyFromHandle")
-
-	// Save the record
-	_, _, err = validator.SaveRecord(testFile, false)
-	require.NoError(t, err, "Failed to record hash")
-
-	// Open the file
-	file, err := os.Open(testFile)
-	require.NoError(t, err, "Failed to open test file")
-	defer func() {
-		err := file.Close()
-		assert.NoError(t, err, "Failed to close file")
-	}()
-
-	rpHandle, err := common.NewResolvedPath(testFile)
-	require.NoError(t, err, "NewResolvedPath failed")
-	err = validator.VerifyFromHandle(file, rpHandle)
-	assert.NoError(t, err, "VerifyFromHandle failed")
-}
-
-// TestValidator_VerifyFromHandle_Mismatch tests hash mismatch case
-func TestValidator_VerifyFromHandle_Mismatch(t *testing.T) {
-	tempDir := safeTempDir(t)
-
-	// Create a validator
-	validator, err := New(&SHA256{}, tempDir)
-	require.NoError(t, err, "Failed to create validator")
-
-	// Create a test file
-	testFile := createTestFile(t, "test content")
-
-	// Save the record
-	_, _, err = validator.SaveRecord(testFile, false)
-	require.NoError(t, err, "Failed to record hash")
-
-	// Create another file with different content
-	testFile2 := createTestFile(t, "different content")
-
-	// Open the second file
-	file, err := os.Open(testFile2)
-	require.NoError(t, err, "Failed to open test file")
-	defer func() {
-		err := file.Close()
-		assert.NoError(t, err, "Failed to close file")
-	}()
-
-	// Test VerifyFromHandle - should fail with mismatch
-	rpMismatch, err := common.NewResolvedPath(testFile)
-	require.NoError(t, err, "NewResolvedPath failed")
-	err = validator.VerifyFromHandle(file, rpMismatch)
-	assert.ErrorIs(t, err, ErrMismatch, "Expected ErrMismatch")
-}
-
-// TestValidator_VerifyWithPrivileges tests the VerifyWithPrivileges method
-func TestValidator_VerifyWithPrivileges(t *testing.T) {
-	tempDir := safeTempDir(t)
-
-	// Create a validator
-	validator, err := New(&SHA256{}, tempDir)
-	require.NoError(t, err, "Failed to create validator")
-
-	// Create a test file
-	testFile := createTestFile(t, "test content for VerifyWithPrivileges")
-
-	// Save the record
-	_, _, err = validator.SaveRecord(testFile, false)
-	require.NoError(t, err, "Failed to record hash")
-
-	// Test VerifyWithPrivileges with nil privilege manager (should fail now)
-	err = validator.VerifyWithPrivileges(testFile, nil)
-	assert.Error(t, err, "Expected error with nil privilege manager")
-	assert.ErrorIs(t, err, ErrPrivilegeManagerNotAvailable, "Expected privilege manager error")
-}
-
-// TestValidator_VerifyWithPrivileges_NoPrivilegeManager tests error handling without privilege manager
-func TestValidator_VerifyWithPrivileges_NoPrivilegeManager(t *testing.T) {
-	tempDir := safeTempDir(t)
-
-	// Create a validator
-	validator, err := New(&SHA256{}, tempDir)
-	require.NoError(t, err, "Failed to create validator")
-
-	// Test with non-existent file should return validation error (not privilege manager error)
-	err = validator.VerifyWithPrivileges("/tmp/non_existent_file", nil)
-	assert.Error(t, err, "Expected error for non-existent file")
-	// Should get validation error before privilege manager check
-	assert.True(t, errors.Is(err, os.ErrNotExist) ||
-		errors.Is(err, ErrPrivilegeManagerNotAvailable),
-		"Expected file not found or privilege manager error, got: %v", err)
-}
-
-// TestValidator_VerifyWithPrivileges_MockPrivilegeManager tests with mock privilege manager
-func TestValidator_VerifyWithPrivileges_MockPrivilegeManager(t *testing.T) {
-	tempDir := safeTempDir(t)
-
-	// Create a validator
-	validator, err := New(&SHA256{}, tempDir)
-	require.NoError(t, err, "Failed to create validator")
-
-	// Create a test file and record its hash first
-	testFile := createTestFile(t, "test content for VerifyWithPrivileges")
-	_, _, err = validator.SaveRecord(testFile, false)
-	require.NoError(t, err, "Failed to record hash")
-
-	t.Run("privilege manager not supported", func(t *testing.T) {
-		mockPM := privtesting.NewMockPrivilegeManager(false)
-		err = validator.VerifyWithPrivileges(testFile, mockPM)
-		assert.Error(t, err, "Expected error with unsupported privilege manager")
-		assert.ErrorIs(t, err, ErrPrivilegedExecutionNotSupported, "Expected privileged execution not supported error")
-	})
-
-	t.Run("privilege manager supported but fails", func(t *testing.T) {
-		mockPM := privtesting.NewFailingMockPrivilegeManager(true)
-		// Use a file that would require permissions to simulate the scenario
-		restrictedFile := "/root/restricted_file"
-		err = validator.VerifyWithPrivileges(restrictedFile, mockPM)
-		assert.Error(t, err, "Expected error with failing privilege manager")
-		// Should get either privilege execution error or validation error
-		assert.True(t, errors.Is(err, privtesting.ErrMockPrivilegeElevationFailed) ||
-			errors.Is(err, os.ErrPermission) ||
-			errors.Is(err, os.ErrNotExist),
-			"Expected privilege execution, permission denied, or file not found error, got: %v", err)
-	})
-
-	t.Run("privilege manager supported and succeeds", func(t *testing.T) {
-		mockPM := privtesting.NewMockPrivilegeManager(true)
-		err = validator.VerifyWithPrivileges(testFile, mockPM)
-		assert.NoError(t, err, "Expected no error with working privilege manager")
-	})
-}
-
 // TestValidator_HashAlgorithmConsistency tests that the validator uses the configured
 // hash algorithm consistently in both recording and verification.
 // This test would fail with hardcoded sha256.Sum256() but passes with v.algorithm.Sum().
@@ -578,163 +437,6 @@ func TestValidator_VerifyAndRead(t *testing.T) {
 	})
 }
 
-// TestValidator_VerifyAndReadWithPrivileges tests the VerifyAndReadWithPrivileges method
-// which performs atomic verification and reading with privilege escalation.
-func TestValidator_VerifyAndReadWithPrivileges(t *testing.T) {
-	tempDir := safeTempDir(t)
-
-	// Create a validator
-	validator, err := New(&SHA256{}, tempDir)
-	require.NoError(t, err, "Failed to create validator")
-
-	testContent := "test content for VerifyAndReadWithPrivileges"
-
-	t.Run("nil privilege manager", func(t *testing.T) {
-		// Create a test file
-		testFile := createTestFile(t, testContent)
-
-		// VerifyAndReadWithPrivileges should fail with nil privilege manager
-		content, err := validator.VerifyAndReadWithPrivileges(testFile, nil)
-		assert.Error(t, err, "VerifyAndReadWithPrivileges should fail with nil privilege manager")
-		assert.ErrorIs(t, err, ErrPrivilegeManagerNotAvailable, "Should return ErrPrivilegeManagerNotAvailable")
-		assert.Nil(t, content, "Content should be nil on error")
-	})
-
-	t.Run("privilege execution not supported", func(t *testing.T) {
-		// Create a test file and record its hash
-		testFile := createTestFile(t, testContent)
-		_, _, err = validator.SaveRecord(testFile, false)
-		require.NoError(t, err, "Failed to record hash")
-
-		// Use mock privilege manager that doesn't support privileged execution
-		mockPM := privtesting.NewMockPrivilegeManager(false)
-
-		// VerifyAndReadWithPrivileges should fail
-		content, err := validator.VerifyAndReadWithPrivileges(testFile, mockPM)
-		assert.Error(t, err, "VerifyAndReadWithPrivileges should fail when privileges not supported")
-		assert.ErrorIs(t, err, ErrPrivilegedExecutionNotSupported, "Should return ErrPrivilegedExecutionNotSupported")
-		assert.Nil(t, content, "Content should be nil on error")
-	})
-
-	t.Run("successful privileged verification and read", func(t *testing.T) {
-		// Create a test file and record its hash
-		testFile := createTestFile(t, testContent)
-		_, _, err = validator.SaveRecord(testFile, false)
-		require.NoError(t, err, "Failed to record hash")
-
-		// Use mock privilege manager that supports privileged execution
-		mockPM := privtesting.NewMockPrivilegeManager(true)
-
-		// VerifyAndReadWithPrivileges should succeed
-		content, err := validator.VerifyAndReadWithPrivileges(testFile, mockPM)
-		assert.NoError(t, err, "VerifyAndReadWithPrivileges should succeed")
-		assert.Equal(t, testContent, string(content), "Content should match")
-	})
-
-	t.Run("file content mismatch with privileges", func(t *testing.T) {
-		// Create a test file and record its hash
-		testFile := createTestFile(t, testContent)
-		_, _, err = validator.SaveRecord(testFile, false)
-		require.NoError(t, err, "Failed to record hash")
-
-		// Modify the file content
-		modifiedContent := "modified content with privileges"
-		err = os.WriteFile(testFile, []byte(modifiedContent), 0o644)
-		require.NoError(t, err, "Failed to modify test file")
-
-		// Use mock privilege manager
-		mockPM := privtesting.NewMockPrivilegeManager(true)
-
-		// VerifyAndReadWithPrivileges should fail with mismatch error
-		content, err := validator.VerifyAndReadWithPrivileges(testFile, mockPM)
-		assert.Error(t, err, "VerifyAndReadWithPrivileges should fail with modified file")
-		assert.ErrorIs(t, err, ErrMismatch, "Should return ErrMismatch")
-		assert.Nil(t, content, "Content should be nil on error")
-	})
-
-	t.Run("missing hash file with privileges", func(t *testing.T) {
-		// Create a test file but don't record its hash
-		testFile := createTestFile(t, testContent)
-
-		// Use mock privilege manager
-		mockPM := privtesting.NewMockPrivilegeManager(true)
-
-		// VerifyAndReadWithPrivileges should fail with hash file not found
-		content, err := validator.VerifyAndReadWithPrivileges(testFile, mockPM)
-		assert.Error(t, err, "VerifyAndReadWithPrivileges should fail without hash file")
-		assert.ErrorIs(t, err, ErrHashFileNotFound, "Should return ErrHashFileNotFound")
-		assert.Nil(t, content, "Content should be nil on error")
-	})
-
-	t.Run("privilege manager execution failure", func(t *testing.T) {
-		// Create a real file, record it, then remove it so it "requires privilege" at verify time.
-		restrictedFile := filepath.Join(tempDir, "restricted_file_test.txt")
-		require.NoError(t, os.WriteFile(restrictedFile, []byte("restricted content"), 0o644))
-
-		restrictedPath, err := common.NewResolvedPath(restrictedFile)
-		require.NoError(t, err, "Failed to create resolved path")
-
-		// Create a FileAnalysisRecord for the restricted file using the analysis store.
-		err = validator.Store().Update(restrictedPath, func(record *fileanalysis.Record) error {
-			record.ContentHash = "sha256:mock_hash_for_restricted_file"
-			return nil
-		})
-		require.NoError(t, err, "Failed to write hash record")
-
-		// Remove the file to make it inaccessible (simulating privilege requirement).
-		require.NoError(t, os.Remove(restrictedFile))
-
-		// Use failing mock privilege manager
-		mockPM := privtesting.NewFailingMockPrivilegeManager(true)
-
-		// VerifyAndReadWithPrivileges should fail with privilege execution error
-		content, err := validator.VerifyAndReadWithPrivileges(restrictedFile, mockPM)
-		assert.Error(t, err, "VerifyAndReadWithPrivileges should fail with failing privilege manager")
-		assert.Nil(t, content, "Content should be nil on error")
-	})
-
-	t.Run("invalid file path with privileges", func(t *testing.T) {
-		// Use mock privilege manager
-		mockPM := privtesting.NewMockPrivilegeManager(true)
-
-		// Test with empty path
-		content, err := validator.VerifyAndReadWithPrivileges("", mockPM)
-		assert.Error(t, err, "VerifyAndReadWithPrivileges should fail with empty path")
-		assert.Nil(t, content, "Content should be nil on error")
-	})
-
-	t.Run("realistic permission scenario", func(t *testing.T) {
-		// Create a real file, record a hash for it, then remove it.
-		// Simulates a file that was accessible at record time but not at verify time.
-		restrictedFile := filepath.Join(tempDir, "some_restricted_file.txt")
-		require.NoError(t, os.WriteFile(restrictedFile, []byte("restricted content"), 0o644))
-
-		// Create hash record for this path.
-		restrictedPath, err := common.NewResolvedPath(restrictedFile)
-		require.NoError(t, err, "Failed to create resolved path")
-
-		err = validator.Store().Update(restrictedPath, func(record *fileanalysis.Record) error {
-			record.ContentHash = "sha256:some_hash_value"
-			return nil
-		})
-		require.NoError(t, err, "Failed to write hash record")
-
-		// Remove the file so it is no longer accessible.
-		require.NoError(t, os.Remove(restrictedFile))
-
-		// Create a mock privilege manager
-		mockPM := privtesting.NewMockPrivilegeManager(true)
-
-		// VerifyAndReadWithPrivileges should fail because the file doesn't exist
-		_, err = validator.VerifyAndReadWithPrivileges(restrictedFile, mockPM)
-		assert.Error(t, err, "VerifyAndReadWithPrivileges should fail for non-existent file")
-
-		// The specific error depends on the file system, but it should be related to file access
-		assert.True(t, os.IsNotExist(err) || os.IsPermission(err),
-			"Error should be file not found or permission denied, got: %v", err)
-	})
-}
-
 // TestValidator_VerifyAndRead_TOCTOUPrevention tests that VerifyAndRead methods
 // properly prevent Time-of-check to time-of-use attacks by performing atomic operations.
 func TestValidator_VerifyAndRead_TOCTOUPrevention(t *testing.T) {
@@ -761,40 +463,23 @@ func TestValidator_VerifyAndRead_TOCTOUPrevention(t *testing.T) {
 		assert.Equal(t, testContent, string(content), "Content should match original")
 	})
 
-	t.Run("VerifyAndReadWithPrivileges atomic operation", func(t *testing.T) {
-		// Create a test file and record its hash
-		testFile := createTestFile(t, testContent)
-		_, _, err = validator.SaveRecord(testFile, false)
-		require.NoError(t, err, "Failed to record hash")
-
-		// Use mock privilege manager
-		mockPM := privtesting.NewMockPrivilegeManager(true)
-
-		// VerifyAndReadWithPrivileges should return the content that matches the hash
-		content, err := validator.VerifyAndReadWithPrivileges(testFile, mockPM)
-		assert.NoError(t, err, "VerifyAndReadWithPrivileges should succeed")
-		assert.Equal(t, testContent, string(content), "Content should match original")
-	})
-
 	t.Run("verify read consistency", func(t *testing.T) {
-		// This test verifies that both methods read and verify the same content
+		// This test verifies that VerifyAndRead reads and verifies the same content
 		// to prevent TOCTOU attacks where the file could be modified between
-		// reading and verification
+		// reading and verification.
 		testFile := createTestFile(t, testContent)
 		_, _, err = validator.SaveRecord(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
-		// Test VerifyAndRead
+		// Test VerifyAndRead twice; both reads must be consistent.
 		content1, err := validator.VerifyAndRead(testFile)
 		require.NoError(t, err, "VerifyAndRead should succeed")
 
-		// Test VerifyAndReadWithPrivileges
-		mockPM := privtesting.NewMockPrivilegeManager(true)
-		content2, err := validator.VerifyAndReadWithPrivileges(testFile, mockPM)
-		require.NoError(t, err, "VerifyAndReadWithPrivileges should succeed")
+		content2, err := validator.VerifyAndRead(testFile)
+		require.NoError(t, err, "VerifyAndRead should succeed on second read")
 
-		// Both methods should return the same content
-		assert.Equal(t, content1, content2, "Both methods should return identical content")
+		// Both reads should return the same content.
+		assert.Equal(t, content1, content2, "Both reads should return identical content")
 		assert.Equal(t, testContent, string(content1), "Content should match original")
 	})
 }

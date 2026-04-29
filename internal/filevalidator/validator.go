@@ -19,7 +19,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/machoanalyzer"
@@ -101,9 +100,6 @@ type SyscallAnalyzerInterface interface {
 
 // Error definitions for static error handling
 var (
-	ErrPrivilegeManagerNotAvailable    = errors.New("privilege manager not available")
-	ErrPrivilegedExecutionNotSupported = errors.New("privileged execution not supported")
-
 	// errNotELF is returned by openELFFile when the file is not an ELF binary.
 	errNotELF = errors.New("file is not an ELF binary")
 )
@@ -115,9 +111,7 @@ type FileValidator interface {
 	// VerifyWithHash verifies the file and returns the prefixed content hash ("algo:hex")
 	// so callers can forward it to downstream consumers without a redundant file read.
 	VerifyWithHash(filePath string) (string, error)
-	VerifyWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) error
 	VerifyAndRead(filePath string) ([]byte, error)
-	VerifyAndReadWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) ([]byte, error)
 	// LoadRecord returns the full analysis record for the given file path.
 	// Used by verification.Manager to access DynLibDeps without exposing the store directly.
 	LoadRecord(filePath string) (*fileanalysis.Record, error)
@@ -137,10 +131,9 @@ func (v *Validator) Store() *fileanalysis.Store {
 // Validator provides functionality to record and verify file hashes.
 // It should be instantiated using the New function.
 type Validator struct {
-	algorithm               HashAlgorithm
-	hashDir                 common.ResolvedPath
-	hashFilePathGetter      common.HashFilePathGetter
-	privilegedFileValidator *PrivilegedFileValidator
+	algorithm          HashAlgorithm
+	hashDir            common.ResolvedPath
+	hashFilePathGetter common.HashFilePathGetter
 
 	// store is the unified analysis store for FileAnalysisRecord format.
 	store *fileanalysis.Store
@@ -206,11 +199,10 @@ func newValidator(algorithm HashAlgorithm, hashDir common.ResolvedPath, hashFile
 	}
 
 	return &Validator{
-		algorithm:               algorithm,
-		hashDir:                 hashDir,
-		hashFilePathGetter:      hashFilePathGetter,
-		privilegedFileValidator: DefaultPrivilegedFileValidator(),
-		fileSystem:              safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
+		algorithm:          algorithm,
+		hashDir:            hashDir,
+		hashFilePathGetter: hashFilePathGetter,
+		fileSystem:         safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
 	}, nil
 }
 
@@ -637,53 +629,6 @@ func (v *Validator) calculateHash(filePath common.ResolvedPath) (string, error) 
 	return v.algorithm.Sum(bytes.NewReader(content))
 }
 
-// VerifyFromHandle verifies a file's hash using an already opened file handle.
-// The file parameter must implement io.ReadSeeker (satisfied by *os.File and safefileio.File).
-func (v *Validator) VerifyFromHandle(file io.ReadSeeker, targetPath common.ResolvedPath) error {
-	// Calculate hash directly from file handle (normal privilege)
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("failed to seek file to start: %w", err)
-	}
-	actualHash, err := v.algorithm.Sum(file)
-	if err != nil {
-		return fmt.Errorf("failed to calculate hash: %w", err)
-	}
-
-	return v.verifyHash(targetPath, actualHash)
-}
-
-// VerifyWithPrivileges verifies a file's integrity using privilege escalation
-// This method assumes that normal verification has already failed with a permission error
-func (v *Validator) VerifyWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) error {
-	// Validate the file path
-	targetPath, err := validatePath(filePath)
-	if err != nil {
-		return err
-	}
-
-	// Check if privilege manager is available
-	if privManager == nil {
-		return fmt.Errorf("failed to verify file %s: %w", targetPath, ErrPrivilegeManagerNotAvailable)
-	}
-
-	// Check if privilege escalation is supported
-	if !privManager.IsPrivilegedExecutionSupported() {
-		return fmt.Errorf("failed to verify file %s: %w", targetPath, ErrPrivilegedExecutionNotSupported)
-	}
-
-	// Open file with privileges
-	file, openErr := v.privilegedFileValidator.OpenFileWithPrivileges(targetPath.String(), privManager)
-	if openErr != nil {
-		return fmt.Errorf("failed to open file with privileges: %w", openErr)
-	}
-	defer func() {
-		_ = file.Close() // Ignore close error
-	}()
-
-	// Verify using the opened file handle
-	return v.VerifyFromHandle(file, targetPath)
-}
-
 // verifyAndReadContent performs the common verification and reading logic
 // readContent should return the file content and any read error
 func (v *Validator) verifyAndReadContent(targetPath common.ResolvedPath, readContent func() ([]byte, error)) ([]byte, error) {
@@ -718,44 +663,6 @@ func (v *Validator) VerifyAndRead(filePath string) ([]byte, error) {
 		content, err := safefileio.SafeReadFile(targetPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file: %w", err)
-		}
-		return content, nil
-	})
-}
-
-// VerifyAndReadWithPrivileges atomically verifies file integrity and returns its content using privileged access
-func (v *Validator) VerifyAndReadWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) ([]byte, error) {
-	// Validate the file path
-	targetPath, err := validatePath(filePath)
-	if err != nil {
-		return nil, err
-	}
-
-	// Check if privilege manager is available
-	if privManager == nil {
-		return nil, fmt.Errorf("failed to verify and read file %s: %w", targetPath, ErrPrivilegeManagerNotAvailable)
-	}
-
-	// Check if privilege escalation is supported
-	if !privManager.IsPrivilegedExecutionSupported() {
-		return nil, fmt.Errorf("failed to verify and read file %s: %w", targetPath, ErrPrivilegedExecutionNotSupported)
-	}
-
-	// Use common verification logic with privileged file reading
-	return v.verifyAndReadContent(targetPath, func() ([]byte, error) {
-		// Open file with privileges
-		file, openErr := v.privilegedFileValidator.OpenFileWithPrivileges(targetPath.String(), privManager)
-		if openErr != nil {
-			return nil, fmt.Errorf("failed to open file with privileges: %w", openErr)
-		}
-		defer func() {
-			_ = file.Close() // Ignore close error
-		}()
-
-		// Read content from the opened file handle
-		content, err := io.ReadAll(file)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read file content: %w", err)
 		}
 		return content, nil
 	})
