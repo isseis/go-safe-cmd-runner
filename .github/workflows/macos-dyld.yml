@@ -4,12 +4,12 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'internal/machodylib/**'
+      - 'internal/dynlib/machodylib/**'
       - '.github/workflows/macos-dyld.yml'
   pull_request:
     branches: [ main ]
     paths:
-      - 'internal/machodylib/**'
+      - 'internal/dynlib/machodylib/**'
       - '.github/workflows/macos-dyld.yml'
   schedule:
     # Every Monday 09:00 UTC — catches upstream dyld_cache_format.h changes
@@ -34,7 +34,7 @@ jobs:
             echo "Checking $file ..."
             gh api "repos/apple-oss-distributions/dyld/contents/include/$file" \
               --jq '.content' | base64 -d > /tmp/upstream_$(basename $file)
-            committed="internal/machodylib/testdata/dyld_headers/$file"
+            committed="internal/dynlib/machodylib/testdata/dyld_headers/$file"
             if ! cmp -s "$committed" /tmp/upstream_$(basename $file); then
               echo "FAIL: $file has changed upstream."
               echo "Update testdata/dyld_headers/$file, review dyld_offsets_test.go"
@@ -62,4 +62,4 @@ jobs:
         env:
           CGO_ENABLED: 1
         run: |
-          go test -tags test -v -race ./internal/machodylib/...
+          go test -tags test -v -race ./internal/dynlib/machodylib/...
