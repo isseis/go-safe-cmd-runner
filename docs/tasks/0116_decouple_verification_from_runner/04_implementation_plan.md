@@ -99,13 +99,13 @@
 
 ### Phase 9: 整形・ビルド・受け入れ基準の検証
 
-- [ ] `make fmt` を実行
-- [ ] `go build ./cmd/record ./cmd/verify ./cmd/runner` を実行
-- [ ] `make test` を実行
-- [ ] `make lint` を実行
-- [ ] AC-1 を確認: `go list -deps github.com/isseis/go-safe-cmd-runner/internal/verification | grep internal/runner` が 0 件
-- [ ] AC-6 を確認: `go list -deps ./cmd/record | grep internal/runner` が 0 件
-- [ ] AC-6 を確認: `go list -deps ./cmd/verify | grep internal/runner` が 0 件
+- [x] `make fmt` を実行
+- [x] `go build ./cmd/record ./cmd/verify ./cmd/runner` を実行
+- [x] `make test` を実行
+- [x] `make lint` を実行
+- [x] AC-1 を確認: `go list -deps github.com/isseis/go-safe-cmd-runner/internal/verification | grep internal/runner` が 0 件
+- [x] AC-6 を確認: `go list -deps ./cmd/record | grep internal/runner` が 0 件
+- [x] AC-6 を確認: `go list -deps ./cmd/verify | grep internal/runner` が 0 件
 
 ### Phase 10: 実装レビュー
 
