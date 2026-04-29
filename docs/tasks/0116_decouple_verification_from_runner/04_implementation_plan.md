@@ -40,7 +40,7 @@
 - [x] `collectVerificationFiles` の引数を `*GroupVerificationInput` に変更
 - [x] グループ名取得を `runnertypes.ExtractGroupName` 依存から `input.Name` 利用へ置換
 - [x] コマンド展開文字列の走査を `CommandEntry.ExpandedCmd` 利用へ置換
-- [ ] `ValidateHashDirectory` の分岐順をスキップ判定優先へ整理
+- [x] `ValidateHashDirectory` の分岐順をスキップ判定優先へ整理
 
 ### Phase 4: security 依存を抽象化しデッドコードを削除
 

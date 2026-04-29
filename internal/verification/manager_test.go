@@ -152,6 +152,30 @@ func TestManager_ValidateHashDirectory_NoSecurityValidator(t *testing.T) {
 	assert.ErrorIs(t, err, ErrSecurityValidatorNotInitialized)
 }
 
+func TestManager_ValidateHashDirectory_SkipsWithoutSecurityValidator(t *testing.T) {
+	t.Run("skip validation option", func(t *testing.T) {
+		manager := &Manager{
+			hashDir:                     testHashDir,
+			security:                    nil,
+			skipHashDirectoryValidation: true,
+		}
+
+		err := manager.ValidateHashDirectory()
+		assert.NoError(t, err)
+	})
+
+	t.Run("dry run mode", func(t *testing.T) {
+		manager := &Manager{
+			hashDir:  testHashDir,
+			security: nil,
+			isDryRun: true,
+		}
+
+		err := manager.ValidateHashDirectory()
+		assert.NoError(t, err)
+	})
+}
+
 func TestManager_ValidateHashDirectory_RelativePath(t *testing.T) {
 	testCases := []struct {
 		name        string

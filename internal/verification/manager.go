@@ -121,10 +121,6 @@ func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
 
 // ValidateHashDirectory validates the hash directory security
 func (m *Manager) ValidateHashDirectory() error {
-	if m.security == nil {
-		return ErrSecurityValidatorNotInitialized
-	}
-
 	// Skip hash directory validation if explicitly requested or in dry-run mode
 	if m.skipHashDirectoryValidation || m.isDryRun {
 		slog.Debug("Skipping hash directory validation",
@@ -132,6 +128,10 @@ func (m *Manager) ValidateHashDirectory() error {
 			"skip_validation", m.skipHashDirectoryValidation,
 			"dry_run", m.isDryRun)
 		return nil
+	}
+
+	if m.security == nil {
+		return ErrSecurityValidatorNotInitialized
 	}
 
 	// Validate directory permissions using security validator
