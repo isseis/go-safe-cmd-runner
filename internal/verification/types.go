@@ -59,6 +59,7 @@ type managerInternalOptions struct {
 	skipHashDirectoryValidation bool
 	isDryRun                    bool
 	customPathResolver          *PathResolver
+	directoryValidator          DirectoryValidator
 }
 
 func newInternalOptions() *managerInternalOptions {
@@ -120,6 +121,13 @@ func withSkipHashDirectoryValidationInternal() InternalOption {
 func withDryRunModeInternal() InternalOption {
 	return func(opts *managerInternalOptions) {
 		opts.isDryRun = true
+	}
+}
+
+// withDirectoryValidatorInternal injects the directory validator used by production mode.
+func withDirectoryValidatorInternal(validator DirectoryValidator) InternalOption {
+	return func(opts *managerInternalOptions) {
+		opts.directoryValidator = validator
 	}
 }
 

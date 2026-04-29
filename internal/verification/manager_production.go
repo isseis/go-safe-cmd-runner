@@ -7,9 +7,8 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 )
 
-// NewManager creates a new verification manager using the default hash directory
-// This is the production API that enforces strict security constraints
-func NewManager() (*Manager, error) {
+// NewManagerForProduction creates a production verification manager.
+func NewManagerForProduction(validator DirectoryValidator) (*Manager, error) {
 	// Log production manager creation for security audit trail
 	logProductionManagerCreation()
 
@@ -20,6 +19,7 @@ func NewManager() (*Manager, error) {
 	return newManagerInternal(hashDir,
 		withCreationMode(CreationModeProduction),
 		withSecurityLevel(SecurityLevelStrict),
+		withDirectoryValidatorInternal(validator),
 	)
 }
 
@@ -44,11 +44,11 @@ func NewManagerForDryRun() (*Manager, error) {
 
 const (
 	// callerDepthForNewManager is the stack depth passed to runtime.
-	// Caller to obtain the caller of NewManager.
+	// Caller to obtain the caller of NewManagerForProduction.
 	// Stack frames:
 	//   0: runtime.Caller
 	//   1: logProductionManagerCreation
-	//   2: NewManager (we want the caller of NewManager)
+	//   2: NewManagerForProduction (we want the caller of NewManagerForProduction)
 	// If the call stack changes, this value may need to be updated.
 	callerDepthForNewManager = 2
 
@@ -66,7 +66,7 @@ const (
 func logProductionManagerCreation() {
 	// Build base logging arguments
 	args := []any{
-		"api", "NewManager",
+		"api", "NewManagerForProduction",
 		"hash_directory", cmdcommon.DefaultHashDirectory,
 		"security_level", "strict",
 	}

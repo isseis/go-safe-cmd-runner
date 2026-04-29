@@ -13,6 +13,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type stubDirectoryValidator struct {
+	err error
+}
+
+func (s stubDirectoryValidator) ValidateDirectoryPermissions(string) error {
+	return s.err
+}
+
 // TestProductionNewManager tests the production NewManager API
 func TestProductionNewManager(t *testing.T) {
 	t.Run("successful_manager_creation", func(t *testing.T) {
@@ -28,10 +36,10 @@ func TestProductionNewManager(t *testing.T) {
 		cmdcommon.DefaultHashDirectory = hashDir
 
 		// Test manager creation
-		manager, err := NewManager()
+		manager, err := NewManagerForProduction(stubDirectoryValidator{})
 
 		// Verify successful creation
-		assert.NoError(t, err, "NewManager should not return an error")
+		assert.NoError(t, err, "NewManagerForProduction should not return an error")
 		assert.NotNil(t, manager, "Manager should not be nil")
 		assert.Equal(t, hashDir, manager.hashDir, "Manager should use default hash directory")
 		assert.NotNil(t, manager.fs, "File system should be initialized")
@@ -45,10 +53,10 @@ func TestProductionNewManager(t *testing.T) {
 		cmdcommon.DefaultHashDirectory = "/non/existent/hash/directory"
 
 		// Test manager creation
-		manager, err := NewManager()
+		manager, err := NewManagerForProduction(stubDirectoryValidator{})
 
 		// Verify that validation fails appropriately
-		assert.Error(t, err, "NewManager should return an error for non-existent hash directory")
+		assert.Error(t, err, "NewManagerForProduction should return an error for non-existent hash directory")
 		assert.Nil(t, manager, "Manager should be nil on error")
 		assert.Contains(t, err.Error(), "hash directory", "Error should mention hash directory")
 	})
@@ -73,7 +81,7 @@ func TestProductionNewManager(t *testing.T) {
 		slog.SetDefault(logger)
 
 		// Create manager
-		manager, err := NewManager()
+		manager, err := NewManagerForProduction(stubDirectoryValidator{})
 
 		// Verify logging occurred
 		assert.NoError(t, err)
@@ -162,7 +170,7 @@ func TestProductionNewManagerForDryRun(t *testing.T) {
 		cmdcommon.DefaultHashDirectory = hashDir
 
 		// Create both types of managers
-		prodManager, err := NewManager()
+		prodManager, err := NewManagerForProduction(stubDirectoryValidator{})
 		require.NoError(t, err)
 
 		dryRunManager, err := NewManagerForDryRun()

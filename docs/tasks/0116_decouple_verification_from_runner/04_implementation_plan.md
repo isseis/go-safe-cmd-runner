@@ -46,23 +46,23 @@
 
 対象: verification から `internal/runner/security` への直接依存を除去する。
 
-- [ ] `PathResolver.security` フィールドを削除
-- [ ] `NewPathResolver` から `security` 引数を削除
-- [ ] `internal/verification` に固定 PATH 定数を追加
-- [ ] `manager.go` で `security.SecurePathEnv` 参照を新定数へ置換
-- [ ] `Manager.security` フィールド型を `DirectoryValidator` へ変更
-- [ ] `internal/verification` から `internal/runner/security` import を除去
+- [x] `PathResolver.security` フィールドを削除
+- [x] `NewPathResolver` から `security` 引数を削除
+- [x] `internal/verification` に固定 PATH 定数を追加
+- [x] `manager.go` で `security.SecurePathEnv` 参照を新定数へ置換
+- [x] `Manager.security` フィールド型を `DirectoryValidator` へ変更
+- [x] `internal/verification` から `internal/runner/security` import を除去
 
 ### Phase 5: Manager 生成責務を production / dry-run で分離
 
 対象: 本番用 validator 生成を `runner/bootstrap` に移し、verification は注入を受ける。
 
-- [ ] `internal/verification/manager_production.go` から `NewManager()` を削除
-- [ ] `internal/verification` に `NewManagerForProduction(DirectoryValidator)` を追加
-- [ ] `NewManagerForDryRun()` を security 非依存のまま維持
-- [ ] `internal/verification` に内部オプション `withDirectoryValidatorInternal` を追加
-- [ ] `internal/runner/bootstrap` に `NewVerificationManager()` を追加
-- [ ] `cmd/runner/main.go` の本番経路を `bootstrap.NewVerificationManager()` 呼び出しへ変更
+- [x] `internal/verification/manager_production.go` から `NewManager()` を削除
+- [x] `internal/verification` に `NewManagerForProduction(DirectoryValidator)` を追加
+- [x] `NewManagerForDryRun()` を security 非依存のまま維持
+- [x] `internal/verification` に内部オプション `withDirectoryValidatorInternal` を追加
+- [x] `internal/runner/bootstrap` に `NewVerificationManager()` を追加
+- [x] `cmd/runner/main.go` の本番経路を `bootstrap.NewVerificationManager()` 呼び出しへ変更
 
 ### Phase 6: runner 側の呼び出し境界で DTO へ変換
 

@@ -15,6 +15,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -225,11 +226,15 @@ func TestManager_ValidateHashDirectory_RelativePath(t *testing.T) {
 				}
 			}
 
+			directoryValidator, err := security.NewValidator(security.DefaultConfig(), security.WithFileSystem(mockFS))
+			require.NoError(t, err)
+
 			manager, err := newManagerInternal(tc.hashDir,
 				withFSInternal(mockFS),
 				withFileValidatorDisabledInternal(),
 				withCreationMode(CreationModeTesting),
-				withSecurityLevel(SecurityLevelRelaxed))
+				withSecurityLevel(SecurityLevelRelaxed),
+				withDirectoryValidatorInternal(directoryValidator))
 			require.NoError(t, err)
 
 			// The ValidateHashDirectory method delegates to the security validator
@@ -323,7 +328,7 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 		// Create a manager with a custom path resolver using our test secure path
 		// We need to use the real filesystem for path resolution, not the mock
 		// For integration testing, we disable security validation to focus on PATH resolution
-		testPathResolver := NewPathResolver(testSecurePath, nil)
+		testPathResolver := NewPathResolver(testSecurePath)
 		manager, err := NewManagerForTest(testHashDir,
 			WithFileValidatorDisabled(),
 			WithPathResolver(testPathResolver),
@@ -347,7 +352,7 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 	t.Run("fails to resolve commands not in secure PATH", func(t *testing.T) {
 		// Create a manager with a custom path resolver using our test secure path
 		// For integration testing, we disable security validation to focus on PATH resolution
-		testPathResolver := NewPathResolver(testSecurePath, nil)
+		testPathResolver := NewPathResolver(testSecurePath)
 		manager, err := NewManagerForTest(testHashDir,
 			WithFileValidatorDisabled(),
 			WithPathResolver(testPathResolver),
@@ -370,7 +375,7 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 
 		// Create a manager with a custom path resolver using our test secure path
 		// For integration testing, we disable security validation to focus on PATH resolution
-		testPathResolver := NewPathResolver(testSecurePath, nil)
+		testPathResolver := NewPathResolver(testSecurePath)
 		manager, err := NewManagerForTest(testHashDir,
 			WithFileValidatorDisabled(),
 			WithPathResolver(testPathResolver),
@@ -773,7 +778,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create manager with PATH resolver
-		pathResolver := NewPathResolver(binDir, nil)
+		pathResolver := NewPathResolver(binDir)
 		manager, err := NewManagerForTest(tmpDir, WithPathResolver(pathResolver))
 		require.NoError(t, err)
 
@@ -816,7 +821,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create path resolver with empty PATH (no commands can be resolved)
-		pathResolver := NewPathResolver("", nil)
+		pathResolver := NewPathResolver("")
 		manager, err := NewManagerForTest(tmpDir, WithPathResolver(pathResolver))
 		require.NoError(t, err)
 
@@ -1128,8 +1133,8 @@ func TestManagerCreationWithFileValidator(t *testing.T) {
 		// File validator should be initialized
 		assert.NotNil(t, manager.fileValidator)
 
-		// Security validator should be initialized
-		assert.NotNil(t, manager.security)
+		// Directory validator is injected only when needed
+		assert.Nil(t, manager.security)
 
 		// Path resolver should be initialized
 		assert.NotNil(t, manager.pathResolver)
@@ -1144,8 +1149,8 @@ func TestManagerCreationWithFileValidator(t *testing.T) {
 		// File validator should be nil
 		assert.Nil(t, manager.fileValidator)
 
-		// Security validator should still be initialized
-		assert.NotNil(t, manager.security)
+		// Directory validator is injected only when needed
+		assert.Nil(t, manager.security)
 
 		// Path resolver should still be initialized
 		assert.NotNil(t, manager.pathResolver)
@@ -1180,6 +1185,10 @@ func TestSecurityIntegration(t *testing.T) {
 			assert.Contains(t, err.Error(), "hash directory validation failed")
 			return
 		}
+
+		directoryValidator, err := security.NewValidator(security.DefaultConfig())
+		require.NoError(t, err)
+		manager.security = directoryValidator
 
 		// If creation succeeded, test hash directory validation
 		err = manager.ValidateHashDirectory()

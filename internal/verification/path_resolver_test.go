@@ -38,7 +38,7 @@ func TestPathResolver_ResolvePath(t *testing.T) {
 	t.Setenv("PATH", testPath)
 
 	// Create a new PathResolver with our test PATH
-	resolver := NewPathResolver(testPath, nil)
+	resolver := NewPathResolver(testPath)
 
 	t.Run("finds executable in second PATH directory when first is a directory", func(t *testing.T) {
 		resolved, err := resolver.ResolvePath("testcmd")
@@ -86,7 +86,7 @@ func TestPathResolver_NoCommandValidation(t *testing.T) {
 		// Create PathResolver with a security validator that would reject this command
 		// (if validation were performed, which it should NOT be)
 		testPath := tempDir
-		resolver := NewPathResolver(testPath, nil)
+		resolver := NewPathResolver(testPath)
 
 		// ResolvePath should succeed - it only resolves paths, doesn't validate
 		resolved, err := resolver.ResolvePath(execPath)
@@ -106,7 +106,7 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 		err := os.WriteFile(execPath, []byte("#!/bin/sh\necho test"), 0o755)
 		require.NoError(t, err)
 
-		resolver := NewPathResolver(tempDir, nil)
+		resolver := NewPathResolver(tempDir)
 
 		path, err := resolver.validateAndCacheCommand(execPath, "test_cmd")
 
@@ -120,7 +120,7 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 	})
 
 	t.Run("command_validation_failure", func(t *testing.T) {
-		resolver := NewPathResolver("/nonexistent", nil)
+		resolver := NewPathResolver("/nonexistent")
 
 		path, err := resolver.validateAndCacheCommand("/nonexistent/command", "nonexistent_command")
 
@@ -135,7 +135,7 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 		err := os.WriteFile(nonExecPath, []byte("#!/bin/sh\necho test"), 0o644)
 		require.NoError(t, err)
 
-		resolver := NewPathResolver(tempDir, nil)
+		resolver := NewPathResolver(tempDir)
 
 		path, err := resolver.validateAndCacheCommand(nonExecPath, "non_exec")
 
@@ -151,7 +151,7 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 		err := os.MkdirAll(dirPath, 0o755)
 		require.NoError(t, err)
 
-		resolver := NewPathResolver(tempDir, nil)
+		resolver := NewPathResolver(tempDir)
 
 		path, err := resolver.validateAndCacheCommand(dirPath, "test_dir")
 

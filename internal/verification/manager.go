@@ -15,7 +15,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
 )
@@ -29,7 +28,7 @@ type Manager struct {
 	networkSymbolStore          fileanalysis.NetworkSymbolStore // nil when cache is unavailable
 	syscallAnalysisStore        fileanalysis.SyscallAnalysisStore
 	dynlibVerifier              *elfdynlib.DynLibVerifier // initialized once at construction
-	security                    *security.Validator
+	security                    DirectoryValidator
 	pathResolver                *PathResolver
 	isDryRun                    bool
 	skipHashDirectoryValidation bool
@@ -511,23 +510,16 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 		}
 	}
 
-	// Initialize security validator with default config
-	securityConfig := security.DefaultConfig()
-	securityValidator, err := security.NewValidator(securityConfig, security.WithFileSystem(opts.fs))
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize security validator: %w", err)
-	}
-
 	// Initialize path resolver with secure fixed PATH (do not inherit from environment)
 	// Use custom path resolver if provided, otherwise create the default one
 	var pathResolver *PathResolver
 	if opts.customPathResolver != nil {
 		pathResolver = opts.customPathResolver
 	} else {
-		pathResolver = NewPathResolver(security.SecurePathEnv, securityValidator)
+		pathResolver = NewPathResolver(secureDefaultPath)
 	}
 
-	manager.security = securityValidator
+	manager.security = opts.directoryValidator
 	manager.pathResolver = pathResolver
 
 	// Initialize result collector for dry-run mode

@@ -212,7 +212,7 @@ func run(runID string) error {
 	if dryRun {
 		verificationManager, err = verification.NewManagerForDryRun()
 	} else {
-		verificationManager, err = verification.NewManager()
+		verificationManager, err = bootstrap.NewVerificationManager()
 	}
 	if err != nil {
 		return &logging.PreExecutionError{
