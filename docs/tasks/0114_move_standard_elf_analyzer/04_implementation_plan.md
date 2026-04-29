@@ -98,3 +98,45 @@
 
 - 2.1〜2.7 と 3.1〜3.3 のチェックボックスがすべて完了していること。
 - AC-1〜AC-5 を満たす検証ログを提示できること。
+
+## 6. 計画外追加作業（完了後に判明・対応済み）
+
+当初計画の完了後、コードレビューで下記の問題が判明した。いずれも同一ブランチで対応済み。
+
+### 6.1 PrivilegedFileOpener と runner/security/elfanalyzer パッケージの削除
+
+- **問題**: `NewPrivilegedFileOpener` の呼び出し箇所がなく、`opener` フィールドも常に `nil` で
+  渡されていた。`internal/runner/security/elfanalyzer` パッケージ全体が dead code だった。
+- **対応**:
+  - `PrivilegedFileOpener` インターフェース（`privileged_opener.go`）を削除
+  - `internal/runner/security/elfanalyzer/` パッケージを丸ごと削除
+  - `StandardELFAnalyzer` の `opener` フィールドと全コンストラクタの `opener` 引数を削除
+  - `AnalyzeNetworkSymbols` の privileged fallback ブロックを削除
+  - 全呼び出し箇所の引数 `nil` を除去
+
+### 6.2 NewBinaryAnalyzer の internal/runner/security からの分離
+
+- **問題**: `cmd/record` が `NewBinaryAnalyzer` のためだけに `internal/runner/security` を
+  インポートしており、runner 固有の依存ツリーを引き込んでいた。
+  `NewBinaryAnalyzer` 自体は runner 依存を持たないことが判明。
+- **対応**:
+  - `NewBinaryAnalyzer` を `internal/runner/security/binary_analyzer.go` から
+    `internal/security/binary_analyzer.go` へ移動
+  - `cmd/record` のインポートを `internal/runner/security` から
+    `internal/security` へ変更
+  - `GosDarwin` / `RequireGOOS` を `internal/security/goos.go` に一本化し、
+    `internal/runner/security/network_analyzer.go` はそこを参照するよう変更
+
+### 6.3 isec エイリアスの整理
+
+- **問題**: `isec` エイリアスは名前衝突が起きる箇所（`internal/runner/security` 内のファイルなど）
+  で必要だが、衝突しない `cmd/record` / `cmd/verify` でも使われており Go 慣習に反していた。
+- **対応**: `cmd/record` / `cmd/verify` のインポートを `isec` → デフォルト名 `security` へ変更。
+  衝突が発生するファイル（`cmd/runner/main.go`、`internal/runner/group_executor.go` 等）は
+  `isec` を維持。
+
+### 6.4 検証（追加作業完了後）
+
+- [x] `go list -deps ./cmd/record | grep internal/runner/security` が 0 件
+- [x] `go list -deps ./cmd/verify | grep internal/runner/security` が 0 件
+- [x] `make build && make test && make lint` がすべて成功
