@@ -21,7 +21,7 @@
 
 `toctou_check_test.go` のテストは `internal/security` パッケージの関数（`CollectTOCTOUCheckDirs`・`RunTOCTOUPermissionCheck`）を検証しており、そのパッケージに置くべきである。また `RunTOCTOUPermissionCheck` のテストは旧来の `runner/security.Validator` ではなく `isec.NewDirectoryPermChecker()` を使用するよう更新する。
 
-- [ ] `internal/security/toctou_test.go` を新規作成し、以下のテストを実装する
+- [x] `internal/security/toctou_test.go` を新規作成し、以下のテストを実装する
 
   | 移植元 | 変更点 |
   |---|---|
@@ -37,14 +37,14 @@
 
 ### Step 2: `toctou_check.go` と `toctou_check_test.go` を削除する
 
-- [ ] `internal/runner/security/toctou_check.go` を削除する
-- [ ] `internal/runner/security/toctou_check_test.go` を削除する（Step 1 で内容を移管済み）
+- [x] `internal/runner/security/toctou_check.go` を削除する
+- [x] `internal/runner/security/toctou_check_test.go` を削除する（Step 1 で内容を移管済み）
 
 ---
 
 ### Step 3: `internal/runner/group_executor_options.go` を修正する
 
-- [ ] `groupExecutorOptions.toctouValidator` の型を変更する
+- [x] `groupExecutorOptions.toctouValidator` の型を変更する
 
   ```go
   // before
@@ -54,7 +54,7 @@
   toctouValidator  isec.DirectoryPermChecker
   ```
 
-- [ ] `WithGroupTOCTOUValidator` の引数型を変更する
+- [x] `WithGroupTOCTOUValidator` の引数型を変更する
 
   ```go
   // before
@@ -64,7 +64,7 @@
   func WithGroupTOCTOUValidator(v isec.DirectoryPermChecker) GroupExecutorOption {
   ```
 
-- [ ] import を入れ替える
+- [x] import を入れ替える
   - `"github.com/isseis/go-safe-cmd-runner/internal/runner/security"` を削除
   - `isec "github.com/isseis/go-safe-cmd-runner/internal/security"` を追加
 
@@ -72,7 +72,7 @@
 
 ### Step 4: `internal/runner/group_executor.go` を修正する
 
-- [ ] `DefaultGroupExecutor.toctouValidator` の型を変更する
+- [x] `DefaultGroupExecutor.toctouValidator` の型を変更する
 
   ```go
   // before
@@ -89,7 +89,7 @@
 
 ### Step 5: `internal/runner/runner.go` を修正する
 
-- [ ] `runnerOptions.toctouValidator` の型を変更する
+- [x] `runnerOptions.toctouValidator` の型を変更する
 
   ```go
   // before
@@ -99,7 +99,7 @@
   toctouValidator         isec.DirectoryPermChecker
   ```
 
-- [ ] `WithTOCTOUValidator` の引数型を変更する
+- [x] `WithTOCTOUValidator` の引数型を変更する
 
   ```go
   // before
@@ -109,7 +109,7 @@
   func WithTOCTOUValidator(v isec.DirectoryPermChecker) Option {
   ```
 
-- [ ] `isec "github.com/isseis/go-safe-cmd-runner/internal/security"` import を追加する
+- [x] `isec "github.com/isseis/go-safe-cmd-runner/internal/security"` import を追加する
 
   `security` import はこのファイルで他用途（`validator *security.Validator` 等）にも使用されているため削除しない。
 
@@ -117,7 +117,7 @@
 
 ### Step 6: `cmd/runner/main.go` を修正する
 
-- [ ] `runTOCTOUCheck` の戻り値型を変更する
+- [x] `runTOCTOUCheck` の戻り値型を変更する
 
   ```go
   // before
@@ -127,7 +127,7 @@
   func runTOCTOUCheck(...) (isec.DirectoryPermChecker, error) {
   ```
 
-- [ ] `security.NewValidatorForTOCTOU()` を `isec.NewDirectoryPermChecker()` に置き換える
+- [x] `security.NewValidatorForTOCTOU()` を `isec.NewDirectoryPermChecker()` に置き換える
 
   ```go
   // before
@@ -147,7 +147,7 @@
   }
   ```
 
-- [ ] `executeRunner` の引数型を変更する
+- [x] `executeRunner` の引数型を変更する
 
   ```go
   // before
@@ -157,7 +157,7 @@
   func executeRunner(..., secValidator isec.DirectoryPermChecker) error {
   ```
 
-- [ ] `"github.com/isseis/go-safe-cmd-runner/internal/runner/security"` import を削除する
+- [x] `"github.com/isseis/go-safe-cmd-runner/internal/runner/security"` import を削除する
 
   このファイルでは `security.NewValidatorForTOCTOU()` と型参照のみが `runner/security` を使用している。
   他に `runner/security` を参照している箇所がないことを確認してから削除する。
@@ -166,14 +166,14 @@
 
 ### Step 7: `internal/runner/group_executor_test.go` を修正する
 
-- [ ] `security.NewValidatorForTOCTOU()` を `isec.NewDirectoryPermChecker()` に置き換える（3 箇所）
+- [x] `security.NewValidatorForTOCTOU()` を `isec.NewDirectoryPermChecker()` に置き換える（3 箇所）
 
   対象関数：
   - `TestRunGroupTOCTOUCheck_SecureDir`
   - `TestRunGroupTOCTOUCheck_ViolationReturnsError`
   - `TestRunGroupTOCTOUCheck_RelativePathsSkipped`
 
-- [ ] import を入れ替える
+- [x] import を入れ替える
   - `"github.com/isseis/go-safe-cmd-runner/internal/runner/security"` を削除
   - `isec "github.com/isseis/go-safe-cmd-runner/internal/security"` を追加
 
@@ -183,9 +183,9 @@
 
 ### Step 8: ビルド・テスト・lint の確認
 
-- [ ] `go build ./cmd/record ./cmd/verify ./cmd/runner` が成功することを確認する（AC-4）
-- [ ] `make test` が全件パスすることを確認する（AC-5）
-- [ ] `make lint` がエラーなしで完了することを確認する（AC-6）
+- [x] `go build ./cmd/record ./cmd/verify ./cmd/runner` が成功することを確認する（AC-4）
+- [x] `make test` が全件パスすることを確認する（AC-5）
+- [x] `make lint` がエラーなしで完了することを確認する（AC-6）
 
 ---
 
