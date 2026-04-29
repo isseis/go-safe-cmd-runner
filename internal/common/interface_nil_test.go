@@ -1,6 +1,9 @@
 package common
 
-import "testing"
+import (
+	"testing"
+	"unsafe"
+)
 
 func TestIsNilInterfaceValue(t *testing.T) {
 	t.Parallel()
@@ -59,6 +62,21 @@ func TestIsNilInterfaceValue(t *testing.T) {
 		m := map[string]string{"k": "v"}
 		if IsNilInterfaceValue(m) {
 			t.Fatal("expected non-nil map to be treated as non-nil")
+		}
+	})
+
+	t.Run("nil unsafe pointer", func(t *testing.T) {
+		var p unsafe.Pointer
+		if !IsNilInterfaceValue(p) {
+			t.Fatal("expected nil unsafe.Pointer to be treated as nil")
+		}
+	})
+
+	t.Run("non-nil unsafe pointer", func(t *testing.T) {
+		v := 42
+		p := unsafe.Pointer(&v)
+		if IsNilInterfaceValue(p) {
+			t.Fatal("expected non-nil unsafe.Pointer to be treated as non-nil")
 		}
 	})
 
