@@ -11,7 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
-	"github.com/isseis/go-safe-cmd-runner/internal/elfdynlib"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"

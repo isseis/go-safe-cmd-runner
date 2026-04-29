@@ -16,9 +16,9 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/elfdynlib"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
-	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/machoanalyzer"

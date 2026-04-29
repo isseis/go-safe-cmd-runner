@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
-	machodylibtesting "github.com/isseis/go-safe-cmd-runner/internal/machodylib/testing"
+	machodylibtesting "github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

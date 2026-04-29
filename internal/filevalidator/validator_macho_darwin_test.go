@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
-	machodylibtesting "github.com/isseis/go-safe-cmd-runner/internal/machodylib/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
+	machodylibtesting "github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
