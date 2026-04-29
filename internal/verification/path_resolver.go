@@ -10,11 +10,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
 )
 
-const (
-	// secureDefaultPath is the fixed secure PATH used for command resolution.
-	secureDefaultPath = "/sbin:/usr/sbin:/bin:/usr/bin"
-)
-
 // PathResolver provides secure path resolution with caching.
 type PathResolver struct {
 	pathEnv string

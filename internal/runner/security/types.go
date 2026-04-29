@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -70,11 +71,9 @@ const (
 	// DefaultMaxPathLength defines the default maximum allowed path length
 	DefaultMaxPathLength = 4096
 
-	// SecurePathEnv defines the secure fixed PATH used for command resolution
-	// This hardcoded PATH prevents PATH manipulation attacks by completely
-	// eliminating environment variable PATH inheritance
-	// Note: /sbin is included for compatibility with system commands that may only exist there
-	SecurePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
+	// SecurePathEnv defines the secure fixed PATH used for command resolution.
+	// Alias of common.SecurePathEnv; kept here for backward compatibility.
+	SecurePathEnv = common.SecurePathEnv
 )
 
 // Constants for security configuration

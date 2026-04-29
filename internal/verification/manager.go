@@ -516,7 +516,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	if opts.customPathResolver != nil {
 		pathResolver = opts.customPathResolver
 	} else {
-		pathResolver = NewPathResolver(secureDefaultPath)
+		pathResolver = NewPathResolver(common.SecurePathEnv)
 	}
 
 	manager.security = opts.directoryValidator
