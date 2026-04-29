@@ -205,7 +205,7 @@ func createResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSp
 		if opts.verificationManager != nil {
 			return opts.verificationManager
 		}
-		return verification.NewPathResolver("", validator)
+		return verification.NewPathResolver("")
 	}
 
 	if opts.dryRun {

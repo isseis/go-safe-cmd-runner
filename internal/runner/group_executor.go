@@ -392,7 +392,16 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 		return nil
 	}
 
-	result, err := ge.verificationManager.VerifyGroupFiles(runtimeGroup)
+	input := &verification.GroupVerificationInput{
+		Name:                runnertypes.ExtractGroupName(runtimeGroup),
+		ExpandedVerifyFiles: runtimeGroup.ExpandedVerifyFiles,
+		Commands:            make([]verification.CommandEntry, 0, len(runtimeGroup.Commands)),
+	}
+	for _, cmd := range runtimeGroup.Commands {
+		input.Commands = append(input.Commands, verification.CommandEntry{ExpandedCmd: cmd.ExpandedCmd})
+	}
+
+	result, err := ge.verificationManager.VerifyGroupFiles(input)
 	if err != nil {
 		// Return the error directly (it already contains all necessary information)
 		return err

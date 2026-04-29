@@ -10,6 +10,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -62,8 +63,8 @@ func setupFailedMockExecution(m *MockResourceManager, err error) {
 //
 //	mockVerificationManager.On("VerifyGroupFiles", matchRuntimeGroupWithName("test-group")).Return(...)
 func matchRuntimeGroupWithName(expectedName string) any {
-	return mock.MatchedBy(func(rg *runnertypes.RuntimeGroup) bool {
-		return rg != nil && rg.Spec != nil && rg.Spec.Name == expectedName
+	return mock.MatchedBy(func(input *verification.GroupVerificationInput) bool {
+		return input != nil && input.Name == expectedName
 	})
 }
 

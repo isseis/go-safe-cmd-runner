@@ -2,6 +2,7 @@ package verification
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,22 +16,16 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 const testHashDir = "/usr/local/etc/go-safe-cmd-runner/hashes"
 
-// Helper function to create RuntimeGlobal for testing
-func createRuntimeGlobal(verifyFiles []string) *runnertypes.RuntimeGlobal {
-	spec := &runnertypes.GlobalSpec{
-		VerifyFiles: verifyFiles,
-	}
-	runtime, err := runnertypes.NewRuntimeGlobal(spec)
-	require.NoError(nil, err)
-	runtime.ExpandedVerifyFiles = verifyFiles
-	return runtime
+// Helper function to create GlobalVerificationInput for testing.
+func createRuntimeGlobal(verifyFiles []string) *GlobalVerificationInput {
+	return &GlobalVerificationInput{ExpandedVerifyFiles: verifyFiles}
 }
 
 // Helper to create a hash record file with wrong hash value in FileAnalysisRecord format.
@@ -70,23 +65,12 @@ func createWrongHashRecord(hashDir, filePath, wrongHash string) (string, error) 
 	return hashFile, nil
 }
 
-// Helper function to create GroupSpec for testing
-// Name and Description are fixed for tests to avoid unparam lint warnings
-func createGroupSpec(verifyFiles []string) *runnertypes.GroupSpec {
-	return &runnertypes.GroupSpec{
-		Name:        "test-group",
-		Description: "",
-		VerifyFiles: verifyFiles,
+// Helper function to create GroupVerificationInput for testing.
+func createRuntimeGroup(verifyFiles []string) *GroupVerificationInput {
+	return &GroupVerificationInput{
+		Name:                "test-group",
+		ExpandedVerifyFiles: verifyFiles,
 	}
-}
-
-// Helper function to create RuntimeGroup for testing
-func createRuntimeGroup(verifyFiles []string) *runnertypes.RuntimeGroup {
-	spec := createGroupSpec(verifyFiles)
-	runtime, err := runnertypes.NewRuntimeGroup(spec)
-	require.NoError(nil, err)
-	runtime.ExpandedVerifyFiles = verifyFiles
-	return runtime
 }
 
 func TestNewManager(t *testing.T) {
@@ -165,9 +149,33 @@ func TestManager_ValidateHashDirectory_NoSecurityValidator(t *testing.T) {
 		security: nil, // No security validator
 	}
 
-	err := manager.ValidateHashDirectory()
-	assert.Error(t, err)
-	assert.ErrorIs(t, err, ErrSecurityValidatorNotInitialized)
+	assert.Panics(t, func() {
+		_ = manager.ValidateHashDirectory()
+	})
+}
+
+func TestManager_ValidateHashDirectory_SkipsWithoutSecurityValidator(t *testing.T) {
+	t.Run("skip validation option", func(t *testing.T) {
+		manager := &Manager{
+			hashDir:                     testHashDir,
+			security:                    nil,
+			skipHashDirectoryValidation: true,
+		}
+
+		err := manager.ValidateHashDirectory()
+		assert.NoError(t, err)
+	})
+
+	t.Run("dry run mode", func(t *testing.T) {
+		manager := &Manager{
+			hashDir:  testHashDir,
+			security: nil,
+			isDryRun: true,
+		}
+
+		err := manager.ValidateHashDirectory()
+		assert.NoError(t, err)
+	})
 }
 
 func TestManager_ValidateHashDirectory_RelativePath(t *testing.T) {
@@ -219,11 +227,15 @@ func TestManager_ValidateHashDirectory_RelativePath(t *testing.T) {
 				}
 			}
 
+			directoryValidator, err := security.NewValidator(security.DefaultConfig(), security.WithFileSystem(mockFS))
+			require.NoError(t, err)
+
 			manager, err := newManagerInternal(tc.hashDir,
 				withFSInternal(mockFS),
 				withFileValidatorDisabledInternal(),
 				withCreationMode(CreationModeTesting),
-				withSecurityLevel(SecurityLevelRelaxed))
+				withSecurityLevel(SecurityLevelRelaxed),
+				withDirectoryValidatorInternal(directoryValidator))
 			require.NoError(t, err)
 
 			// The ValidateHashDirectory method delegates to the security validator
@@ -317,7 +329,7 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 		// Create a manager with a custom path resolver using our test secure path
 		// We need to use the real filesystem for path resolution, not the mock
 		// For integration testing, we disable security validation to focus on PATH resolution
-		testPathResolver := NewPathResolver(testSecurePath, nil)
+		testPathResolver := NewPathResolver(testSecurePath)
 		manager, err := NewManagerForTest(testHashDir,
 			WithFileValidatorDisabled(),
 			WithPathResolver(testPathResolver),
@@ -341,7 +353,7 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 	t.Run("fails to resolve commands not in secure PATH", func(t *testing.T) {
 		// Create a manager with a custom path resolver using our test secure path
 		// For integration testing, we disable security validation to focus on PATH resolution
-		testPathResolver := NewPathResolver(testSecurePath, nil)
+		testPathResolver := NewPathResolver(testSecurePath)
 		manager, err := NewManagerForTest(testHashDir,
 			WithFileValidatorDisabled(),
 			WithPathResolver(testPathResolver),
@@ -364,7 +376,7 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 
 		// Create a manager with a custom path resolver using our test secure path
 		// For integration testing, we disable security validation to focus on PATH resolution
-		testPathResolver := NewPathResolver(testSecurePath, nil)
+		testPathResolver := NewPathResolver(testSecurePath)
 		manager, err := NewManagerForTest(testHashDir,
 			WithFileValidatorDisabled(),
 			WithPathResolver(testPathResolver),
@@ -406,8 +418,9 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 // tests.
 func invalidHashDirManager() *Manager {
 	return &Manager{
-		hashDir: "/non/existent/hash/directory",
-		fs:      common.NewDefaultFileSystem(),
+		hashDir:  "/non/existent/hash/directory",
+		fs:       common.NewDefaultFileSystem(),
+		security: stubDirectoryValidator{err: errors.New("directory not found")},
 	}
 }
 
@@ -469,7 +482,7 @@ func TestVerifyAndReadConfigFile(t *testing.T) {
 		// Should fail hash directory validation
 		assert.Error(t, err)
 		assert.Nil(t, content)
-		assert.Contains(t, err.Error(), "security validator not initialized")
+		assert.Contains(t, err.Error(), "hash directory validation failed")
 	})
 }
 
@@ -525,7 +538,7 @@ func TestVerifyEnvironmentFile(t *testing.T) {
 
 		// Should fail hash directory validation
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "security validator not initialized")
+		assert.Contains(t, err.Error(), "hash directory validation failed")
 	})
 }
 
@@ -577,7 +590,7 @@ func TestVerifyGlobalFiles(t *testing.T) {
 		// Should fail hash directory validation
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "security validator not initialized")
+		assert.Contains(t, err.Error(), "hash directory validation failed")
 	})
 }
 
@@ -629,7 +642,7 @@ func TestVerifyGroupFiles(t *testing.T) {
 		// Should fail hash directory validation
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "security validator not initialized")
+		assert.Contains(t, err.Error(), "hash directory validation failed")
 	})
 }
 
@@ -767,32 +780,16 @@ func TestCollectVerificationFiles(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create manager with PATH resolver
-		pathResolver := NewPathResolver(binDir, nil)
+		pathResolver := NewPathResolver(binDir)
 		manager, err := NewManagerForTest(tmpDir, WithPathResolver(pathResolver))
 		require.NoError(t, err)
 
-		// Create runtime group with command using variable reference
-		spec := &runnertypes.GroupSpec{
+		runtimeGroup := &GroupVerificationInput{
 			Name: "test-group",
-			Commands: []runnertypes.CommandSpec{
-				{
-					Name: "test-command",
-					Cmd:  "%{bindir}/testcmd",
-					Args: []string{},
-				},
+			Commands: []CommandEntry{
+				{ExpandedCmd: filepath.Join(binDir, "testcmd")},
 			},
 		}
-		runtimeGroup, err := runnertypes.NewRuntimeGroup(spec)
-		require.NoError(t, err)
-		runtimeGroup.ExpandedVars = map[string]string{
-			"bindir": binDir,
-		}
-
-		// Create pre-expanded RuntimeCommand (simulating preExpandCommands behavior)
-		runtimeCmd, err := runnertypes.NewRuntimeCommand(&spec.Commands[0], common.NewUnsetTimeout(), commontesting.NewUnlimitedOutputSizeLimit(), spec.Name)
-		require.NoError(t, err)
-		runtimeCmd.ExpandedCmd = filepath.Join(binDir, "testcmd")
-		runtimeGroup.Commands = []*runnertypes.RuntimeCommand{runtimeCmd}
 
 		// Collect files (should use pre-expanded command)
 		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
@@ -808,20 +805,12 @@ func TestCollectVerificationFiles(t *testing.T) {
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
 
-		// Create runtime group with command using undefined variable
-		spec := &runnertypes.GroupSpec{
+		runtimeGroup := &GroupVerificationInput{
 			Name: "test-group",
-			Commands: []runnertypes.CommandSpec{
-				{
-					Name: "test-command",
-					Cmd:  "%{undefined_var}/testcmd",
-					Args: []string{},
-				},
+			Commands: []CommandEntry{
+				{ExpandedCmd: "%{undefined_var}/testcmd"},
 			},
 		}
-		runtimeGroup, err := runnertypes.NewRuntimeGroup(spec)
-		require.NoError(t, err)
-		runtimeGroup.ExpandedVars = map[string]string{} // Empty - no variables defined
 
 		// Collect files (should skip command with expansion error)
 		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
@@ -834,24 +823,16 @@ func TestCollectVerificationFiles(t *testing.T) {
 		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create path resolver with empty PATH (no commands can be resolved)
-		pathResolver := NewPathResolver("", nil)
+		pathResolver := NewPathResolver("")
 		manager, err := NewManagerForTest(tmpDir, WithPathResolver(pathResolver))
 		require.NoError(t, err)
 
-		// Create runtime group with command that can't be resolved
-		spec := &runnertypes.GroupSpec{
+		runtimeGroup := &GroupVerificationInput{
 			Name: "test-group",
-			Commands: []runnertypes.CommandSpec{
-				{
-					Name: "test-command",
-					Cmd:  "/nonexistent/command",
-					Args: []string{},
-				},
+			Commands: []CommandEntry{
+				{ExpandedCmd: "/nonexistent/command"},
 			},
 		}
-		runtimeGroup, err := runnertypes.NewRuntimeGroup(spec)
-		require.NoError(t, err)
-		runtimeGroup.ExpandedVars = map[string]string{}
 
 		// Collect files (should skip command with resolution error)
 		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
@@ -1154,8 +1135,8 @@ func TestManagerCreationWithFileValidator(t *testing.T) {
 		// File validator should be initialized
 		assert.NotNil(t, manager.fileValidator)
 
-		// Security validator should be initialized
-		assert.NotNil(t, manager.security)
+		// Directory validator is injected only when needed
+		assert.Nil(t, manager.security)
 
 		// Path resolver should be initialized
 		assert.NotNil(t, manager.pathResolver)
@@ -1170,8 +1151,8 @@ func TestManagerCreationWithFileValidator(t *testing.T) {
 		// File validator should be nil
 		assert.Nil(t, manager.fileValidator)
 
-		// Security validator should still be initialized
-		assert.NotNil(t, manager.security)
+		// Directory validator is injected only when needed
+		assert.Nil(t, manager.security)
 
 		// Path resolver should still be initialized
 		assert.NotNil(t, manager.pathResolver)
@@ -1206,6 +1187,10 @@ func TestSecurityIntegration(t *testing.T) {
 			assert.Contains(t, err.Error(), "hash directory validation failed")
 			return
 		}
+
+		directoryValidator, err := security.NewValidator(security.DefaultConfig())
+		require.NoError(t, err)
+		manager.security = directoryValidator
 
 		// If creation succeeded, test hash directory validation
 		err = manager.ValidateHashDirectory()

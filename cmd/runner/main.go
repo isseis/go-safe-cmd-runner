@@ -212,7 +212,7 @@ func run(runID string) error {
 	if dryRun {
 		verificationManager, err = verification.NewManagerForDryRun()
 	} else {
-		verificationManager, err = verification.NewManager()
+		verificationManager, err = bootstrap.NewVerificationManager()
 	}
 	if err != nil {
 		return &logging.PreExecutionError{
@@ -267,7 +267,9 @@ func run(runID string) error {
 	}
 
 	// Perform global file verification (using verification manager directly)
-	result, err := verificationManager.VerifyGlobalFiles(runtimeGlobal)
+	result, err := verificationManager.VerifyGlobalFiles(&verification.GlobalVerificationInput{
+		ExpandedVerifyFiles: runtimeGlobal.ExpandedVerifyFiles,
+	})
 	if err != nil {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,

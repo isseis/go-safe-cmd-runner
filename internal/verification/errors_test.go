@@ -84,14 +84,12 @@ func TestStaticErrors(t *testing.T) {
 	assert.NotNil(t, ErrHashDirectoryEmpty)
 	assert.NotNil(t, ErrHashDirectoryInvalid)
 	assert.NotNil(t, ErrConfigNil)
-	assert.NotNil(t, ErrSecurityValidatorNotInitialized)
 
 	// Test error messages
 	assert.Equal(t, "verification is disabled", ErrVerificationDisabled.Error())
 	assert.Equal(t, "hash directory cannot be empty", ErrHashDirectoryEmpty.Error())
 	assert.Equal(t, "hash directory is invalid", ErrHashDirectoryInvalid.Error())
 	assert.Equal(t, "config cannot be nil", ErrConfigNil.Error())
-	assert.Equal(t, "security validator not initialized", ErrSecurityValidatorNotInitialized.Error())
 }
 
 // Test SecurityViolationError
@@ -376,7 +374,6 @@ func TestPredefinedErrorsComplete(t *testing.T) {
 		{"ErrHashDirectoryEmpty", ErrHashDirectoryEmpty},
 		{"ErrHashDirectoryInvalid", ErrHashDirectoryInvalid},
 		{"ErrConfigNil", ErrConfigNil},
-		{"ErrSecurityValidatorNotInitialized", ErrSecurityValidatorNotInitialized},
 		{"ErrGlobalVerificationFailed", ErrGlobalVerificationFailed},
 		{"ErrGroupVerificationFailed", ErrGroupVerificationFailed},
 		{"ErrPathResolverNotInitialized", ErrPathResolverNotInitialized},

@@ -13,8 +13,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type stubDirectoryValidator struct {
+	err error
+}
+
+func (s stubDirectoryValidator) ValidateDirectoryPermissions(string) error {
+	return s.err
+}
+
+type ptrDirectoryValidator struct{}
+
+func (*ptrDirectoryValidator) ValidateDirectoryPermissions(string) error {
+	return nil
+}
+
 // TestProductionNewManager tests the production NewManager API
 func TestProductionNewManager(t *testing.T) {
+	t.Run("panics_when_validator_is_nil", func(t *testing.T) {
+		assert.Panics(t, func() {
+			_, _ = NewManagerForProduction(nil)
+		})
+	})
+
+	t.Run("panics_when_validator_is_typed_nil_pointer", func(t *testing.T) {
+		var validator *ptrDirectoryValidator
+		assert.Panics(t, func() {
+			_, _ = NewManagerForProduction(validator)
+		})
+	})
+
 	t.Run("successful_manager_creation", func(t *testing.T) {
 		// Create a temporary directory to act as hash directory
 		tmpDir := commontesting.SafeTempDir(t)
@@ -28,10 +55,10 @@ func TestProductionNewManager(t *testing.T) {
 		cmdcommon.DefaultHashDirectory = hashDir
 
 		// Test manager creation
-		manager, err := NewManager()
+		manager, err := NewManagerForProduction(stubDirectoryValidator{})
 
 		// Verify successful creation
-		assert.NoError(t, err, "NewManager should not return an error")
+		assert.NoError(t, err, "NewManagerForProduction should not return an error")
 		assert.NotNil(t, manager, "Manager should not be nil")
 		assert.Equal(t, hashDir, manager.hashDir, "Manager should use default hash directory")
 		assert.NotNil(t, manager.fs, "File system should be initialized")
@@ -45,10 +72,10 @@ func TestProductionNewManager(t *testing.T) {
 		cmdcommon.DefaultHashDirectory = "/non/existent/hash/directory"
 
 		// Test manager creation
-		manager, err := NewManager()
+		manager, err := NewManagerForProduction(stubDirectoryValidator{})
 
 		// Verify that validation fails appropriately
-		assert.Error(t, err, "NewManager should return an error for non-existent hash directory")
+		assert.Error(t, err, "NewManagerForProduction should return an error for non-existent hash directory")
 		assert.Nil(t, manager, "Manager should be nil on error")
 		assert.Contains(t, err.Error(), "hash directory", "Error should mention hash directory")
 	})
@@ -73,7 +100,7 @@ func TestProductionNewManager(t *testing.T) {
 		slog.SetDefault(logger)
 
 		// Create manager
-		manager, err := NewManager()
+		manager, err := NewManagerForProduction(stubDirectoryValidator{})
 
 		// Verify logging occurred
 		assert.NoError(t, err)
@@ -81,7 +108,7 @@ func TestProductionNewManager(t *testing.T) {
 
 		logOutput := logBuffer.String()
 		assert.Contains(t, logOutput, "Production verification manager created")
-		assert.Contains(t, logOutput, "api=NewManager")
+		assert.Contains(t, logOutput, "api=NewManagerForProduction")
 		assert.Contains(t, logOutput, hashDir)
 		assert.Contains(t, logOutput, "security_level=strict")
 	})
@@ -162,7 +189,7 @@ func TestProductionNewManagerForDryRun(t *testing.T) {
 		cmdcommon.DefaultHashDirectory = hashDir
 
 		// Create both types of managers
-		prodManager, err := NewManager()
+		prodManager, err := NewManagerForProduction(stubDirectoryValidator{})
 		require.NoError(t, err)
 
 		dryRunManager, err := NewManagerForDryRun()
@@ -193,7 +220,7 @@ func TestProductionManagerLogging(t *testing.T) {
 		// Verify log content
 		logOutput := logBuffer.String()
 		assert.Contains(t, logOutput, "Production verification manager created")
-		assert.Contains(t, logOutput, "api=NewManager")
+		assert.Contains(t, logOutput, "api=NewManagerForProduction")
 		assert.Contains(t, logOutput, "security_level=strict")
 		assert.Contains(t, logOutput, "caller_file=")
 		assert.Contains(t, logOutput, "caller_line=")

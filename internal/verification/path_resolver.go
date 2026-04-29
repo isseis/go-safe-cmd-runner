@@ -7,24 +7,21 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
 )
 
-// PathResolver provides secure path resolution with caching
+// PathResolver provides secure path resolution with caching.
 type PathResolver struct {
-	pathEnv  string
-	security *security.Validator
-	cache    map[string]string
-	mu       sync.RWMutex
+	pathEnv string
+	cache   map[string]string
+	mu      sync.RWMutex
 }
 
-// NewPathResolver creates a new PathResolver with the specified configuration
-func NewPathResolver(pathEnv string, security *security.Validator) *PathResolver {
+// NewPathResolver creates a new PathResolver with the specified configuration.
+func NewPathResolver(pathEnv string) *PathResolver {
 	return &PathResolver{
-		pathEnv:  pathEnv,
-		security: security,
-		cache:    make(map[string]string),
+		pathEnv: pathEnv,
+		cache:   make(map[string]string),
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -69,12 +70,6 @@ const (
 	DefaultDirectoryPermissions = 0o755
 	// DefaultMaxPathLength defines the default maximum allowed path length
 	DefaultMaxPathLength = 4096
-
-	// SecurePathEnv defines the secure fixed PATH used for command resolution
-	// This hardcoded PATH prevents PATH manipulation attacks by completely
-	// eliminating environment variable PATH inheritance
-	// Note: /sbin is included for compatibility with system commands that may only exist there
-	SecurePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
 )
 
 // Constants for security configuration
@@ -170,7 +165,7 @@ type DangerousCommandPattern struct {
 func DefaultConfig() *Config {
 	// Generate AllowedCommands from SecurePathEnv
 	// This should never fail as SecurePathEnv is a compile-time constant
-	allowedCommands, err := GenerateAllowedCommandsFromPath(SecurePathEnv)
+	allowedCommands, err := GenerateAllowedCommandsFromPath(common.SecurePathEnv)
 	if err != nil {
 		// This is a programming error in the constant definition
 		panic(fmt.Sprintf("failed to generate AllowedCommands from SecurePathEnv: %v", err))

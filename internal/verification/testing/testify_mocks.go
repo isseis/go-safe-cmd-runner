@@ -4,7 +4,6 @@
 package verificationtesting
 
 import (
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/mock"
 )
@@ -20,9 +19,9 @@ func (m *MockManager) ResolvePath(path string) (string, error) {
 	return args.String(0), args.Error(1)
 }
 
-// VerifyGroupFiles mocks the VerifyGroupFiles method
-func (m *MockManager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*verification.Result, error) {
-	args := m.Called(runtimeGroup)
+// VerifyGroupFiles mocks the VerifyGroupFiles method.
+func (m *MockManager) VerifyGroupFiles(input *verification.GroupVerificationInput) (*verification.Result, error) {
+	args := m.Called(input)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
