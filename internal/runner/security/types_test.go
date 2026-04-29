@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -250,11 +251,11 @@ func TestGenerateAllowedCommandsFromPath(t *testing.T) {
 func TestDefaultConfig_AllowedCommandsConsistency(t *testing.T) {
 	// Test that DefaultConfig uses generated patterns from SecurePathEnv
 	config := DefaultConfig()
-	expected, err := GenerateAllowedCommandsFromPath(SecurePathEnv)
+	expected, err := GenerateAllowedCommandsFromPath(common.SecurePathEnv)
 
 	assert.NoError(t, err, "SecurePathEnv should be valid")
 	assert.Equal(t, expected, config.AllowedCommands,
-		"DefaultConfig().AllowedCommands should match GenerateAllowedCommandsFromPath(SecurePathEnv)")
+		"DefaultConfig().AllowedCommands should match GenerateAllowedCommandsFromPath(common.SecurePathEnv)")
 }
 
 func TestDefaultConfig_DoesNotPanic(t *testing.T) {

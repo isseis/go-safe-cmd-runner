@@ -70,10 +70,6 @@ const (
 	DefaultDirectoryPermissions = 0o755
 	// DefaultMaxPathLength defines the default maximum allowed path length
 	DefaultMaxPathLength = 4096
-
-	// SecurePathEnv defines the secure fixed PATH used for command resolution.
-	// Alias of common.SecurePathEnv; kept here for backward compatibility.
-	SecurePathEnv = common.SecurePathEnv
 )
 
 // Constants for security configuration
@@ -169,7 +165,7 @@ type DangerousCommandPattern struct {
 func DefaultConfig() *Config {
 	// Generate AllowedCommands from SecurePathEnv
 	// This should never fail as SecurePathEnv is a compile-time constant
-	allowedCommands, err := GenerateAllowedCommandsFromPath(SecurePathEnv)
+	allowedCommands, err := GenerateAllowedCommandsFromPath(common.SecurePathEnv)
 	if err != nil {
 		// This is a programming error in the constant definition
 		panic(fmt.Sprintf("failed to generate AllowedCommands from SecurePathEnv: %v", err))
