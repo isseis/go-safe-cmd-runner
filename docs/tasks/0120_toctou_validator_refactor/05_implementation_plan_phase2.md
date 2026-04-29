@@ -59,8 +59,8 @@ func (v *Validator) buildDirPermOpts(realUID int) isec.DirectoryPermCheckOptions
 }
 ```
 
-- [ ] `buildDirPermOpts` ヘルパーを追加する
-- [ ] `ValidateDirectoryPermissions` がこのヘルパーを使うよう更新する
+- [x] `buildDirPermOpts` ヘルパーを追加する
+- [x] `ValidateDirectoryPermissions` がこのヘルパーを使うよう更新する
 
   ```go
   // before
@@ -79,7 +79,7 @@ func (v *Validator) buildDirPermOpts(realUID int) isec.DirectoryPermCheckOptions
 
 #### 1-2: `validateOutputDirectoryAccess` の `validateCompletePath` 呼び出しを切り替える
 
-- [ ] `validateCompletePath(resolvedPath, currentPath, realUID)` の呼び出しを `isec.ValidateDirectoryPermissionsWithOptions(resolvedPath, v.buildDirPermOpts(realUID))` に置き換える
+- [x] `validateCompletePath(resolvedPath, currentPath, realUID)` の呼び出しを `isec.ValidateDirectoryPermissionsWithOptions(resolvedPath, v.buildDirPermOpts(realUID))` に置き換える
 
   ```go
   // before
@@ -97,11 +97,11 @@ func (v *Validator) buildDirPermOpts(realUID int) isec.DirectoryPermCheckOptions
 
 #### 1-3: 使用されなくなった private メソッドを削除する
 
-- [ ] `validateCompletePath` を削除する
-- [ ] `validateDirectoryComponentMode` を削除する
-- [ ] `isStickyDirectory` を削除する
-- [ ] `validateDirectoryComponentPermissions` を削除する
-- [ ] `validateGroupWritePermissions` を削除する
+- [x] `validateCompletePath` を削除する
+- [x] `validateDirectoryComponentMode` を削除する
+- [x] `isStickyDirectory` を削除する
+- [x] `validateDirectoryComponentPermissions` を削除する
+- [x] `validateGroupWritePermissions` を削除する
 
 ---
 
@@ -111,15 +111,15 @@ func (v *Validator) buildDirPermOpts(realUID int) isec.DirectoryPermCheckOptions
 
 以下のテストは `validateCompletePath` を直接呼び出しており、メソッド削除後にコンパイルエラーになるため `ValidateDirectoryPermissions` 経由に移行する。
 
-- [ ] `TestValidator_ValidateCompletePath_SymlinkProtection`
+- [x] `TestValidator_ValidateCompletePath_SymlinkProtection`
   - `testValidator.validateCompletePath(cleanPath, originalPath, realUID)` → `testValidator.ValidateDirectoryPermissions(tt.path)`
   - `ValidateDirectoryPermissions` 内で `ValidateDirectoryPermissionsWithOptions` → `validateDirectoryHierarchy` → `validateDirectoryComponentMode` を経由するため、シンボリックリンク検出ロジックは同様に動作する
 
-- [ ] `TestValidator_ValidatePathComponents_EdgeCases`
+- [x] `TestValidator_ValidatePathComponents_EdgeCases`
   - `testValidator.validateCompletePath(cleanPath, originalPath, realUID)` → `testValidator.ValidateDirectoryPermissions(tt.path)`
   - パス正規化のエッジケース（`//`、末尾 `/` 等）は `ValidateDirectoryPermissionsWithOptions` 内の `filepath.Clean` で処理される
 
-- [ ] `TestValidator_validateCompletePath`
+- [x] `TestValidator_validateCompletePath`
   - 2 件のテストケース（UID コンテキスト、所有権ミスマッチ）を `ValidateDirectoryPermissions` 経由に移行する
   - 移行後は `ValidateDirectoryPermissions` が `os.Getuid()` を使用するため、テスト環境でのUID を前提としたケース設計に修正する
 
@@ -127,7 +127,7 @@ func (v *Validator) buildDirPermOpts(realUID int) isec.DirectoryPermCheckOptions
 
 以下のテストは削除するメソッドを直接テストしているが、それぞれ上位レベルのテストで同等のシナリオが検証されている。
 
-- [ ] `TestValidator_validateDirectoryComponentPermissions_WithRealUID` を削除する
+- [x] `TestValidator_validateDirectoryComponentPermissions_WithRealUID` を削除する
 
   | シナリオ | 上位テストでの対応 |
   |---|---|
@@ -137,7 +137,7 @@ func (v *Validator) buildDirPermOpts(realUID int) isec.DirectoryPermCheckOptions
   | group_write_permission_with_single_group_member | `TestValidator_ValidateDirectoryPermissions` sticky ケース |
   | world_writable_directory_rejected | `TestValidator_ValidateDirectoryPermissions` "directory with excessive permissions" |
 
-- [ ] `TestValidator_validateGroupWritePermissions_AllScenarios` を削除する
+- [x] `TestValidator_validateGroupWritePermissions_AllScenarios` を削除する
 
   | シナリオ | 上位テストでの対応 |
   |---|---|
@@ -145,7 +145,7 @@ func (v *Validator) buildDirPermOpts(realUID int) isec.DirectoryPermCheckOptions
   | group_write_non_trusted / gm_nil / gm_unsafe | `TestValidator_ValidateDirectoryPermissions_CompletePath` "group-writable intermediate directory owned by non-root" |
   | gm_safe_write_passes | `TestRunTOCTOUPermissionCheck_*` in `internal/security/toctou_test.go`（実FSで同等） |
 
-- [ ] `TestValidator_validateGroupWritePermissions_TrustedOwnershipScenarios` を削除する
+- [x] `TestValidator_validateGroupWritePermissions_TrustedOwnershipScenarios` を削除する
 
   | シナリオ | 上位テストでの対応 |
   |---|---|

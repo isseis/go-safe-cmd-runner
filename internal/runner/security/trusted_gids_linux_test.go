@@ -41,10 +41,7 @@ func TestValidator_validateGroupWritePermissions_LinuxTrustedGIDConfigDifference
 		config.TrustedGIDs = []uint32{10}
 		validator := newValidatorWithDir(t, config, 10)
 
-		info, err := validator.fs.Lstat("/test")
-		require.NoError(t, err)
-
-		err = validator.validateGroupWritePermissions("/test", info, 1000)
+		err := validator.ValidateDirectoryPermissions("/test")
 		assert.NoError(t, err)
 	})
 
@@ -52,10 +49,7 @@ func TestValidator_validateGroupWritePermissions_LinuxTrustedGIDConfigDifference
 		config := DefaultConfig()
 		validator := newValidatorWithDir(t, config, 10)
 
-		info, err := validator.fs.Lstat("/test")
-		require.NoError(t, err)
-
-		err = validator.validateGroupWritePermissions("/test", info, 1000)
+		err := validator.ValidateDirectoryPermissions("/test")
 		assert.ErrorIs(t, err, isec.ErrInvalidDirPermissions)
 	})
 }
