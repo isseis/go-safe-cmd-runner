@@ -1,166 +1,121 @@
-# TOCTOU Validator リファクタリング要件書
-
-## 概要
-
-`security.NewValidator(nil, WithGroupMembership(...))` で初期化される`Validator` 全体から、TOCTOU権限チェック専用の軽量な実装を切り出し、不要な初期化処理（200+ 行）を削減する。
+# 要件定義: TOCTOU チェックから runner/security.Validator 依存を除去する
 
 ## 背景
 
-### 現在の問題
+`internal/security` パッケージには TOCTOU（Time-Of-Check-Time-Of-Use）ディレクトリ権限チェック専用の軽量な実装が存在する。
 
-1. **不要な初期化コスト**
-   [cmd/runner/main.go:339](cmd/runner/main.go#L339) で TOCTOU権限チェック専用に `NewValidator(nil, WithGroupMembership(...))` を呼び出している
-
-2. **初期化時に実行されるが未使用の処理**
-   - AllowedCommands 正規表現コンパイル（70+ 行）
-   - SensitiveEnvVars 正規表現コンパイル（70+ 行）
-   - DangerousPrivilegedCommands マップ作成
-   - ShellCommands マップ作成
-   - DangerousRootPatterns 検証
-   - redaction.Config / SensitivePatterns 初期化
-
-3. **本番コードで必要なのは**
-   - ファイルシステム操作（Lstat, stat）
-   - グループメンバーシップ検証（`CanUserSafelyWriteFile()`）
-   - 小数の設定値（trustedGIDs, testPermissiveMode）
-
-### `NewValidator(nil)` の呼び出し箇所
-
-#### 本番コード
-- `internal/runner/security/toctou_check.go:12` - **TOCTOU チェック専用** ← 切り出し対象
-
-#### テストコード（21 箇所）
-- `internal/runner/security/` 配下のテスト（6 ファイル）
-- `test/security/` 配下のテスト（3 ファイル）
-- これらはすべて `DefaultConfig()` を活用した統合テスト
-
-**結論**: 本番コードでは **TOCTOU チェックの 1 箇所だけ** で `nil` が渡されている
-
-## 受理基準
-
-### 1. 新しい軽量な DirectoryPermChecker 実装の作成
-
-- [ ] `internal/security/directory_perm_checker.go` を新規作成
-  - `NewDirectoryPermCheckerForTOCTOU()` ファクトリ関数を提供
-  - `DirectoryValidator` インタフェース（`internal/verification/types.go:96`）を実装
-  - 以下のフィールドのみを保持
-    - `fs`: `common.FileSystem`
-    - `groupMembership`: `*groupmembership.GroupMembership`
-    - `trustedGIDs`: `map[uint32]struct{}`
-    - `testPermissiveMode`: `bool`
-
-- [ ] `internal/security/directory_perm_checker.go` で実装する処理
-  - `ValidateDirectoryPermissions(dirPath string) error` メソッド
-  - struct フィールドへのアクセスのため、ヘルパー関数を呼び出す
-
-- [ ] 共通のロジック関数を `internal/security/` にパッケージレベル関数として抽出
-  - `validateCompletePath(fs FileSystem, groupMembership *GroupMembership, config *permValidationConfig, cleanPath, originalPath string, realUID int) error`
-  - `validateDirectoryComponentMode(fs FileSystem, dirPath string, info os.FileInfo) error`
-  - `validateDirectoryComponentPermissions(fs FileSystem, groupMembership *GroupMembership, config *permValidationConfig, dirPath string, info os.FileInfo, realUID int) error`
-  - `validateGroupWritePermissions(groupMembership *GroupMembership, config *permValidationConfig, dirPath string, info os.FileInfo, realUID int) error`
-  - `isStickyDirectory(info os.FileInfo) bool`
-  - `isTrustedGroup(config *permValidationConfig, gid uint32) bool`
-
-- [ ] 設定構造体 `permValidationConfig` を定義
-  ```go
-  type permValidationConfig struct {
-      trustedGIDs       map[uint32]struct{}
-      testPermissiveMode bool
-  }
-  ```
-
-### 2. `toctou_check.go` の更新
-
-- [ ] `NewValidatorForTOCTOU()` を新しい `NewDirectoryPermCheckerForTOCTOU()` に置き換え
-- [ ] 戻り値型を `(*Validator, error)` から `(DirectoryValidator, error)` に変更
-- [ ] 下位互換性のため、古い `NewValidatorForTOCTOU()` は **廃止予定 (deprecated)** とマーク
-
-### 3. `cmd/runner/main.go` の更新
-
-- [ ] `security.NewValidatorForTOCTOU()` の呼び出しを新しい実装に置き換え
-- [ ] 変数型を必要に応じて `DirectoryValidator` インタフェース型に調整
-
-### 4. `Validator.NewValidator()` の簡略化
-
-- [ ] 本番コードで `config = nil` が渡されなくなったことを確認
-- [ ] `newValidatorCore()` で `if config == nil { config = DefaultConfig() }` の条件を削除
-- [ ] **前提**: `NewValidator()` は常に `config != nil` で呼び出されることを保証
-
-### 5. テストの更新
-
-- [ ] `internal/runner/security/toctou_check_test.go` を新規作成（必要な場合）
-  - `NewDirectoryPermCheckerForTOCTOU()` のテストケース
-  - `DirectoryValidator` インタフェースの実装確認
-
-- [ ] 既存のテストコードは変更なし
-  - `NewValidator(nil)` は引き続き機能する（互換性維持）
-
-## 実装の成果
-
-| 項目 | 効果 |
-|-----|------|
-| 初期化処理の削減 | 200+ 行の不要なコンパイル処理を回避 |
-| コードの明確性 | TOCTOU チェック専用の軽量な実装で意図が明確 |
-| メモリ使用量 | 不要なフィールド（regex 配列、map）の割り当てを削減 |
-| 保守性 | `Validator` の責務がより明確になる |
-| 互換性 | テストコードへの影響なし、既存の `DirectoryValidator` インタフェースを活用 |
-
-## スコープ（対象外）
-
-- Validator 自体の機能削減（他の用途で必要な AllowedCommands, SensitiveEnvVars チェックは維持）
-- 既存のテストコードの大規模な変更
-- ドキュメント更新（必要に応じて docs/ へのコメント追加のみ）
-
-## 設計上の決定
-
-### 1. 既存の `DirectoryValidator` インタフェースを再利用
-
-```go
-// internal/verification/types.go:96
-type DirectoryValidator interface {
-    ValidateDirectoryPermissions(dirPath string) error
-}
+```
+internal/security.DirectoryPermChecker  （インターフェース）
+internal/security.NewDirectoryPermChecker()  （スタンドアロン実装）
 ```
 
-- 既に `internal/verification/manager.go` で使用されている
-- 新しい実装も同じインタフェースを実装することで統一性を確保
+`cmd/record` と `cmd/verify` はすでにこの実装を正しく使用している。
 
-### 2. ロジック重複の回避（共通関数への抽出）
+しかし `cmd/runner` のみが `internal/runner/security.Validator`（全セキュリティ検証機能を持つ重厚な構造体）を TOCTOU チェックに使用している。この `Validator` は AllowedCommands パターン・SensitiveEnvVars・TrustedGIDs など TOCTOU チェックとは無関係な多数のフィールドを持つ。
 
-- `internal/runner/security/file_validation.go` の既存メソッドロジックを、パッケージレベルの共通関数として抽出
-- `Validator` と `dirPermChecker` の両方で同じ関数を呼び出す
-- 利点:
-  - コード保守性向上（バグ修正は 1 箇所で完結）
-  - 一貫性確保（両実装で同じセキュリティチェック）
-  - テスト効率化（共通関数単位でテスト可能）
+## 問題
 
-### 3. テストコードへの影響最小化
+### 不整合
 
-- `NewValidator(nil)` は引き続き機能（互換性維持）
-- テストコードは既存のまま
-- 新しい実装用のテストは別途追加
+| コマンド | TOCTOU チェックの実装 |
+|---|---|
+| `cmd/record` | `isec.NewDirectoryPermChecker()` ✓ |
+| `cmd/verify` | `isec.NewDirectoryPermChecker()` ✓ |
+| `cmd/runner` | `runner/security.NewValidatorForTOCTOU()` ← 重厚な `Validator` を使用 |
 
-## 実装のステップ
+### 原因
 
-1. **Phase 1**: `internal/runner/security/file_validation.go` から共通ロジック関数を抽出
-   - パッケージレベル関数として定義
-   - `permValidationConfig` 構造体を定義
-   - 既存の `Validator` メソッドを新しい共通関数で置き換え（リファクタリング）
+`runner/runner.go`、`group_executor.go`、`group_executor_options.go` の `toctouValidator` フィールドが
+`*security.Validator` のコンクリート型で宣言されており、`cmd/runner/main.go` まで型が伝播している。
 
-2. **Phase 2**: `internal/security/directory_perm_checker.go` の新規作成
-   - `dirPermChecker` struct 定義
-   - `ValidateDirectoryPermissions()` メソッド実装
-   - Phase 1 で抽出した共通関数を呼び出す
+```go
+// runner/runner.go:88（現状）
+toctouValidator *security.Validator
 
-3. **Phase 3**: `toctou_check.go` の更新
-   - `NewDirectoryPermCheckerForTOCTOU()` を実装
-   - 戻り値型を `DirectoryValidator` に変更
-   - 古い `NewValidatorForTOCTOU()` は deprecated とマーク
+// group_executor.go:70（現状）
+toctouValidator *security.Validator
 
-4. **Phase 4**: `cmd/runner/main.go` の更新
-   - `NewDirectoryPermCheckerForTOCTOU()` に切り替え
+// group_executor_options.go:19（現状）
+toctouValidator *security.Validator
+```
 
-5. **Phase 5**: `Validator.NewValidator()` の簡略化
-   - `config = nil` チェック削除
+### 不要なコード
 
-6. **Phase 6**: テスト追加・検証
+`internal/runner/security/toctou_check.go` に定義された `NewValidatorForTOCTOU()` は
+`NewValidator(nil, WithGroupMembership(groupmembership.New()))` を呼ぶだけの
+3行のラッパーであり、`cmd/runner/main.go` 以外から使用されていない。
+
+`RunTOCTOUPermissionCheck` が受け取る型はすでに `isec.DirectoryPermChecker` インターフェースであり、
+`*security.Validator` 全体は不要である。
+
+## 目標
+
+TOCTOU チェックの実装を `cmd/runner` においても `isec.DirectoryPermChecker` インターフェースに統一し、
+`runner/security.Validator` への不要な依存と重複実装を除去する。
+
+## 受け入れ基準
+
+| # | 基準 |
+|---|------|
+| AC-1 | `cmd/runner/main.go` が TOCTOU チェックに `isec.NewDirectoryPermChecker()` を使用する |
+| AC-2 | `runner/runner.go`、`group_executor.go`、`group_executor_options.go` の `toctouValidator` フィールドの型が `isec.DirectoryPermChecker` インターフェースになっている |
+| AC-3 | `internal/runner/security/toctou_check.go` および `NewValidatorForTOCTOU()` が削除されている |
+| AC-4 | `go build ./cmd/record ./cmd/verify ./cmd/runner` が成功する |
+| AC-5 | `make test` が全件パスする |
+| AC-6 | `make lint` がエラーなしで完了する |
+
+## 設計方針
+
+### フィールド型をインターフェースに変更する
+
+`toctouValidator` フィールドの型を `*security.Validator` から `isec.DirectoryPermChecker` に変更する。
+
+```go
+// 変更前
+toctouValidator *security.Validator
+
+// 変更後
+toctouValidator isec.DirectoryPermChecker
+```
+
+対象ファイル：
+- `internal/runner/runner.go`
+- `internal/runner/group_executor.go`
+- `internal/runner/group_executor_options.go`
+
+### `cmd/runner/main.go` の呼び出しを変更する
+
+```go
+// 変更前
+secValidator, secErr := security.NewValidatorForTOCTOU()
+// ...
+runnerOptions = append(runnerOptions, runner.WithTOCTOUValidator(secValidator))
+
+// 変更後
+secValidator, secErr := isec.NewDirectoryPermChecker()
+// ...
+runnerOptions = append(runnerOptions, runner.WithTOCTOUValidator(secValidator))
+```
+
+`runner/security` の import が TOCTOU チェック目的のみで使用されていた場合、その import も削除する。
+
+### `toctou_check.go` を削除する
+
+`internal/runner/security/toctou_check.go` を削除し、`NewValidatorForTOCTOU()` を除去する。
+
+### スコープ外
+
+- `runner/security.Validator.ValidateDirectoryPermissions` メソッド自体の削除または移動
+  （テストで mock FS を注入する用途などで引き続き使われる可能性がある）
+- `internal/security.dirPermChecker` と `runner/security.Validator` の実装重複の解消
+- `toctouValidator` フィールドの nil チェック挙動の変更
+
+## 影響範囲
+
+| ファイル | 変更内容 |
+|---|---|
+| `internal/runner/security/toctou_check.go` | 削除 |
+| `internal/runner/runner.go` | `toctouValidator` フィールド型変更、`WithTOCTOUValidator` 引数型変更 |
+| `internal/runner/group_executor.go` | `toctouValidator` フィールド型変更 |
+| `internal/runner/group_executor_options.go` | `toctouValidator` フィールド型変更 |
+| `cmd/runner/main.go` | `isec.NewDirectoryPermChecker()` に変更、不要 import 削除 |
