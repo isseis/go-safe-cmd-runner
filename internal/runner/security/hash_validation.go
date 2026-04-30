@@ -9,7 +9,6 @@ import (
 
 // validateFileHash performs file hash validation using provided validator
 func validateFileHash(cmdPath string, hashDir string) error {
-	// Fallback to creating validator (for backward compatibility)
 	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
 	if err != nil {
 		return fmt.Errorf("hash validation failed to initialize validator: %w", err)
