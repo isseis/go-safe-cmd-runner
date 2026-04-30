@@ -144,7 +144,6 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, fileInfo.Mode()&os.ModeSetuid != 0, "setuid bit should be set")
 
-		// Updated to use AnalyzeCommandSecurityWithConfig
 		risk, pattern, reason, err := AnalyzeCommandSecurity(setuidExec, []string{}, "")
 		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
@@ -1339,7 +1338,6 @@ func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 		err := os.WriteFile(echoPath, []byte("#!/bin/bash\necho hello"), 0o755)
 		require.NoError(t, err)
 
-		// Updated to use AnalyzeCommandSecurityWithConfig
 		risk, pattern, reason, err := AnalyzeCommandSecurity(echoPath, []string{"hello"}, "")
 		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelUnknown, risk)
@@ -1349,7 +1347,6 @@ func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 
 	t.Run("dangerous pattern detected", func(t *testing.T) {
 		rmPath := "/bin/rm"
-		// Updated to use AnalyzeCommandSecurityWithConfig
 		risk, pattern, reason, err := AnalyzeCommandSecurity(rmPath, []string{"-rf", "/"}, "")
 		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
@@ -1373,7 +1370,6 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 		err := os.WriteFile(normalExec, []byte("#!/bin/bash\necho test"), 0o755)
 		require.NoError(t, err)
 
-		// Updated to use AnalyzeCommandSecurityWithConfig
 		risk, pattern, reason, err := AnalyzeCommandSecurity(normalExec, []string{}, "")
 		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelUnknown, risk)
@@ -1385,7 +1381,6 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 	t.Run("real setuid binary integration test", func(t *testing.T) {
 		// Check if passwd command exists and has setuid bit
 		if fileInfo, err := os.Stat(passwdPath); err == nil && fileInfo.Mode()&os.ModeSetuid != 0 {
-			// Updated to use AnalyzeCommandSecurityWithConfig
 			risk, pattern, reason, err := AnalyzeCommandSecurity(passwdPath, []string{}, "")
 			require.NoError(t, err)
 			assert.Equal(t, runnertypes.RiskLevelHigh, risk)
@@ -1398,7 +1393,6 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 
 	t.Run("non-existent executable", func(t *testing.T) {
 		// Test with non-existent file - should be treated as high risk due to stat error
-		// Updated to use AnalyzeCommandSecurityWithConfig
 		risk, pattern, reason, err := AnalyzeCommandSecurity("/non/existent/file", []string{}, "")
 		require.NoError(t, err)
 		// After the fix, stat errors are treated as high risk
@@ -1409,7 +1403,6 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 
 	t.Run("relative path should return error", func(t *testing.T) {
 		// Test with relative path - should return error
-		// Updated to use AnalyzeCommandSecurityWithConfig
 		_, _, _, err := AnalyzeCommandSecurity("relative/path", []string{}, "")
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, isec.ErrInvalidPath)
