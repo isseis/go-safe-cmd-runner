@@ -1,5 +1,5 @@
-//go:build test
-// +build test
+//go:build test || performance
+// +build test performance
 
 package resource
 
@@ -38,4 +38,17 @@ func NewDefaultResourceManagerForTest(
 	symStore fileanalysis.NetworkSymbolStore,
 ) (*DefaultResourceManager, error) {
 	return NewDefaultResourceManager(exec, fs, privMgr, pathResolver, logger, mode, dryRunOpts, outputMgr, maxOutputSize, symStore, nil)
+}
+
+// NewNormalResourceManagerWithOutput creates a new NormalResourceManager with output capture support
+func NewNormalResourceManagerWithOutput(
+	exec executor.CommandExecutor,
+	fs executor.FileSystem,
+	privMgr runnertypes.PrivilegeManager,
+	outputMgr output.CaptureManager,
+	maxOutputSize int64,
+	logger *slog.Logger,
+	store fileanalysis.NetworkSymbolStore,
+) *NormalResourceManager {
+	return NewNormalResourceManagerWithStores(exec, fs, privMgr, outputMgr, maxOutputSize, logger, store, nil)
 }

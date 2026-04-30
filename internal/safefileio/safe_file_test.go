@@ -1,7 +1,6 @@
 package safefileio
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -22,117 +21,6 @@ func mustResolvedPath(t *testing.T, path string) common.ResolvedPath {
 	rp, err := common.NewResolvedPathParentOnly(path)
 	require.NoError(t, err, "mustResolvedPath: failed to create ResolvedPath for %s", path)
 	return rp
-}
-
-func TestSafeWriteFile(t *testing.T) {
-	tests := []struct {
-		name    string
-		setup   func(t *testing.T) (string, []byte, os.FileMode)
-		wantErr bool
-		errType error
-	}{
-		{
-			name: "write to new file",
-			setup: func(t *testing.T) (string, []byte, os.FileMode) {
-				tempDir := commontesting.SafeTempDir(t)
-				filePath := filepath.Join(tempDir, "testfile.txt")
-				content := []byte("test content")
-				return filePath, content, 0o644
-			},
-			wantErr: false,
-		},
-		{
-			name: "write to existing file should fail",
-			setup: func(t *testing.T) (string, []byte, os.FileMode) {
-				tempDir := commontesting.SafeTempDir(t)
-				filePath := filepath.Join(tempDir, "existing.txt")
-				// Create a file first with 0600 permissions
-				require.NoError(t, os.WriteFile(filePath, []byte("old content"), 0o600), "Failed to create test file")
-				// Note: safeWriteFile will preserve the original file's permissions
-				// rather than using the provided permissions when the file exists
-				return filePath, []byte("new content"), 0o600
-			},
-			wantErr: true,
-			errType: ErrFileExists,
-		},
-		{
-			name: "write to directory should fail",
-			setup: func(t *testing.T) (string, []byte, os.FileMode) {
-				tempDir := commontesting.SafeTempDir(t)
-				return tempDir, []byte("should fail"), 0o644
-			},
-			wantErr: true,
-			// The actual error will be from the OS about not being able to write to a directory
-			errType: nil,
-		},
-		{
-			name: "write to path with symlink in parent resolves to real path",
-			setup: func(t *testing.T) (string, []byte, os.FileMode) {
-				tempDir := commontesting.SafeTempDir(t)
-
-				// Create a target directory
-				targetDir := filepath.Join(tempDir, "target")
-				require.NoError(t, os.MkdirAll(targetDir, 0o755), "Failed to create target directory")
-
-				// Create a directory that will contain our test files
-				testDir := filepath.Join(tempDir, "testdir")
-				require.NoError(t, os.Mkdir(testDir, 0o755), "Failed to create test directory")
-
-				// Create a symlink inside our test directory
-				symlinkPath := filepath.Join(testDir, "symlink")
-				require.NoError(t, os.Symlink(targetDir, symlinkPath), "Failed to create symlink")
-
-				// NewResolvedPathParentOnly resolves the symlink in the parent, so the write
-				// goes to the real path (targetDir/file.txt), not through the symlink.
-				filePath := filepath.Join(symlinkPath, "file.txt")
-				return filePath, []byte("test content"), 0o644
-			},
-			wantErr: false,
-		},
-		{
-			name: "write with group writable permissions should succeed for owned file",
-			setup: func(t *testing.T) (string, []byte, os.FileMode) {
-				tempDir := commontesting.SafeTempDir(t)
-				filePath := filepath.Join(tempDir, "group_writable_new.txt")
-				content := []byte("test content")
-				// Use group writable permissions
-				return filePath, content, 0o664
-			},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			path, content, perm := tt.setup(t)
-
-			rp := mustResolvedPath(t, path)
-			err := SafeWriteFile(rp, content, perm)
-			if tt.wantErr {
-				assert.Error(t, err, "SafeWriteFile() should return an error")
-				if tt.errType != nil {
-					assert.ErrorIs(t, err, tt.errType, "SafeWriteFile() error should be of expected type")
-				}
-			} else {
-				assert.NoError(t, err, "SafeWriteFile() should not return an error")
-			}
-
-			if !tt.wantErr {
-				// Verify file was created with correct content and permissions
-				info, err := os.Lstat(path)
-				require.NoError(t, err, "Failed to stat file")
-
-				// On Unix-like systems, the actual permissions might be affected by umask
-				// So we'll only check that the file is readable and writable by the owner
-				assert.True(t, info.Mode()&0o600 == 0o600, "File should be readable and writable by owner, got permissions %v", info.Mode())
-
-				gotContent, err := os.ReadFile(path)
-				require.NoError(t, err, "Failed to read file")
-
-				assert.Equal(t, string(content), string(gotContent), "File content should match")
-			}
-		})
-	}
 }
 
 func TestSafeReadFile(t *testing.T) {
@@ -463,17 +351,14 @@ func TestValidateFilePermissions(t *testing.T) {
 	}
 }
 
-func TestSafeWriteFile_FileCloseError(t *testing.T) {
+func TestSafeWriteFileOverwrite_FileCloseError(t *testing.T) {
 	t.Run("close error only", func(t *testing.T) {
 		tempDir := commontesting.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "testfile.txt")
 
-		// Create a test file system that will return failing files
 		fs := failingCloseFS{FileSystem: defaultFS}
-		err := safeWriteFileWithFS(mustResolvedPath(t, filePath), []byte("test"), 0o644, fs)
+		err := safeWriteFileOverwriteWithFS(mustResolvedPath(t, filePath), []byte("test"), 0o644, fs)
 		assert.Error(t, err, "Expected error when closing file fails")
-
-		// The error should be related to file closing
 		assert.ErrorIs(t, err, errSimulatedClose, "Expected specific close error")
 	})
 
@@ -481,12 +366,9 @@ func TestSafeWriteFile_FileCloseError(t *testing.T) {
 		tempDir := commontesting.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "testfile.txt")
 
-		// Create a test file system that will return files that fail on both write and close
 		fs := failingWriteFS{FileSystem: defaultFS}
-		err := safeWriteFileWithFS(mustResolvedPath(t, filePath), []byte("test"), 0o644, fs)
+		err := safeWriteFileOverwriteWithFS(mustResolvedPath(t, filePath), []byte("test"), 0o644, fs)
 		assert.Error(t, err, "Expected error when writing to file")
-
-		// The error should be the write error, not the close error
 		assert.ErrorIs(t, err, errSimulatedWrite, "Expected specific write error")
 	})
 }
@@ -506,22 +388,6 @@ func TestSetuidSetgidBehavior(t *testing.T) {
 		got, err := SafeReadFile(mustResolvedPath(t, filePath))
 		assert.NoError(t, err, "SafeReadFile should allow reading file with setuid/setgid bits")
 		assert.Equal(t, string(content), string(got))
-	})
-
-	t.Run("SafeWriteFile forbids creating file with setuid/setgid bits", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
-		filePath := filepath.Join(tempDir, "setuid_setgid_create.txt")
-
-		// Try to create a new file with setuid/setgid bits in requested perm
-		err := SafeWriteFile(mustResolvedPath(t, filePath), []byte("deny"), 0o6755)
-		assert.Error(t, err, "SafeWriteFile should reject setuid/setgid perms on creation")
-		assert.ErrorIs(t, err, groupmembership.ErrPermissionsExceedMaximum)
-		// Note: depending on the kernel/filesystem, the file may have been created
-		// before validation failed. We don't assert non-existence to avoid flakiness.
-		// Cleanup if it exists.
-		if _, statErr := os.Lstat(filePath); statErr == nil {
-			_ = os.Remove(filePath)
-		}
 	})
 }
 
@@ -551,170 +417,6 @@ func TestValidateFileOperationDifferences(t *testing.T) {
 	// Read should succeed
 	_, err = SafeReadFile(mustResolvedPath(t, setuidFilePath))
 	assert.NoError(t, err, "Reading setuid file should succeed")
-
-	// Write should fail - try to create a new file with setuid permissions
-	newSetuidFilePath := filepath.Join(tempDir, "new_setuid_file.txt")
-	err = SafeWriteFile(mustResolvedPath(t, newSetuidFilePath), []byte("new content"), 0o4644)
-	assert.Error(t, err, "Creating a file with setuid permissions should fail")
-	assert.ErrorIs(t, err, groupmembership.ErrPermissionsExceedMaximum, "Should fail with permission error")
-}
-
-func TestSafeAtomicMoveFile(t *testing.T) {
-	t.Run("successful atomic move with permission setting", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
-		srcPath := filepath.Join(tempDir, "source.txt")
-		dstPath := filepath.Join(tempDir, "destination.txt")
-		content := []byte("test content for atomic move")
-
-		// Create source file with loose permissions
-		require.NoError(t, os.WriteFile(srcPath, content, 0o644))
-
-		// Move with secure permissions
-		err := SafeAtomicMoveFile(mustResolvedPath(t, srcPath), mustResolvedPath(t, dstPath), 0o600)
-		assert.NoError(t, err, "SafeAtomicMoveFile should succeed")
-
-		// Verify source file is gone
-		_, err = os.Stat(srcPath)
-		assert.True(t, os.IsNotExist(err), "Source file should not exist after move")
-
-		// Verify destination file exists with correct content and permissions
-		stat, err := os.Stat(dstPath)
-		require.NoError(t, err, "Destination file should exist")
-		assert.Equal(t, os.FileMode(0o600), stat.Mode().Perm(), "Destination should have 0600 permissions")
-
-		gotContent, err := os.ReadFile(dstPath)
-		require.NoError(t, err, "Should be able to read destination file")
-		assert.Equal(t, content, gotContent, "Content should match")
-	})
-
-	t.Run("move to existing file overwrites", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
-		srcPath := filepath.Join(tempDir, "source.txt")
-		dstPath := filepath.Join(tempDir, "destination.txt")
-		srcContent := []byte("new content")
-		oldContent := []byte("old content")
-
-		// Create source and destination files
-		require.NoError(t, os.WriteFile(srcPath, srcContent, 0o600))
-		require.NoError(t, os.WriteFile(dstPath, oldContent, 0o600))
-
-		// Move should overwrite destination
-		err := SafeAtomicMoveFile(mustResolvedPath(t, srcPath), mustResolvedPath(t, dstPath), 0o600)
-		assert.NoError(t, err, "SafeAtomicMoveFile should succeed with overwrite")
-
-		// Verify content was overwritten
-		gotContent, err := os.ReadFile(dstPath)
-		require.NoError(t, err, "Should be able to read destination file")
-		assert.Equal(t, srcContent, gotContent, "Content should be from source file")
-	})
-
-	t.Run("fails with invalid permissions", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
-		srcPath := filepath.Join(tempDir, "source.txt")
-		dstPath := filepath.Join(tempDir, "destination.txt")
-
-		require.NoError(t, os.WriteFile(srcPath, []byte("test"), 0o600))
-
-		// Try to move with invalid permissions (too permissive for write operation)
-		err := SafeAtomicMoveFile(mustResolvedPath(t, srcPath), mustResolvedPath(t, dstPath), 0o755)
-		assert.Error(t, err, "Should fail with overly permissive permissions")
-		assert.ErrorIs(t, err, groupmembership.ErrPermissionsExceedMaximum)
-	})
-
-	t.Run("fails when source does not exist", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
-		srcPath := filepath.Join(tempDir, "nonexistent.txt")
-		dstPath := filepath.Join(tempDir, "destination.txt")
-
-		err := SafeAtomicMoveFile(mustResolvedPath(t, srcPath), mustResolvedPath(t, dstPath), 0o600)
-		assert.Error(t, err, "Should fail when source file does not exist")
-	})
-
-	t.Run("creates destination directory structure", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
-		srcPath := filepath.Join(tempDir, "source.txt")
-		dstPath := filepath.Join(tempDir, "subdir", "destination.txt")
-		content := []byte("test content")
-
-		require.NoError(t, os.WriteFile(srcPath, content, 0o600))
-		require.NoError(t, os.MkdirAll(filepath.Dir(dstPath), 0o750))
-
-		err := SafeAtomicMoveFile(mustResolvedPath(t, srcPath), mustResolvedPath(t, dstPath), 0o600)
-		assert.NoError(t, err, "Should succeed when destination directory exists")
-
-		// Verify move was successful
-		gotContent, err := os.ReadFile(dstPath)
-		require.NoError(t, err, "Should be able to read destination file")
-		assert.Equal(t, content, gotContent, "Content should match")
-	})
-
-	t.Run("prevents file descriptor leakage attack", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
-		srcPath := filepath.Join(tempDir, "source.txt")
-		dstPath := filepath.Join(tempDir, "destination.txt")
-
-		// 1. Create initial target file with 0o644 permissions (potentially vulnerable)
-		oldContent := []byte("sensitive old content")
-		require.NoError(t, os.WriteFile(dstPath, oldContent, 0o644))
-
-		// 2. Simulate attacker opening the file and keeping the descriptor
-		attackerFd, err := os.Open(dstPath)
-		require.NoError(t, err, "Attacker should be able to open the file")
-		defer attackerFd.Close()
-
-		// Verify attacker can read original content
-		attackerContent := make([]byte, len(oldContent))
-		n, err := attackerFd.Read(attackerContent)
-		require.NoError(t, err, "Attacker should be able to read original content")
-		assert.Equal(t, oldContent, attackerContent[:n], "Attacker should see original content")
-
-		// 3. Create source file with new sensitive content
-		newContent := []byte("new sensitive content that should not leak")
-		require.NoError(t, os.WriteFile(srcPath, newContent, 0o600))
-
-		// 4. Use SafeAtomicMoveFile to overwrite the target
-		err = SafeAtomicMoveFile(mustResolvedPath(t, srcPath), mustResolvedPath(t, dstPath), 0o600)
-		assert.NoError(t, err, "SafeAtomicMoveFile should succeed")
-
-		// 5. Verify the file was overwritten with new content
-		finalContent, err := os.ReadFile(dstPath)
-		require.NoError(t, err, "Should be able to read final file")
-		assert.Equal(t, newContent, finalContent, "File should contain new content")
-
-		// 6. Critical security check: Attacker's old file descriptor should NOT see new content
-		// Reset file descriptor position and try to read
-		_, err = attackerFd.Seek(0, 0)
-		require.NoError(t, err, "Should be able to seek to beginning")
-
-		// Try to read new content through old descriptor
-		attackerNewRead := make([]byte, len(newContent))
-		n, readErr := attackerFd.Read(attackerNewRead)
-
-		// The behavior depends on the filesystem and OS, but we expect one of these outcomes:
-		// 1. Read error (file descriptor becomes invalid)
-		// 2. Read returns old content or empty (not new content)
-		// 3. Read returns fewer bytes than expected
-
-		switch {
-		case readErr != nil:
-			// Good: File descriptor became invalid (best case)
-			t.Logf("Attacker's file descriptor became invalid after atomic move: %v", readErr)
-		case n == 0:
-			// Good: No content readable
-			t.Logf("Attacker's file descriptor returned no content")
-		default:
-			// Check if attacker can see new content (this would be a security issue)
-			attackerReadContent := attackerNewRead[:n]
-			assert.False(t, bytes.Equal(attackerReadContent, newContent), "SECURITY ISSUE: Attacker can read new content through old file descriptor. Expected: old content or error, Got: new content")
-			// Good: Attacker sees old content or garbage, not new content
-			t.Logf("Attacker's file descriptor sees different content (safe): %q", attackerReadContent)
-		}
-
-		// 7. Verify file permissions are secure (0o600)
-		stat, err := os.Stat(dstPath)
-		require.NoError(t, err, "Should be able to stat final file")
-		assert.Equal(t, os.FileMode(0o600), stat.Mode().Perm(), "Final file should have secure permissions")
-	})
 }
 
 // TestCanSafelyWriteToFile tests the new unified security validation function
@@ -932,35 +634,10 @@ func TestResolvedPathModeEnforcement(t *testing.T) {
 	fullRP, err := common.NewResolvedPath(existingFile)
 	require.NoError(t, err, "NewResolvedPath should succeed for existing file")
 
-	t.Run("SafeWriteFile rejects resolveModeFull", func(t *testing.T) {
-		err := SafeWriteFile(fullRP, []byte("new"), 0o644)
-		assert.ErrorIs(t, err, ErrInvalidFilePath,
-			"SafeWriteFile must reject ResolvedPath created with NewResolvedPath")
-	})
-
 	t.Run("SafeWriteFileOverwrite rejects resolveModeFull", func(t *testing.T) {
 		err := SafeWriteFileOverwrite(fullRP, []byte("new"), 0o644)
 		assert.ErrorIs(t, err, ErrInvalidFilePath,
 			"SafeWriteFileOverwrite must reject ResolvedPath created with NewResolvedPath")
-	})
-
-	t.Run("SafeAtomicMoveFile rejects resolveModeFull for srcPath", func(t *testing.T) {
-		// dstPath uses a valid ParentOnly to ensure only srcPath triggers the error.
-		dstPath, err := common.NewResolvedPathParentOnly(filepath.Join(tempDir, "dst.txt"))
-		require.NoError(t, err)
-		err = SafeAtomicMoveFile(fullRP, dstPath, 0o600)
-		assert.ErrorIs(t, err, ErrInvalidFilePath,
-			"SafeAtomicMoveFile must reject srcPath created with NewResolvedPath")
-	})
-
-	t.Run("SafeAtomicMoveFile rejects resolveModeFull for dstPath", func(t *testing.T) {
-		srcFile := filepath.Join(tempDir, "src.txt")
-		require.NoError(t, os.WriteFile(srcFile, []byte("src"), 0o644))
-		srcRP, err := common.NewResolvedPathParentOnly(srcFile)
-		require.NoError(t, err)
-		err = SafeAtomicMoveFile(srcRP, fullRP, 0o600)
-		assert.ErrorIs(t, err, ErrInvalidFilePath,
-			"SafeAtomicMoveFile must reject dstPath created with NewResolvedPath")
 	})
 }
 

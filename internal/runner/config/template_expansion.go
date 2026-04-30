@@ -720,59 +720,6 @@ func validateGlobalOnly(input, templateName, field string) error {
 	return nil
 }
 
-// ValidateParams validates template parameter values.
-//
-// This function validates:
-//  1. Parameter names must be valid variable names (letter/underscore start, alphanumeric)
-//  2. Parameter values must be string or []string ([]any with string elements)
-//
-// NOTE: %{var} references in params values ARE allowed (NF-006) because they
-// will be expanded after template expansion using the group's variable context.
-func ValidateParams(params map[string]any, templateName string) error {
-	for paramName, value := range params {
-		// Validate parameter name
-		if err := security.ValidateVariableName(paramName); err != nil {
-			return &ErrInvalidParamName{
-				TemplateName: templateName,
-				ParamName:    paramName,
-				Reason:       err.Error(),
-			}
-		}
-
-		// Validate parameter value type
-		switch v := value.(type) {
-		case string:
-			// String is valid, %{var} references allowed (NF-006)
-			continue
-		case []any:
-			// Check that all elements are strings
-			for i, elem := range v {
-				if _, ok := elem.(string); !ok {
-					return &ErrTemplateInvalidArrayElement{
-						TemplateName: templateName,
-						Field:        "params",
-						ParamName:    paramName,
-						Index:        i,
-						ActualType:   fmt.Sprintf("%T", elem),
-					}
-				}
-			}
-		case []string:
-			// Already validated as string array
-			continue
-		default:
-			return &ErrUnsupportedParamType{
-				TemplateName: templateName,
-				Field:        "params",
-				ParamName:    paramName,
-				ActualType:   fmt.Sprintf("%T", value),
-			}
-		}
-	}
-
-	return nil
-}
-
 // validateCmdSpec validates that template and command fields
 // are mutually exclusive in a CommandSpec.
 //

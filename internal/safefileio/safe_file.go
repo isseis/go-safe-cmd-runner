@@ -114,21 +114,6 @@ func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode
 	return atomicMoveFileCore(absSrc, absDst, requiredPerm, fs)
 }
 
-// SafeWriteFile writes a file safely after validating the path and checking file properties.
-// It uses openat2 with RESOLVE_NO_SYMLINKS when available for atomic symlink-safe operations,
-// eliminating TOCTOU (Time-of-Check Time-of-Use) race conditions completely.
-// On systems without openat2, it falls back to path verification before opening the file.
-//
-// filePath must be created with common.NewResolvedPathParentOnly. A path created with
-// common.NewResolvedPath would resolve the leaf symlink, bypassing leaf-symlink detection,
-// so this function rejects it and returns ErrInvalidFilePath.
-//
-// Note: The filepath parameter is intentionally not restricted to a safe directory as the
-// function is designed to work with any valid file path while maintaining security.
-func SafeWriteFile(filePath common.ResolvedPath, content []byte, perm os.FileMode) (err error) {
-	return safeWriteFileWithFS(filePath, content, perm, defaultFS)
-}
-
 // SafeWriteFileOverwrite writes a file safely, allowing overwrite of existing files.
 // It uses openat2 with RESOLVE_NO_SYMLINKS when available for atomic symlink-safe operations,
 // eliminating TOCTOU (Time-of-Check Time-of-Use) race conditions completely.
@@ -144,57 +129,12 @@ func SafeWriteFileOverwrite(filePath common.ResolvedPath, content []byte, perm o
 	return safeWriteFileOverwriteWithFS(filePath, content, perm, defaultFS)
 }
 
-// SafeAtomicMoveFile atomically moves a file from source to destination with secure permissions.
-// It uses rename(2) system call for atomic operation and validates both source and destination
-// files using safefileio security checks. The source file permissions are set to requiredPerm
-// before the move operation.
-//
-// Both srcPath and dstPath must be created with common.NewResolvedPathParentOnly. A path
-// created with common.NewResolvedPath would resolve the leaf symlink, bypassing leaf-symlink
-// detection, so this function rejects it and returns ErrInvalidFilePath.
-//
-// This function provides protection against symlink attacks, TOCTOU race conditions, and
-// ensures the destination file has the required permissions and security properties.
-func SafeAtomicMoveFile(srcPath, dstPath common.ResolvedPath, requiredPerm os.FileMode) error {
-	return safeAtomicMoveFileWithFS(srcPath, dstPath, requiredPerm, defaultFS)
-}
-
 // safeWriteFileOverwriteWithFS is the internal implementation that accepts a FileSystem for testing
 func safeWriteFileOverwriteWithFS(filePath common.ResolvedPath, content []byte, perm os.FileMode, fs FileSystem) (err error) {
-	return safeWriteFileCommon(filePath, content, perm, fs, os.O_WRONLY|os.O_CREATE)
+	return safeWriteFileCommon(filePath, content, perm, fs)
 }
 
-// safeWriteFileWithFS is the internal implementation that accepts a FileSystem for testing
-func safeWriteFileWithFS(filePath common.ResolvedPath, content []byte, perm os.FileMode, fs FileSystem) (err error) {
-	return safeWriteFileCommon(filePath, content, perm, fs, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
-}
-
-// safeAtomicMoveFileWithFS is the internal implementation that accepts a FileSystem for testing.
-// srcPath and dstPath must be created with NewResolvedPathParentOnly; this function asserts that
-// via IsParentOnly() so that SafeOpenFile's openat2(RESOLVE_NO_SYMLINKS) check can detect and
-// reject a symlink at the leaf position.
-func safeAtomicMoveFileWithFS(srcPath, dstPath common.ResolvedPath, requiredPerm os.FileMode, fs FileSystem) error {
-	absSrc := srcPath.String()
-	if absSrc == "" {
-		return fmt.Errorf("%w: empty source path", ErrInvalidFilePath)
-	}
-	// Require NewResolvedPathParentOnly so leaf-symlink detection is preserved.
-	if !srcPath.IsParentOnly() {
-		return fmt.Errorf("%w: srcPath must be created with NewResolvedPathParentOnly", ErrInvalidFilePath)
-	}
-	absDst := dstPath.String()
-	if absDst == "" {
-		return fmt.Errorf("%w: empty destination path", ErrInvalidFilePath)
-	}
-	if !dstPath.IsParentOnly() {
-		return fmt.Errorf("%w: dstPath must be created with NewResolvedPathParentOnly", ErrInvalidFilePath)
-	}
-	return atomicMoveFileCore(absSrc, absDst, requiredPerm, fs)
-}
-
-// atomicMoveFileCore is the shared implementation used by both safeAtomicMoveFileWithFS
-// (public API path, paths already resolved via ResolvedPath) and osFS.AtomicMoveFile
-// (FileSystem bridge, paths resolved via filepath.Abs only).
+// atomicMoveFileCore is the shared implementation for osFS.AtomicMoveFile.
 // absSrc and absDst must be absolute paths. Symlinks in the paths are detected and
 // rejected here by SafeOpenFile (openat2 RESOLVE_NO_SYMLINKS) and ensureParentDirsNoSymlinks.
 func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs FileSystem) error {
@@ -258,7 +198,7 @@ func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs File
 }
 
 // safeWriteFileCommon contains the common logic for safe file writing operations
-func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.FileMode, fs FileSystem, flags int) (err error) {
+func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.FileMode, fs FileSystem) (err error) {
 	absPath := filePath.String()
 	if absPath == "" {
 		return fmt.Errorf("%w: empty path", ErrInvalidFilePath)
@@ -274,35 +214,13 @@ func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.F
 		return err
 	}
 
-	// Track whether file was created by this function
-	// Only set to true when creating a new file (O_EXCL), not when truncating an existing file
-	fileCreated := false
-
-	// Use the FileSystem interface consistently for both testing and production
-	file, err := fs.SafeOpenFile(absPath, flags, perm)
+	file, err := fs.SafeOpenFile(absPath, os.O_WRONLY|os.O_CREATE, perm)
 	if err != nil {
 		return err
 	}
-	// File was successfully opened/created - only mark as created if using O_EXCL (new file)
-	if flags&os.O_EXCL != 0 {
-		fileCreated = true
-	}
 
-	// Ensure the file is closed, and remove it if validation or writing fails
 	defer func() {
 		closeErr := file.Close()
-
-		// If there was an error during validation or writing, remove the file
-		if err != nil && fileCreated {
-			if removeErr := fs.Remove(absPath); removeErr != nil {
-				slog.Warn("failed to remove file after error",
-					slog.String("path", absPath),
-					slog.Any("original_error", err),
-					slog.Any("remove_error", removeErr))
-			}
-		}
-
-		// Report close error if no other error occurred
 		if closeErr != nil && err == nil {
 			err = fmt.Errorf("failed to close file: %w", closeErr)
 		}
@@ -313,14 +231,11 @@ func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.F
 		return err
 	}
 
-	// Truncate the file after permission check to ensure content is written to an empty file
-	// For O_EXCL (new file), this is a no-op but harmless
-	// For overwrite mode, this ensures the file is truncated only after permission validation
+	// Truncate after permission check to ensure content is written to an empty file
 	if err := file.Truncate(0); err != nil {
 		return fmt.Errorf("failed to truncate %s: %w", absPath, err)
 	}
 
-	// Write the content
 	if _, err = file.Write(content); err != nil {
 		return fmt.Errorf("failed to write to %s: %w", absPath, err)
 	}

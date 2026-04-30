@@ -34,17 +34,6 @@ type NetworkAnalyzer struct {
 	syscallStore fileanalysis.SyscallAnalysisStore // nil means svc cache disabled
 }
 
-// NewNetworkAnalyzer creates a new NetworkAnalyzer.
-// The caller must inject the target GOOS.
-func NewNetworkAnalyzer(goos string) *NetworkAnalyzer {
-	return &NetworkAnalyzer{goos: isec.RequireGOOS(goos)}
-}
-
-// NewNetworkAnalyzerWithStore creates a NetworkAnalyzer with a store for cache-based analysis.
-func NewNetworkAnalyzerWithStore(goos string, store fileanalysis.NetworkSymbolStore) *NetworkAnalyzer {
-	return &NetworkAnalyzer{goos: isec.RequireGOOS(goos), store: store}
-}
-
 // NewNetworkAnalyzerWithStores creates a NetworkAnalyzer with both
 // symbol and syscall stores for cache-based analysis.
 // If either store is nil, the corresponding cache lookup is disabled.

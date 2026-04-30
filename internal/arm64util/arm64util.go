@@ -108,14 +108,6 @@ func BackwardScanX16(code []byte, svcOffset int) (int, bool) {
 	return 0, false
 }
 
-// BackwardScanX0 walks backward from the BL instruction at code[blOffset]
-// and looks for an immediate-load sequence into X0 or W0 (first argument register
-// on arm64). When found, it returns the loaded value. The scan is limited to
-// maxBackwardScanInstr instructions.
-func BackwardScanX0(code []byte, blOffset int) (int, bool) {
-	return backwardScanRegImm(code, blOffset, 0)
-}
-
 // BackwardScanStackTrap walks backward from the BL instruction at code[blOffset]
 // looking for a Go old-stack-ABI trap argument write: STR/STP xN, [SP, #8] (the
 // trap argument slot), followed by an immediate-load sequence into xN.
