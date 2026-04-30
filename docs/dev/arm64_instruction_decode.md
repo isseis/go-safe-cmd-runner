@@ -301,7 +301,7 @@ These two are distinct problems and are treated separately.
 - When decoding itself fails → **Log output only** (does not affect risk classification)
 
 Results with `unknown:*` methods (SVC #0 instructions with unknown numbers)
-are treated as High Risk (§8.5 / §9.1.2).
+are treated as High Risk.
 The decode failure count does not affect risk classification.
 
 ### 8.5 Visualization of Decode Failures
