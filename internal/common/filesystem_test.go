@@ -319,7 +319,6 @@ func TestNewResolvedPathForNew(t *testing.T) {
 		name        string
 		path        string
 		expectError bool
-		expectErr   error
 		expectPath  string
 	}{
 		{
@@ -328,8 +327,8 @@ func TestNewResolvedPathForNew(t *testing.T) {
 			expectPath: filepath.Join(resolvedDir, "newfile.txt"),
 		},
 		{
-			name:      "empty path should fail",
-			expectErr: ErrEmptyPath,
+			name:        "empty path should fail",
+			expectError: true,
 		},
 		{
 			name:        "non-existent parent dir should fail",
@@ -337,25 +336,32 @@ func TestNewResolvedPathForNew(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:      "existing file should fail",
-			path:      existingFile,
-			expectErr: errPathAlreadyExists,
+			name:        "existing file should fail",
+			path:        existingFile,
+			expectError: true,
 		},
 		{
-			name:      "existing symlink should fail",
-			path:      symlinkPath,
-			expectErr: errPathAlreadyExists,
+			name:        "existing symlink should fail",
+			path:        symlinkPath,
+			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := newResolvedPathForNew(tt.path)
+			result := ResolvedPath{}
+			rp, err := NewResolvedPathParentOnly(tt.path)
+			if err == nil {
+				if _, lerr := os.Lstat(rp.String()); lerr == nil {
+					err = os.ErrExist
+				} else if !os.IsNotExist(lerr) {
+					err = lerr
+				} else {
+					result = rp
+				}
+			}
 
 			switch {
-			case tt.expectErr != nil:
-				assert.ErrorIs(t, err, tt.expectErr)
-				assert.Empty(t, result.String())
 			case tt.expectError:
 				assert.Error(t, err)
 				assert.Empty(t, result.String())

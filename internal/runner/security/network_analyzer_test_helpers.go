@@ -16,13 +16,3 @@ func newNetworkAnalyzer(
 ) *NetworkAnalyzer {
 	return NewNetworkAnalyzerWithStore(runtime.GOOS, store)
 }
-
-// newNetworkAnalyzerWithStores creates a NetworkAnalyzer with a symbol store and
-// syscall store for testing.
-// This function is only available in test builds.
-func newNetworkAnalyzerWithStores(
-	symStore fileanalysis.NetworkSymbolStore,
-	svcStore fileanalysis.SyscallAnalysisStore,
-) *NetworkAnalyzer {
-	return NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
-}

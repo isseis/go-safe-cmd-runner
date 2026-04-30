@@ -61,25 +61,6 @@ func collectSVCAddresses(f *macho.File) ([]uint64, error) {
 	return addrs, nil
 }
 
-// containsSVCInstruction scans the __TEXT,__text section of a Mach-O file
-// for the svc #0x80 instruction (0xD4001001 in little-endian).
-//
-// Uses 4-byte aligned scan, exploiting arm64 fixed-width instruction encoding.
-// Only processes arm64 binaries (CpuArm64); returns (false, nil) for other
-// architectures or when no __TEXT,__text section is present.
-//
-// Returns (false, err) when the section exists but cannot be read — the caller
-// must treat this as a scan failure and propagate AnalysisError rather than
-// silently returning NoNetworkSymbols.
-//
-// Background: Regular macOS binaries (both Go and C) call libSystem.dylib for
-// system calls and never contain svc #0x80 directly. Its presence indicates
-// a direct kernel call, bypassing libSystem.dylib.
-func containsSVCInstruction(f *macho.File) (bool, error) {
-	addrs, err := collectSVCAddresses(f)
-	return len(addrs) > 0, err
-}
-
 // isMachOMagicAll reports whether the first 4 bytes match any recognized
 // Mach-O or Fat binary magic number, covering 32-bit, 64-bit, and Fat
 // binaries in both native and byte-swapped byte orders.

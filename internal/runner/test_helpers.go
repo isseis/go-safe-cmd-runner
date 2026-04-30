@@ -11,7 +11,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testutil"
-	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -55,18 +54,6 @@ func setupSafeTestEnv(t *testing.T) {
 func setupFailedMockExecution(m *MockResourceManager, err error) {
 	m.On("ValidateOutputPath", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 	m.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resource.CommandToken(""), nil, err)
-}
-
-// matchRuntimeGroupWithName creates a mock.ArgumentMatcher that validates RuntimeGroup with expected group name.
-// This is a helper function to avoid code duplication in mock expectations.
-//
-// Usage:
-//
-//	mockVerificationManager.On("VerifyGroupFiles", matchRuntimeGroupWithName("test-group")).Return(...)
-func matchRuntimeGroupWithName(expectedName string) any {
-	return mock.MatchedBy(func(input *verification.GroupVerificationInput) bool {
-		return input != nil && input.Name == expectedName
-	})
 }
 
 // WithSecurityLogger sets the security logger for timeout-related security events.

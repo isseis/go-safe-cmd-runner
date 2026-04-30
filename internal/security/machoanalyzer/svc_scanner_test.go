@@ -219,9 +219,9 @@ func TestScanSVCAddrs_FatBinary(t *testing.T) {
 	assert.Nil(t, addrs, "expected nil: arm64 slice in fat_binary has no svc #0x80")
 }
 
-// TestContainsSVCInstruction_DelegatesToCollect verifies that containsSVCInstruction
-// delegates to collectSVCAddresses and returns the correct bool result.
-func TestContainsSVCInstruction_DelegatesToCollect(t *testing.T) {
+// TestCollectSVCAddresses_HasOrNot verifies collectSVCAddresses result shape
+// for binaries with and without svc #0x80 instructions.
+func TestCollectSVCAddresses_HasOrNot(t *testing.T) {
 	t.Run("with_svc", func(t *testing.T) {
 		path := testdataPath("svc_only_arm64")
 		skipIfNotExist(t, path)
@@ -230,9 +230,9 @@ func TestContainsSVCInstruction_DelegatesToCollect(t *testing.T) {
 		require.NoError(t, err)
 		defer f.Close()
 
-		hasSVC, err := containsSVCInstruction(f)
+		addrs, err := collectSVCAddresses(f)
 		require.NoError(t, err)
-		assert.True(t, hasSVC, "expected true for svc_only_arm64")
+		require.NotEmpty(t, addrs)
 	})
 
 	t.Run("without_svc", func(t *testing.T) {
@@ -243,8 +243,8 @@ func TestContainsSVCInstruction_DelegatesToCollect(t *testing.T) {
 		require.NoError(t, err)
 		defer f.Close()
 
-		hasSVC, err := containsSVCInstruction(f)
+		addrs, err := collectSVCAddresses(f)
 		require.NoError(t, err)
-		assert.False(t, hasSVC, "expected false for no-svc binary")
+		assert.Empty(t, addrs, "expected no svc addresses for no-svc binary")
 	})
 }
