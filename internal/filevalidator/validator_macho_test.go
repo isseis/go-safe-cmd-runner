@@ -331,7 +331,7 @@ func TestNativeOrArm64Slice(t *testing.T) {
 // correct fields for the svc-only case.
 func TestBuildMachoSyscallAnalysisData_SVCOnly(t *testing.T) {
 	addrs := []uint64{0x100000004, 0x10000000C}
-	svcEntries := buildSVCInfos(addrs)
+	svcEntries := buildTestSVCInfos(addrs)
 	result := buildMachoSyscallData(svcEntries, nil, "arm64", true)
 
 	require.NotNil(t, result)
@@ -476,7 +476,7 @@ func TestUpdateAnalysisRecord_ELFNotAffected(t *testing.T) {
 // common.SyscallInfo entries with the expected field values from the spec.
 func TestBuildSVCSyscallEntries_CommonSyscallInfo(t *testing.T) {
 	addrs := []uint64{0x100000000}
-	entries := buildSVCInfos(addrs)
+	entries := buildTestSVCInfos(addrs)
 
 	require.Len(t, entries, 1)
 
@@ -498,6 +498,24 @@ type stubLibSystemCache struct {
 	infos []common.SyscallInfo
 	// err is returned by GetSyscallInfos when non-nil.
 	err error
+}
+
+func buildTestSVCInfos(addrs []uint64) []common.SyscallInfo {
+	if len(addrs) == 0 {
+		return nil
+	}
+	infos := make([]common.SyscallInfo, len(addrs))
+	for i, addr := range addrs {
+		infos[i] = common.SyscallInfo{
+			Number: -1,
+			Occurrences: []common.SyscallOccurrence{{
+				Location:            addr,
+				DeterminationMethod: common.DeterminationMethodDirectSVC0x80,
+				Source:              common.DeterminationMethodDirectSVC0x80,
+			}},
+		}
+	}
+	return infos
 }
 
 func (s *stubLibSystemCache) GetSyscallInfos(
@@ -588,7 +606,7 @@ func TestUpdateAnalysisRecord_LibSystemImportOnly(t *testing.T) {
 // TestUpdateAnalysisRecord_SVCAndLibSystemMerged verifies that buildMachoSyscallData
 // merges svc and libSystem entries correctly, sorted by Number.
 func TestUpdateAnalysisRecord_SVCAndLibSystemMerged(t *testing.T) {
-	svcEntries := buildSVCInfos([]uint64{0x100000000})
+	svcEntries := buildTestSVCInfos([]uint64{0x100000000})
 	libsysEntries := []common.SyscallInfo{
 		{
 			Number: 98,

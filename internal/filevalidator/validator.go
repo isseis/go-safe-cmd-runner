@@ -686,28 +686,6 @@ func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []string {
 	return entries
 }
 
-// buildSVCInfos converts a list of svc #0x80 addresses into []common.SyscallInfo.
-// Returns nil when addrs is empty.
-func buildSVCInfos(addrs []uint64) []common.SyscallInfo {
-	if len(addrs) == 0 {
-		return nil
-	}
-	syscalls := make([]common.SyscallInfo, len(addrs))
-	for i, addr := range addrs {
-		syscalls[i] = common.SyscallInfo{
-			Number: -1,
-			Occurrences: []common.SyscallOccurrence{
-				{
-					Location:            addr,
-					DeterminationMethod: common.DeterminationMethodDirectSVC0x80,
-					Source:              common.DeterminationMethodDirectSVC0x80,
-				},
-			},
-		}
-	}
-	return syscalls
-}
-
 // buildMachoSyscallData merges svc and libSystem entries and constructs
 // SyscallAnalysisData.
 // AnalysisWarnings is populated only when unresolved svc #0x80 entries exist

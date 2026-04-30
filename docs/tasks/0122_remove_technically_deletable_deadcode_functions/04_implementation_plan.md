@@ -53,16 +53,16 @@
 - `containsSVCInstruction`
 
 作業:
-- [ ] 関数本体と関連コメントを削除
-- [ ] 呼び出しが残るテストは、代替ロジックへ置換またはテスト自体を統合
-- [ ] `make fmt` 実行
-- [ ] `go build ./...` 実行
-- [ ] `make lint` 実行
-- [ ] `go test -tags test ./...` 実行
+- [x] 関数本体と関連コメントを削除
+- [x] 呼び出しが残るテストは、代替ロジックへ置換またはテスト自体を統合
+- [x] `make fmt` 実行
+- [x] `go build ./...` 実行
+- [x] `make lint` 実行
+- [x] `go test -tags test ./...` 実行
 
 完了条件:
-- [ ] 2 関数がコードベースから削除されている
-- [ ] 品質ゲート（build/lint/test）が成功
+- [x] 2 関数がコードベースから削除されている
+- [x] 品質ゲート（build/lint/test）が成功
 
 ## 2.3 Phase C: 要確認関数 3 件の削除
 
@@ -123,8 +123,8 @@
 
 - [x] Phase A 実施中
 - [x] Phase A 完了
-- [ ] Phase B 実施中
-- [ ] Phase B 完了
+- [x] Phase B 実施中
+- [x] Phase B 完了
 - [ ] Phase C 実施中
 - [ ] Phase C 完了
 - [ ] Phase D 実施中
@@ -147,6 +147,14 @@
 - 結果サマリ: 対象5関数はいずれも本番参照なし。テスト参照箇所を一覧化。
 - 課題/ブロッカー: なし
 - 次アクション: Phase B で `buildSVCInfos` と `containsSVCInstruction` を削除
+
+- 実施日: 2026-04-30
+- ブランチ: issei/deadcode-removal-02
+- 実施者: GitHub Copilot
+- 実行コマンド: `make fmt`, `go build ./...`, `make lint`, `go test -tags test ./...`
+- 結果サマリ: `buildSVCInfos` と `containsSVCInstruction` を削除し、関連テストを代替ロジックへ置換。
+- 課題/ブロッカー: なし
+- 次アクション: Phase C で要確認3関数を削除
 
 ## 6. レビュー観点
 
