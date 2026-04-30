@@ -1,0 +1,148 @@
+# 技術的に削除可能な dead code 関数の削除計画
+
+## 0. 目的
+
+先行調査で抽出された `dead code 候補` および `要確認` のうち、
+「残置予定コメントや将来計画を考慮せず、現時点で削除してもプロダクションコードの動作に影響しない関数」を削除する。
+
+本計画は次を満たすことを目的とする。
+
+1. プロダクション経路に未接続の関数を安全に削除する
+2. 削除に伴うテスト修正を最小化する
+3. 削除後の `go vet ./...`、`make lint`、`go test -tags test ./...` を成功させる
+
+## 1. 対象スコープ
+
+### 1.1 削除対象（dead code 候補）
+
+- `internal/filevalidator/validator.go`: `buildSVCInfos`
+- `internal/security/machoanalyzer/svc_scanner.go`: `containsSVCInstruction`
+
+### 1.2 削除対象（要確認のうち技術的に削除可能）
+
+- `internal/common/test_helpers.go`: `newResolvedPathForNew`
+- `internal/runner/security/network_analyzer_test_helpers.go`: `newNetworkAnalyzerWithStores`
+- `internal/runner/test_helpers_test.go`: `matchRuntimeGroupWithName`
+
+注記:
+- 上記はプロダクションコードの実行経路に接続されていないことを前提にする。
+- 要確認群はテスト補助関数であり、削除時は呼び出し側テストを直接実装へ置換する。
+
+### 1.3 非対象
+
+- 構造体フィールド、インターフェース実装の未使用判定
+- 既に削除済みのシンボル
+- 削除により新たな設計変更を伴う API 再設計
+
+## 2. 実施フェーズ
+
+## 2.1 Phase A: 事前再確認
+
+- [ ] 対象 5 関数の参照箇所を `rg --glob '*.go'` で再確認
+- [ ] 参照を「本番」「テスト」「未参照」に分類
+- [ ] 依存するテスト修正箇所を一覧化
+
+完了条件:
+- [ ] 削除対象 5 関数の最新参照マップが作成されている
+- [ ] プロダクション参照がないことを確認できる
+
+## 2.2 Phase B: dead code 候補 2 件の削除
+
+対象:
+- `buildSVCInfos`
+- `containsSVCInstruction`
+
+作業:
+- [ ] 関数本体と関連コメントを削除
+- [ ] 呼び出しが残るテストは、代替ロジックへ置換またはテスト自体を統合
+- [ ] `make fmt` 実行
+- [ ] `go build ./...` 実行
+- [ ] `make lint` 実行
+- [ ] `go test -tags test ./...` 実行
+
+完了条件:
+- [ ] 2 関数がコードベースから削除されている
+- [ ] 品質ゲート（build/lint/test）が成功
+
+## 2.3 Phase C: 要確認関数 3 件の削除
+
+対象:
+- `newResolvedPathForNew`
+- `newNetworkAnalyzerWithStores`
+- `matchRuntimeGroupWithName`
+
+作業:
+- [ ] 参照側テストを直接ロジック化（ヘルパー呼び出しをインライン化）
+- [ ] ヘルパー関数を削除
+- [ ] 付随する未使用定数/変数があれば同 PR で削除
+- [ ] `make fmt` 実行
+- [ ] `go build ./...` 実行
+- [ ] `make lint` 実行
+- [ ] `go test -tags test ./...` 実行
+
+完了条件:
+- [ ] 3 関数がコードベースから削除されている
+- [ ] テスト可読性が低下していない（同等意図を維持）
+- [ ] 品質ゲート（build/lint/test）が成功
+
+## 2.4 Phase D: 事後精査と結果更新
+
+- [ ] `go vet ./...` 実行
+- [ ] `go run honnef.co/go/tools/cmd/staticcheck@latest ./...` 実行
+- [ ] `golangci-lint run --enable=unused,unparam,ineffassign` 実行
+- [ ] `go run golang.org/x/tools/cmd/deadcode@latest ./cmd/...` 実行
+- [ ] 結果を本タスク配下に記録（残件の dead code 候補を更新）
+
+完了条件:
+- [ ] 対象 5 関数が再検出されない
+- [ ] 次の削除候補リストが更新されている
+
+## 3. コミット戦略
+
+- [ ] Commit 1: Phase B（dead code 候補 2 件）
+- [ ] Commit 2: Phase C（要確認関数 3 件）
+- [ ] Commit 3: Phase D（結果更新ドキュメント）
+
+ルール:
+- 1 フェーズ完了ごとにコミットする
+- 失敗で実施しなかった項目は `[-]` を付ける
+- コミットメッセージは英語、1 行サマリ + 箇条書き本文
+
+## 4. リスクと対策
+
+- テストロジック劣化:
+  - 対策: ヘルパー削除時にテスト意図コメントを残し、同等アサーションを維持
+- 削除漏れによる lint 失敗:
+  - 対策: `rg` と `unused` 出力を突き合わせ、関連シンボルを同時削除
+- 非意図の本番影響:
+  - 対策: `go build ./...` と `go vet ./...` を必須ゲート化
+
+## 5. 進捗管理
+
+### 5.1 ステータス
+
+- [ ] Phase A 実施中
+- [ ] Phase A 完了
+- [ ] Phase B 実施中
+- [ ] Phase B 完了
+- [ ] Phase C 実施中
+- [ ] Phase C 完了
+- [ ] Phase D 実施中
+- [ ] Phase D 完了
+
+### 5.2 実行ログ
+
+- 実施日:
+- ブランチ:
+- 実施者:
+- 実行コマンド:
+- 結果サマリ:
+- 課題/ブロッカー:
+- 次アクション:
+
+## 6. レビュー観点
+
+- 削除対象はプロダクション経路に未接続か
+- テスト修正は最小差分で、重複ロジックを増やしていないか
+- コメントは英語のみか
+- dead code 再検出結果が計画と一致しているか
