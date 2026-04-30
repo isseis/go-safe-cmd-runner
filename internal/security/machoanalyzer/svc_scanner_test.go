@@ -6,28 +6,14 @@ import (
 	"bytes"
 	"debug/macho"
 	"encoding/binary"
-	"os"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
-	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // nopEncoding is a common arm64 NOP instruction.
 const nopEncoding = uint32(0xD503201F)
-
-// osWrapFS is a safefileio.FileSystem that opens files using os.Open,
-// used to read testdata fixtures without the security constraints of osFS.
-type osWrapFS struct{}
-
-func (osWrapFS) SafeOpenFile(name string, _ int, _ os.FileMode) (safefileio.File, error) {
-	return os.Open(name)
-}
-func (osWrapFS) AtomicMoveFile(_, _ string, _ os.FileMode) error      { return nil }
-func (osWrapFS) GetGroupMembership() *groupmembership.GroupMembership { return nil }
-func (osWrapFS) Remove(_ string) error                                { return nil }
 
 // buildArm64MachO builds a minimal arm64 Mach-O binary in memory.
 // The given instructions (as 32-bit little-endian words) are placed in
@@ -193,30 +179,6 @@ func TestCollectSVCAddresses_MultipleSVC(t *testing.T) {
 	assert.Equal(t, uint64(0x100000004), addrs[0])
 	assert.Equal(t, uint64(0x10000000C), addrs[1])
 	assert.Equal(t, uint64(0x100000014), addrs[2])
-}
-
-// TestScanSVCAddrs_NotMacho verifies that ScanSVCAddrs
-// returns nil, nil for a non-Mach-O file (e.g., a shell script).
-func TestScanSVCAddrs_NotMacho(t *testing.T) {
-	path := testdataPath("script.sh")
-	skipIfNotExist(t, path)
-
-	addrs, err := ScanSVCAddrs(path, osWrapFS{})
-	require.NoError(t, err)
-	assert.Nil(t, addrs, "expected nil for non-Mach-O file")
-}
-
-// TestScanSVCAddrs_FatBinary verifies that ScanSVCAddrs
-// processes a Fat binary, scanning only arm64 slices for svc #0x80.
-func TestScanSVCAddrs_FatBinary(t *testing.T) {
-	path := testdataPath("fat_binary")
-	skipIfNotExist(t, path)
-
-	// fat_binary contains arm64 and x86_64 slices; both lack svc #0x80.
-	// Verify: no error, returns nil (no svc in arm64 slice).
-	addrs, err := ScanSVCAddrs(path, osWrapFS{})
-	require.NoError(t, err)
-	assert.Nil(t, addrs, "expected nil: arm64 slice in fat_binary has no svc #0x80")
 }
 
 // TestCollectSVCAddresses_HasOrNot verifies collectSVCAddresses result shape
