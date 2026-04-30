@@ -114,12 +114,15 @@ cmd/                    # Command-line entry points
 
 internal/              # Core implementation
 ├── ansicolor/         # Terminal color support (ANSI escape codes)
+├── arm64util/         # Shared ARM64 instruction decoding utilities
 ├── cmdcommon/         # Shared command utilities
 ├── common/            # Common utilities and filesystem abstraction
-├── dynlibanalysis/    # Dynamic library dependency analysis and verification for ELF binaries
+├── dynlib/            # Dynamic library dependency analysis
+│   ├── elfdynlib/     # ELF binary dynamic library dependency analysis
+│   └── machodylib/    # Mach-O binary dynamic library dependency analysis
 ├── fileanalysis/      # Unified file analysis records (hash, syscall, symbol, shebang)
 ├── filevalidator/     # File integrity validation
-│   └── pathencoding/ # Hybrid hash filename encoding
+│   └── pathencoding/  # Hybrid hash filename encoding
 ├── groupmembership/   # User/group membership validation
 ├── libccache/         # libc syscall wrapper symbol caching and matching
 ├── logging/           # Advanced logging with Slack integration
@@ -141,6 +144,10 @@ internal/              # Core implementation
 │   ├── security/      # Security validation framework
 │   └── variable/      # Automatic variable generation and definitions
 ├── safefileio/        # Secure file operations with symlink protection
+├── security/          # Binary security analysis framework
+│   ├── binaryanalyzer/ # Common interfaces and types for binary analysis
+│   ├── elfanalyzer/   # ELF binary network capability detection
+│   └── machoanalyzer/ # Mach-O binary network capability detection
 ├── shebang/           # Shebang line parsing and interpreter path resolution
 ├── terminal/          # Terminal capability detection
 └── verification/      # Centralized verification management
