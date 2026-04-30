@@ -236,7 +236,7 @@ These two are problems of different nature and are treated distinctly.
 - Decode failure itself → **log output only** (does not affect risk classification)
 
 Results with `unknown:*` method (SYSCALL instructions whose number is unknown) are treated
-as High Risk (§8.5 / §9.1.2).
+as High Risk.
 The decode failure count does not affect risk classification.
 
 ### 7.3 Visualization of Decode Failures
