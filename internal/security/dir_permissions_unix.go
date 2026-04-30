@@ -28,9 +28,6 @@ type DirectoryPermCheckOptions struct {
 	TestPermissiveMode bool
 	IsTrustedGroup     func(gid uint32) bool
 	CanUserSafelyWrite func(realUID int, ownerUID uint32, groupGID uint32, mode os.FileMode) (bool, error)
-	// FirstFileInfo, if non-nil, skips the initial Lstat call for the target path.
-	// The caller is responsible for ensuring it corresponds to the resolved dirPath.
-	FirstFileInfo os.FileInfo
 }
 
 // NewDirectoryPermChecker creates a standalone DirectoryPermChecker.
@@ -83,16 +80,10 @@ func ValidateDirectoryPermissionsWithOptions(dirPath string, opts DirectoryPermC
 		return err
 	}
 
-	var fileInfo os.FileInfo
-	if opts.FirstFileInfo != nil {
-		fileInfo = opts.FirstFileInfo
-	} else {
-		var err error
-		fileInfo, err = opts.Lstat(cleanPath)
-		if err != nil {
-			slog.Error("Failed to get directory info", slog.String("path", cleanPath), slog.Any("error", err))
-			return fmt.Errorf("failed to stat %s: %w", cleanPath, err)
-		}
+	fileInfo, err := opts.Lstat(cleanPath)
+	if err != nil {
+		slog.Error("Failed to get directory info", slog.String("path", cleanPath), slog.Any("error", err))
+		return fmt.Errorf("failed to stat %s: %w", cleanPath, err)
 	}
 	if !fileInfo.Mode().IsDir() {
 		err := fmt.Errorf("%w: %s is not a directory", ErrInvalidDirPermissions, dirPath)
