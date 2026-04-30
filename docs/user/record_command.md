@@ -489,13 +489,13 @@ fi
 echo "Hash update completed!"
 ```
 
-**Periodic Execution with cron**
+**Notes: Do Not Automate Hash Updates**
 
-```bash
-# crontab -e
-# Update hashes of system binaries every Sunday at 2:00 AM
-0 2 * * 0 /usr/local/sbin/update-system-hashes.sh >> /var/log/hash-update.log 2>&1
-```
+Automating hash updates via cron or similar mechanisms is **dangerous**.
+
+- The purpose of the record command is to "record the hash of the intended state and later verify that the state matches"
+- If hash updates are automated, any tampering with binaries by an attacker will be automatically incorporated into the hashes, causing the tampering to go undetected
+- Hash updates must always be performed manually, after a human has verified the contents of a package update
 
 ### 4.6 Hash Management in Test Environment
 
