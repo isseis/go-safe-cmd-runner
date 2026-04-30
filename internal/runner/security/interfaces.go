@@ -5,7 +5,6 @@ package security
 type ValidatorInterface interface {
 	ValidateAllEnvironmentVars(envVars map[string]string) error
 	ValidateEnvironmentValue(key, value string) error
-	ValidateCommand(command string) error
 	// ValidateCommandAllowed checks whether a command path is permitted for execution.
 	// It validates against global AllowedCommands patterns OR group-level cmd_allowed map.
 	// The map provides O(1) lookup performance for checking if a command is in the allowed list.

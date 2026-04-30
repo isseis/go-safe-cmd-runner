@@ -16,15 +16,6 @@ func NewPermissiveTestConfig() *Config {
 	return config
 }
 
-// NewSkipHashValidationTestConfig creates a config that skips hash validation for tests
-// This function is only available in test builds and should be used when hash validation
-// would prevent test execution
-func NewSkipHashValidationTestConfig() *Config {
-	config := DefaultConfig()
-	config.testSkipHashValidation = true
-	return config
-}
-
 func TestConfig_GetSuspiciousFilePatterns(t *testing.T) {
 	tests := []struct {
 		name                       string

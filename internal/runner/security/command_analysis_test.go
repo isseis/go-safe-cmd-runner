@@ -93,12 +93,7 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cmdPath := tc.setupFile()
 
-			// Use empty hashDir for tests since hash validation is not the main focus
-			opts := &AnalysisOptions{
-				HashDir: "",
-				Config:  NewSkipHashValidationTestConfig(),
-			}
-			risk, pattern, reason, err := AnalyzeCommandSecurity(cmdPath, tc.args, opts)
+			risk, pattern, reason, err := AnalyzeCommandSecurity(cmdPath, tc.args, "")
 
 			if tc.expectError {
 				assert.Error(t, err)
@@ -127,7 +122,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		err := os.WriteFile(normalExec, []byte("#!/bin/bash\necho test"), 0o755)
 		require.NoError(t, err)
 
-		risk, pattern, reason, err := AnalyzeCommandSecurity(normalExec, []string{}, nil)
+		risk, pattern, reason, err := AnalyzeCommandSecurity(normalExec, []string{}, "")
 		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelUnknown, risk)
 		assert.Empty(t, pattern)
@@ -149,8 +144,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, fileInfo.Mode()&os.ModeSetuid != 0, "setuid bit should be set")
 
-		// Updated to use AnalyzeCommandSecurityWithConfig
-		risk, pattern, reason, err := AnalyzeCommandSecurity(setuidExec, []string{}, nil)
+		risk, pattern, reason, err := AnalyzeCommandSecurity(setuidExec, []string{}, "")
 		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 		assert.Equal(t, setuidExec, pattern)
@@ -175,7 +169,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 			t.Skip("Skipping: OS silently ignored setgid bit (non-root on macOS)")
 		}
 
-		risk, pattern, reason, err := AnalyzeCommandSecurity(setgidExec, []string{}, nil)
+		risk, pattern, reason, err := AnalyzeCommandSecurity(setgidExec, []string{}, "")
 		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 		assert.Equal(t, setgidExec, pattern)
@@ -201,7 +195,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 			t.Skip("Skipping: OS silently ignored setgid bit (non-root on macOS)")
 		}
 
-		risk, pattern, reason, err := AnalyzeCommandSecurity(setuidSetgidExec, []string{}, nil)
+		risk, pattern, reason, err := AnalyzeCommandSecurity(setuidSetgidExec, []string{}, "")
 		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 		assert.Equal(t, setuidSetgidExec, pattern)
@@ -226,7 +220,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 
 		// The function should still detect setuid bit regardless of executable status
 		// because the security risk comes from the setuid bit itself
-		risk, pattern, reason, err := AnalyzeCommandSecurity(nonExecFile, []string{}, nil)
+		risk, pattern, reason, err := AnalyzeCommandSecurity(nonExecFile, []string{}, "")
 		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 		assert.Equal(t, nonExecFile, pattern)
@@ -254,7 +248,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 
 		// The function should not detect directories as risky even with setgid
 		// because hasSetuidOrSetgidBit only checks regular files
-		risk, pattern, reason, err := AnalyzeCommandSecurity(setgidDir, []string{}, nil)
+		risk, pattern, reason, err := AnalyzeCommandSecurity(setgidDir, []string{}, "")
 		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelUnknown, risk)
 		assert.Empty(t, pattern)
@@ -265,7 +259,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		// Test with non-existent file - should be treated as high risk due to stat error
 		nonExistentFile := filepath.Join(tmpDir, "non_existent")
 
-		risk, pattern, reason, err := AnalyzeCommandSecurity(nonExistentFile, []string{}, nil)
+		risk, pattern, reason, err := AnalyzeCommandSecurity(nonExistentFile, []string{}, "")
 		require.NoError(t, err)
 		// After the fix, stat errors are treated as high risk
 		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
@@ -275,7 +269,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 
 	t.Run("relative path should return error", func(t *testing.T) {
 		// Test with relative path - should return error
-		_, _, _, err := AnalyzeCommandSecurity("relative/path", []string{}, nil)
+		_, _, _, err := AnalyzeCommandSecurity("relative/path", []string{}, "")
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, isec.ErrInvalidPath)
 	})
@@ -283,7 +277,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 	t.Run("integration test with real setuid binary", func(t *testing.T) {
 		// Check if passwd command exists and has setuid bit (common on most Unix systems)
 		if fileInfo, err := os.Stat(passwdPath); err == nil && fileInfo.Mode()&os.ModeSetuid != 0 {
-			risk, pattern, reason, err := AnalyzeCommandSecurity(passwdPath, []string{}, nil)
+			risk, pattern, reason, err := AnalyzeCommandSecurity(passwdPath, []string{}, "")
 			require.NoError(t, err)
 			assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 			assert.Equal(t, passwdPath, pattern)
@@ -310,7 +304,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		assert.True(t, fileInfo.Mode()&os.ModeSetuid != 0, "setuid bit should be set")
 
 		// Test with arguments that would match medium risk pattern "chmod 777"
-		risk, pattern, reason, err := AnalyzeCommandSecurity(setuidExec, []string{"777"}, nil)
+		risk, pattern, reason, err := AnalyzeCommandSecurity(setuidExec, []string{"777"}, "")
 		require.NoError(t, err)
 
 		// Should be classified as high risk due to setuid bit, not medium risk due to pattern
@@ -323,7 +317,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		err = os.WriteFile(normalExec, []byte("#!/bin/bash\necho test"), 0o755)
 		require.NoError(t, err)
 
-		riskNormal, patternNormal, reasonNormal, errNormal := AnalyzeCommandSecurity(normalExec, []string{"777"}, nil)
+		riskNormal, patternNormal, reasonNormal, errNormal := AnalyzeCommandSecurity(normalExec, []string{"777"}, "")
 		require.NoError(t, errNormal)
 		assert.Equal(t, runnertypes.RiskLevelMedium, riskNormal)
 		assert.Equal(t, "chmod 777", patternNormal)
@@ -341,7 +335,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		require.NoError(t, err)
 
 		// Analyze the non-existent file - should be treated as high risk due to stat error
-		risk, pattern, reason, err := AnalyzeCommandSecurity(tempFile, []string{}, nil)
+		risk, pattern, reason, err := AnalyzeCommandSecurity(tempFile, []string{}, "")
 		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 		assert.Equal(t, tempFile, pattern)
@@ -912,46 +906,6 @@ func TestHasSetuidOrSetgidBit_Detailed(t *testing.T) {
 	})
 }
 
-func TestValidator_ValidateCommand(t *testing.T) {
-	validator, err := NewValidator(nil)
-	require.NoError(t, err)
-
-	t.Run("empty command", func(t *testing.T) {
-		err := validator.ValidateCommand("")
-		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrCommandNotAllowed)
-	})
-
-	t.Run("allowed commands", func(t *testing.T) {
-		allowedCommands := []string{
-			"/bin/echo",
-			"/bin/ls",
-			"/bin/cat",
-			"/usr/bin/grep",
-		}
-
-		for _, cmd := range allowedCommands {
-			err := validator.ValidateCommand(cmd)
-			assert.NoError(t, err, "Command %s should be allowed", cmd)
-		}
-	})
-
-	t.Run("disallowed commands", func(t *testing.T) {
-		disallowedCommands := []string{
-			"rm",
-			"sudo",
-			"../../../bin/sh",
-			"evil-command",
-		}
-
-		for _, cmd := range disallowedCommands {
-			err := validator.ValidateCommand(cmd)
-			assert.Error(t, err, "Command %s should not be allowed", cmd)
-			assert.ErrorIs(t, err, ErrCommandNotAllowed)
-		}
-	})
-}
-
 func TestMatchesPattern(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1384,8 +1338,7 @@ func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 		err := os.WriteFile(echoPath, []byte("#!/bin/bash\necho hello"), 0o755)
 		require.NoError(t, err)
 
-		// Updated to use AnalyzeCommandSecurityWithConfig
-		risk, pattern, reason, err := AnalyzeCommandSecurity(echoPath, []string{"hello"}, nil)
+		risk, pattern, reason, err := AnalyzeCommandSecurity(echoPath, []string{"hello"}, "")
 		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelUnknown, risk)
 		assert.Empty(t, pattern)
@@ -1394,8 +1347,7 @@ func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 
 	t.Run("dangerous pattern detected", func(t *testing.T) {
 		rmPath := "/bin/rm"
-		// Updated to use AnalyzeCommandSecurityWithConfig
-		risk, pattern, reason, err := AnalyzeCommandSecurity(rmPath, []string{"-rf", "/"}, nil)
+		risk, pattern, reason, err := AnalyzeCommandSecurity(rmPath, []string{"-rf", "/"}, "")
 		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 		assert.Equal(t, "rm -rf", pattern)
@@ -1418,8 +1370,7 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 		err := os.WriteFile(normalExec, []byte("#!/bin/bash\necho test"), 0o755)
 		require.NoError(t, err)
 
-		// Updated to use AnalyzeCommandSecurityWithConfig
-		risk, pattern, reason, err := AnalyzeCommandSecurity(normalExec, []string{}, nil)
+		risk, pattern, reason, err := AnalyzeCommandSecurity(normalExec, []string{}, "")
 		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelUnknown, risk)
 		assert.Empty(t, pattern)
@@ -1430,8 +1381,7 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 	t.Run("real setuid binary integration test", func(t *testing.T) {
 		// Check if passwd command exists and has setuid bit
 		if fileInfo, err := os.Stat(passwdPath); err == nil && fileInfo.Mode()&os.ModeSetuid != 0 {
-			// Updated to use AnalyzeCommandSecurityWithConfig
-			risk, pattern, reason, err := AnalyzeCommandSecurity(passwdPath, []string{}, nil)
+			risk, pattern, reason, err := AnalyzeCommandSecurity(passwdPath, []string{}, "")
 			require.NoError(t, err)
 			assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 			assert.Equal(t, passwdPath, pattern)
@@ -1443,8 +1393,7 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 
 	t.Run("non-existent executable", func(t *testing.T) {
 		// Test with non-existent file - should be treated as high risk due to stat error
-		// Updated to use AnalyzeCommandSecurityWithConfig
-		risk, pattern, reason, err := AnalyzeCommandSecurity("/non/existent/file", []string{}, nil)
+		risk, pattern, reason, err := AnalyzeCommandSecurity("/non/existent/file", []string{}, "")
 		require.NoError(t, err)
 		// After the fix, stat errors are treated as high risk
 		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
@@ -1454,8 +1403,7 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 
 	t.Run("relative path should return error", func(t *testing.T) {
 		// Test with relative path - should return error
-		// Updated to use AnalyzeCommandSecurityWithConfig
-		_, _, _, err := AnalyzeCommandSecurity("relative/path", []string{}, nil)
+		_, _, _, err := AnalyzeCommandSecurity("relative/path", []string{}, "")
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, isec.ErrInvalidPath)
 	})
@@ -1897,60 +1845,6 @@ func TestValidator_IsShellCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := validator.IsShellCommand(tt.cmdPath)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestValidator_HasShellMetacharacters(t *testing.T) {
-	validator, err := NewValidator(nil)
-	require.NoError(t, err)
-
-	tests := []struct {
-		name     string
-		args     []string
-		expected bool
-	}{
-		{
-			name:     "no metacharacters",
-			args:     []string{"hello", "world"},
-			expected: false,
-		},
-		{
-			name:     "semicolon metacharacter",
-			args:     []string{"echo hello", "; rm -rf /"},
-			expected: true,
-		},
-		{
-			name:     "pipe metacharacter",
-			args:     []string{"cat file", "| grep test"},
-			expected: true,
-		},
-		{
-			name:     "dollar sign for variable",
-			args:     []string{"echo $HOME"},
-			expected: true,
-		},
-		{
-			name:     "backtick for command substitution",
-			args:     []string{"echo `date`"},
-			expected: true,
-		},
-		{
-			name:     "redirect metacharacter",
-			args:     []string{"echo hello", "> /tmp/file"},
-			expected: true,
-		},
-		{
-			name:     "wildcard metacharacter",
-			args:     []string{"ls *.txt"},
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := validator.HasShellMetacharacters(tt.args)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -2673,10 +2567,7 @@ func TestAnalyzeCommandSecurity_StandardDirHashValidationAlwaysRuns(t *testing.T
 	// Using an empty hash directory means no hash file exists for lsPath,
 	// so validateFileHash must fail — proving that hash validation was attempted
 	// for this command regardless of which directory it lives in.
-	risk, _, reason, err := AnalyzeCommandSecurity(lsPath, []string{}, &AnalysisOptions{
-		HashDir: tmpDir,
-		Config:  DefaultConfig(),
-	})
+	risk, _, reason, err := AnalyzeCommandSecurity(lsPath, []string{}, tmpDir)
 
 	require.NoError(t, err)
 	assert.Equal(t, runnertypes.RiskLevelCritical, risk,

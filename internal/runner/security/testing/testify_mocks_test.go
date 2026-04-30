@@ -40,37 +40,19 @@ func TestMockValidator_ValidateEnvironmentValue(t *testing.T) {
 	mockValidator.AssertExpectations(t)
 }
 
-func TestMockValidator_ValidateCommand(t *testing.T) {
-	// Arrange
-	mockValidator := new(securitytesting.MockValidator)
-	expectedErr := errors.New("validation error")
-
-	mockValidator.On("ValidateCommand", "/bin/test").Return(expectedErr)
-
-	// Act
-	err := mockValidator.ValidateCommand("/bin/test")
-
-	// Assert
-	assert.Equal(t, expectedErr, err)
-	mockValidator.AssertExpectations(t)
-}
-
 func TestMockValidator_SuccessScenario(t *testing.T) {
 	// Arrange
 	mockValidator := new(securitytesting.MockValidator)
 
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
 	mockValidator.On("ValidateEnvironmentValue", mock.Anything, mock.Anything).Return(nil)
-	mockValidator.On("ValidateCommand", mock.Anything).Return(nil)
 
 	// Act
 	err1 := mockValidator.ValidateAllEnvironmentVars(map[string]string{"TEST": "value"})
 	err2 := mockValidator.ValidateEnvironmentValue("KEY", "value")
-	err3 := mockValidator.ValidateCommand("/bin/test")
 
 	// Assert
 	assert.NoError(t, err1)
 	assert.NoError(t, err2)
-	assert.NoError(t, err3)
 	mockValidator.AssertExpectations(t)
 }

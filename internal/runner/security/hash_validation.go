@@ -7,28 +7,18 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 )
 
-// validateFileHash performs file hash validation using provided validator
-func validateFileHash(cmdPath string, hashDir string, config *Config) error {
-	// Skip hash validation if testSkipHashValidation is enabled (test builds only)
-	if config != nil && config.testSkipHashValidation {
-		return nil
-	}
-
-	// Fallback to creating validator (for backward compatibility)
+// validateFileHash verifies cmdPath against a SHA256 hash stored under hashDir.
+// The caller is responsible for ensuring hashDir is non-empty before calling.
+func validateFileHash(cmdPath string, hashDir string) error {
 	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
 	if err != nil {
 		return fmt.Errorf("hash validation failed to initialize validator: %w", err)
 	}
 
-	// Perform hash validation using filevalidator
 	if err := validator.Verify(cmdPath); err != nil {
-		// Check if error is due to missing hash file (not necessarily a failure)
 		if isHashFileNotFound(err) {
-			// Hash file not found. The current security policy is to treat this as
-			// a validation failure.
 			return fmt.Errorf("%w: no hash recorded for file: %s", ErrHashValidationFailed, cmdPath)
 		}
-		// Hash validation failed
 		return fmt.Errorf("%w: %v", ErrHashValidationFailed, err)
 	}
 

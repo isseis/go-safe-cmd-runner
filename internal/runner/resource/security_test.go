@@ -227,11 +227,8 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 	ctx := context.Background()
 
 	// Test that we can directly verify the security analysis function
-	// Hash validation runs when HashDir is set; here HashDir is empty so no hash validation
-	opts := &security.AnalysisOptions{
-		HashDir: "",
-	}
-	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/tmp/*"}, opts)
+	// Hash validation runs when hashDir is set; here it is empty so no hash validation
+	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/tmp/*"}, "")
 	require.NoError(t, err)
 
 	// Verify direct security analysis works

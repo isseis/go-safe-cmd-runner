@@ -24,12 +24,6 @@ func (m *MockValidator) ValidateEnvironmentValue(key, value string) error {
 	return args.Error(0)
 }
 
-// ValidateCommand mocks the ValidateCommand method
-func (m *MockValidator) ValidateCommand(command string) error {
-	args := m.Called(command)
-	return args.Error(0)
-}
-
 // ValidateCommandAllowed mocks the ValidateCommandAllowed method
 func (m *MockValidator) ValidateCommandAllowed(cmdPath string, groupCmdAllowed map[string]struct{}) error {
 	args := m.Called(cmdPath, groupCmdAllowed)

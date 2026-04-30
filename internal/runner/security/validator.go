@@ -94,38 +94,24 @@ func WithGroupMembership(gm *groupmembership.GroupMembership) Option {
 // If config is nil, DefaultConfig() will be used.
 // Returns an error if any regex patterns in the config are invalid.
 func NewValidator(config *Config, opts ...Option) (*Validator, error) {
-	// Apply default options
 	options := &validatorOptions{
 		fs:              common.NewDefaultFileSystem(),
 		groupMembership: nil,
 	}
-
-	// Apply provided options
 	for _, opt := range opts {
 		opt(options)
 	}
 
-	return newValidatorCore(config, options.fs, options.groupMembership)
-}
-
-// newValidatorCore creates a new security validator with all options.
-// If config is nil, DefaultConfig() will be used.
-// Returns an error if any regex patterns in the config are invalid.
-func newValidatorCore(config *Config, fs common.FileSystem, groupMembership *groupmembership.GroupMembership) (*Validator, error) {
 	if config == nil {
 		config = DefaultConfig()
 	}
 
-	// Initialize common redaction functionality
-	sensitivePatterns := redaction.DefaultSensitivePatterns()
-	redactionConfig := redaction.DefaultConfig()
-
 	v := &Validator{
 		config:            config,
-		fs:                fs,
-		groupMembership:   groupMembership,
-		sensitivePatterns: sensitivePatterns,
-		redactionConfig:   redactionConfig,
+		fs:                options.fs,
+		groupMembership:   options.groupMembership,
+		sensitivePatterns: redaction.DefaultSensitivePatterns(),
+		redactionConfig:   redaction.DefaultConfig(),
 		trustedGIDs:       make(map[uint32]struct{}, len(config.TrustedGIDs)),
 	}
 
@@ -133,7 +119,6 @@ func newValidatorCore(config *Config, fs common.FileSystem, groupMembership *gro
 		v.trustedGIDs[gid] = struct{}{}
 	}
 
-	// Compile allowed command patterns
 	v.allowedCommandRegexps = make([]*regexp.Regexp, len(config.AllowedCommands))
 	for i, pattern := range config.AllowedCommands {
 		re, err := regexp.Compile(pattern)
@@ -143,7 +128,6 @@ func newValidatorCore(config *Config, fs common.FileSystem, groupMembership *gro
 		v.allowedCommandRegexps[i] = re
 	}
 
-	// Compile sensitive environment variable patterns
 	v.sensitiveEnvRegexps = make([]*regexp.Regexp, len(config.SensitiveEnvVars))
 	for i, pattern := range config.SensitiveEnvVars {
 		re, err := regexp.Compile(pattern)
@@ -153,19 +137,16 @@ func newValidatorCore(config *Config, fs common.FileSystem, groupMembership *gro
 		v.sensitiveEnvRegexps[i] = re
 	}
 
-	// Initialize dangerous commands map
 	v.dangerousPrivilegedCommands = make(map[string]struct{})
 	for _, cmd := range config.DangerousPrivilegedCommands {
 		v.dangerousPrivilegedCommands[cmd] = struct{}{}
 	}
 
-	// Initialize shell commands map
 	v.shellCommands = make(map[string]struct{})
 	for _, cmd := range config.ShellCommands {
 		v.shellCommands[cmd] = struct{}{}
 	}
 
-	// Validate DangerousRootPatterns to ensure exact matching
 	if err := validateDangerousRootPatterns(config.DangerousRootPatterns); err != nil {
 		return nil, err
 	}
