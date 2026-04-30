@@ -705,7 +705,7 @@ func TestIsNetworkOperation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			analyzer := NewNetworkAnalyzer(runtime.GOOS)
+			analyzer := newNetworkAnalyzer(runtime.GOOS)
 			isNet, isRisk := analyzer.IsNetworkOperation(tt.cmdName, tt.args, "")
 			assert.Equal(t, tt.expectedNet, isNet, "IsNetworkOperation(%s, %v) network detection. %s",
 				tt.cmdName, tt.args, tt.description)
@@ -1750,7 +1750,7 @@ func TestIsNetworkOperation_FromEvaluatorTests(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			analyzer := NewNetworkAnalyzer(runtime.GOOS)
+			analyzer := newNetworkAnalyzer(runtime.GOOS)
 			result, _ := analyzer.IsNetworkOperation(tt.cmd, tt.args, "")
 			assert.Equal(t, tt.expected, result, "IsNetworkOperation(%q, %v)", tt.cmd, tt.args)
 		})
@@ -2311,7 +2311,7 @@ func TestIsNetworkOperation_Analysis(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			analyzer := NewNetworkAnalyzer(runtime.GOOS)
+			analyzer := newNetworkAnalyzer(runtime.GOOS)
 			isNetwork, _ := analyzer.IsNetworkOperation(tc.cmdName, tc.args, "sha256:dummy")
 			assert.Equal(t, tc.expectNetwork, isNetwork, "isNetwork mismatch")
 		})
@@ -2364,12 +2364,7 @@ func TestFormatDetectedSymbols(t *testing.T) {
 // TestNewNetworkAnalyzer tests the creation of NetworkAnalyzer.
 func TestNewNetworkAnalyzer(t *testing.T) {
 	t.Run("creates analyzer with default binaryAnalyzer", func(t *testing.T) {
-		analyzer := NewNetworkAnalyzer(runtime.GOOS)
-		assert.NotNil(t, analyzer)
-	})
-
-	t.Run("with nil store → binary analysis skipped", func(t *testing.T) {
-		analyzer := newNetworkAnalyzer(nil)
+		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, nil)
 		assert.NotNil(t, analyzer)
 
 		// With nil store, binary analysis is skipped and returns false, false.
@@ -2412,7 +2407,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 				DetectedSymbols: []string{"socket"},
 			},
 		}
-		analyzer := newNetworkAnalyzer(store)
+		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.True(t, isNet, "expected network detected from cache")
 		assert.False(t, isHigh, "expected not high risk (no dlopen)")
@@ -2425,7 +2420,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 				DynamicLoadSymbols: nil,
 			},
 		}
-		analyzer := newNetworkAnalyzer(store)
+		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.False(t, isNet, "expected no network from cache")
 		assert.False(t, isHigh, "expected not high risk")
@@ -2437,7 +2432,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 				DynamicLoadSymbols: []string{"dlopen"},
 			},
 		}
-		analyzer := newNetworkAnalyzer(store)
+		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.False(t, isNet, "expected no network (DetectedSymbols=nil)")
 		assert.True(t, isHigh, "expected high risk from dlopen in cache")
@@ -2445,7 +2440,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 
 	t.Run("nil (no syscallStore) → false, false (static binary)", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{data: nil}
-		analyzer := newNetworkAnalyzer(store)
+		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.False(t, isNet, "static binary with no svc should return false")
 		assert.False(t, isHigh, "static binary with no svc should return false")
@@ -2454,14 +2449,14 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 	t.Run("SchemaVersionMismatchError → high risk", func(t *testing.T) {
 		schemaErr := &fileanalysis.SchemaVersionMismatchError{Expected: fileanalysis.CurrentSchemaVersion, Actual: fileanalysis.CurrentSchemaVersion - 1}
 		store := &stubNetworkSymbolStore{err: schemaErr}
-		analyzer := newNetworkAnalyzer(store)
+		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.True(t, isNet, "schema mismatch must return isNetwork=true as safety measure")
 		assert.True(t, isHigh, "schema mismatch must return high risk")
 	})
 
 	t.Run("nil store → false, false", func(t *testing.T) {
-		analyzer := newNetworkAnalyzer(nil)
+		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, nil)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.False(t, isNet, "nil store must return false (no live binary analysis)")
 		assert.False(t, isHigh, "nil store must return false (no live binary analysis)")
@@ -2470,7 +2465,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 	t.Run("empty contentHash → cache skipped", func(t *testing.T) {
 		storeCalled := false
 		store := &callTrackingStore{called: &storeCalled, err: fileanalysis.ErrHashMismatch}
-		analyzer := newNetworkAnalyzer(store)
+		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, "")
 		assert.False(t, storeCalled, "store must not be called when contentHash is empty")
 		assert.False(t, isNet, "expected no network result when contentHash is empty")
@@ -2484,7 +2479,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 				KnownNetworkLibDeps: []string{"libcurl.so.4"},
 			},
 		}
-		analyzer := newNetworkAnalyzer(store)
+		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.True(t, isNet, "expected network detected from KnownNetworkLibDeps in cache")
 		assert.False(t, isHigh, "expected not high risk")
@@ -2497,7 +2492,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 				KnownNetworkLibDeps: nil,
 			},
 		}
-		analyzer := newNetworkAnalyzer(store)
+		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.False(t, isNet, "expected no network when both DetectedSymbols and KnownNetworkLibDeps are empty")
 		assert.False(t, isHigh, "expected not high risk")
@@ -2538,7 +2533,7 @@ func TestNetworkSymbolCache_RecordToRunner(t *testing.T) {
 	// Create a NetworkSymbolStore backed by the real Store.
 	symStore := fileanalysis.NewNetworkSymbolStore(store)
 
-	analyzer := newNetworkAnalyzer(symStore)
+	analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, symStore)
 
 	isNet, _ := analyzer.isNetworkViaBinaryAnalysis(cmdPath, fakeHash)
 

@@ -19,10 +19,10 @@ func TestSyscallAnalysisHasSVCSignal_Nil(t *testing.T) {
 
 func TestConstructors_PanicOnEmptyGOOS(t *testing.T) {
 	assert.Panics(t, func() {
-		_ = NewNetworkAnalyzer("")
+		_ = newNetworkAnalyzer("")
 	})
 	assert.Panics(t, func() {
-		_ = NewNetworkAnalyzerWithStore("", nil)
+		_ = newNetworkAnalyzerWithStore("", nil)
 	})
 	assert.Panics(t, func() {
 		_ = NewNetworkAnalyzerWithStores("", nil, nil)
@@ -31,10 +31,10 @@ func TestConstructors_PanicOnEmptyGOOS(t *testing.T) {
 
 func TestConstructors_AcceptCurrentGOOS(t *testing.T) {
 	assert.NotPanics(t, func() {
-		_ = NewNetworkAnalyzer(runtime.GOOS)
+		_ = newNetworkAnalyzer(runtime.GOOS)
 	})
 	assert.NotPanics(t, func() {
-		_ = NewNetworkAnalyzerWithStore(runtime.GOOS, nil)
+		_ = newNetworkAnalyzerWithStore(runtime.GOOS, nil)
 	})
 	assert.NotPanics(t, func() {
 		_ = NewNetworkAnalyzerWithStores(runtime.GOOS, nil, nil)
