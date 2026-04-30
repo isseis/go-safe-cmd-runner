@@ -23,20 +23,6 @@ func WithFileValidatorDisabled() TestOption {
 	}
 }
 
-// WithFileValidatorEnabled enables file validation for testing
-func WithFileValidatorEnabled() TestOption {
-	return func(opts *managerInternalOptions) {
-		opts.fileValidatorEnabled = true
-	}
-}
-
-// WithTestingSecurityLevel sets the security level to relaxed for testing
-func WithTestingSecurityLevel() TestOption {
-	return func(opts *managerInternalOptions) {
-		opts.securityLevel = SecurityLevelRelaxed
-	}
-}
-
 // WithSkipHashDirectoryValidation skips hash directory validation for testing
 func WithSkipHashDirectoryValidation() TestOption {
 	return func(opts *managerInternalOptions) {

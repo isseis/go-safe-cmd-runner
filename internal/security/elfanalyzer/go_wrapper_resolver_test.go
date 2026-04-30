@@ -182,7 +182,7 @@ func TestX86GoWrapperResolver_ResolveSyscallArgument_ControlFlowBoundary(t *test
 	// Scanning backward from call: jmp is hit first, which is a control flow boundary
 	recentInstructions := []DecodedInstruction{movInst, jmpInst, callInst}
 
-	syscallNum, method := resolver.resolveSyscallArgument(recentInstructions)
+	syscallNum, method := resolver.resolveSyscallArgument(recentInstructions, resolver.decoder)
 	assert.Equal(t, -1, syscallNum) // Should not find syscall number due to control flow boundary
 	assert.Equal(t, DeterminationMethodUnknownControlFlowBoundary, method)
 }
@@ -201,7 +201,7 @@ func TestX86GoWrapperResolver_ResolveSyscallArgument_RAX(t *testing.T) {
 
 	recentInstructions := []DecodedInstruction{movInst, callInst}
 
-	syscallNum, method := resolver.resolveSyscallArgument(recentInstructions)
+	syscallNum, method := resolver.resolveSyscallArgument(recentInstructions, resolver.decoder)
 	assert.Equal(t, 41, syscallNum) // socket syscall
 	assert.Equal(t, DeterminationMethodGoWrapper, method)
 }
@@ -220,7 +220,7 @@ func TestX86GoWrapperResolver_ResolveSyscallArgument_EAX(t *testing.T) {
 
 	recentInstructions := []DecodedInstruction{movInst, callInst}
 
-	syscallNum, method := resolver.resolveSyscallArgument(recentInstructions)
+	syscallNum, method := resolver.resolveSyscallArgument(recentInstructions, resolver.decoder)
 	assert.Equal(t, 41, syscallNum) // socket syscall
 	assert.Equal(t, DeterminationMethodGoWrapper, method)
 }
@@ -271,7 +271,7 @@ func TestX86GoWrapperResolver_ResolveSyscallArgument_OutOfRange(t *testing.T) {
 
 			recentInstructions := []DecodedInstruction{movInst, callInst}
 
-			syscallNum, method := resolver.resolveSyscallArgument(recentInstructions)
+			syscallNum, method := resolver.resolveSyscallArgument(recentInstructions, resolver.decoder)
 			assert.Equal(t, tt.expected, syscallNum, tt.reason)
 			assert.Equal(t, tt.expectedMethod, method, tt.reason)
 		})
