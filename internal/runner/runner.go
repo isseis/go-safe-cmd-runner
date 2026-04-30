@@ -132,13 +132,6 @@ func WithRuntimeGlobal(runtimeGlobal *runnertypes.RuntimeGlobal) Option {
 	}
 }
 
-// WithGroupMembershipProvider sets the group membership provider.
-func WithGroupMembershipProvider(provider *groupmembership.GroupMembership) Option {
-	return func(opts *runnerOptions) {
-		opts.groupMembershipProvider = provider
-	}
-}
-
 // WithTOCTOUValidator enables per-group TOCTOU directory permission checks.
 // When set, each group execution runs a TOCTOU check after variable expansion
 // so that paths containing %{GROUP_VAR} references are checked with their

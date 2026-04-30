@@ -205,26 +205,6 @@ func NewRuntimeGroup(spec *GroupSpec) (*RuntimeGroup, error) {
 	}, nil
 }
 
-// Convenience methods for RuntimeGroup
-
-// Name returns the group name from the spec.
-// Panics if r or r.Spec is nil (programming error - use NewRuntimeGroup).
-func (r *RuntimeGroup) Name() string {
-	if r == nil || r.Spec == nil {
-		panic("RuntimeGroup.Name: nil receiver or Spec (programming error - use NewRuntimeGroup)")
-	}
-	return r.Spec.Name
-}
-
-// WorkDir returns the group working directory from the spec (not yet expanded).
-// Panics if r or r.Spec is nil (programming error - use NewRuntimeGroup).
-func (r *RuntimeGroup) WorkDir() string {
-	if r == nil || r.Spec == nil {
-		panic("RuntimeGroup.WorkDir: nil receiver or Spec (programming error - use NewRuntimeGroup)")
-	}
-	return r.Spec.WorkDir
-}
-
 // ExtractGroupName extracts the group name from a RuntimeGroup.
 // Panics if runtimeGroup or runtimeGroup.Spec is nil (programming error).
 // All commands must belong to a group per TOML specification.

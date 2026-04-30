@@ -16,18 +16,6 @@ const (
 	CreationModeTesting
 )
 
-// String returns a string representation of CreationMode
-func (c CreationMode) String() string {
-	switch c {
-	case CreationModeProduction:
-		return "production"
-	case CreationModeTesting:
-		return "testing"
-	default:
-		return "unknown"
-	}
-}
-
 // SecurityLevel represents the security enforcement level
 type SecurityLevel int
 
@@ -37,18 +25,6 @@ const (
 	// SecurityLevelRelaxed allows some flexibility for testing
 	SecurityLevelRelaxed
 )
-
-// String returns a string representation of SecurityLevel
-func (s SecurityLevel) String() string {
-	switch s {
-	case SecurityLevelStrict:
-		return "strict"
-	case SecurityLevelRelaxed:
-		return "relaxed"
-	default:
-		return "unknown"
-	}
-}
 
 // managerInternalOptions holds all configuration options for creating a Manager internally
 type managerInternalOptions struct {

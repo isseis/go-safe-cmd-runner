@@ -359,11 +359,6 @@ const (
 	ComponentLogging Component = "logging"
 )
 
-// String returns the string representation of Component
-func (c Component) String() string {
-	return string(c)
-}
-
 // DryRunWarning represents a warning that occurred during dry-run
 type DryRunWarning struct {
 	Type      WarningType `json:"type"`

@@ -1222,19 +1222,6 @@ func TestSecurityIntegration(t *testing.T) {
 	})
 }
 
-// TestTypeEnumMethods tests the String methods for enums
-func TestTypeEnumMethods(t *testing.T) {
-	t.Run("creation_mode_string", func(t *testing.T) {
-		assert.Equal(t, "production", CreationModeProduction.String())
-		assert.Equal(t, "testing", CreationModeTesting.String())
-	})
-
-	t.Run("security_level_string", func(t *testing.T) {
-		assert.Equal(t, "strict", SecurityLevelStrict.String())
-		assert.Equal(t, "relaxed", SecurityLevelRelaxed.String())
-	})
-}
-
 // TestVerifyGlobalFiles_DryRun_MultipleFailures tests global file verification in dry-run mode
 // when hash files do not exist for any files (both files will fail verification)
 func TestVerifyGlobalFiles_DryRun_MultipleFailures(t *testing.T) {

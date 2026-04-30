@@ -85,19 +85,19 @@
 - `WithGroupMembershipProvider()`
 
 作業:
-- [ ] 各シンボルの参照箇所を `rg --glob '*.go'` で最終確認
-- [ ] `RuntimeGroup.Name()` / `WorkDir()`: テスト側を `r.Spec.Name` / `r.Spec.WorkDir` に置換してからメソッド削除
-- [ ] `WithGroupMembershipProvider()`: `runner_test.go:93` をインライン化（Option 関数リテラルを直接渡す）してから関数削除
-- [ ] 残り 5 件（`Component.String`、`KnownNetworkLibraryCount`、`CreationMode.String`、`SecurityLevel.String`）: 関数削除、関連テストも削除
-- [ ] `make fmt` 実行
-- [ ] `go build ./...` 実行
-- [ ] `make lint` 実行
-- [ ] `go test -tags test ./...` 実行
+- [x] 各シンボルの参照箇所を `rg --glob '*.go'` で最終確認
+- [x] `RuntimeGroup.Name()` / `WorkDir()`: テスト側を `r.Spec.Name` / `r.Spec.WorkDir` に置換してからメソッド削除
+- [x] `WithGroupMembershipProvider()`: `runner_test.go:93` をインライン化（Option 関数リテラルを直接渡す）してから関数削除
+- [x] 残り 5 件（`Component.String`、`KnownNetworkLibraryCount`、`CreationMode.String`、`SecurityLevel.String`）: 関数削除、関連テストも削除
+- [x] `make fmt` 実行
+- [x] `go build ./...` 実行
+- [x] `make lint` 実行
+- [x] `go test -tags test ./...` 実行
 
 完了条件:
-- [ ] 8 シンボルがコードベースから削除されている
-- [ ] テスト修正は最小差分（重複ロジック追加なし）
-- [ ] 品質ゲート（build/lint/test）が成功
+- [x] 8 シンボルがコードベースから削除されている
+- [x] テスト修正は最小差分（重複ロジック追加なし）
+- [x] 品質ゲート（build/lint/test）が成功
 
 ### 2.3 Phase B: 追加調査と削除判断
 
@@ -136,7 +136,7 @@
 
 ## 3. コミット戦略
 
-- [ ] Commit 1: Phase A-1（エラー型 5 件）
+- [x] Commit 1: Phase A-1（エラー型 5 件）
 - [ ] Commit 2: Phase A-2（便利メソッド・関数 8 件）
 - [ ] Commit 3: Phase B（追加調査結果。削除した場合はコード変更を含む）
 - [ ] Commit 4: Phase C（結果更新ドキュメント）
@@ -164,7 +164,7 @@
 - [ ] Phase A-1 実施中
 - [x] Phase A-1 完了
 - [ ] Phase A-2 実施中
-- [ ] Phase A-2 完了
+- [x] Phase A-2 完了
 - [ ] Phase B 実施中
 - [ ] Phase B 完了
 - [ ] Phase C 実施中

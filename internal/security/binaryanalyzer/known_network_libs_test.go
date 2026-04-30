@@ -173,12 +173,3 @@ func TestMatchesKnownPrefix(t *testing.T) {
 		})
 	}
 }
-
-// TestKnownNetworkLibraryCount verifies the count function returns a reasonable value.
-func TestKnownNetworkLibraryCount(t *testing.T) {
-	count := KnownNetworkLibraryCount()
-	assert.Greater(t, count, 0, "KnownNetworkLibraryCount should be > 0")
-	// We expect at least 20 entries (network libs + language runtimes)
-	assert.GreaterOrEqual(t, count, 20,
-		"KnownNetworkLibraryCount should include both network libs and language runtimes")
-}
