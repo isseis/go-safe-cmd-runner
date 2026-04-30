@@ -129,19 +129,6 @@ func (e *ErrTemplateTypeMismatch) Error() string {
 		e.TemplateName, e.Field, e.ParamName, e.Expected, e.Actual)
 }
 
-// ErrForbiddenPatternInTemplate is returned when a template definition contains
-// a forbidden variable reference pattern (%{var}) - enforces NF-006.
-type ErrForbiddenPatternInTemplate struct {
-	TemplateName string
-	Field        string
-	Value        string
-}
-
-func (e *ErrForbiddenPatternInTemplate) Error() string {
-	return fmt.Sprintf("template %q contains forbidden pattern \"%%{\" in %s: variable references are not allowed in template definitions for security reasons (see NF-006)",
-		e.TemplateName, e.Field)
-}
-
 // ErrPlaceholderInEnvKey is returned when a placeholder is used in an env key.
 type ErrPlaceholderInEnvKey struct {
 	TemplateName string
@@ -208,18 +195,6 @@ type ErrUnsupportedParamType struct {
 func (e *ErrUnsupportedParamType) Error() string {
 	return fmt.Sprintf("template %q %s: parameter %q has unsupported type %s (expected string or []string)",
 		e.TemplateName, e.Field, e.ParamName, e.ActualType)
-}
-
-// ErrInvalidParamName is returned when a parameter name is invalid.
-type ErrInvalidParamName struct {
-	TemplateName string
-	ParamName    string
-	Reason       string
-}
-
-func (e *ErrInvalidParamName) Error() string {
-	return fmt.Sprintf("template %q: invalid parameter name %q: %s",
-		e.TemplateName, e.ParamName, e.Reason)
 }
 
 // ErrEmptyPlaceholderName is returned when a placeholder has an empty name.

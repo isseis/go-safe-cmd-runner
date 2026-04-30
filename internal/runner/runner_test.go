@@ -90,7 +90,9 @@ func TestNewRunner(t *testing.T) {
 		runner, err := NewRunner(config,
 			WithVerificationManager(setupDryRunVerification(t)),
 			WithRunID("test-run-123"),
-			WithGroupMembershipProvider(customProvider))
+			func(opts *runnerOptions) {
+				opts.groupMembershipProvider = customProvider
+			})
 		require.NoError(t, err, "NewRunner should not return an error with custom group membership provider")
 		assert.NotNil(t, runner)
 		assert.NotNil(t, runner.validator)

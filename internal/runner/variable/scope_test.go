@@ -352,22 +352,6 @@ func TestErrorMessages(t *testing.T) {
 		assert.Contains(t, msg, "uppercase")
 		assert.Contains(t, msg, "lowercase")
 	})
-
-	t.Run("ErrUndefinedGlobalVariable", func(t *testing.T) {
-		err := &ErrUndefinedGlobalVariable{Name: "AwsPath"}
-		msg := err.Error()
-		assert.Contains(t, msg, "AwsPath")
-		assert.Contains(t, msg, "undefined")
-		assert.Contains(t, msg, "global")
-	})
-
-	t.Run("ErrUndefinedLocalVariable", func(t *testing.T) {
-		err := &ErrUndefinedLocalVariable{Name: "dataDir"}
-		msg := err.Error()
-		assert.Contains(t, msg, "dataDir")
-		assert.Contains(t, msg, "undefined")
-		assert.Contains(t, msg, "local")
-	})
 }
 
 func TestScopeString(t *testing.T) {

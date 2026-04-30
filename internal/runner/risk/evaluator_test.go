@@ -10,14 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewStandardEvaluator(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil)
+func TestNewStandardEvaluatorWithStores(t *testing.T) {
+	evaluator := NewStandardEvaluatorWithStores(nil, nil)
 	require.NotNil(t, evaluator)
 	assert.IsType(t, &StandardEvaluator{}, evaluator)
 }
 
 func TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil)
+	evaluator := NewStandardEvaluatorWithStores(nil, nil)
 
 	tests := []struct {
 		name     string
@@ -59,7 +59,7 @@ func TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation(t *testing.T) {
 }
 
 func TestStandardEvaluator_EvaluateRisk_DestructiveFileOperations(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil)
+	evaluator := NewStandardEvaluatorWithStores(nil, nil)
 
 	tests := []struct {
 		name     string
@@ -101,7 +101,7 @@ func TestStandardEvaluator_EvaluateRisk_DestructiveFileOperations(t *testing.T) 
 }
 
 func TestStandardEvaluator_EvaluateRisk_NetworkOperations(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil)
+	evaluator := NewStandardEvaluatorWithStores(nil, nil)
 
 	tests := []struct {
 		name     string
@@ -143,7 +143,7 @@ func TestStandardEvaluator_EvaluateRisk_NetworkOperations(t *testing.T) {
 }
 
 func TestStandardEvaluator_EvaluateRisk_SystemModifications(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil)
+	evaluator := NewStandardEvaluatorWithStores(nil, nil)
 
 	tests := []struct {
 		name     string
@@ -185,7 +185,7 @@ func TestStandardEvaluator_EvaluateRisk_SystemModifications(t *testing.T) {
 }
 
 func TestStandardEvaluator_EvaluateRisk_SafeCommands(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil)
+	evaluator := NewStandardEvaluatorWithStores(nil, nil)
 
 	tests := []struct {
 		name     string
@@ -233,7 +233,7 @@ func TestStandardEvaluator_EvaluateRisk_SafeCommands(t *testing.T) {
 }
 
 func TestStandardEvaluator_EvaluateRisk_EmptyCommand(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil)
+	evaluator := NewStandardEvaluatorWithStores(nil, nil)
 
 	runtimeCmd := &runnertypes.RuntimeCommand{
 		ExpandedCmd:  "",
@@ -245,7 +245,7 @@ func TestStandardEvaluator_EvaluateRisk_EmptyCommand(t *testing.T) {
 }
 
 func TestStandardEvaluator_EvaluateRisk_RiskLevelHierarchy(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil)
+	evaluator := NewStandardEvaluatorWithStores(nil, nil)
 
 	tests := []struct {
 		name        string

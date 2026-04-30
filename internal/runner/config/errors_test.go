@@ -124,17 +124,6 @@ func TestErrInvalidEnvImportFormatDetail_Unwrap(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidEnvImportFormat)
 }
 
-// TestErrInvalidVarsFormatDetail_Unwrap tests the Unwrap() method
-func TestErrInvalidVarsFormatDetail_Unwrap(t *testing.T) {
-	err := &ErrInvalidVarsFormatDetail{
-		Level:   "command",
-		Mapping: "test",
-		Reason:  "reason",
-	}
-
-	assert.ErrorIs(t, err, ErrInvalidVarsFormat)
-}
-
 // TestErrInvalidEnvFormatDetail_Unwrap tests the Unwrap() method
 func TestErrInvalidEnvFormatDetail_Unwrap(t *testing.T) {
 	err := &ErrInvalidEnvFormatDetail{

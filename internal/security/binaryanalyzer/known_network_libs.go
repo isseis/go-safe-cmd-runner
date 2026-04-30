@@ -100,8 +100,3 @@ func IsKnownNetworkLibrary(soname string) bool {
 	}
 	return false
 }
-
-// KnownNetworkLibraryCount returns the number of registered library prefixes (for tests and documentation).
-func KnownNetworkLibraryCount() int {
-	return len(knownNetworkLibPrefixes)
-}
