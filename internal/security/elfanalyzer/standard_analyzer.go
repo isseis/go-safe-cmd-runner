@@ -67,18 +67,6 @@ func NewStandardELFAnalyzer(fs safefileio.FileSystem) *StandardELFAnalyzer {
 	}
 }
 
-// NewStandardELFAnalyzerWithSymbols creates an analyzer with custom network symbols.
-// This is primarily for testing purposes.
-func NewStandardELFAnalyzerWithSymbols(fs safefileio.FileSystem, symbols map[string]binaryanalyzer.SymbolCategory) *StandardELFAnalyzer {
-	if fs == nil {
-		fs = safefileio.NewFileSystem(safefileio.FileSystemConfig{})
-	}
-	return &StandardELFAnalyzer{
-		fs:             fs,
-		networkSymbols: symbols,
-	}
-}
-
 // NewStandardELFAnalyzerWithSyscallStore creates an analyzer with syscall analysis store support.
 // Uses dependency injection for SyscallAnalysisStore to avoid circular dependencies.
 //

@@ -60,23 +60,23 @@ Phase 1 と混ぜず、小さい PR とする。
 
 ### 3.2 候補抽出
 
-- [ ] 前回一覧から `dead code 候補` を再確認
-- [ ] `//go:build test` / `//go:build test || performance` ファイル経由参照を識別
-- [ ] 削除対象を「test helper API 群」に限定して確定
+- [x] 前回一覧から `dead code 候補` を再確認
+- [x] `//go:build test` / `//go:build test || performance` ファイル経由参照を識別
+- [x] 削除対象を「test helper API 群」に限定して確定（`NewSafeFileManagerWithFS`, `NewStandardELFAnalyzerWithSymbols`）
 
 ### 3.3 実施手順
 
-- [ ] 参照されるテストコードを先に削除または置換
-- [ ] helper API 本体を削除
-- [ ] `make fmt` 実行
-- [ ] `go build ./...` 実行
-- [ ] `make test` 実行
+- [x] 参照されるテストコードを先に削除または置換
+- [x] helper API 本体を削除
+- [x] `make fmt` 実行
+- [x] `go build ./...` 実行
+- [x] `go test -tags test ./...` 実行
 
 ### 3.4 完了条件
 
-- [ ] 本番パスに影響する API 変更が混入していない
-- [ ] PR 単体でレビュー可能なサイズ（目安: 300 行前後）
-- [ ] 削除対象の根拠（参照経路）が PR 内で説明されている
+- [x] 本番パスに影響する API 変更が混入していない
+- [x] PR 単体でレビュー可能なサイズ（目安: 300 行前後）
+- [x] 削除対象の根拠（参照経路）が PR 内で説明されている
 
 ## 4. Phase 3: go vet 問題修正 + 2回目精査
 
@@ -118,8 +118,8 @@ Phase 1 と混ぜず、小さい PR とする。
 - [x] Phase 1 実施中
 - [x] Phase 1 完了
 - [x] Phase 2 実施中
-- [ ] Phase 2 完了
-- [ ] Phase 3 実施中
+- [x] Phase 2 完了
+- [x] Phase 3 実施中
 - [ ] Phase 3 完了
 
 ### 5.2 実行ログ（追記用）
@@ -139,6 +139,14 @@ Phase 1 と混ぜず、小さい PR とする。
 - 結果サマリ: 対象5件を削除。lint/test/build すべて成功。
 - 課題/ブロッカー: なし
 - 次アクション: Phase 2 の候補抽出（3.2）を実施する
+
+- 実施日: 2026-04-30
+- ブランチ: issei/deadcode-removal-01
+- 実施者: GitHub Copilot
+- 実行コマンド: `rg`（候補再抽出）, `make fmt`, `go build ./...`, `make lint`, `go test -tags test ./...`
+- 結果サマリ: test helper API 2件（`NewSafeFileManagerWithFS`, `NewStandardELFAnalyzerWithSymbols`）を削除し、関連テストを置換。lint/test/build すべて成功。
+- 課題/ブロッカー: なし
+- 次アクション: Phase 3 の `go vet ./...` 失敗一覧を再取得して分類する
 
 ## 6. レビュー観点
 

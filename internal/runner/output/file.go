@@ -30,15 +30,6 @@ func NewSafeFileManager() *SafeFileManager {
 	}
 }
 
-// NewSafeFileManagerWithFS creates a new SafeFileManager with custom FileSystem implementations
-// This constructor is useful for testing with mock implementations
-func NewSafeFileManagerWithFS(safeFS safefileio.FileSystem, commonFS common.FileSystem) *SafeFileManager {
-	return &SafeFileManager{
-		safeFS:   safeFS,
-		commonFS: commonFS,
-	}
-}
-
 // CreateTempFile creates a temporary file for output capture with secure permissions (0600)
 func (f *SafeFileManager) CreateTempFile(dir string, pattern string) (*os.File, error) {
 	// Use commonFS.CreateTemp for consistent file system operations and testability

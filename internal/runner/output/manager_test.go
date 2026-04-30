@@ -448,7 +448,7 @@ func TestDefaultOutputCaptureManager_CleanupOutput(t *testing.T) {
 
 	// Create manager with mocks
 	manager := &DefaultOutputCaptureManager{
-		fileManager: NewSafeFileManagerWithFS(mockSafeFS, mockCommonFS),
+		fileManager: &SafeFileManager{safeFS: mockSafeFS, commonFS: mockCommonFS},
 	}
 
 	// Create a dummy file handle that can be closed

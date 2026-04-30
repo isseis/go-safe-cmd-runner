@@ -584,7 +584,7 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 			}
 
 			// Create SafeFileManager with mocks
-			manager := NewSafeFileManagerWithFS(mockSafeFS, mockCommonFS)
+			manager := &SafeFileManager{safeFS: mockSafeFS, commonFS: mockCommonFS}
 
 			// Execute
 			err := manager.MoveToFinal(tt.tempPath, tt.finalPath, tt.perm)
@@ -663,7 +663,7 @@ func TestSafeFileManager_EnsureDirectory_WithMock(t *testing.T) {
 			mockSafeFS := safefileiotesting.NewMockFileSystem()
 
 			// Create SafeFileManager with mocks
-			manager := NewSafeFileManagerWithFS(mockSafeFS, mockCommonFS)
+			manager := &SafeFileManager{safeFS: mockSafeFS, commonFS: mockCommonFS}
 
 			// Execute
 			err := manager.EnsureDirectory(tt.path)
@@ -728,7 +728,7 @@ func TestSafeFileManager_RemoveTemp_WithMock(t *testing.T) {
 			mockSafeFS := safefileiotesting.NewMockFileSystem()
 
 			// Create SafeFileManager with mocks
-			manager := NewSafeFileManagerWithFS(mockSafeFS, mockCommonFS)
+			manager := &SafeFileManager{safeFS: mockSafeFS, commonFS: mockCommonFS}
 
 			// Execute
 			err := manager.RemoveTemp(tt.path)
@@ -787,7 +787,7 @@ func TestSafeFileManager_CreateTempFile_WithMock(t *testing.T) {
 			mockSafeFS := safefileiotesting.NewMockFileSystem()
 
 			// Create SafeFileManager with mocks
-			manager := NewSafeFileManagerWithFS(mockSafeFS, mockCommonFS)
+			manager := &SafeFileManager{safeFS: mockSafeFS, commonFS: mockCommonFS}
 
 			// Execute
 			file, err := manager.CreateTempFile(tt.dir, tt.pattern)
