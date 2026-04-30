@@ -45,23 +45,6 @@ func NewLoader(fs common.FileSystem, verificationManager *verification.Manager) 
 	}
 }
 
-// newLoaderInternal creates a new config loader without nil checks.
-// This is an internal helper for testing code that needs to pass nil values.
-// ONLY use this in test code - production code must use NewLoader.
-func newLoaderInternal(fs common.FileSystem, verificationManager *verification.Manager) *Loader {
-	return &Loader{
-		fs:              fs,
-		verificationMgr: verificationManager,
-	}
-}
-
-// NewLoaderForTest creates a new config loader with default dependencies for testing.
-// This convenience constructor should only be used in test code.
-// It allows verificationManager to be nil for tests that don't need verification.
-func NewLoaderForTest() *Loader {
-	return newLoaderInternal(common.NewDefaultFileSystem(), nil)
-}
-
 // LoadConfig loads and validates configuration from a file path,
 // processing includes and merging templates
 func (l *Loader) LoadConfig(configPath string, content []byte) (*runnertypes.ConfigSpec, error) {
