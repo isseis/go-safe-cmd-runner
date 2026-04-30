@@ -1,5 +1,3 @@
-//go:build test
-
 // Package testutil provides testing utilities for safefileio package.
 package testutil
 

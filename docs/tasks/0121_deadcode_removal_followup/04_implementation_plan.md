@@ -89,27 +89,37 @@ Phase 1 と混ぜず、小さい PR とする。
 
 ### 4.2 修正手順
 
-- [ ] `go vet ./...` 実行し、失敗一覧を最新版に更新
-- [ ] 原因を「欠落シンボル」「build tag 不整合」「その他」に分類
-- [ ] 1 件ずつ修正し、都度 `go test` で局所確認
-- [ ] `go vet ./...` が通るまで繰り返す
+- [x] `go vet ./...` 実行し、失敗一覧を最新版に更新
+- [x] 原因を「欠落シンボル」「build tag 不整合」「その他」に分類
+- [x] 1 件ずつ修正し、都度 `go test` で局所確認
+- [x] `go vet ./...` が通るまで繰り返す
 
 ### 4.3 2回目 dead code 精査
 
 `go vet` クリーン後に再精査する。
 
-- [ ] `staticcheck ./...`（U1000 記録）
-- [ ] `golangci-lint run --enable=unused,unparam,ineffassign`
-- [ ] `go run golang.org/x/tools/cmd/deadcode@latest ./cmd/...`
-- [ ] grep ベースで「テストのみ参照」を再判定
-- [ ] struct field / interface 実装の未使用も対象に追加
+- [x] `staticcheck ./...`（U1000 記録）
+- [x] `golangci-lint run --enable=unused,unparam,ineffassign`
+- [x] `go run golang.org/x/tools/cmd/deadcode@latest ./cmd/...`
+- [x] grep ベースで「テストのみ参照」を再判定
+- [-] struct field / interface 実装の未使用も対象に追加（本ステップでは関数・メソッド優先で再判定。次回監査で拡張）
 
 ### 4.4 完了条件
 
-- [ ] `go vet ./...` が成功
-- [ ] 2回目精査の結果表を更新
-- [ ] 判定カテゴリ（dead code / dead code 候補 / 要確認）を再確定
-- [ ] 次の削除 PR のスコープを確定
+- [x] `go vet ./...` が成功
+- [x] 2回目精査の結果表を更新
+- [x] 判定カテゴリ（dead code / dead code 候補 / 要確認）を再確定
+- [x] 次の削除 PR のスコープを確定
+
+### 4.5 2回目精査結果（要約）
+
+| ファイル | シンボル | 判定 | 次アクション |
+|---|---|---|---|
+| `internal/filevalidator/validator.go` | `buildSVCInfos` | dead code 候補（テストのみ参照） | 次削除 PR 候補 |
+| `internal/security/machoanalyzer/svc_scanner.go` | `containsSVCInstruction` | dead code 候補（テストのみ参照） | 次削除 PR 候補 |
+| `internal/common/test_helpers.go` | `newResolvedPathForNew` ほか | 要確認（test 補助用途） | test helper 再配置を別PRで検討 |
+| `internal/runner/security/network_analyzer_test_helpers.go` | `newNetworkAnalyzerWithStores` | 要確認（test 補助用途） | test helper 再配置を別PRで検討 |
+| `internal/runner/test_helpers.go` | `matchRuntimeGroupWithName` | 要確認（test 補助用途） | test helper 再配置を別PRで検討 |
 
 ## 5. 進捗管理テンプレート
 
@@ -120,7 +130,7 @@ Phase 1 と混ぜず、小さい PR とする。
 - [x] Phase 2 実施中
 - [x] Phase 2 完了
 - [x] Phase 3 実施中
-- [ ] Phase 3 完了
+- [x] Phase 3 完了
 
 ### 5.2 実行ログ（追記用）
 
@@ -147,6 +157,14 @@ Phase 1 と混ぜず、小さい PR とする。
 - 結果サマリ: test helper API 2件（`NewSafeFileManagerWithFS`, `NewStandardELFAnalyzerWithSymbols`）を削除し、関連テストを置換。lint/test/build すべて成功。
 - 課題/ブロッカー: なし
 - 次アクション: Phase 3 の `go vet ./...` 失敗一覧を再取得して分類する
+
+- 実施日: 2026-04-30
+- ブランチ: issei/deadcode-removal-01
+- 実施者: GitHub Copilot
+- 実行コマンド: `go vet ./...`, `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`, `golangci-lint run --enable=unused,unparam,ineffassign`, `go run golang.org/x/tools/cmd/deadcode@latest ./cmd/...`, `rg`（U1000再判定）, `make lint`, `go test -tags test ./...`
+- 結果サマリ: build tag 不整合を解消して `go vet ./...` を成功させ、2回目 dead code 精査を実施。主要候補の再分類と次削除スコープを確定。
+- 課題/ブロッカー: struct field / interface 実装の未使用監査は次回監査に分離
+- 次アクション: レビュー実施後に PR 更新/作成
 
 ## 6. レビュー観点
 

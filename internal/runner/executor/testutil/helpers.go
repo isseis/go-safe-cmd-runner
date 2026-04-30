@@ -1,5 +1,3 @@
-//go:build test || performance
-
 package testutil
 
 import (

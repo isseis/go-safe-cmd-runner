@@ -1,5 +1,3 @@
-//go:build test
-
 // Package testutil provides shared test utilities for privilege management.
 package testutil
 

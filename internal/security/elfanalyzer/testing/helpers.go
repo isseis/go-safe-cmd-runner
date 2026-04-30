@@ -1,5 +1,3 @@
-//go:build test
-
 // Package elfanalyzertesting provides test helpers for the elfanalyzer package.
 package elfanalyzertesting
 
