@@ -122,8 +122,6 @@ type Config struct {
 	DangerousPrivilegedCommands []string
 	// ShellCommands is a list of shell commands
 	ShellCommands []string
-	// ShellMetacharacters is a list of shell metacharacters that require careful handling
-	ShellMetacharacters []string
 	// DangerousRootPatterns is a list of potentially destructive command names when running as root.
 	// These patterns are matched using EXACT command name matching (case-insensitive).
 	// Each entry should be a simple command name without paths, wildcards, or regex patterns.
@@ -216,13 +214,6 @@ func DefaultConfig() *Config {
 			"/bin/zsh", "/usr/bin/zsh", "/bin/csh", "/usr/bin/csh",
 			"/bin/fish", "/usr/bin/fish",
 			"/bin/dash", "/usr/bin/dash",
-		},
-		ShellMetacharacters: []string{
-			";", "&", "|", "&&", "||",
-			"$", "`", "$(", "${",
-			">", "<", ">>", "<<",
-			"*", "?", "[", "]",
-			"~", "!",
 		},
 		DangerousRootPatterns: []string{
 			"rm", "rmdir", "del", "delete",

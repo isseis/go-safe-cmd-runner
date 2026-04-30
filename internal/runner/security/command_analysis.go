@@ -278,18 +278,6 @@ func (v *Validator) IsShellCommand(cmdPath string) bool {
 	return exists
 }
 
-// HasShellMetacharacters checks if any argument contains shell metacharacters
-func (v *Validator) HasShellMetacharacters(args []string) bool {
-	for _, arg := range args {
-		for _, meta := range v.config.ShellMetacharacters {
-			if strings.Contains(arg, meta) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // IsDangerousRootCommand checks if a command matches dangerous patterns when running as root.
 //
 // This function uses exact command name matching (after extracting the basename and converting

@@ -1902,60 +1902,6 @@ func TestValidator_IsShellCommand(t *testing.T) {
 	}
 }
 
-func TestValidator_HasShellMetacharacters(t *testing.T) {
-	validator, err := NewValidator(nil)
-	require.NoError(t, err)
-
-	tests := []struct {
-		name     string
-		args     []string
-		expected bool
-	}{
-		{
-			name:     "no metacharacters",
-			args:     []string{"hello", "world"},
-			expected: false,
-		},
-		{
-			name:     "semicolon metacharacter",
-			args:     []string{"echo hello", "; rm -rf /"},
-			expected: true,
-		},
-		{
-			name:     "pipe metacharacter",
-			args:     []string{"cat file", "| grep test"},
-			expected: true,
-		},
-		{
-			name:     "dollar sign for variable",
-			args:     []string{"echo $HOME"},
-			expected: true,
-		},
-		{
-			name:     "backtick for command substitution",
-			args:     []string{"echo `date`"},
-			expected: true,
-		},
-		{
-			name:     "redirect metacharacter",
-			args:     []string{"echo hello", "> /tmp/file"},
-			expected: true,
-		},
-		{
-			name:     "wildcard metacharacter",
-			args:     []string{"ls *.txt"},
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := validator.HasShellMetacharacters(tt.args)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestGetCommandRiskOverride(t *testing.T) {
 	testCases := []struct {
 		name          string

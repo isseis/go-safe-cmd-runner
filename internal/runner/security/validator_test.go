@@ -76,7 +76,6 @@ func TestValidator_CustomConfig(t *testing.T) {
 	// Override with custom values for testing
 	config.DangerousPrivilegedCommands = []string{"/custom/dangerous"}
 	config.ShellCommands = []string{"/custom/shell"}
-	config.ShellMetacharacters = []string{"@", "#"}
 
 	validator, err := NewValidator(config)
 	require.NoError(t, err)
@@ -88,11 +87,6 @@ func TestValidator_CustomConfig(t *testing.T) {
 	// Test custom shell command
 	assert.True(t, validator.IsShellCommand("/custom/shell"))
 	assert.False(t, validator.IsShellCommand("/bin/bash")) // Not in custom list
-
-	// Test custom metacharacters
-	assert.True(t, validator.HasShellMetacharacters([]string{"test@example"}))
-	assert.True(t, validator.HasShellMetacharacters([]string{"test#hash"}))
-	assert.False(t, validator.HasShellMetacharacters([]string{"test;semicolon"})) // Not in custom list
 }
 
 func TestNewValidator_WithOptions(t *testing.T) {
