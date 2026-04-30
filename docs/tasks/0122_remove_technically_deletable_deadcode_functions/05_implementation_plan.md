@@ -63,17 +63,17 @@
 - `ErrUndefinedLocalVariable`
 
 作業:
-- [ ] 各型の参照箇所を `rg --glob '*.go'` で最終確認
-- [ ] 型定義・メソッド・関連コメントを削除
-- [ ] 型を参照するテストコード（インスタンス化、`errors.As` ターゲット）を削除
-- [ ] `make fmt` 実行
-- [ ] `go build ./...` 実行
-- [ ] `make lint` 実行
-- [ ] `go test -tags test ./...` 実行
+- [x] 各型の参照箇所を `rg --glob '*.go'` で最終確認
+- [x] 型定義・メソッド・関連コメントを削除
+- [x] 型を参照するテストコード（インスタンス化、`errors.As` ターゲット）を削除
+- [x] `make fmt` 実行
+- [x] `go build ./...` 実行
+- [x] `make lint` 実行
+- [x] `go test -tags test ./...` 実行
 
 完了条件:
-- [ ] 5 型がコードベースから削除されている
-- [ ] 品質ゲート（build/lint/test）が成功
+- [x] 5 型がコードベースから削除されている
+- [x] 品質ゲート（build/lint/test）が成功
 
 ### 2.2 Phase A-2: 便利メソッド・関数 8 件の削除
 
@@ -162,7 +162,7 @@
 ### 5.1 ステータス
 
 - [ ] Phase A-1 実施中
-- [ ] Phase A-1 完了
+- [x] Phase A-1 完了
 - [ ] Phase A-2 実施中
 - [ ] Phase A-2 完了
 - [ ] Phase B 実施中

@@ -181,21 +181,3 @@ func (e *ErrScopeMismatch) scopeStartCharDescription(scope Scope) string {
 		return "unknown"
 	}
 }
-
-// ErrUndefinedGlobalVariable is returned when a global variable is not defined
-type ErrUndefinedGlobalVariable struct {
-	Name string
-}
-
-func (e *ErrUndefinedGlobalVariable) Error() string {
-	return fmt.Sprintf("undefined global variable %q", e.Name)
-}
-
-// ErrUndefinedLocalVariable is returned when a local variable is not defined
-type ErrUndefinedLocalVariable struct {
-	Name string
-}
-
-func (e *ErrUndefinedLocalVariable) Error() string {
-	return fmt.Sprintf("undefined local variable %q", e.Name)
-}

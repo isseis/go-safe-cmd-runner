@@ -427,8 +427,7 @@ version = "1.0"
 [command_templates.bad]
 cmd = "%{var}"
 `,
-			wantErr:     true,
-			wantErrType: &ErrForbiddenPatternInTemplate{},
+			wantErr: true,
 		},
 		{
 			name: "forbidden %{ in template args",
@@ -438,8 +437,7 @@ version = "1.0"
 cmd = "echo"
 args = ["%{var}", "hello"]
 `,
-			wantErr:     true,
-			wantErrType: &ErrForbiddenPatternInTemplate{},
+			wantErr: true,
 		},
 		{
 			name: "forbidden %{ in template env",
@@ -449,8 +447,7 @@ version = "1.0"
 cmd = "echo"
 env_vars = ["VAR=%{value}"]
 `,
-			wantErr:     true,
-			wantErrType: &ErrForbiddenPatternInTemplate{},
+			wantErr: true,
 		},
 		{
 			name: "forbidden %{ in template workdir",
@@ -460,8 +457,7 @@ version = "1.0"
 cmd = "echo"
 workdir = "%{dir}"
 `,
-			wantErr:     true,
-			wantErrType: &ErrForbiddenPatternInTemplate{},
+			wantErr: true,
 		},
 		{
 			name: "missing cmd field",
