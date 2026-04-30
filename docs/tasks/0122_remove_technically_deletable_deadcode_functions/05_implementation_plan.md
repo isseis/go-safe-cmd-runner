@@ -125,20 +125,25 @@
 
 ### 2.4 Phase C: 事後精査と結果更新
 
-- [ ] `go vet -tags=test ./...` 実行
-- [ ] `go run honnef.co/go/tools/cmd/staticcheck@latest -tags=test ./...` 実行
-- [ ] `go run golang.org/x/tools/cmd/deadcode@latest ./cmd/...` 実行
-- [ ] 結果を本タスク配下に記録（新たな dead code 候補があれば `01_requirements.md` に追記）
+- [x] `go vet -tags=test ./...` 実行
+- [x] `go run honnef.co/go/tools/cmd/staticcheck@latest -tags=test ./...` 実行
+- [x] `go run golang.org/x/tools/cmd/deadcode@latest ./cmd/...` 実行
+- [x] 結果を本タスク配下に記録（新たな dead code 候補があれば `01_requirements.md` に追記）
+
+結果サマリ（2026-04-30）:
+- `deadcode` の再検出は非対象 3 件のみ（`WithFileSystem`、`NewStandardELFAnalyzerWithSyscallStore`、`NewSyscallAnalyzerWithConfig`）
+- Phase A で削除した 13 シンボルは再検出されず
+- 新規の dead code 候補はなし（`01_requirements.md` 追記不要）
 
 完了条件:
-- [ ] Phase A で削除した 13 シンボルが再検出されない
-- [ ] 新規候補リストが更新されている
+- [x] Phase A で削除した 13 シンボルが再検出されない
+- [x] 新規候補リストが更新されている
 
 ## 3. コミット戦略
 
 - [x] Commit 1: Phase A-1（エラー型 5 件）
 - [x] Commit 2: Phase A-2（便利メソッド・関数 8 件）
-- [ ] Commit 3: Phase B（追加調査結果。削除した場合はコード変更を含む）
+- [x] Commit 3: Phase B（追加調査結果。削除した場合はコード変更を含む）
 - [ ] Commit 4: Phase C（結果更新ドキュメント）
 
 ルール:
@@ -168,7 +173,7 @@
 - [ ] Phase B 実施中
 - [x] Phase B 完了
 - [ ] Phase C 実施中
-- [ ] Phase C 完了
+- [x] Phase C 完了
 
 ### 5.2 実行ログ（追記用）
 
