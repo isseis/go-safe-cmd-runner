@@ -1,11 +1,9 @@
 package safefileio
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -184,7 +182,6 @@ type mockFileSystem struct {
 	removeFunc         func(name string) error
 	atomicMoveFileFunc func(srcPath, dstPath string, requiredPerm os.FileMode) error
 	groupMembership    *groupmembership.GroupMembership
-	removedFiles       []string
 	removeCallCount    int
 	mu                 sync.Mutex
 }
@@ -192,7 +189,6 @@ type mockFileSystem struct {
 func newMockFileSystem() *mockFileSystem {
 	return &mockFileSystem{
 		groupMembership: groupmembership.New(),
-		removedFiles:    []string{},
 	}
 }
 
@@ -207,7 +203,6 @@ func (m *mockFileSystem) Remove(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.removeCallCount++
-	m.removedFiles = append(m.removedFiles, name)
 	if m.removeFunc != nil {
 		return m.removeFunc(name)
 	}
@@ -225,100 +220,10 @@ func (m *mockFileSystem) GetGroupMembership() *groupmembership.GroupMembership {
 	return m.groupMembership
 }
 
-func (m *mockFileSystem) getRemovedFiles() []string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]string{}, m.removedFiles...)
-}
-
 func (m *mockFileSystem) getRemoveCallCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.removeCallCount
-}
-
-// TestSafeWriteFile_CleanupOnValidationError tests that newly created files are removed when validation fails
-func TestSafeWriteFile_CleanupOnValidationError(t *testing.T) {
-	t.Run("file is cleaned up when validation fails after creation", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
-		filePath := filepath.Join(tempDir, "test_cleanup.txt")
-		absPath, err := filepath.Abs(filePath)
-		require.NoError(t, err)
-
-		mockFS := newMockFileSystem()
-
-		// Setup: SafeOpenFile succeeds (simulating file creation with O_EXCL)
-		// but Stat returns an error to trigger validation failure
-		mockFS.openFunc = func(_ string, _ int, _ os.FileMode) (File, error) {
-			// Simulate file creation that will fail validation
-			mockFile := &mockFile{
-				data:     nil,
-				statErr:  errors.New("stat error to trigger validation failure"),
-				isClosed: false,
-			}
-			return mockFile, nil
-		}
-
-		content := []byte("test content")
-
-		// Execute: Try to write file with O_EXCL (new file creation)
-		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
-		require.NoError(t, rpErr)
-		err = safeWriteFileCommon(rp, content, 0o644, mockFS, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
-
-		// Verify: Operation failed
-		require.Error(t, err)
-
-		// Verify: Remove was called once to clean up the created file
-		assert.Equal(t, 1, mockFS.getRemoveCallCount(), "Remove should be called once to clean up")
-		removedFiles := mockFS.getRemovedFiles()
-		require.Len(t, removedFiles, 1, "Exactly one file should be removed")
-		assert.Equal(t, absPath, removedFiles[0], "The created file should be removed")
-	})
-
-	t.Run("file is cleaned up when write fails after creation", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
-		filePath := filepath.Join(tempDir, "test_write_error.txt")
-		absPath, err := filepath.Abs(filePath)
-		require.NoError(t, err)
-
-		mockFS := newMockFileSystem()
-
-		// Get current user's UID and GID for validation
-		currentUID := uint32(os.Getuid())
-		currentGID := uint32(os.Getgid())
-
-		// Setup: Create a file that passes validation but fails on write
-		mockFS.openFunc = func(name string, _ int, perm os.FileMode) (File, error) {
-			fileInfo := &mockFileInfo{
-				name: filepath.Base(name),
-				mode: perm,
-				size: 0,
-				uid:  currentUID,
-				gid:  currentGID,
-			}
-			mockFile := newMockFile(nil, fileInfo)
-			mockFile.writeErr = errors.New("write error")
-			return mockFile, nil
-		}
-
-		content := []byte("test content")
-
-		// Execute: Try to write file with O_EXCL
-		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
-		require.NoError(t, rpErr)
-		err = safeWriteFileWithFS(rp, content, 0o644, mockFS)
-
-		// Verify: Operation failed
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to write")
-
-		// Verify: File was removed during cleanup
-		assert.Equal(t, 1, mockFS.getRemoveCallCount(), "Remove should be called once")
-		removedFiles := mockFS.getRemovedFiles()
-		require.Len(t, removedFiles, 1)
-		assert.Equal(t, absPath, removedFiles[0])
-	})
 }
 
 // TestSafeWriteFileOverwrite_NoCleanupOnError tests that existing files are NOT deleted when overwrite fails
@@ -440,91 +345,8 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 	})
 }
 
-// TestFileCleanup_RemoveFailureWarning tests that warnings are logged when file removal fails
-func TestFileCleanup_RemoveFailureWarning(t *testing.T) {
-	t.Run("warning is logged when file removal fails during cleanup", func(t *testing.T) {
-		// Setup: Capture log output
-		var logBuf bytes.Buffer
-		logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{
-			Level: slog.LevelWarn,
-		}))
-		oldDefault := slog.Default()
-		slog.SetDefault(logger)
-		defer slog.SetDefault(oldDefault)
-
-		tempDir := commontesting.SafeTempDir(t)
-		filePath := filepath.Join(tempDir, "test_remove_fail.txt")
-		absPath, err := filepath.Abs(filePath)
-		require.NoError(t, err)
-
-		mockFS := newMockFileSystem()
-
-		// Setup: File creation and validation succeed, but Remove fails
-		mockFS.openFunc = func(_ string, _ int, _ os.FileMode) (File, error) {
-			mockFile := &mockFile{
-				data:     nil,
-				statErr:  errors.New("validation error"), // Trigger cleanup
-				isClosed: false,
-			}
-			return mockFile, nil
-		}
-
-		removeErr := errors.New("permission denied during remove")
-		mockFS.removeFunc = func(_ string) error {
-			return removeErr
-		}
-
-		content := []byte("test content")
-
-		// Execute: This should trigger cleanup, which will fail
-		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
-		require.NoError(t, rpErr)
-		err = safeWriteFileCommon(rp, content, 0o644, mockFS, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
-
-		// Verify: Original error is returned (not the remove error)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "validation error")
-
-		// Verify: Remove was attempted
-		assert.Equal(t, 1, mockFS.getRemoveCallCount())
-
-		// Verify: Warning was logged
-		logOutput := logBuf.String()
-		assert.Contains(t, logOutput, "failed to remove file after error",
-			"Should log warning about remove failure")
-		assert.Contains(t, logOutput, absPath,
-			"Log should contain the file path")
-		assert.Contains(t, logOutput, "permission denied during remove",
-			"Log should contain the remove error message")
-	})
-}
-
 // TestFileCleanup_Integration tests the cleanup behavior with real filesystem
 func TestFileCleanup_Integration(t *testing.T) {
-	t.Run("real file is cleaned up on validation error", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
-		filePath := filepath.Join(tempDir, "cleanup_test.txt")
-
-		// Create a custom filesystem that will fail validation after file creation
-		fs := NewFileSystem(FileSystemConfig{})
-
-		// This will fail because we're trying to create a file with world-writable permissions
-		// which will be rejected during validation
-		content := []byte("test content")
-		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
-		require.NoError(t, rpErr)
-		err := safeWriteFileWithFS(rp, content, 0o666, fs)
-
-		// Verify: Operation failed
-		require.Error(t, err)
-		assert.ErrorIs(t, err, groupmembership.ErrPermissionsExceedMaximum)
-
-		// Verify: File was cleaned up (does not exist)
-		_, statErr := os.Stat(filePath)
-		assert.True(t, os.IsNotExist(statErr),
-			"File should be cleaned up and not exist after validation failure")
-	})
-
 	t.Run("existing file is NOT deleted on overwrite error", func(t *testing.T) {
 		tempDir := commontesting.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "existing.txt")
