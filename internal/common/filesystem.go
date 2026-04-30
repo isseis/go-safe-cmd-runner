@@ -192,7 +192,7 @@ func (p ResolvedPath) String() string {
 }
 
 // IsParentOnly returns true if this ResolvedPath was created with NewResolvedPathParentOnly.
-// Security-boundary write functions (SafeWriteFile, SafeWriteFileOverwrite, SafeAtomicMoveFile)
+// Security-boundary write functions (SafeWriteFileOverwrite)
 // require IsParentOnly() == true to preserve leaf-symlink detection via openat2(RESOLVE_NO_SYMLINKS).
 func (p ResolvedPath) IsParentOnly() bool {
 	return p.mode == resolveModeParentOnly
