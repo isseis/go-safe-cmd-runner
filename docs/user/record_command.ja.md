@@ -112,6 +112,13 @@ record -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.
 record -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 ```
 
+### 2.5 syscall 解析のデバッグ情報を含めて記録
+
+```bash
+# デバッグ情報（Occurrences, DeterminationStats）を含めて記録
+record --debug-info -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh
+```
+
 ## 3. コマンドラインフラグ詳解
 
 ### 3.1 ファイル指定（ポジショナル引数）
@@ -159,7 +166,7 @@ record /usr/local/bin/*.sh
 
 **概要**
 
-ハッシュファイルを保存するディレクトリを指定します。指定しない場合はカレントディレクトリが使用されます。
+ハッシュファイルを保存するディレクトリを指定します。指定しない場合はデフォルトのハッシュディレクトリ（`/usr/local/etc/go-safe-cmd-runner/hashes`）が使用されます。
 
 **文法**
 
@@ -171,7 +178,7 @@ record -d <directory> <file>...
 **パラメータ**
 
 - `<directory>`: ハッシュファイルを保存するディレクトリパス（省略可能）
-- デフォルト: カレントディレクトリ
+- デフォルト: `/usr/local/etc/go-safe-cmd-runner/hashes`
 
 **使用例**
 
@@ -266,6 +273,44 @@ record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 - `-force` フラグは既存のハッシュファイルを警告なしで上書きします
 - 誤って重要なハッシュファイルを上書きしないよう注意してください
 - 本番環境では、バックアップを取ってから使用することを推奨します
+
+### 3.4 `--debug-info` (オプション)
+
+**概要**
+
+syscall 解析結果にデバッグ情報（`Occurrences` フィールドおよび `DeterminationStats` フィールド）を含めて保存します。指定しない場合、これらのフィールドは保存されたハッシュレコードから除去されます。
+
+**文法**
+
+```bash
+record --debug-info [-hash-dir <directory>] <file>...
+```
+
+**デバッグ情報の内容**
+
+- **`Occurrences`**: 各 syscall が検出されたバイナリ内の仮想アドレス一覧、および syscall 番号の判定方法（`DeterminationMethod`、`DeterminationDetail`）
+- **`DeterminationStats`**: syscall 番号解決の統計（即値解決、レジスタコピーチェーン、分岐収束による解決数など）
+
+**使用例**
+
+```bash
+# デバッグ情報を含めてハッシュを記録
+record --debug-info -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh
+
+# 記録されたデバッグ情報を確認（JSON で保存されたハッシュレコードを参照）
+cat /usr/local/etc/go-safe-cmd-runner/hashes/~usr~local~bin~backup.sh.json | python3 -m json.tool | grep -A 20 '"occurrences"'
+```
+
+**ユースケース**
+
+- **解析結果の調査**: `unknown:indirect_setting` などの警告が出たときに、どのアドレスで検出されたかを確認する
+- **判定精度の確認**: `DeterminationStats` により、何件の syscall が即値・コピーチェーン・分岐収束で解決されたかを把握する
+- **開発・デバッグ**: syscall 解析ロジックの動作確認
+
+**注意事項**
+
+- デバッグ情報はファイルサイズが増加します
+- 通常の本番環境ではデバッグ情報は不要です（デフォルト: 除去）
 
 ## 4. 実践例
 
