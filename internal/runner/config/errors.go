@@ -660,32 +660,6 @@ func (e *ErrIncludedFileNotFound) Error() string {
 	)
 }
 
-// ErrConfigFileInvalidFormat is returned when a config file contains
-// unknown fields or sections.
-type ErrConfigFileInvalidFormat struct {
-	// ConfigFile is the path to the config file
-	ConfigFile string
-
-	// ParseError is the original error from go-toml
-	// (contains details about the unknown field)
-	ParseError error
-}
-
-func (e *ErrConfigFileInvalidFormat) Error() string {
-	return fmt.Sprintf(
-		"config file contains invalid fields or sections\n"+
-			"  File: %s\n"+
-			"  Config files can only contain 'version', 'includes', 'global', 'command_templates', and 'groups'\n"+
-			"  Detail: %v",
-		e.ConfigFile,
-		e.ParseError,
-	)
-}
-
-func (e *ErrConfigFileInvalidFormat) Unwrap() error {
-	return e.ParseError
-}
-
 // ErrTemplateFileInvalidFormat is returned when a template file contains
 // unknown fields or sections.
 type ErrTemplateFileInvalidFormat struct {

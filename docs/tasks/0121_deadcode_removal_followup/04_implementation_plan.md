@@ -1,0 +1,174 @@
+# Dead Code Removal Follow-up Implementation Plan
+
+## 0. 目的
+
+この手順書は、dead code 調査結果を安全に反映するための実行計画である。
+以下の 3 段階で進める。
+
+1. dead code 5件を最小差分で削除し、ビルドとテスト影響を確認する
+2. dead code 候補のうち test helper API 群を別 PR で削除する
+3. go vet 失敗要因（test helper 欠落と build tag 問題）を修正し、2回目の精査を実施する
+
+## 1. 前提条件
+
+- 作業ブランチを分ける（例: `issei/deadcode-removal-01`, `issei/deadcode-removal-02`, `issei/deadcode-audit-02`）
+- 各 PR は目的を 1 つに限定する
+- 変更後は必ず `make fmt`、`go build ./...`、`make test` を実行する
+- `go vet ./...` は現状失敗するため、Phase 3 までは参考値として扱う
+
+## 2. Phase 1: dead code 5件を先に削除（最小差分 PR）
+
+### 2.1 対象
+
+削除対象（前回調査で `dead code` 判定）:
+
+- `internal/security/elfanalyzer/x86_go_wrapper_resolver.go`: `(*X86GoWrapperResolver).resolveSyscallArgument`
+- `internal/verification/test_helpers.go`: `WithFileValidatorEnabled`
+- `internal/verification/test_helpers.go`: `WithTestingSecurityLevel`
+- `internal/runner/config/errors.go`: `ErrConfigFileInvalidFormat`（型 + メソッド）
+- `internal/runner/config/template_errors.go`: `ErrMultipleValuesInStringContext`（型 + メソッド）
+
+### 2.2 手順
+
+- [x] `rg` で各シンボルの最終参照確認（`--glob '*.go'`）
+- [x] 対象 5 件のみ削除（関連コメント含む）
+- [x] `make fmt` 実行
+- [x] `go build ./...` 実行
+- [x] `go test -tags test ./...` 実行
+- [-] 失敗時は失敗ログを整理し、削除の妥当性と別因子を切り分け（失敗なし）
+
+### 2.3 完了条件
+
+- [x] 対象 5 件以外に不要な差分がない
+- [x] `go build ./...` が成功
+- [x] `go test -tags test ./...` が成功
+- [-] PR タイトルと説明に「Phase 1 / dead code 5件削除」と明記（PR 作成フェーズで実施）
+
+### 2.4 PR チェックリスト
+
+- [x] 変更理由（なぜ削除可能か）
+- [x] 参照調査結果（テスト外参照なし）
+- [x] 実行コマンドと結果要約
+- [x] リスクとロールバック方法
+
+## 3. Phase 2: test helper API 群を別 PR で削除
+
+### 3.1 方針
+
+`dead code 候補` のうち「テストからのみ使われる API（または build tag 付き test helper からのみ参照）」をまとめて削除する。
+Phase 1 と混ぜず、小さい PR とする。
+
+### 3.2 候補抽出
+
+- [x] 前回一覧から `dead code 候補` を再確認
+- [x] `//go:build test` / `//go:build test || performance` ファイル経由参照を識別
+- [x] 削除対象を「test helper API 群」に限定して確定（`NewSafeFileManagerWithFS`, `NewStandardELFAnalyzerWithSymbols`）
+
+### 3.3 実施手順
+
+- [x] 参照されるテストコードを先に削除または置換
+- [x] helper API 本体を削除
+- [x] `make fmt` 実行
+- [x] `go build ./...` 実行
+- [x] `go test -tags test ./...` 実行
+
+### 3.4 完了条件
+
+- [x] 本番パスに影響する API 変更が混入していない
+- [x] PR 単体でレビュー可能なサイズ（目安: 300 行前後）
+- [x] 削除対象の根拠（参照経路）が PR 内で説明されている
+
+## 4. Phase 3: go vet 問題修正 + 2回目精査
+
+### 4.1 go vet 失敗の先行修正
+
+現時点の代表的失敗要因:
+
+- test helper 欠落（例: `Int32Ptr`, `MockFileSystem`）
+- build constraints により test パッケージが空になる問題
+
+### 4.2 修正手順
+
+- [x] `go vet ./...` 実行し、失敗一覧を最新版に更新
+- [x] 原因を「欠落シンボル」「build tag 不整合」「その他」に分類
+- [x] 1 件ずつ修正し、都度 `go test` で局所確認
+- [x] `go vet ./...` が通るまで繰り返す
+
+### 4.3 2回目 dead code 精査
+
+`go vet` クリーン後に再精査する。
+
+- [x] `staticcheck ./...`（U1000 記録）
+- [x] `golangci-lint run --enable=unused,unparam,ineffassign`
+- [x] `go run golang.org/x/tools/cmd/deadcode@latest ./cmd/...`
+- [x] grep ベースで「テストのみ参照」を再判定
+- [-] struct field / interface 実装の未使用も対象に追加（本ステップでは関数・メソッド優先で再判定。次回監査で拡張）
+
+### 4.4 完了条件
+
+- [x] `go vet ./...` が成功
+- [x] 2回目精査の結果表を更新
+- [x] 判定カテゴリ（dead code / dead code 候補 / 要確認）を再確定
+- [x] 次の削除 PR のスコープを確定
+
+### 4.5 2回目精査結果（要約）
+
+| ファイル | シンボル | 判定 | 次アクション |
+|---|---|---|---|
+| `internal/filevalidator/validator.go` | `buildSVCInfos` | dead code 候補（テストのみ参照） | 次削除 PR 候補 |
+| `internal/security/machoanalyzer/svc_scanner.go` | `containsSVCInstruction` | dead code 候補（テストのみ参照） | 次削除 PR 候補 |
+| `internal/common/test_helpers.go` | `newResolvedPathForNew` ほか | 要確認（test 補助用途） | test helper 再配置を別PRで検討 |
+| `internal/runner/security/network_analyzer_test_helpers.go` | `newNetworkAnalyzerWithStores` | 要確認（test 補助用途） | test helper 再配置を別PRで検討 |
+| `internal/runner/test_helpers.go` | `matchRuntimeGroupWithName` | 要確認（test 補助用途） | test helper 再配置を別PRで検討 |
+
+## 5. 進捗管理テンプレート
+
+### 5.1 ステータス
+
+- [x] Phase 1 実施中
+- [x] Phase 1 完了
+- [x] Phase 2 実施中
+- [x] Phase 2 完了
+- [x] Phase 3 実施中
+- [x] Phase 3 完了
+
+### 5.2 実行ログ（追記用）
+
+- 実施日:
+- ブランチ:
+- 実施者:
+- 実行コマンド:
+- 結果サマリ:
+- 課題/ブロッカー:
+- 次アクション:
+
+- 実施日: 2026-04-30
+- ブランチ: issei/deadcode-removal-01
+- 実施者: GitHub Copilot
+- 実行コマンド: `rg`（対象5シンボル確認）, `make fmt`, `go build ./...`, `make lint`, `go test -tags test ./...`
+- 結果サマリ: 対象5件を削除。lint/test/build すべて成功。
+- 課題/ブロッカー: なし
+- 次アクション: Phase 2 の候補抽出（3.2）を実施する
+
+- 実施日: 2026-04-30
+- ブランチ: issei/deadcode-removal-01
+- 実施者: GitHub Copilot
+- 実行コマンド: `rg`（候補再抽出）, `make fmt`, `go build ./...`, `make lint`, `go test -tags test ./...`
+- 結果サマリ: test helper API 2件（`NewSafeFileManagerWithFS`, `NewStandardELFAnalyzerWithSymbols`）を削除し、関連テストを置換。lint/test/build すべて成功。
+- 課題/ブロッカー: なし
+- 次アクション: Phase 3 の `go vet ./...` 失敗一覧を再取得して分類する
+
+- 実施日: 2026-04-30
+- ブランチ: issei/deadcode-removal-01
+- 実施者: GitHub Copilot
+- 実行コマンド: `go vet ./...`, `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`, `golangci-lint run --enable=unused,unparam,ineffassign`, `go run golang.org/x/tools/cmd/deadcode@latest ./cmd/...`, `rg`（U1000再判定）, `make lint`, `go test -tags test ./...`
+- 結果サマリ: build tag 不整合を解消して `go vet ./...` を成功させ、2回目 dead code 精査を実施。主要候補の再分類と次削除スコープを確定。
+- 課題/ブロッカー: struct field / interface 実装の未使用監査は次回監査に分離
+- 次アクション: レビュー実施後に PR 更新/作成
+
+## 6. レビュー観点
+
+- 削除対象は本当に本番非使用か
+- build tag 付きファイルを本番参照と誤判定していないか
+- PR の責務が単一か（Phase 混在がないか）
+- 調査再現性（コマンド・判定根拠）が残っているか

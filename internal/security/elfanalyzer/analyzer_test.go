@@ -225,7 +225,8 @@ func TestStandardELFAnalyzer_WithCustomSymbols(t *testing.T) {
 	customSymbols := map[string]binaryanalyzer.SymbolCategory{
 		"my_network_func": binaryanalyzer.CategorySocket,
 	}
-	analyzer := NewStandardELFAnalyzerWithSymbols(nil, customSymbols)
+	analyzer := NewStandardELFAnalyzer(nil)
+	analyzer.networkSymbols = customSymbols
 
 	// Test with a real binary that has network symbols not in our custom set
 	testdataDir := "testdata"

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,7 +24,7 @@ func createTestCommand(cmd string, args []string) *runnertypes.RuntimeCommand {
 		Args: args,
 	}
 
-	rtCmd, err := runnertypes.NewRuntimeCommand(spec, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit(), "test_group")
+	rtCmd, err := runnertypes.NewRuntimeCommand(spec, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit(), "test_group")
 	if err != nil {
 		panic(err)
 	}

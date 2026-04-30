@@ -75,12 +75,6 @@ func (r *X86GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) ([
 	return r.findWrapperCalls(code, baseAddr, r.decoder)
 }
 
-// resolveSyscallArgument is a test-facing helper that delegates to the shared
-// goWrapperBase implementation using this resolver's decoder.
-func (r *X86GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedInstruction) (int, string) {
-	return r.goWrapperBase.resolveSyscallArgument(recentInstructions, r.decoder)
-}
-
 // GetWrapperAddresses returns all known wrapper function addresses.
 // This is primarily useful for testing.
 func (r *X86GoWrapperResolver) GetWrapperAddresses() map[uint64]GoSyscallWrapper {

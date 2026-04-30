@@ -232,18 +232,6 @@ func (e *ErrEmptyPlaceholderName) Error() string {
 	return fmt.Sprintf("empty placeholder name at position %d in %q", e.Position, e.Input)
 }
 
-// ErrMultipleValuesInStringContext is returned when array expansion produces
-// multiple values in a string context.
-type ErrMultipleValuesInStringContext struct {
-	TemplateName string
-	Field        string
-}
-
-func (e *ErrMultipleValuesInStringContext) Error() string {
-	return fmt.Sprintf("template %q %s: array expansion produced multiple values in string context",
-		e.TemplateName, e.Field)
-}
-
 // Placeholder parsing errors
 
 // ErrUnclosedPlaceholder is returned when a placeholder is not closed.
