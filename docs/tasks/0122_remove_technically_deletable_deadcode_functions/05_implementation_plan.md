@@ -103,25 +103,25 @@
 
 **B-1: `NewStandardEvaluator` の調査**
 
-- [ ] `evaluator_test.go` の 8 件参照を確認し、`NewStandardEvaluatorWithStores(nil, nil)` への置換が意図を損なわないか検証
-- [ ] 置換コスト（行数・複雑さ）を評価
-- [ ] 削除する場合: テストを置換してから関数削除 → `make fmt` → `go build` → `make lint` → `go test`
-- [ ] 削除しない場合: 理由を本ドキュメントに記録
+- [x] `evaluator_test.go` の 8 件参照を確認し、`NewStandardEvaluatorWithStores(nil, nil)` への置換が意図を損なわないか検証
+- [x] 置換コスト（行数・複雑さ）を評価
+- [x] 削除する場合: テストを置換してから関数削除 → `make fmt` → `go build` → `make lint` → `go test`
+- [-] 削除しない場合: 理由を本ドキュメントに記録
 
 完了条件:
-- [ ] 削除 or 保留の判断が記録されている
-- [ ] 削除した場合は品質ゲートが成功
+- [x] 削除 or 保留の判断が記録されている
+- [x] 削除した場合は品質ゲートが成功
 
 **B-2: `NewELFSyscallStoreAdapter` の調査**
 
-- [ ] `syscall_store_adapter_test.go` の 3 件参照を確認し、アダプターを直接構築（`&fileanalysisSyscallStoreAdapter{inner: store}`）でテストを書き換えられるか検証
-- [ ] `fileanalysisSyscallStoreAdapter` 型が本番コードの他の箇所で参照されていないか再確認
-- [ ] 削除する場合: テストを置換してから関数・型・メソッドを削除 → 品質ゲート実行
-- [ ] 削除しない場合: 理由を本ドキュメントに記録
+- [x] `syscall_store_adapter_test.go` の 3 件参照を確認し、アダプターを直接構築（`&fileanalysisSyscallStoreAdapter{inner: store}`）でテストを書き換えられるか検証
+- [x] `fileanalysisSyscallStoreAdapter` 型が本番コードの他の箇所で参照されていないか再確認
+- [x] 削除する場合: テストを置換してから関数・型・メソッドを削除 → 品質ゲート実行
+- [-] 削除しない場合: 理由を本ドキュメントに記録
 
 完了条件:
-- [ ] 削除 or 保留の判断が記録されている
-- [ ] 削除した場合は品質ゲートが成功
+- [x] 削除 or 保留の判断が記録されている
+- [x] 削除した場合は品質ゲートが成功
 
 ### 2.4 Phase C: 事後精査と結果更新
 
@@ -137,7 +137,7 @@
 ## 3. コミット戦略
 
 - [x] Commit 1: Phase A-1（エラー型 5 件）
-- [ ] Commit 2: Phase A-2（便利メソッド・関数 8 件）
+- [x] Commit 2: Phase A-2（便利メソッド・関数 8 件）
 - [ ] Commit 3: Phase B（追加調査結果。削除した場合はコード変更を含む）
 - [ ] Commit 4: Phase C（結果更新ドキュメント）
 
@@ -166,7 +166,7 @@
 - [ ] Phase A-2 実施中
 - [x] Phase A-2 完了
 - [ ] Phase B 実施中
-- [ ] Phase B 完了
+- [x] Phase B 完了
 - [ ] Phase C 実施中
 - [ ] Phase C 完了
 

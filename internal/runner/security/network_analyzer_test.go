@@ -156,6 +156,19 @@ const (
 	testContentHash = "sha256:abc123"
 )
 
+type mockFileanalysisSyscallStore struct {
+	result *fileanalysis.SyscallAnalysisResult
+	err    error
+}
+
+func (m *mockFileanalysisSyscallStore) LoadSyscallAnalysis(_ string, _ string) (*fileanalysis.SyscallAnalysisResult, error) {
+	return m.result, m.err
+}
+
+func (m *mockFileanalysisSyscallStore) SaveSyscallAnalysis(_, _ string, _ *fileanalysis.SyscallAnalysisResult) error {
+	return nil
+}
+
 // svcResult builds a SyscallAnalysisResult containing a svc #0x80 signal.
 func svcResult() *fileanalysis.SyscallAnalysisResult {
 	return &fileanalysis.SyscallAnalysisResult{

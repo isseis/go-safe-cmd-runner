@@ -20,12 +20,6 @@ type StandardEvaluator struct {
 	networkAnalyzer *security.NetworkAnalyzer
 }
 
-// NewStandardEvaluator creates a new standard risk evaluator.
-// Pass a non-nil store to enable cache-based network symbol analysis.
-func NewStandardEvaluator(store fileanalysis.NetworkSymbolStore) Evaluator {
-	return NewStandardEvaluatorWithStores(store, nil)
-}
-
 // NewStandardEvaluatorWithStores creates a new standard risk evaluator with
 // both symbol and syscall analysis caches enabled when the corresponding stores
 // are non-nil.
