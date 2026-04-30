@@ -23,6 +23,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
@@ -85,7 +86,7 @@ type runnerOptions struct {
 	runtimeGlobal           *runnertypes.RuntimeGlobal
 	keepTempDirs            bool
 	groupMembershipProvider *groupmembership.GroupMembership
-	toctouValidator         *security.Validator
+	toctouValidator         isec.DirectoryPermChecker
 }
 
 // WithVerificationManager sets a custom verification manager
@@ -156,7 +157,7 @@ func WithGroupMembershipProvider(provider *groupmembership.GroupMembership) Opti
 // When set, each group execution runs a TOCTOU check after variable expansion
 // so that paths containing %{GROUP_VAR} references are checked with their
 // resolved values. Violations cause group execution to return an error.
-func WithTOCTOUValidator(v *security.Validator) Option {
+func WithTOCTOUValidator(v isec.DirectoryPermChecker) Option {
 	return func(opts *runnerOptions) {
 		opts.toctouValidator = v
 	}

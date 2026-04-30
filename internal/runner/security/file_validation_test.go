@@ -1030,7 +1030,7 @@ func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
 			},
 			path:        "/usr/local", // Test the symlink path itself
 			shouldFail:  true,
-			expectedErr: isec.ErrInsecurePathComponent,
+			expectedErr: isec.ErrInvalidDirPermissions,
 		},
 		{
 			name: "path with symlink target directory should be rejected",
@@ -1050,7 +1050,7 @@ func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
 			},
 			path:        "/usr/local/etc/go-safe-cmd-runner",
 			shouldFail:  true,
-			expectedErr: isec.ErrInsecurePathComponent,
+			expectedErr: isec.ErrInvalidDirPermissions,
 		},
 		{
 			name: "secure path with no symlinks should pass",
@@ -1094,10 +1094,8 @@ func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
 				tt.setupFunc(testMockFS)
 			}
 
-			// Run the validation
-			originalPath, cleanPath := tt.path, filepath.Clean(tt.path)
-			realUID := os.Getuid()
-			err = testValidator.validateCompletePath(cleanPath, originalPath, realUID)
+			// Run the validation through the public API.
+			err = testValidator.ValidateDirectoryPermissions(tt.path)
 
 			if tt.shouldFail {
 				assert.Error(t, err)
@@ -1166,10 +1164,8 @@ func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
 				tt.setupFunc(testMockFS)
 			}
 
-			// Run the validation
-			originalPath, cleanPath := tt.path, filepath.Clean(tt.path)
-			realUID := os.Getuid()
-			err = testValidator.validateCompletePath(cleanPath, originalPath, realUID)
+			// Run the validation through the public API.
+			err = testValidator.ValidateDirectoryPermissions(tt.path)
 
 			if tt.shouldFail {
 				assert.Error(t, err)
@@ -1383,122 +1379,6 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 	})
 }
 
-func TestValidator_validateDirectoryComponentPermissions_WithRealUID(t *testing.T) {
-	// Get current user info for testing
-	currentUser, err := user.Current()
-	require.NoError(t, err)
-
-	currentUID, err := strconv.Atoi(currentUser.Uid)
-	require.NoError(t, err)
-
-	otherUID := currentUID + 1000 // Use a different UID for testing
-
-	tests := []struct {
-		name        string
-		setupFunc   func(mockFS *commontesting.MockFileSystem)
-		realUID     int
-		wantErr     bool
-		expectedErr error
-	}{
-		{
-			name: "owner_write_permission_with_matching_uid",
-			setupFunc: func(mockFS *commontesting.MockFileSystem) {
-				// Directory with owner write permission, owned by current user
-				currentGid, err := strconv.ParseUint(currentUser.Gid, 10, 32)
-				require.NoError(t, err)
-				err = mockFS.AddDirWithOwner("/test-dir", 0o755, uint32(currentUID), uint32(currentGid))
-				require.NoError(t, err)
-			},
-			realUID: currentUID,
-			wantErr: false,
-		},
-		{
-			name: "owner_write_permission_with_non_matching_uid",
-			setupFunc: func(mockFS *commontesting.MockFileSystem) {
-				// Directory with owner write permission, owned by different user
-				currentGid, err := strconv.ParseUint(currentUser.Gid, 10, 32)
-				require.NoError(t, err)
-				err = mockFS.AddDirWithOwner("/test-dir", 0o755, uint32(otherUID), uint32(currentGid))
-				require.NoError(t, err)
-			},
-			realUID:     currentUID,
-			wantErr:     true,
-			expectedErr: isec.ErrInvalidDirPermissions,
-		},
-		{
-			name: "root_owned_directory_always_allowed",
-			setupFunc: func(mockFS *commontesting.MockFileSystem) {
-				// Root-owned directory should always be allowed
-				err := mockFS.AddDirWithOwner("/test-dir", 0o755, UIDRoot, GIDRoot)
-				require.NoError(t, err)
-			},
-			realUID: currentUID,
-			wantErr: false,
-		},
-		{
-			name: "group_write_permission_with_single_group_member",
-			setupFunc: func(mockFS *commontesting.MockFileSystem) {
-				// Directory with group write permission using current user's group
-				// Use permissive mode for this test to avoid environmental complexities
-				currentGid, err := strconv.ParseUint(currentUser.Gid, 10, 32)
-				require.NoError(t, err)
-				err = mockFS.AddDirWithOwner("/test-dir", 0o775, uint32(currentUID), uint32(currentGid))
-				require.NoError(t, err)
-			},
-			realUID: currentUID,
-			// This test should pass because testPermissiveMode is enabled
-			wantErr: false,
-		},
-		{
-			name: "world_writable_directory_rejected",
-			setupFunc: func(mockFS *commontesting.MockFileSystem) {
-				// World-writable directory should be rejected
-				currentGid, err := strconv.ParseUint(currentUser.Gid, 10, 32)
-				require.NoError(t, err)
-				err = mockFS.AddDirWithOwner("/test-dir", 0o777, uint32(currentUID), uint32(currentGid))
-				require.NoError(t, err)
-			},
-			realUID:     currentUID,
-			wantErr:     true,
-			expectedErr: isec.ErrInvalidDirPermissions,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create mock filesystem and validator
-			mockFS := commontesting.NewMockFileSystem()
-			tt.setupFunc(mockFS)
-
-			// Create actual group membership (will be used for real group checking)
-			groupMembership := groupmembership.New()
-
-			config := DefaultConfig()
-			// For the problematic test, use permissive mode to bypass group membership complexities
-			if tt.name == "group_write_permission_with_single_group_member" {
-				config.testPermissiveMode = true
-			}
-
-			validator, err := NewValidator(config, WithFileSystem(mockFS), WithGroupMembership(groupMembership))
-			require.NoError(t, err) // Get directory info
-			info, err := mockFS.Lstat("/test-dir")
-			require.NoError(t, err)
-
-			// Test the function
-			err = validator.validateDirectoryComponentPermissions("/test-dir", info, tt.realUID)
-
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.expectedErr != nil {
-					assert.ErrorIs(t, err, tt.expectedErr)
-				}
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
 func TestValidator_validateCompletePath(t *testing.T) {
 	currentUser, err := user.Current()
 	require.NoError(t, err)
@@ -1510,7 +1390,6 @@ func TestValidator_validateCompletePath(t *testing.T) {
 		name      string
 		setupFunc func(mockFS *commontesting.MockFileSystem)
 		path      string
-		realUID   int
 		wantErr   bool
 	}{
 		{
@@ -1527,7 +1406,6 @@ func TestValidator_validateCompletePath(t *testing.T) {
 				require.NoError(t, err)
 			},
 			path:    "/home/user/project",
-			realUID: currentUID,
 			wantErr: false,
 		},
 		{
@@ -1541,7 +1419,6 @@ func TestValidator_validateCompletePath(t *testing.T) {
 				require.NoError(t, err)
 			},
 			path:    "/tmp/other",
-			realUID: currentUID,
 			wantErr: true,
 		},
 	}
@@ -1557,8 +1434,7 @@ func TestValidator_validateCompletePath(t *testing.T) {
 			validator, err := NewValidator(config, WithFileSystem(mockFS), WithGroupMembership(groupMembership))
 			require.NoError(t, err)
 
-			cleanPath := filepath.Clean(tt.path)
-			err = validator.validateCompletePath(cleanPath, tt.path, tt.realUID)
+			err = validator.ValidateDirectoryPermissions(tt.path)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -1628,183 +1504,4 @@ func TestValidator_validateOutputDirectoryAccess_WithImprovedLogic(t *testing.T)
 			}
 		})
 	}
-}
-
-func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
-	currentUser, err := user.Current()
-	require.NoError(t, err)
-
-	currentUID, err := strconv.Atoi(currentUser.Uid)
-	require.NoError(t, err)
-
-	currentGID, err := strconv.Atoi(currentUser.Gid)
-	require.NoError(t, err)
-
-	tests := []struct {
-		name        string
-		setupFunc   func(mockFS *commontesting.MockFileSystem)
-		useNilGroup bool
-		realUID     int
-		wantErr     bool
-		expectedErr error
-	}{
-		{
-			name: "permissive_mode_allows_all",
-			setupFunc: func(mockFS *commontesting.MockFileSystem) {
-				// Create directory with group write permission
-				err := mockFS.AddDirWithOwner("/test", 0o775, uint32(currentUID), uint32(currentGID))
-				require.NoError(t, err)
-			},
-			useNilGroup: false,
-			realUID:     currentUID,
-			wantErr:     false,
-		},
-		{
-			name: "root_owned_directory_allowed",
-			setupFunc: func(mockFS *commontesting.MockFileSystem) {
-				// Root-owned directory with group write
-				err := mockFS.AddDirWithOwner("/test", 0o775, UIDRoot, GIDRoot)
-				require.NoError(t, err)
-			},
-			useNilGroup: false,
-			realUID:     currentUID,
-			wantErr:     false,
-		},
-		{
-			name: "nil_groupmembership_error",
-			setupFunc: func(mockFS *commontesting.MockFileSystem) {
-				// Non-root directory with group write
-				err := mockFS.AddDirWithOwner("/test", 0o775, uint32(currentUID), uint32(currentGID))
-				require.NoError(t, err)
-			},
-			useNilGroup: true,
-			realUID:     currentUID,
-			wantErr:     true,
-			expectedErr: isec.ErrInvalidDirPermissions,
-		},
-		{
-			name: "group_write_safe_with_single_member",
-			setupFunc: func(mockFS *commontesting.MockFileSystem) {
-				// Directory with group write owned by current user
-				err := mockFS.AddDirWithOwner("/test", 0o775, uint32(currentUID), uint32(currentGID))
-				require.NoError(t, err)
-			},
-			useNilGroup: false,
-			realUID:     currentUID,
-			// On macOS, the default group (staff, GID 20) has multiple members,
-			// so the security check correctly denies group-writable access.
-			wantErr: runtime.GOOS == isec.GosDarwin,
-		},
-		{
-			name: "group_write_unsafe_with_multiple_members",
-			setupFunc: func(mockFS *commontesting.MockFileSystem) {
-				// Directory with group write owned by different user
-				err := mockFS.AddDirWithOwner("/test", 0o775, uint32(currentUID+1000), uint32(currentGID))
-				require.NoError(t, err)
-			},
-			useNilGroup: false,
-			realUID:     currentUID,
-			wantErr:     true,
-			expectedErr: isec.ErrInvalidDirPermissions,
-		},
-		{
-			name: "uid_0_gid_0_boundary",
-			setupFunc: func(mockFS *commontesting.MockFileSystem) {
-				// Root UID and GID (boundary value)
-				err := mockFS.AddDirWithOwner("/test", 0o775, 0, 0)
-				require.NoError(t, err)
-			},
-			useNilGroup: false,
-			realUID:     0,
-			wantErr:     false,
-		},
-		{
-			name: "uid_gid_boundary_with_existing_user",
-			setupFunc: func(mockFS *commontesting.MockFileSystem) {
-				// Use current user UID for boundary test (realistic boundary)
-				err := mockFS.AddDirWithOwner("/test", 0o775, uint32(currentUID), uint32(currentGID))
-				require.NoError(t, err)
-			},
-			useNilGroup: false,
-			realUID:     currentUID,
-			// On macOS, the default group (staff, GID 20) has multiple members,
-			// so the security check correctly denies group-writable access.
-			wantErr: runtime.GOOS == isec.GosDarwin,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockFS := commontesting.NewMockFileSystem()
-			tt.setupFunc(mockFS)
-
-			var groupMembershipMgr *groupmembership.GroupMembership
-			if !tt.useNilGroup {
-				groupMembershipMgr = groupmembership.New()
-			}
-
-			var config *Config
-			if tt.name == "permissive_mode_allows_all" {
-				config = NewPermissiveTestConfig()
-			} else {
-				config = DefaultConfig()
-			}
-
-			validator, err := NewValidator(config, WithFileSystem(mockFS), WithGroupMembership(groupMembershipMgr))
-			require.NoError(t, err)
-
-			info, err := mockFS.Lstat("/test")
-			require.NoError(t, err)
-
-			err = validator.validateGroupWritePermissions("/test", info, tt.realUID)
-
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.expectedErr != nil {
-					assert.ErrorIs(t, err, tt.expectedErr)
-				}
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestValidator_validateGroupWritePermissions_TrustedOwnershipScenarios(t *testing.T) {
-	createValidatorWithDir := func(t *testing.T, uid uint32, gid uint32, perm os.FileMode) *Validator {
-		t.Helper()
-
-		mockFS := commontesting.NewMockFileSystem()
-		err := mockFS.AddDirWithOwner("/test", perm, uid, gid)
-		require.NoError(t, err)
-
-		validator, err := NewValidator(DefaultConfig(), WithFileSystem(mockFS), WithGroupMembership(nil))
-		require.NoError(t, err)
-
-		return validator
-	}
-
-	t.Run("rejects_group_write_for_root_owned_directory_with_untrusted_gid", func(t *testing.T) {
-		validator := createValidatorWithDir(t, UIDRoot, 9999, 0o775)
-
-		info, err := validator.fs.Lstat("/test")
-		require.NoError(t, err)
-
-		err = validator.validateGroupWritePermissions("/test", info, 1000)
-		assert.ErrorIs(t, err, isec.ErrInvalidDirPermissions)
-	})
-
-	t.Run("allows_group_write_for_root_owned_directory_with_macos_admin_gid", func(t *testing.T) {
-		if runtime.GOOS != isec.GosDarwin {
-			t.Skip("macOS only")
-		}
-
-		validator := createValidatorWithDir(t, UIDRoot, 80, 0o775)
-
-		info, err := validator.fs.Lstat("/test")
-		require.NoError(t, err)
-
-		err = validator.validateGroupWritePermissions("/test", info, 1000)
-		assert.NoError(t, err)
-	})
 }

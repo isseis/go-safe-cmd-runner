@@ -87,203 +87,27 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 }
 
 // ValidateDirectoryPermissions validates that a directory has appropriate permissions
-// and checks the complete path from root to target for security
+// and checks the complete path from root to target for security.
 func (v *Validator) ValidateDirectoryPermissions(dirPath string) error {
-	cleanDir, dirInfo, err := v.validatePathAndGetInfo(dirPath, "directory")
-	if err != nil {
-		return err
-	}
-
-	// Check if it's a directory
-	if !dirInfo.Mode().IsDir() {
-		err := fmt.Errorf("%w: %s is not a directory", isec.ErrInvalidDirPermissions, dirPath)
-		slog.Warn("Invalid directory type", slog.String("path", dirPath), slog.String("mode", dirInfo.Mode().String()))
-		return err
-	}
-
-	// SECURITY: Validate complete path from root to target directory
-	// This prevents attacks through compromised intermediate directories
-	// Use actual UID for proper permission validation
-	realUID := os.Getuid()
-	return v.validateCompletePath(cleanDir, dirPath, realUID)
+	return isec.ValidateDirectoryPermissionsWithOptions(dirPath, v.buildDirPermOpts(os.Getuid()))
 }
 
-// validateCompletePath validates the security of the complete path from root to target
-// with proper realUID context for permission checks
-// cleanDir must be absolute and cleaned.
-func (v *Validator) validateCompletePath(cleanPath string, originalPath string, realUID int) error {
-	slog.Debug("Validating complete path security with UID context", slog.String("target_path", originalPath), slog.Int("realUID", realUID))
-
-	// Validate each directory component from target to root
-	for currentPath := cleanPath; ; {
-		slog.Debug("Validating path component with UID context", slog.String("component_path", currentPath))
-
-		info, err := v.fs.Lstat(currentPath)
-		if err != nil {
-			slog.Error("Failed to stat path component", slog.String("path", currentPath), slog.Any("error", err))
-			return fmt.Errorf("failed to stat path component %s: %w", currentPath, err)
-		}
-
-		if err := v.validateDirectoryComponentMode(currentPath, info); err != nil {
-			return err
-		}
-		if err := v.validateDirectoryComponentPermissions(currentPath, info, realUID); err != nil {
-			return err
-		}
-
-		// Move to parent directory, or break if we reached root
-		parentPath := filepath.Dir(currentPath)
-		if parentPath == currentPath {
-			break
-		}
-		currentPath = parentPath
+func (v *Validator) buildDirPermOpts(realUID int) isec.DirectoryPermCheckOptions {
+	opts := isec.DirectoryPermCheckOptions{
+		Lstat:              v.fs.Lstat,
+		MaxPathLength:      v.config.MaxPathLength,
+		RealUID:            realUID,
+		TestPermissiveMode: v.config.testPermissiveMode,
+		IsTrustedGroup: func(gid uint32) bool {
+			return v.isTrustedGroup(gid)
+		},
 	}
-
-	slog.Debug("Complete path validation with UID context successful", slog.String("original_path", originalPath), slog.String("final_path", cleanPath), slog.Int("realUID", realUID))
-	return nil
-}
-
-// validateDirectoryComponentMode validates that a directory component is a directory and not a symlink
-func (v *Validator) validateDirectoryComponentMode(dirPath string, info os.FileInfo) error {
-	// Check if the component is not a symlink
-	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("%w: path component %s is a symlink", isec.ErrInsecurePathComponent, dirPath)
-	}
-
-	// Ensure the component is a directory
-	if !info.Mode().IsDir() {
-		return fmt.Errorf("%w: path component %s is not a directory", isec.ErrInsecurePathComponent, dirPath)
-	}
-	return nil
-}
-
-// isStickyDirectory checks if a path is a directory with the sticky bit set
-// Returns true if the path is a directory with the sticky bit set (like /tmp)
-// Note: This function does NOT check for world-writability; that check should be done by the caller
-func isStickyDirectory(info os.FileInfo) bool {
-	return info.Mode().IsDir() && info.Mode()&os.ModeSticky != 0
-}
-
-// validateDirectoryComponentPermissions validates that a directory component has secure permissions
-// info parameter should be the FileInfo for the directory at dirPath to avoid redundant filesystem calls
-// realUID parameter is the real user ID of the executing user for permission checks
-func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info os.FileInfo, realUID int) error {
-	// Get system-level file info for ownership checks
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fmt.Errorf("%w: failed to get system info for directory %s", isec.ErrInsecurePathComponent, dirPath)
-	}
-
-	perm := info.Mode().Perm()
-
-	// Check that other users cannot write (world-writable check)
-	// Exception: If sticky bit is set (like /tmp), world-writable is safe because
-	// users can only delete/modify their own files in that directory
-	// Only bypass this check if explicitly configured for permissive testing or sticky bit is set
-	if perm&0o002 != 0 && !v.config.testPermissiveMode {
-		if isStickyDirectory(info) {
-			// Sticky bit is set, world-writable is acceptable
-			slog.Debug("Directory is world-writable but has sticky bit set (safe)",
-				slog.String("path", dirPath),
-				slog.String("permissions", fmt.Sprintf("%04o", perm)))
-		} else {
-			slog.Error("Directory writable by others detected",
-				slog.String("path", dirPath),
-				slog.String("permissions", fmt.Sprintf("%04o", perm)))
-			return fmt.Errorf("%w: directory %s is writable by others (%04o)",
-				isec.ErrInvalidDirPermissions, dirPath, perm)
+	if v.groupMembership != nil {
+		opts.CanUserSafelyWrite = func(uid int, ownerUID uint32, groupGID uint32, mode os.FileMode) (bool, error) {
+			return v.groupMembership.CanUserSafelyWriteFile(uid, ownerUID, groupGID, mode)
 		}
 	}
-
-	// Check group write permissions.
-	// Skip group-write validation only when the directory is both sticky and world-writable:
-	// world-write is already more permissive than group-write, and we already accepted it above
-	// because the sticky bit makes that specific world-writable case safe (for example /tmp).
-	// Requiring group membership verification on top would be redundant in that case only.
-	if perm&0o020 != 0 && (perm&0o002 == 0 || !isStickyDirectory(info)) {
-		if err := v.validateGroupWritePermissions(dirPath, info, realUID); err != nil {
-			return err
-		}
-	}
-
-	// Check owner write permissions
-	if perm&0o200 != 0 { // Directory has owner write permission
-		if stat.Uid != UIDRoot && !v.config.testPermissiveMode {
-			// For non-root owned directories, validate owner matches realUID
-			if int(stat.Uid) != realUID {
-				slog.Error("Directory has owner write permissions but owner is not the execution user",
-					slog.String("path", dirPath),
-					slog.String("permissions", fmt.Sprintf("%04o", perm)),
-					slog.Any("directory_owner_uid", stat.Uid),
-					slog.Int("execution_user_uid", realUID))
-				return fmt.Errorf("%w: directory %s is owned by UID %d but execution user is UID %d",
-					isec.ErrInvalidDirPermissions, dirPath, stat.Uid, realUID)
-			}
-		}
-	}
-
-	return nil
-}
-
-// validateGroupWritePermissions validates group write permissions for a directory component
-func (v *Validator) validateGroupWritePermissions(dirPath string, info os.FileInfo, realUID int) error {
-	// Allow group write if:
-	// 1. Owned by root with a trusted group
-	// 2. realUID context is provided and the user is the only member of the group
-	// 3. testPermissiveMode is enabled
-	if v.config.testPermissiveMode {
-		return nil
-	}
-
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fmt.Errorf("%w: failed to get system info for directory %s", isec.ErrInsecurePathComponent, dirPath)
-	}
-
-	perm := info.Mode().Perm()
-
-	// Safe case: root-owned directory with trusted group
-	isTrustedOwnership := stat.Uid == UIDRoot && v.isTrustedGroup(stat.Gid)
-	if isTrustedOwnership {
-		slog.Debug("Directory has trusted ownership, group write allowed",
-			slog.String("path", dirPath),
-			slog.Any("gid", stat.Gid),
-			slog.String("permissions", fmt.Sprintf("%04o", perm)))
-		return nil
-	}
-
-	// Check if realUID is the only group member
-	if v.groupMembership == nil {
-		// No group membership checker available, fall back to strict check
-		slog.Error("Directory has group write permissions but cannot verify group membership",
-			slog.String("path", dirPath),
-			slog.String("permissions", fmt.Sprintf("%04o", perm)))
-		return fmt.Errorf("%w: directory %s has group write permissions (%04o) but group membership cannot be verified",
-			isec.ErrInvalidDirPermissions, dirPath, perm)
-	}
-
-	// Use unified security validation from groupmembership package
-	canSafelyWrite, err := v.groupMembership.CanUserSafelyWriteFile(realUID, stat.Uid, stat.Gid, info.Mode())
-	if err != nil {
-		// Convert groupmembership errors to security context errors
-		slog.Error("Directory security validation failed",
-			slog.String("path", dirPath),
-			slog.String("permissions", fmt.Sprintf("%04o", perm)),
-			slog.Int("user_uid", realUID),
-			slog.Any("error", err))
-		return fmt.Errorf("%w: directory %s failed security validation: %v",
-			isec.ErrInvalidDirPermissions, dirPath, err)
-	}
-	if !canSafelyWrite {
-		slog.Error("Directory security validation failed - write not safe",
-			slog.String("path", dirPath),
-			slog.String("permissions", fmt.Sprintf("%04o", perm)),
-			slog.Int("user_uid", realUID))
-		return fmt.Errorf("%w: directory %s - user UID %d cannot safely write to this directory",
-			isec.ErrInvalidDirPermissions, dirPath, realUID)
-	}
-
-	return nil
+	return opts
 }
 
 // ValidateOutputWritePermission validates write permission for output file creation
@@ -350,8 +174,8 @@ func (v *Validator) validateOutputDirectoryAccess(dirPath string, realUID int) e
 				return fmt.Errorf("failed to stat resolved path %s: %w", resolvedPath, err)
 			}
 
-			// Directory exists, validate security for complete path with realUID context
-			if err := v.validateCompletePath(resolvedPath, currentPath, realUID); err != nil {
+			// Directory exists, validate security for complete path with realUID context.
+			if err := isec.ValidateDirectoryPermissionsWithOptions(resolvedPath, v.buildDirPermOpts(realUID)); err != nil {
 				return fmt.Errorf("directory security validation failed for %s: %w", currentPath, err)
 			}
 
@@ -447,7 +271,7 @@ func (v *Validator) checkWritePermission(path string, stat os.FileInfo, realUID 
 	if stat.Mode()&0o002 != 0 {
 		if !v.config.testPermissiveMode {
 			// For directories with sticky bit, world-writable is acceptable
-			if isStickyDirectory(stat) {
+			if stat.Mode().IsDir() && stat.Mode()&os.ModeSticky != 0 {
 				slog.Debug("Directory is world-writable but has sticky bit set (safe)",
 					slog.String("path", path),
 					slog.String("permissions", fmt.Sprintf("%04o", stat.Mode().Perm())))

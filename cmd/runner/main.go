@@ -24,7 +24,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
@@ -315,7 +314,7 @@ func resolveStaticAbsPath(p string) (string, bool) {
 // and a PreExecutionError if any violation is detected.
 // Paths containing variable references or relative paths are skipped because they
 // cannot be safely resolved before per-group expansion.
-func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, runID string) (*security.Validator, error) {
+func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, runID string) (isec.DirectoryPermChecker, error) {
 	verifyFilePaths := make([]string, 0, len(runtimeGlobal.ExpandedVerifyFiles))
 	for _, f := range runtimeGlobal.ExpandedVerifyFiles {
 		// Variables are already expanded so no %{ filter is needed here.
@@ -336,11 +335,11 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 			}
 		}
 	}
-	secValidator, secErr := security.NewValidatorForTOCTOU()
+	secValidator, secErr := isec.NewDirectoryPermChecker()
 	if secErr != nil {
-		// NewValidatorForTOCTOU only fails when a regex literal in DefaultConfig
-		// is invalid — a programming error that cannot be recovered at runtime.
-		panic(fmt.Sprintf("security validator initialisation failed (invalid built-in regex pattern): %v", secErr))
+		// NewDirectoryPermChecker only fails when checker setup itself fails,
+		// which is not recoverable in this startup path.
+		panic(fmt.Sprintf("security validator initialisation failed: %v", secErr))
 	}
 	// Resolve symlinks in the hash directory so ValidateDirectoryPermissions evaluates
 	// the real path rather than rejecting symlink path components.
@@ -362,7 +361,7 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 }
 
 // executeRunner initializes and executes the runner with proper cleanup
-func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, verificationManager *verification.Manager, runID string, secValidator *security.Validator) error {
+func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, verificationManager *verification.Manager, runID string, secValidator isec.DirectoryPermChecker) error {
 	// Initialize privilege manager
 	logger := slog.Default()
 	privMgr := privilege.NewManager(logger)

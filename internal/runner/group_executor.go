@@ -67,7 +67,7 @@ type DefaultGroupExecutor struct {
 	keepTempDirs        bool
 	securityLogger      *logging.SecurityLogger
 	currentUser         string
-	toctouValidator     *security.Validator
+	toctouValidator     isec.DirectoryPermChecker
 }
 
 // groupNotificationFunc is a function type for sending group notifications

@@ -20,9 +20,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	securitytesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/testing"
 	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testutil"
+	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	verificationtesting "github.com/isseis/go-safe-cmd-runner/internal/verification/testing"
 	"github.com/stretchr/testify/assert"
@@ -3440,7 +3440,7 @@ func TestRunGroupTOCTOUCheck_NoValidator(t *testing.T) {
 // TestRunGroupTOCTOUCheck_SecureDir verifies that runGroupTOCTOUCheck returns
 // no error when all referenced directories satisfy the permission policy.
 func TestRunGroupTOCTOUCheck_SecureDir(t *testing.T) {
-	v, err := security.NewValidatorForTOCTOU()
+	v, err := isec.NewDirectoryPermChecker()
 	require.NoError(t, err)
 
 	// Use a temp dir whose permissions satisfy the policy (0755).
@@ -3459,7 +3459,7 @@ func TestRunGroupTOCTOUCheck_SecureDir(t *testing.T) {
 // TestRunGroupTOCTOUCheck_ViolationReturnsError verifies that runGroupTOCTOUCheck
 // returns an error when a referenced directory violates the permission policy.
 func TestRunGroupTOCTOUCheck_ViolationReturnsError(t *testing.T) {
-	v, err := security.NewValidatorForTOCTOU()
+	v, err := isec.NewDirectoryPermChecker()
 	require.NoError(t, err)
 
 	// Make a world-writable directory to trigger a violation.
@@ -3481,7 +3481,7 @@ func TestRunGroupTOCTOUCheck_ViolationReturnsError(t *testing.T) {
 // ExpandedVerifyFiles are not passed to the TOCTOU check (they would produce a
 // meaningless or erroneous result).
 func TestRunGroupTOCTOUCheck_RelativePathsSkipped(t *testing.T) {
-	v, err := security.NewValidatorForTOCTOU()
+	v, err := isec.NewDirectoryPermChecker()
 	require.NoError(t, err)
 
 	ge := &DefaultGroupExecutor{toctouValidator: v}
