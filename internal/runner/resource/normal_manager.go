@@ -40,19 +40,6 @@ type NormalResourceManager struct {
 	tempDirs []string
 }
 
-// NewNormalResourceManagerWithOutput creates a new NormalResourceManager with output capture support
-func NewNormalResourceManagerWithOutput(
-	exec executor.CommandExecutor,
-	fs executor.FileSystem,
-	privMgr runnertypes.PrivilegeManager,
-	outputMgr output.CaptureManager,
-	maxOutputSize int64,
-	logger *slog.Logger,
-	store fileanalysis.NetworkSymbolStore,
-) *NormalResourceManager {
-	return NewNormalResourceManagerWithStores(exec, fs, privMgr, outputMgr, maxOutputSize, logger, store, nil)
-}
-
 // NewNormalResourceManagerWithStores creates a new NormalResourceManager with
 // output capture support and both binary-analysis caches.
 func NewNormalResourceManagerWithStores(
