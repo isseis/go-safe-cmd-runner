@@ -278,10 +278,7 @@ func (d *DryRunResourceManager) analyzeCommandSecurity(cmd *runnertypes.RuntimeC
 	}
 
 	// Analyze security with resolved path using cached validator
-	opts := &security.AnalysisOptions{
-		HashDir: d.dryRunOptions.HashDir,
-	}
-	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.ExpandedArgs, opts)
+	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.ExpandedArgs, d.dryRunOptions.HashDir)
 	if err != nil {
 		return fmt.Errorf("security analysis failed for command '%s': %w", cmd.ExpandedCmd, err)
 	}

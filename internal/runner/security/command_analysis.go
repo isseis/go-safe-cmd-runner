@@ -572,50 +572,21 @@ func IsSystemModification(cmd string, args []string) bool {
 	return false
 }
 
-// AnalysisOptions contains configuration options for command security analysis
-type AnalysisOptions struct {
-	// HashDir specifies the directory containing hash files for validation
-	HashDir string
-}
-
 // AnalyzeCommandSecurity analyzes a command with its arguments for dangerous
 // patterns with enhanced security validation including directory-based risk
 // assessment and hash validation.
 //
-// This is the primary entry point for command security analysis. It performs
-// comprehensive security checks including:
-//   - Pattern-based dangerous command detection
-//   - setuid/setgid bit analysis
-//   - Directory-based default risk assessment
-//   - Optional hash validation for executable integrity
-//
-// Usage examples:
-//
-//	// Basic analysis (no hash validation)
-//	risk, pattern, reason, err := AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/"}, nil)
-//
-//	// Analysis with hash validation
-//	opts := &AnalysisOptions{
-//		HashDir: "/path/to/hashes",
-//	}
-//	risk, pattern, reason, err := AnalyzeCommandSecurity("/usr/local/bin/custom", []string{}, opts)
-//
 // Parameters:
 //   - resolvedPath: Absolute path to the command executable
 //   - args: Command line arguments
-//   - opts: Configuration options (nil is acceptable for default behavior)
+//   - hashDir: Directory containing hash files for validation (empty string to skip)
 //
 // Returns:
 //   - riskLevel: Security risk level (Unknown, Low, Medium, High, Critical)
 //   - detectedPattern: Matched dangerous pattern (if any)
 //   - reason: Human-readable explanation of the risk assessment
 //   - err: Error if analysis fails
-func AnalyzeCommandSecurity(resolvedPath string, args []string, opts *AnalysisOptions) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
-	// Handle nil options
-	if opts == nil {
-		opts = &AnalysisOptions{}
-	}
-
+func AnalyzeCommandSecurity(resolvedPath string, args []string, hashDir string) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
 	// Step 1: Input validation
 	if resolvedPath == "" {
 		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: empty command path", isec.ErrInvalidPath)
@@ -634,8 +605,8 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, opts *AnalysisOp
 	defaultRisk := getDefaultRiskByDirectory(resolvedPath)
 
 	// Step 4: Hash validation
-	if opts.HashDir != "" {
-		if err := validateFileHash(resolvedPath, opts.HashDir); err != nil {
+	if hashDir != "" {
+		if err := validateFileHash(resolvedPath, hashDir); err != nil {
 			return runnertypes.RiskLevelCritical, resolvedPath,
 				fmt.Sprintf("Hash validation failed: %v", err), nil
 		}
