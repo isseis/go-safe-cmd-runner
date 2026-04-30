@@ -132,20 +132,6 @@ func WithRuntimeGlobal(runtimeGlobal *runnertypes.RuntimeGlobal) Option {
 	}
 }
 
-// WithExecutor sets a custom command executor
-func WithExecutor(exec executor.CommandExecutor) Option {
-	return func(opts *runnerOptions) {
-		opts.executor = exec
-	}
-}
-
-// WithResourceManager sets the resource manager.
-func WithResourceManager(manager resource.Manager) Option {
-	return func(opts *runnerOptions) {
-		opts.resourceManager = manager
-	}
-}
-
 // WithGroupMembershipProvider sets the group membership provider.
 func WithGroupMembershipProvider(provider *groupmembership.GroupMembership) Option {
 	return func(opts *runnerOptions) {

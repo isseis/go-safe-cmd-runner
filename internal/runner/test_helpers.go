@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testutil"
@@ -56,9 +57,23 @@ func setupFailedMockExecution(m *MockResourceManager, err error) {
 	m.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resource.CommandToken(""), nil, err)
 }
 
+// WithResourceManager sets the resource manager.
+func WithResourceManager(manager resource.Manager) Option {
+	return func(opts *runnerOptions) {
+		opts.resourceManager = manager
+	}
+}
+
 // WithSecurityLogger sets the security logger for timeout-related security events.
 func WithSecurityLogger(logger *logging.SecurityLogger) GroupExecutorOption {
 	return func(opts *groupExecutorOptions) {
 		opts.securityLogger = logger
+	}
+}
+
+// WithExecutor sets a custom command executor
+func WithExecutor(exec executor.CommandExecutor) Option {
+	return func(opts *runnerOptions) {
+		opts.executor = exec
 	}
 }
