@@ -18,6 +18,7 @@
 |--------|---------|------|
 | 〜に加えて | in addition to 〜 | |
 | アーキテクチャ設計書 | architecture design | |
+| 監査ログ | audit logging | セキュリティ監査の文脈 |
 | アクセス | access | |
 | 値 | value | |
 | 曖昧さ | ambiguity | |
@@ -36,6 +37,7 @@
 | 後向きスキャン | backward scan | 命令列を末尾から走査する解析手法 |
 | バックアップ | backup | |
 | 分岐収束 | branch convergence | CFG上で複数の分岐が同一点で合流すること |
+| ブートストラップ | bootstrap | システム初期化処理の文脈 |
 | バッチ処理 | batch processing | |
 | ベースライン | baseline | |
 | 基本 | basic | |
@@ -84,6 +86,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | データフロー解析 | dataflow analysis | CFGを用いたデータの流れの解析 |
+| 依存 / 依存解析 | dependency / dependency analysis | 動的ライブラリ依存解析の文脈 |
 | 判定メソッド | determination method | syscall番号の決定手段を示す文字列 |
 | デバッグ | debug / debugging | |
 | データ構造 | data structure | |
@@ -198,6 +201,9 @@
 |--------|---------|------|
 | 即値 | immediate value | 命令中に埋め込まれた定数値 |
 | 命令境界 | instruction boundary | x86_64可変長命令の正しい境界位置 |
+| インジェクション | injection | コマンドインジェクションの文脈では "injection" |
+| 整合性 | integrity | ファイルの整合性検証の文脈 |
+| インターフェース | interface | |
 | 即時展開 | immediate expansion | 変数展開の文脈 |
 | 実装 | implementation | |
 | 実装計画書 | implementation plan | |
@@ -396,7 +402,9 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 安全 | safe | |
+| 関心の分離 | separation of concerns | 設計パターンの文脈 |
 | 符号拡張 | sign extension | 上位ビットを符号ビットで埋める操作 |
+| シンボル | symbol | ELFシンボルテーブルの文脈 |
 | 後続グラフ | successor graph | CFGにおける後続ノードのグラフ |
 | サンプル | sample | |
 | スコープ | scope | 変数スコープの文脈 |
@@ -636,6 +644,7 @@
 | 2026-01-11 | フィールド継承関連の用語を追加 (inheritable, inheritance model, override model, union merge, map merge, overrideable, customize/customization, custom, default settings) |
 | 2026-01-27 | Slack Webhook分離機能関連の用語を追加 (notification, notification destination, Slack notification, success notification, error notification, webhook URL) |
 | 2026-04-30 | x86_64命令デコードドキュメント関連の用語を追加 (backward scan, branch convergence, control flow, copy chain, dataflow analysis, determination method, effective address, false positive, forward scan, immediate value, instruction boundary, misanalysis, predecessor node, register, sign extension, successor graph, variable-length instruction, virtual node, visualization) |
+| 2026-04-30 | パッケージリファレンスドキュメント関連の用語を追加 (audit logging, bootstrap, dependency/dependency analysis, injection, integrity, interface, separation of concerns, symbol) |
 
 ---
 
