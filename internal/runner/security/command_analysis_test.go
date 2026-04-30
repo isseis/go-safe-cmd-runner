@@ -96,7 +96,6 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 			// Use empty hashDir for tests since hash validation is not the main focus
 			opts := &AnalysisOptions{
 				HashDir: "",
-				Config:  NewSkipHashValidationTestConfig(),
 			}
 			risk, pattern, reason, err := AnalyzeCommandSecurity(cmdPath, tc.args, opts)
 
@@ -2581,7 +2580,6 @@ func TestAnalyzeCommandSecurity_StandardDirHashValidationAlwaysRuns(t *testing.T
 	// for this command regardless of which directory it lives in.
 	risk, _, reason, err := AnalyzeCommandSecurity(lsPath, []string{}, &AnalysisOptions{
 		HashDir: tmpDir,
-		Config:  DefaultConfig(),
 	})
 
 	require.NoError(t, err)

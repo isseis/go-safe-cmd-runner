@@ -576,8 +576,6 @@ func IsSystemModification(cmd string, args []string) bool {
 type AnalysisOptions struct {
 	// HashDir specifies the directory containing hash files for validation
 	HashDir string
-	// Config provides access to security configuration including test settings
-	Config *Config
 }
 
 // AnalyzeCommandSecurity analyzes a command with its arguments for dangerous
@@ -637,7 +635,7 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, opts *AnalysisOp
 
 	// Step 4: Hash validation
 	if opts.HashDir != "" {
-		if err := validateFileHash(resolvedPath, opts.HashDir, opts.Config); err != nil {
+		if err := validateFileHash(resolvedPath, opts.HashDir); err != nil {
 			return runnertypes.RiskLevelCritical, resolvedPath,
 				fmt.Sprintf("Hash validation failed: %v", err), nil
 		}

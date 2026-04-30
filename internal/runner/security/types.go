@@ -148,8 +148,6 @@ type Config struct {
 	TrustedGIDs []uint32
 	// testPermissiveMode is only available in test builds and allows relaxed directory permissions
 	testPermissiveMode bool
-	// testSkipHashValidation is only available in test builds and allows skipping hash validation
-	testSkipHashValidation bool
 }
 
 // DangerousCommandPattern represents a dangerous command pattern with its risk level
