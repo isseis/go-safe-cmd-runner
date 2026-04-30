@@ -87,21 +87,40 @@
 
 ## 2.4 Phase D: 事後精査と結果更新
 
-- [ ] `go vet ./...` 実行
-- [ ] `go run honnef.co/go/tools/cmd/staticcheck@latest ./...` 実行
-- [ ] `golangci-lint run --enable=unused,unparam,ineffassign` 実行
-- [ ] `go run golang.org/x/tools/cmd/deadcode@latest ./cmd/...` 実行
-- [ ] 結果を本タスク配下に記録（残件の dead code 候補を更新）
+- [x] `go vet -tags=test ./...` 実行
+- [x] `go run honnef.co/go/tools/cmd/staticcheck@latest -tags=test ./...` 実行
+- [x] `golangci-lint run --build-tags=test --enable=unused,unparam,ineffassign` 実行
+- [x] `go run golang.org/x/tools/cmd/deadcode@latest ./cmd/...` 実行
+- [x] 結果を本タスク配下に記録（残件の dead code 候補を更新）
 
 完了条件:
-- [ ] 対象 5 関数が再検出されない
-- [ ] 次の削除候補リストが更新されている
+- [x] 対象 5 関数が再検出されない
+- [x] 次の削除候補リストが更新されている
+
+### 残件 dead code 候補（次フェーズ参考）
+
+`go run golang.org/x/tools/cmd/deadcode@latest ./cmd/...` 出力より、以下が未使用として検出された（本タスクのスコープ外）:
+
+| ファイル | シンボル | 備考 |
+|---|---|---|
+| internal/arm64util/arm64util.go | `BackwardScanX0` | 将来拡張向け |
+| internal/runner/runner.go | `WithExecutor`, `WithResourceManager`, `WithGroupMembershipProvider` | テスト/外部向け API |
+| internal/runner/audit/logger.go | `NewAuditLoggerWithCustom` | テスト向け |
+| internal/runner/config/loader.go | `newLoaderInternal`, `NewLoaderForTest` | テスト向け |
+| internal/runner/config/template_expansion.go | `ValidateParams` | 外部向け API |
+| internal/runner/config/validation.go | `ValidateEnvImport` | 外部向け API |
+| internal/runner/resource/normal_manager.go | `NewNormalResourceManagerWithOutput` | テスト向け |
+| internal/runner/security/network_analyzer.go | `NewNetworkAnalyzer`, `NewNetworkAnalyzerWithStore` | 外部向け API |
+| internal/runner/variable/registry.go | `NewRegistry` 他 | 外部向け API |
+| internal/safefileio/safe_file.go | `SafeWriteFile`, `SafeAtomicMoveFile` 他 | 外部向け API |
+| internal/security/machoanalyzer/svc_scanner.go | `ScanSVCAddrs` | 将来拡張向け |
+| その他 | Error メソッド群、String メソッド群 | インターフェース実装 |
 
 ## 3. コミット戦略
 
-- [ ] Commit 1: Phase B（dead code 候補 2 件）
-- [ ] Commit 2: Phase C（要確認関数 3 件）
-- [ ] Commit 3: Phase D（結果更新ドキュメント）
+- [x] Commit 1: Phase B（dead code 候補 2 件）
+- [x] Commit 2: Phase C（要確認関数 3 件）
+- [x] Commit 3: Phase D（結果更新ドキュメント）
 
 ルール:
 - 1 フェーズ完了ごとにコミットする
@@ -127,8 +146,8 @@
 - [x] Phase B 完了
 - [x] Phase C 実施中
 - [x] Phase C 完了
-- [ ] Phase D 実施中
-- [ ] Phase D 完了
+- [x] Phase D 実施中
+- [x] Phase D 完了
 
 ### 5.2 実行ログ
 
@@ -163,6 +182,14 @@
 - 結果サマリ: `newResolvedPathForNew`、`newNetworkAnalyzerWithStores`、`matchRuntimeGroupWithName` を削除し、テストを直接ロジック化して置換。
 - 課題/ブロッカー: なし
 - 次アクション: Phase D の事後精査コマンドを実行
+
+- 実施日: 2026-04-30
+- ブランチ: issei/deadcode-removal-02
+- 実施者: GitHub Copilot
+- 実行コマンド: `go vet -tags=test ./...`, `staticcheck -tags=test ./...`, `golangci-lint run --build-tags=test --enable=unused,unparam,ineffassign`, `deadcode ./cmd/...`
+- 結果サマリ: 対象5関数はいずれも再検出されず。残件候補（将来タスク用）を計画書に記録。
+- 課題/ブロッカー: なし
+- 次アクション: Phase D 完了。PR の更新・マージ作業へ移行。
 
 ## 6. レビュー観点
 
