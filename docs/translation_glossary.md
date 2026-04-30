@@ -53,6 +53,9 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 能力 | capability | |
+| コードパス | code path | 実行経路の文脈 |
+| コンパイル単位 | compilation unit | ELFバイナリの文脈 |
+| 定数 | constant | プログラムの定数値 |
 | 制御フロー | control flow | |
 | コピーチェーン | register copy chain / copy chain | レジスタのコピー命令の連鎖 |
 | キャッシュ | cache | |
@@ -177,6 +180,7 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| ガベージコレクション | garbage collection | |
 | グローバル | global | |
 | グローバル変数 | global variable | |
 | グローバルレベル | global level | |
@@ -190,6 +194,7 @@
 | ハンドラ | handler | slogハンドラの文脈 |
 | ハードコード | hardcoded | プログラムに埋め込まれた値 |
 | ハッシュ | hash | |
+| ヘッダー | header | バイナリフォーマットのヘッダー構造 |
 | 階層 | hierarchy / level | "level" は設定階層の文脈で使用 |
 | 階層継承 | hierarchy inheritance | |
 | 階層解決 | hierarchy resolution | |
@@ -233,6 +238,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 遅延評価 | lazy evaluation | 変数展開の文脈 |
+| リンカー | linker | コンパイル・リンク処理の文脈 |
 | 活用 | leverage / leveraging | |
 | 学習 | learn / learning | |
 | ライセンス | license | |
@@ -254,6 +260,7 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| マジックナンバー | magic number | バイナリフォーマット識別用の固定値 |
 | 誤解析 | misanalysis | 誤ったsyscall番号を解析すること |
 | 保守性 | maintainability | |
 | メンテナンス | maintenance | |
@@ -404,6 +411,7 @@
 | 安全 | safe | |
 | 関心の分離 | separation of concerns | 設計パターンの文脈 |
 | 符号拡張 | sign extension | 上位ビットを符号ビットで埋める操作 |
+| スタックトレース | stack trace | |
 | シンボル | symbol | ELFシンボルテーブルの文脈 |
 | 後続グラフ | successor graph | CFGにおける後続ノードのグラフ |
 | サンプル | sample | |
@@ -645,6 +653,7 @@
 | 2026-01-27 | Slack Webhook分離機能関連の用語を追加 (notification, notification destination, Slack notification, success notification, error notification, webhook URL) |
 | 2026-04-30 | x86_64命令デコードドキュメント関連の用語を追加 (backward scan, branch convergence, control flow, copy chain, dataflow analysis, determination method, effective address, false positive, forward scan, immediate value, instruction boundary, misanalysis, predecessor node, register, sign extension, successor graph, variable-length instruction, virtual node, visualization) |
 | 2026-04-30 | パッケージリファレンスドキュメント関連の用語を追加 (audit logging, bootstrap, dependency/dependency analysis, injection, integrity, interface, separation of concerns, symbol) |
+| 2026-04-30 | pclntabメンテナンスガイド関連の用語を追加 (code path, compilation unit, constant, garbage collection, header, linker, magic number, stack trace) |
 
 ---
 
