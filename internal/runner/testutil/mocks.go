@@ -1,3 +1,5 @@
+//go:build test
+
 // Package testutil provides shared test utilities and mock implementations
 // for the runner package.
 package testutil

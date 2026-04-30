@@ -1,3 +1,5 @@
+//go:build test || performance
+
 // Package testutil provides test helper functions for resource management testing.
 package testutil
 

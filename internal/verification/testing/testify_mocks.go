@@ -1,3 +1,5 @@
+//go:build test
+
 // Package verificationtesting provides mock implementations for verification management testing.
 package verificationtesting
 
