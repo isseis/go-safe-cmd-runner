@@ -5,9 +5,7 @@
 package common
 
 import (
-	"errors"
 	"fmt"
-	"os"
 )
 
 // ErrInvalidTimeout is returned when an invalid timeout value is encountered
@@ -75,26 +73,4 @@ func Int64Ptr(v int64) *int64 {
 // This is a convenience function for creating pointer values in tests and configuration.
 func BoolPtr(v bool) *bool {
 	return &v
-}
-
-// errPathAlreadyExists is returned by newResolvedPathForNew when the target path already exists.
-var errPathAlreadyExists = errors.New("path already exists; use NewResolvedPath for existing files")
-
-// newResolvedPathForNew creates a ResolvedPath for a file that does not yet exist.
-// It delegates path resolution to NewResolvedPathParentOnly and additionally checks
-// that the target path itself does not exist.
-//
-// Returns ErrEmptyPath if path is empty, errPathAlreadyExists if the path
-// already exists, or any error from NewResolvedPathParentOnly.
-func newResolvedPathForNew(path string) (ResolvedPath, error) {
-	rp, err := NewResolvedPathParentOnly(path)
-	if err != nil {
-		return ResolvedPath{}, err
-	}
-	if _, err := os.Lstat(rp.String()); err == nil {
-		return ResolvedPath{}, errPathAlreadyExists
-	} else if !os.IsNotExist(err) {
-		return ResolvedPath{}, err
-	}
-	return rp, nil
 }

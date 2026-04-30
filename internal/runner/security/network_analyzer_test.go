@@ -201,7 +201,7 @@ func syscallWrapperOnlyData() *fileanalysis.SymbolAnalysisData {
 func TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{err: errors.New("unexpected I/O error")}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -214,7 +214,7 @@ func TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_HashMismatch(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{err: fileanalysis.ErrHashMismatch}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -231,7 +231,7 @@ func TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_SchemaMismatch(t *testing.T) 
 	}
 	symStore := &stubNetworkSymbolStore{err: schemaErr}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -244,7 +244,7 @@ func TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_SchemaMismatch(t *testing.T) 
 func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCCacheHit(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: nil}
 	svcStore := &mockFileanalysisSyscallStore{result: svcResult()}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -257,7 +257,7 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCCacheHit(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_StaticBinary_NoSVC(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: nil}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -270,7 +270,7 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_NoSVC(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{result: svcResult()}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -284,7 +284,7 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	// LoadSyscallAnalysis returns nil result (no svc signal).
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -297,7 +297,7 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{err: fileanalysis.ErrHashMismatch}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -311,7 +311,7 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch(t *testing.
 func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoSyscallAnalysis(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -328,7 +328,7 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch(t *testin
 	}
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{err: schemaErr}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -342,7 +342,7 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch(t *testin
 func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{err: fileanalysis.ErrRecordNotFound}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	assert.Panics(t, func() {
 		analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
@@ -354,7 +354,7 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound(t *testin
 func TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCCacheHit(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: networkDetectedData()}
 	svcStore := &mockFileanalysisSyscallStore{result: svcResult()}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -367,7 +367,7 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCCacheHit(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCNoSyscallAnalysis(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: networkDetectedData()}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -380,7 +380,7 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCNoSyscallAnalysis(t *test
 func TestIsNetworkViaBinaryAnalysis_NetworkDetected_NoSVC(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: networkDetectedData()}
 	svcStore := &mockFileanalysisSyscallStore{result: noSVCResult()}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -395,7 +395,7 @@ func TestIsNetworkViaBinaryAnalysis_NetworkCategorySymbol(t *testing.T) {
 		DetectedSymbols: []string{"read", "socket"},
 	}}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -408,7 +408,7 @@ func TestIsNetworkViaBinaryAnalysis_NetworkCategorySymbol(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_SyscallWrapperOnly(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: syscallWrapperOnlyData()}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -508,7 +508,7 @@ func syscallResultWithNonNetworkEntry() *fileanalysis.SyscallAnalysisResult {
 func TestIsNetworkViaBinaryAnalysis_StaticBinary_NetworkSyscall(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: nil}
 	svcStore := &mockFileanalysisSyscallStore{result: syscallResultWithNetworkEntry()}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -521,7 +521,7 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_NetworkSyscall(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_StaticBinary_NonNetworkSyscall(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: nil}
 	svcStore := &mockFileanalysisSyscallStore{result: syscallResultWithNonNetworkEntry()}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -543,7 +543,7 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAndNetworkSyscall(t *testing
 	}
 	symStore := &stubNetworkSymbolStore{data: nil}
 	svcStore := &mockFileanalysisSyscallStore{result: result}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -557,7 +557,7 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAndNetworkSyscall(t *testing
 func TestIsNetworkViaBinaryAnalysis_NetworkDetected_WithNetworkSyscall(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: networkDetectedData()}
 	svcStore := &mockFileanalysisSyscallStore{result: syscallResultWithNetworkEntry()}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 

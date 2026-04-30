@@ -162,7 +162,7 @@ func TestIntegration_SlackRedaction(t *testing.T) {
 	})
 
 	// Mock verification manager
-	mockVerificationManager.On("VerifyGroupFiles", matchRuntimeGroupWithName("test-group-integration")).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("VerifyGroupFiles", verificationtesting.MatchRuntimeGroupWithName("test-group-integration")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
@@ -284,7 +284,7 @@ func TestE2E_MultiHandlerLogging(t *testing.T) {
 		RunID:               "test-run-multihandler",
 	})
 
-	mockVerificationManager.On("VerifyGroupFiles", matchRuntimeGroupWithName("test-group-multihandler")).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("VerifyGroupFiles", verificationtesting.MatchRuntimeGroupWithName("test-group-multihandler")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)

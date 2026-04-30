@@ -72,18 +72,18 @@
 - `matchRuntimeGroupWithName`
 
 作業:
-- [ ] 参照側テストを直接ロジック化（ヘルパー呼び出しをインライン化）
-- [ ] ヘルパー関数を削除
-- [ ] 付随する未使用定数/変数があれば同 PR で削除
-- [ ] `make fmt` 実行
-- [ ] `go build ./...` 実行
-- [ ] `make lint` 実行
-- [ ] `go test -tags test ./...` 実行
+- [x] 参照側テストを直接ロジック化（ヘルパー呼び出しをインライン化）
+- [x] ヘルパー関数を削除
+- [x] 付随する未使用定数/変数があれば同 PR で削除
+- [x] `make fmt` 実行
+- [x] `go build ./...` 実行
+- [x] `make lint` 実行
+- [x] `go test -tags test ./...` 実行
 
 完了条件:
-- [ ] 3 関数がコードベースから削除されている
-- [ ] テスト可読性が低下していない（同等意図を維持）
-- [ ] 品質ゲート（build/lint/test）が成功
+- [x] 3 関数がコードベースから削除されている
+- [x] テスト可読性が低下していない（同等意図を維持）
+- [x] 品質ゲート（build/lint/test）が成功
 
 ## 2.4 Phase D: 事後精査と結果更新
 
@@ -125,8 +125,8 @@
 - [x] Phase A 完了
 - [x] Phase B 実施中
 - [x] Phase B 完了
-- [ ] Phase C 実施中
-- [ ] Phase C 完了
+- [x] Phase C 実施中
+- [x] Phase C 完了
 - [ ] Phase D 実施中
 - [ ] Phase D 完了
 
@@ -155,6 +155,14 @@
 - 結果サマリ: `buildSVCInfos` と `containsSVCInstruction` を削除し、関連テストを代替ロジックへ置換。
 - 課題/ブロッカー: なし
 - 次アクション: Phase C で要確認3関数を削除
+
+- 実施日: 2026-04-30
+- ブランチ: issei/deadcode-removal-02
+- 実施者: GitHub Copilot
+- 実行コマンド: `make fmt`, `go build ./...`, `make lint`, `go test -tags test ./...`, `rg --glob '*.go'`
+- 結果サマリ: `newResolvedPathForNew`、`newNetworkAnalyzerWithStores`、`matchRuntimeGroupWithName` を削除し、テストを直接ロジック化して置換。
+- 課題/ブロッカー: なし
+- 次アクション: Phase D の事後精査コマンドを実行
 
 ## 6. レビュー観点
 
