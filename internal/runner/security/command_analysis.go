@@ -573,8 +573,21 @@ func IsSystemModification(cmd string, args []string) bool {
 }
 
 // AnalyzeCommandSecurity analyzes a command with its arguments for dangerous
-// patterns with enhanced security validation including directory-based risk
-// assessment and hash validation.
+// patterns. It performs the following checks in order:
+//
+//  1. Input validation (empty / relative path)
+//  2. Symbolic link depth check
+//  3. Directory-based default risk assessment
+//  4. Hash validation (skipped when hashDir is "")
+//  5. High-risk dangerous command pattern matching
+//  6. setuid / setgid bit detection
+//  7. Medium-risk dangerous command pattern matching
+//  8. Per-command risk profile override
+//  9. Directory default risk fallback
+//
+// Example:
+//
+//	risk, pattern, reason, err := AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/"}, "")
 //
 // Parameters:
 //   - resolvedPath: Absolute path to the command executable
