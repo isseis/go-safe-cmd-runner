@@ -250,22 +250,6 @@ func init() {
 	}
 }
 
-// ValidateCommand validates that a command is allowed according to the whitelist
-func (v *Validator) ValidateCommand(command string) error {
-	if command == "" {
-		return fmt.Errorf("%w: empty command", ErrCommandNotAllowed)
-	}
-
-	// Check against compiled allowed command patterns
-	for _, re := range v.allowedCommandRegexps {
-		if re.MatchString(command) {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("%w: command %s does not match any allowed pattern", ErrCommandNotAllowed, command)
-}
-
 // IsDangerousPrivilegedCommand checks if a command path is potentially dangerous when run with privileges
 func (v *Validator) IsDangerousPrivilegedCommand(cmdPath string) bool {
 	_, exists := v.dangerousPrivilegedCommands[cmdPath]

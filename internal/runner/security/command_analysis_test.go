@@ -912,46 +912,6 @@ func TestHasSetuidOrSetgidBit_Detailed(t *testing.T) {
 	})
 }
 
-func TestValidator_ValidateCommand(t *testing.T) {
-	validator, err := NewValidator(nil)
-	require.NoError(t, err)
-
-	t.Run("empty command", func(t *testing.T) {
-		err := validator.ValidateCommand("")
-		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrCommandNotAllowed)
-	})
-
-	t.Run("allowed commands", func(t *testing.T) {
-		allowedCommands := []string{
-			"/bin/echo",
-			"/bin/ls",
-			"/bin/cat",
-			"/usr/bin/grep",
-		}
-
-		for _, cmd := range allowedCommands {
-			err := validator.ValidateCommand(cmd)
-			assert.NoError(t, err, "Command %s should be allowed", cmd)
-		}
-	})
-
-	t.Run("disallowed commands", func(t *testing.T) {
-		disallowedCommands := []string{
-			"rm",
-			"sudo",
-			"../../../bin/sh",
-			"evil-command",
-		}
-
-		for _, cmd := range disallowedCommands {
-			err := validator.ValidateCommand(cmd)
-			assert.Error(t, err, "Command %s should not be allowed", cmd)
-			assert.ErrorIs(t, err, ErrCommandNotAllowed)
-		}
-	})
-}
-
 func TestMatchesPattern(t *testing.T) {
 	tests := []struct {
 		name     string

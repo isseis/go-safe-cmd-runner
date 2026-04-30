@@ -73,65 +73,6 @@ func TestCommandArgumentEscape_DangerousRootArgs(t *testing.T) {
 	}
 }
 
-// TestCommandArgumentEscape_CommandValidation tests command whitelist validation
-func TestCommandArgumentEscape_CommandValidation(t *testing.T) {
-	validator, err := security.NewValidator(nil)
-	require.NoError(t, err)
-
-	tests := []struct {
-		name    string
-		command string
-		wantErr bool
-		reason  string
-	}{
-		{
-			name:    "Empty command",
-			command: "",
-			wantErr: true,
-			reason:  "Empty command should be rejected",
-		},
-		{
-			name:    "Standard ls command",
-			command: "/bin/ls",
-			wantErr: false,
-			reason:  "ls is typically allowed",
-		},
-		{
-			name:    "Standard cat command",
-			command: "/bin/cat",
-			wantErr: false,
-			reason:  "cat is typically allowed",
-		},
-		{
-			name:    "Standard echo command",
-			command: "/bin/echo",
-			wantErr: false,
-			reason:  "echo is typically allowed",
-		},
-		{
-			name:    "Standard grep command",
-			command: "/bin/grep",
-			wantErr: false,
-			reason:  "grep is typically allowed",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validator.ValidateCommand(tt.command)
-
-			if tt.wantErr {
-				require.Error(t, err, "Command %q should be rejected: %s", tt.command, tt.reason)
-			} else if err != nil {
-				// Note: May fail based on actual whitelist configuration
-				// Not using require.NoError here since whitelist may vary
-				t.Skipf("Command %q rejected (may be intentional based on whitelist): %v",
-					tt.command, err)
-			}
-		})
-	}
-}
-
 // TestCommandArgumentEscape_DangerousRootCommands tests detection of dangerous
 // commands when running as root
 func TestCommandArgumentEscape_DangerousRootCommands(t *testing.T) {
