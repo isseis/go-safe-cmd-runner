@@ -413,7 +413,7 @@
 | 安全 | safe | |
 | 関心の分離 | separation of concerns | 設計パターンの文脈 |
 | 符号拡張 | sign extension | 上位ビットを符号ビットで埋める操作 |
-| スライス（Fatバイナリの） | slice | Fat バイナリの各アーキテクチャ断面 |
+| スライス（Fatバイナリの） | slice (Fat binary) | Fat バイナリの各アーキテクチャ断面 |
 | スタックトレース | stack trace | |
 | シンボル | symbol | ELFシンボルテーブルの文脈 |
 | 後続グラフ | successor graph | CFGにおける後続ノードのグラフ |
