@@ -37,6 +37,7 @@
 | 後向きスキャン | backward scan | 命令列を末尾から走査する解析手法 |
 | バックアップ | backup | |
 | 分岐収束 | branch convergence | CFG上で複数の分岐が同一点で合流すること |
+| 幅優先探索 | breadth-first search (BFS) | グラフ探索アルゴリズム |
 | ブートストラップ | bootstrap | システム初期化処理の文脈 |
 | バッチ処理 | batch processing | |
 | ベースライン | baseline | |
@@ -298,6 +299,7 @@
 |--------|---------|------|
 | 名前 | name | |
 | 命名 | naming | |
+| 名前空間 | namespace | 2レベル名前空間/フラット名前空間の文脈 |
 | 通知 | notification | |
 | 通知先 | notification destination | |
 
@@ -411,6 +413,7 @@
 | 安全 | safe | |
 | 関心の分離 | separation of concerns | 設計パターンの文脈 |
 | 符号拡張 | sign extension | 上位ビットを符号ビットで埋める操作 |
+| スライス（Fatバイナリの） | slice | Fat バイナリの各アーキテクチャ断面 |
 | スタックトレース | stack trace | |
 | シンボル | symbol | ELFシンボルテーブルの文脈 |
 | 後続グラフ | successor graph | CFGにおける後続ノードのグラフ |
@@ -465,6 +468,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | テンプレート | template | コマンドテンプレート機能の文脈 |
+| トランポリン | trampoline | 1命令で別アドレスに分岐するスタブ |
 | テンプレート展開 | template expansion | コマンド定義への置換処理 |
 | テンプレートパラメータ | template parameter | `${...}` 形式の参照 |
 | タグ | tag | TOMLタグの文脈 |
@@ -654,6 +658,7 @@
 | 2026-04-30 | x86_64命令デコードドキュメント関連の用語を追加 (backward scan, branch convergence, control flow, copy chain, dataflow analysis, determination method, effective address, false positive, forward scan, immediate value, instruction boundary, misanalysis, predecessor node, register, sign extension, successor graph, variable-length instruction, virtual node, visualization) |
 | 2026-04-30 | パッケージリファレンスドキュメント関連の用語を追加 (audit logging, bootstrap, dependency/dependency analysis, injection, integrity, interface, separation of concerns, symbol) |
 | 2026-04-30 | pclntabメンテナンスガイド関連の用語を追加 (code path, compilation unit, constant, garbage collection, header, linker, magic number, stack trace) |
+| 2026-05-01 | Mach-Oバイナリ解析ドキュメント関連の用語を追加 (breadth-first search, namespace, slice (Fat binary), trampoline) |
 
 ---
 
