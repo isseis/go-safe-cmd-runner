@@ -112,6 +112,13 @@ record -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.
 record -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 ```
 
+### 2.5 Record with Debug Information for syscall Analysis
+
+```bash
+# Record including debug information (Occurrences, DeterminationStats)
+record --debug-info -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh
+```
+
 ## 3. Command-Line Flags
 
 ### 3.1 File Specification (Positional Arguments)
@@ -159,7 +166,7 @@ record /usr/local/bin/*.sh
 
 **Overview**
 
-Specifies the directory where the hash file should be saved. If not specified, the current directory is used.
+Specifies the directory where the hash file should be saved. If not specified, the default hash directory (`/usr/local/etc/go-safe-cmd-runner/hashes`) is used.
 
 **Syntax**
 
@@ -171,7 +178,7 @@ record -d <directory> <file>...
 **Parameters**
 
 - `<directory>`: Directory path where the hash file will be saved (optional)
-- Default: Current directory
+- Default: `/usr/local/etc/go-safe-cmd-runner/hashes`
 
 **Usage Examples**
 
@@ -266,6 +273,44 @@ record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 - The `-force` flag overwrites existing hash files without warning
 - Be careful not to accidentally overwrite important hash files
 - In production environments, it is recommended to take backups before use
+
+### 3.4 `--debug-info` (Optional)
+
+**Overview**
+
+Saves debug information (`Occurrences` field and `DeterminationStats` field) in the syscall analysis result. If not specified, these fields are stripped from the saved hash record.
+
+**Syntax**
+
+```bash
+record --debug-info [-hash-dir <directory>] <file>...
+```
+
+**Debug Information Content**
+
+- **`Occurrences`**: List of virtual addresses within the binary where each syscall was detected, along with the method used to determine the syscall number (`DeterminationMethod`, `DeterminationDetail`)
+- **`DeterminationStats`**: Statistics on syscall number resolution (number of resolutions by immediate value, register copy chain, branch convergence, etc.)
+
+**Usage Examples**
+
+```bash
+# Record hash including debug information
+record --debug-info -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh
+
+# Check recorded debug information (refer to the JSON hash record)
+cat /usr/local/etc/go-safe-cmd-runner/hashes/~usr~local~bin~backup.sh.json | python3 -m json.tool | grep -A 20 '"occurrences"'
+```
+
+**Use Cases**
+
+- **Investigating analysis results**: When warnings like `unknown:indirect_setting` appear, check which addresses were detected
+- **Verifying determination accuracy**: Use `DeterminationStats` to understand how many syscalls were resolved by immediate value, register copy chain, or branch convergence
+- **Development and debugging**: Verifying syscall analysis logic behavior
+
+**Notes**
+
+- Debug information increases file size
+- Debug information is not needed in normal production environments (default: stripped)
 
 ## 4. Practical Examples
 
@@ -444,13 +489,13 @@ fi
 echo "Hash update completed!"
 ```
 
-**Periodic Execution with cron**
+**Notes: Do Not Automate Hash Updates**
 
-```bash
-# crontab -e
-# Update hashes of system binaries every Sunday at 2:00 AM
-0 2 * * 0 /usr/local/sbin/update-system-hashes.sh >> /var/log/hash-update.log 2>&1
-```
+Automating hash updates via cron or similar mechanisms is **dangerous**.
+
+- The purpose of the record command is to "record the hash of the intended state and later verify that the state matches"
+- If hash updates are automated, any tampering with binaries by an attacker will be automatically incorporated into the hashes, causing the tampering to go undetected
+- Hash updates must always be performed manually, after a human has verified the contents of a package update
 
 ### 4.6 Hash Management in Test Environment
 
@@ -515,8 +560,7 @@ ls -ld /usr/local/etc/go-safe-cmd-runner/hashes
 sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
 
 # Or run record with sudo
-sudo record -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+sudo record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 ### 5.3 Existing Hash File Present

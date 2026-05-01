@@ -9,31 +9,42 @@ This document provides a detailed reference of the package structure in this cod
   - `record/`: Hash recording utility
   - `verify/`: File verification utility
 - `internal/`: Core implementation
+  - `ansicolor/`: Terminal color support (ANSI escape codes)
+  - `arm64util/`: Shared ARM64 instruction decoding utilities
   - `cmdcommon/`: Shared command utilities
-  - `color/`: Terminal color support and control
   - `common/`: Common utilities and filesystem abstraction
+  - `dynlib/`: Dynamic library dependency analysis
+    - `elfdynlib/`: ELF binary dynamic library dependency analysis
+    - `machodylib/`: Mach-O binary dynamic library dependency analysis
+  - `fileanalysis/`: Unified file analysis records (hash, syscall, symbol, shebang)
   - `filevalidator/`: File integrity validation
-    - `encoding/`: Filename encoding for hash storage
+    - `pathencoding/`: Hybrid hash filename encoding
   - `groupmembership/`: User/group membership validation
-  - `logging/`: Advanced logging system with interactive UI and Slack integration
+  - `libccache/`: libc syscall wrapper symbol caching and matching
+  - `logging/`: Advanced logging system with Slack integration
   - `redaction/`: Automatic sensitive data filtering
   - `runner/`: Command execution engine
     - `audit/`: Security audit logging
     - `bootstrap/`: System initialization and bootstrap
     - `cli/`: Command-line interface management
     - `config/`: Configuration management
-    - `debug/`: Debug functionality and utilities
+    - `debuginfo/`: Debug functionality and utilities
     - `environment/`: Environment variable processing and filtering
-    - `errors/`: Centralized error handling
     - `executor/`: Command execution logic
     - `output/`: Output path validation and security
     - `privilege/`: Privilege management
     - `resource/`: Unified resource management (normal/dry-run)
     - `risk/`: Risk-based command assessment
+    - `runerrors/`: Centralized error handling
     - `runnertypes/`: Type definitions and interfaces
     - `security/`: Security validation framework
     - `variable/`: Automatic variable generation and definitions
-  - `safefileio/`: Secure file operations
+  - `safefileio/`: Secure file operations with symlink protection
+  - `security/`: Binary security analysis framework
+    - `binaryanalyzer/`: Common interfaces and types for binary analysis
+    - `elfanalyzer/`: ELF binary network capability and syscall detection
+    - `machoanalyzer/`: Mach-O binary network capability detection
+  - `shebang/`: Shebang line parsing and interpreter path resolution
   - `terminal/`: Terminal capabilities detection and interactive UI support
   - `verification/`: Centralized file verification management (pre-execution verification, path resolution)
 - `docs/`: Project documentation with requirements and architecture
@@ -51,7 +62,21 @@ This document provides a detailed reference of the package structure in this cod
 #### File Operations
 - **`safefileio/`**: Secure file I/O operations with symlink attack prevention
 - **`filevalidator/`**: File integrity verification using hash validation
+- **`filevalidator/pathencoding/`**: Hybrid hash filename encoding with automatic fallback
 - **`verification/`**: Centralized pre-execution file verification management
+
+#### Binary Analysis
+- **`security/`**: Binary security analysis framework
+  - **`binaryanalyzer/`**: Common interfaces and types shared across binary analyzers
+  - **`elfanalyzer/`**: ELF binary analysis — network capability detection (socket/connect symbols), dangerous syscall patterns (mprotect/pkey_mprotect with PROT_EXEC), and static syscall number extraction
+  - **`machoanalyzer/`**: Mach-O binary network capability detection
+- **`dynlib/`**: Dynamic library dependency analysis
+  - **`elfdynlib/`**: ELF binary dynamic library dependency analysis (DT_NEEDED, RPATH, RUNPATH)
+  - **`machodylib/`**: Mach-O binary dynamic library dependency analysis
+- **`fileanalysis/`**: Unified file analysis records combining hash, syscall, symbol, and shebang results
+- **`libccache/`**: libc syscall wrapper symbol caching and matching
+- **`arm64util/`**: Shared ARM64 instruction decoding utilities used by elfanalyzer and related packages
+- **`shebang/`**: Shebang line parsing and interpreter path resolution
 
 #### Command Execution
 - **`runner/`**: Core command execution engine
@@ -71,16 +96,16 @@ This document provides a detailed reference of the package structure in this cod
 
 #### User Interface
 - **`terminal/`**: Terminal capabilities detection
-- **`color/`**: Terminal color support
+- **`ansicolor/`**: Terminal color support (ANSI escape codes)
 - **`runner/cli/`**: Command-line interface management
-- **`logging/`**: Advanced logging with interactive UI and Slack integration
+- **`logging/`**: Advanced logging with Slack integration
 
 #### Utilities
 - **`common/`**: Common utilities and filesystem abstraction
 - **`cmdcommon/`**: Shared command utilities
 - **`redaction/`**: Automatic sensitive data filtering
-- **`runner/debug/`**: Debug functionality
-- **`runner/errors/`**: Centralized error handling
+- **`runner/debuginfo/`**: Debug functionality
+- **`runner/runerrors/`**: Centralized error handling
 - **`runner/resource/`**: Unified resource management (normal/dry-run modes)
 - **`runner/bootstrap/`**: System initialization and bootstrap
 

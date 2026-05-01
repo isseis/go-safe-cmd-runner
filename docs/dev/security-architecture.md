@@ -6,7 +6,7 @@ This document provides a comprehensive technical analysis of the security measur
 
 ## Executive Summary
 
-Go Safe Command Runner implements multiple layers of security controls to enable secure delegation of privileged operations and automated batch processing. The security model is built on defense-in-depth principles, combining file integrity verification, environment variable isolation, privilege management, and secure file operations.
+Go Safe Command Runner implements multiple layers of security controls to enable secure delegation of privileged operations and automated batch processing. The security model is built on defense-in-depth principles, combining file integrity verification, ELF binary static analysis, environment variable isolation, privilege management, and secure file operations.
 
 ## Key Security Features
 
@@ -67,7 +67,80 @@ func (v *Validator) Verify(filePath string) error {
 - Cryptographically strong hash algorithm (SHA-256)
 - Atomic file operations to prevent race conditions
 
-### 2. Environment Variable Isolation
+### 2. ELF Binary Static Analysis and Interpreter Tracking
+
+#### Purpose
+At `record` command execution time, performs static analysis of ELF and Mach-O binaries to record dangerous system call patterns, network capability usage, dynamic library dependencies, and script interpreters. The runner uses the stored data to verify the integrity of dynamic libraries, eliminating the need for runtime ELF re-analysis.
+
+#### Implementation Details
+
+**Analysis flow in the record command** (`cmd/record/main.go`):
+
+```go
+// BinaryAnalyzer: network symbol detection (socket, connect, bind, etc.)
+fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer(runtime.GOOS))
+
+// SyscallAnalyzer: syscall pattern analysis (x86_64 / arm64 support)
+syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
+fv.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))
+
+// LibcCacheManager: libc syscall wrapper symbol cache
+cacheMgr, _ := libccache.NewLibcCacheManager(cacheDir, fs, libcAnalyzer)
+fv.SetLibcCache(libccache.NewCacheAdapter(cacheMgr, syscallAnalyzer))
+
+// DynLibAnalyzer: recursive analysis of dynamic library dependencies
+fv.SetELFDynLibAnalyzer(d.elfDynlibAnalyzerFactory())
+fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
+```
+
+**Analysis content**:
+- **syscall analysis** (`internal/security/elfanalyzer/`): Supports both x86_64 and arm64 architectures. Enumerates SYSCALL instructions (0F 05) / SVC #0 and identifies syscall numbers via backward scanning. Detects mprotect/pkey_mprotect + PROT_EXEC combinations (equivalent to JIT code execution) as dangerous patterns. Also analyzes Go wrapper calls (syscall.Syscall, etc.) in Pass 2.
+- **Network capability detection** (`internal/security/binaryanalyzer/`, `internal/security/elfanalyzer/`): Determines binary network capability from the presence of socket, connect, bind, etc. symbols.
+- **Dynamic library dependency analysis** (`internal/dynlib/elfdynlib/`, `internal/dynlib/machodylib/`): Recursively analyzes ELF DT_NEEDED / Mach-O LC_LOAD_DYLIB to record the paths and hashes of all dependency libraries.
+- **libc syscall cache** (`internal/libccache/`): Caches libc syscall wrapper symbols to analyze indirect syscall calls.
+- **shebang tracking** (`internal/shebang/`): Parses and records interpreter paths from `#!/bin/sh` (direct form) / `#!/usr/bin/env python3` (env form), etc.
+
+**Analysis result persistence** (`internal/fileanalysis/`):
+
+```
+fileanalysis.Record (SchemaVersion = 19)
+  ├── ContentHash         // SHA-256 hash of the file
+  ├── DynLibDeps          // List of dependency library paths and hashes ([]LibEntry)
+  ├── SyscallAnalysis     // syscall analysis result (risk level, detected patterns)
+  ├── SymbolAnalysis      // network symbol analysis result
+  └── ShebangInterpreter  // interpreter information (for scripts)
+```
+
+**Runner-side verification** (`internal/verification/manager.go`):
+
+```go
+func (m *Manager) verifyDynLibDeps(cmdPath string) error {
+    record, _ := m.fileValidator.LoadRecord(cmdPath)
+
+    if len(record.DynLibDeps) > 0 {
+        // Verify recorded dependency library hashes via DynLibVerifier
+        return m.dynlibVerifier.Verify(record.DynLibDeps)
+    }
+
+    // Require re-recording if DynLibDeps are not recorded for a dynamically linked binary
+    if hasDynDeps, _ := m.hasDynamicLibraryDeps(cmdPath); hasDynDeps {
+        return &dynlib.ErrDynLibDepsRequired{BinaryPath: cmdPath}
+    }
+    return nil
+}
+```
+
+For binaries with recorded DynLibDeps, verification is optimized by matching against the recorded hash list rather than re-analyzing the ELF at runtime.
+
+#### Security Guarantees
+- Detection of dynamic library tampering (hash comparison of dependency libraries)
+- Requires re-recording before execution if dependencies of dynamically linked binaries are not recorded
+- Pre-detection and warning of dangerous syscall patterns (mprotect+PROT_EXEC)
+- Identification and visualization of binaries with network capabilities
+- Detection of script interpreter tampering (shebang tracking)
+- Support for analysis of indirect syscall calls via libc (libccache)
+
+### 3. Environment Variable Isolation
 
 #### Purpose
 Implements strict allowlist-based filtering of environment variables to prevent information leakage and command injection attacks via environment manipulation.
@@ -119,7 +192,7 @@ func (v *Validator) validateVariableValue(value string) error {
 - Group-level isolation of sensitive variables
 - Validation of variable names and values against dangerous patterns
 
-### 3. Secure File Operations
+### 4. Secure File Operations
 
 #### Purpose
 Provides symlink-safe file I/O operations to prevent symlink attacks, TOCTOU (Time-of-Check-Time-of-Use) race conditions, and path traversal attacks.
@@ -170,7 +243,7 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 - Protection against memory exhaustion attacks
 - Secure file type validation
 
-### 4. Privilege Management
+### 5. Privilege Management
 
 #### Purpose
 Enables controlled privilege escalation for specific operations while maintaining the principle of least privilege and providing comprehensive audit trails.
@@ -252,7 +325,7 @@ func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
 - Emergency shutdown on security failures
 - Supports both native root and setuid binary execution models
 
-### 5. Command Path Verification
+### 6. Command Path Verification
 
 #### Purpose
 Validates command paths against a configurable allowlist and prevents execution of dangerous binaries, ensuring only authorized commands can be executed. Stops environment variable inheritance and uses a secure fixed PATH.
@@ -309,7 +382,7 @@ AllowedCommands: []string{
 - Complete elimination of environment variable PATH inheritance
 - Enforced use of secure fixed PATH (/sbin:/usr/sbin:/bin:/usr/bin)
 
-### 6. Risk-Based Command Control
+### 7. Risk-Based Command Control
 
 #### Purpose
 Implements intelligent security controls based on command risk assessment, automatically blocking high-risk operations while allowing safe commands to execute normally.
@@ -344,7 +417,7 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.
 ```go
 // Location: internal/runner/runnertypes/config.go
 type Command struct {
-    RiskLevel string `toml:"risk_level"` // Risk level
+    RiskLevel string `toml:"risk_level"` // Risk level of the command
 }
 ```
 
@@ -354,7 +427,7 @@ type Command struct {
 - Comprehensive command pattern matching
 - Risk-based audit logging
 
-### 7. Resource Management Security
+### 8. Resource Management Security
 
 #### Purpose
 Provides secure resource management that maintains security boundaries in both normal execution and dry-run modes.
@@ -382,14 +455,12 @@ type ResourceManager interface {
 - Secure notification handling
 - Resource lifecycle management
 
-### 8. Secure Logging and Sensitive Data Protection
+### 9. Secure Logging and Sensitive Data Protection
 
 #### Purpose
 Prevents sensitive information such as passwords, API keys, and tokens from being exposed in log files, providing a safe audit trail without compromising sensitive data. Enhanced with dedicated redaction services to achieve comprehensive protection through a defense-in-depth approach.
 
 #### Implementation Details
-
-##### Current Implementation
 
 **Centralized Data Redaction Foundation**:
 ```go
@@ -410,7 +481,21 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 }
 ```
 
-**RedactingHandler (Log-Level Redaction)**:
+**Two-Layer Defense Architecture**:
+
+Sensitive data protection is implemented as a dual defense where if one layer has a gap, the other catches it.
+
+**Layer 1: Redaction at CommandResult Creation** (`internal/runner/group_executor.go`):
+```go
+// Location: internal/runner/group_executor.go:260-261
+// Redact sensitive information before storing command output into CommandResult
+sanitizedStdout := ge.validator.SanitizeOutputForLogging(stdout)
+sanitizedStderr := ge.validator.SanitizeOutputForLogging(stderr)
+```
+- `SanitizeOutputForLogging()` is implemented in `internal/runner/security/logging_security.go`
+- Redacts sensitive information at the point of storing command output, preventing leakage to Slack notifications and other external services
+
+**Layer 2: Redaction in RedactingHandler** (`internal/redaction/redactor.go`):
 ```go
 // Location: internal/redaction/redactor.go:200-259
 type RedactingHandler struct {
@@ -427,7 +512,7 @@ logger := slog.New(redactedHandler)
 - Recursive processing of structured logs including `slog.KindGroup`
 - Supports both key=value format and authentication header patterns
 
-**Current Slack Notification Implementation**:
+**Slack Notification Implementation**:
 ```go
 // Location: internal/logging/slack_handler.go:64-73
 type SlackHandler struct {
@@ -440,38 +525,9 @@ type SlackHandler struct {
     backoffConfig BackoffConfig
 }
 ```
-- Wrapped by RedactingHandler, so basic redaction is applied
+- Wrapped by RedactingHandler, so Layer 2 redaction is applied
+- Command output is already redacted before storage via Layer 1 (CommandResult creation time), so it is redacted before notification
 - Length limits on command output (stdout: 1000 characters, stderr: 500 characters)
-
-##### Planned Enhancements (task 0055)
-
-**Enhanced Sensitive Information Protection with Multiple Layers of Defense**:
-
-The system adopts a dual defense layer approach where one layer protects even if the other fails:
-
-1. **Layer 1: Redaction at CommandResult Creation** (Planned)
-   - Location: `internal/runner/group_executor.go` (to be modified)
-   - Pre-redact when storing command output into `CommandResult`
-   - Uses `security.Validator.SanitizeOutputForLogging()`
-   - Current implementation: Stores raw output without redaction
-
-2. **Layer 2: Redaction in RedactingHandler** (Implemented)
-   - Location: `internal/redaction/redactor.go:200-259`
-   - Handles `slog.KindAny` type and `LogValuer` interface at log output time
-   - Catches sensitive information missed by Layer 1
-   - Prevents infinite recursion with recursion depth limit
-
-**Enhanced Sensitive Information Protection for Slack Notifications** (Planned):
-```go
-// Planned implementation: internal/logging/slack_handler.go
-type SlackHandler struct {
-    webhookURL string
-    redactor   *redaction.Redactor  // To be added
-}
-```
-- Add explicit redaction processing before sending Slack notifications
-- Complete redaction of sensitive information within `[]common.CommandResult` slices
-- Additional protection layer in external communication
 
 **Log Security Configuration**:
 ```go
@@ -564,9 +620,8 @@ func (v *Validator) SanitizeErrorForLogging(err error) string {
 - Automatic detection and redaction of sensitive patterns in structured logs
 
 #### Security Guarantees
-
-##### Currently Provided Guarantees
-- Automatic redaction in all log output via RedactingHandler
+- Dual defense via Layer 1 (CommandResult creation time) and Layer 2 (RedactingHandler)
+- Even if redaction is missed in Layer 1, Layer 2 (RedactingHandler) catches it
 - Detection and redaction of common sensitive patterns (passwords, tokens, API keys)
 - Configurable log detail levels for different security environments
 - Protection from credential exposure via error messages and command output
@@ -574,12 +629,7 @@ func (v *Validator) SanitizeErrorForLogging(err error) string {
 - Detection and sanitization of environment variable patterns
 - Supports both key=value format and authentication header patterns (Bearer, Basic)
 
-##### Guarantees to be Added After task 0055 Implementation
-- Dual defense with pre-redaction at CommandResult creation time
-- Additional protection layer in external communication with explicit redaction processing in Slack notifications
-- Catch by Layer 2 (RedactingHandler) even if redaction is missed in Layer 1
-
-### 9. Terminal Capability Detection (`internal/terminal/`)
+### 10. Terminal Capability Detection (`internal/terminal/`)
 
 #### Purpose
 Provides terminal capability detection functionality to detect color support and interactive execution environments, enabling selection of appropriate output formats.
@@ -618,19 +668,24 @@ type InteractiveDetector interface {
 - **Environment Variable Validation**: Proper parsing of CI environment variables
 - **Configuration Priority Control**: Security-aware configuration inheritance
 
-### 10. Color Management (`internal/color/`)
+### 11. Color Management (`internal/ansicolor/`)
 
 #### Purpose
 Provides safe colored output based on terminal color support capability and proper management of color control sequences.
 
 #### Implementation Details
 
-**Color Management Interface**:
+**Color Function Type**:
 ```go
-// Location: internal/color/color.go
-type ColorManager interface {
-    Enable() bool
-    Colorize(text string, color ColorCode) string
+// Location: internal/ansicolor/color.go
+// Color is a function type that wraps text with ANSI escape sequences
+type Color func(text string) string
+
+// NewColor creates a color function with the specified ANSI code
+func NewColor(ansiCode string) Color {
+    return func(text string) string {
+        return ansiCode + text + resetCode
+    }
 }
 ```
 
@@ -653,7 +708,7 @@ type ColorDetector interface {
 - **Verified Patterns**: Enables color only for known color-capable terminals
 - **Safe Default**: Guarantees safe behavior when color support is unknown
 
-### 11. Common Utilities (`internal/common/`, `internal/cmdcommon/`)
+### 12. Common Utilities (`internal/common/`, `internal/cmdcommon/`)
 
 #### Purpose
 Provides cross-package foundational functionality, guaranteeing testable, reproducible, and secure implementations.
@@ -681,7 +736,7 @@ type FileSystem interface {
 - Type-safe interface contracts
 - Mock implementations preserve security properties
 
-### 12. User and Group Execution Security
+### 13. User and Group Execution Security
 
 #### Purpose
 Provides secure user and group switching functionality while maintaining strict security boundaries and comprehensive audit trails.
@@ -720,7 +775,7 @@ type GroupMembershipChecker interface {
 - Group membership confirmation
 - Complete audit trail of user and group switching
 
-### 13. Multi-Channel Notification Security
+### 14. Multi-Channel Notification Security
 
 #### Purpose
 Provides secure notification functionality for critical security events while protecting sensitive information in external communication.
@@ -731,24 +786,30 @@ Provides secure notification functionality for critical security events while pr
 ```go
 // Location: internal/logging/slack_handler.go
 type SlackHandler struct {
-    webhookURL string
-    redactor   *redaction.Redactor
+    webhookURL    string
+    runID         string
+    httpClient    *http.Client
+    level         slog.Level
+    attrs         []slog.Attr
+    groups        []string
+    backoffConfig BackoffConfig
 }
 ```
 
 **Secure Notification Handling**:
-- Automatic sensitive data redaction before sending
+- Wrapped by RedactingHandler, so sensitive data is automatically redacted (Layer 2)
+- Command output is pre-redacted at CommandResult creation time, so it is already redacted before notification (Layer 1)
 - Configurable notification channels
 - Rate limiting and error handling
 - Secure webhook URL management
 
 #### Security Guarantees
-- Sensitive data protection in external notifications
+- Sensitive data protection in external notifications (dual-layer defense)
 - Secure communication channel management
 - Rate limiting to prevent abuse
 - Comprehensive error handling
 
-### 14. Command Execution Environment Isolation
+### 15. Command Execution Environment Isolation
 
 #### Purpose
 Prevents child processes from reading unexpected input and explicitly controls the execution environment to improve security and stability.
@@ -758,11 +819,9 @@ Prevents child processes from reading unexpected input and explicitly controls t
 **Standard Input Disabling**:
 ```go
 // Location: internal/runner/executor/executor.go:210-224
-// Set up stdin to null device for security and stability:
-// 1. Security: Prevents child processes from reading unexpected input from stdin
-// 2. Stability: Prevents errors in commands that try to allocate a pseudo-TTY when stdin is nil
-//    (e.g., docker-compose exec can fail with "exit status 255" if stdin is not configured)
-// 3. Best practice: Batch processing tools should explicitly control stdin rather than inheriting it
+// Set up stdin to null device to prevent issues with commands that expect stdin
+// This prevents "exit status 255" errors from docker-compose exec and similar commands
+// that try to allocate a pseudo-TTY when stdin is nil (file descriptor -1)
 devNull, err := os.Open(os.DevNull)
 if err != nil {
     return nil, fmt.Errorf("failed to open null device for stdin: %w", err)
@@ -790,7 +849,7 @@ execCmd.Stdin = devNull
 - Prevents processing halt or tampering via unexpected input
 - Cross-platform support (Linux: `/dev/null`, Windows: `NUL`)
 
-### 15. Resource Protection with Output Size Limits
+### 16. Resource Protection with Output Size Limits
 
 #### Purpose
 Limits command output size to prevent memory exhaustion attacks and disk space exhaustion, ensuring system stability and security.
@@ -833,7 +892,7 @@ const DefaultOutputSizeLimit = 10 * 1024 * 1024
 - Clear error messages when output size limit is exceeded
 - Fine-grained control with flexible limit configuration per command
 
-### 16. Configuration Security
+### 17. Configuration Security
 
 #### Purpose
 Ensures that configuration files and overall system configuration are not tampered with and follows security best practices.
@@ -931,17 +990,18 @@ if !filepath.IsAbs(hashDir) {
 The system implements multiple security layers:
 
 1. **Input Validation**: All inputs are validated at entry points (including absolute path requirement)
-2. **Pre-Verification**: Hash verification of configuration files before use
-3. **Path Security**: Comprehensive path validation and symlink protection, secure fixed PATH use
-4. **File Integrity**: Hash-based verification of all critical files (configuration, executables)
-5. **Privilege Control**: Principle of least privilege with controlled escalation
-6. **Environment Isolation**: Strict allowlist-based environment filtering, PATH inheritance elimination
-7. **Command Validation**: Risk-based command execution control with allowlist verification
-8. **Data Protection**: Automatic sensitive information redaction in all log output via RedactingHandler (task 0055 will add pre-redaction at CommandResult creation time to strengthen defense-in-depth with dual protection)
-9. **User and Group Security**: Secure user and group switching with membership verification
-10. **Hash Directory Security**: Complete prevention of custom hash directory attacks
-11. **Execution Environment Isolation**: Prevention of unexpected input via stdin disabling
-12. **Resource Protection**: Prevention of memory and disk exhaustion attacks with output size limits
+2. **ELF Binary Static Analysis**: Pre-detection of dangerous syscall patterns and network capabilities by the record command, tracking and hash verification of dynamic library dependencies
+3. **Pre-Verification**: Hash verification of configuration files before use
+4. **Path Security**: Comprehensive path validation and symlink protection, secure fixed PATH use
+5. **File Integrity**: Hash-based verification of all critical files (configuration, executables, dependency libraries)
+6. **Privilege Control**: Principle of least privilege with controlled escalation
+7. **Environment Isolation**: Strict allowlist-based environment filtering, PATH inheritance elimination
+8. **Command Validation**: Risk-based command execution control with allowlist verification
+9. **Data Protection**: Dual-layer defense — automatic sensitive information redaction via Layer 1 (CommandResult creation time) and Layer 2 (RedactingHandler for all log output)
+10. **User and Group Security**: Secure user and group switching with membership verification
+11. **Hash Directory Security**: Complete prevention of custom hash directory attacks
+12. **Execution Environment Isolation**: Prevention of unexpected input via stdin disabling
+13. **Resource Protection**: Prevention of memory and disk exhaustion attacks with output size limits
 
 ### Zero-Trust Model
 
@@ -984,6 +1044,21 @@ The system implements multiple security layers:
 - Atomic file operations
 - Pre-hash verification of configuration files
 - Fixed hash directory default (custom specification completely prohibited)
+
+### Dangerous Binary Execution
+
+**Threats**:
+- Dynamic code execution using mprotect+PROT_EXEC (equivalent to JIT code injection)
+- Unexpected external communication from binaries with network capabilities
+- Behavior tampering via replacement of dynamic libraries (.so / dylib)
+- Arbitrary code execution via script interpreter tampering
+
+**Countermeasures**:
+- Pre-detection of dangerous syscall patterns via ELF static analysis by the record command
+- Visualization of communication capabilities via network symbol analysis
+- Hash recording of dynamic library dependencies and pre-execution verification
+- Hash recording of shebang interpreters and pre-execution verification
+- Requires re-recording before execution if DynLibDeps are not recorded for dynamically linked binaries
 
 ### Privilege Escalation
 
@@ -1070,11 +1145,15 @@ The system implements multiple security layers:
 - Result caching for repeated command analysis
 
 ### Data Redaction
-- Redaction at log output time via RedactingHandler (currently implemented)
+- Dual-layer defense via Layer 1 (CommandResult creation time) and Layer 2 (RedactingHandler)
 - Pre-compiled patterns for sensitive data
 - Minimal performance impact on normal operations
 - Configurable redaction policy
-- Addition of pre-redaction at CommandResult creation time for defense-in-depth (to be implemented in task 0055)
+
+### ELF Binary Analysis
+- Analysis performed only at record command execution time (runner references stored data at runtime)
+- For binaries with recorded DynLibDeps: no runtime ELF re-analysis needed (only matches against stored hash list)
+- Avoidance of redundant analysis via libc syscall wrapper caching
 
 ### Resource Management
 - Controls memory usage with output size limits
@@ -1179,7 +1258,7 @@ Such an implementation is impractical due to:
 #### References
 
 - [Safe programming. How to avoid TOCTOU vulnerability](https://stackoverflow.com/questions/41069166/)
-- [CERT C Coding Standard: POS35-C](https://wiki.sei.cmu.edu/confluence/display/c/POS35-C.+Avoid+race+conditions+while+checking+for+the+existence+of+a+symbolic+link)
+- [CERT C Coding Standard: POS35-C](https://wiki.sei.cmu.edu/confluence/display/c/POS35-C.+Avoid+race_conditions+while+checking+for+the+existence+of+a+symbolic_link)
 - [Wikipedia: Symlink race](https://en.wikipedia.org/wiki/Symlink_race)
 - [Star Lab Software: Linux Symbolic Links Security](https://www.starlab.io/blog/linux-symbolic-links-convenient-useful-and-a-whole-lot-of-trouble)
 
@@ -1187,15 +1266,16 @@ Such an implementation is impractical due to:
 
 Go Safe Command Runner provides a comprehensive security framework for secure command execution with privilege delegation. The multi-layered approach combines modern security primitives (openat2) with proven security principles (defense-in-depth, zero-trust, fail-safe design) to create a robust system suitable for production use in security-conscious environments.
 
-The implementation demonstrates security engineering best practices including comprehensive input validation, risk-based command control, secure privilege management, automatic sensitive data protection, and extensive audit capabilities. The system is designed to fail safely and provide complete visibility into security-related operations.
+The implementation demonstrates security engineering best practices including comprehensive input validation, ELF binary static analysis, risk-based command control, secure privilege management, automatic sensitive data protection, and extensive audit capabilities. The system is designed to fail safely and provide complete visibility into security-related operations.
 
-Key security innovation features include:
+Key security features include:
+- ELF binary static analysis by the record command (detection of dangerous syscall patterns and network capabilities, hash recording of dynamic library dependencies)
 - Intelligent risk assessment for command execution
 - Unified resource management with consistent security boundaries
-- Automatic sensitive data redaction in all log output via RedactingHandler (task 0055 will add pre-redaction at CommandResult creation time to achieve dual protection with defense-in-depth)
+- Dual-layer defense — automatic sensitive data redaction via Layer 1 (CommandResult creation time) and Layer 2 (RedactingHandler for all log output)
 - Secure user and group execution functionality
 - Comprehensive multi-channel notifications with security-aware messaging
 - Explicit control of execution environment via stdin disabling
 - Prevention of resource exhaustion attacks with output size limits
 
-The system provides enterprise-grade security controls while maintaining operational flexibility and transparency. Recent improvements have strengthened execution environment isolation and resource protection, achieving more comprehensive security countermeasures. Implementation of task 0055 will further strengthen sensitive data protection.
+The system provides enterprise-grade security controls while maintaining operational flexibility and transparency. ELF binary static analysis and dual-layer sensitive data redaction deliver comprehensive security countermeasures.

@@ -109,12 +109,18 @@ cmd/                    # コマンドラインエントリーポイント
 └── verify/            # ファイル検証ユーティリティ
 
 internal/              # コア実装
+├── ansicolor/         # ターミナルカラーサポート（ANSIエスケープコード）
+├── arm64util/         # ARM64命令デコードユーティリティ
 ├── cmdcommon/         # 共有コマンドユーティリティ
-├── color/             # ターミナルカラーサポート
 ├── common/            # 共通ユーティリティとファイルシステム抽象化
+├── dynlib/            # 動的ライブラリ依存関係解析
+│   ├── elfdynlib/     # ELFバイナリの動的ライブラリ依存関係解析
+│   └── machodylib/    # Mach-Oバイナリの動的ライブラリ依存関係解析
+├── fileanalysis/      # 統合ファイル解析レコード（ハッシュ、シスコール、シンボル、シェバン）
 ├── filevalidator/     # ファイル整合性検証
-│   └── encoding/      # ハイブリッドハッシュファイル名エンコーディング
+│   └── pathencoding/  # ハイブリッドハッシュファイル名エンコーディング
 ├── groupmembership/   # ユーザー/グループメンバーシップ検証
+├── libccache/         # libcシスコールラッパーシンボルのキャッシュとマッチング
 ├── logging/           # Slack統合を備えた高度なログ機能
 ├── redaction/         # 機密データの自動フィルタリング
 ├── runner/            # コマンド実行エンジン
@@ -122,18 +128,23 @@ internal/              # コア実装
 │   ├── bootstrap/     # システム初期化
 │   ├── cli/           # コマンドラインインターフェース
 │   ├── config/        # 設定管理
-│   ├── debug/         # デバッグ機能とユーティリティ
+│   ├── debuginfo/     # デバッグ機能とユーティリティ
 │   ├── environment/   # 環境変数処理
-│   ├── errors/        # 一元化エラー処理
 │   ├── executor/      # コマンド実行ロジック
 │   ├── output/        # 出力キャプチャ管理
 │   ├── privilege/     # 権限管理
 │   ├── resource/      # リソース管理（通常/ドライラン）
 │   ├── risk/          # リスクベースコマンド評価
+│   ├── runerrors/     # 一元化エラー処理
 │   ├── runnertypes/   # 型定義とインターフェース
 │   ├── security/      # セキュリティ検証フレームワーク
 │   └── variable/      # 自動変数の生成と定義
 ├── safefileio/        # セキュアファイル操作
+├── security/          # バイナリセキュリティ解析フレームワーク
+│   ├── binaryanalyzer/ # バイナリ解析共通インターフェースと型定義
+│   ├── elfanalyzer/   # ELFバイナリのネットワーク機能検出
+│   └── machoanalyzer/ # Mach-Oバイナリのネットワーク機能検出
+├── shebang/           # シェバン行の解析とインタープリタパス解決
 ├── terminal/          # ターミナル機能検出
 └── verification/      # 一元化検証管理
 ```

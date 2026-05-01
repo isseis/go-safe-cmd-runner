@@ -18,6 +18,7 @@
 |--------|---------|------|
 | 〜に加えて | in addition to 〜 | |
 | アーキテクチャ設計書 | architecture design | |
+| 監査ログ | audit logging | セキュリティ監査の文脈 |
 | アクセス | access | |
 | 値 | value | |
 | 曖昧さ | ambiguity | |
@@ -33,7 +34,10 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| 後向きスキャン | backward scan | 命令列を末尾から走査する解析手法 |
 | バックアップ | backup | |
+| 分岐収束 | branch convergence | CFG上で複数の分岐が同一点で合流すること |
+| ブートストラップ | bootstrap | システム初期化処理の文脈 |
 | バッチ処理 | batch processing | |
 | ベースライン | baseline | |
 | 基本 | basic | |
@@ -49,6 +53,11 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 能力 | capability | |
+| コードパス | code path | 実行経路の文脈 |
+| コンパイル単位 | compilation unit | ELFバイナリの文脈 |
+| 定数 | constant | プログラムの定数値 |
+| 制御フロー | control flow | |
+| コピーチェーン | register copy chain / copy chain | レジスタのコピー命令の連鎖 |
 | キャッシュ | cache | |
 | キャプチャ | capture | |
 | CI/CD | CI/CD | |
@@ -79,6 +88,9 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| データフロー解析 | dataflow analysis | CFGを用いたデータの流れの解析 |
+| 依存 / 依存解析 | dependency / dependency analysis | 動的ライブラリ依存解析の文脈 |
+| 判定メソッド | determination method | syscall番号の決定手段を示す文字列 |
 | デバッグ | debug / debugging | |
 | データ構造 | data structure | |
 | データベース | database | |
@@ -112,6 +124,7 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| 実効アドレス | effective address | メモリアクセスの最終的なアドレス |
 | エコー | echo | |
 | E2E | E2E | End-to-End の略 |
 | エッジケース | edge case | |
@@ -144,6 +157,8 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| 誤検出 | false positive | 誤ってSYSCALL命令として検出すること |
+| 前向きスキャン | forward scan | 命令列を先頭から走査する解析手法 |
 | FAQ | FAQ | Frequently Asked Questions |
 | 汎用的 | generic | |
 | 機能 | feature / functionality | |
@@ -165,6 +180,7 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| ガベージコレクション | garbage collection | |
 | グローバル | global | |
 | グローバル変数 | global variable | |
 | グローバルレベル | global level | |
@@ -178,6 +194,7 @@
 | ハンドラ | handler | slogハンドラの文脈 |
 | ハードコード | hardcoded | プログラムに埋め込まれた値 |
 | ハッシュ | hash | |
+| ヘッダー | header | バイナリフォーマットのヘッダー構造 |
 | 階層 | hierarchy / level | "level" は設定階層の文脈で使用 |
 | 階層継承 | hierarchy inheritance | |
 | 階層解決 | hierarchy resolution | |
@@ -187,6 +204,11 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| 即値 | immediate value | 命令中に埋め込まれた定数値 |
+| 命令境界 | instruction boundary | x86_64可変長命令の正しい境界位置 |
+| インジェクション | injection | コマンドインジェクションの文脈では "injection" |
+| 整合性 | integrity | ファイルの整合性検証の文脈 |
+| インターフェース | interface | |
 | 即時展開 | immediate expansion | 変数展開の文脈 |
 | 実装 | implementation | |
 | 実装計画書 | implementation plan | |
@@ -216,6 +238,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 遅延評価 | lazy evaluation | 変数展開の文脈 |
+| リンカー | linker | コンパイル・リンク処理の文脈 |
 | 活用 | leverage / leveraging | |
 | 学習 | learn / learning | |
 | ライセンス | license | |
@@ -237,6 +260,8 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| マジックナンバー | magic number | バイナリフォーマット識別用の固定値 |
+| 誤解析 | misanalysis | 誤ったsyscall番号を解析すること |
 | 保守性 | maintainability | |
 | メンテナンス | maintenance | |
 | 管理 | manage / management | |
@@ -298,6 +323,7 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| 前駆ノード | predecessor node | CFGにおける先行ノード |
 | パッケージ | package | |
 | パラメータ | parameter | |
 | パラメータ値 | parameter value | Template parameter value |
@@ -338,6 +364,7 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| レジスタ | register | x86_64やarm64のCPUレジスタ |
 | 読み取り | read | |
 | README | README | |
 | 理由 | reason | |
@@ -382,6 +409,11 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 安全 | safe | |
+| 関心の分離 | separation of concerns | 設計パターンの文脈 |
+| 符号拡張 | sign extension | 上位ビットを符号ビットで埋める操作 |
+| スタックトレース | stack trace | |
+| シンボル | symbol | ELFシンボルテーブルの文脈 |
+| 後続グラフ | successor graph | CFGにおける後続ノードのグラフ |
 | サンプル | sample | |
 | スコープ | scope | 変数スコープの文脈 |
 | スクリプト | script | |
@@ -486,7 +518,10 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| 可変長命令 | variable-length instruction | 1〜15バイトのx86_64命令 |
+| 仮想ノード | virtual node | CFG解析で使用する論理的な終端ノード |
 | バリデーション | validation | データ妥当性検証 |
+| 可視化 | visualization | ログや統計による情報の見える化 |
 | 妥当性 | validity | |
 | 値 | value | |
 | 変数 | variable | |
@@ -616,6 +651,9 @@
 | 2025-12-18 | 変数スコープと命名規則関連の用語を追加 (global variable, local variable, scope, variable scope) |
 | 2026-01-11 | フィールド継承関連の用語を追加 (inheritable, inheritance model, override model, union merge, map merge, overrideable, customize/customization, custom, default settings) |
 | 2026-01-27 | Slack Webhook分離機能関連の用語を追加 (notification, notification destination, Slack notification, success notification, error notification, webhook URL) |
+| 2026-04-30 | x86_64命令デコードドキュメント関連の用語を追加 (backward scan, branch convergence, control flow, copy chain, dataflow analysis, determination method, effective address, false positive, forward scan, immediate value, instruction boundary, misanalysis, predecessor node, register, sign extension, successor graph, variable-length instruction, virtual node, visualization) |
+| 2026-04-30 | パッケージリファレンスドキュメント関連の用語を追加 (audit logging, bootstrap, dependency/dependency analysis, injection, integrity, interface, separation of concerns, symbol) |
+| 2026-04-30 | pclntabメンテナンスガイド関連の用語を追加 (code path, compilation unit, constant, garbage collection, header, linker, magic number, stack trace) |
 
 ---
 
