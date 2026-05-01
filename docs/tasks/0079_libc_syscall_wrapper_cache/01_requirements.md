@@ -69,7 +69,7 @@ libc は頻繁に更新されるものではないため、ライブラリファ
 
 キャッシュファイル名のエンコード入力には `DynLibDeps.Libs[].Path` の値をそのまま使用する。この値は `dynlibanalysis.LibraryResolver` が `filepath.EvalSymlinks + filepath.Clean` を適用して正規化した実体ファイルパスであり（`resolver.go:39`, `resolver.go:87`）、シンボリックリンクが解決済みの状態である。
 
-複数バージョンの libc が共存する環境でも衝突しないよう、`internal/filevalidator/pathencoding` パッケージが提供する既存のファイル名エンコーディング方式（[hash-file-naming-adr.ja.md](../../dev/hash-file-naming-adr.ja.md) 参照）を使用してこのパスをエンコードする。
+複数バージョンの libc が共存する環境でも衝突しないよう、`internal/filevalidator/pathencoding` パッケージが提供する既存のファイル名エンコーディング方式（[hash-file-naming-adr.ja.md](../../dev/architecture_design/hash-file-naming-adr.ja.md) 参照）を使用してこのパスをエンコードする。
 
 #### FR-3.1.3: キャッシュファイルの保存場所
 

@@ -1763,4 +1763,4 @@ func TestExtractCommandResults_LegacyFormat(t *testing.T) {
 
 - [要件定義書](./01_requirements.md)
 - [実装計画](./04_implementation_plan.md)（作成予定）
-- [RedactingHandler スライス型変換の動作](../../dev/redaction_slice_type_conversion.md)
+- [RedactingHandler スライス型変換の動作](../../dev/architecture_design/redaction_slice_type_conversion.md)

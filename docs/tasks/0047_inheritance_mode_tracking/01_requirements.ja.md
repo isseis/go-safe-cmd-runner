@@ -353,8 +353,8 @@ case InheritanceModeReject:
 ## 9. 参考情報
 
 ### 9.1 関連ドキュメント
-- [docs/dev/config-inheritance-behavior.ja.md](../../dev/config-inheritance-behavior.ja.md) - 継承動作の詳細説明
-- [docs/dev/security-architecture.ja.md](../../dev/security-architecture.ja.md) - セキュリティアーキテクチャ
+- [docs/dev/config-inheritance-behavior.ja.md](../../dev/architecture_design/config-inheritance-behavior.ja.md) - 継承動作の詳細説明
+- [docs/dev/security-architecture.ja.md](../../dev/architecture_design/security-architecture.ja.md) - セキュリティアーキテクチャ
 
 ### 9.2 関連タスク
 - Task 0011: Allowlist refinement - `InheritanceMode`型の初期定義
