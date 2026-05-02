@@ -5,7 +5,7 @@ package config
 
 import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
 // LoadConfigForTest loads and validates configuration from byte content instead of file path.

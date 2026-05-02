@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/variable"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/variable"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 

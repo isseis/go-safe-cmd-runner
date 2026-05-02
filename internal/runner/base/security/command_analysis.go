@@ -1,0 +1,829 @@
+package security
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+)
+
+// NetworkOperationType indicates the type of network operation a command performs
+type NetworkOperationType int
+
+// Network operation type constants
+const (
+	NetworkTypeNone        NetworkOperationType = iota // Not a network command
+	NetworkTypeAlways                                  // Always performs network operations
+	NetworkTypeConditional                             // Conditional based on arguments
+)
+
+// commandProfileDefinitions defines command risk profiles using the new builder pattern
+// This uses CommandRiskProfile with explicit risk factor separation
+var commandProfileDefinitions = []CommandProfileDef{
+	// Privilege escalation commands
+	NewProfile("sudo", "su", "doas").
+		PrivilegeRisk(runnertypes.RiskLevelCritical, "Allows execution with elevated privileges, can compromise entire system").
+		Build(),
+
+	// System modification commands
+	NewProfile("systemctl", "service").
+		SystemModRisk(runnertypes.RiskLevelHigh, "Can modify system services and configuration").
+		Build(),
+
+	// Destructive operations - separate definitions for different risk levels
+	NewProfile("rm").
+		DestructionRisk(runnertypes.RiskLevelHigh, "Can delete files and directories").
+		Build(),
+	NewProfile("dd").
+		DestructionRisk(runnertypes.RiskLevelHigh, "Can overwrite entire disks, potential data loss").
+		Build(),
+
+	// AI service commands with multiple risk factors
+	NewProfile("claude", "gemini", "chatgpt", "gpt", "openai", "anthropic").
+		NetworkRisk(runnertypes.RiskLevelHigh, "Always communicates with external AI API").
+		DataExfilRisk(runnertypes.RiskLevelHigh, "May send sensitive data to external service").
+		AlwaysNetwork().
+		Build(),
+
+	// Network commands (always)
+	NewProfile("curl", "wget").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Always performs network operations").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("nc", "netcat", "telnet").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Establishes network connections").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("ssh", "scp").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Remote operations via network").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("aws").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Cloud service operations via network").
+		AlwaysNetwork().
+		Build(),
+
+	// Network commands (conditional)
+	NewProfile("git").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Network operations for clone/fetch/pull/push/remote").
+		ConditionalNetwork("clone", "fetch", "pull", "push", "remote").
+		Build(),
+	NewProfile("rsync").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Network operations when using remote sources/destinations").
+		ConditionalNetwork().
+		Build(),
+
+	// Script interpreters and shells - can execute arbitrary network commands internally
+	// These may not have network symbols in their main binary but can invoke network tools
+	NewProfile("bash", "sh", "dash", "zsh", "ksh", "csh", "tcsh", "fish").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Shell can execute arbitrary commands including network tools").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("node", "nodejs", "deno", "bun").
+		NetworkRisk(runnertypes.RiskLevelMedium, "JavaScript runtime with built-in network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("python", "python2", "python3").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Python interpreter with built-in network libraries").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("perl").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Perl interpreter with built-in network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("ruby").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Ruby interpreter with built-in network libraries").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("php").
+		NetworkRisk(runnertypes.RiskLevelMedium, "PHP interpreter can perform network operations").
+		AlwaysNetwork().
+		Build(),
+
+	// Lua interpreter
+	NewProfile("lua", "lua5.1", "lua5.2", "lua5.3", "lua5.4", "luajit").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Lua interpreter can load network extensions (e.g. LuaSocket)").
+		AlwaysNetwork().
+		Build(),
+
+	// Tcl/Tk interpreter
+	NewProfile("tclsh", "tclsh8.5", "tclsh8.6", "wish", "wish8.5", "wish8.6").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Tcl interpreter with built-in socket command").
+		AlwaysNetwork().
+		Build(),
+
+	// R language
+	NewProfile("R", "Rscript").
+		NetworkRisk(runnertypes.RiskLevelMedium, "R interpreter with network-capable packages").
+		AlwaysNetwork().
+		Build(),
+
+	// Julia
+	NewProfile("julia").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Julia interpreter with built-in network capabilities").
+		AlwaysNetwork().
+		Build(),
+
+	// GNU Guile (Scheme)
+	NewProfile("guile", "guile2", "guile3").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Guile Scheme interpreter with network module").
+		AlwaysNetwork().
+		Build(),
+
+	// Erlang/Elixir
+	NewProfile("elixir", "iex").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Elixir runtime with built-in network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("erl", "erlc", "escript").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Erlang runtime, network-oriented language").
+		AlwaysNetwork().
+		Build(),
+
+	// JVM-based runtimes
+	NewProfile("java", "javaw").
+		NetworkRisk(runnertypes.RiskLevelMedium, "JVM with built-in java.net network libraries").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("groovy", "groovysh", "groovyConsole").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Groovy runtime on JVM with network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("kotlin").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Kotlin runtime on JVM with network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("scala", "scala3").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Scala runtime on JVM with network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("clojure", "clj").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Clojure runtime on JVM with network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("jruby").
+		NetworkRisk(runnertypes.RiskLevelMedium, "JRuby runtime with Ruby network libraries on JVM").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("jython").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Jython runtime with Python network libraries on JVM").
+		AlwaysNetwork().
+		Build(),
+
+	// .NET runtimes
+	NewProfile("dotnet").
+		NetworkRisk(runnertypes.RiskLevelMedium, ".NET runtime with System.Net network libraries").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("mono").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Mono .NET runtime with network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("pwsh", "powershell").
+		NetworkRisk(runnertypes.RiskLevelMedium, "PowerShell with built-in network cmdlets").
+		AlwaysNetwork().
+		Build(),
+}
+
+// commandRiskProfiles is built from commandProfileDefinitions (new structure)
+var commandRiskProfiles = buildCommandRiskProfiles()
+
+func buildCommandRiskProfiles() map[string]CommandRiskProfile {
+	profiles := make(map[string]CommandRiskProfile)
+	for _, def := range commandProfileDefinitions {
+		// Profile is already validated in Build()
+		for _, cmd := range def.Commands() {
+			profiles[cmd] = def.Profile()
+		}
+	}
+	return profiles
+}
+
+// Pre-sorted patterns by risk level for efficient lookup
+var (
+	highRiskPatterns   []DangerousCommandPattern
+	mediumRiskPatterns []DangerousCommandPattern
+)
+
+// dangerousCommandPatterns contains the static list of dangerous command patterns
+var dangerousCommandPatterns = []DangerousCommandPattern{
+	// File system destruction
+	{[]string{"rm", "-rf"}, runnertypes.RiskLevelHigh, "Recursive file removal"},
+	{[]string{"sudo", "rm"}, runnertypes.RiskLevelHigh, "Privileged file removal"},
+	{[]string{"format"}, runnertypes.RiskLevelHigh, "Disk formatting"},
+	{[]string{"mkfs"}, runnertypes.RiskLevelHigh, "File system creation"},
+	{[]string{"fdisk"}, runnertypes.RiskLevelHigh, "Disk partitioning"},
+
+	// Data manipulation
+	{[]string{"dd", "if="}, runnertypes.RiskLevelHigh, "Low-level disk operations"},
+	{[]string{"chmod", "777"}, runnertypes.RiskLevelMedium, "Overly permissive file permissions"},
+	{[]string{"chown", "root"}, runnertypes.RiskLevelMedium, "Ownership change to root"},
+
+	// Network operations
+	{[]string{"wget"}, runnertypes.RiskLevelMedium, "File download"},
+	{[]string{"curl"}, runnertypes.RiskLevelMedium, "Network request"},
+	{[]string{"nc", "-"}, runnertypes.RiskLevelMedium, "Network connection"},
+	{[]string{"netcat"}, runnertypes.RiskLevelMedium, "Network connection"},
+}
+
+// init initializes the pre-sorted pattern lists for efficient lookup
+func init() {
+	for _, p := range dangerousCommandPatterns {
+		switch p.RiskLevel {
+		case runnertypes.RiskLevelHigh:
+			highRiskPatterns = append(highRiskPatterns, p)
+		case runnertypes.RiskLevelMedium:
+			mediumRiskPatterns = append(mediumRiskPatterns, p)
+		case runnertypes.RiskLevelLow, runnertypes.RiskLevelUnknown:
+			// Skip low and none risk patterns as they don't need checking
+			continue
+		default:
+			// Skip invalid risk levels
+			continue
+		}
+	}
+}
+
+// IsDangerousPrivilegedCommand checks if a command path is potentially dangerous when run with privileges
+func (v *Validator) IsDangerousPrivilegedCommand(cmdPath string) bool {
+	_, exists := v.dangerousPrivilegedCommands[cmdPath]
+	return exists
+}
+
+// IsShellCommand checks if a command is a shell command
+func (v *Validator) IsShellCommand(cmdPath string) bool {
+	_, exists := v.shellCommands[cmdPath]
+	return exists
+}
+
+// IsDangerousRootCommand checks if a command matches dangerous patterns when running as root.
+//
+// This function uses exact command name matching (after extracting the basename and converting
+// to lowercase) to determine if a command is in the dangerous patterns list. This ensures that
+// commands like "lsrm" are not incorrectly flagged just because they contain "rm" as a substring.
+//
+// Matching behavior:
+//   - Extracts the basename from the command path (e.g., "/bin/rm" -> "rm")
+//   - Converts to lowercase for case-insensitive comparison
+//   - Performs exact match against DangerousRootPatterns list
+//
+// Examples:
+//   - "/bin/rm" matches if DangerousRootPatterns contains "rm"
+//   - "/usr/bin/lsrm" does NOT match even if DangerousRootPatterns contains "rm"
+//   - "RM" matches if DangerousRootPatterns contains "rm" (case-insensitive)
+//
+// The DangerousRootPatterns list is validated at validator creation time to ensure
+// all entries are suitable for exact matching (no paths, wildcards, or regex patterns).
+func (v *Validator) IsDangerousRootCommand(cmdPath string) bool {
+	cmdBase := filepath.Base(cmdPath)
+	cmdLower := strings.ToLower(cmdBase)
+
+	return slices.Contains(v.config.DangerousRootPatterns, cmdLower)
+}
+
+// HasDangerousRootArgs checks if any argument contains dangerous patterns for root commands
+func (v *Validator) HasDangerousRootArgs(args []string) []int {
+	var dangerousIndices []int
+
+	for i, arg := range args {
+		argLower := strings.ToLower(arg)
+		for _, dangerousPattern := range v.config.DangerousRootArgPatterns {
+			if strings.Contains(argLower, dangerousPattern) {
+				dangerousIndices = append(dangerousIndices, i)
+				break
+			}
+		}
+	}
+	return dangerousIndices
+}
+
+// HasWildcards checks if any argument contains wildcards
+func (v *Validator) HasWildcards(args []string) []int {
+	var wildcardIndices []int
+
+	for i, arg := range args {
+		if strings.Contains(arg, "*") || strings.Contains(arg, "?") {
+			wildcardIndices = append(wildcardIndices, i)
+		}
+	}
+	return wildcardIndices
+}
+
+// HasSystemCriticalPaths checks if any argument targets system-critical paths
+func (v *Validator) HasSystemCriticalPaths(args []string) []int {
+	var criticalIndices []int
+
+	for i, arg := range args {
+		for _, criticalPath := range v.config.GetSystemCriticalPaths() {
+			if strings.HasPrefix(arg, criticalPath) &&
+				(len(arg) == len(criticalPath) || arg[len(criticalPath)] == '/') {
+				criticalIndices = append(criticalIndices, i)
+				break
+			}
+		}
+	}
+	return criticalIndices
+}
+
+// getCommandRiskOverride retrieves the risk override and reasons for a specific command
+// It now uses command name (basename) instead of full path
+func getCommandRiskOverride(cmdPath string) (runnertypes.RiskLevel, string, bool) {
+	// Extract command name from path
+	cmdName := filepath.Base(cmdPath)
+
+	// Look up in unified profiles
+	if profile, exists := commandRiskProfiles[cmdName]; exists {
+		reasons := profile.GetRiskReasons()
+		reason := strings.Join(reasons, "; ")
+		return profile.BaseRiskLevel(), reason, true
+	}
+
+	return runnertypes.RiskLevelUnknown, "", false
+}
+
+// checkCommandPatterns checks if a command matches any patterns in the given list
+func checkCommandPatterns(cmdName string, cmdArgs []string, patterns []DangerousCommandPattern) (runnertypes.RiskLevel, string, string) {
+	for _, pattern := range patterns {
+		if matchesPattern(cmdName, cmdArgs, pattern.Pattern) {
+			displayPattern := strings.Join(pattern.Pattern, " ")
+			return pattern.RiskLevel, displayPattern, pattern.Reason
+		}
+	}
+	return runnertypes.RiskLevelUnknown, "", ""
+}
+
+// IsPrivilegeEscalationCommand checks if the given command is a privilege escalation command
+// (sudo, su, doas), considering symbolic links
+// Returns (isPrivilegeEscalation, error) where error indicates if symlink depth was exceeded
+func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
+	commandNames, exceededDepth := extractAllCommandNames(cmdName)
+	if exceededDepth {
+		return false, ErrSymlinkDepthExceeded
+	}
+
+	// Check for any privilege escalation commands using unified profiles
+	for cmdName := range commandNames {
+		if profile, exists := commandRiskProfiles[cmdName]; exists && profile.IsPrivilege() {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// formatDetectedSymbols formats detected symbols for logging.
+func formatDetectedSymbols(symbols []binaryanalyzer.DetectedSymbol) string {
+	if len(symbols) == 0 {
+		return "[]"
+	}
+	var b strings.Builder
+	b.WriteByte('[')
+	for i, s := range symbols {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(s.Name)
+		b.WriteByte('(')
+		b.WriteString(s.Category)
+		b.WriteByte(')')
+	}
+	b.WriteByte(']')
+	return b.String()
+}
+
+// findFirstSubcommand returns the first non-option argument from args.
+// It skips arguments starting with "-" or "--" to find the actual subcommand.
+// Also skips option arguments (e.g., for "-c value", skip both "-c" and "value").
+// Returns empty string if no subcommand is found.
+func findFirstSubcommand(args []string) string {
+	// Common git options that take a value (not exhaustive, but covers common cases)
+	optionsWithValue := map[string]bool{
+		"-c": true, "-C": true, "--work-tree": true, "--git-dir": true,
+		"--config": true, "--namespace": true,
+	}
+
+	skipNext := false
+	for _, arg := range args {
+		// If previous argument was an option that takes a value, skip this arg
+		if skipNext {
+			skipNext = false
+			continue
+		}
+
+		// Skip options (starting with - or --)
+		if strings.HasPrefix(arg, "-") {
+			// Check if it's an option with embedded value (e.g., --config=value)
+			if strings.Contains(arg, "=") {
+				continue
+			}
+
+			// Check if this option takes a value
+			if optionsWithValue[arg] {
+				skipNext = true
+			}
+			continue
+		}
+
+		// Found the first non-option argument
+		return arg
+	}
+	return ""
+}
+
+// Regex patterns for SSH-style address detection.
+//
+// Pattern 1: user@host:path (e.g., "user@example.com:/path/to/file", "user@host:file.txt")
+//   - .+@      : one or more chars before @  (user part)
+//   - [^:@]+   : one or more chars that are not : or @  (host part)
+//   - :        : literal colon separator
+//   - [^ \t]   : first char after : must not be space/tab (excludes "user@host: /path")
+//   - \S*      : remaining non-whitespace chars  (rest of path)
+//   - The presence of user@host: is sufficient to identify SSH-style addresses;
+//     the path can be absolute, relative, or a bare filename.
+//
+// Pattern 2: host:path without @ (e.g., "server:/path", "host:~/documents")
+//   - ^[^@:]+  : one or more chars that are not @ or :  (host part, no @ allowed)
+//   - :        : literal colon separator
+//   - [^ \t]   : first char after : must not be space/tab
+//   - \S*      : remaining non-whitespace chars
+//   - The path portion (after :) must contain / or ~ to distinguish from
+//     non-SSH uses of colons (e.g., "localhost:8080", "12:30:45").
+var (
+	sshUserHostPathRe = regexp.MustCompile(`.+@[^:@]+:[^ \t]\S*`)
+	sshHostPathRe     = regexp.MustCompile(`^[^@:]+:[^ \t]\S*`)
+)
+
+// containsSSHStyleAddress checks if any argument contains SSH-style addresses ([user@]host:path).
+// This is more specific than just checking for "@" to avoid false positives with email addresses,
+// port numbers, time formats, and natural-language text containing colons.
+func containsSSHStyleAddress(args []string) bool {
+	for _, arg := range args {
+		switch {
+		case sshUserHostPathRe.MatchString(arg):
+			// user@host:path — the user@host: pattern is sufficient to identify SSH.
+			// Relative paths (e.g., "user@host:file.txt") are valid SSH addresses.
+			return true
+		case sshHostPathRe.MatchString(arg):
+			// host:path (no @) — require / or ~ in the path to avoid false positives
+			// with port numbers (e.g., "localhost:8080") and time formats.
+			colonIndex := strings.Index(arg, ":")
+			pathPart := arg[colonIndex+1:]
+			if strings.Contains(pathPart, "/") || strings.HasPrefix(pathPart, "~") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// IsDestructiveFileOperation checks if the command performs destructive file operations
+func IsDestructiveFileOperation(cmd string, args []string) bool {
+	destructiveCommands := map[string]bool{
+		"rm":     true,
+		"rmdir":  true,
+		"unlink": true,
+		"shred":  true,
+		"dd":     true, // Can be dangerous when used incorrectly
+	}
+
+	if destructiveCommands[cmd] {
+		return true
+	}
+
+	// Check for destructive flags in common commands
+	if cmd == "find" {
+		for i, arg := range args {
+			if arg == "-delete" {
+				return true
+			}
+			if arg == "-exec" && i+1 < len(args) {
+				// Check if the command following -exec is destructive
+				execCmd := args[i+1]
+				if destructiveCommands[execCmd] {
+					return true
+				}
+			}
+		}
+	}
+
+	if cmd == "rsync" {
+		for _, arg := range args {
+			if arg == "--delete" || arg == "--delete-before" || arg == "--delete-after" {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// IsSystemModification checks if the command modifies system settings
+func IsSystemModification(cmd string, args []string) bool {
+	systemCommands := map[string]bool{
+		"systemctl":   true,
+		"service":     true,
+		"chkconfig":   true,
+		"update-rc.d": true,
+		"mount":       true,
+		"umount":      true,
+		"fdisk":       true,
+		"parted":      true,
+		"mkfs":        true,
+		"fsck":        true,
+		"crontab":     true,
+		"at":          true,
+		"batch":       true,
+	}
+
+	if systemCommands[cmd] {
+		return true
+	}
+
+	// Check for package management commands
+	packageManagers := map[string]bool{
+		"apt":     true,
+		"apt-get": true,
+		"yum":     true,
+		"dnf":     true,
+		"zypper":  true,
+		"pacman":  true,
+		"brew":    true,
+		"pip":     true,
+		"npm":     true,
+		"yarn":    true,
+	}
+
+	if packageManagers[cmd] {
+		// Only consider install/remove operations as medium risk
+		for _, arg := range args {
+			if arg == "install" || arg == "remove" || arg == "uninstall" ||
+				arg == "upgrade" || arg == "update" {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// AnalyzeCommandSecurity analyzes a command with its arguments for dangerous
+// patterns. It performs the following checks in order:
+//
+//  1. Input validation (empty / relative path)
+//  2. Symbolic link depth check
+//  3. Directory-based default risk assessment
+//  4. Hash validation (skipped when hashDir is "")
+//  5. High-risk dangerous command pattern matching
+//  6. setuid / setgid bit detection
+//  7. Medium-risk dangerous command pattern matching
+//  8. Per-command risk profile override
+//  9. Directory default risk fallback
+//
+// Example:
+//
+//	risk, pattern, reason, err := AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/"}, "")
+//
+// Parameters:
+//   - resolvedPath: Absolute path to the command executable
+//   - args: Command line arguments
+//   - hashDir: Directory containing hash files for validation (empty string to skip)
+//
+// Returns:
+//   - riskLevel: Security risk level (Unknown, Low, Medium, High, Critical)
+//   - detectedPattern: Matched dangerous pattern (if any)
+//   - reason: Human-readable explanation of the risk assessment
+//   - err: Error if analysis fails
+func AnalyzeCommandSecurity(resolvedPath string, args []string, hashDir string) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
+	// Step 1: Input validation
+	if resolvedPath == "" {
+		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: empty command path", isec.ErrInvalidPath)
+	}
+
+	if !filepath.IsAbs(resolvedPath) {
+		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: path must be absolute, got relative path: %s", isec.ErrInvalidPath, resolvedPath)
+	}
+
+	// Step 2: Symbolic link depth check
+	if _, exceededDepth := extractAllCommandNames(resolvedPath); exceededDepth {
+		return runnertypes.RiskLevelHigh, resolvedPath, "Symbolic link depth exceeds security limit (potential symlink attack)", nil
+	}
+
+	// Step 3: Directory-based default risk assessment
+	defaultRisk := getDefaultRiskByDirectory(resolvedPath)
+
+	// Step 4: Hash validation
+	if hashDir != "" {
+		if err := validateFileHash(resolvedPath, hashDir); err != nil {
+			return runnertypes.RiskLevelCritical, resolvedPath,
+				fmt.Sprintf("Hash validation failed: %v", err), nil
+		}
+	}
+
+	// Step 5: High-risk pattern analysis
+	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, highRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
+		return riskLevel, pattern, reason, nil
+	}
+
+	// Step 6: setuid/setgid check
+	hasSetuidOrSetgid, setuidErr := hasSetuidOrSetgidBit(resolvedPath)
+	if setuidErr != nil {
+		return runnertypes.RiskLevelHigh, resolvedPath,
+			fmt.Sprintf("Unable to check setuid/setgid status: %v", setuidErr), nil
+	}
+	if hasSetuidOrSetgid {
+		return runnertypes.RiskLevelHigh, resolvedPath,
+			"Executable has setuid or setgid bit set", nil
+	}
+
+	// Step 7: Medium-risk pattern analysis
+	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, mediumRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
+		return riskLevel, pattern, reason, nil
+	}
+
+	// Step 8: Individual command override application
+	if overrideRisk, reason, found := getCommandRiskOverride(resolvedPath); found {
+		return overrideRisk, resolvedPath, reason, nil
+	}
+
+	// Step 9: Apply default risk level
+	if defaultRisk != runnertypes.RiskLevelUnknown {
+		return defaultRisk, "", "Default directory-based risk level", nil
+	}
+
+	// Fallback: no specific risk identified
+	return runnertypes.RiskLevelUnknown, "", "", nil
+}
+
+// extractAllCommandNames extracts all possible command names for matching:
+// 1. The original command name (could be full path or just filename)
+// 2. Just the base filename from the original command
+// 3. All symbolic link names in the chain (if any)
+// 4. The final target filename after resolving all symbolic links
+// Returns a map for O(1) lookup performance and a boolean indicating if symlink depth was exceeded.
+func extractAllCommandNames(cmdName string) (map[string]struct{}, bool) {
+	// Handle error case: empty command name (programming error or TOML file mistake)
+	if cmdName == "" {
+		return make(map[string]struct{}), false
+	}
+
+	seen := make(map[string]struct{})
+
+	// Add original command name
+	seen[cmdName] = struct{}{}
+
+	// Add base filename (no-op if cmdName is already just a filename)
+	seen[filepath.Base(cmdName)] = struct{}{}
+
+	// Resolve symbolic links iteratively to handle multi-level links
+	current := cmdName
+	exceededDepth := false
+
+	for depth := range MaxSymlinkDepth {
+		// Check if current path is a symbolic link
+		fileInfo, err := os.Lstat(current)
+		if err != nil {
+			// If we can't stat the file, stop here
+			break
+		}
+
+		// If it's not a symbolic link, we're done
+		if fileInfo.Mode()&os.ModeSymlink == 0 {
+			break
+		}
+
+		// If we're at the last iteration and still have a symlink, we exceeded the limit
+		if depth == MaxSymlinkDepth-1 {
+			exceededDepth = true
+			break
+		}
+
+		// Resolve the symbolic link
+		target, err := os.Readlink(current)
+		if err != nil {
+			break
+		}
+
+		// If target is relative, make it relative to the current directory
+		if !filepath.IsAbs(target) {
+			current = filepath.Join(filepath.Dir(current), target)
+		} else {
+			current = target
+		}
+
+		// Add the target name (both full path and base name)
+		seen[current] = struct{}{}
+		seen[filepath.Base(current)] = struct{}{}
+	}
+
+	return seen, exceededDepth
+}
+
+// matchesPattern checks if the command matches the dangerous pattern.
+//
+// Pattern matching rules:
+//  1. Empty commands are invalid (programming error) and always return false.
+//  2. Empty patterns match all valid commands.
+//  3. Command names (index 0): Matches against filename only, supporting full paths and symbolic links.
+//  4. Argument matching is order-independent.
+//  5. Argument count matching: Subset matching (command can have more arguments than pattern).
+//  6. Argument patterns ending with "=": Use prefix matching (e.g., "if="
+//     matches "if=/dev/zero").
+//  7. Other arguments: Require exact string match.
+func matchesPattern(cmdName string, cmdArgs []string, pattern []string) bool {
+	// If command itself is empty, it's a programming error that should be caught early
+	if cmdName == "" {
+		return false
+	}
+
+	// Empty pattern never matches any command
+	if len(pattern) == 0 {
+		return false
+	}
+
+	// Extract all possible command names (original, base filename, symlink targets)
+	commandNames, _ := extractAllCommandNames(cmdName)
+
+	// Check if any of the extracted command names match the pattern[0]
+	if _, exists := commandNames[pattern[0]]; !exists {
+		return false
+	}
+
+	patternArgs := pattern[1:]
+
+	// Default: subset match, require command to have at least as many args as pattern
+	if len(cmdArgs) < len(patternArgs) {
+		return false
+	}
+
+	// Order-independent matching with one-time use of command args
+	matchedCommandArgs := make([]bool, len(cmdArgs))
+	for _, patternArg := range patternArgs {
+		foundMatch := false
+
+		// Prefix pattern when ending with '=' (e.g., "if=")
+		if strings.HasSuffix(patternArg, "=") {
+			for i, commandArg := range cmdArgs {
+				if matchedCommandArgs[i] {
+					continue
+				}
+				if strings.HasPrefix(commandArg, patternArg) {
+					matchedCommandArgs[i] = true
+					foundMatch = true
+					break
+				}
+			}
+		} else {
+			// Exact match
+			for i, commandArg := range cmdArgs {
+				if matchedCommandArgs[i] {
+					continue
+				}
+				if commandArg == patternArg {
+					matchedCommandArgs[i] = true
+					foundMatch = true
+					break
+				}
+			}
+		}
+
+		if !foundMatch {
+			return false
+		}
+	}
+
+	return true
+}
+
+// hasSetuidOrSetgidBit checks if the given command path has setuid or setgid bit set
+// This function expects a resolved absolute path. Path resolution should be done
+// by the caller using the unified path resolution system.
+// Returns (hasSetuidOrSetgid, error)
+func hasSetuidOrSetgidBit(cmdPath string) (bool, error) {
+	if !filepath.IsAbs(cmdPath) {
+		return false, fmt.Errorf("%w: path must be absolute, got relative path: %s", isec.ErrInvalidPath, cmdPath)
+	}
+	// Get file information
+	fileInfo, err := os.Stat(cmdPath)
+	if err != nil {
+		// If we can't stat the file, assume it's not setuid/setgid
+		return false, err
+	}
+
+	// Check if it's a regular file
+	if !fileInfo.Mode().IsRegular() {
+		return false, nil
+	}
+
+	// Check for setuid or setgid bits
+	mode := fileInfo.Mode()
+	hasSetuidBit := mode&os.ModeSetuid != 0
+	hasSetgidBit := mode&os.ModeSetgid != 0
+
+	return hasSetuidBit || hasSetgidBit, nil
+}

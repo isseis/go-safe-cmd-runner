@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/variable"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/environment"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/variable"
 )
 
 const (

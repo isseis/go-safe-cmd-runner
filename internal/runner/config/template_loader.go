@@ -3,7 +3,7 @@ package config
 import (
 	"bytes"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/pelletier/go-toml/v2"
 )
 

@@ -3,7 +3,7 @@ package security
 import (
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 
 	"github.com/stretchr/testify/require"
 )
