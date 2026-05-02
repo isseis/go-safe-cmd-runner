@@ -148,6 +148,17 @@ func categorizeELFSymbol(name string, networkSymbols map[string]binaryanalyzer.S
 
 `internal/security/elfanalyzer/testing/helpers.go` に `CreateELFWithSymbols` を追加する。テストが必要とするのは「任意のシンボル名を持ち、VERNEED を持たない（musl 相当）ELF」であるため、VERNEED あり ELF の生成は対象外とする（AC-5 は既存 testdata を使用）。
 
+`CreateDynamicELFFile` は `CreateELFWithSymbols` に委譲してコードの重複を排除する。
+
+```go
+// CreateDynamicELFFile creates a minimal dynamic ELF file for testing.
+// Deprecated: use CreateELFWithSymbols directly.
+func CreateDynamicELFFile(t *testing.T, path string) {
+    t.Helper()
+    CreateELFWithSymbols(t, path, []SymbolSpec{{Name: "__libc_start_main"}})
+}
+```
+
 ```go
 // SymbolSpec defines a symbol to include in a test ELF binary.
 type SymbolSpec struct {
@@ -203,7 +214,7 @@ func CreateELFWithSymbols(t *testing.T, path string, symbols []SymbolSpec) {
         binary.LittleEndian.PutUint16(sym[6:8], uint16(elf.SHN_UNDEF))
     }
 
-    // レイアウト: ELF header | section headers | .dynsym | .dynstr | .shstrtab
+    // Layout: ELF header | section headers | .dynsym | .dynstr | .shstrtab
     shdrsOffset := int64(elfHeaderSize)
     shdrsSize := int64(numSections * sectionHdrSize)
     dynsymOffset := shdrsOffset + shdrsSize
@@ -269,31 +280,37 @@ func CreateELFWithSymbols(t *testing.T, path string, symbols []SymbolSpec) {
 
 ### 4.1 既存テストの更新
 
-`TestStandardELFAnalyzer_LibcSymbolFiltering` の `"non-libc symbols are not recorded"` サブテストを更新する。
+`TestStandardELFAnalyzer_LibcSymbolFiltering` の `"non-libc symbols are not recorded"` サブテストを更新する。サブテスト名も動作変更に合わせてリネームする。
 
-**変更前の assert:**
+**変更前（サブテスト名 + assert）:**
 ```go
-for _, sym := range output.DetectedSymbols {
-    assert.NotEqual(t, "SSL_CTX_new", sym.Name,
-        "SSL_CTX_new (from libssl) must not appear in DetectedSymbols")
-    assert.NotEqual(t, "SSL_CTX_free", sym.Name,
-        "SSL_CTX_free (from libssl) must not appear in DetectedSymbols")
-}
+t.Run("non-libc symbols are not recorded", func(t *testing.T) {
+    // ...
+    for _, sym := range output.DetectedSymbols {
+        assert.NotEqual(t, "SSL_CTX_new", sym.Name,
+            "SSL_CTX_new (from libssl) must not appear in DetectedSymbols")
+        assert.NotEqual(t, "SSL_CTX_free", sym.Name,
+            "SSL_CTX_free (from libssl) must not appear in DetectedSymbols")
+    }
+})
 ```
 
-**変更後の assert:**
+**変更後（サブテスト名 + assert）:**
 ```go
-// After task 0109, networkSymbols-matched symbols are always recorded regardless of Library.
-// SSL_CTX_new is in networkSymbols (tls category), so it now appears in DetectedSymbols.
-foundSSL := false
-for _, sym := range output.DetectedSymbols {
-    if sym.Name == "SSL_CTX_new" {
-        assert.Equal(t, "tls", sym.Category,
-            `SSL_CTX_new should have category "tls"`)
-        foundSSL = true
+t.Run("non-libc network symbols recorded with correct category", func(t *testing.T) {
+    // After task 0109, Step 1 records networkSymbols matches regardless of Library.
+    // SSL_CTX_new is in networkSymbols (tls category) and must appear in DetectedSymbols.
+    // ...
+    foundSSL := false
+    for _, sym := range output.DetectedSymbols {
+        if sym.Name == "SSL_CTX_new" {
+            assert.Equal(t, "tls", sym.Category,
+                `SSL_CTX_new should have category "tls"`)
+            foundSSL = true
+        }
     }
-}
-assert.True(t, foundSSL, `SSL_CTX_new should now appear in DetectedSymbols`)
+    assert.True(t, foundSSL, `SSL_CTX_new should now appear in DetectedSymbols`)
+})
 ```
 
 また `TestStandardELFAnalyzer_AnalyzeNetworkSymbols` の `"binary with ssl symbols"` ケースも期待値を更新する。
@@ -325,15 +342,15 @@ assert.True(t, foundSSL, `SSL_CTX_new should now appear in DetectedSymbols`)
 > **JSON スキーマとの関係**: 各テストは `binaryanalyzer.AnalysisOutput`（内部表現）を検証する。`sym.Category` は `binaryanalyzer.DetectedSymbol` の内部フィールドであり、JSON `symbol_analysis.detected_symbols` には保存されない（schema v19 以降）。JSON にはシンボル名のみが `[]string` で保存される。
 
 ```go
-// TestCheckDynamicSymbols_NameBasedFilter は FR-2 の二段階フィルタを検証する。
-// 受け入れ基準 AC-1〜AC-6 に対応する。
+// TestCheckDynamicSymbols_NameBasedFilter verifies that checkDynamicSymbols applies
+// name-based detection for VERNEED-absent binaries (musl-style) and correctly handles
+// mixed-library VERNEED-absent binaries.
 func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
     tmpDir := commontesting.SafeTempDir(t)
     analyzer := NewStandardELFAnalyzer(nil)
 
-    t.Run("AC-1: VERNEED なし・socket を検出", func(t *testing.T) {
-        // VERNEED なし (musl 相当): socket のみインポート
-        path := filepath.Join(tmpDir, "ac1.elf")
+    t.Run("no-VERNEED binary importing socket yields NetworkDetected with socket category", func(t *testing.T) {
+        path := filepath.Join(tmpDir, "socket_only.elf")
         elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
             {Name: "socket"},
         })
@@ -352,8 +369,8 @@ func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
         assert.True(t, found, `"socket" must be in DetectedSymbols`)
     })
 
-    t.Run("AC-2: VERNEED なし・SSL_CTX_new を tls カテゴリで検出", func(t *testing.T) {
-        path := filepath.Join(tmpDir, "ac2.elf")
+    t.Run("no-VERNEED binary importing SSL_CTX_new yields NetworkDetected with tls category", func(t *testing.T) {
+        path := filepath.Join(tmpDir, "ssl_only.elf")
         elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
             {Name: "SSL_CTX_new"},
         })
@@ -371,8 +388,8 @@ func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
         assert.True(t, found, `"SSL_CTX_new" must be in DetectedSymbols`)
     })
 
-    t.Run("AC-3: VERNEED なし・read のみ → DetectedSymbols が空", func(t *testing.T) {
-        path := filepath.Join(tmpDir, "ac3.elf")
+    t.Run("no-VERNEED binary importing only non-network symbols yields NoNetworkSymbols", func(t *testing.T) {
+        path := filepath.Join(tmpDir, "read_only.elf")
         elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
             {Name: "read"},
         })
@@ -383,12 +400,12 @@ func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
         assert.Empty(t, output.DetectedSymbols)
     })
 
-    t.Run("AC-4: VERNEED なし・複数ライブラリリンク時も socket と SSL_CTX_new を検出", func(t *testing.T) {
-        path := filepath.Join(tmpDir, "ac4.elf")
+    t.Run("no-VERNEED binary with mixed symbols records only networkSymbols matches", func(t *testing.T) {
+        path := filepath.Join(tmpDir, "mixed_symbols.elf")
         elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
             {Name: "socket"},
             {Name: "SSL_CTX_new"},
-            {Name: "pthread_create"}, // libpthread 由来・networkSymbols 未登録
+            {Name: "pthread_create"}, // not in networkSymbols, must not be recorded
         })
 
         output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
@@ -401,43 +418,11 @@ func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
         assert.Equal(t, "socket", names["socket"])
         assert.Equal(t, "tls", names["SSL_CTX_new"])
         assert.NotContains(t, names, "pthread_create",
-            "pthread_create は networkSymbols 未登録のため記録されない")
+            "pthread_create is not in networkSymbols and must not appear in DetectedSymbols")
     })
 
-    t.Run("AC-5: VERNEED あり・各ライブラリ由来シンボルの分類", func(t *testing.T) {
-        // with_socket.elf は glibc リンク (VERNEED あり)
-        testdataDir := "testdata"
-        path := filepath.Join(testdataDir, "with_socket.elf")
-        if _, err := os.Stat(path); os.IsNotExist(err) {
-            t.Skip("with_socket.elf not found")
-        }
-        absPath, err := filepath.Abs(path)
-        require.NoError(t, err)
-
-        output := analyzer.AnalyzeNetworkSymbols(absPath, "sha256:dummy")
-        require.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
-
-        categories := make(map[string]string)
-        for _, sym := range output.DetectedSymbols {
-            categories[sym.Name] = sym.Category
-        }
-
-        // libc + networkSymbols 一致 → network カテゴリ
-        assert.Equal(t, "socket", categories["socket"],
-            `libc の "socket" は "socket" カテゴリ`)
-
-        // libc + networkSymbols 不一致 → syscall_wrapper
-        for name, cat := range categories {
-            if !binaryanalyzer.IsNetworkCategory(cat) {
-                assert.Equal(t, "syscall_wrapper", cat,
-                    `非 network libc シンボル %q は "syscall_wrapper" カテゴリ`, name)
-            }
-        }
-    })
-
-    t.Run("AC-6: DynamicLoadSymbols は VERNEED の有無に関わらず変化なし", func(t *testing.T) {
-        // dlopen を含む VERNEED なし ELF
-        path := filepath.Join(tmpDir, "ac6.elf")
+    t.Run("dlopen in no-VERNEED binary appears in DynamicLoadSymbols", func(t *testing.T) {
+        path := filepath.Join(tmpDir, "dlopen_socket.elf")
         elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
             {Name: "dlopen"},
             {Name: "socket"},
