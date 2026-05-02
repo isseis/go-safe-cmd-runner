@@ -431,6 +431,7 @@
 | シリアライズ | serialize / serialization | |
 | セットアップ | setup | |
 | シェル | shell | |
+| サイレントに | silently | |
 | シンプルさ | simplicity | |
 | 単一値 | single-value | 設定項目の文脈 |
 | サイズ | size | |
