@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
 const (

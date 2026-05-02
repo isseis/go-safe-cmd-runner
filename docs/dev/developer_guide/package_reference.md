@@ -24,21 +24,22 @@ This document provides a detailed reference of the package structure in this cod
   - `logging/`: Advanced logging system with Slack integration
   - `redaction/`: Automatic sensitive data filtering
   - `runner/`: Command execution engine
-    - `audit/`: Security audit logging
+    - `base/`: Generic packages (no dependency on flat packages)
+      - `audit/`: Security audit logging
+      - `environment/`: Environment variable processing and filtering
+      - `executor/`: Command execution logic
+      - `output/`: Output path validation and security
+      - `privilege/`: Privilege management
+      - `risk/`: Risk-based command assessment
+      - `runnertypes/`: Type definitions and interfaces
+      - `security/`: Security validation framework
+      - `variable/`: Automatic variable generation and definitions
     - `bootstrap/`: System initialization and bootstrap
     - `cli/`: Command-line interface management
     - `config/`: Configuration management
     - `debuginfo/`: Debug functionality and utilities
-    - `environment/`: Environment variable processing and filtering
-    - `executor/`: Command execution logic
-    - `output/`: Output path validation and security
-    - `privilege/`: Privilege management
     - `resource/`: Unified resource management (normal/dry-run)
-    - `risk/`: Risk-based command assessment
     - `runerrors/`: Centralized error handling
-    - `runnertypes/`: Type definitions and interfaces
-    - `security/`: Security validation framework
-    - `variable/`: Automatic variable generation and definitions
   - `safefileio/`: Secure file operations with symlink protection
   - `security/`: Binary security analysis framework
     - `binaryanalyzer/`: Common interfaces and types for binary analysis
@@ -80,18 +81,18 @@ This document provides a detailed reference of the package structure in this cod
 
 #### Command Execution
 - **`runner/`**: Core command execution engine
-  - **`executor/`**: Command execution with output handling
-  - **`config/`**: TOML configuration loading and validation
-  - **`runnertypes/`**: Shared type definitions and interfaces
-  - **`environment/`**: Environment variable processing and filtering
-  - **`variable/`**: Automatic variable generation
+  - **`runner/base/executor/`**: Command execution with output handling
+  - **`runner/config/`**: TOML configuration loading and validation
+  - **`runner/base/runnertypes/`**: Shared type definitions and interfaces
+  - **`runner/base/environment/`**: Environment variable processing and filtering
+  - **`runner/base/variable/`**: Automatic variable generation
 
 #### Security
-- **`runner/security/`**: Security validation framework
-- **`runner/audit/`**: Security audit logging
-- **`runner/privilege/`**: Privilege management
-- **`runner/risk/`**: Risk-based command assessment
-- **`runner/output/`**: Output path validation and security
+- **`runner/base/security/`**: Security validation framework
+- **`runner/base/audit/`**: Security audit logging
+- **`runner/base/privilege/`**: Privilege management
+- **`runner/base/risk/`**: Risk-based command assessment
+- **`runner/base/output/`**: Output path validation and security
 - **`groupmembership/`**: User/group membership validation
 
 #### User Interface

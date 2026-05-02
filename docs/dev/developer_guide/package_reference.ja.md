@@ -24,21 +24,22 @@
   - `logging/`: Slack 連携を含む高度なロギングシステム
   - `redaction/`: 機密データの自動フィルタリング
   - `runner/`: コマンド実行エンジン
-    - `audit/`: セキュリティ監査ログ
+    - `base/`: 汎用パッケージ（flat パッケージへの依存なし）
+      - `audit/`: セキュリティ監査ログ
+      - `environment/`: 環境変数の処理とフィルタリング
+      - `executor/`: コマンド実行ロジック
+      - `output/`: 出力パスの検証とセキュリティ
+      - `privilege/`: 特権管理
+      - `risk/`: リスクベースのコマンド評価
+      - `runnertypes/`: 型定義とインターフェース
+      - `security/`: セキュリティバリデーションフレームワーク
+      - `variable/`: 自動変数生成と定義
     - `bootstrap/`: システム初期化とブートストラップ
     - `cli/`: コマンドラインインターフェース管理
     - `config/`: 設定管理
     - `debuginfo/`: デバッグ機能とユーティリティ
-    - `environment/`: 環境変数の処理とフィルタリング
-    - `executor/`: コマンド実行ロジック
-    - `output/`: 出力パスの検証とセキュリティ
-    - `privilege/`: 特権管理
     - `resource/`: 統合リソース管理（通常/ドライラン）
-    - `risk/`: リスクベースのコマンド評価
     - `runerrors/`: 集中型エラーハンドリング
-    - `runnertypes/`: 型定義とインターフェース
-    - `security/`: セキュリティバリデーションフレームワーク
-    - `variable/`: 自動変数生成と定義
   - `safefileio/`: シンボリックリンク保護を含む安全なファイル操作
   - `security/`: バイナリセキュリティ解析フレームワーク
     - `binaryanalyzer/`: バイナリ解析用の共通インターフェースと型
@@ -80,18 +81,18 @@
 
 #### コマンド実行
 - **`runner/`**: コアのコマンド実行エンジン
-  - **`executor/`**: 出力ハンドリングを含むコマンド実行
-  - **`config/`**: TOML 設定の読み込みとバリデーション
-  - **`runnertypes/`**: 共通の型定義とインターフェース
-  - **`environment/`**: 環境変数の処理とフィルタリング
-  - **`variable/`**: 自動変数生成
+  - **`runner/base/executor/`**: 出力ハンドリングを含むコマンド実行
+  - **`runner/config/`**: TOML 設定の読み込みとバリデーション
+  - **`runner/base/runnertypes/`**: 共通の型定義とインターフェース
+  - **`runner/base/environment/`**: 環境変数の処理とフィルタリング
+  - **`runner/base/variable/`**: 自動変数生成
 
 #### セキュリティ
-- **`runner/security/`**: セキュリティバリデーションフレームワーク
-- **`runner/audit/`**: セキュリティ監査ログ
-- **`runner/privilege/`**: 特権管理
-- **`runner/risk/`**: リスクベースのコマンド評価
-- **`runner/output/`**: 出力パスの検証とセキュリティ
+- **`runner/base/security/`**: セキュリティバリデーションフレームワーク
+- **`runner/base/audit/`**: セキュリティ監査ログ
+- **`runner/base/privilege/`**: 特権管理
+- **`runner/base/risk/`**: リスクベースのコマンド評価
+- **`runner/base/output/`**: 出力パスの検証とセキュリティ
 - **`groupmembership/`**: ユーザー/グループメンバーシップ検証
 
 #### ユーザーインターフェース

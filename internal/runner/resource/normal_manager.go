@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/risk"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
 // Static errors

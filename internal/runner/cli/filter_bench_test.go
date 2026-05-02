@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
 func BenchmarkParseGroupNames(b *testing.B) {

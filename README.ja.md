@@ -124,21 +124,22 @@ internal/              # コア実装
 ├── logging/           # Slack統合を備えた高度なログ機能
 ├── redaction/         # 機密データの自動フィルタリング
 ├── runner/            # コマンド実行エンジン
-│   ├── audit/         # セキュリティ監査ログ
+│   ├── base/          # 汎用パッケージ（flat パッケージへの依存なし）
+│   │   ├── audit/     # セキュリティ監査ログ
+│   │   ├── environment/ # 環境変数処理
+│   │   ├── executor/  # コマンド実行ロジック
+│   │   ├── output/    # 出力キャプチャ管理
+│   │   ├── privilege/ # 権限管理
+│   │   ├── risk/      # リスクベースコマンド評価
+│   │   ├── runnertypes/ # 型定義とインターフェース
+│   │   ├── security/  # セキュリティ検証フレームワーク
+│   │   └── variable/  # 自動変数の生成と定義
 │   ├── bootstrap/     # システム初期化
 │   ├── cli/           # コマンドラインインターフェース
 │   ├── config/        # 設定管理
 │   ├── debuginfo/     # デバッグ機能とユーティリティ
-│   ├── environment/   # 環境変数処理
-│   ├── executor/      # コマンド実行ロジック
-│   ├── output/        # 出力キャプチャ管理
-│   ├── privilege/     # 権限管理
 │   ├── resource/      # リソース管理（通常/ドライラン）
-│   ├── risk/          # リスクベースコマンド評価
-│   ├── runerrors/     # 一元化エラー処理
-│   ├── runnertypes/   # 型定義とインターフェース
-│   ├── security/      # セキュリティ検証フレームワーク
-│   └── variable/      # 自動変数の生成と定義
+│   └── runerrors/     # 一元化エラー処理
 ├── safefileio/        # セキュアファイル操作
 ├── security/          # バイナリセキュリティ解析フレームワーク
 │   ├── binaryanalyzer/ # バイナリ解析共通インターフェースと型定義

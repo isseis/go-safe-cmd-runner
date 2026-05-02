@@ -128,21 +128,22 @@ internal/              # Core implementation
 ├── logging/           # Advanced logging with Slack integration
 ├── redaction/         # Automatic sensitive data filtering
 ├── runner/            # Command execution engine
-│   ├── audit/         # Security audit logging
+│   ├── base/          # Generic packages (no dependency on flat packages)
+│   │   ├── audit/     # Security audit logging
+│   │   ├── environment/ # Environment variable processing
+│   │   ├── executor/  # Command execution logic
+│   │   ├── output/    # Output capture management
+│   │   ├── privilege/ # Privilege management
+│   │   ├── risk/      # Risk-based command assessment
+│   │   ├── runnertypes/ # Type definitions and interfaces
+│   │   ├── security/  # Security validation framework
+│   │   └── variable/  # Automatic variable generation and definitions
 │   ├── bootstrap/     # System initialization
 │   ├── cli/           # Command-line interface
 │   ├── config/        # Configuration management
 │   ├── debuginfo/     # Debug functionality and utilities
-│   ├── environment/   # Environment variable processing
-│   ├── executor/      # Command execution logic
-│   ├── output/        # Output capture management
-│   ├── privilege/     # Privilege management
 │   ├── resource/      # Resource management (normal/dry-run)
-│   ├── risk/          # Risk-based command assessment
-│   ├── runerrors/     # Centralized error handling
-│   ├── runnertypes/   # Type definitions and interfaces
-│   ├── security/      # Security validation framework
-│   └── variable/      # Automatic variable generation and definitions
+│   └── runerrors/     # Centralized error handling
 ├── safefileio/        # Secure file operations with symlink protection
 ├── security/          # Binary security analysis framework
 │   ├── binaryanalyzer/ # Common interfaces and types for binary analysis

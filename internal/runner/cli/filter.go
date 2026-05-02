@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
 // Error definitions for group filtering.

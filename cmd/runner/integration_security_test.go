@@ -9,10 +9,10 @@ import (
 
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testutil"
-	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testutil"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
