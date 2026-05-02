@@ -29,6 +29,7 @@ The main execution command. Safely executes commands based on TOML configuration
 - Risk-based security controls
 - Detailed logging
 - Color output support
+- Slack notification integration (send success/error to separate channels)
 
 **Quick Start:**
 ```bash
@@ -58,6 +59,7 @@ Command to record SHA-256 hash values of files. For administrators.
 - Create file integrity baseline
 - Manage hash files
 - Support for batch recording of multiple files
+- Record syscall analysis debug information (`--debug-info`)
 
 **Quick Start:**
 ```bash
@@ -69,6 +71,9 @@ record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 
 # Batch recording of multiple files
 record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
+
+# Record with debug information (Occurrences, DeterminationStats)
+record --debug-info -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh
 ```
 
 **Use this when:**
@@ -337,6 +342,30 @@ A: Yes, it is optimized for CI/CD environments. See:
 - Automatic detection via environment variables (CI, GITHUB_ACTIONS, JENKINS_URL, etc.)
 - Non-interactive mode with `-quiet` flag
 
+### Q: How do I send notifications to Slack?
+
+A: Configure Slack notifications in two steps:
+
+1. **TOML setting** (add `slack_allowed_host`):
+   ```toml
+   [global]
+   slack_allowed_host = "hooks.slack.com"
+   ```
+
+2. **Environment variables** (set Webhook URLs):
+   ```bash
+   # Error notifications only (recommended)
+   export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/..."
+
+   # Both success and error notifications
+   export GSCR_SLACK_WEBHOOK_URL_SUCCESS="https://hooks.slack.com/services/..."
+   export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/..."
+   ```
+
+For details, see:
+- [runner Command - Notification Settings](runner_command.md#42-notification-settings)
+- [TOML Configuration - slack_allowed_host](toml_config/04_global_level.md#49-slack_allowed_host---slack-notification-host-setting)
+
 ### Q: What are the security considerations?
 
 A: Key considerations:
@@ -407,5 +436,5 @@ See [CLAUDE.md](../../CLAUDE.md) for documentation writing guidelines.
 
 ---
 
-**Last Updated**: 2025-10-02
+**Last Updated**: 2026-05-02
 **Version**: 1.0
