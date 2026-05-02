@@ -854,5 +854,5 @@ BenchmarkDetermineEnvAllowlistInheritanceMode_Reject-8    1000000000   0.5 ns/op
 **承認**: 未承認
 **関連文書**:
 - [01_requirements.ja.md](./01_requirements.ja.md) - 要件定義書
-- [docs/dev/design-implementation-overview.ja.md](../../dev/design-implementation-overview.ja.md) - システム全体設計
-- [docs/dev/config-inheritance-behavior.ja.md](../../dev/config-inheritance-behavior.ja.md) - 継承動作仕様
+- [docs/dev/design-implementation-overview.ja.md](../../dev/developer_guide/design-implementation-overview.ja.md) - システム全体設計
+- [docs/dev/config-inheritance-behavior.ja.md](../../dev/architecture_design/config-inheritance-behavior.ja.md) - 継承動作仕様

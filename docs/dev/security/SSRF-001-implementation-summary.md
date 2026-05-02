@@ -20,7 +20,7 @@ SECURITY WARNING:
     DO NOT use this flag on untrusted branches or pull requests, as it can lead to
     Server-Side Request Forgery (SSRF) attacks. Only use for trusted content.
 
-    See docs/security/SSRF-001-external-link-verification.md for details.
+    See docs/dev/security/SSRF-001-external-link-verification.md for details.
 ```
 
 ### 2. URL Allowlist Implementation
@@ -111,7 +111,7 @@ Created 5 test suites with 50+ test cases:
 
 ### 7. CI/CD Configuration Examples
 
-**File**: [`docs/security/ci-configuration-example.md`](ci-configuration-example.md)
+**File**: [`docs/dev/security/ci-configuration-example.md`](ci-configuration-example.md)
 
 Provided secure configuration examples for:
 - GitHub Actions (with fork detection)

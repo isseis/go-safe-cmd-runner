@@ -5,9 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Quick Links
 
 **Development Guides:**
-- [Requirements and Acceptance Criteria Process](docs/development/requirements_process.md) - Process for implementing new features
-- [Test Organization Guide](docs/development/test_organization.md) - Test helper file organization
-- [Package Reference](docs/development/package_reference.md) - Detailed package structure
+- [Requirements and Acceptance Criteria Process](docs/dev/developer_guide/requirements_process.md) - Process for implementing new features
+- [Test Organization Guide](docs/dev/developer_guide/test_organization.md) - Test helper file organization
+- [Package Reference](docs/dev/developer_guide/package_reference.md) - Detailed package structure
 
 ## Documents
 
@@ -69,7 +69,7 @@ This is a Go-based secure command runner with the following core components:
 - **Command Executor**: Core execution engine with output handling (`internal/runner/executor`)
 - **Config Management**: TOML-based configuration loading (`internal/runner/config`)
 
-See [Package Reference](docs/development/package_reference.md) for detailed package structure.
+See [Package Reference](docs/dev/developer_guide/package_reference.md) for detailed package structure.
 
 ### Key Design Patterns
 - **Separation of Concerns**: Each package has a single responsibility
@@ -99,7 +99,7 @@ See [Package Reference](docs/development/package_reference.md) for detailed pack
 - Output capture and verification
 - **Error Testing**: Use `errors.Is()` to validate error types, not string matching on error messages
 
-See [Test Organization Guide](docs/development/test_organization.md) for test helper file structure.
+See [Test Organization Guide](docs/dev/developer_guide/test_organization.md) for test helper file structure.
 
 ## Development Notes
 
@@ -113,7 +113,7 @@ See [Test Organization Guide](docs/development/test_organization.md) for test he
 
 ## Requirements and Acceptance Criteria
 
-When implementing new features or security-critical functionality, follow the process documented in [Requirements Process Guide](docs/development/requirements_process.md).
+When implementing new features or security-critical functionality, follow the process documented in [Requirements Process Guide](docs/dev/developer_guide/requirements_process.md).
 
 **Quick summary:**
 1. Create `01_requirements.md` with explicit acceptance criteria
