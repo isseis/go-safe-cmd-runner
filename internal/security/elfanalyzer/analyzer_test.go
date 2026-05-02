@@ -584,3 +584,102 @@ func TestDynamicELF_WithoutSyscallStore(t *testing.T) {
 
 	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
 }
+
+// TestCheckDynamicSymbols_NameBasedFilter verifies that checkDynamicSymbols applies
+// name-based detection for VERNEED-absent binaries (musl-style) and correctly handles
+// mixed-library VERNEED-absent binaries.
+func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	analyzer := NewStandardELFAnalyzer(nil)
+
+	t.Run("no-VERNEED binary importing socket yields NetworkDetected with socket category", func(t *testing.T) {
+		path := filepath.Join(tmpDir, "socket_only.elf")
+		elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
+			{Name: "socket"},
+		})
+
+		output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
+
+		require.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
+		require.NotEmpty(t, output.DetectedSymbols)
+		found := false
+		for _, sym := range output.DetectedSymbols {
+			if sym.Name == "socket" {
+				assert.Equal(t, "socket", sym.Category)
+				found = true
+			}
+		}
+		assert.True(t, found, `"socket" must be in DetectedSymbols`)
+	})
+
+	t.Run("no-VERNEED binary importing SSL_CTX_new yields NetworkDetected with tls category", func(t *testing.T) {
+		path := filepath.Join(tmpDir, "ssl_only.elf")
+		elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
+			{Name: "SSL_CTX_new"},
+		})
+
+		output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
+
+		require.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
+		found := false
+		for _, sym := range output.DetectedSymbols {
+			if sym.Name == "SSL_CTX_new" {
+				assert.Equal(t, "tls", sym.Category)
+				found = true
+			}
+		}
+		assert.True(t, found, `"SSL_CTX_new" must be in DetectedSymbols`)
+	})
+
+	t.Run("no-VERNEED binary importing only non-network symbols yields NoNetworkSymbols", func(t *testing.T) {
+		path := filepath.Join(tmpDir, "read_only.elf")
+		elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
+			{Name: "read"},
+		})
+
+		output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
+
+		assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
+		assert.Empty(t, output.DetectedSymbols)
+	})
+
+	t.Run("no-VERNEED binary with mixed symbols records only networkSymbols matches", func(t *testing.T) {
+		path := filepath.Join(tmpDir, "mixed_symbols.elf")
+		elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
+			{Name: "socket"},
+			{Name: "SSL_CTX_new"},
+			{Name: "pthread_create"}, // not in networkSymbols, must not be recorded
+		})
+
+		output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
+
+		require.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
+		names := make(map[string]string)
+		for _, sym := range output.DetectedSymbols {
+			names[sym.Name] = sym.Category
+		}
+		assert.Equal(t, "socket", names["socket"])
+		assert.Equal(t, "tls", names["SSL_CTX_new"])
+		assert.NotContains(t, names, "pthread_create",
+			"pthread_create is not in networkSymbols and must not appear in DetectedSymbols")
+	})
+
+	t.Run("dlopen in no-VERNEED binary appears in DynamicLoadSymbols", func(t *testing.T) {
+		path := filepath.Join(tmpDir, "dlopen_socket.elf")
+		elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
+			{Name: "dlopen"},
+			{Name: "socket"},
+		})
+
+		output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
+
+		found := false
+		for _, sym := range output.DynamicLoadSymbols {
+			if sym.Name == "dlopen" {
+				assert.Equal(t, "dynamic_load", sym.Category)
+				found = true
+			}
+		}
+		assert.True(t, found, `"dlopen" must appear in DynamicLoadSymbols`)
+	})
+}

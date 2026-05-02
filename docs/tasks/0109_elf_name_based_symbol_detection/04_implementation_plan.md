@@ -45,12 +45,12 @@
 
 **対象ファイル**: `internal/security/elfanalyzer/analyzer_test.go`
 
-- [ ] `TestCheckDynamicSymbols_NameBasedFilter` 関数を追加する（詳細仕様書 4.2 参照）
-  - [ ] `"no-VERNEED binary importing socket yields NetworkDetected with socket category"` サブテスト
-  - [ ] `"no-VERNEED binary importing SSL_CTX_new yields NetworkDetected with tls category"` サブテスト
-  - [ ] `"no-VERNEED binary importing only non-network symbols yields NoNetworkSymbols"` サブテスト
-  - [ ] `"no-VERNEED binary with mixed symbols records only networkSymbols matches"` サブテスト
-  - [ ] `"dlopen in no-VERNEED binary appears in DynamicLoadSymbols"` サブテスト
+- [x] `TestCheckDynamicSymbols_NameBasedFilter` 関数を追加する（詳細仕様書 4.2 参照）
+  - [x] `"no-VERNEED binary importing socket yields NetworkDetected with socket category"` サブテスト
+  - [x] `"no-VERNEED binary importing SSL_CTX_new yields NetworkDetected with tls category"` サブテスト
+  - [x] `"no-VERNEED binary importing only non-network symbols yields NoNetworkSymbols"` サブテスト
+  - [x] `"no-VERNEED binary with mixed symbols records only networkSymbols matches"` サブテスト
+  - [x] `"dlopen in no-VERNEED binary appears in DynamicLoadSymbols"` サブテスト
 
 ### Phase 5: 品質確認（AC-7 対応）
 
