@@ -5,7 +5,6 @@ package elfanalyzer
 import (
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -42,12 +41,4 @@ func TestIsLibcLibrary(t *testing.T) {
 			assert.Equal(t, tt.expected, isLibcLibrary(tt.lib))
 		})
 	}
-}
-
-func TestCategorizeELFSymbol(t *testing.T) {
-	networkSymbols := binaryanalyzer.GetNetworkSymbols()
-
-	assert.Equal(t, "socket", categorizeELFSymbol("socket", networkSymbols))
-	assert.Equal(t, "syscall_wrapper", categorizeELFSymbol("read", networkSymbols))
-	assert.Equal(t, "syscall_wrapper", categorizeELFSymbol("unknown_symbol", networkSymbols))
 }

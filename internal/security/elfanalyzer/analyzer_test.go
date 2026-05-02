@@ -40,7 +40,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 		{
 			name:           "binary with ssl symbols",
 			filename:       "with_ssl.elf",
-			expectedResult: binaryanalyzer.NoNetworkSymbols,
+			expectedResult: binaryanalyzer.NetworkDetected,
 			expectSymbols:  true,
 		},
 		{
@@ -201,7 +201,7 @@ func TestStandardELFAnalyzer_LibcSymbolFiltering(t *testing.T) {
 			`expected at least one "syscall_wrapper" symbol from libc (e.g. __libc_start_main)`)
 	})
 
-	t.Run("non-libc symbols are not recorded", func(t *testing.T) {
+	t.Run("non-libc network symbols recorded with correct category", func(t *testing.T) {
 		path := filepath.Join(testdataDir, "with_ssl.elf")
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Skip("with_ssl.elf not found")
@@ -210,13 +210,17 @@ func TestStandardELFAnalyzer_LibcSymbolFiltering(t *testing.T) {
 		require.NoError(t, err)
 
 		output := analyzer.AnalyzeNetworkSymbols(absPath, "sha256:dummy")
-		// SSL symbols come from libssl/libcrypto, not libc — must not appear in DetectedSymbols.
+		// After task 0109, Step 1 records networkSymbols matches regardless of Library.
+		// SSL_CTX_new is in networkSymbols (tls category) and must appear in DetectedSymbols.
+		foundSSL := false
 		for _, sym := range output.DetectedSymbols {
-			assert.NotEqual(t, "SSL_CTX_new", sym.Name,
-				"SSL_CTX_new (from libssl) must not appear in DetectedSymbols")
-			assert.NotEqual(t, "SSL_CTX_free", sym.Name,
-				"SSL_CTX_free (from libssl) must not appear in DetectedSymbols")
+			if sym.Name == "SSL_CTX_new" {
+				assert.Equal(t, "tls", sym.Category,
+					`SSL_CTX_new should have category "tls"`)
+				foundSSL = true
+			}
 		}
+		assert.True(t, foundSSL, `SSL_CTX_new should now appear in DetectedSymbols`)
 	})
 }
 
