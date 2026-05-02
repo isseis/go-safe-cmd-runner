@@ -1226,6 +1226,117 @@ output_size_limit = 1024  # 1KB - ほとんどのコマンドで不足
 output_size_limit = 10485760  # 10MB - 一般的な用途に適切
 ```
 
+## 4.9 slack_allowed_host - Slack 通知ホスト設定
+
+### 概要
+
+Slack Webhook URL に許可するホスト名を指定します。環境変数 `GSCR_SLACK_WEBHOOK_URL_SUCCESS` または `GSCR_SLACK_WEBHOOK_URL_ERROR` を設定してSlack通知を有効にする場合は、必ずこのパラメータも設定する必要があります。
+
+Webhook URLのシークレット（URL自体）は環境変数で管理し、許可ホストはTOML（ハッシュ検証対象）で管理することで、Webhook URLが改ざんされても任意ホストへのログ送信（情報漏洩・SSRF）を防ぎます。
+
+### 文法
+
+```toml
+[global]
+slack_allowed_host = "ホスト名"
+```
+
+### パラメータの詳細
+
+| 項目 | 内容 |
+|-----|------|
+| **型** | 文字列 |
+| **必須/オプション** | 条件付き必須（Slack通知を使用する場合は必須） |
+| **設定可能な階層** | グローバルのみ |
+| **デフォルト値** | なし（空文字列） |
+| **有効な値** | ポートなし・空白なしのホスト名（例: `"hooks.slack.com"`） |
+
+### Slack通知の有効化
+
+Slack通知は以下の2つの設定を組み合わせて有効にします：
+
+| 設定 | 種別 | 内容 |
+|---|---|---|
+| `global.slack_allowed_host` | TOML設定 | 許可するWebhookのホスト名 |
+| `GSCR_SLACK_WEBHOOK_URL_SUCCESS` | 環境変数 | 成功通知用Webhook URL（省略可） |
+| `GSCR_SLACK_WEBHOOK_URL_ERROR` | 環境変数 | エラー通知用Webhook URL |
+
+環境変数の設定パターンと動作については [runner コマンドガイド - 通知設定](../runner_command.ja.md#42-通知設定) を参照してください。
+
+### 設定例
+
+#### 例1: エラー通知のみ（推奨）
+
+```toml
+version = "1.0"
+
+[global]
+slack_allowed_host = "hooks.slack.com"
+timeout = 3600
+env_allowed = ["PATH", "HOME"]
+
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "db_backup"
+cmd = "/usr/bin/pg_dump"
+args = ["-U", "postgres", "mydb"]
+```
+
+```bash
+# 環境変数でWebhook URLを設定（シークレットはTOMLに書かない）
+export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/T.../B.../..."
+runner -config backup.toml
+```
+
+#### 例2: 成功・エラー両方の通知
+
+```toml
+[global]
+slack_allowed_host = "hooks.slack.com"
+```
+
+```bash
+export GSCR_SLACK_WEBHOOK_URL_SUCCESS="https://hooks.slack.com/services/T.../B.../..."
+export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/T.../B.../..."
+runner -config config.toml
+```
+
+### ⚠️ 形式制約
+
+`slack_allowed_host` に指定できる値：
+
+```toml
+# ✅ 有効な設定
+slack_allowed_host = "hooks.slack.com"
+slack_allowed_host = "my-internal-slack.example.com"
+
+# ❌ 無効な設定（起動エラーになります）
+slack_allowed_host = "hooks.slack.com:443"  # ポート番号は不可
+slack_allowed_host = " hooks.slack.com"     # 前後の空白は不可
+slack_allowed_host = "https://hooks.slack.com"  # スキームは不可
+```
+
+### Slack通知を使用しない場合
+
+環境変数 `GSCR_SLACK_WEBHOOK_URL_*` を設定しない場合、`slack_allowed_host` は省略可能です。通知は静粛に無効化されます。
+
+```toml
+# Slack通知なし → slack_allowed_host は不要
+[global]
+timeout = 3600
+env_allowed = ["PATH", "HOME"]
+```
+
+### ⚠️ セキュリティ上の注意
+
+- Webhook URLは機密情報です。環境変数またはシークレット管理ツールで管理し、TOMLファイルには直接書かないでください
+- `SUCCESS` のみ設定して `ERROR` を省略すると起動エラーになります（サイレントな通知失敗防止のため）
+- dry-runモードではどちらのWebhookにも通知は送信されません
+
+---
+
 ## 全体的な設定例
 
 以下は、グローバルレベルの設定を組み合わせた実践的な例です:
@@ -1257,6 +1368,9 @@ verify_files = [
 
 # 出力サイズ制限
 output_size_limit = 10485760  # 10MB
+
+# Slack通知のホスト設定（環境変数でWebhook URLを設定する場合は必須）
+slack_allowed_host = "hooks.slack.com"
 
 [[groups]]
 name = "application_tasks"
