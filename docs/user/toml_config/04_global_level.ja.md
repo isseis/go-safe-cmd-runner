@@ -1320,7 +1320,7 @@ slack_allowed_host = "https://hooks.slack.com"  # スキームは不可
 
 ### Slack通知を使用しない場合
 
-環境変数 `GSCR_SLACK_WEBHOOK_URL_*` を設定しない場合、`slack_allowed_host` は省略可能です。通知は静粛に無効化されます。
+環境変数 `GSCR_SLACK_WEBHOOK_URL_*` を設定しない場合、`slack_allowed_host` は省略可能です。通知はサイレントに無効化されます。
 
 ```toml
 # Slack通知なし → slack_allowed_host は不要
