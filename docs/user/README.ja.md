@@ -29,6 +29,7 @@ go-safe-cmd-runner は3つのコマンドラインツールを提供します。
 - リスクベースのセキュリティ制御
 - 詳細なロギング
 - カラー出力対応
+- Slack通知連携（成功・エラーを別チャンネルへ通知）
 
 **クイックスタート:**
 ```bash
@@ -58,6 +59,7 @@ runner -c config.toml -n  # 短い形式
 - ファイル整合性のベースライン作成
 - ハッシュファイルの管理
 - 複数ファイルの一括記録対応
+- syscall解析デバッグ情報の記録（`--debug-info`）
 
 **クイックスタート:**
 ```bash
@@ -69,6 +71,9 @@ record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 
 # 複数ファイルを一括記録
 record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
+
+# デバッグ情報（Occurrences, DeterminationStats）を含めて記録
+record --debug-info -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh
 ```
 
 **こんな時に:**
@@ -337,6 +342,30 @@ A: はい、CI/CD環境に最適化されています。詳細は以下を参照
 - 環境変数による自動検出（CI, GITHUB_ACTIONS, JENKINS_URL など）
 - `-quiet` フラグによる非インタラクティブモード
 
+### Q: Slackに通知するにはどうすればいいですか？
+
+A: 環境変数とTOML設定の2段階で設定します：
+
+1. **TOML設定**（`slack_allowed_host` を追加）:
+   ```toml
+   [global]
+   slack_allowed_host = "hooks.slack.com"
+   ```
+
+2. **環境変数**（Webhook URLを設定）:
+   ```bash
+   # エラー通知のみ（推奨）
+   export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/..."
+
+   # 成功とエラー両方の通知
+   export GSCR_SLACK_WEBHOOK_URL_SUCCESS="https://hooks.slack.com/services/..."
+   export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/..."
+   ```
+
+詳細は以下を参照してください：
+- [runner コマンド - 通知設定](runner_command.ja.md#42-通知設定)
+- [TOML設定 - slack_allowed_host](toml_config/04_global_level.ja.md#49-slack_allowed_host---slack-通知ホスト設定)
+
 ### Q: セキュリティ上の注意点は？
 
 A: 主な注意点：
@@ -407,5 +436,5 @@ A: 主な注意点：
 
 ---
 
-**最終更新**: 2025-10-02
+**最終更新**: 2026-05-02
 **バージョン**: 1.0

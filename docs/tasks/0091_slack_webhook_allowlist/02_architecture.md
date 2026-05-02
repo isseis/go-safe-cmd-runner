@@ -229,7 +229,7 @@ flowchart TD
 
 | 状況 | エラー型 | `PreExecutionError.Type` |
 |------|----------|--------------------------|
-| Slack URL なし (`GSCR_SLACK_WEBHOOK_URL_*` 未設定) | — (エラーなし、静粛に無効) | — |
+| Slack URL なし (`GSCR_SLACK_WEBHOOK_URL_*` 未設定) | — (エラーなし、サイレントに無効) | — |
 | SUCCESS のみ設定、ERROR なし | `ErrSuccessWithoutError` | `ErrorTypeConfigParsing` (既存) |
 | URL が HTTPS でない | `ErrInvalidWebhookURL` | `ErrorTypeConfigParsing` |
 | URL のホストが許可ホストと不一致 | `ErrInvalidWebhookURL` | `ErrorTypeConfigParsing` |

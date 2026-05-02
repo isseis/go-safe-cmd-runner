@@ -1196,6 +1196,117 @@ output_size_limit = 1024  # 1KB - insufficient for most commands
 output_size_limit = 10485760  # 10MB - appropriate for general use
 ```
 
+## 4.9 slack_allowed_host - Slack Notification Host Setting
+
+### Overview
+
+Specifies the hostname permitted in Slack Webhook URLs. This parameter must be configured whenever you enable Slack notifications by setting the `GSCR_SLACK_WEBHOOK_URL_SUCCESS` or `GSCR_SLACK_WEBHOOK_URL_ERROR` environment variables.
+
+Webhook URL secrets (the URLs themselves) are managed via environment variables, while the permitted host is managed in TOML (which is subject to hash verification). This design prevents log exfiltration or SSRF attacks even if the Webhook URL environment variable is tampered with.
+
+### Syntax
+
+```toml
+[global]
+slack_allowed_host = "hostname"
+```
+
+### Parameter Details
+
+| Item | Description |
+|------|-------------|
+| **Type** | String |
+| **Required/Optional** | Conditionally required (required when using Slack notifications) |
+| **Configurable Level** | Global only |
+| **Default Value** | None (empty string) |
+| **Valid Values** | Hostname without port or whitespace (e.g., `"hooks.slack.com"`) |
+
+### Enabling Slack Notifications
+
+Slack notifications are enabled by combining two types of settings:
+
+| Setting | Type | Description |
+|---------|------|-------------|
+| `global.slack_allowed_host` | TOML setting | Permitted hostname for Webhooks |
+| `GSCR_SLACK_WEBHOOK_URL_SUCCESS` | Environment variable | Webhook URL for success notifications (optional) |
+| `GSCR_SLACK_WEBHOOK_URL_ERROR` | Environment variable | Webhook URL for error notifications (required when using Slack notifications)|
+
+For environment variable configuration patterns and behavior, see [runner Command Guide - Notification Settings](../runner_command.md#42-notification-settings).
+
+### Configuration Examples
+
+#### Example 1: Error Notifications Only (Recommended)
+
+```toml
+version = "1.0"
+
+[global]
+slack_allowed_host = "hooks.slack.com"
+timeout = 3600
+env_allowed = ["PATH", "HOME"]
+
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "db_backup"
+cmd = "/usr/bin/pg_dump"
+args = ["-U", "postgres", "mydb"]
+```
+
+```bash
+# Set Webhook URL via environment variable (do not write secrets in TOML)
+export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/T.../B.../..."
+runner -config backup.toml
+```
+
+#### Example 2: Both Success and Error Notifications
+
+```toml
+[global]
+slack_allowed_host = "hooks.slack.com"
+```
+
+```bash
+export GSCR_SLACK_WEBHOOK_URL_SUCCESS="https://hooks.slack.com/services/T.../B.../..."
+export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/T.../B.../..."
+runner -config config.toml
+```
+
+### ⚠️ Format Constraints
+
+Valid values for `slack_allowed_host`:
+
+```toml
+# ✅ Valid settings
+slack_allowed_host = "hooks.slack.com"
+slack_allowed_host = "my-internal-slack.example.com"
+
+# ❌ Invalid settings (will cause startup error)
+slack_allowed_host = "hooks.slack.com:443"           # Port number not allowed
+slack_allowed_host = " hooks.slack.com"              # Leading/trailing whitespace not allowed
+slack_allowed_host = "https://hooks.slack.com"       # Scheme not allowed
+```
+
+### When Not Using Slack Notifications
+
+If the `GSCR_SLACK_WEBHOOK_URL_*` environment variables are not set, `slack_allowed_host` can be omitted. Notifications are silently disabled.
+
+```toml
+# No Slack notifications → slack_allowed_host is not required
+[global]
+timeout = 3600
+env_allowed = ["PATH", "HOME"]
+```
+
+### ⚠️ Security Considerations
+
+- Webhook URLs are confidential. Manage them via environment variables or a secrets management tool; do not write them directly in TOML files.
+- Setting only `SUCCESS` without `ERROR` will cause a startup error (to prevent silent notification failures).
+- In dry-run mode, no notifications are sent to either Webhook.
+
+---
+
 ## Overall Configuration Example
 
 Below is a practical example combining global-level settings:
@@ -1232,6 +1343,9 @@ verify_files = [
 
 # Output size limit
 output_size_limit = 10485760  # 10MB
+
+# Slack notification host setting (required when Webhook URL environment variables are set)
+slack_allowed_host = "hooks.slack.com"
 
 [[groups]]
 name = "application_tasks"
