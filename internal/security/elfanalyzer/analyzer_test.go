@@ -210,7 +210,7 @@ func TestStandardELFAnalyzer_LibcSymbolFiltering(t *testing.T) {
 		require.NoError(t, err)
 
 		output := analyzer.AnalyzeNetworkSymbols(absPath, "sha256:dummy")
-		// After task 0109, Step 1 records networkSymbols matches regardless of Library.
+		// Step 1 records networkSymbols matches regardless of sym.Library or VERNEED presence.
 		// SSL_CTX_new is in networkSymbols (tls category) and must appear in DetectedSymbols.
 		foundSSL := false
 		for _, sym := range output.DetectedSymbols {
