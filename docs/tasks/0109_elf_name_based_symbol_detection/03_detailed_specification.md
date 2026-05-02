@@ -322,6 +322,8 @@ assert.True(t, foundSSL, `SSL_CTX_new should now appear in DetectedSymbols`)
 
 以下のテスト関数を `analyzer_test.go` に追加する。
 
+> **JSON スキーマとの関係**: 各テストは `binaryanalyzer.AnalysisOutput`（内部表現）を検証する。`sym.Category` は `binaryanalyzer.DetectedSymbol` の内部フィールドであり、JSON `symbol_analysis.detected_symbols` には保存されない（schema v19 以降）。JSON にはシンボル名のみが `[]string` で保存される。
+
 ```go
 // TestCheckDynamicSymbols_NameBasedFilter は FR-2 の二段階フィルタを検証する。
 // 受け入れ基準 AC-1〜AC-6 に対応する。
@@ -466,3 +468,16 @@ func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
 | `testdata/with_socket.elf` | AC-5（VERNEED あり・glibc） | 変更なし |
 | `testdata/with_ssl.elf` | AC-5（VERNEED あり・libssl）、既存テスト更新 | 変更なし（テスト期待値を更新） |
 | `CreateELFWithSymbols` 生成 | AC-1〜AC-4、AC-6（VERNEED なし） | 新規ヘルパーで動的生成 |
+
+## 7. `record` コマンドと JSON スキーマの関係
+
+本タスクの変更は `checkDynamicSymbols`（内部）のみに影響し、`record` コマンドの出力仕様は変わらない。参考として現行の出力仕様を記載する。
+
+| 項目 | デフォルト出力 | `--debug-info` 追加時 |
+|------|--------------|----------------------|
+| `symbol_analysis.detected_symbols` | シンボル名のみ `[]string` | 同じ（変化なし） |
+| `symbol_analysis.dynamic_load_symbols` | シンボル名のみ `[]string` | 同じ（変化なし） |
+| `syscall_analysis.detected_syscalls[].occurrences` | 含まれない | 含まれる |
+| `syscall_analysis.determination_stats` | 含まれない | 含まれる |
+
+`Category`（`socket` / `tls` / `dns` / `http` / `syscall_wrapper`）は schema v18 以降 JSON に保存されない。`runner` はシンボル名から `binaryanalyzer.IsNetworkSymbol()` を呼び出してカテゴリを再導出する。

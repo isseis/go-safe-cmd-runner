@@ -73,14 +73,16 @@ flowchart LR
 
 ### 2.3 変更前後の比較
 
+「記録」は `binaryanalyzer.AnalysisOutput.DetectedSymbols` への追加（内部表現）を指す。JSON `symbol_analysis.detected_symbols` にはシンボル名のみが保存され、カテゴリは含まれない（schema v19）。
+
 | 条件 | 変更前 | 変更後 |
 |------|--------|--------|
-| VERNEED なし + `socket` | 検出されない | `socket` カテゴリで記録 |
-| VERNEED なし + `SSL_CTX_new` | 検出されない | `tls` カテゴリで記録 |
+| VERNEED なし + `socket` | 検出されない | `socket` カテゴリで内部記録、JSON に名前 `"socket"` を保存 |
+| VERNEED なし + `SSL_CTX_new` | 検出されない | `tls` カテゴリで内部記録、JSON に名前 `"SSL_CTX_new"` を保存 |
 | VERNEED なし + `read` | 検出されない | 記録なし（networkSymbols 未登録、Library が空） |
 | VERNEED あり + libc + `socket` | `socket` カテゴリで記録 | 同じ（Step 1 で記録） |
 | VERNEED あり + libc + `read` | `syscall_wrapper` で記録 | 同じ（Step 2 で記録） |
-| VERNEED あり + libssl + `SSL_CTX_new` | 記録なし | `tls` カテゴリで記録（改善） |
+| VERNEED あり + libssl + `SSL_CTX_new` | 記録なし | `tls` カテゴリで内部記録（改善） |
 | VERNEED あり + libm + `pow` | 記録なし | 記録なし（変化なし） |
 
 ## 3. コンポーネント設計
