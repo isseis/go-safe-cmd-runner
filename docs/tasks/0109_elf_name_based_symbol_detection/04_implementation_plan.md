@@ -10,13 +10,13 @@
 
 **対象ファイル**: `internal/security/elfanalyzer/testing/helpers.go`
 
-- [ ] `SymbolSpec` 型を定義する（`Name string` フィールドのみ）
-- [ ] `CreateELFWithSymbols(t, path, symbols []SymbolSpec)` 関数を実装する
+- [x] `SymbolSpec` 型を定義する（`Name string` フィールドのみ）
+- [x] `CreateELFWithSymbols(t, path, symbols []SymbolSpec)` 関数を実装する
   - `null` / `.dynsym` / `.dynstr` / `.shstrtab` の 4 セクションのみ生成（VERNEED なし）
   - 各シンボルを `SHN_UNDEF`・`STT_FUNC`・`STB_GLOBAL` として `.dynsym` に追加する
   - バイナリレイアウト: ELF header → section headers → `.dynsym` → `.dynstr` → `.shstrtab`
   - 詳細は詳細仕様書 3 節の実装コードを参照
-- [ ] `CreateDynamicELFFile` を `CreateELFWithSymbols` に委譲してコードの重複を排除する
+- [x] `CreateDynamicELFFile` を `CreateELFWithSymbols` に委譲してコードの重複を排除する
   - `CreateDynamicELFFile(t, path)` → `CreateELFWithSymbols(t, path, []SymbolSpec{{Name: "__libc_start_main"}})`
   - 既存のテストが `CreateDynamicELFFile` を呼んでいる箇所は変更不要（シグネチャは維持）
 
