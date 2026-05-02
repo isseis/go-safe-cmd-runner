@@ -1327,13 +1327,24 @@ CLICOLOR=1 NO_COLOR=1 runner -config config.toml
 
 ### 4.2 Notification Configuration
 
-Slack notifications can be configured using environment variables. Success and error notifications can be sent to different webhooks.
+Slack notifications are configured by combining environment variables with a TOML setting. Webhook URLs are managed as secrets via environment variables, while the permitted hostname is declared in the TOML configuration file (which is subject to hash verification). Success and error notifications can be sent to different webhooks.
 
-#### `GSCR_SLACK_WEBHOOK_URL_SUCCESS`
+#### TOML Setting: `global.slack_allowed_host`
+
+Specifies the hostname permitted in Webhook URLs, declared in the TOML configuration file. Required whenever Webhook URL environment variables are set.
+
+```toml
+[global]
+slack_allowed_host = "hooks.slack.com"
+```
+
+For details, see [Global Level Configuration - slack_allowed_host](toml_config/04_global_level.md#49-slack_allowed_host---slack-notification-host-setting).
+
+#### Environment Variable: `GSCR_SLACK_WEBHOOK_URL_SUCCESS`
 
 Specifies the Webhook URL for success notifications. When set, command group completion with success status is notified to this webhook (INFO level).
 
-#### `GSCR_SLACK_WEBHOOK_URL_ERROR`
+#### Environment Variable: `GSCR_SLACK_WEBHOOK_URL_ERROR`
 
 Specifies the Webhook URL for error notifications. When set, warnings and errors are notified to this webhook (WARN and ERROR levels).
 
@@ -1347,6 +1358,12 @@ Specifies the Webhook URL for error notifications. When set, warnings and errors
 | Set | Not set | **Invalid configuration** (error) |
 
 **Usage Examples**
+
+```toml
+# config.toml
+[global]
+slack_allowed_host = "hooks.slack.com"
+```
 
 ```bash
 # Error notifications only (recommended for production)

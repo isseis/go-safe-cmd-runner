@@ -1297,13 +1297,24 @@ CLICOLOR=1 NO_COLOR=1 runner -config config.toml
 
 ### 4.2 通知設定
 
-Slack通知は環境変数で設定できます。成功通知とエラー通知を別々のWebhookに送信できます。
+Slack通知は環境変数とTOML設定の組み合わせで設定します。Webhook URLはシークレットとして環境変数で管理し、許可するホスト名はTOML設定（ハッシュ検証対象）で管理します。成功通知とエラー通知を別々のWebhookに送信できます。
 
-#### `GSCR_SLACK_WEBHOOK_URL_SUCCESS`
+#### TOML設定: `global.slack_allowed_host`
+
+Webhook URLに許可するホスト名をTOML設定ファイルで指定します。環境変数でWebhook URLを設定する場合は必須です。
+
+```toml
+[global]
+slack_allowed_host = "hooks.slack.com"
+```
+
+詳細は [グローバルレベル設定 - slack_allowed_host](toml_config/04_global_level.ja.md#49-slack_allowed_host---slack-通知ホスト設定) を参照してください。
+
+#### 環境変数: `GSCR_SLACK_WEBHOOK_URL_SUCCESS`
 
 成功通知用のWebhook URLを指定します。設定すると、コマンドグループの正常完了がこのWebhookに通知されます（INFOレベル）。
 
-#### `GSCR_SLACK_WEBHOOK_URL_ERROR`
+#### 環境変数: `GSCR_SLACK_WEBHOOK_URL_ERROR`
 
 エラー通知用のWebhook URLを指定します。設定すると、警告とエラーがこのWebhookに通知されます（WARNおよびERRORレベル）。
 
@@ -1317,6 +1328,12 @@ Slack通知は環境変数で設定できます。成功通知とエラー通知
 | 設定済み | 未設定 | **無効な設定**（エラー） |
 
 **使用例**
+
+```toml
+# config.toml
+[global]
+slack_allowed_host = "hooks.slack.com"
+```
 
 ```bash
 # エラー通知のみ（本番環境推奨）
