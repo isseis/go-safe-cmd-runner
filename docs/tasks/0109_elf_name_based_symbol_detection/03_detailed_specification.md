@@ -339,7 +339,7 @@ t.Run("non-libc network symbols recorded with correct category", func(t *testing
 
 以下のテスト関数を `analyzer_test.go` に追加する。
 
-> **JSON スキーマとの関係**: 各テストは `binaryanalyzer.AnalysisOutput`（内部表現）を検証する。`sym.Category` は `binaryanalyzer.DetectedSymbol` の内部フィールドであり、JSON `symbol_analysis.detected_symbols` には保存されない（schema v19 以降）。JSON にはシンボル名のみが `[]string` で保存される。
+> **JSON スキーマとの関係**: 各テストは `binaryanalyzer.AnalysisOutput`（内部表現）を検証する。`sym.Category` は `binaryanalyzer.DetectedSymbol` の内部フィールドであり、JSON `symbol_analysis.detected_symbols` には schema v18 以降保存されない（`category` フィールド削除）。JSON にはシンボル名のみが `[]string` で保存される（schema v19 以降）。
 
 ```go
 // TestCheckDynamicSymbols_NameBasedFilter verifies that checkDynamicSymbols applies

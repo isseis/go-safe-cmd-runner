@@ -73,7 +73,7 @@ flowchart LR
 
 ### 2.3 変更前後の比較
 
-「記録」は `binaryanalyzer.AnalysisOutput.DetectedSymbols` への追加（内部表現）を指す。JSON `symbol_analysis.detected_symbols` にはシンボル名のみが保存され、カテゴリは含まれない（schema v19）。
+「記録」は `binaryanalyzer.AnalysisOutput.DetectedSymbols` への追加（内部表現）を指す。JSON `symbol_analysis.detected_symbols` は schema v18 以降 `category` フィールドを持たず、schema v19 以降はシンボル名のみの `[]string` 形式で保存される。
 
 | 条件 | 変更前 | 変更後 |
 |------|--------|--------|
