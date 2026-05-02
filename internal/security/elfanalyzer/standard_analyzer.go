@@ -200,7 +200,9 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 //  1. If the symbol name is in networkSymbols, record it with the corresponding category.
 //  2. Otherwise, if the symbol is from libc, record it as "syscall_wrapper".
 //
-// This handles both VERNEED-present (glibc) and VERNEED-absent (musl) binaries.
+// Note: For VERNEED-present (glibc) binaries, Step 2 successfully identifies non-network
+// libc symbols. However, for VERNEED-absent (musl) binaries, sym.Library is always empty,
+// so Step 2 never triggers and non-network libc symbols are not recorded.
 func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanalyzer.AnalysisOutput {
 	dynsyms, err := elfFile.DynamicSymbols()
 	if err != nil {

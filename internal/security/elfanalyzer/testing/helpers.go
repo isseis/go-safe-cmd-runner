@@ -205,4 +205,16 @@ func CreateELFWithSymbols(t *testing.T, path string, symbols []SymbolSpec) {
 
 	err := os.WriteFile(path, buf.Bytes(), 0o644) //nolint:gosec // test helper: 0644 is intentional for test files
 	require.NoError(t, err)
+
+	// Verify the generated ELF file can be parsed and DynamicSymbols() succeeds.
+	// This catches malformed ELF generation early in the test helper rather than
+	// in later analyzer logic, making test failures easier to debug.
+	f, err := os.Open(path) //nolint:gosec // test helper: path is provided by the test
+	require.NoError(t, err)
+	defer func() { require.NoError(t, f.Close()) }()
+
+	file, err := elf.NewFile(f)
+	require.NoError(t, err)
+	_, err = file.DynamicSymbols()
+	require.NoError(t, err, "generated ELF must have valid .dynsym section")
 }

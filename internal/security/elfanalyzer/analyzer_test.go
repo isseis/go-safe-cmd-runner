@@ -140,11 +140,12 @@ func TestHasDynamicLoad_ELF(t *testing.T) {
 		"python3 is expected to import dlopen/dlsym, got no DynamicLoadSymbols")
 }
 
-// TestStandardELFAnalyzer_LibcSymbolFiltering verifies that only libc-derived symbols
-// are recorded in DetectedSymbols, and that each symbol carries the correct category.
-//   - socket() imported from libc appears with category "socket"
+// TestStandardELFAnalyzer_LibcSymbolFiltering verifies that symbols are recorded
+// in DetectedSymbols with the correct category according to the two-step filter:
+//   - networkSymbols matches (e.g. socket, SSL_CTX_new) are recorded with their category
+//     (regardless of library or VERNEED presence)
 //   - non-network libc symbols (e.g. __libc_start_main) appear with category "syscall_wrapper"
-//   - symbols from non-libc libraries (e.g. SSL_CTX_new from libssl) are not recorded
+//     (only for VERNEED-present/glibc binaries where sym.Library is populated)
 func TestStandardELFAnalyzer_LibcSymbolFiltering(t *testing.T) {
 	testdataDir := "testdata"
 	analyzer := NewStandardELFAnalyzer(nil)
