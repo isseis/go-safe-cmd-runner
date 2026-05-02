@@ -1229,7 +1229,7 @@ Slack notifications are enabled by combining two types of settings:
 |---------|------|-------------|
 | `global.slack_allowed_host` | TOML setting | Permitted hostname for Webhooks |
 | `GSCR_SLACK_WEBHOOK_URL_SUCCESS` | Environment variable | Webhook URL for success notifications (optional) |
-| `GSCR_SLACK_WEBHOOK_URL_ERROR` | Environment variable | Webhook URL for error notifications |
+| `GSCR_SLACK_WEBHOOK_URL_ERROR` | Environment variable | Webhook URL for error notifications (required when using Slack notifications)|
 
 For environment variable configuration patterns and behavior, see [runner Command Guide - Notification Settings](../runner_command.md#42-notification-settings).
 

@@ -1259,7 +1259,7 @@ Slack通知は以下の2つの設定を組み合わせて有効にします：
 |---|---|---|
 | `global.slack_allowed_host` | TOML設定 | 許可するWebhookのホスト名 |
 | `GSCR_SLACK_WEBHOOK_URL_SUCCESS` | 環境変数 | 成功通知用Webhook URL（省略可） |
-| `GSCR_SLACK_WEBHOOK_URL_ERROR` | 環境変数 | エラー通知用Webhook URL |
+| `GSCR_SLACK_WEBHOOK_URL_ERROR` | 環境変数 | エラー通知用Webhook URL（Slack通知を使用する場合は必須）） |
 
 環境変数の設定パターンと動作については [runner コマンドガイド - 通知設定](../runner_command.ja.md#42-通知設定) を参照してください。
 
