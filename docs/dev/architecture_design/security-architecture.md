@@ -84,9 +84,14 @@ fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer(runtime.GOOS))
 syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
 fv.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))
 
-// LibcCacheManager: libc syscall wrapper symbol cache
+// LibcCacheManager: libc syscall wrapper symbol cache (Linux)
 cacheMgr, _ := libccache.NewLibcCacheManager(cacheDir, fs, libcAnalyzer)
 fv.SetLibcCache(libccache.NewCacheAdapter(cacheMgr, syscallAnalyzer))
+
+// LibSystemCacheManager: macOS libSystem syscall symbol cache (macOS)
+machoCacheMgr, _ := libccache.NewMachoLibSystemCacheManager(machoCacheDir)
+fv.SetLibSystemCache(libccache.NewMachoLibSystemAdapter(machoCacheMgr, fs))
+fv.SetMachoSyscallTable(libccache.MacOSSyscallTable{})
 
 // DynLibAnalyzer: recursive analysis of dynamic library dependencies
 fv.SetELFDynLibAnalyzer(d.elfDynlibAnalyzerFactory())
@@ -94,21 +99,26 @@ fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
 ```
 
 **Analysis content**:
-- **syscall analysis** (`internal/security/elfanalyzer/`): Supports both x86_64 and arm64 architectures. Enumerates SYSCALL instructions (0F 05) / SVC #0 and identifies syscall numbers via backward scanning. Detects mprotect/pkey_mprotect + PROT_EXEC combinations (equivalent to JIT code execution) as dangerous patterns. Also analyzes Go wrapper calls (syscall.Syscall, etc.) in Pass 2.
+- **syscall analysis** (`internal/security/elfanalyzer/`): Supports both x86_64 and arm64 architectures. Enumerates SYSCALL instructions (0F 05) / SVC #0 and identifies syscall numbers via backward scanning. Detects mprotect/pkey_mprotect + PROT_EXEC combinations (equivalent to JIT code execution) as dangerous patterns. Also analyzes Go wrapper calls (syscall.Syscall, etc.) in Pass 2. Branch convergence analysis tracks register copy chains to identify syscall numbers across conditional branches.
 - **Network capability detection** (`internal/security/binaryanalyzer/`, `internal/security/elfanalyzer/`): Determines binary network capability from the presence of socket, connect, bind, etc. symbols.
 - **Dynamic library dependency analysis** (`internal/dynlib/elfdynlib/`, `internal/dynlib/machodylib/`): Recursively analyzes ELF DT_NEEDED / Mach-O LC_LOAD_DYLIB to record the paths and hashes of all dependency libraries.
-- **libc syscall cache** (`internal/libccache/`): Caches libc syscall wrapper symbols to analyze indirect syscall calls.
+- **libc syscall cache** (`internal/libccache/`): On Linux, caches libc syscall wrapper symbols; on macOS, caches libSystem syscall symbols, enabling analysis of indirect syscall calls on both platforms.
 - **shebang tracking** (`internal/shebang/`): Parses and records interpreter paths from `#!/bin/sh` (direct form) / `#!/usr/bin/env python3` (env form), etc.
 
 **Analysis result persistence** (`internal/fileanalysis/`):
 
 ```
 fileanalysis.Record (SchemaVersion = 19)
-  ├── ContentHash         // SHA-256 hash of the file
-  ├── DynLibDeps          // List of dependency library paths and hashes ([]LibEntry)
-  ├── SyscallAnalysis     // syscall analysis result (risk level, detected patterns)
-  ├── SymbolAnalysis      // network symbol analysis result
-  └── ShebangInterpreter  // interpreter information (for scripts)
+  ├── ContentHash           // SHA-256 hash of the file
+  ├── DynLibDeps            // List of dependency library paths and hashes ([]LibEntry)
+  ├── SyscallAnalysis       // syscall analysis result
+  │     ├── DetectedSyscalls   // list of detected syscalls (number, name, occurrences, determination method)
+  │     ├── AnalysisWarnings   // analysis warnings (e.g., mprotect+PROT_EXEC detected)
+  │     ├── ArgEvalResults     // syscall argument evaluation results (PROT_EXEC flag determination for mprotect)
+  │     └── DeterminationStats // diagnostic statistics for syscall number determination methods
+  ├── SymbolAnalysis        // network symbol analysis result
+  ├── ShebangInterpreter    // interpreter information (for scripts)
+  └── AnalysisWarnings      // non-fatal warnings from dynlib analysis
 ```
 
 **Runner-side verification** (`internal/verification/manager.go`):
@@ -167,30 +177,35 @@ type Filter struct {
 - `InheritanceModeExplicit`: Use only group-specific allowlist
 - `InheritanceModeReject`: Allow no environment variables (empty allowlist)
 
-**Variable Validation**:
+**Environment Variable Value Safety Validation**:
 ```go
-// Location: internal/runner/config/validator.go
-func (v *Validator) validateVariableValue(value string) error {
-    // Use centralized security validation
-    if err := security.IsVariableValueSafe(value); err != nil {
-        // Wrap security error with validation error type for consistency
-        return fmt.Errorf("%w: %s", ErrDangerousPattern, err.Error())
+// Location: internal/runner/base/security/environment_validation.go
+// Shell metacharacters such as ; | $( > < are intentionally allowed because
+// commands are executed directly (not via a shell), so these characters carry no injection risk.
+func (v *Validator) ValidateEnvironmentValue(key, value string) error {
+    if strings.ContainsRune(value, '\x00') {
+        return fmt.Errorf("%w: environment variable %s contains null byte",
+            ErrUnsafeEnvironmentVar, key)
+    }
+    if strings.ContainsAny(value, "\n\r") {
+        return fmt.Errorf("%w: environment variable %s contains newline or carriage return character",
+            ErrUnsafeEnvironmentVar, key)
     }
     return nil
 }
 ```
 
-**Dangerous Pattern Detection**:
-- Command separators: `;`, `|`, `&&`, `||`
-- Command substitution: `$(...)`, backticks
-- File operations: `>`, `<`, `rm `, `dd if=`, `dd of=`
-- Code execution: `exec `, `system `, `eval `
+**Validated Variable Value Constraints**:
+Because commands are executed directly without a shell, shell metacharacters (`;`, `|`, `$(...)`, `>`, `<`, etc.) carry no injection risk and are not validated. Only the following characters are rejected:
+- Null byte: `\x00` (can be used to inject headers or corrupt structured output)
+- Newline characters: `\n`, `\r` (same)
 
 #### Security Guarantees
 - Zero-trust environment variable model (allowlist only)
 - Prevents environment-based command injection
 - Group-level isolation of sensitive variables
-- Validation of variable names and values against dangerous patterns
+- Validation of variable names (POSIX compliance and reserved prefix check)
+- Validation of variable values for null bytes and newline characters (shell metacharacters are not validated because commands are executed directly, not via a shell)
 
 ### 4. Secure File Operations
 
@@ -1082,9 +1097,9 @@ The system implements multiple security layers:
 
 **Countermeasures**:
 - Strict allowlist-based filtering
-- Dangerous pattern detection
 - Group-level environment isolation
-- Variable name and value validation
+- Variable name validation (POSIX compliance)
+- Variable value validation for null bytes and newline characters (shell metacharacter injection does not apply because commands are not executed via a shell)
 
 ### Command Injection
 
