@@ -13,6 +13,7 @@ import (
 	"runtime"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
@@ -143,7 +144,14 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 
 		syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
 		fv.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))
-		fv.SetLibraryAnalysisEnabled(true)
+
+		dynlibStoreDir := filepath.Join(cfg.hashDir, dynamicanalysis.StoreSubDir)
+		dynlibStore, dynlibStoreErr := dynamicanalysis.New(dynlibStoreDir, fv)
+		if dynlibStoreErr != nil {
+			fmt.Fprintf(stderr, "Error: Failed to initialize dynamic library analysis store: %v\n", dynlibStoreErr) //nolint:errcheck
+			return 1
+		}
+		fv.SetDynamicLibAnalysisStore(dynlibStore)
 
 		cacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
 		fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})

@@ -42,7 +42,10 @@ const (
 	// Version 20 adds LibraryAnalysis to Record for per-library syscall/symbol
 	// analysis results and DetectedLibraryNetworkDeps to SymbolAnalysisData.
 	// Load returns SchemaVersionMismatchError for records with schema_version != 20.
-	CurrentSchemaVersion = 20
+	// Version 21 removes LibraryAnalysis from Record: per-library results are now stored
+	// in the dynamic library analysis store (internal/dynamicanalysis) and read at
+	// runner runtime rather than embedded in each executable's record.
+	CurrentSchemaVersion = 21
 )
 
 // Record represents a unified file analysis record containing both
@@ -88,29 +91,6 @@ type Record struct {
 	// (e.g., unknown @ tokens that prevent hash verification for specific libraries).
 	// nil/empty is omitted from JSON (omitempty).
 	AnalysisWarnings []string `json:"analysis_warnings,omitempty"`
-
-	// LibraryAnalysis contains per-library analysis results for application-level
-	// dynamic libraries in DynLibDeps (excluding syscall wrappers like libc).
-	// nil/empty means library analysis was not performed or found nothing notable.
-	LibraryAnalysis []LibraryAnalysisEntry `json:"library_analysis,omitempty"`
-}
-
-// LibraryAnalysisEntry holds syscall and symbol analysis results for a single
-// application-level dynamic library dependency.
-type LibraryAnalysisEntry struct {
-	// SOName is the DT_NEEDED library name (e.g., "libfoo.so.1").
-	SOName string `json:"soname"`
-
-	// Path is the resolved full path to the library file.
-	Path string `json:"path"`
-
-	// SyscallAnalysis contains machine-code syscall instruction scan results.
-	// nil when machine-code analysis was skipped or produced no data.
-	SyscallAnalysis *SyscallAnalysisData `json:"syscall_analysis,omitempty"`
-
-	// SymbolAnalysis contains .dynsym UNDEF symbol analysis results.
-	// nil when symbol analysis was skipped or produced no data.
-	SymbolAnalysis *SymbolAnalysisData `json:"symbol_analysis,omitempty"`
 }
 
 // LibEntry represents a single resolved dynamic library dependency.
@@ -183,9 +163,4 @@ type SymbolAnalysisData struct {
 	// detected from DynLibDeps during record.
 	// If non-empty, this binary is treated as network-capable.
 	KnownNetworkLibDeps []string `json:"known_network_lib_deps,omitempty"`
-
-	// DetectedLibraryNetworkDeps lists SOName values of application libraries
-	// in which network-related syscalls or symbols were detected during
-	// library-level analysis.
-	DetectedLibraryNetworkDeps []string `json:"detected_library_network_deps,omitempty"`
 }

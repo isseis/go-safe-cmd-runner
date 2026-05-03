@@ -58,13 +58,13 @@
 ## 1. 進捗状況
 
 - [x] Step 1: 文書全面改定（本計画の 0 章反映）
-- [ ] Step 2: 解析結果ストアパッケージ新設と旧パッケージ互換層作成
-- [ ] Step 3: record 側シンボル改名
-- [ ] Step 4: runner 側シンボル改名
-- [ ] Step 5: cmd 配線の完全移行
-- [ ] Step 6: テスト名・ログ語彙の改名
-- [ ] Step 7: 互換 alias 削除
-- [ ] Step 8: fmt/test/lint 実行と最終整合確認
+- [x] Step 2: 解析結果ストアパッケージ新設と旧パッケージ互換層作成
+- [x] Step 3: record 側シンボル改名
+- [x] Step 4: runner 側シンボル改名
+- [x] Step 5: cmd 配線の完全移行
+- [x] Step 6: テスト名・ログ語彙の改名
+- [x] Step 7: 互換 alias 削除
+- [x] Step 8: fmt/test/lint 実行と最終整合確認
 
 ---
 
@@ -96,11 +96,11 @@
 
 作業内容:
 
-- [ ] internal/dynlibcache を internal/dynlibanalysisstore へ移設
-- [ ] DynamicLibAnalysisStore インタフェースを定義
-- [ ] LoadOrAnalyzeAndStore / LoadAnalysis の API を実装
-- [ ] ErrAnalysisNotFound を定義
-- [ ] 旧パッケージの互換 alias を一時実装
+- [x] internal/dynlibcache を internal/dynlibanalysisstore へ移設
+- [x] DynamicLibAnalysisStore インタフェースを定義
+- [x] LoadOrAnalyzeAndStore / LoadAnalysis の API を実装
+- [x] ErrAnalysisNotFound を定義
+- [-] 旧パッケージの互換 alias を一時実装
 
 ### Step 3: record 側シンボル改名
 
@@ -112,10 +112,10 @@
 
 作業内容:
 
-- [ ] libAnalysisCacheManager を dynamicLibAnalysisStore に改名
-- [ ] SetLibraryAnalysisCacheManager を SetDynamicLibAnalysisStore に改名
-- [ ] analyzeLibraries の呼び出しを LoadOrAnalyzeAndStore へ変更
-- [ ] record 側の warning/error 伝播テストを新名称へ更新
+- [x] libAnalysisCacheManager を dynamicLibAnalysisStore に改名
+- [x] SetLibraryAnalysisCacheManager を SetDynamicLibAnalysisStore に改名
+- [x] analyzeLibraries の呼び出しを LoadOrAnalyzeAndStore へ変更
+- [x] record 側の warning/error 伝播テストを新名称へ更新
 
 ### Step 4: runner 側シンボル改名
 
@@ -127,10 +127,10 @@
 
 作業内容:
 
-- [ ] libCache を libAnalysisStore に改名
-- [ ] NewNetworkAnalyzerWithLibCache を NewNetworkAnalyzerWithLibAnalysisStore に改名
-- [ ] Get 呼び出しを LoadAnalysis に差し替え
-- [ ] ErrCacheMiss 判定を ErrAnalysisNotFound 判定へ更新
+- [x] libCache を libAnalysisStore に改名
+- [x] NewNetworkAnalyzerWithLibCache を NewNetworkAnalyzerWithLibAnalysisStore に改名
+- [x] Get 呼び出しを LoadAnalysis に差し替え
+- [x] ErrCacheMiss 判定を ErrAnalysisNotFound 判定へ更新
 
 ### Step 5: cmd 配線の完全移行
 
@@ -141,9 +141,9 @@
 
 作業内容:
 
-- [ ] dynlibanalysisstore.NewDynamicLibAnalysisStore を利用
-- [ ] 旧 dynlibcache 参照を除去
-- [ ] 依存注入の型名を新シンボルへ統一
+- [x] dynlibanalysisstore.NewDynamicLibAnalysisStore を利用
+- [x] 旧 dynlibcache 参照を除去
+- [x] 依存注入の型名を新シンボルへ統一
 
 ### Step 6: テスト名・ログ語彙改名
 
@@ -167,17 +167,17 @@
 
 作業内容:
 
-- [ ] 旧 package/type/method の alias を削除
-- [ ] 全参照が新シンボルに移行済みであることを確認
-- [ ] ドキュメントの移行中注記を削除
+- [x] 旧 package/type/method の alias を削除
+- [x] 全参照が新シンボルに移行済みであることを確認
+- [x] ドキュメントの移行中注記を削除
 
 ### Step 8: 品質確認と最終整合レビュー
 
-- [ ] make fmt
-- [ ] go test -tags test -v ./...
-- [ ] make lint
-- [ ] 4 文書間で用語・見出し・AC・テスト名の整合を再レビュー
-- [ ] 実施順序と依存関係が矛盾しないことを再確認
+- [x] make fmt
+- [x] go test -tags test -v ./...
+- [x] make lint
+- [x] 4 文書間で用語・見出し・AC・テスト名の整合を再レビュー
+- [x] 実施順序と依存関係が矛盾しないことを再確認
 
 ---
 

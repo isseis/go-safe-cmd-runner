@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
@@ -40,26 +39,18 @@ type NormalResourceManager struct {
 	tempDirs []string
 }
 
-// NewNormalResourceManagerWithStores creates a new NormalResourceManager with
-// output capture support and both binary-analysis caches.
-func NewNormalResourceManagerWithStores(
-	exec executor.CommandExecutor,
-	fs executor.FileSystem,
-	privMgr runnertypes.PrivilegeManager,
-	outputMgr output.CaptureManager,
-	maxOutputSize int64,
-	logger *slog.Logger,
-	symStore fileanalysis.NetworkSymbolStore,
-	syscallStore fileanalysis.SyscallAnalysisStore,
-) *NormalResourceManager {
+// newNormalManager creates a NormalResourceManager from cfg and a resolved outputMgr.
+// outputMgr is passed separately because NewDefaultResourceManager may create one
+// when cfg.OutputManager is nil.
+func newNormalManager(cfg Config, outputMgr output.CaptureManager) *NormalResourceManager {
 	return &NormalResourceManager{
-		executor:         exec,
-		fileSystem:       fs,
-		privilegeManager: privMgr,
-		riskEvaluator:    risk.NewStandardEvaluatorWithStores(symStore, syscallStore),
+		executor:         cfg.Executor,
+		fileSystem:       cfg.FileSystem,
+		privilegeManager: cfg.PrivilegeManager,
+		riskEvaluator:    risk.NewStandardEvaluator(cfg.NetworkSymbolStore, cfg.SyscallStore, cfg.DynLibDepsStore, cfg.LibAnalysisStore),
 		outputManager:    outputMgr,
-		maxOutputSize:    maxOutputSize,
-		logger:           logger,
+		maxOutputSize:    cfg.MaxOutputSize,
+		logger:           cfg.Logger,
 		tempDirs:         make([]string, 0),
 	}
 }

@@ -23,8 +23,8 @@ func NewNormalResourceManager(
 	return NewNormalResourceManagerWithOutput(exec, fs, privMgr, nil, 0, logger, nil)
 }
 
-// NewDefaultResourceManagerForTest creates a DefaultResourceManager with nil SyscallAnalysisStore.
-// Use only in tests; production code must supply all stores explicitly via NewDefaultResourceManager.
+// NewDefaultResourceManagerForTest creates a DefaultResourceManager with nil analysis stores
+// (except the optional symStore). Use only in tests.
 func NewDefaultResourceManagerForTest(
 	exec executor.CommandExecutor,
 	fs executor.FileSystem,
@@ -37,7 +37,18 @@ func NewDefaultResourceManagerForTest(
 	maxOutputSize int64,
 	symStore fileanalysis.NetworkSymbolStore,
 ) (*DefaultResourceManager, error) {
-	return NewDefaultResourceManager(exec, fs, privMgr, pathResolver, logger, mode, dryRunOpts, outputMgr, maxOutputSize, symStore, nil)
+	return NewDefaultResourceManager(Config{
+		Executor:           exec,
+		FileSystem:         fs,
+		PrivilegeManager:   privMgr,
+		PathResolver:       pathResolver,
+		Logger:             logger,
+		Mode:               mode,
+		DryRunOpts:         dryRunOpts,
+		OutputManager:      outputMgr,
+		MaxOutputSize:      maxOutputSize,
+		NetworkSymbolStore: symStore,
+	})
 }
 
 // NewNormalResourceManagerWithOutput creates a new NormalResourceManager with output capture support
@@ -50,5 +61,12 @@ func NewNormalResourceManagerWithOutput(
 	logger *slog.Logger,
 	store fileanalysis.NetworkSymbolStore,
 ) *NormalResourceManager {
-	return NewNormalResourceManagerWithStores(exec, fs, privMgr, outputMgr, maxOutputSize, logger, store, nil)
+	return newNormalManager(Config{
+		Executor:           exec,
+		FileSystem:         fs,
+		PrivilegeManager:   privMgr,
+		MaxOutputSize:      maxOutputSize,
+		Logger:             logger,
+		NetworkSymbolStore: store,
+	}, outputMgr)
 }

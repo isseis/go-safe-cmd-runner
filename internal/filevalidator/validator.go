@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
@@ -102,6 +103,8 @@ type SyscallAnalyzerInterface interface {
 var (
 	// errNotELF is returned by openELFFile when the file is not an ELF binary.
 	errNotELF = errors.New("file is not an ELF binary")
+	// errLibraryFileTooLarge is returned when a library file exceeds the analysis size limit.
+	errLibraryFileTooLarge = errors.New("library file too large for analysis")
 )
 
 // FileValidator interface defines the basic file validation methods
@@ -128,13 +131,6 @@ func (v *Validator) Store() *fileanalysis.Store {
 	return v.store
 }
 
-type libraryCacheEntry struct {
-	entry              fileanalysis.LibraryAnalysisEntry
-	hasNetwork         bool
-	dynamicLoadSymbols []string
-	warnings           []string
-}
-
 // Validator provides functionality to record and verify file hashes.
 // It should be instantiated using the New function.
 type Validator struct {
@@ -145,17 +141,17 @@ type Validator struct {
 	// store is the unified analysis store for FileAnalysisRecord format.
 	store *fileanalysis.Store
 
-	fileSystem             safefileio.FileSystem           // used by openELFFile in analyzeELFSyscalls
-	elfDynlibAnalyzer      *elfdynlib.DynLibAnalyzer       // nil if dynlib analysis is disabled
-	machoDynlibAnalyzer    *machodylib.MachODynLibAnalyzer // nil if Mach-O dynlib analysis is disabled
-	binaryAnalyzer         binaryanalyzer.BinaryAnalyzer   // nil if binary analysis is disabled
-	libcCache              LibcCacheInterface              // nil if libc cache is disabled
-	libSystemCache         LibSystemCacheInterface         // nil if Mach-O libSystem cache is disabled
-	syscallAnalyzer        SyscallAnalyzerInterface        // nil if syscall analysis is disabled
-	machoSyscallTable      SyscallNumberTable              // nil falls back to noop table in ScanSyscallInfos
-	libraryAnalysisCache   map[string]libraryCacheEntry
-	libraryAnalysisEnabled bool
-	includeDebugInfo       bool
+	fileSystem              safefileio.FileSystem           // used by openELFFile in analyzeELFSyscalls
+	elfDynlibAnalyzer       *elfdynlib.DynLibAnalyzer       // nil if dynlib analysis is disabled
+	machoDynlibAnalyzer     *machodylib.MachODynLibAnalyzer // nil if Mach-O dynlib analysis is disabled
+	binaryAnalyzer          binaryanalyzer.BinaryAnalyzer   // nil if binary analysis is disabled
+	libcCache               LibcCacheInterface              // nil if libc cache is disabled
+	libSystemCache          LibSystemCacheInterface         // nil if Mach-O libSystem cache is disabled
+	syscallAnalyzer         SyscallAnalyzerInterface        // nil if syscall analysis is disabled
+	machoSyscallTable       SyscallNumberTable              // nil falls back to noop table in ScanSyscallInfos
+	dynamicLibAnalysisStore dynamicanalysis.Store
+	processedLibAnalysis    map[libCacheKey]*dynamicanalysis.Result
+	includeDebugInfo        bool
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
@@ -536,121 +532,115 @@ func (v *Validator) SetSyscallAnalyzer(a SyscallAnalyzerInterface) {
 	v.syscallAnalyzer = a
 }
 
-// SetLibraryAnalysisEnabled enables or disables library-level analysis.
-// Call before the first SaveRecord() invocation.
-func (v *Validator) SetLibraryAnalysisEnabled(enabled bool) {
-	v.libraryAnalysisEnabled = enabled
-	if enabled && v.libraryAnalysisCache == nil {
-		v.libraryAnalysisCache = make(map[string]libraryCacheEntry)
+// libCacheKey is the key type for the in-session library analysis cache.
+// Using a struct avoids false collisions that could occur when concatenating
+// Path and Hash with a separator character.
+type libCacheKey struct {
+	Path string
+	Hash string
+}
+
+// SetDynamicLibAnalysisStore sets the persistent store for dynamic library analysis results.
+// When non-nil, library-level analysis is enabled and results are persisted to disk.
+// Pass nil to disable library analysis.
+func (v *Validator) SetDynamicLibAnalysisStore(store dynamicanalysis.Store) {
+	v.dynamicLibAnalysisStore = store
+	if store != nil && v.processedLibAnalysis == nil {
+		v.processedLibAnalysis = make(map[libCacheKey]*dynamicanalysis.Result)
 	}
 }
 
+// AnalyzeLibrary performs symbol and syscall analysis for the library at libPath.
+// It implements dynamicanalysis.Analyzer so the Validator can serve as the
+// analysis back-end for the dynamicanalysis store.
+func (v *Validator) AnalyzeLibrary(libPath string) (*dynamicanalysis.Result, error) {
+	soName := filepath.Base(libPath)
+	lib := fileanalysis.LibEntry{SOName: soName, Path: libPath}
+	return v.analyzeOneLibrary(lib)
+}
+
 // analyzeOneLibrary runs symbol and syscall analysis for one dynamic library.
-func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (
-	entry *fileanalysis.LibraryAnalysisEntry,
-	hasNetwork bool,
-	dynamicLoadSymbols []string,
-	warnings []string,
-	err error,
-) {
-	entry = &fileanalysis.LibraryAnalysisEntry{
-		SOName: lib.SOName,
-		Path:   lib.Path,
+// It returns an error when the file is missing or exceeds the size limit (fail-fast).
+// Non-fatal issues (e.g., non-ELF format, unsupported architecture) are recorded
+// as warnings in the returned result.
+func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (*dynamicanalysis.Result, error) {
+	result := &dynamicanalysis.Result{}
+
+	// Open the file first to verify it exists and is within the analysis size limit.
+	// Both conditions must be checked before running any analysis to fail fast.
+	f, openErr := v.fileSystem.SafeOpenFile(lib.Path, os.O_RDONLY, 0)
+	if openErr != nil {
+		return nil, fmt.Errorf("failed to open library file %s: %w", lib.SOName, openErr)
+	}
+	fi, statErr := f.Stat()
+	_ = f.Close()
+	if statErr != nil {
+		return nil, fmt.Errorf("failed to stat library file %s: %w", lib.SOName, statErr)
+	}
+	if fi.Size() > maxFileSize {
+		return nil, fmt.Errorf("%w: %s", errLibraryFileTooLarge, lib.SOName)
 	}
 
 	if v.binaryAnalyzer != nil {
 		output := v.binaryAnalyzer.AnalyzeNetworkSymbols(lib.Path, "")
 		switch output.Result {
 		case binaryanalyzer.NetworkDetected:
-			entry.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
+			result.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
 				DetectedSymbols:    convertDetectedSymbols(output.DetectedSymbols),
 				DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
 			}
-			hasNetwork = true
 		case binaryanalyzer.NoNetworkSymbols:
-			entry.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
+			result.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
 				DetectedSymbols:    convertDetectedSymbols(output.DetectedSymbols),
 				DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
 			}
 		case binaryanalyzer.AnalysisError:
-			warnings = append(warnings,
+			result.Warnings = append(result.Warnings,
 				fmt.Sprintf("library symbol analysis failed for %s: %v", lib.SOName, output.Error))
 		}
-		dynamicLoadSymbols = convertDetectedSymbols(output.DynamicLoadSymbols)
+		result.DynamicLoadSymbols = convertDetectedSymbols(output.DynamicLoadSymbols)
 	}
 
 	if v.syscallAnalyzer == nil {
-		return entry, hasNetwork, dynamicLoadSymbols, warnings, nil
+		return result, nil
 	}
-
-	// Skip machine-code analysis when the library file exceeds the size limit.
-	// This mirrors the maxFileSize check applied to executable binaries.
-	f, openErr := v.fileSystem.SafeOpenFile(lib.Path, os.O_RDONLY, 0)
-	if openErr != nil {
-		warnings = append(warnings,
-			fmt.Sprintf("failed to open library file %s: %v", lib.SOName, openErr))
-		return entry, hasNetwork, dynamicLoadSymbols, warnings, nil
-	}
-	if fi, statErr := f.Stat(); statErr == nil && fi.Size() > maxFileSize {
-		_ = f.Close()
-		warnings = append(warnings,
-			fmt.Sprintf("library file too large, skipping analysis for %s", lib.SOName))
-		return entry, hasNetwork, dynamicLoadSymbols, warnings, nil
-	}
-	_ = f.Close()
 
 	elfFile, openErr := openELFFile(v.fileSystem, lib.Path)
 	if openErr != nil {
 		if !errors.Is(openErr, errNotELF) {
-			warnings = append(warnings,
+			result.Warnings = append(result.Warnings,
 				fmt.Sprintf("failed to open library ELF %s: %v", lib.SOName, openErr))
 		}
-		return entry, hasNetwork, dynamicLoadSymbols, warnings, nil
+		return result, nil
 	}
 	defer func() { _ = elfFile.Close() }()
 
 	detected, _, _, analyzeErr := v.syscallAnalyzer.AnalyzeSyscallsFromELF(elfFile)
 	if analyzeErr != nil {
 		if !errors.Is(analyzeErr, ErrUnsupportedArch) {
-			warnings = append(warnings,
+			result.Warnings = append(result.Warnings,
 				fmt.Sprintf("syscall analysis failed for library %s: %v", lib.SOName, analyzeErr))
 		}
-		return entry, hasNetwork, dynamicLoadSymbols, warnings, nil
+		return result, nil
 	}
 
 	if len(detected) > 0 {
-		entry.SyscallAnalysis = buildSyscallData(detected, nil, elfFile.Machine, nil, v.includeDebugInfo)
-
-		table, ok := v.syscallAnalyzer.GetSyscallTable(elfFile.Machine)
-		if ok {
-			for _, s := range detected {
-				if s.Number >= 0 && table.IsNetworkSyscall(s.Number) {
-					hasNetwork = true
-					break
-				}
-			}
-		}
+		result.SyscallAnalysis = buildSyscallData(detected, nil, elfFile.Machine, nil, v.includeDebugInfo)
 	}
 
-	return entry, hasNetwork, dynamicLoadSymbols, warnings, nil
+	return result, nil
 }
 
 // analyzeLibraries runs library-level analysis for non-wrapper dynamic dependencies.
 func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
-	if !v.libraryAnalysisEnabled || len(record.DynLibDeps) == 0 {
-		record.LibraryAnalysis = nil
-		if record.SymbolAnalysis != nil {
-			record.SymbolAnalysis.DetectedLibraryNetworkDeps = nil
-		}
+	if v.dynamicLibAnalysisStore == nil || len(record.DynLibDeps) == 0 {
 		return nil
 	}
 
-	if v.libraryAnalysisCache == nil {
-		v.libraryAnalysisCache = make(map[string]libraryCacheEntry)
+	if v.processedLibAnalysis == nil {
+		v.processedLibAnalysis = make(map[libCacheKey]*dynamicanalysis.Result)
 	}
 
-	var entries []fileanalysis.LibraryAnalysisEntry
-	var networkSONames []string
 	var allDynLoadSymbols []string
 
 	for _, lib := range record.DynLibDeps {
@@ -661,49 +651,29 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 			continue
 		}
 
-		if cached, ok := v.libraryAnalysisCache[lib.Path]; ok {
-			cachedEntry := cached.entry
-			cachedEntry.SOName = lib.SOName
-			entries = append(entries, cachedEntry)
-			if cached.hasNetwork {
-				networkSONames = append(networkSONames, lib.SOName)
-			}
-			allDynLoadSymbols = append(allDynLoadSymbols, cached.dynamicLoadSymbols...)
-			record.AnalysisWarnings = append(record.AnalysisWarnings, cached.warnings...)
+		// In-session cache avoids calling the persistent store for the same lib+hash twice.
+		cacheKey := libCacheKey{Path: lib.Path, Hash: lib.Hash}
+		result, cached := v.processedLibAnalysis[cacheKey]
+		if cached {
+			allDynLoadSymbols = append(allDynLoadSymbols, result.DynamicLoadSymbols...)
+			record.AnalysisWarnings = append(record.AnalysisWarnings, result.Warnings...)
 			continue
 		}
 
-		entry, hasNetwork, dynLoadSyms, warnings, err := v.analyzeOneLibrary(lib)
+		var err error
+		result, err = v.dynamicLibAnalysisStore.LoadOrAnalyzeAndStore(lib.Path, lib.Hash)
 		if err != nil {
 			return err
 		}
-		record.AnalysisWarnings = append(record.AnalysisWarnings, warnings...)
-
-		cache := libraryCacheEntry{entry: *entry, hasNetwork: hasNetwork, dynamicLoadSymbols: dynLoadSyms, warnings: warnings}
-		v.libraryAnalysisCache[lib.Path] = cache
-
-		entries = append(entries, cache.entry)
-		if cache.hasNetwork {
-			networkSONames = append(networkSONames, lib.SOName)
-		}
-		allDynLoadSymbols = append(allDynLoadSymbols, dynLoadSyms...)
+		v.processedLibAnalysis[cacheKey] = result
+		record.AnalysisWarnings = append(record.AnalysisWarnings, result.Warnings...)
+		allDynLoadSymbols = append(allDynLoadSymbols, result.DynamicLoadSymbols...)
 	}
 
-	record.LibraryAnalysis = entries
-
-	if len(networkSONames) > 0 || len(allDynLoadSymbols) > 0 {
+	if len(allDynLoadSymbols) > 0 {
 		if record.SymbolAnalysis == nil {
 			record.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{}
 		}
-	}
-	if len(networkSONames) > 0 {
-		slices.Sort(networkSONames)
-		networkSONames = slices.Compact(networkSONames)
-		record.SymbolAnalysis.DetectedLibraryNetworkDeps = networkSONames
-	} else if record.SymbolAnalysis != nil {
-		record.SymbolAnalysis.DetectedLibraryNetworkDeps = nil
-	}
-	if len(allDynLoadSymbols) > 0 {
 		// Merge library-detected dlopen/dlsym symbols into the exec record's
 		// DynamicLoadSymbols so that the runner can apply high-risk judgment.
 		merged := []string{}
@@ -726,6 +696,12 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 func (v *Validator) SetIncludeDebugInfo(b bool) {
 	v.includeDebugInfo = b
 }
+
+// elfMachineForArchName converts an architecture name string (as stored in
+// SyscallAnalysisData.Architecture) to the corresponding elf.Machine value.
+// Returns (0, false) for unrecognised architecture names.
+// archNameX86_64 is the canonical architecture string for x86-64 (used by elfArchName).
+const archNameX86_64 = "x86_64"
 
 // isKnownVDSO reports whether soname refers to a Linux virtual DSO.
 func isKnownVDSO(soname string) bool {
@@ -1352,7 +1328,7 @@ func mergeSyscallInfos(libc, direct []common.SyscallInfo) []common.SyscallInfo {
 func elfArchName(machine elf.Machine) string {
 	switch machine {
 	case elf.EM_X86_64:
-		return "x86_64"
+		return archNameX86_64
 	case elf.EM_AARCH64:
 		return archNameArm64
 	default:

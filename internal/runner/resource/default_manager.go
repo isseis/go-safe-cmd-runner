@@ -5,12 +5,31 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 )
+
+// Config holds all dependencies and settings for DefaultResourceManager.
+// Any nil store disables the corresponding analysis.
+type Config struct {
+	Executor           executor.CommandExecutor
+	FileSystem         executor.FileSystem
+	PrivilegeManager   runnertypes.PrivilegeManager
+	PathResolver       PathResolver
+	Logger             *slog.Logger
+	Mode               ExecutionMode
+	DryRunOpts         *DryRunOptions
+	OutputManager      output.CaptureManager
+	MaxOutputSize      int64
+	NetworkSymbolStore fileanalysis.NetworkSymbolStore
+	SyscallStore       fileanalysis.SyscallAnalysisStore
+	DynLibDepsStore    fileanalysis.DynLibDepsStore
+	LibAnalysisStore   dynamicanalysis.Store
+}
 
 // DefaultResourceManager provides a mode-aware facade that delegates to
 // NormalResourceManager or DryRunResourceManager depending on ExecutionMode.
@@ -22,13 +41,11 @@ type DefaultResourceManager struct {
 	dryrun *DryRunResourceManager
 }
 
-// NewDefaultResourceManager creates a new DefaultResourceManager with output capture support
-// and both binary-analysis caches.
-func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, dryRunOpts *DryRunOptions, outputMgr output.CaptureManager, maxOutputSize int64, symStore fileanalysis.NetworkSymbolStore, syscallStore fileanalysis.SyscallAnalysisStore) (*DefaultResourceManager, error) {
-	// Create output manager if not provided
+// NewDefaultResourceManager creates a new DefaultResourceManager from cfg.
+func NewDefaultResourceManager(cfg Config) (*DefaultResourceManager, error) {
+	outputMgr := cfg.OutputManager
 	if outputMgr == nil {
-		// Create a security validator for output validation
-		securityValidator, err := security.NewValidator(nil) // Use default config
+		securityValidator, err := security.NewValidator(nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create security validator: %w", err)
 		}
@@ -36,12 +53,12 @@ func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSy
 	}
 
 	mgr := &DefaultResourceManager{
-		mode:   mode,
-		normal: NewNormalResourceManagerWithStores(exec, fs, privMgr, outputMgr, maxOutputSize, logger, symStore, syscallStore),
+		mode:   cfg.Mode,
+		normal: newNormalManager(cfg, outputMgr),
 	}
 	// Create dry-run manager eagerly to keep state like analyses across mode flips
 	// and to simplify switching without re-wiring dependencies.
-	dryrunManager, err := NewDryRunResourceManager(exec, privMgr, pathResolver, dryRunOpts)
+	dryrunManager, err := NewDryRunResourceManager(cfg.Executor, cfg.PrivilegeManager, cfg.PathResolver, cfg.DryRunOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dry-run resource manager: %w", err)
 	}

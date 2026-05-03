@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
@@ -29,23 +30,28 @@ func syscallTableForArch(goos, arch string) syscallTableInterface {
 
 // NetworkAnalyzer provides network operation detection for commands.
 type NetworkAnalyzer struct {
-	goos         string
-	store        fileanalysis.NetworkSymbolStore   // nil means cache disabled
-	syscallStore fileanalysis.SyscallAnalysisStore // nil means svc cache disabled
+	goos             string
+	store            fileanalysis.NetworkSymbolStore   // nil means cache disabled
+	syscallStore     fileanalysis.SyscallAnalysisStore // nil means svc cache disabled
+	depsStore        fileanalysis.DynLibDepsStore      // nil means dynlib check disabled
+	libAnalysisStore dynamicanalysis.Store             // nil means dynlib check disabled
 }
 
-// NewNetworkAnalyzerWithStores creates a NetworkAnalyzer with both
-// symbol and syscall stores for cache-based analysis.
-// If either store is nil, the corresponding cache lookup is disabled.
-func NewNetworkAnalyzerWithStores(
+// NewNetworkAnalyzer creates a NetworkAnalyzer with the given stores.
+// Any nil store disables the corresponding analysis.
+func NewNetworkAnalyzer(
 	goos string,
 	symStore fileanalysis.NetworkSymbolStore,
 	svcStore fileanalysis.SyscallAnalysisStore,
+	depsStore fileanalysis.DynLibDepsStore,
+	libAnalysisStore dynamicanalysis.Store,
 ) *NetworkAnalyzer {
 	return &NetworkAnalyzer{
-		goos:         isec.RequireGOOS(goos),
-		store:        symStore,
-		syscallStore: svcStore,
+		goos:             isec.RequireGOOS(goos),
+		store:            symStore,
+		syscallStore:     svcStore,
+		depsStore:        depsStore,
+		libAnalysisStore: libAnalysisStore,
 	}
 }
 
@@ -224,15 +230,131 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 
 		// No svc #0x80 signal: determine result from SymbolAnalysis.
 		// data == nil when analyzed but no network symbols found (static binary with no svc).
-		if data == nil {
-			return false, false
+		// Non-nil: check for network/high-risk signal; fall through to dynlib check if none.
+		if data != nil {
+			output := buildAnalysisOutputFromSymbolData(data, cmdPath)
+			isNet, isHigh := handleAnalysisOutput(output, cmdPath)
+			if isNet || isHigh {
+				return isNet, isHigh
+			}
+			// No network signal from binary body: fall through to dynlib check.
 		}
-		output := buildAnalysisOutputFromSymbolData(data, cmdPath)
-		return handleAnalysisOutput(output, cmdPath)
+	}
+
+	// Additional dynlib analysis: check per-library network signals.
+	// Runs when depsStore and libAnalysisStore are both configured and contentHash is available.
+	// Fail-closed: any loading error is treated as high risk.
+	if a.depsStore != nil && a.libAnalysisStore != nil && contentHash != "" {
+		return a.checkDynLibDepsNetwork(cmdPath, contentHash)
 	}
 
 	// No store configured or contentHash empty: skip analysis.
 	return false, false
+}
+
+// checkDynLibDepsNetwork checks network capability by loading per-library analysis
+// results for each dynamic dependency of the given command.
+// Fail-closed: any loading failure returns (true, true).
+func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (isNetwork, isHighRisk bool) {
+	deps, err := a.depsStore.LoadDynLibDeps(cmdPath, contentHash)
+	if err != nil {
+		var schemaMismatch *fileanalysis.SchemaVersionMismatchError
+		switch {
+		case errors.Is(err, fileanalysis.ErrHashMismatch):
+			slog.Error("DynLibDeps record hash mismatch; treating as high risk", "path", cmdPath)
+		case errors.As(err, &schemaMismatch):
+			slog.Warn("DynLibDeps record has outdated schema; treating as high risk",
+				"path", cmdPath,
+				"expected_schema", schemaMismatch.Expected,
+				"actual_schema", schemaMismatch.Actual)
+		default:
+			slog.Error("DynLibDeps record load failed; treating as high risk",
+				"path", cmdPath, "error", err)
+		}
+		return true, true
+	}
+
+	if len(deps) == 0 {
+		// Static binary or no deps recorded: no dynlib network signal.
+		return false, false
+	}
+
+	for _, dep := range deps {
+		// Skip VDSO entries (no real file) and known syscall wrapper libraries.
+		if isVDSOEntry(dep.SOName) || binaryanalyzer.IsSyscallWrapperLibrary(dep.SOName) {
+			continue
+		}
+
+		result, loadErr := a.libAnalysisStore.LoadAnalysis(dep.Path, dep.Hash)
+		if loadErr != nil {
+			if errors.Is(loadErr, dynamicanalysis.ErrAnalysisNotFound) {
+				slog.Warn("dynlib analysis not found; treating as high risk",
+					"cmd_path", cmdPath, "dep_path", dep.Path, "dep_hash", dep.Hash)
+			} else {
+				slog.Error("dynlib analysis load failed; treating as high risk",
+					"cmd_path", cmdPath, "dep_path", dep.Path, "error", loadErr)
+			}
+			return true, true
+		}
+
+		if result == nil {
+			continue
+		}
+
+		// Check for dynamic load symbols (dlopen/dlsym → high risk).
+		if len(result.DynamicLoadSymbols) > 0 {
+			slog.Info("dynlib analysis detected dynamic load symbols",
+				"cmd_path", cmdPath, "dep_path", dep.Path,
+				"symbols", result.DynamicLoadSymbols)
+			isHighRisk = true
+		}
+
+		// Check for network signal from symbols.
+		if result.SymbolAnalysis != nil && len(result.SymbolAnalysis.DetectedSymbols) > 0 {
+			slog.Info("dynlib analysis detected network symbols",
+				"cmd_path", cmdPath, "dep_path", dep.Path,
+				"symbols", result.SymbolAnalysis.DetectedSymbols)
+			isNetwork = true
+		}
+
+		// Check for network signal from syscalls.
+		if result.SyscallAnalysis != nil {
+			table := syscallTableForArch(a.goos, result.SyscallAnalysis.Architecture)
+			if name := firstNetworkSyscall(table, result.SyscallAnalysis); name != "" {
+				slog.Info("dynlib analysis detected network syscall",
+					"cmd_path", cmdPath, "dep_path", dep.Path,
+					"syscall", name)
+				isNetwork = true
+			}
+		}
+	}
+
+	return isNetwork, isHighRisk
+}
+
+// firstNetworkSyscall returns the name of the first network syscall found in
+// data using table for classification. Returns "" if none found or inputs are nil.
+func firstNetworkSyscall(table syscallTableInterface, data *fileanalysis.SyscallAnalysisData) string {
+	if table == nil || data == nil {
+		return ""
+	}
+	for _, s := range data.DetectedSyscalls {
+		if s.Number >= 0 && table.IsNetworkSyscall(s.Number) {
+			return s.Name
+		}
+	}
+	return ""
+}
+
+// isVDSOEntry reports whether soname refers to a Linux virtual DSO that has no
+// real file on disk and should be excluded from library analysis.
+func isVDSOEntry(soname string) bool {
+	switch soname {
+	case "linux-vdso.so.1", "linux-gate.so.1", "linux-vdso64.so.1":
+		return true
+	default:
+		return false
+	}
 }
 
 func buildAnalysisOutputFromSymbolData(data *fileanalysis.SymbolAnalysisData, cmdPath string) binaryanalyzer.AnalysisOutput {
@@ -254,13 +376,6 @@ func buildAnalysisOutputFromSymbolData(data *fileanalysis.SymbolAnalysisData, cm
 			"treating binary as network-capable based on known network library dependencies",
 			"path", cmdPath,
 			"known_network_lib_deps", data.KnownNetworkLibDeps,
-		)
-	case len(data.DetectedLibraryNetworkDeps) > 0:
-		output.Result = binaryanalyzer.NetworkDetected
-		slog.Info( //nolint:gosec // G706: cmdPath is a configured command path from TOML, not arbitrary user input
-			"treating binary as network-capable based on library syscall/symbol analysis",
-			"path", cmdPath,
-			"detected_library_network_deps", data.DetectedLibraryNetworkDeps,
 		)
 	default:
 		output.Result = binaryanalyzer.NoNetworkSymbols

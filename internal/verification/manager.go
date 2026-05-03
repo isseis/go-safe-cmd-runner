@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
@@ -27,6 +28,8 @@ type Manager struct {
 	fileValidator               filevalidator.FileValidator
 	networkSymbolStore          fileanalysis.NetworkSymbolStore // nil when cache is unavailable
 	syscallAnalysisStore        fileanalysis.SyscallAnalysisStore
+	dynlibAnalysisStore         dynamicanalysis.Store // nil when store is unavailable
+	dynLibDepsStore             fileanalysis.DynLibDepsStore
 	dynlibVerifier              *elfdynlib.DynLibVerifier // initialized once at construction
 	security                    DirectoryValidator
 	pathResolver                *PathResolver
@@ -34,6 +37,8 @@ type Manager struct {
 	skipHashDirectoryValidation bool
 	resultCollector             *ResultCollector
 }
+
+var errAnalysisStoresUnavailable = errors.New("analysis stores unavailable: validator store is unavailable")
 
 // VerifyAndReadConfigFile performs atomic verification and reading of a configuration file
 // This prevents TOCTOU attacks by reading the file content once and verifying it against the hash
@@ -351,6 +356,18 @@ func (m *Manager) GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore {
 	return m.syscallAnalysisStore
 }
 
+// GetDynLibAnalysisStore returns a DynamicLibAnalysisStore for runner-side library
+// network detection, or nil if not available.
+func (m *Manager) GetDynLibAnalysisStore() dynamicanalysis.Store {
+	return m.dynlibAnalysisStore
+}
+
+// GetDynLibDepsStore returns a DynLibDepsStore for reading per-command library
+// dependency snapshots, or nil if not available.
+func (m *Manager) GetDynLibDepsStore() fileanalysis.DynLibDepsStore {
+	return m.dynLibDepsStore
+}
+
 // verifyFile attempts file verification using the configured fileValidator.
 // In dry-run mode it records the result in the ResultCollector and logs the
 // failure, but still returns the underlying error so callers can track
@@ -506,6 +523,44 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 			if s := validator.Store(); s != nil {
 				manager.networkSymbolStore = fileanalysis.NewNetworkSymbolStore(s)
 				manager.syscallAnalysisStore = fileanalysis.NewSyscallAnalysisStore(s)
+				manager.dynLibDepsStore = fileanalysis.NewDynLibDepsStore(s)
+			} else {
+				// Security policy:
+				// - Production mode is fail-closed.
+				// - Dry-run/Test modes are fail-open to keep validation workflows usable.
+				if opts.creationMode == CreationModeProduction && !opts.isDryRun {
+					slog.Error("Failed to initialize analysis stores in production mode: validator store is unavailable")
+					return nil, errAnalysisStoresUnavailable
+				}
+
+				slog.Warn("Analysis stores are unavailable; network/syscall/dynlib-deps analysis will be disabled",
+					"creation_mode", opts.creationMode,
+					"dry_run", opts.isDryRun)
+				manager.networkSymbolStore = nil
+				manager.syscallAnalysisStore = nil
+				manager.dynLibDepsStore = nil
+			}
+			// Initialize dynlib analysis store for runner-side library network detection.
+			// The store is load-only (nil analyzer): analysis is performed by record.
+			dynlibStoreDir := filepath.Join(hashDir, dynamicanalysis.StoreSubDir)
+			if ds, dsErr := dynamicanalysis.New(dynlibStoreDir, nil); dsErr == nil {
+				manager.dynlibAnalysisStore = ds
+			} else {
+				// Security policy:
+				// - Production mode is fail-closed.
+				// - Dry-run/Test modes are fail-open to keep validation workflows usable.
+				if opts.creationMode == CreationModeProduction && !opts.isDryRun {
+					slog.Error("Failed to initialize dynlib analysis store in production mode",
+						"store_dir", dynlibStoreDir, "error", dsErr)
+					return nil, fmt.Errorf("failed to initialize dynlib analysis store: %w", dsErr)
+				}
+
+				slog.Warn("Failed to initialize dynlib analysis store; runner-side dynlib analysis will be disabled",
+					"store_dir", dynlibStoreDir,
+					"creation_mode", opts.creationMode,
+					"dry_run", opts.isDryRun,
+					"error", dsErr)
+				manager.dynlibAnalysisStore = nil
 			}
 		}
 	}

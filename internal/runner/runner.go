@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
@@ -236,11 +237,19 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 	// is disabled.
 	var networkStore fileanalysis.NetworkSymbolStore
 	var syscallStore fileanalysis.SyscallAnalysisStore
+	var dynlibAnalysisStore dynamicanalysis.Store
+	var dynLibDepsStore fileanalysis.DynLibDepsStore
 	type networkSymbolStoreProvider interface {
 		GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore
 	}
 	type syscallAnalysisStoreProvider interface {
 		GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore
+	}
+	type dynlibAnalysisStoreProvider interface {
+		GetDynLibAnalysisStore() dynamicanalysis.Store
+	}
+	type dynLibDepsStoreProvider interface {
+		GetDynLibDepsStore() fileanalysis.DynLibDepsStore
 	}
 	if p, ok := pathResolver.(networkSymbolStoreProvider); ok {
 		networkStore = p.GetNetworkSymbolStore()
@@ -248,20 +257,28 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 	if p, ok := pathResolver.(syscallAnalysisStoreProvider); ok {
 		syscallStore = p.GetSyscallAnalysisStore()
 	}
+	if p, ok := pathResolver.(dynlibAnalysisStoreProvider); ok {
+		dynlibAnalysisStore = p.GetDynLibAnalysisStore()
+	}
+	if p, ok := pathResolver.(dynLibDepsStoreProvider); ok {
+		dynLibDepsStore = p.GetDynLibDepsStore()
+	}
 
-	resourceManager, err := resource.NewDefaultResourceManager(
-		opts.executor,
-		fs,
-		opts.privilegeManager,
-		pathResolver,
-		slog.Default(),
-		resource.ExecutionModeNormal,
-		&resource.DryRunOptions{}, // Empty dry-run options for normal mode
-		outputMgr,                 // Pass output manager with validator
-		maxOutputSize,             // Not used anymore (per-command limit is used instead)
-		networkStore,              // NetworkSymbolStore for cache-based analysis (nil disables cache)
-		syscallStore,              // SyscallAnalysisStore for cache-based analysis (nil disables cache)
-	)
+	resourceManager, err := resource.NewDefaultResourceManager(resource.Config{
+		Executor:           opts.executor,
+		FileSystem:         fs,
+		PrivilegeManager:   opts.privilegeManager,
+		PathResolver:       pathResolver,
+		Logger:             slog.Default(),
+		Mode:               resource.ExecutionModeNormal,
+		DryRunOpts:         &resource.DryRunOptions{},
+		OutputManager:      outputMgr,
+		MaxOutputSize:      maxOutputSize,
+		NetworkSymbolStore: networkStore,
+		SyscallStore:       syscallStore,
+		DynLibDepsStore:    dynLibDepsStore,
+		LibAnalysisStore:   dynlibAnalysisStore,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create default resource manager: %w", err)
 	}
