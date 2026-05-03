@@ -101,10 +101,8 @@ fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
 ```
 
 **解析内容**:
-- **syscall 解析** (`internal/security/elfanalyzer/`): x86_64 と arm64 の両アーキテクチャに対応。SYSCALL 命令 (0F 05) / SVC #0 を列挙し、逆方向スキャンで syscall 番号を特定。mprotect/pkey_mprotect + PROT_EXEC の組み合わせ（JIT コード実行相当）を危険パターンとして検出。Go ラッパー呼び出し（syscall.Syscall 等）も Pass 2 で解析
-- **ネットワーク機能検出** (`internal/security/binaryanalyzer/`, `internal/security/elfanalyzer/`): socket, connect, bind 等のシンボル名を `networkSymbols` で正規化し、runner が後続で参照する `detected_symbols` / `dynamic_load_symbols` を生成
-- syscall 解析 (internal/security/elfanalyzer/): x86_64 と arm64 の両アーキテクチャに対応。SYSCALL 命令 (0F 05) / SVC #0 を列挙し、逆方向スキャンで syscall 番号を特定。mprotect/pkey_mprotect + PROT_EXEC の組み合わせ（JIT コード実行相当）を危険パターンとして検出。Go ラッパー呼び出し（syscall.Syscall 等）も Pass 2 で解析。分岐先収束（Branch Convergence）解析によりレジスタコピーチェーンを追跡し、条件分岐を跨ぐ syscall 番号の特定にも対応
-- **ネットワーク機能検出** (`internal/security/binaryanalyzer/`, `internal/security/elfanalyzer/`): socket, connect, bind 等のシンボルの有無からバイナリのネットワーク利用能力を判定
+- **syscall 解析** (internal/security/elfanalyzer/): x86_64 と arm64 の両アーキテクチャに対応。SYSCALL 命令 (0F 05) / SVC #0 を列挙し、逆方向スキャンで syscall 番号を特定。mprotect/pkey_mprotect + PROT_EXEC の組み合わせ（JIT コード実行相当）を危険パターンとして検出。Go ラッパー呼び出し（syscall.Syscall 等）も Pass 2 で解析（pclntab 解析のため Go 1.18 以降が必要）。分岐先収束（Branch Convergence）解析によりレジスタコピーチェーンを追跡し、条件分岐を跨ぐ syscall 番号の特定にも対応。キャッシュミス（ErrNoSyscallAnalysis 等）時はライブ解析へフォールバックするが、スキーマ不一致（SchemaVersionMismatchError）時は再記録が必要。
+- **ネットワーク機能検出** (internal/security/binaryanalyzer/, internal/security/elfanalyzer/): socket, connect, bind 等のシンボル名を networkSymbols で正規化し、runner が後続で参照する detected_symbols / dynamic_load_symbols を生成。未定義シンボル (SHN_UNDEF) がない ELF の場合、StaticBinary ではなく NoNetworkSymbols を返却。
 - **動的ライブラリ依存解析** (`internal/dynlib/elfdynlib/`, `internal/dynlib/machodylib/`): ELF の DT_NEEDED / Mach-O の LC_LOAD_DYLIB を再帰解析し、すべての依存ライブラリのパスとハッシュを記録
 - **libc syscall キャッシュ** (`internal/libccache/`): Linux では libc の syscall ラッパーシンボルをキャッシュし、macOS では libSystem の syscall シンボルをキャッシュすることで、間接的な syscall 呼び出しを解析
 - **shebang 追跡** (`internal/shebang/`): `#!/bin/sh`（直接形式）/ `#!/usr/bin/env python3`（env 形式）等のインタープリタパスを解析・記録
