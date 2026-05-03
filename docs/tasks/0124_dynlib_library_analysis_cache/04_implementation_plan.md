@@ -58,7 +58,7 @@
 ## 1. 進捗状況
 
 - [x] Step 1: 文書全面改定（本計画の 0 章反映）
-- [ ] Step 2: 解析結果ストアパッケージ新設と旧パッケージ互換層作成
+- [x] Step 2: 解析結果ストアパッケージ新設と旧パッケージ互換層作成
 - [ ] Step 3: record 側シンボル改名
 - [ ] Step 4: runner 側シンボル改名
 - [ ] Step 5: cmd 配線の完全移行
@@ -96,11 +96,11 @@
 
 作業内容:
 
-- [ ] internal/dynlibcache を internal/dynlibanalysisstore へ移設
-- [ ] DynamicLibAnalysisStore インタフェースを定義
-- [ ] LoadOrAnalyzeAndStore / LoadAnalysis の API を実装
-- [ ] ErrAnalysisNotFound を定義
-- [ ] 旧パッケージの互換 alias を一時実装
+- [x] internal/dynlibcache を internal/dynlibanalysisstore へ移設
+- [x] DynamicLibAnalysisStore インタフェースを定義
+- [x] LoadOrAnalyzeAndStore / LoadAnalysis の API を実装
+- [x] ErrAnalysisNotFound を定義
+- [-] 旧パッケージの互換 alias を一時実装
 
 ### Step 3: record 側シンボル改名
 
