@@ -389,6 +389,7 @@
 | 要件 | requirement | |
 | 要件定義書 | requirements document | |
 | 予約済み | reserved | |
+| 再導出する | re-derive | カテゴリや属性を再計算する文脈 |
 | 解決 | resolution | 問題解決の文脈 |
 | 解決する | resolve / resolving | シンボリックリンク解決の文脈 |
 | 解決策 | solution | |
@@ -396,6 +397,7 @@
 | 制限を緩和する | weaken restrictions | セキュリティの文脈 |
 | 戻り値 | return value | |
 | 責務 | responsibility | |
+| 責務分担 | responsibility split | コンポーネント間の責務の切り分け |
 | リスク | risk | |
 | リスクレベル | risk level | |
 | 堅牢性 | robustness | |
@@ -411,6 +413,8 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 安全 | safe | |
+| 正規化済み解析結果 | normalized analysis result | 保存前に整形・選別された解析結果 |
+| 正規化済み特徴量 | normalized feature | runner 向けに整形された特徴量 |
 | 関心の分離 | separation of concerns | 設計パターンの文脈 |
 | 符号拡張 | sign extension | 上位ビットを符号ビットで埋める操作 |
 | スライス（Fatバイナリの） | slice (Fat binary) | Fat バイナリの各アーキテクチャ断面 |

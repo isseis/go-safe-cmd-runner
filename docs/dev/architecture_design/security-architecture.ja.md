@@ -72,6 +72,8 @@ func (v *Validator) Verify(filePath string) error {
 #### 目的
 `record` コマンド実行時に ELF および Mach-O バイナリを静的解析し、危険なシステムコールパターン、ネットワーク機能の使用、動的ライブラリ依存関係、スクリプトインタープリタを記録します。runner は記録済みデータを用いて動的ライブラリの整合性を検証し、実行時の ELF 再解析を不要にします。
 
+ここでの責務分担は次のとおりです。`record` はバイナリの静的解析結果を runner が利用しやすい正規化済み特徴量として保存します。たとえばネットワーク関連シンボル解析では `networkSymbols` を用いて保存対象のシンボル名集合を絞り込みますが、これは保存形式の正規化であり、実行可否や `risk_level` の最終判断ではありません。`runner` は保存済みの `detected_symbols`、`dynamic_load_symbols`、`known_network_lib_deps` を読み取り、必要に応じてカテゴリを再導出して実行時のリスク判定を行います。
+
 #### 実装詳細
 
 **record コマンドでの解析フロー** (`cmd/record/main.go`):
@@ -95,7 +97,7 @@ fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
 
 **解析内容**:
 - **syscall 解析** (`internal/security/elfanalyzer/`): x86_64 と arm64 の両アーキテクチャに対応。SYSCALL 命令 (0F 05) / SVC #0 を列挙し、逆方向スキャンで syscall 番号を特定。mprotect/pkey_mprotect + PROT_EXEC の組み合わせ（JIT コード実行相当）を危険パターンとして検出。Go ラッパー呼び出し（syscall.Syscall 等）も Pass 2 で解析
-- **ネットワーク機能検出** (`internal/security/binaryanalyzer/`, `internal/security/elfanalyzer/`): socket, connect, bind 等のシンボルの有無からバイナリのネットワーク利用能力を判定
+- **ネットワーク機能検出** (`internal/security/binaryanalyzer/`, `internal/security/elfanalyzer/`): socket, connect, bind 等のシンボル名を `networkSymbols` で正規化し、runner が後続で参照する `detected_symbols` / `dynamic_load_symbols` を生成
 - **動的ライブラリ依存解析** (`internal/dynlib/elfdynlib/`, `internal/dynlib/machodylib/`): ELF の DT_NEEDED / Mach-O の LC_LOAD_DYLIB を再帰解析し、すべての依存ライブラリのパスとハッシュを記録
 - **libc syscall キャッシュ** (`internal/libccache/`): libc の syscall ラッパーシンボルをキャッシュし、間接的な syscall 呼び出しを解析
 - **shebang 追跡** (`internal/shebang/`): `#!/bin/sh`（直接形式）/ `#!/usr/bin/env python3`（env 形式）等のインタープリタパスを解析・記録
@@ -131,6 +133,8 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 ```
 
 DynLibDeps が記録済みのバイナリに対しては、実行時に ELF を再解析せず、記録済みのハッシュ一覧を照合することで検証コストを最適化しています。
+
+同様に、ネットワーク機能判定でも runner は ELF を再解析せず、`record` が保存した `detected_symbols` と `known_network_lib_deps` を読み込み、シンボル名からカテゴリを再導出してポリシー判定を行います。
 
 #### セキュリティ保証
 - 動的ライブラリの改ざん検出（依存ライブラリのハッシュ照合）

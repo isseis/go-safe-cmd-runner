@@ -72,6 +72,8 @@ func (v *Validator) Verify(filePath string) error {
 #### Purpose
 At `record` command execution time, performs static analysis of ELF and Mach-O binaries to record dangerous system call patterns, network capability usage, dynamic library dependencies, and script interpreters. The runner uses the stored data to verify the integrity of dynamic libraries, eliminating the need for runtime ELF re-analysis.
 
+The responsibility split here is as follows. `record` stores static-analysis results as normalized features that are easy for the runner to consume. For network symbol analysis, for example, it uses `networkSymbols` to narrow the set of symbol names persisted to the record, but this is normalization of stored analysis results rather than the final execution or `risk_level` decision. The `runner` reads stored `detected_symbols`, `dynamic_load_symbols`, and `known_network_lib_deps`, re-derives categories when needed, and performs runtime risk evaluation.
+
 #### Implementation Details
 
 **Analysis flow in the record command** (`cmd/record/main.go`):
@@ -95,7 +97,7 @@ fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
 
 **Analysis content**:
 - **syscall analysis** (`internal/security/elfanalyzer/`): Supports both x86_64 and arm64 architectures. Enumerates SYSCALL instructions (0F 05) / SVC #0 and identifies syscall numbers via backward scanning. Detects mprotect/pkey_mprotect + PROT_EXEC combinations (equivalent to JIT code execution) as dangerous patterns. Also analyzes Go wrapper calls (syscall.Syscall, etc.) in Pass 2.
-- **Network capability detection** (`internal/security/binaryanalyzer/`, `internal/security/elfanalyzer/`): Determines binary network capability from the presence of socket, connect, bind, etc. symbols.
+- **Network capability detection** (`internal/security/binaryanalyzer/`, `internal/security/elfanalyzer/`): Normalizes symbol names such as socket, connect, and bind through `networkSymbols` and produces `detected_symbols` / `dynamic_load_symbols` for later runner-side policy evaluation.
 - **Dynamic library dependency analysis** (`internal/dynlib/elfdynlib/`, `internal/dynlib/machodylib/`): Recursively analyzes ELF DT_NEEDED / Mach-O LC_LOAD_DYLIB to record the paths and hashes of all dependency libraries.
 - **libc syscall cache** (`internal/libccache/`): Caches libc syscall wrapper symbols to analyze indirect syscall calls.
 - **shebang tracking** (`internal/shebang/`): Parses and records interpreter paths from `#!/bin/sh` (direct form) / `#!/usr/bin/env python3` (env form), etc.
@@ -131,6 +133,8 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 ```
 
 For binaries with recorded DynLibDeps, verification is optimized by matching against the recorded hash list rather than re-analyzing the ELF at runtime.
+
+Likewise, for network capability handling, the runner does not re-analyze the ELF at runtime. It reads the `detected_symbols` and `known_network_lib_deps` recorded by `record`, re-derives categories from symbol names, and maps that information to runtime policy decisions.
 
 #### Security Guarantees
 - Detection of dynamic library tampering (hash comparison of dependency libraries)
