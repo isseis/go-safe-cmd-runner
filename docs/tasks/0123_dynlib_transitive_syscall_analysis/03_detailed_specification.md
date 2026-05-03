@@ -435,7 +435,7 @@ v.SetLibraryAnalysisEnabled(true)
 
 | AC | 対応する実装 |
 |----|------------|
-| AC-1 | `analyzeOneLibrary` が `.dynsym` 解析結果を `LibraryAnalysis` に記録、`isNetworkLibraryEntry` がシンボルを検出、`DetectedLibraryNetworkDeps` にSOName追加 |
+| AC-1 | `analyzeOneLibrary` が `.dynsym` 解析結果を `LibraryAnalysis` に記録し `NetworkDetected` のとき `hasNetwork=true`、`analyzeLibraries` が `DetectedLibraryNetworkDeps` にSOName追加 |
 | AC-2 | `analyzeOneLibrary` が机械語解析結果を `LibraryAnalysis.SyscallAnalysis` に記録 |
 | AC-3 | `IsSyscallWrapperLibrary("libc.so.6")` が `true`、`analyzeLibraries` でスキップ |
 | AC-4 | `IsSyscallWrapperLibrary("ld-linux-x86-64.so.2")` が `true`、`analyzeLibraries` でスキップ |
