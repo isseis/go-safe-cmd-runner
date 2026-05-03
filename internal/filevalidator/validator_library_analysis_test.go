@@ -45,13 +45,14 @@ func (t *libraryTestSyscallTable) IsNetworkSyscall(number int) bool {
 }
 
 type libraryTestSyscallAnalyzer struct {
-	syscalls []common.SyscallInfo
-	err      error
-	table    SyscallNumberTable
+	syscalls   []common.SyscallInfo
+	argResults []common.SyscallArgEvalResult
+	err        error
+	table      SyscallNumberTable
 }
 
 func (s *libraryTestSyscallAnalyzer) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, *common.SyscallDeterminationStats, error) {
-	return s.syscalls, nil, nil, s.err
+	return s.syscalls, s.argResults, nil, s.err
 }
 
 func (s *libraryTestSyscallAnalyzer) EvaluatePLTCallArgs(_ *elf.File, _ string) (*common.SyscallArgEvalResult, error) {
@@ -134,6 +135,31 @@ func TestAnalyzeOneLibrary_networkSyscallDetected(t *testing.T) {
 	require.NotNil(t, result.SyscallAnalysis)
 	assert.NotEmpty(t, result.SyscallAnalysis.DetectedSyscalls)
 	assert.Empty(t, result.Warnings)
+}
+
+func TestAnalyzeOneLibrary_preservesArgEvalResults(t *testing.T) {
+	v := validatorWithTempHashDir(t)
+	v.SetBinaryAnalyzer(&libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}})
+	v.SetSyscallAnalyzer(&libraryTestSyscallAnalyzer{
+		syscalls: []common.SyscallInfo{{Number: 10, Name: "mprotect"}},
+		argResults: []common.SyscallArgEvalResult{{
+			SyscallName: "mprotect",
+			Status:      common.SyscallArgEvalExecConfirmed,
+			Details:     "prot=0x5",
+		}},
+	})
+
+	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
+		SOName: "libjit.so.1",
+		Path:   elfTestDataPath(t, "with_socket.elf"),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.SyscallAnalysis)
+	require.Len(t, result.SyscallAnalysis.ArgEvalResults, 1)
+	assert.Equal(t, "mprotect", result.SyscallAnalysis.ArgEvalResults[0].SyscallName)
+	assert.Equal(t, common.SyscallArgEvalExecConfirmed, result.SyscallAnalysis.ArgEvalResults[0].Status)
+	assert.Equal(t, "prot=0x5", result.SyscallAnalysis.ArgEvalResults[0].Details)
 }
 
 func TestAnalyzeOneLibrary_nonNetwork(t *testing.T) {

@@ -703,6 +703,33 @@ func TestCheckDynLibDepsNetwork_DynamicLoadSymbols(t *testing.T) {
 	assert.True(t, isHighRisk)
 }
 
+// TestCheckDynLibDepsNetwork_MprotectProtExecRisk verifies that dynlib syscall
+// argument evaluation (mprotect-family PROT_EXEC risk) escalates isHighRisk.
+func TestCheckDynLibDepsNetwork_MprotectProtExecRisk(t *testing.T) {
+	dep := fileanalysis.LibEntry{SOName: "libjit.so.1", Path: "/usr/lib/libjit.so.1", Hash: "sha256:dd"}
+	depsStore := &mockDynLibDepsStore{deps: []fileanalysis.LibEntry{dep}}
+	libStore := &mockDynLibAnalysisStore{
+		results: map[string]*dynamicanalysis.Result{
+			"/usr/lib/libjit.so.1": {
+				SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
+					SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+						Architecture: "x86_64",
+						ArgEvalResults: []common.SyscallArgEvalResult{{
+							SyscallName: "mprotect",
+							Status:      common.SyscallArgEvalExecConfirmed,
+							Details:     "prot=0x5",
+						}},
+					},
+				},
+			},
+		},
+	}
+	a := makeNetworkAnalyzerWithLibStores(depsStore, libStore)
+	isNetwork, isHighRisk := a.checkDynLibDepsNetwork(testCmdPath, testContentHash)
+	assert.False(t, isNetwork)
+	assert.True(t, isHighRisk)
+}
+
 // TestCheckDynLibDepsNetwork_ErrAnalysisNotFound verifies fail-closed behaviour when
 // library analysis is missing from the store.
 func TestCheckDynLibDepsNetwork_ErrAnalysisNotFound(t *testing.T) {

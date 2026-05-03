@@ -612,7 +612,7 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (*dynamicanalys
 	}
 	defer func() { _ = elfFile.Close() }()
 
-	detected, _, _, analyzeErr := v.syscallAnalyzer.AnalyzeSyscallsFromELF(elfFile)
+	detected, argEvalResults, _, analyzeErr := v.syscallAnalyzer.AnalyzeSyscallsFromELF(elfFile)
 	if analyzeErr != nil {
 		if !errors.Is(analyzeErr, ErrUnsupportedArch) {
 			result.Warnings = append(result.Warnings,
@@ -621,8 +621,8 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (*dynamicanalys
 		return result, nil
 	}
 
-	if len(detected) > 0 {
-		result.SyscallAnalysis = buildSyscallData(detected, nil, elfFile.Machine, nil, v.includeDebugInfo)
+	if len(detected) > 0 || len(argEvalResults) > 0 {
+		result.SyscallAnalysis = buildSyscallData(detected, argEvalResults, elfFile.Machine, nil, v.includeDebugInfo)
 	}
 
 	return result, nil

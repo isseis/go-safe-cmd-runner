@@ -328,6 +328,11 @@ func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (i
 					"syscall", name)
 				isNetwork = true
 			}
+			if elfanalyzer.EvalMprotectRisk(result.SyscallAnalysis.ArgEvalResults) {
+				slog.Info("dynlib analysis detected mprotect-family PROT_EXEC risk",
+					"cmd_path", cmdPath, "dep_path", dep.Path)
+				isHighRisk = true
+			}
 		}
 	}
 
