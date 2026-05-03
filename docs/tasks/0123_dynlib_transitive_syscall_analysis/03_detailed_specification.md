@@ -407,7 +407,7 @@ v.SetLibraryAnalysisEnabled(true)
 | テスト名 | 確認内容 |
 |---------|---------|
 | `TestIsSyscallWrapperLibrary_match` | `libc.so.6`, `libpthread.so.0`, `ld-linux-x86-64.so.2` が `true` を返す |
-| `TestIsSyscallWrapperLibrary_noMatch` | `libssl.so.3`, `libcurlso.4`, `libstdc++.so.6` が `false` を返す |
+| `TestIsSyscallWrapperLibrary_noMatch` | `libssl.so.3`, `libcurl.so.4`, `libstdc++.so.6` が `false` を返す |
 | `TestIsSyscallWrapperLibrary_prefixBoundary` | `libcc.so.1`（`libc` に前方一致するが区切り文字条件を満たさない）が `false` を返す |
 
 ### 7.2 `validator_library_analysis_test.go`（新規、`filevalidator` パッケージ）
@@ -444,7 +444,7 @@ v.SetLibraryAnalysisEnabled(true)
 | AC | 対応する実装 |
 |----|------------|
 | AC-1 | `analyzeOneLibrary` が `.dynsym` 解析結果を `LibraryAnalysis` に記録し `NetworkDetected` のとき `hasNetwork=true`、`analyzeLibraries` が `DetectedLibraryNetworkDeps` にSOName追加 |
-| AC-2 | `analyzeOneLibrary` が机械語解析結果を `LibraryAnalysis.SyscallAnalysis` に記録 |
+| AC-2 | `analyzeOneLibrary` が機械語解析結果を `LibraryAnalysis.SyscallAnalysis` に記録 |
 | AC-3 | `IsSyscallWrapperLibrary("libc.so.6")` が `true`、`analyzeLibraries` でスキップ |
 | AC-4 | `IsSyscallWrapperLibrary("ld-linux-x86-64.so.2")` が `true`、`analyzeLibraries` でスキップ |
 | AC-5 | `isNetworkViaBinaryAnalysis` が `DetectedLibraryNetworkDeps` を参照してネットワーク有りと判定 |
