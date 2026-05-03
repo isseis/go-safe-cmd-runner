@@ -59,7 +59,7 @@
 
 - [x] Step 1: 文書全面改定（本計画の 0 章反映）
 - [x] Step 2: 解析結果ストアパッケージ新設と旧パッケージ互換層作成
-- [ ] Step 3: record 側シンボル改名
+- [x] Step 3: record 側シンボル改名
 - [ ] Step 4: runner 側シンボル改名
 - [ ] Step 5: cmd 配線の完全移行
 - [ ] Step 6: テスト名・ログ語彙の改名
@@ -112,10 +112,10 @@
 
 作業内容:
 
-- [ ] libAnalysisCacheManager を dynamicLibAnalysisStore に改名
-- [ ] SetLibraryAnalysisCacheManager を SetDynamicLibAnalysisStore に改名
-- [ ] analyzeLibraries の呼び出しを LoadOrAnalyzeAndStore へ変更
-- [ ] record 側の warning/error 伝播テストを新名称へ更新
+- [x] libAnalysisCacheManager を dynamicLibAnalysisStore に改名
+- [x] SetLibraryAnalysisCacheManager を SetDynamicLibAnalysisStore に改名
+- [x] analyzeLibraries の呼び出しを LoadOrAnalyzeAndStore へ変更
+- [x] record 側の warning/error 伝播テストを新名称へ更新
 
 ### Step 4: runner 側シンボル改名
 

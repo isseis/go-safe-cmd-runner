@@ -15,6 +15,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysisstore"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
@@ -25,6 +26,7 @@ import (
 const (
 	hashDirPermissions = 0o750
 	libcCacheSubDir    = "lib-cache"
+	dynlibStoreSubDir  = "dynlib-analysis"
 )
 
 var (
@@ -143,7 +145,14 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 
 		syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
 		fv.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))
-		fv.SetLibraryAnalysisEnabled(true)
+
+		dynlibStoreDir := filepath.Join(cfg.hashDir, dynlibStoreSubDir)
+		dynlibStore, dynlibStoreErr := dynlibanalysisstore.NewDynamicLibAnalysisStore(dynlibStoreDir, fv)
+		if dynlibStoreErr != nil {
+			fmt.Fprintf(stderr, "Error: Failed to initialize dynamic library analysis store: %v\n", dynlibStoreErr) //nolint:errcheck
+			return 1
+		}
+		fv.SetDynamicLibAnalysisStore(dynlibStore)
 
 		cacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
 		fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
