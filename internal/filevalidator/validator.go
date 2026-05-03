@@ -564,11 +564,14 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (*dynamicanalys
 	if openErr != nil {
 		return nil, fmt.Errorf("failed to open library file %s: %w", lib.SOName, openErr)
 	}
-	if fi, statErr := f.Stat(); statErr == nil && fi.Size() > maxFileSize {
-		_ = f.Close()
+	fi, statErr := f.Stat()
+	_ = f.Close()
+	if statErr != nil {
+		return nil, fmt.Errorf("failed to stat library file %s: %w", lib.SOName, statErr)
+	}
+	if fi.Size() > maxFileSize {
 		return nil, fmt.Errorf("%w: %s", errLibraryFileTooLarge, lib.SOName)
 	}
-	_ = f.Close()
 
 	if v.binaryAnalyzer != nil {
 		output := v.binaryAnalyzer.AnalyzeNetworkSymbols(lib.Path, "")
