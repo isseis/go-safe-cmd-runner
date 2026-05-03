@@ -301,11 +301,13 @@ func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (i
 			continue
 		}
 
+		dynLoadSymbols := dynLoadSymbolsFromResult(result)
+
 		// Check for dynamic load symbols (dlopen/dlsym → high risk).
-		if len(result.DynamicLoadSymbols) > 0 {
+		if len(dynLoadSymbols) > 0 {
 			slog.Info("dynlib analysis detected dynamic load symbols",
 				"cmd_path", cmdPath, "dep_path", dep.Path,
-				"symbols", result.DynamicLoadSymbols)
+				"symbols", dynLoadSymbols)
 			isHighRisk = true
 		}
 
@@ -330,6 +332,13 @@ func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (i
 	}
 
 	return isNetwork, isHighRisk
+}
+
+func dynLoadSymbolsFromResult(result *dynamicanalysis.Result) []string {
+	if result == nil || result.SymbolAnalysis == nil {
+		return nil
+	}
+	return result.SymbolAnalysis.DynamicLoadSymbols
 }
 
 // firstNetworkSyscall returns the name of the first network syscall found in

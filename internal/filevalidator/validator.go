@@ -583,22 +583,24 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (*dynamicanalys
 
 	if v.binaryAnalyzer != nil {
 		output := v.binaryAnalyzer.AnalyzeNetworkSymbols(lib.Path, "")
+		dynamicLoadSymbols := convertDetectedSymbols(output.DynamicLoadSymbols)
 		switch output.Result {
 		case binaryanalyzer.NetworkDetected:
 			result.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
 				DetectedSymbols:    convertDetectedSymbols(output.DetectedSymbols),
-				DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
+				DynamicLoadSymbols: dynamicLoadSymbols,
 			}
 		case binaryanalyzer.NoNetworkSymbols:
 			result.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
 				DetectedSymbols:    convertDetectedSymbols(output.DetectedSymbols),
-				DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
+				DynamicLoadSymbols: dynamicLoadSymbols,
 			}
+		case binaryanalyzer.StaticBinary, binaryanalyzer.NotSupportedBinary:
+			// Library-level symbol analysis is not applicable.
 		case binaryanalyzer.AnalysisError:
 			result.Warnings = append(result.Warnings,
 				fmt.Sprintf("library symbol analysis failed for %s: %v", lib.SOName, output.Error))
 		}
-		result.DynamicLoadSymbols = convertDetectedSymbols(output.DynamicLoadSymbols)
 	}
 
 	if v.syscallAnalyzer == nil {
@@ -655,7 +657,7 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 		cacheKey := libCacheKey{Path: lib.Path, Hash: lib.Hash}
 		result, cached := v.processedLibAnalysis[cacheKey]
 		if cached {
-			allDynLoadSymbols = append(allDynLoadSymbols, result.DynamicLoadSymbols...)
+			allDynLoadSymbols = append(allDynLoadSymbols, dynamicLoadSymbolsFromResult(result)...)
 			record.AnalysisWarnings = append(record.AnalysisWarnings, result.Warnings...)
 			continue
 		}
@@ -667,7 +669,7 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 		}
 		v.processedLibAnalysis[cacheKey] = result
 		record.AnalysisWarnings = append(record.AnalysisWarnings, result.Warnings...)
-		allDynLoadSymbols = append(allDynLoadSymbols, result.DynamicLoadSymbols...)
+		allDynLoadSymbols = append(allDynLoadSymbols, dynamicLoadSymbolsFromResult(result)...)
 	}
 
 	if len(allDynLoadSymbols) > 0 {
@@ -689,6 +691,13 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 	}
 
 	return nil
+}
+
+func dynamicLoadSymbolsFromResult(result *dynamicanalysis.Result) []string {
+	if result == nil || result.SymbolAnalysis == nil {
+		return nil
+	}
+	return result.SymbolAnalysis.DynamicLoadSymbols
 }
 
 // SetIncludeDebugInfo controls whether debug information (Occurrences,
