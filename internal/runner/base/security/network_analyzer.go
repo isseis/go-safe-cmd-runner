@@ -277,14 +277,14 @@ func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (i
 		var schemaMismatch *fileanalysis.SchemaVersionMismatchError
 		switch {
 		case errors.Is(err, fileanalysis.ErrHashMismatch):
-			slog.Warn("DynLibDeps record hash mismatch; treating as high risk", "path", cmdPath)
+			slog.Error("DynLibDeps record hash mismatch; treating as high risk", "path", cmdPath)
 		case errors.As(err, &schemaMismatch):
 			slog.Warn("DynLibDeps record has outdated schema; treating as high risk",
 				"path", cmdPath,
 				"expected_schema", schemaMismatch.Expected,
 				"actual_schema", schemaMismatch.Actual)
 		default:
-			slog.Warn("DynLibDeps record load failed; treating as high risk",
+			slog.Error("DynLibDeps record load failed; treating as high risk",
 				"path", cmdPath, "error", err)
 		}
 		return true, true
