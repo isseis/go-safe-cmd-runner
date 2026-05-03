@@ -384,13 +384,6 @@ func buildAnalysisOutputFromSymbolData(data *fileanalysis.SymbolAnalysisData, cm
 			"path", cmdPath,
 			"known_network_lib_deps", data.KnownNetworkLibDeps,
 		)
-	case len(data.DetectedLibraryNetworkDeps) > 0:
-		output.Result = binaryanalyzer.NetworkDetected
-		slog.Info( //nolint:gosec // G706: cmdPath is a configured command path from TOML, not arbitrary user input
-			"treating binary as network-capable based on library syscall/symbol analysis",
-			"path", cmdPath,
-			"detected_library_network_deps", data.DetectedLibraryNetworkDeps,
-		)
 	default:
 		output.Result = binaryanalyzer.NoNetworkSymbols
 	}

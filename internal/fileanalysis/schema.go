@@ -163,9 +163,4 @@ type SymbolAnalysisData struct {
 	// detected from DynLibDeps during record.
 	// If non-empty, this binary is treated as network-capable.
 	KnownNetworkLibDeps []string `json:"known_network_lib_deps,omitempty"`
-
-	// DetectedLibraryNetworkDeps lists SOName values of application libraries
-	// in which network-related syscalls or symbols were detected during
-	// library-level analysis.
-	DetectedLibraryNetworkDeps []string `json:"detected_library_network_deps,omitempty"`
 }

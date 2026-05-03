@@ -63,7 +63,7 @@
 - [x] Step 4: runner 側シンボル改名
 - [x] Step 5: cmd 配線の完全移行
 - [x] Step 6: テスト名・ログ語彙の改名
-- [ ] Step 7: 互換 alias 削除
+- [x] Step 7: 互換 alias 削除
 - [ ] Step 8: fmt/test/lint 実行と最終整合確認
 
 ---
@@ -167,9 +167,9 @@
 
 作業内容:
 
-- [ ] 旧 package/type/method の alias を削除
-- [ ] 全参照が新シンボルに移行済みであることを確認
-- [ ] ドキュメントの移行中注記を削除
+- [x] 旧 package/type/method の alias を削除
+- [x] 全参照が新シンボルに移行済みであることを確認
+- [x] ドキュメントの移行中注記を削除
 
 ### Step 8: 品質確認と最終整合レビュー
 

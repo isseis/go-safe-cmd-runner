@@ -623,9 +623,6 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (*dynlibanalysi
 // analyzeLibraries runs library-level analysis for non-wrapper dynamic dependencies.
 func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 	if v.dynamicLibAnalysisStore == nil || len(record.DynLibDeps) == 0 {
-		if record.SymbolAnalysis != nil {
-			record.SymbolAnalysis.DetectedLibraryNetworkDeps = nil
-		}
 		return nil
 	}
 
@@ -633,7 +630,6 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 		v.processedLibAnalysis = make(map[string]*dynlibanalysisstore.DynamicLibAnalysisResult)
 	}
 
-	var networkSONames []string
 	var allDynLoadSymbols []string
 
 	for _, lib := range record.DynLibDeps {
@@ -648,9 +644,6 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 		cacheKey := lib.Path + "#" + lib.Hash
 		result, cached := v.processedLibAnalysis[cacheKey]
 		if cached {
-			if v.hasLibraryNetworkSignal(result) {
-				networkSONames = append(networkSONames, lib.SOName)
-			}
 			allDynLoadSymbols = append(allDynLoadSymbols, result.DynamicLoadSymbols...)
 			record.AnalysisWarnings = append(record.AnalysisWarnings, result.Warnings...)
 			continue
@@ -663,25 +656,13 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 		}
 		v.processedLibAnalysis[cacheKey] = result
 		record.AnalysisWarnings = append(record.AnalysisWarnings, result.Warnings...)
-		if v.hasLibraryNetworkSignal(result) {
-			networkSONames = append(networkSONames, lib.SOName)
-		}
 		allDynLoadSymbols = append(allDynLoadSymbols, result.DynamicLoadSymbols...)
 	}
 
-	if len(networkSONames) > 0 || len(allDynLoadSymbols) > 0 {
+	if len(allDynLoadSymbols) > 0 {
 		if record.SymbolAnalysis == nil {
 			record.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{}
 		}
-	}
-	if len(networkSONames) > 0 {
-		slices.Sort(networkSONames)
-		networkSONames = slices.Compact(networkSONames)
-		record.SymbolAnalysis.DetectedLibraryNetworkDeps = networkSONames
-	} else if record.SymbolAnalysis != nil {
-		record.SymbolAnalysis.DetectedLibraryNetworkDeps = nil
-	}
-	if len(allDynLoadSymbols) > 0 {
 		// Merge library-detected dlopen/dlsym symbols into the exec record's
 		// DynamicLoadSymbols so that the runner can apply high-risk judgment.
 		merged := []string{}
@@ -705,49 +686,11 @@ func (v *Validator) SetIncludeDebugInfo(b bool) {
 	v.includeDebugInfo = b
 }
 
-// hasLibraryNetworkSignal reports whether the library analysis result indicates
-// network capability, using both symbol-based and syscall-based detection.
-func (v *Validator) hasLibraryNetworkSignal(result *dynlibanalysisstore.DynamicLibAnalysisResult) bool {
-	if result == nil {
-		return false
-	}
-	if result.SymbolAnalysis != nil && len(result.SymbolAnalysis.DetectedSymbols) > 0 {
-		return true
-	}
-	if v.syscallAnalyzer != nil && result.SyscallAnalysis != nil {
-		machine, ok := elfMachineForArchName(result.SyscallAnalysis.Architecture)
-		if ok {
-			table, tableOK := v.syscallAnalyzer.GetSyscallTable(machine)
-			if tableOK {
-				for _, s := range result.SyscallAnalysis.DetectedSyscalls {
-					if s.Number >= 0 && table.IsNetworkSyscall(s.Number) {
-						return true
-					}
-				}
-			}
-		}
-	}
-	return false
-}
-
 // elfMachineForArchName converts an architecture name string (as stored in
 // SyscallAnalysisData.Architecture) to the corresponding elf.Machine value.
 // Returns (0, false) for unrecognised architecture names.
-// archNameX86_64 is the canonical architecture string for x86-64 (used by elfArchName and elfMachineForArchName).
+// archNameX86_64 is the canonical architecture string for x86-64 (used by elfArchName).
 const archNameX86_64 = "x86_64"
-
-func elfMachineForArchName(arch string) (elf.Machine, bool) {
-	switch arch {
-	case archNameX86_64:
-		return elf.EM_X86_64, true
-	case "aarch64", "arm64": // arm64 is used by elfArchName for EM_AARCH64
-		return elf.EM_AARCH64, true
-	case "i386":
-		return elf.EM_386, true
-	default:
-		return 0, false
-	}
-}
 
 // isKnownVDSO reports whether soname refers to a Linux virtual DSO.
 func isKnownVDSO(soname string) bool {

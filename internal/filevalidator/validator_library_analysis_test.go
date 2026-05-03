@@ -112,7 +112,6 @@ func TestAnalyzeOneLibrary_networkSymbolDetected(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.True(t, v.hasLibraryNetworkSignal(result))
 	require.NotNil(t, result.SymbolAnalysis)
 	assert.Contains(t, result.SymbolAnalysis.DetectedSymbols, "socket")
 	assert.Empty(t, result.Warnings)
@@ -132,7 +131,6 @@ func TestAnalyzeOneLibrary_networkSyscallDetected(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.True(t, v.hasLibraryNetworkSignal(result))
 	require.NotNil(t, result.SyscallAnalysis)
 	assert.NotEmpty(t, result.SyscallAnalysis.DetectedSyscalls)
 	assert.Empty(t, result.Warnings)
@@ -149,7 +147,11 @@ func TestAnalyzeOneLibrary_nonNetwork(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.False(t, v.hasLibraryNetworkSignal(result))
+	// No network symbols detected; SymbolAnalysis may still be populated with empty data.
+	if result.SymbolAnalysis != nil {
+		assert.Empty(t, result.SymbolAnalysis.DetectedSymbols)
+	}
+	// Syscall analysis runs but write (syscall 1) is not a network syscall.
 	assert.Empty(t, result.Warnings)
 }
 
@@ -177,8 +179,8 @@ func TestAnalyzeOneLibrary_nonELFLibrarySkipsSyscallScan(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.False(t, v.hasLibraryNetworkSignal(result))
 	assert.Nil(t, result.SyscallAnalysis)
+	assert.Nil(t, result.SymbolAnalysis)
 	assert.Empty(t, result.Warnings)
 }
 
@@ -192,8 +194,8 @@ func TestAnalyzeOneLibrary_unsupportedArchSkipsWarning(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.False(t, v.hasLibraryNetworkSignal(result))
 	assert.Nil(t, result.SyscallAnalysis)
+	assert.Nil(t, result.SymbolAnalysis)
 	assert.Empty(t, result.Warnings)
 }
 
@@ -259,16 +261,16 @@ func TestAnalyzeLibraries_sessionCache(t *testing.T) {
 	assert.Equal(t, 1, bin.calls)
 }
 
-// TestAnalyzeLibraries_symbolAnalysisCreatedWhenNil verifies that DetectedLibraryNetworkDeps
-// is populated when a library has network symbols.
+// TestAnalyzeLibraries_symbolAnalysisCreatedWhenNil verifies that DynamicLoadSymbols
+// are merged and SymbolAnalysis is created when a library has dlopen/dlsym symbols.
 func TestAnalyzeLibraries_symbolAnalysisCreatedWhenNil(t *testing.T) {
 	v := validatorWithStore(t)
 
 	v.SetBinaryAnalyzer(&libraryTestBinaryAnalyzer{
 		output: binaryanalyzer.AnalysisOutput{
 			Result: binaryanalyzer.NetworkDetected,
-			DetectedSymbols: []binaryanalyzer.DetectedSymbol{
-				{Name: "socket", Category: "socket"},
+			DynamicLoadSymbols: []binaryanalyzer.DetectedSymbol{
+				{Name: "dlopen", Category: "dynamic_load"},
 			},
 		},
 	})
@@ -281,7 +283,7 @@ func TestAnalyzeLibraries_symbolAnalysisCreatedWhenNil(t *testing.T) {
 
 	require.NoError(t, v.analyzeLibraries(record))
 	require.NotNil(t, record.SymbolAnalysis)
-	require.Equal(t, []string{"libnet.so.1"}, record.SymbolAnalysis.DetectedLibraryNetworkDeps)
+	require.Contains(t, record.SymbolAnalysis.DynamicLoadSymbols, "dlopen")
 }
 
 // TestAnalyzeLibraries_RecordHasNoLibraryAnalysisField verifies that the record does not
