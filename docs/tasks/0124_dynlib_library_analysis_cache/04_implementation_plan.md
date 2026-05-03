@@ -61,7 +61,7 @@
 - [x] Step 2: 解析結果ストアパッケージ新設と旧パッケージ互換層作成
 - [x] Step 3: record 側シンボル改名
 - [x] Step 4: runner 側シンボル改名
-- [ ] Step 5: cmd 配線の完全移行
+- [x] Step 5: cmd 配線の完全移行
 - [ ] Step 6: テスト名・ログ語彙の改名
 - [ ] Step 7: 互換 alias 削除
 - [ ] Step 8: fmt/test/lint 実行と最終整合確認
@@ -141,9 +141,9 @@
 
 作業内容:
 
-- [ ] dynlibanalysisstore.NewDynamicLibAnalysisStore を利用
-- [ ] 旧 dynlibcache 参照を除去
-- [ ] 依存注入の型名を新シンボルへ統一
+- [x] dynlibanalysisstore.NewDynamicLibAnalysisStore を利用
+- [x] 旧 dynlibcache 参照を除去
+- [x] 依存注入の型名を新シンボルへ統一
 
 ### Step 6: テスト名・ログ語彙改名
 

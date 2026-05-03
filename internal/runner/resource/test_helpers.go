@@ -37,7 +37,7 @@ func NewDefaultResourceManagerForTest(
 	maxOutputSize int64,
 	symStore fileanalysis.NetworkSymbolStore,
 ) (*DefaultResourceManager, error) {
-	return NewDefaultResourceManager(exec, fs, privMgr, pathResolver, logger, mode, dryRunOpts, outputMgr, maxOutputSize, symStore, nil)
+	return NewDefaultResourceManager(exec, fs, privMgr, pathResolver, logger, mode, dryRunOpts, outputMgr, maxOutputSize, symStore, nil, nil, nil)
 }
 
 // NewNormalResourceManagerWithOutput creates a new NormalResourceManager with output capture support
@@ -50,5 +50,5 @@ func NewNormalResourceManagerWithOutput(
 	logger *slog.Logger,
 	store fileanalysis.NetworkSymbolStore,
 ) *NormalResourceManager {
-	return NewNormalResourceManagerWithStores(exec, fs, privMgr, outputMgr, maxOutputSize, logger, store, nil)
+	return NewNormalResourceManagerWithStores(exec, fs, privMgr, outputMgr, maxOutputSize, logger, store, nil, nil, nil)
 }

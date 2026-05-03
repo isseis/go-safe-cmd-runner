@@ -38,5 +38,5 @@ func NewDefaultResourceManager(
 	maxOutputSize int64,
 	symStore fileanalysis.NetworkSymbolStore,
 ) (*resource.DefaultResourceManager, error) {
-	return resource.NewDefaultResourceManager(exec, fs, privMgr, pathResolver, logger, mode, dryRunOpts, outputMgr, maxOutputSize, symStore, nil)
+	return resource.NewDefaultResourceManager(exec, fs, privMgr, pathResolver, logger, mode, dryRunOpts, outputMgr, maxOutputSize, symStore, nil, nil, nil)
 }

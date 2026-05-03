@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysisstore"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
@@ -236,17 +237,31 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 	// is disabled.
 	var networkStore fileanalysis.NetworkSymbolStore
 	var syscallStore fileanalysis.SyscallAnalysisStore
+	var dynlibAnalysisStore dynlibanalysisstore.DynamicLibAnalysisStore
+	var dynLibDepsStore fileanalysis.DynLibDepsStore
 	type networkSymbolStoreProvider interface {
 		GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore
 	}
 	type syscallAnalysisStoreProvider interface {
 		GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore
 	}
+	type dynlibAnalysisStoreProvider interface {
+		GetDynLibAnalysisStore() dynlibanalysisstore.DynamicLibAnalysisStore
+	}
+	type dynLibDepsStoreProvider interface {
+		GetDynLibDepsStore() fileanalysis.DynLibDepsStore
+	}
 	if p, ok := pathResolver.(networkSymbolStoreProvider); ok {
 		networkStore = p.GetNetworkSymbolStore()
 	}
 	if p, ok := pathResolver.(syscallAnalysisStoreProvider); ok {
 		syscallStore = p.GetSyscallAnalysisStore()
+	}
+	if p, ok := pathResolver.(dynlibAnalysisStoreProvider); ok {
+		dynlibAnalysisStore = p.GetDynLibAnalysisStore()
+	}
+	if p, ok := pathResolver.(dynLibDepsStoreProvider); ok {
+		dynLibDepsStore = p.GetDynLibDepsStore()
 	}
 
 	resourceManager, err := resource.NewDefaultResourceManager(
@@ -261,6 +276,8 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 		maxOutputSize,             // Not used anymore (per-command limit is used instead)
 		networkStore,              // NetworkSymbolStore for cache-based analysis (nil disables cache)
 		syscallStore,              // SyscallAnalysisStore for cache-based analysis (nil disables cache)
+		dynLibDepsStore,           // DynLibDepsStore for per-command library deps (nil disables)
+		dynlibAnalysisStore,       // DynamicLibAnalysisStore for library analysis (nil disables)
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create default resource manager: %w", err)
