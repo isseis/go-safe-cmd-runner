@@ -279,7 +279,11 @@ func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (i
 		return false, false
 	}
 
-	var mprotectRiskLogged bool
+	var (
+		dynLoadLog  onceLogger
+		networkLog  onceLogger
+		mprotectLog onceLogger
+	)
 
 	for _, dep := range deps {
 		// Skip VDSO entries (no real file) and known syscall wrapper libraries.
@@ -303,46 +307,65 @@ func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (i
 			continue
 		}
 
-		dynLoadSymbols := result.DynamicLoadSymbols()
+		sigs := a.analyzeDepSignals(result)
 
-		// Check for dynamic load symbols (dlopen/dlsym → high risk).
-		if len(dynLoadSymbols) > 0 {
-			slog.Info("dynlib analysis detected dynamic load symbols",
-				"cmd_path", cmdPath, "dep_path", dep.Path,
-				"symbols", dynLoadSymbols)
+		if len(sigs.dynLoadSymbols) > 0 {
+			dynLoadLog.log("dynlib analysis detected dynamic load symbols",
+				"cmd_path", cmdPath, "dep_path", dep.Path, "symbols", sigs.dynLoadSymbols)
 			isHighRisk = true
 		}
-
-		// Check for network signal from symbols.
-		if result.SymbolAnalysis != nil && len(result.SymbolAnalysis.DetectedSymbols) > 0 {
-			slog.Info("dynlib analysis detected network symbols",
-				"cmd_path", cmdPath, "dep_path", dep.Path,
-				"symbols", result.SymbolAnalysis.DetectedSymbols)
+		if len(sigs.networkSymbols) > 0 {
+			networkLog.log("dynlib analysis detected network symbols",
+				"cmd_path", cmdPath, "dep_path", dep.Path, "symbols", sigs.networkSymbols)
 			isNetwork = true
 		}
-
-		// Check for network signal from syscalls.
-		if result.SyscallAnalysis != nil {
-			table := syscallTableForArch(a.goos, result.SyscallAnalysis.Architecture)
-			if name := firstNetworkSyscall(table, result.SyscallAnalysis); name != "" {
-				slog.Info("dynlib analysis detected network syscall",
-					"cmd_path", cmdPath, "dep_path", dep.Path,
-					"syscall", name)
-				isNetwork = true
-			}
-			if first := elfanalyzer.FirstMprotectRisk(result.SyscallAnalysis.ArgEvalResults); first != nil {
-				if !mprotectRiskLogged {
-					slog.Info("dynlib analysis detected mprotect-family PROT_EXEC risk",
-						"cmd_path", cmdPath, "dep_path", dep.Path,
-						"syscall", first.SyscallName, "status", first.Status)
-					mprotectRiskLogged = true
-				}
-				isHighRisk = true
-			}
+		if sigs.networkSyscall != "" {
+			networkLog.log("dynlib analysis detected network syscall",
+				"cmd_path", cmdPath, "dep_path", dep.Path, "syscall", sigs.networkSyscall)
+			isNetwork = true
+		}
+		if sigs.mprotectRisk != nil {
+			mprotectLog.log("dynlib analysis detected mprotect-family PROT_EXEC risk",
+				"cmd_path", cmdPath, "dep_path", dep.Path,
+				"syscall", sigs.mprotectRisk.SyscallName, "status", sigs.mprotectRisk.Status)
+			isHighRisk = true
 		}
 	}
 
 	return isNetwork, isHighRisk
+}
+
+// onceLogger emits a slog.Info message at most once.
+type onceLogger struct{ logged bool }
+
+func (l *onceLogger) log(msg string, args ...any) {
+	if !l.logged {
+		slog.Info(msg, args...)
+		l.logged = true
+	}
+}
+
+// depSignals holds the network/risk signals extracted from one library analysis result.
+type depSignals struct {
+	dynLoadSymbols []string
+	networkSymbols []string
+	networkSyscall string
+	mprotectRisk   *common.SyscallArgEvalResult
+}
+
+// analyzeDepSignals extracts all network and risk signals from result.
+func (a *NetworkAnalyzer) analyzeDepSignals(result *dynamicanalysis.Result) depSignals {
+	var s depSignals
+	s.dynLoadSymbols = result.DynamicLoadSymbols()
+	if result.SymbolAnalysis != nil {
+		s.networkSymbols = result.SymbolAnalysis.DetectedSymbols
+	}
+	if result.SyscallAnalysis != nil {
+		table := syscallTableForArch(a.goos, result.SyscallAnalysis.Architecture)
+		s.networkSyscall = firstNetworkSyscall(table, result.SyscallAnalysis)
+		s.mprotectRisk = elfanalyzer.FirstMprotectRisk(result.SyscallAnalysis.ArgEvalResults)
+	}
+	return s
 }
 
 // firstNetworkSyscall returns the name of the first network syscall found in
