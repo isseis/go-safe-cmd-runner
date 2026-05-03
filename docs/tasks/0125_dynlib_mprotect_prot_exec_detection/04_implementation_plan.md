@@ -19,10 +19,10 @@
 
 ### Phase 1: 影響分析と設計確定
 
-- [ ] P1-1 変更点を 2 箇所に限定する（`filevalidator` / `network_analyzer`）
-- [ ] P1-2 `ArgEvalResults` の保存先が dynlib ストアスキーマで欠落しないことを確認する
-- [ ] P1-3 高リスク判定ロジックは `EvalMprotectRisk` 再利用で実装する方針を確定する
-- [ ] P1-4 既存 AC（要件定義書）との対応表を作成する
+- [x] P1-1 変更点を 2 箇所に限定する（`filevalidator` / `network_analyzer`）
+- [x] P1-2 `ArgEvalResults` の保存先が dynlib ストアスキーマで欠落しないことを確認する
+- [x] P1-3 高リスク判定ロジックは `EvalMprotectRisk` 再利用で実装する方針を確定する
+- [x] P1-4 既存 AC（要件定義書）との対応表を作成する
 
 ### Phase 2: `record` 側実装
 
@@ -32,9 +32,9 @@
 
 タスク:
 
-- [ ] P2-1 `AnalyzeSyscallsFromELF` の戻り値で `ArgEvalResults` を受け取る
-- [ ] P2-2 `detected_syscalls` 0 件でも `arg_eval_results` があれば `SyscallAnalysis` を保存する
-- [ ] P2-3 既存挙動（非 ELF、unsupported arch、warning 伝播）に回帰がないことを確認する
+- [x] P2-1 `AnalyzeSyscallsFromELF` の戻り値で `ArgEvalResults` を受け取る
+- [x] P2-2 `detected_syscalls` 0 件でも `arg_eval_results` があれば `SyscallAnalysis` を保存する
+- [x] P2-3 既存挙動（非 ELF、unsupported arch、warning 伝播）に回帰がないことを確認する
 
 ### Phase 3: `runner` 側実装
 
@@ -44,10 +44,10 @@
 
 タスク:
 
-- [ ] P3-1 dynlib ループ内で `result.SyscallAnalysis.ArgEvalResults` を評価する
-- [ ] P3-2 `mprotect`/`pkey_mprotect` の `exec_confirmed`/`exec_unknown` で `isHighRisk=true` を設定する
-- [ ] P3-3 ネットワーク判定・動的ロード判定との OR 合成が維持されることを確認する
-- [ ] P3-4 可観測性要件として `cmd_path` と `dep_path` を含むログ出力を追加/確認する
+- [x] P3-1 dynlib ループ内で `result.SyscallAnalysis.ArgEvalResults` を評価する
+- [x] P3-2 `mprotect`/`pkey_mprotect` の `exec_confirmed`/`exec_unknown` で `isHighRisk=true` を設定する
+- [x] P3-3 ネットワーク判定・動的ロード判定との OR 合成が維持されることを確認する
+- [x] P3-4 可観測性要件として `cmd_path` と `dep_path` を含むログ出力を追加/確認する
 
 ### Phase 4: テスト実装（不足分のみ）
 
@@ -58,16 +58,16 @@
 
 タスク:
 
-- [ ] P4-1 AC-1 用テスト: ライブラリ解析結果に `ArgEvalResults` が保存されること
-- [ ] P4-2 AC-2〜AC-4 用テスト: `exec_confirmed` / `exec_unknown` / `exec_not_set` を table-driven で検証する
-- [ ] P4-5 重複防止: 既存の dynlib ネットワーク判定テストと重なるケースを追加しないこと
+- [x] P4-1 AC-1 用テスト: ライブラリ解析結果に `ArgEvalResults` が保存されること
+- [x] P4-2 AC-2〜AC-4 用テスト: `exec_confirmed` / `exec_unknown` / `exec_not_set` を table-driven で検証する
+- [x] P4-5 重複防止: 既存の dynlib ネットワーク判定テストと重なるケースを追加しないこと
 
 ### Phase 5: 品質確認
 
-- [ ] P5-1 `make fmt`
-- [ ] P5-2 `go test -tags test -v ./internal/filevalidator ./internal/runner/base/security`
-- [ ] P5-3 `make test`
-- [ ] P5-4 `make lint`
+- [x] P5-1 `make fmt`
+- [x] P5-2 `go test -tags test -v ./internal/filevalidator ./internal/runner/base/security`
+- [x] P5-3 `make test`
+- [x] P5-4 `make lint`
 
 ### Phase 6: 実装計画書レビューと修正
 

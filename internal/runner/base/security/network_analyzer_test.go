@@ -704,30 +704,63 @@ func TestCheckDynLibDepsNetwork_DynamicLoadSymbols(t *testing.T) {
 }
 
 // TestCheckDynLibDepsNetwork_MprotectProtExecRisk verifies that dynlib syscall
-// argument evaluation (mprotect-family PROT_EXEC risk) escalates isHighRisk.
+// argument evaluation (mprotect-family PROT_EXEC risk) maps to the expected
+// high-risk decision.
 func TestCheckDynLibDepsNetwork_MprotectProtExecRisk(t *testing.T) {
-	dep := fileanalysis.LibEntry{SOName: "libjit.so.1", Path: "/usr/lib/libjit.so.1", Hash: "sha256:dd"}
-	depsStore := &mockDynLibDepsStore{deps: []fileanalysis.LibEntry{dep}}
-	libStore := &mockDynLibAnalysisStore{
-		results: map[string]*dynamicanalysis.Result{
-			"/usr/lib/libjit.so.1": {
-				SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
-					SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-						Architecture: "x86_64",
-						ArgEvalResults: []common.SyscallArgEvalResult{{
-							SyscallName: "mprotect",
-							Status:      common.SyscallArgEvalExecConfirmed,
-							Details:     "prot=0x5",
-						}},
-					},
-				},
-			},
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		status       common.SyscallArgEvalStatus
+		wantHighRisk bool
+	}{
+		{
+			name:         "exec_confirmed is high risk",
+			status:       common.SyscallArgEvalExecConfirmed,
+			wantHighRisk: true,
+		},
+		{
+			name:         "exec_unknown is high risk",
+			status:       common.SyscallArgEvalExecUnknown,
+			wantHighRisk: true,
+		},
+		{
+			name:         "exec_not_set is not high risk",
+			status:       common.SyscallArgEvalExecNotSet,
+			wantHighRisk: false,
 		},
 	}
-	a := makeNetworkAnalyzerWithLibStores(depsStore, libStore)
-	isNetwork, isHighRisk := a.checkDynLibDepsNetwork(testCmdPath, testContentHash)
-	assert.False(t, isNetwork)
-	assert.True(t, isHighRisk)
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dep := fileanalysis.LibEntry{SOName: "libjit.so.1", Path: "/usr/lib/libjit.so.1", Hash: "sha256:dd"}
+			depsStore := &mockDynLibDepsStore{deps: []fileanalysis.LibEntry{dep}}
+			libStore := &mockDynLibAnalysisStore{
+				results: map[string]*dynamicanalysis.Result{
+					"/usr/lib/libjit.so.1": {
+						SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
+							SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+								Architecture: "x86_64",
+								ArgEvalResults: []common.SyscallArgEvalResult{{
+									SyscallName: "mprotect",
+									Status:      tc.status,
+									Details:     "prot=0x5",
+								}},
+							},
+						},
+					},
+				},
+			}
+
+			a := makeNetworkAnalyzerWithLibStores(depsStore, libStore)
+			isNetwork, isHighRisk := a.checkDynLibDepsNetwork(testCmdPath, testContentHash)
+			assert.False(t, isNetwork)
+			assert.Equal(t, tc.wantHighRisk, isHighRisk)
+		})
+	}
 }
 
 // TestCheckDynLibDepsNetwork_ErrAnalysisNotFound verifies fail-closed behaviour when
