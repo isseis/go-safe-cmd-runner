@@ -529,8 +529,9 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 			if ds, dsErr := dynamicanalysis.New(dynlibStoreDir, nil); dsErr == nil {
 				manager.dynlibAnalysisStore = ds
 			} else {
-				slog.Warn("Failed to initialize dynlib analysis store; dynlib network detection disabled",
+				slog.Error("Failed to initialize dynlib analysis store",
 					"store_dir", dynlibStoreDir, "error", dsErr)
+				return nil, fmt.Errorf("failed to initialize dynlib analysis store: %w", dsErr)
 			}
 		}
 	}
