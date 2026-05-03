@@ -86,7 +86,7 @@ func (m *CacheManager) GetOrCreate(libPath, libHash string) (*LibAnalysisResult,
 
 **処理フロー:**
 
-1. `pathEnc.Encode(libPath)` でキャッシュファイルパスを生成
+1. `pathEnc.Encode(libPath + "#" + libHash)` でキャッシュファイルパスを生成
 2. キャッシュファイルを読み込み JSON をパース（失敗 → Cache Miss）
 3. `cache.SchemaVersion != CacheSchemaVersion` → Cache Miss
 4. `cache.LibHash != libHash` → Cache Miss
@@ -96,10 +96,11 @@ func (m *CacheManager) GetOrCreate(libPath, libHash string) (*LibAnalysisResult,
 **ファイル命名:**
 
 ```
-<cacheDir>/<pathencoding.SubstitutionHashEscape(libPath)>
+<cacheDir>/<pathencoding.SubstitutionHashEscape(libPath + "#" + libHash)>
 ```
 
-libc-cache と同じ命名方式。1 ライブラリにつき 1 ファイル。`lib_hash` 変化時は上書き。
+1 ライブラリバージョン（`lib_path` + `lib_hash`）につき 1 ファイル。
+同一 `lib_path` でも `lib_hash` が異なるエントリを同時保持できる。
 
 **アトミック書き込み:**
 
@@ -217,15 +218,18 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record):
   1. libAnalysisCacheManager が nil → 早期リターン
   2. record.DynLibDeps をイテレート
   3. VDSO / syscall wrapper → スキップ
-  4. メモリキャッシュ Hit → スキップ（GetOrCreate は冪等だが二重解析を避ける）
+    4. メモリキャッシュ Hit → キャッシュ済み warnings を record.AnalysisWarnings に追記してスキップ
   5. libAnalysisCacheManager.GetOrCreate(lib.Path, lib.Hash)
-     - 成功（warnings あり）: result.Warnings を record.AnalysisWarnings に追記してメモリキャッシュに格納
+         - 成功（warnings あり）: result.Warnings を record.AnalysisWarnings に追記してメモリキャッシュに格納
      - 失敗（ファイル不在等の error）: error をそのまま返す（FR-3.6.2）
   6. record.LibraryAnalysis および DetectedLibraryNetworkDeps への書き込みは行わない
 ```
 
-メモリキャッシュ（セッション内重複解析防止）は `map[string]struct{}` で済む
-（「解析済み」フラグのみ必要で、結果は dynlibcache が保持する）。
+メモリキャッシュ（セッション内重複解析防止）は
+`map[string]*dynlibcache.LibAnalysisResult` を使用する。
+
+- キー: `libPath + "#" + libHash`
+- 目的: 同一 `record` セッション内で再遭遇したライブラリに対して、`warnings` 伝播を失わない
 
 ---
 
@@ -263,17 +267,22 @@ func NewNetworkAnalyzerWithLibCache(
 if depsStore != nil && libCache != nil:
     deps, err := depsStore.LoadDynLibDeps(cmdPath, contentHash)
     err 処理:
-      ErrRecordNotFound → スキップ（DynLibDeps 未記録）
+      ErrRecordNotFound → (true, true) 高リスク
       ErrHashMismatch   → (true, true) 高リスク
       SchemaVersionMismatchError → (true, true) 高リスク
       その他エラー → (true, true) 高リスク
 
     for _, dep := range deps:
+    if dep が VDSO / syscall wrapper に該当:
+        continue
         result, err := libCache.Get(dep.Path, dep.Hash)
         err != nil → エラー停止（ErrCacheMiss 含む）
         result.HasNetworkSignal     → NetworkDetected
         result.HasDynamicLoadSignal → 高リスクフラグを true に
 ```
+
+`runner` は実行時ライブ解析へのフォールバックを行わない。
+`DynLibDeps` またはライブラリキャッシュが読めない場合は fail-closed（高リスクまたは停止）とする。
 
 `libCache.Get(path, hash)` は **読み取り専用**（runner は解析を行わない）。
 キャッシュファイルが存在しない場合はエラー停止する。
@@ -317,9 +326,9 @@ Get(libPath, libHash string) (*LibAnalysisResult, error)
 | AC | テスト種別 | テスト名 / テスト内容 |
 |----|---------|---------|
 | AC-1 | Unit | `TestCacheManager_GetOrCreate_Hit`: 同一ライブラリを 2 回 GetOrCreate → 2 回目はファイルを読まない（モック確認） |
-| AC-2 | Unit | `TestCacheManager_GetOrCreate_HashMismatch`: `lib_hash` 変更後の GetOrCreate → 再解析されキャッシュが上書きされる |
+| AC-2 | Unit | `TestCacheManager_GetOrCreate_HashMismatch`: `lib_hash` 変更後の GetOrCreate → 再解析され新しい `path+hash` キーで保存される |
 | AC-3 | Unit | `TestAnalyzeLibraries_dynLibDepsPreservedOnCacheHit`: キャッシュヒット時でも `record.DynLibDeps` に正しい soname/path/hash が記録される |
-| AC-4 | Integration | dynlibcache 経由のネットワーク判定が 0123 ベースラインと同等 |
+| AC-4 | Integration | dynlibcache 経由のネットワーク判定が 0123 ベースラインと同等（runner 側で wrapper/VDSO 除外を維持し、`LoadDynLibDeps` の `ErrRecordNotFound` は fail-closed で高リスク扱い） |
 | AC-5 | Unit | `TestCacheManager_GetOrCreate_CorruptFile`: 破損キャッシュファイル → 再解析して `AnalysisWarnings` に記録 |
 | AC-6 | Unit | `TestAnalyzeLibraries_recordHasNoDynLibAnalysisField`: record JSON サイズの削減を確認（`LibraryAnalysis` フィールドが含まれない） |
 | AC-7 | Unit | `TestAnalyzeLibraries_excludesWrapperAndVDSO`: wrapper / VDSO がキャッシュ対象から除外される |
