@@ -65,11 +65,14 @@
 - `schema_version`
 - `lib_path`（解析対象ライブラリの絶対パス）
 - `lib_hash`（`sha256:<hex>`）
-- `analyzed_at`（RFC3339）
-- `syscall_analysis`（任意）
-- `symbol_analysis`（任意）
-- `has_dynamic_load_signal`（ライブラリ単体が動的ロードシンボルを持つか）
-- `has_network_signal`（ライブラリ単体がネットワークシグナルを持つか）
+- `syscall_analysis`（ライブラリ内で検出したシステムコール呼び出し情報）
+- `symbol_analysis`（ライブラリ内で検出したシステムコールラッパ関数シンボル情報）
+- `dynamic_load_symbols`（ライブラリ内で検出した動的ロード関連シンボル名の列挙）
+
+補足:
+
+- ライブラリキャッシュの解析結果スキーマは、実行ファイル（コマンド）に対する解析結果スキーマと整合する形で定義する
+- `has_dynamic_load_signal` / `has_network_signal` はキャッシュに保存せず、`runner` が `syscall_analysis` / `symbol_analysis` / `dynamic_load_symbols` を用いて実行時に内部で導出する
 
 #### FR-3.1.2: キャッシュキーと同一性担保
 
@@ -102,7 +105,8 @@ DynLibDep の必須情報:
 2. 各ライブラリについて `lib_path` + `lib_hash` に対応するキャッシュファイルを読み込む
    （runner はコマンド実行時にすべての共有ライブラリを開いてハッシュを検証するため、
    この時点でライブラリファイルへのアクセスとハッシュ取得は済んでいる）
-3. キャッシュファイルの `has_network_signal` / `has_dynamic_load_signal` を集計し、
+3. キャッシュファイルの `syscall_analysis` / `symbol_analysis` / `dynamic_load_symbols` を参照し、
+  `runner` が内部で `has_network_signal` / `has_dynamic_load_signal` を導出して集計し、
    ネットワーク利用および高リスク判定を行う
 
 キャッシュファイルが存在しない場合、またはキャッシュの `lib_hash` が
@@ -154,8 +158,9 @@ DynLibDep の必須情報:
 
 #### FR-3.5.2: 既存 runner 判定との互換
 
-ライブラリ解析キャッシュの `has_network_signal` を用いた runner ネットワーク判定は、
-0123 の `DetectedLibraryNetworkDeps` ベースの判定と同等の結果を返す（後退なし）。
+ライブラリ解析キャッシュの `syscall_analysis` / `symbol_analysis` / `dynamic_load_symbols` を
+用いた runner ネットワーク判定は、0123 の `DetectedLibraryNetworkDeps` ベースの判定と
+同等の結果を返す（後退なし）。
 
 ### 3.6 タスク 0123 テストカバレッジの引き継ぎ
 
@@ -229,7 +234,7 @@ VDSO (`linux-vdso.so.1` 等) のみが `DynLibDeps` に含まれる場合も
 | AC-6 | 実行ファイルレコードのサイズが、ライブラリ解析全量埋め込み方式より削減されることを確認できる |
 | AC-7 | syscall wrapper / VDSO 除外ルールがキャッシュ方式でも維持される |
 | AC-8 | `make fmt` / `go test -tags test -v ./...` / `make lint` がすべて成功する |
-| AC-9 | `dlopen`/`dlsym` 等のシンボルを持つライブラリのキャッシュファイルで `has_dynamic_load_signal` が `true` となり、`runner` による高リスク判定が機能する |
+| AC-9 | `dlopen`/`dlsym` 等のシンボルを持つライブラリのキャッシュファイルに `dynamic_load_symbols` が記録され、`runner` が内部導出した `has_dynamic_load_signal` により高リスク判定が機能する |
 | AC-10 | ファイルサイズが 1 GB を超えるライブラリの `Analyze()` 呼び出しが警告を返し、syscall 解析をスキップする（`validatorLibraryAnalyzer.Analyze` レベルのテストで確認、FR-3.6.1） |
 | AC-11 | ファイルサイズ超過時の警告が `record.AnalysisWarnings` まで伝播し、処理が継続される（`analyzeLibraries` レベルのテストで確認、FR-3.6.1） |
 | AC-12 | 存在しないライブラリパスが `analyzeLibraries()` に渡された場合、エラーが返されその実行ファイルのレコードは書き込まれない。`record` セッションは次の実行ファイルの処理を継続する（FR-3.6.2） |

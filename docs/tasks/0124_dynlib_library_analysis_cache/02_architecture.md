@@ -3,7 +3,7 @@
 ## 1. 設計目標
 
 - ライブラリ解析結果を実行ファイルレコードから分離し、**ライブラリ単位の共通キャッシュファイル**（Library Analysis Cache）へ集約する
-- `runner` が実行時に Library Analysis Cache を直接参照してリスク判定（ネットワーク・動的ロード）を行う
+- `runner` が実行時に Library Analysis Cache を直接参照し、`syscall_analysis` / `symbol_analysis` / `dynamic_load_symbols` からリスク判定（ネットワーク・動的ロード）を内部導出して行う
 - Library Analysis Cache を `libc-cache` とは独立したスキーマ・パッケージで実装する
 - `DynLibDeps` に記録済みのハッシュをキャッシュ参照キーとして活用し、ライブラリファイルの二重読み取りを避ける
 
@@ -29,7 +29,7 @@ flowchart TD
     MEMCACHE -->|"Miss"| DISKCACHE{"dynlibcache<br>Hit?"}
     DISKCACHE -->|"Hit"| RESULT
     DISKCACHE -->|"Miss"| ANALYZE["ライブラリ解析<br>.dynsym + syscall命令"]
-    ANALYZE --> WRITE["dynlibcache 書き込み<br>has_network_signal<br>has_dynamic_load_signal"]
+    ANALYZE --> WRITE["dynlibcache 書き込み<br>syscall_analysis<br>symbol_analysis<br>dynamic_load_symbols"]
     WRITE --> RESULT
     DYNLIB --> RECORD[("record JSON<br>DynLibDeps のみ")]
 
@@ -73,7 +73,7 @@ flowchart TD
     DEPSLOAD --> EACH["各 DynLibDep<br>(path + hash)"]
     EACH --> CACHELOAD["dynlibcache Lookup<br>(path + DynLibDep.Hash)"]
     CACHELOAD -->|"Miss"| STOP2["エラー停止"]
-    CACHELOAD -->|"Hit"| SIG_LIB[("has_network_signal<br>has_dynamic_load_signal")]
+    CACHELOAD -->|"Hit"| SIG_LIB[("syscall_analysis<br>symbol_analysis<br>dynamic_load_symbols")]
 
     SIG_BIN --> DECISION["リスク判定"]
     SIG_LIB --> DECISION
@@ -95,7 +95,7 @@ graph TB
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
     subgraph dynlibcache["internal/dynlibcache (新規パッケージ)"]
-        DC_SCHEMA["schema.go<br>LibAnalysisCacheFile 型<br>schema_version / lib_path / lib_hash<br>has_network_signal / has_dynamic_load_signal"]
+        DC_SCHEMA["schema.go<br>LibAnalysisCacheFile 型<br>schema_version / lib_path / lib_hash<br>syscall_analysis / symbol_analysis / dynamic_load_symbols"]
         DC_CACHE["cache.go<br>CacheManager<br>GetOrCreate(libPath, libHash)"]
         DC_ERR["errors.go"]
     end
@@ -128,7 +128,7 @@ graph TB
 
 ### 4.1 役割と責務
 
-各共有ライブラリの解析結果（syscall シグナル・動的ロードシグナル）を永続化・取得する。
+各共有ライブラリの解析結果（syscall_analysis / symbol_analysis / dynamic_load_symbols）を永続化・取得する。
 `record` が書き込み、`runner` が読み込む。
 
 `libc-cache`（`internal/libccache`）との違い:
@@ -143,7 +143,7 @@ graph TB
 ### 4.2 キャッシュキーと保存先
 
 - キャッシュキー: `lib_path` + `lib_hash`（+ `schema_version`）
-- ファイル名: `pathencoding.SubstitutionHashEscape.Encode(lib_path)` （libccache と同じ方式）
+- ファイル名: `pathencoding.SubstitutionHashEscape.Encode(lib_path + "#" + lib_hash)`
 - ファイル内部でも `lib_hash` と `schema_version` を保持し、読み込み時に再検証する
 - ハッシュ不一致またはスキーマバージョン不一致の場合は Cache Miss とし、`record` 時には再解析・上書きする
 - 保存ディレクトリは libc-cache・レコード JSON のいずれとも独立した専用ディレクトリとする
@@ -197,8 +197,8 @@ graph TB
 
 1. 既存: バイナリ本体の `SymbolAnalysisData` を参照してネットワーク判定
 2. 新規: `DynLibDeps` を取得し、各ライブラリについて `CacheManager` からシグナルを参照
-3. 新規: いずれかのライブラリで `has_network_signal = true` → NetworkDetected
-4. 新規: いずれかのライブラリで `has_dynamic_load_signal = true` → 高リスク判定に反映
+3. 新規: 各ライブラリの `syscall_analysis` / `symbol_analysis` / `dynamic_load_symbols` から `runner` が `has_network_signal` を内部導出し、いずれかが `true` なら NetworkDetected
+4. 新規: 各ライブラリの `dynamic_load_symbols` から `runner` が `has_dynamic_load_signal` を内部導出し、いずれかが `true` なら高リスク判定に反映
 
 `DynLibDeps[i].Hash` には `VerifyCommandDynLibDeps` によって検証済みのハッシュが入っているため、
 `CacheManager` 参照時にライブラリファイルを再度開く必要はない。

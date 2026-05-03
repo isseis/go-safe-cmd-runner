@@ -26,8 +26,8 @@
 作業内容:
 
 - [ ] `schema.go`: `CacheSchemaVersion = 1` 定数を定義
-- [ ] `schema.go`: `LibAnalysisCacheFile` 型を定義（フィールド: `SchemaVersion`, `LibPath`, `LibHash`, `AnalyzedAt`, `HasNetworkSignal`, `HasDynamicLoadSignal`, `SyscallAnalysis`, `SymbolAnalysis`）
-- [ ] `schema.go`: `LibAnalysisResult` 型を定義（フィールド: `HasNetworkSignal bool`, `HasDynamicLoadSignal bool`, `Warnings []string`）
+- [ ] `schema.go`: `LibAnalysisCacheFile` 型を定義（フィールド: `SchemaVersion`, `LibPath`, `LibHash`, `SyscallAnalysis`, `SymbolAnalysis`, `DynamicLoadSymbols`）
+- [ ] `schema.go`: `LibAnalysisResult` 型を定義（フィールド: `SyscallAnalysis`, `SymbolAnalysis`, `DynamicLoadSymbols`, `Warnings []string`）
   - `Warnings` は解析中に発生した一時的な警告（キャッシュファイルには保存しない）
 - [ ] `errors.go`: `ErrCacheMiss` 変数を定義
 - [ ] `interfaces.go`: `LibraryAnalyzer` インタフェースを定義
@@ -61,7 +61,7 @@
   - `cacheDir` が存在しない場合は `os.MkdirAll` で自動作成（パーミッション `0o755`）
   - `pathencoding.NewSubstitutionHashEscape()` で pathEnc を初期化（`libccache.NewLibcCacheManager` と同じパターン）
 - [ ] `(m *CacheManager) GetOrCreate(libPath, libHash string) (*LibAnalysisResult, error)` を実装
-  - `pathEnc.Encode(libPath)` でキャッシュファイルパスを生成
+  - `pathEnc.Encode(libPath + "#" + libHash)` でキャッシュファイルパスを生成
   - ファイル読み込み → JSON パース（失敗 → Cache Miss）
   - `SchemaVersion` 不一致 → Cache Miss
   - `LibHash` 不一致 → Cache Miss
@@ -137,7 +137,7 @@
 **作業内容（実装）:**
 
 - [ ] `libraryCacheEntry` 構造体を削除（`LibraryAnalysisEntry` が削除されるため不要になる）
-- [ ] `Validator` 構造体の `libraryAnalysisCache` フィールドを `map[string]struct{}`（処理済みフラグ）に変更
+- [ ] `Validator` 構造体の `libraryAnalysisCache` フィールドを `map[string]*dynlibcache.LibAnalysisResult`（処理済み解析結果）に変更
 - [ ] `Validator` 構造体に `libAnalysisCacheManager dynlibcache.CacheManagerInterface` フィールドを追加
 - [ ] `SetLibraryAnalysisEnabled` を `SetLibraryAnalysisCacheManager(m dynlibcache.CacheManagerInterface)` に変更
 - [ ] `validatorLibraryAnalyzer` 型を新規追加（`filevalidator` パッケージ内）
@@ -145,7 +145,7 @@
   - `Analyze(libPath string) (*dynlibcache.LibAnalysisCacheFile, []string, error)` で既存の `analyzeOneLibrary` のロジックを再利用
 - [ ] `analyzeLibraries()` を変更
   - `libAnalysisCacheManager` が nil → 早期リターン
-  - 処理済みフラグ（`map[string]struct{}`）で同一セッション内重複を防ぐ
+  - 処理済み解析結果（`map[string]*dynlibcache.LibAnalysisResult`）で同一セッション内重複を防ぎ、warnings 伝播を維持する
   - `libAnalysisCacheManager.GetOrCreate(lib.Path, lib.Hash)` を呼び出す
   - 成功: `result.Warnings` を `record.AnalysisWarnings` に追記
   - 失敗（ファイル不在等の error）: error をそのまま上位へ返す（FR-3.6.2）
@@ -157,7 +157,7 @@
 
 - [ ] `TestAnalyzeLibraries_*` のうち `record.LibraryAnalysis` を検証しているテストを、CacheManager の `GetOrCreate` 呼び出し確認に変更
 - [ ] `TestAnalyzeLibraries_disabled` → `cacheManager が nil` ケースに変更
-- [ ] `TestAnalyzeLibraries_sessionCache` → 処理済みフラグにより同一パスが 2 回解析されないことを確認（AC-1 のセッション側）
+- [ ] `TestAnalyzeLibraries_sessionCache` → 処理済み解析結果により同一パスが 2 回解析されず、warnings が再伝播されることを確認（AC-1 のセッション側）
 - [ ] `TestAnalyzeLibraries_excludesWrapperAndVDSO` → wrapper/VDSO が `GetOrCreate` の対象外であることを確認（AC-7）
 - [ ] `TestAnalyzeOneLibrary_*` → `validatorLibraryAnalyzer.Analyze` のテストとして維持
 - [ ] `TestAnalyzeLibraries_recordHasNoDynLibAnalysisField`: `analyzeLibraries` 後の record JSON に `library_analysis` フィールドが含まれないことを確認（AC-6）
@@ -186,21 +186,21 @@
 - [ ] `isNetworkViaBinaryAnalysis()` に DynLibDeps ベースのシグナル集計を追加
   - 既存の `SymbolAnalysisData` 判定の後に実行
   - `depsStore.LoadDynLibDeps(cmdPath, contentHash)` を呼び出す
-  - `ErrRecordNotFound` → スキップ（DynLibDeps 未記録）
+  - `ErrRecordNotFound` → `(true, true)` 高リスク（fail-closed）
   - `ErrHashMismatch`, `SchemaVersionMismatchError`, その他 → `(true, true)` 高リスク
+  - wrapper / VDSO 依存は `record` 側と同じ除外規則でスキップ
   - 各 `dep` に対して `libCache.Get(dep.Path, dep.Hash)` を呼び出す
   - `ErrCacheMiss` またはその他エラー → `(true, true)` 高リスク扱いとしてエラーをログに記録して返す
-  - `result.HasNetworkSignal` → `NetworkDetected`
-  - `result.HasDynamicLoadSignal` → 高リスクフラグを `true` に
+  - `result.SyscallAnalysis` / `result.SymbolAnalysis` / `result.DynamicLoadSymbols` を runner が評価して `has_network_signal` / `has_dynamic_load_signal` を内部導出
 
 **作業内容（テスト更新）:**
 
 - [ ] `TestIsNetworkViaBinaryAnalysis_DetectedLibraryNetworkDeps` を削除
   （`DetectedLibraryNetworkDeps` フィールドが schema から削除されるため）
-- [ ] `TestIsNetworkViaBinaryAnalysis_DynLibDepsNetwork`: DynLibDeps に `has_network_signal=true` のライブラリ → `(true, false)` が返る（AC-4）
-- [ ] `TestIsNetworkViaBinaryAnalysis_DynLibDepsDynamicLoad`: DynLibDeps に `has_dynamic_load_signal=true` のライブラリ → `(true, true)` が返る（AC-9）
+- [ ] `TestIsNetworkViaBinaryAnalysis_DynLibDepsNetwork`: DynLibDeps に network シグナルを含む `syscall_analysis` / `symbol_analysis` を持つライブラリ → `(true, false)` が返る（AC-4）
+- [ ] `TestIsNetworkViaBinaryAnalysis_DynLibDepsDynamicLoad`: DynLibDeps に `dynamic_load_symbols` を持つライブラリ → `(true, true)` が返る（AC-9）
 - [ ] `TestIsNetworkViaBinaryAnalysis_DynLibDepsCacheMiss`: `Get` が `ErrCacheMiss` を返す → `(true, true)` が返る
-- [ ] `TestIsNetworkViaBinaryAnalysis_DynLibDepsNone`: `LoadDynLibDeps` が `ErrRecordNotFound` → DynLibDeps なしとしてスキップ
+- [ ] `TestIsNetworkViaBinaryAnalysis_DynLibDepsRecordNotFound`: `LoadDynLibDeps` が `ErrRecordNotFound` → `(true, true)` が返る（fail-closed）
 - [ ] `TestIsNetworkViaBinaryAnalysis_DynLibDepsHashMismatch`: `LoadDynLibDeps` が `ErrHashMismatch` → `(true, true)` が返る
 - [ ] `TestIsNetworkViaBinaryAnalysis_NilDepsStore`: `depsStore` が nil → 既存の `SymbolAnalysisData` 判定のみ（後方互換）
 
@@ -236,7 +236,7 @@
 | AC-3 | キャッシュヒット時も `record.DynLibDeps` に正しい soname/path/hash が記録される | `validator_test.go` |
 | AC-4 | dynlibcache 経由のネットワーク判定が 0123 ベースラインと同等（libssl.so.3 を依存に持つバイナリが network=true になる） | `network_analyzer_test.go` |
 | AC-6 | record JSON に `library_analysis` フィールドが含まれない | `validator_test.go` |
-| AC-9 | `has_dynamic_load_signal=true` のライブラリを依存に持つ場合に runner が高リスク判定 | `network_analyzer_test.go` |
+| AC-9 | `dynamic_load_symbols` を持つライブラリを依存に持つ場合に runner が内部導出した `has_dynamic_load_signal` により高リスク判定 | `network_analyzer_test.go` |
 
 ---
 

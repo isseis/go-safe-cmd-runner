@@ -29,26 +29,30 @@ const CacheSchemaVersion = 1
 
 // LibAnalysisCacheFile is the JSON schema for a library analysis cache file.
 type LibAnalysisCacheFile struct {
-    SchemaVersion        int    `json:"schema_version"`
-    LibPath              string `json:"lib_path"`
-    LibHash              string `json:"lib_hash"`          // "sha256:<hex>"
-    AnalyzedAt           string `json:"analyzed_at"`       // RFC3339
-    HasNetworkSignal     bool   `json:"has_network_signal"`
-    HasDynamicLoadSignal bool   `json:"has_dynamic_load_signal"`
+    SchemaVersion int    `json:"schema_version"`
+    LibPath       string `json:"lib_path"`
+    LibHash       string `json:"lib_hash"` // "sha256:<hex>"
 
-    // SyscallAnalysis is retained for audit/debug purposes; not used by the runner.
+    // SyscallAnalysis stores detected syscall call information in the same
+    // shape used for command-level analysis records.
     SyscallAnalysis *fileanalysis.SyscallAnalysisData `json:"syscall_analysis,omitempty"`
 
-    // SymbolAnalysis is retained for audit/debug purposes; not used by the runner.
+    // SymbolAnalysis stores detected syscall-wrapper symbol information in the
+    // same shape used for command-level analysis records.
     SymbolAnalysis *fileanalysis.SymbolAnalysisData `json:"symbol_analysis,omitempty"`
+
+    // DynamicLoadSymbols stores dynamic-load-related symbols as a top-level
+    // field to keep parity with command-level threat evaluation inputs.
+    DynamicLoadSymbols []string `json:"dynamic_load_symbols,omitempty"`
 }
 
 // LibAnalysisResult is the in-memory result returned by CacheManager.GetOrCreate.
 // Warnings are transient analysis warnings not persisted to the cache file.
 type LibAnalysisResult struct {
-    HasNetworkSignal     bool
-    HasDynamicLoadSignal bool
-    Warnings             []string
+    SyscallAnalysis    *fileanalysis.SyscallAnalysisData
+    SymbolAnalysis     *fileanalysis.SymbolAnalysisData
+    DynamicLoadSymbols []string
+    Warnings           []string
 }
 ```
 
@@ -90,7 +94,7 @@ func (m *CacheManager) GetOrCreate(libPath, libHash string) (*LibAnalysisResult,
 2. キャッシュファイルを読み込み JSON をパース（失敗 → Cache Miss）
 3. `cache.SchemaVersion != CacheSchemaVersion` → Cache Miss
 4. `cache.LibHash != libHash` → Cache Miss
-5. Cache Hit: `LibAnalysisResult{HasNetworkSignal, HasDynamicLoadSignal}` を構築して返す（`Warnings` は空）
+5. Cache Hit: `LibAnalysisResult{SyscallAnalysis, SymbolAnalysis, DynamicLoadSymbols}` を構築して返す（`Warnings` は空）
 6. Cache Miss: `analyzer.Analyze(libPath)` → `(cacheFile, warnings, err)` を取得し、ファイルを書き込み、`LibAnalysisResult{..., Warnings: warnings}` を返す
 
 **ファイル命名:**
@@ -273,12 +277,13 @@ if depsStore != nil && libCache != nil:
       その他エラー → (true, true) 高リスク
 
     for _, dep := range deps:
-    if dep が VDSO / syscall wrapper に該当:
-        continue
+        if dep が VDSO / syscall wrapper に該当:
+            continue
         result, err := libCache.Get(dep.Path, dep.Hash)
         err != nil → エラー停止（ErrCacheMiss 含む）
-        result.HasNetworkSignal     → NetworkDetected
-        result.HasDynamicLoadSignal → 高リスクフラグを true に
+        result.SyscallAnalysis / result.SymbolAnalysis / result.DynamicLoadSymbols を
+        runner が評価して `has_network_signal` / `has_dynamic_load_signal` を内部導出
+        導出結果が true の場合に NetworkDetected / 高リスクフラグを更新
 ```
 
 `runner` は実行時ライブ解析へのフォールバックを行わない。
@@ -333,7 +338,7 @@ Get(libPath, libHash string) (*LibAnalysisResult, error)
 | AC-6 | Unit | `TestAnalyzeLibraries_recordHasNoDynLibAnalysisField`: record JSON サイズの削減を確認（`LibraryAnalysis` フィールドが含まれない） |
 | AC-7 | Unit | `TestAnalyzeLibraries_excludesWrapperAndVDSO`: wrapper / VDSO がキャッシュ対象から除外される |
 | AC-8 | CI | `make fmt` / `go test -tags test -v ./...` / `make lint` |
-| AC-9 | Integration | `has_dynamic_load_signal = true` のライブラリ → runner が高リスク判定 |
+| AC-9 | Integration | `dynamic_load_symbols` が記録されたライブラリ → runner が内部導出した `has_dynamic_load_signal` により高リスク判定 |
 | AC-10 | Unit | `TestValidatorLibraryAnalyzer_Analyze_fileTooLarge`: ファイルサイズ 1 GB 超のライブラリを `Analyze()` に渡すと警告が返り `SyscallAnalysis` が nil（FR-3.6.1） |
 | AC-11 | Unit | `TestAnalyzeLibraries_fileTooLargeWarningPropagated`: ファイルサイズ超過ライブラリの警告が `record.AnalysisWarnings` に追記され処理が継続される（FR-3.6.1） |
 | AC-12 | Unit | `TestAnalyzeLibraries_missingLibFileReturnsError`: 存在しないライブラリパスが含まれる DynLibDeps で `analyzeLibraries()` がエラーを返すことを確認。また `record` セッションレベルのテストで次ファイルの処理継続を確認（FR-3.6.2） |
