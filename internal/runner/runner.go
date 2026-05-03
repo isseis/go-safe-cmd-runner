@@ -264,21 +264,21 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 		dynLibDepsStore = p.GetDynLibDepsStore()
 	}
 
-	resourceManager, err := resource.NewDefaultResourceManager(
-		opts.executor,
-		fs,
-		opts.privilegeManager,
-		pathResolver,
-		slog.Default(),
-		resource.ExecutionModeNormal,
-		&resource.DryRunOptions{}, // Empty dry-run options for normal mode
-		outputMgr,                 // Pass output manager with validator
-		maxOutputSize,             // Not used anymore (per-command limit is used instead)
-		networkStore,              // NetworkSymbolStore for cache-based analysis (nil disables cache)
-		syscallStore,              // SyscallAnalysisStore for cache-based analysis (nil disables cache)
-		dynLibDepsStore,           // DynLibDepsStore for per-command library deps (nil disables)
-		dynlibAnalysisStore,       // DynamicLibAnalysisStore for library analysis (nil disables)
-	)
+	resourceManager, err := resource.NewDefaultResourceManager(resource.Config{
+		Executor:           opts.executor,
+		FileSystem:         fs,
+		PrivilegeManager:   opts.privilegeManager,
+		PathResolver:       pathResolver,
+		Logger:             slog.Default(),
+		Mode:               resource.ExecutionModeNormal,
+		DryRunOpts:         &resource.DryRunOptions{},
+		OutputManager:      outputMgr,
+		MaxOutputSize:      maxOutputSize,
+		NetworkSymbolStore: networkStore,
+		SyscallStore:       syscallStore,
+		DynLibDepsStore:    dynLibDepsStore,
+		LibAnalysisStore:   dynlibAnalysisStore,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create default resource manager: %w", err)
 	}
