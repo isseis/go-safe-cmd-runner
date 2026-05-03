@@ -10,8 +10,8 @@
 - [x] Step 6: `updateAnalysisRecord` への統合
 - [x] Step 7: runner 側のネットワーク判定拡張
 - [x] Step 8: `cmd/record/main.go` の有効化
-- [ ] Step 9: 統合テスト（AC-1 〜 AC-8）
-- [ ] Step 10: `make fmt` `make test` `make lint` で品質確認
+- [x] Step 9: 統合テスト（AC-1 〜 AC-8）
+- [x] Step 10: `make fmt` `make test` `make lint` で品質確認
 
 ---
 
@@ -164,9 +164,9 @@
 
 ### Step 10: 品質確認
 
-- [ ] `make fmt` — gofumpt によるフォーマット
-- [ ] `make test` — 全テスト通過
-- [ ] `make lint` — golangci-lint エラーなし
+- [x] `make fmt` — gofumpt によるフォーマット
+- [x] `make test` — 全テスト通過
+- [x] `make lint` — golangci-lint エラーなし
 
 ---
 
