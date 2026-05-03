@@ -307,7 +307,7 @@ func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (i
 				slog.Warn("dynlib analysis not found; treating as high risk",
 					"cmd_path", cmdPath, "dep_path", dep.Path, "dep_hash", dep.Hash)
 			} else {
-				slog.Warn("dynlib analysis load failed; treating as high risk",
+				slog.Error("dynlib analysis load failed; treating as high risk",
 					"cmd_path", cmdPath, "dep_path", dep.Path, "error", loadErr)
 			}
 			return true, true
