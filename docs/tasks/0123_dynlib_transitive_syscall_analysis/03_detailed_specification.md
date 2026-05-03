@@ -276,6 +276,8 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (
 
     // .dynsym UNDEF symbol analysis.
     // Pass empty contentHash to disable syscall store lookup for library files.
+    // For dynamically linked ELF binaries with no SHN_UNDEF entries,
+    // BinaryAnalyzer must return NoNetworkSymbols (not StaticBinary).
     if v.binaryAnalyzer != nil {
         output := v.binaryAnalyzer.AnalyzeNetworkSymbols(lib.Path, "")
         switch output.Result {
@@ -294,7 +296,9 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (
             warnings = append(warnings,
                 fmt.Sprintf("library symbol analysis failed for %s: %v", lib.SOName, output.Error))
         }
-        // StaticBinary / NotSupportedBinary: leave SymbolAnalysis nil.
+        // StaticBinary: truly static binary only.
+        // NotSupportedBinary: unsupported binary format.
+        // ELF with zero SHN_UNDEF must be handled as NoNetworkSymbols.
     }
 
     // Machine-code syscall instruction scan.
@@ -347,6 +351,9 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (
 - **syscall 判定**: `v.syscallAnalyzer.GetSyscallTable(elfFile.Machine)` でテーブルを取得し、
   `IsNetworkSyscall()` で判定する。テーブルが取得できない場合（`ok == false`）は
   syscall 由来のネットワーク判定をスキップする
+- **ELF 例外規則**: 動的リンク ELF で `SHN_UNDEF` シンボルが 0 件のケースは
+    `StaticBinary` ではなく `NoNetworkSymbols` を返す。これにより「外部シンボル未インポートの
+    動的 ELF」が静的バイナリ扱いされることを防ぎ、後続判定を正しく維持する
 
 `analyzeLibraries` は `hasNetwork` フラグのみを受け取り、`DetectedLibraryNetworkDeps` への
 SOName 追加判断に使う。独立したヘルパ関数は不要であり、`analyzer.go` への参照も生じない。
@@ -412,6 +419,7 @@ v.SetLibraryAnalysisEnabled(true)
 |---------|-----|---------|
 | `TestAnalyzeLibraries_networkSymbolDetected` | AC-1 | `libfoo.so` が `socket` を UNDEF に持つ場合、`LibraryAnalysis` に記録され `DetectedLibraryNetworkDeps` に SOName が入る |
 | `TestAnalyzeLibraries_networkSyscallDetected` | AC-2 | `libbar.so` が socket 番号の syscall を含む場合、`LibraryAnalysis.SyscallAnalysis` に記録される |
+| `TestAnalyzeLibraries_dynamicELFNoUndefinedSymbols` | AC-8 | 動的リンク ELF かつ `SHN_UNDEF` 0 件のとき、symbol 解析結果は `NoNetworkSymbols` 扱いとなり `StaticBinary` にならない |
 | `TestAnalyzeLibraries_libcExcluded` | AC-3 | `libc.so.6` は `LibraryAnalysis` に含まれない |
 | `TestAnalyzeLibraries_ldLinuxExcluded` | AC-4 | `ld-linux-x86-64.so.2` は `LibraryAnalysis` に含まれない |
 | `TestAnalyzeLibraries_nonNetworkLib` | AC-7 | `libz.so.1` は `DetectedLibraryNetworkDeps` に含まれない（ネットワーク syscall/シンボルなし） |
