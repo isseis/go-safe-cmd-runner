@@ -101,7 +101,7 @@ graph TB
     end
 
     subgraph fileanalysis["internal/fileanalysis (変更)"]
-        FA_SCHEMA["schema.go<br>- LibraryAnalysis フィールド削除<br>- DetectedLibraryNetworkDeps 削除<br>+ DynLibDepsStore インタフェース<br>SchemaVersion 20→21"]
+        FA_SCHEMA["schema.go / dyn_lib_deps_store.go<br>- LibraryAnalysis フィールド削除<br>- DetectedLibraryNetworkDeps 削除<br>+ DynLibDepsStore インタフェース (新規ファイル)<br>SchemaVersion 20→21"]
     end
 
     subgraph filevalidator["internal/filevalidator (変更)"]

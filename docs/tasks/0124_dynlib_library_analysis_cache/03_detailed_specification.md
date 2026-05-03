@@ -36,17 +36,19 @@ type LibAnalysisCacheFile struct {
     HasNetworkSignal     bool   `json:"has_network_signal"`
     HasDynamicLoadSignal bool   `json:"has_dynamic_load_signal"`
 
-    // SyscallAnalysis はデバッグ・監査用途で保持する（runner 判定には使用しない）。
+    // SyscallAnalysis is retained for audit/debug purposes; not used by the runner.
     SyscallAnalysis *fileanalysis.SyscallAnalysisData `json:"syscall_analysis,omitempty"`
 
-    // SymbolAnalysis はデバッグ・監査用途で保持する（runner 判定には使用しない）。
+    // SymbolAnalysis is retained for audit/debug purposes; not used by the runner.
     SymbolAnalysis *fileanalysis.SymbolAnalysisData `json:"symbol_analysis,omitempty"`
 }
 
-// LibAnalysisResult は CacheManager.GetOrCreate が返す解析結果サマリ。
+// LibAnalysisResult is the in-memory result returned by CacheManager.GetOrCreate.
+// Warnings are transient analysis warnings not persisted to the cache file.
 type LibAnalysisResult struct {
     HasNetworkSignal     bool
     HasDynamicLoadSignal bool
+    Warnings             []string
 }
 ```
 
@@ -60,7 +62,7 @@ type LibAnalysisResult struct {
 type CacheManager struct {
     cacheDir string
     fs       safefileio.FileSystem
-    analyzer LibraryAnalyzer  // ライブラリ解析を行うインタフェース
+    analyzer LibraryAnalyzer
     pathEnc  *pathencoding.SubstitutionHashEscape
 }
 
@@ -76,8 +78,9 @@ func NewCacheManager(
 ### 3.2 GetOrCreate
 
 ```go
-// GetOrCreate はキャッシュから解析結果を返す。キャッシュミスの場合はライブラリを解析して保存する。
-// libPath は正規化済みの絶対パス。libHash は "sha256:<hex>" 形式。
+// GetOrCreate returns cached analysis or analyzes the library on cache miss.
+// libPath must be a normalized absolute path. libHash must be in "sha256:<hex>" format.
+// Warnings from analysis on cache miss are included in LibAnalysisResult.Warnings.
 func (m *CacheManager) GetOrCreate(libPath, libHash string) (*LibAnalysisResult, error)
 ```
 
@@ -87,8 +90,8 @@ func (m *CacheManager) GetOrCreate(libPath, libHash string) (*LibAnalysisResult,
 2. キャッシュファイルを読み込み JSON をパース（失敗 → Cache Miss）
 3. `cache.SchemaVersion != CacheSchemaVersion` → Cache Miss
 4. `cache.LibHash != libHash` → Cache Miss
-5. Cache Hit: `LibAnalysisResult` を構築して返す
-6. Cache Miss: `analyzer.Analyze(libPath)` を呼んで解析し、ファイルを書き込んで返す
+5. Cache Hit: `LibAnalysisResult{HasNetworkSignal, HasDynamicLoadSignal}` を構築して返す（`Warnings` は空）
+6. Cache Miss: `analyzer.Analyze(libPath)` → `(cacheFile, warnings, err)` を取得し、ファイルを書き込み、`LibAnalysisResult{..., Warnings: warnings}` を返す
 
 **ファイル命名:**
 
@@ -98,16 +101,22 @@ func (m *CacheManager) GetOrCreate(libPath, libHash string) (*LibAnalysisResult,
 
 libc-cache と同じ命名方式。1 ライブラリにつき 1 ファイル。`lib_hash` 変化時は上書き。
 
+**アトミック書き込み:**
+
+`libccache` の `writeFileAtomic`（非公開関数）と同じパターン（一時ファイルへ書き込み → `os.Rename`）を `dynlibcache/cache.go` 内に実装する。`libccache.writeFileAtomic` は非公開のため直接再利用できないが、実装は同一である。
+
 ### 3.3 LibraryAnalyzer インタフェース
 
 ```go
-// LibraryAnalyzer はライブラリ解析を行うインタフェース（テスト時にモック可能）。
+// LibraryAnalyzer performs analysis of a single dynamic library.
+// The concrete implementation lives in filevalidator and wraps the existing
+// BinaryAnalyzer / SyscallAnalyzerInterface engines.
 type LibraryAnalyzer interface {
-    Analyze(libPath string) (*LibAnalysisCacheFile, error)
+    // Analyze returns the cache file data, any non-fatal warnings, and an error.
+    // Warnings are transient (e.g., file open failures) and must not be cached.
+    Analyze(libPath string) (*LibAnalysisCacheFile, []string, error)
 }
 ```
-
-本番実装は `filevalidator` の既存解析エンジン（`BinaryAnalyzer` / `SyscallAnalyzerInterface`）をラップする。
 
 ---
 
@@ -115,8 +124,8 @@ type LibraryAnalyzer interface {
 
 ```go
 var (
-    // ErrCacheMiss はキャッシュファイルが存在しないまたはハッシュ不一致のエラー。
-    // runner 実行時にこのエラーが返った場合はエラー停止する。
+    // ErrCacheMiss is returned by Get when the cache file does not exist,
+    // the lib_hash does not match, or the schema version does not match.
     ErrCacheMiss = errors.New("dynlibcache: cache miss")
 )
 ```
@@ -154,16 +163,16 @@ CurrentSchemaVersion = 21
 ```go
 package fileanalysis
 
-// DynLibDepsStore はレコードから DynLibDeps を取得するインタフェース。
-// NetworkAnalyzer に注入し、ライブラリシグナル集計で使用する。
+// DynLibDepsStore loads DynLibDeps from a file analysis record.
+// Injected into NetworkAnalyzer for library signal aggregation.
 type DynLibDepsStore interface {
-    // LoadDynLibDeps は指定ファイルの DynLibDeps を返す。
-    // contentHash が record.ContentHash と一致しない場合は ErrHashMismatch を返す。
-    // DynLibDeps が記録されていない場合は (nil, nil) を返す。
+    // LoadDynLibDeps returns the recorded DynLibDeps for the given file.
+    // Returns ErrHashMismatch when contentHash differs from record.ContentHash.
+    // Returns (nil, nil) when DynLibDeps is not recorded (e.g. static binary).
     LoadDynLibDeps(filePath string, contentHash string) ([]LibEntry, error)
 }
 
-// dynLibDepsStore は DynLibDepsStore の Store バックド実装。
+// dynLibDepsStore is the Store-backed implementation of DynLibDepsStore.
 type dynLibDepsStore struct {
     store *Store
 }
