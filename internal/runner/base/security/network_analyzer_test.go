@@ -222,9 +222,9 @@ func syscallWrapperOnlyData() *fileanalysis.SymbolAnalysisData {
 	}
 }
 
-// TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss verifies that an unexpected
+// TestIsNetworkViaBinaryAnalysis_SymbolAnalysisLoadError verifies that an unexpected
 // SymbolAnalysis load error returns AnalysisError (true, true).
-func TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss(t *testing.T) {
+func TestIsNetworkViaBinaryAnalysis_SymbolAnalysisLoadError(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{err: errors.New("unexpected I/O error")}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
 	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
@@ -265,9 +265,9 @@ func TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_SchemaMismatch(t *testing.T) 
 	assert.True(t, isHigh, "SchemaVersionMismatchError should return high risk")
 }
 
-// TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCCacheHit verifies that a static binary
+// TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAnalysisFound verifies that a static binary
 // (nil SymbolAnalysis) with a svc #0x80 signal returns true, true.
-func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCCacheHit(t *testing.T) {
+func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAnalysisFound(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: nil}
 	svcStore := &mockFileanalysisSyscallStore{result: svcResult()}
 	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
@@ -291,9 +291,9 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_NoSVC(t *testing.T) {
 	assert.False(t, isHigh, "static binary + no svc should return false")
 }
 
-// TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit verifies that a binary with
+// TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCAnalysisFound verifies that a binary with
 // NoNetworkSymbols and a svc signal returns true, true (svc signal escalates to high risk).
-func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit(t *testing.T) {
+func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCAnalysisFound(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{result: svcResult()}
 	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
@@ -304,9 +304,9 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit(t *testing.T) {
 	assert.True(t, isHigh, "svc signal should set high risk")
 }
 
-// TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil verifies that a binary with
+// TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCAnalysisNil verifies that a binary with
 // NoNetworkSymbols and a nil/empty SyscallAnalysis result (no svc signal) returns false, false.
-func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil(t *testing.T) {
+func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCAnalysisNil(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	// LoadSyscallAnalysis returns nil result (no svc signal).
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
@@ -375,9 +375,9 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound(t *testin
 	}, "ErrRecordNotFound from SyscallAnalysis must panic (consistency bug)")
 }
 
-// TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCCacheHit verifies that NetworkDetected
+// TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCAnalysisFound verifies that NetworkDetected
 // with a svc signal returns true, true (isHighRisk escalated).
-func TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCCacheHit(t *testing.T) {
+func TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCAnalysisFound(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: networkDetectedData()}
 	svcStore := &mockFileanalysisSyscallStore{result: svcResult()}
 	analyzer := NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)

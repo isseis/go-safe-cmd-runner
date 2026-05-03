@@ -62,7 +62,7 @@
 - [x] Step 3: record 側シンボル改名
 - [x] Step 4: runner 側シンボル改名
 - [x] Step 5: cmd 配線の完全移行
-- [ ] Step 6: テスト名・ログ語彙の改名
+- [x] Step 6: テスト名・ログ語彙の改名
 - [ ] Step 7: 互換 alias 削除
 - [ ] Step 8: fmt/test/lint 実行と最終整合確認
 

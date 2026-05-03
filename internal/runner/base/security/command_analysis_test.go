@@ -2396,12 +2396,12 @@ func (s *callTrackingStore) LoadNetworkSymbolAnalysis(_ string, _ string) (*file
 	return s.data, s.err
 }
 
-// TestIsNetworkViaBinaryAnalysis_Cache tests the cache path in isNetworkViaBinaryAnalysis.
-func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
+// TestIsNetworkViaBinaryAnalysis_AnalysisStore tests the analysis store path in isNetworkViaBinaryAnalysis.
+func TestIsNetworkViaBinaryAnalysis_AnalysisStore(t *testing.T) {
 	const cmdPath = "/usr/bin/curl"
 	const contentHash = "sha256:abc123"
 
-	t.Run("cache hit DetectedSymbols=[socket] → NetworkDetected", func(t *testing.T) {
+	t.Run("analysis found DetectedSymbols=[socket] → NetworkDetected", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{
 			data: &fileanalysis.SymbolAnalysisData{
 				DetectedSymbols: []string{"socket"},
@@ -2409,11 +2409,11 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		}
 		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
-		assert.True(t, isNet, "expected network detected from cache")
+		assert.True(t, isNet, "expected network detected from analysis store")
 		assert.False(t, isHigh, "expected not high risk (no dlopen)")
 	})
 
-	t.Run("cache hit DetectedSymbols=nil → NoNetworkSymbols", func(t *testing.T) {
+	t.Run("analysis found DetectedSymbols=nil → NoNetworkSymbols", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{
 			data: &fileanalysis.SymbolAnalysisData{
 				DetectedSymbols:    nil,
@@ -2422,11 +2422,11 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		}
 		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
-		assert.False(t, isNet, "expected no network from cache")
+		assert.False(t, isNet, "expected no network from analysis store")
 		assert.False(t, isHigh, "expected not high risk")
 	})
 
-	t.Run("cache hit DynamicLoadSymbols=[dlopen] → isHighRisk=true", func(t *testing.T) {
+	t.Run("analysis found DynamicLoadSymbols=[dlopen] → isHighRisk=true", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{
 			data: &fileanalysis.SymbolAnalysisData{
 				DynamicLoadSymbols: []string{"dlopen"},
@@ -2435,7 +2435,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.False(t, isNet, "expected no network (DetectedSymbols=nil)")
-		assert.True(t, isHigh, "expected high risk from dlopen in cache")
+		assert.True(t, isHigh, "expected high risk from dlopen in analysis store")
 	})
 
 	t.Run("nil (no syscallStore) → false, false (static binary)", func(t *testing.T) {
@@ -2462,7 +2462,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		assert.False(t, isHigh, "nil store must return false (no live binary analysis)")
 	})
 
-	t.Run("empty contentHash → cache skipped", func(t *testing.T) {
+	t.Run("empty contentHash → analysis skipped", func(t *testing.T) {
 		storeCalled := false
 		store := &callTrackingStore{called: &storeCalled, err: fileanalysis.ErrHashMismatch}
 		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
@@ -2472,7 +2472,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		assert.False(t, isHigh, "expected no high-risk result when contentHash is empty")
 	})
 
-	t.Run("cache hit KnownNetworkLibDeps non-empty, DetectedSymbols empty → NetworkDetected", func(t *testing.T) {
+	t.Run("analysis found KnownNetworkLibDeps non-empty, DetectedSymbols empty → NetworkDetected", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{
 			data: &fileanalysis.SymbolAnalysisData{
 				DetectedSymbols:     nil,
@@ -2481,11 +2481,11 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		}
 		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
-		assert.True(t, isNet, "expected network detected from KnownNetworkLibDeps in cache")
+		assert.True(t, isNet, "expected network detected from KnownNetworkLibDeps in analysis store")
 		assert.False(t, isHigh, "expected not high risk")
 	})
 
-	t.Run("cache hit KnownNetworkLibDeps empty, DetectedSymbols empty → NoNetworkSymbols", func(t *testing.T) {
+	t.Run("analysis found KnownNetworkLibDeps empty, DetectedSymbols empty → NoNetworkSymbols", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{
 			data: &fileanalysis.SymbolAnalysisData{
 				DetectedSymbols:     nil,
@@ -2499,11 +2499,11 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 	})
 }
 
-// TestNetworkSymbolCache_RecordToRunner tests the record→runner cache flow.
+// TestNetworkSymbolAnalysisStore_RecordToRunner tests the record→runner analysis store flow.
 // It writes a SymbolAnalysisData record using fileanalysis.Store.Save,
-// then verifies that NetworkAnalyzer reads from the cache instead of calling
-// BinaryAnalyzer. This verifies that the network symbol cache is used in the runner pipeline.
-func TestNetworkSymbolCache_RecordToRunner(t *testing.T) {
+// then verifies that NetworkAnalyzer reads from the analysis store instead of calling
+// BinaryAnalyzer. This verifies that the network symbol analysis store is used in the runner pipeline.
+func TestNetworkSymbolAnalysisStore_RecordToRunner(t *testing.T) {
 	analysisDir := commontesting.SafeTempDir(t)
 
 	// Create a real fileanalysis.Store with HybridHashFilePathGetter.
@@ -2537,7 +2537,7 @@ func TestNetworkSymbolCache_RecordToRunner(t *testing.T) {
 
 	isNet, _ := analyzer.isNetworkViaBinaryAnalysis(cmdPath, fakeHash)
 
-	assert.True(t, isNet, "cache hit should report network detected")
+	assert.True(t, isNet, "analysis store result should report network detected")
 }
 
 // TestAnalyzeCommandSecurity_StandardDirHashValidationAlwaysRuns is a regression

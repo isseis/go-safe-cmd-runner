@@ -25,7 +25,7 @@ type DynamicLibAnalysisStoreImpl struct {
 
 // NewDynamicLibAnalysisStore creates a new DynamicLibAnalysisStoreImpl.
 // storeDir is the path to the store directory (created automatically if it does not exist).
-// analyzer is used by LoadOrAnalyzeAndStore to perform fresh analysis on cache miss.
+// analyzer is used by LoadOrAnalyzeAndStore to perform fresh analysis when no stored
 // Pass a nil analyzer only when LoadOrAnalyzeAndStore will not be called (e.g., runner mode).
 func NewDynamicLibAnalysisStore(
 	storeDir string,
