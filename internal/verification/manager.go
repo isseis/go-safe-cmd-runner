@@ -38,6 +38,8 @@ type Manager struct {
 	resultCollector             *ResultCollector
 }
 
+var errAnalysisStoresUnavailable = errors.New("analysis stores unavailable: validator store is unavailable")
+
 // VerifyAndReadConfigFile performs atomic verification and reading of a configuration file
 // This prevents TOCTOU attacks by reading the file content once and verifying it against the hash
 func (m *Manager) VerifyAndReadConfigFile(configPath string) ([]byte, error) {
@@ -522,6 +524,21 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 				manager.networkSymbolStore = fileanalysis.NewNetworkSymbolStore(s)
 				manager.syscallAnalysisStore = fileanalysis.NewSyscallAnalysisStore(s)
 				manager.dynLibDepsStore = fileanalysis.NewDynLibDepsStore(s)
+			} else {
+				// Security policy:
+				// - Production mode is fail-closed.
+				// - Dry-run/Test modes are fail-open to keep validation workflows usable.
+				if opts.creationMode == CreationModeProduction && !opts.isDryRun {
+					slog.Error("Failed to initialize analysis stores in production mode: validator store is unavailable")
+					return nil, errAnalysisStoresUnavailable
+				}
+
+				slog.Warn("Analysis stores are unavailable; network/syscall/dynlib-deps analysis will be disabled",
+					"creation_mode", opts.creationMode,
+					"dry_run", opts.isDryRun)
+				manager.networkSymbolStore = nil
+				manager.syscallAnalysisStore = nil
+				manager.dynLibDepsStore = nil
 			}
 			// Initialize dynlib analysis store for runner-side library network detection.
 			// The store is load-only (nil analyzer): analysis is performed by record.
@@ -529,9 +546,21 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 			if ds, dsErr := dynamicanalysis.New(dynlibStoreDir, nil); dsErr == nil {
 				manager.dynlibAnalysisStore = ds
 			} else {
-				slog.Error("Failed to initialize dynlib analysis store",
-					"store_dir", dynlibStoreDir, "error", dsErr)
-				return nil, fmt.Errorf("failed to initialize dynlib analysis store: %w", dsErr)
+				// Security policy:
+				// - Production mode is fail-closed.
+				// - Dry-run/Test modes are fail-open to keep validation workflows usable.
+				if opts.creationMode == CreationModeProduction && !opts.isDryRun {
+					slog.Error("Failed to initialize dynlib analysis store in production mode",
+						"store_dir", dynlibStoreDir, "error", dsErr)
+					return nil, fmt.Errorf("failed to initialize dynlib analysis store: %w", dsErr)
+				}
+
+				slog.Warn("Failed to initialize dynlib analysis store; runner-side dynlib analysis will be disabled",
+					"store_dir", dynlibStoreDir,
+					"creation_mode", opts.creationMode,
+					"dry_run", opts.isDryRun,
+					"error", dsErr)
+				manager.dynlibAnalysisStore = nil
 			}
 		}
 	}
