@@ -279,6 +279,8 @@ func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (i
 		return false, false
 	}
 
+	var mprotectRiskLogged bool
+
 	for _, dep := range deps {
 		// Skip VDSO entries (no real file) and known syscall wrapper libraries.
 		if isVDSOEntry(dep.SOName) || binaryanalyzer.IsSyscallWrapperLibrary(dep.SOName) {
@@ -328,9 +330,13 @@ func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (i
 					"syscall", name)
 				isNetwork = true
 			}
-			if elfanalyzer.EvalMprotectRisk(result.SyscallAnalysis.ArgEvalResults) {
-				slog.Info("dynlib analysis detected mprotect-family PROT_EXEC risk",
-					"cmd_path", cmdPath, "dep_path", dep.Path)
+			if first := elfanalyzer.FirstMprotectRisk(result.SyscallAnalysis.ArgEvalResults); first != nil {
+				if !mprotectRiskLogged {
+					slog.Info("dynlib analysis detected mprotect-family PROT_EXEC risk",
+						"cmd_path", cmdPath, "dep_path", dep.Path,
+						"syscall", first.SyscallName, "status", first.Status)
+					mprotectRiskLogged = true
+				}
 				isHighRisk = true
 			}
 		}
