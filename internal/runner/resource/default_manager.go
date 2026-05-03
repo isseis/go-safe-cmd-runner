@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysisstore"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
@@ -25,7 +25,7 @@ type DefaultResourceManager struct {
 
 // NewDefaultResourceManager creates a new DefaultResourceManager with output capture support
 // and both binary-analysis caches.
-func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, dryRunOpts *DryRunOptions, outputMgr output.CaptureManager, maxOutputSize int64, symStore fileanalysis.NetworkSymbolStore, syscallStore fileanalysis.SyscallAnalysisStore, depsStore fileanalysis.DynLibDepsStore, libAnalysisStore dynlibanalysisstore.DynamicLibAnalysisStore) (*DefaultResourceManager, error) {
+func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, dryRunOpts *DryRunOptions, outputMgr output.CaptureManager, maxOutputSize int64, symStore fileanalysis.NetworkSymbolStore, syscallStore fileanalysis.SyscallAnalysisStore, depsStore fileanalysis.DynLibDepsStore, libAnalysisStore dynamicanalysis.Store) (*DefaultResourceManager, error) {
 	// Create output manager if not provided
 	if outputMgr == nil {
 		// Create a security validator for output validation

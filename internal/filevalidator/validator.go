@@ -16,9 +16,9 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysisstore"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
@@ -149,8 +149,8 @@ type Validator struct {
 	libSystemCache          LibSystemCacheInterface         // nil if Mach-O libSystem cache is disabled
 	syscallAnalyzer         SyscallAnalyzerInterface        // nil if syscall analysis is disabled
 	machoSyscallTable       SyscallNumberTable              // nil falls back to noop table in ScanSyscallInfos
-	dynamicLibAnalysisStore dynlibanalysisstore.DynamicLibAnalysisStore
-	processedLibAnalysis    map[string]*dynlibanalysisstore.DynamicLibAnalysisResult
+	dynamicLibAnalysisStore dynamicanalysis.Store
+	processedLibAnalysis    map[string]*dynamicanalysis.Result
 	includeDebugInfo        bool
 }
 
@@ -535,17 +535,17 @@ func (v *Validator) SetSyscallAnalyzer(a SyscallAnalyzerInterface) {
 // SetDynamicLibAnalysisStore sets the persistent store for dynamic library analysis results.
 // When non-nil, library-level analysis is enabled and results are persisted to disk.
 // Pass nil to disable library analysis.
-func (v *Validator) SetDynamicLibAnalysisStore(store dynlibanalysisstore.DynamicLibAnalysisStore) {
+func (v *Validator) SetDynamicLibAnalysisStore(store dynamicanalysis.Store) {
 	v.dynamicLibAnalysisStore = store
 	if store != nil && v.processedLibAnalysis == nil {
-		v.processedLibAnalysis = make(map[string]*dynlibanalysisstore.DynamicLibAnalysisResult)
+		v.processedLibAnalysis = make(map[string]*dynamicanalysis.Result)
 	}
 }
 
 // AnalyzeLibrary performs symbol and syscall analysis for the library at libPath.
-// It implements dynlibanalysisstore.LibraryAnalyzer so the Validator can serve as
-// the analysis back-end for DynamicLibAnalysisStoreImpl.
-func (v *Validator) AnalyzeLibrary(libPath string) (*dynlibanalysisstore.DynamicLibAnalysisResult, error) {
+// It implements dynamicanalysis.Analyzer so the Validator can serve as the
+// analysis back-end for the dynamicanalysis store.
+func (v *Validator) AnalyzeLibrary(libPath string) (*dynamicanalysis.Result, error) {
 	soName := filepath.Base(libPath)
 	lib := fileanalysis.LibEntry{SOName: soName, Path: libPath}
 	return v.analyzeOneLibrary(lib)
@@ -555,8 +555,8 @@ func (v *Validator) AnalyzeLibrary(libPath string) (*dynlibanalysisstore.Dynamic
 // It returns an error when the file is missing or exceeds the size limit (fail-fast).
 // Non-fatal issues (e.g., non-ELF format, unsupported architecture) are recorded
 // as warnings in the returned result.
-func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (*dynlibanalysisstore.DynamicLibAnalysisResult, error) {
-	result := &dynlibanalysisstore.DynamicLibAnalysisResult{}
+func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (*dynamicanalysis.Result, error) {
+	result := &dynamicanalysis.Result{}
 
 	// Open the file first to verify it exists and is within the analysis size limit.
 	// Both conditions must be checked before running any analysis to fail fast.
@@ -627,7 +627,7 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 	}
 
 	if v.processedLibAnalysis == nil {
-		v.processedLibAnalysis = make(map[string]*dynlibanalysisstore.DynamicLibAnalysisResult)
+		v.processedLibAnalysis = make(map[string]*dynamicanalysis.Result)
 	}
 
 	var allDynLoadSymbols []string

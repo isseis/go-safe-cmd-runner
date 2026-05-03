@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysisstore"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
@@ -237,7 +237,7 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 	// is disabled.
 	var networkStore fileanalysis.NetworkSymbolStore
 	var syscallStore fileanalysis.SyscallAnalysisStore
-	var dynlibAnalysisStore dynlibanalysisstore.DynamicLibAnalysisStore
+	var dynlibAnalysisStore dynamicanalysis.Store
 	var dynLibDepsStore fileanalysis.DynLibDepsStore
 	type networkSymbolStoreProvider interface {
 		GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore
@@ -246,7 +246,7 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 		GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore
 	}
 	type dynlibAnalysisStoreProvider interface {
-		GetDynLibAnalysisStore() dynlibanalysisstore.DynamicLibAnalysisStore
+		GetDynLibAnalysisStore() dynamicanalysis.Store
 	}
 	type dynLibDepsStoreProvider interface {
 		GetDynLibDepsStore() fileanalysis.DynLibDepsStore

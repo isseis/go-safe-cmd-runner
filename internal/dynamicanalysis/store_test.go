@@ -1,43 +1,43 @@
 //go:build test
 
-package dynlibanalysisstore_test
+package dynamicanalysis_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysisstore"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// mockLibraryAnalyzer is a test double for LibraryAnalyzer.
-type mockLibraryAnalyzer struct {
-	result   *dynlibanalysisstore.DynamicLibAnalysisResult
+// mockAnalyzer is a test double for Analyzer.
+type mockAnalyzer struct {
+	result   *dynamicanalysis.Result
 	err      error
 	callArgs []string
 }
 
-func (m *mockLibraryAnalyzer) AnalyzeLibrary(libPath string) (*dynlibanalysisstore.DynamicLibAnalysisResult, error) {
+func (m *mockAnalyzer) AnalyzeLibrary(libPath string) (*dynamicanalysis.Result, error) {
 	m.callArgs = append(m.callArgs, libPath)
 	return m.result, m.err
 }
 
-func newTestStore(t *testing.T, analyzer dynlibanalysisstore.LibraryAnalyzer) *dynlibanalysisstore.DynamicLibAnalysisStoreImpl {
+func newTestStore(t *testing.T, analyzer dynamicanalysis.Analyzer) dynamicanalysis.Store {
 	t.Helper()
 	storeDir := filepath.Join(t.TempDir(), "dynlibstore")
-	store, err := dynlibanalysisstore.NewDynamicLibAnalysisStore(storeDir, analyzer)
+	store, err := dynamicanalysis.New(storeDir, analyzer)
 	require.NoError(t, err)
 	return store
 }
 
-// TestDynamicLibAnalysisStore_LoadOrAnalyzeAndStore_Reuse verifies that a second call
+// TestStore_LoadOrAnalyzeAndStore_Reuse verifies that a second call
 // with the same path and hash reuses the stored result without invoking the analyzer again.
-func TestDynamicLibAnalysisStore_LoadOrAnalyzeAndStore_Reuse(t *testing.T) {
-	analyzer := &mockLibraryAnalyzer{
-		result: &dynlibanalysisstore.DynamicLibAnalysisResult{
+func TestStore_LoadOrAnalyzeAndStore_Reuse(t *testing.T) {
+	analyzer := &mockAnalyzer{
+		result: &dynamicanalysis.Result{
 			SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
 				DetectedSymbols: []string{"socket"},
 			},
@@ -64,12 +64,11 @@ func TestDynamicLibAnalysisStore_LoadOrAnalyzeAndStore_Reuse(t *testing.T) {
 	assert.Equal(t, []string{"socket"}, result2.SymbolAnalysis.DetectedSymbols)
 }
 
-// TestDynamicLibAnalysisStore_LoadOrAnalyzeAndStore_HashChanged verifies that
-// when the library hash changes, the stored result is not reused and a fresh
-// analysis is performed.
-func TestDynamicLibAnalysisStore_LoadOrAnalyzeAndStore_HashChanged(t *testing.T) {
-	analyzer := &mockLibraryAnalyzer{
-		result: &dynlibanalysisstore.DynamicLibAnalysisResult{},
+// TestStore_LoadOrAnalyzeAndStore_HashChanged verifies that when the library hash
+// changes, the stored result is not reused and a fresh analysis is performed.
+func TestStore_LoadOrAnalyzeAndStore_HashChanged(t *testing.T) {
+	analyzer := &mockAnalyzer{
+		result: &dynamicanalysis.Result{},
 	}
 	store := newTestStore(t, analyzer)
 
@@ -88,14 +87,14 @@ func TestDynamicLibAnalysisStore_LoadOrAnalyzeAndStore_HashChanged(t *testing.T)
 	assert.Len(t, analyzer.callArgs, 2, "analyzer should be called again when hash changes")
 }
 
-// TestDynamicLibAnalysisStore_CorruptFile_Reanalyze verifies that a corrupt
-// store file is treated as not found and a fresh analysis is performed.
-func TestDynamicLibAnalysisStore_CorruptFile_Reanalyze(t *testing.T) {
-	analyzer := &mockLibraryAnalyzer{
-		result: &dynlibanalysisstore.DynamicLibAnalysisResult{},
+// TestStore_CorruptFile_Reanalyze verifies that a corrupt store file is treated
+// as not found and a fresh analysis is performed.
+func TestStore_CorruptFile_Reanalyze(t *testing.T) {
+	analyzer := &mockAnalyzer{
+		result: &dynamicanalysis.Result{},
 	}
 	storeDir := filepath.Join(t.TempDir(), "dynlibstore")
-	store, err := dynlibanalysisstore.NewDynamicLibAnalysisStore(storeDir, analyzer)
+	store, err := dynamicanalysis.New(storeDir, analyzer)
 	require.NoError(t, err)
 
 	const libPath = "/usr/lib/libbaz.so.3"
@@ -120,20 +119,20 @@ func TestDynamicLibAnalysisStore_CorruptFile_Reanalyze(t *testing.T) {
 	assert.Len(t, analyzer.callArgs, 2, "analyzer should be called again on corrupt file")
 }
 
-// TestDynamicLibAnalysisStore_LoadAnalysis_NotFound verifies that LoadAnalysis returns
+// TestStore_LoadAnalysis_NotFound verifies that LoadAnalysis returns
 // ErrAnalysisNotFound when no entry exists for the given library.
-func TestDynamicLibAnalysisStore_LoadAnalysis_NotFound(t *testing.T) {
+func TestStore_LoadAnalysis_NotFound(t *testing.T) {
 	store := newTestStore(t, nil)
 
 	_, err := store.LoadAnalysis("/usr/lib/libunknown.so.1", "sha256:000")
-	assert.ErrorIs(t, err, dynlibanalysisstore.ErrAnalysisNotFound)
+	assert.ErrorIs(t, err, dynamicanalysis.ErrAnalysisNotFound)
 }
 
-// TestDynamicLibAnalysisStore_LoadAnalysis_HashMismatch verifies that LoadAnalysis
-// returns ErrAnalysisNotFound when the stored hash does not match the requested hash.
-func TestDynamicLibAnalysisStore_LoadAnalysis_HashMismatch(t *testing.T) {
-	analyzer := &mockLibraryAnalyzer{
-		result: &dynlibanalysisstore.DynamicLibAnalysisResult{},
+// TestStore_LoadAnalysis_HashMismatch verifies that LoadAnalysis returns
+// ErrAnalysisNotFound when the stored hash does not match the requested hash.
+func TestStore_LoadAnalysis_HashMismatch(t *testing.T) {
+	analyzer := &mockAnalyzer{
+		result: &dynamicanalysis.Result{},
 	}
 	store := newTestStore(t, analyzer)
 
@@ -142,5 +141,5 @@ func TestDynamicLibAnalysisStore_LoadAnalysis_HashMismatch(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = store.LoadAnalysis(libPath, "sha256:different")
-	assert.ErrorIs(t, err, dynlibanalysisstore.ErrAnalysisNotFound)
+	assert.ErrorIs(t, err, dynamicanalysis.ErrAnalysisNotFound)
 }

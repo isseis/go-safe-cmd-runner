@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysisstore"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
@@ -53,7 +53,7 @@ func NewNormalResourceManagerWithStores(
 	symStore fileanalysis.NetworkSymbolStore,
 	syscallStore fileanalysis.SyscallAnalysisStore,
 	depsStore fileanalysis.DynLibDepsStore,
-	libAnalysisStore dynlibanalysisstore.DynamicLibAnalysisStore,
+	libAnalysisStore dynamicanalysis.Store,
 ) *NormalResourceManager {
 	return &NormalResourceManager{
 		executor:         exec,

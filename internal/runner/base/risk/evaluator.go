@@ -5,7 +5,7 @@ package risk
 import (
 	"runtime"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysisstore"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
@@ -38,7 +38,7 @@ func NewStandardEvaluatorWithLibAnalysisStore(
 	symStore fileanalysis.NetworkSymbolStore,
 	syscallStore fileanalysis.SyscallAnalysisStore,
 	depsStore fileanalysis.DynLibDepsStore,
-	libAnalysisStore dynlibanalysisstore.DynamicLibAnalysisStore,
+	libAnalysisStore dynamicanalysis.Store,
 ) Evaluator {
 	return &StandardEvaluator{
 		networkAnalyzer: security.NewNetworkAnalyzerWithLibAnalysisStore(

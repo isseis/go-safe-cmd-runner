@@ -1,4 +1,4 @@
-package dynlibanalysisstore
+package dynamicanalysis
 
 import (
 	"encoding/json"
@@ -15,26 +15,22 @@ const (
 	storeFilePerm = 0o644
 )
 
-// DynamicLibAnalysisStoreImpl manages storage and retrieval of dynamic library
-// analysis results on disk, keyed by library path and hash.
-type DynamicLibAnalysisStoreImpl struct {
+// store manages storage and retrieval of dynamic library analysis results on
+// disk, keyed by library path and hash.
+type store struct {
 	storeDir string
-	analyzer LibraryAnalyzer
+	analyzer Analyzer
 	pathEnc  *pathencoding.SubstitutionHashEscape
 }
 
-// NewDynamicLibAnalysisStore creates a new DynamicLibAnalysisStoreImpl.
-// storeDir is the path to the store directory (created automatically if it does not exist).
-// analyzer is used by LoadOrAnalyzeAndStore to perform fresh analysis when no stored
+// New creates a new Store backed by storeDir.
+// storeDir is created automatically if it does not exist.
 // Pass a nil analyzer only when LoadOrAnalyzeAndStore will not be called (e.g., runner mode).
-func NewDynamicLibAnalysisStore(
-	storeDir string,
-	analyzer LibraryAnalyzer,
-) (*DynamicLibAnalysisStoreImpl, error) {
+func New(storeDir string, analyzer Analyzer) (Store, error) {
 	if err := os.MkdirAll(storeDir, storeDirPerm); err != nil {
 		return nil, fmt.Errorf("failed to create store directory %s: %w", storeDir, err)
 	}
-	return &DynamicLibAnalysisStoreImpl{
+	return &store{
 		storeDir: storeDir,
 		analyzer: analyzer,
 		pathEnc:  pathencoding.NewSubstitutionHashEscape(),
@@ -43,13 +39,13 @@ func NewDynamicLibAnalysisStore(
 
 // LoadAnalysis retrieves stored analysis for the given library.
 // Returns ErrAnalysisNotFound if no valid analysis exists.
-func (s *DynamicLibAnalysisStoreImpl) LoadAnalysis(libPath, libHash string) (*DynamicLibAnalysisResult, error) {
+func (s *store) LoadAnalysis(libPath, libHash string) (*Result, error) {
 	return s.load(libPath, libHash)
 }
 
 // LoadOrAnalyzeAndStore retrieves existing analysis for the given library.
 // On a miss it runs a fresh analysis, persists the result, and returns it.
-func (s *DynamicLibAnalysisStoreImpl) LoadOrAnalyzeAndStore(libPath, libHash string) (*DynamicLibAnalysisResult, error) {
+func (s *store) LoadOrAnalyzeAndStore(libPath, libHash string) (*Result, error) {
 	result, loadErr := s.load(libPath, libHash)
 	if loadErr == nil {
 		return result, nil
@@ -76,7 +72,7 @@ func (s *DynamicLibAnalysisStoreImpl) LoadOrAnalyzeAndStore(libPath, libHash str
 // load reads and validates the stored analysis for the given library.
 // Returns ErrAnalysisNotFound for all cases where the result cannot be reused
 // (file not found, parse error, schema mismatch, hash mismatch).
-func (s *DynamicLibAnalysisStoreImpl) load(libPath, libHash string) (*DynamicLibAnalysisResult, error) {
+func (s *store) load(libPath, libHash string) (*Result, error) {
 	storeFilePath, err := s.storeFilePath(libPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute store file path: %w", err)
@@ -87,31 +83,31 @@ func (s *DynamicLibAnalysisStoreImpl) load(libPath, libHash string) (*DynamicLib
 		return nil, ErrAnalysisNotFound
 	}
 
-	var file DynamicLibAnalysisFile
-	if err := json.Unmarshal(data, &file); err != nil {
+	var f File
+	if err := json.Unmarshal(data, &f); err != nil {
 		return nil, ErrAnalysisNotFound
 	}
 
-	if file.SchemaVersion != DynLibAnalysisSchemaVersion || file.LibHash != libHash {
+	if f.SchemaVersion != SchemaVersion || f.LibHash != libHash {
 		return nil, ErrAnalysisNotFound
 	}
 
-	return &DynamicLibAnalysisResult{
-		SyscallAnalysis:    file.SyscallAnalysis,
-		SymbolAnalysis:     file.SymbolAnalysis,
-		DynamicLoadSymbols: file.DynamicLoadSymbols,
+	return &Result{
+		SyscallAnalysis:    f.SyscallAnalysis,
+		SymbolAnalysis:     f.SymbolAnalysis,
+		DynamicLoadSymbols: f.DynamicLoadSymbols,
 	}, nil
 }
 
 // saveResult writes the analysis result to disk atomically.
-func (s *DynamicLibAnalysisStoreImpl) saveResult(libPath, libHash string, result *DynamicLibAnalysisResult) error {
+func (s *store) saveResult(libPath, libHash string, result *Result) error {
 	storeFilePath, err := s.storeFilePath(libPath)
 	if err != nil {
 		return fmt.Errorf("failed to compute store file path: %w", err)
 	}
 
-	file := DynamicLibAnalysisFile{
-		SchemaVersion:      DynLibAnalysisSchemaVersion,
+	f := File{
+		SchemaVersion:      SchemaVersion,
 		LibPath:            libPath,
 		LibHash:            libHash,
 		SyscallAnalysis:    result.SyscallAnalysis,
@@ -119,7 +115,7 @@ func (s *DynamicLibAnalysisStoreImpl) saveResult(libPath, libHash string, result
 		DynamicLoadSymbols: result.DynamicLoadSymbols,
 	}
 
-	data, err := json.MarshalIndent(file, "", "  ")
+	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal analysis file: %w", err)
 	}
@@ -128,7 +124,7 @@ func (s *DynamicLibAnalysisStoreImpl) saveResult(libPath, libHash string, result
 }
 
 // storeFilePath returns the on-disk path for the given library path.
-func (s *DynamicLibAnalysisStoreImpl) storeFilePath(libPath string) (string, error) {
+func (s *store) storeFilePath(libPath string) (string, error) {
 	encodedName, err := s.pathEnc.Encode(libPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to encode library path: %w", err)

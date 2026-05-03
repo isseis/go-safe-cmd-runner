@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysisstore"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
@@ -28,7 +28,7 @@ type Manager struct {
 	fileValidator               filevalidator.FileValidator
 	networkSymbolStore          fileanalysis.NetworkSymbolStore // nil when cache is unavailable
 	syscallAnalysisStore        fileanalysis.SyscallAnalysisStore
-	dynlibAnalysisStore         dynlibanalysisstore.DynamicLibAnalysisStore // nil when store is unavailable
+	dynlibAnalysisStore         dynamicanalysis.Store // nil when store is unavailable
 	dynLibDepsStore             fileanalysis.DynLibDepsStore
 	dynlibVerifier              *elfdynlib.DynLibVerifier // initialized once at construction
 	security                    DirectoryValidator
@@ -356,7 +356,7 @@ func (m *Manager) GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore {
 
 // GetDynLibAnalysisStore returns a DynamicLibAnalysisStore for runner-side library
 // network detection, or nil if not available.
-func (m *Manager) GetDynLibAnalysisStore() dynlibanalysisstore.DynamicLibAnalysisStore {
+func (m *Manager) GetDynLibAnalysisStore() dynamicanalysis.Store {
 	return m.dynlibAnalysisStore
 }
 
@@ -526,7 +526,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 			// Initialize dynlib analysis store for runner-side library network detection.
 			// The store is load-only (nil analyzer): analysis is performed by record.
 			dynlibStoreDir := filepath.Join(hashDir, "dynlib-analysis")
-			if ds, dsErr := dynlibanalysisstore.NewDynamicLibAnalysisStore(dynlibStoreDir, nil); dsErr == nil {
+			if ds, dsErr := dynamicanalysis.New(dynlibStoreDir, nil); dsErr == nil {
 				manager.dynlibAnalysisStore = ds
 			} else {
 				slog.Warn("Failed to initialize dynlib analysis store; dynlib network detection disabled",

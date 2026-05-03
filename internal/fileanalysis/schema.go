@@ -43,7 +43,7 @@ const (
 	// analysis results and DetectedLibraryNetworkDeps to SymbolAnalysisData.
 	// Load returns SchemaVersionMismatchError for records with schema_version != 20.
 	// Version 21 removes LibraryAnalysis from Record: per-library results are now stored
-	// in the dynamic library analysis store (internal/dynlibanalysisstore) and read at
+	// in the dynamic library analysis store (internal/dynamicanalysis) and read at
 	// runner runtime rather than embedded in each executable's record.
 	CurrentSchemaVersion = 21
 )

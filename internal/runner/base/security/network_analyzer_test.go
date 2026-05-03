@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysisstore"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -638,31 +638,31 @@ func (m *mockDynLibDepsStore) LoadDynLibDeps(_ string, _ string) ([]fileanalysis
 }
 
 type mockDynLibAnalysisStore struct {
-	results map[string]*dynlibanalysisstore.DynamicLibAnalysisResult
+	results map[string]*dynamicanalysis.Result
 	err     error
 }
 
-func (m *mockDynLibAnalysisStore) LoadOrAnalyzeAndStore(libPath, _ string) (*dynlibanalysisstore.DynamicLibAnalysisResult, error) {
+func (m *mockDynLibAnalysisStore) LoadOrAnalyzeAndStore(libPath, _ string) (*dynamicanalysis.Result, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	return m.results[libPath], nil
 }
 
-func (m *mockDynLibAnalysisStore) LoadAnalysis(libPath, _ string) (*dynlibanalysisstore.DynamicLibAnalysisResult, error) {
+func (m *mockDynLibAnalysisStore) LoadAnalysis(libPath, _ string) (*dynamicanalysis.Result, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	r, ok := m.results[libPath]
 	if !ok {
-		return nil, dynlibanalysisstore.ErrAnalysisNotFound
+		return nil, dynamicanalysis.ErrAnalysisNotFound
 	}
 	return r, nil
 }
 
 func makeNetworkAnalyzerWithLibStores(
 	depsStore fileanalysis.DynLibDepsStore,
-	libStore dynlibanalysisstore.DynamicLibAnalysisStore,
+	libStore dynamicanalysis.Store,
 ) *NetworkAnalyzer {
 	return NewNetworkAnalyzerWithLibAnalysisStore(runtime.GOOS, nil, nil, depsStore, libStore)
 }
@@ -673,7 +673,7 @@ func TestCheckDynLibDepsNetwork_NetworkSymbol(t *testing.T) {
 	dep := fileanalysis.LibEntry{SOName: "libssl.so.3", Path: "/usr/lib/libssl.so.3", Hash: "sha256:aa"}
 	depsStore := &mockDynLibDepsStore{deps: []fileanalysis.LibEntry{dep}}
 	libStore := &mockDynLibAnalysisStore{
-		results: map[string]*dynlibanalysisstore.DynamicLibAnalysisResult{
+		results: map[string]*dynamicanalysis.Result{
 			"/usr/lib/libssl.so.3": {
 				SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
 					DetectedSymbols: []string{"connect"},
@@ -693,7 +693,7 @@ func TestCheckDynLibDepsNetwork_DynamicLoadSymbols(t *testing.T) {
 	dep := fileanalysis.LibEntry{SOName: "libplugin.so", Path: "/usr/lib/libplugin.so", Hash: "sha256:bb"}
 	depsStore := &mockDynLibDepsStore{deps: []fileanalysis.LibEntry{dep}}
 	libStore := &mockDynLibAnalysisStore{
-		results: map[string]*dynlibanalysisstore.DynamicLibAnalysisResult{
+		results: map[string]*dynamicanalysis.Result{
 			"/usr/lib/libplugin.so": {
 				DynamicLoadSymbols: []string{"dlopen"},
 			},

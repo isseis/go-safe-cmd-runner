@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysisstore"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
@@ -83,13 +83,13 @@ func elfTestDataPath(t *testing.T, name string) string {
 	return filepath.Join(filepath.Dir(thisFile), "..", "security", "elfanalyzer", "testdata", name)
 }
 
-// validatorWithStore creates a Validator with a real DynamicLibAnalysisStore backed by the
+// validatorWithStore creates a Validator with a real dynamicanalysis.Store backed by the
 // validator itself. Used for tests that exercise the full analyzeLibraries flow.
 func validatorWithStore(t *testing.T) *Validator {
 	t.Helper()
 	v := validatorWithTempHashDir(t)
 	storeDir := filepath.Join(t.TempDir(), "dynlibstore")
-	store, err := dynlibanalysisstore.NewDynamicLibAnalysisStore(storeDir, v)
+	store, err := dynamicanalysis.New(storeDir, v)
 	require.NoError(t, err)
 	v.SetDynamicLibAnalysisStore(store)
 	return v

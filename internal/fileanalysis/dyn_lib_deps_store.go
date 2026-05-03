@@ -8,7 +8,7 @@ import (
 
 // DynLibDepsStore defines the interface for loading dynamic library dependency records.
 // Used by the runner to retrieve the DynLibDeps list recorded at record time, so that
-// per-library analysis results can be looked up from the dynlibanalysisstore.
+// per-library analysis results can be looked up from the dynamicanalysis store.
 type DynLibDepsStore interface {
 	// LoadDynLibDeps loads the dynamic library dependencies for the given file.
 	// Returns (deps, nil) if found and hash matches.

@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysisstore"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
@@ -31,10 +31,10 @@ func syscallTableForArch(goos, arch string) syscallTableInterface {
 // NetworkAnalyzer provides network operation detection for commands.
 type NetworkAnalyzer struct {
 	goos             string
-	store            fileanalysis.NetworkSymbolStore             // nil means cache disabled
-	syscallStore     fileanalysis.SyscallAnalysisStore           // nil means svc cache disabled
-	depsStore        fileanalysis.DynLibDepsStore                // nil means dynlib check disabled
-	libAnalysisStore dynlibanalysisstore.DynamicLibAnalysisStore // nil means dynlib check disabled
+	store            fileanalysis.NetworkSymbolStore   // nil means cache disabled
+	syscallStore     fileanalysis.SyscallAnalysisStore // nil means svc cache disabled
+	depsStore        fileanalysis.DynLibDepsStore      // nil means dynlib check disabled
+	libAnalysisStore dynamicanalysis.Store             // nil means dynlib check disabled
 }
 
 // NewNetworkAnalyzerWithStores creates a NetworkAnalyzer with both
@@ -60,7 +60,7 @@ func NewNetworkAnalyzerWithLibAnalysisStore(
 	symStore fileanalysis.NetworkSymbolStore,
 	svcStore fileanalysis.SyscallAnalysisStore,
 	depsStore fileanalysis.DynLibDepsStore,
-	libAnalysisStore dynlibanalysisstore.DynamicLibAnalysisStore,
+	libAnalysisStore dynamicanalysis.Store,
 ) *NetworkAnalyzer {
 	return &NetworkAnalyzer{
 		goos:             isec.RequireGOOS(goos),
@@ -303,7 +303,7 @@ func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (i
 
 		result, loadErr := a.libAnalysisStore.LoadAnalysis(dep.Path, dep.Hash)
 		if loadErr != nil {
-			if errors.Is(loadErr, dynlibanalysisstore.ErrAnalysisNotFound) {
+			if errors.Is(loadErr, dynamicanalysis.ErrAnalysisNotFound) {
 				slog.Warn("dynlib analysis not found; treating as high risk",
 					"cmd_path", cmdPath, "dep_path", dep.Path, "dep_hash", dep.Hash)
 			} else {
