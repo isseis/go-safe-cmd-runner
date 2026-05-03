@@ -93,9 +93,8 @@ func (s *store) load(libPath, libHash string) (*Result, error) {
 	}
 
 	return &Result{
-		SyscallAnalysis:    f.SyscallAnalysis,
-		SymbolAnalysis:     f.SymbolAnalysis,
-		DynamicLoadSymbols: f.DynamicLoadSymbols,
+		SyscallAnalysis: f.SyscallAnalysis,
+		SymbolAnalysis:  f.SymbolAnalysis,
 	}, nil
 }
 
@@ -107,12 +106,11 @@ func (s *store) saveResult(libPath, libHash string, result *Result) error {
 	}
 
 	f := File{
-		SchemaVersion:      SchemaVersion,
-		LibPath:            libPath,
-		LibHash:            libHash,
-		SyscallAnalysis:    result.SyscallAnalysis,
-		SymbolAnalysis:     result.SymbolAnalysis,
-		DynamicLoadSymbols: result.DynamicLoadSymbols,
+		SchemaVersion:   SchemaVersion,
+		LibPath:         libPath,
+		LibHash:         libHash,
+		SyscallAnalysis: result.SyscallAnalysis,
+		SymbolAnalysis:  result.SymbolAnalysis,
 	}
 
 	data, err := json.MarshalIndent(f, "", "  ")

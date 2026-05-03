@@ -692,7 +692,9 @@ func TestCheckDynLibDepsNetwork_DynamicLoadSymbols(t *testing.T) {
 	libStore := &mockDynLibAnalysisStore{
 		results: map[string]*dynamicanalysis.Result{
 			"/usr/lib/libplugin.so": {
-				DynamicLoadSymbols: []string{"dlopen"},
+				SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
+					DynamicLoadSymbols: []string{"dlopen"},
+				},
 			},
 		},
 	}
