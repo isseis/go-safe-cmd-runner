@@ -168,12 +168,18 @@ DynLibDep の必須情報:
 本タスクのリファクタリングで `analyzeLibraries()` および `analyzeOneLibrary()` の
 実装経路が変わるため、これらのテストを本タスクで追加する。
 
-#### FR-3.6.1: ファイルサイズ上限超過時の警告伝播
+#### FR-3.6.1: ファイルサイズ上限超過時のエラー処理
 
-`Analyze()` がファイルサイズ超過を検出した場合、警告を `LibAnalysisResult.Warnings`
-として返し、`analyzeLibraries()` が `record.AnalysisWarnings` に追記して処理を継続すること。
+`Analyze()` がファイルサイズ超過（1 GB 超）を検出した場合、エラーとして扱い、
+ファイル不在（FR-3.6.2）と同様の処理を行う。
 
-- 対応: タスク 0123 AC-10 の実装は存在するが、`analyzeLibraries()` レベルのテストが未作成
+背景: サイズ超過でスキャンをスキップした場合、機械語中の直接 `syscall` 命令が検出できず
+「ネットワーク利用なし」と誤記録するリスクが生じる。セキュリティツールとして false negative は
+許容しがたいため、エラーとして扱い不完全な解析結果を記録しない。
+
+- 訂正: タスク 0123 AC-10 の「warning + スキップ継続」設計を取り消す。
+  `analyzeOneLibrary` がファイルサイズ超過を warning として返す動作を、
+  error を返す動作に変更する。
 
 #### FR-3.6.2: ライブラリファイル不在時のエラー処理
 
@@ -235,8 +241,7 @@ VDSO (`linux-vdso.so.1` 等) のみが `DynLibDeps` に含まれる場合も
 | AC-7 | syscall wrapper / VDSO 除外ルールがキャッシュ方式でも維持される |
 | AC-8 | `make fmt` / `go test -tags test -v ./...` / `make lint` がすべて成功する |
 | AC-9 | `dlopen`/`dlsym` 等のシンボルを持つライブラリのキャッシュファイルに `dynamic_load_symbols` が記録され、`runner` が内部導出した `has_dynamic_load_signal` により高リスク判定が機能する |
-| AC-10 | ファイルサイズが 1 GB を超えるライブラリの `Analyze()` 呼び出しが警告を返し、syscall 解析をスキップする（`validatorLibraryAnalyzer.Analyze` レベルのテストで確認、FR-3.6.1） |
-| AC-11 | ファイルサイズ超過時の警告が `record.AnalysisWarnings` まで伝播し、処理が継続される（`analyzeLibraries` レベルのテストで確認、FR-3.6.1） |
+| AC-10 | ファイルサイズが 1 GB を超えるライブラリの `Analyze()` 呼び出しがエラーを返し、`analyzeLibraries()` がそのエラーを上位へ伝播する。当該実行ファイルのレコードは書き込まれず、`record` セッションは次の実行ファイルの処理を継続する（FR-3.6.1） |
 | AC-12 | 存在しないライブラリパスが `analyzeLibraries()` に渡された場合、エラーが返されその実行ファイルのレコードは書き込まれない。`record` セッションは次の実行ファイルの処理を継続する（FR-3.6.2） |
 | AC-13 | `linux-vdso.so.1` 等の VDSO のみが `DynLibDeps` に含まれる場合、`analyzeLibraries` の解析対象から除外される専用テストが存在する（FR-3.6.3） |
 

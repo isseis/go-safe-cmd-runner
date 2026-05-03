@@ -219,28 +219,22 @@ graph TB
 | 発生フェーズ | 状況 | 対応 |
 |---|---|---|
 | record 時 | `Analyze()` がライブラリファイルを開けない（不在） | `Analyze()` が error を返す → `analyzeLibraries()` がエラーを上位へ伝播 → 当該実行ファイルのレコード不出力。`record` セッションは次ファイルへ継続（FR-3.6.2） |
-| record 時 | `Analyze()` がファイルサイズ上限（1 GB）超過を検出 | 警告を `LibAnalysisResult.Warnings` で返し、`analyzeLibraries()` が `record.AnalysisWarnings` に追記して継続（FR-3.6.1） |
+| record 時 | `Analyze()` がファイルサイズ上限（1 GB）超過を検出 | `Analyze()` が error を返す → `analyzeLibraries()` がエラーを上位へ伝播 → 当該実行ファイルのレコード不出力。`record` セッションは次ファイルへ継続（FR-3.6.1） |
 | record 時 | キャッシュファイル読み込み失敗（破損等） | 警告を `AnalysisWarnings` に記録し、再解析して継続 |
 | record 時 | キャッシュファイル書き込み失敗 | 警告を `AnalysisWarnings` に記録し、継続（ただし runner 実行時はキャッシュミスエラーになる） |
 | runner 時 | ライブラリのキャッシュファイルが存在しない | エラー停止（`record` 再実行が必要） |
 | runner 時 | ライブラリのハッシュ不一致 | `VerifyCommandDynLibDeps` が先に検出してエラー停止 |
 | runner 時 | スキーマバージョン不一致 | エラー停止（`record` 再実行が必要） |
 
-### 7.1 ライブラリファイル不在とサイズ超過の処理差異
+### 7.1 ファイル不在とサイズ超過の統一エラー処理
 
-ライブラリファイル不在（FR-3.6.2）とサイズ超過（FR-3.6.1）は意味的に異なるため、エラー処理も異なる。
+ファイル不在（FR-3.6.2）とサイズ超過（FR-3.6.1）はいずれも `Analyze()` が error を返し、
+同一の処理経路を辿る。
 
 | 状況 | 意味 | 処理 |
 |---|---|---|
 | ファイル不在 | `analyzeDynLibDeps()` 直後にファイルが消えた = 予期しない状態 | `Analyze()` が `error` を返し、当該実行ファイルの解析全体をエラーとする |
-| サイズ超過 | 既知の解析制限（1 GB 超は解析対象外） | `Analyze()` が警告を返し、解析結果は「スキャンなし」として継続 |
+| サイズ超過 | スキャン未実施 = ネットワーク利用を見逃す false negative リスクあり | `Analyze()` が `error` を返し、当該実行ファイルの解析全体をエラーとする |
 
-### 7.2 警告伝播パス（record 時・サイズ超過）
-
-`Analyze()` 内のサイズ超過は以下の経路で `record.AnalysisWarnings` に集約される。
-
-```
-Analyze() → warnings []string
-  └→ GetOrCreate() → LibAnalysisResult.Warnings
-       └→ analyzeLibraries() → record.AnalysisWarnings
-```
+両ケースとも `analyzeLibraries()` はエラーを上位へ伝播し、当該レコードは書き込まれない。
+`record` セッションは次の実行ファイルへ継続する。
