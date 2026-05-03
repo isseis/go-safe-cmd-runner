@@ -9,7 +9,7 @@
 - [x] Step 5: `analyzeLibraries()` 実装とユニットテスト
 - [x] Step 6: `updateAnalysisRecord` への統合
 - [x] Step 7: runner 側のネットワーク判定拡張
-- [ ] Step 8: `cmd/record/main.go` の有効化
+- [x] Step 8: `cmd/record/main.go` の有効化
 - [ ] Step 9: 統合テスト（AC-1 〜 AC-8）
 - [ ] Step 10: `make fmt` `make test` `make lint` で品質確認
 
@@ -140,7 +140,7 @@
 **対象ファイル**: `cmd/record/main.go`
 
 作業内容:
-- [ ] `v.SetSyscallAnalyzer(...)` 呼び出しの直後に `v.SetLibraryAnalysisEnabled(true)` を追加
+- [x] `v.SetSyscallAnalyzer(...)` 呼び出しの直後に `v.SetLibraryAnalysisEnabled(true)` を追加
 
 ---
 
