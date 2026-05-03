@@ -2,7 +2,7 @@
 
 ## 進捗状況
 
-- [ ] Step 1: スキーマ変更
+- [x] Step 1: スキーマ変更
 - [ ] Step 2: `binaryanalyzer/syscall_wrapper_libs.go` 新規作成とテスト
 - [ ] Step 3: `Validator` にキャッシュフィールドと setter 追加
 - [ ] Step 4: `analyzeOneLibrary()` 実装とユニットテスト
@@ -22,11 +22,11 @@
 **対象ファイル**: `internal/fileanalysis/schema.go`
 
 作業内容:
-- [ ] `CurrentSchemaVersion` を 19 → 20 に変更し、バージョンアップ理由をコメントに追記
-- [ ] `LibraryAnalysisEntry` 型を追加（`SOName`, `Path`, `SyscallAnalysis`, `SymbolAnalysis` フィールド）
-- [ ] `Record` 構造体に `LibraryAnalysis []LibraryAnalysisEntry` フィールドを追加
-- [ ] `SymbolAnalysisData` 構造体に `DetectedLibraryNetworkDeps []string` フィールドを追加
-- [ ] スキーマバージョンを参照しているテストを 20 に更新
+- [x] `CurrentSchemaVersion` を 19 → 20 に変更し、バージョンアップ理由をコメントに追記
+- [x] `LibraryAnalysisEntry` 型を追加（`SOName`, `Path`, `SyscallAnalysis`, `SymbolAnalysis` フィールド）
+- [x] `Record` 構造体に `LibraryAnalysis []LibraryAnalysisEntry` フィールドを追加
+- [x] `SymbolAnalysisData` 構造体に `DetectedLibraryNetworkDeps []string` フィールドを追加
+- [x] スキーマバージョンを参照しているテストを 20 に更新
 
 ---
 
