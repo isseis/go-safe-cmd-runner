@@ -157,6 +157,43 @@ DynLibDep の必須情報:
 ライブラリ解析キャッシュの `has_network_signal` を用いた runner ネットワーク判定は、
 0123 の `DetectedLibraryNetworkDeps` ベースの判定と同等の結果を返す（後退なし）。
 
+### 3.6 タスク 0123 テストカバレッジの引き継ぎ
+
+タスク 0123 の整合性チェックにより、以下のテストが未作成であることが判明した。
+本タスクのリファクタリングで `analyzeLibraries()` および `analyzeOneLibrary()` の
+実装経路が変わるため、これらのテストを本タスクで追加する。
+
+#### FR-3.6.1: ファイルサイズ上限超過時の警告伝播
+
+`Analyze()` がファイルサイズ超過を検出した場合、警告を `LibAnalysisResult.Warnings`
+として返し、`analyzeLibraries()` が `record.AnalysisWarnings` に追記して処理を継続すること。
+
+- 対応: タスク 0123 AC-10 の実装は存在するが、`analyzeLibraries()` レベルのテストが未作成
+
+#### FR-3.6.2: ライブラリファイル不在時のエラー処理
+
+`DynLibDeps` に記録されたライブラリのファイルが `analyzeLibraries()` 時点で存在しない場合、
+その実行ファイルの解析はエラーとして扱い、当該レコードは書き込まない。
+
+背景: `analyzeDynLibDeps()` でパスとハッシュを確認した直後に `analyzeLibraries()` を実行するため、
+ファイル不在は「競合状態」や「実装バグ」等の予期しない状態を示す。不完全な解析結果を
+「ネットワーク利用なし」と誤記録するリスクを避けるため、エラーとして扱う。
+
+`record` コマンドは複数ファイルをバッチ処理するため、ある実行ファイルの解析がエラーとなっても
+次の実行ファイルの処理は継続する（ファイル単位のエラー、セッション全体のエラーではない）。
+
+- 訂正: タスク 0123 AC-7 の「warning + 継続」設計を取り消す。
+  `analyzeOneLibrary` がライブラリファイル不在を warning として返す動作を、
+  error を返す動作に変更する。
+
+#### FR-3.6.3: VDSO 除外の専用テスト
+
+VDSO (`linux-vdso.so.1` 等) のみが `DynLibDeps` に含まれる場合も
+`analyzeLibraries()` の解析対象から除外されること。
+
+- 対応: タスク 0123 AC-9 は wrapper と混在テスト（`TestAnalyzeLibraries_excludesWrapperAndVDSO`）
+  でカバーされているが、VDSO 単独の除外を確認する専用テストが未作成
+
 ---
 
 ## 4. 非機能要件
@@ -193,6 +230,10 @@ DynLibDep の必須情報:
 | AC-7 | syscall wrapper / VDSO 除外ルールがキャッシュ方式でも維持される |
 | AC-8 | `make fmt` / `go test -tags test -v ./...` / `make lint` がすべて成功する |
 | AC-9 | `dlopen`/`dlsym` 等のシンボルを持つライブラリのキャッシュファイルで `has_dynamic_load_signal` が `true` となり、`runner` による高リスク判定が機能する |
+| AC-10 | ファイルサイズが 1 GB を超えるライブラリの `Analyze()` 呼び出しが警告を返し、syscall 解析をスキップする（`validatorLibraryAnalyzer.Analyze` レベルのテストで確認、FR-3.6.1） |
+| AC-11 | ファイルサイズ超過時の警告が `record.AnalysisWarnings` まで伝播し、処理が継続される（`analyzeLibraries` レベルのテストで確認、FR-3.6.1） |
+| AC-12 | 存在しないライブラリパスが `analyzeLibraries()` に渡された場合、エラーが返されその実行ファイルのレコードは書き込まれない。`record` セッションは次の実行ファイルの処理を継続する（FR-3.6.2） |
+| AC-13 | `linux-vdso.so.1` 等の VDSO のみが `DynLibDeps` に含まれる場合、`analyzeLibraries` の解析対象から除外される専用テストが存在する（FR-3.6.3） |
 
 ---
 

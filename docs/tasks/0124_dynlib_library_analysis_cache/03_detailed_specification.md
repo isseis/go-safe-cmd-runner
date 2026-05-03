@@ -219,8 +219,8 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record):
   3. VDSO / syscall wrapper → スキップ
   4. メモリキャッシュ Hit → スキップ（GetOrCreate は冪等だが二重解析を避ける）
   5. libAnalysisCacheManager.GetOrCreate(lib.Path, lib.Hash)
-     - 成功: メモリキャッシュに格納
-     - 失敗: AnalysisWarnings に追記し継続
+     - 成功（warnings あり）: result.Warnings を record.AnalysisWarnings に追記してメモリキャッシュに格納
+     - 失敗（ファイル不在等の error）: error をそのまま返す（FR-3.6.2）
   6. record.LibraryAnalysis および DetectedLibraryNetworkDeps への書き込みは行わない
 ```
 
@@ -314,14 +314,58 @@ Get(libPath, libHash string) (*LibAnalysisResult, error)
 
 各 AC に対するテストの対応:
 
-| AC | テスト種別 | テスト内容 |
+| AC | テスト種別 | テスト名 / テスト内容 |
 |----|---------|---------|
-| AC-1 | Unit | 同一ライブラリを 2 回 GetOrCreate → 2 回目はファイルを読まない（モック確認） |
-| AC-2 | Unit | `lib_hash` 変更後の GetOrCreate → 再解析されキャッシュが上書きされる |
-| AC-3 | Unit | キャッシュヒット時でも `record.DynLibDeps` に正しい soname/path/hash が記録される |
+| AC-1 | Unit | `TestCacheManager_GetOrCreate_Hit`: 同一ライブラリを 2 回 GetOrCreate → 2 回目はファイルを読まない（モック確認） |
+| AC-2 | Unit | `TestCacheManager_GetOrCreate_HashMismatch`: `lib_hash` 変更後の GetOrCreate → 再解析されキャッシュが上書きされる |
+| AC-3 | Unit | `TestAnalyzeLibraries_dynLibDepsPreservedOnCacheHit`: キャッシュヒット時でも `record.DynLibDeps` に正しい soname/path/hash が記録される |
 | AC-4 | Integration | dynlibcache 経由のネットワーク判定が 0123 ベースラインと同等 |
-| AC-5 | Unit | 破損キャッシュファイル → 再解析して `AnalysisWarnings` に記録 |
-| AC-6 | Unit | record JSON サイズの削減を確認（`LibraryAnalysis` フィールドが含まれない） |
-| AC-7 | Unit | wrapper / VDSO がキャッシュ対象から除外される |
+| AC-5 | Unit | `TestCacheManager_GetOrCreate_CorruptFile`: 破損キャッシュファイル → 再解析して `AnalysisWarnings` に記録 |
+| AC-6 | Unit | `TestAnalyzeLibraries_recordHasNoDynLibAnalysisField`: record JSON サイズの削減を確認（`LibraryAnalysis` フィールドが含まれない） |
+| AC-7 | Unit | `TestAnalyzeLibraries_excludesWrapperAndVDSO`: wrapper / VDSO がキャッシュ対象から除外される |
 | AC-8 | CI | `make fmt` / `go test -tags test -v ./...` / `make lint` |
 | AC-9 | Integration | `has_dynamic_load_signal = true` のライブラリ → runner が高リスク判定 |
+| AC-10 | Unit | `TestValidatorLibraryAnalyzer_Analyze_fileTooLarge`: ファイルサイズ 1 GB 超のライブラリを `Analyze()` に渡すと警告が返り `SyscallAnalysis` が nil（FR-3.6.1） |
+| AC-11 | Unit | `TestAnalyzeLibraries_fileTooLargeWarningPropagated`: ファイルサイズ超過ライブラリの警告が `record.AnalysisWarnings` に追記され処理が継続される（FR-3.6.1） |
+| AC-12 | Unit | `TestAnalyzeLibraries_missingLibFileReturnsError`: 存在しないライブラリパスが含まれる DynLibDeps で `analyzeLibraries()` がエラーを返すことを確認。また `record` セッションレベルのテストで次ファイルの処理継続を確認（FR-3.6.2） |
+| AC-13 | Unit | `TestAnalyzeLibraries_vdsoExcluded`: `linux-vdso.so.1` のみを含む DynLibDeps で `GetOrCreate` が呼ばれないことを確認（FR-3.6.3） |
+
+### 10.1 AC-10/11 の実装方法
+
+ファイルサイズ超過は `validatorLibraryAnalyzer.Analyze()` 内で検出するが、
+テスト時に 1 GB 超の実ファイルを作成するのはコストが高い。
+**モック `FileSystem`** の `SafeOpenFile().Stat()` が 1 GB 超のサイズを返すようスタブすることで、
+実ファイルなしにサイズ超過パスをテストする。
+
+```
+// テスト用スタブ例
+type oversizedStatFile struct { safefileio.File }
+func (f *oversizedStatFile) Stat() (os.FileInfo, error) {
+    return &fakeFileInfo{size: maxFileSize + 1}, nil
+}
+```
+
+AC-11 の `TestAnalyzeLibraries_fileTooLargeWarningPropagated` では、
+`GetOrCreate` を呼んだ結果の `LibAnalysisResult.Warnings` が
+`record.AnalysisWarnings` に追記されることを `analyzeLibraries()` ごと呼び出して確認する。
+
+### 10.2 AC-12 の実装方法
+
+`TestAnalyzeLibraries_missingLibFileReturnsError` は
+`analyzeLibraries()` を直接呼び出し、`DynLibDeps` に存在しないパスを含むエントリを渡す。
+`Analyze()` が error を返し、`analyzeLibraries()` がその error を上位へ伝播することを確認する。
+
+セッション継続の確認は統合テストレベルで行う（`record` が複数ファイルを処理する際に、
+1 ファイルの `analyzeLibraries` エラーが次ファイルの処理を妨げないこと）。
+
+**タスク 0123 AC-7 との関係:**
+タスク 0123 の `analyzeOneLibrary` は warning を返していたが、本タスクで `Analyze()` が
+error を返す動作に変更する。`TestAnalyzeOneLibrary_missingFileAddsWarning`（旧テスト）は
+`TestValidatorLibraryAnalyzer_Analyze_missingFileReturnsError` に置き換える。
+
+### 10.3 AC-13 の実装方法
+
+`TestAnalyzeLibraries_vdsoExcluded` は VDSO エントリのみを持つ `DynLibDeps` を渡し、
+`GetOrCreate` が一度も呼ばれないことをモック `CacheManagerInterface` の呼び出し回数で確認する。
+（既存の `TestAnalyzeLibraries_excludesWrapperAndVDSO` は wrapper と混在テストのため、
+VDSO 除外を単独で保証しない。）

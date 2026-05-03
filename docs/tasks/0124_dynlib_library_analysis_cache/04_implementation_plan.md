@@ -148,9 +148,9 @@
   - 処理済みフラグ（`map[string]struct{}`）で同一セッション内重複を防ぐ
   - `libAnalysisCacheManager.GetOrCreate(lib.Path, lib.Hash)` を呼び出す
   - 成功: `result.Warnings` を `record.AnalysisWarnings` に追記
-  - 失敗: エラーを `record.AnalysisWarnings` に追記して継続
+  - 失敗（ファイル不在等の error）: error をそのまま上位へ返す（FR-3.6.2）
   - `record.LibraryAnalysis` / `DetectedLibraryNetworkDeps` への書き込みを削除
-- [ ] `analyzeOneLibrary` はそのまま `validatorLibraryAnalyzer.Analyze` の内部実装として使う（外部から呼ばれなくなる）
+- [ ] `analyzeOneLibrary` のライブラリファイル不在処理を warning → error に変更したうえで、`validatorLibraryAnalyzer.Analyze` の内部実装として使う（外部から呼ばれなくなる）（FR-3.6.2、タスク 0123 AC-7 の訂正）
 - [ ] `cmd/record/main.go` の `SetLibraryAnalysisEnabled(true)` 呼び出しを `SetLibraryAnalysisCacheManager` に変更
 
 **作業内容（テスト更新）:**
@@ -162,6 +162,12 @@
 - [ ] `TestAnalyzeOneLibrary_*` → `validatorLibraryAnalyzer.Analyze` のテストとして維持
 - [ ] `TestAnalyzeLibraries_recordHasNoDynLibAnalysisField`: `analyzeLibraries` 後の record JSON に `library_analysis` フィールドが含まれないことを確認（AC-6）
 - [ ] `TestAnalyzeLibraries_dynLibDepsPreservedOnCacheHit`: キャッシュヒット時も `record.DynLibDeps` の soname/path/hash が正しく記録されることを確認（AC-3）
+- [ ] `TestValidatorLibraryAnalyzer_Analyze_fileTooLarge`: ファイルサイズ 1 GB 超でモック FileSystem から Stat が超過サイズを返すとき、`Analyze()` が警告を返し `SyscallAnalysis` が nil になることを確認（AC-10、タスク 0123 未作成テスト）
+- [ ] `TestAnalyzeLibraries_fileTooLargeWarningPropagated`: サイズ超過ライブラリが含まれる DynLibDeps で `analyzeLibraries()` を呼ぶと、`record.AnalysisWarnings` に警告が追記され処理が継続されることを確認（AC-11、タスク 0123 未作成テスト）
+- [ ] `TestValidatorLibraryAnalyzer_Analyze_missingFileReturnsError`: ライブラリファイルが存在しないとき `Analyze()` が warning ではなく error を返すことを確認（タスク 0123 `TestAnalyzeOneLibrary_missingFileAddsWarning` の置き換え）
+- [ ] `TestAnalyzeLibraries_missingLibFileReturnsError`: 存在しないパスが含まれる DynLibDeps で `analyzeLibraries()` を呼ぶと error が返されることを確認（AC-12、FR-3.6.2）
+- [ ] セッション継続の統合テスト: 複数ファイルのバッチ処理で 1 ファイルが `analyzeLibraries` エラーになっても次ファイルの処理が継続されることを確認（AC-12）
+- [ ] `TestAnalyzeLibraries_vdsoExcluded`: `linux-vdso.so.1` のみの DynLibDeps で `analyzeLibraries()` を呼ぶと、モック `CacheManagerInterface` の `GetOrCreate` が呼ばれないことを確認（AC-13、タスク 0123 AC-9 の専用テスト未作成）
 
 ---
 
