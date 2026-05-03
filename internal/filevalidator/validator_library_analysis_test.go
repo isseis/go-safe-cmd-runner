@@ -241,6 +241,8 @@ func TestAnalyzeLibraries_sessionCache(t *testing.T) {
 	require.NoError(t, v.analyzeLibraries(record))
 	assert.Equal(t, 1, bin.calls)
 	require.Len(t, record.LibraryAnalysis, 2)
+	assert.Equal(t, "libfoo.so.1", record.LibraryAnalysis[0].SOName)
+	assert.Equal(t, "libfoo-alias.so.1", record.LibraryAnalysis[1].SOName)
 }
 
 func TestAnalyzeLibraries_symbolAnalysisCreatedWhenNil(t *testing.T) {

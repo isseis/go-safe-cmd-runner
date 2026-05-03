@@ -641,7 +641,9 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 		}
 
 		if cached, ok := v.libraryAnalysisCache[lib.Path]; ok {
-			entries = append(entries, cached.entry)
+			cachedEntry := cached.entry
+			cachedEntry.SOName = lib.SOName
+			entries = append(entries, cachedEntry)
 			if cached.hasNetwork {
 				networkSONames = append(networkSONames, lib.SOName)
 			}
