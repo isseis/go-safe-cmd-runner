@@ -8,7 +8,7 @@
 - [x] Step 4: `analyzeOneLibrary()` 実装とユニットテスト
 - [x] Step 5: `analyzeLibraries()` 実装とユニットテスト
 - [x] Step 6: `updateAnalysisRecord` への統合
-- [ ] Step 7: runner 側のネットワーク判定拡張
+- [x] Step 7: runner 側のネットワーク判定拡張
 - [ ] Step 8: `cmd/record/main.go` の有効化
 - [ ] Step 9: 統合テスト（AC-1 〜 AC-8）
 - [ ] Step 10: `make fmt` `make test` `make lint` で品質確認
@@ -128,10 +128,10 @@
 **対象ファイル**: `internal/runner/base/security/network_analyzer.go`
 
 作業内容:
-- [ ] `isNetworkViaBinaryAnalysis` 内の条件を変更:
+- [x] `isNetworkViaBinaryAnalysis` 内の条件を変更:
   `if hasNetworkSymbol || len(data.KnownNetworkLibDeps) > 0 || len(data.DetectedLibraryNetworkDeps) > 0`
-- [ ] `DetectedLibraryNetworkDeps` が原因でネットワーク有りと判定した場合のログ出力を追加
-- [ ] テスト: `DetectedLibraryNetworkDeps` 非空のとき `(true, false)` を返すことを確認
+- [x] `DetectedLibraryNetworkDeps` が原因でネットワーク有りと判定した場合のログ出力を追加
+- [x] テスト: `DetectedLibraryNetworkDeps` 非空のとき `(true, false)` を返すことを確認
 
 ---
 
