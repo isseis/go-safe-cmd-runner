@@ -128,6 +128,11 @@ func (v *Validator) Store() *fileanalysis.Store {
 	return v.store
 }
 
+type libraryCacheEntry struct {
+	entry      fileanalysis.LibraryAnalysisEntry //nolint:unused // used in analyzeLibraries cache in Step 5.
+	hasNetwork bool                              //nolint:unused // used in analyzeLibraries cache in Step 5.
+}
+
 // Validator provides functionality to record and verify file hashes.
 // It should be instantiated using the New function.
 type Validator struct {
@@ -138,15 +143,17 @@ type Validator struct {
 	// store is the unified analysis store for FileAnalysisRecord format.
 	store *fileanalysis.Store
 
-	fileSystem          safefileio.FileSystem           // used by openELFFile in analyzeELFSyscalls
-	elfDynlibAnalyzer   *elfdynlib.DynLibAnalyzer       // nil if dynlib analysis is disabled
-	machoDynlibAnalyzer *machodylib.MachODynLibAnalyzer // nil if Mach-O dynlib analysis is disabled
-	binaryAnalyzer      binaryanalyzer.BinaryAnalyzer   // nil if binary analysis is disabled
-	libcCache           LibcCacheInterface              // nil if libc cache is disabled
-	libSystemCache      LibSystemCacheInterface         // nil if Mach-O libSystem cache is disabled
-	syscallAnalyzer     SyscallAnalyzerInterface        // nil if syscall analysis is disabled
-	machoSyscallTable   SyscallNumberTable              // nil falls back to noop table in ScanSyscallInfos
-	includeDebugInfo    bool
+	fileSystem             safefileio.FileSystem           // used by openELFFile in analyzeELFSyscalls
+	elfDynlibAnalyzer      *elfdynlib.DynLibAnalyzer       // nil if dynlib analysis is disabled
+	machoDynlibAnalyzer    *machodylib.MachODynLibAnalyzer // nil if Mach-O dynlib analysis is disabled
+	binaryAnalyzer         binaryanalyzer.BinaryAnalyzer   // nil if binary analysis is disabled
+	libcCache              LibcCacheInterface              // nil if libc cache is disabled
+	libSystemCache         LibSystemCacheInterface         // nil if Mach-O libSystem cache is disabled
+	syscallAnalyzer        SyscallAnalyzerInterface        // nil if syscall analysis is disabled
+	machoSyscallTable      SyscallNumberTable              // nil falls back to noop table in ScanSyscallInfos
+	libraryAnalysisCache   map[string]libraryCacheEntry
+	libraryAnalysisEnabled bool
+	includeDebugInfo       bool
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
@@ -522,10 +529,31 @@ func (v *Validator) SetSyscallAnalyzer(a SyscallAnalyzerInterface) {
 	v.syscallAnalyzer = a
 }
 
+// SetLibraryAnalysisEnabled enables or disables library-level analysis.
+// Call before the first SaveRecord() invocation.
+func (v *Validator) SetLibraryAnalysisEnabled(enabled bool) {
+	v.libraryAnalysisEnabled = enabled
+	if enabled && v.libraryAnalysisCache == nil {
+		v.libraryAnalysisCache = make(map[string]libraryCacheEntry)
+	}
+}
+
 // SetIncludeDebugInfo controls whether debug information (Occurrences,
 // DeterminationStats) is included in saved JSON output.
 func (v *Validator) SetIncludeDebugInfo(b bool) {
 	v.includeDebugInfo = b
+}
+
+// isKnownVDSO reports whether soname refers to a Linux virtual DSO.
+//
+//nolint:unused // wired into analyzeLibraries in Step 5.
+func isKnownVDSO(soname string) bool {
+	switch soname {
+	case "linux-vdso.so.1", "linux-gate.so.1", "linux-vdso64.so.1":
+		return true
+	default:
+		return false
+	}
 }
 
 // Verify checks if the file at filePath matches its recorded hash.

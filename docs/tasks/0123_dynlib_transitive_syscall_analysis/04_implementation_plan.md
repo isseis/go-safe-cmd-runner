@@ -4,7 +4,7 @@
 
 - [x] Step 1: スキーマ変更
 - [x] Step 2: `binaryanalyzer/syscall_wrapper_libs.go` 新規作成とテスト
-- [ ] Step 3: `Validator` にキャッシュフィールドと setter 追加
+- [x] Step 3: `Validator` にキャッシュフィールドと setter 追加
 - [ ] Step 4: `analyzeOneLibrary()` 実装とユニットテスト
 - [ ] Step 5: `analyzeLibraries()` 実装とユニットテスト
 - [ ] Step 6: `updateAnalysisRecord` への統合
@@ -53,12 +53,12 @@
 **対象ファイル**: `internal/filevalidator/validator.go`
 
 作業内容:
-- [ ] `libraryCacheEntry` 構造体を定義（`entry fileanalysis.LibraryAnalysisEntry`,
+- [x] `libraryCacheEntry` 構造体を定義（`entry fileanalysis.LibraryAnalysisEntry`,
   `hasNetwork bool`）
-- [ ] `Validator` 構造体に `libraryAnalysisCache map[string]libraryCacheEntry` フィールドを追加
-- [ ] `Validator` 構造体に `libraryAnalysisEnabled bool` フィールドを追加
-- [ ] `SetLibraryAnalysisEnabled(enabled bool)` メソッドを追加（有効化時にキャッシュを初期化）
-- [ ] `isKnownVDSO(soname string) bool` プライベートヘルパを追加（`linux-vdso.so.1`,
+- [x] `Validator` 構造体に `libraryAnalysisCache map[string]libraryCacheEntry` フィールドを追加
+- [x] `Validator` 構造体に `libraryAnalysisEnabled bool` フィールドを追加
+- [x] `SetLibraryAnalysisEnabled(enabled bool)` メソッドを追加（有効化時にキャッシュを初期化）
+- [x] `isKnownVDSO(soname string) bool` プライベートヘルパを追加（`linux-vdso.so.1`,
   `linux-gate.so.1`, `linux-vdso64.so.1`）
 
 ---
