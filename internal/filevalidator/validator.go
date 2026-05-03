@@ -150,7 +150,7 @@ type Validator struct {
 	syscallAnalyzer         SyscallAnalyzerInterface        // nil if syscall analysis is disabled
 	machoSyscallTable       SyscallNumberTable              // nil falls back to noop table in ScanSyscallInfos
 	dynamicLibAnalysisStore dynamicanalysis.Store
-	processedLibAnalysis    map[string]*dynamicanalysis.Result
+	processedLibAnalysis    map[libCacheKey]*dynamicanalysis.Result
 	includeDebugInfo        bool
 }
 
@@ -532,13 +532,21 @@ func (v *Validator) SetSyscallAnalyzer(a SyscallAnalyzerInterface) {
 	v.syscallAnalyzer = a
 }
 
+// libCacheKey is the key type for the in-session library analysis cache.
+// Using a struct avoids false collisions that could occur when concatenating
+// Path and Hash with a separator character.
+type libCacheKey struct {
+	Path string
+	Hash string
+}
+
 // SetDynamicLibAnalysisStore sets the persistent store for dynamic library analysis results.
 // When non-nil, library-level analysis is enabled and results are persisted to disk.
 // Pass nil to disable library analysis.
 func (v *Validator) SetDynamicLibAnalysisStore(store dynamicanalysis.Store) {
 	v.dynamicLibAnalysisStore = store
 	if store != nil && v.processedLibAnalysis == nil {
-		v.processedLibAnalysis = make(map[string]*dynamicanalysis.Result)
+		v.processedLibAnalysis = make(map[libCacheKey]*dynamicanalysis.Result)
 	}
 }
 
@@ -630,7 +638,7 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 	}
 
 	if v.processedLibAnalysis == nil {
-		v.processedLibAnalysis = make(map[string]*dynamicanalysis.Result)
+		v.processedLibAnalysis = make(map[libCacheKey]*dynamicanalysis.Result)
 	}
 
 	var allDynLoadSymbols []string
@@ -644,7 +652,7 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 		}
 
 		// In-session cache avoids calling the persistent store for the same lib+hash twice.
-		cacheKey := lib.Path + "#" + lib.Hash
+		cacheKey := libCacheKey{Path: lib.Path, Hash: lib.Hash}
 		result, cached := v.processedLibAnalysis[cacheKey]
 		if cached {
 			allDynLoadSymbols = append(allDynLoadSymbols, result.DynamicLoadSymbols...)
