@@ -705,29 +705,45 @@ func TestCheckDynLibDepsNetwork_DynamicLoadSymbols(t *testing.T) {
 
 // TestCheckDynLibDepsNetwork_MprotectProtExecRisk verifies that dynlib syscall
 // argument evaluation (mprotect-family PROT_EXEC risk) maps to the expected
-// high-risk decision.
+// high-risk decision for both mprotect and pkey_mprotect.
 func TestCheckDynLibDepsNetwork_MprotectProtExecRisk(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name         string
+		syscallName  string
 		status       common.SyscallArgEvalStatus
 		wantHighRisk bool
 	}{
 		{
-			name:         "exec_confirmed is high risk",
+			name:         "mprotect exec_confirmed is high risk",
+			syscallName:  "mprotect",
 			status:       common.SyscallArgEvalExecConfirmed,
 			wantHighRisk: true,
 		},
 		{
-			name:         "exec_unknown is high risk",
+			name:         "mprotect exec_unknown is high risk",
+			syscallName:  "mprotect",
 			status:       common.SyscallArgEvalExecUnknown,
 			wantHighRisk: true,
 		},
 		{
-			name:         "exec_not_set is not high risk",
+			name:         "mprotect exec_not_set is not high risk",
+			syscallName:  "mprotect",
 			status:       common.SyscallArgEvalExecNotSet,
 			wantHighRisk: false,
+		},
+		{
+			name:         "pkey_mprotect exec_confirmed is high risk",
+			syscallName:  "pkey_mprotect",
+			status:       common.SyscallArgEvalExecConfirmed,
+			wantHighRisk: true,
+		},
+		{
+			name:         "pkey_mprotect exec_unknown is high risk",
+			syscallName:  "pkey_mprotect",
+			status:       common.SyscallArgEvalExecUnknown,
+			wantHighRisk: true,
 		},
 	}
 
@@ -745,7 +761,7 @@ func TestCheckDynLibDepsNetwork_MprotectProtExecRisk(t *testing.T) {
 							SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 								Architecture: "x86_64",
 								ArgEvalResults: []common.SyscallArgEvalResult{{
-									SyscallName: "mprotect",
+									SyscallName: tc.syscallName,
 									Status:      tc.status,
 									Details:     "prot=0x5",
 								}},
