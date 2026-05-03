@@ -60,7 +60,7 @@
 - [x] Step 1: 文書全面改定（本計画の 0 章反映）
 - [x] Step 2: 解析結果ストアパッケージ新設と旧パッケージ互換層作成
 - [x] Step 3: record 側シンボル改名
-- [ ] Step 4: runner 側シンボル改名
+- [x] Step 4: runner 側シンボル改名
 - [ ] Step 5: cmd 配線の完全移行
 - [ ] Step 6: テスト名・ログ語彙の改名
 - [ ] Step 7: 互換 alias 削除
@@ -127,10 +127,10 @@
 
 作業内容:
 
-- [ ] libCache を libAnalysisStore に改名
-- [ ] NewNetworkAnalyzerWithLibCache を NewNetworkAnalyzerWithLibAnalysisStore に改名
-- [ ] Get 呼び出しを LoadAnalysis に差し替え
-- [ ] ErrCacheMiss 判定を ErrAnalysisNotFound 判定へ更新
+- [x] libCache を libAnalysisStore に改名
+- [x] NewNetworkAnalyzerWithLibCache を NewNetworkAnalyzerWithLibAnalysisStore に改名
+- [x] Get 呼び出しを LoadAnalysis に差し替え
+- [x] ErrCacheMiss 判定を ErrAnalysisNotFound 判定へ更新
 
 ### Step 5: cmd 配線の完全移行
 

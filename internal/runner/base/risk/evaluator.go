@@ -5,6 +5,7 @@ package risk
 import (
 	"runtime"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysisstore"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
@@ -28,6 +29,22 @@ func NewStandardEvaluatorWithStores(
 	syscallStore fileanalysis.SyscallAnalysisStore,
 ) Evaluator {
 	return &StandardEvaluator{networkAnalyzer: security.NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, syscallStore)}
+}
+
+// NewStandardEvaluatorWithLibAnalysisStore creates a new standard risk evaluator with
+// all stores including the dynamic library analysis store for per-library network detection.
+// If any store is nil, the corresponding lookup is disabled.
+func NewStandardEvaluatorWithLibAnalysisStore(
+	symStore fileanalysis.NetworkSymbolStore,
+	syscallStore fileanalysis.SyscallAnalysisStore,
+	depsStore fileanalysis.DynLibDepsStore,
+	libAnalysisStore dynlibanalysisstore.DynamicLibAnalysisStore,
+) Evaluator {
+	return &StandardEvaluator{
+		networkAnalyzer: security.NewNetworkAnalyzerWithLibAnalysisStore(
+			runtime.GOOS, symStore, syscallStore, depsStore, libAnalysisStore,
+		),
+	}
 }
 
 // EvaluateRisk analyzes a command and returns its risk level

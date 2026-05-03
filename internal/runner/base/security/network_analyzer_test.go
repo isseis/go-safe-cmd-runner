@@ -8,8 +8,10 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysisstore"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestSyscallAnalysisHasSVCSignal_Nil verifies that a nil result returns false.
@@ -38,6 +40,9 @@ func TestConstructors_AcceptCurrentGOOS(t *testing.T) {
 	})
 	assert.NotPanics(t, func() {
 		_ = NewNetworkAnalyzerWithStores(runtime.GOOS, nil, nil)
+	})
+	assert.NotPanics(t, func() {
+		_ = NewNetworkAnalyzerWithLibAnalysisStore(runtime.GOOS, nil, nil, nil, nil)
 	})
 }
 
@@ -624,4 +629,129 @@ func TestSyscallAnalysisHasNetworkSignal_NegativeNumber(t *testing.T) {
 		},
 	}
 	assert.False(t, syscallAnalysisHasNetworkSignal(result, runtime.GOOS))
+}
+
+// ----- mock types for checkDynLibDepsNetwork tests -----
+
+type mockDynLibDepsStore struct {
+	deps []fileanalysis.LibEntry
+	err  error
+}
+
+func (m *mockDynLibDepsStore) LoadDynLibDeps(_ string, _ string) ([]fileanalysis.LibEntry, error) {
+	return m.deps, m.err
+}
+
+type mockDynLibAnalysisStore struct {
+	results map[string]*dynlibanalysisstore.DynamicLibAnalysisResult
+	err     error
+}
+
+func (m *mockDynLibAnalysisStore) LoadOrAnalyzeAndStore(libPath, _ string) (*dynlibanalysisstore.DynamicLibAnalysisResult, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.results[libPath], nil
+}
+
+func (m *mockDynLibAnalysisStore) LoadAnalysis(libPath, _ string) (*dynlibanalysisstore.DynamicLibAnalysisResult, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	r, ok := m.results[libPath]
+	if !ok {
+		return nil, dynlibanalysisstore.ErrAnalysisNotFound
+	}
+	return r, nil
+}
+
+func makeNetworkAnalyzerWithLibStores(
+	depsStore fileanalysis.DynLibDepsStore,
+	libStore dynlibanalysisstore.DynamicLibAnalysisStore,
+) *NetworkAnalyzer {
+	return NewNetworkAnalyzerWithLibAnalysisStore(runtime.GOOS, nil, nil, depsStore, libStore)
+}
+
+// TestCheckDynLibDepsNetwork_NetworkSymbol verifies that a library with a detected
+// network symbol causes the result to be (isNetwork=true, isHighRisk=false).
+func TestCheckDynLibDepsNetwork_NetworkSymbol(t *testing.T) {
+	dep := fileanalysis.LibEntry{SOName: "libssl.so.3", Path: "/usr/lib/libssl.so.3", Hash: "sha256:aa"}
+	depsStore := &mockDynLibDepsStore{deps: []fileanalysis.LibEntry{dep}}
+	libStore := &mockDynLibAnalysisStore{
+		results: map[string]*dynlibanalysisstore.DynamicLibAnalysisResult{
+			"/usr/lib/libssl.so.3": {
+				SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
+					DetectedSymbols: []string{"connect"},
+				},
+			},
+		},
+	}
+	a := makeNetworkAnalyzerWithLibStores(depsStore, libStore)
+	isNetwork, isHighRisk := a.checkDynLibDepsNetwork(testCmdPath, testContentHash)
+	require.True(t, isNetwork)
+	assert.False(t, isHighRisk)
+}
+
+// TestCheckDynLibDepsNetwork_DynamicLoadSymbols verifies that a library with dlopen/dlsym
+// causes isHighRisk=true.
+func TestCheckDynLibDepsNetwork_DynamicLoadSymbols(t *testing.T) {
+	dep := fileanalysis.LibEntry{SOName: "libplugin.so", Path: "/usr/lib/libplugin.so", Hash: "sha256:bb"}
+	depsStore := &mockDynLibDepsStore{deps: []fileanalysis.LibEntry{dep}}
+	libStore := &mockDynLibAnalysisStore{
+		results: map[string]*dynlibanalysisstore.DynamicLibAnalysisResult{
+			"/usr/lib/libplugin.so": {
+				DynamicLoadSymbols: []string{"dlopen"},
+			},
+		},
+	}
+	a := makeNetworkAnalyzerWithLibStores(depsStore, libStore)
+	_, isHighRisk := a.checkDynLibDepsNetwork(testCmdPath, testContentHash)
+	assert.True(t, isHighRisk)
+}
+
+// TestCheckDynLibDepsNetwork_ErrAnalysisNotFound verifies fail-closed behaviour when
+// library analysis is missing from the store.
+func TestCheckDynLibDepsNetwork_ErrAnalysisNotFound(t *testing.T) {
+	dep := fileanalysis.LibEntry{SOName: "libunknown.so", Path: "/usr/lib/libunknown.so", Hash: "sha256:cc"}
+	depsStore := &mockDynLibDepsStore{deps: []fileanalysis.LibEntry{dep}}
+	libStore := &mockDynLibAnalysisStore{
+		// results is nil → LoadAnalysis returns ErrAnalysisNotFound
+	}
+	a := makeNetworkAnalyzerWithLibStores(depsStore, libStore)
+	isNetwork, isHighRisk := a.checkDynLibDepsNetwork(testCmdPath, testContentHash)
+	assert.True(t, isNetwork)
+	assert.True(t, isHighRisk)
+}
+
+// TestCheckDynLibDepsNetwork_VDSOSkipped verifies that VDSO entries are skipped.
+func TestCheckDynLibDepsNetwork_VDSOSkipped(t *testing.T) {
+	dep := fileanalysis.LibEntry{SOName: "linux-vdso.so.1", Path: "", Hash: ""}
+	depsStore := &mockDynLibDepsStore{deps: []fileanalysis.LibEntry{dep}}
+	// libStore with error to ensure it is never called.
+	libStore := &mockDynLibAnalysisStore{err: errors.New("should not be called")}
+	a := makeNetworkAnalyzerWithLibStores(depsStore, libStore)
+	isNetwork, isHighRisk := a.checkDynLibDepsNetwork(testCmdPath, testContentHash)
+	assert.False(t, isNetwork)
+	assert.False(t, isHighRisk)
+}
+
+// TestCheckDynLibDepsNetwork_NoDeps verifies that a static binary (no deps) returns
+// (false, false).
+func TestCheckDynLibDepsNetwork_NoDeps(t *testing.T) {
+	depsStore := &mockDynLibDepsStore{deps: nil}
+	libStore := &mockDynLibAnalysisStore{}
+	a := makeNetworkAnalyzerWithLibStores(depsStore, libStore)
+	isNetwork, isHighRisk := a.checkDynLibDepsNetwork(testCmdPath, testContentHash)
+	assert.False(t, isNetwork)
+	assert.False(t, isHighRisk)
+}
+
+// TestCheckDynLibDepsNetwork_DepsLoadError verifies fail-closed when deps store errors.
+func TestCheckDynLibDepsNetwork_DepsLoadError(t *testing.T) {
+	depsStore := &mockDynLibDepsStore{err: errors.New("disk read failed")}
+	libStore := &mockDynLibAnalysisStore{}
+	a := makeNetworkAnalyzerWithLibStores(depsStore, libStore)
+	isNetwork, isHighRisk := a.checkDynLibDepsNetwork(testCmdPath, testContentHash)
+	assert.True(t, isNetwork)
+	assert.True(t, isHighRisk)
 }
