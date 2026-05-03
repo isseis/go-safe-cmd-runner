@@ -91,7 +91,7 @@ func TestAnalyzeOneLibrary_networkSymbolDetected(t *testing.T) {
 		},
 	})
 
-	entry, hasNetwork, warnings, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
+	entry, hasNetwork, _, warnings, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libfoo.so.1",
 		Path:   elfTestDataPath(t, "with_socket.elf"),
 	})
@@ -111,7 +111,7 @@ func TestAnalyzeOneLibrary_networkSyscallDetected(t *testing.T) {
 		table:    &libraryTestSyscallTable{network: map[int]bool{41: true}},
 	})
 
-	entry, hasNetwork, warnings, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
+	entry, hasNetwork, _, warnings, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libbar.so.1",
 		Path:   elfTestDataPath(t, "with_socket.elf"),
 	})
@@ -128,7 +128,7 @@ func TestAnalyzeOneLibrary_nonNetwork(t *testing.T) {
 	v.SetBinaryAnalyzer(&libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}})
 	v.SetSyscallAnalyzer(&libraryTestSyscallAnalyzer{syscalls: []common.SyscallInfo{{Number: 1, Name: "write"}}})
 
-	entry, hasNetwork, warnings, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
+	entry, hasNetwork, _, warnings, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libbaz.so.1",
 		Path:   elfTestDataPath(t, "with_socket.elf"),
 	})
@@ -142,7 +142,7 @@ func TestAnalyzeOneLibrary_missingFileAddsWarning(t *testing.T) {
 	v := validatorWithTempHashDir(t)
 	v.SetSyscallAnalyzer(&libraryTestSyscallAnalyzer{})
 
-	entry, hasNetwork, warnings, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
+	entry, hasNetwork, _, warnings, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libmissing.so.1",
 		Path:   filepath.Join(safeTempDir(t), "missing.so"),
 	})
@@ -150,14 +150,14 @@ func TestAnalyzeOneLibrary_missingFileAddsWarning(t *testing.T) {
 	require.NotNil(t, entry)
 	assert.False(t, hasNetwork)
 	require.NotEmpty(t, warnings)
-	assert.Contains(t, warnings[0], "failed to open library ELF")
+	assert.Contains(t, warnings[0], "failed to open library file")
 }
 
 func TestAnalyzeOneLibrary_nonELFLibrarySkipsSyscallScan(t *testing.T) {
 	v := validatorWithTempHashDir(t)
 	v.SetSyscallAnalyzer(&libraryTestSyscallAnalyzer{syscalls: []common.SyscallInfo{{Number: 41, Name: "socket"}}})
 
-	entry, hasNetwork, warnings, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
+	entry, hasNetwork, _, warnings, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libscript.so.1",
 		Path:   elfTestDataPath(t, "script.sh"),
 	})
@@ -172,7 +172,7 @@ func TestAnalyzeOneLibrary_unsupportedArchSkipsWarning(t *testing.T) {
 	v := validatorWithTempHashDir(t)
 	v.SetSyscallAnalyzer(&libraryTestSyscallAnalyzer{err: ErrUnsupportedArch})
 
-	entry, hasNetwork, warnings, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
+	entry, hasNetwork, _, warnings, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libfoo.so.1",
 		Path:   elfTestDataPath(t, "with_socket.elf"),
 	})

@@ -11,6 +11,7 @@
 - [x] Step 7: runner 側のネットワーク判定拡張
 - [x] Step 8: `cmd/record/main.go` の有効化
 - [x] Step 9: 統合テスト（AC-1 〜 AC-8）
+- [ ] Step 11: AC-9/10/11 対応テスト追加
 - [x] Step 10: `make fmt` `make test` `make lint` で品質確認
 
 ---
@@ -167,6 +168,19 @@
 - [x] `make fmt` — gofumpt によるフォーマット
 - [x] `make test` — 全テスト通過
 - [x] `make lint` — golangci-lint エラーなし
+
+---
+
+### Step 11: AC-9/10/11 対応テスト追加
+
+**対象ファイル**: `internal/filevalidator/validator_library_analysis_test.go`、`internal/security/binaryanalyzer/syscall_wrapper_libs_test.go`
+
+作業内容:
+- [ ] `TestAnalyzeLibraries_vdsoExcluded`: `linux-vdso.so.1` を DynLibDeps に含めて実行し、`LibraryAnalysis` に含まれないことを確認（AC-9）
+- [ ] `TestAnalyzeLibraries_fileTooLarge`: ファイルサイズが `maxLibraryFileSize` を超えるモックを設定し、解析スキップと `AnalysisWarnings` 追記を確認（AC-10）
+- [ ] `analyzeOneLibrary` の冒頭にファイルサイズチェックを実装（詳細仕様 4.5 節）
+- [ ] `TestIsSyscallWrapperLibrary_prefixBoundary_libcc`: `libcc.so.1` が `false` を返すことを追加確認（AC-11）
+- [ ] `make fmt` / `go test -tags test -v ./...` / `make lint` で品質確認
 
 ---
 

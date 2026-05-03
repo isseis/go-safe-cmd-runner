@@ -129,8 +129,9 @@ func (v *Validator) Store() *fileanalysis.Store {
 }
 
 type libraryCacheEntry struct {
-	entry      fileanalysis.LibraryAnalysisEntry
-	hasNetwork bool
+	entry              fileanalysis.LibraryAnalysisEntry
+	hasNetwork         bool
+	dynamicLoadSymbols []string
 }
 
 // Validator provides functionality to record and verify file hashes.
@@ -547,6 +548,7 @@ func (v *Validator) SetLibraryAnalysisEnabled(enabled bool) {
 func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (
 	entry *fileanalysis.LibraryAnalysisEntry,
 	hasNetwork bool,
+	dynamicLoadSymbols []string,
 	warnings []string,
 	err error,
 ) {
@@ -573,11 +575,28 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (
 			warnings = append(warnings,
 				fmt.Sprintf("library symbol analysis failed for %s: %v", lib.SOName, output.Error))
 		}
+		dynamicLoadSymbols = convertDetectedSymbols(output.DynamicLoadSymbols)
 	}
 
 	if v.syscallAnalyzer == nil {
-		return entry, hasNetwork, warnings, nil
+		return entry, hasNetwork, dynamicLoadSymbols, warnings, nil
 	}
+
+	// Skip machine-code analysis when the library file exceeds the size limit.
+	// This mirrors the maxFileSize check applied to executable binaries.
+	f, openErr := v.fileSystem.SafeOpenFile(lib.Path, os.O_RDONLY, 0)
+	if openErr != nil {
+		warnings = append(warnings,
+			fmt.Sprintf("failed to open library file %s: %v", lib.SOName, openErr))
+		return entry, hasNetwork, dynamicLoadSymbols, warnings, nil
+	}
+	if fi, statErr := f.Stat(); statErr == nil && fi.Size() > maxFileSize {
+		_ = f.Close()
+		warnings = append(warnings,
+			fmt.Sprintf("library file too large, skipping analysis for %s", lib.SOName))
+		return entry, hasNetwork, dynamicLoadSymbols, warnings, nil
+	}
+	_ = f.Close()
 
 	elfFile, openErr := openELFFile(v.fileSystem, lib.Path)
 	if openErr != nil {
@@ -585,7 +604,7 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (
 			warnings = append(warnings,
 				fmt.Sprintf("failed to open library ELF %s: %v", lib.SOName, openErr))
 		}
-		return entry, hasNetwork, warnings, nil
+		return entry, hasNetwork, dynamicLoadSymbols, warnings, nil
 	}
 	defer func() { _ = elfFile.Close() }()
 
@@ -595,7 +614,7 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (
 			warnings = append(warnings,
 				fmt.Sprintf("syscall analysis failed for library %s: %v", lib.SOName, analyzeErr))
 		}
-		return entry, hasNetwork, warnings, nil
+		return entry, hasNetwork, dynamicLoadSymbols, warnings, nil
 	}
 
 	if len(detected) > 0 {
@@ -612,7 +631,7 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (
 		}
 	}
 
-	return entry, hasNetwork, warnings, nil
+	return entry, hasNetwork, dynamicLoadSymbols, warnings, nil
 }
 
 // analyzeLibraries runs library-level analysis for non-wrapper dynamic dependencies.
@@ -631,6 +650,7 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 
 	var entries []fileanalysis.LibraryAnalysisEntry
 	var networkSONames []string
+	var allDynLoadSymbols []string
 
 	for _, lib := range record.DynLibDeps {
 		if isKnownVDSO(lib.SOName) {
@@ -647,35 +667,48 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 			if cached.hasNetwork {
 				networkSONames = append(networkSONames, lib.SOName)
 			}
+			allDynLoadSymbols = append(allDynLoadSymbols, cached.dynamicLoadSymbols...)
 			continue
 		}
 
-		entry, hasNetwork, warnings, err := v.analyzeOneLibrary(lib)
+		entry, hasNetwork, dynLoadSyms, warnings, err := v.analyzeOneLibrary(lib)
 		if err != nil {
 			return err
 		}
 		record.AnalysisWarnings = append(record.AnalysisWarnings, warnings...)
 
-		cache := libraryCacheEntry{entry: *entry, hasNetwork: hasNetwork}
+		cache := libraryCacheEntry{entry: *entry, hasNetwork: hasNetwork, dynamicLoadSymbols: dynLoadSyms}
 		v.libraryAnalysisCache[lib.Path] = cache
 
 		entries = append(entries, cache.entry)
 		if cache.hasNetwork {
 			networkSONames = append(networkSONames, lib.SOName)
 		}
+		allDynLoadSymbols = append(allDynLoadSymbols, dynLoadSyms...)
 	}
 
 	record.LibraryAnalysis = entries
 
-	if len(networkSONames) > 0 {
-		slices.Sort(networkSONames)
-		networkSONames = slices.Compact(networkSONames)
+	if len(networkSONames) > 0 || len(allDynLoadSymbols) > 0 {
 		if record.SymbolAnalysis == nil {
 			record.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{}
 		}
+	}
+	if len(networkSONames) > 0 {
+		slices.Sort(networkSONames)
+		networkSONames = slices.Compact(networkSONames)
 		record.SymbolAnalysis.DetectedLibraryNetworkDeps = networkSONames
 	} else if record.SymbolAnalysis != nil {
 		record.SymbolAnalysis.DetectedLibraryNetworkDeps = nil
+	}
+	if len(allDynLoadSymbols) > 0 {
+		// Merge library-detected dlopen/dlsym symbols into the exec record's
+		// DynamicLoadSymbols so that the runner can apply high-risk judgment.
+		merged := []string{}
+		merged = append(merged, record.SymbolAnalysis.DynamicLoadSymbols...)
+		merged = append(merged, allDynLoadSymbols...)
+		slices.Sort(merged)
+		record.SymbolAnalysis.DynamicLoadSymbols = slices.Compact(merged)
 	}
 
 	if len(record.AnalysisWarnings) > 0 {
@@ -1024,6 +1057,11 @@ const (
 	machoFatMagicLE = uint32(0xBEBAFECA)
 	machoFatCigamLE = uint32(0xCAFEBABE)
 )
+
+// maxFileSize is the maximum file size (1 GB) for binary analysis.
+// Files larger than this are skipped to bound analysis time and memory usage.
+// Matches the limit used in elfanalyzer and machoanalyzer.
+const maxFileSize = 1 << 30
 
 // archNameArm64 is the canonical architecture string for Apple Silicon (arm64).
 const archNameArm64 = "arm64"
