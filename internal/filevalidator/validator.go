@@ -129,9 +129,10 @@ func (v *Validator) Store() *fileanalysis.Store {
 }
 
 type libraryCacheEntry struct {
-	entry              fileanalysis.LibraryAnalysisEntry
-	hasNetwork         bool
-	dynamicLoadSymbols []string
+type libraryCacheEntry struct {
+	entry      fileanalysis.LibraryAnalysisEntry
+	hasNetwork bool
+	warnings   []string
 }
 
 // Validator provides functionality to record and verify file hashes.
