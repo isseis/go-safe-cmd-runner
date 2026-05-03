@@ -3,7 +3,7 @@
 ## 進捗状況
 
 - [x] Step 1: スキーマ変更
-- [ ] Step 2: `binaryanalyzer/syscall_wrapper_libs.go` 新規作成とテスト
+- [x] Step 2: `binaryanalyzer/syscall_wrapper_libs.go` 新規作成とテスト
 - [ ] Step 3: `Validator` にキャッシュフィールドと setter 追加
 - [ ] Step 4: `analyzeOneLibrary()` 実装とユニットテスト
 - [ ] Step 5: `analyzeLibraries()` 実装とユニットテスト
@@ -37,14 +37,14 @@
 - 新規: `internal/security/binaryanalyzer/syscall_wrapper_libs_test.go`
 
 作業内容:
-- [ ] `syscallWrapperPrefixes` スライスを定義（`libc`, `libpthread`, `libdl`, `librt`,
+- [x] `syscallWrapperPrefixes` スライスを定義（`libc`, `libpthread`, `libdl`, `librt`,
   `libgcc_s`, `ld-linux`, `ld-linux-x86-64`, `ld-linux-aarch64`, `linux-vdso`）
-- [ ] `IsSyscallWrapperLibrary(soname string) bool` 関数を実装（既存の
+- [x] `IsSyscallWrapperLibrary(soname string) bool` 関数を実装（既存の
   `matchesKnownPrefix` を再利用）
-- [ ] テスト: マッチするケース（`libc.so.6`, `libpthread.so.0`, `ld-linux-x86-64.so.2`,
+- [x] テスト: マッチするケース（`libc.so.6`, `libpthread.so.0`, `ld-linux-x86-64.so.2`,
   `linux-vdso.so.1`）
-- [ ] テスト: マッチしないケース（`libssl.so.3`, `libcurl.so.4`, `libstdc++.so.6`）
-- [ ] テスト: 前方一致境界ケース（`libcc.so.1` → `false`, `libcpp.so.1` → `false`）
+- [x] テスト: マッチしないケース（`libssl.so.3`, `libcurl.so.4`, `libstdc++.so.6`）
+- [x] テスト: 前方一致境界ケース（`libcc.so.1` → `false`, `libcpp.so.1` → `false`）
 
 ---
 
