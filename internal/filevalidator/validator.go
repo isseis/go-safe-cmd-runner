@@ -129,8 +129,8 @@ func (v *Validator) Store() *fileanalysis.Store {
 }
 
 type libraryCacheEntry struct {
-	entry      fileanalysis.LibraryAnalysisEntry //nolint:unused // used in analyzeLibraries cache in Step 5.
-	hasNetwork bool                              //nolint:unused // used in analyzeLibraries cache in Step 5.
+	entry      fileanalysis.LibraryAnalysisEntry
+	hasNetwork bool
 }
 
 // Validator provides functionality to record and verify file hashes.
@@ -610,6 +610,75 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (
 	return entry, hasNetwork, warnings, nil
 }
 
+// analyzeLibraries runs library-level analysis for non-wrapper dynamic dependencies.
+func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
+	if !v.libraryAnalysisEnabled || len(record.DynLibDeps) == 0 {
+		record.LibraryAnalysis = nil
+		if record.SymbolAnalysis != nil {
+			record.SymbolAnalysis.DetectedLibraryNetworkDeps = nil
+		}
+		return nil
+	}
+
+	if v.libraryAnalysisCache == nil {
+		v.libraryAnalysisCache = make(map[string]libraryCacheEntry)
+	}
+
+	var entries []fileanalysis.LibraryAnalysisEntry
+	var networkSONames []string
+
+	for _, lib := range record.DynLibDeps {
+		if isKnownVDSO(lib.SOName) {
+			continue
+		}
+		if binaryanalyzer.IsSyscallWrapperLibrary(lib.SOName) {
+			continue
+		}
+
+		if cached, ok := v.libraryAnalysisCache[lib.Path]; ok {
+			entries = append(entries, cached.entry)
+			if cached.hasNetwork {
+				networkSONames = append(networkSONames, lib.SOName)
+			}
+			continue
+		}
+
+		entry, hasNetwork, warnings, err := v.analyzeOneLibrary(lib)
+		if err != nil {
+			return err
+		}
+		record.AnalysisWarnings = append(record.AnalysisWarnings, warnings...)
+
+		cache := libraryCacheEntry{entry: *entry, hasNetwork: hasNetwork}
+		v.libraryAnalysisCache[lib.Path] = cache
+
+		entries = append(entries, cache.entry)
+		if cache.hasNetwork {
+			networkSONames = append(networkSONames, lib.SOName)
+		}
+	}
+
+	record.LibraryAnalysis = entries
+
+	if len(networkSONames) > 0 {
+		slices.Sort(networkSONames)
+		networkSONames = slices.Compact(networkSONames)
+		if record.SymbolAnalysis == nil {
+			record.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{}
+		}
+		record.SymbolAnalysis.DetectedLibraryNetworkDeps = networkSONames
+	} else if record.SymbolAnalysis != nil {
+		record.SymbolAnalysis.DetectedLibraryNetworkDeps = nil
+	}
+
+	if len(record.AnalysisWarnings) > 0 {
+		slices.Sort(record.AnalysisWarnings)
+		record.AnalysisWarnings = slices.Compact(record.AnalysisWarnings)
+	}
+
+	return nil
+}
+
 // SetIncludeDebugInfo controls whether debug information (Occurrences,
 // DeterminationStats) is included in saved JSON output.
 func (v *Validator) SetIncludeDebugInfo(b bool) {
@@ -618,7 +687,7 @@ func (v *Validator) SetIncludeDebugInfo(b bool) {
 
 // isKnownVDSO reports whether soname refers to a Linux virtual DSO.
 //
-//nolint:unused // wired into analyzeLibraries in Step 5.
+// isKnownVDSO reports whether soname refers to a Linux virtual DSO.
 func isKnownVDSO(soname string) bool {
 	switch soname {
 	case "linux-vdso.so.1", "linux-gate.so.1", "linux-vdso64.so.1":

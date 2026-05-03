@@ -6,7 +6,7 @@
 - [x] Step 2: `binaryanalyzer/syscall_wrapper_libs.go` 新規作成とテスト
 - [x] Step 3: `Validator` にキャッシュフィールドと setter 追加
 - [x] Step 4: `analyzeOneLibrary()` 実装とユニットテスト
-- [ ] Step 5: `analyzeLibraries()` 実装とユニットテスト
+- [x] Step 5: `analyzeLibraries()` 実装とユニットテスト
 - [ ] Step 6: `updateAnalysisRecord` への統合
 - [ ] Step 7: runner 側のネットワーク判定拡張
 - [ ] Step 8: `cmd/record/main.go` の有効化
@@ -92,23 +92,23 @@
 **対象ファイル**: `internal/filevalidator/validator.go`、テストファイル
 
 作業内容:
-- [ ] `analyzeLibraries(record *fileanalysis.Record) error` を実装
-  - [ ] `!v.libraryAnalysisEnabled` または `len(record.DynLibDeps) == 0` のときは即時 return nil
-  - [ ] 各 `DynLibDeps` エントリに対してループ:
-    - [ ] `isKnownVDSO(lib.SOName)` の場合はスキップ
-    - [ ] `binaryanalyzer.IsSyscallWrapperLibrary(lib.SOName)` の場合はスキップ
-    - [ ] `v.libraryAnalysisCache[lib.Path]` でキャッシュヒット確認
-    - [ ] キャッシュミスのとき `analyzeOneLibrary` を呼び出してキャッシュに保存
-  - [ ] ネットワーク検出ライブラリの SOName を `slices.Sort` してから `DetectedLibraryNetworkDeps` へ設定
-  - [ ] `record.SymbolAnalysis` が nil のとき新規作成して設定
-  - [ ] `record.LibraryAnalysis` に全エントリを設定
-  - [ ] `record.AnalysisWarnings` を `slices.Sort` で整列
-- [ ] テスト: `libraryAnalysisEnabled = false` → `LibraryAnalysis` nil
-- [ ] テスト: 空の `DynLibDeps` → `LibraryAnalysis` nil
-- [ ] テスト: `libc.so.6` と `libssl.so.3` が依存の場合、`libc` はスキップ、`libssl` のみ解析
-- [ ] テスト: `linux-vdso.so.1` はスキップ
-- [ ] テスト: 同一ライブラリを 2 回参照（異なるコマンドが同じライブラリに依存）→ `analyzeOneLibrary` は 1 回のみ
-- [ ] テスト: `SymbolAnalysis` が nil の場合でも `DetectedLibraryNetworkDeps` が設定される
+- [x] `analyzeLibraries(record *fileanalysis.Record) error` を実装
+  - [x] `!v.libraryAnalysisEnabled` または `len(record.DynLibDeps) == 0` のときは即時 return nil
+  - [x] 各 `DynLibDeps` エントリに対してループ:
+    - [x] `isKnownVDSO(lib.SOName)` の場合はスキップ
+    - [x] `binaryanalyzer.IsSyscallWrapperLibrary(lib.SOName)` の場合はスキップ
+    - [x] `v.libraryAnalysisCache[lib.Path]` でキャッシュヒット確認
+    - [x] キャッシュミスのとき `analyzeOneLibrary` を呼び出してキャッシュに保存
+  - [x] ネットワーク検出ライブラリの SOName を `slices.Sort` してから `DetectedLibraryNetworkDeps` へ設定
+  - [x] `record.SymbolAnalysis` が nil のとき新規作成して設定
+  - [x] `record.LibraryAnalysis` に全エントリを設定
+  - [x] `record.AnalysisWarnings` を `slices.Sort` で整列
+- [x] テスト: `libraryAnalysisEnabled = false` → `LibraryAnalysis` nil
+- [x] テスト: 空の `DynLibDeps` → `LibraryAnalysis` nil
+- [x] テスト: `libc.so.6` と `libssl.so.3` が依存の場合、`libc` はスキップ、`libssl` のみ解析
+- [x] テスト: `linux-vdso.so.1` はスキップ
+- [x] テスト: 同一ライブラリを 2 回参照（異なるコマンドが同じライブラリに依存）→ `analyzeOneLibrary` は 1 回のみ
+- [x] テスト: `SymbolAnalysis` が nil の場合でも `DetectedLibraryNetworkDeps` が設定される
 
 ---
 

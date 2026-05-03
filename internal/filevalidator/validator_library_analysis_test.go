@@ -18,9 +18,11 @@ import (
 
 type libraryTestBinaryAnalyzer struct {
 	output binaryanalyzer.AnalysisOutput
+	calls  int
 }
 
 func (s *libraryTestBinaryAnalyzer) AnalyzeNetworkSymbols(_, _ string) binaryanalyzer.AnalysisOutput {
+	s.calls++
 	return s.output
 }
 
@@ -106,7 +108,7 @@ func TestAnalyzeOneLibrary_networkSyscallDetected(t *testing.T) {
 	v.SetBinaryAnalyzer(&libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}})
 	v.SetSyscallAnalyzer(&libraryTestSyscallAnalyzer{
 		syscalls: []common.SyscallInfo{{Number: 41, Name: "socket"}},
-		table: &libraryTestSyscallTable{network: map[int]bool{41: true}},
+		table:    &libraryTestSyscallTable{network: map[int]bool{41: true}},
 	})
 
 	entry, hasNetwork, warnings, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
@@ -179,4 +181,86 @@ func TestAnalyzeOneLibrary_unsupportedArchSkipsWarning(t *testing.T) {
 	assert.False(t, hasNetwork)
 	assert.Nil(t, entry.SyscallAnalysis)
 	assert.Empty(t, warnings)
+}
+
+func TestAnalyzeLibraries_disabled(t *testing.T) {
+	v := validatorWithTempHashDir(t)
+	record := &fileanalysis.Record{
+		DynLibDeps: []fileanalysis.LibEntry{{SOName: "libfoo.so.1", Path: elfTestDataPath(t, "with_socket.elf")}},
+	}
+
+	require.NoError(t, v.analyzeLibraries(record))
+	assert.Nil(t, record.LibraryAnalysis)
+}
+
+func TestAnalyzeLibraries_emptyDynLibDeps(t *testing.T) {
+	v := validatorWithTempHashDir(t)
+	v.SetLibraryAnalysisEnabled(true)
+	record := &fileanalysis.Record{}
+
+	require.NoError(t, v.analyzeLibraries(record))
+	assert.Nil(t, record.LibraryAnalysis)
+}
+
+func TestAnalyzeLibraries_excludesWrapperAndVDSO(t *testing.T) {
+	v := validatorWithTempHashDir(t)
+	v.SetLibraryAnalysisEnabled(true)
+
+	bin := &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}}
+	v.SetBinaryAnalyzer(bin)
+
+	record := &fileanalysis.Record{
+		DynLibDeps: []fileanalysis.LibEntry{
+			{SOName: "libc.so.6", Path: elfTestDataPath(t, "with_socket.elf")},
+			{SOName: "linux-vdso.so.1", Path: ""},
+			{SOName: "libssl.so.3", Path: elfTestDataPath(t, "with_socket.elf")},
+		},
+	}
+
+	require.NoError(t, v.analyzeLibraries(record))
+	require.Len(t, record.LibraryAnalysis, 1)
+	assert.Equal(t, "libssl.so.3", record.LibraryAnalysis[0].SOName)
+	assert.Equal(t, 1, bin.calls)
+}
+
+func TestAnalyzeLibraries_sessionCache(t *testing.T) {
+	v := validatorWithTempHashDir(t)
+	v.SetLibraryAnalysisEnabled(true)
+
+	bin := &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}}
+	v.SetBinaryAnalyzer(bin)
+
+	path := elfTestDataPath(t, "with_socket.elf")
+	record := &fileanalysis.Record{
+		DynLibDeps: []fileanalysis.LibEntry{
+			{SOName: "libfoo.so.1", Path: path},
+			{SOName: "libfoo-alias.so.1", Path: path},
+		},
+	}
+
+	require.NoError(t, v.analyzeLibraries(record))
+	assert.Equal(t, 1, bin.calls)
+	require.Len(t, record.LibraryAnalysis, 2)
+}
+
+func TestAnalyzeLibraries_symbolAnalysisCreatedWhenNil(t *testing.T) {
+	v := validatorWithTempHashDir(t)
+	v.SetLibraryAnalysisEnabled(true)
+
+	v.SetBinaryAnalyzer(&libraryTestBinaryAnalyzer{
+		output: binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.NetworkDetected,
+			DetectedSymbols: []binaryanalyzer.DetectedSymbol{
+				{Name: "socket", Category: "socket"},
+			},
+		},
+	})
+
+	record := &fileanalysis.Record{
+		DynLibDeps: []fileanalysis.LibEntry{{SOName: "libnet.so.1", Path: elfTestDataPath(t, "with_socket.elf")}},
+	}
+
+	require.NoError(t, v.analyzeLibraries(record))
+	require.NotNil(t, record.SymbolAnalysis)
+	require.Equal(t, []string{"libnet.so.1"}, record.SymbolAnalysis.DetectedLibraryNetworkDeps)
 }
