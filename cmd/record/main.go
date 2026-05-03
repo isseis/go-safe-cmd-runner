@@ -26,7 +26,6 @@ import (
 const (
 	hashDirPermissions = 0o750
 	libcCacheSubDir    = "lib-cache"
-	dynlibStoreSubDir  = "dynlib-analysis"
 )
 
 var (
@@ -146,7 +145,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
 		fv.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))
 
-		dynlibStoreDir := filepath.Join(cfg.hashDir, dynlibStoreSubDir)
+		dynlibStoreDir := filepath.Join(cfg.hashDir, dynamicanalysis.StoreSubDir)
 		dynlibStore, dynlibStoreErr := dynamicanalysis.New(dynlibStoreDir, fv)
 		if dynlibStoreErr != nil {
 			fmt.Fprintf(stderr, "Error: Failed to initialize dynamic library analysis store: %v\n", dynlibStoreErr) //nolint:errcheck

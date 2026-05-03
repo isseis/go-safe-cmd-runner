@@ -5,6 +5,10 @@ package dynamicanalysis
 
 import "errors"
 
+// StoreSubDir is the subdirectory name used within the hash directory to store
+// dynamic library analysis results.
+const StoreSubDir = "dynlib-analysis"
+
 // ErrAnalysisNotFound is returned when the analysis result is not found or is invalid.
 // This includes: file not found, schema_version mismatch, lib_hash mismatch, and parse errors.
 var ErrAnalysisNotFound = errors.New("dynamicanalysis: analysis not found")

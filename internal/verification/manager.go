@@ -542,7 +542,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 			}
 			// Initialize dynlib analysis store for runner-side library network detection.
 			// The store is load-only (nil analyzer): analysis is performed by record.
-			dynlibStoreDir := filepath.Join(hashDir, "dynlib-analysis")
+			dynlibStoreDir := filepath.Join(hashDir, dynamicanalysis.StoreSubDir)
 			if ds, dsErr := dynamicanalysis.New(dynlibStoreDir, nil); dsErr == nil {
 				manager.dynlibAnalysisStore = ds
 			} else {
