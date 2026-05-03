@@ -59,7 +59,7 @@ func NewNormalResourceManagerWithStores(
 		executor:         exec,
 		fileSystem:       fs,
 		privilegeManager: privMgr,
-		riskEvaluator:    risk.NewStandardEvaluatorWithLibAnalysisStore(symStore, syscallStore, depsStore, libAnalysisStore),
+		riskEvaluator:    risk.NewStandardEvaluator(symStore, syscallStore, depsStore, libAnalysisStore),
 		outputManager:    outputMgr,
 		maxOutputSize:    maxOutputSize,
 		logger:           logger,

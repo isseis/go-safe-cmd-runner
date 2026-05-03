@@ -21,27 +21,16 @@ type StandardEvaluator struct {
 	networkAnalyzer *security.NetworkAnalyzer
 }
 
-// NewStandardEvaluatorWithStores creates a new standard risk evaluator with
-// both symbol and syscall analysis caches enabled when the corresponding stores
-// are non-nil.
-func NewStandardEvaluatorWithStores(
-	symStore fileanalysis.NetworkSymbolStore,
-	syscallStore fileanalysis.SyscallAnalysisStore,
-) Evaluator {
-	return &StandardEvaluator{networkAnalyzer: security.NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, syscallStore)}
-}
-
-// NewStandardEvaluatorWithLibAnalysisStore creates a new standard risk evaluator with
-// all stores including the dynamic library analysis store for per-library network detection.
-// If any store is nil, the corresponding lookup is disabled.
-func NewStandardEvaluatorWithLibAnalysisStore(
+// NewStandardEvaluator creates a new standard risk evaluator with the given stores.
+// Any nil store disables the corresponding analysis.
+func NewStandardEvaluator(
 	symStore fileanalysis.NetworkSymbolStore,
 	syscallStore fileanalysis.SyscallAnalysisStore,
 	depsStore fileanalysis.DynLibDepsStore,
 	libAnalysisStore dynamicanalysis.Store,
 ) Evaluator {
 	return &StandardEvaluator{
-		networkAnalyzer: security.NewNetworkAnalyzerWithLibAnalysisStore(
+		networkAnalyzer: security.NewNetworkAnalyzer(
 			runtime.GOOS, symStore, syscallStore, depsStore, libAnalysisStore,
 		),
 	}

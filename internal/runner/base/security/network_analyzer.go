@@ -37,25 +37,9 @@ type NetworkAnalyzer struct {
 	libAnalysisStore dynamicanalysis.Store             // nil means dynlib check disabled
 }
 
-// NewNetworkAnalyzerWithStores creates a NetworkAnalyzer with both
-// symbol and syscall stores for cache-based analysis.
-// If either store is nil, the corresponding cache lookup is disabled.
-func NewNetworkAnalyzerWithStores(
-	goos string,
-	symStore fileanalysis.NetworkSymbolStore,
-	svcStore fileanalysis.SyscallAnalysisStore,
-) *NetworkAnalyzer {
-	return &NetworkAnalyzer{
-		goos:         isec.RequireGOOS(goos),
-		store:        symStore,
-		syscallStore: svcStore,
-	}
-}
-
-// NewNetworkAnalyzerWithLibAnalysisStore creates a NetworkAnalyzer with all stores
-// including the dynamic library analysis store for per-library network detection.
-// If any store is nil, the corresponding lookup is disabled.
-func NewNetworkAnalyzerWithLibAnalysisStore(
+// NewNetworkAnalyzer creates a NetworkAnalyzer with the given stores.
+// Any nil store disables the corresponding analysis.
+func NewNetworkAnalyzer(
 	goos string,
 	symStore fileanalysis.NetworkSymbolStore,
 	svcStore fileanalysis.SyscallAnalysisStore,
