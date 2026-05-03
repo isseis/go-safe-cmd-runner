@@ -41,9 +41,6 @@ func TestConstructors_AcceptCurrentGOOS(t *testing.T) {
 	assert.NotPanics(t, func() {
 		_ = NewNetworkAnalyzer(runtime.GOOS, nil, nil, nil, nil)
 	})
-	assert.NotPanics(t, func() {
-		_ = NewNetworkAnalyzer(runtime.GOOS, nil, nil, nil, nil)
-	})
 }
 
 // TestSyscallAnalysisHasSVCSignal_Empty verifies that an empty result returns false.
