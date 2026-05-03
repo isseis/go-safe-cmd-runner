@@ -86,9 +86,14 @@ fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer(runtime.GOOS))
 syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
 fv.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))
 
-// LibcCacheManager: libc syscall ラッパーシンボルキャッシュ
+// LibcCacheManager: libc syscall ラッパーシンボルキャッシュ（Linux）
 cacheMgr, _ := libccache.NewLibcCacheManager(cacheDir, fs, libcAnalyzer)
 fv.SetLibcCache(libccache.NewCacheAdapter(cacheMgr, syscallAnalyzer))
+
+// LibSystemCacheManager: macOS libSystem syscall シンボルキャッシュ（macOS）
+machoCacheMgr, _ := libccache.NewMachoLibSystemCacheManager(machoCacheDir)
+fv.SetLibSystemCache(libccache.NewMachoLibSystemAdapter(machoCacheMgr, fs))
+fv.SetMachoSyscallTable(libccache.MacOSSyscallTable{})
 
 // DynLibAnalyzer: 動的ライブラリ依存関係の再帰解析
 fv.SetELFDynLibAnalyzer(d.elfDynlibAnalyzerFactory())
@@ -98,19 +103,26 @@ fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
 **解析内容**:
 - **syscall 解析** (`internal/security/elfanalyzer/`): x86_64 と arm64 の両アーキテクチャに対応。SYSCALL 命令 (0F 05) / SVC #0 を列挙し、逆方向スキャンで syscall 番号を特定。mprotect/pkey_mprotect + PROT_EXEC の組み合わせ（JIT コード実行相当）を危険パターンとして検出。Go ラッパー呼び出し（syscall.Syscall 等）も Pass 2 で解析
 - **ネットワーク機能検出** (`internal/security/binaryanalyzer/`, `internal/security/elfanalyzer/`): socket, connect, bind 等のシンボル名を `networkSymbols` で正規化し、runner が後続で参照する `detected_symbols` / `dynamic_load_symbols` を生成
+- syscall 解析 (internal/security/elfanalyzer/): x86_64 と arm64 の両アーキテクチャに対応。SYSCALL 命令 (0F 05) / SVC #0 を列挙し、逆方向スキャンで syscall 番号を特定。mprotect/pkey_mprotect + PROT_EXEC の組み合わせ（JIT コード実行相当）を危険パターンとして検出。Go ラッパー呼び出し（syscall.Syscall 等）も Pass 2 で解析。分岐先収束（Branch Convergence）解析によりレジスタコピーチェーンを追跡し、条件分岐を跨ぐ syscall 番号の特定にも対応
+- **ネットワーク機能検出** (`internal/security/binaryanalyzer/`, `internal/security/elfanalyzer/`): socket, connect, bind 等のシンボルの有無からバイナリのネットワーク利用能力を判定
 - **動的ライブラリ依存解析** (`internal/dynlib/elfdynlib/`, `internal/dynlib/machodylib/`): ELF の DT_NEEDED / Mach-O の LC_LOAD_DYLIB を再帰解析し、すべての依存ライブラリのパスとハッシュを記録
-- **libc syscall キャッシュ** (`internal/libccache/`): libc の syscall ラッパーシンボルをキャッシュし、間接的な syscall 呼び出しを解析
+- **libc syscall キャッシュ** (`internal/libccache/`): Linux では libc の syscall ラッパーシンボルをキャッシュし、macOS では libSystem の syscall シンボルをキャッシュすることで、間接的な syscall 呼び出しを解析
 - **shebang 追跡** (`internal/shebang/`): `#!/bin/sh`（直接形式）/ `#!/usr/bin/env python3`（env 形式）等のインタープリタパスを解析・記録
 
 **解析結果の永続化** (`internal/fileanalysis/`):
 
 ```
 fileanalysis.Record（SchemaVersion = 19）
-  ├── ContentHash         // ファイルの SHA-256 ハッシュ
-  ├── DynLibDeps          // 依存ライブラリのパスとハッシュ一覧（[]LibEntry）
-  ├── SyscallAnalysis     // syscall 解析結果（リスクレベル、検出パターン）
-  ├── SymbolAnalysis      // ネットワークシンボル解析結果
-  └── ShebangInterpreter  // インタープリタ情報（スクリプトの場合）
+  ├── ContentHash           // ファイルの SHA-256 ハッシュ
+  ├── DynLibDeps            // 依存ライブラリのパスとハッシュ一覧（[]LibEntry）
+  ├── SyscallAnalysis       // syscall 解析結果
+  │     ├── DetectedSyscalls   // 検出された syscall 一覧（番号・名称・出現箇所・判定方法）
+  │     ├── AnalysisWarnings   // 解析警告（mprotect+PROT_EXEC 検出など）
+  │     ├── ArgEvalResults     // syscall 引数評価結果（mprotect の PROT_EXEC フラグ判定）
+  │     └── DeterminationStats // syscall 番号判定方法の診断統計
+  ├── SymbolAnalysis        // ネットワークシンボル解析結果
+  ├── ShebangInterpreter    // インタープリタ情報（スクリプトの場合）
+  └── AnalysisWarnings      // dynlib 解析の非致命的警告
 ```
 
 **runner 実行時の検証** (`internal/verification/manager.go`):
@@ -171,30 +183,35 @@ type Filter struct {
 - `InheritanceModeExplicit`: グループ固有の許可リストのみを使用
 - `InheritanceModeReject`: 環境変数を許可しない（空の許可リスト）
 
-**変数検証**:
+**変数値の安全性検証**:
 ```go
-// 場所: internal/runner/config/validator.go
-func (v *Validator) validateVariableValue(value string) error {
-    // 一元化されたセキュリティ検証を使用
-    if err := security.IsVariableValueSafe(value); err != nil {
-        // 一貫性のため検証エラー型でセキュリティエラーをラップ
-        return fmt.Errorf("%w: %s", ErrDangerousPattern, err.Error())
+// 場所: internal/runner/base/security/environment_validation.go
+// コマンドはシェルを介さず直接実行されるため、; | $( > < 等のシェルメタ文字は
+// インジェクションリスクがなく、検証対象外とする。
+func (v *Validator) ValidateEnvironmentValue(key, value string) error {
+    if strings.ContainsRune(value, '\x00') {
+        return fmt.Errorf("%w: environment variable %s contains null byte",
+            ErrUnsafeEnvironmentVar, key)
+    }
+    if strings.ContainsAny(value, "\n\r") {
+        return fmt.Errorf("%w: environment variable %s contains newline or carriage return character",
+            ErrUnsafeEnvironmentVar, key)
     }
     return nil
 }
 ```
 
-**危険パターン検出**:
-- コマンド区切り文字: `;`, `|`, `&&`, `||`
-- コマンド置換: `$(...)`, バッククォート
-- ファイル操作: `>`, `<`, `rm `, `dd if=`, `dd of=`
-- コード実行: `exec `, `system `, `eval `
+**変数値の検証対象**:
+コマンドはシェルを介さず直接実行されるため、シェルメタ文字（`;`、`|`、`$(...)`、`>`、`<` 等）はインジェクションリスクを持たず検証対象外とする。以下の文字のみを拒否する：
+- ヌルバイト: `\x00`（ヘッダーインジェクションや構造化出力の破壊に悪用可能）
+- 改行文字: `\n`、`\r`（同上）
 
 #### セキュリティ保証
 - ゼロトラスト環境変数モデル（許可リストのみ）
 - 環境ベースのコマンドインジェクションを防止
 - 機密変数のグループレベル分離
-- 危険なパターンに対する変数名と値の検証
+- 変数名の検証（POSIX 準拠・予約プレフィックスチェック）
+- ヌルバイト・改行文字による変数値の検証（コマンドはシェル経由ではなく直接実行されるため、シェルメタ文字は検証対象外）
 
 ### 4. 安全なファイル操作
 
@@ -1086,9 +1103,9 @@ if !filepath.IsAbs(hashDir) {
 
 **対策**:
 - 厳格な許可リストベースフィルタリング
-- 危険パターン検出
 - グループレベル環境分離
-- 変数名と値の検証
+- 変数名の検証（POSIX 準拠）
+- ヌルバイト・改行文字に対する変数値の検証（コマンドはシェル経由で実行されないため、シェルメタ文字によるインジェクション不成立）
 
 ### コマンドインジェクション
 
