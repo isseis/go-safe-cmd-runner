@@ -64,7 +64,7 @@
 - [x] Step 5: cmd 配線の完全移行
 - [x] Step 6: テスト名・ログ語彙の改名
 - [x] Step 7: 互換 alias 削除
-- [ ] Step 8: fmt/test/lint 実行と最終整合確認
+- [x] Step 8: fmt/test/lint 実行と最終整合確認
 
 ---
 
@@ -173,11 +173,11 @@
 
 ### Step 8: 品質確認と最終整合レビュー
 
-- [ ] make fmt
-- [ ] go test -tags test -v ./...
-- [ ] make lint
-- [ ] 4 文書間で用語・見出し・AC・テスト名の整合を再レビュー
-- [ ] 実施順序と依存関係が矛盾しないことを再確認
+- [x] make fmt
+- [x] go test -tags test -v ./...
+- [x] make lint
+- [x] 4 文書間で用語・見出し・AC・テスト名の整合を再レビュー
+- [x] 実施順序と依存関係が矛盾しないことを再確認
 
 ---
 
