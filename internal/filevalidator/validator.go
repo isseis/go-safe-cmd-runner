@@ -354,6 +354,11 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 			record.SymbolAnalysis.KnownNetworkLibDeps = matched
 		}
 
+		// Analyze dynamic dependencies at library granularity.
+		if err := v.analyzeLibraries(record); err != nil {
+			return err
+		}
+
 		// Analyze ELF syscalls via libc import symbol matching and direct instruction scan.
 		if err := v.analyzeELFSyscalls(record, filePath.String()); err != nil {
 			return err

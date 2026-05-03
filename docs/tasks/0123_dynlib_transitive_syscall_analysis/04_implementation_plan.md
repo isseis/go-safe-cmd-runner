@@ -7,7 +7,7 @@
 - [x] Step 3: `Validator` にキャッシュフィールドと setter 追加
 - [x] Step 4: `analyzeOneLibrary()` 実装とユニットテスト
 - [x] Step 5: `analyzeLibraries()` 実装とユニットテスト
-- [ ] Step 6: `updateAnalysisRecord` への統合
+- [x] Step 6: `updateAnalysisRecord` への統合
 - [ ] Step 7: runner 側のネットワーク判定拡張
 - [ ] Step 8: `cmd/record/main.go` の有効化
 - [ ] Step 9: 統合テスト（AC-1 〜 AC-8）
@@ -117,9 +117,9 @@
 **対象ファイル**: `internal/filevalidator/validator.go`
 
 作業内容:
-- [ ] `KnownNetworkLibDeps` ブロックの直後、`analyzeELFSyscalls` の直前に
+- [x] `KnownNetworkLibDeps` ブロックの直後、`analyzeELFSyscalls` の直前に
   `v.analyzeLibraries(record)` 呼び出しを追加
-- [ ] エラーが返ったとき即時 `return err`
+- [x] エラーが返ったとき即時 `return err`
 
 ---
 
