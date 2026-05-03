@@ -61,5 +61,12 @@ func NewNormalResourceManagerWithOutput(
 	logger *slog.Logger,
 	store fileanalysis.NetworkSymbolStore,
 ) *NormalResourceManager {
-	return NewNormalResourceManagerWithStores(exec, fs, privMgr, outputMgr, maxOutputSize, logger, store, nil, nil, nil)
+	return newNormalManager(Config{
+		Executor:           exec,
+		FileSystem:         fs,
+		PrivilegeManager:   privMgr,
+		MaxOutputSize:      maxOutputSize,
+		Logger:             logger,
+		NetworkSymbolStore: store,
+	}, outputMgr)
 }

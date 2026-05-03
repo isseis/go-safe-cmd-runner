@@ -53,12 +53,8 @@ func NewDefaultResourceManager(cfg Config) (*DefaultResourceManager, error) {
 	}
 
 	mgr := &DefaultResourceManager{
-		mode: cfg.Mode,
-		normal: NewNormalResourceManagerWithStores(
-			cfg.Executor, cfg.FileSystem, cfg.PrivilegeManager,
-			outputMgr, cfg.MaxOutputSize, cfg.Logger,
-			cfg.NetworkSymbolStore, cfg.SyscallStore, cfg.DynLibDepsStore, cfg.LibAnalysisStore,
-		),
+		mode:   cfg.Mode,
+		normal: newNormalManager(cfg, outputMgr),
 	}
 	// Create dry-run manager eagerly to keep state like analyses across mode flips
 	// and to simplify switching without re-wiring dependencies.
