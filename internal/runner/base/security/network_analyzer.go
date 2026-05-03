@@ -318,23 +318,32 @@ func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (i
 		}
 
 		// Check for network signal from syscalls.
-		if result.SyscallAnalysis != nil && len(result.SyscallAnalysis.DetectedSyscalls) > 0 {
+		if result.SyscallAnalysis != nil {
 			table := syscallTableForArch(a.goos, result.SyscallAnalysis.Architecture)
-			if table != nil {
-				for _, s := range result.SyscallAnalysis.DetectedSyscalls {
-					if s.Number >= 0 && table.IsNetworkSyscall(s.Number) {
-						slog.Info("dynlib analysis detected network syscall",
-							"cmd_path", cmdPath, "dep_path", dep.Path,
-							"syscall", s.Name)
-						isNetwork = true
-						break
-					}
-				}
+			if name := firstNetworkSyscall(table, result.SyscallAnalysis); name != "" {
+				slog.Info("dynlib analysis detected network syscall",
+					"cmd_path", cmdPath, "dep_path", dep.Path,
+					"syscall", name)
+				isNetwork = true
 			}
 		}
 	}
 
 	return isNetwork, isHighRisk
+}
+
+// firstNetworkSyscall returns the name of the first network syscall found in
+// data using table for classification. Returns "" if none found or inputs are nil.
+func firstNetworkSyscall(table syscallTableInterface, data *fileanalysis.SyscallAnalysisData) string {
+	if table == nil || data == nil {
+		return ""
+	}
+	for _, s := range data.DetectedSyscalls {
+		if s.Number >= 0 && table.IsNetworkSyscall(s.Number) {
+			return s.Name
+		}
+	}
+	return ""
 }
 
 // isVDSOEntry reports whether soname refers to a Linux virtual DSO that has no
