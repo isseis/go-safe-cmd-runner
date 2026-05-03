@@ -129,10 +129,10 @@ func (v *Validator) Store() *fileanalysis.Store {
 }
 
 type libraryCacheEntry struct {
-type libraryCacheEntry struct {
-	entry      fileanalysis.LibraryAnalysisEntry
-	hasNetwork bool
-	warnings   []string
+	entry              fileanalysis.LibraryAnalysisEntry
+	hasNetwork         bool
+	dynamicLoadSymbols []string
+	warnings           []string
 }
 
 // Validator provides functionality to record and verify file hashes.
@@ -669,6 +669,7 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 				networkSONames = append(networkSONames, lib.SOName)
 			}
 			allDynLoadSymbols = append(allDynLoadSymbols, cached.dynamicLoadSymbols...)
+			record.AnalysisWarnings = append(record.AnalysisWarnings, cached.warnings...)
 			continue
 		}
 
@@ -678,7 +679,7 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 		}
 		record.AnalysisWarnings = append(record.AnalysisWarnings, warnings...)
 
-		cache := libraryCacheEntry{entry: *entry, hasNetwork: hasNetwork, dynamicLoadSymbols: dynLoadSyms}
+		cache := libraryCacheEntry{entry: *entry, hasNetwork: hasNetwork, dynamicLoadSymbols: dynLoadSyms, warnings: warnings}
 		v.libraryAnalysisCache[lib.Path] = cache
 
 		entries = append(entries, cache.entry)
@@ -726,8 +727,6 @@ func (v *Validator) SetIncludeDebugInfo(b bool) {
 	v.includeDebugInfo = b
 }
 
-// isKnownVDSO reports whether soname refers to a Linux virtual DSO.
-//
 // isKnownVDSO reports whether soname refers to a Linux virtual DSO.
 func isKnownVDSO(soname string) bool {
 	switch soname {
