@@ -227,42 +227,46 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 		if data == nil {
 			return false, false
 		}
-		output := binaryanalyzer.AnalysisOutput{
-			DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
-			DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
-		}
-
-		// Check if any detected symbol has a network category (socket, dns, tls, http).
-		// non-network symbols don't trigger NetworkDetected.
-		hasNetworkSymbol := false
-		for _, sym := range data.DetectedSymbols {
-			if binaryanalyzer.IsNetworkSymbolName(sym) {
-				hasNetworkSymbol = true
-				break
-			}
-		}
-
-		if hasNetworkSymbol || len(data.KnownNetworkLibDeps) > 0 {
-			output.Result = binaryanalyzer.NetworkDetected
-			// When network capability is inferred only from KnownNetworkLibDeps,
-			// DetectedSymbols remains empty. Log this explicitly so that logs
-			// clearly explain why the binary is treated as network-capable even
-			// if handleAnalysisOutput logs an empty symbol list.
-			if !hasNetworkSymbol && len(data.KnownNetworkLibDeps) > 0 {
-				slog.Info( //nolint:gosec // G706: cmdPath is a configured command path from TOML, not arbitrary user input
-					"treating binary as network-capable based on known network library dependencies",
-					"path", cmdPath,
-					"known_network_lib_deps", data.KnownNetworkLibDeps,
-				)
-			}
-		} else {
-			output.Result = binaryanalyzer.NoNetworkSymbols
-		}
+		output := buildAnalysisOutputFromSymbolData(data, cmdPath)
 		return handleAnalysisOutput(output, cmdPath)
 	}
 
 	// No store configured or contentHash empty: skip analysis.
 	return false, false
+}
+
+func buildAnalysisOutputFromSymbolData(data *fileanalysis.SymbolAnalysisData, cmdPath string) binaryanalyzer.AnalysisOutput {
+	output := binaryanalyzer.AnalysisOutput{
+		DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
+		DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
+	}
+
+	// Check if any detected symbol has a network category (socket, dns, tls, http).
+	// non-network symbols do not trigger NetworkDetected.
+	hasNetworkSymbol := slices.ContainsFunc(data.DetectedSymbols, binaryanalyzer.IsNetworkSymbolName)
+
+	switch {
+	case hasNetworkSymbol:
+		output.Result = binaryanalyzer.NetworkDetected
+	case len(data.KnownNetworkLibDeps) > 0:
+		output.Result = binaryanalyzer.NetworkDetected
+		slog.Info( //nolint:gosec // G706: cmdPath is a configured command path from TOML, not arbitrary user input
+			"treating binary as network-capable based on known network library dependencies",
+			"path", cmdPath,
+			"known_network_lib_deps", data.KnownNetworkLibDeps,
+		)
+	case len(data.DetectedLibraryNetworkDeps) > 0:
+		output.Result = binaryanalyzer.NetworkDetected
+		slog.Info( //nolint:gosec // G706: cmdPath is a configured command path from TOML, not arbitrary user input
+			"treating binary as network-capable based on library syscall/symbol analysis",
+			"path", cmdPath,
+			"detected_library_network_deps", data.DetectedLibraryNetworkDeps,
+		)
+	default:
+		output.Result = binaryanalyzer.NoNetworkSymbols
+	}
+
+	return output
 }
 
 // syscallAnalysisHasSVCSignal reports whether the given SyscallAnalysisResult

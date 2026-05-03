@@ -212,6 +212,9 @@ LibraryAnalysisEntry {
 | AC-6 | 同一ライブラリが複数の実行ファイルの依存グラフに現れる場合、セッション内で1回だけ解析される（キャッシュ確認） |
 | AC-7 | 存在しないライブラリパスに対しては `AnalysisWarnings` に警告が追加され、処理が継続される |
 | AC-8 | 既存の `.dynsym` UNDEF 解析・機械語 syscall 解析の動作が変わらないこと（回帰テスト） |
+| AC-9 | `linux-vdso.so.1` 等の仮想 DSO は `LibraryAnalysis` に記録されない（VDSO 除外） |
+| AC-10 | 解析対象ライブラリのファイルサイズが上限（1 GB）を超える場合、解析をスキップして `AnalysisWarnings` に警告が記録され、処理が継続される |
+| AC-11 | `libcc.so.1`（`libc` に前方一致するが区切り文字条件を満たさない）は除外されず `LibraryAnalysis` の解析対象となる |
 
 ---
 

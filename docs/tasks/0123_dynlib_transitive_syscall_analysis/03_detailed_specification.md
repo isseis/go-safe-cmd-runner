@@ -256,7 +256,32 @@ func isKnownVDSO(soname string) bool {
 
 `analyzeLibraries` 内の VDSO チェックはこの関数を使う。
 
-### 4.5 `analyzeOneLibrary` メソッド（新規）
+### 4.5 ファイルサイズ上限チェック（FR-3.3.2）
+
+`analyzeOneLibrary` 内、`syscallAnalyzer` が nil でないことを確認した直後、
+ELF open の前にファイルを一度開いて `Stat()` でサイズを検証する。
+
+```go
+f, openErr := v.fileSystem.SafeOpenFile(lib.Path, os.O_RDONLY, 0)
+if openErr != nil {
+    warnings = append(warnings,
+        fmt.Sprintf("failed to open library file %s: %v", lib.SOName, openErr))
+    return entry, hasNetwork, warnings, nil
+}
+if fi, statErr := f.Stat(); statErr == nil && fi.Size() > maxFileSize {
+    _ = f.Close()
+    warnings = append(warnings,
+        fmt.Sprintf("library file too large, skipping analysis for %s", lib.SOName))
+    return entry, hasNetwork, warnings, nil
+}
+_ = f.Close()
+```
+
+`maxFileSize` は既存の実行ファイル解析に用いている定数（`1 << 30 = 1 GB`）を流用する。
+`FileSystem` インタフェースには `Stat` メソッドが存在しないため、`SafeOpenFile` で
+ファイルを開き `File.Stat()` を呼ぶ方式を採用する。
+
+### 4.6 `analyzeOneLibrary` メソッド（新規）
 
 ```go
 // analyzeOneLibrary runs symbol and syscall analysis on a single library.
@@ -362,29 +387,39 @@ SOName 追加判断に使う。独立したヘルパ関数は不要であり、`
 
 ## 5. `internal/runner/base/security/network_analyzer.go`
 
-### 5.1 `isNetworkViaBinaryAnalysis` の変更
+### 5.1 `buildAnalysisOutputFromSymbolData` の変更（AC-5）
 
-既存の `KnownNetworkLibDeps` チェックと同じ位置に以下を追加する。
+既存の `switch` 文に `DetectedLibraryNetworkDeps` ケースを追加する。
 
 変更前（抜粋）:
 ```go
-if hasNetworkSymbol || len(data.KnownNetworkLibDeps) > 0 {
+switch {
+case hasNetworkSymbol:
+    output.Result = binaryanalyzer.NetworkDetected
+case len(data.KnownNetworkLibDeps) > 0:
+    output.Result = binaryanalyzer.NetworkDetected
+    slog.Info(...)
+default:
+    output.Result = binaryanalyzer.NoNetworkSymbols
+}
 ```
 
 変更後:
 ```go
-if hasNetworkSymbol || len(data.KnownNetworkLibDeps) > 0 || len(data.DetectedLibraryNetworkDeps) > 0 {
-```
-
-`KnownNetworkLibDeps` のログ出力と同様のログを `DetectedLibraryNetworkDeps` 専用に追加する。
-
-```go
-if !hasNetworkSymbol && len(data.KnownNetworkLibDeps) == 0 && len(data.DetectedLibraryNetworkDeps) > 0 {
-    slog.Info(
-        "treating binary as network-capable based on library syscall/symbol analysis",
+switch {
+case hasNetworkSymbol:
+    output.Result = binaryanalyzer.NetworkDetected
+case len(data.KnownNetworkLibDeps) > 0:
+    output.Result = binaryanalyzer.NetworkDetected
+    slog.Info("treating binary as network-capable based on known network library dependencies", ...)
+case len(data.DetectedLibraryNetworkDeps) > 0:
+    output.Result = binaryanalyzer.NetworkDetected
+    slog.Info("treating binary as network-capable based on library syscall/symbol analysis",
         "path", cmdPath,
         "detected_library_network_deps", data.DetectedLibraryNetworkDeps,
     )
+default:
+    output.Result = binaryanalyzer.NoNetworkSymbols
 }
 ```
 
@@ -404,11 +439,11 @@ v.SetLibraryAnalysisEnabled(true)
 
 ### 7.1 `syscall_wrapper_libs_test.go`（新規）
 
-| テスト名 | 確認内容 |
-|---------|---------|
-| `TestIsSyscallWrapperLibrary_match` | `libc.so.6`, `libpthread.so.0`, `ld-linux-x86-64.so.2` が `true` を返す |
-| `TestIsSyscallWrapperLibrary_noMatch` | `libssl.so.3`, `libcurl.so.4`, `libstdc++.so.6` が `false` を返す |
-| `TestIsSyscallWrapperLibrary_prefixBoundary` | `libcc.so.1`（`libc` に前方一致するが区切り文字条件を満たさない）が `false` を返す |
+| テスト名 | AC | 確認内容 |
+|---------|-----|----------|
+| `TestIsSyscallWrapperLibrary_match` | AC-3,4 | `libc.so.6`, `libpthread.so.0`, `ld-linux-x86-64.so.2` が `true` を返す |
+| `TestIsSyscallWrapperLibrary_noMatch` | AC-11 | `libssl.so.3`, `libcurl.so.4`, `libstdc++.so.6` が `false` を返す |
+| `TestIsSyscallWrapperLibrary_prefixBoundary` | AC-11 | `libcc.so.1`（`libc` に前方一致するが区切り文字条件を満たさない）が `false` を返す |
 
 ### 7.2 `validator_library_analysis_test.go`（新規、`filevalidator` パッケージ）
 
@@ -426,6 +461,9 @@ v.SetLibraryAnalysisEnabled(true)
 | `TestAnalyzeLibraries_sessionCache` | AC-6 | 同じライブラリを 2 回参照すると `analyzeOneLibrary` は 1 回だけ呼ばれる |
 | `TestAnalyzeLibraries_missingLibFile` | AC-7 | 存在しないライブラリパスは `AnalysisWarnings` に追加され処理継続 |
 | `TestAnalyzeLibraries_disabled` | - | `SetLibraryAnalysisEnabled(false)` のとき `LibraryAnalysis` が nil |
+| `TestAnalyzeLibraries_vdsoExcluded` | AC-9 | `linux-vdso.so.1` は `LibraryAnalysis` に含まれない |
+| `TestAnalyzeLibraries_fileTooLarge` | AC-10 | ファイルサイズ 1 GB 超のライブラリは解析スキップ、`AnalysisWarnings` に警告追記 |
+| `TestIsSyscallWrapperLibrary_prefixBoundary_libcc` | AC-11 | `libcc.so.1` は `IsSyscallWrapperLibrary` で `false`、解析対象に含まれる |
 
 ### 7.3 `network_analyzer_test.go` への追加（`runner` パッケージ）
 
@@ -451,3 +489,6 @@ v.SetLibraryAnalysisEnabled(true)
 | AC-6 | `libraryAnalysisCache` によりキャッシュヒット時は再解析しない |
 | AC-7 | ライブラリファイル不在は `AnalysisWarnings` に追記、処理継続 |
 | AC-8 | 既存の `.dynsym`・syscall 解析は変更なし（回帰テスト） |
+| AC-9 | `isKnownVDSO` により `linux-vdso.so.1` 等をスキップ、`analyzeLibraries` でスキップされ `LibraryAnalysis` に含まれない |
+| AC-10 | `analyzeOneLibrary` のファイルサイズチェック（4.5 節）により 1 GB 超のライブラリをスキップし `AnalysisWarnings` に記録 |
+| AC-11 | `IsSyscallWrapperLibrary("libcc.so.1")` が `false`（プレフィックス境界ルール）、解析対象に残る |

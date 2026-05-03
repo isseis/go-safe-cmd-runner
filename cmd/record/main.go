@@ -143,6 +143,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 
 		syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
 		fv.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))
+		fv.SetLibraryAnalysisEnabled(true)
 
 		cacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
 		fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})

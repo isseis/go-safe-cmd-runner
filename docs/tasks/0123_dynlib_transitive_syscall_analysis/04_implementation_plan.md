@@ -2,16 +2,17 @@
 
 ## 進捗状況
 
-- [ ] Step 1: スキーマ変更
-- [ ] Step 2: `binaryanalyzer/syscall_wrapper_libs.go` 新規作成とテスト
-- [ ] Step 3: `Validator` にキャッシュフィールドと setter 追加
-- [ ] Step 4: `analyzeOneLibrary()` 実装とユニットテスト
-- [ ] Step 5: `analyzeLibraries()` 実装とユニットテスト
-- [ ] Step 6: `updateAnalysisRecord` への統合
-- [ ] Step 7: runner 側のネットワーク判定拡張
-- [ ] Step 8: `cmd/record/main.go` の有効化
-- [ ] Step 9: 統合テスト（AC-1 〜 AC-8）
-- [ ] Step 10: `make fmt` `make test` `make lint` で品質確認
+- [x] Step 1: スキーマ変更
+- [x] Step 2: `binaryanalyzer/syscall_wrapper_libs.go` 新規作成とテスト
+- [x] Step 3: `Validator` にキャッシュフィールドと setter 追加
+- [x] Step 4: `analyzeOneLibrary()` 実装とユニットテスト
+- [x] Step 5: `analyzeLibraries()` 実装とユニットテスト
+- [x] Step 6: `updateAnalysisRecord` への統合
+- [x] Step 7: runner 側のネットワーク判定拡張
+- [x] Step 8: `cmd/record/main.go` の有効化
+- [x] Step 9: 統合テスト（AC-1 〜 AC-8）
+- [ ] Step 11: AC-9/10/11 対応テスト追加
+- [x] Step 10: `make fmt` `make test` `make lint` で品質確認
 
 ---
 
@@ -22,11 +23,11 @@
 **対象ファイル**: `internal/fileanalysis/schema.go`
 
 作業内容:
-- [ ] `CurrentSchemaVersion` を 19 → 20 に変更し、バージョンアップ理由をコメントに追記
-- [ ] `LibraryAnalysisEntry` 型を追加（`SOName`, `Path`, `SyscallAnalysis`, `SymbolAnalysis` フィールド）
-- [ ] `Record` 構造体に `LibraryAnalysis []LibraryAnalysisEntry` フィールドを追加
-- [ ] `SymbolAnalysisData` 構造体に `DetectedLibraryNetworkDeps []string` フィールドを追加
-- [ ] スキーマバージョンを参照しているテストを 20 に更新
+- [x] `CurrentSchemaVersion` を 19 → 20 に変更し、バージョンアップ理由をコメントに追記
+- [x] `LibraryAnalysisEntry` 型を追加（`SOName`, `Path`, `SyscallAnalysis`, `SymbolAnalysis` フィールド）
+- [x] `Record` 構造体に `LibraryAnalysis []LibraryAnalysisEntry` フィールドを追加
+- [x] `SymbolAnalysisData` 構造体に `DetectedLibraryNetworkDeps []string` フィールドを追加
+- [x] スキーマバージョンを参照しているテストを 20 に更新
 
 ---
 
@@ -37,14 +38,14 @@
 - 新規: `internal/security/binaryanalyzer/syscall_wrapper_libs_test.go`
 
 作業内容:
-- [ ] `syscallWrapperPrefixes` スライスを定義（`libc`, `libpthread`, `libdl`, `librt`,
+- [x] `syscallWrapperPrefixes` スライスを定義（`libc`, `libpthread`, `libdl`, `librt`,
   `libgcc_s`, `ld-linux`, `ld-linux-x86-64`, `ld-linux-aarch64`, `linux-vdso`）
-- [ ] `IsSyscallWrapperLibrary(soname string) bool` 関数を実装（既存の
+- [x] `IsSyscallWrapperLibrary(soname string) bool` 関数を実装（既存の
   `matchesKnownPrefix` を再利用）
-- [ ] テスト: マッチするケース（`libc.so.6`, `libpthread.so.0`, `ld-linux-x86-64.so.2`,
+- [x] テスト: マッチするケース（`libc.so.6`, `libpthread.so.0`, `ld-linux-x86-64.so.2`,
   `linux-vdso.so.1`）
-- [ ] テスト: マッチしないケース（`libssl.so.3`, `libcurl.so.4`, `libstdc++.so.6`）
-- [ ] テスト: 前方一致境界ケース（`libcc.so.1` → `false`, `libcpp.so.1` → `false`）
+- [x] テスト: マッチしないケース（`libssl.so.3`, `libcurl.so.4`, `libstdc++.so.6`）
+- [x] テスト: 前方一致境界ケース（`libcc.so.1` → `false`, `libcpp.so.1` → `false`）
 
 ---
 
@@ -53,12 +54,12 @@
 **対象ファイル**: `internal/filevalidator/validator.go`
 
 作業内容:
-- [ ] `libraryCacheEntry` 構造体を定義（`entry fileanalysis.LibraryAnalysisEntry`,
+- [x] `libraryCacheEntry` 構造体を定義（`entry fileanalysis.LibraryAnalysisEntry`,
   `hasNetwork bool`）
-- [ ] `Validator` 構造体に `libraryAnalysisCache map[string]libraryCacheEntry` フィールドを追加
-- [ ] `Validator` 構造体に `libraryAnalysisEnabled bool` フィールドを追加
-- [ ] `SetLibraryAnalysisEnabled(enabled bool)` メソッドを追加（有効化時にキャッシュを初期化）
-- [ ] `isKnownVDSO(soname string) bool` プライベートヘルパを追加（`linux-vdso.so.1`,
+- [x] `Validator` 構造体に `libraryAnalysisCache map[string]libraryCacheEntry` フィールドを追加
+- [x] `Validator` 構造体に `libraryAnalysisEnabled bool` フィールドを追加
+- [x] `SetLibraryAnalysisEnabled(enabled bool)` メソッドを追加（有効化時にキャッシュを初期化）
+- [x] `isKnownVDSO(soname string) bool` プライベートヘルパを追加（`linux-vdso.so.1`,
   `linux-gate.so.1`, `linux-vdso64.so.1`）
 
 ---
@@ -70,20 +71,20 @@
 - 新規: `internal/filevalidator/validator_library_analysis_test.go`（または既存テストファイルへ追記）
 
 作業内容:
-- [ ] `analyzeOneLibrary(lib fileanalysis.LibEntry) (entry *fileanalysis.LibraryAnalysisEntry, hasNetwork bool, warnings []string, err error)` を実装
-  - [ ] `.dynsym` シンボル解析: `v.binaryAnalyzer.AnalyzeNetworkSymbols(lib.Path, "")` を呼び出し
-  - [ ] `NetworkDetected` のとき `hasNetwork = true`、`SymbolAnalysisData` を設定
-  - [ ] `AnalysisError` のとき `warnings` に追記して継続
-  - [ ] syscall 命令スキャン: `openELFFile` → `AnalyzeSyscallsFromELF`
-  - [ ] ELF open 失敗は `errNotELF` なら無視、それ以外は `warnings` に追記して継続
-  - [ ] `ErrUnsupportedArch` は `warnings` に追記せずスキップ
-  - [ ] network syscall 判定: `GetSyscallTable(elfFile.Machine)` → `IsNetworkSyscall()` で `hasNetwork` を更新
-- [ ] テスト: network シンボルを持つライブラリ → `hasNetwork = true`、`SymbolAnalysis` に記録
-- [ ] テスト: network syscall を持つライブラリ → `hasNetwork = true`、`SyscallAnalysis` に記録
-- [ ] テスト: ネットワーク系なし → `hasNetwork = false`
-- [ ] テスト: ファイル不在 → `hasNetwork = false`、`warnings` に追記
-- [ ] テスト: 非 ELF ライブラリ（`.so` だが ELF でない）→ syscall 解析はスキップ
-- [ ] テスト: `ErrUnsupportedArch` → `warnings` なし、`SyscallAnalysis` nil
+- [x] `analyzeOneLibrary(lib fileanalysis.LibEntry) (entry *fileanalysis.LibraryAnalysisEntry, hasNetwork bool, warnings []string, err error)` を実装
+  - [x] `.dynsym` シンボル解析: `v.binaryAnalyzer.AnalyzeNetworkSymbols(lib.Path, "")` を呼び出し
+  - [x] `NetworkDetected` のとき `hasNetwork = true`、`SymbolAnalysisData` を設定
+  - [x] `AnalysisError` のとき `warnings` に追記して継続
+  - [x] syscall 命令スキャン: `openELFFile` → `AnalyzeSyscallsFromELF`
+  - [x] ELF open 失敗は `errNotELF` なら無視、それ以外は `warnings` に追記して継続
+  - [x] `ErrUnsupportedArch` は `warnings` に追記せずスキップ
+  - [x] network syscall 判定: `GetSyscallTable(elfFile.Machine)` → `IsNetworkSyscall()` で `hasNetwork` を更新
+- [x] テスト: network シンボルを持つライブラリ → `hasNetwork = true`、`SymbolAnalysis` に記録
+- [x] テスト: network syscall を持つライブラリ → `hasNetwork = true`、`SyscallAnalysis` に記録
+- [x] テスト: ネットワーク系なし → `hasNetwork = false`
+- [x] テスト: ファイル不在 → `hasNetwork = false`、`warnings` に追記
+- [x] テスト: 非 ELF ライブラリ（`.so` だが ELF でない）→ syscall 解析はスキップ
+- [x] テスト: `ErrUnsupportedArch` → `warnings` なし、`SyscallAnalysis` nil
 
 ---
 
@@ -92,23 +93,23 @@
 **対象ファイル**: `internal/filevalidator/validator.go`、テストファイル
 
 作業内容:
-- [ ] `analyzeLibraries(record *fileanalysis.Record) error` を実装
-  - [ ] `!v.libraryAnalysisEnabled` または `len(record.DynLibDeps) == 0` のときは即時 return nil
-  - [ ] 各 `DynLibDeps` エントリに対してループ:
-    - [ ] `isKnownVDSO(lib.SOName)` の場合はスキップ
-    - [ ] `binaryanalyzer.IsSyscallWrapperLibrary(lib.SOName)` の場合はスキップ
-    - [ ] `v.libraryAnalysisCache[lib.Path]` でキャッシュヒット確認
-    - [ ] キャッシュミスのとき `analyzeOneLibrary` を呼び出してキャッシュに保存
-  - [ ] ネットワーク検出ライブラリの SOName を `slices.Sort` してから `DetectedLibraryNetworkDeps` へ設定
-  - [ ] `record.SymbolAnalysis` が nil のとき新規作成して設定
-  - [ ] `record.LibraryAnalysis` に全エントリを設定
-  - [ ] `record.AnalysisWarnings` を `slices.Sort` で整列
-- [ ] テスト: `libraryAnalysisEnabled = false` → `LibraryAnalysis` nil
-- [ ] テスト: 空の `DynLibDeps` → `LibraryAnalysis` nil
-- [ ] テスト: `libc.so.6` と `libssl.so.3` が依存の場合、`libc` はスキップ、`libssl` のみ解析
-- [ ] テスト: `linux-vdso.so.1` はスキップ
-- [ ] テスト: 同一ライブラリを 2 回参照（異なるコマンドが同じライブラリに依存）→ `analyzeOneLibrary` は 1 回のみ
-- [ ] テスト: `SymbolAnalysis` が nil の場合でも `DetectedLibraryNetworkDeps` が設定される
+- [x] `analyzeLibraries(record *fileanalysis.Record) error` を実装
+  - [x] `!v.libraryAnalysisEnabled` または `len(record.DynLibDeps) == 0` のときは即時 return nil
+  - [x] 各 `DynLibDeps` エントリに対してループ:
+    - [x] `isKnownVDSO(lib.SOName)` の場合はスキップ
+    - [x] `binaryanalyzer.IsSyscallWrapperLibrary(lib.SOName)` の場合はスキップ
+    - [x] `v.libraryAnalysisCache[lib.Path]` でキャッシュヒット確認
+    - [x] キャッシュミスのとき `analyzeOneLibrary` を呼び出してキャッシュに保存
+  - [x] ネットワーク検出ライブラリの SOName を `slices.Sort` してから `DetectedLibraryNetworkDeps` へ設定
+  - [x] `record.SymbolAnalysis` が nil のとき新規作成して設定
+  - [x] `record.LibraryAnalysis` に全エントリを設定
+  - [x] `record.AnalysisWarnings` を `slices.Sort` で整列
+- [x] テスト: `libraryAnalysisEnabled = false` → `LibraryAnalysis` nil
+- [x] テスト: 空の `DynLibDeps` → `LibraryAnalysis` nil
+- [x] テスト: `libc.so.6` と `libssl.so.3` が依存の場合、`libc` はスキップ、`libssl` のみ解析
+- [x] テスト: `linux-vdso.so.1` はスキップ
+- [x] テスト: 同一ライブラリを 2 回参照（異なるコマンドが同じライブラリに依存）→ `analyzeOneLibrary` は 1 回のみ
+- [x] テスト: `SymbolAnalysis` が nil の場合でも `DetectedLibraryNetworkDeps` が設定される
 
 ---
 
@@ -117,9 +118,9 @@
 **対象ファイル**: `internal/filevalidator/validator.go`
 
 作業内容:
-- [ ] `KnownNetworkLibDeps` ブロックの直後、`analyzeELFSyscalls` の直前に
+- [x] `KnownNetworkLibDeps` ブロックの直後、`analyzeELFSyscalls` の直前に
   `v.analyzeLibraries(record)` 呼び出しを追加
-- [ ] エラーが返ったとき即時 `return err`
+- [x] エラーが返ったとき即時 `return err`
 
 ---
 
@@ -128,10 +129,10 @@
 **対象ファイル**: `internal/runner/base/security/network_analyzer.go`
 
 作業内容:
-- [ ] `isNetworkViaBinaryAnalysis` 内の条件を変更:
+- [x] `isNetworkViaBinaryAnalysis` 内の条件を変更:
   `if hasNetworkSymbol || len(data.KnownNetworkLibDeps) > 0 || len(data.DetectedLibraryNetworkDeps) > 0`
-- [ ] `DetectedLibraryNetworkDeps` が原因でネットワーク有りと判定した場合のログ出力を追加
-- [ ] テスト: `DetectedLibraryNetworkDeps` 非空のとき `(true, false)` を返すことを確認
+- [x] `DetectedLibraryNetworkDeps` が原因でネットワーク有りと判定した場合のログ出力を追加
+- [x] テスト: `DetectedLibraryNetworkDeps` 非空のとき `(true, false)` を返すことを確認
 
 ---
 
@@ -140,7 +141,7 @@
 **対象ファイル**: `cmd/record/main.go`
 
 作業内容:
-- [ ] `v.SetSyscallAnalyzer(...)` 呼び出しの直後に `v.SetLibraryAnalysisEnabled(true)` を追加
+- [x] `v.SetSyscallAnalyzer(...)` 呼び出しの直後に `v.SetLibraryAnalysisEnabled(true)` を追加
 
 ---
 
@@ -164,9 +165,22 @@
 
 ### Step 10: 品質確認
 
-- [ ] `make fmt` — gofumpt によるフォーマット
-- [ ] `make test` — 全テスト通過
-- [ ] `make lint` — golangci-lint エラーなし
+- [x] `make fmt` — gofumpt によるフォーマット
+- [x] `make test` — 全テスト通過
+- [x] `make lint` — golangci-lint エラーなし
+
+---
+
+### Step 11: AC-9/10/11 対応テスト追加
+
+**対象ファイル**: `internal/filevalidator/validator_library_analysis_test.go`、`internal/security/binaryanalyzer/syscall_wrapper_libs_test.go`
+
+作業内容:
+- [ ] `TestAnalyzeLibraries_vdsoExcluded`: `linux-vdso.so.1` を DynLibDeps に含めて実行し、`LibraryAnalysis` に含まれないことを確認（AC-9）
+- [ ] `TestAnalyzeLibraries_fileTooLarge`: ファイルサイズが `maxLibraryFileSize` を超えるモックを設定し、解析スキップと `AnalysisWarnings` 追記を確認（AC-10）
+- [ ] `analyzeOneLibrary` の冒頭にファイルサイズチェックを実装（詳細仕様 4.5 節）
+- [ ] `TestIsSyscallWrapperLibrary_prefixBoundary_libcc`: `libcc.so.1` が `false` を返すことを追加確認（AC-11）
+- [ ] `make fmt` / `go test -tags test -v ./...` / `make lint` で品質確認
 
 ---
 
