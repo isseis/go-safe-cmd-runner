@@ -195,9 +195,14 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	return dynOutput
 }
 
-// checkDynamicSymbols extracts all libc symbols from the given ELF file and categorizes them.
-// Returns DetectedSymbols containing both network and non-network libc symbols.
-// Non-network libc symbols are assigned category "syscall_wrapper".
+// checkDynamicSymbols extracts network-related and libc symbols from the given ELF file.
+// For each SHN_UNDEF symbol, applies a two-step filter:
+//  1. If the symbol name is in networkSymbols, record it with the corresponding category.
+//  2. Otherwise, if the symbol is from libc, record it as "syscall_wrapper".
+//
+// Note: For VERNEED-present (glibc) binaries, Step 2 successfully identifies non-network
+// libc symbols. However, for VERNEED-absent (musl) binaries, sym.Library is always empty,
+// so Step 2 never triggers and non-network libc symbols are not recorded.
 func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanalyzer.AnalysisOutput {
 	dynsyms, err := elfFile.DynamicSymbols()
 	if err != nil {
@@ -211,14 +216,7 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanaly
 		}
 	}
 
-	// VERNEED judgment: scan all SHN_UNDEF symbols and check if any Library field is non-empty.
-	// If hasVERNEED=true, classify symbols by sym.Library. If hasVERNEED=false,
-	// do not infer libc ownership from DT_NEEDED.
-	hasVERNEED := slices.ContainsFunc(dynsyms, func(s elf.Symbol) bool {
-		return s.Section == elf.SHN_UNDEF && s.Library != ""
-	})
-	// hasVERNEED implies hasAnyUndef; only scan again if VERNEED was not found.
-	hasAnyUndef := hasVERNEED || slices.ContainsFunc(dynsyms, func(s elf.Symbol) bool {
+	hasAnyUndef := slices.ContainsFunc(dynsyms, func(s elf.Symbol) bool {
 		return s.Section == elf.SHN_UNDEF
 	})
 
@@ -235,17 +233,19 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanaly
 			continue
 		}
 
-		// Determine if symbol is from libc
-		isLibc := false
-		if hasVERNEED {
-			isLibc = isLibcLibrary(sym.Library)
-		}
-
-		if isLibc {
-			cat := categorizeELFSymbol(sym.Name, a.networkSymbols)
+		// Step 1: name-based detection — applies regardless of sym.Library or VERNEED presence.
+		if cat, found := a.networkSymbols[sym.Name]; found {
 			detected = append(detected, binaryanalyzer.DetectedSymbol{
 				Name:     sym.Name,
-				Category: cat,
+				Category: string(cat),
+			})
+		} else if isLibcLibrary(sym.Library) {
+			// Step 2: libc symbols not in networkSymbols are syscall wrappers.
+			// On VERNEED-less binaries (musl) sym.Library is always empty,
+			// so isLibcLibrary returns false and syscall_wrapper is never assigned.
+			detected = append(detected, binaryanalyzer.DetectedSymbol{
+				Name:     sym.Name,
+				Category: string(binaryanalyzer.CategorySyscallWrapper),
 			})
 		}
 
@@ -282,15 +282,6 @@ func isLibcLibrary(lib string) bool {
 	base := filepath.Base(lib)
 	return strings.HasPrefix(base, "libc.so.") ||
 		strings.HasPrefix(base, "libc.musl-")
-}
-
-// categorizeELFSymbol returns the category of the symbol using networkSymbols,
-// or "syscall_wrapper" if not found.
-func categorizeELFSymbol(name string, networkSymbols map[string]binaryanalyzer.SymbolCategory) string {
-	if cat, found := networkSymbols[name]; found {
-		return string(cat)
-	}
-	return string(binaryanalyzer.CategorySyscallWrapper)
 }
 
 // isELFMagic checks if the given bytes match the ELF magic number.

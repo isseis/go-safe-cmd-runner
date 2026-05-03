@@ -7,6 +7,8 @@
 - glibc 環境への回帰なし（Task 0106 の検出結果を維持・拡張）
 - 変更範囲を最小化する（`checkDynamicSymbols` の分類ロジックのみ）
 
+本設計では現行の `record` / `runner` 責務分担を変更しない。`record` は ELF 静的解析の結果を runner 向けの正規化済み特徴量として保存し、`runner` は保存済みのシンボル名や依存ライブラリ情報からネットワーク性とリスクを判定する。したがって `record` における `networkSymbols` 参照は保存対象の選別であり、実行可否の最終判断ではない。
+
 ## 2. システム構成
 
 ### 2.1 変更前アーキテクチャ
@@ -74,6 +76,8 @@ flowchart LR
 ### 2.3 変更前後の比較
 
 「記録」は `binaryanalyzer.AnalysisOutput.DetectedSymbols` への追加（内部表現）を指す。JSON `symbol_analysis.detected_symbols` は schema v18 以降 `category` フィールドを持たず、schema v19 以降はシンボル名のみの `[]string` 形式で保存される。
+
+このため `record` が保存するのは「全未定義シンボルの生データ」ではなく、runner が後続で再利用するための正規化済み解析結果である。`runner` は保存済みシンボル名に対して `binaryanalyzer.IsNetworkSymbol()` を再適用し、カテゴリとネットワーク性を再導出する。
 
 | 条件 | 変更前 | 変更後 |
 |------|--------|--------|
@@ -154,6 +158,16 @@ sequenceDiagram
     end
     SA->>OUT: AnalysisOutput を返す
 ```
+
+### 4.1 record / runner の責務分担
+
+- `record`:
+    - ELF / Mach-O を静的解析し、`DetectedSymbols`・`DynamicLoadSymbols`・`DynLibDeps` などの正規化済み解析結果を生成する
+    - `networkSymbols` を使って、runner が後続で参照すべきシンボル名集合を絞り込んで JSON に保存する
+- `runner`:
+    - JSON に保存された `detected_symbols`、`dynamic_load_symbols`、`known_network_lib_deps` を読み込む
+    - 保存済みシンボル名へ `binaryanalyzer.IsNetworkSymbol()` を再適用し、ネットワーク性とリスクレベルを実行時ポリシーへ写像する
+    - 実行可否、`risk_level` 充足、再 record 要否などの最終判断を担う
 
 ## 5. テスト戦略
 

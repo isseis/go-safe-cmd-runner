@@ -8,6 +8,16 @@
 | `internal/security/elfanalyzer/testing/helpers.go` | 修正 | `CreateELFWithSymbols` ヘルパー追加 |
 | `internal/security/elfanalyzer/analyzer_test.go` | 修正 | AC-1〜AC-6 対応テストの追加、既存テストの更新 |
 
+## 1.1 責務分担に関する前提
+
+本タスクでは `record` / `runner` の責務分担を変更しない。
+
+- `record` は `checkDynamicSymbols` の結果を `fileanalysis.SymbolAnalysisData` へ保存する際、`networkSymbols` を使って runner 向けの正規化済み特徴量を生成する
+- JSON に保存される `detected_symbols` はシンボル名のみであり、カテゴリは保持しない
+- `runner` は保存済みシンボル名に対して `binaryanalyzer.IsNetworkSymbol()` を再適用し、カテゴリとネットワーク性を再導出して実行時リスク判定に利用する
+
+したがって、本タスクが変更するのは「record が保存する解析結果の正規化ルール」であり、実行可否や `risk_level` の最終判断ロジック自体ではない。
+
 ## 2. `standard_analyzer.go` の変更
 
 ### 2.1 `checkDynamicSymbols` の修正
@@ -466,3 +476,5 @@ func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
 | `syscall_analysis.determination_stats` | 含まれない | 含まれる |
 
 `Category`（`socket` / `tls` / `dns` / `http` / `syscall_wrapper`）は schema v18 以降 JSON に保存されない。`runner` はシンボル名から `binaryanalyzer.IsNetworkSymbol()` を呼び出してカテゴリを再導出する。
+
+このスキーマは現行の責務分担を反映している。すなわち `record` は runner が参照すべきシンボル名集合を保存し、`runner` がその集合を実行時ポリシーへ解釈する。生の全インポートシンボル一覧を保存する設計には変更しない。
