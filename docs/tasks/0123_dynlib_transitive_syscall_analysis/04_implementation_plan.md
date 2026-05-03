@@ -5,7 +5,7 @@
 - [x] Step 1: スキーマ変更
 - [x] Step 2: `binaryanalyzer/syscall_wrapper_libs.go` 新規作成とテスト
 - [x] Step 3: `Validator` にキャッシュフィールドと setter 追加
-- [ ] Step 4: `analyzeOneLibrary()` 実装とユニットテスト
+- [x] Step 4: `analyzeOneLibrary()` 実装とユニットテスト
 - [ ] Step 5: `analyzeLibraries()` 実装とユニットテスト
 - [ ] Step 6: `updateAnalysisRecord` への統合
 - [ ] Step 7: runner 側のネットワーク判定拡張
@@ -70,20 +70,20 @@
 - 新規: `internal/filevalidator/validator_library_analysis_test.go`（または既存テストファイルへ追記）
 
 作業内容:
-- [ ] `analyzeOneLibrary(lib fileanalysis.LibEntry) (entry *fileanalysis.LibraryAnalysisEntry, hasNetwork bool, warnings []string, err error)` を実装
-  - [ ] `.dynsym` シンボル解析: `v.binaryAnalyzer.AnalyzeNetworkSymbols(lib.Path, "")` を呼び出し
-  - [ ] `NetworkDetected` のとき `hasNetwork = true`、`SymbolAnalysisData` を設定
-  - [ ] `AnalysisError` のとき `warnings` に追記して継続
-  - [ ] syscall 命令スキャン: `openELFFile` → `AnalyzeSyscallsFromELF`
-  - [ ] ELF open 失敗は `errNotELF` なら無視、それ以外は `warnings` に追記して継続
-  - [ ] `ErrUnsupportedArch` は `warnings` に追記せずスキップ
-  - [ ] network syscall 判定: `GetSyscallTable(elfFile.Machine)` → `IsNetworkSyscall()` で `hasNetwork` を更新
-- [ ] テスト: network シンボルを持つライブラリ → `hasNetwork = true`、`SymbolAnalysis` に記録
-- [ ] テスト: network syscall を持つライブラリ → `hasNetwork = true`、`SyscallAnalysis` に記録
-- [ ] テスト: ネットワーク系なし → `hasNetwork = false`
-- [ ] テスト: ファイル不在 → `hasNetwork = false`、`warnings` に追記
-- [ ] テスト: 非 ELF ライブラリ（`.so` だが ELF でない）→ syscall 解析はスキップ
-- [ ] テスト: `ErrUnsupportedArch` → `warnings` なし、`SyscallAnalysis` nil
+- [x] `analyzeOneLibrary(lib fileanalysis.LibEntry) (entry *fileanalysis.LibraryAnalysisEntry, hasNetwork bool, warnings []string, err error)` を実装
+  - [x] `.dynsym` シンボル解析: `v.binaryAnalyzer.AnalyzeNetworkSymbols(lib.Path, "")` を呼び出し
+  - [x] `NetworkDetected` のとき `hasNetwork = true`、`SymbolAnalysisData` を設定
+  - [x] `AnalysisError` のとき `warnings` に追記して継続
+  - [x] syscall 命令スキャン: `openELFFile` → `AnalyzeSyscallsFromELF`
+  - [x] ELF open 失敗は `errNotELF` なら無視、それ以外は `warnings` に追記して継続
+  - [x] `ErrUnsupportedArch` は `warnings` に追記せずスキップ
+  - [x] network syscall 判定: `GetSyscallTable(elfFile.Machine)` → `IsNetworkSyscall()` で `hasNetwork` を更新
+- [x] テスト: network シンボルを持つライブラリ → `hasNetwork = true`、`SymbolAnalysis` に記録
+- [x] テスト: network syscall を持つライブラリ → `hasNetwork = true`、`SyscallAnalysis` に記録
+- [x] テスト: ネットワーク系なし → `hasNetwork = false`
+- [x] テスト: ファイル不在 → `hasNetwork = false`、`warnings` に追記
+- [x] テスト: 非 ELF ライブラリ（`.so` だが ELF でない）→ syscall 解析はスキップ
+- [x] テスト: `ErrUnsupportedArch` → `warnings` なし、`SyscallAnalysis` nil
 
 ---
 

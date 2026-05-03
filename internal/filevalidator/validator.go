@@ -538,6 +538,78 @@ func (v *Validator) SetLibraryAnalysisEnabled(enabled bool) {
 	}
 }
 
+// analyzeOneLibrary runs symbol and syscall analysis for one dynamic library.
+func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (
+	entry *fileanalysis.LibraryAnalysisEntry,
+	hasNetwork bool,
+	warnings []string,
+	err error,
+) {
+	entry = &fileanalysis.LibraryAnalysisEntry{
+		SOName: lib.SOName,
+		Path:   lib.Path,
+	}
+
+	if v.binaryAnalyzer != nil {
+		output := v.binaryAnalyzer.AnalyzeNetworkSymbols(lib.Path, "")
+		switch output.Result {
+		case binaryanalyzer.NetworkDetected:
+			entry.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
+				DetectedSymbols:    convertDetectedSymbols(output.DetectedSymbols),
+				DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
+			}
+			hasNetwork = true
+		case binaryanalyzer.NoNetworkSymbols:
+			entry.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
+				DetectedSymbols:    convertDetectedSymbols(output.DetectedSymbols),
+				DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
+			}
+		case binaryanalyzer.AnalysisError:
+			warnings = append(warnings,
+				fmt.Sprintf("library symbol analysis failed for %s: %v", lib.SOName, output.Error))
+		}
+	}
+
+	if v.syscallAnalyzer == nil {
+		return entry, hasNetwork, warnings, nil
+	}
+
+	elfFile, openErr := openELFFile(v.fileSystem, lib.Path)
+	if openErr != nil {
+		if !errors.Is(openErr, errNotELF) {
+			warnings = append(warnings,
+				fmt.Sprintf("failed to open library ELF %s: %v", lib.SOName, openErr))
+		}
+		return entry, hasNetwork, warnings, nil
+	}
+	defer func() { _ = elfFile.Close() }()
+
+	detected, _, _, analyzeErr := v.syscallAnalyzer.AnalyzeSyscallsFromELF(elfFile)
+	if analyzeErr != nil {
+		if !errors.Is(analyzeErr, ErrUnsupportedArch) {
+			warnings = append(warnings,
+				fmt.Sprintf("syscall analysis failed for library %s: %v", lib.SOName, analyzeErr))
+		}
+		return entry, hasNetwork, warnings, nil
+	}
+
+	if len(detected) > 0 {
+		entry.SyscallAnalysis = buildSyscallData(detected, nil, elfFile.Machine, nil, v.includeDebugInfo)
+
+		table, ok := v.syscallAnalyzer.GetSyscallTable(elfFile.Machine)
+		if ok {
+			for _, s := range detected {
+				if s.Number >= 0 && table.IsNetworkSyscall(s.Number) {
+					hasNetwork = true
+					break
+				}
+			}
+		}
+	}
+
+	return entry, hasNetwork, warnings, nil
+}
+
 // SetIncludeDebugInfo controls whether debug information (Occurrences,
 // DeterminationStats) is included in saved JSON output.
 func (v *Validator) SetIncludeDebugInfo(b bool) {
