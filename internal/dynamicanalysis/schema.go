@@ -29,3 +29,11 @@ type Result struct {
 	SymbolAnalysis  *fileanalysis.SymbolAnalysisData
 	Warnings        []string
 }
+
+// DynamicLoadSymbols returns the list of dynamic load symbols from the symbol analysis.
+func (r *Result) DynamicLoadSymbols() []string {
+	if r == nil || r.SymbolAnalysis == nil {
+		return nil
+	}
+	return r.SymbolAnalysis.DynamicLoadSymbols
+}
