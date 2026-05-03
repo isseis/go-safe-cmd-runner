@@ -1,54 +1,57 @@
-# ライブラリ解析結果の共通キャッシュ化 詳細仕様書
+# 動的ライブラリ解析結果ストア導入 詳細仕様書
 
-## 1. 変更ファイル一覧
+## 1. 変更ファイル一覧（最終形）
 
 | ファイル | 変更種別 | 概要 |
 |---------|----------|------|
-| `internal/dynlibcache/schema.go` | 新規 | `LibAnalysisCacheFile` 型、スキーマ定数 |
-| `internal/dynlibcache/cache.go` | 新規 | `CacheManager`（GetOrCreate） |
-| `internal/dynlibcache/errors.go` | 新規 | エラー型 |
-| `internal/fileanalysis/schema.go` | 変更 | `LibraryAnalysis` / `DetectedLibraryNetworkDeps` 削除、`DynLibDepsStore` 追加、バージョン 20→21 |
-| `internal/fileanalysis/dyn_lib_deps_store.go` | 新規 | `DynLibDepsStore` インタフェースと実装 |
-| `internal/filevalidator/validator.go` | 変更 | `CacheManager` 注入、`analyzeLibraries()` をキャッシュ書き込み方式に変更 |
-| `internal/runner/base/security/network_analyzer.go` | 変更 | `DynLibDepsStore` / `CacheManager` 注入、ライブラリシグナル集計追加 |
-| `cmd/record/main.go` | 変更 | `dynlibcache.NewCacheManager()` 生成と `SetLibraryAnalysisCacheManager()` 呼び出し |
-| `cmd/runner/main.go` | 変更 | `dynlibcache.NewCacheManager()` 生成と `NetworkAnalyzer` への注入 |
+| internal/dynlibanalysisstore/schema.go | 新規 | DynamicLibAnalysisFile 型、スキーマ定数 |
+| internal/dynlibanalysisstore/store.go | 新規 | DynamicLibAnalysisStore（LoadOrAnalyzeAndStore / LoadAnalysis） |
+| internal/dynlibanalysisstore/errors.go | 新規 | 解析結果未取得エラー型 |
+| internal/fileanalysis/schema.go | 変更 | LibraryAnalysis/DetectedLibraryNetworkDeps 削除、バージョン更新 |
+| internal/fileanalysis/dyn_lib_deps_store.go | 新規 | DynLibDepsStore インタフェースと実装 |
+| internal/filevalidator/validator.go | 変更 | DynamicLibAnalysisStore 注入、analyzeLibraries で保存 |
+| internal/runner/base/security/network_analyzer.go | 変更 | DynLibDepsStore / DynamicLibAnalysisStore 注入、解析結果集計 |
+| cmd/record/main.go | 変更 | ストア生成と validator への注入 |
+| cmd/runner/main.go | 変更 | ストア生成と network analyzer への注入 |
 
 ---
 
-## 2. `internal/dynlibcache/schema.go`（新規）
+## 2. 用語と責務
+
+### 2.1 用語
+
+- 動的ライブラリ解析結果: runner の判定入力データ
+- 解析結果ストア: 上記データを path/hash/schema で保存・取得する機構
+- 再解析回避キャッシュ: record 実行中の重複回避戦略
+
+### 2.2 record と runner の責務分離
+
+- record: 解析結果を作る、保存する、再利用する
+- runner: 解析結果を読む、導出する、判定する
+
+runner 仕様文では cache hit/miss という語を使わず、解析結果取得成功/未取得で記載する。
+
+---
+
+## 3. データモデル
+
+### 3.1 DynamicLibAnalysisFile
 
 ```go
-package dynlibcache
-
-// CacheSchemaVersion is the current schema version for library analysis cache files.
-// Version history:
-//
-//	1 - initial schema
-const CacheSchemaVersion = 1
-
-// LibAnalysisCacheFile is the JSON schema for a library analysis cache file.
-type LibAnalysisCacheFile struct {
-    SchemaVersion int    `json:"schema_version"`
-    LibPath       string `json:"lib_path"`
-    LibHash       string `json:"lib_hash"` // "sha256:<hex>"
-
-    // SyscallAnalysis stores detected syscall call information in the same
-    // shape used for command-level analysis records.
-    SyscallAnalysis *fileanalysis.SyscallAnalysisData `json:"syscall_analysis,omitempty"`
-
-    // SymbolAnalysis stores detected syscall-wrapper symbol information in the
-    // same shape used for command-level analysis records.
-    SymbolAnalysis *fileanalysis.SymbolAnalysisData `json:"symbol_analysis,omitempty"`
-
-    // DynamicLoadSymbols stores dynamic-load-related symbols as a top-level
-    // field to keep parity with command-level threat evaluation inputs.
-    DynamicLoadSymbols []string `json:"dynamic_load_symbols,omitempty"`
+type DynamicLibAnalysisFile struct {
+    SchemaVersion      int    `json:"schema_version"`
+    LibPath            string `json:"lib_path"`
+    LibHash            string `json:"lib_hash"`
+    SyscallAnalysis    *fileanalysis.SyscallAnalysisData `json:"syscall_analysis,omitempty"`
+    SymbolAnalysis     *fileanalysis.SymbolAnalysisData  `json:"symbol_analysis,omitempty"`
+    DynamicLoadSymbols []string                          `json:"dynamic_load_symbols,omitempty"`
 }
+```
 
-// LibAnalysisResult is the in-memory result returned by CacheManager.GetOrCreate.
-// Warnings are transient analysis warnings not persisted to the cache file.
-type LibAnalysisResult struct {
+### 3.2 DynamicLibAnalysisResult
+
+```go
+type DynamicLibAnalysisResult struct {
     SyscallAnalysis    *fileanalysis.SyscallAnalysisData
     SymbolAnalysis     *fileanalysis.SymbolAnalysisData
     DynamicLoadSymbols []string
@@ -56,332 +59,165 @@ type LibAnalysisResult struct {
 }
 ```
 
----
-
-## 3. `internal/dynlibcache/cache.go`（新規）
-
-### 3.1 CacheManager の構造
-
-```go
-type CacheManager struct {
-    cacheDir string
-    fs       safefileio.FileSystem
-    analyzer LibraryAnalyzer
-    pathEnc  *pathencoding.SubstitutionHashEscape
-}
-
-func NewCacheManager(
-    cacheDir string,
-    fs safefileio.FileSystem,
-    analyzer LibraryAnalyzer,
-) (*CacheManager, error)
-```
-
-`cacheDir` は存在しない場合、自動作成する（`os.MkdirAll`、パーミッション `0o755`）。
-
-### 3.2 GetOrCreate
-
-```go
-// GetOrCreate returns cached analysis or analyzes the library on cache miss.
-// libPath must be a normalized absolute path. libHash must be in "sha256:<hex>" format.
-// Warnings from analysis on cache miss are included in LibAnalysisResult.Warnings.
-func (m *CacheManager) GetOrCreate(libPath, libHash string) (*LibAnalysisResult, error)
-```
-
-**処理フロー:**
-
-1. `pathEnc.Encode(libPath + "#" + libHash)` でキャッシュファイルパスを生成
-2. キャッシュファイルを読み込み JSON をパース（失敗 → Cache Miss）
-3. `cache.SchemaVersion != CacheSchemaVersion` → Cache Miss
-4. `cache.LibHash != libHash` → Cache Miss
-5. Cache Hit: `LibAnalysisResult{SyscallAnalysis, SymbolAnalysis, DynamicLoadSymbols}` を構築して返す（`Warnings` は空）
-6. Cache Miss: `analyzer.Analyze(libPath)` → `(cacheFile, warnings, err)` を取得し、ファイルを書き込み、`LibAnalysisResult{..., Warnings: warnings}` を返す
-
-**ファイル命名:**
-
-```
-<cacheDir>/<pathencoding.SubstitutionHashEscape(libPath + "#" + libHash)>
-```
-
-1 ライブラリバージョン（`lib_path` + `lib_hash`）につき 1 ファイル。
-同一 `lib_path` でも `lib_hash` が異なるエントリを同時保持できる。
-
-**アトミック書き込み:**
-
-`libccache` の `writeFileAtomic`（非公開関数）と同じパターン（一時ファイルへ書き込み → `os.Rename`）を `dynlibcache/cache.go` 内に実装する。`libccache.writeFileAtomic` は非公開のため直接再利用できないが、実装は同一である。
-
-### 3.3 LibraryAnalyzer インタフェース
-
-```go
-// LibraryAnalyzer performs analysis of a single dynamic library.
-// The concrete implementation lives in filevalidator and wraps the existing
-// BinaryAnalyzer / SyscallAnalyzerInterface engines.
-type LibraryAnalyzer interface {
-    // Analyze returns the cache file data, any non-fatal warnings, and an error.
-    // Warnings are transient (e.g., best-effort metadata extraction failures)
-    // and must not be cached.
-    Analyze(libPath string) (*LibAnalysisCacheFile, []string, error)
-}
-```
+Warnings は record の解析時にのみ利用し、永続ファイルへ保存しない。
 
 ---
 
-## 4. `internal/dynlibcache/errors.go`（新規）
+## 4. ストア API 仕様
+
+### 4.1 DynamicLibAnalysisStore
 
 ```go
-var (
-    // ErrCacheMiss is returned by Get when the cache file does not exist,
-    // the lib_hash does not match, or the schema version does not match.
-    ErrCacheMiss = errors.New("dynlibcache: cache miss")
-)
-```
+type DynamicLibAnalysisStore interface {
+    // record 専用: 取得できなければ解析して保存する
+    LoadOrAnalyzeAndStore(libPath, libHash string) (*DynamicLibAnalysisResult, error)
 
----
-
-## 5. `internal/fileanalysis/schema.go`（変更）
-
-### 5.1 スキーマバージョン
-
-```go
-// Version 21 removes LibraryAnalysis from Record and DetectedLibraryNetworkDeps
-// from SymbolAnalysisData. Library analysis results are now stored in separate
-// per-library cache files (internal/dynlibcache) and read by the runner at runtime.
-CurrentSchemaVersion = 21
-```
-
-### 5.2 `Record` からの削除
-
-`LibraryAnalysis []LibraryAnalysisEntry` フィールドを削除する。
-`DynLibDeps []LibEntry` は変更なし（DynLibDep として記録する）。
-
-### 5.3 `SymbolAnalysisData` からの削除
-
-`DetectedLibraryNetworkDeps []string` フィールドを削除する。
-
-### 5.4 `LibraryAnalysisEntry` 型の削除
-
-`Record.LibraryAnalysis` の削除に伴い、`LibraryAnalysisEntry` 型も削除する。
-
----
-
-## 6. `internal/fileanalysis/dyn_lib_deps_store.go`（新規）
-
-```go
-package fileanalysis
-
-// DynLibDepsStore loads DynLibDeps from a file analysis record.
-// Injected into NetworkAnalyzer for library signal aggregation.
-type DynLibDepsStore interface {
-    // LoadDynLibDeps returns the recorded DynLibDeps for the given file.
-    // Returns ErrHashMismatch when contentHash differs from record.ContentHash.
-    // Returns (nil, nil) when DynLibDeps is not recorded (e.g. static binary).
-    LoadDynLibDeps(filePath string, contentHash string) ([]LibEntry, error)
-}
-
-// dynLibDepsStore is the Store-backed implementation of DynLibDepsStore.
-type dynLibDepsStore struct {
-    store *Store
-}
-
-func NewDynLibDepsStore(store *Store) DynLibDepsStore {
-    return &dynLibDepsStore{store: store}
-}
-
-func (s *dynLibDepsStore) LoadDynLibDeps(filePath string, contentHash string) ([]LibEntry, error) {
-    // store.Load → hash 照合 → record.DynLibDeps を返す
+    // runner 専用: 取得のみ。解析は行わない
+    LoadAnalysis(libPath, libHash string) (*DynamicLibAnalysisResult, error)
 }
 ```
 
----
-
-## 7. `internal/filevalidator/validator.go`（変更）
-
-### 7.1 フィールド変更
+### 4.2 エラー型
 
 ```go
-// 削除: libraryAnalysisCache map[string]*fileanalysis.LibraryAnalysisEntry
-// 追加:
-libAnalysisCacheManager dynlibcache.CacheManagerInterface  // nil = 無効
+var ErrAnalysisNotFound = errors.New("dynlibanalysisstore: analysis not found")
 ```
 
-### 7.2 SetLibraryAnalysisCacheManager
+ErrAnalysisNotFound は以下を含む。
 
-```go
-func (v *Validator) SetLibraryAnalysisCacheManager(m dynlibcache.CacheManagerInterface)
-```
-
-`cmd/record/main.go` から呼び出す。
-
-### 7.3 analyzeLibraries() の変更
-
-**変更前（0123）:** `LibraryAnalysisEntry` を `record.LibraryAnalysis` に追加し、`DetectedLibraryNetworkDeps` を集計
-
-**変更後（0124）:**
-
-```
-func (v *Validator) analyzeLibraries(record *fileanalysis.Record):
-  1. libAnalysisCacheManager が nil → 早期リターン
-  2. record.DynLibDeps をイテレート
-  3. VDSO / syscall wrapper → スキップ
-    4. メモリキャッシュ Hit → キャッシュ済み warnings を record.AnalysisWarnings に追記してスキップ
-  5. libAnalysisCacheManager.GetOrCreate(lib.Path, lib.Hash)
-         - 成功（warnings あり）: result.Warnings を record.AnalysisWarnings に追記してメモリキャッシュに格納
-      - 失敗（ファイル不在・サイズ超過等の error）: error をそのまま返す（FR-3.6.1, FR-3.6.2）
-  6. record.LibraryAnalysis および DetectedLibraryNetworkDeps への書き込みは行わない
-```
-
-メモリキャッシュ（セッション内重複解析防止）は
-`map[string]*dynlibcache.LibAnalysisResult` を使用する。
-
-- キー: `libPath + "#" + libHash`
-- 目的: 同一 `record` セッション内で再遭遇したライブラリに対して、`warnings` 伝播を失わない
+- ファイル不存在
+- schema_version 不一致
+- lib_hash 不一致
 
 ---
 
-## 8. `internal/runner/base/security/network_analyzer.go`（変更）
+## 5. record 側詳細
 
-### 8.1 フィールド追加
+### 5.1 Validator フィールド
+
+```go
+type Validator struct {
+    // 旧: libraryAnalysisCache
+    // 新: processedLibAnalysis map[string]*DynamicLibAnalysisResult
+    dynamicLibAnalysisStore DynamicLibAnalysisStore // nil = 無効
+}
+```
+
+### 5.2 analyzeLibraries フロー
+
+```text
+1. dynamicLibAnalysisStore が nil なら return
+2. record.DynLibDeps を走査
+3. wrapper / VDSO を除外
+4. processedLibAnalysis にあれば warnings を再伝播して continue
+5. dynamicLibAnalysisStore.LoadOrAnalyzeAndStore(lib.Path, lib.Hash)
+6. 成功時: warnings を record.AnalysisWarnings に追記
+7. 失敗時: error を上位へ返却（ファイル不在、サイズ超過含む）
+```
+
+### 5.3 エラー処理
+
+- ファイル不在と 1 GB 超過はともに error を返し、当該レコードを不出力とする
+- セッション継続は record のファイル単位エラー制御で担保する
+
+---
+
+## 6. runner 側詳細
+
+### 6.1 NetworkAnalyzer フィールド
 
 ```go
 type NetworkAnalyzer struct {
-    goos         string
-    store        fileanalysis.NetworkSymbolStore
-    syscallStore fileanalysis.SyscallAnalysisStore
-    depsStore    fileanalysis.DynLibDepsStore        // 新規（nil = 無効）
-    libCache     dynlibcache.CacheManagerInterface   // 新規（nil = 無効）
+    goos             string
+    store            fileanalysis.NetworkSymbolStore
+    syscallStore     fileanalysis.SyscallAnalysisStore
+    depsStore        fileanalysis.DynLibDepsStore
+    libAnalysisStore DynamicLibAnalysisStore
 }
 ```
 
-### 8.2 コンストラクタ追加
+### 6.2 コンストラクタ
 
 ```go
-func NewNetworkAnalyzerWithLibCache(
+func NewNetworkAnalyzerWithLibAnalysisStore(
     goos string,
     symStore fileanalysis.NetworkSymbolStore,
     svcStore fileanalysis.SyscallAnalysisStore,
     depsStore fileanalysis.DynLibDepsStore,
-    libCache dynlibcache.CacheManagerInterface,
+    libAnalysisStore DynamicLibAnalysisStore,
 ) *NetworkAnalyzer
 ```
 
-### 8.3 isNetworkViaBinaryAnalysis() の拡張
+### 6.3 isNetworkViaBinaryAnalysis 拡張
 
-既存の `SymbolAnalysisData` 判定後、以下を追加する:
-
-```
-if depsStore != nil && libCache != nil:
-    deps, err := depsStore.LoadDynLibDeps(cmdPath, contentHash)
-    err 処理:
-      ErrRecordNotFound → (true, true) 高リスク
-      ErrHashMismatch   → (true, true) 高リスク
-      SchemaVersionMismatchError → (true, true) 高リスク
-      その他エラー → (true, true) 高リスク
-
-    for _, dep := range deps:
-        if dep が VDSO / syscall wrapper に該当:
-            continue
-        result, err := libCache.Get(dep.Path, dep.Hash)
-        err != nil → エラー停止（ErrCacheMiss 含む）
-        result.SyscallAnalysis / result.SymbolAnalysis / result.DynamicLoadSymbols を
-        runner が評価して `has_network_signal` / `has_dynamic_load_signal` を内部導出
-        導出結果が true の場合に NetworkDetected / 高リスクフラグを更新
-```
-
-`runner` は実行時ライブ解析へのフォールバックを行わない。
-`DynLibDeps` またはライブラリキャッシュが読めない場合は fail-closed（高リスクまたは停止）とする。
-
-`libCache.Get(path, hash)` は **読み取り専用**（runner は解析を行わない）。
-キャッシュファイルが存在しない場合はエラー停止する。
-
-### 8.4 libCache の Get（読み取り専用）
-
-`CacheManagerInterface` に読み取り専用メソッドを追加する:
-
-```go
-// Get はキャッシュを読み取る。存在しない・ハッシュ不一致の場合は ErrCacheMiss を返す。
-// runner は解析を行わないため、GetOrCreate ではなく Get を使用する。
-Get(libPath, libHash string) (*LibAnalysisResult, error)
+```text
+1. 既存のバイナリ本体判定を実行
+2. depsStore.LoadDynLibDeps(cmdPath, contentHash) を実行
+3. 各 dep で wrapper / VDSO を除外
+4. libAnalysisStore.LoadAnalysis(dep.Path, dep.Hash) を実行
+5. 読込結果から has_network_signal / has_dynamic_load_signal を導出
+6. 解析結果未取得や store 読込失敗は fail-closed で停止
 ```
 
 ---
 
-## 9. スキーマバージョン移行
+## 7. スキーマ移行
 
-### 9.1 旧スキーマ（v20）レコードの扱い
+### 7.1 fileanalysis.Record
 
-`SchemaVersionMismatchError` は `LoadNetworkSymbolAnalysis` / `LoadDynLibDeps` が返す。
-`NetworkAnalyzer` は既存の動作（高リスク扱い + 警告ログ）を維持する。
-ユーザーは `record` を再実行する必要がある。
+- Record.LibraryAnalysis を削除
+- SymbolAnalysisData.DetectedLibraryNetworkDeps を削除
+- CurrentSchemaVersion を更新
 
-### 9.2 移行に伴う削除対象
+### 7.2 旧レコード
 
-| 削除対象 | 場所 |
-|---------|------|
-| `LibraryAnalysisEntry` 型 | `internal/fileanalysis/schema.go` |
-| `Record.LibraryAnalysis` フィールド | `internal/fileanalysis/schema.go` |
-| `SymbolAnalysisData.DetectedLibraryNetworkDeps` | `internal/fileanalysis/schema.go` |
-| `buildAnalysisOutputFromSymbolData` の `DetectedLibraryNetworkDeps` 参照 | `network_analyzer.go` |
-| `Validator.libraryAnalysisCache` フィールド（`map[string]*LibraryAnalysisEntry`） | `validator.go` |
+- LoadNetworkSymbolAnalysis / LoadDynLibDeps が SchemaVersionMismatchError を返す
+- runner は fail-closed を維持する
+- ユーザーは record 再実行が必要
 
 ---
 
-## 10. テスト方針
+## 8. シンボルリネーム仕様（最終形）
 
-各 AC に対するテストの対応:
+| 種別 | 旧シンボル | 新シンボル |
+|---|---|---|
+| package | internal/dynlibcache | internal/dynlibanalysisstore |
+| type | CacheManager | DynamicLibAnalysisStoreImpl |
+| interface | CacheManagerInterface | DynamicLibAnalysisStore |
+| method | GetOrCreate | LoadOrAnalyzeAndStore |
+| method | Get | LoadAnalysis |
+| error | ErrCacheMiss | ErrAnalysisNotFound |
+| validator field | libAnalysisCacheManager | dynamicLibAnalysisStore |
+| runner field | libCache | libAnalysisStore |
+| constructor | NewNetworkAnalyzerWithLibCache | NewNetworkAnalyzerWithLibAnalysisStore |
 
-| AC | テスト種別 | テスト名 / テスト内容 |
+注記: 最終マージ時点では旧シンボルを残さず、新シンボルへ統一する。
+
+---
+
+## 9. テスト方針
+
+| AC | テスト種別 | テスト内容（新命名） |
 |----|---------|---------|
-| AC-1 | Unit | `TestCacheManager_GetOrCreate_Hit`: 同一ライブラリを 2 回 GetOrCreate → 2 回目はファイルを読まない（モック確認） |
-| AC-2 | Unit | `TestCacheManager_GetOrCreate_HashMismatch`: `lib_hash` 変更後の GetOrCreate → 再解析され新しい `path+hash` キーで保存される |
-| AC-3 | Unit | `TestAnalyzeLibraries_dynLibDepsPreservedOnCacheHit`: キャッシュヒット時でも `record.DynLibDeps` に正しい soname/path/hash が記録される |
-| AC-4 | Integration | dynlibcache 経由のネットワーク判定が 0123 ベースラインと同等（runner 側で wrapper/VDSO 除外を維持し、`LoadDynLibDeps` の `ErrRecordNotFound` は fail-closed で高リスク扱い） |
-| AC-5 | Unit | `TestCacheManager_GetOrCreate_CorruptFile`: 破損キャッシュファイル → 再解析して `AnalysisWarnings` に記録 |
-| AC-6 | Unit | `TestAnalyzeLibraries_recordHasNoDynLibAnalysisField`: record JSON サイズの削減を確認（`LibraryAnalysis` フィールドが含まれない） |
-| AC-7 | Unit | `TestAnalyzeLibraries_excludesWrapperAndVDSO`: wrapper / VDSO がキャッシュ対象から除外される |
-| AC-8 | CI | `make fmt` / `go test -tags test -v ./...` / `make lint` |
-| AC-9 | Integration | `dynamic_load_symbols` が記録されたライブラリ → runner が内部導出した `has_dynamic_load_signal` により高リスク判定 |
-| AC-10 | Unit | `TestValidatorLibraryAnalyzer_Analyze_fileTooLarge`: ファイルサイズ 1 GB 超のライブラリを `Analyze()` に渡すと error が返る（FR-3.6.1）。`TestAnalyzeLibraries_fileTooLargeReturnsError`: `analyzeLibraries()` がそのエラーを上位へ伝播し、セッション継続を確認 |
-| AC-12 | Unit | `TestAnalyzeLibraries_missingLibFileReturnsError`: 存在しないライブラリパスが含まれる DynLibDeps で `analyzeLibraries()` がエラーを返すことを確認。また `record` セッションレベルのテストで次ファイルの処理継続を確認（FR-3.6.2） |
-| AC-13 | Unit | `TestAnalyzeLibraries_vdsoExcluded`: `linux-vdso.so.1` のみを含む DynLibDeps で `GetOrCreate` が呼ばれないことを確認（FR-3.6.3） |
+| AC-1 | Unit | TestDynamicLibAnalysisStore_LoadOrAnalyzeAndStore_Reuse |
+| AC-2 | Unit | TestDynamicLibAnalysisStore_LoadOrAnalyzeAndStore_HashChanged |
+| AC-3 | Unit | TestAnalyzeLibraries_DynLibDepsPreservedOnReuse |
+| AC-4 | Integration | TestNetworkAnalyzer_UsesDynamicLibAnalysisResults |
+| AC-5 | Unit | TestDynamicLibAnalysisStore_CorruptFile_Reanalyze |
+| AC-6 | Unit | TestAnalyzeLibraries_RecordHasNoLibraryAnalysisField |
+| AC-7 | Unit | TestAnalyzeLibraries_ExcludesWrapperAndVDSO |
+| AC-8 | CI | make fmt / go test -tags test -v ./... / make lint |
+| AC-9 | Integration | TestNetworkAnalyzer_DynamicLoadSymbolsHighRisk |
+| AC-10 | Unit | TestValidatorLibraryAnalyzer_Analyze_FileTooLargeReturnsError |
+| AC-12 | Unit | TestAnalyzeLibraries_MissingLibFileReturnsError |
+| AC-13 | Unit | TestAnalyzeLibraries_VDSOExcluded |
 
-### 10.1 AC-10 の実装方法
+### 9.1 AC-10 の実装補足
 
-ファイルサイズ超過とファイル不在はいずれも `Analyze()` が error を返す同一パスを辿る。
+SafeOpenFile().Stat() をモックし、maxFileSize + 1 を返すことで
+1 GB 超過パスを実ファイルなしで検証する。
 
-テスト時に 1 GB 超の実ファイルを作成するのはコストが高い。
-**モック `FileSystem`** の `SafeOpenFile().Stat()` が 1 GB 超のサイズを返すようスタブすることで、
-実ファイルなしにサイズ超過パスをテストする。
+### 9.2 AC-12 の実装補足
 
-```
-// テスト用スタブ例
-type oversizedStatFile struct { safefileio.File }
-func (f *oversizedStatFile) Stat() (os.FileInfo, error) {
-    return &fakeFileInfo{size: maxFileSize + 1}, nil
-}
-```
-
-**タスク 0123 AC-10 との関係:**
-タスク 0123 の `analyzeOneLibrary` はサイズ超過を warning として返していたが、
-本タスクで error を返す動作に変更する。`TestAnalyzeOneLibrary_fileTooLarge`（旧テスト）は
-`TestValidatorLibraryAnalyzer_Analyze_fileTooLarge`（error を確認）に置き換える。
-
-### 10.2 AC-12 の実装方法
-
-`TestAnalyzeLibraries_missingLibFileReturnsError` は
-`analyzeLibraries()` を直接呼び出し、`DynLibDeps` に存在しないパスを含むエントリを渡す。
-`Analyze()` が error を返し、`analyzeLibraries()` がその error を上位へ伝播することを確認する。
-
-セッション継続の確認は統合テストレベルで行う（`record` が複数ファイルを処理する際に、
-1 ファイルの `analyzeLibraries` エラーが次ファイルの処理を妨げないこと）。
-
-**タスク 0123 AC-7 との関係:**
-タスク 0123 の `analyzeOneLibrary` は warning を返していたが、本タスクで `Analyze()` が
-error を返す動作に変更する。`TestAnalyzeOneLibrary_missingFileAddsWarning`（旧テスト）は
-`TestValidatorLibraryAnalyzer_Analyze_missingFileReturnsError` に置き換える。
-
-### 10.3 AC-13 の実装方法
-
-`TestAnalyzeLibraries_vdsoExcluded` は VDSO エントリのみを持つ `DynLibDeps` を渡し、
-`GetOrCreate` が一度も呼ばれないことをモック `CacheManagerInterface` の呼び出し回数で確認する。
-（既存の `TestAnalyzeLibraries_excludesWrapperAndVDSO` は wrapper と混在テストのため、
-VDSO 除外を単独で保証しない。）
+analyzeLibraries を直接呼び、存在しないパスを含む DynLibDeps を渡し、
+error 伝播とセッション継続を確認する。
