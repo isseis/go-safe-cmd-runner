@@ -22,9 +22,9 @@ flowchart TD
 
     SCRIPT[("script.sh")] --> SHEBANG["resolveShebangInfo()"]
     SHEBANG --> SAVE_INTERP["saveInterpreterRecord(interpPath)"]
-    SAVE_INTERP --> IREC[("インタープリタ record\nSymbolAnalysis\nSyscallAnalysis\nDynLibDeps")]
+    SAVE_INTERP --> IREC[("インタープリタ record<br>SymbolAnalysis<br>SyscallAnalysis<br>DynLibDeps")]
     SCRIPT --> SAVE_SCRIPT["saveRecordCore(scriptPath)"]
-    SAVE_SCRIPT --> SREC[("script record\nShebangInterpreter\n  .InterpreterPath\n  .ResolvedPath\n  ...\nSymbolAnalysis = nil\nDynLibDeps = nil")]
+    SAVE_SCRIPT --> SREC[("script record<br>ShebangInterpreter<br>  .InterpreterPath<br>  .ResolvedPath<br>  ...<br>SymbolAnalysis = nil<br>DynLibDeps = nil")]
 
     class SCRIPT,IREC,SREC data;
     class SHEBANG,SAVE_INTERP,SAVE_SCRIPT process;
@@ -44,21 +44,21 @@ flowchart TD
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    CMD["IsNetworkOperation(\n  scriptPath, args, contentHash\n)"] --> PROF{"commandProfiles\n一致?"}
+    CMD["IsNetworkOperation(<br>  scriptPath, args, contentHash<br>)"] --> PROF{"commandProfiles<br>一致?"}
     PROF -->|"Yes"| RET1["結果返却"]
-    PROF -->|"No"| BINS["analyzeBinarySignals(\n  scriptPath, contentHash\n)"]
+    PROF -->|"No"| BINS["analyzeBinarySignals(<br>  scriptPath, contentHash<br>)"]
 
-    BINS --> SCRIPT_SYM["LoadNetworkSymbolAnalysis(scriptPath)\n→ nil (script 自身はシンボルなし)"]
-    BINS --> SCRIPT_SVC["checkSyscallCache(scriptPath)\n→ nil (script に svc なし)"]
-    BINS --> SCRIPT_DYNLIB["checkDynLibDepsNetwork(scriptPath)\n→ nil (script に DynLibDeps なし)"]
+    BINS --> SCRIPT_SYM["LoadNetworkSymbolAnalysis(scriptPath)<br>→ nil (script 自身はシンボルなし)"]
+    BINS --> SCRIPT_SVC["checkSyscallCache(scriptPath)<br>→ nil (script に svc なし)"]
+    BINS --> SCRIPT_DYNLIB["checkDynLibDepsNetwork(scriptPath)<br>→ nil (script に DynLibDeps なし)"]
 
-    BINS --> SHEBANG["新規: ShebangInterpreterStore\n.LoadInterpreterAnalysisPath(\n  scriptPath, contentHash\n)"]
-    SHEBANG --> IPATH[("interpPath\ninterpContentHash")]
-    IPATH --> RECURSE["analyzeBinarySignals(\n  interpPath, interpContentHash\n)"]
+    BINS --> SHEBANG["新規: ShebangInterpreterStore<br>.LoadInterpreterAnalysisPath(<br>  scriptPath, contentHash<br>)"]
+    SHEBANG --> IPATH[("interpPath<br>interpContentHash")]
+    IPATH --> RECURSE["analyzeBinarySignals(<br>  interpPath, interpContentHash<br>)"]
 
-    RECURSE --> INTERP_SYM["LoadNetworkSymbolAnalysis(interpPath)\n← インタープリタの SymbolAnalysis"]
-    RECURSE --> INTERP_SVC["checkSyscallCache(interpPath)\n← インタープリタの SyscallAnalysis\n（mprotect PROT_EXEC 含む）"]
-    RECURSE --> INTERP_DYNLIB["checkDynLibDepsNetwork(interpPath)\n← インタープリタの DynLibDeps\n（推移的ライブラリ解析）"]
+    RECURSE --> INTERP_SYM["LoadNetworkSymbolAnalysis(interpPath)<br>← インタープリタの SymbolAnalysis"]
+    RECURSE --> INTERP_SVC["checkSyscallCache(interpPath)<br>← インタープリタの SyscallAnalysis<br>（mprotect PROT_EXEC 含む）"]
+    RECURSE --> INTERP_DYNLIB["checkDynLibDepsNetwork(interpPath)<br>← インタープリタの DynLibDeps<br>（推移的ライブラリ解析）"]
 
     RECURSE --> OR["OR 結合"]
     BINS --> OR
@@ -111,22 +111,22 @@ flowchart TD
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
 
-    START["LoadInterpreterAnalysisPath(\n  scriptPath, scriptContentHash\n)"] --> LOAD_S["v.store.Load(scriptPath)"]
+    START["LoadInterpreterAnalysisPath(<br>  scriptPath, scriptContentHash<br>)"] --> LOAD_S["v.store.Load(scriptPath)"]
     LOAD_S --> NOT_FOUND{"ErrRecordNotFound?"}
     NOT_FOUND -->|"Yes"| RET_NIL1["return ('', '', nil)"]
     NOT_FOUND -->|"No"| ERR1{"他のエラー?"}
     ERR1 -->|"Yes"| RET_ERR1["error を返す"]
-    ERR1 -->|"No"| HASH_CHK{"scriptRecord.ContentHash\n== scriptContentHash?"}
+    ERR1 -->|"No"| HASH_CHK{"scriptRecord.ContentHash<br>== scriptContentHash?"}
     HASH_CHK -->|"No"| RET_MISMATCH["ErrHashMismatch を返す"]
-    HASH_CHK -->|"Yes"| SI{"ShebangInterpreter\nnil?"}
+    HASH_CHK -->|"Yes"| SI{"ShebangInterpreter<br>nil?"}
     SI -->|"Yes"| RET_NIL2["return ('', '', nil)"]
-    SI -->|"No"| IPATH["interpPath 決定\n(ResolvedPath 優先)"]
+    SI -->|"No"| IPATH["interpPath 決定<br>(ResolvedPath 優先)"]
     IPATH --> LOAD_I["v.store.Load(interpPath)"]
     LOAD_I --> NOT_FOUND2{"ErrRecordNotFound?"}
     NOT_FOUND2 -->|"Yes"| RET_NIL3["return (interpPath, '', nil)"]
     NOT_FOUND2 -->|"No"| ERR2{"他のエラー?"}
     ERR2 -->|"Yes"| RET_ERR2["error を返す"]
-    ERR2 -->|"No"| RET_OK["return (interpPath,\n  interpRecord.ContentHash,\n  nil)"]
+    ERR2 -->|"No"| RET_OK["return (interpPath,<br>  interpRecord.ContentHash,<br>  nil)"]
 
     class START,RET_NIL1,RET_NIL2,RET_NIL3,RET_OK data;
     class LOAD_S,NOT_FOUND,ERR1,HASH_CHK,SI,IPATH,LOAD_I,NOT_FOUND2,ERR2 process;
