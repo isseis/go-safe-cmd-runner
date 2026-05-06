@@ -5,8 +5,8 @@
 - [x] Phase 1: `ShebangInterpreterStore` の実装
 - [x] Phase 2: `NetworkAnalyzer` の拡張
 - [x] Phase 3: `NewNetworkAnalyzer` 呼び出し箇所の更新
-- [ ] Phase 4: テスト実装
-- [ ] Phase 5: 動作確認・品質チェック
+- [x] Phase 4: テスト実装
+- [x] Phase 5: 動作確認・品質チェック
 
 ---
 
