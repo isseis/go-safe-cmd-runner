@@ -324,7 +324,7 @@ func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (i
 				"cmd_path", cmdPath, "dep_path", dep.Path, "syscall", sigs.networkSyscall)
 			isNetwork = true
 		}
-		if sigs.mprotectRisk != nil {
+		if sigs.hasMprotectRisk {
 			mprotectLog.log("dynlib analysis detected mprotect-family PROT_EXEC risk",
 				"cmd_path", cmdPath, "dep_path", dep.Path,
 				"syscall", sigs.mprotectRisk.SyscallName, "status", sigs.mprotectRisk.Status)
@@ -347,10 +347,11 @@ func (l *onceLogger) log(msg string, args ...any) {
 
 // depSignals holds the network/risk signals extracted from one library analysis result.
 type depSignals struct {
-	dynLoadSymbols []string
-	networkSymbols []string
-	networkSyscall string
-	mprotectRisk   *common.SyscallArgEvalResult
+	dynLoadSymbols  []string
+	networkSymbols  []string
+	networkSyscall  string
+	mprotectRisk    common.SyscallArgEvalResult
+	hasMprotectRisk bool
 }
 
 // analyzeDepSignals extracts all network and risk signals from result.
@@ -363,7 +364,7 @@ func (a *NetworkAnalyzer) analyzeDepSignals(result *dynamicanalysis.Result) depS
 	if result.SyscallAnalysis != nil {
 		table := syscallTableForArch(a.goos, result.SyscallAnalysis.Architecture)
 		s.networkSyscall = firstNetworkSyscall(table, result.SyscallAnalysis)
-		s.mprotectRisk = elfanalyzer.FirstMprotectRisk(result.SyscallAnalysis.ArgEvalResults)
+		s.mprotectRisk, s.hasMprotectRisk = elfanalyzer.FirstMprotectRisk(result.SyscallAnalysis.ArgEvalResults)
 	}
 	return s
 }
