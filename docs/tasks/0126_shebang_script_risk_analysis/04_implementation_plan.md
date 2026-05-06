@@ -45,8 +45,9 @@
 - [ ] 2-3. `analyzeBinarySignals` に shebang チェーン追跡を追加（`return` 直前）
   - [ ] `shebangStore != nil && contentHash != ""` のガード
   - [ ] `LoadInterpreterAnalysisPath` 呼び出し
-  - [ ] `ErrHashMismatch` → `return true, true`
-  - [ ] その他エラー → `slog.Warn` + `return true, true`
+  - [ ] `ErrInterpreterRecordMissing` → エラーを呼び出し元へ返却（実行中止）
+  - [ ] `ErrHashMismatch` → エラーを呼び出し元へ返却（実行中止）
+  - [ ] その他エラー（インタープリタレコードロード失敗を含む）→ エラーを呼び出し元へ返却（実行中止）
   - [ ] `interpHash != ""` の場合のみ再帰呼び出し
   - [ ] 再帰結果を OR 結合
 
@@ -81,9 +82,9 @@
   - [ ] TC-11: インタープリタが `socket` シンボル → `isNetwork = true`
   - [ ] TC-12: インタープリタの共有ライブラリが mprotect リスクを持つ → `isHighRisk = true`
   - [ ] TC-13: インタープリタのライブラリが `dlopen` → `isHighRisk = true`
-  - [ ] TC-14: インタープリタレコード不在（`ErrInterpreterRecordMissing`）→ `(true, true)`
-  - [ ] TC-15: `ErrHashMismatch` → `(true, true)`
-  - [ ] TC-16: ロードエラー → `(true, true)`
+  - [ ] TC-14: インタープリタレコード不在（`ErrInterpreterRecordMissing`）→ エラー返却 + グループ実行中止
+  - [ ] TC-15: `ErrHashMismatch` → エラー返却 + グループ実行中止
+  - [ ] TC-16: ロードエラー → エラー返却 + グループ実行中止
   - [ ] TC-17: `shebangStore == nil` → 変更なし
   - [ ] TC-18: 非スクリプト（`ShebangInterpreter == nil`）→ 変更なし
 

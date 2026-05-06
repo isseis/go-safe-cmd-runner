@@ -82,13 +82,13 @@ shebang スクリプトについては、`record` 実行時に `ShebangInterpret
 - スクリプトのレコードが存在しない（`ErrRecordNotFound`）: **panic（プログラミングエラー）**
   - `LoadInterpreterAnalysisPath` 到達時点では `LoadNetworkSymbolAnalysis` が成功済みであり、スクリプトレコードは必ず存在するはず。不在は呼び出し側のバグを示す
   - `checkSyscallCache` が `ErrRecordNotFound` を panic にするのと同一方針
-- スクリプトのコンテンツハッシュ不一致: high risk 扱い（`ErrHashMismatch`）
+- スクリプトのコンテンツハッシュ不一致（`ErrHashMismatch`）: **実行中止 + エラー報告**
 - `ShebangInterpreter` フィールドが nil: スキップ（非スクリプト）
-- インタープリタのレコードが存在しない（`ErrRecordNotFound`）: **high risk 扱い**
-  - `record` 実行時に必ずインタープリタレコードが保存されるため、不在は整合性異常を示す
-  - 既存の dynlib 解析（`ErrAnalysisNotFound` → high risk）と同一方針
-- インタープリタのレコードロードエラー: high risk 扱い（fail-closed）
-- インタープリタのコンテンツハッシュが空（整合性異常）: high risk 扱い
+- インタープリタのレコードが存在しない（`ErrRecordNotFound`）: **実行中止 + エラー報告**
+  - `record` 実行時に必ずインタープリタレコードが保存されるため、不在は整合性異常（改ざんまたは破損）を示す
+  - `runner` は当該グループの実行を継続せず、利用者に明示的なエラーを返す
+- インタープリタのレコードロードエラー: **実行中止 + エラー報告**
+- インタープリタのコンテンツハッシュが空（整合性異常）: 実行中止 + エラー報告
 
 ### 4.3. 互換性
 
@@ -112,8 +112,8 @@ shebang スクリプトについては、`record` 実行時に `ShebangInterpret
 | AC-03 | インタープリタの共有ライブラリが mprotect(PROT_EXEC) リスクを持つ | `IsNetworkOperation()` の `isHighRisk` が `true` になる |
 | AC-04 | インタープリタの共有ライブラリが dynload シンボルを持つ | `isHighRisk` が `true` になる |
 | AC-05 | スクリプトのレコードがストアに存在しない | panic（プログラミングエラー） |
-| AC-06 | インタープリタレコードがストアに存在しない | high risk 扱い（fail-closed） |
-| AC-07 | インタープリタレコードのロードが失敗する | high risk 扱い（fail-closed） |
+| AC-06 | インタープリタレコードがストアに存在しない | 当該グループの実行を中止し、エラーを報告する |
+| AC-07 | スクリプトハッシュ不一致またはインタープリタレコードのロードが失敗する | 当該グループの実行を中止し、エラーを報告する |
 | AC-08 | 非スクリプトファイル（ELF バイナリ等）を runner が処理 | 既存の動作が変わらない |
 
 ---

@@ -83,11 +83,11 @@ func NewShebangInterpreterStore(store Store) ShebangInterpreterStore {
 | 条件 | 返却値 | 呼び出し側の扱い |
 |------|--------|----------------|
 | スクリプトレコード不在 | `("", "", ErrRecordNotFound)` | panic（`analyzeBinarySignals` で検出）|
-| スクリプト `contentHash` 不一致 | `("", "", ErrHashMismatch)` | high risk |
+| スクリプト `contentHash` 不一致 | `("", "", ErrHashMismatch)` | エラー返却（当該グループ実行中止）|
 | `ShebangInterpreter == nil` | `("", "", nil)` | スキップ（非スクリプト）|
-| インタープリタレコード不在 | `("", "", error)` | high risk（整合性異常）|
-| インタープリタ `ContentHash` 空 | `("", "", error)` | high risk（整合性異常）|
-| その他のエラー | `("", "", err)` | high risk（fail-closed）|
+| インタープリタレコード不在 | `("", "", ErrInterpreterRecordMissing)` | エラー返却（当該グループ実行中止）|
+| インタープリタ `ContentHash` 空 | `("", "", ErrInterpreterRecordMissing)` | エラー返却（当該グループ実行中止）|
+| その他のエラー（インタープリタレコードロード失敗含む） | `("", "", err)` | エラー返却（当該グループ実行中止）|
 
 `ErrInterpreterRecordMissing` は `fileanalysis` パッケージに新規追加する sentinel error。
 
@@ -132,7 +132,10 @@ func NewNetworkAnalyzer(
 
 ### 3.3. `analyzeBinarySignals` の変更
 
-既存の解析（`SymbolAnalysis`・`SyscallAnalysis`・`DynLibDeps`）の実行後に shebang チェーン追跡を追加する。挿入位置は関数末尾の `return isNetwork, hasDynLoad` の直前。
+既存の解析（`SymbolAnalysis`・`SyscallAnalysis`・`DynLibDeps`）の実行後に shebang チェーン追跡を追加する。インタープリタレコード不在は high risk に丸めず、エラーとして呼び出し元へ返却する。
+
+このため、`analyzeBinarySignals` は `error` を返せる形に拡張し、`IsNetworkOperation` → `EvaluateRisk` → グループ実行層へ伝播させる。
+`ErrHashMismatch` とインタープリタレコードロードエラーは high risk へ丸めず、実行中止エラーとして扱う。
 
 ```go
 // Shebang chain: if this is a script, also analyze the interpreter binary.
@@ -152,12 +155,11 @@ if a.shebangStore != nil && contentHash != "" {
         // succeeded). A missing record now indicates a programming error.
         panic(fmt.Sprintf("shebang store: script record disappeared for %q: %v", cmdPath, err))
     case errors.Is(err, fileanalysis.ErrHashMismatch):
-        slog.Warn("shebang script hash mismatch; treating as high risk", "path", cmdPath)
-        return true, true
+        return false, false, fmt.Errorf("shebang script hash mismatch for %q: %w", cmdPath, err)
+    case errors.Is(err, fileanalysis.ErrInterpreterRecordMissing):
+        return false, false, fmt.Errorf("shebang interpreter record missing for %q: %w", cmdPath, err)
     default:
-        slog.Warn("shebang interpreter lookup failed; treating as high risk",
-            "path", cmdPath, "error", err)
-        return true, true
+        return false, false, fmt.Errorf("shebang interpreter lookup failed for %q: %w", cmdPath, err)
     }
 }
 ```
@@ -213,9 +215,9 @@ networkAnalyzer := security.NewNetworkAnalyzer(
 | TC-11 | インタープリタが `socket` シンボルを持つ | `isNetwork = true` |
 | TC-12 | インタープリタの共有ライブラリが mprotect リスクを持つ | `isHighRisk = true` |
 | TC-13 | インタープリタの共有ライブラリが `dlopen` を持つ | `isHighRisk = true` |
-| TC-14 | インタープリタレコード不在（`ErrInterpreterRecordMissing`）| `(true, true)`（high risk）|
-| TC-15 | `ErrHashMismatch` | `(true, true)` |
-| TC-16 | ロードエラー | `(true, true)` |
+| TC-14 | インタープリタレコード不在（`ErrInterpreterRecordMissing`）| エラーを返し、グループ実行を中止 |
+| TC-15 | `ErrHashMismatch` | エラーを返し、グループ実行を中止 |
+| TC-16 | ロードエラー | エラーを返し、グループ実行を中止 |
 | TC-17 | `shebangStore == nil` | 変更なし（既存動作）|
 | TC-18 | 非スクリプト（`ShebangInterpreter == nil`）| 変更なし（AC-07）|
 
@@ -227,9 +229,9 @@ networkAnalyzer := security.NewNetworkAnalyzer(
 | AC-02: env 形式 python3 | TC-02 |
 | AC-03: インタープリタ共有ライブラリの mprotect リスク | TC-12 |
 | AC-04: ライブラリの dynload シンボル | TC-13 |
-| AC-05: スクリプトレコード不在はスキップ | TC-03 |
-| AC-06: インタープリタレコード不在は high risk | TC-06, TC-14 |
-| AC-07: ロードエラーで high risk | TC-15, TC-16 |
+| AC-05: スクリプトレコード不在は panic | TC-03 |
+| AC-06: インタープリタレコード不在は実行中止エラー | TC-06, TC-14 |
+| AC-07: ハッシュ不一致またはロードエラーは実行中止エラー | TC-15, TC-16 |
 | AC-08: ELF バイナリの回帰 | TC-18 |
 
 ---

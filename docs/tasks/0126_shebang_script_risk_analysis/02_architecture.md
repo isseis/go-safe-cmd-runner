@@ -117,17 +117,17 @@ flowchart TD
     NOT_FOUND -->|"No"| ERR1{"他のエラー?"}
     ERR1 -->|"Yes"| RET_ERR1["error を返す"]
     ERR1 -->|"No"| HASH_CHK{"scriptRecord.ContentHash<br>== scriptContentHash?"}
-    HASH_CHK -->|"No"| RET_MISMATCH["ErrHashMismatch を返す"]
+    HASH_CHK -->|"No"| RET_MISMATCH["ErrHashMismatch を返す<br>（整合性異常 → 実行中止）"]
     HASH_CHK -->|"Yes"| SI{"ShebangInterpreter<br>nil?"}
     SI -->|"Yes"| RET_NIL2["return ('', '', nil)"]
     SI -->|"No"| IPATH["interpPath 決定<br>(ResolvedPath 優先)"]
     IPATH --> LOAD_I["v.store.Load(interpPath)"]
     LOAD_I --> NOT_FOUND2{"ErrRecordNotFound?"}
-    NOT_FOUND2 -->|"Yes"| RET_ERR3["error を返す<br>（整合性異常 → high risk）"]
+    NOT_FOUND2 -->|"Yes"| RET_ERR3["error を返す<br>（整合性異常 → 実行中止）"]
     NOT_FOUND2 -->|"No"| ERR2{"他のエラー?"}
     ERR2 -->|"Yes"| RET_ERR2["error を返す"]
     ERR2 -->|"No"| HASH_EMPTY{"interpRecord.ContentHash<br>空?"}
-    HASH_EMPTY -->|"Yes"| RET_ERR4["error を返す<br>（整合性異常 → high risk）"]
+    HASH_EMPTY -->|"Yes"| RET_ERR4["error を返す<br>（整合性異常 → 実行中止）"]
     HASH_EMPTY -->|"No"| RET_OK["return (interpPath,<br>  interpRecord.ContentHash,<br>  nil)"]
 
     class START,RET_NIL2,RET_OK data;
