@@ -26,11 +26,11 @@ flowchart TD
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    A[(Analysis Stores)] --> B["verification.Manager\nowns store instances"]
-    B --> C["AnalysisDeps\naggregates wiring input"]
-    C --> D["risk.Evaluator\nassembled once in runner"]
-    D --> E["resource.NormalResourceManager\nuses high-level dependency only"]
-    D -.-> F["security.NetworkAnalyzer\nconsumes aggregated analysis deps"]
+    A[(Analysis Stores)] --> B["verification.Manager<br>owns store instances"]
+    B --> C["AnalysisDeps<br>aggregates wiring input"]
+    C --> D["risk.Evaluator<br>assembled once in runner"]
+    D --> E["resource.NormalResourceManager<br>uses high-level dependency only"]
+    D -.-> F["security.NetworkAnalyzer<br>consumes aggregated analysis deps"]
 
     class A data;
     class B,D,F process;
@@ -63,19 +63,19 @@ flowchart TB
     classDef risk fill:#fff5e6,stroke:#cc7a00,stroke-width:2px,color:#7a4900;
 
     subgraph Current[現状]
-        C1["verification.Manager\nGetXxxStore x5"] --> C2["runner.createNormalResourceManager\ncollect stores individually"]
-        C2 --> C3["resource.Config\n5 store fields"]
+        C1["verification.Manager<br>GetXxxStore x5"] --> C2["runner.createNormalResourceManager<br>collect stores individually"]
+        C2 --> C3["resource.Config<br>5 store fields"]
         C3 --> C4["newNormalManager"]
-        C4 --> C5["risk.NewStandardEvaluator\n5 store args"]
-        C5 --> C6["security.NewNetworkAnalyzer\n5 store args"]
+        C4 --> C5["risk.NewStandardEvaluator<br>5 store args"]
+        C5 --> C6["security.NewNetworkAnalyzer<br>5 store args"]
     end
 
     subgraph Target[目標]
-        T1["verification.Manager\nGetAnalysisDeps"] --> T2["runner composition root\nassemble once"]
-        T2 --> T3["resource.Config\nEvaluator only"]
+        T1["verification.Manager<br>GetAnalysisDeps"] --> T2["runner composition root<br>assemble once"]
+        T2 --> T3["resource.Config<br>Evaluator only"]
         T3 --> T4["newNormalManager"]
         T4 --> T5["risk.Evaluator"]
-        T5 --> T6["security.NewNetworkAnalyzer\naggregated deps"]
+        T5 --> T6["security.NewNetworkAnalyzer<br>aggregated deps"]
     end
 
     class C1,C2,C4,C5,C6,T1,T2,T4,T5,T6 process;
@@ -92,22 +92,22 @@ graph TB
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
     subgraph verification[internal/verification]
-        V1["manager.go\nstore ownership"]
-        V2["analysis deps provider\nnew"]
+        V1["manager.go<br>store ownership"]
+        V2["analysis deps provider<br>new"]
     end
 
     subgraph runner[internal/runner]
-        R1["runner.go\ncomposition root"]
-        R2["resource/default_manager.go\nConfig simplified"]
-        R3["resource/normal_manager.go\nEvaluator injected"]
+        R1["runner.go<br>composition root"]
+        R2["resource/default_manager.go<br>Config simplified"]
+        R3["resource/normal_manager.go<br>Evaluator injected"]
     end
 
     subgraph risk[internal/runner/base/risk]
-        K1["evaluator.go\nNewStandardEvaluator"]
+        K1["evaluator.go<br>NewStandardEvaluator"]
     end
 
     subgraph security[internal/runner/base/security]
-        S1["network_analyzer.go\nAnalysisDeps consumed"]
+        S1["network_analyzer.go<br>AnalysisDeps consumed"]
     end
 
     V1 --> V2 --> R1 --> R2 --> R3 --> K1 --> S1
