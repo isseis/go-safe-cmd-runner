@@ -9,7 +9,10 @@
   - `record` 側: ライブラリ解析結果への `ArgEvalResults` 保存
   - `runner` 側: dynlib 由来 `ArgEvalResults` の高リスク判定反映
 - 再利用優先:
-  - 既存の `elfanalyzer.EvalMprotectRisk` を流用し、独自判定関数は新設しない
+  - 既存の `elfanalyzer.EvalMprotectRisk` を基盤として利用する
+  - ログ出力にマッチした syscall 名・ステータスを含めるため、同ファイルに
+    `FirstMprotectRisk` (値コピーを返す companion 関数) を追加し、
+    `EvalMprotectRisk` はそれに委譲する形に変更する
 - 回帰防止:
   - 既存ネットワーク判定テストを維持し、追加テストは不足ケースのみに限定する
 
@@ -21,7 +24,8 @@
 
 - [x] P1-1 変更点を 2 箇所に限定する（`filevalidator` / `network_analyzer`）
 - [x] P1-2 `ArgEvalResults` の保存先が dynlib ストアスキーマで欠落しないことを確認する
-- [x] P1-3 高リスク判定ロジックは `EvalMprotectRisk` 再利用で実装する方針を確定する
+- [x] P1-3 高リスク判定ロジックは `EvalMprotectRisk` を基盤とし、ログ用コンテキスト取得のため
+       `FirstMprotectRisk` を companion として追加する方針を確定する
 - [x] P1-4 既存 AC（要件定義書）との対応表を作成する
 
 ### Phase 2: `record` 側実装
@@ -40,6 +44,7 @@
 
 対象:
 
+- `internal/security/elfanalyzer/mprotect_risk.go`（`FirstMprotectRisk` 追加）
 - `internal/runner/base/security/network_analyzer.go`
 
 タスク:
@@ -118,8 +123,11 @@
 
 ### 4.4 実装再利用レビュー
 
-- `runner` 側判定は `elfanalyzer.EvalMprotectRisk` を利用する前提を維持
-- mprotect 判定の自前ロジック新設は行わない
+- `runner` 側判定は `elfanalyzer.EvalMprotectRisk` / `FirstMprotectRisk` を利用
+- `FirstMprotectRisk` は `EvalMprotectRisk` の companion として
+  `mprotect_risk.go` に追加し、`EvalMprotectRisk` がそれに委譲する形に変更
+- ログ出力に syscall 名・ステータスを含めるための必要最小限の追加であり、
+  判定ロジックの自前実装ではない
 
 ### 4.5 コード言語レビュー
 
