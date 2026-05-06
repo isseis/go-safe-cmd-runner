@@ -49,7 +49,6 @@ func BenchmarkAnalyzeNetworkSymbols_TestdataFixtures(b *testing.B) {
 
 	fixtures := []string{
 		"with_socket.elf",
-		"with_ssl.elf",
 		"no_network.elf",
 		"static.elf",
 		"script.sh",

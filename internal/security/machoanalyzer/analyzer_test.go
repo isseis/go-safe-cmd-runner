@@ -46,7 +46,8 @@ func TestNormalizeSymbolName(t *testing.T) {
 		{"_socket$UNIX2003", "socket"},
 		{"socket", "socket"},
 		{"_connect$INODE64", "connect"},
-		{"SSL_connect", "SSL_connect"},
+		{"SSL_connect", "SSL_connect"}, // internal underscores and mixed-case must not be altered
+		{"getaddrinfo", "getaddrinfo"},
 		{"", ""},
 	}
 
@@ -339,7 +340,7 @@ func TestAnalyzeSlice_NonLibSystemSymbolsExcluded(t *testing.T) {
 
 	// curl's socket calls go through libcurl (not libSystem directly), so the
 	// libSystem-level symbol filter must not report NetworkDetected at the
-	// analyzer layer. (curl is detected at the runner level via KnownNetworkLibDeps.)
+	// analyzer layer. (curl is detected at the runner level via dynlib analysis.)
 	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
 }
 

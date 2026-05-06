@@ -38,12 +38,6 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 			expectSymbols:  true,
 		},
 		{
-			name:           "binary with ssl symbols",
-			filename:       "with_ssl.elf",
-			expectedResult: binaryanalyzer.NetworkDetected,
-			expectSymbols:  true,
-		},
-		{
 			name:           "binary without network symbols",
 			filename:       "no_network.elf",
 			expectedResult: binaryanalyzer.NoNetworkSymbols,
@@ -142,7 +136,7 @@ func TestHasDynamicLoad_ELF(t *testing.T) {
 
 // TestStandardELFAnalyzer_LibcSymbolFiltering verifies that symbols are recorded
 // in DetectedSymbols with the correct category according to the two-step filter:
-//   - networkSymbols matches (e.g. socket, SSL_CTX_new) are recorded with their category
+//   - networkSymbols matches (e.g. socket, getaddrinfo) are recorded with their category
 //     (regardless of library or VERNEED presence)
 //   - non-network libc symbols (e.g. __libc_start_main) appear with category "syscall_wrapper"
 //     (only for VERNEED-present/glibc binaries where sym.Library is populated)
@@ -203,25 +197,23 @@ func TestStandardELFAnalyzer_LibcSymbolFiltering(t *testing.T) {
 	})
 
 	t.Run("non-libc network symbols recorded with correct category", func(t *testing.T) {
-		path := filepath.Join(testdataDir, "with_ssl.elf")
+		path := filepath.Join(testdataDir, "with_socket.elf")
 		if _, err := os.Stat(path); os.IsNotExist(err) {
-			t.Skip("with_ssl.elf not found")
+			t.Skip("with_socket.elf not found")
 		}
 		absPath, err := filepath.Abs(path)
 		require.NoError(t, err)
 
 		output := analyzer.AnalyzeNetworkSymbols(absPath, "sha256:dummy")
-		// Step 1 records networkSymbols matches regardless of sym.Library or VERNEED presence.
-		// SSL_CTX_new is in networkSymbols (tls category) and must appear in DetectedSymbols.
-		foundSSL := false
+		foundSocket := false
 		for _, sym := range output.DetectedSymbols {
-			if sym.Name == "SSL_CTX_new" {
-				assert.Equal(t, "tls", sym.Category,
-					`SSL_CTX_new should have category "tls"`)
-				foundSSL = true
+			if sym.Name == "socket" {
+				assert.Equal(t, "socket", sym.Category,
+					`socket should have category "socket"`)
+				foundSocket = true
 			}
 		}
-		assert.True(t, foundSSL, `SSL_CTX_new should now appear in DetectedSymbols`)
+		assert.True(t, foundSocket, `socket should appear in DetectedSymbols`)
 	})
 }
 
@@ -613,10 +605,10 @@ func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
 		assert.True(t, found, `"socket" must be in DetectedSymbols`)
 	})
 
-	t.Run("no-VERNEED binary importing SSL_CTX_new yields NetworkDetected with tls category", func(t *testing.T) {
-		path := filepath.Join(tmpDir, "ssl_only.elf")
+	t.Run("no-VERNEED binary importing getaddrinfo yields NetworkDetected with dns category", func(t *testing.T) {
+		path := filepath.Join(tmpDir, "dns_only.elf")
 		elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
-			{Name: "SSL_CTX_new"},
+			{Name: "getaddrinfo"},
 		})
 
 		output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
@@ -624,12 +616,12 @@ func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
 		require.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
 		found := false
 		for _, sym := range output.DetectedSymbols {
-			if sym.Name == "SSL_CTX_new" {
-				assert.Equal(t, "tls", sym.Category)
+			if sym.Name == "getaddrinfo" {
+				assert.Equal(t, "dns", sym.Category)
 				found = true
 			}
 		}
-		assert.True(t, found, `"SSL_CTX_new" must be in DetectedSymbols`)
+		assert.True(t, found, `"getaddrinfo" must be in DetectedSymbols`)
 	})
 
 	t.Run("no-VERNEED binary importing only non-network symbols yields NoNetworkSymbols", func(t *testing.T) {
@@ -648,7 +640,7 @@ func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
 		path := filepath.Join(tmpDir, "mixed_symbols.elf")
 		elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
 			{Name: "socket"},
-			{Name: "SSL_CTX_new"},
+			{Name: "getaddrinfo"},
 			{Name: "pthread_create"}, // not in networkSymbols, must not be recorded
 		})
 
@@ -660,7 +652,7 @@ func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
 			names[sym.Name] = sym.Category
 		}
 		assert.Equal(t, "socket", names["socket"])
-		assert.Equal(t, "tls", names["SSL_CTX_new"])
+		assert.Equal(t, "dns", names["getaddrinfo"])
 		assert.NotContains(t, names, "pthread_create",
 			"pthread_create is not in networkSymbols and must not appear in DetectedSymbols")
 	})

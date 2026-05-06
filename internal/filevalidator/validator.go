@@ -338,20 +338,6 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 			}
 		}
 
-		// Detect known network libraries based on SOName.
-		// Run only when DynLibDeps is recorded and SymbolAnalysis is set.
-		if len(record.DynLibDeps) > 0 && record.SymbolAnalysis != nil {
-			var matched []string
-			for _, lib := range record.DynLibDeps {
-				base := filepath.Base(lib.SOName)
-				if binaryanalyzer.IsKnownNetworkLibrary(base) {
-					matched = append(matched, lib.SOName)
-				}
-			}
-			slices.Sort(matched)
-			record.SymbolAnalysis.KnownNetworkLibDeps = matched
-		}
-
 		// Analyze dynamic dependencies at library granularity.
 		if err := v.analyzeLibraries(record); err != nil {
 			return err
