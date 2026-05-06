@@ -12,12 +12,6 @@ const (
 	// CategorySocket represents POSIX socket API functions.
 	CategorySocket SymbolCategory = "socket"
 
-	// CategoryHTTP represents HTTP client library functions.
-	CategoryHTTP SymbolCategory = "http"
-
-	// CategoryTLS represents TLS/SSL library functions.
-	CategoryTLS SymbolCategory = "tls"
-
 	// CategoryDNS represents DNS resolution functions.
 	CategoryDNS SymbolCategory = "dns"
 
@@ -77,46 +71,6 @@ var networkSymbolRegistry = map[string]SymbolCategory{
 	"res_init":       CategoryDNS,
 	"res_query":      CategoryDNS,
 	"res_search":     CategoryDNS,
-
-	// =========================================
-	// HTTP Libraries (libcurl)
-	// =========================================
-
-	"curl_easy_init":     CategoryHTTP,
-	"curl_easy_perform":  CategoryHTTP,
-	"curl_easy_cleanup":  CategoryHTTP,
-	"curl_multi_init":    CategoryHTTP,
-	"curl_multi_perform": CategoryHTTP,
-	"curl_multi_cleanup": CategoryHTTP,
-	"curl_global_init":   CategoryHTTP,
-
-	// =========================================
-	// TLS/SSL Libraries (OpenSSL)
-	// =========================================
-
-	"SSL_new":          CategoryTLS,
-	"SSL_connect":      CategoryTLS,
-	"SSL_accept":       CategoryTLS,
-	"SSL_read":         CategoryTLS,
-	"SSL_write":        CategoryTLS,
-	"SSL_shutdown":     CategoryTLS,
-	"SSL_free":         CategoryTLS,
-	"SSL_CTX_new":      CategoryTLS,
-	"SSL_CTX_free":     CategoryTLS,
-	"SSL_library_init": CategoryTLS, // Legacy OpenSSL 1.0
-	"OPENSSL_init_ssl": CategoryTLS, // OpenSSL 1.1+
-
-	// =========================================
-	// TLS/SSL Libraries (GnuTLS)
-	// =========================================
-
-	"gnutls_init":        CategoryTLS,
-	"gnutls_handshake":   CategoryTLS,
-	"gnutls_record_send": CategoryTLS,
-	"gnutls_record_recv": CategoryTLS,
-	"gnutls_bye":         CategoryTLS,
-	"gnutls_deinit":      CategoryTLS,
-	"gnutls_global_init": CategoryTLS,
 }
 
 // GetNetworkSymbols returns a copy of the network symbol registry.
@@ -136,11 +90,11 @@ func IsNetworkSymbol(name string) (SymbolCategory, bool) {
 }
 
 // IsNetworkCategory returns true if the given category string represents a
-// network-related symbol category. The network categories are "socket", "dns",
-// "tls", and "http". "syscall_wrapper" and "dynamic_load" return false.
+// network-related symbol category. The network categories are "socket" and "dns".
+// "syscall_wrapper" and "dynamic_load" return false.
 func IsNetworkCategory(cat string) bool {
 	switch SymbolCategory(cat) {
-	case CategorySocket, CategoryDNS, CategoryTLS, CategoryHTTP:
+	case CategorySocket, CategoryDNS:
 		return true
 	}
 	return false

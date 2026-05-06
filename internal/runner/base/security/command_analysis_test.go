@@ -2348,9 +2348,9 @@ func TestFormatDetectedSymbols(t *testing.T) {
 			symbols: []binaryanalyzer.DetectedSymbol{
 				{Name: "socket", Category: "socket"},
 				{Name: "connect", Category: "socket"},
-				{Name: "SSL_connect", Category: "tls"},
+				{Name: "getaddrinfo", Category: "dns"},
 			},
-			expected: "[socket(socket), connect(socket), SSL_connect(tls)]",
+			expected: "[socket(socket), connect(socket), getaddrinfo(dns)]",
 		},
 	}
 

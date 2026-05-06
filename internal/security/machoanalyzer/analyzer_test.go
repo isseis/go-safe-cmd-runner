@@ -46,7 +46,7 @@ func TestNormalizeSymbolName(t *testing.T) {
 		{"_socket$UNIX2003", "socket"},
 		{"socket", "socket"},
 		{"_connect$INODE64", "connect"},
-		{"SSL_connect", "SSL_connect"},
+		{"getaddrinfo", "getaddrinfo"},
 		{"", ""},
 	}
 

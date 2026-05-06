@@ -50,7 +50,7 @@ func TestHasDynamicLoad_Independent(t *testing.T) {
 }
 
 // TestIsNetworkCategory verifies the IsNetworkCategory function correctly identifies
-// network-related categories ("socket", "dns", "tls", "http") and correctly rejects
+// network-related categories ("socket", "dns") and correctly rejects
 // other categories ("syscall_wrapper", "dynamic_load", empty string).
 func TestIsNetworkCategory(t *testing.T) {
 	tests := []struct {
@@ -61,8 +61,6 @@ func TestIsNetworkCategory(t *testing.T) {
 		// Network categories (should return true)
 		{"socket category", "socket", true},
 		{"dns category", "dns", true},
-		{"tls category", "tls", true},
-		{"http category", "http", true},
 
 		// Non-network categories (should return false)
 		{"syscall_wrapper category", "syscall_wrapper", false},
@@ -89,8 +87,6 @@ func TestIsNetworkSymbolName(t *testing.T) {
 		{"socket (socket category)", "socket", true},
 		{"connect (socket category)", "connect", true},
 		{"getaddrinfo (dns category)", "getaddrinfo", true},
-		{"SSL_connect (tls category)", "SSL_connect", true},
-		{"curl_easy_init (http category)", "curl_easy_init", true},
 		// Non-network symbols (syscall_wrapper category)
 		{"dlopen (dynamic_load, not network)", "dlopen", false},
 		// Unknown symbols
