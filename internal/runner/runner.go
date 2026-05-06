@@ -251,6 +251,9 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 	type dynLibDepsStoreProvider interface {
 		GetDynLibDepsStore() fileanalysis.DynLibDepsStore
 	}
+	type shebangStoreProvider interface {
+		GetShebangInterpreterStore() fileanalysis.ShebangInterpreterStore
+	}
 	if p, ok := pathResolver.(networkSymbolStoreProvider); ok {
 		networkStore = p.GetNetworkSymbolStore()
 	}
@@ -262,6 +265,10 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 	}
 	if p, ok := pathResolver.(dynLibDepsStoreProvider); ok {
 		dynLibDepsStore = p.GetDynLibDepsStore()
+	}
+	var shebangStore fileanalysis.ShebangInterpreterStore
+	if p, ok := pathResolver.(shebangStoreProvider); ok {
+		shebangStore = p.GetShebangInterpreterStore()
 	}
 
 	resourceManager, err := resource.NewDefaultResourceManager(resource.Config{
@@ -278,6 +285,7 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 		SyscallStore:       syscallStore,
 		DynLibDepsStore:    dynLibDepsStore,
 		LibAnalysisStore:   dynlibAnalysisStore,
+		ShebangStore:       shebangStore,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create default resource manager: %w", err)
