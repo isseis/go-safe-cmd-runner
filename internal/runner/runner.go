@@ -239,6 +239,7 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 	var syscallStore fileanalysis.SyscallAnalysisStore
 	var dynlibAnalysisStore dynamicanalysis.Store
 	var dynLibDepsStore fileanalysis.DynLibDepsStore
+	var shebangStore fileanalysis.ShebangInterpreterStore
 	type networkSymbolStoreProvider interface {
 		GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore
 	}
@@ -266,7 +267,6 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 	if p, ok := pathResolver.(dynLibDepsStoreProvider); ok {
 		dynLibDepsStore = p.GetDynLibDepsStore()
 	}
-	var shebangStore fileanalysis.ShebangInterpreterStore
 	if p, ok := pathResolver.(shebangStoreProvider); ok {
 		shebangStore = p.GetShebangInterpreterStore()
 	}

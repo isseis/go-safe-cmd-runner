@@ -541,7 +541,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 					return nil, errAnalysisStoresUnavailable
 				}
 
-				slog.Warn("Analysis stores are unavailable; network/syscall/dynlib-deps analysis will be disabled",
+				slog.Warn("Analysis stores are unavailable; network/syscall/dynlib-deps/shebang analysis will be disabled",
 					"creation_mode", opts.creationMode,
 					"dry_run", opts.isDryRun)
 				manager.networkSymbolStore = nil
