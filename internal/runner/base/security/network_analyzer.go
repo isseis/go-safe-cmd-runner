@@ -60,10 +60,13 @@ func NewNetworkAnalyzer(
 
 // IsNetworkOperation checks if the command performs network operations.
 // This function considers symbolic links to detect network commands properly.
-// Returns (isNetwork, isHighRisk, nil) where isHighRisk is true when any of the
+// Returns (isNetwork, isHighRisk, error). isHighRisk is true when any of the
 // following conditions hold: symlink depth exceeded; dynamic load symbols
 // (dlopen/dlsym) detected in the binary or its deps; mprotect PROT_EXEC risk
 // detected in deps; or binary analysis inconclusive (fail-closed).
+// Returns a non-nil error when shebang-chain analysis cannot be completed
+// (e.g. missing or stale interpreter record); callers must abort the command
+// group on error.
 //
 // contentHash is a pre-computed hash in "algo:hex" format (e.g. "sha256:abc123...").
 // Used to verify cache record freshness when store-based binary analysis runs.
@@ -158,7 +161,10 @@ func hasNetworkArguments(args []string) bool {
 // already resolved by the caller (via verification.PathResolver.ResolvePath()).
 //
 // contentHash is a pre-computed hash in "algo:hex" format. Used to verify cache
-// record freshness; when empty or store is nil, analysis is skipped (returning false, false).
+// record freshness; when empty, all cache-backed analysis (symbol/syscall,
+// dynlib-deps, shebang chain) is skipped (returning false, false, nil).
+// When store is nil but shebangStore is configured, symbol/syscall analysis is
+// skipped but shebang-chain analysis still runs.
 func (a *NetworkAnalyzer) analyzeBinarySignals(cmdPath string, contentHash string) (isNetwork, hasDynLoad bool, err error) {
 	// Validate that cmdPath is an absolute path.
 	// The caller (EvaluateRisk via group_executor) must have already resolved the path.
