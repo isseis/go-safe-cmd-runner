@@ -2,7 +2,7 @@
 
 ## 進捗状況
 
-- [ ] Phase 1: `ShebangInterpreterStore` の実装
+- [x] Phase 1: `ShebangInterpreterStore` の実装
 - [ ] Phase 2: `NetworkAnalyzer` の拡張
 - [ ] Phase 3: `NewNetworkAnalyzer` 呼び出し箇所の更新
 - [ ] Phase 4: テスト実装
@@ -14,23 +14,23 @@
 
 **対象ファイル:** `internal/fileanalysis/shebang_store.go`（新規）
 
-- [ ] 1-1. `ShebangInterpreterStore` インターフェースを定義
+- [x] 1-1. `ShebangInterpreterStore` インターフェースを定義
   - メソッド: `LoadInterpreterAnalysisPath(scriptPath, scriptContentHash string) (interpPath, interpContentHash string, err error)`
 
-- [ ] 1-2. `shebangInterpreterStore` 構造体の実装
+- [x] 1-2. `shebangInterpreterStore` 構造体の実装
   - `store Store` フィールド
   - `NewShebangInterpreterStore(store Store) ShebangInterpreterStore` コンストラクタ
 
-- [ ] 1-3. `ErrInterpreterRecordMissing` sentinel error を定義
+- [x] 1-3. `ErrInterpreterRecordMissing` sentinel error を定義
 
-- [ ] 1-4. `LoadInterpreterAnalysisPath` の処理実装
-  - [ ] スクリプトレコードのロード（`ErrRecordNotFound` は `ErrRecordNotFound` を返す）
-  - [ ] `contentHash` の検証（不一致は `ErrHashMismatch`）
-  - [ ] `ShebangInterpreter == nil` チェック（スキップ）
-  - [ ] インタープリタパスの決定（`ResolvedPath` 優先）
-  - [ ] インタープリタレコードのロード（`ErrRecordNotFound` は `ErrInterpreterRecordMissing` でエラー返却）
-  - [ ] `interpRecord.ContentHash == ""` も `ErrInterpreterRecordMissing` でエラー返却
-  - [ ] `(interpPath, interpRecord.ContentHash, nil)` を返す
+- [x] 1-4. `LoadInterpreterAnalysisPath` の処理実装
+  - [x] スクリプトレコードのロード（`ErrRecordNotFound` は `ErrRecordNotFound` を返す）
+  - [x] `contentHash` の検証（不一致は `ErrHashMismatch`）
+  - [x] `ShebangInterpreter == nil` チェック（スキップ）
+  - [x] インタープリタパスの決定（`ResolvedPath` 優先）
+  - [x] インタープリタレコードのロード（`ErrRecordNotFound` は `ErrInterpreterRecordMissing` でエラー返却）
+  - [x] `interpRecord.ContentHash == ""` も `ErrInterpreterRecordMissing` でエラー返却
+  - [x] `(interpPath, interpRecord.ContentHash, nil)` を返す
 
 ---
 

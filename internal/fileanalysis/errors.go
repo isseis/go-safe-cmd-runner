@@ -16,6 +16,11 @@ var (
 
 	// ErrHashMismatch indicates the file content hash does not match the expected hash.
 	ErrHashMismatch = errors.New("file content hash mismatch")
+
+	// ErrInterpreterRecordMissing indicates that the shebang interpreter's analysis
+	// record is absent or incomplete (empty content hash). This prevents risk
+	// assessment from proceeding, so the runner must abort the command group.
+	ErrInterpreterRecordMissing = errors.New("shebang interpreter analysis record missing or incomplete")
 )
 
 // SchemaVersionMismatchError indicates analysis record schema version mismatch.
