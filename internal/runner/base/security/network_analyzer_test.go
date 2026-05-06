@@ -993,6 +993,16 @@ func TestAnalyzeBinarySignals_TC14_InterpRecordMissing(t *testing.T) {
 		"TC-14: ErrInterpreterRecordMissing should propagate, got: %v", err)
 }
 
+// AC-05: script record missing in shebang lookup is a consistency bug and must panic.
+func TestAnalyzeBinarySignals_AC05_ShebangScriptRecordMissingPanics(t *testing.T) {
+	shebang := &mockShebangStore{err: fileanalysis.ErrRecordNotFound}
+	a := makeNetworkAnalyzerWithShebang(&stubNetworkSymbolStore{data: nil}, nil, nil, nil, shebang)
+
+	assert.Panics(t, func() {
+		_, _, _ = a.analyzeBinarySignals(testCmdPath, testContentHash)
+	}, "ErrRecordNotFound from shebang store must panic (consistency bug)")
+}
+
 // TC-15: ErrHashMismatch from shebang store -> error returned.
 func TestAnalyzeBinarySignals_TC15_ShebangHashMismatch(t *testing.T) {
 	shebang := &mockShebangStore{err: fileanalysis.ErrHashMismatch}
