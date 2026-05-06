@@ -32,12 +32,12 @@ type ShebangInterpreterStore interface {
     //
     // Returns ("", "", nil) when:
     //   - The script has no ShebangInterpreter (not a shebang script)
-    //   - The interpreter's record is not found (ErrRecordNotFound for interpreter)
-    //   - The interpreter's content hash is empty
     //
     // Returns error when:
     //   - The script's record cannot be loaded (non-ErrRecordNotFound errors)
     //   - scriptContentHash does not match stored hash (ErrHashMismatch)
+    //   - The interpreter's record is not found (ErrInterpreterRecordMissing)
+    //   - The interpreter's content hash is empty (ErrInterpreterRecordMissing)
     //   - The interpreter's record cannot be loaded (non-ErrRecordNotFound errors)
     LoadInterpreterAnalysisPath(scriptPath, scriptContentHash string) (interpPath, interpContentHash string, err error)
 }
@@ -145,7 +145,7 @@ if a.shebangStore != nil && contentHash != "" {
     interpPath, interpHash, err := a.shebangStore.LoadInterpreterAnalysisPath(cmdPath, contentHash)
     switch {
     case err == nil:
-        if interpPath != "" && interpHash != "" {
+        if interpPath != "" {
             interpNet, interpHigh := a.analyzeBinarySignals(interpPath, interpHash)
             isNetwork = isNetwork || interpNet
             hasDynLoad = hasDynLoad || interpHigh

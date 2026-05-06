@@ -98,8 +98,9 @@ type ShebangInterpreterStore interface {
     // LoadInterpreterAnalysisPath returns the effective interpreter binary path
     // and its content hash for the shebang script at scriptPath.
     // scriptContentHash is used to validate freshness of the script's record.
-    // Returns ("", "", nil) if the script has no ShebangInterpreter or the
-    // interpreter's record is not found.
+    // Returns ("", "", nil) only when the script has no ShebangInterpreter.
+    // Returns ErrInterpreterRecordMissing when the interpreter record is not
+    // found or its content hash is empty.
     LoadInterpreterAnalysisPath(scriptPath, scriptContentHash string) (interpPath, interpContentHash string, err error)
 }
 ```
