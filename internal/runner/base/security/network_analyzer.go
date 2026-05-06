@@ -233,7 +233,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 		// Accumulate rather than early-return so the dynlib check can add isNetwork from
 		// dep libs (e.g. libcurl) even when binary analysis sets isHigh via DynamicLoadSymbols.
 		if data != nil {
-			output := buildAnalysisOutputFromSymbolData(data, cmdPath)
+			output := buildAnalysisOutputFromSymbolData(data)
 			isNetwork, isHighRisk = handleAnalysisOutput(output, cmdPath)
 		}
 	}
@@ -392,13 +392,13 @@ func isVDSOEntry(soname string) bool {
 	}
 }
 
-func buildAnalysisOutputFromSymbolData(data *fileanalysis.SymbolAnalysisData, _ string) binaryanalyzer.AnalysisOutput {
+func buildAnalysisOutputFromSymbolData(data *fileanalysis.SymbolAnalysisData) binaryanalyzer.AnalysisOutput {
 	output := binaryanalyzer.AnalysisOutput{
 		DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
 		DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
 	}
 
-	// Check if any detected symbol has a network category (socket, dns, tls, http).
+	// Check if any detected symbol has a network category (socket or dns).
 	// non-network symbols do not trigger NetworkDetected.
 	hasNetworkSymbol := slices.ContainsFunc(data.DetectedSymbols, binaryanalyzer.IsNetworkSymbolName)
 
