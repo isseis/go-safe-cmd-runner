@@ -68,31 +68,31 @@
 **対象ファイル（新規）:** `internal/fileanalysis/shebang_store_test.go`
 **対象ファイル（追加）:** `internal/runner/base/security/network_analyzer_test.go`
 
-- [ ] 4-1. `ShebangInterpreterStore` テスト（TC-01〜TC-08）
-  - [ ] TC-01: direct 形式、両レコード存在 → `(interpPath, interpHash, nil)`
-  - [ ] TC-02: env 形式、`ResolvedPath` が使用される
-  - [ ] TC-03: スクリプトレコード不在 → `("", "", ErrRecordNotFound)`
-  - [ ] TC-04: `contentHash` 不一致 → `ErrHashMismatch`
-  - [ ] TC-05: `ShebangInterpreter == nil` → `("", "", nil)`
-  - [ ] TC-06: インタープリタレコード不在 → `("", "", ErrInterpreterRecordMissing)`
-  - [ ] TC-07: インタープリタロードエラー → error
-  - [ ] TC-08: インタープリタ `ContentHash` 空 → `("", "", ErrInterpreterRecordMissing)`
+  - [x] 4-1. `ShebangInterpreterStore` テスト（TC-01〜TC-08）
+    - [x] TC-01: direct 形式、両レコード存在 → `(interpPath, interpHash, nil)`
+    - [x] TC-02: env 形式、`ResolvedPath` が使用される
+    - [x] TC-03: スクリプトレコード不在 → `("", "", ErrRecordNotFound)`
+    - [x] TC-04: `contentHash` 不一致 → `ErrHashMismatch`
+    - [x] TC-05: `ShebangInterpreter == nil` → `("", "", nil)`
+    - [x] TC-06: インタープリタレコード不在 → `("", "", ErrInterpreterRecordMissing)`
+    - [x] TC-07: インタープリタロードエラー → error
+    - [x] TC-08: インタープリタ `ContentHash` 空 → `("", "", ErrInterpreterRecordMissing)`
 
-- [ ] 4-2. `analyzeBinarySignals` shebang 拡張テスト（TC-11〜TC-18）
-  - [ ] TC-11: インタープリタが `socket` シンボル → `isNetwork = true`
-  - [ ] TC-12: インタープリタの共有ライブラリが mprotect リスクを持つ → `isHighRisk = true`
-  - [ ] TC-13: インタープリタのライブラリが `dlopen` → `isHighRisk = true`
-  - [ ] TC-14: インタープリタレコード不在（`ErrInterpreterRecordMissing`）→ エラー返却 + グループ実行中止
-  - [ ] TC-15: `ErrHashMismatch` → エラー返却 + グループ実行中止
-  - [ ] TC-16: ロードエラー → エラー返却 + グループ実行中止
-  - [ ] TC-17: `shebangStore == nil` → 変更なし
-  - [ ] TC-18: 非スクリプト（`ShebangInterpreter == nil`）→ 変更なし
+  - [x] 4-2. `analyzeBinarySignals` shebang 拡張テスト（TC-11〜TC-18）
+    - [x] TC-11: インタープリタが `socket` シンボル → `isNetwork = true`
+    - [x] TC-12: インタープリタの共有ライブラリが mprotect リスクを持つ → `isHighRisk = true`
+    - [x] TC-13: インタープリタのライブラリが `dlopen` → `isHighRisk = true`
+    - [x] TC-14: インタープリタレコード不在（`ErrInterpreterRecordMissing`）→ エラー返却 + グループ実行中止
+    - [x] TC-15: `ErrHashMismatch` → エラー返却 + グループ実行中止
+    - [x] TC-16: ロードエラー → エラー返却 + グループ実行中止
+    - [x] TC-17: `shebangStore == nil` → 変更なし
+    - [x] TC-18: 非スクリプト（`ShebangInterpreter == nil`）→ 変更なし
 
 ---
 
 ## Phase 5: 動作確認・品質チェック
 
-- [ ] 5-1. `make fmt` でフォーマット確認
-- [ ] 5-2. `make test` で全テストが通ることを確認
-- [ ] 5-3. `make lint` でリンターエラーがないことを確認
-- [ ] 5-4. 既存テストのリグレッションがないことを確認
+  - [x] 5-1. `make fmt` でフォーマット確認
+  - [x] 5-2. `make test` で全テストが通ることを確認
+  - [x] 5-3. `make lint` でリンターエラーがないことを確認
+  - [x] 5-4. 既存テストのリグレッションがないことを確認
