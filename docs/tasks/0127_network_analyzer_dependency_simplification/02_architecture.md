@@ -236,6 +236,12 @@ type Config struct {
 - `runner` が composition root として evaluator 組み立てを完結できる
 - `verification` が `risk` 実装へ依存せず、層構造を保てる
 
+**import 依存の変化**: `GetAnalysisDeps()` の戻り値型が `security.AnalysisDeps` であるため、
+`verification` → `security` という新たな import 依存が生じる。
+現時点では `security` は `verification` をインポートしていないため循環は生じない。
+これは意図的な設計判断であり、`verification` が `risk` を直接インポートする案より
+依存方向が適切（基盤層が判定ロジック層に依存しない）。
+
 `verification` に `NewRiskEvaluator()` を持たせる案は採用しない。
 その案は配線をさらに短くできるが、`verification` が `risk` の知識を持つため、
 基盤層の責務が広がるためである。
@@ -317,13 +323,13 @@ sequenceDiagram
     participant VM as verification.Manager
     participant Runner as runner.go
     participant Eval as risk.Evaluator
-    participant Res as resource.NormalResourceManager
+    participant Res as resource.NewDefaultResourceManager
 
     VM->>Runner: GetAnalysisDeps()
     Runner->>Runner: NewNetworkAnalyzer(runtime.GOOS, deps)
     Runner->>Runner: NewStandardEvaluator(networkAnalyzer)
-    Runner->>Res: inject evaluator via Config
-    Res-->>Runner: ready
+    Runner->>Res: NewDefaultResourceManager(Config{RiskEvaluator: evaluator, ...})
+    Res-->>Runner: *DefaultResourceManager
 ```
 
 ### 6.2 実行時フロー
@@ -372,13 +378,19 @@ sequenceDiagram
 ### Phase 2: evaluator 構築責務の整理
 
 - `risk.NewStandardEvaluator` が `NetworkAnalyzer` 完成品を受け取る形へ変更する
-- `resource.Config` から分析ストア詳細を削除する
+- `resource.Config` から分析ストア詳細を削除し、`RiskEvaluator risk.Evaluator` を追加する
 - `NormalResourceManager` は evaluator 注入のみに変更する
+
+> **中間状態の注意**: Phase 2 完了時点では、`runner.createNormalResourceManager` は
+> 引き続き 5 系統の個別型アサーションで分析ストアを取得する。
+> ただしそれらは `NetworkAnalyzer` と `risk.Evaluator` の組み立てにのみ使用し、
+> 完成した evaluator を `resource.Config.RiskEvaluator` として渡す。
+> 個別アサーションの除去は Phase 3 で行う。
 
 ### Phase 3: composition root の単純化
 
-- `verification.Manager` から集約依存を取得する API を追加する
-- `runner.createNormalResourceManager` の個別型アサーションと個別 getter 群を除去する
+- `verification.Manager` に `GetAnalysisDeps() security.AnalysisDeps` を追加する
+- `runner.createNormalResourceManager` の 5 系統の個別型アサーションと個別 getter 群を `GetAnalysisDeps()` 呼び出し 1 本に置き換える
 - 既存初期化テストを更新し、挙動互換を確認する
 
 ## 9. 将来の拡張性
