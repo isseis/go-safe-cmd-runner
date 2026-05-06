@@ -64,7 +64,7 @@ func NewShebangInterpreterStore(store Store) ShebangInterpreterStore {
 
 1. `validatePath(scriptPath)` → `common.ResolvedPath`
 2. `store.Load(scriptTarget)` でスクリプトのレコードをロード
-   - `ErrRecordNotFound` → `return "", "", nil`
+   - `ErrRecordNotFound` → `return "", "", fileanalysis.ErrRecordNotFound`（呼び出し元で panic）
    - 他のエラー → `return "", "", err`
 3. `scriptRecord.ContentHash != scriptContentHash` → `return "", "", ErrHashMismatch`
 4. `scriptRecord.ShebangInterpreter == nil` → `return "", "", nil`
@@ -73,19 +73,23 @@ func NewShebangInterpreterStore(store Store) ShebangInterpreterStore {
    - それ以外 → `interpPath = si.InterpreterPath`
 6. `validatePath(interpPath)` → `common.ResolvedPath`
 7. `store.Load(interpTarget)` でインタープリタのレコードをロード
-   - `ErrRecordNotFound` → `return interpPath, "", nil`（ハッシュなし=スキップ可能）
+   - `ErrRecordNotFound` → `return "", "", fmt.Errorf("interpreter record not found: %w", ErrInterpreterRecordMissing)`
    - 他のエラー → `return "", "", err`
-8. `return interpPath, interpRecord.ContentHash, nil`
+8. `interpRecord.ContentHash == ""` → `return "", "", fmt.Errorf("interpreter record has empty content hash: %w", ErrInterpreterRecordMissing)`
+9. `return interpPath, interpRecord.ContentHash, nil`
 
 ### 2.3. エラー処理一覧
 
-| 条件 | 返却値 | 意味 |
-|------|--------|------|
-| スクリプトレコード不在 | `("", "", nil)` | 解析スキップ |
-| `contentHash` 不一致 | `("", "", ErrHashMismatch)` | ファイル変更検知 |
-| `ShebangInterpreter == nil` | `("", "", nil)` | 非スクリプト |
-| インタープリタレコード不在 | `(interpPath, "", nil)` | ハッシュ不明（スキップ）|
-| その他のエラー | `("", "", err)` | fail-closed |
+| 条件 | 返却値 | 呼び出し側の扱い |
+|------|--------|----------------|
+| スクリプトレコード不在 | `("", "", ErrRecordNotFound)` | panic（`analyzeBinarySignals` で検出）|
+| スクリプト `contentHash` 不一致 | `("", "", ErrHashMismatch)` | high risk |
+| `ShebangInterpreter == nil` | `("", "", nil)` | スキップ（非スクリプト）|
+| インタープリタレコード不在 | `("", "", error)` | high risk（整合性異常）|
+| インタープリタ `ContentHash` 空 | `("", "", error)` | high risk（整合性異常）|
+| その他のエラー | `("", "", err)` | high risk（fail-closed）|
+
+`ErrInterpreterRecordMissing` は `fileanalysis` パッケージに新規追加する sentinel error。
 
 ---
 
@@ -143,9 +147,12 @@ if a.shebangStore != nil && contentHash != "" {
             isNetwork = isNetwork || interpNet
             hasDynLoad = hasDynLoad || interpHigh
         }
+    case errors.Is(err, fileanalysis.ErrRecordNotFound):
+        // Script record must exist at this point (LoadNetworkSymbolAnalysis already
+        // succeeded). A missing record now indicates a programming error.
+        panic(fmt.Sprintf("shebang store: script record disappeared for %q: %v", cmdPath, err))
     case errors.Is(err, fileanalysis.ErrHashMismatch):
-        slog.Warn("shebang interpreter script hash mismatch; treating as high risk",
-            "path", cmdPath)
+        slog.Warn("shebang script hash mismatch; treating as high risk", "path", cmdPath)
         return true, true
     default:
         slog.Warn("shebang interpreter lookup failed; treating as high risk",
@@ -190,11 +197,12 @@ networkAnalyzer := security.NewNetworkAnalyzer(
 |------------|------|---------|
 | TC-01 | direct 形式、両レコード存在 | `(interpPath, interpHash, nil)` |
 | TC-02 | env 形式、`ResolvedPath` が使用される | `ResolvedPath` のレコードハッシュを返す |
-| TC-03 | スクリプトレコード不在 | `("", "", nil)` |
+| TC-03 | スクリプトレコード不在 | `("", "", ErrRecordNotFound)` |
 | TC-04 | `contentHash` 不一致 | `("", "", ErrHashMismatch)` |
 | TC-05 | `ShebangInterpreter == nil` | `("", "", nil)` |
-| TC-06 | インタープリタレコード不在 | `(interpPath, "", nil)` |
+| TC-06 | インタープリタレコード不在 | `("", "", ErrInterpreterRecordMissing)` |
 | TC-07 | インタープリタロードエラー | `("", "", error)` |
+| TC-08 | インタープリタ `ContentHash` 空 | `("", "", ErrInterpreterRecordMissing)` |
 
 ### 5.2. `analyzeBinarySignals` shebang 拡張テスト
 
@@ -205,7 +213,7 @@ networkAnalyzer := security.NewNetworkAnalyzer(
 | TC-11 | インタープリタが `socket` シンボルを持つ | `isNetwork = true` |
 | TC-12 | インタープリタの共有ライブラリが mprotect リスクを持つ | `isHighRisk = true` |
 | TC-13 | インタープリタの共有ライブラリが `dlopen` を持つ | `isHighRisk = true` |
-| TC-14 | インタープリタレコードのハッシュが不明（`""`）| スキップ、`(false, false)` |
+| TC-14 | インタープリタレコード不在（`ErrInterpreterRecordMissing`）| `(true, true)`（high risk）|
 | TC-15 | `ErrHashMismatch` | `(true, true)` |
 | TC-16 | ロードエラー | `(true, true)` |
 | TC-17 | `shebangStore == nil` | 変更なし（既存動作）|
@@ -219,10 +227,10 @@ networkAnalyzer := security.NewNetworkAnalyzer(
 | AC-02: env 形式 python3 | TC-02 |
 | AC-03: インタープリタ共有ライブラリの mprotect リスク | TC-12 |
 | AC-04: ライブラリの dynload シンボル | TC-13 |
-| AC-05: インタープリタレコード不在はスキップ | TC-14, TC-06 |
-| AC-06: ロードエラーで high risk | TC-15, TC-16 |
-| AC-07: ELF バイナリの回帰 | TC-18 |
-| AC-08: ハッシュ不明はスキップ | TC-14 |
+| AC-05: スクリプトレコード不在はスキップ | TC-03 |
+| AC-06: インタープリタレコード不在は high risk | TC-06, TC-14 |
+| AC-07: ロードエラーで high risk | TC-15, TC-16 |
+| AC-08: ELF バイナリの回帰 | TC-18 |
 
 ---
 

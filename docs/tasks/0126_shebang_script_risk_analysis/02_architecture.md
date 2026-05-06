@@ -113,7 +113,7 @@ flowchart TD
 
     START["LoadInterpreterAnalysisPath(<br>  scriptPath, scriptContentHash<br>)"] --> LOAD_S["v.store.Load(scriptPath)"]
     LOAD_S --> NOT_FOUND{"ErrRecordNotFound?"}
-    NOT_FOUND -->|"Yes"| RET_NIL1["return ('', '', nil)"]
+    NOT_FOUND -->|"Yes"| RET_ERR0["ErrRecordNotFound を返す<br>（呼び出し元で panic）"]
     NOT_FOUND -->|"No"| ERR1{"他のエラー?"}
     ERR1 -->|"Yes"| RET_ERR1["error を返す"]
     ERR1 -->|"No"| HASH_CHK{"scriptRecord.ContentHash<br>== scriptContentHash?"}
@@ -123,13 +123,15 @@ flowchart TD
     SI -->|"No"| IPATH["interpPath 決定<br>(ResolvedPath 優先)"]
     IPATH --> LOAD_I["v.store.Load(interpPath)"]
     LOAD_I --> NOT_FOUND2{"ErrRecordNotFound?"}
-    NOT_FOUND2 -->|"Yes"| RET_NIL3["return (interpPath, '', nil)"]
+    NOT_FOUND2 -->|"Yes"| RET_ERR3["error を返す<br>（整合性異常 → high risk）"]
     NOT_FOUND2 -->|"No"| ERR2{"他のエラー?"}
     ERR2 -->|"Yes"| RET_ERR2["error を返す"]
-    ERR2 -->|"No"| RET_OK["return (interpPath,<br>  interpRecord.ContentHash,<br>  nil)"]
+    ERR2 -->|"No"| HASH_EMPTY{"interpRecord.ContentHash<br>空?"}
+    HASH_EMPTY -->|"Yes"| RET_ERR4["error を返す<br>（整合性異常 → high risk）"]
+    HASH_EMPTY -->|"No"| RET_OK["return (interpPath,<br>  interpRecord.ContentHash,<br>  nil)"]
 
-    class START,RET_NIL1,RET_NIL2,RET_NIL3,RET_OK data;
-    class LOAD_S,NOT_FOUND,ERR1,HASH_CHK,SI,IPATH,LOAD_I,NOT_FOUND2,ERR2 process;
+    class START,RET_NIL2,RET_OK data;
+    class LOAD_S,NOT_FOUND,ERR1,HASH_CHK,SI,IPATH,LOAD_I,NOT_FOUND2,ERR2,HASH_EMPTY process;
 ```
 
 ---

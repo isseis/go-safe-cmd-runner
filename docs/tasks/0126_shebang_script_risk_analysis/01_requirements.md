@@ -79,11 +79,16 @@ shebang スクリプトについては、`record` 実行時に `ShebangInterpret
 
 ### 4.2. セキュリティ（フェイルセーフ）
 
-- スクリプトのコンテンツハッシュ不一致: `ErrHashMismatch` として high risk 扱い
-- インタープリタのレコードが存在しない: スキップ（インタープリタのリスク判定をスキップ）
-  - verify 側の `VerifyCommandShebangInterpreter` がインタープリタ未記録を検出する
+- スクリプトのレコードが存在しない（`ErrRecordNotFound`）: **panic（プログラミングエラー）**
+  - `LoadInterpreterAnalysisPath` 到達時点では `LoadNetworkSymbolAnalysis` が成功済みであり、スクリプトレコードは必ず存在するはず。不在は呼び出し側のバグを示す
+  - `checkSyscallCache` が `ErrRecordNotFound` を panic にするのと同一方針
+- スクリプトのコンテンツハッシュ不一致: high risk 扱い（`ErrHashMismatch`）
+- `ShebangInterpreter` フィールドが nil: スキップ（非スクリプト）
+- インタープリタのレコードが存在しない（`ErrRecordNotFound`）: **high risk 扱い**
+  - `record` 実行時に必ずインタープリタレコードが保存されるため、不在は整合性異常を示す
+  - 既存の dynlib 解析（`ErrAnalysisNotFound` → high risk）と同一方針
 - インタープリタのレコードロードエラー: high risk 扱い（fail-closed）
-- インタープリタのコンテンツハッシュが空（未記録）: インタープリタのリスク判定をスキップ
+- インタープリタのコンテンツハッシュが空（整合性異常）: high risk 扱い
 
 ### 4.3. 互換性
 
@@ -106,10 +111,10 @@ shebang スクリプトについては、`record` 実行時に `ShebangInterpret
 | AC-02 | `#!/usr/bin/env python3` スクリプトを runner が処理 | python3 バイナリの解析結果が利用される |
 | AC-03 | インタープリタの共有ライブラリが mprotect(PROT_EXEC) リスクを持つ | `IsNetworkOperation()` の `isHighRisk` が `true` になる |
 | AC-04 | インタープリタの共有ライブラリが dynload シンボルを持つ | `isHighRisk` が `true` になる |
-| AC-05 | インタープリタレコードがストアに存在しない | リスク判定をスキップ（エラーなし） |
-| AC-06 | インタープリタレコードのロードが失敗する | high risk 扱い（fail-closed） |
-| AC-07 | 非スクリプトファイル（ELF バイナリ等）を runner が処理 | 既存の動作が変わらない |
-| AC-08 | インタープリタのコンテンツハッシュが取得できない | インタープリタのリスク判定をスキップ（エラーなし） |
+| AC-05 | スクリプトのレコードがストアに存在しない | panic（プログラミングエラー） |
+| AC-06 | インタープリタレコードがストアに存在しない | high risk 扱い（fail-closed） |
+| AC-07 | インタープリタレコードのロードが失敗する | high risk 扱い（fail-closed） |
+| AC-08 | 非スクリプトファイル（ELF バイナリ等）を runner が処理 | 既存の動作が変わらない |
 
 ---
 

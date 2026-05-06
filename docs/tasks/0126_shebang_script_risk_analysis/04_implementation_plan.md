@@ -21,12 +21,15 @@
   - `store Store` フィールド
   - `NewShebangInterpreterStore(store Store) ShebangInterpreterStore` コンストラクタ
 
-- [ ] 1-3. `LoadInterpreterAnalysisPath` の処理実装
-  - [ ] スクリプトレコードのロード（`ErrRecordNotFound` はスキップ）
+- [ ] 1-3. `ErrInterpreterRecordMissing` sentinel error を定義
+
+- [ ] 1-4. `LoadInterpreterAnalysisPath` の処理実装
+  - [ ] スクリプトレコードのロード（`ErrRecordNotFound` は `ErrRecordNotFound` を返す）
   - [ ] `contentHash` の検証（不一致は `ErrHashMismatch`）
   - [ ] `ShebangInterpreter == nil` チェック（スキップ）
   - [ ] インタープリタパスの決定（`ResolvedPath` 優先）
-  - [ ] インタープリタレコードのロード（`ErrRecordNotFound` は `(interpPath, "", nil)`）
+  - [ ] インタープリタレコードのロード（`ErrRecordNotFound` は `ErrInterpreterRecordMissing` でエラー返却）
+  - [ ] `interpRecord.ContentHash == ""` も `ErrInterpreterRecordMissing` でエラー返却
   - [ ] `(interpPath, interpRecord.ContentHash, nil)` を返す
 
 ---
@@ -67,17 +70,18 @@
 - [ ] 4-1. `ShebangInterpreterStore` テスト（TC-01〜TC-07）
   - [ ] TC-01: direct 形式、両レコード存在 → `(interpPath, interpHash, nil)`
   - [ ] TC-02: env 形式、`ResolvedPath` が使用される
-  - [ ] TC-03: スクリプトレコード不在 → `("", "", nil)`
+  - [ ] TC-03: スクリプトレコード不在 → `("", "", ErrRecordNotFound)`
   - [ ] TC-04: `contentHash` 不一致 → `ErrHashMismatch`
   - [ ] TC-05: `ShebangInterpreter == nil` → `("", "", nil)`
-  - [ ] TC-06: インタープリタレコード不在 → `(interpPath, "", nil)`
+  - [ ] TC-06: インタープリタレコード不在 → `("", "", ErrInterpreterRecordMissing)`
   - [ ] TC-07: インタープリタロードエラー → error
+  - [ ] TC-08: インタープリタ `ContentHash` 空 → `("", "", ErrInterpreterRecordMissing)`
 
 - [ ] 4-2. `analyzeBinarySignals` shebang 拡張テスト（TC-11〜TC-18）
   - [ ] TC-11: インタープリタが `socket` シンボル → `isNetwork = true`
   - [ ] TC-12: インタープリタの共有ライブラリが mprotect リスクを持つ → `isHighRisk = true`
   - [ ] TC-13: インタープリタのライブラリが `dlopen` → `isHighRisk = true`
-  - [ ] TC-14: インタープリタのハッシュ不明 → スキップ `(false, false)`
+  - [ ] TC-14: インタープリタレコード不在（`ErrInterpreterRecordMissing`）→ `(true, true)`
   - [ ] TC-15: `ErrHashMismatch` → `(true, true)`
   - [ ] TC-16: ロードエラー → `(true, true)`
   - [ ] TC-17: `shebangStore == nil` → 変更なし
