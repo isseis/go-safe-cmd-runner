@@ -228,28 +228,26 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 			}
 		}
 
-		// No svc #0x80 signal: determine result from SymbolAnalysis.
+		// No svc #0x80 signal: accumulate network/risk signals from SymbolAnalysis.
 		// data == nil when analyzed but no network symbols found (static binary with no svc).
-		// Non-nil: check for network/high-risk signal; fall through to dynlib check if none.
+		// Accumulate rather than early-return so the dynlib check can add isNetwork from
+		// dep libs (e.g. libcurl) even when binary analysis sets isHigh via DynamicLoadSymbols.
 		if data != nil {
 			output := buildAnalysisOutputFromSymbolData(data, cmdPath)
-			isNet, isHigh := handleAnalysisOutput(output, cmdPath)
-			if isNet || isHigh {
-				return isNet, isHigh
-			}
-			// No network signal from binary body: fall through to dynlib check.
+			isNetwork, isHighRisk = handleAnalysisOutput(output, cmdPath)
 		}
 	}
 
-	// Additional dynlib analysis: check per-library network signals.
+	// Additional dynlib analysis: OR signals with binary-analysis results.
 	// Runs when depsStore and libAnalysisStore are both configured and contentHash is available.
 	// Fail-closed: any loading error is treated as high risk.
 	if a.depsStore != nil && a.libAnalysisStore != nil && contentHash != "" {
-		return a.checkDynLibDepsNetwork(cmdPath, contentHash)
+		dynNet, dynHigh := a.checkDynLibDepsNetwork(cmdPath, contentHash)
+		isNetwork = isNetwork || dynNet
+		isHighRisk = isHighRisk || dynHigh
 	}
 
-	// No store configured or contentHash empty: skip analysis.
-	return false, false
+	return isNetwork, isHighRisk
 }
 
 // checkDynLibDepsNetwork checks network capability by loading per-library analysis

@@ -10,6 +10,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -2471,6 +2472,41 @@ func TestIsNetworkViaBinaryAnalysis_AnalysisStore(t *testing.T) {
 		assert.False(t, isNet, "expected no network result when contentHash is empty")
 		assert.False(t, isHigh, "expected no high-risk result when contentHash is empty")
 	})
+}
+
+// TestIsNetworkViaBinaryAnalysis_DynloadPlusDynlibNetwork is a regression test for the case
+// where a binary has DynamicLoadSymbols (causing isHigh=true from binary analysis) AND a dep
+// library has network symbols. Previously the early-return on isHigh prevented checkDynLibDepsNetwork
+// from running, causing isNetwork to remain false.
+func TestIsNetworkViaBinaryAnalysis_DynloadPlusDynlibNetwork(t *testing.T) {
+	const cmdPath = "/usr/bin/myprog"
+	const contentHash = "sha256:abc123"
+
+	// Binary's own record: has DynamicLoadSymbols (dlopen via language runtime) but no network symbols.
+	symStore := &stubNetworkSymbolStore{
+		data: &fileanalysis.SymbolAnalysisData{
+			DynamicLoadSymbols: []string{"dlopen"},
+		},
+	}
+
+	// Dynlib dep: libcurl has network symbols.
+	dep := fileanalysis.LibEntry{SOName: "libcurl.so.4", Path: "/usr/lib/libcurl.so.4", Hash: "sha256:cc"}
+	depsStore := &mockDynLibDepsStore{deps: []fileanalysis.LibEntry{dep}}
+	libStore := &mockDynLibAnalysisStore{
+		results: map[string]*dynamicanalysis.Result{
+			"/usr/lib/libcurl.so.4": {
+				SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
+					DetectedSymbols: []string{"connect"},
+				},
+			},
+		},
+	}
+
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, nil, depsStore, libStore)
+	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
+
+	assert.True(t, isNet, "dynlib dep libcurl must contribute isNetwork=true")
+	assert.True(t, isHigh, "binary's own dlopen must contribute isHighRisk=true")
 }
 
 // TestNetworkSymbolAnalysisStore_RecordToRunner tests the record→runner analysis store flow.
