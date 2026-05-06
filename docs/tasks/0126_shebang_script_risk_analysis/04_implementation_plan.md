@@ -68,7 +68,7 @@
 **対象ファイル（新規）:** `internal/fileanalysis/shebang_store_test.go`
 **対象ファイル（追加）:** `internal/runner/base/security/network_analyzer_test.go`
 
-- [ ] 4-1. `ShebangInterpreterStore` テスト（TC-01〜TC-07）
+- [ ] 4-1. `ShebangInterpreterStore` テスト（TC-01〜TC-08）
   - [ ] TC-01: direct 形式、両レコード存在 → `(interpPath, interpHash, nil)`
   - [ ] TC-02: env 形式、`ResolvedPath` が使用される
   - [ ] TC-03: スクリプトレコード不在 → `("", "", ErrRecordNotFound)`

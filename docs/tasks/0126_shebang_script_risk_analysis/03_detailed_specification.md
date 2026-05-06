@@ -51,18 +51,18 @@ type ShebangInterpreterStore interface {
 // shebangInterpreterStore implements ShebangInterpreterStore using the file
 // analysis record store.
 type shebangInterpreterStore struct {
-    store Store  // 既存の Record ストア
+    store *Store  // 既存の Record ストア（他のストア実装と同様にポインタを使用）
 }
 
 // NewShebangInterpreterStore creates a ShebangInterpreterStore backed by store.
-func NewShebangInterpreterStore(store Store) ShebangInterpreterStore {
+func NewShebangInterpreterStore(store *Store) ShebangInterpreterStore {
     return &shebangInterpreterStore{store: store}
 }
 ```
 
 #### 処理手順
 
-1. `validatePath(scriptPath)` → `common.ResolvedPath`
+1. `common.NewResolvedPath(scriptPath)` → `common.ResolvedPath`（`networkSymbolStore` 等の既存実装と同じパターン）
 2. `store.Load(scriptTarget)` でスクリプトのレコードをロード
    - `ErrRecordNotFound` → `return "", "", fileanalysis.ErrRecordNotFound`（呼び出し元で panic）
    - 他のエラー → `return "", "", err`
@@ -71,7 +71,7 @@ func NewShebangInterpreterStore(store Store) ShebangInterpreterStore {
 5. インタープリタパスの決定:
    - `si.ResolvedPath != ""` → `interpPath = si.ResolvedPath`
    - それ以外 → `interpPath = si.InterpreterPath`
-6. `validatePath(interpPath)` → `common.ResolvedPath`
+6. `common.NewResolvedPath(interpPath)` → `common.ResolvedPath`
 7. `store.Load(interpTarget)` でインタープリタのレコードをロード
    - `ErrRecordNotFound` → `return "", "", fmt.Errorf("interpreter record not found: %w", ErrInterpreterRecordMissing)`
    - 他のエラー → `return "", "", err`
@@ -133,6 +133,8 @@ func NewNetworkAnalyzer(
 ### 3.3. `analyzeBinarySignals` の変更
 
 既存の解析（`SymbolAnalysis`・`SyscallAnalysis`・`DynLibDeps`）の実行後に shebang チェーン追跡を追加する。インタープリタレコード不在は high risk に丸めず、エラーとして呼び出し元へ返却する。
+
+> **設計上の意図:** このタスクは意図的に `analyzeBinarySignals` の戻り値に `error` を追加し、ランナーの契約を変更する。既存の `ErrHashMismatch` 等の処理（`return true, true`）とは異なり、shebang インタープリタのレコード不在・ハッシュ不一致はエラーとして伝播させ、グループ実行を中止する。これは AC-06・AC-07 で定義された fail-closed ポリシーに従ったものであり、「解析結果が得られない場合は実行を継続しない」という設計方針の一貫性を確保するためである。
 
 このため、`analyzeBinarySignals` は `error` を返せる形に拡張し、`IsNetworkOperation` → `EvaluateRisk` → グループ実行層へ伝播させる。
 `ErrHashMismatch` とインタープリタレコードロードエラーは high risk へ丸めず、実行中止エラーとして扱う。
