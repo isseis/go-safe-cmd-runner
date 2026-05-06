@@ -11,17 +11,65 @@
 package runner
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func buildNetworkInterpreterBinary(t *testing.T, dir string) string {
+	t.Helper()
+
+	if runtime.GOOS != "linux" {
+		t.Skipf("buildNetworkInterpreterBinary requires Linux (got %s)", runtime.GOOS)
+	}
+	if _, err := exec.LookPath("cc"); err != nil {
+		t.Skip("buildNetworkInterpreterBinary requires cc (install build-essential)")
+	}
+
+	srcPath := filepath.Join(dir, "net_interp.c")
+	binPath := filepath.Join(dir, "net-interpreter")
+
+	src := `#include <dlfcn.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+int main(int argc, char** argv) {
+	void* handle = dlopen("libc.so.6", RTLD_LAZY);
+	if (handle != NULL) {
+		(void)dlsym(handle, "socket");
+		dlclose(handle);
+	}
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd >= 0) {
+        close(fd);
+    }
+    (void)argc;
+    (void)argv;
+    return 0;
+}
+`
+
+	require.NoError(t, os.WriteFile(srcPath, []byte(src), 0o644))
+
+	cmd := exec.Command("cc", "-O0", "-o", binPath, srcPath, "-ldl")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "failed to compile network interpreter: %s", string(out))
+
+	require.NoError(t, os.Chmod(binPath, 0o755))
+	return binPath
+}
 
 // TestIntegration_ShebangVerification_DirectForm tests the full record → verification
 // pipeline for a script with a direct-form shebang (e.g. #!/bin/sh).
@@ -109,4 +157,126 @@ func TestIntegration_ShebangVerification_InterpreterRecordMissing(t *testing.T) 
 	var notFound *verification.ErrInterpreterRecordNotFound
 	assert.ErrorAs(t, err, &notFound, "expected ErrInterpreterRecordNotFound, got: %v", err)
 	assert.Equal(t, interpPath, notFound.Path)
+}
+
+// TestIntegration_ShebangChainRunnerExecution verifies an end-to-end runner
+// execution path for a shebang script using real hash records and verification.
+func TestIntegration_ShebangChainRunnerExecution(t *testing.T) {
+	hashDir := commontesting.SafeTempDir(t)
+	scriptDir := commontesting.SafeTempDir(t)
+
+	// Build a local interpreter binary that references socket(2).
+	// This makes the risk signal deterministic in CI and local runs.
+	interpPath := buildNetworkInterpreterBinary(t, scriptDir)
+
+	// Step 1 (record phase): create script and record it.
+	// SaveRecord stores both the script record and shebang interpreter records.
+	scriptContent := "#!" + interpPath + "\n--version\n"
+	scriptPath := commontesting.WriteExecutableFile(t, scriptDir, "network-tool.sh", []byte(scriptContent))
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	require.NoError(t, err)
+	_, _, err = validator.SaveRecord(scriptPath, false)
+	require.NoError(t, err)
+
+	// Step 2 (runner phase): execute using a real runner + verification manager.
+	verificationManager, err := verification.NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	configSpec := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global: runnertypes.GlobalSpec{
+			Timeout: commontesting.Int32Ptr(30),
+		},
+		Groups: []runnertypes.GroupSpec{
+			{
+				Name:       "shebang-chain-risk-group",
+				CmdAllowed: []string{scriptPath},
+				Commands: []runnertypes.CommandSpec{
+					{
+						Name:      "shebang-network-script",
+						Cmd:       scriptPath,
+						RiskLevel: runnertypes.RiskLevelHighPtr,
+					},
+				},
+			},
+		},
+	}
+
+	r, err := NewRunner(
+		configSpec,
+		WithRunID("test-run-shebang-chain-risk"),
+		WithVerificationManager(verificationManager),
+	)
+	require.NoError(t, err)
+	require.NoError(t, r.LoadSystemEnvironment())
+
+	err = r.Execute(context.Background(), nil)
+	assert.NoError(t, err)
+}
+
+// TestIntegration_ShebangChainRiskRejectsLowRisk verifies the strict rejection
+// path: shebang-chain interpreter analysis elevates effective risk and a command
+// with low risk_level is denied.
+func TestIntegration_ShebangChainRiskRejectsLowRisk(t *testing.T) {
+	hashDir := commontesting.SafeTempDir(t)
+	scriptDir := commontesting.SafeTempDir(t)
+
+	interpPath := buildNetworkInterpreterBinary(t, scriptDir)
+
+	scriptContent := "#!" + interpPath + "\n--version\n"
+	scriptPath := commontesting.WriteExecutableFile(t, scriptDir, "network-tool-reject.sh", []byte(scriptContent))
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	require.NoError(t, err)
+	_, _, err = validator.SaveRecord(scriptPath, false)
+	require.NoError(t, err)
+
+	// Inject explicit high-risk signals into the interpreter record to make
+	// rejection deterministic regardless of toolchain/linker symbol variance.
+	interpResolved, err := common.NewResolvedPath(interpPath)
+	require.NoError(t, err)
+	store := validator.Store()
+	require.NotNil(t, store)
+	interpRecord, err := store.Load(interpResolved)
+	require.NoError(t, err)
+	interpRecord.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
+		DetectedSymbols:    []string{"socket"},
+		DynamicLoadSymbols: []string{"dlopen"},
+	}
+	require.NoError(t, store.Save(interpResolved, interpRecord))
+
+	verificationManager, err := verification.NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	configSpec := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global: runnertypes.GlobalSpec{
+			Timeout: commontesting.Int32Ptr(30),
+		},
+		Groups: []runnertypes.GroupSpec{
+			{
+				Name:       "shebang-chain-reject-group",
+				CmdAllowed: []string{scriptPath},
+				Commands: []runnertypes.CommandSpec{
+					{
+						Name:      "shebang-network-script-reject",
+						Cmd:       scriptPath,
+						RiskLevel: runnertypes.RiskLevelLowPtr,
+					},
+				},
+			},
+		},
+	}
+
+	r, err := NewRunner(
+		configSpec,
+		WithRunID("test-run-shebang-chain-reject"),
+		WithVerificationManager(verificationManager),
+	)
+	require.NoError(t, err)
+	require.NoError(t, r.LoadSystemEnvironment())
+
+	err = r.Execute(context.Background(), nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, runnertypes.ErrCommandSecurityViolation)
+	assert.Contains(t, err.Error(), "effective risk")
 }

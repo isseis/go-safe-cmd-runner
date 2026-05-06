@@ -27,7 +27,7 @@ func TestConstructors_PanicOnEmptyGOOS(t *testing.T) {
 		_ = newNetworkAnalyzerWithStore("", nil)
 	})
 	assert.Panics(t, func() {
-		_ = NewNetworkAnalyzer("", nil, nil, nil, nil)
+		_ = NewNetworkAnalyzer("", nil, nil, nil, nil, nil)
 	})
 }
 
@@ -39,7 +39,7 @@ func TestConstructors_AcceptCurrentGOOS(t *testing.T) {
 		_ = newNetworkAnalyzerWithStore(runtime.GOOS, nil)
 	})
 	assert.NotPanics(t, func() {
-		_ = NewNetworkAnalyzer(runtime.GOOS, nil, nil, nil, nil)
+		_ = NewNetworkAnalyzer(runtime.GOOS, nil, nil, nil, nil, nil)
 	})
 }
 
@@ -215,9 +215,10 @@ func syscallWrapperOnlyData() *fileanalysis.SymbolAnalysisData {
 func TestIsNetworkViaBinaryAnalysis_SymbolAnalysisLoadError(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{err: errors.New("unexpected I/O error")}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.True(t, isNet, "unexpected SymbolAnalysis error should return true (AnalysisError)")
 	assert.True(t, isHigh, "unexpected SymbolAnalysis error should return high risk")
@@ -228,9 +229,10 @@ func TestIsNetworkViaBinaryAnalysis_SymbolAnalysisLoadError(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_HashMismatch(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{err: fileanalysis.ErrHashMismatch}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.True(t, isNet, "ErrHashMismatch should return true (AnalysisError)")
 	assert.True(t, isHigh, "ErrHashMismatch should return high risk")
@@ -245,9 +247,10 @@ func TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_SchemaMismatch(t *testing.T) 
 	}
 	symStore := &stubNetworkSymbolStore{err: schemaErr}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.True(t, isNet, "SchemaVersionMismatchError should return true (AnalysisError)")
 	assert.True(t, isHigh, "SchemaVersionMismatchError should return high risk")
@@ -258,9 +261,10 @@ func TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_SchemaMismatch(t *testing.T) 
 func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAnalysisFound(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: nil}
 	svcStore := &mockFileanalysisSyscallStore{result: svcResult()}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.True(t, isNet, "static binary + svc signal should return true")
 	assert.True(t, isHigh, "static binary + svc signal should return high risk")
@@ -271,9 +275,10 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAnalysisFound(t *testing.T) 
 func TestIsNetworkViaBinaryAnalysis_StaticBinary_NoSVC(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: nil}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.False(t, isNet, "static binary + no svc should return false")
 	assert.False(t, isHigh, "static binary + no svc should return false")
@@ -284,9 +289,10 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_NoSVC(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCAnalysisFound(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{result: svcResult()}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.True(t, isNet, "svc signal should escalate to true even for NoNetworkSymbols")
 	assert.True(t, isHigh, "svc signal should set high risk")
@@ -298,9 +304,10 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCAnalysisNil(t *testing.T
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	// LoadSyscallAnalysis returns nil result (no svc signal).
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.False(t, isNet, "NoNetworkSymbols + no svc should return false")
 	assert.False(t, isHigh, "NoNetworkSymbols + no svc should return false")
@@ -311,9 +318,10 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCAnalysisNil(t *testing.T
 func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{err: fileanalysis.ErrHashMismatch}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.True(t, isNet, "SVC ErrHashMismatch should return true (AnalysisError)")
 	assert.True(t, isHigh, "SVC ErrHashMismatch should return high risk")
@@ -325,9 +333,10 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch(t *testing.
 func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoSyscallAnalysis(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.False(t, isNet, "nil SyscallAnalysis should fall through to NoNetworkSymbols result")
 	assert.False(t, isHigh)
@@ -342,9 +351,10 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch(t *testin
 	}
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{err: schemaErr}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.True(t, isNet, "SVC SchemaVersionMismatchError should return AnalysisError")
 	assert.True(t, isHigh, "SVC SchemaVersionMismatchError should return high risk")
@@ -356,7 +366,7 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch(t *testin
 func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{err: fileanalysis.ErrRecordNotFound}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
 	assert.Panics(t, func() {
 		analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
@@ -368,9 +378,10 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound(t *testin
 func TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCAnalysisFound(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: networkDetectedData()}
 	svcStore := &mockFileanalysisSyscallStore{result: svcResult()}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.True(t, isNet, "NetworkDetected + svc should return true")
 	assert.True(t, isHigh, "svc signal should escalate isHighRisk to true")
@@ -381,9 +392,10 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCAnalysisFound(t *testing.
 func TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCNoSyscallAnalysis(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: networkDetectedData()}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.True(t, isNet, "NetworkDetected should return true")
 	assert.False(t, isHigh, "nil SyscallAnalysis should not escalate isHighRisk")
@@ -394,9 +406,10 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCNoSyscallAnalysis(t *test
 func TestIsNetworkViaBinaryAnalysis_NetworkDetected_NoSVC(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: networkDetectedData()}
 	svcStore := &mockFileanalysisSyscallStore{result: noSVCResult()}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.True(t, isNet, "NetworkDetected should return true")
 	assert.False(t, isHigh, "no svc signal should not escalate isHighRisk")
@@ -409,9 +422,10 @@ func TestIsNetworkViaBinaryAnalysis_NetworkCategorySymbol(t *testing.T) {
 		DetectedSymbols: []string{"read", "socket"},
 	}}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.True(t, isNet, "network category symbol should trigger NetworkDetected")
 	assert.False(t, isHigh, "no svc signal should keep high risk false")
@@ -422,9 +436,10 @@ func TestIsNetworkViaBinaryAnalysis_NetworkCategorySymbol(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_SyscallWrapperOnly(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: syscallWrapperOnlyData()}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.False(t, isNet, "syscall_wrapper only must not trigger NetworkDetected")
 	assert.False(t, isHigh, "syscall_wrapper only must not escalate to high risk")
@@ -522,9 +537,10 @@ func syscallResultWithNonNetworkEntry() *fileanalysis.SyscallAnalysisResult {
 func TestIsNetworkViaBinaryAnalysis_StaticBinary_NetworkSyscall(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: nil}
 	svcStore := &mockFileanalysisSyscallStore{result: syscallResultWithNetworkEntry()}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.True(t, isNet, "static binary with network syscall should return true")
 	assert.False(t, isHigh, "network syscall detection should not escalate to high risk")
@@ -535,9 +551,10 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_NetworkSyscall(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_StaticBinary_NonNetworkSyscall(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: nil}
 	svcStore := &mockFileanalysisSyscallStore{result: syscallResultWithNonNetworkEntry()}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.False(t, isNet, "static binary with no network syscall should return false")
 	assert.False(t, isHigh, "no network signal should not escalate to high risk")
@@ -557,9 +574,10 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAndNetworkSyscall(t *testing
 	}
 	symStore := &stubNetworkSymbolStore{data: nil}
 	svcStore := &mockFileanalysisSyscallStore{result: result}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.True(t, isNet, "svc + network syscall should return true")
 	assert.True(t, isHigh, "svc #0x80 should escalate to high risk")
@@ -571,9 +589,10 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAndNetworkSyscall(t *testing
 func TestIsNetworkViaBinaryAnalysis_NetworkDetected_WithNetworkSyscall(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: networkDetectedData()}
 	svcStore := &mockFileanalysisSyscallStore{result: syscallResultWithNetworkEntry()}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil, nil)
 
-	isNet, isHigh := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
 
 	assert.True(t, isNet, "SymbolAnalysis network should return true")
 	assert.False(t, isHigh, "network syscall without svc should not escalate to high risk")
@@ -645,7 +664,7 @@ func makeNetworkAnalyzerWithLibStores(
 	depsStore fileanalysis.DynLibDepsStore,
 	libStore dynamicanalysis.Store,
 ) *NetworkAnalyzer {
-	return NewNetworkAnalyzer(runtime.GOOS, nil, nil, depsStore, libStore)
+	return NewNetworkAnalyzer(runtime.GOOS, nil, nil, depsStore, libStore, nil)
 }
 
 // TestCheckDynLibDepsNetwork_NetworkSymbol verifies that a library with a detected
@@ -808,4 +827,291 @@ func TestCheckDynLibDepsNetwork_DepsLoadError(t *testing.T) {
 	isNetwork, isHighRisk := a.checkDynLibDepsNetwork(testCmdPath, testContentHash)
 	assert.True(t, isNetwork)
 	assert.True(t, isHighRisk)
+}
+
+// ----- mock ShebangInterpreterStore -----
+
+// mockShebangStore is a simple mock that returns fixed (interpPath, interpHash, err)
+// for every call regardless of the input path.
+type mockShebangStore struct {
+	interpPath string
+	interpHash string
+	err        error
+}
+
+func (m *mockShebangStore) LoadInterpreterAnalysisPath(_, _ string) (string, string, error) {
+	return m.interpPath, m.interpHash, m.err
+}
+
+// multiPathShebangStore dispatches LoadInterpreterAnalysisPath to per-path entries.
+// Paths not in the map return ("", "", nil), simulating a native binary with no shebang.
+type multiPathShebangStore struct {
+	entries map[string]*mockShebangStore
+}
+
+func (m *multiPathShebangStore) LoadInterpreterAnalysisPath(scriptPath, _ string) (string, string, error) {
+	if e, ok := m.entries[scriptPath]; ok {
+		return e.interpPath, e.interpHash, e.err
+	}
+	// Non-script binary: no shebang interpreter.
+	return "", "", nil
+}
+
+// makeNetworkAnalyzerWithShebang creates a NetworkAnalyzer with the given stores.
+func makeNetworkAnalyzerWithShebang(
+	symStore fileanalysis.NetworkSymbolStore,
+	svcStore fileanalysis.SyscallAnalysisStore,
+	depsStore fileanalysis.DynLibDepsStore,
+	libStore dynamicanalysis.Store,
+	shebangStore fileanalysis.ShebangInterpreterStore,
+) *NetworkAnalyzer {
+	return NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, depsStore, libStore, shebangStore)
+}
+
+// ----- Section: followShebangChain / shebang-extended analyzeBinarySignals tests -----
+
+// TC-11: interpreter binary has a socket symbol -> isNetwork = true.
+// The shebang store returns the interpreter for the script path, and ("","",nil)
+// for the interpreter path itself (it is a native binary).
+func TestAnalyzeBinarySignals_TC11_InterpNetworkSymbol(t *testing.T) {
+	interpPath := testCmdPath + "_interp11"
+	shebang := &multiPathShebangStore{
+		entries: map[string]*mockShebangStore{
+			testCmdPath: {interpPath: interpPath, interpHash: "sha256:interphash11"},
+		},
+	}
+	combSymStore := &multiPathSymbolStore{
+		stores: map[string]fileanalysis.NetworkSymbolStore{
+			testCmdPath: &stubNetworkSymbolStore{data: nil},
+			interpPath: &stubNetworkSymbolStore{
+				data: &fileanalysis.SymbolAnalysisData{DetectedSymbols: []string{"socket"}},
+			},
+		},
+		defaultStore: &stubNetworkSymbolStore{data: nil},
+	}
+	combSvcStore := &multiPathSyscallStore{defaultStore: &mockFileanalysisSyscallStore{result: nil}}
+	a := makeNetworkAnalyzerWithShebang(combSymStore, combSvcStore, nil, nil, shebang)
+	isNet, isHigh, err := a.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
+	assert.True(t, isNet, "TC-11: interpreter network symbol should set isNetwork=true")
+	assert.False(t, isHigh)
+}
+
+// TC-12: interpreter's shared library has mprotect PROT_EXEC risk -> isHighRisk = true.
+func TestAnalyzeBinarySignals_TC12_InterpLibMprotectRisk(t *testing.T) {
+	interpPath := testCmdPath + "_interp12"
+	interpHash := "sha256:interphash12"
+	shebang := &multiPathShebangStore{
+		entries: map[string]*mockShebangStore{
+			testCmdPath: {interpPath: interpPath, interpHash: interpHash},
+		},
+	}
+	interpDepsStore := &mockDynLibDepsStore{
+		deps: []fileanalysis.LibEntry{
+			{SOName: "libssl.so.3", Path: "/usr/lib/libssl.so.3", Hash: "sha256:ssl"},
+		},
+	}
+	interpLibStore := &mockDynLibAnalysisStore{
+		results: map[string]*dynamicanalysis.Result{
+			"/usr/lib/libssl.so.3": {
+				SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
+					SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+						Architecture:   "x86_64",
+						ArgEvalResults: []common.SyscallArgEvalResult{{SyscallName: "mprotect", Status: "exec_confirmed"}},
+					},
+				},
+			},
+		},
+	}
+	combSymStore := &multiPathSymbolStore{
+		stores: map[string]fileanalysis.NetworkSymbolStore{
+			testCmdPath: &stubNetworkSymbolStore{data: nil},
+			interpPath:  &stubNetworkSymbolStore{data: nil},
+		},
+		defaultStore: &stubNetworkSymbolStore{data: nil},
+	}
+	combSvcStore := &multiPathSyscallStore{defaultStore: &mockFileanalysisSyscallStore{result: nil}}
+	combDepsStore := &multiPathDepsStore{
+		stores:       map[string]fileanalysis.DynLibDepsStore{interpPath: interpDepsStore},
+		defaultStore: &mockDynLibDepsStore{deps: nil},
+	}
+	a := makeNetworkAnalyzerWithShebang(combSymStore, combSvcStore, combDepsStore, interpLibStore, shebang)
+	isNet, isHigh, err := a.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
+	assert.False(t, isNet)
+	assert.True(t, isHigh, "TC-12: interpreter library mprotect risk should set isHighRisk=true")
+}
+
+// TC-13: interpreter's shared library has dlopen -> isHighRisk = true.
+func TestAnalyzeBinarySignals_TC13_InterpLibDlopen(t *testing.T) {
+	interpPath := testCmdPath + "_interp13"
+	interpHash := "sha256:interphash13"
+	shebang := &multiPathShebangStore{
+		entries: map[string]*mockShebangStore{
+			testCmdPath: {interpPath: interpPath, interpHash: interpHash},
+		},
+	}
+	// Use libssl.so.3 (not a syscall wrapper library, so it is not skipped).
+	interpDepsStore := &mockDynLibDepsStore{
+		deps: []fileanalysis.LibEntry{
+			{SOName: "libssl.so.3", Path: "/usr/lib/libssl.so.3", Hash: "sha256:ssl"},
+		},
+	}
+	interpLibStore := &mockDynLibAnalysisStore{
+		results: map[string]*dynamicanalysis.Result{
+			"/usr/lib/libssl.so.3": {
+				SymbolAnalysis: &fileanalysis.SymbolAnalysisData{DynamicLoadSymbols: []string{"dlopen"}},
+			},
+		},
+	}
+	combSymStore := &multiPathSymbolStore{
+		stores: map[string]fileanalysis.NetworkSymbolStore{
+			testCmdPath: &stubNetworkSymbolStore{data: nil},
+			interpPath:  &stubNetworkSymbolStore{data: nil},
+		},
+		defaultStore: &stubNetworkSymbolStore{data: nil},
+	}
+	combSvcStore := &multiPathSyscallStore{defaultStore: &mockFileanalysisSyscallStore{result: nil}}
+	combDepsStore := &multiPathDepsStore{
+		stores:       map[string]fileanalysis.DynLibDepsStore{interpPath: interpDepsStore},
+		defaultStore: &mockDynLibDepsStore{deps: nil},
+	}
+	a := makeNetworkAnalyzerWithShebang(combSymStore, combSvcStore, combDepsStore, interpLibStore, shebang)
+	isNet, isHigh, err := a.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
+	assert.False(t, isNet)
+	assert.True(t, isHigh, "TC-13: interpreter library dlopen should set isHighRisk=true")
+}
+
+// TC-14: interpreter record missing (ErrInterpreterRecordMissing) -> error returned.
+func TestAnalyzeBinarySignals_TC14_InterpRecordMissing(t *testing.T) {
+	shebang := &mockShebangStore{err: fileanalysis.ErrInterpreterRecordMissing}
+	a := makeNetworkAnalyzerWithShebang(&stubNetworkSymbolStore{data: nil}, nil, nil, nil, shebang)
+	_, _, err := a.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, fileanalysis.ErrInterpreterRecordMissing),
+		"TC-14: ErrInterpreterRecordMissing should propagate, got: %v", err)
+}
+
+// AC-05: ErrRecordNotFound from the shebang store when the symbol store is configured
+// means the script record disappeared between checkAnalysisCache and followShebangChain
+// (e.g. hash-dir rotation). The function must return a non-nil error so the command
+// group is aborted fail-closed rather than crashing the runner.
+func TestAnalyzeBinarySignals_AC05_ShebangScriptRecordMissingReturnsError(t *testing.T) {
+	shebang := &mockShebangStore{err: fileanalysis.ErrRecordNotFound}
+	a := makeNetworkAnalyzerWithShebang(&stubNetworkSymbolStore{data: nil}, nil, nil, nil, shebang)
+
+	_, _, err := a.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.Error(t, err, "AC-05: ErrRecordNotFound from shebang store must return an error")
+	assert.True(t, errors.Is(err, fileanalysis.ErrRecordNotFound),
+		"AC-05: error must wrap ErrRecordNotFound, got: %v", err)
+}
+
+// AC-05b: ErrRecordNotFound from the shebang store when the symbol store is nil
+// (analysis records may not have been written) is a valid runtime state and must
+// not panic; the function should return (false, false, nil).
+func TestAnalyzeBinarySignals_AC05b_ShebangRecordNotFoundNilSymStore(t *testing.T) {
+	shebang := &mockShebangStore{err: fileanalysis.ErrRecordNotFound}
+	a := makeNetworkAnalyzerWithShebang(nil, nil, nil, nil, shebang)
+
+	assert.NotPanics(t, func() {
+		isNet, isHigh, err := a.analyzeBinarySignals(testCmdPath, testContentHash)
+		assert.NoError(t, err, "AC-05b: ErrRecordNotFound with nil symStore must not error")
+		assert.False(t, isNet, "AC-05b: no network signal expected")
+		assert.False(t, isHigh, "AC-05b: no high-risk signal expected")
+	}, "AC-05b: ErrRecordNotFound with nil symStore must not panic")
+}
+
+// TC-15: ErrHashMismatch from shebang store -> error returned.
+func TestAnalyzeBinarySignals_TC15_ShebangHashMismatch(t *testing.T) {
+	shebang := &mockShebangStore{err: fileanalysis.ErrHashMismatch}
+	a := makeNetworkAnalyzerWithShebang(&stubNetworkSymbolStore{data: nil}, nil, nil, nil, shebang)
+	_, _, err := a.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, fileanalysis.ErrHashMismatch),
+		"TC-15: ErrHashMismatch should propagate, got: %v", err)
+}
+
+// TC-16: generic load error from shebang store -> error returned.
+func TestAnalyzeBinarySignals_TC16_ShebangLoadError(t *testing.T) {
+	shebang := &mockShebangStore{err: errors.New("unexpected I/O error")}
+	a := makeNetworkAnalyzerWithShebang(&stubNetworkSymbolStore{data: nil}, nil, nil, nil, shebang)
+	_, _, err := a.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.Error(t, err)
+}
+
+// TC-17: shebangStore == nil -> no change to signals (existing behavior preserved).
+func TestAnalyzeBinarySignals_TC17_NilShebangStore(t *testing.T) {
+	symStore := &stubNetworkSymbolStore{
+		data: &fileanalysis.SymbolAnalysisData{DetectedSymbols: []string{"socket"}},
+	}
+	a := makeNetworkAnalyzerWithShebang(symStore, nil, nil, nil, nil)
+	isNet, isHigh, err := a.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
+	assert.True(t, isNet, "TC-17: script's own network symbol should still be detected")
+	assert.False(t, isHigh)
+}
+
+// TC-18: non-script ELF binary (shebang store returns "", "", nil) -> signals unchanged.
+func TestAnalyzeBinarySignals_TC18_NonScriptBinary(t *testing.T) {
+	symStore := &stubNetworkSymbolStore{
+		data: &fileanalysis.SymbolAnalysisData{DetectedSymbols: []string{"connect"}},
+	}
+	// Shebang store returns ("", "", nil) simulating a native binary with no shebang.
+	shebang := &mockShebangStore{interpPath: "", interpHash: "", err: nil}
+	a := makeNetworkAnalyzerWithShebang(symStore, nil, nil, nil, shebang)
+	isNet, isHigh, err := a.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
+	assert.True(t, isNet, "TC-18: binary's own network symbol should be preserved")
+	assert.False(t, isHigh)
+}
+
+// ----- multi-path mock helpers for shebang chain tests -----
+
+// multiPathSymbolStore dispatches LoadNetworkSymbolAnalysis to per-path stores.
+type multiPathSymbolStore struct {
+	stores       map[string]fileanalysis.NetworkSymbolStore
+	defaultStore fileanalysis.NetworkSymbolStore
+}
+
+func (m *multiPathSymbolStore) LoadNetworkSymbolAnalysis(filePath, contentHash string) (*fileanalysis.SymbolAnalysisData, error) {
+	if s, ok := m.stores[filePath]; ok {
+		return s.LoadNetworkSymbolAnalysis(filePath, contentHash)
+	}
+	return m.defaultStore.LoadNetworkSymbolAnalysis(filePath, contentHash)
+}
+
+// multiPathSyscallStore dispatches LoadSyscallAnalysis to per-path stores.
+type multiPathSyscallStore struct {
+	stores       map[string]fileanalysis.SyscallAnalysisStore
+	defaultStore fileanalysis.SyscallAnalysisStore
+}
+
+func (m *multiPathSyscallStore) LoadSyscallAnalysis(filePath, contentHash string) (*fileanalysis.SyscallAnalysisResult, error) {
+	if m.stores != nil {
+		if s, ok := m.stores[filePath]; ok {
+			return s.LoadSyscallAnalysis(filePath, contentHash)
+		}
+	}
+	if m.defaultStore != nil {
+		return m.defaultStore.LoadSyscallAnalysis(filePath, contentHash)
+	}
+	return nil, nil
+}
+
+func (m *multiPathSyscallStore) SaveSyscallAnalysis(_, _ string, _ *fileanalysis.SyscallAnalysisResult) error {
+	return nil
+}
+
+// multiPathDepsStore dispatches LoadDynLibDeps to per-path stores.
+type multiPathDepsStore struct {
+	stores       map[string]fileanalysis.DynLibDepsStore
+	defaultStore fileanalysis.DynLibDepsStore
+}
+
+func (m *multiPathDepsStore) LoadDynLibDeps(filePath, contentHash string) ([]fileanalysis.LibEntry, error) {
+	if s, ok := m.stores[filePath]; ok {
+		return s.LoadDynLibDeps(filePath, contentHash)
+	}
+	return m.defaultStore.LoadDynLibDeps(filePath, contentHash)
 }

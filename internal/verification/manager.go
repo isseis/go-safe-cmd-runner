@@ -30,6 +30,7 @@ type Manager struct {
 	syscallAnalysisStore        fileanalysis.SyscallAnalysisStore
 	dynlibAnalysisStore         dynamicanalysis.Store // nil when store is unavailable
 	dynLibDepsStore             fileanalysis.DynLibDepsStore
+	shebangStore                fileanalysis.ShebangInterpreterStore
 	dynlibVerifier              *elfdynlib.DynLibVerifier // initialized once at construction
 	security                    DirectoryValidator
 	pathResolver                *PathResolver
@@ -368,6 +369,12 @@ func (m *Manager) GetDynLibDepsStore() fileanalysis.DynLibDepsStore {
 	return m.dynLibDepsStore
 }
 
+// GetShebangInterpreterStore returns a ShebangInterpreterStore for looking up
+// shebang interpreter analysis records, or nil if not available.
+func (m *Manager) GetShebangInterpreterStore() fileanalysis.ShebangInterpreterStore {
+	return m.shebangStore
+}
+
 // verifyFile attempts file verification using the configured fileValidator.
 // In dry-run mode it records the result in the ResultCollector and logs the
 // failure, but still returns the underlying error so callers can track
@@ -524,6 +531,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 				manager.networkSymbolStore = fileanalysis.NewNetworkSymbolStore(s)
 				manager.syscallAnalysisStore = fileanalysis.NewSyscallAnalysisStore(s)
 				manager.dynLibDepsStore = fileanalysis.NewDynLibDepsStore(s)
+				manager.shebangStore = fileanalysis.NewShebangInterpreterStore(s)
 			} else {
 				// Security policy:
 				// - Production mode is fail-closed.
@@ -533,12 +541,13 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 					return nil, errAnalysisStoresUnavailable
 				}
 
-				slog.Warn("Analysis stores are unavailable; network/syscall/dynlib-deps analysis will be disabled",
+				slog.Warn("Analysis stores are unavailable; network/syscall/dynlib-deps/shebang analysis will be disabled",
 					"creation_mode", opts.creationMode,
 					"dry_run", opts.isDryRun)
 				manager.networkSymbolStore = nil
 				manager.syscallAnalysisStore = nil
 				manager.dynLibDepsStore = nil
+				manager.shebangStore = nil
 			}
 			// Initialize dynlib analysis store for runner-side library network detection.
 			// The store is load-only (nil analyzer): analysis is performed by record.
