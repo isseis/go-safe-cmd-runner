@@ -26,6 +26,14 @@ const (
 // networkSymbolRegistry contains the default set of network-related symbols.
 // Key: symbol name, Value: category
 //
+// Design: only POSIX socket API and DNS resolver symbols are registered here.
+// High-level protocol library symbols (OpenSSL SSL_*, libcurl curl_easy_*, etc.)
+// are intentionally excluded. Those libraries always call socket/connect/getaddrinfo
+// internally, so they are detected transitively when dynlib analysis walks the
+// binary's library dependencies and checks each library's own symbol analysis.
+// Registering protocol-library symbols here would create redundant detections
+// while adding maintenance burden for every new TLS/HTTP library variant.
+//
 // Symbol names should NOT include version suffixes (e.g., @GLIBC_2.2.5)
 // as Go's debug/elf.DynamicSymbols() returns names without versioning.
 var networkSymbolRegistry = map[string]SymbolCategory{

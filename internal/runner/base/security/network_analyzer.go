@@ -191,41 +191,8 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 		// This check runs regardless of SymbolAnalysis result (NetworkDetected, NoNetworkSymbols,
 		// or nil for static binaries) so that svc #0x80 always escalates
 		// isHighRisk to true.
-		if a.syscallStore != nil {
-			svcResult, svcErr := a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)
-			var svcSchemaMismatch *fileanalysis.SchemaVersionMismatchError
-			switch {
-			case svcErr == nil:
-				if syscallAnalysisHasSVCSignal(svcResult) {
-					slog.Warn("SyscallAnalysis cache indicates svc #0x80; treating as high risk",
-						"path", cmdPath)
-					return true, true
-				}
-				// Check whether any non-svc detected syscall is a network syscall.
-				if syscallAnalysisHasNetworkSignal(svcResult, a.goos) {
-					slog.Info("SyscallAnalysis cache indicates network syscall",
-						"path", cmdPath)
-					return true, false
-				}
-				// No svc signal and no network signal: fall through to SymbolAnalysis-based decision.
-
-			case errors.Is(svcErr, fileanalysis.ErrHashMismatch):
-				slog.Warn("SyscallAnalysis cache hash mismatch; treating as high risk",
-					"path", cmdPath)
-				return true, true
-			case errors.As(svcErr, &svcSchemaMismatch):
-				slog.Warn("SyscallAnalysis cache has outdated schema; treating as high risk",
-					"path", cmdPath,
-					"expected_schema", svcSchemaMismatch.Expected,
-					"actual_schema", svcSchemaMismatch.Actual)
-				return true, true
-			default:
-				// ErrRecordNotFound or unexpected error: this must not occur in production.
-				// The underlying record exists (SymbolAnalysis succeeded or returned
-				// nil for static binary), so a missing SyscallAnalysis record indicates
-				// a consistency bug that must be fixed, not silently absorbed.
-				panic(fmt.Sprintf("SyscallAnalysis cache inconsistency for %q: %v", cmdPath, svcErr))
-			}
+		if handled, isNet, isHigh := a.checkSyscallCache(cmdPath, contentHash); handled {
+			return isNet, isHigh
 		}
 
 		// No svc #0x80 signal: accumulate network/risk signals from SymbolAnalysis.
@@ -241,13 +208,62 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 	// Additional dynlib analysis: OR signals with binary-analysis results.
 	// Runs when depsStore and libAnalysisStore are both configured and contentHash is available.
 	// Fail-closed: any loading error is treated as high risk.
-	if a.depsStore != nil && a.libAnalysisStore != nil && contentHash != "" {
+	//
+	// Short-circuit: if both signals are already true, checkDynLibDepsNetwork cannot
+	// change the outcome, so skip it to avoid unnecessary store I/O.
+	// We still run when only one signal is true (e.g. isHighRisk=true but isNetwork=false)
+	// so that a dep library can contribute the missing signal.
+	if a.depsStore != nil && a.libAnalysisStore != nil && contentHash != "" && (!isNetwork || !isHighRisk) {
 		dynNet, dynHigh := a.checkDynLibDepsNetwork(cmdPath, contentHash)
 		isNetwork = isNetwork || dynNet
 		isHighRisk = isHighRisk || dynHigh
 	}
 
 	return isNetwork, isHighRisk
+}
+
+// checkSyscallCache loads and evaluates the SyscallAnalysis cache entry.
+// Returns (handled, isNetwork, isHighRisk):
+//   - handled=true: a definitive signal was found; the caller should return isNetwork/isHighRisk immediately.
+//   - handled=false: no definitive signal; the caller should continue with SymbolAnalysis-based logic.
+func (a *NetworkAnalyzer) checkSyscallCache(cmdPath, contentHash string) (handled, isNetwork, isHighRisk bool) {
+	if a.syscallStore == nil {
+		return false, false, false
+	}
+	svcResult, svcErr := a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)
+	var svcSchemaMismatch *fileanalysis.SchemaVersionMismatchError
+	switch {
+	case svcErr == nil:
+		if syscallAnalysisHasSVCSignal(svcResult) {
+			slog.Warn("SyscallAnalysis cache indicates svc #0x80; treating as high risk",
+				"path", cmdPath)
+			return true, true, true
+		}
+		// Check whether any non-svc detected syscall is a network syscall.
+		if syscallAnalysisHasNetworkSignal(svcResult, a.goos) {
+			slog.Info("SyscallAnalysis cache indicates network syscall",
+				"path", cmdPath)
+			return true, true, false
+		}
+		// No svc signal and no network signal: fall through to SymbolAnalysis-based decision.
+		return false, false, false
+	case errors.Is(svcErr, fileanalysis.ErrHashMismatch):
+		slog.Warn("SyscallAnalysis cache hash mismatch; treating as high risk",
+			"path", cmdPath)
+		return true, true, true
+	case errors.As(svcErr, &svcSchemaMismatch):
+		slog.Warn("SyscallAnalysis cache has outdated schema; treating as high risk",
+			"path", cmdPath,
+			"expected_schema", svcSchemaMismatch.Expected,
+			"actual_schema", svcSchemaMismatch.Actual)
+		return true, true, true
+	default:
+		// ErrRecordNotFound or unexpected error: this must not occur in production.
+		// The underlying record exists (SymbolAnalysis succeeded or returned
+		// nil for static binary), so a missing SyscallAnalysis record indicates
+		// a consistency bug that must be fixed, not silently absorbed.
+		panic(fmt.Sprintf("SyscallAnalysis cache inconsistency for %q: %v", cmdPath, svcErr))
+	}
 }
 
 // checkDynLibDepsNetwork checks network capability by loading per-library analysis
