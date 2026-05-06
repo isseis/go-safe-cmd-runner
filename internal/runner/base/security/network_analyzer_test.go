@@ -703,6 +703,82 @@ func TestCheckDynLibDepsNetwork_DynamicLoadSymbols(t *testing.T) {
 	assert.True(t, isHighRisk)
 }
 
+// TestCheckDynLibDepsNetwork_MprotectProtExecRisk verifies that dynlib syscall
+// argument evaluation (mprotect-family PROT_EXEC risk) maps to the expected
+// high-risk decision for both mprotect and pkey_mprotect.
+func TestCheckDynLibDepsNetwork_MprotectProtExecRisk(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		syscallName  string
+		status       common.SyscallArgEvalStatus
+		wantHighRisk bool
+	}{
+		{
+			name:         "mprotect exec_confirmed is high risk",
+			syscallName:  "mprotect",
+			status:       common.SyscallArgEvalExecConfirmed,
+			wantHighRisk: true,
+		},
+		{
+			name:         "mprotect exec_unknown is high risk",
+			syscallName:  "mprotect",
+			status:       common.SyscallArgEvalExecUnknown,
+			wantHighRisk: true,
+		},
+		{
+			name:         "mprotect exec_not_set is not high risk",
+			syscallName:  "mprotect",
+			status:       common.SyscallArgEvalExecNotSet,
+			wantHighRisk: false,
+		},
+		{
+			name:         "pkey_mprotect exec_confirmed is high risk",
+			syscallName:  "pkey_mprotect",
+			status:       common.SyscallArgEvalExecConfirmed,
+			wantHighRisk: true,
+		},
+		{
+			name:         "pkey_mprotect exec_unknown is high risk",
+			syscallName:  "pkey_mprotect",
+			status:       common.SyscallArgEvalExecUnknown,
+			wantHighRisk: true,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dep := fileanalysis.LibEntry{SOName: "libjit.so.1", Path: "/usr/lib/libjit.so.1", Hash: "sha256:dd"}
+			depsStore := &mockDynLibDepsStore{deps: []fileanalysis.LibEntry{dep}}
+			libStore := &mockDynLibAnalysisStore{
+				results: map[string]*dynamicanalysis.Result{
+					"/usr/lib/libjit.so.1": {
+						SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
+							SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+								Architecture: "x86_64",
+								ArgEvalResults: []common.SyscallArgEvalResult{{
+									SyscallName: tc.syscallName,
+									Status:      tc.status,
+									Details:     "prot=0x5",
+								}},
+							},
+						},
+					},
+				},
+			}
+
+			a := makeNetworkAnalyzerWithLibStores(depsStore, libStore)
+			isNetwork, isHighRisk := a.checkDynLibDepsNetwork(testCmdPath, testContentHash)
+			assert.False(t, isNetwork)
+			assert.Equal(t, tc.wantHighRisk, isHighRisk)
+		})
+	}
+}
+
 // TestCheckDynLibDepsNetwork_ErrAnalysisNotFound verifies fail-closed behaviour when
 // library analysis is missing from the store.
 func TestCheckDynLibDepsNetwork_ErrAnalysisNotFound(t *testing.T) {

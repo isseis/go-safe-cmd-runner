@@ -1,34 +1,31 @@
 package elfanalyzer
 
-import "github.com/isseis/go-safe-cmd-runner/internal/common"
+import (
+	"slices"
 
-// EvalMprotectRisk evaluates ArgEvalResults for mprotect-family risk.
-// Covers both mprotect and pkey_mprotect syscalls.
-// Returns true if PROT_EXEC risk exists (used for AnalysisWarnings
-// entries and risk derivation in convertSyscallResult).
-//
-// Mapping rules:
-//   - exec_confirmed → true
-//   - exec_unknown   → true
-//   - exec_not_set   → false
-//   - no mprotect/pkey_mprotect entries → false
-func EvalMprotectRisk(argEvalResults []common.SyscallArgEvalResult) bool {
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
+)
+
+// FirstMprotectRisk returns a copy of the first ArgEvalResult in the mprotect
+// family (mprotect or pkey_mprotect) that represents PROT_EXEC risk
+// (exec_confirmed or exec_unknown), plus true. Returns the zero value and
+// false when no such entry is found.
+func FirstMprotectRisk(argEvalResults []common.SyscallArgEvalResult) (common.SyscallArgEvalResult, bool) {
 	for _, r := range argEvalResults {
-		isMember := false
-		for _, familyName := range MprotectFamilyNames {
-			if r.SyscallName == familyName {
-				isMember = true
-				break
+		if slices.Contains(MprotectFamilyNames, r.SyscallName) {
+			switch r.Status {
+			case common.SyscallArgEvalExecConfirmed,
+				common.SyscallArgEvalExecUnknown:
+				return r, true
 			}
 		}
-		if !isMember {
-			continue
-		}
-		switch r.Status {
-		case common.SyscallArgEvalExecConfirmed,
-			common.SyscallArgEvalExecUnknown:
-			return true
-		}
 	}
-	return false
+	return common.SyscallArgEvalResult{}, false
+}
+
+// EvalMprotectRisk reports whether argEvalResults contain any mprotect-family
+// PROT_EXEC risk. See FirstMprotectRisk for the matching rules.
+func EvalMprotectRisk(argEvalResults []common.SyscallArgEvalResult) bool {
+	_, ok := FirstMprotectRisk(argEvalResults)
+	return ok
 }
