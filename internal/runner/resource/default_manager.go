@@ -29,6 +29,7 @@ type Config struct {
 	SyscallStore       fileanalysis.SyscallAnalysisStore
 	DynLibDepsStore    fileanalysis.DynLibDepsStore
 	LibAnalysisStore   dynamicanalysis.Store
+	ShebangStore       fileanalysis.ShebangInterpreterStore
 }
 
 // DefaultResourceManager provides a mode-aware facade that delegates to

@@ -28,10 +28,11 @@ func NewStandardEvaluator(
 	syscallStore fileanalysis.SyscallAnalysisStore,
 	depsStore fileanalysis.DynLibDepsStore,
 	libAnalysisStore dynamicanalysis.Store,
+	shebangStore fileanalysis.ShebangInterpreterStore,
 ) Evaluator {
 	return &StandardEvaluator{
 		networkAnalyzer: security.NewNetworkAnalyzer(
-			runtime.GOOS, symStore, syscallStore, depsStore, libAnalysisStore,
+			runtime.GOOS, symStore, syscallStore, depsStore, libAnalysisStore, shebangStore,
 		),
 	}
 }
@@ -55,7 +56,10 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (runne
 	// Check for network operations.
 	// Forward the pre-verified content hash so ELF analysis of static binaries
 	// can skip a redundant file read when looking up syscall analysis results.
-	isNetwork, isHighRisk := e.networkAnalyzer.IsNetworkOperation(cmd.ExpandedCmd, cmd.ExpandedArgs, cmd.ExpandedCmdContentHash)
+	isNetwork, isHighRisk, err := e.networkAnalyzer.IsNetworkOperation(cmd.ExpandedCmd, cmd.ExpandedArgs, cmd.ExpandedCmdContentHash)
+	if err != nil {
+		return runnertypes.RiskLevelUnknown, err
+	}
 	if isHighRisk {
 		return runnertypes.RiskLevelHigh, nil
 	}

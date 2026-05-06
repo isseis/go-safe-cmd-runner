@@ -3,8 +3,8 @@
 ## 進捗状況
 
 - [x] Phase 1: `ShebangInterpreterStore` の実装
-- [ ] Phase 2: `NetworkAnalyzer` の拡張
-- [ ] Phase 3: `NewNetworkAnalyzer` 呼び出し箇所の更新
+- [x] Phase 2: `NetworkAnalyzer` の拡張
+- [x] Phase 3: `NewNetworkAnalyzer` 呼び出し箇所の更新
 - [ ] Phase 4: テスト実装
 - [ ] Phase 5: 動作確認・品質チェック
 
@@ -38,26 +38,26 @@
 
 **対象ファイル:** `internal/runner/base/security/network_analyzer.go`
 
-- [ ] 2-1. `NetworkAnalyzer` 構造体に `shebangStore fileanalysis.ShebangInterpreterStore` フィールドを追加
+- [x] 2-1. `NetworkAnalyzer` 構造体に `shebangStore fileanalysis.ShebangInterpreterStore` フィールドを追加
 
-- [ ] 2-2. `NewNetworkAnalyzer` の引数に `shebangStore fileanalysis.ShebangInterpreterStore` を追加し、フィールドに代入
+- [x] 2-2. `NewNetworkAnalyzer` の引数に `shebangStore fileanalysis.ShebangInterpreterStore` を追加し、フィールドに代入
 
-- [ ] 2-3. `analyzeBinarySignals` に shebang チェーン追跡を追加（`return` 直前）
-  - [ ] `shebangStore != nil && contentHash != ""` のガード
-  - [ ] `LoadInterpreterAnalysisPath` 呼び出し
-  - [ ] `ErrInterpreterRecordMissing` → エラーを呼び出し元へ返却（実行中止）
-  - [ ] `ErrHashMismatch` → エラーを呼び出し元へ返却（実行中止）
-  - [ ] その他エラー（インタープリタレコードロード失敗を含む）→ エラーを呼び出し元へ返却（実行中止）
-  - [ ] `interpHash != ""` の場合のみ再帰呼び出し
-  - [ ] 再帰結果を OR 結合
+- [x] 2-3. `analyzeBinarySignals` に shebang チェーン追跡を追加（`return` 直前）
+  - [x] `shebangStore != nil && contentHash != ""` のガード
+  - [x] `LoadInterpreterAnalysisPath` 呼び出し
+  - [x] `ErrInterpreterRecordMissing` → エラーを呼び出し元へ返却（実行中止）
+  - [x] `ErrHashMismatch` → エラーを呼び出し元へ返却（実行中止）
+  - [x] その他エラー（インタープリタレコードロード失敗を含む）→ エラーを呼び出し元へ返却（実行中止）
+  - [x] `interpHash != ""` の場合のみ再帰呼び出し
+  - [x] 再帰結果を OR 結合
 
 ---
 
 ## Phase 3: `NewNetworkAnalyzer` 呼び出し箇所の更新
 
-- [ ] 3-1. `grep -rn "NewNetworkAnalyzer"` で全呼び出し箇所を特定
+- [x] 3-1. `grep -rn "NewNetworkAnalyzer"` で全呼び出し箇所を特定
 
-- [ ] 3-2. 各呼び出し箇所に `shebangStore` 引数を追加
+- [x] 3-2. 各呼び出し箇所に `shebangStore` 引数を追加
   - `internal/runner/base/risk/evaluator.go`: `NewNetworkAnalyzer` 呼び出しに `shebangStore` を渡す
   - テストコード等: 適切なモックまたは `nil` を渡す
 

@@ -47,7 +47,7 @@ func newNormalManager(cfg Config, outputMgr output.CaptureManager) *NormalResour
 		executor:         cfg.Executor,
 		fileSystem:       cfg.FileSystem,
 		privilegeManager: cfg.PrivilegeManager,
-		riskEvaluator:    risk.NewStandardEvaluator(cfg.NetworkSymbolStore, cfg.SyscallStore, cfg.DynLibDepsStore, cfg.LibAnalysisStore),
+		riskEvaluator:    risk.NewStandardEvaluator(cfg.NetworkSymbolStore, cfg.SyscallStore, cfg.DynLibDepsStore, cfg.LibAnalysisStore, cfg.ShebangStore),
 		outputManager:    outputMgr,
 		maxOutputSize:    cfg.MaxOutputSize,
 		logger:           cfg.Logger,
