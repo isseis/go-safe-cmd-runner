@@ -7,7 +7,7 @@
 | `internal/fileanalysis/shebang_store.go` | 新規（`ShebangInterpreterStore` インターフェース・実装）|
 | `internal/runner/base/security/network_analyzer.go` | 変更（`shebangStore` フィールド追加・`analyzeBinarySignals` 拡張）|
 | `internal/runner/base/security/network_analyzer_test.go` | テスト追加 |
-| `cmd/record/main.go` | 変更（`NetworkAnalyzer` 生成時に `shebangStore` を注入）|
+| `internal/runner/base/risk/evaluator.go` | 変更（`NewNetworkAnalyzer` 呼び出しに `shebangStore` を追加）|
 
 ---
 
@@ -159,19 +159,18 @@ if a.shebangStore != nil && contentHash != "" {
 
 ## 4. `NewNetworkAnalyzer` 呼び出し箇所の変更
 
-### 4.1. `cmd/record/main.go`
+### 4.1. `internal/runner/base/risk/evaluator.go`
 
 `NewNetworkAnalyzer` の呼び出しに `shebangStore` を追加する。
 
 ```go
-shebangStore := fileanalysis.NewShebangInterpreterStore(analysisStore)
 networkAnalyzer := security.NewNetworkAnalyzer(
     runtime.GOOS,
     symStore,
-    svcStore,
+    syscallStore,
     depsStore,
     libAnalysisStore,
-    shebangStore,  // 追加
+    shebangStore, // 追加
 )
 ```
 
@@ -204,7 +203,7 @@ networkAnalyzer := security.NewNetworkAnalyzer(
 | テストケース | 条件 | 期待結果 |
 |------------|------|---------|
 | TC-11 | インタープリタが `socket` シンボルを持つ | `isNetwork = true` |
-| TC-12 | インタープリタが mprotect を持つ（`SyscallAnalysis`）| `isHighRisk = true` |
+| TC-12 | インタープリタの共有ライブラリが mprotect リスクを持つ | `isHighRisk = true` |
 | TC-13 | インタープリタの共有ライブラリが `dlopen` を持つ | `isHighRisk = true` |
 | TC-14 | インタープリタレコードのハッシュが不明（`""`）| スキップ、`(false, false)` |
 | TC-15 | `ErrHashMismatch` | `(true, true)` |
@@ -218,7 +217,7 @@ networkAnalyzer := security.NewNetworkAnalyzer(
 |------------|-------|
 | AC-01: bash の network シンボル | TC-11 |
 | AC-02: env 形式 python3 | TC-02 |
-| AC-03: インタープリタの mprotect | TC-12 |
+| AC-03: インタープリタ共有ライブラリの mprotect リスク | TC-12 |
 | AC-04: ライブラリの dynload シンボル | TC-13 |
 | AC-05: インタープリタレコード不在はスキップ | TC-14, TC-06 |
 | AC-06: ロードエラーで high risk | TC-15, TC-16 |

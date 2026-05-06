@@ -54,7 +54,7 @@
 - [ ] 3-1. `grep -rn "NewNetworkAnalyzer"` で全呼び出し箇所を特定
 
 - [ ] 3-2. 各呼び出し箇所に `shebangStore` 引数を追加
-  - `cmd/record/main.go`: `fileanalysis.NewShebangInterpreterStore(analysisStore)` を渡す
+  - `internal/runner/base/risk/evaluator.go`: `NewNetworkAnalyzer` 呼び出しに `shebangStore` を渡す
   - テストコード等: 適切なモックまたは `nil` を渡す
 
 ---
@@ -75,7 +75,7 @@
 
 - [ ] 4-2. `analyzeBinarySignals` shebang 拡張テスト（TC-11〜TC-18）
   - [ ] TC-11: インタープリタが `socket` シンボル → `isNetwork = true`
-  - [ ] TC-12: インタープリタが mprotect（`SyscallAnalysis`）→ `isHighRisk = true`
+  - [ ] TC-12: インタープリタの共有ライブラリが mprotect リスクを持つ → `isHighRisk = true`
   - [ ] TC-13: インタープリタのライブラリが `dlopen` → `isHighRisk = true`
   - [ ] TC-14: インタープリタのハッシュ不明 → スキップ `(false, false)`
   - [ ] TC-15: `ErrHashMismatch` → `(true, true)`

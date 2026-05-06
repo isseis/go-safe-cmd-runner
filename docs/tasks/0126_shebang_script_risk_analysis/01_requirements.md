@@ -64,7 +64,7 @@ shebang スクリプトについては、`record` 実行時に `ShebangInterpret
 **詳細:**
 - `analyzeBinarySignals(interpPath, interpHash)` を再帰呼び出しし、以下すべてを評価:
   - インタープリタの `SymbolAnalysis`（ネットワークシンボル・dynload シンボル）
-  - インタープリタの `SyscallAnalysis`（mprotect(PROT_EXEC) 等）
+  - インタープリタの `SyscallAnalysis`（svc #0x80・ネットワーク syscall）
   - インタープリタの `DynLibDeps`（推移的ライブラリのリスク）
 - 結果は既存のリスクシグナルと OR 結合する
 
@@ -104,7 +104,7 @@ shebang スクリプトについては、`record` 実行時に `ShebangInterpret
 |----|------|---------|
 | AC-01 | `#!/bin/bash` スクリプトを runner が処理 | bash が network シンボル（`socket` 等）を持つ場合 `IsNetworkOperation()` が `true` を返す |
 | AC-02 | `#!/usr/bin/env python3` スクリプトを runner が処理 | python3 バイナリの解析結果が利用される |
-| AC-03 | インタープリタが mprotect(PROT_EXEC) を持つ | `IsNetworkOperation()` の `isHighRisk` が `true` になる |
+| AC-03 | インタープリタの共有ライブラリが mprotect(PROT_EXEC) リスクを持つ | `IsNetworkOperation()` の `isHighRisk` が `true` になる |
 | AC-04 | インタープリタの共有ライブラリが dynload シンボルを持つ | `isHighRisk` が `true` になる |
 | AC-05 | インタープリタレコードがストアに存在しない | リスク判定をスキップ（エラーなし） |
 | AC-06 | インタープリタレコードのロードが失敗する | high risk 扱い（fail-closed） |

@@ -4,7 +4,7 @@
 
 - runner がスクリプトを処理する際、インタープリタの JSON レコードも読み込み、そこに記録されたリスクシグナル（`SymbolAnalysis`・`SyscallAnalysis`・`DynLibDeps`）を活用する
 - `record` 側のコードを変更せず、インタープリタバイナリの既存レコードを再利用する
-- インタープリタの `SyscallAnalysis`（mprotect PROT_EXEC 含む）・共有ライブラリの推移的解析を自動的に活用する
+- インタープリタの `SyscallAnalysis`（svc #0x80・ネットワーク syscall）・共有ライブラリの推移的解析を自動的に活用する
 - `analyzeBinarySignals` の再帰呼び出しにより既存の解析ロジックを最大限再利用する
 
 ---
@@ -57,7 +57,7 @@ flowchart TD
     IPATH --> RECURSE["analyzeBinarySignals(<br>  interpPath, interpContentHash<br>)"]
 
     RECURSE --> INTERP_SYM["LoadNetworkSymbolAnalysis(interpPath)<br>← インタープリタの SymbolAnalysis"]
-    RECURSE --> INTERP_SVC["checkSyscallCache(interpPath)<br>← インタープリタの SyscallAnalysis<br>（mprotect PROT_EXEC 含む）"]
+    RECURSE --> INTERP_SVC["checkSyscallCache(interpPath)<br>← インタープリタの SyscallAnalysis<br>（svc #0x80 / network syscall）"]
     RECURSE --> INTERP_DYNLIB["checkDynLibDepsNetwork(interpPath)<br>← インタープリタの DynLibDeps<br>（推移的ライブラリ解析）"]
 
     RECURSE --> OR["OR 結合"]
