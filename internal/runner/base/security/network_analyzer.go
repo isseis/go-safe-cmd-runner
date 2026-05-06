@@ -394,7 +394,7 @@ func isVDSOEntry(soname string) bool {
 	}
 }
 
-func buildAnalysisOutputFromSymbolData(data *fileanalysis.SymbolAnalysisData, cmdPath string) binaryanalyzer.AnalysisOutput {
+func buildAnalysisOutputFromSymbolData(data *fileanalysis.SymbolAnalysisData, _ string) binaryanalyzer.AnalysisOutput {
 	output := binaryanalyzer.AnalysisOutput{
 		DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
 		DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
@@ -404,17 +404,9 @@ func buildAnalysisOutputFromSymbolData(data *fileanalysis.SymbolAnalysisData, cm
 	// non-network symbols do not trigger NetworkDetected.
 	hasNetworkSymbol := slices.ContainsFunc(data.DetectedSymbols, binaryanalyzer.IsNetworkSymbolName)
 
-	switch {
-	case hasNetworkSymbol:
+	if hasNetworkSymbol {
 		output.Result = binaryanalyzer.NetworkDetected
-	case len(data.KnownNetworkLibDeps) > 0:
-		output.Result = binaryanalyzer.NetworkDetected
-		slog.Info( //nolint:gosec // G706: cmdPath is a configured command path from TOML, not arbitrary user input
-			"treating binary as network-capable based on known network library dependencies",
-			"path", cmdPath,
-			"known_network_lib_deps", data.KnownNetworkLibDeps,
-		)
-	default:
+	} else {
 		output.Result = binaryanalyzer.NoNetworkSymbols
 	}
 

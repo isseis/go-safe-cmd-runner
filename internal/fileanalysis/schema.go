@@ -13,7 +13,6 @@ const (
 	// Version 5 adds ArgEvalResults for syscall argument evaluation (mprotect PROT_EXEC detection).
 	// Version 6 removes is_high_risk from summary and renames high_risk_reasons to analysis_warnings.
 	// Version 7 adds pkey_mprotect PROT_EXEC detection.
-	// Version 8 adds KnownNetworkLibDeps to SymbolAnalysisData.
 	// Version 9 removes per-sub-analysis timestamps (DynLibDepsData.RecordedAt,
 	// SyscallAnalysisData.AnalyzedAt, SymbolAnalysisData.AnalyzedAt); consolidated into a record-level timestamp.
 	// Version 10 flattens dyn_lib_deps from {"libs": [...]} to [...] directly.
@@ -158,9 +157,4 @@ type SymbolAnalysisData struct {
 	// Empty when none were detected.
 	// HasDynamicLoad is derived as len(DynamicLoadSymbols) > 0; no separate field.
 	DynamicLoadSymbols []string `json:"dynamic_load_symbols,omitempty"`
-
-	// KnownNetworkLibDeps lists SOName values of known network libraries
-	// detected from DynLibDeps during record.
-	// If non-empty, this binary is treated as network-capable.
-	KnownNetworkLibDeps []string `json:"known_network_lib_deps,omitempty"`
 }

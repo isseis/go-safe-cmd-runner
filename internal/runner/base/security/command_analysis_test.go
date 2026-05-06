@@ -2471,32 +2471,6 @@ func TestIsNetworkViaBinaryAnalysis_AnalysisStore(t *testing.T) {
 		assert.False(t, isNet, "expected no network result when contentHash is empty")
 		assert.False(t, isHigh, "expected no high-risk result when contentHash is empty")
 	})
-
-	t.Run("analysis found KnownNetworkLibDeps non-empty, DetectedSymbols empty → NetworkDetected", func(t *testing.T) {
-		store := &stubNetworkSymbolStore{
-			data: &fileanalysis.SymbolAnalysisData{
-				DetectedSymbols:     nil,
-				KnownNetworkLibDeps: []string{"libcurl.so.4"},
-			},
-		}
-		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
-		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
-		assert.True(t, isNet, "expected network detected from KnownNetworkLibDeps in analysis store")
-		assert.False(t, isHigh, "expected not high risk")
-	})
-
-	t.Run("analysis found KnownNetworkLibDeps empty, DetectedSymbols empty → NoNetworkSymbols", func(t *testing.T) {
-		store := &stubNetworkSymbolStore{
-			data: &fileanalysis.SymbolAnalysisData{
-				DetectedSymbols:     nil,
-				KnownNetworkLibDeps: nil,
-			},
-		}
-		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
-		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
-		assert.False(t, isNet, "expected no network when both DetectedSymbols and KnownNetworkLibDeps are empty")
-		assert.False(t, isHigh, "expected not high risk")
-	})
 }
 
 // TestNetworkSymbolAnalysisStore_RecordToRunner tests the record→runner analysis store flow.

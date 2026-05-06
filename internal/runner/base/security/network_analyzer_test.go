@@ -191,24 +191,8 @@ func noSVCResult() *fileanalysis.SyscallAnalysisResult {
 // noNetworkSymbolData builds a SymbolAnalysisData with no network symbols.
 func noNetworkSymbolData() *fileanalysis.SymbolAnalysisData {
 	return &fileanalysis.SymbolAnalysisData{
-		DetectedSymbols:     nil,
-		KnownNetworkLibDeps: nil,
+		DetectedSymbols: nil,
 	}
-}
-
-// TestIsNetworkViaBinaryAnalysis_DetectedLibraryNetworkDeps verifies that detected library
-// network dependencies reported via KnownNetworkLibDeps are handled correctly.
-func TestIsNetworkViaBinaryAnalysis_KnownNetworkLibDeps(t *testing.T) {
-	symStore := &stubNetworkSymbolStore{data: &fileanalysis.SymbolAnalysisData{
-		KnownNetworkLibDeps: []string{"libnetdep.so.1"},
-	}}
-	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, svcStore, nil, nil)
-
-	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
-
-	assert.True(t, isNet, "known_network_lib_deps should mark as network-capable")
-	assert.False(t, isHigh, "known_network_lib_deps alone should not mark high risk")
 }
 
 // networkDetectedData builds a SymbolAnalysisData with network symbols detected.
