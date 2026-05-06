@@ -339,7 +339,7 @@ func TestAnalyzeSlice_NonLibSystemSymbolsExcluded(t *testing.T) {
 
 	// curl's socket calls go through libcurl (not libSystem directly), so the
 	// libSystem-level symbol filter must not report NetworkDetected at the
-	// analyzer layer. (curl is detected at the runner level via KnownNetworkLibDeps.)
+	// analyzer layer. (curl is detected at the runner level via dynlib analysis.)
 	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
 }
 
