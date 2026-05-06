@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -29,6 +30,13 @@ import (
 
 func buildNetworkInterpreterBinary(t *testing.T, dir string) string {
 	t.Helper()
+
+	if runtime.GOOS != "linux" {
+		t.Skipf("buildNetworkInterpreterBinary requires Linux (got %s)", runtime.GOOS)
+	}
+	if _, err := exec.LookPath("cc"); err != nil {
+		t.Skip("buildNetworkInterpreterBinary requires cc (install build-essential)")
+	}
 
 	srcPath := filepath.Join(dir, "net_interp.c")
 	binPath := filepath.Join(dir, "net-interpreter")
