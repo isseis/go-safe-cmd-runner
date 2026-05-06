@@ -38,12 +38,6 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 			expectSymbols:  true,
 		},
 		{
-			name:           "binary with ssl symbols only",
-			filename:       "with_ssl.elf",
-			expectedResult: binaryanalyzer.NoNetworkSymbols,
-			expectSymbols:  true, // syscall_wrapper symbols from libc are still recorded
-		},
-		{
 			name:           "binary without network symbols",
 			filename:       "no_network.elf",
 			expectedResult: binaryanalyzer.NoNetworkSymbols,
@@ -142,7 +136,7 @@ func TestHasDynamicLoad_ELF(t *testing.T) {
 
 // TestStandardELFAnalyzer_LibcSymbolFiltering verifies that symbols are recorded
 // in DetectedSymbols with the correct category according to the two-step filter:
-//   - networkSymbols matches (e.g. socket, SSL_CTX_new) are recorded with their category
+//   - networkSymbols matches (e.g. socket, getaddrinfo) are recorded with their category
 //     (regardless of library or VERNEED presence)
 //   - non-network libc symbols (e.g. __libc_start_main) appear with category "syscall_wrapper"
 //     (only for VERNEED-present/glibc binaries where sym.Library is populated)

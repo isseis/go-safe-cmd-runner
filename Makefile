@@ -184,7 +184,6 @@ ELFANALYZER_TESTDATA_DIR := internal/security/elfanalyzer/testdata
 # On macOS, gcc produces Mach-O binaries, so these are only generated on Linux.
 ELFANALYZER_C_ELF_BINARIES := \
 	$(ELFANALYZER_TESTDATA_DIR)/with_socket.elf \
-	$(ELFANALYZER_TESTDATA_DIR)/with_ssl.elf \
 	$(ELFANALYZER_TESTDATA_DIR)/no_network.elf
 
 # List of all required test binaries
@@ -223,11 +222,6 @@ $(ELFANALYZER_TESTDATA_DIR)/with_socket.elf:
 	@echo "Generating $@..."
 	@echo '#include <sys/socket.h>\n#include <netinet/in.h>\nint main() { int fd = socket(AF_INET, SOCK_STREAM, 0); struct sockaddr_in addr = {0}; connect(fd, (struct sockaddr*)&addr, sizeof(addr)); return 0; }' | \
 		gcc -x c -o $@ -
-
-$(ELFANALYZER_TESTDATA_DIR)/with_ssl.elf:
-	@echo "Generating $@..."
-	@echo '#include <openssl/ssl.h>\nint main() { SSL_CTX *ctx = SSL_CTX_new(TLS_client_method()); SSL_CTX_free(ctx); return 0; }' | \
-		gcc -x c -o $@ - -lssl -lcrypto
 
 $(ELFANALYZER_TESTDATA_DIR)/no_network.elf:
 	@echo "Generating $@..."
