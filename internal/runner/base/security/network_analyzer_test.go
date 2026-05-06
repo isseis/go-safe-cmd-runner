@@ -1003,6 +1003,21 @@ func TestAnalyzeBinarySignals_AC05_ShebangScriptRecordMissingPanics(t *testing.T
 	}, "ErrRecordNotFound from shebang store must panic (consistency bug)")
 }
 
+// AC-05b: ErrRecordNotFound from the shebang store when the symbol store is nil
+// (analysis records may not have been written) is a valid runtime state and must
+// not panic; the function should return (false, false, nil).
+func TestAnalyzeBinarySignals_AC05b_ShebangRecordNotFoundNilSymStore(t *testing.T) {
+	shebang := &mockShebangStore{err: fileanalysis.ErrRecordNotFound}
+	a := makeNetworkAnalyzerWithShebang(nil, nil, nil, nil, shebang)
+
+	assert.NotPanics(t, func() {
+		isNet, isHigh, err := a.analyzeBinarySignals(testCmdPath, testContentHash)
+		assert.NoError(t, err, "AC-05b: ErrRecordNotFound with nil symStore must not error")
+		assert.False(t, isNet, "AC-05b: no network signal expected")
+		assert.False(t, isHigh, "AC-05b: no high-risk signal expected")
+	}, "AC-05b: ErrRecordNotFound with nil symStore must not panic")
+}
+
 // TC-15: ErrHashMismatch from shebang store -> error returned.
 func TestAnalyzeBinarySignals_TC15_ShebangHashMismatch(t *testing.T) {
 	shebang := &mockShebangStore{err: fileanalysis.ErrHashMismatch}
