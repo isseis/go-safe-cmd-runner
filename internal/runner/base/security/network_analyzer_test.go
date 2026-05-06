@@ -993,14 +993,18 @@ func TestAnalyzeBinarySignals_TC14_InterpRecordMissing(t *testing.T) {
 		"TC-14: ErrInterpreterRecordMissing should propagate, got: %v", err)
 }
 
-// AC-05: script record missing in shebang lookup is a consistency bug and must panic.
-func TestAnalyzeBinarySignals_AC05_ShebangScriptRecordMissingPanics(t *testing.T) {
+// AC-05: ErrRecordNotFound from the shebang store when the symbol store is configured
+// means the script record disappeared between checkAnalysisCache and followShebangChain
+// (e.g. hash-dir rotation). The function must return a non-nil error so the command
+// group is aborted fail-closed rather than crashing the runner.
+func TestAnalyzeBinarySignals_AC05_ShebangScriptRecordMissingReturnsError(t *testing.T) {
 	shebang := &mockShebangStore{err: fileanalysis.ErrRecordNotFound}
 	a := makeNetworkAnalyzerWithShebang(&stubNetworkSymbolStore{data: nil}, nil, nil, nil, shebang)
 
-	assert.Panics(t, func() {
-		_, _, _ = a.analyzeBinarySignals(testCmdPath, testContentHash)
-	}, "ErrRecordNotFound from shebang store must panic (consistency bug)")
+	_, _, err := a.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.Error(t, err, "AC-05: ErrRecordNotFound from shebang store must return an error")
+	assert.True(t, errors.Is(err, fileanalysis.ErrRecordNotFound),
+		"AC-05: error must wrap ErrRecordNotFound, got: %v", err)
 }
 
 // AC-05b: ErrRecordNotFound from the shebang store when the symbol store is nil

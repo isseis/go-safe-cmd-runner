@@ -239,14 +239,17 @@ func (a *NetworkAnalyzer) followShebangChain(cmdPath, contentHash string) (isNet
 		// When the symbol store is configured, checkAnalysisCache already called
 		// LoadNetworkSymbolAnalysis and confirmed the script record exists before
 		// followShebangChain is reached. A missing shebang record at this point
-		// can only happen if the record was deleted between those two calls —
-		// a programming error.
+		// most likely means the record was deleted between those two calls
+		// (e.g. hash-dir rotation or concurrent modification). Return an error
+		// so the command group is aborted fail-closed rather than crashing.
 		//
 		// When the symbol store is nil, checkAnalysisCache is never called, so
 		// the script may have no analysis record at all; treat it as
 		// "no shebang info available" and continue without error.
 		if a.store != nil {
-			panic(fmt.Sprintf("shebang store: script record disappeared for %q: %v", cmdPath, shebangErr))
+			slog.Error("Shebang script record disappeared between cache lookup and shebang lookup; aborting command group",
+				"path", cmdPath, "error", shebangErr)
+			return false, false, fmt.Errorf("shebang script record disappeared for %q: %w", cmdPath, shebangErr)
 		}
 		return false, false, nil
 	case errors.Is(shebangErr, fileanalysis.ErrHashMismatch):
