@@ -57,7 +57,10 @@ func NewNetworkAnalyzer(
 
 // IsNetworkOperation checks if the command performs network operations.
 // This function considers symbolic links to detect network commands properly.
-// Returns (isNetwork, isHighRisk) where isHighRisk indicates symlink depth exceeded.
+// Returns (isNetwork, isHighRisk) where isHighRisk is true when any of the
+// following conditions hold: symlink depth exceeded; dynamic load symbols
+// (dlopen/dlsym) detected in the binary or its deps; mprotect PROT_EXEC risk
+// detected in deps; or binary analysis inconclusive (fail-closed).
 //
 // contentHash is a pre-computed hash in "algo:hex" format (e.g. "sha256:abc123...").
 // Used to verify cache record freshness when store-based binary analysis runs.
@@ -111,9 +114,9 @@ func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string, cont
 	// Binary analysis requires an absolute path (should be resolved by caller via PathResolver).
 	// If cmdName is not absolute, skip binary analysis silently.
 	if !foundInProfiles && filepath.IsAbs(cmdName) {
-		isNet, isHigh := a.isNetworkViaBinaryAnalysis(cmdName, contentHash)
-		if isNet || isHigh {
-			return isNet, isHigh
+		isNet, hasDynLoad := a.analyzeBinarySignals(cmdName, contentHash)
+		if isNet || hasDynLoad {
+			return isNet, hasDynLoad
 		}
 	}
 
@@ -132,26 +135,26 @@ func hasNetworkArguments(args []string) bool {
 		containsSSHStyleAddress(args) // SSH-style user@host:path addresses
 }
 
-// isNetworkViaBinaryAnalysis performs binary analysis on the command binary.
-// Returns (isNetwork, isHighRisk) where:
-//   - isNetwork: true if confirmed network symbols were found or analysis failed (safety)
-//   - isHighRisk: true if dynamic load symbols (dlopen/dlsym/dlvsym) were detected
+// analyzeBinarySignals analyzes the binary for network usage and dynamic loading.
+// Returns (isNetwork, hasDynLoad) where:
+//   - isNetwork: true if network symbols or network syscalls were detected
+//   - hasDynLoad: true if dynamic load symbols (dlopen/dlsym/dlvsym) were detected
+//     in the binary or its dep libraries; also true when analysis is inconclusive
+//     (fail-closed) or when mprotect PROT_EXEC risk is detected in deps
 //
-// DynamicLoadSymbols and network detection are independent signals.
-// A binary with both dlopen and socket will return (true, true).
+// Both signals are independent: a binary with both socket and dlopen returns (true, true).
 //
-// IMPORTANT: cmdPath is expected to be an absolute, symlink-resolved path,
+// IMPORTANT: cmdPath must be an absolute, symlink-resolved path,
 // already resolved by the caller (via verification.PathResolver.ResolvePath()).
-// This ensures TOCTOU safety and consistency across all security checks.
 //
 // contentHash is a pre-computed hash in "algo:hex" format. Used to verify cache
 // record freshness; when empty or store is nil, analysis is skipped (returning false, false).
-func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash string) (isNetwork, isHighRisk bool) {
+func (a *NetworkAnalyzer) analyzeBinarySignals(cmdPath string, contentHash string) (isNetwork, hasDynLoad bool) {
 	// Validate that cmdPath is an absolute path.
 	// The caller (EvaluateRisk via group_executor) must have already resolved the path.
 	// A non-absolute path here indicates a programming error in the call chain.
 	if !filepath.IsAbs(cmdPath) {
-		panic("isNetworkViaBinaryAnalysis: cmdPath must be an absolute path, got: " + cmdPath)
+		panic("analyzeBinarySignals: cmdPath must be an absolute path, got: " + cmdPath)
 	}
 
 	// cmdPath is already symlink-resolved by PathResolver.ResolvePath(),
@@ -189,19 +192,18 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 
 		// Check SyscallAnalysis cache for svc #0x80 signal (Mach-O arm64).
 		// This check runs regardless of SymbolAnalysis result (NetworkDetected, NoNetworkSymbols,
-		// or nil for static binaries) so that svc #0x80 always escalates
-		// isHighRisk to true.
-		if handled, isNet, isHigh := a.checkSyscallCache(cmdPath, contentHash); handled {
-			return isNet, isHigh
+		// or nil for static binaries) so that svc #0x80 always escalates hasDynLoad to true.
+		if handled, isNet, dynLoad := a.checkSyscallCache(cmdPath, contentHash); handled {
+			return isNet, dynLoad
 		}
 
-		// No svc #0x80 signal: accumulate network/risk signals from SymbolAnalysis.
+		// No svc #0x80 signal: accumulate network/dynload signals from SymbolAnalysis.
 		// data == nil when analyzed but no network symbols found (static binary with no svc).
 		// Accumulate rather than early-return so the dynlib check can add isNetwork from
-		// dep libs (e.g. libcurl) even when binary analysis sets isHigh via DynamicLoadSymbols.
+		// dep libs (e.g. libcurl) even when binary analysis sets hasDynLoad via DynamicLoadSymbols.
 		if data != nil {
 			output := buildAnalysisOutputFromSymbolData(data)
-			isNetwork, isHighRisk = handleAnalysisOutput(output, cmdPath)
+			isNetwork, hasDynLoad = handleAnalysisOutput(output, cmdPath)
 		}
 	}
 
@@ -211,15 +213,15 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 	//
 	// Short-circuit: if both signals are already true, checkDynLibDepsNetwork cannot
 	// change the outcome, so skip it to avoid unnecessary store I/O.
-	// We still run when only one signal is true (e.g. isHighRisk=true but isNetwork=false)
+	// We still run when only one signal is true (e.g. hasDynLoad=true but isNetwork=false)
 	// so that a dep library can contribute the missing signal.
-	if a.depsStore != nil && a.libAnalysisStore != nil && contentHash != "" && (!isNetwork || !isHighRisk) {
+	if a.depsStore != nil && a.libAnalysisStore != nil && contentHash != "" && (!isNetwork || !hasDynLoad) {
 		dynNet, dynHigh := a.checkDynLibDepsNetwork(cmdPath, contentHash)
 		isNetwork = isNetwork || dynNet
-		isHighRisk = isHighRisk || dynHigh
+		hasDynLoad = hasDynLoad || dynHigh
 	}
 
-	return isNetwork, isHighRisk
+	return isNetwork, hasDynLoad
 }
 
 // checkSyscallCache loads and evaluates the SyscallAnalysis cache entry.
