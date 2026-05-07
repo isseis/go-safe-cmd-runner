@@ -18,7 +18,7 @@
 | `symbol_analysis` | 全解析対象の symbol 名 dedup 統合結果 | AC-014, AC-017 |
 | `analysis_warnings` | 非致命警告を統合・dedup して格納（必要時のみ） | AC-004 |
 | `deps` | `path` + `hash` のみ。hash 検証用途 | AC-002, AC-006, AC-009 |
-| `shebang_chain` | `raw_path?` `path` `command_name?` のみ | AC-003, AC-010, AC-011, AC-012 |
+| `shebang_chain` | `ref?` `path` のみ | AC-003, AC-010, AC-011 |
 | `debug.dep_sources` | `-debug-info` 時のみ出力 | AC-005 |
 
 ### 2.2 deps の仕様
@@ -35,9 +35,12 @@
 
 ### 2.3 shebang_chain の仕様
 
-1. `raw_path` がある場合は実行時 `EvalSymlinks(raw_path)` と `path` を比較
-2. `command_name` がある場合は実行時 `LookPath(command_name)` 後に `EvalSymlinks` した値と `path` を比較
-3. 不一致時は fail-closed
+各エントリの `ref` フィールドの内容で解決方法を分岐する:
+- `ref` なし: 再解決不要（スキップ）
+- `ref` が絶対パス（`filepath.IsAbs(ref) == true`）: `filepath.EvalSymlinks(ref)` の結果を `path` と比較
+- `ref` がベア名（パス区切りなし）: `exec.LookPath(ref)` + `filepath.EvalSymlinks` の結果を `path` と比較
+
+不一致または LookPath 失敗時は fail-closed
 
 ## 3. record 実装詳細
 
@@ -78,9 +81,18 @@
 
 ### 4.3 verifyShebangChain
 
-1. `raw_path` がある要素は symlink 再解決比較を行う
-2. `command_name` がある要素は PATH 再解決比較を行う
-3. 失敗時は実行中止する
+```
+for each entry in shebang_chain:
+    if entry.Ref == "":
+        continue
+    if filepath.IsAbs(entry.Ref):
+        resolved = filepath.EvalSymlinks(entry.Ref)
+    else:
+        found = exec.LookPath(entry.Ref)  // error → abort
+        resolved = filepath.EvalSymlinks(found)
+    if resolved != entry.Path:
+        abort  // fail-closed
+```
 
 ### 4.4 エラー方針
 
@@ -99,15 +111,14 @@
 |---|---|---|
 | AC-001, AC-026 | schema_version が 22 | `internal/fileanalysis/schema_test.go` |
 | AC-002 | deps が path/hash のみ | `cmd/record/*integration*_test.go` |
-| AC-003, AC-012 | shebang_chain の項目制約 | `internal/fileanalysis/schema_test.go` |
+| AC-003, AC-011 | shebang_chain の項目制約（`ref` + `path` のみ） | `internal/fileanalysis/schema_test.go` |
 | AC-004 | analysis_warnings の統合・dedup | `internal/filevalidator/*analysis*_test.go` |
 | AC-005 | debug の omitempty | `cmd/record/main_test.go` |
 | AC-006 | deps 収集範囲 | `internal/filevalidator/validator_shebang_test.go` |
 | AC-007 | path dedup | `internal/filevalidator/validator_dedup_test.go` |
 | AC-008 | path 同一 hash 不一致で失敗 | `internal/filevalidator/validator_dedup_test.go` |
 | AC-009 | deps をリスク判定に使わない | `internal/runner/base/security/network_analyzer_test.go` |
-| AC-010 | raw_path 再解決比較 | `internal/verification/shebang_chain_verifier_test.go` |
-| AC-011 | command_name PATH 再解決比較 | `internal/verification/shebang_chain_verifier_test.go` |
+| AC-010 | ref（絶対パス）→ EvalSymlinks 比較 / ref（ベア名）→ LookPath+EvalSymlinks 比較 | `internal/verification/shebang_chain_verifier_test.go` |
 | AC-013 | syscall 統合 dedup | `internal/filevalidator/*syscall*_test.go` |
 | AC-014 | symbol 統合 dedup | `internal/filevalidator/*symbol*_test.go` |
 | AC-015 | ArgEvalResults worst-case 統合 | `internal/filevalidator/*syscall*_test.go` |

@@ -36,7 +36,7 @@ Record は次のトップレベル構造を持つ。
       { "path": "...", "hash": "sha256:..." }
    ],
    "shebang_chain": [
-      { "raw_path": "...", "path": "...", "command_name": "..." }
+      { "ref": "...", "path": "..." }
    ],
    "debug": { "dep_sources": {} }
 }
@@ -46,7 +46,7 @@ Acceptance Criteria:
 
 1. AC-001: `schema_version` は 22 固定である
 2. AC-002: `deps` の各要素は `path` と `hash` のみを持つ
-3. AC-003: `shebang_chain` の各要素は `raw_path`（任意）`path`（必須）`command_name`（任意）のみを持つ
+3. AC-003: `shebang_chain` の各要素は `ref`（任意）`path`（必須）のみを持つ
 4. AC-004: `analysis_warnings` は警告がある場合のみ格納され、警告文字列は統合・dedup される
 5. AC-005: `debug` は `-debug-info` 指定時のみ出力される
 
@@ -65,13 +65,14 @@ Acceptance Criteria:
 
 ### FR-003: shebang_chain の責務定義
 
-`shebang_chain` は実行時改ざん検出専用データとする。
+`shebang_chain` は実行時改ざん検出専用データとする。各エントリは `ref`（任意）と `path`（必須）のみを持つ。`ref` が絶対パスであればシンボリックリンク再解決、ベア名であれば PATH ルックアップ後にシンボリックリンク再解決を行い、いずれも解決結果が `path` と一致することを検証する。
 
 Acceptance Criteria:
 
-1. AC-010: `raw_path` があるエントリは実行時に再解決され、解決結果が `path` と一致しない場合は失敗する
-2. AC-011: `command_name` があるエントリは実行時 PATH で再解決され、解決結果が `path` と一致しない場合は失敗する
-3. AC-012: `shebang_chain` は hash や解析結果を保持しない
+1. AC-010: `ref` があるエントリは実行時に再解決される
+   - `ref` が絶対パス（`/` 始まり）→ `filepath.EvalSymlinks(ref)` の結果が `path` と一致しない場合は失敗する（シンボリックリンクリダイレクト検出）
+   - `ref` がベア名（パス区切りなし）→ `exec.LookPath(ref)` + `filepath.EvalSymlinks` の結果が `path` と一致しない場合は失敗する（PATH 操作検出）
+2. AC-011: `shebang_chain` は hash や解析結果を保持しない
 
 ### FR-004: トップレベル解析結果の統合
 

@@ -18,7 +18,7 @@
 ### 1-2. Record フィールド更新
 
 - [ ] `deps` を `path` `hash` のみの構造に更新する（AC-002）
-- [ ] `shebang_chain` を `raw_path?` `path` `command_name?` のみに更新する（AC-003, AC-012）
+- [ ] `shebang_chain` を `ref?` `path` のみに更新する（AC-003, AC-011）
 - [ ] `analysis_warnings` をトップレベルで統合出力する（AC-004）
 - [ ] `debug` を `omitempty` で保持する（AC-005）
 
@@ -72,8 +72,7 @@
 
 ### 3-3. shebang 実行時検証
 
-- [ ] `verifyShebangChain` で `raw_path` 再解決比較を維持する（AC-010, AC-022）
-- [ ] `verifyShebangChain` で `command_name` PATH 再解決比較を実装する（AC-011, AC-022）
+- [ ] `verifyShebangChain` を実装する: `ref` が絶対パスなら EvalSymlinks、ベア名なら LookPath+EvalSymlinks で解決し `path` と比較する（AC-010, AC-022）
 
 ### 3-4. verification.Manager 更新
 
@@ -86,7 +85,7 @@
 
 - [ ] schema_version 22 検証テストを追加・更新する（AC-001, AC-026）
 - [ ] deps path/hash 制約テストを追加・更新する（AC-002, AC-006, AC-007, AC-008）
-- [ ] shebang_chain フィールド制約と再解決テストを追加・更新する（AC-003, AC-010, AC-011, AC-012, AC-022）
+- [ ] shebang_chain フィールド制約と再解決テストを追加・更新する（AC-003, AC-010, AC-011, AC-022）
 - [ ] 統合 syscall/symbol/ArgEvalResults テストを追加・更新する（AC-013, AC-014, AC-015, AC-016, AC-017）
 - [ ] debug omitempty テストを追加・更新する（AC-005）
 - [ ] v21 以下拒否と再記録テストを追加・更新する（AC-027, AC-028）

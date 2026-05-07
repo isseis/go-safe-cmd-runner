@@ -90,7 +90,7 @@ flowchart TB
 2. `deps`
    実行時 hash 検証用の参照データ
 3. `shebang_chain`
-   実行時の再解決整合性検証データ
+   実行時の再解決整合性検証データ。各エントリの `ref`（絶対パスまたはベア名）を解決して `path` と比較する
 4. `analysis_warnings`
    非致命警告の統合ログ
 5. `debug.dep_sources`
@@ -139,8 +139,8 @@ sequenceDiagram
     R->>RS: LoadRecord(command)
     RS-->>R: Record v22
     R->>V: Verify(record.shebang_chain)
-    V->>OS: EvalSymlinks(raw_path) when raw_path exists
-    V->>OS: LookPath(command_name) when command_name exists
+    V->>OS: EvalSymlinks(ref) when ref is absolute path
+    V->>OS: LookPath(ref)+EvalSymlinks when ref is bare name
     V-->>R: ok or error
     R->>N: Analyze(record)
     N->>N: Read only record.syscall_analysis
@@ -180,8 +180,8 @@ flowchart LR
     classDef threat fill:#ffe6e6,stroke:#d62728,stroke-width:1px,color:#7f0000;
     classDef control fill:#e8f5e8,stroke:#2e8b57,stroke-width:1px,color:#006400;
 
-    T1[Shebang symlink tampering] --> C1[EvalSymlinks(raw_path) must equal path]
-    T2[PATH hijack for env shebang] --> C2[LookPath(command_name) must equal path]
+    T1[Shebang symlink tampering] --> C1[ref is absolute: EvalSymlinks(ref) must equal path]
+    T2[PATH hijack for env shebang] --> C2[ref is bare name: LookPath(ref)+EvalSymlinks must equal path]
     T3[Dep binary replacement] --> C3[Hash verification via deps path/hash]
     T4[Analysis source divergence] --> C4[Risk decision uses unified top-level analysis only]
 
