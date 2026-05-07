@@ -1,123 +1,131 @@
-# 要件定義書: コマンド Record 完全自己完結化
+# 要件定義書: Record スキーマ v22 への移行
 
-## 1. 背景と課題
+## 1. 背景
 
-### 1.1 現状のファイル構造
+本タスクでは、Record を実行時に自己完結して参照できる形へ再設計する。主目的は次の3点。
 
-`record` コマンドはコマンドを解析した際に、以下の複数のファイルを生成する。
+1. `runner` のリスク判定入力を Record のトップレベル解析結果に一本化する
+2. `deps` と `shebang_chain` を検証用途に限定し、責務を明確化する
+3. スキーマを v22 に更新し、旧 Record（v21 以下）を明確に拒否する
 
-1. **コマンドの Record JSON**（`<hash-dir>/~path~to~command.json`）
-   - コマンド自体のハッシュ、syscall 解析結果、シンボル解析結果
-   - 依存共有ライブラリの参照情報（path + hash のみ。解析結果なし）
-   - shebang インタープリターの参照情報（`raw_interpreter_path`、`interpreter_path`、`command_name`、`resolved_path` を保持。hash および解析結果なし）
-
-2. **dynlib-analysis キャッシュ**（`<hash-dir>/dynlib-analysis/<encoded-lib-path>`）
-   - 各共有ライブラリの syscall 解析結果、シンボル解析結果
-
-### 1.2 課題
-
-`runner` がコマンドを実行する際には、コマンドの Record JSON に加えて以下のファイルを個別に読み込む必要がある。
-
-- **依存ライブラリの解析結果**: dynlib-analysis キャッシュを dep の数だけ読み込む
-- **shebang インタープリターの Record**: インタープリターバイナリの hash および解析結果を持つ別 Record（インタープリター自体を `record` で別途処理した JSON）
-
-これにより以下の課題が生じている。
-
-- **例外処理の複雑さ**: dynlib キャッシュが存在しない場合（`ErrAnalysisNotFound`）は「高リスク扱い」とするフォールバックが必要であり、runner の実装が複雑になっている
-- **I/O 回数の多さ**: コマンドが N 個の依存ライブラリを持つ場合、実行時に N+1 回以上のファイル読み込みが発生する
-- **管理の煩雑さ**: Record ファイルを別環境に移植する際に dynlib キャッシュも一緒に持ち運ぶ必要がある
-
-### 1.3 目標
-
-コマンドの Record JSON を**完全自己完結型**にする。依存共有ライブラリおよび shebang インタープリターの解析結果を Record に埋め込み、`runner` が参照するファイルをコマンドの Record JSON 1ファイルのみとする。
-
-## 2. 用語定義
+## 2. 用語
 
 | 用語 | 定義 |
 |------|------|
-| Record | `record` コマンドが生成するコマンドの解析結果 JSON ファイル |
-| deps | コマンドおよび shebang チェーン全バイナリが依存する共有ライブラリ、加えて shebang チェーンを構成するインタープリターバイナリを `path` で dedup した統合解析リスト |
-| shebang チェーン | スクリプトの shebang 行で指定されたインタープリター群。直接形式（例: `#!/bin/bash`）では1バイナリ、env 形式（例: `#!/usr/bin/env python3`）では env バイナリと解決済みバイナリの2バイナリ |
-| dynlib キャッシュ | `record` の内部最適化用キャッシュ（`dynlib-analysis/` ディレクトリ）。`runner` は参照しない |
+| Record | `record` コマンドが生成する JSON ファイル |
+| 統合解析結果 | `syscall_analysis` と `symbol_analysis` のトップレベル集約結果 |
+| deps | `path` と `hash` のみを持つ依存物リスト |
+| shebang_chain | shebang 解決過程を記録する識別情報リスト |
+| analysis_warnings | 解析時の非致命警告を統合・dedup した配列 |
 
 ## 3. 機能要件
 
-### F-001: deps フィールドへの解析結果埋め込み
+### FR-001: Record スキーマ v22
 
-現在の `dyn_lib_deps` フィールド（path + hash のみ）を `deps` フィールドに置き換える。`deps` はコマンド・shebang チェーン全バイナリの依存共有ライブラリ、**および shebang チェーンを構成するインタープリターバイナリ自体**を `path` を主キーとして dedup したフラットリストであり（同一 path で hash が一致する場合に統合。不一致の場合は致命的エラー）、各エントリの解析結果（`syscall_analysis`、`symbol_analysis`）を含む。
+Record は次のトップレベル構造を持つ。
 
-**Acceptance Criteria:**
+```json
+{
+   "schema_version": 22,
+   "file_path": "...",
+   "content_hash": "sha256:...",
+   "syscall_analysis": {},
+   "symbol_analysis": {},
+   "analysis_warnings": [],
+   "deps": [
+      { "path": "...", "hash": "sha256:..." }
+   ],
+   "shebang_chain": [
+      { "raw_path": "...", "path": "...", "command_name": "..." }
+   ],
+   "debug": { "dep_sources": {} }
+}
+```
 
-1. `deps` の各エントリに `soname`（共有ライブラリのみ。実行バイナリエントリでは省略）、`path`、`hash` に加えて `syscall_analysis`（nullable）と `symbol_analysis`（nullable）が含まれる
-2. `deps` はコマンド自身・shebang チェーン全バイナリの依存ライブラリ、および shebang チェーンのインタープリターバイナリを合わせた dedup リスト（`path` を主キーとして重複排除。同一 path で hash が一致する場合に1エントリとして統合。同一 path で hash が不一致の場合は致命的エラーとして `record` を中断する）である
-3. syscall wrapper ライブラリ（libc 等）および VDSO エントリは `deps` に含まれるが、解析フィールド（`syscall_analysis`、`symbol_analysis`）は null となる
-4. 各 dep の解析中に発生した非致命的な警告は当該 `deps` エントリの `warnings` フィールドに記録される（現行の Record レベルの `analysis_warnings` に相当）
+Acceptance Criteria:
 
-### F-002: shebang_chain フィールドへのインタープリター情報埋め込み
+1. AC-001: `schema_version` は 22 固定である
+2. AC-002: `deps` の各要素は `path` と `hash` のみを持つ
+3. AC-003: `shebang_chain` の各要素は `raw_path`（任意）`path`（必須）`command_name`（任意）のみを持つ
+4. AC-004: `analysis_warnings` は警告がある場合のみ格納され、警告文字列は統合・dedup される
+5. AC-005: `debug` は `-debug-info` 指定時のみ出力される
 
-現在の `shebang_interpreter` フィールド（参照情報のみ）を `shebang_chain` フィールドに置き換える。`shebang_chain` は shebang チェーンを構成する各バイナリの**順序付き命名メタデータ**（`raw_path`・`path`・`command_name`）のみを保持する。hash および解析結果（`syscall_analysis`、`symbol_analysis`）はすべて F-001 の `deps` リストで管理し、`shebang_chain` エントリは一切持たない。
+### FR-002: deps の責務定義
 
-**Acceptance Criteria:**
+`deps` はハッシュ整合性検証専用データであり、リスク判定には使用しない。
 
-1. `shebang_chain` の各エントリに `path`（シンボリックリンク解決済み）のみを必須フィールドとして含む。`content_hash`・`syscall_analysis`・`symbol_analysis` は含まない（すべて `deps` エントリで管理する）
-2. 直接形式の shebang（例: `#!/bin/bash`）では `shebang_chain` に1エントリが含まれ、`raw_path`（shebang 行の記述そのまま）が記録される
-3. env 形式の shebang（例: `#!/usr/bin/env python3`）では `shebang_chain` に2エントリが含まれる。1つ目は env バイナリ（`raw_path` と `command_name` を保持）、2つ目は解決済みバイナリ
-4. `shebang_chain` の各インタープリターバイナリ（例: `/bin/bash`、`/usr/bin/env`、`/usr/bin/python3`）は F-001 の `deps` リストに `soname` なしのエントリとして dedup して含まれ、hash・解析結果（`syscall_analysis`、`symbol_analysis`）も `deps` に記録される
-5. `shebang_chain` の各バイナリが依存する共有ライブラリも F-001 の `deps` リストに dedup して含まれる
-6. env 形式の shebang において、`runner` は `shebang_chain` に記録された `command_name` を実行時の PATH で再解決し、シンボリックリンク解決済みの結果が当該エントリの `path` と一致することを確認する。不一致の場合は実行をエラー終了する（fail-closed）。これにより PATH 操作による別バイナリへのすり替えを検出する
+Acceptance Criteria:
 
-### F-003: runner から dynamicanalysis.Store 依存の除去
+1. AC-006: `deps` には以下を含む
+    コマンド本体および shebang チェーン各バイナリの依存共有ライブラリ
+    shebang チェーンのインタープリターバイナリ本体
+2. AC-007: `deps` の dedup キーは `path` である
+3. AC-008: 同一 `path` で `hash` が不一致の場合、`record` は致命的エラーで中断する
+4. AC-009: `runner` は `deps` をハッシュ検証にのみ使用し、ネットワークリスク判定には使用しない
 
-`runner` が dynlib 解析に使用する `dynamicanalysis.Store` インターフェースを除去し、`NetworkAnalyzer` が Record の `deps` フィールドから直接解析結果を読み込むよう変更する。shebang インタープリターの解析結果も同様に `shebang_chain` フィールドから直接読み込む。これにより `runner` が参照するファイルはコマンドの Record JSON のみとなる。
+### FR-003: shebang_chain の責務定義
 
-**Acceptance Criteria:**
+`shebang_chain` は実行時改ざん検出専用データとする。
 
-1. `NetworkAnalyzer` の依存から `dynamicanalysis.Store` が除去される
-2. `runner` は dynlib 解析結果を Record の `deps` フィールドから直接取得する
-3. dynlib キャッシュファイル（`dynlib-analysis/`）が存在しなくても `runner` が正常に動作する
-4. `ErrAnalysisNotFound` による「高リスクフォールバック」処理が `runner` から除去される
-5. shebang インタープリターバイナリの解析結果（`syscall_analysis`、`symbol_analysis`）は Record の `deps` から取得する。`shebang_chain` はパスと hash の確認（シンボリックリンクリダイレクト検出）のみに使用し、解析結果は持たない
-6. `deps` エントリの `syscall_analysis` および `symbol_analysis` が null であり、かつ syscall wrapper（libc 等）や VDSO ではない場合、`runner` は解析データ欠落として実行をエラー終了する（fail-closed）。高リスク扱いへのフォールバックは行わない
+Acceptance Criteria:
 
-### F-004: -debug-info 時のみ dep 由来情報を記録
+1. AC-010: `raw_path` があるエントリは実行時に再解決され、解決結果が `path` と一致しない場合は失敗する
+2. AC-011: `command_name` があるエントリは実行時 PATH で再解決され、解決結果が `path` と一致しない場合は失敗する
+3. AC-012: `shebang_chain` は hash や解析結果を保持しない
 
-`-debug-info` フラグが指定された場合のみ、Record の `debug` フィールドに各 dep の由来情報（どのバイナリからの依存か）を記録する。
+### FR-004: トップレベル解析結果の統合
 
-**Acceptance Criteria:**
+`record` は解析対象全体の結果を集約し、`runner` はトップレベルのみを参照する。
 
-1. `-debug-info` なしの場合、`debug` フィールドは JSON に含まれない（`omitempty`）
-2. `-debug-info` ありの場合、`debug.dep_sources` に各 dep の絶対パス → 由来バイナリ絶対パスのリストが記録される
-3. `runner` は `debug` フィールドを解析・参照しない
+Acceptance Criteria:
 
-### F-005: スキーマバージョンアップと Record の再生成
+1. AC-013: `syscall_analysis` はコマンド本体、全 dep ライブラリ、shebang チェーン全バイナリ由来の結果を syscall 番号で統合・dedup する
+2. AC-014: `symbol_analysis` は同対象を symbol 名で統合・dedup する
+3. AC-015: `ArgEvalResults`（`mprotect` の `PROT_EXEC` 判定）は統合時に worst-case を採用する
+4. AC-016: VDSO と syscall wrapper ライブラリは解析をスキップする（ただし `deps` には `path` + `hash` で残る）
+5. AC-017: `runner` のリスク判定は `record.syscall_analysis` と `record.symbol_analysis` のみを参照する
 
-スキーマ変更に伴い `CurrentSchemaVersion` を更新し、旧バージョンの Record は `record` コマンドの再実行を要求する。
+### FR-005: runner / NetworkAnalyzer / verification.Manager の簡素化
 
-**Acceptance Criteria:**
+Acceptance Criteria:
 
-1. `CurrentSchemaVersion` が新しい値（22 以上）に更新される
-2. 旧バージョン（21 以下）の Record を読み込んだ場合、`SchemaVersionMismatchError` が返される
-3. `record` の再実行（スキーマ不一致時は `--force` 不要）により旧 Record を新フォーマットで上書き再生成できる
+1. AC-018: `AnalysisDeps` は `RecordStore` のみを持つ
+2. AC-019: `analyzeBinarySignals` は Record を読み込み、トップレベル解析結果のみでシグナル判定する
+3. AC-020: `checkDepsSignals`（dep ごとの解析ループ）は削除される
+4. AC-021: `followShebangChain`（解析目的）は削除される
+5. AC-022: `verifyShebangChain` は存続し、改ざん検出に使用される
+6. AC-023: `ErrDepAnalysisNotEmbedded` は削除される
+7. AC-024: `verification.Manager.GetAnalysisDeps` は `AnalysisDeps{RecordStore: m.fileValidator}` を返す
+8. AC-025: `verification.Manager` から `networkSymbolStore` `syscallAnalysisStore` `dynLibDepsStore` `dynlibAnalysisStore` `shebangStore` を削除する
+
+### FR-006: スキーマバージョン互換性
+
+Acceptance Criteria:
+
+1. AC-026: `CurrentSchemaVersion` は 22 である
+2. AC-027: v21 以下の Record 読み込み時は `SchemaVersionMismatchError` を返す
+3. AC-028: 旧 Record は `record` 再実行で v22 形式へ再生成できる
 
 ## 4. 非機能要件
 
-### 4.1 パフォーマンス
+1. NFR-001: `runner` 実行時の解析用外部ストア参照をなくし、Record 単体で判断できること
+2. NFR-002: dedup と統合結果は再現可能であること（同入力で同一結果）
+3. NFR-003: 既存 CLI 互換性を維持すること（主要フラグと入出力契約）
+4. NFR-004: Record 保存は既存どおりアトミックに行うこと
 
-- `runner` の Record 読み込みファイル数がコマンドごとに1ファイルになること（現在の N+1 から削減）
+## 5. テスト要求
 
-### 4.2 後方互換性
+1. 各 AC に対して少なくとも1件のテストを対応付ける
+2. 廃止ロジックのテストは削除対象として明示する
+3. 既存テストと重複するケースは統合または削減し、冗長な同義検証を避ける
 
-- 旧 Record は `record` の再実行により新フォーマットに移行できること
-- `record` コマンドの外部インターフェース（フラグ、基本的な出力フォーマット）は維持すること
-- dynlib-analysis キャッシュファイルは引き続き `record` が生成・利用すること（`runner` からは不可視）
+## 6. 実装上の注意事項
 
-### 4.3 データ整合性
+1. 実装コード内ではコメントを含め日本語を使用しない
+2. 変更後は 01〜04 の文書間で用語、AC番号、削除対象、テスト対応を一致させる
 
-- `deps` の dedup は `path` を主キーとする。同一 path で hash が一致する場合に1エントリとして統合し、同一 path で hash が不一致の場合は致命的エラーとして `record` を中断すること（どちらのバイナリが実際に使用されるか不明なため、不正なセキュリティポリシー適用を防ぐ）
-- Record の書き出しはアトミックに行うこと（既存の動作を維持）
+## 7. スコープ外
 
-## 5. スコープ外
-
-- `03_detailed_specification.md`（詳細仕様）および `04_implementation_plan.md`（実装計画）の作成
-- shebang の多段チェーン（インタープリター自体がスクリプトである場合）のサポート
-- 推移的な共有ライブラリ依存（ライブラリが依存するライブラリ）の解析
+1. shebang 多段解決の新規対応
+2. 推移的依存関係解析の新規導入
+3. Record 以外のフォーマット追加

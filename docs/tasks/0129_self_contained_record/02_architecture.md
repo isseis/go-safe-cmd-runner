@@ -1,437 +1,201 @@
-# アーキテクチャ設計書: コマンド Record 完全自己完結化
+# アーキテクチャ設計書: Record スキーマ v22
 
-## 1. 設計概要
+## 1. 設計方針
 
-### 1.1 設計目標
+### 1.1 目的
 
-- `runner` が参照するファイルをコマンドの Record JSON 1ファイルのみにする
-- Record ファイル1つで完全な解析情報を提供し、配布・移植を容易にする
-- `runner` の `dynamicanalysis.Store` への依存を除去してコードをシンプルにする
+1. リスク判定入力を Record トップレベルへ集約する
+2. `deps` と `shebang_chain` を検証専用データへ縮約する
+3. `runner` の解析依存を `RecordStore` 単一依存にする
 
-### 1.2 設計原則
+### 1.2 原則
 
-- **自己完結性**: コマンドの Record は実行時判断に必要な全情報を内包する
-- **dedup**: 複数の依存元から参照される共有ライブラリは `path` を主キーとして1エントリに統合する（hash が一致する場合に統合。不一致の場合は致命的エラーとして `record` を中断する）
-- **キャッシュの分離**: dynlib-analysis キャッシュは `record` の内部最適化手段として維持し、`runner` からは不可視とする
-- **段階的デバッグ**: 通常用途には必要最小限の情報のみ記録し、`-debug-info` 時のみ詳細な由来情報を追記する
+1. Self-contained: 実行時の解析判断は Record 1件で完結させる
+2. Single source of risk: ネットワークリスク判定は `syscall_analysis` と `symbol_analysis` のみを参照する
+3. Fail-closed: dedup 不整合や shebang 再解決不一致は実行停止とする
 
-## 2. システム構成
+## 2. 全体構成
 
-### 2.1 全体アーキテクチャ（変更前後）
-
-**変更前**: `runner` が複数ファイルを参照
-
-```mermaid
-flowchart TD
-    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
-    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
-
-    RUN[["runner"]]
-    RUN -->|"① 読み込み"| CMD[("command.json\n（参照のみ）")]
-    RUN -->|"② 読み込み × N"| DYN[("dynlib-analysis/\n各ライブラリ JSON")]
-    RUN -->|"③ 読み込み"| INT[("interpreter.json\n（hash・解析結果を保持）")]
-
-    class CMD,DYN,INT data;
-    class RUN process;
-```
-
-**変更後**: `runner` は1ファイルのみ参照
-
-```mermaid
-flowchart TD
-    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
-    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
-    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
-
-    RUN[["runner"]]
-    RUN -->|"① 読み込み（1ファイルのみ）"| CMD[("command.json\n（解析結果を内包）")]
-    CACHE[("dynlib-analysis/\n（record の内部キャッシュ）\n※ runner は参照しない")]
-
-    class CMD,CACHE data;
-    class RUN process;
-    class CMD enhanced;
-```
-
-**凡例（Legend）**
+### 2.1 Before / After
 
 ```mermaid
 flowchart LR
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
-    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
-    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef proc fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef change fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    D1[("データ")] --- P1["既存コンポーネント"] --- E1["拡張・変更コンポーネント"]
-    class D1 data
-    class P1 process
-    class E1 enhanced
+    subgraph BEFORE[Before]
+        BRUN[runner]
+        BREC[(command Record)]
+        BDYN[(dynlib-analysis cache)]
+        BSHE[(shebang interpreter record)]
+        BRUN --> BREC
+        BRUN --> BDYN
+        BRUN --> BSHE
+    end
+
+    subgraph AFTER[After]
+        ARUN[runner]
+        AREC[(command Record v22)]
+        ADYN[(dynlib-analysis cache)]
+        ARUN --> AREC
+        ADYN -. internal only .-> AREC
+    end
+
+    class BREC,BDYN,BSHE,AREC,ADYN data;
+    class BRUN,ARUN proc;
+    class AREC,ARUN change;
 ```
 
-### 2.2 コンポーネント配置
+### 2.2 コンポーネント責務
+
+| コンポーネント | 主責務 | 非責務 |
+|---|---|---|
+| `record` | 解析対象全体を解析し、トップレベル解析結果を統合して Record に保存 | 実行時リスク判定 |
+| `runner.NetworkAnalyzer` | Record のトップレベル解析結果だけでリスク判定 | dep ごとの再解析、shebang 追跡解析 |
+| `verifyShebangChain` | `raw_path` と `command_name` の実行時再解決検証 | リスク判定 |
+| `deps` | hash 整合性検証対象の列挙 | リスク判定入力 |
+
+## 3. データモデル
+
+### 3.1 Record v22 論理モデル
 
 ```mermaid
-graph TB
+flowchart TB
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
-    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
-    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef proc fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
 
-    subgraph "internal/fileanalysis"
-        SCHEMA["schema.go\nRecord 構造体（拡張）\nDepEntry, ShebangBinaryInfo, DebugInfo 追加"]
-    end
+    REC[(Record v22)]
+    SA[(syscall_analysis)]
+    SBA[(symbol_analysis)]
+    AW[(analysis_warnings)]
+    DEPS[(deps: path + hash)]
+    SH[(shebang_chain)]
+    DBG[(debug.dep_sources)]
 
-    subgraph "cmd/record"
-        REC["main.go\ndep 収集・dedup・解析・埋め込みロジック追加\nshebang チェーン解析を shebang_chain に出力"]
-    end
+    REC --> SA
+    REC --> SBA
+    REC --> AW
+    REC --> DEPS
+    REC --> SH
+    REC --> DBG
 
-    subgraph "internal/dynamicanalysis"
-        DYN_STORE["store.go\nrecord 内部キャッシュ（変更なし）\nrunner からは不可視"]
-    end
-
-    subgraph "internal/runner/base/security"
-        NET_ANA["network_analyzer.go\ndynamicanalysis.Store 依存を除去\nRecord.Deps から解析結果を読む"]
-    end
-
-    subgraph "internal/filevalidator"
-        VALID["validator.go\nshebang_chain を参照するよう更新"]
-    end
-
-    REC -->|"キャッシュ利用"| DYN_STORE
-    REC -->|"Record 生成"| SCHEMA
-    NET_ANA -->|"Record 参照"| SCHEMA
-    VALID -->|"Record 参照"| SCHEMA
-
-    class SCHEMA,DYN_STORE data;
-    class VALID,NET_ANA process;
-    class REC,SCHEMA enhanced;
+    class REC,SA,SBA,AW,DEPS,SH,DBG data;
 ```
 
-### 2.3 record コマンドの処理フロー（変更後）
+### 3.2 スキーマ責務分離
+
+1. `syscall_analysis` / `symbol_analysis`
+   リスク判定用の統合済みデータ
+2. `deps`
+   実行時 hash 検証用の参照データ
+3. `shebang_chain`
+   実行時の再解決整合性検証データ
+4. `analysis_warnings`
+   非致命警告の統合ログ
+5. `debug.dep_sources`
+   `-debug-info` 時のみのトレーサビリティ情報
+
+## 4. 処理フロー
+
+### 4.1 record 側
 
 ```mermaid
 flowchart TD
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
-    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
-    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef proc fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef gate fill:#fffbe6,stroke:#d48806,stroke-width:1px,color:#8a5a00;
 
-    CMD_FILE[("実行ファイル\n（ELF / スクリプト）")]
-    CMD_FILE --> ANALYZE["コマンド本体解析\n（syscall / symbol / dyn_lib_deps）"]
-    ANALYZE --> SHEBANG{"shebang?"}
+    TGT[(target binary or script)] --> A1[Analyze target binary]
+    A1 --> S1{Has shebang}
+    S1 -->|yes| A2[Resolve shebang chain binaries]
+    S1 -->|no| C1[Collect deps]
+    A2 --> C1
+    C1 --> D1[Dedup deps by path]
+    D1 --> G1{Same path hash mismatch}
+    G1 -->|yes| E1[Abort record generation]
+    G1 -->|no| A3[Analyze all binaries and dep libs]
+    A3 --> M1[Merge and dedup syscall by number]
+    M1 --> M2[Merge and dedup symbol by name]
+    M2 --> M3[Merge ArgEvalResults with worst-case]
+    M3 --> W1[Merge and dedup warnings]
+    W1 --> O1[(Write Record v22 atomically)]
 
-    SHEBANG -->|"あり"| CHAIN["shebang チェーン解析\n（各バイナリの hash / syscall / symbol / deps）"]
-    SHEBANG -->|"なし"| COLLECT
-
-    CHAIN --> COLLECT["全 dyn_lib_deps を収集\n（コマンド + shebang チェーン全バイナリ）"]
-    COLLECT --> DEDUP["path を主キーとして dedup\n（hash 不一致は致命的エラー）"]
-
-    DEDUP --> ANALYZE_DEP["各ライブラリ解析\n（キャッシュ優先）"]
-    ANALYZE_DEP --> CACHE_CHK{"dynlib キャッシュ\nヒット?"}
-    CACHE_CHK -->|"ヒット"| USE_CACHE["キャッシュ利用"]
-    CACHE_CHK -->|"ミス"| FRESH["新規解析 → キャッシュ保存"]
-
-    USE_CACHE --> BUILD
-    FRESH --> BUILD["Record 構築\n（全解析結果を埋め込み）"]
-    BUILD --> WRITE[("command.json 出力\n（アトミック書き出し）")]
-
-    class CMD_FILE,WRITE data;
-    class ANALYZE,CHAIN,COLLECT,DEDUP process;
-    class ANALYZE_DEP,CACHE_CHK,USE_CACHE,FRESH,BUILD enhanced;
+    class TGT,O1 data;
+    class A1,A2,C1,D1,A3,M1,M2,M3,W1,E1 proc;
+    class S1,G1 gate;
 ```
 
-## 3. コンポーネント設計
-
-### 3.1 スキーマ設計（fileanalysis.Record の変更）
-
-**変更前後のフィールド対応:**
-
-| 変更前フィールド | 変更後フィールド | 変更内容 |
-|-----------------|-----------------|---------|
-| `DynLibDeps []LibEntry` | `Deps []DepEntry` | 共有ライブラリに加えインタープリターバイナリも統合。解析結果（`syscall_analysis`、`symbol_analysis`、`warnings`）を追加 |
-| `ShebangInterpreter *ShebangInterpreterInfo` | `ShebangChain []ShebangBinaryInfo` | `content_hash` を追加、リスト形式に変更。解析結果は `Deps` に統合したため `ShebangBinaryInfo` には含まない |
-| `AnalysisWarnings []string`（Record レベル） | `DepEntry.Warnings []string`（各エントリ内） | 警告を dep ごとに記録 |
-| （なし） | `Debug *DebugInfo` | `-debug-info` 時のみ |
-
-**新規型定義（概要）:**
-
-```go
-// DepEntry represents one entry in the unified analysis list.
-// Covers both shared libraries (soname non-empty) and interpreter executables
-// from the shebang chain (soname empty). Path is the dedup primary key.
-type DepEntry struct {
-    SOName          string               // omitempty: empty for executable entries
-    Path            string
-    Hash            string
-    SyscallAnalysis *SyscallAnalysisData // nil for syscall wrappers and VDSO
-    SymbolAnalysis  *SymbolAnalysisData  // nil for syscall wrappers and VDSO
-    Warnings        []string             // non-fatal warnings during analysis
-}
-
-// ShebangBinaryInfo holds ordered naming metadata for one binary in the shebang chain.
-// Hash and analysis results are stored in the corresponding Record.Deps entry (keyed by Path).
-type ShebangBinaryInfo struct {
-    RawPath     string // shebang line text (first entry only)
-    Path        string // symlink-resolved absolute path; lookup key into Deps
-    CommandName string // env argument (env binary entry only)
-    // No ContentHash or analysis fields: all binary data lives in Deps.
-}
-
-// DebugInfo は -debug-info 時のみ記録されるデバッグ情報。
-type DebugInfo struct {
-    // DepSources は各 dep の由来バイナリパスのリストを保持する。
-    // キー: dep の絶対パス、値: 由来バイナリ絶対パスのリスト
-    DepSources map[string][]string
-}
-```
-
-### 3.2 shebang_chain の JSON 表現例
-
-`shebang_chain` は識別情報のみを持つ。解析結果は `deps` に含まれる。
-
-**直接形式 `#!/bin/bash`:**
-
-```json
-"shebang_chain": [
-  { "raw_path": "/bin/bash", "path": "/usr/bin/bash" }
-]
-```
-
-`deps` 内の対応エントリ（`soname` なし。`path` で紐付け）:
-```json
-{
-  "path": "/usr/bin/bash",
-  "hash": "sha256:...",
-  "syscall_analysis": { "architecture": "arm64", "detected_syscalls": [...] },
-  "symbol_analysis": { "detected_symbols": [...] }
-}
-```
-
-**env 形式 `#!/usr/bin/env python3`:**
-
-```json
-"shebang_chain": [
-  { "raw_path": "/usr/bin/env", "path": "/usr/bin/env", "command_name": "python3" },
-  { "path": "/usr/bin/python3.12" }
-]
-```
-
-### 3.3 debug.dep_sources の JSON 表現例（-debug-info 時のみ）
-
-```json
-"debug": {
-  "dep_sources": {
-    "/usr/lib/aarch64-linux-gnu/libz.so.1.3": [
-      "/usr/local/bin/myscript.sh",
-      "/usr/bin/python3.12"
-    ],
-    "/usr/lib/aarch64-linux-gnu/libssl.so.3": [
-      "/usr/bin/python3.12"
-    ]
-  }
-}
-```
-
-`dep_sources` のキーは dep の絶対パス、値はその dep を依存に持つバイナリの絶対パスのリスト（コマンド自身または shebang チェーンのバイナリ）。
-
-### 3.4 deps の dedup ロジック
-
-`record` コマンドが全エントリを収集する際に、以下のロジックで dedup する。
-
-1. コマンド本体の `dyn_lib_deps`（共有ライブラリ）を収集
-2. shebang チェーンの各インタープリターバイナリを **`soname` なしのエントリとして** 収集に追加
-3. shebang チェーンの各バイナリ（env バイナリを含む）の `dyn_lib_deps`（共有ライブラリ）を収集
-4. `path` を主キーとして dedup する。同一 path で異なる hash が出現した場合は致命的エラーとして `record` を中断する（どちらのバイナリが実際にロードされるか不明なため、不正なセキュリティポリシー適用を防ぐ）
-5. 各ユニークなエントリについて dynlib-analysis キャッシュ（共有ライブラリのみ）または直接解析を参照し解析結果を設定する
-
-### 3.5 NetworkAnalyzer の変更
-
-**変更前:**
-
-```
-NetworkAnalyzer.deps.LibAnalysisStore (dynamicanalysis.Store)
-  ↓ LoadAnalysis(dep.Path, dep.Hash)
-  ↓ *dynamicanalysis.Result
-
-NetworkAnalyzer.deps.ShebangStore
-  ↓ LoadInterpreterAnalysisPath(cmdPath, contentHash)
-  ↓ 別 Record ファイルを再帰参照
-```
-
-**変更後:**
-
-```
-NetworkAnalyzer は Record.Deps を直接参照
-  ↓ dep.SyscallAnalysis, dep.SymbolAnalysis を読む
-  （共有ライブラリもインタープリターバイナリも同一ループで処理）
-```
-
-`AnalysisDeps` 構造体から全ストアフィールドを除去し、`RecordStore RecordLoader` のみとする。`checkDynLibDepsNetwork`・`followShebangChain`（解析目的）を廃止し、単一の `checkDepsSignals([]DepEntry)` に統合する。
-
-## 4. エラーハンドリング設計
-
-### 4.1 runner からの ErrAnalysisNotFound 除去
-
-現在、dynlib キャッシュが存在しない場合は `ErrAnalysisNotFound` → 「高リスクフォールバック」の処理が `runner` に存在する。新設計では Record に全解析結果が埋め込まれるため、この処理は不要となる。
-
-Record 自体が存在しない場合は既存の `SchemaVersionMismatchError` / ファイル不存在エラーが適用される（変更なし）。
-
-### 4.2 dedup 時の hash 不一致
-
-同一 path で異なる hash の dep が複数のバイナリから参照された場合:
-
-- `record` コマンドを致命的エラーで中断する
-- どちらの hash のバイナリが実際にロードされるか不明であり、いずれかの解析結果を採用することは不正なセキュリティポリシー適用につながるため、fail-closed とする
-- Record は生成しない（不整合な Record が `runner` に読み込まれることを防ぐ）
-
-## 5. セキュリティ考慮事項
-
-### 5.1 整合性の維持
-
-- `deps` の各エントリは hash を保持し、`runner` がファイルを使用する前にハッシュ検証を行う（既存の filevalidator の動作を維持）
-- `shebang_chain` の `raw_path` をランタイムで再解決し `path` と比較することで、シンボリックリンクリダイレクト攻撃を検出する（既存の動作を維持）
-- env 形式の shebang では、ランタイムの PATH で `command_name` を再解決し `path` と比較することで、PATH 操作による別バイナリへのすり替えを検出する（新規追加）
-- Record の書き出しはアトミック（既存の動作を維持）
-
-### 5.2 dynlib キャッシュの信頼性
-
-dynlib-analysis キャッシュは `record` コマンドのみが参照する内部最適化手段であり、`runner` は参照しない。キャッシュが改ざんされても `record` が生成した Record の内容（解析結果）が `runner` の判断基準となるため、実行時のセキュリティには影響しない。キャッシュの改ざんが影響するのは `record` の次回実行時のみであり、hash 不一致により改ざんを検出できる（既存の動作を維持）。
-
-### 5.3 脅威モデル: Record の情報完全性
+### 4.2 runner 側
 
 ```mermaid
-flowchart TD
+sequenceDiagram
+    participant R as runner
+    participant RS as RecordStore
+    participant V as verifyShebangChain
+    participant N as NetworkAnalyzer
+    participant OS as OS
+
+    R->>RS: LoadRecord(command)
+    RS-->>R: Record v22
+    R->>V: Verify(record.shebang_chain)
+    V->>OS: EvalSymlinks(raw_path) when raw_path exists
+    V->>OS: LookPath(command_name) when command_name exists
+    V-->>R: ok or error
+    R->>N: Analyze(record)
+    N->>N: Read only record.syscall_analysis
+    N->>N: Read only record.symbol_analysis
+    N-->>R: network/high-risk signals
+```
+
+## 5. 変更対象設計
+
+### 5.1 record
+
+1. コマンド本体、shebang チェーン各バイナリ、各 dep ライブラリを解析対象とする
+2. VDSO と syscall wrapper ライブラリは解析スキップする
+3. 結果はトップレベルへ統合し、`deps` には `path` + `hash` のみを出力する
+4. `saveInterpreterRecord` は削除する
+5. `analysis_warnings` は Record トップレベルに統合する
+
+### 5.2 runner / NetworkAnalyzer
+
+1. `AnalysisDeps` は `RecordStore` のみを保持する
+2. `analyzeBinarySignals` は Record ロード後、トップレベル解析結果のみで判定する
+3. `checkDepsSignals` を削除する
+4. `followShebangChain`（解析目的）を削除する
+5. `ErrDepAnalysisNotEmbedded` を削除する
+
+### 5.3 verification.Manager
+
+1. `GetAnalysisDeps` は `AnalysisDeps{RecordStore: m.fileValidator}` を返す
+2. `networkSymbolStore` `syscallAnalysisStore` `dynLibDepsStore` `dynlibAnalysisStore` `shebangStore` を削除する
+
+## 6. セキュリティ設計
+
+### 6.1 検出ポイント
+
+```mermaid
+flowchart LR
     classDef threat fill:#ffe6e6,stroke:#d62728,stroke-width:1px,color:#7f0000;
-    classDef counter fill:#e8f5e8,stroke:#2e8b57,stroke-width:1px,color:#006400;
-    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef control fill:#e8f5e8,stroke:#2e8b57,stroke-width:1px,color:#006400;
 
-    T1["脅威: 依存ライブラリの差し替え"]
-    C1["対策: deps エントリの hash 検証\n（filevalidator による実行時検証）"]
-
-    T2["脅威: shebang インタープリターの\nシンボリックリンク改ざん"]
-    C2["対策: shebang_chain の raw_path を\nランタイムで再解決して path と比較\n（既存の検出ロジックを維持）"]
-
-    T3["脅威: dynlib キャッシュの改ざん"]
-    C3["対策: キャッシュは record のみが参照\nrunner は Record の埋め込み情報を使用"]
-
-    T4["脅威: env 形式 shebang の\nPATH 操作による別バイナリすり替え"]
-    C4["対策: runner がランタイムの PATH で\ncommand_name を再解決して path と比較\n不一致の場合はエラー終了（fail-closed）"]
-
-    T1 --> C1
-    T2 --> C2
-    T3 --> C3
-    T4 --> C4
+    T1[Shebang symlink tampering] --> C1[EvalSymlinks(raw_path) must equal path]
+    T2[PATH hijack for env shebang] --> C2[LookPath(command_name) must equal path]
+    T3[Dep binary replacement] --> C3[Hash verification via deps path/hash]
+    T4[Analysis source divergence] --> C4[Risk decision uses unified top-level analysis only]
 
     class T1,T2,T3,T4 threat;
-    class C1,C2,C3,C4 counter;
+    class C1,C2,C3,C4 control;
 ```
 
-## 6. 処理フロー詳細
+### 6.2 エラー境界
 
-### 6.1 record コマンドの deps 収集シーケンス
+1. dedup 中の同一 path hash 不一致は `record` 側で致命エラー
+2. shebang 再解決不一致は `runner` 側で致命エラー
+3. v21 以下 Record は `SchemaVersionMismatchError`
 
-```mermaid
-sequenceDiagram
-    participant R as record コマンド
-    participant E as Binary Analyzer
-    participant S as Shebang Parser
-    participant C as dynlib-analysis キャッシュ
-    participant FS as ファイルシステム
+## 7. 文書整合ルール
 
-    R->>E: コマンド本体解析
-    E-->>R: syscall_analysis, symbol_analysis, dyn_lib_deps
-
-    alt shebang スクリプト
-        R->>S: shebang 行解析
-        S-->>R: インタープリター情報（path, command_name 等）
-        loop shebang チェーンの各バイナリ
-            R->>E: バイナリ解析（hash + syscall + symbol + dyn_lib_deps）
-            E-->>R: ShebangBinaryInfo（識別情報のみ）+ 解析結果 + dyn_lib_deps
-        end
-    end
-
-    R->>R: インタープリターバイナリ自体＋全 dyn_lib_deps を収集・dedup<br/>（path を主キー。hash 不一致は致命的エラー）
-
-    loop 各ユニーク dep（共有ライブラリのみ。実行バイナリは解析済み）
-        R->>C: LoadAnalysis(path, hash)
-        alt キャッシュヒット
-            C-->>R: 解析結果
-        else キャッシュミス
-            R->>E: ライブラリ解析
-            E-->>R: 解析結果
-            R->>C: SaveResult(path, hash, result)
-        end
-    end
-
-    R->>FS: Record JSON 書き出し（アトミック）
-```
-
-### 6.2 runner の処理フロー（変更後）
-
-```mermaid
-sequenceDiagram
-    participant RUN as runner
-    participant FS as ファイルシステム
-    participant OS as OS (PATH 解決)
-    participant NA as NetworkAnalyzer
-
-    RUN->>FS: Record 読み込み（1ファイルのみ）
-    FS-->>RUN: Record（Deps, ShebangChain を内包）
-
-    loop ShebangChain の各エントリ（command_name あり）
-        RUN->>OS: LookPath(command_name) + EvalSymlinks
-        OS-->>RUN: 解決済みパス
-        RUN->>RUN: 解決済みパス == entry.path を確認\n不一致 → エラー終了（fail-closed）
-    end
-
-    RUN->>NA: CheckAnalysisCache(record)
-
-    NA->>NA: checkSyscallSignals（コマンド本体の SyscallAnalysis）
-    NA->>NA: checkSymbolSignals（コマンド本体の SymbolAnalysis）
-
-    loop Record.Deps の各エントリ（共有ライブラリ＋インタープリターバイナリ）
-        NA->>NA: checkDepsSignals(dep.SyscallAnalysis, dep.SymbolAnalysis)
-    end
-
-    NA-->>RUN: (isNetwork, isHighRisk)
-```
-
-## 7. テスト戦略
-
-### 7.1 ユニットテスト
-
-- `DepEntry` の JSON シリアライズ・デシリアライズ（`soname` あり/なし、`syscall_analysis` null / 非 null、`warnings` あり / なし）
-- dedup ロジック（同一 path+hash → 統合、同一 path 異なる hash → 致命的エラーで中断）
-- インタープリターバイナリが `deps` に `soname` なしエントリとして含まれること
-- `ShebangBinaryInfo` の直接形式・env 形式の JSON 表現（解析フィールドなし）
-- `DebugInfo` の `-debug-info` あり / なしでの生成（`omitempty` 動作）
-
-### 7.2 統合テスト
-
-- `record` コマンドが ELF バイナリの `deps` を埋め込んだ Record を生成する（F-001 AC1〜4 検証）
-- `record` コマンドが shebang スクリプトの Record でインタープリターバイナリを `deps` に含める（F-002 AC4 検証）
-- `record` コマンドが直接形式 shebang の `shebang_chain`（1エントリ、解析フィールドなし）を生成する（F-002 AC2 検証）
-- `record` コマンドが env 形式 shebang の `shebang_chain`（2エントリ）を生成する（F-002 AC3 検証）
-- `runner` が dynlib-analysis キャッシュなしで Record のみから正しく動作する（F-003 AC3 検証）
-- スキーマバージョンミスマッチ時に `SchemaVersionMismatchError` が返される（F-005 AC2 検証）
-
-### 7.3 後方互換性テスト
-
-- 旧バージョン（v21 以前）の Record を読み込んだ際に `SchemaVersionMismatchError` が返される
-- `record` 再実行による旧 Record の上書きが正常に動作する
-
-## 8. 実装の優先順位
-
-### Phase 1: スキーマ定義
-`fileanalysis/schema.go` に `DepEntry`、`ShebangBinaryInfo`、`DebugInfo` を追加し、`CurrentSchemaVersion` をインクリメント。既存フィールドを削除・置換。旧バージョン Record に対するエラー動作テストを追加。
-
-### Phase 2: record コマンド
-deps 収集・dedup・解析・埋め込みロジックを実装。shebang チェーン解析を `shebang_chain` に出力。`-debug-info` 時の `dep_sources` 生成を追加。
-
-### Phase 3: runner の更新
-`NetworkAnalyzer` から `dynamicanalysis.Store` 依存を除去し、`Record.Deps` を直接参照するよう変更。`filevalidator` の `ShebangChain` 参照を更新。
-
-### Phase 4: 検証
-全テストのパス、リンターパス、エンドツーエンド動作確認。
-
-## 9. 将来の拡張性
-
-- **推移的依存の解析**: 将来的に共有ライブラリが依存するライブラリ（推移的依存）も `deps` に追加する拡張が可能。`DepEntry` の構造はそのまま利用できる（現在は直接依存のみ）
-- **多段 shebang チェーン**: `shebang_chain` はリスト構造のため、インタープリター自体がスクリプトである場合への対応が可能（現在はスコープ外）
-- **並列 record**: dedup 後の各ライブラリ解析を並列実行する最適化が可能。現在のスキーマ設計は並列化に対応できる
+1. AC番号は [docs/tasks/0129_self_contained_record/01_requirements.md](docs/tasks/0129_self_contained_record/01_requirements.md) に一致させる
+2. テスト対応表は [docs/tasks/0129_self_contained_record/03_detailed_specification.md](docs/tasks/0129_self_contained_record/03_detailed_specification.md) と [docs/tasks/0129_self_contained_record/04_implementation_plan.md](docs/tasks/0129_self_contained_record/04_implementation_plan.md) で同一の削除対象を指す

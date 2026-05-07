@@ -1,226 +1,125 @@
-# 実装計画書: コマンド Record 完全自己完結化
+# 実装計画書: Record スキーマ v22
 
-## 進捗サマリー
+## 進捗
 
-- [ ] Phase 1: スキーマ定義
-- [ ] Phase 2: record コマンド（filevalidator）
-- [ ] Phase 3: runner 更新
-- [ ] Phase 4: 検証・仕上げ
+- [ ] Phase 1: スキーマ更新
+- [ ] Phase 2: record 実装更新
+- [ ] Phase 3: runner / verification 更新
+- [ ] Phase 4: テスト整理と追加
+- [ ] Phase 5: 品質確認と文書整合
 
----
+## Phase 1: スキーマ更新
 
-## Phase 1: スキーマ定義
+### 1-1. バージョン更新
 
-### 1-1. `CurrentSchemaVersion` を 22 に更新
+- [ ] `CurrentSchemaVersion` を 22 に更新する（AC-001, AC-026）
+- [ ] v21 以下読み込み時に `SchemaVersionMismatchError` を返すことを確認する（AC-027）
 
-- [ ] `internal/fileanalysis/schema.go`: `CurrentSchemaVersion = 21` → `22` に変更し、バージョン履歴コメントを追記する
+### 1-2. Record フィールド更新
 
-### 1-2. 新規型の追加
+- [ ] `deps` を `path` `hash` のみの構造に更新する（AC-002）
+- [ ] `shebang_chain` を `raw_path?` `path` `command_name?` のみに更新する（AC-003, AC-012）
+- [ ] `analysis_warnings` をトップレベルで統合出力する（AC-004）
+- [ ] `debug` を `omitempty` で保持する（AC-005）
 
-- [ ] `internal/fileanalysis/schema.go`: `DepEntry` 型を追加する
-  - フィールド: `SOName` (omitempty), `Path`, `Hash`, `SyscallAnalysis *SyscallAnalysisData`, `SymbolAnalysis *SymbolAnalysisData`, `Warnings []string`
-  - `SOName` は共有ライブラリに設定、インタープリターバイナリエントリでは省略（空文字）
-- [ ] `internal/fileanalysis/schema.go`: `ShebangBinaryInfo` 型を追加する
-  - フィールド: `RawPath` (omitempty), `Path`, `CommandName` (omitempty)
-  - `ContentHash` は含めない（hash は `Deps` エントリで管理。`Path` が `Deps` への参照キー）
-  - 解析フィールド（`SyscallAnalysis`、`SymbolAnalysis`）も含めない（`Deps` に統合）
-- [ ] `internal/fileanalysis/schema.go`: `DebugInfo` 型を追加する
-  - フィールド: `DepSources map[string][]string`
+### 1-3. 参照コード修正
 
-### 1-3. `Record` 構造体の変更
+- [ ] 旧 dep 解析フィールド参照を全て削除する
+- [ ] 旧 shebang 解析埋め込み前提の参照を全て削除する
 
-- [ ] `internal/fileanalysis/schema.go`: `Record` に `Deps []DepEntry`、`ShebangChain []ShebangBinaryInfo`、`Debug *DebugInfo` を追加する（`omitempty`）
-- [ ] `internal/fileanalysis/schema.go`: `Record` から `DynLibDeps []LibEntry`、`ShebangInterpreter *ShebangInterpreterInfo`、`AnalysisWarnings []string` を削除する
-- [ ] `internal/fileanalysis/schema.go`: `LibEntry` 型を削除する（`DepEntry` に置き換え）
-- [ ] `internal/fileanalysis/schema.go`: `ShebangInterpreterInfo` 型を削除する
+## Phase 2: record 実装更新
 
-### 1-4. スキーマ変更に伴う既存コードの修正（コンパイルエラー解消）
+### 2-1. deps 収集
 
-- [ ] `Record.DynLibDeps` を参照しているすべての箇所を `Record.Deps` に置き換える（grep で特定）
-- [ ] `Record.ShebangInterpreter` を参照しているすべての箇所を `Record.ShebangChain` に置き換える
-- [ ] `Record.AnalysisWarnings` を参照しているすべての箇所を修正する
-- [ ] `LibEntry` 型を参照しているすべての箇所を `DepEntry` に置き換えるか、内部用途のみ残す
+- [ ] コマンド本体の依存共有ライブラリを収集する（AC-006）
+- [ ] shebang チェーン各バイナリの依存共有ライブラリを収集する（AC-006）
+- [ ] shebang チェーンのインタープリターバイナリ本体を deps に含める（AC-006）
 
-### 1-5. スキーマ変更のテスト
+### 2-2. dedup とエラー
 
-- [ ] `internal/fileanalysis/schema_test.go` を新規作成し、以下のテストを追加する:
-  - `DepEntry` JSON round-trip（`syscall_analysis` null / 非 null、`warnings` あり / なし）
-  - `ShebangBinaryInfo` JSON round-trip（direct form / env form）
-  - `DebugInfo` omitempty（`debug == nil` → JSON に `"debug"` キーなし）
-  - `CurrentSchemaVersion == 22` の確認
-- [ ] `fileanalysis.Store.Load` が `schema_version != 22` の Record に対して `SchemaVersionMismatchError` を返すことを確認する（既存テストを v21 フィクスチャで実行確認、または新規テスト追加）
+- [ ] `path` をキーに dedup する（AC-007）
+- [ ] 同一 path hash 不一致で致命エラーにする（AC-008）
 
----
+### 2-3. 解析統合
 
-## Phase 2: record コマンド（filevalidator）
+- [ ] コマンド本体、dep ライブラリ、shebang チェーン全バイナリを対象に syscall を統合する（AC-013）
+- [ ] コマンド本体、dep ライブラリ、shebang チェーン全バイナリを対象に symbol を統合する（AC-014）
+- [ ] ArgEvalResults は worst-case 統合を実装する（AC-015）
+- [ ] VDSO と syscall wrapper を解析スキップする（AC-016）
 
-### 2-1. `resolveShebangChain` の実装
+### 2-4. 出力更新
 
-- [ ] `internal/filevalidator/validator.go`: `resolveShebangChain(filePath string) ([]ShebangBinaryInfo, []binaryDynLibDeps, error)` を実装する
-  - `shebang.Parse` でインタープリター情報を取得
-  - 各バイナリ（`InterpreterPath`、`ResolvedPath`）について:
-    1. `calculateHash` でハッシュ算出（`ShebangBinaryInfo.ContentHash` に設定）
-    2. `elfDynlibAnalyzer.Analyze` で `DynLibDeps`（共有ライブラリ）を収集
-    3. 一時 `fileanalysis.Record` に `DynLibDeps` を設定し `analyzeELFSyscalls(&tmpRecord, filePath)` を呼ぶ（`findLibcEntry` が `DynLibDeps` を必要とするため）
-    4. `binaryAnalyzer.AnalyzeNetworkSymbols` で `SymbolAnalysis` を取得
-  - `ShebangBinaryInfo` に命名メタデータ（`RawPath`、`Path`、`CommandName`）のみを設定する（`ContentHash` も解析結果も `Deps` に含めるため `ShebangBinaryInfo` には含めない）
-  - インタープリターバイナリ自体の解析結果（hash + syscall + symbol）は `binaryDynLibDeps` の形式で返し、`collectAndDedupDeps` で `DepEntry{SOName: ""}` として `deps` に追加する
-  - インタープリターが shebang スクリプトの場合は `ErrRecursiveShebang` を返す（既存ロジックを維持）
+- [ ] 統合結果を `record.syscall_analysis` と `record.symbol_analysis` に書き込む（AC-017）
+- [ ] `analysis_warnings` を統合・dedup して書き込む（AC-004）
+- [ ] `-debug-info` 指定時のみ `debug.dep_sources` を書き込む（AC-005）
 
-### 2-2. `collectAndDedupDeps` の実装
+### 2-5. 削除作業
 
-- [ ] `internal/filevalidator/validator.go`: `collectAndDedupDeps(binaries []binaryWithDeps) ([]DepEntry, map[string][]string, error)` を実装する
-  - 同一 `path` + 同一 `hash` → 統合（1エントリ）
-  - 同一 `path` + 異なる `hash` → 即時エラー返却
-  - `sources` マップ（ `DepSources` 用）を同時に構築する
+- [ ] `saveInterpreterRecord` を削除する
 
-### 2-3. `analyzeDepEntries` の実装
+## Phase 3: runner / verification 更新
 
-- [ ] `internal/filevalidator/validator.go`: `analyzeDepEntries(rawDeps []depRaw) ([]DepEntry, error)` を実装する
-  - VDSO / syscall wrapper → `SyscallAnalysis == nil`、`SymbolAnalysis == nil`
-  - それ以外 → in-session キャッシュまたは `dynamicLibAnalysisStore.LoadOrAnalyzeAndStore` で解析
-  - 既存の `v.processedLibAnalysis` キャッシュを再利用する
-  - `Warnings` をソート後 dedup して `DepEntry.Warnings` に設定する
+### 3-1. AnalysisDeps の単純化
 
-### 2-4. `updateAnalysisRecord` の大幅変更
+- [ ] `AnalysisDeps` を `RecordStore` のみに変更する（AC-018）
 
-- [ ] `internal/filevalidator/validator.go`: `updateAnalysisRecord` を変更して以下を行う:
-  - `resolveShebangChain` を呼ぶ（旧 `saveInterpreterRecord` 呼び出しは不要）
-  - shebang チェーン各バイナリの `DynLibDeps` も収集する
-  - `collectAndDedupDeps` で全 deps を dedup する
-  - `analyzeDepEntries` で各 dep を解析する
-  - `record.Deps = deps` を設定する
-  - `record.ShebangChain = chain` を設定する
-  - `v.includeDebugInfo` が true なら `record.Debug = &DebugInfo{DepSources: sources}` を設定する
-  - `record.AnalysisWarnings`、`record.DynLibDeps`、`record.ShebangInterpreter` の設定を削除する（フィールド削除に伴い自動的に不要）
+### 3-2. NetworkAnalyzer 更新
 
-### 2-5. `SaveRecord` から `saveInterpreterRecord` 呼び出しを削除
+- [ ] `analyzeBinarySignals` を Record ロード + トップレベル解析参照に置換する（AC-019, AC-017）
+- [ ] `checkDepsSignals` を削除する（AC-020）
+- [ ] `followShebangChain`（解析目的）を削除する（AC-021）
+- [ ] `ErrDepAnalysisNotEmbedded` を削除する（AC-023）
 
-- [ ] `internal/filevalidator/validator.go`: `SaveRecord` 内の `saveInterpreterRecord` 呼び出しブロックを削除する
-- [ ] `internal/filevalidator/validator.go`: `saveInterpreterRecord` 関数を削除する
+### 3-3. shebang 実行時検証
 
-### 2-6. `analyzeLibraries` の変更
+- [ ] `verifyShebangChain` で `raw_path` 再解決比較を維持する（AC-010, AC-022）
+- [ ] `verifyShebangChain` で `command_name` PATH 再解決比較を実装する（AC-011, AC-022）
 
-- [ ] `internal/filevalidator/validator.go`: `analyzeLibraries` を変更してデータを `DepEntry` スライスに書き込むようにする（または `analyzeDepEntries` に統合して `analyzeLibraries` を削除する）
-- [ ] dep からの `DynamicLoadSymbols` を `record.SymbolAnalysis.DynamicLoadSymbols` にマージする処理を削除する（runner がランタイムに参照するため）
+### 3-4. verification.Manager 更新
 
-### 2-7. record コマンドのテスト
+- [ ] `GetAnalysisDeps` を `AnalysisDeps{RecordStore: m.fileValidator}` に変更する（AC-024）
+- [ ] `networkSymbolStore` `syscallAnalysisStore` `dynLibDepsStore` `dynlibAnalysisStore` `shebangStore` を削除する（AC-025）
 
-- [ ] `internal/filevalidator/validator_dedup_test.go` を新規作成し、以下のテストを追加する:
-  - 同一 path + 同一 hash → 1 エントリ統合
-  - 同一 path + 異なる hash → エラー、Record 書き出しなし（F-001 AC2 / 4.3）
-  - syscall wrapper dep → `SyscallAnalysis == nil && SymbolAnalysis == nil`（F-001 AC3）
-  - VDSO dep → `SyscallAnalysis == nil && SymbolAnalysis == nil`（F-001 AC3）
-  - dep warnings → `DepEntry.Warnings` に記録（F-001 AC4）
-- [ ] `internal/filevalidator/validator_shebang_test.go`: 別 Record ファイル生成を前提とするテストを削除し、`ShebangChain` エントリの検証に書き換える
-- [ ] `internal/filevalidator/validator_library_analysis_test.go`: `AnalysisWarnings` の期待値を `DepEntry.Warnings` に変更する
-- [ ] `cmd/record/main_test.go`: `-debug-info` あり / なしで `Debug` フィールドの有無を確認するテストを追加する（F-004 AC1, AC2）
+## Phase 4: テスト整理と追加
 
----
+### 4-1. 追加・更新テスト
 
-## Phase 3: runner 更新
+- [ ] schema_version 22 検証テストを追加・更新する（AC-001, AC-026）
+- [ ] deps path/hash 制約テストを追加・更新する（AC-002, AC-006, AC-007, AC-008）
+- [ ] shebang_chain フィールド制約と再解決テストを追加・更新する（AC-003, AC-010, AC-011, AC-012, AC-022）
+- [ ] 統合 syscall/symbol/ArgEvalResults テストを追加・更新する（AC-013, AC-014, AC-015, AC-016, AC-017）
+- [ ] debug omitempty テストを追加・更新する（AC-005）
+- [ ] v21 以下拒否と再記録テストを追加・更新する（AC-027, AC-028）
 
-### 3-1. `RecordLoader` インターフェースの定義
+### 4-2. 削除テスト
 
-- [ ] `internal/runner/base/security/network_analyzer.go`: `RecordLoader` インターフェースを定義する
-  ```go
-  type RecordLoader interface {
-      LoadRecord(filePath string) (*fileanalysis.Record, error)
-  }
-  ```
+- [ ] `ErrAnalysisNotFound` フォールバック前提テストを削除する
+- [ ] `checkDepsSignals` 前提テストを削除する
+- [ ] `followShebangChain` 前提テストを削除する
+- [ ] `ErrDepAnalysisNotEmbedded` 前提テストを削除する
+- [ ] `ShebangStore` `DynLibDepsStore` `LibAnalysisStore` 前提テストを削除する
+- [ ] deps 内解析フィールド前提テストを削除する
 
-### 3-2. `AnalysisDeps` の変更
+### 4-3. 重複排除
 
-- [ ] `internal/runner/base/security/network_analyzer.go`: `AnalysisDeps` から全既存フィールド（`NetworkSymbolStore`、`SyscallStore`、`DynLibDepsStore`、`LibAnalysisStore`、`ShebangStore`）を削除し、`RecordStore RecordLoader` のみにする
+- [ ] schema 形状検証を単一テスト群に集約する
+- [ ] dedup 異常系検証を単一テスト群に集約する
+- [ ] shebang 再解決検証を単一テスト群に集約する
 
-### 3-3. `ErrDepAnalysisNotEmbedded` の定義
+## Phase 5: 品質確認と文書整合
 
-- [ ] `internal/runner/base/security/network_analyzer.go` または `internal/fileanalysis/errors.go`: `ErrDepAnalysisNotEmbedded` を定義する
+### 5-1. コード品質
 
-### 3-4. `analyzeBinarySignals` の変更
+- [ ] `make fmt` を実行する
+- [ ] `make test` を実行する
+- [ ] `make lint` を実行する
 
-- [ ] `internal/runner/base/security/network_analyzer.go`: `analyzeBinarySignals` を変更して以下を行う:
-  - `RecordStore.LoadRecord(cmdPath)` でレコードを読み込む
-  - `record.ContentHash != contentHash` の場合はハッシュ不一致として高リスク扱い
-  - コマンド本体の `SyscallAnalysis`、`SymbolAnalysis` から既存の `checkSyscallCache`、`checkAnalysisCache` 相当のシグナルを抽出する
-  - `checkDepsSignals(record.Deps)` を呼ぶ
-  - `followShebangChain(record.ShebangChain)` を呼ぶ
+### 5-2. 実装ルール確認
 
-### 3-5. `checkDepsSignals` の実装
+- [ ] コメントを含むコード中に日本語がないことを確認する
 
-- [ ] `internal/runner/base/security/network_analyzer.go`: `checkDepsSignals(deps []fileanalysis.DepEntry) (isNetwork, isHighRisk bool, err error)` を実装する
-  - VDSO / wrapper はスキップ
-  - `SyscallAnalysis == nil && SymbolAnalysis == nil` かつ非 wrapper/VDSO → `ErrDepAnalysisNotEmbedded` を返す（fail-closed）
-  - 既存の `analyzeDepSignals` ロジックを `*SyscallAnalysisData`、`*SymbolAnalysisData` を受け取る形に変更して再利用する
+### 5-3. 文書整合
 
-### 3-6. `followShebangChain`（解析目的）の廃止
-
-- [ ] `internal/runner/base/security/network_analyzer.go`: `followShebangChain` 関数を削除する（インタープリターバイナリの解析結果は `Record.Deps` に含まれるため不要）
-- [ ] `internal/runner/base/security/network_analyzer.go`: `ShebangStore.LoadInterpreterAnalysisPath` への依存を除去する（`AnalysisDeps` から `ShebangStore` を削除した時点で自動的に除去される）
-
-### 3-7. `verifyShebangChain` の新規実装（F-002 AC6）
-
-- [ ] `internal/verification/` または `internal/runner/base/security/` に `verifyShebangChain(chain []fileanalysis.ShebangBinaryInfo) error` を実装する
-  - `entry.CommandName != ""` のエントリに対して `exec.LookPath(entry.CommandName)` を呼ぶ
-  - 結果に `filepath.EvalSymlinks` を適用し、`entry.Path` と比較する
-  - 不一致または lookup 失敗の場合は `slog.Error` でログ記録後にエラー返却（fail-closed）
-  - `entry.RawPath != ""` のエントリに対してシンボリックリンクリダイレクト検出も行う（既存動作の移行）
-- [ ] `internal/verification/manager.go`: コマンドグループ実行前に `verifyShebangChain` を呼ぶよう変更する
-  - `fileValidator.LoadRecord(scriptPath)` でレコードを取得し `record.ShebangChain` を渡す
-- [ ] `internal/verification/shebang_chain_verifier_test.go` を新規作成し、以下のテストを追加する:
-  - `command_name` あり + PATH 解決が `path` と一致 → エラーなし（F-002 AC6）
-  - `command_name` あり + PATH 解決が `path` と不一致 → エラー返却（F-002 AC6）
-  - `command_name` あり + PATH に存在しない → エラー返却（F-002 AC6）
-  - `command_name` なし（direct form）→ PATH 再解決をスキップ（F-002 AC6）
-
-### 3-7. `checkDynLibDepsNetwork` の削除
-
-- [ ] `internal/runner/base/security/network_analyzer.go`: `checkDynLibDepsNetwork` 関数を削除する（`checkDepsSignals` に置き換え）
-
-### 3-8. `verification.Manager` の変更
-
-- [ ] `internal/verification/manager.go`: `GetAnalysisDeps` を `AnalysisDeps{RecordStore: m.fileValidator}` のみを返すよう変更する（`NetworkSymbolStore`、`SyscallStore`、`DynLibDepsStore`、`LibAnalysisStore`、`ShebangStore` を除去）
-- [ ] `internal/verification/manager.go`: `Manager` から `networkSymbolStore`、`syscallAnalysisStore`、`dynLibDepsStore`、`dynlibAnalysisStore`、`shebangStore` フィールドを削除する
-- [ ] `internal/verification/manager.go`: 各 store を初期化するブロック（`NewNetworkSymbolStore`、`NewSyscallAnalysisStore`、`NewDynLibDepsStore`、`dynamicanalysis.New`、`NewShebangInterpreterStore`）を削除する
-
-### 3-9. runner のテスト
-
-- [ ] `internal/runner/base/security/network_analyzer_test.go`: 以下のテストを追加・変更する:
-  - `Record.Deps` 内の共有ライブラリエントリから network signal を検出する（F-003 AC2）
-  - `Record.Deps` 内のインタープリターバイナリエントリ（`soname` なし）から network signal を検出する（F-003 AC5）
-  - 非 wrapper dep の `SyscallAnalysis == nil` → `ErrDepAnalysisNotEmbedded` を返す（F-003 AC6）
-  - VDSO dep の `SyscallAnalysis == nil` → エラーなし（F-003 AC6）
-  - `record.ContentHash != contentHash` → 高リスク扱いになること
-  - `DynLibDepsStore`、`LibAnalysisStore`、`ShebangStore` を使うテストを削除する
-  - `ErrAnalysisNotFound` → 高リスクフォールバックのテストを削除する
-  - `checkDynLibDepsNetwork`、`followShebangChain` を使うテストを削除する
-- [ ] `internal/verification/manager_test.go`: `GetAnalysisDeps` 関連テストを新 `AnalysisDeps` 構造に合わせて更新する
-
----
-
-## Phase 4: 検証・仕上げ
-
-### 4-1. 統合テスト
-
-- [ ] `cmd/record/main_test.go` または専用の統合テストファイル:
-  - ELF バイナリの `record` 実行 → `deps` に解析結果が埋め込まれることを確認（F-001 AC1〜3）
-  - 直接形式 shebang の `shebang_chain`（1エントリ）生成確認（F-002 AC2）
-  - env 形式 shebang の `shebang_chain`（2エントリ）生成確認（F-002 AC3）
-  - `dynlib-analysis/` ディレクトリを削除した状態で `runner` が正常動作することを確認（F-003 AC3）
-  - v21 Record を読み込むと `SchemaVersionMismatchError` が返ることを確認（F-005 AC2）
-  - `record` 再実行で旧 Record を新フォーマットで上書きできることを確認（F-005 AC3）
-
-### 4-2. ビルド・テスト・Lint
-
-- [ ] `make build` でビルドが通ることを確認する
-- [ ] `make test` で全テストが通ることを確認する（`go test -tags test -v ./...`）
-- [ ] `make lint` でリンターが通ることを確認する
-- [ ] `make fmt` でフォーマットを適用する
-
-### 4-3. 最終確認
-
-- [ ] 要件定義書の全 Acceptance Criteria（F-001〜F-005）に対応するテストが存在することを確認する
-- [ ] コード中に日本語が含まれていないことを確認する（`grep -rn '[^\x00-\x7F]' --include="*.go"` で検索）
-- [ ] `dynamicanalysis.ErrAnalysisNotFound` が runner から参照されていないことを確認する
-- [ ] `ShebangStore`、`DynLibDepsStore`、`LibAnalysisStore` が `AnalysisDeps` から除去されていることを確認する
-- [ ] env 形式の shebang に対して PATH 再解決検証（`verifyShebangChain`）が実行されることを統合テストで確認する（F-002 AC6）
+- [ ] 01〜04 の AC 番号整合を確認する
+- [ ] 01〜04 の削除対象ロジック記述整合を確認する
+- [ ] 01〜04 のテスト対応記述整合を確認する
