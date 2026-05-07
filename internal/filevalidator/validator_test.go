@@ -820,6 +820,54 @@ func TestRecord_DynamicLoadSymbols_Stored(t *testing.T) {
 	assert.Equal(t, "dlopen", record.SymbolAnalysis.DynamicLoadSymbols[0])
 }
 
+func TestRecord_ShebangChainAggregatesDepsAndTopLevelAnalysis(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	script := filepath.Join(tempDir, "script.sh")
+	require.NoError(t, os.WriteFile(script, []byte("#!/bin/sh\necho hello\n"), 0o755))
+
+	interpreterPath, err := filepath.EvalSymlinks("/bin/sh")
+	if err != nil {
+		t.Skip("skipping: /bin/sh not available in this environment")
+	}
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
+		result: binaryanalyzer.NetworkDetected,
+		detectedSymbols: []binaryanalyzer.DetectedSymbol{
+			{Name: "socket", Category: "network"},
+		},
+	})
+	v.SetSyscallAnalyzer(&stubSyscallAnalyzerReturnsOne{})
+
+	_, _, err = v.SaveRecord(script, false)
+	require.NoError(t, err)
+
+	record, err := v.LoadRecord(script)
+	require.NoError(t, err)
+
+	require.NotEmpty(t, record.ShebangChain)
+	assert.Equal(t, interpreterPath, record.ShebangChain[len(record.ShebangChain)-1].Path)
+
+	depPaths := make(map[string]struct{}, len(record.DynLibDeps))
+	for _, dep := range record.DynLibDeps {
+		depPaths[dep.Path] = struct{}{}
+	}
+	_, foundInterpreter := depPaths[interpreterPath]
+	assert.True(t, foundInterpreter, "deps should include the shebang interpreter binary")
+
+	require.NotNil(t, record.SymbolAnalysis)
+	assert.Equal(t, []string{"socket"}, record.SymbolAnalysis.DetectedSymbols,
+		"top-level symbol analysis should be deduped across analyzed binaries")
+
+	require.NotNil(t, record.SyscallAnalysis)
+	require.Len(t, record.SyscallAnalysis.DetectedSyscalls, 1)
+	assert.Equal(t, 1, record.SyscallAnalysis.DetectedSyscalls[0].Number)
+}
+
 func TestRecord_NotSupportedBinary_SymbolAnalysisNil(t *testing.T) {
 	stub := &stubBinaryAnalyzer{
 		result: binaryanalyzer.NotSupportedBinary,
