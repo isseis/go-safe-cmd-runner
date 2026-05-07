@@ -5,7 +5,7 @@
 - [x] Phase 1: スキーマ更新
 - [x] Phase 2: record 実装更新
 - [x] Phase 3: runner / verification 更新
-- [ ] Phase 4: テスト整理と追加
+- [x] Phase 4: テスト整理と追加
 - [ ] Phase 5: 品質確認と文書整合
 
 ## Phase 1: スキーマ更新
@@ -93,18 +93,18 @@
 
 ### 4-2. 削除テスト
 
-- [ ] `ErrAnalysisNotFound` フォールバック前提テストを削除する
-- [ ] `checkDepsSignals` 前提テストを削除する
-- [ ] `followShebangChain` 前提テストを削除する
-- [ ] `ErrDepAnalysisNotEmbedded` 前提テストを削除する
-- [ ] `ShebangStore` `DynLibDepsStore` `LibAnalysisStore` 前提テストを削除する
-- [ ] deps 内解析フィールド前提テストを削除する
+- [x] `ErrAnalysisNotFound` フォールバック前提テストを削除する
+- [x] `checkDepsSignals` 前提テストを削除する
+- [x] `followShebangChain` 前提テストを削除する
+- [x] `ErrDepAnalysisNotEmbedded` 前提テストを削除する
+- [x] `ShebangStore` `DynLibDepsStore` `LibAnalysisStore` 前提テストを削除する
+- [x] deps 内解析フィールド前提テストを削除する
 
 ### 4-3. 重複排除
 
-- [ ] schema 形状検証を単一テスト群に集約する
-- [ ] dedup 異常系検証を単一テスト群に集約する
-- [ ] shebang 再解決検証を単一テスト群に集約する
+- [x] schema 形状検証を単一テスト群に集約する
+- [x] dedup 異常系検証を単一テスト群に集約する
+- [x] shebang 再解決検証を単一テスト群に集約する
 
 ## Phase 5: 品質確認と文書整合
 
