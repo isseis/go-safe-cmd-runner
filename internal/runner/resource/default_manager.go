@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -36,8 +37,15 @@ type DefaultResourceManager struct {
 	dryrun *DryRunResourceManager
 }
 
+// ErrRiskEvaluatorRequired is returned when Config.RiskEvaluator is nil.
+var ErrRiskEvaluatorRequired = errors.New("RiskEvaluator is required for NormalResourceManager")
+
 // NewDefaultResourceManager creates a new DefaultResourceManager from cfg.
 func NewDefaultResourceManager(cfg Config) (*DefaultResourceManager, error) {
+	if cfg.RiskEvaluator == nil {
+		return nil, ErrRiskEvaluatorRequired
+	}
+
 	outputMgr := cfg.OutputManager
 	if outputMgr == nil {
 		securityValidator, err := security.NewValidator(nil)

@@ -37,6 +37,19 @@ func setupTestMocks() *testMocks {
 	}
 }
 
+func TestNewDefaultResourceManager_NilRiskEvaluator(t *testing.T) {
+	mocks := setupTestMocks()
+	_, err := NewDefaultResourceManager(Config{
+		Executor:     mocks.exec,
+		FileSystem:   mocks.fs,
+		PathResolver: mocks.pathResolver,
+		Logger:       slog.Default(),
+		Mode:         ExecutionModeNormal,
+		// RiskEvaluator intentionally omitted
+	})
+	require.ErrorIs(t, err, ErrRiskEvaluatorRequired)
+}
+
 func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 	mocks := setupTestMocks()
 
