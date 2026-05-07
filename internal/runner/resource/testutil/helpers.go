@@ -15,6 +15,10 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 )
 
+func defaultTestEvaluator() risk.Evaluator {
+	return risk.NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
+}
+
 // NewNormalResourceManager creates a new NormalResourceManager for normal execution mode
 func NewNormalResourceManager(
 	exec executor.CommandExecutor,
@@ -48,8 +52,6 @@ func NewDefaultResourceManager(
 		DryRunOpts:       dryRunOpts,
 		OutputManager:    outputMgr,
 		MaxOutputSize:    maxOutputSize,
-		RiskEvaluator: risk.NewStandardEvaluator(
-			security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}),
-		),
+		RiskEvaluator:    defaultTestEvaluator(),
 	})
 }
