@@ -38,7 +38,8 @@ func TestDynLibDepsStore_LoadDynLibDeps_Normal(t *testing.T) {
 	got, err := depsStore.LoadDynLibDeps(f.Name(), "sha256:testhash")
 	require.NoError(t, err)
 	require.Len(t, got, 1)
-	assert.Equal(t, "libssl.so.3", got[0].SOName)
+	assert.Equal(t, "/usr/lib/libssl.so.3", got[0].Path)
+	assert.Equal(t, "sha256:aaaa", got[0].Hash)
 }
 
 func TestDynLibDepsStore_LoadDynLibDeps_HashMismatch(t *testing.T) {

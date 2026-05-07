@@ -376,10 +376,13 @@ func buildRunnerBinary(t *testing.T) string {
 
 	// Create temporary directory for binary
 	tmpDir := commontesting.SafeTempDir(t)
+	hashDir := filepath.Join(tmpDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
 	binaryPath := filepath.Join(tmpDir, "runner")
+	ldflags := fmt.Sprintf("-X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=%s", hashDir)
 
 	// Build the binary
-	cmd := exec.Command("go", "build", "-tags", "test", "-o", binaryPath, ".")
+	cmd := exec.Command("go", "build", "-tags", "test", "-ldflags", ldflags, "-o", binaryPath, ".")
 	cmd.Dir = "." // Current directory (cmd/runner)
 
 	var stderr bytes.Buffer

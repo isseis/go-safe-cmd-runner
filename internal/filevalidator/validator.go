@@ -356,8 +356,21 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 			return err
 		}
 
-		// Record shebang interpreter info.
+		// Record shebang chain entries used for runtime re-resolution checks.
 		if shebangInfo != nil {
+			record.ShebangChain = nil
+			record.ShebangChain = append(record.ShebangChain, fileanalysis.ShebangChainEntry{
+				Ref:  shebangInfo.RawInterpreterPath,
+				Path: shebangInfo.InterpreterPath,
+			})
+			if shebangInfo.CommandName != "" && shebangInfo.ResolvedPath != "" {
+				record.ShebangChain = append(record.ShebangChain, fileanalysis.ShebangChainEntry{
+					Ref:  shebangInfo.CommandName,
+					Path: shebangInfo.ResolvedPath,
+				})
+			}
+
+			// Keep legacy in-memory field for code paths that are migrated in later phases.
 			record.ShebangInterpreter = &fileanalysis.ShebangInterpreterInfo{
 				RawInterpreterPath: shebangInfo.RawInterpreterPath,
 				InterpreterPath:    shebangInfo.InterpreterPath,
@@ -365,6 +378,7 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 				ResolvedPath:       shebangInfo.ResolvedPath,
 			}
 		} else {
+			record.ShebangChain = nil
 			record.ShebangInterpreter = nil
 		}
 

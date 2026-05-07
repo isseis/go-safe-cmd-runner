@@ -4,11 +4,13 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -57,7 +59,9 @@ args = ["hello"]
 
 			// Run command in dry-run mode with JSON output
 			// Capture stdout and stderr separately to verify JSON output separation
-			cmd := exec.Command("go", "run", ".", "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
+			hashDir := commontesting.SafeTempDir(t)
+			ldflags := fmt.Sprintf("-X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=%s", hashDir)
+			cmd := exec.Command("go", "run", "-ldflags", ldflags, ".", "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
 			cmd.Dir = "."
 
 			var stdout, stderr strings.Builder
@@ -196,7 +200,9 @@ args = ["hello"]
 			tmpFile.Close()
 
 			// Run command in dry-run mode with JSON output
-			cmd := exec.Command("go", "run", ".", "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
+			hashDir := commontesting.SafeTempDir(t)
+			ldflags := fmt.Sprintf("-X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=%s", hashDir)
+			cmd := exec.Command("go", "run", "-ldflags", ldflags, ".", "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
 			cmd.Dir = "."
 
 			output, err := cmd.Output() // Use Output() instead of CombinedOutput() to get only stdout

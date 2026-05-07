@@ -186,10 +186,10 @@ func buildMinimalELFWithDeps(t *testing.T, dir, fileName string, sonames []strin
 	return path
 }
 
-// TestDynLibDeps_SortedBySOName verifies that DynLibDeps is sorted by SOName
-// (then Path, then Hash) regardless of the order DT_NEEDED entries appear in
+// TestDynLibDeps_SortedByPath verifies that deps entries are sorted by Path
+// (then Hash) regardless of the order DT_NEEDED entries appear in
 // the binary.
-func TestDynLibDeps_SortedBySOName(t *testing.T) {
+func TestDynLibDeps_SortedByPath(t *testing.T) {
 	tmpDir := safeTempDir(t)
 	hashDir := filepath.Join(tmpDir, "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
@@ -216,9 +216,9 @@ func TestDynLibDeps_SortedBySOName(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, record.DynLibDeps, 3)
-	sonames := make([]string, len(record.DynLibDeps))
+	baseNames := make([]string, len(record.DynLibDeps))
 	for i, e := range record.DynLibDeps {
-		sonames[i] = e.SOName
+		baseNames[i] = filepath.Base(e.Path)
 	}
-	assert.Equal(t, []string{"liba.so.1", "libm.so.6", "libz.so.1"}, sonames)
+	assert.Equal(t, []string{"liba.so.1", "libm.so.6", "libz.so.1"}, baseNames)
 }

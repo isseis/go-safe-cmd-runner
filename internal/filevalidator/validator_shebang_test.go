@@ -15,7 +15,7 @@ import (
 )
 
 // TestSaveRecord_ShebangDirect verifies that SaveRecord on a "#!/bin/sh" script
-// records the ShebangInterpreter field and creates an independent record for
+// records shebang_chain entries and creates an independent record for
 // the interpreter.
 //
 // Prerequisite: /bin/sh must exist. This is true on all Linux systems, so no
@@ -31,17 +31,15 @@ func TestSaveRecord_ShebangDirect(t *testing.T) {
 	_, _, err = validator.SaveRecord(script, false)
 	require.NoError(t, err)
 
-	// Verify the script record has ShebangInterpreter set.
+	// Verify the script record has shebang_chain set.
 	record, err := validator.LoadRecord(script)
 	require.NoError(t, err)
-	require.NotNil(t, record.ShebangInterpreter)
+	require.Len(t, record.ShebangChain, 1)
 
-	assert.Equal(t, "/bin/sh", record.ShebangInterpreter.RawInterpreterPath)
+	assert.Equal(t, "/bin/sh", record.ShebangChain[0].Ref)
 	expectedInterpreter, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
-	assert.Equal(t, expectedInterpreter, record.ShebangInterpreter.InterpreterPath)
-	assert.Empty(t, record.ShebangInterpreter.CommandName)
-	assert.Empty(t, record.ShebangInterpreter.ResolvedPath)
+	assert.Equal(t, expectedInterpreter, record.ShebangChain[0].Path)
 
 	// Verify the interpreter also has its own independent record.
 	interpRecord, err := validator.LoadRecord(expectedInterpreter)
@@ -50,7 +48,7 @@ func TestSaveRecord_ShebangDirect(t *testing.T) {
 }
 
 // TestSaveRecord_ShebangEnv verifies that SaveRecord on a "#!/usr/bin/env sh"
-// script records all three ShebangInterpreter fields and creates independent
+// script records shebang_chain entries and creates independent
 // records for both env and the resolved command.
 //
 // "sh" is used instead of "python3" because python3 is not guaranteed to be
@@ -72,23 +70,23 @@ func TestSaveRecord_ShebangEnv(t *testing.T) {
 	_, _, err = validator.SaveRecord(script, false)
 	require.NoError(t, err)
 
-	// Verify the script record has all three ShebangInterpreter fields.
+	// Verify the script record has env and command entries in shebang_chain.
 	record, err := validator.LoadRecord(script)
 	require.NoError(t, err)
-	require.NotNil(t, record.ShebangInterpreter)
+	require.Len(t, record.ShebangChain, 2)
 
-	assert.Equal(t, "/usr/bin/env", record.ShebangInterpreter.RawInterpreterPath)
+	assert.Equal(t, "/usr/bin/env", record.ShebangChain[0].Ref)
 	expectedEnvPath, err := filepath.EvalSymlinks("/usr/bin/env")
 	require.NoError(t, err)
-	assert.Equal(t, expectedEnvPath, record.ShebangInterpreter.InterpreterPath)
-	assert.Equal(t, "sh", record.ShebangInterpreter.CommandName)
+	assert.Equal(t, expectedEnvPath, record.ShebangChain[0].Path)
+	assert.Equal(t, "sh", record.ShebangChain[1].Ref)
 
 	// Compute expected resolved path from the pinned PATH — deterministic.
 	shFound, err := exec.LookPath("sh")
 	require.NoError(t, err)
 	expectedResolvedPath, err := filepath.EvalSymlinks(shFound)
 	require.NoError(t, err)
-	assert.Equal(t, expectedResolvedPath, record.ShebangInterpreter.ResolvedPath)
+	assert.Equal(t, expectedResolvedPath, record.ShebangChain[1].Path)
 
 	// Verify env has its own record.
 	envRecord, err := validator.LoadRecord(expectedEnvPath)
@@ -96,12 +94,12 @@ func TestSaveRecord_ShebangEnv(t *testing.T) {
 	assert.Equal(t, expectedEnvPath, envRecord.FilePath)
 
 	// Verify the resolved command has its own record.
-	resolvedRecord, err := validator.LoadRecord(record.ShebangInterpreter.ResolvedPath)
+	resolvedRecord, err := validator.LoadRecord(record.ShebangChain[1].Path)
 	require.NoError(t, err)
-	assert.Equal(t, record.ShebangInterpreter.ResolvedPath, resolvedRecord.FilePath)
+	assert.Equal(t, record.ShebangChain[1].Path, resolvedRecord.FilePath)
 }
 
-// TestSaveRecord_ShebangELF verifies that ELF binaries have nil ShebangInterpreter.
+// TestSaveRecord_ShebangELF verifies that ELF binaries have no shebang_chain entries.
 func TestSaveRecord_ShebangELF(t *testing.T) {
 	hashDir := safeTempDir(t)
 	dir := safeTempDir(t)
@@ -118,11 +116,11 @@ func TestSaveRecord_ShebangELF(t *testing.T) {
 
 	record, err := validator.LoadRecord(path)
 	require.NoError(t, err)
-	assert.Nil(t, record.ShebangInterpreter)
+	assert.Empty(t, record.ShebangChain)
 }
 
 // TestSaveRecord_ShebangText verifies that plain text files (no shebang) have
-// nil ShebangInterpreter.
+// no shebang_chain entries.
 func TestSaveRecord_ShebangText(t *testing.T) {
 	hashDir := safeTempDir(t)
 	dir := safeTempDir(t)
@@ -138,7 +136,7 @@ func TestSaveRecord_ShebangText(t *testing.T) {
 
 	record, err := validator.LoadRecord(path)
 	require.NoError(t, err)
-	assert.Nil(t, record.ShebangInterpreter)
+	assert.Empty(t, record.ShebangChain)
 }
 
 // TestSaveRecord_ShebangRecursive verifies that SaveRecord returns
@@ -197,7 +195,7 @@ func TestSaveRecord_InterpreterForce(t *testing.T) {
 }
 
 // TestSaveRecord_ShebangSymlink verifies that when the script is accessed via
-// a symlink, the ShebangInterpreter is still populated correctly (the symlink is
+// a symlink, shebang_chain is still populated correctly (the symlink is
 // resolved before shebang analysis).
 func TestSaveRecord_ShebangSymlink(t *testing.T) {
 	hashDir := safeTempDir(t)
@@ -217,9 +215,9 @@ func TestSaveRecord_ShebangSymlink(t *testing.T) {
 	// The record is stored under the resolved (real) path.
 	record, err := validator.LoadRecord(script)
 	require.NoError(t, err)
-	require.NotNil(t, record.ShebangInterpreter)
+	require.Len(t, record.ShebangChain, 1)
 
 	expectedInterpreter, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
-	assert.Equal(t, expectedInterpreter, record.ShebangInterpreter.InterpreterPath)
+	assert.Equal(t, expectedInterpreter, record.ShebangChain[0].Path)
 }

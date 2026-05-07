@@ -44,7 +44,9 @@ const (
 	// Version 21 removes LibraryAnalysis from Record: per-library results are now stored
 	// in the dynamic library analysis store (internal/dynamicanalysis) and read at
 	// runner runtime rather than embedded in each executable's record.
-	CurrentSchemaVersion = 21
+	// Version 22 replaces dyn_lib_deps with deps(path/hash only), replaces
+	// shebang_interpreter with shebang_chain(ref/path), and adds optional debug output.
+	CurrentSchemaVersion = 22
 )
 
 // Record represents a unified file analysis record containing both
@@ -74,28 +76,35 @@ type Record struct {
 	// detected syscalls.
 	SyscallAnalysis *SyscallAnalysisData `json:"syscall_analysis,omitempty"`
 
-	// DynLibDeps contains the dynamic library dependency snapshot recorded at record time.
-	// Only present for ELF binaries with DT_NEEDED entries.
-	DynLibDeps []LibEntry `json:"dyn_lib_deps,omitempty"`
+	// DynLibDeps contains dependency entries recorded for hash verification.
+	// JSON field name is deps in schema v22.
+	DynLibDeps []LibEntry `json:"deps,omitempty"`
 
 	// SymbolAnalysis contains the symbol analysis result cached at record time.
 	// nil means not analyzed (static binary, non-ELF, or old schema record).
 	SymbolAnalysis *SymbolAnalysisData `json:"symbol_analysis,omitempty"`
 
-	// ShebangInterpreter holds interpreter information parsed from the file's
-	// shebang line. nil for non-script files (ELF binaries, text files, etc.).
-	ShebangInterpreter *ShebangInterpreterInfo `json:"shebang_interpreter,omitempty"`
+	// ShebangChain holds runtime verification entries for shebang resolution.
+	// Each entry stores the reference token (optional) and the resolved path.
+	ShebangChain []ShebangChainEntry `json:"shebang_chain,omitempty"`
 
 	// AnalysisWarnings holds non-fatal warnings generated during dynlib analysis
 	// (e.g., unknown @ tokens that prevent hash verification for specific libraries).
 	// nil/empty is omitted from JSON (omitempty).
 	AnalysisWarnings []string `json:"analysis_warnings,omitempty"`
+
+	// Debug holds optional debug-only fields emitted when debug-info is enabled.
+	Debug *RecordDebug `json:"debug,omitempty"`
+
+	// ShebangInterpreter is kept as an internal migration field and is not serialized.
+	// New schema output uses ShebangChain only.
+	ShebangInterpreter *ShebangInterpreterInfo `json:"-"`
 }
 
 // LibEntry represents a single resolved dynamic library dependency.
 type LibEntry struct {
-	// SOName is the DT_NEEDED library name (e.g., "libssl.so.3").
-	SOName string `json:"soname"`
+	// SOName is retained for internal matching logic and is not serialized in v22 records.
+	SOName string `json:"-"`
 
 	// Path is the resolved full path to the library file, normalized via
 	// filepath.EvalSymlinks + filepath.Clean.
@@ -103,6 +112,22 @@ type LibEntry struct {
 
 	// Hash is the SHA256 hash of the library file in "sha256:<hex>" format.
 	Hash string `json:"hash"`
+}
+
+// ShebangChainEntry stores one shebang verification hop.
+type ShebangChainEntry struct {
+	// Ref is the original shebang reference token (absolute path or bare command name).
+	// Empty means no runtime re-resolution is required.
+	Ref string `json:"ref,omitempty"`
+
+	// Path is the resolved absolute path recorded at record time.
+	Path string `json:"path"`
+}
+
+// RecordDebug stores optional debug-only metadata.
+type RecordDebug struct {
+	// DepSources maps dependency paths to source labels that contributed them.
+	DepSources map[string][]string `json:"dep_sources,omitempty"`
 }
 
 // ShebangInterpreterInfo records the interpreter associated with a script file.

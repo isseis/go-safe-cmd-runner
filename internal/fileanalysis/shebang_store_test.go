@@ -54,10 +54,8 @@ func TestShebangInterpreterStore_TC01_DirectForm(t *testing.T) {
 
 	scriptHash := "sha256:scripthash01"
 	scriptPath, _ := saveRecord(t, store, tmpDir, "script.sh", &Record{
-		ContentHash: scriptHash,
-		ShebangInterpreter: &ShebangInterpreterInfo{
-			InterpreterPath: interpPath,
-		},
+		ContentHash:  scriptHash,
+		ShebangChain: []ShebangChainEntry{{Ref: "/bin/bash", Path: interpPath}},
 	})
 
 	gotPath, gotHash, err := shebangStore.LoadInterpreterAnalysisPath(scriptPath, scriptHash)
@@ -85,10 +83,9 @@ func TestShebangInterpreterStore_TC02_EnvForm(t *testing.T) {
 	scriptHash := "sha256:scripthash02"
 	scriptPath, _ := saveRecord(t, store, tmpDir, "script.py", &Record{
 		ContentHash: scriptHash,
-		ShebangInterpreter: &ShebangInterpreterInfo{
-			InterpreterPath: envPath,
-			CommandName:     "python3",
-			ResolvedPath:    resolvedInterpPath,
+		ShebangChain: []ShebangChainEntry{
+			{Ref: "/usr/bin/env", Path: envPath},
+			{Ref: "python3", Path: resolvedInterpPath},
 		},
 	})
 
@@ -118,10 +115,8 @@ func TestShebangInterpreterStore_TC04_HashMismatch(t *testing.T) {
 
 	scriptHash := "sha256:scripthash04"
 	scriptPath, _ := saveRecord(t, store, tmpDir, "script.sh", &Record{
-		ContentHash: scriptHash,
-		ShebangInterpreter: &ShebangInterpreterInfo{
-			InterpreterPath: "/usr/bin/bash",
-		},
+		ContentHash:  scriptHash,
+		ShebangChain: []ShebangChainEntry{{Ref: "/bin/bash", Path: "/usr/bin/bash"}},
 	})
 
 	_, _, err := shebangStore.LoadInterpreterAnalysisPath(scriptPath, "sha256:wronghash")
@@ -129,15 +124,14 @@ func TestShebangInterpreterStore_TC04_HashMismatch(t *testing.T) {
 	assert.True(t, errors.Is(err, ErrHashMismatch), "expected ErrHashMismatch, got: %v", err)
 }
 
-// TC-05: ShebangInterpreter is nil (not a shebang script).
+// TC-05: shebang_chain is empty (not a shebang script).
 // Expected: return ("", "", nil).
 func TestShebangInterpreterStore_TC05_NoShebang(t *testing.T) {
 	store, shebangStore, tmpDir := setupShebangStoreTest(t)
 
 	scriptHash := "sha256:scripthash05"
 	scriptPath, _ := saveRecord(t, store, tmpDir, "binary", &Record{
-		ContentHash:        scriptHash,
-		ShebangInterpreter: nil,
+		ContentHash: scriptHash,
 	})
 
 	gotPath, gotHash, err := shebangStore.LoadInterpreterAnalysisPath(scriptPath, scriptHash)
@@ -157,10 +151,8 @@ func TestShebangInterpreterStore_TC06_InterpRecordNotFound(t *testing.T) {
 
 	scriptHash := "sha256:scripthash06"
 	scriptPath, _ := saveRecord(t, store, tmpDir, "script.sh", &Record{
-		ContentHash: scriptHash,
-		ShebangInterpreter: &ShebangInterpreterInfo{
-			InterpreterPath: interpPath,
-		},
+		ContentHash:  scriptHash,
+		ShebangChain: []ShebangChainEntry{{Ref: "/bin/bash", Path: interpPath}},
 	})
 
 	_, _, err := shebangStore.LoadInterpreterAnalysisPath(scriptPath, scriptHash)
@@ -187,10 +179,8 @@ func TestShebangInterpreterStore_TC07_InterpLoadError(t *testing.T) {
 
 	scriptHash := "sha256:scripthash07"
 	scriptPath, _ := saveRecord(t, store, tmpDir, "script07.sh", &Record{
-		ContentHash: scriptHash,
-		ShebangInterpreter: &ShebangInterpreterInfo{
-			InterpreterPath: interpPath,
-		},
+		ContentHash:  scriptHash,
+		ShebangChain: []ShebangChainEntry{{Ref: "/bin/bash", Path: interpPath}},
 	})
 
 	_, _, err = shebangStore.LoadInterpreterAnalysisPath(scriptPath, scriptHash)
@@ -210,10 +200,8 @@ func TestShebangInterpreterStore_TC08_InterpEmptyContentHash(t *testing.T) {
 
 	scriptHash := "sha256:scripthash08"
 	scriptPath, _ := saveRecord(t, store, tmpDir, "script08.sh", &Record{
-		ContentHash: scriptHash,
-		ShebangInterpreter: &ShebangInterpreterInfo{
-			InterpreterPath: interpPath,
-		},
+		ContentHash:  scriptHash,
+		ShebangChain: []ShebangChainEntry{{Ref: "/bin/bash", Path: interpPath}},
 	})
 
 	_, _, err := shebangStore.LoadInterpreterAnalysisPath(scriptPath, scriptHash)

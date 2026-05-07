@@ -743,14 +743,13 @@ func (m *Manager) hasMachODynamicLibraryDeps(path string) (bool, error) {
 	return machodylib.HasDynamicLibDeps(path, m.safeFS)
 }
 
-// VerifyCommandShebangInterpreter verifies the integrity of a shebang interpreter for a
-// script command. It loads the analysis record for cmdPath, reads the ShebangInterpreter
-// field, and verifies that:
-//   - The interpreter binary's hash matches the stored record.
-//   - For env-form shebangs, the command name resolves (via envVars["PATH"]) to the same
-//     binary path that was recorded at record time.
+// VerifyCommandShebangInterpreter verifies recorded shebang chain entries for a script command.
+// For each entry with ref/path:
+//   - ref is absolute path: EvalSymlinks(ref) must equal path.
+//   - ref is bare command name: PATH re-resolution must equal path.
+//   - path must have a valid hash record.
 //
-// Returns nil if cmdPath has no analysis record or the record has no ShebangInterpreter.
+// Returns nil if cmdPath has no analysis record or no shebang chain entries.
 func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error {
 	if m.fileValidator == nil {
 		return nil
@@ -768,6 +767,14 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 			return err
 		}
 		return fmt.Errorf("failed to load record for shebang verification: %w", err)
+	}
+
+	if len(record.ShebangChain) == 0 && record.ShebangInterpreter == nil {
+		return nil
+	}
+
+	if len(record.ShebangChain) > 0 {
+		return m.verifyShebangChain(record.ShebangChain, envVars)
 	}
 
 	si := record.ShebangInterpreter
@@ -803,6 +810,35 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 	}
 
 	return nil
+}
+
+func (m *Manager) verifyShebangChain(chain []fileanalysis.ShebangChainEntry, envVars map[string]string) error {
+	for _, entry := range chain {
+		if err := m.verifyShebangChainEntry(entry, envVars); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) verifyShebangChainEntry(entry fileanalysis.ShebangChainEntry, envVars map[string]string) error {
+	if entry.Path == "" {
+		return nil
+	}
+
+	if entry.Ref != "" {
+		if filepath.IsAbs(entry.Ref) {
+			if err := m.verifyInterpreterSymlinkTarget(entry.Ref, entry.Path); err != nil {
+				return err
+			}
+		} else {
+			if err := m.verifyEnvPathResolution(entry.Ref, entry.Path, envVars); err != nil {
+				return err
+			}
+		}
+	}
+
+	return m.verifyInterpreterHash(entry.Path)
 }
 
 // verifyInterpreterHash verifies the hash of the given interpreter binary.

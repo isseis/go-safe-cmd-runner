@@ -2,7 +2,7 @@
 
 ## 進捗
 
-- [ ] Phase 1: スキーマ更新
+- [x] Phase 1: スキーマ更新
 - [ ] Phase 2: record 実装更新
 - [ ] Phase 3: runner / verification 更新
 - [ ] Phase 4: テスト整理と追加
@@ -12,21 +12,21 @@
 
 ### 1-1. バージョン更新
 
-- [ ] `CurrentSchemaVersion` を 22 に更新する（AC-001, AC-026）
-- [ ] v21 以下読み込み時に `SchemaVersionMismatchError` を返すことを確認する（AC-027）
+- [x] `CurrentSchemaVersion` を 22 に更新する（AC-001, AC-026）
+- [x] v21 以下読み込み時に `SchemaVersionMismatchError` を返すことを確認する（AC-027）
 
 ### 1-2. Record フィールド更新
 
-- [ ] `deps` を `path` `hash` のみの構造に更新する（AC-002）
-- [ ] `shebang_chain` を `ref?` `path` のみに更新する（AC-003, AC-011）
-- [ ] `analysis_warnings` をトップレベルで統合出力する（AC-004）
-- [ ] `debug` を `omitempty` で保持する（AC-005）
-- [ ] `internal/fileanalysis/schema_test.go` を新規作成し、`deps`・`shebang_chain` の JSON シリアライズ仕様（AC-002, AC-003, AC-011）をテストする
+- [x] `deps` を `path` `hash` のみの構造に更新する（AC-002）
+- [x] `shebang_chain` を `ref?` `path` のみに更新する（AC-003, AC-011）
+- [x] `analysis_warnings` をトップレベルで統合出力する（AC-004）
+- [x] `debug` を `omitempty` で保持する（AC-005）
+- [x] `internal/fileanalysis/schema_test.go` を新規作成し、`deps`・`shebang_chain` の JSON シリアライズ仕様（AC-002, AC-003, AC-011）をテストする
 
 ### 1-3. 参照コード修正
 
-- [ ] 旧 dep 解析フィールド参照を全て削除する
-- [ ] 旧 shebang 解析埋め込み前提の参照を全て削除する
+- [x] 旧 dep 解析フィールド参照を全て削除する
+- [x] 旧 shebang 解析埋め込み前提の参照を全て削除する
 
 ## Phase 2: record 実装更新
 

@@ -8,8 +8,8 @@ import (
 )
 
 // ShebangInterpreterStore provides the interpreter binary path and content hash
-// for a shebang script, enabling the runner to follow the shebang chain for
-// risk assessment without re-analyzing the interpreter binary.
+// for a shebang script, enabling the runner to follow recorded shebang chain
+// entries without re-analyzing interpreter binaries.
 type ShebangInterpreterStore interface {
 	// LoadInterpreterAnalysisPath returns the effective interpreter binary path
 	// and its content hash for the shebang script at scriptPath.
@@ -18,7 +18,7 @@ type ShebangInterpreterStore interface {
 	// script file changes (ErrHashMismatch).
 	//
 	// Returns ("", "", nil) when:
-	//   - The script has no ShebangInterpreter (not a shebang script)
+	//   - The script has no shebang_chain entries (not a shebang script)
 	//
 	// Returns error when:
 	//   - The script's record cannot be loaded (non-ErrRecordNotFound errors)
@@ -60,15 +60,13 @@ func (s *shebangInterpreterStore) LoadInterpreterAnalysisPath(scriptPath, script
 		return "", "", ErrHashMismatch
 	}
 
-	if scriptRecord.ShebangInterpreter == nil {
+	if len(scriptRecord.ShebangChain) == 0 {
 		return "", "", nil
 	}
 
-	si := scriptRecord.ShebangInterpreter
-	if si.ResolvedPath != "" {
-		interpPath = si.ResolvedPath
-	} else {
-		interpPath = si.InterpreterPath
+	interpPath = scriptRecord.ShebangChain[len(scriptRecord.ShebangChain)-1].Path
+	if interpPath == "" {
+		return "", "", fmt.Errorf("interpreter path in shebang_chain is empty: %w", ErrInterpreterRecordMissing)
 	}
 
 	interpTarget, err := common.NewResolvedPath(interpPath)
