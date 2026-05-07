@@ -30,12 +30,14 @@ import (
 
 // Error definitions
 var (
-	ErrCommandFailed        = errors.New("command failed")
-	ErrCommandNotFound      = errors.New("command not found")
-	ErrGroupVerification    = errors.New("group file verification failed")
-	ErrGroupNotFound        = errors.New("group not found")
-	ErrVariableAccessDenied = errors.New("variable access denied")
-	ErrRunIDRequired        = errors.New("runID is required")
+	ErrCommandFailed                     = errors.New("command failed")
+	ErrCommandNotFound                   = errors.New("command not found")
+	ErrGroupVerification                 = errors.New("group file verification failed")
+	ErrGroupNotFound                     = errors.New("group not found")
+	ErrVariableAccessDenied              = errors.New("variable access denied")
+	ErrRunIDRequired                     = errors.New("runID is required")
+	ErrVerificationManagerRequiredDryRun = errors.New("verification manager is required for dry-run resource manager creation")
+	ErrVerificationManagerRequiredNormal = errors.New("verification manager is required for normal resource manager creation")
 )
 
 // GroupExecutionStatus represents the execution status of a command group
@@ -175,15 +177,6 @@ func initializeDefaultComponents(opts *runnerOptions, configSpec *runnertypes.Co
 	}
 }
 
-// pathResolverFromVM returns vm when non-nil, otherwise a no-op resolver with
-// no hash directory (disables all hash-backed verification).
-func pathResolverFromVM(vm *verification.Manager) resource.PathResolver {
-	if vm != nil {
-		return vm
-	}
-	return verification.NewPathResolver("")
-}
-
 // createResourceManager creates a resource manager for dry-run or normal mode
 func createResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSpec, validator *security.Validator) error {
 	if opts.resourceManager != nil {
@@ -196,7 +189,12 @@ func createResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSp
 }
 
 // createDryRunResourceManager creates a resource manager for dry-run mode
+// vm is required (must not be nil) to ensure verification manager is properly initialized
 func createDryRunResourceManager(opts *runnerOptions, vm *verification.Manager, validator *security.Validator) error {
+	if vm == nil {
+		return ErrVerificationManagerRequiredDryRun
+	}
+
 	if opts.dryRunOptions == nil {
 		opts.dryRunOptions = &resource.DryRunOptions{
 			DetailLevel:  resource.DetailLevelDetailed,
@@ -209,7 +207,7 @@ func createDryRunResourceManager(opts *runnerOptions, vm *verification.Manager, 
 	resourceManager, err := resource.NewDryRunResourceManagerWithOutput(
 		opts.executor,
 		opts.privilegeManager,
-		pathResolverFromVM(vm),
+		vm,
 		outputMgr,
 		opts.dryRunOptions,
 	)
@@ -221,16 +219,18 @@ func createDryRunResourceManager(opts *runnerOptions, vm *verification.Manager, 
 }
 
 // createNormalResourceManager creates a resource manager for normal mode
+// vm is required (must not be nil) to ensure verification manager is properly initialized
 func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec, vm *verification.Manager, validator *security.Validator) error {
+	if vm == nil {
+		return ErrVerificationManagerRequiredNormal
+	}
+
 	fs := common.NewDefaultFileSystem()
 	maxOutputSize := int64(0)
 
 	outputMgr := output.NewDefaultOutputCaptureManager(validator)
 
-	var deps security.AnalysisDeps
-	if vm != nil {
-		deps = vm.GetAnalysisDeps()
-	}
+	deps := vm.GetAnalysisDeps()
 	networkAnalyzer := security.NewNetworkAnalyzer(runtime.GOOS, deps)
 	evaluator := risk.NewStandardEvaluator(networkAnalyzer)
 
@@ -238,7 +238,7 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 		Executor:         opts.executor,
 		FileSystem:       fs,
 		PrivilegeManager: opts.privilegeManager,
-		PathResolver:     pathResolverFromVM(vm),
+		PathResolver:     vm,
 		Logger:           slog.Default(),
 		Mode:             resource.ExecutionModeNormal,
 		DryRunOpts:       &resource.DryRunOptions{},

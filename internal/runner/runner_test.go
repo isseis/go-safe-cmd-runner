@@ -2379,10 +2379,20 @@ func (h *logCaptureHandler) WithGroup(_ string) slog.Handler {
 }
 
 // TestCreateNormalResourceManager_Succeeds verifies that createNormalResourceManager
-// creates a resource manager without error when no verification manager is available.
+// creates a resource manager without error when a verification manager is provided.
 func TestCreateNormalResourceManager_Succeeds(t *testing.T) {
 	opts := &runnerOptions{}
-	err := createNormalResourceManager(opts, &runnertypes.ConfigSpec{}, nil, nil)
+	vm := setupDryRunVerification(t)
+	err := createNormalResourceManager(opts, &runnertypes.ConfigSpec{}, vm, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, opts.resourceManager)
+}
+
+// TestCreateNormalResourceManager_FailsWithNilVM verifies that createNormalResourceManager
+// returns an error when no verification manager is provided.
+func TestCreateNormalResourceManager_FailsWithNilVM(t *testing.T) {
+	opts := &runnerOptions{}
+	err := createNormalResourceManager(opts, &runnertypes.ConfigSpec{}, nil, nil)
+	require.Error(t, err)
+	assert.Equal(t, ErrVerificationManagerRequiredNormal, err)
 }
