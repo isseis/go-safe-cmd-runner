@@ -234,7 +234,8 @@ sequenceDiagram
     ST-->>CC: bool
 
     Note over CC: exec signal check (新規)
-    CC->>CC: syscallAnalysisHasExecSignal(result, table)
+    CC->>CC: syscallAnalysisHasExecSignal(result, a.goos)
+    Note over CC: internally calls syscallTableForArch(goos, arch)
     CC->>ST: IsExecSyscall(number) per syscall
     ST-->>CC: bool
 
