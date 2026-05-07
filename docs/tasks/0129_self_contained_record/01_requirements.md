@@ -49,7 +49,7 @@
 **Acceptance Criteria:**
 
 1. `deps` の各エントリに `soname`、`path`、`hash` に加えて `syscall_analysis`（nullable）と `symbol_analysis`（nullable）が含まれる
-2. `deps` はコマンド自身と shebang チェーン全バイナリの依存ライブラリを合わせた dedup リスト（`path` を主キーとして重複排除。同一 path で hash が一致する場合に1エントリとして統合）である
+2. `deps` はコマンド自身と shebang チェーン全バイナリの依存ライブラリを合わせた dedup リスト（`path` を主キーとして重複排除。同一 path で hash が一致する場合に1エントリとして統合。同一 path で hash が不一致の場合は致命的エラーとして `record` を中断する）である
 3. syscall wrapper ライブラリ（libc 等）および VDSO エントリは `deps` に含まれるが、解析フィールド（`syscall_analysis`、`symbol_analysis`）は null となる
 4. 各 dep の解析中に発生した非致命的な警告は当該 `deps` エントリの `warnings` フィールドに記録される（現行の Record レベルの `analysis_warnings` に相当）
 
@@ -111,7 +111,7 @@
 
 ### 4.3 データ整合性
 
-- `deps` の dedup は `path` を主キーとする。同一 path で hash が一致する場合に1エントリとして統合し、同一 path で hash が不一致の場合は警告を出力して最初のエントリを採用すること
+- `deps` の dedup は `path` を主キーとする。同一 path で hash が一致する場合に1エントリとして統合し、同一 path で hash が不一致の場合は致命的エラーとして `record` を中断すること（どちらのバイナリが実際に使用されるか不明なため、不正なセキュリティポリシー適用を防ぐ）
 - Record の書き出しはアトミックに行うこと（既存の動作を維持）
 
 ## 5. スコープ外
