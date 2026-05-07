@@ -21,6 +21,7 @@
 - [ ] `shebang_chain` を `ref?` `path` のみに更新する（AC-003, AC-011）
 - [ ] `analysis_warnings` をトップレベルで統合出力する（AC-004）
 - [ ] `debug` を `omitempty` で保持する（AC-005）
+- [ ] `internal/fileanalysis/schema_test.go` を新規作成し、`deps`・`shebang_chain` の JSON シリアライズ仕様（AC-002, AC-003, AC-011）をテストする
 
 ### 1-3. 参照コード修正
 

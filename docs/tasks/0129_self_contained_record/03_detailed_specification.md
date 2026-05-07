@@ -109,9 +109,9 @@ for each entry in shebang_chain:
 
 | AC | テスト観点 | 追加/更新テスト候補 |
 |---|---|---|
-| AC-001, AC-026 | schema_version が 22 | `internal/fileanalysis/schema_test.go` |
-| AC-002 | deps が path/hash のみ | `cmd/record/*integration*_test.go` |
-| AC-003, AC-011 | shebang_chain の項目制約（`ref` + `path` のみ） | `internal/fileanalysis/schema_test.go` |
+| AC-001, AC-026 | schema_version が 22 | `internal/fileanalysis/file_analysis_store_test.go`（既存）を更新 |
+| AC-002 | deps が path/hash のみ | `internal/fileanalysis/schema_test.go`（新規作成）|
+| AC-003, AC-011 | shebang_chain の項目制約（`ref` + `path` のみ） | `internal/fileanalysis/schema_test.go`（新規作成）|
 | AC-004 | analysis_warnings の統合・dedup | `internal/filevalidator/*analysis*_test.go` |
 | AC-005 | debug の omitempty | `cmd/record/main_test.go` |
 | AC-006 | deps 収集範囲 | `internal/filevalidator/validator_shebang_test.go` |
@@ -131,7 +131,7 @@ for each entry in shebang_chain:
 | AC-022 | verifyShebangChain 存続 | `internal/verification/shebang_chain_verifier_test.go` |
 | AC-023 | ErrDepAnalysisNotEmbedded 削除確認 | 参照消滅テスト or grep ベース検証 |
 | AC-025 | Manager 不要フィールド削除確認 | `internal/verification/manager_test.go` |
-| AC-027 | v21 以下読み込み拒否 | `internal/fileanalysis/store_test.go` |
+| AC-027 | v21 以下読み込み拒否 | `internal/fileanalysis/file_analysis_store_test.go`（既存）を更新 |
 | AC-028 | 再記録で v22 生成 | `cmd/record/main_test.go` |
 
 ## 7. 削除対象テスト一覧
