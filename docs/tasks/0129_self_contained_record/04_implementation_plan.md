@@ -73,7 +73,7 @@
 
 ### 3-3. shebang 実行時検証
 
-- [ ] `verifyShebangChain` を実装する: `ref` が絶対パスなら EvalSymlinks、ベア名なら LookPath+EvalSymlinks で解決し `path` と比較する（AC-010, AC-022）
+- [x] `verifyShebangChain` を実装する: `ref` が絶対パスなら EvalSymlinks、ベア名なら LookPath+EvalSymlinks で解決し `path` と比較する（AC-010, AC-022）
 
 ### 3-4. verification.Manager 更新
 
@@ -86,8 +86,8 @@
 
 - [ ] `internal/fileanalysis/file_analysis_store_test.go`（既存）を更新: schema_version 22 検証（AC-001, AC-026, AC-027）
 - [ ] `internal/fileanalysis/schema_test.go`（新規作成）: deps・shebang_chain の JSON 構造制約（AC-002, AC-003, AC-011）
-- [ ] `internal/filevalidator/validator_dedup_test.go`（新規作成）: path dedup と hash 不一致エラー（AC-007, AC-008）
-- [ ] `internal/verification/shebang_chain_verifier_test.go`（新規作成）: ref 再解決検証（AC-010, AC-022）
+- [x] `internal/filevalidator/validator_dedup_test.go`（新規作成）: path dedup と hash 不一致エラー（AC-007, AC-008）
+- [x] `internal/verification/shebang_chain_verifier_test.go`（新規作成）: ref 再解決検証（AC-010, AC-022）
 - [ ] `internal/filevalidator/validator_test.go`（既存）を更新: 統合 syscall/symbol/ArgEvalResults・deps 収集範囲（AC-006, AC-013, AC-014, AC-015, AC-016, AC-017）
 - [ ] `cmd/record/main_test.go`（既存）を更新: debug omitempty・再記録（AC-005, AC-028）
 
