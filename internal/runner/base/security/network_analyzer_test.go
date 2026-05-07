@@ -114,6 +114,18 @@ func platformNetworkSyscallNums() (arch string, socketNum, connectNum int) {
 	return "x86_64", 41, 42
 }
 
+// platformExecSyscallNums returns the architecture string and exec syscall
+// numbers that match syscallTableForArch's behavior on the current OS.
+// On macOS, syscallTableForArch ignores the arch field and always uses
+// MacOSSyscallTable (execve=59, __mac_execve=380); on Linux it uses the
+// x86_64 table (execve=59, execveat=322).
+func platformExecSyscallNums() (arch string, secondExecNum int) {
+	if runtime.GOOS == "darwin" {
+		return "arm64", 380
+	}
+	return "x86_64", 322
+}
+
 // TestSyscallAnalysisHasNetworkSignal_ResolvedNetworkSVC verifies that a resolved network svc
 // is detected as a network signal based on syscall number lookup.
 func TestSyscallAnalysisHasNetworkSignal_ResolvedNetworkSVC(t *testing.T) {
@@ -624,6 +636,267 @@ func TestSyscallAnalysisHasNetworkSignal_NegativeNumber(t *testing.T) {
 		},
 	}
 	assert.False(t, syscallAnalysisHasNetworkSignal(result, runtime.GOOS))
+}
+
+func TestSyscallAnalysisHasExecSignal(t *testing.T) {
+	const execveNum = 59
+	arch, secondExecNum := platformExecSyscallNums()
+	tests := []struct {
+		name   string
+		result *fileanalysis.SyscallAnalysisResult
+		want   bool
+	}{
+		{
+			name: "nil result",
+			want: false,
+		},
+		{
+			name: "empty detected syscalls",
+			result: &fileanalysis.SyscallAnalysisResult{
+				SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{Architecture: arch},
+			},
+			want: false,
+		},
+		{
+			name: "execve detected",
+			result: &fileanalysis.SyscallAnalysisResult{
+				SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+					Architecture: arch,
+					DetectedSyscalls: []common.SyscallInfo{
+						{Number: execveNum, Name: "execve"},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "second exec syscall detected",
+			result: &fileanalysis.SyscallAnalysisResult{
+				SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+					Architecture: arch,
+					DetectedSyscalls: []common.SyscallInfo{
+						{Number: secondExecNum, Name: "execveat_or_mac_execve"},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "network syscall only",
+			result: &fileanalysis.SyscallAnalysisResult{
+				SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+					Architecture: arch,
+					DetectedSyscalls: []common.SyscallInfo{
+						{Number: platformSocketNum(), Name: "socket"},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "non exec syscall only",
+			result: &fileanalysis.SyscallAnalysisResult{
+				SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+					Architecture: arch,
+					DetectedSyscalls: []common.SyscallInfo{
+						{Number: 1, Name: "write"},
+					},
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, syscallAnalysisHasExecSignal(tt.result, runtime.GOOS))
+		})
+	}
+}
+
+func platformSocketNum() int {
+	_, socketNum, _ := platformNetworkSyscallNums()
+	return socketNum
+}
+
+func TestNetworkAnalyzer_ExecSyscallIsHighRisk(t *testing.T) {
+	const execveNum = 59
+	arch, _ := platformExecSyscallNums()
+	_, socketNum, _ := platformNetworkSyscallNums()
+
+	tests := []struct {
+		name            string
+		detectedSyscall []common.SyscallInfo
+		wantNetwork     bool
+		wantHighRisk    bool
+	}{
+		{
+			name: "exec syscall only",
+			detectedSyscall: []common.SyscallInfo{
+				{Number: execveNum, Name: "execve"},
+			},
+			wantNetwork:  false,
+			wantHighRisk: true,
+		},
+		{
+			name: "exec and network syscall",
+			detectedSyscall: []common.SyscallInfo{
+				{Number: socketNum, Name: "socket"},
+				{Number: execveNum, Name: "execve"},
+			},
+			wantNetwork:  true,
+			wantHighRisk: true,
+		},
+		{
+			name: "network syscall only",
+			detectedSyscall: []common.SyscallInfo{
+				{Number: socketNum, Name: "socket"},
+			},
+			wantNetwork:  true,
+			wantHighRisk: false,
+		},
+		{
+			name: "no exec syscall",
+			detectedSyscall: []common.SyscallInfo{
+				{Number: 1, Name: "write"},
+			},
+			wantNetwork:  false,
+			wantHighRisk: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			symStore := &stubNetworkSymbolStore{data: nil}
+			svcStore := &mockFileanalysisSyscallStore{result: &fileanalysis.SyscallAnalysisResult{
+				SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+					Architecture:     arch,
+					DetectedSyscalls: tt.detectedSyscall,
+				},
+			}}
+			a := NewNetworkAnalyzer(runtime.GOOS, AnalysisDeps{NetworkSymbolStore: symStore, SyscallStore: svcStore})
+
+			isNetwork, isHighRisk, err := a.analyzeBinarySignals(testCmdPath, testContentHash)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantNetwork, isNetwork)
+			assert.Equal(t, tt.wantHighRisk, isHighRisk)
+		})
+	}
+}
+
+func TestFirstExecSyscall(t *testing.T) {
+	const execveNum = 59
+	arch, _ := platformExecSyscallNums()
+	_, socketNum, _ := platformNetworkSyscallNums()
+	table := syscallTableForArch(runtime.GOOS, arch)
+
+	assert.Equal(t, "", firstExecSyscall(nil, &fileanalysis.SyscallAnalysisData{}))
+	assert.Equal(t, "", firstExecSyscall(table, nil))
+	assert.Equal(t, "", firstExecSyscall(table, &fileanalysis.SyscallAnalysisData{}))
+
+	assert.Equal(t, "", firstExecSyscall(table, &fileanalysis.SyscallAnalysisData{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			DetectedSyscalls: []common.SyscallInfo{{Number: socketNum, Name: "socket"}},
+		},
+	}))
+
+	assert.Equal(t, "execve", firstExecSyscall(table, &fileanalysis.SyscallAnalysisData{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			DetectedSyscalls: []common.SyscallInfo{{Number: execveNum, Name: "execve"}},
+		},
+	}))
+}
+
+func TestAnalyzeDepSignals_ExecSyscall(t *testing.T) {
+	const execveNum = 59
+	arch, _ := platformExecSyscallNums()
+	a := NewNetworkAnalyzer(runtime.GOOS, AnalysisDeps{})
+
+	s := a.analyzeDepSignals(&dynamicanalysis.Result{SyscallAnalysis: nil})
+	assert.Equal(t, "", s.execSyscall)
+
+	s = a.analyzeDepSignals(&dynamicanalysis.Result{
+		SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				Architecture: arch,
+				DetectedSyscalls: []common.SyscallInfo{
+					{Number: 1, Name: "write"},
+				},
+			},
+		},
+	})
+	assert.Equal(t, "", s.execSyscall)
+
+	s = a.analyzeDepSignals(&dynamicanalysis.Result{
+		SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				Architecture: arch,
+				DetectedSyscalls: []common.SyscallInfo{
+					{Number: execveNum, Name: "execve"},
+				},
+			},
+		},
+	})
+	assert.Equal(t, "execve", s.execSyscall)
+}
+
+func TestNetworkAnalyzer_DynLibExecSyscallIsHighRisk(t *testing.T) {
+	const execveNum = 59
+	arch, _ := platformExecSyscallNums()
+	_, socketNum, _ := platformNetworkSyscallNums()
+	dep := fileanalysis.LibEntry{SOName: "libssl.so.3", Path: "/usr/lib/libssl.so.3", Hash: "sha256:ssl"}
+
+	tests := []struct {
+		name         string
+		syscalls     []common.SyscallInfo
+		wantNetwork  bool
+		wantHighRisk bool
+	}{
+		{
+			name:         "dynlib exec syscall only",
+			syscalls:     []common.SyscallInfo{{Number: execveNum, Name: "execve"}},
+			wantNetwork:  false,
+			wantHighRisk: true,
+		},
+		{
+			name: "dynlib network and exec syscall",
+			syscalls: []common.SyscallInfo{
+				{Number: socketNum, Name: "socket"},
+				{Number: execveNum, Name: "execve"},
+			},
+			wantNetwork:  true,
+			wantHighRisk: true,
+		},
+		{
+			name:         "dynlib no exec syscall",
+			syscalls:     []common.SyscallInfo{{Number: 1, Name: "write"}},
+			wantNetwork:  false,
+			wantHighRisk: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			depsStore := &mockDynLibDepsStore{deps: []fileanalysis.LibEntry{dep}}
+			libStore := &mockDynLibAnalysisStore{
+				results: map[string]*dynamicanalysis.Result{
+					dep.Path: {
+						SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
+							SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+								Architecture:     arch,
+								DetectedSyscalls: tt.syscalls,
+							},
+						},
+					},
+				},
+			}
+			a := makeNetworkAnalyzerWithLibStores(depsStore, libStore)
+
+			isNetwork, isHighRisk := a.checkDynLibDepsNetwork(testCmdPath, testContentHash)
+			assert.Equal(t, tt.wantNetwork, isNetwork)
+			assert.Equal(t, tt.wantHighRisk, isHighRisk)
+		})
+	}
 }
 
 // ----- mock types for checkDynLibDepsNetwork tests -----
