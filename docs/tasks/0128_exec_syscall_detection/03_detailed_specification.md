@@ -246,7 +246,87 @@ return false, false, false
 
 **変更の理由**: 既存の early return パターンは exec signal との組み合わせを正しく処理できない。バイナリが network syscall と exec syscall の両方を呼ぶ場合、両方のシグナルを正確に返す必要がある。
 
-## 7. 生成スクリプトの変更
+## 7. dynlib 依存ライブラリの exec 検出
+
+**ファイル**: `internal/runner/base/security/network_analyzer.go`
+
+### 7.1 depSignals 構造体の拡張
+
+```go
+// depSignals holds the network/risk signals extracted from one library analysis result.
+type depSignals struct {
+    dynLoadSymbols  []string
+    networkSymbols  []string
+    networkSyscall  string
+    execSyscall     string  // ★New: name of first detected exec syscall, or ""
+    mprotectRisk    common.SyscallArgEvalResult
+    hasMprotectRisk bool
+}
+```
+
+### 7.2 firstExecSyscall 関数の追加
+
+`firstNetworkSyscall` の直後に追加する。
+
+```go
+// firstExecSyscall returns the name of the first exec syscall found in
+// data using table for classification. Returns "" if none found or inputs are nil.
+func firstExecSyscall(table syscallTableInterface, data *fileanalysis.SyscallAnalysisData) string { //nolint:unparam // table varies by platform (darwin vs linux)
+    if table == nil || data == nil {
+        return ""
+    }
+    for _, s := range data.DetectedSyscalls {
+        if s.Number >= 0 && table.IsExecSyscall(s.Number) {
+            return s.Name
+        }
+    }
+    return ""
+}
+```
+
+### 7.3 analyzeDepSignals の拡張
+
+`result.SyscallAnalysis != nil` ブロック内に exec syscall 検出を追加する。
+
+```go
+func (a *NetworkAnalyzer) analyzeDepSignals(result *dynamicanalysis.Result) depSignals {
+    var s depSignals
+    s.dynLoadSymbols = result.DynamicLoadSymbols()
+    if result.SymbolAnalysis != nil {
+        s.networkSymbols = result.SymbolAnalysis.DetectedSymbols
+    }
+    if result.SyscallAnalysis != nil {
+        table := syscallTableForArch(a.goos, result.SyscallAnalysis.Architecture)
+        s.networkSyscall = firstNetworkSyscall(table, result.SyscallAnalysis)
+        s.execSyscall = firstExecSyscall(table, result.SyscallAnalysis)  // ★New
+        s.mprotectRisk, s.hasMprotectRisk = elfanalyzer.FirstMprotectRisk(result.SyscallAnalysis.ArgEvalResults)
+    }
+    return s
+}
+```
+
+### 7.4 checkDynLibDepsNetwork の拡張
+
+`sigs.hasMprotectRisk` の処理の後に exec signal のハンドリングを追加する。
+
+```go
+var (
+    dynLoadLog  onceLogger
+    networkLog  onceLogger
+    mprotectLog onceLogger
+    execLog     onceLogger  // ★New
+)
+
+// ...（既存の dynLoadLog, networkLog, mprotectLog 処理）...
+
+if sigs.execSyscall != "" {  // ★New
+    execLog.log("dynlib analysis detected exec syscall; treating as high risk",
+        "cmd_path", cmdPath, "dep_path", dep.Path, "syscall", sigs.execSyscall)
+    isHighRisk = true
+}
+```
+
+## 8. 生成スクリプトの変更
 
 **ファイル**: `scripts/generate_syscall_table.py`
 
@@ -415,7 +495,37 @@ lines.append(f'\t{number}:\t{{name: "{name}", isNetwork: {is_network}, isExec: {
 
 **実装上の注意**: これらのテストは `checkSyscallCache` を直接テストするのではなく、`IsNetworkOperation` を通じて統合的にテストする。テスト用のモック `SyscallAnalysisResult` を準備し、`NetworkAnalyzer` に渡す。
 
-### 8.6 既存テストの回帰確認
+### 8.6 dynlib exec 検出のテスト
+
+**ファイル**: `internal/runner/base/security/network_analyzer_test.go`
+
+`TestFirstExecSyscall` を追加する（`firstNetworkSyscall` の既存テストパターンに従う）。
+
+| テストケース | 入力 | 期待値 |
+|---|---|---|
+| execve を含む SyscallAnalysisData | `{Number: 59, Name: "execve"}` (x86\_64) | `"execve"` |
+| network syscall のみ | `{Number: 41, Name: "socket"}` | `""` |
+| DetectedSyscalls が空 | `[]` | `""` |
+| table が nil | nil | `""` |
+| data が nil | nil | `""` |
+
+`TestAnalyzeDepSignals_ExecSyscall` を追加する。
+
+| テストケース | dynamicanalysis.Result の内容 | 期待 execSyscall |
+|---|---|---|
+| execve を含む SyscallAnalysis | execve(59) | `"execve"` |
+| exec syscall なし | write(1) | `""` |
+| SyscallAnalysis が nil | nil | `""` |
+
+`TestNetworkAnalyzer_DynLibExecSyscallIsHighRisk` を追加する。
+
+| テストケース | dynlib SyscallAnalysis の内容 | 期待 isNetwork | 期待 isHighRisk |
+|---|---|---|---|
+| dynlib に execve のみ | x86\_64, execve(59) | false | true |
+| dynlib に network + exec | x86\_64, socket(41) + execve(59) | true | true |
+| dynlib に exec syscall なし | x86\_64, write(1) | false | false |
+
+### 8.7 既存テストの回帰確認
 
 - `TestSyscallAnalysisHasNetworkSignal` が引き続きパスすること（既存テスト）
 - network only のケースで `isHighRisk` が `false` のままであることを確認する
@@ -434,8 +544,8 @@ lines.append(f'\t{number}:\t{{name: "{name}", isNetwork: {is_network}, isExec: {
 | `internal/libccache/macos_syscall_table.go` | 変更 | `macOSSyscallEntry.isExec`, `MacOSSyscallTable.IsExecSyscall` 追加 |
 | `internal/libccache/macos_syscall_numbers.go` | 再生成 | execve/\_\_mac\_execve に `isExec: true` |
 | `internal/libccache/macos_syscall_table_test.go` | 変更 | `TestMacOSSyscallTable_IsExecSyscall` 追加 |
-| `internal/runner/base/security/network_analyzer.go` | 変更 | `syscallTableInterface` 拡張, `syscallAnalysisHasExecSignal`, `checkSyscallCache` 更新 |
-| `internal/runner/base/security/network_analyzer_test.go` | 変更 | `TestSyscallAnalysisHasExecSignal`, `TestNetworkAnalyzer_ExecSyscallIsHighRisk` 追加 |
+| `internal/runner/base/security/network_analyzer.go` | 変更 | `syscallTableInterface` 拡張, `syscallAnalysisHasExecSignal`, `checkSyscallCache` 更新, `firstExecSyscall`, `depSignals.execSyscall`, `analyzeDepSignals` 更新, `checkDynLibDepsNetwork` 更新 |
+| `internal/runner/base/security/network_analyzer_test.go` | 変更 | `TestSyscallAnalysisHasExecSignal`, `TestNetworkAnalyzer_ExecSyscallIsHighRisk`, `TestFirstExecSyscall`, `TestAnalyzeDepSignals_ExecSyscall`, `TestNetworkAnalyzer_DynLibExecSyscallIsHighRisk` 追加 |
 | `scripts/generate_syscall_table.py` | 変更 | `EXEC_SYSCALL_NAMES`, `MACOS_EXEC_SYSCALL_NAMES`, `IsExec` フィールド生成 |
 
 ### 9.2 ドキュメントファイル

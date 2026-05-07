@@ -26,13 +26,20 @@ flowchart LR
     classDef existing fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00
     classDef new fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400
 
-    A[("SyscallAnalysisResult")] --> B["checkSyscallCache<br>(既存)"]
+    A[("主バイナリ<br>SyscallAnalysisResult")] --> B["checkSyscallCache<br>(既存)"]
     B -->|"network signal"| C["isNetwork = true<br>(既存)"]
     B -->|"exec signal"| D["isHighRisk = true<br>(新規)"]
     B -->|"svc signal"| E["isHighRisk = true<br>(既存)"]
 
-    class A data
-    class B,C,E existing
+    F[("dynlib deps<br>SyscallAnalysisData")] --> G["analyzeDepSignals<br>(既存)"]
+    G -->|"exec syscall"| D
+
+    H[("shebang interpreter")] --> I["analyzeBinarySignals<br>再帰呼び出し（既存）"]
+    I --> B
+    I --> G
+
+    class A,F,H data
+    class B,C,E,G,I existing
     class D new
 ```
 
@@ -71,7 +78,7 @@ flowchart TD
     end
 
     subgraph "internal/runner/base/security"
-        F["network_analyzer.go<br>(拡張: syscallTableInterface.IsExecSyscall,<br>syscallAnalysisHasExecSignal,<br>checkSyscallCache 更新)"]
+        F["network_analyzer.go<br>(拡張: syscallTableInterface.IsExecSyscall,<br>syscallAnalysisHasExecSignal,<br>checkSyscallCache 更新,<br>firstExecSyscall,<br>depSignals.execSyscall,<br>analyzeDepSignals 更新,<br>checkDynLibDepsNetwork 更新)"]
     end
 
     subgraph "scripts"
@@ -238,7 +245,16 @@ sequenceDiagram
 
 ## 4. コンポーネント設計
 
-### 4.1 syscallAnalysisHasExecSignal 関数
+### 4.1 検出対象のカバレッジ
+
+| 検出対象 | 実装箇所 | 新規実装要否 |
+|---|---|---|
+| 主バイナリの exec syscall | `checkSyscallCache` | 要（FR-3.2.3） |
+| dynlib 依存ライブラリの exec syscall | `analyzeDepSignals` + `firstExecSyscall` | 要（FR-3.2.4） |
+| shebang インタープリタの exec syscall | `followShebangChain` → `analyzeBinarySignals` 再帰 → `checkSyscallCache` | 不要（FR-3.2.3 完了で自動カバー） |
+| shebang インタープリタの dynlib 依存の exec syscall | `followShebangChain` → `analyzeBinarySignals` 再帰 → `checkDynLibDepsNetwork` | 不要（FR-3.2.4 完了で自動カバー） |
+
+### 4.2 syscallAnalysisHasExecSignal 関数
 
 `syscallAnalysisHasNetworkSignal` と同じパターンで実装する。
 
@@ -265,7 +281,7 @@ func syscallAnalysisHasExecSignal(result *fileanalysis.SyscallAnalysisResult, go
 }
 ```
 
-### 4.2 checkSyscallCache の変更
+### 4.3 checkSyscallCache の変更
 
 ```go
 // Before (network signal の early return を廃止):
@@ -290,7 +306,39 @@ if isNet || isExec {
 return false, false, false
 ```
 
-### 4.3 syscall テーブルの拡張パターン
+### 4.4 dynlib 依存ライブラリの exec 検出
+
+`analyzeDepSignals` に exec syscall 検出を追加する。
+
+```go
+// depSignals の拡張:
+type depSignals struct {
+    dynLoadSymbols  []string
+    networkSymbols  []string
+    networkSyscall  string
+    execSyscall     string  // ★New
+    mprotectRisk    common.SyscallArgEvalResult
+    hasMprotectRisk bool
+}
+
+// analyzeDepSignals の拡張（result.SyscallAnalysis != nil ブロック内）:
+s.networkSyscall = firstNetworkSyscall(table, result.SyscallAnalysis)
+s.execSyscall = firstExecSyscall(table, result.SyscallAnalysis)  // ★New
+```
+
+`checkDynLibDepsNetwork` に exec signal のハンドリングを追加する。
+
+```go
+if sigs.execSyscall != "" {
+    execLog.log("dynlib analysis detected exec syscall; treating as high risk",
+        "cmd_path", cmdPath, "dep_path", dep.Path, "syscall", sigs.execSyscall)
+    isHighRisk = true
+}
+```
+
+`firstExecSyscall` は `firstNetworkSyscall` と同一のパターンで実装し、`table.IsExecSyscall` を使用する。
+
+### 4.5 syscall テーブルの拡張パターン
 
 `X86_64SyscallTable` と `ARM64LinuxSyscallTable` の両方で同一パターンを適用する。
 
@@ -322,7 +370,7 @@ func (t *X86_64SyscallTable) GetExecSyscalls() []int {
 }
 ```
 
-### 4.4 生成スクリプトの変更
+### 4.6 生成スクリプトの変更
 
 ```python
 # 追加するセット定数:

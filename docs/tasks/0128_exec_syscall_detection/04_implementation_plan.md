@@ -39,7 +39,7 @@ flowchart LR
     class T1 todo
 ```
 
-**注記**: Phase 2、Phase 3、Phase 4 は Phase 1 完了後に並行して開始可能。Phase 5 完了後に Phase 6 を実施する（Phase 6 は実装ファイルへの依存がないため、Phase 5 と並行して開始することも可能）。ただし CLAUDE.md の逐次ツール実行プロトコルに従い、各フェーズは順番に実施すること。
+**注記**: Phase 2、Phase 3、Phase 4 は Phase 1 完了後に並行して開始可能。Phase 4 内では 4.1〜4.5（主バイナリ検出）完了後に 4.6〜4.7（dynlib 検出）を実施する。Phase 5 完了後に Phase 6 を実施する（Phase 6 は実装ファイルへの依存がないため、Phase 5 と並行して開始することも可能）。ただし CLAUDE.md の逐次ツール実行プロトコルに従い、各フェーズは順番に実施すること。
 
 ---
 
@@ -203,6 +203,36 @@ exec signal の検出と `checkSyscallCache` の更新を行う。
     - exec なし → isHighRisk への影響なし
   - 仕様: 詳細仕様書 §8.5
   - 受け入れ条件: AC-4
+
+### 4.6 dynlib 依存ライブラリの exec 検出
+
+- [ ] `internal/runner/base/security/network_analyzer.go` を編集
+  - `depSignals` 構造体に `execSyscall string` フィールドを追加
+  - `firstExecSyscall` 関数を `firstNetworkSyscall` の直後に追加
+  - `analyzeDepSignals` に `s.execSyscall = firstExecSyscall(table, result.SyscallAnalysis)` を追加
+  - `checkDynLibDepsNetwork` に `sigs.execSyscall != ""` → `isHighRisk = true` の処理を追加
+  - 仕様: 詳細仕様書 §7
+  - 受け入れ条件: AC-7
+
+### 4.7 dynlib exec 検出テスト
+
+- [ ] `internal/runner/base/security/network_analyzer_test.go` を編集
+  - `TestFirstExecSyscall` を追加
+    - execve を含む SyscallAnalysisData → `"execve"`
+    - network syscall のみ → `""`
+    - DetectedSyscalls が空 → `""`
+    - table が nil → `""`
+    - data が nil → `""`
+  - `TestAnalyzeDepSignals_ExecSyscall` を追加
+    - execve を含む SyscallAnalysis → `execSyscall == "execve"`
+    - exec syscall なし → `execSyscall == ""`
+    - SyscallAnalysis が nil → `execSyscall == ""`
+  - `TestNetworkAnalyzer_DynLibExecSyscallIsHighRisk` を追加
+    - dynlib に execve のみ → (isNetwork=false, isHighRisk=true)
+    - dynlib に network + exec → (isNetwork=true, isHighRisk=true)
+    - dynlib に exec syscall なし → isHighRisk への影響なし
+  - 仕様: 詳細仕様書 §8.6
+  - 受け入れ条件: AC-7
 
 ---
 

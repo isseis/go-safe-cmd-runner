@@ -26,10 +26,12 @@ syscall 静的解析（タスク 0070/0072/0097）の枠組みを利用して、
 **対象:**
 - ELF バイナリ（x86_64 Linux、arm64 Linux）の syscall 解析結果に含まれる exec syscall の検出
 - Mach-O バイナリ（macOS arm64）の syscall 解析結果に含まれる exec syscall の検出
-- 主バイナリの syscall 解析結果を通じた検出（dynlib 依存ライブラリへの検出拡張は対象外）
+- 主バイナリの syscall 解析結果を通じた検出
+- dynlib 依存ライブラリの syscall 解析結果を通じた検出
+- shebang インタープリタバイナリの syscall 解析結果を通じた検出（`followShebangChain` の再帰処理により自動的にカバーされる）
+- shebang インタープリタが依存する dynlib ライブラリの検出（同上）
 
 **対象外:**
-- dynlib 依存ライブラリ内の exec syscall 検出（将来タスク）
 - 静的解析結果に exec syscall が記録されていない場合の実行時動的検出
 - exec 呼び出し先バイナリの解析（exec チェーンのトレース）
 
@@ -94,11 +96,23 @@ syscall 静的解析（タスク 0070/0072/0097）の枠組みを利用して、
 
 `network_analyzer.go` に `syscallAnalysisHasExecSignal` 関数を実装すること。`fileanalysis.SyscallAnalysisResult` を受け取り、exec syscall が含まれる場合に `true` を返すこと。
 
-#### FR-3.2.3: checkSyscallCache への統合
+#### FR-3.2.3: checkSyscallCache への統合（主バイナリ）
 
 `NetworkAnalyzer.checkSyscallCache` において exec signal を検出し、exec syscall が含まれる場合に `isHighRisk = true` を返すこと。
 
 network signal と exec signal が同時に存在する場合は、両方のシグナルを組み合わせること（`isNetwork = true` かつ `isHighRisk = true`）。
+
+#### FR-3.2.4: dynlib 依存ライブラリへの exec signal 伝播
+
+`network_analyzer.go` に `firstExecSyscall` 関数を追加すること（既存の `firstNetworkSyscall` と同じパターン）。
+
+`depSignals` 構造体に `execSyscall string` フィールドを追加し、`analyzeDepSignals` において `firstExecSyscall` を呼び出すこと。
+
+`checkDynLibDepsNetwork` において `sigs.execSyscall != ""` の場合に `isHighRisk = true` を返すこと。
+
+#### FR-3.2.5: shebang バイナリおよびその dynlib 依存ライブラリ
+
+shebang インタープリタの exec 検出は `followShebangChain` → `analyzeBinarySignals(interpPath, interpHash)` の再帰呼び出しを通じて自動的にカバーされる。インタープリタの dynlib 依存ライブラリの exec 検出は、同再帰呼び出し内の `checkDynLibDepsNetwork` を通じてカバーされる。FR-3.2.3 および FR-3.2.4 の実装が完了すれば、追加実装は不要である。
 
 ### 3.3 リスクマッピング
 
@@ -151,7 +165,9 @@ exec signal 検出ロジックは、既存の `syscallAnalysisHasNetworkSignal` 
 
 #### NFR-4.3.2: network_analyzer テスト
 
-`checkSyscallCache` に対して、exec signal 検出とリスクマッピングをテストすること。
+`checkSyscallCache` に対して、主バイナリの exec signal 検出とリスクマッピングをテストすること。
+
+dynlib 依存ライブラリの exec signal 検出（`analyzeDepSignals` 経由）についてもテストすること。
 
 ## 5. 受け入れ条件
 
@@ -183,13 +199,22 @@ exec signal 検出ロジックは、既存の `syscallAnalysisHasNetworkSignal` 
 - [ ] `SyscallAnalysisResult` が `nil` の場合に `false` を返すこと
   - `TestSyscallAnalysisHasExecSignal`
 
-### AC-4: checkSyscallCache のリスクマッピング
+### AC-4: checkSyscallCache のリスクマッピング（主バイナリ）
 
 以下はいずれも `TestNetworkAnalyzer_ExecSyscallIsHighRisk` のサブケースとして実装する。
 
 - [ ] syscall 解析結果に exec syscall のみが含まれる場合、`IsNetworkOperation` が `(isNetwork=false, isHighRisk=true)` を返すこと
 - [ ] syscall 解析結果に network syscall と exec syscall が両方含まれる場合、`(isNetwork=true, isHighRisk=true)` を返すこと
 - [ ] syscall 解析結果に exec syscall が含まれない場合、exec 検出による `isHighRisk` への影響がないこと
+
+### AC-7: dynlib 依存ライブラリの exec signal 伝播
+
+- [ ] `firstExecSyscall` 関数が exec syscall を含む `SyscallAnalysisData` に対して syscall 名を返すこと
+  - `TestFirstExecSyscall`
+- [ ] dynlib 解析結果に exec syscall が含まれる場合、`analyzeDepSignals` の `execSyscall` フィールドが非空であること
+  - `TestAnalyzeDepSignals_ExecSyscall`
+- [ ] dynlib 依存ライブラリに exec syscall が含まれる場合、`IsNetworkOperation` が `(isHighRisk=true)` を返すこと
+  - `TestNetworkAnalyzer_DynLibExecSyscallIsHighRisk`
 
 ### AC-5: 生成スクリプトの更新
 
@@ -234,6 +259,12 @@ exec signal 検出ロジックは、既存の `syscallAnalysisHasNetworkSignal` 
 
 `TestSyscallAnalysisHasExecSignal` を `network_analyzer_test.go` に追加する。
 `TestNetworkAnalyzer_ExecSyscallIsHighRisk` および関連テストを追加する。
+
+dynlib 依存ライブラリの exec 検出テストを追加する。
+
+- `TestFirstExecSyscall`
+- `TestAnalyzeDepSignals_ExecSyscall`
+- `TestNetworkAnalyzer_DynLibExecSyscallIsHighRisk`
 
 ### 6.2 既存テストの維持
 
