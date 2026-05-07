@@ -180,10 +180,10 @@ flowchart LR
     classDef threat fill:#ffe6e6,stroke:#d62728,stroke-width:1px,color:#7f0000;
     classDef control fill:#e8f5e8,stroke:#2e8b57,stroke-width:1px,color:#006400;
 
-    T1[Shebang symlink tampering] --> C1[ref is absolute: EvalSymlinks(ref) must equal path]
-    T2[PATH hijack for env shebang] --> C2[ref is bare name: LookPath(ref)+EvalSymlinks must equal path]
-    T3[Dep binary replacement] --> C3[Hash verification via deps path/hash]
-    T4[Analysis source divergence] --> C4[Risk decision uses unified top-level analysis only]
+    T1["Shebang symlink tampering"] --> C1["ref is absolute: EvalSymlinks(ref) must equal path"]
+    T2["PATH hijack for env shebang"] --> C2["ref is bare name: LookPath(ref)+EvalSymlinks must equal path"]
+    T3["Dep binary replacement"] --> C3["Hash verification via deps path/hash"]
+    T4["Analysis source divergence"] --> C4["Risk decision uses unified top-level analysis only"]
 
     class T1,T2,T3,T4 threat;
     class C1,C2,C3,C4 control;
