@@ -24,6 +24,8 @@
 
 Record は次のトップレベル構造を持つ。
 
+通常出力（`analysis_warnings` なし、`-debug-info` なし）:
+
 ```json
 {
    "schema_version": 22,
@@ -31,14 +33,21 @@ Record は次のトップレベル構造を持つ。
    "content_hash": "sha256:...",
    "syscall_analysis": {},
    "symbol_analysis": {},
-   "analysis_warnings": [],
    "deps": [
       { "path": "...", "hash": "sha256:..." }
    ],
    "shebang_chain": [
       { "ref": "...", "path": "..." }
-   ],
-   "debug": { "dep_sources": {} }
+   ]
+}
+```
+
+警告あり・`-debug-info` 指定時のみ追加される任意フィールド（AC-004, AC-005）:
+
+```json
+{
+   "analysis_warnings": ["..."],
+   "debug": { "dep_sources": { "...": ["..."] } }
 }
 ```
 
