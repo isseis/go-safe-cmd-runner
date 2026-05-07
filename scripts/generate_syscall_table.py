@@ -14,8 +14,8 @@ Options:
                          (e.g. $(xcrun --show-sdk-path)/usr/include/sys/syscall.h)
 
 Writes:
-    internal/runner/security/elfanalyzer/x86_syscall_numbers.go
-    internal/runner/security/elfanalyzer/arm64_syscall_numbers.go
+    internal/security/elfanalyzer/x86_syscall_numbers.go
+    internal/security/elfanalyzer/arm64_syscall_numbers.go
     internal/libccache/macos_syscall_numbers.go  (only when --macos-header is given)
 """
 
@@ -43,6 +43,15 @@ NETWORK_SYSCALL_NAMES = {
     "socketpair",
     "recvmmsg",
     "sendmmsg",
+}
+
+# ---------------------------------------------------------------------------
+# Exec syscall names (architecture-independent names).
+# These are the syscalls that can execute a new process image.
+# ---------------------------------------------------------------------------
+EXEC_SYSCALL_NAMES = {
+    "execve",
+    "execveat",
 }
 
 # macOS-specific network syscall names.
@@ -73,6 +82,12 @@ MACOS_NETWORK_SYSCALL_NAMES = {
 MACOS_NETWORK_SYSCALL_SUFFIXES = (
     "_nocancel",
 )
+
+# macOS-specific exec syscall names.
+MACOS_EXEC_SYSCALL_NAMES = {
+    "execve",
+    "__mac_execve",
+}
 
 
 # Meta/size constants that appear in kernel headers as __NR_<name> but are
@@ -161,6 +176,7 @@ STRUCT_TEMPLATE = """\
 type {struct_name} struct {{
 \tsyscalls       map[int]SyscallDefinition
 \tnetworkNumbers []int
+\texecNumbers    []int
 }}
 
 // {constructor_name} creates a new syscall table for {arch_desc}.{constructor_extra_comment}
@@ -193,6 +209,22 @@ func (t *{struct_name}) IsNetworkSyscall(number int) bool {{
 func (t *{struct_name}) GetNetworkSyscalls() []int {{
 \tresult := make([]int, len(t.networkNumbers))
 \tcopy(result, t.networkNumbers)
+\treturn result
+}}
+
+// IsExecSyscall returns true if the syscall can execute a new process image.
+func (t *{struct_name}) IsExecSyscall(number int) bool {{
+\tif def, ok := t.syscalls[number]; ok {{
+\t\treturn def.IsExec
+\t}}
+\treturn false
+}}
+
+// GetExecSyscalls returns all exec-related syscall numbers.
+// Returns a copy to prevent callers from mutating the internal state.
+func (t *{struct_name}) GetExecSyscalls() []int {{
+\tresult := make([]int, len(t.execNumbers))
+\tcopy(result, t.execNumbers)
 \treturn result
 }}
 """
@@ -238,13 +270,18 @@ def build_body(syscalls: dict[str, int]) -> str:
             continue
         processed_numbers.add(num)
         is_network = "true" if name in NETWORK_SYSCALL_NAMES else "false"
-        lines.append(f'\t\t{{{num}, "{name}", {is_network}}},')
+        is_exec = "true" if name in EXEC_SYSCALL_NAMES else "false"
+        lines.append(f'\t\t{{{num}, "{name}", {is_network}, {is_exec}}},')
     lines.append("\t}")
     lines.append("\tfor _, def := range syscalls {")
     lines.append("\t\ttable.syscalls[def.Number] = def")
     lines.append("\t\tif def.IsNetwork {")
     lines.append(
         "\t\t\ttable.networkNumbers = append(table.networkNumbers, def.Number)")
+    lines.append("\t\t}")
+    lines.append("\t\tif def.IsExec {")
+    lines.append(
+        "\t\t\ttable.execNumbers = append(table.execNumbers, def.Number)")
     lines.append("\t\t}")
     lines.append("\t}")
 
@@ -305,8 +342,9 @@ def generate_macos(source: str, output: str) -> None:
             continue
         processed_numbers.add(number)
         is_network = "true" if is_macos_network_syscall(name) else "false"
+        is_exec = "true" if name in MACOS_EXEC_SYSCALL_NAMES else "false"
         lines.append(
-            f'\t{number}:\t{{name: "{name}", isNetwork: {is_network}}},')
+            f'\t{number}:\t{{name: "{name}", isNetwork: {is_network}, isExec: {is_exec}}},')
 
     lines.append("}")
     lines.append("")
@@ -342,7 +380,7 @@ def main() -> None:
         args.arm64_header = "/usr/include/asm-generic/unistd.h"
 
     repo_root = Path(__file__).parent.parent
-    out_dir = repo_root / "internal/runner/security/elfanalyzer"
+    out_dir = repo_root / "internal/security/elfanalyzer"
 
     if args.x86_header is not None:
         generate(

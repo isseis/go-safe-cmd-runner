@@ -51,13 +51,13 @@ syscall テーブルの生成スクリプトと手動実装の基礎となるイ
 
 ### 1.1 SyscallDefinition の拡張
 
-- [ ] `internal/security/elfanalyzer/syscall_numbers.go` を編集
+- [x] `internal/security/elfanalyzer/syscall_numbers.go` を編集
   - `SyscallDefinition` 構造体に `IsExec bool` フィールドを追加
   - 仕様: 詳細仕様書 §2.1
 
 ### 1.2 SyscallNumberTable インターフェースの拡張
 
-- [ ] `internal/security/elfanalyzer/syscall_numbers.go` を編集
+- [x] `internal/security/elfanalyzer/syscall_numbers.go` を編集
   - `SyscallNumberTable` インターフェースに `IsExecSyscall(number int) bool` を追加
   - `SyscallNumberTable` インターフェースに `GetExecSyscalls() []int` を追加
   - 仕様: 詳細仕様書 §2.2
@@ -65,7 +65,7 @@ syscall テーブルの生成スクリプトと手動実装の基礎となるイ
 
 ### 1.3 生成スクリプトの更新
 
-- [ ] `scripts/generate_syscall_table.py` を編集
+- [x] `scripts/generate_syscall_table.py` を編集
   - `EXEC_SYSCALL_NAMES = {"execve", "execveat"}` セットを追加
   - `MACOS_EXEC_SYSCALL_NAMES = {"execve", "__mac_execve"}` セットを追加
   - `build_body` 関数に `IsExec` フィールドの生成を追加
@@ -83,7 +83,7 @@ syscall テーブルの生成スクリプトと手動実装の基礎となるイ
 
 ### 2.1 Linux テーブルの再生成
 
-- [ ] `make generate-syscall-tables` を実行して x86_64 / arm64 テーブルを再生成
+- [x] `make generate-syscall-tables` を実行して x86_64 / arm64 テーブルを再生成
   - 生成後に `x86_syscall_numbers.go` と `arm64_syscall_numbers.go` の変更内容を確認
   - execve / execveat に `IsExec: true` が設定されていること
   - `execNumbers` フィールドと `IsExecSyscall` / `GetExecSyscalls` メソッドが生成されていること
@@ -92,7 +92,7 @@ syscall テーブルの生成スクリプトと手動実装の基礎となるイ
 
 ### 2.2 x86_64 syscall テーブルのテスト
 
-- [ ] `internal/security/elfanalyzer/x86_syscall_numbers_test.go` を編集
+- [x] `internal/security/elfanalyzer/x86_syscall_numbers_test.go` を編集
   - `TestX86_64SyscallTable_IsExecSyscall` を追加
     - execve(59) → true
     - execveat(322) → true
@@ -108,7 +108,7 @@ syscall テーブルの生成スクリプトと手動実装の基礎となるイ
 
 ### 2.3 arm64 syscall テーブルのテスト
 
-- [ ] `internal/security/elfanalyzer/arm64_syscall_numbers_test.go` を編集
+- [x] `internal/security/elfanalyzer/arm64_syscall_numbers_test.go` を編集
   - `TestARM64LinuxSyscallTable_IsExecSyscall` を追加
     - execve(221) → true
     - execveat(281) → true
