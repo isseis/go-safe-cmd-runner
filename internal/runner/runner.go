@@ -181,18 +181,15 @@ func createResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSp
 		return nil
 	}
 
-	// Helper function to get path resolver
-	getPathResolver := func() resource.PathResolver {
-		if opts.verificationManager != nil {
-			return opts.verificationManager
-		}
-		return verification.NewPathResolver("")
+	pathResolver := resource.PathResolver(verification.NewPathResolver(""))
+	if opts.verificationManager != nil {
+		pathResolver = opts.verificationManager
 	}
 
 	if opts.dryRun {
-		return createDryRunResourceManager(opts, getPathResolver(), validator)
+		return createDryRunResourceManager(opts, pathResolver, validator)
 	}
-	return createNormalResourceManager(opts, configSpec, getPathResolver(), validator)
+	return createNormalResourceManager(opts, configSpec, pathResolver, validator)
 }
 
 // createDryRunResourceManager creates a resource manager for dry-run mode
