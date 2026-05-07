@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os/user"
+	"runtime"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -20,6 +21,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -271,21 +273,27 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 		shebangStore = p.GetShebangInterpreterStore()
 	}
 
-	resourceManager, err := resource.NewDefaultResourceManager(resource.Config{
-		Executor:           opts.executor,
-		FileSystem:         fs,
-		PrivilegeManager:   opts.privilegeManager,
-		PathResolver:       pathResolver,
-		Logger:             slog.Default(),
-		Mode:               resource.ExecutionModeNormal,
-		DryRunOpts:         &resource.DryRunOptions{},
-		OutputManager:      outputMgr,
-		MaxOutputSize:      maxOutputSize,
+	deps := security.AnalysisDeps{
 		NetworkSymbolStore: networkStore,
 		SyscallStore:       syscallStore,
 		DynLibDepsStore:    dynLibDepsStore,
 		LibAnalysisStore:   dynlibAnalysisStore,
 		ShebangStore:       shebangStore,
+	}
+	networkAnalyzer := security.NewNetworkAnalyzer(runtime.GOOS, deps)
+	evaluator := risk.NewStandardEvaluator(networkAnalyzer)
+
+	resourceManager, err := resource.NewDefaultResourceManager(resource.Config{
+		Executor:         opts.executor,
+		FileSystem:       fs,
+		PrivilegeManager: opts.privilegeManager,
+		PathResolver:     pathResolver,
+		Logger:           slog.Default(),
+		Mode:             resource.ExecutionModeNormal,
+		DryRunOpts:       &resource.DryRunOptions{},
+		OutputManager:    outputMgr,
+		MaxOutputSize:    maxOutputSize,
+		RiskEvaluator:    evaluator,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create default resource manager: %w", err)

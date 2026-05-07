@@ -5,31 +5,25 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
-	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 )
 
 // Config holds all dependencies and settings for DefaultResourceManager.
-// Any nil store disables the corresponding analysis.
 type Config struct {
-	Executor           executor.CommandExecutor
-	FileSystem         executor.FileSystem
-	PrivilegeManager   runnertypes.PrivilegeManager
-	PathResolver       PathResolver
-	Logger             *slog.Logger
-	Mode               ExecutionMode
-	DryRunOpts         *DryRunOptions
-	OutputManager      output.CaptureManager
-	MaxOutputSize      int64
-	NetworkSymbolStore fileanalysis.NetworkSymbolStore
-	SyscallStore       fileanalysis.SyscallAnalysisStore
-	DynLibDepsStore    fileanalysis.DynLibDepsStore
-	LibAnalysisStore   dynamicanalysis.Store
-	ShebangStore       fileanalysis.ShebangInterpreterStore
+	Executor         executor.CommandExecutor
+	FileSystem       executor.FileSystem
+	PrivilegeManager runnertypes.PrivilegeManager
+	PathResolver     PathResolver
+	Logger           *slog.Logger
+	Mode             ExecutionMode
+	DryRunOpts       *DryRunOptions
+	OutputManager    output.CaptureManager
+	MaxOutputSize    int64
+	RiskEvaluator    risk.Evaluator
 }
 
 // DefaultResourceManager provides a mode-aware facade that delegates to

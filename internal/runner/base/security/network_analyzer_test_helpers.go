@@ -15,5 +15,5 @@ func newNetworkAnalyzer(goos string) *NetworkAnalyzer {
 
 // newNetworkAnalyzerWithStore creates a NetworkAnalyzer with a store for cache-based analysis.
 func newNetworkAnalyzerWithStore(goos string, store fileanalysis.NetworkSymbolStore) *NetworkAnalyzer {
-	return &NetworkAnalyzer{goos: isec.RequireGOOS(goos), store: store}
+	return &NetworkAnalyzer{goos: isec.RequireGOOS(goos), deps: AnalysisDeps{NetworkSymbolStore: store}}
 }

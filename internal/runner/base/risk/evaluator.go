@@ -3,10 +3,6 @@
 package risk
 
 import (
-	"runtime"
-
-	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
-	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 )
@@ -21,19 +17,10 @@ type StandardEvaluator struct {
 	networkAnalyzer *security.NetworkAnalyzer
 }
 
-// NewStandardEvaluator creates a new standard risk evaluator with the given stores.
-// Any nil store disables the corresponding analysis.
-func NewStandardEvaluator(
-	symStore fileanalysis.NetworkSymbolStore,
-	syscallStore fileanalysis.SyscallAnalysisStore,
-	depsStore fileanalysis.DynLibDepsStore,
-	libAnalysisStore dynamicanalysis.Store,
-	shebangStore fileanalysis.ShebangInterpreterStore,
-) Evaluator {
+// NewStandardEvaluator creates a new standard risk evaluator with a prebuilt network analyzer.
+func NewStandardEvaluator(networkAnalyzer *security.NetworkAnalyzer) Evaluator {
 	return &StandardEvaluator{
-		networkAnalyzer: security.NewNetworkAnalyzer(
-			runtime.GOOS, symStore, syscallStore, depsStore, libAnalysisStore, shebangStore,
-		),
+		networkAnalyzer: networkAnalyzer,
 	}
 }
 

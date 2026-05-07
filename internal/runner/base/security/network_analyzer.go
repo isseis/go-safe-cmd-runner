@@ -28,33 +28,28 @@ func syscallTableForArch(goos, arch string) syscallTableInterface {
 	return elfanalyzer.SyscallTableForArchitecture(arch)
 }
 
-// NetworkAnalyzer provides network operation detection for commands.
-type NetworkAnalyzer struct {
-	goos             string
-	store            fileanalysis.NetworkSymbolStore      // nil means cache disabled
-	syscallStore     fileanalysis.SyscallAnalysisStore    // nil means svc cache disabled
-	depsStore        fileanalysis.DynLibDepsStore         // nil means dynlib check disabled
-	libAnalysisStore dynamicanalysis.Store                // nil means dynlib check disabled
-	shebangStore     fileanalysis.ShebangInterpreterStore // nil means shebang chain disabled
+// AnalysisDeps aggregates analysis stores consumed by NetworkAnalyzer.
+// Nil fields preserve the existing behavior of disabling corresponding checks.
+type AnalysisDeps struct {
+	NetworkSymbolStore fileanalysis.NetworkSymbolStore
+	SyscallStore       fileanalysis.SyscallAnalysisStore
+	DynLibDepsStore    fileanalysis.DynLibDepsStore
+	LibAnalysisStore   dynamicanalysis.Store
+	ShebangStore       fileanalysis.ShebangInterpreterStore
 }
 
-// NewNetworkAnalyzer creates a NetworkAnalyzer with the given stores.
-// Any nil store disables the corresponding analysis.
-func NewNetworkAnalyzer(
-	goos string,
-	symStore fileanalysis.NetworkSymbolStore,
-	svcStore fileanalysis.SyscallAnalysisStore,
-	depsStore fileanalysis.DynLibDepsStore,
-	libAnalysisStore dynamicanalysis.Store,
-	shebangStore fileanalysis.ShebangInterpreterStore,
-) *NetworkAnalyzer {
+// NetworkAnalyzer provides network operation detection for commands.
+type NetworkAnalyzer struct {
+	goos string
+	deps AnalysisDeps
+}
+
+// NewNetworkAnalyzer creates a NetworkAnalyzer with the given analysis dependencies.
+// Any nil dependency disables the corresponding analysis.
+func NewNetworkAnalyzer(goos string, deps AnalysisDeps) *NetworkAnalyzer {
 	return &NetworkAnalyzer{
-		goos:             isec.RequireGOOS(goos),
-		store:            symStore,
-		syscallStore:     svcStore,
-		depsStore:        depsStore,
-		libAnalysisStore: libAnalysisStore,
-		shebangStore:     shebangStore,
+		goos: isec.RequireGOOS(goos),
+		deps: deps,
 	}
 }
 
@@ -181,7 +176,7 @@ func (a *NetworkAnalyzer) analyzeBinarySignals(cmdPath string, contentHash strin
 	// record freshness, so an empty hash would always produce ErrHashMismatch even
 	// for a valid record. That would misuse ErrHashMismatch (which signals a genuine
 	// file-content change) for a mere "no hash available" situation.
-	if a.store != nil && contentHash != "" {
+	if a.deps.NetworkSymbolStore != nil && contentHash != "" {
 		handled, isNet, dynLoad := a.checkAnalysisCache(cmdPath, contentHash)
 		if handled {
 			return isNet, dynLoad, nil
@@ -197,7 +192,7 @@ func (a *NetworkAnalyzer) analyzeBinarySignals(cmdPath string, contentHash strin
 	// change the outcome, so skip it to avoid unnecessary store I/O.
 	// We still run when only one signal is true (e.g. hasDynLoad=true but isNetwork=false)
 	// so that a dep library can contribute the missing signal.
-	if a.depsStore != nil && a.libAnalysisStore != nil && contentHash != "" && (!isNetwork || !hasDynLoad) {
+	if a.deps.DynLibDepsStore != nil && a.deps.LibAnalysisStore != nil && contentHash != "" && (!isNetwork || !hasDynLoad) {
 		dynNet, dynHigh := a.checkDynLibDepsNetwork(cmdPath, contentHash)
 		isNetwork = isNetwork || dynNet
 		hasDynLoad = hasDynLoad || dynHigh
@@ -206,7 +201,7 @@ func (a *NetworkAnalyzer) analyzeBinarySignals(cmdPath string, contentHash strin
 	// Shebang chain: if this is a script, also analyze the interpreter binary.
 	// The interpreter's record (SymbolAnalysis, SyscallAnalysis, DynLibDeps)
 	// was written by `record` when the script was first recorded.
-	if a.shebangStore != nil && contentHash != "" {
+	if a.deps.ShebangStore != nil && contentHash != "" {
 		interpNet, interpHigh, err := a.followShebangChain(cmdPath, contentHash)
 		if err != nil {
 			return false, false, err
@@ -224,7 +219,7 @@ func (a *NetworkAnalyzer) analyzeBinarySignals(cmdPath string, contentHash strin
 // Returns a non-nil error when the interpreter record is missing or stale, indicating
 // that risk assessment cannot be completed and the command group must be aborted.
 func (a *NetworkAnalyzer) followShebangChain(cmdPath, contentHash string) (isNetwork, hasDynLoad bool, err error) {
-	interpPath, interpHash, shebangErr := a.shebangStore.LoadInterpreterAnalysisPath(cmdPath, contentHash)
+	interpPath, interpHash, shebangErr := a.deps.ShebangStore.LoadInterpreterAnalysisPath(cmdPath, contentHash)
 	switch {
 	case shebangErr == nil:
 		if interpPath == "" {
@@ -246,7 +241,7 @@ func (a *NetworkAnalyzer) followShebangChain(cmdPath, contentHash string) (isNet
 		// When the symbol store is nil, checkAnalysisCache is never called, so
 		// the script may have no analysis record at all; treat it as
 		// "no shebang info available" and continue without error.
-		if a.store != nil {
+		if a.deps.NetworkSymbolStore != nil {
 			slog.Error("Shebang script record disappeared between cache lookup and shebang lookup; aborting command group",
 				"path", cmdPath, "error", shebangErr)
 			return false, false, fmt.Errorf("shebang script record disappeared for %q: %w", cmdPath, shebangErr)
@@ -267,7 +262,7 @@ func (a *NetworkAnalyzer) followShebangChain(cmdPath, contentHash string) (isNet
 //   - handled=true: caller should return isNetwork/hasDynLoad immediately (definitive or high-risk signal).
 //   - handled=false: caller should OR-merge isNetwork/hasDynLoad with other signals.
 func (a *NetworkAnalyzer) checkAnalysisCache(cmdPath, contentHash string) (handled, isNetwork, hasDynLoad bool) {
-	data, err := a.store.LoadNetworkSymbolAnalysis(cmdPath, contentHash)
+	data, err := a.deps.NetworkSymbolStore.LoadNetworkSymbolAnalysis(cmdPath, contentHash)
 	var symSchemaMismatch *fileanalysis.SchemaVersionMismatchError
 	switch {
 	case err == nil:
@@ -309,10 +304,10 @@ func (a *NetworkAnalyzer) checkAnalysisCache(cmdPath, contentHash string) (handl
 //   - handled=true: a definitive signal was found; the caller should return isNetwork/isHighRisk immediately.
 //   - handled=false: no definitive signal; the caller should continue with SymbolAnalysis-based logic.
 func (a *NetworkAnalyzer) checkSyscallCache(cmdPath, contentHash string) (handled, isNetwork, isHighRisk bool) {
-	if a.syscallStore == nil {
+	if a.deps.SyscallStore == nil {
 		return false, false, false
 	}
-	svcResult, svcErr := a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)
+	svcResult, svcErr := a.deps.SyscallStore.LoadSyscallAnalysis(cmdPath, contentHash)
 	var svcSchemaMismatch *fileanalysis.SchemaVersionMismatchError
 	switch {
 	case svcErr == nil:
@@ -352,7 +347,7 @@ func (a *NetworkAnalyzer) checkSyscallCache(cmdPath, contentHash string) (handle
 // results for each dynamic dependency of the given command.
 // Fail-closed: any loading failure returns (true, true).
 func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (isNetwork, isHighRisk bool) {
-	deps, err := a.depsStore.LoadDynLibDeps(cmdPath, contentHash)
+	deps, err := a.deps.DynLibDepsStore.LoadDynLibDeps(cmdPath, contentHash)
 	if err != nil {
 		var schemaMismatch *fileanalysis.SchemaVersionMismatchError
 		switch {
@@ -387,7 +382,7 @@ func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (i
 			continue
 		}
 
-		result, loadErr := a.libAnalysisStore.LoadAnalysis(dep.Path, dep.Hash)
+		result, loadErr := a.deps.LibAnalysisStore.LoadAnalysis(dep.Path, dep.Hash)
 		if loadErr != nil {
 			if errors.Is(loadErr, dynamicanalysis.ErrAnalysisNotFound) {
 				slog.Warn("dynlib analysis not found; treating as high risk",

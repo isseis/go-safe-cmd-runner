@@ -97,7 +97,6 @@ func TestIntegration_DualDefense(t *testing.T) {
 		nil,
 		outputMgr,
 		0,
-		nil,
 	)
 	require.NoError(t, err)
 
@@ -208,7 +207,6 @@ func TestIntegration_Case1Only(t *testing.T) {
 		nil,
 		outputMgr,
 		0,
-		nil,
 	)
 	require.NoError(t, err)
 
@@ -310,7 +308,6 @@ func TestIntegration_Case2Only(t *testing.T) {
 		nil,
 		outputMgr,
 		0,
-		nil,
 	)
 	require.NoError(t, err)
 
@@ -417,7 +414,6 @@ func TestIntegration_Case2Only_DebugLeakage(t *testing.T) {
 		nil,
 		outputMgr,
 		0,
-		nil,
 	)
 	require.NoError(t, err)
 
