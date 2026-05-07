@@ -75,6 +75,7 @@
 3. dynlib キャッシュファイル（`dynlib-analysis/`）が存在しなくても `runner` が正常に動作する
 4. `ErrAnalysisNotFound` による「高リスクフォールバック」処理が `runner` から除去される
 5. shebang インタープリターの解析結果（hash、syscall_analysis、symbol_analysis）も Record の `shebang_chain` から直接取得し、インタープリターの別 Record ファイルを参照しない
+6. `deps` エントリの `syscall_analysis` および `symbol_analysis` が null であり、かつ syscall wrapper（libc 等）や VDSO ではない場合、`runner` は解析データ欠落として実行をエラー終了する（fail-closed）。高リスク扱いへのフォールバックは行わない
 
 ### F-004: -debug-info 時のみ dep 由来情報を記録
 
