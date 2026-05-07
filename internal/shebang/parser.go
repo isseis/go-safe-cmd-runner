@@ -131,7 +131,9 @@ func Parse(filePath string, fs safefileio.FileSystem) (*Info, error) {
 	// Detect env-form based on the original shebang token, before symlink
 	// resolution. Checking after EvalSymlinks would misclassify env-form
 	// shebangs when /usr/bin/env is a symlink (e.g., to busybox).
-	isEnvForm := filepath.Base(interpreterPath) == "env"
+	// Only well-known system paths are recognised as env(1); a binary named
+	// "env" at an arbitrary attacker-controlled path must not bypass analysis.
+	isEnvForm := isTrustedEnvBinary(interpreterPath)
 
 	// Resolve symlinks for interpreter path.
 	resolvedInterpreter, err := filepath.EvalSymlinks(interpreterPath)
@@ -150,6 +152,19 @@ func Parse(filePath string, fs safefileio.FileSystem) (*Info, error) {
 		RawInterpreterPath: interpreterPath,
 		InterpreterPath:    resolvedInterpreter,
 	}, nil
+}
+
+// trustedEnvPaths is the set of absolute paths recognised as the system env(1)
+// binary. Keyed on the raw (pre-symlink-resolution) shebang token so that
+// systems where /usr/bin/env is a symlink (e.g., to busybox) work correctly.
+var trustedEnvPaths = map[string]bool{
+	"/usr/bin/env": true,
+	"/bin/env":     true,
+}
+
+// isTrustedEnvBinary reports whether path is a known system env(1) binary.
+func isTrustedEnvBinary(path string) bool {
+	return trustedEnvPaths[path]
 }
 
 // parseEnvForm handles "#!/usr/bin/env <cmd>" shebangs.

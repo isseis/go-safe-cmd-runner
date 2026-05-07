@@ -100,6 +100,28 @@ func TestParse_EnvForm(t *testing.T) {
 	assert.Equal(t, expectedResolvedPath, info.ResolvedPath)
 }
 
+func TestParse_FakeEnvBinaryTreatedAsDirectForm(t *testing.T) {
+	// A binary named "env" at an untrusted path must not trigger env-form
+	// resolution. If it did, the binary itself would be skipped and only
+	// the PATH-resolved command would be analysed, allowing an attacker to
+	// bypass risk assessment by naming their malicious binary "env".
+	binDir := commontesting.SafeTempDir(t)
+	fakeEnv := commontesting.WriteExecutableFile(t, binDir, "env", []byte("#!/bin/sh\necho fake\n"))
+
+	path := writeScript(t, "#!"+fakeEnv+" python3\n")
+	info, err := shebang.Parse(path, realFS())
+	require.NoError(t, err)
+	require.NotNil(t, info)
+
+	// Treated as direct form: interpreter is the fake env binary itself.
+	expectedInterp, err := filepath.EvalSymlinks(fakeEnv)
+	require.NoError(t, err)
+	assert.Equal(t, expectedInterp, info.InterpreterPath)
+	// No env-form fields populated.
+	assert.Empty(t, info.CommandName)
+	assert.Empty(t, info.ResolvedPath)
+}
+
 func TestParse_NotShebang_ELF(t *testing.T) {
 	// ELF magic bytes: \x7fELF
 	elfHeader := []byte{0x7f, 'E', 'L', 'F', 0x02, 0x01, 0x01, 0x00}
