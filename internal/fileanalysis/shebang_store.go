@@ -68,6 +68,15 @@ func (s *shebangInterpreterStore) LoadInterpreterAnalysisPath(scriptPath, script
 	if interpPath == "" {
 		return "", "", fmt.Errorf("interpreter path in shebang_chain is empty: %w", ErrInterpreterRecordMissing)
 	}
+	for _, dep := range scriptRecord.DynLibDeps {
+		if dep.Path != interpPath {
+			continue
+		}
+		if dep.Hash == "" {
+			return "", "", fmt.Errorf("interpreter dep has empty hash: %w", ErrInterpreterRecordMissing)
+		}
+		return interpPath, dep.Hash, nil
+	}
 
 	interpTarget, err := common.NewResolvedPath(interpPath)
 	if err != nil {

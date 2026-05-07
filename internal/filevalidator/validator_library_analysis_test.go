@@ -237,16 +237,17 @@ func TestAnalyzeOneLibrary_unsupportedArchSkipsWarning(t *testing.T) {
 	assert.Empty(t, result.Warnings)
 }
 
-// TestAnalyzeLibraries_disabled verifies that library analysis is skipped when
-// no dynamic library analysis store is configured.
+// TestAnalyzeLibraries_withoutStore verifies that library analysis still runs
+// without an external dynamic library analysis store.
 func TestAnalyzeLibraries_disabled(t *testing.T) {
 	v := validatorWithTempHashDir(t)
+	v.SetBinaryAnalyzer(&libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}})
 	record := &fileanalysis.Record{
-		DynLibDeps: []fileanalysis.LibEntry{{SOName: "libfoo.so.1", Path: filepath.Join(t.TempDir(), "unused.so")}},
+		DynLibDeps: []fileanalysis.LibEntry{{SOName: "libfoo.so.1", Path: requireWithSocketELF(t), Hash: "sha256:foo"}},
 	}
 
 	require.NoError(t, v.analyzeLibraries(record))
-	assert.Nil(t, record.SymbolAnalysis)
+	assert.NotNil(t, record.SymbolAnalysis)
 }
 
 // TestAnalyzeLibraries_emptyDynLibDeps verifies that no analysis is performed when

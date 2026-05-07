@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"bytes"
 	"debug/elf"
 	"errors"
 	"fmt"
@@ -774,7 +775,7 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 	}
 
 	if len(record.ShebangChain) > 0 {
-		return m.verifyShebangChain(record.ShebangChain, envVars)
+		return m.verifyShebangChain(record, record.ShebangChain, envVars)
 	}
 
 	si := record.ShebangInterpreter
@@ -792,7 +793,7 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 	}
 
 	// Verify that the recorded interpreter binary still exists and matches its hash.
-	if err := m.verifyInterpreterHash(si.InterpreterPath); err != nil {
+	if err := m.verifyInterpreterHash(record, si.InterpreterPath); err != nil {
 		return err
 	}
 
@@ -800,7 +801,7 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 		// Verify the resolved command binary before PATH re-resolution so that a
 		// missing resolved_path record is reported as ErrInterpreterRecordNotFound
 		// rather than being masked by a subsequent path mismatch error.
-		if err := m.verifyInterpreterHash(si.ResolvedPath); err != nil {
+		if err := m.verifyInterpreterHash(record, si.ResolvedPath); err != nil {
 			return err
 		}
 		// Verify that the runtime PATH resolves the command to the recorded binary.
@@ -812,16 +813,16 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 	return nil
 }
 
-func (m *Manager) verifyShebangChain(chain []fileanalysis.ShebangChainEntry, envVars map[string]string) error {
+func (m *Manager) verifyShebangChain(record *fileanalysis.Record, chain []fileanalysis.ShebangChainEntry, envVars map[string]string) error {
 	for _, entry := range chain {
-		if err := m.verifyShebangChainEntry(entry, envVars); err != nil {
+		if err := m.verifyShebangChainEntry(record, entry, envVars); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (m *Manager) verifyShebangChainEntry(entry fileanalysis.ShebangChainEntry, envVars map[string]string) error {
+func (m *Manager) verifyShebangChainEntry(record *fileanalysis.Record, entry fileanalysis.ShebangChainEntry, envVars map[string]string) error {
 	if entry.Path == "" {
 		return nil
 	}
@@ -838,14 +839,26 @@ func (m *Manager) verifyShebangChainEntry(entry fileanalysis.ShebangChainEntry, 
 		}
 	}
 
-	return m.verifyInterpreterHash(entry.Path)
+	return m.verifyInterpreterHash(record, entry.Path)
 }
 
 // verifyInterpreterHash verifies the hash of the given interpreter binary.
 // ErrHashFileNotFound (no record for that binary) is translated into
 // *ErrInterpreterRecordNotFound so callers can distinguish "never recorded"
 // from "tampered" (ErrMismatch).
-func (m *Manager) verifyInterpreterHash(interpreterPath string) error {
+
+func (m *Manager) verifyInterpreterHash(record *fileanalysis.Record, interpreterPath string) error {
+	if expectedHash, ok := lookupRecordedDepHash(record, interpreterPath); ok {
+		actualHash, err := m.computeSHA256Hash(interpreterPath)
+		if err != nil {
+			return err
+		}
+		if actualHash != expectedHash {
+			return filevalidator.ErrMismatch
+		}
+		return nil
+	}
+
 	err := m.fileValidator.Verify(interpreterPath)
 	if err == nil {
 		return nil
@@ -854,6 +867,35 @@ func (m *Manager) verifyInterpreterHash(interpreterPath string) error {
 		return &ErrInterpreterRecordNotFound{Path: interpreterPath}
 	}
 	return err
+}
+
+func lookupRecordedDepHash(record *fileanalysis.Record, path string) (string, bool) {
+	if record == nil {
+		return "", false
+	}
+	for _, dep := range record.DynLibDeps {
+		if dep.Path == path && dep.Hash != "" {
+			return dep.Hash, true
+		}
+	}
+	return "", false
+}
+
+func (m *Manager) computeSHA256Hash(path string) (string, error) {
+	resolvedPath, err := common.NewResolvedPath(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve interpreter path %q: %w", path, err)
+	}
+	content, err := safefileio.SafeReadFile(resolvedPath)
+	if err != nil {
+		return "", err
+	}
+	var hasher filevalidator.SHA256
+	hash, err := hasher.Sum(bytes.NewReader(content))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s:%s", hasher.Name(), hash), nil
 }
 
 // verifyEnvPathResolution resolves commandName through envVars["PATH"] and checks

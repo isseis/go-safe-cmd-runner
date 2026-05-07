@@ -3,7 +3,7 @@
 ## 進捗
 
 - [x] Phase 1: スキーマ更新
-- [ ] Phase 2: record 実装更新
+- [x] Phase 2: record 実装更新
 - [ ] Phase 3: runner / verification 更新
 - [ ] Phase 4: テスト整理と追加
 - [ ] Phase 5: 品質確認と文書整合
@@ -32,31 +32,31 @@
 
 ### 2-1. deps 収集
 
-- [ ] コマンド本体の依存共有ライブラリを収集する（AC-006）
-- [ ] shebang チェーン各バイナリの依存共有ライブラリを収集する（AC-006）
-- [ ] shebang チェーンのインタープリターバイナリ本体を deps に含める（AC-006）
+- [x] コマンド本体の依存共有ライブラリを収集する（AC-006）
+- [x] shebang チェーン各バイナリの依存共有ライブラリを収集する（AC-006）
+- [x] shebang チェーンのインタープリターバイナリ本体を deps に含める（AC-006）
 
 ### 2-2. dedup とエラー
 
-- [ ] `path` をキーに dedup する（AC-007）
-- [ ] 同一 path hash 不一致で致命エラーにする（AC-008）
+- [x] `path` をキーに dedup する（AC-007）
+- [x] 同一 path hash 不一致で致命エラーにする（AC-008）
 
 ### 2-3. 解析統合
 
-- [ ] コマンド本体、dep ライブラリ、shebang チェーン全バイナリを対象に syscall を統合する（AC-013）
-- [ ] コマンド本体、dep ライブラリ、shebang チェーン全バイナリを対象に symbol を統合する（AC-014）
-- [ ] ArgEvalResults は worst-case 統合を実装する（AC-015）
-- [ ] VDSO と syscall wrapper を解析スキップする（AC-016）
+- [x] コマンド本体、dep ライブラリ、shebang チェーン全バイナリを対象に syscall を統合する（AC-013）
+- [x] コマンド本体、dep ライブラリ、shebang チェーン全バイナリを対象に symbol を統合する（AC-014）
+- [x] ArgEvalResults は worst-case 統合を実装する（AC-015）
+- [x] VDSO と syscall wrapper を解析スキップする（AC-016）
 
 ### 2-4. 出力更新
 
-- [ ] 統合結果を `record.syscall_analysis` と `record.symbol_analysis` に書き込む（AC-017）
-- [ ] `analysis_warnings` を統合・dedup して書き込む（AC-004）
-- [ ] `-debug-info` 指定時のみ `debug.dep_sources` を書き込む（AC-005）
+- [x] 統合結果を `record.syscall_analysis` と `record.symbol_analysis` に書き込む（AC-017）
+- [x] `analysis_warnings` を統合・dedup して書き込む（AC-004）
+- [x] `-debug-info` 指定時のみ `debug.dep_sources` を書き込む（AC-005）
 
 ### 2-5. 削除作業
 
-- [ ] `saveInterpreterRecord` を削除する
+- [x] `saveInterpreterRecord` を削除する
 
 ## Phase 3: runner / verification 更新
 

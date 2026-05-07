@@ -104,7 +104,9 @@ var (
 	// errNotELF is returned by openELFFile when the file is not an ELF binary.
 	errNotELF = errors.New("file is not an ELF binary")
 	// errLibraryFileTooLarge is returned when a library file exceeds the analysis size limit.
-	errLibraryFileTooLarge = errors.New("library file too large for analysis")
+	errLibraryFileTooLarge    = errors.New("library file too large for analysis")
+	errDependencyPathEmpty    = errors.New("dependency path is empty")
+	errDependencyHashMismatch = errors.New("dependency hash mismatch")
 )
 
 // FileValidator interface defines the basic file validation methods
@@ -224,42 +226,32 @@ func (v *Validator) SaveRecord(filePath string, force bool) (string, string, err
 		return "", "", err
 	}
 
-	// Analyze shebang and record interpreter binaries before persisting this record.
-	// This ensures atomic failure: if interpreter recording fails, the script record
-	// is not written either.
+	// Analyze shebang before persisting this record.
 	shebangInfo, err := v.resolveShebangInfo(targetPath.String())
 	if err != nil {
 		return "", "", err
 	}
 	if shebangInfo != nil {
-		// Use saveRecordCore to skip redundant shebang analysis: resolveShebangInfo
-		// already confirmed the interpreters are not shebang scripts themselves.
-		if err := v.saveInterpreterRecord(shebangInfo.InterpreterPath, force); err != nil {
-			return "", "", fmt.Errorf("failed to record interpreter %s: %w",
-				shebangInfo.InterpreterPath, err)
-		}
+		shebangTargets := []string{shebangInfo.InterpreterPath}
 		if shebangInfo.ResolvedPath != "" {
-			if err := v.saveInterpreterRecord(shebangInfo.ResolvedPath, force); err != nil {
-				return "", "", fmt.Errorf("failed to record resolved command %s: %w",
-					shebangInfo.ResolvedPath, err)
+			shebangTargets = append(shebangTargets, shebangInfo.ResolvedPath)
+		}
+		seen := make(map[string]struct{}, len(shebangTargets))
+		for _, shebangTarget := range shebangTargets {
+			if _, ok := seen[shebangTarget]; ok {
+				continue
+			}
+			seen[shebangTarget] = struct{}{}
+			if _, _, err := v.saveRecordCore(shebangTarget, force, nil); err != nil {
+				if !force && errors.Is(err, ErrHashFileExists) {
+					continue
+				}
+				return "", "", fmt.Errorf("failed to record shebang binary %s: %w", shebangTarget, err)
 			}
 		}
 	}
 
 	return v.saveRecordCore(targetPath.String(), force, shebangInfo)
-}
-
-// saveInterpreterRecord records an interpreter binary discovered via shebang analysis.
-// When force is true, an existing record is overwritten.
-// When force is false, an existing record is left unchanged (ErrHashFileExists is silently
-// ignored), because multiple scripts may share the same interpreter and the caller's
-// non-destructive intent should not prevent the script itself from being recorded.
-func (v *Validator) saveInterpreterRecord(path string, force bool) error {
-	_, _, err := v.saveRecordCore(path, force, nil)
-	if !force && errors.Is(err, ErrHashFileExists) {
-		return nil
-	}
-	return err
 }
 
 // saveRecordCore calculates the hash and persists the analysis record for filePath.
@@ -310,85 +302,152 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 		if record.FilePath == filePath.String() && !force {
 			return fmt.Errorf("hash file already exists for %s: %w", filePath, ErrHashFileExists)
 		}
-		record.ContentHash = contentHash
-
-		// Analyze dynamic library dependencies (ELF + Mach-O).
-		if err := v.analyzeDynLibDeps(filePath.String(), record); err != nil {
-			return err
-		}
-
-		// Analyze binary symbols if analyzer is available.
-		// Stores the result as SymbolAnalysis in the record.
-		if v.binaryAnalyzer != nil {
-			output := v.binaryAnalyzer.AnalyzeNetworkSymbols(filePath.String(), contentHash)
-			switch output.Result {
-			case binaryanalyzer.NetworkDetected, binaryanalyzer.NoNetworkSymbols:
-				record.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
-					DetectedSymbols:    convertDetectedSymbols(output.DetectedSymbols),
-					DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
-				}
-			case binaryanalyzer.StaticBinary, binaryanalyzer.NotSupportedBinary:
-				// SymbolAnalysis does not apply to static or unsupported binaries.
-				// Explicitly nil it out so that a force-re-record of a binary that was
-				// previously dynamic does not carry over the old SymbolAnalysis value
-				// (store.Update passes the existing record to this callback unchanged).
-				record.SymbolAnalysis = nil
-			case binaryanalyzer.AnalysisError:
-				return fmt.Errorf("network symbol analysis failed: %w", output.Error)
-			}
-		}
-
-		// Analyze dynamic dependencies at library granularity.
-		if err := v.analyzeLibraries(record); err != nil {
-			return err
-		}
-
-		// Analyze ELF syscalls via libc import symbol matching and direct instruction scan.
-		if err := v.analyzeELFSyscalls(record, filePath.String()); err != nil {
-			return err
-		}
-
-		// Mach-O arm64 svc #0x80 scan and libSystem import-symbol matching.
-		// Merge both results and store them in record.SyscallAnalysis (task 0100).
-		// ScanSVCAddrs checks magic bytes and returns nil for non-Mach-O
-		// files, so this is safe to call on all platforms and binary formats.
-		if err := v.analyzeMachoSyscalls(record, filePath.String()); err != nil {
-			return err
-		}
-
-		// Record shebang chain entries used for runtime re-resolution checks.
-		if shebangInfo != nil {
-			record.ShebangChain = nil
-			record.ShebangChain = append(record.ShebangChain, fileanalysis.ShebangChainEntry{
-				Ref:  shebangInfo.RawInterpreterPath,
-				Path: shebangInfo.InterpreterPath,
-			})
-			if shebangInfo.CommandName != "" && shebangInfo.ResolvedPath != "" {
-				record.ShebangChain = append(record.ShebangChain, fileanalysis.ShebangChainEntry{
-					Ref:  shebangInfo.CommandName,
-					Path: shebangInfo.ResolvedPath,
-				})
-			}
-
-			// Keep legacy in-memory field for code paths that are migrated in later phases.
-			record.ShebangInterpreter = &fileanalysis.ShebangInterpreterInfo{
-				RawInterpreterPath: shebangInfo.RawInterpreterPath,
-				InterpreterPath:    shebangInfo.InterpreterPath,
-				CommandName:        shebangInfo.CommandName,
-				ResolvedPath:       shebangInfo.ResolvedPath,
-			}
-		} else {
-			record.ShebangChain = nil
-			record.ShebangInterpreter = nil
-		}
-
-		return nil
+		return v.populateAnalysisRecord(record, filePath.String(), contentHash, shebangInfo)
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to update analysis record: %w", err)
 	}
 
 	return contentHash, nil
+}
+
+func (v *Validator) populateAnalysisRecord(record *fileanalysis.Record, filePath, contentHash string, shebangInfo *shebang.Info) error {
+	existingSymbolAnalysis := record.SymbolAnalysis
+	existingSyscallAnalysis := record.SyscallAnalysis
+	existingWarnings := slices.Clone(record.AnalysisWarnings)
+	existingDebug := record.Debug
+
+	record.ContentHash = contentHash
+	aggregate := newAnalysisAggregate()
+	depCollector := newDepCollector(v.includeDebugInfo)
+
+	targetAnalysis, err := v.analyzeRecordTarget(filePath, contentHash)
+	if err != nil {
+		return err
+	}
+	aggregate.addRecord(targetAnalysis)
+	if err := depCollector.addEntries(filePath, targetAnalysis.DynLibDeps); err != nil {
+		return err
+	}
+
+	if err := v.populateShebangData(record, shebangInfo, aggregate, depCollector); err != nil {
+		return err
+	}
+
+	record.DynLibDeps = depCollector.entries()
+	record.Debug = depCollector.debugRecord()
+	record.SymbolAnalysis = aggregate.symbolAnalysis()
+	record.SyscallAnalysis = aggregate.syscallAnalysis()
+	record.AnalysisWarnings = aggregate.warnings()
+
+	if record.SymbolAnalysis == nil && v.binaryAnalyzer == nil {
+		record.SymbolAnalysis = existingSymbolAnalysis
+	}
+	if record.SyscallAnalysis == nil && v.syscallAnalyzer == nil && v.libcCache == nil && v.libSystemCache == nil {
+		record.SyscallAnalysis = existingSyscallAnalysis
+	}
+	if record.AnalysisWarnings == nil && v.elfDynlibAnalyzer == nil && v.machoDynlibAnalyzer == nil && record.SyscallAnalysis == existingSyscallAnalysis {
+		record.AnalysisWarnings = existingWarnings
+	}
+	if record.Debug == nil && !v.includeDebugInfo {
+		record.Debug = existingDebug
+	}
+
+	return v.analyzeLibraries(record)
+}
+
+func (v *Validator) populateShebangData(record *fileanalysis.Record, shebangInfo *shebang.Info, aggregate *analysisAggregate, depCollector *depCollector) error {
+	if shebangInfo == nil {
+		record.ShebangChain = nil
+		record.ShebangInterpreter = nil
+		return nil
+	}
+
+	record.ShebangChain = []fileanalysis.ShebangChainEntry{{
+		Ref:  shebangInfo.RawInterpreterPath,
+		Path: shebangInfo.InterpreterPath,
+	}}
+	if shebangInfo.CommandName != "" && shebangInfo.ResolvedPath != "" {
+		record.ShebangChain = append(record.ShebangChain, fileanalysis.ShebangChainEntry{
+			Ref:  shebangInfo.CommandName,
+			Path: shebangInfo.ResolvedPath,
+		})
+	}
+
+	for _, entry := range record.ShebangChain {
+		entryHash, err := v.prefixedHashForPath(entry.Path)
+		if err != nil {
+			return fmt.Errorf("failed to hash shebang binary %s: %w", entry.Path, err)
+		}
+		if err := depCollector.addEntry(entry.Path, fileanalysis.LibEntry{
+			SOName: filepath.Base(entry.Path),
+			Path:   entry.Path,
+			Hash:   entryHash,
+		}); err != nil {
+			return err
+		}
+
+		chainAnalysis, err := v.analyzeRecordTarget(entry.Path, entryHash)
+		if err != nil {
+			return err
+		}
+		aggregate.addRecord(chainAnalysis)
+		if err := depCollector.addEntries(entry.Path, chainAnalysis.DynLibDeps); err != nil {
+			return err
+		}
+	}
+
+	record.ShebangInterpreter = &fileanalysis.ShebangInterpreterInfo{
+		RawInterpreterPath: shebangInfo.RawInterpreterPath,
+		InterpreterPath:    shebangInfo.InterpreterPath,
+		CommandName:        shebangInfo.CommandName,
+		ResolvedPath:       shebangInfo.ResolvedPath,
+	}
+	return nil
+}
+
+func (v *Validator) analyzeRecordTarget(filePath, contentHash string) (*fileanalysis.Record, error) {
+	record := &fileanalysis.Record{ContentHash: contentHash}
+
+	if err := v.analyzeDynLibDeps(filePath, record); err != nil {
+		return nil, err
+	}
+
+	if v.binaryAnalyzer != nil {
+		output := v.binaryAnalyzer.AnalyzeNetworkSymbols(filePath, contentHash)
+		switch output.Result {
+		case binaryanalyzer.NetworkDetected, binaryanalyzer.NoNetworkSymbols:
+			record.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
+				DetectedSymbols:    convertDetectedSymbols(output.DetectedSymbols),
+				DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
+			}
+		case binaryanalyzer.StaticBinary, binaryanalyzer.NotSupportedBinary:
+			record.SymbolAnalysis = nil
+		case binaryanalyzer.AnalysisError:
+			return nil, fmt.Errorf("network symbol analysis failed: %w", output.Error)
+		}
+	}
+
+	if err := v.analyzeELFSyscalls(record, filePath); err != nil {
+		return nil, err
+	}
+	if err := v.analyzeMachoSyscalls(record, filePath); err != nil {
+		return nil, err
+	}
+
+	return record, nil
+}
+
+func (v *Validator) prefixedHashForPath(filePath string) (string, error) {
+	targetPath, err := validatePath(filePath)
+	if err != nil {
+		return "", err
+	}
+	rawHash, err := v.calculateHash(targetPath)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s:%s", v.algorithm.Name(), rawHash), nil
 }
 
 // LoadRecord returns the full analysis record for the given file path.
@@ -503,13 +562,13 @@ func (v *Validator) analyzeDynLibDeps(filePath string, record *fileanalysis.Reco
 	}
 
 	slices.SortFunc(record.DynLibDeps, func(a, b fileanalysis.LibEntry) int {
-		if c := cmp.Compare(a.SOName, b.SOName); c != 0 {
-			return c
-		}
 		if c := cmp.Compare(a.Path, b.Path); c != 0 {
 			return c
 		}
-		return cmp.Compare(a.Hash, b.Hash)
+		if c := cmp.Compare(a.Hash, b.Hash); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.SOName, b.SOName)
 	})
 	slices.Sort(record.AnalysisWarnings)
 
@@ -630,15 +689,11 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (*dynamicanalys
 
 // analyzeLibraries runs library-level analysis for non-wrapper dynamic dependencies.
 func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
-	if v.dynamicLibAnalysisStore == nil || len(record.DynLibDeps) == 0 {
+	if len(record.DynLibDeps) == 0 {
 		return nil
 	}
-
-	if v.processedLibAnalysis == nil {
-		v.processedLibAnalysis = make(map[libCacheKey]*dynamicanalysis.Result)
-	}
-
-	var allDynLoadSymbols []string
+	aggregate := newAnalysisAggregate()
+	aggregate.addRecord(record)
 
 	for _, lib := range record.DynLibDeps {
 		if isKnownVDSO(lib.SOName) {
@@ -648,44 +703,279 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 			continue
 		}
 
-		// In-session cache avoids calling the persistent store for the same lib+hash twice.
-		cacheKey := libCacheKey{Path: lib.Path, Hash: lib.Hash}
-		result, cached := v.processedLibAnalysis[cacheKey]
-		if cached {
-			allDynLoadSymbols = append(allDynLoadSymbols, result.DynamicLoadSymbols()...)
-			record.AnalysisWarnings = append(record.AnalysisWarnings, result.Warnings...)
-			continue
-		}
-
-		var err error
-		result, err = v.dynamicLibAnalysisStore.LoadOrAnalyzeAndStore(lib.Path, lib.Hash)
+		result, err := v.loadOrAnalyzeLibrary(lib)
 		if err != nil {
 			return err
 		}
-		v.processedLibAnalysis[cacheKey] = result
-		record.AnalysisWarnings = append(record.AnalysisWarnings, result.Warnings...)
-		allDynLoadSymbols = append(allDynLoadSymbols, result.DynamicLoadSymbols()...)
+		aggregate.addDynamicResult(result)
 	}
 
-	if len(allDynLoadSymbols) > 0 {
-		if record.SymbolAnalysis == nil {
-			record.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{}
+	record.SymbolAnalysis = aggregate.symbolAnalysis()
+	record.SyscallAnalysis = aggregate.syscallAnalysis()
+	record.AnalysisWarnings = aggregate.warnings()
+
+	return nil
+}
+
+func (v *Validator) loadOrAnalyzeLibrary(lib fileanalysis.LibEntry) (*dynamicanalysis.Result, error) {
+	if v.processedLibAnalysis == nil {
+		v.processedLibAnalysis = make(map[libCacheKey]*dynamicanalysis.Result)
+	}
+
+	cacheKey := libCacheKey{Path: lib.Path, Hash: lib.Hash}
+	if result, ok := v.processedLibAnalysis[cacheKey]; ok {
+		return result, nil
+	}
+
+	var (
+		result *dynamicanalysis.Result
+		err    error
+	)
+	if v.dynamicLibAnalysisStore != nil {
+		result, err = v.dynamicLibAnalysisStore.LoadOrAnalyzeAndStore(lib.Path, lib.Hash)
+	} else {
+		result, err = v.analyzeOneLibrary(lib)
+	}
+	if err != nil {
+		return nil, err
+	}
+	v.processedLibAnalysis[cacheKey] = result
+	return result, nil
+}
+
+type depCollector struct {
+	entriesByPath map[string]fileanalysis.LibEntry
+	sourcesByPath map[string]map[string]struct{}
+	includeDebug  bool
+}
+
+func newDepCollector(includeDebug bool) *depCollector {
+	return &depCollector{
+		entriesByPath: make(map[string]fileanalysis.LibEntry),
+		sourcesByPath: make(map[string]map[string]struct{}),
+		includeDebug:  includeDebug,
+	}
+}
+
+func (c *depCollector) addEntries(sourcePath string, entries []fileanalysis.LibEntry) error {
+	for _, entry := range entries {
+		if err := c.addEntry(sourcePath, entry); err != nil {
+			return err
 		}
-		// Merge library-detected dlopen/dlsym symbols into the exec record's
-		// DynamicLoadSymbols so that the runner can apply high-risk judgment.
-		merged := []string{}
-		merged = append(merged, record.SymbolAnalysis.DynamicLoadSymbols...)
-		merged = append(merged, allDynLoadSymbols...)
-		slices.Sort(merged)
-		record.SymbolAnalysis.DynamicLoadSymbols = slices.Compact(merged)
+	}
+	return nil
+}
+
+func (c *depCollector) addEntry(sourcePath string, entry fileanalysis.LibEntry) error {
+	if isKnownVDSO(entry.SOName) {
+		return nil
+	}
+	if entry.Path == "" {
+		return fmt.Errorf("%w: %s", errDependencyPathEmpty, entry.SOName)
 	}
 
-	if len(record.AnalysisWarnings) > 0 {
-		slices.Sort(record.AnalysisWarnings)
-		record.AnalysisWarnings = slices.Compact(record.AnalysisWarnings)
+	if existing, ok := c.entriesByPath[entry.Path]; ok {
+		if existing.Hash != entry.Hash {
+			return fmt.Errorf("%w: %s", errDependencyHashMismatch, entry.Path)
+		}
+	} else {
+		c.entriesByPath[entry.Path] = entry
+	}
+
+	if c.includeDebug {
+		if _, ok := c.sourcesByPath[entry.Path]; !ok {
+			c.sourcesByPath[entry.Path] = make(map[string]struct{})
+		}
+		c.sourcesByPath[entry.Path][sourcePath] = struct{}{}
 	}
 
 	return nil
+}
+
+func (c *depCollector) entries() []fileanalysis.LibEntry {
+	if len(c.entriesByPath) == 0 {
+		return nil
+	}
+	entries := make([]fileanalysis.LibEntry, 0, len(c.entriesByPath))
+	for _, entry := range c.entriesByPath {
+		entries = append(entries, entry)
+	}
+	slices.SortFunc(entries, func(a, b fileanalysis.LibEntry) int {
+		if c := cmp.Compare(a.Path, b.Path); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Hash, b.Hash); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.SOName, b.SOName)
+	})
+	return entries
+}
+
+func (c *depCollector) debugRecord() *fileanalysis.RecordDebug {
+	if !c.includeDebug || len(c.sourcesByPath) == 0 {
+		return nil
+	}
+	depSources := make(map[string][]string, len(c.sourcesByPath))
+	for path, rawSources := range c.sourcesByPath {
+		sources := make([]string, 0, len(rawSources))
+		for source := range rawSources {
+			sources = append(sources, source)
+		}
+		slices.Sort(sources)
+		depSources[path] = sources
+	}
+	return &fileanalysis.RecordDebug{DepSources: depSources}
+}
+
+type analysisAggregate struct {
+	architecture  string
+	syscalls      []common.SyscallInfo
+	argEvalByName map[string]common.SyscallArgEvalResult
+	stats         *common.SyscallDeterminationStats
+	symbolSeen    bool
+	symbols       map[string]struct{}
+	dynLoads      map[string]struct{}
+	warningsSet   map[string]struct{}
+}
+
+func newAnalysisAggregate() *analysisAggregate {
+	return &analysisAggregate{
+		argEvalByName: make(map[string]common.SyscallArgEvalResult),
+		symbols:       make(map[string]struct{}),
+		dynLoads:      make(map[string]struct{}),
+		warningsSet:   make(map[string]struct{}),
+	}
+}
+
+func (a *analysisAggregate) addRecord(record *fileanalysis.Record) {
+	if record == nil {
+		return
+	}
+	a.addSyscallAnalysis(record.SyscallAnalysis)
+	a.addSymbolAnalysis(record.SymbolAnalysis)
+	a.addWarnings(record.AnalysisWarnings)
+}
+
+func (a *analysisAggregate) addDynamicResult(result *dynamicanalysis.Result) {
+	if result == nil {
+		return
+	}
+	a.addSyscallAnalysis(result.SyscallAnalysis)
+	a.addSymbolAnalysis(result.SymbolAnalysis)
+	a.addWarnings(result.Warnings)
+}
+
+func (a *analysisAggregate) addSyscallAnalysis(data *fileanalysis.SyscallAnalysisData) {
+	if data == nil {
+		return
+	}
+	if a.architecture == "" && data.Architecture != "" {
+		a.architecture = data.Architecture
+	}
+	a.syscalls = append(a.syscalls, data.DetectedSyscalls...)
+	for _, result := range data.ArgEvalResults {
+		existing, ok := a.argEvalByName[result.SyscallName]
+		if !ok || mprotectStatusPriority(result.Status) > mprotectStatusPriority(existing.Status) ||
+			(mprotectStatusPriority(result.Status) == mprotectStatusPriority(existing.Status) && existing.Details == "" && result.Details != "") {
+			a.argEvalByName[result.SyscallName] = result
+		}
+	}
+	a.addDeterminationStats(data.DeterminationStats)
+	a.addWarnings(data.AnalysisWarnings)
+}
+
+func (a *analysisAggregate) addDeterminationStats(stats *common.SyscallDeterminationStats) {
+	if stats == nil {
+		return
+	}
+	if a.stats == nil {
+		a.stats = &common.SyscallDeterminationStats{}
+	}
+	a.stats.ImmediateTotal += stats.ImmediateTotal
+	a.stats.ImmediateViaCopyChain += stats.ImmediateViaCopyChain
+	a.stats.ImmediateViaBranchConvergence += stats.ImmediateViaBranchConvergence
+	a.stats.UnknownIndirectSetting += stats.UnknownIndirectSetting
+}
+
+func (a *analysisAggregate) addSymbolAnalysis(data *fileanalysis.SymbolAnalysisData) {
+	if data == nil {
+		return
+	}
+	a.symbolSeen = true
+	for _, symbol := range data.DetectedSymbols {
+		a.symbols[symbol] = struct{}{}
+	}
+	for _, symbol := range data.DynamicLoadSymbols {
+		a.dynLoads[symbol] = struct{}{}
+	}
+}
+
+func (a *analysisAggregate) addWarnings(warnings []string) {
+	for _, warning := range warnings {
+		if warning == "" {
+			continue
+		}
+		a.warningsSet[warning] = struct{}{}
+	}
+}
+
+func (a *analysisAggregate) syscallAnalysis() *fileanalysis.SyscallAnalysisData {
+	if len(a.syscalls) == 0 && len(a.argEvalByName) == 0 {
+		return nil
+	}
+	argResults := make([]common.SyscallArgEvalResult, 0, len(a.argEvalByName))
+	for _, result := range a.argEvalByName {
+		argResults = append(argResults, result)
+	}
+	slices.SortFunc(argResults, func(x, y common.SyscallArgEvalResult) int {
+		if c := cmp.Compare(x.SyscallName, y.SyscallName); c != 0 {
+			return c
+		}
+		return cmp.Compare(x.Status, y.Status)
+	})
+	return &fileanalysis.SyscallAnalysisData{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			Architecture:       a.architecture,
+			DetectedSyscalls:   common.GroupAndSortSyscalls(a.syscalls),
+			ArgEvalResults:     argResults,
+			DeterminationStats: a.stats,
+		},
+	}
+}
+
+func (a *analysisAggregate) symbolAnalysis() *fileanalysis.SymbolAnalysisData {
+	if !a.symbolSeen && len(a.symbols) == 0 && len(a.dynLoads) == 0 {
+		return nil
+	}
+	result := &fileanalysis.SymbolAnalysisData{}
+	if len(a.symbols) > 0 {
+		result.DetectedSymbols = make([]string, 0, len(a.symbols))
+		for symbol := range a.symbols {
+			result.DetectedSymbols = append(result.DetectedSymbols, symbol)
+		}
+		slices.Sort(result.DetectedSymbols)
+	}
+	if len(a.dynLoads) > 0 {
+		result.DynamicLoadSymbols = make([]string, 0, len(a.dynLoads))
+		for symbol := range a.dynLoads {
+			result.DynamicLoadSymbols = append(result.DynamicLoadSymbols, symbol)
+		}
+		slices.Sort(result.DynamicLoadSymbols)
+	}
+	return result
+}
+
+func (a *analysisAggregate) warnings() []string {
+	if len(a.warningsSet) == 0 {
+		return nil
+	}
+	warnings := make([]string, 0, len(a.warningsSet))
+	for warning := range a.warningsSet {
+		warnings = append(warnings, warning)
+	}
+	slices.Sort(warnings)
+	return warnings
 }
 
 // SetIncludeDebugInfo controls whether debug information (Occurrences,

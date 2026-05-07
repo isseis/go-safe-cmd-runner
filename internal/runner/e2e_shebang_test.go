@@ -139,9 +139,26 @@ func TestIntegration_ShebangVerification_InterpreterRecordMissing(t *testing.T) 
 	_, _, err = validator.SaveRecord(scriptPath, false)
 	require.NoError(t, err)
 
-	// Simulate a missing interpreter record by deleting the interpreter's hash file.
+	// Simulate a missing interpreter record by removing the embedded dep hash and
+	// deleting the compatibility interpreter record.
 	interpPath, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
+	scriptRecord, err := validator.LoadRecord(scriptPath)
+	require.NoError(t, err)
+	filteredDeps := make([]fileanalysis.LibEntry, 0, len(scriptRecord.DynLibDeps))
+	for _, dep := range scriptRecord.DynLibDeps {
+		if dep.Path == interpPath {
+			continue
+		}
+		filteredDeps = append(filteredDeps, dep)
+	}
+	scriptRecord.DynLibDeps = filteredDeps
+	store := validator.Store()
+	require.NotNil(t, store)
+	scriptResolvedPath, err := common.NewResolvedPath(scriptPath)
+	require.NoError(t, err)
+	require.NoError(t, store.Save(scriptResolvedPath, scriptRecord))
+
 	resolvedInterpPath, err := common.NewResolvedPath(interpPath)
 	require.NoError(t, err)
 	interpHashPath, err := validator.HashFilePath(resolvedInterpPath)

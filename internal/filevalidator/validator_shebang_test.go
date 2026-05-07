@@ -41,10 +41,12 @@ func TestSaveRecord_ShebangDirect(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, expectedInterpreter, record.ShebangChain[0].Path)
 
-	// Verify the interpreter also has its own independent record.
-	interpRecord, err := validator.LoadRecord(expectedInterpreter)
-	require.NoError(t, err)
-	assert.Equal(t, expectedInterpreter, interpRecord.FilePath)
+	// Verify the interpreter binary itself is included in deps.
+	depPaths := make([]string, 0, len(record.DynLibDeps))
+	for _, dep := range record.DynLibDeps {
+		depPaths = append(depPaths, dep.Path)
+	}
+	assert.Contains(t, depPaths, expectedInterpreter, "deps should include the shebang interpreter binary")
 }
 
 // TestSaveRecord_ShebangEnv verifies that SaveRecord on a "#!/usr/bin/env sh"
@@ -88,15 +90,13 @@ func TestSaveRecord_ShebangEnv(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, expectedResolvedPath, record.ShebangChain[1].Path)
 
-	// Verify env has its own record.
-	envRecord, err := validator.LoadRecord(expectedEnvPath)
-	require.NoError(t, err)
-	assert.Equal(t, expectedEnvPath, envRecord.FilePath)
-
-	// Verify the resolved command has its own record.
-	resolvedRecord, err := validator.LoadRecord(record.ShebangChain[1].Path)
-	require.NoError(t, err)
-	assert.Equal(t, record.ShebangChain[1].Path, resolvedRecord.FilePath)
+	// Verify both shebang binaries are included in deps.
+	depPaths := make([]string, 0, len(record.DynLibDeps))
+	for _, dep := range record.DynLibDeps {
+		depPaths = append(depPaths, dep.Path)
+	}
+	assert.Contains(t, depPaths, expectedEnvPath)
+	assert.Contains(t, depPaths, record.ShebangChain[1].Path)
 }
 
 // TestSaveRecord_ShebangELF verifies that ELF binaries have no shebang_chain entries.
@@ -160,10 +160,8 @@ func TestSaveRecord_ShebangRecursive(t *testing.T) {
 	assert.ErrorIs(t, err, ErrRecursiveShebang)
 }
 
-// TestSaveRecord_InterpreterForce verifies that the caller's force flag is
-// propagated to interpreter records:
-//   - force=false: existing interpreter record is preserved (no error, no overwrite)
-//   - force=true: existing interpreter record is overwritten
+// TestSaveRecord_InterpreterForce verifies that repeated shebang recording keeps
+// the main script record consistent without requiring independent interpreter records.
 func TestSaveRecord_InterpreterForce(t *testing.T) {
 	hashDir := safeTempDir(t)
 	dir := safeTempDir(t)
@@ -174,24 +172,30 @@ func TestSaveRecord_InterpreterForce(t *testing.T) {
 	validator, err := New(&SHA256{}, hashDir)
 	require.NoError(t, err)
 
-	// Record script A — creates the interpreter record for the first time.
+	// Record script A.
 	scriptA := commontesting.WriteExecutableFile(t, dir, "a.sh", []byte("#!/bin/sh\necho A\n"))
 	_, _, err = validator.SaveRecord(scriptA, false)
 	require.NoError(t, err)
 
-	// Record script B with force=false — interpreter already recorded; must not error.
+	// Record script B with force=false.
 	scriptB := commontesting.WriteExecutableFile(t, dir, "b.sh", []byte("#!/bin/sh\necho B\n"))
 	_, _, err = validator.SaveRecord(scriptB, false)
-	require.NoError(t, err, "second SaveRecord(force=false) must succeed even though interpreter is already recorded")
+	require.NoError(t, err, "second SaveRecord(force=false) must succeed")
 
-	// Record script B again with force=true — interpreter record must be refreshed.
+	// Record script B again with force=true.
 	_, _, err = validator.SaveRecord(scriptB, true)
-	require.NoError(t, err, "SaveRecord(force=true) must succeed and overwrite interpreter record")
+	require.NoError(t, err, "SaveRecord(force=true) must succeed")
 
-	// Interpreter record must still be valid after force re-record.
-	interpRecord, err := validator.LoadRecord(interpPath)
+	// Script record must still contain the interpreter binary in deps after force re-record.
+	scriptRecord, err := validator.LoadRecord(scriptB)
 	require.NoError(t, err)
-	assert.Equal(t, interpPath, interpRecord.FilePath)
+	depPaths := make([]string, 0, len(scriptRecord.DynLibDeps))
+	for _, dep := range scriptRecord.DynLibDeps {
+		depPaths = append(depPaths, dep.Path)
+	}
+	assert.Contains(t, depPaths, interpPath)
+	_, err = validator.LoadRecord(interpPath)
+	assert.NoError(t, err)
 }
 
 // TestSaveRecord_ShebangSymlink verifies that when the script is accessed via
