@@ -46,7 +46,7 @@
 1. コマンド本体を解析する
 2. shebang チェーンがある場合、チェーン全バイナリを解析する
 3. 1と2で得た依存共有ライブラリを解析する
-4. VDSO と syscall wrapper ライブラリは解析スキップする
+4. VDSO は解析スキップし `deps` にも含めない（AC-016）。syscall wrapper ライブラリは解析スキップするが `deps` には path+hash を含める
 5. syscall は番号で dedup する
 6. symbol は名前で dedup する
 7. `ArgEvalResults` は worst-case を採用して統合する
@@ -111,7 +111,7 @@
 | AC-013 | syscall 統合 dedup | `internal/filevalidator/*syscall*_test.go` |
 | AC-014 | symbol 統合 dedup | `internal/filevalidator/*symbol*_test.go` |
 | AC-015 | ArgEvalResults worst-case 統合 | `internal/filevalidator/*syscall*_test.go` |
-| AC-016 | VDSO/wrapper 解析スキップ | `internal/filevalidator/validator_library_analysis_test.go` |
+| AC-016 | VDSO 解析スキップかつ deps 除外 / wrapper 解析スキップのみ（deps に残す） | `internal/filevalidator/validator_library_analysis_test.go` |
 | AC-017 | runner はトップレベルのみ参照 | `internal/runner/base/security/network_analyzer_test.go` |
 | AC-018, AC-024 | AnalysisDeps/Manager の新構造 | `internal/verification/manager_test.go` |
 | AC-019 | analyzeBinarySignals 新仕様 | `internal/runner/base/security/network_analyzer_test.go` |

@@ -82,7 +82,7 @@ Acceptance Criteria:
 1. AC-013: `syscall_analysis` はコマンド本体、全 dep ライブラリ、shebang チェーン全バイナリ由来の結果を syscall 番号で統合・dedup する
 2. AC-014: `symbol_analysis` は同対象を symbol 名で統合・dedup する
 3. AC-015: `ArgEvalResults`（`mprotect` の `PROT_EXEC` 判定）は統合時に worst-case を採用する
-4. AC-016: VDSO と syscall wrapper ライブラリは解析をスキップする（ただし `deps` には `path` + `hash` で残る）
+4. AC-016: VDSO は解析をスキップし `deps` にも含めない（実ファイルが存在しないため hash 検証不可）。syscall wrapper ライブラリ（libc 等）は解析をスキップするが `deps` には `path` + `hash` で含める
 5. AC-017: `runner` のリスク判定は `record.syscall_analysis` と `record.symbol_analysis` のみを参照する
 
 ### FR-005: runner / NetworkAnalyzer / verification.Manager の簡素化
@@ -104,7 +104,7 @@ Acceptance Criteria:
 
 1. AC-026: `CurrentSchemaVersion` は 22 である
 2. AC-027: v21 以下の Record 読み込み時は `SchemaVersionMismatchError` を返す
-3. AC-028: 旧 Record は `record` 再実行で v22 形式へ再生成できる
+3. AC-028: v21 以下の Record が存在する場合、`--force` フラグなしで `record` を再実行すれば v22 形式へ上書き再生成できる
 
 ## 4. 非機能要件
 
