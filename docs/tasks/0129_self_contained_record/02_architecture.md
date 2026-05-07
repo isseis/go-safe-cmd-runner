@@ -11,7 +11,7 @@
 ### 1.2 設計原則
 
 - **自己完結性**: コマンドの Record は実行時判断に必要な全情報を内包する
-- **dedup**: 複数の依存元から参照される共有ライブラリは `path` を主キーとして1エントリに統合する（hash が一致する場合に統合。不一致の場合は警告を出力して最初のエントリを採用）
+- **dedup**: 複数の依存元から参照される共有ライブラリは `path` を主キーとして1エントリに統合する（hash が一致する場合に統合。不一致の場合は致命的エラーとして `record` を中断する）
 - **キャッシュの分離**: dynlib-analysis キャッシュは `record` の内部最適化手段として維持し、`runner` からは不可視とする
 - **段階的デバッグ**: 通常用途には必要最小限の情報のみ記録し、`-debug-info` 時のみ詳細な由来情報を追記する
 
@@ -242,7 +242,7 @@ type DebugInfo struct {
 
 1. コマンド本体の `dyn_lib_deps` を収集
 2. shebang チェーンの各バイナリ（env バイナリを含む）の `dyn_lib_deps` を収集
-3. `path` を主キーとして dedup する。同一 path で異なる hash が出現した場合は最初のエントリを採用し警告を記録する（通常はシンボリックリンク不整合などの異常環境でのみ発生）
+3. `path` を主キーとして dedup する。同一 path で異なる hash が出現した場合は致命的エラーとして `record` を中断する（どちらのバイナリが実際にロードされるか不明なため、不正なセキュリティポリシー適用を防ぐ）
 4. 各ユニークなライブラリについて dynlib-analysis キャッシュを参照し、ヒットしなければ新規解析
 
 ### 3.5 NetworkAnalyzer の変更
@@ -276,9 +276,9 @@ Record 自体が存在しない場合は既存の `SchemaVersionMismatchError` /
 
 同一 path で異なる hash の dep が複数のバイナリから参照された場合:
 
-- 最初に見つかったエントリを採用する
-- `record` コマンドの stderr に警告を出力する
-- Record の `DepEntry.Warnings` には記録しない（`record` 実行時の環境異常であり、`runner` が知る必要はない）
+- `record` コマンドを致命的エラーで中断する
+- どちらの hash のバイナリが実際にロードされるか不明であり、いずれかの解析結果を採用することは不正なセキュリティポリシー適用につながるため、fail-closed とする
+- Record は生成しない（不整合な Record が `runner` に読み込まれることを防ぐ）
 
 ## 5. セキュリティ考慮事項
 
@@ -389,7 +389,7 @@ sequenceDiagram
 ### 7.1 ユニットテスト
 
 - `DepEntry` の JSON シリアライズ・デシリアライズ（`syscall_analysis` null / 非 null、`warnings` あり / なし）
-- dedup ロジック（同一 path+hash → 統合、同一 path 異なる hash → 最初のエントリ採用 + 警告）
+- dedup ロジック（同一 path+hash → 統合、同一 path 異なる hash → 致命的エラーで中断）
 - `ShebangBinaryInfo` の直接形式・env 形式の JSON 表現
 - `DebugInfo` の `-debug-info` あり / なしでの生成（`omitempty` 動作）
 
