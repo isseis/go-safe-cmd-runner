@@ -145,10 +145,10 @@ for each entry in shebang_chain:
 
 ## 8. 重複テスト整理方針
 
-1. schema のフィールド存在確認は `internal/fileanalysis/schema_test.go` に集約する
-2. dedup 失敗パスは `internal/filevalidator/validator_dedup_test.go` に集約する
-3. shebang 実行時再解決は `internal/verification/shebang_chain_verifier_test.go` に集約する
-4. runner の入力源確認は `internal/runner/base/security/network_analyzer_test.go` に集約する
+1. schema のフィールド存在確認は `internal/fileanalysis/schema_test.go`（**新規作成**）に集約する
+2. dedup 失敗パスは `internal/filevalidator/validator_dedup_test.go`（**新規作成**）に集約する
+3. shebang 実行時再解決は `internal/verification/shebang_chain_verifier_test.go`（**新規作成**）に集約する
+4. runner の入力源確認は `internal/runner/base/security/network_analyzer_test.go`（既存）に集約する
 
 ## 9. 実装上の注意事項
 
