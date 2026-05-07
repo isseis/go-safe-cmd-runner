@@ -2379,49 +2379,12 @@ func (h *logCaptureHandler) WithGroup(_ string) slog.Handler {
 	return h
 }
 
-// pathResolverWithDeps is a minimal PathResolver that also implements
-// GetAnalysisDeps(), allowing tests to verify createNormalResourceManager
-// picks up aggregated analysis dependencies from the path resolver.
-type pathResolverWithDeps struct {
-	depsCalled *bool
-}
-
-func (p *pathResolverWithDeps) ResolvePath(path string) (string, error) {
-	return path, nil
-}
-
-func (p *pathResolverWithDeps) GetAnalysisDeps() security.AnalysisDeps {
-	*p.depsCalled = true
-	return security.AnalysisDeps{}
-}
-
-// TestCreateNormalResourceManager_AnalysisStoresInjected verifies that when the
-// path resolver implements GetAnalysisDeps(), createNormalResourceManager calls
-// it and uses the returned dependencies.
-func TestCreateNormalResourceManager_AnalysisStoresInjected(t *testing.T) {
-	depsCalled := false
-	resolver := &pathResolverWithDeps{
-		depsCalled: &depsCalled,
-	}
-
-	opts := &runnerOptions{}
-	err := createNormalResourceManager(opts, &runnertypes.ConfigSpec{}, resolver, nil)
-	require.NoError(t, err)
-
-	assert.True(t, depsCalled, "GetAnalysisDeps must be called when pathResolver implements the interface")
-	assert.NotNil(t, opts.resourceManager)
-}
-
-// TestCreateNormalResourceManager_NoStoreWhenResolverLacksInterface verifies that
-// when the path resolver does NOT implement GetAnalysisDeps(), the resource
-// manager is still created successfully (deps default to nil / cache disabled).
-func TestCreateNormalResourceManager_NoStoreWhenResolverLacksInterface(t *testing.T) {
-	// verification.NewPathResolver returns a *PathResolver that does NOT implement
-	// GetAnalysisDeps, so deps must remain empty (no panic, no error).
+// TestCreateNormalResourceManager_Succeeds verifies that createNormalResourceManager
+// creates a resource manager without error when given a basic path resolver and empty deps.
+func TestCreateNormalResourceManager_Succeeds(t *testing.T) {
 	resolver := verification.NewPathResolver("")
-
 	opts := &runnerOptions{}
-	err := createNormalResourceManager(opts, &runnertypes.ConfigSpec{}, resolver, nil)
+	err := createNormalResourceManager(opts, &runnertypes.ConfigSpec{}, resolver, security.AnalysisDeps{}, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, opts.resourceManager)
 }

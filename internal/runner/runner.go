@@ -182,14 +182,16 @@ func createResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSp
 	}
 
 	pathResolver := resource.PathResolver(verification.NewPathResolver(""))
+	var deps security.AnalysisDeps
 	if opts.verificationManager != nil {
 		pathResolver = opts.verificationManager
+		deps = opts.verificationManager.GetAnalysisDeps()
 	}
 
 	if opts.dryRun {
 		return createDryRunResourceManager(opts, pathResolver, validator)
 	}
-	return createNormalResourceManager(opts, configSpec, pathResolver, validator)
+	return createNormalResourceManager(opts, configSpec, pathResolver, deps, validator)
 }
 
 // createDryRunResourceManager creates a resource manager for dry-run mode
@@ -219,7 +221,7 @@ func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.Path
 }
 
 // createNormalResourceManager creates a resource manager for normal mode
-func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec, pathResolver resource.PathResolver, validator *security.Validator) error {
+func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec, pathResolver resource.PathResolver, deps security.AnalysisDeps, validator *security.Validator) error {
 	fs := common.NewDefaultFileSystem()
 	// Note: maxOutputSize is no longer used here as output size limit is now resolved per-command
 	// via RuntimeCommand.EffectiveOutputSizeLimit. Pass 0 to ResourceManager.
@@ -227,15 +229,6 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 
 	// Create output manager with the same validator that has group membership support
 	outputMgr := output.NewDefaultOutputCaptureManager(validator)
-
-	type analysisDepsProvider interface {
-		GetAnalysisDeps() security.AnalysisDeps
-	}
-
-	deps := security.AnalysisDeps{}
-	if p, ok := pathResolver.(analysisDepsProvider); ok {
-		deps = p.GetAnalysisDeps()
-	}
 
 	networkAnalyzer := security.NewNetworkAnalyzer(runtime.GOOS, deps)
 	evaluator := risk.NewStandardEvaluator(networkAnalyzer)
