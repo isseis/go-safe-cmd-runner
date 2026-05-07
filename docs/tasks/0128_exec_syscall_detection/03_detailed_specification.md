@@ -703,7 +703,7 @@ Countermeasures リストに追加:
 
 > - exec syscall（execve/execveat）によるプロセスイメージの置換。ネットワーク機能や他の危険な動作を持つ任意のバイナリの実行が可能になる
 
-**変更箇所 3: Countermeasures**
+**変更箇所 4: Countermeasures**
 
 > - runner 実行時における exec syscall（execve/execveat）使用の検出。該当バイナリは自動的に高リスクに分類される
 
