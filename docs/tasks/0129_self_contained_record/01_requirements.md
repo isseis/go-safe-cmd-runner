@@ -9,7 +9,7 @@
 1. **コマンドの Record JSON**（`<hash-dir>/~path~to~command.json`）
    - コマンド自体のハッシュ、syscall 解析結果、シンボル解析結果
    - 依存共有ライブラリの参照情報（path + hash のみ。解析結果なし）
-   - shebang インタープリターの参照情報（path のみ。hash および解析結果なし）
+   - shebang インタープリターの参照情報（`raw_interpreter_path`、`interpreter_path`、`command_name`、`resolved_path` を保持。hash および解析結果なし）
 
 2. **dynlib-analysis キャッシュ**（`<hash-dir>/dynlib-analysis/<encoded-lib-path>`）
    - 各共有ライブラリの syscall 解析結果、シンボル解析結果
