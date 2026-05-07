@@ -150,7 +150,7 @@ func createTestNormalResourceManager() *testResourceManagerFixture {
 	mockPriv := &MockPrivilegeManager{}
 	mockOutputMgr := &MockCaptureManager{}
 
-	manager := NewNormalResourceManagerWithOutput(mockExec, mockFS, mockPriv, mockOutputMgr, 1024*1024, slog.Default(), nil)
+	manager := NewNormalResourceManagerWithOutput(mockExec, mockFS, mockPriv, mockOutputMgr, 1024*1024, slog.Default())
 
 	return &testResourceManagerFixture{
 		Manager:       manager,

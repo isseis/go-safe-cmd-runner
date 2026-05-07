@@ -234,7 +234,7 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 			require.NoError(t, err)
 			outputMgr := output.NewDefaultOutputCaptureManager(securityValidator)
 
-			manager := resource.NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, 0, logger, nil)
+			manager := resource.NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, 0, logger)
 			ctx := context.Background()
 			_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 

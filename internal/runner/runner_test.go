@@ -12,7 +12,6 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
-	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
@@ -2379,58 +2378,21 @@ func (h *logCaptureHandler) WithGroup(_ string) slog.Handler {
 	return h
 }
 
-// pathResolverWithStore is a minimal PathResolver that also implements
-// GetNetworkSymbolStore() and GetSyscallAnalysisStore(), allowing tests to verify
-// that createNormalResourceManager picks up both stores from the path resolver.
-type pathResolverWithStore struct {
-	networkStoreCalled *bool
-	syscallStoreCalled *bool
-}
-
-func (p *pathResolverWithStore) ResolvePath(path string) (string, error) {
-	return path, nil
-}
-
-func (p *pathResolverWithStore) GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore {
-	*p.networkStoreCalled = true
-	return nil // nil store is sufficient; we only verify the method was called
-}
-
-func (p *pathResolverWithStore) GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore {
-	*p.syscallStoreCalled = true
-	return nil // nil store is sufficient; we only verify the method was called
-}
-
-// TestCreateNormalResourceManager_AnalysisStoresInjected verifies that when the
-// path resolver implements both store getters, createNormalResourceManager calls
-// them to obtain and inject the caches used by NetworkAnalyzer.
-func TestCreateNormalResourceManager_AnalysisStoresInjected(t *testing.T) {
-	networkStoreCalled := false
-	syscallStoreCalled := false
-	resolver := &pathResolverWithStore{
-		networkStoreCalled: &networkStoreCalled,
-		syscallStoreCalled: &syscallStoreCalled,
-	}
-
+// TestCreateNormalResourceManager_Succeeds verifies that createNormalResourceManager
+// creates a resource manager without error when a verification manager is provided.
+func TestCreateNormalResourceManager_Succeeds(t *testing.T) {
 	opts := &runnerOptions{}
-	err := createNormalResourceManager(opts, &runnertypes.ConfigSpec{}, resolver, nil)
-	require.NoError(t, err)
-
-	assert.True(t, networkStoreCalled, "GetNetworkSymbolStore must be called when pathResolver implements the interface")
-	assert.True(t, syscallStoreCalled, "GetSyscallAnalysisStore must be called when pathResolver implements the interface")
-	assert.NotNil(t, opts.resourceManager)
-}
-
-// TestCreateNormalResourceManager_NoStoreWhenResolverLacksInterface verifies that
-// when the path resolver does NOT implement GetNetworkSymbolStore(), the resource
-// manager is still created successfully (store defaults to nil / cache disabled).
-func TestCreateNormalResourceManager_NoStoreWhenResolverLacksInterface(t *testing.T) {
-	// verification.NewPathResolver returns a *PathResolver that does NOT implement
-	// GetNetworkSymbolStore, so the store must remain nil (no panic, no error).
-	resolver := verification.NewPathResolver("")
-
-	opts := &runnerOptions{}
-	err := createNormalResourceManager(opts, &runnertypes.ConfigSpec{}, resolver, nil)
+	vm := setupDryRunVerification(t)
+	err := createNormalResourceManager(opts, &runnertypes.ConfigSpec{}, vm, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, opts.resourceManager)
+}
+
+// TestCreateNormalResourceManager_FailsWithNilVM verifies that createNormalResourceManager
+// returns an error when no verification manager is provided.
+func TestCreateNormalResourceManager_FailsWithNilVM(t *testing.T) {
+	opts := &runnerOptions{}
+	err := createNormalResourceManager(opts, &runnertypes.ConfigSpec{}, nil, nil)
+	require.Error(t, err)
+	assert.Equal(t, ErrVerificationManagerRequiredNormal, err)
 }

@@ -2513,7 +2513,7 @@ func TestIsNetworkViaBinaryAnalysis_DynloadPlusDynlibNetwork(t *testing.T) {
 		},
 	}
 
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, symStore, nil, depsStore, libStore, nil)
+	analyzer := NewNetworkAnalyzer(runtime.GOOS, AnalysisDeps{NetworkSymbolStore: symStore, DynLibDepsStore: depsStore, LibAnalysisStore: libStore})
 	isNet, isHigh, err := analyzer.analyzeBinarySignals(cmdPath, contentHash)
 	require.NoError(t, err)
 

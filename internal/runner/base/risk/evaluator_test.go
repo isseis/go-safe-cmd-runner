@@ -3,21 +3,23 @@
 package risk
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNewStandardEvaluator(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil, nil, nil, nil, nil)
+	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
 	require.NotNil(t, evaluator)
 	assert.IsType(t, &StandardEvaluator{}, evaluator)
 }
 
 func TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil, nil, nil, nil, nil)
+	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
 
 	tests := []struct {
 		name     string
@@ -59,7 +61,7 @@ func TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation(t *testing.T) {
 }
 
 func TestStandardEvaluator_EvaluateRisk_DestructiveFileOperations(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil, nil, nil, nil, nil)
+	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
 
 	tests := []struct {
 		name     string
@@ -101,7 +103,7 @@ func TestStandardEvaluator_EvaluateRisk_DestructiveFileOperations(t *testing.T) 
 }
 
 func TestStandardEvaluator_EvaluateRisk_NetworkOperations(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil, nil, nil, nil, nil)
+	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
 
 	tests := []struct {
 		name     string
@@ -143,7 +145,7 @@ func TestStandardEvaluator_EvaluateRisk_NetworkOperations(t *testing.T) {
 }
 
 func TestStandardEvaluator_EvaluateRisk_SystemModifications(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil, nil, nil, nil, nil)
+	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
 
 	tests := []struct {
 		name     string
@@ -185,7 +187,7 @@ func TestStandardEvaluator_EvaluateRisk_SystemModifications(t *testing.T) {
 }
 
 func TestStandardEvaluator_EvaluateRisk_SafeCommands(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil, nil, nil, nil, nil)
+	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
 
 	tests := []struct {
 		name     string
@@ -233,7 +235,7 @@ func TestStandardEvaluator_EvaluateRisk_SafeCommands(t *testing.T) {
 }
 
 func TestStandardEvaluator_EvaluateRisk_EmptyCommand(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil, nil, nil, nil, nil)
+	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
 
 	runtimeCmd := &runnertypes.RuntimeCommand{
 		ExpandedCmd:  "",
@@ -245,7 +247,7 @@ func TestStandardEvaluator_EvaluateRisk_EmptyCommand(t *testing.T) {
 }
 
 func TestStandardEvaluator_EvaluateRisk_RiskLevelHierarchy(t *testing.T) {
-	evaluator := NewStandardEvaluator(nil, nil, nil, nil, nil)
+	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
 
 	tests := []struct {
 		name        string

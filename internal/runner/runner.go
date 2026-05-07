@@ -8,11 +8,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os/user"
+	"runtime"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
-	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
@@ -20,6 +19,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -30,12 +30,14 @@ import (
 
 // Error definitions
 var (
-	ErrCommandFailed        = errors.New("command failed")
-	ErrCommandNotFound      = errors.New("command not found")
-	ErrGroupVerification    = errors.New("group file verification failed")
-	ErrGroupNotFound        = errors.New("group not found")
-	ErrVariableAccessDenied = errors.New("variable access denied")
-	ErrRunIDRequired        = errors.New("runID is required")
+	ErrCommandFailed                     = errors.New("command failed")
+	ErrCommandNotFound                   = errors.New("command not found")
+	ErrGroupVerification                 = errors.New("group file verification failed")
+	ErrGroupNotFound                     = errors.New("group not found")
+	ErrVariableAccessDenied              = errors.New("variable access denied")
+	ErrRunIDRequired                     = errors.New("runID is required")
+	ErrVerificationManagerRequiredDryRun = errors.New("verification manager is required for dry-run resource manager creation")
+	ErrVerificationManagerRequiredNormal = errors.New("verification manager is required for normal resource manager creation")
 )
 
 // GroupExecutionStatus represents the execution status of a command group
@@ -180,23 +182,19 @@ func createResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSp
 	if opts.resourceManager != nil {
 		return nil
 	}
-
-	// Helper function to get path resolver
-	getPathResolver := func() resource.PathResolver {
-		if opts.verificationManager != nil {
-			return opts.verificationManager
-		}
-		return verification.NewPathResolver("")
-	}
-
 	if opts.dryRun {
-		return createDryRunResourceManager(opts, getPathResolver(), validator)
+		return createDryRunResourceManager(opts, opts.verificationManager, validator)
 	}
-	return createNormalResourceManager(opts, configSpec, getPathResolver(), validator)
+	return createNormalResourceManager(opts, configSpec, opts.verificationManager, validator)
 }
 
 // createDryRunResourceManager creates a resource manager for dry-run mode
-func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.PathResolver, validator *security.Validator) error {
+// verificationManager is required (must not be nil) to ensure verification manager is properly initialized
+func createDryRunResourceManager(opts *runnerOptions, verificationManager *verification.Manager, validator *security.Validator) error {
+	if verificationManager == nil {
+		return ErrVerificationManagerRequiredDryRun
+	}
+
 	if opts.dryRunOptions == nil {
 		opts.dryRunOptions = &resource.DryRunOptions{
 			DetailLevel:  resource.DetailLevelDetailed,
@@ -204,13 +202,12 @@ func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.Path
 		}
 	}
 
-	// Create output manager with the same validator that has group membership support
 	outputMgr := output.NewDefaultOutputCaptureManager(validator)
 
 	resourceManager, err := resource.NewDryRunResourceManagerWithOutput(
 		opts.executor,
 		opts.privilegeManager,
-		pathResolver,
+		verificationManager,
 		outputMgr,
 		opts.dryRunOptions,
 	)
@@ -222,70 +219,32 @@ func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.Path
 }
 
 // createNormalResourceManager creates a resource manager for normal mode
-func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec, pathResolver resource.PathResolver, validator *security.Validator) error {
+// verificationManager is required (must not be nil) to ensure verification manager is properly initialized
+func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec, verificationManager *verification.Manager, validator *security.Validator) error {
+	if verificationManager == nil {
+		return ErrVerificationManagerRequiredNormal
+	}
+
 	fs := common.NewDefaultFileSystem()
-	// Note: maxOutputSize is no longer used here as output size limit is now resolved per-command
-	// via RuntimeCommand.EffectiveOutputSizeLimit. Pass 0 to ResourceManager.
 	maxOutputSize := int64(0)
 
-	// Create output manager with the same validator that has group membership support
 	outputMgr := output.NewDefaultOutputCaptureManager(validator)
 
-	// Obtain analysis stores from the path resolver if available.
-	// When the resolver does not implement these provider interfaces (e.g., test mocks
-	// without a hash dir), the corresponding cache is nil and cache-based analysis
-	// is disabled.
-	var networkStore fileanalysis.NetworkSymbolStore
-	var syscallStore fileanalysis.SyscallAnalysisStore
-	var dynlibAnalysisStore dynamicanalysis.Store
-	var dynLibDepsStore fileanalysis.DynLibDepsStore
-	var shebangStore fileanalysis.ShebangInterpreterStore
-	type networkSymbolStoreProvider interface {
-		GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore
-	}
-	type syscallAnalysisStoreProvider interface {
-		GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore
-	}
-	type dynlibAnalysisStoreProvider interface {
-		GetDynLibAnalysisStore() dynamicanalysis.Store
-	}
-	type dynLibDepsStoreProvider interface {
-		GetDynLibDepsStore() fileanalysis.DynLibDepsStore
-	}
-	type shebangStoreProvider interface {
-		GetShebangInterpreterStore() fileanalysis.ShebangInterpreterStore
-	}
-	if p, ok := pathResolver.(networkSymbolStoreProvider); ok {
-		networkStore = p.GetNetworkSymbolStore()
-	}
-	if p, ok := pathResolver.(syscallAnalysisStoreProvider); ok {
-		syscallStore = p.GetSyscallAnalysisStore()
-	}
-	if p, ok := pathResolver.(dynlibAnalysisStoreProvider); ok {
-		dynlibAnalysisStore = p.GetDynLibAnalysisStore()
-	}
-	if p, ok := pathResolver.(dynLibDepsStoreProvider); ok {
-		dynLibDepsStore = p.GetDynLibDepsStore()
-	}
-	if p, ok := pathResolver.(shebangStoreProvider); ok {
-		shebangStore = p.GetShebangInterpreterStore()
-	}
+	deps := verificationManager.GetAnalysisDeps()
+	networkAnalyzer := security.NewNetworkAnalyzer(runtime.GOOS, deps)
+	evaluator := risk.NewStandardEvaluator(networkAnalyzer)
 
 	resourceManager, err := resource.NewDefaultResourceManager(resource.Config{
-		Executor:           opts.executor,
-		FileSystem:         fs,
-		PrivilegeManager:   opts.privilegeManager,
-		PathResolver:       pathResolver,
-		Logger:             slog.Default(),
-		Mode:               resource.ExecutionModeNormal,
-		DryRunOpts:         &resource.DryRunOptions{},
-		OutputManager:      outputMgr,
-		MaxOutputSize:      maxOutputSize,
-		NetworkSymbolStore: networkStore,
-		SyscallStore:       syscallStore,
-		DynLibDepsStore:    dynLibDepsStore,
-		LibAnalysisStore:   dynlibAnalysisStore,
-		ShebangStore:       shebangStore,
+		Executor:         opts.executor,
+		FileSystem:       fs,
+		PrivilegeManager: opts.privilegeManager,
+		PathResolver:     verificationManager,
+		Logger:           slog.Default(),
+		Mode:             resource.ExecutionModeNormal,
+		DryRunOpts:       &resource.DryRunOptions{},
+		OutputManager:    outputMgr,
+		MaxOutputSize:    maxOutputSize,
+		RiskEvaluator:    evaluator,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create default resource manager: %w", err)
