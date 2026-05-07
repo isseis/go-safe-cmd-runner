@@ -44,7 +44,7 @@
 
 ### F-001: deps フィールドへの解析結果埋め込み
 
-現在の `dyn_lib_deps` フィールド（path + hash のみ）を `deps` フィールドに置き換える。`deps` はコマンドおよび shebang チェーン全バイナリの依存共有ライブラリを path+hash で dedup したリストであり、各ライブラリの解析結果（`syscall_analysis`、`symbol_analysis`）を含む。
+現在の `dyn_lib_deps` フィールド（path + hash のみ）を `deps` フィールドに置き換える。`deps` はコマンドおよび shebang チェーン全バイナリの依存共有ライブラリを `path` を主キーとして dedup したリストであり（同一 path で hash が一致する場合に統合。不一致の場合は致命的エラー）、各ライブラリの解析結果（`syscall_analysis`、`symbol_analysis`）を含む。
 
 **Acceptance Criteria:**
 
