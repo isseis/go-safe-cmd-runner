@@ -141,6 +141,18 @@ func TestNewManager(t *testing.T) {
 	}
 }
 
+func TestManager_GetAnalysisDeps(t *testing.T) {
+	var manager Manager
+
+	deps := manager.GetAnalysisDeps()
+
+	assert.Nil(t, deps.NetworkSymbolStore)
+	assert.Nil(t, deps.SyscallStore)
+	assert.Nil(t, deps.DynLibDepsStore)
+	assert.Nil(t, deps.LibAnalysisStore)
+	assert.Nil(t, deps.ShebangStore)
+}
+
 // TestManager_ValidateHashDirectory_NoSecurityValidator tests that hash directory validation fails when no security validator is set
 
 func TestManager_ValidateHashDirectory_NoSecurityValidator(t *testing.T) {

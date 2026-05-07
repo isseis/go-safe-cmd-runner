@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
-	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
@@ -233,53 +231,15 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 	// Create output manager with the same validator that has group membership support
 	outputMgr := output.NewDefaultOutputCaptureManager(validator)
 
-	// Obtain analysis stores from the path resolver if available.
-	// When the resolver does not implement these provider interfaces (e.g., test mocks
-	// without a hash dir), the corresponding cache is nil and cache-based analysis
-	// is disabled.
-	var networkStore fileanalysis.NetworkSymbolStore
-	var syscallStore fileanalysis.SyscallAnalysisStore
-	var dynlibAnalysisStore dynamicanalysis.Store
-	var dynLibDepsStore fileanalysis.DynLibDepsStore
-	var shebangStore fileanalysis.ShebangInterpreterStore
-	type networkSymbolStoreProvider interface {
-		GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore
-	}
-	type syscallAnalysisStoreProvider interface {
-		GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore
-	}
-	type dynlibAnalysisStoreProvider interface {
-		GetDynLibAnalysisStore() dynamicanalysis.Store
-	}
-	type dynLibDepsStoreProvider interface {
-		GetDynLibDepsStore() fileanalysis.DynLibDepsStore
-	}
-	type shebangStoreProvider interface {
-		GetShebangInterpreterStore() fileanalysis.ShebangInterpreterStore
-	}
-	if p, ok := pathResolver.(networkSymbolStoreProvider); ok {
-		networkStore = p.GetNetworkSymbolStore()
-	}
-	if p, ok := pathResolver.(syscallAnalysisStoreProvider); ok {
-		syscallStore = p.GetSyscallAnalysisStore()
-	}
-	if p, ok := pathResolver.(dynlibAnalysisStoreProvider); ok {
-		dynlibAnalysisStore = p.GetDynLibAnalysisStore()
-	}
-	if p, ok := pathResolver.(dynLibDepsStoreProvider); ok {
-		dynLibDepsStore = p.GetDynLibDepsStore()
-	}
-	if p, ok := pathResolver.(shebangStoreProvider); ok {
-		shebangStore = p.GetShebangInterpreterStore()
+	type analysisDepsProvider interface {
+		GetAnalysisDeps() security.AnalysisDeps
 	}
 
-	deps := security.AnalysisDeps{
-		NetworkSymbolStore: networkStore,
-		SyscallStore:       syscallStore,
-		DynLibDepsStore:    dynLibDepsStore,
-		LibAnalysisStore:   dynlibAnalysisStore,
-		ShebangStore:       shebangStore,
+	deps := security.AnalysisDeps{}
+	if p, ok := pathResolver.(analysisDepsProvider); ok {
+		deps = p.GetAnalysisDeps()
 	}
+
 	networkAnalyzer := security.NewNetworkAnalyzer(runtime.GOOS, deps)
 	evaluator := risk.NewStandardEvaluator(networkAnalyzer)
 

@@ -16,6 +16,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
 )
@@ -344,35 +345,16 @@ func (m *Manager) GetVerificationSummary() *FileVerificationSummary {
 	return &summary
 }
 
-// GetNetworkSymbolStore returns a NetworkSymbolStore backed by the same hash directory,
-// or nil if not available (e.g. when fileValidator is a test mock or hash dir is absent).
-func (m *Manager) GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore {
-	return m.networkSymbolStore
-}
-
-// GetSyscallAnalysisStore returns a SyscallAnalysisStore backed by the same hash
-// directory, or nil if not available (e.g. when fileValidator is a test mock or
-// hash dir is absent).
-func (m *Manager) GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore {
-	return m.syscallAnalysisStore
-}
-
-// GetDynLibAnalysisStore returns a DynamicLibAnalysisStore for runner-side library
-// network detection, or nil if not available.
-func (m *Manager) GetDynLibAnalysisStore() dynamicanalysis.Store {
-	return m.dynlibAnalysisStore
-}
-
-// GetDynLibDepsStore returns a DynLibDepsStore for reading per-command library
-// dependency snapshots, or nil if not available.
-func (m *Manager) GetDynLibDepsStore() fileanalysis.DynLibDepsStore {
-	return m.dynLibDepsStore
-}
-
-// GetShebangInterpreterStore returns a ShebangInterpreterStore for looking up
-// shebang interpreter analysis records, or nil if not available.
-func (m *Manager) GetShebangInterpreterStore() fileanalysis.ShebangInterpreterStore {
-	return m.shebangStore
+// GetAnalysisDeps returns the aggregated analysis dependencies owned by this manager.
+// Nil fields indicate unavailable stores and preserve disabled-analysis behavior.
+func (m *Manager) GetAnalysisDeps() security.AnalysisDeps {
+	return security.AnalysisDeps{
+		NetworkSymbolStore: m.networkSymbolStore,
+		SyscallStore:       m.syscallAnalysisStore,
+		DynLibDepsStore:    m.dynLibDepsStore,
+		LibAnalysisStore:   m.dynlibAnalysisStore,
+		ShebangStore:       m.shebangStore,
+	}
 }
 
 // verifyFile attempts file verification using the configured fileValidator.
