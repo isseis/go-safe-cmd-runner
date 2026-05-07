@@ -189,9 +189,9 @@ func createResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSp
 }
 
 // createDryRunResourceManager creates a resource manager for dry-run mode
-// vm is required (must not be nil) to ensure verification manager is properly initialized
-func createDryRunResourceManager(opts *runnerOptions, vm *verification.Manager, validator *security.Validator) error {
-	if vm == nil {
+// verificationManager is required (must not be nil) to ensure verification manager is properly initialized
+func createDryRunResourceManager(opts *runnerOptions, verificationManager *verification.Manager, validator *security.Validator) error {
+	if verificationManager == nil {
 		return ErrVerificationManagerRequiredDryRun
 	}
 
@@ -207,7 +207,7 @@ func createDryRunResourceManager(opts *runnerOptions, vm *verification.Manager, 
 	resourceManager, err := resource.NewDryRunResourceManagerWithOutput(
 		opts.executor,
 		opts.privilegeManager,
-		vm,
+		verificationManager,
 		outputMgr,
 		opts.dryRunOptions,
 	)
@@ -219,9 +219,9 @@ func createDryRunResourceManager(opts *runnerOptions, vm *verification.Manager, 
 }
 
 // createNormalResourceManager creates a resource manager for normal mode
-// vm is required (must not be nil) to ensure verification manager is properly initialized
-func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec, vm *verification.Manager, validator *security.Validator) error {
-	if vm == nil {
+// verificationManager is required (must not be nil) to ensure verification manager is properly initialized
+func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec, verificationManager *verification.Manager, validator *security.Validator) error {
+	if verificationManager == nil {
 		return ErrVerificationManagerRequiredNormal
 	}
 
@@ -230,7 +230,7 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 
 	outputMgr := output.NewDefaultOutputCaptureManager(validator)
 
-	deps := vm.GetAnalysisDeps()
+	deps := verificationManager.GetAnalysisDeps()
 	networkAnalyzer := security.NewNetworkAnalyzer(runtime.GOOS, deps)
 	evaluator := risk.NewStandardEvaluator(networkAnalyzer)
 
@@ -238,7 +238,7 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 		Executor:         opts.executor,
 		FileSystem:       fs,
 		PrivilegeManager: opts.privilegeManager,
-		PathResolver:     vm,
+		PathResolver:     verificationManager,
 		Logger:           slog.Default(),
 		Mode:             resource.ExecutionModeNormal,
 		DryRunOpts:       &resource.DryRunOptions{},
