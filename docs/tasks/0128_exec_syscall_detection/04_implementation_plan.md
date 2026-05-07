@@ -285,21 +285,21 @@ exec signal の検出と `checkSyscallCache` の更新を行う。
 
 ### 6.1 コマンドレベル設定ガイド（英語版）
 
-- [ ] `docs/user/toml_config/06_command_level.md` を編集
+- [x] `docs/user/toml_config/06_command_level.md` を編集
   - 「Risk Assessment Mechanism」の番号付きリストに項目 5 を追加
   - 内容: exec syscall（execve/execveat）検出による自動高リスク分類の説明
   - 仕様: 詳細仕様書 §11.1
 
 ### 6.2 コマンドレベル設定ガイド（日本語版）
 
-- [ ] `docs/user/toml_config/06_command_level.ja.md` を編集
+- [x] `docs/user/toml_config/06_command_level.ja.md` を編集
   - 「リスク評価の仕組み」の番号付きリストに項目 5 を追加
   - 内容: §6.1 の日本語版
   - 仕様: 詳細仕様書 §11.2
 
 ### 6.3 セキュリティアーキテクチャ設計書（英語版）
 
-- [ ] `docs/dev/architecture_design/security-architecture.md` を編集
+- [x] `docs/dev/architecture_design/security-architecture.md` を編集
   - syscall analysis の説明（§2 "Analysis content"）に exec syscall 検出を追記
   - Security Guarantees リストに exec syscall 検出を追記
   - Threat Model "Dangerous Binary Execution" の Threats / Countermeasures に追記
@@ -307,6 +307,6 @@ exec signal の検出と `checkSyscallCache` の更新を行う。
 
 ### 6.4 セキュリティアーキテクチャ設計書（日本語版）
 
-- [ ] `docs/dev/architecture_design/security-architecture.ja.md` を編集
+- [x] `docs/dev/architecture_design/security-architecture.ja.md` を編集
   - §6.3 と同内容を日本語の対応箇所に適用
   - 仕様: 詳細仕様書 §11.4

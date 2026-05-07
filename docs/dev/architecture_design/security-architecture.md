@@ -101,7 +101,7 @@ fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
 ```
 
 **Analysis content**:
-- **syscall analysis** (internal/security/elfanalyzer/): Supports both x86_64 and arm64 architectures. Enumerates SYSCALL instructions (0F 05) / SVC #0 and identifies syscall numbers via backward scanning. Detects mprotect/pkey_mprotect + PROT_EXEC combinations (equivalent to JIT code execution) as dangerous patterns. Also analyzes Go wrapper calls (syscall.Syscall, etc.) in Pass 2 (requires Go 1.18+ for pclntab parsing). Branch convergence analysis tracks register copy chains to identify syscall numbers across conditional branches. Cache misses (e.g., ErrNoSyscallAnalysis) trigger a fallback to live analysis, though schema version mismatches (SchemaVersionMismatchError) require re-recording.
+- **syscall analysis** (internal/security/elfanalyzer/): Supports both x86_64 and arm64 architectures. Enumerates SYSCALL instructions (0F 05) / SVC #0 and identifies syscall numbers via backward scanning. Detects mprotect/pkey_mprotect + PROT_EXEC combinations (equivalent to JIT code execution) as dangerous patterns. Detects exec-related syscalls (Linux: execve/execveat, macOS: execve/__mac_execve) and maps them to high-risk classification at runtime. Also analyzes Go wrapper calls (syscall.Syscall, etc.) in Pass 2 (requires Go 1.18+ for pclntab parsing). Branch convergence analysis tracks register copy chains to identify syscall numbers across conditional branches. Cache misses (e.g., ErrNoSyscallAnalysis) trigger a fallback to live analysis, though schema version mismatches (SchemaVersionMismatchError) require re-recording.
 - **Network capability detection** (internal/security/binaryanalyzer/, internal/security/elfanalyzer/): Normalizes symbol names such as socket, connect, and bind through networkSymbols and produces detected_symbols / dynamic_load_symbols for later runner-side policy evaluation. For ELF binaries without undefined symbols (SHN_UNDEF), the analysis returns NoNetworkSymbols instead of StaticBinary.
 - **Dynamic library dependency analysis** (`internal/dynlib/elfdynlib/`, `internal/dynlib/machodylib/`): Recursively analyzes ELF DT_NEEDED / Mach-O LC_LOAD_DYLIB to record the paths and hashes of all dependency libraries.
 - **libc syscall cache** (`internal/libccache/`): On Linux, caches libc syscall wrapper symbols; on macOS, caches libSystem syscall symbols, enabling analysis of indirect syscall calls on both platforms.
@@ -150,6 +150,7 @@ Likewise, for network capability handling, the runner does not re-analyze the EL
 - Detection of dynamic library tampering (hash comparison of dependency libraries)
 - Requires re-recording before execution if dependencies of dynamically linked binaries are not recorded
 - Pre-detection and warning of dangerous syscall patterns (mprotect+PROT_EXEC)
+- Pre-detection of exec-related syscalls and automatic high-risk classification
 - Identification and visualization of binaries with network capabilities
 - Detection of script interpreter tampering (shebang tracking)
 - Support for analysis of indirect syscall calls via libc (libccache)
@@ -1068,12 +1069,14 @@ The system implements multiple security layers:
 
 **Threats**:
 - Dynamic code execution using mprotect+PROT_EXEC (equivalent to JIT code injection)
+- Process replacement/execution via exec-related syscalls (execve family)
 - Unexpected external communication from binaries with network capabilities
 - Behavior tampering via replacement of dynamic libraries (.so / dylib)
 - Arbitrary code execution via script interpreter tampering
 
 **Countermeasures**:
 - Pre-detection of dangerous syscall patterns via ELF static analysis by the record command
+- Pre-detection of exec-related syscalls and runtime escalation to high-risk policy
 - Visualization of communication capabilities via network symbol analysis
 - Hash recording of dynamic library dependencies and pre-execution verification
 - Hash recording of shebang interpreters and pre-execution verification

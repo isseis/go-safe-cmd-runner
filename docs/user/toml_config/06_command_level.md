@@ -1036,6 +1036,7 @@ go-safe-cmd-runner automatically assesses command risk from the following elemen
 2. **Argument Patterns**: Recursive deletion (-rf), forced execution (-f), etc.
 3. **Privilege Escalation**: Use of run_as_user, run_as_group
 4. **Network Access**: Network commands like curl, wget
+5. **Exec Syscall Detection**: Detected exec-related syscalls (execve/execveat on Linux, execve/__mac_execve on macOS) are treated as high risk
 
 #### Configuration Examples
 
