@@ -3,7 +3,6 @@
 package security
 
 import (
-	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 )
 
@@ -13,7 +12,7 @@ func newNetworkAnalyzer(goos string) *NetworkAnalyzer {
 	return &NetworkAnalyzer{goos: isec.RequireGOOS(goos)}
 }
 
-// newNetworkAnalyzerWithStore creates a NetworkAnalyzer with a store for cache-based analysis.
-func newNetworkAnalyzerWithStore(goos string, store fileanalysis.NetworkSymbolStore) *NetworkAnalyzer {
-	return &NetworkAnalyzer{goos: isec.RequireGOOS(goos), deps: AnalysisDeps{NetworkSymbolStore: store}}
+// newNetworkAnalyzerWithStore creates a NetworkAnalyzer with a RecordStore for record-based analysis.
+func newNetworkAnalyzerWithStore(goos string, store RecordStore) *NetworkAnalyzer {
+	return &NetworkAnalyzer{goos: isec.RequireGOOS(goos), deps: AnalysisDeps{RecordStore: store}}
 }

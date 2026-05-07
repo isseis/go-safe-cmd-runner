@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
@@ -28,11 +27,6 @@ type Manager struct {
 	fs                          common.FileSystem
 	safeFS                      safefileio.FileSystem // used for secure file I/O (e.g. ELF inspection)
 	fileValidator               filevalidator.FileValidator
-	networkSymbolStore          fileanalysis.NetworkSymbolStore // nil when cache is unavailable
-	syscallAnalysisStore        fileanalysis.SyscallAnalysisStore
-	dynlibAnalysisStore         dynamicanalysis.Store // nil when store is unavailable
-	dynLibDepsStore             fileanalysis.DynLibDepsStore
-	shebangStore                fileanalysis.ShebangInterpreterStore
 	dynlibVerifier              *elfdynlib.DynLibVerifier // initialized once at construction
 	security                    DirectoryValidator
 	pathResolver                *PathResolver
@@ -40,8 +34,6 @@ type Manager struct {
 	skipHashDirectoryValidation bool
 	resultCollector             *ResultCollector
 }
-
-var errAnalysisStoresUnavailable = errors.New("analysis stores unavailable: validator store is unavailable")
 
 // VerifyAndReadConfigFile performs atomic verification and reading of a configuration file
 // This prevents TOCTOU attacks by reading the file content once and verifying it against the hash
@@ -350,11 +342,7 @@ func (m *Manager) GetVerificationSummary() *FileVerificationSummary {
 // Nil fields indicate unavailable stores and preserve disabled-analysis behavior.
 func (m *Manager) GetAnalysisDeps() security.AnalysisDeps {
 	return security.AnalysisDeps{
-		NetworkSymbolStore: m.networkSymbolStore,
-		SyscallStore:       m.syscallAnalysisStore,
-		DynLibDepsStore:    m.dynLibDepsStore,
-		LibAnalysisStore:   m.dynlibAnalysisStore,
-		ShebangStore:       m.shebangStore,
+		RecordStore: m.fileValidator,
 	}
 }
 
@@ -510,50 +498,6 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 			}
 		} else {
 			manager.fileValidator = validator
-			if s := validator.Store(); s != nil {
-				manager.networkSymbolStore = fileanalysis.NewNetworkSymbolStore(s)
-				manager.syscallAnalysisStore = fileanalysis.NewSyscallAnalysisStore(s)
-				manager.dynLibDepsStore = fileanalysis.NewDynLibDepsStore(s)
-				manager.shebangStore = fileanalysis.NewShebangInterpreterStore(s)
-			} else {
-				// Security policy:
-				// - Production mode is fail-closed.
-				// - Dry-run/Test modes are fail-open to keep validation workflows usable.
-				if opts.creationMode == CreationModeProduction && !opts.isDryRun {
-					slog.Error("Failed to initialize analysis stores in production mode: validator store is unavailable")
-					return nil, errAnalysisStoresUnavailable
-				}
-
-				slog.Warn("Analysis stores are unavailable; network/syscall/dynlib-deps/shebang analysis will be disabled",
-					"creation_mode", opts.creationMode,
-					"dry_run", opts.isDryRun)
-				manager.networkSymbolStore = nil
-				manager.syscallAnalysisStore = nil
-				manager.dynLibDepsStore = nil
-				manager.shebangStore = nil
-			}
-			// Initialize dynlib analysis store for runner-side library network detection.
-			// The store is load-only (nil analyzer): analysis is performed by record.
-			dynlibStoreDir := filepath.Join(hashDir, dynamicanalysis.StoreSubDir)
-			if ds, dsErr := dynamicanalysis.New(dynlibStoreDir, nil); dsErr == nil {
-				manager.dynlibAnalysisStore = ds
-			} else {
-				// Security policy:
-				// - Production mode is fail-closed.
-				// - Dry-run/Test modes are fail-open to keep validation workflows usable.
-				if opts.creationMode == CreationModeProduction && !opts.isDryRun {
-					slog.Error("Failed to initialize dynlib analysis store in production mode",
-						"store_dir", dynlibStoreDir, "error", dsErr)
-					return nil, fmt.Errorf("failed to initialize dynlib analysis store: %w", dsErr)
-				}
-
-				slog.Warn("Failed to initialize dynlib analysis store; runner-side dynlib analysis will be disabled",
-					"store_dir", dynlibStoreDir,
-					"creation_mode", opts.creationMode,
-					"dry_run", opts.isDryRun,
-					"error", dsErr)
-				manager.dynlibAnalysisStore = nil
-			}
 		}
 	}
 

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
@@ -29,14 +28,15 @@ func syscallTableForArch(goos, arch string) syscallTableInterface {
 	return elfanalyzer.SyscallTableForArchitecture(arch)
 }
 
+// RecordStore is an interface for loading precomputed analysis records.
+type RecordStore interface {
+	LoadRecord(filePath string) (*fileanalysis.Record, error)
+}
+
 // AnalysisDeps aggregates analysis stores consumed by NetworkAnalyzer.
-// Nil fields preserve the existing behavior of disabling corresponding checks.
+// RecordStore provides precomputed analysis records; nil disables record-based checks.
 type AnalysisDeps struct {
-	NetworkSymbolStore fileanalysis.NetworkSymbolStore
-	SyscallStore       fileanalysis.SyscallAnalysisStore
-	DynLibDepsStore    fileanalysis.DynLibDepsStore
-	LibAnalysisStore   dynamicanalysis.Store
-	ShebangStore       fileanalysis.ShebangInterpreterStore
+	RecordStore RecordStore
 }
 
 // NetworkAnalyzer provides network operation detection for commands.
@@ -58,18 +58,16 @@ func NewNetworkAnalyzer(goos string, deps AnalysisDeps) *NetworkAnalyzer {
 // This function considers symbolic links to detect network commands properly.
 // Returns (isNetwork, isHighRisk, error). isHighRisk is true when any of the
 // following conditions hold: symlink depth exceeded; dynamic load symbols
-// (dlopen/dlsym) detected in the binary or its deps; mprotect PROT_EXEC risk
-// detected in deps; or binary analysis inconclusive (fail-closed).
-// Returns a non-nil error when shebang-chain analysis cannot be completed
-// (e.g. missing or stale interpreter record); callers must abort the command
-// group on error.
+// (dlopen/dlsym) detected in the binary; svc #0x80 syscall detected; or
+// exec syscall detected in the binary.
 //
 // contentHash is a pre-computed hash in "algo:hex" format (e.g. "sha256:abc123...").
-// Used to verify cache record freshness when store-based binary analysis runs.
+// Used to verify that binary analysis is applicable; when empty, binary analysis
+// is skipped.
 //
 // Detection priority:
 // 1. commandProfileDefinitions (hardcoded list) - takes precedence
-// 2. Cache-backed binary analysis for unknown commands (requires store and contentHash)
+// 2. Record-backed binary analysis for unknown commands (requires RecordStore and contentHash)
 // 3. Argument-based detection (URLs, SSH-style addresses)
 func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string, contentHash string) (bool, bool, error) {
 	// Extract all possible command names including symlink targets
@@ -140,387 +138,103 @@ func hasNetworkArguments(args []string) bool {
 		containsSSHStyleAddress(args) // SSH-style user@host:path addresses
 }
 
-// analyzeBinarySignals analyzes the binary for network usage and dynamic loading.
+// analyzeBinarySignals analyzes the binary for network usage and dynamic loading
+// by loading its precomputed analysis Record.
 // Returns (isNetwork, hasDynLoad, nil) where:
 //   - isNetwork: true if network symbols or network syscalls were detected
-//   - hasDynLoad: true if dynamic load symbols (dlopen/dlsym/dlvsym) were detected
-//     in the binary or its dep libraries; also true when analysis is inconclusive
-//     (fail-closed) or when mprotect PROT_EXEC risk is detected in deps
+//   - hasDynLoad: true if dynamic load symbols (dlopen/dlsym/dlvsym) were detected,
+//     or exec syscalls, or if the record schema is mismatched (fail-closed)
 //
-// Both signals are independent: a binary with both socket and dlopen returns (true, true).
+// Returns (false, false, nil) when RecordStore is nil or contentHash is empty.
+// Returns (true, true, nil) on schema mismatch (fail-closed).
+// Returns (false, false, error) on unexpected load failures.
 //
-// Returns a non-nil error when the shebang interpreter record is missing or its
-// content hash mismatches, indicating that risk assessment cannot be completed.
-// Callers must abort the command group on error.
-//
-// IMPORTANT: cmdPath must be an absolute, symlink-resolved path,
-// already resolved by the caller (via verification.PathResolver.ResolvePath()).
-//
-// contentHash is a pre-computed hash in "algo:hex" format. Used to verify cache
-// record freshness; when empty, all cache-backed analysis (symbol/syscall,
-// dynlib-deps, shebang chain) is skipped (returning false, false, nil).
-// When store is nil but shebangStore is configured, symbol/syscall analysis is
-// skipped but shebang-chain analysis still runs.
+// IMPORTANT: cmdPath must be an absolute path.
+// contentHash is a pre-computed hash in "algo:hex" format; when empty, analysis is skipped.
 func (a *NetworkAnalyzer) analyzeBinarySignals(cmdPath string, contentHash string) (isNetwork, hasDynLoad bool, err error) {
-	// Validate that cmdPath is an absolute path.
-	// The caller (EvaluateRisk via group_executor) must have already resolved the path.
-	// A non-absolute path here indicates a programming error in the call chain.
 	if !filepath.IsAbs(cmdPath) {
 		panic("analyzeBinarySignals: cmdPath must be an absolute path, got: " + cmdPath)
 	}
 
-	// cmdPath is already symlink-resolved by PathResolver.ResolvePath(),
-	// so no need for filepath.EvalSymlinks() here.
-
-	// Check cache first (when store is configured and contentHash is available).
-	// Skip cache lookup when contentHash is empty: the store uses hash to verify
-	// record freshness, so an empty hash would always produce ErrHashMismatch even
-	// for a valid record. That would misuse ErrHashMismatch (which signals a genuine
-	// file-content change) for a mere "no hash available" situation.
-	if a.deps.NetworkSymbolStore != nil && contentHash != "" {
-		handled, isNet, dynLoad := a.checkAnalysisCache(cmdPath, contentHash)
-		if handled {
-			return isNet, dynLoad, nil
-		}
-		isNetwork, hasDynLoad = isNet, dynLoad
+	if a.deps.RecordStore == nil || contentHash == "" {
+		return false, false, nil
 	}
 
-	// Additional dynlib analysis: OR signals with binary-analysis results.
-	// Runs when depsStore and libAnalysisStore are both configured and contentHash is available.
-	// Fail-closed: any loading error is treated as high risk.
-	//
-	// Short-circuit: if both signals are already true, checkDynLibDepsNetwork cannot
-	// change the outcome, so skip it to avoid unnecessary store I/O.
-	// We still run when only one signal is true (e.g. hasDynLoad=true but isNetwork=false)
-	// so that a dep library can contribute the missing signal.
-	if a.deps.DynLibDepsStore != nil && a.deps.LibAnalysisStore != nil && contentHash != "" && (!isNetwork || !hasDynLoad) {
-		dynNet, dynHigh := a.checkDynLibDepsNetwork(cmdPath, contentHash)
-		isNetwork = isNetwork || dynNet
-		hasDynLoad = hasDynLoad || dynHigh
+	record, loadErr := a.deps.RecordStore.LoadRecord(cmdPath)
+	if loadErr != nil {
+		if errors.Is(loadErr, fileanalysis.ErrRecordNotFound) {
+			return false, false, nil
+		}
+		var schemaMismatch *fileanalysis.SchemaVersionMismatchError
+		if errors.As(loadErr, &schemaMismatch) {
+			slog.Warn("Record has outdated schema; treating as high risk",
+				"path", cmdPath,
+				"expected_schema", schemaMismatch.Expected,
+				"actual_schema", schemaMismatch.Actual)
+			return true, true, nil
+		}
+		return false, false, fmt.Errorf("failed to load record for %q: %w", cmdPath, loadErr)
 	}
 
-	// Shebang chain: if this is a script, also analyze the interpreter binary.
-	// The interpreter's record (SymbolAnalysis, SyscallAnalysis, DynLibDeps)
-	// was written by `record` when the script was first recorded.
-	if a.deps.ShebangStore != nil && contentHash != "" {
-		interpNet, interpHigh, err := a.followShebangChain(cmdPath, contentHash)
-		if err != nil {
-			return false, false, err
+	isNetwork, hasDynLoad = a.analyzeRecordSignals(record, cmdPath)
+	if hasDynLoad {
+		return isNetwork, hasDynLoad, nil
+	}
+
+	// Follow the shebang chain: load and analyze each interpreter's record.
+	for _, entry := range record.ShebangChain {
+		if entry.Path == "" {
+			continue
 		}
+		interpRecord, interpErr := a.deps.RecordStore.LoadRecord(entry.Path)
+		if interpErr != nil {
+			if errors.Is(interpErr, fileanalysis.ErrRecordNotFound) {
+				continue
+			}
+			var schemaMismatch *fileanalysis.SchemaVersionMismatchError
+			if errors.As(interpErr, &schemaMismatch) {
+				slog.Warn("Interpreter record has outdated schema; treating as high risk",
+					"path", entry.Path,
+					"expected_schema", schemaMismatch.Expected,
+					"actual_schema", schemaMismatch.Actual)
+				return true, true, nil
+			}
+			return false, false, fmt.Errorf("failed to load interpreter record for %q: %w", entry.Path, interpErr)
+		}
+		interpNet, interpHigh := a.analyzeRecordSignals(interpRecord, entry.Path)
 		isNetwork = isNetwork || interpNet
 		hasDynLoad = hasDynLoad || interpHigh
+		if hasDynLoad {
+			return isNetwork, hasDynLoad, nil
+		}
 	}
 
 	return isNetwork, hasDynLoad, nil
 }
 
-// followShebangChain loads the shebang interpreter record for the given script and
-// recursively analyzes the interpreter binary for network and dynamic-load signals.
-// Returns (0, 0, nil) when cmdPath is not a shebang script.
-// Returns a non-nil error when the interpreter record is missing or stale, indicating
-// that risk assessment cannot be completed and the command group must be aborted.
-func (a *NetworkAnalyzer) followShebangChain(cmdPath, contentHash string) (isNetwork, hasDynLoad bool, err error) {
-	interpPath, interpHash, shebangErr := a.deps.ShebangStore.LoadInterpreterAnalysisPath(cmdPath, contentHash)
-	switch {
-	case shebangErr == nil:
-		if interpPath == "" {
-			return false, false, nil
-		}
-		interpNet, interpHigh, interpErr := a.analyzeBinarySignals(interpPath, interpHash)
-		if interpErr != nil {
-			return false, false, interpErr
-		}
-		return interpNet, interpHigh, nil
-	case errors.Is(shebangErr, fileanalysis.ErrRecordNotFound):
-		// When the symbol store is configured, checkAnalysisCache already called
-		// LoadNetworkSymbolAnalysis and confirmed the script record exists before
-		// followShebangChain is reached. A missing shebang record at this point
-		// most likely means the record was deleted between those two calls
-		// (e.g. hash-dir rotation or concurrent modification). Return an error
-		// so the command group is aborted fail-closed rather than crashing.
-		//
-		// When the symbol store is nil, checkAnalysisCache is never called, so
-		// the script may have no analysis record at all; treat it as
-		// "no shebang info available" and continue without error.
-		if a.deps.NetworkSymbolStore != nil {
-			slog.Error("Shebang script record disappeared between cache lookup and shebang lookup; aborting command group",
-				"path", cmdPath, "error", shebangErr)
-			return false, false, fmt.Errorf("shebang script record disappeared for %q: %w", cmdPath, shebangErr)
-		}
-		return false, false, nil
-	case errors.Is(shebangErr, fileanalysis.ErrHashMismatch):
-		return false, false, fmt.Errorf("shebang script hash mismatch for %q: %w", cmdPath, shebangErr)
-	case errors.Is(shebangErr, fileanalysis.ErrInterpreterRecordMissing):
-		return false, false, fmt.Errorf("shebang interpreter record missing for %q: %w", cmdPath, shebangErr)
-	default:
-		return false, false, fmt.Errorf("shebang interpreter lookup failed for %q: %w", cmdPath, shebangErr)
-	}
-}
-
-// checkSyscallCache loads and evaluates the SyscallAnalysis cache entry.
-// checkAnalysisCache loads and evaluates both SymbolAnalysis and SyscallAnalysis cache entries.
-// Returns (handled, isNetwork, hasDynLoad):
-//   - handled=true: caller should return isNetwork/hasDynLoad immediately (definitive or high-risk signal).
-//   - handled=false: caller should OR-merge isNetwork/hasDynLoad with other signals.
-func (a *NetworkAnalyzer) checkAnalysisCache(cmdPath, contentHash string) (handled, isNetwork, hasDynLoad bool) {
-	data, err := a.deps.NetworkSymbolStore.LoadNetworkSymbolAnalysis(cmdPath, contentHash)
-	var symSchemaMismatch *fileanalysis.SchemaVersionMismatchError
-	switch {
-	case err == nil:
-		// data is valid (or nil when analyzed but no symbols found); continue below.
-	case errors.Is(err, fileanalysis.ErrHashMismatch):
-		slog.Warn("SymbolAnalysis cache hash mismatch; treating as high risk",
-			"path", cmdPath)
-		return true, true, true
-	case errors.As(err, &symSchemaMismatch):
-		slog.Warn("SymbolAnalysis cache has outdated schema; treating as high risk",
-			"path", cmdPath,
-			"expected_schema", symSchemaMismatch.Expected,
-			"actual_schema", symSchemaMismatch.Actual)
-		return true, true, true
-	default:
-		slog.Warn("SymbolAnalysis cache load failed; treating as high risk",
-			"path", cmdPath, "error", err)
-		return true, true, true
+// analyzeRecordSignals extracts network and high-risk signals from a single record.
+func (a *NetworkAnalyzer) analyzeRecordSignals(record *fileanalysis.Record, path string) (isNetwork, hasDynLoad bool) {
+	if record.SymbolAnalysis != nil {
+		output := buildAnalysisOutputFromSymbolData(record.SymbolAnalysis)
+		symIsNet, symHigh := handleAnalysisOutput(output, path)
+		isNetwork = isNetwork || symIsNet
+		hasDynLoad = hasDynLoad || symHigh
 	}
 
-	syscallHandled, syscallIsNet, syscallIsHighRisk := a.checkSyscallCache(cmdPath, contentHash)
-	if syscallHandled {
-		// Definitive signal from svc #0x80 or cache error: early return.
-		return true, syscallIsNet, syscallIsHighRisk
-	}
-
-	// Accumulate syscall signals even when not definitively handled.
-	isNetwork = syscallIsNet
-	hasDynLoad = syscallIsHighRisk
-
-	// Always run symbol analysis to detect dlopen etc.
-	// data == nil when analyzed but no network symbols found (static binary with no svc).
-	if data != nil {
-		output := buildAnalysisOutputFromSymbolData(data)
-		symIsNetwork, symIsHighRisk := handleAnalysisOutput(output, cmdPath)
-		isNetwork = isNetwork || symIsNetwork
-		hasDynLoad = hasDynLoad || symIsHighRisk
-	}
-	return false, isNetwork, hasDynLoad
-}
-
-// checkSyscallCache loads and evaluates the SyscallAnalysis cache entry.
-// Returns (handled, isNetwork, isHighRisk):
-//   - handled=true: only for svc #0x80 or cache errors; caller should return immediately.
-//   - handled=false: caller should OR-merge isNetwork/isHighRisk with symbol/dynlib/shebang signals.
-//
-// Exec syscalls set isHighRisk=true but return handled=false so that symbol analysis,
-// dynlib deps, and shebang chain analysis can still contribute an isNetwork=true signal.
-// High risk and network capability are independent: a binary that launches a child process
-// may also make network connections via its dynamic libraries or shebang interpreter.
-func (a *NetworkAnalyzer) checkSyscallCache(cmdPath, contentHash string) (handled, isNetwork, isHighRisk bool) {
-	if a.deps.SyscallStore == nil {
-		return false, false, false
-	}
-	svcResult, svcErr := a.deps.SyscallStore.LoadSyscallAnalysis(cmdPath, contentHash)
-	var svcSchemaMismatch *fileanalysis.SchemaVersionMismatchError
-	switch {
-	case svcErr == nil:
-		if syscallAnalysisHasSVCSignal(svcResult) {
-			slog.Warn("SyscallAnalysis cache indicates svc #0x80; treating as high risk",
-				"path", cmdPath)
-			return true, true, true
-		}
-		isNet := syscallAnalysisHasNetworkSignal(svcResult, a.goos)
-		if isNet {
-			slog.Info("SyscallAnalysis cache indicates network syscall",
-				"path", cmdPath)
-		}
-		isExec := syscallAnalysisHasExecSignal(svcResult, a.goos)
-		if isExec {
-			slog.Warn("SyscallAnalysis cache indicates exec syscall; treating as high risk",
-				"path", cmdPath)
-		}
-		// Return handled=false for both exec and non-exec: symbol/dynlib/shebang analysis
-		// must still run to complete the isNetwork determination.
-		return false, isNet, isExec
-	case errors.Is(svcErr, fileanalysis.ErrHashMismatch):
-		slog.Warn("SyscallAnalysis cache hash mismatch; treating as high risk",
-			"path", cmdPath)
-		return true, true, true
-	case errors.As(svcErr, &svcSchemaMismatch):
-		slog.Warn("SyscallAnalysis cache has outdated schema; treating as high risk",
-			"path", cmdPath,
-			"expected_schema", svcSchemaMismatch.Expected,
-			"actual_schema", svcSchemaMismatch.Actual)
-		return true, true, true
-	default:
-		// ErrRecordNotFound or unexpected error: this must not occur in production.
-		// The underlying record exists (SymbolAnalysis succeeded or returned
-		// nil for static binary), so a missing SyscallAnalysis record indicates
-		// a consistency bug that must be fixed, not silently absorbed.
-		panic(fmt.Sprintf("SyscallAnalysis cache inconsistency for %q: %v", cmdPath, svcErr))
-	}
-}
-
-// checkDynLibDepsNetwork checks network capability by loading per-library analysis
-// results for each dynamic dependency of the given command.
-// Fail-closed: any loading failure returns (true, true).
-func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (isNetwork, isHighRisk bool) {
-	deps, err := a.deps.DynLibDepsStore.LoadDynLibDeps(cmdPath, contentHash)
-	if err != nil {
-		var schemaMismatch *fileanalysis.SchemaVersionMismatchError
-		switch {
-		case errors.Is(err, fileanalysis.ErrHashMismatch):
-			slog.Error("DynLibDeps record hash mismatch; treating as high risk", "path", cmdPath)
-		case errors.As(err, &schemaMismatch):
-			slog.Warn("DynLibDeps record has outdated schema; treating as high risk",
-				"path", cmdPath,
-				"expected_schema", schemaMismatch.Expected,
-				"actual_schema", schemaMismatch.Actual)
-		default:
-			slog.Error("DynLibDeps record load failed; treating as high risk",
-				"path", cmdPath, "error", err)
-		}
+	if syscallAnalysisHasSVCSignal(record.SyscallAnalysis) {
+		slog.Warn("SyscallAnalysis indicates svc #0x80; treating as high risk", "path", path)
 		return true, true
 	}
-
-	if len(deps) == 0 {
-		// Static binary or no deps recorded: no dynlib network signal.
-		return false, false
+	if syscallAnalysisHasNetworkSignal(record.SyscallAnalysis, a.goos) {
+		slog.Info("SyscallAnalysis indicates network syscall", "path", path)
+		isNetwork = true
+	}
+	if syscallAnalysisHasExecSignal(record.SyscallAnalysis, a.goos) {
+		slog.Warn("SyscallAnalysis indicates exec syscall; treating as high risk", "path", path)
+		hasDynLoad = true
 	}
 
-	var (
-		dynLoadLog  onceLogger
-		networkLog  onceLogger
-		mprotectLog onceLogger
-		execLog     onceLogger
-	)
-
-	for _, dep := range deps {
-		// Skip VDSO entries (no real file) and known syscall wrapper libraries.
-		if isVDSOEntry(dep.SOName) || binaryanalyzer.IsSyscallWrapperLibrary(dep.SOName) {
-			continue
-		}
-
-		result, loadErr := a.deps.LibAnalysisStore.LoadAnalysis(dep.Path, dep.Hash)
-		if loadErr != nil {
-			if errors.Is(loadErr, dynamicanalysis.ErrAnalysisNotFound) {
-				slog.Warn("dynlib analysis not found; treating as high risk",
-					"cmd_path", cmdPath, "dep_path", dep.Path, "dep_hash", dep.Hash)
-			} else {
-				slog.Error("dynlib analysis load failed; treating as high risk",
-					"cmd_path", cmdPath, "dep_path", dep.Path, "error", loadErr)
-			}
-			return true, true
-		}
-
-		if result == nil {
-			continue
-		}
-
-		sigs := a.analyzeDepSignals(result)
-
-		if len(sigs.dynLoadSymbols) > 0 {
-			dynLoadLog.log("dynlib analysis detected dynamic load symbols",
-				"cmd_path", cmdPath, "dep_path", dep.Path, "symbols", sigs.dynLoadSymbols)
-			isHighRisk = true
-		}
-		if len(sigs.networkSymbols) > 0 {
-			networkLog.log("dynlib analysis detected network symbols",
-				"cmd_path", cmdPath, "dep_path", dep.Path, "symbols", sigs.networkSymbols)
-			isNetwork = true
-		}
-		if sigs.networkSyscall != "" {
-			networkLog.log("dynlib analysis detected network syscall",
-				"cmd_path", cmdPath, "dep_path", dep.Path, "syscall", sigs.networkSyscall)
-			isNetwork = true
-		}
-		if sigs.hasMprotectRisk {
-			mprotectLog.log("dynlib analysis detected mprotect-family PROT_EXEC risk",
-				"cmd_path", cmdPath, "dep_path", dep.Path,
-				"syscall", sigs.mprotectRisk.SyscallName, "status", sigs.mprotectRisk.Status)
-			isHighRisk = true
-		}
-		if sigs.execSyscall != "" {
-			execLog.log("dynlib analysis detected exec syscall; treating as high risk",
-				"cmd_path", cmdPath, "dep_path", dep.Path, "syscall", sigs.execSyscall)
-			isHighRisk = true
-		}
-	}
-
-	return isNetwork, isHighRisk
-}
-
-// onceLogger emits a slog.Info message at most once.
-type onceLogger struct{ logged bool }
-
-func (l *onceLogger) log(msg string, args ...any) {
-	if !l.logged {
-		slog.Info(msg, args...)
-		l.logged = true
-	}
-}
-
-// depSignals holds the network/risk signals extracted from one library analysis result.
-type depSignals struct {
-	dynLoadSymbols  []string
-	networkSymbols  []string
-	networkSyscall  string
-	execSyscall     string
-	mprotectRisk    common.SyscallArgEvalResult
-	hasMprotectRisk bool
-}
-
-// analyzeDepSignals extracts all network and risk signals from result.
-func (a *NetworkAnalyzer) analyzeDepSignals(result *dynamicanalysis.Result) depSignals {
-	var s depSignals
-	s.dynLoadSymbols = result.DynamicLoadSymbols()
-	if result.SymbolAnalysis != nil {
-		s.networkSymbols = result.SymbolAnalysis.DetectedSymbols
-	}
-	if result.SyscallAnalysis != nil {
-		table := syscallTableForArch(a.goos, result.SyscallAnalysis.Architecture)
-		s.networkSyscall = firstNetworkSyscall(table, result.SyscallAnalysis)
-		s.execSyscall = firstExecSyscall(table, result.SyscallAnalysis)
-		s.mprotectRisk, s.hasMprotectRisk = elfanalyzer.FirstMprotectRisk(result.SyscallAnalysis.ArgEvalResults)
-	}
-	return s
-}
-
-// firstNetworkSyscall returns the name of the first network syscall found in
-// data using table for classification. Returns "" if none found or inputs are nil.
-func firstNetworkSyscall(table syscallTableInterface, data *fileanalysis.SyscallAnalysisData) string {
-	if table == nil || data == nil {
-		return ""
-	}
-	for _, s := range data.DetectedSyscalls {
-		if s.Number >= 0 && table.IsNetworkSyscall(s.Number) {
-			return s.Name
-		}
-	}
-	return ""
-}
-
-// firstExecSyscall returns the name of the first exec syscall found in
-// data using table for classification. Returns "" if none found or inputs are nil.
-func firstExecSyscall(table syscallTableInterface, data *fileanalysis.SyscallAnalysisData) string {
-	if table == nil || data == nil {
-		return ""
-	}
-	for _, s := range data.DetectedSyscalls {
-		if s.Number >= 0 && table.IsExecSyscall(s.Number) {
-			return s.Name
-		}
-	}
-	return ""
-}
-
-// isVDSOEntry reports whether soname refers to a Linux virtual DSO that has no
-// real file on disk and should be excluded from library analysis.
-func isVDSOEntry(soname string) bool {
-	switch soname {
-	case "linux-vdso.so.1", "linux-gate.so.1", "linux-vdso64.so.1":
-		return true
-	default:
-		return false
-	}
+	return isNetwork, hasDynLoad
 }
 
 func buildAnalysisOutputFromSymbolData(data *fileanalysis.SymbolAnalysisData) binaryanalyzer.AnalysisOutput {
@@ -542,13 +256,13 @@ func buildAnalysisOutputFromSymbolData(data *fileanalysis.SymbolAnalysisData) bi
 	return output
 }
 
-// syscallAnalysisHasSVCSignal reports whether the given SyscallAnalysisResult
+// syscallAnalysisHasSVCSignal reports whether the given SyscallAnalysisData
 // contains evidence of unresolved svc #0x80 direct syscall usage (high risk).
 // Returns true only when any DetectedSyscall has Number == -1 and at least one
 // Occurrence with DeterminationMethod == "direct_svc_0x80".
 // Resolved svc entries (Number != -1) are not treated as high risk here;
 // their network classification is handled by syscallAnalysisHasNetworkSignal.
-func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) bool {
+func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisData) bool {
 	if result == nil {
 		return false
 	}
@@ -562,11 +276,11 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 	return false
 }
 
-// syscallAnalysisHasNetworkSignal reports whether the given SyscallAnalysisResult
+// syscallAnalysisHasNetworkSignal reports whether the given SyscallAnalysisData
 // contains any detected syscall classified as a network syscall.
 // This includes resolved svc entries (DeterminationMethod == "direct_svc_0x80" AND Number != -1)
 // whose network classification is determined by the syscall table lookup.
-func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult, goos string) bool {
+func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisData, goos string) bool {
 	if result == nil {
 		return false
 	}
@@ -585,10 +299,10 @@ func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult,
 	return false
 }
 
-// syscallAnalysisHasExecSignal reports whether the given SyscallAnalysisResult
+// syscallAnalysisHasExecSignal reports whether the given SyscallAnalysisData
 // contains any detected syscall classified as an exec syscall.
 // Resolved svc entries (Number != -1) with exec classification are included.
-func syscallAnalysisHasExecSignal(result *fileanalysis.SyscallAnalysisResult, goos string) bool {
+func syscallAnalysisHasExecSignal(result *fileanalysis.SyscallAnalysisData, goos string) bool {
 	if result == nil {
 		return false
 	}

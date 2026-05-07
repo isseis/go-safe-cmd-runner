@@ -8,11 +8,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
-	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
@@ -2379,75 +2376,88 @@ func TestNewNetworkAnalyzer(t *testing.T) {
 	})
 }
 
-// stubNetworkSymbolStore is a test double for fileanalysis.NetworkSymbolStore.
-type stubNetworkSymbolStore struct {
-	data *fileanalysis.SymbolAnalysisData
-	err  error
-}
-
-func (s *stubNetworkSymbolStore) LoadNetworkSymbolAnalysis(_ string, _ string) (*fileanalysis.SymbolAnalysisData, error) {
-	return s.data, s.err
-}
-
-// callTrackingStore records whether LoadNetworkSymbolAnalysis was called.
-type callTrackingStore struct {
-	called *bool
-	data   *fileanalysis.SymbolAnalysisData
+// stubRecordStore is a test double for RecordStore.
+type stubRecordStore struct {
+	record *fileanalysis.Record
 	err    error
 }
 
-func (s *callTrackingStore) LoadNetworkSymbolAnalysis(_ string, _ string) (*fileanalysis.SymbolAnalysisData, error) {
-	*s.called = true
-	return s.data, s.err
+func (s *stubRecordStore) LoadRecord(_ string) (*fileanalysis.Record, error) {
+	return s.record, s.err
 }
 
-// TestIsNetworkViaBinaryAnalysis_AnalysisStore tests the analysis store path in analyzeBinarySignals.
+// callTrackingRecordStore records whether LoadRecord was called.
+type callTrackingRecordStore struct {
+	called *bool
+	record *fileanalysis.Record
+	err    error
+}
+
+func (s *callTrackingRecordStore) LoadRecord(_ string) (*fileanalysis.Record, error) {
+	*s.called = true
+	return s.record, s.err
+}
+
+// TestIsNetworkViaBinaryAnalysis_AnalysisStore tests the record store path in analyzeBinarySignals.
 func TestIsNetworkViaBinaryAnalysis_AnalysisStore(t *testing.T) {
 	const cmdPath = "/usr/bin/curl"
 	const contentHash = "sha256:abc123"
 
-	t.Run("analysis found DetectedSymbols=[socket] → NetworkDetected", func(t *testing.T) {
-		store := &stubNetworkSymbolStore{
-			data: &fileanalysis.SymbolAnalysisData{
-				DetectedSymbols: []string{"socket"},
+	t.Run("record.SymbolAnalysis=[socket] → NetworkDetected", func(t *testing.T) {
+		store := &stubRecordStore{
+			record: &fileanalysis.Record{
+				ContentHash: contentHash,
+				SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
+					DetectedSymbols: []string{"socket"},
+				},
 			},
 		}
 		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh, err := analyzer.analyzeBinarySignals(cmdPath, contentHash)
 		require.NoError(t, err)
-		assert.True(t, isNet, "expected network detected from analysis store")
+		assert.True(t, isNet, "expected network detected from record")
 		assert.False(t, isHigh, "expected not high risk (no dlopen)")
 	})
 
-	t.Run("analysis found DetectedSymbols=nil → NoNetworkSymbols", func(t *testing.T) {
-		store := &stubNetworkSymbolStore{
-			data: &fileanalysis.SymbolAnalysisData{
-				DetectedSymbols:    nil,
-				DynamicLoadSymbols: nil,
+	t.Run("record.SymbolAnalysis.DetectedSymbols=nil → NoNetworkSymbols", func(t *testing.T) {
+		store := &stubRecordStore{
+			record: &fileanalysis.Record{
+				ContentHash: contentHash,
+				SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
+					DetectedSymbols:    nil,
+					DynamicLoadSymbols: nil,
+				},
 			},
 		}
 		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh, err := analyzer.analyzeBinarySignals(cmdPath, contentHash)
 		require.NoError(t, err)
-		assert.False(t, isNet, "expected no network from analysis store")
+		assert.False(t, isNet, "expected no network from record")
 		assert.False(t, isHigh, "expected not high risk")
 	})
 
-	t.Run("analysis found DynamicLoadSymbols=[dlopen] → isHighRisk=true", func(t *testing.T) {
-		store := &stubNetworkSymbolStore{
-			data: &fileanalysis.SymbolAnalysisData{
-				DynamicLoadSymbols: []string{"dlopen"},
+	t.Run("record.SymbolAnalysis.DynamicLoadSymbols=[dlopen] → isHighRisk=true", func(t *testing.T) {
+		store := &stubRecordStore{
+			record: &fileanalysis.Record{
+				ContentHash: contentHash,
+				SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
+					DynamicLoadSymbols: []string{"dlopen"},
+				},
 			},
 		}
 		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh, err := analyzer.analyzeBinarySignals(cmdPath, contentHash)
 		require.NoError(t, err)
 		assert.False(t, isNet, "expected no network (DetectedSymbols=nil)")
-		assert.True(t, isHigh, "expected high risk from dlopen in analysis store")
+		assert.True(t, isHigh, "expected high risk from dlopen in record")
 	})
 
-	t.Run("nil (no syscallStore) → false, false (static binary)", func(t *testing.T) {
-		store := &stubNetworkSymbolStore{data: nil}
+	t.Run("record.SymbolAnalysis=nil → false, false (static binary)", func(t *testing.T) {
+		store := &stubRecordStore{
+			record: &fileanalysis.Record{
+				ContentHash: contentHash,
+			},
+		}
 		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh, err := analyzer.analyzeBinarySignals(cmdPath, contentHash)
 		require.NoError(t, err)
@@ -2457,7 +2467,7 @@ func TestIsNetworkViaBinaryAnalysis_AnalysisStore(t *testing.T) {
 
 	t.Run("SchemaVersionMismatchError → high risk", func(t *testing.T) {
 		schemaErr := &fileanalysis.SchemaVersionMismatchError{Expected: fileanalysis.CurrentSchemaVersion, Actual: fileanalysis.CurrentSchemaVersion - 1}
-		store := &stubNetworkSymbolStore{err: schemaErr}
+		store := &stubRecordStore{err: schemaErr}
 		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh, err := analyzer.analyzeBinarySignals(cmdPath, contentHash)
 		require.NoError(t, err)
@@ -2475,7 +2485,7 @@ func TestIsNetworkViaBinaryAnalysis_AnalysisStore(t *testing.T) {
 
 	t.Run("empty contentHash → analysis skipped", func(t *testing.T) {
 		storeCalled := false
-		store := &callTrackingStore{called: &storeCalled, err: fileanalysis.ErrHashMismatch}
+		store := &callTrackingRecordStore{called: &storeCalled}
 		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh, err := analyzer.analyzeBinarySignals(cmdPath, "")
 		require.NoError(t, err)
@@ -2483,84 +2493,37 @@ func TestIsNetworkViaBinaryAnalysis_AnalysisStore(t *testing.T) {
 		assert.False(t, isNet, "expected no network result when contentHash is empty")
 		assert.False(t, isHigh, "expected no high-risk result when contentHash is empty")
 	})
+
+	t.Run("ErrRecordNotFound → false, false, nil", func(t *testing.T) {
+		store := &stubRecordStore{err: fileanalysis.ErrRecordNotFound}
+		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
+		isNet, isHigh, err := analyzer.analyzeBinarySignals(cmdPath, contentHash)
+		require.NoError(t, err)
+		assert.False(t, isNet, "record not found must return false")
+		assert.False(t, isHigh, "record not found must return false")
+	})
 }
 
-// TestIsNetworkViaBinaryAnalysis_DynloadPlusDynlibNetwork is a regression test for the case
-// where a binary has DynamicLoadSymbols (causing isHigh=true from binary analysis) AND a dep
-// library has network symbols. Previously the early-return on isHigh prevented checkDynLibDepsNetwork
-// from running, causing isNetwork to remain false.
-func TestIsNetworkViaBinaryAnalysis_DynloadPlusDynlibNetwork(t *testing.T) {
-	const cmdPath = "/usr/bin/myprog"
-	const contentHash = "sha256:abc123"
+// TestNetworkSymbolAnalysisStore_RecordToRunner tests the record→runner analysis flow.
+// Verifies that NetworkAnalyzer correctly reads SymbolAnalysis from a preloaded Record.
+func TestNetworkSymbolAnalysisStore_RecordToRunner(t *testing.T) {
+	const cmdPath = "/usr/bin/fake-curl"
+	const fakeHash = "sha256:deadbeef"
 
-	// Binary's own record: has DynamicLoadSymbols (dlopen via language runtime) but no network symbols.
-	symStore := &stubNetworkSymbolStore{
-		data: &fileanalysis.SymbolAnalysisData{
-			DynamicLoadSymbols: []string{"dlopen"},
-		},
-	}
-
-	// Dynlib dep: libcurl has network symbols.
-	dep := fileanalysis.LibEntry{SOName: "libcurl.so.4", Path: "/usr/lib/libcurl.so.4", Hash: "sha256:cc"}
-	depsStore := &mockDynLibDepsStore{deps: []fileanalysis.LibEntry{dep}}
-	libStore := &mockDynLibAnalysisStore{
-		results: map[string]*dynamicanalysis.Result{
-			"/usr/lib/libcurl.so.4": {
-				SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
-					DetectedSymbols: []string{"connect"},
-				},
+	store := &stubRecordStore{
+		record: &fileanalysis.Record{
+			ContentHash: fakeHash,
+			SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
+				DetectedSymbols: []string{"socket"},
 			},
 		},
 	}
-
-	analyzer := NewNetworkAnalyzer(runtime.GOOS, AnalysisDeps{NetworkSymbolStore: symStore, DynLibDepsStore: depsStore, LibAnalysisStore: libStore})
-	isNet, isHigh, err := analyzer.analyzeBinarySignals(cmdPath, contentHash)
-	require.NoError(t, err)
-
-	assert.True(t, isNet, "dynlib dep libcurl must contribute isNetwork=true")
-	assert.True(t, isHigh, "binary's own dlopen must contribute isHighRisk=true")
-}
-
-// TestNetworkSymbolAnalysisStore_RecordToRunner tests the record→runner analysis store flow.
-// It writes a SymbolAnalysisData record using fileanalysis.Store.Save,
-// then verifies that NetworkAnalyzer reads from the analysis store instead of calling
-// BinaryAnalyzer. This verifies that the network symbol analysis store is used in the runner pipeline.
-func TestNetworkSymbolAnalysisStore_RecordToRunner(t *testing.T) {
-	analysisDir := commontesting.SafeTempDir(t)
-
-	// Create a real fileanalysis.Store with HybridHashFilePathGetter.
-	getter := filevalidator.NewHybridHashFilePathGetter()
-	store, err := fileanalysis.NewStore(analysisDir, getter)
-	require.NoError(t, err)
-
-	// Write a record that simulates what the record command would produce:
-	// a dynamically-linked binary with network symbols.
-	// Create a temp file to use as the command path (NewResolvedPath requires the file to exist).
-	tmpCmd, err := os.CreateTemp(analysisDir, "fake-curl-*")
-	require.NoError(t, err)
-	tmpCmd.Close()
-	cmdPath := tmpCmd.Name()
-	resolvedPath, err := common.NewResolvedPath(cmdPath)
-	require.NoError(t, err)
-	const fakeHash = "sha256:deadbeef"
-
-	record := &fileanalysis.Record{
-		ContentHash: fakeHash,
-		SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
-			DetectedSymbols: []string{"socket"},
-		},
-	}
-	require.NoError(t, store.Save(resolvedPath, record))
-
-	// Create a NetworkSymbolStore backed by the real Store.
-	symStore := fileanalysis.NewNetworkSymbolStore(store)
-
-	analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, symStore)
+	analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 
 	isNet, _, err := analyzer.analyzeBinarySignals(cmdPath, fakeHash)
 	require.NoError(t, err)
 
-	assert.True(t, isNet, "analysis store result should report network detected")
+	assert.True(t, isNet, "record with socket symbol should report network detected")
 }
 
 // TestAnalyzeCommandSecurity_StandardDirHashValidationAlwaysRuns is a regression

@@ -4,7 +4,7 @@
 
 - [x] Phase 1: スキーマ更新
 - [x] Phase 2: record 実装更新
-- [ ] Phase 3: runner / verification 更新
+- [x] Phase 3: runner / verification 更新
 - [ ] Phase 4: テスト整理と追加
 - [ ] Phase 5: 品質確認と文書整合
 
@@ -62,14 +62,14 @@
 
 ### 3-1. AnalysisDeps の単純化
 
-- [ ] `AnalysisDeps` を `RecordStore` のみに変更する（AC-018）
+- [x] `AnalysisDeps` を `RecordStore` のみに変更する（AC-018）
 
 ### 3-2. NetworkAnalyzer 更新
 
-- [ ] `analyzeBinarySignals` を Record ロード + トップレベル解析参照に置換する（AC-019, AC-017）
-- [ ] `checkDepsSignals` を削除する（AC-020）
-- [ ] `followShebangChain`（解析目的）を削除する（AC-021）
-- [ ] `ErrDepAnalysisNotEmbedded` を削除する（AC-023）
+- [x] `analyzeBinarySignals` を Record ロード + トップレベル解析参照に置換する（AC-019, AC-017）
+- [x] `checkDepsSignals` を削除する（AC-020）
+- [x] `followShebangChain`（解析目的）を削除する（AC-021）
+- [x] `ErrDepAnalysisNotEmbedded` を削除する（AC-023）
 
 ### 3-3. shebang 実行時検証
 
@@ -77,8 +77,8 @@
 
 ### 3-4. verification.Manager 更新
 
-- [ ] `GetAnalysisDeps` を `AnalysisDeps{RecordStore: m.fileValidator}` に変更する（AC-024）
-- [ ] `networkSymbolStore` `syscallAnalysisStore` `dynLibDepsStore` `dynlibAnalysisStore` `shebangStore` を削除する（AC-025）
+- [x] `GetAnalysisDeps` を `AnalysisDeps{RecordStore: m.fileValidator}` に変更する（AC-024）
+- [x] `networkSymbolStore` `syscallAnalysisStore` `dynLibDepsStore` `dynlibAnalysisStore` `shebangStore` を削除する（AC-025）
 
 ## Phase 4: テスト整理と追加
 
