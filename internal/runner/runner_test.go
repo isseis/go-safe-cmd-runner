@@ -16,7 +16,6 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	configpkg "github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
@@ -2380,11 +2379,10 @@ func (h *logCaptureHandler) WithGroup(_ string) slog.Handler {
 }
 
 // TestCreateNormalResourceManager_Succeeds verifies that createNormalResourceManager
-// creates a resource manager without error when given a basic path resolver and empty deps.
+// creates a resource manager without error when no verification manager is available.
 func TestCreateNormalResourceManager_Succeeds(t *testing.T) {
-	resolver := verification.NewPathResolver("")
 	opts := &runnerOptions{}
-	err := createNormalResourceManager(opts, &runnertypes.ConfigSpec{}, resolver, security.AnalysisDeps{}, nil)
+	err := createNormalResourceManager(opts, &runnertypes.ConfigSpec{}, nil, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, opts.resourceManager)
 }

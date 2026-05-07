@@ -175,27 +175,28 @@ func initializeDefaultComponents(opts *runnerOptions, configSpec *runnertypes.Co
 	}
 }
 
+// pathResolverFromVM returns vm when non-nil, otherwise a no-op resolver with
+// no hash directory (disables all hash-backed verification).
+func pathResolverFromVM(vm *verification.Manager) resource.PathResolver {
+	if vm != nil {
+		return vm
+	}
+	return verification.NewPathResolver("")
+}
+
 // createResourceManager creates a resource manager for dry-run or normal mode
 func createResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSpec, validator *security.Validator) error {
 	if opts.resourceManager != nil {
 		return nil
 	}
-
-	pathResolver := resource.PathResolver(verification.NewPathResolver(""))
-	var deps security.AnalysisDeps
-	if opts.verificationManager != nil {
-		pathResolver = opts.verificationManager
-		deps = opts.verificationManager.GetAnalysisDeps()
-	}
-
 	if opts.dryRun {
-		return createDryRunResourceManager(opts, pathResolver, validator)
+		return createDryRunResourceManager(opts, opts.verificationManager, validator)
 	}
-	return createNormalResourceManager(opts, configSpec, pathResolver, deps, validator)
+	return createNormalResourceManager(opts, configSpec, opts.verificationManager, validator)
 }
 
 // createDryRunResourceManager creates a resource manager for dry-run mode
-func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.PathResolver, validator *security.Validator) error {
+func createDryRunResourceManager(opts *runnerOptions, vm *verification.Manager, validator *security.Validator) error {
 	if opts.dryRunOptions == nil {
 		opts.dryRunOptions = &resource.DryRunOptions{
 			DetailLevel:  resource.DetailLevelDetailed,
@@ -203,13 +204,12 @@ func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.Path
 		}
 	}
 
-	// Create output manager with the same validator that has group membership support
 	outputMgr := output.NewDefaultOutputCaptureManager(validator)
 
 	resourceManager, err := resource.NewDryRunResourceManagerWithOutput(
 		opts.executor,
 		opts.privilegeManager,
-		pathResolver,
+		pathResolverFromVM(vm),
 		outputMgr,
 		opts.dryRunOptions,
 	)
@@ -221,15 +221,16 @@ func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.Path
 }
 
 // createNormalResourceManager creates a resource manager for normal mode
-func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec, pathResolver resource.PathResolver, deps security.AnalysisDeps, validator *security.Validator) error {
+func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec, vm *verification.Manager, validator *security.Validator) error {
 	fs := common.NewDefaultFileSystem()
-	// Note: maxOutputSize is no longer used here as output size limit is now resolved per-command
-	// via RuntimeCommand.EffectiveOutputSizeLimit. Pass 0 to ResourceManager.
 	maxOutputSize := int64(0)
 
-	// Create output manager with the same validator that has group membership support
 	outputMgr := output.NewDefaultOutputCaptureManager(validator)
 
+	var deps security.AnalysisDeps
+	if vm != nil {
+		deps = vm.GetAnalysisDeps()
+	}
 	networkAnalyzer := security.NewNetworkAnalyzer(runtime.GOOS, deps)
 	evaluator := risk.NewStandardEvaluator(networkAnalyzer)
 
@@ -237,7 +238,7 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 		Executor:         opts.executor,
 		FileSystem:       fs,
 		PrivilegeManager: opts.privilegeManager,
-		PathResolver:     pathResolver,
+		PathResolver:     pathResolverFromVM(vm),
 		Logger:           slog.Default(),
 		Mode:             resource.ExecutionModeNormal,
 		DryRunOpts:       &resource.DryRunOptions{},
