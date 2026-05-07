@@ -21,13 +21,13 @@ type DepEntry struct {
     Warnings        []string             `json:"warnings,omitempty"`
 }
 
-// ShebangBinaryInfo holds identification info for one binary in the shebang chain.
-// Analysis results are stored in Record.Deps, not here.
+// ShebangBinaryInfo holds ordered naming metadata for one binary in the shebang chain.
+// Hash and analysis results are stored in the corresponding Deps entry (keyed by Path).
 type ShebangBinaryInfo struct {
     RawPath     string `json:"raw_path,omitempty"`
     Path        string `json:"path"`
     CommandName string `json:"command_name,omitempty"`
-    ContentHash string `json:"content_hash"`
+    // No ContentHash or analysis fields: all binary data lives in Deps.
 }
 
 // DebugInfo holds optional debugging information recorded with -debug-info.
@@ -97,8 +97,8 @@ SaveRecord(filePath, force)
 注: `analyzeELFSyscalls` は libc エントリを探すため（`findLibcEntry(record.DynLibDeps)`）、手順 2 で `DynLibDeps` を設定してから呼ぶ必要がある。
 
 返却型: `([]ShebangBinaryInfo, []binaryDynLibDeps)`
-— `ShebangBinaryInfo` は識別情報のみ（`ContentHash`、`RawPath`、`CommandName`）
-— `binaryDynLibDeps` はインタープリターバイナリ自体の解析結果 + その共有ライブラリ一覧を dedup 処理に渡すために返す
+— `ShebangBinaryInfo` は命名メタデータのみ（`RawPath`、`Path`、`CommandName`）。`ContentHash` は不要（hash は `deps` に保持される）
+— `binaryDynLibDeps` はインタープリターバイナリ自体の hash + 解析結果 + 共有ライブラリ一覧を dedup 処理に渡すために返す
 
 **`ShebangBinaryInfo` フィールドマッピング:**
 | `shebang.Info` フィールド | `ShebangBinaryInfo` フィールド |
@@ -327,7 +327,7 @@ var ErrDepAnalysisNotEmbedded = errors.New("dep analysis not embedded in record"
 |---|---|
 | `DepEntry` JSON round-trip (soname あり/なし、syscall_analysis null / 非 null) | F-001 AC1 |
 | `DepEntry` JSON round-trip (warnings あり / なし) | F-001 AC4 |
-| `ShebangBinaryInfo` JSON round-trip (解析フィールドなし、direct form) | F-002 AC1, AC2 |
+| `ShebangBinaryInfo` JSON round-trip (direct form、`content_hash` フィールドなし) | F-002 AC1, AC2 |
 | `ShebangBinaryInfo` JSON round-trip (env form) | F-002 AC1, AC3 |
 | `DebugInfo` omitempty (debug=nil → JSON に "debug" キーなし) | F-004 AC1 |
 | `CurrentSchemaVersion == 22` | F-005 AC1 |

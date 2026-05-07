@@ -21,8 +21,9 @@
   - フィールド: `SOName` (omitempty), `Path`, `Hash`, `SyscallAnalysis *SyscallAnalysisData`, `SymbolAnalysis *SymbolAnalysisData`, `Warnings []string`
   - `SOName` は共有ライブラリに設定、インタープリターバイナリエントリでは省略（空文字）
 - [ ] `internal/fileanalysis/schema.go`: `ShebangBinaryInfo` 型を追加する
-  - フィールド: `RawPath` (omitempty), `Path`, `CommandName` (omitempty), `ContentHash`
-  - 解析フィールド（`SyscallAnalysis`、`SymbolAnalysis`）は含めない（`Deps` に統合）
+  - フィールド: `RawPath` (omitempty), `Path`, `CommandName` (omitempty)
+  - `ContentHash` は含めない（hash は `Deps` エントリで管理。`Path` が `Deps` への参照キー）
+  - 解析フィールド（`SyscallAnalysis`、`SymbolAnalysis`）も含めない（`Deps` に統合）
 - [ ] `internal/fileanalysis/schema.go`: `DebugInfo` 型を追加する
   - フィールド: `DepSources map[string][]string`
 
@@ -62,7 +63,7 @@
     2. `elfDynlibAnalyzer.Analyze` で `DynLibDeps`（共有ライブラリ）を収集
     3. 一時 `fileanalysis.Record` に `DynLibDeps` を設定し `analyzeELFSyscalls(&tmpRecord, filePath)` を呼ぶ（`findLibcEntry` が `DynLibDeps` を必要とするため）
     4. `binaryAnalyzer.AnalyzeNetworkSymbols` で `SymbolAnalysis` を取得
-  - `ShebangBinaryInfo` に識別情報（`RawPath`、`Path`、`CommandName`、`ContentHash`）のみを設定する（解析結果は `Deps` に含めるため `ShebangBinaryInfo` には含めない）
+  - `ShebangBinaryInfo` に命名メタデータ（`RawPath`、`Path`、`CommandName`）のみを設定する（`ContentHash` も解析結果も `Deps` に含めるため `ShebangBinaryInfo` には含めない）
   - インタープリターバイナリ自体の解析結果（hash + syscall + symbol）は `binaryDynLibDeps` の形式で返し、`collectAndDedupDeps` で `DepEntry{SOName: ""}` として `deps` に追加する
   - インタープリターが shebang スクリプトの場合は `ErrRecursiveShebang` を返す（既存ロジックを維持）
 

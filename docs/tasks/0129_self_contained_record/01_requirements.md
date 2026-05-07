@@ -55,14 +55,14 @@
 
 ### F-002: shebang_chain フィールドへのインタープリター情報埋め込み
 
-現在の `shebang_interpreter` フィールド（参照情報のみ）を `shebang_chain` フィールドに置き換える。`shebang_chain` は shebang チェーンを構成する各バイナリの**識別情報**（path、content_hash 等）をリストとして保持する。解析結果（`syscall_analysis`、`symbol_analysis`）は F-001 の `deps` リストに統合し、`shebang_chain` エントリは持たない。
+現在の `shebang_interpreter` フィールド（参照情報のみ）を `shebang_chain` フィールドに置き換える。`shebang_chain` は shebang チェーンを構成する各バイナリの**順序付き命名メタデータ**（`raw_path`・`path`・`command_name`）のみを保持する。hash および解析結果（`syscall_analysis`、`symbol_analysis`）はすべて F-001 の `deps` リストで管理し、`shebang_chain` エントリは一切持たない。
 
 **Acceptance Criteria:**
 
-1. `shebang_chain` の各エントリに `path`（シンボリックリンク解決済み）と `content_hash` が含まれる。`syscall_analysis`・`symbol_analysis` は `shebang_chain` エントリには含まれない（F-001 の `deps` で管理する）
+1. `shebang_chain` の各エントリに `path`（シンボリックリンク解決済み）のみを必須フィールドとして含む。`content_hash`・`syscall_analysis`・`symbol_analysis` は含まない（すべて `deps` エントリで管理する）
 2. 直接形式の shebang（例: `#!/bin/bash`）では `shebang_chain` に1エントリが含まれ、`raw_path`（shebang 行の記述そのまま）が記録される
 3. env 形式の shebang（例: `#!/usr/bin/env python3`）では `shebang_chain` に2エントリが含まれる。1つ目は env バイナリ（`raw_path` と `command_name` を保持）、2つ目は解決済みバイナリ
-4. `shebang_chain` の各インタープリターバイナリ（例: `/bin/bash`、`/usr/bin/env`、`/usr/bin/python3`）は F-001 の `deps` リストに `soname` なしのエントリとして dedup して含まれ、その解析結果（`syscall_analysis`、`symbol_analysis`）も `deps` に記録される
+4. `shebang_chain` の各インタープリターバイナリ（例: `/bin/bash`、`/usr/bin/env`、`/usr/bin/python3`）は F-001 の `deps` リストに `soname` なしのエントリとして dedup して含まれ、hash・解析結果（`syscall_analysis`、`symbol_analysis`）も `deps` に記録される
 5. `shebang_chain` の各バイナリが依存する共有ライブラリも F-001 の `deps` リストに dedup して含まれる
 
 ### F-003: runner から dynamicanalysis.Store 依存の除去

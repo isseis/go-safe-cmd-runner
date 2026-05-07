@@ -164,13 +164,13 @@ type DepEntry struct {
     Warnings        []string             // non-fatal warnings during analysis
 }
 
-// ShebangBinaryInfo holds identification info for one binary in the shebang chain.
-// Analysis results are stored in Record.Deps, not here.
+// ShebangBinaryInfo holds ordered naming metadata for one binary in the shebang chain.
+// Hash and analysis results are stored in the corresponding Record.Deps entry (keyed by Path).
 type ShebangBinaryInfo struct {
     RawPath     string // shebang line text (first entry only)
-    Path        string // symlink-resolved absolute path
+    Path        string // symlink-resolved absolute path; lookup key into Deps
     CommandName string // env argument (env binary entry only)
-    ContentHash string
+    // No ContentHash or analysis fields: all binary data lives in Deps.
 }
 
 // DebugInfo は -debug-info 時のみ記録されるデバッグ情報。
@@ -189,15 +189,11 @@ type DebugInfo struct {
 
 ```json
 "shebang_chain": [
-  {
-    "raw_path": "/bin/bash",
-    "path": "/usr/bin/bash",
-    "content_hash": "sha256:..."
-  }
+  { "raw_path": "/bin/bash", "path": "/usr/bin/bash" }
 ]
 ```
 
-`deps` 内の対応エントリ（`soname` なし）:
+`deps` 内の対応エントリ（`soname` なし。`path` で紐付け）:
 ```json
 {
   "path": "/usr/bin/bash",
@@ -211,16 +207,8 @@ type DebugInfo struct {
 
 ```json
 "shebang_chain": [
-  {
-    "raw_path": "/usr/bin/env",
-    "path": "/usr/bin/env",
-    "command_name": "python3",
-    "content_hash": "sha256:..."
-  },
-  {
-    "path": "/usr/bin/python3.12",
-    "content_hash": "sha256:..."
-  }
+  { "raw_path": "/usr/bin/env", "path": "/usr/bin/env", "command_name": "python3" },
+  { "path": "/usr/bin/python3.12" }
 ]
 ```
 
