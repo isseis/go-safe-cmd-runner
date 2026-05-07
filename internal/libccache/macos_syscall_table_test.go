@@ -79,6 +79,28 @@ func TestMacOSSyscallTable_UnknownSyscall(t *testing.T) {
 	assert.False(t, table.IsNetworkSyscall(9999))
 }
 
+func TestMacOSSyscallTable_IsExecSyscall(t *testing.T) {
+	table := MacOSSyscallTable{}
+
+	tests := []struct {
+		name   string
+		number int
+		want   bool
+	}{
+		{name: "execve", number: 59, want: true},
+		{name: "__mac_execve", number: 380, want: true},
+		{name: "socket", number: 97, want: false},
+		{name: "read", number: 3, want: false},
+		{name: "unknown-negative", number: -1, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, table.IsExecSyscall(tt.number))
+		})
+	}
+}
+
 // TestNetworkSyscallWrapperNames verifies the fallback list contains expected names.
 func TestNetworkSyscallWrapperNames(t *testing.T) {
 	expected := []string{

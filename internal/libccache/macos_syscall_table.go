@@ -4,6 +4,7 @@ package libccache
 type macOSSyscallEntry struct {
 	name      string
 	isNetwork bool
+	isExec    bool
 }
 
 // MacOSSyscallTable implements SyscallNumberTable for macOS arm64 BSD syscalls.
@@ -41,6 +42,14 @@ func (t MacOSSyscallTable) GetSyscallName(number int) string {
 func (t MacOSSyscallTable) IsNetworkSyscall(number int) bool {
 	if e, ok := macOSSyscallEntries[number]; ok {
 		return e.isNetwork
+	}
+	return false
+}
+
+// IsExecSyscall returns true if the syscall can execute a new process image.
+func (t MacOSSyscallTable) IsExecSyscall(number int) bool {
+	if e, ok := macOSSyscallEntries[number]; ok {
+		return e.isExec
 	}
 	return false
 }
