@@ -217,16 +217,14 @@ func syscallAnalysisHasExecSignal(result *fileanalysis.SyscallAnalysisResult, go
 if syscallAnalysisHasNetworkSignal(svcResult, a.goos) {
     slog.Info("SyscallAnalysis cache indicates network syscall",
         "path", cmdPath)
-    return true, true, false  // ← early return
+    return true, true, false  // ← handled=true で symbol analysis をスキップ
 }
-// No svc signal and no network signal: fall through to SymbolAnalysis-based decision.
 return false, false, false
 ```
 
 **変更後**:
 
 ```go
-// Check whether any non-svc detected syscall is a network or exec syscall.
 isNet := syscallAnalysisHasNetworkSignal(svcResult, a.goos)
 if isNet {
     slog.Info("SyscallAnalysis cache indicates network syscall",
@@ -237,14 +235,67 @@ if isExec {
     slog.Warn("SyscallAnalysis cache indicates exec syscall; treating as high risk",
         "path", cmdPath)
 }
-if isNet || isExec {
-    return true, isNet, isExec
+if isExec {
+    // Exec = definitively high risk: caller may skip symbol analysis.
+    return true, isNet, true
 }
-// No definitive signal: fall through to SymbolAnalysis-based decision.
-return false, false, false
+// Network-only or no signal: return handled=false so checkAnalysisCache
+// still runs symbol analysis (dlopen detection etc.).
+return false, isNet, false
 ```
 
-**変更の理由**: 既存の early return パターンは exec signal との組み合わせを正しく処理できない。バイナリが network syscall と exec syscall の両方を呼ぶ場合、両方のシグナルを正確に返す必要がある。
+**変更の理由**: `handled=true` の意味を「決定的 high-risk（これ以上の分析が不要）」に限定する。exec syscall は `handled=true` とし、呼び出し元が symbol analysis をスキップできる。一方、network-only の場合は `handled=false` とし、`checkAnalysisCache` が symbol analysis も実行して dlopen 等の high-risk シグナルを見落とさないようにする。
+
+### 6.4 checkAnalysisCache の変更
+
+`checkSyscallCache` の `isNet` シグナルを `handled=false` 時にも積算し、symbol analysis を常に実行するよう変更する。
+
+**ファイル**: `internal/runner/base/security/network_analyzer.go`
+
+**変更前（抜粋）**:
+
+```go
+// Check SyscallAnalysis cache for svc #0x80 signal (Mach-O arm64).
+// This check runs regardless of SymbolAnalysis result so that svc #0x80 always
+// escalates hasDynLoad to true.
+if handled, isNet, dynLoad := a.checkSyscallCache(cmdPath, contentHash); handled {
+    return true, isNet, dynLoad  // ← handled=false のとき isNet を捨てる
+}
+
+// No svc #0x80 signal: accumulate network/dynload signals from SymbolAnalysis.
+if data != nil {
+    output := buildAnalysisOutputFromSymbolData(data)
+    isNetwork, hasDynLoad = handleAnalysisOutput(output, cmdPath)
+}
+return false, isNetwork, hasDynLoad
+```
+
+**変更後**:
+
+```go
+syscallHandled, syscallIsNet, syscallIsHighRisk := a.checkSyscallCache(cmdPath, contentHash)
+if syscallHandled {
+    // Definitively high risk (svc or exec): early return.
+    // Symbol analysis cannot escalate further.
+    return true, syscallIsNet, syscallIsHighRisk
+}
+// Accumulate syscall network signal even when not definitively handled.
+isNetwork = syscallIsNet
+hasDynLoad = syscallIsHighRisk
+
+// Always run symbol analysis to detect dlopen etc.
+// Runs even when a network syscall was detected, preventing dlopen from being missed.
+if data != nil {
+    output := buildAnalysisOutputFromSymbolData(data)
+    symIsNetwork, symIsHighRisk := handleAnalysisOutput(output, cmdPath)
+    isNetwork = isNetwork || symIsNetwork
+    hasDynLoad = hasDynLoad || symIsHighRisk
+}
+if isNetwork || hasDynLoad {
+    return true, isNetwork, hasDynLoad
+}
+return false, false, false
+```
 
 ## 7. dynlib 依存ライブラリの exec 検出
 
@@ -544,7 +595,7 @@ lines.append(f'\t{number}:\t{{name: "{name}", isNetwork: {is_network}, isExec: {
 | `internal/libccache/macos_syscall_table.go` | 変更 | `macOSSyscallEntry.isExec`, `MacOSSyscallTable.IsExecSyscall` 追加 |
 | `internal/libccache/macos_syscall_numbers.go` | 再生成 | execve/\_\_mac\_execve に `isExec: true` |
 | `internal/libccache/macos_syscall_table_test.go` | 変更 | `TestMacOSSyscallTable_IsExecSyscall` 追加 |
-| `internal/runner/base/security/network_analyzer.go` | 変更 | `syscallTableInterface` 拡張, `syscallAnalysisHasExecSignal`, `checkSyscallCache` 更新, `firstExecSyscall`, `depSignals.execSyscall`, `analyzeDepSignals` 更新, `checkDynLibDepsNetwork` 更新 |
+| `internal/runner/base/security/network_analyzer.go` | 変更 | `syscallTableInterface` 拡張, `syscallAnalysisHasExecSignal`, `checkSyscallCache` 更新（handled=true を exec/SVC のみに限定）, `checkAnalysisCache` 更新（syscall isNet を積算・symbol analysis を常時実行）, `firstExecSyscall`, `depSignals.execSyscall`, `analyzeDepSignals` 更新, `checkDynLibDepsNetwork` 更新 |
 | `internal/runner/base/security/network_analyzer_test.go` | 変更 | `TestSyscallAnalysisHasExecSignal`, `TestNetworkAnalyzer_ExecSyscallIsHighRisk`, `TestFirstExecSyscall`, `TestAnalyzeDepSignals_ExecSyscall`, `TestNetworkAnalyzer_DynLibExecSyscallIsHighRisk` 追加 |
 | `scripts/generate_syscall_table.py` | 変更 | `EXEC_SYSCALL_NAMES`, `MACOS_EXEC_SYSCALL_NAMES`, `IsExec` フィールド生成 |
 

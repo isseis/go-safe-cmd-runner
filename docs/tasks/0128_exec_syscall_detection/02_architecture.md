@@ -281,27 +281,79 @@ func syscallAnalysisHasExecSignal(result *fileanalysis.SyscallAnalysisResult, go
 }
 ```
 
-### 4.3 checkSyscallCache の変更
+### 4.3 checkSyscallCache と checkAnalysisCache の変更
+
+**問題**: 既存の `checkSyscallCache` は network-only の場合に `handled=true` を返す。これにより `checkAnalysisCache` が symbol analysis をスキップし、dlopen 等の high-risk シグナルを見落とす可能性がある。
+
+**設計方針**: `handled=true` は「これ以上の分析が不要な決定的 high-risk シグナル」のみに限定する。SVC #0x80 または exec syscall の場合のみ `handled=true` とし、network-only シグナルは `handled=false` で返す。`checkAnalysisCache` 側でシグナルを統合する。
+
+#### checkSyscallCache の変更
 
 ```go
-// Before (network signal の early return を廃止):
+// Before:
 if syscallAnalysisHasNetworkSignal(svcResult, a.goos) {
     slog.Info("SyscallAnalysis cache indicates network syscall", "path", cmdPath)
-    return true, true, false  // ← early return で exec signal を見逃す
+    return true, true, false  // ← handled=true で symbol analysis をスキップ
 }
+return false, false, false
 
-// After (両シグナルを評価してから返す):
+// After:
 isNet := syscallAnalysisHasNetworkSignal(svcResult, a.goos)
-isExec := syscallAnalysisHasExecSignal(svcResult, a.goos)
-
 if isNet {
     slog.Info("SyscallAnalysis cache indicates network syscall", "path", cmdPath)
 }
+isExec := syscallAnalysisHasExecSignal(svcResult, a.goos)
 if isExec {
-    slog.Warn("SyscallAnalysis cache indicates exec syscall; treating as high risk", "path", cmdPath)
+    slog.Warn("SyscallAnalysis cache indicates exec syscall; treating as high risk",
+        "path", cmdPath)
 }
-if isNet || isExec {
-    return true, isNet, isExec
+if isExec {
+    // exec = 決定的 high risk。symbol analysis は不要。
+    return true, isNet, true
+}
+// network-only またはシグナルなし: handled=false で返し、checkAnalysisCache が
+// symbol analysis を実行して dlopen 等を検出できるようにする。
+return false, isNet, false
+```
+
+`handled` フラグの意味:
+- `handled=true` → SVC または exec による決定的 high-risk。呼び出し元は early return してよい
+- `handled=false` → 決定的ではない。`isNet` に部分シグナルを含む場合がある
+
+#### checkAnalysisCache の変更
+
+`checkSyscallCache` の `isNet` を `handled=false` の場合にも積算し、symbol analysis を常に実行する。
+
+```go
+// Before:
+if handled, isNet, dynLoad := a.checkSyscallCache(cmdPath, contentHash); handled {
+    return true, isNet, dynLoad  // handled=false のとき isNet を捨てる
+}
+if data != nil {
+    output := buildAnalysisOutputFromSymbolData(data)
+    isNetwork, hasDynLoad = handleAnalysisOutput(output, cmdPath)
+}
+return false, isNetwork, hasDynLoad
+
+// After:
+syscallHandled, syscallIsNet, syscallIsHighRisk := a.checkSyscallCache(cmdPath, contentHash)
+if syscallHandled {
+    // 決定的 high risk (svc or exec): early return。symbol analysis は不要。
+    return true, syscallIsNet, syscallIsHighRisk
+}
+// network signal を積算（handled=false でも捨てない）
+isNetwork = syscallIsNet
+hasDynLoad = syscallIsHighRisk
+
+// symbol analysis を常に実行（network syscall 検出後も dlopen を見落とさない）
+if data != nil {
+    output := buildAnalysisOutputFromSymbolData(data)
+    symIsNetwork, symIsHighRisk := handleAnalysisOutput(output, cmdPath)
+    isNetwork = isNetwork || symIsNetwork
+    hasDynLoad = hasDynLoad || symIsHighRisk
+}
+if isNetwork || hasDynLoad {
+    return true, isNetwork, hasDynLoad
 }
 return false, false, false
 ```

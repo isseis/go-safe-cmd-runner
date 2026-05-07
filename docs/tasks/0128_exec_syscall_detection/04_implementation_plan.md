@@ -171,13 +171,19 @@ exec signal の検出と `checkSyscallCache` の更新を行う。
   - 仕様: 詳細仕様書 §6.2
   - 受け入れ条件: AC-3
 
-### 4.3 checkSyscallCache の更新
+### 4.3 checkSyscallCache と checkAnalysisCache の更新
 
-- [ ] `internal/runner/base/security/network_analyzer.go` を編集
-  - network signal の early return を廃止し、exec signal と組み合わせる形に変更
-  - exec signal が検出された場合は `slog.Warn` でログ出力
-  - `isNet || isExec` の場合に `handled = true` を返す
+- [ ] `internal/runner/base/security/network_analyzer.go` を編集（`checkSyscallCache`）
+  - `handled=true` を exec または SVC の場合のみに限定する
+  - exec signal を検出した場合は `slog.Warn` でログ出力し `(true, isNet, true)` を返す
+  - network-only の場合は `(false, isNet, false)` を返す（symbol analysis をスキップしない）
   - 仕様: 詳細仕様書 §6.3
+  - 受け入れ条件: AC-4
+- [ ] `internal/runner/base/security/network_analyzer.go` を編集（`checkAnalysisCache`）
+  - `checkSyscallCache` の戻り値を変数に受けて `handled=false` でも `syscallIsNet` を積算する
+  - `syscallHandled=true` の場合のみ early return し、それ以外は symbol analysis を常時実行する
+  - symbol analysis の結果と syscall シグナルを OR で統合して返す
+  - 仕様: 詳細仕様書 §6.4
   - 受け入れ条件: AC-4
 
 ### 4.4 syscallAnalysisHasExecSignal のテスト
