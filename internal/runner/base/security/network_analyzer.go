@@ -499,7 +499,7 @@ func firstNetworkSyscall(table syscallTableInterface, data *fileanalysis.Syscall
 
 // firstExecSyscall returns the name of the first exec syscall found in
 // data using table for classification. Returns "" if none found or inputs are nil.
-func firstExecSyscall(table syscallTableInterface, data *fileanalysis.SyscallAnalysisData) string { //nolint:unparam // table varies by platform (darwin vs linux)
+func firstExecSyscall(table syscallTableInterface, data *fileanalysis.SyscallAnalysisData) string {
 	if table == nil || data == nil {
 		return ""
 	}
@@ -565,7 +565,7 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 // contains any detected syscall classified as a network syscall.
 // This includes resolved svc entries (DeterminationMethod == "direct_svc_0x80" AND Number != -1)
 // whose network classification is determined by the syscall table lookup.
-func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult, goos string) bool { //nolint:unparam // goos varies by platform (darwin vs linux)
+func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult, goos string) bool {
 	if result == nil {
 		return false
 	}
@@ -587,7 +587,7 @@ func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult,
 // syscallAnalysisHasExecSignal reports whether the given SyscallAnalysisResult
 // contains any detected syscall classified as an exec syscall.
 // Resolved svc entries (Number != -1) with exec classification are included.
-func syscallAnalysisHasExecSignal(result *fileanalysis.SyscallAnalysisResult, goos string) bool { //nolint:unparam // goos varies by platform (darwin vs linux)
+func syscallAnalysisHasExecSignal(result *fileanalysis.SyscallAnalysisResult, goos string) bool {
 	if result == nil {
 		return false
 	}
