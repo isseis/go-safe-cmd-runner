@@ -181,7 +181,8 @@ func (a *NetworkAnalyzer) analyzeBinarySignals(cmdPath string, contentHash strin
 		return isNetwork, hasDynLoad, nil
 	}
 
-	// Follow the shebang chain: load and analyze each interpreter's record.
+	// For each shebang interpreter, load its record and evaluate only top-level
+	// analysis fields (syscall_analysis/symbol_analysis) for risk signals.
 	for _, entry := range record.ShebangChain {
 		if entry.Path == "" {
 			continue

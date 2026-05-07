@@ -486,6 +486,33 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_NonNetworkSyscall(t *testing.T)
 	assert.False(t, isHigh, "no network signal should not escalate to high risk")
 }
 
+// TestIsNetworkViaBinaryAnalysis_IgnoresDepsForRisk ensures DynLibDeps content
+// does not affect risk detection and only top-level analysis fields are used.
+func TestIsNetworkViaBinaryAnalysis_IgnoresDepsForRisk(t *testing.T) {
+	store := &stubRecordStore{record: &fileanalysis.Record{
+		ContentHash: testContentHash,
+		DynLibDeps: []fileanalysis.LibEntry{{
+			SOName: "libsocket.so",
+			Path:   "/tmp/libsocket.so",
+			Hash:   "sha256:deadbeef",
+		}},
+		SymbolAnalysis: &fileanalysis.SymbolAnalysisData{},
+		SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				Architecture:     "x86_64",
+				DetectedSyscalls: []common.SyscallInfo{{Number: 1, Name: "write"}},
+			},
+		},
+	}}
+	analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
+
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
+
+	assert.False(t, isNet, "DynLibDeps should not be used for network risk judgment")
+	assert.False(t, isHigh, "DynLibDeps should not affect high-risk detection")
+}
+
 // TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAndNetworkSyscall verifies that a static binary
 // with both an unresolved svc #0x80 and a network syscall returns (true, true).
 func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAndNetworkSyscall(t *testing.T) {
