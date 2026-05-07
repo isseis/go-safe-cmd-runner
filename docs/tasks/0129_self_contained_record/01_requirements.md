@@ -36,7 +36,7 @@
 | 用語 | 定義 |
 |------|------|
 | Record | `record` コマンドが生成するコマンドの解析結果 JSON ファイル |
-| deps | コマンドおよび shebang チェーン全バイナリが依存する共有ライブラリの統合リスト |
+| deps | コマンドおよび shebang チェーン全バイナリが依存する共有ライブラリ、加えて shebang チェーンを構成するインタープリターバイナリを `path` で dedup した統合解析リスト |
 | shebang チェーン | スクリプトの shebang 行で指定されたインタープリター群。直接形式（例: `#!/bin/bash`）では1バイナリ、env 形式（例: `#!/usr/bin/env python3`）では env バイナリと解決済みバイナリの2バイナリ |
 | dynlib キャッシュ | `record` の内部最適化用キャッシュ（`dynlib-analysis/` ディレクトリ）。`runner` は参照しない |
 
@@ -44,25 +44,26 @@
 
 ### F-001: deps フィールドへの解析結果埋め込み
 
-現在の `dyn_lib_deps` フィールド（path + hash のみ）を `deps` フィールドに置き換える。`deps` はコマンドおよび shebang チェーン全バイナリの依存共有ライブラリを `path` を主キーとして dedup したリストであり（同一 path で hash が一致する場合に統合。不一致の場合は致命的エラー）、各ライブラリの解析結果（`syscall_analysis`、`symbol_analysis`）を含む。
+現在の `dyn_lib_deps` フィールド（path + hash のみ）を `deps` フィールドに置き換える。`deps` はコマンド・shebang チェーン全バイナリの依存共有ライブラリ、**および shebang チェーンを構成するインタープリターバイナリ自体**を `path` を主キーとして dedup したフラットリストであり（同一 path で hash が一致する場合に統合。不一致の場合は致命的エラー）、各エントリの解析結果（`syscall_analysis`、`symbol_analysis`）を含む。
 
 **Acceptance Criteria:**
 
-1. `deps` の各エントリに `soname`、`path`、`hash` に加えて `syscall_analysis`（nullable）と `symbol_analysis`（nullable）が含まれる
-2. `deps` はコマンド自身と shebang チェーン全バイナリの依存ライブラリを合わせた dedup リスト（`path` を主キーとして重複排除。同一 path で hash が一致する場合に1エントリとして統合。同一 path で hash が不一致の場合は致命的エラーとして `record` を中断する）である
+1. `deps` の各エントリに `soname`（共有ライブラリのみ。実行バイナリエントリでは省略）、`path`、`hash` に加えて `syscall_analysis`（nullable）と `symbol_analysis`（nullable）が含まれる
+2. `deps` はコマンド自身・shebang チェーン全バイナリの依存ライブラリ、および shebang チェーンのインタープリターバイナリを合わせた dedup リスト（`path` を主キーとして重複排除。同一 path で hash が一致する場合に1エントリとして統合。同一 path で hash が不一致の場合は致命的エラーとして `record` を中断する）である
 3. syscall wrapper ライブラリ（libc 等）および VDSO エントリは `deps` に含まれるが、解析フィールド（`syscall_analysis`、`symbol_analysis`）は null となる
 4. 各 dep の解析中に発生した非致命的な警告は当該 `deps` エントリの `warnings` フィールドに記録される（現行の Record レベルの `analysis_warnings` に相当）
 
 ### F-002: shebang_chain フィールドへのインタープリター情報埋め込み
 
-現在の `shebang_interpreter` フィールド（参照情報のみ）を `shebang_chain` フィールドに置き換える。`shebang_chain` は shebang チェーンを構成する各バイナリの情報（path、content_hash、syscall_analysis、symbol_analysis）をリストとして保持する。
+現在の `shebang_interpreter` フィールド（参照情報のみ）を `shebang_chain` フィールドに置き換える。`shebang_chain` は shebang チェーンを構成する各バイナリの**識別情報**（path、content_hash 等）をリストとして保持する。解析結果（`syscall_analysis`、`symbol_analysis`）は F-001 の `deps` リストに統合し、`shebang_chain` エントリは持たない。
 
 **Acceptance Criteria:**
 
-1. `shebang_chain` の各エントリに `path`（シンボリックリンク解決済み）、`content_hash`、`syscall_analysis`（nullable）、`symbol_analysis`（nullable）が含まれる
+1. `shebang_chain` の各エントリに `path`（シンボリックリンク解決済み）と `content_hash` が含まれる。`syscall_analysis`・`symbol_analysis` は `shebang_chain` エントリには含まれない（F-001 の `deps` で管理する）
 2. 直接形式の shebang（例: `#!/bin/bash`）では `shebang_chain` に1エントリが含まれ、`raw_path`（shebang 行の記述そのまま）が記録される
 3. env 形式の shebang（例: `#!/usr/bin/env python3`）では `shebang_chain` に2エントリが含まれる。1つ目は env バイナリ（`raw_path` と `command_name` を保持）、2つ目は解決済みバイナリ
-4. `shebang_chain` の各バイナリが依存するライブラリ（env バイナリの deps を含む）は F-001 の `deps` リストに dedup して含まれる
+4. `shebang_chain` の各インタープリターバイナリ（例: `/bin/bash`、`/usr/bin/env`、`/usr/bin/python3`）は F-001 の `deps` リストに `soname` なしのエントリとして dedup して含まれ、その解析結果（`syscall_analysis`、`symbol_analysis`）も `deps` に記録される
+5. `shebang_chain` の各バイナリが依存する共有ライブラリも F-001 の `deps` リストに dedup して含まれる
 
 ### F-003: runner から dynamicanalysis.Store 依存の除去
 
@@ -74,7 +75,7 @@
 2. `runner` は dynlib 解析結果を Record の `deps` フィールドから直接取得する
 3. dynlib キャッシュファイル（`dynlib-analysis/`）が存在しなくても `runner` が正常に動作する
 4. `ErrAnalysisNotFound` による「高リスクフォールバック」処理が `runner` から除去される
-5. shebang インタープリターの解析結果（hash、syscall_analysis、symbol_analysis）も Record の `shebang_chain` から直接取得し、インタープリターの別 Record ファイルを参照しない
+5. shebang インタープリターバイナリの解析結果（`syscall_analysis`、`symbol_analysis`）は Record の `deps` から取得する。`shebang_chain` はパスと hash の確認（シンボリックリンクリダイレクト検出）のみに使用し、解析結果は持たない
 6. `deps` エントリの `syscall_analysis` および `symbol_analysis` が null であり、かつ syscall wrapper（libc 等）や VDSO ではない場合、`runner` は解析データ欠落として実行をエラー終了する（fail-closed）。高リスク扱いへのフォールバックは行わない
 
 ### F-004: -debug-info 時のみ dep 由来情報を記録

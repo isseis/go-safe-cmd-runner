@@ -144,33 +144,33 @@ flowchart TD
 
 | 変更前フィールド | 変更後フィールド | 変更内容 |
 |-----------------|-----------------|---------|
-| `DynLibDeps []LibEntry` | `Deps []DepEntry` | 解析結果（`syscall_analysis`、`symbol_analysis`、`warnings`）を追加 |
-| `ShebangInterpreter *ShebangInterpreterInfo` | `ShebangChain []ShebangBinaryInfo` | `content_hash` と解析結果を追加、リスト形式に変更 |
+| `DynLibDeps []LibEntry` | `Deps []DepEntry` | 共有ライブラリに加えインタープリターバイナリも統合。解析結果（`syscall_analysis`、`symbol_analysis`、`warnings`）を追加 |
+| `ShebangInterpreter *ShebangInterpreterInfo` | `ShebangChain []ShebangBinaryInfo` | `content_hash` を追加、リスト形式に変更。解析結果は `Deps` に統合したため `ShebangBinaryInfo` には含まない |
 | `AnalysisWarnings []string`（Record レベル） | `DepEntry.Warnings []string`（各エントリ内） | 警告を dep ごとに記録 |
 | （なし） | `Debug *DebugInfo` | `-debug-info` 時のみ |
 
 **新規型定義（概要）:**
 
 ```go
-// DepEntry は単一の依存共有ライブラリを表す。
-// Deps リスト内では path+hash をキーとして dedup される。
+// DepEntry represents one entry in the unified analysis list.
+// Covers both shared libraries (soname non-empty) and interpreter executables
+// from the shebang chain (soname empty). Path is the dedup primary key.
 type DepEntry struct {
-    SOName          string
+    SOName          string               // omitempty: empty for executable entries
     Path            string
     Hash            string
-    SyscallAnalysis *SyscallAnalysisData  // nullable（syscall wrapper は nil）
-    SymbolAnalysis  *SymbolAnalysisData   // nullable
-    Warnings        []string              // 解析中の非致命的警告
+    SyscallAnalysis *SyscallAnalysisData // nil for syscall wrappers and VDSO
+    SymbolAnalysis  *SymbolAnalysisData  // nil for syscall wrappers and VDSO
+    Warnings        []string             // non-fatal warnings during analysis
 }
 
-// ShebangBinaryInfo は shebang チェーンの1バイナリを表す。
+// ShebangBinaryInfo holds identification info for one binary in the shebang chain.
+// Analysis results are stored in Record.Deps, not here.
 type ShebangBinaryInfo struct {
-    RawPath         string  // shebang 行の記述（先頭エントリのみ）
-    Path            string  // シンボリックリンク解決済みパス
-    CommandName     string  // env 形式の引数名（env バイナリのエントリのみ）
-    ContentHash     string
-    SyscallAnalysis *SyscallAnalysisData  // nullable
-    SymbolAnalysis  *SymbolAnalysisData   // nullable
+    RawPath     string // shebang line text (first entry only)
+    Path        string // symlink-resolved absolute path
+    CommandName string // env argument (env binary entry only)
+    ContentHash string
 }
 
 // DebugInfo は -debug-info 時のみ記録されるデバッグ情報。
@@ -183,6 +183,8 @@ type DebugInfo struct {
 
 ### 3.2 shebang_chain の JSON 表現例
 
+`shebang_chain` は識別情報のみを持つ。解析結果は `deps` に含まれる。
+
 **直接形式 `#!/bin/bash`:**
 
 ```json
@@ -190,11 +192,19 @@ type DebugInfo struct {
   {
     "raw_path": "/bin/bash",
     "path": "/usr/bin/bash",
-    "content_hash": "sha256:...",
-    "syscall_analysis": { "architecture": "arm64", "detected_syscalls": [...] },
-    "symbol_analysis": { "detected_symbols": [...] }
+    "content_hash": "sha256:..."
   }
 ]
+```
+
+`deps` 内の対応エントリ（`soname` なし）:
+```json
+{
+  "path": "/usr/bin/bash",
+  "hash": "sha256:...",
+  "syscall_analysis": { "architecture": "arm64", "detected_syscalls": [...] },
+  "symbol_analysis": { "detected_symbols": [...] }
+}
 ```
 
 **env 形式 `#!/usr/bin/env python3`:**
@@ -205,15 +215,11 @@ type DebugInfo struct {
     "raw_path": "/usr/bin/env",
     "path": "/usr/bin/env",
     "command_name": "python3",
-    "content_hash": "sha256:...",
-    "syscall_analysis": null,
-    "symbol_analysis": { "detected_symbols": [...] }
+    "content_hash": "sha256:..."
   },
   {
     "path": "/usr/bin/python3.12",
-    "content_hash": "sha256:...",
-    "syscall_analysis": { "architecture": "arm64", "detected_syscalls": [...] },
-    "symbol_analysis": { "detected_symbols": [...] }
+    "content_hash": "sha256:..."
   }
 ]
 ```
@@ -238,12 +244,13 @@ type DebugInfo struct {
 
 ### 3.4 deps の dedup ロジック
 
-`record` コマンドが全バイナリの `dyn_lib_deps` を収集する際に、以下のロジックで dedup する。
+`record` コマンドが全エントリを収集する際に、以下のロジックで dedup する。
 
-1. コマンド本体の `dyn_lib_deps` を収集
-2. shebang チェーンの各バイナリ（env バイナリを含む）の `dyn_lib_deps` を収集
-3. `path` を主キーとして dedup する。同一 path で異なる hash が出現した場合は致命的エラーとして `record` を中断する（どちらのバイナリが実際にロードされるか不明なため、不正なセキュリティポリシー適用を防ぐ）
-4. 各ユニークなライブラリについて dynlib-analysis キャッシュを参照し、ヒットしなければ新規解析
+1. コマンド本体の `dyn_lib_deps`（共有ライブラリ）を収集
+2. shebang チェーンの各インタープリターバイナリを **`soname` なしのエントリとして** 収集に追加
+3. shebang チェーンの各バイナリ（env バイナリを含む）の `dyn_lib_deps`（共有ライブラリ）を収集
+4. `path` を主キーとして dedup する。同一 path で異なる hash が出現した場合は致命的エラーとして `record` を中断する（どちらのバイナリが実際にロードされるか不明なため、不正なセキュリティポリシー適用を防ぐ）
+5. 各ユニークなエントリについて dynlib-analysis キャッシュ（共有ライブラリのみ）または直接解析を参照し解析結果を設定する
 
 ### 3.5 NetworkAnalyzer の変更
 
@@ -253,6 +260,10 @@ type DebugInfo struct {
 NetworkAnalyzer.deps.LibAnalysisStore (dynamicanalysis.Store)
   ↓ LoadAnalysis(dep.Path, dep.Hash)
   ↓ *dynamicanalysis.Result
+
+NetworkAnalyzer.deps.ShebangStore
+  ↓ LoadInterpreterAnalysisPath(cmdPath, contentHash)
+  ↓ 別 Record ファイルを再帰参照
 ```
 
 **変更後:**
@@ -260,9 +271,10 @@ NetworkAnalyzer.deps.LibAnalysisStore (dynamicanalysis.Store)
 ```
 NetworkAnalyzer は Record.Deps を直接参照
   ↓ dep.SyscallAnalysis, dep.SymbolAnalysis を読む
+  （共有ライブラリもインタープリターバイナリも同一ループで処理）
 ```
 
-`NetworkAnalyzer` の `AnalyzerDeps` 構造体から `LibAnalysisStore dynamicanalysis.Store` フィールドを除去する。`checkDynLibDepsNetwork` は `[]fileanalysis.DepEntry` を受け取り、各エントリの解析フィールドを直接参照する。
+`AnalysisDeps` 構造体から全ストアフィールドを除去し、`RecordStore RecordLoader` のみとする。`checkDynLibDepsNetwork`・`followShebangChain`（解析目的）を廃止し、単一の `checkDepsSignals([]DepEntry)` に統合する。
 
 ## 4. エラーハンドリング設計
 
@@ -336,14 +348,14 @@ sequenceDiagram
         R->>S: shebang 行解析
         S-->>R: インタープリター情報（path, command_name 等）
         loop shebang チェーンの各バイナリ
-            R->>E: バイナリ解析（hash + syscall + symbol + deps）
-            E-->>R: ShebangBinaryInfo + dyn_lib_deps
+            R->>E: バイナリ解析（hash + syscall + symbol + dyn_lib_deps）
+            E-->>R: ShebangBinaryInfo（識別情報のみ）+ 解析結果 + dyn_lib_deps
         end
     end
 
-    R->>R: 全 dyn_lib_deps を収集・dedup（path を主キー。hash 不一致は致命的エラー）
+    R->>R: インタープリターバイナリ自体＋全 dyn_lib_deps を収集・dedup<br/>（path を主キー。hash 不一致は致命的エラー）
 
-    loop 各ユニーク dep
+    loop 各ユニーク dep（共有ライブラリのみ。実行バイナリは解析済み）
         R->>C: LoadAnalysis(path, hash)
         alt キャッシュヒット
             C-->>R: 解析結果
@@ -370,15 +382,11 @@ sequenceDiagram
 
     RUN->>NA: CheckAnalysisCache(record)
 
-    NA->>NA: checkSyscallCache（コマンド本体の SyscallAnalysis）
-    NA->>NA: checkSymbolAnalysisCache（コマンド本体の SymbolAnalysis）
+    NA->>NA: checkSyscallSignals（コマンド本体の SyscallAnalysis）
+    NA->>NA: checkSymbolSignals（コマンド本体の SymbolAnalysis）
 
-    loop Record.Deps の各エントリ
-        NA->>NA: analyzeDepSignals(dep.SyscallAnalysis, dep.SymbolAnalysis)
-    end
-
-    loop Record.ShebangChain の各エントリ
-        NA->>NA: analyzeChainBinarySignals(entry.SyscallAnalysis, entry.SymbolAnalysis)
+    loop Record.Deps の各エントリ（共有ライブラリ＋インタープリターバイナリ）
+        NA->>NA: checkDepsSignals(dep.SyscallAnalysis, dep.SymbolAnalysis)
     end
 
     NA-->>RUN: (isNetwork, isHighRisk)
@@ -388,18 +396,20 @@ sequenceDiagram
 
 ### 7.1 ユニットテスト
 
-- `DepEntry` の JSON シリアライズ・デシリアライズ（`syscall_analysis` null / 非 null、`warnings` あり / なし）
+- `DepEntry` の JSON シリアライズ・デシリアライズ（`soname` あり/なし、`syscall_analysis` null / 非 null、`warnings` あり / なし）
 - dedup ロジック（同一 path+hash → 統合、同一 path 異なる hash → 致命的エラーで中断）
-- `ShebangBinaryInfo` の直接形式・env 形式の JSON 表現
+- インタープリターバイナリが `deps` に `soname` なしエントリとして含まれること
+- `ShebangBinaryInfo` の直接形式・env 形式の JSON 表現（解析フィールドなし）
 - `DebugInfo` の `-debug-info` あり / なしでの生成（`omitempty` 動作）
 
 ### 7.2 統合テスト
 
-- `record` コマンドが ELF バイナリの `deps` を埋め込んだ Record を生成する（AC-1〜4 検証）
-- `record` コマンドが直接形式 shebang の `shebang_chain`（1エントリ）を生成する（AC-2 検証）
-- `record` コマンドが env 形式 shebang の `shebang_chain`（2エントリ）を生成する（AC-3 検証）
-- `runner` が dynlib-analysis キャッシュなしで Record のみから正しく動作する（F-003 AC-3 検証）
-- スキーマバージョンミスマッチ時に `SchemaVersionMismatchError` が返される（F-005 AC-2 検証）
+- `record` コマンドが ELF バイナリの `deps` を埋め込んだ Record を生成する（F-001 AC1〜4 検証）
+- `record` コマンドが shebang スクリプトの Record でインタープリターバイナリを `deps` に含める（F-002 AC4 検証）
+- `record` コマンドが直接形式 shebang の `shebang_chain`（1エントリ、解析フィールドなし）を生成する（F-002 AC2 検証）
+- `record` コマンドが env 形式 shebang の `shebang_chain`（2エントリ）を生成する（F-002 AC3 検証）
+- `runner` が dynlib-analysis キャッシュなしで Record のみから正しく動作する（F-003 AC3 検証）
+- スキーマバージョンミスマッチ時に `SchemaVersionMismatchError` が返される（F-005 AC2 検証）
 
 ### 7.3 後方互換性テスト
 

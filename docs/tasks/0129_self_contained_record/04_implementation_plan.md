@@ -18,9 +18,11 @@
 ### 1-2. 新規型の追加
 
 - [ ] `internal/fileanalysis/schema.go`: `DepEntry` 型を追加する
-  - フィールド: `SOName`, `Path`, `Hash`, `SyscallAnalysis *SyscallAnalysisData`, `SymbolAnalysis *SymbolAnalysisData`, `Warnings []string`
+  - フィールド: `SOName` (omitempty), `Path`, `Hash`, `SyscallAnalysis *SyscallAnalysisData`, `SymbolAnalysis *SymbolAnalysisData`, `Warnings []string`
+  - `SOName` は共有ライブラリに設定、インタープリターバイナリエントリでは省略（空文字）
 - [ ] `internal/fileanalysis/schema.go`: `ShebangBinaryInfo` 型を追加する
-  - フィールド: `RawPath`, `Path`, `CommandName`, `ContentHash`, `SyscallAnalysis *SyscallAnalysisData`, `SymbolAnalysis *SymbolAnalysisData`
+  - フィールド: `RawPath` (omitempty), `Path`, `CommandName` (omitempty), `ContentHash`
+  - 解析フィールド（`SyscallAnalysis`、`SymbolAnalysis`）は含めない（`Deps` に統合）
 - [ ] `internal/fileanalysis/schema.go`: `DebugInfo` 型を追加する
   - フィールド: `DepSources map[string][]string`
 
@@ -56,13 +58,13 @@
 - [ ] `internal/filevalidator/validator.go`: `resolveShebangChain(filePath string) ([]ShebangBinaryInfo, []binaryDynLibDeps, error)` を実装する
   - `shebang.Parse` でインタープリター情報を取得
   - 各バイナリ（`InterpreterPath`、`ResolvedPath`）について:
-    1. `calculateHash` でハッシュ算出
-    2. `elfDynlibAnalyzer.Analyze` で `DynLibDeps` を収集
+    1. `calculateHash` でハッシュ算出（`ShebangBinaryInfo.ContentHash` に設定）
+    2. `elfDynlibAnalyzer.Analyze` で `DynLibDeps`（共有ライブラリ）を収集
     3. 一時 `fileanalysis.Record` に `DynLibDeps` を設定し `analyzeELFSyscalls(&tmpRecord, filePath)` を呼ぶ（`findLibcEntry` が `DynLibDeps` を必要とするため）
     4. `binaryAnalyzer.AnalyzeNetworkSymbols` で `SymbolAnalysis` を取得
-  - `ShebangBinaryInfo` の `RawPath`、`CommandName` を正しくマッピングする（詳細設計書 2.3 参照）
+  - `ShebangBinaryInfo` に識別情報（`RawPath`、`Path`、`CommandName`、`ContentHash`）のみを設定する（解析結果は `Deps` に含めるため `ShebangBinaryInfo` には含めない）
+  - インタープリターバイナリ自体の解析結果（hash + syscall + symbol）は `binaryDynLibDeps` の形式で返し、`collectAndDedupDeps` で `DepEntry{SOName: ""}` として `deps` に追加する
   - インタープリターが shebang スクリプトの場合は `ErrRecursiveShebang` を返す（既存ロジックを維持）
-  - `DynLibDeps` は `binaryDynLibDeps` スライスとして返す（dedup 処理に使用）
 
 ### 2-2. `collectAndDedupDeps` の実装
 
@@ -150,12 +152,10 @@
   - `SyscallAnalysis == nil && SymbolAnalysis == nil` かつ非 wrapper/VDSO → `ErrDepAnalysisNotEmbedded` を返す（fail-closed）
   - 既存の `analyzeDepSignals` ロジックを `*SyscallAnalysisData`、`*SymbolAnalysisData` を受け取る形に変更して再利用する
 
-### 3-6. `followShebangChain` の変更
+### 3-6. `followShebangChain`（解析目的）の廃止
 
-- [ ] `internal/runner/base/security/network_analyzer.go`: `followShebangChain` を `[]fileanalysis.ShebangBinaryInfo` を受け取る形に変更する
-  - `ShebangStore.LoadInterpreterAnalysisPath` への依存を除去する
-  - 各エントリの `SyscallAnalysis`、`SymbolAnalysis` からシグナルを抽出する
-  - エラーを返さない（ErrAnalysisNotFound のフォールバックを除去）
+- [ ] `internal/runner/base/security/network_analyzer.go`: `followShebangChain` 関数を削除する（インタープリターバイナリの解析結果は `Record.Deps` に含まれるため不要）
+- [ ] `internal/runner/base/security/network_analyzer.go`: `ShebangStore.LoadInterpreterAnalysisPath` への依存を除去する（`AnalysisDeps` から `ShebangStore` を削除した時点で自動的に除去される）
 
 ### 3-7. `checkDynLibDepsNetwork` の削除
 
@@ -170,14 +170,14 @@
 ### 3-9. runner のテスト
 
 - [ ] `internal/runner/base/security/network_analyzer_test.go`: 以下のテストを追加・変更する:
-  - `Record.Deps` から network signal を検出する（F-003 AC2）
-  - `Record.ShebangChain` から interpreter signals を検出する（F-003 AC5）
+  - `Record.Deps` 内の共有ライブラリエントリから network signal を検出する（F-003 AC2）
+  - `Record.Deps` 内のインタープリターバイナリエントリ（`soname` なし）から network signal を検出する（F-003 AC5）
   - 非 wrapper dep の `SyscallAnalysis == nil` → `ErrDepAnalysisNotEmbedded` を返す（F-003 AC6）
   - VDSO dep の `SyscallAnalysis == nil` → エラーなし（F-003 AC6）
-  - `record.ContentHash != contentHash` → 高リスク扱いになること（`checkAnalysisCache` 相当）
+  - `record.ContentHash != contentHash` → 高リスク扱いになること
   - `DynLibDepsStore`、`LibAnalysisStore`、`ShebangStore` を使うテストを削除する
   - `ErrAnalysisNotFound` → 高リスクフォールバックのテストを削除する
-  - `checkDynLibDepsNetwork` を使うテストを削除する（`checkDepsSignals` への書き換え）
+  - `checkDynLibDepsNetwork`、`followShebangChain` を使うテストを削除する
 - [ ] `internal/verification/manager_test.go`: `GetAnalysisDeps` 関連テストを新 `AnalysisDeps` 構造に合わせて更新する
 
 ---
