@@ -115,20 +115,20 @@ for each entry in shebang_chain:
 | AC-004 | analysis_warnings の統合・dedup | `internal/filevalidator/*analysis*_test.go` |
 | AC-005 | debug の omitempty | `cmd/record/main_test.go` |
 | AC-006 | deps 収集範囲 | `internal/filevalidator/validator_shebang_test.go` |
-| AC-007 | path dedup | `internal/filevalidator/validator_dedup_test.go` |
-| AC-008 | path 同一 hash 不一致で失敗 | `internal/filevalidator/validator_dedup_test.go` |
+| AC-007 | path dedup | `internal/filevalidator/validator_dedup_test.go`（新規作成）|
+| AC-008 | path 同一 hash 不一致で失敗 | `internal/filevalidator/validator_dedup_test.go`（新規作成）|
 | AC-009 | deps をリスク判定に使わない | `internal/runner/base/security/network_analyzer_test.go` |
-| AC-010 | ref（絶対パス）→ EvalSymlinks 比較 / ref（ベア名）→ LookPath+EvalSymlinks 比較 | `internal/verification/shebang_chain_verifier_test.go` |
-| AC-013 | syscall 統合 dedup | `internal/filevalidator/*syscall*_test.go` |
-| AC-014 | symbol 統合 dedup | `internal/filevalidator/*symbol*_test.go` |
-| AC-015 | ArgEvalResults worst-case 統合 | `internal/filevalidator/*syscall*_test.go` |
+| AC-010 | ref（絶対パス）→ EvalSymlinks 比較 / ref（ベア名）→ LookPath+EvalSymlinks 比較 | `internal/verification/shebang_chain_verifier_test.go`（新規作成）|
+| AC-013 | syscall 統合 dedup | `internal/filevalidator/validator_test.go`（既存）を更新 |
+| AC-014 | symbol 統合 dedup | `internal/filevalidator/validator_test.go`（既存）を更新 |
+| AC-015 | ArgEvalResults worst-case 統合 | `internal/filevalidator/validator_test.go`（既存）を更新 |
 | AC-016 | VDSO 解析スキップかつ deps 除外 / wrapper 解析スキップのみ（deps に残す） | `internal/filevalidator/validator_library_analysis_test.go` |
 | AC-017 | runner はトップレベルのみ参照 | `internal/runner/base/security/network_analyzer_test.go` |
 | AC-018, AC-024 | AnalysisDeps/Manager の新構造 | `internal/verification/manager_test.go` |
 | AC-019 | analyzeBinarySignals 新仕様 | `internal/runner/base/security/network_analyzer_test.go` |
 | AC-020 | checkDepsSignals 削除確認 | `internal/runner/base/security` のコンパイル/参照テスト |
 | AC-021 | followShebangChain 削除確認 | `internal/runner/base/security` のコンパイル/参照テスト |
-| AC-022 | verifyShebangChain 存続 | `internal/verification/shebang_chain_verifier_test.go` |
+| AC-022 | verifyShebangChain 存続 | `internal/verification/shebang_chain_verifier_test.go`（新規作成）|
 | AC-023 | ErrDepAnalysisNotEmbedded 削除確認 | 参照消滅テスト or grep ベース検証 |
 | AC-025 | Manager 不要フィールド削除確認 | `internal/verification/manager_test.go` |
 | AC-027 | v21 以下読み込み拒否 | `internal/fileanalysis/file_analysis_store_test.go`（既存）を更新 |
