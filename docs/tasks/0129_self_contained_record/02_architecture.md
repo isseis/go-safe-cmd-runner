@@ -197,5 +197,5 @@ flowchart LR
 
 ## 7. 文書整合ルール
 
-1. AC番号は [docs/tasks/0129_self_contained_record/01_requirements.md](docs/tasks/0129_self_contained_record/01_requirements.md) に一致させる
-2. テスト対応表は [docs/tasks/0129_self_contained_record/03_detailed_specification.md](docs/tasks/0129_self_contained_record/03_detailed_specification.md) と [docs/tasks/0129_self_contained_record/04_implementation_plan.md](docs/tasks/0129_self_contained_record/04_implementation_plan.md) で同一の削除対象を指す
+1. AC番号は [./01_requirements.md](./01_requirements.md) に一致させる
+2. テスト対応表は [./03_detailed_specification.md](./03_detailed_specification.md) と [./04_implementation_plan.md](./04_implementation_plan.md) で同一の削除対象を指す
