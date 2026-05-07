@@ -286,8 +286,7 @@ func (a *NetworkAnalyzer) checkAnalysisCache(cmdPath, contentHash string) (handl
 
 	syscallHandled, syscallIsNet, syscallIsHighRisk := a.checkSyscallCache(cmdPath, contentHash)
 	if syscallHandled {
-		// Definitively high risk (svc or exec): early return.
-		// Symbol analysis cannot escalate further.
+		// Definitive signal from svc #0x80 or cache error: early return.
 		return true, syscallIsNet, syscallIsHighRisk
 	}
 
@@ -308,8 +307,13 @@ func (a *NetworkAnalyzer) checkAnalysisCache(cmdPath, contentHash string) (handl
 
 // checkSyscallCache loads and evaluates the SyscallAnalysis cache entry.
 // Returns (handled, isNetwork, isHighRisk):
-//   - handled=true: a definitive signal was found; the caller should return isNetwork/isHighRisk immediately.
-//   - handled=false: no definitive signal; the caller should continue with SymbolAnalysis-based logic.
+//   - handled=true: only for svc #0x80 or cache errors; caller should return immediately.
+//   - handled=false: caller should OR-merge isNetwork/isHighRisk with symbol/dynlib/shebang signals.
+//
+// Exec syscalls set isHighRisk=true but return handled=false so that symbol analysis,
+// dynlib deps, and shebang chain analysis can still contribute an isNetwork=true signal.
+// High risk and network capability are independent: a binary that launches a child process
+// may also make network connections via its dynamic libraries or shebang interpreter.
 func (a *NetworkAnalyzer) checkSyscallCache(cmdPath, contentHash string) (handled, isNetwork, isHighRisk bool) {
 	if a.deps.SyscallStore == nil {
 		return false, false, false
@@ -333,12 +337,9 @@ func (a *NetworkAnalyzer) checkSyscallCache(cmdPath, contentHash string) (handle
 			slog.Warn("SyscallAnalysis cache indicates exec syscall; treating as high risk",
 				"path", cmdPath)
 		}
-		if isExec {
-			// Exec = definitively high risk: caller may skip symbol analysis.
-			return true, isNet, true
-		}
-		// Network-only or no signal: caller still runs SymbolAnalysis for high-risk signals.
-		return false, isNet, false
+		// Return handled=false for both exec and non-exec: symbol/dynlib/shebang analysis
+		// must still run to complete the isNetwork determination.
+		return false, isNet, isExec
 	case errors.Is(svcErr, fileanalysis.ErrHashMismatch):
 		slog.Warn("SyscallAnalysis cache hash mismatch; treating as high risk",
 			"path", cmdPath)
