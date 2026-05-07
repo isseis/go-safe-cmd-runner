@@ -285,7 +285,8 @@ Record 自体が存在しない場合は既存の `SchemaVersionMismatchError` /
 ### 5.1 整合性の維持
 
 - `deps` の各エントリは hash を保持し、`runner` がファイルを使用する前にハッシュ検証を行う（既存の filevalidator の動作を維持）
-- `shebang_chain` の各バイナリも `content_hash` を保持し、シンボリックリンクリダイレクト攻撃を検出できる
+- `shebang_chain` の `raw_path` をランタイムで再解決し `path` と比較することで、シンボリックリンクリダイレクト攻撃を検出する（既存の動作を維持）
+- env 形式の shebang では、ランタイムの PATH で `command_name` を再解決し `path` と比較することで、PATH 操作による別バイナリへのすり替えを検出する（新規追加）
 - Record の書き出しはアトミック（既存の動作を維持）
 
 ### 5.2 dynlib キャッシュの信頼性
@@ -304,17 +305,21 @@ flowchart TD
     C1["対策: deps エントリの hash 検証\n（filevalidator による実行時検証）"]
 
     T2["脅威: shebang インタープリターの\nシンボリックリンク改ざん"]
-    C2["対策: shebang_chain の raw_path と\ncontent_hash の突き合わせ\n（既存の検出ロジックを維持）"]
+    C2["対策: shebang_chain の raw_path を\nランタイムで再解決して path と比較\n（既存の検出ロジックを維持）"]
 
     T3["脅威: dynlib キャッシュの改ざん"]
     C3["対策: キャッシュは record のみが参照\nrunner は Record の埋め込み情報を使用"]
 
+    T4["脅威: env 形式 shebang の\nPATH 操作による別バイナリすり替え"]
+    C4["対策: runner がランタイムの PATH で\ncommand_name を再解決して path と比較\n不一致の場合はエラー終了（fail-closed）"]
+
     T1 --> C1
     T2 --> C2
     T3 --> C3
+    T4 --> C4
 
-    class T1,T2,T3 threat;
-    class C1,C2,C3 counter;
+    class T1,T2,T3,T4 threat;
+    class C1,C2,C3,C4 counter;
 ```
 
 ## 6. 処理フロー詳細
@@ -357,16 +362,23 @@ sequenceDiagram
     R->>FS: Record JSON 書き出し（アトミック）
 ```
 
-### 6.2 runner の NetworkAnalyzer 処理フロー（変更後）
+### 6.2 runner の処理フロー（変更後）
 
 ```mermaid
 sequenceDiagram
     participant RUN as runner
     participant FS as ファイルシステム
+    participant OS as OS (PATH 解決)
     participant NA as NetworkAnalyzer
 
     RUN->>FS: Record 読み込み（1ファイルのみ）
     FS-->>RUN: Record（Deps, ShebangChain を内包）
+
+    loop ShebangChain の各エントリ（command_name あり）
+        RUN->>OS: LookPath(command_name) + EvalSymlinks
+        OS-->>RUN: 解決済みパス
+        RUN->>RUN: 解決済みパス == entry.path を確認\n不一致 → エラー終了（fail-closed）
+    end
 
     RUN->>NA: CheckAnalysisCache(record)
 

@@ -64,6 +64,7 @@
 3. env 形式の shebang（例: `#!/usr/bin/env python3`）では `shebang_chain` に2エントリが含まれる。1つ目は env バイナリ（`raw_path` と `command_name` を保持）、2つ目は解決済みバイナリ
 4. `shebang_chain` の各インタープリターバイナリ（例: `/bin/bash`、`/usr/bin/env`、`/usr/bin/python3`）は F-001 の `deps` リストに `soname` なしのエントリとして dedup して含まれ、hash・解析結果（`syscall_analysis`、`symbol_analysis`）も `deps` に記録される
 5. `shebang_chain` の各バイナリが依存する共有ライブラリも F-001 の `deps` リストに dedup して含まれる
+6. env 形式の shebang において、`runner` は `shebang_chain` に記録された `command_name` を実行時の PATH で再解決し、シンボリックリンク解決済みの結果が当該エントリの `path` と一致することを確認する。不一致の場合は実行をエラー終了する（fail-closed）。これにより PATH 操作による別バイナリへのすり替えを検出する
 
 ### F-003: runner から dynamicanalysis.Store 依存の除去
 

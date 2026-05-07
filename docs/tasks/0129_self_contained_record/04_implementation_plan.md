@@ -158,6 +158,21 @@
 - [ ] `internal/runner/base/security/network_analyzer.go`: `followShebangChain` 関数を削除する（インタープリターバイナリの解析結果は `Record.Deps` に含まれるため不要）
 - [ ] `internal/runner/base/security/network_analyzer.go`: `ShebangStore.LoadInterpreterAnalysisPath` への依存を除去する（`AnalysisDeps` から `ShebangStore` を削除した時点で自動的に除去される）
 
+### 3-7. `verifyShebangChain` の新規実装（F-002 AC6）
+
+- [ ] `internal/verification/` または `internal/runner/base/security/` に `verifyShebangChain(chain []fileanalysis.ShebangBinaryInfo) error` を実装する
+  - `entry.CommandName != ""` のエントリに対して `exec.LookPath(entry.CommandName)` を呼ぶ
+  - 結果に `filepath.EvalSymlinks` を適用し、`entry.Path` と比較する
+  - 不一致または lookup 失敗の場合は `slog.Error` でログ記録後にエラー返却（fail-closed）
+  - `entry.RawPath != ""` のエントリに対してシンボリックリンクリダイレクト検出も行う（既存動作の移行）
+- [ ] `internal/verification/manager.go`: コマンドグループ実行前に `verifyShebangChain` を呼ぶよう変更する
+  - `fileValidator.LoadRecord(scriptPath)` でレコードを取得し `record.ShebangChain` を渡す
+- [ ] `internal/verification/shebang_chain_verifier_test.go` を新規作成し、以下のテストを追加する:
+  - `command_name` あり + PATH 解決が `path` と一致 → エラーなし（F-002 AC6）
+  - `command_name` あり + PATH 解決が `path` と不一致 → エラー返却（F-002 AC6）
+  - `command_name` あり + PATH に存在しない → エラー返却（F-002 AC6）
+  - `command_name` なし（direct form）→ PATH 再解決をスキップ（F-002 AC6）
+
 ### 3-7. `checkDynLibDepsNetwork` の削除
 
 - [ ] `internal/runner/base/security/network_analyzer.go`: `checkDynLibDepsNetwork` 関数を削除する（`checkDepsSignals` に置き換え）
@@ -208,3 +223,4 @@
 - [ ] コード中に日本語が含まれていないことを確認する（`grep -rn '[^\x00-\x7F]' --include="*.go"` で検索）
 - [ ] `dynamicanalysis.ErrAnalysisNotFound` が runner から参照されていないことを確認する
 - [ ] `ShebangStore`、`DynLibDepsStore`、`LibAnalysisStore` が `AnalysisDeps` から除去されていることを確認する
+- [ ] env 形式の shebang に対して PATH 再解決検証（`verifyShebangChain`）が実行されることを統合テストで確認する（F-002 AC6）
