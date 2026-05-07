@@ -112,3 +112,25 @@ func TestARM64LinuxSyscallTable_GetNetworkSyscallsReturnsCopy(t *testing.T) {
 		assert.NotEqual(t, -9999, n, "GetNetworkSyscalls should return a copy, not the internal slice")
 	}
 }
+
+func TestARM64LinuxSyscallTable_IsExecSyscall(t *testing.T) {
+	table := NewARM64LinuxSyscallTable()
+
+	tests := []struct {
+		name   string
+		number int
+		want   bool
+	}{
+		{name: "execve", number: 221, want: true},
+		{name: "execveat", number: 281, want: true},
+		{name: "socket", number: 198, want: false},
+		{name: "read", number: 63, want: false},
+		{name: "unknown-negative", number: -1, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, table.IsExecSyscall(tt.number))
+		})
+	}
+}

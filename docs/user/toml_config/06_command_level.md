@@ -1035,7 +1035,9 @@ go-safe-cmd-runner automatically assesses command risk from the following elemen
 1. **Command Type**: Dangerous commands like rm, chmod, chown
 2. **Argument Patterns**: Recursive deletion (-rf), forced execution (-f), etc.
 3. **Privilege Escalation**: Use of run_as_user, run_as_group
-4. **Network Access**: Network commands like curl, wget
+4. **Network Communication**: Whether the command makes network connections
+5. **External Program Execution**: Whether the command launches another program
+6. **Dynamic Library Loading**: Whether the command loads additional libraries at runtime
 
 #### Configuration Examples
 

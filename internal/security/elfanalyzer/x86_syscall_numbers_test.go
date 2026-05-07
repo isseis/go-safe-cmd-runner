@@ -82,3 +82,57 @@ func TestX86_64SyscallTable_GetNetworkSyscalls_ReturnsCopy(t *testing.T) {
 		assert.Equal(t, nums2, nums3)
 	}
 }
+
+func TestX86_64SyscallTable_IsExecSyscall(t *testing.T) {
+	table := NewX86_64SyscallTable()
+
+	tests := []struct {
+		name   string
+		number int
+		want   bool
+	}{
+		{name: "execve", number: 59, want: true},
+		{name: "execveat", number: 322, want: true},
+		{name: "socket", number: 41, want: false},
+		{name: "read", number: 0, want: false},
+		{name: "unknown-negative", number: -1, want: false},
+		{name: "unknown-large", number: 9999, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, table.IsExecSyscall(tt.number))
+		})
+	}
+}
+
+func TestX86_64SyscallTable_GetExecSyscalls(t *testing.T) {
+	table := NewX86_64SyscallTable()
+
+	execNums := table.GetExecSyscalls()
+	execNumSet := make(map[int]bool, len(execNums))
+	for _, n := range execNums {
+		execNumSet[n] = true
+	}
+
+	assert.True(t, execNumSet[59], "GetExecSyscalls() should include execve(59)")
+	assert.True(t, execNumSet[322], "GetExecSyscalls() should include execveat(322)")
+	assert.Len(t, execNums, 2, "GetExecSyscalls() should include only exec syscalls")
+
+	// Mutating the returned slice must not affect subsequent calls.
+	if len(execNums) > 0 {
+		execNums[0] = -1
+		execNums2 := table.GetExecSyscalls()
+		assert.True(t, contains(execNums2, 59))
+		assert.True(t, contains(execNums2, 322))
+	}
+}
+
+func contains(nums []int, target int) bool {
+	for _, n := range nums {
+		if n == target {
+			return true
+		}
+	}
+	return false
+}

@@ -19,6 +19,7 @@ import (
 
 type syscallTableInterface interface {
 	IsNetworkSyscall(number int) bool
+	IsExecSyscall(number int) bool
 }
 
 func syscallTableForArch(goos, arch string) syscallTableInterface {
@@ -283,26 +284,36 @@ func (a *NetworkAnalyzer) checkAnalysisCache(cmdPath, contentHash string) (handl
 		return true, true, true
 	}
 
-	// Check SyscallAnalysis cache for svc #0x80 signal (Mach-O arm64).
-	// This check runs regardless of SymbolAnalysis result so that svc #0x80 always
-	// escalates hasDynLoad to true.
-	if handled, isNet, dynLoad := a.checkSyscallCache(cmdPath, contentHash); handled {
-		return true, isNet, dynLoad
+	syscallHandled, syscallIsNet, syscallIsHighRisk := a.checkSyscallCache(cmdPath, contentHash)
+	if syscallHandled {
+		// Definitive signal from svc #0x80 or cache error: early return.
+		return true, syscallIsNet, syscallIsHighRisk
 	}
 
-	// No svc #0x80 signal: accumulate network/dynload signals from SymbolAnalysis.
+	// Accumulate syscall signals even when not definitively handled.
+	isNetwork = syscallIsNet
+	hasDynLoad = syscallIsHighRisk
+
+	// Always run symbol analysis to detect dlopen etc.
 	// data == nil when analyzed but no network symbols found (static binary with no svc).
 	if data != nil {
 		output := buildAnalysisOutputFromSymbolData(data)
-		isNetwork, hasDynLoad = handleAnalysisOutput(output, cmdPath)
+		symIsNetwork, symIsHighRisk := handleAnalysisOutput(output, cmdPath)
+		isNetwork = isNetwork || symIsNetwork
+		hasDynLoad = hasDynLoad || symIsHighRisk
 	}
 	return false, isNetwork, hasDynLoad
 }
 
 // checkSyscallCache loads and evaluates the SyscallAnalysis cache entry.
 // Returns (handled, isNetwork, isHighRisk):
-//   - handled=true: a definitive signal was found; the caller should return isNetwork/isHighRisk immediately.
-//   - handled=false: no definitive signal; the caller should continue with SymbolAnalysis-based logic.
+//   - handled=true: only for svc #0x80 or cache errors; caller should return immediately.
+//   - handled=false: caller should OR-merge isNetwork/isHighRisk with symbol/dynlib/shebang signals.
+//
+// Exec syscalls set isHighRisk=true but return handled=false so that symbol analysis,
+// dynlib deps, and shebang chain analysis can still contribute an isNetwork=true signal.
+// High risk and network capability are independent: a binary that launches a child process
+// may also make network connections via its dynamic libraries or shebang interpreter.
 func (a *NetworkAnalyzer) checkSyscallCache(cmdPath, contentHash string) (handled, isNetwork, isHighRisk bool) {
 	if a.deps.SyscallStore == nil {
 		return false, false, false
@@ -316,14 +327,19 @@ func (a *NetworkAnalyzer) checkSyscallCache(cmdPath, contentHash string) (handle
 				"path", cmdPath)
 			return true, true, true
 		}
-		// Check whether any non-svc detected syscall is a network syscall.
-		if syscallAnalysisHasNetworkSignal(svcResult, a.goos) {
+		isNet := syscallAnalysisHasNetworkSignal(svcResult, a.goos)
+		if isNet {
 			slog.Info("SyscallAnalysis cache indicates network syscall",
 				"path", cmdPath)
-			return true, true, false
 		}
-		// No svc signal and no network signal: fall through to SymbolAnalysis-based decision.
-		return false, false, false
+		isExec := syscallAnalysisHasExecSignal(svcResult, a.goos)
+		if isExec {
+			slog.Warn("SyscallAnalysis cache indicates exec syscall; treating as high risk",
+				"path", cmdPath)
+		}
+		// Return handled=false for both exec and non-exec: symbol/dynlib/shebang analysis
+		// must still run to complete the isNetwork determination.
+		return false, isNet, isExec
 	case errors.Is(svcErr, fileanalysis.ErrHashMismatch):
 		slog.Warn("SyscallAnalysis cache hash mismatch; treating as high risk",
 			"path", cmdPath)
@@ -374,6 +390,7 @@ func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (i
 		dynLoadLog  onceLogger
 		networkLog  onceLogger
 		mprotectLog onceLogger
+		execLog     onceLogger
 	)
 
 	for _, dep := range deps {
@@ -421,6 +438,11 @@ func (a *NetworkAnalyzer) checkDynLibDepsNetwork(cmdPath, contentHash string) (i
 				"syscall", sigs.mprotectRisk.SyscallName, "status", sigs.mprotectRisk.Status)
 			isHighRisk = true
 		}
+		if sigs.execSyscall != "" {
+			execLog.log("dynlib analysis detected exec syscall; treating as high risk",
+				"cmd_path", cmdPath, "dep_path", dep.Path, "syscall", sigs.execSyscall)
+			isHighRisk = true
+		}
 	}
 
 	return isNetwork, isHighRisk
@@ -441,6 +463,7 @@ type depSignals struct {
 	dynLoadSymbols  []string
 	networkSymbols  []string
 	networkSyscall  string
+	execSyscall     string
 	mprotectRisk    common.SyscallArgEvalResult
 	hasMprotectRisk bool
 }
@@ -455,6 +478,7 @@ func (a *NetworkAnalyzer) analyzeDepSignals(result *dynamicanalysis.Result) depS
 	if result.SyscallAnalysis != nil {
 		table := syscallTableForArch(a.goos, result.SyscallAnalysis.Architecture)
 		s.networkSyscall = firstNetworkSyscall(table, result.SyscallAnalysis)
+		s.execSyscall = firstExecSyscall(table, result.SyscallAnalysis)
 		s.mprotectRisk, s.hasMprotectRisk = elfanalyzer.FirstMprotectRisk(result.SyscallAnalysis.ArgEvalResults)
 	}
 	return s
@@ -468,6 +492,20 @@ func firstNetworkSyscall(table syscallTableInterface, data *fileanalysis.Syscall
 	}
 	for _, s := range data.DetectedSyscalls {
 		if s.Number >= 0 && table.IsNetworkSyscall(s.Number) {
+			return s.Name
+		}
+	}
+	return ""
+}
+
+// firstExecSyscall returns the name of the first exec syscall found in
+// data using table for classification. Returns "" if none found or inputs are nil.
+func firstExecSyscall(table syscallTableInterface, data *fileanalysis.SyscallAnalysisData) string {
+	if table == nil || data == nil {
+		return ""
+	}
+	for _, s := range data.DetectedSyscalls {
+		if s.Number >= 0 && table.IsExecSyscall(s.Number) {
 			return s.Name
 		}
 	}
@@ -528,7 +566,7 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 // contains any detected syscall classified as a network syscall.
 // This includes resolved svc entries (DeterminationMethod == "direct_svc_0x80" AND Number != -1)
 // whose network classification is determined by the syscall table lookup.
-func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult, goos string) bool { //nolint:unparam // goos varies by platform (darwin vs linux)
+func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult, goos string) bool {
 	if result == nil {
 		return false
 	}
@@ -541,6 +579,28 @@ func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult,
 	}
 	for _, s := range result.DetectedSyscalls {
 		if s.Number >= 0 && table.IsNetworkSyscall(s.Number) {
+			return true
+		}
+	}
+	return false
+}
+
+// syscallAnalysisHasExecSignal reports whether the given SyscallAnalysisResult
+// contains any detected syscall classified as an exec syscall.
+// Resolved svc entries (Number != -1) with exec classification are included.
+func syscallAnalysisHasExecSignal(result *fileanalysis.SyscallAnalysisResult, goos string) bool {
+	if result == nil {
+		return false
+	}
+	if len(result.DetectedSyscalls) == 0 {
+		return false
+	}
+	table := syscallTableForArch(goos, result.Architecture)
+	if table == nil {
+		return false
+	}
+	for _, s := range result.DetectedSyscalls {
+		if s.Number >= 0 && table.IsExecSyscall(s.Number) {
 			return true
 		}
 	}
