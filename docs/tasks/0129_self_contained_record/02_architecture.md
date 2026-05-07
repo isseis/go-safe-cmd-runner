@@ -120,7 +120,7 @@ flowchart TD
     SHEBANG -->|"なし"| COLLECT
 
     CHAIN --> COLLECT["全 dyn_lib_deps を収集\n（コマンド + shebang チェーン全バイナリ）"]
-    COLLECT --> DEDUP["path+hash で dedup"]
+    COLLECT --> DEDUP["path を主キーとして dedup\n（hash 不一致は致命的エラー）"]
 
     DEDUP --> ANALYZE_DEP["各ライブラリ解析\n（キャッシュ優先）"]
     ANALYZE_DEP --> CACHE_CHK{"dynlib キャッシュ\nヒット?"}
@@ -341,7 +341,7 @@ sequenceDiagram
         end
     end
 
-    R->>R: 全 dyn_lib_deps を収集・dedup（path+hash キー）
+    R->>R: 全 dyn_lib_deps を収集・dedup（path を主キー。hash 不一致は致命的エラー）
 
     loop 各ユニーク dep
         R->>C: LoadAnalysis(path, hash)
