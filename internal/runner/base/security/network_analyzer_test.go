@@ -104,24 +104,33 @@ func TestSyscallAnalysisHasSVCSignal_ResolvedNetworkSVC(t *testing.T) {
 }
 
 // platformNetworkSyscallNums returns the architecture string and network syscall
-// numbers (socket, connect) that match syscallTableForArch's behavior on the current OS.
+// numbers (socket, connect) that match syscallTableForArch's behavior on the current OS
+// and architecture.
 // On macOS, syscallTableForArch ignores the arch field and always uses MacOSSyscallTable
-// (socket=97, connect=98); on Linux it uses the x86_64 table (socket=41, connect=42).
+// (socket=97, connect=98); on Linux it dispatches by GOARCH: x86_64 (socket=41, connect=42)
+// or arm64 (socket=198, connect=203).
 func platformNetworkSyscallNums() (arch string, socketNum, connectNum int) {
 	if runtime.GOOS == "darwin" {
 		return "arm64", 97, 98
+	}
+	if runtime.GOARCH == "arm64" {
+		return "arm64", 198, 203
 	}
 	return "x86_64", 41, 42
 }
 
 // platformExecSyscallNums returns the architecture string and exec syscall
-// numbers that match syscallTableForArch's behavior on the current OS.
+// numbers that match syscallTableForArch's behavior on the current OS and
+// architecture.
 // On macOS, syscallTableForArch ignores the arch field and always uses
-// MacOSSyscallTable (execve=59, __mac_execve=380); on Linux it uses the
-// x86_64 table (execve=59, execveat=322).
+// MacOSSyscallTable (execve=59, __mac_execve=380); on Linux it dispatches by
+// GOARCH: x86_64 (execve=59, execveat=322) or arm64 (execve=221, execveat=281).
 func platformExecSyscallNums() (arch string, secondExecNum int) {
 	if runtime.GOOS == "darwin" {
 		return "arm64", 380
+	}
+	if runtime.GOARCH == "arm64" {
+		return "arm64", 281
 	}
 	return "x86_64", 322
 }
@@ -639,7 +648,7 @@ func TestSyscallAnalysisHasNetworkSignal_NegativeNumber(t *testing.T) {
 }
 
 func TestSyscallAnalysisHasExecSignal(t *testing.T) {
-	const execveNum = 59
+	execveNum := platformFirstExecSyscallNum()
 	arch, secondExecNum := platformExecSyscallNums()
 	tests := []struct {
 		name   string
@@ -719,8 +728,17 @@ func platformSocketNum() int {
 	return socketNum
 }
 
+// platformFirstExecSyscallNum returns the execve syscall number for the current OS/arch.
+// macOS and x86_64 Linux use 59; arm64 Linux uses 221.
+func platformFirstExecSyscallNum() int {
+	if runtime.GOOS == "linux" && runtime.GOARCH == "arm64" {
+		return 221
+	}
+	return 59
+}
+
 func TestNetworkAnalyzer_ExecSyscallIsHighRisk(t *testing.T) {
-	const execveNum = 59
+	execveNum := platformFirstExecSyscallNum()
 	arch, _ := platformExecSyscallNums()
 	_, socketNum, _ := platformNetworkSyscallNums()
 
@@ -785,7 +803,7 @@ func TestNetworkAnalyzer_ExecSyscallIsHighRisk(t *testing.T) {
 }
 
 func TestFirstExecSyscall(t *testing.T) {
-	const execveNum = 59
+	execveNum := platformFirstExecSyscallNum()
 	arch, _ := platformExecSyscallNums()
 	_, socketNum, _ := platformNetworkSyscallNums()
 	table := syscallTableForArch(runtime.GOOS, arch)
@@ -808,7 +826,7 @@ func TestFirstExecSyscall(t *testing.T) {
 }
 
 func TestAnalyzeDepSignals_ExecSyscall(t *testing.T) {
-	const execveNum = 59
+	execveNum := platformFirstExecSyscallNum()
 	arch, _ := platformExecSyscallNums()
 	a := NewNetworkAnalyzer(runtime.GOOS, AnalysisDeps{})
 
@@ -841,7 +859,7 @@ func TestAnalyzeDepSignals_ExecSyscall(t *testing.T) {
 }
 
 func TestNetworkAnalyzer_DynLibExecSyscallIsHighRisk(t *testing.T) {
-	const execveNum = 59
+	execveNum := platformFirstExecSyscallNum()
 	arch, _ := platformExecSyscallNums()
 	_, socketNum, _ := platformNetworkSyscallNums()
 	dep := fileanalysis.LibEntry{SOName: "libssl.so.3", Path: "/usr/lib/libssl.so.3", Hash: "sha256:ssl"}
