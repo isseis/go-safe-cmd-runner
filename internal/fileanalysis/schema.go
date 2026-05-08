@@ -117,8 +117,11 @@ type LibEntry struct {
 // ShebangChainEntry stores one shebang verification hop.
 type ShebangChainEntry struct {
 	// Ref is the original shebang reference token (absolute path or bare command name).
-	// Empty means no runtime re-resolution is required.
-	Ref string `json:"ref,omitempty"`
+	// Must be non-empty: verification.Manager.verifyShebangChainEntry rejects an
+	// empty Ref with ErrShebangChainEmptyRef (fail-closed) because an absent token
+	// would skip the symlink-redirection / PATH-resolution check at verify time.
+	// populateShebangData always writes a non-empty Ref.
+	Ref string `json:"ref"`
 
 	// Path is the resolved absolute path recorded at record time.
 	Path string `json:"path"`
