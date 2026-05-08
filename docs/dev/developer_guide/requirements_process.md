@@ -73,45 +73,25 @@ When implementing new features or security-critical functionality, follow this p
 **Content guidelines:**
 - **Focus on high-level design**: Use diagrams and natural language descriptions
 - **Code examples**: Only include high-level code (interfaces, type definitions, error types)
-- **Avoid implementation details**: Save detailed code for the detailed specification
+- **Avoid implementation details**: Concrete code belongs in the implementation itself, not the design doc
 - **Language**: Japanese (default)
 - **Format**: Markdown with Mermaid diagrams
 
 **Reference**: `docs/tasks/0066_template_include/02_architecture.md`
 
-## 3. Detailed Specification (`docs/tasks/XXXX_feature/03_detailed_specification.md`)
+## 3. Detailed Specification — intentionally skipped
 
-**Purpose**: Detailed technical specification with implementation details, code examples, and verification steps.
+`03_detailed_specification.md` is no longer produced. In practice, writing detailed
+pre-implementation specifications duplicates the eventual code and tends to drift
+from it. Instead:
 
-**Required sections:**
-1. **Implementation phases with detailed steps**
-   - Each phase should include specific file paths, functions, and code changes
-   - Include concrete code examples (not just interfaces)
-2. **Acceptance verification phase** (see below)
+- Capture the high-level design in `02_architecture.md`
+- Capture the work outline (with checkboxes) and AC traceability in
+  `04_implementation_plan.md`
+- Let the implementation itself be the authoritative record of concrete details
 
-**Add acceptance verification phase:**
-```markdown
-### Phase N: Acceptance Criteria Verification (1 day)
-
-#### F-XXX Acceptance Criteria Verification
-
-**AC-1: [First acceptance criterion]**
-- [ ] Test location: `internal/package/subpackage_test.go::TestFunctionName`
-- [ ] Implementation: [File path and line numbers]
-- [ ] Verification method: [How to verify]
-
-**AC-2: [Second acceptance criterion]**
-- [ ] Test location: `internal/package/integration_test.go::TestIntegrationScenario`
-- [ ] Implementation: [File path and line numbers]
-- [ ] Verification method: [How to verify]
-...
-```
-
-**Content guidelines:**
-- **Detailed implementation steps**: Include specific code changes, file paths, line numbers
-- **Code examples**: Show actual implementation code (not just interfaces)
-- **Test specifications**: Describe test cases in detail
-- **Avoid duplication**: Reference the architecture document for high-level design; focus on implementation details here
+The numbering of subsequent files is preserved (`04_implementation_plan.md` keeps its
+name) for backward compatibility with existing tasks.
 
 ## 4. Implementation Plan (`docs/tasks/XXXX_feature/04_implementation_plan.md`)
 
@@ -123,7 +103,7 @@ When implementing new features or security-critical functionality, follow this p
    - Implementation principles (実装原則)
 
 2. **Implementation Steps (実装ステップ)**
-   - Organized by phases matching the detailed specification
+   - Organized by phases derived from the architecture document
    - Each step includes:
      - **Files to modify**: Specific file paths
      - **Work content (作業内容)**: What to do (with checkboxes)
@@ -164,10 +144,11 @@ When implementing new features or security-critical functionality, follow this p
 - **Focus on tracking**: Use checkboxes extensively for progress tracking
 - **Avoid duplication**: Reference other documents instead of repeating content
   - Don't duplicate architecture diagrams or design details
-  - Don't duplicate detailed code from the specification
   - Reference sections like "See 02_architecture.md Section 3.2 for design details"
 - **Actionable tasks**: Each checkbox should represent a concrete, completable action
 - **Update during implementation**: Mark tasks as complete in real-time
+- **AC traceability**: Include an explicit "Acceptance Criteria Verification" section
+  mapping each AC to the test that proves it (see § 5)
 - **Language**: Japanese (default)
 
 **Reference**: `docs/tasks/0067_template_inheritance_enhancement/04_implementation_plan.md`
@@ -180,10 +161,10 @@ When implementing new features or security-critical functionality, follow this p
 - Tests can be unit tests, integration tests, or any appropriate type
 - Each acceptance criterion must have at least one test
 - Tests must verify the actual behavior, not just the happy path
-- Link tests to acceptance criteria in the detailed specification document
+- Link tests to acceptance criteria in the implementation plan
 
-**Traceability in detailed specification:**
-Document which tests verify each acceptance criterion in `03_detailed_specification.md`:
+**Traceability in implementation plan:**
+Document which tests verify each acceptance criterion in `04_implementation_plan.md`:
 
 ```markdown
 **AC-1: [First acceptance criterion]**
@@ -211,9 +192,8 @@ func TestIncludeFileVerification(t *testing.T) {
 Before considering a feature complete:
 - [ ] All acceptance criteria defined in requirements document
 - [ ] Architecture design document created with high-level design
-- [ ] Detailed specification created with implementation details
 - [ ] Implementation plan created and updated during development
-- [ ] Acceptance verification phase added to detailed specification
+- [ ] Acceptance criteria verification section present in implementation plan
 - [ ] At least one test per acceptance criterion
 - [ ] All acceptance tests pass
 - [ ] Security requirements explicitly tested
@@ -223,7 +203,7 @@ Before considering a feature complete:
 This process was established after discovering a critical security gap in the template include feature (task 0066). The included template files were not being hash-verified, despite the requirement stating "included files should also be subject to checksum verification to detect tampering". The gap occurred because:
 
 1. Requirements lacked explicit acceptance criteria
-2. No verification phase in the detailed specification
+2. No verification phase that traced each criterion to a test
 3. No tests specifically validating the security requirement
 
 The security implementation was later added (`VerifiedTemplateFileLoader`), and this process ensures such gaps don't recur.
