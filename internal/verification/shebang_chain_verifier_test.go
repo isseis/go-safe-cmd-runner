@@ -128,13 +128,13 @@ func TestVerifyCommandShebangInterpreter_ShebangChain_UnsupportedHashAlgorithm(t
 // command using the stale cached hash from the first command.
 func TestVerifyCommandDynLibDeps_ResetsDepHashCacheBetweenCommands(t *testing.T) {
 	dir := commontesting.SafeTempDir(t)
-
-	// interpPath is a real file used as the shebang interpreter.
 	interpPath := commontesting.WriteExecutableFile(t, dir, "interp", []byte("#!/bin/sh\n"))
 
-	buildRecord := func(scriptPath string) *fileanalysis.Record {
-		interpHash, err := computeSHA256PrefixedHash(interpPath)
-		require.NoError(t, err)
+	// Capture the hash of the original interpreter before it is replaced.
+	originalHash, err := computeSHA256PrefixedHash(interpPath)
+	require.NoError(t, err)
+
+	makeRecord := func(scriptPath, interpHash string) *fileanalysis.Record {
 		return &fileanalysis.Record{
 			SchemaVersion: fileanalysis.CurrentSchemaVersion,
 			FilePath:      scriptPath,
@@ -148,7 +148,7 @@ func TestVerifyCommandDynLibDeps_ResetsDepHashCacheBetweenCommands(t *testing.T)
 	script2 := filepath.Join(dir, "script2.sh")
 
 	mockFV := newMockFVForShebang()
-	mockFV.setRecord(script1, buildRecord(script1))
+	mockFV.setRecord(script1, makeRecord(script1, originalHash))
 
 	m := setupManagerWithMockValidator(t, mockFV)
 	// A real DynLibVerifier is required to exercise the cache path.
@@ -156,31 +156,20 @@ func TestVerifyCommandDynLibDeps_ResetsDepHashCacheBetweenCommands(t *testing.T)
 	m.dynlibVerifier = elfdynlib.NewDynLibVerifier(safeFS)
 	m.safeFS = safeFS
 
-	// Command 1: dynlib verification populates the cache.
+	// Command 1: dynlib verification passes and populates the cache.
 	require.NoError(t, m.VerifyCommandDynLibDeps(script1))
 	require.NoError(t, m.VerifyCommandShebangInterpreter(script1, map[string]string{}))
 
-	// Simulate the interpreter being replaced before the second command runs.
+	// Replace the interpreter on disk. script2's record still carries the
+	// original hash, so the disk content no longer matches the record.
 	require.NoError(t, os.WriteFile(interpPath, []byte("#!/bin/sh\n# replaced\n"), 0o755))
+	mockFV.setRecord(script2, makeRecord(script2, originalHash))
 
-	// Rebuild the record for script2 so it reflects the current (pre-replacement) hash —
-	// i.e., the hash no longer matches the file on disk after the write above.
-	// Build the record with the OLD hash to simulate a tampered file.
-	oldRecord := buildRecord(script2) // hash was computed before the write above? No:
-	// Actually buildRecord calls computeSHA256PrefixedHash NOW (after replacement),
-	// so we need to set the old hash manually.
-	oldHash := m.verifiedDepHashes[interpPath] // captured from command 1's cache
-	oldRecord.DynLibDeps[0].Hash = oldHash
-	oldRecord.ShebangChain[0].Path = interpPath
-	mockFV.setRecord(script2, oldRecord)
-
-	// Command 2: VerifyCommandDynLibDeps must reset the cache, so shebang
-	// verification for script2 recomputes the hash and detects the mismatch.
-	_ = m.VerifyCommandDynLibDeps(script2) // will fail due to hash mismatch — that's expected
-	err := m.VerifyCommandShebangInterpreter(script2, map[string]string{})
-	// If the cache were not reset, verifyInterpreterHash would skip computeHash
-	// and return nil (false negative). With the reset, it must recompute and detect
-	// the mismatch.
+	// Command 2: VerifyCommandDynLibDeps resets the cache before re-verifying,
+	// so verifyInterpreterHash must recompute the hash from disk and detect the
+	// mismatch rather than using the stale cache entry from command 1.
+	_ = m.VerifyCommandDynLibDeps(script2) // expected to fail — hash mismatch
+	err = m.VerifyCommandShebangInterpreter(script2, map[string]string{})
 	assert.Error(t, err, "shebang verification must detect replaced interpreter after cache reset")
 }
 
