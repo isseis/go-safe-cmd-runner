@@ -88,3 +88,26 @@ func TestVerifyCommandShebangInterpreter_ShebangChain_BareRef_PathMismatch(t *te
 	assert.Equal(t, recordedInterp, mismatch.RecordedPath)
 	assert.Equal(t, runtimeInterp, mismatch.ActualPath)
 }
+
+// TestVerifyCommandShebangInterpreter_ShebangChain_EmptyPath verifies that a
+// shebang_chain entry with an empty path is rejected as a corrupted record
+// rather than silently skipped (fail-closed).
+func TestVerifyCommandShebangInterpreter_ShebangChain_EmptyPath(t *testing.T) {
+	dir := commontesting.SafeTempDir(t)
+	scriptPath := filepath.Join(dir, "script.sh")
+
+	mockFV := newMockFVForShebang()
+	mockFV.setRecord(scriptPath, &fileanalysis.Record{
+		SchemaVersion: fileanalysis.CurrentSchemaVersion,
+		FilePath:      scriptPath,
+		ContentHash:   "sha256:abc",
+		ShebangChain: []fileanalysis.ShebangChainEntry{{
+			Ref:  "/bin/sh",
+			Path: "",
+		}},
+	})
+
+	m := setupManagerWithMockValidator(t, mockFV)
+	err := m.VerifyCommandShebangInterpreter(scriptPath, map[string]string{})
+	assert.Error(t, err, "empty shebang_chain path must be rejected, not silently skipped")
+}

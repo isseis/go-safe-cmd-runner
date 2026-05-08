@@ -24,6 +24,9 @@ var (
 	ErrPathResolverNotInitialized = errors.New("path resolver not initialized")
 	// ErrCommandNotFound is returned when command is not found in PATH
 	ErrCommandNotFound = errors.New("command not found in PATH")
+	// ErrShebangChainEmptyPath is returned when a shebang_chain entry has an empty path,
+	// indicating a corrupted or malformed record.
+	ErrShebangChainEmptyPath = errors.New("shebang_chain entry has empty path: record may be corrupt")
 )
 
 // SecurityViolationError is the base error type for security-related violations

@@ -768,7 +768,7 @@ func (m *Manager) verifyShebangChain(record *fileanalysis.Record, chain []filean
 
 func (m *Manager) verifyShebangChainEntry(record *fileanalysis.Record, entry fileanalysis.ShebangChainEntry, envVars map[string]string) error {
 	if entry.Path == "" {
-		return nil
+		return ErrShebangChainEmptyPath
 	}
 
 	if entry.Ref != "" {
