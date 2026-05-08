@@ -675,11 +675,23 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 	aggregate := newAnalysisAggregate()
 	aggregate.addRecord(record)
 
+	// Shebang chain binaries are already analyzed as executables via
+	// analyzeRecordTarget in populateShebangData; skip them here.
+	shebangPaths := make(map[string]struct{}, len(record.ShebangChain))
+	for _, entry := range record.ShebangChain {
+		if entry.Path != "" {
+			shebangPaths[entry.Path] = struct{}{}
+		}
+	}
+
 	for _, lib := range record.DynLibDeps {
 		if isKnownVDSO(lib.SOName) {
 			continue
 		}
 		if binaryanalyzer.IsSyscallWrapperLibrary(lib.SOName) {
+			continue
+		}
+		if _, ok := shebangPaths[lib.Path]; ok {
 			continue
 		}
 
