@@ -47,7 +47,8 @@ type SyscallOccurrence struct {
 
 	// Location is the virtual address of the syscall instruction
 	// (typically located within the .text section).
-	Location uint64 `json:"location"`
+	// Zero is used as a sentinel by libc-import detection and is omitted from JSON.
+	Location uint64 `json:"location,omitempty"`
 
 	// DeterminationMethod describes how the syscall number was determined.
 	// See the DeterminationMethod* constants in the elfanalyzer package for

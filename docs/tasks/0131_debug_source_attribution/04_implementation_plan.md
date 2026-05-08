@@ -34,7 +34,7 @@
 
 対象（テスト追加）: `internal/common/syscall_types_test.go`
 
-- [ ] 既存テスト `TestSyscallInfoJSON` のサブテストとして `"location field omitted when zero"` を追加する
+- [x] 既存テスト `TestSyscallInfoJSON` のサブテストとして `"location field omitted when zero"` を追加する
   - `Location: 0, Source: "libc_symbol_import"` の occurrence を JSON 化し、`"location"` キーが存在しないことを確認する
 
 AC カバレッジ: AC-001, AC-002, AC-003
