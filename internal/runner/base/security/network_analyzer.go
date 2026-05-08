@@ -65,8 +65,9 @@ func NewNetworkAnalyzer(goos string, deps AnalysisDeps) *NetworkAnalyzer {
 // exec syscall detected in the binary.
 //
 // contentHash is a pre-computed hash in "algo:hex" format (e.g. "sha256:abc123...").
-// Used to verify that binary analysis is applicable; when empty, binary analysis
-// is skipped.
+// Used to verify that the loaded analysis record matches the binary on disk.
+// When empty the binary's identity is unverified; binary analysis treats this
+// as high risk and returns (true, true) — fail-closed.
 //
 // Detection priority:
 // 1. commandProfileDefinitions (hardcoded list) - takes precedence
