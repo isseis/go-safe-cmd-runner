@@ -5,11 +5,9 @@ package main
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -58,10 +56,7 @@ args = ["hello"]
 
 			// Run command in dry-run mode with JSON output
 			// Capture stdout and stderr separately to verify JSON output separation
-			hashDir := commontesting.SafeTempDir(t)
-			ldflags := hashDirLDFlags(hashDir)
-			cmd := exec.Command("go", "run", "-ldflags", ldflags, ".", "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
-			cmd.Dir = "."
+			cmd := newGoRunCmd(t, "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
 
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
@@ -199,10 +194,7 @@ args = ["hello"]
 			tmpFile.Close()
 
 			// Run command in dry-run mode with JSON output
-			hashDir := commontesting.SafeTempDir(t)
-			ldflags := hashDirLDFlags(hashDir)
-			cmd := exec.Command("go", "run", "-ldflags", ldflags, ".", "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
-			cmd.Dir = "."
+			cmd := newGoRunCmd(t, "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
 
 			output, err := cmd.Output() // Use Output() instead of CombinedOutput() to get only stdout
 			require.NoError(t, err, "dry-run should succeed")

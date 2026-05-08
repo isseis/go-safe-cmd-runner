@@ -2,7 +2,13 @@
 
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os/exec"
+	"testing"
+
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+)
 
 const hashDirPackage = "github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory"
 
@@ -12,4 +18,18 @@ const hashDirPackage = "github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.
 // ldflags parser.
 func hashDirLDFlags(hashDir string) string {
 	return fmt.Sprintf("-X '%s=%s'", hashDirPackage, hashDir)
+}
+
+// newGoRunCmd returns an *exec.Cmd that runs the current package via `go run`
+// with a freshly created temporary directory embedded as the default hash
+// directory via -ldflags. The directory is automatically cleaned up when the
+// test ends. appArgs are passed to the compiled binary after ".".
+func newGoRunCmd(t *testing.T, appArgs ...string) *exec.Cmd {
+	t.Helper()
+	hashDir := commontesting.SafeTempDir(t)
+	ldflags := hashDirLDFlags(hashDir)
+	args := append([]string{"run", "-ldflags", ldflags, "."}, appArgs...)
+	cmd := exec.Command("go", args...)
+	cmd.Dir = "."
+	return cmd
 }
