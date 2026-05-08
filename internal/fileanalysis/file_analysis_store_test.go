@@ -131,7 +131,7 @@ func TestStore_Load_V21RejectedWithSchemaVersionMismatch(t *testing.T) {
 	_, err = store.Load(rp)
 	var schemaErr *SchemaVersionMismatchError
 	require.ErrorAs(t, err, &schemaErr)
-	assert.Equal(t, 22, schemaErr.Expected)
+	assert.Equal(t, CurrentSchemaVersion, schemaErr.Expected)
 	assert.Equal(t, 21, schemaErr.Actual)
 }
 

@@ -2408,7 +2408,7 @@ func TestIsNetworkViaBinaryAnalysis_AnalysisStore(t *testing.T) {
 			record: &fileanalysis.Record{
 				ContentHash: contentHash,
 				SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
-					DetectedSymbols: []string{"socket"},
+					DetectedSymbols: []fileanalysis.DetectedSymbol{{Name: "socket"}},
 				},
 			},
 		}
@@ -2441,7 +2441,7 @@ func TestIsNetworkViaBinaryAnalysis_AnalysisStore(t *testing.T) {
 			record: &fileanalysis.Record{
 				ContentHash: contentHash,
 				SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
-					DynamicLoadSymbols: []string{"dlopen"},
+					DynamicLoadSymbols: []fileanalysis.DetectedSymbol{{Name: "dlopen"}},
 				},
 			},
 		}
@@ -2514,7 +2514,7 @@ func TestNetworkSymbolAnalysisStore_RecordToRunner(t *testing.T) {
 		record: &fileanalysis.Record{
 			ContentHash: fakeHash,
 			SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
-				DetectedSymbols: []string{"socket"},
+				DetectedSymbols: []fileanalysis.DetectedSymbol{{Name: "socket"}},
 			},
 		},
 	}

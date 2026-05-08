@@ -39,7 +39,7 @@ func TestStore_LoadOrAnalyzeAndStore_Reuse(t *testing.T) {
 	analyzer := &mockAnalyzer{
 		result: &dynamicanalysis.Result{
 			SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
-				DetectedSymbols: []string{"socket"},
+				DetectedSymbols: []fileanalysis.DetectedSymbol{{Name: "socket"}},
 			},
 		},
 	}
@@ -61,7 +61,7 @@ func TestStore_LoadOrAnalyzeAndStore_Reuse(t *testing.T) {
 	assert.Len(t, analyzer.callArgs, 1, "analyzer should not be called again on reuse")
 
 	require.NotNil(t, result2.SymbolAnalysis)
-	assert.Equal(t, []string{"socket"}, result2.SymbolAnalysis.DetectedSymbols)
+	assert.Equal(t, []fileanalysis.DetectedSymbol{{Name: "socket"}}, result2.SymbolAnalysis.DetectedSymbols)
 }
 
 // TestStore_LoadOrAnalyzeAndStore_HashChanged verifies that when the library hash

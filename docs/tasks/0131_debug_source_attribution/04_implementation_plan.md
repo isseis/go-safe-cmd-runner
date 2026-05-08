@@ -26,7 +26,7 @@
 
 対象: `internal/common/syscall_types.go`
 
-- [ ] `SyscallOccurrence` 構造体に `SourcePath string \`json:"source_path,omitempty"\`` フィールドを追加する
+- [x] `SyscallOccurrence` 構造体に `SourcePath string \`json:"source_path,omitempty"\`` フィールドを追加する
 
 AC カバレッジ: AC-001, AC-002, AC-003
 
@@ -34,15 +34,15 @@ AC カバレッジ: AC-001, AC-002, AC-003
 
 対象: `internal/fileanalysis/schema.go`
 
-- [ ] `DetectedSymbol` 構造体を新設する
+- [x] `DetectedSymbol` 構造体を新設する
   ```go
   type DetectedSymbol struct {
       Name       string `json:"name"`
       SourcePath string `json:"source_path,omitempty"`
   }
   ```
-- [ ] `SymbolAnalysisData.DetectedSymbols` の型を `[]string` → `[]DetectedSymbol` に変更する
-- [ ] `SymbolAnalysisData.DynamicLoadSymbols` の型を `[]string` → `[]DetectedSymbol` に変更する
+- [x] `SymbolAnalysisData.DetectedSymbols` の型を `[]string` → `[]DetectedSymbol` に変更する
+- [x] `SymbolAnalysisData.DynamicLoadSymbols` の型を `[]string` → `[]DetectedSymbol` に変更する
 
 AC カバレッジ: AC-004, AC-005, AC-006, AC-007
 
@@ -50,8 +50,8 @@ AC カバレッジ: AC-004, AC-005, AC-006, AC-007
 
 対象: `internal/fileanalysis/schema.go`
 
-- [ ] `CurrentSchemaVersion` を `22` → `23` に変更する
-- [ ] バージョン履歴コメントに v23 の説明（source attribution 追加）を追記する
+- [x] `CurrentSchemaVersion` を `22` → `23` に変更する
+- [x] バージョン履歴コメントに v23 の説明（source attribution 追加）を追記する
 
 AC カバレッジ: AC-011, AC-012, AC-013
 
@@ -63,10 +63,10 @@ AC カバレッジ: AC-011, AC-012, AC-013
 
 対象: `internal/filevalidator/validator.go`
 
-- [ ] `convertDetectedSymbols` の戻り値型を `[]string` → `[]fileanalysis.DetectedSymbol` に変更する
+- [x] `convertDetectedSymbols` の戻り値型を `[]string` → `[]fileanalysis.DetectedSymbol` に変更する
   - `SourcePath` は空文字列のまま（呼び出し元帰属は集約時に設定）
   - ソートは `Name` フィールドで行う（従来動作維持）
-- [ ] `analyzeRecordTarget` および `analyzeOneLibrary` の `record.SymbolAnalysis` 設定箇所がコンパイルエラーにならないことを確認する
+- [x] `analyzeRecordTarget` および `analyzeOneLibrary` の `record.SymbolAnalysis` 設定箇所がコンパイルエラーにならないことを確認する
 
 ---
 
@@ -76,14 +76,14 @@ AC カバレッジ: AC-011, AC-012, AC-013
 
 対象: `internal/filevalidator/validator.go`
 
-- [ ] `detectedSymbolKey` 型を定義する
+- [x] `detectedSymbolKey` 型を定義する
   ```go
   type detectedSymbolKey struct {
       name       string
       sourcePath string
   }
   ```
-- [ ] `sourceRole` 型および定数を定義する
+- [x] `sourceRole` 型および定数を定義する
   ```go
   type sourceRole string
   const (
@@ -99,9 +99,9 @@ AC カバレッジ: AC-009
 
 対象: `internal/filevalidator/validator.go`
 
-- [ ] `includeDebugInfo bool` フィールドを追加する
-- [ ] `symbols map[string]struct{}` → `symbols map[detectedSymbolKey]struct{}` に変更する
-- [ ] `dynLoads map[string]struct{}` → `dynLoads map[detectedSymbolKey]struct{}` に変更する
+- [x] `includeDebugInfo bool` フィールドを追加する
+- [x] `symbols map[string]struct{}` → `symbols map[detectedSymbolKey]struct{}` に変更する
+- [x] `dynLoads map[string]struct{}` → `dynLoads map[detectedSymbolKey]struct{}` に変更する
 
 AC カバレッジ: AC-006, AC-007
 
@@ -109,16 +109,16 @@ AC カバレッジ: AC-006, AC-007
 
 対象: `internal/filevalidator/validator.go`
 
-- [ ] 引数に `includeDebugInfo bool` を追加する
-- [ ] 初期化時に `includeDebugInfo` を構造体フィールドに設定する
+- [x] 引数に `includeDebugInfo bool` を追加する
+- [x] 初期化時に `includeDebugInfo` を構造体フィールドに設定する
 
 ### タスク 3.4: `addRecord` / `addDynamicResult` のシグネチャ変更
 
 対象: `internal/filevalidator/validator.go`
 
-- [ ] `addRecord(record *fileanalysis.Record, sourcePath string, role sourceRole)` に変更する
-- [ ] `addDynamicResult(result *dynamicanalysis.Result, sourcePath string, role sourceRole)` に変更する
-- [ ] 各メソッド内で `addSymbolAnalysis(data, sourcePath)` を呼び出す
+- [x] `addRecord(record *fileanalysis.Record, sourcePath string, role sourceRole)` に変更する
+- [x] `addDynamicResult(result *dynamicanalysis.Result, sourcePath string, role sourceRole)` に変更する
+- [x] 各メソッド内で `addSymbolAnalysis(data, sourcePath)` を呼び出す
 
 AC カバレッジ: AC-001, AC-003, AC-004, AC-009
 
@@ -126,11 +126,11 @@ AC カバレッジ: AC-001, AC-003, AC-004, AC-009
 
 対象: `internal/filevalidator/validator.go`
 
-- [ ] 引数に `sourcePath string` を追加する
-- [ ] dedup キーの構築ロジックを変更する
+- [x] 引数に `sourcePath string` を追加する
+- [x] dedup キーの構築ロジックを変更する
   - `includeDebugInfo = false` の場合: `detectedSymbolKey{name: sym.Name, sourcePath: ""}` を使用（name 単位 dedup）
   - `includeDebugInfo = true` の場合: `sym.SourcePath` が非空なら `sym.SourcePath` を使用、空なら引数の `sourcePath` を使用
-- [ ] `a.symbols` および `a.dynLoads` マップへの追加をキー型変更に合わせて更新する
+- [x] `a.symbols` および `a.dynLoads` マップへの追加をキー型変更に合わせて更新する
 
 AC カバレッジ: AC-004, AC-005, AC-006, AC-007, AC-010
 
@@ -138,10 +138,10 @@ AC カバレッジ: AC-004, AC-005, AC-006, AC-007, AC-010
 
 対象: `internal/filevalidator/validator.go`
 
-- [ ] `addRecord` 内に以下の処理を `addSyscallAnalysis` の呼び出し前に追加する
+- [x] `addRecord` 内に以下の処理を `addSyscallAnalysis` の呼び出し前に追加する
   - `a.includeDebugInfo = true` かつ `record.SyscallAnalysis != nil` のときのみ実行
   - `record.SyscallAnalysis.DetectedSyscalls` の各 `SyscallOccurrence.SourcePath` が空文字列の場合のみ `sourcePath` をセット（AC-008）
-- [ ] `addDynamicResult` 内に同様の処理を追加する（`result.SyscallAnalysis` 対象）
+- [x] `addDynamicResult` 内に同様の処理を追加する（`result.SyscallAnalysis` 対象）
 
 AC カバレッジ: AC-001, AC-002, AC-003, AC-008
 
@@ -149,11 +149,11 @@ AC カバレッジ: AC-001, AC-002, AC-003, AC-008
 
 対象: `internal/filevalidator/validator.go`
 
-- [ ] 戻り値の `result.DetectedSymbols` を `[]fileanalysis.DetectedSymbol` として構築する
+- [x] 戻り値の `result.DetectedSymbols` を `[]fileanalysis.DetectedSymbol` として構築する
   - `detectedSymbolKey` の `{name, sourcePath}` から `DetectedSymbol{Name: key.name, SourcePath: key.sourcePath}` を生成
   - 非 debug 時は `key.sourcePath = ""` のため `omitempty` により JSON で省略される
-- [ ] ソート順を `Name` 昇順、同一の場合は `SourcePath` 昇順に変更する
-- [ ] 同様に `result.DynamicLoadSymbols` も `[]DetectedSymbol` として構築する
+- [x] ソート順を `Name` 昇順、同一の場合は `SourcePath` 昇順に変更する
+- [x] 同様に `result.DynamicLoadSymbols` も `[]DetectedSymbol` として構築する
 
 AC カバレッジ: AC-004, AC-005, AC-006, AC-007
 
@@ -165,8 +165,8 @@ AC カバレッジ: AC-004, AC-005, AC-006, AC-007
 
 対象: `internal/filevalidator/validator.go`
 
-- [ ] `aggregate := newAnalysisAggregate()` → `newAnalysisAggregate(v.includeDebugInfo)` に変更する
-- [ ] `aggregate.addRecord(targetAnalysis)` → `aggregate.addRecord(targetAnalysis, filePath, roleMain)` に変更する
+- [x] `aggregate := newAnalysisAggregate()` → `newAnalysisAggregate(v.includeDebugInfo)` に変更する
+- [x] `aggregate.addRecord(targetAnalysis)` → `aggregate.addRecord(targetAnalysis, filePath, roleMain)` に変更する
 
 AC カバレッジ: AC-001, AC-004, AC-009
 
@@ -174,7 +174,7 @@ AC カバレッジ: AC-001, AC-004, AC-009
 
 対象: `internal/filevalidator/validator.go`
 
-- [ ] `aggregate.addRecord(chainAnalysis)` → `aggregate.addRecord(chainAnalysis, entry.Path, roleShebangInterpreter)` に変更する
+- [x] `aggregate.addRecord(chainAnalysis)` → `aggregate.addRecord(chainAnalysis, entry.Path, roleShebangInterpreter)` に変更する
 
 AC カバレッジ: AC-001, AC-004, AC-009
 
@@ -182,10 +182,10 @@ AC カバレッジ: AC-001, AC-004, AC-009
 
 対象: `internal/filevalidator/validator.go`
 
-- [ ] `aggregate := newAnalysisAggregate()` → `newAnalysisAggregate(v.includeDebugInfo)` に変更する
-- [ ] `aggregate.addRecord(record)` → `aggregate.addRecord(record, record.FilePath, roleMain)` に変更する
+- [x] `aggregate := newAnalysisAggregate()` → `newAnalysisAggregate(v.includeDebugInfo)` に変更する
+- [x] `aggregate.addRecord(record)` → `aggregate.addRecord(record, record.FilePath, roleMain)` に変更する
   - record には既にソースパスが設定された occurrence / symbol が含まれるため「空のみ上書き」ロジックにより既存値は保護される
-- [ ] `aggregate.addDynamicResult(result)` → `aggregate.addDynamicResult(result, lib.Path, roleDynLib)` に変更する
+- [x] `aggregate.addDynamicResult(result)` → `aggregate.addDynamicResult(result, lib.Path, roleDynLib)` に変更する
 
 AC カバレッジ: AC-001, AC-004, AC-008, AC-009
 
@@ -197,8 +197,8 @@ AC カバレッジ: AC-001, AC-004, AC-008, AC-009
 
 対象: `internal/runner/base/security/network_analyzer.go`
 
-- [ ] 引数型を `[]string` → `[]fileanalysis.DetectedSymbol` に変更する
-- [ ] ループ内の `e` を `e.Name` に変更する（判定ロジック自体は変更しない）
+- [x] 引数型を `[]string` → `[]fileanalysis.DetectedSymbol` に変更する
+- [x] ループ内の `e` を `e.Name` に変更する（判定ロジック自体は変更しない）
 
 NFR カバレッジ: NFR-003, NFR-004
 
@@ -206,7 +206,7 @@ NFR カバレッジ: NFR-003, NFR-004
 
 対象: `internal/runner/base/security/network_analyzer.go`
 
-- [ ] `slices.ContainsFunc(data.DetectedSymbols, binaryanalyzer.IsNetworkSymbolName)` の述語を以下に変更する
+- [x] `slices.ContainsFunc(data.DetectedSymbols, binaryanalyzer.IsNetworkSymbolName)` の述語を以下に変更する
   ```go
   func(s fileanalysis.DetectedSymbol) bool { return binaryanalyzer.IsNetworkSymbolName(s.Name) }
   ```
@@ -219,32 +219,32 @@ NFR カバレッジ: NFR-003, NFR-004
 
 ### タスク 6.1: `internal/fileanalysis/file_analysis_store_test.go`
 
-- [ ] `TestStore_Load_V21RejectedWithSchemaVersionMismatch` の `assert.Equal(t, 22, schemaErr.Expected)` を `assert.Equal(t, CurrentSchemaVersion, schemaErr.Expected)` に変更する（定数名参照に統一）
+- [x] `TestStore_Load_V21RejectedWithSchemaVersionMismatch` の `assert.Equal(t, 22, schemaErr.Expected)` を `assert.Equal(t, CurrentSchemaVersion, schemaErr.Expected)` に変更する（定数名参照に統一）
 
 ### タスク 6.2: `internal/filevalidator/validator_test.go`
 
-- [ ] `record.SymbolAnalysis.DetectedSymbols` の期待値を `[]string` から `[]fileanalysis.DetectedSymbol` に変更する（全箇所）
+- [x] `record.SymbolAnalysis.DetectedSymbols` の期待値を `[]string` から `[]fileanalysis.DetectedSymbol` に変更する（全箇所）
   - 例: `assert.Equal(t, "socket", record.SymbolAnalysis.DetectedSymbols[0])` → `assert.Equal(t, fileanalysis.DetectedSymbol{Name: "socket"}, record.SymbolAnalysis.DetectedSymbols[0])`
-- [ ] `record.SymbolAnalysis.DynamicLoadSymbols` の期待値を同様に変更する
+- [x] `record.SymbolAnalysis.DynamicLoadSymbols` の期待値を同様に変更する
 
 ### タスク 6.3: `internal/filevalidator/validator_library_analysis_test.go`
 
-- [ ] `assert.Contains(t, result.SymbolAnalysis.DetectedSymbols, "socket")` を `DetectedSymbol` 型で比較するよう変更する
-- [ ] `assert.Contains(t, record.SymbolAnalysis.DynamicLoadSymbols, "dlopen")` を更新する
+- [x] `assert.Contains(t, result.SymbolAnalysis.DetectedSymbols, "socket")` を `DetectedSymbol` 型で比較するよう変更する
+- [x] `assert.Contains(t, record.SymbolAnalysis.DynamicLoadSymbols, "dlopen")` を更新する
 
 ### タスク 6.4: `internal/filevalidator/validator_sort_test.go`
 
-- [ ] `TestRecord_DetectedSymbols_SortedAlphabetically` の期待値を `[]fileanalysis.DetectedSymbol{{Name: "bind"}, {Name: "connect"}, {Name: "socket"}}` に変更する
-- [ ] `TestRecord_DynamicLoadSymbols_SortedAlphabetically` の期待値を同様に変更する
+- [x] `TestRecord_DetectedSymbols_SortedAlphabetically` の期待値を `[]fileanalysis.DetectedSymbol{{Name: "bind"}, {Name: "connect"}, {Name: "socket"}}` に変更する
+- [x] `TestRecord_DynamicLoadSymbols_SortedAlphabetically` の期待値を同様に変更する
 
 ### タスク 6.5: `internal/runner/base/security/network_analyzer_test.go`
 
-- [ ] `DetectedSymbols: []string{...}` の箇所をすべて `[]fileanalysis.DetectedSymbol{{Name: "..."}}` に変更する（`nil` はそのまま）
+- [x] `DetectedSymbols: []string{...}` の箇所をすべて `[]fileanalysis.DetectedSymbol{{Name: "..."}}` に変更する（`nil` はそのまま）
 
 ### タスク 6.6: `internal/dynamicanalysis/store_test.go`
 
-- [ ] `DetectedSymbols: []string{"socket"}` を `[]fileanalysis.DetectedSymbol{{Name: "socket"}}` に変更する
-- [ ] `assert.Equal(t, []string{"socket"}, result2.SymbolAnalysis.DetectedSymbols)` を更新する
+- [x] `DetectedSymbols: []string{"socket"}` を `[]fileanalysis.DetectedSymbol{{Name: "socket"}}` に変更する
+- [x] `assert.Equal(t, []string{"socket"}, result2.SymbolAnalysis.DetectedSymbols)` を更新する
 
 ---
 

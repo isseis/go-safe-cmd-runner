@@ -41,6 +41,10 @@ type SyscallArgEvalResult struct {
 // Multiple occurrences can be grouped under a single SyscallInfo entry
 // when they have the same syscall number.
 type SyscallOccurrence struct {
+	// SourcePath is the absolute path of the binary/library that emitted
+	// this syscall occurrence.
+	SourcePath string `json:"source_path,omitempty"`
+
 	// Location is the virtual address of the syscall instruction
 	// (typically located within the .text section).
 	Location uint64 `json:"location"`

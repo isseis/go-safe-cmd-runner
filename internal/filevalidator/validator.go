@@ -299,14 +299,14 @@ func (v *Validator) populateAnalysisRecord(record *fileanalysis.Record, filePath
 	existingWarnings := slices.Clone(record.AnalysisWarnings)
 
 	record.ContentHash = contentHash
-	aggregate := newAnalysisAggregate()
+	aggregate := newAnalysisAggregate(v.includeDebugInfo)
 	depCollector := newDepCollector(v.includeDebugInfo)
 
 	targetAnalysis, err := v.analyzeRecordTarget(filePath, contentHash)
 	if err != nil {
 		return err
 	}
-	aggregate.addRecord(targetAnalysis)
+	aggregate.addRecord(targetAnalysis, filePath, roleMain)
 	if err := depCollector.addEntries(filePath, targetAnalysis.DynLibDeps); err != nil {
 		return err
 	}
@@ -369,7 +369,7 @@ func (v *Validator) populateShebangData(record *fileanalysis.Record, shebangInfo
 		if err != nil {
 			return err
 		}
-		aggregate.addRecord(chainAnalysis)
+		aggregate.addRecord(chainAnalysis, entry.Path, roleShebangInterpreter)
 		if err := depCollector.addEntries(entry.Path, chainAnalysis.DynLibDeps); err != nil {
 			return err
 		}
@@ -675,8 +675,8 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 	if len(record.DynLibDeps) == 0 {
 		return nil
 	}
-	aggregate := newAnalysisAggregate()
-	aggregate.addRecord(record)
+	aggregate := newAnalysisAggregate(v.includeDebugInfo)
+	aggregate.addRecord(record, record.FilePath, roleMain)
 
 	// Shebang chain binaries are already analyzed as executables via
 	// analyzeRecordTarget in populateShebangData; skip them here.
@@ -703,7 +703,7 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 		if err != nil {
 			return err
 		}
-		aggregate.addDynamicResult(result)
+		aggregate.addDynamicResult(result, lib.Path, roleDynLib)
 	}
 
 	record.SymbolAnalysis = aggregate.symbolAnalysis()
@@ -846,41 +846,73 @@ func (c *depCollector) debugRecord() *fileanalysis.RecordDebug {
 }
 
 type analysisAggregate struct {
-	architecture  string
-	syscalls      []common.SyscallInfo
-	argEvalByName map[string]common.SyscallArgEvalResult
-	stats         *common.SyscallDeterminationStats
-	symbolSeen    bool
-	symbols       map[string]struct{}
-	dynLoads      map[string]struct{}
-	warningsSet   map[string]struct{}
+	includeDebugInfo bool
+	architecture     string
+	syscalls         []common.SyscallInfo
+	argEvalByName    map[string]common.SyscallArgEvalResult
+	stats            *common.SyscallDeterminationStats
+	symbolSeen       bool
+	symbols          map[detectedSymbolKey]struct{}
+	dynLoads         map[detectedSymbolKey]struct{}
+	warningsSet      map[string]struct{}
 }
 
-func newAnalysisAggregate() *analysisAggregate {
+type detectedSymbolKey struct {
+	name       string
+	sourcePath string
+}
+
+type sourceRole string
+
+const (
+	roleMain               sourceRole = "main"
+	roleShebangInterpreter sourceRole = "shebang_interpreter"
+	roleDynLib             sourceRole = "dynlib"
+)
+
+func newAnalysisAggregate(includeDebugInfo bool) *analysisAggregate {
 	return &analysisAggregate{
-		argEvalByName: make(map[string]common.SyscallArgEvalResult),
-		symbols:       make(map[string]struct{}),
-		dynLoads:      make(map[string]struct{}),
-		warningsSet:   make(map[string]struct{}),
+		includeDebugInfo: includeDebugInfo,
+		argEvalByName:    make(map[string]common.SyscallArgEvalResult),
+		symbols:          make(map[detectedSymbolKey]struct{}),
+		dynLoads:         make(map[detectedSymbolKey]struct{}),
+		warningsSet:      make(map[string]struct{}),
 	}
 }
 
-func (a *analysisAggregate) addRecord(record *fileanalysis.Record) {
+func (a *analysisAggregate) addRecord(record *fileanalysis.Record, sourcePath string, role sourceRole) {
 	if record == nil {
 		return
 	}
+	_ = role
+	a.stampSourcePath(record.SyscallAnalysis, sourcePath)
 	a.addSyscallAnalysis(record.SyscallAnalysis)
-	a.addSymbolAnalysis(record.SymbolAnalysis)
+	a.addSymbolAnalysis(record.SymbolAnalysis, sourcePath)
 	a.addWarnings(record.AnalysisWarnings)
 }
 
-func (a *analysisAggregate) addDynamicResult(result *dynamicanalysis.Result) {
+func (a *analysisAggregate) addDynamicResult(result *dynamicanalysis.Result, sourcePath string, role sourceRole) {
 	if result == nil {
 		return
 	}
+	_ = role
+	a.stampSourcePath(result.SyscallAnalysis, sourcePath)
 	a.addSyscallAnalysis(result.SyscallAnalysis)
-	a.addSymbolAnalysis(result.SymbolAnalysis)
+	a.addSymbolAnalysis(result.SymbolAnalysis, sourcePath)
 	a.addWarnings(result.Warnings)
+}
+
+func (a *analysisAggregate) stampSourcePath(data *fileanalysis.SyscallAnalysisData, sourcePath string) {
+	if !a.includeDebugInfo || data == nil || sourcePath == "" {
+		return
+	}
+	for i := range data.DetectedSyscalls {
+		for j := range data.DetectedSyscalls[i].Occurrences {
+			if data.DetectedSyscalls[i].Occurrences[j].SourcePath == "" {
+				data.DetectedSyscalls[i].Occurrences[j].SourcePath = sourcePath
+			}
+		}
+	}
 }
 
 func (a *analysisAggregate) addSyscallAnalysis(data *fileanalysis.SyscallAnalysisData) {
@@ -915,16 +947,30 @@ func (a *analysisAggregate) addDeterminationStats(stats *common.SyscallDetermina
 	a.stats.UnknownIndirectSetting += stats.UnknownIndirectSetting
 }
 
-func (a *analysisAggregate) addSymbolAnalysis(data *fileanalysis.SymbolAnalysisData) {
+func (a *analysisAggregate) addSymbolAnalysis(data *fileanalysis.SymbolAnalysisData, sourcePath string) {
 	if data == nil {
 		return
 	}
 	a.symbolSeen = true
 	for _, symbol := range data.DetectedSymbols {
-		a.symbols[symbol] = struct{}{}
+		key := detectedSymbolKey{name: symbol.Name}
+		if a.includeDebugInfo {
+			key.sourcePath = symbol.SourcePath
+			if key.sourcePath == "" {
+				key.sourcePath = sourcePath
+			}
+		}
+		a.symbols[key] = struct{}{}
 	}
 	for _, symbol := range data.DynamicLoadSymbols {
-		a.dynLoads[symbol] = struct{}{}
+		key := detectedSymbolKey{name: symbol.Name}
+		if a.includeDebugInfo {
+			key.sourcePath = symbol.SourcePath
+			if key.sourcePath == "" {
+				key.sourcePath = sourcePath
+			}
+		}
+		a.dynLoads[key] = struct{}{}
 	}
 }
 
@@ -967,18 +1013,34 @@ func (a *analysisAggregate) symbolAnalysis() *fileanalysis.SymbolAnalysisData {
 	}
 	result := &fileanalysis.SymbolAnalysisData{}
 	if len(a.symbols) > 0 {
-		result.DetectedSymbols = make([]string, 0, len(a.symbols))
+		result.DetectedSymbols = make([]fileanalysis.DetectedSymbol, 0, len(a.symbols))
 		for symbol := range a.symbols {
-			result.DetectedSymbols = append(result.DetectedSymbols, symbol)
+			result.DetectedSymbols = append(result.DetectedSymbols, fileanalysis.DetectedSymbol{
+				Name:       symbol.name,
+				SourcePath: symbol.sourcePath,
+			})
 		}
-		slices.Sort(result.DetectedSymbols)
+		slices.SortFunc(result.DetectedSymbols, func(x, y fileanalysis.DetectedSymbol) int {
+			if c := cmp.Compare(x.Name, y.Name); c != 0 {
+				return c
+			}
+			return cmp.Compare(x.SourcePath, y.SourcePath)
+		})
 	}
 	if len(a.dynLoads) > 0 {
-		result.DynamicLoadSymbols = make([]string, 0, len(a.dynLoads))
+		result.DynamicLoadSymbols = make([]fileanalysis.DetectedSymbol, 0, len(a.dynLoads))
 		for symbol := range a.dynLoads {
-			result.DynamicLoadSymbols = append(result.DynamicLoadSymbols, symbol)
+			result.DynamicLoadSymbols = append(result.DynamicLoadSymbols, fileanalysis.DetectedSymbol{
+				Name:       symbol.name,
+				SourcePath: symbol.sourcePath,
+			})
 		}
-		slices.Sort(result.DynamicLoadSymbols)
+		slices.SortFunc(result.DynamicLoadSymbols, func(x, y fileanalysis.DetectedSymbol) int {
+			if c := cmp.Compare(x.Name, y.Name); c != 0 {
+				return c
+			}
+			return cmp.Compare(x.SourcePath, y.SourcePath)
+		})
 	}
 	return result
 }
@@ -1169,15 +1231,17 @@ func (v *Validator) VerifyAndRead(filePath string) ([]byte, error) {
 // NOTE: This is the inverse of convertNetworkSymbolEntries in
 // internal/runner/security/network_analyzer.go. fileanalysis stores symbol
 // names as plain strings.
-func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []string {
+func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis.DetectedSymbol {
 	if len(syms) == 0 {
 		return nil
 	}
-	entries := make([]string, len(syms))
+	entries := make([]fileanalysis.DetectedSymbol, len(syms))
 	for i, s := range syms {
-		entries[i] = s.Name
+		entries[i] = fileanalysis.DetectedSymbol{Name: s.Name}
 	}
-	slices.Sort(entries)
+	slices.SortFunc(entries, func(x, y fileanalysis.DetectedSymbol) int {
+		return cmp.Compare(x.Name, y.Name)
+	})
 	return entries
 }
 
