@@ -33,6 +33,11 @@ type Manager struct {
 	isDryRun                    bool
 	skipHashDirectoryValidation bool
 	resultCollector             *ResultCollector
+	// verifiedDepHashes caches path → prefixed hash for deps successfully
+	// verified by verifyDynLibDeps. verifyInterpreterHash consults this cache
+	// to skip redundant hash recomputation when DynLibVerifier already confirmed
+	// the file's integrity during the same runner execution.
+	verifiedDepHashes map[string]string
 }
 
 // VerifyAndReadConfigFile performs atomic verification and reading of a configuration file
@@ -620,7 +625,19 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 	if len(record.DynLibDeps) > 0 {
 		// DynLibDeps is recorded: verify library hashes.
 		// m.dynlibVerifier is initialized once at Manager construction.
-		return m.dynlibVerifier.Verify(record.DynLibDeps)
+		if err := m.dynlibVerifier.Verify(record.DynLibDeps); err != nil {
+			return err
+		}
+		// Cache verified hashes so verifyInterpreterHash can skip redundant
+		// recomputation for interpreter binaries that appear in both DynLibDeps
+		// and shebang_chain.
+		if m.verifiedDepHashes == nil {
+			m.verifiedDepHashes = make(map[string]string, len(record.DynLibDeps))
+		}
+		for _, dep := range record.DynLibDeps {
+			m.verifiedDepHashes[dep.Path] = dep.Hash
+		}
+		return nil
 	}
 
 	// DynLibDeps is not recorded: check if this is a dynamically linked ELF binary.
@@ -792,6 +809,11 @@ func (m *Manager) verifyShebangChainEntry(record *fileanalysis.Record, entry fil
 // from "tampered" (ErrMismatch).
 func (m *Manager) verifyInterpreterHash(record *fileanalysis.Record, interpreterPath string) error {
 	if expectedHash, ok := lookupRecordedDepHash(record, interpreterPath); ok {
+		// If verifyDynLibDeps already hashed and verified this path during the
+		// same execution, the file is known-good; skip redundant I/O.
+		if m.verifiedDepHashes[interpreterPath] == expectedHash {
+			return nil
+		}
 		var sha256Hasher filevalidator.SHA256
 		algo, _, valid := strings.Cut(expectedHash, ":")
 		if !valid || algo != sha256Hasher.Name() {
