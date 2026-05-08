@@ -177,38 +177,6 @@ func (a *NetworkAnalyzer) analyzeBinarySignals(cmdPath string, contentHash strin
 	}
 
 	isNetwork, hasDynLoad = a.analyzeRecordSignals(record, cmdPath)
-	if hasDynLoad {
-		return isNetwork, hasDynLoad, nil
-	}
-
-	// For each shebang interpreter, load its record and evaluate only top-level
-	// analysis fields (syscall_analysis/symbol_analysis) for risk signals.
-	for _, entry := range record.ShebangChain {
-		if entry.Path == "" {
-			continue
-		}
-		interpRecord, interpErr := a.deps.RecordStore.LoadRecord(entry.Path)
-		if interpErr != nil {
-			if errors.Is(interpErr, fileanalysis.ErrRecordNotFound) {
-				continue
-			}
-			var schemaMismatch *fileanalysis.SchemaVersionMismatchError
-			if errors.As(interpErr, &schemaMismatch) {
-				slog.Warn("Interpreter record has outdated schema; treating as high risk",
-					"path", entry.Path,
-					"expected_schema", schemaMismatch.Expected,
-					"actual_schema", schemaMismatch.Actual)
-				return true, true, nil
-			}
-			return false, false, fmt.Errorf("failed to load interpreter record for %q: %w", entry.Path, interpErr)
-		}
-		interpNet, interpHigh := a.analyzeRecordSignals(interpRecord, entry.Path)
-		isNetwork = isNetwork || interpNet
-		hasDynLoad = hasDynLoad || interpHigh
-		if hasDynLoad {
-			return isNetwork, hasDynLoad, nil
-		}
-	}
 
 	return isNetwork, hasDynLoad, nil
 }
@@ -232,6 +200,10 @@ func (a *NetworkAnalyzer) analyzeRecordSignals(record *fileanalysis.Record, path
 	}
 	if syscallAnalysisHasExecSignal(record.SyscallAnalysis, a.goos) {
 		slog.Warn("SyscallAnalysis indicates exec syscall; treating as high risk", "path", path)
+		hasDynLoad = true
+	}
+	if syscallAnalysisHasMprotectExecSignal(record.SyscallAnalysis) {
+		slog.Warn("SyscallAnalysis indicates mprotect-family PROT_EXEC; treating as high risk", "path", path)
 		hasDynLoad = true
 	}
 
@@ -316,6 +288,25 @@ func syscallAnalysisHasExecSignal(result *fileanalysis.SyscallAnalysisData, goos
 	}
 	for _, s := range result.DetectedSyscalls {
 		if s.Number >= 0 && table.IsExecSyscall(s.Number) {
+			return true
+		}
+	}
+	return false
+}
+
+// syscallAnalysisHasMprotectExecSignal reports whether SyscallAnalysisData
+// contains mprotect-family ArgEvalResults with PROT_EXEC confirmed.
+func syscallAnalysisHasMprotectExecSignal(result *fileanalysis.SyscallAnalysisData) bool {
+	if result == nil {
+		return false
+	}
+	if len(result.ArgEvalResults) == 0 {
+		return false
+	}
+
+	for _, r := range result.ArgEvalResults {
+		if slices.Contains(elfanalyzer.MprotectFamilyNames, r.SyscallName) &&
+			r.Status == common.SyscallArgEvalExecConfirmed {
 			return true
 		}
 	}

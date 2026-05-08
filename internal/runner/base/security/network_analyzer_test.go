@@ -660,6 +660,99 @@ func TestSyscallAnalysisHasExecSignal(t *testing.T) {
 	}
 }
 
+func TestSyscallAnalysisHasMprotectExecSignal(t *testing.T) {
+	tests := []struct {
+		name   string
+		result *fileanalysis.SyscallAnalysisData
+		want   bool
+	}{
+		{
+			name: "nil result",
+			want: false,
+		},
+		{
+			name:   "empty arg eval results",
+			result: &fileanalysis.SyscallAnalysisData{},
+			want:   false,
+		},
+		{
+			name: "mprotect exec confirmed",
+			result: &fileanalysis.SyscallAnalysisData{
+				SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+					ArgEvalResults: []common.SyscallArgEvalResult{{
+						SyscallName: "mprotect",
+						Status:      common.SyscallArgEvalExecConfirmed,
+					}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "pkey_mprotect exec confirmed",
+			result: &fileanalysis.SyscallAnalysisData{
+				SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+					ArgEvalResults: []common.SyscallArgEvalResult{{
+						SyscallName: "pkey_mprotect",
+						Status:      common.SyscallArgEvalExecConfirmed,
+					}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "mprotect exec unknown",
+			result: &fileanalysis.SyscallAnalysisData{
+				SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+					ArgEvalResults: []common.SyscallArgEvalResult{{
+						SyscallName: "mprotect",
+						Status:      common.SyscallArgEvalExecUnknown,
+					}},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "non mprotect family exec confirmed",
+			result: &fileanalysis.SyscallAnalysisData{
+				SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+					ArgEvalResults: []common.SyscallArgEvalResult{{
+						SyscallName: "mmap",
+						Status:      common.SyscallArgEvalExecConfirmed,
+					}},
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, syscallAnalysisHasMprotectExecSignal(tt.result))
+		})
+	}
+}
+
+func TestNetworkAnalyzer_MprotectExecConfirmedIsHighRisk(t *testing.T) {
+	store := &stubRecordStore{record: &fileanalysis.Record{
+		ContentHash: testContentHash,
+		SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				ArgEvalResults: []common.SyscallArgEvalResult{{
+					SyscallName: "mprotect",
+					Status:      common.SyscallArgEvalExecConfirmed,
+					Details:     "prot=0x5",
+				}},
+			},
+		},
+	}}
+	a := newNetworkAnalyzerWithStore(runtime.GOOS, store)
+
+	isNetwork, isHighRisk, err := a.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
+	assert.False(t, isNetwork, "mprotect PROT_EXEC signal alone should not imply network")
+	assert.True(t, isHighRisk, "mprotect PROT_EXEC signal should escalate to high risk")
+}
+
 func platformSocketNum() int {
 	_, socketNum, _ := platformNetworkSyscallNums()
 	return socketNum
