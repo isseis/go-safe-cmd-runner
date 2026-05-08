@@ -2483,15 +2483,15 @@ func TestIsNetworkViaBinaryAnalysis_AnalysisStore(t *testing.T) {
 		assert.False(t, isHigh, "nil store must return false (no live binary analysis)")
 	})
 
-	t.Run("empty contentHash → analysis skipped", func(t *testing.T) {
+	t.Run("empty contentHash → high risk (fail-closed)", func(t *testing.T) {
 		storeCalled := false
 		store := &callTrackingRecordStore{called: &storeCalled}
 		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh, err := analyzer.analyzeBinarySignals(cmdPath, "")
 		require.NoError(t, err)
 		assert.False(t, storeCalled, "store must not be called when contentHash is empty")
-		assert.False(t, isNet, "expected no network result when contentHash is empty")
-		assert.False(t, isHigh, "expected no high-risk result when contentHash is empty")
+		assert.True(t, isNet, "unverified binary must be treated as high risk (fail-closed)")
+		assert.True(t, isHigh, "unverified binary must be treated as high risk (fail-closed)")
 	})
 
 	t.Run("ErrRecordNotFound → true, true (fail-closed)", func(t *testing.T) {

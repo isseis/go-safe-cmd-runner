@@ -145,19 +145,26 @@ func hasNetworkArguments(args []string) bool {
 //   - hasDynLoad: true if dynamic load symbols (dlopen/dlsym/dlvsym) were detected,
 //     or exec syscalls, or if the record schema is mismatched (fail-closed)
 //
-// Returns (false, false, nil) when RecordStore is nil or contentHash is empty.
+// Returns (false, false, nil) when RecordStore is nil (no analysis capability configured).
+// Returns (true, true, nil) when contentHash is empty: the binary's identity is
+// unverified so the result is unknown; treated as high risk (fail-closed).
 // Returns (true, true, nil) on schema mismatch (fail-closed).
 // Returns (false, false, error) on unexpected load failures.
 //
 // IMPORTANT: cmdPath must be an absolute path.
-// contentHash is a pre-computed hash in "algo:hex" format; when empty, analysis is skipped.
+// contentHash is a pre-computed hash in "algo:hex" format.
 func (a *NetworkAnalyzer) analyzeBinarySignals(cmdPath string, contentHash string) (isNetwork, hasDynLoad bool, err error) {
 	if !filepath.IsAbs(cmdPath) {
 		panic("analyzeBinarySignals: cmdPath must be an absolute path, got: " + cmdPath)
 	}
 
-	if a.deps.RecordStore == nil || contentHash == "" {
+	if a.deps.RecordStore == nil {
 		return false, false, nil
+	}
+
+	if contentHash == "" {
+		slog.Warn("Binary has no pre-verified hash; treating as high risk", "path", cmdPath)
+		return true, true, nil
 	}
 
 	record, loadErr := a.deps.RecordStore.LoadRecord(cmdPath)
