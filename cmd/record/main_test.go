@@ -2,14 +2,19 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -198,4 +203,84 @@ func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
 	// record does NOT abort on TOCTOU violations — it only logs a warning
 	assert.Equal(t, 0, exitCode, "record should continue (exit 0) despite world-writable directory")
 	require.Len(t, recorder.calls, 1, "file should have been processed")
+}
+
+func extractHashFilePathFromStdout(t *testing.T, output string) string {
+	t.Helper()
+	idx := strings.LastIndex(output, "OK (")
+	require.NotEqual(t, -1, idx, "stdout must contain successful output line")
+
+	rest := output[idx+len("OK ("):]
+	end := strings.Index(rest, ")")
+	require.NotEqual(t, -1, end, "stdout must include closing parenthesis for hash path")
+
+	return rest[:end]
+}
+
+func TestRun_DebugInfoFlag_ControlsDebugFieldOmitEmpty(t *testing.T) {
+	target, err := exec.LookPath("ls")
+	if err != nil {
+		t.Skip("skipping: ls command not found in PATH")
+	}
+
+	t.Run("debug field omitted by default", func(t *testing.T) {
+		hashDir := commontesting.SafeTempDir(t)
+		stdout := &bytes.Buffer{}
+		stderr := &bytes.Buffer{}
+
+		exitCode := run([]string{"-d", hashDir, target}, defaultDeps(), stdout, stderr)
+		require.Equal(t, 0, exitCode, "stderr: %s", stderr.String())
+
+		recordPath := extractHashFilePathFromStdout(t, stdout.String())
+		recordBytes, readErr := os.ReadFile(recordPath)
+		require.NoError(t, readErr)
+		assert.NotContains(t, string(recordBytes), "\"debug\"", "debug must be omitted without -debug-info")
+	})
+
+	t.Run("debug field is emitted with debug-info", func(t *testing.T) {
+		hashDir := commontesting.SafeTempDir(t)
+		stdout := &bytes.Buffer{}
+		stderr := &bytes.Buffer{}
+
+		exitCode := run([]string{"-d", hashDir, "-debug-info", target}, defaultDeps(), stdout, stderr)
+		require.Equal(t, 0, exitCode, "stderr: %s", stderr.String())
+
+		recordPath := extractHashFilePathFromStdout(t, stdout.String())
+		recordBytes, readErr := os.ReadFile(recordPath)
+		require.NoError(t, readErr)
+		assert.Contains(t, string(recordBytes), "\"debug\"", "debug must be emitted with -debug-info")
+	})
+}
+
+func TestRun_ReRecordOldSchemaWithoutForce(t *testing.T) {
+	hashDir := commontesting.SafeTempDir(t)
+	targetFile := filepath.Join(hashDir, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	seedValidator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	require.NoError(t, err)
+	recordPath, _, err := seedValidator.SaveRecord(targetFile, false)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(recordPath)
+	require.NoError(t, err)
+
+	var oldRecord map[string]any
+	require.NoError(t, json.Unmarshal(data, &oldRecord))
+	oldRecord["schema_version"] = fileanalysis.CurrentSchemaVersion - 1
+
+	updated, err := json.MarshalIndent(oldRecord, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(recordPath, updated, 0o600))
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-d", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+	require.Equal(t, 0, exitCode, "stderr: %s", stderr.String())
+
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	require.NoError(t, err)
+	recorded, err := validator.LoadRecord(targetFile)
+	require.NoError(t, err)
+	assert.Equal(t, fileanalysis.CurrentSchemaVersion, recorded.SchemaVersion)
 }

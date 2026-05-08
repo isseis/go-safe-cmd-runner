@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -3475,6 +3476,94 @@ func TestRunGroupTOCTOUCheck_ViolationReturnsError(t *testing.T) {
 	err = ge.runGroupTOCTOUCheck(rg)
 	require.Error(t, err, "expected error when verify_files parent dir is world-writable")
 	assert.ErrorIs(t, err, ErrTOCTOUViolation)
+}
+
+// TestVerifyCommandCallOrder_DynLibBeforeShebang verifies that
+// VerifyCommandDynLibDeps is called before VerifyCommandShebangInterpreter for
+// every command in a group.  VerifyCommandDynLibDeps resets the per-command
+// dep-hash cache and then repopulates it with freshly verified entries.  If
+// VerifyCommandShebangInterpreter ran first, the cache would still hold stale
+// entries from the previous command; verifyInterpreterHash would then take the
+// cache fast-path and skip the disk re-hash, missing a file replacement.
+func TestVerifyCommandCallOrder_DynLibBeforeShebang(t *testing.T) {
+	// orderTrackingMock records the sequence of VerifyCommandDynLibDeps and
+	// VerifyCommandShebangInterpreter calls to assert ordering.
+	type callRecord struct{ method, path string }
+	var mu sync.Mutex
+	var calls []callRecord
+
+	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator := new(securitytesting.MockValidator)
+	mockVerificationManager := new(verificationtesting.MockManager)
+
+	// Wrap VerifyCommandDynLibDeps / VerifyCommandShebangInterpreter to record
+	// actual invocation order via Run callbacks.
+	mockVerificationManager.
+		On("VerifyCommandDynLibDeps", mock.Anything).
+		Run(func(args mock.Arguments) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, callRecord{"DynLib", args.String(0)})
+		}).Return(nil)
+	mockVerificationManager.
+		On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, callRecord{"Shebang", args.String(0)})
+		}).Return(nil)
+
+	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
+	mockVerificationManager.On("ResolvePath", "/bin/true").Return("/bin/true", nil)
+
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
+
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0}, nil)
+	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
+	}
+	ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+		Config:              config,
+		Validator:           mockValidator,
+		VerificationManager: mockVerificationManager,
+		ResourceManager:     mockRM,
+	})
+
+	group := &runnertypes.GroupSpec{
+		Name: "order-test-group",
+		Commands: []runnertypes.CommandSpec{
+			{Name: "cmd-echo", Cmd: "/bin/echo", Args: []string{"hello"}},
+			{Name: "cmd-true", Cmd: "/bin/true"},
+		},
+	}
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
+	}
+
+	err := ge.ExecuteGroup(context.Background(), group, runtimeGlobal)
+	require.NoError(t, err)
+
+	// For each command the call sequence must be:
+	//   VerifyCommandDynLibDeps(path)  →  VerifyCommandShebangInterpreter(path)
+	// Validate that every DynLib call is immediately followed by the Shebang
+	// call for the same path.
+	require.Len(t, calls, 4, "expected 4 calls: DynLib+Shebang for each of 2 commands")
+	for i := 0; i < len(calls); i += 2 {
+		dynLib := calls[i]
+		shebang := calls[i+1]
+		assert.Equal(t, "DynLib", dynLib.method,
+			"call[%d] must be VerifyCommandDynLibDeps, got %s", i, dynLib.method)
+		assert.Equal(t, "Shebang", shebang.method,
+			"call[%d] must be VerifyCommandShebangInterpreter, got %s", i+1, shebang.method)
+		assert.Equal(t, dynLib.path, shebang.path,
+			"DynLib and Shebang at positions %d/%d must be for the same path", i, i+1)
+	}
 }
 
 // TestRunGroupTOCTOUCheck_RelativePathsSkipped verifies that relative paths in

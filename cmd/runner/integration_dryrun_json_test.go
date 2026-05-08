@@ -5,7 +5,6 @@ package main
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
 
@@ -57,8 +56,7 @@ args = ["hello"]
 
 			// Run command in dry-run mode with JSON output
 			// Capture stdout and stderr separately to verify JSON output separation
-			cmd := exec.Command("go", "run", ".", "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
-			cmd.Dir = "."
+			cmd := newGoRunCmd(t, "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
 
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
@@ -196,8 +194,7 @@ args = ["hello"]
 			tmpFile.Close()
 
 			// Run command in dry-run mode with JSON output
-			cmd := exec.Command("go", "run", ".", "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
-			cmd.Dir = "."
+			cmd := newGoRunCmd(t, "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
 
 			output, err := cmd.Output() // Use Output() instead of CombinedOutput() to get only stdout
 			require.NoError(t, err, "dry-run should succeed")

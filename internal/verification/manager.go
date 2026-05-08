@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
@@ -27,20 +27,18 @@ type Manager struct {
 	fs                          common.FileSystem
 	safeFS                      safefileio.FileSystem // used for secure file I/O (e.g. ELF inspection)
 	fileValidator               filevalidator.FileValidator
-	networkSymbolStore          fileanalysis.NetworkSymbolStore // nil when cache is unavailable
-	syscallAnalysisStore        fileanalysis.SyscallAnalysisStore
-	dynlibAnalysisStore         dynamicanalysis.Store // nil when store is unavailable
-	dynLibDepsStore             fileanalysis.DynLibDepsStore
-	shebangStore                fileanalysis.ShebangInterpreterStore
 	dynlibVerifier              *elfdynlib.DynLibVerifier // initialized once at construction
 	security                    DirectoryValidator
 	pathResolver                *PathResolver
 	isDryRun                    bool
 	skipHashDirectoryValidation bool
 	resultCollector             *ResultCollector
+	// verifiedDepHashes caches path → prefixed hash for deps successfully
+	// verified by verifyDynLibDeps. verifyInterpreterHash consults this cache
+	// to skip redundant hash recomputation when DynLibVerifier already confirmed
+	// the file's integrity during the same runner execution.
+	verifiedDepHashes map[string]string
 }
-
-var errAnalysisStoresUnavailable = errors.New("analysis stores unavailable: validator store is unavailable")
 
 // VerifyAndReadConfigFile performs atomic verification and reading of a configuration file
 // This prevents TOCTOU attacks by reading the file content once and verifying it against the hash
@@ -349,11 +347,7 @@ func (m *Manager) GetVerificationSummary() *FileVerificationSummary {
 // Nil fields indicate unavailable stores and preserve disabled-analysis behavior.
 func (m *Manager) GetAnalysisDeps() security.AnalysisDeps {
 	return security.AnalysisDeps{
-		NetworkSymbolStore: m.networkSymbolStore,
-		SyscallStore:       m.syscallAnalysisStore,
-		DynLibDepsStore:    m.dynLibDepsStore,
-		LibAnalysisStore:   m.dynlibAnalysisStore,
-		ShebangStore:       m.shebangStore,
+		RecordStore: m.fileValidator,
 	}
 }
 
@@ -509,50 +503,6 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 			}
 		} else {
 			manager.fileValidator = validator
-			if s := validator.Store(); s != nil {
-				manager.networkSymbolStore = fileanalysis.NewNetworkSymbolStore(s)
-				manager.syscallAnalysisStore = fileanalysis.NewSyscallAnalysisStore(s)
-				manager.dynLibDepsStore = fileanalysis.NewDynLibDepsStore(s)
-				manager.shebangStore = fileanalysis.NewShebangInterpreterStore(s)
-			} else {
-				// Security policy:
-				// - Production mode is fail-closed.
-				// - Dry-run/Test modes are fail-open to keep validation workflows usable.
-				if opts.creationMode == CreationModeProduction && !opts.isDryRun {
-					slog.Error("Failed to initialize analysis stores in production mode: validator store is unavailable")
-					return nil, errAnalysisStoresUnavailable
-				}
-
-				slog.Warn("Analysis stores are unavailable; network/syscall/dynlib-deps/shebang analysis will be disabled",
-					"creation_mode", opts.creationMode,
-					"dry_run", opts.isDryRun)
-				manager.networkSymbolStore = nil
-				manager.syscallAnalysisStore = nil
-				manager.dynLibDepsStore = nil
-				manager.shebangStore = nil
-			}
-			// Initialize dynlib analysis store for runner-side library network detection.
-			// The store is load-only (nil analyzer): analysis is performed by record.
-			dynlibStoreDir := filepath.Join(hashDir, dynamicanalysis.StoreSubDir)
-			if ds, dsErr := dynamicanalysis.New(dynlibStoreDir, nil); dsErr == nil {
-				manager.dynlibAnalysisStore = ds
-			} else {
-				// Security policy:
-				// - Production mode is fail-closed.
-				// - Dry-run/Test modes are fail-open to keep validation workflows usable.
-				if opts.creationMode == CreationModeProduction && !opts.isDryRun {
-					slog.Error("Failed to initialize dynlib analysis store in production mode",
-						"store_dir", dynlibStoreDir, "error", dsErr)
-					return nil, fmt.Errorf("failed to initialize dynlib analysis store: %w", dsErr)
-				}
-
-				slog.Warn("Failed to initialize dynlib analysis store; runner-side dynlib analysis will be disabled",
-					"store_dir", dynlibStoreDir,
-					"creation_mode", opts.creationMode,
-					"dry_run", opts.isDryRun,
-					"error", dsErr)
-				manager.dynlibAnalysisStore = nil
-			}
 		}
 	}
 
@@ -643,6 +593,11 @@ func validateHashDirectoryWithFS(hashDir string, fs common.FileSystem) error {
 // It is called separately from VerifyGroupFiles to avoid the need to track
 // which files in the verification set are command files vs explicit verify_files entries.
 func (m *Manager) VerifyCommandDynLibDeps(cmdPath string) error {
+	// Reset the per-command dep-hash cache so that shebang verification for
+	// this command never reuses an entry that was cached for a previous command.
+	// Without this reset, a file replaced between two commands in the same group
+	// would pass shebang verification using the stale cached hash.
+	m.verifiedDepHashes = nil
 	return m.verifyDynLibDeps(cmdPath)
 }
 
@@ -675,7 +630,19 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 	if len(record.DynLibDeps) > 0 {
 		// DynLibDeps is recorded: verify library hashes.
 		// m.dynlibVerifier is initialized once at Manager construction.
-		return m.dynlibVerifier.Verify(record.DynLibDeps)
+		if err := m.dynlibVerifier.Verify(record.DynLibDeps); err != nil {
+			return err
+		}
+		// Cache verified hashes so verifyInterpreterHash can skip redundant
+		// recomputation for interpreter binaries that appear in both DynLibDeps
+		// and shebang_chain.
+		if m.verifiedDepHashes == nil {
+			m.verifiedDepHashes = make(map[string]string, len(record.DynLibDeps))
+		}
+		for _, dep := range record.DynLibDeps {
+			m.verifiedDepHashes[dep.Path] = dep.Hash
+		}
+		return nil
 	}
 
 	// DynLibDeps is not recorded: check if this is a dynamically linked ELF binary.
@@ -743,14 +710,13 @@ func (m *Manager) hasMachODynamicLibraryDeps(path string) (bool, error) {
 	return machodylib.HasDynamicLibDeps(path, m.safeFS)
 }
 
-// VerifyCommandShebangInterpreter verifies the integrity of a shebang interpreter for a
-// script command. It loads the analysis record for cmdPath, reads the ShebangInterpreter
-// field, and verifies that:
-//   - The interpreter binary's hash matches the stored record.
-//   - For env-form shebangs, the command name resolves (via envVars["PATH"]) to the same
-//     binary path that was recorded at record time.
+// VerifyCommandShebangInterpreter verifies recorded shebang chain entries for a script command.
+// For each entry with ref/path:
+//   - ref is absolute path: EvalSymlinks(ref) must equal path.
+//   - ref is bare command name: PATH re-resolution must equal path.
+//   - path must have a valid hash record.
 //
-// Returns nil if cmdPath has no analysis record or the record has no ShebangInterpreter.
+// Returns nil if cmdPath has no analysis record or no shebang chain entries.
 func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error {
 	if m.fileValidator == nil {
 		return nil
@@ -770,6 +736,14 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 		return fmt.Errorf("failed to load record for shebang verification: %w", err)
 	}
 
+	if len(record.ShebangChain) == 0 && record.ShebangInterpreter == nil {
+		return nil
+	}
+
+	if len(record.ShebangChain) > 0 {
+		return m.verifyShebangChain(record, record.ShebangChain, envVars)
+	}
+
 	si := record.ShebangInterpreter
 	if si == nil {
 		return nil
@@ -785,7 +759,7 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 	}
 
 	// Verify that the recorded interpreter binary still exists and matches its hash.
-	if err := m.verifyInterpreterHash(si.InterpreterPath); err != nil {
+	if err := m.verifyInterpreterHash(record, si.InterpreterPath); err != nil {
 		return err
 	}
 
@@ -793,7 +767,7 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 		// Verify the resolved command binary before PATH re-resolution so that a
 		// missing resolved_path record is reported as ErrInterpreterRecordNotFound
 		// rather than being masked by a subsequent path mismatch error.
-		if err := m.verifyInterpreterHash(si.ResolvedPath); err != nil {
+		if err := m.verifyInterpreterHash(record, si.ResolvedPath); err != nil {
 			return err
 		}
 		// Verify that the runtime PATH resolves the command to the recorded binary.
@@ -805,11 +779,62 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 	return nil
 }
 
+func (m *Manager) verifyShebangChain(record *fileanalysis.Record, chain []fileanalysis.ShebangChainEntry, envVars map[string]string) error {
+	for _, entry := range chain {
+		if err := m.verifyShebangChainEntry(record, entry, envVars); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) verifyShebangChainEntry(record *fileanalysis.Record, entry fileanalysis.ShebangChainEntry, envVars map[string]string) error {
+	if entry.Path == "" {
+		return ErrShebangChainEmptyPath
+	}
+	if entry.Ref == "" {
+		return ErrShebangChainEmptyRef
+	}
+
+	if filepath.IsAbs(entry.Ref) {
+		if err := m.verifyInterpreterSymlinkTarget(entry.Ref, entry.Path); err != nil {
+			return err
+		}
+	} else {
+		if err := m.verifyEnvPathResolution(entry.Ref, entry.Path, envVars); err != nil {
+			return err
+		}
+	}
+
+	return m.verifyInterpreterHash(record, entry.Path)
+}
+
 // verifyInterpreterHash verifies the hash of the given interpreter binary.
 // ErrHashFileNotFound (no record for that binary) is translated into
 // *ErrInterpreterRecordNotFound so callers can distinguish "never recorded"
 // from "tampered" (ErrMismatch).
-func (m *Manager) verifyInterpreterHash(interpreterPath string) error {
+func (m *Manager) verifyInterpreterHash(record *fileanalysis.Record, interpreterPath string) error {
+	if expectedHash, ok := lookupRecordedDepHash(record, interpreterPath); ok {
+		// If verifyDynLibDeps already hashed and verified this path during the
+		// same execution, the file is known-good; skip redundant I/O.
+		if m.verifiedDepHashes[interpreterPath] == expectedHash {
+			return nil
+		}
+		var sha256Hasher filevalidator.SHA256
+		algo, _, valid := strings.Cut(expectedHash, ":")
+		if !valid || algo != sha256Hasher.Name() {
+			return fmt.Errorf("%w: %q for %q", ErrUnsupportedHashAlgorithm, algo, interpreterPath)
+		}
+		actualHash, err := m.computeHash(&sha256Hasher, interpreterPath)
+		if err != nil {
+			return err
+		}
+		if actualHash != expectedHash {
+			return filevalidator.ErrMismatch
+		}
+		return nil
+	}
+
 	err := m.fileValidator.Verify(interpreterPath)
 	if err == nil {
 		return nil
@@ -818,6 +843,39 @@ func (m *Manager) verifyInterpreterHash(interpreterPath string) error {
 		return &ErrInterpreterRecordNotFound{Path: interpreterPath}
 	}
 	return err
+}
+
+func lookupRecordedDepHash(record *fileanalysis.Record, path string) (string, bool) {
+	if record == nil {
+		return "", false
+	}
+	for _, dep := range record.DynLibDeps {
+		if dep.Path == path && dep.Hash != "" {
+			return dep.Hash, true
+		}
+	}
+	return "", false
+}
+
+func (m *Manager) computeHash(hasher filevalidator.HashAlgorithm, path string) (string, error) {
+	resolvedPath, err := common.NewResolvedPath(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve interpreter path %q: %w", path, err)
+	}
+	f, err := m.safeFS.SafeOpenFile(resolvedPath.String(), os.O_RDONLY, 0)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			slog.Warn("error closing file during hash computation", slog.Any("error", closeErr))
+		}
+	}()
+	hash, err := hasher.Sum(f)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s:%s", hasher.Name(), hash), nil
 }
 
 // verifyEnvPathResolution resolves commandName through envVars["PATH"] and checks

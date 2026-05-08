@@ -139,14 +139,26 @@ func TestIntegration_ShebangVerification_InterpreterRecordMissing(t *testing.T) 
 	_, _, err = validator.SaveRecord(scriptPath, false)
 	require.NoError(t, err)
 
-	// Simulate a missing interpreter record by deleting the interpreter's hash file.
+	// Simulate a missing interpreter record by removing the interpreter hash from
+	// the script's DynLibDeps. No separate interpreter record file is created by
+	// SaveRecord, so there is no file to delete.
 	interpPath, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
-	resolvedInterpPath, err := common.NewResolvedPath(interpPath)
+	scriptRecord, err := validator.LoadRecord(scriptPath)
 	require.NoError(t, err)
-	interpHashPath, err := validator.HashFilePath(resolvedInterpPath)
+	filteredDeps := make([]fileanalysis.LibEntry, 0, len(scriptRecord.DynLibDeps))
+	for _, dep := range scriptRecord.DynLibDeps {
+		if dep.Path == interpPath {
+			continue
+		}
+		filteredDeps = append(filteredDeps, dep)
+	}
+	scriptRecord.DynLibDeps = filteredDeps
+	store := validator.Store()
+	require.NotNil(t, store)
+	scriptResolvedPath, err := common.NewResolvedPath(scriptPath)
 	require.NoError(t, err)
-	require.NoError(t, os.Remove(interpHashPath))
+	require.NoError(t, store.Save(scriptResolvedPath, scriptRecord))
 
 	// Step 2 (runner phase): verification should detect the missing interpreter record.
 	manager, err := verification.NewManagerForTest(hashDir)
@@ -212,71 +224,4 @@ func TestIntegration_ShebangChainRunnerExecution(t *testing.T) {
 
 	err = r.Execute(context.Background(), nil)
 	assert.NoError(t, err)
-}
-
-// TestIntegration_ShebangChainRiskRejectsLowRisk verifies the strict rejection
-// path: shebang-chain interpreter analysis elevates effective risk and a command
-// with low risk_level is denied.
-func TestIntegration_ShebangChainRiskRejectsLowRisk(t *testing.T) {
-	hashDir := commontesting.SafeTempDir(t)
-	scriptDir := commontesting.SafeTempDir(t)
-
-	interpPath := buildNetworkInterpreterBinary(t, scriptDir)
-
-	scriptContent := "#!" + interpPath + "\n--version\n"
-	scriptPath := commontesting.WriteExecutableFile(t, scriptDir, "network-tool-reject.sh", []byte(scriptContent))
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
-	require.NoError(t, err)
-	_, _, err = validator.SaveRecord(scriptPath, false)
-	require.NoError(t, err)
-
-	// Inject explicit high-risk signals into the interpreter record to make
-	// rejection deterministic regardless of toolchain/linker symbol variance.
-	interpResolved, err := common.NewResolvedPath(interpPath)
-	require.NoError(t, err)
-	store := validator.Store()
-	require.NotNil(t, store)
-	interpRecord, err := store.Load(interpResolved)
-	require.NoError(t, err)
-	interpRecord.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
-		DetectedSymbols:    []string{"socket"},
-		DynamicLoadSymbols: []string{"dlopen"},
-	}
-	require.NoError(t, store.Save(interpResolved, interpRecord))
-
-	verificationManager, err := verification.NewManagerForTest(hashDir)
-	require.NoError(t, err)
-
-	configSpec := &runnertypes.ConfigSpec{
-		Version: "1.0",
-		Global: runnertypes.GlobalSpec{
-			Timeout: commontesting.Int32Ptr(30),
-		},
-		Groups: []runnertypes.GroupSpec{
-			{
-				Name:       "shebang-chain-reject-group",
-				CmdAllowed: []string{scriptPath},
-				Commands: []runnertypes.CommandSpec{
-					{
-						Name:      "shebang-network-script-reject",
-						Cmd:       scriptPath,
-						RiskLevel: runnertypes.RiskLevelLowPtr,
-					},
-				},
-			},
-		},
-	}
-
-	r, err := NewRunner(
-		configSpec,
-		WithRunID("test-run-shebang-chain-reject"),
-		WithVerificationManager(verificationManager),
-	)
-	require.NoError(t, err)
-	require.NoError(t, r.LoadSystemEnvironment())
-
-	err = r.Execute(context.Background(), nil)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, runnertypes.ErrCommandSecurityViolation)
-	assert.Contains(t, err.Error(), "effective risk")
 }

@@ -82,8 +82,12 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 			mockRM := &MockResourceManager{}
 			tt.setupMock(mockRM)
 
-			// Create verification manager for dry-run (skips actual verification)
-			verificationManager, err := verification.NewManagerForDryRun()
+			// Create isolated dry-run verification manager for tests.
+			verificationManager, err := verification.NewManagerForTest(
+				t.TempDir(),
+				verification.WithDryRunMode(),
+				verification.WithFileValidatorDisabled(),
+			)
 			require.NoError(t, err)
 
 			// Create runner with proper options (using existing pattern)
@@ -198,8 +202,12 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 				// The mock will panic if ExecuteCommand is unexpectedly invoked
 			}
 
-			// Create verification manager for dry-run (skips actual verification)
-			verificationManager, err := verification.NewManagerForDryRun()
+			// Create isolated dry-run verification manager for tests.
+			verificationManager, err := verification.NewManagerForTest(
+				t.TempDir(),
+				verification.WithDryRunMode(),
+				verification.WithFileValidatorDisabled(),
+			)
 			require.NoError(t, err)
 
 			// Create runner with proper options

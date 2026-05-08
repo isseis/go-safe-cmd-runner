@@ -104,6 +104,37 @@ func TestStore_SchemaVersionMismatch(t *testing.T) {
 	assert.Equal(t, 999, schemaErr.Actual)
 }
 
+func TestStore_Load_V21RejectedWithSchemaVersionMismatch(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	analysisDir := filepath.Join(tmpDir, "analysis")
+
+	store, err := NewStore(analysisDir, &mockPathGetter{})
+	require.NoError(t, err)
+
+	testFile := filepath.Join(tmpDir, "test.bin")
+	err = os.WriteFile(testFile, []byte("test content"), 0o644)
+	require.NoError(t, err)
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
+
+	recordPath := filepath.Join(analysisDir, "test.bin.json")
+	v21Record := map[string]interface{}{
+		"schema_version": 21,
+		"file_path":      testFile,
+		"content_hash":   "sha256:abc123",
+	}
+	data, err := json.MarshalIndent(v21Record, "", "  ")
+	require.NoError(t, err)
+	err = os.WriteFile(recordPath, data, 0o600)
+	require.NoError(t, err)
+
+	_, err = store.Load(rp)
+	var schemaErr *SchemaVersionMismatchError
+	require.ErrorAs(t, err, &schemaErr)
+	assert.Equal(t, 22, schemaErr.Expected)
+	assert.Equal(t, 21, schemaErr.Actual)
+}
+
 func TestStore_CorruptedRecord(t *testing.T) {
 	tmpDir := commontesting.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
@@ -354,12 +385,10 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 	require.Len(t, loadedRecord.DynLibDeps, 2)
 
 	lib0 := loadedRecord.DynLibDeps[0]
-	assert.Equal(t, "libssl.so.3", lib0.SOName)
 	assert.Equal(t, "/usr/lib/x86_64-linux-gnu/libssl.so.3", lib0.Path)
 	assert.Equal(t, "sha256:deadbeef", lib0.Hash)
 
 	lib1 := loadedRecord.DynLibDeps[1]
-	assert.Equal(t, "libc.so.6", lib1.SOName)
 	assert.Equal(t, "/lib/x86_64-linux-gnu/libc.so.6", lib1.Path)
 	assert.Equal(t, "sha256:cafebabe", lib1.Hash)
 }

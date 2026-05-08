@@ -24,6 +24,16 @@ var (
 	ErrPathResolverNotInitialized = errors.New("path resolver not initialized")
 	// ErrCommandNotFound is returned when command is not found in PATH
 	ErrCommandNotFound = errors.New("command not found in PATH")
+	// ErrShebangChainEmptyPath is returned when a shebang_chain entry has an empty path,
+	// indicating a corrupted or malformed record.
+	ErrShebangChainEmptyPath = errors.New("shebang_chain entry has empty path: record may be corrupt")
+	// ErrShebangChainEmptyRef is returned when a shebang_chain entry has an empty ref,
+	// indicating a corrupted or malformed record. Every entry must carry a ref so that
+	// runtime symlink-redirection and PATH-resolution checks can be performed.
+	ErrShebangChainEmptyRef = errors.New("shebang_chain entry has empty ref: record may be corrupt")
+	// ErrUnsupportedHashAlgorithm is returned when a dep hash uses an algorithm
+	// that the verifier does not support.
+	ErrUnsupportedHashAlgorithm = errors.New("unsupported hash algorithm in dep record")
 )
 
 // SecurityViolationError is the base error type for security-related violations

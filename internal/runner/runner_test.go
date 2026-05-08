@@ -42,7 +42,11 @@ func (m *MockSecurityValidator) ValidateOutputWritePermission(outputPath string,
 // setupDryRunVerification creates a verification manager for dry-run testing
 func setupDryRunVerification(t *testing.T) *verification.Manager {
 	t.Helper()
-	vm, err := verification.NewManagerForDryRun()
+	vm, err := verification.NewManagerForTest(
+		t.TempDir(),
+		verification.WithDryRunMode(),
+		verification.WithFileValidatorDisabled(),
+	)
 	require.NoError(t, err)
 	return vm
 }

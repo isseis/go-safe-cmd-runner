@@ -31,10 +31,9 @@ func setupTempConfig(t *testing.T, configContent string) string {
 // Returns the command and its combined output.
 func runDryRunCommand(t *testing.T, configFile string, extraArgs ...string) (*exec.Cmd, []byte) {
 	t.Helper()
-	args := []string{"run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text"}
-	args = append(args, extraArgs...)
-	cmd := exec.Command("go", args...)
-	cmd.Dir = "."
+	appArgs := []string{"-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text"}
+	appArgs = append(appArgs, extraArgs...)
+	cmd := newGoRunCmd(t, appArgs...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Logf("Command output:\n%s", string(output))
@@ -106,9 +105,7 @@ args = ["hello"]
 	configFile := setupTempConfig(t, configContent)
 
 	// Run with summary detail level instead of full
-	args := []string{"run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "summary", "-dry-run-format", "text"}
-	cmd := exec.Command("go", args...)
-	cmd.Dir = "."
+	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run", "-dry-run-detail", "summary", "-dry-run-format", "text")
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "dry-run should succeed")
 
@@ -135,8 +132,7 @@ args = ["hello"]
 	configFile := setupTempConfig(t, configContent)
 
 	// Run command in dry-run mode with JSON output
-	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
-	cmd.Dir = "."
+	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -187,9 +183,7 @@ args = ["-l"]
 	configFile := setupTempConfig(t, configContent)
 
 	// Run command in dry-run mode with detailed output
-	args := []string{"run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "detailed", "-dry-run-format", "text"}
-	cmd := exec.Command("go", args...)
-	cmd.Dir = "."
+	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run", "-dry-run-detail", "detailed", "-dry-run-format", "text")
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "dry-run should succeed even with verification failures")
 
@@ -242,8 +236,7 @@ args = ["hello"]
 	require.NoError(t, err)
 
 	// Run command in dry-run mode
-	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text", "-log-level", "debug")
-	cmd.Dir = "."
+	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text", "-log-level", "debug")
 	cmd.Env = os.Environ()
 
 	output, err := cmd.CombinedOutput()

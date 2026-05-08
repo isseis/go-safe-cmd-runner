@@ -146,11 +146,8 @@ func TestManager_GetAnalysisDeps(t *testing.T) {
 
 	deps := manager.GetAnalysisDeps()
 
-	assert.Nil(t, deps.NetworkSymbolStore)
-	assert.Nil(t, deps.SyscallStore)
-	assert.Nil(t, deps.DynLibDepsStore)
-	assert.Nil(t, deps.LibAnalysisStore)
-	assert.Nil(t, deps.ShebangStore)
+	// When fileValidator is nil, RecordStore should also be nil.
+	assert.Nil(t, deps.RecordStore)
 }
 
 // TestManager_ValidateHashDirectory_NoSecurityValidator tests that hash directory validation fails when no security validator is set

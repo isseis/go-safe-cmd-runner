@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
@@ -500,6 +501,12 @@ risk_level = "medium"
 
 // TestIntegration_DryRunWithTempDir tests dry-run mode with temporary directories
 func TestIntegration_DryRunWithTempDir(t *testing.T) {
+	oldHashDir := cmdcommon.DefaultHashDirectory
+	cmdcommon.DefaultHashDirectory = commontesting.SafeTempDir(t)
+	t.Cleanup(func() {
+		cmdcommon.DefaultHashDirectory = oldHashDir
+	})
+
 	configContent := `
 [[groups]]
 name = "test_group"
@@ -528,15 +535,15 @@ risk_level = "medium"
 	// Initialize privilege manager
 	privMgr := privilege.NewManager(slog.Default())
 
-	// Setup dry-run options
-	hashDir := commontesting.SafeTempDir(t)
-
+	// Setup dry-run options, reusing the overridden DefaultHashDirectory to
+	// match the real CLI path (cmd/runner/main.go reads DefaultHashDirectory
+	// for DryRunOptions.HashDir).
 	dryRunOptions := &resource.DryRunOptions{
 		DetailLevel:   resource.DetailLevelDetailed,
 		OutputFormat:  resource.OutputFormatText,
 		ShowSensitive: false,
 		VerifyFiles:   true,
-		HashDir:       hashDir,
+		HashDir:       cmdcommon.DefaultHashDirectory,
 	}
 
 	// Create runner with dry-run option
