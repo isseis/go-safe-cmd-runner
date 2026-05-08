@@ -792,16 +792,17 @@ func (m *Manager) verifyShebangChainEntry(record *fileanalysis.Record, entry fil
 	if entry.Path == "" {
 		return ErrShebangChainEmptyPath
 	}
+	if entry.Ref == "" {
+		return ErrShebangChainEmptyRef
+	}
 
-	if entry.Ref != "" {
-		if filepath.IsAbs(entry.Ref) {
-			if err := m.verifyInterpreterSymlinkTarget(entry.Ref, entry.Path); err != nil {
-				return err
-			}
-		} else {
-			if err := m.verifyEnvPathResolution(entry.Ref, entry.Path, envVars); err != nil {
-				return err
-			}
+	if filepath.IsAbs(entry.Ref) {
+		if err := m.verifyInterpreterSymlinkTarget(entry.Ref, entry.Path); err != nil {
+			return err
+		}
+	} else {
+		if err := m.verifyEnvPathResolution(entry.Ref, entry.Path, envVars); err != nil {
+			return err
 		}
 	}
 

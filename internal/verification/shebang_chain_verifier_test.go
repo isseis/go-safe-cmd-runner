@@ -221,3 +221,30 @@ func TestVerifyCommandShebangInterpreter_ShebangChain_EmptyPath(t *testing.T) {
 	err := m.VerifyCommandShebangInterpreter(scriptPath, map[string]string{})
 	assert.Error(t, err, "empty shebang_chain path must be rejected, not silently skipped")
 }
+
+// TestVerifyCommandShebangInterpreter_ShebangChain_EmptyRef verifies that a
+// shebang_chain entry with an empty ref is rejected as a corrupted record
+// (fail-closed). An empty ref skips the runtime symlink-redirection and
+// PATH-resolution checks, which would allow an attacker to redirect /bin/sh
+// to a different binary without detection.
+func TestVerifyCommandShebangInterpreter_ShebangChain_EmptyRef(t *testing.T) {
+	dir := commontesting.SafeTempDir(t)
+	interpPath := commontesting.WriteExecutableFile(t, dir, "interp", []byte("#!/bin/sh\n"))
+	scriptPath := filepath.Join(dir, "script.sh")
+
+	mockFV := newMockFVForShebang()
+	mockFV.setRecord(scriptPath, &fileanalysis.Record{
+		SchemaVersion: fileanalysis.CurrentSchemaVersion,
+		FilePath:      scriptPath,
+		ContentHash:   "sha256:abc",
+		ShebangChain: []fileanalysis.ShebangChainEntry{{
+			Ref:  "",
+			Path: interpPath,
+		}},
+	})
+
+	m := setupManagerWithMockValidator(t, mockFV)
+	err := m.VerifyCommandShebangInterpreter(scriptPath, map[string]string{})
+	require.Error(t, err, "empty shebang_chain ref must be rejected (fail-closed)")
+	assert.ErrorIs(t, err, ErrShebangChainEmptyRef)
+}
