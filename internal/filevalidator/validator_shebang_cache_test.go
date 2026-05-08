@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
@@ -101,15 +100,8 @@ func TestSaveRecord_ShebangInterpreterCacheHashChangeReanalyzes(t *testing.T) {
 	hashDir := safeTempDir(t)
 	dir := safeTempDir(t)
 
-	if runtime.GOOS != "linux" {
-		t.Skipf("test requires Linux (got %s)", runtime.GOOS)
-	}
-	if _, err := exec.LookPath("cc"); err != nil {
-		t.Skip("test requires cc (install build-essential)")
-	}
-
 	interpreterPath := filepath.Join(dir, "test-interpreter")
-	buildTestInterpreterBinary(t, interpreterPath, 1)
+	writeTestInterpreterFile(t, interpreterPath, "variant-1")
 
 	validator, err := New(&SHA256{}, hashDir)
 	require.NoError(t, err)
@@ -123,7 +115,7 @@ func TestSaveRecord_ShebangInterpreterCacheHashChangeReanalyzes(t *testing.T) {
 	hashA, err := validator.prefixedHashForPath(interpreterPath)
 	require.NoError(t, err)
 
-	buildTestInterpreterBinary(t, interpreterPath, 2)
+	writeTestInterpreterFile(t, interpreterPath, "variant-2")
 	hashB, err := validator.prefixedHashForPath(interpreterPath)
 	require.NoError(t, err)
 	require.NotEqual(t, hashA, hashB)
@@ -191,19 +183,8 @@ func assertShebangInterpreterDepPresent(t *testing.T, record *fileanalysis.Recor
 	t.Fatalf("record.DynLibDeps does not include interpreter path: %s", interpreterPath)
 }
 
-func buildTestInterpreterBinary(t *testing.T, outPath string, variant int) {
+func writeTestInterpreterFile(t *testing.T, outPath, content string) {
 	t.Helper()
-
-	srcPath := outPath + ".c"
-	src := fmt.Sprintf(`#include <unistd.h>
-int main(void) {
-	return %d;
-}
-`, variant)
-	require.NoError(t, os.WriteFile(srcPath, []byte(src), 0o644))
-
-	cmd := exec.Command("cc", "-O0", "-o", outPath, srcPath)
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "failed to compile test interpreter: %s", string(out))
+	require.NoError(t, os.WriteFile(outPath, []byte(content), 0o644))
 	require.NoError(t, os.Chmod(outPath, 0o755))
 }
