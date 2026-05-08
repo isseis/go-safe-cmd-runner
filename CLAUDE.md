@@ -118,10 +118,13 @@ When implementing new features or security-critical functionality, follow the pr
 **Quick summary:**
 1. Create `01_requirements.md` with explicit acceptance criteria
 2. Create `02_architecture.md` with high-level design (Mermaid diagrams)
-3. Create `03_detailed_specification.md` with implementation details
-4. Create `04_implementation_plan.md` with progress tracking (checkboxes)
-5. Write tests for each acceptance criterion
-6. Link tests to acceptance criteria in detailed specification
+3. Create `04_implementation_plan.md` with progress tracking (checkboxes) and AC traceability
+4. Write tests for each acceptance criterion
+5. Link tests to acceptance criteria in the implementation plan
+
+`03_detailed_specification.md` is intentionally skipped: writing it tends to duplicate
+the eventual code. Capture the work outline in `04_implementation_plan.md` instead and
+let the implementation itself record the concrete details.
 
 ## Tool Execution Safety
 

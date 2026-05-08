@@ -153,7 +153,9 @@ type Validator struct {
 	machoSyscallTable       SyscallNumberTable              // nil falls back to noop table in ScanSyscallInfos
 	dynamicLibAnalysisStore dynamicanalysis.Store
 	processedLibAnalysis    map[libCacheKey]*dynamicanalysis.Result
-	includeDebugInfo        bool
+	// processedInterpreterAnalysis caches shebang interpreter analysis records during one Validator lifetime.
+	processedInterpreterAnalysis map[libCacheKey]*fileanalysis.Record
+	includeDebugInfo             bool
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
@@ -363,7 +365,7 @@ func (v *Validator) populateShebangData(record *fileanalysis.Record, shebangInfo
 			return err
 		}
 
-		chainAnalysis, err := v.analyzeRecordTarget(entry.Path, entryHash)
+		chainAnalysis, err := v.loadOrAnalyzeShebangTarget(entry.Path, entryHash)
 		if err != nil {
 			return err
 		}
@@ -479,6 +481,7 @@ func (v *Validator) checkNotShebang(path, role string) error {
 }
 
 // SetLibSystemCache injects the LibSystemCacheInterface used during record operations.
+// Call before the first SaveRecord() invocation.
 func (v *Validator) SetLibSystemCache(m LibSystemCacheInterface) {
 	v.libSystemCache = m
 }
@@ -486,6 +489,7 @@ func (v *Validator) SetLibSystemCache(m LibSystemCacheInterface) {
 // SetMachoSyscallTable injects the SyscallNumberTable used for macOS BSD syscall
 // number resolution during Pass 1 and Pass 2 analysis. When nil, syscall names
 // and network flags are left empty but numbers are still resolved where possible.
+// Call before the first SaveRecord() invocation.
 func (v *Validator) SetMachoSyscallTable(t SyscallNumberTable) {
 	v.machoSyscallTable = t
 }
@@ -558,11 +562,13 @@ func (v *Validator) SetBinaryAnalyzer(a binaryanalyzer.BinaryAnalyzer) {
 }
 
 // SetLibcCache injects the LibcCacheInterface used during record operations.
+// Call before the first SaveRecord() invocation.
 func (v *Validator) SetLibcCache(m LibcCacheInterface) {
 	v.libcCache = m
 }
 
 // SetSyscallAnalyzer injects the SyscallAnalyzer used during record operations.
+// Call before the first SaveRecord() invocation.
 func (v *Validator) SetSyscallAnalyzer(a SyscallAnalyzerInterface) {
 	v.syscallAnalyzer = a
 }
@@ -578,6 +584,7 @@ type libCacheKey struct {
 // SetDynamicLibAnalysisStore sets the persistent store for dynamic library analysis results.
 // When non-nil, library-level analysis is enabled and results are persisted to disk.
 // Pass nil to disable library analysis.
+// Call before the first SaveRecord() invocation.
 func (v *Validator) SetDynamicLibAnalysisStore(store dynamicanalysis.Store) {
 	v.dynamicLibAnalysisStore = store
 	if store != nil && v.processedLibAnalysis == nil {
@@ -730,6 +737,27 @@ func (v *Validator) loadOrAnalyzeLibrary(lib fileanalysis.LibEntry) (*dynamicana
 	}
 	v.processedLibAnalysis[cacheKey] = result
 	return result, nil
+}
+
+// loadOrAnalyzeShebangTarget returns a cached analysis for a shebang target,
+// or analyzes and caches it on the first request in this Validator session.
+func (v *Validator) loadOrAnalyzeShebangTarget(filePath, contentHash string) (*fileanalysis.Record, error) {
+	if v.processedInterpreterAnalysis == nil {
+		v.processedInterpreterAnalysis = make(map[libCacheKey]*fileanalysis.Record)
+	}
+
+	cacheKey := libCacheKey{Path: filePath, Hash: contentHash}
+	if record, ok := v.processedInterpreterAnalysis[cacheKey]; ok {
+		return record, nil
+	}
+
+	record, err := v.analyzeRecordTarget(filePath, contentHash)
+	if err != nil {
+		return nil, err
+	}
+
+	v.processedInterpreterAnalysis[cacheKey] = record
+	return record, nil
 }
 
 type depCollector struct {
@@ -969,6 +997,9 @@ func (a *analysisAggregate) warnings() []string {
 
 // SetIncludeDebugInfo controls whether debug information (Occurrences,
 // DeterminationStats) is included in saved JSON output.
+// Call before the first SaveRecord() invocation. Changing this after records
+// have been processed causes the in-session interpreter and library analysis
+// caches to return results with inconsistent debug data.
 func (v *Validator) SetIncludeDebugInfo(b bool) {
 	v.includeDebugInfo = b
 }
