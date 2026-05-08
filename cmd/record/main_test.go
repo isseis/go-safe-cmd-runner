@@ -44,9 +44,6 @@ func (f *fakeRecorder) SaveRecord(filePath string, force bool) (string, string, 
 // processFiles() behavior should call processFiles() directly instead.
 func testRunDeps(hashDir string) deps {
 	d := defaultDeps()
-	d.validatorFactory = func(dir string) (*filevalidator.Validator, error) {
-		return filevalidator.New(&filevalidator.SHA256{}, dir)
-	}
 	d.mkdirAll = func(path string, perm os.FileMode) error {
 		if path == hashDir {
 			return nil // already created by the test
