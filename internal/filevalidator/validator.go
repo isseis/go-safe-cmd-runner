@@ -295,7 +295,6 @@ func (v *Validator) populateAnalysisRecord(record *fileanalysis.Record, filePath
 	existingSymbolAnalysis := record.SymbolAnalysis
 	existingSyscallAnalysis := record.SyscallAnalysis
 	existingWarnings := slices.Clone(record.AnalysisWarnings)
-	existingDebug := record.Debug
 
 	record.ContentHash = contentHash
 	aggregate := newAnalysisAggregate()
@@ -328,9 +327,6 @@ func (v *Validator) populateAnalysisRecord(record *fileanalysis.Record, filePath
 	}
 	if record.AnalysisWarnings == nil && v.elfDynlibAnalyzer == nil && v.machoDynlibAnalyzer == nil && record.SyscallAnalysis == existingSyscallAnalysis {
 		record.AnalysisWarnings = existingWarnings
-	}
-	if record.Debug == nil && !v.includeDebugInfo {
-		record.Debug = existingDebug
 	}
 
 	return v.analyzeLibraries(record)
