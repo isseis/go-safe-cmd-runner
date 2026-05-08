@@ -1,7 +1,6 @@
 package verification
 
 import (
-	"bytes"
 	"debug/elf"
 	"errors"
 	"fmt"
@@ -829,12 +828,17 @@ func (m *Manager) computeSHA256Hash(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve interpreter path %q: %w", path, err)
 	}
-	content, err := safefileio.SafeReadFile(resolvedPath)
+	f, err := m.safeFS.SafeOpenFile(resolvedPath.String(), os.O_RDONLY, 0)
 	if err != nil {
 		return "", err
 	}
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			slog.Warn("error closing file during hash computation", slog.Any("error", closeErr))
+		}
+	}()
 	var hasher filevalidator.SHA256
-	hash, err := hasher.Sum(bytes.NewReader(content))
+	hash, err := hasher.Sum(f)
 	if err != nil {
 		return "", err
 	}
