@@ -34,9 +34,7 @@ func TestSaveRecord_ShebangInterpreterCacheReuse(t *testing.T) {
 	scriptDir := safeTempDir(t)
 
 	interpreterPath, err := filepath.EvalSymlinks("/bin/sh")
-	if err != nil {
-		t.Skip("skipping: /bin/sh not available in this environment")
-	}
+	require.NoError(t, err)
 
 	spy := &shebangCacheSpyBinaryAnalyzer{
 		output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols},
@@ -61,9 +59,7 @@ func TestSaveRecord_ShebangInterpreterCacheOutputEquivalence(t *testing.T) {
 	scriptDir := safeTempDir(t)
 
 	interpreterPath, err := filepath.EvalSymlinks("/bin/sh")
-	if err != nil {
-		t.Skip("skipping: /bin/sh not available in this environment")
-	}
+	require.NoError(t, err)
 
 	spy := &shebangCacheSpyBinaryAnalyzer{
 		output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols},
@@ -146,9 +142,7 @@ func TestSaveRecord_ShebangInterpreterCacheEnvForm(t *testing.T) {
 	scriptDir := safeTempDir(t)
 
 	envPath, err := filepath.EvalSymlinks("/usr/bin/env")
-	if err != nil {
-		t.Skip("skipping: /usr/bin/env not available in this environment")
-	}
+	require.NoError(t, err)
 	shFound, err := exec.LookPath("sh")
 	require.NoError(t, err)
 	resolvedShPath, err := filepath.EvalSymlinks(shFound)
