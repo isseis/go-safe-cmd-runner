@@ -22,11 +22,20 @@
 
 ## フェーズ 1: スキーマ変更 (FR-001, FR-002, FR-004)
 
-### タスク 1.1: `SyscallOccurrence` への `SourcePath` 追加
+### タスク 1.1: `SyscallOccurrence` への `SourcePath` 追加と `Location` の `omitempty` 化
 
 対象: `internal/common/syscall_types.go`
 
 - [x] `SyscallOccurrence` 構造体に `SourcePath string \`json:"source_path,omitempty"\`` フィールドを追加する
+- [x] `Location uint64` の JSON タグを `json:"location"` → `json:"location,omitempty"` に変更する
+  - libc インポート経由 occurrence では `Location=0`（番兵値）が JSON に出力されず誤解を防ぐ
+  - Go 構造体の値は 0 のまま変わらないため、struct レベルのアサーションは影響なし
+  - ELF テキストセクションが仮想アドレス 0 に配置されることは実用上ないため、実アドレス 0 との混同は生じない
+
+対象（テスト追加）: `internal/common/syscall_types_test.go`
+
+- [ ] 既存テスト `TestSyscallInfoJSON` のサブテストとして `"location field omitted when zero"` を追加する
+  - `Location: 0, Source: "libc_symbol_import"` の occurrence を JSON 化し、`"location"` キーが存在しないことを確認する
 
 AC カバレッジ: AC-001, AC-002, AC-003
 
