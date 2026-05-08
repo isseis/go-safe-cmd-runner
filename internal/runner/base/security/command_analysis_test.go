@@ -2494,13 +2494,13 @@ func TestIsNetworkViaBinaryAnalysis_AnalysisStore(t *testing.T) {
 		assert.False(t, isHigh, "expected no high-risk result when contentHash is empty")
 	})
 
-	t.Run("ErrRecordNotFound → false, false, nil", func(t *testing.T) {
+	t.Run("ErrRecordNotFound → true, true (fail-closed)", func(t *testing.T) {
 		store := &stubRecordStore{err: fileanalysis.ErrRecordNotFound}
 		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
 		isNet, isHigh, err := analyzer.analyzeBinarySignals(cmdPath, contentHash)
 		require.NoError(t, err)
-		assert.False(t, isNet, "record not found must return false")
-		assert.False(t, isHigh, "record not found must return false")
+		assert.True(t, isNet, "missing analysis record must be treated as high risk (fail-closed)")
+		assert.True(t, isHigh, "missing analysis record must be treated as high risk (fail-closed)")
 	})
 }
 

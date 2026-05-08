@@ -593,6 +593,11 @@ func validateHashDirectoryWithFS(hashDir string, fs common.FileSystem) error {
 // It is called separately from VerifyGroupFiles to avoid the need to track
 // which files in the verification set are command files vs explicit verify_files entries.
 func (m *Manager) VerifyCommandDynLibDeps(cmdPath string) error {
+	// Reset the per-command dep-hash cache so that shebang verification for
+	// this command never reuses an entry that was cached for a previous command.
+	// Without this reset, a file replaced between two commands in the same group
+	// would pass shebang verification using the stale cached hash.
+	m.verifiedDepHashes = nil
 	return m.verifyDynLibDeps(cmdPath)
 }
 

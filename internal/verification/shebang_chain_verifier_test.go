@@ -9,7 +9,10 @@ import (
 	"testing"
 
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -116,6 +119,84 @@ func TestVerifyCommandShebangInterpreter_ShebangChain_UnsupportedHashAlgorithm(t
 	err := m.VerifyCommandShebangInterpreter(scriptPath, map[string]string{})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrUnsupportedHashAlgorithm)
+}
+
+// TestVerifyCommandDynLibDeps_ResetsDepHashCacheBetweenCommands verifies that
+// the per-command dep-hash cache introduced for deduplication is reset before
+// each VerifyCommandDynLibDeps call. Without the reset, a file replaced between
+// two commands in the same group would pass shebang verification for the second
+// command using the stale cached hash from the first command.
+func TestVerifyCommandDynLibDeps_ResetsDepHashCacheBetweenCommands(t *testing.T) {
+	dir := commontesting.SafeTempDir(t)
+
+	// interpPath is a real file used as the shebang interpreter.
+	interpPath := commontesting.WriteExecutableFile(t, dir, "interp", []byte("#!/bin/sh\n"))
+
+	buildRecord := func(scriptPath string) *fileanalysis.Record {
+		interpHash, err := computeSHA256PrefixedHash(interpPath)
+		require.NoError(t, err)
+		return &fileanalysis.Record{
+			SchemaVersion: fileanalysis.CurrentSchemaVersion,
+			FilePath:      scriptPath,
+			ContentHash:   "sha256:script",
+			ShebangChain:  []fileanalysis.ShebangChainEntry{{Ref: interpPath, Path: interpPath}},
+			DynLibDeps:    []fileanalysis.LibEntry{{Path: interpPath, Hash: interpHash}},
+		}
+	}
+
+	script1 := filepath.Join(dir, "script1.sh")
+	script2 := filepath.Join(dir, "script2.sh")
+
+	mockFV := newMockFVForShebang()
+	mockFV.setRecord(script1, buildRecord(script1))
+
+	m := setupManagerWithMockValidator(t, mockFV)
+	// A real DynLibVerifier is required to exercise the cache path.
+	safeFS := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+	m.dynlibVerifier = elfdynlib.NewDynLibVerifier(safeFS)
+	m.safeFS = safeFS
+
+	// Command 1: dynlib verification populates the cache.
+	require.NoError(t, m.VerifyCommandDynLibDeps(script1))
+	require.NoError(t, m.VerifyCommandShebangInterpreter(script1, map[string]string{}))
+
+	// Simulate the interpreter being replaced before the second command runs.
+	require.NoError(t, os.WriteFile(interpPath, []byte("#!/bin/sh\n# replaced\n"), 0o755))
+
+	// Rebuild the record for script2 so it reflects the current (pre-replacement) hash —
+	// i.e., the hash no longer matches the file on disk after the write above.
+	// Build the record with the OLD hash to simulate a tampered file.
+	oldRecord := buildRecord(script2) // hash was computed before the write above? No:
+	// Actually buildRecord calls computeSHA256PrefixedHash NOW (after replacement),
+	// so we need to set the old hash manually.
+	oldHash := m.verifiedDepHashes[interpPath] // captured from command 1's cache
+	oldRecord.DynLibDeps[0].Hash = oldHash
+	oldRecord.ShebangChain[0].Path = interpPath
+	mockFV.setRecord(script2, oldRecord)
+
+	// Command 2: VerifyCommandDynLibDeps must reset the cache, so shebang
+	// verification for script2 recomputes the hash and detects the mismatch.
+	_ = m.VerifyCommandDynLibDeps(script2) // will fail due to hash mismatch — that's expected
+	err := m.VerifyCommandShebangInterpreter(script2, map[string]string{})
+	// If the cache were not reset, verifyInterpreterHash would skip computeHash
+	// and return nil (false negative). With the reset, it must recompute and detect
+	// the mismatch.
+	assert.Error(t, err, "shebang verification must detect replaced interpreter after cache reset")
+}
+
+// computeSHA256PrefixedHash returns "sha256:<hex>" for the file at path.
+func computeSHA256PrefixedHash(path string) (string, error) {
+	f, err := os.Open(path) //nolint:gosec // path is test-controlled
+	if err != nil {
+		return "", err
+	}
+	defer f.Close() //nolint:errcheck
+	var h filevalidator.SHA256
+	raw, err := h.Sum(f)
+	if err != nil {
+		return "", err
+	}
+	return "sha256:" + raw, nil
 }
 
 // TestVerifyCommandShebangInterpreter_ShebangChain_EmptyPath verifies that a

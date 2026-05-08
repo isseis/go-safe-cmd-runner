@@ -163,7 +163,13 @@ func (a *NetworkAnalyzer) analyzeBinarySignals(cmdPath string, contentHash strin
 	record, loadErr := a.deps.RecordStore.LoadRecord(cmdPath)
 	if loadErr != nil {
 		if errors.Is(loadErr, fileanalysis.ErrRecordNotFound) {
-			return false, false, nil
+			// contentHash is non-empty here (checked above), meaning the binary
+			// was hash-verified but has no analysis record. Treat as high risk
+			// rather than fail-open: a missing analysis record cannot be
+			// distinguished from a deleted or never-generated one.
+			slog.Warn("Analysis record not found for hash-verified binary; treating as high risk",
+				"path", cmdPath)
+			return true, true, nil
 		}
 		var schemaMismatch *fileanalysis.SchemaVersionMismatchError
 		if errors.As(loadErr, &schemaMismatch) {
