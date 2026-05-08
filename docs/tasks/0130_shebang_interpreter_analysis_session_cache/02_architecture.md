@@ -316,18 +316,20 @@ flowchart LR
 ### 9.2 観測手段
 
 `analyzeRecordTarget` の重複実行抑制は、プロダクションコードに分岐を入れずに
-観測する。要件 FR-3.4.1 に従い、build tag やテスト専用カウンタは導入しない。
-以下のいずれかで実装する（最終決定は `04_implementation_plan.md` の Step 4.1 / 4.3 内で確定）。
+観測する。要件 FR-3.4.1 に従い、プロダクションコード側へ build tag やテスト専用
+カウンタは導入しない。テストでは以下の組み合わせで観測する。
 
-- 案 A（推奨）: 既存の Analyzer 注入機構（`SetELFDynLibAnalyzer` /
-  `SetBinaryAnalyzer` / `SetSyscallAnalyzer` 等）を利用して、テストでは呼び出し回数を
-  カウントするスパイ実装を差し込み、同一インタプリタへの呼び出しが 1 回に抑えられたことを検証
-- 案 B: テストフィクスチャ用の小さな ELF バイナリを共有インタプリタとして用い、
-  キャッシュ後の `Validator.processedInterpreterAnalysis` の状態（キー数や保持されているポインタ）を
-  パッケージ内テスト（`filevalidator` パッケージ内）から観測
+- Analyzer 注入機構（`SetELFDynLibAnalyzer` / `SetBinaryAnalyzer` /
+  `SetSyscallAnalyzer` 等）を利用して、パス別の呼び出し回数を記録するスパイ実装を
+  差し込み、同一インタプリタへの呼び出しが 1 回に抑えられたことを検証する
+- AC-3 の同一パス・異ハッシュ検証では、`filevalidator` パッケージ内テストから
+  `Validator.processedInterpreterAnalysis` のキー集合を直接観測する。必要なテスト用
+  インタプリタ生成ヘルパは同パッケージ側にローカル実装し、
+  `internal/runner/e2e_shebang_test.go` の非公開ヘルパには依存しない
 
-既存テスト（`internal/runner/e2e_shebang_test.go`、
-`internal/filevalidator/validator_shebang_test.go`）が依存する型・モックを再利用する。
+再利用対象は `internal/filevalidator/validator_library_analysis_test.go` の
+`validatorWithTempHashDir`、`libraryTestBinaryAnalyzer` 相当のパターン、および
+`internal/filevalidator/validator_shebang_test.go` の shebang fixture 作成方法とする。
 
 ### 9.3 統合テスト
 
@@ -342,7 +344,7 @@ flowchart LR
 |---|---|
 | Phase 1 | `Validator` 構造体への `processedInterpreterAnalysis` フィールド追加と lazy-init |
 | Phase 2 | `loadOrAnalyzeShebangTarget` ヘルパの実装と `populateShebangData` からの呼び出し置き換え |
-| Phase 3 | テスト追加（AC-1, AC-3, AC-4, AC-5） |
+| Phase 3 | テスト追加（AC-1, AC-2, AC-3, AC-4, AC-5） |
 | Phase 4 | 既存テストの回帰確認 / `make fmt` / `make test` / `make lint` |
 
 詳細は `04_implementation_plan.md` で確定する。

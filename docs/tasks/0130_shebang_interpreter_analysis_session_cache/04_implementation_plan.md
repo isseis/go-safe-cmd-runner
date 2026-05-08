@@ -11,8 +11,8 @@
 
 ### 1.2 実装原則
 
-- 既存の `libCacheKey` 構造体・既存テストヘルパ（`libraryTestBinaryAnalyzer` の
-  呼び出しカウンタ等）を再利用し、二重実装を避ける
+- 既存の `libCacheKey` 構造体と、`validatorWithTempHashDir` /
+      `libraryTestBinaryAnalyzer` のテストパターンを再利用し、二重実装を避ける
 - プロダクションコードに `-tags test` 専用分岐やテスト用フラグを混入させない
 - `*fileanalysis.Record` の最終生成内容はキャッシュ導入前後で同一
 - コード中のコメント・識別子・テスト名はすべて英語（CLAUDE.md 既定）
@@ -105,28 +105,25 @@
 - [ ] 同じインタプリタ（`/bin/sh`）を使う 2 つの異なるスクリプト（内容違い）を
       同一 `Validator` インスタンスで `SaveRecord`。1 つ目が cache miss、
       2 つ目が cache hit となる
-- [ ] 検証 1（AC-2）: 両スクリプトの `LoadRecord` 結果から `ShebangChain[i].Path` に
-      対応する `DynLibDeps` エントリ（インタプリタ自身および推移的依存）の
-      `Path` / `Hash` 集合が完全一致すること
-- [ ] 検証 2（AC-2）: cache hit 経路で書き込まれた record の `SymbolAnalysis` /
-      `SyscallAnalysis` / `AnalysisWarnings` のうち、インタプリタ由来の寄与（= cache miss
-      経路の同フィールドと共通する寄与）が欠落していないこと
+- [ ] 検証 1（AC-2）: 両スクリプトの `LoadRecord` 結果について、
+      `ShebangChain` / `DynLibDeps` / `SymbolAnalysis` / `SyscallAnalysis` /
+      `AnalysisWarnings` をそれぞれ完全一致で比較する
+- [ ] 検証 2（AC-2）: `ShebangInterpreter` も完全一致で比較し、シェバン解決情報が
+      cache hit 経路で欠落しないことを確認する
 - [ ] 検証 3（AC-5）: cache hit 経路（2 つ目のスクリプト）の `record.DynLibDeps` に
       インタプリタ自身（`ShebangChain[i].Path`）が `LibEntry` として含まれていること
 
 #### Step 4.3: 同一パス・ハッシュ変化時の独立解析（AC-3）
 
 - [ ] テスト名: `TestSaveRecord_ShebangInterpreterCacheHashChangeReanalyzes`
-- [ ] 実装方針 A（推奨）: テスト用ローカル ELF インタプリタを `buildNetworkInterpreterBinary`
-      （`internal/runner/e2e_shebang_test.go` で利用中）相当の手段で生成し、内容を
-      書き換えてハッシュを変える。書き換え後にスクリプトの shebang 行も更新して
-      `SaveRecord` を再実行
-- [ ] 実装方針 B（代替）: A の ELF ビルドが煩雑な場合、`Validator.processedInterpreterAnalysis`
-      を package-internal にとどめたまま、テスト側でフィールドのキー集合を直接検証する
-      （同一パスで `{path, hashA}` と `{path, hashB}` の 2 つのキーが入ること）
-- [ ] 検証（共通）: スパイカウンタもしくは内部マップ観測のいずれかで、
-      ハッシュ変化により独立に解析されたことを確認
-- [ ] どちらの実装方針を採るかは Step 1〜3 の実装後に判断し、本書を更新する
+- [ ] `validator_shebang_cache_test.go` 内に、Linux 上で小さなテスト用 ELF
+      インタプリタを生成する package-local helper を追加する
+- [ ] 同一パスのインタプリタ実体を差し替えてハッシュを変え、同じパスを参照する
+      2 本のスクリプトに対して `SaveRecord` を順に実行する
+- [ ] 検証 1（AC-3）: `Validator.processedInterpreterAnalysis` に同一パスで
+      `{path, hashA}` と `{path, hashB}` の 2 キーが格納されること
+- [ ] 検証 2（AC-3）: パス別スパイまたは content-hash 別観測により、
+      ハッシュ変化後のインタプリタに対して `analyzeRecordTarget` 経路が再実行されること
 
 #### Step 4.4: env 形式チェーンのキャッシュ動作（AC-4）
 
@@ -155,8 +152,8 @@
 作業内容:
 - [ ] § 4 の AC トレーサビリティ表に従い、各 AC の対応テストが実在することを確認
 - [ ] FR-3.4.1（観測手段）がプロダクションコードに分岐を残していないことを確認
-- [ ] [02_architecture.md § 6](02_architecture.md#6-runner-側設計) 相当の項目はないが、
-      verify 側経路に変更がないこと（手で diff を確認）
+- [ ] [02_architecture.md](02_architecture.md) の前提どおり、verify 側経路に変更がないことを
+      手で diff して確認
 
 ---
 
@@ -165,7 +162,7 @@
 | AC | 主担当 Step | 検証テスト |
 |----|-------------|------------|
 | AC-1 | Step 4.1 | `TestSaveRecord_ShebangInterpreterCacheReuse` でカウンタが 1 になること |
-| AC-2 | Step 4.2 | `TestSaveRecord_ShebangInterpreterCacheOutputEquivalence` でキャッシュミス経路（1 回目）とヒット経路（2 回目）の record が完全一致すること |
+| AC-2 | Step 4.2 | `TestSaveRecord_ShebangInterpreterCacheOutputEquivalence` で `ShebangChain` / `DynLibDeps` / `SymbolAnalysis` / `SyscallAnalysis` / `AnalysisWarnings` / `ShebangInterpreter` が完全一致すること |
 | AC-3 | Step 4.3 | `TestSaveRecord_ShebangInterpreterCacheHashChangeReanalyzes` でハッシュ変化後も独立に解析されること |
 | AC-4 | Step 4.4 | `TestSaveRecord_ShebangInterpreterCacheEnvForm` で env / sh 両方が 1 回ずつであること |
 | AC-5 | Step 4.2 | 同テスト内で `record.DynLibDeps` にインタプリタが含まれていることを検証 |
