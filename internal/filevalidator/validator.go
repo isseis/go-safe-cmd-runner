@@ -347,7 +347,7 @@ func (v *Validator) populateShebangData(record *fileanalysis.Record, shebangInfo
 		Ref:  shebangInfo.RawInterpreterPath,
 		Path: shebangInfo.InterpreterPath,
 	}}
-	if shebangInfo.CommandName != "" && shebangInfo.ResolvedPath != "" {
+	if shebangInfo.CommandName != "" {
 		record.ShebangChain = append(record.ShebangChain, fileanalysis.ShebangChainEntry{
 			Ref:  shebangInfo.CommandName,
 			Path: shebangInfo.ResolvedPath,
