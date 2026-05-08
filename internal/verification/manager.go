@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -791,7 +792,12 @@ func (m *Manager) verifyShebangChainEntry(record *fileanalysis.Record, entry fil
 // from "tampered" (ErrMismatch).
 func (m *Manager) verifyInterpreterHash(record *fileanalysis.Record, interpreterPath string) error {
 	if expectedHash, ok := lookupRecordedDepHash(record, interpreterPath); ok {
-		actualHash, err := m.computeSHA256Hash(interpreterPath)
+		var sha256Hasher filevalidator.SHA256
+		algo, _, valid := strings.Cut(expectedHash, ":")
+		if !valid || algo != sha256Hasher.Name() {
+			return fmt.Errorf("%w: %q for %q", ErrUnsupportedHashAlgorithm, algo, interpreterPath)
+		}
+		actualHash, err := m.computeHash(&sha256Hasher, interpreterPath)
 		if err != nil {
 			return err
 		}
@@ -823,7 +829,7 @@ func lookupRecordedDepHash(record *fileanalysis.Record, path string) (string, bo
 	return "", false
 }
 
-func (m *Manager) computeSHA256Hash(path string) (string, error) {
+func (m *Manager) computeHash(hasher filevalidator.HashAlgorithm, path string) (string, error) {
 	resolvedPath, err := common.NewResolvedPath(path)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve interpreter path %q: %w", path, err)
@@ -837,7 +843,6 @@ func (m *Manager) computeSHA256Hash(path string) (string, error) {
 			slog.Warn("error closing file during hash computation", slog.Any("error", closeErr))
 		}
 	}()
-	var hasher filevalidator.SHA256
 	hash, err := hasher.Sum(f)
 	if err != nil {
 		return "", err

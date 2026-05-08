@@ -27,6 +27,9 @@ var (
 	// ErrShebangChainEmptyPath is returned when a shebang_chain entry has an empty path,
 	// indicating a corrupted or malformed record.
 	ErrShebangChainEmptyPath = errors.New("shebang_chain entry has empty path: record may be corrupt")
+	// ErrUnsupportedHashAlgorithm is returned when a dep hash uses an algorithm
+	// that the verifier does not support.
+	ErrUnsupportedHashAlgorithm = errors.New("unsupported hash algorithm in dep record")
 )
 
 // SecurityViolationError is the base error type for security-related violations

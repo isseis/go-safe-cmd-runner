@@ -89,6 +89,35 @@ func TestVerifyCommandShebangInterpreter_ShebangChain_BareRef_PathMismatch(t *te
 	assert.Equal(t, runtimeInterp, mismatch.ActualPath)
 }
 
+// TestVerifyCommandShebangInterpreter_ShebangChain_UnsupportedHashAlgorithm verifies
+// that a dep hash with an unrecognized algorithm prefix is rejected with
+// ErrUnsupportedHashAlgorithm rather than ErrMismatch.
+func TestVerifyCommandShebangInterpreter_ShebangChain_UnsupportedHashAlgorithm(t *testing.T) {
+	dir := commontesting.SafeTempDir(t)
+	interpPath := commontesting.WriteExecutableFile(t, dir, "interp", []byte("#!/bin/sh\n"))
+	scriptPath := filepath.Join(dir, "script.sh")
+
+	mockFV := newMockFVForShebang()
+	mockFV.setRecord(scriptPath, &fileanalysis.Record{
+		SchemaVersion: fileanalysis.CurrentSchemaVersion,
+		FilePath:      scriptPath,
+		ContentHash:   "sha256:abc",
+		ShebangChain: []fileanalysis.ShebangChainEntry{{
+			Ref:  interpPath,
+			Path: interpPath,
+		}},
+		DynLibDeps: []fileanalysis.LibEntry{{
+			Path: interpPath,
+			Hash: "md5:d41d8cd98f00b204e9800998ecf8427e",
+		}},
+	})
+
+	m := setupManagerWithMockValidator(t, mockFV)
+	err := m.VerifyCommandShebangInterpreter(scriptPath, map[string]string{})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrUnsupportedHashAlgorithm)
+}
+
 // TestVerifyCommandShebangInterpreter_ShebangChain_EmptyPath verifies that a
 // shebang_chain entry with an empty path is rejected as a corrupted record
 // rather than silently skipped (fail-closed).
