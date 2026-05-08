@@ -148,7 +148,7 @@ graph TB
 | 永続ストア (`dynamicanalysis.Store`) | 変更なし |
 | `fileanalysis` スキーマ | 変更なし |
 
-新規ヘルパ関数を 1 つ追加する想定（実装詳細は `03_detailed_specification.md` で確定）。
+新規ヘルパ関数を 1 つ追加する想定（実装詳細は実装時に確定する）。
 
 ```text
 loadOrAnalyzeShebangTarget(path, hash string) (*fileanalysis.Record, error)
@@ -317,7 +317,7 @@ flowchart LR
 
 `analyzeRecordTarget` の重複実行抑制は、プロダクションコードに分岐を入れずに
 観測する。要件 FR-3.4.1 に従い、build tag やテスト専用カウンタは導入しない。
-以下のいずれかで実装する（最終決定は `03_detailed_specification.md`）。
+以下のいずれかで実装する（最終決定は `04_implementation_plan.md` の Step 4.1 / 4.3 内で確定）。
 
 - 案 A（推奨）: 既存の Analyzer 注入機構（`SetELFDynLibAnalyzer` /
   `SetBinaryAnalyzer` / `SetSyscallAnalyzer` 等）を利用して、テストでは呼び出し回数を
@@ -345,7 +345,7 @@ flowchart LR
 | Phase 3 | テスト追加（AC-1, AC-3, AC-4, AC-5） |
 | Phase 4 | 既存テストの回帰確認 / `make fmt` / `make test` / `make lint` |
 
-詳細は `03_detailed_specification.md` および `04_implementation_plan.md` で確定する。
+詳細は `04_implementation_plan.md` で確定する。
 
 ---
 
