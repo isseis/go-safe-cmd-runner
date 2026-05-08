@@ -884,10 +884,10 @@ func (a *analysisAggregate) addRecord(record *fileanalysis.Record, sourcePath st
 	if record == nil {
 		return
 	}
-	_ = role
-	a.stampSourcePath(record.SyscallAnalysis, sourcePath)
+	resolvedSourcePath := sourcePathForRole(sourcePath, role)
+	a.stampSourcePath(record.SyscallAnalysis, resolvedSourcePath)
 	a.addSyscallAnalysis(record.SyscallAnalysis)
-	a.addSymbolAnalysis(record.SymbolAnalysis, sourcePath)
+	a.addSymbolAnalysis(record.SymbolAnalysis, resolvedSourcePath)
 	a.addWarnings(record.AnalysisWarnings)
 }
 
@@ -895,11 +895,20 @@ func (a *analysisAggregate) addDynamicResult(result *dynamicanalysis.Result, sou
 	if result == nil {
 		return
 	}
-	_ = role
-	a.stampSourcePath(result.SyscallAnalysis, sourcePath)
+	resolvedSourcePath := sourcePathForRole(sourcePath, role)
+	a.stampSourcePath(result.SyscallAnalysis, resolvedSourcePath)
 	a.addSyscallAnalysis(result.SyscallAnalysis)
-	a.addSymbolAnalysis(result.SymbolAnalysis, sourcePath)
+	a.addSymbolAnalysis(result.SymbolAnalysis, resolvedSourcePath)
 	a.addWarnings(result.Warnings)
+}
+
+func sourcePathForRole(sourcePath string, role sourceRole) string {
+	switch role {
+	case roleMain, roleShebangInterpreter, roleDynLib:
+		return sourcePath
+	default:
+		return ""
+	}
 }
 
 func (a *analysisAggregate) stampSourcePath(data *fileanalysis.SyscallAnalysisData, sourcePath string) {
