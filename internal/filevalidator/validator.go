@@ -231,26 +231,6 @@ func (v *Validator) SaveRecord(filePath string, force bool) (string, string, err
 	if err != nil {
 		return "", "", err
 	}
-	if shebangInfo != nil {
-		shebangTargets := []string{shebangInfo.InterpreterPath}
-		if shebangInfo.ResolvedPath != "" {
-			shebangTargets = append(shebangTargets, shebangInfo.ResolvedPath)
-		}
-		seen := make(map[string]struct{}, len(shebangTargets))
-		for _, shebangTarget := range shebangTargets {
-			if _, ok := seen[shebangTarget]; ok {
-				continue
-			}
-			seen[shebangTarget] = struct{}{}
-			if _, _, err := v.saveRecordCore(shebangTarget, force, nil); err != nil {
-				if !force && errors.Is(err, ErrHashFileExists) {
-					continue
-				}
-				return "", "", fmt.Errorf("failed to record shebang binary %s: %w", shebangTarget, err)
-			}
-		}
-	}
-
 	return v.saveRecordCore(targetPath.String(), force, shebangInfo)
 }
 

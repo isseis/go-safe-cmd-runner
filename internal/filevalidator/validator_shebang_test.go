@@ -194,8 +194,6 @@ func TestSaveRecord_InterpreterForce(t *testing.T) {
 		depPaths = append(depPaths, dep.Path)
 	}
 	assert.Contains(t, depPaths, interpPath)
-	_, err = validator.LoadRecord(interpPath)
-	assert.NoError(t, err)
 }
 
 // TestSaveRecord_ShebangSymlink verifies that when the script is accessed via
