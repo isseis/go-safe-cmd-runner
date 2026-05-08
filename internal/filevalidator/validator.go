@@ -685,10 +685,11 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 	}
 
 	for _, lib := range record.DynLibDeps {
-		if isKnownVDSO(lib.SOName) {
+		soName := libEntrySOName(lib)
+		if isKnownVDSO(soName) {
 			continue
 		}
-		if binaryanalyzer.IsSyscallWrapperLibrary(lib.SOName) {
+		if binaryanalyzer.IsSyscallWrapperLibrary(soName) {
 			continue
 		}
 		if _, ok := shebangPaths[lib.Path]; ok {
@@ -759,7 +760,7 @@ func (c *depCollector) addEntries(sourcePath string, entries []fileanalysis.LibE
 }
 
 func (c *depCollector) addEntry(sourcePath string, entry fileanalysis.LibEntry) error {
-	if isKnownVDSO(entry.SOName) {
+	if isKnownVDSO(libEntrySOName(entry)) {
 		return nil
 	}
 	if entry.Path == "" {
@@ -1585,11 +1586,23 @@ func extractUNDSymbols(elfFile *elf.File) ([]string, error) {
 // Returns nil if no such entry is found.
 func findLibcEntry(deps []fileanalysis.LibEntry) *fileanalysis.LibEntry {
 	for i := range deps {
-		if strings.HasPrefix(deps[i].SOName, "libc.so.") {
+		if strings.HasPrefix(libEntrySOName(deps[i]), "libc.so.") {
 			return &deps[i]
 		}
 	}
 	return nil
+}
+
+// libEntrySOName returns the effective SO name for a LibEntry.
+// SOName is not serialized in v22+ records (json:"-"), so entries loaded from
+// disk have an empty SOName. filepath.Base(lib.Path) is used as a fallback to
+// ensure VDSO and syscall-wrapper checks remain correct regardless of whether
+// the entry originated from a fresh analysis or a deserialized record.
+func libEntrySOName(lib fileanalysis.LibEntry) string {
+	if lib.SOName != "" {
+		return lib.SOName
+	}
+	return filepath.Base(lib.Path)
 }
 
 // mergeSyscallInfos merges libc-derived and direct syscall infos into a single slice.
