@@ -859,6 +859,19 @@ func TestNetworkAnalyzer_ExecSyscallIsHighRisk(t *testing.T) {
 	}
 }
 
+// TestAnalyzeBinarySignals_RelativePath_ReturnsError verifies that passing a
+// relative cmdPath returns an error instead of panicking.  The caller
+// (IsNetworkOperation) already guards with filepath.IsAbs, so this path is
+// not reachable in production, but the graceful error prevents a process
+// crash if the guard is ever removed.
+func TestAnalyzeBinarySignals_RelativePath_ReturnsError(t *testing.T) {
+	store := &stubRecordStore{}
+	analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
+
+	_, _, err := analyzer.analyzeBinarySignals("relative/path/cmd", testContentHash)
+	require.Error(t, err, "relative cmdPath must return an error, not panic")
+}
+
 // TestHandleAnalysisOutput_DefaultIsFullyFailClosed verifies that an unknown
 // AnalysisResult value (e.g. a future enum added without updating the switch)
 // returns (true, true) — fully fail-closed — regardless of DynamicLoadSymbols.

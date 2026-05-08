@@ -16,6 +16,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 )
 
+// errRelativeCmdPath is returned when analyzeBinarySignals receives a non-absolute path.
+var errRelativeCmdPath = errors.New("analyzeBinarySignals: cmdPath must be an absolute path")
+
 type syscallTableInterface interface {
 	IsNetworkSyscall(number int) bool
 	IsExecSyscall(number int) bool
@@ -155,7 +158,7 @@ func hasNetworkArguments(args []string) bool {
 // contentHash is a pre-computed hash in "algo:hex" format.
 func (a *NetworkAnalyzer) analyzeBinarySignals(cmdPath string, contentHash string) (isNetwork, hasDynLoad bool, err error) {
 	if !filepath.IsAbs(cmdPath) {
-		panic("analyzeBinarySignals: cmdPath must be an absolute path, got: " + cmdPath)
+		return false, false, fmt.Errorf("%w: %q", errRelativeCmdPath, cmdPath)
 	}
 
 	if a.deps.RecordStore == nil {
