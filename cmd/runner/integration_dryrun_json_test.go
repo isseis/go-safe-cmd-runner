@@ -4,7 +4,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -60,7 +59,7 @@ args = ["hello"]
 			// Run command in dry-run mode with JSON output
 			// Capture stdout and stderr separately to verify JSON output separation
 			hashDir := commontesting.SafeTempDir(t)
-			ldflags := fmt.Sprintf("-X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=%s", hashDir)
+			ldflags := hashDirLDFlags(hashDir)
 			cmd := exec.Command("go", "run", "-ldflags", ldflags, ".", "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
 			cmd.Dir = "."
 
@@ -201,7 +200,7 @@ args = ["hello"]
 
 			// Run command in dry-run mode with JSON output
 			hashDir := commontesting.SafeTempDir(t)
-			ldflags := fmt.Sprintf("-X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=%s", hashDir)
+			ldflags := hashDirLDFlags(hashDir)
 			cmd := exec.Command("go", "run", "-ldflags", ldflags, ".", "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
 			cmd.Dir = "."
 

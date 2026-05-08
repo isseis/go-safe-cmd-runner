@@ -379,7 +379,7 @@ func buildRunnerBinary(t *testing.T) string {
 	hashDir := filepath.Join(tmpDir, "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
 	binaryPath := filepath.Join(tmpDir, "runner")
-	ldflags := fmt.Sprintf("-X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=%s", hashDir)
+	ldflags := hashDirLDFlags(hashDir)
 
 	// Build the binary
 	cmd := exec.Command("go", "build", "-tags", "test", "-ldflags", ldflags, "-o", binaryPath, ".")

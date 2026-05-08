@@ -4,7 +4,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,7 +32,7 @@ func setupTempConfig(t *testing.T, configContent string) string {
 func runDryRunCommand(t *testing.T, configFile string, extraArgs ...string) (*exec.Cmd, []byte) {
 	t.Helper()
 	hashDir := commontesting.SafeTempDir(t)
-	ldflags := fmt.Sprintf("-X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=%s", hashDir)
+	ldflags := hashDirLDFlags(hashDir)
 	args := []string{"run", "-ldflags", ldflags, ".", "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text"}
 	args = append(args, extraArgs...)
 	cmd := exec.Command("go", args...)
@@ -110,7 +109,7 @@ args = ["hello"]
 
 	// Run with summary detail level instead of full
 	hashDir := commontesting.SafeTempDir(t)
-	ldflags := fmt.Sprintf("-X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=%s", hashDir)
+	ldflags := hashDirLDFlags(hashDir)
 	args := []string{"run", "-ldflags", ldflags, ".", "-config", configFile, "-dry-run", "-dry-run-detail", "summary", "-dry-run-format", "text"}
 	cmd := exec.Command("go", args...)
 	cmd.Dir = "."
@@ -141,7 +140,7 @@ args = ["hello"]
 
 	// Run command in dry-run mode with JSON output
 	hashDir := commontesting.SafeTempDir(t)
-	ldflags := fmt.Sprintf("-X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=%s", hashDir)
+	ldflags := hashDirLDFlags(hashDir)
 	cmd := exec.Command("go", "run", "-ldflags", ldflags, ".", "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
 	cmd.Dir = "."
 
@@ -195,7 +194,7 @@ args = ["-l"]
 
 	// Run command in dry-run mode with detailed output
 	hashDir := commontesting.SafeTempDir(t)
-	ldflags := fmt.Sprintf("-X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=%s", hashDir)
+	ldflags := hashDirLDFlags(hashDir)
 	args := []string{"run", "-ldflags", ldflags, ".", "-config", configFile, "-dry-run", "-dry-run-detail", "detailed", "-dry-run-format", "text"}
 	cmd := exec.Command("go", args...)
 	cmd.Dir = "."
@@ -252,7 +251,7 @@ args = ["hello"]
 
 	// Run command in dry-run mode
 	hashDir := commontesting.SafeTempDir(t)
-	ldflags := fmt.Sprintf("-X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=%s", hashDir)
+	ldflags := hashDirLDFlags(hashDir)
 	cmd := exec.Command("go", "run", "-ldflags", ldflags, ".", "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text", "-log-level", "debug")
 	cmd.Dir = "."
 	cmd.Env = os.Environ()
