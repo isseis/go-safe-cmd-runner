@@ -36,7 +36,7 @@ var (
 // deps holds injectable dependencies for the record command.
 // This makes the dependency graph visible at call sites and simplifies testing.
 type deps struct {
-	validatorFactory           func(hashDir string) (hashRecorder, error)
+	validatorFactory           func(hashDir string) (*filevalidator.Validator, error)
 	elfDynlibAnalyzerFactory   func() *elfdynlib.DynLibAnalyzer       // nil means dynlib analysis is disabled
 	machoDynlibAnalyzerFactory func() *machodylib.MachODynLibAnalyzer // nil means Mach-O dynlib analysis is disabled
 	mkdirAll                   func(path string, perm os.FileMode) error
@@ -44,7 +44,7 @@ type deps struct {
 
 func defaultDeps() deps {
 	return deps{
-		validatorFactory: func(hashDir string) (hashRecorder, error) {
+		validatorFactory: func(hashDir string) (*filevalidator.Validator, error) {
 			return filevalidator.New(&filevalidator.SHA256{}, hashDir)
 		},
 		elfDynlibAnalyzerFactory: func() *elfdynlib.DynLibAnalyzer {
@@ -131,49 +131,46 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// Inject DynLibAnalyzer, BinaryAnalyzer, SyscallAnalyzer, and LibcCache when the validator supports it.
-	// Uses a type assertion so that test fakes implementing only hashRecorder are unaffected.
-	if fv, ok := validator.(*filevalidator.Validator); ok {
-		if d.elfDynlibAnalyzerFactory != nil {
-			fv.SetELFDynLibAnalyzer(d.elfDynlibAnalyzerFactory())
-		}
-		if d.machoDynlibAnalyzerFactory != nil {
-			fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
-		}
-		fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer(runtime.GOOS))
-
-		syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
-		fv.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))
-
-		dynlibStoreDir := filepath.Join(cfg.hashDir, dynamicanalysis.StoreSubDir)
-		dynlibStore, dynlibStoreErr := dynamicanalysis.New(dynlibStoreDir, fv)
-		if dynlibStoreErr != nil {
-			fmt.Fprintf(stderr, "Error: Failed to initialize dynamic library analysis store: %v\n", dynlibStoreErr) //nolint:errcheck
-			return 1
-		}
-		fv.SetDynamicLibAnalysisStore(dynlibStore)
-
-		cacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
-		fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
-		libcAnalyzer := libccache.NewLibcWrapperAnalyzer(syscallAnalyzer)
-		cacheMgr, cacheErr := libccache.NewLibcCacheManager(cacheDir, fs, libcAnalyzer)
-		if cacheErr != nil {
-			fmt.Fprintf(stderr, "Error: Failed to initialize libc cache: %v\n", cacheErr) //nolint:errcheck
-			return 1
-		}
-		fv.SetLibcCache(libccache.NewCacheAdapter(cacheMgr, syscallAnalyzer))
-		fv.SetIncludeDebugInfo(cfg.debugInfo)
-
-		// Inject MachoLibSystemAdapter for Mach-O libSystem import-symbol matching.
-		machoCacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
-		machoCacheMgr, machoCacheErr := libccache.NewMachoLibSystemCacheManager(machoCacheDir)
-		if machoCacheErr != nil {
-			fmt.Fprintf(stderr, "Error: Failed to initialize machoLibSystem cache: %v\n", machoCacheErr) //nolint:errcheck
-			return 1
-		}
-		fv.SetLibSystemCache(libccache.NewMachoLibSystemAdapter(machoCacheMgr, fs))
-		fv.SetMachoSyscallTable(libccache.MacOSSyscallTable{})
+	// Inject DynLibAnalyzer, BinaryAnalyzer, SyscallAnalyzer, and LibcCache.
+	if d.elfDynlibAnalyzerFactory != nil {
+		validator.SetELFDynLibAnalyzer(d.elfDynlibAnalyzerFactory())
 	}
+	if d.machoDynlibAnalyzerFactory != nil {
+		validator.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
+	}
+	validator.SetBinaryAnalyzer(security.NewBinaryAnalyzer(runtime.GOOS))
+
+	syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
+	validator.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))
+
+	dynlibStoreDir := filepath.Join(cfg.hashDir, dynamicanalysis.StoreSubDir)
+	dynlibStore, dynlibStoreErr := dynamicanalysis.New(dynlibStoreDir, validator)
+	if dynlibStoreErr != nil {
+		fmt.Fprintf(stderr, "Error: Failed to initialize dynamic library analysis store: %v\n", dynlibStoreErr) //nolint:errcheck
+		return 1
+	}
+	validator.SetDynamicLibAnalysisStore(dynlibStore)
+
+	cacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
+	safeFS := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+	libcAnalyzer := libccache.NewLibcWrapperAnalyzer(syscallAnalyzer)
+	cacheMgr, cacheErr := libccache.NewLibcCacheManager(cacheDir, safeFS, libcAnalyzer)
+	if cacheErr != nil {
+		fmt.Fprintf(stderr, "Error: Failed to initialize libc cache: %v\n", cacheErr) //nolint:errcheck
+		return 1
+	}
+	validator.SetLibcCache(libccache.NewCacheAdapter(cacheMgr, syscallAnalyzer))
+	validator.SetIncludeDebugInfo(cfg.debugInfo)
+
+	// Inject MachoLibSystemAdapter for Mach-O libSystem import-symbol matching.
+	machoCacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
+	machoCacheMgr, machoCacheErr := libccache.NewMachoLibSystemCacheManager(machoCacheDir)
+	if machoCacheErr != nil {
+		fmt.Fprintf(stderr, "Error: Failed to initialize machoLibSystem cache: %v\n", machoCacheErr) //nolint:errcheck
+		return 1
+	}
+	validator.SetLibSystemCache(libccache.NewMachoLibSystemAdapter(machoCacheMgr, safeFS))
+	validator.SetMachoSyscallTable(libccache.MacOSSyscallTable{})
 
 	return processFiles(validator, cfg, stdout, stderr)
 }
