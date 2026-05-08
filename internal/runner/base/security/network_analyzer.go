@@ -176,6 +176,14 @@ func (a *NetworkAnalyzer) analyzeBinarySignals(cmdPath string, contentHash strin
 		return false, false, fmt.Errorf("failed to load record for %q: %w", cmdPath, loadErr)
 	}
 
+	if record.ContentHash != contentHash {
+		slog.Warn("Record content hash mismatch; treating as high risk",
+			"path", cmdPath,
+			"expected", contentHash,
+			"actual", record.ContentHash)
+		return true, true, nil
+	}
+
 	isNetwork, hasDynLoad = a.analyzeRecordSignals(record, cmdPath)
 
 	return isNetwork, hasDynLoad, nil

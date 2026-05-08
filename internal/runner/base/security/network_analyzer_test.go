@@ -202,6 +202,19 @@ func TestIsNetworkViaBinaryAnalysis_LoadRecordError(t *testing.T) {
 
 // TestIsNetworkViaBinaryAnalysis_SchemaMismatch verifies that a
 // SchemaVersionMismatchError from LoadRecord returns (true, true, nil) (fail-closed).
+func TestIsNetworkViaBinaryAnalysis_ContentHashMismatch(t *testing.T) {
+	store := &stubRecordStore{record: &fileanalysis.Record{
+		ContentHash: "sha256:stale_hash_from_old_record",
+	}}
+	analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
+
+	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
+	require.NoError(t, err)
+
+	assert.True(t, isNet, "content hash mismatch should return isNetwork=true (fail-closed)")
+	assert.True(t, isHigh, "content hash mismatch should return high risk")
+}
+
 func TestIsNetworkViaBinaryAnalysis_SchemaMismatch(t *testing.T) {
 	schemaErr := &fileanalysis.SchemaVersionMismatchError{
 		Expected: fileanalysis.CurrentSchemaVersion,
