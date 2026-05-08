@@ -761,6 +761,12 @@ func (s *stubBinaryAnalyzer) AnalyzeNetworkSymbols(_, _ string) binaryanalyzer.A
 // recordWithBinaryAnalyzer is a test helper that records a file using the given stub analyzer.
 func recordWithBinaryAnalyzer(t *testing.T, stub *stubBinaryAnalyzer) (*fileanalysis.Record, error) {
 	t.Helper()
+	record, _, err := recordWithBinaryAnalyzerOptions(t, stub, false)
+	return record, err
+}
+
+func recordWithBinaryAnalyzerOptions(t *testing.T, stub *stubBinaryAnalyzer, includeDebugInfo bool) (*fileanalysis.Record, string, error) {
+	t.Helper()
 	tempDir := safeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
@@ -771,14 +777,130 @@ func recordWithBinaryAnalyzer(t *testing.T, stub *stubBinaryAnalyzer) (*fileanal
 	v, err := New(&SHA256{}, hashDir)
 	require.NoError(t, err)
 	v.SetBinaryAnalyzer(stub)
+	v.SetIncludeDebugInfo(includeDebugInfo)
 
 	_, _, recErr := v.SaveRecord(targetFile, false)
 	if recErr != nil {
-		return nil, recErr
+		return nil, "", recErr
 	}
 	record, loadErr := v.LoadRecord(targetFile)
 	require.NoError(t, loadErr)
-	return record, nil
+	return record, targetFile, nil
+}
+
+func TestRecord_SyscallOccurrence_SourcePathSetWhenDebugInfo(t *testing.T) {
+	t.Run("direct syscall occurrence", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		hashDir := filepath.Join(tempDir, "hashes")
+		require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+		targetFile := filepath.Join(tempDir, "target.bin")
+		elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
+
+		v, err := New(&SHA256{}, hashDir)
+		require.NoError(t, err)
+		v.SetIncludeDebugInfo(true)
+		v.SetSyscallAnalyzer(&stubSyscallAnalyzerWithDebugInfo{})
+
+		_, _, err = v.SaveRecord(targetFile, false)
+		require.NoError(t, err)
+
+		record, err := v.LoadRecord(targetFile)
+		require.NoError(t, err)
+		require.NotNil(t, record.SyscallAnalysis)
+		require.Len(t, record.SyscallAnalysis.DetectedSyscalls, 1)
+		require.Len(t, record.SyscallAnalysis.DetectedSyscalls[0].Occurrences, 1)
+		assert.Equal(t, targetFile, record.SyscallAnalysis.DetectedSyscalls[0].Occurrences[0].SourcePath)
+	})
+
+	t.Run("libc import occurrence", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		hashDir := filepath.Join(tempDir, "hashes")
+		require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+		targetFile := filepath.Join(tempDir, "target-libc.bin")
+		elfanalyzertesting.CreateELFWithSymbols(t, targetFile, []elfanalyzertesting.SymbolSpec{{Name: "socket"}})
+
+		v, err := New(&SHA256{}, hashDir)
+		require.NoError(t, err)
+		v.SetIncludeDebugInfo(true)
+		v.SetLibcCache(&stubLibcCache{
+			syscalls: []common.SyscallInfo{{
+				Number: 41,
+				Name:   "socket",
+				Occurrences: []common.SyscallOccurrence{{
+					Location:            0,
+					DeterminationMethod: "lib_cache_match",
+					Source:              "libc_symbol_import",
+				}},
+			}},
+		})
+
+		record := &fileanalysis.Record{
+			DynLibDeps: []fileanalysis.LibEntry{{
+				SOName: "libc.so.6",
+				Path:   "/lib/x86_64-linux-gnu/libc.so.6",
+				Hash:   "sha256:deadbeef",
+			}},
+		}
+		require.NoError(t, v.analyzeELFSyscalls(record, targetFile))
+
+		aggregate := newAnalysisAggregate(true)
+		aggregate.addRecord(record, targetFile, roleMain)
+		syscallAnalysis := aggregate.syscallAnalysis()
+		require.NotNil(t, syscallAnalysis)
+		require.Len(t, syscallAnalysis.DetectedSyscalls, 1)
+		require.Len(t, syscallAnalysis.DetectedSyscalls[0].Occurrences, 1)
+		assert.Equal(t, uint64(0), syscallAnalysis.DetectedSyscalls[0].Occurrences[0].Location)
+		assert.Equal(t, "libc_symbol_import", syscallAnalysis.DetectedSyscalls[0].Occurrences[0].Source)
+		assert.Equal(t, targetFile, syscallAnalysis.DetectedSyscalls[0].Occurrences[0].SourcePath)
+	})
+}
+
+func TestRecord_SyscallOccurrence_SourcePathOmittedWithoutDebugInfo(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	targetFile := filepath.Join(tempDir, "target.bin")
+	elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+	v.SetSyscallAnalyzer(&stubSyscallAnalyzerWithDebugInfo{})
+
+	_, _, err = v.SaveRecord(targetFile, false)
+	require.NoError(t, err)
+
+	record, err := v.LoadRecord(targetFile)
+	require.NoError(t, err)
+	require.NotNil(t, record.SyscallAnalysis)
+	require.Len(t, record.SyscallAnalysis.DetectedSyscalls, 1)
+	assert.Nil(t, record.SyscallAnalysis.DetectedSyscalls[0].Occurrences)
+}
+
+func TestRecord_DetectedSymbol_SourcePathSetWhenDebugInfo(t *testing.T) {
+	stub := &stubBinaryAnalyzer{
+		result:          binaryanalyzer.NetworkDetected,
+		detectedSymbols: []binaryanalyzer.DetectedSymbol{{Name: "socket", Category: "network"}},
+	}
+	record, targetFile, err := recordWithBinaryAnalyzerOptions(t, stub, true)
+	require.NoError(t, err)
+	require.NotNil(t, record.SymbolAnalysis)
+	require.Len(t, record.SymbolAnalysis.DetectedSymbols, 1)
+	assert.Equal(t, fileanalysis.DetectedSymbol{Name: "socket", SourcePath: targetFile}, record.SymbolAnalysis.DetectedSymbols[0])
+}
+
+func TestRecord_DetectedSymbol_SourcePathOmittedWithoutDebugInfo(t *testing.T) {
+	stub := &stubBinaryAnalyzer{
+		result:          binaryanalyzer.NetworkDetected,
+		detectedSymbols: []binaryanalyzer.DetectedSymbol{{Name: "socket", Category: "network"}},
+	}
+	record, _, err := recordWithBinaryAnalyzerOptions(t, stub, false)
+	require.NoError(t, err)
+	require.NotNil(t, record.SymbolAnalysis)
+	require.Len(t, record.SymbolAnalysis.DetectedSymbols, 1)
+	assert.Equal(t, fileanalysis.DetectedSymbol{Name: "socket"}, record.SymbolAnalysis.DetectedSymbols[0])
 }
 
 func TestRecord_NetworkDetected_SetsSymbolAnalysis(t *testing.T) {

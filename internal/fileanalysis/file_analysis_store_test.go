@@ -160,6 +160,37 @@ func TestStore_CorruptedRecord(t *testing.T) {
 	assert.ErrorAs(t, err, &corruptedErr)
 }
 
+func TestStore_Load_V22RejectedWithSchemaVersionMismatch(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	analysisDir := filepath.Join(tmpDir, "analysis")
+
+	store, err := NewStore(analysisDir, &mockPathGetter{})
+	require.NoError(t, err)
+
+	testFile := filepath.Join(tmpDir, "test.bin")
+	err = os.WriteFile(testFile, []byte("test content"), 0o644)
+	require.NoError(t, err)
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
+
+	recordPath := filepath.Join(analysisDir, "test.bin.json")
+	v22Record := map[string]interface{}{
+		"schema_version": 22,
+		"file_path":      testFile,
+		"content_hash":   "sha256:abc123",
+	}
+	data, err := json.MarshalIndent(v22Record, "", "  ")
+	require.NoError(t, err)
+	err = os.WriteFile(recordPath, data, 0o600)
+	require.NoError(t, err)
+
+	_, err = store.Load(rp)
+	var schemaErr *SchemaVersionMismatchError
+	require.ErrorAs(t, err, &schemaErr)
+	assert.Equal(t, CurrentSchemaVersion, schemaErr.Expected)
+	assert.Equal(t, 22, schemaErr.Actual)
+}
+
 func TestStore_PreservesExistingFields(t *testing.T) {
 	tmpDir := commontesting.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")

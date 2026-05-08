@@ -254,7 +254,7 @@ NFR カバレッジ: NFR-003, NFR-004
 
 対象: `internal/filevalidator/validator_test.go`
 
-- [ ] `TestRecord_SyscallOccurrence_SourcePathSetWhenDebugInfo` を追加する
+- [x] `TestRecord_SyscallOccurrence_SourcePathSetWhenDebugInfo` を追加する
   - `SetIncludeDebugInfo(true)` の Validator で SaveRecord
   - `SyscallOccurrence.SourcePath` がターゲットバイナリのパスと一致することを確認
   - `Source: "libc_symbol_import"` の occurrence（location=0）でも `SourcePath` が正しく設定されることを確認（AC-003）
@@ -263,7 +263,7 @@ NFR カバレッジ: NFR-003, NFR-004
 
 対象: `internal/filevalidator/validator_test.go`
 
-- [ ] `TestRecord_SyscallOccurrence_SourcePathOmittedWithoutDebugInfo` を追加する
+- [x] `TestRecord_SyscallOccurrence_SourcePathOmittedWithoutDebugInfo` を追加する
   - `SetIncludeDebugInfo(false)` の Validator で SaveRecord
   - `SyscallAnalysis.DetectedSyscalls[*].Occurrences` が `nil` であることを確認（`stripOccurrences` 動作）
 
@@ -271,7 +271,7 @@ NFR カバレッジ: NFR-003, NFR-004
 
 対象: `internal/filevalidator/validator_test.go`
 
-- [ ] `TestRecord_DetectedSymbol_SourcePathSetWhenDebugInfo` を追加する
+- [x] `TestRecord_DetectedSymbol_SourcePathSetWhenDebugInfo` を追加する
   - `SetIncludeDebugInfo(true)` の Validator で SaveRecord
   - `DetectedSymbols[i].SourcePath` がターゲットバイナリのパスと一致することを確認
 
@@ -279,7 +279,7 @@ NFR カバレッジ: NFR-003, NFR-004
 
 対象: `internal/filevalidator/validator_test.go`
 
-- [ ] `TestRecord_DetectedSymbol_SourcePathOmittedWithoutDebugInfo` を追加する
+- [x] `TestRecord_DetectedSymbol_SourcePathOmittedWithoutDebugInfo` を追加する
   - `SetIncludeDebugInfo(false)` の Validator で SaveRecord
   - `DetectedSymbols[i].SourcePath` が空文字列であることを確認
 
@@ -287,7 +287,7 @@ NFR カバレッジ: NFR-003, NFR-004
 
 対象: `internal/filevalidator/validator_dedup_test.go`
 
-- [ ] `TestAnalysisAggregate_DetectedSymbol_DedupByNameAndSourcePath_DebugMode` を追加する
+- [x] `TestAnalysisAggregate_DetectedSymbol_DedupByNameAndSourcePath_DebugMode` を追加する
   - `newAnalysisAggregate(true)` で aggregate を作成
   - 異なる `sourcePath` を持つ 2 つの record に同一シンボル名を設定し `addRecord` を 2 回呼び出す
   - `symbolAnalysis().DetectedSymbols` が 2 エントリであることを確認
@@ -296,7 +296,7 @@ NFR カバレッジ: NFR-003, NFR-004
 
 対象: `internal/filevalidator/validator_dedup_test.go`
 
-- [ ] `TestAnalysisAggregate_DetectedSymbol_DedupByNameOnly_NonDebugMode` を追加する
+- [x] `TestAnalysisAggregate_DetectedSymbol_DedupByNameOnly_NonDebugMode` を追加する
   - `newAnalysisAggregate(false)` で aggregate を作成
   - 同一シンボル名を異なるソースパスで 2 回 `addRecord` する
   - `symbolAnalysis().DetectedSymbols` が 1 エントリであることを確認
@@ -305,7 +305,7 @@ NFR カバレッジ: NFR-003, NFR-004
 
 対象: `internal/filevalidator/validator_dedup_test.go`
 
-- [ ] `TestAnalysisAggregate_AddRecord_SourcePathNotOverwrittenIfAlreadySet` を追加する
+- [x] `TestAnalysisAggregate_AddRecord_SourcePathNotOverwrittenIfAlreadySet` を追加する
   - `SyscallOccurrence.SourcePath` を事前に設定した record を `addRecord(record, "other_path", roleMain)` で追加する
   - `syscallAnalysis()` の occurrence の `SourcePath` が元の値のままであることを確認
 
@@ -313,7 +313,7 @@ NFR カバレッジ: NFR-003, NFR-004
 
 対象: `internal/filevalidator/validator_dedup_test.go`
 
-- [ ] `TestAnalysisAggregate_AllRolesDistinct` を追加する
+- [x] `TestAnalysisAggregate_AllRolesDistinct` を追加する
   - `newAnalysisAggregate(true)` で aggregate を作成
   - `addRecord` で `roleMain` / `roleShebangInterpreter`、`addDynamicResult` で `roleDynLib` を指定
   - 各 occurrence の `SourcePath` が対応するソースパスに設定されていることを確認
@@ -322,7 +322,7 @@ NFR カバレッジ: NFR-003, NFR-004
 
 対象: `internal/fileanalysis/file_analysis_store_test.go`
 
-- [ ] `TestStore_Load_V22RejectedWithSchemaVersionMismatch` を追加する
+- [x] `TestStore_Load_V22RejectedWithSchemaVersionMismatch` を追加する
   - `schema_version: 22` のレコードを直接書き込む
   - `store.Load` が `SchemaVersionMismatchError` を返し、`Expected = CurrentSchemaVersion (23)`、`Actual = 22` であることを確認
 
