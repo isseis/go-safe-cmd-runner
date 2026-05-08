@@ -32,32 +32,32 @@ ENV LANG=ja_JP.UTF-8
 
 # Go 言語と golangci-lint のインストール
 # TARGETARCH は docker-compose.yml の platform 指定から Docker が自動設定する
-ARG GO_VERSION=1.26.2
+ARG GO_VERSION=1.26.3
 ARG GOLANGCI_LINT_VERSION=2.11.4
 ARG GOFUMPT_VERSION=v0.6.0
 ARG TARGETARCH
 RUN set -eux \
     && TARGETARCH="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && case "${TARGETARCH}" in \
-        amd64) \
-            GO_SHA256="990e6b4bbba816dc3ee129eaeaf4b42f17c2800b88a2166c265ac1a200262282"; \
-            LINT_SHA256="200c5b7503f67b59a6743ccf32133026c174e272b930ee79aa2aa6f37aca7ef1"; \
-            ;; \
-        arm64) \
-            GO_SHA256="c958a1fe1b361391db163a485e21f5f228142d6f8b584f6bef89b26f66dc5b23"; \
-            LINT_SHA256="3bcfa2e6f3d32b2bf5cd75eaa876447507025e0303698633f722a05331988db4"; \
-            ;; \
-        *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
+    amd64) \
+    GO_SHA256="2b2cfc7148493da5e73981bffbf3353af381d5f93e789c82c79aff64962eb556"; \
+    LINT_SHA256="200c5b7503f67b59a6743ccf32133026c174e272b930ee79aa2aa6f37aca7ef1"; \
+    ;; \
+    arm64) \
+    GO_SHA256="9d89a3ea57d141c2b22d70083f2c8459ba3890f2d9e818e7e933b75614936565"; \
+    LINT_SHA256="3bcfa2e6f3d32b2bf5cd75eaa876447507025e0303698633f722a05331988db4"; \
+    ;; \
+    *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
     esac \
     && curl -sSfL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" -o /tmp/go.tar.gz \
     && echo "${GO_SHA256}  /tmp/go.tar.gz" | sha256sum -c - \
     && tar -C /usr/local -xzf /tmp/go.tar.gz \
     && rm /tmp/go.tar.gz \
     && curl -sSfL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-${TARGETARCH}.tar.gz" \
-        -o /tmp/golangci-lint.tar.gz \
+    -o /tmp/golangci-lint.tar.gz \
     && echo "${LINT_SHA256}  /tmp/golangci-lint.tar.gz" | sha256sum -c - \
     && tar -C /usr/local/bin -xzf /tmp/golangci-lint.tar.gz \
-        --strip-components=1 "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-${TARGETARCH}/golangci-lint" \
+    --strip-components=1 "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-${TARGETARCH}/golangci-lint" \
     && rm /tmp/golangci-lint.tar.gz \
     && /usr/local/go/bin/go install mvdan.cc/gofumpt@${GOFUMPT_VERSION} \
     && mv /root/go/bin/gofumpt /usr/local/bin/gofumpt \
@@ -65,10 +65,10 @@ RUN set -eux \
 
 # GitHub CLI (gh) のインストール
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-        -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-        > /etc/apt/sources.list.d/github-cli.list \
+    > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y gh \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
