@@ -535,15 +535,15 @@ risk_level = "medium"
 	// Initialize privilege manager
 	privMgr := privilege.NewManager(slog.Default())
 
-	// Setup dry-run options
-	hashDir := commontesting.SafeTempDir(t)
-
+	// Setup dry-run options, reusing the overridden DefaultHashDirectory to
+	// match the real CLI path (cmd/runner/main.go reads DefaultHashDirectory
+	// for DryRunOptions.HashDir).
 	dryRunOptions := &resource.DryRunOptions{
 		DetailLevel:   resource.DetailLevelDetailed,
 		OutputFormat:  resource.OutputFormatText,
 		ShowSensitive: false,
 		VerifyFiles:   true,
-		HashDir:       hashDir,
+		HashDir:       cmdcommon.DefaultHashDirectory,
 	}
 
 	// Create runner with dry-run option
