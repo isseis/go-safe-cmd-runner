@@ -790,7 +790,6 @@ func (m *Manager) verifyShebangChainEntry(record *fileanalysis.Record, entry fil
 // ErrHashFileNotFound (no record for that binary) is translated into
 // *ErrInterpreterRecordNotFound so callers can distinguish "never recorded"
 // from "tampered" (ErrMismatch).
-
 func (m *Manager) verifyInterpreterHash(record *fileanalysis.Record, interpreterPath string) error {
 	if expectedHash, ok := lookupRecordedDepHash(record, interpreterPath); ok {
 		actualHash, err := m.computeSHA256Hash(interpreterPath)
