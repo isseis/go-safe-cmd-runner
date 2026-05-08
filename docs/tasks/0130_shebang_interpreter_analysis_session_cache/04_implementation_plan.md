@@ -21,9 +21,9 @@
 
 ## 2. 進捗状況
 
-- [ ] Step 1: `Validator` 構造体への `processedInterpreterAnalysis` フィールド追加
-- [ ] Step 2: `loadOrAnalyzeShebangTarget` ヘルパの実装
-- [ ] Step 3: `populateShebangData` のキャッシュ経由化
+- [x] Step 1: `Validator` 構造体への `processedInterpreterAnalysis` フィールド追加
+- [x] Step 2: `loadOrAnalyzeShebangTarget` ヘルパの実装
+- [x] Step 3: `populateShebangData` のキャッシュ経由化
 - [ ] Step 4: テスト追加（AC-1, AC-2, AC-3, AC-4 を網羅）
 - [ ] Step 5: 既存テストの回帰確認と `make fmt` / `make test` / `make lint`
 - [ ] Step 6: AC 対応の最終検証と巻き戻り点検
@@ -218,9 +218,9 @@
 
 ## 7. 実装チェックリスト
 
-- [ ] Step 1: フィールド追加完了
-- [ ] Step 2: ヘルパ実装完了
-- [ ] Step 3: `populateShebangData` 置換完了
+- [x] Step 1: フィールド追加完了
+- [x] Step 2: ヘルパ実装完了
+- [x] Step 3: `populateShebangData` 置換完了
 - [ ] Step 4.1: AC-1 テスト追加完了
 - [ ] Step 4.2: AC-2 + AC-5 テスト追加完了
 - [ ] Step 4.3: AC-3 テスト追加完了
