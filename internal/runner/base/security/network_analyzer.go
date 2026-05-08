@@ -381,11 +381,12 @@ func handleAnalysisOutput(output binaryanalyzer.AnalysisOutput, cmdPath string) 
 		return true, true
 
 	default:
-		// Unknown result: treat as potential network operation for safety
+		// Unknown result: treat as high risk (fail-closed) to match the
+		// AnalysisError / schema-mismatch / missing-record behavior.
 		slog.Warn("Binary analysis returned unknown result", //nolint:gosec // G706: cmdPath is a configured command path from TOML, not arbitrary user input
 			"path", cmdPath,
 			"result", output.Result)
-		return true, isHighRisk
+		return true, true
 	}
 }
 

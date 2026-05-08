@@ -9,6 +9,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -856,4 +857,18 @@ func TestNetworkAnalyzer_ExecSyscallIsHighRisk(t *testing.T) {
 			assert.Equal(t, tt.wantHighRisk, isHighRisk)
 		})
 	}
+}
+
+// TestHandleAnalysisOutput_DefaultIsFullyFailClosed verifies that an unknown
+// AnalysisResult value (e.g. a future enum added without updating the switch)
+// returns (true, true) — fully fail-closed — regardless of DynamicLoadSymbols.
+func TestHandleAnalysisOutput_DefaultIsFullyFailClosed(t *testing.T) {
+	output := binaryanalyzer.AnalysisOutput{
+		Result:             binaryanalyzer.AnalysisResult(999),
+		DynamicLoadSymbols: nil, // no dynamic load symbols — isHighRisk must still be true
+	}
+
+	isNetwork, isHighRisk := handleAnalysisOutput(output, testCmdPath)
+	assert.True(t, isNetwork, "unknown AnalysisResult must be treated as network (fail-closed)")
+	assert.True(t, isHighRisk, "unknown AnalysisResult must be treated as high risk (fail-closed)")
 }
