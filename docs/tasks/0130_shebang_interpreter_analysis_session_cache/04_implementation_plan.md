@@ -25,8 +25,8 @@
 - [x] Step 2: `loadOrAnalyzeShebangTarget` ヘルパの実装
 - [x] Step 3: `populateShebangData` のキャッシュ経由化
 - [x] Step 4: テスト追加（AC-1, AC-2, AC-3, AC-4 を網羅）
-- [ ] Step 5: 既存テストの回帰確認と `make fmt` / `make test` / `make lint`
-- [ ] Step 6: AC 対応の最終検証と巻き戻り点検
+- [x] Step 5: 既存テストの回帰確認と `make fmt` / `make test` / `make lint`
+- [x] Step 6: AC 対応最終検証完了
 
 ---
 
@@ -225,7 +225,7 @@
 - [x] Step 4.2: AC-2 + AC-5 テスト追加完了
 - [x] Step 4.3: AC-3 テスト追加完了
 - [x] Step 4.4: AC-4 テスト追加完了
-- [ ] Step 5: `make fmt` / `go test -tags test ./...` / `make lint` 全合格
+- [x] Step 5: `make fmt` / `go test -tags test ./...` / `make lint` 全合格
 - [ ] Step 6: AC 対応最終検証完了
 
 ---
