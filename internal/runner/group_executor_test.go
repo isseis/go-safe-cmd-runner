@@ -3480,11 +3480,11 @@ func TestRunGroupTOCTOUCheck_ViolationReturnsError(t *testing.T) {
 
 // TestVerifyCommandCallOrder_DynLibBeforeShebang verifies that
 // VerifyCommandDynLibDeps is called before VerifyCommandShebangInterpreter for
-// every command in a group.  The dep-hash cache in verification.Manager is
-// reset and (optionally) repopulated by VerifyCommandDynLibDeps; calling
-// VerifyCommandShebangInterpreter first would leave the cache uninitialized,
-// causing the interpreter hash check to skip the fast-path and potentially
-// use stale data from a previous command.
+// every command in a group.  VerifyCommandDynLibDeps resets the per-command
+// dep-hash cache and then repopulates it with freshly verified entries.  If
+// VerifyCommandShebangInterpreter ran first, the cache would still hold stale
+// entries from the previous command; verifyInterpreterHash would then take the
+// cache fast-path and skip the disk re-hash, missing a file replacement.
 func TestVerifyCommandCallOrder_DynLibBeforeShebang(t *testing.T) {
 	// orderTrackingMock records the sequence of VerifyCommandDynLibDeps and
 	// VerifyCommandShebangInterpreter calls to assert ordering.
