@@ -295,7 +295,9 @@ func syscallAnalysisHasExecSignal(result *fileanalysis.SyscallAnalysisData, goos
 }
 
 // syscallAnalysisHasMprotectExecSignal reports whether SyscallAnalysisData
-// contains mprotect-family ArgEvalResults with PROT_EXEC confirmed.
+// contains mprotect-family ArgEvalResults with PROT_EXEC confirmed or unknown.
+// exec_unknown is treated as high risk because the static analyzer could not
+// determine the prot argument, so PROT_EXEC cannot be ruled out (fail-closed).
 func syscallAnalysisHasMprotectExecSignal(result *fileanalysis.SyscallAnalysisData) bool {
 	if result == nil {
 		return false
@@ -306,7 +308,7 @@ func syscallAnalysisHasMprotectExecSignal(result *fileanalysis.SyscallAnalysisDa
 
 	for _, r := range result.ArgEvalResults {
 		if slices.Contains(elfanalyzer.MprotectFamilyNames, r.SyscallName) &&
-			r.Status == common.SyscallArgEvalExecConfirmed {
+			r.Status != common.SyscallArgEvalExecNotSet {
 			return true
 		}
 	}

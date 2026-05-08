@@ -709,7 +709,7 @@ func TestSyscallAnalysisHasMprotectExecSignal(t *testing.T) {
 					}},
 				},
 			},
-			want: false,
+			want: true,
 		},
 		{
 			name: "non mprotect family exec confirmed",
