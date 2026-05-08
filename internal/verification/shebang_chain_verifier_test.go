@@ -93,7 +93,7 @@ func TestVerifyCommandShebangInterpreter_ShebangChain_BareRef_PathMismatch(t *te
 }
 
 // TestVerifyCommandShebangInterpreter_ShebangChain_UnsupportedHashAlgorithm verifies
-// that a dep hash with an unrecognized algorithm prefix is rejected with
+// that a dep hash with an unsupported algorithm prefix (e.g. "md5:") is rejected with
 // ErrUnsupportedHashAlgorithm rather than ErrMismatch.
 func TestVerifyCommandShebangInterpreter_ShebangChain_UnsupportedHashAlgorithm(t *testing.T) {
 	dir := commontesting.SafeTempDir(t)
