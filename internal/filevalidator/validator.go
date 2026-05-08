@@ -1082,12 +1082,15 @@ func validatePath(filePath string) (common.ResolvedPath, error) {
 
 // calculateHash calculates the hash of the file at the given path.
 // filePath must be validated by validatePath before calling this function.
+// The file is streamed through the hasher to avoid loading it entirely into
+// memory — important for large binaries such as python or node interpreters.
 func (v *Validator) calculateHash(filePath common.ResolvedPath) (string, error) {
-	content, err := safefileio.SafeReadFile(filePath)
+	f, err := v.fileSystem.SafeOpenFile(filePath.String(), os.O_RDONLY, 0)
 	if err != nil {
 		return "", err
 	}
-	return v.algorithm.Sum(bytes.NewReader(content))
+	defer func() { _ = f.Close() }()
+	return v.algorithm.Sum(f)
 }
 
 // verifyAndReadContent performs the common verification and reading logic
