@@ -239,7 +239,7 @@ func TestAnalyzeOneLibrary_unsupportedArchSkipsWarning(t *testing.T) {
 
 // TestAnalyzeLibraries_withoutStore verifies that library analysis still runs
 // without an external dynamic library analysis store.
-func TestAnalyzeLibraries_disabled(t *testing.T) {
+func TestAnalyzeLibraries_withoutStore(t *testing.T) {
 	v := validatorWithTempHashDir(t)
 	v.SetBinaryAnalyzer(&libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}})
 	record := &fileanalysis.Record{
