@@ -28,7 +28,6 @@ type recordCall struct {
 type fakeRecorder struct {
 	responses map[string]error
 	calls     []recordCall
-	hashDir   string
 }
 
 func (f *fakeRecorder) SaveRecord(filePath string, force bool) (string, string, error) {
@@ -39,41 +38,45 @@ func (f *fakeRecorder) SaveRecord(filePath string, force bool) (string, string, 
 	return fmt.Sprintf("/hash/%s.json", filepath.Base(filePath)), "sha256:fakehash", nil
 }
 
-// testDeps returns a deps with the given recorder wired as the validatorFactory.
-// Callers can override individual fields afterwards when needed.
-func testDeps(recorder *fakeRecorder) deps {
-	return deps{
-		validatorFactory: func(hashDir string) (hashRecorder, error) {
-			if recorder != nil {
-				recorder.hashDir = hashDir
-			}
-			return recorder, nil
-		},
-		mkdirAll: os.MkdirAll,
+// testDeps returns a deps suitable for tests that need to exercise run() setup
+// (arg parsing, TOCTOU check, deprecated warning). The validatorFactory creates
+// a real Validator rooted at the given hashDir; callers that only need to test
+// processFiles() behavior should call processFiles() directly instead.
+func testRunDeps(hashDir string) deps {
+	d := defaultDeps()
+	d.validatorFactory = func(dir string) (*filevalidator.Validator, error) {
+		return filevalidator.New(&filevalidator.SHA256{}, dir)
 	}
+	d.mkdirAll = func(path string, perm os.FileMode) error {
+		if path == hashDir {
+			return nil // already created by the test
+		}
+		return os.MkdirAll(path, perm)
+	}
+	return d
 }
 
 func TestRunRequiresAtLeastOneFile(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{}, testDeps(nil), stdout, stderr)
+	// validatorFactory is never called when arg parsing fails, so it can be nil.
+	exitCode := run([]string{}, deps{mkdirAll: os.MkdirAll}, stdout, stderr)
 
 	require.Equal(t, 1, exitCode)
 	assert.Contains(t, stderr.String(), "at least one file path")
 }
 
-func TestRunProcessesMultipleFiles(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
+func TestProcessFiles_MultipleFiles(t *testing.T) {
 	recorder := &fakeRecorder{responses: map[string]error{}}
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
+	cfg := &recordConfig{files: []string{"file1.txt", "file2.txt"}}
 
-	exitCode := run([]string{"-d", tempDir, "file1.txt", "file2.txt"}, testDeps(recorder), stdout, stderr)
+	exitCode := processFiles(recorder, cfg, stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
-	assert.Equal(t, tempDir, recorder.hashDir)
 	require.Len(t, recorder.calls, 2)
 	assert.Equal(t, []recordCall{{"file1.txt", false}, {"file2.txt", false}}, recorder.calls)
 	assert.Contains(t, stdout.String(), "Processing 2 files...")
@@ -81,16 +84,16 @@ func TestRunProcessesMultipleFiles(t *testing.T) {
 	assert.Empty(t, stderr.String())
 }
 
-func TestRunReportsFailuresAndContinues(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
+func TestProcessFiles_ReportsFailuresAndContinues(t *testing.T) {
 	recorder := &fakeRecorder{responses: map[string]error{
 		"bad.dat": errors.New("calculate hash failure"),
 	}}
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
+	cfg := &recordConfig{files: []string{"good1", "bad.dat", "good2"}, force: true}
 
-	exitCode := run([]string{"-force", "-hash-dir", tempDir, "good1", "bad.dat", "good2"}, testDeps(recorder), stdout, stderr)
+	exitCode := processFiles(recorder, cfg, stdout, stderr)
 
 	require.Equal(t, 1, exitCode)
 	require.Len(t, recorder.calls, 3)
@@ -103,17 +106,18 @@ func TestRunReportsFailuresAndContinues(t *testing.T) {
 }
 
 func TestRunWarnsWhenDeprecatedFlagUsed(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
-	recorder := &fakeRecorder{responses: map[string]error{}}
+	hashDir := commontesting.SafeTempDir(t)
+	legacyFile := filepath.Join(hashDir, "legacy.txt")
+	newFile := filepath.Join(hashDir, "new.txt")
+	require.NoError(t, os.WriteFile(legacyFile, []byte("legacy content"), 0o644))
+	require.NoError(t, os.WriteFile(newFile, []byte("new content"), 0o644))
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-hash-dir", tempDir, "-file", "legacy.txt", "new.txt"}, testDeps(recorder), stdout, stderr)
+	exitCode := run([]string{"-hash-dir", hashDir, "-file", legacyFile, newFile}, testRunDeps(hashDir), stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
-	require.Len(t, recorder.calls, 2)
-	assert.Equal(t, "legacy.txt", recorder.calls[0].file)
 	assert.Contains(t, stderr.String(), "deprecated")
 }
 
@@ -134,19 +138,18 @@ func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
 	assert.False(t, cfg.debugInfo)
 }
 
-func TestRunWithSyscallAnalysis(t *testing.T) {
+func TestProcessFiles_WithELF(t *testing.T) {
 	tempDir := commontesting.SafeTempDir(t)
 	recorder := &fakeRecorder{responses: map[string]error{}}
 
-	// Create a static ELF file for testing
 	staticELF := filepath.Join(tempDir, "static.elf")
 	elfanalyzertesting.CreateStaticELFFile(t, staticELF)
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
+	cfg := &recordConfig{files: []string{staticELF}}
 
-	// Syscall analysis is always enabled
-	exitCode := run([]string{"-d", tempDir, staticELF}, testDeps(recorder), stdout, stderr)
+	exitCode := processFiles(recorder, cfg, stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 	require.Len(t, recorder.calls, 1)
@@ -154,24 +157,22 @@ func TestRunWithSyscallAnalysis(t *testing.T) {
 	assert.Contains(t, stdout.String(), "OK")
 }
 
-func TestRunWithSyscallAnalysisSkipsNonELF(t *testing.T) {
+func TestProcessFiles_SkipsNonELF(t *testing.T) {
 	tempDir := commontesting.SafeTempDir(t)
 	recorder := &fakeRecorder{responses: map[string]error{}}
 
-	// Create a non-ELF file
 	nonELF := filepath.Join(tempDir, "script.sh")
 	err := os.WriteFile(nonELF, []byte("#!/bin/bash\necho hello"), 0o755)
 	require.NoError(t, err)
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
+	cfg := &recordConfig{files: []string{nonELF}}
 
-	// Syscall analysis is always enabled but should skip non-ELF files without warning
-	exitCode := run([]string{"-d", tempDir, nonELF}, testDeps(recorder), stdout, stderr)
+	exitCode := processFiles(recorder, cfg, stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 	require.Len(t, recorder.calls, 1)
-	// No warning should be printed for non-ELF files
 	assert.NotContains(t, stderr.String(), "Syscall analysis failed")
 }
 
@@ -192,17 +193,16 @@ func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
 	require.NoError(t, err)
 
 	hashDir := commontesting.SafeTempDir(t)
-	recorder := &fakeRecorder{responses: map[string]error{}}
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
 	// record should continue (exit 0) despite the TOCTOU violation
-	exitCode := run([]string{"-d", hashDir, targetFile}, testDeps(recorder), stdout, stderr)
+	exitCode := run([]string{"-d", hashDir, targetFile}, testRunDeps(hashDir), stdout, stderr)
 
 	// record does NOT abort on TOCTOU violations — it only logs a warning
 	assert.Equal(t, 0, exitCode, "record should continue (exit 0) despite world-writable directory")
-	require.Len(t, recorder.calls, 1, "file should have been processed")
+	assert.Contains(t, stdout.String(), "OK", "file should have been processed")
 }
 
 func extractHashFilePathFromStdout(t *testing.T, output string) string {
