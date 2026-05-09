@@ -458,6 +458,7 @@ libccache-integration-test:
 test-ci-cgo1: unit-test-cgo1 e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
+	@$(GOCMD) tool cover -func=coverage.out | tail -1
 
 # CI matrix leg: CGO=0 — verifies the codebase builds and passes tests without CGO
 test-ci-cgo0: unit-test-cgo0
