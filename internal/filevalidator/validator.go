@@ -1234,12 +1234,12 @@ func (v *Validator) VerifyAndRead(filePath string) ([]byte, error) {
 	})
 }
 
-// convertDetectedSymbols converts binaryanalyzer.DetectedSymbol slice to []string.
+// convertDetectedSymbols converts binaryanalyzer.DetectedSymbol slice to fileanalysis.DetectedSymbol slice.
 // Returns nil for empty input to keep JSON output clean with omitempty.
+// SourcePath is left empty; it is populated later by analysisAggregate.addRecord.
 //
 // NOTE: This is the inverse of convertNetworkSymbolEntries in
-// internal/runner/security/network_analyzer.go. fileanalysis stores symbol
-// names as plain strings.
+// internal/runner/base/security/network_analyzer.go.
 func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis.DetectedSymbol {
 	if len(syms) == 0 {
 		return nil

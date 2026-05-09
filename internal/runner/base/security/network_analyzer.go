@@ -396,12 +396,11 @@ func handleAnalysisOutput(output binaryanalyzer.AnalysisOutput, cmdPath string) 
 	}
 }
 
-// convertNetworkSymbolEntries converts fileanalysis symbols to binaryanalyzer.DetectedSymbol slice.
+// convertNetworkSymbolEntries converts fileanalysis.DetectedSymbol slice to binaryanalyzer.DetectedSymbol slice.
+// Category is derived from the symbol name for runner-internal logging and filtering.
 //
 // NOTE: This is the inverse of convertDetectedSymbols in
-// internal/filevalidator/validator.go. fileanalysis stores symbol names as
-// plain strings, and this
-// function derives Category for runner-internal logging and filtering.
+// internal/filevalidator/validator.go.
 func convertNetworkSymbolEntries(entries []fileanalysis.DetectedSymbol) []binaryanalyzer.DetectedSymbol {
 	if len(entries) == 0 {
 		return nil
