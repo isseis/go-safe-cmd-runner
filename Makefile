@@ -115,7 +115,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test test-ci test-ci-cgo1 test-ci-cgo0 test-all benchmark coverage coverage-internal hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test unit-test-cgo1 unit-test-cgo0 e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
+.PHONY: all lint build run clean test test-ci test-ci-cgo1 test-ci-cgo0 test-all benchmark hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test unit-test-cgo1 unit-test-cgo0 e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
 
 all: security-check
 
@@ -489,16 +489,6 @@ fmt-all:
 benchmark:
 	$(GOTEST) -tags test -bench=. -benchmem ./internal/runner/resource/ ./internal/runner/config
 
-coverage:
-	$(ENVSET) $(GOTEST) -tags test -coverprofile=coverage.out $$(go list ./internal/... | grep -v '/testing$$' | grep -v '/binaryanalyzer$$' | grep -v '/dynlib$$')
-	$(GOCMD) tool cover -html=coverage.out -o coverage.html
-	@echo "Coverage report generated: coverage.html"
-
-coverage-internal:
-	$(ENVSET) $(GOTEST) -tags test -coverprofile=coverage_internal.out ./internal/...
-	$(GOCMD) tool cover -html=coverage_internal.out -o coverage_internal.html
-	@echo "Internal packages coverage report generated: coverage_internal.html"
-	@$(GOCMD) tool cover -func=coverage_internal.out | tail -1
 
 # Integration tests - tests with actual runner binary execution
 integration-test: $(BINARY_RUNNER) hash-integration-test
