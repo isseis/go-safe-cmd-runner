@@ -18,7 +18,7 @@
 
 対象: `internal/filevalidator/validator.go`
 
-- [ ] `ValidatorConfig` 構造体をファイル先頭付近（`Validator` 構造体定義より前）に追加する
+- [x] `ValidatorConfig` 構造体をファイル先頭付近（`Validator` 構造体定義より前）に追加する
   ```go
   type ValidatorConfig struct {
       ELFDynLibAnalyzer   *elfdynlib.DynLibAnalyzer
@@ -31,7 +31,7 @@
       DebugInfo           bool
   }
   ```
-- [ ] コメントは英語で記載し日本語を含まないことを確認する
+- [x] コメントは英語で記載し日本語を含まないことを確認する
 
 AC カバレッジ: AC-1 (ゼロ値 = 全解析無効)
 
@@ -39,17 +39,17 @@ AC カバレッジ: AC-1 (ゼロ値 = 全解析無効)
 
 対象: `internal/filevalidator/validator.go`
 
-- [ ] `New` の第 3 引数に `cfg ValidatorConfig` を追加する
+- [x] `New` の第 3 引数に `cfg ValidatorConfig` を追加する
   ```go
   func New(algorithm HashAlgorithm, hashDir string, cfg ValidatorConfig) (*Validator, error)
   ```
-- [ ] `newValidator` の第 4 引数に `cfg ValidatorConfig` を追加し、返却する `&Validator{}` リテラルで各フィールドを設定する
+- [x] `newValidator` の第 4 引数に `cfg ValidatorConfig` を追加し、返却する `&Validator{}` リテラルで各フィールドを設定する
   ```go
   func newValidator(algorithm HashAlgorithm, hashDir common.ResolvedPath, hashFilePathGetter common.HashFilePathGetter, cfg ValidatorConfig) (*Validator, error)
   ```
   設定対象フィールド: `elfDynlibAnalyzer`, `machoDynlibAnalyzer`, `binaryAnalyzer`,
   `syscallAnalyzer`, `libcCache`, `libSystemCache`, `machoSyscallTable`, `includeDebugInfo`
-- [ ] `New` から `newValidator` へ `cfg` を転送する
+- [x] `New` から `newValidator` へ `cfg` を転送する
 
 AC カバレッジ: AC-1
 
@@ -58,14 +58,14 @@ AC カバレッジ: AC-1
 対象: `internal/filevalidator/validator.go`
 
 削除対象メソッド（8 個）:
-- [ ] `SetELFDynLibAnalyzer`
-- [ ] `SetMachODynLibAnalyzer`
-- [ ] `SetBinaryAnalyzer`
-- [ ] `SetSyscallAnalyzer`
-- [ ] `SetLibcCache`
-- [ ] `SetLibSystemCache`
-- [ ] `SetMachoSyscallTable`
-- [ ] `SetIncludeDebugInfo`
+- [x] `SetELFDynLibAnalyzer`
+- [x] `SetMachODynLibAnalyzer`
+- [x] `SetBinaryAnalyzer`
+- [x] `SetSyscallAnalyzer`
+- [x] `SetLibcCache`
+- [x] `SetLibSystemCache`
+- [x] `SetMachoSyscallTable`
+- [x] `SetIncludeDebugInfo`
 
 存続させるメソッド（変更なし）:
 - `SetDynamicLibAnalysisStore` — 循環依存のため除外（02_architecture.md 1.3 参照）
@@ -82,10 +82,10 @@ AC カバレッジ: AC-2, AC-3
 
 対象: `internal/filevalidator/validator_library_analysis_test.go`
 
-- [ ] `validatorWithTempHashDir(t *testing.T)` を
+- [x] `validatorWithTempHashDir(t *testing.T)` を
   `validatorWithTempHashDir(t *testing.T, cfg ValidatorConfig)` に変更する
-- [ ] 内部の `New(&SHA256{}, hashDir)` を `New(&SHA256{}, hashDir, cfg)` に変更する
-- [ ] このヘルパーを呼ぶすべての箇所（同ファイル内）に `ValidatorConfig{}` または必要な設定を渡すよう更新する（下記 2.2 で詳細化）
+- [x] 内部の `New(&SHA256{}, hashDir)` を `New(&SHA256{}, hashDir, cfg)` に変更する
+- [x] このヘルパーを呼ぶすべての箇所（同ファイル内）に `ValidatorConfig{}` または必要な設定を渡すよう更新する（下記 2.2 で詳細化）
 
 AC カバレッジ: AC-1 (ゼロ値等価)
 
@@ -93,11 +93,11 @@ AC カバレッジ: AC-1 (ゼロ値等価)
 
 対象: `internal/filevalidator/validator_library_analysis_test.go`
 
-- [ ] `validatorWithTempHashDir(t)` 呼び出し後にセッターを呼ぶ各テストを、
+- [x] `validatorWithTempHashDir(t)` 呼び出し後にセッターを呼ぶ各テストを、
   `validatorWithTempHashDir(t, ValidatorConfig{BinaryAnalyzer: ..., SyscallAnalyzer: ...})` 形式に変更する
-- [ ] `validatorWithStore` は `validatorWithTempHashDir(t, ValidatorConfig{})` を呼ぶよう更新する
+- [x] `validatorWithStore` は `validatorWithTempHashDir(t, ValidatorConfig{})` を呼ぶよう更新する
   （`SetDynamicLibAnalysisStore` の呼び出しはそのまま残す — AC-3 テスト）
-- [ ] セッター呼び出し行を削除し、コンパイルエラーがなくなることを確認する
+- [x] セッター呼び出し行を削除し、コンパイルエラーがなくなることを確認する
 
 AC カバレッジ: AC-1, AC-2, AC-3
 
@@ -105,12 +105,12 @@ AC カバレッジ: AC-1, AC-2, AC-3
 
 対象: `internal/filevalidator/validator_test.go`
 
-- [ ] `New(&SHA256{}, hashDir)` を全 27 箇所で `New(&SHA256{}, hashDir, ValidatorConfig{})` に変更する
-- [ ] `newValidatorWithStubs(t, libcCache)` ヘルパーを修正する
+- [x] `New(&SHA256{}, hashDir)` を全 27 箇所で `New(&SHA256{}, hashDir, ValidatorConfig{})` に変更する
+- [x] `newValidatorWithStubs(t, libcCache)` ヘルパーを修正する
   - `v.SetLibcCache(libcCache)` を削除し、`New(&SHA256{}, hashDir, ValidatorConfig{LibcCache: libcCache})` に変更する
   - nil ガード（`if libcCache != nil`）は不要になるため削除する
-- [ ] 各テスト内で `v.SetXxx(...)` を呼んでいる箇所は、直前の `New` 呼び出しの `ValidatorConfig` に移動する（23 箇所）
-- [ ] `newCollisionValidator` ヘルパー内の `newValidator(&SHA256{}, resolvedHashDir, getter)` を
+- [x] 各テスト内で `v.SetXxx(...)` を呼んでいる箇所は、直前の `New` 呼び出しの `ValidatorConfig` に移動する（23 箇所）
+- [x] `newCollisionValidator` ヘルパー内の `newValidator(&SHA256{}, resolvedHashDir, getter)` を
   `newValidator(&SHA256{}, resolvedHashDir, getter, ValidatorConfig{})` に変更する
 
 AC カバレッジ: AC-1, AC-2
@@ -119,8 +119,8 @@ AC カバレッジ: AC-1, AC-2
 
 対象: `internal/filevalidator/validator_shebang_cache_test.go`
 
-- [ ] `New(&SHA256{}, hashDir)` を 4 箇所で `ValidatorConfig{BinaryAnalyzer: spy}` 付きに変更する
-- [ ] `v.SetBinaryAnalyzer(spy)` 呼び出し 4 箇所を削除する
+- [x] `New(&SHA256{}, hashDir)` を 4 箇所で `ValidatorConfig{BinaryAnalyzer: spy}` 付きに変更する
+- [x] `v.SetBinaryAnalyzer(spy)` 呼び出し 4 箇所を削除する
 
 AC カバレッジ: AC-1, AC-2
 
@@ -128,8 +128,8 @@ AC カバレッジ: AC-1, AC-2
 
 対象: `internal/filevalidator/validator_macho_test.go`
 
-- [ ] `New(&SHA256{}, hashDir)` 6 箇所に対応する `ValidatorConfig` を設定する
-- [ ] セッター呼び出し 9 箇所（`SetBinaryAnalyzer`, `SetIncludeDebugInfo`, `SetLibSystemCache`）を削除し、`ValidatorConfig` に移動する
+- [x] `New(&SHA256{}, hashDir)` 6 箇所に対応する `ValidatorConfig` を設定する
+- [x] セッター呼び出し 9 箇所（`SetBinaryAnalyzer`, `SetIncludeDebugInfo`, `SetLibSystemCache`）を削除し、`ValidatorConfig` に移動する
 
 AC カバレッジ: AC-1, AC-2
 
@@ -137,8 +137,8 @@ AC カバレッジ: AC-1, AC-2
 
 対象: `internal/filevalidator/validator_macho_darwin_test.go`
 
-- [ ] `New(&SHA256{}, hashDir)` に `ValidatorConfig{MachODynLibAnalyzer: ...}` を追加する
-- [ ] `v.SetMachODynLibAnalyzer(...)` を削除する
+- [x] `New(&SHA256{}, hashDir)` に `ValidatorConfig{MachODynLibAnalyzer: ...}` を追加する
+- [x] `v.SetMachODynLibAnalyzer(...)` を削除する
 
 AC カバレッジ: AC-1, AC-2
 
@@ -146,16 +146,16 @@ AC カバレッジ: AC-1, AC-2
 
 対象: `internal/filevalidator/validator_dynlib_sort_linux_test.go`
 
-- [ ] `New(&SHA256{}, hashDir)` に `ValidatorConfig{ELFDynLibAnalyzer: ...}` を追加する
-- [ ] `v.SetELFDynLibAnalyzer(...)` を削除する
+- [x] `New(&SHA256{}, hashDir)` に `ValidatorConfig{ELFDynLibAnalyzer: ...}` を追加する
+- [x] `v.SetELFDynLibAnalyzer(...)` を削除する
 
 AC カバレッジ: AC-1, AC-2
 
 ### タスク 2.8: その他パッケージ内テストファイルの `New` 呼び出し更新
 
-- [ ] `validator_error_test.go` — 3 箇所に `ValidatorConfig{}` を追加する
-- [ ] `validator_shebang_test.go` — 7 箇所に `ValidatorConfig{}` を追加する
-- [ ] `benchmark_test.go` — 1 箇所に `ValidatorConfig{}` を追加する
+- [x] `validator_error_test.go` — 3 箇所に `ValidatorConfig{}` を追加する
+- [x] `validator_shebang_test.go` — 7 箇所に `ValidatorConfig{}` を追加する
+- [x] `benchmark_test.go` — 1 箇所に `ValidatorConfig{}` を追加する
 
 AC カバレッジ: AC-1
 
@@ -167,11 +167,11 @@ AC カバレッジ: AC-1
 
 対象: `cmd/record/main.go`
 
-- [ ] `deps.validatorFactory` フィールドの型を変更する
+- [x] `deps.validatorFactory` フィールドの型を変更する
   ```go
   validatorFactory func(hashDir string, cfg filevalidator.ValidatorConfig) (*filevalidator.Validator, error)
   ```
-- [ ] `defaultDeps()` 内の factory ラムダを更新する
+- [x] `defaultDeps()` 内の factory ラムダを更新する
   ```go
   validatorFactory: func(hashDir string, cfg filevalidator.ValidatorConfig) (*filevalidator.Validator, error) {
       return filevalidator.New(&filevalidator.SHA256{}, hashDir, cfg)
@@ -184,7 +184,7 @@ AC カバレッジ: AC-4
 
 対象: `cmd/record/main.go`
 
-- [ ] `elfDynlibAnalyzerFactory` / `machoDynlibAnalyzerFactory` を呼び出す前に
+- [x] `elfDynlibAnalyzerFactory` / `machoDynlibAnalyzerFactory` を呼び出す前に
   `ValidatorConfig` を組み立てるコードブロックを追加する
   ```go
   vCfg := filevalidator.ValidatorConfig{
@@ -202,11 +202,11 @@ AC カバレッジ: AC-4
       vCfg.MachODynLibAnalyzer = d.machoDynlibAnalyzerFactory()
   }
   ```
-- [ ] `d.validatorFactory(cfg.hashDir)` を `d.validatorFactory(cfg.hashDir, vCfg)` に変更する
-- [ ] 旧セッター呼び出し 8 行（`SetELFDynLibAnalyzer`, `SetMachODynLibAnalyzer`, `SetBinaryAnalyzer`,
+- [x] `d.validatorFactory(cfg.hashDir)` を `d.validatorFactory(cfg.hashDir, vCfg)` に変更する
+- [x] 旧セッター呼び出し 8 行（`SetELFDynLibAnalyzer`, `SetMachODynLibAnalyzer`, `SetBinaryAnalyzer`,
   `SetSyscallAnalyzer`, `SetLibcCache`, `SetIncludeDebugInfo`, `SetLibSystemCache`,
   `SetMachoSyscallTable`）を削除する
-- [ ] `SetDynamicLibAnalysisStore` の呼び出しはそのまま残す
+- [x] `SetDynamicLibAnalysisStore` の呼び出しはそのまま残す
 
 > **実行順序の変更について**: 現状のコードでは `syscallAnalyzer`（line 143）・`cacheMgr`（line 157）・
 > `machoCacheMgr`（line 167）の生成が `validatorFactory` 呼び出し（line 128）の**後**にある。
@@ -226,9 +226,9 @@ AC カバレッジ: AC-4
 
 対象: `cmd/record/main_test.go`
 
-- [ ] `testRunDeps` は `defaultDeps()` を呼ぶだけなので、factory 型変更は自動的に反映される
+- [x] `testRunDeps` は `defaultDeps()` を呼ぶだけなので、factory 型変更は自動的に反映される
   — コンパイルが通ることで確認する
-- [ ] `filevalidator.New` を直接呼ぶ 2 箇所（line 257, 278）に `filevalidator.ValidatorConfig{}` を追加する
+- [x] `filevalidator.New` を直接呼ぶ 2 箇所（line 257, 278）に `filevalidator.ValidatorConfig{}` を追加する
 
 AC カバレッジ: AC-4, AC-5
 
@@ -238,16 +238,16 @@ AC カバレッジ: AC-4, AC-5
 
 ### タスク 4.1: `internal/cmdcommon/common.go`
 
-- [ ] `filevalidator.New(&filevalidator.SHA256{}, hashDir)` を
+- [x] `filevalidator.New(&filevalidator.SHA256{}, hashDir)` を
   `filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})` に変更する
 
 ### タスク 4.2: `internal/runner/base/security/hash_validation.go`
 
-- [ ] `filevalidator.New(&filevalidator.SHA256{}, hashDir)` に `filevalidator.ValidatorConfig{}` を追加する
+- [x] `filevalidator.New(&filevalidator.SHA256{}, hashDir)` に `filevalidator.ValidatorConfig{}` を追加する
 
 ### タスク 4.3: `internal/verification/manager.go`
 
-- [ ] `filevalidator.New(&filevalidator.SHA256{}, hashDir)` に `filevalidator.ValidatorConfig{}` を追加する
+- [x] `filevalidator.New(&filevalidator.SHA256{}, hashDir)` に `filevalidator.ValidatorConfig{}` を追加する
 
 AC カバレッジ: AC-5 (コンパイル成功)
 
@@ -257,29 +257,29 @@ AC カバレッジ: AC-5 (コンパイル成功)
 
 ### タスク 5.1: `internal/libccache/integration_test.go`（1 `New` + 4 セッター）
 
-- [ ] `filevalidator.New(&filevalidator.SHA256{}, hashDir)` に対応する `ValidatorConfig`
+- [x] `filevalidator.New(&filevalidator.SHA256{}, hashDir)` に対応する `ValidatorConfig`
   （`ELFDynLibAnalyzer`, `SyscallAnalyzer`, `LibcCache`, `DebugInfo: true`）を渡すよう変更する
-- [ ] セッター呼び出し 4 行を削除する
+- [x] セッター呼び出し 4 行を削除する
 
 ### タスク 5.2: `internal/libccache/integration_darwin_test.go`（2 `New` + 2 セッター）
 
-- [ ] `filevalidator.New` の 2 箇所のうちセッターを呼ぶ箇所（line 42 付近）に
+- [x] `filevalidator.New` の 2 箇所のうちセッターを呼ぶ箇所（line 42 付近）に
   `ValidatorConfig{MachODynLibAnalyzer: ..., LibSystemCache: ...}` を渡すよう変更する
-- [ ] もう 1 箇所（line 240 付近）は `ValidatorConfig{}` のみ追加する
-- [ ] セッター呼び出し 2 行を削除する
+- [x] もう 1 箇所（line 240 付近）は `ValidatorConfig{}` のみ追加する
+- [x] セッター呼び出し 2 行を削除する
 
 ### タスク 5.3: `internal/verification/manager_macho_test.go`（2 `New` + 2 セッター）
 
-- [ ] 各 `filevalidator.New` 呼び出し後の `SetMachODynLibAnalyzer` を
+- [x] 各 `filevalidator.New` 呼び出し後の `SetMachODynLibAnalyzer` を
   `ValidatorConfig{MachODynLibAnalyzer: ...}` に移動する
 
 ### タスク 5.4: その他外部テストの `New` 呼び出し更新（`ValidatorConfig{}` 追加のみ）
 
-- [ ] `internal/runner/e2e_shebang_test.go` — 4 箇所
-- [ ] `internal/runner/bootstrap/config_test.go` — 1 箇所
-- [ ] `internal/runner/config/loader_verification_test.go` — 1 箇所
-- [ ] `cmd/runner/integration_security_test.go` — 1 箇所
-- [ ] `test/security/hash_bypass_test.go` — 4 箇所
+- [x] `internal/runner/e2e_shebang_test.go` — 4 箇所
+- [x] `internal/runner/bootstrap/config_test.go` — 1 箇所
+- [x] `internal/runner/config/loader_verification_test.go` — 1 箇所
+- [x] `cmd/runner/integration_security_test.go` — 1 箇所
+- [x] `test/security/hash_bypass_test.go` — 4 箇所
 
 AC カバレッジ: AC-5 (コンパイル成功)
 
@@ -289,9 +289,9 @@ AC カバレッジ: AC-5 (コンパイル成功)
 
 ### タスク 6.1: フォーマット・テスト・リント
 
-- [ ] `make fmt` を実行してフォーマットエラーがないことを確認する
-- [ ] `go test -tags test -v ./...` を実行して全テストが通ることを確認する
-- [ ] `make lint` を実行して linter エラーがないことを確認する
+- [x] `make fmt` を実行してフォーマットエラーがないことを確認する
+- [x] `go test -tags test -v ./...` を実行して全テストが通ることを確認する
+- [x] `make lint` を実行して linter エラーがないことを確認する
 
 AC カバレッジ: AC-5
 

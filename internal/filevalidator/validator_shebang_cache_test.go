@@ -39,9 +39,8 @@ func TestSaveRecord_ShebangInterpreterCacheReuse(t *testing.T) {
 	spy := &shebangCacheSpyBinaryAnalyzer{
 		output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols},
 	}
-	validator, err := New(&SHA256{}, hashDir)
+	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: spy})
 	require.NoError(t, err)
-	validator.SetBinaryAnalyzer(spy)
 
 	scriptA := commontesting.WriteExecutableFile(t, scriptDir, "a.sh", []byte("#!/bin/sh\necho A\n"))
 	scriptB := commontesting.WriteExecutableFile(t, scriptDir, "b.sh", []byte("#!/bin/sh\necho B\n"))
@@ -64,9 +63,8 @@ func TestSaveRecord_ShebangInterpreterCacheOutputEquivalence(t *testing.T) {
 	spy := &shebangCacheSpyBinaryAnalyzer{
 		output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols},
 	}
-	validator, err := New(&SHA256{}, hashDir)
+	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: spy})
 	require.NoError(t, err)
-	validator.SetBinaryAnalyzer(spy)
 
 	scriptA := commontesting.WriteExecutableFile(t, scriptDir, "a.sh", []byte("#!/bin/sh\necho A\n"))
 	scriptB := commontesting.WriteExecutableFile(t, scriptDir, "b.sh", []byte("#!/bin/sh\necho B\n"))
@@ -99,10 +97,9 @@ func TestSaveRecord_ShebangInterpreterCacheHashChangeReanalyzes(t *testing.T) {
 	interpreterPath := filepath.Join(dir, "test-interpreter")
 	writeTestInterpreterFile(t, interpreterPath, "variant-1")
 
-	validator, err := New(&SHA256{}, hashDir)
-	require.NoError(t, err)
 	spy := &shebangCacheSpyBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}}
-	validator.SetBinaryAnalyzer(spy)
+	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: spy})
+	require.NoError(t, err)
 
 	scriptA := commontesting.WriteExecutableFile(t, dir, "a.sh", []byte(fmt.Sprintf("#!%s\necho A\n", interpreterPath)))
 	_, _, err = validator.SaveRecord(scriptA, false)
@@ -151,9 +148,8 @@ func TestSaveRecord_ShebangInterpreterCacheEnvForm(t *testing.T) {
 	spy := &shebangCacheSpyBinaryAnalyzer{
 		output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols},
 	}
-	validator, err := New(&SHA256{}, hashDir)
+	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: spy})
 	require.NoError(t, err)
-	validator.SetBinaryAnalyzer(spy)
 
 	scriptA := commontesting.WriteExecutableFile(t, scriptDir, "a.sh", []byte("#!/usr/bin/env sh\necho A\n"))
 	scriptB := commontesting.WriteExecutableFile(t, scriptDir, "b.sh", []byte("#!/usr/bin/env sh\necho B\n"))

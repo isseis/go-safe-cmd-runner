@@ -57,7 +57,7 @@ func TestValidator_RecordAndVerify(t *testing.T) {
 	require.NoErrorf(t, err, "Failed to resolve symlinks in test file path: %v", err)
 
 	// Create a validator
-	validator, err := New(&SHA256{}, tempDir)
+	validator, err := New(&SHA256{}, tempDir, ValidatorConfig{})
 	require.NoError(t, err, "Failed to create validator")
 
 	// Test SaveRecord
@@ -128,7 +128,7 @@ func TestNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := New(tt.algo, tt.hashDir)
+			_, err := New(tt.algo, tt.hashDir, ValidatorConfig{})
 			if tt.wantErr {
 				assert.Error(t, err, "New() should return an error")
 			} else {
@@ -159,7 +159,7 @@ func TestValidator_Record_Symlink(t *testing.T) {
 	expectedPath := resolvedSymlinkPath
 
 	// Create a validator
-	validator, err := New(&SHA256{}, tempDir)
+	validator, err := New(&SHA256{}, tempDir, ValidatorConfig{})
 	require.NoError(t, err, "Failed to create validator")
 
 	// Test SaveRecord with symlink
@@ -191,7 +191,7 @@ func TestValidator_Verify_Symlink(t *testing.T) {
 	require.NoError(t, err, "Failed to resolve symlinks in test file path")
 
 	// Create a validator and record the original file
-	validator, err := New(&SHA256{}, tempDir)
+	validator, err := New(&SHA256{}, tempDir, ValidatorConfig{})
 	require.NoError(t, err, "Failed to create validator")
 
 	_, _, err = validator.SaveRecord(testFilePath, false)
@@ -214,7 +214,7 @@ func TestValidator_Record_EmptyHashFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(testFilePath, []byte("test content"), 0o644), "Failed to create test file")
 
 	// Create a validator
-	validator, err := New(&SHA256{}, tempDir)
+	validator, err := New(&SHA256{}, tempDir, ValidatorConfig{})
 	require.NoError(t, err, "Failed to create validator")
 
 	// Get the hash file path
@@ -249,7 +249,7 @@ func TestValidator_FileAnalysisRecordFormat(t *testing.T) {
 	require.NoError(t, os.WriteFile(testFilePath, []byte("test content"), 0o644), "Failed to create test file")
 
 	// Create a validator
-	validator, err := New(&SHA256{}, tempDir)
+	validator, err := New(&SHA256{}, tempDir, ValidatorConfig{})
 	require.NoError(t, err, "Failed to create validator")
 
 	// Save the file record
@@ -286,7 +286,7 @@ func TestValidator_HashAlgorithmConsistency(t *testing.T) {
 
 	// Create validator with MockHashAlgorithm (not SHA-256)
 	mockAlgo := &MockHashAlgorithm{}
-	validator, err := New(mockAlgo, tempDir)
+	validator, err := New(mockAlgo, tempDir, ValidatorConfig{})
 	require.NoError(t, err, "Failed to create validator")
 
 	// Save the file record - this should use mockAlgo.Sum()
@@ -337,13 +337,13 @@ func TestValidator_CrossAlgorithmVerificationFails(t *testing.T) {
 	require.NoError(t, err, "Failed to create test file")
 
 	// SaveRecord with MockHashAlgorithm
-	mockValidator, err := New(&MockHashAlgorithm{}, tempDir)
+	mockValidator, err := New(&MockHashAlgorithm{}, tempDir, ValidatorConfig{})
 	require.NoError(t, err, "Failed to create mock validator")
 	_, _, err = mockValidator.SaveRecord(testFilePath, false)
 	require.NoError(t, err, "Failed to record file with MockHashAlgorithm")
 
 	// Attempt verification with SHA-256 validator (different algorithm)
-	sha256Validator, err := New(&SHA256{}, tempDir)
+	sha256Validator, err := New(&SHA256{}, tempDir, ValidatorConfig{})
 	require.NoError(t, err, "Failed to create SHA-256 validator")
 
 	// This should fail because the stored hash uses mock: prefix but sha256 validator
@@ -359,7 +359,7 @@ func TestValidator_VerifyAndRead(t *testing.T) {
 	tempDir := safeTempDir(t)
 
 	// Create a validator
-	validator, err := New(&SHA256{}, tempDir)
+	validator, err := New(&SHA256{}, tempDir, ValidatorConfig{})
 	require.NoError(t, err, "Failed to create validator")
 
 	testContent := "test content for VerifyAndRead"
@@ -443,7 +443,7 @@ func TestValidator_VerifyAndRead_TOCTOUPrevention(t *testing.T) {
 	tempDir := safeTempDir(t)
 
 	// Create a validator
-	validator, err := New(&SHA256{}, tempDir)
+	validator, err := New(&SHA256{}, tempDir, ValidatorConfig{})
 	require.NoError(t, err, "Failed to create validator")
 
 	testContent := "original content for TOCTOU test"
@@ -490,7 +490,7 @@ func TestNew_RecordAndVerify(t *testing.T) {
 	tempDir := safeTempDir(t)
 
 	// Create a validator with analysis store support
-	validator, err := New(&SHA256{}, tempDir)
+	validator, err := New(&SHA256{}, tempDir, ValidatorConfig{})
 	require.NoError(t, err, "Failed to create validator with analysis store")
 
 	// Verify that Store returns a non-nil store
@@ -542,7 +542,7 @@ func TestNew_PreservesExistingFields(t *testing.T) {
 	tempDir := safeTempDir(t)
 
 	// Create a validator with analysis store support
-	validator, err := New(&SHA256{}, tempDir)
+	validator, err := New(&SHA256{}, tempDir, ValidatorConfig{})
 	require.NoError(t, err, "Failed to create validator with analysis store")
 
 	store := validator.Store()
@@ -602,7 +602,7 @@ func TestNew_CreatesDirectory(t *testing.T) {
 	require.True(t, os.IsNotExist(err), "hashDir should not exist before calling New")
 
 	// New should succeed even though hashDir doesn't exist
-	validator, err := New(&SHA256{}, hashDir)
+	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{})
 	require.NoError(t, err, "New should create the directory automatically")
 	require.NotNil(t, validator)
 
@@ -643,7 +643,7 @@ func newCollisionValidator(t *testing.T) (*Validator, string) {
 	resolvedHashDir, err := common.NewResolvedPath(hashDir)
 	require.NoError(t, err)
 
-	v, err := newValidator(&SHA256{}, resolvedHashDir, getter)
+	v, err := newValidator(&SHA256{}, resolvedHashDir, getter, ValidatorConfig{})
 	require.NoError(t, err)
 	v.store = store
 
@@ -697,7 +697,7 @@ func TestValidator_Verify_HashFilePathCollision(t *testing.T) {
 }
 
 // TestAnalyze_Force verifies that record --force updates DynLibDeps.
-// This covers Phase 3 completion criterion: DynLibDeps is updated by `record --force`.
+// Ensures DynLibDeps is updated by `record --force`.
 func TestAnalyze_Force(t *testing.T) {
 	tempDir := safeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
@@ -706,7 +706,7 @@ func TestAnalyze_Force(t *testing.T) {
 	targetFile := filepath.Join(tempDir, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("content"), 0o644))
 
-	v, err := New(&SHA256{}, hashDir)
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{})
 	require.NoError(t, err)
 
 	// First record without force — succeeds.
@@ -733,7 +733,7 @@ func TestRecord_BinaryAnalyzerNil_NoError(t *testing.T) {
 	targetFile := filepath.Join(tempDir, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("content"), 0o644))
 
-	v, err := New(&SHA256{}, hashDir)
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{})
 	require.NoError(t, err)
 	// binaryAnalyzer is nil by default — do not call SetBinaryAnalyzer.
 
@@ -774,10 +774,11 @@ func recordWithBinaryAnalyzerOptions(t *testing.T, stub *stubBinaryAnalyzer, inc
 	targetFile := filepath.Join(tempDir, "target.bin")
 	require.NoError(t, os.WriteFile(targetFile, []byte("binary content"), 0o644))
 
-	v, err := New(&SHA256{}, hashDir)
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{
+		BinaryAnalyzer: stub,
+		DebugInfo:      includeDebugInfo,
+	})
 	require.NoError(t, err)
-	v.SetBinaryAnalyzer(stub)
-	v.SetIncludeDebugInfo(includeDebugInfo)
 
 	_, _, recErr := v.SaveRecord(targetFile, false)
 	if recErr != nil {
@@ -797,10 +798,11 @@ func TestRecord_SyscallOccurrence_SourcePathSetWhenDebugInfo(t *testing.T) {
 		targetFile := filepath.Join(tempDir, "target.bin")
 		elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
 
-		v, err := New(&SHA256{}, hashDir)
+		v, err := New(&SHA256{}, hashDir, ValidatorConfig{
+			DebugInfo:       true,
+			SyscallAnalyzer: &stubSyscallAnalyzerWithDebugInfo{},
+		})
 		require.NoError(t, err)
-		v.SetIncludeDebugInfo(true)
-		v.SetSyscallAnalyzer(&stubSyscallAnalyzerWithDebugInfo{})
 
 		_, _, err = v.SaveRecord(targetFile, false)
 		require.NoError(t, err)
@@ -821,20 +823,21 @@ func TestRecord_SyscallOccurrence_SourcePathSetWhenDebugInfo(t *testing.T) {
 		targetFile := filepath.Join(tempDir, "target-libc.bin")
 		elfanalyzertesting.CreateELFWithSymbols(t, targetFile, []elfanalyzertesting.SymbolSpec{{Name: "socket"}})
 
-		v, err := New(&SHA256{}, hashDir)
-		require.NoError(t, err)
-		v.SetIncludeDebugInfo(true)
-		v.SetLibcCache(&stubLibcCache{
-			syscalls: []common.SyscallInfo{{
-				Number: 41,
-				Name:   "socket",
-				Occurrences: []common.SyscallOccurrence{{
-					Location:            0,
-					DeterminationMethod: "lib_cache_match",
-					Source:              "libc_symbol_import",
+		v, err := New(&SHA256{}, hashDir, ValidatorConfig{
+			DebugInfo: true,
+			LibcCache: &stubLibcCache{
+				syscalls: []common.SyscallInfo{{
+					Number: 41,
+					Name:   "socket",
+					Occurrences: []common.SyscallOccurrence{{
+						Location:            0,
+						DeterminationMethod: "lib_cache_match",
+						Source:              "libc_symbol_import",
+					}},
 				}},
-			}},
+			},
 		})
+		require.NoError(t, err)
 
 		record := &fileanalysis.Record{
 			DynLibDeps: []fileanalysis.LibEntry{{
@@ -865,9 +868,8 @@ func TestRecord_SyscallOccurrence_SourcePathOmittedWithoutDebugInfo(t *testing.T
 	targetFile := filepath.Join(tempDir, "target.bin")
 	elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
 
-	v, err := New(&SHA256{}, hashDir)
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{SyscallAnalyzer: &stubSyscallAnalyzerWithDebugInfo{}})
 	require.NoError(t, err)
-	v.SetSyscallAnalyzer(&stubSyscallAnalyzerWithDebugInfo{})
 
 	_, _, err = v.SaveRecord(targetFile, false)
 	require.NoError(t, err)
@@ -955,15 +957,16 @@ func TestRecord_ShebangChainAggregatesDepsAndTopLevelAnalysis(t *testing.T) {
 		t.Skip("skipping: /bin/sh not available in this environment")
 	}
 
-	v, err := New(&SHA256{}, hashDir)
-	require.NoError(t, err)
-	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
-		result: binaryanalyzer.NetworkDetected,
-		detectedSymbols: []binaryanalyzer.DetectedSymbol{
-			{Name: "socket", Category: "network"},
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{
+		BinaryAnalyzer: &stubBinaryAnalyzer{
+			result: binaryanalyzer.NetworkDetected,
+			detectedSymbols: []binaryanalyzer.DetectedSymbol{
+				{Name: "socket", Category: "network"},
+			},
 		},
+		SyscallAnalyzer: &stubSyscallAnalyzerReturnsOne{},
 	})
-	v.SetSyscallAnalyzer(&stubSyscallAnalyzerReturnsOne{})
+	require.NoError(t, err)
 
 	_, _, err = v.SaveRecord(script, false)
 	require.NoError(t, err)
@@ -1025,24 +1028,22 @@ func TestRecord_Force_OverwritesSymbolAnalysis(t *testing.T) {
 	targetFile := filepath.Join(tempDir, "target.bin")
 	require.NoError(t, os.WriteFile(targetFile, []byte("binary content"), 0o644))
 
-	v, err := New(&SHA256{}, hashDir)
-	require.NoError(t, err)
-
-	// First record with network symbols detected.
-	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: &stubBinaryAnalyzer{
 		result: binaryanalyzer.NetworkDetected,
 		detectedSymbols: []binaryanalyzer.DetectedSymbol{
 			{Name: "socket", Category: "network"},
 		},
-	})
+	}})
+	require.NoError(t, err)
+
+	// First record with network symbols detected.
 	_, _, err = v.SaveRecord(targetFile, false)
 	require.NoError(t, err)
 
 	// Second record (force=true) with no network symbols: should overwrite.
-	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
-		result: binaryanalyzer.NoNetworkSymbols,
-	})
-	_, _, err = v.SaveRecord(targetFile, true)
+	v2, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}})
+	require.NoError(t, err)
+	_, _, err = v2.SaveRecord(targetFile, true)
 	require.NoError(t, err)
 
 	record, loadErr := v.LoadRecord(targetFile)
@@ -1064,16 +1065,15 @@ func TestRecord_Force_NetworkToStaticBinary_ClearsSymbolAnalysis(t *testing.T) {
 	targetFile := filepath.Join(tempDir, "target.bin")
 	require.NoError(t, os.WriteFile(targetFile, []byte("binary content"), 0o644))
 
-	v, err := New(&SHA256{}, hashDir)
-	require.NoError(t, err)
-
-	// First record: dynamic ELF with network symbols.
-	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: &stubBinaryAnalyzer{
 		result: binaryanalyzer.NetworkDetected,
 		detectedSymbols: []binaryanalyzer.DetectedSymbol{
 			{Name: "socket", Category: "network"},
 		},
-	})
+	}})
+	require.NoError(t, err)
+
+	// First record: dynamic ELF with network symbols.
 	_, _, err = v.SaveRecord(targetFile, false)
 	require.NoError(t, err)
 
@@ -1082,10 +1082,9 @@ func TestRecord_Force_NetworkToStaticBinary_ClearsSymbolAnalysis(t *testing.T) {
 	require.NotNil(t, record.SymbolAnalysis, "first record should have SymbolAnalysis")
 
 	// Second record (force=true): same binary now analysed as static — SymbolAnalysis must be nil.
-	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
-		result: binaryanalyzer.StaticBinary,
-	})
-	_, _, err = v.SaveRecord(targetFile, true)
+	v2, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: &stubBinaryAnalyzer{result: binaryanalyzer.StaticBinary}})
+	require.NoError(t, err)
+	_, _, err = v2.SaveRecord(targetFile, true)
 	require.NoError(t, err)
 
 	record, loadErr = v.LoadRecord(targetFile)
@@ -1248,9 +1247,8 @@ func TestRecord_DebugInfo_ELF(t *testing.T) {
 	targetFile := filepath.Join(tempDir, "target.bin")
 	elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
 
-	v, err := New(&SHA256{}, hashDir)
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{SyscallAnalyzer: &stubSyscallAnalyzerWithDebugInfo{}})
 	require.NoError(t, err)
-	v.SetSyscallAnalyzer(&stubSyscallAnalyzerWithDebugInfo{})
 
 	_, _, err = v.SaveRecord(targetFile, false)
 	require.NoError(t, err)
@@ -1262,8 +1260,12 @@ func TestRecord_DebugInfo_ELF(t *testing.T) {
 	assert.Nil(t, withoutDebug.SyscallAnalysis.DetectedSyscalls[0].Occurrences)
 	assert.Nil(t, withoutDebug.SyscallAnalysis.DeterminationStats)
 
-	v.SetIncludeDebugInfo(true)
-	_, _, err = v.SaveRecord(targetFile, true)
+	vWithDebug, err := New(&SHA256{}, hashDir, ValidatorConfig{
+		SyscallAnalyzer: &stubSyscallAnalyzerWithDebugInfo{},
+		DebugInfo:       true,
+	})
+	require.NoError(t, err)
+	_, _, err = vWithDebug.SaveRecord(targetFile, true)
 	require.NoError(t, err)
 
 	withDebug, loadErr := v.LoadRecord(targetFile)
@@ -1291,11 +1293,8 @@ func newValidatorWithStubs(t *testing.T, libcCache LibcCacheInterface) (*Validat
 	targetFile := filepath.Join(tempDir, "target.bin")
 	require.NoError(t, os.WriteFile(targetFile, []byte("not an ELF"), 0o644))
 
-	v, err := New(&SHA256{}, hashDir)
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{LibcCache: libcCache})
 	require.NoError(t, err)
-	if libcCache != nil {
-		v.SetLibcCache(libcCache)
-	}
 	return v, targetFile
 }
 
@@ -1326,9 +1325,8 @@ func TestRecord_LibcCache_Error_CausesRecordFailure(t *testing.T) {
 	elfanalyzertesting.CreateDynamicELFFile(t, elfPath)
 
 	stub := &stubLibcCache{err: errors.New("libc file not accessible")}
-	v, err := New(&SHA256{}, tempDir)
+	v, err := New(&SHA256{}, tempDir, ValidatorConfig{LibcCache: stub})
 	require.NoError(t, err)
-	v.SetLibcCache(stub)
 
 	// Inject a DynLibDeps record with a libc entry so the libc cache is called.
 	record := &fileanalysis.Record{
@@ -1368,11 +1366,8 @@ func TestRecord_Force_ELFToNonELF_ClearsSyscallAnalysis(t *testing.T) {
 	targetFile := filepath.Join(tempDir, "target.bin")
 	elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
 
-	v, err := New(&SHA256{}, hashDir)
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{SyscallAnalyzer: &stubSyscallAnalyzerReturnsOne{}})
 	require.NoError(t, err)
-
-	// Inject a stub syscall analyzer that returns one syscall for any ELF.
-	v.SetSyscallAnalyzer(&stubSyscallAnalyzerReturnsOne{})
 
 	_, _, err = v.SaveRecord(targetFile, false)
 	require.NoError(t, err)
@@ -1421,11 +1416,10 @@ func TestRecord_Force_SyscallsToNone_ClearsSyscallAnalysis(t *testing.T) {
 	targetFile := filepath.Join(tempDir, "target.bin")
 	elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
 
-	v, err := New(&SHA256{}, hashDir)
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{SyscallAnalyzer: &stubSyscallAnalyzerReturnsOne{}})
 	require.NoError(t, err)
 
 	// First record: analyzer returns one syscall.
-	v.SetSyscallAnalyzer(&stubSyscallAnalyzerReturnsOne{})
 	_, _, err = v.SaveRecord(targetFile, false)
 	require.NoError(t, err)
 
@@ -1434,8 +1428,9 @@ func TestRecord_Force_SyscallsToNone_ClearsSyscallAnalysis(t *testing.T) {
 	require.NotNil(t, record.SyscallAnalysis, "precondition: SyscallAnalysis must be set")
 
 	// Second record (force=true): analyzer returns no syscalls.
-	v.SetSyscallAnalyzer(&stubSyscallAnalyzerReturnsNone{})
-	_, _, err = v.SaveRecord(targetFile, true)
+	v2, err := New(&SHA256{}, hashDir, ValidatorConfig{SyscallAnalyzer: &stubSyscallAnalyzerReturnsNone{}})
+	require.NoError(t, err)
+	_, _, err = v2.SaveRecord(targetFile, true)
 	require.NoError(t, err)
 
 	record, loadErr = v.LoadRecord(targetFile)
@@ -1491,24 +1486,22 @@ func TestRecord_Force_NetworkToNotSupportedBinary_ClearsSymbolAnalysis(t *testin
 	targetFile := filepath.Join(tempDir, "target.bin")
 	require.NoError(t, os.WriteFile(targetFile, []byte("binary content"), 0o644))
 
-	v, err := New(&SHA256{}, hashDir)
-	require.NoError(t, err)
-
-	// First record: dynamic ELF with network symbols.
-	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: &stubBinaryAnalyzer{
 		result: binaryanalyzer.NetworkDetected,
 		detectedSymbols: []binaryanalyzer.DetectedSymbol{
 			{Name: "socket", Category: "network"},
 		},
-	})
+	}})
+	require.NoError(t, err)
+
+	// First record: dynamic ELF with network symbols.
 	_, _, err = v.SaveRecord(targetFile, false)
 	require.NoError(t, err)
 
 	// Second record (force=true): now treated as unsupported format.
-	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
-		result: binaryanalyzer.NotSupportedBinary,
-	})
-	_, _, err = v.SaveRecord(targetFile, true)
+	v2, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: &stubBinaryAnalyzer{result: binaryanalyzer.NotSupportedBinary}})
+	require.NoError(t, err)
+	_, _, err = v2.SaveRecord(targetFile, true)
 	require.NoError(t, err)
 
 	record, loadErr := v.LoadRecord(targetFile)

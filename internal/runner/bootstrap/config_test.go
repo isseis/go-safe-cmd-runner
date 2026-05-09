@@ -149,7 +149,7 @@ func TestBootstrapCommandEnvExpansionIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Record hash for the config file using filevalidator
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 	_, _, err = validator.SaveRecord(configPath, false)
 	require.NoError(t, err)

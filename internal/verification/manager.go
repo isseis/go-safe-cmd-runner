@@ -486,7 +486,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 
 	// Initialize file validator with hybrid hash path getter
 	if opts.fileValidatorEnabled {
-		validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+		validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 		if err != nil {
 			// In dry-run mode, a permission error creating the hash directory is
 			// recoverable: the operator may be checking configuration on a machine

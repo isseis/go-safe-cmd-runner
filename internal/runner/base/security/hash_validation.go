@@ -10,7 +10,7 @@ import (
 // validateFileHash verifies cmdPath against a SHA256 hash stored under hashDir.
 // The caller is responsible for ensuring hashDir is non-empty before calling.
 func validateFileHash(cmdPath string, hashDir string) error {
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 	if err != nil {
 		return fmt.Errorf("hash validation failed to initialize validator: %w", err)
 	}

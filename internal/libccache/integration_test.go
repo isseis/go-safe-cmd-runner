@@ -52,23 +52,21 @@ func socketSyscallNumber() int {
 func newTestValidator(t *testing.T, hashDir string) *filevalidator.Validator {
 	t.Helper()
 
-	v, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
-	require.NoError(t, err)
-
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
-	v.SetELFDynLibAnalyzer(elfdynlib.NewDynLibAnalyzer(fs))
-
 	syscallAn := elfanalyzer.NewSyscallAnalyzer()
-	v.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAn))
 
 	cacheDir := filepath.Join(hashDir, "lib-cache")
 	libcAnalyzer := libccache.NewLibcWrapperAnalyzer(syscallAn)
 	cacheMgr, err := libccache.NewLibcCacheManager(cacheDir, fs, libcAnalyzer)
 	require.NoError(t, err)
 
-	v.SetLibcCache(libccache.NewCacheAdapter(cacheMgr, syscallAn))
-	// Keep syscall occurrences in the saved record for integration assertions.
-	v.SetIncludeDebugInfo(true)
+	v, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{
+		ELFDynLibAnalyzer: elfdynlib.NewDynLibAnalyzer(fs),
+		SyscallAnalyzer:   libccache.NewSyscallAdapter(syscallAn),
+		LibcCache:         libccache.NewCacheAdapter(cacheMgr, syscallAn),
+		DebugInfo:         true,
+	})
+	require.NoError(t, err)
 
 	return v
 }
@@ -79,8 +77,6 @@ func newTestValidator(t *testing.T, hashDir string) *filevalidator.Validator {
 // socket is a network syscall (IsNetwork=true) and is reliably detectable across architectures.
 //
 // Syscall numbers: x86_64=41, arm64=198.
-//
-// This covers AC-4.
 func TestLibcCache_Integration_SocketSyscallDetected(t *testing.T) {
 	skipIfUnsupported(t)
 
@@ -138,8 +134,6 @@ int main() {
 
 // TestLibcCache_Integration_CacheReuse verifies that a second SaveRecord call
 // does not overwrite the libc cache file (mtime must not change).
-//
-// This covers AC-3 (cache HIT).
 func TestLibcCache_Integration_CacheReuse(t *testing.T) {
 	skipIfUnsupported(t)
 

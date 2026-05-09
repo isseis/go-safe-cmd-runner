@@ -175,7 +175,7 @@ func TestProcessFiles_SkipsNonELF(t *testing.T) {
 
 // TestRunTOCTOU_ContinuesOnWorldWritableDir verifies that the record command
 // continues processing even when the file's parent directory is world-writable.
-// This validates AC-M2S-7: record warns but does not abort on TOCTOU violations.
+// Ensures record warns but does not abort on TOCTOU violations.
 func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
 	// Create a world-writable directory with a target file
 	worldWritableDir := commontesting.SafeTempDir(t)
@@ -254,7 +254,7 @@ func TestRun_ReRecordOldSchemaWithoutForce(t *testing.T) {
 	targetFile := filepath.Join(hashDir, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
 
-	seedValidator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	seedValidator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 	recordPath, _, err := seedValidator.SaveRecord(targetFile, false)
 	require.NoError(t, err)
@@ -275,7 +275,7 @@ func TestRun_ReRecordOldSchemaWithoutForce(t *testing.T) {
 	exitCode := run([]string{"-d", hashDir, targetFile}, defaultDeps(), stdout, stderr)
 	require.Equal(t, 0, exitCode, "stderr: %s", stderr.String())
 
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 	recorded, err := validator.LoadRecord(targetFile)
 	require.NoError(t, err)

@@ -250,10 +250,11 @@ func recordMachO(t *testing.T, binData []byte, stub *stubBinaryAnalyzer) *filean
 
 	binPath := writeTempBinary(t, tempDir, "target.bin", binData)
 
-	v, err := New(&SHA256{}, hashDir)
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{
+		BinaryAnalyzer: stub,
+		DebugInfo:      true,
+	})
 	require.NoError(t, err)
-	v.SetBinaryAnalyzer(stub)
-	v.SetIncludeDebugInfo(true)
 
 	_, _, recErr := v.SaveRecord(binPath, false)
 	require.NoError(t, recErr)
@@ -391,9 +392,8 @@ func TestUpdateAnalysisRecord_MachoSVCDetected_BinaryAnalyzerNil(t *testing.T) {
 
 	binPath := writeTempBinary(t, tempDir, "target.bin", buildArm64MachOBinary(t, []uint32{svcEncodingU32}))
 
-	v, err := New(&SHA256{}, hashDir)
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{DebugInfo: true})
 	require.NoError(t, err)
-	v.SetIncludeDebugInfo(true)
 
 	_, _, recErr := v.SaveRecord(binPath, false)
 	require.NoError(t, recErr)
@@ -457,10 +457,9 @@ func TestUpdateAnalysisRecord_ELFNotAffected(t *testing.T) {
 	// The Mach-O svc scan must also return nil (magic mismatch).
 	textPath := writeTempBinary(t, tempDir, "not_binary.txt", []byte("hello world"))
 
-	v, err := New(&SHA256{}, hashDir)
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: &stubBinaryAnalyzer{result: binaryanalyzer.NotSupportedBinary}})
 	require.NoError(t, err)
 	// Set a non-nil BinaryAnalyzer so the svc scan path is exercised.
-	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{result: binaryanalyzer.NotSupportedBinary})
 
 	_, _, recErr := v.SaveRecord(textPath, false)
 	require.NoError(t, recErr)
@@ -540,15 +539,15 @@ func recordMachOWithLibSystem(
 
 	binPath := writeTempBinary(t, tempDir, "target.bin", binData)
 
-	v, err := New(&SHA256{}, hashDir)
-	require.NoError(t, err)
+	vCfg := ValidatorConfig{DebugInfo: true}
 	if stub != nil {
-		v.SetBinaryAnalyzer(stub)
+		vCfg.BinaryAnalyzer = stub
 	}
-	v.SetIncludeDebugInfo(true)
 	if libsys != nil {
-		v.SetLibSystemCache(libsys)
+		vCfg.LibSystemCache = libsys
 	}
+	v, err := New(&SHA256{}, hashDir, vCfg)
+	require.NoError(t, err)
 
 	_, _, recErr := v.SaveRecord(binPath, false)
 	if recErr != nil {
@@ -577,9 +576,8 @@ func TestUpdateAnalysisRecord_LibSystemImportOnly(t *testing.T) {
 	}
 	stub := &stubLibSystemCache{infos: libsysEntries}
 
-	v, err := New(&SHA256{}, safeTempDir(t))
+	v, err := New(&SHA256{}, safeTempDir(t), ValidatorConfig{LibSystemCache: stub})
 	require.NoError(t, err)
-	v.SetLibSystemCache(stub)
 
 	// Build a record with DynLibDeps so analyzeLibSystem is not skipped.
 	record := &fileanalysis.Record{
@@ -673,9 +671,8 @@ func TestUpdateAnalysisRecord_LibSystemError(t *testing.T) {
 
 	// Build a minimal arm64 Mach-O so machoImportSymbols succeeds (returns empty list).
 	// analyzeLibSystem skips when DynLibDeps is empty, so inject a mock record directly.
-	v, err := New(&SHA256{}, safeTempDir(t))
+	v, err := New(&SHA256{}, safeTempDir(t), ValidatorConfig{LibSystemCache: stub})
 	require.NoError(t, err)
-	v.SetLibSystemCache(stub)
 
 	record := &fileanalysis.Record{
 		DynLibDeps: []fileanalysis.LibEntry{

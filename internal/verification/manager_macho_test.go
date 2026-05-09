@@ -184,11 +184,12 @@ func TestVerify_MachOWithDynLibDeps(t *testing.T) {
 
 	// Build a validator with Mach-O dynlib analysis enabled and record the
 	// binary in-process, replicating what the `record` binary would do.
-	v, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	v, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{
+		MachODynLibAnalyzer: machodylib.NewMachODynLibAnalyzer(
+			safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
+		),
+	})
 	require.NoError(t, err)
-	v.SetMachODynLibAnalyzer(machodylib.NewMachODynLibAnalyzer(
-		safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
-	))
 	_, _, err = v.SaveRecord(cmdPath, false)
 	require.NoError(t, err, "SaveRecord should succeed for the test binary")
 
@@ -260,11 +261,12 @@ func TestVerify_MachOLibraryTampered(t *testing.T) {
 	libPath := filepath.Join(filepath.Dir(cmdPath), "libfoo.dylib")
 
 	// Record the binary in-process with Mach-O dynlib analysis enabled.
-	v, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	v, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{
+		MachODynLibAnalyzer: machodylib.NewMachODynLibAnalyzer(
+			safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
+		),
+	})
 	require.NoError(t, err)
-	v.SetMachODynLibAnalyzer(machodylib.NewMachODynLibAnalyzer(
-		safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
-	))
 	_, _, err = v.SaveRecord(cmdPath, false)
 	require.NoError(t, err, "initial record should succeed")
 

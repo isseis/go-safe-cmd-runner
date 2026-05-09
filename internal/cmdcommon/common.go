@@ -12,5 +12,5 @@ var (
 
 // CreateValidator creates a new file validator with the hybrid hash path getter.
 func CreateValidator(hashDir string) (filevalidator.FileValidator, error) {
-	return filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	return filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 }

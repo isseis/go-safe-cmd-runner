@@ -36,7 +36,7 @@ var (
 // deps holds injectable dependencies for the record command.
 // This makes the dependency graph visible at call sites and simplifies testing.
 type deps struct {
-	validatorFactory           func(hashDir string) (*filevalidator.Validator, error)
+	validatorFactory           func(hashDir string, cfg filevalidator.ValidatorConfig) (*filevalidator.Validator, error)
 	elfDynlibAnalyzerFactory   func() *elfdynlib.DynLibAnalyzer       // nil means dynlib analysis is disabled
 	machoDynlibAnalyzerFactory func() *machodylib.MachODynLibAnalyzer // nil means Mach-O dynlib analysis is disabled
 	mkdirAll                   func(path string, perm os.FileMode) error
@@ -44,8 +44,8 @@ type deps struct {
 
 func defaultDeps() deps {
 	return deps{
-		validatorFactory: func(hashDir string) (*filevalidator.Validator, error) {
-			return filevalidator.New(&filevalidator.SHA256{}, hashDir)
+		validatorFactory: func(hashDir string, cfg filevalidator.ValidatorConfig) (*filevalidator.Validator, error) {
+			return filevalidator.New(&filevalidator.SHA256{}, hashDir, cfg)
 		},
 		elfDynlibAnalyzerFactory: func() *elfdynlib.DynLibAnalyzer {
 			return elfdynlib.NewDynLibAnalyzer(safefileio.NewFileSystem(safefileio.FileSystemConfig{}))
@@ -125,42 +125,15 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	toctouDirs := security.CollectTOCTOUCheckDirs(absFiles, nil, absHashDir)
 	security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
 
-	validator, err := d.validatorFactory(cfg.hashDir)
-	if err != nil {
-		fmt.Fprintf(stderr, "Error creating validator: %v\n", err) //nolint:errcheck
-		return 1
-	}
-
-	// Inject DynLibAnalyzer, BinaryAnalyzer, SyscallAnalyzer, and LibcCache.
-	if d.elfDynlibAnalyzerFactory != nil {
-		validator.SetELFDynLibAnalyzer(d.elfDynlibAnalyzerFactory())
-	}
-	if d.machoDynlibAnalyzerFactory != nil {
-		validator.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
-	}
-	validator.SetBinaryAnalyzer(security.NewBinaryAnalyzer(runtime.GOOS))
-
-	syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
-	validator.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))
-
-	dynlibStoreDir := filepath.Join(cfg.hashDir, dynamicanalysis.StoreSubDir)
-	dynlibStore, dynlibStoreErr := dynamicanalysis.New(dynlibStoreDir, validator)
-	if dynlibStoreErr != nil {
-		fmt.Fprintf(stderr, "Error: Failed to initialize dynamic library analysis store: %v\n", dynlibStoreErr) //nolint:errcheck
-		return 1
-	}
-	validator.SetDynamicLibAnalysisStore(dynlibStore)
-
-	cacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
 	safeFS := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+	syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
+	cacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
 	libcAnalyzer := libccache.NewLibcWrapperAnalyzer(syscallAnalyzer)
 	cacheMgr, cacheErr := libccache.NewLibcCacheManager(cacheDir, safeFS, libcAnalyzer)
 	if cacheErr != nil {
 		fmt.Fprintf(stderr, "Error: Failed to initialize libc cache: %v\n", cacheErr) //nolint:errcheck
 		return 1
 	}
-	validator.SetLibcCache(libccache.NewCacheAdapter(cacheMgr, syscallAnalyzer))
-	validator.SetIncludeDebugInfo(cfg.debugInfo)
 
 	// Inject MachoLibSystemAdapter for Mach-O libSystem import-symbol matching.
 	machoCacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
@@ -169,8 +142,35 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "Error: Failed to initialize machoLibSystem cache: %v\n", machoCacheErr) //nolint:errcheck
 		return 1
 	}
-	validator.SetLibSystemCache(libccache.NewMachoLibSystemAdapter(machoCacheMgr, safeFS))
-	validator.SetMachoSyscallTable(libccache.MacOSSyscallTable{})
+
+	vCfg := filevalidator.ValidatorConfig{
+		BinaryAnalyzer:    security.NewBinaryAnalyzer(runtime.GOOS),
+		SyscallAnalyzer:   libccache.NewSyscallAdapter(syscallAnalyzer),
+		LibcCache:         libccache.NewCacheAdapter(cacheMgr, syscallAnalyzer),
+		LibSystemCache:    libccache.NewMachoLibSystemAdapter(machoCacheMgr, safeFS),
+		MachoSyscallTable: libccache.MacOSSyscallTable{},
+		DebugInfo:         cfg.debugInfo,
+	}
+	if d.elfDynlibAnalyzerFactory != nil {
+		vCfg.ELFDynLibAnalyzer = d.elfDynlibAnalyzerFactory()
+	}
+	if d.machoDynlibAnalyzerFactory != nil {
+		vCfg.MachODynLibAnalyzer = d.machoDynlibAnalyzerFactory()
+	}
+
+	validator, err := d.validatorFactory(cfg.hashDir, vCfg)
+	if err != nil {
+		fmt.Fprintf(stderr, "Error creating validator: %v\n", err) //nolint:errcheck
+		return 1
+	}
+
+	dynlibStoreDir := filepath.Join(cfg.hashDir, dynamicanalysis.StoreSubDir)
+	dynlibStore, dynlibStoreErr := dynamicanalysis.New(dynlibStoreDir, validator)
+	if dynlibStoreErr != nil {
+		fmt.Fprintf(stderr, "Error: Failed to initialize dynamic library analysis store: %v\n", dynlibStoreErr) //nolint:errcheck
+		return 1
+	}
+	validator.SetDynamicLibAnalysisStore(dynlibStore)
 
 	return processFiles(validator, cfg, stdout, stderr)
 }

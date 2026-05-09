@@ -428,7 +428,7 @@ func TestUnverifiedDataAccessPrevention(t *testing.T) {
 	require.NoError(t, os.WriteFile(unverifiedFile, []byte("sensitive unverified data"), 0o644), "Failed to create unverified data file")
 
 	// Attempt to verify the unverified file - this should fail
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err, "Failed to create validator")
 
 	// Test that verification of unverified data fails appropriately
