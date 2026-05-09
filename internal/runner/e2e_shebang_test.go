@@ -81,7 +81,7 @@ func TestIntegration_ShebangVerification_DirectForm(t *testing.T) {
 
 	// Step 1 (record phase): create a shebang script and save its hash record.
 	scriptPath := commontesting.WriteExecutableFile(t, scriptDir, "deploy.sh", []byte("#!/bin/sh\necho hello\n"))
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 	_, _, err = validator.SaveRecord(scriptPath, false)
 	require.NoError(t, err)
@@ -110,7 +110,7 @@ func TestIntegration_ShebangVerification_EnvForm(t *testing.T) {
 	// Step 1 (record phase): create a shebang script and save its hash record.
 	// SaveRecord also records /usr/bin/env and the resolved sh binary automatically.
 	scriptPath := commontesting.WriteExecutableFile(t, scriptDir, "process.sh", []byte("#!/usr/bin/env sh\necho hello\n"))
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 	_, _, err = validator.SaveRecord(scriptPath, false)
 	require.NoError(t, err)
@@ -134,7 +134,7 @@ func TestIntegration_ShebangVerification_InterpreterRecordMissing(t *testing.T) 
 
 	// Step 1 (record phase): record the script (which also records the interpreter).
 	scriptPath := commontesting.WriteExecutableFile(t, scriptDir, "deploy.sh", []byte("#!/bin/sh\necho hello\n"))
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 	_, _, err = validator.SaveRecord(scriptPath, false)
 	require.NoError(t, err)
@@ -185,7 +185,7 @@ func TestIntegration_ShebangChainRunnerExecution(t *testing.T) {
 	// SaveRecord stores both the script record and shebang interpreter records.
 	scriptContent := "#!" + interpPath + "\n--version\n"
 	scriptPath := commontesting.WriteExecutableFile(t, scriptDir, "network-tool.sh", []byte(scriptContent))
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 	_, _, err = validator.SaveRecord(scriptPath, false)
 	require.NoError(t, err)

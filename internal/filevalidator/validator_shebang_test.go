@@ -25,7 +25,7 @@ func TestSaveRecord_ShebangDirect(t *testing.T) {
 	scriptDir := safeTempDir(t)
 
 	script := commontesting.WriteExecutableFile(t, scriptDir, "script.sh", []byte("#!/bin/sh\necho hello\n"))
-	validator, err := New(&SHA256{}, hashDir)
+	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{})
 	require.NoError(t, err)
 
 	_, _, err = validator.SaveRecord(script, false)
@@ -66,7 +66,7 @@ func TestSaveRecord_ShebangEnv(t *testing.T) {
 	scriptDir := safeTempDir(t)
 
 	script := commontesting.WriteExecutableFile(t, scriptDir, "script.py", []byte("#!/usr/bin/env sh\necho hello\n"))
-	validator, err := New(&SHA256{}, hashDir)
+	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{})
 	require.NoError(t, err)
 
 	_, _, err = validator.SaveRecord(script, false)
@@ -108,7 +108,7 @@ func TestSaveRecord_ShebangELF(t *testing.T) {
 	path := filepath.Join(dir, "fake_elf")
 	require.NoError(t, os.WriteFile(path, elfHeader, 0o755))
 
-	validator, err := New(&SHA256{}, hashDir)
+	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{})
 	require.NoError(t, err)
 
 	_, _, err = validator.SaveRecord(path, false)
@@ -128,7 +128,7 @@ func TestSaveRecord_ShebangText(t *testing.T) {
 	path := filepath.Join(dir, "script.sh")
 	require.NoError(t, os.WriteFile(path, []byte("echo hello\n"), 0o755))
 
-	validator, err := New(&SHA256{}, hashDir)
+	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{})
 	require.NoError(t, err)
 
 	_, _, err = validator.SaveRecord(path, false)
@@ -152,7 +152,7 @@ func TestSaveRecord_ShebangRecursive(t *testing.T) {
 	script := commontesting.WriteExecutableFile(t, dir, "script.sh",
 		[]byte(fmt.Sprintf("#!%s\necho hello\n", fakeInterp)))
 
-	validator, err := New(&SHA256{}, hashDir)
+	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{})
 	require.NoError(t, err)
 
 	_, _, err = validator.SaveRecord(script, false)
@@ -169,7 +169,7 @@ func TestSaveRecord_InterpreterForce(t *testing.T) {
 	interpPath, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
 
-	validator, err := New(&SHA256{}, hashDir)
+	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{})
 	require.NoError(t, err)
 
 	// Record script A.
@@ -207,7 +207,7 @@ func TestSaveRecord_ShebangSymlink(t *testing.T) {
 	symlinkPath := filepath.Join(dir, "link_to_script.sh")
 	require.NoError(t, os.Symlink(script, symlinkPath))
 
-	validator, err := New(&SHA256{}, hashDir)
+	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{})
 	require.NoError(t, err)
 
 	// SaveRecord on the symlink — validatePath resolves it to the real path.

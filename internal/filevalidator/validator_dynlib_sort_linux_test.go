@@ -203,11 +203,12 @@ func TestDynLibDeps_SortedByPath(t *testing.T) {
 	mainELF := buildMinimalELFWithDeps(t, tmpDir, "main.elf",
 		[]string{"libz.so.1", "libm.so.6", "liba.so.1"}, tmpDir)
 
-	v, err := New(&SHA256{}, hashDir)
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{
+		ELFDynLibAnalyzer: elfdynlib.NewDynLibAnalyzer(
+			safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
+		),
+	})
 	require.NoError(t, err)
-	v.SetELFDynLibAnalyzer(elfdynlib.NewDynLibAnalyzer(
-		safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
-	))
 
 	_, _, err = v.SaveRecord(mainELF, false)
 	require.NoError(t, err)

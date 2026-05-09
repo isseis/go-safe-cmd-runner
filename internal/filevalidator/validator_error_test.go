@@ -17,7 +17,7 @@ import (
 // TestErrorCases tests various error conditions and their messages
 func TestErrorCases(t *testing.T) {
 	tempDir := safeTempDir(t)
-	validator, err := New(&SHA256{}, tempDir)
+	validator, err := New(&SHA256{}, tempDir, ValidatorConfig{})
 	assert.NoError(t, err, "Failed to create validator")
 
 	tests := []struct {
@@ -94,7 +94,7 @@ func TestErrorCases(t *testing.T) {
 // TestFilesystemEdgeCases tests various edge cases related to filesystem operations
 func TestFilesystemEdgeCases(t *testing.T) {
 	tempDir := safeTempDir(t)
-	validator, err := New(&SHA256{}, tempDir)
+	validator, err := New(&SHA256{}, tempDir, ValidatorConfig{})
 	assert.NoError(t, err, "Failed to create validator")
 
 	t.Run("deleted file", func(t *testing.T) {
@@ -171,7 +171,7 @@ func TestFilesystemEdgeCases(t *testing.T) {
 // TestErrorMessages verifies that error messages are clear and helpful
 func TestErrorMessages(t *testing.T) {
 	tempDir := safeTempDir(t)
-	validator, err := New(&SHA256{}, tempDir)
+	validator, err := New(&SHA256{}, tempDir, ValidatorConfig{})
 	assert.NoError(t, err, "Failed to create validator")
 
 	tests := []struct {

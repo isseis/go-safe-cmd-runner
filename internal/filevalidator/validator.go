@@ -133,6 +133,19 @@ func (v *Validator) Store() *fileanalysis.Store {
 	return v.store
 }
 
+// ValidatorConfig configures optional analyzers and caches for Validator.
+// Zero values disable the corresponding analysis features.
+type ValidatorConfig struct {
+	ELFDynLibAnalyzer   *elfdynlib.DynLibAnalyzer
+	MachODynLibAnalyzer *machodylib.MachODynLibAnalyzer
+	BinaryAnalyzer      binaryanalyzer.BinaryAnalyzer
+	SyscallAnalyzer     SyscallAnalyzerInterface
+	LibcCache           LibcCacheInterface
+	LibSystemCache      LibSystemCacheInterface
+	MachoSyscallTable   SyscallNumberTable
+	DebugInfo           bool
+}
+
 // Validator provides functionality to record and verify file hashes.
 // It should be instantiated using the New function.
 type Validator struct {
@@ -163,7 +176,7 @@ type Validator struct {
 // The hash directory is created automatically if it does not exist.
 // This constructor uses the FileAnalysisRecord format for storing hash and analysis results.
 // The analysis store preserves existing fields (e.g., SyscallAnalysis) when updating hashes.
-func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
+func New(algorithm HashAlgorithm, hashDir string, cfg ValidatorConfig) (*Validator, error) {
 	hashFilePathGetter := NewHybridHashFilePathGetter()
 
 	// Create analysis store first — this creates the directory if it doesn't exist.
@@ -179,7 +192,7 @@ func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
 	}
 
 	// Now create the validator — the directory is guaranteed to exist.
-	v, err := newValidator(algorithm, resolvedHashDir, hashFilePathGetter)
+	v, err := newValidator(algorithm, resolvedHashDir, hashFilePathGetter, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +203,7 @@ func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
 
 // newValidator initializes and returns a new Validator with the specified hash algorithm and hash directory.
 // Returns an error if the algorithm is nil or if the hash directory cannot be accessed.
-func newValidator(algorithm HashAlgorithm, hashDir common.ResolvedPath, hashFilePathGetter common.HashFilePathGetter) (*Validator, error) {
+func newValidator(algorithm HashAlgorithm, hashDir common.ResolvedPath, hashFilePathGetter common.HashFilePathGetter, cfg ValidatorConfig) (*Validator, error) {
 	if algorithm == nil {
 		return nil, ErrNilAlgorithm
 	}
@@ -208,10 +221,18 @@ func newValidator(algorithm HashAlgorithm, hashDir common.ResolvedPath, hashFile
 	}
 
 	return &Validator{
-		algorithm:          algorithm,
-		hashDir:            hashDir,
-		hashFilePathGetter: hashFilePathGetter,
-		fileSystem:         safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
+		algorithm:           algorithm,
+		hashDir:             hashDir,
+		hashFilePathGetter:  hashFilePathGetter,
+		fileSystem:          safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
+		elfDynlibAnalyzer:   cfg.ELFDynLibAnalyzer,
+		machoDynlibAnalyzer: cfg.MachODynLibAnalyzer,
+		binaryAnalyzer:      cfg.BinaryAnalyzer,
+		syscallAnalyzer:     cfg.SyscallAnalyzer,
+		libcCache:           cfg.LibcCache,
+		libSystemCache:      cfg.LibSystemCache,
+		machoSyscallTable:   cfg.MachoSyscallTable,
+		includeDebugInfo:    cfg.DebugInfo,
 	}, nil
 }
 
@@ -480,32 +501,6 @@ func (v *Validator) checkNotShebang(path, role string) error {
 	return nil
 }
 
-// SetLibSystemCache injects the LibSystemCacheInterface used during record operations.
-// Call before the first SaveRecord() invocation.
-func (v *Validator) SetLibSystemCache(m LibSystemCacheInterface) {
-	v.libSystemCache = m
-}
-
-// SetMachoSyscallTable injects the SyscallNumberTable used for macOS BSD syscall
-// number resolution during Pass 1 and Pass 2 analysis. When nil, syscall names
-// and network flags are left empty but numbers are still resolved where possible.
-// Call before the first SaveRecord() invocation.
-func (v *Validator) SetMachoSyscallTable(t SyscallNumberTable) {
-	v.machoSyscallTable = t
-}
-
-// SetELFDynLibAnalyzer injects the DynLibAnalyzer used during record operations.
-// Call before the first SaveRecord() invocation. Safe to call with nil (disables dynlib analysis).
-func (v *Validator) SetELFDynLibAnalyzer(a *elfdynlib.DynLibAnalyzer) {
-	v.elfDynlibAnalyzer = a
-}
-
-// SetMachODynLibAnalyzer injects the MachODynLibAnalyzer used during record operations.
-// Call before the first SaveRecord() invocation. Safe to call with nil (disables Mach-O dynlib analysis).
-func (v *Validator) SetMachODynLibAnalyzer(a *machodylib.MachODynLibAnalyzer) {
-	v.machoDynlibAnalyzer = a
-}
-
 // analyzeDynLibDeps analyzes dynamic library dependencies for the given file and
 // updates the record. ELF analysis runs first; Mach-O analysis runs only when ELF
 // returns no results. Both fields are cleared before analysis when at least one
@@ -553,24 +548,6 @@ func (v *Validator) analyzeDynLibDeps(filePath string, record *fileanalysis.Reco
 	slices.Sort(record.AnalysisWarnings)
 
 	return nil
-}
-
-// SetBinaryAnalyzer injects the BinaryAnalyzer used during record operations.
-// Call before the first SaveRecord() invocation. Safe to call with nil (disables binary analysis).
-func (v *Validator) SetBinaryAnalyzer(a binaryanalyzer.BinaryAnalyzer) {
-	v.binaryAnalyzer = a
-}
-
-// SetLibcCache injects the LibcCacheInterface used during record operations.
-// Call before the first SaveRecord() invocation.
-func (v *Validator) SetLibcCache(m LibcCacheInterface) {
-	v.libcCache = m
-}
-
-// SetSyscallAnalyzer injects the SyscallAnalyzer used during record operations.
-// Call before the first SaveRecord() invocation.
-func (v *Validator) SetSyscallAnalyzer(a SyscallAnalyzerInterface) {
-	v.syscallAnalyzer = a
 }
 
 // libCacheKey is the key type for the in-session library analysis cache.
@@ -1072,15 +1049,6 @@ func (a *analysisAggregate) warnings() []string {
 	}
 	slices.Sort(warnings)
 	return warnings
-}
-
-// SetIncludeDebugInfo controls whether debug information (Occurrences,
-// DeterminationStats) is included in saved JSON output.
-// Call before the first SaveRecord() invocation. Changing this after records
-// have been processed causes the in-session interpreter and library analysis
-// caches to return results with inconsistent debug data.
-func (v *Validator) SetIncludeDebugInfo(b bool) {
-	v.includeDebugInfo = b
 }
 
 // elfMachineForArchName converts an architecture name string (as stored in

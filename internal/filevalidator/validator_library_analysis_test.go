@@ -66,13 +66,13 @@ func (s *libraryTestSyscallAnalyzer) GetSyscallTable(_ elf.Machine) (SyscallNumb
 	return s.table, true
 }
 
-func validatorWithTempHashDir(t *testing.T) *Validator {
+func validatorWithTempHashDir(t *testing.T, cfg ValidatorConfig) *Validator {
 	t.Helper()
 	tempDir := safeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
 
-	v, err := New(&SHA256{}, hashDir)
+	v, err := New(&SHA256{}, hashDir, cfg)
 	require.NoError(t, err)
 	return v
 }
@@ -100,7 +100,7 @@ func requireWithSocketELF(t *testing.T) string {
 // validator itself. Used for tests that exercise the full analyzeLibraries flow.
 func validatorWithStore(t *testing.T) *Validator {
 	t.Helper()
-	v := validatorWithTempHashDir(t)
+	v := validatorWithTempHashDir(t, ValidatorConfig{})
 	storeDir := filepath.Join(t.TempDir(), "dynlibstore")
 	store, err := dynamicanalysis.New(storeDir, v)
 	require.NoError(t, err)
@@ -109,15 +109,14 @@ func validatorWithStore(t *testing.T) *Validator {
 }
 
 func TestAnalyzeOneLibrary_networkSymbolDetected(t *testing.T) {
-	v := validatorWithTempHashDir(t)
-	v.SetBinaryAnalyzer(&libraryTestBinaryAnalyzer{
+	v := validatorWithTempHashDir(t, ValidatorConfig{BinaryAnalyzer: &libraryTestBinaryAnalyzer{
 		output: binaryanalyzer.AnalysisOutput{
 			Result: binaryanalyzer.NetworkDetected,
 			DetectedSymbols: []binaryanalyzer.DetectedSymbol{
 				{Name: "socket", Category: "socket"},
 			},
 		},
-	})
+	}})
 
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libfoo.so.1",
@@ -131,11 +130,12 @@ func TestAnalyzeOneLibrary_networkSymbolDetected(t *testing.T) {
 }
 
 func TestAnalyzeOneLibrary_networkSyscallDetected(t *testing.T) {
-	v := validatorWithTempHashDir(t)
-	v.SetBinaryAnalyzer(&libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}})
-	v.SetSyscallAnalyzer(&libraryTestSyscallAnalyzer{
-		syscalls: []common.SyscallInfo{{Number: 41, Name: "socket"}},
-		table:    &libraryTestSyscallTable{network: map[int]bool{41: true}},
+	v := validatorWithTempHashDir(t, ValidatorConfig{
+		BinaryAnalyzer: &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}},
+		SyscallAnalyzer: &libraryTestSyscallAnalyzer{
+			syscalls: []common.SyscallInfo{{Number: 41, Name: "socket"}},
+			table:    &libraryTestSyscallTable{network: map[int]bool{41: true}},
+		},
 	})
 
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
@@ -150,15 +150,16 @@ func TestAnalyzeOneLibrary_networkSyscallDetected(t *testing.T) {
 }
 
 func TestAnalyzeOneLibrary_preservesArgEvalResults(t *testing.T) {
-	v := validatorWithTempHashDir(t)
-	v.SetBinaryAnalyzer(&libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}})
-	v.SetSyscallAnalyzer(&libraryTestSyscallAnalyzer{
-		syscalls: []common.SyscallInfo{{Number: 10, Name: "mprotect"}},
-		argResults: []common.SyscallArgEvalResult{{
-			SyscallName: "mprotect",
-			Status:      common.SyscallArgEvalExecConfirmed,
-			Details:     "prot=0x5",
-		}},
+	v := validatorWithTempHashDir(t, ValidatorConfig{
+		BinaryAnalyzer: &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}},
+		SyscallAnalyzer: &libraryTestSyscallAnalyzer{
+			syscalls: []common.SyscallInfo{{Number: 10, Name: "mprotect"}},
+			argResults: []common.SyscallArgEvalResult{{
+				SyscallName: "mprotect",
+				Status:      common.SyscallArgEvalExecConfirmed,
+				Details:     "prot=0x5",
+			}},
+		},
 	})
 
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
@@ -175,9 +176,10 @@ func TestAnalyzeOneLibrary_preservesArgEvalResults(t *testing.T) {
 }
 
 func TestAnalyzeOneLibrary_nonNetwork(t *testing.T) {
-	v := validatorWithTempHashDir(t)
-	v.SetBinaryAnalyzer(&libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}})
-	v.SetSyscallAnalyzer(&libraryTestSyscallAnalyzer{syscalls: []common.SyscallInfo{{Number: 1, Name: "write"}}})
+	v := validatorWithTempHashDir(t, ValidatorConfig{
+		BinaryAnalyzer:  &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}},
+		SyscallAnalyzer: &libraryTestSyscallAnalyzer{syscalls: []common.SyscallInfo{{Number: 1, Name: "write"}}},
+	})
 
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libbaz.so.1",
@@ -196,8 +198,7 @@ func TestAnalyzeOneLibrary_nonNetwork(t *testing.T) {
 // TestAnalyzeOneLibrary_missingFileReturnsError verifies that a missing library file
 // returns an error rather than a non-fatal warning.
 func TestAnalyzeOneLibrary_missingFileReturnsError(t *testing.T) {
-	v := validatorWithTempHashDir(t)
-	v.SetSyscallAnalyzer(&libraryTestSyscallAnalyzer{})
+	v := validatorWithTempHashDir(t, ValidatorConfig{SyscallAnalyzer: &libraryTestSyscallAnalyzer{}})
 
 	_, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libmissing.so.1",
@@ -208,8 +209,7 @@ func TestAnalyzeOneLibrary_missingFileReturnsError(t *testing.T) {
 }
 
 func TestAnalyzeOneLibrary_nonELFLibrarySkipsSyscallScan(t *testing.T) {
-	v := validatorWithTempHashDir(t)
-	v.SetSyscallAnalyzer(&libraryTestSyscallAnalyzer{syscalls: []common.SyscallInfo{{Number: 41, Name: "socket"}}})
+	v := validatorWithTempHashDir(t, ValidatorConfig{SyscallAnalyzer: &libraryTestSyscallAnalyzer{syscalls: []common.SyscallInfo{{Number: 41, Name: "socket"}}}})
 
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libscript.so.1",
@@ -223,8 +223,7 @@ func TestAnalyzeOneLibrary_nonELFLibrarySkipsSyscallScan(t *testing.T) {
 }
 
 func TestAnalyzeOneLibrary_unsupportedArchSkipsWarning(t *testing.T) {
-	v := validatorWithTempHashDir(t)
-	v.SetSyscallAnalyzer(&libraryTestSyscallAnalyzer{err: ErrUnsupportedArch})
+	v := validatorWithTempHashDir(t, ValidatorConfig{SyscallAnalyzer: &libraryTestSyscallAnalyzer{err: ErrUnsupportedArch}})
 
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libfoo.so.1",
@@ -240,8 +239,7 @@ func TestAnalyzeOneLibrary_unsupportedArchSkipsWarning(t *testing.T) {
 // TestAnalyzeLibraries_withoutStore verifies that library analysis still runs
 // without an external dynamic library analysis store.
 func TestAnalyzeLibraries_withoutStore(t *testing.T) {
-	v := validatorWithTempHashDir(t)
-	v.SetBinaryAnalyzer(&libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}})
+	v := validatorWithTempHashDir(t, ValidatorConfig{BinaryAnalyzer: &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}}})
 	record := &fileanalysis.Record{
 		DynLibDeps: []fileanalysis.LibEntry{{SOName: "libfoo.so.1", Path: requireWithSocketELF(t), Hash: "sha256:foo"}},
 	}
@@ -263,10 +261,12 @@ func TestAnalyzeLibraries_emptyDynLibDeps(t *testing.T) {
 // TestAnalyzeLibraries_ExcludesWrapperAndVDSO verifies that syscall wrapper libraries
 // (e.g., libc) and VDSO entries are excluded from library analysis.
 func TestAnalyzeLibraries_excludesWrapperAndVDSO(t *testing.T) {
-	v := validatorWithStore(t)
-
 	bin := &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}}
-	v.SetBinaryAnalyzer(bin)
+	v := validatorWithTempHashDir(t, ValidatorConfig{BinaryAnalyzer: bin})
+	storeDir := filepath.Join(t.TempDir(), "dynlibstore")
+	store, err := dynamicanalysis.New(storeDir, v)
+	require.NoError(t, err)
+	v.SetDynamicLibAnalysisStore(store)
 
 	elfPath := requireWithSocketELF(t)
 	record := &fileanalysis.Record{
@@ -284,10 +284,12 @@ func TestAnalyzeLibraries_excludesWrapperAndVDSO(t *testing.T) {
 // TestAnalyzeLibraries_sessionCache verifies that repeated analysis of the same
 // library path and hash within a single session uses the in-session cache.
 func TestAnalyzeLibraries_sessionCache(t *testing.T) {
-	v := validatorWithStore(t)
-
 	bin := &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}}
-	v.SetBinaryAnalyzer(bin)
+	v := validatorWithTempHashDir(t, ValidatorConfig{BinaryAnalyzer: bin})
+	storeDir := filepath.Join(t.TempDir(), "dynlibstore")
+	store, err := dynamicanalysis.New(storeDir, v)
+	require.NoError(t, err)
+	v.SetDynamicLibAnalysisStore(store)
 
 	path := requireWithSocketELF(t)
 	record := &fileanalysis.Record{
@@ -304,16 +306,18 @@ func TestAnalyzeLibraries_sessionCache(t *testing.T) {
 // TestAnalyzeLibraries_symbolAnalysisCreatedWhenNil verifies that DynamicLoadSymbols
 // are merged and SymbolAnalysis is created when a library has dlopen/dlsym symbols.
 func TestAnalyzeLibraries_symbolAnalysisCreatedWhenNil(t *testing.T) {
-	v := validatorWithStore(t)
-
-	v.SetBinaryAnalyzer(&libraryTestBinaryAnalyzer{
+	v := validatorWithTempHashDir(t, ValidatorConfig{BinaryAnalyzer: &libraryTestBinaryAnalyzer{
 		output: binaryanalyzer.AnalysisOutput{
 			Result: binaryanalyzer.NetworkDetected,
 			DynamicLoadSymbols: []binaryanalyzer.DetectedSymbol{
 				{Name: "dlopen", Category: "dynamic_load"},
 			},
 		},
-	})
+	}})
+	storeDir := filepath.Join(t.TempDir(), "dynlibstore")
+	store, err := dynamicanalysis.New(storeDir, v)
+	require.NoError(t, err)
+	v.SetDynamicLibAnalysisStore(store)
 
 	record := &fileanalysis.Record{
 		DynLibDeps: []fileanalysis.LibEntry{
@@ -329,8 +333,11 @@ func TestAnalyzeLibraries_symbolAnalysisCreatedWhenNil(t *testing.T) {
 // TestAnalyzeLibraries_RecordHasNoLibraryAnalysisField verifies that the record does not
 // contain a library_analysis field after analysis (results are stored externally).
 func TestAnalyzeLibraries_RecordHasNoLibraryAnalysisField(t *testing.T) {
-	v := validatorWithStore(t)
-	v.SetBinaryAnalyzer(&libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}})
+	v := validatorWithTempHashDir(t, ValidatorConfig{BinaryAnalyzer: &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}}})
+	storeDir := filepath.Join(t.TempDir(), "dynlibstore")
+	store, err := dynamicanalysis.New(storeDir, v)
+	require.NoError(t, err)
+	v.SetDynamicLibAnalysisStore(store)
 
 	record := &fileanalysis.Record{
 		DynLibDeps: []fileanalysis.LibEntry{
@@ -347,9 +354,12 @@ func TestAnalyzeLibraries_RecordHasNoLibraryAnalysisField(t *testing.T) {
 // are correctly recorded in the executable record even when the store reuses
 // an existing analysis result.
 func TestAnalyzeLibraries_DynLibDepsPreservedOnReuse(t *testing.T) {
-	v := validatorWithStore(t)
 	bin := &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}}
-	v.SetBinaryAnalyzer(bin)
+	v := validatorWithTempHashDir(t, ValidatorConfig{BinaryAnalyzer: bin})
+	storeDir := filepath.Join(t.TempDir(), "dynlibstore")
+	store, err := dynamicanalysis.New(storeDir, v)
+	require.NoError(t, err)
+	v.SetDynamicLibAnalysisStore(store)
 
 	path := requireWithSocketELF(t)
 	record := &fileanalysis.Record{
@@ -377,8 +387,11 @@ func TestAnalyzeLibraries_DynLibDepsPreservedOnReuse(t *testing.T) {
 // TestAnalyzeLibraries_MissingLibFileReturnsError verifies that a missing library file
 // causes analyzeLibraries to return an error, and the record is not written.
 func TestAnalyzeLibraries_MissingLibFileReturnsError(t *testing.T) {
-	v := validatorWithStore(t)
-	v.SetSyscallAnalyzer(&libraryTestSyscallAnalyzer{})
+	v := validatorWithTempHashDir(t, ValidatorConfig{SyscallAnalyzer: &libraryTestSyscallAnalyzer{}})
+	storeDir := filepath.Join(t.TempDir(), "dynlibstore")
+	store, err := dynamicanalysis.New(storeDir, v)
+	require.NoError(t, err)
+	v.SetDynamicLibAnalysisStore(store)
 
 	record := &fileanalysis.Record{
 		DynLibDeps: []fileanalysis.LibEntry{
@@ -386,17 +399,20 @@ func TestAnalyzeLibraries_MissingLibFileReturnsError(t *testing.T) {
 		},
 	}
 
-	err := v.analyzeLibraries(record)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to open library file")
+	analyzeErr := v.analyzeLibraries(record)
+	require.Error(t, analyzeErr)
+	assert.Contains(t, analyzeErr.Error(), "failed to open library file")
 }
 
 // TestAnalyzeLibraries_VDSOExcluded verifies that VDSO entries are excluded from
 // library analysis even when they are the only entry in DynLibDeps.
 func TestAnalyzeLibraries_VDSOExcluded(t *testing.T) {
-	v := validatorWithStore(t)
 	bin := &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}}
-	v.SetBinaryAnalyzer(bin)
+	v := validatorWithTempHashDir(t, ValidatorConfig{BinaryAnalyzer: bin})
+	storeDir := filepath.Join(t.TempDir(), "dynlibstore")
+	store, err := dynamicanalysis.New(storeDir, v)
+	require.NoError(t, err)
+	v.SetDynamicLibAnalysisStore(store)
 
 	record := &fileanalysis.Record{
 		DynLibDeps: []fileanalysis.LibEntry{
@@ -411,8 +427,7 @@ func TestAnalyzeLibraries_VDSOExcluded(t *testing.T) {
 // TestValidatorLibraryAnalyzer_Analyze_FileTooLargeReturnsError verifies that a library
 // file exceeding the size limit causes analyzeLibraries to return an error.
 func TestValidatorLibraryAnalyzer_Analyze_FileTooLargeReturnsError(t *testing.T) {
-	v := validatorWithTempHashDir(t)
-	v.SetSyscallAnalyzer(&libraryTestSyscallAnalyzer{})
+	v := validatorWithTempHashDir(t, ValidatorConfig{SyscallAnalyzer: &libraryTestSyscallAnalyzer{}})
 
 	// Use a mock FileSystem that reports maxFileSize+1 for Stat().
 	v.fileSystem = &oversizeFileSystem{FileSystem: v.fileSystem}

@@ -39,13 +39,7 @@ func skipIfUnsupportedMacOS(t *testing.T) {
 func newTestValidatorMacOS(t *testing.T, hashDir string) *filevalidator.Validator {
 	t.Helper()
 
-	v, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
-	require.NoError(t, err)
-
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
-
-	// Wire Mach-O dynamic library dependency analyzer so DynLibDeps is populated.
-	v.SetMachODynLibAnalyzer(machodylib.NewMachODynLibAnalyzer(fs))
 
 	cacheDir := filepath.Join(hashDir, "lib-cache")
 
@@ -53,7 +47,11 @@ func newTestValidatorMacOS(t *testing.T, hashDir string) *filevalidator.Validato
 	require.NoError(t, err)
 
 	machoAdapter := libccache.NewMachoLibSystemAdapter(machoLibSysMgr, fs)
-	v.SetLibSystemCache(machoAdapter)
+	v, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{
+		MachODynLibAnalyzer: machodylib.NewMachODynLibAnalyzer(fs),
+		LibSystemCache:      machoAdapter,
+	})
+	require.NoError(t, err)
 
 	return v
 }
@@ -237,7 +235,7 @@ func TestLibSystemCache_Integration_ELFFlowNonRegression(t *testing.T) {
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
 
 	// Use a validator WITHOUT libSystem cache to verify the base pipeline is unaffected.
-	v, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	v, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 
 	_, _, err = v.SaveRecord(binFile, false)

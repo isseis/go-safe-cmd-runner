@@ -20,7 +20,7 @@ func TestHashValidation_BasicBypassAttempts(t *testing.T) {
 	require.NoError(t, os.MkdirAll(hashDir, 0o755))
 
 	algo := &filevalidator.SHA256{}
-	validator, err := filevalidator.New(algo, hashDir)
+	validator, err := filevalidator.New(algo, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -118,7 +118,7 @@ func TestHashValidation_ManifestTampering(t *testing.T) {
 	require.NoError(t, os.MkdirAll(hashDir, 0o755))
 
 	algo := &filevalidator.SHA256{}
-	validator, err := filevalidator.New(algo, hashDir)
+	validator, err := filevalidator.New(algo, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -229,7 +229,7 @@ func TestHashValidation_SymbolicLinkAttack(t *testing.T) {
 	require.NoError(t, os.MkdirAll(hashDir, 0o755))
 
 	algo := &filevalidator.SHA256{}
-	validator, err := filevalidator.New(algo, hashDir)
+	validator, err := filevalidator.New(algo, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 
 	// Create a legitimate file
@@ -277,7 +277,7 @@ func TestHashValidation_RaceConditionProtection(t *testing.T) {
 	require.NoError(t, os.MkdirAll(hashDir, 0o755))
 
 	algo := &filevalidator.SHA256{}
-	validator, err := filevalidator.New(algo, hashDir)
+	validator, err := filevalidator.New(algo, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 
 	testFile := filepath.Join(tempDir, "toctou_test.txt")

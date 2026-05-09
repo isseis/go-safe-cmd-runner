@@ -8,7 +8,7 @@ import (
 // BenchmarkValidator_Verify benchmarks the standard Verify method
 func BenchmarkValidator_Verify(b *testing.B) {
 	tempDir := b.TempDir()
-	validator, err := New(&SHA256{}, tempDir)
+	validator, err := New(&SHA256{}, tempDir, ValidatorConfig{})
 	if err != nil {
 		b.Fatalf("Failed to create validator: %v", err)
 	}

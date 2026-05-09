@@ -16,7 +16,7 @@ import (
 
 // TestRecord_Force_MachO_UpdatesDynLibDeps verifies that SaveRecord with force=true
 // re-runs Mach-O dynlib analysis and updates DynLibDeps with the new hash.
-// This covers Phase 3 completion criterion: Mach-O DynLibDeps is updated by record --force.
+// Verifies force re-record updates Mach-O DynLibDeps.
 func TestRecord_Force_MachO_UpdatesDynLibDeps(t *testing.T) {
 	tempDir := safeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
@@ -31,11 +31,12 @@ func TestRecord_Force_MachO_UpdatesDynLibDeps(t *testing.T) {
 	require.NoError(t, os.WriteFile(binPath,
 		machodylibtesting.BuildMachOWithDeps(machodylibtesting.NativeCPU(), []string{libPath}, nil, nil), 0o700))
 
-	v, err := New(&SHA256{}, hashDir)
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{
+		MachODynLibAnalyzer: machodylib.NewMachODynLibAnalyzer(
+			safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
+		),
+	})
 	require.NoError(t, err)
-	v.SetMachODynLibAnalyzer(machodylib.NewMachODynLibAnalyzer(
-		safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
-	))
 
 	// First record: DynLibDeps should capture libfoo.dylib with its initial hash.
 	_, _, err = v.SaveRecord(binPath, false)
