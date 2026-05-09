@@ -143,8 +143,8 @@ graph LR
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
 
     subgraph deps構造体
-        FAC_OLD["validatorFactory<br/>func(hashDir string) (hashRecorder, error)<br/>現状"]
-        FAC_NEW["validatorFactory<br/>func(hashDir string, cfg filevalidator.ValidatorConfig) (hashRecorder, error)<br/>変更後"]
+        FAC_OLD["validatorFactory<br/>func(hashDir string) (*filevalidator.Validator, error)<br/>現状"]
+        FAC_NEW["validatorFactory<br/>func(hashDir string, cfg filevalidator.ValidatorConfig) (*filevalidator.Validator, error)<br/>変更後"]
     end
 
     subgraph run関数
@@ -160,8 +160,12 @@ graph LR
 ```
 
 `deps.elfDynlibAnalyzerFactory` / `deps.machoDynlibAnalyzerFactory` は
-そのまま残し、`run()` 内で `ValidatorConfig.ELFDynLibAnalyzer` に代入してから
-factory に渡す。
+そのまま残し、`run()` 内で `ValidatorConfig.ELFDynLibAnalyzer` /
+`ValidatorConfig.MachODynLibAnalyzer` に代入してから factory に渡す。
+
+factory の返り値は具象型 `*filevalidator.Validator` のまま維持する。
+`SetDynamicLibAnalysisStore` は引き続きセッターで注入する必要があり、
+呼び出し側 (`run()`) は `*Validator` を直接保持するのが自然なため。
 
 ---
 
@@ -184,13 +188,16 @@ factory に渡す。
 | 追加 | `ValidatorConfig` を組み立てるコード |
 | 削除 | `Set*` 呼び出し（`SetDynamicLibAnalysisStore` を除く） |
 
-### 5.3 テスト（71 箇所以上）
+### 5.3 テスト・呼び出し箇所の見込み
 
 | 変更パターン | 件数の見込み |
 |---|---|
-| `New(&SHA256{}, hashDir)` → `New(&SHA256{}, hashDir, ValidatorConfig{})` | 約 71 箇所（テスト 67 + production 4）の大半が `, ValidatorConfig{}` 追加のみ |
-| `v.SetBinaryAnalyzer(spy)` 等を `ValidatorConfig{BinaryAnalyzer: spy}` に変更 | 約 75 箇所（production 16 + テスト 59） |
-| `testDeps()` の factory 型更新 | `cmd/record/main_test.go` 等 数箇所 |
+| `New(&SHA256{}, hashDir)` → `New(&SHA256{}, hashDir, ValidatorConfig{})` | 約 75 箇所（production 4 + テスト 71）の大半が `, ValidatorConfig{}` 追加のみ |
+| `v.SetBinaryAnalyzer(spy)` 等を `ValidatorConfig{BinaryAnalyzer: spy}` に変更 | 約 73 箇所（production 8（`cmd/record/main.go`） + テスト 65）に加え、`internal/filevalidator/validator.go` のセッター宣言 8 個を削除 |
+| `testRunDeps()` の factory 型更新 | `cmd/record/main_test.go` 等 数箇所 |
+
+> **補足**: 件数は本タスク開始時点でのコードベース調査によるおおよその見積もり。
+> 実装時に新規テストが追加・削除されても誤差の範囲。
 
 ---
 

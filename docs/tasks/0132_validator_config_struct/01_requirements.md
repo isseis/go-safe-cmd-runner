@@ -106,11 +106,15 @@ func New(algorithm HashAlgorithm, hashDir string, cfg ValidatorConfig) (*Validat
 
 #### FR-3.3.1: `cmd/record/main.go` の `validatorFactory` 型変更
 
-現在の factory は `func(hashDir string) (hashRecorder, error)` だが、
+現在の factory は `func(hashDir string) (*filevalidator.Validator, error)` だが、
 `ValidatorConfig` を渡せるよう変更が必要。
 
-方針: factory の型を `func(hashDir string, cfg ValidatorConfig) (hashRecorder, error)` に変更し、
-`run()` 内で `cfg` を組み立てて factory に渡す。
+方針: factory の型を
+`func(hashDir string, cfg filevalidator.ValidatorConfig) (*filevalidator.Validator, error)`
+に変更し、`run()` 内で `cfg` を組み立てて factory に渡す。
+返り値の具象型 (`*filevalidator.Validator`) は維持する。残存する
+`SetDynamicLibAnalysisStore` を `run()` から呼び出すため、`hashRecorder`
+インタフェースに丸める必要はない。
 
 #### FR-3.3.2: テスト側の更新
 
