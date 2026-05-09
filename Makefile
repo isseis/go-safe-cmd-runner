@@ -115,7 +115,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test test-ci test-all benchmark coverage coverage-internal hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
+.PHONY: all lint build run clean test test-ci test-ci-cgo1 test-ci-cgo0 test-all benchmark coverage coverage-internal hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test unit-test-cgo1 unit-test-cgo0 e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
 
 all: security-check
 
@@ -391,7 +391,9 @@ build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 # Test Targets
 # =============================================================================
 # Individual test targets:
-#   unit-test              - Unit tests (race detection enabled and disabled)
+#   unit-test              - Unit tests (CGO=1 race + CGO=0, sequential; for local dev)
+#   unit-test-cgo1         - CGO=1 race tests with coverage profile (for CI matrix)
+#   unit-test-cgo0         - CGO=0 tests only (for CI matrix)
 #   integration-test       - Integration tests with runner binary
 #   e2e-test               - End-to-end tests (dry-run validation + security checks)
 #   security-test          - Security-focused tests
@@ -401,7 +403,9 @@ build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 #
 # Composite test targets:
 #   test                   - Tests for pre-commit (unit-test only)
-#   test-ci                - Tests for CI environments (no sudo required)
+#   test-ci-cgo1           - CI tests for CGO=1 matrix leg (with coverage)
+#   test-ci-cgo0           - CI tests for CGO=0 matrix leg
+#   test-ci                - All CI tests sequentially (legacy; use matrix targets in CI)
 #   test-all               - All tests including integration (requires sudo)
 # =============================================================================
 
@@ -409,12 +413,24 @@ build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 # Runs twice: with race detection (CGO_ENABLED=1) and without (CGO_ENABLED=0)
 # On macOS, only CGO_ENABLED=1 is supported (group membership requires CGO/Directory Services)
 unit-test: build-test elfanalyzer-testdata-verify
-	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags test -race -p 2 -v ./...
+	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags test -race -p 4 -v ./...
 	@if [ "$$(uname -s)" != "Darwin" ]; then \
-		$(ENVSET) CGO_ENABLED=0 $(GOTEST) -tags test -p 2 -v ./...; \
+		$(ENVSET) CGO_ENABLED=0 $(GOTEST) -tags test -p 4 -v ./...; \
 	else \
 		echo "macOS: skipping CGO_ENABLED=0 test run (not supported on macOS)"; \
 	fi
+
+# CGO=1 unit tests with coverage profile — used by CI matrix (test-ci-cgo1)
+unit-test-cgo1: build-test elfanalyzer-testdata-verify
+	COVERPKGS=$$(go list -tags test ./internal/... | grep -vE '/testing$$|/binaryanalyzer$$|/dynlib$$' | tr '\n' ',' | sed 's/,$$//'); \
+	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags test -race -p 4 -v \
+		-coverprofile=coverage.out -coverpkg="$$COVERPKGS" \
+		./...
+
+# CGO=0 unit tests — used by CI matrix (test-ci-cgo0)
+# Runs without elfanalyzer test data (tests skip gracefully if data absent)
+unit-test-cgo0:
+	$(ENVSET) CGO_ENABLED=0 $(GOTEST) -tags test -p 4 -v ./...
 
 # End-to-end tests - validates binary execution and security checks
 e2e-test: build-test
@@ -437,8 +453,18 @@ elfanalyzer-integration-test:
 libccache-integration-test:
 	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags integration -v ./internal/libccache/
 
+# CI matrix leg: CGO=1 — full test suite with race detection and coverage
+# Runs alongside test-ci-cgo0 in parallel via GitHub Actions matrix
+test-ci-cgo1: unit-test-cgo1 e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test
+	$(GOCMD) tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
+
+# CI matrix leg: CGO=0 — verifies the codebase builds and passes tests without CGO
+test-ci-cgo0: unit-test-cgo0
+
 # CI test target - tests that can run without sudo or external services
 # Suitable for GitHub Actions and other CI environments
+# Note: in CI use test-ci-cgo1 and test-ci-cgo0 matrix targets for parallel execution
 test-ci: unit-test e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test
 
 # All tests - comprehensive test suite (requires sudo for integration-test)
