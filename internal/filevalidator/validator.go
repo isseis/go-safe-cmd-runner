@@ -885,8 +885,7 @@ func (a *analysisAggregate) addRecord(record *fileanalysis.Record, sourcePath st
 		return
 	}
 	resolvedSourcePath := sourcePathForRole(sourcePath, role)
-	a.stampSourcePath(record.SyscallAnalysis, resolvedSourcePath)
-	a.addSyscallAnalysis(record.SyscallAnalysis)
+	a.addSyscallAnalysis(record.SyscallAnalysis, resolvedSourcePath)
 	a.addSymbolAnalysis(record.SymbolAnalysis, resolvedSourcePath)
 	a.addWarnings(record.AnalysisWarnings)
 }
@@ -896,8 +895,7 @@ func (a *analysisAggregate) addDynamicResult(result *dynamicanalysis.Result, sou
 		return
 	}
 	resolvedSourcePath := sourcePathForRole(sourcePath, role)
-	a.stampSourcePath(result.SyscallAnalysis, resolvedSourcePath)
-	a.addSyscallAnalysis(result.SyscallAnalysis)
+	a.addSyscallAnalysis(result.SyscallAnalysis, resolvedSourcePath)
 	a.addSymbolAnalysis(result.SymbolAnalysis, resolvedSourcePath)
 	a.addWarnings(result.Warnings)
 }
@@ -911,27 +909,37 @@ func sourcePathForRole(sourcePath string, role sourceRole) string {
 	}
 }
 
-func (a *analysisAggregate) stampSourcePath(data *fileanalysis.SyscallAnalysisData, sourcePath string) {
-	if !a.includeDebugInfo || data == nil || sourcePath == "" {
-		return
-	}
-	for i := range data.DetectedSyscalls {
-		for j := range data.DetectedSyscalls[i].Occurrences {
-			if data.DetectedSyscalls[i].Occurrences[j].SourcePath == "" {
-				data.DetectedSyscalls[i].Occurrences[j].SourcePath = sourcePath
+func stampSourcePathOnSyscalls(syscalls []common.SyscallInfo, sourcePath string) []common.SyscallInfo {
+	stamped := make([]common.SyscallInfo, len(syscalls))
+	for i := range syscalls {
+		stamped[i] = syscalls[i]
+		if len(syscalls[i].Occurrences) == 0 {
+			continue
+		}
+		occurrences := make([]common.SyscallOccurrence, len(syscalls[i].Occurrences))
+		copy(occurrences, syscalls[i].Occurrences)
+		for j := range occurrences {
+			if occurrences[j].SourcePath == "" {
+				occurrences[j].SourcePath = sourcePath
 			}
 		}
+		stamped[i].Occurrences = occurrences
 	}
+	return stamped
 }
 
-func (a *analysisAggregate) addSyscallAnalysis(data *fileanalysis.SyscallAnalysisData) {
+func (a *analysisAggregate) addSyscallAnalysis(data *fileanalysis.SyscallAnalysisData, sourcePath string) {
 	if data == nil {
 		return
 	}
 	if a.architecture == "" && data.Architecture != "" {
 		a.architecture = data.Architecture
 	}
-	a.syscalls = append(a.syscalls, data.DetectedSyscalls...)
+	syscalls := data.DetectedSyscalls
+	if a.includeDebugInfo && sourcePath != "" {
+		syscalls = stampSourcePathOnSyscalls(syscalls, sourcePath)
+	}
+	a.syscalls = append(a.syscalls, syscalls...)
 	for _, result := range data.ArgEvalResults {
 		existing, ok := a.argEvalByName[result.SyscallName]
 		if !ok || mprotectStatusPriority(result.Status) > mprotectStatusPriority(existing.Status) ||

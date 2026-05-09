@@ -78,7 +78,7 @@ Acceptance Criteria:
 
 ## 4. 非機能要件
 
-1. NFR-001: `--debug-info` 非指定時の Record JSON サイズは v22 比で増加しない（`source_path` は `omitempty`）
+1. NFR-001: `--debug-info` 非指定時、`source_path` は JSON に出力されない（`omitempty`）。ただし `detected_symbols` / `dynamic_load_symbols` の型が `string[]` から `DetectedSymbol[]` に変わるため、構造変更に伴うサイズ増分は許容する
 2. NFR-002: `--debug-info` 指定時の追加データは source attribution の文字列フィールドのみとし、データ重複を持ち込まない
 3. NFR-003: セキュリティポリシー評価（ネットワークリスク判定）に使用される集約フィールドの動作は変更しない
 4. NFR-004: `network_analyzer` はシンボル名の有無でリスク判定するため、`DetectedSymbol` への型変更後も判定ロジックを維持する

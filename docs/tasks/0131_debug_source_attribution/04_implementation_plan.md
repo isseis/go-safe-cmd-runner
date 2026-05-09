@@ -341,7 +341,7 @@ NFR カバレッジ: NFR-003, NFR-004
 
 | 要件 | 対応方法 |
 |---|---|
-| NFR-001: 非 debug 時 JSON サイズ増加なし | `omitempty` タグによる省略 + タスク 7.2/7.4 のテストで確認 |
+| NFR-001: 非 debug 時 `source_path` 非出力 | `omitempty` タグによる `source_path` 省略 + タスク 7.2/7.4 のテストで確認（`DetectedSymbol[]` 化による構造オーバーヘッドは許容） |
 | NFR-002: debug 時追加データはソース attribution 文字列のみ | 設計通り `SourcePath` 文字列のみ追加、データ重複なし |
 | NFR-003: セキュリティポリシー評価の動作変更なし | タスク 5.1/5.2 + 既存 network_analyzer テストで確認 |
 | NFR-004: `DetectedSymbol` 型変更後もリスク判定維持 | タスク 5.2 で `.Name` 参照に更新 + 既存テストで確認 |

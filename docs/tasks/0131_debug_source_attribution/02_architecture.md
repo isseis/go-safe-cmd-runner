@@ -9,7 +9,7 @@
 ### 1.2 原則
 
 1. **In-place attribution**: 集約済みフィールドの各エントリに `source_path` を直接付与する。デバッグ専用の並列構造（`per_source_analysis`）は持ち込まない
-2. **Debug-only overhead**: `source_path` は `omitempty` により `--debug-info` 非指定時の JSON には出力されず、ファイルサイズに影響しない
+2. **Debug-only attribution overhead**: `source_path` は `omitempty` により `--debug-info` 非指定時の JSON には出力されない。一方で、`detected_symbols` / `dynamic_load_symbols` は `string[]` から `DetectedSymbol[]` へ変更されるため、非 debug 時にも構造変更由来のサイズ増分は生じうる
 3. **Policy-transparent**: ネットワークリスク判定（`network_analyzer`）の動作はシンボル名の有無で行うため、型変更（`string` → `DetectedSymbol`）後も判定結果は変わらない
 4. **Deduplication split**: `--debug-info` 時は `(name, source_path)` 単位で重複除去（同一シンボルでも異なるバイナリから来た場合は別エントリ）、非 debug 時は `name` 単位で重複除去（従来動作を維持）
 
@@ -253,7 +253,7 @@ flowchart TD
 
 ### 4.2 `--debug-info` なしのパス
 
-`SyscallOccurrence.SourcePath` は aggregate 内部でセットされるが、`buildSyscallData` が `includeDebugInfo=false` 時に `stripOccurrences()` を呼び出す。`stripOccurrences()` は各 `SyscallInfo.Occurrences` スライスを `nil` にするため（フィールド単位ではなくスライスごと除去）、`SourcePath` を含む occurrence 全体が JSON に出力されない。
+`SyscallOccurrence.SourcePath` の stamp は `includeDebugInfo=true` の場合のみ行う。`includeDebugInfo=false` 時は occurrences そのものが `stripOccurrences()` により除去されるため、`SourcePath` は JSON に出力されない。
 
 `DetectedSymbol.SourcePath` は `includeDebugInfo=false` 時に aggregate 内で `sourcePath=""` を dedup キーとして使うため、出力される `DetectedSymbol` の `source_path` フィールドは常に空文字列となり `omitempty` により省略される。
 
@@ -279,4 +279,4 @@ flowchart TD
 ## 6. 文書整合ルール
 
 1. AC番号は [./01_requirements.md](./01_requirements.md) に一致させる
-2. テスト対応表は [./03_detailed_specification.md](./03_detailed_specification.md) と [./04_implementation_plan.md](./04_implementation_plan.md) で同一の変更対象を指す
+2. テスト対応表は [./01_requirements.md](./01_requirements.md) と [./04_implementation_plan.md](./04_implementation_plan.md) で同一の変更対象を指す

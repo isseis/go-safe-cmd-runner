@@ -118,6 +118,38 @@ func TestAnalysisAggregate_AddRecord_SourcePathNotOverwrittenIfAlreadySet(t *tes
 	assert.Equal(t, "/original/source", result.DetectedSyscalls[0].Occurrences[0].SourcePath)
 }
 
+func TestAnalysisAggregate_AddRecord_DoesNotMutateInputSyscalls(t *testing.T) {
+	record := &fileanalysis.Record{
+		SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				DetectedSyscalls: []common.SyscallInfo{{
+					Number: 41,
+					Name:   "socket",
+					Occurrences: []common.SyscallOccurrence{{
+						Location:            0,
+						DeterminationMethod: "lib_cache_match",
+						Source:              "libc_symbol_import",
+					}},
+				}},
+			},
+		},
+	}
+
+	aggregate := newAnalysisAggregate(true)
+	aggregate.addRecord(record, "/app/bin/main", roleMain)
+
+	require.NotNil(t, record.SyscallAnalysis)
+	require.Len(t, record.SyscallAnalysis.DetectedSyscalls, 1)
+	require.Len(t, record.SyscallAnalysis.DetectedSyscalls[0].Occurrences, 1)
+	assert.Equal(t, "", record.SyscallAnalysis.DetectedSyscalls[0].Occurrences[0].SourcePath)
+
+	result := aggregate.syscallAnalysis()
+	require.NotNil(t, result)
+	require.Len(t, result.DetectedSyscalls, 1)
+	require.Len(t, result.DetectedSyscalls[0].Occurrences, 1)
+	assert.Equal(t, "/app/bin/main", result.DetectedSyscalls[0].Occurrences[0].SourcePath)
+}
+
 func TestAnalysisAggregate_AllRolesDistinct(t *testing.T) {
 	aggregate := newAnalysisAggregate(true)
 	aggregate.addRecord(&fileanalysis.Record{
