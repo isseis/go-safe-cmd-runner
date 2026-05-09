@@ -96,6 +96,27 @@ func TestSyscallInfo_JSONTags(t *testing.T) {
 		assert.Equal(t, "libc_symbol_import", occ["source"])
 	})
 
+	t.Run("location field omitted when zero", func(t *testing.T) {
+		info := common.SyscallInfo{
+			Number: 83,
+			Occurrences: []common.SyscallOccurrence{
+				{Location: 0, DeterminationMethod: "immediate", Source: "libc_symbol_import"},
+			},
+		}
+		data, err := json.Marshal(info)
+		require.NoError(t, err)
+
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(data, &m))
+
+		occs, ok := m["occurrences"].([]any)
+		require.True(t, ok)
+		require.Len(t, occs, 1)
+		occ := occs[0].(map[string]any)
+		_, hasLocation := occ["location"]
+		assert.False(t, hasLocation, "location field should be omitted when zero")
+	})
+
 	t.Run("determination_detail omitted when empty", func(t *testing.T) {
 		info := common.SyscallInfo{
 			Number: 41,

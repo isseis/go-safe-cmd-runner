@@ -243,7 +243,9 @@ func buildAnalysisOutputFromSymbolData(data *fileanalysis.SymbolAnalysisData) bi
 
 	// Check if any detected symbol has a network category (socket or dns).
 	// non-network symbols do not trigger NetworkDetected.
-	hasNetworkSymbol := slices.ContainsFunc(data.DetectedSymbols, binaryanalyzer.IsNetworkSymbolName)
+	hasNetworkSymbol := slices.ContainsFunc(data.DetectedSymbols, func(s fileanalysis.DetectedSymbol) bool {
+		return binaryanalyzer.IsNetworkSymbolName(s.Name)
+	})
 
 	if hasNetworkSymbol {
 		output.Result = binaryanalyzer.NetworkDetected
@@ -394,27 +396,26 @@ func handleAnalysisOutput(output binaryanalyzer.AnalysisOutput, cmdPath string) 
 	}
 }
 
-// convertNetworkSymbolEntries converts []string to binaryanalyzer.DetectedSymbol slice.
+// convertNetworkSymbolEntries converts fileanalysis.DetectedSymbol slice to binaryanalyzer.DetectedSymbol slice.
+// Category is derived from the symbol name for runner-internal logging and filtering.
 //
 // NOTE: This is the inverse of convertDetectedSymbols in
-// internal/filevalidator/validator.go. fileanalysis stores symbol names as
-// plain strings, and this
-// function derives Category for runner-internal logging and filtering.
-func convertNetworkSymbolEntries(entries []string) []binaryanalyzer.DetectedSymbol {
+// internal/filevalidator/validator.go.
+func convertNetworkSymbolEntries(entries []fileanalysis.DetectedSymbol) []binaryanalyzer.DetectedSymbol {
 	if len(entries) == 0 {
 		return nil
 	}
 	syms := make([]binaryanalyzer.DetectedSymbol, len(entries))
 	for i, e := range entries {
-		cat, found := binaryanalyzer.IsNetworkSymbol(e)
+		cat, found := binaryanalyzer.IsNetworkSymbol(e.Name)
 		if !found {
-			if binaryanalyzer.IsDynamicLoadSymbol(e) {
+			if binaryanalyzer.IsDynamicLoadSymbol(e.Name) {
 				cat = binaryanalyzer.CategoryDynamicLoad
 			} else {
 				cat = binaryanalyzer.CategorySyscallWrapper
 			}
 		}
-		syms[i] = binaryanalyzer.DetectedSymbol{Name: e, Category: string(cat)}
+		syms[i] = binaryanalyzer.DetectedSymbol{Name: e.Name, Category: string(cat)}
 	}
 	return syms
 }

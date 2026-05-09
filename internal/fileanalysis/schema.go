@@ -46,7 +46,8 @@ const (
 	// runner runtime rather than embedded in each executable's record.
 	// Version 22 replaces dyn_lib_deps with deps(path/hash only), replaces
 	// shebang_interpreter with shebang_chain(ref/path), and adds optional debug output.
-	CurrentSchemaVersion = 22
+	// Version 23 adds source attribution for syscall occurrences and detected symbols.
+	CurrentSchemaVersion = 23
 )
 
 // Record represents a unified file analysis record containing both
@@ -173,16 +174,22 @@ type SyscallAnalysisData struct {
 	common.SyscallAnalysisResultCore
 }
 
+// DetectedSymbol stores a symbol name with optional source attribution.
+type DetectedSymbol struct {
+	Name       string `json:"name"`
+	SourcePath string `json:"source_path,omitempty"`
+}
+
 // SymbolAnalysisData holds the symbol analysis result cached at record time.
 // Covers both network-related symbols (DetectedSymbols) and dynamic-load symbols (DynamicLoadSymbols).
 // nil means not analyzed (static binary, non-ELF, or old schema record).
 type SymbolAnalysisData struct {
 	// DetectedSymbols contains all network-related symbols found (excluding dynamic_load category).
 	// Non-empty when network symbols were detected.
-	DetectedSymbols []string `json:"detected_symbols,omitempty"`
+	DetectedSymbols []DetectedSymbol `json:"detected_symbols,omitempty"`
 
 	// DynamicLoadSymbols contains the dynamic library loading symbols found (dlopen, dlsym, dlvsym).
 	// Empty when none were detected.
 	// HasDynamicLoad is derived as len(DynamicLoadSymbols) > 0; no separate field.
-	DynamicLoadSymbols []string `json:"dynamic_load_symbols,omitempty"`
+	DynamicLoadSymbols []DetectedSymbol `json:"dynamic_load_symbols,omitempty"`
 }

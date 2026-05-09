@@ -35,5 +35,12 @@ func (r *Result) DynamicLoadSymbols() []string {
 	if r == nil || r.SymbolAnalysis == nil {
 		return nil
 	}
-	return r.SymbolAnalysis.DynamicLoadSymbols
+	if len(r.SymbolAnalysis.DynamicLoadSymbols) == 0 {
+		return nil
+	}
+	result := make([]string, len(r.SymbolAnalysis.DynamicLoadSymbols))
+	for i, s := range r.SymbolAnalysis.DynamicLoadSymbols {
+		result[i] = s.Name
+	}
+	return result
 }

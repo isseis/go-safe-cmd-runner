@@ -5,6 +5,7 @@ package filevalidator
 import (
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,7 +27,7 @@ func TestRecord_DetectedSymbols_SortedAlphabetically(t *testing.T) {
 	record, err := recordWithBinaryAnalyzer(t, stub)
 	require.NoError(t, err)
 	require.NotNil(t, record.SymbolAnalysis)
-	assert.Equal(t, []string{"bind", "connect", "socket"}, record.SymbolAnalysis.DetectedSymbols)
+	assert.Equal(t, []fileanalysis.DetectedSymbol{{Name: "bind"}, {Name: "connect"}, {Name: "socket"}}, record.SymbolAnalysis.DetectedSymbols)
 }
 
 func TestRecord_DynamicLoadSymbols_SortedAlphabetically(t *testing.T) {
@@ -41,5 +42,5 @@ func TestRecord_DynamicLoadSymbols_SortedAlphabetically(t *testing.T) {
 	record, err := recordWithBinaryAnalyzer(t, stub)
 	require.NoError(t, err)
 	require.NotNil(t, record.SymbolAnalysis)
-	assert.Equal(t, []string{"dlopen", "dlsym", "dlvsym"}, record.SymbolAnalysis.DynamicLoadSymbols)
+	assert.Equal(t, []fileanalysis.DetectedSymbol{{Name: "dlopen"}, {Name: "dlsym"}, {Name: "dlvsym"}}, record.SymbolAnalysis.DynamicLoadSymbols)
 }

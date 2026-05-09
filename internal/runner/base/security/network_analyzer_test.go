@@ -316,7 +316,7 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCAnalysisFound(t *testing.
 	store := &stubRecordStore{record: &fileanalysis.Record{
 		ContentHash: testContentHash,
 		SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
-			DetectedSymbols: []string{"socket"},
+			DetectedSymbols: []fileanalysis.DetectedSymbol{{Name: "socket"}},
 		},
 		SyscallAnalysis: svcSyscallData(),
 	}}
@@ -335,7 +335,7 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_NoSyscallAnalysis(t *testing
 	store := &stubRecordStore{record: &fileanalysis.Record{
 		ContentHash: testContentHash,
 		SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
-			DetectedSymbols: []string{"socket"},
+			DetectedSymbols: []fileanalysis.DetectedSymbol{{Name: "socket"}},
 		},
 	}}
 	analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
@@ -353,7 +353,7 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_NoSVC(t *testing.T) {
 	store := &stubRecordStore{record: &fileanalysis.Record{
 		ContentHash: testContentHash,
 		SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
-			DetectedSymbols: []string{"socket"},
+			DetectedSymbols: []fileanalysis.DetectedSymbol{{Name: "socket"}},
 		},
 		SyscallAnalysis: &fileanalysis.SyscallAnalysisData{},
 	}}
@@ -372,7 +372,7 @@ func TestIsNetworkViaBinaryAnalysis_NetworkCategorySymbol(t *testing.T) {
 	store := &stubRecordStore{record: &fileanalysis.Record{
 		ContentHash: testContentHash,
 		SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
-			DetectedSymbols: []string{"read", "socket"},
+			DetectedSymbols: []fileanalysis.DetectedSymbol{{Name: "read"}, {Name: "socket"}},
 		},
 	}}
 	analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
@@ -390,7 +390,7 @@ func TestIsNetworkViaBinaryAnalysis_SyscallWrapperOnly(t *testing.T) {
 	store := &stubRecordStore{record: &fileanalysis.Record{
 		ContentHash: testContentHash,
 		SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
-			DetectedSymbols: []string{"read", "close"},
+			DetectedSymbols: []fileanalysis.DetectedSymbol{{Name: "read"}, {Name: "close"}},
 		},
 	}}
 	analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, store)
@@ -568,7 +568,7 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_WithNetworkSyscall(t *testin
 	store := &stubRecordStore{record: &fileanalysis.Record{
 		ContentHash: testContentHash,
 		SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
-			DetectedSymbols: []string{"socket"},
+			DetectedSymbols: []fileanalysis.DetectedSymbol{{Name: "socket"}},
 		},
 		SyscallAnalysis: syscallDataWithNetworkSyscall(true),
 	}}

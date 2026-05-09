@@ -126,7 +126,7 @@ func TestAnalyzeOneLibrary_networkSymbolDetected(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.SymbolAnalysis)
-	assert.Contains(t, result.SymbolAnalysis.DetectedSymbols, "socket")
+	assert.Contains(t, result.SymbolAnalysis.DetectedSymbols, fileanalysis.DetectedSymbol{Name: "socket"})
 	assert.Empty(t, result.Warnings)
 }
 
@@ -323,7 +323,7 @@ func TestAnalyzeLibraries_symbolAnalysisCreatedWhenNil(t *testing.T) {
 
 	require.NoError(t, v.analyzeLibraries(record))
 	require.NotNil(t, record.SymbolAnalysis)
-	require.Contains(t, record.SymbolAnalysis.DynamicLoadSymbols, "dlopen")
+	require.Contains(t, record.SymbolAnalysis.DynamicLoadSymbols, fileanalysis.DetectedSymbol{Name: "dlopen"})
 }
 
 // TestAnalyzeLibraries_RecordHasNoLibraryAnalysisField verifies that the record does not
