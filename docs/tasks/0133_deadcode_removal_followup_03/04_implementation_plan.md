@@ -74,9 +74,9 @@ golangci-lint run --no-config --default=none --enable=unused ./...
 責務が単一で副作用が小さいので最初に実施。
 
 #### Phase 1a: `internal/common/test_helpers.go` 全削除 + testutil の未使用関数削除
-- [ ] [internal/common/test_helpers.go](internal/common/test_helpers.go) を削除
-- [ ] [internal/common/testutil/helpers.go](internal/common/testutil/helpers.go) から `ErrInvalidTimeout`, `NewUnlimitedTimeout`, `NewTimeout`, `NewUnlimitedOutputSizeLimit`, `BoolPtr` を削除（残す: `Int32Ptr`, `Int64Ptr`, `NewUnsetOutputSizeLimit`, `StringPtr`, `StringPtrOrNil`, `SafeTempDir`, `WriteExecutableFile`）
-- [ ] `goimports`/`gofumpt` で未使用 import (`fmt` など) を整理
+- [x] [internal/common/test_helpers.go](internal/common/test_helpers.go) を削除
+- [x] [internal/common/testutil/helpers.go](internal/common/testutil/helpers.go) から `ErrInvalidTimeout`, `NewUnlimitedTimeout`, `NewTimeout`, `NewUnlimitedOutputSizeLimit`, `BoolPtr` を削除（残す: `Int32Ptr`, `Int64Ptr`, `NewUnsetOutputSizeLimit`, `StringPtr`, `StringPtrOrNil`, `SafeTempDir`, `WriteExecutableFile`）
+- [x] `goimports`/`gofumpt` で未使用 import (`fmt` など) を整理
 
 #### Phase 1b: `internal/runner/bootstrap/test_helpers.go` 削除
 - [ ] [internal/runner/bootstrap/test_helpers.go](internal/runner/bootstrap/test_helpers.go) を削除（中身が `InitializeVerificationManagerForTest` 1 関数のみ）

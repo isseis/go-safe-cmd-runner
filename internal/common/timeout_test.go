@@ -5,40 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
-
-func TestErrInvalidTimeout_Error(t *testing.T) {
-	tests := []struct {
-		name    string
-		err     ErrInvalidTimeout
-		wantMsg string
-	}{
-		{
-			name: "negative timeout",
-			err: ErrInvalidTimeout{
-				Value:   -1,
-				Context: "timeout cannot be negative",
-			},
-			wantMsg: "invalid timeout value -1 in timeout cannot be negative",
-		},
-		{
-			name: "exceeds max",
-			err: ErrInvalidTimeout{
-				Value:   100000,
-				Context: "timeout exceeds maximum allowed value",
-			},
-			wantMsg: "invalid timeout value 100000 in timeout exceeds maximum allowed value",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := tt.err.Error()
-			assert.Equal(t, tt.wantMsg, got, "ErrInvalidTimeout.Error() should match expected message")
-		})
-	}
-}
 
 func TestNewUnsetTimeout(t *testing.T) {
 	timeout := NewUnsetTimeout()
@@ -48,64 +15,16 @@ func TestNewUnsetTimeout(t *testing.T) {
 	// Value() should not be called on unset timeout - it should panic
 }
 
-func TestNewUnlimitedTimeout(t *testing.T) {
-	timeout := NewUnlimitedTimeout()
-
-	assert.True(t, timeout.IsSet(), "NewUnlimitedTimeout() should be set")
-	assert.True(t, timeout.IsUnlimited(), "NewUnlimitedTimeout() should be unlimited")
-	assert.Equal(t, int32(0), timeout.Value(), "NewUnlimitedTimeout().Value() should be 0")
+func unlimitedTimeout() Timeout {
+	return Timeout{NewOptionalValue[int32](0)}
 }
 
-func TestNewTimeout(t *testing.T) {
-	tests := []struct {
-		name    string
-		seconds int32
-		wantErr bool
-	}{
-		{
-			name:    "valid positive timeout",
-			seconds: 60,
-			wantErr: false,
-		},
-		{
-			name:    "zero timeout",
-			seconds: 0,
-			wantErr: false,
-		},
-		{
-			name:    "max timeout",
-			seconds: MaxTimeout,
-			wantErr: false,
-		},
-		{
-			name:    "negative timeout",
-			seconds: -1,
-			wantErr: true,
-		},
-		{
-			name:    "exceeds max timeout",
-			seconds: MaxTimeout + 1,
-			wantErr: true,
-		},
-	}
+func timeoutFromSeconds(seconds int32) Timeout {
+	return Timeout{NewOptionalValue(seconds)}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			timeout, err := NewTimeout(tt.seconds)
-			if tt.wantErr {
-				assert.Error(t, err, "NewTimeout(%d) should return error", tt.seconds)
-				return
-			}
-			require.NoError(t, err, "NewTimeout(%d) should not return error", tt.seconds)
-			assert.True(t, timeout.IsSet(), "NewTimeout() should create a set timeout")
-			assert.Equal(t, tt.seconds, timeout.Value(), "NewTimeout(%d).Value() should match", tt.seconds)
-			if tt.seconds == 0 {
-				assert.True(t, timeout.IsUnlimited(), "NewTimeout(0) should be unlimited")
-			} else {
-				assert.False(t, timeout.IsUnlimited(), "NewTimeout(non-zero) should not be unlimited")
-			}
-		})
-	}
+func timeoutInt32Ptr(v int32) *int32 {
+	return &v
 }
 
 func TestTimeout_IsSet(t *testing.T) {
@@ -121,14 +40,13 @@ func TestTimeout_IsSet(t *testing.T) {
 		},
 		{
 			name:    "unlimited timeout",
-			timeout: NewUnlimitedTimeout(),
+			timeout: unlimitedTimeout(),
 			want:    true,
 		},
 		{
 			name: "positive timeout",
 			timeout: func() Timeout {
-				t, _ := NewTimeout(60)
-				return t
+				return timeoutFromSeconds(60)
 			}(),
 			want: true,
 		},
@@ -154,24 +72,20 @@ func TestTimeout_IsUnlimited(t *testing.T) {
 		},
 		{
 			name:    "unlimited timeout",
-			timeout: NewUnlimitedTimeout(),
+			timeout: unlimitedTimeout(),
 			want:    true,
 		},
 		{
 			name: "positive timeout",
 			timeout: func() Timeout {
-				t, _ := NewTimeout(60)
-				return t
+				return timeoutFromSeconds(60)
 			}(),
 			want: false,
 		},
 		{
-			name: "zero via NewTimeout",
-			timeout: func() Timeout {
-				t, _ := NewTimeout(0)
-				return t
-			}(),
-			want: true,
+			name:    "zero timeout",
+			timeout: unlimitedTimeout(),
+			want:    true,
 		},
 	}
 
@@ -190,22 +104,20 @@ func TestTimeout_Value(t *testing.T) {
 	}{
 		{
 			name:    "unlimited timeout",
-			timeout: NewUnlimitedTimeout(),
+			timeout: unlimitedTimeout(),
 			want:    0,
 		},
 		{
 			name: "positive timeout",
 			timeout: func() Timeout {
-				t, _ := NewTimeout(60)
-				return t
+				return timeoutFromSeconds(60)
 			}(),
 			want: 60,
 		},
 		{
 			name: "large timeout",
 			timeout: func() Timeout {
-				t, _ := NewTimeout(3600)
-				return t
+				return timeoutFromSeconds(3600)
 			}(),
 			want: 3600,
 		},
@@ -243,21 +155,21 @@ func TestNewFromIntPtr(t *testing.T) {
 		},
 		{
 			name:      "zero pointer creates unlimited timeout",
-			ptr:       Int32Ptr(0),
+			ptr:       timeoutInt32Ptr(0),
 			wantSet:   true,
 			wantUnlim: true,
 			wantValue: 0,
 		},
 		{
 			name:      "positive pointer creates timeout",
-			ptr:       Int32Ptr(120),
+			ptr:       timeoutInt32Ptr(120),
 			wantSet:   true,
 			wantUnlim: false,
 			wantValue: 120,
 		},
 		{
 			name:      "max timeout pointer",
-			ptr:       Int32Ptr(MaxTimeout),
+			ptr:       timeoutInt32Ptr(MaxTimeout),
 			wantSet:   true,
 			wantUnlim: false,
 			wantValue: MaxTimeout,
