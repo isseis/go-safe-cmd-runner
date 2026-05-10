@@ -10,10 +10,10 @@ import (
 	"runtime"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -55,7 +55,7 @@ int main() {
     return 0;
 }
 `
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "test.c")
 	binFile := filepath.Join(tmpDir, "test")
 
@@ -116,7 +116,7 @@ func main() {
 	conn.Close()
 }
 `
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "main.go")
 	binFile := filepath.Join(tmpDir, "test")
 
@@ -179,7 +179,7 @@ func main() {
 	fmt.Println("hello, world")
 }
 `
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "main.go")
 	binFile := filepath.Join(tmpDir, "test")
 
@@ -236,7 +236,7 @@ func main() {
 	conn.Close()
 }
 `
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "main.go")
 	binFile := filepath.Join(tmpDir, "test_binary")
 
@@ -367,7 +367,7 @@ func main() {
     fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
     if err == nil { _ = syscall.Close(fd) }
 }`
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "main.go")
 	binaryPath := filepath.Join(tmpDir, "cgo_test")
 
@@ -476,7 +476,7 @@ func main() {
 		_ = syscall.Close(int(fd))
 	}
 }`
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "main.go")
 	binaryPath := filepath.Join(tmpDir, "cgo_x86_test")
 

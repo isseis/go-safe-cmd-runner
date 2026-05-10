@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -153,7 +153,7 @@ func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
 // This validates AC-M2S-7: verify warns but does not abort on TOCTOU violations.
 func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
 	// Create a world-writable directory with a target file
-	worldWritableDir := commontesting.SafeTempDir(t)
+	worldWritableDir := tu.SafeTempDir(t)
 	err := os.Chmod(worldWritableDir, 0o777)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -164,7 +164,7 @@ func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
 	err = os.WriteFile(targetFile, []byte("hello"), 0o644)
 	require.NoError(t, err)
 
-	hashDir := commontesting.SafeTempDir(t)
+	hashDir := tu.SafeTempDir(t)
 	validator := &fakeValidator{responses: map[string]error{}}
 	cleanup := overrideValidatorFactory(t, validator)
 	defer cleanup()

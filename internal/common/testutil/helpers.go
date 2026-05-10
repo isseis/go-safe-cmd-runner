@@ -3,65 +3,10 @@
 package testutil
 
 import (
-	"os"
-	"path/filepath"
-	"testing"
-
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/stretchr/testify/require"
 )
 
 // NewUnsetOutputSizeLimit creates an unset OutputSizeLimit (will use default or inherit from parent).
 func NewUnsetOutputSizeLimit() common.OutputSizeLimit {
 	return common.OutputSizeLimit{OptionalValue: common.NewUnsetOptionalValue[int64]()}
-}
-
-// Int32Ptr returns a pointer to the given int value.
-// This is a convenience function for creating timeout values.
-func Int32Ptr(v int32) *int32 {
-	return &v
-}
-
-// Int64Ptr returns a pointer to the given int64 value.
-// This is a convenience function for creating output size limit values.
-func Int64Ptr(v int64) *int64 {
-	return &v
-}
-
-// StringPtr returns a pointer to the given string value.
-// This is a convenience function for creating string pointer values in tests.
-func StringPtr(s string) *string {
-	return &s
-}
-
-// StringPtrOrNil returns a pointer to the given string value, or nil if the string is empty.
-// This is useful for optional string fields in tests where empty strings should be treated as unset.
-func StringPtrOrNil(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
-// SafeTempDir creates a temporary directory and resolves any symlinks in its path
-// to ensure consistent behavior across different environments.
-// On macOS, /var is a symlink to /private/var, which causes safefileio's symlink
-// checks to fail. This helper resolves such OS-level symlinks so that temp paths
-// are safe for use with safefileio functions.
-func SafeTempDir(t *testing.T) string {
-	t.Helper()
-	tempDir := t.TempDir()
-	realPath, err := filepath.EvalSymlinks(tempDir)
-	require.NoError(t, err, "Failed to resolve symlinks in temp dir")
-	return realPath
-}
-
-// WriteExecutableFile writes content to dir/name with executable permissions (0o755)
-// and returns the full path.  Use this in tests that need a script or binary stub
-// on the filesystem.
-func WriteExecutableFile(t *testing.T, dir, name string, content []byte) string {
-	t.Helper()
-	path := filepath.Join(dir, name)
-	require.NoError(t, os.WriteFile(path, content, 0o755)) // #nosec G306 -- executable bit is intentional for test scripts
-	return path
 }

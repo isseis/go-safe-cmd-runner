@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -229,7 +229,7 @@ func (m *mockFileSystem) getRemoveCallCount() int {
 // TestSafeWriteFileOverwrite_NoCleanupOnError tests that existing files are NOT deleted when overwrite fails
 func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 	t.Run("existing file is NOT deleted when overwrite validation fails", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
+		tempDir := tu.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "existing_file.txt")
 
 		mockFS := newMockFileSystem()
@@ -265,7 +265,7 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 	})
 
 	t.Run("existing file is NOT deleted when overwrite write fails", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
+		tempDir := tu.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "existing_write_fail.txt")
 
 		mockFS := newMockFileSystem()
@@ -305,7 +305,7 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 	})
 
 	t.Run("existing file is NOT deleted when truncate fails", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
+		tempDir := tu.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "existing_truncate_fail.txt")
 
 		mockFS := newMockFileSystem()
@@ -348,7 +348,7 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 // TestFileCleanup_Integration tests the cleanup behavior with real filesystem
 func TestFileCleanup_Integration(t *testing.T) {
 	t.Run("existing file is NOT deleted on overwrite error", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
+		tempDir := tu.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "existing.txt")
 
 		// Create an existing file with valid permissions

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +20,7 @@ import (
 func TestE2E_TOCTOU_RunnerFailsOnWorldWritableVerifyFilesDir(t *testing.T) {
 	// Create a world-writable directory with a file inside it.
 	// The TOCTOU check inspects the parent directory of verify_files entries.
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	err := os.Chmod(tmpDir, 0o777)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -33,7 +33,7 @@ func TestE2E_TOCTOU_RunnerFailsOnWorldWritableVerifyFilesDir(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a config file that references the file in the world-writable directory
-	configDir := commontesting.SafeTempDir(t)
+	configDir := tu.SafeTempDir(t)
 	configFile := filepath.Join(configDir, "config.toml")
 	tomlContent := `version = "1.0"
 

@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
@@ -28,6 +27,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	resourcetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	verificationtesting "github.com/isseis/go-safe-cmd-runner/internal/verification/testing"
 	"github.com/stretchr/testify/assert"
@@ -123,7 +123,7 @@ func TestIntegration_SlackRedaction(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: tu.Int32Ptr(30)},
 	}
 
 	// Create real executor and resource manager
@@ -247,7 +247,7 @@ func TestE2E_MultiHandlerLogging(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: tu.Int32Ptr(30)},
 	}
 
 	// Create executor and resource manager

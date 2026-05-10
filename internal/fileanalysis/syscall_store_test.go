@@ -9,13 +9,13 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
@@ -60,7 +60,7 @@ func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
 }
 
 func TestSyscallAnalysisStore_HashMismatch(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
@@ -91,7 +91,7 @@ func TestSyscallAnalysisStore_HashMismatch(t *testing.T) {
 }
 
 func TestSyscallAnalysisStore_NoSyscallAnalysis(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
@@ -121,7 +121,7 @@ func TestSyscallAnalysisStore_NoSyscallAnalysis(t *testing.T) {
 }
 
 func TestSyscallAnalysisStore_RecordNotFound(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
@@ -138,7 +138,7 @@ func TestSyscallAnalysisStore_RecordNotFound(t *testing.T) {
 }
 
 func TestSyscallAnalysisStore_AnalysisWarnings(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
@@ -181,7 +181,7 @@ func TestSyscallAnalysisStore_AnalysisWarnings(t *testing.T) {
 }
 
 func TestSyscallAnalysisStore_SaveSortsDetectedSyscallsByNumber(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
@@ -221,7 +221,7 @@ func TestSyscallAnalysisStore_SaveSortsDetectedSyscallsByNumber(t *testing.T) {
 }
 
 func TestSyscallAnalysisStore_UpdatePreservesOtherFields(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
@@ -272,7 +272,7 @@ func TestSyscallAnalysisStore_UpdatePreservesOtherFields(t *testing.T) {
 }
 
 func TestSyscallAnalysisStore_GroupingBehavior(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
@@ -380,7 +380,7 @@ func TestSyscallAnalysisStore_GroupingBehavior(t *testing.T) {
 }
 
 func TestStore_ArgEvalResults(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
@@ -447,7 +447,7 @@ func TestStore_ArgEvalResults(t *testing.T) {
 // TestLoad_SchemaVersion17_ReturnsSchemaVersionMismatchError verifies that loading a
 // syscall analysis record saved with schema version 17 returns SchemaVersionMismatchError.
 func TestLoad_SchemaVersion17_ReturnsSchemaVersionMismatchError(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})

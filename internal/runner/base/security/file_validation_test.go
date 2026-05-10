@@ -15,6 +15,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 )
 
 func TestValidator_ValidateOutputWritePermission(t *testing.T) {
@@ -36,7 +37,7 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 			name: "valid_output_file_write_permission",
 			setupFunc: func(t *testing.T) string {
 				// Create a secure temporary directory first
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				err := os.Chmod(tempDir, 0o755)
 				require.NoError(t, err)
 
@@ -56,7 +57,7 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 		{
 			name: "non_existent_file_in_writable_directory",
 			setupFunc: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				// Set secure directory permissions for test
 				err := os.Chmod(tempDir, 0o755)
 				require.NoError(t, err)
@@ -86,7 +87,7 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 		{
 			name: "directory_instead_of_file",
 			setupFunc: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				return tempDir
 			},
 			uid:         currentUID,
@@ -136,7 +137,7 @@ func TestValidator_ValidateOutputWritePermission_RejectsUserSymlinkComponent(t *
 		t.Skip("symlink test is not portable on Windows")
 	}
 
-	baseDir := commontesting.SafeTempDir(t)
+	baseDir := tu.SafeTempDir(t)
 	realDir := filepath.Join(baseDir, "real-output-dir")
 	require.NoError(t, os.Mkdir(realDir, 0o755))
 
@@ -275,7 +276,7 @@ func TestValidator_validateOutputDirectoryAccess(t *testing.T) {
 		{
 			name: "writable_directory_by_owner_with_permissive_config",
 			setupFunc: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				// Ensure directory is writable by owner
 				err := os.Chmod(tempDir, 0o700)
 				require.NoError(t, err)
@@ -287,7 +288,7 @@ func TestValidator_validateOutputDirectoryAccess(t *testing.T) {
 		{
 			name: "non_existent_directory_with_permissive_config",
 			setupFunc: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				nonExistentDir := filepath.Join(tempDir, "non_existent")
 				return nonExistentDir
 			},
@@ -297,7 +298,7 @@ func TestValidator_validateOutputDirectoryAccess(t *testing.T) {
 		{
 			name: "directory_without_write_permission_with_permissive_config",
 			setupFunc: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				// Remove write permissions for all
 				err := os.Chmod(tempDir, 0o555)
 				require.NoError(t, err)
@@ -478,7 +479,7 @@ func TestValidator_ValidateOutputWritePermission_Integration(t *testing.T) {
 
 	t.Run("integration_with_directory_validation", func(t *testing.T) {
 		// Create a directory structure that should pass validation
-		tempDir := commontesting.SafeTempDir(t)
+		tempDir := tu.SafeTempDir(t)
 		// Set secure permissions on parent directory
 		err := os.Chmod(tempDir, 0o755)
 		require.NoError(t, err)
@@ -1461,7 +1462,7 @@ func TestValidator_validateOutputDirectoryAccess_WithImprovedLogic(t *testing.T)
 		{
 			name: "output_directory_owned_by_user",
 			setupFunc: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 
 				// Create subdirectory owned by current user
 				subDir := filepath.Join(tempDir, "output")
@@ -1476,7 +1477,7 @@ func TestValidator_validateOutputDirectoryAccess_WithImprovedLogic(t *testing.T)
 		{
 			name: "non_existent_directory_with_existing_parent",
 			setupFunc: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 
 				// Return path to non-existent subdirectory
 				return filepath.Join(tempDir, "nonexistent", "output")

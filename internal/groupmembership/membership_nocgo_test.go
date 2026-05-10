@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -134,14 +134,14 @@ func TestParsePasswdLine(t *testing.T) {
 
 // Helper functions for testing with temporary files
 func createTempGroupFile(t *testing.T, content string) string {
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	groupFile := filepath.Join(tempDir, "group")
 	require.NoError(t, os.WriteFile(groupFile, []byte(content), 0o644))
 	return groupFile
 }
 
 func createTempPasswdFile(t *testing.T, content string) string {
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	passwdFile := filepath.Join(tempDir, "passwd")
 	require.NoError(t, os.WriteFile(passwdFile, []byte(content), 0o644))
 	return passwdFile

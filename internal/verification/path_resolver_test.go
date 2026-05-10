@@ -5,14 +5,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestPathResolver_ResolvePath(t *testing.T) {
 	// Create a temporary directory for our test
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 
 	// Create test directories in PATH
 	dir1 := filepath.Join(tempDir, "dir1")
@@ -76,7 +76,7 @@ func TestPathResolver_NoCommandValidation(t *testing.T) {
 	// command allowlist validation. Validation is the caller's responsibility.
 
 	t.Run("ResolvePath succeeds regardless of allowlist", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
+		tempDir := tu.SafeTempDir(t)
 
 		// Create an executable file
 		execPath := filepath.Join(tempDir, "test_command")
@@ -101,7 +101,7 @@ func TestPathResolver_NoCommandValidation(t *testing.T) {
 
 func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 	t.Run("successful_validation_and_caching", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
+		tempDir := tu.SafeTempDir(t)
 		execPath := filepath.Join(tempDir, "test_cmd")
 		err := os.WriteFile(execPath, []byte("#!/bin/sh\necho test"), 0o755)
 		require.NoError(t, err)
@@ -130,7 +130,7 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 	})
 
 	t.Run("non_executable_file", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
+		tempDir := tu.SafeTempDir(t)
 		nonExecPath := filepath.Join(tempDir, "non_exec")
 		err := os.WriteFile(nonExecPath, []byte("#!/bin/sh\necho test"), 0o644)
 		require.NoError(t, err)
@@ -146,7 +146,7 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 	})
 
 	t.Run("directory_instead_of_command", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
+		tempDir := tu.SafeTempDir(t)
 		dirPath := filepath.Join(tempDir, "test_dir")
 		err := os.MkdirAll(dirPath, 0o755)
 		require.NoError(t, err)

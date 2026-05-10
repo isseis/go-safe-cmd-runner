@@ -10,11 +10,11 @@ import (
 	"regexp"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/variable"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,7 +22,7 @@ import (
 
 func TestIntegration_AutoVariables(t *testing.T) {
 	// Test that __runner_datetime and __runner_pid are properly expanded in commands
-	testDir := commontesting.SafeTempDir(t)
+	testDir := tu.SafeTempDir(t)
 	hashDir := filepath.Join(testDir, "hashes")
 	configPath := filepath.Join(testDir, "config.toml")
 	outputFile := filepath.Join(testDir, "output.txt")

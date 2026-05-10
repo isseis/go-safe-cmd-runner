@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 )
 
 // TestCollectTOCTOUCheckDirs verifies that directory collection covers all required
@@ -96,7 +96,7 @@ func TestCollectTOCTOUCheckDirs(t *testing.T) {
 // TestRunTOCTOUPermissionCheck_NoViolations verifies that clean directories
 // produce no violations.
 func TestRunTOCTOUPermissionCheck_NoViolations(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	err := os.Chmod(tmpDir, 0o755)
 	require.NoError(t, err)
 
@@ -110,7 +110,7 @@ func TestRunTOCTOUPermissionCheck_NoViolations(t *testing.T) {
 // TestRunTOCTOUPermissionCheck_ViolationDetected verifies that world-writable
 // directories are detected as violations.
 func TestRunTOCTOUPermissionCheck_ViolationDetected(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 
 	// Make the directory world-writable (violates security policy)
 	err := os.Chmod(tmpDir, 0o777)
@@ -132,8 +132,8 @@ func TestRunTOCTOUPermissionCheck_ViolationDetected(t *testing.T) {
 // TestRunTOCTOUPermissionCheck_MultipleViolations verifies that multiple
 // violations are all returned.
 func TestRunTOCTOUPermissionCheck_MultipleViolations(t *testing.T) {
-	dir1 := commontesting.SafeTempDir(t)
-	dir2 := commontesting.SafeTempDir(t)
+	dir1 := tu.SafeTempDir(t)
+	dir2 := tu.SafeTempDir(t)
 
 	for _, d := range []string{dir1, dir2} {
 		err := os.Chmod(d, 0o777)

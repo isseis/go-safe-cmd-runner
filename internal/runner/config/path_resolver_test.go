@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -65,7 +65,7 @@ func TestDefaultPathResolver_ResolvePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			baseDir := commontesting.SafeTempDir(t)
+			baseDir := tu.SafeTempDir(t)
 			expectedPath := tt.setupFiles(t, baseDir)
 
 			fs := common.NewDefaultFileSystem()
@@ -125,7 +125,7 @@ func TestDefaultPathResolver_ResolvePathWithDotPaths(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			baseDir := commontesting.SafeTempDir(t)
+			baseDir := tu.SafeTempDir(t)
 			expectedPath := tt.setupFiles(t, baseDir)
 
 			fs := common.NewDefaultFileSystem()
@@ -139,7 +139,7 @@ func TestDefaultPathResolver_ResolvePathWithDotPaths(t *testing.T) {
 }
 
 func TestDefaultPathResolver_ErrorDetails(t *testing.T) {
-	baseDir := commontesting.SafeTempDir(t)
+	baseDir := tu.SafeTempDir(t)
 
 	fs := common.NewDefaultFileSystem()
 	resolver := NewDefaultPathResolver(fs)

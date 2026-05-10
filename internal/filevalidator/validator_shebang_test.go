@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +24,7 @@ func TestSaveRecord_ShebangDirect(t *testing.T) {
 	hashDir := safeTempDir(t)
 	scriptDir := safeTempDir(t)
 
-	script := commontesting.WriteExecutableFile(t, scriptDir, "script.sh", []byte("#!/bin/sh\necho hello\n"))
+	script := tu.WriteExecutableFile(t, scriptDir, "script.sh", []byte("#!/bin/sh\necho hello\n"))
 	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{})
 	require.NoError(t, err)
 
@@ -65,7 +65,7 @@ func TestSaveRecord_ShebangEnv(t *testing.T) {
 	hashDir := safeTempDir(t)
 	scriptDir := safeTempDir(t)
 
-	script := commontesting.WriteExecutableFile(t, scriptDir, "script.py", []byte("#!/usr/bin/env sh\necho hello\n"))
+	script := tu.WriteExecutableFile(t, scriptDir, "script.py", []byte("#!/usr/bin/env sh\necho hello\n"))
 	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{})
 	require.NoError(t, err)
 
@@ -146,10 +146,10 @@ func TestSaveRecord_ShebangRecursive(t *testing.T) {
 	dir := safeTempDir(t)
 
 	// Create a fake interpreter that is itself a shebang script.
-	fakeInterp := commontesting.WriteExecutableFile(t, dir, "fake_interpreter", []byte("#!/bin/sh\necho wrapper\n"))
+	fakeInterp := tu.WriteExecutableFile(t, dir, "fake_interpreter", []byte("#!/bin/sh\necho wrapper\n"))
 
 	// Create a script pointing to the fake interpreter.
-	script := commontesting.WriteExecutableFile(t, dir, "script.sh",
+	script := tu.WriteExecutableFile(t, dir, "script.sh",
 		[]byte(fmt.Sprintf("#!%s\necho hello\n", fakeInterp)))
 
 	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{})
@@ -173,12 +173,12 @@ func TestSaveRecord_InterpreterForce(t *testing.T) {
 	require.NoError(t, err)
 
 	// Record script A.
-	scriptA := commontesting.WriteExecutableFile(t, dir, "a.sh", []byte("#!/bin/sh\necho A\n"))
+	scriptA := tu.WriteExecutableFile(t, dir, "a.sh", []byte("#!/bin/sh\necho A\n"))
 	_, _, err = validator.SaveRecord(scriptA, false)
 	require.NoError(t, err)
 
 	// Record script B with force=false.
-	scriptB := commontesting.WriteExecutableFile(t, dir, "b.sh", []byte("#!/bin/sh\necho B\n"))
+	scriptB := tu.WriteExecutableFile(t, dir, "b.sh", []byte("#!/bin/sh\necho B\n"))
 	_, _, err = validator.SaveRecord(scriptB, false)
 	require.NoError(t, err, "second SaveRecord(force=false) must succeed")
 
@@ -203,7 +203,7 @@ func TestSaveRecord_ShebangSymlink(t *testing.T) {
 	hashDir := safeTempDir(t)
 	dir := safeTempDir(t)
 
-	script := commontesting.WriteExecutableFile(t, dir, "script.sh", []byte("#!/bin/sh\necho hello\n"))
+	script := tu.WriteExecutableFile(t, dir, "script.sh", []byte("#!/bin/sh\necho hello\n"))
 	symlinkPath := filepath.Join(dir, "link_to_script.sh")
 	require.NoError(t, os.Symlink(script, symlinkPath))
 

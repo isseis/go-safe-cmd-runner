@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,8 +42,8 @@ func TestSaveRecord_ShebangInterpreterCacheReuse(t *testing.T) {
 	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: spy})
 	require.NoError(t, err)
 
-	scriptA := commontesting.WriteExecutableFile(t, scriptDir, "a.sh", []byte("#!/bin/sh\necho A\n"))
-	scriptB := commontesting.WriteExecutableFile(t, scriptDir, "b.sh", []byte("#!/bin/sh\necho B\n"))
+	scriptA := tu.WriteExecutableFile(t, scriptDir, "a.sh", []byte("#!/bin/sh\necho A\n"))
+	scriptB := tu.WriteExecutableFile(t, scriptDir, "b.sh", []byte("#!/bin/sh\necho B\n"))
 
 	_, _, err = validator.SaveRecord(scriptA, false)
 	require.NoError(t, err)
@@ -66,8 +66,8 @@ func TestSaveRecord_ShebangInterpreterCacheOutputEquivalence(t *testing.T) {
 	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: spy})
 	require.NoError(t, err)
 
-	scriptA := commontesting.WriteExecutableFile(t, scriptDir, "a.sh", []byte("#!/bin/sh\necho A\n"))
-	scriptB := commontesting.WriteExecutableFile(t, scriptDir, "b.sh", []byte("#!/bin/sh\necho B\n"))
+	scriptA := tu.WriteExecutableFile(t, scriptDir, "a.sh", []byte("#!/bin/sh\necho A\n"))
+	scriptB := tu.WriteExecutableFile(t, scriptDir, "b.sh", []byte("#!/bin/sh\necho B\n"))
 
 	_, _, err = validator.SaveRecord(scriptA, false)
 	require.NoError(t, err)
@@ -101,7 +101,7 @@ func TestSaveRecord_ShebangInterpreterCacheHashChangeReanalyzes(t *testing.T) {
 	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: spy})
 	require.NoError(t, err)
 
-	scriptA := commontesting.WriteExecutableFile(t, dir, "a.sh", []byte(fmt.Sprintf("#!%s\necho A\n", interpreterPath)))
+	scriptA := tu.WriteExecutableFile(t, dir, "a.sh", []byte(fmt.Sprintf("#!%s\necho A\n", interpreterPath)))
 	_, _, err = validator.SaveRecord(scriptA, false)
 	require.NoError(t, err)
 
@@ -113,7 +113,7 @@ func TestSaveRecord_ShebangInterpreterCacheHashChangeReanalyzes(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, hashA, hashB)
 
-	scriptB := commontesting.WriteExecutableFile(t, dir, "b.sh", []byte(fmt.Sprintf("#!%s\necho B\n", interpreterPath)))
+	scriptB := tu.WriteExecutableFile(t, dir, "b.sh", []byte(fmt.Sprintf("#!%s\necho B\n", interpreterPath)))
 	_, _, err = validator.SaveRecord(scriptB, false)
 	require.NoError(t, err)
 
@@ -151,8 +151,8 @@ func TestSaveRecord_ShebangInterpreterCacheEnvForm(t *testing.T) {
 	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: spy})
 	require.NoError(t, err)
 
-	scriptA := commontesting.WriteExecutableFile(t, scriptDir, "a.sh", []byte("#!/usr/bin/env sh\necho A\n"))
-	scriptB := commontesting.WriteExecutableFile(t, scriptDir, "b.sh", []byte("#!/usr/bin/env sh\necho B\n"))
+	scriptA := tu.WriteExecutableFile(t, scriptDir, "a.sh", []byte("#!/usr/bin/env sh\necho A\n"))
+	scriptB := tu.WriteExecutableFile(t, scriptDir, "b.sh", []byte("#!/usr/bin/env sh\necho B\n"))
 
 	_, _, err = validator.SaveRecord(scriptA, false)
 	require.NoError(t, err)

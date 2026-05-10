@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -375,7 +375,7 @@ func buildRunnerBinary(t *testing.T) string {
 	t.Helper()
 
 	// Create temporary directory for binary
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	hashDir := filepath.Join(tmpDir, "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
 	binaryPath := filepath.Join(tmpDir, "runner")

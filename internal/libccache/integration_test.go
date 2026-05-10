@@ -10,12 +10,12 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -90,7 +90,7 @@ int main() {
 	return fd >= 0 ? 0 : 1;
 }
 `
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "test.c")
 	binFile := filepath.Join(tmpDir, "test_socket.elf")
 
@@ -144,7 +144,7 @@ int main() {
 	return fd >= 0 ? 0 : 1;
 }
 `
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "test2.c")
 	binFile := filepath.Join(tmpDir, "test_socket2.elf")
 

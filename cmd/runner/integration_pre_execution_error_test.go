@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +22,7 @@ import (
 // parsing error path specifically.
 func TestE2E_PreExecutionError_TOMLParseError(t *testing.T) {
 	// Create a config file with invalid TOML syntax
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	configFile := filepath.Join(tmpDir, "invalid.toml")
 
 	invalidTOML := `
@@ -76,7 +76,7 @@ cmd = "/bin/echo"
 func TestE2E_PreExecutionError_HashNotFound(t *testing.T) {
 	// Create a valid config file in a temp directory
 	// This file won't have a corresponding hash in the default hash directory
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	configFile := filepath.Join(tmpDir, "config.toml")
 
 	validTOML := `
@@ -196,7 +196,7 @@ func TestE2E_PreExecutionError_NonExistentConfigFile(t *testing.T) {
 // with a config parsing error when Slack webhook env vars are configured but
 // global.slack_allowed_host is missing from TOML (AC-L2-20).
 func TestE2E_PreExecutionError_MissingSlackAllowedHost(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	configFile := filepath.Join(tmpDir, "missing_slack_allowed_host.toml")
 
 	validTOML := `

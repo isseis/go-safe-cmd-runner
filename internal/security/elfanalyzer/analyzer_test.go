@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer/testing"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -259,7 +259,7 @@ func (m *mockSyscallAnalysisStore) LoadSyscallAnalysis(_ string, expectedHash st
 }
 
 func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
@@ -298,7 +298,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 }
 
 func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
@@ -327,7 +327,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 }
 
 func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
@@ -359,7 +359,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 }
 
 func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
@@ -401,7 +401,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t 
 }
 
 func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
@@ -418,7 +418,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
 }
 
 func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
@@ -443,7 +443,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 }
 
 func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
@@ -463,7 +463,7 @@ func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
 // when .dynsym returns NoNetworkSymbols but SyscallAnalysis records HasNetworkSyscalls=true,
 // AnalyzeNetworkSymbols returns NetworkDetected.
 func TestDynamicELF_SyscallFallback_NetworkDetected(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")
 	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
 
@@ -492,7 +492,7 @@ func TestDynamicELF_SyscallFallback_NetworkDetected(t *testing.T) {
 // when .dynsym returns NoNetworkSymbols and SyscallAnalysis is not recorded
 // (ErrRecordNotFound or (nil, nil)), AnalyzeNetworkSymbols returns NoNetworkSymbols.
 func TestDynamicELF_SyscallFallback_NotRecorded(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")
 	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
 
@@ -521,7 +521,7 @@ func TestDynamicELF_SyscallFallback_NotRecorded(t *testing.T) {
 // when .dynsym returns NoNetworkSymbols but SyscallAnalysis returns ErrHashMismatch
 // (binary changed since record), AnalyzeNetworkSymbols returns AnalysisError.
 func TestDynamicELF_SyscallFallback_HashMismatch(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")
 	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
 
@@ -541,7 +541,7 @@ func TestDynamicELF_SyscallFallback_HashMismatch(t *testing.T) {
 // when .dynsym returns NoNetworkSymbols but SyscallAnalysis returns AnalysisError,
 // AnalyzeNetworkSymbols returns AnalysisError.
 func TestDynamicELF_SyscallFallback_HighRisk(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")
 	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
 
@@ -567,7 +567,7 @@ func TestDynamicELF_SyscallFallback_HighRisk(t *testing.T) {
 // when syscallStore is nil, dynamic ELF with NoNetworkSymbols in .dynsym
 // returns NoNetworkSymbols (no fallback attempted).
 func TestDynamicELF_WithoutSyscallStore(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")
 	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
 
@@ -582,7 +582,7 @@ func TestDynamicELF_WithoutSyscallStore(t *testing.T) {
 // name-based detection for VERNEED-absent binaries (musl-style) and correctly handles
 // mixed-library VERNEED-absent binaries.
 func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analyzer := NewStandardELFAnalyzer(nil)
 
 	t.Run("no-VERNEED binary importing socket yields NetworkDetected with socket category", func(t *testing.T) {

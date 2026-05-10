@@ -8,6 +8,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -49,8 +50,8 @@ template = "full_settings"
 [groups.commands.params]
 msg = "hello"
 `,
-			expectedTimeout:          commontesting.Int32Ptr(30),
-			expectedOutputSizeLimit:  commontesting.Int64Ptr(2048),
+			expectedTimeout:          tu.Int32Ptr(30),
+			expectedOutputSizeLimit:  tu.Int64Ptr(2048),
 			expectedRiskLevel:        runnertypes.RiskLevelMediumPtr,
 			expectedEffectiveTimeout: 30,
 		},
@@ -73,7 +74,7 @@ template = "unlimited"
 [groups.commands.params]
 msg = "hello"
 `,
-			expectedTimeout:          commontesting.Int32Ptr(0),
+			expectedTimeout:          tu.Int32Ptr(0),
 			expectedOutputSizeLimit:  nil,
 			expectedRiskLevel:        nil, // Neither template nor command set it, so nil (default from GetRiskLevel())
 			expectedEffectiveTimeout: 0,
@@ -98,7 +99,7 @@ timeout = 0
 [groups.commands.params]
 msg = "hello"
 `,
-			expectedTimeout:          commontesting.Int32Ptr(0),
+			expectedTimeout:          tu.Int32Ptr(0),
 			expectedOutputSizeLimit:  nil,
 			expectedRiskLevel:        nil, // Neither template nor command set it, so nil (default from GetRiskLevel())
 			expectedEffectiveTimeout: 0,

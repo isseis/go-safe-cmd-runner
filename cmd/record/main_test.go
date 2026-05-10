@@ -12,10 +12,10 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer/testing"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -103,7 +103,7 @@ func TestProcessFiles_ReportsFailuresAndContinues(t *testing.T) {
 }
 
 func TestRunWarnsWhenDeprecatedFlagUsed(t *testing.T) {
-	hashDir := commontesting.SafeTempDir(t)
+	hashDir := tu.SafeTempDir(t)
 	legacyFile := filepath.Join(hashDir, "legacy.txt")
 	newFile := filepath.Join(hashDir, "new.txt")
 	require.NoError(t, os.WriteFile(legacyFile, []byte("legacy content"), 0o644))
@@ -136,7 +136,7 @@ func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
 }
 
 func TestProcessFiles_WithELF(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	recorder := &fakeRecorder{responses: map[string]error{}}
 
 	staticELF := filepath.Join(tempDir, "static.elf")
@@ -155,7 +155,7 @@ func TestProcessFiles_WithELF(t *testing.T) {
 }
 
 func TestProcessFiles_SkipsNonELF(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	recorder := &fakeRecorder{responses: map[string]error{}}
 
 	nonELF := filepath.Join(tempDir, "script.sh")
@@ -178,7 +178,7 @@ func TestProcessFiles_SkipsNonELF(t *testing.T) {
 // Ensures record warns but does not abort on TOCTOU violations.
 func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
 	// Create a world-writable directory with a target file
-	worldWritableDir := commontesting.SafeTempDir(t)
+	worldWritableDir := tu.SafeTempDir(t)
 	err := os.Chmod(worldWritableDir, 0o777)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -189,7 +189,7 @@ func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
 	err = os.WriteFile(targetFile, []byte("hello"), 0o644)
 	require.NoError(t, err)
 
-	hashDir := commontesting.SafeTempDir(t)
+	hashDir := tu.SafeTempDir(t)
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -221,7 +221,7 @@ func TestRun_DebugInfoFlag_ControlsDebugFieldOmitEmpty(t *testing.T) {
 	}
 
 	t.Run("debug field omitted by default", func(t *testing.T) {
-		hashDir := commontesting.SafeTempDir(t)
+		hashDir := tu.SafeTempDir(t)
 		stdout := &bytes.Buffer{}
 		stderr := &bytes.Buffer{}
 
@@ -235,7 +235,7 @@ func TestRun_DebugInfoFlag_ControlsDebugFieldOmitEmpty(t *testing.T) {
 	})
 
 	t.Run("debug field is emitted with debug-info", func(t *testing.T) {
-		hashDir := commontesting.SafeTempDir(t)
+		hashDir := tu.SafeTempDir(t)
 		stdout := &bytes.Buffer{}
 		stderr := &bytes.Buffer{}
 
@@ -250,7 +250,7 @@ func TestRun_DebugInfoFlag_ControlsDebugFieldOmitEmpty(t *testing.T) {
 }
 
 func TestRun_ReRecordOldSchemaWithoutForce(t *testing.T) {
-	hashDir := commontesting.SafeTempDir(t)
+	hashDir := tu.SafeTempDir(t)
 	targetFile := filepath.Join(hashDir, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
 

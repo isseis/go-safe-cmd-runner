@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,13 +23,13 @@ func realFS() safefileio.FileSystem {
 // writeScript creates a script file with the given content in a temp dir.
 func writeScript(t *testing.T, content string) string {
 	t.Helper()
-	return commontesting.WriteExecutableFile(t, commontesting.SafeTempDir(t), "test_script", []byte(content))
+	return tu.WriteExecutableFile(t, tu.SafeTempDir(t), "test_script", []byte(content))
 }
 
 // writeBinaryFile creates a binary file with the given bytes in a temp dir.
 func writeBinaryFile(t *testing.T, data []byte) string {
 	t.Helper()
-	return commontesting.WriteExecutableFile(t, commontesting.SafeTempDir(t), "test_binary", data)
+	return tu.WriteExecutableFile(t, tu.SafeTempDir(t), "test_binary", data)
 }
 
 // --- Parse tests ---
@@ -77,8 +77,8 @@ func TestParse_SpaceAfterShebang(t *testing.T) {
 func TestParse_EnvForm(t *testing.T) {
 	// Create a controlled PATH containing a stub "sh" so the test does not
 	// depend on the ambient process PATH.
-	binDir := commontesting.SafeTempDir(t)
-	shStub := commontesting.WriteExecutableFile(t, binDir, "sh", []byte("#!/bin/sh\necho hello\n"))
+	binDir := tu.SafeTempDir(t)
+	shStub := tu.WriteExecutableFile(t, binDir, "sh", []byte("#!/bin/sh\necho hello\n"))
 	t.Setenv("PATH", binDir)
 
 	path := writeScript(t, "#!/usr/bin/env sh\necho hello\n")
@@ -105,8 +105,8 @@ func TestParse_FakeEnvBinaryTreatedAsDirectForm(t *testing.T) {
 	// resolution. If it did, the binary itself would be skipped and only
 	// the PATH-resolved command would be analysed, allowing an attacker to
 	// bypass risk assessment by naming their malicious binary "env".
-	binDir := commontesting.SafeTempDir(t)
-	fakeEnv := commontesting.WriteExecutableFile(t, binDir, "env", []byte("#!/bin/sh\necho fake\n"))
+	binDir := tu.SafeTempDir(t)
+	fakeEnv := tu.WriteExecutableFile(t, binDir, "env", []byte("#!/bin/sh\necho fake\n"))
 
 	path := writeScript(t, "#!"+fakeEnv+" python3\n")
 	info, err := shebang.Parse(path, realFS())
@@ -205,7 +205,7 @@ func TestIsShebangScript_True(t *testing.T) {
 }
 
 func TestIsShebangScript_False_Empty(t *testing.T) {
-	dir := commontesting.SafeTempDir(t)
+	dir := tu.SafeTempDir(t)
 	path := filepath.Join(dir, "empty_file")
 	require.NoError(t, os.WriteFile(path, []byte{}, 0o755))
 	result, err := shebang.IsShebangScript(path, realFS())
@@ -214,7 +214,7 @@ func TestIsShebangScript_False_Empty(t *testing.T) {
 }
 
 func TestIsShebangScript_False_OneByte(t *testing.T) {
-	dir := commontesting.SafeTempDir(t)
+	dir := tu.SafeTempDir(t)
 	path := filepath.Join(dir, "one_byte_file")
 	require.NoError(t, os.WriteFile(path, []byte("#"), 0o755))
 	result, err := shebang.IsShebangScript(path, realFS())

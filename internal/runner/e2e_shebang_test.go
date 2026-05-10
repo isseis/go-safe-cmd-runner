@@ -19,10 +19,10 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -76,11 +76,11 @@ int main(int argc, char** argv) {
 //
 // Prerequisite: /bin/sh must exist (standard on all Linux systems).
 func TestIntegration_ShebangVerification_DirectForm(t *testing.T) {
-	hashDir := commontesting.SafeTempDir(t)
-	scriptDir := commontesting.SafeTempDir(t)
+	hashDir := tu.SafeTempDir(t)
+	scriptDir := tu.SafeTempDir(t)
 
 	// Step 1 (record phase): create a shebang script and save its hash record.
-	scriptPath := commontesting.WriteExecutableFile(t, scriptDir, "deploy.sh", []byte("#!/bin/sh\necho hello\n"))
+	scriptPath := tu.WriteExecutableFile(t, scriptDir, "deploy.sh", []byte("#!/bin/sh\necho hello\n"))
 	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 	_, _, err = validator.SaveRecord(scriptPath, false)
@@ -100,8 +100,8 @@ func TestIntegration_ShebangVerification_DirectForm(t *testing.T) {
 // Prerequisite: /usr/bin/env and sh must exist (standard on all Linux systems).
 // "sh" is used instead of "python3" to avoid a dependency on python3 in CI.
 func TestIntegration_ShebangVerification_EnvForm(t *testing.T) {
-	hashDir := commontesting.SafeTempDir(t)
-	scriptDir := commontesting.SafeTempDir(t)
+	hashDir := tu.SafeTempDir(t)
+	scriptDir := tu.SafeTempDir(t)
 
 	// Pin PATH for both phases so shebang.Parse (record) and verifyEnvPathResolution
 	// (verify) resolve "sh" from the same directories.
@@ -109,7 +109,7 @@ func TestIntegration_ShebangVerification_EnvForm(t *testing.T) {
 
 	// Step 1 (record phase): create a shebang script and save its hash record.
 	// SaveRecord also records /usr/bin/env and the resolved sh binary automatically.
-	scriptPath := commontesting.WriteExecutableFile(t, scriptDir, "process.sh", []byte("#!/usr/bin/env sh\necho hello\n"))
+	scriptPath := tu.WriteExecutableFile(t, scriptDir, "process.sh", []byte("#!/usr/bin/env sh\necho hello\n"))
 	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 	_, _, err = validator.SaveRecord(scriptPath, false)
@@ -129,11 +129,11 @@ func TestIntegration_ShebangVerification_EnvForm(t *testing.T) {
 //
 // Prerequisite: /bin/sh must exist (standard on all Linux systems).
 func TestIntegration_ShebangVerification_InterpreterRecordMissing(t *testing.T) {
-	hashDir := commontesting.SafeTempDir(t)
-	scriptDir := commontesting.SafeTempDir(t)
+	hashDir := tu.SafeTempDir(t)
+	scriptDir := tu.SafeTempDir(t)
 
 	// Step 1 (record phase): record the script (which also records the interpreter).
-	scriptPath := commontesting.WriteExecutableFile(t, scriptDir, "deploy.sh", []byte("#!/bin/sh\necho hello\n"))
+	scriptPath := tu.WriteExecutableFile(t, scriptDir, "deploy.sh", []byte("#!/bin/sh\necho hello\n"))
 	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 	_, _, err = validator.SaveRecord(scriptPath, false)
@@ -174,8 +174,8 @@ func TestIntegration_ShebangVerification_InterpreterRecordMissing(t *testing.T) 
 // TestIntegration_ShebangChainRunnerExecution verifies an end-to-end runner
 // execution path for a shebang script using real hash records and verification.
 func TestIntegration_ShebangChainRunnerExecution(t *testing.T) {
-	hashDir := commontesting.SafeTempDir(t)
-	scriptDir := commontesting.SafeTempDir(t)
+	hashDir := tu.SafeTempDir(t)
+	scriptDir := tu.SafeTempDir(t)
 
 	// Build a local interpreter binary that references socket(2).
 	// This makes the risk signal deterministic in CI and local runs.
@@ -184,7 +184,7 @@ func TestIntegration_ShebangChainRunnerExecution(t *testing.T) {
 	// Step 1 (record phase): create script and record it.
 	// SaveRecord stores both the script record and shebang interpreter records.
 	scriptContent := "#!" + interpPath + "\n--version\n"
-	scriptPath := commontesting.WriteExecutableFile(t, scriptDir, "network-tool.sh", []byte(scriptContent))
+	scriptPath := tu.WriteExecutableFile(t, scriptDir, "network-tool.sh", []byte(scriptContent))
 	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 	require.NoError(t, err)
 	_, _, err = validator.SaveRecord(scriptPath, false)
@@ -197,7 +197,7 @@ func TestIntegration_ShebangChainRunnerExecution(t *testing.T) {
 	configSpec := &runnertypes.ConfigSpec{
 		Version: "1.0",
 		Global: runnertypes.GlobalSpec{
-			Timeout: commontesting.Int32Ptr(30),
+			Timeout: tu.Int32Ptr(30),
 		},
 		Groups: []runnertypes.GroupSpec{
 			{

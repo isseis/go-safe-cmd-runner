@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,7 +33,7 @@ func newSensitiveTestHelper(t *testing.T) *sensitiveTestHelper {
 	t.Helper()
 	return &sensitiveTestHelper{
 		t:       t,
-		tempDir: commontesting.SafeTempDir(t),
+		tempDir: tu.SafeTempDir(t),
 	}
 }
 
