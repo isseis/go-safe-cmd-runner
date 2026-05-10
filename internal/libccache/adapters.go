@@ -1,12 +1,13 @@
 package libccache
 
 import (
+	"cmp"
 	"debug/elf"
 	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"sort"
+	"slices"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
@@ -254,6 +255,6 @@ func (a *MachoLibSystemAdapter) fallbackNameMatch(importSymbols []string) []comm
 	}
 
 	// Sort by Number.
-	sort.Slice(result, func(i, j int) bool { return result[i].Number < result[j].Number })
+	slices.SortFunc(result, func(a, b common.SyscallInfo) int { return cmp.Compare(a.Number, b.Number) })
 	return result
 }

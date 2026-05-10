@@ -33,12 +33,12 @@ func TestUnixPrivilegeManager_ConcurrentAccess(t *testing.T) {
 	var results []error
 
 	// Launch multiple goroutines that try to use WithPrivileges concurrently
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		wg.Add(1)
-		go func(_ int) {
+		go func() {
 			defer wg.Done()
 
-			for j := 0; j < numOperationsPerGoroutine; j++ {
+			for range numOperationsPerGoroutine {
 				elevationCtx := runnertypes.ElevationContext{
 					Operation:   runnertypes.OperationFileAccess,
 					CommandName: "test_concurrent",
@@ -61,7 +61,7 @@ func TestUnixPrivilegeManager_ConcurrentAccess(t *testing.T) {
 				results = append(results, err)
 				mu.Unlock()
 			}
-		}(i)
+		}()
 	}
 
 	// Wait for all goroutines to complete
@@ -132,7 +132,7 @@ func TestUnixPrivilegeManager_RaceConditionProtection(t *testing.T) {
 	var errors []error
 
 	// Launch many goroutines simultaneously to try to trigger race conditions
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -232,7 +232,7 @@ func TestUnixPrivilegeManager_ThreadSafety(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Test concurrent access to read-only methods
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

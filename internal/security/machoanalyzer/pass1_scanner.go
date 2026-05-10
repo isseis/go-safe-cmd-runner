@@ -1,7 +1,8 @@
 package machoanalyzer
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/arm64util"
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -50,8 +51,8 @@ func buildStubRanges(funcs map[string]MachoPclntabFunc) []funcRange {
 		}
 	}
 	// Sort by start address for binary search in isInsideRange.
-	sort.Slice(ranges, func(i, j int) bool {
-		return ranges[i].start < ranges[j].start
+	slices.SortFunc(ranges, func(a, b funcRange) int {
+		return cmp.Compare(a.start, b.start)
 	})
 	return ranges
 }

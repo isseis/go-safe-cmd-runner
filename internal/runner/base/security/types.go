@@ -272,7 +272,7 @@ func (c *Config) GetPathPatternsByRisk(level runnertypes.RiskLevel) []string {
 // GetSuspiciousFilePatterns returns patterns for suspicious files that should be flagged
 // This is derived dynamically from OutputCriticalPathPatterns to maintain consistency
 func (c *Config) GetSuspiciousFilePatterns() []string {
-	patterns := make(map[string]bool)
+	patterns := make(map[string]struct{})
 
 	// Extract file names from OutputCriticalPathPatterns
 	for _, pattern := range c.OutputCriticalPathPatterns {
@@ -281,11 +281,11 @@ func (c *Config) GetSuspiciousFilePatterns() []string {
 			// Extract basename from absolute paths
 			basename := filepath.Base(pattern)
 			if basename != "" && basename != "." && basename != "/" {
-				patterns[basename] = true
+				patterns[basename] = struct{}{}
 			}
 		} else if !strings.HasSuffix(pattern, "/") {
 			// Pattern is already a filename or relative path (not ending with "/")
-			patterns[pattern] = true
+			patterns[pattern] = struct{}{}
 		}
 		// Skip directory patterns ending with "/"
 	}

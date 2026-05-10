@@ -299,14 +299,14 @@ func ValidateTemplates(cfg *runnertypes.ConfigSpec) error {
 	}
 
 	// Track seen template names to detect duplicates
-	seen := make(map[string]bool)
+	seen := make(map[string]struct{})
 
 	for name, tmpl := range cfg.CommandTemplates {
 		// Check for duplicate names
-		if seen[name] {
+		if _, ok := seen[name]; ok {
 			return &ErrDuplicateTemplateName{Name: name}
 		}
-		seen[name] = true
+		seen[name] = struct{}{}
 
 		// Validate template name
 		if err := ValidateTemplateName(name); err != nil {

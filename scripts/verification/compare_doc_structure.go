@@ -190,25 +190,25 @@ func compareFiles(jaFile, enFile string) (*StructureComparison, error) {
 	}
 
 	// Find headings that appear in one file but not the other
-	jaHeadingMap := make(map[int]map[string]bool)
-	enHeadingMap := make(map[int]map[string]bool)
+	jaHeadingMap := make(map[int]map[string]struct{})
+	enHeadingMap := make(map[int]map[string]struct{})
 
 	for _, h := range jaStructure.Headings {
 		if jaHeadingMap[h.Level] == nil {
-			jaHeadingMap[h.Level] = make(map[string]bool)
+			jaHeadingMap[h.Level] = make(map[string]struct{})
 		}
-		jaHeadingMap[h.Level][normalizeHeading(h.Text)] = true
+		jaHeadingMap[h.Level][normalizeHeading(h.Text)] = struct{}{}
 	}
 
 	for _, h := range enStructure.Headings {
 		if enHeadingMap[h.Level] == nil {
-			enHeadingMap[h.Level] = make(map[string]bool)
+			enHeadingMap[h.Level] = make(map[string]struct{})
 		}
 		normalized := normalizeHeading(h.Text)
-		enHeadingMap[h.Level][normalized] = true
+		enHeadingMap[h.Level][normalized] = struct{}{}
 
 		// Check if this heading exists in Japanese
-		if !jaHeadingMap[h.Level][normalized] {
+		if _, ok := jaHeadingMap[h.Level][normalized]; !ok {
 			comparison.MissingInJa = append(comparison.MissingInJa,
 				fmt.Sprintf("Level %d: %s", h.Level, h.Text))
 		}
@@ -216,7 +216,7 @@ func compareFiles(jaFile, enFile string) (*StructureComparison, error) {
 
 	for _, h := range jaStructure.Headings {
 		normalized := normalizeHeading(h.Text)
-		if !enHeadingMap[h.Level][normalized] {
+		if _, ok := enHeadingMap[h.Level][normalized]; !ok {
 			comparison.MissingInEn = append(comparison.MissingInEn,
 				fmt.Sprintf("Level %d: %s", h.Level, h.Text))
 		}
@@ -308,10 +308,7 @@ func parseDocStructure(filePath, lang string) (*DocStructure, error) {
 func compareHeadings(jaHeadings, enHeadings []Heading) []HeadingMatch {
 	matches := []HeadingMatch{}
 
-	maxLen := len(jaHeadings)
-	if len(enHeadings) > maxLen {
-		maxLen = len(enHeadings)
-	}
+	maxLen := max(len(jaHeadings), len(enHeadings))
 
 	for i := 0; i < maxLen; i++ {
 		match := HeadingMatch{}

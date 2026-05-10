@@ -111,6 +111,43 @@ See [Test Organization Guide](docs/dev/developer_guide/test_organization.md) for
 - After editing go files, make sure to run `make fmt` to format the files.
 - After editing files, make sure to run `make test` and `make lint` and fix errors.
 
+## Modern Go Idioms (Go 1.21+)
+
+When writing or modifying Go code in this repository, prefer the following modern idioms over older equivalents. These improve readability, reduce boilerplate, and leverage standard library improvements.
+
+### Language Features
+- Use `any` instead of `interface{}`.
+- Use `for range n` (Go 1.22+) instead of `for i := 0; i < n; i++` when the index is unused or only counts iterations.
+- Rely on per-iteration loop variable scope (Go 1.22+); do not write `i := i` shadowing inside loop bodies.
+- Use range-over-function iterators (Go 1.23+) for custom traversal where appropriate.
+
+### Built-in Functions
+- Use `min(a, b)` / `max(a, b)` instead of hand-written comparisons or `math.Max`/`math.Min`.
+- Use `clear(m)` to clear maps and slices instead of manual `for k := range m { delete(m, k) }`.
+
+### Standard Library
+- Use the `slices` package: `slices.Contains`, `slices.Index`, `slices.Sort`, `slices.SortFunc`, `slices.Equal`, `slices.Clone`, `slices.Concat`, `slices.Delete`, `slices.Insert`, etc., instead of explicit loops.
+- Use the `maps` package: `maps.Keys`, `maps.Values`, `maps.Clone`, `maps.Equal`, `maps.Copy`.
+- Use `cmp.Or(a, b, c)` to return the first non-zero value instead of chained `if x == zero { x = y }`.
+- Use `cmp.Compare` for three-way comparisons, especially in `slices.SortFunc`.
+- Use `errors.Join(err1, err2)` for combining multiple errors.
+- Use `fmt.Errorf("...: %w", err)` for error wrapping.
+- Use `strings.Cut` / `bytes.Cut` instead of `SplitN(s, sep, 2)`.
+- Use `strings.CutPrefix` / `strings.CutSuffix` instead of `HasPrefix` + `TrimPrefix` combinations.
+- Use `sync.OnceFunc` / `sync.OnceValue` / `sync.OnceValues` instead of `sync.Once` + closure boilerplate.
+- Use `log/slog` for structured logging.
+- Use `context.WithoutCancel` to detach cancellation propagation.
+- Use `reflect.TypeFor[T]()` instead of `reflect.TypeOf((*T)(nil)).Elem()`.
+
+### Generics
+- Use type parameters (Go 1.18+) to consolidate duplicated `int`/`int64`/`float64` helpers.
+- Prefer `slices.SortFunc` over `sort.Slice` for type-safe, faster sorting without reflection.
+
+### Other Patterns
+- Use `map[T]struct{}` instead of `map[T]bool` for set semantics (saves memory).
+- Use `errors.Is` / `errors.As` instead of string matching on error messages.
+- In tests, use `t.Cleanup` instead of manual `defer` chains, and `t.TempDir` instead of `os.MkdirTemp` + `defer os.RemoveAll`.
+
 ## Requirements and Acceptance Criteria
 
 When implementing new features or security-critical functionality, follow the process documented in [Requirements Process Guide](docs/dev/developer_guide/requirements_process.md).

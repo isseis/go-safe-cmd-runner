@@ -676,12 +676,10 @@ func TestEnsureParentDirsNoSymlinks(t *testing.T) {
 		// os.TempDir() on macOS resolves through /tmp -> /private/tmp.
 		// ensureParentDirsNoSymlinks must accept that root-owned symlink so
 		// that writing to the system temp directory works correctly.
-		subDir, err := os.MkdirTemp("", "safefileio-test-*")
-		require.NoError(t, err)
-		defer func() { _ = os.RemoveAll(subDir) }()
+		subDir := commontesting.SafeTempDir(t)
 
 		targetPath := filepath.Join(subDir, "file.txt")
-		err = ensureParentDirsNoSymlinks(targetPath)
+		err := ensureParentDirsNoSymlinks(targetPath)
 		assert.NoError(t, err, "path under os.TempDir must be accepted")
 	})
 }

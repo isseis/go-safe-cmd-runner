@@ -2,6 +2,7 @@ package machodylib
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"debug/macho"
 	"encoding/binary"
@@ -13,7 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
@@ -240,11 +241,11 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 		return nil, warnings, nil
 	}
 
-	sort.Slice(libs, func(i, j int) bool {
-		if libs[i].SOName != libs[j].SOName {
-			return libs[i].SOName < libs[j].SOName
+	slices.SortFunc(libs, func(a, b fileanalysis.LibEntry) int {
+		if a.SOName != b.SOName {
+			return cmp.Compare(a.SOName, b.SOName)
 		}
-		return libs[i].Path < libs[j].Path
+		return cmp.Compare(a.Path, b.Path)
 	})
 
 	return libs, warnings, nil

@@ -1,6 +1,7 @@
 package elfdynlib
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"debug/elf"
 	"encoding/hex"
@@ -10,7 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
@@ -235,11 +236,11 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntry, er
 	// stable for a given binary but not guaranteed across re-links or tool
 	// changes. Sorting ensures git diff noise is minimised and the JSON output
 	// is reproducible.
-	sort.Slice(libs, func(i, j int) bool {
-		if libs[i].SOName != libs[j].SOName {
-			return libs[i].SOName < libs[j].SOName
+	slices.SortFunc(libs, func(a, b fileanalysis.LibEntry) int {
+		if a.SOName != b.SOName {
+			return cmp.Compare(a.SOName, b.SOName)
 		}
-		return libs[i].Path < libs[j].Path
+		return cmp.Compare(a.Path, b.Path)
 	})
 
 	return libs, nil

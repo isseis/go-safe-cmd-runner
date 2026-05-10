@@ -67,7 +67,7 @@ func TestInMemoryErrorCollector_MaxSize(t *testing.T) {
 	collector := NewInMemoryErrorCollector(maxSize)
 
 	// Record more failures than maxSize
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		collector.RecordFailure("key", errors.New("error"))
 	}
 
@@ -106,10 +106,10 @@ func TestInMemoryErrorCollector_ConcurrentAccess(t *testing.T) {
 	wg.Add(goroutines)
 
 	// Record failures concurrently
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < recordsPerGoroutine; j++ {
+			for range recordsPerGoroutine {
 				collector.RecordFailure("key", errors.New("error"))
 			}
 		}()
@@ -130,20 +130,20 @@ func TestInMemoryErrorCollector_ConcurrentReadWrite(_ *testing.T) {
 	wg.Add(goroutines * 2) // Writers + readers
 
 	// Writers
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < iterations; j++ {
+			for range iterations {
 				collector.RecordFailure("key", errors.New("error"))
 			}
 		}()
 	}
 
 	// Readers
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < iterations; j++ {
+			for range iterations {
 				_ = collector.GetFailures()
 				_ = collector.Count()
 				_ = collector.HasFailures()

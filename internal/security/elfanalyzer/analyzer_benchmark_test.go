@@ -33,7 +33,7 @@ func BenchmarkAnalyzeNetworkSymbols(b *testing.B) {
 		b.Run(bin.name, func(b *testing.B) {
 			analyzer := NewStandardELFAnalyzer(nil)
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_ = analyzer.AnalyzeNetworkSymbols(absPath, "sha256:dummy")
 			}
 		})
@@ -69,7 +69,7 @@ func BenchmarkAnalyzeNetworkSymbols_TestdataFixtures(b *testing.B) {
 		b.Run(fixture, func(b *testing.B) {
 			analyzer := NewStandardELFAnalyzer(nil)
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_ = analyzer.AnalyzeNetworkSymbols(absPath, "sha256:dummy")
 			}
 		})

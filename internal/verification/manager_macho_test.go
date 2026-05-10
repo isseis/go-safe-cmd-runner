@@ -224,7 +224,7 @@ func TestVerify_MachOOldSchema(t *testing.T) {
 	require.NoError(t, err)
 
 	oldSchema := fileanalysis.CurrentSchemaVersion - 1
-	rawRecord := map[string]interface{}{
+	rawRecord := map[string]any{
 		"schema_version": oldSchema,
 		"content_hash":   "sha256:aabbcc",
 	}
@@ -240,7 +240,7 @@ func TestVerify_MachOOldSchema(t *testing.T) {
 
 // writeRawJSONRecord writes a raw JSON object to the given path, creating
 // parent directories as needed. Used to inject records with arbitrary schema versions.
-func writeRawJSONRecord(t *testing.T, path string, record interface{}) {
+func writeRawJSONRecord(t *testing.T, path string, record any) {
 	t.Helper()
 	data, err := json.MarshalIndent(record, "", "  ")
 	require.NoError(t, err)

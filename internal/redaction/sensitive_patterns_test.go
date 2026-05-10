@@ -84,7 +84,7 @@ func TestNewSensitivePatterns(t *testing.T) {
 		`(?i).*SECRET.*`,
 	}
 
-	allowedEnvVars := make(map[string]bool)
+	allowedEnvVars := make(map[string]struct{})
 
 	patterns, err := NewSensitivePatterns(credentialPatterns, envVarPatterns, allowedEnvVars)
 	require.NoError(t, err, "NewSensitivePatterns should succeed")
@@ -111,7 +111,7 @@ func TestNewSensitivePatterns_ErrorHandling(t *testing.T) {
 		`(?i).*PASSWORD.*`,
 	}
 
-	allowedEnvVars := make(map[string]bool)
+	allowedEnvVars := make(map[string]struct{})
 
 	patterns, err := NewSensitivePatterns(invalidCredentialPatterns, envVarPatterns, allowedEnvVars)
 	assert.Error(t, err, "NewSensitivePatterns should fail with invalid regex")
@@ -121,7 +121,7 @@ func TestNewSensitivePatterns_ErrorHandling(t *testing.T) {
 
 func TestNewSensitivePatterns_EmptyPatterns(t *testing.T) {
 	// Test with empty patterns (should succeed and create never-matching patterns)
-	allowedEnvVars := make(map[string]bool)
+	allowedEnvVars := make(map[string]struct{})
 
 	patterns, err := NewSensitivePatterns([]string{}, []string{}, allowedEnvVars)
 	require.NoError(t, err, "NewSensitivePatterns should succeed with empty patterns")
@@ -145,7 +145,7 @@ func BenchmarkIsSensitiveKey_IndividualPatterns(b *testing.B) {
 
 	testKey := "api_secret_key"
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		// Simulate original loop-based approach
 		found := false
 		for _, pattern := range credentialPatterns {
@@ -163,7 +163,7 @@ func BenchmarkIsSensitiveKey_Combined(b *testing.B) {
 	testKey := "api_secret_key"
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		patterns.IsSensitiveKey(testKey)
 	}
 }

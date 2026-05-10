@@ -280,7 +280,7 @@ func TestOutputCaptureIntegration_UnlimitedSize(t *testing.T) {
 	}
 
 	// Write multiple times
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		err = manager.WriteOutput(capture, largeData)
 		require.NoError(t, err)
 	}
@@ -326,7 +326,7 @@ func TestOutputCaptureIntegration_ConcurrentWrites(t *testing.T) {
 	numWrites := 100
 
 	// Perform multiple writes sequentially
-	for i := 0; i < numWrites; i++ {
+	for range numWrites {
 		err = manager.WriteOutput(capture, testData)
 		require.NoError(t, err)
 	}

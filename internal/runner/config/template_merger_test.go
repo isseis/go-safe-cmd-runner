@@ -16,7 +16,7 @@ func TestDefaultTemplateMerger_MergeTemplates(t *testing.T) {
 		sources       []TemplateSource
 		wantTemplates map[string]runnertypes.CommandTemplate
 		wantErr       bool
-		errType       interface{}
+		errType       any
 		errLocations  []string
 	}{
 		{

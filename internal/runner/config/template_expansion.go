@@ -1057,14 +1057,12 @@ func ValidateTemplateVars(
 	// Check env_vars array
 	for i, envMapping := range template.EnvVars {
 		// Parse "KEY=value" format
-		const envSplitParts = 2
-		parts := strings.SplitN(envMapping, "=", envSplitParts)
-		if len(parts) != envSplitParts {
+		_, value, found := strings.Cut(envMapping, "=")
+		if !found {
 			// Invalid format - this should have been caught during parsing
 			// but we check here for defensive programming
 			continue
 		}
-		value := parts[1]
 
 		fieldName := fmt.Sprintf("env_vars[%d]", i)
 		if err := validateFieldVars(value, templateName, fieldName, globalVars); err != nil {

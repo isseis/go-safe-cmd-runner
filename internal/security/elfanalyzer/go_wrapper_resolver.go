@@ -1,9 +1,11 @@
 package elfanalyzer
 
 import (
+	"cmp"
 	"debug/elf"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 )
 
@@ -214,8 +216,8 @@ func (b *goWrapperBase) loadFromPclntab(elfFile *elf.File) error {
 	}
 
 	// Sort wrapperRanges by start address so IsInsideWrapper can use binary search.
-	sort.Slice(b.wrapperRanges, func(i, j int) bool {
-		return b.wrapperRanges[i].start < b.wrapperRanges[j].start
+	slices.SortFunc(b.wrapperRanges, func(a, b wrapperRange) int {
+		return cmp.Compare(a.start, b.start)
 	})
 
 	return nil

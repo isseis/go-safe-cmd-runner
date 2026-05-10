@@ -53,30 +53,30 @@ type Config struct {
 // allowedHosts is a map of trusted domains for external link checking.
 // SECURITY: Only these hosts can be checked to prevent SSRF attacks.
 // Add new trusted domains here as needed.
-var allowedHosts = map[string]bool{
+var allowedHosts = map[string]struct{}{
 	// Go ecosystem
-	"golang.org":          true,
-	"go.dev":              true,
-	"pkg.go.dev":          true,
-	"go.googlesource.com": true,
+	"golang.org":          {},
+	"go.dev":              {},
+	"pkg.go.dev":          {},
+	"go.googlesource.com": {},
 
 	// Documentation and references
-	"en.wikipedia.org": true,
-	"ja.wikipedia.org": true,
-	"owasp.org":        true,
-	"cwe.mitre.org":    true,
+	"en.wikipedia.org": {},
+	"ja.wikipedia.org": {},
+	"owasp.org":        {},
+	"cwe.mitre.org":    {},
 
 	// Code hosting
-	"github.com": true,
-	"gitlab.com": true,
+	"github.com": {},
+	"gitlab.com": {},
 
 	// Rust ecosystem (if needed)
-	"docs.rs":   true,
-	"crates.io": true,
+	"docs.rs":   {},
+	"crates.io": {},
 
 	// Standards and RFCs
-	"www.rfc-editor.org":   true,
-	"datatracker.ietf.org": true,
+	"www.rfc-editor.org":   {},
+	"datatracker.ietf.org": {},
 }
 
 func main() {
@@ -274,8 +274,7 @@ func isExternalURL(url string) bool {
 // verifyInternalLink verifies an internal link
 func verifyInternalLink(url, sourceFile string) bool {
 	// Remove anchor if present
-	parts := strings.SplitN(url, "#", 2)
-	filePath := parts[0]
+	filePath, _, _ := strings.Cut(url, "#")
 
 	// Skip empty paths (anchor-only links)
 	if filePath == "" {
@@ -345,7 +344,7 @@ func isAllowedHost(urlStr string) error {
 	}
 
 	// Check against allowlist
-	if !allowedHosts[u.Host] {
+	if _, ok := allowedHosts[u.Host]; !ok {
 		return fmt.Errorf("host not in allowlist: %s (add to allowedHosts if trusted)", u.Host)
 	}
 

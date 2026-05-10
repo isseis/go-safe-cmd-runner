@@ -3,8 +3,9 @@
 package elfanalyzer
 
 import (
+	"cmp"
 	"debug/elf"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -306,8 +307,8 @@ func TestX86GoWrapperResolver_IsInsideWrapper(t *testing.T) {
 	}
 
 	// Sort as loadFromPclntab would.
-	sort.Slice(resolver.wrapperRanges, func(i, j int) bool {
-		return resolver.wrapperRanges[i].start < resolver.wrapperRanges[j].start
+	slices.SortFunc(resolver.wrapperRanges, func(a, b wrapperRange) int {
+		return cmp.Compare(a.start, b.start)
 	})
 
 	for _, tt := range tests {

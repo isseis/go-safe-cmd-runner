@@ -86,7 +86,7 @@ func TestShutdownReporter_GroupsByKey(t *testing.T) {
 	collector := NewInMemoryErrorCollector(0)
 
 	// Record multiple failures for the same key
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		collector.RecordFailure("repeated_key", errors.New("same error"))
 		time.Sleep(5 * time.Millisecond)
 	}

@@ -289,10 +289,11 @@ func TestConfig_GetSuspiciousFilePatterns_Invariants(t *testing.T) {
 	assert.NotEmpty(t, patterns, "GetSuspiciousFilePatterns() returned empty list")
 
 	// Verify no duplicates
-	seen := make(map[string]bool)
+	seen := make(map[string]struct{})
 	for _, pattern := range patterns {
-		assert.False(t, seen[pattern], "Duplicate pattern found: %q", pattern)
-		seen[pattern] = true
+		_, dup := seen[pattern]
+		assert.False(t, dup, "Duplicate pattern found: %q", pattern)
+		seen[pattern] = struct{}{}
 	}
 
 	// Verify result is sorted

@@ -10,6 +10,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -19,7 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -276,8 +277,8 @@ func extractCommandFromFilename(path string) string {
 	// docs/user/runner_command.ja.md -> runner
 	// docs/user/record_command.ja.md -> record
 	filename := filepath.Base(path)
-	if strings.HasSuffix(filename, "_command.ja.md") {
-		return strings.TrimSuffix(filename, "_command.ja.md")
+	if base, ok := strings.CutSuffix(filename, "_command.ja.md"); ok {
+		return base
 	}
 	return "unknown"
 }
@@ -294,10 +295,8 @@ func isValidArgName(name string) bool {
 		"h", "help", "version", "v",
 	}
 
-	for _, exclude := range excludeList {
-		if name == exclude {
-			return false // Filter out these common arguments
-		}
+	if slices.Contains(excludeList, name) {
+		return false // Filter out these common arguments
 	}
 
 	return true
@@ -340,15 +339,13 @@ func compareArgs(codeArgs map[string]*CLIArg, docArgs map[string][]string) *Comp
 	}
 
 	// Sort for consistent output
-	sort.Slice(report.InCodeOnly, func(i, j int) bool {
-		return report.InCodeOnly[i].Command+":"+report.InCodeOnly[i].Name <
-			report.InCodeOnly[j].Command+":"+report.InCodeOnly[j].Name
+	slices.SortFunc(report.InCodeOnly, func(a, b *CLIArg) int {
+		return cmp.Compare(a.Command+":"+a.Name, b.Command+":"+b.Name)
 	})
-	sort.Slice(report.InBoth, func(i, j int) bool {
-		return report.InBoth[i].Command+":"+report.InBoth[i].Name <
-			report.InBoth[j].Command+":"+report.InBoth[j].Name
+	slices.SortFunc(report.InBoth, func(a, b *CLIArg) int {
+		return cmp.Compare(a.Command+":"+a.Name, b.Command+":"+b.Name)
 	})
-	sort.Strings(report.InDocsOnly)
+	slices.Sort(report.InDocsOnly)
 
 	return report
 }

@@ -1,11 +1,12 @@
 package libccache
 
 import (
+	"cmp"
 	"debug/macho"
 	"encoding/binary"
 	"fmt"
 	"log/slog"
-	"sort"
+	"slices"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/arm64util"
 )
@@ -51,8 +52,8 @@ func (a *MachoLibSystemAnalyzer) Analyze(machoFile *macho.File) ([]WrapperEntry,
 
 	// Sort by address to estimate function sizes.
 	syms := filterFunctionSymbols(machoFile.Symtab.Syms)
-	sort.Slice(syms, func(i, j int) bool {
-		return syms[i].Value < syms[j].Value
+	slices.SortFunc(syms, func(a, b macho.Symbol) int {
+		return cmp.Compare(a.Value, b.Value)
 	})
 
 	textEnd := textBase + uint64(len(code))
@@ -101,11 +102,11 @@ func (a *MachoLibSystemAnalyzer) Analyze(machoFile *macho.File) ([]WrapperEntry,
 	}
 
 	// Sort by Number then by Name for deterministic output.
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].Number != entries[j].Number {
-			return entries[i].Number < entries[j].Number
+	slices.SortFunc(entries, func(a, b WrapperEntry) int {
+		if a.Number != b.Number {
+			return cmp.Compare(a.Number, b.Number)
 		}
-		return entries[i].Name < entries[j].Name
+		return cmp.Compare(a.Name, b.Name)
 	})
 
 	return entries, nil

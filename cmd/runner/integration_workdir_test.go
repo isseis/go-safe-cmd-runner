@@ -121,11 +121,7 @@ func createRunnerWithOutputCapture(
 	t.Helper()
 
 	// 1. Create temporary hash directory for test
-	tempHashDir, err := os.MkdirTemp("", "test-hash-*")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		os.RemoveAll(tempHashDir)
-	})
+	tempHashDir := commontesting.SafeTempDir(t)
 
 	// 2. Create temporary config file using helper
 	configPath := setupTestConfig(t, configContent)
@@ -448,10 +444,7 @@ risk_level = "medium"
 			var fixedWorkdir string
 			configContent := tt.configContent
 			if tt.usesFixedWorkdir {
-				var err error
-				fixedWorkdir, err = os.MkdirTemp("", "test-fixed-workdir-*")
-				require.NoError(t, err)
-				defer os.RemoveAll(fixedWorkdir)
+				fixedWorkdir = commontesting.SafeTempDir(t)
 
 				// Escape path for TOML string (Windows compatibility: backslashes must be escaped)
 				escapedPath := strings.ReplaceAll(fixedWorkdir, `\`, `\\`)

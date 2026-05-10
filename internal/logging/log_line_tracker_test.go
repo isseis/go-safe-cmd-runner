@@ -77,10 +77,10 @@ func TestDefaultLogLineTracker_ThreadSafety(t *testing.T) {
 	wg.Add(numGoroutines)
 
 	// Start multiple goroutines that increment the counter
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < incrementsPerGoroutine; j++ {
+			for range incrementsPerGoroutine {
 				tracker.IncrementLine()
 			}
 		}()
@@ -105,7 +105,7 @@ func TestDefaultLogLineTracker_ConcurrentReadWrite(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < numOperations; i++ {
+		for range numOperations {
 			tracker.IncrementLine()
 		}
 	}()
@@ -114,7 +114,7 @@ func TestDefaultLogLineTracker_ConcurrentReadWrite(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < numOperations; i++ {
+		for range numOperations {
 			line := tracker.GetCurrentLine()
 			// Line should never be negative
 			assert.GreaterOrEqual(t, line, 0, "GetCurrentLine() returned negative value")
@@ -125,7 +125,7 @@ func TestDefaultLogLineTracker_ConcurrentReadWrite(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			tracker.Reset()
 		}
 	}()

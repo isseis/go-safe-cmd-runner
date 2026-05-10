@@ -403,9 +403,9 @@ func formatDetectedSymbols(symbols []binaryanalyzer.DetectedSymbol) string {
 // Returns empty string if no subcommand is found.
 func findFirstSubcommand(args []string) string {
 	// Common git options that take a value (not exhaustive, but covers common cases)
-	optionsWithValue := map[string]bool{
-		"-c": true, "-C": true, "--work-tree": true, "--git-dir": true,
-		"--config": true, "--namespace": true,
+	optionsWithValue := map[string]struct{}{
+		"-c": {}, "-C": {}, "--work-tree": {}, "--git-dir": {},
+		"--config": {}, "--namespace": {},
 	}
 
 	skipNext := false
@@ -424,7 +424,7 @@ func findFirstSubcommand(args []string) string {
 			}
 
 			// Check if this option takes a value
-			if optionsWithValue[arg] {
+			if _, ok := optionsWithValue[arg]; ok {
 				skipNext = true
 			}
 			continue
@@ -484,15 +484,15 @@ func containsSSHStyleAddress(args []string) bool {
 
 // IsDestructiveFileOperation checks if the command performs destructive file operations
 func IsDestructiveFileOperation(cmd string, args []string) bool {
-	destructiveCommands := map[string]bool{
-		"rm":     true,
-		"rmdir":  true,
-		"unlink": true,
-		"shred":  true,
-		"dd":     true, // Can be dangerous when used incorrectly
+	destructiveCommands := map[string]struct{}{
+		"rm":     {},
+		"rmdir":  {},
+		"unlink": {},
+		"shred":  {},
+		"dd":     {}, // Can be dangerous when used incorrectly
 	}
 
-	if destructiveCommands[cmd] {
+	if _, ok := destructiveCommands[cmd]; ok {
 		return true
 	}
 
@@ -505,7 +505,7 @@ func IsDestructiveFileOperation(cmd string, args []string) bool {
 			if arg == "-exec" && i+1 < len(args) {
 				// Check if the command following -exec is destructive
 				execCmd := args[i+1]
-				if destructiveCommands[execCmd] {
+				if _, ok := destructiveCommands[execCmd]; ok {
 					return true
 				}
 			}
@@ -525,41 +525,41 @@ func IsDestructiveFileOperation(cmd string, args []string) bool {
 
 // IsSystemModification checks if the command modifies system settings
 func IsSystemModification(cmd string, args []string) bool {
-	systemCommands := map[string]bool{
-		"systemctl":   true,
-		"service":     true,
-		"chkconfig":   true,
-		"update-rc.d": true,
-		"mount":       true,
-		"umount":      true,
-		"fdisk":       true,
-		"parted":      true,
-		"mkfs":        true,
-		"fsck":        true,
-		"crontab":     true,
-		"at":          true,
-		"batch":       true,
+	systemCommands := map[string]struct{}{
+		"systemctl":   {},
+		"service":     {},
+		"chkconfig":   {},
+		"update-rc.d": {},
+		"mount":       {},
+		"umount":      {},
+		"fdisk":       {},
+		"parted":      {},
+		"mkfs":        {},
+		"fsck":        {},
+		"crontab":     {},
+		"at":          {},
+		"batch":       {},
 	}
 
-	if systemCommands[cmd] {
+	if _, ok := systemCommands[cmd]; ok {
 		return true
 	}
 
 	// Check for package management commands
-	packageManagers := map[string]bool{
-		"apt":     true,
-		"apt-get": true,
-		"yum":     true,
-		"dnf":     true,
-		"zypper":  true,
-		"pacman":  true,
-		"brew":    true,
-		"pip":     true,
-		"npm":     true,
-		"yarn":    true,
+	packageManagers := map[string]struct{}{
+		"apt":     {},
+		"apt-get": {},
+		"yum":     {},
+		"dnf":     {},
+		"zypper":  {},
+		"pacman":  {},
+		"brew":    {},
+		"pip":     {},
+		"npm":     {},
+		"yarn":    {},
 	}
 
-	if packageManagers[cmd] {
+	if _, ok := packageManagers[cmd]; ok {
 		// Only consider install/remove operations as medium risk
 		for _, arg := range args {
 			if arg == "install" || arg == "remove" || arg == "uninstall" ||

@@ -9,6 +9,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -18,7 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -197,10 +198,10 @@ func extractKeysFromDocs(docsRoot string) (map[string][]string, error) {
 			line := scanner.Text()
 
 			// Track code block state
-			if strings.HasPrefix(line, "```") {
+			if rest, ok := strings.CutPrefix(line, "```"); ok {
 				if !inCodeBlock {
 					inCodeBlock = true
-					codeBlockType = strings.TrimPrefix(line, "```")
+					codeBlockType = rest
 				} else {
 					inCodeBlock = false
 					codeBlockType = ""
@@ -247,13 +248,7 @@ func isValidTOMLKey(key string) bool {
 		"true", "false", "yes", "no",
 	}
 
-	for _, exclude := range excludeList {
-		if key == exclude {
-			return false
-		}
-	}
-
-	return true
+	return !slices.Contains(excludeList, key)
 }
 
 // ComparisonReport contains the comparison results
@@ -293,13 +288,13 @@ func compareKeys(codeKeys map[string]*TOMLKey, docKeys map[string][]string) *Com
 	}
 
 	// Sort for consistent output
-	sort.Slice(report.InCodeOnly, func(i, j int) bool {
-		return report.InCodeOnly[i].Key < report.InCodeOnly[j].Key
+	slices.SortFunc(report.InCodeOnly, func(a, b *TOMLKey) int {
+		return cmp.Compare(a.Key, b.Key)
 	})
-	sort.Slice(report.InBoth, func(i, j int) bool {
-		return report.InBoth[i].Key < report.InBoth[j].Key
+	slices.SortFunc(report.InBoth, func(a, b *TOMLKey) int {
+		return cmp.Compare(a.Key, b.Key)
 	})
-	sort.Strings(report.InDocsOnly)
+	slices.Sort(report.InDocsOnly)
 
 	return report
 }
