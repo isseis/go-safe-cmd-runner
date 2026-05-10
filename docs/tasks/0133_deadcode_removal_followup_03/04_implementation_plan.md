@@ -86,9 +86,9 @@ golangci-lint run --no-config --default=none --enable=unused ./...
 - [x] 必要に応じて未使用 import (`executor`, `runnertypes`, `security`, `verification`, `mock`) を整理
 
 #### Phase 1d: testutil/mocks ・ helpers の未使用 export を削除
-- [ ] [internal/runner/base/executor/testutil/mocks.go](internal/runner/base/executor/testutil/mocks.go) から `NewMockFileSystem`, `NewMockFileSystemWithPaths`, `NewMockOutputWriter` 削除
-- [ ] [internal/runner/base/executor/testutil/helpers.go](internal/runner/base/executor/testutil/helpers.go) から `WithExpandedCmd`, `WithExpandedArgs`, `WithEffectiveWorkDir` 削除（コメントの "WithEffectiveWorkDir で上書き" など参照箇所も修正）
-- [ ] [internal/runner/base/privilege/testutil/mocks.go](internal/runner/base/privilege/testutil/mocks.go) から `NewMockPrivilegeManagerWithExecFn` 削除
+- [x] [internal/runner/base/executor/testutil/mocks.go](internal/runner/base/executor/testutil/mocks.go) から `NewMockFileSystem`, `NewMockFileSystemWithPaths`, `NewMockOutputWriter` 削除
+- [x] [internal/runner/base/executor/testutil/helpers.go](internal/runner/base/executor/testutil/helpers.go) から `WithExpandedCmd`, `WithExpandedArgs`, `WithEffectiveWorkDir` 削除（コメントの "WithEffectiveWorkDir で上書き" など参照箇所も修正）
+- [x] [internal/runner/base/privilege/testutil/mocks.go](internal/runner/base/privilege/testutil/mocks.go) から `NewMockPrivilegeManagerWithExecFn` 削除
 
 #### Phase 1e: `internal/verification/test_helpers.go: WithFS` 削除
 - [ ] [internal/verification/test_helpers.go:22-26](internal/verification/test_helpers.go#L22-L26) 削除（同ファイル内 `withFSInternal` が代替済み）

@@ -72,18 +72,3 @@ func (m *MockFileSystem) FileExists(path string) (bool, error) {
 	}
 	return err == nil, err
 }
-
-// NewMockFileSystem creates a new MockFileSystem with default behavior
-func NewMockFileSystem() *MockFileSystem {
-	return &MockFileSystem{}
-}
-
-// NewMockFileSystemWithPaths creates a MockFileSystem with predefined paths
-func NewMockFileSystemWithPaths(paths map[string]bool) *MockFileSystem {
-	return &MockFileSystem{ExistingPaths: paths}
-}
-
-// NewMockOutputWriter creates a new MockOutputWriter
-func NewMockOutputWriter() *MockOutputWriter {
-	return &MockOutputWriter{Outputs: make([]string, 0)}
-}

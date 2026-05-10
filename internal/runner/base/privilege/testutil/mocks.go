@@ -112,11 +112,3 @@ func NewFailingMockPrivilegeManager(supported bool) *MockPrivilegeManager {
 		ShouldFail: true,
 	}
 }
-
-// NewMockPrivilegeManagerWithExecFn creates a new MockPrivilegeManager with a custom execution function
-func NewMockPrivilegeManagerWithExecFn(supported bool, execFn func() error) *MockPrivilegeManager {
-	return &MockPrivilegeManager{
-		Supported: supported,
-		ExecFn:    execFn,
-	}
-}
