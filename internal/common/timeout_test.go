@@ -23,10 +23,6 @@ func timeoutFromSeconds(seconds int32) Timeout {
 	return Timeout{NewOptionalValue(seconds)}
 }
 
-func timeoutInt32Ptr(v int32) *int32 {
-	return &v
-}
-
 func TestTimeout_IsSet(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -150,21 +146,21 @@ func TestNewFromIntPtr(t *testing.T) {
 		},
 		{
 			name:      "zero pointer creates unlimited timeout",
-			ptr:       timeoutInt32Ptr(0),
+			ptr:       int32Ptr(0),
 			wantSet:   true,
 			wantUnlim: true,
 			wantValue: 0,
 		},
 		{
 			name:      "positive pointer creates timeout",
-			ptr:       timeoutInt32Ptr(120),
+			ptr:       int32Ptr(120),
 			wantSet:   true,
 			wantUnlim: false,
 			wantValue: 120,
 		},
 		{
 			name:      "max timeout pointer",
-			ptr:       timeoutInt32Ptr(MaxTimeout),
+			ptr:       int32Ptr(MaxTimeout),
 			wantSet:   true,
 			wantUnlim: false,
 			wantValue: MaxTimeout,
