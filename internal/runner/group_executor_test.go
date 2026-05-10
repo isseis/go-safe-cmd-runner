@@ -59,13 +59,6 @@ func WithExpandedVars(vars map[string]string) RuntimeGroupOption {
 	}
 }
 
-// WithEffectiveWorkDir sets the EffectiveWorkDir for a RuntimeGroup
-func WithEffectiveWorkDir(workDir string) RuntimeGroupOption {
-	return func(rg *runnertypes.RuntimeGroup) {
-		rg.EffectiveWorkDir = workDir
-	}
-}
-
 // newRuntimeGroup creates a RuntimeGroup with default test values and applies optional modifications
 func newRuntimeGroup(groupSpec *runnertypes.GroupSpec, opts ...RuntimeGroupOption) *runnertypes.RuntimeGroup {
 	rg := newDefaultRuntimeGroup(groupSpec)

@@ -94,7 +94,7 @@ golangci-lint run --no-config --default=none --enable=unused ./...
 - [x] [internal/verification/test_helpers.go:22-26](internal/verification/test_helpers.go#L22-L26) 削除（同ファイル内 `withFSInternal` が代替済み）
 
 #### Phase 1f: `internal/runner/group_executor_test.go: WithEffectiveWorkDir` 削除
-- [ ] [internal/runner/group_executor_test.go:62-66](internal/runner/group_executor_test.go#L62-L66) を削除
+- [x] [internal/runner/group_executor_test.go:62-66](internal/runner/group_executor_test.go#L62-L66) を削除
 
 ### Phase 2: プロダクションファイル中のテスト専用 API の整理（Category A）
 
