@@ -133,7 +133,7 @@ func WithExpandedEnv(env map[string]string) RuntimeCommandOption {
 //	    WithRunAsGroup("testgroup"),
 //	)
 //
-//	// Override expanded values
+//	// Customize command metadata
 //	cmd := CreateRuntimeCommand("echo", []string{"hello"},
 //	    WithName("echo-expanded"),
 //	)
