@@ -18,13 +18,6 @@ import (
 // TestOption is a function type for configuring Manager instances for testing
 type TestOption func(*managerInternalOptions)
 
-// WithFS sets a custom file system for testing
-func WithFS(fs common.FileSystem) TestOption {
-	return func(opts *managerInternalOptions) {
-		opts.fs = fs
-	}
-}
-
 // WithFileValidatorDisabled disables file validation for testing
 func WithFileValidatorDisabled() TestOption {
 	return func(opts *managerInternalOptions) {

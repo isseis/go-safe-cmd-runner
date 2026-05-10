@@ -91,7 +91,7 @@ golangci-lint run --no-config --default=none --enable=unused ./...
 - [x] [internal/runner/base/privilege/testutil/mocks.go](internal/runner/base/privilege/testutil/mocks.go) から `NewMockPrivilegeManagerWithExecFn` 削除
 
 #### Phase 1e: `internal/verification/test_helpers.go: WithFS` 削除
-- [ ] [internal/verification/test_helpers.go:22-26](internal/verification/test_helpers.go#L22-L26) 削除（同ファイル内 `withFSInternal` が代替済み）
+- [x] [internal/verification/test_helpers.go:22-26](internal/verification/test_helpers.go#L22-L26) 削除（同ファイル内 `withFSInternal` が代替済み）
 
 #### Phase 1f: `internal/runner/group_executor_test.go: WithEffectiveWorkDir` 削除
 - [ ] [internal/runner/group_executor_test.go:62-66](internal/runner/group_executor_test.go#L62-L66) を削除
