@@ -13,12 +13,12 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
-	resourcetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 
 	"github.com/stretchr/testify/require"
@@ -27,8 +27,8 @@ import (
 // Resolve commands to absolute paths once for all tests.
 // This is required because executor now expects absolute, symlink-resolved paths.
 var (
-	shCmd   = executortesting.ResolveCommand("sh")
-	echoCmd = executortesting.ResolveCommand("echo")
+	shCmd   = executortestutil.ResolveCommand("sh")
+	echoCmd = executortestutil.ResolveCommand("echo")
 )
 
 // TestLargeOutputMemoryUsage tests memory usage with large output
@@ -41,12 +41,12 @@ func TestLargeOutputMemoryUsage(t *testing.T) {
 	outputPath := filepath.Join(tempDir, "large_output.txt")
 
 	// Create test configuration
-	runtimeCmd := executortesting.CreateRuntimeCommand(
+	runtimeCmd := executortestutil.CreateRuntimeCommand(
 		shCmd,
 		[]string{"-c", "yes 'A' | head -c 10240"},
-		executortesting.WithName("large_output_test"),
-		executortesting.WithOutputFile(outputPath),
-		executortesting.WithRiskLevel("medium"),
+		executortestutil.WithName("large_output_test"),
+		executortestutil.WithOutputFile(outputPath),
+		executortestutil.WithRiskLevel("medium"),
 	)
 
 	groupSpec := &runnertypes.GroupSpec{Name: "test_group"}
@@ -63,7 +63,7 @@ func TestLargeOutputMemoryUsage(t *testing.T) {
 	runtime.ReadMemStats(&initialMem)
 
 	// Create resource manager and execute command
-	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetestutil.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
 	_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
@@ -118,12 +118,12 @@ func TestOutputSizeLimit(t *testing.T) {
 	outputPath := filepath.Join(tempDir, "size_limited_output.txt")
 
 	// Create command that generates more output than the limit
-	runtimeCmd := executortesting.CreateRuntimeCommand(
+	runtimeCmd := executortestutil.CreateRuntimeCommand(
 		shCmd,
 		[]string{"-c", "yes 'A' | head -c 2048"},
-		executortesting.WithName("size_limit_test"),
-		executortesting.WithOutputFile(outputPath),
-		executortesting.WithRiskLevel("medium"),
+		executortestutil.WithName("size_limit_test"),
+		executortestutil.WithOutputFile(outputPath),
+		executortestutil.WithRiskLevel("medium"),
 	)
 	// Set the output size limit on the command (1KB limit for 2KB data)
 	outputLimit, err := common.NewOutputSizeLimit(1024)
@@ -177,7 +177,7 @@ func TestConcurrentExecution(t *testing.T) {
 	// Create output capture manager
 	// For testing, we can use a simple mock SecurityValidator or skip output capture
 
-	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetestutil.NewNormalResourceManager(exec, fs, privMgr, logger)
 
 	// Execute commands concurrently
 	results := make(chan error, numCommands)
@@ -185,11 +185,11 @@ func TestConcurrentExecution(t *testing.T) {
 
 	for i := range numCommands {
 		go func(index int) {
-			runtimeCmd := executortesting.CreateRuntimeCommand(
+			runtimeCmd := executortestutil.CreateRuntimeCommand(
 				echoCmd,
 				[]string{fmt.Sprintf("Output from command %d", index)},
-				executortesting.WithName(fmt.Sprintf("concurrent_test_%d", index)),
-				executortesting.WithOutputFile(filepath.Join(tempDir, fmt.Sprintf("output_%d.txt", index))),
+				executortestutil.WithName(fmt.Sprintf("concurrent_test_%d", index)),
+				executortestutil.WithOutputFile(filepath.Join(tempDir, fmt.Sprintf("output_%d.txt", index))),
 			)
 
 			groupSpec := &runnertypes.GroupSpec{Name: "test_group"}
@@ -237,13 +237,13 @@ func TestLongRunningStability(t *testing.T) {
 	outputPath := filepath.Join(tempDir, "long_running_output.txt")
 
 	// Create command that runs for a while and produces incremental output
-	runtimeCmd := executortesting.CreateRuntimeCommand(
+	runtimeCmd := executortestutil.CreateRuntimeCommand(
 		shCmd,
 		[]string{"-c", "for i in $(seq 1 10); do echo \"Line $i\"; sleep 0.1; done"},
-		executortesting.WithName("long_running_test"),
-		executortesting.WithOutputFile(outputPath),
-		executortesting.WithTimeout(tu.Int32Ptr(30)),
-		executortesting.WithRiskLevel("medium"),
+		executortestutil.WithName("long_running_test"),
+		executortestutil.WithOutputFile(outputPath),
+		executortestutil.WithTimeout(tu.Int32Ptr(30)),
+		executortestutil.WithRiskLevel("medium"),
 	)
 
 	groupSpec := &runnertypes.GroupSpec{Name: "test_group"}
@@ -257,7 +257,7 @@ func TestLongRunningStability(t *testing.T) {
 	// Create output capture manager
 	// For testing, we can use a simple mock SecurityValidator or skip output capture
 
-	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetestutil.NewNormalResourceManager(exec, fs, privMgr, logger)
 
 	start := time.Now()
 	ctx := context.Background()
@@ -298,17 +298,17 @@ func BenchmarkOutputCapture(b *testing.B) {
 	privMgr := privilege.NewManager(slog.Default())
 	logger := slog.Default()
 
-	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetestutil.NewNormalResourceManager(exec, fs, privMgr, logger)
 
 	// Small output benchmark
 	b.Run("SmallOutput", func(b *testing.B) {
 		for i := range b.N {
 			outputPath := filepath.Join(tempDir, fmt.Sprintf("small_output_%d.txt", i))
-			runtimeCmd := executortesting.CreateRuntimeCommand(
+			runtimeCmd := executortestutil.CreateRuntimeCommand(
 				echoCmd,
 				[]string{"small output"},
-				executortesting.WithName("small_output_bench"),
-				executortesting.WithOutputFile(outputPath),
+				executortestutil.WithName("small_output_bench"),
+				executortestutil.WithOutputFile(outputPath),
 			)
 
 			groupSpec := &runnertypes.GroupSpec{
@@ -328,11 +328,11 @@ func BenchmarkOutputCapture(b *testing.B) {
 		largeData := strings.Repeat("A", 100*1024) // 100KB
 		for i := range b.N {
 			outputPath := filepath.Join(tempDir, fmt.Sprintf("large_output_%d.txt", i))
-			runtimeCmd := executortesting.CreateRuntimeCommand(
+			runtimeCmd := executortestutil.CreateRuntimeCommand(
 				echoCmd,
 				[]string{largeData},
-				executortesting.WithName("large_output_bench"),
-				executortesting.WithOutputFile(outputPath),
+				executortestutil.WithName("large_output_bench"),
+				executortestutil.WithOutputFile(outputPath),
 			)
 
 			groupSpec := &runnertypes.GroupSpec{
@@ -368,16 +368,16 @@ func TestMemoryLeakDetection(t *testing.T) {
 	privMgr := privilege.NewManager(slog.Default())
 	logger := slog.Default()
 
-	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetestutil.NewNormalResourceManager(exec, fs, privMgr, logger)
 
 	// Execute many commands to detect memory leaks
 	for i := range iterations {
 		outputPath := filepath.Join(tempDir, fmt.Sprintf("leak_test_%d.txt", i))
-		runtimeCmd := executortesting.CreateRuntimeCommand(
+		runtimeCmd := executortestutil.CreateRuntimeCommand(
 			echoCmd,
 			[]string{fmt.Sprintf("Test output %d", i)},
-			executortesting.WithName(fmt.Sprintf("leak_test_%d", i)),
-			executortesting.WithOutputFile(outputPath),
+			executortestutil.WithName(fmt.Sprintf("leak_test_%d", i)),
+			executortestutil.WithOutputFile(outputPath),
 		)
 
 		groupSpec := &runnertypes.GroupSpec{

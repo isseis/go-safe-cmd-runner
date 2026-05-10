@@ -5,7 +5,7 @@ package security
 import (
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,7 +27,7 @@ func TestValidator_validateGroupWritePermissions_LinuxTrustedGIDConfigDifference
 	newValidatorWithDir := func(t *testing.T, config *Config, gid uint32) *Validator {
 		t.Helper()
 
-		mockFS := commontesting.NewMockFileSystem()
+		mockFS := commontestutil.NewMockFileSystem()
 		err := mockFS.AddDirWithOwner("/test", 0o775, UIDRoot, gid)
 		require.NoError(t, err)
 

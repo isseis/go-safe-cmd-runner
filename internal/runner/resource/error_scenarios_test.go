@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -225,12 +225,12 @@ func TestErrorScenariosConsistency(t *testing.T) {
 			t.Run(fmt.Sprintf("%s_%s", mode.name, tt.name), func(t *testing.T) {
 				ctx := context.Background()
 				manager := mode.setup()
-				cmd := executortesting.CreateRuntimeCommand(
+				cmd := executortestutil.CreateRuntimeCommand(
 					tt.spec.Cmd,
 					tt.spec.Args,
-					executortesting.WithName(tt.spec.Name),
-					executortesting.WithRunAsUser(tt.spec.RunAsUser),
-					executortesting.WithRunAsGroup(tt.spec.RunAsGroup),
+					executortestutil.WithName(tt.spec.Name),
+					executortestutil.WithRunAsUser(tt.spec.RunAsUser),
+					executortestutil.WithRunAsGroup(tt.spec.RunAsGroup),
 				)
 				group := tt.groupSpec
 
@@ -308,10 +308,10 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 					}
 
 					for j := range commandsPerGoroutine {
-						cmd := executortesting.CreateRuntimeCommand(
+						cmd := executortestutil.CreateRuntimeCommand(
 							"echo",
 							[]string{"concurrent test"},
-							executortesting.WithName(fmt.Sprintf("concurrent-cmd-%d-%d", goroutineID, j)),
+							executortestutil.WithName(fmt.Sprintf("concurrent-cmd-%d-%d", goroutineID, j)),
 						)
 
 						_, result, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
@@ -474,12 +474,12 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 
 			manager, err := tt.setup()
 			require.NoError(t, err, "setup failed: %v", err)
-			cmd := executortesting.CreateRuntimeCommand(
+			cmd := executortestutil.CreateRuntimeCommand(
 				tt.spec.Cmd,
 				tt.spec.Args,
-				executortesting.WithName(tt.spec.Name),
-				executortesting.WithRunAsUser(tt.spec.RunAsUser),
-				executortesting.WithRunAsGroup(tt.spec.RunAsGroup),
+				executortestutil.WithName(tt.spec.Name),
+				executortestutil.WithRunAsUser(tt.spec.RunAsUser),
+				executortestutil.WithRunAsGroup(tt.spec.RunAsGroup),
 			)
 			group := tt.groupSpec
 
@@ -631,10 +631,10 @@ func TestConcurrentExecution(t *testing.T) {
 
 			// Execute multiple commands in this goroutine
 			for range commandsPerGoroutine {
-				cmd := executortesting.CreateRuntimeCommand(
+				cmd := executortestutil.CreateRuntimeCommand(
 					"echo",
 					[]string{"concurrent test"},
-					executortesting.WithName("concurrent-cmd"),
+					executortestutil.WithName("concurrent-cmd"),
 				)
 
 				_, _, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
@@ -694,10 +694,10 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, manager)
 
-	cmd := executortesting.CreateRuntimeCommand(
+	cmd := executortestutil.CreateRuntimeCommand(
 		"echo",
 		[]string{"state test"},
-		executortesting.WithName("state-test"),
+		executortestutil.WithName("state-test"),
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -730,10 +730,10 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 	// Test edge case: null bytes in environment variables
 	// This tests both normal and dry-run modes for proper handling
 	t.Run("null_bytes_in_environment", func(t *testing.T) {
-		nullCmd := executortesting.CreateRuntimeCommand(
+		nullCmd := executortestutil.CreateRuntimeCommand(
 			"echo",
 			[]string{"$NULL_VAR"},
-			executortesting.WithName("null-test"),
+			executortestutil.WithName("null-test"),
 		)
 
 		nullEnvVars := map[string]string{

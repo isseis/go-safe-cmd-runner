@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -15,7 +15,7 @@ import (
 // Test helper functions for dry-run manager
 
 func createTestDryRunResourceManager() *DryRunResourceManager {
-	mockExec := executortesting.NewMockExecutor()
+	mockExec := executortestutil.NewMockExecutor()
 	mockPriv := &MockPrivilegeManager{}
 	mockPathResolver := &MockPathResolver{}
 
@@ -42,7 +42,7 @@ func createTestDryRunResourceManager() *DryRunResourceManager {
 
 func TestDryRunResourceManager_ExecuteCommand(t *testing.T) {
 	manager := createTestDryRunResourceManager()
-	cmd := executortesting.CreateRuntimeCommand("echo", []string{})
+	cmd := executortestutil.CreateRuntimeCommand("echo", []string{})
 	group := createTestCommandGroup()
 	env := map[string]string{"TEST": "value"}
 	ctx := context.Background()
@@ -153,7 +153,7 @@ func TestDryRunResourceManager_GetDryRunResults(t *testing.T) {
 
 func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 	// Create manager with standard command paths
-	mockExec := executortesting.NewMockExecutor()
+	mockExec := executortestutil.NewMockExecutor()
 	mockPriv := &MockPrivilegeManager{}
 	mockPathResolver := &MockPathResolver{}
 
@@ -275,7 +275,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create a separate manager with setuid file path resolver
-		mockExec := executortesting.NewMockExecutor()
+		mockExec := executortestutil.NewMockExecutor()
 		mockPriv := &MockPrivilegeManager{}
 		mockPathResolver := &MockPathResolver{}
 
@@ -289,10 +289,10 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		setuidManager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
 		require.NoError(t, err)
 
-		cmd := executortesting.CreateRuntimeCommand(
+		cmd := executortestutil.CreateRuntimeCommand(
 			"setuid-chmod",
 			[]string{"777", "/tmp/test"},
-			executortesting.WithName("setuid-chmod"),
+			executortestutil.WithName("setuid-chmod"),
 		)
 
 		ctx := context.Background()
@@ -312,7 +312,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 			ctx := context.Background()
 			group := createTestCommandGroup()
 			env := map[string]string{}
-			cmd := executortesting.CreateRuntimeCommandFromSpec(&tt.spec)
+			cmd := executortestutil.CreateRuntimeCommandFromSpec(&tt.spec)
 
 			_, result, err := manager.ExecuteCommand(ctx, cmd, group, env)
 
@@ -327,7 +327,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 }
 
 func TestDryRunResourceManager_PathResolverRequired(t *testing.T) {
-	mockExec := executortesting.NewMockExecutor()
+	mockExec := executortestutil.NewMockExecutor()
 	mockPriv := &MockPrivilegeManager{}
 	opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
 
@@ -338,7 +338,7 @@ func TestDryRunResourceManager_PathResolverRequired(t *testing.T) {
 }
 
 func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
-	mockExec := executortesting.NewMockExecutor()
+	mockExec := executortestutil.NewMockExecutor()
 	mockPriv := &MockPrivilegeManager{}
 	mockPathResolver := &MockPathResolver{}
 
@@ -352,10 +352,10 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
 	require.NoError(t, err)
 
-	cmd := executortesting.CreateRuntimeCommand(
+	cmd := executortestutil.CreateRuntimeCommand(
 		"nonexistent-cmd",
 		[]string{"arg1"},
-		executortesting.WithName("test-failure"),
+		executortestutil.WithName("test-failure"),
 	)
 	group := createTestCommandGroup()
 	env := map[string]string{}
@@ -518,7 +518,7 @@ func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 			name: "Update command with final environment using valid token",
 			setupFunc: func(m *DryRunResourceManager) CommandToken {
 				// Record a command analysis first
-				cmd := executortesting.CreateRuntimeCommand("echo", []string{"hello", "world"})
+				cmd := executortestutil.CreateRuntimeCommand("echo", []string{"hello", "world"})
 				group := createTestCommandGroup()
 				env := map[string]string{"TEST": "value"}
 				ctx := context.Background()
@@ -574,7 +574,7 @@ func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 			name: "Update with complete debug info including both fields",
 			setupFunc: func(m *DryRunResourceManager) CommandToken {
 				// Record a command
-				cmd := executortesting.CreateRuntimeCommand("echo", []string{"hello", "world"})
+				cmd := executortestutil.CreateRuntimeCommand("echo", []string{"hello", "world"})
 				group := createTestCommandGroup()
 				env := map[string]string{"TEST": "value"}
 				ctx := context.Background()
@@ -620,7 +620,7 @@ func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 			name: "Duplicate call should return error",
 			setupFunc: func(m *DryRunResourceManager) CommandToken {
 				// Record a command and update once
-				cmd := executortesting.CreateRuntimeCommand("echo", []string{"hello", "world"})
+				cmd := executortestutil.CreateRuntimeCommand("echo", []string{"hello", "world"})
 				group := createTestCommandGroup()
 				env := map[string]string{"TEST": "value"}
 				ctx := context.Background()

@@ -14,12 +14,12 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
-	securitytesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/security/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
-	resourcetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
-	verificationtesting "github.com/isseis/go-safe-cmd-runner/internal/verification/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -78,7 +78,7 @@ func TestIntegration_DualDefense(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	mockVerificationManager := new(verificationtesting.MockManager)
+	mockVerificationManager := new(verificationtestutil.MockManager)
 
 	// Create mock path resolver
 	mockPathResolver := &mockPathResolver{}
@@ -110,7 +110,7 @@ func TestIntegration_DualDefense(t *testing.T) {
 	})
 
 	// Mock verification manager
-	mockVerificationManager.On("VerifyGroupFiles", verificationtesting.MatchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("VerifyGroupFiles", verificationtestutil.MatchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
@@ -178,7 +178,7 @@ func TestIntegration_Case1Only(t *testing.T) {
 
 	// Use MOCK validator with sanitization disabled (Case 2 - disabled)
 	// This simulates a scenario where Case 2 is not working, so Case 1 must protect alone
-	mockValidator := new(securitytesting.MockValidator)
+	mockValidator := new(securitytestutil.MockValidator)
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
 	// Mock ValidateCommandAllowed - allow all commands for this test
 	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
@@ -188,7 +188,7 @@ func TestIntegration_Case1Only(t *testing.T) {
 		return true // Match any input
 	})).Return("token=abc123xyz") // This will be the actual output from the command
 
-	mockVerificationManager := new(verificationtesting.MockManager)
+	mockVerificationManager := new(verificationtestutil.MockManager)
 
 	// Create mock path resolver
 	mockPathResolver := &mockPathResolver{}
@@ -220,7 +220,7 @@ func TestIntegration_Case1Only(t *testing.T) {
 	})
 
 	// Mock verification manager
-	mockVerificationManager.On("VerifyGroupFiles", verificationtesting.MatchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("VerifyGroupFiles", verificationtestutil.MatchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
@@ -289,7 +289,7 @@ func TestIntegration_Case2Only(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	mockVerificationManager := new(verificationtesting.MockManager)
+	mockVerificationManager := new(verificationtestutil.MockManager)
 
 	// Create mock path resolver
 	mockPathResolver := &mockPathResolver{}
@@ -321,7 +321,7 @@ func TestIntegration_Case2Only(t *testing.T) {
 	})
 
 	// Mock verification manager
-	mockVerificationManager.On("VerifyGroupFiles", verificationtesting.MatchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("VerifyGroupFiles", verificationtestutil.MatchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
@@ -395,7 +395,7 @@ func TestIntegration_Case2Only_DebugLeakage(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	mockVerificationManager := new(verificationtesting.MockManager)
+	mockVerificationManager := new(verificationtestutil.MockManager)
 
 	// Create mock path resolver
 	mockPathResolver := &mockPathResolver{}
@@ -427,7 +427,7 @@ func TestIntegration_Case2Only_DebugLeakage(t *testing.T) {
 	})
 
 	// Mock verification manager
-	mockVerificationManager.On("VerifyGroupFiles", verificationtesting.MatchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("VerifyGroupFiles", verificationtestutil.MatchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)

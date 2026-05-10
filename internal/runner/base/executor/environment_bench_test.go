@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -52,9 +52,9 @@ func BenchmarkBuildProcessEnvironment(b *testing.B) {
 		ExpandedEnv: groupEnv,
 	}
 
-	cmd := executortesting.CreateRuntimeCommand("bench-command", []string{},
-		executortesting.WithName("bench-command"),
-		executortesting.WithExpandedEnv(cmdEnv))
+	cmd := executortestutil.CreateRuntimeCommand("bench-command", []string{},
+		executortestutil.WithName("bench-command"),
+		executortestutil.WithExpandedEnv(cmdEnv))
 
 	b.ResetTimer()
 	for range b.N {
@@ -85,9 +85,9 @@ func BenchmarkBuildProcessEnvironment_Small(b *testing.B) {
 		},
 	}
 
-	cmd := executortesting.CreateRuntimeCommand("echo", []string{},
-		executortesting.WithName("test-echo-command"),
-		executortesting.WithExpandedEnv(map[string]string{
+	cmd := executortestutil.CreateRuntimeCommand("echo", []string{},
+		executortestutil.WithName("test-echo-command"),
+		executortestutil.WithExpandedEnv(map[string]string{
 			"CMD_VAR": "value",
 		}))
 

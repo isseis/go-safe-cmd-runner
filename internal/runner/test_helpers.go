@@ -11,12 +11,12 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
-	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/testutil"
 	"github.com/stretchr/testify/mock"
 )
 
 // MockResourceManager is an alias to the shared mock implementation
-type MockResourceManager = runnertesting.MockResourceManager
+type MockResourceManager = runnertestutil.MockResourceManager
 
 // MockGroupExecutor is a mock implementation of GroupExecutor for testing
 type MockGroupExecutor struct {

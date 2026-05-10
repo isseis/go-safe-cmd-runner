@@ -12,13 +12,13 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
-	resourcetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 
 	"github.com/stretchr/testify/require"
@@ -27,8 +27,8 @@ import (
 // Resolve commands to absolute paths once for all tests.
 // This is required because executor expects absolute paths (resolved by PathResolver in production).
 var (
-	echoCmd = executortesting.ResolveCommand("echo")
-	shCmd   = executortesting.ResolveCommand("sh")
+	echoCmd = executortestutil.ResolveCommand("echo")
+	shCmd   = executortestutil.ResolveCommand("sh")
 )
 
 // TestPathTraversalAttack tests protection against path traversal attacks
@@ -81,11 +81,11 @@ func TestPathTraversalAttack(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			runtimeCmd := executortesting.CreateRuntimeCommand(
+			runtimeCmd := executortestutil.CreateRuntimeCommand(
 				echoCmd,
 				[]string{"test output"},
-				executortesting.WithName("path_traversal_test"),
-				executortesting.WithOutputFile(tc.outputPath),
+				executortestutil.WithName("path_traversal_test"),
+				executortestutil.WithOutputFile(tc.outputPath),
 			)
 
 			groupSpec := &runnertypes.GroupSpec{
@@ -98,7 +98,7 @@ func TestPathTraversalAttack(t *testing.T) {
 			privMgr := privilege.NewManager(slog.Default())
 			logger := slog.Default()
 
-			manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
+			manager := resourcetestutil.NewNormalResourceManager(exec, fs, privMgr, logger)
 			ctx := context.Background()
 			_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
@@ -137,11 +137,11 @@ func TestSymlinkAttack(t *testing.T) {
 	err := os.Symlink(sensitiveFile, symlinkPath)
 	require.NoError(t, err)
 
-	runtimeCmd := executortesting.CreateRuntimeCommand(
+	runtimeCmd := executortestutil.CreateRuntimeCommand(
 		echoCmd,
 		[]string{"malicious content"},
-		executortesting.WithName("symlink_attack_test"),
-		executortesting.WithOutputFile(symlinkPath),
+		executortestutil.WithName("symlink_attack_test"),
+		executortestutil.WithOutputFile(symlinkPath),
 	)
 
 	groupSpec := &runnertypes.GroupSpec{
@@ -154,7 +154,7 @@ func TestSymlinkAttack(t *testing.T) {
 	privMgr := privilege.NewManager(slog.Default())
 	logger := slog.Default()
 
-	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetestutil.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
 	_, _, err = manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
@@ -212,11 +212,11 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			runtimeCmd := executortesting.CreateRuntimeCommand(
+			runtimeCmd := executortestutil.CreateRuntimeCommand(
 				echoCmd,
 				[]string{"test output"},
-				executortesting.WithName("privilege_escalation_test"),
-				executortesting.WithOutputFile(tc.outputPath),
+				executortestutil.WithName("privilege_escalation_test"),
+				executortestutil.WithOutputFile(tc.outputPath),
 			)
 			outputSizeLimit := int64(1024 * 1024)
 			runtimeCmd.EffectiveOutputSizeLimit = common.NewOutputSizeLimitFromPtr(&outputSizeLimit)
@@ -261,11 +261,11 @@ func TestDiskSpaceExhaustionAttack(t *testing.T) {
 
 	// Create command that attempts to generate very large output
 	largeSize := 100 * 1024 * 1024 // 100MB
-	runtimeCmd := executortesting.CreateRuntimeCommand(
+	runtimeCmd := executortestutil.CreateRuntimeCommand(
 		shCmd,
 		[]string{"-c", "yes 'A' | head -c " + strconv.Itoa(largeSize)},
-		executortesting.WithName("disk_exhaustion_test"),
-		executortesting.WithOutputFile(outputPath),
+		executortestutil.WithName("disk_exhaustion_test"),
+		executortestutil.WithOutputFile(outputPath),
 	)
 
 	groupSpec := &runnertypes.GroupSpec{
@@ -277,7 +277,7 @@ func TestDiskSpaceExhaustionAttack(t *testing.T) {
 	exec := executor.NewDefaultExecutor()
 	privMgr := privilege.NewManager(slog.Default())
 	logger := slog.Default()
-	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetestutil.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
 	_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
@@ -306,11 +306,11 @@ func TestFilePermissionValidation(t *testing.T) {
 	tempDir := tu.SafeTempDir(t)
 	outputPath := filepath.Join(tempDir, "permission_test.txt")
 
-	runtimeCmd := executortesting.CreateRuntimeCommand(
+	runtimeCmd := executortestutil.CreateRuntimeCommand(
 		echoCmd,
 		[]string{"test output"},
-		executortesting.WithName("permission_test"),
-		executortesting.WithOutputFile(outputPath),
+		executortestutil.WithName("permission_test"),
+		executortestutil.WithOutputFile(outputPath),
 	)
 
 	groupSpec := &runnertypes.GroupSpec{
@@ -323,7 +323,7 @@ func TestFilePermissionValidation(t *testing.T) {
 	privMgr := privilege.NewManager(slog.Default())
 	logger := slog.Default()
 
-	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetestutil.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
 	_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 	// In current implementation, output capture is not fully integrated
@@ -362,17 +362,17 @@ func TestConcurrentSecurityValidation(t *testing.T) {
 	privMgr := privilege.NewManager(slog.Default())
 	logger := slog.Default()
 
-	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetestutil.NewNormalResourceManager(exec, fs, privMgr, logger)
 
 	for i := range numGoroutines {
 		go func(index int) {
 			outputPath := filepath.Join(tempDir, fmt.Sprintf("concurrent_test_%d.txt", index))
 
-			runtimeCmd := executortesting.CreateRuntimeCommand(
+			runtimeCmd := executortestutil.CreateRuntimeCommand(
 				echoCmd,
 				[]string{"concurrent test output"},
-				executortesting.WithName("concurrent_security_test"),
-				executortesting.WithOutputFile(outputPath),
+				executortestutil.WithName("concurrent_security_test"),
+				executortestutil.WithOutputFile(outputPath),
 			)
 
 			groupSpec := &runnertypes.GroupSpec{
@@ -431,11 +431,11 @@ func TestSecurityValidatorIntegration(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			runtimeCmd := executortesting.CreateRuntimeCommand(
+			runtimeCmd := executortestutil.CreateRuntimeCommand(
 				echoCmd,
 				[]string{"test output"},
-				executortesting.WithName("security_integration_test"),
-				executortesting.WithOutputFile(tc.outputPath),
+				executortestutil.WithName("security_integration_test"),
+				executortestutil.WithOutputFile(tc.outputPath),
 			)
 
 			groupSpec := &runnertypes.GroupSpec{
@@ -448,7 +448,7 @@ func TestSecurityValidatorIntegration(t *testing.T) {
 			privMgr := privilege.NewManager(slog.Default())
 			logger := slog.Default()
 
-			manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
+			manager := resourcetestutil.NewNormalResourceManager(exec, fs, privMgr, logger)
 			ctx := context.Background()
 			_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
@@ -483,7 +483,7 @@ func TestRaceConditionPrevention(t *testing.T) {
 	privMgr := privilege.NewManager(slog.Default())
 	logger := slog.Default()
 
-	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetestutil.NewNormalResourceManager(exec, fs, privMgr, logger)
 
 	// Create multiple goroutines trying to write to the same output file
 	numGoroutines := 5
@@ -491,11 +491,11 @@ func TestRaceConditionPrevention(t *testing.T) {
 
 	for i := range numGoroutines {
 		go func(index int) {
-			runtimeCmd := executortesting.CreateRuntimeCommand(
+			runtimeCmd := executortestutil.CreateRuntimeCommand(
 				echoCmd,
 				[]string{fmt.Sprintf("content from goroutine %d", index)},
-				executortesting.WithName("race_condition_test"),
-				executortesting.WithOutputFile(outputPath),
+				executortestutil.WithName("race_condition_test"),
+				executortestutil.WithOutputFile(outputPath),
 			)
 
 			groupSpec := &runnertypes.GroupSpec{

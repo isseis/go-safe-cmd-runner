@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -100,7 +100,7 @@ func TestNewValidator_WithOptions(t *testing.T) {
 	})
 
 	t.Run("with WithFileSystem option", func(t *testing.T) {
-		mockFS := commontesting.NewMockFileSystem()
+		mockFS := commontestutil.NewMockFileSystem()
 		config := DefaultConfig()
 		validator, err := NewValidator(config, WithFileSystem(mockFS))
 
@@ -122,7 +122,7 @@ func TestNewValidator_WithOptions(t *testing.T) {
 	})
 
 	t.Run("with both options", func(t *testing.T) {
-		mockFS := commontesting.NewMockFileSystem()
+		mockFS := commontestutil.NewMockFileSystem()
 		gm := groupmembership.New()
 		config := DefaultConfig()
 		validator, err := NewValidator(config, WithFileSystem(mockFS), WithGroupMembership(gm))
@@ -134,7 +134,7 @@ func TestNewValidator_WithOptions(t *testing.T) {
 	})
 
 	t.Run("option application order independence", func(t *testing.T) {
-		mockFS := commontesting.NewMockFileSystem()
+		mockFS := commontestutil.NewMockFileSystem()
 		gm := groupmembership.New()
 		config := DefaultConfig()
 

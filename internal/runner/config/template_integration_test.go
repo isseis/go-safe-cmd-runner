@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -55,7 +55,7 @@ func TestTemplateIntegrationWithSampleFile(t *testing.T) {
 		runtimeGroup,
 		runtimeGlobal,
 		common.NewUnsetTimeout(),
-		commontesting.NewUnsetOutputSizeLimit(),
+		commontestutil.NewUnsetOutputSizeLimit(),
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "restic", runtimeCmd.Cmd())
@@ -74,7 +74,7 @@ func TestTemplateIntegrationWithSampleFile(t *testing.T) {
 		runtimeGroup,
 		runtimeGlobal,
 		common.NewUnsetTimeout(),
-		commontesting.NewUnsetOutputSizeLimit(),
+		commontestutil.NewUnsetOutputSizeLimit(),
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "restic", runtimeCmd.Cmd())
@@ -90,7 +90,7 @@ func TestTemplateIntegrationWithSampleFile(t *testing.T) {
 		runtimeGroup,
 		runtimeGlobal,
 		common.NewUnsetTimeout(),
-		commontesting.NewUnsetOutputSizeLimit(),
+		commontestutil.NewUnsetOutputSizeLimit(),
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "restic", runtimeCmd.Cmd())
@@ -107,7 +107,7 @@ func TestTemplateIntegrationWithSampleFile(t *testing.T) {
 		runtimeGroup,
 		runtimeGlobal,
 		common.NewUnsetTimeout(),
-		commontesting.NewUnsetOutputSizeLimit(),
+		commontestutil.NewUnsetOutputSizeLimit(),
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "restic", runtimeCmd.Cmd())
@@ -158,7 +158,7 @@ message = "%{greeting} %{name}"
 		runtimeGroup,
 		runtimeGlobal,
 		common.NewUnsetTimeout(),
-		commontesting.NewUnsetOutputSizeLimit(),
+		commontestutil.NewUnsetOutputSizeLimit(),
 	)
 	require.NoError(t, err)
 
@@ -205,7 +205,7 @@ path = "/home"
 		runtimeGroup,
 		runtimeGlobal,
 		common.NewUnsetTimeout(),
-		commontesting.NewUnsetOutputSizeLimit(),
+		commontestutil.NewUnsetOutputSizeLimit(),
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "ls", runtimeCmd.Cmd())
@@ -324,7 +324,7 @@ message = 123
 					runtimeGroup,
 					runtimeGlobal,
 					common.NewUnsetTimeout(),
-					commontesting.NewUnsetOutputSizeLimit(),
+					commontestutil.NewUnsetOutputSizeLimit(),
 				)
 				require.Error(t, err)
 				if tt.wantErrType != nil {
@@ -375,7 +375,7 @@ msg = "hello"
 		runtimeGroup,
 		runtimeGlobal,
 		common.NewUnsetTimeout(),
-		commontesting.NewUnsetOutputSizeLimit(),
+		commontestutil.NewUnsetOutputSizeLimit(),
 	)
 	require.NoError(t, err)
 
@@ -483,7 +483,7 @@ mycmd = "echo"
 				runtimeGroup,
 				runtimeGlobal,
 				common.NewUnsetTimeout(),
-				commontesting.NewUnsetOutputSizeLimit(),
+				commontestutil.NewUnsetOutputSizeLimit(),
 			)
 
 			if tt.wantErr {
@@ -548,7 +548,7 @@ message = "%{msg}"
 		runtimeGroup1,
 		runtimeGlobal,
 		common.NewUnsetTimeout(),
-		commontesting.NewUnsetOutputSizeLimit(),
+		commontestutil.NewUnsetOutputSizeLimit(),
 	)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"Group 1"}, runtimeCmd1.ExpandedArgs)
@@ -562,7 +562,7 @@ message = "%{msg}"
 		runtimeGroup2,
 		runtimeGlobal,
 		common.NewUnsetTimeout(),
-		commontesting.NewUnsetOutputSizeLimit(),
+		commontestutil.NewUnsetOutputSizeLimit(),
 	)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"Group 2"}, runtimeCmd2.ExpandedArgs)
@@ -732,7 +732,7 @@ msg = "hello"
 				runtimeGroup,
 				runtimeGlobal,
 				common.NewUnsetTimeout(),
-				commontesting.NewUnsetOutputSizeLimit(),
+				commontestutil.NewUnsetOutputSizeLimit(),
 			)
 			require.NoError(t, err)
 
@@ -921,7 +921,7 @@ env_vars = []
 				runtimeGroup,
 				runtimeGlobal,
 				common.NewUnsetTimeout(),
-				commontesting.NewUnsetOutputSizeLimit(),
+				commontestutil.NewUnsetOutputSizeLimit(),
 			)
 			require.NoError(t, err)
 

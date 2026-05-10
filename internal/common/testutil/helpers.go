@@ -1,6 +1,6 @@
 //go:build test || performance || integration
 
-package testutil
+package commontestutil
 
 import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"

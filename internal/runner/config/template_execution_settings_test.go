@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -175,7 +175,7 @@ msg = "hello"
 				runtimeGroup,
 				runtimeGlobal,
 				common.NewUnsetTimeout(),
-				commontesting.NewUnsetOutputSizeLimit(),
+				commontestutil.NewUnsetOutputSizeLimit(),
 			)
 			require.NoError(t, err)
 

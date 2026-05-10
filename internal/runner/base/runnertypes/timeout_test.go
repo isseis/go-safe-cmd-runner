@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 )
@@ -57,7 +57,7 @@ func TestNewRuntimeCommand_TimeoutResolution(t *testing.T) {
 				Timeout: tt.commandTimeout,
 			}
 
-			runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(tt.globalTimeout), commontesting.NewUnsetOutputSizeLimit(), "test-group")
+			runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(tt.globalTimeout), commontestutil.NewUnsetOutputSizeLimit(), "test-group")
 			assert.NoError(t, err, "NewRuntimeCommand() should not fail")
 
 			assert.Equal(t, tt.expectedEffective, runtime.EffectiveTimeout,
@@ -86,7 +86,7 @@ func TestNewRuntimeCommand_CommandTimeoutZero(t *testing.T) {
 
 	globalTimeout := tu.Int32Ptr(60) // 60 seconds global timeout
 
-	runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(globalTimeout), commontesting.NewUnsetOutputSizeLimit(), "test-group")
+	runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(globalTimeout), commontestutil.NewUnsetOutputSizeLimit(), "test-group")
 	assert.NoError(t, err, "NewRuntimeCommand() should not fail")
 
 	// Command timeout should take precedence, resulting in unlimited execution
@@ -110,7 +110,7 @@ func TestNewRuntimeCommand_GlobalTimeoutZero(t *testing.T) {
 
 	globalTimeout := tu.Int32Ptr(0) // Unlimited global timeout
 
-	runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(globalTimeout), commontesting.NewUnsetOutputSizeLimit(), "test-group")
+	runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(globalTimeout), commontestutil.NewUnsetOutputSizeLimit(), "test-group")
 	assert.NoError(t, err, "NewRuntimeCommand() should not fail")
 
 	// Should inherit unlimited execution from global timeout
@@ -124,7 +124,7 @@ func TestNewRuntimeCommand_GlobalTimeoutZero(t *testing.T) {
 
 func TestNewRuntimeCommand_ErrorHandling(t *testing.T) {
 	// Test with nil spec
-	runtime, err := NewRuntimeCommand(nil, common.NewFromIntPtr(tu.Int32Ptr(60)), commontesting.NewUnsetOutputSizeLimit(), "test-group")
+	runtime, err := NewRuntimeCommand(nil, common.NewFromIntPtr(tu.Int32Ptr(60)), commontestutil.NewUnsetOutputSizeLimit(), "test-group")
 	assert.ErrorIs(t, err, ErrNilSpec, "NewRuntimeCommand(nil, ...) should return ErrNilSpec")
 	assert.Nil(t, runtime, "NewRuntimeCommand(nil, ...) should return nil runtime")
 }
@@ -179,7 +179,7 @@ func TestNewRuntimeCommand_TimeoutResolutionContext(t *testing.T) {
 			runtime, err := NewRuntimeCommand(
 				spec,
 				common.NewFromIntPtr(tt.globalTimeout),
-				commontesting.NewUnsetOutputSizeLimit(),
+				commontestutil.NewUnsetOutputSizeLimit(),
 				tt.groupName,
 			)
 

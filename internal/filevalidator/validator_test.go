@@ -12,7 +12,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
-	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -796,7 +796,7 @@ func TestRecord_SyscallOccurrence_SourcePathSetWhenDebugInfo(t *testing.T) {
 		require.NoError(t, os.MkdirAll(hashDir, 0o700))
 
 		targetFile := filepath.Join(tempDir, "target.bin")
-		elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
+		elfanalyzertestutil.CreateDynamicELFFile(t, targetFile)
 
 		v, err := New(&SHA256{}, hashDir, ValidatorConfig{
 			DebugInfo:       true,
@@ -821,7 +821,7 @@ func TestRecord_SyscallOccurrence_SourcePathSetWhenDebugInfo(t *testing.T) {
 		require.NoError(t, os.MkdirAll(hashDir, 0o700))
 
 		targetFile := filepath.Join(tempDir, "target-libc.bin")
-		elfanalyzertesting.CreateELFWithSymbols(t, targetFile, []elfanalyzertesting.SymbolSpec{{Name: "socket"}})
+		elfanalyzertestutil.CreateELFWithSymbols(t, targetFile, []elfanalyzertestutil.SymbolSpec{{Name: "socket"}})
 
 		v, err := New(&SHA256{}, hashDir, ValidatorConfig{
 			DebugInfo: true,
@@ -866,7 +866,7 @@ func TestRecord_SyscallOccurrence_SourcePathOmittedWithoutDebugInfo(t *testing.T
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
 
 	targetFile := filepath.Join(tempDir, "target.bin")
-	elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
+	elfanalyzertestutil.CreateDynamicELFFile(t, targetFile)
 
 	v, err := New(&SHA256{}, hashDir, ValidatorConfig{SyscallAnalyzer: &stubSyscallAnalyzerWithDebugInfo{}})
 	require.NoError(t, err)
@@ -1245,7 +1245,7 @@ func TestRecord_DebugInfo_ELF(t *testing.T) {
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
 
 	targetFile := filepath.Join(tempDir, "target.bin")
-	elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
+	elfanalyzertestutil.CreateDynamicELFFile(t, targetFile)
 
 	v, err := New(&SHA256{}, hashDir, ValidatorConfig{SyscallAnalyzer: &stubSyscallAnalyzerWithDebugInfo{}})
 	require.NoError(t, err)
@@ -1322,7 +1322,7 @@ func TestRecord_LibcCache_Error_CausesRecordFailure(t *testing.T) {
 	// libc cache path without depending on any system binary.
 	tempDir := safeTempDir(t)
 	elfPath := filepath.Join(tempDir, "test.elf")
-	elfanalyzertesting.CreateDynamicELFFile(t, elfPath)
+	elfanalyzertestutil.CreateDynamicELFFile(t, elfPath)
 
 	stub := &stubLibcCache{err: errors.New("libc file not accessible")}
 	v, err := New(&SHA256{}, tempDir, ValidatorConfig{LibcCache: stub})
@@ -1364,7 +1364,7 @@ func TestRecord_Force_ELFToNonELF_ClearsSyscallAnalysis(t *testing.T) {
 
 	// Create an in-memory ELF at the target path.
 	targetFile := filepath.Join(tempDir, "target.bin")
-	elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
+	elfanalyzertestutil.CreateDynamicELFFile(t, targetFile)
 
 	v, err := New(&SHA256{}, hashDir, ValidatorConfig{SyscallAnalyzer: &stubSyscallAnalyzerReturnsOne{}})
 	require.NoError(t, err)
@@ -1414,7 +1414,7 @@ func TestRecord_Force_SyscallsToNone_ClearsSyscallAnalysis(t *testing.T) {
 
 	// Create an in-memory ELF at the target path.
 	targetFile := filepath.Join(tempDir, "target.bin")
-	elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
+	elfanalyzertestutil.CreateDynamicELFFile(t, targetFile)
 
 	v, err := New(&SHA256{}, hashDir, ValidatorConfig{SyscallAnalyzer: &stubSyscallAnalyzerReturnsOne{}})
 	require.NoError(t, err)

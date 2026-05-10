@@ -14,7 +14,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -140,7 +140,7 @@ func TestProcessFiles_WithELF(t *testing.T) {
 	recorder := &fakeRecorder{responses: map[string]error{}}
 
 	staticELF := filepath.Join(tempDir, "static.elf")
-	elfanalyzertesting.CreateStaticELFFile(t, staticELF)
+	elfanalyzertestutil.CreateStaticELFFile(t, staticELF)
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}

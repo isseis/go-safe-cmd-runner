@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
@@ -106,7 +106,7 @@ func TestNewManager(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			mockFS := commontesting.NewMockFileSystem()
+			mockFS := commontestutil.NewMockFileSystem()
 
 			// Set up mock filesystem for valid directories
 			if tc.hashDir == testHashDir {
@@ -219,7 +219,7 @@ func TestManager_ValidateHashDirectory_RelativePath(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a mock filesystem with necessary directory structure
-			mockFS := commontesting.NewMockFileSystem()
+			mockFS := commontestutil.NewMockFileSystem()
 
 			// Create the directory in the mock filesystem to satisfy the security validator
 			if tc.hashDir != "" {
@@ -274,7 +274,7 @@ func TestNewManagerProduction(t *testing.T) {
 	t.Run("creates manager with default hash directory", func(t *testing.T) {
 		// We can't easily test the actual NewManager function due to filesystem requirements
 		// Instead, test the internal implementation with mocked filesystem
-		mockFS := commontesting.NewMockFileSystem()
+		mockFS := commontestutil.NewMockFileSystem()
 		err := mockFS.AddDir(testHashDir, 0o755)
 		require.NoError(t, err)
 
@@ -293,7 +293,7 @@ func TestNewManagerProduction(t *testing.T) {
 	t.Run("validates production constraints", func(t *testing.T) {
 		// Test that non-default directory is rejected in production mode
 		_, err := newManagerInternal("/custom/hash/dir",
-			withFSInternal(commontesting.NewMockFileSystem()),
+			withFSInternal(commontestutil.NewMockFileSystem()),
 			withFileValidatorDisabledInternal(),
 			withCreationMode(CreationModeProduction),
 			withSecurityLevel(SecurityLevelStrict),
@@ -403,7 +403,7 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 		// Test that our Manager correctly uses the hardcoded securePathEnv
 		// We can't easily test with the actual system paths, but we can verify
 		// that the Manager uses its pathResolver correctly
-		mockFS := commontesting.NewMockFileSystem()
+		mockFS := commontestutil.NewMockFileSystem()
 		require.NoError(t, mockFS.AddDir(testHashDir, 0o755))
 
 		manager, err := newManagerInternal(testHashDir,
@@ -1250,7 +1250,7 @@ func TestVerifyGlobalFiles_DryRun_MultipleFailures(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up mock filesystem with files but no hash files (both will fail verification)
-	mockFS := commontesting.NewMockFileSystem()
+	mockFS := commontestutil.NewMockFileSystem()
 	err = mockFS.AddDir(hashDir, 0o755)
 	require.NoError(t, err)
 	err = mockFS.AddFile(file1, 0o644, []byte("content1"))

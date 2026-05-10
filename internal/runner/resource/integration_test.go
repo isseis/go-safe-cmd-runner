@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"testing"
 
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -89,12 +89,12 @@ func TestDryRunExecutionPath(t *testing.T) {
 			require.NotNil(t, dryRunManager) // Execute commands in dry-run mode
 			for _, cmdSpec := range tt.commandSpecs {
 				group := tt.groupSpecs[0] // Use first group for simplicity
-				cmd := executortesting.CreateRuntimeCommand(
+				cmd := executortestutil.CreateRuntimeCommand(
 					cmdSpec.Cmd,
 					cmdSpec.Args,
-					executortesting.WithName(cmdSpec.Name),
-					executortesting.WithRunAsUser(cmdSpec.RunAsUser),
-					executortesting.WithRunAsGroup(cmdSpec.RunAsGroup),
+					executortestutil.WithName(cmdSpec.Name),
+					executortestutil.WithRunAsUser(cmdSpec.RunAsUser),
+					executortestutil.WithRunAsGroup(cmdSpec.RunAsGroup),
 				)
 				_, result, err := dryRunManager.ExecuteCommand(ctx, cmd, group, tt.envVars)
 
@@ -147,10 +147,10 @@ func TestDryRunResultConsistency(t *testing.T) {
 		VerifyFiles:   true,
 	}
 
-	cmd := executortesting.CreateRuntimeCommand(
+	cmd := executortestutil.CreateRuntimeCommand(
 		"echo",
 		[]string{"consistency test"},
-		executortesting.WithName("consistency-test"),
+		executortestutil.WithName("consistency-test"),
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -209,10 +209,10 @@ func TestDryRunResultConsistency(t *testing.T) {
 func TestDefaultResourceManagerModeConsistency(t *testing.T) {
 	ctx := context.Background()
 
-	cmd := executortesting.CreateRuntimeCommand(
+	cmd := executortestutil.CreateRuntimeCommand(
 		"echo",
 		[]string{"mode test"},
-		executortesting.WithName("mode-test"),
+		executortestutil.WithName("mode-test"),
 	)
 
 	group := &runnertypes.GroupSpec{

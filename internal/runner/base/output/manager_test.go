@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
-	safefileiotesting "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 )
 
@@ -440,8 +440,8 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 
 func TestDefaultOutputCaptureManager_CleanupOutput(t *testing.T) {
 	// Setup mocks
-	mockSafeFS := safefileiotesting.NewMockFileSystem()
-	mockCommonFS := commontesting.NewMockFileSystem()
+	mockSafeFS := safefileiotestutil.NewMockFileSystem()
+	mockCommonFS := commontestutil.NewMockFileSystem()
 
 	// Add a dummy file to mock FS
 	tempPath := "/tmp/test_output_123.tmp"

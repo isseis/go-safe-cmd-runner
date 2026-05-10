@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/pelletier/go-toml/v2"
@@ -351,7 +351,7 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 
 			// 4. Expand command
 			cmdSpec := &group.Commands[0]
-			runtimeCmd, err := ExpandCommand(cmdSpec, nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+			runtimeCmd, err := ExpandCommand(cmdSpec, nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontestutil.NewUnsetOutputSizeLimit())
 			require.NoError(t, err, "Failed to expand command")
 
 			// 5. Verify command name

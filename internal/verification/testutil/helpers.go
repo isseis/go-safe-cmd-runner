@@ -1,6 +1,6 @@
 //go:build test
 
-package verificationtesting
+package verificationtestutil
 
 import (
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
@@ -12,7 +12,7 @@ import (
 //
 // Usage:
 //
-//	mockVerificationManager.On("VerifyGroupFiles", verificationtesting.MatchRuntimeGroupWithName("test-group")).Return(...)
+//	mockVerificationManager.On("VerifyGroupFiles", verificationtestutil.MatchRuntimeGroupWithName("test-group")).Return(...)
 func MatchRuntimeGroupWithName(expectedName string) any {
 	return mock.MatchedBy(func(input *verification.GroupVerificationInput) bool {
 		return input != nil && input.Name == expectedName

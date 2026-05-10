@@ -1,17 +1,17 @@
-package securitytesting_test
+package securitytestutil_test
 
 import (
 	"errors"
 	"testing"
 
-	securitytesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/security/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
 func TestMockValidator_ValidateAllEnvironmentVars(t *testing.T) {
 	// Arrange
-	mockValidator := new(securitytesting.MockValidator)
+	mockValidator := new(securitytestutil.MockValidator)
 	envVars := map[string]string{"TEST": "value"}
 	expectedErr := errors.New("validation error")
 
@@ -27,7 +27,7 @@ func TestMockValidator_ValidateAllEnvironmentVars(t *testing.T) {
 
 func TestMockValidator_ValidateEnvironmentValue(t *testing.T) {
 	// Arrange
-	mockValidator := new(securitytesting.MockValidator)
+	mockValidator := new(securitytestutil.MockValidator)
 	expectedErr := errors.New("validation error")
 
 	mockValidator.On("ValidateEnvironmentValue", "KEY", "value").Return(expectedErr)
@@ -42,7 +42,7 @@ func TestMockValidator_ValidateEnvironmentValue(t *testing.T) {
 
 func TestMockValidator_SuccessScenario(t *testing.T) {
 	// Arrange
-	mockValidator := new(securitytesting.MockValidator)
+	mockValidator := new(securitytestutil.MockValidator)
 
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
 	mockValidator.On("ValidateEnvironmentValue", mock.Anything, mock.Anything).Return(nil)

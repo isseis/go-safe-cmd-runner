@@ -1,7 +1,7 @@
 //go:build test || performance
 
-// Package testutil provides test helper functions for resource management testing.
-package testutil
+// Package resourcetestutil provides test helper functions for resource management testing.
+package resourcetestutil
 
 import (
 	"log/slog"

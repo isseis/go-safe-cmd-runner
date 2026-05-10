@@ -14,19 +14,19 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
-	securitytesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/security/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
-	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/testutil"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
-	verificationtesting "github.com/isseis/go-safe-cmd-runner/internal/verification/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -83,7 +83,7 @@ func TestCreateCommandContext_UnlimitedTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRM := new(runnertesting.MockResourceManager)
+			mockRM := new(runnertestutil.MockResourceManager)
 			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
 				Config:          &runnertypes.ConfigSpec{},
 				ResourceManager: mockRM,
@@ -114,7 +114,7 @@ func TestCreateCommandContext_UnlimitedTimeout(t *testing.T) {
 
 // TestCreateCommandContext_NegativeTimeoutPanic tests that negative timeout causes panic
 func TestCreateCommandContext_NegativeTimeoutPanic(t *testing.T) {
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 	ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
 		Config:          &runnertypes.ConfigSpec{},
 		ResourceManager: mockRM,
@@ -187,7 +187,7 @@ func TestExecuteGroup_WorkDirPriority(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRM := new(runnertesting.MockResourceManager)
+			mockRM := new(runnertestutil.MockResourceManager)
 
 			config := &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
@@ -274,7 +274,7 @@ func TestExecuteGroup_TempDirCleanup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRM := new(runnertesting.MockResourceManager)
+			mockRM := new(runnertestutil.MockResourceManager)
 
 			config := &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
@@ -334,7 +334,7 @@ func TestExecuteGroup_TempDirCleanup(t *testing.T) {
 // Note: TempDir functionality is currently not implemented in GroupSpec, so this test is skipped
 func TestExecuteGroup_CreateTempDirFailure(t *testing.T) {
 	t.Skip("TempDir functionality is not implemented in GroupSpec yet")
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -372,9 +372,9 @@ func TestExecuteGroup_CreateTempDirFailure(t *testing.T) {
 
 // TestExecuteGroup_CommandExecutionFailure tests error handling when command execution fails
 func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
-	mockRM := new(runnertesting.MockResourceManager)
-	mockValidator := new(securitytesting.MockValidator)
-	mockVerificationManager := new(verificationtesting.MockManager)
+	mockRM := new(runnertestutil.MockResourceManager)
+	mockValidator := new(securitytestutil.MockValidator)
+	mockVerificationManager := new(verificationtestutil.MockManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -445,9 +445,9 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 
 // TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode tests that non-standard exit codes are preserved
 func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) {
-	mockRM := new(runnertesting.MockResourceManager)
-	mockValidator := new(securitytesting.MockValidator)
-	mockVerificationManager := new(verificationtesting.MockManager)
+	mockRM := new(runnertestutil.MockResourceManager)
+	mockValidator := new(securitytestutil.MockValidator)
+	mockVerificationManager := new(verificationtestutil.MockManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -518,9 +518,9 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 
 // TestExecuteGroup_SuccessNotification tests that success notification is sent properly
 func TestExecuteGroup_SuccessNotification(t *testing.T) {
-	mockRM := new(runnertesting.MockResourceManager)
-	mockValidator := new(securitytesting.MockValidator)
-	mockVerificationManager := new(verificationtesting.MockManager)
+	mockRM := new(runnertestutil.MockResourceManager)
+	mockValidator := new(securitytestutil.MockValidator)
+	mockVerificationManager := new(verificationtestutil.MockManager)
 
 	// Setup validator mocks - need to preserve actual output for this test
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
@@ -602,7 +602,7 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 
 // TestExecuteCommandInGroup_OutputPathValidationFailure tests error handling for output path validation
 func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 	mockValidator, mockVerificationManager := setupMocksForTest(t)
 
 	config := &runnertypes.ConfigSpec{
@@ -662,7 +662,7 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 
 // TestExecuteGroup_MultipleCommands tests execution of multiple commands in sequence
 func TestExecuteGroup_MultipleCommands(t *testing.T) {
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 	mockValidator, mockVerificationManager := setupMocksForTest(t)
 
 	config := &runnertypes.ConfigSpec{
@@ -721,7 +721,7 @@ func TestExecuteGroup_MultipleCommands(t *testing.T) {
 
 // TestExecuteGroup_StopOnFirstFailure tests that execution stops on first command failure
 func TestExecuteGroup_StopOnFirstFailure(t *testing.T) {
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 	mockValidator, mockVerificationManager := setupMocksForTest(t)
 
 	config := &runnertypes.ConfigSpec{
@@ -864,7 +864,7 @@ func TestResolveGroupWorkDir(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRM := new(runnertesting.MockResourceManager)
+			mockRM := new(runnertestutil.MockResourceManager)
 			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
 				Config:          &runnertypes.ConfigSpec{},
 				ResourceManager: mockRM,
@@ -985,7 +985,7 @@ func TestResolveCommandWorkDir(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRM := new(runnertesting.MockResourceManager)
+			mockRM := new(runnertestutil.MockResourceManager)
 			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
 				Config:          &runnertypes.ConfigSpec{},
 				ResourceManager: mockRM,
@@ -1083,7 +1083,7 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup mocks
-			mockExecutor := new(runnertesting.MockResourceManager)
+			mockExecutor := new(runnertestutil.MockResourceManager)
 			mockNotificationFunc := func(_ *runnertypes.GroupSpec, _ *groupExecutionResult, _ time.Duration) {
 				// Test notification function - no-op
 			}
@@ -1155,7 +1155,7 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 
 			// 3. Test command expansion with __runner_workdir
 			cmdSpec := &group.Commands[0]
-			runtimeCmd, err := config.ExpandCommand(cmdSpec, nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+			runtimeCmd, err := config.ExpandCommand(cmdSpec, nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontestutil.NewUnsetOutputSizeLimit())
 			require.NoError(t, err)
 
 			// Verify __runner_workdir was expanded in arguments
@@ -1231,8 +1231,8 @@ func containsPattern(t *testing.T, s, pattern string) bool {
 // TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure tests environment variable validation error (T1.2)
 func TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure(t *testing.T) {
 	// Arrange
-	mockValidator := new(securitytesting.MockValidator)
-	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator := new(securitytestutil.MockValidator)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -1298,9 +1298,9 @@ func TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure(t *testing.T) {
 // TestExecuteCommandInGroup_ResolvePathFailure tests path resolution error (T1.3)
 func TestExecuteCommandInGroup_ResolvePathFailure(t *testing.T) {
 	// Arrange
-	mockValidator := new(securitytesting.MockValidator)
-	mockVM := new(verificationtesting.MockManager)
-	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator := new(securitytestutil.MockValidator)
+	mockVM := new(verificationtestutil.MockManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -1366,10 +1366,10 @@ func TestExecuteCommandInGroup_ResolvePathFailure(t *testing.T) {
 }
 
 // setupMocksForTest creates commonly needed mocks for testing
-func setupMocksForTest(t *testing.T) (*securitytesting.MockValidator, *verificationtesting.MockManager) {
+func setupMocksForTest(t *testing.T) (*securitytestutil.MockValidator, *verificationtestutil.MockManager) {
 	t.Helper()
-	mockValidator := new(securitytesting.MockValidator)
-	mockVerificationManager := new(verificationtesting.MockManager)
+	mockValidator := new(securitytestutil.MockValidator)
+	mockVerificationManager := new(verificationtestutil.MockManager)
 
 	// Setup default behaviors for validator
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil).Maybe()
@@ -1398,7 +1398,7 @@ func setupMocksForTest(t *testing.T) (*securitytesting.MockValidator, *verificat
 func TestExecuteCommandInGroup_DryRunDetailLevelFull(t *testing.T) {
 	// Arrange
 	mockValidator, mockVM := setupMocksForTest(t)
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	// Capture stdout
 	oldStdout := os.Stdout
@@ -1486,7 +1486,7 @@ func TestExecuteCommandInGroup_DryRunDetailLevelFull(t *testing.T) {
 func TestExecuteGroup_DryRunVariableExpansion(t *testing.T) {
 	// Arrange
 	mockValidator, mockVM := setupMocksForTest(t)
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	// Capture stdout
 	oldStdout := os.Stdout
@@ -1554,7 +1554,7 @@ func TestExecuteGroup_DryRunVariableExpansion(t *testing.T) {
 func TestExecuteCommandInGroup_VerificationManagerNil(t *testing.T) {
 	// Arrange
 	mockValidator, _ := setupMocksForTest(t)
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -1614,7 +1614,7 @@ func TestExecuteCommandInGroup_VerificationManagerNil(t *testing.T) {
 func TestExecuteGroup_KeepTempDirs(t *testing.T) {
 	// Arrange
 	mockValidator, mockVM := setupMocksForTest(t)
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -1670,7 +1670,7 @@ func TestExecuteGroup_KeepTempDirs(t *testing.T) {
 func TestExecuteGroup_NoNotificationFunc(t *testing.T) {
 	// Arrange
 	mockValidator, mockVM := setupMocksForTest(t)
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -1724,7 +1724,7 @@ func TestExecuteGroup_NoNotificationFunc(t *testing.T) {
 func TestExecuteGroup_EmptyDescription(t *testing.T) {
 	// Arrange
 	mockValidator, mockVM := setupMocksForTest(t)
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -1779,7 +1779,7 @@ func TestExecuteGroup_EmptyDescription(t *testing.T) {
 func TestExecuteGroup_VariableExpansionError(t *testing.T) {
 	// Arrange
 	mockValidator, _ := setupMocksForTest(t)
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	configSpec := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -1831,7 +1831,7 @@ func TestExecuteGroup_VariableExpansionError(t *testing.T) {
 func TestExecuteGroup_FileVerificationResultLog(t *testing.T) {
 	// Arrange
 	mockValidator, mockVM := setupMocksForTest(t)
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -1893,7 +1893,7 @@ func TestExecuteGroup_FileVerificationResultLog(t *testing.T) {
 func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 	// Arrange
 	mockValidator, mockVM := setupMocksForTest(t)
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	configSpec := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -1948,7 +1948,7 @@ func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 	// Arrange
 	mockValidator, mockVM := setupMocksForTest(t)
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	configSpec := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -2104,7 +2104,7 @@ func TestNewDefaultGroupExecutor_WithOptions(t *testing.T) {
 			Timeout: tu.Int32Ptr(30),
 		},
 	}
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 	testNotificationFunc := func(_ *runnertypes.GroupSpec, _ *groupExecutionResult, _ time.Duration) {}
 
 	t.Run("default options", func(t *testing.T) {
@@ -2173,7 +2173,7 @@ func TestNewDefaultGroupExecutor_Validation(t *testing.T) {
 			Timeout: tu.Int32Ptr(30),
 		},
 	}
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	t.Run("nil config panics", func(t *testing.T) {
 		assert.Panics(t, func() {
@@ -2201,7 +2201,7 @@ func TestNewTestGroupExecutor(t *testing.T) {
 			Timeout: tu.Int32Ptr(30),
 		},
 	}
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	t.Run("basic helper", func(t *testing.T) {
 		ge := NewTestGroupExecutor(config, mockRM)
@@ -2236,7 +2236,7 @@ func TestNewDefaultGroupExecutor_Performance(t *testing.T) {
 			Timeout: tu.Int32Ptr(30),
 		},
 	}
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	// Test allocation count
 	allocs := testing.AllocsPerRun(100, func() {
@@ -2258,7 +2258,7 @@ func BenchmarkNewDefaultGroupExecutor(b *testing.B) {
 			Timeout: tu.Int32Ptr(30),
 		},
 	}
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	var ge *DefaultGroupExecutor
 	b.ResetTimer()
@@ -2283,7 +2283,7 @@ func BenchmarkNewDefaultGroupExecutor_NoOptions(b *testing.B) {
 			Timeout: tu.Int32Ptr(30),
 		},
 	}
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	var ge *DefaultGroupExecutor
 	b.ResetTimer()
@@ -2321,7 +2321,7 @@ func TestWithCurrentUser(t *testing.T) {
 					Timeout: tu.Int32Ptr(30),
 				},
 			}
-			mockRM := new(runnertesting.MockResourceManager)
+			mockRM := new(runnertestutil.MockResourceManager)
 
 			ge := NewDefaultGroupExecutor(
 				nil, config, nil, nil, mockRM, "test-run",
@@ -2340,7 +2340,7 @@ func TestDefaultCurrentUser(t *testing.T) {
 			Timeout: tu.Int32Ptr(30),
 		},
 	}
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 
 	ge := NewDefaultGroupExecutor(
 		nil, config, nil, nil, mockRM, "test-run",
@@ -2398,7 +2398,7 @@ func TestCreateCommandContext_UnlimitedTimeout_SecurityLogging(t *testing.T) {
 			// Create SecurityLogger with test logger
 			secLogger := logging.NewSecurityLoggerWithLogger(testLogger)
 
-			mockRM := new(runnertesting.MockResourceManager)
+			mockRM := new(runnertestutil.MockResourceManager)
 			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
 				Config:          &runnertypes.ConfigSpec{},
 				ResourceManager: mockRM,
@@ -2453,7 +2453,7 @@ func TestExecuteGroup_TimeoutExceeded_SecurityLogging(t *testing.T) {
 	// Create SecurityLogger with test logger
 	secLogger := logging.NewSecurityLoggerWithLogger(testLogger)
 
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 	mockValidator, mockVerificationManager := setupMocksForTest(t)
 
 	config := &runnertypes.ConfigSpec{
@@ -2530,7 +2530,7 @@ func TestExecuteGroup_MultipleCommands_TimeoutLogging(t *testing.T) {
 	// Create SecurityLogger with test logger
 	secLogger := logging.NewSecurityLoggerWithLogger(testLogger)
 
-	mockRM := new(runnertesting.MockResourceManager)
+	mockRM := new(runnertestutil.MockResourceManager)
 	mockValidator, mockVerificationManager := setupMocksForTest(t)
 
 	config := &runnertypes.ConfigSpec{
@@ -2676,9 +2676,9 @@ func TestCommandFailureLogging_StderrInErrorLog(t *testing.T) {
 				Spec: &runnertypes.GlobalSpec{Timeout: tu.Int32Ptr(30)},
 			}
 
-			mockRM := new(runnertesting.MockResourceManager)
-			mockValidator := new(securitytesting.MockValidator)
-			mockVerificationManager := new(verificationtesting.MockManager)
+			mockRM := new(runnertestutil.MockResourceManager)
+			mockValidator := new(securitytestutil.MockValidator)
+			mockVerificationManager := new(verificationtestutil.MockManager)
 
 			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
 				Config:              &runnertypes.ConfigSpec{},
@@ -2916,7 +2916,7 @@ func TestPreExpandCommands_Success(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRM := new(runnertesting.MockResourceManager)
+			mockRM := new(runnertestutil.MockResourceManager)
 			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
 				Config:          &runnertypes.ConfigSpec{},
 				ResourceManager: mockRM,
@@ -3006,7 +3006,7 @@ func TestPreExpandCommands_Error(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRM := new(runnertesting.MockResourceManager)
+			mockRM := new(runnertestutil.MockResourceManager)
 			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
 				Config:          &runnertypes.ConfigSpec{},
 				ResourceManager: mockRM,
@@ -3037,9 +3037,9 @@ func TestPreExpandCommands_Error(t *testing.T) {
 // but do not appear in runtimeGroup.Commands, so they must not trigger dynlib
 // verification.
 func TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles(t *testing.T) {
-	mockRM := new(runnertesting.MockResourceManager)
-	mockValidator := new(securitytesting.MockValidator)
-	mockVerificationManager := new(verificationtesting.MockManager)
+	mockRM := new(runnertestutil.MockResourceManager)
+	mockValidator := new(securitytestutil.MockValidator)
+	mockVerificationManager := new(verificationtestutil.MockManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -3109,9 +3109,9 @@ func TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles(t *testing.T) {
 // immediately, before VerifyCommandDynLibDeps or VerifyCommandShebangInterpreter
 // are called.
 func TestVerifyGroupFiles_DynLibResolvePathFailure(t *testing.T) {
-	mockRM := new(runnertesting.MockResourceManager)
-	mockValidator := new(securitytesting.MockValidator)
-	mockVerificationManager := new(verificationtesting.MockManager)
+	mockRM := new(runnertestutil.MockResourceManager)
+	mockValidator := new(securitytestutil.MockValidator)
+	mockVerificationManager := new(verificationtestutil.MockManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -3175,9 +3175,9 @@ func TestVerifyGroupFiles_ContentHashPropagatedToCommand(t *testing.T) {
 	const resolvedPath = "/usr/bin/somecmd"
 	const fakeHash = "sha256:deadbeef1234"
 
-	mockRM := new(runnertesting.MockResourceManager)
-	mockValidator := new(securitytesting.MockValidator)
-	mockVM := new(verificationtesting.MockManager)
+	mockRM := new(runnertestutil.MockResourceManager)
+	mockValidator := new(securitytestutil.MockValidator)
+	mockVM := new(verificationtestutil.MockManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -3242,9 +3242,9 @@ func TestVerifyGroupFiles_ContentHashPropagatedToCommand(t *testing.T) {
 // TestVerifyGroupFiles_ShebangInterpreter_OK verifies that VerifyCommandShebangInterpreter
 // is called for each command and execution proceeds when it returns nil.
 func TestVerifyGroupFiles_ShebangInterpreter_OK(t *testing.T) {
-	mockRM := new(runnertesting.MockResourceManager)
-	mockValidator := new(securitytesting.MockValidator)
-	mockVM := new(verificationtesting.MockManager)
+	mockRM := new(runnertestutil.MockResourceManager)
+	mockValidator := new(securitytestutil.MockValidator)
+	mockVM := new(verificationtestutil.MockManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -3296,9 +3296,9 @@ func TestVerifyGroupFiles_ShebangInterpreter_OK(t *testing.T) {
 // VerifyCommandShebangInterpreter returns an error, ExecuteGroup fails immediately
 // and ExecuteCommand is never invoked.
 func TestVerifyGroupFiles_ShebangInterpreter_Error(t *testing.T) {
-	mockRM := new(runnertesting.MockResourceManager)
-	mockValidator := new(securitytesting.MockValidator)
-	mockVM := new(verificationtesting.MockManager)
+	mockRM := new(runnertestutil.MockResourceManager)
+	mockValidator := new(securitytestutil.MockValidator)
+	mockVM := new(verificationtestutil.MockManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -3358,9 +3358,9 @@ func TestVerifyGroupFiles_ShebangInterpreter_Error(t *testing.T) {
 // that only the recorded command_name (held by the verification manager) is
 // used — not a live re-parse of the script file.
 func TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH(t *testing.T) {
-	mockRM := new(runnertesting.MockResourceManager)
-	mockValidator := new(securitytesting.MockValidator)
-	mockVM := new(verificationtesting.MockManager)
+	mockRM := new(runnertestutil.MockResourceManager)
+	mockValidator := new(securitytestutil.MockValidator)
+	mockVM := new(verificationtestutil.MockManager)
 
 	cfg := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -3486,9 +3486,9 @@ func TestVerifyCommandCallOrder_DynLibBeforeShebang(t *testing.T) {
 	var mu sync.Mutex
 	var calls []callRecord
 
-	mockRM := new(runnertesting.MockResourceManager)
-	mockValidator := new(securitytesting.MockValidator)
-	mockVerificationManager := new(verificationtesting.MockManager)
+	mockRM := new(runnertestutil.MockResourceManager)
+	mockValidator := new(securitytestutil.MockValidator)
+	mockVerificationManager := new(verificationtestutil.MockManager)
 
 	// Wrap VerifyCommandDynLibDeps / VerifyCommandShebangInterpreter to record
 	// actual invocation order via Run callbacks.

@@ -1,8 +1,8 @@
 //go:build test && darwin
 
-// Package machodylibtesting provides test helpers for building synthetic Mach-O
+// Package machodylibtestutil provides test helpers for building synthetic Mach-O
 // binaries with LC_LOAD_DYLIB, LC_LOAD_WEAK_DYLIB, and LC_RPATH load commands.
-package machodylibtesting
+package machodylibtestutil
 
 import (
 	"debug/macho"

@@ -10,7 +10,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
-	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -261,7 +261,7 @@ func (m *mockSyscallAnalysisStore) LoadSyscallAnalysis(_ string, expectedHash st
 func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
-	elfanalyzertesting.CreateStaticELFFile(t, testFile)
+	elfanalyzertestutil.CreateStaticELFFile(t, testFile)
 
 	// Create mock store that returns network syscall result
 	mockStore := &mockSyscallAnalysisStore{
@@ -300,7 +300,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
-	elfanalyzertesting.CreateStaticELFFile(t, testFile)
+	elfanalyzertestutil.CreateStaticELFFile(t, testFile)
 
 	// Create mock store that returns non-network syscall result
 	mockStore := &mockSyscallAnalysisStore{
@@ -329,7 +329,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
-	elfanalyzertesting.CreateStaticELFFile(t, testFile)
+	elfanalyzertestutil.CreateStaticELFFile(t, testFile)
 
 	// Create mock store that returns high-risk result (unknown syscalls)
 	mockStore := &mockSyscallAnalysisStore{
@@ -361,7 +361,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
-	elfanalyzertesting.CreateStaticELFFile(t, testFile)
+	elfanalyzertestutil.CreateStaticELFFile(t, testFile)
 
 	// Create mock store that returns both network syscalls and high-risk (unknown syscalls).
 	// Risk must win: incomplete analysis makes the result unreliable regardless of
@@ -403,7 +403,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t 
 func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
-	elfanalyzertesting.CreateStaticELFFile(t, testFile)
+	elfanalyzertestutil.CreateStaticELFFile(t, testFile)
 
 	// Create mock store that returns not found
 	mockStore := &mockSyscallAnalysisStore{
@@ -420,7 +420,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
 func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
-	elfanalyzertesting.CreateStaticELFFile(t, testFile)
+	elfanalyzertestutil.CreateStaticELFFile(t, testFile)
 
 	// Create mock store that expects a specific hash
 	mockStore := &mockSyscallAnalysisStore{
@@ -445,7 +445,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
-	elfanalyzertesting.CreateStaticELFFile(t, testFile)
+	elfanalyzertestutil.CreateStaticELFFile(t, testFile)
 
 	// Create analyzer without syscall store (nil)
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil)
@@ -465,7 +465,7 @@ func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
 func TestDynamicELF_SyscallFallback_NetworkDetected(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")
-	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
+	elfanalyzertestutil.CreateDynamicELFFile(t, testFile)
 
 	// Store returns HasNetworkSyscalls=true (simulates CGO binary with socket syscall)
 	mockStore := &mockSyscallAnalysisStore{
@@ -494,7 +494,7 @@ func TestDynamicELF_SyscallFallback_NetworkDetected(t *testing.T) {
 func TestDynamicELF_SyscallFallback_NotRecorded(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")
-	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
+	elfanalyzertestutil.CreateDynamicELFFile(t, testFile)
 
 	tests := []struct {
 		name   string
@@ -523,7 +523,7 @@ func TestDynamicELF_SyscallFallback_NotRecorded(t *testing.T) {
 func TestDynamicELF_SyscallFallback_HashMismatch(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")
-	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
+	elfanalyzertestutil.CreateDynamicELFFile(t, testFile)
 
 	mockStore := &mockSyscallAnalysisStore{
 		result:       &SyscallAnalysisResult{},
@@ -543,7 +543,7 @@ func TestDynamicELF_SyscallFallback_HashMismatch(t *testing.T) {
 func TestDynamicELF_SyscallFallback_HighRisk(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")
-	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
+	elfanalyzertestutil.CreateDynamicELFFile(t, testFile)
 
 	mockStore := &mockSyscallAnalysisStore{
 		result: &SyscallAnalysisResult{
@@ -569,7 +569,7 @@ func TestDynamicELF_SyscallFallback_HighRisk(t *testing.T) {
 func TestDynamicELF_WithoutSyscallStore(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")
-	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
+	elfanalyzertestutil.CreateDynamicELFFile(t, testFile)
 
 	// No syscall store: fallback disabled
 	analyzer := NewStandardELFAnalyzer(nil)
@@ -587,7 +587,7 @@ func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
 
 	t.Run("no-VERNEED binary importing socket yields NetworkDetected with socket category", func(t *testing.T) {
 		path := filepath.Join(tmpDir, "socket_only.elf")
-		elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
+		elfanalyzertestutil.CreateELFWithSymbols(t, path, []elfanalyzertestutil.SymbolSpec{
 			{Name: "socket"},
 		})
 
@@ -607,7 +607,7 @@ func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
 
 	t.Run("no-VERNEED binary importing getaddrinfo yields NetworkDetected with dns category", func(t *testing.T) {
 		path := filepath.Join(tmpDir, "dns_only.elf")
-		elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
+		elfanalyzertestutil.CreateELFWithSymbols(t, path, []elfanalyzertestutil.SymbolSpec{
 			{Name: "getaddrinfo"},
 		})
 
@@ -626,7 +626,7 @@ func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
 
 	t.Run("no-VERNEED binary importing only non-network symbols yields NoNetworkSymbols", func(t *testing.T) {
 		path := filepath.Join(tmpDir, "read_only.elf")
-		elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
+		elfanalyzertestutil.CreateELFWithSymbols(t, path, []elfanalyzertestutil.SymbolSpec{
 			{Name: "read"},
 		})
 
@@ -638,7 +638,7 @@ func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
 
 	t.Run("no-VERNEED binary with mixed symbols records only networkSymbols matches", func(t *testing.T) {
 		path := filepath.Join(tmpDir, "mixed_symbols.elf")
-		elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
+		elfanalyzertestutil.CreateELFWithSymbols(t, path, []elfanalyzertestutil.SymbolSpec{
 			{Name: "socket"},
 			{Name: "getaddrinfo"},
 			{Name: "pthread_create"}, // not in networkSymbols, must not be recorded
@@ -659,7 +659,7 @@ func TestCheckDynamicSymbols_NameBasedFilter(t *testing.T) {
 
 	t.Run("dlopen in no-VERNEED binary appears in DynamicLoadSymbols", func(t *testing.T) {
 		path := filepath.Join(tmpDir, "dlopen_socket.elf")
-		elfanalyzertesting.CreateELFWithSymbols(t, path, []elfanalyzertesting.SymbolSpec{
+		elfanalyzertestutil.CreateELFWithSymbols(t, path, []elfanalyzertestutil.SymbolSpec{
 			{Name: "dlopen"},
 			{Name: "socket"},
 		})

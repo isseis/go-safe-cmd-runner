@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -201,7 +201,7 @@ func TestBootstrapCommandEnvExpansionIntegration(t *testing.T) {
 	require.Equal(t, "run_app", cmdSpec.Name)
 
 	// Expand command spec to runtime
-	runtimeCmd, err := config.ExpandCommand(cmdSpec, nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+	runtimeCmd, err := config.ExpandCommand(cmdSpec, nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontestutil.NewUnsetOutputSizeLimit())
 	require.NoError(t, err)
 	require.NotNil(t, runtimeCmd)
 

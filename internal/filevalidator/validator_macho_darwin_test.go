@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
-	machodylibtesting "github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,7 +29,7 @@ func TestRecord_Force_MachO_UpdatesDynLibDeps(t *testing.T) {
 	// Create a synthetic Mach-O binary referencing libfoo.dylib.
 	binPath := filepath.Join(tempDir, "testbin")
 	require.NoError(t, os.WriteFile(binPath,
-		machodylibtesting.BuildMachOWithDeps(machodylibtesting.NativeCPU(), []string{libPath}, nil, nil), 0o700))
+		machodylibtestutil.BuildMachOWithDeps(machodylibtestutil.NativeCPU(), []string{libPath}, nil, nil), 0o700))
 
 	v, err := New(&SHA256{}, hashDir, ValidatorConfig{
 		MachODynLibAnalyzer: machodylib.NewMachODynLibAnalyzer(

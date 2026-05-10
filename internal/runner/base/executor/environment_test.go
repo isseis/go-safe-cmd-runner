@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 )
@@ -22,8 +22,8 @@ func createTestRuntimeGlobal(envAllowlist []string, expandedEnv map[string]strin
 }
 
 func createTestRuntimeCommand(expandedArgs []string, expandedEnv map[string]string) *runnertypes.RuntimeCommand {
-	return executortesting.CreateRuntimeCommand("echo", expandedArgs,
-		executortesting.WithExpandedEnv(expandedEnv),
+	return executortestutil.CreateRuntimeCommand("echo", expandedArgs,
+		executortestutil.WithExpandedEnv(expandedEnv),
 	)
 }
 

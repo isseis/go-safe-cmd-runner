@@ -1,7 +1,7 @@
 //go:build test
 
-// Package verificationtesting provides mock implementations for verification management testing.
-package verificationtesting
+// Package verificationtestutil provides mock implementations for verification management testing.
+package verificationtestutil
 
 import (
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"

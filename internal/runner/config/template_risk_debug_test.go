@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -49,7 +49,7 @@ dst = "s3://my-bucket/test.txt"
 		runtimeGroup,
 		runtimeGlobal,
 		common.NewUnsetTimeout(),
-		commontesting.NewUnsetOutputSizeLimit(),
+		commontestutil.NewUnsetOutputSizeLimit(),
 	)
 	require.NoError(t, err)
 
@@ -116,7 +116,7 @@ dst = "s3://my-bucket/test.txt"
 		runtimeGroup,
 		runtimeGlobal,
 		common.NewUnsetTimeout(),
-		commontesting.NewUnsetOutputSizeLimit(),
+		commontestutil.NewUnsetOutputSizeLimit(),
 	)
 	require.NoError(t, err)
 
