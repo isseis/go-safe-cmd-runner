@@ -82,8 +82,8 @@ golangci-lint run --no-config --default=none --enable=unused ./...
 - [x] [internal/runner/bootstrap/test_helpers.go](internal/runner/bootstrap/test_helpers.go) を削除（中身が `InitializeVerificationManagerForTest` 1 関数のみ）
 
 #### Phase 1c: `internal/runner/testutil/helpers.go` の未使用 export を削除
-- [ ] `SetupTestEnv`, `SetupSafeTestEnv`, `SetupFailedMockExecution`, `TestGroupExecutorConfig` を削除
-- [ ] 必要に応じて未使用 import (`executor`, `runnertypes`, `security`, `verification`, `mock`) を整理
+- [x] `SetupTestEnv`, `SetupSafeTestEnv`, `SetupFailedMockExecution`, `TestGroupExecutorConfig` を削除
+- [x] 必要に応じて未使用 import (`executor`, `runnertypes`, `security`, `verification`, `mock`) を整理
 
 #### Phase 1d: testutil/mocks ・ helpers の未使用 export を削除
 - [ ] [internal/runner/base/executor/testutil/mocks.go](internal/runner/base/executor/testutil/mocks.go) から `NewMockFileSystem`, `NewMockFileSystemWithPaths`, `NewMockOutputWriter` 削除
