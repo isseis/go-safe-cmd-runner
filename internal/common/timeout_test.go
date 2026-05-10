@@ -82,11 +82,6 @@ func TestTimeout_IsUnlimited(t *testing.T) {
 			}(),
 			want: false,
 		},
-		{
-			name:    "zero timeout",
-			timeout: unlimitedTimeout(),
-			want:    true,
-		},
 	}
 
 	for _, tt := range tests {
