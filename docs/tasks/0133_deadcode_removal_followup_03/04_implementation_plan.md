@@ -79,7 +79,7 @@ golangci-lint run --no-config --default=none --enable=unused ./...
 - [x] `goimports`/`gofumpt` で未使用 import (`fmt` など) を整理
 
 #### Phase 1b: `internal/runner/bootstrap/test_helpers.go` 削除
-- [ ] [internal/runner/bootstrap/test_helpers.go](internal/runner/bootstrap/test_helpers.go) を削除（中身が `InitializeVerificationManagerForTest` 1 関数のみ）
+- [x] [internal/runner/bootstrap/test_helpers.go](internal/runner/bootstrap/test_helpers.go) を削除（中身が `InitializeVerificationManagerForTest` 1 関数のみ）
 
 #### Phase 1c: `internal/runner/testutil/helpers.go` の未使用 export を削除
 - [ ] `SetupTestEnv`, `SetupSafeTestEnv`, `SetupFailedMockExecution`, `TestGroupExecutorConfig` を削除
