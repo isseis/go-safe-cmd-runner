@@ -34,3 +34,28 @@ func NewLoaderForTest() *Loader {
 		verificationMgr: nil,
 	}
 }
+
+func makeCommand(name string, timeout *int32) runnertypes.CommandSpec {
+	return runnertypes.CommandSpec{
+		Name:    name,
+		Cmd:     "/bin/echo",
+		Timeout: timeout,
+	}
+}
+
+func makeGroup(name string, commands ...runnertypes.CommandSpec) runnertypes.GroupSpec {
+	return runnertypes.GroupSpec{
+		Name:     name,
+		Commands: commands,
+	}
+}
+
+func makeConfig(globalTimeout *int32, groups ...runnertypes.GroupSpec) *runnertypes.ConfigSpec {
+	cfg := &runnertypes.ConfigSpec{
+		Groups: groups,
+	}
+	if globalTimeout != nil {
+		cfg.Global.Timeout = globalTimeout
+	}
+	return cfg
+}

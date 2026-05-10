@@ -387,34 +387,6 @@ func TestValidateGroupNames(t *testing.T) {
 }
 
 func TestValidateTimeouts(t *testing.T) {
-	// Helper function to create a basic command spec
-	makeCommand := func(name string, timeout *int32) runnertypes.CommandSpec {
-		return runnertypes.CommandSpec{
-			Name:    name,
-			Cmd:     "/bin/echo",
-			Timeout: timeout,
-		}
-	}
-
-	// Helper function to create a group spec
-	makeGroup := func(name string, commands ...runnertypes.CommandSpec) runnertypes.GroupSpec {
-		return runnertypes.GroupSpec{
-			Name:     name,
-			Commands: commands,
-		}
-	}
-
-	// Helper function to create a config spec
-	makeConfig := func(globalTimeout *int32, groups ...runnertypes.GroupSpec) *runnertypes.ConfigSpec {
-		cfg := &runnertypes.ConfigSpec{
-			Groups: groups,
-		}
-		if globalTimeout != nil {
-			cfg.Global.Timeout = globalTimeout
-		}
-		return cfg
-	}
-
 	tests := []struct {
 		name             string
 		config           *runnertypes.ConfigSpec
