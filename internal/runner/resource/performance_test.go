@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"testing"
 
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -28,10 +28,10 @@ func BenchmarkDryRunPerformance(b *testing.B) {
 			// Create test commands
 			commands := make([]*runnertypes.RuntimeCommand, bm.numCommands)
 			for i := 0; i < bm.numCommands; i++ {
-				commands[i] = executortesting.CreateRuntimeCommand(
+				commands[i] = executortestutil.CreateRuntimeCommand(
 					"echo",
 					[]string{"test"},
-					executortesting.WithName("test-cmd"),
+					executortestutil.WithName("test-cmd"),
 				)
 			}
 
@@ -146,10 +146,10 @@ func BenchmarkFormatterPerformance(b *testing.B) {
 
 // BenchmarkResourceManagerModeSwitch benchmarks mode switching performance
 func BenchmarkResourceManagerModeSwitch(b *testing.B) {
-	cmd := executortesting.CreateRuntimeCommand(
+	cmd := executortestutil.CreateRuntimeCommand(
 		"echo",
 		[]string{"switch test"},
-		executortesting.WithName("switch-test"),
+		executortestutil.WithName("switch-test"),
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -191,10 +191,10 @@ func BenchmarkResourceManagerModeSwitch(b *testing.B) {
 func BenchmarkMemoryUsage(b *testing.B) {
 	commands := make([]*runnertypes.RuntimeCommand, 1000)
 	for i := 0; i < 1000; i++ {
-		commands[i] = executortesting.CreateRuntimeCommand(
+		commands[i] = executortestutil.CreateRuntimeCommand(
 			"echo",
 			[]string{"memory test"},
-			executortesting.WithName("memory-test"),
+			executortestutil.WithName("memory-test"),
 		)
 	}
 

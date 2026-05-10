@@ -1,7 +1,7 @@
 //go:build test
 
-// Package elfanalyzertesting provides test helpers for the elfanalyzer package.
-package elfanalyzertesting
+// Package elfanalyzertestutil provides test helpers for the elfanalyzer package.
+package elfanalyzertestutil
 
 import (
 	"bytes"

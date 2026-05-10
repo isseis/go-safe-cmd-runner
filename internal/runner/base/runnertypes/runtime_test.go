@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -356,7 +356,7 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 		Timeout: tu.Int32Ptr(60),
 	}
 
-	runtime, err := NewRuntimeCommand(spec, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit(), "test-group")
+	runtime, err := NewRuntimeCommand(spec, common.NewUnsetTimeout(), commontestutil.NewUnsetOutputSizeLimit(), "test-group")
 	require.NoError(t, err)
 
 	// Test Cmd()

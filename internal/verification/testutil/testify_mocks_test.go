@@ -1,17 +1,17 @@
-package verificationtesting_test
+package verificationtestutil_test
 
 import (
 	"errors"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
-	verificationtesting "github.com/isseis/go-safe-cmd-runner/internal/verification/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMockManager_ResolvePath(t *testing.T) {
-	mockManager := new(verificationtesting.MockManager)
+	mockManager := new(verificationtestutil.MockManager)
 	expectedPath := "/usr/bin/test"
 	expectedErr := errors.New("resolution error")
 
@@ -25,7 +25,7 @@ func TestMockManager_ResolvePath(t *testing.T) {
 }
 
 func TestMockManager_VerifyGroupFiles(t *testing.T) {
-	mockManager := new(verificationtesting.MockManager)
+	mockManager := new(verificationtestutil.MockManager)
 	input := &verification.GroupVerificationInput{Name: "test-group"}
 	expectedResult := &verification.Result{TotalFiles: 1, VerifiedFiles: 1}
 	expectedErr := errors.New("verification error")
@@ -40,12 +40,12 @@ func TestMockManager_VerifyGroupFiles(t *testing.T) {
 }
 
 func TestMockManager_SuccessScenario(t *testing.T) {
-	mockManager := new(verificationtesting.MockManager)
+	mockManager := new(verificationtestutil.MockManager)
 	input := &verification.GroupVerificationInput{Name: "test-group"}
 	expectedResult := &verification.Result{TotalFiles: 1, VerifiedFiles: 1}
 
 	mockManager.On("ResolvePath", "test").Return("/usr/bin/test", nil)
-	mockManager.On("VerifyGroupFiles", verificationtesting.MatchRuntimeGroupWithName("test-group")).Return(expectedResult, nil)
+	mockManager.On("VerifyGroupFiles", verificationtestutil.MatchRuntimeGroupWithName("test-group")).Return(expectedResult, nil)
 
 	path, err1 := mockManager.ResolvePath("test")
 	result, err2 := mockManager.VerifyGroupFiles(input)
@@ -60,7 +60,7 @@ func TestMockManager_SuccessScenario(t *testing.T) {
 }
 
 func TestMockManager_VerifyGroupFiles_NilResult(t *testing.T) {
-	mockManager := new(verificationtesting.MockManager)
+	mockManager := new(verificationtestutil.MockManager)
 	input := &verification.GroupVerificationInput{Name: "test-group"}
 	expectedErr := errors.New("verification failed")
 
@@ -74,7 +74,7 @@ func TestMockManager_VerifyGroupFiles_NilResult(t *testing.T) {
 }
 
 func TestMockManager_VerifyCommandDynLibDeps(t *testing.T) {
-	mockManager := new(verificationtesting.MockManager)
+	mockManager := new(verificationtestutil.MockManager)
 	expectedErr := errors.New("dynlib verification error")
 
 	mockManager.On("VerifyCommandDynLibDeps", "/usr/bin/test").Return(expectedErr)

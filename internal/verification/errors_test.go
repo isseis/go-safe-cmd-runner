@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -145,7 +145,7 @@ func TestValidateProductionConstraints(t *testing.T) {
 func TestSecurityConstraintsInManager(t *testing.T) {
 	t.Run("production mode with strict security enforces constraints", func(t *testing.T) {
 		_, err := newManagerInternal("/custom/dir",
-			withFSInternal(commontesting.NewMockFileSystem()),
+			withFSInternal(commontestutil.NewMockFileSystem()),
 			withFileValidatorDisabledInternal(),
 			withCreationMode(CreationModeProduction),
 			withSecurityLevel(SecurityLevelStrict),
@@ -157,7 +157,7 @@ func TestSecurityConstraintsInManager(t *testing.T) {
 	})
 
 	t.Run("testing mode with relaxed security allows custom directories", func(t *testing.T) {
-		mockFS := commontesting.NewMockFileSystem()
+		mockFS := commontestutil.NewMockFileSystem()
 		mockFS.AddDir("/custom", 0o755)
 		mockFS.AddDir("/custom/dir", 0o755)
 

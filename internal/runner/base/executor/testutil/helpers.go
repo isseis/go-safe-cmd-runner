@@ -1,6 +1,6 @@
 //go:build test || performance
 
-package testutil
+package executortestutil
 
 import (
 	"os"

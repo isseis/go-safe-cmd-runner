@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/stretchr/testify/assert"
@@ -357,7 +357,7 @@ func TestCircularReference_CrossLevel_GroupCommand(t *testing.T) {
 			require.NoError(t, err, "Group expansion should succeed")
 
 			// Then try to expand command (this is where error should be detected)
-			_, err = config.ExpandCommand(tt.command, nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+			_, err = config.ExpandCommand(tt.command, nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontestutil.NewUnsetOutputSizeLimit())
 			require.Error(t, err, "Expected error in command expansion")
 			assert.True(t, errors.Is(err, tt.wantErr), "Expected error type %v, got %v", tt.wantErr, err)
 
@@ -603,7 +603,7 @@ func TestCircularReference_CommandVarsToGroupVars(t *testing.T) {
 			}
 
 			// Finally expand command
-			runtimeCmd, err := config.ExpandCommand(tt.command, nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+			runtimeCmd, err := config.ExpandCommand(tt.command, nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontestutil.NewUnsetOutputSizeLimit())
 			if tt.wantErr != nil {
 				require.Error(t, err, "Expected error in command expansion")
 				assert.True(t, errors.Is(err, tt.wantErr), "Expected error type %v, got %v", tt.wantErr, err)

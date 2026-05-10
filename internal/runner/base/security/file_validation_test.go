@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
@@ -840,14 +840,14 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		setupFunc   func(*commontesting.MockFileSystem)
+		setupFunc   func(*commontestutil.MockFileSystem)
 		dirPath     string
 		shouldFail  bool
 		expectedErr error
 	}{
 		{
 			name: "valid directory with secure path",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				// Create secure directory hierarchy
 				fs.AddDir("/usr", 0o755)
 				fs.AddDir("/usr/local", 0o755)
@@ -860,7 +860,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 		},
 		{
 			name: "directory with world-writable intermediate directory",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				fs.AddDir("/usr", 0o755)
 				fs.AddDir("/usr/local", 0o777) // World writable - insecure!
 				fs.AddDir("/usr/local/etc", 0o755)
@@ -873,7 +873,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 		},
 		{
 			name: "directory with group-writable intermediate directory owned by non-root",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				fs.AddDir("/opt", 0o755)
 				fs.AddDirWithOwner("/opt/myapp", 0o775, 1000, 1000) // Group writable, owned by non-root
 				fs.AddDir("/opt/myapp/etc", 0o755)
@@ -886,7 +886,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 		},
 		{
 			name: "directory with root group write owned by root",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				fs.AddDirWithOwner("/usr", 0o775, 0, 0) // Root group writable, owned by root - allowed
 				fs.AddDir("/usr/local", 0o755)
 				fs.AddDir("/usr/local/etc", 0o755)
@@ -898,7 +898,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 		},
 		{
 			name: "directory with non-root group write owned by root",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				fs.AddDirWithOwner("/usr", 0o775, 0, 1) // Non-root group writable, owned by root - prohibited
 				fs.AddDir("/usr/local", 0o755)
 				fs.AddDir("/usr/local/etc", 0o755)
@@ -911,7 +911,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 		},
 		{
 			name: "directory owned by current user",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				fs.AddDir("/home", 0o755)
 				fs.AddDirWithOwner("/home/user", 0o755, uint32(os.Getuid()), uint32(os.Getgid())) // Owned by current user
 				fs.AddDir("/home/user/config", 0o755)
@@ -921,7 +921,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 		},
 		{
 			name: "directory owned by different non-root user",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				fs.AddDir("/home", 0o755)
 				fs.AddDirWithOwner("/home/user", 0o755, 2000, 2000) // Owned by different non-root user (UID 2000)
 				fs.AddDir("/home/user/config", 0o755)
@@ -944,7 +944,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 		},
 		{
 			name: "root directory with insecure permissions",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				// Replace default secure root with insecure one
 				fs.RemoveAll("/")
 				fs.AddDirWithOwner("/", 0o777, 0, 0) // World-writable root - insecure!
@@ -957,7 +957,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 		},
 		{
 			name: "directory hierarchy with sticky bit directory",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				// Create hierarchy with sticky bit directory (like /tmp)
 				fs.AddDirWithOwner("/tmp", 0o777|os.ModeSticky, 0, 0) // World-writable with sticky bit - safe!
 				fs.AddDir("/tmp/user-temp", 0o755)
@@ -968,7 +968,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 		},
 		{
 			name: "directory hierarchy with world-writable directory without sticky bit",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				// Create hierarchy with world-writable directory but no sticky bit - insecure!
 				fs.AddDirWithOwner("/shared", 0o777, 0, 0) // World-writable without sticky bit - insecure!
 				fs.AddDir("/shared/data", 0o755)
@@ -982,7 +982,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create fresh mock filesystem for each test
-			testMockFS := commontesting.NewMockFileSystem()
+			testMockFS := commontestutil.NewMockFileSystem()
 			testValidator, err := NewValidator(config, WithFileSystem(testMockFS))
 			require.NoError(t, err)
 
@@ -1010,14 +1010,14 @@ func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		setupFunc   func(*commontesting.MockFileSystem)
+		setupFunc   func(*commontestutil.MockFileSystem)
 		path        string
 		shouldFail  bool
 		expectedErr error
 	}{
 		{
 			name: "path with symlink component should be rejected",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				// Create secure directory hierarchy, but skip /usr/local as we'll replace it with a symlink
 				fs.AddDir("/usr", 0o755)
 
@@ -1035,7 +1035,7 @@ func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
 		},
 		{
 			name: "path with symlink target directory should be rejected",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				// Create secure directory hierarchy
 				fs.AddDir("/usr", 0o755)
 				fs.AddDir("/usr/local", 0o755)
@@ -1055,7 +1055,7 @@ func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
 		},
 		{
 			name: "secure path with no symlinks should pass",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				// Create completely normal directory hierarchy
 				fs.AddDir("/usr", 0o755)
 				fs.AddDir("/usr/local", 0o755)
@@ -1068,7 +1068,7 @@ func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
 		},
 		{
 			name: "AddSymlink should fail when path already exists",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				// Create directory first
 				fs.AddDir("/usr", 0o755)
 				fs.AddDir("/usr/existing", 0o755)
@@ -1086,7 +1086,7 @@ func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create fresh mock filesystem for each test
-			testMockFS := commontesting.NewMockFileSystem()
+			testMockFS := commontestutil.NewMockFileSystem()
 			testValidator, err := NewValidator(config, WithFileSystem(testMockFS))
 			require.NoError(t, err)
 
@@ -1115,7 +1115,7 @@ func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		setupFunc  func(*commontesting.MockFileSystem)
+		setupFunc  func(*commontestutil.MockFileSystem)
 		path       string
 		shouldFail bool
 	}{
@@ -1127,7 +1127,7 @@ func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
 		},
 		{
 			name: "single level directory",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				fs.AddDir("/test", 0o755)
 			},
 			path:       "/test",
@@ -1135,7 +1135,7 @@ func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
 		},
 		{
 			name: "path with double slashes",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				fs.AddDir("/usr", 0o755)
 				fs.AddDir("/usr/local", 0o755)
 			},
@@ -1144,7 +1144,7 @@ func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
 		},
 		{
 			name: "empty path components handled",
-			setupFunc: func(fs *commontesting.MockFileSystem) {
+			setupFunc: func(fs *commontestutil.MockFileSystem) {
 				fs.AddDir("/usr", 0o755)
 				fs.AddDir("/usr/local", 0o755)
 			},
@@ -1156,7 +1156,7 @@ func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create fresh mock filesystem for each test
-			testMockFS := commontesting.NewMockFileSystem()
+			testMockFS := commontestutil.NewMockFileSystem()
 			testValidator, err := NewValidator(config, WithFileSystem(testMockFS))
 			require.NoError(t, err)
 
@@ -1178,7 +1178,7 @@ func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
 }
 
 func TestValidator_ValidateFilePermissions(t *testing.T) {
-	mockFS := commontesting.NewMockFileSystem()
+	mockFS := commontestutil.NewMockFileSystem()
 	validator, err := NewValidator(DefaultConfig(), WithFileSystem(mockFS))
 	require.NoError(t, err)
 
@@ -1255,7 +1255,7 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 
 	t.Run("path too long", func(t *testing.T) {
 		// Test with a path that's too long
-		mockFS2 := commontesting.NewMockFileSystem()
+		mockFS2 := commontestutil.NewMockFileSystem()
 		config2 := DefaultConfig()
 		// Override for path length testing
 		config2.AllowedCommands = []string{".*"}
@@ -1272,7 +1272,7 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 }
 
 func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
-	mockFS := commontesting.NewMockFileSystem()
+	mockFS := commontestutil.NewMockFileSystem()
 	validator, err := NewValidator(DefaultConfig(), WithFileSystem(mockFS))
 	require.NoError(t, err)
 
@@ -1364,7 +1364,7 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 
 	t.Run("path too long", func(t *testing.T) {
 		// Test with a path that's too long
-		mockFS2 := commontesting.NewMockFileSystem()
+		mockFS2 := commontestutil.NewMockFileSystem()
 		config2 := DefaultConfig()
 		// Override for path length testing
 		config2.AllowedCommands = []string{".*"}
@@ -1389,13 +1389,13 @@ func TestValidator_validateCompletePath(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		setupFunc func(mockFS *commontesting.MockFileSystem)
+		setupFunc func(mockFS *commontestutil.MockFileSystem)
 		path      string
 		wantErr   bool
 	}{
 		{
 			name: "complete_path_validation_with_uid_context",
-			setupFunc: func(mockFS *commontesting.MockFileSystem) {
+			setupFunc: func(mockFS *commontestutil.MockFileSystem) {
 				// Create a complete directory hierarchy owned by current user
 				err := mockFS.AddDirWithOwner("/home", 0o755, UIDRoot, GIDRoot)
 				require.NoError(t, err)
@@ -1411,7 +1411,7 @@ func TestValidator_validateCompletePath(t *testing.T) {
 		},
 		{
 			name: "complete_path_validation_with_ownership_mismatch",
-			setupFunc: func(mockFS *commontesting.MockFileSystem) {
+			setupFunc: func(mockFS *commontestutil.MockFileSystem) {
 				// Create hierarchy with ownership mismatch
 				err := mockFS.AddDirWithOwner("/tmp", 0o755, UIDRoot, GIDRoot)
 				require.NoError(t, err)
@@ -1426,7 +1426,7 @@ func TestValidator_validateCompletePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockFS := commontesting.NewMockFileSystem()
+			mockFS := commontestutil.NewMockFileSystem()
 			tt.setupFunc(mockFS)
 
 			groupMembership := groupmembership.New()

@@ -1,7 +1,7 @@
 //go:build test
 
-// Package securitytesting provides mock implementations for security validation testing.
-package securitytesting
+// Package securitytestutil provides mock implementations for security validation testing.
+package securitytestutil
 
 import (
 	"github.com/stretchr/testify/mock"

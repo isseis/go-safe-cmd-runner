@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/stretchr/testify/assert"
@@ -65,7 +65,7 @@ func TestEndToEndExpansion_GlobalVariablesInTemplates(t *testing.T) {
 		runtimeGroup,
 		globalRuntime,
 		common.NewUnsetTimeout(),
-		commontesting.NewUnsetOutputSizeLimit(),
+		commontestutil.NewUnsetOutputSizeLimit(),
 	)
 	require.NoError(t, err)
 
@@ -125,7 +125,7 @@ func TestEndToEndExpansion_LocalVariablesInParams(t *testing.T) {
 		runtimeGroup,
 		globalRuntime,
 		common.NewUnsetTimeout(),
-		commontesting.NewUnsetOutputSizeLimit(),
+		commontestutil.NewUnsetOutputSizeLimit(),
 	)
 	require.NoError(t, err)
 

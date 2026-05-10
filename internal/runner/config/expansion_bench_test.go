@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -87,7 +87,7 @@ func BenchmarkExpandCommand(b *testing.B) {
 
 	b.ResetTimer()
 	for range b.N {
-		_, _ = ExpandCommand(spec, nil, rGroup, rGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+		_, _ = ExpandCommand(spec, nil, rGroup, rGlobal, common.NewUnsetTimeout(), commontestutil.NewUnsetOutputSizeLimit())
 	}
 }
 
@@ -167,7 +167,7 @@ func BenchmarkExpandCommandWithEnvImport(b *testing.B) {
 
 	b.ResetTimer()
 	for range b.N {
-		_, _ = ExpandCommand(cmdSpec, nil, groupRuntime, globalRuntime, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+		_, _ = ExpandCommand(cmdSpec, nil, groupRuntime, globalRuntime, common.NewUnsetTimeout(), commontestutil.NewUnsetOutputSizeLimit())
 	}
 }
 
@@ -222,7 +222,7 @@ func BenchmarkExpandMultipleCommandsWithEnvImport(b *testing.B) {
 	for range b.N {
 		// Expand all commands (simulating loop in group_executor)
 		for _, cmdSpec := range cmdSpecs {
-			_, _ = ExpandCommand(cmdSpec, nil, groupRuntime, globalRuntime, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+			_, _ = ExpandCommand(cmdSpec, nil, groupRuntime, globalRuntime, common.NewUnsetTimeout(), commontestutil.NewUnsetOutputSizeLimit())
 		}
 	}
 }

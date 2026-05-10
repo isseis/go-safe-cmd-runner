@@ -1,7 +1,7 @@
 //go:build test || performance || integration
 
-// Package testutil provides shared helper functions for tests.
-package testutil
+// Package tu provides shared helper functions for tests.
+package tu
 
 import (
 	"os"

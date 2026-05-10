@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
-	machodylibtesting "github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -169,11 +169,11 @@ func writeFatBinary(t *testing.T, name string, cpuTypes []macho.Cpu) string {
 	t.Helper()
 	tmp := realPath(t, t.TempDir())
 	path := filepath.Join(tmp, name)
-	slices := make([]machodylibtesting.FatSlice, len(cpuTypes))
+	slices := make([]machodylibtestutil.FatSlice, len(cpuTypes))
 	for i, cpu := range cpuTypes {
-		slices[i] = machodylibtesting.FatSlice{CPU: cpu, Bytes: machodylibtesting.BuildMachOWithDeps(cpu, nil, nil, nil)}
+		slices[i] = machodylibtestutil.FatSlice{CPU: cpu, Bytes: machodylibtestutil.BuildMachOWithDeps(cpu, nil, nil, nil)}
 	}
-	require.NoError(t, os.WriteFile(path, machodylibtesting.BuildFatBinaryFromSlices(slices), 0o600))
+	require.NoError(t, os.WriteFile(path, machodylibtestutil.BuildFatBinaryFromSlices(slices), 0o600))
 	return path
 }
 
@@ -183,7 +183,7 @@ func writeFatBinary(t *testing.T, name string, cpuTypes []macho.Cpu) string {
 // native-arch slice from a Fat binary and returns a valid *macho.File whose
 // Cpu field matches the native CPU type.
 func TestOpenMachO_FatBinary_MatchingSlice(t *testing.T) {
-	nativeCPU := machodylibtesting.NativeCPU()
+	nativeCPU := machodylibtestutil.NativeCPU()
 	path := writeFatBinary(t, "fat_native.bin", []macho.Cpu{nativeCPU})
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -203,7 +203,7 @@ func TestOpenMachO_FatBinary_MatchingSlice(t *testing.T) {
 // TestOpenMachO_FatBinary_NoMatchingSlice verifies that openMachO returns an
 // ErrNoMatchingSlice error when the Fat binary contains no native-arch slice.
 func TestOpenMachO_FatBinary_NoMatchingSlice(t *testing.T) {
-	nonNativeCPU := machodylibtesting.NonNativeCPU()
+	nonNativeCPU := machodylibtestutil.NonNativeCPU()
 	path := writeFatBinary(t, "fat_non_native.bin", []macho.Cpu{nonNativeCPU})
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -222,7 +222,7 @@ func TestOpenMachO_FatBinary_NoMatchingSlice(t *testing.T) {
 // TestAnalyze_FatBinary_MatchingSlice verifies that Analyze returns (nil, nil, nil)
 // for a Fat binary with a native-arch slice that has no LC_LOAD_DYLIB entries.
 func TestAnalyze_FatBinary_MatchingSlice(t *testing.T) {
-	nativeCPU := machodylibtesting.NativeCPU()
+	nativeCPU := machodylibtestutil.NativeCPU()
 	path := writeFatBinary(t, "fat_native.bin", []macho.Cpu{nativeCPU})
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -238,7 +238,7 @@ func TestAnalyze_FatBinary_MatchingSlice(t *testing.T) {
 // ErrNoMatchingSlice (and does NOT swallow it as ErrNotMachO) when the Fat
 // binary has no native-arch slice.
 func TestAnalyze_FatBinary_NoMatchingSlice(t *testing.T) {
-	nonNativeCPU := machodylibtesting.NonNativeCPU()
+	nonNativeCPU := machodylibtestutil.NonNativeCPU()
 	path := writeFatBinary(t, "fat_non_native.bin", []macho.Cpu{nonNativeCPU})
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -257,7 +257,7 @@ func TestAnalyze_FatBinary_NoMatchingSlice(t *testing.T) {
 // TestHasDynamicLibDeps_FatBinary_MatchingSlice verifies HasDynamicLibDeps for a
 // Fat binary whose native-arch slice has no LC_LOAD_DYLIB entries.
 func TestHasDynamicLibDeps_FatBinary_MatchingSlice(t *testing.T) {
-	nativeCPU := machodylibtesting.NativeCPU()
+	nativeCPU := machodylibtestutil.NativeCPU()
 	path := writeFatBinary(t, "fat_native.bin", []macho.Cpu{nativeCPU})
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -269,7 +269,7 @@ func TestHasDynamicLibDeps_FatBinary_MatchingSlice(t *testing.T) {
 // TestHasDynamicLibDeps_FatBinary_NoMatchingSlice verifies that HasDynamicLibDeps
 // returns (false, nil) for a Fat binary that has no native-arch slice.
 func TestHasDynamicLibDeps_FatBinary_NoMatchingSlice(t *testing.T) {
-	nonNativeCPU := machodylibtesting.NonNativeCPU()
+	nonNativeCPU := machodylibtestutil.NonNativeCPU()
 	path := writeFatBinary(t, "fat_non_native.bin", []macho.Cpu{nonNativeCPU})
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -283,8 +283,8 @@ func TestHasDynamicLibDeps_FatBinary_NoMatchingSlice(t *testing.T) {
 // TestAnalyze_SingleArchMachO_NoDeps verifies that Analyze returns (nil, nil, nil) for a
 // single-architecture Mach-O binary that has no LC_LOAD_DYLIB entries.
 func TestAnalyze_SingleArchMachO_NoDeps(t *testing.T) {
-	nativeCPU := machodylibtesting.NativeCPU()
-	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU, nil, nil, nil)
+	nativeCPU := machodylibtestutil.NativeCPU()
+	buf := machodylibtestutil.BuildMachOWithDeps(nativeCPU, nil, nil, nil)
 
 	tmp := realPath(t, t.TempDir())
 	path := filepath.Join(tmp, "nolc.bin")
@@ -302,10 +302,10 @@ func TestAnalyze_SingleArchMachO_NoDeps(t *testing.T) {
 // TestAnalyze_StrongDepResolutionFailure verifies that Analyze returns an error when
 // a LC_LOAD_DYLIB (strong) dependency cannot be resolved.
 func TestAnalyze_StrongDepResolutionFailure(t *testing.T) {
-	nativeCPU := machodylibtesting.NativeCPU()
+	nativeCPU := machodylibtestutil.NativeCPU()
 	tmp := realPath(t, t.TempDir())
 	// Use a path inside the test's temp dir that is guaranteed not to exist.
-	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU,
+	buf := machodylibtestutil.BuildMachOWithDeps(nativeCPU,
 		[]string{filepath.Join(tmp, "does-not-exist.dylib")},
 		nil, nil)
 
@@ -322,10 +322,10 @@ func TestAnalyze_StrongDepResolutionFailure(t *testing.T) {
 // TestAnalyze_WeakDepSkipped verifies that an unresolvable LC_LOAD_WEAK_DYLIB
 // dependency is silently skipped and Analyze returns (nil, nil, nil).
 func TestAnalyze_WeakDepSkipped(t *testing.T) {
-	nativeCPU := machodylibtesting.NativeCPU()
+	nativeCPU := machodylibtestutil.NativeCPU()
 	tmp := realPath(t, t.TempDir())
 	// Use a path inside the test's temp dir that is guaranteed not to exist.
-	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU,
+	buf := machodylibtestutil.BuildMachOWithDeps(nativeCPU,
 		nil,
 		[]string{filepath.Join(tmp, "does-not-exist.dylib")},
 		nil)
@@ -345,9 +345,9 @@ func TestAnalyze_WeakDepSkipped(t *testing.T) {
 // TestAnalyze_UnknownAtToken_Warning verifies that an install name with an unknown
 // @ token generates an AnalysisWarning and does not cause Analyze to fail.
 func TestAnalyze_UnknownAtToken_Warning(t *testing.T) {
-	nativeCPU := machodylibtesting.NativeCPU()
+	nativeCPU := machodylibtestutil.NativeCPU()
 	// @loaderrpath is an intentional misspelling of @loader_path – an unknown @ token.
-	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU,
+	buf := machodylibtestutil.BuildMachOWithDeps(nativeCPU,
 		[]string{"@loaderrpath/libfoo.dylib"},
 		nil, nil)
 
@@ -368,23 +368,23 @@ func TestAnalyze_UnknownAtToken_Warning(t *testing.T) {
 // TestAnalyze_IndirectDeps verifies that Analyze recursively resolves transitive
 // LC_LOAD_DYLIB dependencies (BFS) and includes them all in the returned slice.
 func TestAnalyze_IndirectDeps(t *testing.T) {
-	nativeCPU := machodylibtesting.NativeCPU()
+	nativeCPU := machodylibtestutil.NativeCPU()
 	tmp := realPath(t, t.TempDir())
 
 	// lib2.dylib: leaf, no dependencies.
 	lib2Path := filepath.Join(tmp, "lib2.dylib")
 	require.NoError(t, os.WriteFile(lib2Path,
-		machodylibtesting.BuildMachOWithDeps(nativeCPU, nil, nil, nil), 0o600))
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, nil, nil, nil), 0o600))
 
 	// lib1.dylib: depends on lib2 by absolute path.
 	lib1Path := filepath.Join(tmp, "lib1.dylib")
 	require.NoError(t, os.WriteFile(lib1Path,
-		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{lib2Path}, nil, nil), 0o600))
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, []string{lib2Path}, nil, nil), 0o600))
 
 	// root.bin: depends on lib1 by absolute path.
 	rootPath := filepath.Join(tmp, "root.bin")
 	require.NoError(t, os.WriteFile(rootPath,
-		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{lib1Path}, nil, nil), 0o600))
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, []string{lib1Path}, nil, nil), 0o600))
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	a := NewMachODynLibAnalyzer(fs)
@@ -407,7 +407,7 @@ func TestAnalyze_IndirectDeps(t *testing.T) {
 // TestAnalyze_IndirectDeps_RpathFromDylib verifies that @rpath entries in a child
 // .dylib's own LC_RPATH are used to resolve its dependencies, not the root binary's rpaths.
 func TestAnalyze_IndirectDeps_RpathFromDylib(t *testing.T) {
-	nativeCPU := machodylibtesting.NativeCPU()
+	nativeCPU := machodylibtestutil.NativeCPU()
 	tmp := realPath(t, t.TempDir())
 
 	// lib2.dylib lives in a subdirectory; its install name is resolved via @rpath.
@@ -415,12 +415,12 @@ func TestAnalyze_IndirectDeps_RpathFromDylib(t *testing.T) {
 	require.NoError(t, os.MkdirAll(lib2Dir, 0o700))
 	lib2Path := filepath.Join(lib2Dir, "lib2.dylib")
 	require.NoError(t, os.WriteFile(lib2Path,
-		machodylibtesting.BuildMachOWithDeps(nativeCPU, nil, nil, nil), 0o600))
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, nil, nil, nil), 0o600))
 
 	// lib1.dylib: references lib2 via @rpath, carries its own LC_RPATH pointing to lib2Dir.
 	lib1Path := filepath.Join(tmp, "lib1.dylib")
 	require.NoError(t, os.WriteFile(lib1Path,
-		machodylibtesting.BuildMachOWithDeps(nativeCPU,
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU,
 			[]string{"@rpath/lib2.dylib"},
 			nil,
 			[]string{lib2Dir}), 0o600))
@@ -428,7 +428,7 @@ func TestAnalyze_IndirectDeps_RpathFromDylib(t *testing.T) {
 	// root.bin: references lib1 by absolute path (no rpath expansion needed for lib1).
 	rootPath := filepath.Join(tmp, "root.bin")
 	require.NoError(t, os.WriteFile(rootPath,
-		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{lib1Path}, nil, nil), 0o600))
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, []string{lib1Path}, nil, nil), 0o600))
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	a := NewMachODynLibAnalyzer(fs)
@@ -449,27 +449,27 @@ func TestAnalyze_IndirectDeps_RpathFromDylib(t *testing.T) {
 // TestAnalyze_SharedDep_NoDuplicates verifies that a shared transitive dependency
 // (diamond pattern: root→lib1→shared, root→lib2→shared) appears only once in DynLibDeps.
 func TestAnalyze_SharedDep_NoDuplicates(t *testing.T) {
-	nativeCPU := machodylibtesting.NativeCPU()
+	nativeCPU := machodylibtestutil.NativeCPU()
 	tmp := realPath(t, t.TempDir())
 
 	// shared.dylib: leaf, no dependencies.
 	sharedPath := filepath.Join(tmp, "shared.dylib")
 	require.NoError(t, os.WriteFile(sharedPath,
-		machodylibtesting.BuildMachOWithDeps(nativeCPU, nil, nil, nil), 0o600))
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, nil, nil, nil), 0o600))
 
 	// lib1.dylib and lib2.dylib: both depend on shared.dylib.
 	lib1Path := filepath.Join(tmp, "lib1.dylib")
 	require.NoError(t, os.WriteFile(lib1Path,
-		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{sharedPath}, nil, nil), 0o600))
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, []string{sharedPath}, nil, nil), 0o600))
 
 	lib2Path := filepath.Join(tmp, "lib2.dylib")
 	require.NoError(t, os.WriteFile(lib2Path,
-		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{sharedPath}, nil, nil), 0o600))
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, []string{sharedPath}, nil, nil), 0o600))
 
 	// root.bin: depends on lib1 and lib2 (diamond).
 	rootPath := filepath.Join(tmp, "root.bin")
 	require.NoError(t, os.WriteFile(rootPath,
-		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{lib1Path, lib2Path}, nil, nil), 0o600))
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, []string{lib1Path, lib2Path}, nil, nil), 0o600))
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	a := NewMachODynLibAnalyzer(fs)
@@ -491,7 +491,7 @@ func TestAnalyze_SharedDep_NoDuplicates(t *testing.T) {
 // TestAnalyze_CircularDeps verifies that circular dependencies (A→B→A) do not
 // cause an infinite loop; the visited set prevents redundant processing.
 func TestAnalyze_CircularDeps(t *testing.T) {
-	nativeCPU := machodylibtesting.NativeCPU()
+	nativeCPU := machodylibtestutil.NativeCPU()
 	tmp := realPath(t, t.TempDir())
 
 	libAPath := filepath.Join(tmp, "libA.dylib")
@@ -500,13 +500,13 @@ func TestAnalyze_CircularDeps(t *testing.T) {
 	// Write libA first; it references libB (which does not yet exist – the bytes
 	// embed the path string; the file is resolved later at analysis time).
 	require.NoError(t, os.WriteFile(libAPath,
-		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{libBPath}, nil, nil), 0o600))
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, []string{libBPath}, nil, nil), 0o600))
 	require.NoError(t, os.WriteFile(libBPath,
-		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{libAPath}, nil, nil), 0o600))
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, []string{libAPath}, nil, nil), 0o600))
 
 	rootPath := filepath.Join(tmp, "root.bin")
 	require.NoError(t, os.WriteFile(rootPath,
-		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{libAPath}, nil, nil), 0o600))
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, []string{libAPath}, nil, nil), 0o600))
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	a := NewMachODynLibAnalyzer(fs)
@@ -526,7 +526,7 @@ func TestAnalyze_CircularDeps(t *testing.T) {
 // TestAnalyze_RecursionDepthExceeded verifies that Analyze returns an
 // ErrRecursionDepthExceeded when the dependency chain exceeds MaxRecursionDepth.
 func TestAnalyze_RecursionDepthExceeded(t *testing.T) {
-	nativeCPU := machodylibtesting.NativeCPU()
+	nativeCPU := machodylibtestutil.NativeCPU()
 	tmp := realPath(t, t.TempDir())
 
 	// Build a chain: root → chain[0] → chain[1] → … → chain[MaxRecursionDepth-1] → chain[MaxRecursionDepth].
@@ -542,12 +542,12 @@ func TestAnalyze_RecursionDepthExceeded(t *testing.T) {
 	// chain[MaxRecursionDepth-1] references chain[MaxRecursionDepth] (does not need to exist).
 	for i := 0; i < MaxRecursionDepth; i++ {
 		require.NoError(t, os.WriteFile(chain[i],
-			machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{chain[i+1]}, nil, nil), 0o600))
+			machodylibtestutil.BuildMachOWithDeps(nativeCPU, []string{chain[i+1]}, nil, nil), 0o600))
 	}
 
 	rootPath := filepath.Join(tmp, "root.bin")
 	require.NoError(t, os.WriteFile(rootPath,
-		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{chain[0]}, nil, nil), 0o600))
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, []string{chain[0]}, nil, nil), 0o600))
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	a := NewMachODynLibAnalyzer(fs)
@@ -568,8 +568,8 @@ func TestAnalyze_RecursionDepthExceeded(t *testing.T) {
 // The referenced library does not need to exist on disk: IsDyldSharedCacheLib
 // returns false for /opt/homebrew/lib/, so the function returns true immediately.
 func TestHasDynamicLibDeps_SingleArch_NonSharedCacheDep(t *testing.T) {
-	nativeCPU := machodylibtesting.NativeCPU()
-	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU,
+	nativeCPU := machodylibtestutil.NativeCPU()
+	buf := machodylibtestutil.BuildMachOWithDeps(nativeCPU,
 		[]string{"/opt/homebrew/lib/libfoo.dylib"},
 		nil, nil)
 
@@ -587,11 +587,11 @@ func TestHasDynamicLibDeps_SingleArch_NonSharedCacheDep(t *testing.T) {
 // returns (true, nil) for a Fat binary whose native-arch slice has at least one
 // LC_LOAD_DYLIB entry pointing to a non-dyld-shared-cache path.
 func TestHasDynamicLibDeps_FatBinary_NonSharedCacheDep(t *testing.T) {
-	nativeCPU := machodylibtesting.NativeCPU()
-	nativeSlice := machodylibtesting.BuildMachOWithDeps(nativeCPU,
+	nativeCPU := machodylibtestutil.NativeCPU()
+	nativeSlice := machodylibtestutil.BuildMachOWithDeps(nativeCPU,
 		[]string{"/opt/homebrew/lib/libfoo.dylib"},
 		nil, nil)
-	fatBin := machodylibtesting.BuildFatBinaryFromSlices([]machodylibtesting.FatSlice{{CPU: nativeCPU, Bytes: nativeSlice}})
+	fatBin := machodylibtestutil.BuildFatBinaryFromSlices([]machodylibtestutil.FatSlice{{CPU: nativeCPU, Bytes: nativeSlice}})
 
 	tmp := realPath(t, t.TempDir())
 	path := filepath.Join(tmp, "fat_test.bin")

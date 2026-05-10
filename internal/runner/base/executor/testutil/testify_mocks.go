@@ -1,7 +1,7 @@
 //go:build test || performance
 
-// Package testutil provides testify-based mock implementations for executor interfaces.
-package testutil
+// Package executortestutil provides testify-based mock implementations for executor interfaces.
+package executortestutil
 
 import (
 	"context"

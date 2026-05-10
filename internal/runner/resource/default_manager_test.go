@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -14,7 +14,7 @@ import (
 
 // testMocks holds all the mocks needed for testing DefaultResourceManager
 type testMocks struct {
-	exec         *executortesting.MockExecutor
+	exec         *executortestutil.MockExecutor
 	fs           *MockFileSystem
 	priv         *MockPrivilegeManager
 	pathResolver *MockPathResolver
@@ -22,7 +22,7 @@ type testMocks struct {
 
 // setupTestMocks creates and initializes all mocks for DefaultResourceManager tests
 func setupTestMocks() *testMocks {
-	mockExec := executortesting.NewMockExecutor()
+	mockExec := executortestutil.NewMockExecutor()
 	mockFS := &MockFileSystem{}
 	mockPriv := &MockPrivilegeManager{}
 	mockPathResolver := &MockPathResolver{}
@@ -53,7 +53,7 @@ func TestNewDefaultResourceManager_NilRiskEvaluator(t *testing.T) {
 func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 	mocks := setupTestMocks()
 
-	cmd := executortesting.CreateRuntimeCommand("echo", []string{})
+	cmd := executortestutil.CreateRuntimeCommand("echo", []string{})
 	env := map[string]string{"FOO": "BAR"}
 	ctx := context.Background()
 
@@ -256,7 +256,7 @@ func TestDefaultResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 		require.NoError(t, err)
 
 		// Execute a command to get a valid token
-		cmd := executortesting.CreateRuntimeCommand("echo", []string{})
+		cmd := executortestutil.CreateRuntimeCommand("echo", []string{})
 		env := map[string]string{}
 		ctx := context.Background()
 

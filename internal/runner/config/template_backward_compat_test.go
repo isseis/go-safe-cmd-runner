@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -196,7 +196,7 @@ env_vars = ["GO111MODULE=on", "GOOS=linux"]
 			require.NoError(t, err)
 
 			// Expand the command (with empty template map for backward compatibility)
-			expanded, err := ExpandCommand(targetCmd, cfg.CommandTemplates, runtimeGroup, globalRuntime, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+			expanded, err := ExpandCommand(targetCmd, cfg.CommandTemplates, runtimeGroup, globalRuntime, common.NewUnsetTimeout(), commontestutil.NewUnsetOutputSizeLimit())
 			require.NoError(t, err)
 
 			// Verify expansion results

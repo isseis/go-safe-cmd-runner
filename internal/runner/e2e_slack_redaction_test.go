@@ -26,10 +26,10 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
-	resourcetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
-	verificationtesting "github.com/isseis/go-safe-cmd-runner/internal/verification/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -129,7 +129,7 @@ func TestIntegration_SlackRedaction(t *testing.T) {
 	// Create real executor and resource manager
 	exec := executor.NewDefaultExecutor()
 	fs := common.NewDefaultFileSystem()
-	mockVerificationManager := new(verificationtesting.MockManager)
+	mockVerificationManager := new(verificationtestutil.MockManager)
 
 	// Create mock path resolver
 	mockPathResolver := &mockPathResolver{}
@@ -161,7 +161,7 @@ func TestIntegration_SlackRedaction(t *testing.T) {
 	})
 
 	// Mock verification manager
-	mockVerificationManager.On("VerifyGroupFiles", verificationtesting.MatchRuntimeGroupWithName("test-group-integration")).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("VerifyGroupFiles", verificationtestutil.MatchRuntimeGroupWithName("test-group-integration")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
@@ -253,7 +253,7 @@ func TestE2E_MultiHandlerLogging(t *testing.T) {
 	// Create executor and resource manager
 	exec := executor.NewDefaultExecutor()
 	fs := common.NewDefaultFileSystem()
-	mockVerificationManager := new(verificationtesting.MockManager)
+	mockVerificationManager := new(verificationtestutil.MockManager)
 
 	mockPathResolver := &mockPathResolver{}
 	mockPathResolver.On("ResolvePath", mock.Anything).Return(func(path string) string { return path }, nil)
@@ -282,7 +282,7 @@ func TestE2E_MultiHandlerLogging(t *testing.T) {
 		RunID:               "test-run-multihandler",
 	})
 
-	mockVerificationManager.On("VerifyGroupFiles", verificationtesting.MatchRuntimeGroupWithName("test-group-multihandler")).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("VerifyGroupFiles", verificationtestutil.MatchRuntimeGroupWithName("test-group-multihandler")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)

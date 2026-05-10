@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
-	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -14,20 +14,20 @@ import (
 
 func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	t.Run("valid_user_group_specification", func(t *testing.T) {
-		mockExec := executortesting.NewMockExecutor()
-		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
+		mockExec := executortestutil.NewMockExecutor()
+		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := executortesting.CreateRuntimeCommand(
+		cmd := executortestutil.CreateRuntimeCommand(
 			"echo",
 			[]string{"test"},
-			executortesting.WithName("test_user_group"),
-			executortesting.WithRunAsUser("testuser"),
-			executortesting.WithRunAsGroup("testgroup"),
+			executortestutil.WithName("test_user_group"),
+			executortestutil.WithRunAsUser("testuser"),
+			executortestutil.WithRunAsGroup("testgroup"),
 		)
 
 		group := &runnertypes.GroupSpec{
@@ -53,8 +53,8 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	})
 
 	t.Run("invalid_user_group_specification", func(t *testing.T) {
-		mockExec := executortesting.NewMockExecutor()
-		mockPriv := privilegetesting.NewFailingMockPrivilegeManager(true) // Will fail user/group validation
+		mockExec := executortestutil.NewMockExecutor()
+		mockPriv := privilegetestutil.NewFailingMockPrivilegeManager(true) // Will fail user/group validation
 
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
@@ -62,12 +62,12 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := executortesting.CreateRuntimeCommand(
+		cmd := executortestutil.CreateRuntimeCommand(
 			"echo",
 			[]string{"test"},
-			executortesting.WithName("test_invalid_user_group"),
-			executortesting.WithRunAsUser("nonexistent_user"),
-			executortesting.WithRunAsGroup("nonexistent_group"),
+			executortestutil.WithName("test_invalid_user_group"),
+			executortestutil.WithRunAsUser("nonexistent_user"),
+			executortestutil.WithRunAsGroup("nonexistent_group"),
 		)
 
 		group := &runnertypes.GroupSpec{
@@ -91,8 +91,8 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	})
 
 	t.Run("user_group_not_supported", func(t *testing.T) {
-		mockExec := executortesting.NewMockExecutor()
-		mockPriv := privilegetesting.NewMockPrivilegeManager(false) // Not supported
+		mockExec := executortestutil.NewMockExecutor()
+		mockPriv := privilegetestutil.NewMockPrivilegeManager(false) // Not supported
 
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
@@ -100,12 +100,12 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := executortesting.CreateRuntimeCommand(
+		cmd := executortestutil.CreateRuntimeCommand(
 			"echo",
 			[]string{"test"},
-			executortesting.WithName("test_user_group_unsupported"),
-			executortesting.WithRunAsUser("testuser"),
-			executortesting.WithRunAsGroup("testgroup"),
+			executortestutil.WithName("test_user_group_unsupported"),
+			executortestutil.WithRunAsUser("testuser"),
+			executortestutil.WithRunAsGroup("testgroup"),
 		)
 
 		group := &runnertypes.GroupSpec{
@@ -126,7 +126,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	})
 
 	t.Run("no_privilege_manager", func(t *testing.T) {
-		mockExec := executortesting.NewMockExecutor()
+		mockExec := executortestutil.NewMockExecutor()
 		// No privilege manager provided
 
 		mockPathResolver := &MockPathResolver{}
@@ -135,12 +135,12 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, nil, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := executortesting.CreateRuntimeCommand(
+		cmd := executortestutil.CreateRuntimeCommand(
 			"echo",
 			[]string{"test"},
-			executortesting.WithName("test_no_privmgr"),
-			executortesting.WithRunAsUser("testuser"),
-			executortesting.WithRunAsGroup("testgroup"),
+			executortestutil.WithName("test_no_privmgr"),
+			executortestutil.WithRunAsUser("testuser"),
+			executortestutil.WithRunAsGroup("testgroup"),
 		)
 
 		group := &runnertypes.GroupSpec{
@@ -161,8 +161,8 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	})
 
 	t.Run("only_user_specified", func(t *testing.T) {
-		mockExec := executortesting.NewMockExecutor()
-		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
+		mockExec := executortestutil.NewMockExecutor()
+		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
 
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
@@ -170,11 +170,11 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := executortesting.CreateRuntimeCommand(
+		cmd := executortestutil.CreateRuntimeCommand(
 			"echo",
 			[]string{"test"},
-			executortesting.WithName("test_user_only"),
-			executortesting.WithRunAsUser("testuser"),
+			executortestutil.WithName("test_user_only"),
+			executortestutil.WithRunAsUser("testuser"),
 		)
 
 		group := &runnertypes.GroupSpec{
@@ -200,8 +200,8 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	})
 
 	t.Run("no_user_group_specification", func(t *testing.T) {
-		mockExec := executortesting.NewMockExecutor()
-		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
+		mockExec := executortestutil.NewMockExecutor()
+		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
 
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
@@ -209,10 +209,10 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := executortesting.CreateRuntimeCommand(
+		cmd := executortestutil.CreateRuntimeCommand(
 			"echo",
 			[]string{"test"},
-			executortesting.WithName("test_no_user_group"),
+			executortestutil.WithName("test_no_user_group"),
 		)
 
 		group := &runnertypes.GroupSpec{

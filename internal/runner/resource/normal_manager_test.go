@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -138,14 +138,14 @@ var (
 // testResourceManagerFixture holds all mocks and the manager for testing
 type testResourceManagerFixture struct {
 	Manager       *NormalResourceManager
-	MockExec      *executortesting.MockExecutor
+	MockExec      *executortestutil.MockExecutor
 	MockFS        *MockFileSystem
 	MockPriv      *MockPrivilegeManager
 	MockOutputMgr *MockCaptureManager
 }
 
 func createTestNormalResourceManager() *testResourceManagerFixture {
-	mockExec := executortesting.NewMockExecutor()
+	mockExec := executortestutil.NewMockExecutor()
 	mockFS := &MockFileSystem{}
 	mockPriv := &MockPrivilegeManager{}
 	mockOutputMgr := &MockCaptureManager{}
@@ -174,7 +174,7 @@ func createTestCommandGroup() *runnertypes.GroupSpec {
 
 func TestNormalResourceManager_ExecuteCommand(t *testing.T) {
 	f := createTestNormalResourceManager()
-	cmd := executortesting.CreateRuntimeCommand("echo", []string{"hello", "world"})
+	cmd := executortestutil.CreateRuntimeCommand("echo", []string{"hello", "world"})
 	group := createTestCommandGroup()
 	env := map[string]string{"TEST": "value"}
 	ctx := context.Background()
@@ -228,13 +228,13 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := executortesting.CreateRuntimeCommand(
+			cmd := executortestutil.CreateRuntimeCommand(
 				tc.cmd,
 				tc.args,
-				executortesting.WithName("test-privilege-command"),
-				executortesting.WithWorkDir("/tmp"),
-				executortesting.WithTimeout(tu.Int32Ptr(30)),
-				executortesting.WithRiskLevel("low"),
+				executortestutil.WithName("test-privilege-command"),
+				executortestutil.WithWorkDir("/tmp"),
+				executortestutil.WithTimeout(tu.Int32Ptr(30)),
+				executortestutil.WithRiskLevel("low"),
 			)
 			group := createTestCommandGroup()
 			env := map[string]string{"TEST": "value"}
@@ -320,13 +320,13 @@ func TestNormalResourceManager_ExecuteCommand_RiskLevelControl(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := executortesting.CreateRuntimeCommand(
+			cmd := executortestutil.CreateRuntimeCommand(
 				tc.cmd,
 				tc.args,
-				executortesting.WithName("test-command"),
-				executortesting.WithWorkDir("/tmp"),
-				executortesting.WithTimeout(tu.Int32Ptr(30)),
-				executortesting.WithRiskLevel(tc.riskLevel),
+				executortestutil.WithName("test-command"),
+				executortestutil.WithWorkDir("/tmp"),
+				executortestutil.WithTimeout(tu.Int32Ptr(30)),
+				executortestutil.WithRiskLevel(tc.riskLevel),
 			)
 
 			if tc.shouldExecute {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/stretchr/testify/assert"
@@ -93,10 +93,10 @@ func TestSecurityAnalysis(t *testing.T) {
 			}
 
 			// Execute the command
-			cmd := executortesting.CreateRuntimeCommand(
+			cmd := executortestutil.CreateRuntimeCommand(
 				tt.spec.Cmd,
 				tt.spec.Args,
-				executortesting.WithName(tt.spec.Name),
+				executortestutil.WithName(tt.spec.Name),
 			)
 			_, result, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 			assert.NoError(t, err)
@@ -189,12 +189,12 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 			}
 
 			// Execute the command
-			cmd := executortesting.CreateRuntimeCommand(
+			cmd := executortestutil.CreateRuntimeCommand(
 				tt.spec.Cmd,
 				tt.spec.Args,
-				executortesting.WithName(tt.spec.Name),
-				executortesting.WithRunAsUser(tt.spec.RunAsUser),
-				executortesting.WithRunAsGroup(tt.spec.RunAsGroup),
+				executortestutil.WithName(tt.spec.Name),
+				executortestutil.WithRunAsUser(tt.spec.RunAsUser),
+				executortestutil.WithRunAsGroup(tt.spec.RunAsGroup),
 			)
 			_, _, err = manager.ExecuteCommand(ctx, cmd, group, envVars)
 			assert.NoError(t, err)
@@ -256,10 +256,10 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 		Description: "Security test group",
 	}
 
-	cmd := executortesting.CreateRuntimeCommand(
+	cmd := executortestutil.CreateRuntimeCommand(
 		"rm",
 		[]string{"-rf", "/tmp/*"},
-		executortesting.WithName("dangerous-rm"),
+		executortestutil.WithName("dangerous-rm"),
 	)
 
 	// Execute the command
@@ -319,10 +319,10 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 
 	var analyses []Analysis
 	for _, cmdSpec := range commandSpecs {
-		cmd := executortesting.CreateRuntimeCommand(
+		cmd := executortestutil.CreateRuntimeCommand(
 			cmdSpec.Cmd,
 			cmdSpec.Args,
-			executortesting.WithName(cmdSpec.Name),
+			executortestutil.WithName(cmdSpec.Name),
 		)
 		_, _, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
 		assert.NoError(t, err)
