@@ -145,7 +145,15 @@ When writing or modifying Go code in this repository, prefer the following moder
 
 ### Other Patterns
 - Use `map[T]struct{}` instead of `map[T]bool` for set semantics (saves memory).
-- Use `errors.Is` / `errors.As` instead of string matching on error messages.
+- Use `errors.Is` / `errors.AsType[T]` instead of string matching on error messages. Prefer `errors.AsType[T]` over `errors.As` — it eliminates the `var target T` declaration:
+  ```go
+  // Before
+  var pathErr *fs.PathError
+  if errors.As(err, &pathErr) { ... }
+
+  // After
+  if pathErr, ok := errors.AsType[*fs.PathError](err); ok { ... }
+  ```
 - In tests, use `t.Cleanup` instead of manual `defer` chains, and `t.TempDir` instead of `os.MkdirTemp` + `defer os.RemoveAll`.
 
 ## Requirements and Acceptance Criteria

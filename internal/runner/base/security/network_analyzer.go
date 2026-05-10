@@ -182,8 +182,7 @@ func (a *NetworkAnalyzer) analyzeBinarySignals(cmdPath string, contentHash strin
 				"path", cmdPath)
 			return true, true, nil
 		}
-		var schemaMismatch *fileanalysis.SchemaVersionMismatchError
-		if errors.As(loadErr, &schemaMismatch) {
+		if schemaMismatch, ok := errors.AsType[*fileanalysis.SchemaVersionMismatchError](loadErr); ok {
 			slog.Warn("Record has outdated schema; treating as high risk",
 				"path", cmdPath,
 				"expected_schema", schemaMismatch.Expected,
