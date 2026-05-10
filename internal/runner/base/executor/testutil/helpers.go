@@ -38,7 +38,6 @@ type runtimeCommandConfig struct {
 	expandedCmd         string
 	expandedArgs        []string
 	workDir             string
-	workDirSet          bool // Track if workDir was explicitly set
 	effectiveWorkDir    string
 	effectiveWorkDirSet bool // Track if effectiveWorkDir was explicitly set
 	timeout             *int32
@@ -56,42 +55,16 @@ func WithName(name string) RuntimeCommandOption {
 	}
 }
 
-// WithExpandedCmd sets the expanded command path.
-// If not set, the cmd parameter from CreateRuntimeCommand will be used.
-func WithExpandedCmd(expandedCmd string) RuntimeCommandOption {
-	return func(c *runtimeCommandConfig) {
-		c.expandedCmd = expandedCmd
-	}
-}
-
-// WithExpandedArgs sets the expanded command arguments.
-// If not set, the args parameter from CreateRuntimeCommand will be used.
-func WithExpandedArgs(expandedArgs []string) RuntimeCommandOption {
-	return func(c *runtimeCommandConfig) {
-		c.expandedArgs = expandedArgs
-	}
-}
-
 // WithWorkDir sets the working directory for both Spec.WorkDir and EffectiveWorkDir.
 // If not set, Spec.WorkDir will be empty and EffectiveWorkDir will default to os.TempDir().
 func WithWorkDir(workDir string) RuntimeCommandOption {
 	return func(c *runtimeCommandConfig) {
 		c.workDir = workDir
-		c.workDirSet = true
-		// Also set effectiveWorkDir if not already set
+		// Also set effectiveWorkDir if not already set.
 		if !c.effectiveWorkDirSet {
 			c.effectiveWorkDir = workDir
 			c.effectiveWorkDirSet = true
 		}
-	}
-}
-
-// WithEffectiveWorkDir sets only the EffectiveWorkDir, leaving Spec.WorkDir unchanged.
-// This is useful when you want to override the effective directory without changing the spec.
-func WithEffectiveWorkDir(effectiveWorkDir string) RuntimeCommandOption {
-	return func(c *runtimeCommandConfig) {
-		c.effectiveWorkDir = effectiveWorkDir
-		c.effectiveWorkDirSet = true
 	}
 }
 
@@ -140,7 +113,7 @@ func WithExpandedEnv(env map[string]string) RuntimeCommandOption {
 // CreateRuntimeCommand creates a RuntimeCommand for testing with optional configuration.
 // The cmd and args parameters are required and represent the Spec.Cmd and Spec.Args values.
 // ExpandedCmd and ExpandedArgs default to cmd and args unless overridden with options.
-// EffectiveWorkDir defaults to os.TempDir() unless overridden with WithWorkDir or WithEffectiveWorkDir.
+// EffectiveWorkDir defaults to os.TempDir() unless overridden with WithWorkDir.
 //
 // This function automatically sets ExpandedCmd, ExpandedArgs, and EffectiveWorkDir
 // from the provided parameters and options.
@@ -160,10 +133,9 @@ func WithExpandedEnv(env map[string]string) RuntimeCommandOption {
 //	    WithRunAsGroup("testgroup"),
 //	)
 //
-//	// Override expanded values
+//	// Customize command metadata
 //	cmd := CreateRuntimeCommand("echo", []string{"hello"},
-//	    WithExpandedCmd("/bin/echo"),
-//	    WithExpandedArgs([]string{"hello", "world"}),
+//	    WithName("echo-expanded"),
 //	)
 func CreateRuntimeCommand(cmd string, args []string, opts ...RuntimeCommandOption) *runnertypes.RuntimeCommand {
 	// Default configuration
@@ -223,18 +195,11 @@ func CreateRuntimeCommand(cmd string, args []string, opts ...RuntimeCommandOptio
 
 	// Set effective working directory
 	// Priority:
-	// 1. Explicitly set effectiveWorkDir (via WithEffectiveWorkDir)
-	// 2. Set workDir (via WithWorkDir) - use the value as-is
-	// 3. Default to os.TempDir() for tests
+	// 1. Set workDir (via WithWorkDir) - use the value as-is
+	// 2. Otherwise default to os.TempDir() for tests
 	effectiveWorkDir := cfg.effectiveWorkDir
 	if !cfg.effectiveWorkDirSet {
-		if cfg.workDirSet {
-			// Use workDir value as-is (even if empty)
-			effectiveWorkDir = cfg.workDir
-		} else {
-			// Default to temporary directory for tests
-			effectiveWorkDir = os.TempDir()
-		}
+		effectiveWorkDir = os.TempDir()
 	}
 
 	return &runnertypes.RuntimeCommand{

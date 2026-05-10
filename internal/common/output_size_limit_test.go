@@ -10,6 +10,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func unsetOutputSizeLimit() OutputSizeLimit {
+	return OutputSizeLimit{NewUnsetOptionalValue[int64]()}
+}
+
+func unlimitedOutputSizeLimit() OutputSizeLimit {
+	return OutputSizeLimit{NewOptionalValue[int64](0)}
+}
+
+func int64Ptr(v int64) *int64 {
+	return &v
+}
+
 func TestErrInvalidOutputSizeLimit_Error(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -37,7 +49,7 @@ func TestErrInvalidOutputSizeLimit_Error(t *testing.T) {
 }
 
 func TestNewUnsetOutputSizeLimit(t *testing.T) {
-	limit := NewUnsetOutputSizeLimit()
+	limit := unsetOutputSizeLimit()
 
 	assert.False(t, limit.IsSet(), "NewUnsetOutputSizeLimit() should create an unset limit")
 	assert.False(t, limit.IsUnlimited(), "NewUnsetOutputSizeLimit() should not be unlimited")
@@ -45,7 +57,7 @@ func TestNewUnsetOutputSizeLimit(t *testing.T) {
 }
 
 func TestNewUnlimitedOutputSizeLimit(t *testing.T) {
-	limit := NewUnlimitedOutputSizeLimit()
+	limit := unlimitedOutputSizeLimit()
 
 	assert.True(t, limit.IsSet(), "NewUnlimitedOutputSizeLimit() should be set")
 	assert.True(t, limit.IsUnlimited(), "NewUnlimitedOutputSizeLimit() should be unlimited")
@@ -114,12 +126,12 @@ func TestOutputSizeLimit_IsSet(t *testing.T) {
 	}{
 		{
 			name:  "unset limit",
-			limit: NewUnsetOutputSizeLimit(),
+			limit: unsetOutputSizeLimit(),
 			want:  false,
 		},
 		{
 			name:  "unlimited limit",
-			limit: NewUnlimitedOutputSizeLimit(),
+			limit: unlimitedOutputSizeLimit(),
 			want:  true,
 		},
 		{
@@ -147,12 +159,12 @@ func TestOutputSizeLimit_IsUnlimited(t *testing.T) {
 	}{
 		{
 			name:  "unset limit",
-			limit: NewUnsetOutputSizeLimit(),
+			limit: unsetOutputSizeLimit(),
 			want:  false,
 		},
 		{
 			name:  "unlimited limit",
-			limit: NewUnlimitedOutputSizeLimit(),
+			limit: unlimitedOutputSizeLimit(),
 			want:  true,
 		},
 		{
@@ -188,7 +200,7 @@ func TestOutputSizeLimit_Value(t *testing.T) {
 	}{
 		{
 			name:  "unlimited limit",
-			limit: NewUnlimitedOutputSizeLimit(),
+			limit: unlimitedOutputSizeLimit(),
 			want:  0,
 		},
 		{
@@ -217,7 +229,7 @@ func TestOutputSizeLimit_Value(t *testing.T) {
 }
 
 func TestOutputSizeLimit_ValuePanicsOnUnset(t *testing.T) {
-	limit := NewUnsetOutputSizeLimit()
+	limit := unsetOutputSizeLimit()
 
 	assert.Panics(t, func() {
 		_ = limit.Value()
@@ -241,21 +253,21 @@ func TestNewOutputSizeLimitFromPtr(t *testing.T) {
 		},
 		{
 			name:      "zero pointer creates unlimited limit",
-			ptr:       Int64Ptr(0),
+			ptr:       int64Ptr(0),
 			wantSet:   true,
 			wantUnlim: true,
 			wantValue: 0,
 		},
 		{
 			name:      "positive pointer creates limit",
-			ptr:       Int64Ptr(1024),
+			ptr:       int64Ptr(1024),
 			wantSet:   true,
 			wantUnlim: false,
 			wantValue: 1024,
 		},
 		{
 			name:      "large limit pointer (100MB)",
-			ptr:       Int64Ptr(100 * 1024 * 1024),
+			ptr:       int64Ptr(100 * 1024 * 1024),
 			wantSet:   true,
 			wantUnlim: false,
 			wantValue: 100 * 1024 * 1024,
