@@ -2,7 +2,7 @@
 
 Test helper files follow a two-tier classification system based on their scope and dependencies:
 
-## Classification A: `testing/` Subdirectory (Cross-Package Helpers)
+## Classification A: `testutil/` Subdirectory (Cross-Package Helpers)
 
 **Use for**: Test helpers and mocks used across multiple packages or that only use public APIs
 
@@ -10,7 +10,7 @@ Test helper files follow a two-tier classification system based on their scope a
 <package>/
 ├── <implementation>.go
 ├── <implementation>_test.go
-└── testing/
+└── testutil/
     ├── mocks.go              # Lightweight mocks (no external dependencies)
     ├── testify_mocks.go      # testify-based mocks (for complex scenarios)
     ├── mocks_test.go         # Tests for mock implementations
@@ -18,14 +18,18 @@ Test helper files follow a two-tier classification system based on their scope a
 ```
 
 **File Naming Rules:**
-- **`testing/mocks.go`**: Simple mock implementations without external library dependencies
-- **`testing/testify_mocks.go`**: Advanced mocks using stretchr/testify framework
-- **`testing/mocks_test.go`**: Unit tests for mock implementations
-- **`testing/helpers.go`**: Common test utility functions and setup helpers
+- **`testutil/mocks.go`**: Simple mock implementations without external library dependencies
+- **`testutil/testify_mocks.go`**: Advanced mocks using stretchr/testify framework
+- **`testutil/mocks_test.go`**: Unit tests for mock implementations
+- **`testutil/helpers.go`**: Common test utility functions and setup helpers
 
 **Package Naming:**
-- All testing utilities use `package testing` within the `testing/` subdirectory
-- Import as: `<module>/internal/<package>/testing`
+- Use a domain-prefixed package name within the `testutil/` subdirectory: `package <domain>testutil`
+  - Examples: `package commontestutil`, `package securitytestutil`, `package verificationtestutil`
+- Import without an alias: `<module>/internal/<package>/testutil`
+- The unique package name eliminates the need for import aliases at call sites, preventing alias drift across the codebase
+
+**Exception:** The repository-root `internal/testutil` package uses `package tu` for readability, since its helpers (e.g., `tu.Int32Ptr`) are used heavily for inline test data construction.
 
 ## Classification B: Package-Level `test_helpers.go` (Internal Helpers)
 
@@ -57,22 +61,22 @@ When adding new test helper code, follow this decision tree:
    - Yes → Continue to step 2 (Classification A)
    - No → Continue to step 4 (likely Classification B)
 
-2. **What type of test helper are you creating?** (Classification A - `testing/` subdirectory)
+2. **What type of test helper are you creating?** (Classification A - `testutil/` subdirectory)
    - **Mock implementation** → Choose based on complexity:
-     - Simple mock (no external dependencies) → `testing/mocks.go`
-     - Complex mock (using testify/mock) → `testing/testify_mocks.go`
-   - **Helper function** (setup, utilities, fixtures) → `testing/helpers.go`
-   - **Mock tests** → `testing/mocks_test.go`
+     - Simple mock (no external dependencies) → `testutil/mocks.go`
+     - Complex mock (using testify/mock) → `testutil/testify_mocks.go`
+   - **Helper function** (setup, utilities, fixtures) → `testutil/helpers.go`
+   - **Mock tests** → `testutil/mocks_test.go`
 
 3. **Is the helper used by tests in other packages?**
-   - Yes → Ensure it uses only public APIs, then place in appropriate `testing/` file (step 2)
+   - Yes → Ensure it uses only public APIs, then place in appropriate `testutil/` file (step 2)
    - No → Continue to step 4
 
 4. **Package-internal considerations** (Classification B - `test_helpers.go`)
    Place in `test_helpers.go` if the helper:
    - Adds methods to package-internal types
    - Uses non-exported (private) package APIs
-   - Would create circular dependencies if placed in `testing/` subdirectory
+   - Would create circular dependencies if placed in `testutil/` subdirectory
    - If multiple helper categories exist: use `test_helpers_<category>.go` (e.g., `test_helpers_group.go`)
 
 **Build Tags:**
@@ -80,7 +84,7 @@ When adding new test helper code, follow this decision tree:
 - This ensures they are only compiled during test builds, not in production binaries
 
 **Examples:**
-- Mock interface implementation → `testing/mocks.go` or `testing/testify_mocks.go`
-- Test setup helper function → `testing/helpers.go`
+- Mock interface implementation → `testutil/mocks.go` or `testutil/testify_mocks.go`
+- Test setup helper function → `testutil/helpers.go`
 - Method on internal type → `test_helpers.go`
 - Factory function using private constructor → `test_helpers.go`
