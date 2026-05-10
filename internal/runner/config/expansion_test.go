@@ -5,8 +5,8 @@ package config
 import (
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -20,17 +20,17 @@ func TestApplyTemplateInheritance_WorkDir(t *testing.T) {
 	}{
 		{
 			name:            "command overrides template",
-			cmdWorkDir:      commontesting.StringPtr("/cmd/dir"),
-			templateWorkDir: commontesting.StringPtr("/tmpl/dir"),
-			expandedWorkDir: commontesting.StringPtr("/tmpl/dir"),
-			expectedWorkDir: commontesting.StringPtr("/cmd/dir"),
+			cmdWorkDir:      tu.StringPtr("/cmd/dir"),
+			templateWorkDir: tu.StringPtr("/tmpl/dir"),
+			expandedWorkDir: tu.StringPtr("/tmpl/dir"),
+			expectedWorkDir: tu.StringPtr("/cmd/dir"),
 		},
 		{
 			name:            "command inherits from template",
 			cmdWorkDir:      nil,
-			templateWorkDir: commontesting.StringPtr("/tmpl/dir"),
-			expandedWorkDir: commontesting.StringPtr("/tmpl/dir"),
-			expectedWorkDir: commontesting.StringPtr("/tmpl/dir"),
+			templateWorkDir: tu.StringPtr("/tmpl/dir"),
+			expandedWorkDir: tu.StringPtr("/tmpl/dir"),
+			expectedWorkDir: tu.StringPtr("/tmpl/dir"),
 		},
 		{
 			name:            "both nil",
@@ -41,10 +41,10 @@ func TestApplyTemplateInheritance_WorkDir(t *testing.T) {
 		},
 		{
 			name:            "command empty string overrides template",
-			cmdWorkDir:      commontesting.StringPtr(""),
-			templateWorkDir: commontesting.StringPtr("/tmpl/dir"),
-			expandedWorkDir: commontesting.StringPtr("/tmpl/dir"),
-			expectedWorkDir: commontesting.StringPtr(""),
+			cmdWorkDir:      tu.StringPtr(""),
+			templateWorkDir: tu.StringPtr("/tmpl/dir"),
+			expandedWorkDir: tu.StringPtr("/tmpl/dir"),
+			expectedWorkDir: tu.StringPtr(""),
 		},
 	}
 
@@ -75,17 +75,17 @@ func TestApplyTemplateInheritance_OutputFile(t *testing.T) {
 	}{
 		{
 			name:               "command overrides template",
-			cmdOutputFile:      commontesting.StringPtr("/cmd/output.txt"),
-			templateOutputFile: commontesting.StringPtr("/tmpl/output.txt"),
-			expandedOutputFile: commontesting.StringPtr("/tmpl/output.txt"),
-			expectedOutputFile: commontesting.StringPtr("/cmd/output.txt"),
+			cmdOutputFile:      tu.StringPtr("/cmd/output.txt"),
+			templateOutputFile: tu.StringPtr("/tmpl/output.txt"),
+			expandedOutputFile: tu.StringPtr("/tmpl/output.txt"),
+			expectedOutputFile: tu.StringPtr("/cmd/output.txt"),
 		},
 		{
 			name:               "command inherits from template",
 			cmdOutputFile:      nil,
-			templateOutputFile: commontesting.StringPtr("/tmpl/output.txt"),
-			expandedOutputFile: commontesting.StringPtr("/tmpl/output.txt"),
-			expectedOutputFile: commontesting.StringPtr("/tmpl/output.txt"),
+			templateOutputFile: tu.StringPtr("/tmpl/output.txt"),
+			expandedOutputFile: tu.StringPtr("/tmpl/output.txt"),
+			expectedOutputFile: tu.StringPtr("/tmpl/output.txt"),
 		},
 		{
 			name:               "both nil",
@@ -96,10 +96,10 @@ func TestApplyTemplateInheritance_OutputFile(t *testing.T) {
 		},
 		{
 			name:               "command empty string overrides template",
-			cmdOutputFile:      commontesting.StringPtr(""),
-			templateOutputFile: commontesting.StringPtr("/tmpl/output.txt"),
-			expandedOutputFile: commontesting.StringPtr("/tmpl/output.txt"),
-			expectedOutputFile: commontesting.StringPtr(""),
+			cmdOutputFile:      tu.StringPtr(""),
+			templateOutputFile: tu.StringPtr("/tmpl/output.txt"),
+			expandedOutputFile: tu.StringPtr("/tmpl/output.txt"),
+			expectedOutputFile: tu.StringPtr(""),
 		},
 	}
 
@@ -226,13 +226,13 @@ func TestApplyTemplateInheritance_Combined(t *testing.T) {
 	// Test all inheritance models together
 	expandedSpec := &runnertypes.CommandSpec{}
 	cmdSpec := &runnertypes.CommandSpec{
-		WorkDir:    nil,                                        // Inherit from template
-		OutputFile: commontesting.StringPtr("/cmd/output.txt"), // Override template
-		EnvImport:  []string{"CMD_VAR", "SHARED"},              // Merge with template
-		Vars:       map[string]any{"cmd_key": "cmd_value"},     // Merge with template
+		WorkDir:    nil,                                    // Inherit from template
+		OutputFile: tu.StringPtr("/cmd/output.txt"),        // Override template
+		EnvImport:  []string{"CMD_VAR", "SHARED"},          // Merge with template
+		Vars:       map[string]any{"cmd_key": "cmd_value"}, // Merge with template
 	}
-	expandedWorkDir := commontesting.StringPtr("/tmpl/dir")
-	expandedOutputFile := commontesting.StringPtr("/tmpl/output.txt")
+	expandedWorkDir := tu.StringPtr("/tmpl/dir")
+	expandedOutputFile := tu.StringPtr("/tmpl/output.txt")
 	expandedEnvImport := []string{"TMPL_VAR", "SHARED"}
 	expandedVars := map[string]any{"tmpl_key": "tmpl_value", "cmd_key": "tmpl_override"}
 

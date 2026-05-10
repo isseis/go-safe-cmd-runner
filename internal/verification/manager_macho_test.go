@@ -10,12 +10,12 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -58,7 +58,7 @@ func findNonDyldCacheMachOBinary(t *testing.T) (string, bool) {
 
 	// Use SafeTempDir so the path has no unresolved OS-level symlinks
 	// (macOS /var -> /private/var), which safefileio rejects.
-	dir := commontesting.SafeTempDir(t)
+	dir := tu.SafeTempDir(t)
 
 	libSrc := filepath.Join(dir, "libfoo.c")
 	mainSrc := filepath.Join(dir, "main.c")
@@ -104,7 +104,7 @@ func TestVerify_MachODyldCacheOnly(t *testing.T) {
 		t.Skip("no dyld-cache-only Mach-O binary found")
 	}
 
-	hashDir := commontesting.SafeTempDir(t)
+	hashDir := tu.SafeTempDir(t)
 
 	resolved, err := filepath.EvalSymlinks(cmdPath)
 	if err != nil {
@@ -141,7 +141,7 @@ func TestVerify_MachONoDynLibDeps(t *testing.T) {
 		t.Skip("no non-dyld-cache Mach-O binary found")
 	}
 
-	hashDir := commontesting.SafeTempDir(t)
+	hashDir := tu.SafeTempDir(t)
 
 	// Write a record with no DynLibDeps.
 	getter := filevalidator.NewHybridHashFilePathGetter()
@@ -180,7 +180,7 @@ func TestVerify_MachOWithDynLibDeps(t *testing.T) {
 		t.Skip("no non-dyld-cache Mach-O binary found")
 	}
 
-	hashDir := commontesting.SafeTempDir(t)
+	hashDir := tu.SafeTempDir(t)
 
 	// Build a validator with Mach-O dynlib analysis enabled and record the
 	// binary in-process, replicating what the `record` binary would do.
@@ -210,7 +210,7 @@ func TestVerify_MachOOldSchema(t *testing.T) {
 		t.Skip("no non-dyld-cache Mach-O binary found")
 	}
 
-	hashDir := commontesting.SafeTempDir(t)
+	hashDir := tu.SafeTempDir(t)
 
 	// Write a raw JSON record with schema_version = CurrentSchemaVersion - 1
 	// so that Store.Load returns SchemaVersionMismatchError with Actual < Expected.
@@ -257,7 +257,7 @@ func TestVerify_MachOLibraryTampered(t *testing.T) {
 		t.Skip("no non-dyld-cache Mach-O binary found")
 	}
 
-	hashDir := commontesting.SafeTempDir(t)
+	hashDir := tu.SafeTempDir(t)
 	libPath := filepath.Join(filepath.Dir(cmdPath), "libfoo.dylib")
 
 	// Record the binary in-process with Mach-O dynlib analysis enabled.

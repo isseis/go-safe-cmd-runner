@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -72,7 +72,7 @@ func createTestVerificationLoader(t *testing.T, hashDir string) (*verification.M
 // TestLoadConfig_MainConfigHashVerification verifies that the main config file's
 // hash is verified during loading.
 func TestLoadConfig_MainConfigHashVerification(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	hashDir := filepath.Join(tmpDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
@@ -117,7 +117,7 @@ args = ["hello"]
 // TestLoadConfig_SingleIncludeFileHashVerification verifies that included
 // template files' hashes are verified during loading.
 func TestLoadConfig_SingleIncludeFileHashVerification(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	hashDir := filepath.Join(tmpDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
@@ -168,7 +168,7 @@ args = ["hello"]
 // TestLoadConfig_MultipleIncludeFilesHashVerification tests hash verification for
 // multiple included template files.
 func TestLoadConfig_MultipleIncludeFilesHashVerification(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	hashDir := filepath.Join(tmpDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
@@ -222,7 +222,7 @@ includes = ["backup.toml", "restore.toml"]
 // TestLoadConfig_HashMismatchReturnsError tests that hash verification
 // failure returns an error before execution.
 func TestLoadConfig_HashMismatchReturnsError(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	hashDir := filepath.Join(tmpDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
@@ -254,7 +254,7 @@ includes = ["templates.toml"]
 // TestLoadConfig_MissingHashReturnsError tests that missing hash records
 // return an error before execution.
 func TestLoadConfig_MissingHashReturnsError(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	hashDir := filepath.Join(tmpDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
@@ -284,7 +284,7 @@ includes = ["templates.toml"]
 // TestLoadConfig_TamperedFileDetection tests that tampering with a template file
 // after hash recording is detected.
 func TestLoadConfig_TamperedFileDetection(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	hashDir := filepath.Join(tmpDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
@@ -328,7 +328,7 @@ includes = ["templates.toml"]
 // TestVerifyAndReadTemplateFile_AtomicOperation verifies that file verification and
 // reading are performed atomically to prevent TOCTOU attacks.
 func TestVerifyAndReadTemplateFile_AtomicOperation(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	hashDir := filepath.Join(tmpDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
@@ -375,7 +375,7 @@ func TestNewLoader_RequiresVerificationManager(t *testing.T) {
 	})
 
 	t.Run("NewLoader panics with nil fileSystem", func(t *testing.T) {
-		tmpDir := commontesting.SafeTempDir(t)
+		tmpDir := tu.SafeTempDir(t)
 		verificationMgr, err := verification.NewManagerForTest(tmpDir, verification.WithSkipHashDirectoryValidation())
 		require.NoError(t, err)
 
@@ -397,7 +397,7 @@ func TestNewLoader_RequiresVerificationManager(t *testing.T) {
 // TestLoadConfig_ProductionPathUsesVerification verifies that the
 // production code path always uses VerifyAndReadTemplateFile.
 func TestLoadConfig_ProductionPathUsesVerification(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	hashDir := filepath.Join(tmpDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)

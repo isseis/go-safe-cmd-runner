@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -121,11 +121,11 @@ func TestVerifyCommandShebangInterpreter_DirectForm_OK(t *testing.T) {
 // when the raw interpreter path resolves to a different binary than recorded,
 // ErrInterpreterSymlinkRedirected is returned.
 func TestVerifyCommandShebangInterpreter_DirectForm_SymlinkRedirected(t *testing.T) {
-	dir := commontesting.SafeTempDir(t)
+	dir := tu.SafeTempDir(t)
 
 	// Create two distinct stub binaries.
-	targetA := commontesting.WriteExecutableFile(t, dir, "interp_a", []byte("#!/bin/sh\n"))
-	targetB := commontesting.WriteExecutableFile(t, dir, "interp_b", []byte("#!/bin/sh\n"))
+	targetA := tu.WriteExecutableFile(t, dir, "interp_a", []byte("#!/bin/sh\n"))
+	targetB := tu.WriteExecutableFile(t, dir, "interp_b", []byte("#!/bin/sh\n"))
 
 	// Create a symlink initially pointing to targetA.
 	symlink := filepath.Join(dir, "sh")
@@ -159,7 +159,7 @@ func TestVerifyCommandShebangInterpreter_DirectForm_SymlinkRedirected(t *testing
 
 // TestVerifyCommandShebangInterpreter_EnvForm_OK verifies the env-form happy path.
 func TestVerifyCommandShebangInterpreter_EnvForm_OK(t *testing.T) {
-	dir := commontesting.SafeTempDir(t)
+	dir := tu.SafeTempDir(t)
 	// Create a real sh symlink target so EvalSymlinks works in lookPathInEnv.
 	shPath, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
@@ -234,7 +234,7 @@ func TestVerifyCommandShebangInterpreter_HashMismatch(t *testing.T) {
 // resolution finds a different binary than recorded, ErrInterpreterPathMismatch
 // is returned.
 func TestVerifyCommandShebangInterpreter_PathMismatch(t *testing.T) {
-	dir := commontesting.SafeTempDir(t)
+	dir := tu.SafeTempDir(t)
 	bashPath, err := filepath.EvalSymlinks("/bin/bash")
 	require.NoError(t, err)
 	shPath, err := filepath.EvalSymlinks("/bin/sh")
@@ -304,7 +304,7 @@ func TestVerifyCommandShebangInterpreter_OldSchema(t *testing.T) {
 // This complements TestVerifyCommandShebangInterpreter_HashMismatch which covers
 // the direct-form interpreter path only.
 func TestVerifyCommandShebangInterpreter_EnvForm_HashMismatch(t *testing.T) {
-	dir := commontesting.SafeTempDir(t)
+	dir := tu.SafeTempDir(t)
 	shPath, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
 
@@ -333,7 +333,7 @@ func TestVerifyCommandShebangInterpreter_EnvForm_HashMismatch(t *testing.T) {
 // a missing record for resolved_path is reported as ErrInterpreterRecordNotFound
 // rather than being masked by a PATH mismatch error (Issue: wrong verification order).
 func TestVerifyCommandShebangInterpreter_EnvForm_ResolvedPathMissing(t *testing.T) {
-	dir := commontesting.SafeTempDir(t)
+	dir := tu.SafeTempDir(t)
 	shPath, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
 
@@ -371,7 +371,7 @@ func TestVerifyCommandShebangInterpreter_EnvForm_ResolvedPathMissing(t *testing.
 // EvalSymlinks would produce a CWD-relative real path that differs from the
 // absolute real path stored at record time. This test exercises that branch.
 func TestVerifyCommandShebangInterpreter_RelativePathCommandName(t *testing.T) {
-	dir := commontesting.SafeTempDir(t)
+	dir := tu.SafeTempDir(t)
 	shPath, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
 

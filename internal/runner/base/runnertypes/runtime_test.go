@@ -5,6 +5,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -260,7 +261,7 @@ func TestRuntimeCommand_HasUserGroupSpecification(t *testing.T) {
 func TestRuntimeGlobal_Structure(t *testing.T) {
 	// Test that RuntimeGlobal can be created with proper structure
 	spec := &GlobalSpec{
-		Timeout: commontesting.Int32Ptr(300),
+		Timeout: tu.Int32Ptr(300),
 		EnvVars: []string{"PATH=/usr/bin"},
 		Vars:    map[string]any{"VAR1": "value1"},
 	}
@@ -320,7 +321,7 @@ func TestRuntimeCommand_Structure(t *testing.T) {
 		Cmd:     "/usr/bin/echo",
 		Args:    []string{"hello", "world"},
 		WorkDir: StringPtr("/tmp"),
-		Timeout: commontesting.Int32Ptr(60),
+		Timeout: tu.Int32Ptr(60),
 		EnvVars: []string{"TEST=value"},
 	}
 
@@ -352,7 +353,7 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 		Name:    "test-cmd",
 		Cmd:     "/usr/bin/echo",
 		Args:    []string{"hello", "world"},
-		Timeout: commontesting.Int32Ptr(60),
+		Timeout: tu.Int32Ptr(60),
 	}
 
 	runtime, err := NewRuntimeCommand(spec, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit(), "test-group")
@@ -375,7 +376,7 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 // TestRuntimeGlobal_HelperMethods tests the helper methods for RuntimeGlobal
 func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	spec := &GlobalSpec{
-		Timeout:    commontesting.Int32Ptr(300),
+		Timeout:    tu.Int32Ptr(300),
 		EnvAllowed: []string{"PATH", "HOME"},
 	}
 

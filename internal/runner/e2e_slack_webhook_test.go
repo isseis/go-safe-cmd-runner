@@ -25,10 +25,10 @@ import (
 	"testing"
 	"time"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -113,7 +113,7 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Version: "1.0",
 		Global: runnertypes.GlobalSpec{
-			Timeout: commontesting.Int32Ptr(30),
+			Timeout: tu.Int32Ptr(30),
 		},
 		Groups: []runnertypes.GroupSpec{
 			{

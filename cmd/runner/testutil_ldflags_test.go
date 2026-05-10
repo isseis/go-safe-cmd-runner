@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 )
 
 const hashDirPackage = "github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory"
@@ -26,7 +26,7 @@ func hashDirLDFlags(hashDir string) string {
 // test ends. appArgs are passed to the compiled binary after ".".
 func newGoRunCmd(t *testing.T, appArgs ...string) *exec.Cmd {
 	t.Helper()
-	hashDir := commontesting.SafeTempDir(t)
+	hashDir := tu.SafeTempDir(t)
 	ldflags := hashDirLDFlags(hashDir)
 	args := append([]string{"run", "-ldflags", ldflags, "."}, appArgs...)
 	cmd := exec.Command("go", args...)

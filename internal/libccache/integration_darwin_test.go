@@ -9,12 +9,12 @@ import (
 	"runtime"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -81,7 +81,7 @@ int main() {
 	return fd >= 0 ? 0 : 1;
 }
 `
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "test.c")
 	binFile := filepath.Join(tmpDir, "test_socket.macho")
 
@@ -137,7 +137,7 @@ int main() {
 	return fd >= 0 ? 0 : 1;
 }
 `
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "test2.c")
 	binFile := filepath.Join(tmpDir, "test_socket2.macho")
 
@@ -187,7 +187,7 @@ func TestLibSystemCache_Integration_Fallback(t *testing.T) {
 	src := `
 int main() { return 0; }
 `
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "test3.c")
 	binFile := filepath.Join(tmpDir, "test_minimal.macho")
 
@@ -230,7 +230,7 @@ func TestLibSystemCache_Integration_ELFFlowNonRegression(t *testing.T) {
 		t.Skip("/bin/ls not available")
 	}
 
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	hashDir := filepath.Join(tmpDir, "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
 

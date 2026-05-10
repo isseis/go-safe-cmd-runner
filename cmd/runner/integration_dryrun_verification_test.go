@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,7 +20,7 @@ import (
 // Returns configFile path.
 func setupTempConfig(t *testing.T, configContent string) string {
 	t.Helper()
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	configFile := filepath.Join(tmpDir, "config.toml")
 	err := os.WriteFile(configFile, []byte(configContent), 0o644)
 	require.NoError(t, err)
@@ -204,7 +204,7 @@ args = ["-l"]
 // TestDryRunE2E_NoSideEffects tests that dry-run with file verification has no side effects
 func TestDryRunE2E_NoSideEffects(t *testing.T) {
 	// Create temporary config file
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	configFile := filepath.Join(tmpDir, "config.toml")
 	logDir := filepath.Join(tmpDir, "logs")
 

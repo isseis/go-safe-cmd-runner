@@ -6,11 +6,11 @@ import (
 	"log/slog"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -233,7 +233,7 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 				tc.args,
 				executortesting.WithName("test-privilege-command"),
 				executortesting.WithWorkDir("/tmp"),
-				executortesting.WithTimeout(commontesting.Int32Ptr(30)),
+				executortesting.WithTimeout(tu.Int32Ptr(30)),
 				executortesting.WithRiskLevel("low"),
 			)
 			group := createTestCommandGroup()
@@ -325,7 +325,7 @@ func TestNormalResourceManager_ExecuteCommand_RiskLevelControl(t *testing.T) {
 				tc.args,
 				executortesting.WithName("test-command"),
 				executortesting.WithWorkDir("/tmp"),
-				executortesting.WithTimeout(commontesting.Int32Ptr(30)),
+				executortesting.WithTimeout(tu.Int32Ptr(30)),
 				executortesting.WithRiskLevel(tc.riskLevel),
 			)
 

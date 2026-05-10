@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -163,7 +163,7 @@ func createDryRunManager(t *testing.T, hashDir string) *Manager {
 // Returns: tmpDir, hashDir, logBuffer, cleanup function
 func setupDryRunTest(t *testing.T) (string, string, *strings.Builder, func()) {
 	t.Helper()
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	hashDir := setupHashDir(t, tmpDir)
 	logBuffer, cleanupLog := setupLogCapture(t)
 	return tmpDir, hashDir, logBuffer, cleanupLog

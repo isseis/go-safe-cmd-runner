@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
@@ -20,6 +19,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	resourcetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 
 	"github.com/stretchr/testify/require"
 )
@@ -37,7 +37,7 @@ func TestLargeOutputMemoryUsage(t *testing.T) {
 		t.Skip("Skipping performance test in short mode")
 	}
 
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	outputPath := filepath.Join(tempDir, "large_output.txt")
 
 	// Create test configuration
@@ -114,7 +114,7 @@ func TestOutputSizeLimit(t *testing.T) {
 		t.Skip("Skipping performance test in short mode")
 	}
 
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	outputPath := filepath.Join(tempDir, "size_limited_output.txt")
 
 	// Create command that generates more output than the limit
@@ -165,7 +165,7 @@ func TestConcurrentExecution(t *testing.T) {
 		t.Skip("Skipping performance test in short mode")
 	}
 
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	numCommands := 5
 
 	// Create necessary components for ResourceManager
@@ -233,7 +233,7 @@ func TestLongRunningStability(t *testing.T) {
 		t.Skip("Skipping performance test in short mode")
 	}
 
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	outputPath := filepath.Join(tempDir, "long_running_output.txt")
 
 	// Create command that runs for a while and produces incremental output
@@ -242,7 +242,7 @@ func TestLongRunningStability(t *testing.T) {
 		[]string{"-c", "for i in $(seq 1 10); do echo \"Line $i\"; sleep 0.1; done"},
 		executortesting.WithName("long_running_test"),
 		executortesting.WithOutputFile(outputPath),
-		executortesting.WithTimeout(commontesting.Int32Ptr(30)),
+		executortesting.WithTimeout(tu.Int32Ptr(30)),
 		executortesting.WithRiskLevel("medium"),
 	)
 
@@ -354,7 +354,7 @@ func TestMemoryLeakDetection(t *testing.T) {
 		t.Skip("Skipping performance test in short mode")
 	}
 
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	iterations := 100
 
 	// Record initial memory

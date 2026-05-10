@@ -8,11 +8,11 @@ import (
 	"runtime"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +20,7 @@ import (
 const passwdPath = "/usr/bin/passwd"
 
 func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 
 	testCases := []struct {
 		name            string
@@ -112,7 +112,7 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 
 func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 	// Create temporary directory for testing
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 
 	t.Run("normal executable without setuid/setgid", func(t *testing.T) {
 		// Create a normal executable
@@ -716,7 +716,7 @@ func TestIsNetworkOperation(t *testing.T) {
 
 func TestHasSetuidOrSetgidBit_Detailed(t *testing.T) {
 	// Create temporary directory for testing
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 
 	t.Run("normal file without setuid/setgid", func(t *testing.T) {
 		normalFile := filepath.Join(tmpDir, "normal")
@@ -1117,7 +1117,7 @@ func TestExtractAllCommandNames(t *testing.T) {
 
 func TestExtractAllCommandNamesWithSymlinks(t *testing.T) {
 	// Create temporary directory for testing
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 
 	// Create the actual executable
 	actualCmd := tmpDir + "/actual_echo"
@@ -1279,7 +1279,7 @@ func TestIsPrivilegeEscalationCommand(t *testing.T) {
 	// Test with actual symbolic link (integration test)
 	t.Run("symbolic link to sudo", func(t *testing.T) {
 		// Create a temporary directory
-		tempDir := commontesting.SafeTempDir(t)
+		tempDir := tu.SafeTempDir(t)
 
 		// Create a symbolic link to sudo (if it exists)
 		sudoPath := "/usr/bin/sudo"
@@ -1300,7 +1300,7 @@ func TestIsPrivilegeEscalationCommand(t *testing.T) {
 	// Test symlink depth exceeded case
 	t.Run("symlink depth exceeded should return error", func(t *testing.T) {
 		// Create a temporary directory for deep symlink chain
-		tempDir := commontesting.SafeTempDir(t)
+		tempDir := tu.SafeTempDir(t)
 
 		// Create a deep chain of symlinks (more than MaxSymlinkDepth=40)
 		// Create initial target file
@@ -1328,7 +1328,7 @@ func TestIsPrivilegeEscalationCommand(t *testing.T) {
 func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 	t.Run("normal command has no risk", func(t *testing.T) {
 		// Use a temporary file in a non-standard directory to avoid directory-based risk
-		tmpDir := commontesting.SafeTempDir(t)
+		tmpDir := tu.SafeTempDir(t)
 		echoPath := filepath.Join(tmpDir, "echo")
 		err := os.WriteFile(echoPath, []byte("#!/bin/bash\necho hello"), 0o755)
 		require.NoError(t, err)
@@ -1355,7 +1355,7 @@ func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 
 func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 	// Create temporary directory for testing
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 
 	t.Run("normal executable without setuid/setgid", func(t *testing.T) {
 		// Create a normal executable
@@ -1404,7 +1404,7 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 
 func TestHasSetuidOrSetgidBit(t *testing.T) {
 	// Create temporary directory for testing
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 
 	t.Run("normal file", func(t *testing.T) {
 		normalFile := filepath.Join(tmpDir, "normal")
@@ -2535,7 +2535,7 @@ func TestAnalyzeCommandSecurity_StandardDirHashValidationAlwaysRuns(t *testing.T
 	lsPath, err = filepath.EvalSymlinks(lsPath)
 	require.NoError(t, err)
 
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 
 	// Using an empty hash directory means no hash file exists for lsPath,
 	// so validateFileHash must fail — proving that hash validation was attempted

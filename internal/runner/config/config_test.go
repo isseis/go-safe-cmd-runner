@@ -6,6 +6,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -110,7 +111,7 @@ func TestGlobalConfigMaxOutputSizeParsing(t *testing.T) {
 [global]
 output_size_limit = 10485760
 `,
-			wantMaxSize: commontesting.Int64Ptr(10485760), // 10MB
+			wantMaxSize: tu.Int64Ptr(10485760), // 10MB
 			wantErr:     false,
 		},
 		{
@@ -128,7 +129,7 @@ timeout = 30
 [global]
 output_size_limit = 0
 `,
-			wantMaxSize: commontesting.Int64Ptr(0), // Explicitly set to 0 (unlimited)
+			wantMaxSize: tu.Int64Ptr(0), // Explicitly set to 0 (unlimited)
 			wantErr:     false,
 		},
 	}

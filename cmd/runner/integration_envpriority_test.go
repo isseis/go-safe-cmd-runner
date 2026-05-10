@@ -12,6 +12,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,7 @@ func configSetupHelper(t *testing.T, systemEnv map[string]string, configTOML str
 	}
 
 	// Create temporary config file
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	configPath := filepath.Join(tempDir, "config.toml")
 	require.NoError(t, os.WriteFile(configPath, []byte(configTOML), 0o644), "Failed to write config file")
 

@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
@@ -20,6 +19,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	resourcetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +33,7 @@ var (
 
 // TestPathTraversalAttack tests protection against path traversal attacks
 func TestPathTraversalAttack(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	sensitiveDir := filepath.Join(tempDir, "sensitive")
 	require.NoError(t, os.MkdirAll(sensitiveDir, 0o755))
 
@@ -129,7 +129,7 @@ func TestSymlinkAttack(t *testing.T) {
 		t.Skip("Running as root, skipping symlink attack test")
 	}
 
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	sensitiveFile := "/etc/passwd"
 
 	// Create a symlink pointing to sensitive file
@@ -256,7 +256,7 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 
 // TestDiskSpaceExhaustionAttack tests protection against disk space exhaustion
 func TestDiskSpaceExhaustionAttack(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	outputPath := filepath.Join(tempDir, "disk_exhaustion_test.txt")
 
 	// Create command that attempts to generate very large output
@@ -303,7 +303,7 @@ func TestDiskSpaceExhaustionAttack(t *testing.T) {
 
 // TestFilePermissionValidation tests that output files have correct permissions
 func TestFilePermissionValidation(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	outputPath := filepath.Join(tempDir, "permission_test.txt")
 
 	runtimeCmd := executortesting.CreateRuntimeCommand(
@@ -351,7 +351,7 @@ func TestFilePermissionValidation(t *testing.T) {
 
 // TestConcurrentSecurityValidation tests security validation under concurrent access
 func TestConcurrentSecurityValidation(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	numGoroutines := 10
 
 	results := make(chan error, numGoroutines)
@@ -409,7 +409,7 @@ func TestConcurrentSecurityValidation(t *testing.T) {
 
 // TestSecurityValidatorIntegration tests integration with existing SecurityValidator
 func TestSecurityValidatorIntegration(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 
 	// Test with different security risk scenarios
 	testCases := []struct {
@@ -474,7 +474,7 @@ func TestSecurityValidatorIntegration(t *testing.T) {
 
 // TestRaceConditionPrevention tests protection against race conditions
 func TestRaceConditionPrevention(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	outputPath := filepath.Join(tempDir, "race_condition_test.txt")
 
 	// Create necessary components for ResourceManager

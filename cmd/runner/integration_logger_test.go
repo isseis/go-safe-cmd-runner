@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/terminal"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -53,7 +53,7 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 			name: "full_handler_chain_with_log_file",
 			config: bootstrap.LoggerConfig{
 				Level:  slog.LevelWarn,
-				LogDir: commontesting.SafeTempDir(t),
+				LogDir: tu.SafeTempDir(t),
 				RunID:  "test-run-003",
 			},
 			envVars: map[string]string{
@@ -185,7 +185,7 @@ func TestTerminalCapabilitiesIntegration(t *testing.T) {
 // the complete handler chain
 func TestHandlerChainIntegration(t *testing.T) {
 	// Create temporary directory for log files
-	logDir := commontesting.SafeTempDir(t)
+	logDir := tu.SafeTempDir(t)
 
 	// Slack webhook URLs are omitted (zero value) to disable Slack for this test
 	config := bootstrap.LoggerConfig{

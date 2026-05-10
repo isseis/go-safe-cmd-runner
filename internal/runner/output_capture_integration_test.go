@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -60,8 +60,8 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:         commontesting.Int32Ptr(30),
-					OutputSizeLimit: commontesting.Int64Ptr(1024),
+					Timeout:         tu.Int32Ptr(30),
+					OutputSizeLimit: tu.Int64Ptr(1024),
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -71,7 +71,7 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 								Name:       "test-cmd",
 								Cmd:        "echo",
 								Args:       []string{"test"},
-								OutputFile: commontesting.StringPtr("output.txt"),
+								OutputFile: tu.StringPtr("output.txt"),
 							},
 						},
 					},
@@ -159,8 +159,8 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:         commontesting.Int32Ptr(30),
-					OutputSizeLimit: commontesting.Int64Ptr(1024),
+					Timeout:         tu.Int32Ptr(30),
+					OutputSizeLimit: tu.Int64Ptr(1024),
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -170,7 +170,7 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 								Name:       "test-cmd",
 								Cmd:        "echo",
 								Args:       []string{"test"},
-								OutputFile: commontesting.StringPtrOrNil(tt.outputPath),
+								OutputFile: tu.StringPtrOrNil(tt.outputPath),
 							},
 						},
 					},

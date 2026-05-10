@@ -9,6 +9,7 @@ import (
 
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	safefileiotesting "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,7 +42,7 @@ func TestSafeFileManager_CreateTempFile(t *testing.T) {
 			// Set up test directory if needed
 			var testDir string
 			if tt.name == "valid_temp_file_with_specific_dir" {
-				testDir = commontesting.SafeTempDir(t)
+				testDir = tu.SafeTempDir(t)
 				tt.dir = testDir
 			}
 
@@ -141,7 +142,7 @@ func TestSafeFileManager_EnsureDirectory(t *testing.T) {
 		{
 			name: "create_new_directory",
 			setupPath: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				return filepath.Join(tempDir, "new_dir")
 			},
 			wantErr: false,
@@ -149,7 +150,7 @@ func TestSafeFileManager_EnsureDirectory(t *testing.T) {
 		{
 			name: "existing_directory",
 			setupPath: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				newDir := filepath.Join(tempDir, "existing")
 				err := os.MkdirAll(newDir, 0o755)
 				require.NoError(t, err)
@@ -161,7 +162,7 @@ func TestSafeFileManager_EnsureDirectory(t *testing.T) {
 		{
 			name: "nested_directory_creation",
 			setupPath: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				return filepath.Join(tempDir, "level1", "level2", "level3")
 			},
 			wantErr: false,
@@ -169,7 +170,7 @@ func TestSafeFileManager_EnsureDirectory(t *testing.T) {
 		{
 			name: "path_on_existing_file",
 			setupPath: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				filePath := filepath.Join(tempDir, "existing_file")
 				file, err := os.Create(filePath)
 				require.NoError(t, err)
@@ -223,7 +224,7 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 		{
 			name: "move_existing_temp_file",
 			setupFiles: func(t *testing.T) (string, string) {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 
 				// Create temp file
 				tempFile, err := manager.CreateTempFile(tempDir, "move_test_*.tmp")
@@ -243,7 +244,7 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 		{
 			name: "move_to_existing_file_overwrite",
 			setupFiles: func(t *testing.T) (string, string) {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 
 				// Create temp file
 				tempFile, err := manager.CreateTempFile(tempDir, "move_overwrite_*.tmp")
@@ -265,7 +266,7 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 		{
 			name: "move_nonexistent_temp_file",
 			setupFiles: func(t *testing.T) (string, string) {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				tempPath := filepath.Join(tempDir, "nonexistent.tmp")
 				finalPath := filepath.Join(tempDir, "final.txt")
 				return tempPath, finalPath
@@ -279,7 +280,7 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 		{
 			name: "move_to_directory_instead_of_file",
 			setupFiles: func(t *testing.T) (string, string) {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 
 				// Create temp file
 				tempFile, err := manager.CreateTempFile(tempDir, "move_to_dir_*.tmp")
@@ -363,7 +364,7 @@ func TestSafeFileManager_RemoveTemp(t *testing.T) {
 		{
 			name: "remove_nonexistent_file",
 			setupPath: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				return filepath.Join(tempDir, "nonexistent.tmp")
 			},
 			wantErr: false, // RemoveTemp should be idempotent
@@ -371,7 +372,7 @@ func TestSafeFileManager_RemoveTemp(t *testing.T) {
 		{
 			name: "remove_directory_instead_of_file",
 			setupPath: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				dirPath := filepath.Join(tempDir, "test_dir")
 				err := os.MkdirAll(dirPath, 0o755)
 				require.NoError(t, err)
@@ -405,7 +406,7 @@ func TestSafeFileManager_RemoveTemp(t *testing.T) {
 
 func TestSafeFileManager_FileDescriptorLeakagePrevention(t *testing.T) {
 	manager := NewSafeFileManager()
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 
 	// 1. Create target file with potentially vulnerable permissions
 	finalPath := filepath.Join(tempDir, "output.txt")
@@ -469,7 +470,7 @@ func TestSafeFileManager_FileDescriptorLeakagePrevention(t *testing.T) {
 func TestSafeFileManager_Integration(t *testing.T) {
 	// Integration test for complete file operation workflow
 	manager := NewSafeFileManager()
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	finalPath := filepath.Join(tempDir, "integration_output.txt")
 
 	// Ensure directory exists

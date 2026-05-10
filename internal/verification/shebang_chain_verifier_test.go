@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,9 +21,9 @@ import (
 // verifies that an absolute ref is re-resolved with EvalSymlinks and rejected
 // when it points to a different binary than the recorded path.
 func TestVerifyCommandShebangInterpreter_ShebangChain_AbsoluteRef_SymlinkRedirected(t *testing.T) {
-	dir := commontesting.SafeTempDir(t)
-	interpA := commontesting.WriteExecutableFile(t, dir, "interp_a", []byte("#!/bin/sh\n"))
-	interpB := commontesting.WriteExecutableFile(t, dir, "interp_b", []byte("#!/bin/sh\n"))
+	dir := tu.SafeTempDir(t)
+	interpA := tu.WriteExecutableFile(t, dir, "interp_a", []byte("#!/bin/sh\n"))
+	interpB := tu.WriteExecutableFile(t, dir, "interp_b", []byte("#!/bin/sh\n"))
 
 	rawRef := filepath.Join(dir, "sh")
 	require.NoError(t, os.Symlink(interpA, rawRef))
@@ -59,14 +59,14 @@ func TestVerifyCommandShebangInterpreter_ShebangChain_AbsoluteRef_SymlinkRedirec
 // that a bare ref is re-resolved through PATH and rejected when runtime
 // resolution differs from the recorded path.
 func TestVerifyCommandShebangInterpreter_ShebangChain_BareRef_PathMismatch(t *testing.T) {
-	dir := commontesting.SafeTempDir(t)
+	dir := tu.SafeTempDir(t)
 	recordedDir := filepath.Join(dir, "recorded")
 	runtimeDir := filepath.Join(dir, "runtime")
 	require.NoError(t, os.MkdirAll(recordedDir, 0o755))
 	require.NoError(t, os.MkdirAll(runtimeDir, 0o755))
 
-	recordedInterp := commontesting.WriteExecutableFile(t, recordedDir, "python3", []byte("#!/bin/sh\n"))
-	runtimeInterp := commontesting.WriteExecutableFile(t, runtimeDir, "python3", []byte("#!/bin/sh\n"))
+	recordedInterp := tu.WriteExecutableFile(t, recordedDir, "python3", []byte("#!/bin/sh\n"))
+	runtimeInterp := tu.WriteExecutableFile(t, runtimeDir, "python3", []byte("#!/bin/sh\n"))
 	require.NotEqual(t, recordedInterp, runtimeInterp)
 
 	scriptPath := filepath.Join(dir, "script.py")
@@ -96,8 +96,8 @@ func TestVerifyCommandShebangInterpreter_ShebangChain_BareRef_PathMismatch(t *te
 // that a dep hash with an unsupported algorithm prefix (e.g. "md5:") is rejected with
 // ErrUnsupportedHashAlgorithm rather than ErrMismatch.
 func TestVerifyCommandShebangInterpreter_ShebangChain_UnsupportedHashAlgorithm(t *testing.T) {
-	dir := commontesting.SafeTempDir(t)
-	interpPath := commontesting.WriteExecutableFile(t, dir, "interp", []byte("#!/bin/sh\n"))
+	dir := tu.SafeTempDir(t)
+	interpPath := tu.WriteExecutableFile(t, dir, "interp", []byte("#!/bin/sh\n"))
 	scriptPath := filepath.Join(dir, "script.sh")
 
 	mockFV := newMockFVForShebang()
@@ -127,8 +127,8 @@ func TestVerifyCommandShebangInterpreter_ShebangChain_UnsupportedHashAlgorithm(t
 // two commands in the same group would pass shebang verification for the second
 // command using the stale cached hash from the first command.
 func TestVerifyCommandDynLibDeps_ResetsDepHashCacheBetweenCommands(t *testing.T) {
-	dir := commontesting.SafeTempDir(t)
-	interpPath := commontesting.WriteExecutableFile(t, dir, "interp", []byte("#!/bin/sh\n"))
+	dir := tu.SafeTempDir(t)
+	interpPath := tu.WriteExecutableFile(t, dir, "interp", []byte("#!/bin/sh\n"))
 
 	mockFV := newMockFVForShebang()
 	m := setupManagerWithMockValidator(t, mockFV)
@@ -179,7 +179,7 @@ func TestVerifyCommandDynLibDeps_ResetsDepHashCacheBetweenCommands(t *testing.T)
 // shebang_chain entry with an empty path is rejected as a corrupted record
 // rather than silently skipped (fail-closed).
 func TestVerifyCommandShebangInterpreter_ShebangChain_EmptyPath(t *testing.T) {
-	dir := commontesting.SafeTempDir(t)
+	dir := tu.SafeTempDir(t)
 	scriptPath := filepath.Join(dir, "script.sh")
 
 	mockFV := newMockFVForShebang()
@@ -204,8 +204,8 @@ func TestVerifyCommandShebangInterpreter_ShebangChain_EmptyPath(t *testing.T) {
 // PATH-resolution checks, which would allow an attacker to redirect /bin/sh
 // to a different binary without detection.
 func TestVerifyCommandShebangInterpreter_ShebangChain_EmptyRef(t *testing.T) {
-	dir := commontesting.SafeTempDir(t)
-	interpPath := commontesting.WriteExecutableFile(t, dir, "interp", []byte("#!/bin/sh\n"))
+	dir := tu.SafeTempDir(t)
+	interpPath := tu.WriteExecutableFile(t, dir, "interp", []byte("#!/bin/sh\n"))
 	scriptPath := filepath.Join(dir, "script.sh")
 
 	mockFV := newMockFVForShebang()

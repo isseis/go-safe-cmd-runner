@@ -5,6 +5,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -17,14 +18,14 @@ func TestNewRuntimeCommand_TimeoutResolution(t *testing.T) {
 	}{
 		{
 			name:              "command timeout takes precedence",
-			commandTimeout:    commontesting.Int32Ptr(120),
-			globalTimeout:     commontesting.Int32Ptr(60),
+			commandTimeout:    tu.Int32Ptr(120),
+			globalTimeout:     tu.Int32Ptr(60),
 			expectedEffective: 120,
 		},
 		{
 			name:              "global timeout when command is nil",
 			commandTimeout:    nil,
-			globalTimeout:     commontesting.Int32Ptr(90),
+			globalTimeout:     tu.Int32Ptr(90),
 			expectedEffective: 90,
 		},
 		{
@@ -35,14 +36,14 @@ func TestNewRuntimeCommand_TimeoutResolution(t *testing.T) {
 		},
 		{
 			name:              "command unlimited timeout (0)",
-			commandTimeout:    commontesting.Int32Ptr(0),
-			globalTimeout:     commontesting.Int32Ptr(60),
+			commandTimeout:    tu.Int32Ptr(0),
+			globalTimeout:     tu.Int32Ptr(60),
 			expectedEffective: 0,
 		},
 		{
 			name:              "global unlimited timeout (0)",
 			commandTimeout:    nil,
-			globalTimeout:     commontesting.Int32Ptr(0),
+			globalTimeout:     tu.Int32Ptr(0),
 			expectedEffective: 0,
 		},
 	}
@@ -80,10 +81,10 @@ func TestNewRuntimeCommand_CommandTimeoutZero(t *testing.T) {
 		Name:    "unlimited-command",
 		Cmd:     "/bin/sleep",
 		Args:    []string{"999999"},
-		Timeout: commontesting.Int32Ptr(0), // Unlimited execution
+		Timeout: tu.Int32Ptr(0), // Unlimited execution
 	}
 
-	globalTimeout := commontesting.Int32Ptr(60) // 60 seconds global timeout
+	globalTimeout := tu.Int32Ptr(60) // 60 seconds global timeout
 
 	runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(globalTimeout), commontesting.NewUnsetOutputSizeLimit(), "test-group")
 	assert.NoError(t, err, "NewRuntimeCommand() should not fail")
@@ -107,7 +108,7 @@ func TestNewRuntimeCommand_GlobalTimeoutZero(t *testing.T) {
 		Timeout: nil, // Inherit from global
 	}
 
-	globalTimeout := commontesting.Int32Ptr(0) // Unlimited global timeout
+	globalTimeout := tu.Int32Ptr(0) // Unlimited global timeout
 
 	runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(globalTimeout), commontesting.NewUnsetOutputSizeLimit(), "test-group")
 	assert.NoError(t, err, "NewRuntimeCommand() should not fail")
@@ -123,7 +124,7 @@ func TestNewRuntimeCommand_GlobalTimeoutZero(t *testing.T) {
 
 func TestNewRuntimeCommand_ErrorHandling(t *testing.T) {
 	// Test with nil spec
-	runtime, err := NewRuntimeCommand(nil, common.NewFromIntPtr(commontesting.Int32Ptr(60)), commontesting.NewUnsetOutputSizeLimit(), "test-group")
+	runtime, err := NewRuntimeCommand(nil, common.NewFromIntPtr(tu.Int32Ptr(60)), commontesting.NewUnsetOutputSizeLimit(), "test-group")
 	assert.ErrorIs(t, err, ErrNilSpec, "NewRuntimeCommand(nil, ...) should return ErrNilSpec")
 	assert.Nil(t, runtime, "NewRuntimeCommand(nil, ...) should return nil runtime")
 }
@@ -140,8 +141,8 @@ func TestNewRuntimeCommand_TimeoutResolutionContext(t *testing.T) {
 	}{
 		{
 			name:          "command level resolution",
-			cmdTimeout:    commontesting.Int32Ptr(30),
-			globalTimeout: commontesting.Int32Ptr(60),
+			cmdTimeout:    tu.Int32Ptr(30),
+			globalTimeout: tu.Int32Ptr(60),
 			commandName:   "test-cmd",
 			groupName:     "test-group",
 			wantValue:     30,
@@ -150,7 +151,7 @@ func TestNewRuntimeCommand_TimeoutResolutionContext(t *testing.T) {
 		{
 			name:          "global level resolution",
 			cmdTimeout:    nil,
-			globalTimeout: commontesting.Int32Ptr(60),
+			globalTimeout: tu.Int32Ptr(60),
 			commandName:   "test-cmd",
 			groupName:     "test-group",
 			wantValue:     60,

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,7 +23,7 @@ func (m *mockPathGetter) GetHashFilePath(hashDir common.ResolvedPath, filePath c
 }
 
 func TestStore_SaveAndLoad(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	store, err := NewStore(analysisDir, &mockPathGetter{})
@@ -54,7 +54,7 @@ func TestStore_SaveAndLoad(t *testing.T) {
 }
 
 func TestStore_RecordNotFound(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	store, err := NewStore(analysisDir, &mockPathGetter{})
@@ -71,7 +71,7 @@ func TestStore_RecordNotFound(t *testing.T) {
 }
 
 func TestStore_SchemaVersionMismatch(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	store, err := NewStore(analysisDir, &mockPathGetter{})
@@ -105,7 +105,7 @@ func TestStore_SchemaVersionMismatch(t *testing.T) {
 }
 
 func TestStore_Load_V21RejectedWithSchemaVersionMismatch(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	store, err := NewStore(analysisDir, &mockPathGetter{})
@@ -136,7 +136,7 @@ func TestStore_Load_V21RejectedWithSchemaVersionMismatch(t *testing.T) {
 }
 
 func TestStore_CorruptedRecord(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	store, err := NewStore(analysisDir, &mockPathGetter{})
@@ -161,7 +161,7 @@ func TestStore_CorruptedRecord(t *testing.T) {
 }
 
 func TestStore_Load_V22RejectedWithSchemaVersionMismatch(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	store, err := NewStore(analysisDir, &mockPathGetter{})
@@ -192,7 +192,7 @@ func TestStore_Load_V22RejectedWithSchemaVersionMismatch(t *testing.T) {
 }
 
 func TestStore_PreservesExistingFields(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	store, err := NewStore(analysisDir, &mockPathGetter{})
@@ -235,7 +235,7 @@ func TestStore_PreservesExistingFields(t *testing.T) {
 }
 
 func TestStore_Update_CreatesNewRecord(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	store, err := NewStore(analysisDir, &mockPathGetter{})
@@ -262,7 +262,7 @@ func TestStore_Update_CreatesNewRecord(t *testing.T) {
 }
 
 func TestStore_Update_SchemaVersionMismatch(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	store, err := NewStore(analysisDir, &mockPathGetter{})
@@ -306,7 +306,7 @@ func TestStore_Update_SchemaVersionMismatch(t *testing.T) {
 }
 
 func TestStore_Update_CorruptedRecord(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	store, err := NewStore(analysisDir, &mockPathGetter{})
@@ -338,7 +338,7 @@ func TestStore_Update_CorruptedRecord(t *testing.T) {
 }
 
 func TestNewStore_CreatesDirectory(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "new", "nested", "dir")
 
 	// Directory should not exist yet
@@ -357,7 +357,7 @@ func TestNewStore_CreatesDirectory(t *testing.T) {
 }
 
 func TestNewStore_ExistingDirectory(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 
 	// Use existing temp directory
 	store, err := NewStore(tmpDir, &mockPathGetter{})
@@ -366,7 +366,7 @@ func TestNewStore_ExistingDirectory(t *testing.T) {
 }
 
 func TestNewStore_NotADirectory(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	notADir := filepath.Join(tmpDir, "file.txt")
 
 	// Create a file where we expect a directory
@@ -380,7 +380,7 @@ func TestNewStore_NotADirectory(t *testing.T) {
 }
 
 func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	store, err := NewStore(analysisDir, &mockPathGetter{})
@@ -429,7 +429,7 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 // not RecordCorruptedError. Before the fix, json.Unmarshal into Record would fail
 // on the type mismatch before the schema version check was reached.
 func TestStore_Load_V9DynLibDepsObjectFormat(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	store, err := NewStore(analysisDir, &mockPathGetter{})
@@ -473,7 +473,7 @@ func TestStore_Load_V9DynLibDepsObjectFormat(t *testing.T) {
 // overwriting a record with an older schema version (Actual < Expected).
 // This enables `record --force` to migrate records to the current schema version.
 func TestStore_Update_OldSchemaAllowsOverwrite(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	store, err := NewStore(analysisDir, &mockPathGetter{})

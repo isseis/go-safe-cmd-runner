@@ -10,6 +10,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -134,7 +135,7 @@ func TestNormalizeSlackAllowedHost(t *testing.T) {
 // 5. Command.Args can reference Command.EnvVars
 func TestBootstrapCommandEnvExpansionIntegration(t *testing.T) {
 	// Setup: Create temporary directory for hash storage
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
@@ -231,7 +232,7 @@ func TestBootstrapCommandEnvExpansionIntegration(t *testing.T) {
 // TestLoadAndPrepareConfig_MissingConfigFile verifies error handling for missing config files
 func TestLoadAndPrepareConfig_MissingConfigFile(t *testing.T) {
 	// Setup: Create temporary directory for hash storage
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
@@ -252,7 +253,7 @@ func TestLoadAndPrepareConfig_MissingConfigFile(t *testing.T) {
 // TestLoadAndPrepareConfig_EmptyConfigPath verifies error handling for empty config path
 func TestLoadAndPrepareConfig_EmptyConfigPath(t *testing.T) {
 	// Setup: Create temporary directory for hash storage
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)

@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +32,7 @@ type testEnvironment struct {
 // setupTestEnvironment creates the common test directory structure.
 func setupTestEnvironment(t *testing.T, runID string) *testEnvironment {
 	t.Helper()
-	testDir := commontesting.SafeTempDir(t)
+	testDir := tu.SafeTempDir(t)
 	hashDir := filepath.Join(testDir, "hashes")
 	configPath := filepath.Join(testDir, "config.toml")
 

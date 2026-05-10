@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,7 +34,7 @@ func TestSafeReadFile(t *testing.T) {
 		{
 			name: "read existing file",
 			setup: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				filePath := filepath.Join(tempDir, "testfile.txt")
 				content := []byte("test content")
 				err := os.WriteFile(filePath, content, 0o600)
@@ -47,7 +47,7 @@ func TestSafeReadFile(t *testing.T) {
 		{
 			name: "non-existent file",
 			setup: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				return filepath.Join(tempDir, "nonexistent.txt")
 			},
 			wantErr: true,
@@ -55,7 +55,7 @@ func TestSafeReadFile(t *testing.T) {
 		{
 			name: "directory instead of file",
 			setup: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				return tempDir
 			},
 			wantErr: true,
@@ -64,7 +64,7 @@ func TestSafeReadFile(t *testing.T) {
 		{
 			name: "symlink to file",
 			setup: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				targetFile := filepath.Join(tempDir, "target.txt")
 				symlink := filepath.Join(tempDir, "symlink.txt")
 
@@ -82,7 +82,7 @@ func TestSafeReadFile(t *testing.T) {
 		{
 			name: "file too large",
 			setup: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				filePath := filepath.Join(tempDir, "largefile.bin")
 
 				// Create a file that's slightly larger than the max allowed size
@@ -107,7 +107,7 @@ func TestSafeReadFile(t *testing.T) {
 		{
 			name: "world writable file should fail",
 			setup: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				filePath := filepath.Join(tempDir, "world_writable.txt")
 
 				// Create file with world writable permissions (666)
@@ -124,7 +124,7 @@ func TestSafeReadFile(t *testing.T) {
 		{
 			name: "group writable file owned by current user should succeed",
 			setup: func(t *testing.T) string {
-				tempDir := commontesting.SafeTempDir(t)
+				tempDir := tu.SafeTempDir(t)
 				filePath := filepath.Join(tempDir, "group_writable.txt")
 
 				// Create file with group writable permissions (664)
@@ -316,7 +316,7 @@ func TestValidateFilePermissions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tempDir := commontesting.SafeTempDir(t)
+			tempDir := tu.SafeTempDir(t)
 			filePath := filepath.Join(tempDir, "test_permissions.txt")
 
 			// Create file with specified permissions
@@ -353,7 +353,7 @@ func TestValidateFilePermissions(t *testing.T) {
 
 func TestSafeWriteFileOverwrite_FileCloseError(t *testing.T) {
 	t.Run("close error only", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
+		tempDir := tu.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "testfile.txt")
 
 		fs := failingCloseFS{FileSystem: defaultFS}
@@ -363,7 +363,7 @@ func TestSafeWriteFileOverwrite_FileCloseError(t *testing.T) {
 	})
 
 	t.Run("write error takes precedence over close error", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
+		tempDir := tu.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "testfile.txt")
 
 		fs := failingWriteFS{FileSystem: defaultFS}
@@ -375,7 +375,7 @@ func TestSafeWriteFileOverwrite_FileCloseError(t *testing.T) {
 
 func TestSetuidSetgidBehavior(t *testing.T) {
 	t.Run("SafeReadFile allows reading file with setuid/setgid bits", func(t *testing.T) {
-		tempDir := commontesting.SafeTempDir(t)
+		tempDir := tu.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "setuid_setgid_read.txt")
 
 		// Create file normally first to avoid umask surprises, then chmod explicitly
@@ -393,7 +393,7 @@ func TestSetuidSetgidBehavior(t *testing.T) {
 
 // TestValidateFileOperationDifferences tests that read and write operations have different permission requirements
 func TestValidateFileOperationDifferences(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 
 	// Test executable file - should be allowed for read but not for write
 	execFilePath := filepath.Join(tempDir, "executable_file.txt")
@@ -472,7 +472,7 @@ func TestCanSafelyWriteToFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tempDir := commontesting.SafeTempDir(t)
+			tempDir := tu.SafeTempDir(t)
 			filePath := filepath.Join(tempDir, fmt.Sprintf("test_%s.txt", tt.name))
 
 			// Create test file with specified permissions
@@ -554,7 +554,7 @@ func TestCanSafelyReadFromFile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create temporary file
-			tmpDir := commontesting.SafeTempDir(t)
+			tmpDir := tu.SafeTempDir(t)
 			filePath := filepath.Join(tmpDir, "test_file")
 
 			// Create test file with specified permissions
@@ -591,7 +591,7 @@ func TestCanSafelyReadFromFile(t *testing.T) {
 func TestSafeReadFileWithRelaxedPermissions(t *testing.T) {
 	t.Run("SafeReadFile should succeed with group writable file using new read permissions", func(t *testing.T) {
 		// Create temporary file with group writable permissions
-		tmpDir := commontesting.SafeTempDir(t)
+		tmpDir := tu.SafeTempDir(t)
 		filePath := filepath.Join(tmpDir, "group_writable_file")
 		content := []byte("test content for group writable file")
 
@@ -606,7 +606,7 @@ func TestSafeReadFileWithRelaxedPermissions(t *testing.T) {
 
 	t.Run("SafeReadFile should still fail with world writable file", func(t *testing.T) {
 		// Create temporary file with world writable permissions
-		tmpDir := commontesting.SafeTempDir(t)
+		tmpDir := tu.SafeTempDir(t)
 		filePath := filepath.Join(tmpDir, "world_writable_file")
 		content := []byte("test content for world writable file")
 
@@ -625,7 +625,7 @@ func TestSafeReadFileWithRelaxedPermissions(t *testing.T) {
 // NewResolvedPath (resolveModeFull) to write functions returns ErrInvalidFilePath.
 // This corresponds to AC-14, AC-15, AC-16.
 func TestResolvedPathModeEnforcement(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 
 	// Create an existing file so that NewResolvedPath succeeds.
 	existingFile := filepath.Join(tempDir, "existing.txt")
@@ -651,7 +651,7 @@ func TestEnsureParentDirsNoSymlinks(t *testing.T) {
 		//          <tmpDir>/link -> <tmpDir>/real  (user-owned symlink)
 		// Target path: <tmpDir>/link/file.txt
 		// ensureParentDirsNoSymlinks should reject the symlink component.
-		tmpDir := commontesting.SafeTempDir(t)
+		tmpDir := tu.SafeTempDir(t)
 		realDir := filepath.Join(tmpDir, "real")
 		require.NoError(t, os.Mkdir(realDir, 0o750))
 		linkDir := filepath.Join(tmpDir, "link")
@@ -663,7 +663,7 @@ func TestEnsureParentDirsNoSymlinks(t *testing.T) {
 	})
 
 	t.Run("allows regular directory hierarchy", func(t *testing.T) {
-		tmpDir := commontesting.SafeTempDir(t)
+		tmpDir := tu.SafeTempDir(t)
 		subDir := filepath.Join(tmpDir, "sub")
 		require.NoError(t, os.Mkdir(subDir, 0o750))
 
@@ -676,7 +676,7 @@ func TestEnsureParentDirsNoSymlinks(t *testing.T) {
 		// os.TempDir() on macOS resolves through /tmp -> /private/tmp.
 		// ensureParentDirsNoSymlinks must accept that root-owned symlink so
 		// that writing to the system temp directory works correctly.
-		subDir := commontesting.SafeTempDir(t)
+		subDir := tu.SafeTempDir(t)
 
 		targetPath := filepath.Join(subDir, "file.txt")
 		err := ensureParentDirsNoSymlinks(targetPath)
@@ -687,7 +687,7 @@ func TestEnsureParentDirsNoSymlinks(t *testing.T) {
 // TestSafeReadFile_AcceptsBothModes verifies that SafeReadFile accepts ResolvedPath values
 // created with either NewResolvedPath or NewResolvedPathParentOnly (AC-17).
 func TestSafeReadFile_AcceptsBothModes(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	filePath := filepath.Join(tempDir, "readable.txt")
 	content := []byte("hello")
 	require.NoError(t, os.WriteFile(filePath, content, 0o644))

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,7 +29,7 @@ output_size_limit = 2097152
 				EnvVars:         []string{"DEBUG=1"},
 				EnvAllowed:      []string{"DEBUG"},
 				EnvImport:       []string{},
-				OutputSizeLimit: commontesting.Int64Ptr(2097152),
+				OutputSizeLimit: tu.Int64Ptr(2097152),
 			},
 		},
 	}
@@ -151,7 +151,7 @@ args = ["hello"]
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: commontesting.Int32Ptr(300),
+					Timeout: tu.Int32Ptr(300),
 				},
 				Groups: []GroupSpec{
 					{
@@ -189,7 +189,7 @@ cmd = "/bin/echo"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: commontesting.Int32Ptr(300),
+					Timeout: tu.Int32Ptr(300),
 				},
 				Security: SecuritySpec{
 					TrustedGIDs: []uint32{10, 20},
@@ -226,7 +226,7 @@ cmd = "/bin/echo"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: commontesting.Int32Ptr(120),
+					Timeout: tu.Int32Ptr(120),
 				},
 				Security: SecuritySpec{},
 				Groups: []GroupSpec{
@@ -270,8 +270,8 @@ cmd = "/bin/echo"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout:         commontesting.Int32Ptr(300),
-					OutputSizeLimit: commontesting.Int64Ptr(1048576),
+					Timeout:         tu.Int32Ptr(300),
+					OutputSizeLimit: tu.Int64Ptr(1048576),
 					VerifyFiles:     []string{"/usr/bin/python3", "/usr/bin/gcc"},
 					EnvAllowed:      []string{"PATH", "HOME"},
 					EnvVars:         []string{"PATH=/usr/bin:/bin", "HOME=/root"},
@@ -319,7 +319,7 @@ cmd = "/usr/bin/make"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: commontesting.Int32Ptr(300),
+					Timeout: tu.Int32Ptr(300),
 				},
 				Groups: []GroupSpec{
 					{
@@ -373,7 +373,7 @@ TEST_VAR = "value"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: commontesting.Int32Ptr(300),
+					Timeout: tu.Int32Ptr(300),
 				},
 				Groups: []GroupSpec{
 					{
@@ -385,7 +385,7 @@ TEST_VAR = "value"
 								Cmd:         "/usr/bin/python3",
 								Args:        []string{"-m", "pytest"},
 								WorkDir:     StringPtr("/tmp/test"),
-								Timeout:     commontesting.Int32Ptr(60),
+								Timeout:     tu.Int32Ptr(60),
 								RunAsUser:   "testuser",
 								RunAsGroup:  "testgroup",
 								RiskLevel:   RiskLevelMediumPtr,
@@ -462,7 +462,7 @@ cmd = "/bin/date"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: commontesting.Int32Ptr(300),
+					Timeout: tu.Int32Ptr(300),
 				},
 				Groups: []GroupSpec{
 					{

@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -91,7 +91,7 @@ func TestSetupLogging_Success(t *testing.T) {
 		{
 			name:     "with log directory",
 			logLevel: slog.LevelDebug,
-			logDir:   commontesting.SafeTempDir(t),
+			logDir:   tu.SafeTempDir(t),
 			runID:    "test-run-002",
 		},
 		{
@@ -157,7 +157,7 @@ func TestSetupLogging_InvalidConfig(t *testing.T) {
 			runID:    "test-run-error-002",
 			setupFunc: func(t *testing.T) string {
 				// Create a directory with no write permissions
-				dir := filepath.Join(commontesting.SafeTempDir(t), "readonly")
+				dir := filepath.Join(tu.SafeTempDir(t), "readonly")
 				if err := os.Mkdir(dir, 0o444); err != nil {
 					assert.NoError(t, err, "Failed to create test directory")
 				}
@@ -197,7 +197,7 @@ func TestSetupLogging_FilePermissionError(t *testing.T) {
 	}
 
 	// Create a directory with read-only permissions
-	tempDir := commontesting.SafeTempDir(t)
+	tempDir := tu.SafeTempDir(t)
 	readOnlyDir := filepath.Join(tempDir, "readonly")
 	if err := os.Mkdir(readOnlyDir, 0o444); err != nil {
 		assert.NoError(t, err, "Failed to create read-only directory")

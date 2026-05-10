@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
@@ -23,6 +22,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -121,7 +121,7 @@ func createRunnerWithOutputCapture(
 	t.Helper()
 
 	// 1. Create temporary hash directory for test
-	tempHashDir := commontesting.SafeTempDir(t)
+	tempHashDir := tu.SafeTempDir(t)
 
 	// 2. Create temporary config file using helper
 	configPath := setupTestConfig(t, configContent)
@@ -444,7 +444,7 @@ risk_level = "medium"
 			var fixedWorkdir string
 			configContent := tt.configContent
 			if tt.usesFixedWorkdir {
-				fixedWorkdir = commontesting.SafeTempDir(t)
+				fixedWorkdir = tu.SafeTempDir(t)
 
 				// Escape path for TOML string (Windows compatibility: backslashes must be escaped)
 				escapedPath := strings.ReplaceAll(fixedWorkdir, `\`, `\\`)
@@ -495,7 +495,7 @@ risk_level = "medium"
 // TestIntegration_DryRunWithTempDir tests dry-run mode with temporary directories
 func TestIntegration_DryRunWithTempDir(t *testing.T) {
 	oldHashDir := cmdcommon.DefaultHashDirectory
-	cmdcommon.DefaultHashDirectory = commontesting.SafeTempDir(t)
+	cmdcommon.DefaultHashDirectory = tu.SafeTempDir(t)
 	t.Cleanup(func() {
 		cmdcommon.DefaultHashDirectory = oldHashDir
 	})
