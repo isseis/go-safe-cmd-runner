@@ -3,6 +3,7 @@
 package libccache
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -112,14 +113,7 @@ func TestNetworkSyscallWrapperNames(t *testing.T) {
 		"getpeername", "getsockname",
 	}
 	for _, name := range expected {
-		found := false
-		for _, n := range networkSyscallWrapperNames {
-			if n == name {
-				found = true
-				break
-			}
-		}
-		assert.True(t, found, "expected %s in networkSyscallWrapperNames", name)
+		assert.True(t, slices.Contains(networkSyscallWrapperNames, name), "expected %s in networkSyscallWrapperNames", name)
 	}
 
 	// sendmmsg and recvmmsg must not appear (Linux-specific).

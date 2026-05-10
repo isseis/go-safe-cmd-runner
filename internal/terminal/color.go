@@ -5,6 +5,7 @@ package terminal
 
 import (
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -54,14 +55,7 @@ func (d *DefaultColorDetector) SupportsColor() bool {
 	}
 
 	// Check for exact matches or prefixes using package-level list
-	for _, colorTerm := range colorTerminals {
-		if term == colorTerm || strings.HasPrefix(term, colorTerm+"-") {
-			return true
-		}
-	}
-
-	// For unknown terminals, default to no color for safety
-	// This is a conservative approach - better to miss color support
-	// than to output escape sequences to terminals that don't support them
-	return false
+	return slices.ContainsFunc(colorTerminals, func(colorTerm string) bool {
+		return term == colorTerm || strings.HasPrefix(term, colorTerm+"-")
+	})
 }

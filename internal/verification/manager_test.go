@@ -1460,7 +1460,7 @@ func createOldSchemaRecord(t *testing.T, hashDir, filePath string) string {
 	recordFilePath, err := getter.GetHashFilePath(resolvedHashDir, resolvedPath)
 	require.NoError(t, err)
 
-	record := map[string]interface{}{
+	record := map[string]any{
 		"schema_version": fileanalysis.CurrentSchemaVersion - 1, // older schema triggers the overwrite path (Actual < Expected)
 		"file_path":      filePath,
 		"content_hash":   "sha256:aabbcc",
@@ -1583,7 +1583,7 @@ func createFutureSchemaRecord(t *testing.T, hashDir, filePath string) string {
 	recordFilePath, err := getter.GetHashFilePath(resolvedHashDir, resolvedPath)
 	require.NoError(t, err)
 
-	record := map[string]interface{}{
+	record := map[string]any{
 		"schema_version": fileanalysis.CurrentSchemaVersion + 1, // future schema (> CurrentSchemaVersion)
 		"file_path":      filePath,
 		"content_hash":   "sha256:aabbcc",

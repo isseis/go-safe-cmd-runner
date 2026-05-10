@@ -17,17 +17,11 @@ import (
 // This test uses 'pwd' command which is Unix-specific
 func TestIntegration_CommandLevelWorkdir(t *testing.T) {
 	// Create separate fixed workdirs for different commands
-	fixedWorkdir1, err := os.MkdirTemp("", "test-cmd-workdir1-*")
-	require.NoError(t, err)
-	defer os.RemoveAll(fixedWorkdir1)
 	// Resolve symlinks for macOS where /var -> /private/var
-	fixedWorkdir1, err = filepath.EvalSymlinks(fixedWorkdir1)
+	fixedWorkdir1, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 
-	fixedWorkdir2, err := os.MkdirTemp("", "test-cmd-workdir2-*")
-	require.NoError(t, err)
-	defer os.RemoveAll(fixedWorkdir2)
-	fixedWorkdir2, err = filepath.EvalSymlinks(fixedWorkdir2)
+	fixedWorkdir2, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 
 	configContent := `

@@ -36,7 +36,7 @@ const (
 // MockFileSystem implements FileSystem for testing
 type MockFileSystem struct {
 	files map[string]*MockFileInfo
-	dirs  map[string]bool
+	dirs  map[string]struct{}
 	// Counter for creating unique temp directories
 	tempDirCounter int
 	// Symlinks maps symlink path to target path
@@ -92,7 +92,7 @@ func (m *MockFileInfo) Sys() any {
 func NewMockFileSystem() *MockFileSystem {
 	fs := &MockFileSystem{
 		files:    make(map[string]*MockFileInfo),
-		dirs:     make(map[string]bool),
+		dirs:     make(map[string]struct{}),
 		symlinks: make(map[string]string),
 	}
 
@@ -110,7 +110,7 @@ func (m *MockFileSystem) CreateTempDir(dir string, prefix string) (string, error
 	}
 	m.tempDirCounter++
 	tempDir := filepath.Join(dir, fmt.Sprintf("%s%d", prefix, m.tempDirCounter))
-	m.dirs[tempDir] = true
+	m.dirs[tempDir] = struct{}{}
 	m.files[tempDir] = &MockFileInfo{
 		name:      filepath.Base(tempDir),
 		mode:      DefaultDirPerm,
@@ -340,7 +340,7 @@ func (m *MockFileSystem) AddDirWithOwner(path string, mode os.FileMode, uid, gid
 		return os.ErrExist
 	}
 
-	m.dirs[path] = true
+	m.dirs[path] = struct{}{}
 	m.files[path] = &MockFileInfo{
 		name:      filepath.Base(path),
 		mode:      mode | os.ModeDir, // Add directory flag to mode
@@ -435,7 +435,7 @@ func (m *MockFileSystem) MkdirAll(path string, perm os.FileMode) error {
 				uid:   DefaultUID,
 				gid:   DefaultGID,
 			}
-			m.dirs[currentPath] = true
+			m.dirs[currentPath] = struct{}{}
 		}
 	}
 

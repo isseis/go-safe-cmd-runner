@@ -108,19 +108,19 @@ func escapesWorkDirectory(relPath string) bool {
 }
 
 // dangerousCharLookup contains all single dangerous characters for fast lookup
-var dangerousCharLookup = map[rune]bool{
+var dangerousCharLookup = map[rune]struct{}{
 	// Shell metacharacters
-	';': true, '&': true, '|': true, '$': true, '`': true,
-	'>': true, '<': true,
+	';': {}, '&': {}, '|': {}, '$': {}, '`': {},
+	'>': {}, '<': {},
 	// Glob/expansion characters
-	'*': true, '?': true, '[': true, ']': true, '~': true, '!': true,
+	'*': {}, '?': {}, '[': {}, ']': {}, '~': {}, '!': {},
 	// Control characters
-	'\n': true, '\r': true, '\f': true, '\v': true, '\b': true, '\a': true, '\\': true,
+	'\n': {}, '\r': {}, '\f': {}, '\v': {}, '\b': {}, '\a': {}, '\\': {},
 }
 
 // dangerousSymbolLookup contains high-risk currency symbols
-var dangerousSymbolLookup = map[rune]bool{
-	'€': true, '¥': true, '£': true, '¢': true, '₹': true, '₽': true, '₩': true,
+var dangerousSymbolLookup = map[rune]struct{}{
+	'€': {}, '¥': {}, '£': {}, '¢': {}, '₹': {}, '₽': {}, '₩': {},
 }
 
 // multiCharPatternRegex is a pre-compiled regex for detecting multi-character dangerous patterns
@@ -132,13 +132,13 @@ var multiCharPatternRegex = regexp.MustCompile(`&&|\|\||\$\(|\$\{|>>|<<`)
 // Optimized version that scans the path only once with efficient lookups
 func containsDangerousCharacters(path string) []string {
 	var found []string
-	foundMap := make(map[string]bool) // To avoid duplicates
+	foundMap := make(map[string]struct{}) // To avoid duplicates
 
 	// Helper function to add unique dangerous characters
 	addDangerous := func(char string) {
-		if !foundMap[char] {
+		if _, ok := foundMap[char]; !ok {
 			found = append(found, char)
-			foundMap[char] = true
+			foundMap[char] = struct{}{}
 		}
 	}
 
@@ -153,12 +153,12 @@ func containsDangerousCharacters(path string) []string {
 		runeStr := string(r)
 
 		// Skip if already found
-		if foundMap[runeStr] {
+		if _, ok := foundMap[runeStr]; ok {
 			continue
 		}
 
 		// Check single-character lookup table first (most common case)
-		if dangerousCharLookup[r] {
+		if _, ok := dangerousCharLookup[r]; ok {
 			addDangerous(runeStr)
 			continue
 		}
@@ -170,7 +170,8 @@ func containsDangerousCharacters(path string) []string {
 		}
 
 		// Check for high-risk symbol characters
-		if unicode.IsSymbol(r) && dangerousSymbolLookup[r] {
+		_, inSymLookup := dangerousSymbolLookup[r]
+		if unicode.IsSymbol(r) && inSymLookup {
 			addDangerous(runeStr)
 			continue
 		}

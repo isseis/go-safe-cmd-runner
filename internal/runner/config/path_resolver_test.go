@@ -19,7 +19,7 @@ func TestDefaultPathResolver_ResolvePath(t *testing.T) {
 		includePath  string
 		setupFiles   func(t *testing.T, baseDir string) string // Returns the file path created
 		wantErr      bool
-		errType      interface{}
+		errType      any
 		checkAbsPath bool
 	}{
 		{

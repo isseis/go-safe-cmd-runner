@@ -15,7 +15,7 @@ func BenchmarkParseGroupNames(b *testing.B) {
 	input := strings.Repeat("group,", 5) + "group"
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		ParseGroupNames(input)
 	}
 }
@@ -31,7 +31,7 @@ func BenchmarkFilterGroups(b *testing.B) {
 	target := []string{"group1", "group5", "group9"}
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		FilterGroups(target, config)
 	}
 }

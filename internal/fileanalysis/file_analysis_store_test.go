@@ -86,7 +86,7 @@ func TestStore_SchemaVersionMismatch(t *testing.T) {
 
 	// Manually write record with wrong schema version
 	recordPath := filepath.Join(analysisDir, "test.bin.json")
-	wrongVersionRecord := map[string]interface{}{
+	wrongVersionRecord := map[string]any{
 		"schema_version": 999,
 		"file_path":      testFile,
 		"content_hash":   "sha256:abc123",
@@ -118,7 +118,7 @@ func TestStore_Load_V21RejectedWithSchemaVersionMismatch(t *testing.T) {
 	require.NoError(t, err)
 
 	recordPath := filepath.Join(analysisDir, "test.bin.json")
-	v21Record := map[string]interface{}{
+	v21Record := map[string]any{
 		"schema_version": 21,
 		"file_path":      testFile,
 		"content_hash":   "sha256:abc123",
@@ -174,7 +174,7 @@ func TestStore_Load_V22RejectedWithSchemaVersionMismatch(t *testing.T) {
 	require.NoError(t, err)
 
 	recordPath := filepath.Join(analysisDir, "test.bin.json")
-	v22Record := map[string]interface{}{
+	v22Record := map[string]any{
 		"schema_version": 22,
 		"file_path":      testFile,
 		"content_hash":   "sha256:abc123",
@@ -277,7 +277,7 @@ func TestStore_Update_SchemaVersionMismatch(t *testing.T) {
 
 	// Manually write record with wrong schema version
 	recordPath := filepath.Join(analysisDir, "test.bin.json")
-	wrongVersionRecord := map[string]interface{}{
+	wrongVersionRecord := map[string]any{
 		"schema_version": 999,
 		"file_path":      testFile,
 		"content_hash":   "sha256:oldvalue",
@@ -298,7 +298,7 @@ func TestStore_Update_SchemaVersionMismatch(t *testing.T) {
 	// Original record should be preserved
 	data, err = os.ReadFile(recordPath)
 	require.NoError(t, err)
-	var preserved map[string]interface{}
+	var preserved map[string]any
 	err = json.Unmarshal(data, &preserved)
 	require.NoError(t, err)
 	assert.Equal(t, float64(999), preserved["schema_version"])
@@ -443,13 +443,13 @@ func TestStore_Load_V9DynLibDepsObjectFormat(t *testing.T) {
 
 	// Write a v9 record with dyn_lib_deps in the old {"libs":[...]} object format.
 	recordPath := filepath.Join(analysisDir, "test.bin.json")
-	v9Record := map[string]interface{}{
+	v9Record := map[string]any{
 		"schema_version": 9,
 		"file_path":      testFile,
 		"content_hash":   "sha256:abc123",
-		"dyn_lib_deps": map[string]interface{}{
-			"libs": []interface{}{
-				map[string]interface{}{
+		"dyn_lib_deps": map[string]any{
+			"libs": []any{
+				map[string]any{
 					"soname": "libssl.so.3",
 					"path":   "/usr/lib/x86_64-linux-gnu/libssl.so.3",
 					"hash":   "sha256:deadbeef",
@@ -488,7 +488,7 @@ func TestStore_Update_OldSchemaAllowsOverwrite(t *testing.T) {
 
 	// Write a record with the previous schema version (simulating a v1 record)
 	recordPath := filepath.Join(analysisDir, "test.bin.json")
-	oldVersionRecord := map[string]interface{}{
+	oldVersionRecord := map[string]any{
 		"schema_version": CurrentSchemaVersion - 1, // older schema
 		"file_path":      testFile,
 		"content_hash":   "sha256:oldvalue",

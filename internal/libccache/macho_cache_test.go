@@ -61,7 +61,7 @@ func buildRawMachoBytes(t *testing.T, cpu macho.Cpu, textBytes []byte, syms []te
 	bo := make([]byte, 0, 512)
 	buf := bytes.NewBuffer(bo)
 
-	wr := func(v interface{}) {
+	wr := func(v any) {
 		require.NoError(t, writeLEValue(buf, v))
 	}
 
@@ -131,7 +131,7 @@ func buildRawMachoBytes(t *testing.T, cpu macho.Cpu, textBytes []byte, syms []te
 }
 
 // writeLEValue encodes v as little-endian bytes into buf.
-func writeLEValue(buf *bytes.Buffer, v interface{}) error {
+func writeLEValue(buf *bytes.Buffer, v any) error {
 	writeBytes := func(b []byte) { buf.Write(b) }
 	switch x := v.(type) {
 	case uint8:

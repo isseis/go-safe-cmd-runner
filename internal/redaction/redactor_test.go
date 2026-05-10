@@ -1890,7 +1890,7 @@ func BenchmarkRedactingHandler_String(b *testing.B) {
 	timestamp := time.Now().String()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		logger.Info("test message",
 			"user", "testuser",
 			"action", "login",
@@ -1910,7 +1910,7 @@ func BenchmarkRedactingHandler_String_WithSensitiveData(b *testing.B) {
 	timestamp := time.Now().String()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		logger.Info("test message",
 			"user", "testuser",
 			"credentials", "password=secret123 token=abc456",
@@ -1932,7 +1932,7 @@ func BenchmarkRedactingHandler_LogValuer(b *testing.B) {
 	timestamp := time.Now().String()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		logger.Info("test message",
 			"user", "testuser",
 			"data", valuer,
@@ -1958,7 +1958,7 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) {
 	timestamp := time.Now().String()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		logger.Info("test message",
 			"user", "testuser",
 			"items", slice,
@@ -1983,7 +1983,7 @@ func BenchmarkRedactingHandler_Mixed(b *testing.B) {
 	timestamp := time.Now().String()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		logger.Info("test message",
 			"user", "testuser",
 			"simple_string", "normal data",
@@ -2001,7 +2001,7 @@ func BenchmarkRedactText(b *testing.B) {
 	text := "User logged in with password=secret123 and token=abc456xyz"
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = config.RedactText(text)
 	}
 }
@@ -2012,7 +2012,7 @@ func BenchmarkRedactText_NoSensitiveData(b *testing.B) {
 	text := "User logged in successfully at 2024-01-01 12:00:00"
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = config.RedactText(text)
 	}
 }
@@ -2023,7 +2023,7 @@ func BenchmarkRedactLogAttribute_String(b *testing.B) {
 	attr := slog.String("message", "password=secret123")
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = config.RedactLogAttribute(attr)
 	}
 }
@@ -2038,7 +2038,7 @@ func BenchmarkRedactLogAttribute_Group(b *testing.B) {
 	)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = config.RedactLogAttribute(attr)
 	}
 }
@@ -2050,7 +2050,7 @@ func BenchmarkRedactLogAttribute_Any_LogValuer(b *testing.B) {
 	attr := slog.Any("data", valuer)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = config.RedactLogAttribute(attr)
 	}
 }

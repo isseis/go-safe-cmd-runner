@@ -422,11 +422,11 @@ func TestE2E_SlackWebhookSeparation_DryRunMode(t *testing.T) {
 
 // TestE2E_SlackWebhookSeparation_MessageFormat tests message formatting
 func TestE2E_SlackWebhookSeparation_MessageFormat(t *testing.T) {
-	var successPayloads []map[string]interface{}
+	var successPayloads []map[string]any
 
 	successServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		var payload map[string]interface{}
+		var payload map[string]any
 		if err := json.Unmarshal(body, &payload); err == nil {
 			successPayloads = append(successPayloads, payload)
 		}

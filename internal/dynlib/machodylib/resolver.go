@@ -145,15 +145,13 @@ func (r *LibraryResolver) Resolve(installName, loaderPath string, rpaths []strin
 // expandRpathEntry expands @executable_path and @loader_path tokens
 // within an LC_RPATH entry.
 func (r *LibraryResolver) expandRpathEntry(rpathEntry, loaderPath string) string {
-	if strings.HasPrefix(rpathEntry, "@executable_path") {
-		suffix := strings.TrimPrefix(rpathEntry, "@executable_path")
+	if suffix, ok := strings.CutPrefix(rpathEntry, "@executable_path"); ok {
 		suffix = strings.TrimPrefix(suffix, "/")
 
 		return filepath.Clean(filepath.Join(r.executableDir, suffix))
 	}
 
-	if strings.HasPrefix(rpathEntry, "@loader_path") {
-		suffix := strings.TrimPrefix(rpathEntry, "@loader_path")
+	if suffix, ok := strings.CutPrefix(rpathEntry, "@loader_path"); ok {
 		suffix = strings.TrimPrefix(suffix, "/")
 		loaderDir := filepath.Dir(loaderPath)
 

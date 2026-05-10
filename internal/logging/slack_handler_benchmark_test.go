@@ -30,7 +30,7 @@ func BenchmarkExtractCommandResults_CommandResults(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = extractCommandResults(value)
 	}
 }
@@ -41,7 +41,7 @@ func BenchmarkExtractCommandResults_FromGroupValue(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = extractCommandResultsFromGroup(groupValue)
 	}
 }
@@ -57,7 +57,7 @@ func BenchmarkExtractFromAttrs(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = extractFromAttrs(attrs)
 	}
 }

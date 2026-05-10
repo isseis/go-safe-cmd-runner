@@ -1279,9 +1279,7 @@ func TestIsPrivilegeEscalationCommand(t *testing.T) {
 	// Test with actual symbolic link (integration test)
 	t.Run("symbolic link to sudo", func(t *testing.T) {
 		// Create a temporary directory
-		tempDir, err := os.MkdirTemp("", "sudo_symlink_test")
-		require.NoError(t, err)
-		defer os.RemoveAll(tempDir)
+		tempDir := commontesting.SafeTempDir(t)
 
 		// Create a symbolic link to sudo (if it exists)
 		sudoPath := "/usr/bin/sudo"
@@ -1302,14 +1300,12 @@ func TestIsPrivilegeEscalationCommand(t *testing.T) {
 	// Test symlink depth exceeded case
 	t.Run("symlink depth exceeded should return error", func(t *testing.T) {
 		// Create a temporary directory for deep symlink chain
-		tempDir, err := os.MkdirTemp("", "deep_sudo_symlink_test")
-		require.NoError(t, err)
-		defer os.RemoveAll(tempDir)
+		tempDir := commontesting.SafeTempDir(t)
 
 		// Create a deep chain of symlinks (more than MaxSymlinkDepth=40)
 		// Create initial target file
 		targetFile := filepath.Join(tempDir, "target_sudo")
-		err = os.WriteFile(targetFile, []byte("#!/bin/bash\necho sudo"), 0o755)
+		err := os.WriteFile(targetFile, []byte("#!/bin/bash\necho sudo"), 0o755)
 		require.NoError(t, err)
 
 		// Create 45 symlinks (exceeds MaxSymlinkDepth=40)
@@ -1359,9 +1355,7 @@ func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 
 func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 	// Create temporary directory for testing
-	tmpDir, err := os.MkdirTemp("", "setuid_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	tmpDir := commontesting.SafeTempDir(t)
 
 	t.Run("normal executable without setuid/setgid", func(t *testing.T) {
 		// Create a normal executable
@@ -1410,9 +1404,7 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 
 func TestHasSetuidOrSetgidBit(t *testing.T) {
 	// Create temporary directory for testing
-	tmpDir, err := os.MkdirTemp("", "setuid_helper_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	tmpDir := commontesting.SafeTempDir(t)
 
 	t.Run("normal file", func(t *testing.T) {
 		normalFile := filepath.Join(tmpDir, "normal")

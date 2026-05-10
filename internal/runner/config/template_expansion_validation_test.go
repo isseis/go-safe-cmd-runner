@@ -19,7 +19,7 @@ func TestValidateTemplateVars(t *testing.T) {
 		templateName string
 		globalVars   map[string]string
 		wantErr      bool
-		errType      interface{}
+		errType      any
 	}{
 		{
 			name: "success: no variable references",
@@ -231,7 +231,7 @@ func TestValidateFieldVars(t *testing.T) {
 		fieldName    string
 		globalVars   map[string]string
 		wantErr      bool
-		errType      interface{}
+		errType      any
 	}{
 		{
 			name:         "success: no variables",
@@ -323,7 +323,7 @@ func TestValidateAllTemplates(t *testing.T) {
 		templates  map[string]runnertypes.CommandTemplate
 		globalVars map[string]string
 		wantErr    bool
-		errType    interface{}
+		errType    any
 	}{
 		{
 			name:       "success: no templates",

@@ -387,12 +387,12 @@ func main() {
 		dynsyms, err := elfFile.DynamicSymbols()
 		require.NoError(t, err, ".dynsym must be present in a CGO binary")
 
-		networkSyms := map[string]bool{
-			"socket": true, "connect": true, "bind": true,
-			"sendto": true, "recvfrom": true, "getaddrinfo": true,
+		networkSyms := map[string]struct{}{
+			"socket": {}, "connect": {}, "bind": {},
+			"sendto": {}, "recvfrom": {}, "getaddrinfo": {},
 		}
 		for _, sym := range dynsyms {
-			if networkSyms[sym.Name] {
+			if _, found := networkSyms[sym.Name]; found {
 				t.Errorf(".dynsym contains network symbol %q; CGO binary should not have it", sym.Name)
 			}
 		}

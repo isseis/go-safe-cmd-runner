@@ -10,16 +10,16 @@ import (
 // SensitivePatterns contains compiled patterns for detecting sensitive information
 type SensitivePatterns struct {
 	// AllowedEnvVars contains environment variable names that are safe to log
-	AllowedEnvVars map[string]bool
+	AllowedEnvVars map[string]struct{}
 	// Combined patterns for efficient matching - always guaranteed to be non-nil
 	combinedCredentialPattern *regexp.Regexp
 	combinedEnvVarPattern     *regexp.Regexp
 }
 
 // NewSensitivePatterns creates a new SensitivePatterns with given pattern strings
-func NewSensitivePatterns(credentialPatterns, envVarPatterns []string, allowedEnvVars map[string]bool) (*SensitivePatterns, error) {
+func NewSensitivePatterns(credentialPatterns, envVarPatterns []string, allowedEnvVars map[string]struct{}) (*SensitivePatterns, error) {
 	if allowedEnvVars == nil {
-		allowedEnvVars = make(map[string]bool)
+		allowedEnvVars = make(map[string]struct{})
 	}
 
 	patterns := &SensitivePatterns{
@@ -62,22 +62,22 @@ func DefaultSensitivePatterns() *SensitivePatterns {
 	}
 
 	// Common safe environment variables
-	allowedEnvVars := map[string]bool{
-		"PATH":     true,
-		"HOME":     true,
-		"USER":     true,
-		"LANG":     true,
-		"SHELL":    true,
-		"TERM":     true,
-		"PWD":      true,
-		"OLDPWD":   true,
-		"HOSTNAME": true,
-		"LOGNAME":  true,
-		"TZ":       true,
-		"DISPLAY":  true,
-		"TMPDIR":   true,
-		"EDITOR":   true,
-		"PAGER":    true,
+	allowedEnvVars := map[string]struct{}{
+		"PATH":     {},
+		"HOME":     {},
+		"USER":     {},
+		"LANG":     {},
+		"SHELL":    {},
+		"TERM":     {},
+		"PWD":      {},
+		"OLDPWD":   {},
+		"HOSTNAME": {},
+		"LOGNAME":  {},
+		"TZ":       {},
+		"DISPLAY":  {},
+		"TMPDIR":   {},
+		"EDITOR":   {},
+		"PAGER":    {},
 	}
 
 	// Use constructor to ensure patterns are always properly initialized
@@ -137,7 +137,7 @@ func (sp *SensitivePatterns) IsSensitiveEnvVar(name string) bool {
 	upperName := strings.ToUpper(name)
 
 	// Check if it's explicitly allowed
-	if sp.AllowedEnvVars[upperName] {
+	if _, ok := sp.AllowedEnvVars[upperName]; ok {
 		return false
 	}
 	return sp.combinedEnvVarPattern.MatchString(upperName)

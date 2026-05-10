@@ -124,7 +124,7 @@ func TestGenerateRunID_Uniqueness(t *testing.T) {
 	ids := make(map[string]bool)
 	iterations := 100
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		id := GenerateRunID()
 
 		assert.NotEmpty(t, id, "GenerateRunID() returned empty string")

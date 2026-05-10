@@ -23,7 +23,7 @@ func BenchmarkValidator_Verify(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		err := validator.Verify(testFile)
 		if err != nil {
 			b.Fatalf("Verify failed: %v", err)

@@ -16,7 +16,7 @@ func BenchmarkExpandGlobal(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = ExpandGlobal(spec)
 	}
 }
@@ -35,7 +35,7 @@ func BenchmarkExpandGlobalWithFromEnv(b *testing.B) {
 	b.Setenv("HOME", "/home/testuser")
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = ExpandGlobal(spec)
 	}
 }
@@ -59,7 +59,7 @@ func BenchmarkExpandGroup(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = ExpandGroup(spec, rg)
 	}
 }
@@ -86,7 +86,7 @@ func BenchmarkExpandCommand(b *testing.B) {
 	rGlobal := &runnertypes.RuntimeGlobal{Spec: &runnertypes.GlobalSpec{}, ExpandedVars: map[string]string{}, ExpandedEnv: map[string]string{}}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = ExpandCommand(spec, nil, rGroup, rGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 	}
 }
@@ -117,7 +117,7 @@ func BenchmarkExpandGlobalComplex(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = ExpandGlobal(spec)
 	}
 }
@@ -166,7 +166,7 @@ func BenchmarkExpandCommandWithEnvImport(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = ExpandCommand(cmdSpec, nil, groupRuntime, globalRuntime, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 	}
 }
@@ -219,7 +219,7 @@ func BenchmarkExpandMultipleCommandsWithEnvImport(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		// Expand all commands (simulating loop in group_executor)
 		for _, cmdSpec := range cmdSpecs {
 			_, _ = ExpandCommand(cmdSpec, nil, groupRuntime, globalRuntime, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())

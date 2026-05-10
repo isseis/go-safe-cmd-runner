@@ -122,7 +122,7 @@ func TestMetrics_ConcurrentAccess(t *testing.T) {
 
 	// Writer goroutine
 	go func() {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			metrics.RecordElevationSuccess(time.Millisecond)
 		}
 		done <- true
@@ -130,7 +130,7 @@ func TestMetrics_ConcurrentAccess(t *testing.T) {
 
 	// Reader goroutine
 	go func() {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			snapshot := metrics.GetSnapshot()
 			// Just verify we can read without panicking
 			_ = snapshot.ElevationAttempts
@@ -182,7 +182,7 @@ func TestUpdateSuccessRate_AllCases(t *testing.T) {
 
 	t.Run("all_successes", func(t *testing.T) {
 		metrics := &privilege.Metrics{}
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			metrics.RecordElevationSuccess(time.Millisecond)
 		}
 		snapshot := metrics.GetSnapshot()
@@ -192,7 +192,7 @@ func TestUpdateSuccessRate_AllCases(t *testing.T) {
 
 	t.Run("all_failures", func(t *testing.T) {
 		metrics := &privilege.Metrics{}
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			metrics.RecordElevationFailure(errors.New("test error"))
 		}
 		snapshot := metrics.GetSnapshot()

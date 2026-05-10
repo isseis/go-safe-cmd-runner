@@ -26,13 +26,13 @@ func getGroupMembers(gid uint32) ([]string, error) {
 	}
 
 	// Start with explicit members from /etc/group
-	memberSet := make(map[string]bool)
+	memberSet := make(map[string]struct{})
 	if groupEntry.members != "" {
 		members := strings.Split(groupEntry.members, ",")
 		for _, member := range members {
 			member = strings.TrimSpace(member)
 			if member != "" {
-				memberSet[member] = true
+				memberSet[member] = struct{}{}
 			}
 		}
 	}
@@ -45,7 +45,7 @@ func getGroupMembers(gid uint32) ([]string, error) {
 
 	// Add primary group users to the member set
 	for _, user := range primaryUsers {
-		memberSet[user] = true
+		memberSet[user] = struct{}{}
 	}
 
 	// Convert map to slice

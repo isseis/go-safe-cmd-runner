@@ -2,10 +2,11 @@
 package libccache
 
 import (
+	"cmp"
 	"debug/elf"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
@@ -123,11 +124,11 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
 	}
 
 	// Sort by Number ascending, then Name ascending.
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].Number != entries[j].Number {
-			return entries[i].Number < entries[j].Number
+	slices.SortFunc(entries, func(a, b WrapperEntry) int {
+		if a.Number != b.Number {
+			return cmp.Compare(a.Number, b.Number)
 		}
-		return entries[i].Name < entries[j].Name
+		return cmp.Compare(a.Name, b.Name)
 	})
 
 	return entries, nil

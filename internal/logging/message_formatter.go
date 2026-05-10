@@ -2,6 +2,7 @@ package logging
 
 import (
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -160,12 +161,7 @@ func (f *DefaultMessageFormatter) shouldSkipInteractiveAttr(key string) bool {
 		"interactive_mode", "color_support", "slack_enabled",
 	}
 
-	for _, skipKey := range skipKeys {
-		if key == skipKey {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(skipKeys, key)
 }
 
 // FormatLogFileHint formats a log file hint message for error-level logs.

@@ -1,7 +1,8 @@
 package libccache
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
@@ -69,7 +70,7 @@ func (m *ImportSymbolMatcher) Match(importSymbols []string, wrappers []WrapperEn
 		}
 		result = append(result, info)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].Number < result[j].Number })
+	slices.SortFunc(result, func(a, b common.SyscallInfo) int { return cmp.Compare(a.Number, b.Number) })
 
 	return result
 }
@@ -120,7 +121,7 @@ func (m *ImportSymbolMatcher) MatchWithMethod(
 		}
 		result = append(result, info)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].Number < result[j].Number })
+	slices.SortFunc(result, func(a, b common.SyscallInfo) int { return cmp.Compare(a.Number, b.Number) })
 
 	return result
 }

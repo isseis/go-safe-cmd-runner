@@ -4,6 +4,7 @@ package machodylib
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -11,7 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -333,8 +334,8 @@ func buildSubCacheList(f *os.File, mainPath string, cacheBase uint64) ([]subCach
 
 	// dyld_subcache_entry order is not guaranteed to be VM-address order.
 	// Sort here because downstream range selection assumes monotonic vmBase.
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].vmBase < result[j].vmBase
+	slices.SortFunc(result, func(a, b subCacheFile) int {
+		return cmp.Compare(a.vmBase, b.vmBase)
 	})
 
 	return result, nil

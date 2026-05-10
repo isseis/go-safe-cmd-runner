@@ -33,9 +33,7 @@ func (m *Metrics) RecordElevationSuccess(duration time.Duration) {
 		m.AverageElevationTime = m.TotalElevationTime / time.Duration(m.ElevationSuccesses)
 	}
 
-	if duration > m.MaxElevationTime {
-		m.MaxElevationTime = duration
-	}
+	m.MaxElevationTime = max(m.MaxElevationTime, duration)
 
 	m.LastElevationTime = time.Now()
 	m.updateSuccessRate()

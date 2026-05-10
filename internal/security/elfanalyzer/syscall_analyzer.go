@@ -835,10 +835,7 @@ func (a *SyscallAnalyzer) backwardScanX86WithRegCopy(
 		return number, method, detail
 	}
 
-	probeLimit := windowStart + x86Decoder.MaxInstructionLength()
-	if probeLimit > syscallOffset {
-		probeLimit = syscallOffset
-	}
+	probeLimit := min(windowStart+x86Decoder.MaxInstructionLength(), syscallOffset)
 	for candidateStart := windowStart + 1; candidateStart <= probeLimit; candidateStart++ {
 		candidateNumber, candidateMethod, candidateDetail, _ := a.backwardScanX86WithWindow(
 			code,

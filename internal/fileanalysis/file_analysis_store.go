@@ -160,9 +160,7 @@ func (s *Store) Update(filePath common.ResolvedPath, updateFn func(*Record) erro
 	// Try to load existing record
 	record, err := s.Load(filePath)
 	if err != nil {
-		var schemaErr *SchemaVersionMismatchError
-		switch {
-		case errors.As(err, &schemaErr):
+		if schemaErr, ok := errors.AsType[*SchemaVersionMismatchError](err); ok {
 			if schemaErr.Actual > schemaErr.Expected {
 				// Future schema: do NOT overwrite (forward compatibility protection)
 				return fmt.Errorf("cannot update record: %w", err)
@@ -170,10 +168,10 @@ func (s *Store) Update(filePath common.ResolvedPath, updateFn func(*Record) erro
 			// Older schema (e.g. v1 record, current binary expects v2):
 			// allow --force to overwrite by treating it as a fresh record.
 			record = &Record{}
-		case errors.Is(err, ErrRecordNotFound) || errors.As(err, new(*RecordCorruptedError)):
+		} else if _, isCorrupted := errors.AsType[*RecordCorruptedError](err); errors.Is(err, ErrRecordNotFound) || isCorrupted {
 			// Create a new record if it's not found or if the existing one is corrupted.
 			record = &Record{}
-		default:
+		} else {
 			// For any other unknown error, fail safely.
 			return fmt.Errorf("failed to load existing record: %w", err)
 		}

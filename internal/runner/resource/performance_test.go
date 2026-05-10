@@ -47,7 +47,7 @@ func BenchmarkDryRunPerformance(b *testing.B) {
 			ctx := context.Background()
 
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				dryRunOpts := &DryRunOptions{
 					DetailLevel:   DetailLevelDetailed,
 					OutputFormat:  OutputFormatText,
@@ -118,7 +118,7 @@ func BenchmarkFormatterPerformance(b *testing.B) {
 		}
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			_, err := formatter.FormatResult(result, opts)
 			if err != nil {
 				b.Fatalf("formatting error: %v", err)
@@ -135,7 +135,7 @@ func BenchmarkFormatterPerformance(b *testing.B) {
 		}
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			_, err := formatter.FormatResult(result, opts)
 			if err != nil {
 				b.Fatalf("formatting error: %v", err)
@@ -178,7 +178,7 @@ func BenchmarkResourceManagerModeSwitch(b *testing.B) {
 		require.NoError(b, err)
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			_, _, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 			if err != nil {
 				b.Fatalf("unexpected error: %v", err)
@@ -212,7 +212,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		dryRunOpts := &DryRunOptions{
 			DetailLevel:   DetailLevelDetailed,
 			OutputFormat:  OutputFormatText,

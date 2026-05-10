@@ -157,14 +157,15 @@ func Parse(filePath string, fs safefileio.FileSystem) (*Info, error) {
 // trustedEnvPaths is the set of absolute paths recognised as the system env(1)
 // binary. Keyed on the raw (pre-symlink-resolution) shebang token so that
 // systems where /usr/bin/env is a symlink (e.g., to busybox) work correctly.
-var trustedEnvPaths = map[string]bool{
-	"/usr/bin/env": true,
-	"/bin/env":     true,
+var trustedEnvPaths = map[string]struct{}{
+	"/usr/bin/env": {},
+	"/bin/env":     {},
 }
 
 // isTrustedEnvBinary reports whether path is a known system env(1) binary.
 func isTrustedEnvBinary(path string) bool {
-	return trustedEnvPaths[path]
+	_, ok := trustedEnvPaths[path]
+	return ok
 }
 
 // parseEnvForm handles "#!/usr/bin/env <cmd>" shebangs.

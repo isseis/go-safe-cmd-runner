@@ -2268,7 +2268,7 @@ func BenchmarkNewDefaultGroupExecutor(b *testing.B) {
 
 	var ge *DefaultGroupExecutor
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		ge = NewDefaultGroupExecutor(
 			nil, config, nil, nil, mockRM, "bench-test",
 			WithGroupNotificationFunc(nil),
@@ -2293,7 +2293,7 @@ func BenchmarkNewDefaultGroupExecutor_NoOptions(b *testing.B) {
 
 	var ge *DefaultGroupExecutor
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		ge = NewDefaultGroupExecutor(
 			nil, config, nil, nil, mockRM, "bench-test",
 		)

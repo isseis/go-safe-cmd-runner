@@ -1,9 +1,10 @@
 package elfanalyzer
 
 import (
+	"cmp"
 	"debug/elf"
 	"encoding/binary"
-	"sort"
+	"slices"
 
 	"golang.org/x/arch/arm64/arm64asm"
 )
@@ -198,11 +199,11 @@ func (r *ARM64GoWrapperResolver) sortAndDedupWrapperRanges() {
 	if len(r.wrapperRanges) <= 1 {
 		return
 	}
-	sort.Slice(r.wrapperRanges, func(i, j int) bool {
-		if r.wrapperRanges[i].start == r.wrapperRanges[j].start {
-			return r.wrapperRanges[i].end < r.wrapperRanges[j].end
+	slices.SortFunc(r.wrapperRanges, func(a, b wrapperRange) int {
+		if a.start == b.start {
+			return cmp.Compare(a.end, b.end)
 		}
-		return r.wrapperRanges[i].start < r.wrapperRanges[j].start
+		return cmp.Compare(a.start, b.start)
 	})
 	dedup := r.wrapperRanges[:0]
 	for i := range r.wrapperRanges {
