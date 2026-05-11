@@ -17,6 +17,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
  - Use Mermaid syntax for diagrams.
   - Follow the style and legend used in `docs/tasks/0030_verify_files_variable_expansion/02_architecture.md`.
   - Use a cylinder shape for "data" nodes instead of the default rectangle (in Mermaid flowcharts a cylinder node can be written as `[(data)]`).
+  - **Node label quoting**: Always wrap node labels in double quotes if they contain special characters (parentheses, brackets, colons, slashes, etc.). Example: `A["label (with parens)"]`
+  - **Line breaks in labels**: Use `<br>` for line breaks inside node labels, not `\n`. Example: `A["line1<br>line2"]`
 
 ### Translation Guidelines (Japanese to English)
 
