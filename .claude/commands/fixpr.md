@@ -55,7 +55,7 @@ gh api graphql -F owner=OWNER -F repo=REPO -F number=NUMBER -f query='
 4. 対応内容を PR コメントとしてリプライする。
 
    ```
-   gh api repos/OWNER/REPO/pulls/comments/COMMENT_ID/replies \
+   gh api repos/OWNER/REPO/pulls/NUMBER/comments/COMMENT_ID/replies \
      -X POST -f body="対応内容の説明"
    ```
 
