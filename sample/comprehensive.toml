@@ -22,6 +22,8 @@ env_allowed = [
     "GOTRACEBACK",
 ]
 # Slack webhook URL host allowlist (required when GSCR_SLACK_WEBHOOK_URL_* env vars are set)
+# Set GSCR_SLACK_WEBHOOK_URL_ERROR (and optionally GSCR_SLACK_WEBHOOK_URL_SUCCESS)
+# in the environment before running to enable Slack notifications.
 slack_allowed_host = "hooks.slack.com"
 verify_files = ["/etc/passwd", "/bin/sh"]
 
