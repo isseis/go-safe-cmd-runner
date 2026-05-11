@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Quick Links
 
 **Development Guides:**
-- [Requirements and Acceptance Criteria Process](docs/dev/developer_guide/requirements_process.md) - Process for implementing new features
-- [Test Organization Guide](docs/dev/developer_guide/test_organization.md) - Test helper file organization
+- Requirements and Acceptance Criteria Process: [EN](docs/dev/developer_guide/requirements_process.md) / [JA](docs/dev/developer_guide/requirements_process.ja.md) - Process for implementing new features
+- Test Organization Guide: [EN](docs/dev/developer_guide/test_organization.md) / [JA](docs/dev/developer_guide/test_organization.ja.md) - Test helper file organization
 - [Package Reference](docs/dev/developer_guide/package_reference.md) - Detailed package structure
 
 ## Documents

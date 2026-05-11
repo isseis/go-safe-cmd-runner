@@ -81,13 +81,13 @@
 
 ## 3. 詳細仕様 — 意図的にスキップ
 
-`03_detailed_specification.md` はもはや作成しない。実際に、詳細な事前実装仕様を書くことは最終的なコードを複製し、コードから乖離する傾向があるためである。代わりに：
+`03_detailed_specification.md` はもはや作成しない。というのも、詳細な事前実装仕様を作成することは、最終的なコードの重複 (duplication) を招き、実装との乖離が生じやすいためである。代わりに：
 
 - 高レベル設計を `02_architecture.md` にまとめる
 - 作業アウトライン（チェックボックス付き）と AC トレーサビリティを `04_implementation_plan.md` にまとめる
 - 実装自体を具体的な詳細の権威ある記録とする
 
-後続ファイルの番号付けは維持する（`04_implementation_plan.md` は名前を保持）。既存タスクとの後方互換性のため。
+既存タスクとの後方互換性 (backward compatibility) を維持するため、後続ファイルの番号付け（`04_implementation_plan.md` など）は変更しない。
 
 ## 4. 実装計画 (`docs/tasks/XXXX_feature/04_implementation_plan.md`)
 
