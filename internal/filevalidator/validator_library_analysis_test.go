@@ -281,6 +281,24 @@ func TestAnalyzeLibraries_excludesWrapperAndVDSO(t *testing.T) {
 	assert.Equal(t, 1, bin.calls)
 }
 
+// TestAnalyzeLibraries_excludesImplicitSystemLib verifies that implicit system
+// libraries such as libselinux are excluded from recursive library analysis.
+func TestAnalyzeLibraries_excludesImplicitSystemLib(t *testing.T) {
+	bin := &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}}
+	v := validatorWithTempHashDir(t, ValidatorConfig{BinaryAnalyzer: bin})
+	storeDir := filepath.Join(t.TempDir(), "dynlibstore")
+	store, err := dynamicanalysis.New(storeDir, v)
+	require.NoError(t, err)
+	v.SetDynamicLibAnalysisStore(store)
+
+	record := &fileanalysis.Record{DynLibDeps: []fileanalysis.LibEntry{
+		{SOName: "libselinux.so.1", Path: requireWithSocketELF(t), Hash: "sha256:selinux"},
+	}}
+
+	require.NoError(t, v.analyzeLibraries(record))
+	assert.Equal(t, 0, bin.calls)
+}
+
 // TestAnalyzeLibraries_sessionCache verifies that repeated analysis of the same
 // library path and hash within a single session uses the in-session cache.
 func TestAnalyzeLibraries_sessionCache(t *testing.T) {
