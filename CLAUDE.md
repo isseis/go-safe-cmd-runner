@@ -175,8 +175,9 @@ let the implementation itself record the concrete details.
 
 **CRITICAL**
 - Don't run following commands without user's explicit approval
-  - commands interacting with network, e.g. git push, git pull
-  - git commit
+  - commands interacting with network, e.g. git pull
+  - merging pull requests on GitHub
+- `git commit` and `git push` may be executed without explicit approval
 
 ## Tool Execution Safety (TEMPORARY – Oct 2025)
 
