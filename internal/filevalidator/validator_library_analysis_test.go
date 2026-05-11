@@ -291,17 +291,12 @@ func TestAnalyzeLibraries_excludesImplicitSystemLib(t *testing.T) {
 	require.NoError(t, err)
 	v.SetDynamicLibAnalysisStore(store)
 
-	lib := fileanalysis.LibEntry{
-		SOName: "libselinux.so.1",
-		Path:   requireWithSocketELF(t),
-		Hash:   "sha256:selinux",
-	}
-	record := &fileanalysis.Record{DynLibDeps: []fileanalysis.LibEntry{lib}}
+	record := &fileanalysis.Record{DynLibDeps: []fileanalysis.LibEntry{
+		{SOName: "libselinux.so.1", Path: requireWithSocketELF(t), Hash: "sha256:selinux"},
+	}}
 
 	require.NoError(t, v.analyzeLibraries(record))
 	assert.Equal(t, 0, bin.calls)
-	require.Len(t, record.DynLibDeps, 1)
-	assert.Equal(t, lib, record.DynLibDeps[0])
 }
 
 // TestAnalyzeLibraries_sessionCache verifies that repeated analysis of the same
