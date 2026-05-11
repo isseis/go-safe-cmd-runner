@@ -229,20 +229,28 @@ $ ./runner --config backup.toml --keep-temp-dirs
 
 ## セキュリティ
 
-### [セキュリティリスク評価](security-risk-assessment.ja.md)
+### [リスク評価ガイド](risk_assessment.ja.md) ⭐ 設定時に参照
 
-コマンドのリスクレベルと評価基準について解説します。
+`risk_level` の設定値の根拠となる、リスク算出の仕組みを解説します。
 
 **内容:**
-- リスクレベルの定義（low, medium, high, critical）
-- コマンドごとのリスク評価
-- リスクベースの制御方法
+- リスク評価の概念とフロー
+- コマンド名・引数ベースの評価ルール
+- バイナリ解析（`record` コマンド）に基づくリスク算出ルール
+- フェイルセーフ動作
+- `record --debug-info` を使った算出リスクの確認方法
 
-**リスクレベル:**
-- **Low**: 基本的な読み取り操作（ls, cat, grep）
-- **Medium**: ファイル変更、パッケージ管理（cp, mv, apt）
-- **High**: システム管理、破壊的操作（systemctl, rm -rf）
-- **Critical**: 権限昇格（sudo, su）- 常にブロック
+**こんな時に:**
+- `risk_level` に何を設定すべきか迷ったとき
+- runner がコマンドを拒否した理由を調べるとき
+
+[詳細はこちら →](risk_assessment.ja.md)
+
+---
+
+### [セキュリティリスク評価レポート](security-risk-assessment.ja.md)
+
+go-safe-cmd-runner のセキュリティ設計に関する監査レポートです。システムのセキュリティアーキテクチャや設計判断の根拠を知りたい方向け。日常的な設定作業には [リスク評価ガイド](risk_assessment.ja.md) を参照してください。
 
 [詳細はこちら →](security-risk-assessment.ja.md)
 
@@ -372,7 +380,7 @@ A: 主な注意点：
 - 設定ファイルと実行バイナリは必ずハッシュ値を記録してください
 - 環境変数は必要最小限のみ許可リストに追加してください
 - リスクレベルを適切に設定してください
-- 詳細は [セキュリティリスク評価](security-risk-assessment.ja.md) を参照
+- 詳細は [リスク評価ガイド](risk_assessment.ja.md) を参照
 
 ---
 
@@ -399,7 +407,7 @@ A: 主な注意点：
 上記に加えて：
 
 9. [TOML設定 - ベストプラクティス](toml_config/10_best_practices.ja.md) - 設計パターン
-10. [セキュリティリスク評価](security-risk-assessment.ja.md) - セキュリティモデル
+10. [リスク評価ガイド](risk_assessment.ja.md) - リスクの算出方法と設定指針
 11. [開発者向けドキュメント](../dev/) - アーキテクチャとセキュリティ設計
 12. [トラブルシューティング](toml_config/11_troubleshooting.ja.md) - 問題解決スキル
 

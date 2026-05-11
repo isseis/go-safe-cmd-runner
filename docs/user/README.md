@@ -229,20 +229,28 @@ $ ./runner --config backup.toml --keep-temp-dirs
 
 ## Security
 
-### [Security Risk Assessment](security-risk-assessment.md)
+### [Risk Assessment Guide](risk_assessment.md) ⭐ Reference when configuring
 
-Explains command risk levels and evaluation criteria.
+Explains the risk calculation mechanism that determines the basis for your `risk_level` settings.
 
 **Contents:**
-- Risk level definitions (low, medium, high, critical)
-- Risk assessment by command
-- Risk-based control methods
+- Risk assessment concept and flow
+- Command name/argument evaluation rules
+- Binary analysis (via `record` command) risk calculation rules
+- Fail-closed behavior
+- How to verify the calculated risk using `record --debug-info`
 
-**Risk Levels:**
-- **Low**: Basic read operations (ls, cat, grep)
-- **Medium**: File modifications, package management (cp, mv, apt)
-- **High**: System administration, destructive operations (systemctl, rm -rf)
-- **Critical**: Privilege escalation (sudo, su) - Always blocked
+**Use this when:**
+- You are unsure what value to set for `risk_level`
+- You are investigating why the runner rejected a command
+
+[Learn more →](risk_assessment.md)
+
+---
+
+### [Security Risk Assessment Report](security-risk-assessment.md)
+
+A security audit report on the go-safe-cmd-runner security design. Intended for those who want to understand the system's security architecture and design rationale. For day-to-day configuration, see the [Risk Assessment Guide](risk_assessment.md).
 
 [Learn more →](security-risk-assessment.md)
 
@@ -372,7 +380,7 @@ A: Key considerations:
 - Always record hash values for configuration files and executable binaries
 - Only add necessary environment variables to the allowlist
 - Set appropriate risk levels
-- See [Security Risk Assessment](security-risk-assessment.md) for details
+- See [Risk Assessment Guide](risk_assessment.md) for details on risk levels
 
 ---
 
@@ -399,7 +407,7 @@ In addition to the above:
 In addition to the above:
 
 9. [TOML Configuration - Best Practices](toml_config/10_best_practices.md) - Design patterns
-10. [Security Risk Assessment](security-risk-assessment.md) - Security model
+10. [Risk Assessment Guide](risk_assessment.md) - How risk is calculated and how to configure it
 11. [Developer Documentation](../dev/) - Architecture and security design
 12. [Troubleshooting](toml_config/11_troubleshooting.md) - Problem-solving skills
 
