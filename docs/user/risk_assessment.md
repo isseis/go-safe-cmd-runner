@@ -126,15 +126,13 @@ With `--debug-info`, the analysis record includes:
 
 ### When binary analysis detects network usage
 
-Check with `record --debug-info` and decide:
+When binary analysis calculates `medium`, you must set `risk_level` to `"medium"` or higher — the runner will reject the command with any lower setting. Use `record --debug-info` to inspect what was detected, then decide:
 
-| Situation | Recommendation |
-|-----------|---------------|
+| Situation | Action |
+|-----------|--------|
 | Command that genuinely uses the network (wget, curl, etc.) | Set `"medium"` |
-| Command that has network APIs but does not use them in practice | Set `"medium"` (conservative) |
-| Clearly identified false positive | Report to the development team for investigation |
-
-> **Note**: Do not set `"low"` as a workaround for a false positive. Doing so means real network access would go undetected.
+| Command that has network APIs but does not use them in practice | Set `"medium"` (required; a lower value causes rejection) |
+| Believed to be a false positive | Report to the development team for investigation. Use `"medium"` until the investigation concludes |
 
 ### Configuration examples
 
