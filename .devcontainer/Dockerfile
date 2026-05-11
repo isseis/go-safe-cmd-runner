@@ -35,6 +35,7 @@ ENV LANG=ja_JP.UTF-8
 ARG GO_VERSION=1.26.3
 ARG GOLANGCI_LINT_VERSION=2.11.4
 ARG GOFUMPT_VERSION=v0.6.0
+ARG DEADCODE_VERSION=v0.45.0
 ARG TARGETARCH
 RUN set -eux \
     && TARGETARCH="${TARGETARCH:-$(dpkg --print-architecture)}" \
@@ -61,6 +62,8 @@ RUN set -eux \
     && rm /tmp/golangci-lint.tar.gz \
     && /usr/local/go/bin/go install mvdan.cc/gofumpt@${GOFUMPT_VERSION} \
     && mv /root/go/bin/gofumpt /usr/local/bin/gofumpt \
+    && /usr/local/go/bin/go install golang.org/x/tools/cmd/deadcode@${DEADCODE_VERSION} \
+    && mv /root/go/bin/deadcode /usr/local/bin/deadcode \
     && rm -rf /root/go /root/.cache/go-build
 
 # GitHub CLI (gh) のインストール
