@@ -1025,19 +1025,14 @@ risk_level = "risk_level"
 | Level | Description | Examples |
 |-------|-------------|----------|
 | **low** | Low risk | Read-only commands, information retrieval |
-| **medium** | Medium risk | File creation/modification, network access |
-| **high** | High risk | System configuration changes, package installation |
+| **medium** | Medium risk | Network communication, file creation/modification |
+| **high** | High risk | Dynamic code execution, process spawning, system changes |
 
 #### Risk Assessment Mechanism
 
-go-safe-cmd-runner automatically assesses command risk from the following elements:
+The runner automatically calculates command risk before execution and rejects the command if the calculated value exceeds `risk_level`. Risk is calculated from two independent sources: command name/argument evaluation (assessed on every run) and binary static analysis performed by the `record` command (result reused). The final risk is the maximum across all factors.
 
-1. **Command Type**: Dangerous commands like rm, chmod, chown
-2. **Argument Patterns**: Recursive deletion (-rf), forced execution (-f), etc.
-3. **Privilege Escalation**: Use of run_as_user, run_as_group
-4. **Network Communication**: Whether the command makes network connections
-5. **External Program Execution**: Whether the command launches another program
-6. **Dynamic Library Loading**: Whether the command loads additional libraries at runtime
+For the complete calculation rules (what is detected and mapped to medium/high) and how to verify the calculated risk, see the [Risk Assessment Guide](../risk_assessment.md).
 
 #### Configuration Examples
 
