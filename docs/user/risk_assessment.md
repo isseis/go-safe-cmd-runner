@@ -68,7 +68,6 @@ Risk calculation has **two independent sources**. The final risk is the maximum 
 |--------------------|----------------|
 | Privilege-escalation commands: `sudo`/`su`/`doas`, etc. | `critical` |
 | Destructive file operations: `rm -rf`, `dd`, etc. | `high` |
-| Privilege change via `run_as_user`/`run_as_group` | `high` |
 | System-modifying commands: `systemctl`/`apt`/`dpkg`, etc. | `medium` |
 | None of the above | `low` |
 
@@ -78,26 +77,27 @@ The executable binary is statically analyzed to determine which system calls and
 
 | Detected capability | Calculated risk | Reason |
 |--------------------|----------------|--------|
-| Network APIs: `socket`/`connect`/`bind`/`accept`/`send`/`recv`, etc. | `medium` | May communicate over the network |
+| Socket APIs: `socket`/`connect`/`bind`/`accept`/`send`/`recv`, etc. | `medium` | May communicate over the network or IPC (any socket family) |
 | DNS resolution APIs: `getaddrinfo`/`gethostbyname`, etc. | `medium` | May communicate over the network |
-| Unix domain sockets | `medium` | May perform inter-process communication |
 | Dynamic library loading: `dlopen`/`dlsym`/`dlvsym` | `high` | Can load and execute arbitrary code at runtime |
 | Process creation: `execve`/`execveat` | `high` | Can launch arbitrary commands |
 | Dynamic code execution: `mprotect`+`PROT_EXEC`/`pkey_mprotect` | `high` | Enables arbitrary code execution (e.g., JIT) |
 | None of the above detected | `low` | |
 
-**Analysis method**: The ELF binary's dynamic symbol table (`.dynsym`) and machine instructions are scanned statically. Shared libraries that the binary depends on are also analyzed recursively (OS ABI libraries such as libc are excluded).
+**Analysis method**: On Linux, the ELF binary's dynamic symbol table (`.dynsym`) and machine instructions are scanned statically. On macOS, the equivalent Mach-O structures are analyzed. Shared libraries that the binary depends on are also analyzed recursively (OS ABI libraries such as libc are excluded).
 
 ### 3.3 Fail-Closed Behavior (analysis errors and inconsistencies)
 
-When the reliability of analysis cannot be confirmed, everything defaults to `high` (fail-safe design):
+When a known inconsistency is detected, execution is treated as high risk. For unexpected errors, execution fails with an error rather than defaulting to a risk level.
 
-| Condition | Calculated risk |
-|-----------|----------------|
-| Analysis record does not exist | `high` |
-| Binary hash does not match the record | `high` |
-| Analysis record schema version is outdated | `high` |
-| Error during binary analysis | `high` |
+| Condition | Behavior |
+|-----------|---------|
+| Binary hash not computed (identity unverified) | Treated as `high` |
+| Analysis record does not exist | Treated as `high` |
+| Binary hash does not match the record | Treated as `high` |
+| Analysis record schema version is outdated | Treated as `high` |
+| Analysis result is inconclusive | Treated as `high` |
+| Unexpected record load error | Execution fails with error |
 
 ## 4. How to Verify the Calculated Risk
 

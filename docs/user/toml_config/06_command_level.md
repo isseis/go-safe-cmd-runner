@@ -1026,7 +1026,7 @@ risk_level = "risk_level"
 |-------|-------------|----------|
 | **low** | Low risk | Read-only commands, information retrieval |
 | **medium** | Medium risk | Network communication, file creation/modification |
-| **high** | High risk | Dynamic code execution, process spawning, system changes |
+| **high** | High risk | Dynamic code execution, process spawning, destructive file operations |
 
 #### Risk Assessment Mechanism
 
