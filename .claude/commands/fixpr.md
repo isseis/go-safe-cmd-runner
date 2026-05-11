@@ -52,11 +52,11 @@ gh api graphql -F owner=OWNER -F repo=REPO -F number=NUMBER -f query='
 1. 指摘に従いコードを修正する。
 2. `make lint` と `make test` を実行し、エラーがないことを確認する。
 3. commit する。
-4. 対応内容を PR コメントとしてリプライする。
+4. 対応内容を PR コメントとしてリプライする（英語で記述する）。
 
    ```
    gh api repos/OWNER/REPO/pulls/NUMBER/comments/COMMENT_ID/replies \
-     -X POST -f body="対応内容の説明"
+     -X POST -f body="Description of the fix in English"
    ```
 
 5. スレッドを resolved にする。
