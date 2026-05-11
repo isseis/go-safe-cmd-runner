@@ -6,13 +6,13 @@ version = "1.0"
 
 [global]
 timeout = 30
-
-# Environment variables needed for Slack notifications
-# The SLACK_WEBHOOK_URL should be set in the environment before running
+# Slack webhook URL host allowlist (required when GSCR_SLACK_WEBHOOK_URL_* env vars are set)
+# Set GSCR_SLACK_WEBHOOK_URL_ERROR (and optionally GSCR_SLACK_WEBHOOK_URL_SUCCESS)
+# in the environment before running to enable Slack notifications.
+slack_allowed_host = "hooks.slack.com"
 env_allowed = [
     "PATH",
     "LANG",
-    "SLACK_WEBHOOK_URL",
 ]
 
 # Group 1: Successful command group

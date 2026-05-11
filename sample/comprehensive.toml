@@ -20,8 +20,9 @@ env_allowed = [
     "NODE_ENV",
     "DEBUG_MODE",
     "GOTRACEBACK",
-    "SLACK_WEBHOOK_URL",
 ]
+# Slack webhook URL host allowlist (required when GSCR_SLACK_WEBHOOK_URL_* env vars are set)
+slack_allowed_host = "hooks.slack.com"
 verify_files = ["/etc/passwd", "/bin/sh"]
 
 # Global internal variables available for TOML expansion
