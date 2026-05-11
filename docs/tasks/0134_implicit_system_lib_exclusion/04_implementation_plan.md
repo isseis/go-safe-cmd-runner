@@ -30,13 +30,13 @@
 
 タスク:
 
-- [ ] P1-1 `implicit_system_libs.go` を作成し、`implicitSystemLibPrefixes`
+- [x] P1-1 `implicit_system_libs.go` を作成し、`implicitSystemLibPrefixes`
        スライスと `IsImplicitSystemLibrary(soname string) bool` を実装する
-- [ ] P1-2 `implicitSystemLibPrefixes` 上部のドックコメントに選定基準（要件 FR-3）
+- [x] P1-2 `implicitSystemLibPrefixes` 上部のドックコメントに選定基準（要件 FR-3）
        および除外しないライブラリの例を英語で記載する
-- [ ] P1-3 各エントリ（初期は `libselinux` 1 件）に「なぜ除外するか」の inline
+- [x] P1-3 各エントリ（初期は `libselinux` 1 件）に「なぜ除外するか」の inline
        コメントを英語で追加する
-- [ ] P1-4 `implicit_system_libs_test.go` を作成し、以下の単体テストを実装する
+- [x] P1-4 `implicit_system_libs_test.go` を作成し、以下の単体テストを実装する
        （既存 `syscall_wrapper_libs_test.go` のスタイルに準拠、`//go:build test` タグ）
   - match: `libselinux`, `libselinux.so.1`, `libselinux.so.2`
   - no match: `libssl.so.3`, `libcurl.so.4`, `libc.so.6`
@@ -51,22 +51,22 @@
 
 タスク:
 
-- [ ] P2-1 `analyzeLibraries` のループ内、`IsSyscallWrapperLibrary` 分岐の直後に
+- [x] P2-1 `analyzeLibraries` のループ内、`IsSyscallWrapperLibrary` 分岐の直後に
        `if binaryanalyzer.IsImplicitSystemLibrary(soName) { continue }` を追加する
-- [ ] P2-2 `validator_library_analysis_test.go` に
+- [x] P2-2 `validator_library_analysis_test.go` に
        `TestAnalyzeLibraries_excludesImplicitSystemLib` を追加し、
        `libselinux.so.1` を含む `DynLibDeps` で `bin.calls` がインクリメントされない
        ことを検証する（既存 `libraryTestBinaryAnalyzer` を再利用）
-- [ ] P2-3 同テスト内で、`DynLibDeps` が呼び出し前後で変更されないこと
+- [x] P2-3 同テスト内で、`DynLibDeps` が呼び出し前後で変更されないこと
        （libselinux エントリが残ること）を assert する（AC-7）
 
 ### Phase 3: 回帰確認
 
 タスク:
 
-- [ ] P3-1 `TestAnalyzeLibraries_excludesWrapperAndVDSO` が手を加えずに通過する
+- [x] P3-1 `TestAnalyzeLibraries_excludesWrapperAndVDSO` が手を加えずに通過する
        ことを確認する（既存の libc/VDSO/libssl 動作の維持）
-- [ ] P3-2 ネットワーク API 検出経路の既存テスト（`network_analyzer_test.go`,
+- [x] P3-2 ネットワーク API 検出経路の既存テスト（`network_analyzer_test.go`,
        `elfanalyzer`/`machoanalyzer` パッケージのテスト）が無変更で通過する
        ことを確認する（AC-3〜AC-6 の回帰確認）
 
@@ -74,22 +74,22 @@
 
 タスク:
 
-- [ ] P4-1 `make fmt`
-- [ ] P4-2 `go test -tags test -v ./internal/security/binaryanalyzer ./internal/filevalidator`
+- [x] P4-1 `make fmt`
+- [x] P4-2 `go test -tags test -v ./internal/security/binaryanalyzer ./internal/filevalidator`
        （ピンポイント実行で早期フィードバック）
-- [ ] P4-3 `make test`
-- [ ] P4-4 `make lint`
+- [x] P4-3 `make test`
+- [x] P4-4 `make lint`
 
 ### Phase 5: 実装計画書レビュー
 
-- [ ] P5-1 AC カバレッジ確認: 要件定義書 AC-1〜AC-9 がすべて計画タスクに紐づくこと
-- [ ] P5-2 テスト十分性確認: 非自明な分岐（プレフィックス境界、除外と非除外）に
+- [x] P5-1 AC カバレッジ確認: 要件定義書 AC-1〜AC-9 がすべて計画タスクに紐づくこと
+- [x] P5-2 テスト十分性確認: 非自明な分岐（プレフィックス境界、除外と非除外）に
        対するテストが揃うこと
-- [ ] P5-3 テスト重複なし確認: 既存テストが既に保証する内容（libc/VDSO スキップ、
+- [x] P5-3 テスト重複なし確認: 既存テストが既に保証する内容（libc/VDSO スキップ、
        libssl 解析継続）を再テストしていないこと
-- [ ] P5-4 既存実装の再利用確認: `matchesKnownPrefix`、`libraryTestBinaryAnalyzer`、
+- [x] P5-4 既存実装の再利用確認: `matchesKnownPrefix`、`libraryTestBinaryAnalyzer`、
        `requireWithSocketELF` を再利用していること
-- [ ] P5-5 コード言語確認: 新規 Go ファイル（`.go`）のコメント・識別子・文字列
+- [x] P5-5 コード言語確認: 新規 Go ファイル（`.go`）のコメント・識別子・文字列
        リテラルに日本語が混入しないこと
 
 ---
@@ -174,6 +174,6 @@
 
 以下をすべて満たした時点で完了とする。
 
-- [ ] Phase 1〜5 の全タスクが完了済み
-- [ ] AC トレーサビリティ表（§2）の全 AC が「対応タスク完了」かつ「検証方法実施済み」
-- [ ] `make fmt` / `make test` / `make lint` がエラーなしで成功
+- [x] Phase 1〜5 の全タスクが完了済み
+- [x] AC トレーサビリティ表（§2）の全 AC が「対応タスク完了」かつ「検証方法実施済み」
+- [x] `make fmt` / `make test` / `make lint` がエラーなしで成功

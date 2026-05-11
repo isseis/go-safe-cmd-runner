@@ -672,6 +672,9 @@ func (v *Validator) analyzeLibraries(record *fileanalysis.Record) error {
 		if binaryanalyzer.IsSyscallWrapperLibrary(soName) {
 			continue
 		}
+		if binaryanalyzer.IsImplicitSystemLibrary(soName) {
+			continue
+		}
 		if _, ok := shebangPaths[lib.Path]; ok {
 			continue
 		}
