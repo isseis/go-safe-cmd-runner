@@ -56,8 +56,9 @@ Work in order.
 5a. **PR checkpoint** (reached when step 4 directed you here instead of step 5).
 - Verify the green gate (defined in `_context.md`) passes. Fix any failures before continuing.
 - Mark the first PR checkpoint checkbox (the green gate confirmation line) as `[x]` and commit.
+- Push the current branch with an upstream tracking reference (e.g. `git push -u origin HEAD`) so `gh pr create` does not prompt interactively for where to push.
 - Run `gh pr create --title "<推奨タイトル>" --body "<レビュー観点を含む本文>"`, using the `推奨タイトル` value from the `### PR-N 作成ポイント` section as `--title` and including the `レビュー観点` items in `--body`. Use explicit flags to avoid interactive prompts.
-- Output the PR URL and mark the second checkbox (`PR を作成した`) as `[x]` and commit.
+- Output the PR URL, mark the second checkbox (`PR を作成した`) as `[x]`, commit, and `git push` so this update is included in the PR before it is merged.
 - Pause and ask the user: "PR-N を作成しました: <URL>。マージされたらお知らせください。"
 - Wait for the user to confirm the PR is merged. Then:
   - Update the local base branch so it includes the merge (e.g. `git checkout main && git pull`), then create a new branch for the next group of work from it (e.g. `git checkout -b <feature-branch>-<N+1>`). Without this, especially after a squash or rebase merge, the new branch would still be based on the pre-merge commits.
