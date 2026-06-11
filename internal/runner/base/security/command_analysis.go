@@ -646,7 +646,9 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, hashDir string) 
 	// Classify commands resolved under the coreutils directory directly,
 	// without binary analysis. On stat error, mirror Step 6 by failing safe to
 	// High so the dry-run display continues rather than aborting; the runtime
-	// path (EvaluateRisk) instead fails closed and blocks the command.
+	// path (EvaluateRisk) instead fails closed and blocks the command. In
+	// practice Step 6 already stats the same path and intercepts such failures,
+	// so this error branch is defensive and effectively unreachable here.
 	coreutilsRisk, coreutilsHandled, coreutilsErr := CoreutilsCommandRisk(resolvedPath, args)
 	if coreutilsErr != nil {
 		return runnertypes.RiskLevelHigh, resolvedPath,

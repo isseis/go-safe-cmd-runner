@@ -128,7 +128,12 @@ func TestAnalyzeCommandSecurity_Coreutils(t *testing.T) {
 	tmp := t.TempDir()
 	SetCoreutilsDirForTest(t, tmp)
 
-	for _, name := range []string{"mkdir", "chmod", "cp", "rm", "coreutils"} {
+	// coreutilsReason is the reason string the coreutils step returns. Asserting
+	// it proves the result was produced by the coreutils step rather than an
+	// earlier step (e.g. Step 5 high-risk pattern matching for "rm -rf").
+	const coreutilsReason = "Coreutils command risk classification"
+
+	for _, name := range []string{"mkdir", "chmod", "cp", "unlink", "rm", "coreutils"} {
 		makeCoreutilsBinary(t, tmp, name)
 	}
 
@@ -137,44 +142,66 @@ func TestAnalyzeCommandSecurity_Coreutils(t *testing.T) {
 		cmd      string
 		args     []string
 		expected runnertypes.RiskLevel
+		// expectedReason, when non-empty, asserts the coreutils step produced
+		// the result. Left empty for cases an earlier step intercepts.
+		expectedReason string
 	}{
 		{
-			name:     "safe command is low",
-			cmd:      filepath.Join(tmp, "mkdir"),
-			args:     nil,
-			expected: runnertypes.RiskLevelLow,
+			name:           "safe command is low",
+			cmd:            filepath.Join(tmp, "mkdir"),
+			args:           nil,
+			expected:       runnertypes.RiskLevelLow,
+			expectedReason: coreutilsReason,
 		},
 		{
-			name:     "permission command is medium",
-			cmd:      filepath.Join(tmp, "chmod"),
-			args:     []string{"+x", "file"},
-			expected: runnertypes.RiskLevelMedium,
+			name:           "permission command is medium",
+			cmd:            filepath.Join(tmp, "chmod"),
+			args:           []string{"+x", "file"},
+			expected:       runnertypes.RiskLevelMedium,
+			expectedReason: coreutilsReason,
 		},
 		{
-			name:     "overwrite command is medium",
-			cmd:      filepath.Join(tmp, "cp"),
-			args:     []string{"a", "b"},
-			expected: runnertypes.RiskLevelMedium,
+			name:           "overwrite command is medium",
+			cmd:            filepath.Join(tmp, "cp"),
+			args:           []string{"a", "b"},
+			expected:       runnertypes.RiskLevelMedium,
+			expectedReason: coreutilsReason,
 		},
 		{
-			name:     "destructive command is high",
+			// unlink has no high-risk pattern, so Step 5 misses it and the
+			// coreutils step's destructive list is what yields High here.
+			name:           "destructive command via coreutils step is high",
+			cmd:            filepath.Join(tmp, "unlink"),
+			args:           []string{"x"},
+			expected:       runnertypes.RiskLevelHigh,
+			expectedReason: coreutilsReason,
+		},
+		{
+			// "rm -rf" is intercepted by Step 5 high-risk pattern matching
+			// before the coreutils step; both yield High, so we assert only the
+			// value, not the provenance.
+			name:     "rm with recursive flag is high",
 			cmd:      filepath.Join(tmp, "rm"),
 			args:     []string{"-rf", "/tmp/x"},
 			expected: runnertypes.RiskLevelHigh,
 		},
 		{
-			name:     "multicall entrypoint classified by effective subcommand",
-			cmd:      filepath.Join(tmp, "coreutils"),
-			args:     []string{"rm", "-rf", "/tmp/x"},
-			expected: runnertypes.RiskLevelHigh,
+			name:           "multicall entrypoint classified by effective subcommand",
+			cmd:            filepath.Join(tmp, "coreutils"),
+			args:           []string{"rm", "-rf", "/tmp/x"},
+			expected:       runnertypes.RiskLevelHigh,
+			expectedReason: coreutilsReason,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			risk, _, _, err := AnalyzeCommandSecurity(tt.cmd, tt.args, "")
+			risk, _, reason, err := AnalyzeCommandSecurity(tt.cmd, tt.args, "")
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, risk)
+			if tt.expectedReason != "" {
+				assert.Equal(t, tt.expectedReason, reason)
+			}
 		})
 	}
 }
