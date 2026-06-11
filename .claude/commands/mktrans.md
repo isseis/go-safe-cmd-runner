@@ -12,6 +12,13 @@
 Get the source file path from the argument.
 If no argument is provided, ask the user.
 
+This command is for translating bilingual documentation pairs (e.g. files under
+`docs/dev/developer_guide/`) where a `.md` (English) and `.ja.md` (Japanese)
+version exist or are being created together. Task documents under `docs/tasks/`
+(`01_requirements.md`, `02_architecture.md`, `03_implementation_plan.md`) are
+Japanese-primary working documents with no translation counterpart — do not run
+this command on them.
+
 Determine the translation direction from the file extension:
 
 - Source ends in `.ja.md` → **Japanese → English**
