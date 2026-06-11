@@ -1,0 +1,271 @@
+# 実装計画書：Ubuntu 26.04 Rust coreutils 対応
+
+## ドキュメントステータス
+
+| 項目 | 内容 |
+|---|---|
+| ステータス | `draft` |
+| 作成日 | 2026-06-11 |
+| レビュー日 | - |
+| レビュアー | - |
+| コメント | - |
+
+---
+
+## 1. 実装概要 (Implementation Overview)
+
+### 1.1. 目的
+
+`02_architecture.md` の設計に従い、`/usr/lib/cargo/bin/coreutils` 配下に解決された
+coreutils コマンドを、単一バイナリのバイナリ解析結果に依存せずに分類する仕組みを実装する。
+実行時経路（`EvaluateRisk`）と dry-run 経路（`AnalyzeCommandSecurity`）の双方が同一の
+分類関数 `CoreutilsCommandRisk` を共有し、要件 F-001〜F-005 と非機能 4.1 を満たす。
+
+設計の詳細（判定順序・不変条件・脅威モデル・ケース分析）は `02_architecture.md` を参照する。
+本書は実装タスクと検証手順のみを記述し、設計内容は再掲しない。
+
+### 1.2. 実装原則
+
+- **設計への準拠:** 公開シグネチャ・判定ステップの位置は `02_architecture.md` §3.2 / §6.1 に従う。
+- **既存実装の再利用:** 後述の既存関数（`findFirstSubcommand` / `hasSetuidOrSetgidBit`）を再利用し、重複実装しない（DRY）。
+- **適用範囲の限定:** coreutils ディレクトリ直下のみに作用し、他ディレクトリの挙動を変えない（要件 F-002 / 非機能 4.1）。
+- **Go ソースの記述言語:** コメント・識別子・文字列リテラルはすべて英語で記述する。
+
+### 1.3. 既存コード調査結果
+
+実装着手前に対象パッケージを調査した結果を記す。
+
+**再利用する既存関数（いずれも `internal/runner/base/security` パッケージ内・非公開。新規 `coreutils.go` は同一パッケージのため直接呼び出せる）:**
+
+- `findFirstSubcommand(args []string) string`（[command_analysis.go:404](../../../internal/runner/base/security/command_analysis.go#L404)）
+  — 先頭の非オプション引数を返す。マルチコール入口 `coreutils <util> ...` の実効サブコマンド解決に再利用する（`02_architecture.md` §3.2 ステップ 2）。新規実装は不要。
+- `hasSetuidOrSetgidBit(cmdPath string) (bool, error)`（[command_analysis.go:807](../../../internal/runner/base/security/command_analysis.go#L807)）
+  — 解決済み絶対パスの setuid/setgid ビットを検査する。`CoreutilsCommandRisk` の setuid 検査（`02_architecture.md` §3.2 ステップ 1）に再利用する。新規実装は不要。
+
+**変更対象の既存コード:**
+
+- [internal/common/secure_path.go:9](../../../internal/common/secure_path.go#L9)
+  — 現在 `SecurePathEnv` に coreutils ディレクトリがハードコードで連結された暫定状態（作業ツリー上の未コミット編集）。`CoreutilsDir` 定数を導入し、`SecurePathEnv` をこの定数から構築する。
+- [internal/runner/base/security/directory_risk.go:18](../../../internal/runner/base/security/directory_risk.go#L18)
+  — `DefaultRiskLevels` に暫定追加された一律 `"/usr/lib/cargo/bin/coreutils": RiskLevelMedium` エントリを削除する。`getDefaultRiskByDirectory` のロジック自体は不変。
+- [internal/runner/base/risk/evaluator.go:28](../../../internal/runner/base/risk/evaluator.go#L28)
+  — `EvaluateRisk` に coreutils 判定ステップを追加（破壊的操作判定の後、ネットワーク判定の前）。
+- [internal/runner/base/security/command_analysis.go:602](../../../internal/runner/base/security/command_analysis.go#L602)
+  — `AnalyzeCommandSecurity` のステップ 6（setuid 検査）の後、ステップ 7（Medium パターン照合）の前に coreutils 判定ステップを挿入。関数 docコメントのステップ一覧（[command_analysis.go:575-586](../../../internal/runner/base/security/command_analysis.go#L575-L586)）も更新する。
+
+**コードベース横断調査の結果:**
+
+- Go ソース中の文字列 `/usr/lib/cargo/bin/coreutils` は上記 2 箇所（`secure_path.go`・`directory_risk.go`）のみ（`rg -n "/usr/lib/cargo/bin/coreutils" --type go` で確認済み）。本タスクで両方とも `common.CoreutilsDir` 由来に置き換わる。
+- `internal` 配下の `*_test.go` に coreutils ディレクトリを参照するテストケースは現状ゼロ（`02_architecture.md` §3.1 の確認と一致）。よって暫定エントリ削除で失敗する既存テストは存在しない。
+- `security` パッケージは既に `internal/common` を import 済み（[validator.go:47](../../../internal/runner/base/security/validator.go#L47) ほか）。`coreutils.go` から `common.CoreutilsDir` を参照しても循環依存は発生しない。
+- `common` パッケージにはテストファイルは存在するが `secure_path_test.go` は無い（新規作成する）。
+
+**テスト容易性に関する設計判断（公開シグネチャは不変）:**
+
+`CoreutilsCommandRisk` は setuid 検査のため `os.Stat(resolvedPath)` を実行する。分類ロジックを CI 上で検証するには、対象ファイルが実在する必要があるが、テスト環境に `/usr/lib/cargo/bin/coreutils/<cmd>` は存在しない。そこで `coreutils.go` 内にパッケージ非公開変数 `var coreutilsDir = common.CoreutilsDir` を置き、`CoreutilsCommandRisk` はこの変数を参照する。テストは後述の build タグ付きヘルパー `SetCoreutilsDirForTest` で一時ディレクトリへ差し替える。公開関数のシグネチャ（`02_architecture.md` §3.2）は変更しない。`common.CoreutilsDir` 定数自体は SSOT として不変。
+
+> **重要な制約（全 coreutils テストに共通して適用）:** `coreutilsDir` はパッケージグローバル変数であり、`SetCoreutilsDirForTest` がこれを書き換えるため、本変数を差し替えるテスト（`coreutils_test.go` の各テスト・`evaluator_test.go` の coreutils テスト・`coreutils_consistency_test.go`）は `t.Parallel()` を**使用しない**。差し替えを伴う全テスト関数にこの制約を一律適用する。`security` パッケージと `risk` パッケージは別々のテストバイナリ（別プロセス）として実行されるため両パッケージ間でのグローバル競合は生じないが、`coreutilsDir` の唯一の変更手段を `SetCoreutilsDirForTest`（`t.Cleanup` で必ず復元）に限定し、テスト外からの直接代入は行わない。
+
+---
+
+## 2. 実装ステップ (Implementation Steps)
+
+### フェーズ 0：前提確認（`02_architecture.md` §8 フェーズ 0）
+
+- [x] 対象環境で coreutils コマンドのパス解決後 basename が保持されることを確認（Ubuntu 26.04 実機で確認済み、2026-06-11。`02_architecture.md` §1.3）。
+- [ ] Ubuntu 26.04 参照ホストで `ls /usr/lib/cargo/bin/coreutils` を実行し、実在するサブコマンド名一覧を取得する。
+  - High 一覧（`rm`/`rmdir`/`unlink`/`shred`/`dd`/`truncate`）・Low 一覧の各エントリが実在するかを照合し、実装する一覧と整合させる。実在しないが防御的に残す名（uutils に未実装のもの）はコード内の英語コメントでその旨を明記する。
+  - 注：分類関数は実在しないサブコマンド名に対しても安全側（Low 一覧外は Medium 以上）に動作するため、防御的エントリが残っても安全性は損なわれない。本確認は「Low 一覧に取りこぼした実在コマンドが無いか」を主眼とする。
+
+### フェーズ 1：基盤（定数化・分類関数・ユニットテスト）
+
+**対象ファイル:** `internal/common/secure_path.go`, `internal/runner/base/security/coreutils.go`（新規）, `internal/runner/base/security/test_helpers.go`（既存・追記）
+
+- [ ] `secure_path.go` に定数 `CoreutilsDir` を追加する。
+  - 値：`"/usr/lib/cargo/bin/coreutils"`。docコメントは英語（`02_architecture.md` §3.2 の文面を使用）。
+- [ ] `secure_path.go` の `SecurePathEnv` を `CoreutilsDir` 定数から構築するよう書き換える。
+  - 変更前：`SecurePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin:/usr/lib/cargo/bin/coreutils"`
+  - 変更後：`SecurePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin:" + CoreutilsDir`（連結結果の文字列値は変更前と完全一致させる）。
+- [ ] `coreutils.go`（新規）にパッケージ非公開変数 `var coreutilsDir = common.CoreutilsDir` を定義する。
+- [ ] `coreutils.go` に安全コマンド一覧（Low）と破壊的コマンド一覧（High）を `map[string]struct{}` で定義する（`02_architecture.md` §3.4 の区分方針に従う。集合用途のため `map[string]struct{}` を用いる）。
+  - Low 一覧：`mkdir`, `ls`, `cat`, `echo` ほか §3.4 の方針に沿う読み取り・新規作成中心のコマンド。
+  - High 一覧：`rm`, `rmdir`, `unlink`, `shred`, `dd`, `truncate`。
+- [ ] `coreutils.go` に `CoreutilsCommandRisk(resolvedPath string, args []string) (runnertypes.RiskLevel, bool, error)` を実装する（`02_architecture.md` §3.2 のシグネチャ・処理順）。
+  - ディレクトリ判定：`filepath.Dir(resolvedPath) != coreutilsDir` のとき `(RiskLevelUnknown, false, nil)` を返す（exact match）。
+  - setuid 検査：`hasSetuidOrSetgidBit(resolvedPath)` を呼ぶ。エラー時 `(RiskLevelUnknown, false, err)`、ビットありなら `(RiskLevelHigh, true, nil)`。
+  - 実効サブコマンド解決：basename が `"coreutils"` のとき `findFirstSubcommand(args)` を実効サブコマンド名とする。それ以外は basename を用いる。
+    - **`findFirstSubcommand` の流用に関する前提:** 同関数は git 向けに `-c`/`-C` 等の「値を取るオプション」とその値をスキップする実装だが、uutils のマルチコール構文は `coreutils <util> <util-args>` であり、util 名の前にグローバルオプションを取らない（util 名が必ず先頭の非オプション位置に来る）。したがって先頭非オプションを返す挙動で実効 util 名を正しく得られる。util 名が得られない場合（例：`coreutils --help` のようにオプションのみ）は実効サブコマンドが空文字となり、High/Low いずれの一覧にも該当せず Medium（フェイルセーフ）に落ちる。この前提と挙動はフェーズ 1 のテストで担保する（下記）。
+  - 分類：High 一覧該当 → `(RiskLevelHigh, true, nil)`、Low 一覧該当 → `(RiskLevelLow, true, nil)`、それ以外 → `(RiskLevelMedium, true, nil)`。
+- [ ] **既存**の `test_helpers.go`（`//go:build test`・`package security`。既に `IsVariableValueSafe` を持つ）に `SetCoreutilsDirForTest(t *testing.T, dir string)` を**追記**する（新規作成・上書きはしない。既存ヘルパーを破壊しないこと）。
+  - 現在の `coreutilsDir` を保存し `dir` を代入、`t.Cleanup` で元の値へ復元する。非公開変数 `coreutilsDir` を書き換えるため Classification B（`test_helpers.go`）に置く（`testutil/` は公開 API のみ扱うため不可）。`risk` パッケージのテストからも呼べるよう公開関数とする。本ヘルパーは `-tags test` 下でのみ可視であり、`risk` パッケージのテストは `make test`（`go test -tags test`）で実行されるため参照可能。
+- [ ] `coreutils_test.go`（新規・`//go:build test`）にユニットテストを追加する（`02_architecture.md` §7.1）。各テストは冒頭で `SetCoreutilsDirForTest(t, tmp)` を呼び `t.TempDir()` 配下に対象ファイルを作成する。`t.Parallel()` は使用しない。
+  - [ ] `TestCoreutilsCommandRisk_SafeCommands`：`mkdir`/`ls`/`cat`/`echo` → `(Low, true, nil)`（F-003）。
+  - [ ] `TestCoreutilsCommandRisk_MediumCommands`：`chmod`/`chown`/`env`/`nohup`/`cp`/`mv`、および明らかに coreutils でないセンチネル名 `definitely-not-a-coreutil`（Low/High いずれの一覧にも属さないことを保証し、Medium 既定分岐を確実に通す）→ `(Medium, true, nil)`（F-003 / 非機能 4.1）。
+  - [ ] `TestCoreutilsCommandRisk_DestructiveCommands`：`rm`/`dd`/`shred`/`truncate` → `(High, true, nil)`（F-004）。
+  - [ ] `TestCoreutilsCommandRisk_MulticallEntrypoint`：basename `coreutils` で実効サブコマンド解決を検証する（F-004）。
+    - `args=["rm","-rf","/tmp/x"]` → `(High, true, nil)`
+    - `args=["mkdir","d"]` → `(Low, true, nil)`
+    - `args=["--help"]`（オプションのみ、実効 util 名が空）→ `(Medium, true, nil)`（フェイルセーフ既定）
+    - `args=[]`（引数なし、実効 util 名が空）→ `(Medium, true, nil)`（フェイルセーフ既定）
+  - [ ] `TestCoreutilsCommandRisk_Setuid`：`mkdir`（安全名）に setuid ビットを付与 → `(High, true, nil)`。setgid が OS に無視される場合は既存テスト（[command_analysis_test.go:771-779](../../../internal/runner/base/security/command_analysis_test.go#L771-L779)）と同様に `t.Skip`。
+  - [ ] `TestCoreutilsCommandRisk_NonCoreutilsPath`：`/usr/bin/mkdir`・`/bin/ls`（coreutils 直下でない）→ `(RiskLevelUnknown, false, nil)`（適用範囲限定）。
+- [ ] `make fmt && make test && make lint` を実行し緑であることを確認する。
+
+**成功基準:** `coreutils.go` と上記ユニットテストが緑。`go test -tags test ./internal/runner/base/security/...` がパス。
+
+### フェーズ 2：実行時経路（`EvaluateRisk`）
+
+**対象ファイル:** `internal/runner/base/risk/evaluator.go`, `internal/runner/base/risk/evaluator_test.go`
+
+- [ ] `evaluator.go` の `EvaluateRisk` に coreutils 判定ステップを追加する（`02_architecture.md` §6.1）。
+  - 位置：`IsDestructiveFileOperation` 判定（[evaluator.go:39-41](../../../internal/runner/base/risk/evaluator.go#L39-L41)）の後、`IsNetworkOperation` 呼び出し（[evaluator.go:46](../../../internal/runner/base/risk/evaluator.go#L46)）の前。
+  - 処理：`risk, handled, err := security.CoreutilsCommandRisk(cmd.ExpandedCmd, cmd.ExpandedArgs)`。`err != nil` なら `(RiskLevelUnknown, err)` を返す（フェイルクローズ）。`handled` が真なら `(risk, nil)` を返す（バイナリ解析を迂回）。偽なら従来経路を継続する。
+- [ ] `evaluator_test.go`（既存・`//go:build test`）に `TestStandardEvaluator_EvaluateRisk_Coreutils` を追加する（`02_architecture.md` §7.1）。`SetCoreutilsDirForTest(t, tmp)` で一時ディレクトリへ差し替え、`t.TempDir()` 配下に `mkdir`/`rm`/`coreutils` 等のファイルを作成。`t.Parallel()` は使用しない。
+  - [ ] `ExpandedCmd = <tmp>/mkdir`（setuid なし）→ `Low`（F-002：バイナリ解析を通らない）。
+  - [ ] `ExpandedCmd = <tmp>/rm` → `High`（F-004）。
+  - [ ] `ExpandedCmd = <tmp>/coreutils` ＋ `ExpandedArgs=["rm","-rf","/tmp/x"]` → `High`（F-004）。
+- [ ] `make fmt && make test && make lint` を実行し緑であることを確認する。
+
+**成功基準:** coreutils パスが実行時経路でバイナリ解析を迂回し、設計どおりの分類になる。
+
+### フェーズ 3：dry-run 経路と整合
+
+**対象ファイル:** `internal/runner/base/security/directory_risk.go`, `internal/runner/base/security/directory_risk_test.go`, `internal/runner/base/security/command_analysis.go`, `internal/runner/base/security/coreutils_test.go`
+
+- [ ] `directory_risk.go` の `DefaultRiskLevels` から暫定エントリ行を削除する。
+  - 削除対象：`"/usr/lib/cargo/bin/coreutils": runnertypes.RiskLevelMedium,`（[directory_risk.go:18](../../../internal/runner/base/security/directory_risk.go#L18)）。`getDefaultRiskByDirectory` のロジック・`/bin`・`/usr/bin`・`/sbin` 等の既存エントリは不変。委譲は追加しない（`02_architecture.md` §5.2）。
+- [ ] `directory_risk_test.go` の `TestGetDefaultRiskByDirectory` に coreutils ケースを追加する。
+  - `cmdPath = "/usr/lib/cargo/bin/coreutils/mkdir"` → `RiskLevelUnknown`（暫定エントリ削除後、同関数は coreutils を分類しない）。既存ケースは不変。
+- [ ] `command_analysis.go` の `AnalyzeCommandSecurity` に coreutils 判定ステップを挿入する（`02_architecture.md` §3.1 / §6）。
+  - 位置：ステップ 6（setuid 検査、[command_analysis.go:633-642](../../../internal/runner/base/security/command_analysis.go#L633-L642)）の後、ステップ 7（Medium パターン照合、[command_analysis.go:644-647](../../../internal/runner/base/security/command_analysis.go#L644-L647)）の前。
+  - 処理：`risk, handled, err := CoreutilsCommandRisk(resolvedPath, args)`。`err != nil` なら `(RiskLevelHigh, resolvedPath, "Unable to check setuid/setgid status: ...", nil)` ではなく、`(RiskLevelUnknown, "", "", err)` としてエラーを伝播する（dry-run 経路の戻り値型に合わせ、フェイルクローズ）。`handled` が真なら `(risk, resolvedPath, "Coreutils command risk classification", nil)` を返す。偽なら従来経路を継続する。
+  - 注：setuid バイナリは本ステップ到達前にステップ 6 で既に High 確定するため、本ステップ内の setuid 検査は実質冗長だが、実行時経路（`CoreutilsCommandRisk` 内検査）との一貫性のため関数仕様は変更しない（`02_architecture.md` §5.4）。
+- [ ] `AnalyzeCommandSecurity` の docコメントのステップ一覧（[command_analysis.go:575-586](../../../internal/runner/base/security/command_analysis.go#L575-L586)）に coreutils 判定ステップを追記する（英語）。
+  - 現行の「6. setuid / setgid bit detection」と「7. Medium-risk dangerous command pattern matching」の間に新ステップを挿入し、以降の番号を繰り上げる。文面は英語で記述する。
+- [ ] `coreutils_test.go` に dry-run 経路のテスト `TestAnalyzeCommandSecurity_Coreutils` を追加する。`SetCoreutilsDirForTest(t, tmp)` で差し替え、`hashDir=""`（ハッシュ検証スキップ）で呼ぶ。`t.Parallel()` は使用しない。
+  - [ ] `<tmp>/mkdir` → `Low` / `<tmp>/chmod`（`args=["+x","file"]`）→ `Medium` / `<tmp>/cp`（`args=["a","b"]`）→ `Medium` / `<tmp>/rm`（`args=["-rf","/tmp/x"]`）→ `High`。
+  - [ ] `<tmp>/coreutils` ＋ `args=["rm","-rf","/tmp/x"]` → `High`。
+- [ ] `make fmt && make test && make lint` を実行し緑であることを確認する。
+
+**成功基準:** dry-run 経路が coreutils 判定ステップで分類を確定し、ステップ 9 のディレクトリ既定へ到達しない。
+
+### フェーズ 4：検証（F-001 / F-005 の統合・整合確認）
+
+**対象ファイル:** `internal/common/secure_path_test.go`（新規）, `internal/runner/base/risk/coreutils_consistency_test.go`（新規）
+
+- [ ] `secure_path_test.go`（新規）に F-001 の検証テスト `TestSecurePathEnv_IncludesCoreutilsDir` を追加する。
+  - `strings.Contains(SecurePathEnv, CoreutilsDir)` が真であることを検証（安全ディレクトリ判定が coreutils を含む）。
+- [ ] `internal/runner/base/risk/coreutils_consistency_test.go`（新規・`//go:build test`）に F-005 の整合テスト `TestCoreutilsRiskConsistency_RuntimeVsDryRun` を追加する。`SetCoreutilsDirForTest(t, tmp)` で差し替え、同一の coreutils コマンド集合に対し実行時経路（`risk.StandardEvaluator.EvaluateRisk`）と dry-run 経路（`security.AnalyzeCommandSecurity`、`hashDir=""`）の最終リスクが一致することを検証する（`02_architecture.md` §5.4 / §7.2）。`t.Parallel()` は使用しない。
+  - **配置の根拠:** 本テストは `risk` パッケージを import するため、依存方向（`risk → security` の一方向。`security` は `risk` を import できない）から `risk` パッケージ側に置く。`security` パッケージの `coreutils_test.go` には置けない。
+  - 検証対象（各コマンドで両経路の最終リスクが一致することを assert する）：
+    - `mkdir`（引数なし）→ 両経路 Low
+    - `chmod`（`args=["+x","file"]`）→ 両経路 Medium
+    - `cp`（`args=["a","b"]`）→ 両経路 Medium
+    - `rm`（`args=["-rf","/tmp/x"]`）→ 両経路 High
+    - **`rm`（引数なし）→ 両経路 High**（前段の破壊的判定／高リスクパターンは coreutils フルパス・`-rf` 無しでは発火せず、coreutils 判定ステップの High 一覧のみが High を保証することを検証。F-004 の要となるケース。`02_architecture.md` §5.4）
+    - **`shred`（`args=["file"]`）→ 両経路 High**（同上：High 一覧が保証）
+    - **`truncate`（`args=["-s","0","file"]`）→ 両経路 High**（同上）
+    - **`dd`（引数なし、`if=` 無し）→ 両経路 High**（dry-run の `{"dd","if="}` パターンは `if=` 無しでは不発火、coreutils 判定ステップの High 一覧が保証することを検証）
+    - **`unlink`（`args=["x"]`）→ 両経路 High**（同上）
+    - マルチコール入口 `coreutils` ＋ `args=["rm","-rf","/tmp/x"]` → 両経路 High
+    - setuid 付与 `mkdir` → 両経路 High
+  - **このケース集合の狙い:** 前段ステップ（`IsDestructiveFileOperation` はフルパスを basename 化せず照合するため coreutils 解決済みパスでは不発火、dry-run の高リスクパターンは特定の引数形にのみ反応）に依存せず、`CoreutilsCommandRisk` の High 一覧が F-004 を両経路で保証していることを機械的に検証する。
+- [ ] セキュリティ回帰テストを追加する（`02_architecture.md` §7.3）。`risk` パッケージ側（`evaluator_test.go`）に配置。
+  - [ ] 非 coreutils ディレクトリのコマンドが従来どおりバイナリ解析経路を通ること（適用範囲限定。`<tmp>` 差し替え下で `/usr/bin/...` 等が `handled=false` 相当となり従来判定されることを確認）。
+  - [ ] `sudo` 等の特権昇格が coreutils 判定ステップの前段で Critical のままであること（既存 `TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation` が担保。回帰なきことを確認）。
+- [ ] `make fmt && make test && make lint` を実行し全体が緑であることを確認する。
+- [ ] `make deadcode` を実行し本番コード経路に未使用コードがないことを確認する（回帰チェック）。なお `make deadcode` は `cmd/...` を `-tags test` 無しで走査するため、test タグ付きヘルパー（`SetCoreutilsDirForTest`）や test 経路は対象外である。test タグ付きコードの未使用検出はスコープ外とし、`make test` のコンパイル失敗で参照不整合を検出する。
+
+**成功基準:** F-001〜F-005・非機能 4.1 のすべての検証タスクが緑。
+
+---
+
+## 3. 実装順序とマイルストーン (Implementation Order and Milestones)
+
+`02_architecture.md` §8 のフェーズ順に準拠する。
+
+| マイルストーン | 内容 | 完了条件 |
+|---|---|---|
+| M0 | 前提確認 | basename 保持の確認済み（実機検証済み） |
+| M1 | 基盤（`CoreutilsDir` 定数・`CoreutilsCommandRisk`・ユニットテスト） | フェーズ 1 のチェック全完了 |
+| M2 | 実行時経路（`EvaluateRisk`） | フェーズ 2 のチェック全完了 |
+| M3 | dry-run 経路と整合（暫定エントリ削除・`AnalyzeCommandSecurity` 挿入） | フェーズ 3 のチェック全完了 |
+| M4 | 検証（F-001 / F-005 整合・セキュリティ回帰） | フェーズ 4 のチェック全完了、緑ゲート通過 |
+
+---
+
+## 4. テスト戦略 (Test Strategy)
+
+詳細は `02_architecture.md` §7 を参照。本タスクでのテスト方針は以下。
+
+- **ユニットテスト:** `CoreutilsCommandRisk` の全分類（Low/Medium/High）・setuid・マルチコール入口・非 coreutils パスを `coreutils_test.go` で網羅する（フェーズ 1）。
+- **経路別テスト:** 実行時（`EvaluateRisk`）と dry-run（`AnalyzeCommandSecurity`）で coreutils コマンドが設計どおり分類されることを各経路で検証する（フェーズ 2 / 3）。
+- **整合テスト:** 同一コマンド集合に対し両経路の最終リスクが一致することを検証する（F-005、フェーズ 4）。
+- **セキュリティ回帰:** 適用範囲限定（非 coreutils の従来挙動不変）・特権昇格不変を検証する（非機能 4.1、フェーズ 4）。
+- **後方互換性:** coreutils 非導入環境（`<tmp>` に該当ファイルを置かない）でも従来経路が機能することは、適用範囲限定テスト（`handled=false` フォールバック）で担保する。
+- **既存テストの再利用:** setuid 検査・パターン照合の低レベル挙動は既存テスト（`TestHasSetuidOrSetgidBit_Detailed` 等）が担保済みのため再テストしない（DRY）。
+
+テストヘルパー：**既存**の `internal/runner/base/security/test_helpers.go`（`//go:build test`・`package security`）に `SetCoreutilsDirForTest` を**追記**する（既存の `IsVariableValueSafe` はそのまま）。`testutil/` には追加しない（非公開変数を扱うため。`test_organization.md` Classification B）。
+
+---
+
+## 5. リスク管理 (Risk Management)
+
+| リスク | 影響 | 緩和策 |
+|---|---|---|
+| グローバル変数差し替えによるテスト間干渉 | テストが非決定的に失敗 | 差し替えを伴う全テストで `t.Parallel()` を禁止し、`t.Cleanup` で必ず復元する（§1.3 の制約）。 |
+| 将来 `/usr/bin/<cmd>` がマルチコール本体へのシンボリックリンク化（basename 喪失） | 本設計が機能しなくなる | `02_architecture.md` §1.3 の残存リスクとして記録済み。発生時は解決前コマンド名で分類する代替設計へ切替（別タスク）。 |
+| 安全コマンド一覧の取りこぼし | 安全コマンドが Medium に落ちる | 既定 Medium はフェイルセーフ側であり安全性は損なわない。一覧は §4.3 のとおり追加容易な `map` で保持。 |
+| dry-run と実行時の前後ステップ差異による不一致 | F-005 違反 | フェーズ 4 の整合テストで具体コマンド集合の一致を機械的に検証する。 |
+
+---
+
+## 6. 実装チェックリスト (Implementation Checklist)
+
+- [ ] フェーズ 1：`CoreutilsDir` 定数・`CoreutilsCommandRisk`・`SetCoreutilsDirForTest`・ユニットテスト
+- [ ] フェーズ 2：`EvaluateRisk` への coreutils 判定ステップ追加・テスト
+- [ ] フェーズ 3：`DefaultRiskLevels` 暫定エントリ削除・`AnalyzeCommandSecurity` 挿入・docコメント更新・テスト
+- [ ] フェーズ 4：F-001 / F-005 整合・セキュリティ回帰・`make deadcode`
+- [ ] 緑ゲート：`make test && make lint` 通過
+
+### クロスサーチ確認（`make lint` / `make test` で検出できない項目のみ）
+
+- [ ] `rg -n "/usr/lib/cargo/bin/coreutils" --type go` の結果が、`secure_path.go` の `CoreutilsDir` 定数定義 1 箇所のみであること（`directory_risk.go` の暫定エントリが削除され、ハードコード重複が解消されたこと）。
+- [ ] `AnalyzeCommandSecurity` の docコメントのステップ番号が本文の実処理順と一致していること（手動確認）。
+
+---
+
+## 7. 受け入れ基準の検証 (Acceptance Criteria Verification)
+
+`01_requirements.md` は機能要件を `F-001`〜`F-005` および非機能 4.1 として定義している（個別の `AC-NN` 識別子は未付与）。各機能要件を受け入れ基準とみなし、検証手段を以下に対応づける。検証種別は `test`（実行可能）/ `static`（rg/grep）/ `manual`（PR 観察）。
+
+| 要件 | 内容 | 検証種別 | 検証手段 |
+|---|---|---|---|
+| F-001 | coreutils ディレクトリの安全ディレクトリ判定 | test | `internal/common/secure_path_test.go::TestSecurePathEnv_IncludesCoreutilsDir`（`SecurePathEnv` が `CoreutilsDir` を含む）。既存 `internal/runner/base/security/types_test.go::TestDefaultConfig_AllowedCommandsConsistency`（`GenerateAllowedCommandsFromPath(common.SecurePathEnv)` 由来の許可パターン）が回帰なきこと。 |
+| F-002 | バイナリ解析に依存しないリスク判定 | test | `internal/runner/base/risk/evaluator_test.go::TestStandardEvaluator_EvaluateRisk_Coreutils`（`<tmp>/mkdir` がバイナリ解析を通らず `Low`） |
+| F-003 | コマンド別リスク分類（Low / Medium） | test | `internal/runner/base/security/coreutils_test.go::TestCoreutilsCommandRisk_SafeCommands`（Low）, `::TestCoreutilsCommandRisk_MediumCommands`（Medium） |
+| F-004 | 破壊的コマンドのリスク維持（High） | test | `internal/runner/base/security/coreutils_test.go::TestCoreutilsCommandRisk_DestructiveCommands`, `::TestCoreutilsCommandRisk_MulticallEntrypoint`; `internal/runner/base/risk/evaluator_test.go::TestStandardEvaluator_EvaluateRisk_Coreutils`（`<tmp>/rm` → High） |
+| F-005 | 実行時と dry-run の一貫性 | test | `internal/runner/base/risk/coreutils_consistency_test.go::TestCoreutilsRiskConsistency_RuntimeVsDryRun`（同一コマンド集合で両経路一致。前段ステップに依存せず High 一覧が F-004 を保証するケース（引数なし `rm`/`shred`/`truncate`/`dd`/`unlink`）を含む） |
+| 非機能 4.1（適用範囲限定） | 非 coreutils ディレクトリの検出能力が低下しない | test | `internal/runner/base/risk/evaluator_test.go`（非 coreutils コマンドが従来経路で判定されること） |
+| 非機能 4.1（特権昇格不変） | `sudo` 等が Critical のまま | test | `internal/runner/base/risk/evaluator_test.go::TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation`（既存・回帰確認） |
+| 非機能 4.1（未知コマンドの安全側） | 一覧外コマンドは Medium 以上 | test | `internal/runner/base/security/coreutils_test.go::TestCoreutilsCommandRisk_MediumCommands`（未知名 → Medium） |
+| F-003 / 非機能（setuid） | setuid バイナリは安全名でも High | test | `internal/runner/base/security/coreutils_test.go::TestCoreutilsCommandRisk_Setuid` |
+| 暫定エントリ削除の整合 | `getDefaultRiskByDirectory` は coreutils を分類しない | test | `internal/runner/base/security/directory_risk_test.go::TestGetDefaultRiskByDirectory`（coreutils → `RiskLevelUnknown`） |
+| ハードコード重複の解消 | coreutils パスの定義が定数 1 箇所 | static | `rg -n "/usr/lib/cargo/bin/coreutils" --type go` の出力が `internal/common/secure_path.go` の `CoreutilsDir` 定義 1 行のみ |
+
+---
+
+## 8. 成功基準 (Success Criteria)
+
+- **機能完全性:** §7 の全要件行の検証タスクが緑。
+- **品質:** `make test && make lint` が緑。`make deadcode` で未使用コードなし。
+- **セキュリティ:** 適用範囲限定・特権昇格不変・setuid High・破壊的コマンド High の各テストが緑（非機能 4.1 / F-004）。
+- **ドキュメント整合:** `AnalyzeCommandSecurity` の docコメントのステップ一覧が実処理順と一致。
+
+---
+
+## 9. 次のステップ (Next Steps)
+
+- 本実装計画書を `approved` にしたのち、フェーズ 1 から実装を開始する。
+- 実装中はチェックボックスを随時更新する。
+- 完了後、`02_architecture.md` §9 に記録した将来拡張（既存処理の basename 正規化・他の単一バイナリツール対応）は別タスクで扱う。
