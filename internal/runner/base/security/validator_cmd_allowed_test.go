@@ -44,8 +44,14 @@ func TestValidateCommandAllowed_PatternMatchSingle(t *testing.T) {
 func TestValidateCommandAllowed_PatternMatchMultiple(t *testing.T) {
 	resolvedEcho := resolveToCanonical(t, "/bin/echo")
 
-	// Use patterns that cover both /bin/* and /usr/bin/*
-	v := newValidatorForCmdAllowedTest(t, []string{"^/bin/.*", "^/usr/bin/.*"})
+	// Use patterns that cover standard binary directories. On Ubuntu 26.04+,
+	// /bin/echo resolves to /usr/lib/cargo/bin/coreutils/echo, so that directory
+	// must also be included.
+	v := newValidatorForCmdAllowedTest(t, []string{
+		"^/bin/.*",
+		"^/usr/bin/.*",
+		"^/usr/lib/cargo/bin/coreutils/.*",
+	})
 
 	// Pass the resolved path
 	err := v.ValidateCommandAllowed(resolvedEcho, nil)

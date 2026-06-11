@@ -1093,7 +1093,25 @@ func TestExtractAllCommandNames(t *testing.T) {
 
 	t.Run("full path", func(t *testing.T) {
 		names, exceededDepth := extractAllCommandNames("/bin/echo")
+		// /bin/echo may be a symlink on some systems (e.g., -> /usr/lib/cargo/bin/coreutils/echo
+		// on Ubuntu 26.04+). Mirror extractAllCommandNames's own multi-level resolution loop to
+		// build the expected set, so the test stays consistent with the implementation even when
+		// the symlink chain has more than one hop.
 		expected := map[string]struct{}{"/bin/echo": {}, "echo": {}}
+		current := "/bin/echo"
+		for range MaxSymlinkDepth {
+			target, err := os.Readlink(current)
+			if err != nil {
+				break
+			}
+			if !filepath.IsAbs(target) {
+				current = filepath.Join(filepath.Dir(current), target)
+			} else {
+				current = target
+			}
+			expected[current] = struct{}{}
+			expected[filepath.Base(current)] = struct{}{}
+		}
 		assert.Equal(t, expected, names)
 		assert.False(t, exceededDepth)
 	})
