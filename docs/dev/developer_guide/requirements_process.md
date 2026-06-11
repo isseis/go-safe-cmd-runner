@@ -209,13 +209,18 @@ Document which tests verify each acceptance criterion in `03_implementation_plan
 - Verification method: [How to verify]
 ```
 
-**Example test with traceability comment:**
+**Example test:**
 ```go
-// TestFoo verifies that [behavior] (requirement F-001, AC-02).
+// TestFoo verifies that [behavior].
 func TestFoo(t *testing.T) {
     // Test implementation that verifies the specific criterion
 }
 ```
+
+Traceability between this test and its acceptance criteria is recorded in
+`03_implementation_plan.md` (see "Traceability in implementation plan" above),
+not as `AC-NN`/`F-NNN` references in source comments — `runplan.md`'s
+pre-commit checks reject such references in Go source.
 
 ## 5. Pre-Commit Checklist
 
