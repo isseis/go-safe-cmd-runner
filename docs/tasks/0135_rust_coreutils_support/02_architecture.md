@@ -208,7 +208,7 @@ sequenceDiagram
 | ファイル | 区分 | 責務 | 更新が必要なテスト |
 |---|---|---|---|
 | `internal/common/secure_path.go` | 変更 | `CoreutilsDir` 定数を追加し、`SecurePathEnv` をこの定数から構築する。coreutils ディレクトリパスの単一の真実の源（SSOT）。 | `internal/runner/base/security/types_test.go`（`common.SecurePathEnv` を参照。値は不変でパターン生成テストはそのまま通る） |
-| `internal/runner/base/security/coreutils.go` | 新規 | `CoreutilsCommandRisk(resolvedPath)` を提供。解決済みパスが coreutils ディレクトリ直下かを判定し、basename に基づき Low / Medium / High を返す。安全コマンド一覧・破壊的コマンド一覧を保持する。 | 新規 `coreutils_test.go` を追加 |
+| `internal/runner/base/security/coreutils.go` | 新規 | `CoreutilsCommandRisk(resolvedPath, args)` を提供。解決済みパスが coreutils ディレクトリ直下かを判定し、setuid/setgid 検査・マルチコール入口の実効サブコマンド解決を経て、実効サブコマンド名に基づき Low / Medium / High を返す。安全コマンド一覧・破壊的コマンド一覧を保持する（詳細シグネチャは §3.2）。 | 新規 `coreutils_test.go` を追加 |
 | `internal/runner/base/risk/evaluator.go` | 変更 | `EvaluateRisk` に coreutils 判定段を追加（特権昇格・破壊的操作判定の後、ネットワーク判定の前）。coreutils ディレクトリ直下なら `CoreutilsCommandRisk` の結果を返し、バイナリ解析を迂回する。 | `internal/runner/base/risk/evaluator_test.go`（coreutils ケースを追加） |
 | `internal/runner/base/security/directory_risk.go` | 変更 | `DefaultRiskLevels` から coreutils の一律 Medium エントリ（暫定追加分）を削除するのみ。**`getDefaultRiskByDirectory` に coreutils 専用の委譲は追加しない**（coreutils の分類は `command_analysis.go` の coreutils 判定段が担うため。§5.2 参照）。`/bin`・`/usr/bin`・`/sbin` 等の既存挙動は不変。 | `internal/runner/base/security/directory_risk_test.go`（coreutils が `RiskLevelUnknown` を返すケースを追加。既存ケースは不変） |
 | `internal/runner/base/security/command_analysis.go` | 変更 | dry-run 経路の `AnalyzeCommandSecurity` に coreutils 判定段を「setuid/setgid 検査（既存ステップ 6）の後、Medium パターン照合（既存ステップ 7）の前」へ挿入し、coreutils 直下なら `CoreutilsCommandRisk` の結果を直接返す。これにより実行時と同じ不変条件で coreutils リスクを確定させる（ディレクトリ既定フォールバックのステップ 9 には到達しない）。 | `internal/runner/base/security/command_analysis_test.go`（coreutils ケースを追加） |
@@ -380,7 +380,7 @@ flowchart LR
 |---|---|---|---|
 | 特権昇格 | 前段で Critical | （coreutils は対象外） | coreutils は特権昇格コマンドでないため両経路とも非該当 |
 | 破壊的 `rm -rf` 等 | 破壊的判定（フルパスのため不確実）＋ coreutils 分類関数の High 区分 | 高リスクパターン（basename ベースで検出）＋ coreutils 分類関数の High 区分 | いずれの経路でも High |
-| マルチコール入口 `coreutils rm ...` | coreutils 判定段が実効サブコマンド（`args[0]`）で分類 → High | 同左 | 同一関数・同一入力で High に一致 |
+| マルチコール入口 `coreutils rm ...` | coreutils 判定段が実効サブコマンド（`args` の最初の非オプション）で分類 → High | 同左 | 同一関数・同一入力で High に一致 |
 | setuid/setgid | coreutils 判定段の最初のステップ（`CoreutilsCommandRisk` 内）で High | ステップ 6（前段）で High | 両経路とも High |
 | ハッシュ不一致 | 実行前の `internal/verification` が fail-closed で停止 | ステップ 4 で Critical | 両経路ともブロック |
 | Low/Medium/High 分類 | coreutils 判定段（`CoreutilsCommandRisk`） | coreutils 判定段（`CoreutilsCommandRisk`、同一入力 basename / args） | 同一関数・同一入力で一致 |
@@ -405,7 +405,7 @@ flowchart TD
     D -->|"いいえ"| CU{"coreutils 直下?"}
     CU -->|"はい"| SU{"setuid/setgid?"}
     SU -->|"はい"| RHS["High"]
-    SU -->|"いいえ"| RCU["実効サブコマンドで分類<br>(マルチコール入口は args[0])<br>Low / Medium / High"]
+    SU -->|"いいえ"| RCU["実効サブコマンドで分類<br>(マルチコール入口は args の最初の非オプション)<br>Low / Medium / High"]
     CU -->|"いいえ"| NWH{"バイナリ解析で高リスク?"}
     NWH -->|"はい"| RH2["High"]
     NWH -->|"いいえ"| NW{"ネットワーク操作?"}
