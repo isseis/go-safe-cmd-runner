@@ -121,6 +121,64 @@ func TestCoreutilsCommandRisk_Setuid(t *testing.T) {
 	assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 }
 
+func TestAnalyzeCommandSecurity_Coreutils(t *testing.T) {
+	// Verify the dry-run path (AnalyzeCommandSecurity) classifies coreutils
+	// commands via the coreutils step. hashDir is "" to skip hash validation.
+	// Overriding coreutilsDir forbids t.Parallel().
+	tmp := t.TempDir()
+	SetCoreutilsDirForTest(t, tmp)
+
+	for _, name := range []string{"mkdir", "chmod", "cp", "rm", "coreutils"} {
+		makeCoreutilsBinary(t, tmp, name)
+	}
+
+	tests := []struct {
+		name     string
+		cmd      string
+		args     []string
+		expected runnertypes.RiskLevel
+	}{
+		{
+			name:     "safe command is low",
+			cmd:      filepath.Join(tmp, "mkdir"),
+			args:     nil,
+			expected: runnertypes.RiskLevelLow,
+		},
+		{
+			name:     "permission command is medium",
+			cmd:      filepath.Join(tmp, "chmod"),
+			args:     []string{"+x", "file"},
+			expected: runnertypes.RiskLevelMedium,
+		},
+		{
+			name:     "overwrite command is medium",
+			cmd:      filepath.Join(tmp, "cp"),
+			args:     []string{"a", "b"},
+			expected: runnertypes.RiskLevelMedium,
+		},
+		{
+			name:     "destructive command is high",
+			cmd:      filepath.Join(tmp, "rm"),
+			args:     []string{"-rf", "/tmp/x"},
+			expected: runnertypes.RiskLevelHigh,
+		},
+		{
+			name:     "multicall entrypoint classified by effective subcommand",
+			cmd:      filepath.Join(tmp, "coreutils"),
+			args:     []string{"rm", "-rf", "/tmp/x"},
+			expected: runnertypes.RiskLevelHigh,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			risk, _, _, err := AnalyzeCommandSecurity(tt.cmd, tt.args, "")
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, risk)
+		})
+	}
+}
+
 func TestCoreutilsCommandRisk_NonCoreutilsPath(t *testing.T) {
 	tmp := t.TempDir()
 	SetCoreutilsDirForTest(t, tmp)

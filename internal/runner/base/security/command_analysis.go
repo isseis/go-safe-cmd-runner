@@ -581,9 +581,10 @@ func IsSystemModification(cmd string, args []string) bool {
 //  4. Hash validation (skipped when hashDir is "")
 //  5. High-risk dangerous command pattern matching
 //  6. setuid / setgid bit detection
-//  7. Medium-risk dangerous command pattern matching
-//  8. Per-command risk profile override
-//  9. Directory default risk fallback
+//  7. Coreutils single-binary command classification
+//  8. Medium-risk dangerous command pattern matching
+//  9. Per-command risk profile override
+//  10. Directory default risk fallback
 //
 // Example:
 //
@@ -641,17 +642,31 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, hashDir string) 
 			"Executable has setuid or setgid bit set", nil
 	}
 
-	// Step 7: Medium-risk pattern analysis
+	// Step 7: Coreutils single-binary classification.
+	// Classify commands resolved under the coreutils directory directly,
+	// without binary analysis. On stat error, mirror Step 6 by failing safe to
+	// High so the dry-run display continues rather than aborting; the runtime
+	// path (EvaluateRisk) instead fails closed and blocks the command.
+	coreutilsRisk, coreutilsHandled, coreutilsErr := CoreutilsCommandRisk(resolvedPath, args)
+	if coreutilsErr != nil {
+		return runnertypes.RiskLevelHigh, resolvedPath,
+			fmt.Sprintf("Unable to check setuid/setgid status: %v", coreutilsErr), nil
+	}
+	if coreutilsHandled {
+		return coreutilsRisk, resolvedPath, "Coreutils command risk classification", nil
+	}
+
+	// Step 8: Medium-risk pattern analysis
 	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, mediumRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
 		return riskLevel, pattern, reason, nil
 	}
 
-	// Step 8: Individual command override application
+	// Step 9: Individual command override application
 	if overrideRisk, reason, found := getCommandRiskOverride(resolvedPath); found {
 		return overrideRisk, resolvedPath, reason, nil
 	}
 
-	// Step 9: Apply default risk level
+	// Step 10: Apply default risk level
 	if defaultRisk != runnertypes.RiskLevelUnknown {
 		return defaultRisk, "", "Default directory-based risk level", nil
 	}
