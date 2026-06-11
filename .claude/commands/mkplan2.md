@@ -81,15 +81,13 @@ Work in the following order.
    …
    ```
 
-9. Commit the implementation plan document with a message that explains the PR grouping rationale.
-
-10. Run the critical-review subagent procedure in `.claude/commands/_lib/review-subagent-pattern.md` with these inputs:
+9. Run the critical-review subagent procedure in `.claude/commands/_lib/review-subagent-pattern.md` with these inputs:
     - **ARTIFACT**: the PR boundary design.
     - **PERSONA**: an experienced senior engineer and senior SRE. Direct it to surface PRs that are too large to review, PRs that cannot be built independently, missing risk isolation, and cross-references that were not updated after renumbering.
     - **FILES**: the implementation plan document, the architecture document, and the requirements document (paths in `_context.md`), as resolved absolute-path strings.
     - **CRITERIA**: every item from the PR boundary review checklist below, copied verbatim.
 
-    Extra rule: commit after all Critical and Major issues are resolved.
+10. Commit the implementation plan document with a message that explains the PR grouping rationale, only after all review passes are complete and all Critical and Major issues are resolved.
 
 **PR boundary review checklist (use verbatim as evaluation criteria in the subagent prompt above):**
 - [ ] Every `### PR-N 作成ポイント` section appears after all steps it covers.
