@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Quick Links
 
 **Development Guides:**
-- Requirements and Acceptance Criteria Process: [EN](docs/dev/developer_guide/requirements_process.md) / [JA](docs/dev/developer_guide/requirements_process.ja.md) - Process for implementing new features
-- Test Organization Guide: [EN](docs/dev/developer_guide/test_organization.md) / [JA](docs/dev/developer_guide/test_organization.ja.md) - Test helper file organization
+- Requirements and Acceptance Criteria Process: [requirements_process.md](docs/dev/developer_guide/requirements_process.md) - Process for implementing new features
+- Test Organization Guide: [test_organization.md](docs/dev/developer_guide/test_organization.md) - Test helper file organization
 - [Package Reference](docs/dev/developer_guide/package_reference.md) - Detailed package structure
 
 ## Documents
@@ -165,13 +165,9 @@ When implementing new features or security-critical functionality, follow the pr
 **Quick summary:**
 1. Create `01_requirements.md` with explicit acceptance criteria
 2. Create `02_architecture.md` with high-level design (Mermaid diagrams)
-3. Create `04_implementation_plan.md` with progress tracking (checkboxes) and AC traceability
+3. Create `03_implementation_plan.md` with progress tracking (checkboxes) and AC traceability
 4. Write tests for each acceptance criterion
 5. Link tests to acceptance criteria in the implementation plan
-
-`03_detailed_specification.md` is intentionally skipped: writing it tends to duplicate
-the eventual code. Capture the work outline in `04_implementation_plan.md` instead and
-let the implementation itself record the concrete details.
 
 ## Tool Execution Safety
 
