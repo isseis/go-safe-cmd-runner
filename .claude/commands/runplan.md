@@ -60,7 +60,7 @@ Work in order.
 - Output the PR URL and mark the second checkbox (`PR を作成した`) as `[x]` and commit.
 - Pause and ask the user: "PR-N を作成しました: <URL>。マージされたらお知らせください。"
 - Wait for the user to confirm the PR is merged. Then:
-  - Create a new branch for the next group of work (e.g. `git checkout -b <feature-branch>-<N+1>`).
+  - Update the local base branch so it includes the merge (e.g. `git checkout main && git pull`), then create a new branch for the next group of work from it (e.g. `git checkout -b <feature-branch>-<N+1>`). Without this, especially after a squash or rebase merge, the new branch would still be based on the pre-merge commits.
   - Mark the remaining PR checkpoint checkboxes (`PR がマージされた` and `次のブランチへ切り替えた`) as `[x]` and commit.
 - Return to step 4.
 
