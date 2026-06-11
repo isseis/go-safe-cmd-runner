@@ -1,17 +1,21 @@
-## 準備
+> **Project context**: this command refers to "the build checks" (e.g. `make lint`,
+> `make test`). Their exact values are defined in `.claude/commands/_context.md`
+> under "Tech-stack convention". Read that file and use its values; the rest of
+> this command is project-independent.
 
-現在のブランチに対応する PR を確認する。
+## Preparation
+
+Check the PR for the current branch.
 
 ```
 gh pr view --json number,url,headRefName
 ```
 
-PR が存在しない場合は終了する。
-owner・repo・PR 番号を後続のステップで使うために控えておく。
+If no PR exists, stop. Note the owner, repo, and PR number for use in subsequent steps.
 
-## 未解決コメントの取得
+## Fetch Unresolved Comments
 
-GraphQL で未解決レビュースレッドの一覧を取得する。
+Use GraphQL to get a list of unresolved review threads.
 
 ```
 gh api graphql -F owner=OWNER -F repo=REPO -F number=NUMBER -f query='
@@ -41,25 +45,38 @@ gh api graphql -F owner=OWNER -F repo=REPO -F number=NUMBER -f query='
 '
 ```
 
-`isResolved: false` のスレッドのみを対象にする。対象がなければ終了する。
+Only process threads where `isResolved: false`. If there are none, stop.
 
-## 各未解決スレッドへの対応
+## Address Each Unresolved Thread
 
-各スレッドに対して順番に以下を実施する。
+Process each thread in order as follows.
 
-### 対応が明らかな場合
+### Step 1: Assess validity of the comment
 
-1. 指摘に従いコードを修正する。
-2. `make lint` と `make test` を実行し、エラーがないことを確認する。
-3. commit する。
-4. 対応内容を PR コメントとしてリプライする（英語で記述する）。
+Before making any change, evaluate whether the suggested fix is actually correct and beneficial for this codebase. Consider:
+
+- Does the fix align with the project's design principles, conventions, and goals?
+- Could the suggestion be based on a misunderstanding of the context (e.g., applying general style rules to a domain-specific file like an AI prompt)?
+- Does it improve correctness, clarity, or maintainability — or is it a stylistic preference that doesn't apply here?
+
+Based on this assessment, classify the thread as one of:
+- **Valid**: The fix is clearly correct and beneficial → follow [When the comment is valid and the fix is clear].
+- **Invalid**: The fix is incorrect or inappropriate for this context → follow [When the comment is invalid].
+- **Unclear**: You are uncertain whether the fix is appropriate → follow [When the fix is unclear].
+
+### When the comment is valid and the fix is clear
+
+1. Fix the code as indicated by the comment.
+2. Run the build checks (defined in `.claude/commands/_context.md`, Tech-stack convention) to confirm no errors.
+3. Commit.
+4. Reply to the PR comment thread with a description of the fix (in English).
 
    ```
-   gh api repos/OWNER/REPO/pulls/NUMBER/comments/COMMENT_ID/replies \
+   gh api repos/OWNER/REPO/pulls/NUMBER/comments/DATABASE_ID/replies \
      -X POST -f body="Description of the fix in English"
    ```
 
-5. スレッドを resolved にする。
+5. Resolve the thread.
 
    ```
    gh api graphql -F threadId=THREAD_ID -f query='
@@ -71,18 +88,52 @@ gh api graphql -F owner=OWNER -F repo=REPO -F number=NUMBER -f query='
    '
    ```
 
-### 対応方針が明らかでない場合
+### When the comment is invalid
 
-スキップして次のスレッドへ進む（後のステップで再検討）。
+1. Reply to the PR comment thread explaining why the suggestion does not apply (in English).
 
-## push
+   ```
+   gh api repos/OWNER/REPO/pulls/NUMBER/comments/DATABASE_ID/replies \
+     -X POST -f body="Explanation of why the suggestion is not applicable"
+   ```
 
-明らかなコメントへの対応が全て完了したら `git push` する。
+2. Resolve the thread.
 
-## 未解決スレッドの再検討
+   ```
+   gh api graphql -F threadId=THREAD_ID -f query='
+     mutation($threadId:ID!) {
+       resolveReviewThread(input:{threadId:$threadId}) {
+         thread { id isResolved }
+       }
+     }
+   '
+   ```
 
-スキップしたスレッドについて、それぞれ以下を提示する。
+### When the fix is unclear
 
-- **問題の要約**: コメントが指摘している問題を簡潔にまとめる。
-- **対応案**: 考えられる選択肢を複数挙げ、それぞれ pros と cons を示す。
-- **推奨案**: 可能であれば一つ選び、理由を述べる。
+Skip and move to the next thread (revisit in a later step).
+
+## Check PR Description Accuracy
+
+Before pushing, verify that the PR title and body still accurately describe the current state of the changes. A PR description becomes stale when the approach changes significantly during review (e.g., a TLS strategy is revised, a scope item is added or removed, a file list changes). Stale descriptions cause reviewers to flag inconsistencies that are not real bugs.
+
+If the description is stale, update it:
+
+```
+gh pr edit NUMBER --body "$(cat <<'EOF'
+...updated body...
+EOF
+)"
+```
+
+## Push
+
+Once the PR description is accurate and all clear comments have been addressed, run `git push`.
+
+## Revisit Skipped Threads
+
+For each skipped thread, present the following:
+
+- **Problem summary**: Briefly describe the issue raised by the comment.
+- **Proposed approaches**: List multiple possible options with pros and cons for each.
+- **Recommendation**: If possible, recommend one option and explain why.
