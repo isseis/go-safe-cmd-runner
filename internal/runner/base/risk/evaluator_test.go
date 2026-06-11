@@ -304,6 +304,23 @@ func TestStandardEvaluator_EvaluateRisk_Coreutils(t *testing.T) {
 	}
 }
 
+func TestStandardEvaluator_EvaluateRisk_CoreutilsStatError(t *testing.T) {
+	// A path under the coreutils directory whose file does not exist makes the
+	// setuid stat fail. EvaluateRisk must fail closed: propagate the error and
+	// return RiskLevelUnknown so the command is not executed.
+	tmp := t.TempDir()
+	security.SetCoreutilsDirForTest(t, tmp)
+
+	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
+	runtimeCmd := &runnertypes.RuntimeCommand{
+		ExpandedCmd:  filepath.Join(tmp, "mkdir"), // not created
+		ExpandedArgs: nil,
+	}
+	result, err := evaluator.EvaluateRisk(runtimeCmd)
+	require.Error(t, err)
+	assert.Equal(t, runnertypes.RiskLevelUnknown, result)
+}
+
 func TestStandardEvaluator_EvaluateRisk_RiskLevelHierarchy(t *testing.T) {
 	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
 
