@@ -105,7 +105,7 @@ Work in order.
 
 Phase-group review checklist (use verbatim as evaluation criteria in the subagent prompt above):
 - [ ] Implementation is consistent with `02_architecture.md`.
-- [ ] Every AC assigned to this phase group by the implementation plan has at least one test.
+- [ ] Every AC assigned to this phase group by the implementation plan has at least one `test` or `static` verification, as labeled in the implementation plan's Acceptance Criteria Verification section.
 - [ ] Test coverage is sufficient: non-trivial logic, error paths, and boundary values are covered.
 - [ ] No tests duplicate existing coverage without good reason.
 - [ ] No tests are so trivial that they add no verification value.

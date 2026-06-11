@@ -82,7 +82,7 @@ Work in the following order.
 - [ ] Every acceptance criterion in `01_requirements.md` is addressed by at least one implementation task.
 - [ ] For each acceptance criterion that covers an existing code pattern, the plan addresses ALL instances of that pattern in the codebase. Verify by searching the codebase for the pattern before assessing completeness.
 - [ ] The plan includes an explicit acceptance criteria verification section.
-- [ ] Every acceptance criterion has at least one concrete test task.
+- [ ] Every acceptance criterion has at least one concrete `test` or `static` verification task (per the labeling in step 6); `static`-only is valid only for criteria that are purely about textual/documentation presence.
 - [ ] Test tasks cover non-trivial logic, error paths, and boundary values where applicable.
 - [ ] Creation tasks (new prose, tables, command examples, runbooks, translations) each have a verification task that checks the content against ground truth, not only an absence-search.
 - [ ] The plan does not duplicate tests or re-test behavior that existing tests already cover without reason.

@@ -190,7 +190,7 @@ Include the following section at the top of `01_requirements.md`, `02_architectu
 - Place tests in standard test files (`*_test.go`)
 - Follow normal test naming conventions based on what is being tested
 - Tests can be unit tests, integration tests, or any appropriate type
-- Each acceptance criterion must have at least one test
+- Each acceptance criterion must have at least one `test` or `static` verification (see "Acceptance Criteria Verification" in `03_implementation_plan.md`); a `static` check alone is sufficient only for criteria that are purely about textual/documentation presence
 - Tests must verify the actual behavior, not just the happy path
 - Link tests to acceptance criteria in the implementation plan
 
