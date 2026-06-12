@@ -40,6 +40,18 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (runne
 		return runnertypes.RiskLevelHigh, nil
 	}
 
+	// Classify commands resolved under the coreutils single-binary directory.
+	// This bypasses binary analysis (below), which misclassifies coreutils
+	// because every subcommand shares the same binary's symbols. On stat error
+	// we fail closed by propagating the error so the command is not executed.
+	coreutilsRisk, handled, err := security.CoreutilsCommandRisk(cmd.ExpandedCmd, cmd.ExpandedArgs)
+	if err != nil {
+		return runnertypes.RiskLevelUnknown, err
+	}
+	if handled {
+		return coreutilsRisk, nil
+	}
+
 	// Check for network operations.
 	// Forward the pre-verified content hash so ELF analysis of static binaries
 	// can skip a redundant file read when looking up syscall analysis results.

@@ -49,6 +49,13 @@ func TestGetDefaultRiskByDirectory(t *testing.T) {
 			expectedRisk: runnertypes.RiskLevelUnknown,
 		},
 		{
+			// The coreutils directory is intentionally not classified here;
+			// the coreutils step in AnalyzeCommandSecurity handles it instead.
+			name:         "coreutils directory not classified by directory default",
+			cmdPath:      "/usr/lib/cargo/bin/coreutils/mkdir",
+			expectedRisk: runnertypes.RiskLevelUnknown,
+		},
+		{
 			name:         "subdirectory of bin",
 			cmdPath:      "/bin/subdir/script",
 			expectedRisk: runnertypes.RiskLevelLow,

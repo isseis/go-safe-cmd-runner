@@ -3,6 +3,8 @@
 package risk
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -244,6 +246,79 @@ func TestStandardEvaluator_EvaluateRisk_EmptyCommand(t *testing.T) {
 	result, err := evaluator.EvaluateRisk(runtimeCmd)
 	require.NoError(t, err)
 	assert.Equal(t, runnertypes.RiskLevelLow, result)
+}
+
+func TestStandardEvaluator_EvaluateRisk_Coreutils(t *testing.T) {
+	// Redirect the coreutils directory to a temp dir so the classifier can stat
+	// real files. Tests that override coreutilsDir must not run in parallel.
+	tmp := t.TempDir()
+	security.SetCoreutilsDirForTest(t, tmp)
+
+	makeBinary := func(name string) string {
+		path := filepath.Join(tmp, name)
+		require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\necho test"), 0o755))
+		return path
+	}
+
+	mkdirPath := makeBinary("mkdir")
+	rmPath := makeBinary("rm")
+	multicallPath := makeBinary("coreutils")
+
+	tests := []struct {
+		name     string
+		cmd      string
+		args     []string
+		expected runnertypes.RiskLevel
+	}{
+		{
+			name:     "safe coreutils command bypasses binary analysis",
+			cmd:      mkdirPath,
+			args:     nil,
+			expected: runnertypes.RiskLevelLow,
+		},
+		{
+			name:     "destructive coreutils command stays high",
+			cmd:      rmPath,
+			args:     []string{"-rf", "/tmp/x"},
+			expected: runnertypes.RiskLevelHigh,
+		},
+		{
+			name:     "multicall entrypoint classified by effective subcommand",
+			cmd:      multicallPath,
+			args:     []string{"rm", "-rf", "/tmp/x"},
+			expected: runnertypes.RiskLevelHigh,
+		},
+	}
+
+	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runtimeCmd := &runnertypes.RuntimeCommand{
+				ExpandedCmd:  tt.cmd,
+				ExpandedArgs: tt.args,
+			}
+			result, err := evaluator.EvaluateRisk(runtimeCmd)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestStandardEvaluator_EvaluateRisk_CoreutilsStatError(t *testing.T) {
+	// A path under the coreutils directory whose file does not exist makes the
+	// setuid stat fail. EvaluateRisk must fail closed: propagate the error and
+	// return RiskLevelUnknown so the command is not executed.
+	tmp := t.TempDir()
+	security.SetCoreutilsDirForTest(t, tmp)
+
+	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
+	runtimeCmd := &runnertypes.RuntimeCommand{
+		ExpandedCmd:  filepath.Join(tmp, "mkdir"), // not created
+		ExpandedArgs: nil,
+	}
+	result, err := evaluator.EvaluateRisk(runtimeCmd)
+	require.Error(t, err)
+	assert.Equal(t, runnertypes.RiskLevelUnknown, result)
 }
 
 func TestStandardEvaluator_EvaluateRisk_RiskLevelHierarchy(t *testing.T) {
