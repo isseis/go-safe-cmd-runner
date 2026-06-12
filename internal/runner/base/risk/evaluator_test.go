@@ -321,6 +321,49 @@ func TestStandardEvaluator_EvaluateRisk_CoreutilsStatError(t *testing.T) {
 	assert.Equal(t, runnertypes.RiskLevelUnknown, result)
 }
 
+func TestStandardEvaluator_EvaluateRisk_CoreutilsScopeLimitation(t *testing.T) {
+	// Scope limitation (non-functional 4.1): redirecting the coreutils directory
+	// must not change the final risk of commands that do not resolve under it.
+	// We compute a baseline for several non-coreutils commands, then re-evaluate
+	// them after pointing coreutilsDir at a temp directory, and assert the
+	// results are unchanged. This also re-confirms that privilege escalation
+	// (sudo) stays Critical under the override (regression of the existing
+	// TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation guarantee).
+	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
+
+	cmds := []struct {
+		name string
+		cmd  string
+		args []string
+	}{
+		{"privilege escalation stays critical", "sudo", []string{"ls", "/root"}},
+		{"destructive operation stays high", "rm", []string{"-rf", "/tmp/x"}},
+		{"network operation stays medium", "wget", []string{"https://example.com/file.txt"}},
+		{"system modification stays medium", "systemctl", []string{"restart", "nginx"}},
+		{"safe command stays low", "echo", []string{"hi"}},
+	}
+
+	// Baseline before any coreutils override.
+	baseline := make(map[string]runnertypes.RiskLevel, len(cmds))
+	for _, c := range cmds {
+		risk, err := evaluator.EvaluateRisk(&runnertypes.RuntimeCommand{ExpandedCmd: c.cmd, ExpandedArgs: c.args})
+		require.NoError(t, err, c.name)
+		baseline[c.name] = risk
+	}
+
+	// Apply the coreutils override; non-coreutils paths must be unaffected.
+	tmp := t.TempDir()
+	security.SetCoreutilsDirForTest(t, tmp)
+
+	for _, c := range cmds {
+		t.Run(c.name, func(t *testing.T) {
+			risk, err := evaluator.EvaluateRisk(&runnertypes.RuntimeCommand{ExpandedCmd: c.cmd, ExpandedArgs: c.args})
+			require.NoError(t, err)
+			assert.Equal(t, baseline[c.name], risk, "coreutils override must not change non-coreutils risk")
+		})
+	}
+}
+
 func TestStandardEvaluator_EvaluateRisk_RiskLevelHierarchy(t *testing.T) {
 	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
 
