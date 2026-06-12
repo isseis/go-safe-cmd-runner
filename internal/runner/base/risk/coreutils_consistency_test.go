@@ -168,9 +168,20 @@ func TestCoreutilsRiskConsistency_Setuid(t *testing.T) {
 	runtimeRisk, err := evaluator.EvaluateRisk(runtimeCmd)
 	require.NoError(t, err)
 
-	dryRunRisk, _, _, err := security.AnalyzeCommandSecurity(path, nil, "")
+	dryRunRisk, _, dryRunReason, err := security.AnalyzeCommandSecurity(path, nil, "")
 	require.NoError(t, err)
 
 	assert.Equal(t, runnertypes.RiskLevelHigh, runtimeRisk, "runtime risk")
 	assert.Equal(t, runnertypes.RiskLevelHigh, dryRunRisk, "dry-run risk")
+
+	// Assert provenance, not just the value: the dry-run High must come from the
+	// setuid step (Step 6), which runs before the coreutils step (Step 7). Since
+	// CoreutilsCommandRisk also returns High for a setuid binary, checking only
+	// the risk level would not detect a regression that moved the coreutils step
+	// ahead of Step 6. The reason string distinguishes the two: Step 6 returns
+	// "Executable has setuid or setgid bit set" whereas the coreutils step
+	// returns "Coreutils command risk classification".
+	const setuidStepReason = "Executable has setuid or setgid bit set"
+	assert.Equal(t, setuidStepReason, dryRunReason,
+		"dry-run High must be produced by the setuid step (Step 6), before the coreutils step")
 }
