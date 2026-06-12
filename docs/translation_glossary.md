@@ -91,9 +91,8 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
-| データ持ち出し | data exfiltration | 機密データを外部サービスへ送出すること |
-| データフロー解析 | dataflow analysis | CFGを用いたデータの流れの解析 |
 | データ持ち出し | data exfiltration | 機密データの外部送信（セキュリティの文脈） |
+| データフロー解析 | dataflow analysis | CFGを用いたデータの流れの解析 |
 | 依存 / 依存解析 | dependency / dependency analysis | 動的ライブラリ依存解析の文脈 |
 | 判定メソッド | determination method | syscall番号の決定手段を示す文字列 |
 | デバッグ | debug / debugging | |
@@ -146,11 +145,11 @@
 | 排他性 | exclusivity | Field exclusivity context |
 | 例 | example | |
 | 例外 | exception | |
-| 実行 | execute / execution | |
-| 実行可能ファイル | executable | |
 | 実行時 | at runtime | |
-| 実効リスク | effective risk | 算出された実際の危険度（リスク判定の文脈） |
 | 早期リターン | early return | 最初に該当した結果を返す制御方式 |
+| 実効リスク | effective risk | 算出された実際の危険度（リスク判定の文脈） |
+| 実行可能ファイル | executable | |
+| 実行 | execute / execution | |
 | 明示 | explicit | env_allowlistの継承モードの文脈 |
 | 展開 | expansion | |
 | 展開済み | expanded | 変数展開の文脈 |
@@ -165,11 +164,15 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+<<<<<<< HEAD
 | フェイルクローズ | fail-closed | 確認できない場合は実行を拒否する設計（優雅な劣化の対義） |
 | フェイルセーフ | fail-safe | 安全側へ倒す設計 |
 | 誤検出 | false positive | 誤ってSYSCALL命令として検出すること |
+=======
+>>>>>>> c9a1a4b8 (docs: alphabetize new glossary entries within their sections)
 | フェイルクローズド | fail-closed | エラー時に安全側（実行中止）へ倒す設計 |
 | フェイルセーフ | fail-safe | 不明時に安全側のリスクへ倒す設計 |
+| 誤検出 | false positive | 誤ってSYSCALL命令として検出すること |
 | 前向きスキャン | forward scan | 命令列を先頭から走査する解析手法 |
 | FAQ | FAQ | Frequently Asked Questions |
 | 汎用的 | generic | |
@@ -415,8 +418,8 @@
 | 責務 | responsibility | |
 | 責務分担 | responsibility split | コンポーネント間の責務の切り分け |
 | リスク | risk | |
-| リスクレベル | risk level | |
 | リスク判定 | risk evaluation | リスクレベルの算出 |
+| リスクレベル | risk level | |
 | 堅牢性 | robustness | |
 | 役割 | role | |
 | ルート | root | |
