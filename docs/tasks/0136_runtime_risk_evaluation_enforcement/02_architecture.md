@@ -8,7 +8,7 @@
 | Created | 2026-06-14 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-06-15: セキュリティレビュー（Critical 3・High 4・Medium 4）を反映 — 評価と実行の結合（`VerifiedCommandPlan` 中心設計、executor は plan のみ exec）、TOCTOU の fd ベース実行（fexecve/execveat）第一候補化、identity ゲートを coreutils 抑制より前段に配置、dry-run unknown/normal Blocking を `AssessmentStatus`/`EvaluationContext` で型区別、「統合評価モデル＋優先順位」への用語精緻化＋リスク次元優先順位表、`Classify` を全検証済み実行可能ファイルに適用、監査 `Decision` enum・`BlockingReason`・Chain の Role/Disposition、Critical の一貫扱い、systemctl argv 解析規則、フェーズの縦切り化＋リリースゲート。2026-06-15: 実装計画（03）レベルの詳細を点検しトリム — systemctl の argv 解析手順と監査ロガーの具体配線（Config フィールド/コンストラクタ）を契約レベルに圧縮し、具体は 03 へ移送。2026-06-15: 【isseis 指示】dry-run の `unknown` リスク状態を廃止（01 の AC-46/58 改訂と整合）。dry-run は normal と同じ read-only 解析で判定を決定的に再現し、出力は allow/deny の2区分。`AssessmentStatus`・`EvaluationContext`・`VerificationState` を削除、`EvaluateRisk(cmd)` へ簡素化、`Decision` enum から `Unknown` を除去、検証不能 deny は `VerificationUnavailable` 運用フラグで区別 |
+| Comments | 2026-06-15: セキュリティレビュー（Critical 3・High 4・Medium 4）を反映 — 評価と実行の結合（`VerifiedCommandPlan` 中心設計、executor は plan のみ exec）、TOCTOU の fd ベース実行（fexecve/execveat）第一候補化、identity ゲートを coreutils 抑制より前段に配置、dry-run unknown/normal Blocking を `AssessmentStatus`/`EvaluationContext` で型区別、「統合評価モデル＋優先順位」への用語精緻化＋リスク次元優先順位表、`Classify` を全検証済み実行可能ファイルに適用、監査 `Decision` enum・`BlockingReason`・Chain の Role/Disposition、Critical の一貫扱い、systemctl argv 解析規則、フェーズの縦切り化＋リリースゲート。2026-06-15: 実装計画（03）レベルの詳細を点検しトリム — systemctl の argv 解析手順と監査ロガーの具体配線（Config フィールド/コンストラクタ）を契約レベルに圧縮し、具体は 03 へ移送。2026-06-15: 【isseis 指示】dry-run の `unknown` リスク状態を廃止（01 の AC-46/58 改訂と整合）。dry-run は normal と同じ read-only 解析で判定を決定的に再現し、出力は allow/deny の2区分。`AssessmentStatus`・`EvaluationContext`・`VerificationState` を削除、`EvaluateRisk(cmd)` へ簡素化、`Decision` enum から `Unknown` を除去、検証不能 deny は `VerificationUnavailable` 運用フラグで区別。2026-06-15: 機械可読コードを string 派生型化 — `ReasonCode` 型＋定数を導入し `ReasonCodes []ReasonCode` / `BlockingReason ReasonCode` に変更。列挙的文字列（Role/Disposition/ErrorClass）も派生型化する方針を明記（AC-69 の網羅検証と親和） |
 
 本書は `01_requirements.md`（status: `approved`）の機能要件 F-001〜F-015 / 受入基準 AC-01〜AC-87 を満たすための高レベル設計を定義する。実装詳細・擬似コード・アルゴリズムは含めない（それらは実装と `03_implementation_plan.md` で扱う）。
 
@@ -249,13 +249,28 @@ type VerifiedIdentity struct {
 
 > **dry-run の判定は決定的（`unknown` 状態を持たない）**: dry-run は normal と同じ read-only 解析を行い、実行時判定を allow/deny で正確に再現する。解析・検証が利用不能な環境でも AC-51 により実行時は必ず拒否されるため dry-run は **deny 予告** となる（§3.5）。よって「許可されるかもしれない」という曖昧な `unknown` リスク状態は設けない。評価は normal/dry-run でモード非依存（モードに応じた副作用＝exec か preview かは ResourceManager の責務）。
 
+機械可読なコードは、生の `string` ではなく **string 派生型＋定義済み定数** で表現する（タイプミス防止・利用箇所の発見性・網羅性検証 AC-69 のため）。
+
 ```go
+// ReasonCode は判定根拠の機械可読コード（string 派生型）。定数で定義し、生文字列は使わない。
+type ReasonCode string
+
+const (
+    ReasonDestructiveFileOperation ReasonCode = "destructive_file_operation"
+    ReasonBinaryAnalysisDynamicLoad ReasonCode = "binary_analysis_dynamic_load"
+    ReasonCoreutilsClassification  ReasonCode = "coreutils_classification"
+    ReasonPrivilegeEscalation      ReasonCode = "privilege_escalation"
+    ReasonUncertainMissingRecord   ReasonCode = "uncertain_missing_record"
+    ReasonIdentityUnbound          ReasonCode = "identity_unbound"
+    // 全コード一覧（バイナリ解析各分岐含む）は実装で定義し、AC-69 で網羅をテストする。
+)
+
 // RiskAssessment は実効リスクとその判定根拠を表す（新規）。
 type RiskAssessment struct {
     Level          runnertypes.RiskLevel // 実効リスク（全次元の最大値）
     Blocking       bool                  // true なら risk_level によらず拒否（不確実 / identity 束縛不能）
-    BlockingReason string                // Blocking の理由コード（例: "uncertain_missing_record", "identity_unbound"）
-    ReasonCodes    []string              // 機械可読な判定根拠（例: "destructive_file_operation"）
+    BlockingReason ReasonCode            // Blocking の理由コード（例: ReasonUncertainMissingRecord）
+    ReasonCodes    []ReasonCode          // 機械可読な判定根拠
     Reasons        []string              // 人間可読な根拠（プロファイル由来の Reason 等）
     NetworkType    string                // 監査用（none/always/conditional）
 }
@@ -265,6 +280,8 @@ type Evaluator interface {
     EvaluateRisk(cmd *runnertypes.RuntimeCommand) (VerifiedCommandPlan, error)
 }
 ```
+
+> 同様に、列挙的な文字列フィールド（`ExecutedArtifact.Role` / `Disposition`、`RiskAuditEntry.ErrorClass` 等）も string 派生型＋定数で表現する（下記は簡潔さのため `string` 表記だが、実装では各々専用の派生型を定義する）。
 
 > 現行の `EvaluateRisk(cmd) (runnertypes.RiskLevel, error)` を上記へ変更する。`error` は「エラー中止」（解決失敗・予期しないレコード読込エラー等）専用。設定によらず実行を中止する不確実ケースは `RiskAssessment.Blocking=true`＋`BlockingReason`（内部 Critical 相当）で表現する。**特権昇格は `Level=Critical`**（設定不可のため常に拒否。監査では `effective_risk=critical, decision=deny, blocking_reason=privilege_escalation` で一貫させる）。`Level=Critical` と `Blocking=true` はいずれも「必ず拒否」だが、前者はリスクレベル（特権昇格）、後者は不確実/identity 失敗という意味の異なる経路である。
 
@@ -321,8 +338,8 @@ classDiagram
         <<struct>>
         +Level RiskLevel
         +Blocking bool
-        +BlockingReason string
-        +ReasonCodes []string
+        +BlockingReason ReasonCode
+        +ReasonCodes []ReasonCode
         +NetworkType string
     }
     class CommandRiskProfile {
@@ -384,8 +401,8 @@ type RiskAuditEntry struct {
     MaxAllowedRisk runnertypes.RiskLevel
     Decision       Decision              // allow/deny/error
     VerificationUnavailable bool         // dry-run で解析・検証が利用不能だった（deny だが環境起因。AC-58 の運用区別）
-    BlockingReason string                // Blocking/Critical 時の理由（例: "privilege_escalation", "uncertain_missing_record"）
-    ErrorClass     string                // DecisionError 時の分類（例: "symlink_resolution"）
+    BlockingReason ReasonCode            // Blocking/Critical 時の理由（例: ReasonPrivilegeEscalation）
+    ErrorClass     string                // DecisionError 時の分類（実装では派生型。例: "symlink_resolution"）
     Chain          []ExecutedArtifact    // 間接実行連鎖の全成果物（AC-11）
 }
 
