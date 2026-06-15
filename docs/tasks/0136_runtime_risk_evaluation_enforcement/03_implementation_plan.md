@@ -87,12 +87,12 @@
 
 **対象ファイル**: `internal/runner/base/risktypes/types.go`（新規）, `internal/runner/base/risktypes/reason_codes.go`（新規）
 
-- [ ] `VerifiedCommandPlan` / `VerifiedIdentity` / `RiskAssessment` / `ExecutedArtifact` / `RiskAuditEntry` を定義（`02_architecture.md` §3.1/§3.2 の型に一致。`RiskAuditEntry` は `Mode`/`Decision`/`MaxAllowedRisk`/`Chain` 等を持ち、Phase 3 の `LogRiskProfile` がこの型を受ける）。
-- [ ] **fd 所有権の型を確定（02 §3.6.2 が 03 へ委譲）**: `VerifiedFD` を「生 fd（`int`）を内包し `Close() error` と raw fd 取得（例 `Fd() int`）を持つクローズ可能ラッパー」として定義する。`VerifiedIdentity` および各 `ExecutedArtifact` は **fd を `*VerifiedFD`（nil=fd なし）で保持**する（02 が `FD *int` とスケッチしていた箇所を本タスクでは `*VerifiedFD` に確定。所有権・close を一元化）。`/proc/self/fd/<n>` の `n` はこのラッパーの `Fd()` から得る（int を直接扱うコードも矛盾なく利用できる）。生 `int` フィールドは持たせない（close 漏れ・二重所有を防ぐ）。
-- [ ] `BinaryAnalysisClass`（`Uncertain=0` がゼロ値=fail-closed）＋ `BinaryAnalysisResult` を定義（§3.1）。
-- [ ] `ReasonCode`（string 派生型）＋全定数を定義。最低限以下を含む（網羅は AC-69 でテスト）: `ReasonDestructiveFileOperation`, `ReasonSystemModification`, `ReasonPrivilegeEscalation`, `ReasonCoreutilsClassification`, `ReasonProfilePrivilege`, `ReasonProfileDestruction`, `ReasonProfileDataExfil`, `ReasonProfileNetwork`, `ReasonProfileSystemMod`, `ReasonBinaryAnalysisNetwork`, `ReasonBinaryAnalysisDynamicLoad`, `ReasonBinaryAnalysisExec`, `ReasonBinaryAnalysisSVC`, `ReasonBinaryAnalysisMprotectExec`, `ReasonUncertainMissingRecord`, `ReasonUncertainSchemaMismatch`, `ReasonUncertainHashMismatch`, `ReasonUncertainUnsupportedFormat`, `ReasonUncertainUnverifiedIdentity`, `ReasonAnalysisDisabled`, `ReasonArbitraryCodeExecution`, `ReasonDangerousArgPattern`, `ReasonSymlinkResolutionFailed`, `ReasonIdentityUnbound`, `ReasonIndirectExecutionRejected`, `ReasonForbiddenEnvVar`。各定数の文字列値は snake_case の英語（例: `"destructive_file_operation"`）。
-- [ ] `ErrorClass`（string 派生型）＋定数: `ErrorClassSymlinkResolution`, `ErrorClassCoreutilsFileInfo`, `ErrorClassRecordLoad`, `ErrorClassPathResolution`。
-- [ ] `ArtifactRole` / `ArtifactDisposition` / `Decision`（`DecisionAllow`/`DecisionDeny`）/ `ExecutionMode`（`ModeNormal`/`ModeDryRun`）を定義（§3.2）。
+- [x] `VerifiedCommandPlan` / `VerifiedIdentity` / `RiskAssessment` / `ExecutedArtifact` / `RiskAuditEntry` を定義（`02_architecture.md` §3.1/§3.2 の型に一致。`RiskAuditEntry` は `Mode`/`Decision`/`MaxAllowedRisk`/`Chain` 等を持ち、Phase 3 の `LogRiskProfile` がこの型を受ける）。
+- [x] **fd 所有権の型を確定（02 §3.6.2 が 03 へ委譲）**: `VerifiedFD` を「生 fd（`int`）を内包し `Close() error` と raw fd 取得（例 `Fd() int`）を持つクローズ可能ラッパー」として定義する。`VerifiedIdentity` および各 `ExecutedArtifact` は **fd を `*VerifiedFD`（nil=fd なし）で保持**する（02 が `FD *int` とスケッチしていた箇所を本タスクでは `*VerifiedFD` に確定。所有権・close を一元化）。`/proc/self/fd/<n>` の `n` はこのラッパーの `Fd()` から得る（int を直接扱うコードも矛盾なく利用できる）。生 `int` フィールドは持たせない（close 漏れ・二重所有を防ぐ）。
+- [x] `BinaryAnalysisClass`（`Uncertain=0` がゼロ値=fail-closed）＋ `BinaryAnalysisResult` を定義（§3.1）。
+- [x] `ReasonCode`（string 派生型）＋全定数を定義。最低限以下を含む（網羅は AC-69 でテスト）: `ReasonDestructiveFileOperation`, `ReasonSystemModification`, `ReasonPrivilegeEscalation`, `ReasonCoreutilsClassification`, `ReasonProfilePrivilege`, `ReasonProfileDestruction`, `ReasonProfileDataExfil`, `ReasonProfileNetwork`, `ReasonProfileSystemMod`, `ReasonBinaryAnalysisNetwork`, `ReasonBinaryAnalysisDynamicLoad`, `ReasonBinaryAnalysisExec`, `ReasonBinaryAnalysisSVC`, `ReasonBinaryAnalysisMprotectExec`, `ReasonUncertainMissingRecord`, `ReasonUncertainSchemaMismatch`, `ReasonUncertainHashMismatch`, `ReasonUncertainUnsupportedFormat`, `ReasonUncertainUnverifiedIdentity`, `ReasonAnalysisDisabled`, `ReasonArbitraryCodeExecution`, `ReasonDangerousArgPattern`, `ReasonSymlinkResolutionFailed`, `ReasonIdentityUnbound`, `ReasonIndirectExecutionRejected`, `ReasonForbiddenEnvVar`。各定数の文字列値は snake_case の英語（例: `"destructive_file_operation"`）。
+- [x] `ErrorClass`（string 派生型）＋定数: `ErrorClassSymlinkResolution`, `ErrorClassCoreutilsFileInfo`, `ErrorClassRecordLoad`, `ErrorClassPathResolution`。
+- [x] `ArtifactRole` / `ArtifactDisposition` / `Decision`（`DecisionAllow`/`DecisionDeny`）/ `ExecutionMode`（`ModeNormal`/`ModeDryRun`）を定義（§3.2）。
 
 **完了条件**: `go build -tags test ./internal/runner/base/risktypes/` が通る。型のゼロ値が fail-closed（`BinaryAnalysisClass` ゼロ値 = `Uncertain`）であることを単体テストで確認。
 
@@ -100,8 +100,8 @@
 
 **対象ファイル**: [config.go](../../../internal/runner/base/runnertypes/config.go), [config_test.go](../../../internal/runner/base/runnertypes/config_test.go)
 
-- [ ] `ParseRiskLevel` に `case "unknown":` を追加し `ErrInvalidRiskLevel` を返す（`"critical"` と同様。AC-24）。`"low"/"medium"/"high"/省略/空文字` は不変（AC-26）。
-- [ ] `config_test.go` に `ParseRiskLevel("unknown")` エラーケースを追加。
+- [x] `ParseRiskLevel` に `case "unknown":` を追加し `ErrInvalidRiskLevel` を返す（`"critical"` と同様。AC-24）。`"low"/"medium"/"high"/省略/空文字` は不変（AC-26）。
+- [x] `config_test.go` に `ParseRiskLevel("unknown")` エラーケースを追加。
 
 **完了条件**: `go test -tags test ./internal/runner/base/runnertypes/ -run RiskLevel` が通る。
 
@@ -109,8 +109,8 @@
 
 **対象ファイル**: [spec.go](../../../internal/runner/base/runnertypes/spec.go)
 
-- [ ] `CommandTemplate.RiskLevel`（:46 付近）コメントを `// nil: inherit from global default, otherwise must be one of: "low", "medium", "high"` から `// nil: no template-level default (a command that omits risk_level falls back here; if this is also nil, GetRiskLevel() yields "low"); otherwise must be one of: "low", "medium", "high"` へ変更（テンプレート自身が「テンプレートへフォールバック」する誤記を避け、テンプレート nil＝テンプレート既定なし、と明示。AC-16）。
-- [ ] `CommandSpec.RiskLevel`（:259 付近）の行末コメントを `// Maximum allowed risk level (nil=inherit default, otherwise: low, medium, high)` から `// Maximum allowed risk level (nil defaults to "low" after template fallback; otherwise: low, medium, high)` へ変更。
+- [x] `CommandTemplate.RiskLevel`（:46 付近）コメントを `// nil: inherit from global default, otherwise must be one of: "low", "medium", "high"` から `// nil: no template-level default (a command that omits risk_level falls back here; if this is also nil, GetRiskLevel() yields "low"); otherwise must be one of: "low", "medium", "high"` へ変更（テンプレート自身が「テンプレートへフォールバック」する誤記を避け、テンプレート nil＝テンプレート既定なし、と明示。AC-16）。
+- [x] `CommandSpec.RiskLevel`（:259 付近）の行末コメントを `// Maximum allowed risk level (nil=inherit default, otherwise: low, medium, high)` から `// Maximum allowed risk level (nil defaults to "low" after template fallback; otherwise: low, medium, high)` へ変更。
 
 **完了条件**: `rg -n "inherit from global default|nil=inherit default" internal/runner/base/runnertypes/spec.go` が 0 件。
 
@@ -122,8 +122,8 @@
 
 **レビュー観点**: `risktypes` のゼロ値 fail-closed（`BinaryAnalysisClass`=Uncertain）/ 共有 DTO の最下位中立パッケージ配置（循環回避）/ `ParseRiskLevel("unknown")` のエラー化と既存値の不変 / 評価器・実行系へのシグネチャ波及が無い（本 PR は新規型・config・コメントのみで既存挙動を変えない）
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/728）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

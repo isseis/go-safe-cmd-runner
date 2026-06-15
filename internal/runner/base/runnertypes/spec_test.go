@@ -545,10 +545,10 @@ func TestCommandSpec_GetRiskLevel(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name:      "unknown risk level",
+			name:      "unknown risk level is rejected",
 			riskLevel: "unknown",
 			want:      RiskLevelUnknown,
-			wantErr:   false,
+			wantErr:   true,
 		},
 		{
 			name:      "invalid risk level",
