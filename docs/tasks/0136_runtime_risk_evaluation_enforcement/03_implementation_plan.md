@@ -8,7 +8,7 @@
 | Created | 2026-06-15 |
 | Review date | - |
 | Reviewer | - |
-| Comments | - |
+| Comments | 2026-06-15: main マージで取り込んだ 02 第7巡の変更へ追従 — `group_executor` を「`ResourceManager` 経由の呼び出し側に徹する（`EvaluateRisk`・比較・監査は manager 所有）」へ訂正（コンポーネント表・Step 2-3）、`xargs` をラッパー一覧から除外し子プロセス実行（find/xargs）ルールへ一本化、束縛可否チェックを副作用なし・実ステージング書込は normal の exec 直前のみ・dry-run は read-only 維持（AC-30/39）と Step 2-2 に明記。02 §1.2 概念モデル／§3.5 dry-run ハードエラー行の変更は 03 既存記述（評価器が resolve/verify/open・symlink 失敗=Blocking deny）と既に整合のため追加変更なし |
 
 本計画は `02_architecture.md`（status: `approved`）に基づき、`01_requirements.md` の F-001〜F-015 / AC-01〜AC-87（AC-52/53 は欠番）を実装するための作業手順・テスト対応・検証手段を定義する。設計判断・図・型定義は `02_architecture.md` を参照し、本書では重複させない。
 
@@ -44,7 +44,7 @@
 | [dryrun_manager.go](../../../internal/runner/resource/dryrun_manager.go) | `RiskEvaluator` を受け取らず、`AnalyzeCommandSecurity` ベースの表示のみ。実行可否予告なし（背景 I） | 同一評価器（read-only 解析）で実効リスク＋allow/deny 予告。検証不能 deny の運用区別（終了コード/CI オプション、AC-58） |
 | [default_manager.go](../../../internal/runner/resource/default_manager.go) | dry-run に `RiskEvaluator`・`audit.Logger` を配線していない | dry-run マネージャへ評価器・監査ロガーを配線（AC-39/56） |
 | [logger.go](../../../internal/runner/base/audit/logger.go) | `LogRiskProfile(ctx, commandName, baseRiskLevel, riskReasons, networkType)` のみ。相関フィールド（resolved_path/content_hash/decision/max_allowed_risk/reason_codes）なし。**本番未呼び出し（デッドコード、背景 B）** | `LogRiskProfile(ctx, RiskAuditEntry)` パラメータ構造体へ。相関フィールド・引数マスキング・連鎖監査・deny 重大度下限 |
-| [group_executor.go](../../../internal/runner/group_executor.go) | `verifyGroupFiles` で `ResolvePath`＋ハッシュ伝播。`executeCommandInGroup`（:520-528）で **実行直前に再度 `ResolvePath` し `cmd.ExpandedCmd` を上書き**（TOCTOU 二重解決） | `EvaluateRisk` を呼び `VerifiedCommandPlan` を受領。実行直前の独立した再 `ResolvePath` を廃止（AC-64/76） |
+| [group_executor.go](../../../internal/runner/group_executor.go) | `verifyGroupFiles` で `ResolvePath`＋ハッシュ伝播。`executeCommandInGroup`（:520-528）で **実行直前に再度 `ResolvePath` し `cmd.ExpandedCmd` を上書き**（TOCTOU 二重解決） | `ResourceManager` 経由で実行を委譲する呼び出し側に徹する（`EvaluateRisk`・比較・`LogRiskProfile` は **manager が所有**。group_executor は自前で呼ばない）。実行直前の独立した再 `ResolvePath`（二重解決）を廃止（AC-64/76） |
 | [executor.go](../../../internal/runner/base/executor/executor.go) | `Execute(ctx, cmd, env, outputWriter)` が `cmd.ExpandedCmd`（パス）を exec。fd ベース実行なし | `VerifiedCommandPlan` のみ exec。fd ベース実行（`execveat(AT_EMPTY_PATH)` の自前 syscall ラッパー、§1.3 参照）第一候補、read-only ステージングがフォールバック。元 argv/env 直接 exec を禁止（AC-76/79） |
 | `security/indirect_execution.go` | **存在しない** | 新規作成。ラッパー/シェル/ローダ/find-exec/shebang/オプションの検出・抽出・ゲート・identity 束縛・拒否（F-013/F-014） |
 | `docs/dev/architecture_design/command-risk-evaluation.{ja,md}` | **main に存在しない**（PR #724 にのみ存在。§3.4 注・付録参照） | PR #724 マージ後に AC-15/17/18 を反映（フェーズ 4） |
@@ -196,7 +196,7 @@
 **対象ファイル**: `internal/runner/base/security/indirect_execution.go`（新規）, `internal/runner/base/security/indirect_execution_test.go`（新規）
 
 - [ ] `02_architecture.md` §3.3 の形態表を実装。各形態で「実行/ロードされる全成果物を抽出 → allowlist/ハッシュゲート → identity 束縛 → 不能なら拒否（`Blocking`＋reason code）」。
-- [ ] ラッパー（`env`/`nice`/`ionice`/`timeout`/`nohup`/`stdbuf`/`setsid`/`xargs`/`time`/`chrt`/`taskset`）: インナーコマンド抽出→再帰評価＋ゲート。COMMAND ありで抽出不能は `ReasonIndirectExecutionRejected`（AC-60/77/84）。
+- [ ] ラッパー（`env`/`nice`/`ionice`/`timeout`/`nohup`/`stdbuf`/`setsid`/`time`/`chrt`/`taskset`。**runner 自身が抽出した実コマンドを exec する形態**）: インナーコマンド抽出→再帰評価＋ゲート。COMMAND ありで抽出不能は `ReasonIndirectExecutionRejected`（AC-60/77/84）。**`xargs` はここに含めない**（helper を exec するのは runner ではなく xargs 子プロセスのため、下記 find/xargs の子プロセス実行ルールで扱う）。
 - [ ] 特権昇格トークン（`sudo`/`su`/`doas`）が独立トークンで出現 → 抽出可否によらず Critical（AC-59）。
 - [ ] ラッパー供給環境変数を既存 [environment_validation.go](../../../internal/runner/base/security/environment_validation.go) で検証。ローダ制御変数（`LD_PRELOAD`/`LD_LIBRARY_PATH`/`LD_AUDIT`）拒否（AC-80）。
 - [ ] `env -S`（split-string）分割後 argv 解釈。`sudo` 等を Critical、解釈不能は拒否（AC-81）。
@@ -221,6 +221,7 @@
 - [ ] `EvaluateRisk`（評価器）が検証時に開いた fd を `VerifiedIdentity.FD`（`*int`）に格納する経路を実装（パス解決・検証・open を評価器が一度だけ。§3.6.2）。
 - [ ] executor の実行入口を `VerifiedCommandPlan` 受領へ変更。fd ベース実行は `//go:build linux` の自前ラッパー `execFD(fd int, argv, envp []string)` が `unix.Syscall6(unix.SYS_EXECVEAT, uintptr(fd), <empty-path>, <argv>, <envp>, uintptr(unix.AT_EMPTY_PATH), 0)` を呼ぶ（6 引数版。引数マーシャリングは §1.3 参照）。第一候補。不能環境は read-only ステージング、双方不能なら評価段階で Blocking 済み（executor はセキュリティ拒否判定を持たない。§3.6.2）。
 - [ ] **再ハッシュのみの path exec（rehash-then-path-exec）を実装しない**（§3.6.2 / AC-76）。
+- [ ] 束縛可否の判定は **副作用なし**で行う（§3.6.2）: 評価段階では「fd を保持できているか」「ステージングが**実施可能か**（書込不能ステージング領域が利用可能か）」のみを確認し、**実際のステージング複製（ファイル書き込み）は normal の exec 直前にのみ行う**。dry-run は同じ副作用なし可否チェックで allow/deny を決め、ステージング書き込みは行わない（read-only 維持。AC-30/39 の normal/dry-run 整合を保ち、normal が staging で許可する実体を dry-run が誤って deny しない）。
 - [ ] fd 所有権と close 機構の確定（§3.6.2 が 03 へ委譲）: クローズ可能ラッパー型 `VerifiedFD`（`risktypes` に定義、`Close() error` を持つ）を新設し、`VerifiedIdentity` および各 `ExecutedArtifact` が保持する。`VerifiedCommandPlan` に `Close() error`（全 fd を集約 close、`errors.Join`）を実装する。close 呼び出し箇所を明示: (a) 許可 plan は executor が exec 直前に親側 fd を `O_CLOEXEC` 任せにせず exec 後に明示 close、(b) 拒否 plan・dry-run preview・exec されない副成果物は ResourceManager が監査出力後に `plan.Close()`。`EvaluateRisk` 内で fd を開いた後にエラーで早期 return する場合も、その時点までに開いた fd を defer で close する。
 - [ ] 元 argv/env の直接 exec を禁止（型契約＋コードレビュー観点）。
 - [ ] 非対応 OS（`//go:build !linux`）の `execveat_other.go` は fd 実行不能を返すスタブとし、ステージング/拒否のみ。
@@ -235,8 +236,8 @@
 **対象ファイル**: [group_executor.go](../../../internal/runner/group_executor.go), [group_executor_test.go](../../../internal/runner/group_executor_test.go)
 
 - [ ] `executeCommandInGroup`（:520-528）の実行直前 `ResolvePath`＋`cmd.ExpandedCmd` 上書きを **廃止**（TOCTOU 二重解決の解消。AC-64/76）。
-- [ ] グループ検証フェーズで `EvaluateRisk` を呼び `VerifiedCommandPlan` を受領、その identity/fd を実行へ引き渡す（解決・ハッシュ・fd 生成は評価器に一元化）。
-- [ ] ラッパー/ローダ成果物の検証連携（§3.3 の連鎖を `VerifiedCommandPlan.Artifacts` 経由で実行・監査へ）。
+- [ ] `group_executor` は `ResourceManager` 経由で実行を委譲する呼び出し側に徹する（`EvaluateRisk`・risk 比較・`LogRiskProfile` は manager が所有。§2.3。`EvaluateRisk` を呼ぶのは `normal_manager` で Step 1-9 に計上済み）。group_executor 自身は評価・ゲート・監査を持たない。
+- [ ] ラッパー/ローダ成果物の検証連携は plan 経由で行う（評価器が生成した `VerifiedCommandPlan.Artifacts` を manager→executor が実行・監査へ引き渡す。§3.3 の連鎖）。
 
 **完了条件**: `go test -tags test ./internal/runner/ -run GroupExecutor` が緑。Phase 2 完了ゲート: `make fmt && make test && make lint`。
 
