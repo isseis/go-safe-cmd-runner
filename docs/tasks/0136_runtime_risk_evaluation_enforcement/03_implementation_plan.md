@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-06-15 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-05-15 |
+| Reviewer | isseis |
 | Comments | 2026-06-15: main マージで取り込んだ 02 第7巡の変更へ追従 — `group_executor` を「`ResourceManager` 経由の呼び出し側に徹する（`EvaluateRisk`・比較・監査は manager 所有）」へ訂正（コンポーネント表・Step 2-3）、`xargs` をラッパー一覧から除外し子プロセス実行（find/xargs）ルールへ一本化、束縛可否チェックを副作用なし・実ステージング書込は normal の exec 直前のみ・dry-run は read-only 維持（AC-30/39）と Step 2-2 に明記。02 §1.2 概念モデル／§3.5 dry-run ハードエラー行の変更は 03 既存記述（評価器が resolve/verify/open・symlink 失敗=Blocking deny）と既に整合のため追加変更なし。2026-06-15: PR #727 自動レビュー（gemini 4件）を反映 — **fd 束縛実行の機構を是正**（runner はバッチ＝子プロセス起動・継続のため in-process `SYS_EXECVEAT` は runner 自身を置換し不可。検証済み fd を `ExtraFiles` で子へ継承し `os/exec` で `/proc/self/fd/<childfd>` を exec する方式へ。raw syscall/`unsafe`/`x/sys` direct 化を不要化。§1.3・Step 2-2・関連記述を更新）、systemctl argv 解析に `-n`/`--lines` 追加＋既知 verb 照合を主規則化（値オプション網羅漏れによる偽陽性 deny を抑制）、ローダ制御変数拒否に macOS `DYLD_*` を追加、シェル（`-c` のみ）とインタプリタ（`-c`/`-e`）の inline フラグ区別を明記（`bash -e script.sh` の誤解析回避）。2026-06-15: PR #727 自動レビュー第2巡（codex 9件・P1 3件含む）を反映 — **段階導入の feature gate を新設**（新強制経路は production 既定 OFF、有効化は fd 束縛 exec〔Phase 2〕＋構造化監査〔Phase 3〕が揃う Phase 3 まで行わない。中間 main が path exec で identity 強制／監査なし deny になるのを防止。P1 #136/#193）、**staging は保持中の検証済み fd を源泉とし path 再 open しない**（fd 未保持なら deny。P1 #230）、systemctl 解析に値オプション追加＋**未知オプションは High（hidden-verb-as-value バイパス防止）**（P1 #152）、`RiskAuditEntry`/`VerifiedFD` を `risktypes` 配置リスト＋Step 1-1 に追加（#258）、AC-37 静的 regex を陳腐化記述限定に絞り正当な medium を誤検出しない（#448）、`Classify` 完了条件の `-run` を実テスト名にマッチさせゼロマッチ素通りを防止（#106）、`cmd.Start` 失敗時の親 fd close ＋リークテスト追加（#231）、`CommandTemplate.RiskLevel` コメントの誤った「テンプレートへフォールバック」を訂正（#182） |
 
 本計画は `02_architecture.md`（status: `approved`）に基づき、`01_requirements.md` の F-001〜F-015 / AC-01〜AC-87（AC-52/53 は欠番）を実装するための作業手順・テスト対応・検証手段を定義する。設計判断・図・型定義は `02_architecture.md` を参照し、本書では重複させない。
