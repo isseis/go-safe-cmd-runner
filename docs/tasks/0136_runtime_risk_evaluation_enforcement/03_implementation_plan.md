@@ -8,7 +8,7 @@
 | Created | 2026-06-15 |
 | Review date | 2026-05-15 |
 | Reviewer | isseis |
-| Comments | 2026-06-15: main マージで取り込んだ 02 第7巡の変更へ追従 — `group_executor` を「`ResourceManager` 経由の呼び出し側に徹する（`EvaluateRisk`・比較・監査は manager 所有）」へ訂正（コンポーネント表・Step 2-3）、`xargs` をラッパー一覧から除外し子プロセス実行（find/xargs）ルールへ一本化、束縛可否チェックを副作用なし・実ステージング書込は normal の exec 直前のみ・dry-run は read-only 維持（AC-30/39）と Step 2-2 に明記。02 §1.2 概念モデル／§3.5 dry-run ハードエラー行の変更は 03 既存記述（評価器が resolve/verify/open・symlink 失敗=Blocking deny）と既に整合のため追加変更なし。2026-06-15: PR #727 自動レビュー（gemini 4件）を反映 — **fd 束縛実行の機構を是正**（runner はバッチ＝子プロセス起動・継続のため in-process `SYS_EXECVEAT` は runner 自身を置換し不可。検証済み fd を `ExtraFiles` で子へ継承し `os/exec` で `/proc/self/fd/<childfd>` を exec する方式へ。raw syscall/`unsafe`/`x/sys` direct 化を不要化。§1.3・Step 2-2・関連記述を更新）、systemctl argv 解析に `-n`/`--lines` 追加＋既知 verb 照合を主規則化（値オプション網羅漏れによる偽陽性 deny を抑制）、ローダ制御変数拒否に macOS `DYLD_*` を追加、シェル（`-c` のみ）とインタプリタ（`-c`/`-e`）の inline フラグ区別を明記（`bash -e script.sh` の誤解析回避）。2026-06-15: PR #727 自動レビュー第2巡（codex 9件・P1 3件含む）を反映 — **段階導入の feature gate を新設**（新強制経路は production 既定 OFF、有効化は fd 束縛 exec〔Phase 2〕＋構造化監査〔Phase 3〕が揃う Phase 3 まで行わない。中間 main が path exec で identity 強制／監査なし deny になるのを防止。P1 #136/#193）、**staging は保持中の検証済み fd を源泉とし path 再 open しない**（fd 未保持なら deny。P1 #230）、systemctl 解析に値オプション追加＋**未知オプションは High（hidden-verb-as-value バイパス防止）**（P1 #152）、`RiskAuditEntry`/`VerifiedFD` を `risktypes` 配置リスト＋Step 1-1 に追加（#258）、AC-37 静的 regex を陳腐化記述限定に絞り正当な medium を誤検出しない（#448）、`Classify` 完了条件の `-run` を実テスト名にマッチさせゼロマッチ素通りを防止（#106）、`cmd.Start` 失敗時の親 fd close ＋リークテスト追加（#231）、`CommandTemplate.RiskLevel` コメントの誤った「テンプレートへフォールバック」を訂正（#182） |
+| Comments | 2026-06-15: main マージで取り込んだ 02 第7巡の変更へ追従 — `group_executor` を「`ResourceManager` 経由の呼び出し側に徹する（`EvaluateRisk`・比較・監査は manager 所有）」へ訂正（コンポーネント表・Step 2-3）、`xargs` をラッパー一覧から除外し子プロセス実行（find/xargs）ルールへ一本化、束縛可否チェックを副作用なし・実ステージング書込は normal の exec 直前のみ・dry-run は read-only 維持（AC-30/39）と Step 2-2 に明記。02 §1.2 概念モデル／§3.5 dry-run ハードエラー行の変更は 03 既存記述（評価器が resolve/verify/open・symlink 失敗=Blocking deny）と既に整合のため追加変更なし。2026-06-15: PR #727 自動レビュー（gemini 4件）を反映 — **fd 束縛実行の機構を是正**（runner はバッチ＝子プロセス起動・継続のため in-process `SYS_EXECVEAT` は runner 自身を置換し不可。検証済み fd を `ExtraFiles` で子へ継承し `os/exec` で `/proc/self/fd/<childfd>` を exec する方式へ。raw syscall/`unsafe`/`x/sys` direct 化を不要化。§1.3・Step 2-2・関連記述を更新）、systemctl argv 解析に `-n`/`--lines` 追加＋既知 verb 照合を主規則化（値オプション網羅漏れによる偽陽性 deny を抑制）、ローダ制御変数拒否に macOS `DYLD_*` を追加、シェル（`-c` のみ）とインタプリタ（`-c`/`-e`）の inline フラグ区別を明記（`bash -e script.sh` の誤解析回避）。2026-06-15: PR #727 自動レビュー第2巡（codex 9件・P1 3件含む）を反映 — **段階導入の feature gate を新設**（新強制経路は production 既定 OFF、有効化は fd 束縛 exec〔Phase 2〕＋構造化監査〔Phase 3〕が揃う Phase 3 まで行わない。中間 main が path exec で identity 強制／監査なし deny になるのを防止。P1 #136/#193）、**staging は保持中の検証済み fd を源泉とし path 再 open しない**（fd 未保持なら deny。P1 #230）、systemctl 解析に値オプション追加＋**未知オプションは High（hidden-verb-as-value バイパス防止）**（P1 #152）、`RiskAuditEntry`/`VerifiedFD` を `risktypes` 配置リスト＋Step 1-1 に追加（#258）、AC-37 静的 regex を陳腐化記述限定に絞り正当な medium を誤検出しない（#448）、`Classify` 完了条件の `-run` を実テスト名にマッチさせゼロマッチ素通りを防止（#106）、`cmd.Start` 失敗時の親 fd close ＋リークテスト追加（#231）、`CommandTemplate.RiskLevel` コメントの誤った「テンプレートへフォールバック」を訂正（#182）。2026-06-15: 【isseis 指示】mkplan2 で PR 境界を再設計（フェーズ 1:1 の 4 PR → 7 PR）。Phase 1 を「基盤（PR-1: 1-1〜1-3 types/config）」と「評価コア（PR-2: 1-4〜1-9）」に分割（`IsNetworkOperation`→`Classify` 削除が `EvaluateRisk` のコンパイルに直結する密結合のため評価コアは 1 単位）。fd 束縛 exec（PR-4）を高リスク隔離、文書を security/user（PR-6）と外部依存の command-risk-evaluation（PR-7、PR #724 後）に分離。Step を並べ替え renumber（F-015 を EvaluateRisk より前に＝1-7、EvaluateRisk=1-8）。§3.2 PR 構成表（依存列付き）・PR マーカー・§6 を PR ベース化。critical-review サブエージェント 2 パスで C-1（前方参照）/C-2（dry-run 非呼出前提）/C-3（feature flag 所有 Step 欠落 → Step 1-9 で OFF 新設・Step 3-3 で ON 化）/M-2〜M-4 を解消 |
 
 本計画は `02_architecture.md`（status: `approved`）に基づき、`01_requirements.md` の F-001〜F-015 / AC-01〜AC-87（AC-52/53 は欠番）を実装するための作業手順・テスト対応・検証手段を定義する。設計判断・図・型定義は `02_architecture.md` を参照し、本書では重複させない。
 
@@ -95,7 +95,38 @@
 
 **完了条件**: `go build -tags test ./internal/runner/base/risktypes/` が通る。型のゼロ値が fail-closed（`BinaryAnalysisClass` ゼロ値 = `Uncertain`）であることを単体テストで確認。
 
-### Step 1-2: `NetworkAnalyzer.Classify` へリファクタ
+### Step 1-2: `ParseRiskLevel("unknown")` のエラー化
+
+**対象ファイル**: [config.go](../../../internal/runner/base/runnertypes/config.go), [config_test.go](../../../internal/runner/base/runnertypes/config_test.go)
+
+- [ ] `ParseRiskLevel` に `case "unknown":` を追加し `ErrInvalidRiskLevel` を返す（`"critical"` と同様。AC-24）。`"low"/"medium"/"high"/省略/空文字` は不変（AC-26）。
+- [ ] `config_test.go` に `ParseRiskLevel("unknown")` エラーケースを追加。
+
+**完了条件**: `go test -tags test ./internal/runner/base/runnertypes/ -run RiskLevel` が通る。
+
+### Step 1-3: `spec.go` コメント修正
+
+**対象ファイル**: [spec.go](../../../internal/runner/base/runnertypes/spec.go)
+
+- [ ] `CommandTemplate.RiskLevel`（:46 付近）コメントを `// nil: inherit from global default, otherwise must be one of: "low", "medium", "high"` から `// nil: no template-level default (a command that omits risk_level falls back here; if this is also nil, GetRiskLevel() yields "low"); otherwise must be one of: "low", "medium", "high"` へ変更（テンプレート自身が「テンプレートへフォールバック」する誤記を避け、テンプレート nil＝テンプレート既定なし、と明示。AC-16）。
+- [ ] `CommandSpec.RiskLevel`（:259 付近）の行末コメントを `// Maximum allowed risk level (nil=inherit default, otherwise: low, medium, high)` から `// Maximum allowed risk level (nil defaults to "low" after template fallback; otherwise: low, medium, high)` へ変更。
+
+**完了条件**: `rg -n "inherit from global default|nil=inherit default" internal/runner/base/runnertypes/spec.go` が 0 件。
+
+### PR-1 作成ポイント: shared types and config foundation
+
+**対象ステップ**: 1-1 / 1-2 / 1-3
+
+**推奨タイトル**: `feat(0136): risktypes package and risk_level config foundation`
+
+**レビュー観点**: `risktypes` のゼロ値 fail-closed（`BinaryAnalysisClass`=Uncertain）/ 共有 DTO の最下位中立パッケージ配置（循環回避）/ `ParseRiskLevel("unknown")` のエラー化と既存値の不変 / 評価器・実行系へのシグネチャ波及が無い（本 PR は新規型・config・コメントのみで既存挙動を変えない）
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+### Step 1-4: `NetworkAnalyzer.Classify` へリファクタ
 
 **対象ファイル**: [network_analyzer.go](../../../internal/runner/base/security/network_analyzer.go), [network_analyzer_test.go](../../../internal/runner/base/security/network_analyzer_test.go)
 
@@ -107,7 +138,7 @@
 
 **完了条件**: `go test -tags test -v ./internal/runner/base/security/ -run 'TestClassify'` が通り、**`TestClassify_AllResultClasses` と `TestClassify_DistinctReasonCodes` が実際に実行された**ことを `-v` 出力で確認する（`go test -run` はマッチ 0 件でも成功するため、テスト名にマッチするパターンを用い、実行ログで両テストの `--- PASS` を確認する）。4区分すべてと各 reason code が網羅される。
 
-### Step 1-3: `command_analysis.go` を解決済み絶対パス対応へ
+### Step 1-5: `command_analysis.go` を解決済み絶対パス対応へ
 
 **対象ファイル**: [command_analysis.go](../../../internal/runner/base/security/command_analysis.go), [command_analysis_test.go](../../../internal/runner/base/security/command_analysis_test.go), [command_analysis_dangerous_test.go](../../../internal/runner/base/security/command_analysis_dangerous_test.go)
 
@@ -119,7 +150,7 @@
 
 **完了条件**: `go test -tags test ./internal/runner/base/security/ -run 'CommandAnalysis|Destructive|SystemMod'` が通る。絶対パス入力ケースを含む。
 
-### Step 1-4: `coreutils.go` の未知サブコマンド High 化
+### Step 1-6: `coreutils.go` の未知サブコマンド High 化
 
 **対象ファイル**: [coreutils.go](../../../internal/runner/base/security/coreutils.go), [coreutils_test.go](../../../internal/runner/base/security/coreutils_test.go)
 
@@ -129,7 +160,17 @@
 
 **完了条件**: `go test -tags test ./internal/runner/base/security/ -run Coreutils` が通る。
 
-### Step 1-5: `EvaluateRisk` を最大値モデル＋identity ゲートへ
+### Step 1-7: F-015 任意コード実行ランナー分類
+
+**対象ファイル**: [evaluator.go](../../../internal/runner/base/risk/evaluator.go) もしくは `internal/runner/base/security/arbitrary_code.go`（新規・小規模）, 対応テスト
+
+- [ ] 任意コード実行コマンドの確定リストを定義（`02_architecture.md` §6.1 順位 7）: シェル（`bash`/`sh`/`dash`/`zsh` 等）、インタプリタ（`python`/`node`/`ruby`/`perl`/`php`/`lua`/`java`/`dotnet`/`pwsh` 等）、ビルド/タスクランナー（`make`/`cmake`/`ninja`/`gradle`/`mvn`/`bazel`/`rake`/`just`/`task`）。リストは英語識別子の `map[string]struct{}`。
+- [ ] basename・symlink 解決で照合し、該当なら引数によらず High を最大値へ合流＋`ReasonArbitraryCodeExecution`（AC-73/74）。`--version`/`--help` も既定 High（注 1）。
+- [ ] パッケージスクリプトランナー（`npm run`/`npx`/`yarn <script>`/`pnpm run`）の High は間接実行と重なるため、引数形態判定を含めて Phase 2 の `indirect_execution.go` 側に置く（AC-85）。本 Step は引数非依存の一律 High 群を担当。
+
+**完了条件**: `go test -tags test ./internal/runner/base/risk/ -run ArbitraryCode` が通る。
+
+### Step 1-8: `EvaluateRisk` を最大値モデル＋identity ゲートへ
 
 **対象ファイル**: [evaluator.go](../../../internal/runner/base/risk/evaluator.go), [evaluator_test.go](../../../internal/runner/base/risk/evaluator_test.go), [coreutils_consistency_test.go](../../../internal/runner/base/risk/coreutils_consistency_test.go)
 
@@ -140,8 +181,8 @@
   - [ ] 順位 3: 特権昇格 → `Level=Critical`＋`ReasonPrivilegeEscalation`（§3.1 の Critical 一貫扱い）。
   - [ ] 順位 4: coreutils 分類（バイナリ解析次元を除外して算出。識別ゲートの後段）。
   - [ ] 順位 5: プロファイル要因（引数評価後の SystemModRisk を含む最大値。`BaseRiskLevel` を SystemModRisk 差し替え後に計算）。
-  - [ ] 順位 6: 危険引数パターン（Step 1-3 の公開関数）。
-  - [ ] 順位 7: F-015 任意コード実行ランナー（後述 Step 1-6）。
+  - [ ] 順位 6: 危険引数パターン（Step 1-5 の公開関数）。
+  - [ ] 順位 7: F-015 任意コード実行ランナー（Step 1-7、前出の分類関数を利用）。
   - [ ] 順位 8: バイナリ解析分類（`Classify` 結果を Clean→Low/Network→Medium/HighRisk→High/Uncertain→Blocking に写像し最大値へ合流。reason code を `RiskAssessment.ReasonCodes` に転記）。
 - [ ] 早期 return を撤廃し、順位 4〜8 を **全次元最大値**（順序非依存、F-001/AC-63）で算出。
 - [ ] `RiskAssessment` に `Level`/`Blocking`/`BlockingReason`/`ErrorClass`/`ReasonCodes`/`Reasons`/`NetworkType` を設定。`Blocking=true` または `Level=Critical` の拒否では必ず `BlockingReason` を設定（§3.1）。
@@ -159,43 +200,33 @@
 
 **完了条件**: `go test -tags test ./internal/runner/base/risk/` が通る。AC-01/03/04/05/22/63 のテストが緑。
 
-### Step 1-6: F-015 任意コード実行ランナー分類
-
-**対象ファイル**: [evaluator.go](../../../internal/runner/base/risk/evaluator.go) もしくは `internal/runner/base/security/arbitrary_code.go`（新規・小規模）, 対応テスト
-
-- [ ] 任意コード実行コマンドの確定リストを定義（`02_architecture.md` §6.1 順位 7）: シェル（`bash`/`sh`/`dash`/`zsh` 等）、インタプリタ（`python`/`node`/`ruby`/`perl`/`php`/`lua`/`java`/`dotnet`/`pwsh` 等）、ビルド/タスクランナー（`make`/`cmake`/`ninja`/`gradle`/`mvn`/`bazel`/`rake`/`just`/`task`）。リストは英語識別子の `map[string]struct{}`。
-- [ ] basename・symlink 解決で照合し、該当なら引数によらず High を最大値へ合流＋`ReasonArbitraryCodeExecution`（AC-73/74）。`--version`/`--help` も既定 High（注 1）。
-- [ ] パッケージスクリプトランナー（`npm run`/`npx`/`yarn <script>`/`pnpm run`）の High は間接実行と重なるため、引数形態判定を含めて Phase 2 の `indirect_execution.go` 側に置く（AC-85）。本 Step は引数非依存の一律 High 群を担当。
-
-**完了条件**: `go test -tags test ./internal/runner/base/risk/ -run ArbitraryCode` が通る。
-
-### Step 1-7: `ParseRiskLevel("unknown")` のエラー化
-
-**対象ファイル**: [config.go](../../../internal/runner/base/runnertypes/config.go), [config_test.go](../../../internal/runner/base/runnertypes/config_test.go)
-
-- [ ] `ParseRiskLevel` に `case "unknown":` を追加し `ErrInvalidRiskLevel` を返す（`"critical"` と同様。AC-24）。`"low"/"medium"/"high"/省略/空文字` は不変（AC-26）。
-- [ ] `config_test.go` に `ParseRiskLevel("unknown")` エラーケースを追加。
-
-**完了条件**: `go test -tags test ./internal/runner/base/runnertypes/ -run RiskLevel` が通る。
-
-### Step 1-8: `spec.go` コメント修正
-
-**対象ファイル**: [spec.go](../../../internal/runner/base/runnertypes/spec.go)
-
-- [ ] `CommandTemplate.RiskLevel`（:46 付近）コメントを `// nil: inherit from global default, otherwise must be one of: "low", "medium", "high"` から `// nil: no template-level default (a command that omits risk_level falls back here; if this is also nil, GetRiskLevel() yields "low"); otherwise must be one of: "low", "medium", "high"` へ変更（テンプレート自身が「テンプレートへフォールバック」する誤記を避け、テンプレート nil＝テンプレート既定なし、と明示。AC-16）。
-- [ ] `CommandSpec.RiskLevel`（:259 付近）の行末コメントを `// Maximum allowed risk level (nil=inherit default, otherwise: low, medium, high)` から `// Maximum allowed risk level (nil defaults to "low" after template fallback; otherwise: low, medium, high)` へ変更。
-
-**完了条件**: `rg -n "inherit from global default|nil=inherit default" internal/runner/base/runnertypes/spec.go` が 0 件。
-
 ### Step 1-9: `normal_manager` の最大値ゲート＋監査骨組み
 
 **対象ファイル**: [normal_manager.go](../../../internal/runner/resource/normal_manager.go), 対応テスト
 
-- [ ] `EvaluateRisk` の戻り値 `VerifiedCommandPlan` を受け取り、`plan.Assessment.Level`／`plan.Assessment.Blocking` で比較ゲート（`effectiveRisk > maxAllowed || Blocking`）。
+- [ ] **feature flag を新設し既定 OFF**（§1 Phase 1 の feature gate を実装する所有 Step）。flag（config フィールドまたは起動オプション。具体名は実装で確定、例 `runtime_risk_enforcement`）が OFF のときは従来挙動（旧リスク比較・path 実行）、ON のときのみ新強制経路（最大値モデルの deny ＋ Phase 2 の fd 束縛 exec ＋ Phase 3 の構造化監査）を有効化する。flag は normal/dry-run/executor が共通参照する。
+- [ ] `EvaluateRisk` の戻り値 `VerifiedCommandPlan` を受け取り、`plan.Assessment.Level`／`plan.Assessment.Blocking` で比較ゲート（`effectiveRisk > maxAllowed || Blocking`）。**この新ゲートは flag ON のときのみ有効**（OFF では従来比較）。
 - [ ] 拒否時に `runnertypes.ErrCommandSecurityViolation` を返す（既存）。Blocking/Critical 由来も同経路（§4）。
-- [ ] 監査ロガー注入の受け皿を追加（構造化 `LogRiskProfile` の実配線は Phase 3。Phase 1 では deny が既存 `n.logger.Error` で記録されることのみ確認）。なお Phase 1 は構造化監査（reason code・`max_allowed_risk` 等、AC-56/70）を満たさないため、**この強制経路は feature flag OFF の内部増分**とし、production 有効化は構造化監査が揃う Phase 3 まで行わない（Phase 1 を「監査済み」として外部リリースしない。上記 feature gate 参照）。
+- [ ] 監査ロガー注入の受け皿を追加（構造化 `LogRiskProfile` の実配線は Phase 3。Phase 1 では deny が既存 `n.logger.Error` で記録されることのみ確認）。なお Phase 1 は構造化監査（reason code・`max_allowed_risk` 等、AC-56/70）を満たさないため、**この強制経路は上記 feature flag OFF の内部増分**とし、production 有効化（flag ON 既定化）は fd 束縛 exec と構造化監査が揃う Phase 3（Step 3-3）まで行わない（Phase 1 を「監査済み」として外部リリースしない）。
 
 **完了条件**: `go test -tags test ./internal/runner/resource/ -run Normal` が通る。Phase 1 完了ゲート: `make fmt && make test && make lint`。
+
+### PR-2 作成ポイント: runtime risk evaluation core
+
+**対象ステップ**: 1-4 / 1-5 / 1-6 / 1-7 / 1-8 / 1-9
+
+**推奨タイトル**: `feat(0136): max-of-dimensions risk evaluation core with identity gate and deny`
+
+**レビュー観点**: `EvaluateRisk` の `VerifiedCommandPlan` 返却・全次元最大値の順序非依存（早期 return 撤廃）/ identity ゲートが coreutils 抑制より前段で短絡 / `Classify` 4 区分・F-015 一律 High・systemctl verb 解析（未知オプション→High）/ 新強制経路が feature flag OFF（Phase 1 単体では path exec の TOCTOU 窓・構造化監査未配線のため有効化は Phase 3 まで行わない）
+
+> **本 PR を 1 単位とする理由（密結合・ビルド制約）**: ハードな制約は **Step 1-4 が現行 `EvaluateRisk` の呼び出し先 `IsNetworkOperation` を削除し `Classify`（戻り値型も変更）に置換する**点である。これにより `IsNetworkOperation` を呼ぶ現行 `EvaluateRisk` は 1-4 単独ではコンパイル不能となるため、**1-4（Classify）と 1-8（EvaluateRisk）は同一 PR でなければグリーンゲートを満たせない**。加えて評価器テストは `command_analysis`/`coreutils`/F-015 の挙動に依存するため、これらの挙動変更（1-5/1-6/1-7）も評価器テスト更新（1-8）と同 PR に置く（インターフェース＋実装＋テストを分割しない原則）。`EvaluateRisk` の戻り値型変更の波及先は **唯一 `normal_manager`（1-9）** であり、`dryrun_manager` は本タスク前は `risk.Evaluator` を呼ばない（dry-run への評価器配線は PR-5 で初めて行う。§1.3）。したがって PR-2 マージ時に未コンパイルの呼び出し元は残らない。
+>
+> **レビュー上の注意（高複雑度の内訳）**: 本 PR は大きいため、(a) identity ゲートの短絡（順位 1、F-014 の要）、(b) systemctl の手書き argv パーサ（fail-safe・未知オプション→High）、(c) 8 段優先順位の最大値合成、の 3 点を個別に重点レビューすること（機械的リファクタ 1-5/1-6 とは分けて確認）。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ## Phase 2 — 実行束縛＋間接実行（F-013/F-014/F-015 一部）
 
@@ -222,6 +253,19 @@
 - [ ] §3.3 表注のとおり、列挙したフラグは代表例。同一クラスの他オプションにも一般原則を適用する実装（網羅列挙はスコープ外）。
 
 **完了条件**: `go test -tags test ./internal/runner/base/security/ -run Indirect` が緑。攻撃者視点ケース（AC-71）を含む。
+
+### PR-3 作成ポイント: indirect execution gating
+
+**対象ステップ**: 2-1
+
+**推奨タイトル**: `feat(0136): indirect execution detection and artifact gating`
+
+**レビュー観点**: 抽出不能ラッパーの拒否（High に倒さず `ReasonIndirectExecutionRejected`）/ ローダ制御 env（`LD_*`/`DYLD_*`）・`env -S`・shebang・service init スクリプト・find/xargs 子プロセスの各形態ゲート / 攻撃者視点テスト（AC-71）の網羅 / 未知形態は安全側（一般原則＋backstop）
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Step 2-2: fd ベース実行と `VerifiedCommandPlan` 契約
 
@@ -250,6 +294,19 @@
 - [ ] ラッパー/ローダ成果物の検証連携は plan 経由で行う（評価器が生成した `VerifiedCommandPlan.Artifacts` を manager→executor が実行・監査へ引き渡す。§3.3 の連鎖）。
 
 **完了条件**: `go test -tags test ./internal/runner/ -run GroupExecutor` が緑。Phase 2 完了ゲート: `make fmt && make test && make lint`。
+
+### PR-4 作成ポイント: fd-bound execution and identity binding
+
+**対象ステップ**: 2-2 / 2-3
+
+**推奨タイトル**: `feat(0136): fd-bound execution via /proc/self/fd and TOCTOU-safe identity binding`
+
+**レビュー観点**: `VerifiedCommandPlan` のみ exec（元 argv/env 直接 exec 禁止）/ `/proc/self/fd` 経由 fd 束縛・staging は保持 fd 源泉・再ハッシュ path exec 不可 / fd 所有権と close（`cmd.Start` 失敗パス含むリーク無し）/ `group_executor` の二重解決廃止（manager 委譲）。**高リスク（TOCTOU・実行系）の隔離 PR**として重点レビュー
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ## Phase 3 — dry-run preview＋監査拡張（F-003/F-006/F-009）
 
@@ -288,8 +345,22 @@
 - [ ] 検証不能 deny（解析/検証無効環境）に専用終了コードと CI オプションを付与（AC-46/58）。
 - [ ] dry-run 監査ログ出力（dry-run 旨を含む）。
 - [ ] `coreutils_consistency_test.go`（risk パッケージ）を拡張し、実行時/dry-run の実効リスク一致を検証（AC-20/27/28/39）。
+- [ ] **feature flag を既定 ON へ切替**（Step 1-9 で OFF 既定として導入した flag）。fd 束縛 exec（PR-4）と構造化監査（本 PR）が揃い、AC-64/76（TOCTOU）・AC-56/70（監査）を満たすため、ここで production 有効化する（＝外部リリース可否ゲート）。
 
-**完了条件**: `go test -tags test ./internal/runner/resource/ -run DryRun` が緑。Phase 3 完了ゲート: `make fmt && make test && make lint`。**外部リリース可否ゲート達成**。
+**完了条件**: `go test -tags test ./internal/runner/resource/ -run DryRun` が緑。Phase 3 完了ゲート: `make fmt && make test && make lint`。**外部リリース可否ゲート達成（feature flag ON 既定化）**。
+
+### PR-5 作成ポイント: audit wiring and dry-run preview
+
+**対象ステップ**: 3-1 / 3-2 / 3-3
+
+**推奨タイトル**: `feat(0136): structured risk audit logging and dry-run allow/deny preview`
+
+**レビュー観点**: `LogRiskProfile` の `RiskAuditEntry` 化（在/不在のセンチネル排除）/ ResourceManager（normal・dry-run 双方）への監査配線・deny 重大度下限 / dry-run と normal の判定一致・検証不能 deny の終了コード / **feature flag デフォルト ON 化（fd 束縛 exec＋構造化監査が揃い production 有効化＝外部リリース可否ゲート）**
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ## Phase 4 — ドキュメント（F-004/F-010、AC-19、§5.3 例外）
 
@@ -318,6 +389,19 @@
 
 **完了条件**: 下記 AC 検証表の static rg がすべて期待どおり。
 
+### PR-6 作成ポイント: documentation alignment (security/user docs)
+
+**対象ステップ**: 4-1 / 4-2
+
+**推奨タイトル**: `docs(0136): align security and user docs with enforced runtime risk evaluation`
+
+**レビュー観点**: `security-architecture` の 2 例外（fail-closed 反転・シグネチャ更新）反映 / `risk_assessment` ユーザー文書の整合（dpkg 削除・systemctl レベル是正・移行ノート AC-19）/ 設定例が修正後実装で動作。**Step 4-3 は外部依存（PR #724）のため本 PR に含めず PR-7 に分離**（PR-6 はマージ済み実装に依存せず単独で実行可能）
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Step 4-3: `command-risk-evaluation.{ja,md}`（PR #724 マージ後）
 
 **対象ファイル**: `docs/dev/architecture_design/command-risk-evaluation.ja.md` / `.md`（**PR #724 マージ後に存在**）
@@ -327,40 +411,45 @@
 
 **完了条件（PR #724 マージ後）**: AC 検証表の該当 static rg。**依存**: PR #724 未マージのため、本 Step はマージ完了まで未着手（`02_architecture.md` §3.4 注・付録）。Phase 1〜3 の完了はこの Step に依存しない。
 
+### PR-7 作成ポイント: command-risk-evaluation doc (depends on PR #724)
+
+**対象ステップ**: 4-3
+
+**推奨タイトル**: `docs(0136): align command-risk-evaluation guide with enforced runtime risk evaluation`
+
+**レビュー観点**: AC-15/17/18/29 の反映（`risk_level` スコープ・deny/error/High 許可の区別・dry-run 失敗時挙動・重複定義の優先順位）/ AC-66/67 脅威モデルの開発者向け明記。**前提**: PR #724 がマージ済みで対象ファイルが存在すること（未マージなら本 PR は着手しない）
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ---
 
-## 3. 実装順序とマイルストーン
+## 3. 実装順序と PR 構成
+
+### 3.1 フェーズ・マイルストーン
 
 | マイルストーン | 対象 Step | 成果物 |
 |---|---|---|
-| M1: 評価コア＋normal deny | Step 1-1〜1-9 | 最大値モデル・identity ゲート・`unknown` 拒否・normal の deny が機能 |
-| M2: 実行束縛＋間接実行 | Step 2-1〜2-3 | `indirect_execution.go`・fd ベース実行・二重解決廃止 |
-| M3: 監査＋dry-run preview（リリース可否ゲート） | Step 3-1〜3-3 | `LogRiskProfile` 拡張・配線・dry-run allow/deny preview |
-| M4: ドキュメント | Step 4-1〜4-3 | security-architecture/risk_assessment 整合、移行ノート、（PR #724 後）command-risk-evaluation |
+| M1: 評価コア＋normal deny | 1-1〜1-9 | 最大値モデル・identity ゲート・`unknown` 拒否・normal の deny が機能 |
+| M2: 実行束縛＋間接実行 | 2-1〜2-3 | `indirect_execution.go`・fd 束縛実行・二重解決廃止 |
+| M3: 監査＋dry-run preview（リリース可否ゲート） | 3-1〜3-3 | `LogRiskProfile` 拡張・配線・dry-run allow/deny preview |
+| M4: ドキュメント | 4-1〜4-3 | security-architecture/risk_assessment 整合、移行ノート、（PR #724 後）command-risk-evaluation |
 
-### PR-1 作成ポイント: evaluation core + normal deny gate
+### 3.2 PR 構成
 
-**対象ステップ**: Step 1-1〜1-9
-**推奨タイトル**: `feat(0136): runtime risk evaluation core with max-of-dimensions and deny gate`
-**レビュー観点**: 最大値の順序非依存、identity ゲートの位置（coreutils 抑制より前）、`ParseRiskLevel("unknown")` のエラー化、移行影響の期待値更新、**新強制経路が feature flag OFF（production 既定従来挙動）であること**（Phase 1 単体では path exec の TOCTOU 窓・構造化監査未配線のため、有効化は Phase 3 まで行わない）。
+各 PR の詳細（推奨タイトル・レビュー観点・チェックリスト）は §2 の各グループ末尾の `### PR-N 作成ポイント` を参照。各 PR は単独でグリーンゲート（`_context.md` の "Green gate"）を満たし、依存 PR より後にマージする順序とする（本タスクは `cmd/` 変更を持たず、変更は `internal/` とドキュメントのみ）。
 
-### PR-2 作成ポイント: indirect execution + fd-bound execution
-
-**対象ステップ**: Step 2-1〜2-3
-**推奨タイトル**: `feat(0136): indirect execution gating and fd-bound execution`
-**レビュー観点**: 抽出不能ラッパーの拒否（High に倒さない）、fd 所有権/close、二重解決の完全廃止、攻撃者視点テスト網羅。
-
-### PR-3 作成ポイント: audit wiring + dry-run preview
-
-**対象ステップ**: Step 3-1〜3-3
-**推奨タイトル**: `feat(0136): risk audit logging and dry-run allow/deny preview`
-**レビュー観点**: 在/不在のセンチネル排除、deny 重大度下限、dry-run と normal の判定一致、検証不能 deny の終了コード、**feature flag のデフォルト ON 化（fd 束縛 exec＋構造化監査が揃うため、ここで production 有効化＝外部リリース可否ゲート）**。
-
-### PR-4 作成ポイント: documentation alignment
-
-**対象ステップ**: Step 4-1〜4-2（4-3 は PR #724 マージ後）
-**推奨タイトル**: `docs(0136): align security/user docs with enforced runtime risk evaluation`
-**レビュー観点**: 移行ノートの網羅、設定例が実際に動作、脅威モデルの限界明記。
+| PR | 対象ステップ | 依存 PR / 提供物 | 主な変更内容 |
+|---|---|---|---|
+| PR-1 | 1-1 / 1-2 / 1-3 | なし。提供: `risktypes`（以降の全 PR が依存） | 共有型 `risktypes` 新設、`ParseRiskLevel("unknown")` エラー化、`spec.go` コメント修正（基盤。既存挙動への波及なし） |
+| PR-2 | 1-4 / 1-5 / 1-6 / 1-7 / 1-8 / 1-9 | PR-1。提供: `VerifiedCommandPlan`/`EvaluateRisk`・feature flag（OFF 既定） | 評価コア: `Classify` 4 区分・`command_analysis`/`coreutils`・F-015・`EvaluateRisk` 最大値＋identity ゲート・`normal_manager` deny（`IsNetworkOperation`→`Classify` 削除が `EvaluateRisk` のコンパイルに直結する密結合の 1 単位） |
+| PR-3 | 2-1 | PR-2。提供: 間接実行解決（`Artifacts` を生成） | 間接実行の検出・抽出・ゲート・拒否（`indirect_execution.go` 新規） |
+| PR-4 | 2-2 / 2-3 | PR-3（executor が `Artifacts` 連鎖を実行/監査）・PR-2 | fd 束縛実行（`/proc/self/fd`）・`VerifiedCommandPlan` 契約・`group_executor` 二重解決廃止（高リスク隔離 PR） |
+| PR-5 | 3-1 / 3-2 / 3-3 | PR-4（fd 束縛 exec が揃う）・PR-2 | 構造化監査 `LogRiskProfile`・ResourceManager 配線・dry-run allow/deny preview・**feature flag ON 既定化**（＝外部リリース可否ゲート） |
+| PR-6 | 4-1 / 4-2 | なし（文書のみ。実装 PR に非依存） | security-architecture/risk_assessment 文書整合・移行ノート |
+| PR-7 | 4-3 | **外部 PR #724 マージ後**（対象ファイルが存在すること） | command-risk-evaluation ガイドの整合（AC-15/17/18/29・脅威モデル） |
 
 ---
 
@@ -396,12 +485,15 @@
 
 ---
 
-## 6. 実装チェックリスト
+## 6. 実装チェックリスト（PR 単位）
 
-- [ ] Phase 1: Step 1-1〜1-9 完了、`make fmt && make test && make lint` 緑
-- [ ] Phase 2: Step 2-1〜2-3 完了、`make fmt && make test && make lint` 緑
-- [ ] Phase 3: Step 3-1〜3-3 完了、`make fmt && make test && make lint` 緑（**リリース可否ゲート**）
-- [ ] Phase 4: Step 4-1〜4-2 完了（4-3 は PR #724 マージ後）
+- [ ] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3）— 共有型基盤・config、グリーンゲート緑
+- [ ] PR-2 マージ済み（対象ステップ: 1-4 / 1-5 / 1-6 / 1-7 / 1-8 / 1-9）— 評価コア＋normal deny、グリーンゲート緑
+- [ ] PR-3 マージ済み（対象ステップ: 2-1）— 間接実行ゲート、グリーンゲート緑
+- [ ] PR-4 マージ済み（対象ステップ: 2-2 / 2-3）— fd 束縛実行・二重解決廃止、グリーンゲート緑
+- [ ] PR-5 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3）— 監査＋dry-run preview、feature flag ON 既定化（**外部リリース可否ゲート**）
+- [ ] PR-6 マージ済み（対象ステップ: 4-1 / 4-2）— security/user 文書整合・移行ノート
+- [ ] PR-7 マージ済み（対象ステップ: 4-3）— command-risk-evaluation 整合（**PR #724 マージ後**）
 - [ ] 全 AC が §7 の検証表で `test` または `static` により充足
 - [ ] §8 クロス検索チェックリスト完了
 
@@ -515,6 +607,7 @@
 - [ ] `rg -n "ReasonCode\b" --type go`（cross-package の汎用識別子衝突）→ `risktypes.ReasonCode` のみ。
 - [ ] 用語整合: `02_architecture.md` と本書で「実効リスク」「最大許容リスク」「不確実ケース」「無条件拒否（Blocking）」「リスク昇格」の訳語が一致（`docs/translation_glossary.md` 参照、必要なら追記）。
 - [ ] `rg -n "dpkg" docs/`（ユーザー文書からの削除確認、AC-34 と別に docs 全体）→ 残存は許容される歴史的注記のみ。
+- [ ] PR 構成の三者一致: 各 `### PR-N 作成ポイント` の `対象ステップ` ＝ §3.2 PR 構成表 ＝ §6 PR チェックリスト（再編時はこの 3 箇所を同時更新）。
 
 ---
 
