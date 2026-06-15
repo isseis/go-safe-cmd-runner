@@ -8,7 +8,7 @@
 | Created | 2026-06-14 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-06-15: セキュリティレビュー（Critical 3・High 4・Medium 4）を反映 — 評価と実行の結合（`VerifiedCommandPlan` 中心設計、executor は plan のみ exec）、TOCTOU の fd ベース実行（fexecve/execveat）第一候補化、identity ゲートを coreutils 抑制より前段に配置、dry-run unknown/normal Blocking を `AssessmentStatus`/`EvaluationContext` で型区別、「統合評価モデル＋優先順位」への用語精緻化＋リスク次元優先順位表、`Classify` を全検証済み実行可能ファイルに適用、監査 `Decision` enum・`BlockingReason`・Chain の Role/Disposition、Critical の一貫扱い、systemctl argv 解析規則、フェーズの縦切り化＋リリースゲート。2026-06-15: 実装計画（03）レベルの詳細を点検しトリム — systemctl の argv 解析手順と監査ロガーの具体配線（Config フィールド/コンストラクタ）を契約レベルに圧縮し、具体は 03 へ移送。2026-06-15: 【isseis 指示】dry-run の `unknown` リスク状態を廃止（01 の AC-46/58 改訂と整合）。dry-run は normal と同じ read-only 解析で判定を決定的に再現し、出力は allow/deny の2区分。`AssessmentStatus`・`EvaluationContext`・`VerificationState` を削除、`EvaluateRisk(cmd)` へ簡素化、`Decision` enum から `Unknown` を除去、検証不能 deny は `VerificationUnavailable` 運用フラグで区別。2026-06-15: 機械可読コードを string 派生型化 — `ReasonCode` 型＋定数を導入し `ReasonCodes []ReasonCode` / `BlockingReason ReasonCode` に変更（列挙的文字列 Role/Disposition/ErrorClass も派生型化方針。AC-69 と親和）。2026-06-15: 【isseis 指示】取得不能値を安全化 — `RiskAuditEntry`/`ExecutedArtifact` の `ResolvedPath`/`ContentHash`/`RecordID` を `*string`（nil=不在）にし値内センチネル文字列を排除。固定マーカーはログ出力境界のみ。ContentHash 不在は nil でハッシュ突合は VerifiedIdentity を使用（AC-56 改訂と整合）|
+| Comments | 2026-06-15: セキュリティレビュー（Critical 3・High 4・Medium 4）を反映 — 評価と実行の結合（`VerifiedCommandPlan` 中心設計、executor は plan のみ exec）、TOCTOU の fd ベース実行（fexecve/execveat）第一候補化、identity ゲートを coreutils 抑制より前段に配置、dry-run unknown/normal Blocking を `AssessmentStatus`/`EvaluationContext` で型区別、「統合評価モデル＋優先順位」への用語精緻化＋リスク次元優先順位表、`Classify` を全検証済み実行可能ファイルに適用、監査 `Decision` enum・`BlockingReason`・Chain の Role/Disposition、Critical の一貫扱い、systemctl argv 解析規則、フェーズの縦切り化＋リリースゲート。2026-06-15: 実装計画（03）レベルの詳細を点検しトリム — systemctl の argv 解析手順と監査ロガーの具体配線（Config フィールド/コンストラクタ）を契約レベルに圧縮し、具体は 03 へ移送。2026-06-15: 【isseis 指示】dry-run の `unknown` リスク状態を廃止（01 の AC-46/58 改訂と整合）。dry-run は normal と同じ read-only 解析で判定を決定的に再現し、出力は allow/deny の2区分。`AssessmentStatus`・`EvaluationContext`・`VerificationState` を削除、`EvaluateRisk(cmd)` へ簡素化、`Decision` enum から `Unknown` を除去、検証不能 deny は `VerificationUnavailable` 運用フラグで区別。2026-06-15: 機械可読コードを string 派生型化 — `ReasonCode` 型＋定数を導入し `ReasonCodes []ReasonCode` / `BlockingReason ReasonCode` に変更（列挙的文字列 Role/Disposition/ErrorClass も派生型化方針。AC-69 と親和）。2026-06-15: 【isseis 指示】取得不能値を安全化 — `RiskAuditEntry`/`ExecutedArtifact` の `ResolvedPath`/`ContentHash`/`RecordID` を `*string`（nil=不在）にし値内センチネル文字列を排除。固定マーカーはログ出力境界のみ。ContentHash 不在は nil でハッシュ突合は VerifiedIdentity を使用（AC-56 改訂と整合）。2026-06-15: 残りの列挙的文字列も専用型化 — `ErrorClass` / `ArtifactRole` / `ArtifactDisposition` を string 派生型＋定数で定義し、`RiskAuditEntry.ErrorClass`・`ExecutedArtifact.Role`/`Disposition` に適用 |
 
 本書は `01_requirements.md`（status: `approved`）の機能要件 F-001〜F-015 / 受入基準 AC-01〜AC-87 を満たすための高レベル設計を定義する。実装詳細・擬似コード・アルゴリズムは含めない（それらは実装と `03_implementation_plan.md` で扱う）。
 
@@ -281,7 +281,7 @@ type Evaluator interface {
 }
 ```
 
-> 同様に、列挙的な文字列フィールド（`ExecutedArtifact.Role` / `Disposition`、`RiskAuditEntry.ErrorClass` 等）も string 派生型＋定数で表現する（下記は簡潔さのため `string` 表記だが、実装では各々専用の派生型を定義する）。
+> 列挙的な文字列フィールド（`ExecutedArtifact.Role` / `Disposition`、`RiskAuditEntry.ErrorClass`）も、それぞれ専用の string 派生型＋定数で表現する（§3.2 で定義）。
 
 > 現行の `EvaluateRisk(cmd) (runnertypes.RiskLevel, error)` を上記へ変更する。`error` は「エラー中止」（解決失敗・予期しないレコード読込エラー等）専用。設定によらず実行を中止する不確実ケースは `RiskAssessment.Blocking=true`＋`BlockingReason`（内部 Critical 相当）で表現する。**特権昇格は `Level=Critical`**（設定不可のため常に拒否。監査では `effective_risk=critical, decision=deny, blocking_reason=privilege_escalation` で一貫させる）。`Level=Critical` と `Blocking=true` はいずれも「必ず拒否」だが、前者はリスクレベル（特権昇格）、後者は不確実/identity 失敗という意味の異なる経路である。
 
@@ -390,6 +390,27 @@ const (
     DecisionError // エラー中止
 )
 
+// 列挙的な文字列値は専用の string 派生型＋定数で表現する（生文字列は使わない）。
+// 全定数一覧は実装で定義し、必要に応じて網羅をテストする。
+type ErrorClass string         // DecisionError の分類
+type ArtifactRole string       // 間接実行成果物の役割
+type ArtifactDisposition string // 成果物の処理結果
+
+const (
+    ErrorSymlinkResolution ErrorClass = "symlink_resolution"
+    ErrorRecordLoad        ErrorClass = "record_load"
+
+    RoleWrapper     ArtifactRole = "wrapper"
+    RoleInner       ArtifactRole = "inner"
+    RoleInterpreter ArtifactRole = "interpreter"
+    RolePreload     ArtifactRole = "preload"
+    RoleExecTarget  ArtifactRole = "exec-target"
+
+    DispVerified        ArtifactDisposition = "verified"
+    DispRejected        ArtifactDisposition = "rejected"
+    DispAllowlistFailed ArtifactDisposition = "allowlist-failed"
+)
+
 // 「取得できない値」は **値フィールドにセンチネル文字列を入れない**。在/不在を型で
 // 明示し（ポインタ nil = 不在）、「不在を固定文字列で表示する」のは **ログ出力の境界のみ**
 // で行う（在/不在を判定するロジックがセンチネル文字列を読む余地を作らない。AC-56）。
@@ -408,7 +429,7 @@ type RiskAuditEntry struct {
     Decision       Decision              // allow/deny/error
     VerificationUnavailable bool         // dry-run で解析・検証が利用不能だった（deny だが環境起因。AC-58 の運用区別）
     BlockingReason ReasonCode            // Blocking/Critical 時の理由（例: ReasonPrivilegeEscalation）
-    ErrorClass     string                // DecisionError 時の分類（実装では派生型。例: "symlink_resolution"）
+    ErrorClass     ErrorClass            // DecisionError 時の分類（例: ErrorSymlinkResolution）
     Chain          []ExecutedArtifact    // 間接実行連鎖の全成果物（AC-11）
 }
 
@@ -416,8 +437,8 @@ type RiskAuditEntry struct {
 type ExecutedArtifact struct {
     Path        string  // 解決済み絶対パス
     ContentHash *string // nil = 未検証（突合に使わない）
-    Role        string // 役割: "wrapper" / "inner" / "interpreter" / "preload" / "exec-target" 等
-    Disposition string // 処理結果: "verified" / "rejected" / "allowlist-failed" 等
+    Role        ArtifactRole        // 役割（例: RoleWrapper / RoleInner / RolePreload）
+    Disposition ArtifactDisposition // 処理結果（例: DispVerified / DispRejected）
 }
 
 func (l *Logger) LogRiskProfile(ctx context.Context, entry RiskAuditEntry)
