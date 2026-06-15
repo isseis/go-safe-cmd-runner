@@ -123,7 +123,7 @@
 **レビュー観点**: `risktypes` のゼロ値 fail-closed（`BinaryAnalysisClass`=Uncertain）/ 共有 DTO の最下位中立パッケージ配置（循環回避）/ `ParseRiskLevel("unknown")` のエラー化と既存値の不変 / 評価器・実行系へのシグネチャ波及が無い（本 PR は新規型・config・コメントのみで既存挙動を変えない）
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/728）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
