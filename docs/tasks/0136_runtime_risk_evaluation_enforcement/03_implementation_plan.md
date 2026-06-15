@@ -8,7 +8,7 @@
 | Created | 2026-06-15 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-06-15: main マージで取り込んだ 02 第7巡の変更へ追従 — `group_executor` を「`ResourceManager` 経由の呼び出し側に徹する（`EvaluateRisk`・比較・監査は manager 所有）」へ訂正（コンポーネント表・Step 2-3）、`xargs` をラッパー一覧から除外し子プロセス実行（find/xargs）ルールへ一本化、束縛可否チェックを副作用なし・実ステージング書込は normal の exec 直前のみ・dry-run は read-only 維持（AC-30/39）と Step 2-2 に明記。02 §1.2 概念モデル／§3.5 dry-run ハードエラー行の変更は 03 既存記述（評価器が resolve/verify/open・symlink 失敗=Blocking deny）と既に整合のため追加変更なし |
+| Comments | 2026-06-15: main マージで取り込んだ 02 第7巡の変更へ追従 — `group_executor` を「`ResourceManager` 経由の呼び出し側に徹する（`EvaluateRisk`・比較・監査は manager 所有）」へ訂正（コンポーネント表・Step 2-3）、`xargs` をラッパー一覧から除外し子プロセス実行（find/xargs）ルールへ一本化、束縛可否チェックを副作用なし・実ステージング書込は normal の exec 直前のみ・dry-run は read-only 維持（AC-30/39）と Step 2-2 に明記。02 §1.2 概念モデル／§3.5 dry-run ハードエラー行の変更は 03 既存記述（評価器が resolve/verify/open・symlink 失敗=Blocking deny）と既に整合のため追加変更なし。2026-06-15: PR #727 自動レビュー（gemini 4件）を反映 — **fd 束縛実行の機構を是正**（runner はバッチ＝子プロセス起動・継続のため in-process `SYS_EXECVEAT` は runner 自身を置換し不可。検証済み fd を `ExtraFiles` で子へ継承し `os/exec` で `/proc/self/fd/<childfd>` を exec する方式へ。raw syscall/`unsafe`/`x/sys` direct 化を不要化。§1.3・Step 2-2・関連記述を更新）、systemctl argv 解析に `-n`/`--lines` 追加＋既知 verb 照合を主規則化（値オプション網羅漏れによる偽陽性 deny を抑制）、ローダ制御変数拒否に macOS `DYLD_*` を追加、シェル（`-c` のみ）とインタプリタ（`-c`/`-e`）の inline フラグ区別を明記（`bash -e script.sh` の誤解析回避） |
 
 本計画は `02_architecture.md`（status: `approved`）に基づき、`01_requirements.md` の F-001〜F-015 / AC-01〜AC-87（AC-52/53 は欠番）を実装するための作業手順・テスト対応・検証手段を定義する。設計判断・図・型定義は `02_architecture.md` を参照し、本書では重複させない。
 
@@ -45,7 +45,7 @@
 | [default_manager.go](../../../internal/runner/resource/default_manager.go) | dry-run に `RiskEvaluator`・`audit.Logger` を配線していない | dry-run マネージャへ評価器・監査ロガーを配線（AC-39/56） |
 | [logger.go](../../../internal/runner/base/audit/logger.go) | `LogRiskProfile(ctx, commandName, baseRiskLevel, riskReasons, networkType)` のみ。相関フィールド（resolved_path/content_hash/decision/max_allowed_risk/reason_codes）なし。**本番未呼び出し（デッドコード、背景 B）** | `LogRiskProfile(ctx, RiskAuditEntry)` パラメータ構造体へ。相関フィールド・引数マスキング・連鎖監査・deny 重大度下限 |
 | [group_executor.go](../../../internal/runner/group_executor.go) | `verifyGroupFiles` で `ResolvePath`＋ハッシュ伝播。`executeCommandInGroup`（:520-528）で **実行直前に再度 `ResolvePath` し `cmd.ExpandedCmd` を上書き**（TOCTOU 二重解決） | `ResourceManager` 経由で実行を委譲する呼び出し側に徹する（`EvaluateRisk`・比較・`LogRiskProfile` は **manager が所有**。group_executor は自前で呼ばない）。実行直前の独立した再 `ResolvePath`（二重解決）を廃止（AC-64/76） |
-| [executor.go](../../../internal/runner/base/executor/executor.go) | `Execute(ctx, cmd, env, outputWriter)` が `cmd.ExpandedCmd`（パス）を exec。fd ベース実行なし | `VerifiedCommandPlan` のみ exec。fd ベース実行（`execveat(AT_EMPTY_PATH)` の自前 syscall ラッパー、§1.3 参照）第一候補、read-only ステージングがフォールバック。元 argv/env 直接 exec を禁止（AC-76/79） |
+| [executor.go](../../../internal/runner/base/executor/executor.go) | `Execute(ctx, cmd, env, outputWriter)` が `cmd.ExpandedCmd`（パス）を exec。fd ベース実行なし | `VerifiedCommandPlan` のみ exec。fd 束縛実行（検証済み fd を子へ継承し `os/exec` で `/proc/self/fd/<childfd>` を exec、§1.3 参照）第一候補、read-only ステージングがフォールバック。元 argv/env 直接 exec を禁止（AC-76/79） |
 | `security/indirect_execution.go` | **存在しない** | 新規作成。ラッパー/シェル/ローダ/find-exec/shebang/オプションの検出・抽出・ゲート・identity 束縛・拒否（F-013/F-014） |
 | `docs/dev/architecture_design/command-risk-evaluation.{ja,md}` | **main に存在しない**（PR #724 にのみ存在。§3.4 注・付録参照） | PR #724 マージ後に AC-15/17/18 を反映（フェーズ 4） |
 | [security-architecture.md](../../../docs/dev/architecture_design/security-architecture.md) / `.ja.md` | `:417` 付近に旧シグネチャ `EvaluateRisk(cmd *runnertypes.Command) (RiskLevel, error)`、`:1039` 付近に "Graceful degradation when security features are unavailable" | §5.3 の 2 例外（fail-closed 反転・シグネチャ更新）を反映 |
@@ -53,7 +53,13 @@
 
 **確定済み事項（設計委譲の解消）**: systemctl サブコマンド分類は `02_architecture.md` §3.6.1、identity 束縛契約は §3.6.2、監査配線は §3.6.3、間接実行対象は §3.3/§3.6.4、リスク次元優先順位は §6.1 で確定済み。本計画はこれらを実装へ落とす。
 
-**外部ツール前提の検証**: fd ベース実行（`execveat(2)` の `AT_EMPTY_PATH`）は現状コードに実装が無い（`grep` で production 利用なし、syscall 番号テーブルのみ）。**ground truth 確認済み**: pin 中の `golang.org/x/sys@v0.35.0/unix` には `Fexecve`／`Execveat` の高水準ラッパーは **存在しない**（提供されるのは `SYS_EXECVEAT` 定数・`AT_EMPTY_PATH`・パスベースの `unix.Exec` のみ）。したがって fd ベース実行は、`//go:build linux` の自前ラッパーで `unix.Syscall6(unix.SYS_EXECVEAT, uintptr(fd), <empty-path>, <argv>, <envp>, uintptr(unix.AT_EMPTY_PATH), 0)` を呼ぶ形で実装する（`unix.Syscall` は 3 引数のみ。EXECVEAT は fd/pathname/argv/envp/flags の 5 引数を要するため 6 引数版 `unix.Syscall6` を用いる）。引数は uintptr 化が必要: empty-path は単一 NUL バイトへのポインタ、argv/envp は NULL 終端した `[]*byte` の C 配列を `uintptr(unsafe.Pointer(&arr[0]))` で渡し、syscall 戻りまで backing slice を到達可能に保つ（GC 回収を防ぐ）。`golang.org/x/sys` は現状 `go.mod` で `// indirect` かつ repo の `.go` から未 import のため、本タスクで **直接依存へ昇格**する（Step 2-2 に明示タスクとして計上。新規モジュール追加ではなく既存推移的依存の direct 化）。実装環境での可否確認は Step 2-2 の完了ゲート（`//go:build linux` タグでの実コンパイル）で行い、不能環境では read-only ステージングへフォールバック、双方不能なら評価段階で Blocking deny（§3.6.2）。
+**fd ベース実行の機構（重要・設計確定）**: runner は **バッチ実行プロセス**であり、各コマンドを **子プロセスとして起動して継続** する（現行 `executor.go` は `exec.CommandContext`＝fork+exec）。したがって、`execveat`/`execve` を **runner 自身のプロセスで直接呼んではならない**——それは runner プロセス自体を置換して終わらせてしまう。Go では、マルチスレッドランタイム上で fork した子プロセス側でのみ `execveat` を非同期シグナル安全に呼ぶことは現実的でなく（`os/exec`・`syscall.ForkExec` の子プロセス側実装はパスベースの `execve` 固定で `execveat` を差し込めない）、自前の in-process `SYS_EXECVEAT` 呼び出しは採らない。
+
+したがって Linux での fd 束縛実行は、**保持している検証済み fd を子プロセスへ継承させ、`os/exec` に実行パスとして `/proc/self/fd/<childfd>`（同義 `/dev/fd/<childfd>`）を渡す**方式で実装する（glibc の `fexecve` が古いカーネルで用いるのと同じ手法）。fd は検証済み inode を指すため、元のパス名がすり替えられても子プロセスが exec するのはその inode であり、TOCTOU・symlink すり替えを閉じる（AC-76）。実装上は検証済み fd を `cmd.ExtraFiles` で子へ継承（CLOEXEC を解除）し、子側 fd 番号（`3 + index`）から `/proc/self/fd/<n>` を組み立てる。`os/exec` の堅牢な fork+exec をそのまま使え、`unsafe`/`unix.Syscall6`/GC 回避（`runtime.KeepAlive`）は不要になる。
+
+- **前提・限界**: `/proc` がマウントされていること（Linux 前提）。exec 権限は fd の参照先に対して評価される。`#!` スクリプトや hidepid 構成の扱いは実装で確認する。
+- **フォールバック**: `/proc/self/fd` 実行が不能な環境（非 Linux・`/proc` なし等）は **read-only ステージング**（§3.6.2）。双方不能なら **評価段階で Blocking deny**（§3.6.2 の可否判定。副作用なし）。
+- **依存**: 本方式は標準ライブラリ（`os/exec`・`os`・`syscall`）のみで実現でき、`golang.org/x/sys` を **direct 依存へ昇格する必要はない**（`SYS_EXECVEAT` の自前ラッパーが不要になったため）。
 
 ### 1.4 共有 DTO の配置決定
 
@@ -138,12 +144,12 @@
 - [ ] `RiskAssessment` に `Level`/`Blocking`/`BlockingReason`/`ErrorClass`/`ReasonCodes`/`Reasons`/`NetworkType` を設定。`Blocking=true` または `Level=Critical` の拒否では必ず `BlockingReason` を設定（§3.1）。
 - [ ] F-011 サブコマンド条件付き SystemModRisk 導出（`02_architecture.md` §3.6.1 の確定リスト: 変更系→High、読み取り専用→Medium 下限、未知→High、`service` は全アクション High）。
 - [ ] **systemctl argv 解析規則の確定（§3.6.1 M-9 が 03 へ委譲）**: 現行 `findFirstSubcommand`（git オプション表流用）を systemctl 用パーサ `firstSystemctlSubcommand(args)` に置換する。規則:
-  - 値を取るオプション（次トークンを consume）: `-H`/`--host`, `-M`/`--machine`, `-t`/`--type`, `--state`, `-p`/`--property`, `--what`, `--job-mode`, `--root`, `--kill-whom`, `-s`/`--signal`, `--timestamp`, `--output`, `-o`。これらの直後トークンはサブコマンドとして扱わない。
+  - 値を取るオプション（次トークンを consume）: `-H`/`--host`, `-M`/`--machine`, `-t`/`--type`, `--state`, `-p`/`--property`, `--what`, `--job-mode`, `--root`, `--kill-whom`, `-s`/`--signal`, `--timestamp`, `--output`/`-o`, **`-n`/`--lines`**。これらの直後トークンはサブコマンドとして扱わない。
   - 結合形 `--opt=value` は 1 トークンで完結（次トークンを consume しない）。
   - 真偽オプション（値なし、例 `--now`/`--no-pager`/`--quiet`/`-q`/`--user`/`--system`）は単純スキップ。
   - オプション終端 `--`: 以降の最初のトークンを無条件にサブコマンドとして採用。
-  - 上記スキップ後の最初の非オプショントークンをサブコマンドとする。一意に判別できない（空・解析破綻）場合は High（安全側、§3.6.1）。
-  - 値を取るオプションの網羅は安全側に倒す方針（未知の `-x value` 形を取りこぼしても、サブコマンド誤認時は未知扱い→High に倒れるため fail-safe）。
+  - **主たる判別は既知 verb 集合とのマッチ**: スキップ後の最初の非オプショントークンが systemctl の既知サブコマンド（`status`/`show`/`start`/`stop`/`restart`/`reload`/`enable`/`disable`/`mask`/`is-active`/… 変更系・読み取り系の確定集合は §3.6.1）に一致すればそれを採用する。**既知 verb 照合を主規則にすることで、値オプションのリスト網羅漏れがあっても、その値（数値・日付等）は既知 verb に一致しないため取りこぼしの影響を受けにくい**（偽陽性の主因を低減）。一意に判別できない（空・解析破綻・既知 verb 不一致）場合は High（安全側、§3.6.1）。
+  - 既知 verb 集合・値オプション表は実装で保守する。網羅漏れがあっても **誤認は未知扱い→High（fail-safe、偽陰性なし）** に倒れる設計を維持する（ただし上記 verb 照合により正規コマンドの偽陽性 deny を抑える）。
 - [ ] `evaluator_test.go` を `VerifiedCommandPlan` 返却・最大値・identity ゲートへ全面更新。`02_architecture.md` §5.3 の移行影響（`claude` Medium→High 等）に合わせ期待値を更新。
 - [ ] `coreutils_consistency_test.go` を新シグネチャへ追従（実行時/ dry-run 一致は Phase 3 で完結）。
 
@@ -198,9 +204,9 @@
 - [ ] `02_architecture.md` §3.3 の形態表を実装。各形態で「実行/ロードされる全成果物を抽出 → allowlist/ハッシュゲート → identity 束縛 → 不能なら拒否（`Blocking`＋reason code）」。
 - [ ] ラッパー（`env`/`nice`/`ionice`/`timeout`/`nohup`/`stdbuf`/`setsid`/`time`/`chrt`/`taskset`。**runner 自身が抽出した実コマンドを exec する形態**）: インナーコマンド抽出→再帰評価＋ゲート。COMMAND ありで抽出不能は `ReasonIndirectExecutionRejected`（AC-60/77/84）。**`xargs` はここに含めない**（helper を exec するのは runner ではなく xargs 子プロセスのため、下記 find/xargs の子プロセス実行ルールで扱う）。
 - [ ] 特権昇格トークン（`sudo`/`su`/`doas`）が独立トークンで出現 → 抽出可否によらず Critical（AC-59）。
-- [ ] ラッパー供給環境変数を既存 [environment_validation.go](../../../internal/runner/base/security/environment_validation.go) で検証。ローダ制御変数（`LD_PRELOAD`/`LD_LIBRARY_PATH`/`LD_AUDIT`）拒否（AC-80）。
+- [ ] ラッパー供給環境変数を既存 [environment_validation.go](../../../internal/runner/base/security/environment_validation.go) で検証。ローダ制御変数を拒否（AC-80）: Linux 系 `LD_PRELOAD`/`LD_LIBRARY_PATH`/`LD_AUDIT`、および **macOS（dyld）系 `DYLD_INSERT_LIBRARIES`/`DYLD_LIBRARY_PATH`/`DYLD_FALLBACK_LIBRARY_PATH`** 等の `DYLD_*`（macOS でのライブラリインジェクション対策。OS によらず拒否リストに含める）。
 - [ ] `env -S`（split-string）分割後 argv 解釈。`sudo` 等を Critical、解釈不能は拒否（AC-81）。
-- [ ] シェル/インタプリタ inline（`-c`/`-e`）→ High 下限（AC-61。文字列内 sudo の Critical 化は保証しない＝限界明記）。
+- [ ] シェル/インタプリタの inline コード実行 → High 下限（AC-61。文字列内 sudo の Critical 化は保証しない＝限界明記）。**inline 実行フラグはコマンド種別で区別する**: シェル（`bash`/`sh`/`zsh` 等）は `-c` のみ（`-e` は errexit の真偽オプションで inline コードではない。`bash -e script.sh` を inline 文字列と誤解析しない）。インタプリタ（`node`/`ruby`/`perl` 等）は `-e`（eval）と `-c` を inline コードとして扱う。なお F-015 によりシェル/インタプリタは引数によらず High のため、この区別は inline 文字列か否か（＝内側スクリプトをファイル成果物としてゲートできるか）の判定に用いる。
 - [ ] 実行解決すり替え（`env PATH=…`）→ 検証済み絶対パスで実行 or 拒否（AC-79）。
 - [ ] `find`/`xargs` 実行アクション → 対象を破壊判定＋allowlist/ハッシュゲート＋検証済み絶対パス実行。fd 束縛不能なら拒否（AC-62/82。残存制約は §5.2）。
 - [ ] サービス管理（`service <name> <action>`）→ `/etc/init.d/<name>` を成果物として検証＋ゲート＋identity 束縛、不能なら拒否（AC-75/82）。
@@ -215,20 +221,19 @@
 
 ### Step 2-2: fd ベース実行と `VerifiedCommandPlan` 契約
 
-**対象ファイル**: [executor.go](../../../internal/runner/base/executor/executor.go), [interface.go](../../../internal/runner/base/executor/interface.go), 対応テスト, execveat ラッパー（`internal/runner/base/executor/execveat_linux.go`＋非 Linux スタブ `execveat_other.go`・新規）, `go.mod`（`golang.org/x/sys` を direct 化）
+**対象ファイル**: [executor.go](../../../internal/runner/base/executor/executor.go), [interface.go](../../../internal/runner/base/executor/interface.go), 対応テスト, fd 実行ヘルパ（`internal/runner/base/executor/fdexec_linux.go`＋非 Linux スタブ `fdexec_other.go`・新規）
 
-- [ ] `golang.org/x/sys` を `go.mod` の direct 依存へ昇格（`go get golang.org/x/sys@v0.35.0` 相当。§1.3 の ground truth 参照）。
 - [ ] `EvaluateRisk`（評価器）が検証時に開いた fd を `VerifiedIdentity.FD`（`*int`）に格納する経路を実装（パス解決・検証・open を評価器が一度だけ。§3.6.2）。
-- [ ] executor の実行入口を `VerifiedCommandPlan` 受領へ変更。fd ベース実行は `//go:build linux` の自前ラッパー `execFD(fd int, argv, envp []string)` が `unix.Syscall6(unix.SYS_EXECVEAT, uintptr(fd), <empty-path>, <argv>, <envp>, uintptr(unix.AT_EMPTY_PATH), 0)` を呼ぶ（6 引数版。引数マーシャリングは §1.3 参照）。第一候補。不能環境は read-only ステージング、双方不能なら評価段階で Blocking 済み（executor はセキュリティ拒否判定を持たない。§3.6.2）。
+- [ ] executor の実行入口を `VerifiedCommandPlan` 受領へ変更。fd 束縛実行は `//go:build linux` のヘルパで、検証済み fd を `cmd.ExtraFiles` で子へ継承させ（CLOEXEC 解除）、`os/exec` の `cmd.Path` に `/proc/self/fd/<childfd>`（`childfd = 3 + ExtraFiles index`）を設定して exec する（§1.3。標準 fork+exec を利用、raw syscall/`unsafe` 不要）。第一候補。不能環境は read-only ステージング、双方不能なら評価段階で Blocking 済み（executor はセキュリティ拒否判定を持たない。§3.6.2）。
 - [ ] **再ハッシュのみの path exec（rehash-then-path-exec）を実装しない**（§3.6.2 / AC-76）。
 - [ ] 束縛可否の判定は **副作用なし**で行う（§3.6.2）: 評価段階では「fd を保持できているか」「ステージングが**実施可能か**（書込不能ステージング領域が利用可能か）」のみを確認し、**実際のステージング複製（ファイル書き込み）は normal の exec 直前にのみ行う**。dry-run は同じ副作用なし可否チェックで allow/deny を決め、ステージング書き込みは行わない（read-only 維持。AC-30/39 の normal/dry-run 整合を保ち、normal が staging で許可する実体を dry-run が誤って deny しない）。
-- [ ] fd 所有権と close 機構の確定（§3.6.2 が 03 へ委譲）: クローズ可能ラッパー型 `VerifiedFD`（`risktypes` に定義、`Close() error` を持つ）を新設し、`VerifiedIdentity` および各 `ExecutedArtifact` が保持する。`VerifiedCommandPlan` に `Close() error`（全 fd を集約 close、`errors.Join`）を実装する。close 呼び出し箇所を明示: (a) 許可 plan は executor が exec 直前に親側 fd を `O_CLOEXEC` 任せにせず exec 後に明示 close、(b) 拒否 plan・dry-run preview・exec されない副成果物は ResourceManager が監査出力後に `plan.Close()`。`EvaluateRisk` 内で fd を開いた後にエラーで早期 return する場合も、その時点までに開いた fd を defer で close する。
+- [ ] fd 所有権と close 機構の確定（§3.6.2 が 03 へ委譲）: クローズ可能ラッパー型 `VerifiedFD`（`risktypes` に定義、`Close() error` を持つ）を新設し、`VerifiedIdentity` および各 `ExecutedArtifact` が保持する。`VerifiedCommandPlan` に `Close() error`（全 fd を集約 close、`errors.Join`）を実装する。close 呼び出し箇所を明示: (a) 許可 plan は子プロセス起動（`cmd.Start`、fd は `ExtraFiles` で子へ複製済み）後に親側の検証済み fd を close、(b) 拒否 plan・dry-run preview・exec されない副成果物は ResourceManager が監査出力後に `plan.Close()`。`EvaluateRisk` 内で fd を開いた後にエラーで早期 return する場合も、その時点までに開いた fd を defer で close する。
 - [ ] 元 argv/env の直接 exec を禁止（型契約＋コードレビュー観点）。
-- [ ] 非対応 OS（`//go:build !linux`）の `execveat_other.go` は fd 実行不能を返すスタブとし、ステージング/拒否のみ。
+- [ ] 非対応 OS（`//go:build !linux`）の `fdexec_other.go` は fd 実行不能を返すスタブとし、ステージング/拒否のみ。
 
 **完了条件**:
-- Linux ビルドの実コンパイル: `go build -tags test ./internal/runner/base/executor/`（`//go:build linux` の `execveat_linux.go` が型/シグネチャ込みでコンパイルされる。CI は linux/amd64 を前提・要確認）。
-- 非 Linux スタブのクロスコンパイル: `GOOS=darwin go build -tags test ./internal/runner/base/executor/`（`execveat_other.go` がコンパイルされる）。
+- Linux ビルドの実コンパイル: `go build -tags test ./internal/runner/base/executor/`（`//go:build linux` の `fdexec_linux.go` が型/シグネチャ込みでコンパイルされる。CI は linux/amd64 を前提・要確認）。
+- 非 Linux スタブのクロスコンパイル: `GOOS=darwin go build -tags test ./internal/runner/base/executor/`（`fdexec_other.go` がコンパイルされる）。
 - fd 実行・ステージング双方の単体テスト、および **拒否/preview plan が fd を漏らさない**ことを検証するテスト（`/proc/self/fd` のカウント or fake fd で `Close` 呼び出しを確認）が緑。
 
 ### Step 2-3: `group_executor` の二重解決廃止
@@ -363,14 +368,14 @@
 - **整合性テスト**: 実行時/dry-run の実効リスク一致（AC-20/27/28/39）。`risk/coreutils_consistency_test.go` を維持・拡張。
 - **監査テスト**: deny 出力・相関フィールド・在不在表現・重大度下限・連鎖（AC-11/56/57/70）。
 - **後方互換テスト**: basename 入力の検出維持（AC-10）。
-- **fd 束縛テスト**: fexecve 経路とステージング経路の双方、双方不能時の Blocking deny（AC-76）。
+- **fd 束縛テスト**: `/proc/self/fd` 実行経路とステージング経路の双方、双方不能時の Blocking deny（AC-76）。
 - **品質ゲート**: 各フェーズで `make fmt`/`make test`/`make lint`（AC-21）。
 
 ### テストヘルパー方針（`docs/dev/developer_guide/test_organization.md` 準拠）
 
 - `risktypes` のテスト用ファクトリ（plan/identity 構築）は、公開 API のみ使用するため必要時 `internal/runner/base/risktypes/testutil/helpers.go`（`package risktypestestutil`）に置く。
 - `risk`/`security` パッケージ内で非公開 API を使うヘルパーは各パッケージの `test_helpers.go`（`//go:build test`）。既存 [network_analyzer_test_helpers.go](../../../internal/runner/base/security/network_analyzer_test_helpers.go) / [test_helpers.go](../../../internal/runner/base/security/test_helpers.go) を再利用・拡張する（新規ファイルは必要時のみ）。
-- fexecve のテストでテスト専用バイナリを書込不能領域へ配置する等の OS 依存セットアップは、`security`-linter（gosec）指摘が出る場合のみ最小スコープ `//nolint` をテスト/ヘルパー双方に付す（`testutil/` の `//go:build test` ファイルにも適用。`_test.go` 限定の免除は効かない）。
+- fd 束縛実行のテストでテスト専用バイナリを書込不能領域へ配置する等の OS 依存セットアップは、`security`-linter（gosec）指摘が出る場合のみ最小スコープ `//nolint` をテスト/ヘルパー双方に付す（`testutil/` の `//go:build test` ファイルにも適用。`_test.go` 限定の免除は効かない）。
 
 ---
 
@@ -378,7 +383,7 @@
 
 | リスク | 影響 | 緩和策 |
 |---|---|---|
-| fexecve が一部環境で不可 | fd 束縛が成立せず実行不能 | read-only ステージングへフォールバック、双方不能なら Blocking deny（§3.6.2）。実装環境可否は Step 2-2 ゲートで確認 |
+| `/proc/self/fd` 実行が一部環境で不可（`/proc` なし等） | fd 束縛が成立せず実行不能 | read-only ステージングへフォールバック、双方不能なら Blocking deny（§3.6.2）。実装環境可否は Step 2-2 ゲートで確認 |
 | 間接実行の網羅不能性 | 未知ベクトルの素通り | 一般原則（全成果物ゲート＋identity 束縛、不能なら拒否、未知は安全側）＋ allowlist/ハッシュ固定 backstop（§3.6.4） |
 | 移行影響の広さ（High 化多数） | 既存設定の拒否 | 移行ノート（AC-19）で明記、dry-run で事前確認可能に |
 | PR #724 未マージ依存 | command-risk-evaluation 文書を更新できない | Phase 4 の Step 4-3 をマージ後着手に分離。Phase 1〜3 はこの依存を持たない |
