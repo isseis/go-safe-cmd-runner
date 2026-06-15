@@ -22,6 +22,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	resourcetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
@@ -157,6 +158,7 @@ func createRunnerWithOutputCapture(
 		runner.WithRuntimeGlobal(runtimeGlobal),
 		runner.WithKeepTempDirs(keepTempDirs),
 		runner.WithExecutor(exec),
+		runner.WithRiskEvaluator(resourcetestutil.NewAllowAllEvaluator()),
 	}
 
 	r, err := runner.NewRunner(cfg, runnerOptions...)

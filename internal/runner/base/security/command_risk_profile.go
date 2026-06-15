@@ -3,6 +3,7 @@ package security
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
@@ -79,6 +80,79 @@ func (p CommandRiskProfile) GetRiskReasons() []string {
 	addReason(p.SystemModRisk)
 
 	return reasons
+}
+
+// ResolveProfile resolves the command's symlink chain and returns the risk
+// profile matched by any name in the chain. When multiple names match (a symlink
+// pointing at a differently-named profiled command), the factors are merged by
+// taking the maximum of each factor. found is false when no name matches.
+func ResolveProfile(cmdName string) (profile CommandRiskProfile, found bool) {
+	names, _ := extractAllCommandNames(cmdName)
+	for name := range names {
+		p, exists := commandRiskProfiles[name]
+		if !exists {
+			continue
+		}
+		if !found {
+			profile = p
+			found = true
+			continue
+		}
+		profile = mergeProfilesMax(profile, p)
+	}
+	return profile, found
+}
+
+// maxFactor returns the higher-level of two risk factors, preserving its reason.
+func maxFactor(a, b RiskFactor) RiskFactor {
+	if b.Level > a.Level {
+		return b
+	}
+	return a
+}
+
+// mergeProfilesMax merges two profiles factor-by-factor using the maximum level.
+// NetworkType is merged toward the stronger behavior (Always > Conditional > None)
+// and conditional subcommand lists are unioned.
+func mergeProfilesMax(a, b CommandRiskProfile) CommandRiskProfile {
+	merged := CommandRiskProfile{
+		PrivilegeRisk:   maxFactor(a.PrivilegeRisk, b.PrivilegeRisk),
+		NetworkRisk:     maxFactor(a.NetworkRisk, b.NetworkRisk),
+		DestructionRisk: maxFactor(a.DestructionRisk, b.DestructionRisk),
+		DataExfilRisk:   maxFactor(a.DataExfilRisk, b.DataExfilRisk),
+		SystemModRisk:   maxFactor(a.SystemModRisk, b.SystemModRisk),
+	}
+	switch {
+	case a.NetworkType == NetworkTypeAlways || b.NetworkType == NetworkTypeAlways:
+		merged.NetworkType = NetworkTypeAlways
+	case a.NetworkType == NetworkTypeConditional || b.NetworkType == NetworkTypeConditional:
+		merged.NetworkType = NetworkTypeConditional
+		merged.NetworkSubcommands = slices.Concat(a.NetworkSubcommands, b.NetworkSubcommands)
+	default:
+		merged.NetworkType = NetworkTypeNone
+	}
+	return merged
+}
+
+// ProfileNetworkApplies reports whether the profile's NetworkRisk factor applies
+// to this invocation: always for NetworkTypeAlways, and for NetworkTypeConditional
+// only when a network subcommand or a network-style argument (URL/SSH address) is
+// present.
+func ProfileNetworkApplies(profile CommandRiskProfile, args []string) bool {
+	switch profile.NetworkType {
+	case NetworkTypeAlways:
+		return true
+	case NetworkTypeConditional:
+		if len(profile.NetworkSubcommands) > 0 {
+			sub := findFirstSubcommand(args)
+			if sub != "" && slices.Contains(profile.NetworkSubcommands, sub) {
+				return true
+			}
+		}
+		return hasNetworkArguments(args)
+	default:
+		return false
+	}
 }
 
 // Validate ensures consistency between risk factors and configuration

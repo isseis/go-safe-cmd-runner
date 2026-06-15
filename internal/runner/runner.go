@@ -90,6 +90,7 @@ type runnerOptions struct {
 	keepTempDirs            bool
 	groupMembershipProvider *groupmembership.GroupMembership
 	toctouValidator         isec.DirectoryPermChecker
+	riskEvaluator           risk.Evaluator
 }
 
 // WithVerificationManager sets a custom verification manager
@@ -132,6 +133,16 @@ func WithKeepTempDirs(keep bool) Option {
 func WithRuntimeGlobal(runtimeGlobal *runnertypes.RuntimeGlobal) Option {
 	return func(opts *runnerOptions) {
 		opts.runtimeGlobal = runtimeGlobal
+	}
+}
+
+// WithRiskEvaluator injects a custom risk evaluator. When unset, the runner
+// builds the standard evaluator from the verification manager's analysis
+// dependencies. This is a dependency-injection seam used to supply an alternative
+// evaluator (for example in tests that run with file validation disabled).
+func WithRiskEvaluator(ev risk.Evaluator) Option {
+	return func(opts *runnerOptions) {
+		opts.riskEvaluator = ev
 	}
 }
 
@@ -230,9 +241,12 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 
 	outputMgr := output.NewDefaultOutputCaptureManager(validator)
 
-	deps := verificationManager.GetAnalysisDeps()
-	networkAnalyzer := security.NewNetworkAnalyzer(runtime.GOOS, deps)
-	evaluator := risk.NewStandardEvaluator(networkAnalyzer)
+	evaluator := opts.riskEvaluator
+	if evaluator == nil {
+		deps := verificationManager.GetAnalysisDeps()
+		networkAnalyzer := security.NewNetworkAnalyzer(runtime.GOOS, deps)
+		evaluator = risk.NewStandardEvaluator(networkAnalyzer)
+	}
 
 	resourceManager, err := resource.NewDefaultResourceManager(resource.Config{
 		Executor:         opts.executor,

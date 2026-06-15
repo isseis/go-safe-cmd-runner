@@ -75,4 +75,10 @@ const (
 	ReasonIndirectExecutionRejected ReasonCode = "indirect_execution_rejected"
 	// ReasonForbiddenEnvVar marks a forbidden environment variable being supplied.
 	ReasonForbiddenEnvVar ReasonCode = "forbidden_env_var"
+	// ReasonNonAbsolutePath marks a command path that was not absolute when it
+	// reached the evaluator (identity cannot be established; fail-closed).
+	ReasonNonAbsolutePath ReasonCode = "non_absolute_path"
+	// ReasonNetworkArgument marks a network-style argument (URL or SSH-style
+	// address) detected on a command without a network profile.
+	ReasonNetworkArgument ReasonCode = "network_argument"
 )

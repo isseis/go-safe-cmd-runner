@@ -9,6 +9,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,9 +22,6 @@ func TestSyscallAnalysisHasSVCSignal_Nil(t *testing.T) {
 
 func TestConstructors_PanicOnEmptyGOOS(t *testing.T) {
 	assert.Panics(t, func() {
-		_ = newNetworkAnalyzer("")
-	})
-	assert.Panics(t, func() {
 		_ = newNetworkAnalyzerWithStore("", nil)
 	})
 	assert.Panics(t, func() {
@@ -32,9 +30,6 @@ func TestConstructors_PanicOnEmptyGOOS(t *testing.T) {
 }
 
 func TestConstructors_AcceptCurrentGOOS(t *testing.T) {
-	assert.NotPanics(t, func() {
-		_ = newNetworkAnalyzer(runtime.GOOS)
-	})
 	assert.NotPanics(t, func() {
 		_ = newNetworkAnalyzerWithStore(runtime.GOOS, nil)
 	})
@@ -254,7 +249,7 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAnalysisFound(t *testing.T) 
 	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
 	require.NoError(t, err)
 
-	assert.True(t, isNet, "static binary + svc signal should return true")
+	assert.False(t, isNet, "svc signal is high-risk, not a network signal")
 	assert.True(t, isHigh, "static binary + svc signal should return high risk")
 }
 
@@ -288,7 +283,7 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCAnalysisFound(t *testing
 	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
 	require.NoError(t, err)
 
-	assert.True(t, isNet, "svc signal should escalate to true even for no network symbols")
+	assert.False(t, isNet, "svc signal is high-risk, not a network signal")
 	assert.True(t, isHigh, "svc signal should set high risk")
 }
 
@@ -557,7 +552,9 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAndNetworkSyscall(t *testing
 	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
 	require.NoError(t, err)
 
-	assert.True(t, isNet, "svc + network syscall should return true")
+	// The svc #0x80 escalates to high risk; the socket entry (Number 97) is not a
+	// Linux network syscall, so the only signal is the high-risk svc.
+	assert.False(t, isNet, "svc signal is high-risk, not a network signal")
 	assert.True(t, isHigh, "svc #0x80 should escalate to high risk")
 }
 
@@ -884,4 +881,116 @@ func TestHandleAnalysisOutput_DefaultIsFullyFailClosed(t *testing.T) {
 	isNetwork, isHighRisk := handleAnalysisOutput(output, testCmdPath)
 	assert.True(t, isNetwork, "unknown AnalysisResult must be treated as network (fail-closed)")
 	assert.True(t, isHighRisk, "unknown AnalysisResult must be treated as high risk (fail-closed)")
+}
+
+// TestClassify_AllResultClasses verifies that every binary-analysis outcome
+// maps to the correct class (Clean/Network/HighRisk/Uncertain). Data-unavailable
+// cases are Uncertain (fail-closed), never Clean.
+func TestClassify_AllResultClasses(t *testing.T) {
+	netSyms := &fileanalysis.SymbolAnalysisData{DetectedSymbols: []fileanalysis.DetectedSymbol{{Name: "socket"}}}
+	dlSyms := &fileanalysis.SymbolAnalysisData{DynamicLoadSymbols: []fileanalysis.DetectedSymbol{{Name: "dlopen"}}}
+
+	tests := []struct {
+		name     string
+		store    RecordStore
+		hash     string
+		expected risktypes.BinaryAnalysisClass
+	}{
+		{
+			name:     "clean record with no signals",
+			store:    &stubRecordStore{record: &fileanalysis.Record{ContentHash: testContentHash}},
+			hash:     testContentHash,
+			expected: risktypes.BinaryAnalysisClean,
+		},
+		{
+			name:     "network symbols only",
+			store:    &stubRecordStore{record: &fileanalysis.Record{ContentHash: testContentHash, SymbolAnalysis: netSyms}},
+			hash:     testContentHash,
+			expected: risktypes.BinaryAnalysisNetwork,
+		},
+		{
+			name:     "dynamic load symbols are high risk",
+			store:    &stubRecordStore{record: &fileanalysis.Record{ContentHash: testContentHash, SymbolAnalysis: dlSyms}},
+			hash:     testContentHash,
+			expected: risktypes.BinaryAnalysisHighRisk,
+		},
+		{
+			name:     "svc signal is high risk",
+			store:    &stubRecordStore{record: &fileanalysis.Record{ContentHash: testContentHash, SyscallAnalysis: svcSyscallData()}},
+			hash:     testContentHash,
+			expected: risktypes.BinaryAnalysisHighRisk,
+		},
+		{
+			name:     "missing record is uncertain",
+			store:    &stubRecordStore{err: fileanalysis.ErrRecordNotFound},
+			hash:     testContentHash,
+			expected: risktypes.BinaryAnalysisUncertain,
+		},
+		{
+			name:     "hash mismatch is uncertain",
+			store:    &stubRecordStore{record: &fileanalysis.Record{ContentHash: "sha256:stale"}},
+			hash:     testContentHash,
+			expected: risktypes.BinaryAnalysisUncertain,
+		},
+		{
+			name:     "schema mismatch is uncertain",
+			store:    &stubRecordStore{err: &fileanalysis.SchemaVersionMismatchError{Expected: fileanalysis.CurrentSchemaVersion, Actual: fileanalysis.CurrentSchemaVersion - 1}},
+			hash:     testContentHash,
+			expected: risktypes.BinaryAnalysisUncertain,
+		},
+		{
+			name:     "empty hash is uncertain",
+			store:    &stubRecordStore{record: &fileanalysis.Record{ContentHash: testContentHash}},
+			hash:     "",
+			expected: risktypes.BinaryAnalysisUncertain,
+		},
+		{
+			name:     "analysis disabled is uncertain",
+			store:    nil,
+			hash:     testContentHash,
+			expected: risktypes.BinaryAnalysisUncertain,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, tt.store)
+			res, err := analyzer.Classify(testCmdPath, tt.hash)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, res.Class)
+		})
+	}
+}
+
+// TestClassify_DistinctReasonCodes verifies that distinct evaluation grounds
+// produce distinct reason codes, so an audit can tell why a binary was classified.
+func TestClassify_DistinctReasonCodes(t *testing.T) {
+	tests := []struct {
+		name  string
+		hash  string
+		store RecordStore
+		want  risktypes.ReasonCode
+	}{
+		{"missing record", testContentHash, &stubRecordStore{err: fileanalysis.ErrRecordNotFound}, risktypes.ReasonUncertainMissingRecord},
+		{"schema mismatch", testContentHash, &stubRecordStore{err: &fileanalysis.SchemaVersionMismatchError{Expected: fileanalysis.CurrentSchemaVersion, Actual: fileanalysis.CurrentSchemaVersion - 1}}, risktypes.ReasonUncertainSchemaMismatch},
+		{"hash mismatch", testContentHash, &stubRecordStore{record: &fileanalysis.Record{ContentHash: "sha256:stale"}}, risktypes.ReasonUncertainHashMismatch},
+		{"unverified identity", "", &stubRecordStore{record: &fileanalysis.Record{ContentHash: testContentHash}}, risktypes.ReasonUncertainUnverifiedIdentity},
+		{"analysis disabled", testContentHash, nil, risktypes.ReasonAnalysisDisabled},
+		{"dynamic load", testContentHash, &stubRecordStore{record: &fileanalysis.Record{ContentHash: testContentHash, SymbolAnalysis: &fileanalysis.SymbolAnalysisData{DynamicLoadSymbols: []fileanalysis.DetectedSymbol{{Name: "dlopen"}}}}}, risktypes.ReasonBinaryAnalysisDynamicLoad},
+		{"svc", testContentHash, &stubRecordStore{record: &fileanalysis.Record{ContentHash: testContentHash, SyscallAnalysis: svcSyscallData()}}, risktypes.ReasonBinaryAnalysisSVC},
+		{"network", testContentHash, &stubRecordStore{record: &fileanalysis.Record{ContentHash: testContentHash, SymbolAnalysis: &fileanalysis.SymbolAnalysisData{DetectedSymbols: []fileanalysis.DetectedSymbol{{Name: "socket"}}}}}, risktypes.ReasonBinaryAnalysisNetwork},
+	}
+
+	seen := make(map[risktypes.ReasonCode]struct{})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, tt.store)
+			res, err := analyzer.Classify(testCmdPath, tt.hash)
+			require.NoError(t, err)
+			assert.Contains(t, res.ReasonCodes, tt.want)
+			_, dup := seen[tt.want]
+			assert.False(t, dup, "reason code %q reused across distinct grounds", tt.want)
+			seen[tt.want] = struct{}{}
+		})
+	}
 }

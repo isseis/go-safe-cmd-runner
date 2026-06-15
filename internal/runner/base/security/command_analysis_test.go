@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
@@ -286,9 +287,9 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 	})
 
 	t.Run("setuid binary takes priority over medium risk patterns", func(t *testing.T) {
-		// Create an executable that would match a medium risk pattern (chmod 777)
+		// Create an executable that would match a medium risk pattern (chown root)
 		// but also has setuid bit set - should be classified as high risk due to setuid
-		setuidExec := filepath.Join(tmpDir, "chmod")
+		setuidExec := filepath.Join(tmpDir, "chown")
 		err := os.WriteFile(setuidExec, []byte("#!/bin/bash\necho test"), 0o755)
 		require.NoError(t, err)
 
@@ -301,8 +302,8 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, fileInfo.Mode()&os.ModeSetuid != 0, "setuid bit should be set")
 
-		// Test with arguments that would match medium risk pattern "chmod 777"
-		risk, pattern, reason, err := AnalyzeCommandSecurity(setuidExec, []string{"777"}, "")
+		// Test with arguments that would match medium risk pattern "chown root"
+		risk, pattern, reason, err := AnalyzeCommandSecurity(setuidExec, []string{"root", "/tmp/x"}, "")
 		require.NoError(t, err)
 
 		// Should be classified as high risk due to setuid bit, not medium risk due to pattern
@@ -311,15 +312,15 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		assert.Equal(t, "Executable has setuid or setgid bit set", reason)
 
 		// Verify that without setuid bit, it would be medium risk
-		normalExec := filepath.Join(tmpDir, "chmod")
+		normalExec := filepath.Join(tmpDir, "chown")
 		err = os.WriteFile(normalExec, []byte("#!/bin/bash\necho test"), 0o755)
 		require.NoError(t, err)
 
-		riskNormal, patternNormal, reasonNormal, errNormal := AnalyzeCommandSecurity(normalExec, []string{"777"}, "")
+		riskNormal, patternNormal, reasonNormal, errNormal := AnalyzeCommandSecurity(normalExec, []string{"root", "/tmp/x"}, "")
 		require.NoError(t, errNormal)
 		assert.Equal(t, runnertypes.RiskLevelMedium, riskNormal)
-		assert.Equal(t, "chmod 777", patternNormal)
-		assert.Equal(t, "Overly permissive file permissions", reasonNormal)
+		assert.Equal(t, "chown root", patternNormal)
+		assert.Equal(t, "Ownership change to root", reasonNormal)
 	})
 
 	t.Run("stat error treated as high risk", func(t *testing.T) {
@@ -523,192 +524,168 @@ func TestContainsSSHStyleAddress(t *testing.T) {
 
 func TestIsNetworkOperation(t *testing.T) {
 	tests := []struct {
-		name         string
-		cmdName      string
-		args         []string
-		expectedNet  bool
-		expectedRisk bool
-		description  string
+		name        string
+		cmdName     string
+		args        []string
+		expectedNet bool
+		description string
 	}{
 		// Always network commands
 		{
-			name:         "curl command",
-			cmdName:      "curl",
-			args:         []string{"https://example.com"},
-			expectedNet:  true,
-			expectedRisk: false,
-			description:  "curl is always a network command",
+			name:        "curl command",
+			cmdName:     "curl",
+			args:        []string{"https://example.com"},
+			expectedNet: true,
+			description: "curl is always a network command",
 		},
 		{
-			name:         "wget command",
-			cmdName:      "wget",
-			args:         []string{"https://example.com/file.zip"},
-			expectedNet:  true,
-			expectedRisk: false,
-			description:  "wget is always a network command",
+			name:        "wget command",
+			cmdName:     "wget",
+			args:        []string{"https://example.com/file.zip"},
+			expectedNet: true,
+			description: "wget is always a network command",
 		},
 		{
-			name:         "ssh command",
-			cmdName:      "ssh",
-			args:         []string{"user@host"},
-			expectedNet:  true,
-			expectedRisk: false,
-			description:  "ssh is always a network command",
+			name:        "ssh command",
+			cmdName:     "ssh",
+			args:        []string{"user@host"},
+			expectedNet: true,
+			description: "ssh is always a network command",
 		},
 
 		// Conditional network commands with network arguments
 		{
-			name:         "rsync with ssh-style address",
-			cmdName:      "rsync",
-			args:         []string{"-av", "user@host:/remote/", "./local/"},
-			expectedNet:  true,
-			expectedRisk: false,
-			description:  "rsync with SSH-style address should be detected as network",
+			name:        "rsync with ssh-style address",
+			cmdName:     "rsync",
+			args:        []string{"-av", "user@host:/remote/", "./local/"},
+			expectedNet: true,
+			description: "rsync with SSH-style address should be detected as network",
 		},
 		{
-			name:         "rsync with URL",
-			cmdName:      "rsync",
-			args:         []string{"rsync://host/module/path", "./local/"},
-			expectedNet:  true,
-			expectedRisk: false,
-			description:  "rsync with URL should be detected as network",
+			name:        "rsync with URL",
+			cmdName:     "rsync",
+			args:        []string{"rsync://host/module/path", "./local/"},
+			expectedNet: true,
+			description: "rsync with URL should be detected as network",
 		},
 		{
-			name:         "git with https URL",
-			cmdName:      "git",
-			args:         []string{"clone", "https://github.com/user/repo.git"},
-			expectedNet:  true,
-			expectedRisk: false,
-			description:  "git with HTTPS URL should be detected as network",
+			name:        "git with https URL",
+			cmdName:     "git",
+			args:        []string{"clone", "https://github.com/user/repo.git"},
+			expectedNet: true,
+			description: "git with HTTPS URL should be detected as network",
 		},
 
 		// Conditional network commands without network arguments
 		{
-			name:         "rsync local only",
-			cmdName:      "rsync",
-			args:         []string{"-av", "./source/", "./destination/"},
-			expectedNet:  false,
-			expectedRisk: false,
-			description:  "rsync with only local paths should not be detected as network",
+			name:        "rsync local only",
+			cmdName:     "rsync",
+			args:        []string{"-av", "./source/", "./destination/"},
+			expectedNet: false,
+			description: "rsync with only local paths should not be detected as network",
 		},
 		{
-			name:         "git local operation",
-			cmdName:      "git",
-			args:         []string{"status"},
-			expectedNet:  false,
-			expectedRisk: false,
-			description:  "git local operation should not be detected as network",
+			name:        "git local operation",
+			cmdName:     "git",
+			args:        []string{"status"},
+			expectedNet: false,
+			description: "git local operation should not be detected as network",
 		},
 		{
-			name:         "git fetch without URL",
-			cmdName:      "git",
-			args:         []string{"fetch"},
-			expectedNet:  true,
-			expectedRisk: false,
-			description:  "git fetch should be detected as network even without URL",
+			name:        "git fetch without URL",
+			cmdName:     "git",
+			args:        []string{"fetch"},
+			expectedNet: true,
+			description: "git fetch should be detected as network even without URL",
 		},
 		{
-			name:         "git pull without URL",
-			cmdName:      "git",
-			args:         []string{"pull"},
-			expectedNet:  true,
-			expectedRisk: false,
-			description:  "git pull should be detected as network even without URL",
+			name:        "git pull without URL",
+			cmdName:     "git",
+			args:        []string{"pull"},
+			expectedNet: true,
+			description: "git pull should be detected as network even without URL",
 		},
 		{
-			name:         "git push without URL",
-			cmdName:      "git",
-			args:         []string{"push"},
-			expectedNet:  true,
-			expectedRisk: false,
-			description:  "git push should be detected as network even without URL",
+			name:        "git push without URL",
+			cmdName:     "git",
+			args:        []string{"push"},
+			expectedNet: true,
+			description: "git push should be detected as network even without URL",
 		},
 		{
-			name:         "git clone with https URL",
-			cmdName:      "git",
-			args:         []string{"clone", "https://github.com/user/repo.git"},
-			expectedNet:  true,
-			expectedRisk: false,
-			description:  "git clone with URL should be detected as network",
+			name:        "git clone with https URL",
+			cmdName:     "git",
+			args:        []string{"clone", "https://github.com/user/repo.git"},
+			expectedNet: true,
+			description: "git clone with URL should be detected as network",
 		},
 		{
-			name:         "git remote update",
-			cmdName:      "git",
-			args:         []string{"remote", "update"},
-			expectedNet:  true,
-			expectedRisk: false,
-			description:  "git remote update should be detected as network",
+			name:        "git remote update",
+			cmdName:     "git",
+			args:        []string{"remote", "update"},
+			expectedNet: true,
+			description: "git remote update should be detected as network",
 		},
 		{
-			name:         "git fetch with options before subcommand",
-			cmdName:      "git",
-			args:         []string{"--no-pager", "fetch"},
-			expectedNet:  true,
-			expectedRisk: false,
-			description:  "git fetch with options should be detected as network",
+			name:        "git fetch with options before subcommand",
+			cmdName:     "git",
+			args:        []string{"--no-pager", "fetch"},
+			expectedNet: true,
+			description: "git fetch with options should be detected as network",
 		},
 		{
-			name:         "git pull with multiple options",
-			cmdName:      "git",
-			args:         []string{"--no-pager", "-c", "color.ui=false", "pull"},
-			expectedNet:  true,
-			expectedRisk: false,
-			description:  "git pull with multiple options should be detected as network",
+			name:        "git pull with multiple options",
+			cmdName:     "git",
+			args:        []string{"--no-pager", "-c", "color.ui=false", "pull"},
+			expectedNet: true,
+			description: "git pull with multiple options should be detected as network",
 		},
 		{
-			name:         "git push with options",
-			cmdName:      "git",
-			args:         []string{"-v", "push", "origin", "main"},
-			expectedNet:  true,
-			expectedRisk: false,
-			description:  "git push with options should be detected as network",
+			name:        "git push with options",
+			cmdName:     "git",
+			args:        []string{"-v", "push", "origin", "main"},
+			expectedNet: true,
+			description: "git push with options should be detected as network",
 		},
 		{
-			name:         "git status with options (local operation)",
-			cmdName:      "git",
-			args:         []string{"--no-pager", "status"},
-			expectedNet:  false,
-			expectedRisk: false,
-			description:  "git status with options should not be detected as network",
+			name:        "git status with options (local operation)",
+			cmdName:     "git",
+			args:        []string{"--no-pager", "status"},
+			expectedNet: false,
+			description: "git status with options should not be detected as network",
 		},
 
 		// Non-network commands
 		{
-			name:         "ls command",
-			cmdName:      "ls",
-			args:         []string{"-la"},
-			expectedNet:  false,
-			expectedRisk: false,
-			description:  "ls should not be detected as network",
+			name:        "ls command",
+			cmdName:     "ls",
+			args:        []string{"-la"},
+			expectedNet: false,
+			description: "ls should not be detected as network",
 		},
 		{
-			name:         "echo with email",
-			cmdName:      "echo",
-			args:         []string{"Contact user@example.com"},
-			expectedNet:  false,
-			expectedRisk: false,
-			description:  "echo with email should not be detected as network",
+			name:        "echo with email",
+			cmdName:     "echo",
+			args:        []string{"Contact user@example.com"},
+			expectedNet: false,
+			description: "echo with email should not be detected as network",
 		},
 
-		// Edge cases
+		// Edge cases: an unprofiled command is no longer classified as a network
+		// operation from its arguments alone (consistent with the dry-run path).
 		{
-			name:         "any command with URL",
-			cmdName:      "somecommand",
-			args:         []string{"https://example.com"},
-			expectedNet:  true,
-			expectedRisk: false,
-			description:  "any command with URL should be detected as network",
+			name:        "unprofiled command with URL is not network",
+			cmdName:     "somecommand",
+			args:        []string{"https://example.com"},
+			expectedNet: false,
+			description: "an unprofiled command is not a network operation by argument alone",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			analyzer := newNetworkAnalyzer(runtime.GOOS)
-			isNet, isRisk, err := analyzer.IsNetworkOperation(tt.cmdName, tt.args, "")
-			require.NoError(t, err)
-			assert.Equal(t, tt.expectedNet, isNet, "IsNetworkOperation(%s, %v) network detection. %s",
-				tt.cmdName, tt.args, tt.description)
-			assert.Equal(t, tt.expectedRisk, isRisk, "IsNetworkOperation(%s, %v) risk detection. %s",
+			got := profileNetwork(tt.cmdName, tt.args)
+			assert.Equal(t, tt.expectedNet, got, "profileNetwork(%s, %v). %s",
 				tt.cmdName, tt.args, tt.description)
 		})
 	}
@@ -1223,126 +1200,6 @@ func TestExtractAllCommandNamesWithSymlinks(t *testing.T) {
 	})
 }
 
-func TestIsPrivilegeEscalationCommand(t *testing.T) {
-	tests := []struct {
-		name     string
-		cmdName  string
-		expected bool
-	}{
-		{
-			name:     "simple sudo command",
-			cmdName:  "sudo",
-			expected: true,
-		},
-		{
-			name:     "sudo with absolute path",
-			cmdName:  "/usr/bin/sudo",
-			expected: true,
-		},
-		{
-			name:     "sudo with relative path",
-			cmdName:  "./sudo",
-			expected: true,
-		},
-		{
-			name:     "command containing sudo but not sudo itself",
-			cmdName:  "/usr/bin/pseudo-tool",
-			expected: false,
-		},
-		{
-			name:     "command with sudo-like name",
-			cmdName:  "my-sudo-wrapper",
-			expected: false,
-		},
-		{
-			name:     "normal command",
-			cmdName:  "/bin/echo",
-			expected: false,
-		},
-		{
-			name:     "empty command",
-			cmdName:  "",
-			expected: false,
-		},
-		{
-			name:     "simple su command",
-			cmdName:  "su",
-			expected: true,
-		},
-		{
-			name:     "su with absolute path",
-			cmdName:  "/bin/su",
-			expected: true,
-		},
-		{
-			name:     "simple doas command",
-			cmdName:  "doas",
-			expected: true,
-		},
-		{
-			name:     "doas with absolute path",
-			cmdName:  "/usr/bin/doas",
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := IsPrivilegeEscalationCommand(tt.cmdName)
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-
-	// Test with actual symbolic link (integration test)
-	t.Run("symbolic link to sudo", func(t *testing.T) {
-		// Create a temporary directory
-		tempDir := tu.SafeTempDir(t)
-
-		// Create a symbolic link to sudo (if it exists)
-		sudoPath := "/usr/bin/sudo"
-		if _, err := os.Stat(sudoPath); err == nil {
-			symlinkPath := filepath.Join(tempDir, "my_sudo")
-			err := os.Symlink(sudoPath, symlinkPath)
-			require.NoError(t, err)
-
-			// Test that the symbolic link is detected as sudo
-			result, err := IsPrivilegeEscalationCommand(symlinkPath)
-			assert.NoError(t, err)
-			assert.True(t, result, "Symbolic link to sudo should be detected as sudo")
-		} else {
-			t.Skip("sudo not found at /usr/bin/sudo, skipping symlink test")
-		}
-	})
-
-	// Test symlink depth exceeded case
-	t.Run("symlink depth exceeded should return error", func(t *testing.T) {
-		// Create a temporary directory for deep symlink chain
-		tempDir := tu.SafeTempDir(t)
-
-		// Create a deep chain of symlinks (more than MaxSymlinkDepth=40)
-		// Create initial target file
-		targetFile := filepath.Join(tempDir, "target_sudo")
-		err := os.WriteFile(targetFile, []byte("#!/bin/bash\necho sudo"), 0o755)
-		require.NoError(t, err)
-
-		// Create 45 symlinks (exceeds MaxSymlinkDepth=40)
-		current := targetFile
-		for i := 0; i < 45; i++ {
-			linkPath := filepath.Join(tempDir, fmt.Sprintf("link_%d", i))
-			err := os.Symlink(current, linkPath)
-			require.NoError(t, err)
-			current = linkPath
-		}
-
-		// Test that deep symlink returns error
-		result, err := IsPrivilegeEscalationCommand(current)
-		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrSymlinkDepthExceeded)
-		assert.False(t, result, "Deep symlink should return false when depth exceeded")
-	})
-}
-
 func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 	t.Run("normal command has no risk", func(t *testing.T) {
 		// Use a temporary file in a non-standard directory to avoid directory-based risk
@@ -1593,6 +1450,83 @@ func TestIsDestructiveFileOperation(t *testing.T) {
 	}
 }
 
+// TestIsDestructive_AbsolutePath verifies that a destructive command given as a
+// resolved absolute path (e.g. /usr/bin/rm) is detected, not only its basename.
+func TestIsDestructive_AbsolutePath(t *testing.T) {
+	assert.True(t, IsDestructiveFileOperation("/usr/bin/rm", []string{"file"}))
+	assert.True(t, IsDestructiveFileOperation("/bin/rm", []string{"-rf", "/tmp/x"}))
+	assert.True(t, IsDestructiveFileOperation("/usr/bin/shred", []string{"f"}))
+}
+
+// TestIsDestructive_NoSubstringMatch verifies that a command whose basename
+// merely contains a destructive name as a substring is not matched.
+func TestIsDestructive_NoSubstringMatch(t *testing.T) {
+	assert.False(t, IsDestructiveFileOperation("/usr/bin/lsrm", []string{"x"}))
+	assert.False(t, IsDestructiveFileOperation("/usr/bin/rmate", nil))
+}
+
+// TestIsDestructive_BasenameBackwardCompat verifies that a bare basename is
+// still detected (the path-resolution addition does not lose basename detection).
+func TestIsDestructive_BasenameBackwardCompat(t *testing.T) {
+	assert.True(t, IsDestructiveFileOperation("rm", []string{"file"}))
+	assert.True(t, IsDestructiveFileOperation("dd", []string{"if=/dev/zero"}))
+}
+
+// TestIsSystemModification_AbsolutePath verifies that a system-modification
+// command given as a resolved absolute path is detected.
+func TestIsSystemModification_AbsolutePath(t *testing.T) {
+	assert.True(t, IsSystemModification("/usr/sbin/systemctl", []string{"restart", "nginx"}))
+	assert.True(t, IsSystemModification("/usr/bin/mount", []string{"/dev/sda1", "/mnt"}))
+	assert.False(t, IsSystemModification("/usr/bin/systemctl-helper", []string{"restart"}),
+		"a substring match must not be treated as systemctl")
+}
+
+// TestIsSystemModification_PackageManagerVerbs verifies the expanded set of
+// package-manager subcommands and pacman option flags is detected.
+func TestIsSystemModification_PackageManagerVerbs(t *testing.T) {
+	tests := []struct {
+		name string
+		cmd  string
+		args []string
+		want bool
+	}{
+		{"apt purge", "apt", []string{"purge", "nginx"}, true},
+		{"apt-get autoremove", "apt-get", []string{"autoremove"}, true},
+		{"apt-get dist-upgrade", "apt-get", []string{"dist-upgrade"}, true},
+		{"yum reinstall", "yum", []string{"reinstall", "nginx"}, true},
+		{"dnf groupinstall", "dnf", []string{"groupinstall", "tools"}, true},
+		{"pacman sync install", "pacman", []string{"-S", "nginx"}, true},
+		{"pacman combined sync upgrade", "pacman", []string{"-Syu"}, true},
+		{"pacman remove", "pacman", []string{"-Rns", "nginx"}, true},
+		{"yarn add", "yarn", []string{"add", "left-pad"}, true},
+		{"npm shorthand i", "npm", []string{"i", "left-pad"}, true},
+		{"brew tap", "brew", []string{"tap", "owner/repo"}, true},
+		// Non-modifying operations stay false.
+		{"apt list", "apt", []string{"list", "--installed"}, false},
+		{"pacman query", "pacman", []string{"-Q"}, false},
+		{"npm run script", "npm", []string{"run", "build"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsSystemModification(tt.cmd, tt.args))
+		})
+	}
+}
+
+// TestFindExecAllActions verifies that find's exec-style actions
+// (-exec/-execdir/-ok/-okdir) are all covered, and the target command is matched
+// by basename including absolute and coreutils-directory paths.
+func TestFindExecAllActions(t *testing.T) {
+	for _, action := range []string{"-exec", "-execdir", "-ok", "-okdir"} {
+		assert.Truef(t, IsDestructiveFileOperation("find",
+			[]string{".", action, "/usr/bin/rm", "{}", ";"}),
+			"find %s /usr/bin/rm should be destructive", action)
+		assert.Falsef(t, IsDestructiveFileOperation("find",
+			[]string{".", action, "/usr/bin/stat", "{}", ";"}),
+			"find %s /usr/bin/stat should be safe", action)
+	}
+}
+
 func TestIsSystemModification(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1732,10 +1666,10 @@ func TestIsNetworkOperation_FromEvaluatorTests(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "command with http URL in args",
+			name:     "unprofiled command with http URL in args is not network",
 			cmd:      "myapp",
 			args:     []string{"--url", "http://api.example.com"},
-			expected: true,
+			expected: false,
 		},
 		{
 			name:     "safe local git",
@@ -1759,10 +1693,8 @@ func TestIsNetworkOperation_FromEvaluatorTests(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			analyzer := newNetworkAnalyzer(runtime.GOOS)
-			result, _, err := analyzer.IsNetworkOperation(tt.cmd, tt.args, "")
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, result, "IsNetworkOperation(%q, %v)", tt.cmd, tt.args)
+			got := profileNetwork(tt.cmd, tt.args)
+			assert.Equal(t, tt.expected, got, "profileNetwork(%q, %v)", tt.cmd, tt.args)
 		})
 	}
 }
@@ -2276,11 +2208,11 @@ func TestMigration_MultipleRiskFactors(t *testing.T) {
 	}
 }
 
-// TestIsNetworkOperation_Analysis tests analysis integration in IsNetworkOperation.
-// Binary analysis (live path) has been removed; unknown commands without a store
-// return false, false. Network detection for unknown commands is args-based only
-// unless a cache store is provided.
-func TestIsNetworkOperation_Analysis(t *testing.T) {
+// TestProfileNetworkApplies_Conditional tests profile-based network detection.
+// Network classification now comes only from the command's profile (Always or
+// Conditional + subcommand/argument); unprofiled commands are not network
+// operations regardless of their arguments.
+func TestProfileNetworkApplies_Conditional(t *testing.T) {
 	tests := []struct {
 		name          string
 		cmdName       string
@@ -2306,25 +2238,23 @@ func TestIsNetworkOperation_Analysis(t *testing.T) {
 			expectNetwork: true,
 		},
 		{
-			name:          "unknown command with no store → false",
+			name:          "unprofiled command without URL is not network",
 			cmdName:       "/bin/ls",
 			args:          []string{"-la"},
 			expectNetwork: false,
 		},
 		{
-			name:          "unknown command with URL in args (argument-based detection)",
+			name:          "unprofiled command with URL is not network",
 			cmdName:       "/bin/ls",
 			args:          []string{"http://example.com"},
-			expectNetwork: true, // Detected via argument, not binary analysis
+			expectNetwork: false,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			analyzer := newNetworkAnalyzer(runtime.GOOS)
-			isNetwork, _, err := analyzer.IsNetworkOperation(tc.cmdName, tc.args, "sha256:dummy")
-			require.NoError(t, err)
-			assert.Equal(t, tc.expectNetwork, isNetwork, "isNetwork mismatch")
+			got := profileNetwork(tc.cmdName, tc.args)
+			assert.Equal(t, tc.expectNetwork, got, "profileNetwork mismatch")
 		})
 	}
 }
@@ -2374,15 +2304,16 @@ func TestFormatDetectedSymbols(t *testing.T) {
 
 // TestNewNetworkAnalyzer tests the creation of NetworkAnalyzer.
 func TestNewNetworkAnalyzer(t *testing.T) {
-	t.Run("creates analyzer with default binaryAnalyzer", func(t *testing.T) {
+	t.Run("creates analyzer", func(t *testing.T) {
 		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, nil)
 		assert.NotNil(t, analyzer)
+		assert.False(t, analyzer.AnalysisEnabled(), "nil store means analysis disabled")
 
-		// With nil store, binary analysis is skipped and returns false, false.
-		isNet, isHigh, err := analyzer.IsNetworkOperation("/usr/bin/unknowncmd", []string{}, "sha256:dummy")
+		// With analysis disabled, Classify is fail-closed: Uncertain, never Clean.
+		res, err := analyzer.Classify("/usr/bin/unknowncmd", "sha256:dummy")
 		require.NoError(t, err)
-		assert.False(t, isNet, "nil store must return false")
-		assert.False(t, isHigh, "nil store must return false")
+		assert.Equal(t, risktypes.BinaryAnalysisUncertain, res.Class, "nil store must classify as Uncertain")
+		assert.Contains(t, res.ReasonCodes, risktypes.ReasonAnalysisDisabled)
 	})
 }
 
@@ -2485,12 +2416,13 @@ func TestIsNetworkViaBinaryAnalysis_AnalysisStore(t *testing.T) {
 		assert.True(t, isHigh, "schema mismatch must return high risk")
 	})
 
-	t.Run("nil store → false, false", func(t *testing.T) {
+	t.Run("nil store → uncertain (fail-closed)", func(t *testing.T) {
 		analyzer := newNetworkAnalyzerWithStore(runtime.GOOS, nil)
-		isNet, isHigh, err := analyzer.analyzeBinarySignals(cmdPath, contentHash)
+		res, err := analyzer.Classify(cmdPath, contentHash)
 		require.NoError(t, err)
-		assert.False(t, isNet, "nil store must return false (no live binary analysis)")
-		assert.False(t, isHigh, "nil store must return false (no live binary analysis)")
+		assert.Equal(t, risktypes.BinaryAnalysisUncertain, res.Class,
+			"analysis disabled must be uncertain, not fail-open")
+		assert.Contains(t, res.ReasonCodes, risktypes.ReasonAnalysisDisabled)
 	})
 
 	t.Run("empty contentHash → high risk (fail-closed)", func(t *testing.T) {

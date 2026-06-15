@@ -1,6 +1,7 @@
 package security
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -222,7 +223,7 @@ var dangerousCommandPatterns = []DangerousCommandPattern{
 
 	// Data manipulation
 	{[]string{"dd", "if="}, runnertypes.RiskLevelHigh, "Low-level disk operations"},
-	{[]string{"chmod", "777"}, runnertypes.RiskLevelMedium, "Overly permissive file permissions"},
+	{[]string{"chmod", "777"}, runnertypes.RiskLevelHigh, "Overly permissive file permissions"},
 	{[]string{"chown", "root"}, runnertypes.RiskLevelMedium, "Ownership change to root"},
 
 	// Network operations
@@ -358,25 +359,6 @@ func checkCommandPatterns(cmdName string, cmdArgs []string, patterns []Dangerous
 	return runnertypes.RiskLevelUnknown, "", ""
 }
 
-// IsPrivilegeEscalationCommand checks if the given command is a privilege escalation command
-// (sudo, su, doas), considering symbolic links
-// Returns (isPrivilegeEscalation, error) where error indicates if symlink depth was exceeded
-func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
-	commandNames, exceededDepth := extractAllCommandNames(cmdName)
-	if exceededDepth {
-		return false, ErrSymlinkDepthExceeded
-	}
-
-	// Check for any privilege escalation commands using unified profiles
-	for cmdName := range commandNames {
-		if profile, exists := commandRiskProfiles[cmdName]; exists && profile.IsPrivilege() {
-			return true, nil
-		}
-	}
-
-	return false, nil
-}
-
 // formatDetectedSymbols formats detected symbols for logging.
 func formatDetectedSymbols(symbols []binaryanalyzer.DetectedSymbol) string {
 	if len(symbols) == 0 {
@@ -482,37 +464,134 @@ func containsSSHStyleAddress(args []string) bool {
 	return false
 }
 
-// IsDestructiveFileOperation checks if the command performs destructive file operations
-func IsDestructiveFileOperation(cmd string, args []string) bool {
-	destructiveCommands := map[string]struct{}{
-		"rm":     {},
-		"rmdir":  {},
-		"unlink": {},
-		"shred":  {},
-		"dd":     {}, // Can be dangerous when used incorrectly
-	}
+// destructiveCommandNames is the set of base command names that perform
+// destructive file operations regardless of arguments.
+var destructiveCommandNames = map[string]struct{}{
+	"rm":     {},
+	"rmdir":  {},
+	"unlink": {},
+	"shred":  {},
+	"dd":     {}, // Can be dangerous when used incorrectly
+}
 
-	if _, ok := destructiveCommands[cmd]; ok {
+// findExecActions are the find primaries that run an external command on matched
+// files. Their target command is gated the same way as a top-level command.
+var findExecActions = map[string]struct{}{
+	"-exec":    {},
+	"-execdir": {},
+	"-ok":      {},
+	"-okdir":   {},
+}
+
+// systemModificationCommandNames is the set of base command names that modify
+// system settings regardless of arguments.
+var systemModificationCommandNames = map[string]struct{}{
+	"systemctl":   {},
+	"service":     {},
+	"chkconfig":   {},
+	"update-rc.d": {},
+	"mount":       {},
+	"umount":      {},
+	"fdisk":       {},
+	"parted":      {},
+	"mkfs":        {},
+	"fsck":        {},
+	"crontab":     {},
+	"at":          {},
+	"batch":       {},
+}
+
+// packageManagerNames is the set of package managers whose install/remove style
+// operations count as system modification.
+var packageManagerNames = map[string]struct{}{
+	"apt":     {},
+	"apt-get": {},
+	"yum":     {},
+	"dnf":     {},
+	"zypper":  {},
+	"pacman":  {},
+	"brew":    {},
+	"pip":     {},
+	"npm":     {},
+	"yarn":    {},
+}
+
+// packageModifyingVerbs are package-manager subcommands that install, remove, or
+// otherwise modify installed software. The list is non-exhaustive (the threat
+// model backstops with allowlist + hash pinning); an unmatched verb falls through
+// to a non-modifying classification.
+var packageModifyingVerbs = map[string]struct{}{
+	"install": {}, "remove": {}, "uninstall": {}, "upgrade": {}, "update": {},
+	"purge": {}, "autoremove": {}, "dist-upgrade": {}, "full-upgrade": {},
+	"dselect-upgrade": {}, "clean": {}, "autoclean": {},
+	"groupinstall": {}, "groupremove": {}, "localinstall": {}, "localupdate": {},
+	"reinstall": {}, "add": {}, "tap": {}, "untap": {},
+	"i": {}, "un": {}, "up": {}, // common npm shorthands
+}
+
+// isPacmanModifyingFlag reports whether a pacman option flag performs an
+// install/remove/upgrade. pacman selects its operation via -S (sync/install),
+// -R (remove), or -U (upgrade), possibly combined (-Syu, -Rns), or via the long
+// forms --sync/--remove/--upgrade.
+func isPacmanModifyingFlag(arg string) bool {
+	switch arg {
+	case "--sync", "--remove", "--upgrade":
+		return true
+	}
+	if strings.HasPrefix(arg, "--") {
+		return false
+	}
+	if strings.HasPrefix(arg, "-") && len(arg) > 1 {
+		return strings.ContainsAny(arg[1:], "SRU")
+	}
+	return false
+}
+
+// anyNameInSet reports whether any of the resolved command names is in set.
+func anyNameInSet(names, set map[string]struct{}) bool {
+	for n := range names {
+		if _, ok := set[n]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// isDestructiveBaseCommand reports whether the command (matched by basename and
+// resolved symlinks) is a destructive file operation. Used both for the
+// top-level command and for find's exec-action target.
+func isDestructiveBaseCommand(cmd string) bool {
+	names, _ := extractAllCommandNames(cmd)
+	return anyNameInSet(names, destructiveCommandNames)
+}
+
+// IsDestructiveFileOperation checks if the command performs destructive file
+// operations. The command is matched by basename and considers symbolic links,
+// so an absolute path such as /usr/bin/rm or a coreutils-directory rm is detected
+// (a substring like lsrm is not). find's exec actions (-exec/-execdir/-ok/-okdir)
+// and -delete are covered, with the exec target itself basename/symlink matched.
+func IsDestructiveFileOperation(cmd string, args []string) bool {
+	if isDestructiveBaseCommand(cmd) {
 		return true
 	}
 
-	// Check for destructive flags in common commands
-	if cmd == "find" {
+	names, _ := extractAllCommandNames(cmd)
+
+	if _, ok := names["find"]; ok {
 		for i, arg := range args {
 			if arg == "-delete" {
 				return true
 			}
-			if arg == "-exec" && i+1 < len(args) {
-				// Check if the command following -exec is destructive
-				execCmd := args[i+1]
-				if _, ok := destructiveCommands[execCmd]; ok {
+			if _, isAction := findExecActions[arg]; isAction && i+1 < len(args) {
+				// The token after the action primary is the command to run.
+				if isDestructiveBaseCommand(args[i+1]) {
 					return true
 				}
 			}
 		}
 	}
 
-	if cmd == "rsync" {
+	if _, ok := names["rsync"]; ok {
 		for _, arg := range args {
 			if arg == "--delete" || arg == "--delete-before" || arg == "--delete-after" {
 				return true
@@ -523,53 +602,56 @@ func IsDestructiveFileOperation(cmd string, args []string) bool {
 	return false
 }
 
-// IsSystemModification checks if the command modifies system settings
+// IsSystemModification checks if the command modifies system settings. The
+// command is matched by basename and considers symbolic links, so an absolute
+// path such as /usr/sbin/systemctl is detected.
 func IsSystemModification(cmd string, args []string) bool {
-	systemCommands := map[string]struct{}{
-		"systemctl":   {},
-		"service":     {},
-		"chkconfig":   {},
-		"update-rc.d": {},
-		"mount":       {},
-		"umount":      {},
-		"fdisk":       {},
-		"parted":      {},
-		"mkfs":        {},
-		"fsck":        {},
-		"crontab":     {},
-		"at":          {},
-		"batch":       {},
-	}
+	names, _ := extractAllCommandNames(cmd)
 
-	if _, ok := systemCommands[cmd]; ok {
+	if anyNameInSet(names, systemModificationCommandNames) {
 		return true
 	}
 
-	// Check for package management commands
-	packageManagers := map[string]struct{}{
-		"apt":     {},
-		"apt-get": {},
-		"yum":     {},
-		"dnf":     {},
-		"zypper":  {},
-		"pacman":  {},
-		"brew":    {},
-		"pip":     {},
-		"npm":     {},
-		"yarn":    {},
-	}
-
-	if _, ok := packageManagers[cmd]; ok {
-		// Only consider install/remove operations as medium risk
+	if anyNameInSet(names, packageManagerNames) {
+		// Only consider install/remove/upgrade-style operations as system
+		// modification (a bare query such as "apt list" is not).
+		_, isPacman := names["pacman"]
 		for _, arg := range args {
-			if arg == "install" || arg == "remove" || arg == "uninstall" ||
-				arg == "upgrade" || arg == "update" {
+			if _, ok := packageModifyingVerbs[arg]; ok {
+				return true
+			}
+			if isPacman && isPacmanModifyingFlag(arg) {
 				return true
 			}
 		}
 	}
 
 	return false
+}
+
+// CheckDangerousArgPatterns reports the risk level implied by a command together
+// with its arguments (rm -rf, dd if=, chmod -R 777, mkfs.* ...). It is the public
+// entry point used by runtime risk evaluation so dangerous argument patterns
+// contribute to the effective risk, not only to the dry-run display. High
+// patterns take precedence over Medium. Returns RiskLevelUnknown with an empty
+// reason when no pattern matches.
+func CheckDangerousArgPatterns(cmd string, args []string) (runnertypes.RiskLevel, string) {
+	// mkfs.<fstype> variants (mkfs.ext4, mkfs.xfs, ...) create filesystems and
+	// are high risk; the static pattern list only covers the bare "mkfs" name.
+	names, _ := extractAllCommandNames(cmd)
+	for n := range names {
+		if strings.HasPrefix(n, "mkfs.") {
+			return runnertypes.RiskLevelHigh, "Filesystem creation (mkfs family)"
+		}
+	}
+
+	if level, _, reason := checkCommandPatterns(cmd, args, highRiskPatterns); level != runnertypes.RiskLevelUnknown {
+		return level, reason
+	}
+	if level, _, reason := checkCommandPatterns(cmd, args, mediumRiskPatterns); level != runnertypes.RiskLevelUnknown {
+		return level, reason
+	}
+	return runnertypes.RiskLevelUnknown, ""
 }
 
 // AnalyzeCommandSecurity analyzes a command with its arguments for dangerous
@@ -668,6 +750,13 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, hashDir string) 
 		return overrideRisk, resolvedPath, reason, nil
 	}
 
+	// Step 9b: Network-style arguments (URL or SSH-style address) make an
+	// otherwise-unprofiled command a network operation (Medium). This mirrors the
+	// runtime evaluator's network-argument dimension so dry-run and runtime agree.
+	if hasNetworkArguments(args) {
+		return runnertypes.RiskLevelMedium, resolvedPath, "Network-style argument (URL or remote host)", nil
+	}
+
 	// Step 10: Apply default risk level
 	if defaultRisk != runnertypes.RiskLevelUnknown {
 		return defaultRisk, "", "Default directory-based risk level", nil
@@ -677,6 +766,92 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, hashDir string) 
 	return runnertypes.RiskLevelUnknown, "", "", nil
 }
 
+// ErrSymlinkResolutionFailed is returned by ResolveCommandNames when a symbolic
+// link in the chain cannot be read (link-target fetch failure), distinct from
+// exceeding the depth limit (ErrSymlinkDepthExceeded).
+var ErrSymlinkResolutionFailed = errors.New("symbolic link resolution failed")
+
+// walkSymlinkChain resolves cmdName's symbolic-link chain and returns the set of
+// all names encountered (the original, its basename, and every link target with
+// its basename), used for name-based matching.
+//
+// The strict flag selects the error policy:
+//   - strict=false (lenient): a mid-chain stat/readlink failure stops resolution
+//     and returns the names gathered so far; a depth-limit overflow sets
+//     exceededDepth. err is always nil. Used where partial resolution is
+//     acceptable (matching helpers, dry-run display).
+//   - strict=true: a depth-limit overflow returns ErrSymlinkDepthExceeded and a
+//     mid-chain link-target fetch failure returns ErrSymlinkResolutionFailed, so
+//     the evaluator can block rather than evaluate a partially resolved chain. A
+//     bare command name or a regular file (no symlink to follow) resolves without
+//     error.
+func walkSymlinkChain(cmdName string, strict bool) (names map[string]struct{}, exceededDepth bool, err error) {
+	seen := make(map[string]struct{})
+	if cmdName == "" {
+		return seen, false, nil
+	}
+
+	seen[cmdName] = struct{}{}
+	seen[filepath.Base(cmdName)] = struct{}{}
+
+	// visited detects a symlink cycle directly, rather than only via the depth
+	// limit, so a cycle is reported immediately without walking the full depth.
+	visited := make(map[string]struct{})
+	current := cmdName
+	for depth := range MaxSymlinkDepth {
+		if _, ok := visited[current]; ok {
+			// Cycle detected. Treat it like a depth overflow: strict fails closed,
+			// lenient reports exceededDepth so callers flag it (e.g. dry-run High).
+			if strict {
+				return nil, false, fmt.Errorf("%w: cyclic symlink at %q", ErrSymlinkResolutionFailed, current)
+			}
+			return seen, true, nil
+		}
+		visited[current] = struct{}{}
+
+		fileInfo, statErr := os.Lstat(current)
+		if statErr != nil {
+			// At depth 0 the path may be a bare name or a not-yet-present file;
+			// that is not a resolution failure. After following at least one link,
+			// a stat failure means the link target could not be fetched.
+			if !strict || depth == 0 {
+				break
+			}
+			return nil, false, fmt.Errorf("%w: %q: %w", ErrSymlinkResolutionFailed, current, statErr)
+		}
+
+		if fileInfo.Mode()&os.ModeSymlink == 0 {
+			break
+		}
+
+		if depth == MaxSymlinkDepth-1 {
+			if strict {
+				return nil, false, fmt.Errorf("%w: %q", ErrSymlinkDepthExceeded, cmdName)
+			}
+			return seen, true, nil
+		}
+
+		target, linkErr := os.Readlink(current)
+		if linkErr != nil {
+			if !strict {
+				break
+			}
+			return nil, false, fmt.Errorf("%w: %q: %w", ErrSymlinkResolutionFailed, current, linkErr)
+		}
+
+		if !filepath.IsAbs(target) {
+			current = filepath.Join(filepath.Dir(current), target)
+		} else {
+			current = target
+		}
+
+		seen[current] = struct{}{}
+		seen[filepath.Base(current)] = struct{}{}
+	}
+
+	return seen, false, nil
+}
+
 // extractAllCommandNames extracts all possible command names for matching:
 // 1. The original command name (could be full path or just filename)
 // 2. Just the base filename from the original command
@@ -684,61 +859,17 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, hashDir string) 
 // 4. The final target filename after resolving all symbolic links
 // Returns a map for O(1) lookup performance and a boolean indicating if symlink depth was exceeded.
 func extractAllCommandNames(cmdName string) (map[string]struct{}, bool) {
-	// Handle error case: empty command name (programming error or TOML file mistake)
-	if cmdName == "" {
-		return make(map[string]struct{}), false
-	}
+	names, exceededDepth, _ := walkSymlinkChain(cmdName, false)
+	return names, exceededDepth
+}
 
-	seen := make(map[string]struct{})
-
-	// Add original command name
-	seen[cmdName] = struct{}{}
-
-	// Add base filename (no-op if cmdName is already just a filename)
-	seen[filepath.Base(cmdName)] = struct{}{}
-
-	// Resolve symbolic links iteratively to handle multi-level links
-	current := cmdName
-	exceededDepth := false
-
-	for depth := range MaxSymlinkDepth {
-		// Check if current path is a symbolic link
-		fileInfo, err := os.Lstat(current)
-		if err != nil {
-			// If we can't stat the file, stop here
-			break
-		}
-
-		// If it's not a symbolic link, we're done
-		if fileInfo.Mode()&os.ModeSymlink == 0 {
-			break
-		}
-
-		// If we're at the last iteration and still have a symlink, we exceeded the limit
-		if depth == MaxSymlinkDepth-1 {
-			exceededDepth = true
-			break
-		}
-
-		// Resolve the symbolic link
-		target, err := os.Readlink(current)
-		if err != nil {
-			break
-		}
-
-		// If target is relative, make it relative to the current directory
-		if !filepath.IsAbs(target) {
-			current = filepath.Join(filepath.Dir(current), target)
-		} else {
-			current = target
-		}
-
-		// Add the target name (both full path and base name)
-		seen[current] = struct{}{}
-		seen[filepath.Base(current)] = struct{}{}
-	}
-
-	return seen, exceededDepth
+// ResolveCommandNames resolves the command's symlink chain and returns the set of
+// all names (original, basename, and every link target). It fails closed: a
+// depth-limit overflow returns ErrSymlinkDepthExceeded and a link-target fetch
+// failure mid-chain returns ErrSymlinkResolutionFailed.
+func ResolveCommandNames(cmdName string) (map[string]struct{}, error) {
+	names, _, err := walkSymlinkChain(cmdName, true)
+	return names, err
 }
 
 // matchesPattern checks if the command matches the dangerous pattern.

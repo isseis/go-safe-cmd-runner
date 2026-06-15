@@ -46,6 +46,23 @@ type runtimeCommandConfig struct {
 	outputFile          string
 	expandedEnv         map[string]string
 	riskLevel           *string
+	contentHash         string
+}
+
+// DefaultTestContentHash is the verified content hash attached to test commands
+// by default, so they pass the risk evaluator's identity gate (which denies
+// commands whose binary identity is unverified). Tests that need an unverified
+// command set an empty hash via WithContentHash(""). A matching analysis record
+// store must report this hash for absolute-path commands so binary analysis
+// classifies them as Clean rather than a hash mismatch.
+const DefaultTestContentHash = "sha256:testcommandhash"
+
+// WithContentHash sets the pre-verified content hash ("algo:hex"). An empty
+// string models an unverified command.
+func WithContentHash(hash string) RuntimeCommandOption {
+	return func(c *runtimeCommandConfig) {
+		c.contentHash = hash
+	}
 }
 
 // WithName sets the command name.
@@ -145,6 +162,10 @@ func CreateRuntimeCommand(cmd string, args []string, opts ...RuntimeCommandOptio
 		expandedArgs: args, // Default to args parameter
 	}
 
+	// Default to a verified content hash so commands pass the risk evaluator's
+	// identity gate. Tests model an unverified command with WithContentHash("").
+	cfg.contentHash = DefaultTestContentHash
+
 	// Apply options
 	for _, opt := range opts {
 		opt(cfg)
@@ -203,14 +224,15 @@ func CreateRuntimeCommand(cmd string, args []string, opts ...RuntimeCommandOptio
 	}
 
 	return &runnertypes.RuntimeCommand{
-		Spec:              spec,
-		ExpandedCmd:       cfg.expandedCmd,
-		ExpandedArgs:      cfg.expandedArgs,
-		ExpandedEnv:       expandedEnv,
-		ExpandedVars:      make(map[string]string),
-		EffectiveWorkDir:  effectiveWorkDir,
-		EffectiveTimeout:  effectiveTimeout,
-		TimeoutResolution: resolutionContext,
+		Spec:                   spec,
+		ExpandedCmd:            cfg.expandedCmd,
+		ExpandedArgs:           cfg.expandedArgs,
+		ExpandedCmdContentHash: cfg.contentHash,
+		ExpandedEnv:            expandedEnv,
+		ExpandedVars:           make(map[string]string),
+		EffectiveWorkDir:       effectiveWorkDir,
+		EffectiveTimeout:       effectiveTimeout,
+		TimeoutResolution:      resolutionContext,
 	}
 }
 

@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/stretchr/testify/assert"
@@ -20,237 +22,406 @@ func TestNewStandardEvaluator(t *testing.T) {
 	assert.IsType(t, &StandardEvaluator{}, evaluator)
 }
 
+// evalLevel evaluates a verified command and returns the effective risk level,
+// asserting the command was allowed (not Blocking) and no error occurred.
+func evalLevel(t *testing.T, ev Evaluator, cmd string, args []string) runnertypes.RiskLevel {
+	t.Helper()
+	plan, err := ev.EvaluateRisk(verifiedCmd(cmd, args))
+	require.NoError(t, err)
+	assert.False(t, plan.Assessment.Blocking, "command %q must not be Blocking", cmd)
+	return plan.Assessment.Level
+}
+
 func TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation(t *testing.T) {
-	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
-
-	tests := []struct {
-		name     string
-		cmd      string
-		args     []string
-		expected runnertypes.RiskLevel
-	}{
-		{
-			name:     "sudo command",
-			cmd:      "sudo",
-			args:     []string{"ls", "/root"},
-			expected: runnertypes.RiskLevelCritical,
-		},
-		{
-			name:     "su command",
-			cmd:      "su",
-			args:     []string{"root"},
-			expected: runnertypes.RiskLevelCritical,
-		},
-		{
-			name:     "doas command",
-			cmd:      "doas",
-			args:     []string{"ls", "/root"},
-			expected: runnertypes.RiskLevelCritical,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runtimeCmd := &runnertypes.RuntimeCommand{
-				ExpandedCmd:  tt.cmd,
-				ExpandedArgs: tt.args,
-			}
-			result, err := evaluator.EvaluateRisk(runtimeCmd)
+	ev := newVerifiedEvaluator()
+	for _, cmd := range []string{"sudo", "su", "doas"} {
+		t.Run(cmd, func(t *testing.T) {
+			plan, err := ev.EvaluateRisk(verifiedCmd(cmd, []string{"ls"}))
 			require.NoError(t, err)
-			assert.Equal(t, tt.expected, result)
+			assert.Equal(t, runnertypes.RiskLevelCritical, plan.Assessment.Level)
+			assert.Equal(t, risktypes.ReasonPrivilegeEscalation, plan.Assessment.BlockingReason)
 		})
 	}
 }
 
+// TestEvaluateRisk_PrivilegeEscalationViaSymlink verifies privilege escalation is
+// detected through a symbolic link whose target basename is a privilege command,
+// so a sudo alias cannot bypass the Critical gate.
+func TestEvaluateRisk_PrivilegeEscalationViaSymlink(t *testing.T) {
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "sudo")
+	require.NoError(t, os.WriteFile(target, []byte("#!/bin/sh\n"), 0o755))
+	link := filepath.Join(tmp, "my_sudo")
+	require.NoError(t, os.Symlink(target, link))
+
+	ev := newVerifiedEvaluator()
+	plan, err := ev.EvaluateRisk(verifiedCmd(link, []string{"ls"}))
+	require.NoError(t, err)
+	assert.Equal(t, runnertypes.RiskLevelCritical, plan.Assessment.Level)
+	assert.Equal(t, risktypes.ReasonPrivilegeEscalation, plan.Assessment.BlockingReason)
+}
+
 func TestStandardEvaluator_EvaluateRisk_DestructiveFileOperations(t *testing.T) {
-	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
-
+	ev := newVerifiedEvaluator()
 	tests := []struct {
-		name     string
-		cmd      string
-		args     []string
-		expected runnertypes.RiskLevel
+		name string
+		cmd  string
+		args []string
 	}{
-		{
-			name:     "rm with recursive flag",
-			cmd:      "rm",
-			args:     []string{"-rf", "/tmp/files"},
-			expected: runnertypes.RiskLevelHigh,
-		},
-		{
-			name:     "find with delete",
-			cmd:      "find",
-			args:     []string{"/tmp", "-name", "*.tmp", "-delete"},
-			expected: runnertypes.RiskLevelHigh,
-		},
-		{
-			name:     "dd command",
-			cmd:      "dd",
-			args:     []string{"if=/dev/zero", "of=/tmp/test"},
-			expected: runnertypes.RiskLevelHigh,
-		},
+		{"rm with recursive flag", "rm", []string{"-rf", "/tmp/files"}},
+		{"find with delete", "find", []string{"/tmp", "-name", "*.tmp", "-delete"}},
+		{"dd command", "dd", []string{"if=/dev/zero", "of=/tmp/test"}},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runtimeCmd := &runnertypes.RuntimeCommand{
-				ExpandedCmd:  tt.cmd,
-				ExpandedArgs: tt.args,
-			}
-			result, err := evaluator.EvaluateRisk(runtimeCmd)
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, result)
+			assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, tt.cmd, tt.args))
 		})
 	}
 }
 
 func TestStandardEvaluator_EvaluateRisk_NetworkOperations(t *testing.T) {
-	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
-
+	ev := newVerifiedEvaluator()
 	tests := []struct {
-		name     string
-		cmd      string
-		args     []string
-		expected runnertypes.RiskLevel
+		name string
+		cmd  string
+		args []string
 	}{
-		{
-			name:     "wget download",
-			cmd:      "wget",
-			args:     []string{"https://example.com/file.txt"},
-			expected: runnertypes.RiskLevelMedium,
-		},
-		{
-			name:     "curl download",
-			cmd:      "curl",
-			args:     []string{"-O", "https://example.com/file.txt"},
-			expected: runnertypes.RiskLevelMedium,
-		},
-		{
-			name:     "nc command",
-			cmd:      "nc",
-			args:     []string{"-l", "8080"},
-			expected: runnertypes.RiskLevelMedium,
-		},
+		{"wget download", "wget", []string{"https://example.com/file.txt"}},
+		{"curl download", "curl", []string{"-O", "https://example.com/file.txt"}},
+		{"nc command", "nc", []string{"-l", "8080"}},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runtimeCmd := &runnertypes.RuntimeCommand{
-				ExpandedCmd:  tt.cmd,
-				ExpandedArgs: tt.args,
-			}
-			result, err := evaluator.EvaluateRisk(runtimeCmd)
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, result)
+			assert.Equal(t, runnertypes.RiskLevelMedium, evalLevel(t, ev, tt.cmd, tt.args))
 		})
 	}
 }
 
 func TestStandardEvaluator_EvaluateRisk_SystemModifications(t *testing.T) {
-	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
-
+	ev := newVerifiedEvaluator()
 	tests := []struct {
 		name     string
 		cmd      string
 		args     []string
 		expected runnertypes.RiskLevel
 	}{
-		{
-			name:     "systemctl restart",
-			cmd:      "systemctl",
-			args:     []string{"restart", "nginx"},
-			expected: runnertypes.RiskLevelMedium,
-		},
-		{
-			name:     "apt install",
-			cmd:      "apt",
-			args:     []string{"install", "vim"},
-			expected: runnertypes.RiskLevelMedium,
-		},
-		{
-			name:     "yum install",
-			cmd:      "yum",
-			args:     []string{"install", "vim"},
-			expected: runnertypes.RiskLevelMedium,
-		},
+		// systemctl change verbs are now High, not Medium.
+		{"systemctl restart", "systemctl", []string{"restart", "nginx"}, runnertypes.RiskLevelHigh},
+		{"apt install", "apt", []string{"install", "vim"}, runnertypes.RiskLevelMedium},
+		{"yum install", "yum", []string{"install", "vim"}, runnertypes.RiskLevelMedium},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runtimeCmd := &runnertypes.RuntimeCommand{
-				ExpandedCmd:  tt.cmd,
-				ExpandedArgs: tt.args,
-			}
-			result, err := evaluator.EvaluateRisk(runtimeCmd)
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, result)
+			assert.Equal(t, tt.expected, evalLevel(t, ev, tt.cmd, tt.args))
 		})
 	}
 }
 
 func TestStandardEvaluator_EvaluateRisk_SafeCommands(t *testing.T) {
-	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
-
+	ev := newVerifiedEvaluator()
 	tests := []struct {
-		name     string
-		cmd      string
-		args     []string
-		expected runnertypes.RiskLevel
+		name string
+		cmd  string
+		args []string
 	}{
-		{
-			name:     "echo command",
-			cmd:      "echo",
-			args:     []string{"Hello, World!"},
-			expected: runnertypes.RiskLevelLow,
-		},
-		{
-			name:     "ls command",
-			cmd:      "ls",
-			args:     []string{"-la", "/home"},
-			expected: runnertypes.RiskLevelLow,
-		},
-		{
-			name:     "cat command",
-			cmd:      "cat",
-			args:     []string{"/etc/passwd"},
-			expected: runnertypes.RiskLevelLow,
-		},
-		{
-			name:     "apt list (query)",
-			cmd:      "apt",
-			args:     []string{"list", "--installed"},
-			expected: runnertypes.RiskLevelLow,
-		},
+		{"echo command", "echo", []string{"Hello, World!"}},
+		{"ls command", "ls", []string{"-la", "/home"}},
+		{"cat command", "cat", []string{"/etc/passwd"}},
+		{"apt list (query)", "apt", []string{"list", "--installed"}},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runtimeCmd := &runnertypes.RuntimeCommand{
-				ExpandedCmd:  tt.cmd,
-				ExpandedArgs: tt.args,
-			}
-			result, err := evaluator.EvaluateRisk(runtimeCmd)
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, result)
+			assert.Equal(t, runnertypes.RiskLevelLow, evalLevel(t, ev, tt.cmd, tt.args))
 		})
 	}
 }
 
-func TestStandardEvaluator_EvaluateRisk_EmptyCommand(t *testing.T) {
-	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
+// claude (DataExfilRisk=High, NetworkRisk=High) is High via profile factors.
+func TestEvaluateRisk_ProfileMaxClaude(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "claude", []string{"--help"}))
+}
 
-	runtimeCmd := &runnertypes.RuntimeCommand{
-		ExpandedCmd:  "",
-		ExpandedArgs: []string{"test"},
-	}
-	result, err := evaluator.EvaluateRisk(runtimeCmd)
+// any profile factor declaring High floors the effective risk at High.
+func TestEvaluateRisk_ProfileFactorFloor(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	// gemini shares the claude profile (DataExfilRisk=High).
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "gemini", nil))
+}
+
+// profile reflection only raises risk; it never lowers another dimension.
+func TestEvaluateRisk_ProfileSafeSideOnly(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	// node carries a Medium network profile but is also a High arbitrary-code
+	// runner. Reflecting the lower profile factor must not pull the result below
+	// the High from the runner dimension.
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/bin/node", nil))
+	// Likewise, a privilege-escalation Critical from an earlier step must not be
+	// lowered by the profile dimension.
+	plan, err := ev.EvaluateRisk(verifiedCmd("/usr/bin/sudo", []string{"echo", "hi"}))
 	require.NoError(t, err)
-	assert.Equal(t, runnertypes.RiskLevelLow, result)
+	assert.Equal(t, runnertypes.RiskLevelCritical, plan.Assessment.Level)
+}
+
+// a command without a profile is unaffected by the profile dimension.
+func TestEvaluateRisk_ProfileStepNoChangeWithoutProfile(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	assert.Equal(t, runnertypes.RiskLevelLow, evalLevel(t, ev, "echo", []string{"hi"}))
+}
+
+// an absolute-path destructive command is High.
+func TestEvaluateRisk_AbsoluteRmRfHigh(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/bin/rm", []string{"-rf", "/tmp/x"}))
+}
+
+// systemctl change verbs and service (all actions) are High.
+func TestEvaluateRisk_SystemctlChangeAndServiceHigh(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "systemctl", []string{"restart", "nginx"}))
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/sbin/systemctl", []string{"stop", "nginx"}))
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "service", []string{"nginx", "start"}))
+}
+
+// systemctl read-only subcommands are a Medium floor; change/unknown are High.
+func TestEvaluateRisk_SystemctlSubcommandConditional(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	assert.Equal(t, runnertypes.RiskLevelMedium, evalLevel(t, ev, "systemctl", []string{"status", "nginx"}))
+	assert.Equal(t, runnertypes.RiskLevelMedium, evalLevel(t, ev, "systemctl", []string{"show", "nginx"}))
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "systemctl", []string{"restart", "nginx"}))
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "systemctl", []string{"frobnicate", "nginx"}))
+}
+
+// service is High even for read-only-looking actions.
+func TestEvaluateRisk_ServiceAllActionsHigh(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "service", []string{"nginx", "status"}))
+}
+
+// profile-less commands given as absolute paths get their correct risk.
+func TestEvaluateRisk_NoProfileAbsolutePath(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/bin/rmdir", []string{"d"}), "rmdir is destructive")
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/bin/shred", []string{"f"}), "shred is destructive")
+	assert.Equal(t, runnertypes.RiskLevelMedium, evalLevel(t, ev, "/usr/bin/mount", []string{"/dev/sda1", "/mnt"}), "mount is system modification")
+	assert.Equal(t, runnertypes.RiskLevelMedium, evalLevel(t, ev, "/usr/bin/crontab", []string{"-l"}), "crontab is system modification")
+}
+
+// dangerous argument patterns contribute to the effective risk at runtime.
+func TestEvaluateRisk_DangerousArgPatternsRuntime(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "chmod", []string{"-R", "777", "/"}))
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/sbin/mkfs.ext4", []string{"/dev/sdX"}))
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "dd", []string{"if=/dev/zero", "of=/dev/sdb"}))
+	got := evalLevel(t, ev, "chown", []string{"-R", "root", "/tmp/x"})
+	assert.GreaterOrEqual(t, got, runnertypes.RiskLevelMedium, "chown root is at least Medium")
+}
+
+// shells and interpreters are High regardless of arguments.
+func TestEvaluateRisk_ShellInterpreterHigh(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	for _, cmd := range []string{"bash", "python", "node", "ruby", "perl"} {
+		assert.Equalf(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, cmd, []string{"--version"}),
+			"%s must be High", cmd)
+	}
+}
+
+// build/task runners are High.
+func TestEvaluateRisk_BuildRunnerHigh(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	for _, cmd := range []string{"make", "cmake", "gradle"} {
+		assert.Equalf(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, cmd, nil), "%s must be High", cmd)
+	}
+}
+
+// multiple dimensions take the maximum, independent of order. Each case fires
+// both a Medium and a High dimension, so a result of Medium would prove the
+// evaluator returned a lower dimension instead of the maximum.
+func TestEvaluateRisk_MaxOfDimensionsOrderIndependent(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	cases := []struct {
+		name string
+		cmd  string
+		args []string
+	}{
+		// profile network (Medium) + arbitrary-code runner (High)
+		{"interpreter: medium profile and high runner", "/usr/bin/python", nil},
+		// network-style argument (Medium, unprofiled) + destructive (High)
+		{"destructive with remote-style arg", "/usr/bin/rmdir", []string{"user@host:/srv"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, tc.cmd, tc.args))
+		})
+	}
+}
+
+// The deny-path behaviors are covered by the tests below.
+
+// an unverified hash blocks every evaluation path, never confirming Low.
+func TestEvaluateRisk_UnverifiedHashUncertainAllPaths(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	cases := []struct {
+		name string
+		cmd  string
+		args []string
+	}{
+		{"coreutils-safe echo", "/usr/bin/echo", nil},
+		{"coreutils-destructive rm", "/usr/bin/rm", []string{"-rf", "/"}},
+		{"profile claude", "/usr/bin/claude", nil},
+		{"f015 python", "/usr/bin/python", nil},
+		{"no-profile destructive", "/usr/bin/rmdir", []string{"d"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// No content hash -> identity gate denies (paths are absolute so the
+			// non-absolute gate is not what fires here).
+			cmd := &runnertypes.RuntimeCommand{ExpandedCmd: tc.cmd, ExpandedArgs: tc.args}
+			plan, err := ev.EvaluateRisk(cmd)
+			require.NoError(t, err)
+			assert.True(t, plan.Assessment.Blocking, "%s must be Blocking without a verified hash", tc.name)
+			assert.Equal(t, risktypes.ReasonUncertainUnverifiedIdentity, plan.Assessment.BlockingReason)
+			assert.Nil(t, plan.Identity, "denied plan must not carry a verified identity")
+		})
+	}
+}
+
+// a non-absolute command path is denied fail-closed (it cannot be analyzed).
+func TestEvaluateRisk_NonAbsolutePathBlocked(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	for _, cmd := range []string{"echo", "bash", "./script.sh", "relative/rm", ""} {
+		plan, err := ev.EvaluateRisk(&runnertypes.RuntimeCommand{
+			ExpandedCmd:            cmd,
+			ExpandedCmdContentHash: testContentHash,
+		})
+		require.NoError(t, err)
+		assert.Truef(t, plan.Assessment.Blocking, "%q must be Blocking (non-absolute)", cmd)
+		assert.Equal(t, risktypes.ReasonNonAbsolutePath, plan.Assessment.BlockingReason, cmd)
+		assert.Nil(t, plan.Identity, cmd)
+	}
+}
+
+// a network-style argument makes an unprofiled command a Medium network operation.
+func TestEvaluateRisk_NetworkArgumentUnprofiled(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	// /usr/bin/myhelper has no profile; the URL argument raises it to Medium.
+	assert.Equal(t, runnertypes.RiskLevelMedium,
+		evalLevel(t, ev, "/usr/bin/myhelper", []string{"--fetch", "https://example.com/x"}))
+	assert.Equal(t, runnertypes.RiskLevelMedium,
+		evalLevel(t, ev, "/usr/bin/myhelper", []string{"user@host:/remote/path"}))
+	// Without a network-style argument it stays Low.
+	assert.Equal(t, runnertypes.RiskLevelLow,
+		evalLevel(t, ev, "/usr/bin/myhelper", []string{"--local", "/tmp/x"}))
+}
+
+// with binary analysis disabled, every command is denied (including coreutils).
+func TestEvaluateRisk_AnalysisDisabledAlwaysDeny(t *testing.T) {
+	ev := newAnalysisDisabledEvaluator()
+	for _, cmd := range []string{"echo", "ls", "/usr/bin/curl"} {
+		plan, err := ev.EvaluateRisk(verifiedCmd(cmd, nil))
+		require.NoError(t, err)
+		assert.Truef(t, plan.Assessment.Blocking, "%s must be denied when analysis is disabled", cmd)
+		assert.Equal(t, risktypes.ReasonAnalysisDisabled, plan.Assessment.BlockingReason)
+	}
+}
+
+// an uncertain binary-analysis result blocks even when allowed at High.
+func TestEvaluateRisk_UncertainBlockedEvenAtHigh(t *testing.T) {
+	const cmdPath = "/opt/app/mybinary"
+	store := fakeRecordStore{errs: map[string]error{cmdPath: fileErrNotFound()}}
+	ev := newEvaluatorWithStore(store)
+	plan, err := ev.EvaluateRisk(verifiedCmd(cmdPath, nil))
+	require.NoError(t, err)
+	assert.True(t, plan.Assessment.Blocking)
+	assert.Equal(t, risktypes.ReasonUncertainMissingRecord, plan.Assessment.BlockingReason)
+}
+
+// a dangerous binary-analysis signal is High (allowable), not Blocking.
+func TestEvaluateRisk_DangerousSignalsHighAllowable(t *testing.T) {
+	const cmdPath = "/opt/app/loader"
+	store := fakeRecordStore{records: map[string]*fileanalysis.Record{cmdPath: dlopenRecord()}}
+	ev := newEvaluatorWithStore(store)
+	plan, err := ev.EvaluateRisk(verifiedCmd(cmdPath, nil))
+	require.NoError(t, err)
+	assert.False(t, plan.Assessment.Blocking, "dangerous signal is allowable at high, not blocking")
+	assert.Equal(t, runnertypes.RiskLevelHigh, plan.Assessment.Level)
+}
+
+// coreutils classification beats binary analysis. A safe coreutils command
+// stays Low even with a dlopen signal; a destructive one is High.
+func TestEvaluateRisk_CoreutilsPriorityOverBinaryAnalysis(t *testing.T) {
+	tmp := t.TempDir()
+	security.SetCoreutilsDirForTest(t, tmp)
+	echoPath := filepath.Join(tmp, "echo")
+	rmPath := filepath.Join(tmp, "rm")
+	require.NoError(t, os.WriteFile(echoPath, []byte("#!/bin/sh\n"), 0o755))
+	require.NoError(t, os.WriteFile(rmPath, []byte("#!/bin/sh\n"), 0o755))
+
+	// Even if a record carried dlopen, coreutils suppresses binary analysis.
+	store := fakeRecordStore{records: map[string]*fileanalysis.Record{
+		echoPath: dlopenRecord(),
+		rmPath:   dlopenRecord(),
+	}}
+	ev := newEvaluatorWithStore(store)
+
+	assert.Equal(t, runnertypes.RiskLevelLow, evalLevel(t, ev, echoPath, nil))
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, rmPath, []string{"-rf", "/tmp/x"}))
+}
+
+// a symlink chain matching multiple profiles takes the max; a resolution
+// failure fails closed (see the resolution-failure test). Here a symlink whose
+// target is a profiled command resolves to that profile.
+func TestEvaluateRisk_SymlinkChainMaxAndFailSafe(t *testing.T) {
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "curl")
+	require.NoError(t, os.WriteFile(target, []byte("#!/bin/sh\n"), 0o755))
+	link := filepath.Join(tmp, "mylink")
+	require.NoError(t, os.Symlink(target, link))
+
+	ev := newVerifiedEvaluator()
+	// The link resolves to curl (network profile) -> Medium.
+	assert.Equal(t, runnertypes.RiskLevelMedium, evalLevel(t, ev, link, nil))
+}
+
+// a symlink resolution failure (depth exceeded) is Blocking, not Low.
+func TestEvaluateRisk_SymlinkResolutionFailureBlocking(t *testing.T) {
+	tmp := t.TempDir()
+	// Build a cycle: a -> b -> a, which exceeds the resolution depth.
+	a := filepath.Join(tmp, "a")
+	b := filepath.Join(tmp, "b")
+	require.NoError(t, os.Symlink(b, a))
+	require.NoError(t, os.Symlink(a, b))
+
+	ev := newVerifiedEvaluator()
+	plan, err := ev.EvaluateRisk(verifiedCmd(a, nil))
+	require.NoError(t, err)
+	assert.True(t, plan.Assessment.Blocking, "symlink resolution failure must be Blocking")
+	assert.NotEqual(t, runnertypes.RiskLevelLow, plan.Assessment.Level, "must not fall to Low")
+	assert.Equal(t, risktypes.ErrorClassSymlinkResolution, plan.Assessment.ErrorClass)
+}
+
+// deny (policy) and error (unexpected) are distinct. A missing analysis
+// record is a deny (Blocking), while an unexpected record-load I/O error is an error.
+func TestEvaluateRisk_DenyVsErrorClassification(t *testing.T) {
+	const cmdPath = "/opt/app/x"
+
+	t.Run("missing record is a policy deny", func(t *testing.T) {
+		store := fakeRecordStore{errs: map[string]error{cmdPath: fileErrNotFound()}}
+		ev := newEvaluatorWithStore(store)
+		plan, err := ev.EvaluateRisk(verifiedCmd(cmdPath, nil))
+		require.NoError(t, err)
+		assert.True(t, plan.Assessment.Blocking)
+	})
+
+	t.Run("unexpected I/O error is returned as error", func(t *testing.T) {
+		store := fakeRecordStore{errs: map[string]error{cmdPath: errUnexpectedIO}}
+		ev := newEvaluatorWithStore(store)
+		_, err := ev.EvaluateRisk(verifiedCmd(cmdPath, nil))
+		require.Error(t, err)
+	})
 }
 
 func TestStandardEvaluator_EvaluateRisk_Coreutils(t *testing.T) {
-	// Redirect the coreutils directory to a temp dir so the classifier can stat
-	// real files. Tests that override coreutilsDir must not run in parallel.
 	tmp := t.TempDir()
 	security.SetCoreutilsDirForTest(t, tmp)
 
@@ -259,160 +430,26 @@ func TestStandardEvaluator_EvaluateRisk_Coreutils(t *testing.T) {
 		require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\necho test"), 0o755))
 		return path
 	}
-
 	mkdirPath := makeBinary("mkdir")
 	rmPath := makeBinary("rm")
 	multicallPath := makeBinary("coreutils")
 
-	tests := []struct {
-		name     string
-		cmd      string
-		args     []string
-		expected runnertypes.RiskLevel
-	}{
-		{
-			name:     "safe coreutils command bypasses binary analysis",
-			cmd:      mkdirPath,
-			args:     nil,
-			expected: runnertypes.RiskLevelLow,
-		},
-		{
-			name:     "destructive coreutils command stays high",
-			cmd:      rmPath,
-			args:     []string{"-rf", "/tmp/x"},
-			expected: runnertypes.RiskLevelHigh,
-		},
-		{
-			name:     "multicall entrypoint classified by effective subcommand",
-			cmd:      multicallPath,
-			args:     []string{"rm", "-rf", "/tmp/x"},
-			expected: runnertypes.RiskLevelHigh,
-		},
-	}
-
-	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runtimeCmd := &runnertypes.RuntimeCommand{
-				ExpandedCmd:  tt.cmd,
-				ExpandedArgs: tt.args,
-			}
-			result, err := evaluator.EvaluateRisk(runtimeCmd)
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
+	ev := newVerifiedEvaluator()
+	assert.Equal(t, runnertypes.RiskLevelLow, evalLevel(t, ev, mkdirPath, nil))
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, rmPath, []string{"-rf", "/tmp/x"}))
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, multicallPath, []string{"rm", "-rf", "/tmp/x"}))
 }
 
-func TestStandardEvaluator_EvaluateRisk_CoreutilsStatError(t *testing.T) {
+func TestStandardEvaluator_EvaluateRisk_CoreutilsFileInfoFailureBlocks(t *testing.T) {
 	// A path under the coreutils directory whose file does not exist makes the
-	// setuid stat fail. EvaluateRisk must fail closed: propagate the error and
-	// return RiskLevelUnknown so the command is not executed.
+	// setuid stat fail. The evaluator fails closed with a Blocking assessment
+	// carrying the coreutils file-info error class.
 	tmp := t.TempDir()
 	security.SetCoreutilsDirForTest(t, tmp)
 
-	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
-	runtimeCmd := &runnertypes.RuntimeCommand{
-		ExpandedCmd:  filepath.Join(tmp, "mkdir"), // not created
-		ExpandedArgs: nil,
-	}
-	result, err := evaluator.EvaluateRisk(runtimeCmd)
-	require.Error(t, err)
-	assert.Equal(t, runnertypes.RiskLevelUnknown, result)
-}
-
-func TestStandardEvaluator_EvaluateRisk_CoreutilsScopeLimitation(t *testing.T) {
-	// Scope limitation (non-functional 4.1): redirecting the coreutils directory
-	// must not change the final risk of commands that do not resolve under it.
-	// We compute a baseline for several non-coreutils commands, then re-evaluate
-	// them after pointing coreutilsDir at a temp directory, and assert the
-	// results are unchanged. This also re-confirms that privilege escalation
-	// (sudo) stays Critical under the override (regression of the existing
-	// TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation guarantee).
-	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
-
-	cmds := []struct {
-		name string
-		cmd  string
-		args []string
-	}{
-		{"privilege escalation stays critical", "sudo", []string{"ls", "/root"}},
-		{"destructive operation stays high", "rm", []string{"-rf", "/tmp/x"}},
-		{"network operation stays medium", "wget", []string{"https://example.com/file.txt"}},
-		{"system modification stays medium", "systemctl", []string{"restart", "nginx"}},
-		{"safe command stays low", "echo", []string{"hi"}},
-	}
-
-	// Baseline before any coreutils override.
-	baseline := make(map[string]runnertypes.RiskLevel, len(cmds))
-	for _, c := range cmds {
-		risk, err := evaluator.EvaluateRisk(&runnertypes.RuntimeCommand{ExpandedCmd: c.cmd, ExpandedArgs: c.args})
-		require.NoError(t, err, c.name)
-		baseline[c.name] = risk
-	}
-
-	// Apply the coreutils override; non-coreutils paths must be unaffected.
-	tmp := t.TempDir()
-	security.SetCoreutilsDirForTest(t, tmp)
-
-	for _, c := range cmds {
-		t.Run(c.name, func(t *testing.T) {
-			risk, err := evaluator.EvaluateRisk(&runnertypes.RuntimeCommand{ExpandedCmd: c.cmd, ExpandedArgs: c.args})
-			require.NoError(t, err)
-			assert.Equal(t, baseline[c.name], risk, "coreutils override must not change non-coreutils risk")
-		})
-	}
-}
-
-func TestStandardEvaluator_EvaluateRisk_RiskLevelHierarchy(t *testing.T) {
-	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
-
-	tests := []struct {
-		name        string
-		cmd         string
-		args        []string
-		expected    runnertypes.RiskLevel
-		description string
-	}{
-		{
-			name:        "critical risk overrides all",
-			cmd:         "sudo",
-			args:        []string{"rm", "-rf", "/"},
-			expected:    runnertypes.RiskLevelCritical,
-			description: "Privilege escalation should be classified as critical even with destructive operations",
-		},
-		{
-			name:        "high risk destructive operations",
-			cmd:         "rm",
-			args:        []string{"-rf", "/important/data"},
-			expected:    runnertypes.RiskLevelHigh,
-			description: "Destructive file operations should be high risk",
-		},
-		{
-			name:        "medium risk network operations",
-			cmd:         "wget",
-			args:        []string{"https://suspicious.example.com/script.sh"},
-			expected:    runnertypes.RiskLevelMedium,
-			description: "Network operations should be medium risk",
-		},
-		{
-			name:        "medium risk system modifications",
-			cmd:         "systemctl",
-			args:        []string{"stop", "important-service"},
-			expected:    runnertypes.RiskLevelMedium,
-			description: "System modifications should be medium risk",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runtimeCmd := &runnertypes.RuntimeCommand{
-				ExpandedCmd:  tt.cmd,
-				ExpandedArgs: tt.args,
-			}
-			result, err := evaluator.EvaluateRisk(runtimeCmd)
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, result, "Test: %s\nDescription: %s", tt.name, tt.description)
-		})
-	}
+	ev := newVerifiedEvaluator()
+	plan, err := ev.EvaluateRisk(verifiedCmd(filepath.Join(tmp, "mkdir"), nil)) // not created
+	require.NoError(t, err)
+	assert.True(t, plan.Assessment.Blocking)
+	assert.Equal(t, risktypes.ErrorClassCoreutilsFileInfo, plan.Assessment.ErrorClass)
 }

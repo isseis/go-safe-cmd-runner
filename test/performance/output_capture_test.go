@@ -143,8 +143,10 @@ func TestOutputSizeLimit(t *testing.T) {
 	outputMgr := output.NewDefaultOutputCaptureManager(securityValidator)
 	maxOutputSize := int64(1024) // 1KB limit
 
-	// Create resource manager with output capture support
-	manager := resource.NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, maxOutputSize, logger)
+	// Create resource manager with output capture support. Use a permissive
+	// evaluator: the command runs with file validation disabled, where the
+	// production identity gate would otherwise deny it.
+	manager := resource.NewNormalResourceManagerWithEvaluator(exec, fs, privMgr, outputMgr, maxOutputSize, logger, resourcetestutil.NewAllowAllEvaluator())
 	ctx := context.Background()
 	_, _, err = manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 

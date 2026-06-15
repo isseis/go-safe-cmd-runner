@@ -14,6 +14,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/variable"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	resourcetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
@@ -90,10 +91,12 @@ risk_level = "medium"
 	assert.Equal(t, expectedBackup, backupFile, "BackupFile should be expanded with __runner_datetime")
 
 	// Create and execute runner
-	r, err := runner.NewRunner(cfg,
+	r, err := runner.NewRunner(
+		cfg,
 		runner.WithVerificationManager(verificationManager),
 		runner.WithRuntimeGlobal(runtimeGlobal),
 		runner.WithRunID("test-run-autovar"),
+		runner.WithRiskEvaluator(resourcetestutil.NewAllowAllEvaluator()),
 	)
 	require.NoError(t, err)
 

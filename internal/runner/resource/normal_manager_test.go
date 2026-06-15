@@ -9,6 +9,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -144,13 +145,27 @@ type testResourceManagerFixture struct {
 	MockOutputMgr *MockCaptureManager
 }
 
+// createTestNormalResourceManager builds a fixture with a permissive evaluator,
+// for tests that exercise manager mechanics (execution, output, temp dirs) rather
+// than risk classification, so command names need not be absolute.
 func createTestNormalResourceManager() *testResourceManagerFixture {
+	return newNormalResourceManagerFixture(permissiveTestEvaluator{})
+}
+
+// createRiskEvaluatingNormalResourceManager builds a fixture with the standard
+// evaluator, for tests that verify risk gating (privilege escalation, risk-level
+// control). Commands must use absolute paths.
+func createRiskEvaluatingNormalResourceManager() *testResourceManagerFixture {
+	return newNormalResourceManagerFixture(defaultTestEvaluator())
+}
+
+func newNormalResourceManagerFixture(evaluator risk.Evaluator) *testResourceManagerFixture {
 	mockExec := executortestutil.NewMockExecutor()
 	mockFS := &MockFileSystem{}
 	mockPriv := &MockPrivilegeManager{}
 	mockOutputMgr := &MockCaptureManager{}
 
-	manager := NewNormalResourceManagerWithOutput(mockExec, mockFS, mockPriv, mockOutputMgr, 1024*1024, slog.Default())
+	manager := NewNormalResourceManagerWithEvaluator(mockExec, mockFS, mockPriv, mockOutputMgr, 1024*1024, slog.Default(), evaluator)
 
 	return &testResourceManagerFixture{
 		Manager:       manager,
@@ -201,7 +216,7 @@ func TestNormalResourceManager_ExecuteCommand(t *testing.T) {
 }
 
 func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *testing.T) {
-	f := createTestNormalResourceManager()
+	f := createRiskEvaluatingNormalResourceManager()
 
 	// Test various privilege escalation commands
 	testCases := []struct {
@@ -211,17 +226,17 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 	}{
 		{
 			name: "sudo command blocked",
-			cmd:  "sudo",
+			cmd:  "/usr/bin/sudo",
 			args: []string{"ls", "/root"},
 		},
 		{
 			name: "su command blocked",
-			cmd:  "su",
+			cmd:  "/usr/bin/su",
 			args: []string{"root"},
 		},
 		{
 			name: "doas command blocked",
-			cmd:  "doas",
+			cmd:  "/usr/bin/doas",
 			args: []string{"ls", "/root"},
 		},
 	}
@@ -251,7 +266,7 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 }
 
 func TestNormalResourceManager_ExecuteCommand_RiskLevelControl(t *testing.T) {
-	f := createTestNormalResourceManager()
+	f := createRiskEvaluatingNormalResourceManager()
 	group := createTestCommandGroup()
 	env := map[string]string{"TEST": "value"}
 	ctx := context.Background()
@@ -266,35 +281,35 @@ func TestNormalResourceManager_ExecuteCommand_RiskLevelControl(t *testing.T) {
 	}{
 		{
 			name:          "low risk command with no risk_level (default low)",
-			cmd:           "echo",
+			cmd:           "/usr/bin/echo",
 			args:          []string{"hello"},
 			riskLevel:     "", // Default to low
 			shouldExecute: true,
 		},
 		{
 			name:          "low risk command with low risk_level",
-			cmd:           "echo",
+			cmd:           "/usr/bin/echo",
 			args:          []string{"hello"},
 			riskLevel:     "low",
 			shouldExecute: true,
 		},
 		{
 			name:          "medium risk command with high risk_level",
-			cmd:           "wget",
+			cmd:           "/usr/bin/wget",
 			args:          []string{"http://example.com/file.txt"},
 			riskLevel:     "high",
 			shouldExecute: true,
 		},
 		{
 			name:          "high risk command with high risk_level",
-			cmd:           "rm",
+			cmd:           "/usr/bin/rm",
 			args:          []string{"-rf", "/tmp/test"},
 			riskLevel:     "high",
 			shouldExecute: true,
 		},
 		{
 			name:          "high risk command with low risk_level should be blocked",
-			cmd:           "rm",
+			cmd:           "/usr/bin/rm",
 			args:          []string{"-rf", "/tmp/test"},
 			riskLevel:     "low",
 			shouldExecute: false,
@@ -302,7 +317,7 @@ func TestNormalResourceManager_ExecuteCommand_RiskLevelControl(t *testing.T) {
 		},
 		{
 			name:          "medium risk command with low risk_level should be blocked",
-			cmd:           "wget",
+			cmd:           "/usr/bin/wget",
 			args:          []string{"http://example.com/file.txt"},
 			riskLevel:     "low",
 			shouldExecute: false,
@@ -310,7 +325,7 @@ func TestNormalResourceManager_ExecuteCommand_RiskLevelControl(t *testing.T) {
 		},
 		{
 			name:          "invalid risk_level should return error",
-			cmd:           "echo",
+			cmd:           "/usr/bin/echo",
 			args:          []string{"hello"},
 			riskLevel:     "invalid",
 			shouldExecute: false,
