@@ -101,3 +101,6 @@ RUN mkdir -p /home/$USERNAME/.vscode-server/extensions \
 
 WORKDIR /home/$USERNAME
 USER $USERNAME
+
+# Claude Code CLI のインストール
+RUN curl -fsSL https://claude.ai/install.sh | bash
