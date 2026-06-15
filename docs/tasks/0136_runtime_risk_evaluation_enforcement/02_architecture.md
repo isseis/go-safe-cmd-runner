@@ -8,7 +8,7 @@
 | Created | 2026-06-14 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-06-15: セキュリティレビュー（Critical 3・High 4・Medium 4）を反映 — 評価と実行の結合（`VerifiedCommandPlan` 中心設計、executor は plan のみ exec）、TOCTOU の fd ベース実行（fexecve/execveat）第一候補化、identity ゲートを coreutils 抑制より前段に配置、dry-run/normal の判定区別（当初案 `AssessmentStatus`/`EvaluationContext` は後の改訂で廃止し `Blocking`+`VerificationUnavailable` に簡素化。下記参照）、「統合評価モデル＋優先順位」への用語精緻化＋リスク次元優先順位表、`Classify` を全検証済み実行可能ファイルに適用、監査 `Decision` enum・`BlockingReason`・Chain の Role/Disposition、Critical の一貫扱い、systemctl argv 解析規則、フェーズの縦切り化＋リリースゲート。2026-06-15: 実装計画（03）レベルの詳細を点検しトリム — systemctl の argv 解析手順と監査ロガーの具体配線（Config フィールド/コンストラクタ）を契約レベルに圧縮し、具体は 03 へ移送。2026-06-15: 【isseis 指示】dry-run の `unknown` リスク状態を廃止（01 の AC-46/58 改訂と整合）。dry-run は normal と同じ read-only 解析で判定を決定的に再現し、出力は allow/deny の2区分。`AssessmentStatus`・`EvaluationContext`・`VerificationState` を削除、`EvaluateRisk(cmd)` へ簡素化、`Decision` enum から `Unknown` を除去、検証不能 deny は `VerificationUnavailable` 運用フラグで区別。2026-06-15: 機械可読コードを string 派生型化 — `ReasonCode` 型＋定数を導入し `ReasonCodes []ReasonCode` / `BlockingReason ReasonCode` に変更（列挙的文字列 Role/Disposition/ErrorClass も派生型化方針。AC-69 と親和）。2026-06-15: 【isseis 指示】取得不能値を安全化 — `RiskAuditEntry`/`ExecutedArtifact` の `ResolvedPath`/`ContentHash`/`RecordID` を `*string`（nil=不在）にし値内センチネル文字列を排除。固定マーカーはログ出力境界のみ。ContentHash 不在は nil でハッシュ突合は VerifiedIdentity を使用（AC-56 改訂と整合）。2026-06-15: 残りの列挙的文字列も専用型化 — `ErrorClass` / `ArtifactRole` / `ArtifactDisposition` を string 派生型＋定数で定義し、`RiskAuditEntry.ErrorClass`・`ExecutedArtifact.Role`/`Disposition` に適用。2026-06-15: テクニカルライター/シニア SWE 観点で 01⇄02 整合性レビューを実施し反映 — §3.2 クラス図に `Reasons []string` 追記と監査 `risk_factors`（AC-12）への対応明記、Comments の陳腐化記述（`AssessmentStatus`/`EvaluationContext`）訂正、§3.7 の AC-34〜38 行に §3.6.1/§6.1 参照追加・AC 重複の意図注記、§5.2/AC-66,67 行に root 判定系（§6.1/AC-29）への相互参照、§5.3 の C-1 を「02 設計レビューの C-1（01 F-013 の C-1 とは別系列）」と明記、§4(3) のリスク昇格を fail-closed 非該当と明記、§5.3 で現行 `EvaluateRisk` の引数型が既に `*runnertypes.RuntimeCommand` である旨を補記。2026-06-15: PR #726 自動レビュー（gemini/copilot/codex 計13件）を反映 — `VerifiedIdentity.FD` を `*int`（nil=不在、fd 0=stdin 誤認回避）、`BinaryAnalysisClass` のゼロ値を `Uncertain`（fail-closed）に並べ替え、`Classify` を `BinaryAnalysisResult`（区分＋根拠別 reason code, AC-69/41）返却に、`Decision` を string 派生型 allow/deny の2値に（int enum の数値ログ化を回避、エラー起因 deny は `ErrorClass` で区別）、`RiskAuditEntry` の重複 `BlockingReason` を削除（`Assessment` に内包）、`ExecutionMode` を audit ローカル string 型として定義（resource→audit→resource 循環依存回避）、責務表の `EvaluateRisk` 返却型を `VerifiedCommandPlan` に統一、評価器が検証済み identity/fd を単一 open で生成する旨を明記（TOCTOU）、§6.1 に F-015 任意コード実行次元を追加、find/xargs の子プロセス実行は fd 束縛不能なら拒否（パス書換のみで通さない）と明記、未知間接形態の fail-safe を §5.2 で明確化。AC-32 に解析利用可能時の限定子を復元（01）。2026-06-15: PR #726 自動レビュー第2巡（codex 6件）を反映 — §3.2 クラス図の `Classify` を `BinaryAnalysisResult` 返却に統一、identity 生成を評価器一箇所へ一元化（group_executor は `EvaluateRisk` を呼ぶのみ）と §3.6.2 明記、§4 を再構成しポリシー拒否（symlink 解決失敗・coreutils ファイル情報失敗・間接実行拒否を含む）を単一の監査される `Blocking` 経路へ集約・`error` 返却は真の想定外のみ＋その場合も中止前に監査エントリ出力（AC-56/70）、間接実行拒否をセンチネルエラーから `Blocking`+`ReasonIndirectExecutionRejected` へ変更、ld-linux の `--library-path` 等ローダ探索制御も検証/拒否対象に追加（AC-83）、共有 DTO（VerifiedCommandPlan/ExecutedArtifact 等）を下位中立パッケージへ配置し `risk -> audit -> risk` 循環を回避（責務表に行追加）。2026-06-15: PR #726 自動レビュー第3巡（codex 6件）を反映 — 拒否 plan 向けに `VerifiedCommandPlan.Identity` を `*VerifiedIdentity`（nil=検証済み identity なし）にし空文字センチネルを排除、`ExecutedArtifact` に `Identity *VerifiedIdentity` を追加し連鎖内の各成果物（shebang/loader/helper）も identity 束縛・不能なら拒否、`service <name> <action>` の init スクリプト（`/etc/init.d/<name>`）を間接実行成果物としてゲート（§3.3 行追加・§3.6.1 補記）、特権昇格 Critical 拒否でも `BlockingReason` を設定すると定義（Blocking=true/Level=Critical の両拒否で必須）、§5.3 の `security-architecture.md` 更新指示の戻り値を `VerifiedCommandPlan` に訂正、dry-run の失敗を「ポリシー拒否=deny 予告／分類不能障害=エラー」の2系統に明確化（01 AC-18/33・F-006 改訂）。2026-06-15: 【isseis 指示】アーキテクチャ文書として詳細すぎる内容をトリムし一般原則中心に整理 — 定数（ReasonCode/ErrorClass/ArtifactRole/ArtifactDisposition）のリテラル文字列値の網羅列挙を削除し型定義＋目的＋「完全な一覧は 03」へ、既存コード移行の考古学（内部関数名・`file:line` 引用・現行シグネチャ全文・写像実装手順）を圧縮し責務表/03 へ委譲、共有 DTO 配置ノートの型列挙を圧縮。型定義・インターフェース・一般原則・優先順位表・間接実行形態表は維持 |
+| Comments | 2026-06-15: セキュリティレビュー（Critical 3・High 4・Medium 4）を反映 — 評価と実行の結合（`VerifiedCommandPlan` 中心設計、executor は plan のみ exec）、TOCTOU の fd ベース実行（fexecve/execveat）第一候補化、identity ゲートを coreutils 抑制より前段に配置、dry-run/normal の判定区別（当初案 `AssessmentStatus`/`EvaluationContext` は後の改訂で廃止し `Blocking`+`VerificationUnavailable` に簡素化。下記参照）、「統合評価モデル＋優先順位」への用語精緻化＋リスク次元優先順位表、`Classify` を全検証済み実行可能ファイルに適用、監査 `Decision` enum・`BlockingReason`・Chain の Role/Disposition、Critical の一貫扱い、systemctl argv 解析規則、フェーズの縦切り化＋リリースゲート。2026-06-15: 実装計画（03）レベルの詳細を点検しトリム — systemctl の argv 解析手順と監査ロガーの具体配線（Config フィールド/コンストラクタ）を契約レベルに圧縮し、具体は 03 へ移送。2026-06-15: 【isseis 指示】dry-run の `unknown` リスク状態を廃止（01 の AC-46/58 改訂と整合）。dry-run は normal と同じ read-only 解析で判定を決定的に再現し、出力は allow/deny の2区分。`AssessmentStatus`・`EvaluationContext`・`VerificationState` を削除、`EvaluateRisk(cmd)` へ簡素化、`Decision` enum から `Unknown` を除去、検証不能 deny は `VerificationUnavailable` 運用フラグで区別。2026-06-15: 機械可読コードを string 派生型化 — `ReasonCode` 型＋定数を導入し `ReasonCodes []ReasonCode` / `BlockingReason ReasonCode` に変更（列挙的文字列 Role/Disposition/ErrorClass も派生型化方針。AC-69 と親和）。2026-06-15: 【isseis 指示】取得不能値を安全化 — `RiskAuditEntry`/`ExecutedArtifact` の `ResolvedPath`/`ContentHash`/`RecordID` を `*string`（nil=不在）にし値内センチネル文字列を排除。固定マーカーはログ出力境界のみ。ContentHash 不在は nil でハッシュ突合は VerifiedIdentity を使用（AC-56 改訂と整合）。2026-06-15: 残りの列挙的文字列も専用型化 — `ErrorClass` / `ArtifactRole` / `ArtifactDisposition` を string 派生型＋定数で定義し、`RiskAuditEntry.ErrorClass`・`ExecutedArtifact.Role`/`Disposition` に適用。2026-06-15: テクニカルライター/シニア SWE 観点で 01⇄02 整合性レビューを実施し反映 — §3.2 クラス図に `Reasons []string` 追記と監査 `risk_factors`（AC-12）への対応明記、Comments の陳腐化記述（`AssessmentStatus`/`EvaluationContext`）訂正、§3.7 の AC-34〜38 行に §3.6.1/§6.1 参照追加・AC 重複の意図注記、§5.2/AC-66,67 行に root 判定系（§6.1/AC-29）への相互参照、§5.3 の C-1 を「02 設計レビューの C-1（01 F-013 の C-1 とは別系列）」と明記、§4(3) のリスク昇格を fail-closed 非該当と明記、§5.3 で現行 `EvaluateRisk` の引数型が既に `*runnertypes.RuntimeCommand` である旨を補記。2026-06-15: PR #726 自動レビュー（gemini/copilot/codex 計13件）を反映 — `VerifiedIdentity.FD` を `*int`（nil=不在、fd 0=stdin 誤認回避）、`BinaryAnalysisClass` のゼロ値を `Uncertain`（fail-closed）に並べ替え、`Classify` を `BinaryAnalysisResult`（区分＋根拠別 reason code, AC-69/41）返却に、`Decision` を string 派生型 allow/deny の2値に（int enum の数値ログ化を回避、エラー起因 deny は `ErrorClass` で区別）、`RiskAuditEntry` の重複 `BlockingReason` を削除（`Assessment` に内包）、`ExecutionMode` を audit ローカル string 型として定義（resource→audit→resource 循環依存回避）、責務表の `EvaluateRisk` 返却型を `VerifiedCommandPlan` に統一、評価器が検証済み identity/fd を単一 open で生成する旨を明記（TOCTOU）、§6.1 に F-015 任意コード実行次元を追加、find/xargs の子プロセス実行は fd 束縛不能なら拒否（パス書換のみで通さない）と明記、未知間接形態の fail-safe を §5.2 で明確化。AC-32 に解析利用可能時の限定子を復元（01）。2026-06-15: PR #726 自動レビュー第2巡（codex 6件）を反映 — §3.2 クラス図の `Classify` を `BinaryAnalysisResult` 返却に統一、identity 生成を評価器一箇所へ一元化（group_executor は `EvaluateRisk` を呼ぶのみ）と §3.6.2 明記、§4 を再構成しポリシー拒否（symlink 解決失敗・coreutils ファイル情報失敗・間接実行拒否を含む）を単一の監査される `Blocking` 経路へ集約・`error` 返却は真の想定外のみ＋その場合も中止前に監査エントリ出力（AC-56/70）、間接実行拒否をセンチネルエラーから `Blocking`+`ReasonIndirectExecutionRejected` へ変更、ld-linux の `--library-path` 等ローダ探索制御も検証/拒否対象に追加（AC-83）、共有 DTO（VerifiedCommandPlan/ExecutedArtifact 等）を下位中立パッケージへ配置し `risk -> audit -> risk` 循環を回避（責務表に行追加）。2026-06-15: PR #726 自動レビュー第3巡（codex 6件）を反映 — 拒否 plan 向けに `VerifiedCommandPlan.Identity` を `*VerifiedIdentity`（nil=検証済み identity なし）にし空文字センチネルを排除、`ExecutedArtifact` に `Identity *VerifiedIdentity` を追加し連鎖内の各成果物（shebang/loader/helper）も identity 束縛・不能なら拒否、`service <name> <action>` の init スクリプト（`/etc/init.d/<name>`）を間接実行成果物としてゲート（§3.3 行追加・§3.6.1 補記）、特権昇格 Critical 拒否でも `BlockingReason` を設定すると定義（Blocking=true/Level=Critical の両拒否で必須）、§5.3 の `security-architecture.md` 更新指示の戻り値を `VerifiedCommandPlan` に訂正、dry-run の失敗を「ポリシー拒否=deny 予告／分類不能障害=エラー」の2系統に明確化（01 AC-18/33・F-006 改訂）。2026-06-15: 【isseis 指示】アーキテクチャ文書として詳細すぎる内容をトリムし一般原則中心に整理 — 定数（ReasonCode/ErrorClass/ArtifactRole/ArtifactDisposition）のリテラル文字列値の網羅列挙を削除し型定義＋目的＋「完全な一覧は 03」へ、既存コード移行の考古学（内部関数名・`file:line` 引用・現行シグネチャ全文・写像実装手順）を圧縮し責務表/03 へ委譲、共有 DTO 配置ノートの型列挙を圧縮。型定義・インターフェース・一般原則・優先順位表・間接実行形態表は維持。2026-06-15: PR #726 自動レビュー第4巡（codex 9件）を反映 — §2.3 シーケンス図を修正（パス解決/検証/fd 取得を `EvaluateRisk` 内へ、許可時 exec を `base/executor` 経由に）、§2.2 コンポーネント図に dry-run マネージャ→監査の辺を追加、`RiskAssessment` に `ErrorClass` を追加し失敗起因拒否の分類を manager へ伝達（クラス図も更新）、`VerifiedCommandPlan` の実行内容フィールドは許可 plan のみ設定・監査 resolved_path は Identity から導出（空文字を実値化しない）、fd 所有権の原則を §3.6.2 に追記（close 機構の詳細は 03）、**P1: fd 不能時のフォールバックから再ハッシュのみの path exec を排除**（read-only ステージング or 拒否のみ。AC-76）。01 AC-17 を §4 の拒否/エラー2系統に整合（symlink/coreutils 失敗は拒否ケース）。陳腐化していた `Classify` 互換ノートはトリム済みで対応不要 |
 
 本書は `01_requirements.md`（status: `approved`）の機能要件 F-001〜F-015 / 受入基準 AC-01〜AC-87 を満たすための高レベル設計を定義する。実装詳細・擬似コード・アルゴリズムは含めない（それらは実装と `03_implementation_plan.md` で扱う）。
 
@@ -158,6 +158,7 @@ graph TB
     R1 --> S4
     S4 --> S5
     M1 --> A1
+    M2 --> A1
 
     class S4 newpkg
     class R1,S1,S2,S3,M1,M2,M3,T1,T2,A1,GE enhanced
@@ -188,17 +189,18 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     participant GE as group_executor
-    participant VM as verification.Manager
     participant RM as NormalResourceManager
     participant EV as risk.Evaluator
+    participant VM as verification.Manager
     participant SEC as security(分類器/リゾルバ)
+    participant EX as base/executor
     participant AL as audit.Logger
 
-    GE->>VM: ResolvePath / ハッシュ確定 / fd 取得 / 解析レコード取得
     GE->>RM: ExecuteCommand(cmd, group, env)
     RM->>EV: EvaluateRisk(cmd)
+    EV->>VM: ResolvePath / ファイル検証(ハッシュ) / fd 取得 / 解析レコード取得（評価器が一度だけ）
     EV->>SEC: identity ゲート → 間接実行解決 → 全次元分類
-    SEC-->>EV: VerifiedCommandPlan(確定 argv/env/identity, RiskAssessment)
+    SEC-->>EV: 確定 argv/env/identity, RiskAssessment
     EV-->>RM: VerifiedCommandPlan
     RM->>RM: maxAllowed = cmd.GetRiskLevel()
     alt effectiveRisk > maxAllowed / Blocking / Critical
@@ -206,11 +208,12 @@ sequenceDiagram
         RM-->>GE: ErrCommandSecurityViolation
     else 許可
         RM->>AL: LogRiskProfile(decision=allow, …)
-        RM->>GE: plan.Identity を用いて exec（plan のみ実行）
+        RM->>EX: exec(plan)（plan のみ／fd ベース実行）
+        EX-->>GE: 実行結果
     end
 ```
 
-**矢印の意味**: 実線（→）は同期呼び出し、点線（-->>）は戻り値。`alt` は分岐。exec は `VerifiedCommandPlan`（確定 argv/env と検証済み fd/identity）のみを用いる。
+**矢印の意味**: 実線（→）は同期呼び出し、点線（-->>）は戻り値。`alt` は分岐。パス解決・検証・fd 取得は **評価器（`EvaluateRisk`）が一度だけ** 行い（事前の別経路解決は無い、AC-64/76）、exec は **`base/executor` が `VerifiedCommandPlan` のみ** を用いる（`group_executor` は exec の実行主体にならない）。
 
 ## 3. コンポーネント設計
 
@@ -226,9 +229,13 @@ sequenceDiagram
 // VerifiedCommandPlan は「実際に exec してよい確定済みの実行内容」を表す（新規）。
 // executor はこの plan のみを実行し、元 argv/env を直接 exec してはならない。
 type VerifiedCommandPlan struct {
-    ResolvedPath string            // 検証済みの絶対パス（identity の基準）
-    ResolvedArgv []string          // 間接実行を展開・正規化した最終 argv
-    ResolvedEnv  map[string]string // 禁止環境変数を除去/検証済みの env
+    // 実行内容フィールド（ResolvedPath/Argv/Env）は **許可（実行可能）plan でのみ設定** する。
+    // 検証成立前に拒否される plan（symlink 解決失敗等）では未設定（空）であり、**監査の
+    // resolved_path はこれらではなく Identity から導出**する（Identity が nil なら不在として
+    // 扱い、空文字を実値として記録しない。AC-56）。
+    ResolvedPath string            // 実行対象の絶対パス（許可 plan のみ。監査の基準にはしない）
+    ResolvedArgv []string          // 間接実行を展開・正規化した最終 argv（許可 plan のみ）
+    ResolvedEnv  map[string]string // 禁止環境変数を除去/検証済みの env（許可 plan のみ）
     Identity     *VerifiedIdentity // exec 時点まで束縛する identity（下記）。nil = 検証済み identity が存在しない拒否 plan
     Artifacts    []ExecutedArtifact // 実行/ロードされる全成果物（監査・ゲート済み）
     Assessment   RiskAssessment    // 本 plan に対するリスク判定結果
@@ -269,6 +276,7 @@ type RiskAssessment struct {
     Level          runnertypes.RiskLevel // 実効リスク（全次元の最大値）
     Blocking       bool                  // true なら risk_level によらず拒否（不確実 / identity 束縛不能）
     BlockingReason ReasonCode            // 拒否（deny）理由コード。**Blocking=true または Level=Critical のいずれの拒否でも設定**（例: ReasonUncertainMissingRecord / ReasonPrivilegeEscalation）。許可時は空
+    ErrorClass     ErrorClass            // 失敗起因の拒否（symlink 解決失敗・coreutils ファイル情報失敗 等）の分類。非失敗起因の拒否・許可時は空。監査エントリへそのまま転記する
     ReasonCodes    []ReasonCode          // 機械可読な判定根拠
     Reasons        []string              // 人間可読な根拠（プロファイル由来の Reason 等）。監査では `risk_factors` として出力（01 AC-12）
     NetworkType    string                // 監査用（none/always/conditional）
@@ -351,6 +359,7 @@ classDiagram
         +Level RiskLevel
         +Blocking bool
         +BlockingReason ReasonCode
+        +ErrorClass ErrorClass
         +ReasonCodes []ReasonCode
         +Reasons []string
         +NetworkType string
@@ -431,7 +440,7 @@ type RiskAuditEntry struct {
     MaxAllowedRisk runnertypes.RiskLevel
     Decision       Decision              // allow / deny（2 値）
     VerificationUnavailable bool         // dry-run で解析・検証が利用不能だった（deny だが環境起因。AC-58 の運用区別）
-    ErrorClass     ErrorClass            // エラー起因の deny 時の分類（例: ErrorSymlinkResolution）。空=エラー起因でない
+    ErrorClass     ErrorClass            // 失敗起因 deny の分類。Blocking 拒否では `Assessment.ErrorClass` を転記、plan を得られない error 返却経路（§4(3)）では manager が直接設定。空=失敗起因でない
     Chain          []ExecutedArtifact    // 間接実行連鎖の全成果物（AC-11）
 }
 
@@ -493,7 +502,7 @@ func (l *Logger) LogRiskProfile(ctx context.Context, entry RiskAuditEntry)
 | `resource/default_manager.go` | 変更 | dry-run に `RiskEvaluator`・`audit.Logger` を配線 | F-009 | - |
 | `audit/logger.go` | 変更 | `LogRiskProfile` に相関フィールド（resolved_path/content_hash/解析レコード識別/max_allowed_risk/decision/reason_codes）・引数マスキング・連鎖監査・deny 重大度下限 | F-003/AC-56/57/70/11 | `audit` 関連テスト |
 | `group_executor.go` | 変更 | グループ検証フェーズで `EvaluateRisk` を呼び `VerifiedCommandPlan` を受け取る（解決・ハッシュ・fd の生成は評価器に一元化。自前で再解決しない）。実行直前の独立した再 `ResolvePath` を廃止。ラッパー/ローダ成果物の検証連携 | F-014/AC-64/76/79/83 | `group_executor_test.go` |
-| `base/executor/executor.go` | 変更 | `VerifiedCommandPlan` のみを exec する契約（fd ベース実行 `fexecve`/`execveat` を第一候補、フォールバックは再突合 or 拒否）。元 argv/env の直接 exec を禁止 | F-014/AC-76/79 | `base/executor` 関連テスト |
+| `base/executor/executor.go` | 変更 | `VerifiedCommandPlan` のみを exec する契約（fd ベース実行 `fexecve`/`execveat` を第一候補、フォールバックは read-only ステージング、いずれも不能なら拒否。再ハッシュのみの path exec は不可。§3.6.2）。元 argv/env の直接 exec を禁止 | F-014/AC-76/79 | `base/executor` 関連テスト |
 | `docs/dev/architecture_design/command-risk-evaluation.{ja.md,md}` | 変更 | 開発者向け文書を実装に整合 | F-004/F-005/F-006/AC-15/17/18 | - |
 | `docs/dev/architecture_design/security-architecture.{ja.md,md}` | 変更 | 既存ポリシー記述の更新（§5.3 の例外明記を参照） | C-1/F-005 | - |
 | `docs/user/risk_assessment.{ja.md,md}` | 変更 | ユーザー向けガイドを実装に整合 | F-010/AC-34〜38/50 | - |
@@ -540,9 +549,10 @@ dry-run の出力区分は **allow / deny** の2区分とする（AC-31/46/58）
 不変条件として「検証で確定した実体と、リスク判定・実行が参照する実体が同一」を保証する。AC-76 は「**exec 時点まで**束縛」を要求するため、パス再利用＋再 stat だけでは「再 stat 後〜exec の間」の差し替え窓が残る。設計上の契約（強い順）:
 
 - **第一候補: fd ベース実行**: 検証時に開いた **検証済みファイルディスクリプタ（fd）を保持** し、`fexecve` / `execveat(AT_EMPTY_PATH)` 相当でその fd を直接 exec する。fd は inode を指すため、検証〜exec 間にパス名がすり替えられても **実行される実体は不変**（TOCTOU 窓を原理的に閉じる）。`VerifiedIdentity.FD` がこれを担う。
-- **fd 実行が不能な環境のフォールバック**: (a) 実行直前に確定済み content hash を再突合し、不一致なら **拒否**（実行継続しない）、または (b) **信頼済み read-only ステージング**（検証済み実体を書込不能領域へ複製し、そこから exec）。単なる「再 stat して継続」は採らない。
+- **fd 実行が不能な環境のフォールバック**: **書込不能（不変）な実体に束縛できる手段に限る**。具体的には (b) **信頼済み read-only ステージング**（検証済み実体を書込不能領域へ複製し、そこから exec）を採る。**再ハッシュのみで path から exec する方式（rehash-then-path-exec）は採らない**: 再突合と path ベース exec の間に差し替え窓が残り、全ゲート通過後に別実体が実行され得る（AC-76 の同一 identity 保証に反する）。ステージングも fd 束縛も不能な場合は **拒否** する（「再 stat して継続」「再ハッシュして継続」はいずれも不可）。
 - **パス解決・identity 生成の一元化（単一コンポーネント）**: `ResolvePath`／ファイル検証（ハッシュ確定）／fd 取得は **`EvaluateRisk`（評価器）が一度だけ** 行い、結果を `VerifiedCommandPlan.Identity` に格納する（§3.1 の入力 `RuntimeCommand` は path/hash しか持たないため、identity は評価器が生成する）。グループ検証フェーズ（`group_executor`）は **この `EvaluateRisk` を呼び出して plan を受け取る** 役割であり、自前で別途 `ResolvePath`／fd 取得はしない。実行直前の **独立した再 `ResolvePath` を廃止** する（現行 `executeCommandInGroup` の二重解決＝TOCTOU 窓を統合）。リスク判定（coreutils の setuid チェックを含む）も評価器が確定した同じ実体（fd / 確定ハッシュ）を参照する。identity 生成箇所を評価器一箇所に集約することで、identity を out-of-band で受け渡す経路や再 open を排除する（AC-64/76）。
 - これにより検証〜判定〜exec の全区間で identity が束縛される（AC-64/76）。実装環境（fexecve 可否）の確定は実装計画で行う。
+- **fd の所有権（原則）**: `EvaluateRisk` が開いた fd は `VerifiedCommandPlan`（および各 `ExecutedArtifact`）が所有し、**plan のライフサイクル終了時に必ず閉じる**。許可 plan は exec 後、拒否 plan・dry-run preview・exec されない副成果物は監査出力後に解放する（拒否や preview が多い長時間実行で fd を漏らさない）。所有権を表す型（クローズ可能ラッパー等）と具体的な close 手順は `03_implementation_plan.md` で確定する。
 
 #### 3.6.3 監査ロガーの配線（M-5、AC-11/56/70）
 
