@@ -8,7 +8,7 @@
 | Created | 2026-06-14 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-06-15: セキュリティレビュー（Critical 3・High 4・Medium 4）を反映 — 評価と実行の結合（`VerifiedCommandPlan` 中心設計、executor は plan のみ exec）、TOCTOU の fd ベース実行（fexecve/execveat）第一候補化、identity ゲートを coreutils 抑制より前段に配置、dry-run unknown/normal Blocking を `AssessmentStatus`/`EvaluationContext` で型区別、「統合評価モデル＋優先順位」への用語精緻化＋リスク次元優先順位表、`Classify` を全検証済み実行可能ファイルに適用、監査 `Decision` enum・`BlockingReason`・Chain の Role/Disposition、Critical の一貫扱い、systemctl argv 解析規則、フェーズの縦切り化＋リリースゲート。2026-06-15: 実装計画（03）レベルの詳細を点検しトリム — systemctl の argv 解析手順と監査ロガーの具体配線（Config フィールド/コンストラクタ）を契約レベルに圧縮し、具体は 03 へ移送。2026-06-15: 【isseis 指示】dry-run の `unknown` リスク状態を廃止（01 の AC-46/58 改訂と整合）。dry-run は normal と同じ read-only 解析で判定を決定的に再現し、出力は allow/deny の2区分。`AssessmentStatus`・`EvaluationContext`・`VerificationState` を削除、`EvaluateRisk(cmd)` へ簡素化、`Decision` enum から `Unknown` を除去、検証不能 deny は `VerificationUnavailable` 運用フラグで区別。2026-06-15: 機械可読コードを string 派生型化 — `ReasonCode` 型＋定数を導入し `ReasonCodes []ReasonCode` / `BlockingReason ReasonCode` に変更（列挙的文字列 Role/Disposition/ErrorClass も派生型化方針。AC-69 と親和）。2026-06-15: 【isseis 指示】取得不能値を安全化 — `RiskAuditEntry`/`ExecutedArtifact` の `ResolvedPath`/`ContentHash`/`RecordID` を `*string`（nil=不在）にし値内センチネル文字列を排除。固定マーカーはログ出力境界のみ。ContentHash 不在は nil でハッシュ突合は VerifiedIdentity を使用（AC-56 改訂と整合）。2026-06-15: 残りの列挙的文字列も専用型化 — `ErrorClass` / `ArtifactRole` / `ArtifactDisposition` を string 派生型＋定数で定義し、`RiskAuditEntry.ErrorClass`・`ExecutedArtifact.Role`/`Disposition` に適用 |
+| Comments | 2026-06-15: セキュリティレビュー（Critical 3・High 4・Medium 4）を反映 — 評価と実行の結合（`VerifiedCommandPlan` 中心設計、executor は plan のみ exec）、TOCTOU の fd ベース実行（fexecve/execveat）第一候補化、identity ゲートを coreutils 抑制より前段に配置、dry-run/normal の判定区別（当初案 `AssessmentStatus`/`EvaluationContext` は後の改訂で廃止し `Blocking`+`VerificationUnavailable` に簡素化。下記参照）、「統合評価モデル＋優先順位」への用語精緻化＋リスク次元優先順位表、`Classify` を全検証済み実行可能ファイルに適用、監査 `Decision` enum・`BlockingReason`・Chain の Role/Disposition、Critical の一貫扱い、systemctl argv 解析規則、フェーズの縦切り化＋リリースゲート。2026-06-15: 実装計画（03）レベルの詳細を点検しトリム — systemctl の argv 解析手順と監査ロガーの具体配線（Config フィールド/コンストラクタ）を契約レベルに圧縮し、具体は 03 へ移送。2026-06-15: 【isseis 指示】dry-run の `unknown` リスク状態を廃止（01 の AC-46/58 改訂と整合）。dry-run は normal と同じ read-only 解析で判定を決定的に再現し、出力は allow/deny の2区分。`AssessmentStatus`・`EvaluationContext`・`VerificationState` を削除、`EvaluateRisk(cmd)` へ簡素化、`Decision` enum から `Unknown` を除去、検証不能 deny は `VerificationUnavailable` 運用フラグで区別。2026-06-15: 機械可読コードを string 派生型化 — `ReasonCode` 型＋定数を導入し `ReasonCodes []ReasonCode` / `BlockingReason ReasonCode` に変更（列挙的文字列 Role/Disposition/ErrorClass も派生型化方針。AC-69 と親和）。2026-06-15: 【isseis 指示】取得不能値を安全化 — `RiskAuditEntry`/`ExecutedArtifact` の `ResolvedPath`/`ContentHash`/`RecordID` を `*string`（nil=不在）にし値内センチネル文字列を排除。固定マーカーはログ出力境界のみ。ContentHash 不在は nil でハッシュ突合は VerifiedIdentity を使用（AC-56 改訂と整合）。2026-06-15: 残りの列挙的文字列も専用型化 — `ErrorClass` / `ArtifactRole` / `ArtifactDisposition` を string 派生型＋定数で定義し、`RiskAuditEntry.ErrorClass`・`ExecutedArtifact.Role`/`Disposition` に適用。2026-06-15: テクニカルライター/シニア SWE 観点で 01⇄02 整合性レビューを実施し反映 — §3.2 クラス図に `Reasons []string` 追記と監査 `risk_factors`（AC-12）への対応明記、Comments の陳腐化記述（`AssessmentStatus`/`EvaluationContext`）訂正、§3.7 の AC-34〜38 行に §3.6.1/§6.1 参照追加・AC 重複の意図注記、§5.2/AC-66,67 行に root 判定系（§6.1/AC-29）への相互参照、§5.3 の C-1 を「02 設計レビューの C-1（01 F-013 の C-1 とは別系列）」と明記、§4(3) のリスク昇格を fail-closed 非該当と明記、§5.3 で現行 `EvaluateRisk` の引数型が既に `*runnertypes.RuntimeCommand` である旨を補記 |
 
 本書は `01_requirements.md`（status: `approved`）の機能要件 F-001〜F-015 / 受入基準 AC-01〜AC-87 を満たすための高レベル設計を定義する。実装詳細・擬似コード・アルゴリズムは含めない（それらは実装と `03_implementation_plan.md` で扱う）。
 
@@ -271,7 +271,7 @@ type RiskAssessment struct {
     Blocking       bool                  // true なら risk_level によらず拒否（不確実 / identity 束縛不能）
     BlockingReason ReasonCode            // Blocking の理由コード（例: ReasonUncertainMissingRecord）
     ReasonCodes    []ReasonCode          // 機械可読な判定根拠
-    Reasons        []string              // 人間可読な根拠（プロファイル由来の Reason 等）
+    Reasons        []string              // 人間可読な根拠（プロファイル由来の Reason 等）。監査では `risk_factors` として出力（01 AC-12）
     NetworkType    string                // 監査用（none/always/conditional）
 }
 
@@ -340,6 +340,7 @@ classDiagram
         +Blocking bool
         +BlockingReason ReasonCode
         +ReasonCodes []ReasonCode
+        +Reasons []string
         +NetworkType string
     }
     class CommandRiskProfile {
@@ -556,14 +557,16 @@ dry-run の出力区分は **allow / deny** の2区分とする（AC-31/46/58）
 | AC-18, 30〜33, 39, 46, 58（F-006/F-009 dry-run） | §3.5, §3.6, §4 |
 | AC-24〜26（F-007 unknown 拒否） | §3.4(config.go), §4 |
 | AC-27〜29, 47, 68, 72（F-008 一貫性・優先順位・coreutils・引数パターン） | §3.1, §3.6.1, §5.3, §6.1 |
-| AC-34〜38, 50（F-010 ユーザー文書） | §3.4(risk_assessment) |
+| AC-34〜38, 50（F-010 ユーザー文書） | §3.4(risk_assessment)。文書を合わせる確定値は §3.6.1（systemctl/service）・§6.1（次元優先順位） |
 | AC-49, 75（F-011 サブコマンド条件付き・service） | §3.1, §3.6.1 |
 | AC-54, 55（F-012 symlink 失敗の安全側） | §3.4(command_analysis), §4 |
 | AC-59〜61, 71, 77〜87（F-013 間接実行） | §3.3, §3.4(indirect_execution), §3.6.4 |
 | AC-64, 65, 76（F-014 identity 束縛・ハッシュ次元） | §3.6.2, §3.4(group_executor) |
-| AC-66, 67（脅威モデル・限界） | §5.2 |
+| AC-66, 67（脅威モデル・限界） | §5.2（root 判定系との適用パス・優先順位は §6.1 / AC-29 を参照） |
 | AC-73, 74, 85（F-015 任意コード実行 High） | §3.3, §5.3 |
 | AC-19, 20, 21, 39（NF 後方互換・整合・品質ゲート） | §5.3, §7 |
+
+> 注: 一部の AC（例: AC-39）は複数の行に意図的に重複して現れる。これは 1 つの AC が複数の関心（例: dry-run の挙動と品質ゲート）にまたがって反映されるためで、各行はその AC の異なる側面の反映箇所を示す。正準なテスト対応は `03_implementation_plan.md` の「Acceptance Criteria Verification」で一意に確定する。
 
 ## 4. エラーハンドリング設計
 
@@ -571,7 +574,7 @@ dry-run の出力区分は **allow / deny** の2区分とする（AC-31/46/58）
 
 - **(1) エラー中止（`error` 返却）**: シンボリックリンクの解決失敗（深度超過・リンク先取得失敗・循環・解決不能）、coreutils のファイル情報取得エラー、予期しないレコード読込エラー。`EvaluateRisk` が `error` を返し、`NormalResourceManager` がコマンドを実行しない。symlink 解決失敗は本層（エラー中止）に **一本化** する（AC-54 が許す「エラー中止または内部 Critical 化」のうちエラー中止を採用。要件 §4 と整合）。なお現行 `network_analyzer.go` は symlink 深度超過を High 返却で扱っており、これを本層の error 中止へ変更する。symlink 走査ロジック `extractAllCommandNames` は `command_analysis.go`（security パッケージ）にあり深度超過フラグを返すのみで、High への写像は呼び出し側（評価器・ネットワーク解析）が行う。したがって「深度超過・解決失敗 → error 中止」への変更は **呼び出し側の写像変更** として実装する（共通走査関数自体は判定を持たない）。
 - **(2) 無条件拒否（`RiskAssessment.Blocking=true`、内部 Critical 相当）**: バイナリ解析の不確実ケース（解析レコード欠落・スキーマ/ハッシュ不一致・非対応形式・想定外結果）、解析無効構成、間接実行で identity を束縛できない形態。`risk_level` によらずゲートで拒否する。
-- **(3) リスク昇格（`Level=High`）**: 有効な解析で検出された危険な性質（dlopen/exec/svc/mprotect）。`risk_level="high"` で許可可能。
+- **(3) リスク昇格（`Level=High`、許可可能）**: 有効な解析で検出された危険な性質（dlopen/exec/svc/mprotect）。`risk_level="high"` で許可可能であり、(1)(2) と異なり **fail-closed には含めない**（用語は 01 §4 準拠）。
 dry-run はこれら (1)〜(3) を **read-only 解析で再現** し、allow/deny の決定的予告を出す（§3.5）。dry-run 固有の `unknown` リスク状態は持たない（解析・検証が利用不能な環境は (2) と同じく deny に帰着し、「検証不能」は運用ステータスで区別する。AC-46/58）。
 
 既存のエラー型 `runnertypes.ErrCommandSecurityViolation`（実行拒否）、`runnertypes.ErrInvalidRiskLevel`（`"unknown"` 含む設定値拒否、F-007）を継続利用する。間接実行の拒否は新規のセンチネルエラー（例: `ErrIndirectExecutionRejected`）で表現する。
@@ -626,13 +629,16 @@ flowchart LR
 - **basename ベースのプロファイル**: ハードリンク/リネームによる名前すり替えには対応しない（symlink は F-012 で解決）。緩和は allowlist＋ハッシュ。
 - **シェルインライン文字列**: `bash -c "sudo …"` の文字列内特権昇格は確実に Critical 化できない（不透明）。High 下限＋allowlist が backstop。
 - **`output_file` 書き込み先**: リスク判定対象外（スコープ外、限界として明記）。
+- **root 実行向け判定系との関係**: root 向けの危険判定（部分一致方式）と通常の実行時リスク判定（完全一致方式）は別系統である。適用パスと優先順位は §6.1 の次元優先順位表および AC-29 を参照（本タスクで両系統は統合しない。AC-67）。
 
 ### 5.3 既存セキュリティ方針との関係
 
 - **タスク 0135（coreutils 単一バイナリ分類）の保持**: 本設計は coreutils 分類がバイナリ解析より優先する 0135 の方針を **保持・明文化** する（例外ではない）。`echo` 等の安全サブコマンドは共有バイナリの解析シグナルによらず Low（ハッシュ検証は必要）。整合テストは `risk/coreutils_consistency_test.go` で継続検証する。
 - **ファイル整合性検証（`docs/dev/architecture_design/security-architecture.md`）**: バイナリ解析次元の抑制（coreutils）と **ハッシュ検証は別次元** であり、ハッシュ検証は常に必要（F-014/AC-65）。
 
-#### 既存アーキ文書ポリシーへの例外（C-1）
+#### 既存アーキ文書ポリシーへの例外（02 設計レビューの C-1）
+
+> 注: ここでの `C-1` は **02 アーキテクチャレビュー**での指摘 ID であり、01 要件定義書 F-013 が参照する「C-1（間接実行バイパス）」とは別系列の ID（レビュー指摘 ID は文書ごとに独立）。
 
 本設計は全社的アーキ文書 `docs/dev/architecture_design/security-architecture.md` の 2 つの記述を更新する。要件プロセスに従い、(1) 元ポリシーと所在、(2) 例外の理由、(3) 旧挙動を主張する既存テストを明記する。
 
@@ -641,7 +647,7 @@ flowchart LR
    - (2) 例外の理由: F-005/AC-51 により、バイナリ解析（＝ファイル検証）が無効な構成では **常時実行拒否**（degradation でなく fail-closed）とする。バイナリの素性を確認できない状態での実行を許さないため。dry-run は引き続き可能。`security-architecture.md` の当該記述を「解析/検証が無効な場合は実行を拒否する（dry-run は可）」へ改訂する。
    - (3) 旧挙動を主張するテスト: 解析無効時に Low 通過/実行継続を期待するテストがあれば更新が必要（解析無効関連の検証テスト）。本タスクで該当テストを洗い出し、常時拒否へ更新する。
 2. **`EvaluateRisk` のシグネチャ記述（`security-architecture.md` の Risk Assessment Engine 節、`:417`）の更新**
-   - (1) 元ポリシー記述: `func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error)`。
+   - (1) 元ポリシー記述: `func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error)`。なお、現行コードの引数型は既に `*runnertypes.RuntimeCommand` であり（`security-architecture.md` の記述が旧型 `*runnertypes.Command` のまま陳腐化している）、本タスクでは引数型の差分も含めて当該記述を現行・目標状態に合わせて更新する。
    - (2) 理由: F-001/F-003/F-005 により戻り値を `RiskAssessment`（実効リスク＋reason code＋Blocking）へ拡張する（§1.3）。当該コード片を変更後シグネチャへ更新する。
    - (3) 旧シグネチャに依存する記述・図は本文書 §3.2 の目標状態に合わせて更新する。
 
@@ -707,7 +713,7 @@ flowchart LR
 
 ### 6.2 ゲートと監査（F-003/AC-11/56/70）
 
-リスク比較ゲートは `effectiveRisk > maxAllowed`（または `Blocking=true`）で拒否する。監査エントリ（`command_risk_profile`）は、`resolved_path`・`content_hash`・解析レコード識別・`max_allowed_risk`・`decision`（allow/deny）・`reason_codes` を含み、間接実行連鎖では評価・実行・ロードされた全成果物の identity/hash を相関可能にする。deny イベントは decision に基づく重大度下限（Warn 以上）を適用し、リスクレベル対応のログレベル（AC-13）に埋もれないようにする。引数の機密はマスキング（AC-57、既存 redaction 機構と整合）。
+リスク比較ゲートは `effectiveRisk > maxAllowed`（または `Blocking=true`）で拒否する。監査エントリ（`command_risk_profile`）は、`resolved_path`・`content_hash`・解析レコード識別・`max_allowed_risk`・`decision`（allow/deny）・`reason_codes`、および人間可読な根拠 `risk_factors`（= `RiskAssessment.Reasons`、AC-12）を含み、間接実行連鎖では評価・実行・ロードされた全成果物の identity/hash を相関可能にする。deny イベントは decision に基づく重大度下限（Warn 以上）を適用し、リスクレベル対応のログレベル（AC-13）に埋もれないようにする。引数の機密はマスキング（AC-57、既存 redaction 機構と整合）。
 
 ## 7. テスト戦略
 
