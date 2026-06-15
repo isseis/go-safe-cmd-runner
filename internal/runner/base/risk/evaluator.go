@@ -3,13 +3,19 @@
 package risk
 
 import (
+	"path/filepath"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 )
 
-// Evaluator interface defines methods for evaluating command risk levels
+// Evaluator interface defines methods for evaluating command risk levels.
+// It produces a VerifiedCommandPlan so the evaluated identity and the executed
+// identity are bound together (the executor runs only the plan, never the raw
+// argv/env).
 type Evaluator interface {
-	EvaluateRisk(cmd *runnertypes.RuntimeCommand) (runnertypes.RiskLevel, error)
+	EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error)
 }
 
 // StandardEvaluator implements risk evaluation using predefined patterns
@@ -24,53 +30,272 @@ func NewStandardEvaluator(networkAnalyzer *security.NetworkAnalyzer) Evaluator {
 	}
 }
 
-// EvaluateRisk analyzes a command and returns its risk level
-func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (runnertypes.RiskLevel, error) {
-	// Check for privilege escalation commands (critical risk - should be blocked)
-	isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmd.ExpandedCmd)
+// EvaluateRisk analyzes a command and returns a VerifiedCommandPlan whose
+// Assessment carries the effective risk (the maximum across every applicable
+// dimension) plus the reasoning. The evaluation order follows the architecture's
+// dimension priority: deny gates (identity, privilege) short-circuit first, then
+// the order-independent max of the remaining dimensions is taken.
+//
+// error is reserved for genuinely unexpected internal failures (an
+// unclassifiable record-load I/O error). Policy denies -- uncertain analysis,
+// symlink resolution failure, analysis disabled, unverified identity -- are
+// returned as a non-error plan with Assessment.Blocking set, so the resource
+// manager can audit them on a single deny path.
+func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error) {
+	cmdPath := cmd.ExpandedCmd
+
+	// Resolve the symlink chain once up front. A resolution failure is fail-closed
+	// (Blocking) so a dangerous real target is never missed by evaluating a
+	// partially resolved chain.
+	names, err := security.ResolveCommandNames(cmdPath)
 	if err != nil {
-		return runnertypes.RiskLevelUnknown, err
-	}
-	if isPrivEsc {
-		return runnertypes.RiskLevelCritical, nil
-	}
-
-	// Check for destructive file operations
-	if security.IsDestructiveFileOperation(cmd.ExpandedCmd, cmd.ExpandedArgs) {
-		return runnertypes.RiskLevelHigh, nil
+		return blockingPlan(risktypes.RiskAssessment{
+			Blocking:       true,
+			BlockingReason: risktypes.ReasonSymlinkResolutionFailed,
+			ErrorClass:     risktypes.ErrorClassSymlinkResolution,
+			ReasonCodes:    []risktypes.ReasonCode{risktypes.ReasonSymlinkResolutionFailed},
+		}), nil
 	}
 
-	// Classify commands resolved under the coreutils single-binary directory.
-	// This bypasses binary analysis (below), which misclassifies coreutils
-	// because every subcommand shares the same binary's symbols. On stat error
-	// we fail closed by propagating the error so the command is not executed.
-	coreutilsRisk, handled, err := security.CoreutilsCommandRisk(cmd.ExpandedCmd, cmd.ExpandedArgs)
+	// Rank 1: identity gate. Without a verified hash, or with binary analysis
+	// disabled, the binary's identity cannot be confirmed; deny regardless of the
+	// configured risk_level. This gate runs before every other dimension so no
+	// path (coreutils, destructive, profile, arbitrary-code runner) can confirm a
+	// Low/High-allowable risk for an unverified binary.
+	if blocked, ok := e.identityGate(cmd); ok {
+		return blockingPlan(blocked), nil
+	}
+
+	// Rank 3: privilege escalation -> Critical (always denied; rank 2 indirect
+	// execution is wired in Phase 2). Detected through the resolved profile so
+	// sudo/su/doas cannot be missed via a symlink alias.
+	profile, profileFound := security.ResolveProfile(cmdPath)
+	if profileFound && profile.IsPrivilege() {
+		return criticalPlan(cmd, risktypes.RiskAssessment{
+			Level:          runnertypes.RiskLevelCritical,
+			BlockingReason: risktypes.ReasonPrivilegeEscalation,
+			ReasonCodes:    []risktypes.ReasonCode{risktypes.ReasonPrivilegeEscalation},
+			Reasons:        profile.GetRiskReasons(),
+		}), nil
+	}
+
+	// Ranks 4-8: order-independent maximum of the applicable dimensions.
+	assessment, err := e.evaluateDimensions(cmd, names, profile, profileFound)
 	if err != nil {
-		return runnertypes.RiskLevelUnknown, err
+		return risktypes.VerifiedCommandPlan{}, err
 	}
-	if handled {
-		return coreutilsRisk, nil
+	if assessment.Blocking {
+		return blockingPlan(assessment), nil
 	}
+	return allowedPlan(cmd, assessment), nil
+}
 
-	// Check for network operations.
-	// Forward the pre-verified content hash so ELF analysis of static binaries
-	// can skip a redundant file read when looking up syscall analysis results.
-	isNetwork, isHighRisk, err := e.networkAnalyzer.IsNetworkOperation(cmd.ExpandedCmd, cmd.ExpandedArgs, cmd.ExpandedCmdContentHash)
+// identityGate implements the Phase 1 identity gate: the binary must carry a
+// verified content hash and binary analysis must be enabled. It returns the
+// blocking assessment and true when the gate denies.
+func (e *StandardEvaluator) identityGate(cmd *runnertypes.RuntimeCommand) (risktypes.RiskAssessment, bool) {
+	if cmd.ExpandedCmdContentHash == "" {
+		return blockingAssessment(risktypes.ReasonUncertainUnverifiedIdentity, ""), true
+	}
+	if !e.networkAnalyzer.AnalysisEnabled() {
+		return blockingAssessment(risktypes.ReasonAnalysisDisabled, ""), true
+	}
+	return risktypes.RiskAssessment{}, false
+}
+
+// evaluateDimensions computes the effective risk as the maximum across the
+// applicable dimensions (ranks 4-8). It returns a Blocking assessment when a
+// dimension fails closed (coreutils file-info failure, uncertain binary
+// analysis), or an error for a genuinely unexpected internal failure.
+func (e *StandardEvaluator) evaluateDimensions(
+	cmd *runnertypes.RuntimeCommand,
+	names map[string]struct{},
+	profile security.CommandRiskProfile,
+	profileFound bool,
+) (risktypes.RiskAssessment, error) {
+	cmdPath := cmd.ExpandedCmd
+	args := cmd.ExpandedArgs
+
+	a := risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow}
+
+	// Rank 4: coreutils single-binary classification. When it applies it is
+	// authoritative and suppresses the binary-analysis dimension (including its
+	// uncertain/missing-record signal), but other dimensions still contribute.
+	coreutilsRisk, coreutilsHandled, err := security.CoreutilsCommandRisk(cmdPath, args)
 	if err != nil {
-		return runnertypes.RiskLevelUnknown, err
+		return blockingAssessment(risktypes.ReasonCoreutilsClassification, risktypes.ErrorClassCoreutilsFileInfo), nil
 	}
-	if isHighRisk {
-		return runnertypes.RiskLevelHigh, nil
-	}
-	if isNetwork {
-		return runnertypes.RiskLevelMedium, nil
+	if coreutilsHandled {
+		addDimension(&a, coreutilsRisk, risktypes.ReasonCoreutilsClassification)
 	}
 
-	// Check for system modification commands
-	if security.IsSystemModification(cmd.ExpandedCmd, cmd.ExpandedArgs) {
-		return runnertypes.RiskLevelMedium, nil
+	// Destructive operations and system modification (order-independent max).
+	if security.IsDestructiveFileOperation(cmdPath, args) {
+		addDimension(&a, runnertypes.RiskLevelHigh, risktypes.ReasonDestructiveFileOperation)
+	}
+	if sysmod := systemModificationRisk(names, cmdPath, args); sysmod > runnertypes.RiskLevelUnknown {
+		addDimension(&a, sysmod, risktypes.ReasonSystemModification)
 	}
 
-	// Default to low risk for safe commands
-	return runnertypes.RiskLevelLow, nil
+	// Rank 5: profile factors (privilege handled at rank 3; system modification
+	// handled above so the static SystemModRisk High is not imported unconditionally).
+	if profileFound {
+		applyProfileFactors(&a, profile, args)
+	}
+
+	// Rank 6: dangerous argument patterns (rm -rf, dd if=, chmod -R 777, ...).
+	if level, _ := security.CheckDangerousArgPatterns(cmdPath, args); level > runnertypes.RiskLevelUnknown {
+		addDimension(&a, level, risktypes.ReasonDangerousArgPattern)
+	}
+
+	// Rank 7: arbitrary-code-execution runners (shells/interpreters/build runners)
+	// -> High regardless of arguments.
+	if security.IsArbitraryCodeExecutionRunner(cmdPath) {
+		addDimension(&a, runnertypes.RiskLevelHigh, risktypes.ReasonArbitraryCodeExecution)
+	}
+
+	// Rank 8: binary-analysis classification (suppressed for coreutils).
+	if !coreutilsHandled && filepath.IsAbs(cmdPath) {
+		blocked, err := e.applyBinaryAnalysis(&a, cmd)
+		if err != nil {
+			return risktypes.RiskAssessment{}, err
+		}
+		if blocked != nil {
+			return *blocked, nil
+		}
+	}
+
+	return a, nil
+}
+
+// addDimension folds one dimension's level into the assessment (taking the max)
+// and records its reason code.
+func addDimension(a *risktypes.RiskAssessment, level runnertypes.RiskLevel, code risktypes.ReasonCode) {
+	if level > a.Level {
+		a.Level = level
+	}
+	a.ReasonCodes = append(a.ReasonCodes, code)
+}
+
+// applyProfileFactors folds the profile's non-privilege, non-system-modification
+// risk factors into the assessment and records the human-readable reasons.
+func applyProfileFactors(a *risktypes.RiskAssessment, profile security.CommandRiskProfile, args []string) {
+	if profile.DestructionRisk.Level > runnertypes.RiskLevelLow {
+		addDimension(a, profile.DestructionRisk.Level, risktypes.ReasonProfileDestruction)
+	}
+	if profile.DataExfilRisk.Level > runnertypes.RiskLevelLow {
+		addDimension(a, profile.DataExfilRisk.Level, risktypes.ReasonProfileDataExfil)
+	}
+	if profile.NetworkRisk.Level > runnertypes.RiskLevelLow && security.ProfileNetworkApplies(profile, args) {
+		addDimension(a, profile.NetworkRisk.Level, risktypes.ReasonProfileNetwork)
+	}
+	a.Reasons = profile.GetRiskReasons()
+	a.NetworkType = networkTypeString(profile.NetworkType)
+}
+
+// applyBinaryAnalysis folds the binary-analysis dimension into the assessment.
+// It returns a non-nil blocking assessment when the binary is uncertain
+// (fail-closed), or an error for a genuinely unexpected record-load failure. The
+// identity gate already guaranteed a verified hash and that analysis is enabled.
+func (e *StandardEvaluator) applyBinaryAnalysis(a *risktypes.RiskAssessment, cmd *runnertypes.RuntimeCommand) (*risktypes.RiskAssessment, error) {
+	result, err := e.networkAnalyzer.Classify(cmd.ExpandedCmd, cmd.ExpandedCmdContentHash)
+	if err != nil {
+		return nil, err
+	}
+	switch result.Class {
+	case risktypes.BinaryAnalysisUncertain:
+		blocked := blockingAssessment("", "")
+		blocked.ReasonCodes = result.ReasonCodes
+		if len(result.ReasonCodes) > 0 {
+			blocked.BlockingReason = result.ReasonCodes[0]
+		}
+		return &blocked, nil
+	case risktypes.BinaryAnalysisHighRisk:
+		a.Level = max(a.Level, runnertypes.RiskLevelHigh)
+		a.ReasonCodes = append(a.ReasonCodes, result.ReasonCodes...)
+	case risktypes.BinaryAnalysisNetwork:
+		a.Level = max(a.Level, runnertypes.RiskLevelMedium)
+		a.ReasonCodes = append(a.ReasonCodes, result.ReasonCodes...)
+	case risktypes.BinaryAnalysisClean:
+		// No contribution.
+	}
+	return nil, nil
+}
+
+// systemModificationRisk derives the system-modification risk level for the
+// command. systemctl is argument-conditional (read-only subcommands stay at a
+// Medium floor, change/unknown verbs are High); service is always High (it runs
+// an unverified init script); any other system-modification command (mount,
+// crontab, mkfs, package install/remove, ...) is Medium.
+func systemModificationRisk(names map[string]struct{}, cmdPath string, args []string) runnertypes.RiskLevel {
+	if _, ok := names["systemctl"]; ok {
+		return security.SystemctlSubcommandRisk(args)
+	}
+	if _, ok := names["service"]; ok {
+		return runnertypes.RiskLevelHigh
+	}
+	if security.IsSystemModification(cmdPath, args) {
+		return runnertypes.RiskLevelMedium
+	}
+	return runnertypes.RiskLevelUnknown
+}
+
+// networkTypeString renders a NetworkOperationType for the audit NetworkType field.
+func networkTypeString(t security.NetworkOperationType) string {
+	switch t {
+	case security.NetworkTypeAlways:
+		return "always"
+	case security.NetworkTypeConditional:
+		return "conditional"
+	default:
+		return "none"
+	}
+}
+
+// blockingAssessment builds a Blocking (deny) assessment with the given reason
+// and optional error class.
+func blockingAssessment(reason risktypes.ReasonCode, errClass risktypes.ErrorClass) risktypes.RiskAssessment {
+	a := risktypes.RiskAssessment{
+		Blocking:       true,
+		BlockingReason: reason,
+		ErrorClass:     errClass,
+	}
+	if reason != "" {
+		a.ReasonCodes = []risktypes.ReasonCode{reason}
+	}
+	return a
+}
+
+// blockingPlan wraps a blocking assessment in a plan with no verified identity.
+func blockingPlan(a risktypes.RiskAssessment) risktypes.VerifiedCommandPlan {
+	return risktypes.VerifiedCommandPlan{Assessment: a}
+}
+
+// criticalPlan wraps a Critical (privilege escalation) assessment. The identity
+// is verified (it passed the gate) but the command is denied by its level.
+func criticalPlan(cmd *runnertypes.RuntimeCommand, a risktypes.RiskAssessment) risktypes.VerifiedCommandPlan {
+	return risktypes.VerifiedCommandPlan{
+		Identity:   identityFor(cmd),
+		Assessment: a,
+	}
+}
+
+// allowedPlan builds an executable plan carrying the verified identity. fd
+// binding is wired in Phase 2; for now the identity records the resolved path
+// and content hash.
+func allowedPlan(cmd *runnertypes.RuntimeCommand, a risktypes.RiskAssessment) risktypes.VerifiedCommandPlan {
+	return risktypes.VerifiedCommandPlan{
+		ResolvedPath: cmd.ExpandedCmd,
+		ResolvedArgv: append([]string{cmd.ExpandedCmd}, cmd.ExpandedArgs...),
+		Identity:     identityFor(cmd),
+		Assessment:   a,
+	}
+}
+
+// identityFor builds the verified identity for a command that passed the gate.
+func identityFor(cmd *runnertypes.RuntimeCommand) *risktypes.VerifiedIdentity {
+	return &risktypes.VerifiedIdentity{
+		ResolvedPath: cmd.ExpandedCmd,
+		ContentHash:  cmd.ExpandedCmdContentHash,
+	}
 }

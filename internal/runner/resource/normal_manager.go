@@ -84,11 +84,13 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	}
 
 	// Unified Risk Evaluation Approach
-	// Step 1: Evaluate security risk (includes privilege escalation detection)
-	effectiveRisk, err := n.riskEvaluator.EvaluateRisk(cmd)
+	// Step 1: Evaluate security risk. The plan binds the evaluated identity to the
+	// executed identity and carries the effective risk and deny reasoning.
+	plan, err := n.riskEvaluator.EvaluateRisk(cmd)
 	if err != nil {
 		return "", nil, fmt.Errorf("risk evaluation failed: %w", err)
 	}
+	effectiveRisk := plan.Assessment.Level
 
 	// Step 2: Get maximum allowed risk level from configuration
 	maxAllowedRisk, err := cmd.GetRiskLevel()
@@ -96,15 +98,24 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 		return "", nil, fmt.Errorf("invalid risk_level configuration: %w", err)
 	}
 
-	// Step 3: Unified risk level comparison
-	if effectiveRisk > maxAllowedRisk {
-		n.logger.Error("Command execution rejected due to risk level violation",
+	// Step 3: Unified risk gate. A Blocking assessment (uncertain analysis,
+	// symlink failure, unverified identity, disabled analysis) denies regardless
+	// of the configured maximum; otherwise the effective risk must not exceed it.
+	if plan.Assessment.Blocking || effectiveRisk > maxAllowedRisk {
+		n.logger.Error(
+			"Command execution rejected due to risk level violation",
 			"command", cmd.Name(),
 			"cmd_binary", cmd.ExpandedCmd,
 			"effective_risk", effectiveRisk.String(),
 			"max_allowed_risk", maxAllowedRisk.String(),
+			"blocking", plan.Assessment.Blocking,
+			"blocking_reason", string(plan.Assessment.BlockingReason),
 			"command_path", group.Name,
 		)
+		if plan.Assessment.Blocking {
+			return "", nil, fmt.Errorf("%w: command %s denied (reason: %s)",
+				runnertypes.ErrCommandSecurityViolation, cmd.ExpandedCmd, plan.Assessment.BlockingReason)
+		}
 		return "", nil, fmt.Errorf("%w: command %s (effective risk: %s) exceeds maximum allowed risk level (%s)",
 			runnertypes.ErrCommandSecurityViolation, cmd.ExpandedCmd, effectiveRisk.String(), maxAllowedRisk.String())
 	}

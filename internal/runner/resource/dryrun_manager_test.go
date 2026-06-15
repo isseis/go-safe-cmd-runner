@@ -247,7 +247,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 				Cmd:  "chmod",
 				Args: []string{"777", "/tmp/test"},
 			},
-			expectedSecurityRisk: "medium",
+			expectedSecurityRisk: "high",
 			expectedDescription:  "Overly permissive file permissions",
 		},
 		{
@@ -257,7 +257,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 				Cmd:  "chmod", // Use the actual chmod command
 				Args: []string{"777", "/tmp/test"},
 			},
-			expectedSecurityRisk: "medium",
+			expectedSecurityRisk: "high",
 			expectedDescription:  "Overly permissive file permissions",
 		},
 	}

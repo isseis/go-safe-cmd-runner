@@ -33,7 +33,10 @@ func TestCoreutilsCommandRisk_SafeCommands(t *testing.T) {
 	}
 }
 
-func TestCoreutilsCommandRisk_MediumCommands(t *testing.T) {
+// TestCoreutils_UnknownSubcommandHigh verifies that a subcommand that is not in
+// the explicit safe set (and is not destructive) fails safe to High, rather than
+// passing at Medium. Only subcommands in safeCoreutilsCommands are Low.
+func TestCoreutils_UnknownSubcommandHigh(t *testing.T) {
 	tmp := t.TempDir()
 	SetCoreutilsDirForTest(t, tmp)
 
@@ -42,7 +45,7 @@ func TestCoreutilsCommandRisk_MediumCommands(t *testing.T) {
 		risk, handled, err := CoreutilsCommandRisk(path, nil)
 		assert.NoError(t, err, cmd)
 		assert.True(t, handled, cmd)
-		assert.Equal(t, runnertypes.RiskLevelMedium, risk, cmd)
+		assert.Equal(t, runnertypes.RiskLevelHigh, risk, cmd)
 	}
 }
 
@@ -81,14 +84,16 @@ func TestCoreutilsCommandRisk_MulticallEntrypoint(t *testing.T) {
 			expected: runnertypes.RiskLevelLow,
 		},
 		{
+			// No identifiable subcommand: fail safe to High; an
+			// unparseable multicall could hide a destructive subcommand.
 			name:     "options only no subcommand",
 			args:     []string{"--help"},
-			expected: runnertypes.RiskLevelMedium,
+			expected: runnertypes.RiskLevelHigh,
 		},
 		{
 			name:     "empty args no subcommand",
 			args:     []string{},
-			expected: runnertypes.RiskLevelMedium,
+			expected: runnertypes.RiskLevelHigh,
 		},
 	}
 
@@ -154,17 +159,18 @@ func TestAnalyzeCommandSecurity_Coreutils(t *testing.T) {
 			expectedReason: coreutilsReason,
 		},
 		{
-			name:           "permission command is medium",
+			// Not in the safe set: fail safe to High via the coreutils step.
+			name:           "permission command is high",
 			cmd:            filepath.Join(tmp, "chmod"),
 			args:           []string{"+x", "file"},
-			expected:       runnertypes.RiskLevelMedium,
+			expected:       runnertypes.RiskLevelHigh,
 			expectedReason: coreutilsReason,
 		},
 		{
-			name:           "overwrite command is medium",
+			name:           "overwrite command is high",
 			cmd:            filepath.Join(tmp, "cp"),
 			args:           []string{"a", "b"},
-			expected:       runnertypes.RiskLevelMedium,
+			expected:       runnertypes.RiskLevelHigh,
 			expectedReason: coreutilsReason,
 		},
 		{

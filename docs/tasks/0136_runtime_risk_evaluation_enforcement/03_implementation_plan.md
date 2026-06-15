@@ -131,11 +131,11 @@
 
 **対象ファイル**: [network_analyzer.go](../../../internal/runner/base/security/network_analyzer.go), [network_analyzer_test.go](../../../internal/runner/base/security/network_analyzer_test.go)
 
-- [ ] `IsNetworkOperation` を `Classify(cmdPath string, contentHash string) (risktypes.BinaryAnalysisResult, error)` に置換。プロファイル `NetworkType` 照合・引数 URL/SSH 検出を **削除**（評価器へ移送）。
-- [ ] `analyzeBinarySignals` の 2値 bool 合流を 4区分へ分解: 危険シグナル（dlopen/exec/svc/mprotect）→ `BinaryAnalysisHighRisk`＋該当 reason code、ネットワークのみ → `BinaryAnalysisNetwork`、シグナルなし → `BinaryAnalysisClean`、レコード欠落/スキーマ不一致/ハッシュ不一致/非対応/想定外/`contentHash==""` → `BinaryAnalysisUncertain`＋該当 reason code。
-- [ ] `handleAnalysisOutput` の `NotSupportedBinary`/`StaticBinary` 分岐を見直し: 解析データを入手できないケースは `Uncertain`（fail-open で Clean に落とさない。AC-45）。解析成功・危険なしのみ `Clean`。
-- [ ] 真の I/O 障害（分類不能なレコード読込エラー）は `error` 返却を維持（§4(3)）。
-- [ ] `network_analyzer_test.go` を `Classify` の 4区分・reason code 網羅へ更新。
+- [x] `IsNetworkOperation` を `Classify(cmdPath string, contentHash string) (risktypes.BinaryAnalysisResult, error)` に置換。プロファイル `NetworkType` 照合・引数 URL/SSH 検出を **削除**（評価器へ移送）。
+- [x] `analyzeBinarySignals` の 2値 bool 合流を 4区分へ分解: 危険シグナル（dlopen/exec/svc/mprotect）→ `BinaryAnalysisHighRisk`＋該当 reason code、ネットワークのみ → `BinaryAnalysisNetwork`、シグナルなし → `BinaryAnalysisClean`、レコード欠落/スキーマ不一致/ハッシュ不一致/非対応/想定外/`contentHash==""` → `BinaryAnalysisUncertain`＋該当 reason code。
+- [x] `handleAnalysisOutput` の `NotSupportedBinary`/`StaticBinary` 分岐を見直し: 解析データを入手できないケースは `Uncertain`（fail-open で Clean に落とさない。AC-45）。解析成功・危険なしのみ `Clean`。
+- [x] 真の I/O 障害（分類不能なレコード読込エラー）は `error` 返却を維持（§4(3)）。
+- [x] `network_analyzer_test.go` を `Classify` の 4区分・reason code 網羅へ更新。
 
 **完了条件**: `go test -tags test -v ./internal/runner/base/security/ -run 'TestClassify'` が通り、**`TestClassify_AllResultClasses` と `TestClassify_DistinctReasonCodes` が実際に実行された**ことを `-v` 出力で確認する（`go test -run` はマッチ 0 件でも成功するため、テスト名にマッチするパターンを用い、実行ログで両テストの `--- PASS` を確認する）。4区分すべてと各 reason code が網羅される。
 
@@ -143,11 +143,11 @@
 
 **対象ファイル**: [command_analysis.go](../../../internal/runner/base/security/command_analysis.go), [command_analysis_test.go](../../../internal/runner/base/security/command_analysis_test.go), [command_analysis_dangerous_test.go](../../../internal/runner/base/security/command_analysis_dangerous_test.go)
 
-- [ ] `IsDestructiveFileOperation` / `IsSystemModification` を basename・symlink 解決対応へ（`extractAllCommandNames` を用い、絶対パス `/usr/bin/rm` でも検出。AC-06/07/08）。部分一致誤検出を防ぐ（`lsrm`/`systemctl-helper` 非該当。AC-09）。
-- [ ] `find` の実行アクションを `-exec`/`-execdir`/`-ok`/`-okdir` 全対応に（AC-62）。対象コマンドにも basename 正規化・symlink 解決を適用。
-- [ ] `service`→High（プロファイルと分類関数の双方で一貫。AC-22/75）。
-- [ ] 危険引数パターン（`highRiskPatterns`/`mediumRiskPatterns`: `rm -rf`/`dd if=`/`chmod 777`/`chown root` 等）を実行時評価へ統合できるよう、評価器から呼べる純関数として公開（`checkCommandPatterns` の利用境界を整理。AC-47）。
-- [ ] symlink 解決失敗（深度超過・リンク先取得失敗・循環・解決不能）を、High ではなく **Blocking deny シグナル**として呼び出し元（評価器）へ伝える経路を用意（`ErrorClassSymlinkResolution`。AC-54/55）。現状 `AnalyzeCommandSecurity` Step 2 の深度超過 High 扱いは dry-run 表示用途のため、評価器パスでは Blocking に倒す（§4(1)）。
+- [x] `IsDestructiveFileOperation` / `IsSystemModification` を basename・symlink 解決対応へ（`extractAllCommandNames` を用い、絶対パス `/usr/bin/rm` でも検出。AC-06/07/08）。部分一致誤検出を防ぐ（`lsrm`/`systemctl-helper` 非該当。AC-09）。
+- [x] `find` の実行アクションを `-exec`/`-execdir`/`-ok`/`-okdir` 全対応に（AC-62）。対象コマンドにも basename 正規化・symlink 解決を適用。
+- [x] `service`→High（プロファイルと分類関数の双方で一貫。AC-22/75）。
+- [x] 危険引数パターン（`highRiskPatterns`/`mediumRiskPatterns`: `rm -rf`/`dd if=`/`chmod 777`/`chown root` 等）を実行時評価へ統合できるよう、評価器から呼べる純関数として公開（`checkCommandPatterns` の利用境界を整理。AC-47）。
+- [x] symlink 解決失敗（深度超過・リンク先取得失敗・循環・解決不能）を、High ではなく **Blocking deny シグナル**として呼び出し元（評価器）へ伝える経路を用意（`ErrorClassSymlinkResolution`。AC-54/55）。現状 `AnalyzeCommandSecurity` Step 2 の深度超過 High 扱いは dry-run 表示用途のため、評価器パスでは Blocking に倒す（§4(1)）。
 
 **完了条件**: `go test -tags test ./internal/runner/base/security/ -run 'CommandAnalysis|Destructive|SystemMod'` が通る。絶対パス入力ケースを含む。
 
@@ -155,9 +155,9 @@
 
 **対象ファイル**: [coreutils.go](../../../internal/runner/base/security/coreutils.go), [coreutils_test.go](../../../internal/runner/base/security/coreutils_test.go)
 
-- [ ] `CoreutilsCommandRisk` の未知/判別不能サブコマンド既定を Medium → **High**（AC-68）。`safeCoreutilsCommands` に明示された安全サブコマンドのみ Low。
-- [ ] `findFirstSubcommand`（git オプション表流用）を coreutils 文脈で正しく動くサブコマンド抽出へ。判別不能時は High（安全側）。
-- [ ] `coreutils_test.go` に未知サブコマンド High・`coreutils <未解析>` が Medium 通過しないケースを追加。
+- [x] `CoreutilsCommandRisk` の未知/判別不能サブコマンド既定を Medium → **High**（AC-68）。`safeCoreutilsCommands` に明示された安全サブコマンドのみ Low。
+- [x] `findFirstSubcommand`（git オプション表流用）を coreutils 文脈で正しく動くサブコマンド抽出へ。判別不能時は High（安全側）。
+- [x] `coreutils_test.go` に未知サブコマンド High・`coreutils <未解析>` が Medium 通過しないケースを追加。
 
 **完了条件**: `go test -tags test ./internal/runner/base/security/ -run Coreutils` が通る。
 
@@ -165,9 +165,9 @@
 
 **対象ファイル**: [evaluator.go](../../../internal/runner/base/risk/evaluator.go) もしくは `internal/runner/base/security/arbitrary_code.go`（新規・小規模）, 対応テスト
 
-- [ ] 任意コード実行コマンドの確定リストを定義（`02_architecture.md` §6.1 順位 7）: シェル（`bash`/`sh`/`dash`/`zsh` 等）、インタプリタ（`python`/`node`/`ruby`/`perl`/`php`/`lua`/`java`/`dotnet`/`pwsh` 等）、ビルド/タスクランナー（`make`/`cmake`/`ninja`/`gradle`/`mvn`/`bazel`/`rake`/`just`/`task`）。リストは英語識別子の `map[string]struct{}`。
-- [ ] basename・symlink 解決で照合し、該当なら引数によらず High を最大値へ合流＋`ReasonArbitraryCodeExecution`（AC-73/74）。`--version`/`--help` も既定 High（注 1）。
-- [ ] パッケージスクリプトランナー（`npm run`/`npx`/`yarn <script>`/`pnpm run`）の High は間接実行と重なるため、引数形態判定を含めて Phase 2 の `indirect_execution.go` 側に置く（AC-85）。本 Step は引数非依存の一律 High 群を担当。
+- [x] 任意コード実行コマンドの確定リストを定義（`02_architecture.md` §6.1 順位 7）: シェル（`bash`/`sh`/`dash`/`zsh` 等）、インタプリタ（`python`/`node`/`ruby`/`perl`/`php`/`lua`/`java`/`dotnet`/`pwsh` 等）、ビルド/タスクランナー（`make`/`cmake`/`ninja`/`gradle`/`mvn`/`bazel`/`rake`/`just`/`task`）。リストは英語識別子の `map[string]struct{}`。
+- [x] basename・symlink 解決で照合し、該当なら引数によらず High を最大値へ合流＋`ReasonArbitraryCodeExecution`（AC-73/74）。`--version`/`--help` も既定 High（注 1）。
+- [x] パッケージスクリプトランナー（`npm run`/`npx`/`yarn <script>`/`pnpm run`）の High は間接実行と重なるため、引数形態判定を含めて Phase 2 の `indirect_execution.go` 側に置く（AC-85）。本 Step は引数非依存の一律 High 群を担当。
 
 **完了条件**: `go test -tags test ./internal/runner/base/risk/ -run ArbitraryCode` が通る。
 
@@ -175,20 +175,20 @@
 
 **対象ファイル**: [evaluator.go](../../../internal/runner/base/risk/evaluator.go), [evaluator_test.go](../../../internal/runner/base/risk/evaluator_test.go), [coreutils_consistency_test.go](../../../internal/runner/base/risk/coreutils_consistency_test.go)
 
-- [ ] `Evaluator` インターフェースと `StandardEvaluator.EvaluateRisk` の戻り値を `(risktypes.VerifiedCommandPlan, error)` へ変更。
-- [ ] `02_architecture.md` §6.1 のリスク次元優先順位を実装:
-  - [ ] 順位 1: identity ゲート（content_hash 有・検証/解析有効・identity 束縛可）。不成立で `Blocking=true`＋`ReasonUncertainUnverifiedIdentity`/`ReasonAnalysisDisabled`/`ReasonIdentityUnbound`（AC-51/65）。**このゲートは順位 4〜8 の全次元算出より前に短絡する**ため、未検証ハッシュのコマンドが coreutils 判定・破壊判定・プロファイル・F-015 の **いずれの経路でも** Low/High-allowable に確定する前に Blocking deny へ帰着する（F-014/AC-65 の全経路一貫適用）。実装上は「ハッシュ未確定なら順位 4 以降に進ませない」単一ゲートで全経路を覆う（経路ごとに個別チェックを散らさない＝取りこぼし防止）。Phase 1 では fd 束縛可否は「検証済みハッシュ有 ＋ 解析有効」までを判定し、fd 取得は Phase 2 で接続（Phase 1 完了時は path ベース実行のままだが deny ゲートは機能する）。
-  - [ ] 順位 2: 間接実行の拒否/解決（抽出不能・identity 束縛不能・禁止 env 等 → `Blocking`＋reason code）。**実装は Phase 2（Step 2-1）で行う**ため Phase 1 のこの Step では未実装（順位だけ 02 §6.1 と揃えて明示。Phase 1 完了時点では順位 1・3〜8 が機能し、順位 2 は Phase 2 で接続）。
-  - [ ] 順位 3: 特権昇格 → `Level=Critical`＋`ReasonPrivilegeEscalation`（§3.1 の Critical 一貫扱い）。
-  - [ ] 順位 4: coreutils 分類（バイナリ解析次元を除外して算出。識別ゲートの後段）。
-  - [ ] 順位 5: プロファイル要因（引数評価後の SystemModRisk を含む最大値。`BaseRiskLevel` を SystemModRisk 差し替え後に計算）。**昇格させた要因に応じた専用 reason code を付す**（`PrivilegeRisk`→`ReasonProfilePrivilege` / `DestructionRisk`→`ReasonProfileDestruction` / `NetworkRisk`→`ReasonProfileNetwork` / `DataExfilRisk`→`ReasonProfileDataExfil` / `SystemModRisk`→`ReasonProfileSystemMod`）。引数/パターン由来のランタイム code（例 `ReasonDestructiveFileOperation`）を流用しない（プロファイル起因か引数起因かを監査で区別。AC-12/69）。
-  - [ ] 順位 6: 危険引数パターン（Step 1-5 の公開関数）。
-  - [ ] 順位 7: F-015 任意コード実行ランナー（Step 1-7、前出の分類関数を利用）。
-  - [ ] 順位 8: バイナリ解析分類（`Classify` 結果を Clean→Low/Network→Medium/HighRisk→High/Uncertain→Blocking に写像し最大値へ合流。reason code を `RiskAssessment.ReasonCodes` に転記）。
-- [ ] 早期 return を撤廃し、順位 4〜8 を **全次元最大値**（順序非依存、F-001/AC-63）で算出。
-- [ ] `RiskAssessment` に `Level`/`Blocking`/`BlockingReason`/`ErrorClass`/`ReasonCodes`/`Reasons`/`NetworkType` を設定。`Blocking=true` または `Level=Critical` の拒否では必ず `BlockingReason` を設定（§3.1）。
-- [ ] F-011 サブコマンド条件付き SystemModRisk 導出（`02_architecture.md` §3.6.1 の確定リスト: 変更系→High、読み取り専用→Medium 下限、未知→High、`service` は全アクション High）。
-- [ ] **systemctl argv 解析規則の確定（§3.6.1 M-9 が 03 へ委譲）**: 現行 `findFirstSubcommand`（git オプション表流用）を systemctl 用パーサ `firstSystemctlSubcommand(args)` に置換する。規則:
+- [x] `Evaluator` インターフェースと `StandardEvaluator.EvaluateRisk` の戻り値を `(risktypes.VerifiedCommandPlan, error)` へ変更。
+- [x] `02_architecture.md` §6.1 のリスク次元優先順位を実装:
+  - [x] 順位 1: identity ゲート（content_hash 有・検証/解析有効・identity 束縛可）。不成立で `Blocking=true`＋`ReasonUncertainUnverifiedIdentity`/`ReasonAnalysisDisabled`/`ReasonIdentityUnbound`（AC-51/65）。**このゲートは順位 4〜8 の全次元算出より前に短絡する**ため、未検証ハッシュのコマンドが coreutils 判定・破壊判定・プロファイル・F-015 の **いずれの経路でも** Low/High-allowable に確定する前に Blocking deny へ帰着する（F-014/AC-65 の全経路一貫適用）。実装上は「ハッシュ未確定なら順位 4 以降に進ませない」単一ゲートで全経路を覆う（経路ごとに個別チェックを散らさない＝取りこぼし防止）。Phase 1 では fd 束縛可否は「検証済みハッシュ有 ＋ 解析有効」までを判定し、fd 取得は Phase 2 で接続（Phase 1 完了時は path ベース実行のままだが deny ゲートは機能する）。
+  - [x] 順位 2: 間接実行の拒否/解決（抽出不能・identity 束縛不能・禁止 env 等 → `Blocking`＋reason code）。**実装は Phase 2（Step 2-1）で行う**ため Phase 1 のこの Step では未実装（順位だけ 02 §6.1 と揃えて明示。Phase 1 完了時点では順位 1・3〜8 が機能し、順位 2 は Phase 2 で接続）。
+  - [x] 順位 3: 特権昇格 → `Level=Critical`＋`ReasonPrivilegeEscalation`（§3.1 の Critical 一貫扱い）。
+  - [x] 順位 4: coreutils 分類（バイナリ解析次元を除外して算出。識別ゲートの後段）。
+  - [x] 順位 5: プロファイル要因（引数評価後の SystemModRisk を含む最大値。`BaseRiskLevel` を SystemModRisk 差し替え後に計算）。**昇格させた要因に応じた専用 reason code を付す**（`PrivilegeRisk`→`ReasonProfilePrivilege` / `DestructionRisk`→`ReasonProfileDestruction` / `NetworkRisk`→`ReasonProfileNetwork` / `DataExfilRisk`→`ReasonProfileDataExfil` / `SystemModRisk`→`ReasonProfileSystemMod`）。引数/パターン由来のランタイム code（例 `ReasonDestructiveFileOperation`）を流用しない（プロファイル起因か引数起因かを監査で区別。AC-12/69）。
+  - [x] 順位 6: 危険引数パターン（Step 1-5 の公開関数）。
+  - [x] 順位 7: F-015 任意コード実行ランナー（Step 1-7、前出の分類関数を利用）。
+  - [x] 順位 8: バイナリ解析分類（`Classify` 結果を Clean→Low/Network→Medium/HighRisk→High/Uncertain→Blocking に写像し最大値へ合流。reason code を `RiskAssessment.ReasonCodes` に転記）。
+- [x] 早期 return を撤廃し、順位 4〜8 を **全次元最大値**（順序非依存、F-001/AC-63）で算出。
+- [x] `RiskAssessment` に `Level`/`Blocking`/`BlockingReason`/`ErrorClass`/`ReasonCodes`/`Reasons`/`NetworkType` を設定。`Blocking=true` または `Level=Critical` の拒否では必ず `BlockingReason` を設定（§3.1）。
+- [x] F-011 サブコマンド条件付き SystemModRisk 導出（`02_architecture.md` §3.6.1 の確定リスト: 変更系→High、読み取り専用→Medium 下限、未知→High、`service` は全アクション High）。
+- [x] **systemctl argv 解析規則の確定（§3.6.1 M-9 が 03 へ委譲）**: 現行 `findFirstSubcommand`（git オプション表流用）を systemctl 用パーサ `firstSystemctlSubcommand(args)` に置換する。規則:
   - 値を取るオプション（次トークンを consume）: `-H`/`--host`, `-M`/`--machine`, `-t`/`--type`, `--state`, `-p`/`--property`, `-P`, `--what`, `--job-mode`, `--root`, `--image`, `--drop-in`, `--when`, `--kill-whom`, `-s`/`--signal`, `--timestamp`, `--output`/`-o`, `-n`/`--lines`。これらの直後トークンはサブコマンドとして扱わない。
   - 結合形 `--opt=value` は 1 トークンで完結（次トークンを consume しない）。
   - 真偽オプション（値なし、例 `--now`/`--no-pager`/`--quiet`/`-q`/`--user`/`--system`）は単純スキップ。
@@ -199,8 +199,8 @@
   - オプション終端 `--`: 以降の最初のトークンを無条件にサブコマンドとして採用。
   - **既知オプションのスキップ後、最初の非オプショントークンを既知 verb 集合とマッチ**: systemctl の既知サブコマンド（`status`/`show`/`start`/`stop`/`restart`/`reload`/`enable`/`disable`/`mask`/`is-active`/… 変更系・読み取り系の確定集合は §3.6.1）に一致すればそれを採用。一意に判別できない（空・解析破綻・既知 verb 不一致）場合は High（安全側、§3.6.1）。
   - 既知 verb 集合・値/真偽オプション表は実装で保守する。網羅漏れ・未知オプション・未知 verb のいずれも **High（fail-safe、偽陰性なし）** に倒れる設計を維持する。
-- [ ] `evaluator_test.go` を `VerifiedCommandPlan` 返却・最大値・identity ゲートへ全面更新。`02_architecture.md` §5.3 の移行影響（`claude` Medium→High 等）に合わせ期待値を更新。
-- [ ] `coreutils_consistency_test.go` を新シグネチャへ追従（実行時/ dry-run 一致は Phase 3 で完結）。
+- [x] `evaluator_test.go` を `VerifiedCommandPlan` 返却・最大値・identity ゲートへ全面更新。`02_architecture.md` §5.3 の移行影響（`claude` Medium→High 等）に合わせ期待値を更新。
+- [x] `coreutils_consistency_test.go` を新シグネチャへ追従（実行時/ dry-run 一致は Phase 3 で完結）。
 
 **完了条件**: `go test -tags test ./internal/runner/base/risk/` が通る。AC-01/03/04/05/22/63 のテストが緑。
 
@@ -208,9 +208,9 @@
 
 **対象ファイル**: [normal_manager.go](../../../internal/runner/resource/normal_manager.go), 対応テスト
 
-- [ ] `EvaluateRisk` の戻り値 `VerifiedCommandPlan` を受け取り、`plan.Assessment.Level`／`plan.Assessment.Blocking` で比較ゲート（`effectiveRisk > maxAllowed || Blocking`）。旧リスク比較は本経路に置換する（後方互換は保持しない。§2 Phase 1 注）。
-- [ ] 拒否時に `runnertypes.ErrCommandSecurityViolation` を返す（既存）。Blocking/Critical 由来も同経路（§4）。
-- [ ] 監査ロガー注入の受け皿を追加（構造化 `LogRiskProfile` の実配線は Phase 3。Phase 1 では deny が既存 `n.logger.Error` で記録されることのみ確認）。Phase 1 時点は構造化監査（reason code・`max_allowed_risk` 等、AC-56/70）と fd 束縛 exec（AC-64/76）が未了のため、**完全な AC 充足の主張・外部リリースは Phase 3 まで行わない**（中間 main は現行より退行しない＝§2 Phase 1 注の単調改善）。
+- [x] `EvaluateRisk` の戻り値 `VerifiedCommandPlan` を受け取り、`plan.Assessment.Level`／`plan.Assessment.Blocking` で比較ゲート（`effectiveRisk > maxAllowed || Blocking`）。旧リスク比較は本経路に置換する（後方互換は保持しない。§2 Phase 1 注）。
+- [x] 拒否時に `runnertypes.ErrCommandSecurityViolation` を返す（既存）。Blocking/Critical 由来も同経路（§4）。
+- [x] 監査ロガー注入の受け皿を追加（構造化 `LogRiskProfile` の実配線は Phase 3。Phase 1 では deny が既存 `n.logger.Error` で記録されることのみ確認）。Phase 1 時点は構造化監査（reason code・`max_allowed_risk` 等、AC-56/70）と fd 束縛 exec（AC-64/76）が未了のため、**完全な AC 充足の主張・外部リリースは Phase 3 まで行わない**（中間 main は現行より退行しない＝§2 Phase 1 注の単調改善）。
 
 **完了条件**: `go test -tags test ./internal/runner/resource/ -run Normal` が通る。Phase 1 完了ゲート: `make fmt && make test && make lint`。
 

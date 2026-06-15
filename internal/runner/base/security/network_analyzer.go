@@ -11,13 +11,14 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 )
 
-// errRelativeCmdPath is returned when analyzeBinarySignals receives a non-absolute path.
-var errRelativeCmdPath = errors.New("analyzeBinarySignals: cmdPath must be an absolute path")
+// errRelativeCmdPath is returned when Classify receives a non-absolute path.
+var errRelativeCmdPath = errors.New("Classify: cmdPath must be an absolute path")
 
 type syscallTableInterface interface {
 	IsNetworkSyscall(number int) bool
@@ -57,166 +58,112 @@ func NewNetworkAnalyzer(goos string, deps AnalysisDeps) *NetworkAnalyzer {
 	}
 }
 
-// IsNetworkOperation checks if the command performs network operations.
-// This function considers symbolic links to detect network commands properly.
-// Returns (isNetwork, isHighRisk, error). isHighRisk is true when any of the
-// following conditions hold: symlink depth exceeded; dynamic load symbols
-// (dlopen/dlsym) detected in the binary; svc #0x80 syscall detected; or
-// exec syscall detected in the binary.
-//
-// contentHash is a pre-computed hash in "algo:hex" format (e.g. "sha256:abc123...").
-// Used to verify that the loaded analysis record matches the binary on disk.
-// When empty the binary's identity is unverified; binary analysis treats this
-// as high risk and returns (true, true) — fail-closed.
-//
-// Detection priority:
-// 1. commandProfileDefinitions (hardcoded list) - takes precedence
-// 2. Record-backed binary analysis for unknown commands (requires RecordStore and contentHash)
-// 3. Argument-based detection (URLs, SSH-style addresses)
-func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string, contentHash string) (bool, bool, error) {
-	// Extract all possible command names including symlink targets
-	commandNames, exceededDepth := extractAllCommandNames(cmdName)
-
-	// If symlink depth exceeded, this is a high risk security concern
-	if exceededDepth {
-		return false, true, nil
-	}
-
-	// Check command profiles for network type using unified profiles
-	var conditionalProfile *CommandRiskProfile
-	foundInProfiles := false
-	for name := range commandNames {
-		if profile, exists := commandRiskProfiles[name]; exists {
-			foundInProfiles = true
-			switch profile.NetworkType {
-			case NetworkTypeAlways:
-				return true, false, nil
-			case NetworkTypeConditional:
-				conditionalProfile = &profile
-			}
-		}
-	}
-
-	if conditionalProfile != nil {
-		// Check for network subcommands (e.g., git fetch, git push)
-		// Skip command-line options to find the actual subcommand
-		if len(conditionalProfile.NetworkSubcommands) > 0 {
-			subcommand := findFirstSubcommand(args)
-			if subcommand != "" && slices.Contains(conditionalProfile.NetworkSubcommands, subcommand) {
-				return true, false, nil
-			}
-		}
-
-		// Check for network-related arguments
-		if hasNetworkArguments(args) {
-			return true, false, nil
-		}
-		return false, false, nil
-	}
-
-	// If not found in profiles, try binary analysis for unknown commands.
-	// Binary analysis requires an absolute path (should be resolved by caller via PathResolver).
-	// If cmdName is not absolute, skip binary analysis silently.
-	if !foundInProfiles && filepath.IsAbs(cmdName) {
-		isNet, hasDynLoad, err := a.analyzeBinarySignals(cmdName, contentHash)
-		if err != nil {
-			return false, false, err
-		}
-		if isNet || hasDynLoad {
-			return isNet, hasDynLoad, nil
-		}
-	}
-
-	// Check for network-related arguments in any command
-	if hasNetworkArguments(args) {
-		return true, false, nil
-	}
-
-	return false, false, nil
+// AnalysisEnabled reports whether record-backed binary analysis is configured.
+// When false, binary identity cannot be confirmed and the evaluator's identity
+// gate denies execution (analysis-disabled is fail-closed, not fail-open).
+func (a *NetworkAnalyzer) AnalysisEnabled() bool {
+	return a.deps.RecordStore != nil
 }
 
-// hasNetworkArguments checks if the arguments contain network indicators.
-func hasNetworkArguments(args []string) bool {
-	allArgs := strings.Join(args, " ")
-	return strings.Contains(allArgs, "://") || // URLs
-		containsSSHStyleAddress(args) // SSH-style user@host:path addresses
-}
-
-// analyzeBinarySignals analyzes the binary for network usage and dynamic loading
-// by loading its precomputed analysis Record.
-// Returns (isNetwork, hasDynLoad, nil) where:
-//   - isNetwork: true if network symbols or network syscalls were detected
-//   - hasDynLoad: true if dynamic load symbols (dlopen/dlsym/dlvsym) were detected,
-//     or exec syscalls, or if the record schema is mismatched (fail-closed)
+// Classify performs binary-signal analysis only and returns the classification
+// together with the machine-readable reason codes for the signals found. Profile
+// matching and argument-based network detection are no longer part of this
+// function; the evaluator owns those dimensions.
 //
-// Returns (false, false, nil) when RecordStore is nil (no analysis capability configured).
-// Returns (true, true, nil) when contentHash is empty: the binary's identity is
-// unverified so the result is unknown; treated as high risk (fail-closed).
-// Returns (true, true, nil) on schema mismatch (fail-closed).
-// Returns (false, false, error) on unexpected load failures.
+// The result is one of four classes (risktypes.BinaryAnalysisResult.Class):
+//   - Clean: analysis succeeded and found no dangerous or network signal -> Low
+//   - Network: only network signals were found -> Medium
+//   - HighRisk: dynamic-load/exec/svc/mprotect signals were found -> High
+//   - Uncertain: the binary's signals could not be obtained (missing record,
+//     schema mismatch, hash mismatch, unverified identity, analysis disabled) ->
+//     the evaluator blocks execution (fail-closed). Data-unavailable cases are
+//     never collapsed to Clean.
 //
-// IMPORTANT: cmdPath must be an absolute path.
-// contentHash is a pre-computed hash in "algo:hex" format.
-func (a *NetworkAnalyzer) analyzeBinarySignals(cmdPath string, contentHash string) (isNetwork, hasDynLoad bool, err error) {
+// cmdPath must be an absolute path; contentHash is a pre-computed "algo:hex" hash
+// used to confirm the loaded record matches the binary on disk. A genuine,
+// unclassifiable record-load I/O failure is returned as a non-nil error so the
+// caller aborts with an error rather than a deny.
+func (a *NetworkAnalyzer) Classify(cmdPath string, contentHash string) (risktypes.BinaryAnalysisResult, error) {
 	if !filepath.IsAbs(cmdPath) {
-		return false, false, fmt.Errorf("%w: %q", errRelativeCmdPath, cmdPath)
+		return risktypes.BinaryAnalysisResult{}, fmt.Errorf("%w: %q", errRelativeCmdPath, cmdPath)
 	}
 
 	if a.deps.RecordStore == nil {
-		return false, false, nil
+		// Analysis disabled. The evaluator's identity gate normally blocks this
+		// earlier; classify defensively as uncertain so a missing gate never
+		// falls through to Clean.
+		return uncertainResult(risktypes.ReasonAnalysisDisabled), nil
 	}
 
 	if contentHash == "" {
-		slog.Warn("Binary has no pre-verified hash; treating as high risk", "path", cmdPath)
-		return true, true, nil
+		slog.Warn("Binary has no pre-verified hash; treating as uncertain", "path", cmdPath)
+		return uncertainResult(risktypes.ReasonUncertainUnverifiedIdentity), nil
 	}
 
 	record, loadErr := a.deps.RecordStore.LoadRecord(cmdPath)
 	if loadErr != nil {
 		if errors.Is(loadErr, fileanalysis.ErrRecordNotFound) {
 			// contentHash is non-empty here (checked above), meaning the binary
-			// was hash-verified but has no analysis record. Treat as high risk
+			// was hash-verified but has no analysis record. Treat as uncertain
 			// rather than fail-open: a missing analysis record cannot be
 			// distinguished from a deleted or never-generated one.
-			slog.Warn("Analysis record not found for hash-verified binary; treating as high risk",
+			slog.Warn("Analysis record not found for hash-verified binary; treating as uncertain",
 				"path", cmdPath)
-			return true, true, nil
+			return uncertainResult(risktypes.ReasonUncertainMissingRecord), nil
 		}
 		if schemaMismatch, ok := errors.AsType[*fileanalysis.SchemaVersionMismatchError](loadErr); ok {
-			slog.Warn("Record has outdated schema; treating as high risk",
+			slog.Warn("Record has outdated schema; treating as uncertain",
 				"path", cmdPath,
 				"expected_schema", schemaMismatch.Expected,
 				"actual_schema", schemaMismatch.Actual)
-			return true, true, nil
+			return uncertainResult(risktypes.ReasonUncertainSchemaMismatch), nil
 		}
-		return false, false, fmt.Errorf("failed to load record for %q: %w", cmdPath, loadErr)
+		return risktypes.BinaryAnalysisResult{}, fmt.Errorf("failed to load record for %q: %w", cmdPath, loadErr)
 	}
 
 	if record.ContentHash != contentHash {
-		slog.Warn("Record content hash mismatch; treating as high risk",
+		slog.Warn("Record content hash mismatch; treating as uncertain",
 			"path", cmdPath,
 			"expected", contentHash,
 			"actual", record.ContentHash)
-		return true, true, nil
+		return uncertainResult(risktypes.ReasonUncertainHashMismatch), nil
 	}
 
-	isNetwork, hasDynLoad = a.analyzeRecordSignals(record, cmdPath)
-
-	return isNetwork, hasDynLoad, nil
+	return a.classifyRecordSignals(record, cmdPath), nil
 }
 
-// analyzeRecordSignals extracts network and high-risk signals from a single record.
-func (a *NetworkAnalyzer) analyzeRecordSignals(record *fileanalysis.Record, path string) (isNetwork, hasDynLoad bool) {
+// uncertainResult builds an Uncertain classification carrying the given reason.
+func uncertainResult(code risktypes.ReasonCode) risktypes.BinaryAnalysisResult {
+	return risktypes.BinaryAnalysisResult{
+		Class:       risktypes.BinaryAnalysisUncertain,
+		ReasonCodes: []risktypes.ReasonCode{code},
+	}
+}
+
+// classifyRecordSignals maps the signals in a verified record to one of the
+// Clean/Network/HighRisk classes (Uncertain is decided before this point) and
+// collects a distinct reason code per signal found.
+func (a *NetworkAnalyzer) classifyRecordSignals(record *fileanalysis.Record, path string) risktypes.BinaryAnalysisResult {
+	var codes []risktypes.ReasonCode
+	isNetwork := false
+	isHighRisk := false
+
 	if record.SymbolAnalysis != nil {
 		output := buildAnalysisOutputFromSymbolData(record.SymbolAnalysis)
 		symIsNet, symHigh := handleAnalysisOutput(output, path)
-		isNetwork = isNetwork || symIsNet
-		hasDynLoad = hasDynLoad || symHigh
+		if symHigh {
+			isHighRisk = true
+			codes = append(codes, risktypes.ReasonBinaryAnalysisDynamicLoad)
+		}
+		if symIsNet {
+			isNetwork = true
+		}
 	}
 
 	if syscallAnalysisHasSVCSignal(record.SyscallAnalysis) {
 		slog.Warn("SyscallAnalysis indicates svc #0x80; treating as high risk", "path", path)
-		return true, true
+		isHighRisk = true
+		codes = append(codes, risktypes.ReasonBinaryAnalysisSVC)
 	}
 	if syscallAnalysisHasNetworkSignal(record.SyscallAnalysis, a.goos) {
 		slog.Info("SyscallAnalysis indicates network syscall", "path", path)
@@ -224,14 +171,38 @@ func (a *NetworkAnalyzer) analyzeRecordSignals(record *fileanalysis.Record, path
 	}
 	if syscallAnalysisHasExecSignal(record.SyscallAnalysis, a.goos) {
 		slog.Warn("SyscallAnalysis indicates exec syscall; treating as high risk", "path", path)
-		hasDynLoad = true
+		isHighRisk = true
+		codes = append(codes, risktypes.ReasonBinaryAnalysisExec)
 	}
 	if syscallAnalysisHasMprotectExecSignal(record.SyscallAnalysis) {
 		slog.Warn("SyscallAnalysis indicates mprotect-family PROT_EXEC; treating as high risk", "path", path)
-		hasDynLoad = true
+		isHighRisk = true
+		codes = append(codes, risktypes.ReasonBinaryAnalysisMprotectExec)
 	}
 
-	return isNetwork, hasDynLoad
+	switch {
+	case isHighRisk:
+		// Retain the network signal alongside the high-risk codes so audit and
+		// callers do not lose the fact that the binary also performs network I/O.
+		if isNetwork {
+			codes = append(codes, risktypes.ReasonBinaryAnalysisNetwork)
+		}
+		return risktypes.BinaryAnalysisResult{Class: risktypes.BinaryAnalysisHighRisk, ReasonCodes: codes}
+	case isNetwork:
+		return risktypes.BinaryAnalysisResult{
+			Class:       risktypes.BinaryAnalysisNetwork,
+			ReasonCodes: []risktypes.ReasonCode{risktypes.ReasonBinaryAnalysisNetwork},
+		}
+	default:
+		return risktypes.BinaryAnalysisResult{Class: risktypes.BinaryAnalysisClean}
+	}
+}
+
+// hasNetworkArguments checks if the arguments contain network indicators.
+func hasNetworkArguments(args []string) bool {
+	allArgs := strings.Join(args, " ")
+	return strings.Contains(allArgs, "://") || // URLs
+		containsSSHStyleAddress(args) // SSH-style user@host:path addresses
 }
 
 func buildAnalysisOutputFromSymbolData(data *fileanalysis.SymbolAnalysisData) binaryanalyzer.AnalysisOutput {

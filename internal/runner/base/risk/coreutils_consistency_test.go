@@ -5,7 +5,6 @@ package risk
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -48,7 +47,7 @@ func TestCoreutilsRiskConsistency_RuntimeVsDryRun(t *testing.T) {
 		makeConsistencyBinary(t, tmp, name)
 	}
 
-	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
+	evaluator := newVerifiedEvaluator()
 
 	tests := []struct {
 		name     string
@@ -63,16 +62,17 @@ func TestCoreutilsRiskConsistency_RuntimeVsDryRun(t *testing.T) {
 			expected: runnertypes.RiskLevelLow,
 		},
 		{
-			name:     "chmod is medium",
+			// chmod is not in the safe set, so the coreutils step fails safe to High.
+			name:     "chmod is high",
 			cmd:      filepath.Join(tmp, "chmod"),
 			args:     []string{"+x", "file"},
-			expected: runnertypes.RiskLevelMedium,
+			expected: runnertypes.RiskLevelHigh,
 		},
 		{
-			name:     "cp overwrite is medium",
+			name:     "cp overwrite is high",
 			cmd:      filepath.Join(tmp, "cp"),
 			args:     []string{"a", "b"},
-			expected: runnertypes.RiskLevelMedium,
+			expected: runnertypes.RiskLevelHigh,
 		},
 		{
 			name:     "rm recursive is high",
@@ -122,12 +122,9 @@ func TestCoreutilsRiskConsistency_RuntimeVsDryRun(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runtimeCmd := &runnertypes.RuntimeCommand{
-				ExpandedCmd:  tt.cmd,
-				ExpandedArgs: tt.args,
-			}
-			runtimeRisk, err := evaluator.EvaluateRisk(runtimeCmd)
+			plan, err := evaluator.EvaluateRisk(verifiedCmd(tt.cmd, tt.args))
 			require.NoError(t, err)
+			runtimeRisk := plan.Assessment.Level
 
 			// hashDir is "" to skip hash validation in the dry-run path.
 			dryRunRisk, _, _, err := security.AnalyzeCommandSecurity(tt.cmd, tt.args, "")
@@ -163,10 +160,10 @@ func TestCoreutilsRiskConsistency_Setuid(t *testing.T) {
 		t.Skip("Skipping: OS silently ignored setuid bit (non-root on macOS)")
 	}
 
-	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
-	runtimeCmd := &runnertypes.RuntimeCommand{ExpandedCmd: path, ExpandedArgs: nil}
-	runtimeRisk, err := evaluator.EvaluateRisk(runtimeCmd)
+	evaluator := newVerifiedEvaluator()
+	plan, err := evaluator.EvaluateRisk(verifiedCmd(path, nil))
 	require.NoError(t, err)
+	runtimeRisk := plan.Assessment.Level
 
 	dryRunRisk, _, dryRunReason, err := security.AnalyzeCommandSecurity(path, nil, "")
 	require.NoError(t, err)

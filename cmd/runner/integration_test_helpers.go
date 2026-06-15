@@ -11,6 +11,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	resourcetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/require"
@@ -67,10 +68,15 @@ func (env *testEnvironment) createRunner(t *testing.T) *runner.Runner {
 	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
 	require.NoError(t, err)
 
-	r, err := runner.NewRunner(cfg,
+	// These integration tests run real commands with file validation disabled, so
+	// the production identity gate would deny every command. Inject a permissive
+	// evaluator; risk classification itself is covered by the risk package tests.
+	r, err := runner.NewRunner(
+		cfg,
 		runner.WithVerificationManager(verificationManager),
 		runner.WithRuntimeGlobal(runtimeGlobal),
 		runner.WithRunID(env.RunID),
+		runner.WithRiskEvaluator(resourcetestutil.NewAllowAllEvaluator()),
 	)
 	require.NoError(t, err)
 
