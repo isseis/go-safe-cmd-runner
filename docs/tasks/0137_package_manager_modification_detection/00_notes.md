@@ -139,10 +139,10 @@ var packageManagers = []packageManager{
 
 ### 論点 4: 対象マネージャの範囲（列挙の線引き）
 
-- 確実に入れる: dpkg, rpm（フラグ方式・主要 distro）。
-- 検討: apk（`add`/`del`）, snap（`install`/`remove`/`refresh`）, flatpak（`install`/`uninstall`）,
-  gem（`install`/`uninstall`）, pip3（pip の別名）, pnpm（`add`/`remove`）, port（MacPorts）,
-  emerge（Gentoo, `--unmerge` 等）。
+- 確実に入れる: `dpkg`, `rpm`（フラグ方式・主要 distro）。
+- 検討: `apk`（`add`/`del`）, `snap`（`install`/`remove`/`refresh`）, `flatpak`（`install`/`uninstall`）,
+  `gem`（`install`/`uninstall`）, `pip3`（`pip` の別名）, `pnpm`（`add`/`remove`）, `port`（MacPorts）,
+  `emerge`（Gentoo, `--unmerge` 等）。
 - verb 集合に不足する語（例 `del`, `refresh`, `erase`）の追加。
 - 脅威モデル（AC-66/67）に照らし「列挙は非網羅・backstop は allowlist+ハッシュ」を要件に明記し、
   **どこで線を引くか（主要 distro のみ / 広く取るか）**を決める。
@@ -188,8 +188,8 @@ var packageManagers = []packageManager{
 
 ## 未決事項（要件で確定すべき点）
 
-1. 対象マネージャの線引き（dpkg/rpm のみか、apk/snap/flatpak 等まで広げるか）。
-2. rpm/dpkg の判定精度（論点 2 の A/B/C のどれを採るか＝偽陽性許容度）。
+1. 対象マネージャの線引き（`dpkg`/`rpm` のみか、`apk`/`snap`/`flatpak` 等まで広げるか）。
+2. `rpm`/`dpkg` の判定精度（論点 2 の `A`/`B`/`C` のどれを採るか＝偽陽性許容度）。
 3. リスクレベル（Medium 維持か）。
 4. AC-34 の更新方法（0137 要件での上書き運用）とユーザー文書の再追加範囲。
 5. 定義モデルの凝集（論点 1 の補足）: マネージャ定義を 1 か所へ集約し `IsSystemModification` の
