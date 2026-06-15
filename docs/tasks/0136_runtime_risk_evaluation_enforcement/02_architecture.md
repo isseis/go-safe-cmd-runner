@@ -8,7 +8,7 @@
 | Created | 2026-06-14 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-06-15: セキュリティレビュー（Critical 3・High 4・Medium 4）を反映 — 評価と実行の結合（`VerifiedCommandPlan` 中心設計、executor は plan のみ exec）、TOCTOU の fd ベース実行（fexecve/execveat）第一候補化、identity ゲートを coreutils 抑制より前段に配置、dry-run unknown/normal Blocking を `AssessmentStatus`/`EvaluationContext` で型区別、「統合評価モデル＋優先順位」への用語精緻化＋リスク次元優先順位表、`Classify` を全検証済み実行可能ファイルに適用、監査 `Decision` enum・`BlockingReason`・Chain の Role/Disposition、Critical の一貫扱い、systemctl argv 解析規則、フェーズの縦切り化＋リリースゲート。2026-06-15: 実装計画（03）レベルの詳細を点検しトリム — systemctl の argv 解析手順と監査ロガーの具体配線（Config フィールド/コンストラクタ）を契約レベルに圧縮し、具体は 03 へ移送。2026-06-15: 【isseis 指示】dry-run の `unknown` リスク状態を廃止（01 の AC-46/58 改訂と整合）。dry-run は normal と同じ read-only 解析で判定を決定的に再現し、出力は allow/deny の2区分。`AssessmentStatus`・`EvaluationContext`・`VerificationState` を削除、`EvaluateRisk(cmd)` へ簡素化、`Decision` enum から `Unknown` を除去、検証不能 deny は `VerificationUnavailable` 運用フラグで区別。2026-06-15: 機械可読コードを string 派生型化 — `ReasonCode` 型＋定数を導入し `ReasonCodes []ReasonCode` / `BlockingReason ReasonCode` に変更。列挙的文字列（Role/Disposition/ErrorClass）も派生型化する方針を明記（AC-69 の網羅検証と親和） |
+| Comments | 2026-06-15: セキュリティレビュー（Critical 3・High 4・Medium 4）を反映 — 評価と実行の結合（`VerifiedCommandPlan` 中心設計、executor は plan のみ exec）、TOCTOU の fd ベース実行（fexecve/execveat）第一候補化、identity ゲートを coreutils 抑制より前段に配置、dry-run unknown/normal Blocking を `AssessmentStatus`/`EvaluationContext` で型区別、「統合評価モデル＋優先順位」への用語精緻化＋リスク次元優先順位表、`Classify` を全検証済み実行可能ファイルに適用、監査 `Decision` enum・`BlockingReason`・Chain の Role/Disposition、Critical の一貫扱い、systemctl argv 解析規則、フェーズの縦切り化＋リリースゲート。2026-06-15: 実装計画（03）レベルの詳細を点検しトリム — systemctl の argv 解析手順と監査ロガーの具体配線（Config フィールド/コンストラクタ）を契約レベルに圧縮し、具体は 03 へ移送。2026-06-15: 【isseis 指示】dry-run の `unknown` リスク状態を廃止（01 の AC-46/58 改訂と整合）。dry-run は normal と同じ read-only 解析で判定を決定的に再現し、出力は allow/deny の2区分。`AssessmentStatus`・`EvaluationContext`・`VerificationState` を削除、`EvaluateRisk(cmd)` へ簡素化、`Decision` enum から `Unknown` を除去、検証不能 deny は `VerificationUnavailable` 運用フラグで区別。2026-06-15: 機械可読コードを string 派生型化 — `ReasonCode` 型＋定数を導入し `ReasonCodes []ReasonCode` / `BlockingReason ReasonCode` に変更（列挙的文字列 Role/Disposition/ErrorClass も派生型化方針。AC-69 と親和）。2026-06-15: 【isseis 指示】取得不能値を安全化 — `RiskAuditEntry`/`ExecutedArtifact` の `ResolvedPath`/`ContentHash`/`RecordID` を `*string`（nil=不在）にし値内センチネル文字列を排除。固定マーカーはログ出力境界のみ。ContentHash 不在は nil でハッシュ突合は VerifiedIdentity を使用（AC-56 改訂と整合）|
 
 本書は `01_requirements.md`（status: `approved`）の機能要件 F-001〜F-015 / 受入基準 AC-01〜AC-87 を満たすための高レベル設計を定義する。実装詳細・擬似コード・アルゴリズムは含めない（それらは実装と `03_implementation_plan.md` で扱う）。
 
@@ -390,13 +390,19 @@ const (
     DecisionError // エラー中止
 )
 
+// 「取得できない値」は **値フィールドにセンチネル文字列を入れない**。在/不在を型で
+// 明示し（ポインタ nil = 不在）、「不在を固定文字列で表示する」のは **ログ出力の境界のみ**
+// で行う（在/不在を判定するロジックがセンチネル文字列を読む余地を作らない。AC-56）。
+// とくに ContentHash の不在は nil で表し、ハッシュ突合（F-014）はこの値ではなく
+// VerifiedIdentity（検証済み時のみ設定）を用いる。
+//
 // 変更後（新規パラメータ型）。decision/max_allowed_risk は比較を行う層で設定する。
 type RiskAuditEntry struct {
     CommandName    string
     Mode           ExecutionMode         // normal / dry-run
-    ResolvedPath   string                // 取得不能時はセンチネル（"unresolved" 等、AC-56）
-    ContentHash    string                // 取得不能時はセンチネル（"unverified" 等）
-    RecordID       string                // 解析レコードの hash/schema、非使用時はその旨
+    ResolvedPath   *string               // nil = パス未解決（DecisionError 等）
+    ContentHash    *string               // nil = 未検証（突合には使わない。下記注参照）
+    RecordID       *string               // nil = 解析レコード非使用
     Assessment     RiskAssessment        // 実効リスク・reason codes
     MaxAllowedRisk runnertypes.RiskLevel
     Decision       Decision              // allow/deny/error
@@ -408,8 +414,8 @@ type RiskAuditEntry struct {
 
 // ExecutedArtifact は間接実行で実際に実行/ロードされた成果物 1 件の監査情報。
 type ExecutedArtifact struct {
-    Path        string // 解決済み絶対パス
-    ContentHash string // 検証済みハッシュ（取得不能時はセンチネル）
+    Path        string  // 解決済み絶対パス
+    ContentHash *string // nil = 未検証（突合に使わない）
     Role        string // 役割: "wrapper" / "inner" / "interpreter" / "preload" / "exec-target" 等
     Disposition string // 処理結果: "verified" / "rejected" / "allowlist-failed" 等
 }
