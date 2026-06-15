@@ -134,6 +134,7 @@
 - [ ] `Evaluator` インターフェースと `StandardEvaluator.EvaluateRisk` の戻り値を `(risktypes.VerifiedCommandPlan, error)` へ変更。
 - [ ] `02_architecture.md` §6.1 のリスク次元優先順位を実装:
   - [ ] 順位 1: identity ゲート（content_hash 有・検証/解析有効・identity 束縛可）。不成立で `Blocking=true`＋`ReasonUncertainUnverifiedIdentity`/`ReasonAnalysisDisabled`/`ReasonIdentityUnbound`（AC-51/65）。**このゲートは順位 4〜8 の全次元算出より前に短絡する**ため、未検証ハッシュのコマンドが coreutils 判定・破壊判定・プロファイル・F-015 の **いずれの経路でも** Low/High-allowable に確定する前に Blocking deny へ帰着する（F-014/AC-65 の全経路一貫適用）。実装上は「ハッシュ未確定なら順位 4 以降に進ませない」単一ゲートで全経路を覆う（経路ごとに個別チェックを散らさない＝取りこぼし防止）。Phase 1 では fd 束縛可否は「検証済みハッシュ有 ＋ 解析有効」までを判定し、fd 取得は Phase 2 で接続（Phase 1 完了時は path ベース実行のままだが deny ゲートは機能する）。
+  - [ ] 順位 2: 間接実行の拒否/解決（抽出不能・identity 束縛不能・禁止 env 等 → `Blocking`＋reason code）。**実装は Phase 2（Step 2-1）で行う**ため Phase 1 のこの Step では未実装（順位だけ 02 §6.1 と揃えて明示。Phase 1 完了時点では順位 1・3〜8 が機能し、順位 2 は Phase 2 で接続）。
   - [ ] 順位 3: 特権昇格 → `Level=Critical`＋`ReasonPrivilegeEscalation`（§3.1 の Critical 一貫扱い）。
   - [ ] 順位 4: coreutils 分類（バイナリ解析次元を除外して算出。識別ゲートの後段）。
   - [ ] 順位 5: プロファイル要因（引数評価後の SystemModRisk を含む最大値。`BaseRiskLevel` を SystemModRisk 差し替え後に計算）。
