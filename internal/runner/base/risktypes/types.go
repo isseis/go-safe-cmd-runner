@@ -7,6 +7,7 @@
 package risktypes
 
 import (
+	"sync/atomic"
 	"syscall"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -18,20 +19,17 @@ import (
 //   - It owns the underlying descriptor and is the single place that closes it,
 //     so callers must not hold or close the raw int separately (this prevents
 //     double-close and divided ownership).
-//   - Close is idempotent and safe on a nil receiver: the first call closes the
-//     descriptor, later calls (and a nil receiver) return nil.
+//   - Close is idempotent and safe for concurrent use: it guarantees the
+//     underlying descriptor is closed exactly once even if several callers race,
+//     and a nil receiver returns nil.
 //   - Fd returns the raw descriptor for callers that build /proc/self/fd/<n>
 //     paths or pass the descriptor to a child process.
-//
-// VerifiedFD is not safe for concurrent use: its Close uses a non-atomic
-// check-then-set, so the single owner must serialize Close (e.g. the owning
-// plan closes it once during teardown).
 //
 // The descriptor itself is opened and consumed in Phase 2 (fd-bound execution);
 // this type only declares the ownership contract.
 type VerifiedFD struct {
 	fd     int
-	closed bool
+	closed atomic.Bool
 }
 
 // NewVerifiedFD wraps an already-opened, verified file descriptor.
@@ -45,13 +43,16 @@ func (f *VerifiedFD) Fd() int {
 	return f.fd
 }
 
-// Close closes the underlying descriptor. It is idempotent and safe to call on
-// a nil receiver.
+// Close closes the underlying descriptor. It is idempotent, safe for concurrent
+// use, and safe to call on a nil receiver. The atomic swap ensures syscall.Close
+// runs for exactly one caller, avoiding a double-close race (CWE-1341).
 func (f *VerifiedFD) Close() error {
-	if f == nil || f.closed {
+	if f == nil {
 		return nil
 	}
-	f.closed = true
+	if f.closed.Swap(true) {
+		return nil
+	}
 	return syscall.Close(f.fd)
 }
 
