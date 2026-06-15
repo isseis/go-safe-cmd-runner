@@ -15,10 +15,10 @@ func TestParseRiskLevel(t *testing.T) {
 		hasError bool
 	}{
 		{
-			name:     "valid unknown risk",
+			name:     "unknown is rejected in configuration",
 			input:    "unknown",
 			expected: RiskLevelUnknown,
-			hasError: false,
+			hasError: true,
 		},
 		{
 			name:     "valid low risk",
@@ -73,6 +73,44 @@ func TestParseRiskLevel(t *testing.T) {
 	}
 }
 
+// TestParseRiskLevel_UnknownError verifies that "unknown" is rejected as a
+// configuration value with ErrInvalidRiskLevel.
+func TestParseRiskLevel_UnknownError(t *testing.T) {
+	level, err := ParseRiskLevel("unknown")
+	assert.ErrorIs(t, err, ErrInvalidRiskLevel)
+	assert.Equal(t, RiskLevelUnknown, level)
+}
+
+// TestParseRiskLevel_UnknownConfigRejected verifies that a command configured
+// with risk_level="unknown" surfaces the error through GetRiskLevel.
+func TestParseRiskLevel_UnknownConfigRejected(t *testing.T) {
+	cmd := &CommandSpec{RiskLevel: StringPtr("unknown")}
+	level, err := cmd.GetRiskLevel()
+	assert.ErrorIs(t, err, ErrInvalidRiskLevel)
+	assert.Equal(t, RiskLevelUnknown, level)
+}
+
+// TestParseRiskLevel_ValidValues verifies that the previously accepted values
+// (low/medium/high and omitted/empty) keep parsing unchanged.
+func TestParseRiskLevel_ValidValues(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected RiskLevel
+	}{
+		{"low", RiskLevelLow},
+		{"medium", RiskLevelMedium},
+		{"high", RiskLevelHigh},
+		{"", RiskLevelLow}, // empty/omitted defaults to low
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			level, err := ParseRiskLevel(tt.input)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, level)
+		})
+	}
+}
+
 func TestRiskLevelString(t *testing.T) {
 	tests := []struct {
 		level    RiskLevel
@@ -101,10 +139,10 @@ func TestCommandGetRiskLevel(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name:        "valid unknown risk",
+			name:        "unknown is rejected in configuration",
 			riskStr:     "unknown",
 			expected:    RiskLevelUnknown,
-			expectError: false,
+			expectError: true,
 		},
 		{
 			name:        "valid low risk",

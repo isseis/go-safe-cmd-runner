@@ -43,7 +43,7 @@ type CommandTemplate struct {
 	OutputSizeLimit *int64 `toml:"output_size_limit"`
 
 	// RiskLevel specifies the maximum allowed risk level (optional)
-	// nil: inherit from global default, otherwise must be one of: "low", "medium", "high"
+	// nil: no template-level default (a command that omits risk_level falls back here; if this is also nil, GetRiskLevel() yields "low"); otherwise must be one of: "low", "medium", "high"
 	RiskLevel *string `toml:"risk_level"`
 
 	// OutputFile specifies the output file path for redirection (optional)
@@ -256,7 +256,7 @@ type CommandSpec struct {
 	OutputSizeLimit *int64  `toml:"output_size_limit"` // Command-specific output size limit in bytes (nil=inherit from global, 0=unlimited) - raw value for TOML unmarshaling
 	RunAsUser       string  `toml:"run_as_user"`       // User to execute command as (using seteuid)
 	RunAsGroup      string  `toml:"run_as_group"`      // Group to execute command as (using setegid)
-	RiskLevel       *string `toml:"risk_level"`        // Maximum allowed risk level (nil=inherit default, otherwise: low, medium, high)
+	RiskLevel       *string `toml:"risk_level"`        // Maximum allowed risk level (nil defaults to "low" after template fallback; otherwise: low, medium, high)
 	// OutputFile specifies the output file path for redirection
 	// nil: not specified (can be inherited), non-nil: output file path
 	OutputFile *string `toml:"output_file"`

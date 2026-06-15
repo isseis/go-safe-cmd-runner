@@ -93,7 +93,7 @@ func (r RiskLevel) String() string {
 func ParseRiskLevel(s string) (RiskLevel, error) {
 	switch s {
 	case UnknownRiskLevelString:
-		return RiskLevelUnknown, nil
+		return RiskLevelUnknown, fmt.Errorf("%w: unknown risk level cannot be set in configuration (reserved for internal use only)", ErrInvalidRiskLevel)
 	case LowRiskLevelString:
 		return RiskLevelLow, nil
 	case MediumRiskLevelString:
