@@ -42,9 +42,15 @@ func defaultTestEvaluator() risk.Evaluator {
 type permissiveTestEvaluator struct{}
 
 func (permissiveTestEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error) {
+	// A VerifiedIdentity must carry a real, non-empty content hash; when the
+	// command has no hash, represent absence with a nil Identity per the contract.
+	var identity *risktypes.VerifiedIdentity
+	if cmd.ExpandedCmdContentHash != "" {
+		identity = &risktypes.VerifiedIdentity{ResolvedPath: cmd.ExpandedCmd, ContentHash: cmd.ExpandedCmdContentHash}
+	}
 	return risktypes.VerifiedCommandPlan{
 		ResolvedPath: cmd.ExpandedCmd,
-		Identity:     &risktypes.VerifiedIdentity{ResolvedPath: cmd.ExpandedCmd, ContentHash: cmd.ExpandedCmdContentHash},
+		Identity:     identity,
 		Assessment:   risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
 	}, nil
 }

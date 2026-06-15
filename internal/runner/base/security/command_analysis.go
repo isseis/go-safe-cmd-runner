@@ -794,8 +794,21 @@ func walkSymlinkChain(cmdName string, strict bool) (names map[string]struct{}, e
 	seen[cmdName] = struct{}{}
 	seen[filepath.Base(cmdName)] = struct{}{}
 
+	// visited detects a symlink cycle directly, rather than only via the depth
+	// limit, so a cycle is reported immediately without walking the full depth.
+	visited := make(map[string]struct{})
 	current := cmdName
 	for depth := range MaxSymlinkDepth {
+		if _, ok := visited[current]; ok {
+			// Cycle detected. Treat it like a depth overflow: strict fails closed,
+			// lenient reports exceededDepth so callers flag it (e.g. dry-run High).
+			if strict {
+				return nil, false, fmt.Errorf("%w: cyclic symlink at %q", ErrSymlinkResolutionFailed, current)
+			}
+			return seen, true, nil
+		}
+		visited[current] = struct{}{}
+
 		fileInfo, statErr := os.Lstat(current)
 		if statErr != nil {
 			// At depth 0 the path may be a bare name or a not-yet-present file;

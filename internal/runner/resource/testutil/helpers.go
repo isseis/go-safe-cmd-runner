@@ -24,12 +24,25 @@ type allowAllEvaluator struct{}
 func (allowAllEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error) {
 	return risktypes.VerifiedCommandPlan{
 		ResolvedPath: cmd.ExpandedCmd,
-		Identity: &risktypes.VerifiedIdentity{
-			ResolvedPath: cmd.ExpandedCmd,
-			ContentHash:  cmd.ExpandedCmdContentHash,
-		},
+		// A VerifiedIdentity must carry a real, non-empty content hash; when the
+		// command has no hash, represent absence with a nil Identity per the
+		// VerifiedIdentity contract.
+		Identity:   allowedTestIdentity(cmd),
 		Assessment: risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
 	}, nil
+}
+
+// allowedTestIdentity builds a VerifiedIdentity for a permissively-allowed test
+// command, or nil when the command carries no content hash (the contract forbids
+// an Identity with an empty ContentHash).
+func allowedTestIdentity(cmd *runnertypes.RuntimeCommand) *risktypes.VerifiedIdentity {
+	if cmd.ExpandedCmdContentHash == "" {
+		return nil
+	}
+	return &risktypes.VerifiedIdentity{
+		ResolvedPath: cmd.ExpandedCmd,
+		ContentHash:  cmd.ExpandedCmdContentHash,
+	}
 }
 
 // NewAllowAllEvaluator returns a permissive risk evaluator for end-to-end and
