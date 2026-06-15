@@ -23,6 +23,10 @@ import (
 //   - Fd returns the raw descriptor for callers that build /proc/self/fd/<n>
 //     paths or pass the descriptor to a child process.
 //
+// VerifiedFD is not safe for concurrent use: its Close uses a non-atomic
+// check-then-set, so the single owner must serialize Close (e.g. the owning
+// plan closes it once during teardown).
+//
 // The descriptor itself is opened and consumed in Phase 2 (fd-bound execution);
 // this type only declares the ownership contract.
 type VerifiedFD struct {
