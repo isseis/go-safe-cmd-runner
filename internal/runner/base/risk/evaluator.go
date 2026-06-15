@@ -44,6 +44,19 @@ func NewStandardEvaluator(networkAnalyzer *security.NetworkAnalyzer) Evaluator {
 func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error) {
 	cmdPath := cmd.ExpandedCmd
 
+	// The command path must be absolute by the time it reaches the evaluator
+	// (callers resolve it). A non-absolute path means the identity cannot be
+	// established and binary analysis would be silently skipped, so deny
+	// fail-closed rather than evaluate an unanalyzable relative path.
+	if !filepath.IsAbs(cmdPath) {
+		return blockingPlan(risktypes.RiskAssessment{
+			Blocking:       true,
+			BlockingReason: risktypes.ReasonNonAbsolutePath,
+			ErrorClass:     risktypes.ErrorClassPathResolution,
+			ReasonCodes:    []risktypes.ReasonCode{risktypes.ReasonNonAbsolutePath},
+		}), nil
+	}
+
 	// Resolve the symlink chain once up front. A resolution failure is fail-closed
 	// (Blocking) so a dangerous real target is never missed by evaluating a
 	// partially resolved chain.
@@ -152,6 +165,15 @@ func (e *StandardEvaluator) evaluateDimensions(
 	// -> High regardless of arguments.
 	if security.IsArbitraryCodeExecutionRunner(cmdPath) {
 		addDimension(&a, runnertypes.RiskLevelHigh, risktypes.ReasonArbitraryCodeExecution)
+	}
+
+	// Network-style arguments (URL or SSH-style address) make any command a
+	// network operation (Medium), independent of whether it has a network
+	// profile, so an unprofiled helper invoked with a remote target is not left at
+	// Low. Profiled commands already contribute their NetworkRisk above; this
+	// dimension only raises, so the duplicate Medium is harmless.
+	if !profileFound && security.HasNetworkArguments(args) {
+		addDimension(&a, runnertypes.RiskLevelMedium, risktypes.ReasonNetworkArgument)
 	}
 
 	// Rank 8: binary-analysis classification (suppressed for coreutils).

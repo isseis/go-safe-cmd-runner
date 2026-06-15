@@ -250,15 +250,16 @@ func TestEvaluateRisk_UnverifiedHashUncertainAllPaths(t *testing.T) {
 		cmd  string
 		args []string
 	}{
-		{"coreutils-safe echo", "echo", nil},
-		{"coreutils-destructive rm", "rm", []string{"-rf", "/"}},
-		{"profile claude", "claude", nil},
-		{"f015 python", "python", nil},
+		{"coreutils-safe echo", "/usr/bin/echo", nil},
+		{"coreutils-destructive rm", "/usr/bin/rm", []string{"-rf", "/"}},
+		{"profile claude", "/usr/bin/claude", nil},
+		{"f015 python", "/usr/bin/python", nil},
 		{"no-profile destructive", "/usr/bin/rmdir", []string{"d"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			// No content hash -> identity gate denies.
+			// No content hash -> identity gate denies (paths are absolute so the
+			// non-absolute gate is not what fires here).
 			cmd := &runnertypes.RuntimeCommand{ExpandedCmd: tc.cmd, ExpandedArgs: tc.args}
 			plan, err := ev.EvaluateRisk(cmd)
 			require.NoError(t, err)
@@ -267,6 +268,34 @@ func TestEvaluateRisk_UnverifiedHashUncertainAllPaths(t *testing.T) {
 			assert.Nil(t, plan.Identity, "denied plan must not carry a verified identity")
 		})
 	}
+}
+
+// a non-absolute command path is denied fail-closed (it cannot be analyzed).
+func TestEvaluateRisk_NonAbsolutePathBlocked(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	for _, cmd := range []string{"echo", "bash", "./script.sh", "relative/rm", ""} {
+		plan, err := ev.EvaluateRisk(&runnertypes.RuntimeCommand{
+			ExpandedCmd:            cmd,
+			ExpandedCmdContentHash: testContentHash,
+		})
+		require.NoError(t, err)
+		assert.Truef(t, plan.Assessment.Blocking, "%q must be Blocking (non-absolute)", cmd)
+		assert.Equal(t, risktypes.ReasonNonAbsolutePath, plan.Assessment.BlockingReason, cmd)
+		assert.Nil(t, plan.Identity, cmd)
+	}
+}
+
+// a network-style argument makes an unprofiled command a Medium network operation.
+func TestEvaluateRisk_NetworkArgumentUnprofiled(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	// /usr/bin/myhelper has no profile; the URL argument raises it to Medium.
+	assert.Equal(t, runnertypes.RiskLevelMedium,
+		evalLevel(t, ev, "/usr/bin/myhelper", []string{"--fetch", "https://example.com/x"}))
+	assert.Equal(t, runnertypes.RiskLevelMedium,
+		evalLevel(t, ev, "/usr/bin/myhelper", []string{"user@host:/remote/path"}))
+	// Without a network-style argument it stays Low.
+	assert.Equal(t, runnertypes.RiskLevelLow,
+		evalLevel(t, ev, "/usr/bin/myhelper", []string{"--local", "/tmp/x"}))
 }
 
 // with binary analysis disabled, every command is denied (including coreutils).

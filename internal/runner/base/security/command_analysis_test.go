@@ -1481,6 +1481,38 @@ func TestIsSystemModification_AbsolutePath(t *testing.T) {
 		"a substring match must not be treated as systemctl")
 }
 
+// TestIsSystemModification_PackageManagerVerbs verifies the expanded set of
+// package-manager subcommands and pacman option flags is detected.
+func TestIsSystemModification_PackageManagerVerbs(t *testing.T) {
+	tests := []struct {
+		name string
+		cmd  string
+		args []string
+		want bool
+	}{
+		{"apt purge", "apt", []string{"purge", "nginx"}, true},
+		{"apt-get autoremove", "apt-get", []string{"autoremove"}, true},
+		{"apt-get dist-upgrade", "apt-get", []string{"dist-upgrade"}, true},
+		{"yum reinstall", "yum", []string{"reinstall", "nginx"}, true},
+		{"dnf groupinstall", "dnf", []string{"groupinstall", "tools"}, true},
+		{"pacman sync install", "pacman", []string{"-S", "nginx"}, true},
+		{"pacman combined sync upgrade", "pacman", []string{"-Syu"}, true},
+		{"pacman remove", "pacman", []string{"-Rns", "nginx"}, true},
+		{"yarn add", "yarn", []string{"add", "left-pad"}, true},
+		{"npm shorthand i", "npm", []string{"i", "left-pad"}, true},
+		{"brew tap", "brew", []string{"tap", "owner/repo"}, true},
+		// Non-modifying operations stay false.
+		{"apt list", "apt", []string{"list", "--installed"}, false},
+		{"pacman query", "pacman", []string{"-Q"}, false},
+		{"npm run script", "npm", []string{"run", "build"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsSystemModification(tt.cmd, tt.args))
+		})
+	}
+}
+
 // TestFindExecAllActions verifies that find's exec-style actions
 // (-exec/-execdir/-ok/-okdir) are all covered, and the target command is matched
 // by basename including absolute and coreutils-directory paths.

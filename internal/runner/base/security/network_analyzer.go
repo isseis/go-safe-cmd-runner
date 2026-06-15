@@ -205,6 +205,14 @@ func hasNetworkArguments(args []string) bool {
 		containsSSHStyleAddress(args) // SSH-style user@host:path addresses
 }
 
+// HasNetworkArguments reports whether any argument is a network indicator (a URL
+// or an SSH-style user@host:path address). It is the exported entry point used by
+// runtime risk evaluation so a command with a remote target argument is treated
+// as a network operation even when it has no network profile.
+func HasNetworkArguments(args []string) bool {
+	return hasNetworkArguments(args)
+}
+
 func buildAnalysisOutputFromSymbolData(data *fileanalysis.SymbolAnalysisData) binaryanalyzer.AnalysisOutput {
 	output := binaryanalyzer.AnalysisOutput{
 		DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),

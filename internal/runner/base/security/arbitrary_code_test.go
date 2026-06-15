@@ -27,6 +27,15 @@ func TestArbitraryCodeExecutionRunner_Names(t *testing.T) {
 		{"/usr/bin/bash", true},
 		{"/opt/python/python", true},
 		{"/usr/bin/make", true},
+		// Profiled interpreter aliases must be High, like their base names.
+		{"lua5.4", true},
+		{"Rscript", true},
+		{"tclsh8.6", true},
+		{"escript", true},
+		// go and cargo compile and run arbitrary code.
+		{"go", true},
+		{"cargo", true},
+		{"/usr/local/go/bin/go", true},
 		// Substring look-alikes must not match.
 		{"/usr/bin/makebelieve", false},
 		{"/usr/bin/bashful", false},

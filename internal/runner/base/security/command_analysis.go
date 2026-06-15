@@ -516,6 +516,37 @@ var packageManagerNames = map[string]struct{}{
 	"yarn":    {},
 }
 
+// packageModifyingVerbs are package-manager subcommands that install, remove, or
+// otherwise modify installed software. The list is non-exhaustive (the threat
+// model backstops with allowlist + hash pinning); an unmatched verb falls through
+// to a non-modifying classification.
+var packageModifyingVerbs = map[string]struct{}{
+	"install": {}, "remove": {}, "uninstall": {}, "upgrade": {}, "update": {},
+	"purge": {}, "autoremove": {}, "dist-upgrade": {}, "full-upgrade": {},
+	"dselect-upgrade": {}, "clean": {}, "autoclean": {},
+	"groupinstall": {}, "groupremove": {}, "localinstall": {}, "localupdate": {},
+	"reinstall": {}, "add": {}, "tap": {}, "untap": {},
+	"i": {}, "un": {}, "up": {}, // common npm shorthands
+}
+
+// isPacmanModifyingFlag reports whether a pacman option flag performs an
+// install/remove/upgrade. pacman selects its operation via -S (sync/install),
+// -R (remove), or -U (upgrade), possibly combined (-Syu, -Rns), or via the long
+// forms --sync/--remove/--upgrade.
+func isPacmanModifyingFlag(arg string) bool {
+	switch arg {
+	case "--sync", "--remove", "--upgrade":
+		return true
+	}
+	if strings.HasPrefix(arg, "--") {
+		return false
+	}
+	if strings.HasPrefix(arg, "-") && len(arg) > 1 {
+		return strings.ContainsAny(arg[1:], "SRU")
+	}
+	return false
+}
+
 // anyNameInSet reports whether any of the resolved command names is in set.
 func anyNameInSet(names, set map[string]struct{}) bool {
 	for n := range names {
@@ -582,10 +613,14 @@ func IsSystemModification(cmd string, args []string) bool {
 	}
 
 	if anyNameInSet(names, packageManagerNames) {
-		// Only consider install/remove operations as system modification.
+		// Only consider install/remove/upgrade-style operations as system
+		// modification (a bare query such as "apt list" is not).
+		_, isPacman := names["pacman"]
 		for _, arg := range args {
-			if arg == "install" || arg == "remove" || arg == "uninstall" ||
-				arg == "upgrade" || arg == "update" {
+			if _, ok := packageModifyingVerbs[arg]; ok {
+				return true
+			}
+			if isPacman && isPacmanModifyingFlag(arg) {
 				return true
 			}
 		}
@@ -715,6 +750,13 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, hashDir string) 
 		return overrideRisk, resolvedPath, reason, nil
 	}
 
+	// Step 9b: Network-style arguments (URL or SSH-style address) make an
+	// otherwise-unprofiled command a network operation (Medium). This mirrors the
+	// runtime evaluator's network-argument dimension so dry-run and runtime agree.
+	if hasNetworkArguments(args) {
+		return runnertypes.RiskLevelMedium, resolvedPath, "Network-style argument (URL or remote host)", nil
+	}
+
 	// Step 10: Apply default risk level
 	if defaultRisk != runnertypes.RiskLevelUnknown {
 		return defaultRisk, "", "Default directory-based risk level", nil
@@ -724,6 +766,79 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, hashDir string) 
 	return runnertypes.RiskLevelUnknown, "", "", nil
 }
 
+// ErrSymlinkResolutionFailed is returned by ResolveCommandNames when a symbolic
+// link in the chain cannot be read (link-target fetch failure), distinct from
+// exceeding the depth limit (ErrSymlinkDepthExceeded).
+var ErrSymlinkResolutionFailed = errors.New("symbolic link resolution failed")
+
+// walkSymlinkChain resolves cmdName's symbolic-link chain and returns the set of
+// all names encountered (the original, its basename, and every link target with
+// its basename), used for name-based matching.
+//
+// The strict flag selects the error policy:
+//   - strict=false (lenient): a mid-chain stat/readlink failure stops resolution
+//     and returns the names gathered so far; a depth-limit overflow sets
+//     exceededDepth. err is always nil. Used where partial resolution is
+//     acceptable (matching helpers, dry-run display).
+//   - strict=true: a depth-limit overflow returns ErrSymlinkDepthExceeded and a
+//     mid-chain link-target fetch failure returns ErrSymlinkResolutionFailed, so
+//     the evaluator can block rather than evaluate a partially resolved chain. A
+//     bare command name or a regular file (no symlink to follow) resolves without
+//     error.
+func walkSymlinkChain(cmdName string, strict bool) (names map[string]struct{}, exceededDepth bool, err error) {
+	seen := make(map[string]struct{})
+	if cmdName == "" {
+		return seen, false, nil
+	}
+
+	seen[cmdName] = struct{}{}
+	seen[filepath.Base(cmdName)] = struct{}{}
+
+	current := cmdName
+	for depth := range MaxSymlinkDepth {
+		fileInfo, statErr := os.Lstat(current)
+		if statErr != nil {
+			// At depth 0 the path may be a bare name or a not-yet-present file;
+			// that is not a resolution failure. After following at least one link,
+			// a stat failure means the link target could not be fetched.
+			if !strict || depth == 0 {
+				break
+			}
+			return nil, false, fmt.Errorf("%w: %q: %w", ErrSymlinkResolutionFailed, current, statErr)
+		}
+
+		if fileInfo.Mode()&os.ModeSymlink == 0 {
+			break
+		}
+
+		if depth == MaxSymlinkDepth-1 {
+			if strict {
+				return nil, false, fmt.Errorf("%w: %q", ErrSymlinkDepthExceeded, cmdName)
+			}
+			return seen, true, nil
+		}
+
+		target, linkErr := os.Readlink(current)
+		if linkErr != nil {
+			if !strict {
+				break
+			}
+			return nil, false, fmt.Errorf("%w: %q: %w", ErrSymlinkResolutionFailed, current, linkErr)
+		}
+
+		if !filepath.IsAbs(target) {
+			current = filepath.Join(filepath.Dir(current), target)
+		} else {
+			current = target
+		}
+
+		seen[current] = struct{}{}
+		seen[filepath.Base(current)] = struct{}{}
+	}
+
+	return seen, false, nil
+}
+
 // extractAllCommandNames extracts all possible command names for matching:
 // 1. The original command name (could be full path or just filename)
 // 2. Just the base filename from the original command
@@ -731,121 +846,17 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, hashDir string) 
 // 4. The final target filename after resolving all symbolic links
 // Returns a map for O(1) lookup performance and a boolean indicating if symlink depth was exceeded.
 func extractAllCommandNames(cmdName string) (map[string]struct{}, bool) {
-	// Handle error case: empty command name (programming error or TOML file mistake)
-	if cmdName == "" {
-		return make(map[string]struct{}), false
-	}
-
-	seen := make(map[string]struct{})
-
-	// Add original command name
-	seen[cmdName] = struct{}{}
-
-	// Add base filename (no-op if cmdName is already just a filename)
-	seen[filepath.Base(cmdName)] = struct{}{}
-
-	// Resolve symbolic links iteratively to handle multi-level links
-	current := cmdName
-	exceededDepth := false
-
-	for depth := range MaxSymlinkDepth {
-		// Check if current path is a symbolic link
-		fileInfo, err := os.Lstat(current)
-		if err != nil {
-			// If we can't stat the file, stop here
-			break
-		}
-
-		// If it's not a symbolic link, we're done
-		if fileInfo.Mode()&os.ModeSymlink == 0 {
-			break
-		}
-
-		// If we're at the last iteration and still have a symlink, we exceeded the limit
-		if depth == MaxSymlinkDepth-1 {
-			exceededDepth = true
-			break
-		}
-
-		// Resolve the symbolic link
-		target, err := os.Readlink(current)
-		if err != nil {
-			break
-		}
-
-		// If target is relative, make it relative to the current directory
-		if !filepath.IsAbs(target) {
-			current = filepath.Join(filepath.Dir(current), target)
-		} else {
-			current = target
-		}
-
-		// Add the target name (both full path and base name)
-		seen[current] = struct{}{}
-		seen[filepath.Base(current)] = struct{}{}
-	}
-
-	return seen, exceededDepth
+	names, exceededDepth, _ := walkSymlinkChain(cmdName, false)
+	return names, exceededDepth
 }
 
-// ErrSymlinkResolutionFailed is returned by ResolveCommandNames when a symbolic
-// link in the chain cannot be read (link-target fetch failure), distinct from
-// exceeding the depth limit (ErrSymlinkDepthExceeded).
-var ErrSymlinkResolutionFailed = errors.New("symbolic link resolution failed")
-
 // ResolveCommandNames resolves the command's symlink chain and returns the set of
-// all names (original, basename, and every link target) used for name-based
-// matching. It fails closed: a depth-limit overflow returns
-// ErrSymlinkDepthExceeded and a link-target fetch failure mid-chain returns
-// ErrSymlinkResolutionFailed, so the evaluator can block rather than evaluate a
-// partially resolved chain. A bare command name or a regular file (no
-// symlink to follow) resolves without error.
+// all names (original, basename, and every link target). It fails closed: a
+// depth-limit overflow returns ErrSymlinkDepthExceeded and a link-target fetch
+// failure mid-chain returns ErrSymlinkResolutionFailed.
 func ResolveCommandNames(cmdName string) (map[string]struct{}, error) {
-	if cmdName == "" {
-		return make(map[string]struct{}), nil
-	}
-
-	seen := make(map[string]struct{})
-	seen[cmdName] = struct{}{}
-	seen[filepath.Base(cmdName)] = struct{}{}
-
-	current := cmdName
-	for depth := range MaxSymlinkDepth {
-		fileInfo, err := os.Lstat(current)
-		if err != nil {
-			// At depth 0 the path may simply be a bare name or a not-yet-present
-			// file; that is not a resolution failure. After following at least one
-			// link, a stat failure means the link target could not be fetched.
-			if depth == 0 {
-				break
-			}
-			return nil, fmt.Errorf("%w: %q: %w", ErrSymlinkResolutionFailed, current, err)
-		}
-
-		if fileInfo.Mode()&os.ModeSymlink == 0 {
-			break
-		}
-
-		if depth == MaxSymlinkDepth-1 {
-			return nil, fmt.Errorf("%w: %q", ErrSymlinkDepthExceeded, cmdName)
-		}
-
-		target, err := os.Readlink(current)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %q: %w", ErrSymlinkResolutionFailed, current, err)
-		}
-
-		if !filepath.IsAbs(target) {
-			current = filepath.Join(filepath.Dir(current), target)
-		} else {
-			current = target
-		}
-
-		seen[current] = struct{}{}
-		seen[filepath.Base(current)] = struct{}{}
-	}
-
-	return seen, nil
+	names, _, err := walkSymlinkChain(cmdName, true)
+	return names, err
 }
 
 // matchesPattern checks if the command matches the dangerous pattern.

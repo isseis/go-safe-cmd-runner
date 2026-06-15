@@ -4,6 +4,7 @@ package risk
 
 import (
 	"errors"
+	"path/filepath"
 	"runtime"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
@@ -60,11 +61,25 @@ func newAnalysisDisabledEvaluator() Evaluator {
 	return NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
 }
 
+// testBinDir is the synthetic absolute directory used to turn a bare command
+// name into an absolute path, since the evaluator requires absolute paths
+// (production always resolves them). It does not need to exist on disk.
+const testBinDir = "/runner-test-bin"
+
+// absCmd makes a bare command name absolute so it satisfies the evaluator's
+// absolute-path requirement; an already-absolute path is returned unchanged.
+func absCmd(cmd string) string {
+	if cmd == "" || filepath.IsAbs(cmd) {
+		return cmd
+	}
+	return filepath.Join(testBinDir, cmd)
+}
+
 // verifiedCmd builds a RuntimeCommand carrying a verified content hash so it
-// passes the identity gate.
+// passes the identity gate. A bare command name is made absolute.
 func verifiedCmd(cmd string, args []string) *runnertypes.RuntimeCommand {
 	return &runnertypes.RuntimeCommand{
-		ExpandedCmd:            cmd,
+		ExpandedCmd:            absCmd(cmd),
 		ExpandedArgs:           args,
 		ExpandedCmdContentHash: testContentHash,
 	}

@@ -53,7 +53,7 @@ func TestNewDefaultResourceManager_NilRiskEvaluator(t *testing.T) {
 func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 	mocks := setupTestMocks()
 
-	cmd := executortestutil.CreateRuntimeCommand("echo", []string{})
+	cmd := executortestutil.CreateRuntimeCommand("/usr/bin/echo", []string{})
 	env := map[string]string{"FOO": "BAR"}
 	ctx := context.Background()
 
@@ -256,7 +256,7 @@ func TestDefaultResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 		require.NoError(t, err)
 
 		// Execute a command to get a valid token
-		cmd := executortestutil.CreateRuntimeCommand("echo", []string{})
+		cmd := executortestutil.CreateRuntimeCommand("/usr/bin/echo", []string{})
 		env := map[string]string{}
 		ctx := context.Background()
 

@@ -12,6 +12,7 @@ import (
 	executortestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 )
@@ -33,15 +34,32 @@ func defaultTestEvaluator() risk.Evaluator {
 	return risk.NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, deps))
 }
 
-// NewNormalResourceManager creates a new NormalResourceManager for normal execution mode
+// permissiveTestEvaluator always allows commands at Low risk. It is used by
+// manager-mechanics tests (error handling, output capture, concurrency) that
+// build commands which are not absolute paths and are not exercising risk
+// classification; risk gating is covered by the risk package and the dedicated
+// risk-control tests that use the standard evaluator.
+type permissiveTestEvaluator struct{}
+
+func (permissiveTestEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error) {
+	return risktypes.VerifiedCommandPlan{
+		ResolvedPath: cmd.ExpandedCmd,
+		Identity:     &risktypes.VerifiedIdentity{ResolvedPath: cmd.ExpandedCmd, ContentHash: cmd.ExpandedCmdContentHash},
+		Assessment:   risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
+	}, nil
+}
+
+// NewNormalResourceManager creates a NormalResourceManager for manager-mechanics
+// tests. It uses a permissive evaluator (see permissiveTestEvaluator); tests that
+// exercise risk classification use NewNormalResourceManagerWithOutput, which wires
+// the standard evaluator.
 func NewNormalResourceManager(
 	exec executor.CommandExecutor,
 	fs executor.FileSystem,
 	privMgr runnertypes.PrivilegeManager,
 	logger *slog.Logger,
 ) *NormalResourceManager {
-	// Delegate to NewNormalResourceManagerWithOutput with nil outputManager and 0 maxOutputSize
-	return NewNormalResourceManagerWithOutput(exec, fs, privMgr, nil, 0, logger)
+	return NewNormalResourceManagerWithEvaluator(exec, fs, privMgr, nil, 0, logger, permissiveTestEvaluator{})
 }
 
 // NewDefaultResourceManagerForTest creates a DefaultResourceManager for tests.

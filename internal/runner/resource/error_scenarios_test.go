@@ -309,7 +309,7 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 
 					for j := range commandsPerGoroutine {
 						cmd := executortestutil.CreateRuntimeCommand(
-							"echo",
+							"/usr/bin/echo",
 							[]string{"concurrent test"},
 							executortestutil.WithName(fmt.Sprintf("concurrent-cmd-%d-%d", goroutineID, j)),
 						)
@@ -632,7 +632,7 @@ func TestConcurrentExecution(t *testing.T) {
 			// Execute multiple commands in this goroutine
 			for range commandsPerGoroutine {
 				cmd := executortestutil.CreateRuntimeCommand(
-					"echo",
+					"/usr/bin/echo",
 					[]string{"concurrent test"},
 					executortestutil.WithName("concurrent-cmd"),
 				)
@@ -695,7 +695,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 	require.NotNil(t, manager)
 
 	cmd := executortestutil.CreateRuntimeCommand(
-		"echo",
+		"/usr/bin/echo",
 		[]string{"state test"},
 		executortestutil.WithName("state-test"),
 	)
@@ -731,7 +731,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 	// This tests both normal and dry-run modes for proper handling
 	t.Run("null_bytes_in_environment", func(t *testing.T) {
 		nullCmd := executortestutil.CreateRuntimeCommand(
-			"echo",
+			"/usr/bin/echo",
 			[]string{"$NULL_VAR"},
 			executortestutil.WithName("null-test"),
 		)

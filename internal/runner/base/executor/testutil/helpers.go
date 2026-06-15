@@ -47,7 +47,6 @@ type runtimeCommandConfig struct {
 	expandedEnv         map[string]string
 	riskLevel           *string
 	contentHash         string
-	contentHashSet      bool
 }
 
 // DefaultTestContentHash is the verified content hash attached to test commands
@@ -63,7 +62,6 @@ const DefaultTestContentHash = "sha256:testcommandhash"
 func WithContentHash(hash string) RuntimeCommandOption {
 	return func(c *runtimeCommandConfig) {
 		c.contentHash = hash
-		c.contentHashSet = true
 	}
 }
 
