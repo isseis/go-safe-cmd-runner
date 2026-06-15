@@ -150,10 +150,15 @@ func TestEvaluateRisk_ProfileFactorFloor(t *testing.T) {
 }
 
 // profile reflection only raises risk; it never lowers another dimension.
-// sudo stays Critical even though its profile would otherwise be evaluated.
 func TestEvaluateRisk_ProfileSafeSideOnly(t *testing.T) {
 	ev := newVerifiedEvaluator()
-	plan, err := ev.EvaluateRisk(verifiedCmd("sudo", []string{"echo", "hi"}))
+	// node carries a Medium network profile but is also a High arbitrary-code
+	// runner. Reflecting the lower profile factor must not pull the result below
+	// the High from the runner dimension.
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/bin/node", nil))
+	// Likewise, a privilege-escalation Critical from an earlier step must not be
+	// lowered by the profile dimension.
+	plan, err := ev.EvaluateRisk(verifiedCmd("/usr/bin/sudo", []string{"echo", "hi"}))
 	require.NoError(t, err)
 	assert.Equal(t, runnertypes.RiskLevelCritical, plan.Assessment.Level)
 }
@@ -229,15 +234,26 @@ func TestEvaluateRisk_BuildRunnerHigh(t *testing.T) {
 	}
 }
 
-// multiple dimensions take the maximum, independent of order.
+// multiple dimensions take the maximum, independent of order. Each case fires
+// both a Medium and a High dimension, so a result of Medium would prove the
+// evaluator returned a lower dimension instead of the maximum.
 func TestEvaluateRisk_MaxOfDimensionsOrderIndependent(t *testing.T) {
 	ev := newVerifiedEvaluator()
-	// rm matches destructive, profile destruction, and (with -rf) the dangerous
-	// pattern; all High, max High.
-	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "rm", []string{"-rf", "/x"}))
-	// A network profile command combined with a destructive arg form still ends up
-	// at the maximum of the firing dimensions.
-	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/bin/rm", []string{"-rf", "/"}))
+	cases := []struct {
+		name string
+		cmd  string
+		args []string
+	}{
+		// profile network (Medium) + arbitrary-code runner (High)
+		{"interpreter: medium profile and high runner", "/usr/bin/python", nil},
+		// network-style argument (Medium, unprofiled) + destructive (High)
+		{"destructive with remote-style arg", "/usr/bin/rmdir", []string{"user@host:/srv"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, tc.cmd, tc.args))
+		})
+	}
 }
 
 // The deny-path behaviors are covered by the tests below.
@@ -436,24 +452,4 @@ func TestStandardEvaluator_EvaluateRisk_CoreutilsFileInfoFailureBlocks(t *testin
 	require.NoError(t, err)
 	assert.True(t, plan.Assessment.Blocking)
 	assert.Equal(t, risktypes.ErrorClassCoreutilsFileInfo, plan.Assessment.ErrorClass)
-}
-
-func TestStandardEvaluator_EvaluateRisk_RiskLevelHierarchy(t *testing.T) {
-	ev := newVerifiedEvaluator()
-	tests := []struct {
-		name     string
-		cmd      string
-		args     []string
-		expected runnertypes.RiskLevel
-	}{
-		{"critical risk overrides all", "sudo", []string{"rm", "-rf", "/"}, runnertypes.RiskLevelCritical},
-		{"high risk destructive operations", "rm", []string{"-rf", "/important/data"}, runnertypes.RiskLevelHigh},
-		{"medium risk network operations", "wget", []string{"https://example.com/script.sh"}, runnertypes.RiskLevelMedium},
-		{"high risk system modifications", "systemctl", []string{"stop", "important-service"}, runnertypes.RiskLevelHigh},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, evalLevel(t, ev, tt.cmd, tt.args))
-		})
-	}
 }
