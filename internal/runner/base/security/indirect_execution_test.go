@@ -68,6 +68,42 @@ func TestIndirect_WrapperSudoCritical(t *testing.T) {
 	}
 }
 
+// TestIndirect_Taskset verifies taskset's inner command is resolved for both the
+// positional MASK form and the -c/--cpu-list form (separated, attached, clustered).
+// A value-supplied affinity means there is no positional MASK, so a privilege token
+// must not be missed by skipping a real command token.
+func TestIndirect_Taskset(t *testing.T) {
+	// Forms whose inner command is sudo -> Critical (privilege escalation).
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"positional mask", []string{"0x3", "sudo", "ls"}},
+		{"cpu-list separated", []string{"-c", "0-3", "sudo", "ls"}},
+		{"cpu-list attached short", []string{"-c0-3", "sudo", "ls"}},
+		{"cpu-list attached long", []string{"--cpu-list=0-3", "sudo", "ls"}},
+		{"cpu-list separated long", []string{"--cpu-list", "0-3", "sudo", "ls"}},
+		{"cpu-list clustered", []string{"-ac", "0-3", "sudo", "ls"}},
+		{"cpu-list clustered attached", []string{"-ac0-3", "sudo", "ls"}},
+		{"all-tasks then mask", []string{"-a", "0x3", "sudo", "ls"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := analyzeIndirectCmd("taskset", tc.args...)
+			assert.Equalf(t, IndirectCritical, res.Kind, "taskset %v must reach sudo (Critical)", tc.args)
+		})
+	}
+
+	// A benign inner command stays low; the -p/--pid form runs no command.
+	assert.Equal(t, IndirectFloor, analyzeIndirectCmd("taskset", "0x3", "ls").Kind)
+	assert.NotEqual(t, IndirectCritical, analyzeIndirectCmd("taskset", "-c", "0-3", "ls").Kind)
+	assert.Equal(t, IndirectFloor, analyzeIndirectCmd("taskset", "-p", "0x1", "1234").Kind)
+
+	// A wrapped destructive inner command via -c is still folded to High.
+	rm := analyzeIndirectCmd("taskset", "-c0-3", "rm", "-rf", "/tmp/x")
+	assert.Equal(t, IndirectFloor, rm.Kind)
+	assert.Equal(t, runnertypes.RiskLevelHigh, rm.Level)
+}
+
 // TestIndirect_WrapperDestructive verifies a wrapped destructive or
 // system-modification command keeps a risk at least as high as the unwrapped form.
 func TestIndirect_WrapperDestructive(t *testing.T) {
@@ -271,6 +307,15 @@ func TestIndirect_CoreutilsInnerFolded(t *testing.T) {
 	assert.Equal(t, IndirectFloor, res.Kind)
 	assert.Equal(t, runnertypes.RiskLevelHigh, res.Level, "wrapped unknown coreutils applet must fold to High")
 	assert.True(t, hasReason(res, risktypes.ReasonCoreutilsClassification))
+
+	// A coreutils file-info failure (a path under the coreutils dir that cannot be
+	// stat'd) is a fail-closed deny that preserves the coreutils reason and error
+	// class, matching the top-level evaluator rather than a generic reject.
+	ghost := filepath.Join(dir, "ghost") // under coreutilsDir, does not exist
+	deny := analyzeIndirectCmd("env", ghost, "x")
+	assert.Equal(t, IndirectReject, deny.Kind)
+	assert.True(t, hasReason(deny, risktypes.ReasonCoreutilsClassification))
+	assert.Equal(t, risktypes.ErrorClassCoreutilsFileInfo, deny.ErrorClass)
 }
 
 // TestIndirect_WrappedProfileReasonsCarried verifies a wrapped profiled command's

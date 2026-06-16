@@ -76,9 +76,11 @@ type wrapperSpec struct {
 
 // wrapperSpecs is the curated set of wrappers whose inner command the runner can
 // extract and exec directly. env is parsed separately (it also carries NAME=VALUE
-// assignments and -S split-strings). xargs is intentionally excluded: it execs
-// the helper from its own child process, so the runner cannot identity-bind it
-// (handled as a child-process exec form below).
+// assignments and -S split-strings). taskset is parsed separately too: whether a
+// positional CPU mask precedes the command depends on whether -c/--cpu-list was
+// given, which the fixed-positional model cannot express. xargs is intentionally
+// excluded: it execs the helper from its own child process, so the runner cannot
+// identity-bind it (handled as a child-process exec form below).
 var wrapperSpecs = map[string]wrapperSpec{
 	"timeout": {valueOpts: setOf("-s", "--signal", "-k", "--kill-after"), positionals: 1},
 	"nice":    {valueOpts: setOf("-n", "--adjustment"), positionals: 0},
@@ -88,7 +90,6 @@ var wrapperSpecs = map[string]wrapperSpec{
 	"setsid":  {positionals: 0},
 	"time":    {valueOpts: setOf("-o", "--output", "-f", "--format"), positionals: 0},
 	"chrt":    {valueOpts: setOf("-T", "--sched-runtime", "-P", "--sched-period", "-D", "--sched-deadline"), positionals: 1},
-	"taskset": {positionals: 1},
 }
 
 // wrapperNames is the sorted list of wrapperSpecs keys. analyzeIndirect iterates
@@ -305,6 +306,14 @@ func analyzeIndirect(cmdPath string, args []string, depth int) IndirectExecution
 	// split-string in addition to an optional inner command.
 	if _, ok := names["env"]; ok {
 		return analyzeEnv(args, depth)
+	}
+
+	// taskset is parsed specially: the CPU affinity is either a positional MASK or
+	// the value of -c/--cpu-list, so whether a positional precedes the command is
+	// conditional (the fixed-positional wrapper model would shift the inner command
+	// and miss a privilege token for the -c form).
+	if _, ok := names["taskset"]; ok {
+		return analyzeTaskset(args, depth)
 	}
 
 	// Other wrappers the runner re-implements: extract the inner command and
@@ -588,6 +597,66 @@ func analyzeWrapper(spec wrapperSpec, args []string, depth int) IndirectExecutio
 	return evaluateInner(args[idx], args[idx+1:], depth)
 }
 
+// analyzeTaskset resolves the inner command of a taskset invocation. The CPU
+// affinity is supplied either as a positional MASK ("taskset 0x3 CMD") or via
+// -c/--cpu-list ("taskset -c 0-3 CMD", attached "-c0-3"/"--cpu-list=0-3", or
+// clustered "-ac 0-3"); whether a positional MASK precedes the command therefore
+// depends on the options, which the fixed-positional wrapper model cannot express
+// (it would shift the inner command by one token for the -c form and miss a
+// privilege token). The -p/--pid form acts on an existing process and runs no
+// command. taskset's only value-taking short option is -c, so a 'c' anywhere in a
+// short cluster denotes the cpu-list option.
+func analyzeTaskset(args []string, depth int) IndirectExecutionResult {
+	cpuList := false // -c/--cpu-list supplies the affinity, so there is no positional MASK
+	i := 0
+	for i < len(args) {
+		t := args[i]
+		if t == "--" {
+			i++ // option terminator: the next token is the command (or MASK)
+			break
+		}
+		if !strings.HasPrefix(t, "-") || t == "-" {
+			break // first operand
+		}
+		i++
+		switch {
+		case t == "-p" || t == "--pid":
+			// Sets the affinity of an existing process; no command is executed.
+			return floor(runnertypes.RiskLevelMedium, risktypes.ReasonIndirectExecutionWrapper)
+		case t == "--cpu-list":
+			cpuList = true
+			i++ // separated value
+		case strings.HasPrefix(t, "--cpu-list="):
+			cpuList = true // attached value
+		case strings.HasPrefix(t, "--"):
+			if !strings.Contains(t, "=") {
+				return reject() // unknown long option: arity unknown
+			}
+		default:
+			// Short option(s). -c is the only value-taking short option; if it is the
+			// last character its value is the next token, otherwise the rest of the
+			// token is its attached value.
+			if pos := strings.IndexByte(t[1:], 'c'); pos >= 0 {
+				cpuList = true
+				if 1+pos == len(t)-1 {
+					i++ // -c is last in the cluster: its value is the next token
+				}
+			}
+		}
+	}
+	if !cpuList {
+		i++ // no -c/--cpu-list: a positional MASK precedes the command
+	}
+	if i >= len(args) {
+		// No inner command (e.g. "taskset 0x3" alone). Like env with no command.
+		return floor(runnertypes.RiskLevelMedium, risktypes.ReasonIndirectExecutionWrapper)
+	}
+	if strings.HasPrefix(args[i], "-") {
+		return reject() // mis-located command boundary: fail closed
+	}
+	return evaluateInner(args[i], args[i+1:], depth)
+}
+
 // evaluateInner folds the inner command's name-based risk and recurses into a
 // nested wrapper/form, recording the artifact with the RoleInner role.
 func evaluateInner(inner string, innerArgs []string, depth int) IndirectExecutionResult {
@@ -631,7 +700,10 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 	// fail-closed, matching the top-level evaluator's coreutils handling, so a
 	// wrapped coreutils command is not under-classified relative to the direct one.
 	if cRisk, handled, err := CoreutilsCommandRisk(inner, innerArgs); err != nil {
-		res := reject()
+		// Preserve the coreutils failure reason/error class (rather than a generic
+		// reject) so audits can tell a failure-induced deny from a policy reject,
+		// matching the top-level evaluator's coreutils handling.
+		res := rejectClass(risktypes.ReasonCoreutilsClassification, risktypes.ErrorClassCoreutilsFileInfo)
 		nested.Artifacts = append(nested.Artifacts, artifact)
 		res.Artifacts = nested.Artifacts
 		return res
