@@ -386,6 +386,10 @@ func TestIndirect_PackageScriptRunnerHigh(t *testing.T) {
 		// fail closed (High) rather than miss the hidden "run build" script.
 		{"npm unknown sep option", "npm", []string{"--loglevel", "silent", "run", "build"}},
 		{"yarn unknown sep option", "yarn", []string{"--frozen-lockfile", "build"}},
+		// bun and bunx must be treated the same as yarn/npm/pnpm.
+		{"bun run", "bun", []string{"run", "build"}},
+		{"bun script shorthand", "bun", []string{"deploy"}},
+		{"bunx", "bunx", []string{"create-app"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -554,6 +558,8 @@ func TestIndirect_PlainCommandNotIndirect(t *testing.T) {
 		// not a script invocation. "yarn -- install" must not be flagged as High.
 		{"yarn", []string{"--", "install"}},
 		{"pnpm", []string{"--", "install"}},
+		// bun with "--" option terminator followed by a package-manager builtin is not a script.
+		{"bun", []string{"--", "install"}},
 	} {
 		t.Run(tc.cmd, func(t *testing.T) {
 			assert.Equal(t, IndirectNone, analyzeIndirectCmd(tc.cmd, tc.args...).Kind)

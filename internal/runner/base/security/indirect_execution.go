@@ -662,16 +662,20 @@ var packageManagerBuiltins = setOf(
 )
 
 // packageScriptRunnerRisk reports the High risk of a package script runner
-// (npm run / npx / yarn run / pnpm run / dlx / exec, lifecycle aliases, and the
-// yarn/pnpm "<script>" shorthand).
+// (npm run / npx / bunx / yarn run / pnpm run / bun run / dlx / exec, lifecycle
+// aliases, and the yarn/pnpm/bun "<script>" shorthand).
 func packageScriptRunnerRisk(names map[string]struct{}, args []string) (runnertypes.RiskLevel, bool) {
+	// npx and bunx run arbitrary packages without an explicit install step.
 	if _, ok := names["npx"]; ok {
+		return runnertypes.RiskLevelHigh, true
+	}
+	if _, ok := names["bunx"]; ok {
 		return runnertypes.RiskLevelHigh, true
 	}
 	// Lifecycle aliases (test/start/stop/restart) run package.json scripts without
 	// the explicit run/run-script verb, so they are arbitrary-code runners too.
 	scriptVerbs := setOf("run", "run-script", "exec", "dlx", "test", "start", "stop", "restart")
-	for _, runner := range []string{"npm", "pnpm", "yarn"} {
+	for _, runner := range []string{"npm", "pnpm", "yarn", "bun"} {
 		if _, ok := names[runner]; !ok {
 			continue
 		}
@@ -688,9 +692,9 @@ func packageScriptRunnerRisk(names map[string]struct{}, args []string) (runnerty
 		if _, isScript := scriptVerbs[verb]; isScript {
 			return runnertypes.RiskLevelHigh, true
 		}
-		// yarn and pnpm run "<script>" as shorthand for "run <script>", so any verb
-		// that is not a package-management builtin is a script invocation.
-		if (runner == "yarn" || runner == "pnpm") && !isPackageManagerBuiltin(verb) {
+		// yarn, pnpm, and bun run "<script>" as shorthand for "run <script>", so
+		// any verb that is not a package-management builtin is a script invocation.
+		if (runner == "yarn" || runner == "pnpm" || runner == "bun") && !isPackageManagerBuiltin(verb) {
 			return runnertypes.RiskLevelHigh, true
 		}
 	}
@@ -725,26 +729,30 @@ func hasInlineCode(names map[string]struct{}, args []string) bool {
 func packageRunnerVerb(args []string) (verb string, hasUnknown, ok bool) {
 	valueOpts := setOf("--cwd", "-C", "--prefix", "--registry", "--cache")
 	skip := false
+	optionsTerminated := false
 	for _, a := range args {
 		if skip {
 			skip = false
 			continue
 		}
-		if _, isValueOpt := valueOpts[a]; isValueOpt {
-			skip = true // the option consumes the following token as its value
-			continue
-		}
-		if a == "--" {
-			// Option terminator: remaining tokens are positional, not options.
-			continue
-		}
-		if strings.HasPrefix(a, "-") && a != "-" {
-			// A combined "--opt=value" form completes in one token and is safe to
-			// skip; an unknown separated option is not, so signal fail-closed.
-			if strings.Contains(a, "=") {
+		if !optionsTerminated {
+			if _, isValueOpt := valueOpts[a]; isValueOpt {
+				skip = true // the option consumes the following token as its value
 				continue
 			}
-			return "", true, false
+			if a == "--" {
+				// Option terminator: all subsequent tokens are positional.
+				optionsTerminated = true
+				continue
+			}
+			if strings.HasPrefix(a, "-") && a != "-" {
+				// A combined "--opt=value" form completes in one token and is safe to
+				// skip; an unknown separated option is not, so signal fail-closed.
+				if strings.Contains(a, "=") {
+					continue
+				}
+				return "", true, false
+			}
 		}
 		return a, false, true
 	}
