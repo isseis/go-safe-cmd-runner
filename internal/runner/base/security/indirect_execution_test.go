@@ -64,6 +64,7 @@ func TestIndirect_WrapperDestructive(t *testing.T) {
 		{"env rm -rf", "env", []string{"rm", "-rf", "/tmp/x"}, runnertypes.RiskLevelHigh},
 		{"timeout systemctl stop", "timeout", []string{"10", "systemctl", "stop", "nginx"}, runnertypes.RiskLevelHigh},
 		{"nice -n 5 rm -rf", "nice", []string{"-n", "5", "rm", "-rf", "/tmp/x"}, runnertypes.RiskLevelHigh},
+		{"chrt deadline opts rm", "chrt", []string{"-T", "1000", "-P", "2000", "0", "rm", "-rf", "/tmp/x"}, runnertypes.RiskLevelHigh},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -265,6 +266,7 @@ func TestIndirect_DynamicLoaderGated(t *testing.T) {
 		{"ld-linux preload", "/lib64/ld-linux-x86-64.so.2", []string{"--preload", "/tmp/x.so", "/bin/ls"}},
 		{"ld-linux library-path", "ld-linux-x86-64.so.2", []string{"--library-path", "/tmp", "/bin/ls"}},
 		{"ld.so", "ld.so", []string{"/bin/ls"}},
+		{"macos dyld", "dyld", []string{"/bin/ls"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -298,6 +300,9 @@ func TestIndirect_PackageScriptRunnerHigh(t *testing.T) {
 		{"yarn run", "yarn", []string{"run", "build"}},
 		{"pnpm run", "pnpm", []string{"run", "build"}},
 		{"pnpm dlx", "pnpm", []string{"dlx", "create-app"}},
+		{"npm test lifecycle", "npm", []string{"test"}},
+		{"npm start lifecycle", "npm", []string{"start"}},
+		{"yarn start lifecycle", "yarn", []string{"start"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

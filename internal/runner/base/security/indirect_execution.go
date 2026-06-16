@@ -78,7 +78,7 @@ var wrapperSpecs = map[string]wrapperSpec{
 	"stdbuf":  {valueOpts: setOf("-i", "--input", "-o", "--output", "-e", "--error"), positionals: 0},
 	"setsid":  {positionals: 0},
 	"time":    {valueOpts: setOf("-o", "--output", "-f", "--format"), positionals: 0},
-	"chrt":    {positionals: 1},
+	"chrt":    {valueOpts: setOf("-T", "--sched-runtime", "-P", "--sched-period", "-D", "--sched-deadline"), positionals: 1},
 	"taskset": {positionals: 1},
 }
 
@@ -559,7 +559,9 @@ func packageScriptRunnerRisk(names map[string]struct{}, args []string) (runnerty
 	if _, ok := names["npx"]; ok {
 		return runnertypes.RiskLevelHigh, true
 	}
-	scriptVerbs := setOf("run", "run-script", "exec", "dlx")
+	// Lifecycle aliases (test/start/stop/restart) run package.json scripts without
+	// the explicit run/run-script verb, so they are arbitrary-code runners too.
+	scriptVerbs := setOf("run", "run-script", "exec", "dlx", "test", "start", "stop", "restart")
 	for _, runner := range []string{"npm", "pnpm", "yarn"} {
 		if _, ok := names[runner]; !ok {
 			continue
@@ -635,7 +637,7 @@ func isPrivilegeCommand(cmd string) bool {
 // (ld-linux*.so, ld.so, ld-musl-*).
 func hasDynamicLoaderName(names map[string]struct{}) bool {
 	for n := range names {
-		if strings.HasPrefix(n, "ld-linux") || strings.HasPrefix(n, "ld-musl") || n == "ld.so" {
+		if strings.HasPrefix(n, "ld-linux") || strings.HasPrefix(n, "ld-musl") || n == "ld.so" || n == "dyld" {
 			return true
 		}
 	}
