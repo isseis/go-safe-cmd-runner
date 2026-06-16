@@ -141,6 +141,16 @@ func analyzeIndirect(cmdPath string, args []string, depth int) IndirectExecution
 
 	names, _ := extractAllCommandNames(cmdPath)
 
+	// Direct script with a shebang (#!/usr/bin/env python): the kernel runs the
+	// shebang interpreter, a separate artifact, so the interpreter chain is
+	// evaluated and gated. Check this before basename-based wrapper matching so
+	// an explicit script path whose basename matches a wrapper (e.g. /tmp/env
+	// with #!/usr/bin/python3) is evaluated through its interpreter chain rather
+	// than misidentified as the wrapper.
+	if res, ok := analyzeShebang(cmdPath, args, depth); ok {
+		return res
+	}
+
 	// env is parsed specially: it carries NAME=VALUE assignments and a -S
 	// split-string in addition to an optional inner command.
 	if _, ok := names["env"]; ok {
@@ -197,13 +207,6 @@ func analyzeIndirect(cmdPath string, args []string, depth int) IndirectExecution
 		return analyzeService(args)
 	}
 
-	// Direct script with a shebang (#!/usr/bin/env python): the kernel runs the
-	// shebang interpreter, a separate artifact, so the interpreter chain is
-	// evaluated and gated.
-	if res, ok := analyzeShebang(cmdPath, args, depth); ok {
-		return res
-	}
-
 	return IndirectExecutionResult{Kind: IndirectNone}
 }
 
@@ -232,6 +235,12 @@ func analyzeShebang(cmdPath string, scriptArgs []string, depth int) (IndirectExe
 // with a shebang.
 func readShebang(path string) (interp string, args []string, ok bool) {
 	const maxShebangLen = 256
+	// Only inspect explicit paths (containing '/'): bare command names are
+	// resolved via PATH at exec time, not here, and opening a relative name
+	// could accidentally read an unrelated local file from the CWD.
+	if !strings.Contains(path, "/") {
+		return "", nil, false
+	}
 	// The path is the resolved command path the evaluator is already classifying;
 	// reading its first line to detect a shebang interpreter is intentional.
 	f, err := os.Open(path) //nolint:gosec // reading the verified command path to detect a shebang

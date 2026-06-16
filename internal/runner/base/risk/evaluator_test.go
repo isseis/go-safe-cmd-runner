@@ -505,6 +505,9 @@ func TestEvaluateRisk_IndirectExecutionDeny(t *testing.T) {
 			require.NoError(t, err)
 			if tt.wantBlock {
 				assert.True(t, plan.Assessment.Blocking, "expected Blocking")
+				// IndirectReject: the command passed the identity gate, so the
+				// verified identity must be preserved for audit and artifact gating.
+				assert.NotNil(t, plan.Identity, "IndirectReject plan must carry the verified identity")
 			} else {
 				assert.False(t, plan.Assessment.Blocking, "expected allowed")
 				assert.Equal(t, tt.wantLevel, plan.Assessment.Level)

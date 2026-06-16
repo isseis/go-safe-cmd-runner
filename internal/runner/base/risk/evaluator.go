@@ -101,7 +101,12 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 			ErrorClass:     indirect.ErrorClass,
 			ReasonCodes:    indirect.ReasonCodes,
 		}
-		plan := blockingPlan(a)
+		// The command passed the identity gate, so preserve the verified identity
+		// even on deny — audits and artifact gating need it on reject paths.
+		plan := risktypes.VerifiedCommandPlan{
+			Identity:   identityFor(cmd),
+			Assessment: a,
+		}
 		plan.Artifacts = indirect.Artifacts
 		return plan, nil
 	}

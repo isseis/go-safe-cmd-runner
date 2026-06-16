@@ -409,6 +409,23 @@ func TestIndirect_ShebangInterpreterGated(t *testing.T) {
 		})
 	}
 
+	// A script whose basename matches a wrapper (e.g. "env") must be evaluated
+	// through its shebang interpreter chain, not as the wrapper.
+	t.Run("script named env takes shebang over wrapper match", func(t *testing.T) {
+		dir := t.TempDir()
+		script := filepath.Join(dir, "env") // basename == "env"
+		require.NoError(t, os.WriteFile(script, []byte("#!/usr/bin/python3\nprint('hi')\n"), 0o755))
+		res := analyzeIndirectCmd(script)
+		assert.Equal(t, IndirectFloor, res.Kind, "shebang must win over wrapper basename match")
+		interpCount := 0
+		for _, a := range res.Artifacts {
+			if a.Role == risktypes.RoleInterpreter {
+				interpCount++
+			}
+		}
+		assert.Equal(t, 1, interpCount, "shebang interpreter must be recorded exactly once")
+	})
+
 	// A non-shebang file (regular ELF-like content) is not an indirect form.
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "tool")
