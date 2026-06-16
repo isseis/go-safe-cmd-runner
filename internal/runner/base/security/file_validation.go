@@ -213,7 +213,7 @@ func (v *Validator) validateAllowedOutputPathSymlinks(path string) error {
 			return fmt.Errorf("failed to stat path component %s: %w", currentPath, err)
 		}
 
-		if info.Mode()&os.ModeSymlink != 0 && !isAllowedOSManagedSymlink(currentPath) {
+		if info.Mode()&os.ModeSymlink != 0 && !common.IsAllowedOSManagedSymlink(currentPath) {
 			return fmt.Errorf("%w: path component %s is a symlink", isec.ErrInsecurePathComponent, currentPath)
 		}
 
