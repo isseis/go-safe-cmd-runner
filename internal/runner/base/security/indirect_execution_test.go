@@ -539,6 +539,29 @@ func TestIndirect_ShebangInterpreterGated(t *testing.T) {
 	bin := filepath.Join(dir, "tool")
 	require.NoError(t, os.WriteFile(bin, []byte{0x7f, 'E', 'L', 'F', 0, 0}, 0o755))
 	assert.Equal(t, IndirectNone, analyzeIndirectCmd(bin).Kind)
+
+	// A "#!/usr/bin/env -S ..." shebang carries the whole remainder as ONE optional
+	// argument (Linux does not split it further). The env -S payload here contains
+	// a quote, which env -S would process, so it must fail closed (Reject) — and it
+	// must NOT be split into separate argv tokens, which would move the quote out of
+	// the -S payload and let the dangerous "rm -rf /" through.
+	t.Run("env -S shebang with quoting fails closed", func(t *testing.T) {
+		sdir := t.TempDir()
+		script := filepath.Join(sdir, "deploy.sh")
+		require.NoError(t, os.WriteFile(script, []byte("#!/usr/bin/env -S rm '-rf' /\n"), 0o755))
+		assert.Equal(t, IndirectReject, analyzeIndirectCmd(script).Kind,
+			"env -S payload with a quote must be rejected, not split into separate tokens")
+	})
+
+	// The same shebang form without any special characters is interpreted: the
+	// single optional-arg token "-S echo hi" splits cleanly to "echo" + "hi".
+	t.Run("env -S shebang plain payload is interpreted", func(t *testing.T) {
+		sdir := t.TempDir()
+		script := filepath.Join(sdir, "deploy.sh")
+		require.NoError(t, os.WriteFile(script, []byte("#!/usr/bin/env -S echo hi\n"), 0o755))
+		assert.NotEqual(t, IndirectReject, analyzeIndirectCmd(script).Kind,
+			"a plain -S payload must still be interpreted, not rejected")
+	})
 }
 
 // TestIndirect_CommandExecOptionsGated verifies command options that run an

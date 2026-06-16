@@ -16,7 +16,7 @@ package security
 // lua or python.
 var arbitraryCodeExecutionRunners = map[string]struct{}{
 	// Shells
-	"bash": {}, "sh": {}, "dash": {}, "zsh": {}, "ksh": {}, "csh": {}, "tcsh": {}, "fish": {},
+	"bash": {}, "sh": {}, "ash": {}, "dash": {}, "zsh": {}, "ksh": {}, "csh": {}, "tcsh": {}, "fish": {},
 	// Script interpreters and runtimes (including profiled aliases)
 	"python": {}, "python2": {}, "python3": {},
 	"node": {}, "nodejs": {}, "deno": {}, "bun": {},

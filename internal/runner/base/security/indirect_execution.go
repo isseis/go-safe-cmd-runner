@@ -104,13 +104,14 @@ var loaderControlEnvVars = setOf(
 // shellInlineCommands are shells whose inline-code flag is -c only. -e is the
 // errexit boolean option, not inline code, so "bash -e script.sh" is not treated
 // as an inline string.
-var shellInlineCommands = setOf("bash", "sh", "dash", "zsh", "ksh", "csh", "tcsh", "fish")
+var shellInlineCommands = setOf("bash", "sh", "ash", "dash", "zsh", "ksh", "csh", "tcsh", "fish")
 
 // interpreterInlineCommands are interpreters whose inline-code flags are -e (eval)
 // and -c.
 var interpreterInlineCommands = setOf(
 	"python", "python2", "python3", "node", "nodejs", "deno", "bun",
 	"ruby", "perl", "php", "lua", "luajit", "tclsh",
+	"Rscript", "julia", "guile", "elixir",
 )
 
 // remoteShellOptionPrefixes map a command to the options that make it execute an
@@ -362,11 +363,27 @@ func readShebang(path string) (interp string, args []string, ok bool) {
 	if idx := strings.IndexAny(line, "\n\r"); idx >= 0 {
 		line = line[:idx]
 	}
-	fields := strings.Fields(line)
-	if len(fields) == 0 {
+	// Linux shebang parsing (fs/binfmt_script.c) takes the interpreter as the first
+	// whitespace-delimited token and EVERYTHING after it (leading whitespace
+	// trimmed) as a SINGLE optional argument — it does not split that remainder
+	// further. Splitting it with strings.Fields would move quoted/escaped parts out
+	// of an "env -S" payload (e.g. `#!/usr/bin/env -S rm '-rf' /` would reach env as
+	// "-S" + "rm" instead of one "-S rm '-rf' /" token), bypassing the env -S
+	// fail-closed check, so keep the remainder as one token.
+	line = strings.Trim(line, " \t")
+	if line == "" {
 		return "", nil, false
 	}
-	return fields[0], fields[1:], true
+	sep := strings.IndexAny(line, " \t")
+	if sep < 0 {
+		return line, nil, true // interpreter only, no argument
+	}
+	interp = line[:sep]
+	arg := strings.TrimLeft(line[sep+1:], " \t")
+	if arg == "" {
+		return interp, nil, true
+	}
+	return interp, []string{arg}, true
 }
 
 // envBooleanOptions are env's own value-less options.
