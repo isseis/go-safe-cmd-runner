@@ -104,7 +104,7 @@ var interpreterInlineCommands = setOf(
 	"ruby", "perl", "php", "lua", "luajit", "tclsh",
 )
 
-// remoteShellOptionCommands map a command to the options that make it execute an
+// remoteShellOptionPrefixes map a command to the options that make it execute an
 // external helper from its own child process (rsync's remote shell, tar's output
 // filter / checkpoint action). The helper is not runner-execed, so it cannot be
 // identity-bound and the form is rejected.
@@ -381,7 +381,8 @@ func checkEnvAssignment(t string, pathOverridden *bool) (IndirectExecutionResult
 // reduce to a faithful whitespace split are interpreted. The split tokens are
 // prepended to the remaining argv (the tokens after the -S option) and re-parsed.
 func analyzeEnvSplitString(s string, remaining []string, depth int) IndirectExecutionResult {
-	if strings.ContainsAny(s, "\\'\"$#") {
+	// Backtick is included so a command-substitution payload also fails closed.
+	if strings.ContainsAny(s, "\\'\"$#`") {
 		return reject()
 	}
 	tokens := strings.Fields(s)
@@ -444,16 +445,23 @@ func evaluateInner(inner string, innerArgs []string, depth int) IndirectExecutio
 // evaluateInnerAs is evaluateInner with an explicit artifact role (a shebang
 // interpreter is recorded as RoleInterpreter rather than RoleInner). A privilege
 // token is Critical; an inner form that cannot be bound (find/xargs, loader)
-// propagates its rejection.
+// propagates its rejection. The inner command is recorded as a chain artifact on
+// every outcome (Floor/Critical/Reject) so the indirect-execution chain remains
+// traceable in audits even on deny paths.
 func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
+	artifact := risktypes.ExecutedArtifact{Path: inner, Role: role}
+
 	if isPrivilegeCommand(inner) {
-		return critical()
+		res := critical()
+		res.Artifacts = append(res.Artifacts, artifact)
+		return res
 	}
 
 	// Recurse: the inner command may itself be a wrapper or another indirect form.
 	nested := analyzeIndirect(inner, innerArgs, depth+1)
 	switch nested.Kind {
 	case IndirectCritical, IndirectReject:
+		nested.Artifacts = append(nested.Artifacts, artifact)
 		return nested
 	}
 
@@ -488,7 +496,6 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 		}
 	}
 
-	artifact := risktypes.ExecutedArtifact{Path: inner, Role: role}
 	return IndirectExecutionResult{
 		Kind:        IndirectFloor,
 		Level:       level,
@@ -642,7 +649,7 @@ func packageScriptRunnerRisk(names map[string]struct{}, args []string) (runnerty
 		if _, ok := names[runner]; !ok {
 			continue
 		}
-		verb, ok := firstNonOption(args)
+		verb, ok := packageRunnerVerb(args)
 		if !ok {
 			continue
 		}
@@ -677,9 +684,21 @@ func hasInlineCode(names map[string]struct{}, args []string) bool {
 	return false
 }
 
-// firstNonOption returns the first argument that is not an option flag.
-func firstNonOption(args []string) (string, bool) {
+// packageRunnerVerb returns the package-runner subcommand: the first non-option
+// token, skipping common value-taking options and their values so an option value
+// is not mistaken for the subcommand (e.g. "yarn --cwd /dir install" -> install).
+func packageRunnerVerb(args []string) (string, bool) {
+	valueOpts := setOf("--cwd", "-C", "--prefix", "--registry", "--cache")
+	skip := false
 	for _, a := range args {
+		if skip {
+			skip = false
+			continue
+		}
+		if _, ok := valueOpts[a]; ok {
+			skip = true // the option consumes the following token as its value
+			continue
+		}
 		if !strings.HasPrefix(a, "-") || a == "-" {
 			return a, true
 		}
@@ -687,8 +706,9 @@ func firstNonOption(args []string) (string, bool) {
 	return "", false
 }
 
-// hasFlag reports whether flag appears as a standalone token in args (stopping at
-// the "--" option terminator).
+// hasFlag reports whether flag appears in args (stopping at the "--" option
+// terminator). A two-character short flag (e.g. "-c") is also detected inside a
+// combined short-flag bundle (e.g. "-xc" includes "-c").
 func hasFlag(args []string, flag string) bool {
 	for _, a := range args {
 		if a == "--" {
@@ -696,6 +716,12 @@ func hasFlag(args []string, flag string) bool {
 		}
 		if a == flag {
 			return true
+		}
+		if len(flag) == 2 && flag[0] == '-' && flag[1] != '-' {
+			if strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--") &&
+				strings.IndexByte(a[1:], flag[1]) >= 0 {
+				return true
+			}
 		}
 	}
 	return false

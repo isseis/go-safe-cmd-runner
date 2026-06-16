@@ -112,6 +112,8 @@ func TestIndirect_ShellInlineHigh(t *testing.T) {
 		{"python -c", "python", []string{"-c", "import os"}},
 		{"perl -e", "perl", []string{"-e", "print 1"}},
 		{"node -e", "node", []string{"-e", "process.exit()"}},
+		{"bash combined -xc", "bash", []string{"-xc", "rm -rf /"}},
+		{"bash combined -ic", "bash", []string{"-ic", "evil"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -147,6 +149,12 @@ func TestIndirect_InnerCommandGated(t *testing.T) {
 	// propagates as a rejection rather than passing the gate.
 	rej := analyzeIndirectCmd("env", "find", "/tmp", "-exec", "rm", "{}", ";")
 	assert.Equal(t, IndirectReject, rej.Kind)
+
+	// The inner command is recorded as a chain artifact even on deny paths
+	// (Critical), so the indirect-execution chain stays auditable.
+	crit := analyzeIndirectCmd("env", "sudo", "ls")
+	assert.Equal(t, IndirectCritical, crit.Kind)
+	assert.True(t, hasArtifactPath(crit.Artifacts, "sudo"), "deny path must still record the inner artifact")
 }
 
 // TestIndirect_WrapperNoCommandMedium verifies a wrapper invoked with no inner
@@ -231,7 +239,7 @@ func TestIndirect_EnvSplitString(t *testing.T) {
 	// A payload using env -S escape/quote/substitution processing cannot be
 	// faithfully whitespace-split, so it must fail closed (Reject) rather than
 	// silently mis-tokenize and let a hidden command through.
-	for _, payload := range []string{`sudo\tls`, `'sudo' ls`, `"sudo" ls`, `${X} ls`, `sudo ls #comment`} {
+	for _, payload := range []string{`sudo\tls`, `'sudo' ls`, `"sudo" ls`, `${X} ls`, `sudo ls #comment`, "`whoami` ls"} {
 		res := analyzeIndirectCmd("env", "-S", payload)
 		assert.Equalf(t, IndirectReject, res.Kind, "payload %q must fail closed", payload)
 	}
@@ -484,6 +492,9 @@ func TestIndirect_PlainCommandNotIndirect(t *testing.T) {
 		// system-modification/package-manager dimension, not the indirect gate).
 		{"yarn", []string{"install"}},
 		{"pnpm", []string{"add", "lodash"}},
+		// A value-taking option's value must not be mistaken for the subcommand:
+		// "yarn --cwd /dir install" is still the install builtin, not a script.
+		{"yarn", []string{"--cwd", "/some/dir", "install"}},
 	} {
 		t.Run(tc.cmd, func(t *testing.T) {
 			assert.Equal(t, IndirectNone, analyzeIndirectCmd(tc.cmd, tc.args...).Kind)
