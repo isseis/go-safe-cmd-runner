@@ -812,11 +812,15 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 		}
 	}
 
+	// A wrapped command can accumulate the same reason from more than one source
+	// (e.g. "env bash -c" gets ReasonArbitraryCodeExecution from both the nested
+	// inline-code fold and IsArbitraryCodeExecutionRunner); de-duplicate so the
+	// audit chain is not noisy.
 	return IndirectExecutionResult{
 		Kind:        IndirectFloor,
 		Level:       level,
-		ReasonCodes: codes,
-		Reasons:     reasons,
+		ReasonCodes: common.DedupeStable(codes),
+		Reasons:     common.DedupeStable(reasons),
 		Artifacts:   append(nested.Artifacts, artifact),
 	}
 }

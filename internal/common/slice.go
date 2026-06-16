@@ -89,3 +89,23 @@ func SliceToSet[T comparable](slice []T) map[T]struct{} {
 	}
 	return set
 }
+
+// DedupeStable returns the slice with duplicate elements removed, preserving the
+// first occurrence of each (stable order). The input is not modified; nil and
+// single-element slices are returned as-is. Useful for canonicalizing
+// reason-code / reason-string lists accumulated from several risk dimensions.
+func DedupeStable[T comparable](in []T) []T {
+	if len(in) <= 1 {
+		return in
+	}
+	seen := make(map[T]struct{}, len(in))
+	out := make([]T, 0, len(in))
+	for _, v := range in {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}

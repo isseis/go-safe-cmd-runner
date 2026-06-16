@@ -182,6 +182,22 @@ func TestIndirect_ShellInlineHigh(t *testing.T) {
 	assert.NotEqual(t, IndirectReject, res.Kind)
 }
 
+// TestIndirect_WrappedRunnerReasonCodesDeduped verifies a wrapped runner does not
+// accumulate a duplicate reason code: "env bash -c ..." gets
+// ReasonArbitraryCodeExecution from both the nested inline-code fold and the
+// IsArbitraryCodeExecutionRunner check, and must list it only once.
+func TestIndirect_WrappedRunnerReasonCodesDeduped(t *testing.T) {
+	res := analyzeIndirectCmd("env", "bash", "-c", "echo hi")
+	assert.Equal(t, IndirectFloor, res.Kind)
+	count := 0
+	for _, c := range res.ReasonCodes {
+		if c == risktypes.ReasonArbitraryCodeExecution {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "wrapped runner must not duplicate ReasonArbitraryCodeExecution")
+}
+
 // TestIndirect_InnerCommandGated verifies the extracted inner command is gated:
 // its risk is folded, and an inner form that cannot be bound is rejected.
 func TestIndirect_InnerCommandGated(t *testing.T) {
