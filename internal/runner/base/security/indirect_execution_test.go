@@ -365,6 +365,10 @@ func TestIndirect_PackageScriptRunnerHigh(t *testing.T) {
 		{"yarn script shorthand", "yarn", []string{"build"}},
 		{"pnpm script shorthand", "pnpm", []string{"deploy"}},
 		{"env yarn build wrapped", "env", []string{"yarn", "build"}},
+		// An unknown separated option before the verb shifts the parse position, so
+		// fail closed (High) rather than miss the hidden "run build" script.
+		{"npm unknown sep option", "npm", []string{"--loglevel", "silent", "run", "build"}},
+		{"yarn unknown sep option", "yarn", []string{"--frozen-lockfile", "build"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

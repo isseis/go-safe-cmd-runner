@@ -1,6 +1,8 @@
 package security
 
 import (
+	"errors"
+	"io"
 	"os"
 	"strings"
 
@@ -239,7 +241,12 @@ func readShebang(path string) (interp string, args []string, ok bool) {
 	defer func() { _ = f.Close() }()
 
 	buf := make([]byte, maxShebangLen)
-	n, _ := f.Read(buf)
+	n, err := f.Read(buf)
+	// A short file legitimately returns io.EOF along with the bytes read; any other
+	// error means the buffer may be incomplete, so do not interpret it.
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", nil, false
+	}
 	if n < 2 || buf[0] != '#' || buf[1] != '!' {
 		return "", nil, false
 	}
@@ -638,7 +645,13 @@ func packageScriptRunnerRisk(names map[string]struct{}, args []string) (runnerty
 		if _, ok := names[runner]; !ok {
 			continue
 		}
-		verb, ok := packageRunnerVerb(args)
+		verb, hasUnknown, ok := packageRunnerVerb(args)
+		if hasUnknown {
+			// An unknown separated option may consume the next token as its value,
+			// shifting the parse position and hiding a script subcommand. Fail closed
+			// (High) rather than miss a possible script invocation.
+			return runnertypes.RiskLevelHigh, true
+		}
 		if !ok {
 			continue
 		}
@@ -676,7 +689,10 @@ func hasInlineCode(names map[string]struct{}, args []string) bool {
 // packageRunnerVerb returns the package-runner subcommand: the first non-option
 // token, skipping common value-taking options and their values so an option value
 // is not mistaken for the subcommand (e.g. "yarn --cwd /dir install" -> install).
-func packageRunnerVerb(args []string) (string, bool) {
+// hasUnknown is true when a separated option not in the known value set is seen
+// before the verb: it may or may not consume the next token, so the parse position
+// is no longer reliable and the caller must fail closed.
+func packageRunnerVerb(args []string) (verb string, hasUnknown, ok bool) {
 	valueOpts := setOf("--cwd", "-C", "--prefix", "--registry", "--cache")
 	skip := false
 	for _, a := range args {
@@ -684,15 +700,21 @@ func packageRunnerVerb(args []string) (string, bool) {
 			skip = false
 			continue
 		}
-		if _, ok := valueOpts[a]; ok {
+		if _, isValueOpt := valueOpts[a]; isValueOpt {
 			skip = true // the option consumes the following token as its value
 			continue
 		}
-		if !strings.HasPrefix(a, "-") || a == "-" {
-			return a, true
+		if strings.HasPrefix(a, "-") && a != "-" {
+			// A combined "--opt=value" form completes in one token and is safe to
+			// skip; an unknown separated option is not, so signal fail-closed.
+			if strings.Contains(a, "=") {
+				continue
+			}
+			return "", true, false
 		}
+		return a, false, true
 	}
-	return "", false
+	return "", false, false
 }
 
 // hasFlag reports whether flag appears in args (stopping at the "--" option
