@@ -599,7 +599,8 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 	// wrapped coreutils command is not under-classified relative to the direct one.
 	if cRisk, handled, err := CoreutilsCommandRisk(inner, innerArgs); err != nil {
 		res := reject()
-		res.Artifacts = append(nested.Artifacts, artifact)
+		nested.Artifacts = append(nested.Artifacts, artifact)
+		res.Artifacts = nested.Artifacts
 		return res
 	} else if handled {
 		level = max(level, cRisk)
