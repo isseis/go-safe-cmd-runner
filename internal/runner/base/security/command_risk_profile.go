@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -153,6 +154,32 @@ func ProfileNetworkApplies(profile CommandRiskProfile, args []string) bool {
 	default:
 		return false
 	}
+}
+
+// ProfileFactorRisk returns the non-privilege, non-system-modification risk
+// factors of a command's profile (destruction, data exfiltration, and applicable
+// network) as a single folded level plus the reason code for each contributing
+// factor. Privilege is handled by the dedicated privilege gate and system
+// modification by SystemModificationRisk, so neither is folded here. It returns
+// RiskLevelUnknown with no codes when no factor applies. This is the single
+// source for the profile dimension, used by the evaluator and the wrapped-inner
+// indirect-execution path.
+func ProfileFactorRisk(profile CommandRiskProfile, args []string) (runnertypes.RiskLevel, []risktypes.ReasonCode) {
+	level := runnertypes.RiskLevelUnknown
+	var codes []risktypes.ReasonCode
+	if profile.DestructionRisk.Level > runnertypes.RiskLevelLow {
+		level = max(level, profile.DestructionRisk.Level)
+		codes = append(codes, risktypes.ReasonProfileDestruction)
+	}
+	if profile.DataExfilRisk.Level > runnertypes.RiskLevelLow {
+		level = max(level, profile.DataExfilRisk.Level)
+		codes = append(codes, risktypes.ReasonProfileDataExfil)
+	}
+	if profile.NetworkRisk.Level > runnertypes.RiskLevelLow && ProfileNetworkApplies(profile, args) {
+		level = max(level, profile.NetworkRisk.Level)
+		codes = append(codes, risktypes.ReasonProfileNetwork)
+	}
+	return level, codes
 }
 
 // Validate ensures consistency between risk factors and configuration

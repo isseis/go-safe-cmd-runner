@@ -218,14 +218,29 @@ func analyzeShebang(cmdPath string, scriptArgs []string, depth int) (IndirectExe
 	// and the script's own arguments.
 	args := append(append([]string{}, interpArgs...), cmdPath)
 	args = append(args, scriptArgs...)
-	res := evaluateInner(interp, args, depth)
-	// The shebang interpreter is an executed artifact regardless of the outcome
-	// (Floor/Critical/Reject), so record it on every path for the audit chain.
-	res.Artifacts = append(res.Artifacts, risktypes.ExecutedArtifact{
-		Path: interp,
-		Role: risktypes.RoleInterpreter,
-	})
+	// Evaluate the interpreter as the executed artifact, labeled RoleInterpreter.
+	// On a Floor outcome evaluateInnerAs already records that artifact (once); on a
+	// Critical/Reject outcome it records none, so add it here so the interpreter is
+	// still present in the audit chain on every path.
+	res := evaluateInnerAs(interp, args, depth, risktypes.RoleInterpreter)
+	if !hasArtifactPath(res.Artifacts, interp) {
+		res.Artifacts = append(res.Artifacts, risktypes.ExecutedArtifact{
+			Path: interp,
+			Role: risktypes.RoleInterpreter,
+		})
+	}
 	return res, true
+}
+
+// hasArtifactPath reports whether the artifact list already contains an entry for
+// the given path.
+func hasArtifactPath(arts []risktypes.ExecutedArtifact, path string) bool {
+	for _, a := range arts {
+		if a.Path == path {
+			return true
+		}
+	}
+	return false
 }
 
 // readShebang reads the interpreter and its inline arguments from a file's "#!"
@@ -293,8 +308,18 @@ func analyzeEnv(args []string, depth int) IndirectExecutionResult {
 		}
 		if t == "--" {
 			// Option terminator: the remaining tokens are operands (NAME=VALUE
-			// assignments then the command), parsed by the following iterations.
-			continue
+			// assignments then the command). The command is taken literally even if
+			// it begins with '-', so it is no longer subject to option parsing.
+			for j := i + 1; j < len(args); j++ {
+				if isAssignment(args[j]) {
+					if res, rejected := checkEnvAssignment(args[j], &pathOverridden); rejected {
+						return res
+					}
+					continue
+				}
+				return resolveInner(args[j], args[j+1:], pathOverridden, depth)
+			}
+			return floor(runnertypes.RiskLevelMedium, risktypes.ReasonIndirectExecutionWrapper)
 		}
 		if strings.HasPrefix(t, "-") {
 			// Unknown env option: it may or may not consume a value, so the inner
@@ -395,6 +420,10 @@ func skipWrapperOptions(args []string, valueOpts map[string]struct{}) int {
 	i := 0
 	for i < len(args) {
 		t := args[i]
+		if t == "--" {
+			// Option terminator: the next token is the first positional argument.
+			return i + 1
+		}
 		if !strings.HasPrefix(t, "-") || t == "-" {
 			break
 		}
@@ -407,9 +436,16 @@ func skipWrapperOptions(args []string, valueOpts map[string]struct{}) int {
 }
 
 // evaluateInner folds the inner command's name-based risk and recurses into a
-// nested wrapper/form. A privilege token is Critical; an inner form that cannot
-// be bound (find/xargs, loader) propagates its rejection.
+// nested wrapper/form, recording the artifact with the RoleInner role.
 func evaluateInner(inner string, innerArgs []string, depth int) IndirectExecutionResult {
+	return evaluateInnerAs(inner, innerArgs, depth, risktypes.RoleInner)
+}
+
+// evaluateInnerAs is evaluateInner with an explicit artifact role (a shebang
+// interpreter is recorded as RoleInterpreter rather than RoleInner). A privilege
+// token is Critical; an inner form that cannot be bound (find/xargs, loader)
+// propagates its rejection.
+func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
 	if isPrivilegeCommand(inner) {
 		return critical()
 	}
@@ -441,8 +477,18 @@ func evaluateInner(inner string, innerArgs []string, depth int) IndirectExecutio
 		level = max(level, l)
 		codes = append(codes, risktypes.ReasonDangerousArgPattern)
 	}
+	// Fold the inner command's risk profile (destruction / data exfiltration /
+	// applicable network) so a profiled command (claude, curl, ssh, ...) is not
+	// under-classified when wrapped. Privilege is handled above; system
+	// modification is handled via SystemModificationRisk.
+	if profile, ok := ResolveProfile(inner); ok {
+		if pl, pcodes := ProfileFactorRisk(profile, innerArgs); pl > runnertypes.RiskLevelUnknown {
+			level = max(level, pl)
+			codes = append(codes, pcodes...)
+		}
+	}
 
-	artifact := risktypes.ExecutedArtifact{Path: inner, Role: risktypes.RoleInner}
+	artifact := risktypes.ExecutedArtifact{Path: inner, Role: role}
 	return IndirectExecutionResult{
 		Kind:        IndirectFloor,
 		Level:       level,
@@ -569,8 +615,22 @@ func matchesRemoteShellOption(arg, p string) bool {
 	return false
 }
 
+// packageManagerBuiltins are subcommands of yarn/pnpm that manage packages
+// rather than run a package.json script. Anything else passed to yarn/pnpm is a
+// script invocation (yarn/pnpm treat "<name>" as shorthand for "run <name>").
+// The set is deliberately conservative: an unrecognized verb falls through to the
+// script-runner (High) classification, which is the safe side.
+var packageManagerBuiltins = setOf(
+	"install", "add", "remove", "up", "upgrade", "upgrade-interactive", "dedupe",
+	"why", "list", "info", "init", "link", "unlink", "pack", "publish", "config",
+	"cache", "audit", "outdated", "import", "licenses", "owner", "version",
+	"workspace", "workspaces", "set", "plugin", "create", "global", "bin",
+	"autoclean", "check", "login", "logout", "node", "rebuild", "store", "patch",
+)
+
 // packageScriptRunnerRisk reports the High risk of a package script runner
-// (npm run / npx / yarn run / pnpm run / dlx / exec).
+// (npm run / npx / yarn run / pnpm run / dlx / exec, lifecycle aliases, and the
+// yarn/pnpm "<script>" shorthand).
 func packageScriptRunnerRisk(names map[string]struct{}, args []string) (runnertypes.RiskLevel, bool) {
 	if _, ok := names["npx"]; ok {
 		return runnertypes.RiskLevelHigh, true
@@ -582,13 +642,27 @@ func packageScriptRunnerRisk(names map[string]struct{}, args []string) (runnerty
 		if _, ok := names[runner]; !ok {
 			continue
 		}
-		if verb, ok := firstNonOption(args); ok {
-			if _, isScript := scriptVerbs[verb]; isScript {
-				return runnertypes.RiskLevelHigh, true
-			}
+		verb, ok := firstNonOption(args)
+		if !ok {
+			continue
+		}
+		if _, isScript := scriptVerbs[verb]; isScript {
+			return runnertypes.RiskLevelHigh, true
+		}
+		// yarn and pnpm run "<script>" as shorthand for "run <script>", so any verb
+		// that is not a package-management builtin is a script invocation.
+		if (runner == "yarn" || runner == "pnpm") && !isPackageManagerBuiltin(verb) {
+			return runnertypes.RiskLevelHigh, true
 		}
 	}
 	return runnertypes.RiskLevelUnknown, false
+}
+
+// isPackageManagerBuiltin reports whether verb is a yarn/pnpm package-management
+// subcommand (not a package.json script).
+func isPackageManagerBuiltin(verb string) bool {
+	_, ok := packageManagerBuiltins[verb]
+	return ok
 }
 
 // hasInlineCode reports whether a shell (-c) or interpreter (-c/-e) is invoked

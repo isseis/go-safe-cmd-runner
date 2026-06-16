@@ -65,6 +65,30 @@ func TestIndirect_WrapperDestructive(t *testing.T) {
 		{"timeout systemctl stop", "timeout", []string{"10", "systemctl", "stop", "nginx"}, runnertypes.RiskLevelHigh},
 		{"nice -n 5 rm -rf", "nice", []string{"-n", "5", "rm", "-rf", "/tmp/x"}, runnertypes.RiskLevelHigh},
 		{"chrt deadline opts rm", "chrt", []string{"-T", "1000", "-P", "2000", "0", "rm", "-rf", "/tmp/x"}, runnertypes.RiskLevelHigh},
+		{"timeout -- terminator", "timeout", []string{"--", "5", "rm", "-rf", "/tmp/x"}, runnertypes.RiskLevelHigh},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := analyzeIndirectCmd(tc.cmd, tc.args...)
+			assert.Equal(t, IndirectFloor, res.Kind)
+			assert.Equal(t, tc.want, res.Level)
+		})
+	}
+}
+
+// TestIndirect_WrapperProfileFactors verifies a wrapped command's risk profile
+// (network / data-exfiltration) is folded, so a profiled command is not
+// under-classified when wrapped.
+func TestIndirect_WrapperProfileFactors(t *testing.T) {
+	cases := []struct {
+		name string
+		cmd  string
+		args []string
+		want runnertypes.RiskLevel
+	}{
+		{"env claude", "env", []string{"claude"}, runnertypes.RiskLevelHigh},
+		{"env curl url", "env", []string{"curl", "https://example.com"}, runnertypes.RiskLevelMedium},
+		{"timeout wget", "timeout", []string{"5", "wget", "http://example.com"}, runnertypes.RiskLevelMedium},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -288,9 +312,14 @@ func TestIndirect_UnextractableWrapperRejected(t *testing.T) {
 	assert.Equal(t, runnertypes.RiskLevelMedium, noCmd.Level)
 
 	// The "--" option terminator is a valid form, not an unknown option: the
-	// following token is the command and must still be evaluated.
+	// following token is the command and must still be evaluated, even when the
+	// command itself begins with "-".
 	assert.NotEqual(t, IndirectReject, analyzeIndirectCmd("env", "--", "ls").Kind)
+	assert.NotEqual(t, IndirectReject, analyzeIndirectCmd("env", "--", "-weird-cmd").Kind)
+	assert.NotEqual(t, IndirectReject, analyzeIndirectCmd("env", "--", "--also-a-cmd").Kind)
 	assert.Equal(t, IndirectCritical, analyzeIndirectCmd("env", "--", "sudo", "ls").Kind)
+	// Forbidden assignments after "--" are still caught.
+	assert.Equal(t, IndirectReject, analyzeIndirectCmd("env", "--", "LD_PRELOAD=/tmp/x.so", "ls").Kind)
 }
 
 // TestIndirect_PackageScriptRunnerHigh verifies package script runners are High.
@@ -308,6 +337,9 @@ func TestIndirect_PackageScriptRunnerHigh(t *testing.T) {
 		{"npm test lifecycle", "npm", []string{"test"}},
 		{"npm start lifecycle", "npm", []string{"start"}},
 		{"yarn start lifecycle", "yarn", []string{"start"}},
+		{"yarn script shorthand", "yarn", []string{"build"}},
+		{"pnpm script shorthand", "pnpm", []string{"deploy"}},
+		{"env yarn build wrapped", "env", []string{"yarn", "build"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -338,13 +370,13 @@ func TestIndirect_ShebangInterpreterGated(t *testing.T) {
 			res := analyzeIndirectCmd(script)
 			assert.Equal(t, IndirectFloor, res.Kind)
 			assert.Equal(t, runnertypes.RiskLevelHigh, res.Level)
-			found := false
+			interp := 0
 			for _, a := range res.Artifacts {
 				if a.Role == risktypes.RoleInterpreter {
-					found = true
+					interp++
 				}
 			}
-			assert.True(t, found, "shebang interpreter must be recorded as an artifact")
+			assert.Equal(t, 1, interp, "shebang interpreter must be recorded exactly once, as RoleInterpreter")
 		})
 	}
 
@@ -448,6 +480,10 @@ func TestIndirect_PlainCommandNotIndirect(t *testing.T) {
 		{"rm", []string{"-rf", "/tmp/x"}},
 		{"curl", []string{"https://example.com"}},
 		{"systemctl", []string{"restart", "nginx"}},
+		// yarn package-management builtins are not script runners (handled by the
+		// system-modification/package-manager dimension, not the indirect gate).
+		{"yarn", []string{"install"}},
+		{"pnpm", []string{"add", "lodash"}},
 	} {
 		t.Run(tc.cmd, func(t *testing.T) {
 			assert.Equal(t, IndirectNone, analyzeIndirectCmd(tc.cmd, tc.args...).Kind)

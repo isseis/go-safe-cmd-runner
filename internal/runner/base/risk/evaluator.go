@@ -249,14 +249,10 @@ func addDimension(a *risktypes.RiskAssessment, level runnertypes.RiskLevel, code
 // applyProfileFactors folds the profile's non-privilege, non-system-modification
 // risk factors into the assessment and records the human-readable reasons.
 func applyProfileFactors(a *risktypes.RiskAssessment, profile security.CommandRiskProfile, args []string) {
-	if profile.DestructionRisk.Level > runnertypes.RiskLevelLow {
-		addDimension(a, profile.DestructionRisk.Level, risktypes.ReasonProfileDestruction)
-	}
-	if profile.DataExfilRisk.Level > runnertypes.RiskLevelLow {
-		addDimension(a, profile.DataExfilRisk.Level, risktypes.ReasonProfileDataExfil)
-	}
-	if profile.NetworkRisk.Level > runnertypes.RiskLevelLow && security.ProfileNetworkApplies(profile, args) {
-		addDimension(a, profile.NetworkRisk.Level, risktypes.ReasonProfileNetwork)
+	if level, codes := security.ProfileFactorRisk(profile, args); level > runnertypes.RiskLevelUnknown {
+		for _, code := range codes {
+			addDimension(a, level, code)
+		}
 	}
 	a.Reasons = profile.GetRiskReasons()
 	a.NetworkType = networkTypeString(profile.NetworkType)
