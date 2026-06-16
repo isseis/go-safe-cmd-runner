@@ -269,11 +269,14 @@ func analyzeEnv(args []string, depth int) IndirectExecutionResult {
 	pathOverridden := false
 	for i := 0; i < len(args); i++ {
 		t := args[i]
-		if payload, isSplit, valid := envSplitArg(args, i); isSplit {
+		if payload, consumed, isSplit, valid := envSplitArg(args, i); isSplit {
 			if !valid {
 				return reject()
 			}
-			return analyzeEnvSplitString(payload, depth)
+			// env -S prepends the split tokens to the remaining argv (e.g.
+			// `env -S "env" sudo ls` runs `env env sudo ls`), so the trailing
+			// arguments must be carried along, not discarded.
+			return analyzeEnvSplitString(payload, args[i+consumed:], depth)
 		}
 		if _, ok := envBooleanOptions[t]; ok {
 			continue
@@ -303,20 +306,25 @@ func analyzeEnv(args []string, depth int) IndirectExecutionResult {
 
 // envSplitArg detects env's -S/--split-string at position i. isSplit is true when
 // the token is a split-string form; valid is false when its payload is missing.
-func envSplitArg(args []string, i int) (payload string, isSplit, valid bool) {
+// consumed is the number of argv tokens the option occupies (2 for the separated
+// `-S VALUE` form, 1 for the attached `-SVALUE` / `--split-string=VALUE` forms),
+// so the caller can carry the remaining arguments after the option.
+func envSplitArg(args []string, i int) (payload string, consumed int, isSplit, valid bool) {
 	t := args[i]
 	switch {
 	case t == "-S" || t == "--split-string":
 		if i+1 >= len(args) {
-			return "", true, false
+			return "", 1, true, false
 		}
-		return args[i+1], true, true
+		// The separated form occupies two tokens: the option and its value.
+		const separatedFormTokens = 2
+		return args[i+1], separatedFormTokens, true, true
 	case strings.HasPrefix(t, "-S"):
-		return t[len("-S"):], true, true
+		return t[len("-S"):], 1, true, true
 	case strings.HasPrefix(t, "--split-string="):
-		return t[len("--split-string="):], true, true
+		return t[len("--split-string="):], 1, true, true
 	}
-	return "", false, false
+	return "", 0, false, false
 }
 
 // checkEnvAssignment rejects loader-control assignments (LD_*/DYLD_*) and records
@@ -338,10 +346,11 @@ func checkEnvAssignment(t string, pathOverridden *bool) (IndirectExecutionResult
 // single/double quotes, ${VAR} substitution, '#' comments) before splitting into
 // argv. A plain whitespace split cannot reproduce that, so it would mis-tokenize a
 // payload like 'sudo\tls' or "'sudo' ls" and miss the hidden command (fail open).
-// To stay fail-closed (AC: uninterpretable -> reject), any payload containing a
+// To stay fail-closed (uninterpretable -> reject), any payload containing a
 // character that triggers that extra processing is rejected; only payloads that
-// reduce to a faithful whitespace split are interpreted.
-func analyzeEnvSplitString(s string, depth int) IndirectExecutionResult {
+// reduce to a faithful whitespace split are interpreted. The split tokens are
+// prepended to the remaining argv (the tokens after the -S option) and re-parsed.
+func analyzeEnvSplitString(s string, remaining []string, depth int) IndirectExecutionResult {
 	if strings.ContainsAny(s, "\\'\"$#") {
 		return reject()
 	}
@@ -349,7 +358,7 @@ func analyzeEnvSplitString(s string, depth int) IndirectExecutionResult {
 	if len(tokens) == 0 {
 		return reject()
 	}
-	return analyzeEnv(tokens, depth+1)
+	return analyzeEnv(append(tokens, remaining...), depth+1)
 }
 
 // resolveInner evaluates a wrapper's extracted inner command. When the resolution
@@ -516,13 +525,32 @@ func analyzeRemoteShellOption(names map[string]struct{}, args []string) (Indirec
 		}
 		for _, a := range args {
 			for _, p := range prefixes {
-				if a == p || strings.HasPrefix(a, p+"=") {
+				if matchesRemoteShellOption(a, p) {
 					return reject(), true
 				}
 			}
 		}
 	}
 	return IndirectExecutionResult{}, false
+}
+
+// matchesRemoteShellOption reports whether arg selects the helper option p. It
+// matches the exact form (-e), the long attached form (--rsh=ssh), the short
+// attached form (-essh), and a short-option bundle that includes the option
+// letter (-avze ssh), so an attached or bundled value cannot slip past.
+func matchesRemoteShellOption(arg, p string) bool {
+	if arg == p || strings.HasPrefix(arg, p+"=") {
+		return true
+	}
+	// Short option (e.g. -e): rsync attaches the value (-essh) or bundles the
+	// letter with other short flags (-avze), so any single-dash (non "--") token
+	// that contains the option letter selects it.
+	if len(p) == 2 && p[0] == '-' && p[1] != '-' {
+		if strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") {
+			return strings.IndexByte(arg[1:], p[1]) >= 0
+		}
+	}
+	return false
 }
 
 // packageScriptRunnerRisk reports the High risk of a package script runner

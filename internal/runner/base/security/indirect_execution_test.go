@@ -198,6 +198,11 @@ func TestIndirect_EnvSplitString(t *testing.T) {
 	combined := analyzeIndirectCmd("env", "--split-string=sudo ls")
 	assert.Equal(t, IndirectCritical, combined.Kind)
 
+	// Arguments after the split-string are not discarded: env -S prepends the
+	// split tokens to the remaining argv, so a hidden sudo there is still Critical.
+	remaining := analyzeIndirectCmd("env", "-S", "env", "sudo", "ls")
+	assert.Equal(t, IndirectCritical, remaining.Kind)
+
 	// A payload using env -S escape/quote/substitution processing cannot be
 	// faithfully whitespace-split, so it must fail closed (Reject) rather than
 	// silently mis-tokenize and let a hidden command through.
@@ -351,6 +356,8 @@ func TestIndirect_CommandExecOptionsGated(t *testing.T) {
 	}{
 		{"rsync -e", "rsync", []string{"-e", "ssh -p 22", "src", "dst"}, IndirectReject},
 		{"rsync --rsh=", "rsync", []string{"--rsh=ssh", "src", "dst"}, IndirectReject},
+		{"rsync -essh attached", "rsync", []string{"-essh", "src", "dst"}, IndirectReject},
+		{"rsync -avze bundle", "rsync", []string{"-avze", "ssh", "src", "dst"}, IndirectReject},
 		{"tar --to-command=", "tar", []string{"--to-command=/tmp/x", "-cf", "a.tar", "."}, IndirectReject},
 		{"tar --checkpoint-action=", "tar", []string{"--checkpoint-action=exec=sh", "-cf", "a.tar", "."}, IndirectReject},
 		{"tar plain", "tar", []string{"-cf", "a.tar", "."}, IndirectNone},
