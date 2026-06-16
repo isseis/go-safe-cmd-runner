@@ -3,7 +3,9 @@ package security
 import (
 	"errors"
 	"io"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
@@ -84,6 +86,11 @@ var wrapperSpecs = map[string]wrapperSpec{
 	"taskset": {positionals: 1},
 }
 
+// wrapperNames is the sorted list of wrapperSpecs keys. analyzeIndirect iterates
+// it (rather than ranging the map) so wrapper selection is deterministic when a
+// command's symlink chain matches more than one wrapper name.
+var wrapperNames = slices.Sorted(maps.Keys(wrapperSpecs))
+
 // loaderControlEnvVars are environment variable names that change which shared
 // objects a dynamic executable loads. Supplying them via a wrapper lets an
 // attacker inject code into an otherwise-verified binary, so they are rejected.
@@ -151,19 +158,14 @@ func analyzeIndirect(cmdPath string, args []string, depth int) IndirectExecution
 		return res
 	}
 
-	// env is parsed specially: it carries NAME=VALUE assignments and a -S
-	// split-string in addition to an optional inner command.
-	if _, ok := names["env"]; ok {
-		return analyzeEnv(args, depth)
-	}
-
-	// Other wrappers the runner re-implements: extract the inner command and
-	// evaluate it (the wrapper itself adds no execution beyond the inner command).
-	for name, spec := range wrapperSpecs {
-		if _, ok := names[name]; ok {
-			return analyzeWrapper(spec, args, depth)
-		}
-	}
+	// The remaining detection is name-based, matching against every name in the
+	// command's symlink chain (extractAllCommandNames). A single chain can carry
+	// more than one matchable name (a symlink whose own name collides with a
+	// wrapper while its target is find/xargs/ld-linux*), so the checks are ordered
+	// by disposition strictness — the unbindable reject/Critical forms first —
+	// rather than by category. That way a name collision fails closed toward the
+	// stricter outcome instead of being short-circuited into a lenient
+	// resolve-inner path by map-iteration order.
 
 	// find/xargs run the helper from their own child process; the runner cannot
 	// identity-bind it. A privilege token there is still Critical; any other
@@ -187,6 +189,22 @@ func analyzeIndirect(cmdPath string, args []string, depth int) IndirectExecution
 	// helper runs from the tool's child process. Reject.
 	if res, ok := analyzeRemoteShellOption(names, args); ok {
 		return res
+	}
+
+	// env is parsed specially: it carries NAME=VALUE assignments and a -S
+	// split-string in addition to an optional inner command.
+	if _, ok := names["env"]; ok {
+		return analyzeEnv(args, depth)
+	}
+
+	// Other wrappers the runner re-implements: extract the inner command and
+	// evaluate it (the wrapper itself adds no execution beyond the inner command).
+	// wrapperNames is iterated in sorted order so selection is deterministic when
+	// the chain contains more than one wrapper name.
+	for _, name := range wrapperNames {
+		if _, ok := names[name]; ok {
+			return analyzeWrapper(wrapperSpecs[name], args, depth)
+		}
 	}
 
 	// Package script runners (npm run / npx / yarn run / pnpm run): execute a

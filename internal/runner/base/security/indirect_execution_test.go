@@ -330,6 +330,44 @@ func TestIndirect_DynamicLoaderGated(t *testing.T) {
 	}
 }
 
+// TestIndirect_WrapperNameCollisionFailsClosed verifies that when a command's
+// symlink chain carries both a wrapper name and an unbindable form name (find,
+// xargs, the dynamic loader), the stricter reject/Critical disposition wins. The
+// chain-name set is order-independent, so a wrapper-named symlink pointing at
+// find/xargs/ld-linux must not be short-circuited onto the lenient resolve-inner
+// path.
+func TestIndirect_WrapperNameCollisionFailsClosed(t *testing.T) {
+	// symlinkNamed creates <dir>/<linkName> -> <dir>/<targetName>; both the link
+	// name and the target basename land in the resolved chain-name set. The target
+	// need not be a real executable: the resolver matches by name only.
+	symlinkNamed := func(t *testing.T, linkName, targetName string) string {
+		t.Helper()
+		dir := t.TempDir()
+		target := filepath.Join(dir, targetName)
+		require.NoError(t, os.WriteFile(target, []byte{}, 0o644))
+		link := filepath.Join(dir, linkName)
+		require.NoError(t, os.Symlink(target, link))
+		return link
+	}
+
+	// A "timeout"-named symlink pointing at find with an -exec sudo primary must be
+	// Critical (privilege escalation), not resolved as the timeout wrapper.
+	findLink := symlinkNamed(t, "timeout", "find")
+	findRes := analyzeIndirectCmd(findLink, "/tmp", "-exec", "sudo", "rm", "{}", ";")
+	assert.Equal(t, IndirectCritical, findRes.Kind, "find -exec sudo behind a wrapper-named symlink must stay Critical")
+
+	// A "nice"-named symlink pointing at xargs must be rejected (child-process exec
+	// cannot be identity-bound), not resolved as the nice wrapper.
+	xargsLink := symlinkNamed(t, "nice", "xargs")
+	xargsRes := analyzeIndirectCmd(xargsLink, "rm", "-rf", "/tmp/x")
+	assert.Equal(t, IndirectReject, xargsRes.Kind, "xargs behind a wrapper-named symlink must stay Reject")
+
+	// A "stdbuf"-named symlink pointing at the dynamic loader must be rejected.
+	loaderLink := symlinkNamed(t, "stdbuf", "ld-linux-x86-64.so.2")
+	loaderRes := analyzeIndirectCmd(loaderLink, "--preload", "/tmp/x.so", "/bin/ls")
+	assert.Equal(t, IndirectReject, loaderRes.Kind, "dynamic loader behind a wrapper-named symlink must stay Reject")
+}
+
 // TestIndirect_UnextractableWrapperRejected verifies an unextractable wrapper form
 // is rejected (not silently downgraded), distinct from the Medium no-command case.
 func TestIndirect_UnextractableWrapperRejected(t *testing.T) {

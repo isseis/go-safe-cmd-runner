@@ -136,7 +136,15 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 		}
 	}
 	if assessment.Blocking {
-		plan := blockingPlan(assessment)
+		// The identity gate (rank 1) already passed, so the binary's identity is
+		// verified even though a later dimension denies it. Preserve that identity
+		// on the deny plan — consistent with the IndirectReject path — so audits and
+		// artifact gating have it (a nil Identity is reserved for denies that never
+		// established one).
+		plan := risktypes.VerifiedCommandPlan{
+			Identity:   identityFor(cmd),
+			Assessment: assessment,
+		}
 		plan.Artifacts = indirect.Artifacts
 		return plan, nil
 	}

@@ -334,6 +334,11 @@ func TestEvaluateRisk_UncertainBlockedEvenAtHigh(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, plan.Assessment.Blocking)
 	assert.Equal(t, risktypes.ReasonUncertainMissingRecord, plan.Assessment.BlockingReason)
+	// The identity gate (rank 1) passed, so a later-dimension deny must still carry
+	// the verified identity for audit/artifact gating (nil is reserved for denies
+	// that never established an identity).
+	require.NotNil(t, plan.Identity, "dimension-blocking deny must preserve the verified identity")
+	assert.Equal(t, cmdPath, plan.Identity.ResolvedPath)
 }
 
 // a dangerous binary-analysis signal is High (allowable), not Blocking.
