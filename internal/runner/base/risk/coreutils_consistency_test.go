@@ -14,10 +14,12 @@ import (
 )
 
 // makeConsistencyBinary creates an executable file in dir and returns its path.
+// The content begins with the ELF magic (not a "#!" shebang) so it is treated as
+// a real binary; a shebang would be classified as an indirect script execution.
 func makeConsistencyBinary(t *testing.T, dir, name string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
-	require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\necho test"), 0o755))
+	require.NoError(t, os.WriteFile(path, []byte("\x7fELF\x02\x01\x01\x00"), 0o755))
 	return path
 }
 

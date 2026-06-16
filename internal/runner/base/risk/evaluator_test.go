@@ -50,7 +50,7 @@ func TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation(t *testing.T) {
 func TestEvaluateRisk_PrivilegeEscalationViaSymlink(t *testing.T) {
 	tmp := t.TempDir()
 	target := filepath.Join(tmp, "sudo")
-	require.NoError(t, os.WriteFile(target, []byte("#!/bin/sh\n"), 0o755))
+	require.NoError(t, os.WriteFile(target, []byte("\x7fELF\x02\x01\x01\x00"), 0o755))
 	link := filepath.Join(tmp, "my_sudo")
 	require.NoError(t, os.Symlink(target, link))
 
@@ -354,8 +354,8 @@ func TestEvaluateRisk_CoreutilsPriorityOverBinaryAnalysis(t *testing.T) {
 	security.SetCoreutilsDirForTest(t, tmp)
 	echoPath := filepath.Join(tmp, "echo")
 	rmPath := filepath.Join(tmp, "rm")
-	require.NoError(t, os.WriteFile(echoPath, []byte("#!/bin/sh\n"), 0o755))
-	require.NoError(t, os.WriteFile(rmPath, []byte("#!/bin/sh\n"), 0o755))
+	require.NoError(t, os.WriteFile(echoPath, []byte("\x7fELF\x02\x01\x01\x00"), 0o755))
+	require.NoError(t, os.WriteFile(rmPath, []byte("\x7fELF\x02\x01\x01\x00"), 0o755))
 
 	// Even if a record carried dlopen, coreutils suppresses binary analysis.
 	store := fakeRecordStore{records: map[string]*fileanalysis.Record{
@@ -374,7 +374,7 @@ func TestEvaluateRisk_CoreutilsPriorityOverBinaryAnalysis(t *testing.T) {
 func TestEvaluateRisk_SymlinkChainMaxAndFailSafe(t *testing.T) {
 	tmp := t.TempDir()
 	target := filepath.Join(tmp, "curl")
-	require.NoError(t, os.WriteFile(target, []byte("#!/bin/sh\n"), 0o755))
+	require.NoError(t, os.WriteFile(target, []byte("\x7fELF\x02\x01\x01\x00"), 0o755))
 	link := filepath.Join(tmp, "mylink")
 	require.NoError(t, os.Symlink(target, link))
 
@@ -427,7 +427,7 @@ func TestStandardEvaluator_EvaluateRisk_Coreutils(t *testing.T) {
 
 	makeBinary := func(name string) string {
 		path := filepath.Join(tmp, name)
-		require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\necho test"), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte("\x7fELF\x02\x01\x01\x00"), 0o755))
 		return path
 	}
 	mkdirPath := makeBinary("mkdir")
@@ -452,4 +452,75 @@ func TestStandardEvaluator_EvaluateRisk_CoreutilsFileInfoFailureBlocks(t *testin
 	require.NoError(t, err)
 	assert.True(t, plan.Assessment.Blocking)
 	assert.Equal(t, risktypes.ErrorClassCoreutilsFileInfo, plan.Assessment.ErrorClass)
+}
+
+// TestEvaluateRisk_IndirectExecutionDeny verifies that indirect-execution forms
+// are evaluated and denied (or elevated) end to end through EvaluateRisk: the
+// rank-2 resolver is wired so env sudo is Critical, find/xargs and dynamic-loader
+// forms are Blocking, a forbidden loader env var is Blocking, and inline shells or
+// wrapped destructive commands are elevated to High.
+func TestEvaluateRisk_IndirectExecutionDeny(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	tests := []struct {
+		name        string
+		cmd         string
+		args        []string
+		wantBlock   bool
+		wantLevel   runnertypes.RiskLevel
+		wantReason  risktypes.ReasonCode
+		checkReason bool
+	}{
+		{
+			name: "env sudo is Critical", cmd: "env", args: []string{"sudo", "ls"},
+			wantLevel: runnertypes.RiskLevelCritical, wantReason: risktypes.ReasonPrivilegeEscalation, checkReason: true,
+		},
+		{
+			name: "env LD_PRELOAD is Blocking", cmd: "env", args: []string{"LD_PRELOAD=/tmp/x.so", "ls"},
+			wantBlock: true, wantReason: risktypes.ReasonForbiddenEnvVar, checkReason: true,
+		},
+		{
+			name: "find -exec is Blocking", cmd: "find", args: []string{"/tmp", "-exec", "rm", "{}", ";"},
+			wantBlock: true, wantReason: risktypes.ReasonIndirectExecutionRejected, checkReason: true,
+		},
+		{
+			name: "xargs rm is Blocking", cmd: "xargs", args: []string{"rm", "-rf"},
+			wantBlock: true,
+		},
+		{
+			name: "bash -c is High", cmd: "bash", args: []string{"-c", "rm -rf /"},
+			wantLevel: runnertypes.RiskLevelHigh,
+		},
+		{
+			name: "env rm -rf is High", cmd: "env", args: []string{"rm", "-rf", "/tmp/x"},
+			wantLevel: runnertypes.RiskLevelHigh,
+		},
+		{
+			name: "npm run is High", cmd: "npm", args: []string{"run", "build"},
+			wantLevel: runnertypes.RiskLevelHigh,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan, err := ev.EvaluateRisk(verifiedCmd(tt.cmd, tt.args))
+			require.NoError(t, err)
+			if tt.wantBlock {
+				assert.True(t, plan.Assessment.Blocking, "expected Blocking")
+			} else {
+				assert.False(t, plan.Assessment.Blocking, "expected allowed")
+				assert.Equal(t, tt.wantLevel, plan.Assessment.Level)
+			}
+			if tt.checkReason {
+				assert.Equal(t, tt.wantReason, plan.Assessment.BlockingReason)
+			}
+		})
+	}
+}
+
+// TestEvaluateRisk_DynamicLoaderBlocking verifies a direct dynamic-loader
+// invocation is denied through EvaluateRisk.
+func TestEvaluateRisk_DynamicLoaderBlocking(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	plan, err := ev.EvaluateRisk(verifiedCmd("/lib64/ld-linux-x86-64.so.2", []string{"/bin/sh"}))
+	require.NoError(t, err)
+	assert.True(t, plan.Assessment.Blocking)
 }

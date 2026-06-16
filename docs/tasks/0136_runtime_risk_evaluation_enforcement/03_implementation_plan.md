@@ -239,23 +239,25 @@
 
 **対象ファイル**: `internal/runner/base/security/indirect_execution.go`（新規）, `internal/runner/base/security/indirect_execution_test.go`（新規）, [evaluator.go](../../../internal/runner/base/risk/evaluator.go)（順位 2 を配線）, [evaluator_test.go](../../../internal/runner/base/risk/evaluator_test.go), 対応する resource-manager の deny テスト
 
-- [ ] `02_architecture.md` §3.3 の形態表を実装。各形態で「実行/ロードされる全成果物を抽出 → allowlist/ハッシュゲート → identity 束縛 → 不能なら拒否（`Blocking`＋reason code）」。
-- [ ] ラッパー（`env`/`nice`/`ionice`/`timeout`/`nohup`/`stdbuf`/`setsid`/`time`/`chrt`/`taskset`。**runner 自身が抽出した実コマンドを exec する形態**）: インナーコマンド抽出→再帰評価＋ゲート。COMMAND ありで抽出不能は `ReasonIndirectExecutionRejected`（AC-60/77/84）。**`xargs` はここに含めない**（helper を exec するのは runner ではなく xargs 子プロセスのため、下記 find/xargs の子プロセス実行ルールで扱う）。
-- [ ] 特権昇格トークン（`sudo`/`su`/`doas`）が独立トークンで出現 → 抽出可否によらず Critical（AC-59）。
-- [ ] ラッパー供給環境変数を既存 [environment_validation.go](../../../internal/runner/base/security/environment_validation.go) で検証。ローダ制御変数を拒否（AC-80）: Linux 系 `LD_PRELOAD`/`LD_LIBRARY_PATH`/`LD_AUDIT`、および **macOS（dyld）系 `DYLD_INSERT_LIBRARIES`/`DYLD_LIBRARY_PATH`/`DYLD_FALLBACK_LIBRARY_PATH`** 等の `DYLD_*`（macOS でのライブラリインジェクション対策。OS によらず拒否リストに含める）。
-- [ ] `env -S`（split-string）分割後 argv 解釈。`sudo` 等を Critical、解釈不能は拒否（AC-81）。
-- [ ] シェル/インタプリタの inline コード実行 → High 下限（AC-61。文字列内 sudo の Critical 化は保証しない＝限界明記）。**inline 実行フラグはコマンド種別で区別する**: シェル（`bash`/`sh`/`zsh` 等）は `-c` のみ（`-e` は errexit の真偽オプションで inline コードではない。`bash -e script.sh` を inline 文字列と誤解析しない）。インタプリタ（`node`/`ruby`/`perl` 等）は `-e`（eval）と `-c` を inline コードとして扱う。なお F-015 によりシェル/インタプリタは引数によらず High のため、この区別は inline 文字列か否か（＝内側スクリプトをファイル成果物としてゲートできるか）の判定に用いる。
-- [ ] 実行解決すり替え（`env PATH=…`）→ 検証済み絶対パスで実行 or 拒否（AC-79）。
-- [ ] `find`/`xargs` 実行アクション → 対象を破壊判定＋allowlist/ハッシュゲート＋検証済み絶対パス実行。fd 束縛不能なら拒否（AC-62/82。残存制約は §5.2）。
-- [ ] サービス管理（`service <name> <action>`）→ `/etc/init.d/<name>` を成果物として検証＋ゲート＋identity 束縛、不能なら拒否（AC-75/82）。
-- [ ] 直接スクリプト/shebang（`./deploy.sh`/`#!/usr/bin/env python`）→ インタプリタ連鎖を評価＋ゲート＋identity 束縛（AC-86）。
-- [ ] コマンド実行オプション（`rsync -e`/`--rsh`、`tar --to-command`/checkpoint アクション）→ helper をゲート or 拒否（AC-87）。
-- [ ] 動的ローダ直接起動（`ld-linux*.so --preload`/`--library-path`/`--inhibit-cache` 等）→ EXECUTABLE・preload・探索パス配下を load-time ゲート、不能なら拒否（AC-83）。
-- [ ] パッケージスクリプトランナー（`npm run`/`npx`/`yarn <script>`/`pnpm run`）→ High（AC-85）。
-- [ ] ラッパー無コマンド起動（`env` 単体）→ 抽出不能と区別し Medium 以上（AC-78）。
-- [ ] §3.3 表注のとおり、列挙したフラグは代表例。同一クラスの他オプションにも一般原則を適用する実装（網羅列挙はスコープ外）。
-- [ ] **評価器への配線（dead code 化の防止）**: Step 1-8 で順位 2（間接実行）を未実装としていた箇所を、本 Step の検出器を呼び出すよう `EvaluateRisk` に配線する（§6.1 順位 2 が実効リスク・`Blocking` に反映される）。検出器を追加するだけで `EvaluateRisk` から呼ばれない状態を残さない。
-- [ ] **エンドツーエンドの risk/deny テスト**: `evaluator_test.go`／resource-manager テストで、`env sudo`／`bash -c`／`find -exec`／ローダ起動 等が **`EvaluateRisk` 経由で** Critical/Blocking/High に評価され実行拒否されることを検証する（security パッケージ単体の `-run Indirect` だけで終えない。間接実行が実効リスク計算に確かに参加することを示す）。
+- [x] `02_architecture.md` §3.3 の形態表を実装。各形態で「実行/ロードされる全成果物を抽出 → allowlist/ハッシュゲート → identity 束縛 → 不能なら拒否（`Blocking`＋reason code）」。
+- [x] ラッパー（`env`/`nice`/`ionice`/`timeout`/`nohup`/`stdbuf`/`setsid`/`time`/`chrt`/`taskset`。**runner 自身が抽出した実コマンドを exec する形態**）: インナーコマンド抽出→再帰評価＋ゲート。COMMAND ありで抽出不能は `ReasonIndirectExecutionRejected`（AC-60/77/84）。**`xargs` はここに含めない**（helper を exec するのは runner ではなく xargs 子プロセスのため、下記 find/xargs の子プロセス実行ルールで扱う）。
+- [x] 特権昇格トークン（`sudo`/`su`/`doas`）が独立トークンで出現 → 抽出可否によらず Critical（AC-59）。
+- [x] ラッパー供給環境変数を既存 [environment_validation.go](../../../internal/runner/base/security/environment_validation.go) で検証。ローダ制御変数を拒否（AC-80）: Linux 系 `LD_PRELOAD`/`LD_LIBRARY_PATH`/`LD_AUDIT`、および **macOS（dyld）系 `DYLD_INSERT_LIBRARIES`/`DYLD_LIBRARY_PATH`/`DYLD_FALLBACK_LIBRARY_PATH`** 等の `DYLD_*`（macOS でのライブラリインジェクション対策。OS によらず拒否リストに含める）。
+- [x] `env -S`（split-string）分割後 argv 解釈。`sudo` 等を Critical、解釈不能は拒否（AC-81）。
+- [x] シェル/インタプリタの inline コード実行 → High 下限（AC-61。文字列内 sudo の Critical 化は保証しない＝限界明記）。**inline 実行フラグはコマンド種別で区別する**: シェル（`bash`/`sh`/`zsh` 等）は `-c` のみ（`-e` は errexit の真偽オプションで inline コードではない。`bash -e script.sh` を inline 文字列と誤解析しない）。インタプリタ（`node`/`ruby`/`perl` 等）は `-e`（eval）と `-c` を inline コードとして扱う。なお F-015 によりシェル/インタプリタは引数によらず High のため、この区別は inline 文字列か否か（＝内側スクリプトをファイル成果物としてゲートできるか）の判定に用いる。
+- [x] 実行解決すり替え（`env PATH=…`）→ 検証済み絶対パスで実行 or 拒否（AC-79）。
+- [x] `find`/`xargs` 実行アクション → 対象を破壊判定＋allowlist/ハッシュゲート＋検証済み絶対パス実行。fd 束縛不能なら拒否（AC-62/82。残存制約は §5.2）。
+- [x] サービス管理（`service <name> <action>`）→ `/etc/init.d/<name>` を成果物として検証＋ゲート＋identity 束縛、不能なら拒否（AC-75/82）。
+- [x] 直接スクリプト/shebang（`./deploy.sh`/`#!/usr/bin/env python`）→ インタプリタ連鎖を評価＋ゲート＋identity 束縛（AC-86）。
+- [x] コマンド実行オプション（`rsync -e`/`--rsh`、`tar --to-command`/checkpoint アクション）→ helper をゲート or 拒否（AC-87）。
+- [x] 動的ローダ直接起動（`ld-linux*.so --preload`/`--library-path`/`--inhibit-cache` 等）→ EXECUTABLE・preload・探索パス配下を load-time ゲート、不能なら拒否（AC-83）。
+- [x] パッケージスクリプトランナー（`npm run`/`npx`/`yarn <script>`/`pnpm run`）→ High（AC-85）。
+- [x] ラッパー無コマンド起動（`env` 単体）→ 抽出不能と区別し Medium 以上（AC-78）。
+- [x] §3.3 表注のとおり、列挙したフラグは代表例。同一クラスの他オプションにも一般原則を適用する実装（網羅列挙はスコープ外）。
+- [x] **評価器への配線（dead code 化の防止）**: Step 1-8 で順位 2（間接実行）を未実装としていた箇所を、本 Step の検出器を呼び出すよう `EvaluateRisk` に配線する（§6.1 順位 2 が実効リスク・`Blocking` に反映される）。検出器を追加するだけで `EvaluateRisk` から呼ばれない状態を残さない。
+- [x] **エンドツーエンドの risk/deny テスト**: `evaluator_test.go`／resource-manager テストで、`env sudo`／`bash -c`／`find -exec`／ローダ起動 等が **`EvaluateRisk` 経由で** Critical/Blocking/High に評価され実行拒否されることを検証する（security パッケージ単体の `-run Indirect` だけで終えない。間接実行が実効リスク計算に確かに参加することを示す）。
+
+**実装メモ（PR-4 との責務分担）**: 本 Step の `AnalyzeIndirectExecution` は **評価段階の判定**（`IndirectCritical`／`IndirectReject`／`IndirectFloor`）と **連鎖成果物の記録（Path/Role）** までを担う。各成果物の **fd 束縛・ハッシュゲートの実行（`ExecutedArtifact.Identity`/`Disposition` の確定）は Step 2-2（PR-4）** で実装する（§1.3・Step 2-2 の責務分担に一致）。runner が実コマンドを exec し直せる形態（`env`/`timeout` 等のラッパー）は **インナーを抽出し再帰評価＋成果物記録** で `IndirectFloor`／`IndirectCritical` に倒し、runner が exec 主体になれない形態（`find`/`xargs` 子プロセス・動的ローダ直接起動・`rsync -e`/`tar --to-command` の helper）は fd 束縛不能のため `IndirectReject`（Blocking）とする（§5.2 の残存制約に一致）。
 
 **完了条件**: `go test -tags test ./internal/runner/base/security/ -run Indirect` が緑、かつ `go test -tags test ./internal/runner/base/risk/ ./internal/runner/resource/` の間接実行 e2e ケースが緑（`EvaluateRisk` が検出器を呼ぶことをテストで保証）。攻撃者視点ケース（AC-71）を含む。
 

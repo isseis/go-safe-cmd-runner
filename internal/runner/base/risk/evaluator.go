@@ -79,9 +79,35 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 		return blockingPlan(blocked), nil
 	}
 
-	// Rank 3: privilege escalation -> Critical (always denied; rank 2 indirect
-	// execution is wired in Phase 2). Detected through the resolved profile so
-	// sudo/su/doas cannot be missed via a symlink alias.
+	// Rank 2: indirect execution. Detect forms that run or load an artifact other
+	// than the verified one (wrappers, inline shells, find/xargs child-process
+	// helpers, dynamic loaders, remote-shell helpers). A privilege token there is
+	// Critical and an unbindable form is a Blocking deny; both short-circuit. An
+	// allowable form contributes a risk floor folded into the dimension maximum.
+	indirect := security.AnalyzeIndirectExecution(cmdPath, cmd.ExpandedArgs)
+	switch indirect.Kind {
+	case security.IndirectCritical:
+		plan := criticalPlan(cmd, risktypes.RiskAssessment{
+			Level:          runnertypes.RiskLevelCritical,
+			BlockingReason: risktypes.ReasonPrivilegeEscalation,
+			ReasonCodes:    indirect.ReasonCodes,
+		})
+		plan.Artifacts = indirect.Artifacts
+		return plan, nil
+	case security.IndirectReject:
+		a := risktypes.RiskAssessment{
+			Blocking:       true,
+			BlockingReason: indirectBlockingReason(indirect.ReasonCodes),
+			ErrorClass:     indirect.ErrorClass,
+			ReasonCodes:    indirect.ReasonCodes,
+		}
+		plan := blockingPlan(a)
+		plan.Artifacts = indirect.Artifacts
+		return plan, nil
+	}
+
+	// Rank 3: privilege escalation -> Critical (always denied). Detected through
+	// the resolved profile so sudo/su/doas cannot be missed via a symlink alias.
 	profile, profileFound := security.ResolveProfile(cmdPath)
 	if profileFound && profile.IsPrivilege() {
 		return criticalPlan(cmd, risktypes.RiskAssessment{
@@ -97,10 +123,31 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 	if err != nil {
 		return risktypes.VerifiedCommandPlan{}, err
 	}
-	if assessment.Blocking {
-		return blockingPlan(assessment), nil
+	// Fold the rank-2 indirect-execution floor (an allowable wrapper/inline/package
+	// form) into the maximum so a wrapped dangerous command is not under-classified.
+	if indirect.Kind == security.IndirectFloor && indirect.Level > runnertypes.RiskLevelUnknown {
+		for _, code := range indirect.ReasonCodes {
+			addDimension(&assessment, indirect.Level, code)
+		}
 	}
-	return allowedPlan(cmd, assessment), nil
+	if assessment.Blocking {
+		plan := blockingPlan(assessment)
+		plan.Artifacts = indirect.Artifacts
+		return plan, nil
+	}
+	plan := allowedPlan(cmd, assessment)
+	plan.Artifacts = indirect.Artifacts
+	return plan, nil
+}
+
+// indirectBlockingReason returns the primary blocking reason for a rejected
+// indirect-execution form, falling back to the generic rejection code when the
+// resolver returned no codes.
+func indirectBlockingReason(codes []risktypes.ReasonCode) risktypes.ReasonCode {
+	if len(codes) > 0 {
+		return codes[0]
+	}
+	return risktypes.ReasonIndirectExecutionRejected
 }
 
 // identityGate implements the Phase 1 identity gate: the binary must carry a
