@@ -624,6 +624,24 @@ func TestValidator_EvaluateOutputSecurityRisk(t *testing.T) {
 	}
 }
 
+// TestValidator_EvaluateOutputSecurityRisk_SiblingNotDowngraded verifies the
+// workDir containment check uses a path-segment boundary: a sibling directory that
+// merely shares the workDir name prefix must not be downgraded to Low (the former
+// strings.HasPrefix check misclassified it).
+func TestValidator_EvaluateOutputSecurityRisk_SiblingNotDowngraded(t *testing.T) {
+	validator, err := NewValidator(DefaultConfig())
+	require.NoError(t, err)
+
+	const workDir = "/srv/appwork"
+	inside, err := validator.EvaluateOutputSecurityRisk(workDir+"/out.txt", workDir)
+	require.NoError(t, err)
+	assert.Equal(t, runnertypes.RiskLevelLow, inside, "a path genuinely inside workDir is Low")
+
+	sibling, err := validator.EvaluateOutputSecurityRisk(workDir+"-secrets/out.txt", workDir)
+	require.NoError(t, err)
+	assert.NotEqual(t, runnertypes.RiskLevelLow, sibling, "sibling sharing the workDir name prefix must not be downgraded to Low")
+}
+
 func TestValidator_EvaluateOutputSecurityRisk_CaseInsensitive(t *testing.T) {
 	config := DefaultConfig()
 	validator, err := NewValidator(config)

@@ -396,3 +396,26 @@ func TestContainsPathTraversalSegment(t *testing.T) {
 		})
 	}
 }
+
+func TestIsPathWithinDirectory(t *testing.T) {
+	sep := string(filepath.Separator)
+	for _, tc := range []struct {
+		name   string
+		target string
+		dir    string
+		want   bool
+	}{
+		{"strictly inside", "/home/user/file", "/home/user", true},
+		{"nested inside", "/home/user/a/b/c", "/home/user", true},
+		{"equal is not within", "/home/user", "/home/user", false},
+		{"sibling prefix is not within", "/home/user-evil/file", "/home/user", false},
+		{"sibling prefix no slash", "/work-secrets", "/work", false},
+		{"outside", "/etc/passwd", "/home/user", false},
+		{"empty dir is never container", "/anything", "", false},
+		{"trailing slash on dir", "/home/user/file", "/home/user" + sep, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, IsPathWithinDirectory(tc.target, tc.dir))
+		})
+	}
+}
