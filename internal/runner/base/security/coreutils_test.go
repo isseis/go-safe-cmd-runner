@@ -223,3 +223,15 @@ func TestCoreutilsCommandRisk_NonCoreutilsPath(t *testing.T) {
 		assert.Equal(t, runnertypes.RiskLevelUnknown, risk, path)
 	}
 }
+
+// TestDestructiveCoreutilsDerivedFromBase guards against drift between the two
+// destructive-command sets: destructiveCoreutilsCommands must contain every entry
+// of destructiveCommandNames (it extends it with coreutils-only "truncate").
+func TestDestructiveCoreutilsDerivedFromBase(t *testing.T) {
+	for name := range destructiveCommandNames {
+		_, ok := destructiveCoreutilsCommands[name]
+		assert.Truef(t, ok, "destructiveCoreutilsCommands must include base destructive command %q", name)
+	}
+	_, ok := destructiveCoreutilsCommands["truncate"]
+	assert.True(t, ok, "destructiveCoreutilsCommands must include coreutils-only truncate")
+}

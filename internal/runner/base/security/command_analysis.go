@@ -537,6 +537,9 @@ func IsDestructiveFileOperation(names map[string]struct{}, args []string) bool {
 	}
 
 	if _, ok := names["find"]; ok {
+		// This scans every -exec/-delete primary (a find may have several), so it
+		// intentionally does not reuse findExecTarget, which returns only the first
+		// exec target for the rank-2 indirect-execution gate.
 		for i, arg := range args {
 			if arg == "-delete" {
 				return true
