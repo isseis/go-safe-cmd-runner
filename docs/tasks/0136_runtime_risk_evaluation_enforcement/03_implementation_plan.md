@@ -285,6 +285,7 @@
 - [ ] 束縛可否の判定は **副作用なし**で行う（§3.6.2）: 評価段階では「検証済み fd を保持できているか」「ステージング先（書込不能領域）が**利用可能か**」のみを確認し、**実際のステージング複製（fd からのファイル書き込み）は normal の exec 直前にのみ行う**。dry-run は同じ副作用なし可否チェックで allow/deny を決め、ステージング書き込みは行わない（read-only 維持。AC-30/39 の normal/dry-run 整合を保ち、normal が staging で許可する実体を dry-run が誤って deny しない）。
 - [ ] fd 所有権と close 機構（型は Step 1-1 で確定した `VerifiedFD`＝`*VerifiedFD` を `VerifiedIdentity`/各 `ExecutedArtifact` が保持）: `VerifiedCommandPlan` に `Close() error`（保持する全 `VerifiedFD` を集約 close、`errors.Join`）を実装する。close 呼び出し箇所を明示: (a) 許可 plan は子プロセス起動（`cmd.Start`、fd は `ExtraFiles` で子へ複製済み）成功後に親側の検証済み fd を close、(a') **`cmd.Start` がエラーを返した場合**（子が走らず親が全 fd を保持したまま）は executor が `defer plan.Close()`／エラー時クリーンアップで親側 fd を必ず close（長時間 runner で exec 失敗が続いても fd を漏らさない）、(b) 拒否 plan・dry-run preview・exec されない副成果物は ResourceManager が監査出力後に `plan.Close()`。`EvaluateRisk` 内で fd を開いた後にエラーで早期 return する場合も、その時点までに開いた fd を defer で close する。
 - [ ] 元 argv/env の直接 exec を禁止（型契約＋コードレビュー観点）。
+- [ ] **間接実行で抽出した成果物（ラッパーのインナーコマンド・shebang インタプリタ等）の解決・検証**: Step 2-1 の `AnalyzeIndirectExecution` は成果物を **名前（`ExecutedArtifact.Path` がベア名のことがある）** で記録するに留める。本 Step で各成果物を **本コマンドと同一の解決機構（`ResolvePath`＋symlink 解決＋ハッシュ検証＋fd 取得）** に通して絶対パス・identity を確定する。これにより、ベア名インナー（例 `env myalias` で `myalias`→`rm` の symlink エイリアス）が PR-3 の名前ベース分類で過小評価される残存ギャップを、実行時解決と identity 束縛の段階で閉じる（PR #732 レビュー gemini 指摘への対応。評価器に `os/exec` の PATH 依存・I/O を持ち込まず、正しい実行時解決文脈で行う）。解決・検証・束縛不能な成果物は拒否（§3.3 / §3.6.2 の一般原則）。
 - [ ] 非対応 OS（`//go:build !linux`）の `fdexec_other.go` は fd 実行不能を返すスタブとし、ステージング/拒否のみ。
 
 **完了条件**:
