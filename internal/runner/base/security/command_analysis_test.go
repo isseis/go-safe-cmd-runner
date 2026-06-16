@@ -1941,7 +1941,7 @@ func TestGetCommandRiskOverride(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			risk, reason, found := getCommandRiskOverride(tc.cmdPath)
+			risk, reason, found := getCommandRiskOverride(cmdNameSet(tc.cmdPath))
 			assert.Equal(t, tc.expectedFound, found, "found mismatch for %s", tc.cmdPath)
 			assert.Equal(t, tc.expectedRisk, risk, "risk level mismatch for %s", tc.cmdPath)
 
@@ -1952,6 +1952,22 @@ func TestGetCommandRiskOverride(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestGetCommandRiskOverride_SymlinkAware verifies the override lookup follows the
+// symlink chain (via the resolved name set), so a symlinked alias of a profiled
+// command is matched — matching the runtime evaluator's ResolveProfile rather than
+// the former basename-only lookup.
+func TestGetCommandRiskOverride_SymlinkAware(t *testing.T) {
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "sudo")
+	require.NoError(t, os.WriteFile(target, []byte{0x7f, 'E', 'L', 'F', 0, 0}, 0o755))
+	alias := filepath.Join(tmp, "myalias") // basename "myalias" has no profile
+	require.NoError(t, os.Symlink(target, alias))
+
+	risk, _, found := getCommandRiskOverride(cmdNameSet(alias))
+	assert.True(t, found, "a symlink to a profiled command must be matched via the name set")
+	assert.Equal(t, runnertypes.RiskLevelCritical, risk, "alias -> sudo must surface sudo's privilege risk")
 }
 
 func TestCommandRiskProfiles_Completeness(t *testing.T) {

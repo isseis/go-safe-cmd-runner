@@ -332,19 +332,16 @@ func (v *Validator) HasSystemCriticalPaths(args []string) []int {
 	return criticalIndices
 }
 
-// getCommandRiskOverride retrieves the risk override and reasons for a specific command
-// It now uses command name (basename) instead of full path
-func getCommandRiskOverride(cmdPath string) (runnertypes.RiskLevel, string, bool) {
-	// Extract command name from path
-	cmdName := filepath.Base(cmdPath)
-
-	// Look up in unified profiles
-	if profile, exists := commandRiskProfiles[cmdName]; exists {
-		reasons := profile.GetRiskReasons()
-		reason := strings.Join(reasons, "; ")
+// getCommandRiskOverride retrieves the risk override and reasons for a command,
+// matched against its pre-resolved name set. Using the name set (rather than the
+// basename alone) makes the lookup symlink-aware and consistent with the runtime
+// evaluator's ResolveProfile, so a symlinked alias of a profiled command is not
+// missed in the dry-run preview.
+func getCommandRiskOverride(names map[string]struct{}) (runnertypes.RiskLevel, string, bool) {
+	if profile, found := ResolveProfile(names); found {
+		reason := strings.Join(profile.GetRiskReasons(), "; ")
 		return profile.BaseRiskLevel(), reason, true
 	}
-
 	return runnertypes.RiskLevelUnknown, "", false
 }
 
@@ -732,7 +729,7 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, hashDir string) 
 	}
 
 	// Step 9: Individual command override application
-	if overrideRisk, reason, found := getCommandRiskOverride(resolvedPath); found {
+	if overrideRisk, reason, found := getCommandRiskOverride(names); found {
 		return overrideRisk, resolvedPath, reason, nil
 	}
 
