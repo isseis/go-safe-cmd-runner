@@ -1200,6 +1200,29 @@ func TestExtractAllCommandNamesWithSymlinks(t *testing.T) {
 	})
 }
 
+// TestExtractAllCommandNamesBareNameIgnoresCWD verifies that a bare command name
+// (no path separator) is resolved by its name alone and never through the
+// filesystem, so a same-named entry in the working directory cannot influence
+// name-based classification. PATH resolution happens at exec time, not here.
+func TestExtractAllCommandNamesBareNameIgnoresCWD(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	// A working-directory symlink whose name collides with a command and points at
+	// a privilege binary. Without the bare-name guard, extractAllCommandNames("rm")
+	// would follow this and add "sudo" to the name set.
+	require.NoError(t, os.Symlink("/usr/bin/sudo", tmpDir+"/rm"))
+
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	require.NoError(t, os.Chdir(tmpDir))
+
+	names, exceededDepth := extractAllCommandNames("rm")
+	assert.False(t, exceededDepth)
+	assert.Contains(t, names, "rm", "the bare name itself is always present")
+	assert.NotContains(t, names, "sudo", "a CWD symlink must not influence bare-name resolution")
+	assert.Len(t, names, 1, "a bare name resolves to only itself")
+}
+
 func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 	t.Run("normal command has no risk", func(t *testing.T) {
 		// Use a temporary file in a non-standard directory to avoid directory-based risk

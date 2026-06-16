@@ -815,6 +815,16 @@ func walkSymlinkChain(cmdName string, strict bool) (names map[string]struct{}, e
 	seen[cmdName] = struct{}{}
 	seen[filepath.Base(cmdName)] = struct{}{}
 
+	// A bare command name (no path separator) is resolved via PATH at exec time,
+	// not here. Walking the filesystem for it would Lstat/follow a same-named entry
+	// in the current working directory, making name-based classification depend on
+	// CWD contents (e.g. a ./rm symlink to sudo could turn a wrapped "rm" into a
+	// Critical). Match on the name itself only; this needs no filesystem access and
+	// resolves without error in both modes.
+	if !strings.Contains(cmdName, "/") {
+		return seen, false, nil
+	}
+
 	// visited detects a symlink cycle directly, rather than only via the depth
 	// limit, so a cycle is reported immediately without walking the full depth.
 	visited := make(map[string]struct{})

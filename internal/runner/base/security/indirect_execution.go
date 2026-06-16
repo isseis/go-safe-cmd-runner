@@ -673,7 +673,16 @@ func isSimpleUnitName(name string) bool {
 // option-arity ambiguity to resolve and this stays a dedicated single-pass scan
 // rather than going through skipLeadingOptions.
 func serviceUnitName(args []string) (string, bool) {
-	for _, a := range args {
+	for i, a := range args {
+		if a == "--" {
+			// Option terminator: the next token is the unit name, even if it begins
+			// with "-". Without this, a unit whose name starts with "-" would be
+			// skipped and the following action mis-recorded as the init script.
+			if i+1 < len(args) {
+				return args[i+1], true
+			}
+			return "", false
+		}
 		if strings.HasPrefix(a, "-") {
 			continue
 		}
@@ -690,6 +699,11 @@ func analyzeRemoteShellOption(names map[string]struct{}, args []string) (Indirec
 			continue
 		}
 		for _, a := range args {
+			if a == "--" {
+				// Option terminator: subsequent tokens are operands, so an operand that
+				// happens to look like "-e"/"--rsh" is not a helper option.
+				break
+			}
 			for _, p := range prefixes {
 				if matchesRemoteShellOption(a, p) {
 					return reject(), true

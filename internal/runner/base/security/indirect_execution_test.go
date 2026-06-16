@@ -557,6 +557,11 @@ func TestIndirect_CommandExecOptionsGated(t *testing.T) {
 		{"tar --to-command=", "tar", []string{"--to-command=/tmp/x", "-cf", "a.tar", "."}, IndirectReject},
 		{"tar --checkpoint-action=", "tar", []string{"--checkpoint-action=exec=sh", "-cf", "a.tar", "."}, IndirectReject},
 		{"tar plain", "tar", []string{"-cf", "a.tar", "."}, IndirectNone},
+		// The "--" terminator ends option scanning: an operand that looks like a
+		// helper option (e.g. a destination literally named "-e") must not be
+		// rejected as a remote-shell form.
+		{"rsync -- -e operand", "rsync", []string{"--", "-e", "dst"}, IndirectNone},
+		{"tar -- --to-command operand", "tar", []string{"-cf", "a.tar", "--", "--to-command"}, IndirectNone},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -588,6 +593,14 @@ func TestIndirect_ServiceInitScriptGated(t *testing.T) {
 	// A unit name that is not a simple basename (path traversal) is rejected so the
 	// recorded artifact path cannot escape /etc/init.d.
 	assert.Equal(t, IndirectReject, analyzeIndirectCmd("service", "../../bin/rm", "start").Kind)
+
+	// The "--" option terminator: the next token is the unit name. "service --
+	// nginx start" must behave like "service nginx start" and gate /etc/init.d/nginx.
+	term := analyzeIndirectCmd("service", "--", "nginx", "start")
+	assert.Equal(t, IndirectFloor, term.Kind)
+	require.NotEmpty(t, term.Artifacts)
+	assert.Equal(t, "/etc/init.d/nginx", term.Artifacts[0].Path)
+	assert.Equal(t, risktypes.RoleExecTarget, term.Artifacts[0].Role)
 }
 
 // TestIndirect_BypassAttackerScenarios collects attacker-view bypass forms and
