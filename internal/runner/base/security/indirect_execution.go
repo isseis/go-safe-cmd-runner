@@ -219,12 +219,12 @@ func analyzeShebang(cmdPath string, scriptArgs []string, depth int) (IndirectExe
 	args := append(append([]string{}, interpArgs...), cmdPath)
 	args = append(args, scriptArgs...)
 	res := evaluateInner(interp, args, depth)
-	if res.Kind == IndirectFloor {
-		res.Artifacts = append(res.Artifacts, risktypes.ExecutedArtifact{
-			Path: interp,
-			Role: risktypes.RoleInterpreter,
-		})
-	}
+	// The shebang interpreter is an executed artifact regardless of the outcome
+	// (Floor/Critical/Reject), so record it on every path for the audit chain.
+	res.Artifacts = append(res.Artifacts, risktypes.ExecutedArtifact{
+		Path: interp,
+		Role: risktypes.RoleInterpreter,
+	})
 	return res, true
 }
 
@@ -289,6 +289,11 @@ func analyzeEnv(args []string, depth int) IndirectExecutionResult {
 			if res, rejected := checkEnvAssignment(t, &pathOverridden); rejected {
 				return res
 			}
+			continue
+		}
+		if t == "--" {
+			// Option terminator: the remaining tokens are operands (NAME=VALUE
+			// assignments then the command), parsed by the following iterations.
 			continue
 		}
 		if strings.HasPrefix(t, "-") {
@@ -490,18 +495,29 @@ func findExecTarget(args []string) (string, bool) {
 
 // analyzeService records the SysV init script the service command runs so it is
 // gated and audited. service itself is High via system modification, so this adds
-// a Floor at High plus the init-script artifact.
+// a Floor at High plus the init-script artifact. When the unit name cannot be
+// safely extracted (option-only forms, or a name that is not a simple basename),
+// the init script cannot be identified or gated, so it fails closed like other
+// unbindable indirect forms.
 func analyzeService(args []string) IndirectExecutionResult {
-	res := floor(runnertypes.RiskLevelHigh, risktypes.ReasonSystemModification)
-	if name, ok := serviceUnitName(args); ok {
-		// Record the init script path and role; identity binding / disposition is
-		// populated when artifact gating is wired in the execution layer.
-		res.Artifacts = []risktypes.ExecutedArtifact{{
-			Path: "/etc/init.d/" + name,
-			Role: risktypes.RoleExecTarget,
-		}}
+	name, ok := serviceUnitName(args)
+	if !ok || !isSimpleUnitName(name) {
+		return reject()
 	}
+	res := floor(runnertypes.RiskLevelHigh, risktypes.ReasonSystemModification)
+	// Record the init script path and role; identity binding / disposition is
+	// populated when artifact gating is wired in the execution layer.
+	res.Artifacts = []risktypes.ExecutedArtifact{{
+		Path: "/etc/init.d/" + name,
+		Role: risktypes.RoleExecTarget,
+	}}
 	return res
+}
+
+// isSimpleUnitName reports whether name is a plain basename, so building
+// "/etc/init.d/<name>" cannot escape that directory via a slash or "..".
+func isSimpleUnitName(name string) bool {
+	return name != "" && name != "." && name != ".." && !strings.Contains(name, "/")
 }
 
 // serviceUnitName returns the unit name from "service <name> <action>", skipping

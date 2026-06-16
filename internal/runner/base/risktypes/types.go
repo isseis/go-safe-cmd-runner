@@ -209,7 +209,10 @@ const (
 // An artifact that cannot be bound is marked DispRejected and its form is
 // refused.
 type ExecutedArtifact struct {
-	// Path is the resolved absolute path.
+	// Path identifies the artifact. At the detection stage it may be a command
+	// name (a bare wrapped inner command, a shebang interpreter) pending
+	// resolution; it is resolved to an absolute path when the execution layer
+	// binds the artifact's identity.
 	Path string
 	// ContentHash is nil when unverified (not used for matching; Identity is the
 	// source of truth when present).

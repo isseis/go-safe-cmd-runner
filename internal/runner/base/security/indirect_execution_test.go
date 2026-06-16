@@ -286,6 +286,11 @@ func TestIndirect_UnextractableWrapperRejected(t *testing.T) {
 	noCmd := analyzeIndirectCmd("env", "FOO=bar")
 	assert.Equal(t, IndirectFloor, noCmd.Kind)
 	assert.Equal(t, runnertypes.RiskLevelMedium, noCmd.Level)
+
+	// The "--" option terminator is a valid form, not an unknown option: the
+	// following token is the command and must still be evaluated.
+	assert.NotEqual(t, IndirectReject, analyzeIndirectCmd("env", "--", "ls").Kind)
+	assert.Equal(t, IndirectCritical, analyzeIndirectCmd("env", "--", "sudo", "ls").Kind)
 }
 
 // TestIndirect_PackageScriptRunnerHigh verifies package script runners are High.
@@ -389,6 +394,14 @@ func TestIndirect_ServiceInitScriptGated(t *testing.T) {
 	// A read-only action also runs the init script, so it is also gated/High.
 	status := analyzeIndirectCmd("service", "nginx", "status")
 	assert.Equal(t, runnertypes.RiskLevelHigh, status.Level)
+
+	// An option-only form has no extractable unit, so the init script cannot be
+	// identified or gated -> fail closed.
+	assert.Equal(t, IndirectReject, analyzeIndirectCmd("service", "--status-all").Kind)
+
+	// A unit name that is not a simple basename (path traversal) is rejected so the
+	// recorded artifact path cannot escape /etc/init.d.
+	assert.Equal(t, IndirectReject, analyzeIndirectCmd("service", "../../bin/rm", "start").Kind)
 }
 
 // TestIndirect_BypassAttackerScenarios collects attacker-view bypass forms and
