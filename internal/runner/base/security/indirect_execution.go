@@ -181,20 +181,53 @@ func skipLeadingOptions(args []string, spec optSpec) (idx int, reliable bool) {
 			break // operand
 		}
 		i++
-		if _, ok := spec.valueOpts[t]; ok {
-			i++ // separated value: skip the option's value too
-			continue
-		}
-		if strings.Contains(t, "=") {
-			continue // attached value (--opt=value): self-contained
-		}
-		// Unrecognized option with no attached value: its arity is unknown.
-		if strings.HasPrefix(t, "--") || spec.unknown == anyUnknownIsUnreliable {
+		if strings.HasPrefix(t, "--") {
+			// Long option.
+			if _, ok := spec.valueOpts[t]; ok {
+				i++ // separated value: skip the option's value too
+				continue
+			}
+			if strings.Contains(t, "=") {
+				continue // attached value (--opt=value): self-contained
+			}
+			// Unrecognized long option with no attached value: arity unknown.
 			return i, false
 		}
-		// shortOptsAreBoolean: an unknown short option is assumed value-less.
+		// Short-option token, possibly a cluster (-tc) where a value-taking option
+		// can sit at the end and consume the next token ("-tc 2" -> -c takes "2").
+		// Parse the cluster left to right so a value-option hidden in it is not
+		// missed — missing it would put the operand boundary on the option's value
+		// and let the real command (e.g. sudo) pass as that value's argument.
+		consumesNext, ok := scanShortCluster(t, spec)
+		if !ok {
+			return i, false
+		}
+		if consumesNext {
+			i++ // a value-taking option ended the cluster; its value is the next token
+		}
 	}
 	return i, true
+}
+
+// scanShortCluster parses a clustered short-option token (e.g. "-tc") left to
+// right. consumesNext is true when a value-taking option is the LAST character of
+// the cluster and therefore takes the following token as its separated value; a
+// value-taking option that is not last takes the remainder of the token as an
+// attached value and ends the cluster either way. ok is false when an
+// unrecognized option makes the cluster's arity indeterminate under the
+// anyUnknownIsUnreliable policy, so the caller fails closed; under
+// shortOptsAreBoolean an unrecognized short option is assumed value-less.
+func scanShortCluster(t string, spec optSpec) (consumesNext, ok bool) {
+	for j := 1; j < len(t); j++ {
+		opt := "-" + string(t[j])
+		if _, isValue := spec.valueOpts[opt]; isValue {
+			return j == len(t)-1, true
+		}
+		if spec.unknown == anyUnknownIsUnreliable {
+			return false, false
+		}
+	}
+	return false, true
 }
 
 // shortFlagInBundle reports whether arg is a single-dash short-option token (not a

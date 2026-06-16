@@ -51,6 +51,12 @@ func TestIndirect_WrapperSudoCritical(t *testing.T) {
 		{"xargs sudo", "xargs", []string{"sudo", "rm"}},
 		{"nice sudo", "nice", []string{"-n", "10", "sudo", "ls"}},
 		{"env -S sudo", "env", []string{"-S", "sudo rm -rf /"}},
+		// Short-option cluster where a value-taking option (-c) sits at the end and
+		// consumes the next token: "ionice -tc 2 sudo ls" runs "sudo ls" at class 2.
+		// The cluster must be parsed so "2" is -c's value, not mistaken for the
+		// command, which would hide sudo and bypass the privilege gate.
+		{"ionice cluster sudo", "ionice", []string{"-tc", "2", "sudo", "ls"}},
+		{"nice cluster sudo", "nice", []string{"-n", "5", "sudo", "ls"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -401,6 +407,16 @@ func TestSkipLeadingOptions(t *testing.T) {
 		{"strict unknown long unreliable", []string{"--mystery", "cmd"}, anyUnknownIsUnreliable, 1, false},
 		// An attached "=" form is self-contained, so it is safe even under the strict policy.
 		{"strict attached value safe", []string{"--mystery=v", "cmd"}, anyUnknownIsUnreliable, 1, true},
+		// Short-option clusters: a value-taking option at the end of a cluster
+		// consumes the next token, so the operand boundary lands past that value.
+		{"cluster value opt last takes next", []string{"-xs", "KILL", "cmd"}, shortOptsAreBoolean, 2, true},
+		// A value-taking option not at the end takes the remainder of the token as
+		// its attached value, so the next token is the operand.
+		{"cluster value opt with attached value", []string{"-sKILL", "cmd"}, shortOptsAreBoolean, 1, true},
+		// A cluster of only boolean shorts leaves the next token as the operand.
+		{"cluster all boolean", []string{"-xy", "cmd"}, shortOptsAreBoolean, 1, true},
+		// Under the strict policy an unknown option inside a cluster fails closed.
+		{"strict unknown in cluster", []string{"-xs", "cmd"}, anyUnknownIsUnreliable, 1, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			idx, reliable := skipLeadingOptions(tc.args, optSpec{valueOpts: valueOpts, unknown: tc.unknown})
