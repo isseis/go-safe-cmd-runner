@@ -602,12 +602,11 @@ func IsDestructiveFileOperation(cmd string, args []string) bool {
 	return false
 }
 
-// IsSystemModification checks if the command modifies system settings. The
-// command is matched by basename and considers symbolic links, so an absolute
-// path such as /usr/sbin/systemctl is detected.
-func IsSystemModification(cmd string, args []string) bool {
-	names, _ := extractAllCommandNames(cmd)
-
+// isSystemModificationByNames checks whether the command modifies system settings,
+// deciding from an already-resolved name set (matched by basename and resolved
+// symbolic links, so an absolute path such as /usr/sbin/systemctl is detected) so
+// callers that have already walked the symlink chain do not repeat the work.
+func isSystemModificationByNames(names map[string]struct{}, args []string) bool {
 	if anyNameInSet(names, systemModificationCommandNames) {
 		return true
 	}
@@ -634,17 +633,18 @@ func IsSystemModification(cmd string, args []string) bool {
 // at a Medium floor, change/unknown verbs are High), service is always High (it
 // runs an unverified init script), and any other system-modification command
 // (mount, crontab, mkfs, package install/remove, ...) is Medium. It returns
-// RiskLevelUnknown when no system-modification dimension applies. This is the
-// single source for the dimension, used both by the top-level evaluator and by the
-// wrapped-inner indirect-execution path.
-func SystemModificationRisk(names map[string]struct{}, cmd string, args []string) runnertypes.RiskLevel {
+// RiskLevelUnknown when no system-modification dimension applies. The decision is
+// made entirely from the supplied resolved-name set (no re-extraction). This is
+// the single source for the dimension, used both by the top-level evaluator and
+// by the wrapped-inner indirect-execution path.
+func SystemModificationRisk(names map[string]struct{}, args []string) runnertypes.RiskLevel {
 	if _, ok := names["systemctl"]; ok {
 		return SystemctlSubcommandRisk(args)
 	}
 	if _, ok := names["service"]; ok {
 		return runnertypes.RiskLevelHigh
 	}
-	if IsSystemModification(cmd, args) {
+	if isSystemModificationByNames(names, args) {
 		return runnertypes.RiskLevelMedium
 	}
 	return runnertypes.RiskLevelUnknown

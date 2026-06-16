@@ -324,6 +324,13 @@ func TestIndirect_UnextractableWrapperRejected(t *testing.T) {
 	res := analyzeIndirectCmd("env", "--unknown-flag", "ls")
 	assert.Equal(t, IndirectReject, res.Kind)
 
+	// A wrapper whose option parsing mis-locates the command so that the extracted
+	// token still begins with "-" fails closed rather than evaluating the wrong
+	// token (e.g. an unknown value-taking option consumed the real positional).
+	assert.Equal(t, IndirectReject, analyzeIndirectCmd("timeout", "--unknown-val", "5", "-rf").Kind)
+	// nice's "-NUM" adjustment is still handled: the real command is extracted.
+	assert.Equal(t, IndirectFloor, analyzeIndirectCmd("nice", "-10", "rm", "-rf", "/tmp/x").Kind)
+
 	// Contrast: env with no command is Medium, not Reject.
 	noCmd := analyzeIndirectCmd("env", "FOO=bar")
 	assert.Equal(t, IndirectFloor, noCmd.Kind)

@@ -1472,12 +1472,21 @@ func TestIsDestructive_BasenameBackwardCompat(t *testing.T) {
 	assert.True(t, IsDestructiveFileOperation("dd", []string{"if=/dev/zero"}))
 }
 
+// isSystemModification resolves the command's name set and reports whether it is
+// a system-modification command. The production code derives system-modification
+// risk from an already-resolved name set (isSystemModificationByNames); this test
+// wrapper resolves the path first so the path-based cases stay readable.
+func isSystemModification(cmd string, args []string) bool {
+	names, _ := extractAllCommandNames(cmd)
+	return isSystemModificationByNames(names, args)
+}
+
 // TestIsSystemModification_AbsolutePath verifies that a system-modification
 // command given as a resolved absolute path is detected.
 func TestIsSystemModification_AbsolutePath(t *testing.T) {
-	assert.True(t, IsSystemModification("/usr/sbin/systemctl", []string{"restart", "nginx"}))
-	assert.True(t, IsSystemModification("/usr/bin/mount", []string{"/dev/sda1", "/mnt"}))
-	assert.False(t, IsSystemModification("/usr/bin/systemctl-helper", []string{"restart"}),
+	assert.True(t, isSystemModification("/usr/sbin/systemctl", []string{"restart", "nginx"}))
+	assert.True(t, isSystemModification("/usr/bin/mount", []string{"/dev/sda1", "/mnt"}))
+	assert.False(t, isSystemModification("/usr/bin/systemctl-helper", []string{"restart"}),
 		"a substring match must not be treated as systemctl")
 }
 
@@ -1508,7 +1517,7 @@ func TestIsSystemModification_PackageManagerVerbs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, IsSystemModification(tt.cmd, tt.args))
+			assert.Equal(t, tt.want, isSystemModification(tt.cmd, tt.args))
 		})
 	}
 }
@@ -1622,7 +1631,7 @@ func TestIsSystemModification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := IsSystemModification(tt.cmd, tt.args)
+			result := isSystemModification(tt.cmd, tt.args)
 			assert.Equal(t, tt.expected, result, "IsSystemModification(%q, %v)", tt.cmd, tt.args)
 		})
 	}

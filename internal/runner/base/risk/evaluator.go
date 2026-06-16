@@ -193,7 +193,7 @@ func (e *StandardEvaluator) evaluateDimensions(
 	if security.IsDestructiveFileOperation(cmdPath, args) {
 		addDimension(&a, runnertypes.RiskLevelHigh, risktypes.ReasonDestructiveFileOperation)
 	}
-	if sysmod := security.SystemModificationRisk(names, cmdPath, args); sysmod > runnertypes.RiskLevelUnknown {
+	if sysmod := security.SystemModificationRisk(names, args); sysmod > runnertypes.RiskLevelUnknown {
 		addDimension(&a, sysmod, risktypes.ReasonSystemModification)
 	}
 

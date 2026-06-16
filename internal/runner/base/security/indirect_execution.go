@@ -394,6 +394,13 @@ func analyzeWrapper(spec wrapperSpec, args []string, depth int) IndirectExecutio
 		// command, treat as a Medium floor rather than rejecting outright.
 		return floor(runnertypes.RiskLevelMedium, risktypes.ReasonIndirectExecutionWrapper)
 	}
+	// The extracted inner command should be a program name/path, never an option.
+	// If it still begins with "-", option parsing mis-located the command (e.g. an
+	// unknown value-taking option consumed the real positional), so fail closed
+	// rather than evaluate the wrong token and under-classify the real command.
+	if cmd := args[idx]; strings.HasPrefix(cmd, "-") {
+		return reject()
+	}
 	return evaluateInner(args[idx], args[idx+1:], depth)
 }
 
@@ -455,7 +462,7 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 		codes = append(codes, risktypes.ReasonDestructiveFileOperation)
 	}
 	innerNames, _ := extractAllCommandNames(inner)
-	if s := SystemModificationRisk(innerNames, inner, innerArgs); s > runnertypes.RiskLevelUnknown {
+	if s := SystemModificationRisk(innerNames, innerArgs); s > runnertypes.RiskLevelUnknown {
 		level = max(level, s)
 		codes = append(codes, risktypes.ReasonSystemModification)
 	}
