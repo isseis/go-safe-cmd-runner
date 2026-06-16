@@ -18,6 +18,16 @@ func analyzeIndirectCmd(cmd string, args ...string) IndirectExecutionResult {
 	return AnalyzeIndirectExecution(cmd, args)
 }
 
+// hasArtifactPath reports whether the artifact list contains an entry for path.
+func hasArtifactPath(arts []risktypes.ExecutedArtifact, path string) bool {
+	for _, a := range arts {
+		if a.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
 // hasReason reports whether the result carries the given reason code.
 func hasReason(res IndirectExecutionResult, code risktypes.ReasonCode) bool {
 	for _, c := range res.ReasonCodes {

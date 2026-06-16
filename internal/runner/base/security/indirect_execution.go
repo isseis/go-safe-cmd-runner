@@ -219,28 +219,10 @@ func analyzeShebang(cmdPath string, scriptArgs []string, depth int) (IndirectExe
 	args := append(append([]string{}, interpArgs...), cmdPath)
 	args = append(args, scriptArgs...)
 	// Evaluate the interpreter as the executed artifact, labeled RoleInterpreter.
-	// On a Floor outcome evaluateInnerAs already records that artifact (once); on a
-	// Critical/Reject outcome it records none, so add it here so the interpreter is
-	// still present in the audit chain on every path.
+	// evaluateInnerAs records that artifact on every outcome (Floor/Critical/
+	// Reject), so the interpreter is always present in the audit chain.
 	res := evaluateInnerAs(interp, args, depth, risktypes.RoleInterpreter)
-	if !hasArtifactPath(res.Artifacts, interp) {
-		res.Artifacts = append(res.Artifacts, risktypes.ExecutedArtifact{
-			Path: interp,
-			Role: risktypes.RoleInterpreter,
-		})
-	}
 	return res, true
-}
-
-// hasArtifactPath reports whether the artifact list already contains an entry for
-// the given path.
-func hasArtifactPath(arts []risktypes.ExecutedArtifact, path string) bool {
-	for _, a := range arts {
-		if a.Path == path {
-			return true
-		}
-	}
-	return false
 }
 
 // readShebang reads the interpreter and its inline arguments from a file's "#!"
