@@ -414,6 +414,14 @@ func TestIndirect_FindXargsTargetGated(t *testing.T) {
 	plain := analyzeIndirectCmd("find", "/tmp", "-type", "f")
 	assert.Equal(t, IndirectNone, plain.Kind)
 
+	// An exec primary with no following command token (e.g. the primary is the last
+	// argument) is a malformed exec form: it must fail closed, not fall through to
+	// IndirectNone as if it were a plain search.
+	for _, action := range []string{"-exec", "-execdir", "-ok", "-okdir"} {
+		assert.Equalf(t, IndirectReject, analyzeIndirectCmd("find", "/tmp", action).Kind,
+			"find ... %s with no command token must fail closed", action)
+	}
+
 	// xargs shares the getopt operand scanner, so the "--" terminator and the
 	// fail-closed-on-unknown-long rule apply here too. "xargs -- sudo" runs sudo.
 	xargsTerm := analyzeIndirectCmd("xargs", "--", "sudo", "rm")

@@ -285,8 +285,16 @@ func analyzeIndirect(cmdPath string, args []string, depth int) IndirectExecution
 		return analyzeChildProcessExec(xargsTarget(args))
 	}
 	if _, ok := names["find"]; ok {
-		if target, ok := findExecTarget(args); ok {
+		target, hasTarget, hasPrimary := findExecTarget(args)
+		if hasTarget {
 			return analyzeChildProcessExec(target, true)
+		}
+		if hasPrimary {
+			// An exec primary is present but its command token is missing (e.g.
+			// "find /tmp -exec" with nothing after): the form would run a helper we
+			// cannot extract or identity-bind, so fail closed rather than fall through
+			// to IndirectNone and treat it as a plain search.
+			return reject()
 		}
 	}
 
@@ -791,14 +799,21 @@ func xargsTarget(args []string) (string, bool) {
 }
 
 // findExecTarget returns the command find would run for an -exec/-execdir/-ok/-okdir
-// primary: the token immediately after the primary.
-func findExecTarget(args []string) (string, bool) {
+// primary: the token immediately after the primary. hasTarget is true when such a
+// token was found. hasPrimary reports whether any exec primary was present at all,
+// so the caller can distinguish a plain search (no primary -> not an indirect
+// form) from a malformed exec form (primary present but no following command ->
+// fail closed).
+func findExecTarget(args []string) (target string, hasTarget, hasPrimary bool) {
 	for i, arg := range args {
-		if _, ok := findExecActions[arg]; ok && i+1 < len(args) {
-			return args[i+1], true
+		if _, ok := findExecActions[arg]; ok {
+			hasPrimary = true
+			if i+1 < len(args) {
+				return args[i+1], true, true
+			}
 		}
 	}
-	return "", false
+	return "", false, hasPrimary
 }
 
 // analyzeService records the SysV init script the service command runs so it is
