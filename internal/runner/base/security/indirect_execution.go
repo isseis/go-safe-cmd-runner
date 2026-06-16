@@ -371,7 +371,13 @@ func analyzeShebang(cmdPath string, scriptArgs []string, depth int) (IndirectExe
 // first line. It returns ok=false when the file cannot be read or does not start
 // with a shebang.
 func readShebang(path string) (interp string, args []string, ok bool) {
-	const maxShebangLen = 256
+	// 512 is the larger of the two supported platforms' kernel shebang limits
+	// (Linux BINPRM_BUF_SIZE = 256, macOS IMG_ACT_MAX_SHEBANG = 512). Using the
+	// larger bound avoids truncating a long shebang line on macOS (which would drop
+	// characters that should trigger the env -S fail-closed logic); on Linux it can
+	// only read past what the kernel uses, which is fail-closed-safe, never an
+	// under-read.
+	const maxShebangLen = 512
 	// Only inspect explicit paths (containing '/'): bare command names are
 	// resolved via PATH at exec time, not here, and opening a relative name
 	// could accidentally read an unrelated local file from the CWD.

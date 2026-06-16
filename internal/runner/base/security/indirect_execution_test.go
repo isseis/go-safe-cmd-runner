@@ -5,6 +5,7 @@ package security
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
@@ -600,6 +601,26 @@ func TestIndirect_PackageScriptRunnerHigh(t *testing.T) {
 			assert.Equal(t, runnertypes.RiskLevelHigh, res.Level)
 		})
 	}
+}
+
+// TestIndirect_ShebangLongLineNotTruncated verifies the shebang read bound is
+// large enough to cover macOS's 512-byte kernel shebang limit: an env -S payload
+// whose fail-closed trigger (a quote) sits past Linux's 256-byte limit but within
+// 512 must still be read and rejected, rather than truncated and allowed.
+func TestIndirect_ShebangLongLineNotTruncated(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "deploy.sh")
+	// The quote lands at ~byte 323 — beyond 256 (would be truncated under the old
+	// Linux-only bound) but within 512.
+	shebang := "#!/usr/bin/env -S echo " + strings.Repeat("a", 300) + " 'q'\n"
+	require.Greater(t, len(shebang), 256)
+	require.LessOrEqual(t, len(shebang), 512)
+	require.NoError(t, os.WriteFile(script, []byte(shebang+"echo hi\n"), 0o755))
+
+	// The quote makes the env -S payload uninterpretable -> fail closed (Reject).
+	// A 256-byte cap would truncate before the quote and mis-classify it as Floor.
+	assert.Equal(t, IndirectReject, analyzeIndirectCmd(script).Kind,
+		"a quote past byte 256 in the shebang env -S payload must still trigger fail-closed")
 }
 
 // TestIndirect_ShebangInterpreterGated verifies a direct script with a shebang is
