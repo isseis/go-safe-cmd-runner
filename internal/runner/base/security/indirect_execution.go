@@ -131,6 +131,87 @@ func setOf(keys ...string) map[string]struct{} {
 	return s
 }
 
+// unknownOptionPolicy decides how a leading-option scan treats an option it does
+// not recognize. An unrecognized option's arity (whether it consumes the next
+// token as a value) determines where the operands begin, so the policy is what
+// lets a scan stay either lenient or fail-closed at its call site.
+type unknownOptionPolicy int
+
+const (
+	// shortOptsAreBoolean treats an unrecognized short option (-x) as value-less
+	// and only an unrecognized long option (--foo with no attached "=") as making
+	// the operand boundary unreliable. Short options are predominantly flags, and
+	// a wrapper/xargs invocation's leading tokens are mostly its own known options.
+	shortOptsAreBoolean unknownOptionPolicy = iota
+	// anyUnknownIsUnreliable treats every unrecognized option (short or long, with
+	// no attached "=") as making the boundary unreliable. Used where an
+	// unrecognized separated value-option could hide the following subcommand and
+	// the fallback classification is not the safe side (package script runners,
+	// which have short value-options like npm -w that the spec cannot fully list).
+	anyUnknownIsUnreliable
+)
+
+// optSpec declares a command's own option grammar so a scan can locate the
+// operands (the non-option tokens) without mistaking an option's value for one.
+type optSpec struct {
+	// valueOpts consume the following token as their value in the separated form
+	// (-o VALUE). The attached forms (-oVALUE, --opt=VALUE) are self-contained and
+	// need no special listing.
+	valueOpts map[string]struct{}
+	// unknown selects how an unrecognized option is treated (see the policies).
+	unknown unknownOptionPolicy
+}
+
+// skipLeadingOptions returns the index of the first operand (the first non-option
+// token) in args, consuming the value of any recognized separated value-option.
+// It is the single getopt-style operand scanner shared by the wrapper, xargs, and
+// package-runner classifiers, so the option-surface handling (the "--" terminator,
+// attached values, unknown-arity fail-closed) lives in one place instead of being
+// re-derived — slightly differently each time — per call site.
+//
+// reliable is false when an option of unknown arity made the operand boundary
+// indeterminate; the caller must then fail closed, because it cannot tell which
+// token is the operand. The "--" terminator makes the following token an operand
+// unconditionally (even if it begins with "-") and keeps the scan reliable. When
+// args holds no operand, idx == len(args).
+func skipLeadingOptions(args []string, spec optSpec) (idx int, reliable bool) {
+	i := 0
+	for i < len(args) {
+		t := args[i]
+		if t == "--" {
+			return i + 1, true
+		}
+		if !strings.HasPrefix(t, "-") || t == "-" {
+			break // operand
+		}
+		i++
+		if _, ok := spec.valueOpts[t]; ok {
+			i++ // separated value: skip the option's value too
+			continue
+		}
+		if strings.Contains(t, "=") {
+			continue // attached value (--opt=value): self-contained
+		}
+		// Unrecognized option with no attached value: its arity is unknown.
+		if strings.HasPrefix(t, "--") || spec.unknown == anyUnknownIsUnreliable {
+			return i, false
+		}
+		// shortOptsAreBoolean: an unknown short option is assumed value-less.
+	}
+	return i, true
+}
+
+// shortFlagInBundle reports whether arg is a single-dash short-option token (not a
+// "--" long option) whose letters include c. This matches both an attached value
+// (-essh selects -e) and a bundle of short flags (-avze includes -e), so an
+// option hidden inside such a token is not missed.
+func shortFlagInBundle(arg string, c byte) bool {
+	if !strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "--") || arg == "-" {
+		return false
+	}
+	return strings.IndexByte(arg[1:], c) >= 0
+}
+
 // AnalyzeIndirectExecution detects whether the command executes or loads an
 // artifact other than the verified one (a wrapper's inner command, an inline
 // script, a loader-injected library, a find/xargs child-process helper, a remote
@@ -421,10 +502,10 @@ func resolveInner(inner string, innerArgs []string, pathOverridden bool, depth i
 // analyzeWrapper skips a wrapper's options and positional arguments and evaluates
 // the inner command it runs.
 func analyzeWrapper(spec wrapperSpec, args []string, depth int) IndirectExecutionResult {
-	idx, hasUnknownLongOpt := skipWrapperOptions(args, spec.valueOpts)
-	// An unknown long option (--foo not in valueOpts, no attached =) may or may
-	// not consume the next token; the parse position is unreliable, so fail closed.
-	if hasUnknownLongOpt {
+	idx, reliable := skipLeadingOptions(args, optSpec{valueOpts: spec.valueOpts, unknown: shortOptsAreBoolean})
+	// An option of unknown arity may have consumed the real command token; the
+	// parse position is unreliable, so fail closed.
+	if !reliable {
 		return reject()
 	}
 	idx += spec.positionals
@@ -441,33 +522,6 @@ func analyzeWrapper(spec wrapperSpec, args []string, depth int) IndirectExecutio
 		return reject()
 	}
 	return evaluateInner(args[idx], args[idx+1:], depth)
-}
-
-// skipWrapperOptions returns the index of the first positional argument after the
-// wrapper's leading options, consuming the value of any value-taking option.
-// hasUnknownLongOpt is true when a long option (--foo) not in valueOpts and
-// without an attached = is encountered: its arity is unknown, so the command
-// boundary cannot be located reliably.
-func skipWrapperOptions(args []string, valueOpts map[string]struct{}) (idx int, hasUnknownLongOpt bool) {
-	i := 0
-	for i < len(args) {
-		t := args[i]
-		if t == "--" {
-			// Option terminator: the next token is the first positional argument.
-			return i + 1, false
-		}
-		if !strings.HasPrefix(t, "-") || t == "-" {
-			break
-		}
-		i++
-		if _, ok := valueOpts[t]; ok {
-			i++ // consume the option's value
-		} else if strings.HasPrefix(t, "--") && !strings.Contains(t, "=") {
-			// Unknown long option with no attached value: arity unknown.
-			hasUnknownLongOpt = true
-		}
-	}
-	return i, hasUnknownLongOpt
 }
 
 // evaluateInner folds the inner command's name-based risk and recurses into a
@@ -558,25 +612,21 @@ func analyzeChildProcessExec(target string, hasTarget bool) IndirectExecutionRes
 	return res
 }
 
+// xargsValueOpts are xargs' own options that consume the following token as their
+// value, so the value is not mistaken for the helper command.
+var xargsValueOpts = setOf("-I", "--replace", "-n", "--max-args", "-P", "--max-procs",
+	"-L", "--max-lines", "-s", "--max-chars", "-E", "-d", "--delimiter", "-a", "--arg-file")
+
 // xargsTarget returns the helper command xargs would run: the first non-option
-// token after xargs' own options.
+// token after xargs' own options. ok is false when there is no such token or the
+// option boundary is unreliable; the xargs form is deny-only either way, so the
+// caller rejects, but a reliable scan still records the correct helper artifact.
 func xargsTarget(args []string) (string, bool) {
-	i := 0
-	valueOpts := setOf("-I", "--replace", "-n", "--max-args", "-P", "--max-procs",
-		"-L", "--max-lines", "-s", "--max-chars", "-E", "-d", "--delimiter", "-a", "--arg-file")
-	for i < len(args) {
-		t := args[i]
-		if !strings.HasPrefix(t, "-") || t == "-" {
-			return t, true
-		}
-		i++
-		// -I{}/-n5 combined forms carry their value inline; only the separated
-		// forms consume the next token.
-		if _, ok := valueOpts[t]; ok {
-			i++
-		}
+	idx, reliable := skipLeadingOptions(args, optSpec{valueOpts: xargsValueOpts, unknown: shortOptsAreBoolean})
+	if !reliable || idx >= len(args) {
+		return "", false
 	}
-	return "", false
+	return args[idx], true
 }
 
 // findExecTarget returns the command find would run for an -exec/-execdir/-ok/-okdir
@@ -618,7 +668,10 @@ func isSimpleUnitName(name string) bool {
 }
 
 // serviceUnitName returns the unit name from "service <name> <action>", skipping
-// service's own options (--status-all, --full-restart, etc.).
+// service's own options (--status-all, --full-restart, etc.). service's options
+// are all value-less, so unlike the wrapper/xargs/package classifiers there is no
+// option-arity ambiguity to resolve and this stays a dedicated single-pass scan
+// rather than going through skipLeadingOptions.
 func serviceUnitName(args []string) (string, bool) {
 	for _, a := range args {
 		if strings.HasPrefix(a, "-") {
@@ -656,12 +709,9 @@ func matchesRemoteShellOption(arg, p string) bool {
 		return true
 	}
 	// Short option (e.g. -e): rsync attaches the value (-essh) or bundles the
-	// letter with other short flags (-avze), so any single-dash (non "--") token
-	// that contains the option letter selects it.
+	// letter with other short flags (-avze).
 	if len(p) == 2 && p[0] == '-' && p[1] != '-' {
-		if strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") {
-			return strings.IndexByte(arg[1:], p[1]) >= 0
-		}
+		return shortFlagInBundle(arg, p[1])
 	}
 	return false
 }
@@ -738,49 +788,32 @@ func hasInlineCode(names map[string]struct{}, args []string) bool {
 	return false
 }
 
+// packageRunnerValueOpts are the package-runner options known to consume the
+// following token as their value, so the value is not mistaken for the verb.
+var packageRunnerValueOpts = setOf("--cwd", "-C", "--prefix", "--registry", "--cache")
+
 // packageRunnerVerb returns the package-runner subcommand: the first non-option
-// token, skipping common value-taking options and their values so an option value
-// is not mistaken for the subcommand (e.g. "yarn --cwd /dir install" -> install).
-// hasUnknown is true when a separated option not in the known value set is seen
-// before the verb: it may or may not consume the next token, so the parse position
-// is no longer reliable and the caller must fail closed.
+// token, skipping recognized value-taking options and their values so an option
+// value is not mistaken for the subcommand (e.g. "yarn --cwd /dir install" ->
+// install). hasUnknown is true when an unrecognized option of unknown arity is
+// seen before the verb (anyUnknownIsUnreliable): it may consume the next token,
+// hiding a script subcommand, so the caller must fail closed.
 func packageRunnerVerb(args []string) (verb string, hasUnknown, ok bool) {
-	valueOpts := setOf("--cwd", "-C", "--prefix", "--registry", "--cache")
-	skip := false
-	optionsTerminated := false
-	for _, a := range args {
-		if skip {
-			skip = false
-			continue
-		}
-		if !optionsTerminated {
-			if _, isValueOpt := valueOpts[a]; isValueOpt {
-				skip = true // the option consumes the following token as its value
-				continue
-			}
-			if a == "--" {
-				// Option terminator: all subsequent tokens are positional.
-				optionsTerminated = true
-				continue
-			}
-			if strings.HasPrefix(a, "-") && a != "-" {
-				// A combined "--opt=value" form completes in one token and is safe to
-				// skip; an unknown separated option is not, so signal fail-closed.
-				if strings.Contains(a, "=") {
-					continue
-				}
-				return "", true, false
-			}
-		}
-		return a, false, true
+	idx, reliable := skipLeadingOptions(args, optSpec{valueOpts: packageRunnerValueOpts, unknown: anyUnknownIsUnreliable})
+	if !reliable {
+		return "", true, false
 	}
-	return "", false, false
+	if idx >= len(args) {
+		return "", false, false
+	}
+	return args[idx], false, true
 }
 
 // hasFlag reports whether flag appears in args (stopping at the "--" option
 // terminator). A two-character short flag (e.g. "-c") is also detected inside a
 // combined short-flag bundle (e.g. "-xc" includes "-c").
 func hasFlag(args []string, flag string) bool {
+	isShort := len(flag) == 2 && flag[0] == '-' && flag[1] != '-'
 	for _, a := range args {
 		if a == "--" {
 			return false
@@ -788,11 +821,8 @@ func hasFlag(args []string, flag string) bool {
 		if a == flag {
 			return true
 		}
-		if len(flag) == 2 && flag[0] == '-' && flag[1] != '-' {
-			if strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--") &&
-				strings.IndexByte(a[1:], flag[1]) >= 0 {
-				return true
-			}
+		if isShort && shortFlagInBundle(a, flag[1]) {
+			return true
 		}
 	}
 	return false

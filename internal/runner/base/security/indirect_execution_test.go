@@ -307,6 +307,55 @@ func TestIndirect_FindXargsTargetGated(t *testing.T) {
 
 	plain := analyzeIndirectCmd("find", "/tmp", "-type", "f")
 	assert.Equal(t, IndirectNone, plain.Kind)
+
+	// xargs shares the getopt operand scanner, so the "--" terminator and the
+	// fail-closed-on-unknown-long rule apply here too. "xargs -- sudo" runs sudo.
+	xargsTerm := analyzeIndirectCmd("xargs", "--", "sudo", "rm")
+	assert.Equal(t, IndirectCritical, xargsTerm.Kind, "xargs -- sudo must reach the privilege target")
+	// An unknown long option may consume the next token, so the target boundary is
+	// unreliable; the xargs form is deny-only, so it rejects with no target artifact.
+	xargsUnknown := analyzeIndirectCmd("xargs", "--unknown-long", "rm")
+	assert.Equal(t, IndirectReject, xargsUnknown.Kind)
+	assert.Empty(t, xargsUnknown.Artifacts, "an unreliable xargs scan records no target artifact")
+}
+
+// TestSkipLeadingOptions verifies the shared getopt operand scanner that the
+// wrapper, xargs, and package-runner classifiers all build on: the "--"
+// terminator, separated/attached value-options, and the two unknown-option
+// policies. Locking it here keeps the option-surface handling consistent across
+// every call site instead of being re-derived per classifier.
+func TestSkipLeadingOptions(t *testing.T) {
+	valueOpts := setOf("-s", "--signal")
+	for _, tc := range []struct {
+		name         string
+		args         []string
+		unknown      unknownOptionPolicy
+		wantIdx      int
+		wantReliable bool
+	}{
+		{"no options", []string{"cmd", "a"}, shortOptsAreBoolean, 0, true},
+		{"separated value option", []string{"-s", "KILL", "cmd"}, shortOptsAreBoolean, 2, true},
+		{"attached long value", []string{"--signal=KILL", "cmd"}, shortOptsAreBoolean, 1, true},
+		{"dash terminator", []string{"--", "-weird"}, shortOptsAreBoolean, 1, true},
+		{"lone dash is operand", []string{"-"}, shortOptsAreBoolean, 0, true},
+		{"no operand", []string{"-s", "KILL"}, shortOptsAreBoolean, 2, true},
+		// shortOptsAreBoolean: unknown short is assumed value-less, unknown long fails closed.
+		{"unknown short assumed boolean", []string{"-x", "cmd"}, shortOptsAreBoolean, 1, true},
+		{"unknown long unreliable", []string{"--mystery", "cmd"}, shortOptsAreBoolean, 1, false},
+		// anyUnknownIsUnreliable: any unrecognized option (short or long) fails closed.
+		{"strict unknown short unreliable", []string{"-x", "cmd"}, anyUnknownIsUnreliable, 1, false},
+		{"strict unknown long unreliable", []string{"--mystery", "cmd"}, anyUnknownIsUnreliable, 1, false},
+		// An attached "=" form is self-contained, so it is safe even under the strict policy.
+		{"strict attached value safe", []string{"--mystery=v", "cmd"}, anyUnknownIsUnreliable, 1, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			idx, reliable := skipLeadingOptions(tc.args, optSpec{valueOpts: valueOpts, unknown: tc.unknown})
+			assert.Equal(t, tc.wantReliable, reliable)
+			if tc.wantReliable {
+				assert.Equal(t, tc.wantIdx, idx)
+			}
+		})
+	}
 }
 
 // TestIndirect_DynamicLoaderGated verifies a direct dynamic-loader invocation is
