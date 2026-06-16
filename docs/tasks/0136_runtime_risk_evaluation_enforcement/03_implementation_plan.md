@@ -270,7 +270,7 @@
 **レビュー観点**: 抽出不能ラッパーの拒否（High に倒さず `ReasonIndirectExecutionRejected`）/ ローダ制御 env（`LD_*`/`DYLD_*`）・`env -S`・shebang・service init スクリプト・find/xargs 子プロセスの各形態ゲート / 攻撃者視点テスト（AC-71）の網羅 / 未知形態は安全側（一般原則＋backstop）/ **検出器が `EvaluateRisk` 順位 2 に確実に配線され dead code でない**（e2e で `env sudo`/`bash -c`/`find -exec` が評価経由で拒否される）
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test` 緑。`make lint` の残存指摘は origin/main にも存在する goconst のみ＝既存無関係指摘、AC-21 で除外）
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/732）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
