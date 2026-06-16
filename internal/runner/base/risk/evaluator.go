@@ -193,7 +193,7 @@ func (e *StandardEvaluator) evaluateDimensions(
 	if security.IsDestructiveFileOperation(cmdPath, args) {
 		addDimension(&a, runnertypes.RiskLevelHigh, risktypes.ReasonDestructiveFileOperation)
 	}
-	if sysmod := systemModificationRisk(names, cmdPath, args); sysmod > runnertypes.RiskLevelUnknown {
+	if sysmod := security.SystemModificationRisk(names, cmdPath, args); sysmod > runnertypes.RiskLevelUnknown {
 		addDimension(&a, sysmod, risktypes.ReasonSystemModification)
 	}
 
@@ -289,24 +289,6 @@ func (e *StandardEvaluator) applyBinaryAnalysis(a *risktypes.RiskAssessment, cmd
 		// No contribution.
 	}
 	return nil, nil
-}
-
-// systemModificationRisk derives the system-modification risk level for the
-// command. systemctl is argument-conditional (read-only subcommands stay at a
-// Medium floor, change/unknown verbs are High); service is always High (it runs
-// an unverified init script); any other system-modification command (mount,
-// crontab, mkfs, package install/remove, ...) is Medium.
-func systemModificationRisk(names map[string]struct{}, cmdPath string, args []string) runnertypes.RiskLevel {
-	if _, ok := names["systemctl"]; ok {
-		return security.SystemctlSubcommandRisk(args)
-	}
-	if _, ok := names["service"]; ok {
-		return runnertypes.RiskLevelHigh
-	}
-	if security.IsSystemModification(cmdPath, args) {
-		return runnertypes.RiskLevelMedium
-	}
-	return runnertypes.RiskLevelUnknown
 }
 
 // networkTypeString renders a NetworkOperationType for the audit NetworkType field.

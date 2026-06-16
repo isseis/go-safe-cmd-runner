@@ -629,6 +629,27 @@ func IsSystemModification(cmd string, args []string) bool {
 	return false
 }
 
+// SystemModificationRisk derives the system-modification risk for a command given
+// its resolved name set: systemctl is subcommand-conditional (read-only verbs stay
+// at a Medium floor, change/unknown verbs are High), service is always High (it
+// runs an unverified init script), and any other system-modification command
+// (mount, crontab, mkfs, package install/remove, ...) is Medium. It returns
+// RiskLevelUnknown when no system-modification dimension applies. This is the
+// single source for the dimension, used both by the top-level evaluator and by the
+// wrapped-inner indirect-execution path.
+func SystemModificationRisk(names map[string]struct{}, cmd string, args []string) runnertypes.RiskLevel {
+	if _, ok := names["systemctl"]; ok {
+		return SystemctlSubcommandRisk(args)
+	}
+	if _, ok := names["service"]; ok {
+		return runnertypes.RiskLevelHigh
+	}
+	if IsSystemModification(cmd, args) {
+		return runnertypes.RiskLevelMedium
+	}
+	return runnertypes.RiskLevelUnknown
+}
+
 // CheckDangerousArgPatterns reports the risk level implied by a command together
 // with its arguments (rm -rf, dd if=, chmod -R 777, mkfs.* ...). It is the public
 // entry point used by runtime risk evaluation so dangerous argument patterns

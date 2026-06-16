@@ -332,10 +332,19 @@ func checkEnvAssignment(t string, pathOverridden *bool) (IndirectExecutionResult
 	return IndirectExecutionResult{}, false
 }
 
-// analyzeEnvSplitString interprets env -S 'NAME=VALUE ... COMMAND ARG ...'. The
-// split string is tokenized on whitespace (a safe approximation; an empty result
-// is rejected) and re-parsed as env arguments.
+// analyzeEnvSplitString interprets env -S 'NAME=VALUE ... COMMAND ARG ...'.
+//
+// env -S applies its own escape/quote/variable processing (backslash escapes,
+// single/double quotes, ${VAR} substitution, '#' comments) before splitting into
+// argv. A plain whitespace split cannot reproduce that, so it would mis-tokenize a
+// payload like 'sudo\tls' or "'sudo' ls" and miss the hidden command (fail open).
+// To stay fail-closed (AC: uninterpretable -> reject), any payload containing a
+// character that triggers that extra processing is rejected; only payloads that
+// reduce to a faithful whitespace split are interpreted.
 func analyzeEnvSplitString(s string, depth int) IndirectExecutionResult {
+	if strings.ContainsAny(s, "\\'\"$#") {
+		return reject()
+	}
 	tokens := strings.Fields(s)
 	if len(tokens) == 0 {
 		return reject()
@@ -405,7 +414,8 @@ func evaluateInner(inner string, innerArgs []string, depth int) IndirectExecutio
 		level = max(level, runnertypes.RiskLevelHigh)
 		codes = append(codes, risktypes.ReasonDestructiveFileOperation)
 	}
-	if s := wrappedSystemModRisk(inner, innerArgs); s > runnertypes.RiskLevelUnknown {
+	innerNames, _ := extractAllCommandNames(inner)
+	if s := SystemModificationRisk(innerNames, inner, innerArgs); s > runnertypes.RiskLevelUnknown {
 		level = max(level, s)
 		codes = append(codes, risktypes.ReasonSystemModification)
 	}
@@ -425,24 +435,6 @@ func evaluateInner(inner string, innerArgs []string, depth int) IndirectExecutio
 		ReasonCodes: codes,
 		Artifacts:   append(nested.Artifacts, artifact),
 	}
-}
-
-// wrappedSystemModRisk derives the system-modification risk of a wrapped inner
-// command (systemctl is subcommand-conditional, service is always High, other
-// modifiers are Medium). It mirrors the evaluator's own system-modification
-// dimension so a wrapped "systemctl restart" is not under-classified.
-func wrappedSystemModRisk(cmd string, args []string) runnertypes.RiskLevel {
-	names, _ := extractAllCommandNames(cmd)
-	if _, ok := names["systemctl"]; ok {
-		return SystemctlSubcommandRisk(args)
-	}
-	if _, ok := names["service"]; ok {
-		return runnertypes.RiskLevelHigh
-	}
-	if IsSystemModification(cmd, args) {
-		return runnertypes.RiskLevelMedium
-	}
-	return runnertypes.RiskLevelUnknown
 }
 
 // analyzeChildProcessExec handles a helper run from find/xargs' own child process.
@@ -493,10 +485,11 @@ func findExecTarget(args []string) (string, bool) {
 func analyzeService(args []string) IndirectExecutionResult {
 	res := floor(runnertypes.RiskLevelHigh, risktypes.ReasonSystemModification)
 	if name, ok := serviceUnitName(args); ok {
+		// Record the init script path and role; identity binding / disposition is
+		// populated when artifact gating is wired in the execution layer.
 		res.Artifacts = []risktypes.ExecutedArtifact{{
-			Path:        "/etc/init.d/" + name,
-			Role:        risktypes.RoleExecTarget,
-			Disposition: risktypes.DispRejected,
+			Path: "/etc/init.d/" + name,
+			Role: risktypes.RoleExecTarget,
 		}}
 	}
 	return res

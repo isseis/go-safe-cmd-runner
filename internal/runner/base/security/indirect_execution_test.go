@@ -197,6 +197,38 @@ func TestIndirect_EnvSplitString(t *testing.T) {
 	// Combined --split-string= form is parsed the same way.
 	combined := analyzeIndirectCmd("env", "--split-string=sudo ls")
 	assert.Equal(t, IndirectCritical, combined.Kind)
+
+	// A payload using env -S escape/quote/substitution processing cannot be
+	// faithfully whitespace-split, so it must fail closed (Reject) rather than
+	// silently mis-tokenize and let a hidden command through.
+	for _, payload := range []string{`sudo\tls`, `'sudo' ls`, `"sudo" ls`, `${X} ls`, `sudo ls #comment`} {
+		res := analyzeIndirectCmd("env", "-S", payload)
+		assert.Equalf(t, IndirectReject, res.Kind, "payload %q must fail closed", payload)
+	}
+}
+
+// TestIndirect_NestedWrapperAndDepthGuard verifies the resolver recurses through
+// nested wrappers (so a deeply wrapped privilege or destructive command is still
+// caught) and that the recursion depth guard rejects a pathologically deep chain.
+func TestIndirect_NestedWrapperAndDepthGuard(t *testing.T) {
+	// Nested wrapper reaching a privilege token stays Critical.
+	crit := analyzeIndirectCmd("env", "timeout", "5", "sudo", "ls")
+	assert.Equal(t, IndirectCritical, crit.Kind)
+
+	// Nested wrapper reaching a destructive command stays High.
+	high := analyzeIndirectCmd("env", "nice", "-n", "5", "rm", "-rf", "/tmp/x")
+	assert.Equal(t, IndirectFloor, high.Kind)
+	assert.Equal(t, runnertypes.RiskLevelHigh, high.Level)
+
+	// A chain of wrappers deeper than the recursion guard is rejected rather than
+	// silently bottoming out.
+	deep := make([]string, indirectExecMaxDepth+2)
+	for i := range deep {
+		deep[i] = "env"
+	}
+	deep[len(deep)-1] = "ls"
+	res := analyzeIndirectCmd("env", deep...)
+	assert.Equal(t, IndirectReject, res.Kind)
 }
 
 // TestIndirect_FindXargsTargetGated verifies find/xargs child-process exec forms
