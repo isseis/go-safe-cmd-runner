@@ -706,7 +706,7 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 		return res
 	}
 
-	if isPrivilegeCommand(inner) {
+	if isPrivilegeCommand(innerNames) {
 		res := critical()
 		res.Artifacts = append(res.Artifacts, artifact)
 		return res
@@ -724,7 +724,7 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 	codes := append([]risktypes.ReasonCode{}, nested.ReasonCodes...)
 	reasons := append([]string{}, nested.Reasons...)
 
-	if IsDestructiveFileOperation(inner, innerArgs) {
+	if IsDestructiveFileOperation(innerNames, innerArgs) {
 		level = max(level, runnertypes.RiskLevelHigh)
 		codes = append(codes, risktypes.ReasonDestructiveFileOperation)
 	}
@@ -749,11 +749,11 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 		level = max(level, s)
 		codes = append(codes, risktypes.ReasonSystemModification)
 	}
-	if IsArbitraryCodeExecutionRunner(inner) {
+	if IsArbitraryCodeExecutionRunner(innerNames) {
 		level = max(level, runnertypes.RiskLevelHigh)
 		codes = append(codes, risktypes.ReasonArbitraryCodeExecution)
 	}
-	if l, _ := CheckDangerousArgPatterns(inner, innerArgs); l > runnertypes.RiskLevelUnknown {
+	if l, _ := CheckDangerousArgPatterns(innerNames, innerArgs); l > runnertypes.RiskLevelUnknown {
 		level = max(level, l)
 		codes = append(codes, risktypes.ReasonDangerousArgPattern)
 	}
@@ -763,7 +763,7 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 	// modification is handled via SystemModificationRisk. The profile's
 	// human-readable reasons are carried so the audit log of a wrapped command
 	// keeps the same descriptions as the direct invocation.
-	if profile, ok := ResolveProfile(inner); ok {
+	if profile, ok := ResolveProfile(innerNames); ok {
 		if pl, pcodes := ProfileFactorRisk(profile, innerArgs); pl > runnertypes.RiskLevelUnknown {
 			level = max(level, pl)
 			codes = append(codes, pcodes...)
@@ -785,18 +785,22 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 // runner and is rejected. The target is recorded as a chain artifact when known
 // so the indirect-execution chain is traceable in audits on both outcomes.
 func analyzeChildProcessExec(target string, hasTarget bool) IndirectExecutionResult {
+	if !hasTarget {
+		return reject()
+	}
+	// The target is a separate (usually bare) command run from find/xargs' child
+	// process. Resolve its name set; a privilege token is Critical, anything else
+	// (including a resolution failure) is rejected — it cannot be identity-bound.
 	var res IndirectExecutionResult
-	if hasTarget && isPrivilegeCommand(target) {
+	if names, err := ResolveCommandNames(target); err == nil && isPrivilegeCommand(names) {
 		res = critical()
 	} else {
 		res = reject()
 	}
-	if hasTarget {
-		res.Artifacts = []risktypes.ExecutedArtifact{{
-			Path: target,
-			Role: risktypes.RoleExecTarget,
-		}}
-	}
+	res.Artifacts = []risktypes.ExecutedArtifact{{
+		Path: target,
+		Role: risktypes.RoleExecTarget,
+	}}
 	return res
 }
 
@@ -1098,9 +1102,10 @@ func isLoaderControlVar(name string) bool {
 }
 
 // isPrivilegeCommand reports whether the command escalates privilege
-// (sudo/su/doas), matched through its risk profile by basename and symlinks.
-func isPrivilegeCommand(cmd string) bool {
-	p, ok := ResolveProfile(cmd)
+// (sudo/su/doas), matched through its risk profile by the given pre-resolved name
+// set.
+func isPrivilegeCommand(names map[string]struct{}) bool {
+	p, ok := ResolveProfile(names)
 	return ok && p.IsPrivilege()
 }
 

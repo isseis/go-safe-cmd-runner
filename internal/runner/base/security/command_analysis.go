@@ -348,10 +348,11 @@ func getCommandRiskOverride(cmdPath string) (runnertypes.RiskLevel, string, bool
 	return runnertypes.RiskLevelUnknown, "", false
 }
 
-// checkCommandPatterns checks if a command matches any patterns in the given list
-func checkCommandPatterns(cmdName string, cmdArgs []string, patterns []DangerousCommandPattern) (runnertypes.RiskLevel, string, string) {
+// checkCommandPatterns checks if a command (given by its pre-resolved name set)
+// matches any patterns in the given list.
+func checkCommandPatterns(names map[string]struct{}, cmdArgs []string, patterns []DangerousCommandPattern) (runnertypes.RiskLevel, string, string) {
 	for _, pattern := range patterns {
-		if matchesPattern(cmdName, cmdArgs, pattern.Pattern) {
+		if matchesPattern(names, cmdArgs, pattern.Pattern) {
 			displayPattern := strings.Join(pattern.Pattern, " ")
 			return pattern.RiskLevel, displayPattern, pattern.Reason
 		}
@@ -558,8 +559,10 @@ func anyNameInSet(names, set map[string]struct{}) bool {
 }
 
 // isDestructiveBaseCommand reports whether the command (matched by basename and
-// resolved symlinks) is a destructive file operation. Used both for the
-// top-level command and for find's exec-action target.
+// resolved symlinks) is a destructive file operation. It is used for find's
+// exec-action target — a nested command, typically a bare name, whose name set is
+// resolved here on demand. The top-level/inner command is checked directly
+// against its pre-resolved name set in IsDestructiveFileOperation.
 func isDestructiveBaseCommand(cmd string) bool {
 	names, _ := extractAllCommandNames(cmd)
 	return anyNameInSet(names, destructiveCommandNames)
@@ -570,12 +573,10 @@ func isDestructiveBaseCommand(cmd string) bool {
 // so an absolute path such as /usr/bin/rm or a coreutils-directory rm is detected
 // (a substring like lsrm is not). find's exec actions (-exec/-execdir/-ok/-okdir)
 // and -delete are covered, with the exec target itself basename/symlink matched.
-func IsDestructiveFileOperation(cmd string, args []string) bool {
-	if isDestructiveBaseCommand(cmd) {
+func IsDestructiveFileOperation(names map[string]struct{}, args []string) bool {
+	if anyNameInSet(names, destructiveCommandNames) {
 		return true
 	}
-
-	names, _ := extractAllCommandNames(cmd)
 
 	if _, ok := names["find"]; ok {
 		for i, arg := range args {
@@ -656,20 +657,19 @@ func SystemModificationRisk(names map[string]struct{}, args []string) runnertype
 // contribute to the effective risk, not only to the dry-run display. High
 // patterns take precedence over Medium. Returns RiskLevelUnknown with an empty
 // reason when no pattern matches.
-func CheckDangerousArgPatterns(cmd string, args []string) (runnertypes.RiskLevel, string) {
+func CheckDangerousArgPatterns(names map[string]struct{}, args []string) (runnertypes.RiskLevel, string) {
 	// mkfs.<fstype> variants (mkfs.ext4, mkfs.xfs, ...) create filesystems and
 	// are high risk; the static pattern list only covers the bare "mkfs" name.
-	names, _ := extractAllCommandNames(cmd)
 	for n := range names {
 		if strings.HasPrefix(n, "mkfs.") {
 			return runnertypes.RiskLevelHigh, "Filesystem creation (mkfs family)"
 		}
 	}
 
-	if level, _, reason := checkCommandPatterns(cmd, args, highRiskPatterns); level != runnertypes.RiskLevelUnknown {
+	if level, _, reason := checkCommandPatterns(names, args, highRiskPatterns); level != runnertypes.RiskLevelUnknown {
 		return level, reason
 	}
-	if level, _, reason := checkCommandPatterns(cmd, args, mediumRiskPatterns); level != runnertypes.RiskLevelUnknown {
+	if level, _, reason := checkCommandPatterns(names, args, mediumRiskPatterns); level != runnertypes.RiskLevelUnknown {
 		return level, reason
 	}
 	return runnertypes.RiskLevelUnknown, ""
@@ -713,8 +713,12 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, hashDir string) 
 		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: path must be absolute, got relative path: %s", isec.ErrInvalidPath, resolvedPath)
 	}
 
-	// Step 2: Symbolic link depth check
-	if _, exceededDepth := extractAllCommandNames(resolvedPath); exceededDepth {
+	// Step 2: Symbolic link depth check. Resolve the name set once here (the dry-run
+	// path's policy is lenient: depth/cycle overflow fails safe to High for display,
+	// rather than the runtime path's fail-closed reject) and reuse it for the
+	// name-based pattern checks below.
+	names, exceededDepth := extractAllCommandNames(resolvedPath)
+	if exceededDepth {
 		return runnertypes.RiskLevelHigh, resolvedPath, "Symbolic link depth exceeds security limit (potential symlink attack)", nil
 	}
 
@@ -730,7 +734,7 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, hashDir string) 
 	}
 
 	// Step 5: High-risk pattern analysis
-	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, highRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
+	if riskLevel, pattern, reason := checkCommandPatterns(names, args, highRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
 		return riskLevel, pattern, reason, nil
 	}
 
@@ -762,7 +766,7 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, hashDir string) 
 	}
 
 	// Step 8: Medium-risk pattern analysis
-	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, mediumRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
+	if riskLevel, pattern, reason := checkCommandPatterns(names, args, mediumRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
 		return riskLevel, pattern, reason, nil
 	}
 
@@ -914,22 +918,16 @@ func ResolveCommandNames(cmdName string) (map[string]struct{}, error) {
 //  6. Argument patterns ending with "=": Use prefix matching (e.g., "if="
 //     matches "if=/dev/zero").
 //  7. Other arguments: Require exact string match.
-func matchesPattern(cmdName string, cmdArgs []string, pattern []string) bool {
-	// If command itself is empty, it's a programming error that should be caught early
-	if cmdName == "" {
-		return false
-	}
-
+func matchesPattern(names map[string]struct{}, cmdArgs []string, pattern []string) bool {
 	// Empty pattern never matches any command
 	if len(pattern) == 0 {
 		return false
 	}
 
-	// Extract all possible command names (original, base filename, symlink targets)
-	commandNames, _ := extractAllCommandNames(cmdName)
-
-	// Check if any of the extracted command names match the pattern[0]
-	if _, exists := commandNames[pattern[0]]; !exists {
+	// names is the command's pre-resolved name set (original, base filename,
+	// symlink targets), resolved once by the caller with its own policy. Check if
+	// any of those names match pattern[0].
+	if _, exists := names[pattern[0]]; !exists {
 		return false
 	}
 

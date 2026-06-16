@@ -114,7 +114,8 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 
 	// Rank 3: privilege escalation -> Critical (always denied). Detected through
 	// the resolved profile so sudo/su/doas cannot be missed via a symlink alias.
-	profile, profileFound := security.ResolveProfile(cmdPath)
+	// names was resolved once (strict) at the top of EvaluateRisk.
+	profile, profileFound := security.ResolveProfile(names)
 	if profileFound && profile.IsPrivilege() {
 		return criticalPlan(cmd, risktypes.RiskAssessment{
 			Level:          runnertypes.RiskLevelCritical,
@@ -216,7 +217,9 @@ func (e *StandardEvaluator) evaluateDimensions(
 	}
 
 	// Destructive operations and system modification (order-independent max).
-	if security.IsDestructiveFileOperation(cmdPath, args) {
+	// names was resolved once (strict) by the caller and is shared by every
+	// name-based dimension below.
+	if security.IsDestructiveFileOperation(names, args) {
 		addDimension(&a, runnertypes.RiskLevelHigh, risktypes.ReasonDestructiveFileOperation)
 	}
 	if sysmod := security.SystemModificationRisk(names, args); sysmod > runnertypes.RiskLevelUnknown {
@@ -230,13 +233,13 @@ func (e *StandardEvaluator) evaluateDimensions(
 	}
 
 	// Rank 6: dangerous argument patterns (rm -rf, dd if=, chmod -R 777, ...).
-	if level, _ := security.CheckDangerousArgPatterns(cmdPath, args); level > runnertypes.RiskLevelUnknown {
+	if level, _ := security.CheckDangerousArgPatterns(names, args); level > runnertypes.RiskLevelUnknown {
 		addDimension(&a, level, risktypes.ReasonDangerousArgPattern)
 	}
 
 	// Rank 7: arbitrary-code-execution runners (shells/interpreters/build runners)
 	// -> High regardless of arguments.
-	if security.IsArbitraryCodeExecutionRunner(cmdPath) {
+	if security.IsArbitraryCodeExecutionRunner(names) {
 		addDimension(&a, runnertypes.RiskLevelHigh, risktypes.ReasonArbitraryCodeExecution)
 	}
 

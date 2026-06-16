@@ -83,12 +83,12 @@ func (p CommandRiskProfile) GetRiskReasons() []string {
 	return reasons
 }
 
-// ResolveProfile resolves the command's symlink chain and returns the risk
-// profile matched by any name in the chain. When multiple names match (a symlink
-// pointing at a differently-named profiled command), the factors are merged by
-// taking the maximum of each factor. found is false when no name matches.
-func ResolveProfile(cmdName string) (profile CommandRiskProfile, found bool) {
-	names, _ := extractAllCommandNames(cmdName)
+// ResolveProfile returns the risk profile matched by any name in the command's
+// pre-resolved name set (the caller resolves the symlink chain once with its own
+// policy). When multiple names match (a symlink pointing at a differently-named
+// profiled command), the factors are merged by taking the maximum of each factor.
+// found is false when no name matches.
+func ResolveProfile(names map[string]struct{}) (profile CommandRiskProfile, found bool) {
 	for name := range names {
 		p, exists := commandRiskProfiles[name]
 		if !exists {

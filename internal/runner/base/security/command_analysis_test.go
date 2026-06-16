@@ -1054,7 +1054,7 @@ func TestMatchesPattern(t *testing.T) {
 				cmdName = tt.command[0]
 				cmdArgs = tt.command[1:]
 			}
-			result := matchesPattern(cmdName, cmdArgs, tt.pattern)
+			result := matchesPattern(cmdNameSet(cmdName), cmdArgs, tt.pattern)
 			assert.Equal(t, tt.expected, result, "matchesPattern(%s, %v, %v) should return %v", cmdName, cmdArgs, tt.pattern, tt.expected)
 		})
 	}
@@ -1467,7 +1467,7 @@ func TestIsDestructiveFileOperation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := IsDestructiveFileOperation(tt.cmd, tt.args)
+			result := IsDestructiveFileOperation(cmdNameSet(tt.cmd), tt.args)
 			assert.Equal(t, tt.expected, result, "IsDestructiveFileOperation(%q, %v)", tt.cmd, tt.args)
 		})
 	}
@@ -1476,23 +1476,23 @@ func TestIsDestructiveFileOperation(t *testing.T) {
 // TestIsDestructive_AbsolutePath verifies that a destructive command given as a
 // resolved absolute path (e.g. /usr/bin/rm) is detected, not only its basename.
 func TestIsDestructive_AbsolutePath(t *testing.T) {
-	assert.True(t, IsDestructiveFileOperation("/usr/bin/rm", []string{"file"}))
-	assert.True(t, IsDestructiveFileOperation("/bin/rm", []string{"-rf", "/tmp/x"}))
-	assert.True(t, IsDestructiveFileOperation("/usr/bin/shred", []string{"f"}))
+	assert.True(t, IsDestructiveFileOperation(cmdNameSet("/usr/bin/rm"), []string{"file"}))
+	assert.True(t, IsDestructiveFileOperation(cmdNameSet("/bin/rm"), []string{"-rf", "/tmp/x"}))
+	assert.True(t, IsDestructiveFileOperation(cmdNameSet("/usr/bin/shred"), []string{"f"}))
 }
 
 // TestIsDestructive_NoSubstringMatch verifies that a command whose basename
 // merely contains a destructive name as a substring is not matched.
 func TestIsDestructive_NoSubstringMatch(t *testing.T) {
-	assert.False(t, IsDestructiveFileOperation("/usr/bin/lsrm", []string{"x"}))
-	assert.False(t, IsDestructiveFileOperation("/usr/bin/rmate", nil))
+	assert.False(t, IsDestructiveFileOperation(cmdNameSet("/usr/bin/lsrm"), []string{"x"}))
+	assert.False(t, IsDestructiveFileOperation(cmdNameSet("/usr/bin/rmate"), nil))
 }
 
 // TestIsDestructive_BasenameBackwardCompat verifies that a bare basename is
 // still detected (the path-resolution addition does not lose basename detection).
 func TestIsDestructive_BasenameBackwardCompat(t *testing.T) {
-	assert.True(t, IsDestructiveFileOperation("rm", []string{"file"}))
-	assert.True(t, IsDestructiveFileOperation("dd", []string{"if=/dev/zero"}))
+	assert.True(t, IsDestructiveFileOperation(cmdNameSet("rm"), []string{"file"}))
+	assert.True(t, IsDestructiveFileOperation(cmdNameSet("dd"), []string{"if=/dev/zero"}))
 }
 
 // isSystemModification resolves the command's name set and reports whether it is
@@ -1550,10 +1550,10 @@ func TestIsSystemModification_PackageManagerVerbs(t *testing.T) {
 // by basename including absolute and coreutils-directory paths.
 func TestFindExecAllActions(t *testing.T) {
 	for _, action := range []string{"-exec", "-execdir", "-ok", "-okdir"} {
-		assert.Truef(t, IsDestructiveFileOperation("find",
+		assert.Truef(t, IsDestructiveFileOperation(cmdNameSet("find"),
 			[]string{".", action, "/usr/bin/rm", "{}", ";"}),
 			"find %s /usr/bin/rm should be destructive", action)
-		assert.Falsef(t, IsDestructiveFileOperation("find",
+		assert.Falsef(t, IsDestructiveFileOperation(cmdNameSet("find"),
 			[]string{".", action, "/usr/bin/stat", "{}", ";"}),
 			"find %s /usr/bin/stat should be safe", action)
 	}

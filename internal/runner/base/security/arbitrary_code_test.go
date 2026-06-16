@@ -45,7 +45,7 @@ func TestArbitraryCodeExecutionRunner_Names(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.cmd, func(t *testing.T) {
-			assert.Equal(t, tt.want, IsArbitraryCodeExecutionRunner(tt.cmd))
+			assert.Equal(t, tt.want, IsArbitraryCodeExecutionRunner(cmdNameSet(tt.cmd)))
 		})
 	}
 }
@@ -60,6 +60,6 @@ func TestArbitraryCodeExecutionRunner_Symlink(t *testing.T) {
 	link := filepath.Join(tmp, "myinterp")
 	require.NoError(t, os.Symlink(target, link))
 
-	assert.True(t, IsArbitraryCodeExecutionRunner(link),
+	assert.True(t, IsArbitraryCodeExecutionRunner(cmdNameSet(link)),
 		"a symlink to an interpreter must be classified as an arbitrary-code runner")
 }
