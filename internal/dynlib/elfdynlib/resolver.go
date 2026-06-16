@@ -2,10 +2,10 @@ package elfdynlib
 
 import (
 	"debug/elf"
-	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 )
 
 // LibraryResolver resolves DT_NEEDED library names to filesystem paths.
@@ -45,7 +45,7 @@ func (r *LibraryResolver) Resolve(soname string, parentPath string, runpath []st
 		expanded := expandOrigin(rp, filepath.Dir(parentPath))
 		candidate := filepath.Join(expanded, soname)
 		searchedPaths = append(searchedPaths, candidate+" (RUNPATH)")
-		if resolved, err := r.tryResolve(candidate); err == nil {
+		if resolved, err := dynlib.ResolveRealPath(candidate); err == nil {
 			return resolved, nil
 		}
 	}
@@ -54,7 +54,7 @@ func (r *LibraryResolver) Resolve(soname string, parentPath string, runpath []st
 	if r.cache != nil {
 		if cachedPath := r.cache.Lookup(soname); cachedPath != "" {
 			searchedPaths = append(searchedPaths, cachedPath+" (ld.so.cache)")
-			if resolved, err := r.tryResolve(cachedPath); err == nil {
+			if resolved, err := dynlib.ResolveRealPath(cachedPath); err == nil {
 				return resolved, nil
 			}
 		}
@@ -64,7 +64,7 @@ func (r *LibraryResolver) Resolve(soname string, parentPath string, runpath []st
 	for _, dir := range r.archPaths {
 		candidate := filepath.Join(dir, soname)
 		searchedPaths = append(searchedPaths, candidate+" (default)")
-		if resolved, err := r.tryResolve(candidate); err == nil {
+		if resolved, err := dynlib.ResolveRealPath(candidate); err == nil {
 			return resolved, nil
 		}
 	}
@@ -81,22 +81,4 @@ func (r *LibraryResolver) Resolve(soname string, parentPath string, runpath []st
 func expandOrigin(path string, originDir string) string {
 	result := strings.ReplaceAll(path, "${ORIGIN}", originDir)
 	return strings.ReplaceAll(result, "$ORIGIN", originDir)
-}
-
-// tryResolve checks if the candidate path exists and resolves it via
-// filepath.EvalSymlinks + filepath.Clean for normalization.
-func (r *LibraryResolver) tryResolve(candidate string) (string, error) {
-	// Check if the file exists
-	_, err := os.Lstat(candidate)
-	if err != nil {
-		return "", err
-	}
-
-	// Resolve symlinks and normalize
-	resolved, err := filepath.EvalSymlinks(candidate)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve symlinks for %s: %w", candidate, err)
-	}
-
-	return filepath.Clean(resolved), nil
 }

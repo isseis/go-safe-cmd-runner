@@ -1,10 +1,10 @@
 package machodylib
 
 import (
-	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 )
 
 // defaultSearchPaths are the fallback search paths used when an install name
@@ -51,7 +51,7 @@ func (r *LibraryResolver) Resolve(installName, loaderPath string, rpaths []strin
 		switch token {
 		case "@executable_path":
 			candidate := filepath.Join(r.executableDir, suffix)
-			resolved, err := tryResolve(candidate)
+			resolved, err := dynlib.ResolveRealPath(candidate)
 			if err == nil {
 				return resolved, nil
 			}
@@ -67,7 +67,7 @@ func (r *LibraryResolver) Resolve(installName, loaderPath string, rpaths []strin
 		case "@loader_path":
 			loaderDir := filepath.Dir(loaderPath)
 			candidate := filepath.Join(loaderDir, suffix)
-			resolved, err := tryResolve(candidate)
+			resolved, err := dynlib.ResolveRealPath(candidate)
 			if err == nil {
 				return resolved, nil
 			}
@@ -85,7 +85,7 @@ func (r *LibraryResolver) Resolve(installName, loaderPath string, rpaths []strin
 				// LC_RPATH entries may contain @executable_path or @loader_path
 				expandedRpath := r.expandRpathEntry(rp, loaderPath)
 				candidate := filepath.Join(expandedRpath, suffix)
-				resolved, err := tryResolve(candidate)
+				resolved, err := dynlib.ResolveRealPath(candidate)
 				if err == nil {
 					return resolved, nil
 				}
@@ -110,7 +110,7 @@ func (r *LibraryResolver) Resolve(installName, loaderPath string, rpaths []strin
 
 	// Absolute path (no @ token, starts with /)
 	if filepath.IsAbs(installName) {
-		resolved, err := tryResolve(installName)
+		resolved, err := dynlib.ResolveRealPath(installName)
 		if err == nil {
 			return resolved, nil
 		}
@@ -127,7 +127,7 @@ func (r *LibraryResolver) Resolve(installName, loaderPath string, rpaths []strin
 	// "/usr/lib/foo/libBar.dylib", not "/usr/lib/libBar.dylib".
 	for _, dir := range defaultSearchPaths {
 		candidate := filepath.Join(dir, installName)
-		resolved, err := tryResolve(candidate)
+		resolved, err := dynlib.ResolveRealPath(candidate)
 		if err == nil {
 			return resolved, nil
 		}
@@ -170,21 +170,4 @@ func splitAtToken(installName string) (token, suffix string) {
 	}
 
 	return installName[:idx], installName[idx+1:]
-}
-
-// tryResolve checks if the candidate path exists and resolves it via
-// filepath.EvalSymlinks + filepath.Clean for normalization.
-func tryResolve(candidate string) (string, error) {
-	// Check if the file exists; distinguishes not-found from other errors
-	// (e.g., permission denied) consistent with the ELF resolver.
-	if _, err := os.Lstat(candidate); err != nil {
-		return "", err
-	}
-
-	resolved, err := filepath.EvalSymlinks(candidate)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve symlinks for %s: %w", candidate, err)
-	}
-
-	return filepath.Clean(resolved), nil
 }
