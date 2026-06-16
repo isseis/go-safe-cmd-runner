@@ -292,6 +292,18 @@ func TestIndirect_FindXargsTargetGated(t *testing.T) {
 
 	xargs := analyzeIndirectCmd("xargs", "-I", "{}", "rm", "{}")
 	assert.Equal(t, IndirectReject, xargs.Kind)
+	// The extracted target must be recorded as an artifact so the chain is
+	// traceable in audits even on reject paths.
+	assert.Equal(t, 1, len(xargs.Artifacts), "xargs must record the target artifact")
+	assert.Equal(t, "rm", xargs.Artifacts[0].Path)
+	assert.Equal(t, risktypes.RoleExecTarget, xargs.Artifacts[0].Role)
+
+	// find -exec sudo is Critical; sudo must appear in the artifact chain.
+	sudoFind := analyzeIndirectCmd("find", "/tmp", "-exec", "sudo", "rm", "{}", ";")
+	assert.Equal(t, IndirectCritical, sudoFind.Kind)
+	assert.Equal(t, 1, len(sudoFind.Artifacts))
+	assert.Equal(t, "sudo", sudoFind.Artifacts[0].Path)
+	assert.Equal(t, risktypes.RoleExecTarget, sudoFind.Artifacts[0].Role)
 
 	plain := analyzeIndirectCmd("find", "/tmp", "-type", "f")
 	assert.Equal(t, IndirectNone, plain.Kind)
@@ -330,6 +342,11 @@ func TestIndirect_UnextractableWrapperRejected(t *testing.T) {
 	assert.Equal(t, IndirectReject, analyzeIndirectCmd("timeout", "--unknown-val", "5", "-rf").Kind)
 	// nice's "-NUM" adjustment is still handled: the real command is extracted.
 	assert.Equal(t, IndirectFloor, analyzeIndirectCmd("nice", "-10", "rm", "-rf", "/tmp/x").Kind)
+	// An unknown long option (--foo) may or may not consume the next token, so
+	// the command boundary is unreliable; fail closed even when the extracted
+	// token doesn't start with "-" (e.g. --mystery-opt /val sudo).
+	assert.Equal(t, IndirectReject, analyzeIndirectCmd("timeout", "--mystery-opt", "/val", "sudo", "ls").Kind)
+	assert.Equal(t, IndirectReject, analyzeIndirectCmd("nice", "--mystery-opt", "/val", "sudo", "ls").Kind)
 
 	// Contrast: env with no command is Medium, not Reject.
 	noCmd := analyzeIndirectCmd("env", "FOO=bar")

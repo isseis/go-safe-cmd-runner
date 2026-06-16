@@ -403,7 +403,12 @@ func resolveInner(inner string, innerArgs []string, pathOverridden bool, depth i
 // analyzeWrapper skips a wrapper's options and positional arguments and evaluates
 // the inner command it runs.
 func analyzeWrapper(spec wrapperSpec, args []string, depth int) IndirectExecutionResult {
-	idx := skipWrapperOptions(args, spec.valueOpts)
+	idx, hasUnknownLongOpt := skipWrapperOptions(args, spec.valueOpts)
+	// An unknown long option (--foo not in valueOpts, no attached =) may or may
+	// not consume the next token; the parse position is unreliable, so fail closed.
+	if hasUnknownLongOpt {
+		return reject()
+	}
 	idx += spec.positionals
 	if idx >= len(args) {
 		// No inner command (e.g. "timeout 5" with no COMMAND). Like env with no
@@ -422,13 +427,16 @@ func analyzeWrapper(spec wrapperSpec, args []string, depth int) IndirectExecutio
 
 // skipWrapperOptions returns the index of the first positional argument after the
 // wrapper's leading options, consuming the value of any value-taking option.
-func skipWrapperOptions(args []string, valueOpts map[string]struct{}) int {
+// hasUnknownLongOpt is true when a long option (--foo) not in valueOpts and
+// without an attached = is encountered: its arity is unknown, so the command
+// boundary cannot be located reliably.
+func skipWrapperOptions(args []string, valueOpts map[string]struct{}) (idx int, hasUnknownLongOpt bool) {
 	i := 0
 	for i < len(args) {
 		t := args[i]
 		if t == "--" {
 			// Option terminator: the next token is the first positional argument.
-			return i + 1
+			return i + 1, false
 		}
 		if !strings.HasPrefix(t, "-") || t == "-" {
 			break
@@ -436,9 +444,12 @@ func skipWrapperOptions(args []string, valueOpts map[string]struct{}) int {
 		i++
 		if _, ok := valueOpts[t]; ok {
 			i++ // consume the option's value
+		} else if strings.HasPrefix(t, "--") && !strings.Contains(t, "=") {
+			// Unknown long option with no attached value: arity unknown.
+			hasUnknownLongOpt = true
 		}
 	}
-	return i
+	return i, hasUnknownLongOpt
 }
 
 // evaluateInner folds the inner command's name-based risk and recurses into a
@@ -511,12 +522,22 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 
 // analyzeChildProcessExec handles a helper run from find/xargs' own child process.
 // A privilege token is Critical; any other helper cannot be identity-bound by the
-// runner and is rejected.
+// runner and is rejected. The target is recorded as a chain artifact when known
+// so the indirect-execution chain is traceable in audits on both outcomes.
 func analyzeChildProcessExec(target string, hasTarget bool) IndirectExecutionResult {
+	var res IndirectExecutionResult
 	if hasTarget && isPrivilegeCommand(target) {
-		return critical()
+		res = critical()
+	} else {
+		res = reject()
 	}
-	return reject()
+	if hasTarget {
+		res.Artifacts = []risktypes.ExecutedArtifact{{
+			Path: target,
+			Role: risktypes.RoleExecTarget,
+		}}
+	}
+	return res
 }
 
 // xargsTarget returns the helper command xargs would run: the first non-option
