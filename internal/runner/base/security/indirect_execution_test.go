@@ -533,6 +533,10 @@ func TestIndirect_PlainCommandNotIndirect(t *testing.T) {
 		// A value-taking option's value must not be mistaken for the subcommand:
 		// "yarn --cwd /dir install" is still the install builtin, not a script.
 		{"yarn", []string{"--cwd", "/some/dir", "install"}},
+		// "--" is the option terminator; the verb that follows is a positional arg,
+		// not a script invocation. "yarn -- install" must not be flagged as High.
+		{"yarn", []string{"--", "install"}},
+		{"pnpm", []string{"--", "install"}},
 	} {
 		t.Run(tc.cmd, func(t *testing.T) {
 			assert.Equal(t, IndirectNone, analyzeIndirectCmd(tc.cmd, tc.args...).Kind)

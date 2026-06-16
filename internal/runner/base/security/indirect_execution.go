@@ -713,6 +713,10 @@ func packageRunnerVerb(args []string) (verb string, hasUnknown, ok bool) {
 			skip = true // the option consumes the following token as its value
 			continue
 		}
+		if a == "--" {
+			// Option terminator: remaining tokens are positional, not options.
+			continue
+		}
 		if strings.HasPrefix(a, "-") && a != "-" {
 			// A combined "--opt=value" form completes in one token and is safe to
 			// skip; an unknown separated option is not, so signal fail-closed.
