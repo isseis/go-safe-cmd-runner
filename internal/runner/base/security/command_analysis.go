@@ -380,45 +380,6 @@ func formatDetectedSymbols(symbols []binaryanalyzer.DetectedSymbol) string {
 	return b.String()
 }
 
-// findFirstSubcommand returns the first non-option argument from args.
-// It skips arguments starting with "-" or "--" to find the actual subcommand.
-// Also skips option arguments (e.g., for "-c value", skip both "-c" and "value").
-// Returns empty string if no subcommand is found.
-func findFirstSubcommand(args []string) string {
-	// Common git options that take a value (not exhaustive, but covers common cases)
-	optionsWithValue := map[string]struct{}{
-		"-c": {}, "-C": {}, "--work-tree": {}, "--git-dir": {},
-		"--config": {}, "--namespace": {},
-	}
-
-	skipNext := false
-	for _, arg := range args {
-		// If previous argument was an option that takes a value, skip this arg
-		if skipNext {
-			skipNext = false
-			continue
-		}
-
-		// Skip options (starting with - or --)
-		if strings.HasPrefix(arg, "-") {
-			// Check if it's an option with embedded value (e.g., --config=value)
-			if strings.Contains(arg, "=") {
-				continue
-			}
-
-			// Check if this option takes a value
-			if _, ok := optionsWithValue[arg]; ok {
-				skipNext = true
-			}
-			continue
-		}
-
-		// Found the first non-option argument
-		return arg
-	}
-	return ""
-}
-
 // Regex patterns for SSH-style address detection.
 //
 // Pattern 1: user@host:path (e.g., "user@example.com:/path/to/file", "user@host:file.txt")

@@ -31,6 +31,10 @@ func TestFirstSystemctlSubcommand(t *testing.T) {
 		{"unknown separate option forces high", []string{"--mystery", "status"}, "", true},
 		{"option terminator takes next token", []string{"--", "restart"}, "restart", false},
 		{"value option without following token", []string{"-t"}, "", false},
+		// Clustered short options (-q boolean + -t value): the shared scanner parses
+		// the cluster so -t consumes "service" and "status" is the verb. (The former
+		// bespoke loop mishandled this and forced High.)
+		{"clustered bool+value short options", []string{"-qt", "service", "status"}, "status", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

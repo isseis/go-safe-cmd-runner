@@ -1,8 +1,6 @@
 package security
 
 import (
-	"strings"
-
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -45,53 +43,18 @@ var (
 )
 
 // firstSystemctlSubcommand parses systemctl argv to find the first subcommand
-// verb, correctly skipping options and the option terminator. It returns the verb
-// and a forceHigh flag.
-//
-// Rules:
-//   - A value option (-t TYPE, --host HOST, ...) consumes the next token.
-//   - A combined option (--type=foo) is self-contained.
-//   - A boolean option (--now, --quiet, ...) is skipped.
-//   - An unknown combined option (--unknown=x) cannot hide a verb, so it is
-//     skipped safely.
-//   - An unknown separate option (--unknown) might consume a following verb, so
-//     forceHigh is returned (fail-safe; a hidden change verb must not pass as a
-//     read-only command).
-//   - "--" terminates options; the next token is unconditionally the verb.
+// verb, via the shared getopt operand scanner. It returns the verb and a forceHigh
+// flag. An unknown separate option might consume a following verb, so the scan is
+// unreliable there and forceHigh is set (fail-safe; a hidden change verb must not
+// pass as a read-only command). systemctl's own boolean options are listed so they
+// are skipped rather than treated as unknown.
 func firstSystemctlSubcommand(args []string) (verb string, forceHigh bool) {
-	skipNext := false
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if skipNext {
-			skipNext = false
-			continue
-		}
-
-		if arg == "--" {
-			if i+1 < len(args) {
-				return args[i+1], false
-			}
-			return "", false
-		}
-
-		if strings.HasPrefix(arg, "-") {
-			if strings.Contains(arg, "=") {
-				continue
-			}
-			if _, ok := systemctlValueOptions[arg]; ok {
-				skipNext = true
-				continue
-			}
-			if _, ok := systemctlBoolOptions[arg]; ok {
-				continue
-			}
-			// Unknown separate option: it may take a value that is a verb name.
-			return "", true
-		}
-
-		return arg, false
-	}
-	return "", false
+	verb, reliable := firstOperand(args, optSpec{
+		valueOpts: systemctlValueOptions,
+		boolOpts:  systemctlBoolOptions,
+		unknown:   anyUnknownIsUnreliable,
+	})
+	return verb, !reliable
 }
 
 // SystemctlSubcommandRisk derives the effective system-modification risk of a

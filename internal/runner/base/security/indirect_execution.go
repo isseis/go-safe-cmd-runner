@@ -146,6 +146,12 @@ const (
 	// the fallback classification is not the safe side (package script runners,
 	// which have short value-options like npm -w that the spec cannot fully list).
 	anyUnknownIsUnreliable
+	// allUnknownAreBoolean treats every unrecognized option (short or long) as
+	// value-less and skips it. Used where under-locating the operand only weakens a
+	// non-fail-closed dimension (e.g. git subcommand detection for the conditional
+	// network factor, which also has a URL/SSH-argument fallback), so a lenient
+	// scan that tolerates unlisted boolean options is preferred over over-blocking.
+	allUnknownAreBoolean
 )
 
 // optSpec declares a command's own option grammar so a scan can locate the
@@ -155,6 +161,11 @@ type optSpec struct {
 	// (-o VALUE). The attached forms (-oVALUE, --opt=VALUE) are self-contained and
 	// need no special listing.
 	valueOpts map[string]struct{}
+	// boolOpts are known value-less options. They are skipped regardless of the
+	// unknown-option policy, so a command that mixes known boolean options with a
+	// fail-closed unknown policy (e.g. systemctl) does not treat its own flags as
+	// unknown. May be nil.
+	boolOpts map[string]struct{}
 	// unknown selects how an unrecognized option is treated (see the policies).
 	unknown unknownOptionPolicy
 }
@@ -188,10 +199,17 @@ func skipLeadingOptions(args []string, spec optSpec) (idx int, reliable bool) {
 				i++ // separated value: skip the option's value too
 				continue
 			}
+			if _, ok := spec.boolOpts[t]; ok {
+				continue // known value-less option
+			}
 			if strings.Contains(t, "=") {
 				continue // attached value (--opt=value): self-contained
 			}
-			// Unrecognized long option with no attached value: arity unknown.
+			// Unrecognized long option with no attached value: arity unknown unless
+			// the policy assumes unknown options are value-less.
+			if spec.unknown == allUnknownAreBoolean {
+				continue
+			}
 			return i, false
 		}
 		// Short-option token, possibly a cluster (-tc) where a value-taking option
@@ -210,6 +228,20 @@ func skipLeadingOptions(args []string, spec optSpec) (idx int, reliable bool) {
 	return i, true
 }
 
+// firstOperand returns the first operand (non-option token) of args per spec, and
+// whether the scan was reliable. operand is "" when there is no operand or when
+// the scan was unreliable (an unknown-arity option made the boundary
+// indeterminate); reliable is false in the latter case so the caller can fail
+// closed. It is the string-returning convenience over skipLeadingOptions for
+// callers that want the subcommand/verb directly.
+func firstOperand(args []string, spec optSpec) (operand string, reliable bool) {
+	idx, reliable := skipLeadingOptions(args, spec)
+	if !reliable || idx >= len(args) {
+		return "", reliable
+	}
+	return args[idx], true
+}
+
 // scanShortCluster parses a clustered short-option token (e.g. "-tc") left to
 // right. consumesNext is true when a value-taking option is the LAST character of
 // the cluster and therefore takes the following token as its separated value; a
@@ -224,9 +256,13 @@ func scanShortCluster(t string, spec optSpec) (consumesNext, ok bool) {
 		if _, isValue := spec.valueOpts[opt]; isValue {
 			return j == len(t)-1, true
 		}
+		if _, isBool := spec.boolOpts[opt]; isBool {
+			continue // known value-less short option
+		}
 		if spec.unknown == anyUnknownIsUnreliable {
 			return false, false
 		}
+		// shortOptsAreBoolean / allUnknownAreBoolean: assume value-less, keep scanning.
 	}
 	return false, true
 }

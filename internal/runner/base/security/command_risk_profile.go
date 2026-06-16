@@ -135,6 +135,10 @@ func mergeProfilesMax(a, b CommandRiskProfile) CommandRiskProfile {
 	return merged
 }
 
+// gitValueOptions are git's common global options that take a value, so the value
+// is not mistaken for the subcommand when scanning "git [global-opts] <subcmd>".
+var gitValueOptions = setOf("-c", "-C", "--work-tree", "--git-dir", "--config", "--namespace")
+
 // ProfileNetworkApplies reports whether the profile's NetworkRisk factor applies
 // to this invocation: always for NetworkTypeAlways, and for NetworkTypeConditional
 // only when a network subcommand or a network-style argument (URL/SSH address) is
@@ -145,7 +149,12 @@ func ProfileNetworkApplies(profile CommandRiskProfile, args []string) bool {
 		return true
 	case NetworkTypeConditional:
 		if len(profile.NetworkSubcommands) > 0 {
-			sub := findFirstSubcommand(args)
+			// git's global value-options (-c key=val, --git-dir DIR, ...) must be
+			// skipped to reach the subcommand. Unknown options are assumed boolean
+			// (lenient): under-locating the subcommand only skips this network-factor
+			// check, which still falls back to hasNetworkArguments below, so failing
+			// closed (over-blocking) is not warranted here.
+			sub, _ := firstOperand(args, optSpec{valueOpts: gitValueOptions, unknown: allUnknownAreBoolean})
 			if sub != "" && slices.Contains(profile.NetworkSubcommands, sub) {
 				return true
 			}

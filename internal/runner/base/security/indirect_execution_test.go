@@ -482,6 +482,38 @@ func TestSkipLeadingOptions(t *testing.T) {
 	}
 }
 
+// TestSkipLeadingOptions_BoolOptsAndLenient covers the two optSpec features added
+// to absorb the systemctl and git subcommand scanners: a boolOpts allowlist
+// (known value-less options skipped even under a fail-closed unknown policy) and
+// the allUnknownAreBoolean lenient policy (unknown long options skipped, not
+// treated as unreliable).
+func TestSkipLeadingOptions_BoolOptsAndLenient(t *testing.T) {
+	// boolOpts: --quiet/-q are known value-less; -t is value-taking; an unknown
+	// option still fails closed under anyUnknownIsUnreliable.
+	spec := optSpec{
+		valueOpts: setOf("-t", "--type"),
+		boolOpts:  setOf("--quiet", "-q"),
+		unknown:   anyUnknownIsUnreliable,
+	}
+	idx, reliable := skipLeadingOptions([]string{"--quiet", "status"}, spec)
+	assert.True(t, reliable)
+	assert.Equal(t, 1, idx, "known boolean long option is skipped, not treated as unknown")
+
+	idx, reliable = skipLeadingOptions([]string{"-qt", "service", "status"}, spec)
+	assert.True(t, reliable)
+	assert.Equal(t, 2, idx, "cluster -q(bool)+ -t(value at end) consumes the value token")
+
+	_, reliable = skipLeadingOptions([]string{"--mystery", "status"}, spec)
+	assert.False(t, reliable, "an unknown option still fails closed under anyUnknownIsUnreliable")
+
+	// allUnknownAreBoolean: an unknown long option is skipped (lenient), so the
+	// operand after it is still located.
+	lenient := optSpec{valueOpts: setOf("-c"), unknown: allUnknownAreBoolean}
+	idx, reliable = skipLeadingOptions([]string{"--no-pager", "clone"}, lenient)
+	assert.True(t, reliable)
+	assert.Equal(t, 1, idx, "unknown long option is assumed boolean and skipped under the lenient policy")
+}
+
 // TestIndirect_DynamicLoaderGated verifies a direct dynamic-loader invocation is
 // rejected.
 func TestIndirect_DynamicLoaderGated(t *testing.T) {
