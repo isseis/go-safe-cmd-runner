@@ -1,7 +1,6 @@
 package security
 
 import (
-	"errors"
 	"io"
 	"maps"
 	"os"
@@ -52,8 +51,14 @@ type IndirectExecutionResult struct {
 	Kind        IndirectExecutionKind
 	Level       runnertypes.RiskLevel
 	ReasonCodes []risktypes.ReasonCode
-	ErrorClass  risktypes.ErrorClass
-	Artifacts   []risktypes.ExecutedArtifact
+	// Reasons carries human-readable reasons collected from a wrapped inner
+	// command's risk profile (e.g. "Always communicates with external AI API" for
+	// a wrapped claude), so the audit log of an indirect form keeps the same
+	// descriptions as the direct invocation. The evaluator folds these into the
+	// assessment's Reasons.
+	Reasons    []string
+	ErrorClass risktypes.ErrorClass
+	Artifacts  []risktypes.ExecutedArtifact
 }
 
 // wrapperSpec describes how to skip a wrapper's own options and positional
@@ -90,16 +95,6 @@ var wrapperSpecs = map[string]wrapperSpec{
 // it (rather than ranging the map) so wrapper selection is deterministic when a
 // command's symlink chain matches more than one wrapper name.
 var wrapperNames = slices.Sorted(maps.Keys(wrapperSpecs))
-
-// loaderControlEnvVars are environment variable names that change which shared
-// objects a dynamic executable loads. Supplying them via a wrapper lets an
-// attacker inject code into an otherwise-verified binary, so they are rejected.
-// DYLD_* (macOS) is rejected on every OS, since the deny list is platform
-// independent.
-var loaderControlEnvVars = setOf(
-	"LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "LD_PROFILE", "LD_ORIGIN_PATH",
-	"LD_CONFIG", "LD_DYNAMIC_WEAK",
-)
 
 // shellInlineCommands are shells whose inline-code flag is -c only. -e is the
 // errexit boolean option, not inline code, so "bash -e script.sh" is not treated
@@ -349,17 +344,18 @@ func readShebang(path string) (interp string, args []string, ok bool) {
 	}
 	defer func() { _ = f.Close() }()
 
-	buf := make([]byte, maxShebangLen)
-	n, err := f.Read(buf)
-	// A short file legitimately returns io.EOF along with the bytes read; any other
-	// error means the buffer may be incomplete, so do not interpret it.
-	if err != nil && !errors.Is(err, io.EOF) {
+	// Read up to maxShebangLen bytes. io.ReadAll over a LimitReader keeps reading
+	// until the bound or EOF, so a short read (a single os.File.Read returning
+	// fewer bytes than requested without error) cannot truncate the shebang line
+	// and drop characters that should trigger the env -S fail-closed logic.
+	buf, err := io.ReadAll(io.LimitReader(f, maxShebangLen))
+	if err != nil {
 		return "", nil, false
 	}
-	if n < 2 || buf[0] != '#' || buf[1] != '!' {
+	if len(buf) < 2 || buf[0] != '#' || buf[1] != '!' {
 		return "", nil, false
 	}
-	line := string(buf[2:n])
+	line := string(buf[2:])
 	if idx := strings.IndexAny(line, "\n\r"); idx >= 0 {
 		line = line[:idx]
 	}
@@ -390,7 +386,18 @@ func readShebang(path string) (interp string, args []string, ok bool) {
 var envBooleanOptions = setOf("-i", "--ignore-environment", "-0", "--null", "-v", "--debug")
 
 // envValueOptions are env's own options that consume the following token.
-var envValueOptions = setOf("-u", "--unset", "-C", "--chdir")
+// -C/--chdir is intentionally not here: it is rejected (see analyzeEnv) rather
+// than skipped, because the directory change alters how a relative inner command
+// resolves.
+var envValueOptions = setOf("-u", "--unset")
+
+// isEnvChdirOption reports whether t is env's -C/--chdir option in any surface
+// form: separated (-C, --chdir), attached short (-Cdir), or attached long
+// (--chdir=dir). env has no other option beginning with "-C", so the short
+// prefix test is unambiguous.
+func isEnvChdirOption(t string) bool {
+	return strings.HasPrefix(t, "-C") || t == "--chdir" || strings.HasPrefix(t, "--chdir=")
+}
 
 // analyzeEnv parses an env invocation: NAME=VALUE assignments, -S split-strings,
 // option flags, and the optional inner command.
@@ -406,6 +413,13 @@ func analyzeEnv(args []string, depth int) IndirectExecutionResult {
 			// `env -S "env" sudo ls` runs `env env sudo ls`), so the trailing
 			// arguments must be carried along, not discarded.
 			return analyzeEnvSplitString(payload, args[i+consumed:], depth)
+		}
+		if isEnvChdirOption(t) {
+			// env -C/--chdir changes the working directory before exec, which changes
+			// how a relative inner command (its PATH lookup, a "." entry, or a shebang
+			// read) resolves. We cannot model that, so fail closed rather than
+			// evaluate/gate a different artifact than the one that would run.
+			return reject()
 		}
 		if _, ok := envBooleanOptions[t]; ok {
 			continue
@@ -475,7 +489,7 @@ func envSplitArg(args []string, i int) (payload string, consumed int, isSplit, v
 // a PATH override. rejected is true when the assignment must be denied.
 func checkEnvAssignment(t string, pathOverridden *bool) (IndirectExecutionResult, bool) {
 	name, _, _ := strings.Cut(t, "=")
-	if _, bad := loaderControlEnvVars[strings.ToUpper(name)]; bad || isDyldVar(name) {
+	if isLoaderControlVar(name) {
 		return rejectClass(risktypes.ReasonForbiddenEnvVar, ""), true
 	}
 	if name == "PATH" {
@@ -572,10 +586,24 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 
 	level := nested.Level
 	codes := append([]risktypes.ReasonCode{}, nested.ReasonCodes...)
+	reasons := append([]string{}, nested.Reasons...)
 
 	if IsDestructiveFileOperation(inner, innerArgs) {
 		level = max(level, runnertypes.RiskLevelHigh)
 		codes = append(codes, risktypes.ReasonDestructiveFileOperation)
+	}
+	// Coreutils single-binary classification of the inner command. This applies
+	// when inner is an absolute path under the coreutils dir (e.g. a wrapped
+	// "/usr/lib/cargo/bin/coreutils/chmod"); a stat failure on its setuid check is
+	// fail-closed, matching the top-level evaluator's coreutils handling, so a
+	// wrapped coreutils command is not under-classified relative to the direct one.
+	if cRisk, handled, err := CoreutilsCommandRisk(inner, innerArgs); err != nil {
+		res := reject()
+		res.Artifacts = append(nested.Artifacts, artifact)
+		return res
+	} else if handled {
+		level = max(level, cRisk)
+		codes = append(codes, risktypes.ReasonCoreutilsClassification)
 	}
 	innerNames, _ := extractAllCommandNames(inner)
 	if s := SystemModificationRisk(innerNames, innerArgs); s > runnertypes.RiskLevelUnknown {
@@ -593,11 +621,14 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 	// Fold the inner command's risk profile (destruction / data exfiltration /
 	// applicable network) so a profiled command (claude, curl, ssh, ...) is not
 	// under-classified when wrapped. Privilege is handled above; system
-	// modification is handled via SystemModificationRisk.
+	// modification is handled via SystemModificationRisk. The profile's
+	// human-readable reasons are carried so the audit log of a wrapped command
+	// keeps the same descriptions as the direct invocation.
 	if profile, ok := ResolveProfile(inner); ok {
 		if pl, pcodes := ProfileFactorRisk(profile, innerArgs); pl > runnertypes.RiskLevelUnknown {
 			level = max(level, pl)
 			codes = append(codes, pcodes...)
+			reasons = append(reasons, profile.GetRiskReasons()...)
 		}
 	}
 
@@ -605,6 +636,7 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 		Kind:        IndirectFloor,
 		Level:       level,
 		ReasonCodes: codes,
+		Reasons:     reasons,
 		Artifacts:   append(nested.Artifacts, artifact),
 	}
 }
@@ -708,23 +740,59 @@ func serviceUnitName(args []string) (string, bool) {
 	return "", false
 }
 
+// remoteShellValueOpts lists, per command, the value-taking options whose value
+// must be skipped before testing for a helper option, so a value that happens to
+// look like a helper flag (e.g. a directory literally named "--to-command" passed
+// to "tar -C") is not misread as the helper. The lists cover the common
+// separated-value options; an omission only risks a fail-closed over-block on a
+// pathological value, never an under-block. The helper options themselves are
+// deliberately absent so they are matched, not skipped.
+var remoteShellValueOpts = map[string]map[string]struct{}{
+	"tar": setOf(
+		"-C", "--directory", "-f", "--file", "-b", "--blocking-factor",
+		"-X", "--exclude-from", "-T", "--files-from", "-L", "--tape-length",
+		"-V", "--label", "--transform", "--strip-components", "--owner",
+		"--group", "--mode", "--record-size", "--newer", "--after-date",
+	),
+	"rsync": setOf(
+		"--port", "--bwlimit", "--timeout", "--contimeout", "--rsync-path",
+		"--password-file", "--exclude-from", "--include-from", "--files-from",
+		"--log-file", "-T", "--temp-dir", "--compare-dest", "--copy-dest",
+		"--link-dest", "--chmod", "--block-size", "-B", "--modify-window",
+	),
+}
+
 // analyzeRemoteShellOption rejects rsync -e / tar --to-command style helpers,
-// which the tool runs from its own child process.
+// which the tool runs from its own child process. It skips the values of known
+// value-taking options and stops at the "--" terminator so an option value or a
+// post-terminator operand that happens to look like a helper flag is not
+// misclassified as one (a false Blocking deny).
 func analyzeRemoteShellOption(names map[string]struct{}, args []string) (IndirectExecutionResult, bool) {
 	for cmd, prefixes := range remoteShellOptionPrefixes {
 		if _, ok := names[cmd]; !ok {
 			continue
 		}
+		valueOpts := remoteShellValueOpts[cmd]
+		skipValue := false
 		for _, a := range args {
 			if a == "--" {
 				// Option terminator: subsequent tokens are operands, so an operand that
 				// happens to look like "-e"/"--rsh" is not a helper option.
 				break
 			}
+			if skipValue {
+				skipValue = false // this token is the previous option's value
+				continue
+			}
 			for _, p := range prefixes {
 				if matchesRemoteShellOption(a, p) {
 					return reject(), true
 				}
+			}
+			if _, ok := valueOpts[a]; ok {
+				// A known value-taking option: skip its value so a value that looks
+				// like a helper flag is not matched on the next iteration.
+				skipValue = true
 			}
 		}
 	}
@@ -869,9 +937,18 @@ func isAssignment(t string) bool {
 	return ValidateVariableName(name) == nil
 }
 
-// isDyldVar reports whether name is a macOS dyld library-injection variable.
-func isDyldVar(name string) bool {
-	return strings.HasPrefix(strings.ToUpper(name), "DYLD_")
+// isLoaderControlVar reports whether name is a dynamic-loader control variable:
+// any LD_* (ELF) or DYLD_* (macOS) variable. Supplying one via a wrapper lets an
+// attacker change which shared objects an otherwise-verified binary loads, so
+// these are rejected. The match is a prefix match, not an allowlist of the
+// well-known names (LD_PRELOAD, LD_LIBRARY_PATH, …), so loader variables beyond
+// those — LD_DEBUG, LD_BIND_NOW, LD_AUDIT, … — are also rejected, keeping the
+// fail-closed posture. The DYLD_ family is rejected on every OS since the deny
+// list is platform independent. Names are upper-cased before matching so a
+// lower-case spelling cannot slip past.
+func isLoaderControlVar(name string) bool {
+	upper := strings.ToUpper(name)
+	return strings.HasPrefix(upper, "LD_") || strings.HasPrefix(upper, "DYLD_")
 }
 
 // isPrivilegeCommand reports whether the command escalates privilege

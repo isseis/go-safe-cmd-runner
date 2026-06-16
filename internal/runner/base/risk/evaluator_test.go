@@ -226,6 +226,32 @@ func TestEvaluateRisk_ShellInterpreterHigh(t *testing.T) {
 	}
 }
 
+// folding the indirect-execution floor must not duplicate a reason code already
+// contributed by another dimension. "bash -c" yields ReasonArbitraryCodeExecution
+// from both the rank-2 inline floor and the rank-7 runner dimension.
+func TestEvaluateRisk_FloorReasonCodesDeduped(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	plan, err := ev.EvaluateRisk(verifiedCmd("bash", []string{"-c", "echo hi"}))
+	require.NoError(t, err)
+	assert.Equal(t, runnertypes.RiskLevelHigh, plan.Assessment.Level)
+	count := 0
+	for _, c := range plan.Assessment.ReasonCodes {
+		if c == risktypes.ReasonArbitraryCodeExecution {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "floor folding must not duplicate a reason code already present")
+}
+
+// a wrapped profiled command's human-readable reasons are folded into the
+// assessment, so the audit log of "env curl ..." matches the direct "curl ...".
+func TestEvaluateRisk_WrappedProfileReasonsFolded(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	plan, err := ev.EvaluateRisk(verifiedCmd("env", []string{"curl", "https://example.com"}))
+	require.NoError(t, err)
+	assert.Contains(t, plan.Assessment.Reasons, "Always performs network operations")
+}
+
 // build/task runners are High.
 func TestEvaluateRisk_BuildRunnerHigh(t *testing.T) {
 	ev := newVerifiedEvaluator()

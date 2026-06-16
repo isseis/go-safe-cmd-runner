@@ -4,6 +4,7 @@ package risk
 
 import (
 	"path/filepath"
+	"slices"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -130,9 +131,21 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 	}
 	// Fold the rank-2 indirect-execution floor (an allowable wrapper/inline/package
 	// form) into the maximum so a wrapped dangerous command is not under-classified.
+	// Reason codes and human-readable reasons are de-duplicated: a wrapped runner
+	// like "bash -c" yields ReasonArbitraryCodeExecution from both the floor and the
+	// rank-7 runner dimension, and appending both only makes the audit output
+	// noisier. The level is folded once regardless of duplicate codes.
 	if indirect.Kind == security.IndirectFloor && indirect.Level > runnertypes.RiskLevelUnknown {
+		assessment.Level = max(assessment.Level, indirect.Level)
 		for _, code := range indirect.ReasonCodes {
-			addDimension(&assessment, indirect.Level, code)
+			if !slices.Contains(assessment.ReasonCodes, code) {
+				assessment.ReasonCodes = append(assessment.ReasonCodes, code)
+			}
+		}
+		for _, reason := range indirect.Reasons {
+			if !slices.Contains(assessment.Reasons, reason) {
+				assessment.Reasons = append(assessment.Reasons, reason)
+			}
 		}
 	}
 	if assessment.Blocking {

@@ -213,6 +213,11 @@ func TestIndirect_WrapperLoaderEnvRejected(t *testing.T) {
 		{"LD_LIBRARY_PATH", []string{"LD_LIBRARY_PATH=/tmp", "ls"}},
 		{"LD_AUDIT", []string{"LD_AUDIT=/tmp/a.so", "ls"}},
 		{"DYLD_INSERT_LIBRARIES", []string{"DYLD_INSERT_LIBRARIES=/tmp/x.dylib", "ls"}},
+		// Any LD_*/DYLD_* is rejected by prefix, not just the well-known names, so
+		// less common loader variables cannot weaken the fail-closed posture.
+		{"LD_DEBUG", []string{"LD_DEBUG=all", "ls"}},
+		{"LD_BIND_NOW", []string{"LD_BIND_NOW=1", "ls"}},
+		{"DYLD_LIBRARY_PATH", []string{"DYLD_LIBRARY_PATH=/tmp", "ls"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -221,6 +226,55 @@ func TestIndirect_WrapperLoaderEnvRejected(t *testing.T) {
 			assert.True(t, hasReason(res, risktypes.ReasonForbiddenEnvVar))
 		})
 	}
+}
+
+// TestIndirect_EnvChdirRejected verifies env -C/--chdir fails closed: changing the
+// working directory before exec would alter how a relative inner command resolves,
+// so the form cannot be bound to a concrete artifact.
+func TestIndirect_EnvChdirRejected(t *testing.T) {
+	for _, args := range [][]string{
+		{"-C", "/some/dir", "ls"},
+		{"--chdir", "/some/dir", "ls"},
+		{"--chdir=/some/dir", "ls"},
+		{"-C/some/dir", "ls"},       // attached short form
+		{"-C", "/some/dir", "rm"},   // even a benign-looking inner is rejected
+		{"-C", "/some/dir", "sudo"}, // chdir is checked before the inner is evaluated
+	} {
+		assert.Equalf(t, IndirectReject, analyzeIndirectCmd("env", args...).Kind,
+			"env %v must fail closed on chdir", args)
+	}
+
+	// "-C" appearing after the "--" terminator is a literal command name, not the
+	// chdir option, so it is not rejected on that basis.
+	assert.NotEqual(t, IndirectReject, analyzeIndirectCmd("env", "--", "-C").Kind)
+}
+
+// TestIndirect_CoreutilsInnerFolded verifies the coreutils single-binary
+// classification is applied to a wrapped inner command. Without it, an unsafe
+// coreutils applet wrapped in env would be under-classified relative to the direct
+// invocation (which the top-level evaluator runs through CoreutilsCommandRisk).
+func TestIndirect_CoreutilsInnerFolded(t *testing.T) {
+	dir := t.TempDir()
+	SetCoreutilsDirForTest(t, dir)
+	// An unknown coreutils applet (not in the safe or destructive list) fails safe
+	// to High. Non-shebang content so it is not read as a script.
+	applet := filepath.Join(dir, "mysteryutil")
+	require.NoError(t, os.WriteFile(applet, []byte{0x7f, 'E', 'L', 'F', 0, 0}, 0o755))
+
+	res := analyzeIndirectCmd("env", applet, "x")
+	assert.Equal(t, IndirectFloor, res.Kind)
+	assert.Equal(t, runnertypes.RiskLevelHigh, res.Level, "wrapped unknown coreutils applet must fold to High")
+	assert.True(t, hasReason(res, risktypes.ReasonCoreutilsClassification))
+}
+
+// TestIndirect_WrappedProfileReasonsCarried verifies a wrapped profiled command's
+// human-readable reasons are propagated rather than discarded, so the audit log of
+// the wrapped form matches the direct invocation.
+func TestIndirect_WrappedProfileReasonsCarried(t *testing.T) {
+	res := analyzeIndirectCmd("env", "curl", "https://example.com")
+	assert.Equal(t, IndirectFloor, res.Kind)
+	assert.Contains(t, res.Reasons, "Always performs network operations",
+		"wrapped profiled command must carry its profile reasons")
 }
 
 // TestIndirect_EnvSplitString verifies env -S split-string interpretation:
@@ -585,6 +639,13 @@ func TestIndirect_CommandExecOptionsGated(t *testing.T) {
 		// rejected as a remote-shell form.
 		{"rsync -- -e operand", "rsync", []string{"--", "-e", "dst"}, IndirectNone},
 		{"tar -- --to-command operand", "tar", []string{"-cf", "a.tar", "--", "--to-command"}, IndirectNone},
+		// A value-taking option's value that looks like a helper flag must not be
+		// matched as the helper: here "--to-command" is the directory argument to
+		// tar -C, not the helper option.
+		{"tar -C value looks like helper", "tar", []string{"-C", "--to-command", "-cf", "a.tar", "."}, IndirectNone},
+		{"tar -f value looks like helper", "tar", []string{"-f", "--checkpoint-action", "-c", "."}, IndirectNone},
+		// But the genuine helper option in a normal position is still rejected.
+		{"tar --to-command genuine", "tar", []string{"--to-command", "/tmp/x", "-cf", "a.tar", "."}, IndirectReject},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
