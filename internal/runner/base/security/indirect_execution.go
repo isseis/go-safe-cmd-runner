@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
@@ -423,13 +424,17 @@ func analyzeShebang(cmdPath string, scriptArgs []string, depth int) (IndirectExe
 // first line. It returns ok=false when the file cannot be read or does not start
 // with a shebang.
 func readShebang(path string) (interp string, args []string, ok bool) {
-	// 512 is the larger of the two supported platforms' kernel shebang limits
-	// (Linux BINPRM_BUF_SIZE = 256, macOS IMG_ACT_MAX_SHEBANG = 512). Using the
-	// larger bound avoids truncating a long shebang line on macOS (which would drop
-	// characters that should trigger the env -S fail-closed logic); on Linux it can
-	// only read past what the kernel uses, which is fail-closed-safe, never an
-	// under-read.
-	const maxShebangLen = 512
+	// common.MaxShebangLen is the larger of the two supported platforms' kernel
+	// shebang limits (Linux 256, macOS 512). Using the larger bound avoids
+	// truncating a long shebang line on macOS (which would drop characters that
+	// should trigger the env -S fail-closed logic); on Linux it can only read past
+	// what the kernel uses, which is fail-closed-safe, never an under-read. The same
+	// constant bounds the record/verify shebang parser (internal/shebang), so the
+	// two readers agree on what counts as a shebang. NOTE: this reader intentionally
+	// keeps the post-interpreter remainder as a single token (kernel-accurate, to
+	// preserve an env -S payload), whereas internal/shebang.Parse splits with Fields
+	// for interpreter-identity resolution — a deliberate, documented difference.
+	const maxShebangLen = common.MaxShebangLen
 	// Only inspect explicit paths (containing '/'): bare command names are
 	// resolved via PATH at exec time, not here, and opening a relative name
 	// could accidentally read an unrelated local file from the CWD.

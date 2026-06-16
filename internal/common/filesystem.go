@@ -226,3 +226,11 @@ func IsPathWithinDirectory(targetPath, dirPath string) bool {
 	}
 	return strings.HasPrefix(cleanTarget+string(filepath.Separator), cleanDir)
 }
+
+// MaxShebangLen is the maximum number of bytes read when detecting/parsing a
+// "#!" shebang line. It is the larger of the two supported platforms' kernel
+// shebang limits — Linux BINPRM_BUF_SIZE (256) and macOS IMG_ACT_MAX_SHEBANG
+// (512) — so a shebang reader sees at least as much as the kernel that will exec
+// the script on either platform. It is shared by the record/verify shebang parser
+// and the runtime risk evaluator so the two cannot drift.
+const MaxShebangLen = 512
