@@ -503,6 +503,32 @@ func TestIndirect_DynamicLoaderGated(t *testing.T) {
 	}
 }
 
+// TestIndirect_BrokenSymlinkChainFailsClosed verifies that a command (or wrapped
+// inner command) whose symlink chain cannot be fully resolved fails closed with a
+// symlink-resolution reason, rather than being classified from an incomplete name
+// set (which could miss a privilege/loader name past the break and fail open).
+func TestIndirect_BrokenSymlinkChainFailsClosed(t *testing.T) {
+	dir := t.TempDir()
+	// A dangling symlink: its target does not exist, so strict resolution fails at
+	// the next hop.
+	broken := filepath.Join(dir, "cmd")
+	require.NoError(t, os.Symlink(filepath.Join(dir, "missing"), broken))
+
+	// Top-level command (analyzeIndirect): fail closed.
+	top := analyzeIndirectCmd(broken)
+	assert.Equal(t, IndirectReject, top.Kind)
+	assert.True(t, hasReason(top, risktypes.ReasonSymlinkResolutionFailed))
+	assert.Equal(t, risktypes.ErrorClassSymlinkResolution, top.ErrorClass)
+
+	// Wrapped inner command (evaluateInnerAs): fail closed, preserving the artifact
+	// chain (the inner command is still recorded for audit).
+	inner := analyzeIndirectCmd("env", broken, "arg")
+	assert.Equal(t, IndirectReject, inner.Kind)
+	assert.True(t, hasReason(inner, risktypes.ReasonSymlinkResolutionFailed))
+	assert.Equal(t, risktypes.ErrorClassSymlinkResolution, inner.ErrorClass)
+	assert.True(t, hasArtifactPath(inner.Artifacts, broken), "the inner command must be recorded even on the symlink-failure deny")
+}
+
 // TestIndirect_WrapperNameCollisionFailsClosed verifies that when a command's
 // symlink chain carries both a wrapper name and an unbindable form name (find,
 // xargs, the dynamic loader), the stricter reject/Critical disposition wins. The

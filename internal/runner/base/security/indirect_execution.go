@@ -257,7 +257,15 @@ func analyzeIndirect(cmdPath string, args []string, depth int) IndirectExecution
 		return reject()
 	}
 
-	names, _ := extractAllCommandNames(cmdPath)
+	// Resolve the symlink chain strictly: a broken chain or a depth/cycle overflow
+	// yields an incomplete name set in lenient mode, which could miss a stricter
+	// disposition (a privilege token or dynamic loader past the break) and fail
+	// open. Fail closed the same way EvaluateRisk does for the top-level command.
+	// A bare command name has no chain to walk and resolves to itself without error.
+	names, err := ResolveCommandNames(cmdPath)
+	if err != nil {
+		return rejectClass(risktypes.ReasonSymlinkResolutionFailed, risktypes.ErrorClassSymlinkResolution)
+	}
 
 	// Direct script with a shebang (#!/usr/bin/env python): the kernel runs the
 	// shebang interpreter, a separate artifact, so the interpreter chain is
@@ -686,6 +694,18 @@ func evaluateInner(inner string, innerArgs []string, depth int) IndirectExecutio
 func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
 	artifact := risktypes.ExecutedArtifact{Path: inner, Role: role}
 
+	// Strict-resolve the inner command's symlink chain once, up front. A broken or
+	// over-deep chain yields an incomplete name set in lenient mode, so the
+	// name-based checks below (privilege, system modification, ...) could
+	// under-classify; fail closed instead, preserving the artifact chain for audit.
+	// A bare inner name resolves to itself without error.
+	innerNames, err := ResolveCommandNames(inner)
+	if err != nil {
+		res := rejectClass(risktypes.ReasonSymlinkResolutionFailed, risktypes.ErrorClassSymlinkResolution)
+		res.Artifacts = []risktypes.ExecutedArtifact{artifact}
+		return res
+	}
+
 	if isPrivilegeCommand(inner) {
 		res := critical()
 		res.Artifacts = append(res.Artifacts, artifact)
@@ -725,7 +745,6 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 		level = max(level, cRisk)
 		codes = append(codes, risktypes.ReasonCoreutilsClassification)
 	}
-	innerNames, _ := extractAllCommandNames(inner)
 	if s := SystemModificationRisk(innerNames, innerArgs); s > runnertypes.RiskLevelUnknown {
 		level = max(level, s)
 		codes = append(codes, risktypes.ReasonSystemModification)
