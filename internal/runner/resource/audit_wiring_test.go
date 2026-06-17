@@ -204,6 +204,43 @@ func TestExecute_ErrorPathAuditable(t *testing.T) {
 	assert.Equal(t, "/usr/bin/rm", entry["resolved_path"])
 }
 
+// TestDryRun_PathResolutionErrorAudit verifies that a dry-run path-resolution
+// failure (a hard error) still emits a deny audit entry classified as a
+// path_resolution error before aborting.
+func TestDryRun_PathResolutionErrorAudit(t *testing.T) {
+	var buf bytes.Buffer
+	auditLogger := audit.NewAuditLoggerWithCustom(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	mgr, err := NewDryRunResourceManager(executortestutil.NewMockExecutor(), nil, erroringPathResolver{},
+		&DryRunOptions{DetailLevel: DetailLevelDetailed}, permissiveTestEvaluator{}, auditLogger)
+	require.NoError(t, err)
+	cmd := executortestutil.CreateRuntimeCommand("missing-cmd", nil, executortestutil.WithName("missing"))
+	_, _, err = mgr.ExecuteCommand(context.Background(), cmd, previewTestGroup(), map[string]string{})
+	require.Error(t, err)
+
+	entry := findRiskProfileEntry(t, &buf)
+	assert.Equal(t, "dry-run", entry["mode"])
+	assert.Equal(t, "deny", entry["decision"])
+	assert.Equal(t, "path_resolution", entry["error_class"])
+}
+
+// TestDryRun_ConfigErrorAudit verifies that an invalid risk_level configuration in
+// dry-run is audited as a deny classified as a risk_level config error, correlated
+// with the evaluated identity, before aborting.
+func TestDryRun_ConfigErrorAudit(t *testing.T) {
+	mgr, buf := newAuditingDryRunManager(keyedRiskEvaluator{"bad": {Level: runnertypes.RiskLevelLow}})
+	cmd := executortestutil.CreateRuntimeCommand("/usr/bin/bad", nil,
+		executortestutil.WithName("bad"), executortestutil.WithRiskLevel("unknown"))
+	_, _, err := mgr.ExecuteCommand(context.Background(), cmd, previewTestGroup(), map[string]string{})
+	require.Error(t, err)
+
+	entry := findRiskProfileEntry(t, buf)
+	assert.Equal(t, "dry-run", entry["mode"])
+	assert.Equal(t, "deny", entry["decision"])
+	assert.Equal(t, "risk_level_config", entry["error_class"])
+	// Correlated with the evaluated identity (content hash present, not n/a).
+	assert.Equal(t, executortestutil.DefaultTestContentHash, entry["content_hash"])
+}
+
 // TestExecute_ConfigErrorAuditable verifies that an invalid risk_level
 // configuration is audited as a deny classified as a risk_level config error,
 // rather than a reason-less deny, before the command is aborted.

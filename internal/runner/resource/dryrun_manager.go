@@ -1,6 +1,7 @@
 package resource
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -306,6 +307,10 @@ func (d *DryRunResourceManager) evaluateCommandRisk(ctx context.Context, cmd *ru
 	// error (the command does not exist), not a policy deny.
 	resolvedPath, err := d.pathResolver.ResolvePath(cmd.ExpandedCmd)
 	if err != nil {
+		// Audit the hard-error deny before aborting so the error-return path is
+		// auditable in dry-run too (the path could not be resolved, so the resolved
+		// path is recorded best-effort from the command as given).
+		d.emitDryRunErrorAudit(ctx, cmd, risktypes.ErrorClassPathResolution)
 		return fmt.Errorf("failed to resolve command path '%s': %w. This typically occurs if the command is not found in the system PATH or there are permission issues preventing access", cmd.ExpandedCmd, err)
 	}
 
@@ -327,6 +332,9 @@ func (d *DryRunResourceManager) evaluateCommandRisk(ctx context.Context, cmd *ru
 	maxAllowed, err := cmd.GetRiskLevel()
 	if err != nil {
 		// Invalid risk_level configuration is a hard error, not a deny preview.
+		// Audit it as a deny (classified as a risk_level config error) correlated
+		// with the evaluated identity, mirroring normal mode, before aborting.
+		d.auditRiskDecision(ctx, &prepared, &plan, runnertypes.RiskLevelUnknown, risktypes.DecisionDeny, false, risktypes.ErrorClassRiskLevelConfig)
 		return fmt.Errorf("invalid risk_level configuration for command '%s': %w", cmd.ExpandedCmd, err)
 	}
 
@@ -355,7 +363,7 @@ func (d *DryRunResourceManager) evaluateCommandRisk(ctx context.Context, cmd *ru
 	}
 
 	d.recordPreviewDecision(&prepared, plan.Assessment, denied, verificationUnavailable)
-	d.auditRiskDecision(ctx, &prepared, &plan, maxAllowed, decision, verificationUnavailable)
+	d.auditRiskDecision(ctx, &prepared, &plan, maxAllowed, decision, verificationUnavailable, "")
 	return nil
 }
 
@@ -428,9 +436,11 @@ func (d *DryRunResourceManager) previewExitCodeLocked() int {
 	return DryRunExitAllow
 }
 
-// auditRiskDecision emits the dry-run command_risk_profile audit entry. No-op when
-// no audit logger is configured.
-func (d *DryRunResourceManager) auditRiskDecision(ctx context.Context, cmd *runnertypes.RuntimeCommand, plan *risktypes.VerifiedCommandPlan, maxAllowed runnertypes.RiskLevel, decision risktypes.Decision, verificationUnavailable bool) {
+// auditRiskDecision emits the dry-run command_risk_profile audit entry. The
+// errClass override classifies a deny that is not carried on the assessment (e.g.
+// an invalid risk_level configuration); when empty the plan's own ErrorClass is
+// used. No-op when no audit logger is configured.
+func (d *DryRunResourceManager) auditRiskDecision(ctx context.Context, cmd *runnertypes.RuntimeCommand, plan *risktypes.VerifiedCommandPlan, maxAllowed runnertypes.RiskLevel, decision risktypes.Decision, verificationUnavailable bool, errClass risktypes.ErrorClass) {
 	if d.auditLogger == nil {
 		return
 	}
@@ -444,7 +454,7 @@ func (d *DryRunResourceManager) auditRiskDecision(ctx context.Context, cmd *runn
 		MaxAllowedRisk:          maxAllowed,
 		Decision:                decision,
 		VerificationUnavailable: verificationUnavailable,
-		ErrorClass:              plan.Assessment.ErrorClass,
+		ErrorClass:              cmp.Or(errClass, plan.Assessment.ErrorClass),
 		Chain:                   plan.Artifacts,
 	})
 }

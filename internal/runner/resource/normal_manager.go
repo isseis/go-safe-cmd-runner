@@ -54,9 +54,11 @@ func newNormalManager(cfg Config, outputMgr output.CaptureManager) *NormalResour
 		riskEvaluator:    cfg.RiskEvaluator,
 		outputManager:    outputMgr,
 		maxOutputSize:    cfg.MaxOutputSize,
-		logger:           cfg.Logger,
-		auditLogger:      cfg.AuditLogger,
-		tempDirs:         make([]string, 0),
+		// Fall back to the default logger so a nil cfg.Logger cannot cause a nil
+		// pointer dereference in the later n.logger.Error/Warn calls.
+		logger:      cmp.Or(cfg.Logger, slog.Default()),
+		auditLogger: cfg.AuditLogger,
+		tempDirs:    make([]string, 0),
 	}
 }
 
