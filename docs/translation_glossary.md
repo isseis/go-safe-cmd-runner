@@ -36,8 +36,8 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 後向きスキャン | backward scan | 命令列を末尾から走査する解析手法 |
-| ブロックリスト | blocklist | "blacklist" は使用しない。セキュリティの文脈 |
 | バックアップ | backup | |
+| ブロックリスト | blocklist | "blacklist" は使用しない。セキュリティの文脈 |
 | 分岐収束 | branch convergence | CFG上で複数の分岐が同一点で合流すること |
 | 幅優先探索 | breadth-first search (BFS) | グラフ探索アルゴリズム |
 | ブートストラップ | bootstrap | システム初期化処理の文脈 |
@@ -91,8 +91,8 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
-| データフロー解析 | dataflow analysis | CFGを用いたデータの流れの解析 |
 | データ持ち出し | data exfiltration | 機密データを外部サービスへ送出すること |
+| データフロー解析 | dataflow analysis | CFGを用いたデータの流れの解析 |
 | 依存 / 依存解析 | dependency / dependency analysis | 動的ライブラリ依存解析の文脈 |
 | 判定メソッド | determination method | syscall番号の決定手段を示す文字列 |
 | デバッグ | debug / debugging | |
@@ -162,9 +162,9 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
-| 誤検出 | false positive | 誤ってSYSCALL命令として検出すること |
 | フェイルクローズ | fail-closed | 確認できない場合は実行を拒否する設計（優雅な劣化の対義） |
 | フェイルセーフ | fail-safe | 安全側へ倒す設計 |
+| 誤検出 | false positive | 誤ってSYSCALL命令として検出すること |
 | 前向きスキャン | forward scan | 命令列を先頭から走査する解析手法 |
 | FAQ | FAQ | Frequently Asked Questions |
 | 汎用的 | generic | |
@@ -199,10 +199,10 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | ハンドラ | handler | slogハンドラの文脈 |
+| ハードリンク | hard link | |
 | ハードコード | hardcoded | プログラムに埋め込まれた値 |
 | ハッシュ | hash | |
 | ハッシュ固定 | hash pinning | 記録済みハッシュに束縛して同一性を保証すること |
-| ハードリンク | hard link | |
 | ヘッダー | header | バイナリフォーマットのヘッダー構造 |
 | 階層 | hierarchy / level | "level" は設定階層の文脈で使用 |
 | 階層継承 | hierarchy inheritance | |
@@ -487,11 +487,11 @@
 | タグ | tag | TOMLタグの文脈 |
 | タスク | task | |
 | 改ざん | tampering | |
-| 脅威モデル | threat model | セキュリティ設計の前提と限界を示すモデル |
 | 一時 | temporary | |
 | ターミナル | terminal | |
 | テスト | test / testing | |
 | テストケース | test case | |
+| 脅威モデル | threat model | セキュリティ設計の前提と限界を示すモデル |
 | タイムアウト | timeout | |
 | タイムアウト階層 | timeout hierarchy | |
 | タイムアウト解決 | timeout resolution | |

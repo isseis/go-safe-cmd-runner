@@ -246,7 +246,7 @@ If you are upgrading from an earlier version, several commands are now evaluated
 - **`service`**: now `high` for all actions (it runs an unverified init script).
 - **Destructive operations by absolute path** (`/usr/bin/rm -rf ...`, etc.): now detected the same as by basename — `high`.
 - **Shells, interpreters, and build/task runners** (`bash`/`python`/`node`/`make`, ...): now `high` regardless of arguments (arbitrary code execution).
-- **Package script runners** (`npm run`/`npx`/`yarn`/`pnpm run`): `high`.
+- **Package script runners** (`npm run`/`npx`/`yarn <script>`/`pnpm run`): `high`.
 - **`risk_level = "unknown"`**: now rejected as a configuration error (previously accepted). Use `low`/`medium`/`high`.
 - **Disabled binary analysis / file verification**: now a blocking deny (previously allowed to continue). A binary whose identity cannot be confirmed is not executed.
 - **Wrapper commands** (`env`/`timeout`/`nice`, ...): the wrapped inner command is evaluated and gated; a wrapper whose inner command cannot be extracted, or that supplies loader-control environment variables (`LD_PRELOAD`, `DYLD_*`, ...), is denied. (Privilege-escalation wrappers `sudo`/`su`/`doas` are not gated this way — they remain `critical` and are always denied.)
