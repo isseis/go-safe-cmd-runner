@@ -427,6 +427,12 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 			return fmt.Errorf("command path resolution failed for %q: %w", cmd.ExpandedCmd, resolveErr)
 		}
 
+		// Pin the command to the resolved absolute path here, once. The risk
+		// evaluator opens and binds this exact path (and its inode) for fd-bound
+		// execution, so the former second ResolvePath in executeCommandInGroup is
+		// removed to avoid a TOCTOU re-resolution between verification and exec.
+		cmd.ExpandedCmd = resolvedPath
+
 		// Propagate verified hash.
 		if hash, ok := result.ContentHashes[resolvedPath]; ok {
 			cmd.ExpandedCmdContentHash = hash
@@ -517,16 +523,10 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 		return nil, fmt.Errorf("resolved environment variables security validation failed: %w", err)
 	}
 
-	// Resolve and validate command path if verification manager is available
-	if ge.verificationManager != nil {
-		resolvedPath, err := ge.verificationManager.ResolvePath(cmd.ExpandedCmd)
-		if err != nil {
-			return nil, fmt.Errorf("command path resolution failed: %w", err)
-		}
-
-		// Update the expanded command path (don't modify original)
-		cmd.ExpandedCmd = resolvedPath
-	}
+	// The command path was already resolved to an absolute, symlink-resolved path
+	// once in verifyGroupFiles; it is not re-resolved here. Re-resolving immediately
+	// before execution reopened a TOCTOU window between verification and exec, which
+	// fd-bound execution closes.
 
 	// Validate that the command is allowed (global AllowedCommands OR group-level cmd_allowed)
 	if err := ge.validator.ValidateCommandAllowed(cmd.ExpandedCmd, runtimeGroup.ExpandedCmdAllowed); err != nil {

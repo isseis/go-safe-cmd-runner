@@ -18,6 +18,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -58,6 +59,7 @@ type executorWithOutput struct {
 // Execute executes a command and captures its output
 func (e *executorWithOutput) Execute(
 	ctx context.Context,
+	plan *risktypes.VerifiedCommandPlan,
 	cmd *runnertypes.RuntimeCommand,
 	env map[string]string,
 	outputWriter executor.OutputWriter,
@@ -69,7 +71,7 @@ func (e *executorWithOutput) Execute(
 	}
 
 	// Use the base executor with our custom output writer
-	return e.baseExecutor.Execute(ctx, cmd, env, captureWriter)
+	return e.baseExecutor.Execute(ctx, plan, cmd, env, captureWriter)
 }
 
 // Validate validates a command without executing it

@@ -221,7 +221,8 @@ func TestExecuteGroup_WorkDirPriority(t *testing.T) {
 
 			mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 			mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-				resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "", Stderr: ""}, nil)
+				resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "", Stderr: ""}, nil,
+			)
 
 			ctx := context.Background()
 			err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
@@ -306,10 +307,12 @@ func TestExecuteGroup_TempDirCleanup(t *testing.T) {
 			// Mock execution
 			if tt.executionError != nil {
 				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-					resource.CommandToken(""), nil, tt.executionError)
+					resource.CommandToken(""), nil, tt.executionError,
+				)
 			} else {
 				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-					resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "", Stderr: ""}, nil)
+					resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "", Stderr: ""}, nil,
+				)
 			}
 			mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
@@ -426,7 +429,8 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 
 	// Mock execution to return non-zero exit code
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil,
+	)
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	ctx := context.Background()
@@ -499,7 +503,8 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 
 	// Mock execution to return exit code 127 (command not found)
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 127, Stdout: "", Stderr: "command not found"}, nil)
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 127, Stdout: "", Stderr: "command not found"}, nil,
+	)
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	ctx := context.Background()
@@ -576,7 +581,8 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "success", Stderr: ""}, nil)
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "success", Stderr: ""}, nil,
+	)
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	ctx := context.Background()
@@ -707,7 +713,8 @@ func TestExecuteGroup_MultipleCommands(t *testing.T) {
 
 	// Mock all executions
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "ok", Stderr: ""}, nil)
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "ok", Stderr: ""}, nil,
+	)
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	ctx := context.Background()
@@ -771,14 +778,16 @@ func TestExecuteGroup_StopOnFirstFailure(t *testing.T) {
 		mock.MatchedBy(func(cmd *runnertypes.RuntimeCommand) bool {
 			return cmd.Name() == "cmd1"
 		}), mock.Anything, mock.Anything).Return(
-		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "", Stderr: ""}, nil).Once()
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "", Stderr: ""}, nil,
+	).Once()
 
 	// Second command fails
 	mockRM.On("ExecuteCommand", mock.Anything,
 		mock.MatchedBy(func(cmd *runnertypes.RuntimeCommand) bool {
 			return cmd.Name() == "cmd2-fails"
 		}), mock.Anything, mock.Anything).Return(
-		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "error"}, nil).Once()
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "error"}, nil,
+	).Once()
 
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
@@ -1295,8 +1304,11 @@ func TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure(t *testing.T) {
 	mockValidator.AssertExpectations(t)
 }
 
-// TestExecuteCommandInGroup_ResolvePathFailure tests path resolution error (T1.3)
-func TestExecuteCommandInGroup_ResolvePathFailure(t *testing.T) {
+// TestVerifyGroupFiles_ResolvePathFailure tests path resolution error (T1.3).
+// Path resolution happens once in verifyGroupFiles (the former second resolution
+// in executeCommandInGroup was removed to close a TOCTOU window), so a
+// resolution failure now surfaces from verifyGroupFiles before any command runs.
+func TestVerifyGroupFiles_ResolvePathFailure(t *testing.T) {
 	// Arrange
 	mockValidator := new(securitytestutil.MockValidator)
 	mockVM := new(verificationtestutil.MockManager)
@@ -1308,12 +1320,8 @@ func TestExecuteCommandInGroup_ResolvePathFailure(t *testing.T) {
 		},
 	}
 
-	// Setup: validator passes
-	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
-	// Mock sanitization (optional, as test may not reach logging stage)
-	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("").Maybe()
-
-	// Setup: path resolution fails
+	// Setup: group file verification succeeds, then path resolution fails.
+	mockVM.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 	expectedErr := errors.New("command not found in PATH")
 	mockVM.On("ResolvePath", "/nonexistent/command").Return("", expectedErr)
 
@@ -1342,6 +1350,7 @@ func TestExecuteCommandInGroup_ResolvePathFailure(t *testing.T) {
 
 	runtimeGroup, err := runnertypes.NewRuntimeGroup(groupSpec)
 	require.NoError(t, err)
+	runtimeGroup.Commands = []*runnertypes.RuntimeCommand{cmd}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
 		Spec:         &runnertypes.GlobalSpec{Timeout: tu.Int32Ptr(30)},
@@ -1349,19 +1358,127 @@ func TestExecuteCommandInGroup_ResolvePathFailure(t *testing.T) {
 	}
 
 	// Act
-	ctx := context.Background()
-	result, err := ge.executeCommandInGroup(ctx, cmd, groupSpec, runtimeGroup, runtimeGlobal)
+	err = ge.verifyGroupFiles(runtimeGroup, runtimeGlobal)
 
 	// Assert
 	require.Error(t, err)
-	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "command path resolution failed")
 	assert.ErrorIs(t, err, expectedErr)
 
 	// Verify mocks
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
 	mockVM.AssertCalled(t, "ResolvePath", "/nonexistent/command")
-	mockValidator.AssertExpectations(t)
+	mockVM.AssertExpectations(t)
+}
+
+// TestGroupExecutor_IdentityBoundNoReResolve asserts that executeCommandInGroup
+// does not re-resolve the command path: resolution happens once in
+// verifyGroupFiles, and the execution path must not call ResolvePath again
+// (closing the former TOCTOU re-resolution window).
+func TestGroupExecutor_IdentityBoundNoReResolve(t *testing.T) {
+	mockValidator := new(securitytestutil.MockValidator)
+	mockVM := new(verificationtestutil.MockManager)
+	mockRM := new(runnertestutil.MockResourceManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{Timeout: tu.Int32Ptr(30)},
+	}
+
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("").Maybe()
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0}, nil)
+
+	ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+		Config:              config,
+		Validator:           mockValidator,
+		VerificationManager: mockVM,
+		ResourceManager:     mockRM,
+	})
+
+	cmd := &runnertypes.RuntimeCommand{
+		Spec:         &runnertypes.CommandSpec{Name: "test-cmd"},
+		ExpandedCmd:  "/bin/echo", // already resolved (as verifyGroupFiles would leave it)
+		ExpandedArgs: []string{},
+		ExpandedEnv:  map[string]string{},
+		ExpandedVars: map[string]string{},
+	}
+	groupSpec := &runnertypes.GroupSpec{Name: "test-group"}
+	runtimeGroup, err := runnertypes.NewRuntimeGroup(groupSpec)
+	require.NoError(t, err)
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec:         &runnertypes.GlobalSpec{Timeout: tu.Int32Ptr(30)},
+		ExpandedVars: map[string]string{},
+	}
+
+	_, err = ge.executeCommandInGroup(context.Background(), cmd, groupSpec, runtimeGroup, runtimeGlobal)
+	require.NoError(t, err)
+
+	// The exec path must not re-resolve the command.
+	mockVM.AssertNotCalled(t, "ResolvePath", mock.Anything)
+	mockRM.AssertCalled(t, "ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestGroupExecutor_ExecIdentityBound asserts the command path is resolved exactly
+// once (in verifyGroupFiles) and that same resolved path is what flows to
+// execution, with no second resolution before exec.
+func TestGroupExecutor_ExecIdentityBound(t *testing.T) {
+	mockValidator := new(securitytestutil.MockValidator)
+	mockVM := new(verificationtestutil.MockManager)
+	mockRM := new(runnertestutil.MockResourceManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{Timeout: tu.Int32Ptr(30)},
+	}
+
+	const unresolved = "/bin/echo"
+	const resolved = "/usr/bin/echo"
+
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	mockValidator.On("ValidateCommandAllowed", resolved, mock.Anything).Return(nil)
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("").Maybe()
+	mockVM.On("VerifyGroupFiles", mock.Anything).
+		Return(&verification.Result{ContentHashes: map[string]string{resolved: "sha256:abc"}}, nil)
+	mockVM.On("ResolvePath", unresolved).Return(resolved, nil).Once()
+	mockVM.On("VerifyCommandDynLibDeps", resolved).Return(nil)
+	mockVM.On("VerifyCommandShebangInterpreter", resolved, mock.Anything).Return(nil)
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0}, nil)
+
+	ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+		Config:              config,
+		Validator:           mockValidator,
+		VerificationManager: mockVM,
+		ResourceManager:     mockRM,
+	})
+
+	cmd := &runnertypes.RuntimeCommand{
+		Spec:         &runnertypes.CommandSpec{Name: "test-cmd"},
+		ExpandedCmd:  unresolved,
+		ExpandedArgs: []string{},
+		ExpandedEnv:  map[string]string{},
+		ExpandedVars: map[string]string{},
+	}
+	groupSpec := &runnertypes.GroupSpec{Name: "test-group"}
+	runtimeGroup, err := runnertypes.NewRuntimeGroup(groupSpec)
+	require.NoError(t, err)
+	runtimeGroup.Commands = []*runnertypes.RuntimeCommand{cmd}
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec:         &runnertypes.GlobalSpec{Timeout: tu.Int32Ptr(30)},
+		ExpandedVars: map[string]string{},
+	}
+
+	// verifyGroupFiles resolves once and pins the resolved path and hash.
+	require.NoError(t, ge.verifyGroupFiles(runtimeGroup, runtimeGlobal))
+	assert.Equal(t, resolved, cmd.ExpandedCmd, "command should be pinned to the resolved path")
+	assert.Equal(t, "sha256:abc", cmd.ExpandedCmdContentHash)
+
+	// Execution uses the already-resolved path; ResolvePath is not called again.
+	_, err = ge.executeCommandInGroup(context.Background(), cmd, groupSpec, runtimeGroup, runtimeGlobal)
+	require.NoError(t, err)
+
+	mockVM.AssertNumberOfCalls(t, "ResolvePath", 1)
 	mockVM.AssertExpectations(t)
 }
 
@@ -1411,8 +1528,10 @@ func TestExecuteCommandInGroup_DryRunDetailLevelFull(t *testing.T) {
 		},
 	}
 
-	// Setup: path resolution succeeds
-	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
+	// executeCommandInGroup no longer resolves the path (resolution happens once in
+	// verifyGroupFiles), so ResolvePath is optional in this direct-call test; the
+	// command path is already resolved by the time it reaches executeCommandInGroup.
+	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil).Maybe()
 
 	ge := NewTestGroupExecutorWithConfig(
 		TestGroupExecutorConfig{
@@ -2399,11 +2518,12 @@ func TestCreateCommandContext_UnlimitedTimeout_SecurityLogging(t *testing.T) {
 			secLogger := logging.NewSecurityLoggerWithLogger(testLogger)
 
 			mockRM := new(runnertestutil.MockResourceManager)
-			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
-				Config:          &runnertypes.ConfigSpec{},
-				ResourceManager: mockRM,
-				RunID:           "test-run-unlimited",
-			},
+			ge := NewTestGroupExecutorWithConfig(
+				TestGroupExecutorConfig{
+					Config:          &runnertypes.ConfigSpec{},
+					ResourceManager: mockRM,
+					RunID:           "test-run-unlimited",
+				},
 				WithSecurityLogger(secLogger),
 				WithCurrentUser(tt.currentUser),
 			)
@@ -2494,7 +2614,8 @@ func TestExecuteGroup_TimeoutExceeded_SecurityLogging(t *testing.T) {
 
 	// Mock execution to return context.DeadlineExceeded error
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		resource.CommandToken(""), nil, context.DeadlineExceeded)
+		resource.CommandToken(""), nil, context.DeadlineExceeded,
+	)
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	ctx := context.Background()
@@ -2575,7 +2696,8 @@ func TestExecuteGroup_MultipleCommands_TimeoutLogging(t *testing.T) {
 
 	// Mock successful execution for both commands
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "ok"}, nil)
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "ok"}, nil,
+	)
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	ctx := context.Background()
@@ -3088,7 +3210,8 @@ func TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles(t *testing.T) {
 
 	// Mock command execution to succeed.
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "hello", Stderr: ""}, nil)
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "hello", Stderr: ""}, nil,
+	)
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	ctx := context.Background()
@@ -3403,7 +3526,8 @@ func TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH(t *testing.T) 
 
 	// Assert that the PATH forwarded to VerifyCommandShebangInterpreter exactly
 	// matches the group-level env_vars value.
-	mockVM.On("VerifyCommandShebangInterpreter", scriptPath,
+	mockVM.On(
+		"VerifyCommandShebangInterpreter", scriptPath,
 		mock.MatchedBy(func(env map[string]string) bool {
 			return env["PATH"] == customPATH
 		}),
@@ -3516,7 +3640,8 @@ func TestVerifyCommandCallOrder_DynLibBeforeShebang(t *testing.T) {
 	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0}, nil)
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0}, nil,
+	)
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	config := &runnertypes.ConfigSpec{

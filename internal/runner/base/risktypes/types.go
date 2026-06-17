@@ -7,6 +7,7 @@
 package risktypes
 
 import (
+	"errors"
 	"sync/atomic"
 	"syscall"
 
@@ -72,11 +73,15 @@ type VerifiedIdentity struct {
 }
 
 // VerifiedCommandPlan is the confirmed, ready-to-exec description of a command.
-// The executor runs only this plan and must never exec the original argv/env
-// directly. The execution fields (ResolvedPath/ResolvedArgv/ResolvedEnv) are set
-// only for allowed (executable) plans; for plans denied before verification
-// completes they are empty, and the audit resolved_path is derived from Identity
-// rather than from these fields.
+// The executor binds the executed inode to the verified Identity.FD rather than
+// re-resolving the path. The execution fields (ResolvedPath/ResolvedArgv/
+// ResolvedEnv) are set only for allowed (executable) plans; for plans denied
+// before verification completes they are empty, and the audit resolved_path is
+// derived from Identity rather than from these fields.
+//
+// Note: ResolvedArgv/ResolvedEnv are populated for allowed plans but are not yet
+// consumed by the executor (which currently takes argv/env from the command);
+// binding argv/env from the plan is a future step.
 type VerifiedCommandPlan struct {
 	ResolvedPath string            // absolute path to exec (allowed plans only)
 	ResolvedArgv []string          // final argv after indirect-execution expansion (allowed plans only)
@@ -84,6 +89,24 @@ type VerifiedCommandPlan struct {
 	Identity     *VerifiedIdentity // identity bound until exec; nil = denied plan with no verified identity
 	Artifacts    []ExecutedArtifact
 	Assessment   RiskAssessment
+}
+
+// Close releases every verified file descriptor owned by the plan: the command's
+// own identity and each chained artifact's identity. It aggregates errors with
+// errors.Join and is safe to call on a zero plan and to call more than once
+// (VerifiedFD.Close is idempotent), so the command's owner can defer it
+// unconditionally for allowed, denied, and preview plans alike.
+func (p *VerifiedCommandPlan) Close() error {
+	var errs []error
+	if p.Identity != nil {
+		errs = append(errs, p.Identity.FD.Close())
+	}
+	for i := range p.Artifacts {
+		if id := p.Artifacts[i].Identity; id != nil {
+			errs = append(errs, id.FD.Close())
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // RiskAssessment is the effective risk and the reasoning behind it.

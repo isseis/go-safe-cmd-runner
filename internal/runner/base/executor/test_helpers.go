@@ -34,3 +34,12 @@ func WithIdentityChecker(fn func() error) Option {
 		e.identityChecker = fn
 	}
 }
+
+// WithFdExecDisabled forces the read-only staging fallback even on platforms
+// where fd-bound execution is available, so the staging path can be exercised in
+// tests on Linux.
+func WithFdExecDisabled() Option {
+	return func(e *DefaultExecutor) {
+		e.fdExecDisabled = true
+	}
+}

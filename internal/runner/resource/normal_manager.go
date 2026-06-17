@@ -11,6 +11,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -90,6 +91,14 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	if err != nil {
 		return "", nil, fmt.Errorf("risk evaluation failed: %w", err)
 	}
+	// The plan owns any verified file descriptor opened during evaluation. Close it
+	// on every path -- allowed, gate-denied, or error -- so descriptors are not
+	// leaked when a command is rejected after its fd was opened.
+	defer func() {
+		if closeErr := plan.Close(); closeErr != nil {
+			n.logger.Warn("Failed to close verified command plan", "command", cmd.Name(), "error", closeErr)
+		}
+	}()
 	effectiveRisk := plan.Assessment.Level
 
 	// Step 2: Get maximum allowed risk level from configuration
@@ -122,17 +131,17 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 
 	// Check if output capture is requested and delegate to executeCommandWithOutput
 	if cmd.Output() != "" && n.outputManager != nil {
-		result, err := n.executeCommandWithOutput(ctx, cmd, env, start)
+		result, err := n.executeCommandWithOutput(ctx, &plan, cmd, env, start)
 		return "", result, err
 	}
 
 	// Execute the command using the shared execution logic
-	result, err := n.executeCommandInternal(ctx, cmd, env, start, nil)
+	result, err := n.executeCommandInternal(ctx, &plan, cmd, env, start, nil)
 	return "", result, err
 }
 
 // executeCommandWithOutput executes a command with output capture
-func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cmd *runnertypes.RuntimeCommand, env map[string]string, start time.Time) (result *ExecutionResult, err error) {
+func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, plan *risktypes.VerifiedCommandPlan, cmd *runnertypes.RuntimeCommand, env map[string]string, start time.Time) (result *ExecutionResult, err error) {
 	// Prepare output capture
 	// Use command-level EffectiveOutputSizeLimit which already has the resolved value
 	// (command-level takes precedence, falls back to global-level, then default)
@@ -171,7 +180,7 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 	}()
 
 	// Execute the command using the shared execution logic with capture as output writer
-	result, err = n.executeCommandInternal(ctx, cmd, env, start, capture)
+	result, err = n.executeCommandInternal(ctx, plan, cmd, env, start, capture)
 	if err != nil {
 		// Return result even on error to preserve exit code information
 		return result, err
@@ -189,9 +198,9 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 }
 
 // executeCommandInternal contains the shared command execution logic
-func (n *NormalResourceManager) executeCommandInternal(ctx context.Context, cmd *runnertypes.RuntimeCommand, env map[string]string, start time.Time, outputWriter executor.OutputWriter) (*ExecutionResult, error) {
+func (n *NormalResourceManager) executeCommandInternal(ctx context.Context, plan *risktypes.VerifiedCommandPlan, cmd *runnertypes.RuntimeCommand, env map[string]string, start time.Time, outputWriter executor.OutputWriter) (*ExecutionResult, error) {
 	// Execute command with the provided output writer
-	result, err := n.executor.Execute(ctx, cmd, env, outputWriter)
+	result, err := n.executor.Execute(ctx, plan, cmd, env, outputWriter)
 
 	// Always create ExecutionResult if we have a result from executor
 	// This preserves exit code information even when err is non-nil

@@ -46,7 +46,7 @@ func TestExecutor_DebugLogging(t *testing.T) {
 
 	cmd := createTestCommand("/bin/echo", []string{"hello", "world with spaces"})
 
-	_, err := executor.Execute(context.Background(), cmd, map[string]string{}, nil)
+	_, err := executor.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 	require.NoError(t, err)
 
 	// Check that the debug log contains the command
@@ -66,7 +66,7 @@ func TestExecutor_ErrorLogging_CommandNotFound(t *testing.T) {
 
 	cmd := createTestCommand("/nonexistent/command", []string{})
 
-	_, err := executor.Execute(context.Background(), cmd, map[string]string{}, nil)
+	_, err := executor.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 	require.Error(t, err)
 
 	// Check that the error log contains the failure reason
@@ -90,7 +90,7 @@ func TestExecutor_ErrorLogging_CommandExecutionFailure(t *testing.T) {
 	require.NoError(t, err, "false command not found in PATH")
 	cmd := createTestCommand(falsePath, []string{})
 
-	_, err = executor.Execute(context.Background(), cmd, map[string]string{}, nil)
+	_, err = executor.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 	require.Error(t, err)
 
 	// Check that the error log contains the failure information
@@ -112,7 +112,7 @@ func TestExecutor_ErrorLogging_ValidationFailure(t *testing.T) {
 	// Use a command with invalid path (contains ..)
 	cmd := createTestCommand("../invalid/path", []string{})
 
-	_, err := executor.Execute(context.Background(), cmd, map[string]string{}, nil)
+	_, err := executor.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 	require.Error(t, err)
 
 	// Check that the error log contains the validation failure
@@ -128,7 +128,7 @@ func TestExecutor_DefaultLogger_UsesSlogDefault(t *testing.T) {
 	cmd := createTestCommand("/bin/echo", []string{"test"})
 
 	// Should execute successfully with default slog logger
-	_, err := executor.Execute(context.Background(), cmd, map[string]string{}, nil)
+	_, err := executor.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 	require.NoError(t, err)
 
 	// Note: Both NewDefaultExecutor() and runner.NewRunner() use slog.Default(),
@@ -153,7 +153,7 @@ func TestExecutor_ShellEscapingInLogs(t *testing.T) {
 		"with;semicolon",
 	})
 
-	_, err := executor.Execute(context.Background(), cmd, map[string]string{}, nil)
+	_, err := executor.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 	require.NoError(t, err)
 
 	logOutput := buf.String()
@@ -181,7 +181,7 @@ func TestExecutor_ErrorLogging_WithStderr(t *testing.T) {
 	// sh -c "echo 'error message' >&2; exit 1"
 	cmd := createTestCommand("/bin/sh", []string{"-c", "echo 'error message' >&2; exit 1"})
 
-	_, err := executor.Execute(context.Background(), cmd, map[string]string{}, nil)
+	_, err := executor.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 	require.Error(t, err)
 
 	// Check that the error log includes stderr output

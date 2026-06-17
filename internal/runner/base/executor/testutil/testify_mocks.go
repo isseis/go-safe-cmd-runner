@@ -7,6 +7,7 @@ import (
 	"context"
 
 	executor "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/mock"
 )
@@ -19,8 +20,8 @@ type MockExecutor struct {
 
 // Execute implements executor.CommandExecutor.Execute with safe nil handling.
 // If the mock returns nil as the result, it safely returns nil without panicking.
-func (m *MockExecutor) Execute(ctx context.Context, cmd *runnertypes.RuntimeCommand, env map[string]string, outputWriter executor.OutputWriter) (*executor.Result, error) {
-	args := m.Called(ctx, cmd, env, outputWriter)
+func (m *MockExecutor) Execute(ctx context.Context, plan *risktypes.VerifiedCommandPlan, cmd *runnertypes.RuntimeCommand, env map[string]string, outputWriter executor.OutputWriter) (*executor.Result, error) {
+	args := m.Called(ctx, plan, cmd, env, outputWriter)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 )
@@ -49,16 +50,32 @@ func newVerifiedEvaluator() Evaluator {
 	return newEvaluatorWithStore(fakeRecordStore{})
 }
 
-// newEvaluatorWithStore returns an evaluator using the given record store.
+// newEvaluatorWithStore returns an evaluator using the given record store. It
+// injects a descriptor-free identity opener so risk-classification tests can use
+// synthetic absolute paths (see testBinDir) without placing real files on disk.
 func newEvaluatorWithStore(store security.RecordStore) Evaluator {
 	deps := security.AnalysisDeps{RecordStore: store}
-	return NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, deps))
+	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, deps)).(*StandardEvaluator)
+	ev.openIdentity = fakeIdentityOpener
+	return ev
 }
 
 // newAnalysisDisabledEvaluator returns an evaluator with binary analysis disabled
 // (no record store), so the identity gate denies every command.
 func newAnalysisDisabledEvaluator() Evaluator {
-	return NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
+	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{})).(*StandardEvaluator)
+	ev.openIdentity = fakeIdentityOpener
+	return ev
+}
+
+// fakeIdentityOpener returns a verified identity with no real descriptor, so
+// risk-classification tests need not place real files on disk. The fd-binding
+// behaviour itself is covered by the executor and group-executor tests.
+func fakeIdentityOpener(cmd *runnertypes.RuntimeCommand) (*risktypes.VerifiedIdentity, error) {
+	return &risktypes.VerifiedIdentity{
+		ResolvedPath: cmd.ExpandedCmd,
+		ContentHash:  cmd.ExpandedCmdContentHash,
+	}, nil
 }
 
 // testBinDir is the synthetic absolute directory used to turn a bare command

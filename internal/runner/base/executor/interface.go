@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -40,6 +41,14 @@ func (s OutputStream) String() string {
 type CommandExecutor interface {
 	// Execute executes a command with custom output writer.
 	//
+	// plan is the verified command plan from the risk evaluator. When it carries
+	// a verified file descriptor, the executor binds the executed inode to that
+	// descriptor rather than re-resolving the path, so the executed inode matches
+	// the one the evaluator verified. argv and env are still taken from cmd/env
+	// (plan.ResolvedArgv/ResolvedEnv are not yet consumed). The plan's descriptors
+	// are owned by the caller, which must Close the plan; Execute only
+	// duplicates/copies from them.
+	//
 	// OutputWriter lifecycle and ownership:
 	// - outputWriter may be nil, in which case output is handled internally
 	// - If provided, the caller owns the outputWriter and is responsible for calling Close()
@@ -47,7 +56,7 @@ type CommandExecutor interface {
 	// - Write() calls are made during command execution as output is generated (streamed)
 	// - The outputWriter must remain valid for the entire duration of command execution
 	// - Multiple concurrent Write() calls may occur, so implementations must be thread-safe
-	Execute(ctx context.Context, cmd *runnertypes.RuntimeCommand, env map[string]string, outputWriter OutputWriter) (*Result, error)
+	Execute(ctx context.Context, plan *risktypes.VerifiedCommandPlan, cmd *runnertypes.RuntimeCommand, env map[string]string, outputWriter OutputWriter) (*Result, error)
 	// Validate validates a command without executing it
 	Validate(cmd *runnertypes.RuntimeCommand) error
 }
