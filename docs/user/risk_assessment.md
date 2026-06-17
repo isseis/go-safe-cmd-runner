@@ -57,7 +57,7 @@ Risk calculation draws on **several independent factors**: the command name and 
 |-------|---------|-------------|
 | `low` | Read-only, no side effects | ✅ Yes (default) |
 | `medium` | Network communication, file changes, system changes | ✅ Yes |
-| `high` | Destructive operations, privilege changes, dynamic/arbitrary code execution | ✅ Yes |
+| `high` | Destructive operations, system/service changes, dynamic/arbitrary code execution | ✅ Yes |
 | `critical` | Use of privilege-escalation commands (assigned automatically) | ❌ Not configurable — always blocked |
 
 > `"critical"` cannot be written in TOML. It is assigned automatically when commands like `sudo`/`su`/`doas` are detected and always results in rejection.
@@ -86,15 +86,16 @@ The runner matches commands by their resolved absolute path and basename (symbol
 
 ### 3.2 coreutils Single-Binary Classification
 
-Modern coreutils may be shipped as a single multi-call binary (for example BusyBox, or a merged GNU coreutils binary) where one executable implements many subcommands. For such a binary the risk is classified from the **subcommand**, in three levels:
+On distributions that ship coreutils as a single multi-call binary in a dedicated coreutils directory (for example the Rust coreutils binary at `/usr/lib/cargo/bin/coreutils` on Ubuntu 26.04+), every applet shares one executable and therefore one hash. For a command resolved to that directory, the risk is classified from the **subcommand** (applet) — including the `coreutils <applet> ...` multicall form — rather than from the shared binary's analysis signals.
 
 | coreutils subcommand class | Calculated risk |
 |----------------------------|----------------|
-| Known-safe read-only subcommands (`echo`, `cat`, `ls`, ...) | `low` |
-| Subcommands with side effects but bounded scope | `medium` |
-| Destructive subcommands, or unknown/unidentifiable subcommands (fail-safe) | `high` |
+| Known-safe read-only / informational subcommands (`echo`, `cat`, `ls`, `mkdir`, ...) | `low` |
+| Destructive subcommands (`rm`, `dd`, `shred`, `truncate`, ...), or any unknown/unidentifiable subcommand (fail-safe) | `high` |
 
-For a verified coreutils binary, the binary-analysis dimension (§3.3) is suppressed for the safe read-only subcommands so that, for example, `echo` stays `low` even though the shared multi-call binary links network or `exec` symbols. Hash verification is still required — suppression applies only to the binary-analysis signal, not to identity verification.
+Only subcommands on the curated safe list are `low`; everything else — including an unparseable multicall invocation that might hide a destructive applet — is `high`. There is no `medium` coreutils class. A binary carrying a setuid/setgid bit is also `high`. For such a verified coreutils binary, the binary-analysis dimension (§3.3) is suppressed for the safe subcommands so that, for example, `echo` stays `low` even though the shared multi-call binary links network or `exec` symbols. Hash verification is still required — suppression applies only to the binary-analysis signal, not to identity verification.
+
+(This mechanism is specific to the unified coreutils directory. Other multi-call binaries such as BusyBox are not covered by it; they are evaluated by the general rules in §3.1 and §3.3.)
 
 ### 3.3 Binary Analysis Evaluation (static analysis at record time, result reused)
 

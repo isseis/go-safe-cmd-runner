@@ -389,7 +389,7 @@
 
 - [x] §3.1 の表（[risk_assessment.ja.md:71](../../../docs/user/risk_assessment.ja.md#L71) の `| \`systemctl\`/\`apt\`/\`dpkg\` 等のシステム変更コマンド | \`medium\` |` 行）を書き換える。この 1 行が **AC-34（dpkg 削除）と AC-37（systemctl レベル是正）の双方**に関わるため、同時に改訂する: `dpkg` を除去し、`systemctl` 変更系=High / 読み取り専用=Medium 下限・`service`=High・`apt` install/remove=Medium を反映した記述へ分解する（旧 `systemctl … medium` の単一行を残さない）。`.md` 版の対応行も同様に修正。
 - [x] ネットワーク系（`curl`/`wget`/`ssh`）= medium、シェル/インタプリタ/ビルドランナー（`bash`/`python`/`node`/`make`）= high を説明（AC-35）。
-- [x] coreutils 単一バイナリ分類（Low/Medium/High 3 区分）を説明（AC-36）。
+- [x] coreutils 単一バイナリ分類を説明（AC-36）。**実装（`CoreutilsCommandRisk`）は Low（安全リスト）/High（破壊的＋未知・判別不能の fail-safe）の 2 区分**で、Medium 区分は存在しない（Step 1-6/AC-68 で未知→High を確定済み）。さらに分類が適用されるのは専用 coreutils ディレクトリ（`common.CoreutilsDir`＝Ubuntu 26.04+ Rust coreutils）配下のみで、BusyBox 等は対象外。文書はこの実態に整合させた（旧 03 の「Low/Medium/High 3 区分」想定は実装と乖離していたため訂正）。
 - [x] 「最終リスクはすべての因子の最大値」をプロファイル要因含む最大値へ整合（AC-38）。
 - [x] §3.3 の挙動表を F-005 の deny/error 2 系統へ改訂（AC-17 のユーザー向け部分）。新 §3.4 として拒否（Blocking）/エラーの 2 系統表へ書き換え。
 - [x] §5 設定例を修正後実装で動作する例へ（恒久拒否される例を残さない。AC-50）。`systemctl status` 例を `risk_level="low"`→`"medium"`、`apt-get install` 例を `"high"`→`"medium"` へ修正。
@@ -549,7 +549,7 @@
 | AC-33 | test | `internal/runner/resource/dryrun_manager_test.go::TestDryRun_DenyVsHardError` | deny 予告 / error の 2 系統 |
 | AC-34 | static | `rg -n "dpkg" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` | 0 件 |
 | AC-35 | static | `rg -n "bash.*high\|python.*high\|make.*high\|curl.*medium" docs/user/risk_assessment.ja.md` | 該当記述あり |
-| AC-36 | static | `rg -n "coreutils" docs/user/risk_assessment.ja.md` | Low/Medium/High 3 区分の説明あり |
+| AC-36 | static | `rg -n "coreutils" docs/user/risk_assessment.ja.md` | coreutils 単一バイナリ分類の説明あり（実装は Low/High 2 区分＝未知は fail-safe で High。`CoreutilsDir` 配下のみ適用、BusyBox は対象外） |
 | AC-37 | static | `rg -n "systemctl[^\|]*medium\|システム変更コマンド[^\|]*medium" docs/user/risk_assessment.ja.md` | 0 件（旧 §3.1 :71 行の `systemctl/apt/dpkg … medium`〔システム変更コマンド=medium〕の陳腐化記述のみを対象に検出。ネットワーク系の正当な `medium` 記述〔AC-35〕や一般レベル表の `medium` は対象外。systemctl 変更系=High / 読み取り=Medium 下限・`service`=High に整合した記述へ書き換え済み） |
 | AC-38 | static | `rg -n "最大値\|maximum" docs/user/risk_assessment.ja.md` | プロファイル要因含む最大値の記述 |
 | AC-39 | test | `internal/runner/base/risk/coreutils_consistency_test.go::TestConsistency_ProfileCommands` | claude/systemctl/curl で実行時/dry-run 一致 |
