@@ -162,7 +162,7 @@ type IndirectExecutionResult struct {
 | [indirect_execution.go](../../../internal/runner/base/security/indirect_execution.go) | 変更 | `evaluateInner`（ラッパーインナー評価）を細粒度算出からフラット High 下限へ単純化（§3.2）。実行時挙動を誤記したコメントを修正（下記 AC-08 対象）。`evaluateInnerAs` の `RoleInterpreter` 経路は維持（§3.3） | F-001/F-003/AC-01〜08 | [indirect_execution_test.go](../../../internal/runner/base/security/indirect_execution_test.go)（下表参照） |
 | [risk_assessment.ja.md](../../../docs/user/risk_assessment.ja.md) / [risk_assessment.md](../../../docs/user/risk_assessment.md) | 変更 | §3（間接実行）・§8（移行ノートのラッパー記述）を本方式へ更新（一律 High／特権=Critical／一部 Blocking／インナーは自動検証・自動記録されない・実体固定は `verify_files` 明示登録） | F-004/AC-09 | - |
 | [04_global_level.ja.md](../../../docs/user/toml_config/04_global_level.ja.md) / [04_global_level.md](../../../docs/user/toml_config/04_global_level.md) | 変更 | §4.6 `verify_files` の「コマンドは自動検証される」記述に、ラッパーのインナーは自動検証の対象外である注記を追加 | F-004/AC-09 | - |
-| `06_command_level.{ja,}.md` / `05_group_level.{ja,}.md` / `README{.ja,}.md` | 変更 | 同趣旨の記述があれば整合（`risk_level`・`verify_files`/`cmd_allowed`・セキュリティ機能概説） | F-004/AC-09 | - |
+| `06_command_level{.ja,}.md` / `05_group_level{.ja,}.md` / `README{.ja,}.md` | 変更 | 同趣旨の記述があれば整合（`risk_level`・`verify_files`/`cmd_allowed`・セキュリティ機能概説） | F-004/AC-09 | - |
 | [security-architecture.md](../../../docs/dev/architecture_design/security-architecture.md) | 変更 | 間接実行リゾルバ（ラッパー）の記述を本方式（抽出は維持／Critical・拒否を優先／通常インナーは一律 High／インナーの fd 束縛・ラッパー再実装はしない）へ更新 | F-004/AC-10 | - |
 | `docs/tasks/0136_*/02_architecture.md`（§3.3／§5.2） | 変更（注記のみ） | 0138 により当該設計・保留方針が変更された旨の最小限の参照注記（1〜2 行＋ 0138 への参照）を追加。既存記述は詳細改訂しない | F-003/AC-11 | - |
 | `docs/tasks/0136_*/03_implementation_plan.md`（Step 2-2 の保留 `[-]` 項目、AC-60／AC-77 行周辺） | 変更（注記のみ） | 同上の最小限の参照注記を追加 | F-003/AC-11 | - |
