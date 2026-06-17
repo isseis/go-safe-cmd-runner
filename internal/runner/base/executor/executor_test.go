@@ -85,7 +85,7 @@ func TestExecute_Success(t *testing.T) {
 				executor.WithFileSystem(fileSystem),
 			)
 
-			result, err := e.Execute(context.Background(), tt.cmd, tt.env, outputWriter)
+			result, err := e.Execute(context.Background(), nil, tt.cmd, tt.env, outputWriter)
 			if tt.wantErr {
 				assert.Error(t, err, "Expected error but got none")
 			} else {
@@ -169,7 +169,7 @@ func TestExecute_Failure(t *testing.T) {
 				defer cancel()
 			}
 
-			result, err := e.Execute(ctx, tt.cmd, tt.env, outputWriter)
+			result, err := e.Execute(ctx, nil, tt.cmd, tt.env, outputWriter)
 
 			if tt.wantErr {
 				assert.Error(t, err, "Expected error but got none")
@@ -207,7 +207,7 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	// Cancel the context immediately
 	cancel()
 
-	result, err := e.Execute(ctx, cmd, map[string]string{}, &executortestutil.MockOutputWriter{})
+	result, err := e.Execute(ctx, nil, cmd, map[string]string{}, &executortestutil.MockOutputWriter{})
 
 	// Should get an error due to context cancellation
 	assert.Error(t, err, "Expected error due to context cancellation")
@@ -238,7 +238,7 @@ func TestExecute_EnvironmentVariables(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	result, err := e.Execute(ctx, cmd, envVars, &executortestutil.MockOutputWriter{})
+	result, err := e.Execute(ctx, nil, cmd, envVars, &executortestutil.MockOutputWriter{})
 
 	require.NoError(t, err, "Execute should not return an error")
 	require.NotNil(t, result, "Result should not be nil")
@@ -311,7 +311,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup"))
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
+		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -329,7 +329,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup"))
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
+		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
@@ -345,7 +345,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup"))
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
+		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
@@ -361,7 +361,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("invaliduser"), executortestutil.WithRunAsGroup("invalidgroup"))
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
+		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
@@ -377,7 +377,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"))
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
+		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -396,7 +396,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsGroup("testgroup"))
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
+		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -418,7 +418,7 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup"))
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
+		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -438,7 +438,7 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""))
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
+		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -499,7 +499,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			ctx := context.Background()
 			envVars := map[string]string{"PATH": "/usr/bin"}
 
-			_, err := exec.Execute(ctx, tt.cmd, envVars, nil)
+			_, err := exec.Execute(ctx, nil, tt.cmd, envVars, nil)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -531,7 +531,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithName("test_audit_user_group"), executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup"))
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
+		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -556,7 +556,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithName("test_no_audit"), executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup"))
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
+		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -580,7 +580,7 @@ func TestDefaultExecutor_UserGroupPrivilegeElevationFailure(t *testing.T) {
 	ctx := context.Background()
 	envVars := map[string]string{"PATH": "/usr/bin"}
 
-	result, err := exec.Execute(ctx, cmd, envVars, nil)
+	result, err := exec.Execute(ctx, nil, cmd, envVars, nil)
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -600,7 +600,7 @@ func TestDefaultExecutor_UserGroupBackwardCompatibility(t *testing.T) {
 	ctx := context.Background()
 	envVars := map[string]string{"PATH": "/usr/bin"}
 
-	result, err := exec.Execute(ctx, cmd, envVars, nil)
+	result, err := exec.Execute(ctx, nil, cmd, envVars, nil)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -673,7 +673,7 @@ func TestDefaultExecutor_UserGroupPrivileges_StderrCapture(t *testing.T) {
 			opts = append(opts, executor.WithFileSystem(&executortestutil.MockFileSystem{}))
 			exec := executor.NewDefaultExecutor(opts...)
 
-			result, err := exec.Execute(context.Background(), tc.cmd, map[string]string{}, nil)
+			result, err := exec.Execute(context.Background(), nil, tc.cmd, map[string]string{}, nil)
 
 			assert.Error(t, err)
 			for _, msg := range tc.errContains {
@@ -768,7 +768,7 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 			ctx := context.Background()
 			envVars := map[string]string{"PATH": "/usr/bin"}
 
-			result, err := exec.Execute(ctx, tt.cmd, envVars, nil)
+			result, err := exec.Execute(ctx, nil, tt.cmd, envVars, nil)
 
 			if tt.expectError {
 				assert.Error(t, err)

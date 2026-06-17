@@ -42,6 +42,55 @@ func TestVerifiedFD_NilReceiverClose(t *testing.T) {
 	assert.NoError(t, vfd.Close(), "Close on a nil receiver must return nil")
 }
 
+// fdIsOpen reports whether fd refers to an open descriptor.
+func fdIsOpen(fd int) bool {
+	var stat syscall.Stat_t
+	return syscall.Fstat(fd, &stat) == nil
+}
+
+// TestVerifiedCommandPlan_Close confirms Close releases the command identity's
+// descriptor and every chained artifact's descriptor, is idempotent, and is safe
+// on a zero plan.
+func TestVerifiedCommandPlan_Close(t *testing.T) {
+	openFD := func(t *testing.T) int {
+		t.Helper()
+		fd, err := syscall.Open(os.DevNull, syscall.O_RDONLY, 0)
+		require.NoError(t, err)
+		return fd
+	}
+
+	t.Run("closes identity and artifact descriptors", func(t *testing.T) {
+		idFD := openFD(t)
+		artFD := openFD(t)
+		plan := &VerifiedCommandPlan{
+			Identity: &VerifiedIdentity{FD: NewVerifiedFD(idFD)},
+			Artifacts: []ExecutedArtifact{
+				{Identity: &VerifiedIdentity{FD: NewVerifiedFD(artFD)}},
+				{Identity: nil}, // an unbound (rejected) artifact must not panic
+			},
+		}
+
+		require.True(t, fdIsOpen(idFD))
+		require.True(t, fdIsOpen(artFD))
+
+		assert.NoError(t, plan.Close())
+		assert.False(t, fdIsOpen(idFD), "identity descriptor should be closed")
+		assert.False(t, fdIsOpen(artFD), "artifact descriptor should be closed")
+
+		assert.NoError(t, plan.Close(), "second Close must be a no-op")
+	})
+
+	t.Run("zero plan", func(t *testing.T) {
+		var plan VerifiedCommandPlan
+		assert.NoError(t, plan.Close())
+	})
+
+	t.Run("identity without descriptor", func(t *testing.T) {
+		plan := &VerifiedCommandPlan{Identity: &VerifiedIdentity{ResolvedPath: "/bin/echo"}}
+		assert.NoError(t, plan.Close())
+	})
+}
+
 // TestVerifiedFD_ConcurrentClose exercises the thread-safe close contract: with
 // many callers racing on Close, the descriptor must be closed exactly once (no
 // double-close), and every call must return nil. Run under -race to catch data

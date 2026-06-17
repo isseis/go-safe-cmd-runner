@@ -26,7 +26,7 @@ func TestExecute_PrivilegeLeakCausesExit(t *testing.T) {
 
 	cmd := createTestCommand("/bin/echo", []string{"hello"})
 	// Execute should detect the simulated privilege leak and call osExit.
-	e.Execute(context.Background(), cmd, nil, nil) //nolint:errcheck
+	e.Execute(context.Background(), nil, cmd, nil, nil) //nolint:errcheck
 
 	assert.True(t, exitCalled, "osExit should be called when a privilege leak is detected")
 	assert.Equal(t, 1, capturedCode, "exit code should be 1 for a privilege leak")
@@ -45,7 +45,7 @@ func TestExecute_NoPrivilegeLeakDoesNotCallExit(t *testing.T) {
 	).(*DefaultExecutor)
 
 	cmd := createTestCommand("/bin/echo", []string{"hello"})
-	_, err := e.Execute(context.Background(), cmd, nil, nil)
+	_, err := e.Execute(context.Background(), nil, cmd, nil, nil)
 
 	assert.NoError(t, err)
 	assert.False(t, exitCalled, "osExit should NOT be called when identity is clean")

@@ -7,6 +7,7 @@
 package risktypes
 
 import (
+	"errors"
 	"sync/atomic"
 	"syscall"
 
@@ -84,6 +85,24 @@ type VerifiedCommandPlan struct {
 	Identity     *VerifiedIdentity // identity bound until exec; nil = denied plan with no verified identity
 	Artifacts    []ExecutedArtifact
 	Assessment   RiskAssessment
+}
+
+// Close releases every verified file descriptor owned by the plan: the command's
+// own identity and each chained artifact's identity. It aggregates errors with
+// errors.Join and is safe to call on a zero plan and to call more than once
+// (VerifiedFD.Close is idempotent), so the command's owner can defer it
+// unconditionally for allowed, denied, and preview plans alike.
+func (p *VerifiedCommandPlan) Close() error {
+	var errs []error
+	if p.Identity != nil {
+		errs = append(errs, p.Identity.FD.Close())
+	}
+	for i := range p.Artifacts {
+		if id := p.Artifacts[i].Identity; id != nil {
+			errs = append(errs, id.FD.Close())
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // RiskAssessment is the effective risk and the reasoning behind it.

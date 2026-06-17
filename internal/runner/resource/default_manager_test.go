@@ -63,7 +63,7 @@ func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 
 		expected := &executor.Result{ExitCode: 0, Stdout: "ok"}
 
-		mocks.exec.On("Execute", ctx, cmd, env, mock.Anything).Return(expected, nil)
+		mocks.exec.On("Execute", ctx, mock.Anything, cmd, env, mock.Anything).Return(expected, nil)
 
 		_, res, err := mgr.ExecuteCommand(ctx, cmd, createTestCommandGroup(), env)
 		assert.NoError(t, err)

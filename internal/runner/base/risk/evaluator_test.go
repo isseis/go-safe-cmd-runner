@@ -3,6 +3,7 @@
 package risk
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -557,4 +558,46 @@ func TestEvaluateRisk_DynamicLoaderBlocking(t *testing.T) {
 	plan, err := ev.EvaluateRisk(verifiedCmd("/lib64/ld-linux-x86-64.so.2", []string{"/bin/sh"}))
 	require.NoError(t, err)
 	assert.True(t, plan.Assessment.Blocking)
+}
+
+// TestEvaluateRisk_AllowedPlanCarriesVerifiedFd exercises the production identity
+// opener: an allowed command's plan must carry a real verified file descriptor so
+// the executor can bind execution to that inode.
+func TestEvaluateRisk_AllowedPlanCarriesVerifiedFd(t *testing.T) {
+	// Use the real opener (default), so a real on-disk file is required.
+	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{RecordStore: fakeRecordStore{}}))
+
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "tool")
+	require.NoError(t, os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755))
+
+	plan, err := ev.EvaluateRisk(&runnertypes.RuntimeCommand{
+		ExpandedCmd:            bin,
+		ExpandedCmdContentHash: testContentHash,
+	})
+	require.NoError(t, err)
+	defer func() { _ = plan.Close() }()
+
+	require.False(t, plan.Assessment.Blocking, "a verified clean binary should be allowed")
+	require.NotNil(t, plan.Identity)
+	require.NotNil(t, plan.Identity.FD, "an allowed plan must carry a verified fd")
+	assert.Greater(t, plan.Identity.FD.Fd(), 2, "fd should be a real descriptor")
+}
+
+// TestEvaluateRisk_OpenFailureBlocks confirms the fail-closed contract: when the
+// verified binary cannot be opened for fd-bound execution, the command is denied
+// rather than executed via an unbound path.
+func TestEvaluateRisk_OpenFailureBlocks(t *testing.T) {
+	ev := newVerifiedEvaluator().(*StandardEvaluator)
+	openErr := errors.New("open failed")
+	ev.openIdentity = func(_ *runnertypes.RuntimeCommand) (*risktypes.VerifiedIdentity, error) {
+		return nil, openErr
+	}
+
+	plan, err := ev.EvaluateRisk(verifiedCmd("/usr/bin/echo", nil))
+	require.NoError(t, err)
+	defer func() { _ = plan.Close() }()
+
+	assert.True(t, plan.Assessment.Blocking, "an unopenable verified binary must be denied")
+	assert.Equal(t, risktypes.ReasonIdentityUnbound, plan.Assessment.BlockingReason)
 }

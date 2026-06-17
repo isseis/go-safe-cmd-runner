@@ -8,16 +8,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
+
+// stagedExecMode is the permission of a staged command copy: owner read+execute
+// only, with write withheld so the verified copy cannot be modified before exec.
+const stagedExecMode = 0o500
 
 // ErrPrivilegeLeak is returned when effective UID/GID do not match real UID/GID after execution.
 var ErrPrivilegeLeak = errors.New("privilege leak detected")
@@ -31,6 +38,8 @@ var (
 	ErrNoPrivilegeManager            = errors.New("privileged execution requested but no privilege manager available")
 	ErrUserGroupPrivilegeUnsupported = errors.New("user/group privilege changes are not supported")
 	ErrPrivilegedCmdSecurity         = errors.New("privileged command failed security validation")
+	ErrNoVerifiedFD                  = errors.New("no verified file descriptor available for fd-bound execution")
+	ErrFdExecUnsupported             = errors.New("fd-bound execution is not supported on this platform")
 )
 
 // DefaultExecutor is the default implementation of CommandExecutor
@@ -41,6 +50,7 @@ type DefaultExecutor struct {
 	Logger          *slog.Logger                 // Optional logger for command execution logging
 	osExit          func(code int)               // injectable for testing; defaults to os.Exit
 	identityChecker func() error                 // injectable for testing; defaults to defaultIdentityChecker
+	fdExecDisabled  bool                         // injectable for testing; forces the staging fallback even on Linux
 }
 
 // Option is a functional option for configuring DefaultExecutor
@@ -78,8 +88,15 @@ func NewDefaultExecutor(opts ...Option) CommandExecutor {
 	return e
 }
 
-// Execute implements the CommandExecutor interface
-func (e *DefaultExecutor) Execute(ctx context.Context, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
+// Execute implements the CommandExecutor interface.
+//
+// plan is the verified command plan produced by the risk evaluator. When it
+// carries a verified file descriptor (plan.Identity.FD), the executor binds
+// execution to that descriptor (fd-bound execution, the inode the evaluator
+// verified) instead of re-resolving the path, closing the TOCTOU window between
+// verification and exec. The plan's descriptors are owned by the caller, which
+// must Close the plan; the executor only duplicates/copies from them.
+func (e *DefaultExecutor) Execute(ctx context.Context, plan *risktypes.VerifiedCommandPlan, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	// Note: outputWriter lifecycle is managed by the caller.
 	// The caller is responsible for calling Close() when done.
 	// This executor will NOT close the outputWriter.
@@ -87,9 +104,9 @@ func (e *DefaultExecutor) Execute(ctx context.Context, cmd *runnertypes.RuntimeC
 	var result *Result
 	var err error
 	if cmd.HasUserGroupSpecification() {
-		result, err = e.executeWithUserGroup(ctx, cmd, envVars, outputWriter)
+		result, err = e.executeWithUserGroup(ctx, plan, cmd, envVars, outputWriter)
 	} else {
-		result, err = e.executeNormal(ctx, cmd, envVars, outputWriter)
+		result, err = e.executeNormal(ctx, plan, cmd, envVars, outputWriter)
 	}
 
 	// Security invariant: EUID must equal UID and EGID must equal GID after every execution.
@@ -109,7 +126,7 @@ func (e *DefaultExecutor) Execute(ctx context.Context, cmd *runnertypes.RuntimeC
 }
 
 // executeWithUserGroup handles command execution with user/group privilege changes with audit logging and metrics
-func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
+func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *risktypes.VerifiedCommandPlan, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	startTime := time.Now()
 	var metrics audit.PrivilegeMetrics
 
@@ -156,7 +173,7 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd *runnert
 	e.Logger.Debug("Calling WithPrivileges for user/group execution", "command", cmd.Name(), "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
 	err := e.PrivMgr.WithPrivileges(executionCtx, func() error {
 		var execErr error
-		result, execErr = e.executeCommandWithPath(ctx, cmd.ExpandedCmd, cmd, envVars, outputWriter)
+		result, execErr = e.executeCommandWithPath(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter)
 		return execErr
 	})
 	privilegeDuration := time.Since(privilegeStart)
@@ -183,7 +200,7 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd *runnert
 }
 
 // executeNormal handles normal (non-privileged) command execution
-func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
+func (e *DefaultExecutor) executeNormal(ctx context.Context, plan *risktypes.VerifiedCommandPlan, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	// Validate the command before execution
 	if err := e.Validate(cmd); err != nil {
 		e.Logger.Error("Command validation failed", "error", err, "command", cmd.ExpandedCmd)
@@ -203,11 +220,19 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd *runnertypes.Ru
 		return nil, fmt.Errorf("%w: %s", ErrPathNotAbsolute, cmd.ExpandedCmd)
 	}
 
-	return e.executeCommandWithPath(ctx, cmd.ExpandedCmd, cmd, envVars, outputWriter)
+	return e.executeCommandWithPath(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter)
 }
 
-// executeCommandWithPath executes a command with the given resolved path
-func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path string, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
+// executeCommandWithPath executes a command with the given resolved path.
+//
+// When plan carries a verified file descriptor, execution is bound to that
+// descriptor (fd-bound exec on Linux, or read-only staging copied from the
+// descriptor as a fallback) so the executed inode is exactly the one the
+// evaluator verified. Without a verified descriptor the already-resolved path is
+// executed directly (no re-resolution); the evaluator's identity gate denies
+// unverified binaries before they reach an allowed plan, so this branch does not
+// weaken the production guarantee.
+func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, plan *risktypes.VerifiedCommandPlan, path string, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	// Log the command being executed at DEBUG level
 	cmdLine := FormatCommandForLog(path, cmd.ExpandedArgs)
 	e.Logger.Debug("Executing command",
@@ -216,9 +241,13 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 		"work_dir", cmd.EffectiveWorkDir,
 		"work_dir_len", len(cmd.EffectiveWorkDir))
 
-	// Create the command with the resolved path
+	// Bind execution to the verified descriptor when one is available.
 	// #nosec G204 - The command and arguments are validated before execution with e.Validate()
-	execCmd := exec.CommandContext(ctx, path, cmd.ExpandedArgs...)
+	execCmd, cleanup, err := e.prepareExecCommand(ctx, plan, path, cmd.ExpandedArgs)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
 
 	// Set up stdin to null device for security and stability:
 	// 1. Security: Prevents child processes from reading unexpected input from stdin
@@ -307,6 +336,128 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 	}
 
 	return result, nil
+}
+
+// prepareExecCommand builds the *exec.Cmd to run, binding it to the verified
+// file descriptor when the plan supplies one. It returns a cleanup function the
+// caller must defer; cleanup closes any duplicated descriptor and removes any
+// staged copy, so descriptors are not leaked even when exec.Cmd.Start fails.
+//
+// Selection order when a verified descriptor is present:
+//  1. fd-bound exec via /proc/self/fd (Linux) — the kernel resolves the
+//     descriptor to the verified inode regardless of later path swaps.
+//  2. read-only staging — copy the verified inode out of the held descriptor to
+//     a private file and exec that copy (non-Linux, or when fd exec is disabled
+//     for tests).
+//
+// Without a verified descriptor it execs the already-resolved path directly (no
+// re-resolution).
+func (e *DefaultExecutor) prepareExecCommand(ctx context.Context, plan *risktypes.VerifiedCommandPlan, path string, args []string) (*exec.Cmd, func(), error) {
+	noop := func() {}
+
+	var identity *risktypes.VerifiedIdentity
+	if plan != nil {
+		identity = plan.Identity
+	}
+
+	if identity != nil && identity.FD != nil {
+		if !e.fdExecDisabled && fdExecSupported() {
+			childPath, extraFile, err := fdExecExtraFile(identity)
+			if err != nil {
+				return nil, nil, err
+			}
+			// #nosec G204 - childPath is /proc/self/fd/<n> bound to the verified inode.
+			execCmd := exec.CommandContext(ctx, childPath, args...)
+			execCmd.Args[0] = path // present the resolved path as argv[0] to the child
+			execCmd.ExtraFiles = []*os.File{extraFile}
+			return execCmd, func() {
+				if closeErr := extraFile.Close(); closeErr != nil {
+					e.Logger.Warn("Failed to close duplicated verified fd", "error", closeErr)
+				}
+			}, nil
+		}
+
+		stagedPath, stagingCleanup, err := e.stageFromFD(identity)
+		if err != nil {
+			return nil, nil, err
+		}
+		// #nosec G204 - stagedPath is a private copy of the verified inode.
+		execCmd := exec.CommandContext(ctx, stagedPath, args...)
+		execCmd.Args[0] = path
+		return execCmd, stagingCleanup, nil
+	}
+
+	// #nosec G204 - The command and arguments are validated before execution with e.Validate()
+	return exec.CommandContext(ctx, path, args...), noop, nil
+}
+
+// stageFromFD copies the verified inode out of the held descriptor into a private
+// read-only file and returns its path plus a cleanup function. The bytes are read
+// from the verified descriptor (not re-opened from the path), so a swapped path
+// cannot substitute different content. The staged copy lives in a 0700 temp
+// directory and is created 0500 (read+execute, no write).
+func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity) (string, func(), error) {
+	dir, err := os.MkdirTemp("", "scr-stage-")
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create staging directory: %w", err)
+	}
+	cleanup := func() {
+		if rmErr := os.RemoveAll(dir); rmErr != nil {
+			e.Logger.Warn("Failed to remove staging directory", "error", rmErr, "dir", dir)
+		}
+	}
+
+	// Duplicate the descriptor so reading does not disturb the original's offset
+	// ownership; the *os.File owns the duplicate and closes it here.
+	dup, err := syscall.Dup(identity.FD.Fd())
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("failed to duplicate verified fd for staging: %w", err)
+	}
+	src := os.NewFile(uintptr(dup), identity.ResolvedPath)
+	if src == nil {
+		_ = syscall.Close(dup)
+		cleanup()
+		return "", nil, ErrNoVerifiedFD
+	}
+	defer func() {
+		if closeErr := src.Close(); closeErr != nil {
+			e.Logger.Warn("Failed to close staging source fd", "error", closeErr)
+		}
+	}()
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("failed to rewind verified fd for staging: %w", err)
+	}
+
+	// Preserve the original basename: multi-call binaries (e.g. busybox/coreutils)
+	// select their applet from the executable name, and tools may inspect
+	// /proc/self/exe, so the staged copy must keep the verified command's name.
+	name := filepath.Base(identity.ResolvedPath)
+	if name == "." || name == string(filepath.Separator) || name == "" {
+		name = "command"
+	}
+	stagedPath := filepath.Join(dir, name)
+	// #nosec G304 G302 - stagedPath is a freshly created file (O_EXCL) inside our
+	// own 0700 MkdirTemp directory; the basename derives from the already-verified
+	// resolved path, not untrusted input. The execute bit (0500) is required to
+	// exec the staged copy and write is intentionally withheld.
+	dst, err := os.OpenFile(stagedPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, stagedExecMode)
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("failed to create staged command file: %w", err)
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		_ = dst.Close()
+		cleanup()
+		return "", nil, fmt.Errorf("failed to stage verified command: %w", err)
+	}
+	if err := dst.Close(); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("failed to close staged command file: %w", err)
+	}
+
+	return stagedPath, cleanup, nil
 }
 
 // Validate implements the CommandExecutor interface

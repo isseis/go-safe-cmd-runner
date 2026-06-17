@@ -278,15 +278,15 @@
 
 **対象ファイル**: [executor.go](../../../internal/runner/base/executor/executor.go), [interface.go](../../../internal/runner/base/executor/interface.go), 対応テスト, fd 実行ヘルパ（`internal/runner/base/executor/fdexec_linux.go`＋非 Linux スタブ `fdexec_other.go`・新規）
 
-- [ ] `EvaluateRisk`（評価器）が検証時に開いた fd を `VerifiedIdentity.FD`（`*VerifiedFD`。Step 1-1）に格納する経路を実装（パス解決・検証・open を評価器が一度だけ。§3.6.2）。
-- [ ] executor の実行入口を `VerifiedCommandPlan` 受領へ変更。fd 束縛実行は `//go:build linux` のヘルパで、検証済み fd（`Identity.FD.Fd()` で得た生 fd）を `cmd.ExtraFiles` で子へ継承させ（CLOEXEC 解除）、`os/exec` の `cmd.Path` に `/proc/self/fd/<childfd>`（`childfd = 3 + ExtraFiles index`）を設定して exec する（§1.3。標準 fork+exec を利用、raw syscall/`unsafe` 不要）。第一候補。不能環境は read-only ステージング、双方不能なら評価段階で Blocking 済み（executor はセキュリティ拒否判定を持たない。§3.6.2）。
-- [ ] **再ハッシュのみの path exec（rehash-then-path-exec）を実装しない**（§3.6.2 / AC-76）。
-- [ ] **検証済み fd は常に保持する**（評価時の open 成功＝fd 取得。fd を保持できない＝open 失敗なら deny）。fd 束縛 exec も **ステージングも、この保持中の検証済み fd を源泉**とする（ステージングは fd から複製＝`/proc/self/fd/<fd>` 経由のコピー等。**パスから再 open/再コピーしない**）。これにより、fd 実行不能環境でも allow 判定後にパス再オープンする TOCTOU 窓を作らない（§3.6.2 / AC-76）。源泉となる検証済み fd を保持できない場合は deny。
-- [ ] 束縛可否の判定は **副作用なし**で行う（§3.6.2）: 評価段階では「検証済み fd を保持できているか」「ステージング先（書込不能領域）が**利用可能か**」のみを確認し、**実際のステージング複製（fd からのファイル書き込み）は normal の exec 直前にのみ行う**。dry-run は同じ副作用なし可否チェックで allow/deny を決め、ステージング書き込みは行わない（read-only 維持。AC-30/39 の normal/dry-run 整合を保ち、normal が staging で許可する実体を dry-run が誤って deny しない）。
-- [ ] fd 所有権と close 機構（型は Step 1-1 で確定した `VerifiedFD`＝`*VerifiedFD` を `VerifiedIdentity`/各 `ExecutedArtifact` が保持）: `VerifiedCommandPlan` に `Close() error`（保持する全 `VerifiedFD` を集約 close、`errors.Join`）を実装する。close 呼び出し箇所を明示: (a) 許可 plan は子プロセス起動（`cmd.Start`、fd は `ExtraFiles` で子へ複製済み）成功後に親側の検証済み fd を close、(a') **`cmd.Start` がエラーを返した場合**（子が走らず親が全 fd を保持したまま）は executor が `defer plan.Close()`／エラー時クリーンアップで親側 fd を必ず close（長時間 runner で exec 失敗が続いても fd を漏らさない）、(b) 拒否 plan・dry-run preview・exec されない副成果物は ResourceManager が監査出力後に `plan.Close()`。`EvaluateRisk` 内で fd を開いた後にエラーで早期 return する場合も、その時点までに開いた fd を defer で close する。
-- [ ] 元 argv/env の直接 exec を禁止（型契約＋コードレビュー観点）。
-- [ ] **間接実行で抽出した成果物（ラッパーのインナーコマンド・shebang インタプリタ等）の解決・検証**: Step 2-1 の `AnalyzeIndirectExecution` は成果物を **名前（`ExecutedArtifact.Path` がベア名のことがある）** で記録するに留める。本 Step で各成果物を **本コマンドと同一の解決機構（`ResolvePath`＋symlink 解決＋ハッシュ検証＋fd 取得）** に通して絶対パス・identity を確定する。これにより、ベア名インナー（例 `env myalias` で `myalias`→`rm` の symlink エイリアス）が PR-3 の名前ベース分類で過小評価される残存ギャップを、実行時解決と identity 束縛の段階で閉じる（PR #732 レビュー gemini 指摘への対応。評価器に `os/exec` の PATH 依存・I/O を持ち込まず、正しい実行時解決文脈で行う）。解決・検証・束縛不能な成果物は拒否（§3.3 / §3.6.2 の一般原則）。
-- [ ] 非対応 OS（`//go:build !linux`）の `fdexec_other.go` は fd 実行不能を返すスタブとし、ステージング/拒否のみ。
+- [x] `EvaluateRisk`（評価器）が検証時に開いた fd を `VerifiedIdentity.FD`（`*VerifiedFD`。Step 1-1）に格納する経路を実装（パス解決・検証・open を評価器が一度だけ。§3.6.2）。実装: 許可 plan を生成する `allowedPlan` が `openVerifiedIdentity`（`syscall.Open(O_RDONLY|O_CLOEXEC)`）で fd を取得し `Identity.FD` に格納。open 失敗は `ReasonIdentityUnbound` の Blocking deny。拒否 plan は実行しないため fd を開かない（path/hash のみの identity を保持）。opener は `openIdentity` フィールド（既存 `osExit`/`identityChecker` と同様のテスト注入）で、分類テストは fd 不要のフェイク opener を注入。
+- [x] executor の実行入口を `VerifiedCommandPlan` 受領へ変更。fd 束縛実行は `//go:build linux` のヘルパ（`fdexec_linux.go`）で、検証済み fd を `syscall.Dup` で複製し `cmd.ExtraFiles` で子へ継承させ、`cmd.Path` に `/proc/self/fd/3`（`childfd = 3 + index`）を設定して exec する（§1.3。標準 fork+exec を利用、raw syscall/`unsafe` 不要）。第一候補。不能環境（非 Linux・テストで `WithFdExecDisabled`）は read-only ステージング。
+- [x] **再ハッシュのみの path exec（rehash-then-path-exec）を実装しない**（§3.6.2 / AC-76）。fd 束縛・ステージングいずれも保持中の検証済み fd を源泉とし、パスの再 open・再ハッシュは行わない。
+- [x] **検証済み fd は常に保持する**（評価時の open 成功＝fd 取得。fd を保持できない＝open 失敗なら deny）。fd 束縛 exec も **ステージングも、この保持中の検証済み fd を源泉**とする（`stageFromFD` は `Identity.FD` を `Dup` して内容コピー、**パスから再 open/再コピーしない**）。源泉となる検証済み fd を保持できない場合は deny。
+- [x] 束縛可否の判定は **副作用なし**で行う（§3.6.2）: 評価段階の可否＝検証済み fd の open 成功（read-only）のみ。**実際のステージング複製（fd からのファイル書き込み）は normal の exec 直前（`executeCommandWithPath`→`prepareExecCommand`→`stageFromFD`）にのみ行う**。dry-run の read-only 可否チェックは PR-5（Step 3-3）で接続。
+- [x] fd 所有権と close 機構: `VerifiedCommandPlan.Close() error`（保持する全 `VerifiedFD` を `errors.Join` で集約 close、零値・複数回呼び出し安全）を実装。close 呼び出し箇所: (a) 許可 plan・(b) 拒否 plan とも `normal_manager` が `EvaluateRisk` 直後に `defer plan.Close()`（許可・ゲート拒否・エラーの全経路で fd を解放）。executor 側は (a') `cmd.Start` 成功/失敗いずれでも複製 fd（ExtraFiles の dup）を `defer cleanup()` で必ず close（Start 失敗時のリーク無しをテストで確認）。dry-run preview の close は PR-5。
+- [x] 元 argv/env の直接 exec を禁止（plan の検証済み fd を exec の源泉とする型契約＋レビュー観点）。
+- [-] **間接実行で抽出した成果物（ラッパーのインナーコマンド・shebang インタプリタ等）の解決・検証**: 本 PR では未実装（残存制約として保留）。理由: 許可ラッパー（`env`/`timeout` 等）のインナーコマンドの identity 束縛は、ラッパープロセス自身が PATH で inner を exec するため、runner がインナーを直接 exec し直す実行モデル再設計を要する大きさで、本 PR の主コマンド fd 束縛（AC-64/76）とは分離可能。**退行ではない**（インナーは現行 main と同じくラッパーが PATH 解決で exec＝同一 TOCTOU 特性、§5.2 の find/xargs と同列の残存制約）。本 PR は主コマンドの fd 束縛・二重解決廃止を確立する。インナー成果物の解決・検証・束縛は別途対応（§5.2 残存制約に追記）。
+- [x] 非対応 OS（`//go:build !linux`）の `fdexec_other.go` は fd 実行不能を返すスタブとし、ステージングへフォールバック。
 
 **完了条件**:
 - Linux ビルドの実コンパイル: `go build -tags test ./internal/runner/base/executor/`（`//go:build linux` の `fdexec_linux.go` が型/シグネチャ込みでコンパイルされる。CI は linux/amd64 を前提・要確認）。
@@ -297,9 +297,9 @@
 
 **対象ファイル**: [group_executor.go](../../../internal/runner/group_executor.go), [group_executor_test.go](../../../internal/runner/group_executor_test.go)
 
-- [ ] `executeCommandInGroup`（:520-528）の実行直前 `ResolvePath`＋`cmd.ExpandedCmd` 上書きを **廃止**（TOCTOU 二重解決の解消。AC-64/76）。
-- [ ] `group_executor` は `ResourceManager` 経由で実行を委譲する呼び出し側に徹する（`EvaluateRisk`・risk 比較・`LogRiskProfile` は manager が所有。§2.3。`EvaluateRisk` を呼ぶのは `normal_manager` で Step 1-9 に計上済み）。group_executor 自身は評価・ゲート・監査を持たない。
-- [ ] ラッパー/ローダ成果物の検証連携は plan 経由で行う（評価器が生成した `VerifiedCommandPlan.Artifacts` を manager→executor が実行・監査へ引き渡す。§3.3 の連鎖）。
+- [x] `executeCommandInGroup` の実行直前 `ResolvePath`＋`cmd.ExpandedCmd` 上書きを **廃止**（TOCTOU 二重解決の解消。AC-64/76）。解決は `verifyGroupFiles` で 1 回行い、そこで `cmd.ExpandedCmd` を解決済み絶対パスへ確定する（コマンドごとに 1 回）。
+- [x] `group_executor` は `ResourceManager` 経由で実行を委譲する呼び出し側に徹する（`EvaluateRisk`・risk 比較・`LogRiskProfile` は manager が所有。§2.3。`EvaluateRisk` を呼ぶのは `normal_manager`）。group_executor 自身は評価・ゲート・監査を持たない（既存どおり）。
+- [x] `VerifiedCommandPlan`（および `Artifacts`）は manager→executor へ引き渡される（plan が executor の実行入口に渡る）。各 artifact の実行・監査への展開は監査（PR-5）および上記保留中のインナー成果物束縛と合わせて対応。
 
 **完了条件**: `go test -tags test ./internal/runner/ -run GroupExecutor` が緑。Phase 2 完了ゲート: `make fmt && make test && make lint`。
 

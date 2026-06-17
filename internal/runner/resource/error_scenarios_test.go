@@ -9,6 +9,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -18,7 +19,7 @@ import (
 // Mock implementations for testing
 type mockCommandExecutor struct{}
 
-func (m *mockCommandExecutor) Execute(_ context.Context, cmd *runnertypes.RuntimeCommand, _ map[string]string, _ executor.OutputWriter) (*executor.Result, error) {
+func (m *mockCommandExecutor) Execute(_ context.Context, _ *risktypes.VerifiedCommandPlan, cmd *runnertypes.RuntimeCommand, _ map[string]string, _ executor.OutputWriter) (*executor.Result, error) {
 	// Normal mode test implementation
 	return &executor.Result{
 		ExitCode: 0,

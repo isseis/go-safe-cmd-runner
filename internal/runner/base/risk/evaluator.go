@@ -4,6 +4,7 @@ package risk
 
 import (
 	"path/filepath"
+	"syscall"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
@@ -19,15 +20,24 @@ type Evaluator interface {
 	EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error)
 }
 
+// identityOpener opens the verified executable and returns its identity (the
+// descriptor used for fd-bound execution plus the resolved path and content
+// hash). It is a field so risk-classification tests can inject a descriptor-free
+// opener and need not place real files on disk; production uses
+// openVerifiedIdentity.
+type identityOpener func(cmd *runnertypes.RuntimeCommand) (*risktypes.VerifiedIdentity, error)
+
 // StandardEvaluator implements risk evaluation using predefined patterns
 type StandardEvaluator struct {
 	networkAnalyzer *security.NetworkAnalyzer
+	openIdentity    identityOpener
 }
 
 // NewStandardEvaluator creates a new standard risk evaluator with a prebuilt network analyzer.
 func NewStandardEvaluator(networkAnalyzer *security.NetworkAnalyzer) Evaluator {
 	return &StandardEvaluator{
 		networkAnalyzer: networkAnalyzer,
+		openIdentity:    openVerifiedIdentity,
 	}
 }
 
@@ -158,7 +168,7 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 		plan.Artifacts = indirect.Artifacts
 		return plan, nil
 	}
-	plan := allowedPlan(cmd, assessment)
+	plan := e.allowedPlan(cmd, assessment)
 	plan.Artifacts = indirect.Artifacts
 	return plan, nil
 }
@@ -352,22 +362,48 @@ func criticalPlan(cmd *runnertypes.RuntimeCommand, a risktypes.RiskAssessment) r
 	}
 }
 
-// allowedPlan builds an executable plan carrying the verified identity. fd
-// binding is wired in Phase 2; for now the identity records the resolved path
-// and content hash.
-func allowedPlan(cmd *runnertypes.RuntimeCommand, a risktypes.RiskAssessment) risktypes.VerifiedCommandPlan {
+// allowedPlan builds an executable plan carrying the verified identity. It opens
+// the verified executable for fd-bound execution once here, so the executor binds
+// to this exact inode without re-resolving the path. If the open fails
+// the binary cannot be bound, so deny fail-closed rather than fall back to an
+// unbound path exec. The opened descriptor is owned by the returned plan and is
+// released via VerifiedCommandPlan.Close.
+func (e *StandardEvaluator) allowedPlan(cmd *runnertypes.RuntimeCommand, a risktypes.RiskAssessment) risktypes.VerifiedCommandPlan {
+	identity, err := e.openIdentity(cmd)
+	if err != nil {
+		return blockingPlan(blockingAssessment(risktypes.ReasonIdentityUnbound, risktypes.ErrorClassPathResolution))
+	}
 	return risktypes.VerifiedCommandPlan{
 		ResolvedPath: cmd.ExpandedCmd,
 		ResolvedArgv: append([]string{cmd.ExpandedCmd}, cmd.ExpandedArgs...),
-		Identity:     identityFor(cmd),
+		Identity:     identity,
 		Assessment:   a,
 	}
 }
 
-// identityFor builds the verified identity for a command that passed the gate.
+// identityFor builds the verified identity for a denied command that passed the
+// identity gate (privilege escalation, indirect-execution reject, or a
+// later-dimension deny). Deny plans are not executed, so no descriptor is opened.
 func identityFor(cmd *runnertypes.RuntimeCommand) *risktypes.VerifiedIdentity {
 	return &risktypes.VerifiedIdentity{
 		ResolvedPath: cmd.ExpandedCmd,
 		ContentHash:  cmd.ExpandedCmdContentHash,
 	}
+}
+
+// openVerifiedIdentity opens the resolved executable read-only for fd-bound
+// execution and returns its identity. The descriptor is opened O_RDONLY|O_CLOEXEC
+// once here so the executor can bind execution to this exact inode without
+// re-resolving the path; ownership transfers to the returned VerifiedIdentity
+// (closed via VerifiedCommandPlan.Close).
+func openVerifiedIdentity(cmd *runnertypes.RuntimeCommand) (*risktypes.VerifiedIdentity, error) {
+	fd, err := syscall.Open(cmd.ExpandedCmd, syscall.O_RDONLY|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	return &risktypes.VerifiedIdentity{
+		FD:           risktypes.NewVerifiedFD(fd),
+		ResolvedPath: cmd.ExpandedCmd,
+		ContentHash:  cmd.ExpandedCmdContentHash,
+	}, nil
 }
