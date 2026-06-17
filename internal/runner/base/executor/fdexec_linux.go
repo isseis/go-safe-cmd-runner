@@ -5,15 +5,21 @@ package executor
 import (
 	"fmt"
 	"os"
+	"sync"
 	"syscall"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 )
 
 // fdExecSupported reports whether fd-bound execution via /proc/self/fd is
-// available. On Linux it is, provided /proc is mounted (verified at exec time by
-// the kernel resolving the /proc/self/fd path).
-func fdExecSupported() bool { return true }
+// available. On Linux it requires /proc to be mounted; some containers and
+// chroots run without it, where exec of /proc/self/fd/<n> would fail with ENOENT.
+// Probe once (mount state is effectively stable for a process lifetime) so that
+// such environments fall back to read-only staging instead of failing.
+var fdExecSupported = sync.OnceValue(func() bool {
+	_, err := os.Stat("/proc/self/fd")
+	return err == nil
+})
 
 // fdExecExtraFile prepares fd-bound execution for the verified identity.
 //
