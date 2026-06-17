@@ -119,3 +119,85 @@ func TestExecute_RejectedCommandAuditable(t *testing.T) {
 	// The command must not have been executed.
 	mockExec.AssertNotCalled(t, "Execute", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
+
+// newAuditingDryRunManager builds a DryRunResourceManager whose audit logger
+// writes JSON to the returned buffer, with a passthrough path resolver.
+func newAuditingDryRunManager(evaluator risk.Evaluator) (*DryRunResourceManager, *bytes.Buffer) {
+	var buf bytes.Buffer
+	auditLogger := audit.NewAuditLoggerWithCustom(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	mgr, err := NewDryRunResourceManager(executortestutil.NewMockExecutor(), nil, passthroughPathResolver{}, &DryRunOptions{DetailLevel: DetailLevelDetailed}, evaluator, auditLogger)
+	if err != nil {
+		panic(err)
+	}
+	return mgr, &buf
+}
+
+// TestDryRun_EmitsAuditEntry verifies the dry-run preview emits a
+// command_risk_profile audit entry tagged mode=dry-run for an allow, and marks a
+// verification-unavailable deny in the entry.
+func TestDryRun_EmitsAuditEntry(t *testing.T) {
+	t.Run("allow entry tagged dry-run", func(t *testing.T) {
+		mgr, buf := newAuditingDryRunManager(keyedRiskEvaluator{
+			"net": {Level: runnertypes.RiskLevelMedium},
+		})
+		cmd := executortestutil.CreateRuntimeCommand("/usr/bin/curl", []string{"https://x"},
+			executortestutil.WithName("net"), executortestutil.WithRiskLevel("high"))
+		_, _, err := mgr.ExecuteCommand(context.Background(), cmd, previewTestGroup(), map[string]string{})
+		require.NoError(t, err)
+
+		entry := findRiskProfileEntry(t, buf)
+		assert.Equal(t, "dry-run", entry["mode"])
+		assert.Equal(t, "allow", entry["decision"])
+		assert.Equal(t, "/usr/bin/curl", entry["resolved_path"])
+	})
+
+	t.Run("verification-unavailable deny marked in entry", func(t *testing.T) {
+		mgr, buf := newAuditingDryRunManager(keyedRiskEvaluator{
+			"x": {
+				Level:          runnertypes.RiskLevelLow,
+				Blocking:       true,
+				BlockingReason: risktypes.ReasonAnalysisDisabled,
+				ReasonCodes:    []risktypes.ReasonCode{risktypes.ReasonAnalysisDisabled},
+			},
+		})
+		cmd := executortestutil.CreateRuntimeCommand("/usr/bin/x", nil,
+			executortestutil.WithName("x"), executortestutil.WithRiskLevel("high"))
+		_, _, err := mgr.ExecuteCommand(context.Background(), cmd, previewTestGroup(), map[string]string{})
+		require.NoError(t, err)
+
+		entry := findRiskProfileEntry(t, buf)
+		assert.Equal(t, "dry-run", entry["mode"])
+		assert.Equal(t, "deny", entry["decision"])
+		assert.Equal(t, true, entry["verification_unavailable"])
+	})
+}
+
+// TestDryRun_ErrorPathAudit verifies that when the evaluator fails with an
+// unexpected internal error, the dry-run manager emits a minimal deny audit entry
+// before returning the hard error.
+func TestDryRun_ErrorPathAudit(t *testing.T) {
+	mgr, buf := newAuditingDryRunManager(fixedPlanEvaluator{err: assert.AnError})
+	cmd := executortestutil.CreateRuntimeCommand("/usr/bin/x", nil, executortestutil.WithName("x"))
+	_, _, err := mgr.ExecuteCommand(context.Background(), cmd, previewTestGroup(), map[string]string{})
+	require.Error(t, err)
+
+	entry := findRiskProfileEntry(t, buf)
+	assert.Equal(t, "dry-run", entry["mode"])
+	assert.Equal(t, "deny", entry["decision"])
+	assert.Equal(t, "record_load", entry["error_class"])
+}
+
+// TestExecute_ConfigErrorAuditable verifies that an invalid risk_level
+// configuration is audited as a deny classified as a risk_level config error,
+// rather than a reason-less deny, before the command is aborted.
+func TestExecute_ConfigErrorAuditable(t *testing.T) {
+	mgr, _, buf := newAuditingNormalManager(permissiveTestEvaluator{})
+	cmd := executortestutil.CreateRuntimeCommand("/bin/echo", []string{"hi"},
+		executortestutil.WithName("bad-risk"), executortestutil.WithRiskLevel("unknown"))
+	_, _, err := mgr.ExecuteCommand(context.Background(), cmd, createTestCommandGroup(), map[string]string{})
+	require.Error(t, err)
+
+	entry := findRiskProfileEntry(t, buf)
+	assert.Equal(t, "deny", entry["decision"])
+	assert.Equal(t, "risk_level_config", entry["error_class"])
+}

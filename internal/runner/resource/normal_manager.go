@@ -1,6 +1,7 @@
 package resource
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -112,8 +113,9 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	// Step 2: Get maximum allowed risk level from configuration
 	maxAllowedRisk, err := cmd.GetRiskLevel()
 	if err != nil {
-		// Configuration error: audit as a deny before aborting.
-		n.auditRiskDecision(ctx, cmd, &plan, runnertypes.RiskLevelUnknown, risktypes.DecisionDeny)
+		// Configuration error: audit as a deny (classified as a risk_level config
+		// error so the entry is not a reason-less deny) before aborting.
+		n.auditRiskDecision(ctx, cmd, &plan, runnertypes.RiskLevelUnknown, risktypes.DecisionDeny, risktypes.ErrorClassRiskLevelConfig)
 		return "", nil, fmt.Errorf("invalid risk_level configuration: %w", err)
 	}
 
@@ -127,7 +129,7 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	}
 	// Emit the command_risk_profile audit entry for both allow and deny so every
 	// risk decision is auditable.
-	n.auditRiskDecision(ctx, cmd, &plan, maxAllowedRisk, decision)
+	n.auditRiskDecision(ctx, cmd, &plan, maxAllowedRisk, decision, "")
 
 	if denied {
 		n.logger.Error(
@@ -160,9 +162,11 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 }
 
 // auditRiskDecision emits the command_risk_profile audit entry for a completed
-// risk decision (allow or deny), pulling correlation fields from the plan. It is
-// a no-op when no audit logger is configured.
-func (n *NormalResourceManager) auditRiskDecision(ctx context.Context, cmd *runnertypes.RuntimeCommand, plan *risktypes.VerifiedCommandPlan, maxAllowed runnertypes.RiskLevel, decision risktypes.Decision) {
+// risk decision (allow or deny), pulling correlation fields from the plan. The
+// errClass override classifies a deny that is not carried on the assessment (e.g.
+// an invalid risk_level configuration); when empty the plan's own ErrorClass is
+// used. It is a no-op when no audit logger is configured.
+func (n *NormalResourceManager) auditRiskDecision(ctx context.Context, cmd *runnertypes.RuntimeCommand, plan *risktypes.VerifiedCommandPlan, maxAllowed runnertypes.RiskLevel, decision risktypes.Decision, errClass risktypes.ErrorClass) {
 	if n.auditLogger == nil {
 		return
 	}
@@ -175,7 +179,7 @@ func (n *NormalResourceManager) auditRiskDecision(ctx context.Context, cmd *runn
 		Assessment:     plan.Assessment,
 		MaxAllowedRisk: maxAllowed,
 		Decision:       decision,
-		ErrorClass:     plan.Assessment.ErrorClass,
+		ErrorClass:     cmp.Or(errClass, plan.Assessment.ErrorClass),
 		Chain:          plan.Artifacts,
 	})
 }

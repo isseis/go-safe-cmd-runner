@@ -195,6 +195,8 @@ const (
 	ErrorClassRecordLoad ErrorClass = "record_load"
 	// ErrorClassPathResolution is a command path resolution failure.
 	ErrorClassPathResolution ErrorClass = "path_resolution"
+	// ErrorClassRiskLevelConfig is an invalid risk_level configuration value.
+	ErrorClassRiskLevelConfig ErrorClass = "risk_level_config"
 )
 
 // ArtifactRole is the role of an artifact within an indirect-execution chain.
