@@ -368,8 +368,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test` 緑。`make lint` の残存指摘は origin/main にも存在する goconst のみ＝既存無関係指摘、AC-21 で除外）
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/734）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ## Phase 4 — ドキュメント（F-004/F-010、AC-19、§5.3 例外）
 
