@@ -171,7 +171,11 @@ func initializeDefaultComponents(opts *runnerOptions, configSpec *runnertypes.Co
 		opts.privilegeManager = privilege.NewManager(slog.Default())
 	}
 
-	if opts.auditLogger == nil && opts.privilegeManager != nil {
+	// Always create an audit logger: the resource manager emits a
+	// command_risk_profile entry on every allow/deny decision (AC-11), not only
+	// for privileged commands. NewAuditLogger wraps the default structured logger,
+	// so this is cheap and has no effect for commands that never log.
+	if opts.auditLogger == nil {
 		opts.auditLogger = audit.NewAuditLogger()
 	}
 
@@ -259,6 +263,7 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 		OutputManager:    outputMgr,
 		MaxOutputSize:    maxOutputSize,
 		RiskEvaluator:    evaluator,
+		AuditLogger:      opts.auditLogger,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create default resource manager: %w", err)

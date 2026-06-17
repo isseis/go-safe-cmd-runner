@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
@@ -25,6 +26,9 @@ type Config struct {
 	OutputManager    output.CaptureManager
 	MaxOutputSize    int64
 	RiskEvaluator    risk.Evaluator
+	// AuditLogger receives the command_risk_profile entries emitted on every
+	// allow/deny decision. When nil, no risk-profile audit is written.
+	AuditLogger *audit.Logger
 }
 
 // DefaultResourceManager provides a mode-aware facade that delegates to

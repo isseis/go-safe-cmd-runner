@@ -336,9 +336,9 @@
 
 **対象ファイル**: [default_manager.go](../../../internal/runner/resource/default_manager.go), [normal_manager.go](../../../internal/runner/resource/normal_manager.go), [runner.go](../../../internal/runner/runner.go), 対応テスト
 
-- [ ] `Config` に `AuditLogger *audit.Logger` を追加し、`normal_manager`・`dryrun_manager` 双方へ注入（§3.6.3）。注入経路（Config フィールド・コンストラクタ）を確定。
-- [ ] `normal_manager` が判定後に `LogRiskProfile`（allow/deny・`decision`・`max_allowed_risk`）を出力。`error` 返却経路（§4(3)）でも中止前に最小限の監査エントリ（`decision=deny`+`ErrorClass`+path）を出力。
-- [ ] `runner.go` で生成済みの `audit.Logger` を `Config.AuditLogger` 経由で渡す。
+- [x] `Config` に `AuditLogger *audit.Logger` を追加し、`normal_manager` へ注入（§3.6.3）。注入経路（Config フィールド）を確定。**`dryrun_manager` への注入は評価器配線と密結合のため Step 3-3 で実施**（dry-run のコンストラクタは Step 3-3 で `risk.Evaluator`＋`audit.Logger` を同時に受けるよう拡張し、二重のシグネチャ変更を避ける）。
+- [x] `normal_manager` が判定後に `LogRiskProfile`（allow/deny・`decision`・`max_allowed_risk`）を出力。`error` 返却経路（§4(3)）でも中止前に最小限の監査エントリ（`decision=deny`+`ErrorClass`+path）を出力。
+- [x] `runner.go` で生成済みの `audit.Logger` を `Config.AuditLogger` 経由で渡す（`audit.Logger` は常時生成へ変更＝AC-11 の全実行で `command_risk_profile` を出力するため）。
 
 **完了条件**: `go test -tags test ./internal/runner/resource/ -run 'Normal|Audit'` が緑。AC-11/56/70 のテストが緑。
 
