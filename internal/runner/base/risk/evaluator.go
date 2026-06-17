@@ -85,6 +85,10 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 	// helpers, dynamic loaders, remote-shell helpers). A privilege token there is
 	// Critical and an unbindable form is a Blocking deny; both short-circuit. An
 	// allowable form contributes a risk floor folded into the dimension maximum.
+	// AnalyzeIndirectExecution re-resolves cmdPath's symlink chain internally (it is
+	// exported and must be self-contained for standalone callers); the resulting
+	// extra top-level Lstat is intentional and policy stays consistent because both
+	// resolutions go through the single strict ResolveCommandNames.
 	indirect := security.AnalyzeIndirectExecution(cmdPath, cmd.ExpandedArgs)
 	switch indirect.Kind {
 	case security.IndirectCritical:
