@@ -502,9 +502,9 @@
 - [x] PR-4 マージ済み（対象ステップ: 2-2 / 2-3）— fd 束縛実行・二重解決廃止、グリーンゲート緑（#733）
 - [x] PR-5 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3）— 監査＋dry-run preview、AC 充足（**外部リリース可否ゲート達成**）（#734）
 - [x] PR-6 マージ済み（対象ステップ: 4-1 / 4-2）— security/user 文書整合・移行ノート（#735）
-- [ ] PR-7 マージ済み（対象ステップ: 4-3）— command-risk-evaluation 整合（外部依存 PR #724 はマージ済み。PR-7 #736 作成済み・マージ待ち）
-- [ ] 全 AC が §7 の検証表で `test` または `static` により充足（AC-15/17/18/29/66/67 の command-risk-evaluation 部分は PR-7 #736 で記述済み。PR-7 マージ時に最終確認して確定）
-- [ ] §8 クロス検索チェックリスト完了
+- [x] PR-7 マージ済み（対象ステップ: 4-3）— command-risk-evaluation 整合（外部依存 PR #724 マージ済み。PR-7 #736 マージ済み）
+- [x] 全 AC が §7 の検証表で `test` または `static` により充足（全 static rg・`make test` が pass 済み。AC-15/17/18/29/66/67 の command-risk-evaluation 部分は PR-7 #736 マージで main 確定済み）
+- [x] §8 クロス検索チェックリスト完了（全 9 項目を検証。残存はいずれも許容＝コメント／テスト名／単一解決／自己参照／計画文書／正当なコマンド例）
 
 ---
 
@@ -608,15 +608,15 @@
 
 `make lint`/`make test` が検出できない残存参照・命名衝突・文書整合のみを対象とする（AC 検証表と重複する rg はここに再掲しない）。
 
-- [ ] `rg -n "IsNetworkOperation" --type go`（削除する旧 API の残存参照）→ テスト/呼出が `Classify` へ移行済み、0 件。
-- [ ] `rg -n "LogRiskProfile\(" --type go`（旧シグネチャ呼出）→ 全て新パラメータ構造体形式、旧 4 引数形式 0 件。
-- [ ] `rg -n "func .*EvaluateRisk" --type go` ＋ `rg -n "EvaluateRisk\(" --type go`（戻り値型）→ `VerifiedCommandPlan` 返却に統一、旧 `(RiskLevel, error)` 期待のテスト 0 件。
-- [ ] `rg -n "ExpandedCmd = resolvedPath" internal/runner/group_executor.go`（廃止した二重解決の残存）→ 0 件。
-- [ ] `rg -n "risktypes" --type go`（新パッケージ名の衝突）→ import パスが一意。共有 DTO（`VerifiedCommandPlan`/`RiskAssessment` 等）が `runnertypes` 側に定義されていない（§1.4 で却下した配置の残存なし）こと: `rg -n "VerifiedCommandPlan\|RiskAssessment" internal/runner/base/runnertypes/` が 0 件。
-- [ ] `rg -n "ReasonCode\b" --type go`（cross-package の汎用識別子衝突）→ `risktypes.ReasonCode` のみ。
-- [ ] 用語整合: `02_architecture.md` と本書で「実効リスク」「最大許容リスク」「不確実ケース」「無条件拒否（Blocking）」「リスク昇格」の訳語が一致（`docs/translation_glossary.md` 参照、必要なら追記）。
-- [ ] `rg -n "dpkg" docs/`（ユーザー文書からの削除確認、AC-34 と別に docs 全体）→ 残存は許容される歴史的注記のみ。
-- [ ] PR 構成の三者一致: 各 `### PR-N 作成ポイント` の `対象ステップ` ＝ §3.2 PR 構成表 ＝ §6 PR チェックリスト（再編時はこの 3 箇所を同時更新）。
+- [x] `rg -n "IsNetworkOperation" --type go`（削除する旧 API の残存参照）→ テスト/呼出が `Classify` へ移行済み。残存 4 件は **移行を説明するコメント 2 件**（`network_analyzer_test_helpers.go`・`network_analyzer_test.go`）と **テスト関数名 2 件**（`TestIsNetworkOperation`・`TestIsNetworkOperation_FromEvaluatorTests`）であり、削除済み API の呼出ではない（関数は削除済み・`make test`/`make lint` 緑）。
+- [x] `rg -n "LogRiskProfile\(" --type go`（旧シグネチャ呼出）→ 全て新パラメータ構造体形式（`risktypes.RiskAuditEntry`）。旧 4 引数形式 0 件。
+- [x] `rg -n "func .*EvaluateRisk" --type go` ＋ `rg -n "EvaluateRisk\(" --type go`（戻り値型）→ 全実装・スタブが `(risktypes.VerifiedCommandPlan, error)` 返却に統一、旧 `(RiskLevel, error)` 期待のテスト 0 件。
+- [x] `rg -n "ExpandedCmd = resolvedPath" internal/runner/group_executor.go`（廃止した二重解決の残存）→ 残存 1 件は `verifyGroupFiles` の **正当な単一解決**（コマンドごとに 1 回）。`executeCommandInGroup` の二重解決は削除済み（隣接コメントが TOCTOU 再解決排除を明記）。
+- [x] `rg -n "risktypes" --type go`（新パッケージ名の衝突）→ import パスが一意。共有 DTO（`VerifiedCommandPlan`/`RiskAssessment` 等）が `runnertypes` 側に定義されていない（§1.4 で却下した配置の残存なし）こと: `rg -n "VerifiedCommandPlan\|RiskAssessment" internal/runner/base/runnertypes/` が 0 件。
+- [x] `rg -n "ReasonCode\b" --type go`（cross-package の汎用識別子衝突）→ `risktypes.ReasonCode` のみ（非 prefix の 3 件は `risktypes/types.go` 内の自己参照＝同パッケージの型）。
+- [x] 用語整合: `02_architecture.md` と本書で「実効リスク」「不確実」「Blocking」「リスク昇格」の訳語が一致。「最大許容リスク」は 02 が技術箇所でコード識別子（`maxAllowed`/`max_allowed_risk`）、03 が散文「最大許容リスク」を用いるが、同一概念で競合訳語はなし（`docs/translation_glossary.md` 参照）。
+- [x] `rg -n "dpkg" docs/`（ユーザー文書からの削除確認、AC-34 と別に docs 全体）→ `risk_assessment.{ja,md}` は 0 件（AC-34）。残存は **0136/0137 の計画・タスク文書**（履歴・将来タスク）と **`toml_config/09_practical_examples.{ja,md}` の正当な `dpkg -l` コマンド例**（リスク分類記述ではない）のみ＝許容。
+- [x] PR 構成の三者一致: 各 `### PR-N 作成ポイント` の `対象ステップ` ＝ §3.2 PR 構成表 ＝ §6 PR チェックリストが PR-1〜PR-7 で一致（検証済み）。
 
 ---
 
