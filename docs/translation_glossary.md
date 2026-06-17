@@ -164,12 +164,6 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
-<<<<<<< HEAD
-| フェイルクローズ | fail-closed | 確認できない場合は実行を拒否する設計（優雅な劣化の対義） |
-| フェイルセーフ | fail-safe | 安全側へ倒す設計 |
-| 誤検出 | false positive | 誤ってSYSCALL命令として検出すること |
-=======
->>>>>>> c9a1a4b8 (docs: alphabetize new glossary entries within their sections)
 | フェイルクローズド | fail-closed | エラー時に安全側（実行中止）へ倒す設計 |
 | フェイルセーフ | fail-safe | 不明時に安全側のリスクへ倒す設計 |
 | 誤検出 | false positive | 誤ってSYSCALL命令として検出すること |
