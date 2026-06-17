@@ -406,7 +406,7 @@
 
 **レビュー観点**: `security-architecture` の 2 例外（fail-closed 反転・シグネチャ更新）反映 / `risk_assessment` ユーザー文書の整合（dpkg 削除・systemctl レベル是正・移行ノート AC-19）/ 設定例が修正後実装で動作。**Step 4-3 は外部依存（PR #724）のため本 PR に含めず PR-7 に分離**。**マージ順序の依存: PR-5 完了後（実装が live）にマージする** — 本 PR は新しい強制挙動（`unknown` 拒否・systemctl/service レベル・解析無効 fail-closed・dry-run preview）を現在形で記述するため、PR-5 より前に main へ入るとユーザー文書が未実装挙動を既成事実として誤記することになる（ビルドは通るが内容が main と不整合）。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test` 緑。`make lint` の残存指摘は origin/main にも存在する goconst のみ＝既存無関係指摘、AC-21 で除外。本 PR は docs のみで Go 変更なし）
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
