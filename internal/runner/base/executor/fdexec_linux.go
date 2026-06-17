@@ -37,7 +37,7 @@ func fdExecExtraFile(id *risktypes.VerifiedIdentity) (childPath string, f *os.Fi
 	if err != nil {
 		return "", nil, fmt.Errorf("duplicate verified fd: %w", err)
 	}
-	f = os.NewFile(uintptr(dup), id.ResolvedPath)
+	f = os.NewFile(uintptr(dup), id.ResolvedPath) // #nosec G115 -- dup is a valid non-negative fd from syscall.Dup; int->uintptr cannot overflow
 	if f == nil {
 		_ = syscall.Close(dup)
 		return "", nil, ErrNoVerifiedFD

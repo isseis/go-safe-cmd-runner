@@ -422,7 +422,7 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity) (str
 		cleanup()
 		return "", nil, fmt.Errorf("failed to duplicate verified fd for staging: %w", err)
 	}
-	src := os.NewFile(uintptr(dup), identity.ResolvedPath)
+	src := os.NewFile(uintptr(dup), identity.ResolvedPath) // #nosec G115 -- dup is a valid non-negative fd from syscall.Dup; int->uintptr cannot overflow
 	if src == nil {
 		_ = syscall.Close(dup)
 		cleanup()
