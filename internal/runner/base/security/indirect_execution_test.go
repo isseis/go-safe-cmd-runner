@@ -100,6 +100,10 @@ func TestIndirect_Taskset(t *testing.T) {
 	assert.Equal(t, IndirectFloor, analyzeIndirectCmd("taskset", "0x3", "ls").Kind)
 	assert.NotEqual(t, IndirectCritical, analyzeIndirectCmd("taskset", "-c", "0-3", "ls").Kind)
 	assert.Equal(t, IndirectFloor, analyzeIndirectCmd("taskset", "-p", "0x1", "1234").Kind)
+	// Clustered -p (e.g. "-ap") is the PID form too: no command runs, so the PID is
+	// not mistaken for a MASK and a following token is not evaluated as a command.
+	assert.Equal(t, IndirectFloor, analyzeIndirectCmd("taskset", "-ap", "1234").Kind)
+	assert.Equal(t, IndirectFloor, analyzeIndirectCmd("taskset", "-ap", "1234", "sudo", "ls").Kind)
 
 	// A wrapped destructive inner command via -c is still folded to High.
 	rm := analyzeIndirectCmd("taskset", "-c0-3", "rm", "-rf", "/tmp/x")

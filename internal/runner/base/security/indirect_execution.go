@@ -6,6 +6,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"syscall"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
@@ -449,19 +450,22 @@ func readShebang(path string) (interp string, args []string, ok bool) {
 		return "", nil, false
 	}
 	// The path is the resolved command path the evaluator is already classifying;
-	// reading its first line to detect a shebang interpreter is intentional.
-	// Only inspect regular files: opening a FIFO would block until a writer connects
-	// (a denial of service), and a device file could have read side effects. os.Stat
-	// does not open the file, so it cannot block; a non-regular target is simply not
-	// a shebang script.
-	if fi, statErr := os.Stat(path); statErr != nil || !fi.Mode().IsRegular() {
-		return "", nil, false
-	}
-	f, err := os.Open(path) //nolint:gosec // reading the verified command path to detect a shebang
+	// reading its first line to detect a shebang interpreter is intentional. Open
+	// non-blocking and then fstat the opened descriptor, requiring a regular file:
+	// opening a FIFO would otherwise block until a writer connects (a denial of
+	// service), and a device file could have read side effects. O_NONBLOCK makes the
+	// open of a FIFO/device return immediately, and fstat-ing the descriptor we
+	// actually opened (rather than os.Stat-ing the path, then opening) closes the
+	// TOCTOU window — a swap between check and open cannot make us block or read the
+	// wrong object. O_NONBLOCK has no effect on regular-file reads.
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0) //nolint:gosec // reading the verified command path to detect a shebang
 	if err != nil {
 		return "", nil, false
 	}
 	defer func() { _ = f.Close() }()
+	if fi, statErr := f.Stat(); statErr != nil || !fi.Mode().IsRegular() {
+		return "", nil, false
+	}
 
 	// Read up to maxShebangLen bytes. io.ReadAll over a LimitReader keeps reading
 	// until the bound or EOF, so a short read (a single os.File.Read returning
@@ -697,8 +701,11 @@ func analyzeTaskset(args []string, depth int) IndirectExecutionResult {
 		}
 		i++
 		switch {
-		case t == "-p" || t == "--pid":
-			// Sets the affinity of an existing process; no command is executed.
+		case t == "--pid" || shortFlagInBundle(t, 'p'):
+			// -p/--pid sets the affinity of an existing process; no command is
+			// executed. -p is taskset's only short option containing 'p', so a 'p' in
+			// a short cluster (e.g. "-ap 1234") denotes it; matching the cluster avoids
+			// treating the PID as a positional MASK and a following token as a command.
 			return floor(runnertypes.RiskLevelMedium, risktypes.ReasonIndirectExecutionWrapper)
 		case t == "--cpu-list":
 			cpuList = true
