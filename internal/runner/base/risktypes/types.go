@@ -258,7 +258,11 @@ type ExecutedArtifact struct {
 // marker happens only at the log-output boundary.
 type RiskAuditEntry struct {
 	CommandName string
-	Mode        ExecutionMode
+	// Args are the command arguments recorded for forensic correlation. They are
+	// masked at the log-output boundary (the existing redaction mechanism) before
+	// being written, so secrets passed as arguments are not leaked.
+	Args []string
+	Mode ExecutionMode
 	// ResolvedPath is nil when the path was not resolved (e.g. deny on resolution failure).
 	ResolvedPath *string
 	// ContentHash is nil when unverified (not used for matching).

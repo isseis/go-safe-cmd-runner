@@ -10,6 +10,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -185,103 +186,239 @@ func TestLogger_LogSecurityEvent(t *testing.T) {
 	}
 }
 
-func TestLogger_LogRiskProfile(t *testing.T) {
-	tests := []struct {
-		name              string
-		commandName       string
-		baseRiskLevel     runnertypes.RiskLevel
-		riskReasons       []string
-		networkType       string
-		expectedAuditType string
-		expectedRiskLevel string
-		expectedLogLevel  string
-	}{
-		{
-			name:              "single risk factor",
-			commandName:       "curl",
-			baseRiskLevel:     runnertypes.RiskLevelMedium,
-			riskReasons:       []string{"Always performs network operations"},
-			networkType:       "Always",
-			expectedAuditType: "command_risk_profile",
-			expectedRiskLevel: "medium",
-			expectedLogLevel:  "INFO",
-		},
-		{
-			name:          "multiple risk factors",
-			commandName:   "claude",
-			baseRiskLevel: runnertypes.RiskLevelHigh,
-			riskReasons: []string{
-				"Always communicates with external AI API",
-				"May send sensitive data to external service",
-			},
-			networkType:       "Always",
-			expectedAuditType: "command_risk_profile",
-			expectedRiskLevel: "high",
-			expectedLogLevel:  "WARN",
-		},
-		{
-			name:              "privilege escalation",
-			commandName:       "sudo",
-			baseRiskLevel:     runnertypes.RiskLevelCritical,
-			riskReasons:       []string{"Allows execution with elevated privileges, can compromise entire system"},
-			networkType:       "None",
-			expectedAuditType: "command_risk_profile",
-			expectedRiskLevel: "critical",
-			expectedLogLevel:  "ERROR",
-		},
-		{
-			name:              "unknown risk level",
-			commandName:       "ls",
-			baseRiskLevel:     runnertypes.RiskLevelUnknown,
-			riskReasons:       []string{},
-			networkType:       "None",
-			expectedAuditType: "command_risk_profile",
-			expectedRiskLevel: "unknown",
-			expectedLogLevel:  "DEBUG",
-		},
-	}
+// logRiskProfileEntry runs LogRiskProfile against a fresh DEBUG-level JSON logger
+// and returns the parsed log entry. DEBUG is used so even low-risk allow entries
+// (which log at Debug) are captured.
+func logRiskProfileEntry(t *testing.T, entry risktypes.RiskAuditEntry) map[string]any {
+	t.Helper()
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	audit.NewAuditLoggerWithCustom(logger).LogRiskProfile(context.Background(), entry)
 
+	var logEntry map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &logEntry), "failed to parse JSON log output")
+	return logEntry
+}
+
+func strptr(s string) *string { return &s }
+
+// TestLogRiskProfile_LogLevelByRisk verifies AC-13: the log level corresponds to
+// the effective risk level for allow decisions (no deny floor applies).
+func TestLogRiskProfile_LogLevelByRisk(t *testing.T) {
+	tests := []struct {
+		name          string
+		level         runnertypes.RiskLevel
+		expectedLevel string
+	}{
+		{"critical maps to error", runnertypes.RiskLevelCritical, "ERROR"},
+		{"high maps to warn", runnertypes.RiskLevelHigh, "WARN"},
+		{"medium maps to info", runnertypes.RiskLevelMedium, "INFO"},
+		{"low maps to debug", runnertypes.RiskLevelLow, "DEBUG"},
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			// Use DEBUG level to capture all log levels including DEBUG
-			logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-			auditLogger := audit.NewAuditLoggerWithCustom(logger)
-
-			ctx := context.Background()
-			auditLogger.LogRiskProfile(ctx, tt.commandName, tt.baseRiskLevel, tt.riskReasons, tt.networkType)
-
-			// Parse JSON log output
-			var logEntry map[string]any
-			err := json.Unmarshal(buf.Bytes(), &logEntry)
-			require.NoError(t, err, "Failed to parse JSON log output")
-
-			// Validate structured fields
-			assert.Equal(t, tt.expectedAuditType, logEntry["audit_type"])
-			assert.Equal(t, true, logEntry["audit"])
-			assert.Equal(t, tt.commandName, logEntry["command_name"])
-			assert.Equal(t, tt.expectedRiskLevel, logEntry["risk_level"])
-			assert.Equal(t, tt.networkType, logEntry["network_type"])
-			assert.Equal(t, tt.expectedLogLevel, logEntry["level"])
-
-			// Validate risk_factors array if present
-			if len(tt.riskReasons) > 0 {
-				require.Contains(t, logEntry, "risk_factors")
-				riskFactors, ok := logEntry["risk_factors"].([]any)
-				require.True(t, ok, "risk_factors should be an array")
-				require.Equal(t, len(tt.riskReasons), len(riskFactors))
-				for i, expectedReason := range tt.riskReasons {
-					assert.Equal(t, expectedReason, riskFactors[i])
-				}
-			} else {
-				assert.NotContains(t, logEntry, "risk_factors")
-			}
-
-			// Validate that standard fields are present
-			assert.Contains(t, logEntry, "timestamp")
-			assert.Contains(t, logEntry, "user_id")
-			assert.Contains(t, logEntry, "effective_user_id")
-			assert.Contains(t, logEntry, "process_id")
+			entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
+				CommandName: "cmd",
+				Mode:        risktypes.ModeNormal,
+				Decision:    risktypes.DecisionAllow,
+				Assessment:  risktypes.RiskAssessment{Level: tt.level},
+			})
+			assert.Equal(t, "command_risk_profile", entry["audit_type"])
+			assert.Equal(t, tt.expectedLevel, entry["level"])
+			assert.Equal(t, "allow", entry["decision"])
 		})
 	}
+}
+
+// TestLogRiskProfile_DenySeverityFloor verifies AC-70: every deny is logged at
+// Warn or above, independent of the risk-level mapping, so a Medium command
+// denied under a Low ceiling does not sink to Info.
+func TestLogRiskProfile_DenySeverityFloor(t *testing.T) {
+	tests := []struct {
+		name          string
+		level         runnertypes.RiskLevel
+		expectedLevel string
+	}{
+		{"low deny floored to warn", runnertypes.RiskLevelLow, "WARN"},
+		{"medium deny floored to warn", runnertypes.RiskLevelMedium, "WARN"},
+		{"high deny stays warn", runnertypes.RiskLevelHigh, "WARN"},
+		{"critical deny stays error", runnertypes.RiskLevelCritical, "ERROR"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
+				CommandName: "cmd",
+				Mode:        risktypes.ModeNormal,
+				Decision:    risktypes.DecisionDeny,
+				Assessment:  risktypes.RiskAssessment{Level: tt.level},
+			})
+			assert.Equal(t, tt.expectedLevel, entry["level"])
+			assert.Equal(t, "deny", entry["decision"])
+		})
+	}
+}
+
+// TestLogRiskProfile_ReasonCodesAndFactors verifies AC-12: the entry carries both
+// machine-readable reason codes and human-readable risk factors.
+func TestLogRiskProfile_ReasonCodesAndFactors(t *testing.T) {
+	entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
+		CommandName: "claude",
+		Mode:        risktypes.ModeNormal,
+		Decision:    risktypes.DecisionAllow,
+		Assessment: risktypes.RiskAssessment{
+			Level:       runnertypes.RiskLevelHigh,
+			ReasonCodes: []risktypes.ReasonCode{risktypes.ReasonProfileDataExfil, risktypes.ReasonProfileNetwork},
+			Reasons:     []string{"May send sensitive data to external service"},
+		},
+	})
+
+	codes, ok := entry["reason_codes"].([]any)
+	require.True(t, ok, "reason_codes should be an array")
+	assert.ElementsMatch(t, []any{"profile_data_exfil", "profile_network"}, codes)
+
+	factors, ok := entry["risk_factors"].([]any)
+	require.True(t, ok, "risk_factors should be an array")
+	assert.Equal(t, []any{"May send sensitive data to external service"}, factors)
+}
+
+// TestLogRiskProfile_NoProfileReasonCode verifies AC-48: a command with no
+// profile (e.g. binary-analysis-derived risk) still emits a reason code.
+func TestLogRiskProfile_NoProfileReasonCode(t *testing.T) {
+	entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
+		CommandName: "unknown-tool",
+		Mode:        risktypes.ModeNormal,
+		Decision:    risktypes.DecisionAllow,
+		Assessment: risktypes.RiskAssessment{
+			Level:       runnertypes.RiskLevelMedium,
+			ReasonCodes: []risktypes.ReasonCode{risktypes.ReasonBinaryAnalysisNetwork},
+			// No human-readable Reasons (no profile).
+		},
+	})
+
+	codes, ok := entry["reason_codes"].([]any)
+	require.True(t, ok, "reason_codes should be present even without a profile")
+	assert.Contains(t, codes, "binary_analysis_network")
+	assert.NotContains(t, entry, "risk_factors")
+}
+
+// TestLogRiskProfile_UncertainReason verifies AC-41: an uncertain abort records
+// which uncertain case caused it via the blocking reason and reason codes.
+func TestLogRiskProfile_UncertainReason(t *testing.T) {
+	entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
+		CommandName: "mystery",
+		Mode:        risktypes.ModeNormal,
+		Decision:    risktypes.DecisionDeny,
+		Assessment: risktypes.RiskAssessment{
+			Level:          runnertypes.RiskLevelLow,
+			Blocking:       true,
+			BlockingReason: risktypes.ReasonUncertainMissingRecord,
+			ReasonCodes:    []risktypes.ReasonCode{risktypes.ReasonUncertainMissingRecord},
+		},
+	})
+
+	assert.Equal(t, "uncertain_missing_record", entry["blocking_reason"])
+	codes, ok := entry["reason_codes"].([]any)
+	require.True(t, ok)
+	assert.Contains(t, codes, "uncertain_missing_record")
+	assert.Equal(t, "deny", entry["decision"])
+}
+
+// TestLogRiskProfile_CorrelationFieldsAndAbsence verifies AC-56: correlation
+// fields carry real values when present and an explicit absence marker (never a
+// sentinel inside a value field) when absent, and that a deny entry is still
+// emitted.
+func TestLogRiskProfile_CorrelationFieldsAndAbsence(t *testing.T) {
+	t.Run("all present", func(t *testing.T) {
+		entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
+			CommandName:    "rm",
+			Mode:           risktypes.ModeNormal,
+			ResolvedPath:   strptr("/usr/bin/rm"),
+			ContentHash:    strptr("sha256:abc"),
+			RecordID:       strptr("schema-v1"),
+			MaxAllowedRisk: runnertypes.RiskLevelLow,
+			Decision:       risktypes.DecisionDeny,
+			Assessment: risktypes.RiskAssessment{
+				Level:          runnertypes.RiskLevelHigh,
+				BlockingReason: risktypes.ReasonDestructiveFileOperation,
+				ReasonCodes:    []risktypes.ReasonCode{risktypes.ReasonDestructiveFileOperation},
+			},
+		})
+		assert.Equal(t, "/usr/bin/rm", entry["resolved_path"])
+		assert.Equal(t, "sha256:abc", entry["content_hash"])
+		assert.Equal(t, "schema-v1", entry["record_id"])
+		assert.Equal(t, "low", entry["max_allowed_risk"])
+		assert.Equal(t, "deny", entry["decision"])
+	})
+
+	t.Run("absent rendered as marker, deny still emitted", func(t *testing.T) {
+		entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
+			CommandName:    "missing",
+			Mode:           risktypes.ModeNormal,
+			MaxAllowedRisk: runnertypes.RiskLevelLow,
+			Decision:       risktypes.DecisionDeny,
+			ErrorClass:     risktypes.ErrorClassPathResolution,
+			Assessment: risktypes.RiskAssessment{
+				Level:          runnertypes.RiskLevelLow,
+				Blocking:       true,
+				BlockingReason: risktypes.ReasonSymlinkResolutionFailed,
+			},
+		})
+		// Absence is explicit via the boundary marker; the DTO held nil, never a sentinel.
+		assert.Equal(t, "n/a", entry["resolved_path"])
+		assert.Equal(t, "n/a", entry["content_hash"])
+		assert.Equal(t, "n/a", entry["record_id"])
+		assert.Equal(t, "deny", entry["decision"])
+		assert.Equal(t, "path_resolution", entry["error_class"])
+	})
+}
+
+// TestLogRiskProfile_ArgMasking verifies AC-57: secrets passed as command
+// arguments are masked using the redaction mechanism before being logged.
+func TestLogRiskProfile_ArgMasking(t *testing.T) {
+	entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
+		CommandName: "deploy",
+		Mode:        risktypes.ModeNormal,
+		Decision:    risktypes.DecisionAllow,
+		Args:        []string{"--user=admin", "--password=supersecretvalue"},
+		Assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
+	})
+
+	args, ok := entry["command_args"].([]any)
+	require.True(t, ok, "command_args should be an array")
+	joined := ""
+	for _, a := range args {
+		joined += a.(string) + " "
+	}
+	assert.NotContains(t, joined, "supersecretvalue", "secret must be masked")
+	assert.Contains(t, joined, "[REDACTED]")
+	assert.Contains(t, joined, "admin", "non-sensitive arg preserved")
+}
+
+// TestLogRiskProfile_Chain verifies AC-11: an indirect-execution chain records
+// every executed/loaded artifact so the chain is correlatable from one entry.
+func TestLogRiskProfile_Chain(t *testing.T) {
+	entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
+		CommandName: "env",
+		Mode:        risktypes.ModeNormal,
+		Decision:    risktypes.DecisionAllow,
+		Assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelMedium},
+		Chain: []risktypes.ExecutedArtifact{
+			{Path: "/usr/bin/env", Role: risktypes.RoleWrapper, Disposition: risktypes.DispVerified, ContentHash: strptr("sha256:env")},
+			{Path: "/usr/bin/curl", Role: risktypes.RoleInner, Disposition: risktypes.DispVerified, ContentHash: strptr("sha256:curl")},
+		},
+	})
+
+	chain, ok := entry["chain"].([]any)
+	require.True(t, ok, "chain should be an array")
+	require.Len(t, chain, 2)
+
+	first := chain[0].(map[string]any)
+	assert.Equal(t, "/usr/bin/env", first["path"])
+	assert.Equal(t, "wrapper", first["role"])
+	assert.Equal(t, "verified", first["disposition"])
+	assert.Equal(t, "sha256:env", first["content_hash"])
+
+	second := chain[1].(map[string]any)
+	assert.Equal(t, "/usr/bin/curl", second["path"])
+	assert.Equal(t, "inner", second["role"])
 }

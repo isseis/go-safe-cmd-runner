@@ -324,11 +324,11 @@
 
 **対象ファイル**: [logger.go](../../../internal/runner/base/audit/logger.go), [logger_test.go](../../../internal/runner/base/audit/logger_test.go)
 
-- [ ] `LogRiskProfile(ctx, entry risktypes.RiskAuditEntry)` へシグネチャ変更（`02_architecture.md` §3.2）。相関フィールド（`resolved_path`/`content_hash`/レコード識別/`max_allowed_risk`/`decision`/`reason_codes`/`risk_factors`）を出力。
-- [ ] 取得不能値は在/不在を明示（`*string` nil = 省略）。値フィールドにセンチネル文字列を入れない。固定マーカー（`n/a` 等）はログ出力境界のみ（AC-56）。
-- [ ] decision に基づく重大度下限（deny は Warn 以上）を、リスクレベル対応ログレベル（AC-13）と独立に適用（AC-70）。
-- [ ] 引数マスキング（既存 redaction 機構と整合。AC-57）。
-- [ ] `logger_test.go` で deny 出力・相関フィールド・在不在表現・重大度下限・連鎖カバレッジを検証。
+- [x] `LogRiskProfile(ctx, entry risktypes.RiskAuditEntry)` へシグネチャ変更（`02_architecture.md` §3.2）。相関フィールド（`resolved_path`/`content_hash`/レコード識別/`max_allowed_risk`/`decision`/`reason_codes`/`risk_factors`）を出力。
+- [x] 取得不能値は在/不在を明示（`*string` nil = 省略）。値フィールドにセンチネル文字列を入れない。固定マーカー（`n/a` 等）はログ出力境界のみ（AC-56）。
+- [x] decision に基づく重大度下限（deny は Warn 以上）を、リスクレベル対応ログレベル（AC-13）と独立に適用（AC-70）。
+- [x] 引数マスキング（既存 redaction 機構と整合。AC-57）。
+- [x] `logger_test.go` で deny 出力・相関フィールド・在不在表現・重大度下限・連鎖カバレッジを検証。
 
 **完了条件**: `go test -tags test ./internal/runner/base/audit/` が緑。
 
