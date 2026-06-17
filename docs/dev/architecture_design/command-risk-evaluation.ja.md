@@ -4,9 +4,11 @@
 
 本文書は、`runner` がコマンドを **実行する時点** で行う「リスク判定（risk evaluation）」の仕組みを、開発者向けに解説するものである。
 
-`runner` は設定ファイル（TOML）に記述された各コマンドを実行する前に、そのコマンドが持つセキュリティ上の危険度を **リスクレベル** として算出する。算出されたリスクレベルが、コマンドまたはグループに設定された **最大許容リスクレベル（`risk_level`）** を超える場合、そのコマンドの実行を拒否する。これにより「設定で明示的に許可した範囲を超える危険な操作」を実行前に遮断する。
+`runner` は設定ファイル（TOML）に記述された各コマンドを実行する前に、そのコマンドが持つセキュリティ上の危険度を **リスクレベル** として算出する。算出されたリスクレベル（実効リスク）が、コマンドに設定された **最大許容リスクレベル（`risk_level`）** を超える場合、そのコマンドの実行を拒否する。また、判定が確実に行えない場合（バイナリの同一性が未検証、シンボリックリンク解決の失敗、間接実行で束縛不能な対象など）は、許容レベルとは無関係に **ブロッキング（Blocking）拒否** とする。これにより「設定で明示的に許可した範囲を超える危険な操作」と「安全性を確認できない操作」を実行前に遮断する。
 
-この判定は、ハッシュ検証（ファイル整合性検証）やバイナリ静的解析といった他のセキュリティ層と組み合わさって動作する。本文書ではそれらの詳細には立ち入らず、**リスクレベルの決定ロジック** に焦点を当てる。
+リスク判定の結果は、単なるリスクレベルではなく **検証済み実行計画（`VerifiedCommandPlan`）** として返される。計画は、評価したバイナリの同一性（解決済みパス・content hash・fd）を実行時の同一性と束縛し、実行器はこの計画にもとづいて実行する（評価した実体と実行する実体が一致することを保証する）。
+
+この判定は、ハッシュ検証（ファイル整合性検証）やバイナリ静的解析といった他のセキュリティ層と密接に連動して動作する。本文書では **リスクレベルの決定ロジック** に焦点を当てる。
 
 ### 対象読者
 
@@ -18,10 +20,12 @@
 
 | パッケージ | 役割 |
 |-----------|------|
-| `internal/runner/base/risk` | 実行時リスク判定のエントリポイント（`Evaluator`） |
-| `internal/runner/base/security` | 個別判定ロジック（特権昇格・破壊操作・ネットワーク・coreutils 等） |
-| `internal/runner/resource` | リスク判定の呼び出しと許容レベルとの比較（実行可否の判断） |
-| `internal/runner/base/runnertypes` | `RiskLevel` 型と設定値のパース |
+| `internal/runner/base/risk` | 実行時リスク判定のエントリポイント（`StandardEvaluator.EvaluateRisk`） |
+| `internal/runner/base/security` | 個別判定ロジック（特権昇格・破壊操作・システム変更・coreutils・間接実行・任意コード実行・バイナリ解析など） |
+| `internal/runner/base/risktypes` | 評価結果の DTO（`VerifiedCommandPlan` / `RiskAssessment` / `ReasonCode` / `BinaryAnalysisResult` など） |
+| `internal/runner/base/runnertypes` | `RiskLevel` 型と設定値のパース、`RuntimeCommand` |
+| `internal/runner/base/audit` | リスク判定結果の監査ログ出力（`Logger.LogRiskProfile`） |
+| `internal/runner/resource` | リスク判定の呼び出しと許容レベルとの比較（実行可否の判断、`NormalResourceManager` / `DryRunResourceManager`） |
 
 ## リスクレベルの定義
 
@@ -43,19 +47,19 @@ flowchart LR
 | 0 | `RiskLevelUnknown` | `unknown` | リスクを判定できなかった／分類対象外（**Low より安全という意味ではない**） |
 | 1 | `RiskLevelLow` | `low` | セキュリティリスクが最小限のコマンド |
 | 2 | `RiskLevelMedium` | `medium` | 中程度のリスク（ネットワーク操作・システム変更など） |
-| 3 | `RiskLevelHigh` | `high` | 高リスク（破壊的操作・動的ロード・exec シグナルなど） |
+| 3 | `RiskLevelHigh` | `high` | 高リスク（破壊的操作・任意コード実行・動的ロード・exec シグナルなど） |
 | 4 | `RiskLevelCritical` | `critical` | 実行を遮断すべきコマンド（特権昇格など） |
 
 **重要な性質**：
 
 - `Low` 〜 `Critical` は整数として **大小比較可能** であり、複数の要因がある場合は原則として **最大値** が採用される（`max(...)`）。
-- `Unknown`（値 0）は数値としては最小だが、意味は「判定不能／分類対象外」であって **`Low` より安全という意味ではない**。実装上、`Unknown` が「最も低いリスク」として許容比較（`effectiveRisk > maxAllowedRisk`）を通過してしまうことはない。実行時パス（`EvaluateRisk`）が `Unknown` を返すのは **エラーと同時の場合のみ** で、その際はエラーが呼び出し元へ伝播して **フェイルクローズド**（実行中止）になるためである。`Unknown` は主に「この判定では確定できないので後続の判定に委ねる」という内部シグナルとして使われる（例：`getDefaultRiskByDirectory` や `AnalyzeCommandSecurity` の中間結果）。
-- `critical` は **設定ファイルでは指定できない**（`ParseRiskLevel` がエラーを返す）。内部利用専用であり、特権昇格コマンドのように「必ず遮断すべき」ものに割り当てられる。
+- `Unknown`（値 0）は数値としては最小だが、意味は「判定不能／分類対象外」であって **`Low` より安全という意味ではない**。実装上、判定不能なケースは数値比較ではなく `RiskAssessment.Blocking`（ブロッキング拒否）として表現され、許容レベル比較を素通りすることはない（**フェイルクローズド**）。`Unknown` は主に「この判定では確定できないので後続の判定に委ねる」という内部シグナルとして使われる（例：`SystemModificationRisk` や `ProfileFactorRisk` の「該当なし」を表す戻り値）。
+- `critical` と `unknown` は **設定ファイルでは指定できない**（`ParseRiskLevel` がいずれもエラーを返す）。`critical` は内部利用専用であり、特権昇格コマンドのように「必ず遮断すべき」ものに割り当てられる。
 - 設定で `risk_level` を省略した場合の既定値は `low` である（`CommandSpec.GetRiskLevel` が `RiskLevelLow` を返す）。
 
 ## 実行時の全体フロー
 
-リスク判定は通常実行モード（`NormalResourceManager.ExecuteCommand`）の中で行われる。配線は `runner.go` で行われ、`NetworkAnalyzer` → `StandardEvaluator` → `ResourceManager` の順に組み立てられる。
+リスク判定は通常実行モード（`NormalResourceManager.ExecuteCommand`）の中で行われる。評価器の配線は `runner.go` で行われ、検証マネージャから得た解析依存（`AnalysisDeps`）を `NetworkAnalyzer` に渡し、それを `StandardEvaluator` に渡して組み立てる（`security.NewNetworkAnalyzer` → `risk.NewStandardEvaluator`）。
 
 ```mermaid
 flowchart TD
@@ -63,16 +67,18 @@ flowchart TD
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef decision fill:#fde6e6,stroke:#c0392b,stroke-width:1px,color:#7b0a0a;
 
-    A[("RuntimeCommand<br>(展開済みコマンド/引数)")] --> B["NormalResourceManager<br>ExecuteCommand"]
-    B --> C["Evaluator.EvaluateRisk<br>(実効リスクを算出)"]
-    C -->|"effectiveRisk"| D{"effectiveRisk ><br>maxAllowedRisk ?"}
-    E[("設定 risk_level<br>(最大許容リスク)")] -->|"GetRiskLevel"| D
-    D -->|"Yes"| F["実行拒否<br>ErrCommandSecurityViolation"]
-    D -->|"No"| G["コマンド実行"]
+    A[("RuntimeCommand<br>(展開済みコマンド/引数/content hash)")] --> B["NormalResourceManager<br>ExecuteCommand"]
+    B --> C["Evaluator.EvaluateRisk<br>(VerifiedCommandPlanを算出)"]
+    C -->|"Assessment.Blocking"| D1{"Blocking ?"}
+    D1 -->|"Yes"| F["実行拒否<br>ErrCommandSecurityViolation"]
+    D1 -->|"No"| D2{"effectiveRisk ><br>maxAllowedRisk ?"}
+    E[("設定 risk_level<br>(最大許容リスク)")] -->|"GetRiskLevel"| D2
+    D2 -->|"Yes"| F
+    D2 -->|"No"| G["コマンド実行<br>(計画の同一性に束縛)"]
 
     class A,E data;
     class B,C,G process;
-    class D decision;
+    class D1,D2 decision;
     class F decision;
 ```
 
@@ -93,28 +99,35 @@ flowchart LR
 実行可否の比較は `internal/runner/resource/normal_manager.go` で行われる。
 
 ```go
-// Step 1: 実効リスクを算出
-effectiveRisk, err := n.riskEvaluator.EvaluateRisk(cmd)
+// Step 1: 検証済み実行計画を算出（実効リスク・拒否理由・検証済み同一性を含む）
+plan, err := n.riskEvaluator.EvaluateRisk(cmd)
+// err は「予期しない内部エラー（分類不能なレコード読込失敗）」のみ。
+// ポリシー上の拒否はエラーではなく plan.Assessment.Blocking で表現される。
+
+effectiveRisk := plan.Assessment.Level
 
 // Step 2: 設定から最大許容リスクを取得（既定は low）
 maxAllowedRisk, err := cmd.GetRiskLevel()
 
-// Step 3: 比較。超過していれば実行を拒否する
-if effectiveRisk > maxAllowedRisk {
-    return ..., fmt.Errorf("%w: command %s (effective risk: %s) exceeds maximum allowed risk level (%s)",
-        runnertypes.ErrCommandSecurityViolation, ...)
-}
+// Step 3: 統一リスクゲート。Blocking なら許容レベルに関わらず拒否、
+//         そうでなければ実効リスクが許容上限を超えていれば拒否する。
+denied := plan.Assessment.Blocking || effectiveRisk > maxAllowedRisk
 ```
 
 ポイント：
 
-- **実効リスク（effectiveRisk）**：コマンドの内容から算出される実際の危険度。
+- **実効リスク（effectiveRisk）**：コマンドの内容から算出される実際の危険度（`Assessment.Level`）。
+- **ブロッキング（Blocking）**：許容レベルに関係なく拒否すべき状態（同一性未検証、解析不能、間接実行で束縛不能など）。`Assessment.Blocking` で表現され、`effectiveRisk > maxAllowedRisk` の比較より優先される。
 - **最大許容リスク（maxAllowedRisk）**：利用者が設定で許可した上限。
 - `critical` は設定に書けないため、特権昇格コマンドのように実効リスクが `critical` になるものは **どんな設定でも必ず拒否される**（既定の `low` はもちろん、最大の `high` を設定しても `critical > high` となる）。
+- 計画が開いた検証済みファイルディスクリプタは、許可・拒否・エラーのいずれの経路でも `plan.Close()` で必ず解放される（ディスクリプタ漏れ防止）。
 
 ## リスク判定アルゴリズム（`EvaluateRisk`）
 
-実行時リスクの中核は `risk.StandardEvaluator.EvaluateRisk`（`internal/runner/base/risk/evaluator.go`）である。判定は **早期リターン方式** で、上位（より危険な）判定から順に評価し、最初に該当したレベルを返す。
+実行時リスクの中核は `risk.StandardEvaluator.EvaluateRisk`（`internal/runner/base/risk/evaluator.go`）である。判定は **ランク付けされた拒否ゲートで短絡（ショートサーキット）した後、残りの判定軸の最大値をとる** 構成になっている。すなわち以下の 2 段構えである。
+
+1. **短絡する拒否ゲート（ランク1〜3）**：同一性ゲート・間接実行・特権昇格。いずれかに該当すると即座に拒否（Blocking）または Critical を返す。
+2. **順序非依存の最大値（ランク4〜8）**：残りの判定軸を **すべて評価** し、その **最大値** を実効リスクとする。「最初に該当したものを返す」早期リターン方式ではない点に注意する。
 
 ```mermaid
 flowchart TD
@@ -122,149 +135,90 @@ flowchart TD
     classDef decision fill:#fde6e6,stroke:#c0392b,stroke-width:1px,color:#7b0a0a;
     classDef result fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    S["EvaluateRisk(cmd)"] --> P1{"特権昇格コマンド?<br>(sudo/su/doas)"}
-    P1 -->|"Yes"| RC["Critical"]
-    P1 -->|"No"| P2{"破壊的ファイル操作?<br>(rm/dd/shred/find -delete 等)"}
-    P2 -->|"Yes"| RH1["High"]
-    P2 -->|"No"| P3{"coreutils 単一バイナリ<br>配下のコマンド?"}
-    P3 -->|"handled"| RCU["coreutils 分類結果<br>(Low/Medium/High)"]
-    P3 -->|"No"| P4{"ネットワーク操作 /<br>高リスクバイナリシグナル?<br>(プロファイル/バイナリ解析/引数)"}
-    P4 -->|"高リスク signal<br>(動的ロード/exec/svc/mprotect PROT_EXEC)"| RH2["High"]
-    P4 -->|"ネットワークのみ"| RM1["Medium"]
-    P4 -->|"No"| P5{"システム変更?<br>(systemctl/mount/apt install 等)"}
-    P5 -->|"Yes"| RM2["Medium"]
-    P5 -->|"No"| RL["Low (既定)"]
+    S["EvaluateRisk(cmd)"] --> G0{"絶対パス? & シンボリックリンク<br>解決成功?"}
+    G0 -->|"No"| BR0["Blocking 拒否"]
+    G0 -->|"Yes"| G1{"ランク1: 同一性ゲート<br>content hash あり & 解析有効?"}
+    G1 -->|"No"| BR1["Blocking 拒否"]
+    G1 -->|"Yes"| G2{"ランク2: 間接実行?<br>(wrapper/inline/find/loader等)"}
+    G2 -->|"Critical (特権トークン)"| RC["Critical"]
+    G2 -->|"Reject (束縛不能)"| BR2["Blocking 拒否"]
+    G2 -->|"Floor / None"| G3{"ランク3: 特権昇格?<br>(プロファイルで判定)"}
+    G3 -->|"Yes"| RC
+    G3 -->|"No"| DIM["ランク4〜8: 判定軸の最大値<br>(coreutils / 破壊操作 / システム変更 /<br>プロファイル要因 / 危険引数 /<br>任意コード実行 / ネットワーク引数 /<br>バイナリ解析)"]
+    DIM --> FLOOR["ランク2 Floor を最大値に合成"]
+    FLOOR --> RES["実効リスク (Low〜High)<br>または軸の Blocking 拒否"]
 
-    class S process;
-    class P1,P2,P3,P4,P5 decision;
-    class RC,RH1,RH2,RM1,RM2,RCU,RL result;
+    class S,DIM,FLOOR process;
+    class G0,G1,G2,G3 decision;
+    class RC,RES,BR0,BR1,BR2 result;
 ```
 
-判定順序（コードのステップに対応）：
+### 前処理: 絶対パスとシンボリックリンク解決
 
-### Step 1: 特権昇格コマンド → Critical
+判定軸に入る前に、次の前提を満たすことを確認する。満たさなければ **Blocking 拒否** となる。
 
-`security.IsPrivilegeEscalationCommand` がコマンド名を検査する。`sudo` / `su` / `doas` に該当すると **Critical** を返す。
+- コマンドパスは評価器到達時点で **絶対パス** でなければならない（呼び出し側が解決済み）。相対パスは同一性が確立できず、バイナリ解析が暗黙にスキップされてしまうため拒否する（`ReasonNonAbsolutePath`）。
+- シンボリックリンク連鎖は `security.ResolveCommandNames`（**strict**）で一度だけ解決する。解決失敗・深さ上限超過（`MaxSymlinkDepth = 40`、`ErrSymlinkDepthExceeded`）・循環は `ReasonSymlinkResolutionFailed` で **フェイルクローズド** 拒否する。部分解決された連鎖で評価して危険な実体を見逃すことを防ぐためである。
 
-- シンボリックリンクを辿って判定する（`extractAllCommandNames`）。`/usr/bin/foo` が実体として `sudo` を指していても検出する。
-- シンボリックリンクの深さが上限（`MaxSymlinkDepth`）を超えた場合はエラー（`ErrSymlinkDepthExceeded`）を返し、リスクは `Unknown` となる。`EvaluateRisk` はエラーを呼び出し元へ伝播し、**フェイルクローズド**（コマンドは実行されない）。
+解決によって得られる「名前集合」（元の名前・basename・連鎖中の各リンク先とその basename）は、以降の名前ベース判定（特権・破壊操作・システム変更など）で共有される。
 
-特権昇格コマンドは `commandRiskProfiles` 上で `PrivilegeRisk = Critical` として定義されている（後述のプロファイル参照）。
+### ランク1: 同一性ゲート → Blocking 拒否
 
-### Step 2: 破壊的ファイル操作 → High
+バイナリの同一性を確認できない場合は、設定された `risk_level` に関わらず拒否する（`identityGate`）。これは他のどの判定軸よりも前に評価され、未検証バイナリが後続の軸で「Low/High 許容可」と判定されて通過することを防ぐ。
 
-`security.IsDestructiveFileOperation` が以下を **High** と判定する：
+- `cmd.ExpandedCmdContentHash` が空（ハッシュ検証で同一性が確立されていない）→ `ReasonUncertainUnverifiedIdentity` で Blocking。
+- バイナリ解析が無効（`NetworkAnalyzer.AnalysisEnabled()` が false、すなわち `RecordStore` 未設定）→ `ReasonAnalysisDisabled` で Blocking。解析無効はフェイルオープンではなくフェイルクローズドである。
 
-- コマンド名が `rm` / `rmdir` / `unlink` / `shred` / `dd` のいずれか。
-- `find` の引数に `-delete`、または `-exec` の直後に破壊的コマンドがある。
-- `rsync` の引数に `--delete` 系オプションがある。
+### ランク2: 間接実行（indirect execution）の解析
 
-### Step 3: coreutils 単一バイナリの分類
+検証済みバイナリ以外の実体を実行・ロードする形態を検出する（`security.AnalyzeIndirectExecution`）。詳細は後述の「間接実行の解析」を参照。結果（`IndirectExecutionResult.Kind`）に応じて以下のように扱う。
 
-Rust 製 coreutils のように、すべてのサブコマンドが **1 つのバイナリ** を共有する実装に対応するための特別処理である。`security.CoreutilsCommandRisk` が判定する。
+- `IndirectCritical`：実効ターゲットに特権昇格トークン（sudo/su/doas）がある → **Critical**（短絡）。
+- `IndirectReject`：実行時まで同一性を束縛できない形態（抽出不能なラッパー、禁止されたローダ制御変数、find/xargs の子プロセス exec、動的ローダ直接起動、リモートシェルヘルパー）→ **Blocking 拒否**（短絡）。
+- `IndirectFloor`：許容されるが最小リスクレベルを持つ形態（ラッパー内の危険な内側コマンド、インラインシェル、パッケージスクリプトランナーなど）→ そのレベルを **リスクの下限（floor）** として、後続の判定軸の最大値に合成する。
+- `IndirectNone`：間接実行形態ではない。
 
-通常のバイナリ静的解析（Step 4 のネットワーク解析内）では、coreutils は単一バイナリ内に全サブコマンドのシンボルを含むため誤分類されてしまう。これを避けるために、解析より前に専用ロジックで分類する。
+連鎖中に実行・ロードされる各実体（`ExecutedArtifact`）は、監査と後段の同一性束縛のために計画へ記録される。
 
-判定条件と挙動：
+### ランク3: 特権昇格 → Critical
 
-- 対象は、解決済みパスの **親ディレクトリが coreutils ディレクトリ（`common.CoreutilsDir`）と完全一致** するコマンドのみ。一致しない場合は `handled=false` を返し、後続のステップへ進む。
-- setuid/setgid ビットが立っていれば **High**（coreutils のハードリンクが setuid であることは通常ありえず、パッケージング不備か改ざんの兆候）。
-- 実効サブコマンドの決定：
-  - 通常はパスの basename（例：`/opt/coreutils/rm` → `rm`）。
-  - マルチコール・エントリポイント（basename が `coreutils`）の場合は、引数の最初の非オプション要素を採用（`coreutils rm -rf ...` → `rm`）。
-- 実効サブコマンドによる分類：
-  - 破壊系（`dd`, `rm`, `rmdir`, `shred`, `truncate`, `unlink`）→ **High**
-  - 既知の安全系（`ls`, `cat`, `mkdir`, `sha256sum` 等の読み取り・情報取得・テキスト処理・新規作成系）→ **Low**
-  - それ以外（ディレクトリ配下だが分類不明）→ **Medium**（フェイルセーフの既定）
-- setuid チェックの stat がエラーになった場合、実行時パス（`EvaluateRisk`）では **エラーを伝播してフェイルクローズド**（実行しない）。
+解決済みプロファイルが特権昇格を示す場合は **Critical**（常に拒否）。`security.ResolveProfile(names)` でプロファイルを引き、`profile.IsPrivilege()`（`PrivilegeRisk >= High`）が真なら該当する。プロファイル上では `sudo` / `su` / `doas` が `PrivilegeRisk = Critical` として定義されている。シンボリックリンクを辿った名前集合で照合するため、別名（`/usr/bin/foo` が `sudo` を指す等）でも検出する。
 
-### Step 4: ネットワーク操作 / 高リスクバイナリシグナル → High / Medium
+### ランク4〜8: 判定軸の最大値（`evaluateDimensions`）
 
-`NetworkAnalyzer.IsNetworkOperation` が判定する。関数名は "Network" だが、戻り値は `(isNetwork, isHighRisk, error)` であり、**ネットワーク操作とは限らない高リスクバイナリシグナルも `isHighRisk` 側で報告する**。具体的には、動的ロードシンボル（`dlopen`/`dlsym`/`dlvsym`）、exec シスコール、`svc #0x80` 直接シスコール、**mprotect 系の `PROT_EXEC`** がこれに含まれる（詳細は 4-2 を参照）。
+ここからは **順序非依存** で、該当するすべての軸を評価し最大値をとる（`addDimension` が `max` をとりつつ理由コードを蓄積する）。初期値は `Low`。途中でフェイルクローズドが必要な軸（coreutils のファイル情報取得失敗、バイナリ解析の不確実）に当たった場合は **Blocking 拒否** を返す。
 
-- `isHighRisk == true` → **High**（ネットワークか否かによらず High。mprotect `PROT_EXEC` 等はここに入る）
-- `isNetwork == true`（高リスクでない）→ **Medium**
-- どちらも false → 次のステップへ
+- **ランク4: coreutils 単一バイナリ分類**（`security.CoreutilsCommandRisk`）。該当する場合は権威的に扱い、バイナリ解析軸（ランク8）を抑止する。ただし他の軸は引き続き寄与する。
+- **破壊的ファイル操作**（`security.IsDestructiveFileOperation`）→ High。
+- **システム変更**（`security.SystemModificationRisk`）→ Medium/High（後述）。
+- **ランク5: プロファイル要因**（`applyProfileFactors` → `security.ProfileFactorRisk`）。特権はランク3、システム変更は上記で扱うため、ここでは破壊・データ持ち出し・該当するネットワークの 3 要因のみを合成する。プロファイルの人間可読な理由（`GetRiskReasons`）と `NetworkType` も記録する。
+- **ランク6: 危険な引数パターン**（`security.CheckDangerousArgPatterns`）：`rm -rf`、`dd if=`、`chmod 777`、`mkfs.*` など。
+- **ランク7: 任意コード実行ランナー**（`security.IsArbitraryCodeExecutionRunner`）→ 引数によらず High（後述）。
+- **ネットワーク引数**：プロファイル未登録のコマンドで、引数に URL や SSH 形式アドレスがあれば（`security.HasNetworkArguments`）→ Medium。
+- **ランク8: バイナリ静的解析**（coreutils 該当時は抑止）。`NetworkAnalyzer.Classify` の結果を合成する（後述）。`BinaryAnalysisUncertain` は **Blocking 拒否**。
 
-検出は以下の優先順位で行われる：
+最後に、ランク2の `IndirectFloor` のレベルを最大値へ合成し（ラップされた危険コマンドが過小評価されないように）、理由コード・理由文字列を追記して重複排除する。
 
-```mermaid
-flowchart TD
-    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
-    classDef decision fill:#fde6e6,stroke:#c0392b,stroke-width:1px,color:#7b0a0a;
-    classDef result fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+最終的に Blocking でなければ、`allowedPlan` が検証済み実体を fd 束縛で開いて実行可能な計画を返す（開けない場合は `ReasonIdentityUnbound` で Blocking 拒否）。
 
-    A["IsNetworkOperation"] --> B{"コマンドプロファイルに<br>登録あり?"}
-    B -->|"NetworkTypeAlways"| R1["network=true"]
-    B -->|"NetworkTypeConditional"| C{"サブコマンド/引数が<br>ネットワーク該当?"}
-    C -->|"Yes"| R1
-    C -->|"No"| R0["network=false"]
-    B -->|"登録なし & 絶対パス"| D["バイナリ静的解析<br>(analyzeBinarySignals)"]
-    D --> E{"ネットワーク/動的ロード/<br>exec シグナル?"}
-    E -->|"Yes"| R2["network/highRisk"]
-    E -->|"No"| F{"引数に URL や<br>SSH 形式アドレス?"}
-    B -->|"登録なし"| F
-    F -->|"Yes"| R1
-    F -->|"No"| R0
+## 間接実行（indirect execution）の解析
 
-    class A,D process;
-    class B,C,E,F decision;
-    class R0,R1,R2 result;
-```
+`security.AnalyzeIndirectExecution`（`internal/runner/base/security/indirect_execution.go`）は、**検証したバイナリとは別の実体を実行・ロードする形態** を検出し、評価器がどう扱うべきか（Critical / Reject / Floor / None）を返す。検出は basename と解決済みシンボリックリンクで行い、ラッパーがラッパーをラップする入れ子は再帰的に解析する（深さ上限 `indirectExecMaxDepth = 16`）。
 
-#### 4-1. コマンドプロファイルによる判定（最優先）
+主な検出対象：
 
-`commandProfileDefinitions`（`internal/runner/base/security/command_analysis.go`）にハードコードされた既知コマンドの一覧を参照する。各プロファイルは `NetworkType` を持つ：
+- **シェバン（shebang）スクリプト**：`#!/usr/bin/env python` のように、カーネルがシェバンのインタプリタ（別実体）を起動するため、インタプリタ連鎖を評価しゲートする。basename ベースのラッパー照合より前に判定する。
+- **ラッパー**（`env`, `timeout`, `nice`, `ionice`, `nohup`, `stdbuf`, `setsid`, `time`, `chrt`, `taskset`）：runner はこれらを再実装し、抽出した内側コマンド自体を exec するため、内側コマンドを同一性束縛できる。よって reject ではなく内側コマンドを評価する。内側コマンドが特権トークンなら Critical。`env` は `NAME=VALUE` 代入・`-S` 分割文字列・`-C/--chdir`（拒否）を個別に解析し、ローダ制御変数（`LD_*` / `DYLD_*`）の指定や PATH 上書き＋裸の内側名は拒否する。
+- **find / xargs の子プロセス exec**（`-exec`/`-execdir`/`-ok`/`-okdir`、xargs のヘルパー）：runner の子プロセスではなく find/xargs 自身の子プロセスから実行されるため同一性束縛できない。特権トークンなら Critical、それ以外は Reject。
+- **動的ローダ直接起動**（`ld-linux*.so --preload ...` 等）：任意ライブラリをロードできるため Reject。
+- **リモートシェル／出力フィルタヘルパー**（`rsync -e`、`tar --to-command` / `--checkpoint-action`）：ツールの子プロセスからヘルパーが走るため Reject。
+- **パッケージスクリプトランナー**（`npm run` / `npx` / `yarn <script>` / `pnpm run` / `bunx` 等）：未検証のマニフェストからスクリプトを実行するため High の Floor。
+- **インラインコード**（`bash -c`、`python -c`/`-e` など）：High の Floor。
+- **SysV service**：未検証の init スクリプト（`/etc/init.d/<name>`）を実行するため、init スクリプトを連鎖実体として記録しつつ High の Floor。
 
-- `NetworkTypeAlways`：常にネットワーク操作を行う。該当すると即 `network=true`。
-  - 例：`curl`, `wget`, `ssh`, `scp`, `nc`, `aws`、AI 系（`claude`, `gemini` 等）。
-  - **スクリプト言語・シェルも含む**：`bash`, `python`, `node`, `ruby`, `java`, `perl` などは、本体バイナリにネットワークシンボルが無くても任意のネットワークツールを内部で呼び出せるため `Always` として扱う（フェイルセーフ）。
-- `NetworkTypeConditional`：引数によってネットワーク操作になるかが決まる。
-  - `git`：サブコマンドが `clone` / `fetch` / `pull` / `push` / `remote` の場合（`findFirstSubcommand` でオプションを読み飛ばして判定）。
-  - `rsync`：リモート指定がある場合。
-  - 加えて、引数に URL や SSH 形式アドレスがあればネットワークと判定。
+内側コマンドの評価（`evaluateInnerAs`）では、特権・破壊操作・coreutils・システム変更・任意コード実行ランナー・危険引数パターン・リスクプロファイル要因をすべて折り込み、ラップされたコマンドが直接起動の場合より過小評価されないようにする。連鎖中の実体は、Floor/Critical/Reject のいずれの結果でも監査のために記録される。
 
-これらの判定もシンボリックリンクを辿って行う。
-
-#### 4-2. バイナリ静的解析（プロファイル未登録かつ絶対パス）
-
-プロファイルに無い未知コマンドは、事前計算された解析レコード（`RecordStore`）を用いて静的解析する（`analyzeBinarySignals`）。レコードには ELF/Mach-O のシンボル解析・シスコール解析の結果が含まれる。
-
-検出されるシグナルと扱い：
-
-| シグナル | 結果 |
-|----------|------|
-| ネットワークシンボル（socket/DNS）・ネットワークシスコール | `isNetwork = true`（Medium 相当） |
-| 動的ロードシンボル（`dlopen`/`dlsym`/`dlvsym`） | `isHighRisk = true`（High） |
-| exec シスコール | `isHighRisk = true`（High） |
-| `svc #0x80` 直接シスコール（未解決） | `isHighRisk = true`（High） |
-| mprotect 系で `PROT_EXEC` が確定または不明 | `isHighRisk = true`（High） |
-
-**フェイルクローズドの設計**：解析の確実性が担保できない場合は安全側（高リスク）に倒す。
-
-- `RecordStore` が nil（解析機能なし）→ `(false, false)`。
-- `contentHash` が空（バイナリの同一性が未検証）→ `(true, true)` = High。
-- 解析レコードが見つからない／スキーマ不一致／content hash 不一致／解析エラー／未知の結果 → いずれも High 扱い。
-
-> 注：`contentHash` はハッシュ検証で得た「algo:hex」形式の事前計算ハッシュであり、解析レコードがディスク上のバイナリと一致することを保証する。リスク判定はファイル整合性検証と密接に連動している。
-
-#### 4-3. 引数ベースの検出
-
-プロファイル・バイナリ解析で確定しない場合でも、引数に以下が含まれればネットワークと判定する（`hasNetworkArguments`）：
-
-- `://` を含む URL。
-- SSH 形式アドレス（`[user@]host:path`）。メールアドレスやポート番号、時刻表記との誤検出を避けるため、正規表現で厳密に判定する。
-
-### Step 5: システム変更 → Medium
-
-`security.IsSystemModification` が以下を **Medium** と判定する：
-
-- システム管理系コマンド：`systemctl`, `service`, `mount`, `umount`, `fdisk`, `mkfs`, `crontab` 等。
-- パッケージ管理コマンド（`apt`, `yum`, `npm`, `pip` 等）で、引数に `install` / `remove` / `uninstall` / `upgrade` / `update` を伴う場合のみ。
-
-### Step 6: 既定 → Low
-
-上記いずれにも該当しないコマンドは **Low** とする。
+> 設計意図：これらの「束縛不能な実行形態」を拒否するのは、ハッシュ検証で確認した実体とは異なる実体が実行されてしまう経路を塞ぐためである。runner が自身で再実装できるラッパー（内側コマンドを抽出して exec する）だけが許容され、他者のプロセスがヘルパーを起動する形態は束縛できないため拒否される。
 
 ## コマンドリスクプロファイル
 
@@ -280,17 +234,26 @@ flowchart TD
     P --> F3["DestructionRisk<br>(破壊操作)"]
     P --> F4["DataExfilRisk<br>(データ持ち出し)"]
     P --> F5["SystemModRisk<br>(システム変更)"]
-    F1 --> M["BaseRiskLevel()<br>= max(全要因)"]
-    F2 --> M
-    F3 --> M
-    F4 --> M
-    F5 --> M
+
+    F2 --> PF["ProfileFactorRisk()<br>= max(破壊 / データ持ち出し /<br>該当するネットワーク)"]
+    F3 --> PF
+    F4 --> PF
 
     class P,F1,F2,F3,F4,F5 process;
-    class M result;
+    class PF result;
 ```
 
-各要因は `RiskFactor`（`Level` と人間可読の `Reason`）を持つ。総合リスクは全要因の **最大値**（`BaseRiskLevel`）として計算される。
+各要因は `RiskFactor`（`Level` と人間可読の `Reason`）を持つ。
+
+リスク評価への寄与の仕方は要因ごとに異なる：
+
+- `PrivilegeRisk` は専用の特権ゲート（ランク3、`IsPrivilege()`）で処理する。
+- `SystemModRisk` は `SystemModificationRisk`（後述）で処理する。
+- 残りの `DestructionRisk` / `DataExfilRisk` / `NetworkRisk`（該当する場合）は `ProfileFactorRisk` で 1 つのレベルに折り込み、ランク5の判定軸として最大値に寄与する。
+
+そのため、`CommandRiskProfile.BaseRiskLevel()`（全要因の単純最大値）は **現在の評価経路では使用されておらず**、プロファイル検査・テスト向けの補助関数として残されている。
+
+プロファイルの解決は `ResolveProfile(names)` が行う。シンボリックリンクで複数の名前がプロファイルに一致した場合は、各要因の最大値をとってマージする（`mergeProfilesMax`）。
 
 プロファイルはビルダーパターン（`NewProfile(...).XxxRisk(...).Build()`）で定義する。例：
 
@@ -301,14 +264,45 @@ NewProfile("sudo", "su", "doas").
     Build(),
 
 // AI サービス（ネットワーク + データ持ち出しの 2 要因）
-NewProfile("claude", "gemini", "chatgpt", ...).
+NewProfile("claude", "gemini", "chatgpt", "gpt", "openai", "anthropic").
     NetworkRisk(runnertypes.RiskLevelHigh, "Always communicates with external AI API").
     DataExfilRisk(runnertypes.RiskLevelHigh, "May send sensitive data to external service").
     AlwaysNetwork().
     Build(),
 ```
 
-`Validate()` により整合性が検証される（例：`NetworkTypeAlways` なら `NetworkRisk >= Medium` であること）。
+`NetworkType` は次の 3 種である（`ProfileNetworkApplies` が適用可否を判定する）：
+
+- `NetworkTypeAlways`：常にネットワーク操作を行う。
+  - 例：`curl`, `wget`（Medium）, `ssh`, `scp`, `nc`, `aws`、AI 系（`claude` 等、High）。
+  - **スクリプト言語・シェルも含む**：`bash`, `python`, `node`, `ruby`, `java`, `perl`、その他多数の言語ランタイム（Lua/Tcl/R/Julia/Guile/Erlang/JVM 系/.NET 系/PowerShell など）は、本体バイナリにネットワークシンボルが無くても任意のネットワークツールを内部で呼び出せるため `Always`（Medium）として扱う。なおこれらの多くは後述の **任意コード実行ランナー** にも該当し、その場合は High となる。
+- `NetworkTypeConditional`：引数によってネットワーク操作になるかが決まる。
+  - `git`：サブコマンドが `clone` / `fetch` / `pull` / `push` / `remote` の場合（グローバルオプションを読み飛ばして判定）。
+  - `rsync`：リモート指定がある場合。
+  - 加えて、引数に URL や SSH 形式アドレスがあればネットワークと判定。
+- `NetworkTypeNone`：ネットワークプロファイルなし。
+
+`Validate()` により整合性が検証される（例：`NetworkTypeAlways` なら `NetworkRisk >= Medium` であること、`NetworkSubcommands` は `Conditional` のみで指定可）。
+
+### システム変更リスク（`SystemModificationRisk`）
+
+システム変更は専用関数 `SystemModificationRisk(names, args)` が判定する（プロファイルの `SystemModRisk` ではなくこちらが評価経路の単一の情報源）。
+
+- `systemctl`：サブコマンドにより条件分岐（`SystemctlSubcommandRisk`）。変更系の動詞（start/stop/enable/mask など）と未知・識別不能な動詞は **High**、読み取り専用の動詞（status/show/list-* など）とサブコマンド省略は **Medium** の下限（Low にはしない。構成情報を露出しうるため）。
+- `service`：未検証の init スクリプトを実行するため常に **High**。
+- その他のシステム管理系コマンド（`mount`, `umount`, `fdisk`, `mkfs`, `crontab`, `at` 等）→ **Medium**。
+- パッケージ管理コマンド（`apt`, `yum`, `dnf`, `npm`, `pip`, `pacman` 等）で、引数に `install` / `remove` / `upgrade` 等の変更系の動詞を伴う場合のみ → **Medium**（`apt list` のような照会は対象外）。
+
+該当しない場合は `RiskLevelUnknown` を返し、システム変更軸は寄与しない。
+
+### 任意コード実行ランナー（`IsArbitraryCodeExecutionRunner`）
+
+`arbitrary_code.go` の `arbitraryCodeExecutionRunners` に列挙されたコマンドは、本ツールのリスク評価・ハッシュ検証の外部にある入力（スクリプト・レシピ・ビルド定義）から任意のコードを実行しうるため、**引数によらず High** とする。
+
+- シェル（`bash`, `sh`, `zsh` 等）、スクリプトインタプリタ・ランタイム（`python`, `node`, `ruby`, `perl`, `php`, `lua`, `java`, `dotnet`, `pwsh` 等、別名を含む）。
+- ビルド・タスクランナー（`make`, `cmake`, `gradle`, `mvn`, `bazel`, `rake`, `just`, `go`, `cargo` 等）。
+
+`--version` や `--help` のような無害な起動も区別せず High とする（網羅的に安全な起動を判別するのは安全でないため）。
 
 ### 新しいコマンドのプロファイルを追加する
 
@@ -316,52 +310,117 @@ NewProfile("claude", "gemini", "chatgpt", ...).
 2. 該当するリスク要因（`PrivilegeRisk` / `NetworkRisk` / `DestructionRisk` / `DataExfilRisk` / `SystemModRisk`）を設定する。
 3. ネットワークの種別（`AlwaysNetwork()` / `ConditionalNetwork(...)`）を必要に応じて指定する。
 4. 各リスク要因には根拠（`Reason`）を必ず記述する（監査ログに出力される）。
+5. インタプリタ・ビルドランナーを追加する場合は、`arbitrary_code.go` の `arbitraryCodeExecutionRunners` にも追加し、別名が過小評価されないようにする。
+
+## バイナリ静的解析（`NetworkAnalyzer.Classify`）
+
+プロファイルに無い未知コマンドは、事前計算された解析レコード（`RecordStore`）を用いて静的解析する（`NetworkAnalyzer.Classify`、`internal/runner/base/security/network_analyzer.go`）。レコードには ELF/Mach-O のシンボル解析・シスコール解析の結果が含まれる。`Classify` は **4 つのクラス** のいずれかを返す（`risktypes.BinaryAnalysisResult`）。
+
+| クラス | 意味 | 評価器での扱い |
+|--------|------|----------------|
+| `BinaryAnalysisClean` | 危険・ネットワークいずれのシグナルも無し | 寄与なし（Low） |
+| `BinaryAnalysisNetwork` | ネットワークシグナルのみ | Medium |
+| `BinaryAnalysisHighRisk` | 動的ロード/exec/svc/mprotect シグナル | High |
+| `BinaryAnalysisUncertain` | シグナルを確実に取得できない | **Blocking 拒否**（フェイルクローズド） |
+
+検出されるシグナルと理由コード：
+
+| シグナル | 扱い | 理由コード |
+|----------|------|-----------|
+| ネットワークシンボル（socket/DNS）・ネットワークシスコール | Network | `binary_analysis_network` |
+| 動的ロードシンボル（`dlopen`/`dlsym`/`dlvsym`） | HighRisk | `binary_analysis_dynamic_load` |
+| exec シスコール | HighRisk | `binary_analysis_exec` |
+| `svc #0x80` 直接シスコール（未解決） | HighRisk | `binary_analysis_svc` |
+| mprotect 系で `PROT_EXEC` が確定または不明 | HighRisk | `binary_analysis_mprotect_exec` |
+
+**フェイルクローズドの設計**：解析の確実性が担保できない場合は `Uncertain`（Blocking 拒否）に倒す。具体的には次のいずれも `Uncertain` となる。
+
+- `RecordStore` が nil（解析機能なし）→ `analysis_disabled`（通常はランク1の同一性ゲートで先に拒否される）。
+- `contentHash` が空（バイナリの同一性が未検証）→ `uncertain_unverified_identity`。
+- 解析レコードが見つからない → `uncertain_missing_record`。
+- スキーマ不一致 → `uncertain_schema_mismatch`。
+- content hash 不一致 → `uncertain_hash_mismatch`。
+
+なお、分類不能な真の I/O 失敗（レコード読込失敗）だけは `Classify` が **エラー** を返し、評価器はそれを呼び出し元へ伝播する（`NormalResourceManager` は最小限の deny 監査を出してから処理を中止する）。
+
+> 注：`contentHash` はハッシュ検証で得た「algo:hex」形式の事前計算ハッシュであり、解析レコードがディスク上のバイナリと一致することを保証する。リスク判定はファイル整合性検証と密接に連動している。
+
+### ネットワーク引数の検出（`HasNetworkArguments`）
+
+プロファイル・バイナリ解析とは別に、引数に以下が含まれればネットワーク操作とみなす（プロファイル未登録のコマンドに対してランク4〜8の軸として Medium を寄与）。
+
+- `://` を含む URL。
+- SSH 形式アドレス（`[user@]host:path`）。メールアドレスやポート番号、時刻表記との誤検出を避けるため、正規表現で厳密に判定する。
+
+## coreutils 単一バイナリの分類
+
+Rust 製 coreutils のように、すべてのサブコマンドが **1 つのバイナリ** を共有する実装に対応するための特別処理である（`security.CoreutilsCommandRisk`、`coreutils.go`）。通常のバイナリ静的解析では、単一バイナリ内に全サブコマンドのシンボルを含むため誤分類されてしまう。これを避けるため、ランク4で専用ロジックにより分類し、該当時はバイナリ解析軸を抑止する。
+
+判定条件と挙動：
+
+- 対象は、解決済みパスの **親ディレクトリが coreutils ディレクトリ（`common.CoreutilsDir = /usr/lib/cargo/bin/coreutils`）と完全一致** するコマンドのみ。一致しない場合は `handled=false` を返し、他の軸（バイナリ解析を含む）で評価される。
+- setuid/setgid ビットが立っていれば **High**（coreutils のハードリンクが setuid であることは通常ありえず、パッケージング不備か改ざんの兆候）。
+- 実効サブコマンドの決定：
+  - 通常はパスの basename（例：`/usr/lib/cargo/bin/coreutils/rm` → `rm`）。
+  - マルチコール・エントリポイント（basename が `coreutils`）の場合は、引数の最初の非オプション要素を採用（`coreutils rm -rf ...` → `rm`）。
+- 実効サブコマンドによる分類：
+  - 破壊系（`dd`, `rm`, `rmdir`, `shred`, `truncate`, `unlink`）→ **High**
+  - 既知の安全系（`ls`, `cat`, `mkdir`, `sha256sum` 等の読み取り・情報取得・テキスト処理・新規作成系）→ **Low**
+  - それ以外（ディレクトリ配下だが分類不明・識別不能）→ **High**（フェイルセーフの既定。`coreutils <subcmd>` が解析不能な場合に破壊系サブコマンドを隠せないよう、Medium ではなく High に倒す）
+- setuid チェックの stat がエラーになった場合、実行時パスでは **エラーを伝播してフェイルクローズド**（Blocking 拒否）。
 
 ## 実行時パスとドライランパスの違い
 
-リスク判定には 2 つの入口があり、**目的が異なる** ことに注意する。
+リスク判定には 2 つの入口があるが、**いずれも同一の `EvaluateRisk` を共有** する。差異は「結果をどう扱うか」だけである（以前存在した `AnalyzeCommandSecurity` のような別系統のドライラン専用ロジックは廃止された）。
 
 | 観点 | 実行時パス | ドライランパス |
 |------|-----------|---------------|
-| 関数 | `risk.StandardEvaluator.EvaluateRisk` | `security.AnalyzeCommandSecurity` |
-| 呼び出し元 | `NormalResourceManager.ExecuteCommand` | `dryrun_manager.go` |
-| 目的 | 実行可否の判断（許容レベルと比較） | リスクの **表示・説明** |
-| エラー時の挙動 | フェイルクローズド（実行を中止） | フェイルセーフ（High として表示を継続） |
-| 追加の判定 | なし | ディレクトリ既定リスク、ハッシュ検証、setuid、危険パターン照合 など |
+| 評価関数 | `risk.StandardEvaluator.EvaluateRisk`（共通） | 同左（共通） |
+| 呼び出し元 | `NormalResourceManager.ExecuteCommand` | `DryRunResourceManager.evaluateCommandRisk` |
+| 目的 | 実行可否の判断（許容レベルと比較） | リスクの **表示・説明**（実行はしない） |
+| ポリシー拒否時の挙動 | 実行を中止（エラー） | 拒否を記録して **継続**（プレビュー継続） |
+| 同一性未検証／解析不能の扱い | Blocking 拒否（中止） | Blocking 拒否として記録。`verification_unavailable`（同一性未検証・解析無効）は別扱いし、専用の終了コードで報告 |
+| 内部エラー（レコード読込失敗等） | 監査を出して中止 | 監査を出して中止（ハードエラー） |
 
-`AnalyzeCommandSecurity` はドライラン時により詳細な情報を提供するために、以下の追加判定を含む（実行時パスとは別系統）：
-
-- **ディレクトリベースの既定リスク**（`getDefaultRiskByDirectory`）：`/bin`, `/usr/bin` などは Low、`/sbin`, `/usr/sbin` などは Medium。
-- **ハッシュ検証失敗** → Critical。
-- **setuid/setgid ビット** → High。
-- **危険コマンドパターン照合**（`rm -rf`, `dd if=`, `mkfs` 等）。
-
-> 補足：両パスは共通の `security` パッケージ関数（特権昇格・破壊操作・coreutils・ネットワーク解析）を再利用しているが、判定の組み立てと最終的な扱いは独立している。ロジックを変更する際は **両方への影響** を確認すること。
+両パスとも、判定の確実性（同一性・解析の可用性）が担保できない場合はフェイルクローズドに倒す点は共通である。ドライランは「この環境では検証できないため拒否されるが、検証可能な本番環境での結果を予測する」ための表示を付加する点が異なる。
 
 ## 監査ログ
 
-リスク判定の結果は監査ログに記録される（`internal/runner/base/audit/logger.go` の `LogRiskProfile`）。
+リスク判定の結果は監査ログに記録される（`internal/runner/base/audit/logger.go` の `Logger.LogRiskProfile`）。許可・拒否のいずれの決定でも、また内部エラーで中止する経路でも、必ず 1 件のエントリが出力される。入力は `risktypes.RiskAuditEntry`（DTO）である。
+
+主なフィールド：
 
 - `audit_type`: `command_risk_profile`
-- `risk_level`: 算出されたリスクレベル
-- `risk_factors`: 各リスク要因の `Reason` の配列
-- `network_type`: ネットワーク種別
+- `mode`: `normal` / `dry-run`
+- `decision`: `allow` / `deny`
+- `risk_level`: 算出された実効リスクレベル
+- `max_allowed_risk`: 設定された最大許容リスク
+- `resolved_path` / `content_hash` / `record_id`: 相関用の識別情報（未取得なら欠落マーカー）
+- `network_type`: ネットワーク種別（none/always/conditional）
+- `reason_codes`: 機械可読の理由コード（`ReasonCode` の配列）
+- `risk_factors`: 各リスク要因の人間可読な `Reason` の配列
+- `blocking_reason`: 拒否理由コード（Blocking・Critical いずれの拒否でも設定）
+- `error_class`: 失敗起因の拒否の分類（シンボリックリンク解決失敗・coreutils ファイル情報失敗・レコード読込失敗・パス解決失敗・risk_level 設定不正など）
+- `verification_unavailable`: ドライランで検証/解析が利用不能だったことを示す
+- `command_args`: マスク済みのコマンド引数
+- `chain`: 間接実行で実行・ロードされた各実体（path / role / disposition / content_hash）
 
-ログレベルはリスクレベルに対応する：
+ログレベルはリスクレベルに対応し、さらに **拒否の場合は最低でも Warn** に引き上げられる（Low ceiling で拒否された Medium コマンドも Warn/Error 検索で見つかるように）。
 
 | リスクレベル | ログレベル |
 |-------------|-----------|
 | Critical | Error |
 | High | Warn |
-| Medium | Info |
-| Low / Unknown | Debug |
+| Medium | Info（拒否時は Warn 以上） |
+| Low / Unknown | Debug（拒否時は Warn 以上） |
 
-これにより、なぜそのコマンドが特定のリスクレベルと判定されたかを事後に追跡できる。
+これにより、なぜそのコマンドが特定のリスクレベルと判定されたか、どの理由コードで拒否されたかを事後に追跡できる。
 
 ## まとめ
 
-- `runner` は実行時に各コマンドの **実効リスクレベル** を算出し、設定の **最大許容リスクレベル** と比較して実行可否を決める。
-- 判定は危険度の高い順（特権昇格 → 破壊操作 → coreutils → ネットワーク → システム変更 → 既定 Low）で早期リターンする。
-- 複数要因を持つコマンドは、要因の **最大値** が総合リスクとなる。
-- 判定が確実でない場合（シンボリックリンク異常、解析レコード欠落、ハッシュ未検証など）は、実行時パスでは **フェイルクローズド**（実行しない）で安全側に倒す。
-- `critical` は設定で指定できず、特権昇格などの「必ず遮断すべき」コマンドに内部的に割り当てられる。
+- `runner` は実行時に各コマンドの **検証済み実行計画（`VerifiedCommandPlan`）** を算出し、その実効リスクレベルを設定の **最大許容リスクレベル** と比較して実行可否を決める。判定不能・束縛不能なケースは許容レベルに関わらず **Blocking 拒否** とする。
+- 判定はまず短絡する拒否ゲート（同一性ゲート → 間接実行 → 特権昇格）を評価し、続いて残りの判定軸（coreutils・破壊操作・システム変更・プロファイル要因・危険引数・任意コード実行・ネットワーク引数・バイナリ解析）の **最大値** をとる。早期リターンではなく順序非依存の最大値である。
+- 検証済みバイナリ以外を実行・ロードする **間接実行形態** は、runner が再実装できるラッパーを除き拒否される。
+- 判定が確実でない場合（同一性未検証、解析無効、シンボリックリンク異常、解析レコード欠落・不一致など）は **フェイルクローズド**（Blocking 拒否）で安全側に倒す。
+- `critical`（および `unknown`）は設定で指定できず、`critical` は特権昇格などの「必ず遮断すべき」コマンドに内部的に割り当てられる。
+- 実行時パスとドライランパスは同一の `EvaluateRisk` を共有し、結果の扱い（中止するか、表示して継続するか）だけが異なる。
