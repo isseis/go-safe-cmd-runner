@@ -722,8 +722,12 @@ func (d *DryRunResourceManager) calculateSummary() *ExecutionSummary {
 
 // GetDryRunResults returns the dry-run results
 func (d *DryRunResourceManager) GetDryRunResults() *DryRunResult {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
+	// This mutates d.dryRunResult (slice copy, status/phase/error/summary/exit code),
+	// so it must hold the exclusive lock: a read lock would let concurrent callers
+	// race on those writes. The helpers below (calculateSummary,
+	// previewExitCodeLocked) are lock-free and run under this held lock.
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
 	if d.dryRunResult == nil {
 		return nil
