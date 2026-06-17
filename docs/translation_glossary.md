@@ -147,7 +147,6 @@
 | 例外 | exception | |
 | 実行時 | at runtime | |
 | 早期リターン | early return | 最初に該当した結果を返す制御方式 |
-| 実効リスク | effective risk | 算出された実際の危険度（リスク判定の文脈） |
 | 実行可能ファイル | executable | |
 | 実行 | execute / execution | |
 | 明示 | explicit | env_allowlistの継承モードの文脈 |
