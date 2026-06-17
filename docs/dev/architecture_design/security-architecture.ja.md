@@ -411,19 +411,25 @@ AllowedCommands: []string{
 
 **リスク評価エンジン**:
 ```go
-// 場所: internal/runner/risk/evaluator.go
+// 場所: internal/runner/base/risk/evaluator.go
 type StandardEvaluator struct{}
 
-func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
-    // 特権昇格コマンドをチェック（クリティカルリスク - ブロックされるべき）
-    isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmd.Cmd)
-    if err != nil {
-        return runnertypes.RiskLevelUnknown, err
+// EvaluateRisk は素の RiskLevel ではなく VerifiedCommandPlan を返す。評価した同一性と
+// 実行する同一性を束縛し、executor は plan（検証済みの argv/env/identity）のみを実行し、
+// 素の argv/env は決して実行しないようにするためである。実効リスクは、該当する全次元
+// （プロファイル・破壊・システム変更・危険引数パターン・任意コード実行ランナー・バイナリ
+// 解析）の最大値であり、フェイルクローズのゲートは最大値を取る前に短絡する。
+func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error) {
+    // 最初に identity ゲート: 検証済みハッシュがない、またはバイナリ解析が無効の場合、
+    // バイナリの同一性を確認できないため、設定された risk_level によらず拒否（Blocking）する。
+    // これは全リスク次元より前に実行され、未検証バイナリに対していずれの経路でも
+    // Low/High 許容のリスクを確定させないようにする。
+    if blocked, ok := e.identityGate(cmd); ok {
+        return blockingPlan(blocked), nil
     }
-    if isPrivEsc {
-        return runnertypes.RiskLevelCritical, nil
-    }
-    // ... 追加のリスク評価ロジック
+    // 特権昇格（sudo/su/doas）-> Critical（常にブロック）。
+    // ... 間接実行の解決、coreutils 分類、プロファイル要因、危険引数パターン、
+    // 任意コード実行ランナー、バイナリ解析を、次元の最大値へ合流させる。
 }
 ```
 
@@ -1036,7 +1042,7 @@ if !filepath.IsAbs(hashDir) {
 - すべての操作でデフォルト拒否
 - セキュリティ障害時の緊急シャットダウン
 - 包括的エラー処理とログ
-- セキュリティ機能が利用できない場合の優雅な劣化
+- バイナリ解析・ファイル検証が利用できない場合は実行を拒否する（優雅な劣化ではなくフェイルクローズ）。同一性を確認できないバイナリは決して実行しない。dry-run のプレビューは引き続き利用可能。
 
 ### 監査と監視
 

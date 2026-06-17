@@ -377,9 +377,9 @@
 
 **対象ファイル**: [security-architecture.md](../../../docs/dev/architecture_design/security-architecture.md), `security-architecture.ja.md`
 
-- [ ] `:1039` 付近の "Graceful degradation when security features are unavailable" を「解析/検証が無効な場合は実行を拒否する（dry-run は可）」へ改訂（§5.3 例外 1。F-005/AC-51）。
-- [ ] `:417` 付近の旧シグネチャ `EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error)` を目標シグネチャ `EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error)` へ更新（§5.3 例外 2。引数型の陳腐化も是正）。
-- [ ] 解析無効時に Low 通過/実行継続を期待する既存テストの有無を洗い出し、あれば常時拒否へ更新（§5.3 例外 1(3)）。
+- [x] `:1039` 付近の "Graceful degradation when security features are unavailable" を「解析/検証が無効な場合は実行を拒否する（dry-run は可）」へ改訂（§5.3 例外 1。F-005/AC-51）。
+- [x] `:417` 付近の旧シグネチャ `EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error)` を目標シグネチャ `EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error)` へ更新（§5.3 例外 2。引数型の陳腐化も是正）。
+- [x] 解析無効時に Low 通過/実行継続を期待する既存テストの有無を洗い出し、あれば常時拒否へ更新（§5.3 例外 1(3)）。Phase 1（AC-51 `TestEvaluateRisk_AnalysisDisabledAlwaysDeny`）で既に常時拒否が実装・テスト済みで、Low 通過を期待する残存テストは無し。
 
 **完了条件**: `rg -n "Graceful degradation when security features are unavailable" docs/dev/architecture_design/security-architecture.md` が 0 件。`rg -n "cmd \*runnertypes\.Command\) \(runnertypes\.RiskLevel" docs/dev/architecture_design/security-architecture.md` が 0 件。
 
@@ -387,14 +387,14 @@
 
 **対象ファイル**: [risk_assessment.ja.md](../../../docs/user/risk_assessment.ja.md), `risk_assessment.md`
 
-- [ ] §3.1 の表（[risk_assessment.ja.md:71](../../../docs/user/risk_assessment.ja.md#L71) の `| \`systemctl\`/\`apt\`/\`dpkg\` 等のシステム変更コマンド | \`medium\` |` 行）を書き換える。この 1 行が **AC-34（dpkg 削除）と AC-37（systemctl レベル是正）の双方**に関わるため、同時に改訂する: `dpkg` を除去し、`systemctl` 変更系=High / 読み取り専用=Medium 下限・`service`=High・`apt` install/remove=Medium を反映した記述へ分解する（旧 `systemctl … medium` の単一行を残さない）。`.md` 版の対応行も同様に修正。
-- [ ] ネットワーク系（`curl`/`wget`/`ssh`）= medium、シェル/インタプリタ/ビルドランナー（`bash`/`python`/`node`/`make`）= high を説明（AC-35）。
-- [ ] coreutils 単一バイナリ分類（Low/Medium/High 3 区分）を説明（AC-36）。
-- [ ] 「最終リスクはすべての因子の最大値」をプロファイル要因含む最大値へ整合（AC-38）。
-- [ ] §3.3 の挙動表を F-005 の deny/error 2 系統へ改訂（AC-17 のユーザー向け部分）。
-- [ ] §5 設定例を修正後実装で動作する例へ（恒久拒否される例を残さない。AC-50）。
-- [ ] 脅威モデル（ブロックリスト方式・allowlist/ハッシュ固定前提・basename 限界・output_file 対象外・root 判定系との関係）を明記（AC-66/67/29）。
-- [ ] 移行ノートを追記（`claude`/`systemctl`/`service`/絶対パス破壊/インタプリタ/ビルド/`unknown` 設定エラー化/解析無効/ラッパー。AC-19）。
+- [x] §3.1 の表（[risk_assessment.ja.md:71](../../../docs/user/risk_assessment.ja.md#L71) の `| \`systemctl\`/\`apt\`/\`dpkg\` 等のシステム変更コマンド | \`medium\` |` 行）を書き換える。この 1 行が **AC-34（dpkg 削除）と AC-37（systemctl レベル是正）の双方**に関わるため、同時に改訂する: `dpkg` を除去し、`systemctl` 変更系=High / 読み取り専用=Medium 下限・`service`=High・`apt` install/remove=Medium を反映した記述へ分解する（旧 `systemctl … medium` の単一行を残さない）。`.md` 版の対応行も同様に修正。
+- [x] ネットワーク系（`curl`/`wget`/`ssh`）= medium、シェル/インタプリタ/ビルドランナー（`bash`/`python`/`node`/`make`）= high を説明（AC-35）。
+- [x] coreutils 単一バイナリ分類（Low/Medium/High 3 区分）を説明（AC-36）。
+- [x] 「最終リスクはすべての因子の最大値」をプロファイル要因含む最大値へ整合（AC-38）。
+- [x] §3.3 の挙動表を F-005 の deny/error 2 系統へ改訂（AC-17 のユーザー向け部分）。新 §3.4 として拒否（Blocking）/エラーの 2 系統表へ書き換え。
+- [x] §5 設定例を修正後実装で動作する例へ（恒久拒否される例を残さない。AC-50）。`systemctl status` 例を `risk_level="low"`→`"medium"`、`apt-get install` 例を `"high"`→`"medium"` へ修正。
+- [x] 脅威モデル（ブロックリスト方式・allowlist/ハッシュ固定前提・basename 限界・output_file 対象外・root 判定系との関係）を明記（AC-66/67/29）。新 §7 として追加。
+- [x] 移行ノートを追記（`claude`/`systemctl`/`service`/絶対パス破壊/インタプリタ/ビルド/`unknown` 設定エラー化/解析無効/ラッパー。AC-19）。新 §8 として追加。
 
 **完了条件**: 下記 AC 検証表の static rg がすべて期待どおり。
 
