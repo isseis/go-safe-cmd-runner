@@ -91,6 +91,7 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| 危険文字 | dangerous character | 出力パス検査の文脈 |
 | データ持ち出し | data exfiltration | 機密データの外部送信（セキュリティの文脈） |
 | データフロー解析 | dataflow analysis | CFGを用いたデータの流れの解析 |
 | 依存 / 依存解析 | dependency / dependency analysis | 動的ライブラリ依存解析の文脈 |
@@ -142,6 +143,7 @@
 | エラー | error | |
 | エラーメッセージ | error message | |
 | エスケープ | escape / escaping | |
+| 完全一致 | exact match | basename 照合方式の文脈 |
 | 排他性 | exclusivity | Field exclusivity context |
 | 例 | example | |
 | 例外 | exception | |
@@ -149,6 +151,7 @@
 | 早期リターン | early return | 最初に該当した結果を返す制御方式 |
 | 実行可能ファイル | executable | |
 | 実行 | execute / execution | |
+| 終了コード | exit code | プロセスの終了ステータス |
 | 明示 | explicit | env_allowlistの継承モードの文脈 |
 | 展開 | expansion | |
 | 展開済み | expanded | 変数展開の文脈 |
@@ -342,12 +345,15 @@
 | パラメータ値 | parameter value | Template parameter value |
 | パース | parse / parsing | 構文解析 |
 | パーサ | parser | 構文解析器 |
+| 部分一致 | partial match | 部分文字列一致。root 向け危険判定の文脈 |
 | パス | path | |
+| パストラバーサル | path traversal | `../` 等によるディレクトリ脱出（セキュリティの文脈） |
 | Pattern | pattern | パターン |
 | Payload | payload | ペイロード |
 | パフォーマンス | performance | |
 | プレースホルダー | placeholder | Template parameter syntax like ${...} |
 | プレースホルダー構文 | placeholder syntax | |
+| ポリシー拒否 | policy deny | リスクゲートによる拒否（検証不能による拒否と区別） |
 | 優先する | prefer | |
 | 権限 | permission / privilege | "permission"はファイル権限、"privilege"は特権 |
 | 特権昇格 | privilege escalation | セキュリティの文脈 |
@@ -545,6 +551,7 @@
 | 可変長命令 | variable-length instruction | 1〜15バイトのx86_64命令 |
 | 仮想ノード | virtual node | CFG解析で使用する論理的な終端ノード |
 | バリデーション | validation | データ妥当性検証 |
+| 検証不能 | verification unavailable | 解析／ファイル検証が利用不能な状態。dry-run の終了コードで区別 |
 | 可視化 | visualization | ログや統計による情報の見える化 |
 | 妥当性 | validity | |
 | 値 | value | |
@@ -568,6 +575,7 @@
 | ワークフロー | workflow | |
 | 回避策 | workaround | |
 | 作業ディレクトリ | working directory | |
+| 書き込み権限 | write permission | ファイル／ディレクトリへの書き込み可否 |
 | ワークスペース | workspace | |
 | Wrapper | wrapper | ラッパー |
 | 書き込み | write | |
@@ -681,6 +689,9 @@
 | 2026-05-01 | Mach-Oバイナリ解析ドキュメント関連の用語を追加 (breadth-first search, namespace, slice (Fat binary), trampoline) |
 | 2026-06-12 | コマンドリスク判定ドキュメント関連の用語を追加 (risk evaluation, effective risk, early return, maximum allowed risk level, multicall, fail-closed, fail-safe, data exfiltration, static analysis, privilege escalation) |
 | 2026-06-17 | 実行時リスク評価ドキュメント（Task 0136）関連の用語を追加 (arbitrary code execution, blocklist, data exfiltration, effective risk, fail-closed, fail-safe, hash pinning, hard link, threat model) |
+| 2026-06-17 | command-risk-evaluation 開発者文書（Task 0136 Step 4-3）関連の用語を追加 (exact match, partial match) |
+| 2026-06-18 | runner_command ユーザーガイド（-dry-run-fail-unverified フラグ）関連の用語を追加 (exit code, policy deny, verification unavailable) |
+| 2026-06-18 | command-risk-evaluation 文書（output_file 検証）関連の用語を追加 (dangerous character, path traversal, write permission) |
 
 ---
 

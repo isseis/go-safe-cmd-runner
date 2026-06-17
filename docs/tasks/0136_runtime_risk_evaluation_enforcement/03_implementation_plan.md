@@ -408,15 +408,15 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test` 緑。`make lint` の残存指摘は origin/main にも存在する goconst のみ＝既存無関係指摘、AC-21 で除外。本 PR は docs のみで Go 変更なし）
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/735）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Step 4-3: `command-risk-evaluation.{ja,md}`（PR #724 マージ後）
 
 **対象ファイル**: `docs/dev/architecture_design/command-risk-evaluation.ja.md` / `.md`（**PR #724 マージ後に存在**）
 
-- [ ] PR #724 マージ後、AC-15（`risk_level` スコープ明記）・AC-17（deny/error/High 許可の 3 区別）・AC-18（dry-run 失敗時挙動）・AC-29（重複定義の優先順位・root 判定系との関係）を反映。
-- [ ] AC-66/67 の脅威モデルを開発者向けにも明記。
+- [x] PR #724 マージ後、AC-15（`risk_level` スコープ明記＝コマンドレベル/テンプレートのみ・グループ/グローバル非対応）・AC-17（deny/error/High 許可の 3 区別）・AC-18（dry-run 失敗時挙動＝High として表示継続しない/deny 予告）・AC-29（複数定義の優先順位・root 判定系〔部分一致〕との関係）を反映（新 §「`risk_level` のスコープ」「拒否/エラー/High 許可の区別」「脅威モデルと限界」）。**実装整合の補足**: AC-18 の deny 原因列挙のうち「非対応フォーマット」は、Phase 1 の `NetworkAnalyzer.Classify`／`handleAnalysisOutput` が `NotSupportedBinary` を Clean 扱い（deny ではない）とする実装に確定済みのため、文書では deny 予告原因に含めない（ground truth 整合。`ReasonUncertainUnsupportedFormat` は定義のみで未発行）。
+- [x] AC-66/67 の脅威モデルを開発者向けにも明記（新 §「脅威モデルと限界」：ブロックリスト方式・allowlist＋ハッシュ固定前提・basename 完全一致の限界〔ハードリンク/リネーム〕・`output_file` 対象外・root 判定系との関係）。
 
 **完了条件（PR #724 マージ後）**: AC 検証表の該当 static rg。**依存**: PR #724 未マージのため、本 Step はマージ完了まで未着手（`02_architecture.md` §3.4 注・付録）。Phase 1〜3 の完了はこの Step に依存しない。
 
@@ -428,8 +428,8 @@
 
 **レビュー観点**: AC-15/17/18/29 の反映（`risk_level` スコープ・deny/error/High 許可の区別・dry-run 失敗時挙動・重複定義の優先順位）/ AC-66/67 脅威モデルの開発者向け明記。**前提**: PR #724 がマージ済みで対象ファイルが存在すること（未マージなら本 PR は着手しない）
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test` 緑。`make lint` の残存指摘は origin/main にも存在する goconst のみ＝既存無関係指摘、AC-21 で除外。本 PR は docs のみで Go 変更なし）
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/736）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -496,14 +496,14 @@
 
 ## 6. 実装チェックリスト（PR 単位）
 
-- [ ] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3）— 共有型基盤・config、グリーンゲート緑
-- [ ] PR-2 マージ済み（対象ステップ: 1-4 / 1-5 / 1-6 / 1-7 / 1-8 / 1-9）— 評価コア＋normal deny、グリーンゲート緑
-- [ ] PR-3 マージ済み（対象ステップ: 2-1）— 間接実行ゲート、グリーンゲート緑
-- [ ] PR-4 マージ済み（対象ステップ: 2-2 / 2-3）— fd 束縛実行・二重解決廃止、グリーンゲート緑
-- [ ] PR-5 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3）— 監査＋dry-run preview、AC 充足（**外部リリース可否ゲート達成**）
-- [ ] PR-6 マージ済み（対象ステップ: 4-1 / 4-2）— security/user 文書整合・移行ノート
-- [ ] PR-7 マージ済み（対象ステップ: 4-3）— command-risk-evaluation 整合（**PR #724 マージ後**）
-- [ ] 全 AC が §7 の検証表で `test` または `static` により充足
+- [x] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3）— 共有型基盤・config、グリーンゲート緑（#728）
+- [x] PR-2 マージ済み（対象ステップ: 1-4 / 1-5 / 1-6 / 1-7 / 1-8 / 1-9）— 評価コア＋normal deny、グリーンゲート緑（#729）
+- [x] PR-3 マージ済み（対象ステップ: 2-1）— 間接実行ゲート、グリーンゲート緑（#732）
+- [x] PR-4 マージ済み（対象ステップ: 2-2 / 2-3）— fd 束縛実行・二重解決廃止、グリーンゲート緑（#733）
+- [x] PR-5 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3）— 監査＋dry-run preview、AC 充足（**外部リリース可否ゲート達成**）（#734）
+- [x] PR-6 マージ済み（対象ステップ: 4-1 / 4-2）— security/user 文書整合・移行ノート（#735）
+- [ ] PR-7 マージ済み（対象ステップ: 4-3）— command-risk-evaluation 整合（外部依存 PR #724 はマージ済み。PR-7 #736 作成済み・マージ待ち）
+- [ ] 全 AC が §7 の検証表で `test` または `static` により充足（AC-15/17/18/29/66/67 の command-risk-evaluation 部分は PR-7 #736 で記述済み。PR-7 マージ時に最終確認して確定）
 - [ ] §8 クロス検索チェックリスト完了
 
 ---

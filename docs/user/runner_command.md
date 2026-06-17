@@ -647,6 +647,53 @@ runner -config config.toml -dry-run -dry-run-detail full -show-sensitive > debug
 shred -u debug.txt  # secure deletion
 ```
 
+#### `-dry-run-fail-unverified`
+
+**Overview**
+
+In dry-run mode, treats a command that **could not be verified in this environment** as a hard failure (non-zero exit) instead of the default behavior of reporting it as a note and exiting with code 0.
+
+A dry-run distinguishes two kinds of deny by the process exit code:
+
+- **Policy deny** — the computed effective risk exceeds the command's `risk_level`, or a non-environment Blocking deny (e.g., a symlink-resolution failure, or an indirect-execution form that cannot be bound). Always exits non-zero.
+- **Verification-unavailable deny** — binary analysis / file verification is unavailable in this environment, so the command's identity cannot be confirmed *here* (for example, a local or CI dry-run where the production hash database is not configured, or the command's identity hash has not been established). By default this is reported only as a note and does **not** fail the dry-run (exit code 0), so a preview run is not spuriously broken. (A genuine policy violation such as a missing or mismatched analysis record is a policy deny, not a verification-unavailable deny.)
+
+Setting `-dry-run-fail-unverified` opts a verification-unavailable deny into being treated as a failure, returning a dedicated exit code that is distinguishable from a real policy deny.
+
+**Syntax**
+
+```bash
+runner -config <path> -dry-run -dry-run-fail-unverified
+```
+
+**Dry-run Exit Codes**
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | All commands are allowed, or a verification-unavailable deny under the default (note-only) behavior |
+| `1` | Policy deny — at least one command's effective risk exceeds its `risk_level`, or a non-environment Blocking deny |
+| `3` | Verification-unavailable deny — only when `-dry-run-fail-unverified` is set |
+
+**Use Cases**
+
+- **CI verifiability gate**: in a CI environment that has the production hash database, use `-dry-run-fail-unverified` to fail the build when any command cannot be verified, catching missing hash records before deployment.
+- **Local preview (default)**: omit the flag for local previews that lack the production hash database, so a verification-unavailable deny is shown as a note without failing the run.
+
+**Usage Examples**
+
+```bash
+# Default: a verification-unavailable deny is reported as a note (exit code 0)
+runner -config config.toml -dry-run
+
+# CI: fail on a verification-unavailable deny (exit code 3)
+runner -config config.toml -dry-run -dry-run-fail-unverified
+```
+
+**Notes**
+
+- A policy deny (exit code `1`) takes precedence over a verification-unavailable deny (exit code `3`).
+- This flag only affects dry-run; it has no effect without `-dry-run`.
+
 ### 3.3 Log Configuration
 
 #### `-log-level <level>` / `-l <level>`
@@ -1914,4 +1961,4 @@ unset NO_COLOR  # Unset if set
 
 ---
 
-**Last Updated**: 2025-10-02
+**Last Updated**: 2026-06-18

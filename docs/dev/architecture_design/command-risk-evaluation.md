@@ -57,6 +57,10 @@ flowchart LR
 - `critical` and `unknown` **cannot be specified in the configuration file** (`ParseRiskLevel` returns an error for both). `critical` is reserved for internal use only and is assigned to things that "must be blocked," such as privilege escalation commands.
 - When `risk_level` is omitted in the configuration, the default value is `low` (`CommandSpec.GetRiskLevel` returns `RiskLevelLow`).
 
+### Scope of `risk_level` (command-level only)
+
+`risk_level` is a **command-level** setting. It is declared on an individual command (`CommandSpec.RiskLevel`), and a command that omits it falls back to the **command template** default (`CommandTemplate.RiskLevel`); if that is also unset, the effective default is `low`. There is **no group-level or global-level `risk_level`**: the value cannot be set at the group scope or as a global default, and there is no inheritance from a group or global setting. Each command (optionally via its command template) carries its own maximum allowed risk. This keeps the allowed-risk decision local to the command being executed, so widening the ceiling for one command never silently affects another.
+
 ## Overall Runtime Flow
 
 Risk evaluation is performed within the normal execution mode (`NormalResourceManager.ExecuteCommand`). The wiring of the evaluator is done in `runner.go`, where the analysis dependencies (`AnalysisDeps`) obtained from the verification manager are passed to `NetworkAnalyzer`, which in turn is passed to `StandardEvaluator` to assemble it (`security.NewNetworkAnalyzer` → `risk.NewStandardEvaluator`).
@@ -384,6 +388,14 @@ There are two entry points for risk evaluation, but **both share the same `Evalu
 
 Both paths share the point that, when the certainty of the evaluation (identity / analysis availability) cannot be guaranteed, they fall to the fail-closed side. The dry-run differs in that it adds a display for "this command is denied because it cannot be verified in this environment, but this predicts the result in a production environment where verification is possible."
 
+### Deny vs Error vs High-allowable (dry-run failure handling)
+
+The dry-run preview distinguishes three outcomes, and a failure is **never shown by continuing to display the command as High** — failures are surfaced as a deny or an error, not folded into the risk level:
+
+- **Deny preview** — failures that can be classified as a policy deny (missing analysis record, schema or content-hash mismatch, disabled analysis, symlink-resolution failure, identity that cannot be bound) are previewed as a **deny**. The preview does not abort; it records the deny and continues to the next command.
+- **Error** — failures that prevent the analysis from running at all (path-resolution failure, command not found) and any unclassifiable internal I/O failure (e.g. an unexpected record-load error) are returned as an **error** (a hard error that aborts), per the two-track split shared with the runtime path.
+- **High-allowable** — a command whose effective risk genuinely computes to High (for example dangerous binary-analysis signals) is displayed as High and, under a configuration that allows High, would execute. Conversion to High/Critical happens only through the specific checks inside the detailed analysis — it is never used as a fallback for an unverifiable command. An unverifiable command is a deny preview, not a High display.
+
 ## Audit Logging
 
 The result of risk evaluation is recorded in the audit log (`Logger.LogRiskProfile` in `internal/runner/base/audit/logger.go`). For either decision—allow or deny—and even on the path that aborts due to an internal error, exactly one entry is always output. The input is `risktypes.RiskAuditEntry` (a DTO).
@@ -415,6 +427,15 @@ The log level corresponds to the risk level, and is further raised to **at least
 | Low / Unknown | Debug (Warn or higher on a deny) |
 
 This makes it possible to trace afterward why a command was evaluated as a particular risk level and by which reason code it was denied.
+
+## Threat Model and Limitations
+
+Risk evaluation is **one layer of defense in depth**; it does not block every threat on its own. Developers extending it must keep the following premises and limits in mind (these are also documented for users in `docs/user/risk_assessment.md`).
+
+- **Blocklist approach**: command-name and argument evaluation adds risk for **known** dangerous signals (profiles, patterns, analysis). A command that matches none of them is computed as `low` by that dimension, so an **unknown command can pass under the default `risk_level = "low"`** (fail-closed only rescues binary-analysis uncertainty, not unknown-but-clean commands). Safe operation therefore depends on combining an **allowlist of permitted commands with hash pinning** (`verify_files`): only verified binaries whose content hash matches the recorded analysis record are executed. The blocklist is a backstop, not the primary control.
+- **Matching is basename-centered, exact match**: the runtime risk evaluation matches command-name rules by **exact** basename (after symlink resolution), not by substring — `lsrm` is not treated as `rm`, and `systemctl-helper` is not treated as `systemctl`. The limit is that it **does not handle hard links or renames**: a dangerous binary placed under a different basename will not have its risk computed correctly even though it is verified. The mitigation is again allowlist + hash pinning. (Symbolic links are resolved; hard links share content and hash but not name.)
+- **`output_file` is assessed by a separate subsystem, not folded into the command risk**: the command's runtime risk evaluation (`EvaluateRisk`, the subject of this document) does not add the output destination to the command's effective risk. The output path is still validated and risk-assessed independently by the output subsystem (`internal/runner/base/output`): it is checked for path traversal and dangerous characters (`ValidateAndResolvePath`), its directory and file are checked for symlink components and write permission (`security.Validator.ValidateOutputWritePermission`), and the destination is assigned its own risk level — Critical for system-critical files/directories and sensitive key files, High for system or sensitive-config directories, Low under the working directory or the user's home directory, Medium otherwise (`AnalyzeOutput` / `evaluateSecurityRisk`, surfaced in the dry-run preview). The point to keep in mind is only that this output-path risk is tracked separately from the command's effective risk, not that the output path is unchecked.
+- **Relationship to the root-execution danger checks (separate system, exact vs partial match)**: there is a separate validator-side check aimed at root execution (`Validator.IsDangerousRootCommand` / `HasDangerousRootArgs`). It is a **different system with a different policy**: the root-oriented argument check uses **partial (substring) matching** on argument values (`HasDangerousRootArgs` via `strings.Contains`), whereas the runtime risk evaluation described in this document uses **exact basename matching** for command-name rules. The two are applied on different paths and are **not integrated** in this task. Their relationship: the root-execution checks belong to the validator/security-analysis path for privileged execution, and the runtime risk evaluation (`EvaluateRisk`) is the gate that decides allow/deny against `risk_level`. When more than one rule applies to a command, the runtime evaluation takes the **maximum** across all applicable dimensions (a more specific dangerous classification is never lowered by a more general one), and the short-circuiting deny gates (identity → indirect execution → privilege escalation) take precedence over the maximum-of-dimensions. Running a command as root does not by itself change the computed risk level; privilege escalation is detected separately (the `sudo`/`su`/`doas` tokens → `critical`).
 
 ## Summary
 
