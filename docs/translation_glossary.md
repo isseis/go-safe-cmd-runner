@@ -29,12 +29,14 @@
 | 型アサーション | type assertion | Go言語の文脈 |
 | アンカーされた | anchored | 正規表現パターンの文脈 |
 | 攻撃対象領域 | attack surface | セキュリティの文脈 |
+| 任意コード実行 | arbitrary code execution | シェル/インタプリタ等が任意のコードを実行できること |
 
 ### B
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 後向きスキャン | backward scan | 命令列を末尾から走査する解析手法 |
+| ブロックリスト | blocklist | "blacklist" は使用しない。セキュリティの文脈 |
 | バックアップ | backup | |
 | 分岐収束 | branch convergence | CFG上で複数の分岐が同一点で合流すること |
 | 幅優先探索 | breadth-first search (BFS) | グラフ探索アルゴリズム |
@@ -90,6 +92,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | データフロー解析 | dataflow analysis | CFGを用いたデータの流れの解析 |
+| データ持ち出し | data exfiltration | 機密データを外部サービスへ送出すること |
 | 依存 / 依存解析 | dependency / dependency analysis | 動的ライブラリ依存解析の文脈 |
 | 判定メソッド | determination method | syscall番号の決定手段を示す文字列 |
 | デバッグ | debug / debugging | |
@@ -126,6 +129,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 実効アドレス | effective address | メモリアクセスの最終的なアドレス |
+| 実効リスク | effective risk | 全因子の最大値として算出される最終的なリスク |
 | エコー | echo | |
 | E2E | E2E | End-to-End の略 |
 | エッジケース | edge case | |
@@ -159,6 +163,8 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 誤検出 | false positive | 誤ってSYSCALL命令として検出すること |
+| フェイルクローズ | fail-closed | 確認できない場合は実行を拒否する設計（優雅な劣化の対義） |
+| フェイルセーフ | fail-safe | 安全側へ倒す設計 |
 | 前向きスキャン | forward scan | 命令列を先頭から走査する解析手法 |
 | FAQ | FAQ | Frequently Asked Questions |
 | 汎用的 | generic | |
@@ -195,6 +201,8 @@
 | ハンドラ | handler | slogハンドラの文脈 |
 | ハードコード | hardcoded | プログラムに埋め込まれた値 |
 | ハッシュ | hash | |
+| ハッシュ固定 | hash pinning | 記録済みハッシュに束縛して同一性を保証すること |
+| ハードリンク | hard link | |
 | ヘッダー | header | バイナリフォーマットのヘッダー構造 |
 | 階層 | hierarchy / level | "level" は設定階層の文脈で使用 |
 | 階層継承 | hierarchy inheritance | |
@@ -479,6 +487,7 @@
 | タグ | tag | TOMLタグの文脈 |
 | タスク | task | |
 | 改ざん | tampering | |
+| 脅威モデル | threat model | セキュリティ設計の前提と限界を示すモデル |
 | 一時 | temporary | |
 | ターミナル | terminal | |
 | テスト | test / testing | |
@@ -664,6 +673,7 @@
 | 2026-04-30 | パッケージリファレンスドキュメント関連の用語を追加 (audit logging, bootstrap, dependency/dependency analysis, injection, integrity, interface, separation of concerns, symbol) |
 | 2026-04-30 | pclntabメンテナンスガイド関連の用語を追加 (code path, compilation unit, constant, garbage collection, header, linker, magic number, stack trace) |
 | 2026-05-01 | Mach-Oバイナリ解析ドキュメント関連の用語を追加 (breadth-first search, namespace, slice (Fat binary), trampoline) |
+| 2026-06-17 | 実行時リスク評価ドキュメント（Task 0136）関連の用語を追加 (arbitrary code execution, blocklist, data exfiltration, effective risk, fail-closed, fail-safe, hash pinning, hard link, threat model) |
 
 ---
 
