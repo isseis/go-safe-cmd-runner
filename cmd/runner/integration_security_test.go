@@ -10,6 +10,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -244,13 +245,30 @@ cmd = ["rm", "-rf", "/tmp/should-not-execute"]
 	}
 }
 
+// stubRiskEvaluator returns a preset assessment per command name so the dry-run
+// preview is deterministic without on-disk binaries or hash records. It models the
+// risk evaluator the production dry-run path wires in.
+type stubRiskEvaluator map[string]risktypes.RiskAssessment
+
+func (s stubRiskEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error) {
+	a := s[cmd.Name()]
+	return risktypes.VerifiedCommandPlan{
+		ResolvedPath: cmd.ExpandedCmd,
+		Identity:     &risktypes.VerifiedIdentity{ResolvedPath: cmd.ExpandedCmd, ContentHash: cmd.ExpandedCmdContentHash},
+		Assessment:   a,
+	}, nil
+}
+
 // TestMaliciousConfigCommandControlSecurity verifies that dangerous commands
-// are properly analyzed and controlled by the DryRunResourceManager
+// are properly analyzed and controlled by the DryRunResourceManager: the manager
+// surfaces the evaluator's effective risk and allow/deny verdict in the dry-run
+// preview without executing the command.
 func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 	testCases := []struct {
 		name                    string
 		cmd                     *runnertypes.RuntimeCommand
 		group                   *runnertypes.GroupSpec
+		assessment              risktypes.RiskAssessment
 		expectedSecurityRisk    string
 		expectedExecutionResult bool
 		description             string
@@ -260,25 +278,33 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 			cmd: executortestutil.CreateRuntimeCommand(
 				"rm",
 				[]string{"-rf", "/tmp/should-not-execute-in-test"},
-				executortestutil.WithName("dangerous-rm")),
+				executortestutil.WithName("dangerous-rm"),
+			),
 			group: &runnertypes.GroupSpec{
 				Name: "malicious-group",
 			},
+			assessment:              risktypes.RiskAssessment{Level: runnertypes.RiskLevelHigh},
 			expectedSecurityRisk:    "high",
 			expectedExecutionResult: true, // Should complete analysis without actual execution
 			description:             "Dangerous rm command should be analyzed and controlled in dry-run mode",
 		},
 		{
 			name: "sudo_privilege_escalation_protection",
-			cmd: executortestutil.CreateRuntimeCommand("sudo", []string{"rm", "-rf", "/tmp/test-sudo-target"},
+			cmd: executortestutil.CreateRuntimeCommand(
+				"sudo", []string{"rm", "-rf", "/tmp/test-sudo-target"},
 				executortestutil.WithName("sudo-escalation"),
 				executortestutil.WithRunAsUser("root"),
 			),
 			group: &runnertypes.GroupSpec{
 				Name: "privilege-escalation-group",
 			},
-			expectedSecurityRisk:    "high",
-			expectedExecutionResult: true, // Should complete analysis without actual execution
+			assessment: risktypes.RiskAssessment{
+				Level:          runnertypes.RiskLevelCritical,
+				Blocking:       true,
+				BlockingReason: risktypes.ReasonPrivilegeEscalation,
+			},
+			expectedSecurityRisk:    "critical", // privilege escalation is Critical under the runtime evaluator
+			expectedExecutionResult: true,       // Should complete analysis without actual execution
 			description:             "Sudo privilege escalation should be analyzed and controlled in dry-run mode",
 		},
 		{
@@ -291,6 +317,7 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 			group: &runnertypes.GroupSpec{
 				Name: "network-exfil-group",
 			},
+			assessment:              risktypes.RiskAssessment{Level: runnertypes.RiskLevelMedium},
 			expectedSecurityRisk:    "medium", // curl typically classified as medium risk
 			expectedExecutionResult: true,     // Should complete analysis without actual execution
 			description:             "Network data exfiltration should be analyzed and controlled in dry-run mode",
@@ -317,7 +344,8 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 				HashDir:     "",
 			}
 
-			dryRunManager, err := resource.NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
+			evaluator := stubRiskEvaluator{tc.cmd.Name(): tc.assessment}
+			dryRunManager, err := resource.NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts, evaluator, nil)
 			require.NoError(t, err, "Failed to create DryRunResourceManager")
 
 			// Execute the dangerous command in dry-run mode
@@ -350,8 +378,10 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 					assert.Equal(t, tc.expectedSecurityRisk, analysis.Impact.SecurityRisk,
 						"Expected security risk %q, but got %q", tc.expectedSecurityRisk, analysis.Impact.SecurityRisk)
 
-					// Verify that security warnings are present
-					assert.Contains(t, analysis.Impact.Description, "WARNING", "Expected security warning in impact description")
+					// Verify that the dry-run preview surfaced an allow/deny verdict.
+					assert.True(t,
+						strings.Contains(analysis.Impact.Description, "DENY") || strings.Contains(analysis.Impact.Description, "ALLOW"),
+						"Expected an allow/deny verdict in impact description, got: %s", analysis.Impact.Description)
 
 					t.Logf("Security analysis completed: %s - Risk: %s, Target: %s",
 						tc.description, analysis.Impact.SecurityRisk, analysis.Target)

@@ -10,8 +10,25 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
+
+// auditValueAbsent is the fixed marker rendered for a correlation field whose
+// value could not be obtained (a nil pointer in RiskAuditEntry). The marker is
+// applied only at this log-output boundary; the entry itself represents absence
+// with a nil pointer and never stores a sentinel string in a value field.
+// Keeping the key present on every entry lets incident searches treat the field
+// uniformly instead of distinguishing "absent" from "omitted".
+const auditValueAbsent = "n/a"
+
+// argRedactor masks secrets in command arguments before they reach the log,
+// staying consistent with the global redaction mechanism. The production
+// logger also runs behind a RedactingHandler; applying redaction here keeps the
+// masking guarantee even when LogRiskProfile writes to a logger without that
+// handler.
+var argRedactor = redaction.DefaultConfig()
 
 // Logger provides structured audit logging functionality
 type Logger struct {
@@ -122,7 +139,8 @@ func (l *Logger) LogPrivilegeEscalation(
 		// Failed privilege escalation should be notified via Slack
 		// Create new slice to avoid modifying the original attrs slice
 		failureAttrs := slices.Clone(attrs)
-		failureAttrs = append(failureAttrs,
+		failureAttrs = append(
+			failureAttrs,
 			slog.Bool("slack_notify", true),
 			slog.String("message_type", "privilege_escalation_failure"),
 		)
@@ -158,7 +176,8 @@ func (l *Logger) LogSecurityEvent(
 	// Add Slack notification for critical and high severity events
 	shouldNotifySlack := severity == common.SeverityCritical || severity == common.SeverityHigh
 	if shouldNotifySlack {
-		attrs = append(attrs,
+		attrs = append(
+			attrs,
 			slog.Bool("slack_notify", true),
 			slog.String("message_type", "security_alert"),
 		)
@@ -174,34 +193,110 @@ func (l *Logger) LogSecurityEvent(
 	}
 }
 
-// LogRiskProfile logs command risk profile information with detailed risk factors
-func (l *Logger) LogRiskProfile(
-	ctx context.Context,
-	commandName string,
-	baseRiskLevel runnertypes.RiskLevel,
-	riskReasons []string,
-	networkType string,
-) {
+// LogRiskProfile emits the command_risk_profile audit entry for a single risk
+// decision. It takes a RiskAuditEntry parameter object (defined in risktypes so
+// audit does not import risk) carrying the correlation fields required for incident correlation:
+// resolved_path, content_hash, the analysis record identifier, max_allowed_risk,
+// decision, reason_codes, and the human-readable risk_factors. The entry
+// is always written -- including for denies on the error-return path -- so audit
+// is never skipped by an early return.
+func (l *Logger) LogRiskProfile(ctx context.Context, entry risktypes.RiskAuditEntry) {
+	assessment := entry.Assessment
+
 	attrs := []slog.Attr{
 		slog.String("audit_type", "command_risk_profile"),
 		slog.Bool("audit", true), // Mark as audit event
 		slog.Int64("timestamp", time.Now().Unix()),
-		slog.String("command_name", commandName),
-		slog.String("risk_level", baseRiskLevel.String()),
-		slog.String("network_type", networkType),
+		slog.String("command_name", entry.CommandName),
+		slog.String("mode", string(entry.Mode)),
+		slog.String("decision", string(entry.Decision)),
+		slog.String("risk_level", assessment.Level.String()),
+		slog.String("max_allowed_risk", entry.MaxAllowedRisk.String()),
+		// Correlation fields. Absent (nil) values render as the boundary marker so
+		// the key is present on every entry without storing a sentinel in the DTO.
+		slog.String("resolved_path", optStr(entry.ResolvedPath)),
+		slog.String("content_hash", optStr(entry.ContentHash)),
+		slog.String("record_id", optStr(entry.RecordID)),
+		slog.String("network_type", assessment.NetworkType),
 		slog.Int("user_id", os.Getuid()),
 		slog.Int("effective_user_id", os.Geteuid()),
 		slog.Int("process_id", os.Getpid()),
 	}
 
-	// Add risk reasons as an array
-	if len(riskReasons) > 0 {
-		attrs = append(attrs, slog.Any("risk_factors", riskReasons))
+	// Machine-readable reason codes: present even for commands without a
+	// profile (e.g. binary-analysis-derived risk).
+	if len(assessment.ReasonCodes) > 0 {
+		codes := make([]string, len(assessment.ReasonCodes))
+		for i, c := range assessment.ReasonCodes {
+			codes[i] = string(c)
+		}
+		attrs = append(attrs, slog.Any("reason_codes", codes))
 	}
 
-	// Determine log level based on risk level
+	// Human-readable risk factors.
+	if len(assessment.Reasons) > 0 {
+		attrs = append(attrs, slog.Any("risk_factors", assessment.Reasons))
+	}
+
+	// Deny reasoning. BlockingReason is set for every deny (Blocking or Critical);
+	// ErrorClass distinguishes a failure-induced deny.
+	if assessment.BlockingReason != "" {
+		attrs = append(attrs, slog.String("blocking_reason", string(assessment.BlockingReason)))
+	}
+	if entry.ErrorClass != "" {
+		attrs = append(attrs, slog.String("error_class", string(entry.ErrorClass)))
+	}
+	if entry.VerificationUnavailable {
+		attrs = append(attrs, slog.Bool("verification_unavailable", true))
+	}
+
+	// Masked command arguments. Apply redaction here so secrets are not
+	// leaked even when the destination logger has no RedactingHandler.
+	if len(entry.Args) > 0 {
+		masked := make([]string, len(entry.Args))
+		for i, a := range entry.Args {
+			masked[i] = argRedactor.RedactText(a)
+		}
+		attrs = append(attrs, slog.Any("command_args", masked))
+	}
+
+	// Indirect-execution chain: each executed/loaded artifact's identity so
+	// the whole chain is correlatable from a single entry.
+	if len(entry.Chain) > 0 {
+		chain := make([]map[string]string, len(entry.Chain))
+		for i := range entry.Chain {
+			a := &entry.Chain[i]
+			chain[i] = map[string]string{
+				"path":         a.Path,
+				"role":         string(a.Role),
+				"disposition":  string(a.Disposition),
+				"content_hash": optStr(a.ContentHash),
+			}
+		}
+		attrs = append(attrs, slog.Any("chain", chain))
+	}
+
+	l.logger.LogAttrs(ctx, riskLogLevel(assessment.Level, entry.Decision), "Command risk profile", attrs...)
+}
+
+// optStr renders an optional correlation value: its real value when present, or
+// the absence marker when nil. The DTO never holds a sentinel string; the marker
+// exists only at this output boundary.
+func optStr(s *string) string {
+	if s == nil {
+		return auditValueAbsent
+	}
+	return *s
+}
+
+// riskLogLevel maps the effective risk to a log level (Critical->Error,
+// High->Warn, Medium->Info, else->Debug) and then applies the deny severity
+// floor: any deny is at least Warn, so a Medium command denied under a
+// Low ceiling is still found by a Warn/Error deny search instead of sinking to
+// Info.
+func riskLogLevel(level runnertypes.RiskLevel, decision risktypes.Decision) slog.Level {
 	var logLevel slog.Level
-	switch baseRiskLevel {
+	switch level {
 	case runnertypes.RiskLevelCritical:
 		logLevel = slog.LevelError
 	case runnertypes.RiskLevelHigh:
@@ -211,6 +306,8 @@ func (l *Logger) LogRiskProfile(
 	default:
 		logLevel = slog.LevelDebug
 	}
-
-	l.logger.LogAttrs(ctx, logLevel, "Command risk profile", attrs...)
+	if decision == risktypes.DecisionDeny {
+		logLevel = max(logLevel, slog.LevelWarn)
+	}
+	return logLevel
 }

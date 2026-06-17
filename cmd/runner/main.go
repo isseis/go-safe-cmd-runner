@@ -38,18 +38,19 @@ func (e SilentExitError) Error() string {
 }
 
 var (
-	configPath       string
-	logLevel         string
-	logDir           string
-	dryRun           bool
-	dryRunFormat     string
-	dryRunDetail     string
-	showSensitive    bool
-	runID            string
-	forceInteractive bool
-	forceQuiet       bool
-	keepTempDirs     bool
-	groups           string
+	configPath           string
+	logLevel             string
+	logDir               string
+	dryRun               bool
+	dryRunFormat         string
+	dryRunDetail         string
+	dryRunFailUnverified bool
+	showSensitive        bool
+	runID                string
+	forceInteractive     bool
+	forceQuiet           bool
+	keepTempDirs         bool
+	groups               string
 )
 
 func init() {
@@ -74,6 +75,7 @@ func init() {
 	flag.StringVar(&logDir, "log-dir", "", "directory to place per-run JSON log (auto-named). Overrides TOML/env if set.")
 	flag.StringVar(&dryRunFormat, "dry-run-format", "text", "dry-run output format (text, json)")
 	flag.StringVar(&dryRunDetail, "dry-run-detail", "detailed", "dry-run detail level (summary, detailed, full)")
+	flag.BoolVar(&dryRunFailUnverified, "dry-run-fail-unverified", false, "in dry-run, treat a command that could not be verified in this environment as a hard failure (non-zero exit) instead of the default note-only (exit 0)")
 	flag.BoolVar(&showSensitive, "show-sensitive", false, "show sensitive information in dry-run output (use with caution)")
 	flag.StringVar(&runID, "run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
 	flag.BoolVar(&forceInteractive, "interactive", false, "force interactive mode with colored output (overrides environment detection)")
@@ -118,7 +120,12 @@ func mainWithExitCode(runID string) int {
 		var silentErr SilentExitError
 		var preExecErr *logging.PreExecutionError
 		var execErr *logging.ExecutionError
+		var previewExit dryRunPreviewExit
 		switch {
+		case errors.As(err, &previewExit):
+			// Dry-run deny preview: the preview was already printed; exit with its
+			// recommended code without logging an error.
+			return previewExit.code
 		case errors.As(err, &silentErr):
 			// Check for silent exit error first (validation failure with report already printed)
 			// revive:disable:empty-block This empty block is intentional to handle specific cases
@@ -398,11 +405,12 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		}
 
 		dryRunOpts := &resource.DryRunOptions{
-			DetailLevel:   detailLevel,
-			OutputFormat:  outputFormat,
-			ShowSensitive: showSensitive,
-			VerifyFiles:   true,
-			HashDir:       cmdcommon.DefaultHashDirectory, // Use secure default hash directory
+			DetailLevel:                   detailLevel,
+			OutputFormat:                  outputFormat,
+			ShowSensitive:                 showSensitive,
+			VerifyFiles:                   true,
+			HashDir:                       cmdcommon.DefaultHashDirectory, // Use secure default hash directory
+			FailOnVerificationUnavailable: dryRunFailUnverified,
 		}
 		runnerOptions = append(runnerOptions, runner.WithDryRun(dryRunOpts))
 	}
@@ -442,6 +450,11 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	// Execute handles both cases: nil/empty groupNamesMap executes all groups
 	execErr := r.Execute(ctx, groupNames)
 
+	// dryRunPreviewCode carries the dry-run preview's recommended exit code so a
+	// deny preview surfaces as a non-zero process exit even when execution itself
+	// did not error.
+	var dryRunPreviewCode int
+
 	// Handle dry-run output (always output, even on error)
 	if dryRun {
 		// If an execution error occurred, set error status before getting results
@@ -476,6 +489,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 				return fmt.Errorf("formatting failed: %w", err)
 			}
 			fmt.Print(output)
+			dryRunPreviewCode = result.PreviewExitCode
 		}
 	}
 
@@ -498,5 +512,21 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		}
 	}
 
+	// A dry-run deny preview exits non-zero (the preview output was already
+	// printed); the distinct code lets CI tell a verification-unavailable deny
+	// apart from a policy deny.
+	if dryRunPreviewCode != 0 {
+		return dryRunPreviewExit{code: dryRunPreviewCode}
+	}
+
 	return nil
+}
+
+// dryRunPreviewExit signals that the process should exit with a specific code from
+// the dry-run preview. The preview output was already printed, so this carries no
+// message to log; mainWithExitCode maps it directly to the exit code.
+type dryRunPreviewExit struct{ code int }
+
+func (e dryRunPreviewExit) Error() string {
+	return fmt.Sprintf("dry-run preview requested exit code %d", e.code)
 }

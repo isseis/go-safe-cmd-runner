@@ -202,7 +202,7 @@ func TestErrorScenariosConsistency(t *testing.T) {
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
 				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, opts)
+				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, opts, permissiveTestEvaluator{}, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -271,7 +271,7 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
 				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, opts)
+				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, opts, permissiveTestEvaluator{}, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -372,7 +372,7 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
 				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, opts)
+				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, opts, permissiveTestEvaluator{}, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -397,7 +397,7 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
 				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, opts)
+				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, opts, permissiveTestEvaluator{}, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -421,7 +421,7 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
 				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, nil)
+				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, nil, permissiveTestEvaluator{}, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -450,7 +450,7 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
 				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, opts)
+				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, opts, permissiveTestEvaluator{}, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -615,7 +615,7 @@ func TestConcurrentExecution(t *testing.T) {
 			mockPathResolver := &MockPathResolver{}
 			setupStandardCommandPaths(mockPathResolver)
 			mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-			manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+			manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts, permissiveTestEvaluator{}, nil)
 			if err != nil {
 				errors <- fmt.Errorf("failed to create DryRunResourceManager: %w", err)
 				return

@@ -2,7 +2,6 @@ package resource
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
@@ -30,7 +29,7 @@ func createTestDryRunResourceManager() *DryRunResourceManager {
 		DetailLevel: DetailLevelDetailed,
 	}
 
-	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
+	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts, permissiveTestEvaluator{}, nil)
 	if err != nil {
 		panic(err) // This is a test helper, so panic is acceptable here
 	}
@@ -151,188 +150,13 @@ func TestDryRunResourceManager_GetDryRunResults(t *testing.T) {
 	assert.Empty(t, result.ResourceAnalyses) // Should be empty initially
 }
 
-func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
-	// Create manager with standard command paths
-	mockExec := executortestutil.NewMockExecutor()
-	mockPriv := &MockPrivilegeManager{}
-	mockPathResolver := &MockPathResolver{}
-
-	// Add default expectations for privilege manager
-	mockPriv.On("IsPrivilegedExecutionSupported").Return(true)
-	mockPriv.On("WithPrivileges", mock.Anything, mock.Anything).Return(nil)
-
-	// Setup standard command paths
-	setupStandardCommandPaths(mockPathResolver)
-
-	opts := &DryRunOptions{
-		DetailLevel: DetailLevelDetailed,
-	}
-
-	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
-	require.NoError(t, err)
-
-	tests := []struct {
-		name                 string
-		spec                 runnertypes.CommandSpec
-		expectedSecurityRisk string
-		expectedDescription  string
-	}{
-		{
-			name: "dangerous rm command with args",
-			spec: runnertypes.CommandSpec{
-				Name: "dangerous-rm",
-				Cmd:  "rm",
-				Args: []string{"-rf", "/important/data"},
-			},
-			expectedSecurityRisk: "high",
-			expectedDescription:  "Recursive file removal",
-		},
-		{
-			name: "user/group privilege command",
-			spec: runnertypes.CommandSpec{
-				Name:      "restart-nginx",
-				Cmd:       "systemctl",
-				Args:      []string{"restart", "nginx"},
-				RunAsUser: "root",
-			},
-			expectedSecurityRisk: "high", // Expect high due to systemctl command override
-			expectedDescription:  "User/Group configuration validated",
-		},
-		{
-			name: "normal command",
-			spec: runnertypes.CommandSpec{
-				Name: "list-files",
-				Cmd:  "ls",
-				Args: []string{"-la"},
-			},
-			expectedSecurityRisk: "low", // Now expects low due to directory-based assessment
-			expectedDescription:  "",
-		},
-		{
-			name: "dangerous command with user specification should be high risk",
-			spec: runnertypes.CommandSpec{
-				Name:      "privileged-rm",
-				Cmd:       "sudo",
-				Args:      []string{"rm", "-rf", "/important/data"},
-				RunAsUser: "root",
-			},
-			expectedSecurityRisk: "high",
-			expectedDescription:  "Privileged file removal",
-		},
-		{
-			name: "dangerous command with args and user specification",
-			spec: runnertypes.CommandSpec{
-				Name:      "rm-privileged",
-				Cmd:       "rm",
-				Args:      []string{"-rf", "/important/data"},
-				RunAsUser: "root",
-			},
-			expectedSecurityRisk: "high",
-			expectedDescription:  "Recursive file removal",
-		},
-		{
-			name: "dd command with separate args",
-			spec: runnertypes.CommandSpec{
-				Name: "disk-dd",
-				Cmd:  "dd",
-				Args: []string{"if=/dev/zero", "of=/dev/sda", "bs=1M"},
-			},
-			expectedSecurityRisk: "high",
-			expectedDescription:  "Low-level disk operations",
-		},
-		{
-			name: "chmod with separate args",
-			spec: runnertypes.CommandSpec{
-				Name: "change-perms",
-				Cmd:  "chmod",
-				Args: []string{"777", "/tmp/test"},
-			},
-			expectedSecurityRisk: "high",
-			expectedDescription:  "Overly permissive file permissions",
-		},
-		{
-			name: "executable without setuid bit but with chmod 777 pattern",
-			spec: runnertypes.CommandSpec{
-				Name: "chmod-test",
-				Cmd:  "chmod", // Use the actual chmod command
-				Args: []string{"777", "/tmp/test"},
-			},
-			expectedSecurityRisk: "high",
-			expectedDescription:  "Overly permissive file permissions",
-		},
-	}
-
-	// Add a test case for setuid binary (high priority)
-	t.Run("setuid binary takes priority over medium risk patterns", func(t *testing.T) {
-		// Create a temporary file with setuid bit
-		setuidFile, err := os.CreateTemp("", "setuid-test-*")
-		require.NoError(t, err)
-		defer os.Remove(setuidFile.Name())
-		require.NoError(t, setuidFile.Close())
-
-		// Set executable and setuid bit
-		err = os.Chmod(setuidFile.Name(), 0o755|os.ModeSetuid)
-		require.NoError(t, err)
-
-		// Create a separate manager with setuid file path resolver
-		mockExec := executortestutil.NewMockExecutor()
-		mockPriv := &MockPrivilegeManager{}
-		mockPathResolver := &MockPathResolver{}
-
-		mockPriv.On("IsPrivilegedExecutionSupported").Return(true)
-		mockPriv.On("WithPrivileges", mock.Anything, mock.Anything).Return(nil)
-
-		setupStandardCommandPaths(mockPathResolver)
-		mockPathResolver.On("ResolvePath", "setuid-chmod").Return(setuidFile.Name(), nil)
-
-		opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
-		setuidManager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
-		require.NoError(t, err)
-
-		cmd := executortestutil.CreateRuntimeCommand(
-			"setuid-chmod",
-			[]string{"777", "/tmp/test"},
-			executortestutil.WithName("setuid-chmod"),
-		)
-
-		ctx := context.Background()
-		group := createTestCommandGroup()
-		env := map[string]string{}
-
-		_, result, err := setuidManager.ExecuteCommand(ctx, cmd, group, env)
-
-		assert.NoError(t, err)
-		assert.NotNil(t, result.Analysis)
-		assert.Equal(t, "high", result.Analysis.Impact.SecurityRisk) // setuid takes priority over medium risk
-		assert.Contains(t, result.Analysis.Impact.Description, "setuid")
-	})
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-			group := createTestCommandGroup()
-			env := map[string]string{}
-			cmd := executortestutil.CreateRuntimeCommandFromSpec(&tt.spec)
-
-			_, result, err := manager.ExecuteCommand(ctx, cmd, group, env)
-
-			assert.NoError(t, err)
-			assert.NotNil(t, result.Analysis)
-			assert.Equal(t, tt.expectedSecurityRisk, result.Analysis.Impact.SecurityRisk)
-			if tt.expectedDescription != "" {
-				assert.Contains(t, result.Analysis.Impact.Description, tt.expectedDescription)
-			}
-		})
-	}
-}
-
 func TestDryRunResourceManager_PathResolverRequired(t *testing.T) {
 	mockExec := executortestutil.NewMockExecutor()
 	mockPriv := &MockPrivilegeManager{}
 	opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
 
 	// Test that providing nil PathResolver returns an error
-	_, err := NewDryRunResourceManager(mockExec, mockPriv, nil, opts)
+	_, err := NewDryRunResourceManager(mockExec, mockPriv, nil, opts, permissiveTestEvaluator{}, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "PathResolver is required")
 }
@@ -349,7 +173,7 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 	mockPathResolver.On("ResolvePath", "nonexistent-cmd").Return("", assert.AnError)
 
 	opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
-	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
+	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts, permissiveTestEvaluator{}, nil)
 	require.NoError(t, err)
 
 	cmd := executortestutil.CreateRuntimeCommand(

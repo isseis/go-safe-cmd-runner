@@ -1,4 +1,7 @@
 build/
+/runner
+/record
+/verify
 .claude/settings.local.json
 .envrc
 .env

@@ -51,7 +51,11 @@ func (p CommandRiskProfile) IsPrivilege() bool {
 	return p.PrivilegeRisk.Level >= runnertypes.RiskLevelHigh
 }
 
-// BaseRiskLevel computes the overall risk level as the maximum of all risk factors
+// BaseRiskLevel computes the overall risk level as the maximum of all risk
+// factors. The runtime evaluator now folds the individual factors directly (via
+// ProfileFactorRisk plus dedicated privilege/system-modification handling), so
+// this aggregate is not on the active evaluation path; it is retained as a small,
+// tested public helper for profile inspection and tests.
 func (p CommandRiskProfile) BaseRiskLevel() runnertypes.RiskLevel {
 	return max(
 		p.PrivilegeRisk.Level,

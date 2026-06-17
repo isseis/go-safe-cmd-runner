@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
@@ -25,6 +26,9 @@ type Config struct {
 	OutputManager    output.CaptureManager
 	MaxOutputSize    int64
 	RiskEvaluator    risk.Evaluator
+	// AuditLogger receives the command_risk_profile entries emitted on every
+	// allow/deny decision. When nil, no risk-profile audit is written.
+	AuditLogger *audit.Logger
 }
 
 // DefaultResourceManager provides a mode-aware facade that delegates to
@@ -37,8 +41,9 @@ type DefaultResourceManager struct {
 	dryrun *DryRunResourceManager
 }
 
-// ErrRiskEvaluatorRequired is returned when Config.RiskEvaluator is nil.
-var ErrRiskEvaluatorRequired = errors.New("RiskEvaluator is required for NormalResourceManager")
+// ErrRiskEvaluatorRequired is returned when a resource manager is constructed
+// without a risk evaluator (required by both normal and dry-run managers).
+var ErrRiskEvaluatorRequired = errors.New("RiskEvaluator is required")
 
 // NewDefaultResourceManager creates a new DefaultResourceManager from cfg.
 func NewDefaultResourceManager(cfg Config) (*DefaultResourceManager, error) {
@@ -61,7 +66,7 @@ func NewDefaultResourceManager(cfg Config) (*DefaultResourceManager, error) {
 	}
 	// Create dry-run manager eagerly to keep state like analyses across mode flips
 	// and to simplify switching without re-wiring dependencies.
-	dryrunManager, err := NewDryRunResourceManager(cfg.Executor, cfg.PrivilegeManager, cfg.PathResolver, cfg.DryRunOpts)
+	dryrunManager, err := NewDryRunResourceManager(cfg.Executor, cfg.PrivilegeManager, cfg.PathResolver, cfg.DryRunOpts, cfg.RiskEvaluator, cfg.AuditLogger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dry-run resource manager: %w", err)
 	}

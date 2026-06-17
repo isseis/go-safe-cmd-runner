@@ -87,7 +87,32 @@ type DryRunOptions struct {
 
 	// Security analysis configuration
 	HashDir string `json:"hash_dir"` // Directory containing hash files
+
+	// FailOnVerificationUnavailable, when true, makes a verification-unavailable deny
+	// (a command that could not be verified in this environment) fail the dry-run:
+	// the preview exit code becomes the distinct DryRunExitVerificationUnavailable,
+	// which CI can treat as a build failure while still telling it apart from a
+	// policy deny. When false (the default), a verification-unavailable deny is
+	// reported as a note only and does not fail the dry-run (exit 0).
+	FailOnVerificationUnavailable bool `json:"fail_on_verification_unavailable"`
 }
+
+// Dry-run preview exit codes. The preview is two-valued (allow/deny);
+// the distinct verification-unavailable code is an operational status (environment
+// could not verify), not a third risk classification.
+const (
+	// DryRunExitAllow means every previewed command would be allowed.
+	DryRunExitAllow = 0
+	// DryRunExitPolicyDeny means at least one command would be denied by policy.
+	DryRunExitPolicyDeny = 1
+	// DryRunExitVerificationUnavailable is returned only when
+	// FailOnVerificationUnavailable is set and the only denies were caused by
+	// analysis/verification being unavailable in this environment. It is distinct
+	// from DryRunExitPolicyDeny so CI can tell "could not verify" apart from a real
+	// policy deny. Without the opt-in, a verification-unavailable deny does not fail
+	// the dry-run (it is reported as a note only).
+	DryRunExitVerificationUnavailable = 3
+)
 
 // DryRunDetailLevel represents the level of detail in output
 type DryRunDetailLevel int
@@ -150,6 +175,12 @@ type DryRunResult struct {
 	FileVerification *verification.FileVerificationSummary `json:"file_verification,omitempty"`
 	Errors           []DryRunError                         `json:"errors"`
 	Warnings         []DryRunWarning                       `json:"warnings"`
+	// PreviewExitCode is the process exit code the dry-run preview recommends:
+	// DryRunExitPolicyDeny if any command is denied by policy; otherwise, when the
+	// only denies are verification-induced, DryRunExitVerificationUnavailable if
+	// FailOnVerificationUnavailable is set and 0 (note-only) if not; 0 when every
+	// command is allowed.
+	PreviewExitCode int `json:"preview_exit_code"`
 }
 
 // ExecutionStatus represents the overall execution status

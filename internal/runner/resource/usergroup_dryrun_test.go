@@ -19,7 +19,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 
-		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
+		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{}, permissiveTestEvaluator{}, nil)
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
 		cmd := executortestutil.CreateRuntimeCommand(
@@ -59,7 +59,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
+		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{}, permissiveTestEvaluator{}, nil)
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
 		cmd := executortestutil.CreateRuntimeCommand(
@@ -97,7 +97,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
+		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{}, permissiveTestEvaluator{}, nil)
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
 		cmd := executortestutil.CreateRuntimeCommand(
@@ -132,7 +132,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager, err := NewDryRunResourceManager(mockExec, nil, mockPathResolver, &DryRunOptions{})
+		manager, err := NewDryRunResourceManager(mockExec, nil, mockPathResolver, &DryRunOptions{}, permissiveTestEvaluator{}, nil)
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
 		cmd := executortestutil.CreateRuntimeCommand(
@@ -167,7 +167,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
+		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{}, permissiveTestEvaluator{}, nil)
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
 		cmd := executortestutil.CreateRuntimeCommand(
@@ -206,7 +206,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
+		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{}, permissiveTestEvaluator{}, nil)
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
 		cmd := executortestutil.CreateRuntimeCommand(

@@ -332,29 +332,16 @@ func (v *Validator) HasSystemCriticalPaths(args []string) []int {
 	return criticalIndices
 }
 
-// getCommandRiskOverride retrieves the risk override and reasons for a command,
-// matched against its pre-resolved name set. Using the name set (rather than the
-// basename alone) makes the lookup symlink-aware and consistent with the runtime
-// evaluator's ResolveProfile, so a symlinked alias of a profiled command is not
-// missed in the dry-run preview.
-func getCommandRiskOverride(names map[string]struct{}) (runnertypes.RiskLevel, string, bool) {
-	if profile, found := ResolveProfile(names); found {
-		reason := strings.Join(profile.GetRiskReasons(), "; ")
-		return profile.BaseRiskLevel(), reason, true
-	}
-	return runnertypes.RiskLevelUnknown, "", false
-}
-
 // checkCommandPatterns checks if a command (given by its pre-resolved name set)
-// matches any patterns in the given list.
-func checkCommandPatterns(names map[string]struct{}, cmdArgs []string, patterns []DangerousCommandPattern) (runnertypes.RiskLevel, string, string) {
+// matches any patterns in the given list, returning the matched pattern's risk
+// level and human-readable reason.
+func checkCommandPatterns(names map[string]struct{}, cmdArgs []string, patterns []DangerousCommandPattern) (runnertypes.RiskLevel, string) {
 	for _, pattern := range patterns {
 		if matchesPattern(names, cmdArgs, pattern.Pattern) {
-			displayPattern := strings.Join(pattern.Pattern, " ")
-			return pattern.RiskLevel, displayPattern, pattern.Reason
+			return pattern.RiskLevel, pattern.Reason
 		}
 	}
-	return runnertypes.RiskLevelUnknown, "", ""
+	return runnertypes.RiskLevelUnknown, ""
 }
 
 // formatDetectedSymbols formats detected symbols for logging.
@@ -627,129 +614,13 @@ func CheckDangerousArgPatterns(names map[string]struct{}, args []string) (runner
 		}
 	}
 
-	if level, _, reason := checkCommandPatterns(names, args, highRiskPatterns); level != runnertypes.RiskLevelUnknown {
+	if level, reason := checkCommandPatterns(names, args, highRiskPatterns); level != runnertypes.RiskLevelUnknown {
 		return level, reason
 	}
-	if level, _, reason := checkCommandPatterns(names, args, mediumRiskPatterns); level != runnertypes.RiskLevelUnknown {
+	if level, reason := checkCommandPatterns(names, args, mediumRiskPatterns); level != runnertypes.RiskLevelUnknown {
 		return level, reason
 	}
 	return runnertypes.RiskLevelUnknown, ""
-}
-
-// AnalyzeCommandSecurity analyzes a command with its arguments for dangerous
-// patterns. It performs the following checks in order:
-//
-//  1. Input validation (empty / relative path)
-//  2. Symbolic link depth check
-//  3. Directory-based default risk assessment
-//  4. Hash validation (skipped when hashDir is "")
-//  5. High-risk dangerous command pattern matching
-//  6. setuid / setgid bit detection
-//  7. Coreutils single-binary command classification
-//  8. Medium-risk dangerous command pattern matching
-//  9. Per-command risk profile override
-//  10. Directory default risk fallback
-//
-// Example:
-//
-//	risk, pattern, reason, err := AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/"}, "")
-//
-// Parameters:
-//   - resolvedPath: Absolute path to the command executable
-//   - args: Command line arguments
-//   - hashDir: Directory containing hash files for validation (empty string to skip)
-//
-// Returns:
-//   - riskLevel: Security risk level (Unknown, Low, Medium, High, Critical)
-//   - detectedPattern: Matched dangerous pattern (if any)
-//   - reason: Human-readable explanation of the risk assessment
-//   - err: Error if analysis fails
-func AnalyzeCommandSecurity(resolvedPath string, args []string, hashDir string) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
-	// Step 1: Input validation
-	if resolvedPath == "" {
-		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: empty command path", isec.ErrInvalidPath)
-	}
-
-	if !filepath.IsAbs(resolvedPath) {
-		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: path must be absolute, got relative path: %s", isec.ErrInvalidPath, resolvedPath)
-	}
-
-	// Step 2: Symbolic link depth check. Resolve the name set once here (the dry-run
-	// path's policy is lenient: depth/cycle overflow fails safe to High for display,
-	// rather than the runtime path's fail-closed reject) and reuse it for the
-	// name-based pattern checks below.
-	names, exceededDepth := extractAllCommandNames(resolvedPath)
-	if exceededDepth {
-		return runnertypes.RiskLevelHigh, resolvedPath, "Symbolic link depth exceeds security limit (potential symlink attack)", nil
-	}
-
-	// Step 3: Directory-based default risk assessment
-	defaultRisk := getDefaultRiskByDirectory(resolvedPath)
-
-	// Step 4: Hash validation
-	if hashDir != "" {
-		if err := validateFileHash(resolvedPath, hashDir); err != nil {
-			return runnertypes.RiskLevelCritical, resolvedPath,
-				fmt.Sprintf("Hash validation failed: %v", err), nil
-		}
-	}
-
-	// Step 5: High-risk pattern analysis
-	if riskLevel, pattern, reason := checkCommandPatterns(names, args, highRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
-		return riskLevel, pattern, reason, nil
-	}
-
-	// Step 6: setuid/setgid check
-	hasSetuidOrSetgid, setuidErr := hasSetuidOrSetgidBit(resolvedPath)
-	if setuidErr != nil {
-		return runnertypes.RiskLevelHigh, resolvedPath,
-			fmt.Sprintf("Unable to check setuid/setgid status: %v", setuidErr), nil
-	}
-	if hasSetuidOrSetgid {
-		return runnertypes.RiskLevelHigh, resolvedPath,
-			"Executable has setuid or setgid bit set", nil
-	}
-
-	// Step 7: Coreutils single-binary classification.
-	// Classify commands resolved under the coreutils directory directly,
-	// without binary analysis. On stat error, mirror Step 6 by failing safe to
-	// High so the dry-run display continues rather than aborting; the runtime
-	// path (EvaluateRisk) instead fails closed and blocks the command. In
-	// practice Step 6 already stats the same path and intercepts such failures,
-	// so this error branch is defensive and effectively unreachable here.
-	coreutilsRisk, coreutilsHandled, coreutilsErr := CoreutilsCommandRisk(resolvedPath, args)
-	if coreutilsErr != nil {
-		return runnertypes.RiskLevelHigh, resolvedPath,
-			fmt.Sprintf("Unable to check setuid/setgid status: %v", coreutilsErr), nil
-	}
-	if coreutilsHandled {
-		return coreutilsRisk, resolvedPath, "Coreutils command risk classification", nil
-	}
-
-	// Step 8: Medium-risk pattern analysis
-	if riskLevel, pattern, reason := checkCommandPatterns(names, args, mediumRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
-		return riskLevel, pattern, reason, nil
-	}
-
-	// Step 9: Individual command override application
-	if overrideRisk, reason, found := getCommandRiskOverride(names); found {
-		return overrideRisk, resolvedPath, reason, nil
-	}
-
-	// Step 9b: Network-style arguments (URL or SSH-style address) make an
-	// otherwise-unprofiled command a network operation (Medium). This mirrors the
-	// runtime evaluator's network-argument dimension so dry-run and runtime agree.
-	if hasNetworkArguments(args) {
-		return runnertypes.RiskLevelMedium, resolvedPath, "Network-style argument (URL or remote host)", nil
-	}
-
-	// Step 10: Apply default risk level
-	if defaultRisk != runnertypes.RiskLevelUnknown {
-		return defaultRisk, "", "Default directory-based risk level", nil
-	}
-
-	// Fallback: no specific risk identified
-	return runnertypes.RiskLevelUnknown, "", "", nil
 }
 
 // ErrSymlinkResolutionFailed is returned by ResolveCommandNames when a symbolic

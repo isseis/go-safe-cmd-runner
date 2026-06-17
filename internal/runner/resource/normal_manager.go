@@ -1,6 +1,7 @@
 package resource
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
@@ -33,7 +35,8 @@ type NormalResourceManager struct {
 	maxOutputSize int64
 
 	// Logging
-	logger *slog.Logger
+	logger      *slog.Logger
+	auditLogger *audit.Logger
 
 	// State management
 	mu       sync.RWMutex
@@ -51,8 +54,11 @@ func newNormalManager(cfg Config, outputMgr output.CaptureManager) *NormalResour
 		riskEvaluator:    cfg.RiskEvaluator,
 		outputManager:    outputMgr,
 		maxOutputSize:    cfg.MaxOutputSize,
-		logger:           cfg.Logger,
-		tempDirs:         make([]string, 0),
+		// Fall back to the default logger so a nil cfg.Logger cannot cause a nil
+		// pointer dereference in the later n.logger.Error/Warn calls.
+		logger:      cmp.Or(cfg.Logger, slog.Default()),
+		auditLogger: cfg.AuditLogger,
+		tempDirs:    make([]string, 0),
 	}
 }
 
@@ -89,6 +95,11 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	// executed identity and carries the effective risk and deny reasoning.
 	plan, err := n.riskEvaluator.EvaluateRisk(cmd)
 	if err != nil {
+		// Unexpected internal failure (the error-return path of section 4(3)): emit a
+		// minimal deny audit entry before aborting so a denied command is never
+		// missing from the audit trail. The only error source is an
+		// unclassifiable analysis record-load failure.
+		n.emitErrorAudit(ctx, cmd, risktypes.ErrorClassRecordLoad)
 		return "", nil, fmt.Errorf("risk evaluation failed: %w", err)
 	}
 	// The plan owns any verified file descriptor opened during evaluation. Close it
@@ -104,13 +115,25 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	// Step 2: Get maximum allowed risk level from configuration
 	maxAllowedRisk, err := cmd.GetRiskLevel()
 	if err != nil {
+		// Configuration error: audit as a deny (classified as a risk_level config
+		// error so the entry is not a reason-less deny) before aborting.
+		n.auditRiskDecision(ctx, cmd, &plan, runnertypes.RiskLevelUnknown, risktypes.DecisionDeny, risktypes.ErrorClassRiskLevelConfig)
 		return "", nil, fmt.Errorf("invalid risk_level configuration: %w", err)
 	}
 
 	// Step 3: Unified risk gate. A Blocking assessment (uncertain analysis,
 	// symlink failure, unverified identity, disabled analysis) denies regardless
 	// of the configured maximum; otherwise the effective risk must not exceed it.
-	if plan.Assessment.Blocking || effectiveRisk > maxAllowedRisk {
+	denied := plan.Assessment.Blocking || effectiveRisk > maxAllowedRisk
+	decision := risktypes.DecisionAllow
+	if denied {
+		decision = risktypes.DecisionDeny
+	}
+	// Emit the command_risk_profile audit entry for both allow and deny so every
+	// risk decision is auditable.
+	n.auditRiskDecision(ctx, cmd, &plan, maxAllowedRisk, decision, "")
+
+	if denied {
 		n.logger.Error(
 			"Command execution rejected due to risk level violation",
 			"command", cmd.Name(),
@@ -138,6 +161,80 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	// Execute the command using the shared execution logic
 	result, err := n.executeCommandInternal(ctx, &plan, cmd, env, start, nil)
 	return "", result, err
+}
+
+// auditRiskDecision emits the command_risk_profile audit entry for a completed
+// risk decision (allow or deny), pulling correlation fields from the plan. The
+// errClass override classifies a deny that is not carried on the assessment (e.g.
+// an invalid risk_level configuration); when empty the plan's own ErrorClass is
+// used. It is a no-op when no audit logger is configured.
+func (n *NormalResourceManager) auditRiskDecision(ctx context.Context, cmd *runnertypes.RuntimeCommand, plan *risktypes.VerifiedCommandPlan, maxAllowed runnertypes.RiskLevel, decision risktypes.Decision, errClass risktypes.ErrorClass) {
+	if n.auditLogger == nil {
+		return
+	}
+	n.auditLogger.LogRiskProfile(ctx, risktypes.RiskAuditEntry{
+		CommandName:    cmd.Name(),
+		Args:           cmd.ExpandedArgs,
+		Mode:           risktypes.ModeNormal,
+		ResolvedPath:   planResolvedPath(plan),
+		ContentHash:    planContentHash(plan),
+		Assessment:     plan.Assessment,
+		MaxAllowedRisk: maxAllowed,
+		Decision:       decision,
+		ErrorClass:     cmp.Or(errClass, plan.Assessment.ErrorClass),
+		Chain:          plan.Artifacts,
+	})
+}
+
+// emitErrorAudit emits a minimal deny audit entry for the error-return path,
+// where no plan is available. The resolved path is recorded best-effort from the
+// command's expanded path (resolved by the group executor before execution), so a
+// failed-evaluation deny is still correlatable. It is a no-op when no audit logger
+// is configured.
+func (n *NormalResourceManager) emitErrorAudit(ctx context.Context, cmd *runnertypes.RuntimeCommand, errClass risktypes.ErrorClass) {
+	if n.auditLogger == nil {
+		return
+	}
+	n.auditLogger.LogRiskProfile(ctx, risktypes.RiskAuditEntry{
+		CommandName:  cmd.Name(),
+		Args:         cmd.ExpandedArgs,
+		Mode:         risktypes.ModeNormal,
+		ResolvedPath: optString(cmd.ExpandedCmd),
+		Decision:     risktypes.DecisionDeny,
+		ErrorClass:   errClass,
+	})
+}
+
+// planResolvedPath returns the verified resolved path for the audit entry,
+// preferring the bound identity (the source of truth) and falling back to the
+// plan's ResolvedPath. Returns nil when no path was resolved.
+func planResolvedPath(plan *risktypes.VerifiedCommandPlan) *string {
+	if plan.Identity != nil && plan.Identity.ResolvedPath != "" {
+		return &plan.Identity.ResolvedPath
+	}
+	if plan.ResolvedPath != "" {
+		return &plan.ResolvedPath
+	}
+	return nil
+}
+
+// planContentHash returns the verified content hash for the audit entry, taken
+// from the bound identity. Returns nil when the identity was never verified.
+func planContentHash(plan *risktypes.VerifiedCommandPlan) *string {
+	if plan.Identity != nil && plan.Identity.ContentHash != "" {
+		return &plan.Identity.ContentHash
+	}
+	return nil
+}
+
+// optString returns a pointer to s, or nil when s is empty, for audit correlation
+// fields that distinguish present from absent (rendered as a marker at the log
+// boundary).
+func optString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // executeCommandWithOutput executes a command with output capture
