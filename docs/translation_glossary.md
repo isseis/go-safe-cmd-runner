@@ -91,7 +91,7 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
-| データ持ち出し | data exfiltration | 機密データを外部サービスへ送出すること |
+| データ持ち出し | data exfiltration | 機密データの外部送信（セキュリティの文脈） |
 | データフロー解析 | dataflow analysis | CFGを用いたデータの流れの解析 |
 | 依存 / 依存解析 | dependency / dependency analysis | 動的ライブラリ依存解析の文脈 |
 | 判定メソッド | determination method | syscall番号の決定手段を示す文字列 |
@@ -145,9 +145,10 @@
 | 排他性 | exclusivity | Field exclusivity context |
 | 例 | example | |
 | 例外 | exception | |
-| 実行 | execute / execution | |
-| 実行可能ファイル | executable | |
 | 実行時 | at runtime | |
+| 早期リターン | early return | 最初に該当した結果を返す制御方式 |
+| 実行可能ファイル | executable | |
+| 実行 | execute / execution | |
 | 明示 | explicit | env_allowlistの継承モードの文脈 |
 | 展開 | expansion | |
 | 展開済み | expanded | 変数展開の文脈 |
@@ -162,8 +163,8 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
-| フェイルクローズ | fail-closed | 確認できない場合は実行を拒否する設計（優雅な劣化の対義） |
-| フェイルセーフ | fail-safe | 安全側へ倒す設計 |
+| フェイルクローズド | fail-closed | エラー時に安全側（実行中止）へ倒す設計 |
+| フェイルセーフ | fail-safe | 不明時に安全側のリスクへ倒す設計 |
 | 誤検出 | false positive | 誤ってSYSCALL命令として検出すること |
 | 前向きスキャン | forward scan | 命令列を先頭から走査する解析手法 |
 | FAQ | FAQ | Frequently Asked Questions |
@@ -280,6 +281,8 @@
 | 習得 | mastery | |
 | マッチング | matching | パターンマッチングの文脈 |
 | 最大 | maximum | 通常 "max" ではなく "maximum" を使用 |
+| 最大許容リスクレベル | maximum allowed risk level | リスク判定の文脈 |
+| マルチコール | multicall | 単一バイナリが複数サブコマンドを兼ねる方式 |
 | 意味的 | semantic | |
 | メモ化 | memoization | 計算結果のキャッシング |
 | メモリ枯渇 | memory exhaustion | DoS攻撃の文脈 |
@@ -347,6 +350,7 @@
 | プレースホルダー構文 | placeholder syntax | |
 | 優先する | prefer | |
 | 権限 | permission / privilege | "permission"はファイル権限、"privilege"は特権 |
+| 特権昇格 | privilege escalation | セキュリティの文脈 |
 | 許可 | allow / allowed | "allowlist" の文脈では "allowed" |
 | 許可リスト | allowlist | "whitelist" は使用しない |
 | 許可する | allow | |
@@ -407,6 +411,7 @@
 | 責務 | responsibility | |
 | 責務分担 | responsibility split | コンポーネント間の責務の切り分け |
 | リスク | risk | |
+| リスク判定 | risk evaluation | リスクレベルの算出 |
 | リスクレベル | risk level | |
 | 堅牢性 | robustness | |
 | 役割 | role | |
@@ -465,6 +470,7 @@
 | 標準パス | standard path | |
 | スタート | start | |
 | 静的 | static | |
+| 静的解析 | static analysis | バイナリ静的解析の文脈 |
 | 文字列 | string | |
 | 構造体 | struct | Go言語の文脈 |
 | 置換 | substitution | 変数展開の文脈 |
@@ -673,6 +679,7 @@
 | 2026-04-30 | パッケージリファレンスドキュメント関連の用語を追加 (audit logging, bootstrap, dependency/dependency analysis, injection, integrity, interface, separation of concerns, symbol) |
 | 2026-04-30 | pclntabメンテナンスガイド関連の用語を追加 (code path, compilation unit, constant, garbage collection, header, linker, magic number, stack trace) |
 | 2026-05-01 | Mach-Oバイナリ解析ドキュメント関連の用語を追加 (breadth-first search, namespace, slice (Fat binary), trampoline) |
+| 2026-06-12 | コマンドリスク判定ドキュメント関連の用語を追加 (risk evaluation, effective risk, early return, maximum allowed risk level, multicall, fail-closed, fail-safe, data exfiltration, static analysis, privilege escalation) |
 | 2026-06-17 | 実行時リスク評価ドキュメント（Task 0136）関連の用語を追加 (arbitrary code execution, blocklist, data exfiltration, effective risk, fail-closed, fail-safe, hash pinning, hard link, threat model) |
 
 ---
