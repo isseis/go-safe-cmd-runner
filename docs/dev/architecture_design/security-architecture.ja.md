@@ -427,9 +427,10 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
     if blocked, ok := e.identityGate(cmd); ok {
         return blockingPlan(blocked), nil
     }
-    // 特権昇格（sudo/su/doas）-> Critical（常にブロック）。
-    // ... 間接実行の解決、coreutils 分類、プロファイル要因、危険引数パターン、
-    // 任意コード実行ランナー、バイナリ解析を、次元の最大値へ合流させる。
+    // 間接実行の解決（ラッパー・インラインシェル・ローダ）はそれ自体で拒否や
+    // Critical を強制し得る。次に特権昇格（sudo/su/doas）-> Critical（常にブロック）。
+    // 最後に coreutils 分類、プロファイル要因、危険引数パターン、任意コード実行
+    // ランナー、バイナリ解析を、次元の最大値へ合流させる。
 }
 ```
 

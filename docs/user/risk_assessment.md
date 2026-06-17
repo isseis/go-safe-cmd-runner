@@ -72,11 +72,12 @@ The runner matches commands by their resolved absolute path and basename (symbol
 |--------------------|----------------|
 | Privilege-escalation commands: `sudo`/`su`/`doas`, etc. | `critical` |
 | Destructive file operations: `rm -rf`, `dd`, `chmod -R 777`, etc. | `high` |
+| Filesystem/partition tools: `mkfs`/`mkfs.*`, `fdisk`, etc. | `high` |
 | Shells, interpreters, and build/task runners: `bash`/`sh`/`python`/`node`/`ruby`/`perl`/`make`/`cmake`/`gradle`, etc. | `high` |
 | `systemctl` change verbs (`start`/`stop`/`restart`/`enable`/`disable`, etc.) | `high` |
 | `service` (all actions, because it runs an unverified init script) | `high` |
 | `systemctl` read-only verbs (`status`/`show`/`is-active`, etc.) | `medium` (floor) |
-| Other system-modifying commands (`mount`/`crontab`/`mkfs`, package install/remove such as `apt install`) | `medium` |
+| Other system-modifying commands (`mount`/`crontab`/`chkconfig`, package install/remove such as `apt install`) | `medium` |
 | Network commands: `curl`/`wget`/`ssh`/`scp`, etc. | `medium` |
 | None of the above | `low` |
 
@@ -248,5 +249,5 @@ If you are upgrading from an earlier version, several commands are now evaluated
 - **Package script runners** (`npm run`/`npx`/`yarn`/`pnpm run`): `high`.
 - **`risk_level = "unknown"`**: now rejected as a configuration error (previously accepted). Use `low`/`medium`/`high`.
 - **Disabled binary analysis / file verification**: now a blocking deny (previously allowed to continue). A binary whose identity cannot be confirmed is not executed.
-- **Wrapper commands** (`env`/`timeout`/`nice`/`sudo ...`): the wrapped inner command is evaluated and gated; a wrapper whose inner command cannot be extracted, or that supplies loader-control environment variables (`LD_PRELOAD`, `DYLD_*`, ...), is denied.
+- **Wrapper commands** (`env`/`timeout`/`nice`, ...): the wrapped inner command is evaluated and gated; a wrapper whose inner command cannot be extracted, or that supplies loader-control environment variables (`LD_PRELOAD`, `DYLD_*`, ...), is denied. (Privilege-escalation wrappers `sudo`/`su`/`doas` are not gated this way — they remain `critical` and are always denied.)
 - **Package managers**: system-modification examples no longer single out individual tool names; package managers are covered generically (`apt`/`yum`/`dnf`/... install/remove → `medium`).

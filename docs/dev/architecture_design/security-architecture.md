@@ -430,10 +430,11 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
     if blocked, ok := e.identityGate(cmd); ok {
         return blockingPlan(blocked), nil
     }
-    // Privilege escalation (sudo/su/doas) -> Critical (always blocked).
-    // ... Indirect-execution resolution, coreutils classification, profile
+    // Indirect-execution resolution (wrappers, inline shells, loaders) can
+    // itself deny or force Critical, then privilege escalation (sudo/su/doas)
+    // -> Critical (always blocked). Finally coreutils classification, profile
     // factors, dangerous-arg patterns, arbitrary-code runners, and binary
-    // analysis are then folded into the dimension maximum.
+    // analysis are folded into the dimension maximum.
 }
 ```
 
