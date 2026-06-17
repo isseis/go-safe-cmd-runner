@@ -91,11 +91,16 @@ func NewDefaultExecutor(opts ...Option) CommandExecutor {
 // Execute implements the CommandExecutor interface.
 //
 // plan is the verified command plan produced by the risk evaluator. When it
-// carries a verified file descriptor (plan.Identity.FD), the executor binds
-// execution to that descriptor (fd-bound execution, the inode the evaluator
+// carries a verified file descriptor (plan.Identity.FD), the executor binds the
+// executed inode to that descriptor (fd-bound execution, the inode the evaluator
 // verified) instead of re-resolving the path, closing the TOCTOU window between
 // verification and exec. The plan's descriptors are owned by the caller, which
 // must Close the plan; the executor only duplicates/copies from them.
+//
+// Scope: this binds the executed inode only. argv and env are still taken from
+// cmd.ExpandedArgs and envVars (the plan's ResolvedArgv/ResolvedEnv are not yet
+// consumed); binding those, and the inner artifacts of indirect-execution
+// wrappers, is deferred (see architecture section 5.2).
 func (e *DefaultExecutor) Execute(ctx context.Context, plan *risktypes.VerifiedCommandPlan, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	// Note: outputWriter lifecycle is managed by the caller.
 	// The caller is responsible for calling Close() when done.
@@ -407,8 +412,11 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity) (str
 		}
 	}
 
-	// Duplicate the descriptor so reading does not disturb the original's offset
-	// ownership; the *os.File owns the duplicate and closes it here.
+	// Duplicate the verified descriptor so this function owns a separate closable
+	// handle (the original stays owned by VerifiedFD). The duplicate shares the
+	// same open file description -- and therefore the same file offset -- as the
+	// original, so the copy below reads via ReadAt (pread) over a SectionReader,
+	// which never moves that shared offset.
 	dup, err := syscall.Dup(identity.FD.Fd())
 	if err != nil {
 		cleanup()
@@ -425,9 +433,10 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity) (str
 			e.Logger.Warn("Failed to close staging source fd", "error", closeErr)
 		}
 	}()
-	if _, err := src.Seek(0, io.SeekStart); err != nil {
+	info, err := src.Stat()
+	if err != nil {
 		cleanup()
-		return "", nil, fmt.Errorf("failed to rewind verified fd for staging: %w", err)
+		return "", nil, fmt.Errorf("failed to stat verified fd for staging: %w", err)
 	}
 
 	// Preserve the original basename: multi-call binaries (e.g. busybox/coreutils)
@@ -447,7 +456,7 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity) (str
 		cleanup()
 		return "", nil, fmt.Errorf("failed to create staged command file: %w", err)
 	}
-	if _, err := io.Copy(dst, src); err != nil {
+	if _, err := io.Copy(dst, io.NewSectionReader(src, 0, info.Size())); err != nil {
 		_ = dst.Close()
 		cleanup()
 		return "", nil, fmt.Errorf("failed to stage verified command: %w", err)

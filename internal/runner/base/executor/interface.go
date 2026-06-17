@@ -42,10 +42,12 @@ type CommandExecutor interface {
 	// Execute executes a command with custom output writer.
 	//
 	// plan is the verified command plan from the risk evaluator. When it carries
-	// a verified file descriptor, the executor binds execution to that descriptor
-	// rather than re-resolving the path, so the executed inode matches the one the
-	// evaluator verified. The plan's descriptors are owned by the caller,
-	// which must Close the plan; Execute only duplicates/copies from them.
+	// a verified file descriptor, the executor binds the executed inode to that
+	// descriptor rather than re-resolving the path, so the executed inode matches
+	// the one the evaluator verified. argv and env are still taken from cmd/env
+	// (plan.ResolvedArgv/ResolvedEnv are not yet consumed). The plan's descriptors
+	// are owned by the caller, which must Close the plan; Execute only
+	// duplicates/copies from them.
 	//
 	// OutputWriter lifecycle and ownership:
 	// - outputWriter may be nil, in which case output is handled internally
