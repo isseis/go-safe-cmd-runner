@@ -308,9 +308,10 @@ func (d *DryRunResourceManager) evaluateCommandRisk(ctx context.Context, cmd *ru
 	resolvedPath, err := d.pathResolver.ResolvePath(cmd.ExpandedCmd)
 	if err != nil {
 		// Audit the hard-error deny before aborting so the error-return path is
-		// auditable in dry-run too (the path could not be resolved, so the resolved
-		// path is recorded best-effort from the command as given).
-		d.emitDryRunErrorAudit(ctx, cmd, risktypes.ErrorClassPathResolution)
+		// auditable in dry-run too. The path could not be resolved, so resolved_path
+		// is left absent (nil) per the RiskAuditEntry contract rather than logging an
+		// unresolved value.
+		d.emitDryRunErrorAudit(ctx, cmd, nil, risktypes.ErrorClassPathResolution)
 		return fmt.Errorf("failed to resolve command path '%s': %w. This typically occurs if the command is not found in the system PATH or there are permission issues preventing access", cmd.ExpandedCmd, err)
 	}
 
@@ -319,8 +320,9 @@ func (d *DryRunResourceManager) evaluateCommandRisk(ctx context.Context, cmd *ru
 	prepared.ExpandedCmd = resolvedPath
 	plan, err := d.riskEvaluator.EvaluateRisk(&prepared)
 	if err != nil {
-		// (3) unexpected internal error -> hard error in dry-run too.
-		d.emitDryRunErrorAudit(ctx, &prepared, risktypes.ErrorClassRecordLoad)
+		// (3) unexpected internal error -> hard error in dry-run too. The path was
+		// resolved, so record it for correlation.
+		d.emitDryRunErrorAudit(ctx, &prepared, optString(prepared.ExpandedCmd), risktypes.ErrorClassRecordLoad)
 		return fmt.Errorf("security analysis failed for command '%s': %w", cmd.ExpandedCmd, err)
 	}
 	defer func() {
@@ -460,10 +462,11 @@ func (d *DryRunResourceManager) auditRiskDecision(ctx context.Context, cmd *runn
 }
 
 // emitDryRunErrorAudit emits a minimal deny audit entry on the error-return path,
-// where no plan is available. The resolved path is taken from the prepared command
-// (already resolved by the caller) so the error deny stays correlatable. No-op when
+// where no plan is available. resolvedPath is the verified resolved path or nil
+// when the path could not be resolved (the caller passes nil on a resolution
+// failure so resolved_path is not populated with an unresolved value). No-op when
 // no audit logger is configured.
-func (d *DryRunResourceManager) emitDryRunErrorAudit(ctx context.Context, cmd *runnertypes.RuntimeCommand, errClass risktypes.ErrorClass) {
+func (d *DryRunResourceManager) emitDryRunErrorAudit(ctx context.Context, cmd *runnertypes.RuntimeCommand, resolvedPath *string, errClass risktypes.ErrorClass) {
 	if d.auditLogger == nil {
 		return
 	}
@@ -471,7 +474,7 @@ func (d *DryRunResourceManager) emitDryRunErrorAudit(ctx context.Context, cmd *r
 		CommandName:  cmd.Name(),
 		Args:         cmd.ExpandedArgs,
 		Mode:         risktypes.ModeDryRun,
-		ResolvedPath: optString(cmd.ExpandedCmd),
+		ResolvedPath: resolvedPath,
 		Decision:     risktypes.DecisionDeny,
 		ErrorClass:   errClass,
 	})

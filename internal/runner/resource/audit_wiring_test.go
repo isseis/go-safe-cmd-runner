@@ -221,6 +221,9 @@ func TestDryRun_PathResolutionErrorAudit(t *testing.T) {
 	assert.Equal(t, "dry-run", entry["mode"])
 	assert.Equal(t, "deny", entry["decision"])
 	assert.Equal(t, "path_resolution", entry["error_class"])
+	// The path could not be resolved, so resolved_path is absent (the marker),
+	// not the unresolved input.
+	assert.Equal(t, "n/a", entry["resolved_path"])
 }
 
 // TestDryRun_ConfigErrorAudit verifies that an invalid risk_level configuration in
