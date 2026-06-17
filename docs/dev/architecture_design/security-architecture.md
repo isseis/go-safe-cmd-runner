@@ -411,19 +411,30 @@ Implements intelligent security controls based on command risk assessment, autom
 
 **Risk Assessment Engine**:
 ```go
-// Location: internal/runner/risk/evaluator.go
+// Location: internal/runner/base/risk/evaluator.go
 type StandardEvaluator struct{}
 
-func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
-    // Check privilege escalation commands (critical risk - should be blocked)
-    isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmd.Cmd)
-    if err != nil {
-        return runnertypes.RiskLevelUnknown, err
+// EvaluateRisk returns a VerifiedCommandPlan rather than a bare RiskLevel: the
+// evaluated identity and the executed identity are bound together so the executor
+// runs only the plan (the verified argv/env/identity), never the raw argv/env.
+// The effective risk is the maximum across all applicable dimensions (profile,
+// destructive, system-modification, dangerous-arg patterns, arbitrary-code
+// runners, binary analysis); fail-closed gates short-circuit before the maximum
+// is taken.
+func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error) {
+    // Identity gate first: without a verified hash, or with binary analysis
+    // disabled, the binary's identity cannot be confirmed, so deny (Blocking)
+    // regardless of the configured risk_level. This runs before every risk
+    // dimension so no path can confirm a Low/High-allowable risk for an
+    // unverified binary.
+    if blocked, ok := e.identityGate(cmd); ok {
+        return blockingPlan(blocked), nil
     }
-    if isPrivEsc {
-        return runnertypes.RiskLevelCritical, nil
-    }
-    // ... Additional risk assessment logic
+    // Indirect-execution resolution (wrappers, inline shells, loaders) can
+    // itself deny or force Critical, then privilege escalation (sudo/su/doas)
+    // -> Critical (always blocked). Finally coreutils classification, profile
+    // factors, dangerous-arg patterns, arbitrary-code runners, and binary
+    // analysis are folded into the dimension maximum.
 }
 ```
 
@@ -1036,7 +1047,7 @@ The system implements multiple security layers:
 - Default deny for all operations
 - Emergency shutdown on security failures
 - Comprehensive error handling and logging
-- Graceful degradation when security features are unavailable
+- Execution is denied when binary analysis / file verification is unavailable (fail-closed, not graceful degradation): a binary whose identity cannot be confirmed is never executed. Dry-run preview remains available.
 
 ### Audit and Monitoring
 
