@@ -142,6 +142,7 @@
 | エラー | error | |
 | エラーメッセージ | error message | |
 | エスケープ | escape / escaping | |
+| 完全一致 | exact match | basename 照合方式の文脈 |
 | 排他性 | exclusivity | Field exclusivity context |
 | 例 | example | |
 | 例外 | exception | |
@@ -342,6 +343,7 @@
 | パラメータ値 | parameter value | Template parameter value |
 | パース | parse / parsing | 構文解析 |
 | パーサ | parser | 構文解析器 |
+| 部分一致 | partial match | 部分文字列一致。root 向け危険判定の文脈 |
 | パス | path | |
 | Pattern | pattern | パターン |
 | Payload | payload | ペイロード |
@@ -681,6 +683,7 @@
 | 2026-05-01 | Mach-Oバイナリ解析ドキュメント関連の用語を追加 (breadth-first search, namespace, slice (Fat binary), trampoline) |
 | 2026-06-12 | コマンドリスク判定ドキュメント関連の用語を追加 (risk evaluation, effective risk, early return, maximum allowed risk level, multicall, fail-closed, fail-safe, data exfiltration, static analysis, privilege escalation) |
 | 2026-06-17 | 実行時リスク評価ドキュメント（Task 0136）関連の用語を追加 (arbitrary code execution, blocklist, data exfiltration, effective risk, fail-closed, fail-safe, hash pinning, hard link, threat model) |
+| 2026-06-17 | command-risk-evaluation 開発者文書（Task 0136 Step 4-3）関連の用語を追加 (exact match, partial match) |
 
 ---
 
