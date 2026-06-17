@@ -312,7 +312,7 @@
 **レビュー観点**: `VerifiedCommandPlan` のみ exec（元 argv/env 直接 exec 禁止）/ `/proc/self/fd` 経由 fd 束縛・staging は保持 fd 源泉・再ハッシュ path exec 不可 / fd 所有権と close（`cmd.Start` 失敗パス含むリーク無し）/ `group_executor` の二重解決廃止（manager 委譲）。**高リスク（TOCTOU・実行系）の隔離 PR**として重点レビュー
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test` 緑。`make lint` の残存指摘は origin/main にも存在する goconst のみ＝既存無関係指摘、AC-21 で除外）
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/733）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
