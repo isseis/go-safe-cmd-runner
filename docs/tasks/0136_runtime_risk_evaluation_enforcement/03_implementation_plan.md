@@ -415,7 +415,7 @@
 
 **対象ファイル**: `docs/dev/architecture_design/command-risk-evaluation.ja.md` / `.md`（**PR #724 マージ後に存在**）
 
-- [x] PR #724 マージ後、AC-15（`risk_level` スコープ明記＝コマンドレベル/テンプレートのみ・グループ/グローバル非対応）・AC-17（deny/error/High 許可の 3 区別）・AC-18（dry-run 失敗時挙動＝High として表示継続しない/deny 予告）・AC-29（複数定義の優先順位・root 判定系〔部分一致〕との関係）を反映（新 §「`risk_level` のスコープ」「拒否/エラー/High 許可の区別」「脅威モデルと限界」）。
+- [x] PR #724 マージ後、AC-15（`risk_level` スコープ明記＝コマンドレベル/テンプレートのみ・グループ/グローバル非対応）・AC-17（deny/error/High 許可の 3 区別）・AC-18（dry-run 失敗時挙動＝High として表示継続しない/deny 予告）・AC-29（複数定義の優先順位・root 判定系〔部分一致〕との関係）を反映（新 §「`risk_level` のスコープ」「拒否/エラー/High 許可の区別」「脅威モデルと限界」）。**実装整合の補足**: AC-18 の deny 原因列挙のうち「非対応フォーマット」は、Phase 1 の `NetworkAnalyzer.Classify`／`handleAnalysisOutput` が `NotSupportedBinary` を Clean 扱い（deny ではない）とする実装に確定済みのため、文書では deny 予告原因に含めない（ground truth 整合。`ReasonUncertainUnsupportedFormat` は定義のみで未発行）。
 - [x] AC-66/67 の脅威モデルを開発者向けにも明記（新 §「脅威モデルと限界」：ブロックリスト方式・allowlist＋ハッシュ固定前提・basename 完全一致の限界〔ハードリンク/リネーム〕・`output_file` 対象外・root 判定系との関係）。
 
 **完了条件（PR #724 マージ後）**: AC 検証表の該当 static rg。**依存**: PR #724 未マージのため、本 Step はマージ完了まで未着手（`02_architecture.md` §3.4 注・付録）。Phase 1〜3 の完了はこの Step に依存しない。

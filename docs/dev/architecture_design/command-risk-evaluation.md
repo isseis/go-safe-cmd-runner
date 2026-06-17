@@ -392,7 +392,7 @@ Both paths share the point that, when the certainty of the evaluation (identity 
 
 The dry-run preview distinguishes three outcomes, and a failure is **never shown by continuing to display the command as High** — failures are surfaced as a deny or an error, not folded into the risk level:
 
-- **Deny preview** — failures that can be classified as a policy deny (missing analysis record, schema or content-hash mismatch, unsupported format, disabled analysis, symlink-resolution failure, identity that cannot be bound) are previewed as a **deny**. The preview does not abort; it records the deny and continues to the next command.
+- **Deny preview** — failures that can be classified as a policy deny (missing analysis record, schema or content-hash mismatch, disabled analysis, symlink-resolution failure, identity that cannot be bound) are previewed as a **deny**. The preview does not abort; it records the deny and continues to the next command.
 - **Error** — failures that prevent the analysis from running at all (path-resolution failure, command not found) and any unclassifiable internal I/O failure (e.g. an unexpected record-load error) are returned as an **error** (a hard error that aborts), per the two-track split shared with the runtime path.
 - **High-allowable** — a command whose effective risk genuinely computes to High (for example dangerous binary-analysis signals) is displayed as High and, under a configuration that allows High, would execute. Conversion to High/Critical happens only through the specific checks inside the detailed analysis — it is never used as a fallback for an unverifiable command. An unverifiable command is a deny preview, not a High display.
 
