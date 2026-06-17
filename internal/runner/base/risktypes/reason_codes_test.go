@@ -36,7 +36,10 @@ func TestReasonCodes_AllDistinct(t *testing.T) {
 		ReasonSymlinkResolutionFailed,
 		ReasonIdentityUnbound,
 		ReasonIndirectExecutionRejected,
+		ReasonIndirectExecutionWrapper,
 		ReasonForbiddenEnvVar,
+		ReasonNonAbsolutePath,
+		ReasonNetworkArgument,
 	}
 
 	seen := make(map[ReasonCode]struct{}, len(all))

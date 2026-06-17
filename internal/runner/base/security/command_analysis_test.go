@@ -1054,7 +1054,7 @@ func TestMatchesPattern(t *testing.T) {
 				cmdName = tt.command[0]
 				cmdArgs = tt.command[1:]
 			}
-			result := matchesPattern(cmdName, cmdArgs, tt.pattern)
+			result := matchesPattern(cmdNameSet(cmdName), cmdArgs, tt.pattern)
 			assert.Equal(t, tt.expected, result, "matchesPattern(%s, %v, %v) should return %v", cmdName, cmdArgs, tt.pattern, tt.expected)
 		})
 	}
@@ -1198,6 +1198,29 @@ func TestExtractAllCommandNamesWithSymlinks(t *testing.T) {
 		assert.Contains(t, names, "actual_echo")
 		assert.False(t, exceededDepth, "Chain should be within depth limit")
 	})
+}
+
+// TestExtractAllCommandNamesBareNameIgnoresCWD verifies that a bare command name
+// (no path separator) is resolved by its name alone and never through the
+// filesystem, so a same-named entry in the working directory cannot influence
+// name-based classification. PATH resolution happens at exec time, not here.
+func TestExtractAllCommandNamesBareNameIgnoresCWD(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	// A working-directory symlink whose name collides with a command and points at
+	// a privilege binary. Without the bare-name guard, extractAllCommandNames("rm")
+	// would follow this and add "sudo" to the name set.
+	require.NoError(t, os.Symlink("/usr/bin/sudo", tmpDir+"/rm"))
+
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	require.NoError(t, os.Chdir(tmpDir))
+
+	names, exceededDepth := extractAllCommandNames("rm")
+	assert.False(t, exceededDepth)
+	assert.Contains(t, names, "rm", "the bare name itself is always present")
+	assert.NotContains(t, names, "sudo", "a CWD symlink must not influence bare-name resolution")
+	assert.Len(t, names, 1, "a bare name resolves to only itself")
 }
 
 func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
@@ -1444,7 +1467,7 @@ func TestIsDestructiveFileOperation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := IsDestructiveFileOperation(tt.cmd, tt.args)
+			result := IsDestructiveFileOperation(cmdNameSet(tt.cmd), tt.args)
 			assert.Equal(t, tt.expected, result, "IsDestructiveFileOperation(%q, %v)", tt.cmd, tt.args)
 		})
 	}
@@ -1453,31 +1476,40 @@ func TestIsDestructiveFileOperation(t *testing.T) {
 // TestIsDestructive_AbsolutePath verifies that a destructive command given as a
 // resolved absolute path (e.g. /usr/bin/rm) is detected, not only its basename.
 func TestIsDestructive_AbsolutePath(t *testing.T) {
-	assert.True(t, IsDestructiveFileOperation("/usr/bin/rm", []string{"file"}))
-	assert.True(t, IsDestructiveFileOperation("/bin/rm", []string{"-rf", "/tmp/x"}))
-	assert.True(t, IsDestructiveFileOperation("/usr/bin/shred", []string{"f"}))
+	assert.True(t, IsDestructiveFileOperation(cmdNameSet("/usr/bin/rm"), []string{"file"}))
+	assert.True(t, IsDestructiveFileOperation(cmdNameSet("/bin/rm"), []string{"-rf", "/tmp/x"}))
+	assert.True(t, IsDestructiveFileOperation(cmdNameSet("/usr/bin/shred"), []string{"f"}))
 }
 
 // TestIsDestructive_NoSubstringMatch verifies that a command whose basename
 // merely contains a destructive name as a substring is not matched.
 func TestIsDestructive_NoSubstringMatch(t *testing.T) {
-	assert.False(t, IsDestructiveFileOperation("/usr/bin/lsrm", []string{"x"}))
-	assert.False(t, IsDestructiveFileOperation("/usr/bin/rmate", nil))
+	assert.False(t, IsDestructiveFileOperation(cmdNameSet("/usr/bin/lsrm"), []string{"x"}))
+	assert.False(t, IsDestructiveFileOperation(cmdNameSet("/usr/bin/rmate"), nil))
 }
 
 // TestIsDestructive_BasenameBackwardCompat verifies that a bare basename is
 // still detected (the path-resolution addition does not lose basename detection).
 func TestIsDestructive_BasenameBackwardCompat(t *testing.T) {
-	assert.True(t, IsDestructiveFileOperation("rm", []string{"file"}))
-	assert.True(t, IsDestructiveFileOperation("dd", []string{"if=/dev/zero"}))
+	assert.True(t, IsDestructiveFileOperation(cmdNameSet("rm"), []string{"file"}))
+	assert.True(t, IsDestructiveFileOperation(cmdNameSet("dd"), []string{"if=/dev/zero"}))
+}
+
+// isSystemModification resolves the command's name set and reports whether it is
+// a system-modification command. The production code derives system-modification
+// risk from an already-resolved name set (isSystemModificationByNames); this test
+// wrapper resolves the path first so the path-based cases stay readable.
+func isSystemModification(cmd string, args []string) bool {
+	names, _ := extractAllCommandNames(cmd)
+	return isSystemModificationByNames(names, args)
 }
 
 // TestIsSystemModification_AbsolutePath verifies that a system-modification
 // command given as a resolved absolute path is detected.
 func TestIsSystemModification_AbsolutePath(t *testing.T) {
-	assert.True(t, IsSystemModification("/usr/sbin/systemctl", []string{"restart", "nginx"}))
-	assert.True(t, IsSystemModification("/usr/bin/mount", []string{"/dev/sda1", "/mnt"}))
-	assert.False(t, IsSystemModification("/usr/bin/systemctl-helper", []string{"restart"}),
+	assert.True(t, isSystemModification("/usr/sbin/systemctl", []string{"restart", "nginx"}))
+	assert.True(t, isSystemModification("/usr/bin/mount", []string{"/dev/sda1", "/mnt"}))
+	assert.False(t, isSystemModification("/usr/bin/systemctl-helper", []string{"restart"}),
 		"a substring match must not be treated as systemctl")
 }
 
@@ -1508,7 +1540,7 @@ func TestIsSystemModification_PackageManagerVerbs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, IsSystemModification(tt.cmd, tt.args))
+			assert.Equal(t, tt.want, isSystemModification(tt.cmd, tt.args))
 		})
 	}
 }
@@ -1518,10 +1550,10 @@ func TestIsSystemModification_PackageManagerVerbs(t *testing.T) {
 // by basename including absolute and coreutils-directory paths.
 func TestFindExecAllActions(t *testing.T) {
 	for _, action := range []string{"-exec", "-execdir", "-ok", "-okdir"} {
-		assert.Truef(t, IsDestructiveFileOperation("find",
+		assert.Truef(t, IsDestructiveFileOperation(cmdNameSet("find"),
 			[]string{".", action, "/usr/bin/rm", "{}", ";"}),
 			"find %s /usr/bin/rm should be destructive", action)
-		assert.Falsef(t, IsDestructiveFileOperation("find",
+		assert.Falsef(t, IsDestructiveFileOperation(cmdNameSet("find"),
 			[]string{".", action, "/usr/bin/stat", "{}", ";"}),
 			"find %s /usr/bin/stat should be safe", action)
 	}
@@ -1622,7 +1654,7 @@ func TestIsSystemModification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := IsSystemModification(tt.cmd, tt.args)
+			result := isSystemModification(tt.cmd, tt.args)
 			assert.Equal(t, tt.expected, result, "IsSystemModification(%q, %v)", tt.cmd, tt.args)
 		})
 	}
@@ -1909,7 +1941,7 @@ func TestGetCommandRiskOverride(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			risk, reason, found := getCommandRiskOverride(tc.cmdPath)
+			risk, reason, found := getCommandRiskOverride(cmdNameSet(tc.cmdPath))
 			assert.Equal(t, tc.expectedFound, found, "found mismatch for %s", tc.cmdPath)
 			assert.Equal(t, tc.expectedRisk, risk, "risk level mismatch for %s", tc.cmdPath)
 
@@ -1920,6 +1952,22 @@ func TestGetCommandRiskOverride(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestGetCommandRiskOverride_SymlinkAware verifies the override lookup follows the
+// symlink chain (via the resolved name set), so a symlinked alias of a profiled
+// command is matched — matching the runtime evaluator's ResolveProfile rather than
+// the former basename-only lookup.
+func TestGetCommandRiskOverride_SymlinkAware(t *testing.T) {
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "sudo")
+	require.NoError(t, os.WriteFile(target, []byte{0x7f, 'E', 'L', 'F', 0, 0}, 0o755))
+	alias := filepath.Join(tmp, "myalias") // basename "myalias" has no profile
+	require.NoError(t, os.Symlink(target, alias))
+
+	risk, _, found := getCommandRiskOverride(cmdNameSet(alias))
+	assert.True(t, found, "a symlink to a profiled command must be matched via the name set")
+	assert.Equal(t, runnertypes.RiskLevelCritical, risk, "alias -> sudo must surface sudo's privilege risk")
 }
 
 func TestCommandRiskProfiles_Completeness(t *testing.T) {

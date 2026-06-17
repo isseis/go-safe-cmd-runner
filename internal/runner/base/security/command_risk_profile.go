@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -82,12 +83,12 @@ func (p CommandRiskProfile) GetRiskReasons() []string {
 	return reasons
 }
 
-// ResolveProfile resolves the command's symlink chain and returns the risk
-// profile matched by any name in the chain. When multiple names match (a symlink
-// pointing at a differently-named profiled command), the factors are merged by
-// taking the maximum of each factor. found is false when no name matches.
-func ResolveProfile(cmdName string) (profile CommandRiskProfile, found bool) {
-	names, _ := extractAllCommandNames(cmdName)
+// ResolveProfile returns the risk profile matched by any name in the command's
+// pre-resolved name set (the caller resolves the symlink chain once with its own
+// policy). When multiple names match (a symlink pointing at a differently-named
+// profiled command), the factors are merged by taking the maximum of each factor.
+// found is false when no name matches.
+func ResolveProfile(names map[string]struct{}) (profile CommandRiskProfile, found bool) {
 	for name := range names {
 		p, exists := commandRiskProfiles[name]
 		if !exists {
@@ -134,6 +135,10 @@ func mergeProfilesMax(a, b CommandRiskProfile) CommandRiskProfile {
 	return merged
 }
 
+// gitValueOptions are git's common global options that take a value, so the value
+// is not mistaken for the subcommand when scanning "git [global-opts] <subcmd>".
+var gitValueOptions = setOf("-c", "-C", "--work-tree", "--git-dir", "--config", "--namespace")
+
 // ProfileNetworkApplies reports whether the profile's NetworkRisk factor applies
 // to this invocation: always for NetworkTypeAlways, and for NetworkTypeConditional
 // only when a network subcommand or a network-style argument (URL/SSH address) is
@@ -144,7 +149,12 @@ func ProfileNetworkApplies(profile CommandRiskProfile, args []string) bool {
 		return true
 	case NetworkTypeConditional:
 		if len(profile.NetworkSubcommands) > 0 {
-			sub := findFirstSubcommand(args)
+			// git's global value-options (-c key=val, --git-dir DIR, ...) must be
+			// skipped to reach the subcommand. Unknown options are assumed boolean
+			// (lenient): under-locating the subcommand only skips this network-factor
+			// check, which still falls back to hasNetworkArguments below, so failing
+			// closed (over-blocking) is not warranted here.
+			sub, _ := firstOperand(args, optSpec{valueOpts: gitValueOptions, unknown: allUnknownAreBoolean})
 			if sub != "" && slices.Contains(profile.NetworkSubcommands, sub) {
 				return true
 			}
@@ -153,6 +163,32 @@ func ProfileNetworkApplies(profile CommandRiskProfile, args []string) bool {
 	default:
 		return false
 	}
+}
+
+// ProfileFactorRisk returns the non-privilege, non-system-modification risk
+// factors of a command's profile (destruction, data exfiltration, and applicable
+// network) as a single folded level plus the reason code for each contributing
+// factor. Privilege is handled by the dedicated privilege gate and system
+// modification by SystemModificationRisk, so neither is folded here. It returns
+// RiskLevelUnknown with no codes when no factor applies. This is the single
+// source for the profile dimension, used by the evaluator and the wrapped-inner
+// indirect-execution path.
+func ProfileFactorRisk(profile CommandRiskProfile, args []string) (runnertypes.RiskLevel, []risktypes.ReasonCode) {
+	level := runnertypes.RiskLevelUnknown
+	var codes []risktypes.ReasonCode
+	if profile.DestructionRisk.Level > runnertypes.RiskLevelLow {
+		level = max(level, profile.DestructionRisk.Level)
+		codes = append(codes, risktypes.ReasonProfileDestruction)
+	}
+	if profile.DataExfilRisk.Level > runnertypes.RiskLevelLow {
+		level = max(level, profile.DataExfilRisk.Level)
+		codes = append(codes, risktypes.ReasonProfileDataExfil)
+	}
+	if profile.NetworkRisk.Level > runnertypes.RiskLevelLow && ProfileNetworkApplies(profile, args) {
+		level = max(level, profile.NetworkRisk.Level)
+		codes = append(codes, risktypes.ReasonProfileNetwork)
+	}
+	return level, codes
 }
 
 // Validate ensures consistency between risk factors and configuration

@@ -9,13 +9,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
 const (
 	// maxShebangBytes is the maximum number of bytes to read for shebang detection.
-	// Matches Linux kernel's BINPRM_BUF_SIZE.
-	maxShebangBytes = 256
+	// Shared with the runtime risk evaluator via common.MaxShebangLen (the larger
+	// of the Linux 256 / macOS 512 kernel bounds) so the two readers cannot drift.
+	maxShebangBytes = common.MaxShebangLen
 
 	// shebangPrefixLen is the length of the "#!" shebang prefix.
 	shebangPrefixLen = 2

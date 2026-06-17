@@ -264,3 +264,10 @@ func TestSliceToSet(t *testing.T) {
 		}
 	})
 }
+
+func TestDedupeStable(t *testing.T) {
+	assert.Equal(t, []int{1, 2, 3}, DedupeStable([]int{1, 2, 2, 3, 1, 3}))
+	assert.Equal(t, []string{"a", "b"}, DedupeStable([]string{"a", "a", "b", "b", "a"}))
+	assert.Equal(t, []int(nil), DedupeStable([]int(nil)))
+	assert.Equal(t, []int{1}, DedupeStable([]int{1}))
+}

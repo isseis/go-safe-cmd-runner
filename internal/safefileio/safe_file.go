@@ -281,7 +281,7 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 			// Allow only well-known OS-managed symlinks whose target matches the
 			// expected value in the allowlist (e.g. /tmp -> /private/tmp on macOS).
 			// All other symlinks — including unexpected root-owned ones — are rejected.
-			if !isAllowedOSManagedSymlink(currentPath) {
+			if !common.IsAllowedOSManagedSymlink(currentPath) {
 				return fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
 			}
 			// Resolve the OS-managed symlink so subsequent components are

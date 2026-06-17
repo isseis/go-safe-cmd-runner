@@ -16,7 +16,7 @@ package security
 // lua or python.
 var arbitraryCodeExecutionRunners = map[string]struct{}{
 	// Shells
-	"bash": {}, "sh": {}, "dash": {}, "zsh": {}, "ksh": {}, "csh": {}, "tcsh": {}, "fish": {},
+	"bash": {}, "sh": {}, "ash": {}, "dash": {}, "zsh": {}, "ksh": {}, "csh": {}, "tcsh": {}, "fish": {},
 	// Script interpreters and runtimes (including profiled aliases)
 	"python": {}, "python2": {}, "python3": {},
 	"node": {}, "nodejs": {}, "deno": {}, "bun": {},
@@ -36,12 +36,11 @@ var arbitraryCodeExecutionRunners = map[string]struct{}{
 }
 
 // IsArbitraryCodeExecutionRunner reports whether the command is a shell,
-// interpreter, or build/task runner that can execute arbitrary code.
-// Matching is by basename and considers symbolic links, mirroring the other
-// name-based classifiers. The match is argument-independent: even --version or
-// --help invocations are treated as runners, because exhaustively distinguishing
-// harmless invocations is unsafe.
-func IsArbitraryCodeExecutionRunner(cmd string) bool {
-	names, _ := extractAllCommandNames(cmd)
+// interpreter, or build/task runner that can execute arbitrary code. It matches
+// against the command's pre-resolved name set (original, basename, symlink
+// targets), which the caller resolves once with its own policy. The match is
+// argument-independent: even --version or --help invocations are treated as
+// runners, because exhaustively distinguishing harmless invocations is unsafe.
+func IsArbitraryCodeExecutionRunner(names map[string]struct{}) bool {
 	return anyNameInSet(names, arbitraryCodeExecutionRunners)
 }

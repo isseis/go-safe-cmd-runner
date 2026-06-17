@@ -24,7 +24,7 @@ func createTempLib(t *testing.T, dir, name string) string {
 	return path
 }
 
-// resolvePath resolves symlinks and cleans the path, matching tryResolve behavior.
+// resolvePath resolves symlinks and cleans the path, matching dynlib.ResolveRealPath behavior.
 func resolvePath(t *testing.T, path string) string {
 	t.Helper()
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 )
@@ -70,14 +71,16 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 	if disallowedBits != 0 {
 		err := fmt.Errorf(
 			"%w: %s %s has permissions %o with disallowed bits %o, maximum allowed is %o",
-			ErrInvalidFilePermissions, pathType, cleanPath, perm, disallowedBits, requiredPerms)
+			ErrInvalidFilePermissions, pathType, cleanPath, perm, disallowedBits, requiredPerms,
+		)
 
 		slog.Warn(
 			"Insecure "+pathType+" permissions detected",
 			slog.String("path", cleanPath),
 			slog.String("current_permissions", fmt.Sprintf("%04o", perm)),
 			slog.String("disallowed_bits", fmt.Sprintf("%04o", disallowedBits)),
-			slog.String("max_allowed", fmt.Sprintf("%04o", requiredPerms)))
+			slog.String("max_allowed", fmt.Sprintf("%04o", requiredPerms)),
+		)
 
 		return err
 	}
@@ -210,7 +213,7 @@ func (v *Validator) validateAllowedOutputPathSymlinks(path string) error {
 			return fmt.Errorf("failed to stat path component %s: %w", currentPath, err)
 		}
 
-		if info.Mode()&os.ModeSymlink != 0 && !isAllowedOSManagedSymlink(currentPath) {
+		if info.Mode()&os.ModeSymlink != 0 && !common.IsAllowedOSManagedSymlink(currentPath) {
 			return fmt.Errorf("%w: path component %s is a symlink", isec.ErrInsecurePathComponent, currentPath)
 		}
 
@@ -396,9 +399,11 @@ func (v *Validator) EvaluateOutputSecurityRisk(path, workDir string) (runnertype
 		}
 	}
 
-	// Low: WorkDir internal files
+	// Low: WorkDir internal files. Use a segment-boundary containment check so a
+	// sibling path like "/work-secrets" is not treated as inside "/work" (a naive
+	// strings.HasPrefix would misclassify it and downgrade the risk).
 	if workDir != "" && filepath.IsAbs(workDir) {
-		if strings.HasPrefix(cleanPath, workDir) {
+		if common.IsPathWithinDirectory(cleanPath, workDir) {
 			return runnertypes.RiskLevelLow, nil
 		}
 	}
@@ -407,8 +412,7 @@ func (v *Validator) EvaluateOutputSecurityRisk(path, workDir string) (runnertype
 	if currentUser, err := user.Current(); err == nil {
 		homeDir := currentUser.HomeDir
 		if homeDir != "" && filepath.IsAbs(homeDir) {
-			cleanHomePath := filepath.Clean(homeDir)
-			if strings.HasPrefix(cleanPath, cleanHomePath) {
+			if common.IsPathWithinDirectory(cleanPath, homeDir) {
 				return runnertypes.RiskLevelLow, nil
 			}
 		}

@@ -5,6 +5,7 @@ package risk
 import (
 	"path/filepath"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
@@ -79,10 +80,46 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 		return blockingPlan(blocked), nil
 	}
 
-	// Rank 3: privilege escalation -> Critical (always denied; rank 2 indirect
-	// execution is wired in Phase 2). Detected through the resolved profile so
-	// sudo/su/doas cannot be missed via a symlink alias.
-	profile, profileFound := security.ResolveProfile(cmdPath)
+	// Rank 2: indirect execution. Detect forms that run or load an artifact other
+	// than the verified one (wrappers, inline shells, find/xargs child-process
+	// helpers, dynamic loaders, remote-shell helpers). A privilege token there is
+	// Critical and an unbindable form is a Blocking deny; both short-circuit. An
+	// allowable form contributes a risk floor folded into the dimension maximum.
+	// AnalyzeIndirectExecution re-resolves cmdPath's symlink chain internally (it is
+	// exported and must be self-contained for standalone callers); the resulting
+	// extra top-level Lstat is intentional and policy stays consistent because both
+	// resolutions go through the single strict ResolveCommandNames.
+	indirect := security.AnalyzeIndirectExecution(cmdPath, cmd.ExpandedArgs)
+	switch indirect.Kind {
+	case security.IndirectCritical:
+		plan := criticalPlan(cmd, risktypes.RiskAssessment{
+			Level:          runnertypes.RiskLevelCritical,
+			BlockingReason: risktypes.ReasonPrivilegeEscalation,
+			ReasonCodes:    indirect.ReasonCodes,
+		})
+		plan.Artifacts = indirect.Artifacts
+		return plan, nil
+	case security.IndirectReject:
+		a := risktypes.RiskAssessment{
+			Blocking:       true,
+			BlockingReason: indirectBlockingReason(indirect.ReasonCodes),
+			ErrorClass:     indirect.ErrorClass,
+			ReasonCodes:    indirect.ReasonCodes,
+		}
+		// The command passed the identity gate, so preserve the verified identity
+		// even on deny — audits and artifact gating need it on reject paths.
+		plan := risktypes.VerifiedCommandPlan{
+			Identity:   identityFor(cmd),
+			Assessment: a,
+		}
+		plan.Artifacts = indirect.Artifacts
+		return plan, nil
+	}
+
+	// Rank 3: privilege escalation -> Critical (always denied). Detected through
+	// the resolved profile so sudo/su/doas cannot be missed via a symlink alias.
+	// names was resolved once (strict) at the top of EvaluateRisk.
+	profile, profileFound := security.ResolveProfile(names)
 	if profileFound && profile.IsPrivilege() {
 		return criticalPlan(cmd, risktypes.RiskAssessment{
 			Level:          runnertypes.RiskLevelCritical,
@@ -97,10 +134,43 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 	if err != nil {
 		return risktypes.VerifiedCommandPlan{}, err
 	}
-	if assessment.Blocking {
-		return blockingPlan(assessment), nil
+	// Fold the rank-2 indirect-execution floor (an allowable wrapper/inline/package
+	// form) into the maximum so a wrapped dangerous command is not under-classified.
+	// The level is folded once; reason codes and human-readable reasons are appended
+	// and then de-duplicated (a wrapped runner like "bash -c" yields
+	// ReasonArbitraryCodeExecution from both the floor and the rank-7 runner
+	// dimension, and listing it twice only makes the audit output noisier).
+	if indirect.Kind == security.IndirectFloor && indirect.Level > runnertypes.RiskLevelUnknown {
+		assessment.Level = max(assessment.Level, indirect.Level)
+		assessment.ReasonCodes = common.DedupeStable(append(assessment.ReasonCodes, indirect.ReasonCodes...))
+		assessment.Reasons = common.DedupeStable(append(assessment.Reasons, indirect.Reasons...))
 	}
-	return allowedPlan(cmd, assessment), nil
+	if assessment.Blocking {
+		// The identity gate (rank 1) already passed, so the binary's identity is
+		// verified even though a later dimension denies it. Preserve that identity
+		// on the deny plan — consistent with the IndirectReject path — so audits and
+		// artifact gating have it (a nil Identity is reserved for denies that never
+		// established one).
+		plan := risktypes.VerifiedCommandPlan{
+			Identity:   identityFor(cmd),
+			Assessment: assessment,
+		}
+		plan.Artifacts = indirect.Artifacts
+		return plan, nil
+	}
+	plan := allowedPlan(cmd, assessment)
+	plan.Artifacts = indirect.Artifacts
+	return plan, nil
+}
+
+// indirectBlockingReason returns the primary blocking reason for a rejected
+// indirect-execution form, falling back to the generic rejection code when the
+// resolver returned no codes.
+func indirectBlockingReason(codes []risktypes.ReasonCode) risktypes.ReasonCode {
+	if len(codes) > 0 {
+		return codes[0]
+	}
+	return risktypes.ReasonIndirectExecutionRejected
 }
 
 // identityGate implements the Phase 1 identity gate: the binary must carry a
@@ -143,10 +213,12 @@ func (e *StandardEvaluator) evaluateDimensions(
 	}
 
 	// Destructive operations and system modification (order-independent max).
-	if security.IsDestructiveFileOperation(cmdPath, args) {
+	// names was resolved once (strict) by the caller and is shared by every
+	// name-based dimension below.
+	if security.IsDestructiveFileOperation(names, args) {
 		addDimension(&a, runnertypes.RiskLevelHigh, risktypes.ReasonDestructiveFileOperation)
 	}
-	if sysmod := systemModificationRisk(names, cmdPath, args); sysmod > runnertypes.RiskLevelUnknown {
+	if sysmod := security.SystemModificationRisk(names, args); sysmod > runnertypes.RiskLevelUnknown {
 		addDimension(&a, sysmod, risktypes.ReasonSystemModification)
 	}
 
@@ -157,13 +229,13 @@ func (e *StandardEvaluator) evaluateDimensions(
 	}
 
 	// Rank 6: dangerous argument patterns (rm -rf, dd if=, chmod -R 777, ...).
-	if level, _ := security.CheckDangerousArgPatterns(cmdPath, args); level > runnertypes.RiskLevelUnknown {
+	if level, _ := security.CheckDangerousArgPatterns(names, args); level > runnertypes.RiskLevelUnknown {
 		addDimension(&a, level, risktypes.ReasonDangerousArgPattern)
 	}
 
 	// Rank 7: arbitrary-code-execution runners (shells/interpreters/build runners)
 	// -> High regardless of arguments.
-	if security.IsArbitraryCodeExecutionRunner(cmdPath) {
+	if security.IsArbitraryCodeExecutionRunner(names) {
 		addDimension(&a, runnertypes.RiskLevelHigh, risktypes.ReasonArbitraryCodeExecution)
 	}
 
@@ -202,14 +274,10 @@ func addDimension(a *risktypes.RiskAssessment, level runnertypes.RiskLevel, code
 // applyProfileFactors folds the profile's non-privilege, non-system-modification
 // risk factors into the assessment and records the human-readable reasons.
 func applyProfileFactors(a *risktypes.RiskAssessment, profile security.CommandRiskProfile, args []string) {
-	if profile.DestructionRisk.Level > runnertypes.RiskLevelLow {
-		addDimension(a, profile.DestructionRisk.Level, risktypes.ReasonProfileDestruction)
-	}
-	if profile.DataExfilRisk.Level > runnertypes.RiskLevelLow {
-		addDimension(a, profile.DataExfilRisk.Level, risktypes.ReasonProfileDataExfil)
-	}
-	if profile.NetworkRisk.Level > runnertypes.RiskLevelLow && security.ProfileNetworkApplies(profile, args) {
-		addDimension(a, profile.NetworkRisk.Level, risktypes.ReasonProfileNetwork)
+	if level, codes := security.ProfileFactorRisk(profile, args); level > runnertypes.RiskLevelUnknown {
+		for _, code := range codes {
+			addDimension(a, level, code)
+		}
 	}
 	a.Reasons = profile.GetRiskReasons()
 	a.NetworkType = networkTypeString(profile.NetworkType)
@@ -242,24 +310,6 @@ func (e *StandardEvaluator) applyBinaryAnalysis(a *risktypes.RiskAssessment, cmd
 		// No contribution.
 	}
 	return nil, nil
-}
-
-// systemModificationRisk derives the system-modification risk level for the
-// command. systemctl is argument-conditional (read-only subcommands stay at a
-// Medium floor, change/unknown verbs are High); service is always High (it runs
-// an unverified init script); any other system-modification command (mount,
-// crontab, mkfs, package install/remove, ...) is Medium.
-func systemModificationRisk(names map[string]struct{}, cmdPath string, args []string) runnertypes.RiskLevel {
-	if _, ok := names["systemctl"]; ok {
-		return security.SystemctlSubcommandRisk(args)
-	}
-	if _, ok := names["service"]; ok {
-		return runnertypes.RiskLevelHigh
-	}
-	if security.IsSystemModification(cmdPath, args) {
-		return runnertypes.RiskLevelMedium
-	}
-	return runnertypes.RiskLevelUnknown
 }
 
 // networkTypeString renders a NetworkOperationType for the audit NetworkType field.

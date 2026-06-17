@@ -205,3 +205,32 @@ func ContainsPathTraversalSegment(path string) bool {
 	segments := strings.Split(path, string(filepath.Separator))
 	return slices.Contains(segments, "..")
 }
+
+// IsPathWithinDirectory reports whether targetPath is strictly inside dirPath
+// (not equal to it). Both are cleaned, then dirPath is given a trailing separator
+// so the comparison is on a path-segment boundary: "/home/user-evil" is NOT within
+// "/home/user", unlike a naive strings.HasPrefix. An empty dirPath is never a
+// container. This is the single containment check shared by the output-path and
+// command-output risk classifiers.
+func IsPathWithinDirectory(targetPath, dirPath string) bool {
+	if dirPath == "" {
+		return false
+	}
+	cleanTarget := filepath.Clean(targetPath)
+	cleanDir := filepath.Clean(dirPath)
+	if cleanTarget == cleanDir {
+		return false
+	}
+	if !strings.HasSuffix(cleanDir, string(filepath.Separator)) {
+		cleanDir += string(filepath.Separator)
+	}
+	return strings.HasPrefix(cleanTarget+string(filepath.Separator), cleanDir)
+}
+
+// MaxShebangLen is the maximum number of bytes read when detecting/parsing a
+// "#!" shebang line. It is the larger of the two supported platforms' kernel
+// shebang limits — Linux BINPRM_BUF_SIZE (256) and macOS IMG_ACT_MAX_SHEBANG
+// (512) — so a shebang reader sees at least as much as the kernel that will exec
+// the script on either platform. It is shared by the record/verify shebang parser
+// and the runtime risk evaluator so the two cannot drift.
+const MaxShebangLen = 512

@@ -37,7 +37,7 @@ func legacyBoolsFromResult(res risktypes.BinaryAnalysisResult) (isNetwork, isHig
 // former IsNetworkOperation; binary-analysis and argument-only detection for
 // unprofiled commands are no longer part of network classification.
 func profileNetwork(cmdName string, args []string) bool {
-	profile, found := ResolveProfile(cmdName)
+	profile, found := ResolveProfile(cmdNameSet(cmdName))
 	if !found {
 		return false
 	}

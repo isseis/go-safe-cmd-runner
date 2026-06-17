@@ -73,6 +73,9 @@ const (
 	ReasonIdentityUnbound ReasonCode = "identity_unbound"
 	// ReasonIndirectExecutionRejected marks a rejected indirect-execution form.
 	ReasonIndirectExecutionRejected ReasonCode = "indirect_execution_rejected"
+	// ReasonIndirectExecutionWrapper marks an allowable wrapper indirection
+	// (env/timeout/nice ...) that contributes a risk floor without being rejected.
+	ReasonIndirectExecutionWrapper ReasonCode = "indirect_execution_wrapper"
 	// ReasonForbiddenEnvVar marks a forbidden environment variable being supplied.
 	ReasonForbiddenEnvVar ReasonCode = "forbidden_env_var"
 	// ReasonNonAbsolutePath marks a command path that was not absolute when it

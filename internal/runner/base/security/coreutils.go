@@ -1,6 +1,7 @@
 package security
 
 import (
+	"maps"
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -102,14 +103,15 @@ var safeCoreutilsCommands = map[string]struct{}{
 
 // destructiveCoreutilsCommands is the set of coreutils subcommands classified as High risk:
 // commands that can cause data loss or disk corruption.
-var destructiveCoreutilsCommands = map[string]struct{}{
-	"dd":       {},
-	"rm":       {},
-	"rmdir":    {},
-	"shred":    {},
-	"truncate": {},
-	"unlink":   {},
-}
+// destructiveCoreutilsCommands is the general destructive command set
+// (destructiveCommandNames) plus coreutils-only "truncate". Deriving it from the
+// shared set keeps the common entries (rm, rmdir, unlink, shred, dd) from drifting
+// between the two lists.
+var destructiveCoreutilsCommands = func() map[string]struct{} {
+	m := maps.Clone(destructiveCommandNames)
+	m["truncate"] = struct{}{}
+	return m
+}()
 
 // CoreutilsCommandRisk reports the risk level of a command whose resolved path
 // is a direct child of the coreutils single-binary directory (CoreutilsDir).
@@ -150,7 +152,11 @@ func CoreutilsCommandRisk(resolvedPath string, args []string) (runnertypes.RiskL
 
 	subcmd := filepath.Base(resolvedPath)
 	if subcmd == "coreutils" {
-		subcmd = findFirstSubcommand(args)
+		// "coreutils <applet> ..." — the applet name is the first operand. coreutils
+		// takes no value-options before the applet, so any option here is unexpected;
+		// treat an unreliable scan as an unidentifiable applet, which fails safe to
+		// High below.
+		subcmd, _ = firstOperand(args, optSpec{unknown: anyUnknownIsUnreliable})
 	}
 
 	if _, ok := destructiveCoreutilsCommands[subcmd]; ok {
