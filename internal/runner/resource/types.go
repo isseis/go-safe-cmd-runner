@@ -88,12 +88,12 @@ type DryRunOptions struct {
 	// Security analysis configuration
 	HashDir string `json:"hash_dir"` // Directory containing hash files
 
-	// FailOnVerificationUnavailable, when true, escalates a verification-unavailable
-	// deny (analysis/verification disabled in the environment) to the same exit code
-	// as a real policy deny, so CI treats "could not verify" as a hard failure.
-	// When false, a verification-unavailable deny gets the distinct
-	// DryRunExitVerificationUnavailable exit code so it can be told apart from a
-	// genuine policy deny.
+	// FailOnVerificationUnavailable, when true, makes a verification-unavailable deny
+	// (a command that could not be verified in this environment) fail the dry-run:
+	// the preview exit code becomes the distinct DryRunExitVerificationUnavailable,
+	// which CI can treat as a build failure while still telling it apart from a
+	// policy deny. When false (the default), a verification-unavailable deny is
+	// reported as a note only and does not fail the dry-run (exit 0).
 	FailOnVerificationUnavailable bool `json:"fail_on_verification_unavailable"`
 }
 
@@ -175,9 +175,11 @@ type DryRunResult struct {
 	FileVerification *verification.FileVerificationSummary `json:"file_verification,omitempty"`
 	Errors           []DryRunError                         `json:"errors"`
 	Warnings         []DryRunWarning                       `json:"warnings"`
-	// PreviewExitCode is the process exit code the dry-run preview recommends: 0 if
-	// every command is allowed, DryRunExitPolicyDeny if any is denied by policy, and
-	// DryRunExitVerificationUnavailable when the only denies are verification-induced.
+	// PreviewExitCode is the process exit code the dry-run preview recommends:
+	// DryRunExitPolicyDeny if any command is denied by policy; otherwise, when the
+	// only denies are verification-induced, DryRunExitVerificationUnavailable if
+	// FailOnVerificationUnavailable is set and 0 (note-only) if not; 0 when every
+	// command is allowed.
 	PreviewExitCode int `json:"preview_exit_code"`
 }
 

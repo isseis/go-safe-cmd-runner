@@ -185,19 +185,21 @@ func (n *NormalResourceManager) auditRiskDecision(ctx context.Context, cmd *runn
 }
 
 // emitErrorAudit emits a minimal deny audit entry for the error-return path,
-// where no plan is available. The path is recorded best-effort from the command's
-// expanded path (the evaluator never resolved it on this path). It is a no-op
-// when no audit logger is configured.
+// where no plan is available. The resolved path is recorded best-effort from the
+// command's expanded path (resolved by the group executor before execution), so a
+// failed-evaluation deny is still correlatable. It is a no-op when no audit logger
+// is configured.
 func (n *NormalResourceManager) emitErrorAudit(ctx context.Context, cmd *runnertypes.RuntimeCommand, errClass risktypes.ErrorClass) {
 	if n.auditLogger == nil {
 		return
 	}
 	n.auditLogger.LogRiskProfile(ctx, risktypes.RiskAuditEntry{
-		CommandName: cmd.Name(),
-		Args:        cmd.ExpandedArgs,
-		Mode:        risktypes.ModeNormal,
-		Decision:    risktypes.DecisionDeny,
-		ErrorClass:  errClass,
+		CommandName:  cmd.Name(),
+		Args:         cmd.ExpandedArgs,
+		Mode:         risktypes.ModeNormal,
+		ResolvedPath: optString(cmd.ExpandedCmd),
+		Decision:     risktypes.DecisionDeny,
+		ErrorClass:   errClass,
 	})
 }
 
@@ -221,6 +223,16 @@ func planContentHash(plan *risktypes.VerifiedCommandPlan) *string {
 		return &plan.Identity.ContentHash
 	}
 	return nil
+}
+
+// optString returns a pointer to s, or nil when s is empty, for audit correlation
+// fields that distinguish present from absent (rendered as a marker at the log
+// boundary).
+func optString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // executeCommandWithOutput executes a command with output capture

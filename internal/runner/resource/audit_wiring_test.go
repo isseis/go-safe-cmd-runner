@@ -185,6 +185,23 @@ func TestDryRun_ErrorPathAudit(t *testing.T) {
 	assert.Equal(t, "dry-run", entry["mode"])
 	assert.Equal(t, "deny", entry["decision"])
 	assert.Equal(t, "record_load", entry["error_class"])
+	// The error deny is still correlatable by resolved path (not the absence marker).
+	assert.Equal(t, "/usr/bin/x", entry["resolved_path"])
+}
+
+// TestExecute_ErrorPathAuditable verifies that when the evaluator fails with an
+// unexpected internal error in normal mode, a minimal deny entry is emitted with
+// the resolved path before the hard error is returned.
+func TestExecute_ErrorPathAuditable(t *testing.T) {
+	mgr, _, buf := newAuditingNormalManager(fixedPlanEvaluator{err: assert.AnError})
+	cmd := executortestutil.CreateRuntimeCommand("/usr/bin/rm", []string{"-rf"}, executortestutil.WithName("rm"))
+	_, _, err := mgr.ExecuteCommand(context.Background(), cmd, createTestCommandGroup(), map[string]string{})
+	require.Error(t, err)
+
+	entry := findRiskProfileEntry(t, buf)
+	assert.Equal(t, "deny", entry["decision"])
+	assert.Equal(t, "record_load", entry["error_class"])
+	assert.Equal(t, "/usr/bin/rm", entry["resolved_path"])
 }
 
 // TestExecute_ConfigErrorAuditable verifies that an invalid risk_level

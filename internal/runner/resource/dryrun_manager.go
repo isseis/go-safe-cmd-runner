@@ -348,7 +348,7 @@ func (d *DryRunResourceManager) evaluateCommandRisk(ctx context.Context, cmd *ru
 		}
 		analysis.Impact.Description += "]"
 		if verificationUnavailable {
-			analysis.Impact.Description += " [NOTE: verification unavailable in this environment; the command would also be denied in production]"
+			analysis.Impact.Description += " [NOTE: verification unavailable in this environment; under the fail-closed policy this command is denied here, and would be denied in any environment where verification is likewise unavailable]"
 		}
 	} else {
 		analysis.Impact.Description += fmt.Sprintf(" [ALLOW: effective risk %s, max allowed %s]", effectiveRisk.String(), maxAllowed.String())
@@ -398,11 +398,10 @@ func (d *DryRunResourceManager) recordPreviewDecision(cmd *runnertypes.RuntimeCo
 	})
 }
 
-// PreviewExitCode returns the process exit code for the dry-run preview: 0 when
-// every command is allowed, DryRunExitPolicyDeny when any command is denied by
-// policy, and DryRunExitVerificationUnavailable when the only denies are caused by
-// verification being unavailable (unless FailOnVerificationUnavailable escalates
-// them to a policy-deny exit). A real policy deny dominates.
+// PreviewExitCode returns the process exit code for the dry-run preview. A policy
+// deny dominates and yields DryRunExitPolicyDeny. Otherwise a verification-unavailable
+// deny yields DryRunExitVerificationUnavailable when FailOnVerificationUnavailable is
+// set, or 0 (note-only) by default. It is 0 when every command is allowed.
 func (d *DryRunResourceManager) PreviewExitCode() int {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -451,17 +450,20 @@ func (d *DryRunResourceManager) auditRiskDecision(ctx context.Context, cmd *runn
 }
 
 // emitDryRunErrorAudit emits a minimal deny audit entry on the error-return path,
-// where no plan is available. No-op when no audit logger is configured.
+// where no plan is available. The resolved path is taken from the prepared command
+// (already resolved by the caller) so the error deny stays correlatable. No-op when
+// no audit logger is configured.
 func (d *DryRunResourceManager) emitDryRunErrorAudit(ctx context.Context, cmd *runnertypes.RuntimeCommand, errClass risktypes.ErrorClass) {
 	if d.auditLogger == nil {
 		return
 	}
 	d.auditLogger.LogRiskProfile(ctx, risktypes.RiskAuditEntry{
-		CommandName: cmd.Name(),
-		Args:        cmd.ExpandedArgs,
-		Mode:        risktypes.ModeDryRun,
-		Decision:    risktypes.DecisionDeny,
-		ErrorClass:  errClass,
+		CommandName:  cmd.Name(),
+		Args:         cmd.ExpandedArgs,
+		Mode:         risktypes.ModeDryRun,
+		ResolvedPath: optString(cmd.ExpandedCmd),
+		Decision:     risktypes.DecisionDeny,
+		ErrorClass:   errClass,
 	})
 }
 
