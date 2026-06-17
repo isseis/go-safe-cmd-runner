@@ -29,11 +29,16 @@ var osManagedSymlinks = map[string]string{
 // callers keep their reject-by-default behavior. It is the single implementation
 // shared by safefileio and the output-path validator.
 func IsAllowedOSManagedSymlink(path string) bool {
-	expectedTarget, ok := osManagedSymlinks[filepath.Clean(path)]
+	// Clean once and use the cleaned path for both the allowlist lookup and the
+	// readlink, so a path-spelling difference (e.g. a trailing slash, which would
+	// make os.Readlink resolve through to the target directory instead of reading
+	// the symlink) cannot cause the two to disagree.
+	cleanPath := filepath.Clean(path)
+	expectedTarget, ok := osManagedSymlinks[cleanPath]
 	if !ok {
 		return false
 	}
-	actualTarget, err := os.Readlink(path)
+	actualTarget, err := os.Readlink(cleanPath)
 	if err != nil {
 		return false
 	}
