@@ -38,19 +38,19 @@ func (e SilentExitError) Error() string {
 }
 
 var (
-	configPath                   string
-	logLevel                     string
-	logDir                       string
-	dryRun                       bool
-	dryRunFormat                 string
-	dryRunDetail                 string
-	dryRunFailOnVerifUnavailable bool
-	showSensitive                bool
-	runID                        string
-	forceInteractive             bool
-	forceQuiet                   bool
-	keepTempDirs                 bool
-	groups                       string
+	configPath           string
+	logLevel             string
+	logDir               string
+	dryRun               bool
+	dryRunFormat         string
+	dryRunDetail         string
+	dryRunFailUnverified bool
+	showSensitive        bool
+	runID                string
+	forceInteractive     bool
+	forceQuiet           bool
+	keepTempDirs         bool
+	groups               string
 )
 
 func init() {
@@ -75,7 +75,7 @@ func init() {
 	flag.StringVar(&logDir, "log-dir", "", "directory to place per-run JSON log (auto-named). Overrides TOML/env if set.")
 	flag.StringVar(&dryRunFormat, "dry-run-format", "text", "dry-run output format (text, json)")
 	flag.StringVar(&dryRunDetail, "dry-run-detail", "detailed", "dry-run detail level (summary, detailed, full)")
-	flag.BoolVar(&dryRunFailOnVerifUnavailable, "dry-run-fail-on-verification-unavailable", false, "in dry-run, treat a verification-unavailable deny as a hard failure (same exit code as a policy deny) instead of the distinct verification-unavailable exit code")
+	flag.BoolVar(&dryRunFailUnverified, "dry-run-fail-unverified", false, "in dry-run, treat a command that could not be verified in this environment as a hard failure (non-zero exit) instead of the default note-only (exit 0)")
 	flag.BoolVar(&showSensitive, "show-sensitive", false, "show sensitive information in dry-run output (use with caution)")
 	flag.StringVar(&runID, "run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
 	flag.BoolVar(&forceInteractive, "interactive", false, "force interactive mode with colored output (overrides environment detection)")
@@ -410,7 +410,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 			ShowSensitive:                 showSensitive,
 			VerifyFiles:                   true,
 			HashDir:                       cmdcommon.DefaultHashDirectory, // Use secure default hash directory
-			FailOnVerificationUnavailable: dryRunFailOnVerifUnavailable,
+			FailOnVerificationUnavailable: dryRunFailUnverified,
 		}
 		runnerOptions = append(runnerOptions, runner.WithDryRun(dryRunOpts))
 	}
