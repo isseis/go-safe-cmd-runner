@@ -1,11 +1,7 @@
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 # インタラクティブな入力を無効化
 ENV DEBIAN_FRONTEND=noninteractive
-
-# システムの「最小化」を解除 (unminimize の実行)
-# yes コマンドを使って、実行中の確認プロンプトにすべて 'y' で答える
-RUN yes | unminimize
 
 # 開発ツールのインストール
 RUN apt-get update && apt-get install -y \
@@ -41,13 +37,13 @@ RUN set -eux \
     && TARGETARCH="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && case "${TARGETARCH}" in \
     amd64) \
-        GO_SHA256="2b2cfc7148493da5e73981bffbf3353af381d5f93e789c82c79aff64962eb556"; \
-        LINT_SHA256="200c5b7503f67b59a6743ccf32133026c174e272b930ee79aa2aa6f37aca7ef1"; \
-        ;; \
+    GO_SHA256="2b2cfc7148493da5e73981bffbf3353af381d5f93e789c82c79aff64962eb556"; \
+    LINT_SHA256="200c5b7503f67b59a6743ccf32133026c174e272b930ee79aa2aa6f37aca7ef1"; \
+    ;; \
     arm64) \
-        GO_SHA256="9d89a3ea57d141c2b22d70083f2c8459ba3890f2d9e818e7e933b75614936565"; \
-        LINT_SHA256="3bcfa2e6f3d32b2bf5cd75eaa876447507025e0303698633f722a05331988db4"; \
-        ;; \
+    GO_SHA256="9d89a3ea57d141c2b22d70083f2c8459ba3890f2d9e818e7e933b75614936565"; \
+    LINT_SHA256="3bcfa2e6f3d32b2bf5cd75eaa876447507025e0303698633f722a05331988db4"; \
+    ;; \
     *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
     esac \
     && curl -sSfL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" -o /tmp/go.tar.gz \
