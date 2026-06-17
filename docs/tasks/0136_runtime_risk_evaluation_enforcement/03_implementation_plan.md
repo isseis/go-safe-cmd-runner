@@ -367,7 +367,7 @@
 **レビュー観点**: `LogRiskProfile` の `RiskAuditEntry` 化（在/不在のセンチネル排除）/ ResourceManager（normal・dry-run 双方）への監査配線・deny 重大度下限 / dry-run と normal の判定一致・検証不能 deny の終了コード / **本 PR 完了で fd 束縛 exec＋構造化監査が揃い AC 充足＝外部リリース可否ゲート達成**
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test` 緑。`make lint` の残存指摘は origin/main にも存在する goconst のみ＝既存無関係指摘、AC-21 で除外）
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/734）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
