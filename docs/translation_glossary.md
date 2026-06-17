@@ -91,6 +91,7 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| 危険文字 | dangerous character | 出力パス検査の文脈 |
 | データ持ち出し | data exfiltration | 機密データの外部送信（セキュリティの文脈） |
 | データフロー解析 | dataflow analysis | CFGを用いたデータの流れの解析 |
 | 依存 / 依存解析 | dependency / dependency analysis | 動的ライブラリ依存解析の文脈 |
@@ -346,6 +347,7 @@
 | パーサ | parser | 構文解析器 |
 | 部分一致 | partial match | 部分文字列一致。root 向け危険判定の文脈 |
 | パス | path | |
+| パストラバーサル | path traversal | `../` 等によるディレクトリ脱出（セキュリティの文脈） |
 | Pattern | pattern | パターン |
 | Payload | payload | ペイロード |
 | パフォーマンス | performance | |
@@ -573,6 +575,7 @@
 | ワークフロー | workflow | |
 | 回避策 | workaround | |
 | 作業ディレクトリ | working directory | |
+| 書き込み権限 | write permission | ファイル／ディレクトリへの書き込み可否 |
 | ワークスペース | workspace | |
 | Wrapper | wrapper | ラッパー |
 | 書き込み | write | |
@@ -688,6 +691,7 @@
 | 2026-06-17 | 実行時リスク評価ドキュメント（Task 0136）関連の用語を追加 (arbitrary code execution, blocklist, data exfiltration, effective risk, fail-closed, fail-safe, hash pinning, hard link, threat model) |
 | 2026-06-17 | command-risk-evaluation 開発者文書（Task 0136 Step 4-3）関連の用語を追加 (exact match, partial match) |
 | 2026-06-18 | runner_command ユーザーガイド（-dry-run-fail-unverified フラグ）関連の用語を追加 (exit code, policy deny, verification unavailable) |
+| 2026-06-18 | command-risk-evaluation 文書（output_file 検証）関連の用語を追加 (dangerous character, path traversal, write permission) |
 
 ---
 
