@@ -276,7 +276,14 @@ func shortFlagInBundle(arg string, c byte) bool {
 	if !strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "--") || arg == "-" {
 		return false
 	}
-	return strings.IndexByte(arg[1:], c) >= 0
+	// A short-option token's flag letters precede any attached "=value" (e.g. in
+	// "-e=foo" the flags are "e"); the value chars after "=" must not be matched as
+	// flags, so search only the part before the first "=".
+	flags := arg[1:]
+	if i := strings.IndexByte(flags, '='); i >= 0 {
+		flags = flags[:i]
+	}
+	return strings.IndexByte(flags, c) >= 0
 }
 
 // AnalyzeIndirectExecution detects whether the command executes or loads an
@@ -443,6 +450,13 @@ func readShebang(path string) (interp string, args []string, ok bool) {
 	}
 	// The path is the resolved command path the evaluator is already classifying;
 	// reading its first line to detect a shebang interpreter is intentional.
+	// Only inspect regular files: opening a FIFO would block until a writer connects
+	// (a denial of service), and a device file could have read side effects. os.Stat
+	// does not open the file, so it cannot block; a non-regular target is simply not
+	// a shebang script.
+	if fi, statErr := os.Stat(path); statErr != nil || !fi.Mode().IsRegular() {
+		return "", nil, false
+	}
 	f, err := os.Open(path) //nolint:gosec // reading the verified command path to detect a shebang
 	if err != nil {
 		return "", nil, false

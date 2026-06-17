@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -913,4 +915,37 @@ func TestIndirect_PlainCommandNotIndirect(t *testing.T) {
 			assert.Equal(t, IndirectNone, analyzeIndirectCmd(tc.cmd, tc.args...).Kind)
 		})
 	}
+}
+
+// TestIndirect_ShebangFifoNotRead verifies readShebang does not block when the
+// command path is a FIFO (a denial-of-service vector): the regular-file guard
+// rejects it before os.Open, so analysis returns promptly as not-a-shebang.
+func TestIndirect_ShebangFifoNotRead(t *testing.T) {
+	dir := t.TempDir()
+	fifo := filepath.Join(dir, "pipe")
+	require.NoError(t, syscall.Mkfifo(fifo, 0o644))
+
+	done := make(chan IndirectExecutionResult, 1)
+	go func() { done <- analyzeIndirectCmd(fifo) }()
+	select {
+	case res := <-done:
+		assert.Equal(t, IndirectNone, res.Kind, "a FIFO is not a shebang script")
+	case <-time.After(5 * time.Second):
+		t.Fatal("analyzeIndirectCmd blocked on a FIFO (regular-file guard failed)")
+	}
+}
+
+// TestShortFlagInBundle verifies short-flag bundle detection, including that flag
+// letters are searched only before an attached "=value".
+func TestShortFlagInBundle(t *testing.T) {
+	assert.True(t, shortFlagInBundle("-avze", 'e'), "letter present in a short bundle")
+	assert.True(t, shortFlagInBundle("-xc", 'c'))
+	assert.False(t, shortFlagInBundle("-x", 'c'), "letter absent")
+	assert.False(t, shortFlagInBundle("--c", 'c'), "long option is not a short bundle")
+	assert.False(t, shortFlagInBundle("-", 'c'), "lone dash")
+	// Flag letters precede an attached "=value": chars after "=" are not flags.
+	assert.False(t, shortFlagInBundle("-x=c", 'c'), "char only in the =value must not match")
+	assert.True(t, shortFlagInBundle("-ce=x", 'c'))
+	assert.True(t, shortFlagInBundle("-ce=x", 'e'))
+	assert.False(t, shortFlagInBundle("-ce=x", 'x'))
 }
