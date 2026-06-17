@@ -84,7 +84,7 @@ func TestDryRunExecutionPath(t *testing.T) {
 			mockPathResolver := &MockPathResolver{}
 			setupStandardCommandPaths(mockPathResolver)
 			mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-			dryRunManager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+			dryRunManager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts, permissiveTestEvaluator{}, nil)
 			require.NoError(t, err)
 			require.NotNil(t, dryRunManager) // Execute commands in dry-run mode
 			for _, cmdSpec := range tt.commandSpecs {
@@ -169,7 +169,7 @@ func TestDryRunResultConsistency(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+		manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts, permissiveTestEvaluator{}, nil)
 		require.NoError(t, err)
 
 		_, _, err = manager.ExecuteCommand(ctx, cmd, group, envVars)

@@ -18,13 +18,13 @@ import (
 // auditValueAbsent is the fixed marker rendered for a correlation field whose
 // value could not be obtained (a nil pointer in RiskAuditEntry). The marker is
 // applied only at this log-output boundary; the entry itself represents absence
-// with a nil pointer and never stores a sentinel string in a value field
-// (AC-56). Keeping the key present on every entry lets incident searches treat
-// the field uniformly instead of distinguishing "absent" from "omitted".
+// with a nil pointer and never stores a sentinel string in a value field.
+// Keeping the key present on every entry lets incident searches treat the field
+// uniformly instead of distinguishing "absent" from "omitted".
 const auditValueAbsent = "n/a"
 
 // argRedactor masks secrets in command arguments before they reach the log,
-// staying consistent with the global redaction mechanism (AC-57). The production
+// staying consistent with the global redaction mechanism. The production
 // logger also runs behind a RedactingHandler; applying redaction here keeps the
 // masking guarantee even when LogRiskProfile writes to a logger without that
 // handler.
@@ -195,11 +195,11 @@ func (l *Logger) LogSecurityEvent(
 
 // LogRiskProfile emits the command_risk_profile audit entry for a single risk
 // decision. It takes a RiskAuditEntry parameter object (defined in risktypes so
-// audit does not import risk) carrying the correlation fields required by AC-56:
+// audit does not import risk) carrying the correlation fields required for incident correlation:
 // resolved_path, content_hash, the analysis record identifier, max_allowed_risk,
-// decision, reason_codes, and the human-readable risk_factors (AC-12). The entry
+// decision, reason_codes, and the human-readable risk_factors. The entry
 // is always written -- including for denies on the error-return path -- so audit
-// is never skipped by an early return (AC-56/70).
+// is never skipped by an early return.
 func (l *Logger) LogRiskProfile(ctx context.Context, entry risktypes.RiskAuditEntry) {
 	assessment := entry.Assessment
 
@@ -223,7 +223,7 @@ func (l *Logger) LogRiskProfile(ctx context.Context, entry risktypes.RiskAuditEn
 		slog.Int("process_id", os.Getpid()),
 	}
 
-	// Machine-readable reason codes (AC-12/48): present even for commands without a
+	// Machine-readable reason codes: present even for commands without a
 	// profile (e.g. binary-analysis-derived risk).
 	if len(assessment.ReasonCodes) > 0 {
 		codes := make([]string, len(assessment.ReasonCodes))
@@ -233,7 +233,7 @@ func (l *Logger) LogRiskProfile(ctx context.Context, entry risktypes.RiskAuditEn
 		attrs = append(attrs, slog.Any("reason_codes", codes))
 	}
 
-	// Human-readable risk factors (AC-12).
+	// Human-readable risk factors.
 	if len(assessment.Reasons) > 0 {
 		attrs = append(attrs, slog.Any("risk_factors", assessment.Reasons))
 	}
@@ -250,7 +250,7 @@ func (l *Logger) LogRiskProfile(ctx context.Context, entry risktypes.RiskAuditEn
 		attrs = append(attrs, slog.Bool("verification_unavailable", true))
 	}
 
-	// Masked command arguments (AC-57). Apply redaction here so secrets are not
+	// Masked command arguments. Apply redaction here so secrets are not
 	// leaked even when the destination logger has no RedactingHandler.
 	if len(entry.Args) > 0 {
 		masked := make([]string, len(entry.Args))
@@ -260,7 +260,7 @@ func (l *Logger) LogRiskProfile(ctx context.Context, entry risktypes.RiskAuditEn
 		attrs = append(attrs, slog.Any("command_args", masked))
 	}
 
-	// Indirect-execution chain (AC-11): each executed/loaded artifact's identity so
+	// Indirect-execution chain: each executed/loaded artifact's identity so
 	// the whole chain is correlatable from a single entry.
 	if len(entry.Chain) > 0 {
 		chain := make([]map[string]string, len(entry.Chain))
@@ -281,7 +281,7 @@ func (l *Logger) LogRiskProfile(ctx context.Context, entry risktypes.RiskAuditEn
 
 // optStr renders an optional correlation value: its real value when present, or
 // the absence marker when nil. The DTO never holds a sentinel string; the marker
-// exists only at this output boundary (AC-56).
+// exists only at this output boundary.
 func optStr(s *string) string {
 	if s == nil {
 		return auditValueAbsent
@@ -289,9 +289,9 @@ func optStr(s *string) string {
 	return *s
 }
 
-// riskLogLevel maps the effective risk to a log level (AC-13: Critical->Error,
+// riskLogLevel maps the effective risk to a log level (Critical->Error,
 // High->Warn, Medium->Info, else->Debug) and then applies the deny severity
-// floor (AC-70): any deny is at least Warn, so a Medium command denied under a
+// floor: any deny is at least Warn, so a Medium command denied under a
 // Low ceiling is still found by a Warn/Error deny search instead of sinking to
 // Info.
 func riskLogLevel(level runnertypes.RiskLevel, decision risktypes.Decision) slog.Level {

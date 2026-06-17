@@ -55,6 +55,29 @@ func (permissiveTestEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (ri
 	}, nil
 }
 
+// keyedRiskEvaluator returns a preset assessment per command name (falling back to
+// Low for unknown names), so dry-run preview tests can drive allow/deny/blocking
+// outcomes deterministically without on-disk binaries or hash records.
+type keyedRiskEvaluator map[string]risktypes.RiskAssessment
+
+func (m keyedRiskEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error) {
+	a, ok := m[cmd.Name()]
+	if !ok {
+		a = risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow}
+	}
+	return risktypes.VerifiedCommandPlan{
+		ResolvedPath: cmd.ExpandedCmd,
+		Identity:     &risktypes.VerifiedIdentity{ResolvedPath: cmd.ExpandedCmd, ContentHash: cmd.ExpandedCmdContentHash},
+		Assessment:   a,
+	}, nil
+}
+
+// passthroughPathResolver returns the command path unchanged so dry-run preview
+// tests do not depend on real binaries being present on disk.
+type passthroughPathResolver struct{}
+
+func (passthroughPathResolver) ResolvePath(cmd string) (string, error) { return cmd, nil }
+
 // NewNormalResourceManager creates a NormalResourceManager for manager-mechanics
 // tests. It uses a permissive evaluator (see permissiveTestEvaluator); tests that
 // exercise risk classification use NewNormalResourceManagerWithOutput, which wires

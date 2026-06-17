@@ -172,7 +172,7 @@ func initializeDefaultComponents(opts *runnerOptions, configSpec *runnertypes.Co
 	}
 
 	// Always create an audit logger: the resource manager emits a
-	// command_risk_profile entry on every allow/deny decision (AC-11), not only
+	// command_risk_profile entry on every allow/deny decision, not only
 	// for privileged commands. NewAuditLogger wraps the default structured logger,
 	// so this is cheap and has no effect for commands that never log.
 	if opts.auditLogger == nil {
@@ -225,12 +225,27 @@ func createDryRunResourceManager(opts *runnerOptions, verificationManager *verif
 		verificationManager,
 		outputMgr,
 		opts.dryRunOptions,
+		resolveRiskEvaluator(opts, verificationManager),
+		opts.auditLogger,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create dry-run resource manager: %w", err)
 	}
 	opts.resourceManager = resourceManager
 	return nil
+}
+
+// resolveRiskEvaluator returns the configured risk evaluator, or builds the
+// standard evaluator from the verification manager's analysis dependencies when
+// none was injected. Shared by the normal and dry-run paths so both modes evaluate
+// risk identically.
+func resolveRiskEvaluator(opts *runnerOptions, verificationManager *verification.Manager) risk.Evaluator {
+	if opts.riskEvaluator != nil {
+		return opts.riskEvaluator
+	}
+	deps := verificationManager.GetAnalysisDeps()
+	networkAnalyzer := security.NewNetworkAnalyzer(runtime.GOOS, deps)
+	return risk.NewStandardEvaluator(networkAnalyzer)
 }
 
 // createNormalResourceManager creates a resource manager for normal mode
@@ -245,12 +260,7 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 
 	outputMgr := output.NewDefaultOutputCaptureManager(validator)
 
-	evaluator := opts.riskEvaluator
-	if evaluator == nil {
-		deps := verificationManager.GetAnalysisDeps()
-		networkAnalyzer := security.NewNetworkAnalyzer(runtime.GOOS, deps)
-		evaluator = risk.NewStandardEvaluator(networkAnalyzer)
-	}
+	evaluator := resolveRiskEvaluator(opts, verificationManager)
 
 	resourceManager, err := resource.NewDefaultResourceManager(resource.Config{
 		Executor:         opts.executor,

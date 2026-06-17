@@ -202,7 +202,7 @@ func logRiskProfileEntry(t *testing.T, entry risktypes.RiskAuditEntry) map[strin
 
 func strptr(s string) *string { return &s }
 
-// TestLogRiskProfile_LogLevelByRisk verifies AC-13: the log level corresponds to
+// TestLogRiskProfile_LogLevelByRisk verifies the log level corresponds to
 // the effective risk level for allow decisions (no deny floor applies).
 func TestLogRiskProfile_LogLevelByRisk(t *testing.T) {
 	tests := []struct {
@@ -230,7 +230,7 @@ func TestLogRiskProfile_LogLevelByRisk(t *testing.T) {
 	}
 }
 
-// TestLogRiskProfile_DenySeverityFloor verifies AC-70: every deny is logged at
+// TestLogRiskProfile_DenySeverityFloor verifies every deny is logged at
 // Warn or above, independent of the risk-level mapping, so a Medium command
 // denied under a Low ceiling does not sink to Info.
 func TestLogRiskProfile_DenySeverityFloor(t *testing.T) {
@@ -258,7 +258,7 @@ func TestLogRiskProfile_DenySeverityFloor(t *testing.T) {
 	}
 }
 
-// TestLogRiskProfile_ReasonCodesAndFactors verifies AC-12: the entry carries both
+// TestLogRiskProfile_ReasonCodesAndFactors verifies the entry carries both
 // machine-readable reason codes and human-readable risk factors.
 func TestLogRiskProfile_ReasonCodesAndFactors(t *testing.T) {
 	entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
@@ -281,7 +281,7 @@ func TestLogRiskProfile_ReasonCodesAndFactors(t *testing.T) {
 	assert.Equal(t, []any{"May send sensitive data to external service"}, factors)
 }
 
-// TestLogRiskProfile_NoProfileReasonCode verifies AC-48: a command with no
+// TestLogRiskProfile_NoProfileReasonCode verifies a command with no
 // profile (e.g. binary-analysis-derived risk) still emits a reason code.
 func TestLogRiskProfile_NoProfileReasonCode(t *testing.T) {
 	entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
@@ -301,7 +301,7 @@ func TestLogRiskProfile_NoProfileReasonCode(t *testing.T) {
 	assert.NotContains(t, entry, "risk_factors")
 }
 
-// TestLogRiskProfile_UncertainReason verifies AC-41: an uncertain abort records
+// TestLogRiskProfile_UncertainReason verifies an uncertain abort records
 // which uncertain case caused it via the blocking reason and reason codes.
 func TestLogRiskProfile_UncertainReason(t *testing.T) {
 	entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
@@ -323,7 +323,7 @@ func TestLogRiskProfile_UncertainReason(t *testing.T) {
 	assert.Equal(t, "deny", entry["decision"])
 }
 
-// TestLogRiskProfile_CorrelationFieldsAndAbsence verifies AC-56: correlation
+// TestLogRiskProfile_CorrelationFieldsAndAbsence verifies correlation
 // fields carry real values when present and an explicit absence marker (never a
 // sentinel inside a value field) when absent, and that a deny entry is still
 // emitted.
@@ -372,7 +372,7 @@ func TestLogRiskProfile_CorrelationFieldsAndAbsence(t *testing.T) {
 	})
 }
 
-// TestLogRiskProfile_ArgMasking verifies AC-57: secrets passed as command
+// TestLogRiskProfile_ArgMasking verifies secrets passed as command
 // arguments are masked using the redaction mechanism before being logged.
 func TestLogRiskProfile_ArgMasking(t *testing.T) {
 	entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
@@ -394,7 +394,7 @@ func TestLogRiskProfile_ArgMasking(t *testing.T) {
 	assert.Contains(t, joined, "admin", "non-sensitive arg preserved")
 }
 
-// TestLogRiskProfile_Chain verifies AC-11: an indirect-execution chain records
+// TestLogRiskProfile_Chain verifies an indirect-execution chain records
 // every executed/loaded artifact so the chain is correlatable from one entry.
 func TestLogRiskProfile_Chain(t *testing.T) {
 	entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{

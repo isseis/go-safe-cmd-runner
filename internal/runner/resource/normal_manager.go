@@ -94,7 +94,7 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	if err != nil {
 		// Unexpected internal failure (the error-return path of section 4(3)): emit a
 		// minimal deny audit entry before aborting so a denied command is never
-		// missing from the audit trail (AC-56/70). The only error source is an
+		// missing from the audit trail. The only error source is an
 		// unclassifiable analysis record-load failure.
 		n.emitErrorAudit(ctx, cmd, risktypes.ErrorClassRecordLoad)
 		return "", nil, fmt.Errorf("risk evaluation failed: %w", err)
@@ -112,7 +112,7 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	// Step 2: Get maximum allowed risk level from configuration
 	maxAllowedRisk, err := cmd.GetRiskLevel()
 	if err != nil {
-		// Configuration error: audit as a deny before aborting (AC-56).
+		// Configuration error: audit as a deny before aborting.
 		n.auditRiskDecision(ctx, cmd, &plan, runnertypes.RiskLevelUnknown, risktypes.DecisionDeny)
 		return "", nil, fmt.Errorf("invalid risk_level configuration: %w", err)
 	}
@@ -126,7 +126,7 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 		decision = risktypes.DecisionDeny
 	}
 	// Emit the command_risk_profile audit entry for both allow and deny so every
-	// risk decision is auditable (AC-11/14/56/70).
+	// risk decision is auditable.
 	n.auditRiskDecision(ctx, cmd, &plan, maxAllowedRisk, decision)
 
 	if denied {

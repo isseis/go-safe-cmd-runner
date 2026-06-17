@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/stretchr/testify/assert"
@@ -23,9 +24,22 @@ func makeConsistencyBinary(t *testing.T, dir, name string) string {
 	return path
 }
 
+// Runtime/dry-run risk consistency.
+//
+// Since PR-5 the dry-run resource manager evaluates risk with the same
+// StandardEvaluator.EvaluateRisk that normal mode uses, so the effective risk a
+// command receives is identical in both modes by construction (single source).
+// The tests below pin that shared effective risk for the command classes that
+// historically diverged between the two paths, guarding against regressions in the
+// shared evaluator. For coreutils/destructive commands they additionally
+// cross-check security.AnalyzeCommandSecurity (the retained reference
+// implementation) which still agrees; for the classes the old reference got wrong
+// (systemctl levels, profile factors) only the evaluator's value is asserted.
+
 // TestCoreutilsRiskConsistency_RuntimeVsDryRun verifies that for the same
-// coreutils command, the runtime path (StandardEvaluator.EvaluateRisk) and the
-// dry-run path (security.AnalyzeCommandSecurity) produce the same final risk.
+// coreutils command, the evaluator (StandardEvaluator.EvaluateRisk) and the
+// retained reference (security.AnalyzeCommandSecurity) produce the same final
+// risk.
 //
 // This test lives in the risk package because it imports both risk and
 // security; the dependency direction is risk -> security only, so it cannot
@@ -183,4 +197,86 @@ func TestCoreutilsRiskConsistency_Setuid(t *testing.T) {
 	const setuidStepReason = "Executable has setuid or setgid bit set"
 	assert.Equal(t, setuidStepReason, dryRunReason,
 		"dry-run High must be produced by the setuid step (Step 6), before the coreutils step")
+}
+
+// TestConsistency_DestructiveAbsolutePath verifies a destructive command
+// given by absolute path is High via the shared evaluator (used by both runtime
+// and dry-run), and the retained reference agrees.
+//
+// Overriding coreutilsDir forbids t.Parallel().
+func TestConsistency_DestructiveAbsolutePath(t *testing.T) {
+	tmp := t.TempDir()
+	security.SetCoreutilsDirForTest(t, tmp)
+	rm := makeConsistencyBinary(t, tmp, "rm")
+
+	ev := newVerifiedEvaluator()
+	plan, err := ev.EvaluateRisk(verifiedCmd(rm, []string{"-rf", "/tmp/x"}))
+	require.NoError(t, err)
+	assert.Equal(t, runnertypes.RiskLevelHigh, plan.Assessment.Level, "evaluator (runtime and dry-run)")
+
+	acsRisk, _, _, err := security.AnalyzeCommandSecurity(rm, []string{"-rf", "/tmp/x"}, "")
+	require.NoError(t, err)
+	assert.Equal(t, runnertypes.RiskLevelHigh, acsRisk, "retained reference")
+}
+
+// TestConsistency_RmAllForms verifies rm reaches High through the shared
+// evaluator whether invoked by basename, absolute coreutils path, or coreutils
+// multicall entrypoint.
+//
+// Overriding coreutilsDir forbids t.Parallel().
+func TestConsistency_RmAllForms(t *testing.T) {
+	tmp := t.TempDir()
+	security.SetCoreutilsDirForTest(t, tmp)
+	rm := makeConsistencyBinary(t, tmp, "rm")
+	coreutils := makeConsistencyBinary(t, tmp, "coreutils")
+
+	ev := newVerifiedEvaluator()
+	tests := []struct {
+		name string
+		cmd  string
+		args []string
+	}{
+		{"basename", "rm", []string{"-rf", "/tmp/x"}},         // destructive-name dimension
+		{"absolute coreutils", rm, []string{"-rf", "/tmp/x"}}, // coreutils classification
+		{"multicall", coreutils, []string{"rm", "-rf", "/tmp/x"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan, err := ev.EvaluateRisk(verifiedCmd(tt.cmd, tt.args))
+			require.NoError(t, err)
+			assert.Equal(t, runnertypes.RiskLevelHigh, plan.Assessment.Level)
+		})
+	}
+}
+
+// TestConsistency_Systemctl verifies the shared evaluator (runtime and
+// dry-run) classifies systemctl change verbs as High and read-only verbs at a
+// Medium floor.
+func TestConsistency_Systemctl(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "systemctl", []string{"restart", "nginx"}))
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/sbin/systemctl", []string{"stop", "nginx"}))
+	assert.Equal(t, runnertypes.RiskLevelMedium, evalLevel(t, ev, "systemctl", []string{"status", "nginx"}))
+}
+
+// TestConsistency_ProfileCommands verifies profile-derived risk (claude,
+// curl) is identical for runtime and dry-run because both use the shared
+// evaluator.
+func TestConsistency_ProfileCommands(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "claude", []string{"--help"}))
+	assert.Equal(t, runnertypes.RiskLevelMedium, evalLevel(t, ev, "curl", []string{"https://example.com"}))
+}
+
+// TestConsistency_UncertainCases verifies an uncertain binary (missing
+// analysis record) is a Blocking deny under the shared evaluator, so runtime and
+// dry-run both abort it identically.
+func TestConsistency_UncertainCases(t *testing.T) {
+	path := absCmd("mystery-tool")
+	ev := newEvaluatorWithStore(fakeRecordStore{errs: map[string]error{path: fileErrNotFound()}})
+
+	plan, err := ev.EvaluateRisk(verifiedCmd("mystery-tool", nil))
+	require.NoError(t, err)
+	assert.True(t, plan.Assessment.Blocking, "uncertain binary must be Blocking")
+	assert.Equal(t, risktypes.ReasonUncertainMissingRecord, plan.Assessment.BlockingReason)
 }

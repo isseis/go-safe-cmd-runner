@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 )
 
 // Static errors
@@ -40,6 +42,12 @@ type DryRunResourceManager struct {
 	privilegeManager runnertypes.PrivilegeManager
 	pathResolver     PathResolver
 
+	// Risk evaluation and audit. The same evaluator as normal mode is used so the
+	// dry-run preview reproduces the runtime allow/deny decision (read-only).
+	riskEvaluator                 risk.Evaluator
+	auditLogger                   *audit.Logger
+	failOnVerificationUnavailable bool
+
 	// Output capture dependencies
 	outputManager output.CaptureManager
 
@@ -60,20 +68,31 @@ type DryRunResourceManager struct {
 	executionPhase  ExecutionPhase
 	executionError  *ExecutionError
 
+	// Preview decision tracking (guarded by mu): set as commands are previewed so
+	// PreviewExitCode can report whether any command would be denied and whether a
+	// deny was caused by verification being unavailable.
+	previewPolicyDeny              bool
+	previewVerificationUnavailable bool
+
 	// State management
 	mu sync.RWMutex
 }
 
-// NewDryRunResourceManager creates a new DryRunResourceManager for dry-run mode
-func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, opts *DryRunOptions) (*DryRunResourceManager, error) {
+// NewDryRunResourceManager creates a new DryRunResourceManager for dry-run mode.
+// evaluator and auditLogger are the same dependencies normal mode uses, so the
+// preview reproduces the runtime decision and emits the same audit entries.
+func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, opts *DryRunOptions, evaluator risk.Evaluator, auditLogger *audit.Logger) (*DryRunResourceManager, error) {
 	// Delegate to NewDryRunResourceManagerWithOutput with nil outputManager
-	return NewDryRunResourceManagerWithOutput(exec, privMgr, pathResolver, nil, opts)
+	return NewDryRunResourceManagerWithOutput(exec, privMgr, pathResolver, nil, opts, evaluator, auditLogger)
 }
 
 // NewDryRunResourceManagerWithOutput creates a new DryRunResourceManager with output capture support
-func NewDryRunResourceManagerWithOutput(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, outputMgr output.CaptureManager, opts *DryRunOptions) (*DryRunResourceManager, error) {
+func NewDryRunResourceManagerWithOutput(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, outputMgr output.CaptureManager, opts *DryRunOptions, evaluator risk.Evaluator, auditLogger *audit.Logger) (*DryRunResourceManager, error) {
 	if pathResolver == nil {
 		return nil, ErrPathResolverRequired
+	}
+	if evaluator == nil {
+		return nil, ErrRiskEvaluatorRequired
 	}
 	if opts == nil {
 		opts = &DryRunOptions{}
@@ -81,10 +100,13 @@ func NewDryRunResourceManagerWithOutput(exec executor.CommandExecutor, privMgr r
 
 	// Extract security analysis configuration from options
 	return &DryRunResourceManager{
-		executor:         exec,
-		privilegeManager: privMgr,
-		pathResolver:     pathResolver,
-		outputManager:    outputMgr,
+		executor:                      exec,
+		privilegeManager:              privMgr,
+		pathResolver:                  pathResolver,
+		riskEvaluator:                 evaluator,
+		auditLogger:                   auditLogger,
+		failOnVerificationUnavailable: opts.FailOnVerificationUnavailable,
+		outputManager:                 outputMgr,
 
 		dryRunOptions: opts,
 		dryRunResult: &DryRunResult{
@@ -197,7 +219,7 @@ func (d *DryRunResourceManager) recordAnalysis(analysis Analysis) CommandToken {
 }
 
 // analyzeCommand analyzes a command for dry-run
-func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (Analysis, error) {
+func (d *DryRunResourceManager) analyzeCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (Analysis, error) {
 	analysis := Analysis{
 		Type:      TypeCommand,
 		Operation: OperationExecute,
@@ -230,7 +252,7 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertyp
 	}
 
 	// Analyze security risks first
-	if err := d.analyzeCommandSecurity(cmd, &analysis); err != nil {
+	if err := d.evaluateCommandRisk(ctx, cmd, &analysis); err != nil {
 		return Analysis{}, err
 	}
 
@@ -268,26 +290,179 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertyp
 	return analysis, nil
 }
 
-// analyzeCommandSecurity resolves the command path and performs security analysis
-// using the configuration stored in the DryRunResourceManager.
-func (d *DryRunResourceManager) analyzeCommandSecurity(cmd *runnertypes.RuntimeCommand, analysis *Analysis) error {
-	// PathResolver is guaranteed to be non-nil due to constructor validation
+// evaluateCommandRisk runs the same risk evaluator normal mode uses to produce the
+// dry-run allow/deny preview and the effective risk, so the preview reproduces the
+// runtime decision. It is read-only: the evaluator opens the verified
+// descriptor O_RDONLY and the plan is closed immediately (dry-run never execs).
+//
+// Failures split two ways: a hard error (path resolution failure,
+// invalid risk_level, unexpected internal failure) returns an error and aborts the
+// preview; a policy/blocking deny is not an error but a deny preview. A deny caused
+// by analysis/verification being unavailable is tracked separately so PreviewExitCode
+// can report it with a distinct exit code.
+func (d *DryRunResourceManager) evaluateCommandRisk(ctx context.Context, cmd *runnertypes.RuntimeCommand, analysis *Analysis) error {
+	// Resolve the command path. In production the group executor already resolved it;
+	// resolving an absolute path again is idempotent. A resolution failure is a hard
+	// error (the command does not exist), not a policy deny.
 	resolvedPath, err := d.pathResolver.ResolvePath(cmd.ExpandedCmd)
 	if err != nil {
 		return fmt.Errorf("failed to resolve command path '%s': %w. This typically occurs if the command is not found in the system PATH or there are permission issues preventing access", cmd.ExpandedCmd, err)
 	}
 
-	// Analyze security with resolved path using cached validator
-	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.ExpandedArgs, d.dryRunOptions.HashDir)
+	// Evaluate against a copy carrying the resolved path so the input is not mutated.
+	prepared := *cmd
+	prepared.ExpandedCmd = resolvedPath
+	plan, err := d.riskEvaluator.EvaluateRisk(&prepared)
 	if err != nil {
+		// (3) unexpected internal error -> hard error in dry-run too.
+		d.emitDryRunErrorAudit(ctx, &prepared, risktypes.ErrorClassRecordLoad)
 		return fmt.Errorf("security analysis failed for command '%s': %w", cmd.ExpandedCmd, err)
 	}
-	if riskLevel != runnertypes.RiskLevelUnknown {
-		analysis.Impact.SecurityRisk = riskLevel.String()
-		analysis.Impact.Description += fmt.Sprintf(" [WARNING: %s - %s]", reason, pattern)
+	defer func() {
+		if closeErr := plan.Close(); closeErr != nil {
+			slog.Warn("Failed to close dry-run command plan", "command", cmd.Name(), "error", closeErr)
+		}
+	}()
+
+	maxAllowed, err := cmd.GetRiskLevel()
+	if err != nil {
+		// Invalid risk_level configuration is a hard error, not a deny preview.
+		return fmt.Errorf("invalid risk_level configuration for command '%s': %w", cmd.ExpandedCmd, err)
 	}
 
+	effectiveRisk := plan.Assessment.Level
+	denied := plan.Assessment.Blocking || effectiveRisk > maxAllowed
+	verificationUnavailable := plan.Assessment.Blocking && isVerificationUnavailable(plan.Assessment.BlockingReason)
+
+	decision := risktypes.DecisionAllow
+	if denied {
+		decision = risktypes.DecisionDeny
+	}
+
+	// Annotate the analysis with the effective risk and the allow/deny verdict.
+	analysis.Impact.SecurityRisk = effectiveRisk.String()
+	if denied {
+		analysis.Impact.Description += fmt.Sprintf(" [DENY: would be rejected (effective risk %s, max allowed %s)", effectiveRisk.String(), maxAllowed.String())
+		if plan.Assessment.Blocking {
+			analysis.Impact.Description += fmt.Sprintf("; blocking reason: %s", plan.Assessment.BlockingReason)
+		}
+		analysis.Impact.Description += "]"
+		if verificationUnavailable {
+			analysis.Impact.Description += " [NOTE: verification unavailable in this environment; the command would also be denied in production]"
+		}
+	} else {
+		analysis.Impact.Description += fmt.Sprintf(" [ALLOW: effective risk %s, max allowed %s]", effectiveRisk.String(), maxAllowed.String())
+	}
+
+	d.recordPreviewDecision(&prepared, plan.Assessment, denied, verificationUnavailable)
+	d.auditRiskDecision(ctx, &prepared, &plan, maxAllowed, decision, verificationUnavailable)
 	return nil
+}
+
+// isVerificationUnavailable reports whether a blocking reason is an environment
+// condition (analysis or verification unavailable) rather than a genuine policy
+// deny. These map to the distinct verification-unavailable exit status.
+func isVerificationUnavailable(reason risktypes.ReasonCode) bool {
+	switch reason {
+	case risktypes.ReasonUncertainUnverifiedIdentity, risktypes.ReasonAnalysisDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// recordPreviewDecision records a deny for the exit-code computation and, for a
+// deny, appends a SecurityRisk so the formatter surfaces it. It locks once.
+func (d *DryRunResourceManager) recordPreviewDecision(cmd *runnertypes.RuntimeCommand, assessment risktypes.RiskAssessment, denied, verificationUnavailable bool) {
+	if !denied {
+		return
+	}
+	description := "Command would be denied by the risk gate"
+	if verificationUnavailable {
+		description = "Command would be denied: verification/analysis unavailable in this environment"
+	} else if assessment.Blocking {
+		description = fmt.Sprintf("Command would be denied (blocking: %s)", assessment.BlockingReason)
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if verificationUnavailable {
+		d.previewVerificationUnavailable = true
+	} else {
+		d.previewPolicyDeny = true
+	}
+	d.dryRunResult.SecurityAnalysis.Risks = append(d.dryRunResult.SecurityAnalysis.Risks, SecurityRisk{
+		Level:       assessment.Level,
+		Type:        RiskTypeDangerousCommand,
+		Description: description,
+		Command:     cmd.ExpandedCmd,
+	})
+}
+
+// PreviewExitCode returns the process exit code for the dry-run preview: 0 when
+// every command is allowed, DryRunExitPolicyDeny when any command is denied by
+// policy, and DryRunExitVerificationUnavailable when the only denies are caused by
+// verification being unavailable (unless FailOnVerificationUnavailable escalates
+// them to a policy-deny exit). A real policy deny dominates.
+func (d *DryRunResourceManager) PreviewExitCode() int {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.previewExitCodeLocked()
+}
+
+// previewExitCodeLocked computes the preview exit code. The caller must hold mu
+// (read or write).
+//
+// A genuine policy deny always fails (DryRunExitPolicyDeny). A
+// verification-unavailable deny is environment-induced ("could not verify here"):
+// by default it does not fail the dry-run (DryRunExitAllow) and is reported only
+// as a note, so a local/CI dry-run without the production hash database is not
+// spuriously broken. FailOnVerificationUnavailable opts CI into failing on it with
+// the distinct DryRunExitVerificationUnavailable code, which stays distinguishable
+// from a real policy deny.
+func (d *DryRunResourceManager) previewExitCodeLocked() int {
+	if d.previewPolicyDeny {
+		return DryRunExitPolicyDeny
+	}
+	if d.previewVerificationUnavailable && d.failOnVerificationUnavailable {
+		return DryRunExitVerificationUnavailable
+	}
+	return DryRunExitAllow
+}
+
+// auditRiskDecision emits the dry-run command_risk_profile audit entry. No-op when
+// no audit logger is configured.
+func (d *DryRunResourceManager) auditRiskDecision(ctx context.Context, cmd *runnertypes.RuntimeCommand, plan *risktypes.VerifiedCommandPlan, maxAllowed runnertypes.RiskLevel, decision risktypes.Decision, verificationUnavailable bool) {
+	if d.auditLogger == nil {
+		return
+	}
+	d.auditLogger.LogRiskProfile(ctx, risktypes.RiskAuditEntry{
+		CommandName:             cmd.Name(),
+		Args:                    cmd.ExpandedArgs,
+		Mode:                    risktypes.ModeDryRun,
+		ResolvedPath:            planResolvedPath(plan),
+		ContentHash:             planContentHash(plan),
+		Assessment:              plan.Assessment,
+		MaxAllowedRisk:          maxAllowed,
+		Decision:                decision,
+		VerificationUnavailable: verificationUnavailable,
+		ErrorClass:              plan.Assessment.ErrorClass,
+		Chain:                   plan.Artifacts,
+	})
+}
+
+// emitDryRunErrorAudit emits a minimal deny audit entry on the error-return path,
+// where no plan is available. No-op when no audit logger is configured.
+func (d *DryRunResourceManager) emitDryRunErrorAudit(ctx context.Context, cmd *runnertypes.RuntimeCommand, errClass risktypes.ErrorClass) {
+	if d.auditLogger == nil {
+		return
+	}
+	d.auditLogger.LogRiskProfile(ctx, risktypes.RiskAuditEntry{
+		CommandName: cmd.Name(),
+		Args:        cmd.ExpandedArgs,
+		Mode:        risktypes.ModeDryRun,
+		Decision:    risktypes.DecisionDeny,
+		ErrorClass:  errClass,
+	})
 }
 
 // CreateTempDir simulates creating a temporary directory in dry-run mode
@@ -551,6 +726,7 @@ func (d *DryRunResourceManager) GetDryRunResults() *DryRunResult {
 	d.dryRunResult.Phase = d.executionPhase
 	d.dryRunResult.Error = d.executionError
 	d.dryRunResult.Summary = d.calculateSummary()
+	d.dryRunResult.PreviewExitCode = d.previewExitCodeLocked()
 
 	return d.dryRunResult
 }

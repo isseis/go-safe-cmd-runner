@@ -346,14 +346,15 @@
 
 **対象ファイル**: [dryrun_manager.go](../../../internal/runner/resource/dryrun_manager.go), [default_manager.go](../../../internal/runner/resource/default_manager.go), [formatter.go](../../../internal/runner/resource/formatter.go), 対応テスト
 
-- [ ] `DryRunResourceManager` に `risk.Evaluator` を注入（`NewDryRunResourceManager` 系のシグネチャ拡張）。
-- [ ] 同一評価器（read-only 解析）で実効リスク＋`risk_level` 比較を行い、**allow / deny の 2 区分**を preview 出力（AC-30/31/58）。`unknown` 区分は設けない。
-- [ ] バイナリ解析シグナル由来 High/Medium を dry-run 表示へ反映（解析利用可能時。AC-32）。
-- [ ] 失敗の 2 系統（ポリシー拒否 = deny 予告 / ハードエラー = error 返却）を実装（AC-18/33）。`(3)` 予期しない内部エラーは dry-run でも `error`（§4）。
-- [ ] 検証不能 deny（解析/検証無効環境）に専用終了コードと CI オプションを付与（AC-46/58）。
-- [ ] dry-run 監査ログ出力（dry-run 旨を含む）。
-- [ ] `coreutils_consistency_test.go`（risk パッケージ）を拡張し、実行時/dry-run の実効リスク一致を検証（AC-20/27/28/39）。
-- [ ] 本 PR 完了をもって fd 束縛 exec（PR-4）＋構造化監査（本 PR）が揃い、AC-64/76（TOCTOU）・AC-56/70（監査）を充足する。ここで初めて完全な AC 充足を主張でき、外部リリース可否ゲートに到達する（フラグ等の切替は不要＝後方互換を保持しないため新経路が常時有効）。
+- [x] `DryRunResourceManager` に `risk.Evaluator`＋`audit.Logger` を注入（`NewDryRunResourceManager`/`...WithOutput` のシグネチャを拡張し evaluator・auditLogger を必須化。Step 3-2 で保留した dry-run 側監査配線をここで完了）。`default_manager.go`・`runner.go`（`resolveRiskEvaluator` 共有ヘルパで normal/dry-run が同一評価器を構築）へ配線。
+- [x] 同一評価器（read-only 解析）で実効リスク＋`risk_level` 比較を行い、**allow / deny の 2 区分**を preview 出力（AC-30/31/58）。`unknown` 区分は設けない。**旧 `security.AnalyzeCommandSecurity` ベースの dry-run リスク表示を撤廃し評価器に一本化**（F-009 の二重実装解消。dry-run はコマンドを解決後 `EvaluateRisk` を呼び `defer plan.Close()` で read-only を維持）。
+- [x] バイナリ解析シグナル由来 High/Medium を dry-run 表示へ反映（評価器が `Classify` 結果を実効リスクへ合流済みのため dry-run でも自動反映。AC-32）。
+- [x] 失敗の 2 系統（ポリシー拒否 = deny 予告〔error 返さず preview〕 / ハードエラー〔パス解決失敗・`risk_level` 設定不正・予期しない内部エラー〕 = error 返却）を実装（AC-18/33）。
+- [x] 検証不能 deny（解析/検証無効環境）に CI オプションと専用終了コードを付与（AC-46/58）。**【03 からの明確化】既存 dry-run 統合テスト群（ハッシュ未登録＝検証不能）が exit 0 を期待する点と AC-58 の「失敗として扱う**オプション**を提供」の語意に合わせ、検証不能 deny は **既定では非失敗（exit 0、出力に運用注記）**、`--dry-run-fail-on-verification-unavailable`（`DryRunOptions.FailOnVerificationUnavailable`）指定時のみ専用コード `DryRunExitVerificationUnavailable`=3 で失敗扱い。ポリシー deny は常に exit `DryRunExitPolicyDeny`=1。`DryRunResult.PreviewExitCode`＋`cmd/runner` の `dryRunPreviewExit` でプロセス終了コードへ反映。
+- [x] dry-run 監査ログ出力（`Mode=dry-run`、normal と同一の `LogRiskProfile`）。
+- [x] `coreutils_consistency_test.go`（risk パッケージ）を拡張し、実行時/dry-run の実効リスク一致を検証（AC-20/27/28/39＋AC-43）。dry-run が評価器に一本化されたため一致は構造的（単一源）であり、本テストは両モードが共有する実効リスクを代表コマンド群で固定する。`TestConsistency_DestructiveAbsolutePath`/`RmAllForms`/`Systemctl`/`ProfileCommands`/`UncertainCases` を追加。
+- [-] **旧 `AnalyzeCommandSecurity` チェーンの完全削除は本 Step では未実施（後続 commit/フォロー対応）**。dry-run が評価器へ移行したことで `AnalyzeCommandSecurity`／`getCommandRiskOverride`／`BaseRiskLevel`／`getDefaultRiskByDirectory`／`validateFileHash`／`isHashFileNotFound` が production 到達不能となる。§6 deadcode 手順で本チェーンと付随テスト（`command_analysis_test.go`/`coreutils_test.go`/`directory_risk_test.go`/`hash_validation_test.go`/`command_risk_profile_test.go` の該当）を削除する。
+- [x] 本 PR 完了をもって fd 束縛 exec（PR-4）＋構造化監査（本 PR）が揃い、AC-64/76（TOCTOU）・AC-56/70（監査）を充足する。ここで初めて完全な AC 充足を主張でき、外部リリース可否ゲートに到達する。
 
 **完了条件**: `go test -tags test ./internal/runner/resource/ -run DryRun` が緑。Phase 3 完了ゲート: `make fmt && make test && make lint`。**外部リリース可否ゲート達成**。
 

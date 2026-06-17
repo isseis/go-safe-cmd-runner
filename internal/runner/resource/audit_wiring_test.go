@@ -65,7 +65,7 @@ func findRiskProfileEntry(t *testing.T, buf *bytes.Buffer) map[string]any {
 	return nil
 }
 
-// TestExecute_EmitsRiskProfileAudit verifies AC-11: a normal-mode allow decision
+// TestExecute_EmitsRiskProfileAudit verifies a normal-mode allow decision
 // emits a command_risk_profile audit entry with the correlation fields.
 func TestExecute_EmitsRiskProfileAudit(t *testing.T) {
 	mgr, mockExec, buf := newAuditingNormalManager(permissiveTestEvaluator{})
@@ -88,7 +88,7 @@ func TestExecute_EmitsRiskProfileAudit(t *testing.T) {
 	mockExec.AssertExpectations(t)
 }
 
-// TestExecute_RejectedCommandAuditable verifies AC-14/AC-70: a denied command is
+// TestExecute_RejectedCommandAuditable verifies a denied command is
 // audited (decision=deny) at a deny-floor severity and is not executed.
 func TestExecute_RejectedCommandAuditable(t *testing.T) {
 	denyPlan := risktypes.VerifiedCommandPlan{
@@ -113,7 +113,7 @@ func TestExecute_RejectedCommandAuditable(t *testing.T) {
 	assert.Equal(t, "/usr/bin/rm", entry["resolved_path"])
 	assert.Equal(t, "sha256:abc", entry["content_hash"])
 	assert.Equal(t, "destructive_file_operation", entry["blocking_reason"])
-	// Deny severity floor (AC-70): not Info/Debug even though the level mapping
+	// Deny severity floor: not Info/Debug even though the level mapping
 	// alone would not require Warn for some levels.
 	assert.Contains(t, []any{"WARN", "ERROR"}, entry["level"])
 	// The command must not have been executed.

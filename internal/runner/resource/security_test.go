@@ -4,350 +4,202 @@ import (
 	"context"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	executortestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-// TestSecurityAnalysis verifies that security analysis properly identifies risks
-func TestSecurityAnalysis(t *testing.T) {
-	tests := []struct {
-		name            string
-		spec            runnertypes.CommandSpec
-		expectRisk      bool
-		expectedPattern string // Expected pattern found in security analysis
-	}{
-		{
-			name: "dangerous command - rm with wildcards",
-			spec: runnertypes.CommandSpec{
-				Name:        "dangerous-rm",
-				Description: "Dangerous rm command",
-				Cmd:         "rm",
-				Args:        []string{"-rf", "/tmp/*"},
-			},
-			expectRisk:      true,
-			expectedPattern: "rm -rf", // This pattern is in the security analysis
-		},
-		{
-			name: "sudo rm command with user specification",
-			spec: runnertypes.CommandSpec{
-				Name:        "sudo-rm-command",
-				Description: "Command requiring sudo with rm",
-				Cmd:         "sudo",
-				Args:        []string{"rm", "-rf", "/tmp/files"},
-				RunAsUser:   "root",
-			},
-			expectRisk:      true,
-			expectedPattern: "Privileged", // Should detect privileged file removal
-		},
-		{
-			name: "network command - curl to external",
-			spec: runnertypes.CommandSpec{
-				Name:        "external-curl",
-				Description: "External network request",
-				Cmd:         "curl",
-				Args:        []string{"https://external-api.example.com/data"},
-			},
-			expectRisk:      true,
-			expectedPattern: "curl", // curl is a medium risk pattern
-		},
-		{
-			name: "safe command - simple echo",
-			spec: runnertypes.CommandSpec{
-				Name:        "safe-echo",
-				Description: "Safe echo command",
-				Cmd:         "echo",
-				Args:        []string{"hello", "world"},
-			},
-			expectRisk: true, // Now expects risk due to directory-based assessment
-		},
-	}
+// erroringPathResolver always fails to resolve, modeling a command that does not
+// exist (a hard error, not a policy deny).
+type erroringPathResolver struct{}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-
-			dryRunOpts := &DryRunOptions{
-				DetailLevel:   DetailLevelDetailed,
-				OutputFormat:  OutputFormatText,
-				ShowSensitive: false,
-				VerifyFiles:   true,
-			}
-
-			mockPathResolver := &MockPathResolver{}
-			setupStandardCommandPaths(mockPathResolver) // fallback
-			manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
-			require.NoError(t, err, "Failed to create DryRunResourceManager")
-			require.NotNil(t, manager)
-
-			group := &runnertypes.GroupSpec{
-				Name:        "security-test-group",
-				Description: "Security test group",
-			}
-
-			envVars := map[string]string{
-				"TEST_VAR": "test_value",
-			}
-
-			// Execute the command
-			cmd := executortestutil.CreateRuntimeCommand(
-				tt.spec.Cmd,
-				tt.spec.Args,
-				executortestutil.WithName(tt.spec.Name),
-			)
-			_, result, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
-			assert.NoError(t, err)
-			assert.NotNil(t, result)
-
-			// Get dry-run results
-			dryRunResult := manager.GetDryRunResults()
-			require.NotNil(t, dryRunResult)
-
-			// Verify the resource analysis was captured
-			require.Len(t, dryRunResult.ResourceAnalyses, 1, "should have one resource analysis")
-			analysis := dryRunResult.ResourceAnalyses[0]
-
-			// Verify basic analysis properties
-			assert.Equal(t, TypeCommand, analysis.Type)
-			assert.Equal(t, OperationExecute, analysis.Operation)
-
-			// Verify security analysis results
-			if tt.expectRisk {
-				// Should have detected security risk
-				assert.NotEmpty(t, analysis.Impact.SecurityRisk, "should have detected security risk")
-
-				if tt.expectedPattern != "" {
-					// Should contain expected pattern in description
-					assert.Contains(t, analysis.Impact.Description, tt.expectedPattern,
-						"security analysis description should contain expected pattern")
-				}
-			} else {
-				// Should not have detected security risk
-				assert.Empty(t, analysis.Impact.SecurityRisk, "should not have detected security risk for safe command")
-			}
-		})
-	}
+func (erroringPathResolver) ResolvePath(string) (string, error) {
+	return "", assert.AnError
 }
 
-// TestPrivilegeEscalationDetection tests detection of privilege escalation patterns
-func TestPrivilegeEscalationDetection(t *testing.T) {
-	tests := []struct {
-		name                  string
-		spec                  runnertypes.CommandSpec
-		expectPrivilegeChange bool
-	}{
-		{
-			name: "sudo rm command",
-			spec: runnertypes.CommandSpec{
-				Name:        "sudo-rm-test",
-				Description: "Sudo rm test command",
-				Cmd:         "sudo",
-				Args:        []string{"rm", "-rf", "/tmp/test"},
-				RunAsUser:   "root",
-			},
-			expectPrivilegeChange: true,
-		},
-		{
-			name: "normal command",
-			spec: runnertypes.CommandSpec{
-				Name:        "normal-test",
-				Description: "Normal command test",
-				Cmd:         "ls",
-				Args:        []string{"-la"},
-			},
-			expectPrivilegeChange: false,
-		},
+// newPreviewManager builds a dry-run manager wired with the given evaluator and a
+// passthrough path resolver, for allow/deny preview tests.
+func newPreviewManager(t *testing.T, opts *DryRunOptions, evaluator risk.Evaluator) *DryRunResourceManager {
+	t.Helper()
+	if opts == nil {
+		opts = &DryRunOptions{DetailLevel: DetailLevelDetailed}
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-
-			dryRunOpts := &DryRunOptions{
-				DetailLevel:   DetailLevelDetailed,
-				OutputFormat:  OutputFormatText,
-				ShowSensitive: false,
-				VerifyFiles:   true,
-			}
-
-			mockPathResolver := &MockPathResolver{}
-			setupStandardCommandPaths(mockPathResolver) // fallback
-			manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
-			require.NoError(t, err, "Failed to create DryRunResourceManager")
-			require.NotNil(t, manager)
-
-			group := &runnertypes.GroupSpec{
-				Name:        "privilege-test-group",
-				Description: "Privilege test group",
-			}
-
-			envVars := map[string]string{
-				"USER": "testuser",
-			}
-
-			// Execute the command
-			cmd := executortestutil.CreateRuntimeCommand(
-				tt.spec.Cmd,
-				tt.spec.Args,
-				executortestutil.WithName(tt.spec.Name),
-				executortestutil.WithRunAsUser(tt.spec.RunAsUser),
-				executortestutil.WithRunAsGroup(tt.spec.RunAsGroup),
-			)
-			_, _, err = manager.ExecuteCommand(ctx, cmd, group, envVars)
-			assert.NoError(t, err)
-
-			// Get dry-run results
-			dryRunResult := manager.GetDryRunResults()
-			require.NotNil(t, dryRunResult)
-
-			// Verify the resource analysis was captured
-			require.Len(t, dryRunResult.ResourceAnalyses, 1, "should have one resource analysis")
-			analysis := dryRunResult.ResourceAnalyses[0]
-
-			// Verify privilege escalation detection
-			if tt.expectPrivilegeChange {
-				// Should have detected security risk for privileged command
-				assert.NotEmpty(t, analysis.Impact.SecurityRisk, "should have detected security risk for privileged command")
-				assert.Contains(t, analysis.Impact.Description, "Privileged",
-					"should mention privilege requirement in description")
-			} else if analysis.Impact.Description != "" {
-				// Normal commands may still have some security analysis but shouldn't mention privilege
-				assert.NotContains(t, analysis.Impact.Description, "Privileged",
-					"should not mention privilege for normal command")
-			}
-		})
-	}
-}
-
-// TestCommandSecurityAnalysis tests that the security analysis function is called correctly
-func TestCommandSecurityAnalysis(t *testing.T) {
-	ctx := context.Background()
-
-	// Test that we can directly verify the security analysis function
-	// Hash validation runs when hashDir is set; here it is empty so no hash validation
-	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/tmp/*"}, "")
+	mgr, err := NewDryRunResourceManager(executortestutil.NewMockExecutor(), nil, passthroughPathResolver{}, opts, evaluator, nil)
 	require.NoError(t, err)
-
-	// Verify direct security analysis works
-	assert.Equal(t, runnertypes.RiskLevelHigh, riskLevel, "should detect high risk for rm -rf")
-	assert.Contains(t, pattern, "rm -rf", "should identify rm -rf pattern")
-	assert.NotEmpty(t, reason, "should provide reason for risk")
-
-	// Test through dry-run manager
-	dryRunOpts := &DryRunOptions{
-		DetailLevel:   DetailLevelDetailed,
-		OutputFormat:  OutputFormatText,
-		ShowSensitive: false,
-		VerifyFiles:   true,
-	}
-
-	mockPathResolver := &MockPathResolver{}
-	setupStandardCommandPaths(mockPathResolver)
-	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-	manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
-	require.NoError(t, err, "Failed to create DryRunResourceManager")
-	require.NotNil(t, manager)
-
-	group := &runnertypes.GroupSpec{
-		Name:        "security-test-group",
-		Description: "Security test group",
-	}
-
-	cmd := executortestutil.CreateRuntimeCommand(
-		"rm",
-		[]string{"-rf", "/tmp/*"},
-		executortestutil.WithName("dangerous-rm"),
-	)
-
-	// Execute the command
-	_, _, err = manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
-	assert.NoError(t, err)
-
-	// Get dry-run results and verify security analysis was applied
-	dryRunResult := manager.GetDryRunResults()
-	require.NotNil(t, dryRunResult)
-	require.Len(t, dryRunResult.ResourceAnalyses, 1)
-
-	analysis := dryRunResult.ResourceAnalyses[0]
-	assert.NotEmpty(t, analysis.Impact.SecurityRisk, "should have security risk")
-	assert.Contains(t, analysis.Impact.Description, "WARNING", "should contain security warning")
+	return mgr
 }
 
-// TestSecurityAnalysisIntegration tests the overall security analysis integration
-func TestSecurityAnalysisIntegration(t *testing.T) {
+func previewTestGroup() *runnertypes.GroupSpec {
+	return &runnertypes.GroupSpec{Name: "preview-group", Description: "dry-run preview test group"}
+}
+
+// TestDryRun_EffectiveRiskShown verifies the dry-run preview surfaces the
+// effective risk computed by the same evaluator the runtime uses.
+func TestDryRun_EffectiveRiskShown(t *testing.T) {
+	mgr := newPreviewManager(t, nil, keyedRiskEvaluator{
+		"net": {Level: runnertypes.RiskLevelMedium},
+	})
+	cmd := executortestutil.CreateRuntimeCommand("/usr/bin/curl", []string{"https://example.com"},
+		executortestutil.WithName("net"), executortestutil.WithRiskLevel("high"))
+
+	_, result, err := mgr.ExecuteCommand(context.Background(), cmd, previewTestGroup(), map[string]string{})
+	require.NoError(t, err)
+	require.NotNil(t, result.Analysis)
+	assert.Equal(t, "medium", result.Analysis.Impact.SecurityRisk)
+	assert.Contains(t, result.Analysis.Impact.Description, "ALLOW")
+}
+
+// TestDryRun_AllowDenyPreview verifies the preview reports allow vs deny by
+// comparing the effective risk against the configured risk_level.
+func TestDryRun_AllowDenyPreview(t *testing.T) {
+	mgr := newPreviewManager(t, nil, keyedRiskEvaluator{
+		"allow-cmd": {Level: runnertypes.RiskLevelLow},
+		"deny-cmd":  {Level: runnertypes.RiskLevelHigh},
+	})
 	ctx := context.Background()
+	group := previewTestGroup()
 
-	dryRunOpts := &DryRunOptions{
-		DetailLevel:   DetailLevelDetailed,
-		OutputFormat:  OutputFormatText,
-		ShowSensitive: false,
-		VerifyFiles:   true,
-	}
+	allowCmd := executortestutil.CreateRuntimeCommand("/bin/echo", []string{"hi"},
+		executortestutil.WithName("allow-cmd"), executortestutil.WithRiskLevel("high"))
+	_, allowRes, err := mgr.ExecuteCommand(ctx, allowCmd, group, map[string]string{})
+	require.NoError(t, err)
+	assert.Contains(t, allowRes.Analysis.Impact.Description, "ALLOW")
 
-	mockPathResolver := &MockPathResolver{}
-	setupStandardCommandPaths(mockPathResolver)
-	manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
-	require.NoError(t, err, "Failed to create DryRunResourceManager")
-	require.NotNil(t, manager)
+	denyCmd := executortestutil.CreateRuntimeCommand("/bin/rm", []string{"-rf", "/tmp/x"},
+		executortestutil.WithName("deny-cmd"), executortestutil.WithRiskLevel("low"))
+	_, denyRes, err := mgr.ExecuteCommand(ctx, denyCmd, group, map[string]string{})
+	require.NoError(t, err) // a policy deny is a preview, not an error
+	assert.Contains(t, denyRes.Analysis.Impact.Description, "DENY")
+	assert.Equal(t, "high", denyRes.Analysis.Impact.SecurityRisk)
 
-	group := &runnertypes.GroupSpec{
-		Name:        "security-integration-test",
-		Description: "Security integration test group",
-	}
+	assert.Equal(t, DryRunExitPolicyDeny, mgr.PreviewExitCode())
+}
 
-	// Test multiple commands with different risk levels
-	commandSpecs := []runnertypes.CommandSpec{
-		{
-			Name: "high-risk",
-			Cmd:  "rm",
-			Args: []string{"-rf", "/"},
+// TestDryRun_BinaryAnalysisReflected verifies a High/Medium risk derived
+// from binary-analysis signals is reflected in the dry-run effective risk.
+func TestDryRun_BinaryAnalysisReflected(t *testing.T) {
+	mgr := newPreviewManager(t, nil, keyedRiskEvaluator{
+		"tool": {
+			Level:       runnertypes.RiskLevelHigh,
+			ReasonCodes: []risktypes.ReasonCode{risktypes.ReasonBinaryAnalysisDynamicLoad},
 		},
-		{
-			Name: "medium-risk",
-			Cmd:  "curl",
-			Args: []string{"https://example.com"},
-		},
-		{
-			Name: "safe",
-			Cmd:  "echo",
-			Args: []string{"hello"},
-		},
-	}
+	})
+	cmd := executortestutil.CreateRuntimeCommand("/usr/local/bin/tool", nil,
+		executortestutil.WithName("tool"), executortestutil.WithRiskLevel("high"))
 
-	var analyses []Analysis
-	for _, cmdSpec := range commandSpecs {
-		cmd := executortestutil.CreateRuntimeCommand(
-			cmdSpec.Cmd,
-			cmdSpec.Args,
-			executortestutil.WithName(cmdSpec.Name),
-		)
-		_, _, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
-		assert.NoError(t, err)
+	_, result, err := mgr.ExecuteCommand(context.Background(), cmd, previewTestGroup(), map[string]string{})
+	require.NoError(t, err)
+	assert.Equal(t, "high", result.Analysis.Impact.SecurityRisk)
+}
 
-		result := manager.GetDryRunResults()
+// TestDryRun_DenyVsHardError verifies a policy deny is a preview (no
+// error), while a hard error (path resolution failure) aborts with an error.
+func TestDryRun_DenyVsHardError(t *testing.T) {
+	t.Run("policy deny is a preview, not an error", func(t *testing.T) {
+		mgr := newPreviewManager(t, nil, keyedRiskEvaluator{
+			"deny": {Level: runnertypes.RiskLevelHigh},
+		})
+		cmd := executortestutil.CreateRuntimeCommand("/bin/rm", []string{"-rf"},
+			executortestutil.WithName("deny"), executortestutil.WithRiskLevel("low"))
+		_, result, err := mgr.ExecuteCommand(context.Background(), cmd, previewTestGroup(), map[string]string{})
+		require.NoError(t, err)
 		require.NotNil(t, result)
+		assert.Contains(t, result.Analysis.Impact.Description, "DENY")
+	})
 
-		// Get the latest analysis
-		if len(result.ResourceAnalyses) > 0 {
-			analyses = append(analyses, result.ResourceAnalyses[len(result.ResourceAnalyses)-1])
-		}
+	t.Run("path resolution failure is a hard error", func(t *testing.T) {
+		opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
+		mgr, err := NewDryRunResourceManager(executortestutil.NewMockExecutor(), nil, erroringPathResolver{}, opts, permissiveTestEvaluator{}, nil)
+		require.NoError(t, err)
+		cmd := executortestutil.CreateRuntimeCommand("missing-cmd", nil, executortestutil.WithName("missing"))
+		_, result, err := mgr.ExecuteCommand(context.Background(), cmd, previewTestGroup(), map[string]string{})
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "command analysis failed")
+	})
+}
+
+// TestDryRun_AnalysisUnavailableDenyPreview verifies when analysis or
+// verification is unavailable, the command is a deny preview with an operational
+// note (not an "unknown" status), and the exit code marks it distinctly.
+func TestDryRun_AnalysisUnavailableDenyPreview(t *testing.T) {
+	mgr := newPreviewManager(t, nil, keyedRiskEvaluator{
+		"unverifiable": {
+			Level:          runnertypes.RiskLevelLow,
+			Blocking:       true,
+			BlockingReason: risktypes.ReasonAnalysisDisabled,
+			ReasonCodes:    []risktypes.ReasonCode{risktypes.ReasonAnalysisDisabled},
+		},
+	})
+	cmd := executortestutil.CreateRuntimeCommand("/usr/bin/whatever", nil,
+		executortestutil.WithName("unverifiable"), executortestutil.WithRiskLevel("high"))
+
+	_, result, err := mgr.ExecuteCommand(context.Background(), cmd, previewTestGroup(), map[string]string{})
+	require.NoError(t, err)
+	assert.Contains(t, result.Analysis.Impact.Description, "DENY")
+	assert.Contains(t, result.Analysis.Impact.Description, "verification unavailable")
+	// By default a verification-unavailable deny is reported as a note and does not
+	// fail the dry-run; the exit code stays 0.
+	assert.Equal(t, DryRunExitAllow, mgr.PreviewExitCode())
+}
+
+// TestDryRun_VerificationUnavailableExitCode verifies the preview exit code
+// distinguishes all-allow, policy deny, and verification-unavailable deny, and the
+// FailOnVerificationUnavailable option escalates the latter to a hard failure.
+func TestDryRun_VerificationUnavailableExitCode(t *testing.T) {
+	policyDeny := risktypes.RiskAssessment{Level: runnertypes.RiskLevelHigh}
+	verifUnavail := risktypes.RiskAssessment{
+		Level:          runnertypes.RiskLevelLow,
+		Blocking:       true,
+		BlockingReason: risktypes.ReasonUncertainUnverifiedIdentity,
+		ReasonCodes:    []risktypes.ReasonCode{risktypes.ReasonUncertainUnverifiedIdentity},
 	}
 
-	// Verify we captured analyses for all commands
-	assert.Len(t, analyses, 3, "should have analyses for all commands")
+	tests := []struct {
+		name         string
+		assessment   risktypes.RiskAssessment
+		maxAllowed   string
+		failOnVerif  bool
+		expectedCode int
+	}{
+		{"all allow", risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow}, "high", false, DryRunExitAllow},
+		{"policy deny", policyDeny, "low", false, DryRunExitPolicyDeny},
+		{"verification unavailable not a failure by default", verifUnavail, "high", false, DryRunExitAllow},
+		{"verification unavailable escalated to distinct code", verifUnavail, "high", true, DryRunExitVerificationUnavailable},
+	}
 
-	// Verify high-risk command has security risk
-	highRiskAnalysis := analyses[0]
-	assert.NotEmpty(t, highRiskAnalysis.Impact.SecurityRisk, "high-risk command should have security risk")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := &DryRunOptions{DetailLevel: DetailLevelDetailed, FailOnVerificationUnavailable: tt.failOnVerif}
+			mgr := newPreviewManager(t, opts, keyedRiskEvaluator{"cmd": tt.assessment})
+			cmd := executortestutil.CreateRuntimeCommand("/usr/bin/cmd", nil,
+				executortestutil.WithName("cmd"), executortestutil.WithRiskLevel(tt.maxAllowed))
+			_, _, err := mgr.ExecuteCommand(context.Background(), cmd, previewTestGroup(), map[string]string{})
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedCode, mgr.PreviewExitCode())
+		})
+	}
+}
 
-	// Verify medium-risk command has security risk
-	mediumRiskAnalysis := analyses[1]
-	assert.NotEmpty(t, mediumRiskAnalysis.Impact.SecurityRisk, "medium-risk command should have security risk")
+// TestDryRun_PrivilegeEscalationDenied verifies that a privilege-escalation
+// (Critical) command is surfaced as a deny preview in dry-run.
+func TestDryRun_PrivilegeEscalationDenied(t *testing.T) {
+	mgr := newPreviewManager(t, nil, keyedRiskEvaluator{
+		"sudo-cmd": {
+			Level:          runnertypes.RiskLevelCritical,
+			BlockingReason: risktypes.ReasonPrivilegeEscalation,
+			ReasonCodes:    []risktypes.ReasonCode{risktypes.ReasonPrivilegeEscalation},
+		},
+	})
+	cmd := executortestutil.CreateRuntimeCommand("/usr/bin/sudo", []string{"rm", "-rf", "/"},
+		executortestutil.WithName("sudo-cmd"), executortestutil.WithRiskLevel("high"))
 
-	// Safe command may or may not have security info, but should not fail
-	safeAnalysis := analyses[2]
-	assert.Equal(t, TypeCommand, safeAnalysis.Type, "safe command should still be analyzed")
+	_, result, err := mgr.ExecuteCommand(context.Background(), cmd, previewTestGroup(), map[string]string{})
+	require.NoError(t, err)
+	assert.Equal(t, "critical", result.Analysis.Impact.SecurityRisk)
+	assert.Contains(t, result.Analysis.Impact.Description, "DENY")
+	assert.Equal(t, DryRunExitPolicyDeny, mgr.PreviewExitCode())
 }
