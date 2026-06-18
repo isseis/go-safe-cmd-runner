@@ -187,12 +187,14 @@ type IndirectExecutionResult struct {
 |-----------|--------------|---------|
 | `TestIndirect_WrapperDestructive` | `env rm -rf` 等がラップなし同等以上（破壊次元 High） | フラット High を期待（結果値は High のまま。reason code は `indirect_execution_wrapper` へ） |
 | `TestIndirect_WrapperProfileFactors` | プロファイル要因（`claude` 等）がインナーで合流 | フラット High を期待（プロファイル要因の合流は行わない） |
-| `TestIndirect_WrappedRunnerReasonCodesDeduped` | 複数源泉の reason code の重複排除 | 単一 reason code（`indirect_execution_wrapper`）を期待する形へ更新 |
+| `TestIndirect_WrappedRunnerReasonCodesDeduped` | 複数源泉の reason code の重複排除 | 単一 reason code（`indirect_execution_wrapper`）を期待する形へ更新（dedup 前提が無意味になるため `TestIndirect_WrappedRunnerSingleReasonCode` へ改名） |
 | `TestIndirect_WrappedProfileReasonsCarried` | インナーのプロファイル human-readable reason の引き継ぎ | 引き継ぎを行わない前提へ更新（または削除し、代替で AC-01 を検証） |
 | `TestIndirect_CoreutilsInnerFolded` | インナーの coreutils 分類の合流 | フラット High を期待（coreutils 分類の合流は行わない） |
 | `TestIndirect_InnerCommandGated` | 0136 AC-77（インナーを allowlist/ハッシュゲート、通せなければ拒否） | 本方式で再定義（自動ゲートしない／一律 High・`verify_files` 明示登録）。テストは新方式を検証する形へ更新 |
 
 > 維持されるテスト（変更しないか、結果値が High のまま不変）: `TestIndirect_WrapperSudoCritical`（AC-02）、`TestIndirect_WrapperNoCommandMedium`（AC-05）、`TestIndirect_UnextractableWrapperRejected`（AC-04）、各種 Reject 系（`TestIndirect_WrapperLoaderEnvRejected`／`TestIndirect_EnvChdirRejected`／`TestIndirect_EnvSplitString`／`TestIndirect_NestedWrapperAndDepthGuard`／`TestIndirect_FindXargsTargetGated`／`TestIndirect_DynamicLoaderGated`／`TestIndirect_BrokenSymlinkChainFailsClosed`／`TestIndirect_WrapperNameCollisionFailsClosed`／`TestIndirect_CommandExecOptionsGated`／`TestIndirect_ServiceInitScriptGated`／`TestIndirect_BypassAttackerScenarios`）、shebang 系（`TestIndirect_ShebangInterpreterGated`／`TestIndirect_ShebangLongLineNotTruncated`／`TestIndirect_ShebangFifoNotRead`、§3.3 によりスコープ外）。具体的な更新／追加テストの確定は `03_implementation_plan.md` で行う。
+
+> 注（`role` 伝播の副作用）: `TestIndirect_ShebangInterpreterGated` はリスク Level（High）は不変だが、`role` 再帰伝播により env ベース shebang（`#!/usr/bin/env python`）では内側インタプリタも `RoleInterpreter` で記録されるため、`RoleInterpreter` アーティファクト数のアサーションのみ更新が必要になった（監査ログ専用メタデータの変更でセキュリティ挙動は不変）。詳細は `03_implementation_plan.md` Phase 1「実装上の差分」を参照。
 
 ## 4. エラーハンドリング設計
 
