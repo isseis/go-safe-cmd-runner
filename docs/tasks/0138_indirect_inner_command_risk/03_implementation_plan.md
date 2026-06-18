@@ -148,11 +148,11 @@
 
 **対象ファイル**: `docs/user/risk_assessment{.ja,}.md`, `docs/user/toml_config/04_global_level{.ja,}.md`, `docs/user/toml_config/05_group_level{.ja,}.md`, `docs/user/toml_config/06_command_level{.ja,}.md`, `README{.ja,}.md`
 
-- [ ] `risk_assessment.ja.md` §8 移行ノートのラッパー記述（[:253](../../../docs/user/risk_assessment.ja.md#L253)）を「ラッパー経由のインナーは一律 **High**（明示的に `risk_level = "high"` が必要）。特権昇格は **Critical**、一部形態（ローダ制御変数・`env -C`/解釈不能 `env -S`・find/xargs・動的ローダ・remote-shell・抽出不能・深さ超過・symlink 失敗）は依然 **Blocking**。インナーは自動検証・自動記録されない（実体固定が必要なら `verify_files` に明示登録）」へ書き換える。§5.2 の TOCTOU 残存リスク（[02_architecture.md](02_architecture.md) §5.2）も明記する。
-- [ ] `risk_assessment.ja.md` §3（間接実行）に同趣旨の記述があれば整合させる。
-- [ ] `04_global_level.ja.md` §4.6 の `verify_files`／「コマンドは自動的にハッシュ検証の対象となります」記述（[:950](../../../docs/user/toml_config/04_global_level.ja.md#L950)）に「ラッパー（`env`/`timeout` 等）のインナーコマンドは自動検証の対象外であり、固定が必要なら `verify_files` に明示登録する」注記を追加する。
-- [ ] `05_group_level.ja.md`（`verify_files`/`cmd_allowed`）・`06_command_level.ja.md`（`risk_level`）・`README.ja.md`（セキュリティ機能概説）に同趣旨の記述があれば整合させる（無ければ変更不要、その旨を確認）。
-- [ ] 上記すべての `.ja.md` をコミット後、対応する英語版（`.md`）を `/mktrans` で整合させる（日本語版を正とする翻訳ワークフロー）。
+- [x] `risk_assessment.ja.md` §8 移行ノートのラッパー記述（[:253](../../../docs/user/risk_assessment.ja.md#L253)）を「ラッパー経由のインナーは一律 **High**（明示的に `risk_level = "high"` が必要）。特権昇格は **Critical**、一部形態（ローダ制御変数・`env -C`/解釈不能 `env -S`・find/xargs・動的ローダ・remote-shell・抽出不能・深さ超過・symlink 失敗）は依然 **Blocking**。インナーは自動検証・自動記録されない（実体固定が必要なら `verify_files` に明示登録）」へ書き換える。§5.2 の TOCTOU 残存リスク（[02_architecture.md](02_architecture.md) §5.2）も明記する。
+- [x] `risk_assessment.ja.md` §3（間接実行）に同趣旨の記述があれば整合させる。→ §3 は名前・引数ベース／coreutils／バイナリ解析／フェイルクローズのみで、ラッパーインナー評価の専用記述は存在しないため変更不要（grep 確認済み）。
+- [x] `04_global_level.ja.md` §4.6 の `verify_files`／「コマンドは自動的にハッシュ検証の対象となります」記述（[:950](../../../docs/user/toml_config/04_global_level.ja.md#L950)）に「ラッパー（`env`/`timeout` 等）のインナーコマンドは自動検証の対象外であり、固定が必要なら `verify_files` に明示登録する」注記を追加する。
+- [x] `05_group_level.ja.md`（`verify_files`/`cmd_allowed`）・`06_command_level.ja.md`（`risk_level`）・`README.ja.md`（セキュリティ機能概説）に同趣旨の記述があれば整合させる（無ければ変更不要、その旨を確認）。→ いずれもラッパーインナーに関する記述は無し（grep 確認済み）。変更不要。
+- [x] 上記すべての `.ja.md` をコミット後、対応する英語版（`.md`）を `/mktrans` で整合させる（日本語版を正とする翻訳ワークフロー）。
 
 ### PR-2 作成ポイント: user-facing documentation (AC-09)
 
