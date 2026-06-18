@@ -168,6 +168,7 @@
 |--------|---------|------|
 | フェイルクローズド | fail-closed | エラー時に安全側（実行中止）へ倒す設計 |
 | フェイルセーフ | fail-safe | 不明時に安全側のリスクへ倒す設計 |
+| fd 束縛 | fd binding / fd-bind | 検証済みファイルディスクリプタへ実行実体を束縛すること |
 | 誤検出 | false positive | 誤ってSYSCALL命令として検出すること |
 | 前向きスキャン | forward scan | 命令列を先頭から走査する解析手法 |
 | FAQ | FAQ | Frequently Asked Questions |
@@ -239,6 +240,7 @@
 | インターフェース | interface | |
 | 内部変数 | internal variable | |
 | 中間状態 | intermediate state | テンプレート展開と変数展開の間の状態 |
+| インナーコマンド | inner command | ラッパー (env/timeout 等) が内部で実行するコマンド |
 
 ### K
 
@@ -323,6 +325,7 @@
 |--------|---------|------|
 | 操作 | operation | |
 | オプション | optional | |
+| オプトイン | opt-in | risk_level = "high" を明示設定して許可する文脈 |
 | 最適化 | optimize / optimization | |
 | 順序独立 | order-independent | 変数展開の文脈 |
 | 出力 | output | |
@@ -412,6 +415,7 @@
 | 解決する | resolve / resolving | シンボリックリンク解決の文脈 |
 | 解決策 | solution | |
 | リソース | resource | |
+| 残存リスク | residual risk | 設計上残る既知のリスク（TOCTOU 等） |
 | 制限を緩和する | weaken restrictions | セキュリティの文脈 |
 | 戻り値 | return value | |
 | 責務 | responsibility | |
@@ -692,6 +696,7 @@
 | 2026-06-17 | command-risk-evaluation 開発者文書（Task 0136 Step 4-3）関連の用語を追加 (exact match, partial match) |
 | 2026-06-18 | runner_command ユーザーガイド（-dry-run-fail-unverified フラグ）関連の用語を追加 (exit code, policy deny, verification unavailable) |
 | 2026-06-18 | command-risk-evaluation 文書（output_file 検証）関連の用語を追加 (dangerous character, path traversal, write permission) |
+| 2026-06-18 | 間接実行インナーコマンドのリスク一律 High 化（Task 0138）関連の用語を追加 (inner command, fd binding, opt-in, residual risk) |
 
 ---
 
