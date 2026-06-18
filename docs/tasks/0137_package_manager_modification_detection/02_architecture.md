@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-06-18 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-06-18 |
+| Reviewer | isseis |
 | Comments | - |
 
 関連文書: [01_requirements.md](01_requirements.md) / [00_notes.md](00_notes.md)
@@ -21,12 +21,14 @@
 - **データ駆動のツール別機構**: フラグ方式マネージャの「識別情報」と「検出規則」を 1 つの定義
   テーブルに集約する。判定本体にマネージャ名固有の分岐（現行の `isPacman`）を残さない（AC-10）。
 - **単一の情報源（single source）**: システム変更判定は引き続き `SystemModificationRisk` 1 か所に
-  集約する。実行時（normal）・dry-run・間接実行（ラッパー内側）の全経路がこの関数を共有するため、
-  検出を追加するだけで全経路に一貫して反映される（AC-13 / AC-18 / NF-002）。
+  集約する。実行時（normal）と dry-run は同一の top-level `EvaluateRisk` を共有するため、検出を追加
+  するだけで両経路に一貫して反映される（AC-13 / NF-002）。ラッパー内側（RoleInner）の間接実行は
+  0136 で確立した flat High floor に倒れる（sysmod を経由しないが結果は High ≥ Medium）ため、
+  ラッパー経由の dpkg/rpm も AC-18 を満たす。
 - **振る舞いを変えないリファクタの先行**: ツール別機構への置換（F-003）は pacman の既存挙動を
   保ったまま行い、その上に dpkg/rpm をデータとして追加する（NF-005）。
-- **fail-safe を基本とし、rpm の照会のみ最小権限を優先**: フラグの文字含有判定は過検出（安全側）を
-  許容するが、rpm の照会・検証操作（`-q`/`-V`）は最小権限のため非検出とする（F-002）。
+- **fail-safe を基本とし、rpm の照会のみ最小権限を優先**: フラグの先頭文字一致判定は安全側
+  （過検出許容）を基本とするが、rpm の照会・検証操作（`-q`/`-V`）は最小権限のため非検出とする（F-002）。
 - **既存責務の再利用（DRY）**: シンボリックリンク解決済みの名前集合（`names`）・リスク次元の最大値
   合成・監査ログ・reason code はすべて 0136 で確立済みの仕組みをそのまま使う。新規に作らない。
 
@@ -166,9 +168,11 @@ flowchart TD
 ```
 
 > 矢印 A → B は「A が B を呼ぶ」ことを表す。normal/dry-run が同一 `EvaluateRisk` を共有する点と、
-> ラッパー内側評価が `SystemModificationRisk` を呼ぶ点は**現行コードの既存関係**であり、本タスクで
-> 追加するものではない。検出範囲の拡張（dpkg/rpm）は `SystemModificationRisk` 内部に閉じるため、
-> これら全経路（AC-13 実行時/dry-run 一致、AC-18 ラッパー）に自動的に波及する。
+> 間接実行の内側評価が `SystemModificationRisk` を呼ぶ点は**現行コードの既存関係**であり、本タスクで
+> 追加するものではない。検出範囲の拡張（dpkg/rpm）は top-level の `SystemModificationRisk` 内部に
+> 閉じるため、normal/dry-run 両経路（AC-13）に自動的に波及する。間接実行の内側評価が
+> `SystemModificationRisk` を呼ぶのは RoleInterpreter 経路で、**ラッパー内側（RoleInner）はその手前で
+> 0136 の flat High floor に倒れる**（sysmod 非経由でも High ≥ Medium のため AC-18 を満たす）。
 
 ---
 
@@ -278,7 +282,8 @@ func SystemModificationRisk(names map[string]struct{}, args []string) runnertype
 | `internal/runner/base/security/command_analysis.go` | 変更 | `isSystemModificationByNames` を汎用ループへ置換。`isPacmanModifyingFlag` を削除。 | F-001 / F-002 / F-003 | `command_analysis_test.go` |
 | `internal/runner/base/security/package_manager_flags_test.go` | 新規 | ツール別規則の単体テスト（dpkg/rpm/pacman の肯定・否定・境界）。 | AC-01〜AC-09 / NF-001 | （新規） |
 | `internal/runner/base/security/command_analysis_test.go` | 変更 | `TestIsSystemModification_PackageManagerVerbs`（pacman ケースは退行検証として維持）・`TestIsSystemModification` に dpkg/rpm ケースを追加。 | AC-01〜AC-11 | 同左（拡張） |
-| `internal/runner/base/risk/evaluator_test.go` | 変更 | dpkg/rpm の実効リスク（Medium）・最大値合成・ラッパー/sudo 複合（AC-12/14/18）・監査 reason code（AC-19）の検証を追加。 | AC-12 / AC-14 / AC-18 / AC-19 | 同左（拡張） |
+| `internal/runner/base/risk/evaluator_test.go` | 変更 | dpkg/rpm の top-level 実効リスク（Medium。AC-12）と監査 reason code（AC-19）の検証を追加。最大値合成の不変条件は既存 `TestEvaluateRisk_MaxOfDimensionsOrderIndependent` を参照。 | AC-12 / AC-19 | 同左（拡張） |
+| `internal/runner/base/security/indirect_execution_test.go` | 変更 | ラッパー/sudo 経由の dpkg/rpm 複合（`env dpkg -i`=High、`sudo rpm -U`=Critical。いずれも ≥ Medium で Medium が支配しない）の検証を追加。 | AC-14 / AC-18 | 同左（拡張） |
 | `internal/runner/base/risk/package_manager_consistency_test.go` | 新規 | 同一 dpkg/rpm コマンド集合で実行時/dry-run が同一実効リスクを返すことを共有評価器で固定（`coreutils_consistency_test.go` と同方式）。 | AC-13 | （新規） |
 
 ドキュメント変更（F-005。`docs/tasks/` 配下のスナップショットは対象外）:
@@ -375,8 +380,8 @@ flowchart TD
 
 ### 5.3 fail-safe と最小権限のバランス（rpm 照会除外の位置づけ）
 
-- 基本方針は fail-safe（過検出＝安全側）。dpkg/pacman は文字含有のままで、`pacman -Ss` のような既存の
-  過検出も保持する（AC-09）。
+- 基本方針は fail-safe（過検出＝安全側）。dpkg/pacman は短形式の先頭文字一致で判定し、`pacman -Ss` の
+  ような既存の過検出（先頭 `S`）も保持する（AC-09）。
 - rpm のみ、照会・検証（`-q`/`-V`）を含むトークンがあれば非検出とする例外を設ける。これは 0136 の
   F-011（読み取り専用サブコマンドを最小権限のため Medium 下限に留める思想）と同方向の判断で、
   `rpm -qi` のような頻出照会を誤って Medium にしないためである。
@@ -456,8 +461,8 @@ flowchart TD
 | `rpm -e -q pkg`（変更+照会の矛盾入力） | 除外優先（最小権限 fail-open） | Unknown | AC-07 |
 | `pacman -Syu` | フラグ短形式 `S`/`U` | Medium | AC-09 |
 | `pacman -Q` | 非該当 | Unknown | AC-09 |
-| `env dpkg -i pkg.deb` | 間接実行 → 内側で同判定 | Medium | AC-18 |
-| `sudo rpm -U pkg.rpm` | 特権昇格次元が支配 | Critical | AC-18 |
+| `env dpkg -i pkg.deb` | 間接実行（ラッパー内側 RoleInner は flat High floor） | High（≥ Medium） | AC-18 |
+| `sudo rpm -U pkg.rpm` | 特権昇格次元が支配 | Critical | AC-14 / AC-18 |
 
 ---
 
