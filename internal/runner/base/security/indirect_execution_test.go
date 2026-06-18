@@ -138,7 +138,7 @@ func TestIndirect_WrapperDestructive(t *testing.T) {
 
 // TestIndirect_WrapperInnerFlatHigh verifies a benign extractable inner command
 // is a flat High floor with the single indirect_execution_wrapper reason code,
-// regardless of how harmless the inner command is (AC-01).
+// regardless of how harmless the inner command is.
 func TestIndirect_WrapperInnerFlatHigh(t *testing.T) {
 	cases := []struct {
 		name string
@@ -225,7 +225,8 @@ func TestIndirect_WrappedRunnerSingleReasonCode(t *testing.T) {
 // TestIndirect_InnerCommandGated verifies the extracted inner command is neither
 // allowlist- nor hash-gated but flattened to a High floor, while Reject and
 // Critical dispositions still propagate and the inner is recorded as a chain
-// artifact (the 0136 AC-77 redefinition).
+// artifact. This is the redefinition of the earlier extract-and-gate behavior to
+// a flat High floor.
 func TestIndirect_InnerCommandGated(t *testing.T) {
 	// A benign or destructive inner is a flat High floor; the inner is recorded as a
 	// chain artifact.
