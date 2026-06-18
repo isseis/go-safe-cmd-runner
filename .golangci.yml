@@ -48,8 +48,6 @@ linters:
       # extracted into named constants. The residual 5x "error" mixes a status value
       # with structured-logging keys, so it is intentionally not a single constant.
       min-occurrences: 6
-      # Test fixtures legitimately repeat literals; don't count them.
-      ignore-tests: true
 
     depguard:
       rules:
