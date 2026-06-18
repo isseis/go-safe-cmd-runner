@@ -151,7 +151,7 @@ type IndirectExecutionResult struct {
 
 ### 3.3 スコープ外との境界: shebang（直接スクリプト実行）インタプリタ評価
 
-**実装上の重要制約**: 現状、ラッパーインナー評価とインタプリタ評価は**同一関数 `evaluateInnerAs` を共有**する（`evaluateInnerAs` は `evaluateInnerAs(..., RoleInner)` へ委譲し、`analyzeShebang` は `evaluateInnerAs(..., RoleInterpreter)` を呼ぶ）。要件のスコープ外（「shebang スクリプトのインタプリタ連鎖（直接スクリプト実行）の扱いは変更しない」）を守るため、**直接スクリプト実行（cmdPath 自身がスクリプト）の shebang インタプリタ評価は従来の細粒度算出を保持**する。したがってフラット High 化は、`role == RoleInner` の経路に限って適用する（`evaluateInnerAs` 内で `role` により分岐させるか、`evaluateInnerAs` が細粒度算出へ委譲しない形に分離する）。これにより `RoleInterpreter` 経路が不変であることを設計上保証する。
+**実装上の重要制約**: 現状、ラッパーインナー評価とインタプリタ評価は**同一関数 `evaluateInnerAs` を共有**する（ラッパー経由インナーは `evaluateInnerAs(..., RoleInner)`、`analyzeShebang` は `evaluateInnerAs(..., RoleInterpreter)` を呼ぶ）。要件のスコープ外（「shebang スクリプトのインタプリタ連鎖（直接スクリプト実行）の扱いは変更しない」）を守るため、**直接スクリプト実行（cmdPath 自身がスクリプト）の shebang インタプリタ評価は従来の細粒度算出を保持**する。したがってフラット High 化は、`role == RoleInner` の経路に限って適用する（`evaluateInnerAs` 内で `role` により分岐させる）。これにより `RoleInterpreter` 経路が不変であることを設計上保証する。
 
 > この区別が必要な理由（要件から自明でない制約の明示）: 直接スクリプト実行の shebang 連鎖までフラット High にすると、無害なインタプリタを持つスクリプト（例: `#!/bin/cat`）の直接実行が High になり、スコープ外の挙動を変更してしまう。したがってラッパーインナー経路と shebang インタプリタ経路を `role` で分離する。なお、ラッパーがスクリプトを包む場合（`timeout 5 ./script.sh`）は、ラッパーインナーとして一律 High になる（段階 3 の再帰で shebang の Critical/Reject は引き続き検出される）。
 
