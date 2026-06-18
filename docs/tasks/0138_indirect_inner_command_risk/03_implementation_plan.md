@@ -188,17 +188,17 @@
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（docs-only のため自明に緑だが、ja/en 乖離は検知できない点に注意）
 - [x] `command-risk-evaluation.ja.md` 更新後 `/mktrans` で `.md` を再生成し、AC-10 の `rg`（ja/en 双方）＋ ja↔en 章構成の目視で整合を確認した（本 PR の実質ゲート）
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/748）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4: 0136 ドキュメントへの参照注記追加（F-003/AC-11）
 
 **対象ファイル**: `docs/tasks/0136_runtime_risk_evaluation_enforcement/02_architecture.md`, `docs/tasks/0136_runtime_risk_evaluation_enforcement/03_implementation_plan.md`
 
-- [ ] `0136/02_architecture.md` §3.3 ラッパー行（[:475](../../../docs/tasks/0136_runtime_risk_evaluation_enforcement/02_architecture.md#L475)）に、後続タスク 0138 によりラッパーインナーは一律 High・fd 束縛/再実装は取り下げへ変更された旨の 1〜2 行注記と 0138 ドキュメントへの参照を追加する（既存記述は詳細改訂しない）。
-- [ ] `0136/02_architecture.md` §5.2 残存制約（許可ラッパーのインナーコマンド fd 束縛）に同様の注記を追加する。
-- [ ] `0136/03_implementation_plan.md` Step 2-2 の保留 `[-]` 項目（[:288](../../../docs/tasks/0136_runtime_risk_evaluation_enforcement/03_implementation_plan.md#L288)）に同様の注記を追加する。
-- [ ] `0136/03_implementation_plan.md` AC-60 行（[:574](../../../docs/tasks/0136_runtime_risk_evaluation_enforcement/03_implementation_plan.md#L574)）・AC-77 行（[:591](../../../docs/tasks/0136_runtime_risk_evaluation_enforcement/03_implementation_plan.md#L591)）に、0138 による改訂／再定義の旨の注記と 0138 参照を追加する。
+- [x] `0136/02_architecture.md` §3.3 ラッパー行（[:475](../../../docs/tasks/0136_runtime_risk_evaluation_enforcement/02_architecture.md#L475)）に、後続タスク 0138 によりラッパーインナーは一律 High・fd 束縛/再実装は取り下げへ変更された旨の 1〜2 行注記と 0138 ドキュメントへの参照を追加する（既存記述は詳細改訂しない）。→ §3.3 表直後（既存「フラグは代表例」注記の次）に blockquote 注記を追加（既存ラッパー行は不変）。
+- [x] `0136/02_architecture.md` §5.2 残存制約（許可ラッパーのインナーコマンド fd 束縛）に同様の注記を追加する。→ 当該残存制約 bullet の下に nested blockquote 注記を追加（既存記述は不変）。
+- [x] `0136/03_implementation_plan.md` Step 2-2 の保留 `[-]` 項目（[:288](../../../docs/tasks/0136_runtime_risk_evaluation_enforcement/03_implementation_plan.md#L288)）に同様の注記を追加する。→ `[-]` 項目の下に nested blockquote 注記を追加（項目本文・`[-]` 状態は不変）。
+- [x] `0136/03_implementation_plan.md` AC-60 行（[:574](../../../docs/tasks/0136_runtime_risk_evaluation_enforcement/03_implementation_plan.md#L574)）・AC-77 行（[:591](../../../docs/tasks/0136_runtime_risk_evaluation_enforcement/03_implementation_plan.md#L591)）に、0138 による改訂／再定義の旨の注記と 0138 参照を追加する。→ 各行の期待結果セル末尾に「0138 で改訂／取り下げ・再定義」の括弧注記＋0138 参照を追記（既存期待文は不変）。
 
 ### PR-4 作成ポイント: supersede notes in task 0136 docs (AC-11)
 
@@ -208,8 +208,8 @@
 
 **レビュー観点**: 注記が最小限（1〜2 行＋0138 参照）で 0136 の既存記述を詳細改訂していないか / §3.3・§5.2・Step 2-2 `[-]`・AC-60・AC-77 の全該当箇所を網羅 / スナップショット方針（作業用ドキュメントは改訂しない）の遵守
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/752）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
