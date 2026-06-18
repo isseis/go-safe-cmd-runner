@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-06-18 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-06-18 |
+| Reviewer | isseis |
 | Comments | - |
 
 関連文書: [01_requirements.md](01_requirements.md)（承認済み）、[02_architecture.md](02_architecture.md)（承認済み）。
