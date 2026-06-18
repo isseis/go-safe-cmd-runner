@@ -75,6 +75,19 @@
   **変更なしで緑**であることを確認する。`rg -n "isPacmanModifyingFlag|isPacman\b" internal --glob '*.go'`
   が 0 件であることを確認する（AC-10 / NF-005）。
 
+### PR-1 作成ポイント: per-tool flag mechanism refactor
+
+**対象ステップ**: 1-1 / 1-2 / 1-3 / 1-4
+
+**推奨タイトル**: `refactor(0137): generalize package-manager flag detection into a per-tool mechanism`
+
+**レビュー観点**: pacman 既存挙動の不変（有効入力で退行なし）／`isPacman`・`isPacmanModifyingFlag` の完全削除／ゲート分離（verb=`packageManagerNames`、flag=`flagStyleManagers`）の正しさ
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### フェーズ 2: dpkg/rpm のデータ追加とテスト
 
 **対象ファイル**: `internal/runner/base/security/package_manager_flags.go`（変更）、
@@ -108,6 +121,20 @@
 - [ ] **2-3**: `command_analysis_test.go::TestIsSystemModification_PackageManagerVerbs` に dpkg/rpm の
   代表ケース（`dpkg -i`→true、`dpkg -l`→false、`rpm -U`→true、`rpm -qi`→false）を追加する。pacman・verb の
   既存ケースは変更しない（AC-11 退行検証）。
+
+### PR-2 作成ポイント: dpkg/rpm detection data + security-package tests
+
+**対象ステップ**: 2-1 / 2-2 / 2-3
+
+**推奨タイトル**: `feat(0137): detect dpkg/rpm flag-style system-modification operations`
+
+**レビュー観点**: dpkg/rpm 規則値の正確性（02 §3.1 規則表との一致）／肯定・否定・先頭文字境界・大小区別・rpm 除外の網羅／verb 方式の非退行
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 - [ ] **2-4**: `internal/runner/base/risk/evaluator_test.go::TestStandardEvaluator_EvaluateRisk_SystemModifications` に
   `dpkg -i pkg.deb`→`RiskLevelMedium`、`rpm -U pkg.rpm`→`RiskLevelMedium` を追加する（`evalLevel` 利用。AC-12）。
 - [ ] **2-5**: `internal/runner/base/risk/evaluator_test.go` に `TestEvaluateRisk_PackageManagerReasonCode`（新規）を追加し、
@@ -136,6 +163,19 @@
   `coreutilsDir` グローバルを変更しないため `t.Parallel()` を使用してよい。
 - [ ] **2-8（完了ゲート）**: `make fmt` → `make test` → `make lint` が緑。`make deadcode` で未使用検出なし。
 
+### PR-3 作成ポイント: cross-package behavior and audit verification
+
+**対象ステップ**: 2-4 / 2-5 / 2-5b / 2-6 / 2-7 / 2-8
+
+**推奨タイトル**: `test(0137): verify dpkg/rpm effective risk, wrapper, audit, and runtime/dry-run consistency`
+
+**レビュー観点**: 実効 Medium と最大値合成（より高い次元が支配）／ラッパー・`env sudo` 複合の期待値（High/Critical）／deny 監査エントリ（`reason_codes`/`resolved_path`）／実行時・dry-run 整合
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### フェーズ 3: ドキュメント整合（F-005）
 
 **対象ファイル**: `docs/user/risk_assessment.ja.md` / `.md`、
@@ -158,6 +198,19 @@
 - [ ] **3-6（完了ゲート）**: 日英 2 ファイルで対象操作集合・値が一致することを確認（§7 AC 検証の static
   コマンドを実行）。
 
+### PR-4 作成ポイント: user/developer documentation and glossary
+
+**対象ステップ**: 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6
+
+**推奨タイトル**: `docs(0137): document dpkg/rpm system-modification detection and migration`
+
+**レビュー観点**: §3.1 表・§8 移行ノート・§7 検出限界の反映／reinstall を含む全操作種別の明示／日英整合／用語集の対訳追加
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ---
 
 ## 3. 実装順序とマイルストーン
@@ -169,6 +222,18 @@
 | M3 | フェーズ 3（ドキュメント） | §7 の文書 static 検証がすべて期待どおり、日英整合 |
 
 順序は 02 §8 のフェーズ定義に一致する（M1 を先行させる NF-005）。
+
+### 3.2 PR 構成
+
+各 PR はグリーンゲート（`_context.md` の "Green gate"）を単独でパスする。`internal/` 内に閉じ、`cmd/`
+レイヤの変更はない。リファクタ（PR-1）を先行させ、その後にデータ追加（PR-2）・検証（PR-3）・文書（PR-4）を積む。
+
+| PR | 対象ステップ | 主な変更内容 |
+|---|---|---|
+| PR-1 | 1-1 / 1-2 / 1-3 / 1-4 | ツール別機構へのリファクタ（pacman 移送、`isPacmanModifyingFlag`/`isPacman` 削除）。振る舞い不変・リスク隔離 |
+| PR-2 | 2-1 / 2-2 / 2-3 | dpkg/rpm 検出データ追加と `security` パッケージの単体・回帰テスト |
+| PR-3 | 2-4 / 2-5 / 2-5b / 2-6 / 2-7 / 2-8 | `risk`/`resource` パッケージの統合・監査・整合テスト（実効リスク・ラッパー・deny 監査・実行時/dry-run） |
+| PR-4 | 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 | ユーザー/開発者文書・移行ノート・用語集の更新 |
 
 ---
 
@@ -200,9 +265,10 @@
 
 ## 6. 実装チェックリスト
 
-- [ ] フェーズ 1: 1-1 / 1-2 / 1-3 / 1-4（ゲート）
-- [ ] フェーズ 2: 2-1 / 2-2 / 2-3 / 2-4 / 2-5 / 2-6 / 2-7 / 2-8（ゲート）
-- [ ] フェーズ 3: 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6（ゲート）
+- [ ] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3 / 1-4）
+- [ ] PR-2 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3）
+- [ ] PR-3 マージ済み（対象ステップ: 2-4 / 2-5 / 2-5b / 2-6 / 2-7 / 2-8）
+- [ ] PR-4 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6）
 - [ ] 全体: `make test` / `make lint` / `make deadcode` 緑
 - [ ] §8 クロス検索チェックリスト完了
 
@@ -230,7 +296,7 @@
 | AC-14 最大値合成 | test | `internal/runner/base/security/indirect_execution_test.go::TestIndirect_WrapperPackageManager`（`env dpkg -i`=High／`env sudo rpm -U`=Critical＝より高い次元が支配し、dpkg/rpm の Medium に引き下がらない）＋ 既存 `internal/runner/base/risk/evaluator_test.go::TestEvaluateRisk_MaxOfDimensionsOrderIndependent`（順序非依存の最大値不変条件。0136） |
 | AC-18 ラッパー/間接 | test | `internal/runner/base/security/indirect_execution_test.go::TestIndirect_WrapperPackageManager`（`env dpkg -i`／`timeout 60 rpm -U`=High、`env sudo rpm -U`=Critical。いずれも ≥ Medium） |
 | AC-19 監査 reason code | test | `internal/runner/base/risk/evaluator_test.go::TestEvaluateRisk_PackageManagerReasonCode`（dpkg→`ReasonSystemModification` を分類が生成）＋ `internal/runner/resource/audit_wiring_test.go::TestExecute_PackageManagerDenyAuditable`（Medium+`system_modification` の閾値 deny が `decision=deny`・`reason_codes`・`resolved_path` 付きで監査記録される） |
-| AC-15 AC-34 上書き明記 | static | `rg -n "AC-34" docs/tasks/0137_package_manager_modification_detection/01_requirements.md` → §1.2 に「別途の要件変更として扱う」を上書きする記述がヒット（期待: マッチあり） |
+| AC-15（0136 AC-34 方針上書きの明記） | static | `rg -n "AC-34" docs/tasks/0137_package_manager_modification_detection/01_requirements.md` → §1.2 に「別途の要件変更として扱う」を上書きする記述がヒット（期待: マッチあり） |
 | AC-16 §3.1 表反映（日英） | static | `rg -n "dpkg|rpm" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` で §3.1 表行に dpkg/rpm の `medium` 記述がヒット（期待: 日英両ファイルでマッチ。値 `medium`・操作集合（dpkg: install/remove/purge/unpack/configure、rpm: install/upgrade/freshen/erase/**reinstall**/import/initdb/rebuilddb）が一致） |
 | AC-17 開発者文書反映（日英） | static | `rg -n "dpkg.*rpm|フラグ方式|flag style" docs/dev/architecture_design/command-risk-evaluation.ja.md docs/dev/architecture_design/command-risk-evaluation.md` で「システム変更リスク」節に flag-style 検出と rpm 除外規則がヒット（期待: 日英両方マッチ） |
 | AC-20 移行ノート（日英） | static | `rg -n "dpkg|rpm" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` の §8 に破壊的変更・`risk_level = "medium"`・`--dry-run` を含む移行項目がヒット（期待: 日英両方マッチ） |
