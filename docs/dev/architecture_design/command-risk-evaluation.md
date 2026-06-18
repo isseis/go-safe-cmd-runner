@@ -179,10 +179,10 @@ It detects forms that execute or load an entity other than the verified binary (
 
 - `IndirectCritical`: the effective target has a privilege escalation token (sudo/su/doas) → **Critical** (short-circuit).
 - `IndirectReject`: a form whose identity cannot be bound until execution time (a wrapper that cannot be extracted, a forbidden loader-control variable, a find/xargs child-process exec, a direct dynamic-loader invocation, a remote-shell helper) → **Blocking deny** (short-circuit).
-- `IndirectFloor`: an allowable form that has a minimum risk level (a dangerous inner command within a wrapper, an inline shell, a package script runner, etc.) → that level is folded into the maximum of the subsequent decision dimensions as a **risk floor**.
+- `IndirectFloor`: an allowable form that has a minimum risk level (an extractable inner command within a wrapper is a flat High; an inline shell or a package script runner is High, etc.) → that level is folded into the maximum of the subsequent decision dimensions as a **risk floor**.
 - `IndirectNone`: not an indirect-execution form.
 
-Each entity executed or loaded within the chain (`ExecutedArtifact`) is recorded in the plan for auditing and for the later identity binding.
+Each entity executed or loaded within the chain (`ExecutedArtifact`) is recorded in the plan for auditing (the inner command of a wrapper is not fd-bound or identity-bound; Task 0138).
 
 ### Rank 3: Privilege Escalation → Critical
 
@@ -212,7 +212,7 @@ In the end, if it is not Blocking, `allowedPlan` opens the verified entity with 
 Main detection targets:
 
 - **Shebang script**: as in `#!/usr/bin/env python`, the kernel launches the shebang interpreter (a separate entity), so the interpreter chain is evaluated and gated. This is decided before the basename-based wrapper matching.
-- **Wrappers** (`env`, `timeout`, `nice`, `ionice`, `nohup`, `stdbuf`, `setsid`, `time`, `chrt`, `taskset`): because `runner` re-implements these and execs the extracted inner command itself, the inner command can be identity-bound. Therefore, instead of rejecting, it evaluates the inner command. If the inner command is a privilege token, it is Critical. `env` separately analyzes `NAME=VALUE` assignments, the `-S` split-string, and `-C/--chdir` (rejected), and it rejects the specification of a loader-control variable (`LD_*` / `DYLD_*`) or a PATH override combined with a bare inner name.
+- **Wrappers** (`env`, `timeout`, `nice`, `ionice`, `nohup`, `stdbuf`, `setsid`, `time`, `chrt`, `taskset`): `runner` does not re-implement these; it extracts the inner command and assesses its risk as a flat High floor (because the inner command can be extracted unambiguously, it evaluates rather than rejects — `runner` does not exec, fd-bind, or identity-bind the inner command). If the inner command is a privilege token, it is Critical. `env` separately analyzes `NAME=VALUE` assignments, the `-S` split-string, and `-C/--chdir` (rejected), and it rejects the specification of a loader-control variable (`LD_*` / `DYLD_*`) or a PATH override combined with a bare inner name.
 - **find / xargs child-process exec** (`-exec`/`-execdir`/`-ok`/`-okdir`, the xargs helper): because it is executed from find/xargs's own child process rather than `runner`'s child process, the identity cannot be bound. If it is a privilege token, Critical; otherwise, Reject.
 - **Direct dynamic-loader invocation** (`ld-linux*.so --preload ...`, etc.): because it can load arbitrary libraries, Reject.
 - **Remote-shell / output-filter helpers** (`rsync -e`, `tar --to-command` / `--checkpoint-action`): because the helper runs from the tool's child process, Reject.
@@ -220,9 +220,9 @@ Main detection targets:
 - **Inline code** (`bash -c`, `python -c`/`-e`, etc.): a High Floor.
 - **SysV service**: because it runs an unverified init script (`/etc/init.d/<name>`), it records the init script as a chain entity while applying a High Floor.
 
-In the evaluation of the inner command (`evaluateInnerAs`), it folds in all of privilege, destructive operations, coreutils, system modification, arbitrary-code-execution runner, dangerous argument patterns, and risk profile factors, so that a wrapped command is not under-evaluated compared to a direct invocation. The entities within the chain are recorded for auditing under any result of Floor/Critical/Reject.
+The evaluation of the inner command (`evaluateInnerAs`) branches on `role`. **A wrapper inner command (`RoleInner`) gets no fine-grained computation and is a flat High floor** (a privilege token takes priority as Critical, and forbidden forms as Reject). Because the inner command is not fd-bound or automatically hash-verified, a content-dependent fine-grained level would not be backed by any identity pinning, so a fail-safe is preferred: it is not executed without an explicit `risk_level = "high"` opt-in (Task 0138). In contrast, **the shebang interpreter chain of a direct script execution (`RoleInterpreter`) keeps the fine-grained computation as before** (folding in privilege, destructive operations, coreutils, system modification, arbitrary-code-execution runner, dangerous argument patterns, and risk profile factors, so that it is not under-evaluated compared to a direct invocation). The entities within the chain are recorded for auditing under any result of Floor/Critical/Reject.
 
-> Design intent: these "execution forms that cannot be bound" are rejected in order to close off paths by which an entity different from the one confirmed by hash verification ends up being executed. Only wrappers that `runner` can re-implement itself (extracting the inner command and exec-ing it) are allowed; forms in which another process launches the helper cannot be bound and are therefore rejected.
+> Design intent: these "execution forms that cannot be bound" are rejected in order to close off paths by which an entity different from the one confirmed by hash verification ends up being executed. Wrappers whose inner command can be extracted unambiguously are allowed (as a flat High); forms in which another process launches the helper (find/xargs's own child process, etc.) are rejected because `runner` cannot identity-bind the helper, even when the target can be extracted and recorded for auditing. Note that `runner` does not re-implement wrappers, nor does it exec or fd-bind the inner command (Task 0138).
 
 ## Command Risk Profile
 
@@ -441,7 +441,7 @@ Risk evaluation is **one layer of defense in depth**; it does not block every th
 
 - At runtime, `runner` computes the **verified command plan (`VerifiedCommandPlan`)** of each command and compares its effective risk level with the **maximum allowed risk level** in the configuration to decide whether execution is allowed. Indeterminate or unbindable cases are a **Blocking deny** regardless of the allowed level.
 - The evaluation first evaluates the short-circuiting deny gates (identity gate → indirect execution → privilege escalation), and then takes the **maximum** of the remaining decision dimensions (coreutils, destructive operation, system modification, profile factors, dangerous arguments, arbitrary code execution, network arguments, binary analysis). It is an order-independent maximum, not an early return.
-- **Indirect-execution forms** that execute or load an entity other than the verified binary are rejected, except for wrappers that `runner` can re-implement.
+- **Indirect-execution forms** that execute or load an entity other than the verified binary are rejected, except for wrappers whose inner command can be extracted unambiguously (a flat High).
 - When the evaluation is not certain (unverified identity, disabled analysis, symlink anomaly, missing or mismatched analysis record, etc.), it falls to the safe side with **fail-closed** (a Blocking deny).
 - `critical` (and `unknown`) cannot be specified in the configuration, and `critical` is internally assigned to commands that "must be blocked," such as privilege escalation.
 - The runtime path and the dry-run path share the same `EvaluateRisk`, and only the handling of the result (whether to abort, or to display and continue) differs.
