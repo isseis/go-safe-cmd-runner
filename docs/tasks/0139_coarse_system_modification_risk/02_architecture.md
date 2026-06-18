@@ -10,8 +10,8 @@
 | Reviewer | - |
 | Comments | - |
 
-関連文書: [01_requirements.md](01_requirements.md)（承認済み要件）、
-[00_notes.md なし]。撤回対象の旧方針は
+関連文書: [01_requirements.md](01_requirements.md)（承認済み要件）。本タスクの事前検討ノート
+`00_notes.md` は後日追加予定。撤回対象の旧方針は
 [0137/02_architecture.md](../0137_package_manager_modification_detection/02_architecture.md)。
 
 ---
@@ -309,7 +309,7 @@ func SystemModificationRisk(names map[string]struct{}) runnertypes.RiskLevel
 | [package_manager_flags.go](../../../internal/runner/base/security/package_manager_flags.go) | 削除 | フラグ方式検出の撤去 | （専用テストがあれば削除） |
 | [evaluator.go](../../../internal/runner/base/risk/evaluator.go) | 変更 | `SystemModificationRisk` 呼び出しのシグネチャ追従 | `evaluator_test.go` の `TestEvaluateRisk_SystemctlSubcommandConditional`（status/show が Medium→High へ） |
 | [indirect_execution.go](../../../internal/runner/base/security/indirect_execution.go) | 変更 | `SystemModificationRisk` 呼び出し（`RoleInterpreter` 経路）のシグネチャ追従のみ | 既存の indirect 系テストは結論不変（`env dpkg`/`env systemctl` は従来どおり一律 High floor 由来で High。回帰確認として追加可） |
-| [docs/user/risk_assessment.ja.md](../../../docs/user/risk_assessment.ja.md) / [.md](../../../docs/user/risk_assessment.md) | 変更 | systemctl／パッケージマネージャのサブコマンド粒度記述を削除し、固定レベル（いずれも High）へ更新（AC-11） | — |
+| [docs/user/risk_assessment.ja.md](../../../docs/user/risk_assessment.ja.md) / [docs/user/risk_assessment.md](../../../docs/user/risk_assessment.md) | 変更 | systemctl／パッケージマネージャのサブコマンド粒度記述を削除し、固定レベル（いずれも High）へ更新（AC-11） | — |
 | [sample/risk-based-control.toml](../../../sample/risk-based-control.toml) | 変更 | `apt update`（`risk_level=medium`→`high`）、`systemctl restart`（`medium`→`high`）（AC-14） | — |
 
 > 用語集（`docs/translation_glossary.md`）には該当語が無いことを確認済み。新規用語追加は不要。
