@@ -94,7 +94,8 @@
   Modification Risk」節、`SystemModificationRisk(names, args)`・`SystemctlSubcommandRisk`・verb-only
   Medium の記述。EN は L291 付近）。
 - ユーザーガイド: `docs/user/toml_config/09_practical_examples.ja.md` / `.md` ほか `toml_config/`
-  配下の PM／systemctl 実践例（`risk_level=medium` の箇所）。
+  配下の PM／systemctl 実践例（`risk_level=medium`・既定・**`risk_level=low`** の箇所すべて。
+  systemctl は常に High になるため `low` 例も拒否される）。
 - sample: `sample/risk-based-control.toml`（apt update=medium L67、systemctl restart=medium L103）、
   `sample/timeout_examples.toml`（apt update/upgrade、`risk_level` 無し L72-73/79-80）。
 - sample のロード検証は `internal/runner/config/template_backward_compat_test.go`
@@ -119,19 +120,22 @@
 - [ ] `isSystemModificationByNames`／`packageModifyingVerbs`／`packageManagerNames`／
   `systemModificationCommandNames` を削除する。
 - [ ] `SystemModificationRisk` の doc コメントを新仕様（引数非依存・固定レベル）へ更新する（英語）。
+- [ ] **同一 `security` パッケージ内の呼び出し元**
+  [indirect_execution.go](../../../internal/runner/base/security/indirect_execution.go) L840 を
+  `SystemModificationRisk(innerNames)` へ追従する。シグネチャ変更は同パッケージを一括コンパイルする
+  ため、この追従を Phase 1 内で行わないと `security` パッケージのビルドが必ず赤になる（呼び出し元が
+  旧シグネチャのまま残るため）。`innerArgs` がこの行で未使用化しても他で使われているため未使用変数
+  エラーは生じないことを確認する。
 
-**完了基準**: パッケージ単体ビルドが通る（`go build -tags test ./internal/runner/base/security/`）。
-旧シンボル参照が同ファイル内に残らない。
+**完了基準**: `security` パッケージのビルドが通る（`go build -tags test ./internal/runner/base/security/`。
+同パッケージ呼び出し元の追従込み）。旧シンボル参照が同ファイル内に残らない。
 
-### Phase 2: 呼び出し元のシグネチャ追従
+### Phase 2: 別パッケージ呼び出し元のシグネチャ追従
 
 **作業内容**
 
-- [ ] [evaluator.go](../../../internal/runner/base/risk/evaluator.go) L231 を
+- [ ] [evaluator.go](../../../internal/runner/base/risk/evaluator.go) L231（`risk` パッケージ）を
   `security.SystemModificationRisk(names)` へ変更する。
-- [ ] [indirect_execution.go](../../../internal/runner/base/security/indirect_execution.go) L840 を
-  `SystemModificationRisk(innerNames)` へ変更する。`innerArgs` がこの行でのみ未使用化しても他で
-  使われているため未使用変数エラーは生じないことを確認する。
 
 **完了基準**: `go build -tags test ./...` が通る。
 
@@ -155,8 +159,13 @@
   - Medium: `mount`/`umount`/`fdisk`/`parted`/`mkfs`/`fsck`/`crontab`/`at`/`batch`/`chkconfig`/
     `update-rc.d`（AC-06）。
   - Unknown: 非該当名（`echo`/`ls`）、および `names` に pm 名を含まないケース（AC-02）。
-  - args 非依存: 同一 `names` で異なる args（install 系／照会系／空）でも結果が一致（AC-05）。
   - symlink/絶対パス: `/usr/sbin/systemctl` は High、`systemctl-helper` は非該当（AC-01）。
+  - 注: `SystemModificationRisk` は引数を取らない新シグネチャのため、本関数に args を渡す形の
+    「args 非依存」テストは書けない（書くと撤去した引数を復活させてしまう）。AC-05 は「引数を
+    参照しないこと」を**シグネチャの静的確認**（§7 AC-05 の static チェック）で担保し、加えて
+    evaluator レベルで**同一コマンド・異なる引数**（例: `apt install nginx` と `apt list`）が
+    同一 High になることを `TestStandardEvaluator_EvaluateRisk_SystemModifications` に追加して
+    補強する。
 - [ ] security/command_analysis_test.go の `isSystemModification` ヘルパ（L1101）を削除する。
 - [ ] `TestIsSystemModification_AbsolutePath`（L1108）を削除する（`TestSystemModificationRisk` の
   symlink/絶対パスケースで代替）。
@@ -166,10 +175,12 @@
   の 2 関数を含む。両関数の不変条件は `TestSystemModificationRisk` の systemctl=High と
   evaluator 統合テストで代替）。
 - [ ] risk/evaluator_test.go `TestStandardEvaluator_EvaluateRisk_SystemModifications`（L111-112）の
-  `apt install`／`yum install` 期待値を `RiskLevelMedium` → `RiskLevelHigh` へ変更する。
+  `apt install`／`yum install` 期待値を `RiskLevelMedium` → `RiskLevelHigh` へ変更する。あわせて
+  `{"apt list (query)", "apt", []string{"list", "--installed"}, RiskLevelHigh}` ケースを追加する
+  （`apt install` と同一コマンド・異なる引数で同一 High ＝ AC-05 の引数非依存を evaluator レベルで補強）。
 - [ ] risk/evaluator_test.go `TestStandardEvaluator_EvaluateRisk_SafeCommands`（L131）の
   `{"apt list (query)", "apt", []string{"list", "--installed"}}` ケースを削除する（apt は High に
-  なり Low 前提が崩れるため。AC-01/10）。
+  なり Low 前提が崩れるため。上記 SystemModifications へ High として移設。AC-01/10）。
 - [ ] risk/evaluator_test.go `TestEvaluateRisk_SystemctlSubcommandConditional`（L190-191）の
   `systemctl status`／`systemctl show` 期待値を `RiskLevelMedium` → `RiskLevelHigh` へ変更し、
   テスト名・コメントの「read-only は Medium floor」記述を「常に High」へ更新する（AC-03）。
@@ -205,8 +216,11 @@
 
 **ユーザーガイド（toml_config、F-005 §1.4）**
 
-- [ ] `docs/user/toml_config/` 配下を横断検索し、PM／systemctl を `risk_level=medium`／既定で使う
-  実践例（`09_practical_examples.{ja,md}` 等）を `high` へ更新する（日英両方）。
+- [ ] `docs/user/toml_config/` 配下を横断検索し、PM／systemctl を使う実践例を `high` へ更新する
+  （日英両方）。**`risk_level=medium`／既定（無設定）だけでなく `risk_level=low` の systemctl/PM 例も
+  対象に含める**（systemctl は常に High になるため、`systemctl status` を `low` とする既存テンプレート
+  も以後拒否される）。検索は `rg -n "systemctl|/usr/bin/apt|apt-get|\"apt\"|dpkg|rpm|pacman" docs/user/toml_config/`
+  で該当行を洗い出し、各 risk_level を確認する。
 
 **sample config（AC-14）**
 
@@ -270,9 +284,12 @@ PR 分割は実装着手時に判断する（最小は M1-M2 を 1 PR、M3 を 1
 
 ## 6. クロスサーチチェックリスト（`make lint`/`make test` で検出できない項目のみ）
 
-- [ ] **NF-001 残存参照**: 次がコード・コメント・テスト・文書に残らない（`rg` でゼロ）。
-  `rg -n "SystemctlSubcommandRisk|firstSystemctlSubcommand|systemctlChangeVerbs|systemctlReadOnlyVerbs|flagStyleManagers|flagRule|isFlagStyleModification|matchesShortFlag|packageModifyingVerbs|packageManagerNames|systemModificationCommandNames|isSystemModificationByNames" -g '!docs/tasks/0139_**'`
-  期待: マッチ無し（0139 タスク文書内の経緯記述は除外）。
+- [ ] **NF-001 残存参照**: 次が**ライブコードとユーザー／開発者文書**に残らない（`rg` でゼロ）。
+  検索対象は `internal/`・`cmd/`・`docs/user/`・`docs/dev/` に限定する。`docs/tasks/` 配下は
+  0136/0137/0139 等の**歴史的タスク記録**が当該シンボル名を含む（経緯として正当に残る）ため、
+  検索対象から除外する。
+  `rg -n "SystemctlSubcommandRisk|firstSystemctlSubcommand|systemctlChangeVerbs|systemctlReadOnlyVerbs|flagStyleManagers|flagRule|isFlagStyleModification|matchesShortFlag|packageModifyingVerbs|packageManagerNames|systemModificationCommandNames|isSystemModificationByNames" internal/ cmd/ docs/user/ docs/dev/`
+  期待: マッチ無し。
 - [ ] **旧シグネチャ残存**: `rg -n "SystemModificationRisk\([^)]*,\s*\w*[Aa]rgs" -g '*.go'` 期待: マッチ無し。
 - [ ] **文書のサブコマンド粒度記述**: `rg -n "read-only|サブコマンド|status/show|verb" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md docs/dev/architecture_design/command-risk-evaluation.ja.md docs/dev/architecture_design/command-risk-evaluation.md`
   期待: systemctl/PM のリスク粒度に関する記述が残らない（coreutils 等の無関係な箇所は対象外）。
@@ -288,16 +305,16 @@ PR 分割は実装着手時に判断する（最小は M1-M2 を 1 PR、M3 を 1
 | AC-02（名前が引数値のみ→非該当） | test | 同 `::TestSystemModificationRisk`（`echo` 名集合に pm 名なし→Unknown、非該当名が High/Medium を受けない） |
 | AC-03（systemctl 全 args→High） | test | `command_analysis_test.go::TestSystemModificationRisk`（systemctl=High）＋ `risk/evaluator_test.go::TestEvaluateRisk_SystemctlSubcommandConditional`（status/show=High） |
 | AC-04（service→High） | test | `risk/evaluator_test.go::TestEvaluateRisk_ServiceAllActionsHigh`、`::TestEvaluateRisk_SystemctlChangeAndServiceHigh` |
-| AC-05（args 非参照） | test, static | test: `::TestSystemModificationRisk`（同 names・異 args で同結果）。static: `rg -n "func SystemModificationRisk\(names map\[string\]struct\{\}\) " internal/runner/base/security/command_analysis.go` 期待: 1 件（args 引数なし） |
+| AC-05（args 非参照） | static, test | static: `rg -n "func SystemModificationRisk\(names map\[string\]struct\{\}\) runnertypes.RiskLevel" internal/runner/base/security/command_analysis.go` 期待: 1 件（引数に args が無く、構造的に参照不可）。test: `risk/evaluator_test.go::TestStandardEvaluator_EvaluateRisk_SystemModifications`（`apt install` と `apt list` が同一 High ＝ 引数非依存） |
 | AC-06（Medium 集合維持） | test | `::TestSystemModificationRisk`（mount/.../update-rc.d=Medium）＋ `risk/evaluator_test.go::TestEvaluateRisk_NoProfileAbsolutePath`（mount/crontab=Medium） |
 | AC-07（実行時＝dry-run） | test | `internal/runner/base/risk/coreutils_consistency_test.go::TestConsistency_Systemctl`（systemctl status=High、共有評価器） |
 | AC-08（ラッパー High／特権 Critical） | test | `internal/runner/base/security/indirect_execution_test.go`（`env dpkg`/`env systemctl`→IndirectFloor High）＋ `risk/evaluator_test.go`（`sudo dpkg`/`sudo systemctl`→Critical） |
 | AC-09（直接 sysmod deny の理由コード） | test | `risk/evaluator_test.go`（deny 時 `Assessment.ReasonCodes` に `risktypes.ReasonSystemModification`） |
-| AC-10（移行ノート） | static | `rg -n "high|移行|baseline|従来 (Low|Medium)" docs/user/risk_assessment.ja.md` 期待: 表示/照会系が High へ上がる移行記述が存在 |
-| AC-11（risk_assessment 更新） | static | `rg -n "medium.*floor|read-only" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` 期待: systemctl read-only=medium の記述が残らない（coreutils 無関係箇所を除く） |
-| AC-12（検出限界明記） | static | `rg -n "apk|snap|flatpak|busybox|リネーム" docs/user/risk_assessment.ja.md` 期待: 検出限界の記述が存在 |
-| AC-13（0137/systemctl 撤回の記録） | static | `rg -n "0137|撤回|置換|サブコマンド" docs/user/risk_assessment.ja.md docs/dev/architecture_design/command-risk-evaluation.ja.md` 期待: 撤回／固定レベル化の記述が存在（設計は 02_architecture.md §3.5 に記載済み） |
-| AC-14（sample config 整合） | test, static | test: `internal/runner/config/template_backward_compat_test.go`（risk-based-control.toml／timeout_examples.toml ロード成功）。static: `rg -n "cmd = \"apt\"" -A4 sample/risk-based-control.toml sample/timeout_examples.toml \| rg "risk_level = \"high\""` 期待: 該当 apt コマンドの直近に `risk_level = "high"`（`risk_level` は `args` 行の直後に置く） |
+| AC-10（移行ノート） | static | `rg -n "従来" docs/user/risk_assessment.ja.md` 期待: 「表示・照会系（従来 Low）・systemctl read-only（従来 Medium）が high へ上がり、従来許可していた config がブロックされ得る」旨の移行差分記述がヒット（baseline=直近リリース。単なる `high` 一致では不可、移行文を確認する） |
+| AC-11（risk_assessment 更新） | static | `rg -n "read-only" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` 期待: systemctl read-only を medium（下限）とするサブコマンド粒度記述が残らない（coreutils 等の無関係箇所は対象外） |
+| AC-12（検出限界明記） | static | 各語 `apk`／`snap`／`flatpak`／`gem`／`busybox`／リネーム を**個別に** `rg -q "<語>" docs/user/risk_assessment.ja.md` で確認し、全語がヒットすること（OR 一括ではなく全語必須。`gem` を含める） |
+| AC-13（0137/systemctl 撤回の記録） | static | `rg -n "0137" docs/user/risk_assessment.ja.md docs/dev/architecture_design/command-risk-evaluation.ja.md` 期待: 0137 フラグ方式・systemctl サブコマンド粒度の撤回／固定レベル化の記述がヒット（設計は 02_architecture.md §3.5 に記載済み） |
+| AC-14（sample config 整合） | test, static | test: `internal/runner/config/template_backward_compat_test.go`（risk-based-control.toml／timeout_examples.toml ロード成功）。static: `rg -n -A4 "^cmd = " sample/risk-based-control.toml sample/timeout_examples.toml` の出力で、**apt update／apt upgrade／systemctl restart** の各エントリに `risk_level = "high"` が付くことを確認（apt だけでなく systemctl も含む） |
 | NF-001（撤去シンボル残存ゼロ） | static | §6 の NF-001 cross-search コマンド。期待: マッチ無し |
 | NF-002（緑ゲート） | static | `make test && make lint` 期待: 成功 |
 
