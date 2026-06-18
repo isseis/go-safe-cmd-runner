@@ -27,7 +27,13 @@
 
 - アーキテクチャ §1.1 の設計原則に従う。新規パッケージ・新規エラー型は導入しない（§4）。
 - Go ソースのコメント・識別子・文字列リテラルは英語で書く。
-- 各フェーズ完了時に `make fmt` → `make test` → `make lint` を実行する（NF-002）。
+- **完全な緑ゲート（`make test`／`make lint`）は Phase 4 完了時以降に適用する**。Phase 1〜3 では
+  プロダクションコードと既存テストの整合が一時的に崩れる（例: Phase 1 で `isSystemModificationByNames`
+  を削除しても `command_analysis_test.go` は Phase 4 まで旧 API を呼ぶ。Phase 3 で `systemctl.go` を
+  削除しても `systemctl_test.go` は Phase 4 まで残る）。`make test` は `go test -tags test ./...` で
+  テストもコンパイルするため中間フェーズでは赤になる。したがって Phase 1〜3 の完了基準には**各 Phase に
+  明記したビルドゲート（`go build`、テストファイルを含まない）**を用い、`make fmt` は随時実行してよい。
+  `make test`／`make lint` の通過は Phase 4（テスト改訂完了）と Phase 6 で確認する。
 
 ### 1.3 既存コード調査結果（step 5）
 
@@ -92,10 +98,13 @@
   L75-96 付近・L175-203 付近）。
 - 開発者文書: `docs/dev/architecture_design/command-risk-evaluation.ja.md` / `.md`（「System
   Modification Risk」節、`SystemModificationRisk(names, args)`・`SystemctlSubcommandRisk`・verb-only
-  Medium の記述。EN は L291 付近）。
+  Medium の記述。EN は L291 付近）。`docs/dev/architecture_design/security-architecture.ja.md` / `.md`
+  （L445「Medium risk: … package management (apt, yum)」のコマンドリスク分類）。
 - ユーザーガイド: `docs/user/toml_config/09_practical_examples.ja.md` / `.md` ほか `toml_config/`
   配下の PM／systemctl 実践例（`risk_level=medium`・既定・**`risk_level=low`** の箇所すべて。
   systemctl は常に High になるため `low` 例も拒否される）。
+- README: `README.ja.md` / `README.md`（`systemctl status` を `risk_level = "medium"` とする実践例
+  L231-237 付近、リスク区分一覧 L444-448 のパッケージ管理=Medium 記述）。
 - sample: `sample/risk-based-control.toml`（apt update=medium L67、systemctl restart=medium L103）、
   `sample/timeout_examples.toml`（apt update/upgrade、`risk_level` 無し L72-73/79-80）。
 - sample のロード検証は `internal/runner/config/template_backward_compat_test.go`
@@ -146,7 +155,10 @@
 - [ ] [systemctl.go](../../../internal/runner/base/security/systemctl.go) を削除する。
 - [ ] [package_manager_flags.go](../../../internal/runner/base/security/package_manager_flags.go) を削除する。
 
-**完了基準**: `go build -tags test ./...` が通る。NF-001 の cross-search（§後述）で残存参照ゼロ。
+**完了基準**: `go build -tags test ./...` が通る。**ライブコードのみ**で旧シンボル残存ゼロ
+（`rg -n "SystemctlSubcommandRisk|flagStyleManagers|packageModifyingVerbs|isSystemModificationByNames|packageManagerNames|systemModificationCommandNames" internal/ cmd/` 期待: マッチ無し）。
+文書（`docs/user/`・`docs/dev/`）を含む完全な NF-001 cross-search（§6）は文書更新後の Phase 5 完了時に
+確認する（この時点では `command-risk-evaluation` 等の開発者文書に旧シンボル名が残っているため）。
 
 ### Phase 4: テスト改訂
 
@@ -186,9 +198,19 @@
   テスト名・コメントの「read-only は Medium floor」記述を「常に High」へ更新する（AC-03）。
 - [ ] risk/coreutils_consistency_test.go `TestConsistency_Systemctl`（L218）の `systemctl status`
   期待値を `RiskLevelMedium` → `RiskLevelHigh` へ変更し、コメントを更新する（AC-07）。
-- [ ] AC-09 検証テストを追加する（直接実行 sysmod deny の理由コードが `ReasonSystemModification`）。
-  既存に該当がなければ risk/evaluator_test.go に追加。`risk_level` 上限超過で deny したときの
-  `plan.Assessment.ReasonCodes` に `risktypes.ReasonSystemModification` が含まれることを表明。
+- [ ] AC-09 検証テストを 2 層で追加する。AC-09 は「deny 時の**監査ログ**に system_modification 系
+  理由コードが記録される」ことを要求するが、実際の `risk_level` 比較と deny／監査は evaluator ではなく
+  `NormalResourceManager`／`DryRunResourceManager` で行われる。したがって:
+  - (a) **dimension→理由コード**: `risk/evaluator_test.go` で、直接実行の sysmod コマンドの
+    `plan.Assessment.ReasonCodes` に `risktypes.ReasonSystemModification` が含まれることを表明
+    （名前→理由コードの結線確認）。
+  - (b) **deny+監査**: `internal/runner/resource/audit_wiring_test.go` の既存パターン
+    （`TestExecute_RejectedCommandAuditable`、`fixedPlanEvaluator` で deny plan を注入）に倣い、
+    `ReasonCodes` に `risktypes.ReasonSystemModification` を持つ deny plan で監査エントリが
+    `decision=deny` となり、その理由コード（監査ログに出力される reason コード群。logger.go が
+    `ReasonCodes` を出力）に `system_modification` が含まれることを表明する。実際のフィールド名・
+    `blocking_reason` の値は既存テスト（同ファイル）の表明形式に合わせる。これにより deny／監査の
+    主張を統一 deny 経路で実証する。
 - [ ] AC-08 回帰テストを追加する（本タスクで結論は不変だが明示固定）。security/indirect_execution_test.go に
   `analyzeIndirectCmd("env", "dpkg", "-i", "pkg.deb")` と `("env", "systemctl", "restart", "nginx")`
   が `IndirectFloor` かつ `Level == RiskLevelHigh` を、risk/evaluator_test.go に
@@ -201,11 +223,17 @@
 **ユーザー文書（AC-10/11/12/13）**
 
 - [ ] `docs/user/risk_assessment.ja.md` の systemctl/PM サブコマンド粒度記述（read-only=medium 等）を、
-  固定レベル（PM／systemctl いずれも `high`）へ更新する。表示・照会系が High へ上がる旨の移行ノート
-  （AC-10、baseline=直近リリース）と、検出限界（apk/snap/flatpak/gem・リネーム・busybox 形式、AC-12）、
-  0137/systemctl 粒度の撤回（AC-13）を記載する。
+  固定レベル（PM／systemctl いずれも `high`）へ更新する。移行ノート（AC-10、baseline=直近リリース）には
+  **以下の引き上げをすべて**記載する: (a) 表示・照会系の PM 呼び出し（従来 Low）→High、
+  (b) **パッケージ変更操作（apt install/update 等、0137 後は Medium）→High**、
+  (c) **`dpkg`/`rpm`（従来 Low／未検出）→High**、(d) systemctl read-only（従来 Medium）→High。
+  あわせて従来 `medium` で許可していた PM install/update config がブロックされ得る旨を明記する。
+  検出限界（apk/snap/flatpak/gem・リネーム・busybox 形式、AC-12）、0137/systemctl 粒度の撤回（AC-13）も記載する。
 - [ ] `docs/user/risk_assessment.md`（英語）を `/mktrans` で `.ja.md` から反映する
   （バイリンガル編集順序: ja を先に確定）。
+- [ ] `README.ja.md` の実践例（`systemctl status` を `risk_level = "medium"` とする箇所、L231-233 付近）を
+  `high` へ更新し、リスク区分一覧（L444-445「中: …パッケージ管理／高: システム管理(systemctl)」）から
+  パッケージ管理を Medium 区分の例から外し High 側へ移す。`README.md` を `/mktrans` で反映する。
 
 **開発者文書（F-005 §1.4）**
 
@@ -213,6 +241,9 @@
   `SystemModificationRisk(names)`（引数非依存）・名マッチ固定レベル（PM／systemctl=High）へ更新し、
   `SystemctlSubcommandRisk`・verb-only Medium の記述を削除する。
 - [ ] `docs/dev/architecture_design/command-risk-evaluation.md`（英語）を `/mktrans` で反映する。
+- [ ] `docs/dev/architecture_design/security-architecture.md`（L445「Medium risk: … package management
+  (apt, yum)」）のコマンドリスク分類記述を、パッケージマネージャ=High へ更新する。`.ja.md` も同様に更新する
+  （systemctl は同節で既に High 例として記載済み）。
 
 **ユーザーガイド（toml_config、F-005 §1.4）**
 
@@ -275,7 +306,7 @@ PR 分割は実装着手時に判断する（最小は M1-M2 を 1 PR、M3 を 1
 
 | リスク | 対策 |
 |---|---|
-| §3.5（arch）のテスト一覧が不完全で、見落としたテストが赤くなる | 本計画 §1.3 で全数を再列挙済み。`make test` を各 Phase で実行し未列挙の赤を検出。 |
+| §3.5（arch）のテスト一覧が不完全で、見落としたテストが赤くなる | 本計画 §1.3 で全数を再列挙済み。Phase 4 完了時の `make test` で未列挙の赤を検出（中間フェーズはビルドゲートのみ。§1.2）。 |
 | 旧シンボルの残存参照（コメント・文書） | NF-001 cross-search（§6）で網羅確認。 |
 | 日英文書の不整合 | `/mktrans` で `.ja.md`→`.md` を反映（直接両方編集しない）。 |
 | sample 変更による config テスト破壊 | `risk_level` は `ParseRiskLevel` で `high` が有効。ロード回帰テストで確認。 |
@@ -291,8 +322,13 @@ PR 分割は実装着手時に判断する（最小は M1-M2 を 1 PR、M3 を 1
   `rg -n "SystemctlSubcommandRisk|firstSystemctlSubcommand|systemctlChangeVerbs|systemctlReadOnlyVerbs|flagStyleManagers|flagRule|isFlagStyleModification|matchesShortFlag|packageModifyingVerbs|packageManagerNames|systemModificationCommandNames|isSystemModificationByNames" internal/ cmd/ docs/user/ docs/dev/`
   期待: マッチ無し。
 - [ ] **旧シグネチャ残存**: `rg -n "SystemModificationRisk\([^)]*,\s*\w*[Aa]rgs" -g '*.go'` 期待: マッチ無し。
-- [ ] **文書のサブコマンド粒度記述**: `rg -n "read-only|サブコマンド|status/show|verb" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md docs/dev/architecture_design/command-risk-evaluation.ja.md docs/dev/architecture_design/command-risk-evaluation.md`
-  期待: systemctl/PM のリスク粒度に関する記述が残らない（coreutils 等の無関係な箇所は対象外）。
+- [ ] **stale な挙動記述の残存**: 「systemctl read-only を medium（下限）扱いする」「install/remove 系
+  verb のみ Medium とする」といった**旧挙動を現行仕様として述べる記述**が残らないこと。
+  `rg -n "read-only" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md docs/dev/architecture_design/command-risk-evaluation.ja.md docs/dev/architecture_design/command-risk-evaluation.md`
+  の各ヒットを確認し、systemctl read-only=medium／floor を**現行仕様として**述べる行が無いこと。
+  **注意**: AC-13 が要求する撤回ノート（「0137 のフラグ／verb 方式と systemctl サブコマンド粒度を
+  撤回した」等、`サブコマンド`/`verb` の語を含む経緯説明）はこのチェックの**対象外（残してよい）**。
+  本チェックは「旧挙動を現行として述べる記述」だけを排除し、過去形の撤回ノートは許容する。
 - [ ] **用語集**: 該当語なし（アーキテクチャ §3.4 で確認済み）。追加作業不要。
 
 ---
@@ -309,10 +345,10 @@ PR 分割は実装着手時に判断する（最小は M1-M2 を 1 PR、M3 を 1
 | AC-06（Medium 集合維持） | test | `::TestSystemModificationRisk`（mount/.../update-rc.d=Medium）＋ `risk/evaluator_test.go::TestEvaluateRisk_NoProfileAbsolutePath`（mount/crontab=Medium） |
 | AC-07（実行時＝dry-run） | test | `internal/runner/base/risk/coreutils_consistency_test.go::TestConsistency_Systemctl`（systemctl status=High、共有評価器） |
 | AC-08（ラッパー High／特権 Critical） | test | `internal/runner/base/security/indirect_execution_test.go`（`env dpkg`/`env systemctl`→IndirectFloor High）＋ `risk/evaluator_test.go`（`sudo dpkg`/`sudo systemctl`→Critical） |
-| AC-09（直接 sysmod deny の理由コード） | test | `risk/evaluator_test.go`（deny 時 `Assessment.ReasonCodes` に `risktypes.ReasonSystemModification`） |
-| AC-10（移行ノート） | static | `rg -n "従来" docs/user/risk_assessment.ja.md` 期待: 「表示・照会系（従来 Low）・systemctl read-only（従来 Medium）が high へ上がり、従来許可していた config がブロックされ得る」旨の移行差分記述がヒット（baseline=直近リリース。単なる `high` 一致では不可、移行文を確認する） |
+| AC-09（直接 sysmod deny の監査理由） | test | `risk/evaluator_test.go`（Assessment.ReasonCodes に `ReasonSystemModification`）＋ `internal/runner/resource/audit_wiring_test.go`（`ReasonSystemModification` を持つ deny plan で監査エントリが `decision=deny` となり理由コードに `system_modification` が含まれる。deny／監査は resource manager 層で行われるため、評価器の assessment だけでは不十分） |
+| AC-10（移行ノート） | static | `rg -n "従来" docs/user/risk_assessment.ja.md` 期待: 移行差分に**4 つの引き上げがすべて**記載される — (a) 表示・照会系 PM（従来 Low）→High、(b) **PM 変更操作 install/update（0137 後 Medium）→High**、(c) **dpkg/rpm（従来 Low）→High**、(d) systemctl read-only（従来 Medium）→High。従来 `medium` の PM install config がブロックされ得る旨も明記（baseline=直近リリース。単なる `high` 一致では不可、移行文を確認する） |
 | AC-11（risk_assessment 更新） | static | `rg -n "read-only" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` 期待: systemctl read-only を medium（下限）とするサブコマンド粒度記述が残らない（coreutils 等の無関係箇所は対象外） |
-| AC-12（検出限界明記） | static | 各語 `apk`／`snap`／`flatpak`／`gem`／`busybox`／リネーム を**個別に** `rg -q "<語>" docs/user/risk_assessment.ja.md` で確認し、全語がヒットすること（OR 一括ではなく全語必須。`gem` を含める） |
+| AC-12（検出限界明記） | static | 各語 `apk`／`snap`／`flatpak`／`gem`／`busybox`／リネーム を**個別に**確認し全語がヒットすること（OR 一括不可、全語必須）。`gem` は `gemini` への誤一致を避けるため**バッククォート付き／語境界**で照合する（例 `` rg -q '`gem`' docs/user/risk_assessment.ja.md `` または `rg -qP '\bgem\b(?!ini)'`）。他の語は `rg -q "<語>" docs/user/risk_assessment.ja.md` |
 | AC-13（0137/systemctl 撤回の記録） | static | `rg -n "0137" docs/user/risk_assessment.ja.md docs/dev/architecture_design/command-risk-evaluation.ja.md` 期待: 0137 フラグ方式・systemctl サブコマンド粒度の撤回／固定レベル化の記述がヒット（設計は 02_architecture.md §3.5 に記載済み） |
 | AC-14（sample config 整合） | test, static | test: `internal/runner/config/template_backward_compat_test.go`（risk-based-control.toml／timeout_examples.toml ロード成功）。static: `rg -n -A4 "^cmd = " sample/risk-based-control.toml sample/timeout_examples.toml` の出力で、**apt update／apt upgrade／systemctl restart** の各エントリに `risk_level = "high"` が付くことを確認（apt だけでなく systemctl も含む） |
 | NF-001（撤去シンボル残存ゼロ） | static | §6 の NF-001 cross-search コマンド。期待: マッチ無し |
