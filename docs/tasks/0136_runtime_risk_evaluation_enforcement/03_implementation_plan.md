@@ -286,7 +286,7 @@
 - [x] fd 所有権と close 機構: `VerifiedCommandPlan.Close() error`（保持する全 `VerifiedFD` を `errors.Join` で集約 close、零値・複数回呼び出し安全）を実装。close 呼び出し箇所: (a) 許可 plan・(b) 拒否 plan とも `normal_manager` が `EvaluateRisk` 直後に `defer plan.Close()`（許可・ゲート拒否・エラーの全経路で fd を解放）。executor 側は (a') `cmd.Start` 成功/失敗いずれでも複製 fd（ExtraFiles の dup）を `defer cleanup()` で必ず close（Start 失敗時のリーク無しをテストで確認）。dry-run preview の close は PR-5。
 - [x] 元 argv/env の直接 exec を禁止（plan の検証済み fd を exec の源泉とする型契約＋レビュー観点）。
 - [-] **間接実行で抽出した成果物（ラッパーのインナーコマンド・shebang インタプリタ等）の解決・検証**: 本 PR では未実装（残存制約として保留）。理由: 許可ラッパー（`env`/`timeout` 等）のインナーコマンドの identity 束縛は、ラッパープロセス自身が PATH で inner を exec するため、runner がインナーを直接 exec し直す実行モデル再設計を要する大きさで、本 PR の主コマンド fd 束縛（AC-64/76）とは分離可能。**退行ではない**（インナーは現行 main と同じくラッパーが PATH 解決で exec＝同一 TOCTOU 特性、§5.2 の find/xargs と同列の残存制約）。本 PR は主コマンドの fd 束縛・二重解決廃止を確立する。インナー成果物の解決・検証・束縛は別途対応（§5.2 残存制約に追記）。
-  - > **注（後続タスク 0138 による更新）**: 本保留項目（インナー成果物を runner が直接 exec し直して identity 束縛する将来対応）は後続タスク 0138 により取り下げられた。ラッパー経由インナーは一律 High（特権昇格は Critical／禁止形態は Reject）として扱い、インナーの fd 束縛・自動ハッシュ検証は導入しない（実体固定が必要なら利用者が `verify_files` へ明示登録）。詳細は [docs/tasks/0138_indirect_inner_command_risk/](../0138_indirect_inner_command_risk/02_architecture.md) を参照。
+  > **注（後続タスク 0138 による更新）**: 本保留項目（インナー成果物を runner が直接 exec し直して identity 束縛する将来対応）は後続タスク 0138 により取り下げられた。ラッパー経由インナーは一律 High（特権昇格は Critical／禁止形態は Reject）として扱い、インナーの fd 束縛・自動ハッシュ検証は導入しない。詳細は [タスク 0138 のアーキテクチャ設計書](../0138_indirect_inner_command_risk/02_architecture.md) を参照。
 - [x] 非対応 OS（`//go:build !linux`）の `fdexec_other.go` は fd 実行不能を返すスタブとし、ステージングへフォールバック。
 
 **完了条件**:
@@ -572,7 +572,7 @@
 | AC-57 | test | `internal/runner/base/audit/logger_test.go::TestLogRiskProfile_ArgMasking` | 引数マスキング適用 |
 | AC-58 | test | `internal/runner/resource/dryrun_manager_test.go::TestDryRun_VerificationUnavailableExitCode` | 検証不能 deny を専用終了コードで区別 |
 | AC-59 | test | `internal/runner/base/security/indirect_execution_test.go::TestIndirect_WrapperSudoCritical` | env sudo / timeout sudo / xargs sudo が Critical |
-| AC-60 | test | `internal/runner/base/security/indirect_execution_test.go::TestIndirect_WrapperDestructive` | env rm -rf / timeout systemctl stop 等がラップなし同等以上（**0138 で改訂**: ラッパーインナーは一律 High 下限となり、無害インナーも High。[0138](../0138_indirect_inner_command_risk/01_requirements.md) 参照） |
+| AC-60 | test | `internal/runner/base/security/indirect_execution_test.go::TestIndirect_WrapperDestructive` | env rm -rf / timeout systemctl stop 等がラップなし同等以上（**0138 で改訂**: ラッパーインナーは一律 High 下限となり、無害インナーも High。[タスク 0138 要件定義書](../0138_indirect_inner_command_risk/01_requirements.md) 参照） |
 | AC-61 | test | `internal/runner/base/security/indirect_execution_test.go::TestIndirect_ShellInlineHigh` | bash -c / python -c が High 以上 |
 | AC-62 | test | `internal/runner/base/security/command_analysis_test.go::TestFindExecAllActions` | -exec/-execdir/-ok/-okdir・coreutils 配下対象を破壊判定 |
 | AC-63 | test | `internal/runner/base/risk/evaluator_test.go::TestEvaluateRisk_MaxOfDimensionsOrderIndependent` | 複数次元該当で最大値、順序非依存 |
@@ -589,7 +589,7 @@
 | AC-74 | test | `internal/runner/base/risk/evaluator_test.go::TestEvaluateRisk_BuildRunnerHigh` | make/cmake/gradle が High 以上 |
 | AC-75 | test | `internal/runner/base/risk/evaluator_test.go::TestEvaluateRisk_ServiceAllActionsHigh` ＋ `internal/runner/base/security/indirect_execution_test.go::TestIndirect_ServiceInitScriptGated` | service が読み取りアクションでも High、init スクリプトをゲート |
 | AC-76 | test | `internal/runner/base/executor/executor_test.go::TestExecute_FdBoundOrStaging` ＋ `internal/runner/group_executor_test.go::TestGroupExecutor_ExecIdentityBound` | 検証〜exec の全区間で同一 identity、再ハッシュ path exec なし |
-| AC-77 | test | `internal/runner/base/security/indirect_execution_test.go::TestIndirect_InnerCommandGated` | 抽出インナーが allowlist/ハッシュゲート、通せなければ拒否（**0138 で取り下げ／再定義**: インナーは自動ゲートせず一律 High。実体固定は利用者が `verify_files` で行う。[0138](../0138_indirect_inner_command_risk/01_requirements.md) 参照） |
+| AC-77 | test | `internal/runner/base/security/indirect_execution_test.go::TestIndirect_InnerCommandGated` | 抽出インナーが allowlist/ハッシュゲート、通せなければ拒否（**0138 で取り下げ／再定義**: インナーは自動ゲートせず一律 High。実体固定は利用者が `verify_files` で行う。[タスク 0138 要件定義書](../0138_indirect_inner_command_risk/01_requirements.md) 参照） |
 | AC-78 | test | `internal/runner/base/security/indirect_execution_test.go::TestIndirect_WrapperNoCommandMedium` | env 単体は Medium 以上、抽出不能と区別 |
 | AC-79 | test | `internal/runner/base/security/indirect_execution_test.go::TestIndirect_EnvPathResolutionSwap` | env PATH= で /tmp/rm が実行されない |
 | AC-80 | test | `internal/runner/base/security/indirect_execution_test.go::TestIndirect_WrapperLoaderEnvRejected` | env LD_PRELOAD= 等が拒否 |
