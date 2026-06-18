@@ -43,6 +43,14 @@
   - `IndirectFloor` 定数コメント（[indirect_execution.go:38-42](../../../internal/runner/base/security/indirect_execution.go#L38-L42)）「a wrapped dangerous inner command -> their level」
   - `analyzeService` 内コメント（[indirect_execution.go:920-921](../../../internal/runner/base/security/indirect_execution.go#L920-L921)）「identity binding / disposition is populated when artifact gating is wired in the execution layer」。これは [02_architecture.md](02_architecture.md) §3.4 の 5 箇所には未列挙だが、**同じ「実行層で fd 束縛・ゲートを配線する」前提**を持ち（[02_architecture.md](02_architecture.md) §3.1「成果物に identity / disposition を付与する後続ステップは存在しない」と矛盾）、AC-08 の検証 `rg`（`"wired in the execution layer"` を含む）にも合致するため、本タスクで併せて修正する。
 
+#### 重要: `role` を再帰へ伝播させる必要がある（env ベース shebang の取り扱い）
+
+[02_architecture.md](02_architecture.md) §3.3 が示す「`evaluateInnerAs` 内で `role` により分岐」という素朴な実装だけでは §3.3 の保証（`RoleInterpreter` 経路＝直接スクリプト実行の shebang インタプリタ評価は不変）を**満たせない**ことを、`analyzeShebang` の再帰経路を追って確認した。
+
+- `#!/usr/bin/env <interp>`（最も一般的な shebang の慣用形）の直接スクリプト実行では、`analyzeShebang` が `evaluateInnerAs("/usr/bin/env", ["<interp>", script], RoleInterpreter)` を呼ぶが、その内部の再帰 `analyzeIndirect` は `env` ラッパー経路（`analyzeEnv` → `resolveInner` → `evaluateInner`）を辿り、**実インタプリタ `<interp>` を `RoleInner` で評価する**（[indirect_execution.go:649-654](../../../internal/runner/base/security/indirect_execution.go#L649-L654)・[:746-748](../../../internal/runner/base/security/indirect_execution.go#L746-L748)）。
+- 素朴な分岐では `<interp>` が一律 High に潰れるため、`<interp>` が arbitrary-code ランナーでない無害インタプリタ（例 `#!/usr/bin/env cat`。`cat` は [arbitrary_code.go:17-36](../../../internal/runner/base/security/arbitrary_code.go#L17-L36) の集合に無い）の場合、**現状の非昇格（Low/Unknown）から High へ変化**してしまい、スコープ外（shebang 直接スクリプト実行）の挙動を変えてしまう。`#!/usr/bin/env python`／`bash` 等は `IsArbitraryCodeExecutionRunner` で既に High のため変化しないが、無害インタプリタの env-shebang のみが退行する。
+- **対策**: `role` を `analyzeIndirect` とその下位ラッパーヘルパ（`analyzeEnv`/`analyzeWrapper`/`analyzeTaskset`/`analyzeEnvSplitString`/`resolveInner`/`evaluateInner`）へ引数として伝播させ、`evaluateInnerAs` の再帰 `analyzeIndirect` 呼び出しが**現在の `role` をそのまま渡す**ようにする。これにより shebang インタプリタ連鎖（`env` を経由しても）は終始 `RoleInterpreter`（細粒度算出）で評価され、ラッパー経由インナーのみが `RoleInner`（一律 High）になる。トップレベル公開 API `AnalyzeIndirectExecution` は既定で `RoleInner` を渡す（ラッパーインナー文脈）。
+
 #### 影響を受ける既存テスト（`internal/runner/base/security/indirect_execution_test.go`）
 
 [02_architecture.md](02_architecture.md) §3.4 の更新方針表に加え、実コードを確認して**フラット High 化で実際に挙動が変わる（= 現状アサーションが失敗する）テスト**を以下に確定した。
@@ -88,8 +96,9 @@
 
 #### コア実装
 
+- [ ] `role` を再帰経路へ伝播させる（§1.3「重要: `role` を再帰へ伝播させる必要がある」）。`analyzeIndirect`・`analyzeEnv`・`analyzeWrapper`・`analyzeTaskset`・`analyzeEnvSplitString`・`resolveInner`・`evaluateInner` に `role risktypes.ArtifactRole` 引数を追加し、各ラッパーヘルパは受け取った `role` で `evaluateInner` を呼ぶ。`evaluateInnerAs` の再帰 `analyzeIndirect(inner, innerArgs, depth+1, role)` は**現在の `role` をそのまま渡す**。公開 API `AnalyzeIndirectExecution` は `analyzeIndirect(cmdPath, args, 0, risktypes.RoleInner)` を呼ぶ。`analyzeShebang` はインタプリタ連鎖を `RoleInterpreter` で評価する（`evaluateInnerAs(interp, ..., RoleInterpreter)` とその再帰）。
 - [ ] `evaluateInnerAs`（[indirect_execution.go:756](../../../internal/runner/base/security/indirect_execution.go#L756)）に `role` による分岐を追加する。名前解決・特権判定・再帰（Critical/Reject 伝播）は現状のまま保持し、再帰後に `role == RoleInner` のときは細粒度算出ブロックを実行せず、`IndirectExecutionResult{Kind: IndirectFloor, Level: runnertypes.RiskLevelHigh, ReasonCodes: []risktypes.ReasonCode{risktypes.ReasonIndirectExecutionWrapper}, Artifacts: append(nested.Artifacts, artifact)}` を返す。**`Artifacts` は必ず `nested.Artifacts` に `artifact` を追記したものとする**（既存の細粒度算出ブロックの末尾 [indirect_execution.go:845](../../../internal/runner/base/security/indirect_execution.go#L845) と同様）。`floor(...)` ヘルパは `Artifacts` を空で返すため使用しない（ネストしたラッパー `env timeout nice ls` 等で内側のチェーンアーティファクトが消失するのを防ぐ）。
-- [ ] `role == RoleInterpreter` のときは既存の細粒度算出ブロック（[indirect_execution.go:785-846](../../../internal/runner/base/security/indirect_execution.go#L785-L846)、coreutils fail-closed Reject 分岐を含む）をそのまま実行する。これにより shebang 直接スクリプト実行の挙動を不変に保つ（§3.3）。
+- [ ] `role == RoleInterpreter` のときは既存の細粒度算出ブロック（[indirect_execution.go:785-846](../../../internal/runner/base/security/indirect_execution.go#L785-L846)、coreutils fail-closed Reject 分岐を含む）をそのまま実行する。`role` 伝播と併せ、`#!/usr/bin/env <interp>` のように `env` を経由する shebang インタプリタ連鎖も終始 `RoleInterpreter` で細粒度評価され、直接スクリプト実行の挙動を不変に保つ（§3.3）。
 
 #### コメント修正（AC-08、英語で記述）
 
@@ -106,6 +115,7 @@
 - [ ] `TestIndirect_WrapperProfileFactors` の `want` を `env curl`/`timeout wget` とも `RiskLevelHigh` に更新し、関数コメントを「プロファイル要因は合流せず一律 High」へ書き換える。
 - [ ] `TestIndirect_WrappedProfileReasonsCarried` を削除する（撤廃された `RoleInner` 挙動の検証のため）。
 - [ ] 新規 `TestIndirect_InterpreterReasonsCollected` を追加し、§3.3 で維持する `RoleInterpreter` 経路の Reasons 収集が回帰しないことを locking する: プロファイルを持つコマンド名（例 `curl`）に対し `evaluateInnerAs("curl", []string{"https://example.com"}, 0, risktypes.RoleInterpreter)` を呼び、`Kind==IndirectFloor` かつ `Reasons` に当該プロファイル理由（"Always performs network operations"）を含むことをアサートする（`curl` は bare name のため `ResolveCommandNames` は自身へ解決し、`ResolveProfile` が name でマッチする）。
+- [ ] 新規 `TestIndirect_EnvShebangInterpreterNotFlattened` を追加し、`role` 伝播により env ベース shebang のスコープ外挙動が不変であることを検証する（§1.3）: `#!/usr/bin/env cat` の直接スクリプト実行が High に昇格しないこと（`Level < RiskLevelHigh`。無害インタプリタは細粒度評価のまま）、および `#!/usr/bin/env python` の直接スクリプト実行が従来どおり High であること（`IsArbitraryCodeExecutionRunner` 経由）を `t.TempDir()` にスクリプトを書いてアサートする。
 - [ ] `TestIndirect_CoreutilsInnerFolded` を更新する: `env <unknown applet>` の期待 reason を `risktypes.ReasonCoreutilsClassification` から `risktypes.ReasonIndirectExecutionWrapper` へ変更し、ghost（coreutils dir 配下の非存在ファイル = [02_architecture.md](02_architecture.md) §3.2 の「coreutils 分類失敗」ケース）の期待を `IndirectReject` から `IndirectFloor`/`RiskLevelHigh` へ変更する。関数コメントを「ラップされた coreutils インナーも一律 High に吸収（coreutils 固有の合流・fail-closed Reject は RoleInner では行わない）」へ更新する。
 - [ ] `TestIndirect_WrappedRunnerReasonCodesDeduped` を更新する: `env bash -c echo hi` の `ReasonCodes` が `[]risktypes.ReasonCode{risktypes.ReasonIndirectExecutionWrapper}` と等しいことをアサートする形へ書き換える。関数コメントの「重複 reason code を蓄積しない」という dedup 前提は単一 reason code 化により無意味になるため、「ラッパーインナーは単一の `indirect_execution_wrapper` を返す」旨へ書き換える（テスト名も実態に合えば見直す）。
 - [ ] `TestIndirect_InnerCommandGated` の関数コメントを「インナーは allowlist/ハッシュゲートされず一律 High。Reject/Critical の伝播と artifact 記録は維持（0136 AC-77 の再定義）」へ更新する（アサーション本体は不変で緑のまま）。
@@ -161,7 +171,7 @@
 
 - **単体テスト（`indirect_execution_test.go`）**: AC-01 を新規 `TestIndirect_WrapperInnerFlatHigh` で直接検証（無害インナーが Floor/High／reason=`indirect_execution_wrapper`）。AC-02〜05 は既存テストの回帰確認（結果値不変）。
 - **回帰確認（`evaluator_test.go`）**: 評価器レベルで env sudo=Critical／env LD_PRELOAD=Blocking／env rm -rf=High が不変であること（`TestEvaluateRisk_IndirectExecutionDeny`）。
-- **スコープ外不変確認（§3.3）**: shebang（`RoleInterpreter`）テスト（`TestIndirect_ShebangInterpreterGated`/`TestIndirect_ShebangLongLineNotTruncated`/`TestIndirect_ShebangFifoNotRead`）が従来どおり通過すること（細粒度算出の維持を担保）。さらに新規 `TestIndirect_InterpreterReasonsCollected` で `RoleInterpreter` 経路の Reasons 収集が回帰しないことを locking する（削除する `.Reasons` テストの代替）。
+- **スコープ外不変確認（§3.3）**: shebang（`RoleInterpreter`）テスト（`TestIndirect_ShebangInterpreterGated`/`TestIndirect_ShebangLongLineNotTruncated`/`TestIndirect_ShebangFifoNotRead`）が従来どおり通過すること（細粒度算出の維持を担保）。さらに新規 `TestIndirect_InterpreterReasonsCollected` で `RoleInterpreter` 経路の Reasons 収集が回帰しないことを、新規 `TestIndirect_EnvShebangInterpreterNotFlattened` で env ベース shebang（`#!/usr/bin/env cat`）が `role` 伝播により High に昇格しないこと（無害インタプリタ）を locking する。
 - **セキュリティ回帰**: `TestIndirect_BypassAttackerScenarios` でフラット High が Critical/Reject を上書きしないこと。
 - **後方互換テスト**: 本タスクは挙動を安全側へ強化する（無害インナーが Medium/Low → High）。これは意図した非互換であり、移行ノート（AC-09）で利用者に明示する。
 - **ドキュメント検証（AC-07/09/10/11）**: §6 の AC 検証表に記載した `rg` コマンドで文言の存在／不在を確認し、ja/en 整合は目視確認で補う。
@@ -170,7 +180,7 @@
 
 | リスク | 区分 | 緩和策 |
 |---|---|---|
-| `RoleInterpreter` 経路を誤って一律 High 化し、スコープ外（shebang）の挙動を変えてしまう | 技術 | `role == RoleInner` でのみ分岐。shebang テスト群（§4）が緑であることを Phase 1 完了ゲートで確認 |
+| `RoleInterpreter` 経路を誤って一律 High 化し、スコープ外（shebang）の挙動を変えてしまう | 技術 | `role == RoleInner` でのみ分岐し、`role` を再帰へ伝播させて env ベース shebang（`#!/usr/bin/env <interp>`）のインタプリタ連鎖も `RoleInterpreter` を維持（§1.3）。shebang テスト群＋新規 `TestIndirect_EnvShebangInterpreterNotFlattened`（§4）が緑であることを Phase 1 完了ゲートで確認 |
 | アーキテクチャ §3.4 表に未記載の `evaluator_test.go` テスト失敗を見落とす | 技術 | §1.3 で `risk` パッケージの影響テストを列挙済み。Phase 1 で `make test` 全体を実行 |
 | `command-risk-evaluation` 文書の陳腐化を放置 | スケジュール | §1.3／Phase 3 で AC-10 の追加更新として明示。レビューで指摘されても計画済み |
 | ja/en ドキュメントの乖離 | 品質 | 各ファイル ja を先にコミットし `/mktrans` で en を生成する翻訳ワークフローを徹底 |
@@ -202,7 +212,7 @@
 
 ## 7. 実装チェックリスト
 
-- [ ] **Phase 1**: コア（`role` 分岐）＋ AC-08 コメント 6 箇所 ＋ `indirect_execution_test.go` 更新（新規 2・更新 5・削除 1・コメント修正 2）＋ `evaluator_test.go` 削除 1 ＋ 完了ゲート緑
+- [ ] **Phase 1**: コア（`role` 伝播＋`role` 分岐）＋ AC-08 コメント 6 箇所 ＋ `indirect_execution_test.go` 更新（新規 3・更新 5・削除 1・コメント修正 2）＋ `evaluator_test.go` 削除 1 ＋ 完了ゲート緑
 - [ ] **Phase 2**: ユーザー文書（ja → en）AC-09
 - [ ] **Phase 3**: 開発者文書（`security-architecture.md` ＋ `command-risk-evaluation` ja → en）AC-10
 - [ ] **Phase 4**: 0136 注記（02/03 各該当箇所）AC-11
