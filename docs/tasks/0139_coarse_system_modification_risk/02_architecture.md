@@ -219,7 +219,7 @@ sequenceDiagram
 
 ```go
 // highSystemModificationNames: パッケージマネージャと service/init 管理の入口。
-// これらは引数によらず High（未検証メンテナスクリプト／unit/init スクリプトを特権実行し得る）。
+// これらは引数によらず High（未検証メンテナンススクリプト／unit/init スクリプトを特権実行し得る）。
 var highSystemModificationNames = map[string]struct{}{
     // package managers（dpkg/rpm を新規に含める。AC-01）
     "apt": {}, "apt-get": {}, "yum": {}, "dnf": {}, "zypper": {},
