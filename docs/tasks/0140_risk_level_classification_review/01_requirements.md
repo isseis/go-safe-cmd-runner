@@ -123,16 +123,22 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
 
 **Acceptance Criteria**:
 - **AC-04**（カーネル／モジュール, ③）: `insmod`・`modprobe`・`rmmod`・`kexec` は **High**。
-- **AC-05**（認証／アカウント境界, ②）: `useradd`・`usermod`・`userdel`・`groupadd`・`groupdel`・
-  `gpasswd`・`chpasswd`・`adduser`・`passwd`・`visudo` は **High**。
+  加えて `sysctl`（カーネルパラメータの動的変更＝原則②。例: `net.ipv4.ip_forward` 有効化や
+  セキュリティ機能の無効化はシステム全体に影響）も **High**。名前のみ・粗粒度のため read-only な
+  `sysctl -a` も High に倒す（fail-safe）。
+- **AC-05**（認証／アカウント境界, ②）: `useradd`・`usermod`・`userdel`・`deluser`・`groupadd`・
+  `groupdel`・`delgroup`・`gpasswd`・`chpasswd`・`adduser`・`passwd`・`visudo` は **High**
+  （`deluser`/`delgroup` は Debian/Ubuntu 系の代替名）。
 - **AC-06**（ブート設定, ②③）: `grub-install`・`update-grub`・`grub-mkconfig`・`efibootmgr` は **High**。
 - **AC-07**（ブート時サービス有効化, ②）: `chkconfig`・`update-rc.d` は **High**（`systemctl`/`service`
   と同質。0139 で High となった両者に整合）。
-- **AC-08**（ファイアウォール, ②）: `iptables`・`iptables-restore`・`nft` は **High**。読取専用の
-  `iptables-save` は本次元で High/Medium を受けない（Low）。
+- **AC-08**（ファイアウォール, ②）: `iptables`・`ip6tables`・`iptables-restore`・`ip6tables-restore`・
+  `nft`・`ufw`・`firewall-cmd` は **High**。読取専用の `iptables-save`・`ip6tables-save` は本次元で
+  High/Medium を受けない（Low）。
 - **AC-09**（能力付与, ⑤）: `setcap` は **High**。
-- **AC-10**（信頼境界の置換 intrinsic, ④）: `update-alternatives`・`dpkg-divert`・`alternatives` は
-  **High**（intrinsic に system バイナリ/シンボリックリンクを改変するため、宛先によらず High）。
+- **AC-10**（信頼境界の置換 intrinsic, ④）: `update-alternatives`・`dpkg-divert`・`alternatives`・
+  `ldconfig` は **High**（intrinsic に system バイナリ/シンボリックリンクや共有ライブラリキャッシュを
+  改変するため、宛先によらず High。`ldconfig` はライブラリ差し替え／ハイジャックの経路）。
 
 ### F-003: 限定スコープのシステム変更の Medium 化（軸1・medium 原則）
 
@@ -166,6 +172,10 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
   判定しない（`~/link→/etc`、`$HOME/../../etc` 等で破れない）。`safefileio` の強化済み解決経路を用いる。
   (b) safe-zone は**曖昧な `$HOME` ではなく、run が指定する作業/出力ディレクトリおよび run 専用の
   private temp** に限定する。共有の `/tmp` を無条件 safe としない。
+  (c) **safe-zone が trust-critical パスと重複またはその配下である場合（例: 作業ディレクトリに
+  `/etc` や `/usr/bin` が指定された場合）は、safe-zone として扱わず、trust-critical 判定（High）を
+  優先する**。trust-critical が safe-zone より常に優先（max 合成と整合）し、設定ミスによる
+  セキュリティバイパスを防ぐ。
 - **AC-18**（fail-safe: 宛先不確定なら Low にしない, 安全要件）: 宛先オペランドを確実に解決できない
   呼び出し（複数 source・`-t`/`--target-directory` 等で宛先が一意に取れない、または glob/変数展開で
   評価時に実宛先が未確定）は **Low に分類しない**（最低 Medium。trust-critical 判定の上振れは維持）。
