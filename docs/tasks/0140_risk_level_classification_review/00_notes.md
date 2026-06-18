@@ -146,7 +146,7 @@ high     — ①device/FS/ツリー粒度の不可逆破壊（能力 or 危険ar
            ④信頼境界の破壊（信頼バイナリ/設定の置換, allowlist+ハッシュ無力化）  ← 原則に新規追加
            ⑤権限/能力付与（setcap/setfacl/visudo/chmod-grant/chown）
 medium   — 永続的だが named-file 粒度の影響（rm/mv/cp/rmdir, 非クリティカルパス）
-           / データ egress（境界越え: curl/scp/ssh/rsync）
+           / データ送信（境界越え: curl/scp/ssh/rsync）
            / 定義済み・限定スコープの system 変更（mount, 単一IF設定）
 low      — それ以外（safe-zone 内のロケーション定義コマンド等）
 ```
@@ -154,12 +154,12 @@ low      — それ以外（safe-zone 内のロケーション定義コマンド
 - **④信頼境界の破壊を High 原則に新規追加**: バイナリ/設定の置換は**単一ファイル操作**なので
   「大規模ファイル喪失」では捕まらず「system 変更」とも別物（allowlist+ハッシュ＝第一防御を
   次回実行時に無力化）。発見事項 B で最重要としながら原則 4 行に無かった抜けを補う。
-- **ネットワークは 1 語で括らない**: データ egress（境界越え軸→Medium）と ネット設定変更
+- **ネットワークは 1 語で括らない**: データ送信（境界越え軸→Medium）と ネット設定変更
   （system 変更軸: FW=iptables/nft→High、単一IF=ip/ifconfig→Medium）は別軸。
-- **AI⇔egress の非対称（既知の限界として明文化）**: `claude`/`gemini`=High だが
-  `curl api.anthropic.com`=Medium で**素通りバイパス可能**。name ベース AI 検出は egress 一般を
+- **AI⇔データ送信の非対称（既知の限界として明文化）**: `claude`/`gemini`=High だが
+  `curl api.anthropic.com`=Medium で**素通りバイパス可能**。name ベース AI 検出は データ送信一般を
   塞ぐものではなく、salient な明示ケースの defense-in-depth。また AI は「任意バイナリ実行」より
-  「未検証コンテンツ駆動＋egress」が実体で、③へ同居させると分類が濁る点に留意。C（Medium 据え置き）
+  「未検証コンテンツ駆動＋データ送信」が実体で、③へ同居させると分類が濁る点に留意。C（Medium 据え置き）
   を選ぶ場合もこの限界を doc に残す。
 
 ### 論点 2: 判定構造をリファクタするか（割れの原理的解消）
@@ -263,7 +263,7 @@ low      — それ以外（safe-zone 内のロケーション定義コマンド
 | D6 | **`visudo` 等 権限付与／認証境界系 = High**（Critical にしない。正当な特権バッチが実行不可になるため） | 発見事項D-1 |
 | D7 | **`rm`/`rmdir`/`shred`/`dd` = 宛先ゾーン+arg 化**（`rm ~/file`=Low、`rm -r`/critical-path=High。本ランナーは glob 非展開のため `*` はリテラル扱い＝対象外）。現状 name のみ High からの変更につき**明示 AC + changelog 必須** | 発見事項D-3, 論点4補足 |
 | D8 | **カーネルモジュール（insmod/modprobe/rmmod/kexec）= High**（Critical にしない） | 論点5 |
-| D9 | **データ送信（egress: curl/scp/ssh/rsync）= Medium 据え置き**（C, As is）。AI⇔egress 非対称は**既知の限界として doc 明記** | 論点1補足, 発見事項C/D |
+| D9 | **データ送信（外部送信: curl/scp/ssh/rsync）= Medium 据え置き**（C, As is）。AI⇔データ送信の非対称は**既知の限界として doc 明記** | 論点1補足, 発見事項C/D |
 | D10 | **0139 AC-06 乖離（fdisk/mkfs=Medium 維持 ⇄ 実装 High）は本タスク 0140 で訂正**（0139 は触らない） | 発見事項 冒頭, 論点6 |
 | D11 | **「検討」群の配置を確定**（下表） | 論点1補足の原則を適用 |
 | D12 | **`update-alternatives`=名前のみ High（intrinsic に system バイナリ改変。`dpkg-divert`/`alternatives` も同類）／`install`=arg 条件**（宛先ゾーン＋setuid/setgid→High。cp/mv 類の location-defined） | 発見事項B/D, D4 |

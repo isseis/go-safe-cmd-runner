@@ -51,7 +51,7 @@
 |---|---|---|
 | **critical** | 任意の内側コマンドを透過実行する特権昇格ラッパ。**無条件ブロック**（per-command でも実行不可） | `sudo`・`su`・`pkexec`・`doas`・`runuser`・`setpriv`・`capsh` |
 | **high** | ① device/FS/ツリー粒度の不可逆破壊<br>② 永続的な system/boot/service/account/auth 変更<br>③ 高権限での任意コード実行（カーネルモジュール・interpreter・遅延実行・AI 駆動）<br>④ 信頼境界の破壊（信頼バイナリ/設定の置換＝allowlist+ハッシュ固定を無力化）<br>⑤ 権限/能力の付与 | ①`mkfs`・`parted`・`rm -r`<br>②`useradd`・`grub-install`・`systemctl`<br>③`insmod`<br>④`update-alternatives`<br>⑤`setcap`・`chown root` |
-| **medium** | 永続的だが named-file 粒度の影響／データ egress（境界越え）／定義済み・限定スコープの system 変更 | 非クリティカルパスの `rm`/`mv`/`cp`・`curl`/`scp`/`ssh`・`mount`（既定）・単一 IF 設定 |
+| **medium** | 永続的だが named-file 粒度の影響／データ送信（境界越え）／定義済み・限定スコープの system 変更 | 非クリティカルパスの `rm`/`mv`/`cp`・`curl`/`scp`/`ssh`・`mount`（既定）・単一 IF 設定 |
 | **low** | 上記のいずれにも該当しない | `ls`・safe-zone 内の `cp a $WORKDIR/b` 等 |
 
 **「大規模」の運用定義**: device/FS/ツリー粒度に作用しうる → High、named-file 粒度 → Medium。
@@ -72,7 +72,7 @@ flowchart LR
     CMD["コマンド呼び出し<br>（解決済みパス + 引数）"]
     A1["軸1: コマンド階級<br>（名前で固定）"]
     A2["軸2: 入出力の対象<br>（パス/デバイスのゾーン）"]
-    OTH["その他の floor<br>（間接実行・egress 等）"]
+    OTH["その他の floor<br>（間接実行・データ送信など）"]
     MAX{{"max（最大値）"}}
     OUT["最終リスクレベル"]
     CMD --> A1 --> MAX
@@ -114,7 +114,7 @@ flowchart LR
 | ファミリ | 代表例 |
 |---|---|
 | 限定スコープの system 変更 | LVM 作成/設定系（`lvcreate` 等）・`ip`/`ifconfig`・`mount`/`umount` 既定 |
-| データ egress | `curl`・`wget`・`scp`・`sftp`・`rsync`・`ssh`・`nc` |
+| データ送信 | `curl`・`wget`・`scp`・`sftp`・`rsync`・`ssh`・`nc` |
 
 > 完全な列挙・distro 別名は実装/設計（02）で確定。本ガイドは「どのファミリがどのレベルか」を示す。
 
@@ -189,11 +189,11 @@ Low へ下げるのは「上げる」より危険なので、safe-zone 判定に
 `sudo`/`su`/`pkexec`/`doas`/`runuser`/`setpriv`/`capsh` 等は Critical。内側の実コマンドが
 真の危険であり、ゲートが完全にバイパスされるため、レベル計算を待たず無条件ブロック。
 
-### 6.6 egress と AI の限界
+### 6.6 データ送信と AI の限界
 
-egress は Medium 据え置き。`claude`/`gemini` 等の AI は High だが、`curl <AI エンドポイント>` で
+データ送信は Medium 据え置き。`claude`/`gemini` 等の AI は High だが、`curl <AI エンドポイント>` で
 事実上バイパス可能なので、AI=High は salient な明示ケースの defense-in-depth に過ぎない（限界として
-明記）。なお egress ツールがローカルの trust-critical パスへ書く形（`curl -o /usr/bin/x`）は軸2 で High。
+明記）。なお、データ送信ツールがローカルの trust-critical パスへ書く形（`curl -o /usr/bin/x`）は軸2 で High。
 
 ---
 
@@ -208,7 +208,7 @@ flowchart TD
     BLK["Blocking 拒否"]
     P{"特権昇格ラッパ?<br>sudo/su/..."}
     CRIT["critical（無条件ブロック）"]
-    D["各 floor を算出:<br>軸1 名前階級 /<br>軸2 ゾーン・arg /<br>間接実行ラッパ High /<br>egress 等"]
+    D["各 floor を算出:<br>軸1 名前階級 /<br>軸2 ゾーン・arg /<br>間接実行ラッパ High /<br>データ送信など"]
     M{{"max"}}
     OUT["最終レベル<br>（low/medium/high）"]
     S --> G
@@ -222,7 +222,7 @@ flowchart TD
 1. **特権昇格ラッパか?** → Yes なら **critical**（終了）。
 2. **軸1**: コマンド名が High/Medium ファミリ（§4）か? → 該当 floor を記録。
 3. **軸2**: ロケーション定義コマンドなら対象ゾーン/arg（§5）の floor を記録。
-4. **間接実行ラッパ**なら内側に High floor を記録。**egress** なら Medium を記録。
+4. **間接実行ラッパ**なら内側に High floor を記録。**データ送信**なら Medium を記録。
 5. 記録した floor の **max** が最終レベル。どれも該当しなければ **low**。
 
 ---
@@ -237,8 +237,8 @@ flowchart TD
 | `rm -rf /var/log/old` | 軸2: 再帰が trust-critical（`/var/log`）に及ぶ → High | **high** |
 | `cp build/app /usr/local/bin/app` | 軸2: 宛先 trust-critical（`/usr` 配下）→ High | **high** |
 | `cp report.csv $WORKDIR/out/` | 軸2: safe-zone → Low | **low** |
-| `curl -o $WORKDIR/data.json https://…` | egress Medium + 宛先 safe-zone(Low) → max | **medium** |
-| `curl -o /usr/bin/tool https://…` | egress Medium + 宛先 trust-critical High → max | **high** |
+| `curl -o $WORKDIR/data.json https://…` | データ送信は Medium + 宛先 safe-zone(Low) → max | **medium** |
+| `curl -o /usr/bin/tool https://…` | データ送信は Medium + 宛先 trust-critical High → max | **high** |
 | `env FOO=bar ls` | 間接実行 High floor + redundant-with-config | **high** |
 | `sudo systemctl restart nginx` | 特権昇格ラッパ | **critical** |
 
@@ -255,7 +255,7 @@ flowchart TD
   （§6.3）。満たせなければ降格しない。
 - **情報漏えい（read）は限定的**: 機微ファイルの複製には floor を設けるが、完全な情報漏えい
   モデル化はスコープ外。
-- **AI 検出は defense-in-depth**: §6.6 のとおり generic egress と区別しきれない。
+- **AI 検出は defense-in-depth**: §6.6 のとおり 一般的なデータ送信と区別しきれない。
 
 ---
 
