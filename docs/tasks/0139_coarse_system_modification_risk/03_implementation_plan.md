@@ -378,21 +378,21 @@ internal-before-cmd の制約は非該当。
 
 ## 6. クロスサーチチェックリスト（`make lint`/`make test` で検出できない項目のみ）
 
-- [ ] **NF-001 残存参照**: 次が**ライブコードとユーザー／開発者文書**に残らない（`rg` でゼロ）。
+- [x] **NF-001 残存参照**: 次が**ライブコードとユーザー／開発者文書**に残らない（`rg` でゼロ）。
   検索対象は `internal/`・`cmd/`・`docs/user/`・`docs/dev/` に限定する。`docs/tasks/` 配下は
   0136/0137/0139 等の**歴史的タスク記録**が当該シンボル名を含む（経緯として正当に残る）ため、
   検索対象から除外する。
   `rg -n "SystemctlSubcommandRisk|firstSystemctlSubcommand|systemctlChangeVerbs|systemctlReadOnlyVerbs|flagStyleManagers|flagRule|isFlagStyleModification|matchesShortFlag|packageModifyingVerbs|packageManagerNames|systemModificationCommandNames|isSystemModificationByNames" internal/ cmd/ docs/user/ docs/dev/`
   期待: マッチ無し。
-- [ ] **旧シグネチャ残存**: `rg -n "SystemModificationRisk\([^)]*,\s*\w*[Aa]rgs" -g '*.go'` 期待: マッチ無し。
-- [ ] **stale な挙動記述の残存**: 「systemctl read-only を medium（下限）扱いする」「install/remove 系
+- [x] **旧シグネチャ残存**: `rg -n "SystemModificationRisk\([^)]*,\s*\w*[Aa]rgs" -g '*.go'` 期待: マッチ無し。
+- [x] **stale な挙動記述の残存**: 「systemctl read-only を medium（下限）扱いする」「install/remove 系
   verb のみ Medium とする」といった**旧挙動を現行仕様として述べる記述**が残らないこと。
   `rg -n "read-only" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md docs/dev/architecture_design/command-risk-evaluation.ja.md docs/dev/architecture_design/command-risk-evaluation.md`
   の各ヒットを確認し、systemctl read-only=medium／floor を**現行仕様として**述べる行が無いこと。
   **注意**: AC-13 が要求する撤回ノート（「0137 のフラグ／verb 方式と systemctl サブコマンド粒度を
   撤回した」等、`サブコマンド`/`verb` の語を含む経緯説明）はこのチェックの**対象外（残してよい）**。
   本チェックは「旧挙動を現行として述べる記述」だけを排除し、過去形の撤回ノートは許容する。
-- [ ] **用語集**: 該当語なし（アーキテクチャ §3.4 で確認済み）。追加作業不要。
+- [x] **用語集**: 該当語なし（アーキテクチャ §3.4 で確認済み）。追加作業不要。
 
 ---
 
@@ -424,13 +424,13 @@ internal-before-cmd の制約は非該当。
 各 Phase の詳細チェックボックスは §2 に、PR 境界は §2 の各 `### PR-N 作成ポイント` と §3.2 にある。
 PR 単位の完了は以下で追跡する。
 
-- [ ] PR-1 マージ済み（対象ステップ: Phase 1 / Phase 2 / Phase 3 / Phase 4。`make test && make lint` 緑、
+- [x] PR-1 マージ済み（対象ステップ: Phase 1 / Phase 2 / Phase 3 / Phase 4。`make test && make lint` 緑、
   ライブコード NF-001 クリア、§7 のコード系 AC が検証済み）
-- [ ] PR-2 マージ済み（対象ステップ: Phase 5（文書整合）。文書込み NF-001／stale 記述クリア、日英整合、
+- [x] PR-2 マージ済み（対象ステップ: Phase 5（文書整合）。文書込み NF-001／stale 記述クリア、日英整合、
   AC-10/11/12/13）
-- [ ] PR-3 マージ済み（対象ステップ: Phase 6（sample config 整合）。config ロード回帰緑、AC-14）
-- [ ] §6 クロスサーチチェックリストの全項目クリア（コード=PR-1、文書=PR-2 で確認）
-- [ ] §7 の全 AC（AC-01〜AC-14、NF-001/002）が検証済み
+- [x] PR-3 マージ済み（対象ステップ: Phase 6（sample config 整合）。config ロード回帰緑、AC-14）
+- [x] §6 クロスサーチチェックリストの全項目クリア（コード=PR-1、文書=PR-2 で確認）
+- [x] §7 の全 AC（AC-01〜AC-14、NF-001/002）が検証済み
 
 ## 9. 成功基準
 
