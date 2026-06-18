@@ -136,36 +136,19 @@ device/FS/ボリューム/パーティション粒度の不可逆破壊をもた
 > 個別バイナリ（例: `e2fsck`/`sfdisk`/`vipw`/`kernel-install`/`runuser` 等）が指摘された場合も、
 > 本書では該当ファミリに含める方針を示すに留め、確定列挙は 02 に委ねる。
 
-**Acceptance Criteria**:
-- **AC-04**（カーネル／モジュール, ③）: `insmod`・`modprobe`・`rmmod`・`kexec` は **High**。
-  加えて `sysctl`（カーネルパラメータの動的変更＝原則②。例: `net.ipv4.ip_forward` 有効化や
-  セキュリティ機能の無効化はシステム全体に影響）も **High**。名前のみ・粗粒度のため read-only な
-  `sysctl -a` も High に倒す（fail-safe）。
-- **AC-05**（認証／アカウント境界, ②）: passwd/group/shadow/sudoers の**アカウント・認証 DB を
-  作成/変更/編集するファミリ**は **High**。代表例: `useradd`・`usermod`・`userdel`・`groupadd`・
-  `groupmod`・`groupdel`・`gpasswd`・`chpasswd`・`adduser`/`deluser`/`delgroup`（Debian 系）・
-  `passwd`・`chage`・`newusers`・`vipw`/`vigr`・`visudo`（確定列挙は 02）。
-- **AC-06**（ブート設定, ②③）: ブートローダ/ブートエントリ/カーネルイメージを改変する**ブート
-  変更ファミリ**は **High**。代表例: `grub-install`/`grub2-install`・`update-grub`・
-  `grub-mkconfig`/`grub2-mkconfig`・`efibootmgr`・`kernel-install`/`installkernel`（`/boot` への
-  カーネル/initrd 追加削除）（確定列挙は 02）。
-- **AC-07**（ブート時サービス有効化, ②）: `chkconfig`・`update-rc.d` は **High**（`systemctl`/`service`
-  と同質。0139 で High となった両者に整合）。
-- **AC-07a**（電源状態/ランレベル, ②）: システムの電源/ランレベルを変える**電源状態ファミリ**は
-  **High**——`shutdown`・`reboot`・`halt`・`poweroff`・`telinit`（および `systemctl reboot` 等の同等形）。
-  直接 compat コマンド（`shutdown now`・`reboot -f`）が `systemctl` 経路の High を迂回しないため。
-- **AC-08**（ファイアウォール, ②）: `iptables`・`ip6tables`・`iptables-restore`・`ip6tables-restore`・
-  `nft`・`ufw`・`firewall-cmd` は **High**。`iptables-save`・`ip6tables-save` は既定（stdout 出力）では
-  副作用がないため **Low**。ただし `-f <file>` でファイル出力する場合は宛先がロケーション定義の zoning
-  対象となり、trust-critical 宛先（例 `/etc/iptables/rules.v4`）なら High とする（**無条件 Low とはしない**）。
-- **AC-09**（能力付与, ⑤）: `setcap` は **High**。
-- **AC-10**（信頼境界の置換 intrinsic, ④）: `update-alternatives`・`dpkg-divert`・`alternatives`・
-  `ldconfig` は **High**（intrinsic に system バイナリ/シンボリックリンクや共有ライブラリキャッシュを
-  改変するため、宛先によらず High。`ldconfig` はライブラリ差し替え／ハイジャックの経路）。
-- **AC-10a**（ジョブ/遅延・transient 実行のインストール, ②③）: ゲートされない任意コマンドを後刻・
-  特権で実行させる**永続化/遅延実行ファミリ**は **High**——`crontab`・`at`・`batch`・`systemd-run`
-  （`--on-calendar` 等の transient タイマー/スコープ含む）。直接実行なら High の `useradd`/`chmod u+s`
-  等を Medium 経由で素通りさせないため（②永続化＋③遅延任意実行）。ペイロード解析の要否は 02。
+**Acceptance Criteria**（各行が AC。**レベルはいずれも High**。「代表例」は非有界で確定列挙は 02）:
+
+| AC | ファミリ（原則） | 代表例（非有界・確定列挙は 02） | 補足 |
+|---|---|---|---|
+| AC-04 | カーネル/モジュール・カーネルパラメータ（③/②） | `insmod`・`modprobe`・`rmmod`・`kexec`・`sysctl` | `sysctl` はカーネルパラメータ変更（②）。名前のみ粗粒度のため read-only `sysctl -a` も fail-safe High |
+| AC-05 | アカウント・認証 DB（passwd/group/shadow/sudoers）の作成/変更/編集（②） | `useradd`・`usermod`・`userdel`・`groupadd`/`groupmod`/`groupdel`・`gpasswd`・`chpasswd`・`adduser`/`deluser`/`delgroup`・`passwd`・`chage`・`newusers`・`vipw`/`vigr`・`visudo` | — |
+| AC-06 | ブートローダ/エントリ/カーネルイメージの改変（②③） | `grub-install`/`grub2-install`・`update-grub`・`grub-mkconfig`/`grub2-mkconfig`・`efibootmgr`・`kernel-install`/`installkernel` | `/boot` のカーネル/initrd 追加削除を含む |
+| AC-07 | ブート時サービス有効化（②） | `chkconfig`・`update-rc.d` | `systemctl`/`service`（0139 で High）と同質 |
+| AC-07a | 電源状態/ランレベル変更（②） | `shutdown`・`reboot`・`halt`・`poweroff`・`telinit` | compat 形（`shutdown now`・`reboot -f`）が `systemctl` 経路の High を迂回しないため |
+| AC-08 | ファイアウォール（②） | `iptables`・`ip6tables`・`iptables-restore`/`ip6tables-restore`・`nft`・`ufw`・`firewall-cmd` | `iptables-save`/`ip6tables-save` は既定（stdout）= **Low**。`-f <file>` 出力は宛先 zoning（trust-critical なら High。無条件 Low とはしない） |
+| AC-09 | 能力付与（⑤） | `setcap` | — |
+| AC-10 | 信頼境界の置換 intrinsic（④） | `update-alternatives`・`dpkg-divert`・`alternatives`・`ldconfig` | system バイナリ/symlink/共有ライブラリキャッシュを intrinsic に改変。宛先によらず High（`ldconfig` はライブラリ差し替え経路） |
+| AC-10a | ジョブ/遅延・transient 実行のインストール（②③） | `crontab`・`at`・`batch`・`systemd-run`（`--on-calendar` 等の transient 含む） | ゲートされない遅延任意特権実行（直接なら High の `useradd`/`chmod u+s` 等を素通りさせない）。ペイロード解析の要否は 02 |
 
 ### F-003: 限定スコープのシステム変更の Medium 化（軸1・medium 原則）
 
