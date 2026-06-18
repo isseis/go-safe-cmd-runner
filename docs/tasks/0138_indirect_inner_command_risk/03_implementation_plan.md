@@ -139,7 +139,7 @@
 
 **レビュー観点**: `role` の再帰伝播で shebang（`RoleInterpreter`）経路が不変か / フラット High の `Artifacts` が `nested.Artifacts` を保持するか（ネストしたラッパー） / Critical・Reject 伝播の維持と AC-08 コメント 6 箇所の網羅 / 影響テスト（`security`・`risk` 両パッケージ）の更新・削除と全テスト緑
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
