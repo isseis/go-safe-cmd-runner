@@ -286,14 +286,24 @@
 - [x] PR-2 マージ済み（対象ステップ: Phase 2）— ユーザー文書（ja → en）AC-09（[#745](https://github.com/isseis/go-safe-cmd-runner/pull/745)）
 - [x] PR-3 マージ済み（対象ステップ: Phase 3）— 開発者文書（`security-architecture.md` ＋ `command-risk-evaluation` ja → en）AC-10（[#748](https://github.com/isseis/go-safe-cmd-runner/pull/748)）
 - [x] PR-4 マージ済み（対象ステップ: Phase 4）— 0136 注記（02/03 各該当箇所）AC-11（[#752](https://github.com/isseis/go-safe-cmd-runner/pull/752)）
-- [x] **全体**: §6 の全 AC 検証タスクが期待結果を満たす（AC-01〜05=`security`/`risk` テスト緑、AC-06=`role == risktypes.RoleInner` 分岐ガード存在、AC-07=`record`/`filevalidator` に該当ロジック無し、AC-08=旧コメント 0 件、AC-09/10=ja/en アンカー存在・旧文言除去、AC-11=0136 両ドキュメントに 0138 参照存在。2026-06-18 に再検証）
+- [x] **全体**: §6 の全 AC 検証タスクが期待結果を満たす（2026-06-18 に再検証）
+  - AC-01〜05: `security`/`risk` テスト緑
+  - AC-06: `role == risktypes.RoleInner` 分岐ガード存在
+  - AC-07: `record`/`filevalidator` に該当ロジック無し
+  - AC-08: 旧コメント 0 件
+  - AC-09/10: ja/en アンカー存在・旧文言除去
+  - AC-11: 0136 両ドキュメントに 0138 参照存在
 
 ## 8. クロスサーチチェックリスト
 
 `make lint`/`make test` で検出できない残存参照・整合性のみを対象とする（§6 の AC 表と重複するコマンドは AC 表側に集約済み）。
 
 - [x] 旧 AC-08 コメント文言の残存がコード全体に無いこと（AC-08 の `rg` で担保）。→ 6 文言とも 0 件を確認（2026-06-18）。
-- [x] `RoleInner` の細粒度算出撤廃に伴い、`Reasons` フィールドを参照するテスト／アサーションが `RoleInner` 前提で残っていないこと（`rg -n "\.Reasons" internal/runner/base/security/ internal/runner/base/risk/` で確認し、残るのは `RoleInterpreter`/shebang 由来のもののみ）。→ 残存 4 箇所はいずれも非 `RoleInner`: `indirect_execution.go:817`（`RoleInterpreter` 分岐内、`role == RoleInner` 早期 return の後）、`evaluator.go:156`（汎用 fold。`RoleInner` の空 `Reasons` を追記しても無害）、`evaluator.go:292`（トップレベル直接コマンドのプロファイル理由）、`indirect_execution_test.go:378`（`TestIndirect_InterpreterReasonsCollected`＝`RoleInterpreter` 経路）。
+- [x] `RoleInner` の細粒度算出撤廃に伴い、`Reasons` フィールドを参照するテスト／アサーションが `RoleInner` 前提で残っていないこと（`rg -n "\.Reasons" internal/runner/base/security/ internal/runner/base/risk/` で確認し、残るのは `RoleInterpreter`/shebang 由来のもののみ）。→ 残存 4 箇所はいずれも非 `RoleInner`:
+  - `indirect_execution.go:817`（`RoleInterpreter` 分岐内、`role == RoleInner` 早期 return の後）
+  - `evaluator.go:156`（汎用 fold。`RoleInner` の空 `Reasons` を追記しても無害）
+  - `evaluator.go:292`（トップレベル直接コマンドのプロファイル理由）
+  - `indirect_execution_test.go:378`（`TestIndirect_InterpreterReasonsCollected`＝`RoleInterpreter` 経路）
 
 ## 9. Success Criteria
 
