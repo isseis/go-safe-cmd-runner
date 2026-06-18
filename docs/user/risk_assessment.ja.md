@@ -281,7 +281,7 @@ record -d /path/to/hashes /usr/bin/mycommand
 - **(c) `dpkg`/`rpm`**（従来はどのリストにも含まれず本次元で未検出＝実効 `low`）→ **`high`**。
 - **(d) `systemctl` の読み取り専用サブコマンド**（`status`/`show`/`is-active` 等。従来は `medium`）→ **`high`**。
 
-この結果、従来 `risk_level = "medium"`（または既定の `low`）で許可していたパッケージマネージャの install/update 設定や、`systemctl status` を `medium`/`low` としていた照会系設定は、**算出リスク（`high`）が設定した `risk_level` を超えるためブロックされ得ます**。該当コマンドには明示的に `risk_level = "high"` を設定してください。安全な運用は、許可リスト（allowlist）＋ハッシュ固定＋明示的な `risk_level` 設定を前提とします（このリスク判定は二次ゲートであり、第一防御ではありません）。
+この結果、従来 `risk_level = "medium"`（または既定の `low`）で許可していたパッケージマネージャの install/update 設定や、`systemctl status` を `medium`/`low` としていた照会系設定は、**算出リスク（`high`）が設定した `risk_level` を超えるためブロックされ得ます**。該当コマンドには明示的に `risk_level = "high"` を設定してください。安全な運用は、許可リスト（allowlist）＋ハッシュ固定＋明示的な `risk_level` 設定を前提とします（このリスク判定は二次ゲートであり、主防御ではありません）。
 
 **検出限界**: 粗粒度化後も、本次元は次を検出できず `low` を素通りし得ます。安全運用は前述のとおり allowlist + ハッシュ固定を前提とします。
 
