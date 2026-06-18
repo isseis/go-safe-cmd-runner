@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
@@ -14,6 +16,7 @@ import (
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // MockFileSystem implements executor.FileSystem for testing
@@ -271,6 +274,17 @@ func TestNormalResourceManager_ExecuteCommand_RiskLevelControl(t *testing.T) {
 	env := map[string]string{"TEST": "value"}
 	ctx := context.Background()
 
+	// mediumCmd is a hermetic stand-in for a Medium-risk command. Its basename is
+	// "curl" so the name-based risk profile classifies it as Medium (network), but
+	// it is created in a temp dir so the test does not depend on a network tool
+	// (curl/wget) being installed -- neither is part of a default Ubuntu install.
+	// The risk evaluator only needs the file to exist to bind its identity; the
+	// content hash is the faked test hash, not recomputed from the file. The bytes
+	// are ELF-like (not "#!") so the indirect-execution resolver does not read it as
+	// a shebang script.
+	mediumCmd := filepath.Join(t.TempDir(), "curl")
+	require.NoError(t, os.WriteFile(mediumCmd, []byte{0x7f, 'E', 'L', 'F', 0, 0}, 0o755))
+
 	testCases := []struct {
 		name          string
 		cmd           string
@@ -295,8 +309,8 @@ func TestNormalResourceManager_ExecuteCommand_RiskLevelControl(t *testing.T) {
 		},
 		{
 			name:          "medium risk command with high risk_level",
-			cmd:           "/usr/bin/wget",
-			args:          []string{"http://example.com/file.txt"},
+			cmd:           mediumCmd,
+			args:          []string{"https://example.com/file.txt"},
 			riskLevel:     "high",
 			shouldExecute: true,
 		},
@@ -317,8 +331,8 @@ func TestNormalResourceManager_ExecuteCommand_RiskLevelControl(t *testing.T) {
 		},
 		{
 			name:          "medium risk command with low risk_level should be blocked",
-			cmd:           "/usr/bin/wget",
-			args:          []string{"http://example.com/file.txt"},
+			cmd:           mediumCmd,
+			args:          []string{"https://example.com/file.txt"},
 			riskLevel:     "low",
 			shouldExecute: false,
 			expectedError: runnertypes.ErrCommandSecurityViolation,
