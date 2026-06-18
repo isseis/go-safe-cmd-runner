@@ -758,10 +758,11 @@ func analyzeTaskset(args []string, depth int, role risktypes.ArtifactRole) Indir
 // interpreter), carrying the role of the enclosing context: RoleInner for a
 // wrapper inner (flattened to a High floor), RoleInterpreter for a shebang
 // interpreter chain (kept on the fine-grained path), recorded on the artifact.
-// A privilege token is Critical; an inner form that cannot be bound (find/xargs,
-// loader) propagates its rejection. The inner command is recorded as a chain
-// artifact on every outcome (Floor/Critical/Reject) so the indirect-execution
-// chain remains traceable in audits even on deny paths.
+// A privilege token is Critical; an inner form whose concrete target cannot be
+// safely extracted (a find/xargs child-process helper, a dynamic loader)
+// propagates its rejection. The inner command is recorded as a chain artifact on
+// every outcome (Floor/Critical/Reject) so the indirect-execution chain remains
+// traceable in audits even on deny paths.
 func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
 	artifact := risktypes.ExecutedArtifact{Path: inner, Role: role}
 
