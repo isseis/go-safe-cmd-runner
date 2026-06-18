@@ -47,19 +47,12 @@
 
 リスクレベルは「そのコマンドが正当な許可なしに通った場合の被害の質」で決まる。
 
-```
-critical — 任意の内側コマンドを透過実行する特権昇格ラッパ（sudo/su/pkexec/doas/runuser/setpriv/capsh 等）。
-           無条件ブロック（per-command でも実行不可）。
-high     — ①device/FS/ツリー粒度の不可逆破壊（mkfs・parted・rm -r 等）
-           ②永続的な system/boot/service/account/auth 変更（useradd・grub-install・systemctl 等）
-           ③高権限での任意コード実行（カーネルモジュール・interpreter・遅延実行・AI 駆動）
-           ④信頼境界の破壊（信頼バイナリ/設定の置換。allowlist+ハッシュ固定を無力化）
-           ⑤権限/能力の付与（setcap・setuid 付与・chown root 等）
-medium   — 永続的だが named-file 粒度の影響（非クリティカルパスの rm/mv/cp）
-           / データ egress（curl/scp/ssh 等の境界越え）
-           / 定義済み・限定スコープの system 変更（mount 既定・単一 IF 設定）
-low      — それ以外（safe-zone 内のロケーション定義コマンド等）
-```
+| レベル | 分類基準 | 代表例 |
+|---|---|---|
+| **critical** | 任意の内側コマンドを透過実行する特権昇格ラッパ。**無条件ブロック**（per-command でも実行不可） | `sudo`・`su`・`pkexec`・`doas`・`runuser`・`setpriv`・`capsh` |
+| **high** | ① device/FS/ツリー粒度の不可逆破壊<br>② 永続的な system/boot/service/account/auth 変更<br>③ 高権限での任意コード実行（カーネルモジュール・interpreter・遅延実行・AI 駆動）<br>④ 信頼境界の破壊（信頼バイナリ/設定の置換＝allowlist+ハッシュ固定を無力化）<br>⑤ 権限/能力の付与 | ①`mkfs`・`parted`・`rm -r`<br>②`useradd`・`grub-install`・`systemctl`<br>③`insmod`<br>④`update-alternatives`<br>⑤`setcap`・`chown root` |
+| **medium** | 永続的だが named-file 粒度の影響／データ egress（境界越え）／定義済み・限定スコープの system 変更 | 非クリティカルパスの `rm`/`mv`/`cp`・`curl`/`scp`/`ssh`・`mount`（既定）・単一 IF 設定 |
+| **low** | 上記のいずれにも該当しない | `ls`・safe-zone 内の `cp a $WORKDIR/b` 等 |
 
 **「大規模」の運用定義**: device/FS/ツリー粒度に作用しうる → High、named-file 粒度 → Medium。
 
