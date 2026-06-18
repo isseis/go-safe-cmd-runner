@@ -17,7 +17,11 @@ GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
 GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
-GOLINT=golangci-lint run --build-tags test
+# Pin golangci-lint to the exact version CI enforces (.github/workflows/ci.yml).
+# Using `go run @version` ignores whatever golangci-lint is on PATH, so local
+# `make lint` always matches CI. Bump this and the CI pin together.
+GOLANGCI_VERSION?=v2.11.4
+GOLINT=$(GOCMD) run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) run --build-tags test
 SUDOCMD=sudo
 GOFUMPTCMD=gofumpt
 

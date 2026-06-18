@@ -36,6 +36,19 @@ linters:
     gocyclo:
       min-complexity: 20
 
+    goconst:
+      # match-constant reports string literals whose value coincidentally equals
+      # an existing constant's value even when they belong to unrelated domains
+      # (e.g. an slog key "error" vs. a status enum constant). These are false
+      # positives for this codebase, so disable the heuristic.
+      match-constant: false
+      # Default is 3, which floods this codebase with short enum-like table values
+      # (syscall/symbol names, type tags, CI env-var keys) that are clearer inline.
+      # 6 keeps only high-confidence duplication; genuine repeats above it have been
+      # extracted into named constants. The residual 5x "error" mixes a status value
+      # with structured-logging keys, so it is intentionally not a single constant.
+      min-occurrences: 6
+
     depguard:
       rules:
         filevalidator:

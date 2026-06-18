@@ -6,6 +6,12 @@ import (
 	"strings"
 )
 
+// Variable value type names used in type-mismatch error details.
+const (
+	typeNameString = "string"
+	typeNameArray  = "array"
+)
+
 // Configuration loading and expansion errors
 var (
 	// ErrGlobalEnvExpansionFailed is returned when global environment variable expansion fails

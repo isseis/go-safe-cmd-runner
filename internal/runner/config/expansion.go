@@ -675,8 +675,8 @@ func validateStringVar(
 		return &ErrTypeMismatchDetail{
 			Level:        level,
 			VariableName: varName,
-			ExpectedType: "array",
-			ActualType:   "string",
+			ExpectedType: typeNameArray,
+			ActualType:   typeNameString,
 		}
 	}
 
@@ -705,8 +705,8 @@ func validateArrayVar(
 		return &ErrTypeMismatchDetail{
 			Level:        level,
 			VariableName: varName,
-			ExpectedType: "string",
-			ActualType:   "array",
+			ExpectedType: typeNameString,
+			ActualType:   typeNameArray,
 		}
 	}
 
@@ -728,7 +728,7 @@ func validateArrayVar(
 				Level:        level,
 				VariableName: varName,
 				Index:        i,
-				ExpectedType: "string",
+				ExpectedType: typeNameString,
 				ActualType:   fmt.Sprintf("%T", elem),
 			}
 		}
