@@ -170,6 +170,7 @@
 | フェイルセーフ | fail-safe | 不明時に安全側のリスクへ倒す設計 |
 | fd 束縛 | fd binding / fd-bind | 検証済みファイルディスクリプタへ実行実体を束縛すること |
 | 誤検出 | false positive | 誤ってSYSCALL命令として検出すること |
+| 第一線の防御 | first line of defense | セキュリティの文脈。許可リスト＋ハッシュ固定を指す主防御 |
 | 前向きスキャン | forward scan | 命令列を先頭から走査する解析手法 |
 | FAQ | FAQ | Frequently Asked Questions |
 | 汎用的 | generic | |
@@ -697,6 +698,7 @@
 | 2026-06-18 | runner_command ユーザーガイド（-dry-run-fail-unverified フラグ）関連の用語を追加 (exit code, policy deny, verification unavailable) |
 | 2026-06-18 | command-risk-evaluation 文書（output_file 検証）関連の用語を追加 (dangerous character, path traversal, write permission) |
 | 2026-06-18 | 間接実行インナーコマンドのリスク一律 High 化（Task 0138）関連の用語を追加 (inner command, fd binding, opt-in, residual risk) |
+| 2026-06-18 | システム変更リスク粗粒度化（Task 0139）関連の用語を追加 (first line of defense) |
 
 ---
 
