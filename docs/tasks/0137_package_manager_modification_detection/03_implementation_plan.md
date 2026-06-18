@@ -102,34 +102,34 @@
 `internal/runner/resource/audit_wiring_test.go`（変更）、
 `internal/runner/base/risk/package_manager_consistency_test.go`（新規）
 
-- [ ] **2-1**: `flagStyleManagers` に dpkg・rpm のエントリを追加する（値は 02 §3.1 の規則表どおり。
+- [x] **2-1**: `flagStyleManagers` に dpkg・rpm のエントリを追加する（値は 02 §3.1 の規則表どおり。
   dpkg: `irP` / `{--install,--remove,--purge,--unpack,--configure}` / exclude 空。rpm: `iUFe` /
   `{--install,--upgrade,--freshen,--erase,--reinstall,--import,--initdb,--rebuilddb}` /
   exclude short `qV`・long `{--query,--verify}`）。本体ロジックの変更は不要（データ追加のみ）。
-- [ ] **2-2**: `package_manager_flags_test.go`（`package security`、build タグなし。`command_analysis_test.go`
+- [x] **2-2**: `package_manager_flags_test.go`（`package security`、build タグなし。`command_analysis_test.go`
   に合わせる）を作成し、`isSystemModification` ヘルパを用いてツール別の肯定・否定・境界を固定する:
-  - [ ] `TestSystemModification_DpkgFlags`: 肯定 `-i`/`-r`/`-P`/`--install`/`--remove`/`--purge`/
+  - [x] `TestSystemModification_DpkgFlags`: 肯定 `-i`/`-r`/`-P`/`--install`/`--remove`/`--purge`/
     `--unpack`/`--configure`（`--configure -a` 含む）。否定 `-l`/`-L`/`-s`/`-S`/`-p`/`-I`/`-c`/
     `--info`/`--list`/`--status`/`--get-selections`/`--print-avail`/引数なし、先頭文字境界 `-D<level>`/`-list`。
     大小区別 `-i`≠`-I`（AC-01/AC-02/AC-03）。
-  - [ ] `TestSystemModification_RpmFlags`: 肯定 `-i`/`-U`/`-F`/`-e`/`-ivh`/`-Uvh`/`-e --nodeps`/
+  - [x] `TestSystemModification_RpmFlags`: 肯定 `-i`/`-U`/`-F`/`-e`/`-ivh`/`-Uvh`/`-e --nodeps`/
     `-e --verbose`/`-U --force`/`--install`/`--upgrade`/`--freshen`/`--erase`/`--reinstall`/`--import`/
     `--initdb`/`--rebuilddb`。否定 `-qi`/`-qa`/`-qpi`/`-ql`/`-V`/`-qa --verbose`/`--query`/`--verify`/
     `--eval`/`--querytags`/引数なし、先頭文字境界 `-E%{_libdir}`/`-D'enable_foo 1'`（AC-05/AC-06）。
-  - [ ] `TestSystemModification_RpmExcludePriority`: 除外優先（照会・検証が変更フラグより優先し非検出）。
+  - [x] `TestSystemModification_RpmExcludePriority`: 除外優先（照会・検証が変更フラグより優先し非検出）。
     短形式混在 `-q -i`/`-i -q`/`-e -q`、**長形式混在** `--install --query`/`--erase --verify`、`-V` 混在
     `-i -V`（いずれも非検出。AC-07）。
-  - [ ] `TestSystemModification_DegenerateTokens`: 退化トークン（単独 `-`、単独 `--`、空文字列）自体が
+  - [x] `TestSystemModification_DegenerateTokens`: 退化トークン（単独 `-`、単独 `--`、空文字列）自体が
     フラグに該当しないこと。**唯一の候補が退化トークンの場合は非検出**（例 `dpkg -`、`dpkg --`、`dpkg ""`、
     `rpm -`、`pacman -`）。一方、**退化トークンは有効な変更フラグを抑制しない**（例 `dpkg -i ""`／`dpkg "" -i`／
     `rpm -U ""` は引き続き検出される。fail-safe の維持）。いずれもパニックしないこと（先頭文字参照前の
     長さ検査。02 §3.1 の退化トークン規則 / NF-001）。
-  - [ ] `TestSystemModification_PacmanFlags`: 肯定 `-S`/`-R`/`-U`/`-Syu`/`-Rns`/`--sync`/`--remove`/
+  - [x] `TestSystemModification_PacmanFlags`: 肯定 `-S`/`-R`/`-U`/`-Syu`/`-Rns`/`--sync`/`--remove`/
     `--upgrade`、既存過検出 `-Ss`/`-Si`（先頭 `S` で検出）。否定 `-Q`/`-Qi`、許容差異 `-yS`（非検出）（AC-09）。
-  - [ ] `TestSystemModification_AbsolutePathAndSymlink`: 絶対パス `/usr/bin/dpkg -i`・`/usr/bin/rpm -U` が
+  - [x] `TestSystemModification_AbsolutePathAndSymlink`: 絶対パス `/usr/bin/dpkg -i`・`/usr/bin/rpm -U` が
     検出されること、および symlink エイリアス経由（既存 `TestExtractAllCommandNamesWithSymlinks` と同様に
     `t.TempDir` 配下へリンクを作成）でも検出されること（AC-04/AC-08）。
-- [ ] **2-3**: `command_analysis_test.go::TestIsSystemModification_PackageManagerVerbs` に dpkg/rpm の
+- [x] **2-3**: `command_analysis_test.go::TestIsSystemModification_PackageManagerVerbs` に dpkg/rpm の
   代表ケース（`dpkg -i`→true、`dpkg -l`→false、`rpm -U`→true、`rpm -qi`→false）を追加する。pacman・verb の
   既存ケースは変更しない（AC-11 退行検証）。
 

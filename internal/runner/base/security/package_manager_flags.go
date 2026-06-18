@@ -40,6 +40,43 @@ var flagStyleManagers = map[string]flagRule{
 			"--upgrade": {},
 		},
 	},
+	"dpkg": {
+		// dpkg selects its action with a single short option whose first
+		// character is -i (install), -r (remove), or -P (purge), or with the long
+		// forms below. Query options (-l/-L/-s/-S/-p/-I/-c, --info/--list/...)
+		// start with a different first character, so no exclusion is needed.
+		modifyingShortChars: "irP",
+		modifyingLongForms: map[string]struct{}{
+			"--install":   {},
+			"--remove":    {},
+			"--purge":     {},
+			"--unpack":    {},
+			"--configure": {},
+		},
+	},
+	"rpm": {
+		// rpm selects its mode with a leading short option -i (install),
+		// -U (upgrade), -F (freshen), or -e (erase), or with a long form. Query
+		// and verify modes (-q/-V, --query/--verify) are read-only; if any token
+		// carries one, the command is treated as non-modifying (least privilege)
+		// even when a modifying flag is also present.
+		modifyingShortChars: "iUFe",
+		modifyingLongForms: map[string]struct{}{
+			"--install":   {},
+			"--upgrade":   {},
+			"--freshen":   {},
+			"--erase":     {},
+			"--reinstall": {},
+			"--import":    {},
+			"--initdb":    {},
+			"--rebuilddb": {},
+		},
+		excludeShortChars: "qV",
+		excludeLongForms: map[string]struct{}{
+			"--query":  {},
+			"--verify": {},
+		},
+	},
 }
 
 // isFlagStyleModification reports whether args invoke a modifying operation under

@@ -1132,10 +1132,14 @@ func TestIsSystemModification_PackageManagerVerbs(t *testing.T) {
 		{"yarn add", "yarn", []string{"add", "left-pad"}, true},
 		{"npm shorthand i", "npm", []string{"i", "left-pad"}, true},
 		{"brew tap", "brew", []string{"tap", "owner/repo"}, true},
+		{"dpkg install", "dpkg", []string{"-i", "pkg.deb"}, true},
+		{"rpm upgrade", "rpm", []string{"-U", "pkg.rpm"}, true},
 		// Non-modifying operations stay false.
 		{"apt list", "apt", []string{"list", "--installed"}, false},
 		{"pacman query", "pacman", []string{"-Q"}, false},
 		{"npm run script", "npm", []string{"run", "build"}, false},
+		{"dpkg list", "dpkg", []string{"-l"}, false},
+		{"rpm query info", "rpm", []string{"-qi", "nginx"}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
