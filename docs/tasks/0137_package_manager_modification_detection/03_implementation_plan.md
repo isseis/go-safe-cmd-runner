@@ -210,7 +210,7 @@
 | AC-07 rpm 除外優先 | test | `…::TestSystemModification_RpmExcludePriority`（`-q -i`/`-i -q`/`-e -q` が false） |
 | AC-08 rpm 絶対パス・symlink | test | `…::TestSystemModification_AbsolutePathAndSymlink`（`/usr/bin/rpm -U` と symlink が true） |
 | AC-09 pacman 回帰・許容差異 | test | `…::TestSystemModification_PacmanFlags`（`-S`/`-Syu`/`-Rns`/`-Ss`/`-Si`=true、`-Q`/`-Qi`/`-yS`=false）＋ `command_analysis_test.go::TestIsSystemModification_PackageManagerVerbs`（既存 pacman ケース無変更緑） |
-| AC-10 マネージャ名分岐の排除 | static | `rg -n "isPacmanModifyingFlag\|isPacman\b" internal --glob '*.go'` → 0 件（期待: マッチなし） |
+| AC-10 マネージャ名分岐の排除 | static | `rg -n "isPacmanModifyingFlag|isPacman\b" internal --glob '*.go'` → 0 件（期待: マッチなし） |
 | AC-11 verb 方式の非退行 | test | `command_analysis_test.go::TestIsSystemModification_PackageManagerVerbs`（apt/yum/dnf/yarn/npm/brew ケース無変更緑） |
 | AC-12 実効 Medium | test | `risk/evaluator_test.go::TestStandardEvaluator_EvaluateRisk_SystemModifications`（`dpkg -i`/`rpm -U`=`RiskLevelMedium`） |
 | AC-13 実行時/dry-run 一致 | test | `risk/package_manager_consistency_test.go::TestPackageManagerRiskConsistency_RuntimeVsDryRun` |
@@ -218,11 +218,11 @@
 | AC-18 ラッパー/間接 | test | `security/indirect_execution_test.go::TestIndirect_WrapperPackageManager`（`env dpkg -i`／`timeout 60 rpm -U`=High、`sudo rpm -U`=Critical。いずれも ≥ Medium） |
 | AC-19 監査 reason code | test | `risk/evaluator_test.go::TestEvaluateRisk_PackageManagerReasonCode`（`ReasonSystemModification` を含む） |
 | AC-15 AC-34 上書き明記 | static | `rg -n "AC-34" docs/tasks/0137_package_manager_modification_detection/01_requirements.md` → §1.2 に「別途の要件変更として扱う」を上書きする記述がヒット（期待: マッチあり） |
-| AC-16 §3.1 表反映（日英） | static | `rg -n "dpkg\|rpm" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` で §3.1 表行に dpkg/rpm の `medium` 記述がヒット（期待: 日英両ファイルでマッチ。値 `medium`・操作集合が一致） |
-| AC-17 開発者文書反映（日英） | static | `rg -n "dpkg.*rpm\|フラグ方式\|flag style" docs/dev/architecture_design/command-risk-evaluation.ja.md docs/dev/architecture_design/command-risk-evaluation.md` で「システム変更リスク」節に flag-style 検出と rpm 除外規則がヒット（期待: 日英両方マッチ） |
-| AC-20 移行ノート（日英） | static | `rg -n "dpkg\|rpm" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` の §8 に破壊的変更・`risk_level = "medium"`・`--dry-run` を含む移行項目がヒット（期待: 日英両方マッチ） |
-| AC-21 検出限界（日英） | static | `rg -n "apk\|snap\|busybox\|allowlist" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` で検出対象外・backstop 記述がヒット（期待: 日英両方マッチ） |
-| AC-22 用語集 | static | `rg -n "フラグ方式\|flag style\|ツール別\|per-tool" docs/translation_glossary.md` → 追加用語がヒット（期待: マッチあり） |
+| AC-16 §3.1 表反映（日英） | static | `rg -n "dpkg|rpm" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` で §3.1 表行に dpkg/rpm の `medium` 記述がヒット（期待: 日英両ファイルでマッチ。値 `medium`・操作集合が一致） |
+| AC-17 開発者文書反映（日英） | static | `rg -n "dpkg.*rpm|フラグ方式|flag style" docs/dev/architecture_design/command-risk-evaluation.ja.md docs/dev/architecture_design/command-risk-evaluation.md` で「システム変更リスク」節に flag-style 検出と rpm 除外規則がヒット（期待: 日英両方マッチ） |
+| AC-20 移行ノート（日英） | static | `rg -n "dpkg|rpm" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` の §8 に破壊的変更・`risk_level = "medium"`・`--dry-run` を含む移行項目がヒット（期待: 日英両方マッチ） |
+| AC-21 検出限界（日英） | static | `rg -n "apk|snap|busybox|allowlist" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` で検出対象外・backstop 記述がヒット（期待: 日英両方マッチ） |
+| AC-22 用語集 | static | `rg -n "フラグ方式|flag style|ツール別|per-tool" docs/translation_glossary.md` → 追加用語がヒット（期待: マッチあり） |
 
 > AC-16/AC-20/AC-21 の rg は dpkg/rpm 等の語のヒットに加え、対象節（§3.1 表 / §8 / §7）での記述であることと
 > 日英で対応する内容であることを目視で確認する（static の補助としての manual 確認）。
@@ -237,7 +237,7 @@ NF の検証: NF-001 は単体テストの境界ケース（上記 AC-01/03/05/0
 - [ ] **削除シンボルの残存参照**: `rg -n "isPacmanModifyingFlag" internal docs` → 0 件
   （コード・コメント・docs。`docs/tasks/` 配下のスナップショットは歴史的記述として除外可）。
 - [ ] **`isPacman` ローカル変数の残存**: `rg -n "isPacman\b" internal --glob '*.go'` → 0 件。
-- [ ] **新規識別子の衝突確認**: `rg -n "flagStyleManagers\|flagRule\b" internal --glob '*.go'` が
+- [ ] **新規識別子の衝突確認**: `rg -n "flagStyleManagers|flagRule\b" internal --glob '*.go'` が
   `internal/runner/base/security` 配下のみであること（汎用名のため他パッケージ衝突がないこと）。
 - [ ] **用語集整合**: フェーズ 3 で追加した対訳が本文（要件・設計・ユーザー文書）の用語と一致すること。
 
