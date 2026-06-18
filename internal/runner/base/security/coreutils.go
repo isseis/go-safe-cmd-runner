@@ -156,7 +156,7 @@ func CoreutilsCommandRisk(resolvedPath string, args []string) (runnertypes.RiskL
 		// takes no value-options before the applet, so any option here is unexpected;
 		// treat an unreliable scan as an unidentifiable applet, which fails safe to
 		// High below.
-		subcmd, _ = firstOperand(args, optSpec{unknown: anyUnknownIsUnreliable})
+		subcmd = firstOperand(args, optSpec{unknown: anyUnknownIsUnreliable})
 	}
 
 	if _, ok := destructiveCoreutilsCommands[subcmd]; ok {

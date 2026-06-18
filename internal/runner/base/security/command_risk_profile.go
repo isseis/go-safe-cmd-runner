@@ -158,7 +158,7 @@ func ProfileNetworkApplies(profile CommandRiskProfile, args []string) bool {
 			// (lenient): under-locating the subcommand only skips this network-factor
 			// check, which still falls back to hasNetworkArguments below, so failing
 			// closed (over-blocking) is not warranted here.
-			sub, _ := firstOperand(args, optSpec{valueOpts: gitValueOptions, unknown: allUnknownAreBoolean})
+			sub := firstOperand(args, optSpec{valueOpts: gitValueOptions, unknown: allUnknownAreBoolean})
 			if sub != "" && slices.Contains(profile.NetworkSubcommands, sub) {
 				return true
 			}

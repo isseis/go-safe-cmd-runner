@@ -1094,52 +1094,59 @@ func TestIsDestructive_BasenameBackwardCompat(t *testing.T) {
 	assert.True(t, IsDestructiveFileOperation(cmdNameSet("dd"), []string{"if=/dev/zero"}))
 }
 
-// isSystemModification resolves the command's name set and reports whether it is
-// a system-modification command. The production code derives system-modification
-// risk from an already-resolved name set (isSystemModificationByNames); this test
-// wrapper resolves the path first so the path-based cases stay readable.
-func isSystemModification(cmd string, args []string) bool {
-	names, _ := extractAllCommandNames(cmd)
-	return isSystemModificationByNames(names, args)
-}
-
-// TestIsSystemModification_AbsolutePath verifies that a system-modification
-// command given as a resolved absolute path is detected.
-func TestIsSystemModification_AbsolutePath(t *testing.T) {
-	assert.True(t, isSystemModification("/usr/sbin/systemctl", []string{"restart", "nginx"}))
-	assert.True(t, isSystemModification("/usr/bin/mount", []string{"/dev/sda1", "/mnt"}))
-	assert.False(t, isSystemModification("/usr/bin/systemctl-helper", []string{"restart"}),
-		"a substring match must not be treated as systemctl")
-}
-
-// TestIsSystemModification_PackageManagerVerbs verifies the expanded set of
-// package-manager subcommands and pacman option flags is detected.
-func TestIsSystemModification_PackageManagerVerbs(t *testing.T) {
+// TestSystemModificationRisk verifies the name-only fixed-level classification:
+// package managers and service/init management are High regardless of arguments
+// (queries are treated identically to installs), the remaining name-matched
+// commands are Medium, and anything else (or a name appearing only as an argument
+// value) is Unknown. Matching is by basename and resolved symlinks.
+func TestSystemModificationRisk(t *testing.T) {
 	tests := []struct {
-		name string
-		cmd  string
-		args []string
-		want bool
+		name  string
+		names map[string]struct{}
+		want  runnertypes.RiskLevel
 	}{
-		{"apt purge", "apt", []string{"purge", "nginx"}, true},
-		{"apt-get autoremove", "apt-get", []string{"autoremove"}, true},
-		{"apt-get dist-upgrade", "apt-get", []string{"dist-upgrade"}, true},
-		{"yum reinstall", "yum", []string{"reinstall", "nginx"}, true},
-		{"dnf groupinstall", "dnf", []string{"groupinstall", "tools"}, true},
-		{"pacman sync install", "pacman", []string{"-S", "nginx"}, true},
-		{"pacman combined sync upgrade", "pacman", []string{"-Syu"}, true},
-		{"pacman remove", "pacman", []string{"-Rns", "nginx"}, true},
-		{"yarn add", "yarn", []string{"add", "left-pad"}, true},
-		{"npm shorthand i", "npm", []string{"i", "left-pad"}, true},
-		{"brew tap", "brew", []string{"tap", "owner/repo"}, true},
-		// Non-modifying operations stay false.
-		{"apt list", "apt", []string{"list", "--installed"}, false},
-		{"pacman query", "pacman", []string{"-Q"}, false},
-		{"npm run script", "npm", []string{"run", "build"}, false},
+		// Package managers -> High, install and query alike.
+		{"apt", cmdNameSet("apt"), runnertypes.RiskLevelHigh},
+		{"apt-get", cmdNameSet("apt-get"), runnertypes.RiskLevelHigh},
+		{"yum", cmdNameSet("yum"), runnertypes.RiskLevelHigh},
+		{"dnf", cmdNameSet("dnf"), runnertypes.RiskLevelHigh},
+		{"zypper", cmdNameSet("zypper"), runnertypes.RiskLevelHigh},
+		{"pacman", cmdNameSet("pacman"), runnertypes.RiskLevelHigh},
+		{"brew", cmdNameSet("brew"), runnertypes.RiskLevelHigh},
+		{"pip", cmdNameSet("pip"), runnertypes.RiskLevelHigh},
+		{"npm", cmdNameSet("npm"), runnertypes.RiskLevelHigh},
+		{"yarn", cmdNameSet("yarn"), runnertypes.RiskLevelHigh},
+		{"dpkg", cmdNameSet("dpkg"), runnertypes.RiskLevelHigh},
+		{"rpm", cmdNameSet("rpm"), runnertypes.RiskLevelHigh},
+		// Service / init management -> High.
+		{"systemctl", cmdNameSet("systemctl"), runnertypes.RiskLevelHigh},
+		{"service", cmdNameSet("service"), runnertypes.RiskLevelHigh},
+		// Medium name-matched commands stay Medium.
+		{"mount", cmdNameSet("mount"), runnertypes.RiskLevelMedium},
+		{"umount", cmdNameSet("umount"), runnertypes.RiskLevelMedium},
+		{"fdisk", cmdNameSet("fdisk"), runnertypes.RiskLevelMedium},
+		{"parted", cmdNameSet("parted"), runnertypes.RiskLevelMedium},
+		{"mkfs", cmdNameSet("mkfs"), runnertypes.RiskLevelMedium},
+		{"fsck", cmdNameSet("fsck"), runnertypes.RiskLevelMedium},
+		{"crontab", cmdNameSet("crontab"), runnertypes.RiskLevelMedium},
+		{"at", cmdNameSet("at"), runnertypes.RiskLevelMedium},
+		{"batch", cmdNameSet("batch"), runnertypes.RiskLevelMedium},
+		{"chkconfig", cmdNameSet("chkconfig"), runnertypes.RiskLevelMedium},
+		{"update-rc.d", cmdNameSet("update-rc.d"), runnertypes.RiskLevelMedium},
+		// Non-matching names -> Unknown. Because the function takes only the
+		// resolved name set, a pm name that appears only as an argument value (e.g.
+		// "echo rpm") can never reach this dimension; that guarantee is structural,
+		// so these cases just confirm an unrelated command yields Unknown.
+		{"echo", cmdNameSet("echo"), runnertypes.RiskLevelUnknown},
+		{"ls", cmdNameSet("ls"), runnertypes.RiskLevelUnknown},
+		// symlink / absolute path resolution.
+		{"/usr/sbin/systemctl absolute", cmdNameSet("/usr/sbin/systemctl"), runnertypes.RiskLevelHigh},
+		// A substring match must not be treated as systemctl.
+		{"systemctl-helper not matched", cmdNameSet("systemctl-helper"), runnertypes.RiskLevelUnknown},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, isSystemModification(tt.cmd, tt.args))
+			assert.Equal(t, tt.want, SystemModificationRisk(tt.names))
 		})
 	}
 }
@@ -1155,107 +1162,6 @@ func TestFindExecAllActions(t *testing.T) {
 		assert.Falsef(t, IsDestructiveFileOperation(cmdNameSet("find"),
 			[]string{".", action, "/usr/bin/stat", "{}", ";"}),
 			"find %s /usr/bin/stat should be safe", action)
-	}
-}
-
-func TestIsSystemModification(t *testing.T) {
-	tests := []struct {
-		name     string
-		cmd      string
-		args     []string
-		expected bool
-	}{
-		{
-			name:     "systemctl command",
-			cmd:      "systemctl",
-			args:     []string{"restart", "nginx"},
-			expected: true,
-		},
-		{
-			name:     "mount command",
-			cmd:      "mount",
-			args:     []string{"/dev/sda1", "/mnt"},
-			expected: true,
-		},
-		{
-			name:     "apt install",
-			cmd:      "apt",
-			args:     []string{"install", "nginx"},
-			expected: true,
-		},
-		{
-			name:     "apt install vim",
-			cmd:      "apt",
-			args:     []string{"install", "vim"},
-			expected: true,
-		},
-		{
-			name:     "apt remove",
-			cmd:      "apt",
-			args:     []string{"remove", "nginx"},
-			expected: true,
-		},
-		{
-			name:     "yum update",
-			cmd:      "yum",
-			args:     []string{"update"},
-			expected: true,
-		},
-		{
-			name:     "npm install express",
-			cmd:      "npm",
-			args:     []string{"install", "express"},
-			expected: true,
-		},
-		{
-			name:     "npm install package",
-			cmd:      "npm",
-			args:     []string{"install", "package"},
-			expected: true,
-		},
-		{
-			name:     "mount sdb1",
-			cmd:      "mount",
-			args:     []string{"/dev/sdb1", "/mnt"},
-			expected: true,
-		},
-		{
-			name:     "crontab edit",
-			cmd:      "crontab",
-			args:     []string{"-e"},
-			expected: true,
-		},
-		{
-			name:     "safe apt list",
-			cmd:      "apt",
-			args:     []string{"list"},
-			expected: false,
-		},
-		{
-			name:     "safe apt list installed",
-			cmd:      "apt",
-			args:     []string{"list", "--installed"},
-			expected: false,
-		},
-		{
-			name:     "safe npm list",
-			cmd:      "npm",
-			args:     []string{"list"},
-			expected: false,
-		},
-		{
-			name:     "safe command",
-			cmd:      "echo",
-			args:     []string{"hello"},
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := isSystemModification(tt.cmd, tt.args)
-			assert.Equal(t, tt.expected, result, "IsSystemModification(%q, %v)", tt.cmd, tt.args)
-		})
 	}
 }
 
