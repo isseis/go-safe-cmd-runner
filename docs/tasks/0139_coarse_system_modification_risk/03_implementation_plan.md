@@ -80,9 +80,9 @@
 | `TestFirstSystemctlSubcommand` | security/systemctl_test.go | verb 解析前提 | ファイル削除に伴い削除 |
 | `TestSystemctlSubcommandRisk` | security/systemctl_test.go | read-only=Medium | ファイル削除に伴い削除 |
 | `isSystemModification`（ヘルパ） | security/command_analysis_test.go L1101 | `isSystemModificationByNames` を呼ぶ | 削除（被参照テストの改訂と同時） |
-| `TestIsSystemModification_AbsolutePath` | 同 L1108 | ヘルパ経由 | `SystemModificationRisk` 直接呼びへ改訂 |
-| `TestIsSystemModification_PackageManagerVerbs` | 同 L1117 | `apt list`/`pacman -Q`=false | 照会系も High（非該当でない）へ改訂・新テストへ統合 |
-| `TestIsSystemModification` | 同 L1161 | `apt list`=false 等 | 新 `TestSystemModificationRisk` へ置換 |
+| `TestIsSystemModification_AbsolutePath` | 同 L1108 | ヘルパ経由 | 削除し、新 `TestSystemModificationRisk` の symlink/絶対パスケースで代替（Phase 4） |
+| `TestIsSystemModification_PackageManagerVerbs` | 同 L1117 | `apt list`/`pacman -Q`=false | 削除し、新 `TestSystemModificationRisk` で代替（照会系も High に変わる）（Phase 4） |
+| `TestIsSystemModification` | 同 L1161 | `apt list`=false 等 | 削除し、新 `TestSystemModificationRisk` で代替（Phase 4） |
 | `TestStandardEvaluator_EvaluateRisk_SystemModifications` | risk/evaluator_test.go L101 | `apt/yum install`=Medium | **High へ改訂**（追加特定） |
 | `TestStandardEvaluator_EvaluateRisk_SafeCommands` | 同 L121 | `apt list`=Low | `apt list` ケースを除去（apt は High）（追加特定） |
 | `TestEvaluateRisk_SystemctlSubcommandConditional` | 同 L188 | `status`/`show`=Medium | High へ改訂（status/show 行） |
