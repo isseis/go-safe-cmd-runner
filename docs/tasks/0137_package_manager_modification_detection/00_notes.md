@@ -7,8 +7,8 @@
 
 タスク 0136（実行時リスク判定の強化, PR #729）のレビューで、システム変更検出
 （[command_analysis.go](../../../internal/runner/base/security/command_analysis.go) の
-`SystemModificationRisk` と内部ヘルパ `isSystemModificationByNames`。0136 で旧 `IsSystemModification`
-から改名・分離された）のパッケージマネージャ検出に非対称があることが判明した。
+`SystemModificationRisk` と内部ヘルパ `isSystemModificationByNames`。これらは 0136 で旧
+`IsSystemModification` を改名・分離したもの）のパッケージマネージャ検出に非対称があることが判明した。
 
 - **verb 方式**（`install`/`remove`/`purge`/`add`/`upgrade` 等のサブコマンド）は
   `packageManagerNames` に載る全マネージャ（apt/apt-get/yum/dnf/zypper/pacman/brew/pip/npm/yarn）
