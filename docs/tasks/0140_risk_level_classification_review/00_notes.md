@@ -31,7 +31,7 @@
 
 | 系統 | 関数 / 定義（command_analysis.go ほか） | 出力レベル |
 |---|---|---|
-| システム変更 | `SystemModificationRisk` / `systemModificationCommandNames`・`packageManagerNames` | systemctl=サブコマンド条件付, service=High, **その他名集合=一律 Medium** |
+| システム変更 | `SystemModificationRisk` / `highSystemModificationNames`・`mediumSystemModificationNames`（0139 後） | PM・systemctl・service/init=High（名前のみ）, **その他名集合（mount/crontab/mkfs 等）=Medium** |
 | 破壊的ファイル操作 | `IsDestructiveFileOperation` / `destructiveCommandNames`(`rm`/`rmdir`/`unlink`/`shred`/`dd`) | High |
 | 危険引数パターン | `CheckDangerousArgPatterns` / `dangerousCommandPatterns` | High / Medium |
 | プロファイル | `commandProfileDefinitions`（`ResolveProfile`） | sudo系=Critical, 各種=Medium 等 |
@@ -209,7 +209,9 @@ low      — それ以外（safe-zone 内のロケーション定義コマンド
 **Low へ下げる際の安全要件（必須。「下げる」は「上げる」より危険＝Low は無審査素通り）:**
 
 1. **正規化済みパスで判定**（symlink/traversal 耐性）。`~/link→/etc`、`$HOME/../../etc/passwd`、
-   mv のシンボリックリンク追従。`safefileio` の強化済み解決経路を流用（独自実装しない＝DRY）。
+   mv のシンボリックリンク追従。判定には symlink を安全に追従・解決する専用ロジック
+   （`ResolveCommandNames`/`walkSymlinkChain` 型）を用いる（**注: `safefileio` は symlink を解決せず
+   *拒否*する設計のため zoning 判定には流用不可**。具体は 02）。
 2. **safe-zone は曖昧な `$HOME` ではなく、run の指定 workdir / output / 構成済み temp を
    正規化したものに限定**。特権バッチ委譲が主目的のため `$HOME` は root/対象ユーザで曖昧。
 3. **/tmp は無条件 safe ではない**（world-writable・symlink レース・他プロセス clobber）。

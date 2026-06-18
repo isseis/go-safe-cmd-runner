@@ -203,7 +203,7 @@ device/FS/ボリューム/パーティション粒度の不可逆破壊をもた
 | 条件 | 最小リスク (floor) | 規定 AC |
 |---|---|---|
 | **特権付与**（setuid/setgid・world-write・trust-critical 所有権変更） | **High** | AC-20（install=AC-22a） |
-| **内側コマンド実行**（`find -exec`/`-execdir` 等） | **High**（内側ゲート） | AC-22e |
+| **内側コマンド実行**（`find -exec`/`-execdir` 等） | **拒否/Blocking**（ヘルパーを identity-bind 不可。floor ではなく拒否） | AC-22e |
 
 **軸 B: ファイル入出力の対象（パス/デバイスのゾーン。原則①④＋ゾーン）**
 
@@ -221,9 +221,10 @@ device/FS/ボリューム/パーティション粒度の不可逆破壊をもた
 
 _ゾーン定義と既定マッピング（AC-14〜18）_
 - **AC-14**（宛先ゾーン基本）: ロケーション定義コマンドの宛先が trust-critical パス
-  （`SystemCriticalPaths` 既定集合 = `/`・`/bin`・`/sbin`・`/usr`・`/usr/bin`・`/usr/sbin`・`/etc`・
-  `/var`・`/var/log`・`/boot`・`/sys`・`/proc`・`/dev`・`/lib`・`/lib64`・`/root` 等、
-  [types.go](../../../internal/runner/base/security/types.go) / `HasSystemCriticalPaths`
+  （既定集合 `Config.SystemCriticalPaths`／`GetSystemCriticalPaths`
+  ([types.go](../../../internal/runner/base/security/types.go)) = `/`・`/bin`・`/sbin`・`/usr`・
+  `/usr/bin`・`/usr/sbin`・`/etc`・`/var`・`/var/log`・`/boot`・`/sys`・`/proc`・`/dev`・`/lib`・
+  `/lib64`・`/root` 等。マッチャは `HasSystemCriticalPaths`
   ([command_analysis.go](../../../internal/runner/base/security/command_analysis.go)) 相当）のとき
   **High** に分類される。trust-critical 判定は **AC-17(a) と同じく正規化・symlink 解決後の絶対パスで
   行い、生の引数文字列 prefix では判定しない**。判定はパス境界単位（critical パスと一致、またはその
@@ -239,7 +240,10 @@ _ゾーン定義と既定マッピング（AC-14〜18）_
   例: run の作業ディレクトリ配下での `cp`/`mv`/`rm`/`mkdir`。
 - **AC-17**（safe-zone の定義と解決, 安全要件）: safe-zone 判定は以下をすべて満たす：
   (a) **正規化済み（シンボリックリンク解決後）の絶対パス**で判定し、文字列の prefix 一致では
-  判定しない（`~/link→/etc`、`$HOME/../../etc` 等で破れない）。`safefileio` の強化済み解決経路を用いる。
+  判定しない（`~/link→/etc`、`$HOME/../../etc` 等で破れない）。判定には **symlink を安全に追従・解決
+  する専用ロジック**（`ResolveCommandNames`/`walkSymlinkChain` 型）を用いる。`safefileio` は TOCTOU
+  対策として symlink を*解決せず拒否（Reject）*する設計のため、zoning の「実際にどこを指すか」の解決には
+  そのまま流用できない（解決ロジックの具体は 02）。
   (b) safe-zone は**曖昧な `$HOME` ではなく、run が指定する作業/出力ディレクトリおよび run 専用の
   private temp** に限定する。共有の `/tmp` を無条件 safe としない。
   (c) **safe-zone が trust-critical パスと重複またはその配下である場合（例: 作業ディレクトリに
