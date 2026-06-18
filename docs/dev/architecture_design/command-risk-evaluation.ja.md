@@ -212,7 +212,7 @@ flowchart TD
 主な検出対象：
 
 - **シェバン（shebang）スクリプト**：`#!/usr/bin/env python` のように、カーネルがシェバンのインタプリタ（別実体）を起動するため、インタプリタ連鎖を評価しゲートする。basename ベースのラッパー照合より前に判定する。
-- **ラッパー**（`env`, `timeout`, `nice`, `ionice`, `nohup`, `stdbuf`, `setsid`, `time`, `chrt`, `taskset`）：runner はこれらを再実装せず、内側コマンドを抽出してリスク評価する（一意に抽出できるため reject ではなく評価する。runner が内側コマンドを exec・fd 束縛・同一性束縛するわけではない）。内側コマンドが特権トークンなら Critical。`env` は `NAME=VALUE` 代入・`-S` 分割文字列・`-C/--chdir`（拒否）を個別に解析し、ローダ制御変数（`LD_*` / `DYLD_*`）の指定や PATH 上書き＋裸の内側名は拒否する。
+- **ラッパー**（`env`, `timeout`, `nice`, `ionice`, `nohup`, `stdbuf`, `setsid`, `time`, `chrt`, `taskset`）：runner はこれらを再実装せず、内側コマンドを抽出して一律 High の floor としてリスク評価する（一意に抽出できるため reject ではなく評価する。runner が内側コマンドを exec・fd 束縛・同一性束縛するわけではない）。内側コマンドが特権トークンなら Critical。`env` は `NAME=VALUE` 代入・`-S` 分割文字列・`-C/--chdir`（拒否）を個別に解析し、ローダ制御変数（`LD_*` / `DYLD_*`）の指定や PATH 上書き＋裸の内側名は拒否する。
 - **find / xargs の子プロセス exec**（`-exec`/`-execdir`/`-ok`/`-okdir`、xargs のヘルパー）：runner の子プロセスではなく find/xargs 自身の子プロセスから実行されるため同一性束縛できない。特権トークンなら Critical、それ以外は Reject。
 - **動的ローダ直接起動**（`ld-linux*.so --preload ...` 等）：任意ライブラリをロードできるため Reject。
 - **リモートシェル／出力フィルタヘルパー**（`rsync -e`、`tar --to-command` / `--checkpoint-action`）：ツールの子プロセスからヘルパーが走るため Reject。
