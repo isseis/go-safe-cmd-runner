@@ -104,8 +104,10 @@
 
 - [x] **2-1**: `flagStyleManagers` に dpkg・rpm のエントリを追加する（値は 02 §3.1 の規則表どおり。
   dpkg: `irP` / `{--install,--remove,--purge,--unpack,--configure}` / exclude 空。rpm: `iUFe` /
-  `{--install,--upgrade,--freshen,--erase,--reinstall,--import,--initdb,--rebuilddb}` /
+  `{--install,--upgrade,--freshen,--erase,--reinstall,--import,--initdb,--rebuilddb,--setperms,--setugids}` /
   exclude short `qV`・long `{--query,--verify}`）。本体ロジックの変更は不要（データ追加のみ）。
+  （`--setperms`/`--setugids` は PR #751 レビュー反映で追加。インストール済みファイルの権限・所有者を
+  書き換えるシステム変更操作のため。02 §3.1 規則表も同時に更新。）
 - [x] **2-2**: `package_manager_flags_test.go`（`package security`、build タグなし。`command_analysis_test.go`
   に合わせる）を作成し、`isSystemModification` ヘルパを用いてツール別の肯定・否定・境界を固定する:
   - [x] `TestSystemModification_DpkgFlags`: 肯定 `-i`/`-r`/`-P`/`--install`/`--remove`/`--purge`/
@@ -114,8 +116,8 @@
     大小区別 `-i`≠`-I`（AC-01/AC-02/AC-03）。
   - [x] `TestSystemModification_RpmFlags`: 肯定 `-i`/`-U`/`-F`/`-e`/`-ivh`/`-Uvh`/`-e --nodeps`/
     `-e --verbose`/`-U --force`/`--install`/`--upgrade`/`--freshen`/`--erase`/`--reinstall`/`--import`/
-    `--initdb`/`--rebuilddb`。否定 `-qi`/`-qa`/`-qpi`/`-ql`/`-V`/`-qa --verbose`/`--query`/`--verify`/
-    `--eval`/`--querytags`/引数なし、先頭文字境界 `-E%{_libdir}`/`-D'enable_foo 1'`（AC-05/AC-06）。
+    `--initdb`/`--rebuilddb`/`--setperms`/`--setugids`。否定 `-qi`/`-qa`/`-qpi`/`-ql`/`-V`/`-qa --verbose`/
+    `--query`/`--verify`/`--eval`/`--querytags`/引数なし、先頭文字境界 `-E%{_libdir}`/`-D'enable_foo 1'`（AC-05/AC-06）。
   - [x] `TestSystemModification_RpmExcludePriority`: 除外優先（照会・検証が変更フラグより優先し非検出）。
     短形式混在 `-q -i`/`-i -q`/`-e -q`、**長形式混在** `--install --query`/`--erase --verify`、`-V` 混在
     `-i -V`（いずれも非検出。AC-07）。

@@ -70,6 +70,10 @@ var flagStyleManagers = map[string]flagRule{
 			"--import":    {},
 			"--initdb":    {},
 			"--rebuilddb": {},
+			// --setperms/--setugids rewrite installed-file permissions and
+			// ownership, so they modify system state even without (un)installing.
+			"--setperms": {},
+			"--setugids": {},
 		},
 		excludeShortChars: "qV",
 		excludeLongForms: map[string]struct{}{

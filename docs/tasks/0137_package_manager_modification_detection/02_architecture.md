@@ -243,7 +243,7 @@ var flagStyleManagers = map[string]flagRule{
 |---|---|---|---|
 | pacman | `SRU` | `--sync` / `--remove` / `--upgrade` | なし |
 | dpkg | `irP` | `--install` / `--remove` / `--purge` / `--unpack` / `--configure` | なし |
-| rpm | `iUFe` | `--install` / `--upgrade` / `--freshen` / `--erase` / `--reinstall` / `--import` / `--initdb` / `--rebuilddb` | short `qV`、long `--query` / `--verify` |
+| rpm | `iUFe` | `--install` / `--upgrade` / `--freshen` / `--erase` / `--reinstall` / `--import` / `--initdb` / `--rebuilddb` / `--setperms` / `--setugids` | short `qV`、long `--query` / `--verify` |
 
 > 補足 1（pacman）: 短形式 `SRU` は現行 `isPacmanModifyingFlag` の文字集合をそのまま移送する。
 > pacman の操作フラグ（`-S`/`-R`/`-U`）は常に先頭に来るため、先頭文字一致でも有効な使用の結果は

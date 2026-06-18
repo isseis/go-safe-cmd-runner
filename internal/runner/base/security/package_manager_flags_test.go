@@ -91,6 +91,8 @@ func TestSystemModification_RpmFlags(t *testing.T) {
 		{"import long", []string{"--import", "KEY"}, true},
 		{"initdb long", []string{"--initdb"}, true},
 		{"rebuilddb long", []string{"--rebuilddb"}, true},
+		{"setperms long", []string{"--setperms", "nginx"}, true},
+		{"setugids long", []string{"--setugids", "nginx"}, true},
 		// Query / verify modes are not modifying.
 		{"query info", []string{"-qi", "nginx"}, false},
 		{"query all", []string{"-qa"}, false},
