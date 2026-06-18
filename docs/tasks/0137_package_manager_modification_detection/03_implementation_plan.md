@@ -88,7 +88,7 @@
 **レビュー観点**: pacman 既存挙動の不変（有効入力で退行なし）／`isPacman`・`isPacmanModifyingFlag` の完全削除／ゲート分離（verb=`packageManagerNames`、flag=`flagStyleManagers`）の正しさ
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/750）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
