@@ -84,6 +84,27 @@ dimension にも該当せず **Low**。grep 確認済み（security パッケー
 `curl` `wget` `scp` `rsync` `ssh` `nc` は一律 Medium（`dangerousCommandPatterns` または
 プロファイル）。High は AI サービス系（`claude`/`gemini`/...）のみ。
 
+### D. 提案たたき台の内部矛盾（要訂正）
+
+リスク再定義の議論で挙がった分類案には、以下 3 点の内部矛盾がある。
+
+1. **`visudo`=Critical と「Critical=正統な用途が無い」が衝突**。visudo の正統用途は
+   「sudoers を安全に編集する」ことそのもの。さらに実装の Critical は**無条件ブロック
+   ＝per-command でも実行不可**（論点5）。visudo/useradd には正当な特権バッチ用途があり、
+   実行不可にすると壊れる。→ **visudo は High**（「権限付与=High」のバケツ、setcap と同列）が筋。
+   Critical 定義を「**任意の内側コマンドを透過実行する特権昇格ラッパ（sudo/su/pkexec/doas）。
+   ゲートを完全バイパスするので無条件ブロック**」と尖らせると、sudo=Critical / visudo=High /
+   insmod=High が同一理屈（論点5）で揃う。「sudoers 編集＝root 付与能力」と見て Critical に
+   寄せる解釈も成立するため、**「Critical=実行不可」を受け入れるかが決定点**（推奨は High）。
+2. **`cp`/`mv`=Medium（b 案）と「バイナリ置換=最重要 High」（発見事項 B）が矛盾**。
+   同じ cp/mv が両方に出る。解は論点4補足の宛先ゾーン化: bare = safe/ordinary ゾーンで Low/Medium、
+   宛先が trust-critical なら High。`update-alternatives`/`install` は **/usr/bin 改変が目的**
+   なので名前のみで High でよい（cp と粒度が違う）。これを入れないと B の穴が閉じない。
+3. **`rm`/`mv`/`cp` は現状 High からの「格下げ」**。`destructiveCommandNames`
+   （rm/rmdir/unlink/shred/dd）は現状 **High**。b 案は High→Medium/Low への引き下げ＝
+   セキュリティを弱める方向で、引き上げ作業（論点6）とは性質が逆。**明示 AC + changelog** が要る。
+   `dd`（b で言及なし）の扱いも決定要（of=device→High / of=file→宛先ゾーン）。
+
 ## 論点（要件・設計で詰める）
 
 ### 論点 1: 「High と Medium の境界原則」をどう再定義するか
@@ -95,8 +116,49 @@ dimension にも該当せず **Low**。grep 確認済み（security パッケー
 2. **コマンド／バイナリ置換**（信頼境界＝allowlist+ハッシュの破壊）
 3. **大規模・不可逆なファイル／ディスク破壊**
 4. **外部へのデータ送信**
+5. **AI**
 
 → どの観点を High に含めるか、特に ④（データ送信）を Medium のままにするかは要決定。
+
+#### 論点 1 補足: 2 軸モデルと改訂版・統一原則
+
+**根本フレーム＝最終リスクは 2 軸の max**:
+- **軸1（コマンド階級 / name 固定）**: system 変更・auth・kernel・権限付与・信頼バイナリ置換を
+  名前で固定レベル化（High/Medium）。論点2の一元化リファクタ先。
+- **軸2（呼び出し危険度 / arg）**: `rm -rf`・`dd if=/of=device`・`chmod 777`、宛先パスゾーン
+  （論点4補足）で High/Low へ調整。本来の `CheckDangerousArgPatterns` の役割。
+
+これにより `mkfs`/`parted`=High（軸1, name 由来）と `rm`=Medium/`rm -rf`=High（軸2, arg 由来）が
+**矛盾なく両立**する。「大規模」の運用定義も粒度で固定: **device/FS/ツリー粒度に作用しうる→High、
+named-file 粒度→Medium**（rm=named→Medium / rm -r=tree→High / mkfs=device→High）。
+
+**改訂版・統一原則（たたき台）**:
+
+```
+最終リスク = max(軸1: コマンド階級[name固定], 軸2: 呼び出し危険度[arg/宛先ゾーン])
+
+critical — 任意内側コマンドを透過実行する特権昇格ラッパ（sudo/su/pkexec/doas）。無条件ブロック。
+high     — ①device/FS/ツリー粒度の不可逆破壊（能力 or 危険arg）
+           ②永続的 system/boot/service/account/auth 変更
+           ③高権限での任意コード実行（kernelモジュール, dlsym/LD_PRELOAD, interpreter, AI駆動）
+           ④信頼境界の破壊（信頼バイナリ/設定の置換, allowlist+ハッシュ無力化）  ← 原則に新規追加
+           ⑤権限/能力付与（setcap/setfacl/visudo/chmod-grant/chown）
+medium   — 永続的だが named-file 粒度の影響（rm/mv/cp/rmdir, 非クリティカルパス）
+           / データ egress（境界越え: curl/scp/ssh/rsync）
+           / 定義済み・限定スコープの system 変更（mount, 単一IF設定）
+low      — それ以外（safe-zone 内のロケーション定義コマンド等）
+```
+
+- **④信頼境界の破壊を High 原則に新規追加**: バイナリ/設定の置換は**単一ファイル操作**なので
+  「大規模ファイル喪失」では捕まらず「system 変更」とも別物（allowlist+ハッシュ＝第一防御を
+  次回実行時に無力化）。発見事項 B で最重要としながら原則 4 行に無かった抜けを補う。
+- **ネットワークは 1 語で括らない**: データ egress（境界越え軸→Medium）と ネット設定変更
+  （system 変更軸: FW=iptables/nft→High、単一IF=ip/ifconfig→Medium）は別軸。
+- **AI⇔egress の非対称（既知の限界として明文化）**: `claude`/`gemini`=High だが
+  `curl api.anthropic.com`=Medium で**素通りバイパス可能**。name ベース AI 検出は egress 一般を
+  塞ぐものではなく、salient な明示ケースの defense-in-depth。また AI は「任意バイナリ実行」より
+  「未検証コンテンツ駆動＋egress」が実体で、③へ同居させると分類が濁る点に留意。C（Medium 据え置き）
+  を選ぶ場合もこの限界を doc に残す。
 
 ### 論点 2: 判定構造をリファクタするか（割れの原理的解消）
 
@@ -126,6 +188,52 @@ dimension にも該当せず **Low**。grep 確認済み（security パッケー
 - `HasSystemCriticalPaths`（[command_analysis.go:320](../../../internal/runner/base/security/command_analysis.go#L320)）が既存。
   宛先がクリティカルパスのときのみ High、という折衷が可能か。
 
+#### 論点 4 補足: 「3 ゾーン・パス関数」への一般化
+
+`cp`/`mv`/`mkdir`/`rmdir`/`ln`/`install`/`touch` は**名前自体に固有の危険がなく、
+リスクが本質的に宛先パスの関数**になる「**ロケーション定義コマンド**」階級。軸2を
+「critical→High」の二値ではなく **`pathZone(target)` の 3 ゾーン関数**に格上げする:
+
+| target ゾーン | レベル | 例 |
+|---|---|---|
+| trust-critical（`/usr/bin` `/etc` `/boot` …） | High | 信頼境界破壊 |
+| ordinary | Medium | 既定 |
+| safe-zone（正規化後の指定 workdir / output / private temp） | **Low** | home/temp 内の日常操作 |
+
+- 適用は**ロケーション定義コマンド階級に限定**。`mkfs`/`parted`/`wipefs`/`insmod`/`useradd`
+  等の **intrinsic 階級はパスで下げてはいけない**（device/アカウントが対象でパス引数を持たない）。
+  最終リスクは max 合成なので、別 dimension を踏めば結局 max が効く。
+
+**Low へ下げる際の安全要件（必須。「下げる」は「上げる」より危険＝Low は無審査素通り）:**
+
+1. **正規化済みパスで判定**（symlink/traversal 耐性）。`~/link→/etc`、`$HOME/../../etc/passwd`、
+   mv のシンボリックリンク追従。`safefileio` の強化済み解決経路を流用（独自実装しない＝DRY）。
+2. **safe-zone は曖昧な `$HOME` ではなく、run の指定 workdir / output / 構成済み temp を
+   正規化したものに限定**。特権バッチ委譲が主目的のため `$HOME` は root/対象ユーザで曖昧。
+3. **/tmp は無条件 safe ではない**（world-writable・symlink レース・他プロセス clobber）。
+   temp を safe 扱いするなら run 専用 private temp に限る。
+4. **宛先を確実に取れない呼び出しは Low にしない**（`-t`/`--target-directory`/複数 source/`--`
+   等で解析非自明）→ fail-safe で Medium 据え置き。
+5. **glob/変数展開が絡む宛先は下げない**（評価時に実宛先が未確定 → safe 判定不可）。
+
+**スコープ判断（要明文化）**: 「home 内の cp/mv/rm = Low」は実質
+**「本ツールはシステム完全性と信頼境界を守る。ユーザ自身のデータの自己破壊（`rm -rf ~/`）は
+守備範囲外」**という宣言。妥当なスコープだが要件に 1 文で明記しないと後で揉める。
+
+**粒度の注意**:
+- `rmdir` は**空ディレクトリのみ**削除、`mkdir` も低 blast。cp/mv（上書き破壊あり）と同じ表に
+  載せると過大評価。critical-path 以外は Low / critical-path のみ Medium〜High の一段低いカーブが妥当か。
+- `rm` をこの階級に入れるかは論点（前回の格下げ論点と接続）。`rm ~/file`=Low は自然だが
+  `rm -r`/glob は軸2で High 昇格が残る。
+- 0139 の YAGNI（名前のみ・粗粒度）とは**逆方向の精密化**。`HasSystemCriticalPaths` は upgrade 側に
+  既存だが、**downgrade 側（safe-zone 判定）は新規で最も堅牢性が要る**部分。
+- **精密化の線引き（決定）**: コマンド階級で粗粒度／精密を使い分ける。判断基準＝
+  「コマンドラインフラグの安定性 × 使用頻度」。
+  - **package manager**（ディストリ毎に異なり機能も多様）→ **一律・名前のみ粗粒度**
+    （引数解析しない。0139 方針を踏襲）。
+  - **基本コマンド**（cp/mv/mkdir/rmdir/ln 等、頻用かつフラグが安定）→ **引数解析を行う**
+    （宛先パスゾーンで判定）。
+
 ### 論点 5: Critical を使うか（カーネルコード実行など）
 
 `insmod`/`kexec` は任意カーネルコード実行で破滅性は特権昇格に匹敵するが、Critical 枠は
@@ -139,14 +247,52 @@ dimension にも該当せず **Low**。grep 確認済み（security パッケー
 - 引き上げで既存 sample/テスト config がブロックされ得るため、`risk_level` 付与の追従が要る
   （0139 AC-14 と同型の作業）。
 
-## 未決事項（要件で確定すべき点）
+## 決定事項（本ノート時点で確定。要件・設計の前提とする）
 
-1. High の境界再定義（論点 1 の 4 観点のうちどれを High に含めるか。特に ④ データ送信）。
-2. 判定構造の一元化リファクタを伴うか（論点 2）。0139 との順序関係。
-3. 新規対象コマンドの列挙範囲（論点 3）。
-4. コマンド置換の判定方式（名前のみ／宛先パス併用）（論点 4）。
-5. カーネルモジュール等を High か Critical か（論点 5）。
-6. 0139 AC-06 乖離の是正先（本タスク／0139）と、ユーザー/開発者文書の更新範囲（論点 6）。
+議論を経て以下を確定。詳細根拠は各論点・発見事項を参照。
+
+| # | 決定 | 根拠 |
+|---|---|---|
+| D1 | **2 軸モデル採用**：最終リスク = `max(軸1: コマンド階級[name固定], 軸2: 呼び出し危険度[arg/宛先ゾーン])` | 論点1補足 |
+| D2 | **改訂版・統一原則を採用**（critical/high/medium/low の 4 段、High に **④信頼境界の破壊**を新規追加） | 論点1補足 |
+| D3 | **Critical 定義の尖鋭化**：任意内側コマンドを透過実行する特権昇格ラッパ（sudo/su/pkexec/doas）に限定。無条件ブロック＝実行不可を意味する | 発見事項D-1, 論点5 |
+| D4 | **ロケーション定義コマンドは 3 ゾーン・パス関数**（critical→High / ordinary→Medium / safe-zone→Low）。Low 化は安全要件 5 点（正規化解決・safe-zone 限定・/tmp 非無条件・パース不能/glob は下げない）を満たす場合のみ | 論点4補足 |
+| D5 | **精密化の線引き**：package manager=一律名前のみ粗粒度／基本コマンド（cp/mv/mkdir/rmdir/ln 等）=引数解析。基準＝フラグ安定性 × 使用頻度 | 論点4補足 |
+| D6 | **`visudo` 等 権限付与／認証境界系 = High**（Critical にしない。正当な特権バッチが実行不可になるため） | 発見事項D-1 |
+| D7 | **`rm`/`rmdir`/`shred`/`dd` = 宛先ゾーン+arg 化**（`rm ~/file`=Low、`rm -r`/glob/critical-path=High）。現状 name のみ High からの変更につき**明示 AC + changelog 必須** | 発見事項D-3, 論点4補足 |
+| D8 | **カーネルモジュール（insmod/modprobe/rmmod/kexec）= High**（Critical にしない） | 論点5 |
+| D9 | **データ送信（egress: curl/scp/ssh/rsync）= Medium 据え置き**（C, As is）。AI⇔egress 非対称は**既知の限界として doc 明記** | 論点1補足, 発見事項C/D |
+| D10 | **0139 AC-06 乖離（fdisk/mkfs=Medium 維持 ⇄ 実装 High）は本タスク 0140 で訂正**（0139 は触らない） | 発見事項 冒頭, 論点6 |
+| D11 | **「検討」群の配置を確定**（下表） | 論点1補足の原則を適用 |
+| D12 | **`update-alternatives`=名前のみ High（intrinsic に system バイナリ改変。`dpkg-divert`/`alternatives` も同類）／`install`=arg 条件**（宛先ゾーン＋setuid/setgid→High。cp/mv 類の location-defined） | 発見事項B/D, D4 |
+
+### D11: 「検討」群の最終配置（残課題2の確定）
+
+| コマンド | レベル | 判定方式 | 根拠（原則の該当項） |
+|---|---|---|---|
+| `iptables`/`nft`/`iptables-restore` | **High** | 名前のみ | ②FW=システム全体のセキュリティ境界変更 |
+| `iptables-save`（読取のみ） | **Low** | 名前のみ | 副作用なし |
+| `grub-install`/`update-grub`/`grub-mkconfig`/`efibootmgr` | **High** | 名前のみ | ②永続的 boot 変更＋③任意 boot コード（systemctl-enable と同質） |
+| `setcap` | **High** | 名前のみ | ⑤能力付与（capability＝特権ベクタ。intrinsic） |
+| `ip`/`ifconfig`/`route` | **Medium** | 名前のみ（粗粒度） | 「ネットは原則 mid」。`ip route` の system 全体性は粗粒度で Medium に丸める（D5） |
+| `mount`/`umount` | **Medium**（既定）／**High** | mountpoint の宛先ゾーン | 既定は定義済み system 変更=Medium。**mountpoint が trust-critical（/usr/bin・/etc 等）なら ④信頼境界破壊（shadowing）→ High**。cp/mv と同じ宛先ゾーン判定を mountpoint に適用 |
+| `setfacl` | **Medium**（既定）／**High** | arg 条件（付与方向/対象） | chmod と同型。**付与方向（権限拡大）または critical リソース対象のみ High**、他 Medium |
+| LVM 破壊系：`lvremove`/`vgremove`/`pvremove`/`lvreduce`/`vgreduce`/`pvmove` | **High** | 名前のみ（別バイナリ） | ①大規模・不可逆なディスク/ボリューム破壊 |
+| LVM 作成/設定系：`lvcreate`/`lvextend`/`vgcreate`/`pvcreate`/`vgchange`/`lvchange` | **Medium** | 名前のみ（別バイナリ） | 永続的だが破壊を伴わない system 変更 |
+
+- `mount`/`setfacl` は arg/宛先依存判定が要る（D4 の宛先ゾーン・dd of= と同類の精密化群）。実装段取りは `mkarch`。
+
+## 未決事項（要件・設計で詰める残課題）
+
+1. **判定構造の一元化リファクタ（論点2）を本タスクで実施するか、0139 との順序**（実装段取り。`mkarch` で確定）。
+2. **arg/宛先依存判定群の具体ロジック**（実装段取りは `mkarch`）：
+   - `dd` の `of=`（device→High / file→宛先ゾーン）
+   - `mount` の mountpoint 宛先ゾーン（trust-critical→High）
+   - `setfacl` の付与方向/対象判定（権限拡大 or critical リソース→High）
+   - `install` の宛先ゾーン＋mode（setuid/setgid→High）
+   - `rm`/`cp`/`mv`/`ln` の宛先ゾーン（D4/D7）
+3. **ユーザー/開発者文書の更新範囲**（`risk_assessment.{ja,}.md`、用語集、`command-risk-evaluation.{ja,}`）と、
+   引き上げに伴う既存 sample/テスト config の `risk_level` 追従（0139 AC-14 と同型）。
 
 ## 関連コード・参照
 
