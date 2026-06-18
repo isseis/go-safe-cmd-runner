@@ -1,11 +1,13 @@
 # メモ：コマンド名ベース リスクレベル分類の見直し
 
-> 本書は要件定義（`01_requirements.md`）作成前の課題整理ノート。決定事項ではなく
-> 発見事項と論点の洗い出しを目的とする。設計・確定は `mkarch` / 要件プロセスで行う。
+> 本書は要件定義（`01_requirements.md`）作成前の課題整理ノート。当初は発見事項と論点の
+> 洗い出しのみを目的としたが、議論の進行に伴い**確定した方針を「決定事項」セクション
+> （D1〜D12）に追記して記録している**。発見事項・論点（前半）と決定事項（後半）を併せ持つ
+> 作業ノートであり、最終的な正本は `01_requirements.md` 以降の要件プロセス成果物とする。
 >
 > | Item | Value |
 > |---|---|
-> | Status | `notes`（要件前） |
+> | Status | `notes`（要件前。決定事項を追記済み） |
 > | Created | 2026-06-18 |
 
 ## 発端（課題提起の要約）
@@ -16,7 +18,7 @@
 判定系統に分散し、(A) 同類なのに High と Medium に割れる、(B) どの系統にも載らず Low を
 素通りする**、という構造的な不整合・抜けにあると判明した。
 
-> 補足：指摘にあった `mkfs` 自体は**実装上すでに High**（[evaluator_test.go:215](../../../internal/runner/base/risk/evaluator_test.go#L215)
+> 補足：指摘にあった `mkfs` 自体は**実装上すでに High**（[evaluator_test.go:237](../../../internal/runner/base/risk/evaluator_test.go#L237)
 > が `/sbin/mkfs.ext4 → High` を担保）。経路は `CheckDangerousArgPatterns`。
 > 一方 0139 の **AC-06 は「fdisk/mkfs=Medium 維持」と記述**しており、実装と乖離している
 > （[0139/01_requirements.md:115](../0139_coarse_system_modification_risk/01_requirements.md#L115)）。

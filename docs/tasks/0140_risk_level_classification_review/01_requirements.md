@@ -56,7 +56,7 @@
 | D9 | **データ送信（egress）= Medium 据え置き**。AI⇔egress 非対称は既知の限界として doc 明記 | 論点1補足 |
 | D10 | **0139 AC-06 乖離は本タスクで訂正**（fdisk/mkfs/parted/fsck=High を正とする） | 論点6 |
 | D11 | **「検討」群の配置を確定**（F-002/F-003/F-004 の各 AC へ反映） | 論点1補足 |
-| D12 | **`update-alternatives`=名前のみ High（intrinsic）／`install`=arg 条件（cp/mv 類）** | 発見事項B/D |
+| D12 | **`update-alternatives`=名前のみ High（intrinsic）／`install`=arg 条件（宛先ゾーン＋setuid/setgid/所有者変更→High。cp/mv 類）** | 発見事項B/D |
 
 **改訂版・統一原則（境界の再定義）**:
 
@@ -111,9 +111,13 @@ device/FS/ボリューム/パーティション粒度の不可逆破壊をもた
 
 **Acceptance Criteria**:
 - **AC-01**: 解決済みバイナリ名が `parted`・`fsck`（`fsck.*` 含む）・`wipefs`・`blkdiscard`・
-  `sgdisk`・`mkswap` のいずれかであるコマンドは、引数によらず **High** に分類される。
-- **AC-02**: LVM 破壊系 `lvremove`・`vgremove`・`pvremove`・`lvreduce`・`vgreduce`・`pvmove` は、
-  引数によらず **High** に分類される。
+  `sgdisk`・`gdisk`・`cgdisk`・`mkswap` のいずれかであるコマンドは、引数によらず **High** に分類される
+  （`gdisk`/`cgdisk` は GPT パーティションエディタで `sgdisk` と同等の破壊力）。
+- **AC-02**: LVM 破壊/デバイス初期化系 `lvremove`・`vgremove`・`pvremove`・`lvreduce`・`vgreduce`・
+  `pvmove`・`lvresize`・`pvresize`・`pvcreate` は、引数によらず **High** に分類される
+  （`lvresize`/`pvresize` は縮小＝破壊を含み得るため引数を見ず High に倒す。`pvcreate` はブロック
+  デバイスへ LVM ラベル/メタデータを書き込むデバイス初期化で、全ディスク使用時はパーティション
+  テーブルを消去する）。
 - **AC-03**: `mkfs`（`mkfs.*` 含む）・`fdisk` は **High** に分類される（既存挙動の確定・維持。F-007 と整合）。
 
 ### F-002: 永続的システム変更・特権コード実行・権限付与・信頼境界の High 化（軸1・原則②③④⑤）
@@ -129,12 +133,14 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
 - **AC-05**（認証／アカウント境界, ②）: `useradd`・`usermod`・`userdel`・`deluser`・`groupadd`・
   `groupdel`・`delgroup`・`gpasswd`・`chpasswd`・`adduser`・`passwd`・`visudo` は **High**
   （`deluser`/`delgroup` は Debian/Ubuntu 系の代替名）。
-- **AC-06**（ブート設定, ②③）: `grub-install`・`update-grub`・`grub-mkconfig`・`efibootmgr` は **High**。
+- **AC-06**（ブート設定, ②③）: `grub-install`・`grub2-install`・`update-grub`・`grub-mkconfig`・
+  `grub2-mkconfig`・`efibootmgr` は **High**（`grub2-*` は Fedora/RHEL 系の同等バイナリ）。
 - **AC-07**（ブート時サービス有効化, ②）: `chkconfig`・`update-rc.d` は **High**（`systemctl`/`service`
   と同質。0139 で High となった両者に整合）。
 - **AC-08**（ファイアウォール, ②）: `iptables`・`ip6tables`・`iptables-restore`・`ip6tables-restore`・
-  `nft`・`ufw`・`firewall-cmd` は **High**。読取専用の `iptables-save`・`ip6tables-save` は本次元で
-  High/Medium を受けない（Low）。
+  `nft`・`ufw`・`firewall-cmd` は **High**。`iptables-save`・`ip6tables-save` は既定（stdout 出力）では
+  本次元の High を受けないが、`-f <file>` でファイル出力する場合は宛先がロケーション定義の zoning 対象と
+  なり、trust-critical 宛先（例 `/etc/iptables/rules.v4`）なら High とする（**無条件 Low とはしない**）。
 - **AC-09**（能力付与, ⑤）: `setcap` は **High**。
 - **AC-10**（信頼境界の置換 intrinsic, ④）: `update-alternatives`・`dpkg-divert`・`alternatives`・
   `ldconfig` は **High**（intrinsic に system バイナリ/シンボリックリンクや共有ライブラリキャッシュを
@@ -145,9 +151,13 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
 永続的だが破壊を伴わない／限定スコープのシステム変更は **Medium**。
 
 **Acceptance Criteria**:
-- **AC-11**: LVM 作成/設定系 `lvcreate`・`vgcreate`・`pvcreate`・`lvextend`・`vgchange`・`lvchange` は
-  **Medium**。
+- **AC-11**: LVM 作成/設定系 `lvcreate`・`vgcreate`・`lvextend`・`vgchange`・`lvchange` は
+  **Medium**（`pvcreate` はデバイス初期化のため AC-02 で High）。
 - **AC-12**: `ip`・`ifconfig`・`route` は **Medium**（名前のみ・粗粒度。サブコマンド解析は行わない）。
+  ただし `ip netns exec <NAME> <cmd> ...` は内側 `<cmd>` を名前空間内で実行する**間接実行形**であり、
+  `ip` 自体の Medium ではなく**間接実行解析（内側コマンドのゲート適用）または High** として扱う
+  （`ip netns exec ns rm -rf /`・`ip netns exec ns modprobe x` 等が外側 `ip` の Medium に埋もれない
+  ようにする）。
 - **AC-13**: 既存の Medium 名マッチ系（`crontab`・`at`・`batch`、および `mount`/`umount` の既定）は
   **Medium** を維持する（`mount` の宛先条件付き引き上げは F-004 AC-19 で規定）。
 
@@ -159,12 +169,16 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
 
 **Acceptance Criteria**:
 - **AC-14**（宛先ゾーン基本）: ロケーション定義コマンドの宛先が trust-critical パス
-  （`/usr/bin`・`/bin`・`/sbin`・`/etc`・`/boot`・`/lib*` 等、`HasSystemCriticalPaths`
+  （`SystemCriticalPaths` 既定集合 = `/`・`/bin`・`/sbin`・`/usr`・`/usr/bin`・`/usr/sbin`・`/etc`・
+  `/var`・`/var/log`・`/boot`・`/sys`・`/proc`・`/dev`・`/lib`・`/lib64`・`/root` 等、
+  [types.go](../../../internal/runner/base/security/types.go) / `HasSystemCriticalPaths`
   ([command_analysis.go](../../../internal/runner/base/security/command_analysis.go)) 相当）のとき
-  **High** に分類される。例: `cp evil /usr/bin/ls`・`mv x /etc/passwd`・`ln -sf x /usr/bin/python`・
-  `install -m755 x /usr/local/bin/y`。
+  **High** に分類される。trust-critical 判定も **AC-17(a) と同じく正規化・symlink 解決後の絶対パスで
+  行い、生の引数文字列 prefix では判定しない**。例: `cp evil /usr/bin/ls`・`mv x /etc/passwd`・
+  `ln -sf x /usr/bin/python`・`install -m755 x /usr/local/bin/y`。
 - **AC-15**（ordinary）: 宛先が trust-critical でも safe-zone でもない通常パスの named-file 操作は
-  **Medium**。例: `rm /var/log/app.log`・`cp a /srv/data/b`。
+  **Medium**。例: `rm /srv/app/cache.dat`・`cp a /opt/data/b`（`/srv`・`/opt` は `SystemCriticalPaths`
+  既定集合に含まれない。**`/var`・`/var/log` は trust-critical なので ordinary の例には使わない**）。
 - **AC-16**（safe-zone → Low）: 宛先が safe-zone（§ AC-17 で定義）内の named-file 操作は **Low**。
   例: run の作業ディレクトリ配下での `cp`/`mv`/`rm`/`mkdir`。
 - **AC-17**（safe-zone の定義と解決, 安全要件）: safe-zone 判定は以下をすべて満たす：
@@ -183,11 +197,27 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
   （信頼バイナリ/設定の shadowing）。それ以外の `mount`/`umount` は Medium（AC-13）。
 - **AC-20**（`setfacl`）: `setfacl` は権限を拡大する付与、または trust-critical 対象に対する操作の
   とき **High**、それ以外は **Medium**（chmod の `chmod 777` 等と同型）。
-- **AC-21**（`dd of=`）: `dd` は `of=` がブロックデバイス（`/dev/*`）のとき **High**、`of=` が
-  通常ファイルのときは宛先ゾーン（AC-14〜18）に従う。
+- **AC-21**（`dd` のデバイス入出力）: `dd` は **`if=` または `of=` がブロックデバイス（`/dev/*`）の
+  とき High**。これは `if=/dev/sda of=$WORKDIR/disk.img` のような**全ブロックデバイス読取**を含む
+  （現行実装が `dd if=` を High とする保護を維持する）。`if=`/`of=` のいずれもデバイスでない場合は
+  `of=` の宛先ゾーン（AC-14〜18）に従う。
 - **AC-22**（ツリー破壊の arg 昇格）: `rm`/`cp`/`mv` 等が再帰フラグ（`-r`/`-R`）または複数対象の
   glob 展開によりツリー粒度で作用する場合は、宛先ゾーンによらず **High**（`CheckDangerousArgPatterns`
   相当の arg 軸）。例: `rm -rf <任意>`。
+- **AC-36**（`install` の権限フラグ）: `install` は宛先が safe-zone であっても、`-m` に setuid/setgid
+  ビット（例 `-m 4755`/`-m 2755`）を伴う、または `-o`/`-g` で所有者/グループを変更する場合は
+  **High**（**Low に降格しない**）。`install -o root -m 4755 tool $WORKDIR/tool` のような setuid-root
+  実行ファイル生成を safe-zone 経由で素通りさせない。権限付与軸（⑤・chmod-grant と同型）。
+- **AC-37**（作用する全オペランドの zoning）: source を除去/移動する操作（`mv`・`rm`・`shred`・
+  `unlink`）は宛先だけでなく**作用する全オペランド**を zoning 対象とする。source が trust-critical の
+  ときは宛先が safe でも **High**（例 `mv /etc/passwd $WORKDIR/passwd` は `/etc` から trust-critical
+  ファイルを除去する）。`cp` は source を読むのみで mutate しないため source は zoning 対象外。
+- **AC-38**（coreutils 次元との整合）: 現行 `CoreutilsCommandRisk`
+  ([coreutils.go](../../../internal/runner/base/security/coreutils.go)) は coreutils 単一バイナリ
+  ディレクトリ（固定 secure PATH 配下）で `rm`/`dd`=High、`cp`/`mv`/不明 applet=fail-safe High を返し、
+  最終 max 合成により後段のゾーン判定では降格できない。**safe-zone Low（AC-16）を成立させるため、
+  これら applet について coreutils 次元をゾーンモデルと整合させる（無条件 High を抑止し軸2 の判定に
+  委ねる）よう改修することを要件とする**。降格は AC-17/AC-18 の安全要件を満たす場合に限る。
 
 ### F-005: Critical の尖鋭化
 
