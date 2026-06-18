@@ -93,6 +93,7 @@
 |--------|---------|------|
 | 危険文字 | dangerous character | 出力パス検査の文脈 |
 | データ持ち出し | data exfiltration | 機密データの外部送信（セキュリティの文脈） |
+| データ送信（外部送信） | egress | 信頼境界を越える外部へのデータ送信（セキュリティの文脈）。一般的な「送信」と区別。リスクレベル分類の文脈で使用 |
 | データフロー解析 | dataflow analysis | CFGを用いたデータの流れの解析 |
 | 依存 / 依存解析 | dependency / dependency analysis | 動的ライブラリ依存解析の文脈 |
 | 判定メソッド | determination method | syscall番号の決定手段を示す文字列 |
