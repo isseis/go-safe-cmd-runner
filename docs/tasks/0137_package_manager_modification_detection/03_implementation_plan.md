@@ -115,9 +115,11 @@
   - [ ] `TestSystemModification_RpmExcludePriority`: 除外優先（照会・検証が変更フラグより優先し非検出）。
     短形式混在 `-q -i`/`-i -q`/`-e -q`、**長形式混在** `--install --query`/`--erase --verify`、`-V` 混在
     `-i -V`（いずれも非検出。AC-07）。
-  - [ ] `TestSystemModification_DegenerateTokens`: 退化トークン（引数に単独 `-`、単独 `--`、空文字列
-    トークンを含むケース）が dpkg/rpm/pacman いずれでも非検出となり、かつパニックしないこと（先頭文字
-    参照前の長さ検査。02 §3.1 の退化トークン規則 / NF-001）。
+  - [ ] `TestSystemModification_DegenerateTokens`: 退化トークン（単独 `-`、単独 `--`、空文字列）自体が
+    フラグに該当しないこと。**唯一の候補が退化トークンの場合は非検出**（例 `dpkg -`、`dpkg --`、`dpkg ""`、
+    `rpm -`、`pacman -`）。一方、**退化トークンは有効な変更フラグを抑制しない**（例 `dpkg -i ""`／`dpkg "" -i`／
+    `rpm -U ""` は引き続き検出される。fail-safe の維持）。いずれもパニックしないこと（先頭文字参照前の
+    長さ検査。02 §3.1 の退化トークン規則 / NF-001）。
   - [ ] `TestSystemModification_PacmanFlags`: 肯定 `-S`/`-R`/`-U`/`-Syu`/`-Rns`/`--sync`/`--remove`/
     `--upgrade`、既存過検出 `-Ss`/`-Si`（先頭 `S` で検出）。否定 `-Q`/`-Qi`、許容差異 `-yS`（非検出）（AC-09）。
   - [ ] `TestSystemModification_AbsolutePathAndSymlink`: 絶対パス `/usr/bin/dpkg -i`・`/usr/bin/rpm -U` が
@@ -237,7 +239,7 @@
 |---|---|---|
 | PR-1 | 1-1 / 1-2 / 1-3 / 1-4 | ツール別機構へのリファクタ（pacman 移送、`isPacmanModifyingFlag`/`isPacman` 削除）。振る舞い不変・リスク隔離 |
 | PR-2 | 2-1 / 2-2 / 2-3 | dpkg/rpm 検出データ追加と `security` パッケージの単体・回帰テスト |
-| PR-3 | 2-4 / 2-5 / 2-5b / 2-6 / 2-7 / 2-8 | `risk`/`resource` パッケージの統合・監査・整合テスト（実効リスク・ラッパー・deny 監査・実行時/dry-run） |
+| PR-3 | 2-4 / 2-5 / 2-5b / 2-6 / 2-7 / 2-8 | `security`/`risk`/`resource` パッケージの統合・監査・整合テスト（実効リスク・ラッパー・deny 監査・実行時/dry-run） |
 | PR-4 | 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 | ユーザー/開発者文書・移行ノート・用語集の更新 |
 
 ---
