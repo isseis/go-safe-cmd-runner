@@ -183,9 +183,12 @@ HOW（文字集合・走査方法）は本節で確定する（要件 §4 冒頭
 // flagRule describes how one flag-style package manager selects a modifying
 // operation from its option flags. All character matching is case-sensitive.
 type flagRule struct {
-    // modifyingShortChars: a short-option token (-X, not --X) whose characters
-    // include any of these marks a modifying operation
-    // (pacman "SRU", dpkg "irP", rpm "iUFe").
+    // modifyingShortChars: for a short-option token (-X, not --X), if its FIRST
+    // character (immediately after the single dash) is one of these, the token
+    // marks a modifying operation (pacman "SRU", dpkg "irP", rpm "iUFe"). The
+    // mode selector is always the first short-option character in these tools, so
+    // first-character matching avoids false positives from concatenated argument
+    // values or single-dash long forms (see the rules below).
     modifyingShortChars string
 
     // modifyingLongForms: exact-match long options that are modifying
@@ -218,10 +221,15 @@ var flagStyleManagers = map[string]flagRule{
   `rpm -V` 等を非検出にする（AC-06 / AC-07）。
 - **長形式は完全一致**: `--` で始まるトークンは `modifyingLongForms` との完全一致でのみ該当。
   照会用長形式（dpkg `--info`、rpm `--eval`/`--querytags` 等）を誤検出しない（AC-02 / AC-06）。
-- **短形式は文字含有（大小区別）**: `-` で始まり `--` でないトークンは、`-` 以降に
-  `modifyingShortChars` のいずれかの文字を含めば該当。`-i`≠`-I` を厳密に区別（AC-03 / NF-001）。
-- **退化トークンの扱い（実装上の防御）**: 単独の `-`（`-` 以降が空）や単独の `--`、空文字列トークンは
-  変更フラグにも除外フラグにも該当しない（非該当）。実装は文字参照前に長さを検査し
+- **短形式は先頭文字一致（大小区別）**: `-` で始まり `--` でないトークンは、`-` の直後の
+  **1 文字目**が `modifyingShortChars` に一致すれば該当（`-i`≠`-I` を厳密に区別。AC-03 / NF-001）。
+  これら 3 ツールでは変更モード文字が常に先頭に来る（`pacman -Syu`／`rpm -ivh`／`dpkg -i`）ため、
+  **引数連結オプション**（`rpm -E%{_libdir}`、`dpkg -D<level>` 等。先頭は `E`/`D` で非該当）や
+  **単一ダッシュ長形式**（`dpkg -list`／`-search`。先頭は `l`/`s` で非該当）の途中文字に誤反応しない。
+  なお非慣用・無効な並び（モード文字が先頭でない例 `rpm -hiv`、`pacman -yS`）は検出されないが、
+  これは有効な使用には現れず、allowlist+ハッシュ固定の backstop で別途担保される（AC-66/67）。
+- **退化トークンの扱い（実装上の防御）**: 単独の `-`（直後に文字がない）や単独の `--`、空文字列トークンは
+  変更フラグにも除外フラグにも該当しない（非該当）。実装は 1 文字目を参照する前に長さを検査し
   （現行 `isPacmanModifyingFlag` の `len(arg) > 1` ガードを踏襲）、範囲外参照・パニックを起こさない。
 - 上記いずれにも該当しなければそのマネージャは非該当。
 
@@ -233,14 +241,17 @@ var flagStyleManagers = map[string]flagRule{
 | dpkg | `irP` | `--install` / `--remove` / `--purge` / `--unpack` / `--configure` | なし |
 | rpm | `iUFe` | `--install` / `--upgrade` / `--freshen` / `--erase` / `--reinstall` / `--import` / `--initdb` / `--rebuilddb` | short `qV`、long `--query` / `--verify` |
 
-> 補足 1（pacman）: 短形式 `SRU` は現行 `isPacmanModifyingFlag` の文字集合をそのまま移送したもので、
-> `pacman -Ss`/`-Si`（大文字 `S` を含む検索・情報照会）を変更操作として検出する既存の過検出も
-> そのまま保持される（AC-09。是正はスコープ外）。
+> 補足 1（pacman）: 短形式 `SRU` は現行 `isPacmanModifyingFlag` の文字集合をそのまま移送する。
+> pacman の操作フラグ（`-S`/`-R`/`-U`）は常に先頭に来るため、先頭文字一致でも有効な使用の結果は
+> 不変であり、`pacman -Ss`/`-Si`（先頭が `S`）を変更操作として検出する既存の過検出もそのまま
+> 保持される。現行実装は any-char（`ContainsAny`）だが本タスクで先頭文字一致へ統一する。これにより
+> 非慣用・無効な並び（例 `-yS`）では結果が変わり得るが、有効な pacman 使用に影響しないため許容する
+> （AC-09 の範囲緩和。承認済み。01 §AC-09 参照）。
 >
-> 補足 2（dpkg の文字含有の正当性）: dpkg はモード選択を**単一の短オプションで行い結合しない**
-> （rpm の `-ivh` のような結合形を取らない）。かつ dpkg の照会用短オプション（`-l`/`-L`/`-s`/`-S`/
-> `-p`/`-I`/`-c`）はいずれも `i`/`r`/`P` を含まない（大文字小文字を厳密に区別。`-I` は大文字で `i` と別）。
-> したがって `irP` の文字含有は dpkg の照会オプションを誤検出しない。
+> 補足 2（dpkg の先頭文字一致の妥当性）: dpkg はモード選択を**単一の短オプションの先頭文字で行う**
+> （`-i`/`-r`/`-P`）。照会用短オプション（`-l`/`-L`/`-s`/`-S`/`-p`/`-I`/`-c`）の先頭は `irP` に
+> 非該当（大文字小文字を厳密に区別。`-I` は大文字で `i` と別）。先頭文字一致により、引数連結
+> オプション（`-D<level>` 等）や単一ダッシュ長形式（`-list`/`-search`）の途中文字も誤検出しない。
 
 ### 3.2 既存判定関数の変更
 
@@ -409,7 +420,7 @@ flowchart TD
     VERB -->|"No"| FLAGLOOP["フラグ方式判定<br>(name ∈ flagStyleManagers の<br>各マネージャに規則を適用。<br>packageManagerNames ゲートとは独立)"]
     FLAGLOOP --> EXC{"いずれかのトークンが<br>除外(q/V)に該当?<br>(rpm のみ)"}
     EXC -->|"Yes"| UNK["Unknown（非該当）"]
-    EXC -->|"No"| MOD{"変更フラグに該当?<br>(短形式文字含有 or<br>長形式完全一致)"}
+    EXC -->|"No"| MOD{"変更フラグに該当?<br>(短形式の先頭文字一致 or<br>長形式完全一致)"}
     MOD -->|"Yes"| MED
     MOD -->|"No"| UNK
 
@@ -433,11 +444,13 @@ flowchart TD
 
 | コマンド | 経路 | 結果 | 関連 AC |
 |---|---|---|---|
-| `dpkg -i pkg.deb` | フラグ短形式 `i` | Medium | AC-01 |
+| `dpkg -i pkg.deb` | 短形式の先頭 `i` | Medium | AC-01 |
 | `dpkg --configure -a` | フラグ長形式 | Medium | AC-01 |
 | `dpkg -l` / `dpkg --info` | 非該当 | Unknown | AC-02 |
-| `rpm -Uvh pkg.rpm` | フラグ短形式 `U` | Medium | AC-05 |
-| `rpm -e --verbose pkg` | フラグ短形式 `e`（修飾子は無影響） | Medium | AC-05 |
+| `dpkg -D<level>` / `dpkg -list` | 先頭 `D`/`l` で非該当（連結引数・単一ダッシュ長形式の誤検出回避） | Unknown | AC-02 |
+| `rpm -Uvh pkg.rpm` | 短形式の先頭 `U` | Medium | AC-05 |
+| `rpm -e --verbose pkg` | 短形式の先頭 `e`（修飾子は無影響） | Medium | AC-05 |
+| `rpm -E%{_libdir}` / `rpm -D'...'` | 先頭 `E`/`D` で非該当（マクロ評価・定義の誤検出回避） | Unknown | AC-06 |
 | `rpm --import KEY` | フラグ長形式 | Medium | AC-05 |
 | `rpm -qi pkg` / `rpm -q -i pkg` | 除外（q を含む） | Unknown | AC-06 / AC-07 |
 | `rpm -e -q pkg`（変更+照会の矛盾入力） | 除外優先（最小権限 fail-open） | Unknown | AC-07 |
