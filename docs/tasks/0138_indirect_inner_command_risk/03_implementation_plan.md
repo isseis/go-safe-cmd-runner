@@ -173,9 +173,9 @@
 
 **対象ファイル**: `docs/dev/architecture_design/security-architecture.md`, `docs/dev/architecture_design/command-risk-evaluation{.ja,}.md`
 
-- [ ] `security-architecture.md` の間接実行リゾルバ記述（[:433](../../../docs/dev/architecture_design/security-architecture.md#L433) 周辺）を本方式へ更新する: 抽出は維持／Critical・拒否を優先／通常インナーは一律 High／インナーの fd 束縛・ラッパー再実装はしない。
-- [ ] `command-risk-evaluation.ja.md` の「内側コマンドの評価（`evaluateInnerAs`）では…すべて折り込み…」記述を「`RoleInner`（ラッパーインナー）は一律 High 下限（細粒度算出なし）。`RoleInterpreter`（shebang 直接スクリプト実行）は従来どおり細粒度算出を維持」へ書き換える（AC-10 の文言を超える追加更新。§1.3 参照）。
-- [ ] `command-risk-evaluation.ja.md` を更新後、英語版 `command-risk-evaluation.md` を `/mktrans` で整合させる。
+- [x] `security-architecture.md` の間接実行リゾルバ記述（[:433](../../../docs/dev/architecture_design/security-architecture.md#L433) 周辺）を本方式へ更新する: 抽出は維持／Critical・拒否を優先／通常インナーは一律 High／インナーの fd 束縛・ラッパー再実装はしない。→ `EvaluateRisk` コードブロック直後に「間接実行リゾルバ（ラッパー経由インナー）」段落を新設（一律 High／抽出維持／Critical・Reject 優先／fd 束縛・再実装なし）。`security-architecture` も `.ja.md`/`.md` の対なので ja を先に編集し `/mktrans` で en を整合（翻訳ワークフロー）。
+- [x] `command-risk-evaluation.ja.md` の「内側コマンドの評価（`evaluateInnerAs`）では…すべて折り込み…」記述を「`RoleInner`（ラッパーインナー）は一律 High 下限（細粒度算出なし）。`RoleInterpreter`（shebang 直接スクリプト実行）は従来どおり細粒度算出を維持」へ書き換える（AC-10 の文言を超える追加更新。§1.3 参照）。→ 同記述に加え、同ファイル内の関連する陳腐化記述（`IndirectFloor` 説明・成果物記録の「後段の同一性束縛」・ラッパー項の「再実装し exec／同一性束縛できる」・設計意図ノート・まとめ）も「runner はインナーを再実装・exec・fd 束縛しない（外側コマンドの fd 束縛は不変）」へ併せて修正（AC-08 と同種の陳腐化修正。AC-10 の文言を超える追加更新）。
+- [x] `command-risk-evaluation.ja.md` を更新後、英語版 `command-risk-evaluation.md` を `/mktrans` で整合させる。→ `security-architecture.md` も併せて `/mktrans` で整合（両ペアとも翻訳レビュー subagent で Critical/Major なし。1 件の Major〔`抽出不能`→`抽出不能ラッパー`〕は ja を明示化して解消）。
 
 ### PR-3 作成ポイント: developer architecture documentation (AC-10)
 
