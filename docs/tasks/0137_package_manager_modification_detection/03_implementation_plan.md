@@ -112,7 +112,12 @@
     `-e --verbose`/`-U --force`/`--install`/`--upgrade`/`--freshen`/`--erase`/`--reinstall`/`--import`/
     `--initdb`/`--rebuilddb`。否定 `-qi`/`-qa`/`-qpi`/`-ql`/`-V`/`-qa --verbose`/`--query`/`--verify`/
     `--eval`/`--querytags`/引数なし、先頭文字境界 `-E%{_libdir}`/`-D'enable_foo 1'`（AC-05/AC-06）。
-  - [ ] `TestSystemModification_RpmExcludePriority`: 除外優先 `-q -i`/`-i -q`/`-e -q`（いずれも非検出。AC-07）。
+  - [ ] `TestSystemModification_RpmExcludePriority`: 除外優先（照会・検証が変更フラグより優先し非検出）。
+    短形式混在 `-q -i`/`-i -q`/`-e -q`、**長形式混在** `--install --query`/`--erase --verify`、`-V` 混在
+    `-i -V`（いずれも非検出。AC-07）。
+  - [ ] `TestSystemModification_DegenerateTokens`: 退化トークン（引数に単独 `-`、単独 `--`、空文字列
+    トークンを含むケース）が dpkg/rpm/pacman いずれでも非検出となり、かつパニックしないこと（先頭文字
+    参照前の長さ検査。02 §3.1 の退化トークン規則 / NF-001）。
   - [ ] `TestSystemModification_PacmanFlags`: 肯定 `-S`/`-R`/`-U`/`-Syu`/`-Rns`/`--sync`/`--remove`/
     `--upgrade`、既存過検出 `-Ss`/`-Si`（先頭 `S` で検出）。否定 `-Q`/`-Qi`、許容差異 `-yS`（非検出）（AC-09）。
   - [ ] `TestSystemModification_AbsolutePathAndSymlink`: 絶対パス `/usr/bin/dpkg -i`・`/usr/bin/rpm -U` が
@@ -286,10 +291,10 @@
 | AC-04 dpkg 絶対パス・symlink | test | `…::TestSystemModification_AbsolutePathAndSymlink`（`/usr/bin/dpkg -i` と symlink エイリアスが true） |
 | AC-05 rpm 検出（修飾子併用含む） | test | `…::TestSystemModification_RpmFlags`（肯定群が true。`-e --verbose`/`--reinstall`/`--import` 等を含む） |
 | AC-06 rpm 照会非検出 | test | `…::TestSystemModification_RpmFlags`（否定群・先頭文字境界が false） |
-| AC-07 rpm 除外優先 | test | `…::TestSystemModification_RpmExcludePriority`（`-q -i`/`-i -q`/`-e -q` が false） |
+| AC-07 rpm 除外優先 | test | `…::TestSystemModification_RpmExcludePriority`（短形式 `-q -i`/`-i -q`/`-e -q`、長形式混在 `--install --query`/`--erase --verify`、`-V` 混在 `-i -V` がすべて false） |
 | AC-08 rpm 絶対パス・symlink | test | `…::TestSystemModification_AbsolutePathAndSymlink`（`/usr/bin/rpm -U` と symlink が true） |
 | AC-09 pacman 回帰・許容差異 | test | `…::TestSystemModification_PacmanFlags`（`-S`/`-Syu`/`-Rns`/`-Ss`/`-Si`=true、`-Q`/`-Qi`/`-yS`=false）＋ `command_analysis_test.go::TestIsSystemModification_PackageManagerVerbs`（既存 pacman ケース無変更緑） |
-| AC-10 マネージャ名分岐の排除 | static | `rg -n "isPacmanModifyingFlag|isPacman\b" internal --glob '*.go'` → 0 件（期待: マッチなし） |
+| AC-10 マネージャ名分岐の排除 | static | ① `rg -n "isPacmanModifyingFlag|isPacman\b|isDpkg|isRpm" internal/runner/base/security --glob '*.go'` → 0 件（マネージャ専用関数・分岐がないこと）。② `rg -n '"dpkg"|"rpm"' internal/runner/base/security/command_analysis.go` → 0 件（dpkg/rpm は `flagStyleManagers` データ（`package_manager_flags.go`）のみに現れ、判定本体に直接の名前ゲートを持たないこと。`packageManagerNames` の `"pacman"` は verb 集合として残るため本チェック対象外） |
 | AC-11 verb 方式の非退行 | test | `command_analysis_test.go::TestIsSystemModification_PackageManagerVerbs`（apt/yum/dnf/yarn/npm/brew ケース無変更緑） |
 | AC-12 実効 Medium | test | `internal/runner/base/risk/evaluator_test.go::TestStandardEvaluator_EvaluateRisk_SystemModifications`（`dpkg -i`/`rpm -U`=`RiskLevelMedium`） |
 | AC-13 実行時/dry-run 一致 | test | `internal/runner/base/risk/package_manager_consistency_test.go::TestPackageManagerRiskConsistency_RuntimeVsDryRun` |
@@ -299,8 +304,8 @@
 | AC-15（0136 AC-34 方針上書きの明記） | static | `rg -n "AC-34" docs/tasks/0137_package_manager_modification_detection/01_requirements.md` → §1.2 に「別途の要件変更として扱う」を上書きする記述がヒット（期待: マッチあり） |
 | AC-16 §3.1 表反映（日英） | static | `rg -n "dpkg|rpm" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` で §3.1 表行に dpkg/rpm の `medium` 記述がヒット（期待: 日英両ファイルでマッチ。値 `medium`・操作集合（dpkg: install/remove/purge/unpack/configure、rpm: install/upgrade/freshen/erase/**reinstall**/import/initdb/rebuilddb）が一致） |
 | AC-17 開発者文書反映（日英） | static | `rg -n "dpkg.*rpm|フラグ方式|flag style" docs/dev/architecture_design/command-risk-evaluation.ja.md docs/dev/architecture_design/command-risk-evaluation.md` で「システム変更リスク」節に flag-style 検出と rpm 除外規則がヒット（期待: 日英両方マッチ） |
-| AC-20 移行ノート（日英） | static | `rg -n "dpkg|rpm" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` の §8 に破壊的変更・`risk_level = "medium"`・`--dry-run` を含む移行項目がヒット（期待: 日英両方マッチ） |
-| AC-21 検出限界（日英） | static | `rg -n "apk|snap|busybox|allowlist" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` で検出対象外・backstop 記述がヒット（期待: 日英両方マッチ） |
+| AC-20 移行ノート（日英） | static + manual | static: `rg -n "dpkg|rpm" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` → dpkg/rpm がヒット（現状 0 件のため新規追加を検出）。manual: その追記が **§8 移行ノート内**に dpkg/rpm の破壊的変更項目（旧 `low`/未指定→`medium` でブロック、回避策 `risk_level = "medium"`、`--dry-run` 事前確認）として存在することを目視確認（§3.1 表への追加（AC-16）とは別の §8 への追記であること）。日英両方 |
+| AC-21 検出限界（日英） | static | `rg -n "apk|snap|flatpak|busybox" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` → 検出対象外マネージャ・multi-call の限界記述がヒット（これらの語は現状 0 件のため新規記述を確実に検出。`allowlist` は既存記述にも現れるため判定語に用いない）。日英両方マッチ |
 | AC-22 用語集 | static | `rg -n "フラグ方式|flag style|ツール別|per-tool" docs/translation_glossary.md` → 追加用語がヒット（期待: マッチあり） |
 
 > AC-16/AC-20/AC-21 の rg は dpkg/rpm 等の語のヒットに加え、対象節（§3.1 表 / §8 / §7）での記述であることと
