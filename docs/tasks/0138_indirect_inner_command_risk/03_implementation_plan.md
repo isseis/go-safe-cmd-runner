@@ -148,9 +148,9 @@
 
 **対象ファイル**: `docs/user/risk_assessment{.ja,}.md`, `docs/user/toml_config/04_global_level{.ja,}.md`, `docs/user/toml_config/05_group_level{.ja,}.md`, `docs/user/toml_config/06_command_level{.ja,}.md`, `README{.ja,}.md`
 
-- [x] `risk_assessment.ja.md` §8 移行ノートのラッパー記述（[:253](../../../docs/user/risk_assessment.ja.md#L253)）を「ラッパー経由のインナーは一律 **High**（明示的に `risk_level = "high"` が必要）。特権昇格は **Critical**、一部形態（ローダ制御変数・`env -C`/解釈不能 `env -S`・find/xargs・動的ローダ・remote-shell・抽出不能・深さ超過・symlink 失敗）は依然 **Blocking**。インナーは自動検証・自動記録されない（実体固定が必要なら `verify_files` に明示登録）」へ書き換える。§5.2 の TOCTOU 残存リスク（[02_architecture.md](02_architecture.md) §5.2）も明記する。
+- [x] `risk_assessment.ja.md` §8 移行ノートのラッパー記述（[:253](../../../docs/user/risk_assessment.ja.md#L253)）を「ラッパー経由のインナーは一律 **High**（明示的に `risk_level = "high"` が必要）。特権昇格は **Critical**、一部形態（ローダ制御変数・`env -C`/解釈不能 `env -S`・find/xargs・動的ローダ・remote-shell・抽出不能・深さ超過・symlink 失敗）は依然 **Blocking**。インナーは自動的なハッシュ検証・identity 束縛の対象外（監査チェーンには成果物として記録されるが実体固定ではない。固定が必要なら `record` で記録し `verify_files` に明示登録）」へ書き換える。§5.2 の TOCTOU 残存リスク（[02_architecture.md](02_architecture.md) §5.2）も明記する。
 - [x] `risk_assessment.ja.md` §3（間接実行）に同趣旨の記述があれば整合させる。→ §3 は名前・引数ベース／coreutils／バイナリ解析／フェイルクローズのみで、ラッパーインナー評価の専用記述は存在しないため変更不要（grep 確認済み）。
-- [x] `04_global_level.ja.md` §4.6 の `verify_files`／「コマンドは自動的にハッシュ検証の対象となります」記述（[:950](../../../docs/user/toml_config/04_global_level.ja.md#L950)）に「ラッパー（`env`/`timeout` 等）のインナーコマンドは自動検証の対象外であり、固定が必要なら `verify_files` に明示登録する」注記を追加する。
+- [x] `04_global_level.ja.md` §4.6 の `verify_files`／「コマンドは自動的にハッシュ検証の対象となります」記述（[:950](../../../docs/user/toml_config/04_global_level.ja.md#L950)）に「ラッパー（`env`/`timeout` 等）のインナーコマンドは自動的なハッシュ検証・identity 束縛の対象外であり（監査チェーンには記録されるが実体固定ではない）、固定が必要なら `record` + `verify_files` に明示登録する」注記を追加する。
 - [x] `05_group_level.ja.md`（`verify_files`/`cmd_allowed`）・`06_command_level.ja.md`（`risk_level`）・`README.ja.md`（セキュリティ機能概説）に同趣旨の記述があれば整合させる（無ければ変更不要、その旨を確認）。→ いずれもラッパーインナーに関する記述は無し（grep 確認済み）。変更不要。
 - [x] 上記すべての `.ja.md` をコミット後、対応する英語版（`.md`）を `/mktrans` で整合させる（日本語版を正とする翻訳ワークフロー）。
 
@@ -272,8 +272,8 @@
 | AC-06 | manual | `evaluateInnerAs` のコードレビュー | `RoleInner` 経路が `ResolveCommandNames`（名前解決）・`isPrivilegeCommand`・再帰のみを呼び、ハッシュ検証・fd 束縛・allowlist 照合の API を呼ばないこと |
 | AC-07 | static | `rg -n "AnalyzeIndirectExecution\|wrapperSpec\|inner" cmd/record/ internal/filevalidator/` | `record` 経路にラッパーインナー抽出・自動記録のロジックが存在しない（no matches）。インナーの自動記録を行わないことを確認 |
 | AC-08 | static | `rg -n "re-implements these wrappers\|extract and exec directly\|wired in the execution layer\|Other wrappers the runner re-implements\|a wrapped dangerous inner command\|identity binding / disposition" internal/runner/base/security/indirect_execution.go` | 旧コメント文言が 0 件（6 箇所すべて修正済み。`identity binding / disposition` は `analyzeService` の 6 箇所目を独立に捕捉。§1.3 L44 参照 = architecture §3.4 の 5 箇所＋`analyzeService` 1 箇所） |
-| AC-09 | static | `rg -n "インナーは自動検証・自動記録されない" docs/user/risk_assessment.ja.md`（新規追記する固有アンカー文） | 1 件以上（ラッパーインナー=High／特権=Critical／一部 Blocking／自動検証・自動記録されない、を説明する新規文の存在を固有フレーズで確認）。英語版 `.md` も対応する固有フレーズ（例: "wrapper inner commands are not automatically verified or recorded"）で 1 件以上 |
-| AC-09 | static | `rg -n "自動検証の対象外" docs/user/toml_config/04_global_level.ja.md` および対応 `.md` | §4.6 にラッパーインナーが自動検証の対象外である旨の新規注記が 1 件以上 |
+| AC-09 | static | `rg -n "identity 束縛の対象外" docs/user/risk_assessment.ja.md`（新規追記する固有アンカー文） | 1 件以上（ラッパーインナー=High／特権=Critical／一部 Blocking／インナーは自動ハッシュ検証・identity 束縛の対象外〔監査チェーン記録は実体固定ではない〕、を説明する新規文の存在を固有フレーズで確認）。英語版 `.md` も対応する固有フレーズ（例: "not automatically hash-verified or identity-bound"）で 1 件以上 |
+| AC-09 | static | `rg -n "identity 束縛の対象外" docs/user/toml_config/04_global_level.ja.md` および対応 `.md` | §4.6 にラッパーインナーが自動ハッシュ検証・identity 束縛の対象外である旨の新規注記が 1 件以上 |
 | AC-09 | static | `rg -n "評価・ゲートされます" docs/user/risk_assessment.ja.md` | 旧「ラップされた内部コマンドが評価・ゲートされます」記述が残っていない（no matches） |
 | AC-09 | manual | `docs/user/*` の ja/en 目視 | 日本語版と英語版が構造・内容で整合（翻訳ワークフロー） |
 | AC-10 | static | `rg -n "RoleInterpreter" docs/dev/architecture_design/command-risk-evaluation.ja.md` および対応 `.md` | 細粒度算出が `RoleInterpreter`（shebang）限定である旨の新規記述が 1 件以上（本方式では `RoleInner` は一律 High）。`security-architecture.md` も間接実行リゾルバ記述に「一律 High」相当の固有フレーズが 1 件以上 |
