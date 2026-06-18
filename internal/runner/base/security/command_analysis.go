@@ -475,24 +475,6 @@ var packageModifyingVerbs = map[string]struct{}{
 	"i": {}, "un": {}, "up": {}, // common npm shorthands
 }
 
-// isPacmanModifyingFlag reports whether a pacman option flag performs an
-// install/remove/upgrade. pacman selects its operation via -S (sync/install),
-// -R (remove), or -U (upgrade), possibly combined (-Syu, -Rns), or via the long
-// forms --sync/--remove/--upgrade.
-func isPacmanModifyingFlag(arg string) bool {
-	switch arg {
-	case "--sync", "--remove", "--upgrade":
-		return true
-	}
-	if strings.HasPrefix(arg, "--") {
-		return false
-	}
-	if strings.HasPrefix(arg, "-") && len(arg) > 1 {
-		return strings.ContainsAny(arg[1:], "SRU")
-	}
-	return false
-}
-
 // anyNameInSet reports whether any of the resolved command names is in set.
 func anyNameInSet(names, set map[string]struct{}) bool {
 	for n := range names {
@@ -563,14 +545,19 @@ func isSystemModificationByNames(names map[string]struct{}, args []string) bool 
 	if anyNameInSet(names, packageManagerNames) {
 		// Only consider install/remove/upgrade-style operations as system
 		// modification (a bare query such as "apt list" is not).
-		_, isPacman := names["pacman"]
 		for _, arg := range args {
 			if _, ok := packageModifyingVerbs[arg]; ok {
 				return true
 			}
-			if isPacman && isPacmanModifyingFlag(arg) {
-				return true
-			}
+		}
+	}
+
+	// Flag-style managers (pacman/dpkg/rpm) select their operation from option
+	// flags rather than a verb. This gate is independent of packageManagerNames so
+	// managers absent from the verb set still reach their flag rule.
+	for n := range names {
+		if rule, ok := flagStyleManagers[n]; ok && isFlagStyleModification(rule, args) {
+			return true
 		}
 	}
 

@@ -59,21 +59,26 @@
 **対象ファイル**: `internal/runner/base/security/package_manager_flags.go`（新規）、
 `internal/runner/base/security/command_analysis.go`（変更）
 
-- [ ] **1-1**: `package_manager_flags.go`（`package security`、build タグなし）を作成し、`flagRule` 型と
+- [x] **1-1**: `package_manager_flags.go`（`package security`、build タグなし）を作成し、`flagRule` 型と
   `flagStyleManagers` マップリテラルを定義する。初期エントリは **pacman のみ**
   （`modifyingShortChars: "SRU"`、`modifyingLongForms: {--sync,--remove,--upgrade}`、exclude 空）。
-  型・フィールドの定義は 02 §3.1 に従う。コメント・識別子はすべて英語。
-- [ ] **1-2**: `command_analysis.go` の `isSystemModificationByNames` を、`flagStyleManagers` を引いて
+  型・フィールドの定義は 02 §3.1 に従う。コメント・識別子はすべて英語。規則適用の述語
+  （`isFlagStyleModification` / `matchesShortFlag`）も同ファイルにデータと凝集させて配置した。
+- [x] **1-2**: `command_analysis.go` の `isSystemModificationByNames` を、`flagStyleManagers` を引いて
   各フラグ方式マネージャに規則を適用する汎用ループへ置換する。判定規則（除外優先 → 長形式完全一致 →
   短形式の先頭文字一致、退化トークンは長さ検査で非該当）は 02 §3.1 に従う。verb 方式判定
   （`packageManagerNames`+`packageModifyingVerbs`）と systemctl/service 分岐は不変。フラグ方式ループは
   `flagStyleManagers` 所属で独立に発火させる（`packageManagerNames` ゲートに依存しない）。
-- [ ] **1-3**: `isPacmanModifyingFlag` 関数（コメント含む l.478〜494）と、`isSystemModificationByNames`
+- [x] **1-3**: `isPacmanModifyingFlag` 関数（コメント含む l.478〜494）と、`isSystemModificationByNames`
   内の `_, isPacman := names["pacman"]` 行および `isPacman && isPacmanModifyingFlag(arg)` 分岐を削除する。
-- [ ] **1-4（完了ゲート）**: `make fmt` → `make test` → `make lint` を実行し、既存テスト（特に
+- [x] **1-4（完了ゲート）**: `make fmt` → `make test` → `make lint` を実行し、既存テスト（特に
   `TestIsSystemModification_PackageManagerVerbs` の pacman・verb ケース、`TestIsSystemModification`）が
   **変更なしで緑**であることを確認する。`rg -n "isPacmanModifyingFlag|isPacman\b" internal --glob '*.go'`
   が 0 件であることを確認する（AC-10 / NF-005）。
+  注: `make test` 緑・既存テスト無変更緑・`rg` 0 件・`security` パッケージのスコープ付き lint 0 件を確認。
+  リポジトリ全体の `make lint` は本タスクと無関係な既存 goconst 警告（`internal/terminal/*` 等）で失敗する
+  （golangci-lint v2 の goconst パッケージ横断集計による既存事象。main でも同一に失敗）。本変更由来の新規
+  指摘はなし。
 
 ### PR-1 作成ポイント: per-tool flag mechanism refactor
 
