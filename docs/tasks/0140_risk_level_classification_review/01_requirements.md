@@ -112,30 +112,43 @@ device/FS/ボリューム/パーティション粒度の不可逆破壊をもた
 
 **Acceptance Criteria**:
 - **AC-01**: 解決済みバイナリ名が `parted`・`fsck`（`fsck.*` 含む）・`wipefs`・`blkdiscard`・
-  `sgdisk`・`gdisk`・`cgdisk`・`mkswap` のいずれかであるコマンドは、引数によらず **High** に分類される
-  （`gdisk`/`cgdisk` は GPT パーティションエディタで `sgdisk` と同等の破壊力）。
+  `sgdisk`・`gdisk`・`cgdisk`・`sfdisk`・`cfdisk`・`mkswap` のいずれかであるコマンドは、引数によらず
+  **High** に分類される（`gdisk`/`cgdisk`/`sfdisk`/`cfdisk` は任意ブロックデバイスのパーティション
+  テーブルを編集する util-linux/GPT エディタで `fdisk`/`sgdisk` と同等の破壊力）。
 - **AC-02**: LVM 破壊/デバイス初期化系 `lvremove`・`vgremove`・`pvremove`・`lvreduce`・`vgreduce`・
   `pvmove`・`lvresize`・`pvresize`・`pvcreate` は、引数によらず **High** に分類される
   （`lvresize`/`pvresize` は縮小＝破壊を含み得るため引数を見ず High に倒す。`pvcreate` はブロック
   デバイスへ LVM ラベル/メタデータを書き込むデバイス初期化で、全ディスク使用時はパーティション
   テーブルを消去する）。
-- **AC-03**: `mkfs`（`mkfs.*` 含む）・`fdisk` は **High** に分類される（既存挙動の確定・維持。F-007 と整合）。
+- **AC-03**: `mkfs`（`mkfs.*` 含む）・`fdisk` は **High** に分類される（既存挙動の確定・維持。F-007 と
+  整合）。device/FS を直接生成・検査・改変する**ファイルシステムツールファミリ**（フロントエンドが
+  内部呼出しする直接ユーティリティ `e2fsck`/`mke2fs`/`tune2fs`/`resize2fs` 等を含む）も同水準で High
+  とする（確定列挙は 02）。
 
 ### F-002: 永続的システム変更・特権コード実行・権限付与・信頼境界の High 化（軸1・原則②③④⑤）
 
-以下の名集合は、引数によらず **High** に分類する。列挙は代表例であり**非有界**（脅威モデル上、
-backstop は allowlist + ハッシュ固定。AC-26 と整合）。
+以下の名集合は、引数によらず **High** に分類する。**各 AC の列挙はコマンドファミリの代表例であり
+非有界**（脅威モデル上 backstop は allowlist + ハッシュ固定。AC-26 と整合）。
+
+> **記述方針（WHAT/HOW の分離）**: 本書は「どのファミリをどのレベルにするか（WHAT）」を規定する。
+> **個別バイナリの完全な列挙・distro 別名・引数/パス判定の具体機構（ブロックデバイス判定方式・
+> フラグ解析・宛先パス解決の実装等の HOW）は 02_architecture.md / 実装で確定**する。レビューで
+> 個別バイナリ（例: `e2fsck`/`sfdisk`/`vipw`/`kernel-install`/`runuser` 等）が指摘された場合も、
+> 本書では該当ファミリに含める方針を示すに留め、確定列挙は 02 に委ねる。
 
 **Acceptance Criteria**:
 - **AC-04**（カーネル／モジュール, ③）: `insmod`・`modprobe`・`rmmod`・`kexec` は **High**。
   加えて `sysctl`（カーネルパラメータの動的変更＝原則②。例: `net.ipv4.ip_forward` 有効化や
   セキュリティ機能の無効化はシステム全体に影響）も **High**。名前のみ・粗粒度のため read-only な
   `sysctl -a` も High に倒す（fail-safe）。
-- **AC-05**（認証／アカウント境界, ②）: `useradd`・`usermod`・`userdel`・`deluser`・`groupadd`・
-  `groupdel`・`delgroup`・`gpasswd`・`chpasswd`・`adduser`・`passwd`・`visudo` は **High**
-  （`deluser`/`delgroup` は Debian/Ubuntu 系の代替名）。
-- **AC-06**（ブート設定, ②③）: `grub-install`・`grub2-install`・`update-grub`・`grub-mkconfig`・
-  `grub2-mkconfig`・`efibootmgr` は **High**（`grub2-*` は Fedora/RHEL 系の同等バイナリ）。
+- **AC-05**（認証／アカウント境界, ②）: passwd/group/shadow/sudoers の**アカウント・認証 DB を
+  作成/変更/編集するファミリ**は **High**。代表例: `useradd`・`usermod`・`userdel`・`groupadd`・
+  `groupmod`・`groupdel`・`gpasswd`・`chpasswd`・`adduser`/`deluser`/`delgroup`（Debian 系）・
+  `passwd`・`chage`・`newusers`・`vipw`/`vigr`・`visudo`（確定列挙は 02）。
+- **AC-06**（ブート設定, ②③）: ブートローダ/ブートエントリ/カーネルイメージを改変する**ブート
+  変更ファミリ**は **High**。代表例: `grub-install`/`grub2-install`・`update-grub`・
+  `grub-mkconfig`/`grub2-mkconfig`・`efibootmgr`・`kernel-install`/`installkernel`（`/boot` への
+  カーネル/initrd 追加削除）（確定列挙は 02）。
 - **AC-07**（ブート時サービス有効化, ②）: `chkconfig`・`update-rc.d` は **High**（`systemctl`/`service`
   と同質。0139 で High となった両者に整合）。
 - **AC-08**（ファイアウォール, ②）: `iptables`・`ip6tables`・`iptables-restore`・`ip6tables-restore`・
@@ -165,22 +178,42 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
 ### F-004: ロケーション定義コマンドの 3 ゾーン判定（軸2・宛先ゾーン）
 
 宛先パス/対象によって脅威が決まる「ロケーション定義コマンド」は、宛先ゾーンの関数として
-判定する：**trust-critical → High / ordinary → Medium / safe-zone → Low**。対象は
-`cp`・`mv`・`rm`・`rmdir`・`unlink`・`shred`・`ln`・`mkdir`・`install`・`tee`・`sponge`、および
-`dd`・`mount`・`setfacl`。
+判定する：**trust-critical → High / ordinary → Medium / safe-zone → Low**。対象ファミリは
+ファイルを書込/上書/削除/リンクするもの——`cp`・`mv`・`rm`・`rmdir`・`unlink`・`shred`・`ln`・
+`mkdir`・`install`・`tee`・`sponge`・`truncate`（FILE の切詰め/上書き）、および `dd`・`mount`・`setfacl`
+等（確定列挙は 02）。
+
+#### 判定の構造（条件 → 最小リスク, 合成・適用順序）
+
+最終リスク = **適用される全ルールが与える最小リスク（floor）の max**。複数条件が該当すれば最も高い
+値になる。優先関係として **trust-critical は safe-zone に優先**（AC-17(c)）し、**fail-safe（AC-18）は
+Low を禁ずる下限**として働く。各行の規定 AC を後続で定義する。
+
+| 条件（ロケーション定義コマンドの呼び出しに適用） | 最小リスク | 規定 AC |
+|---|---|---|
+| ツリー粒度の再帰操作（`rm -r`・`cp -a` 等） | **High** | AC-22 |
+| 対象/宛先/リンク先が **trust-critical** パス | **High** | AC-14（mount/umount=AC-19、mv/rm/ln source=AC-22b、egress 書込=AC-25、find 起点=AC-22e） |
+| **特権付与**（setuid/setgid・world-write・trust-critical 所有権） | **High** | AC-20（install=AC-22a） |
+| **ブロックデバイス**入出力（`dd if=`/`of=`） | **High** | AC-21 |
+| **内側コマンド実行**（`find -exec` 等） | **High**（内側ゲート） | AC-22e |
+| **機微 source の複製**（`cp /etc/shadow` 等） | **Medium**（Low 不可） | AC-22b |
+| **宛先不確定**（変数展開未確定・宛先非一意） | **Medium**（Low 不可） | AC-18 |
+| 対象が **ordinary** パス（named-file） | **Medium** | AC-15 |
+| 対象が **safe-zone** 内（AC-17 の安全要件充足） | **Low** | AC-16/AC-17 |
 
 **Acceptance Criteria**:
+
+_ゾーン定義と既定マッピング（AC-14〜18）_
 - **AC-14**（宛先ゾーン基本）: ロケーション定義コマンドの宛先が trust-critical パス
   （`SystemCriticalPaths` 既定集合 = `/`・`/bin`・`/sbin`・`/usr`・`/usr/bin`・`/usr/sbin`・`/etc`・
   `/var`・`/var/log`・`/boot`・`/sys`・`/proc`・`/dev`・`/lib`・`/lib64`・`/root` 等、
   [types.go](../../../internal/runner/base/security/types.go) / `HasSystemCriticalPaths`
   ([command_analysis.go](../../../internal/runner/base/security/command_analysis.go)) 相当）のとき
-  **High** に分類される。trust-critical 判定も **AC-17(a) と同じく正規化・symlink 解決後の絶対パスで
-  行い、生の引数文字列 prefix では判定しない**。例: `cp evil /usr/bin/ls`・`mv x /etc/passwd`・
-  `ln -sf x /usr/bin/python`・`install -m755 x /usr/sbin/y`。
-  注: `/usr/local`（`/usr/local/bin` 等）は現行 `SystemCriticalPaths` 既定集合に**含まれていない**。
-  allowlist 対象バイナリが `/usr/local/bin` 配下に置かれる運用では信頼境界に当たるため、既定集合の
-  拡張（`/usr/local`・`/usr/local/bin`/`/usr/local/sbin` の追加）を要件として検討する（02 で確定）。
+  **High** に分類される。trust-critical 判定は **AC-17(a) と同じく正規化・symlink 解決後の絶対パスで
+  行い、生の引数文字列 prefix では判定しない**。判定はパス境界単位（critical パスと一致、またはその
+  配下）であり、**`/usr` が集合に含まれるため `/usr/local/bin` 等の配下も trust-critical に含まれる**。
+  例: `cp evil /usr/bin/ls`・`mv x /etc/passwd`・`ln -sf x /usr/bin/python`・`install -m755 x /usr/sbin/y`。
+  （critical パス集合の正確な定義・拡張は 02 で確定。）
 - **AC-15**（ordinary）: 宛先が trust-critical でも safe-zone でもない通常パスの named-file 操作は
   **Medium**。例: `rm /srv/app/cache.dat`・`cp a /opt/data/b`（`/srv`・`/opt` は `SystemCriticalPaths`
   既定集合に含まれない。**`/var`・`/var/log` は trust-critical なので ordinary の例には使わない**）。
@@ -196,24 +229,31 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
   優先する**。trust-critical が safe-zone より常に優先（max 合成と整合）し、設定ミスによる
   セキュリティバイパスを防ぐ。
 - **AC-18**（fail-safe: 宛先不確定なら Low にしない, 安全要件）: 宛先オペランドを確実に解決できない
-  呼び出し（複数 source・`-t`/`--target-directory` 等で宛先が一意に取れない、または glob/変数展開で
-  評価時に実宛先が未確定）は **Low に分類しない**（最低 Medium。trust-critical 判定の上振れは維持）。
-- **AC-19**（`mount` mountpoint）: `mount` の mountpoint が trust-critical パスのとき **High**
-  （信頼バイナリ/設定の shadowing）。それ以外の `mount`/`umount` は Medium（AC-13）。
-- **AC-20**（`setfacl`）: `setfacl` は権限を拡大する付与、または trust-critical 対象に対する操作の
-  とき **High**、それ以外は **Medium**（chmod の `chmod 777` 等と同型）。
-- **AC-21**（`dd` のデバイス入出力）: `dd` は **`if=` または `of=` がブロックデバイスのとき High**。
-  これは `if=/dev/sda of=$WORKDIR/disk.img` のような**全ブロックデバイス読取**を含む（現行実装が
-  `dd if=` を High とする保護を維持する）。**ブロックデバイスの判定はパス prefix（`/dev/*`）ではなく
-  ファイル種別（`S_IFBLK`、解決後の stat）で行う**。これにより `of=/dev/null`・`if=/dev/stdin` 等の
-  非ブロックデバイス（`/dev` 配下のキャラクタデバイス/疑似ファイル）を過剰ブロックしない。`if=`/`of=`
-  のいずれもブロックデバイスでない場合は `of=` の宛先ゾーン（AC-14〜18）に従う。
-- **AC-22**（再帰フラグの arg 昇格）: `rm`/`cp`/`mv` 等が**再帰フラグ（`-r`/`-R`/`--recursive`）**を伴い
-  ツリー粒度で作用する場合は、宛先ゾーンによらず **High**（`CheckDangerousArgPatterns` 相当の arg 軸）。
-  例: `rm -rf <任意>`。**複数オペランドの指定（`rm file1 file2`）自体は High 昇格条件としない**——シェル
-  展開後の `ExpandedArgs` では手動指定と glob 展開（`rm *`）を区別できず、一律 High にすると safe-zone の
-  日常操作（AC-16）の恩恵を損なうため。複数オペランドは各オペランドを個別に zoning する（AC-22b/AC-14〜
-  AC-16）。引数中に未展開の生 glob（`*`/`?`）が残る場合は宛先不確定として AC-18 の fail-safe に従う。
+  呼び出し（宛先が一意に取れない、または変数展開（`%{VAR}`）で評価時に実宛先が未確定）は
+  **Low に分類しない**（最低 Medium。trust-critical 判定の上振れは維持）。
+  注: 本ランナーは**シェルを介さず glob（`*`/`?`）を展開しない**ため、`*` は特殊文字ではなく単なる
+  リテラルなパスオペランドとして扱われる。よって glob 展開に起因する宛先不確定は考慮不要。
+_コマンド別の特則（上記ゾーンに上乗せ／例外。AC-19〜22e）_
+- **AC-19**（`mount`/`umount` の対象ゾーニング）: 対象が trust-critical のとき **High**——`mount` は
+  mountpoint（信頼バイナリ/設定の shadowing）、`umount` は対象 FS/ディレクトリ（trust-critical FS の
+  detach）。`umount -a`（全 FS アンマウント）も **High**。それ以外は Medium（AC-13）。
+- **AC-20**（権限/所有権の付与・変更, ⑤）: パーミッション/所有権を変更するファミリ
+  （`setfacl`・`chmod`・`chown`・`chgrp`）は、**特権を付与する操作（setuid/setgid 付与、world-write
+  等の権限拡大）または trust-critical 対象への変更**のとき **High**（`chmod u+s`・`chmod 4755`・
+  `chown root /usr/bin/x` 等）。それ以外（safe-zone 内の通常モード変更）は宛先ゾーンに従う。判定基準の
+  詳細（モード/所有権の解釈）は 02 で確定。
+- **AC-21**（`dd` のデバイス入出力）: `dd` は **`if=` または `of=` がブロックデバイス（物理ディスク等）
+  のとき High**（`if=/dev/sda …` の全デバイス読取、`of=/dev/sda` の全デバイス書込を含む。既存の
+  `dd if=`=High 保護を維持）。**無害なシンク（`/dev/null` 等のキャラクタデバイス/疑似ファイル）は
+  High に上げない**。それ以外（通常ファイル宛先）は宛先ゾーン（AC-14〜18）に従う。ブロックデバイスか
+  否かの判定方式・`/dev` 配下の扱いは 02 で確定（パス文字列ではなくデバイス種別で判定する方針）。
+- **AC-22**（ツリー粒度操作の arg 昇格）: `rm`/`cp`/`mv` 等が**ツリー粒度で再帰的に作用する場合**
+  （`rm -r`/`-R`、`cp -R`/`-a`/`--archive`＝`-dR` 相当 等）は、宛先ゾーンによらず **High**。例:
+  `rm -rf <任意>`・`cp -a tree $WORKDIR/tree`。一方、**複数オペランドの指定（`rm file1 file2`）自体は
+  High 昇格条件とせず**、各オペランドを個別に zoning する（AC-22b/AC-14〜AC-16）。本ランナーは
+  **シェルを介さず glob を展開しない**ため、`rm *` は「`*` という名前のファイル」を指す単なるパス
+  オペランドとして通常どおり zoning され、glob 起因のツリー破壊は発生しない。再帰とみなすフラグ集合の
+  確定は 02。
 - **AC-22a**（`install` の権限フラグ）: `install` は宛先が safe-zone であっても、`-m` に setuid/setgid
   ビット（例 `-m 4755`/`-m 2755`）を伴う、または `-o`/`-g` で所有者/グループを変更する場合は
   **High**（**Low に降格しない**）。`install -o root -m 4755 tool $WORKDIR/tool` のような setuid-root
@@ -224,25 +264,32 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
     ファイルを除去する）。
   - `rm`/`shred`/`unlink`: 構文上「宛先」概念がなく、**削除/破壊対象となる全オペランド（source）**を
     zoning 対象とする。いずれかが trust-critical なら High。
-  - `cp`: source を読むのみで mutate しないため source は zoning 対象外（宛先のみ）。
-- **AC-22c**（coreutils 次元との整合）: 現行 `CoreutilsCommandRisk`
-  ([coreutils.go](../../../internal/runner/base/security/coreutils.go)) は coreutils 単一バイナリ
-  ディレクトリ（固定 secure PATH 配下）で `rm`/`dd`=High、`cp`/`mv`/不明 applet=fail-safe High を返し、
-  最終 max 合成により後段のゾーン判定では降格できない。**safe-zone Low（AC-16）を成立させるため、
-  これら applet について coreutils 次元をゾーンモデルと整合させる（無条件 High を抑止し軸2 の判定に
-  委ねる）よう改修することを要件とする**。降格は AC-17/AC-18 の安全要件を満たす場合に限る。
+  - `ln`: **source（リンク先）も zoning 対象**。trust-critical な source へのハード/シンボリックリンクを
+    safe-zone 内に作る形（`ln /etc/passwd $WORKDIR/passwd`）は、後続の解決を回避して critical ファイルを
+    別名経由で書換え得るため **High**（safe-zone 宛先でも降格しない）。
+  - `cp`: source を mutate しないため宛先ゾーンで判定するが、**trust-critical/機微な source の複製
+    （`cp /etc/shadow $WORKDIR/...`）は safe-zone でも Low に降格しない**（情報露出の floor。既存の
+    `OutputCriticalPathPatterns` と整合）。完全な情報漏えい（read）モデル化は本タスクのスコープ外。
+- **AC-22c**（既存次元との整合）: safe-zone Low（AC-16）が、他次元（coreutils 単一バイナリ分類等）の
+  固定 High により max 合成で打ち消されないこと。すなわち本タスクで Low/Medium へ降格すると定めた
+  ロケーション定義コマンドについては、**軸2（宛先ゾーン）の判定が有効に反映される**ことを要件とする
+  （降格は AC-17/AC-18 の安全要件を満たす場合に限る）。具体的な次元調整方式は 02 で確定。
 - **AC-22d**（`tee`/`sponge` のファイル書き込み）: `tee`（および moreutils `sponge`）は stdin を引数の
   FILE に書き込むため、ロケーション定義コマンドとして **FILE オペランドを zoning 対象**とする。FILE が
   trust-critical（例 `echo x | tee /usr/bin/y`・`tee /etc/passwd`）なら **High**、safe-zone なら Low、
   それ以外は Medium。`tee` の非フラグ引数はすべて書き込み先 FILE（`-a`/`-i`/`-p` 等のフラグを除く）。
   注: `tee` は**内側コマンドを実行しない**——脅威は信頼ファイルの上書き（④信頼境界破壊）であって
   コマンド実行ではない。宛先パースは AC-18 の fail-safe（不確定なら Low にしない）に従う。
+- **AC-22e**（`find` の破壊/実行アクション）: `find` の `-delete`（ツリー削除）は AC-22 のツリー破壊と
+  同等に、`-exec`/`-execdir`（内側コマンド実行）は③任意コード実行（内側ゲート）として扱い、**Low に
+  素通りさせない**（探索起点が trust-critical なら High）。アクション検出の具体は 02 で確定。
 
 ### F-005: Critical の尖鋭化
 
 **Acceptance Criteria**:
 - **AC-23**: Critical（無条件ブロック）に分類されるのは、**任意の内側コマンドを透過実行する特権昇格
-  ラッパ**（`sudo`・`su`・`pkexec`・`doas`）のみとする。
+  ラッパファミリ**（`sudo`・`su`・`pkexec`・`doas`・`runuser` 等、対象実効 UID/GID で内側コマンドを
+  実行するもの）とする（確定列挙は 02）。
 - **AC-24**: F-002 の権限付与/認証境界系（`visudo`・`useradd` 等）および F-001/F-002 のカーネル
   モジュール（`insmod` 等）は **High** であり Critical ではない（per-command で明示許可可能であること
   を担保し、正当な特権バッチを実行不可にしない）。
@@ -250,8 +297,11 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
 ### F-006: データ送信の据え置きと AI⇔egress 限界の明記
 
 **Acceptance Criteria**:
-- **AC-25**: データ egress 系（`curl`・`wget`・`scp`・`rsync`・`ssh`・`nc`）は **Medium** を維持する
-  （High へ引き上げない）。
+- **AC-25**: データ egress 系（`curl`・`wget`・`scp`・`rsync`・`ssh`・`nc`）は egress 軸で **Medium**
+  を維持する（High へ引き上げない）。ただし Medium はあくまで floor であり、**これらが
+  ファイル書込/削除形でローカルの trust-critical パスへ作用する場合は、ロケーション定義と同じく
+  ④信頼境界破壊として High**（`curl -o /usr/bin/x`・`wget -O /etc/cron.d/x`・`rsync --delete … /etc/`
+  等。cp/mv と同じ AC-14 基準で max 合成）。判定対象の書込先オペランド抽出は 02 で確定。
 - **AC-26**（検出限界の明記）: 名前ベース AI 検出（`claude`/`gemini` 等 = High）は generic egress
   （`curl <AI エンドポイント>` 等, Medium）を塞ぐものではなく salient な明示ケースの defense-in-depth で
   あること、ならびに未列挙コマンド・リネームバイナリ・multi-call 形式が本次元を素通りし得ること
@@ -270,7 +320,10 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
 **Acceptance Criteria**:
 - **AC-28**: 同一コマンドに対し、実行時（runtime）と dry-run で同一のリスク分類となる。
 - **AC-29**: ラッパー/間接実行経由の判定が維持される。例: `env modprobe x` は High 以上、
-  `sudo useradd u` は **Critical**（特権昇格）に分類される。
+  `sudo useradd u` は **Critical**（特権昇格）に分類される。内側コマンドを実行する**名前空間/ルート
+  変更ラッパファミリ**（`chroot`・`unshare`・`nsenter` 等）も間接実行として内側コマンドをゲートし
+  外側で素通りさせない（`unshare -r`・`nsenter -t 1 …` 等の特権/名前空間エスケープ形は High 以上）。
+  これらラッパの解析対象と確定列挙は 02。
 - **AC-29a**（安全な TOML 代替がある実行ラッパは High — redundant-with-config 原則, D13）:
   効果を TOML スキーマでより安全に表現できる実行ラッパは **High** に分類する。対象と代替フィールド:
   `env`（→ `env_vars`/`env_import` による環境変数設定）、`timeout`（→ `timeout` フィールド）。
