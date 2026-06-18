@@ -255,6 +255,7 @@ description = "サービス状態の確認"
 cmd = "/usr/bin/systemctl"
 args = ["status", "myapp.service"]
 output_file = "service-status.txt"
+risk_level = "high"  # systemctl はサブコマンドによらず一律 high
 ```
 
 ## 9.5 出力キャプチャを使用した設定例
@@ -310,6 +311,7 @@ description = "サービス状態レポート"
 cmd = "/usr/bin/systemctl"
 args = ["list-units", "--type=service", "--state=running"]
 output_file = "reports/services.txt"
+risk_level = "high"  # systemctl はサブコマンドによらず一律 high
 
 # レポートファイルのアーカイブ
 [[groups.commands]]
@@ -527,6 +529,7 @@ description = "依存関係の確認"
 cmd = "/usr/bin/dpkg"
 args = ["-l"]
 output_file = "installed-packages.txt"
+risk_level = "high"  # パッケージマネージャ（dpkg 含む）は一律 high
 
 # フェーズ2: データベース更新
 [[groups]]
@@ -892,7 +895,7 @@ version = "1.0"
 cmd = "/usr/bin/systemctl"
 args = ["status", "${service_name}"]
 timeout = 30
-risk_level = "low"
+risk_level = "high"  # systemctl はサブコマンドによらず一律 high
 
 [command_templates.restart_service]
 cmd = "/usr/bin/systemctl"

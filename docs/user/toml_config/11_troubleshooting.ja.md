@@ -444,6 +444,7 @@ name = "diagnose"
 cmd = "/usr/bin/systemctl"
 args = ["status", "myapp.service"]
 output_file = "service-status.txt"
+risk_level = "high"  # systemctl はサブコマンドによらず一律 high
 ```
 
 実行後、出力ファイルを確認:

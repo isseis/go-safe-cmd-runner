@@ -942,6 +942,7 @@ name = "system_update"
 cmd = "/usr/bin/apt-get"
 args = ["update"]
 run_as_user = "root"
+risk_level = "high"  # パッケージマネージャはサブコマンドによらず一律 high
 # root 権限が必要なパッケージ更新
 ```
 
@@ -1186,6 +1187,7 @@ name = "system_report"
 cmd = "/usr/bin/systemctl"
 args = ["status"]
 output_file = "/var/log/reports/system_status.txt"
+risk_level = "high"  # systemctl はサブコマンドによらず一律 high
 # 絶対パスで保存
 ```
 

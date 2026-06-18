@@ -438,8 +438,8 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 
 **コマンドリスク分析**:
 - 低リスク: 標準システムユーティリティ（ls、cat、grep）
-- 中リスク: ファイル変更コマンド（cp、mv、chmod）、パッケージ管理（apt、yum）
-- 高リスク: システム管理コマンド（mount、systemctl）、破壊的操作（rm -rf）
+- 中リスク: ファイル変更コマンド（cp、mv、chmod）、その他のシステム変更（mount、crontab）
+- 高リスク: パッケージ管理（apt、yum、dpkg）、サービス/システム管理（systemctl、service）、破壊的操作（rm -rf）
 - クリティカルリスク: 特権昇格コマンド（sudo、su）- 自動的にブロック
 
 **リスクレベル設定**:

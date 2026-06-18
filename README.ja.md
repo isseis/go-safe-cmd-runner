@@ -230,7 +230,7 @@ workdir = "/tmp/maintenance"  # 固定作業ディレクトリを指定
 name = "system_check"
 cmd = "/usr/bin/systemctl"
 args = ["status"]
-risk_level = "medium"
+risk_level = "high"  # systemctl はサブコマンドによらず一律 high（status も含む）
 ```
 
 ### 自動変数
@@ -441,8 +441,8 @@ args = ["--verbose"]
 - **自動ブロック**: 高リスクコマンドの自動ブロック
 - **リスクカテゴリ**:
   - **低**: 基本操作（ls、cat、grep）
-  - **中**: ファイル変更（cp、mv）、パッケージ管理
-  - **高**: システム管理（systemctl）、破壊的操作
+  - **中**: ファイル変更（cp、mv）、その他のシステム変更（mount、crontab）
+  - **高**: パッケージ管理（apt、yum、dpkg 等）、システム管理（systemctl、service）、破壊的操作
   - **クリティカル**: 権限昇格（sudo、su）- 常にブロック
 
 ### 環境分離

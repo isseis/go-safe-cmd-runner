@@ -253,6 +253,7 @@ description = "Check service status"
 cmd = "/usr/bin/systemctl"
 args = ["status", "myapp.service"]
 output_file = "service-status.txt"
+risk_level = "high"  # systemctl is always high regardless of subcommand
 ```
 
 ## 9.5 Configuration Examples Using Output Capture
@@ -308,6 +309,7 @@ description = "Service status report"
 cmd = "/usr/bin/systemctl"
 args = ["list-units", "--type=service", "--state=running"]
 output_file = "reports/services.txt"
+risk_level = "high"  # systemctl is always high regardless of subcommand
 
 # Archive report files
 [[groups.commands]]
@@ -522,6 +524,7 @@ description = "Check dependencies"
 cmd = "/usr/bin/dpkg"
 args = ["-l"]
 output_file = "installed-packages.txt"
+risk_level = "high"  # package managers (incl. dpkg) are always high
 
 # Phase 2: Database update
 [[groups]]
@@ -887,7 +890,7 @@ version = "1.0"
 cmd = "/usr/bin/systemctl"
 args = ["status", "${service_name}"]
 timeout = 30
-risk_level = "low"
+risk_level = "high"  # systemctl is always high regardless of subcommand
 
 [command_templates.restart_service]
 cmd = "/usr/bin/systemctl"

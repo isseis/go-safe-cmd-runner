@@ -74,15 +74,15 @@ The runner matches commands by their resolved absolute path and basename (symbol
 | Destructive file operations: `rm -rf`, `dd`, `chmod -R 777`, etc. | `high` |
 | Filesystem/partition tools: `mkfs`/`mkfs.*`, `fdisk`, etc. | `high` |
 | Shells, interpreters, and build/task runners: `bash`/`sh`/`python`/`node`/`ruby`/`perl`/`make`/`cmake`/`gradle`, etc. | `high` |
-| `systemctl` change verbs (`start`/`stop`/`restart`/`enable`/`disable`, etc.) | `high` |
+| Package managers: `apt`/`apt-get`/`yum`/`dnf`/`zypper`/`pacman`/`brew`/`pip`/`npm`/`yarn`/`dpkg`/`rpm` (regardless of subcommand/arguments) | `high` |
+| `systemctl` (all subcommands, including read-only `status`/`show`/`is-active`, etc.) | `high` |
 | `service` (all actions, because it runs an unverified init script) | `high` |
-| `systemctl` read-only verbs (`status`/`show`/`is-active`, etc.) | `medium` (floor) |
-| Other system-modifying commands (`mount`/`crontab`/`chkconfig`, package install/remove such as `apt install`) | `medium` |
+| Other system-modifying commands (`mount`/`umount`/`parted`/`fsck`/`crontab`/`at`/`batch`/`chkconfig`/`update-rc.d`, etc.) | `medium` |
 | Network commands: `curl`/`wget`/`ssh`/`scp`, etc. | `medium` |
 | None of the above | `low` |
 
 > Shells, interpreters, and build/task runners are `high` regardless of arguments, because they can execute arbitrary code (a script, an inline `-c`/`-e` snippet, or a build target).
-> An unknown or unidentifiable `systemctl` subcommand is treated as `high` (fail-safe), never silently downgraded.
+> Package managers and `systemctl`/`service` are classified `high` solely by the resolved binary name, without parsing subcommands or arguments, because they can run unverified maintainer scripts or unit/init scripts (dpkg `postinst`, rpm `%post`, pip `setup.py`, npm `postinstall`, etc.) under privilege. Queries (`apt list`/`dpkg -l`/`systemctl status`, etc.) are `high` as well.
 
 ### 3.2 coreutils Single-Binary Classification
 
@@ -172,13 +172,13 @@ When binary analysis calculates `medium`, you must set `risk_level` to `"medium"
 ### Configuration examples
 
 ```toml
-# Read-only system query (medium)
+# System query (high)
 [[groups.commands]]
 name = "show_status"
 cmd = "/usr/bin/systemctl"
 args = ["status", "myapp"]
-risk_level = "medium"     # systemctl status is read-only but not low
-                          # (it can expose unit configuration); "low" would be rejected
+risk_level = "high"       # systemctl is always high regardless of subcommand.
+                          # Including the read-only status, anything below "high" is rejected
 
 # Network communication (medium)
 [[groups.commands]]
@@ -194,13 +194,14 @@ cmd = "/usr/local/bin/plugin-runner"
 args = ["--plugin", "myplugin.so"]
 risk_level = "high"       # dlopen for dynamic loading → high
 
-# Package installation (medium)
+# Package installation (high)
 [[groups.commands]]
 name = "install_deps"
 cmd = "/usr/bin/apt-get"
 args = ["install", "-y", "libfoo"]
 run_as_user = "root"
-risk_level = "medium"     # apt install/remove is system modification → medium
+risk_level = "high"       # package managers are always high regardless of subcommand
+                          # (they can run unverified maintainer scripts under privilege)
 ```
 
 ## 6. Frequently Asked Questions
@@ -247,12 +248,12 @@ If you are upgrading from an earlier version, several commands are now evaluated
 | Applies to | New calculated risk | Notes |
 |------------|--------------------|-------|
 | AI service commands (`claude`, `gemini`, etc.) | `high` (previously `medium`) | They always communicate with an external API and may exfiltrate data |
-| `systemctl` change subcommands (`start`/`stop`/`restart`/`enable`/`disable`, etc.) | `high` | Read-only subcommands (`status`/`show`, etc.) are evaluated at a floor above low (see the table in §3.1) |
+| `systemctl` (all subcommands, including read-only `status`/`show`) | `high` | Classified `high` solely by binary name without parsing subcommands (see §8.4) |
 | `service` (all actions) | `high` | It runs an unverified init script |
 | Destructive operations by absolute path (`/usr/bin/rm -rf ...`, etc.) | `high` | Now detected the same as by basename |
 | Shells, interpreters, and build/task runners (`bash`/`python`/`node`/`make`, etc.) | `high` | Regardless of arguments (arbitrary code execution) |
 | Package script runners (`npm run`/`npx`/`yarn <script>`/`pnpm run`) | `high` | |
-| Package managers (`apt`/`yum`/`dnf`/... install/remove) | `medium` | Covered generically rather than by individual tool name |
+| Package managers (`apt`/`apt-get`/`yum`/`dnf`/`zypper`/`pacman`/`brew`/`pip`/`npm`/`yarn`/`dpkg`/`rpm`) | `high` | Classified `high` solely by binary name without parsing subcommands/arguments (see §8.4) |
 
 ### 8.2 Configuration and Verification Behavior Changes
 
@@ -268,3 +269,24 @@ The handling of an **inner command** that a wrapper (`env`/`timeout`/`nice`, etc
 - **Forms that remain Blocking** (not relaxed to High): loader-control environment variables `LD_*`/`DYLD_*`, working-directory change `env -C`, an uninterpretable `env -S`, `find`/`xargs` child-process execution, direct dynamic-loader invocation, helper execution such as `rsync -e`/`tar --to-command`, a wrapper whose inner command cannot be extracted, exceeding the nesting-depth limit, and symlink-resolution failure.
 - **Verification and recording**: the inner command is not automatically hash-verified or identity-bound (it is logged in the audit chain, but that does not pin its identity). To pin the inner command's identity, `record` its path and register it explicitly in `verify_files`.
 - **Residual risk (TOCTOU)**: an inner command of a wrapper you opt into with `risk_level = "high"` is not fd-bound or identity-bound by the runner at execution time. Registering it in `verify_files` only adds a startup-time hash check (verification as an additional file); it does not pin the actual object the wrapper resolves and execs at run time. Because a wrapper binary (`env`, etc.) resolves the path itself and execs it, the verified file and the object actually executed may differ (e.g. `env mytool`), so there is no protection against a swap between check and exec (TOCTOU). This is the same residual limitation as `find`/`xargs` child-process execution.
+
+### 8.4 Coarsening of Package Managers and systemctl (Breaking Change)
+
+The risk classification of package managers and `systemctl` has been simplified to a **fixed level that depends only on the binary name (both `high`)**, removing subcommand/flag parsing. The baseline for comparison is the **most recent release's behavior**.
+
+**Invocations raised to `high` (the net difference)**:
+
+- **(a) Display/query package-manager invocations** (`apt list`/`dpkg -l`/`rpm -qa`/`pacman -Q`/`pip list`, etc.; previously `low`) → **`high`**.
+- **(b) Package-modifying operations** (`apt install`/`apt-get update`/`yum install`, etc.; `medium` in the most recent release) → **`high`**.
+- **(c) `dpkg`/`rpm`** (previously in no list and thus undetected by this dimension, i.e. effectively `low`) → **`high`**.
+- **(d) `systemctl` read-only subcommands** (`status`/`show`/`is-active`, etc.; previously `medium`) → **`high`**.
+
+As a result, package-manager install/update configurations previously permitted at `risk_level = "medium"` (or the default `low`), and query configurations that set `systemctl status` to `medium`/`low`, **may now be blocked because the calculated risk (`high`) exceeds the configured `risk_level`**. Set `risk_level = "high"` explicitly on those commands. Safe operation assumes an allowlist + hash pinning + an explicit `risk_level` setting (this risk classification is a secondary gate, not the first line of defense).
+
+**Detection limits**: even after coarsening, this dimension cannot detect the following, which can pass through as `low`. Safe operation assumes the allowlist + hash pinning described above.
+
+- Unlisted managers: `apk`/`snap`/`flatpak`/`gem`, etc.
+- Renamed binaries (a basename that does not match the name set).
+- Multi-call forms (`busybox <pm>`, etc., where the package-manager name appears as an argument of `busybox`).
+
+**Retraction of the previous approach (background)**: this change **replaces (retracts)** the package-manager flag-style and verb-style detection introduced by the unreleased 0137 (which classified only install/remove-style subcommands as modifying operations and excluded queries such as `apt list`/`pacman -Q`), as well as the `systemctl` subcommand-granularity classification (read-only as `medium`, change verbs as `high`). Those granularities were judged excessive for this tool's threat model, were not relied upon by real configurations, and were not worth the maintenance cost.

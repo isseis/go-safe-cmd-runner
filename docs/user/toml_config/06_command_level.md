@@ -921,6 +921,7 @@ name = "system_update"
 cmd = "/usr/bin/apt-get"
 args = ["update"]
 run_as_user = "root"
+risk_level = "high"  # package managers are always high regardless of subcommand
 # Package update requiring root privileges
 ```
 
@@ -1165,6 +1166,7 @@ name = "system_report"
 cmd = "/usr/bin/systemctl"
 args = ["status"]
 output_file = "/var/log/reports/system_status.txt"
+risk_level = "high"  # systemctl is always high regardless of subcommand
 # Saved with absolute path
 ```
 

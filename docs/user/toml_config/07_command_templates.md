@@ -1003,7 +1003,7 @@ risk_level = "low"
 cmd = "/usr/bin/systemctl"
 args = ["status", "${service_name}"]
 timeout = 30
-risk_level = "low"
+risk_level = "high"  # systemctl is always high regardless of subcommand
 
 [[groups]]
 name = "system_monitoring"
