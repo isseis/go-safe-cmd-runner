@@ -209,13 +209,18 @@ func TestConsistency_RmAllForms(t *testing.T) {
 }
 
 // TestConsistency_Systemctl verifies the shared evaluator (runtime and
-// dry-run) classifies systemctl as High regardless of the subcommand, including
-// read-only verbs such as status.
+// dry-run) classifies systemctl and package managers as High regardless of the
+// subcommand, including read-only verbs (systemctl status) and queries (apt list).
+// Both modes call the same EvaluateRisk, so a single assertion fixes both.
 func TestConsistency_Systemctl(t *testing.T) {
 	ev := newVerifiedEvaluator()
 	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "systemctl", []string{"restart", "nginx"}))
 	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/sbin/systemctl", []string{"stop", "nginx"}))
 	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "systemctl", []string{"status", "nginx"}))
+	// Package managers are the new High additions; include one to exercise the
+	// shared-evaluator consistency for them too.
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "apt", []string{"list", "--installed"}))
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/bin/dpkg", []string{"-i", "pkg.deb"}))
 }
 
 // TestConsistency_ProfileCommands verifies profile-derived risk (claude,

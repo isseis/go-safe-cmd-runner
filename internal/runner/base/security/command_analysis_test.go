@@ -1133,9 +1133,10 @@ func TestSystemModificationRisk(t *testing.T) {
 		{"batch", cmdNameSet("batch"), runnertypes.RiskLevelMedium},
 		{"chkconfig", cmdNameSet("chkconfig"), runnertypes.RiskLevelMedium},
 		{"update-rc.d", cmdNameSet("update-rc.d"), runnertypes.RiskLevelMedium},
-		// Non-matching names -> Unknown. A pm name such as "rpm" appearing only as
-		// an argument value (e.g. "echo rpm") never enters the resolved name set,
-		// so the dimension does not apply.
+		// Non-matching names -> Unknown. Because the function takes only the
+		// resolved name set, a pm name that appears only as an argument value (e.g.
+		// "echo rpm") can never reach this dimension; that guarantee is structural,
+		// so these cases just confirm an unrelated command yields Unknown.
 		{"echo", cmdNameSet("echo"), runnertypes.RiskLevelUnknown},
 		{"ls", cmdNameSet("ls"), runnertypes.RiskLevelUnknown},
 		// symlink / absolute path resolution.
