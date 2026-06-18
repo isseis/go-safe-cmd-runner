@@ -299,7 +299,7 @@ NewProfile("claude", "gemini", "chatgpt", "gpt", "openai", "anthropic").
 
 該当しない場合は `RiskLevelUnknown` を返し、システム変更軸は寄与しない。
 
-> **粗粒度化（0137／systemctl サブコマンド粒度の撤回）**: 本判定は、かつて `systemctl.go` のサブコマンド解析（read-only=Medium／change=High）と、0137 が導入したパッケージマネージャのフラグ方式・verb 方式の検出（install/remove 系の動詞のみを Medium とし照会系を除外）を持っていたが、これらは脅威モデルに対して過剰で実 config が依存していないため撤回し、名マッチ固定レベルへ単純化した。`SystemctlSubcommandRisk` 等の旧シンボルは撤去済み。
+> **粗粒度化（0137／systemctl サブコマンド粒度の撤回）**: 本判定は、かつて systemctl のサブコマンド解析（read-only=Medium／change=High）と、0137 が導入したパッケージマネージャのフラグ方式・verb 方式の検出（install/remove 系の動詞のみを Medium とし照会系を除外）を持っていたが、これらは脅威モデルに対して過剰で実 config が依存していないため撤回し、名マッチ固定レベルへ単純化した。サブコマンド／フラグ解析を行っていた旧実装と関連シンボルは撤去済み。
 
 ### 任意コード実行ランナー（`IsArbitraryCodeExecutionRunner`）
 

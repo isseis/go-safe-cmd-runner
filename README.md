@@ -234,7 +234,7 @@ workdir = "/tmp/maintenance"  # Specify fixed working directory
 name = "system_check"
 cmd = "/usr/bin/systemctl"
 args = ["status"]
-risk_level = "medium"
+risk_level = "high"  # systemctl is always high regardless of subcommand (including status)
 ```
 
 ### Automatic Variables
@@ -444,8 +444,8 @@ For detailed configuration file documentation, refer to the following documents:
 - **Automatic Blocking**: Automatic blocking of high-risk commands
 - **Risk Categories**:
   - **Low**: Basic operations (ls, cat, grep)
-  - **Medium**: File modifications (cp, mv), package management
-  - **High**: System administration (systemctl), destructive operations
+  - **Medium**: File modifications (cp, mv), other system modifications (mount, crontab)
+  - **High**: Package management (apt, yum, dpkg, etc.), system administration (systemctl, service), destructive operations
   - **Critical**: Privilege escalation (sudo, su) - always blocked
 
 ### Environment Isolation

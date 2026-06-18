@@ -442,8 +442,8 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 
 **Command Risk Analysis**:
 - Low risk: Standard system utilities (ls, cat, grep)
-- Medium risk: File modification commands (cp, mv, chmod), package management (apt, yum)
-- High risk: System administration commands (mount, systemctl), destructive operations (rm -rf)
+- Medium risk: File modification commands (cp, mv, chmod), other system modifications (mount, crontab)
+- High risk: Package management (apt, yum, dpkg), service/system administration (systemctl, service), destructive operations (rm -rf)
 - Critical risk: Privilege escalation commands (sudo, su) - automatically blocked
 
 **Risk Level Configuration**:

@@ -189,7 +189,7 @@ name = "system_maintenance"
 name = "check_status"
 cmd = "/usr/bin/systemctl"
 args = ["status", "myapp"]
-risk_level = "low"
+risk_level = "high"  # systemctl はサブコマンドによらず一律 high
 
 [[groups.commands]]
 name = "restart_service"
@@ -528,7 +528,7 @@ risk_level = "medium"
 cmd = "/usr/bin/systemctl"
 args = ["status", "${service_name}"]
 timeout = 30
-risk_level = "low"
+risk_level = "high"  # systemctl はサブコマンドによらず一律 high
 
 [global]
 timeout = 300

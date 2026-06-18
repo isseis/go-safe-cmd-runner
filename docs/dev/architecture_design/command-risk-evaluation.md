@@ -290,14 +290,16 @@ Consistency is verified by `Validate()` (for example, if `NetworkTypeAlways`, th
 
 ### System Modification Risk (`SystemModificationRisk`)
 
-System modification is decided by the dedicated function `SystemModificationRisk(names, args)` (this, not the profile's `SystemModRisk`, is the single source of truth on the evaluation path).
+System modification is decided by the dedicated function `SystemModificationRisk(names)` (this, not the profile's `SystemModRisk`, is the single source of truth on the evaluation path). The decision is made **solely by set-membership of the resolved binary names**, without consulting the arguments (subcommands/flags).
 
-- `systemctl`: branches by subcommand (`SystemctlSubcommandRisk`). Change verbs (start/stop/enable/mask, etc.) and unknown / unidentifiable verbs are **High**; read-only verbs (status/show/list-*, etc.) and an omitted subcommand are a **Medium** floor (not Low, because they can expose configuration information).
+- Package managers (`apt`, `apt-get`, `yum`, `dnf`, `zypper`, `pacman`, `brew`, `pip`, `npm`, `yarn`, `dpkg`, `rpm`) → **High**. Because they can run unverified maintainer scripts (dpkg `postinst`, rpm `%post`, pip `setup.py`, npm `postinstall`, etc.) under privilege, they are uniformly High regardless of subcommand (a query such as `apt list` is also High).
+- `systemctl`: all subcommands are uniformly **High** (including read-only `status`/`show`/`list-*`, because it handles unverified units).
 - `service`: because it runs an unverified init script, always **High**.
-- Other system administration commands (`mount`, `umount`, `fdisk`, `mkfs`, `crontab`, `at`, etc.) → **Medium**.
-- Package management commands (`apt`, `yum`, `dnf`, `npm`, `pip`, `pacman`, etc.), only when the arguments include a change verb such as `install` / `remove` / `upgrade` → **Medium** (a query such as `apt list` is not a target).
+- Other system administration commands (`mount`, `umount`, `fdisk`, `parted`, `mkfs`, `fsck`, `crontab`, `at`, `batch`, `chkconfig`, `update-rc.d`) → **Medium** (they change system state through defined operations rather than executing unverified code under privilege).
 
 When none of these applies, it returns `RiskLevelUnknown` and the system-modification dimension does not contribute.
+
+> **Coarsening (retraction of 0137 / systemctl subcommand granularity)**: this classification formerly had systemctl subcommand parsing (read-only=Medium / change=High) and the package-manager flag-style and verb-style detection introduced by 0137 (which classified only install/remove-style verbs as Medium and excluded queries). These were retracted because they were excessive for the threat model and not relied upon by real configurations, and the logic was simplified to name-match fixed levels. The old subcommand/flag-parsing implementation and its symbols have been removed.
 
 ### Arbitrary-Code-Execution Runner (`IsArbitraryCodeExecutionRunner`)
 
