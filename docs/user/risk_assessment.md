@@ -77,7 +77,7 @@ The runner matches commands by their resolved absolute path and basename (symbol
 | Package managers: `apt`/`apt-get`/`yum`/`dnf`/`zypper`/`pacman`/`brew`/`pip`/`npm`/`yarn`/`dpkg`/`rpm` (regardless of subcommand/arguments) | `high` |
 | `systemctl` (all subcommands, including read-only `status`/`show`/`is-active`, etc.) | `high` |
 | `service` (all actions, because it runs an unverified init script) | `high` |
-| Other system-modifying commands (`mount`/`umount`/`crontab`/`at`/`batch`/`chkconfig`/`update-rc.d`, etc.) | `medium` |
+| Other system-modifying commands (`mount`/`umount`/`parted`/`fsck`/`crontab`/`at`/`batch`/`chkconfig`/`update-rc.d`, etc.) | `medium` |
 | Network commands: `curl`/`wget`/`ssh`/`scp`, etc. | `medium` |
 | None of the above | `low` |
 
@@ -281,7 +281,7 @@ The risk classification of package managers and `systemctl` has been simplified 
 - **(c) `dpkg`/`rpm`** (previously in no list and thus undetected by this dimension, i.e. effectively `low`) → **`high`**.
 - **(d) `systemctl` read-only subcommands** (`status`/`show`/`is-active`, etc.; previously `medium`) → **`high`**.
 
-As a result, package-manager install/update configurations previously permitted at `risk_level = "medium"` (or the default `low`), and query configurations that set `systemctl status` to `medium`/`low`, **may now be blocked because the calculated risk exceeds `high`**. Set `risk_level = "high"` explicitly on those commands. Safe operation assumes an allowlist + hash pinning + an explicit `risk_level` setting (this risk classification is a secondary gate, not the first line of defense).
+As a result, package-manager install/update configurations previously permitted at `risk_level = "medium"` (or the default `low`), and query configurations that set `systemctl status` to `medium`/`low`, **may now be blocked because the calculated risk (`high`) exceeds the configured `risk_level`**. Set `risk_level = "high"` explicitly on those commands. Safe operation assumes an allowlist + hash pinning + an explicit `risk_level` setting (this risk classification is a secondary gate, not the first line of defense).
 
 **Detection limits**: even after coarsening, this dimension cannot detect the following, which can pass through as `low`. Safe operation assumes the allowlist + hash pinning described above.
 
