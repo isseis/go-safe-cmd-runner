@@ -310,9 +310,17 @@ func SystemModificationRisk(names map[string]struct{}) runnertypes.RiskLevel
 | [evaluator.go](../../../internal/runner/base/risk/evaluator.go) | 変更 | `SystemModificationRisk` 呼び出しのシグネチャ追従 | `evaluator_test.go` の `TestEvaluateRisk_SystemctlSubcommandConditional`（status/show が Medium→High へ） |
 | [indirect_execution.go](../../../internal/runner/base/security/indirect_execution.go) | 変更 | `SystemModificationRisk` 呼び出し（`RoleInterpreter` 経路）のシグネチャ追従のみ | 既存の indirect 系テストは結論不変（`env dpkg`/`env systemctl` は従来どおり一律 High floor 由来で High。回帰確認として追加可） |
 | [docs/user/risk_assessment.ja.md](../../../docs/user/risk_assessment.ja.md) / [docs/user/risk_assessment.md](../../../docs/user/risk_assessment.md) | 変更 | systemctl／パッケージマネージャのサブコマンド粒度記述を削除し、固定レベル（いずれも High）へ更新（AC-11） | — |
+| [docs/dev/architecture_design/command-risk-evaluation.ja.md](../../../docs/dev/architecture_design/command-risk-evaluation.ja.md) / [.md](../../../docs/dev/architecture_design/command-risk-evaluation.md) | 変更 | 開発者文書の「System Modification Risk」節（`SystemModificationRisk(names, args)` の旧シグネチャ・`SystemctlSubcommandRisk`・パッケージマネージャの verb-only Medium 記述）を、引数非依存の固定レベル（PM／systemctl=High）へ更新（F-005 §1.4 の文書整合） | — |
+| [docs/user/toml_config/09_practical_examples.ja.md](../../../docs/user/toml_config/09_practical_examples.ja.md) / [.md](../../../docs/user/toml_config/09_practical_examples.md) ほか toml_config ガイド | 変更 | 実践例中の `apt-get`／`systemctl` を `risk_level=medium`／既定のまま使う箇所を `high` へ更新（追従できる例に修正）。`docs/user/toml_config/` 配下を横断検索し、PM／systemctl 例を持つ全ページを対象とする（F-005 §1.4） | — |
 | [sample/risk-based-control.toml](../../../sample/risk-based-control.toml) | 変更 | `apt update`（`risk_level=medium`→`high`）、`systemctl restart`（`medium`→`high`）（AC-14） | — |
+| [sample/timeout_examples.toml](../../../sample/timeout_examples.toml) | 変更 | `apt update`／`apt upgrade -y`（`risk_level` 無し＝既定 Low）に `risk_level="high"` を付与（AC-14） | — |
 
 > 用語集（`docs/translation_glossary.md`）には該当語が無いことを確認済み。新規用語追加は不要。
+> ユーザー文書の更新範囲: 要件 AC-11 は `risk_assessment` を名指しするが、F-005／§1.4 の
+> 「文書を実装と一致させる」目的に基づき、PM／systemctl の例を含む `toml_config` 実践ガイドおよび
+> 開発者文書 `command-risk-evaluation` も整合対象に含める（実装後に stale な例が残らないようにする）。
+> 確定対象ページは実装時に `docs/user/toml_config/` と `docs/dev/architecture_design/` の横断検索で
+> 列挙する。
 
 ### 3.5 他タスク方針への例外（インライン明記：AC-13）
 
@@ -368,8 +376,13 @@ func SystemModificationRisk(names map[string]struct{}) runnertypes.RiskLevel
   経路で決まる: `env dpkg -i pkg.deb`／`env systemctl restart nginx` はラッパーインナーの
   **一律 High floor** により High、`sudo dpkg -i pkg.deb`／`sudo systemctl restart nginx` は
   特権トークン検出により **Critical** となる（AC-08。§2.2 参照）。
-- deny 時の監査ログには、システム変更を示す理由コード `system_modification`
-  （`risktypes.ReasonSystemModification`）が記録される（AC-09、現行の `addDimension` 経路で担保）。
+- **直接実行**で本次元（`SystemModificationRisk`）により分類され deny されたコマンドの監査ログには、
+  システム変更を示す理由コード `system_modification`（`risktypes.ReasonSystemModification`）が
+  記録される（AC-09、現行の `addDimension` 経路で担保）。**ラッパー／特権経由は本次元を通らない**ため
+  理由コードが異なる点に注意する: ラッパーインナー（`env dpkg` 等）は
+  `indirect_execution_wrapper`（`ReasonIndirectExecutionWrapper`）、特権トークン（`sudo dpkg` 等）は
+  `privilege_escalation`（`ReasonPrivilegeEscalation`）。AC-09 の `system_modification` 表明は
+  直接実行の sysmod deny に限定して検証する（§7.2）。
 
 ### 5.2 脅威モデルと本タスクの位置づけ
 
@@ -493,8 +506,10 @@ flowchart TD
   High を追加。
 - **ラッパー／特権（AC-08）**: `env dpkg -i`／`env systemctl restart` が High 以上、
   `sudo dpkg`／`sudo systemctl` が Critical。
-- **監査理由（AC-09）**: deny された system-modification コマンドの Assessment に
-  `ReasonSystemModification` が含まれること。
+- **監査理由（AC-09）**: **直接実行**で本次元により deny された system-modification コマンドの
+  Assessment に `ReasonSystemModification` が含まれること。ラッパー（`env dpkg`）は
+  `ReasonIndirectExecutionWrapper`、特権（`sudo dpkg`）は `ReasonPrivilegeEscalation` を持つこと
+  （本次元の理由コードではないことを区別して固定）。
 - **Medium 維持（AC-06）**: `mount`/`crontab` 等が Medium。`mkfs`/`fdisk` は本次元 Medium だが
   実効 High（危険引数パターン次元）であることを既存テストで確認（不変）。
 
@@ -517,8 +532,11 @@ flowchart TD
 2. **Phase 2（呼び出し元追従）**: `evaluator.go`／`indirect_execution.go` のシグネチャ追従。
 3. **Phase 3（撤去）**: `systemctl.go`／`package_manager_flags.go` を削除（NF-001）。
 4. **Phase 4（テスト改訂）**: §3.5 の旧挙動テストを改訂・削除し、§7 の新テストを追加。
-5. **Phase 5（文書・config）**: risk_assessment 日英の更新（AC-11/10/12/13）、sample config の
-   `risk_level` 追従（AC-14）。
+5. **Phase 5（文書・config）**: risk_assessment 日英の更新（AC-11/10/12/13）、開発者文書
+   `command-risk-evaluation` 日英および `toml_config` 実践ガイドの PM／systemctl 例の整合
+   （F-005 §1.4）、sample config（`risk-based-control.toml`／`timeout_examples.toml` ほか
+   横断検索で見つかる該当 config）の `risk_level` 追従（AC-14）。`docs/user/toml_config/`・
+   `docs/dev/architecture_design/`・`sample/` を横断検索して残存例の網羅を確認する。
 6. **Phase 6（緑化）**: `make fmt`／`make test`／`make lint`（NF-002）。
 
 ---
