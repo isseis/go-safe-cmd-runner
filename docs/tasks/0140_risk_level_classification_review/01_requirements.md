@@ -57,6 +57,7 @@
 | D10 | **0139 AC-06 乖離は本タスクで訂正**（fdisk/mkfs/parted/fsck=High を正とする） | 論点6 |
 | D11 | **「検討」群の配置を確定**（F-002/F-003/F-004 の各 AC へ反映） | 論点1補足 |
 | D12 | **`update-alternatives`=名前のみ High（intrinsic）／`install`=arg 条件（宛先ゾーン＋setuid/setgid/所有者変更→High。cp/mv 類）** | 発見事項B/D |
+| D13 | **安全な TOML 代替がある実行ラッパは High（redundant-with-config）**：`env`（→ `env_vars`/`env_import`）・`timeout`（→ `timeout`）は直接呼び出し不要で難読化/注入ベクタのため High。内側コマンドは間接実行解析で引き続きゲート（max）。Critical にはしない（D3）。代替の無いラッパ（nice/ionice/stdbuf/setsid）は据え置き | AC-29a |
 
 **改訂版・統一原則（境界の再定義）**:
 
@@ -259,13 +260,21 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
 - **AC-28**: 同一コマンドに対し、実行時（runtime）と dry-run で同一のリスク分類となる。
 - **AC-29**: ラッパー/間接実行経由の判定が維持される。例: `env modprobe x` は High 以上、
   `sudo useradd u` は **Critical**（特権昇格）に分類される。
-- **AC-29a**（`env`/ラッパは名前ベース High にしない）: `env`・`timeout`・`nice`・`ionice`・`stdbuf`・
-  `setsid` 等の実行ラッパは、内側コマンドを間接実行解析でゲートする（`wrapperSpecs`,
-  [indirect_execution.go](../../../internal/runner/base/security/indirect_execution.go)）ため、F-002 の
-  固定 High 名集合には**入れない**（`env FOO=bar ls` を High に過大分類しない）。`env` 経由の④信頼境界
-  破壊に当たる loader 制御変数（`LD_PRELOAD`・`LD_LIBRARY_PATH`・`LD_AUDIT`・`LD_DEBUG` 等、信頼バイナリへ
-  のコード注入）は **forbidden-env-var（`ReasonForbiddenEnvVar`）として拒否**される（既存挙動）。すなわち
-  env の信頼境界リスクは名前 High ではなく「内側コマンドのゲート＋禁止環境変数」で担保する。
+- **AC-29a**（安全な TOML 代替がある実行ラッパは High — redundant-with-config 原則, D13）:
+  効果を TOML スキーマでより安全に表現できる実行ラッパは **High** に分類する。対象と代替フィールド:
+  `env`（→ `env_vars`/`env_import` による環境変数設定）、`timeout`（→ `timeout` フィールド）。
+  これらは直接呼び出しが不要であり、コマンド名の難読化・環境変数注入の難読化ベクタになるため、
+  `env FOO=bar ls`・`timeout 10 ls` のような benign 形も含め High とする（過小分類より hygiene を優先）。
+  - 内側コマンドは間接実行解析（`wrapperSpecs`,
+    [indirect_execution.go](../../../internal/runner/base/security/indirect_execution.go)）で引き続き
+    ゲートされ、最終リスクは **max**（`env dpkg -i`→High、`sudo env ...`→Critical）。
+  - **Critical にはしない**（D3: Critical は特権昇格ラッパに限定＝無条件ブロック。`env`/`timeout` は
+    権限を昇格しないため High に留め、稀な正当用途の escape hatch を残す）。
+  - `env` 経由の loader 制御変数（`LD_PRELOAD`・`LD_LIBRARY_PATH`・`LD_AUDIT`・`LD_DEBUG` 等、信頼
+    バイナリへのコード注入＝④信頼境界破壊）は従来どおり **forbidden-env-var
+    （`ReasonForbiddenEnvVar`）として拒否**される。
+  - **代替の無いラッパ（`nice`・`ionice`・`stdbuf`・`setsid` 等）は High にしない**（TOML 等価物が無い）。
+    従来どおり内側コマンドのゲートに委ね、名前ベースの floor を持たない。
 - **AC-30**: 本タスクで引き上げ/変更されたコマンドが deny されたとき、監査ログに対応する理由
   （システム変更・破壊的操作・危険引数パターン等の理由コード）が記録される。
 - **AC-31**: 最終リスクは適用 dimension の **max** で合成され、軸1（名前固定）と軸2（arg/宛先ゾーン）の
