@@ -21,7 +21,7 @@
 - **YAGNI・複雑性の削減**: タスク 0136 が意図した「runner がラッパーセマンティクスを再実装し、抽出したインナーを自ら fd 束縛 exec する」設計を取り下げる。インナーの自動的なハッシュ検証・identity 束縛・fd 束縛を導入しない。本 runner では環境変数設定・タイムアウトは設定（`env`/`vars`・per-command timeout）で提供済みであり、ラッパー経由でインナーを実行する正統な用途は乏しい。
 - **既存方針との整合**: ブロックリスト方式＋ allowlist（`cmd_allowed`）／ハッシュ固定（`verify_files`）の併用というリスク判定の前提（0136 AC-66/67）と整合する。インナーの実体固定が必要な場合は、利用者が `verify_files` に明示登録する（既存機構の延長）。
 
-> **本タスクが変更するロジックは 1 箇所のみ**: 間接実行リゾルバ `indirect_execution.go` における**ラッパーのインナー評価（`evaluateInner`）の細粒度算出**だけを撤廃し、フラット High に置き換える。Critical・各種 Reject・無コマンド時の Medium 下限・インラインコード High・パッケージスクリプトランナー High・`service` High・shebang（直接スクリプト実行）のインタプリタ評価は**いずれも現状のまま保持**する。
+> **本タスクが変更する挙動は 1 箇所のみ**: 間接実行リゾルバ `indirect_execution.go` における**ラッパーのインナー評価（`evaluateInnerAs` の `RoleInner` 経路）の細粒度算出**だけを撤廃し、フラット High に置き換える。Critical・各種 Reject・無コマンド時の Medium 下限・インラインコード High・パッケージスクリプトランナー High・`service` High・shebang（直接スクリプト実行）のインタプリタ評価は**いずれも現状のまま保持**する。なお実装上は、shebang 経路（`RoleInterpreter`）を不変に保つため `role` を `analyzeIndirect` とラッパーヘルパ群へ引数として伝播させる必要がある（挙動変更を伴わないシグネチャ変更。詳細は `03_implementation_plan.md` §1.3）。
 
 ### 1.2 概念モデル（変更前 / 変更後）
 
@@ -78,7 +78,7 @@ flowchart TD
 
     EV["risk/evaluator.go<br>EvaluateRisk (順位 2)"] --> AIE["security/indirect_execution.go<br>AnalyzeIndirectExecution"]
     AIE --> DISP["フォーム分岐<br>(analyzeEnv / analyzeWrapper /<br>analyzeTaskset / find・xargs /<br>loader / remote-shell / shebang)"]
-    DISP --> EI["evaluateInner<br>(ラッパーインナー評価)"]
+    DISP --> EI["evaluateInnerAs<br>(ラッパーインナー評価)"]
     EI --> RES["IndirectExecutionResult<br>(Kind / Level / ReasonCodes / Artifacts)"]
     RES --> EV
 
@@ -94,13 +94,13 @@ flowchart TD
     class L3 process
 ```
 
-> 矢印 `A → B` は「A が B を呼び出す／B へ結果を渡す」を表す。本タスクで挙動が変わるのは `evaluateInner`（ラッパーインナー評価）のみで、`EvaluateRisk` の順位 2 での結果（`IndirectExecutionResult`）の取り込み方（Critical→criticalPlan、Reject→Blocking、Floor→最大値へ合流）は変更しない。
+> 矢印 `A → B` は「A が B を呼び出す／B へ結果を渡す」を表す。本タスクで挙動が変わるのは `evaluateInnerAs`（ラッパーインナー評価）のみで、`EvaluateRisk` の順位 2 での結果（`IndirectExecutionResult`）の取り込み方（Critical→criticalPlan、Reject→Blocking、Floor→最大値へ合流）は変更しない。
 
 ### 2.2 コンポーネント配置（パッケージ）
 
 本タスクで新規パッケージ・新規型は導入しない。変更は既存ファイルに閉じる。
 
-- `internal/runner/base/security/indirect_execution.go`: ラッパーインナー評価ロジックと、実行時挙動を誤記したコメントを変更する（唯一のコード変更）。
+- `internal/runner/base/security/indirect_execution.go`: ラッパーインナー評価ロジック（`evaluateInnerAs` の `RoleInner` 経路）と、実行時挙動を誤記したコメントを変更する（唯一のコード変更ファイル）。`role` を再帰経路へ伝播させるためのシグネチャ変更（`analyzeIndirect`・各ラッパーヘルパ）も同ファイル内に閉じる。
 - ドキュメント（`docs/user/`・`docs/dev/`・0136 タスクドキュメント）を本方式へ整合させる。
 
 ### 2.3 データフロー（実行時パス）
@@ -135,7 +135,7 @@ type IndirectExecutionResult struct {
 
 ### 3.2 ラッパーインナー評価の挙動契約
 
-`evaluateInner`（ラッパー経由インナー、すなわち `RoleInner`）の挙動を次のとおり確定する。
+`evaluateInnerAs`（ラッパー経由インナー、すなわち `RoleInner`）の挙動を次のとおり確定する。
 
 | 段階 | 処理 | 変更 | 関連 AC |
 |------|------|------|---------|
@@ -145,13 +145,13 @@ type IndirectExecutionResult struct {
 | 4. 下限の確定 | 上記で Critical/Reject にならなければ、**6 次元の細粒度算出を行わず一律 `Level = High` の Floor を返す** | **変更** | AC-01 |
 
 - **撤廃する細粒度算出（段階 4 の旧処理）**: `IsDestructiveFileOperation` / `CoreutilsCommandRisk` / `SystemModificationRisk` / `IsArbitraryCodeExecutionRunner` / `CheckDangerousArgPatterns` / プロファイル要因（`ResolveProfile`＋`ProfileFactorRisk`）のインナーへの適用。これに伴い、インナー由来の human-readable reason（プロファイル理由）の収集も行わなくなる。
-- **インナー coreutils 分類失敗の Reject の取り扱い（fail-closed 分岐の吸収）**: 現状の `evaluateInner` は、インナーが coreutils ディレクトリ配下のときに `CoreutilsCommandRisk` の setuid 判定用 stat が失敗すると、fail-closed で Reject（`ReasonCoreutilsClassification`／`ErrorClassCoreutilsFileInfo`）を返す。細粒度算出の撤廃に伴いこの Reject 分岐は消え、当該ケースは一律 High に吸収される。これは後退ではない: (i) High は明示オプトイン（`risk_level = "high"`）なしには実行されず、(ii) 外側ラッパーバイナリ自体のハッシュ検証・identity ゲート（順位 1）は引き続き作用する。インナーの実体は元々 fd 束縛されない（§5.2）ため、インナー stat 失敗を個別に Reject する追加保証は本方式の前提に対して意味を持たない。
+- **インナー coreutils 分類失敗の Reject の取り扱い（fail-closed 分岐の吸収）**: 現状の `evaluateInnerAs` は、インナーが coreutils ディレクトリ配下のときに `CoreutilsCommandRisk` の setuid 判定用 stat が失敗すると、fail-closed で Reject（`ReasonCoreutilsClassification`／`ErrorClassCoreutilsFileInfo`）を返す。細粒度算出の撤廃に伴いこの Reject 分岐は消え、当該ケースは一律 High に吸収される。これは後退ではない: (i) High は明示オプトイン（`risk_level = "high"`）なしには実行されず、(ii) 外側ラッパーバイナリ自体のハッシュ検証・identity ゲート（順位 1）は引き続き作用する。インナーの実体は元々 fd 束縛されない（§5.2）ため、インナー stat 失敗を個別に Reject する追加保証は本方式の前提に対して意味を持たない。
 - **再帰の意義（段階 3 を維持する理由）**: ネスト（`env timeout sudo ls` の `sudo`、`env timeout env -C /tmp ls` の `env -C`）の Critical/Reject を検出するために必要であり、AC-02/AC-03 の「ネストしたラッパーの内側を含む」に対応する。再帰先が Floor/None を返す場合は段階 4 によりすべて High に潰れる。
-- **`evaluateInner` 以外は不変**: 無コマンド時の Medium 下限（`analyzeEnv`／`analyzeWrapper`／`analyzeTaskset` の no-command 経路、AC-05）、インラインコード High（`hasInlineCode`）、パッケージスクリプトランナー High（`packageScriptRunnerRisk`）、`service` の init スクリプト High（`analyzeService`）、各種 Reject（ローダ制御変数・`env -C`・解釈不能な `env -S`・`find`/`xargs` 子プロセス実行・動的ローダ直接起動・`rsync -e`/`tar --to-command`・抽出不能ラッパー・深さ上限超過）は変更しない（AC-03/AC-04）。
+- **`evaluateInnerAs` 以外は不変**: 無コマンド時の Medium 下限（`analyzeEnv`／`analyzeWrapper`／`analyzeTaskset` の no-command 経路、AC-05）、インラインコード High（`hasInlineCode`）、パッケージスクリプトランナー High（`packageScriptRunnerRisk`）、`service` の init スクリプト High（`analyzeService`）、各種 Reject（ローダ制御変数・`env -C`・解釈不能な `env -S`・`find`/`xargs` 子プロセス実行・動的ローダ直接起動・`rsync -e`/`tar --to-command`・抽出不能ラッパー・深さ上限超過）は変更しない（AC-03/AC-04）。
 
 ### 3.3 スコープ外との境界: shebang（直接スクリプト実行）インタプリタ評価
 
-**実装上の重要制約**: 現状、ラッパーインナー評価とインタプリタ評価は**同一関数 `evaluateInnerAs` を共有**する（`evaluateInner` は `evaluateInnerAs(..., RoleInner)` へ委譲し、`analyzeShebang` は `evaluateInnerAs(..., RoleInterpreter)` を呼ぶ）。要件のスコープ外（「shebang スクリプトのインタプリタ連鎖（直接スクリプト実行）の扱いは変更しない」）を守るため、**直接スクリプト実行（cmdPath 自身がスクリプト）の shebang インタプリタ評価は従来の細粒度算出を保持**する。したがってフラット High 化は、`role == RoleInner` の経路に限って適用する（`evaluateInnerAs` 内で `role` により分岐させるか、`evaluateInner` が細粒度算出へ委譲しない形に分離する）。これにより `RoleInterpreter` 経路が不変であることを設計上保証する。
+**実装上の重要制約**: 現状、ラッパーインナー評価とインタプリタ評価は**同一関数 `evaluateInnerAs` を共有**する（`evaluateInnerAs` は `evaluateInnerAs(..., RoleInner)` へ委譲し、`analyzeShebang` は `evaluateInnerAs(..., RoleInterpreter)` を呼ぶ）。要件のスコープ外（「shebang スクリプトのインタプリタ連鎖（直接スクリプト実行）の扱いは変更しない」）を守るため、**直接スクリプト実行（cmdPath 自身がスクリプト）の shebang インタプリタ評価は従来の細粒度算出を保持**する。したがってフラット High 化は、`role == RoleInner` の経路に限って適用する（`evaluateInnerAs` 内で `role` により分岐させるか、`evaluateInnerAs` が細粒度算出へ委譲しない形に分離する）。これにより `RoleInterpreter` 経路が不変であることを設計上保証する。
 
 > この区別が必要な理由（要件から自明でない制約の明示）: 直接スクリプト実行の shebang 連鎖までフラット High にすると、無害なインタプリタを持つスクリプト（例: `#!/bin/cat`）の直接実行が High になり、スコープ外の挙動を変更してしまう。したがってラッパーインナー経路と shebang インタプリタ経路を `role` で分離する。なお、ラッパーがスクリプトを包む場合（`timeout 5 ./script.sh`）は、ラッパーインナーとして一律 High になる（段階 3 の再帰で shebang の Critical/Reject は引き続き検出される）。
 
@@ -159,7 +159,7 @@ type IndirectExecutionResult struct {
 
 | ファイル | 区分 | 責務 / 変更内容 | 要件 | 更新が必要な既存テスト |
 |---------|------|----------------|------|----------------------|
-| [indirect_execution.go](../../../internal/runner/base/security/indirect_execution.go) | 変更 | `evaluateInner`（ラッパーインナー評価）を細粒度算出からフラット High 下限へ単純化（§3.2）。実行時挙動を誤記したコメントを修正（下記 AC-08 対象）。`evaluateInnerAs` の `RoleInterpreter` 経路は維持（§3.3） | F-001/F-003/AC-01〜08 | [indirect_execution_test.go](../../../internal/runner/base/security/indirect_execution_test.go)（下表参照） |
+| [indirect_execution.go](../../../internal/runner/base/security/indirect_execution.go) | 変更 | `evaluateInnerAs`（ラッパーインナー評価）を細粒度算出からフラット High 下限へ単純化（§3.2）。実行時挙動を誤記したコメントを修正（下記 AC-08 対象）。`evaluateInnerAs` の `RoleInterpreter` 経路は維持（§3.3） | F-001/F-003/AC-01〜08 | [indirect_execution_test.go](../../../internal/runner/base/security/indirect_execution_test.go)（下表参照） |
 | [risk_assessment.ja.md](../../../docs/user/risk_assessment.ja.md) / [risk_assessment.md](../../../docs/user/risk_assessment.md) | 変更 | §3（間接実行）・§8（移行ノートのラッパー記述）を本方式へ更新（一律 High／特権=Critical／一部 Blocking／インナーは自動検証・自動記録されない・実体固定は `verify_files` 明示登録） | F-004/AC-09 | - |
 | [04_global_level.ja.md](../../../docs/user/toml_config/04_global_level.ja.md) / [04_global_level.md](../../../docs/user/toml_config/04_global_level.md) | 変更 | §4.6 `verify_files` の「コマンドは自動検証される」記述に、ラッパーのインナーは自動検証の対象外である注記を追加 | F-004/AC-09 | - |
 | `06_command_level{.ja,}.md` / `05_group_level{.ja,}.md` / `README{.ja,}.md` | 変更 | 同趣旨の記述があれば整合（`risk_level`・`verify_files`/`cmd_allowed`・セキュリティ機能概説） | F-004/AC-09 | - |
@@ -263,7 +263,7 @@ flowchart TD
 
 ## 6. 処理フロー詳細
 
-### 6.1 ラッパーインナー評価（`evaluateInner`）の判定フロー
+### 6.1 ラッパーインナー評価（`evaluateInnerAs`）の判定フロー
 
 ```mermaid
 flowchart TD
@@ -307,7 +307,7 @@ flowchart TD
 
 ## 8. 実装優先順位（フェーズ）
 
-1. **Phase 1（コア・コメント）**: `indirect_execution.go` の `evaluateInner` をフラット High へ単純化し、AC-08 対象コメントを修正。関連単体テストを更新。`make fmt && make test && make lint` を緑にする。
+1. **Phase 1（コア・コメント）**: `indirect_execution.go` の `evaluateInnerAs` をフラット High へ単純化し、AC-08 対象コメントを修正。関連単体テストを更新。`make fmt && make test && make lint` を緑にする。
 2. **Phase 2（ユーザー向け文書・AC-09）**: `risk_assessment`・`toml_config/04_global_level`・関連ページを更新。日本語版（`.ja.md`）を先に更新・コミットし、英語版（`.md`）を `mktrans` で整合（翻訳ワークフロー準拠）。
 3. **Phase 3（開発者向け文書・AC-10）**: `security-architecture.md` の間接実行リゾルバ記述を更新。
 4. **Phase 4（0136 ドキュメント注記・AC-11）**: 0136 の該当箇所へ最小限の参照注記を追加。

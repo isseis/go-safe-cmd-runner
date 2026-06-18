@@ -663,7 +663,7 @@ func resolveInner(inner string, innerArgs []string, pathOverridden bool, depth i
 	if pathOverridden && !strings.Contains(inner, "/") {
 		return reject()
 	}
-	return evaluateInner(inner, innerArgs, depth, role)
+	return evaluateInnerAs(inner, innerArgs, depth, role)
 }
 
 // analyzeWrapper skips a wrapper's options and positional arguments and evaluates
@@ -688,7 +688,7 @@ func analyzeWrapper(spec wrapperSpec, args []string, depth int, role risktypes.A
 	if cmd := args[idx]; strings.HasPrefix(cmd, "-") {
 		return reject()
 	}
-	return evaluateInner(args[idx], args[idx+1:], depth, role)
+	return evaluateInnerAs(args[idx], args[idx+1:], depth, role)
 }
 
 // analyzeTaskset resolves the inner command of a taskset invocation. The CPU
@@ -751,22 +751,17 @@ func analyzeTaskset(args []string, depth int, role risktypes.ArtifactRole) Indir
 	if strings.HasPrefix(args[i], "-") {
 		return reject() // mis-located command boundary: fail closed
 	}
-	return evaluateInner(args[i], args[i+1:], depth, role)
+	return evaluateInnerAs(args[i], args[i+1:], depth, role)
 }
 
-// evaluateInner evaluates a wrapper's extracted inner command, carrying the role
-// of the enclosing context (RoleInner for a wrapper inner, RoleInterpreter when
-// the enclosing form is a shebang interpreter chain reached through env).
-func evaluateInner(inner string, innerArgs []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
-	return evaluateInnerAs(inner, innerArgs, depth, role)
-}
-
-// evaluateInnerAs is evaluateInner with an explicit artifact role (a shebang
-// interpreter is recorded as RoleInterpreter rather than RoleInner). A privilege
-// token is Critical; an inner form that cannot be bound (find/xargs, loader)
-// propagates its rejection. The inner command is recorded as a chain artifact on
-// every outcome (Floor/Critical/Reject) so the indirect-execution chain remains
-// traceable in audits even on deny paths.
+// evaluateInnerAs evaluates a wrapper's extracted inner command (or a shebang
+// interpreter), carrying the role of the enclosing context: RoleInner for a
+// wrapper inner (flattened to a High floor), RoleInterpreter for a shebang
+// interpreter chain (kept on the fine-grained path), recorded on the artifact.
+// A privilege token is Critical; an inner form that cannot be bound (find/xargs,
+// loader) propagates its rejection. The inner command is recorded as a chain
+// artifact on every outcome (Floor/Critical/Reject) so the indirect-execution
+// chain remains traceable in audits even on deny paths.
 func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
 	artifact := risktypes.ExecutedArtifact{Path: inner, Role: role}
 
