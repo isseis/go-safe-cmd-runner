@@ -59,21 +59,25 @@
 **対象ファイル**: `internal/runner/base/security/package_manager_flags.go`（新規）、
 `internal/runner/base/security/command_analysis.go`（変更）
 
-- [ ] **1-1**: `package_manager_flags.go`（`package security`、build タグなし）を作成し、`flagRule` 型と
+- [x] **1-1**: `package_manager_flags.go`（`package security`、build タグなし）を作成し、`flagRule` 型と
   `flagStyleManagers` マップリテラルを定義する。初期エントリは **pacman のみ**
   （`modifyingShortChars: "SRU"`、`modifyingLongForms: {--sync,--remove,--upgrade}`、exclude 空）。
-  型・フィールドの定義は 02 §3.1 に従う。コメント・識別子はすべて英語。
-- [ ] **1-2**: `command_analysis.go` の `isSystemModificationByNames` を、`flagStyleManagers` を引いて
+  型・フィールドの定義は 02 §3.1 に従う。コメント・識別子はすべて英語。規則適用の述語
+  （`isFlagStyleModification` / `matchesShortFlag`）も同ファイルにデータと凝集させて配置した。
+- [x] **1-2**: `command_analysis.go` の `isSystemModificationByNames` を、`flagStyleManagers` を引いて
   各フラグ方式マネージャに規則を適用する汎用ループへ置換する。判定規則（除外優先 → 長形式完全一致 →
   短形式の先頭文字一致、退化トークンは長さ検査で非該当）は 02 §3.1 に従う。verb 方式判定
   （`packageManagerNames`+`packageModifyingVerbs`）と systemctl/service 分岐は不変。フラグ方式ループは
   `flagStyleManagers` 所属で独立に発火させる（`packageManagerNames` ゲートに依存しない）。
-- [ ] **1-3**: `isPacmanModifyingFlag` 関数（コメント含む l.478〜494）と、`isSystemModificationByNames`
+- [x] **1-3**: `isPacmanModifyingFlag` 関数（コメント含む l.478〜494）と、`isSystemModificationByNames`
   内の `_, isPacman := names["pacman"]` 行および `isPacman && isPacmanModifyingFlag(arg)` 分岐を削除する。
-- [ ] **1-4（完了ゲート）**: `make fmt` → `make test` → `make lint` を実行し、既存テスト（特に
+- [x] **1-4（完了ゲート）**: `make fmt` → `make test` → `make lint` を実行し、既存テスト（特に
   `TestIsSystemModification_PackageManagerVerbs` の pacman・verb ケース、`TestIsSystemModification`）が
   **変更なしで緑**であることを確認する。`rg -n "isPacmanModifyingFlag|isPacman\b" internal --glob '*.go'`
   が 0 件であることを確認する（AC-10 / NF-005）。
+  注: `make fmt` → `make test`（緑）→ `make lint`（ピン留め版 golangci-lint v2.11.4 で 0 issues）を確認。
+  既存テスト（`TestIsSystemModification_PackageManagerVerbs` の pacman・verb ケース、`TestIsSystemModification`）は
+  無変更で緑。`rg` 0 件。本変更由来の新規 lint 指摘なし。
 
 ### PR-1 作成ポイント: per-tool flag mechanism refactor
 
@@ -83,8 +87,8 @@
 
 **レビュー観点**: pacman 既存挙動の不変（有効入力で退行なし）／`isPacman`・`isPacmanModifyingFlag` の完全削除／ゲート分離（verb=`packageManagerNames`、flag=`flagStyleManagers`）の正しさ
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/750）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
