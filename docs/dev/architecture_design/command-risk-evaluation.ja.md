@@ -290,7 +290,7 @@ NewProfile("claude", "gemini", "chatgpt", "gpt", "openai", "anthropic").
 
 ### システム変更リスク（`SystemModificationRisk`）
 
-システム変更は専用関数 `SystemModificationRisk(names)` が判定する（プロファイルの `SystemModRisk` ではなくこちらが評価経路の単一の情報源）。判定は**解決済みバイナリ名の集合一致のみ**で行い、引数（サブコマンド・フラグ）を参照しない。
+システム変更は専用関数 `SystemModificationRisk(names)` が判定する（プロファイルの `SystemModRisk` ではなくこちらが評価経路の単一の情報源）。判定は、**解決済みのバイナリ名（basename とシンボリックリンク解決結果）が、後述の High／Medium の名前集合に含まれるか**だけで行い、引数（サブコマンド・フラグ）は参照しない。
 
 - パッケージマネージャ（`apt`, `apt-get`, `yum`, `dnf`, `zypper`, `pacman`, `brew`, `pip`, `npm`, `yarn`, `dpkg`, `rpm`）→ **High**。未検証のメンテナンススクリプト（dpkg `postinst`、rpm `%post`、pip `setup.py`、npm `postinstall` 等）を特権実行し得るため、サブコマンドによらず一律 High（`apt list` のような照会も High）。
 - `systemctl`：全サブコマンド一律 **High**（照会系の `status`/`show`/`list-*` を含む。未検証の unit を扱うため）。

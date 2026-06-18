@@ -290,7 +290,7 @@ Consistency is verified by `Validate()` (for example, if `NetworkTypeAlways`, th
 
 ### System Modification Risk (`SystemModificationRisk`)
 
-System modification is decided by the dedicated function `SystemModificationRisk(names)` (this, not the profile's `SystemModRisk`, is the single source of truth on the evaluation path). The decision is made **solely by set-membership of the resolved binary names**, without consulting the arguments (subcommands/flags).
+System modification is decided by the dedicated function `SystemModificationRisk(names)` (this, not the profile's `SystemModRisk`, is the single source of truth on the evaluation path). The decision is made **solely by whether the resolved binary name (its basename and symlink-resolution result) is contained in the High/Medium name sets below**, without consulting the arguments (subcommands/flags).
 
 - Package managers (`apt`, `apt-get`, `yum`, `dnf`, `zypper`, `pacman`, `brew`, `pip`, `npm`, `yarn`, `dpkg`, `rpm`) → **High**. Because they can run unverified maintainer scripts (dpkg `postinst`, rpm `%post`, pip `setup.py`, npm `postinstall`, etc.) under privilege, they are uniformly High regardless of subcommand (a query such as `apt list` is also High).
 - `systemctl`: all subcommands are uniformly **High** (including read-only `status`/`show`/`list-*`, because it handles unverified units).
