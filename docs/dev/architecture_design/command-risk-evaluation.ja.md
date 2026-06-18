@@ -290,14 +290,16 @@ NewProfile("claude", "gemini", "chatgpt", "gpt", "openai", "anthropic").
 
 ### システム変更リスク（`SystemModificationRisk`）
 
-システム変更は専用関数 `SystemModificationRisk(names, args)` が判定する（プロファイルの `SystemModRisk` ではなくこちらが評価経路の単一の情報源）。
+システム変更は専用関数 `SystemModificationRisk(names)` が判定する（プロファイルの `SystemModRisk` ではなくこちらが評価経路の単一の情報源）。判定は**解決済みバイナリ名の集合一致のみ**で行い、引数（サブコマンド・フラグ）を参照しない。
 
-- `systemctl`：サブコマンドにより条件分岐（`SystemctlSubcommandRisk`）。変更系の動詞（start/stop/enable/mask など）と未知・識別不能な動詞は **High**、読み取り専用の動詞（status/show/list-* など）とサブコマンド省略は **Medium** の下限（Low にはしない。構成情報を露出しうるため）。
+- パッケージマネージャ（`apt`, `apt-get`, `yum`, `dnf`, `zypper`, `pacman`, `brew`, `pip`, `npm`, `yarn`, `dpkg`, `rpm`）→ **High**。未検証のメンテナンススクリプト（dpkg `postinst`、rpm `%post`、pip `setup.py`、npm `postinstall` 等）を特権実行し得るため、サブコマンドによらず一律 High（`apt list` のような照会も High）。
+- `systemctl`：全サブコマンド一律 **High**（照会系の `status`/`show`/`list-*` を含む。未検証の unit を扱うため）。
 - `service`：未検証の init スクリプトを実行するため常に **High**。
-- その他のシステム管理系コマンド（`mount`, `umount`, `fdisk`, `mkfs`, `crontab`, `at` 等）→ **Medium**。
-- パッケージ管理コマンド（`apt`, `yum`, `dnf`, `npm`, `pip`, `pacman` 等）で、引数に `install` / `remove` / `upgrade` 等の変更系の動詞を伴う場合のみ → **Medium**（`apt list` のような照会は対象外）。
+- その他のシステム管理系コマンド（`mount`, `umount`, `fdisk`, `parted`, `mkfs`, `fsck`, `crontab`, `at`, `batch`, `chkconfig`, `update-rc.d`）→ **Medium**（定義済み操作によるシステム状態変更で、未検証コードの特権実行ではないため）。
 
 該当しない場合は `RiskLevelUnknown` を返し、システム変更軸は寄与しない。
+
+> **粗粒度化（0137／systemctl サブコマンド粒度の撤回）**: 本判定は、かつて `systemctl.go` のサブコマンド解析（read-only=Medium／change=High）と、0137 が導入したパッケージマネージャのフラグ方式・verb 方式の検出（install/remove 系の動詞のみを Medium とし照会系を除外）を持っていたが、これらは脅威モデルに対して過剰で実 config が依存していないため撤回し、名マッチ固定レベルへ単純化した。`SystemctlSubcommandRisk` 等の旧シンボルは撤去済み。
 
 ### 任意コード実行ランナー（`IsArbitraryCodeExecutionRunner`）
 
