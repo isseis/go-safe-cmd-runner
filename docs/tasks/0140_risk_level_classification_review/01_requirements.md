@@ -165,7 +165,8 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
 
 宛先パス/対象によって脅威が決まる「ロケーション定義コマンド」は、宛先ゾーンの関数として
 判定する：**trust-critical → High / ordinary → Medium / safe-zone → Low**。対象は
-`cp`・`mv`・`rm`・`rmdir`・`unlink`・`shred`・`ln`・`mkdir`・`install`、および `dd`・`mount`・`setfacl`。
+`cp`・`mv`・`rm`・`rmdir`・`unlink`・`shred`・`ln`・`mkdir`・`install`・`tee`・`sponge`、および
+`dd`・`mount`・`setfacl`。
 
 **Acceptance Criteria**:
 - **AC-14**（宛先ゾーン基本）: ロケーション定義コマンドの宛先が trust-critical パス
@@ -218,6 +219,12 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
   最終 max 合成により後段のゾーン判定では降格できない。**safe-zone Low（AC-16）を成立させるため、
   これら applet について coreutils 次元をゾーンモデルと整合させる（無条件 High を抑止し軸2 の判定に
   委ねる）よう改修することを要件とする**。降格は AC-17/AC-18 の安全要件を満たす場合に限る。
+- **AC-39**（`tee`/`sponge` のファイル書き込み）: `tee`（および moreutils `sponge`）は stdin を引数の
+  FILE に書き込むため、ロケーション定義コマンドとして **FILE オペランドを zoning 対象**とする。FILE が
+  trust-critical（例 `echo x | tee /usr/bin/y`・`tee /etc/passwd`）なら **High**、safe-zone なら Low、
+  それ以外は Medium。`tee` の非フラグ引数はすべて書き込み先 FILE（`-a`/`-i`/`-p` 等のフラグを除く）。
+  注: `tee` は**内側コマンドを実行しない**——脅威は信頼ファイルの上書き（④信頼境界破壊）であって
+  コマンド実行ではない。宛先パースは AC-18 の fail-safe（不確定なら Low にしない）に従う。
 
 ### F-005: Critical の尖鋭化
 
@@ -252,6 +259,13 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
 - **AC-28**: 同一コマンドに対し、実行時（runtime）と dry-run で同一のリスク分類となる。
 - **AC-29**: ラッパー/間接実行経由の判定が維持される。例: `env modprobe x` は High 以上、
   `sudo useradd u` は **Critical**（特権昇格）に分類される。
+- **AC-29a**（`env`/ラッパは名前ベース High にしない）: `env`・`timeout`・`nice`・`ionice`・`stdbuf`・
+  `setsid` 等の実行ラッパは、内側コマンドを間接実行解析でゲートする（`wrapperSpecs`,
+  [indirect_execution.go](../../../internal/runner/base/security/indirect_execution.go)）ため、F-002 の
+  固定 High 名集合には**入れない**（`env FOO=bar ls` を High に過大分類しない）。`env` 経由の④信頼境界
+  破壊に当たる loader 制御変数（`LD_PRELOAD`・`LD_LIBRARY_PATH`・`LD_AUDIT`・`LD_DEBUG` 等、信頼バイナリへ
+  のコード注入）は **forbidden-env-var（`ReasonForbiddenEnvVar`）として拒否**される（既存挙動）。すなわち
+  env の信頼境界リスクは名前 High ではなく「内側コマンドのゲート＋禁止環境変数」で担保する。
 - **AC-30**: 本タスクで引き上げ/変更されたコマンドが deny されたとき、監査ログに対応する理由
   （システム変更・破壊的操作・危険引数パターン等の理由コード）が記録される。
 - **AC-31**: 最終リスクは適用 dimension の **max** で合成され、軸1（名前固定）と軸2（arg/宛先ゾーン）の
