@@ -129,6 +129,19 @@
 
 - [ ] `make fmt && make test && make lint` が緑（NF-001）。`go test -tags test ./internal/runner/base/security/... ./internal/runner/base/risk/...` を含む全テストが通過。
 
+### PR-1 作成ポイント: risk-evaluation core change (flat-High wrapper inner)
+
+**対象ステップ**: Phase 1
+
+**推奨タイトル**: `feat(0138): flatten wrapper inner command risk to a High floor`
+
+**レビュー観点**: `role` の再帰伝播で shebang（`RoleInterpreter`）経路が不変か / フラット High の `Artifacts` が `nested.Artifacts` を保持するか（ネストしたラッパー） / Critical・Reject 伝播の維持と AC-08 コメント 6 箇所の網羅 / 影響テスト（`security`・`risk` 両パッケージ）の更新・削除と全テスト緑
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 2: ユーザー向けドキュメント更新（F-004/AC-09）
 
 **対象ファイル**: `docs/user/risk_assessment{.ja,}.md`, `docs/user/toml_config/04_global_level{.ja,}.md`, `docs/user/toml_config/05_group_level{.ja,}.md`, `docs/user/toml_config/06_command_level{.ja,}.md`, `README{.ja,}.md`
@@ -139,6 +152,21 @@
 - [ ] `05_group_level.ja.md`（`verify_files`/`cmd_allowed`）・`06_command_level.ja.md`（`risk_level`）・`README.ja.md`（セキュリティ機能概説）に同趣旨の記述があれば整合させる（無ければ変更不要、その旨を確認）。
 - [ ] 上記すべての `.ja.md` をコミット後、対応する英語版（`.md`）を `/mktrans` で整合させる（日本語版を正とする翻訳ワークフロー）。
 
+### PR-2 作成ポイント: user-facing documentation (AC-09)
+
+**対象ステップ**: Phase 2
+
+**推奨タイトル**: `docs(0138): document flat-High wrapper inner behavior for users`
+
+**レビュー観点**: ラッパーインナー=High／特権=Critical／一部 Blocking／自動検証・自動記録なしの記述が正確か / TOCTOU 残存リスク（§5.2）の明記 / `.ja.md` を先行コミットし `.md` を `/mktrans` で整合（翻訳ワークフロー）
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（docs-only のため自明に緑だが、ja/en 乖離は検知できない点に注意）
+- [ ] `.ja.md` を先行コミット後 `/mktrans` で `.md` を再生成し、AC-09 の `rg`（ja/en 双方）＋ ja↔en 章構成の目視で整合を確認した（本 PR の実質ゲート）
+- [ ] 条件付きステップ（`05_group_level`/`06_command_level`/`README`）は該当記述の有無を grep で確認し、無変更の場合はその旨を PR 説明に記録した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 3: 開発者向けドキュメント更新（F-004/AC-10）
 
 **対象ファイル**: `docs/dev/architecture_design/security-architecture.md`, `docs/dev/architecture_design/command-risk-evaluation{.ja,}.md`
@@ -146,6 +174,20 @@
 - [ ] `security-architecture.md` の間接実行リゾルバ記述（[:433](../../../docs/dev/architecture_design/security-architecture.md#L433) 周辺）を本方式へ更新する: 抽出は維持／Critical・拒否を優先／通常インナーは一律 High／インナーの fd 束縛・ラッパー再実装はしない。
 - [ ] `command-risk-evaluation.ja.md` の「内側コマンドの評価（`evaluateInnerAs`）では…すべて折り込み…」記述を「`RoleInner`（ラッパーインナー）は一律 High 下限（細粒度算出なし）。`RoleInterpreter`（shebang 直接スクリプト実行）は従来どおり細粒度算出を維持」へ書き換える（AC-10 の文言を超える追加更新。§1.3 参照）。
 - [ ] `command-risk-evaluation.ja.md` を更新後、英語版 `command-risk-evaluation.md` を `/mktrans` で整合させる。
+
+### PR-3 作成ポイント: developer architecture documentation (AC-10)
+
+**対象ステップ**: Phase 3
+
+**推奨タイトル**: `docs(0138): update developer architecture docs for flat-High`
+
+**レビュー観点**: `security-architecture.md` の間接実行リゾルバ記述が本方式（抽出維持／Critical・拒否優先／一律 High／fd 束縛・再実装なし）へ更新されたか / `command-risk-evaluation` の「すべて折り込み」記述が `RoleInterpreter` 限定へ修正されたか / ja↔en 整合
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（docs-only のため自明に緑だが、ja/en 乖離は検知できない点に注意）
+- [ ] `command-risk-evaluation.ja.md` 更新後 `/mktrans` で `.md` を再生成し、AC-10 の `rg`（ja/en 双方）＋ ja↔en 章構成の目視で整合を確認した（本 PR の実質ゲート）
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4: 0136 ドキュメントへの参照注記追加（F-003/AC-11）
 
@@ -156,7 +198,22 @@
 - [ ] `0136/03_implementation_plan.md` Step 2-2 の保留 `[-]` 項目（[:288](../../../docs/tasks/0136_runtime_risk_evaluation_enforcement/03_implementation_plan.md#L288)）に同様の注記を追加する。
 - [ ] `0136/03_implementation_plan.md` AC-60 行（[:574](../../../docs/tasks/0136_runtime_risk_evaluation_enforcement/03_implementation_plan.md#L574)）・AC-77 行（[:591](../../../docs/tasks/0136_runtime_risk_evaluation_enforcement/03_implementation_plan.md#L591)）に、0138 による改訂／再定義の旨の注記と 0138 参照を追加する。
 
+### PR-4 作成ポイント: supersede notes in task 0136 docs (AC-11)
+
+**対象ステップ**: Phase 4
+
+**推奨タイトル**: `docs(0138): add 0138 supersede notes to task 0136 documents`
+
+**レビュー観点**: 注記が最小限（1〜2 行＋0138 参照）で 0136 の既存記述を詳細改訂していないか / §3.3・§5.2・Step 2-2 `[-]`・AC-60・AC-77 の全該当箇所を網羅 / スナップショット方針（作業用ドキュメントは改訂しない）の遵守
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ## 3. 実装順序とマイルストーン
+
+### 3.1 マイルストーン
 
 | マイルストーン | フェーズ | 成果物 | 完了条件 |
 |---|---|---|---|
@@ -166,6 +223,17 @@
 | M4: 0136 注記 | Phase 4 | 0136 ドキュメント 2 ファイルへの参照注記 | AC-11 検証通過 |
 
 フェーズ間に強い依存はないが、コア（M1）を先に確定させてからドキュメント（M2〜M4）を整合させる。Phase 2/3 は各ファイルとも日本語版を先にコミットしてから英語版を `/mktrans` で整合させる。
+
+### 3.2 PR 構成
+
+各 PR は 1 フェーズに 1:1 対応する。PR-1 のみがコード変更（唯一のリスク PR）で、PR-2〜4 はドキュメント変更（相互に独立し、グリーンゲートへ影響しない）。コードを先行させ、PR-1 マージ後にドキュメント PR を作成する。
+
+| PR | 対象ステップ | 主な変更内容 |
+|---|---|---|
+| PR-1 | Phase 1 | `evaluateInnerAs` の `role` 伝播＋`RoleInner` フラット High 化、AC-08 コメント 6 箇所、`security`・`risk` 両パッケージの単体テスト更新（F-001/F-003/AC-01〜08） |
+| PR-2 | Phase 2 | ユーザー向け文書（`risk_assessment`／`04_global_level`／関連ページ）を本方式へ更新、ja→en（AC-09） |
+| PR-3 | Phase 3 | 開発者向け文書（`security-architecture.md`／`command-risk-evaluation`）を本方式へ更新、ja→en（AC-10） |
+| PR-4 | Phase 4 | タスク 0136 の該当箇所へ 0138 supersede 参照注記を追加（AC-11） |
 
 ## 4. テスト戦略
 
@@ -201,7 +269,7 @@
 | AC-06 | static | `rg -n "role == risktypes.RoleInterpreter\|role != risktypes.RoleInner" internal/runner/base/security/indirect_execution.go` | `evaluateInnerAs` に role 分岐ガードが存在し、細粒度算出ブロックが `RoleInterpreter` 経路に限定されていることを構造的に確認（1 件以上） |
 | AC-06 | manual | `evaluateInnerAs` のコードレビュー | `RoleInner` 経路が `ResolveCommandNames`（名前解決）・`isPrivilegeCommand`・再帰のみを呼び、ハッシュ検証・fd 束縛・allowlist 照合の API を呼ばないこと |
 | AC-07 | static | `rg -n "AnalyzeIndirectExecution\|wrapperSpec\|inner" cmd/record/ internal/filevalidator/` | `record` 経路にラッパーインナー抽出・自動記録のロジックが存在しない（no matches）。インナーの自動記録を行わないことを確認 |
-| AC-08 | static | `rg -n "re-implements these wrappers\|extract and exec directly\|wired in the execution layer\|Other wrappers the runner re-implements\|a wrapped dangerous inner command" internal/runner/base/security/indirect_execution.go` | 旧コメント文言が 0 件（すべて修正済み） |
+| AC-08 | static | `rg -n "re-implements these wrappers\|extract and exec directly\|wired in the execution layer\|Other wrappers the runner re-implements\|a wrapped dangerous inner command\|identity binding / disposition" internal/runner/base/security/indirect_execution.go` | 旧コメント文言が 0 件（6 箇所すべて修正済み。`identity binding / disposition` は `analyzeService` の 6 箇所目を独立に捕捉。§1.3 L44 参照 = architecture §3.4 の 5 箇所＋`analyzeService` 1 箇所） |
 | AC-09 | static | `rg -n "インナーは自動検証・自動記録されない" docs/user/risk_assessment.ja.md`（新規追記する固有アンカー文） | 1 件以上（ラッパーインナー=High／特権=Critical／一部 Blocking／自動検証・自動記録されない、を説明する新規文の存在を固有フレーズで確認）。英語版 `.md` も対応する固有フレーズ（例: "wrapper inner commands are not automatically verified or recorded"）で 1 件以上 |
 | AC-09 | static | `rg -n "自動検証の対象外" docs/user/toml_config/04_global_level.ja.md` および対応 `.md` | §4.6 にラッパーインナーが自動検証の対象外である旨の新規注記が 1 件以上 |
 | AC-09 | static | `rg -n "評価・ゲートされます" docs/user/risk_assessment.ja.md` | 旧「ラップされた内部コマンドが評価・ゲートされます」記述が残っていない（no matches） |
@@ -212,10 +280,10 @@
 
 ## 7. 実装チェックリスト
 
-- [ ] **Phase 1**: コア（`role` 伝播＋`role` 分岐）＋ AC-08 コメント 6 箇所 ＋ `indirect_execution_test.go` 更新（新規 3・更新 5・削除 1・コメント修正 2）＋ `evaluator_test.go` 削除 1 ＋ 完了ゲート緑
-- [ ] **Phase 2**: ユーザー文書（ja → en）AC-09
-- [ ] **Phase 3**: 開発者文書（`security-architecture.md` ＋ `command-risk-evaluation` ja → en）AC-10
-- [ ] **Phase 4**: 0136 注記（02/03 各該当箇所）AC-11
+- [ ] PR-1 マージ済み（対象ステップ: Phase 1）— コア（`role` 伝播＋`role` 分岐）＋ AC-08 コメント 6 箇所 ＋ `indirect_execution_test.go`（新規 3・アサーション更新 3・コメント修正 2・削除 1）＋ `evaluator_test.go` 削除 1 ＋ 完了ゲート緑（AC-01〜08）
+- [ ] PR-2 マージ済み（対象ステップ: Phase 2）— ユーザー文書（ja → en）AC-09
+- [ ] PR-3 マージ済み（対象ステップ: Phase 3）— 開発者文書（`security-architecture.md` ＋ `command-risk-evaluation` ja → en）AC-10
+- [ ] PR-4 マージ済み（対象ステップ: Phase 4）— 0136 注記（02/03 各該当箇所）AC-11
 - [ ] **全体**: §6 の全 AC 検証タスクが期待結果を満たす
 
 ## 8. クロスサーチチェックリスト
