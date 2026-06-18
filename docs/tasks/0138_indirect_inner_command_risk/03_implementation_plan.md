@@ -185,8 +185,8 @@
 
 **レビュー観点**: `security-architecture.md` の間接実行リゾルバ記述が本方式（抽出維持／Critical・拒否優先／一律 High／fd 束縛・再実装なし）へ更新されたか / `command-risk-evaluation` の「すべて折り込み」記述が `RoleInterpreter` 限定へ修正されたか / ja↔en 整合
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（docs-only のため自明に緑だが、ja/en 乖離は検知できない点に注意）
-- [ ] `command-risk-evaluation.ja.md` 更新後 `/mktrans` で `.md` を再生成し、AC-10 の `rg`（ja/en 双方）＋ ja↔en 章構成の目視で整合を確認した（本 PR の実質ゲート）
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（docs-only のため自明に緑だが、ja/en 乖離は検知できない点に注意）
+- [x] `command-risk-evaluation.ja.md` 更新後 `/mktrans` で `.md` を再生成し、AC-10 の `rg`（ja/en 双方）＋ ja↔en 章構成の目視で整合を確認した（本 PR の実質ゲート）
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
