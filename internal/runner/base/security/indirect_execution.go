@@ -36,8 +36,9 @@ const (
 	IndirectReject
 	// IndirectFloor means the form is allowable but contributes a minimum risk
 	// level (env with no command -> Medium; inline shell/interpreter, package
-	// script runner, or a wrapped dangerous inner command -> their level) that is
-	// folded into the effective-risk maximum.
+	// script runner -> High; a wrapped extractable inner command -> a flat High
+	// floor regardless of the inner's content) that is folded into the
+	// effective-risk maximum.
 	IndirectFloor
 )
 
@@ -45,28 +46,32 @@ const (
 // effective risk.
 //
 // Scope: this resolver produces the evaluation-time decision (Critical / Reject /
-// Floor) and records the artifacts that participate in the chain. The actual fd
-// binding and hash gating of each artifact (populating Artifact.Identity and
-// Disposition) is wired in the execution layer; here Artifacts carry their path
-// and role for audit and for that later binding step.
+// Floor) and records the artifacts that participate in the chain. Artifacts carry
+// their path and role for audit only; the runner does not fd-bind or hash-gate a
+// wrapper's inner command (that design was withdrawn). A user who needs to pin an
+// inner command's identity registers it explicitly in verify_files.
 type IndirectExecutionResult struct {
 	Kind        IndirectExecutionKind
 	Level       runnertypes.RiskLevel
 	ReasonCodes []risktypes.ReasonCode
-	// Reasons carries human-readable reasons collected from a wrapped inner
-	// command's risk profile (e.g. "Always communicates with external AI API" for
-	// a wrapped claude), so the audit log of an indirect form keeps the same
-	// descriptions as the direct invocation. The evaluator folds these into the
-	// assessment's Reasons.
+	// Reasons carries human-readable reasons collected from the risk profile of a
+	// shebang interpreter (the RoleInterpreter path of a direct script execution,
+	// e.g. "Always performs network operations" for an interpreter that profiles as
+	// a network command), so the audit log keeps the same descriptions as the
+	// direct invocation. The evaluator folds these into the assessment's Reasons.
+	// The wrapper-inner (RoleInner) path is a flat High floor and no longer
+	// collects profile reasons.
 	Reasons    []string
 	ErrorClass risktypes.ErrorClass
 	Artifacts  []risktypes.ExecutedArtifact
 }
 
 // wrapperSpec describes how to skip a wrapper's own options and positional
-// arguments to reach the inner COMMAND it runs. The runner re-implements these
-// wrappers (it execs the extracted inner command itself), so the inner command
-// is identity-bindable; that is why wrappers resolve rather than reject.
+// arguments to reach the inner COMMAND it runs. The runner does not re-implement
+// these wrappers or fd-bind the inner command; it parses the wrapper only to
+// extract the inner command and assess its risk (a flat High floor, Critical for a
+// privilege token, Reject for a forbidden form). That is why wrappers resolve
+// rather than reject.
 type wrapperSpec struct {
 	// valueOpts are options that consume the following token as their value
 	// (e.g. timeout -s SIGNAL), so that token is not mistaken for the COMMAND.
@@ -77,7 +82,8 @@ type wrapperSpec struct {
 }
 
 // wrapperSpecs is the curated set of wrappers whose inner command the runner can
-// extract and exec directly. env is parsed separately (it also carries NAME=VALUE
+// extract for risk assessment (the runner does not exec the inner command
+// itself). env is parsed separately (it also carries NAME=VALUE
 // assignments and -S split-strings). taskset is parsed separately too: whether a
 // positional CPU mask precedes the command depends on whether -c/--cpu-list was
 // given, which the fixed-positional model cannot express. xargs is intentionally
@@ -294,10 +300,17 @@ func shortFlagInBundle(arg string, c byte) bool {
 // basename and resolved symbolic links, mirroring the other name-based
 // classifiers.
 func AnalyzeIndirectExecution(cmdPath string, args []string) IndirectExecutionResult {
-	return analyzeIndirect(cmdPath, args, 0)
+	// The top-level command is a wrapper-inner context: RoleInner drives the flat
+	// High floor for any extractable inner command. The shebang branch overrides
+	// this with RoleInterpreter for a direct script execution.
+	return analyzeIndirect(cmdPath, args, 0, risktypes.RoleInner)
 }
 
-func analyzeIndirect(cmdPath string, args []string, depth int) IndirectExecutionResult {
+// analyzeIndirect classifies an indirect-execution form. role threads through the
+// recursion so a shebang interpreter chain reached through env
+// (#!/usr/bin/env <interp>) stays RoleInterpreter (fine-grained) while a wrapper's
+// inner command stays RoleInner (flat High).
+func analyzeIndirect(cmdPath string, args []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
 	if depth >= indirectExecMaxDepth {
 		return reject()
 	}
@@ -366,7 +379,7 @@ func analyzeIndirect(cmdPath string, args []string, depth int) IndirectExecution
 	// env is parsed specially: it carries NAME=VALUE assignments and a -S
 	// split-string in addition to an optional inner command.
 	if _, ok := names["env"]; ok {
-		return analyzeEnv(args, depth)
+		return analyzeEnv(args, depth, role)
 	}
 
 	// taskset is parsed specially: the CPU affinity is either a positional MASK or
@@ -374,16 +387,16 @@ func analyzeIndirect(cmdPath string, args []string, depth int) IndirectExecution
 	// conditional (the fixed-positional wrapper model would shift the inner command
 	// and miss a privilege token for the -c form).
 	if _, ok := names["taskset"]; ok {
-		return analyzeTaskset(args, depth)
+		return analyzeTaskset(args, depth, role)
 	}
 
-	// Other wrappers the runner re-implements: extract the inner command and
-	// evaluate it (the wrapper itself adds no execution beyond the inner command).
-	// wrapperNames is iterated in sorted order so selection is deterministic when
-	// the chain contains more than one wrapper name.
+	// Other wrappers: extract the inner command and assess its risk (the runner
+	// does not re-implement the wrapper; the wrapper itself adds no execution beyond
+	// the inner command). wrapperNames is iterated in sorted order so selection is
+	// deterministic when the chain contains more than one wrapper name.
 	for _, name := range wrapperNames {
 		if _, ok := names[name]; ok {
-			return analyzeWrapper(wrapperSpecs[name], args, depth)
+			return analyzeWrapper(wrapperSpecs[name], args, depth, role)
 		}
 	}
 
@@ -524,7 +537,7 @@ func isEnvChdirOption(t string) bool {
 
 // analyzeEnv parses an env invocation: NAME=VALUE assignments, -S split-strings,
 // option flags, and the optional inner command.
-func analyzeEnv(args []string, depth int) IndirectExecutionResult {
+func analyzeEnv(args []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
 	pathOverridden := false
 	for i := 0; i < len(args); i++ {
 		t := args[i]
@@ -535,7 +548,7 @@ func analyzeEnv(args []string, depth int) IndirectExecutionResult {
 			// env -S prepends the split tokens to the remaining argv (e.g.
 			// `env -S "env" sudo ls` runs `env env sudo ls`), so the trailing
 			// arguments must be carried along, not discarded.
-			return analyzeEnvSplitString(payload, args[i+consumed:], depth)
+			return analyzeEnvSplitString(payload, args[i+consumed:], depth, role)
 		}
 		if isEnvChdirOption(t) {
 			// env -C/--chdir changes the working directory before exec, which changes
@@ -568,7 +581,7 @@ func analyzeEnv(args []string, depth int) IndirectExecutionResult {
 					}
 					continue
 				}
-				return resolveInner(args[j], args[j+1:], pathOverridden, depth)
+				return resolveInner(args[j], args[j+1:], pathOverridden, depth, role)
 			}
 			return floor(runnertypes.RiskLevelMedium, risktypes.ReasonIndirectExecutionWrapper)
 		}
@@ -578,7 +591,7 @@ func analyzeEnv(args []string, depth int) IndirectExecutionResult {
 			return reject()
 		}
 		// First non-option, non-assignment token is the inner command.
-		return resolveInner(t, args[i+1:], pathOverridden, depth)
+		return resolveInner(t, args[i+1:], pathOverridden, depth, role)
 	}
 	// env with no inner command (only assignments/options): suspicious but not a
 	// concrete exec of another artifact. Medium floor.
@@ -631,7 +644,7 @@ func checkEnvAssignment(t string, pathOverridden *bool) (IndirectExecutionResult
 // character that triggers that extra processing is rejected; only payloads that
 // reduce to a faithful whitespace split are interpreted. The split tokens are
 // prepended to the remaining argv (the tokens after the -S option) and re-parsed.
-func analyzeEnvSplitString(s string, remaining []string, depth int) IndirectExecutionResult {
+func analyzeEnvSplitString(s string, remaining []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
 	// Backtick is included so a command-substitution payload also fails closed.
 	if strings.ContainsAny(s, "\\'\"$#`") {
 		return reject()
@@ -640,22 +653,22 @@ func analyzeEnvSplitString(s string, remaining []string, depth int) IndirectExec
 	if len(tokens) == 0 {
 		return reject()
 	}
-	return analyzeEnv(append(tokens, remaining...), depth+1)
+	return analyzeEnv(append(tokens, remaining...), depth+1, role)
 }
 
 // resolveInner evaluates a wrapper's extracted inner command. When the resolution
 // path is attacker-controlled (env overrode PATH) and the inner command is a bare
 // name, it cannot be resolved safely and is rejected.
-func resolveInner(inner string, innerArgs []string, pathOverridden bool, depth int) IndirectExecutionResult {
+func resolveInner(inner string, innerArgs []string, pathOverridden bool, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
 	if pathOverridden && !strings.Contains(inner, "/") {
 		return reject()
 	}
-	return evaluateInner(inner, innerArgs, depth)
+	return evaluateInnerAs(inner, innerArgs, depth, role)
 }
 
 // analyzeWrapper skips a wrapper's options and positional arguments and evaluates
 // the inner command it runs.
-func analyzeWrapper(spec wrapperSpec, args []string, depth int) IndirectExecutionResult {
+func analyzeWrapper(spec wrapperSpec, args []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
 	idx, reliable := skipLeadingOptions(args, optSpec{valueOpts: spec.valueOpts, unknown: shortOptsAreBoolean})
 	// An option of unknown arity may have consumed the real command token; the
 	// parse position is unreliable, so fail closed.
@@ -675,7 +688,7 @@ func analyzeWrapper(spec wrapperSpec, args []string, depth int) IndirectExecutio
 	if cmd := args[idx]; strings.HasPrefix(cmd, "-") {
 		return reject()
 	}
-	return evaluateInner(args[idx], args[idx+1:], depth)
+	return evaluateInnerAs(args[idx], args[idx+1:], depth, role)
 }
 
 // analyzeTaskset resolves the inner command of a taskset invocation. The CPU
@@ -687,7 +700,7 @@ func analyzeWrapper(spec wrapperSpec, args []string, depth int) IndirectExecutio
 // privilege token). The -p/--pid form acts on an existing process and runs no
 // command. taskset's only value-taking short option is -c, so a 'c' anywhere in a
 // short cluster denotes the cpu-list option.
-func analyzeTaskset(args []string, depth int) IndirectExecutionResult {
+func analyzeTaskset(args []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
 	cpuList := false // -c/--cpu-list supplies the affinity, so there is no positional MASK
 	i := 0
 	for i < len(args) {
@@ -738,18 +751,15 @@ func analyzeTaskset(args []string, depth int) IndirectExecutionResult {
 	if strings.HasPrefix(args[i], "-") {
 		return reject() // mis-located command boundary: fail closed
 	}
-	return evaluateInner(args[i], args[i+1:], depth)
+	return evaluateInnerAs(args[i], args[i+1:], depth, role)
 }
 
-// evaluateInner folds the inner command's name-based risk and recurses into a
-// nested wrapper/form, recording the artifact with the RoleInner role.
-func evaluateInner(inner string, innerArgs []string, depth int) IndirectExecutionResult {
-	return evaluateInnerAs(inner, innerArgs, depth, risktypes.RoleInner)
-}
-
-// evaluateInnerAs is evaluateInner with an explicit artifact role (a shebang
-// interpreter is recorded as RoleInterpreter rather than RoleInner). A privilege
-// token is Critical; an inner form that cannot be bound (find/xargs, loader)
+// evaluateInnerAs evaluates a wrapper's extracted inner command (or a shebang
+// interpreter), carrying the role of the enclosing context: RoleInner for a
+// wrapper inner (flattened to a High floor), RoleInterpreter for a shebang
+// interpreter chain (kept on the fine-grained path), recorded on the artifact.
+// A privilege token is Critical; an inner form whose concrete target cannot be
+// safely extracted (a find/xargs child-process helper, a dynamic loader)
 // propagates its rejection. The inner command is recorded as a chain artifact on
 // every outcome (Floor/Critical/Reject) so the indirect-execution chain remains
 // traceable in audits even on deny paths.
@@ -775,13 +785,33 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 	}
 
 	// Recurse: the inner command may itself be a wrapper or another indirect form.
-	nested := analyzeIndirect(inner, innerArgs, depth+1)
+	// Propagate role so an interpreter chain reached through env
+	// (#!/usr/bin/env <interp>) keeps RoleInterpreter and is not collapsed to the
+	// wrapper-inner High floor.
+	nested := analyzeIndirect(inner, innerArgs, depth+1, role)
 	switch nested.Kind {
 	case IndirectCritical, IndirectReject:
 		nested.Artifacts = append(nested.Artifacts, artifact)
 		return nested
 	}
 
+	// A wrapper's inner command (RoleInner) is a flat High floor regardless of its
+	// content: the runner does not fd-bind or hash-gate the inner, so a fine-grained
+	// level would not be backed by an identity guarantee. Critical/Reject above
+	// still take priority. Nested chain artifacts are preserved (e.g. for a nested
+	// wrapper like "env timeout nice ls") so the inner chain stays auditable.
+	if role == risktypes.RoleInner {
+		return IndirectExecutionResult{
+			Kind:        IndirectFloor,
+			Level:       runnertypes.RiskLevelHigh,
+			ReasonCodes: []risktypes.ReasonCode{risktypes.ReasonIndirectExecutionWrapper},
+			Artifacts:   append(nested.Artifacts, artifact),
+		}
+	}
+
+	// RoleInterpreter (a shebang interpreter of a direct script execution) keeps the
+	// fine-grained level computation below: that path is out of scope for the
+	// flat-High change and must stay unchanged.
 	level := nested.Level
 	codes := append([]risktypes.ReasonCode{}, nested.ReasonCodes...)
 	reasons := append([]string{}, nested.Reasons...)
@@ -917,8 +947,8 @@ func analyzeService(args []string) IndirectExecutionResult {
 		return reject()
 	}
 	res := floor(runnertypes.RiskLevelHigh, risktypes.ReasonSystemModification)
-	// Record the init script path and role; identity binding / disposition is
-	// populated when artifact gating is wired in the execution layer.
+	// Record the init script path and role for audit only; the runner does not
+	// fd-bind or hash-gate it (that design was withdrawn).
 	res.Artifacts = []risktypes.ExecutedArtifact{{
 		Path: "/etc/init.d/" + name,
 		Role: risktypes.RoleExecTarget,

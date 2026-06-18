@@ -96,7 +96,8 @@ func TestIndirect_Taskset(t *testing.T) {
 		})
 	}
 
-	// A benign inner command stays low; the -p/--pid form runs no command.
+	// A benign inner command is a flat High floor too (this case checks Kind only);
+	// the -p/--pid form runs no command.
 	assert.Equal(t, IndirectFloor, analyzeIndirectCmd("taskset", "0x3", "ls").Kind)
 	assert.NotEqual(t, IndirectCritical, analyzeIndirectCmd("taskset", "-c", "0-3", "ls").Kind)
 	assert.Equal(t, IndirectFloor, analyzeIndirectCmd("taskset", "-p", "0x1", "1234").Kind)
@@ -135,9 +136,32 @@ func TestIndirect_WrapperDestructive(t *testing.T) {
 	}
 }
 
-// TestIndirect_WrapperProfileFactors verifies a wrapped command's risk profile
-// (network / data-exfiltration) is folded, so a profiled command is not
-// under-classified when wrapped.
+// TestIndirect_WrapperInnerFlatHigh verifies a benign extractable inner command
+// is a flat High floor with the single indirect_execution_wrapper reason code,
+// regardless of how harmless the inner command is.
+func TestIndirect_WrapperInnerFlatHigh(t *testing.T) {
+	cases := []struct {
+		name string
+		cmd  string
+		args []string
+	}{
+		{"env echo", "env", []string{"echo", "hi"}},
+		{"timeout echo", "timeout", []string{"5", "echo", "hi"}},
+		{"nice build script", "nice", []string{"-n", "10", "build.sh"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := analyzeIndirectCmd(tc.cmd, tc.args...)
+			assert.Equal(t, IndirectFloor, res.Kind)
+			assert.Equal(t, runnertypes.RiskLevelHigh, res.Level)
+			assert.Equal(t, []risktypes.ReasonCode{risktypes.ReasonIndirectExecutionWrapper}, res.ReasonCodes)
+		})
+	}
+}
+
+// TestIndirect_WrapperProfileFactors verifies a wrapped command's inner risk
+// profile (network / data-exfiltration) is no longer folded: every extractable
+// wrapper inner is a flat High floor regardless of the inner's profile.
 func TestIndirect_WrapperProfileFactors(t *testing.T) {
 	cases := []struct {
 		name string
@@ -146,8 +170,8 @@ func TestIndirect_WrapperProfileFactors(t *testing.T) {
 		want runnertypes.RiskLevel
 	}{
 		{"env claude", "env", []string{"claude"}, runnertypes.RiskLevelHigh},
-		{"env curl url", "env", []string{"curl", "https://example.com"}, runnertypes.RiskLevelMedium},
-		{"timeout wget", "timeout", []string{"5", "wget", "http://example.com"}, runnertypes.RiskLevelMedium},
+		{"env curl url", "env", []string{"curl", "https://example.com"}, runnertypes.RiskLevelHigh},
+		{"timeout wget", "timeout", []string{"5", "wget", "http://example.com"}, runnertypes.RiskLevelHigh},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -188,26 +212,24 @@ func TestIndirect_ShellInlineHigh(t *testing.T) {
 	assert.NotEqual(t, IndirectReject, res.Kind)
 }
 
-// TestIndirect_WrappedRunnerReasonCodesDeduped verifies a wrapped runner does not
-// accumulate a duplicate reason code: "env bash -c ..." gets
-// ReasonArbitraryCodeExecution from both the nested inline-code fold and the
-// IsArbitraryCodeExecutionRunner check, and must list it only once.
-func TestIndirect_WrappedRunnerReasonCodesDeduped(t *testing.T) {
+// TestIndirect_WrappedRunnerSingleReasonCode verifies a wrapper inner returns the
+// single indirect_execution_wrapper reason code rather than accumulating the
+// inner's own dimension reasons: "env bash -c ..." is a flat High floor, so the
+// inner's arbitrary-code reason is no longer folded into the result.
+func TestIndirect_WrappedRunnerSingleReasonCode(t *testing.T) {
 	res := analyzeIndirectCmd("env", "bash", "-c", "echo hi")
 	assert.Equal(t, IndirectFloor, res.Kind)
-	count := 0
-	for _, c := range res.ReasonCodes {
-		if c == risktypes.ReasonArbitraryCodeExecution {
-			count++
-		}
-	}
-	assert.Equal(t, 1, count, "wrapped runner must not duplicate ReasonArbitraryCodeExecution")
+	assert.Equal(t, []risktypes.ReasonCode{risktypes.ReasonIndirectExecutionWrapper}, res.ReasonCodes)
 }
 
-// TestIndirect_InnerCommandGated verifies the extracted inner command is gated:
-// its risk is folded, and an inner form that cannot be bound is rejected.
+// TestIndirect_InnerCommandGated verifies the extracted inner command is neither
+// allowlist- nor hash-gated but flattened to a High floor, while Reject and
+// Critical dispositions still propagate and the inner is recorded as a chain
+// artifact. This is the redefinition of the earlier extract-and-gate behavior to
+// a flat High floor.
 func TestIndirect_InnerCommandGated(t *testing.T) {
-	// Inner command's risk is folded and the inner is recorded as a chain artifact.
+	// A benign or destructive inner is a flat High floor; the inner is recorded as a
+	// chain artifact.
 	res := analyzeIndirectCmd("env", "rm", "-rf", "/tmp/x")
 	assert.Equal(t, IndirectFloor, res.Kind)
 	assert.Equal(t, runnertypes.RiskLevelHigh, res.Level)
@@ -314,41 +336,47 @@ func TestIndirect_EnvChdirRejected(t *testing.T) {
 	assert.NotEqual(t, IndirectReject, analyzeIndirectCmd("env", "--", "-C").Kind)
 }
 
-// TestIndirect_CoreutilsInnerFolded verifies the coreutils single-binary
-// classification is applied to a wrapped inner command. Without it, an unsafe
-// coreutils applet wrapped in env would be under-classified relative to the direct
-// invocation (which the top-level evaluator runs through CoreutilsCommandRisk).
+// TestIndirect_CoreutilsInnerFolded verifies a wrapped coreutils inner command is
+// absorbed into the flat High floor: the coreutils-specific classification and its
+// fail-closed Reject are no longer applied to a wrapper inner (RoleInner), so the
+// result is High with the indirect_execution_wrapper reason in both the
+// classifiable and the stat-failure cases.
 func TestIndirect_CoreutilsInnerFolded(t *testing.T) {
 	dir := t.TempDir()
 	SetCoreutilsDirForTest(t, dir)
-	// An unknown coreutils applet (not in the safe or destructive list) fails safe
-	// to High. Non-shebang content so it is not read as a script.
+	// An unknown coreutils applet (not in the safe or destructive list) is a flat
+	// High floor. Non-shebang content so it is not read as a script.
 	applet := filepath.Join(dir, "mysteryutil")
 	require.NoError(t, os.WriteFile(applet, []byte{0x7f, 'E', 'L', 'F', 0, 0}, 0o755))
 
 	res := analyzeIndirectCmd("env", applet, "x")
 	assert.Equal(t, IndirectFloor, res.Kind)
-	assert.Equal(t, runnertypes.RiskLevelHigh, res.Level, "wrapped unknown coreutils applet must fold to High")
-	assert.True(t, hasReason(res, risktypes.ReasonCoreutilsClassification))
+	assert.Equal(t, runnertypes.RiskLevelHigh, res.Level, "wrapped coreutils applet must be a flat High floor")
+	assert.Equal(t, []risktypes.ReasonCode{risktypes.ReasonIndirectExecutionWrapper}, res.ReasonCodes)
 
 	// A coreutils file-info failure (a path under the coreutils dir that cannot be
-	// stat'd) is a fail-closed deny that preserves the coreutils reason and error
-	// class, matching the top-level evaluator rather than a generic reject.
+	// stat'd) no longer produces a coreutils-specific fail-closed Reject for a
+	// wrapper inner: it is absorbed into the flat High floor. This is not a
+	// regression (High requires explicit risk_level = "high" opt-in, and the outer
+	// wrapper binary is still hash-gated at rank 1).
 	ghost := filepath.Join(dir, "ghost") // under coreutilsDir, does not exist
 	deny := analyzeIndirectCmd("env", ghost, "x")
-	assert.Equal(t, IndirectReject, deny.Kind)
-	assert.True(t, hasReason(deny, risktypes.ReasonCoreutilsClassification))
-	assert.Equal(t, risktypes.ErrorClassCoreutilsFileInfo, deny.ErrorClass)
+	assert.Equal(t, IndirectFloor, deny.Kind)
+	assert.Equal(t, runnertypes.RiskLevelHigh, deny.Level)
+	assert.Equal(t, []risktypes.ReasonCode{risktypes.ReasonIndirectExecutionWrapper}, deny.ReasonCodes)
 }
 
-// TestIndirect_WrappedProfileReasonsCarried verifies a wrapped profiled command's
-// human-readable reasons are propagated rather than discarded, so the audit log of
-// the wrapped form matches the direct invocation.
-func TestIndirect_WrappedProfileReasonsCarried(t *testing.T) {
-	res := analyzeIndirectCmd("env", "curl", "https://example.com")
+// TestIndirect_InterpreterReasonsCollected verifies the RoleInterpreter path (a
+// shebang interpreter of a direct script execution) still collects a profiled
+// command's human-readable reasons. This locks the fine-grained behavior the
+// flat-High change preserves for interpreters: only the RoleInner (wrapper inner)
+// path stops collecting profile reasons. curl is a bare name, so
+// ResolveCommandNames resolves it to itself and ResolveProfile matches by name.
+func TestIndirect_InterpreterReasonsCollected(t *testing.T) {
+	res := evaluateInnerAs("curl", []string{"https://example.com"}, 0, risktypes.RoleInterpreter)
 	assert.Equal(t, IndirectFloor, res.Kind)
 	assert.Contains(t, res.Reasons, "Always performs network operations",
-		"wrapped profiled command must carry its profile reasons")
+		"the interpreter path must still carry profile reasons")
 }
 
 // TestIndirect_EnvSplitString verifies env -S split-string interpretation:
@@ -712,15 +740,19 @@ func TestIndirect_ShebangLongLineNotTruncated(t *testing.T) {
 }
 
 // TestIndirect_ShebangInterpreterGated verifies a direct script with a shebang is
-// evaluated through its interpreter chain.
+// evaluated through its interpreter chain. Role propagation means an env-based
+// shebang (#!/usr/bin/env python) records both env and the real interpreter
+// (python) as RoleInterpreter, since the whole chain is evaluated as the
+// interpreter rather than as a wrapper inner.
 func TestIndirect_ShebangInterpreterGated(t *testing.T) {
 	cases := []struct {
-		name    string
-		shebang string
+		name       string
+		shebang    string
+		wantInterp int
 	}{
-		{"env python", "#!/usr/bin/env python\n"},
-		{"bin sh", "#!/bin/sh\n"},
-		{"bin bash", "#!/bin/bash -e\n"},
+		{"env python", "#!/usr/bin/env python\n", 2}, // env + python both RoleInterpreter
+		{"bin sh", "#!/bin/sh\n", 1},
+		{"bin bash", "#!/bin/bash -e\n", 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -737,7 +769,7 @@ func TestIndirect_ShebangInterpreterGated(t *testing.T) {
 					interp++
 				}
 			}
-			assert.Equal(t, 1, interp, "shebang interpreter must be recorded exactly once, as RoleInterpreter")
+			assert.Equal(t, tc.wantInterp, interp, "shebang interpreter chain must be recorded as RoleInterpreter")
 		})
 	}
 
@@ -785,6 +817,36 @@ func TestIndirect_ShebangInterpreterGated(t *testing.T) {
 		require.NoError(t, os.WriteFile(script, []byte("#!/usr/bin/env -S echo hi\n"), 0o755))
 		assert.NotEqual(t, IndirectReject, analyzeIndirectCmd(script).Kind,
 			"a plain -S payload must still be interpreted, not rejected")
+	})
+}
+
+// TestIndirect_EnvShebangInterpreterNotFlattened verifies role propagation keeps
+// the env-based shebang form (#!/usr/bin/env <interp>) out of the flat-High
+// collapse: a direct script execution evaluates its interpreter chain as
+// RoleInterpreter even though it passes through env, so a benign interpreter is not
+// promoted to High while an arbitrary-code interpreter stays High.
+func TestIndirect_EnvShebangInterpreterNotFlattened(t *testing.T) {
+	// A benign interpreter (cat is not an arbitrary-code runner) must not be promoted
+	// to High by the wrapper-inner flattening: the interpreter chain stays
+	// RoleInterpreter (fine-grained) all the way through env.
+	t.Run("benign env interpreter not promoted", func(t *testing.T) {
+		dir := t.TempDir()
+		script := filepath.Join(dir, "benign.sh")
+		require.NoError(t, os.WriteFile(script, []byte("#!/usr/bin/env cat\nhi\n"), 0o755))
+		res := analyzeIndirectCmd(script)
+		assert.Less(t, res.Level, runnertypes.RiskLevelHigh,
+			"a benign env-shebang interpreter must keep its fine-grained (sub-High) level")
+	})
+
+	// An arbitrary-code interpreter reached through env stays High via the
+	// fine-grained IsArbitraryCodeExecutionRunner check (unchanged behavior).
+	t.Run("arbitrary-code env interpreter stays High", func(t *testing.T) {
+		dir := t.TempDir()
+		script := filepath.Join(dir, "py.sh")
+		require.NoError(t, os.WriteFile(script, []byte("#!/usr/bin/env python\nprint('hi')\n"), 0o755))
+		res := analyzeIndirectCmd(script)
+		assert.Equal(t, IndirectFloor, res.Kind)
+		assert.Equal(t, runnertypes.RiskLevelHigh, res.Level)
 	})
 }
 

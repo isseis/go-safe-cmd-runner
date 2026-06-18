@@ -244,15 +244,6 @@ func TestEvaluateRisk_FloorReasonCodesDeduped(t *testing.T) {
 	assert.Equal(t, 1, count, "floor folding must not duplicate a reason code already present")
 }
 
-// a wrapped profiled command's human-readable reasons are folded into the
-// assessment, so the audit log of "env curl ..." matches the direct "curl ...".
-func TestEvaluateRisk_WrappedProfileReasonsFolded(t *testing.T) {
-	ev := newVerifiedEvaluator()
-	plan, err := ev.EvaluateRisk(verifiedCmd("env", []string{"curl", "https://example.com"}))
-	require.NoError(t, err)
-	assert.Contains(t, plan.Assessment.Reasons, "Always performs network operations")
-}
-
 // build/task runners are High.
 func TestEvaluateRisk_BuildRunnerHigh(t *testing.T) {
 	ev := newVerifiedEvaluator()
