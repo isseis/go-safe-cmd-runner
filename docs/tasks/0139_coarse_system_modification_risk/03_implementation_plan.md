@@ -156,10 +156,13 @@
 - [ ] [systemctl.go](../../../internal/runner/base/security/systemctl.go) を削除する。
 - [ ] [package_manager_flags.go](../../../internal/runner/base/security/package_manager_flags.go) を削除する。
 
-**完了基準**: `go build -tags test ./...` が通る。**ライブコードのみ**で旧シンボル残存ゼロ
-（`rg -n "SystemctlSubcommandRisk|flagStyleManagers|packageModifyingVerbs|isSystemModificationByNames|packageManagerNames|systemModificationCommandNames" internal/ cmd/` 期待: マッチ無し）。
-文書（`docs/user/`・`docs/dev/`）を含む完全な NF-001 cross-search（§6）は文書更新後の Phase 5 完了時に
-確認する（この時点では `command-risk-evaluation` 等の開発者文書に旧シンボル名が残っているため）。
+**完了基準**: `go build -tags test ./...` が通る。**プロダクションコードのみ**で旧シンボル残存ゼロ
+（`rg -n "SystemctlSubcommandRisk|flagStyleManagers|packageModifyingVerbs|isSystemModificationByNames|packageManagerNames|systemModificationCommandNames" internal/ cmd/ -g '!**/*_test.go'` 期待: マッチ無し）。
+**テストファイルを除外する理由**: Phase 3 時点では `systemctl_test.go` や `command_analysis_test.go` の
+ヘルパが旧シンボル（`SystemctlSubcommandRisk`／`isSystemModificationByNames` 等）をまだ参照しており
+（削除は Phase 4）、`_test.go` を含めると本ゲートが達成不能になるため。テストを含む完全な
+NF-001 cross-search（§6、`_test.go` 込み・文書込み）は、テスト改訂（Phase 4）と文書更新（Phase 5）が
+済んだ PR-1／PR-2 の段階で確認する。
 
 ### Phase 4: テスト改訂
 
