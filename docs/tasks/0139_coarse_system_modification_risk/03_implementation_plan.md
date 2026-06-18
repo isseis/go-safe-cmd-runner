@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-06-18 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-06-18 |
+| Reviewer | isseis |
 | Comments | - |
 
 関連文書: [01_requirements.md](01_requirements.md)（承認済み）、[02_architecture.md](02_architecture.md)（承認済み）。
@@ -33,7 +33,8 @@
   削除しても `systemctl_test.go` は Phase 4 まで残る）。`make test` は `go test -tags test ./...` で
   テストもコンパイルするため中間フェーズでは赤になる。したがって Phase 1〜3 の完了基準には**各 Phase に
   明記したビルドゲート（`go build`、テストファイルを含まない）**を用い、`make fmt` は随時実行してよい。
-  `make test`／`make lint` の通過は Phase 4（テスト改訂完了）と Phase 6 で確認する。
+  `make test`／`make lint` の通過は Phase 4（テスト改訂完了＝PR-1 の緑ゲート）で確認し、以後の各 PR
+  （PR-2／PR-3）でも PR 作成前に再確認する。
 
 ### 1.3 既存コード調査結果（step 5）
 
@@ -155,10 +156,13 @@
 - [ ] [systemctl.go](../../../internal/runner/base/security/systemctl.go) を削除する。
 - [ ] [package_manager_flags.go](../../../internal/runner/base/security/package_manager_flags.go) を削除する。
 
-**完了基準**: `go build -tags test ./...` が通る。**ライブコードのみ**で旧シンボル残存ゼロ
-（`rg -n "SystemctlSubcommandRisk|flagStyleManagers|packageModifyingVerbs|isSystemModificationByNames|packageManagerNames|systemModificationCommandNames" internal/ cmd/` 期待: マッチ無し）。
-文書（`docs/user/`・`docs/dev/`）を含む完全な NF-001 cross-search（§6）は文書更新後の Phase 5 完了時に
-確認する（この時点では `command-risk-evaluation` 等の開発者文書に旧シンボル名が残っているため）。
+**完了基準**: `go build -tags test ./...` が通る。**プロダクションコードのみ**で旧シンボル残存ゼロ
+（`rg -n "SystemctlSubcommandRisk|flagStyleManagers|packageModifyingVerbs|isSystemModificationByNames|packageManagerNames|systemModificationCommandNames" internal/ cmd/ -g '!**/*_test.go'` 期待: マッチ無し）。
+**テストファイルを除外する理由**: Phase 3 時点では `systemctl_test.go` や `command_analysis_test.go` の
+ヘルパが旧シンボル（`SystemctlSubcommandRisk`／`isSystemModificationByNames` 等）をまだ参照しており
+（削除は Phase 4）、`_test.go` を含めると本ゲートが達成不能になるため。テストを含む完全な
+NF-001 cross-search（§6、`_test.go` 込み・文書込み）は、テスト改訂（Phase 4）と文書更新（Phase 5）が
+済んだ PR-1／PR-2 の段階で確認する。
 
 ### Phase 4: テスト改訂
 
@@ -216,9 +220,24 @@
   が `IndirectFloor` かつ `Level == RiskLevelHigh` を、risk/evaluator_test.go に
   `sudo dpkg`／`sudo systemctl restart` が `RiskLevelCritical` を表明する。
 
-**完了基準**: `make test` が緑。
+**完了基準**: `make fmt` → `make test` → `make lint` がすべて緑（コード PR の NF-002 ゲート。
+Phase 1〜4 はこの 1 PR にまとめる。中間フェーズ単独では既存テストが旧 API を参照して赤になるため
+分割できない。§1.2 参照）。
 
-### Phase 5: 文書・config の整合
+### PR-1 作成ポイント: internal risk classification (code + tests)
+
+**対象ステップ**: Phase 1 / Phase 2 / Phase 3 / Phase 4
+
+**推奨タイトル**: `feat(0139): coarse name-only system-modification risk classification`
+
+**レビュー観点**: 名集合の正確性（PM 12 種＋systemctl/service=High・dpkg/rpm 追加・Medium 集合維持） / シグネチャ変更と全呼び出し元・全影響テストの追従（§1.3 のテスト全数） / 旧機構（systemctl.go・package_manager_flags.go）の完全撤去とライブコード NF-001
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+### Phase 5: 文書整合
 
 **ユーザー文書（AC-10/11/12/13）**
 
@@ -253,6 +272,25 @@
   も以後拒否される）。検索は `rg -n "systemctl|/usr/bin/apt|apt-get|\"apt\"|dpkg|rpm|pacman" docs/user/toml_config/`
   で該当行を洗い出し、各 risk_level を確認する。
 
+**完了基準**: 文書のみで NF-001 残存ゼロ＋ stale な挙動記述ゼロ（§6 の NF-001／stale 記述チェックを
+ライブコードと併せて全対象で実施し、撤回ノートのみ許容）。日英文書が `/mktrans` で整合。`make lint`
+が緑（文書のみのため `make test` は不変だが念のため `make test` も緑であることを確認）。
+
+### PR-2 作成ポイント: documentation alignment
+
+**対象ステップ**: Phase 5（文書整合）
+
+**推奨タイトル**: `docs(0139): align risk docs with name-only system-modification levels`
+
+**レビュー観点**: 移行ノートの網羅（AC-10 の 4 引き上げ：照会 PM／PM 変更操作／dpkg・rpm／systemctl read-only） / 検出限界（AC-12、gem 含む）と 0137 撤回記録（AC-13）の記載 / 日英整合（`/mktrans`）と stale な現行仕様記述の不残存（文書込み NF-001）
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+### Phase 6: sample config 整合
+
 **sample config（AC-14）**
 
 - [ ] `sample/risk-based-control.toml` L67 の `apt update` を `risk_level = "medium"` →
@@ -266,27 +304,48 @@
 - [ ] `sample/` 配下を横断検索し、上記以外に PM／systemctl を含む config が無いことを確認する
   （見つかれば同様に `risk_level="high"` を付与）。
 
-**完了基準**: §後述の cross-search でサブコマンド粒度の残存記述ゼロ。
-`go test -tags test ./internal/runner/config/...` が緑（sample ロード回帰）。
+**完了基準**: `go test -tags test ./internal/runner/config/...` が緑（sample ロード回帰、AC-14）。
+`make test`／`make lint` が緑。
 
-### Phase 6: 緑化（NF-002）
+### PR-3 作成ポイント: sample config alignment
 
-- [ ] `make fmt` → `make test` → `make lint` をすべて成功させる。
+**対象ステップ**: Phase 6（sample config 整合）
+
+**推奨タイトル**: `chore(0139): raise risk_level to high for PM/systemctl sample configs`
+
+**レビュー観点**: 引き上げ対象コマンドの網羅（apt update／apt upgrade／systemctl restart、横断検索での取りこぼし無し） / `risk_level = "high"` の値・配置の正しさ（`args` 行直後） / config ロード回帰（`template_backward_compat_test.go`）が緑
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
 ## 3. 実装順序とマイルストーン
 
-アーキテクチャ §8 のフェーズ順に従う（Phase 1→6）。
+本計画は、アーキテクチャ §8 の実装優先順位（Phase 1→6）を**PR 境界向けに具体化**したものである。
+アーキテクチャ §8 が 1 つの Phase 5 にまとめていた「文書・config」を、独立レビュー可能性のため
+本計画では **Phase 5（文書整合）と Phase 6（sample config 整合）に分割**し、アーキテクチャ §8 の
+独立した「緑化」Phase は**各 PR の緑ゲートへ畳み込んだ**（Phase 1→6 の優先順位の方向性は維持しつつ、
+Phase 5 の分割と緑化フェーズの畳み込みのみ調整）。Phase 1〜4 は
+緑ゲートの都合で 1 PR にまとめ（中間フェーズ単独では既存テストが旧 API を参照して赤）、文書と
+sample config を後続 PR に分ける（§3.2）。cmd/ 変更は無く、変更は internal のみのため
+internal-before-cmd の制約は非該当。
 
-| マイルストーン | 内容 | 成果物 |
+| マイルストーン | 対応 PR（Phase） | 成果物 |
 |---|---|---|
-| M1 | Phase 1-3 | 判定本体の名マッチ化＋呼び出し元追従＋旧ファイル削除（ビルド通過） |
-| M2 | Phase 4 | テスト改訂（`make test` 緑、全 AC のテストが存在） |
-| M3 | Phase 5 | 文書・sample 整合（日英・cross-search クリア） |
-| M4 | Phase 6 | `make test && make lint` 緑（PR ゲート） |
+| M1 | PR-1（Phase 1-4） | 名マッチ分類の本体＋全テスト改訂（`make test && make lint` 緑、全 AC のコードテストが存在） |
+| M2 | PR-2（Phase 5） | 文書整合（日英・文書込み NF-001／stale 記述クリア） |
+| M3 | PR-3（Phase 6） | sample config 整合（config ロード回帰緑、AC-14） |
 
-PR 分割は実装着手時に判断する（最小は M1-M2 を 1 PR、M3 を 1 PR）。
+### 3.2 PR 構成
+
+| PR | 対象ステップ | 主な変更内容 |
+|---|---|---|
+| PR-1 | Phase 1 / Phase 2 / Phase 3 / Phase 4 | `SystemModificationRisk` の名マッチ固定レベル化（`args` 撤去）、呼び出し元追従（同/別パッケージ）、`systemctl.go`・`package_manager_flags.go` 削除、全影響テストの改訂・新規（`TestSystemModificationRisk` 等）。internal のみ・分割不可（緑ゲートが Phase 4 完了でのみ通る）。 |
+| PR-2 | Phase 5（文書整合） | risk_assessment／command-risk-evaluation／security-architecture／README／toml_config の日英整合（移行ノート・検出限界・0137 撤回記録）。 |
+| PR-3 | Phase 6（sample config 整合） | `risk-based-control.toml`／`timeout_examples.toml` の該当 PM／systemctl エントリを `risk_level = "high"` へ追従。 |
 
 ---
 
@@ -356,17 +415,17 @@ PR 分割は実装着手時に判断する（最小は M1-M2 を 1 PR、M3 を 1
 
 ---
 
-## 8. 実装チェックリスト（フェーズ別）
+## 8. 実装チェックリスト（PR 別）
 
-各 Phase の詳細チェックボックスは §2 にある。フェーズ完了の総括は以下で追跡する。
+各 Phase の詳細チェックボックスは §2 に、PR 境界は §2 の各 `### PR-N 作成ポイント` と §3.2 にある。
+PR 単位の完了は以下で追跡する。
 
-- [ ] Phase 1: 判定本体の名マッチ固定レベル化（§2 Phase 1 の全項目）
-- [ ] Phase 2: 呼び出し元のシグネチャ追従（§2 Phase 2 の全項目）
-- [ ] Phase 3: 旧機構ファイルの削除（§2 Phase 3 の全項目）
-- [ ] Phase 4: テスト改訂（§2 Phase 4 の全項目）
-- [ ] Phase 5: 文書・config の整合（§2 Phase 5 の全項目）
-- [ ] Phase 6: 緑化 `make fmt`/`make test`/`make lint`（§2 Phase 6）
-- [ ] §6 クロスサーチチェックリストの全項目クリア
+- [ ] PR-1 マージ済み（対象ステップ: Phase 1 / Phase 2 / Phase 3 / Phase 4。`make test && make lint` 緑、
+  ライブコード NF-001 クリア、§7 のコード系 AC が検証済み）
+- [ ] PR-2 マージ済み（対象ステップ: Phase 5（文書整合）。文書込み NF-001／stale 記述クリア、日英整合、
+  AC-10/11/12/13）
+- [ ] PR-3 マージ済み（対象ステップ: Phase 6（sample config 整合）。config ロード回帰緑、AC-14）
+- [ ] §6 クロスサーチチェックリストの全項目クリア（コード=PR-1、文書=PR-2 で確認）
 - [ ] §7 の全 AC（AC-01〜AC-14、NF-001/002）が検証済み
 
 ## 9. 成功基準
@@ -380,6 +439,7 @@ PR 分割は実装着手時に判断する（最小は M1-M2 を 1 PR、M3 を 1
 
 ## 10. 次のステップ
 
-- 本計画のレビュー後、Status を `approved` に更新（レビュアー）。
-- `approved` 後、Phase 1 から実装を開始（`/runplan`）。
-- 実装中は本計画のチェックボックスを随時更新する。
+- 本計画は承認済み（Status: `approved`）。PR 構成は §3.2 に確定済み。
+- PR-1（Phase 1-4）から実装を開始する（`/runplan`）。各 `### PR-N 作成ポイント` の手順に従い、
+  PR-1 → PR-2 → PR-3 の順にブランチを切り替えながら進める。
+- 実装中は本計画のチェックボックス（§2 各 Phase、§8 PR 別）を随時更新する。
