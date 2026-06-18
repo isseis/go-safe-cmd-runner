@@ -202,7 +202,7 @@ func TestEvaluateRisk_ServiceAllActionsHigh(t *testing.T) {
 	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "service", []string{"nginx", "status"}))
 }
 
-// a privilege token wrapping a system-modification command is Critical (AC-08).
+// a privilege token wrapping a system-modification command is Critical.
 func TestEvaluateRisk_SudoSystemModificationCritical(t *testing.T) {
 	ev := newVerifiedEvaluator()
 	assert.Equal(t, runnertypes.RiskLevelCritical, evalLevel(t, ev, "/usr/bin/sudo", []string{"dpkg", "-i", "pkg.deb"}))
@@ -210,7 +210,7 @@ func TestEvaluateRisk_SudoSystemModificationCritical(t *testing.T) {
 }
 
 // a directly executed system-modification command carries the system-modification
-// reason code in its assessment, so a deny is auditable as such (AC-09).
+// reason code in its assessment, so a deny is auditable as such.
 func TestEvaluateRisk_SystemModificationReasonCode(t *testing.T) {
 	ev := newVerifiedEvaluator()
 	for _, cmd := range []string{"dpkg", "systemctl"} {

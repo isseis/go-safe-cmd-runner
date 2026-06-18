@@ -75,7 +75,7 @@ func TestIndirect_WrapperSudoCritical(t *testing.T) {
 // system-modification command reached through a wrapper (env) is a High floor.
 // This is a regression guard: the wrapper inner is High regardless of its content
 // (it does not go through SystemModificationRisk), so the name-only classification
-// change does not affect this conclusion (AC-08).
+// change does not affect this conclusion.
 func TestIndirect_WrapperSystemModificationHighFloor(t *testing.T) {
 	cases := []struct {
 		name string

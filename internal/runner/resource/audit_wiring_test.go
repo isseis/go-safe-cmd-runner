@@ -123,7 +123,7 @@ func TestExecute_RejectedCommandAuditable(t *testing.T) {
 // TestExecute_SystemModificationDenyAuditable verifies that a command denied for
 // system modification is audited (decision=deny) with the system-modification
 // reason code in its reason_codes, so a system-modification deny is auditable as
-// such (AC-09).
+// such.
 func TestExecute_SystemModificationDenyAuditable(t *testing.T) {
 	denyPlan := risktypes.VerifiedCommandPlan{
 		Identity: &risktypes.VerifiedIdentity{ResolvedPath: "/usr/bin/dpkg", ContentHash: "sha256:abc"},

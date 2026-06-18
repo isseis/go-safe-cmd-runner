@@ -1105,7 +1105,7 @@ func TestSystemModificationRisk(t *testing.T) {
 		names map[string]struct{}
 		want  runnertypes.RiskLevel
 	}{
-		// Package managers -> High, install and query alike (AC-01).
+		// Package managers -> High, install and query alike.
 		{"apt", cmdNameSet("apt"), runnertypes.RiskLevelHigh},
 		{"apt-get", cmdNameSet("apt-get"), runnertypes.RiskLevelHigh},
 		{"yum", cmdNameSet("yum"), runnertypes.RiskLevelHigh},
@@ -1118,10 +1118,10 @@ func TestSystemModificationRisk(t *testing.T) {
 		{"yarn", cmdNameSet("yarn"), runnertypes.RiskLevelHigh},
 		{"dpkg", cmdNameSet("dpkg"), runnertypes.RiskLevelHigh},
 		{"rpm", cmdNameSet("rpm"), runnertypes.RiskLevelHigh},
-		// Service / init management -> High (AC-03/04).
+		// Service / init management -> High.
 		{"systemctl", cmdNameSet("systemctl"), runnertypes.RiskLevelHigh},
 		{"service", cmdNameSet("service"), runnertypes.RiskLevelHigh},
-		// Medium name-matched commands stay Medium (AC-06).
+		// Medium name-matched commands stay Medium.
 		{"mount", cmdNameSet("mount"), runnertypes.RiskLevelMedium},
 		{"umount", cmdNameSet("umount"), runnertypes.RiskLevelMedium},
 		{"fdisk", cmdNameSet("fdisk"), runnertypes.RiskLevelMedium},
@@ -1135,10 +1135,10 @@ func TestSystemModificationRisk(t *testing.T) {
 		{"update-rc.d", cmdNameSet("update-rc.d"), runnertypes.RiskLevelMedium},
 		// Non-matching names -> Unknown. A pm name such as "rpm" appearing only as
 		// an argument value (e.g. "echo rpm") never enters the resolved name set,
-		// so the dimension does not apply (AC-02).
+		// so the dimension does not apply.
 		{"echo", cmdNameSet("echo"), runnertypes.RiskLevelUnknown},
 		{"ls", cmdNameSet("ls"), runnertypes.RiskLevelUnknown},
-		// symlink / absolute path resolution (AC-01).
+		// symlink / absolute path resolution.
 		{"/usr/sbin/systemctl absolute", cmdNameSet("/usr/sbin/systemctl"), runnertypes.RiskLevelHigh},
 		// A substring match must not be treated as systemctl.
 		{"systemctl-helper not matched", cmdNameSet("systemctl-helper"), runnertypes.RiskLevelUnknown},
