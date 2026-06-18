@@ -242,13 +242,29 @@ Understanding what the risk assessment does and does not protect against is esse
 
 If you are upgrading from an earlier version, several commands are now evaluated at a higher risk than before. Review your existing `risk_level` settings against the following changes and use `--dry-run` to confirm before deploying:
 
-- **AI service commands** (`claude`, `gemini`, etc.): now `high` (previously `medium`), because they always communicate with an external API and may exfiltrate data.
-- **`systemctl` change verbs** (`start`/`stop`/`restart`/`enable`/`disable`, ...): now `high`. Read-only verbs (`status`/`show`, ...) are evaluated at a floor above low (see the table in §3.1).
-- **`service`**: now `high` for all actions (it runs an unverified init script).
-- **Destructive operations by absolute path** (`/usr/bin/rm -rf ...`, etc.): now detected the same as by basename — `high`.
-- **Shells, interpreters, and build/task runners** (`bash`/`python`/`node`/`make`, ...): now `high` regardless of arguments (arbitrary code execution).
-- **Package script runners** (`npm run`/`npx`/`yarn <script>`/`pnpm run`): `high`.
+### 8.1 Commands Whose Risk Classification Changed
+
+| Applies to | New calculated risk | Notes |
+|------------|--------------------|-------|
+| AI service commands (`claude`, `gemini`, etc.) | `high` (previously `medium`) | They always communicate with an external API and may exfiltrate data |
+| `systemctl` change subcommands (`start`/`stop`/`restart`/`enable`/`disable`, etc.) | `high` | Read-only subcommands (`status`/`show`, etc.) are evaluated at a floor above low (see the table in §3.1) |
+| `service` (all actions) | `high` | It runs an unverified init script |
+| Destructive operations by absolute path (`/usr/bin/rm -rf ...`, etc.) | `high` | Now detected the same as by basename |
+| Shells, interpreters, and build/task runners (`bash`/`python`/`node`/`make`, etc.) | `high` | Regardless of arguments (arbitrary code execution) |
+| Package script runners (`npm run`/`npx`/`yarn <script>`/`pnpm run`) | `high` | |
+| Package managers (`apt`/`yum`/`dnf`/... install/remove) | `medium` | Covered generically rather than by individual tool name |
+
+### 8.2 Configuration and Verification Behavior Changes
+
 - **`risk_level = "unknown"`**: now rejected as a configuration error (previously accepted). Use `low`/`medium`/`high`.
 - **Disabled binary analysis / file verification**: now a blocking deny (previously allowed to continue). A binary whose identity cannot be confirmed is not executed.
-- **Wrapper commands** (`env`/`timeout`/`nice`, ...): the wrapped inner command is evaluated and gated; a wrapper whose inner command cannot be extracted, or that supplies loader-control environment variables (`LD_PRELOAD`, `DYLD_*`, ...), is denied. (Privilege-escalation wrappers `sudo`/`su`/`doas` are not gated this way — they remain `critical` and are always denied.)
-- **Package managers**: system-modification examples no longer single out individual tool names; package managers are covered generically (`apt`/`yum`/`dnf`/... install/remove → `medium`).
+
+### 8.3 Handling of Inner Commands Run Through a Wrapper
+
+The handling of an **inner command** that a wrapper (`env`/`timeout`/`nice`, etc.) executes internally is organized as follows.
+
+- **Ordinary inner commands**: evaluated as a flat **High** regardless of the inner command's content. Even a harmless inner is not executed unless you explicitly set `risk_level = "high"`.
+- **Privilege-escalation tokens** (`sudo`/`su`/`doas`): when they appear as the inner command (including inside a nested wrapper), the command is **Critical** and always denied.
+- **Forms that remain Blocking** (not relaxed to High): loader-control environment variables `LD_*`/`DYLD_*`, working-directory change `env -C`, an uninterpretable `env -S`, `find`/`xargs` child-process execution, direct dynamic-loader invocation, helper execution such as `rsync -e`/`tar --to-command`, a wrapper whose inner command cannot be extracted, exceeding the nesting-depth limit, and symlink-resolution failure.
+- **Verification and recording**: the inner command is not automatically hash-verified or identity-bound (it is logged in the audit chain, but that does not pin its identity). To pin the inner command's identity, `record` its path and register it explicitly in `verify_files`.
+- **Residual risk (TOCTOU)**: an inner command of a wrapper you opt into with `risk_level = "high"` is not fd-bound or identity-bound by the runner at execution time. Registering it in `verify_files` only adds a startup-time hash check (verification as an additional file); it does not pin the actual object the wrapper resolves and execs at run time. Because a wrapper binary (`env`, etc.) resolves the path itself and execs it, the verified file and the object actually executed may differ (e.g. `env mytool`), so there is no protection against a swap between check and exec (TOCTOU). This is the same residual limitation as `find`/`xargs` child-process execution.
