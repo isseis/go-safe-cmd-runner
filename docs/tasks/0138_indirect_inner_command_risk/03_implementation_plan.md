@@ -188,8 +188,8 @@
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（docs-only のため自明に緑だが、ja/en 乖離は検知できない点に注意）
 - [x] `command-risk-evaluation.ja.md` 更新後 `/mktrans` で `.md` を再生成し、AC-10 の `rg`（ja/en 双方）＋ ja↔en 章構成の目視で整合を確認した（本 PR の実質ゲート）
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/748）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4: 0136 ドキュメントへの参照注記追加（F-003/AC-11）
 
