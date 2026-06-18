@@ -48,7 +48,7 @@
 | D1 | **2 軸モデル**：最終リスク = `max(軸1: コマンド階級[name固定], 軸2: 呼び出し危険度[arg/宛先ゾーン])` | 論点1補足 |
 | D2 | **改訂版・統一原則**（下記）を採用。High に **④信頼境界の破壊**を新規追加 | 論点1補足 |
 | D3 | **Critical の尖鋭化**：任意内側コマンドを透過実行する特権昇格ラッパ（sudo/su/pkexec/doas）に限定。無条件ブロック＝実行不可を意味する | 発見事項D-1, 論点5 |
-| D4 | **ロケーション定義コマンドは 3 ゾーン・パス関数**（critical→High / ordinary→Medium / safe-zone→Low）。Low 化は安全要件を満たす場合のみ | 論点4補足 |
+| D4 | **ロケーション定義コマンドは 3 ゾーン・パス関数**（trust-critical→High / ordinary→Medium / safe-zone→Low）。Low 化は安全要件を満たす場合のみ | 論点4補足 |
 | D5 | **精密化の線引き**：package manager=一律名前のみ粗粒度／基本コマンド（cp/mv/mkdir/rmdir/ln 等）=引数解析。基準＝フラグ安定性 × 使用頻度 | 論点4補足 |
 | D6 | **権限付与／認証境界系（visudo/useradd 等）= High**（Critical にしない） | 発見事項D-1 |
 | D7 | **`rm`/`rmdir`/`shred`/`dd`/`unlink` = 宛先ゾーン+arg 化**（現状 name のみ High からの変更） | 発見事項D-3 |
@@ -140,8 +140,8 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
   と同質。0139 で High となった両者に整合）。
 - **AC-08**（ファイアウォール, ②）: `iptables`・`ip6tables`・`iptables-restore`・`ip6tables-restore`・
   `nft`・`ufw`・`firewall-cmd` は **High**。`iptables-save`・`ip6tables-save` は既定（stdout 出力）では
-  本次元の High を受けないが、`-f <file>` でファイル出力する場合は宛先がロケーション定義の zoning 対象と
-  なり、trust-critical 宛先（例 `/etc/iptables/rules.v4`）なら High とする（**無条件 Low とはしない**）。
+  副作用がないため **Low**。ただし `-f <file>` でファイル出力する場合は宛先がロケーション定義の zoning
+  対象となり、trust-critical 宛先（例 `/etc/iptables/rules.v4`）なら High とする（**無条件 Low とはしない**）。
 - **AC-09**（能力付与, ⑤）: `setcap` は **High**。
 - **AC-10**（信頼境界の置換 intrinsic, ④）: `update-alternatives`・`dpkg-divert`・`alternatives`・
   `ldconfig` は **High**（intrinsic に system バイナリ/シンボリックリンクや共有ライブラリキャッシュを
@@ -177,7 +177,10 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
   ([command_analysis.go](../../../internal/runner/base/security/command_analysis.go)) 相当）のとき
   **High** に分類される。trust-critical 判定も **AC-17(a) と同じく正規化・symlink 解決後の絶対パスで
   行い、生の引数文字列 prefix では判定しない**。例: `cp evil /usr/bin/ls`・`mv x /etc/passwd`・
-  `ln -sf x /usr/bin/python`・`install -m755 x /usr/local/bin/y`。
+  `ln -sf x /usr/bin/python`・`install -m755 x /usr/sbin/y`。
+  注: `/usr/local`（`/usr/local/bin` 等）は現行 `SystemCriticalPaths` 既定集合に**含まれていない**。
+  allowlist 対象バイナリが `/usr/local/bin` 配下に置かれる運用では信頼境界に当たるため、既定集合の
+  拡張（`/usr/local`・`/usr/local/bin`/`/usr/local/sbin` の追加）を要件として検討する（02 で確定）。
 - **AC-15**（ordinary）: 宛先が trust-critical でも safe-zone でもない通常パスの named-file 操作は
   **Medium**。例: `rm /srv/app/cache.dat`・`cp a /opt/data/b`（`/srv`・`/opt` は `SystemCriticalPaths`
   既定集合に含まれない。**`/var`・`/var/log` は trust-critical なので ordinary の例には使わない**）。
@@ -199,28 +202,36 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
   （信頼バイナリ/設定の shadowing）。それ以外の `mount`/`umount` は Medium（AC-13）。
 - **AC-20**（`setfacl`）: `setfacl` は権限を拡大する付与、または trust-critical 対象に対する操作の
   とき **High**、それ以外は **Medium**（chmod の `chmod 777` 等と同型）。
-- **AC-21**（`dd` のデバイス入出力）: `dd` は **`if=` または `of=` がブロックデバイス（`/dev/*`）の
-  とき High**。これは `if=/dev/sda of=$WORKDIR/disk.img` のような**全ブロックデバイス読取**を含む
-  （現行実装が `dd if=` を High とする保護を維持する）。`if=`/`of=` のいずれもデバイスでない場合は
-  `of=` の宛先ゾーン（AC-14〜18）に従う。
-- **AC-22**（ツリー破壊の arg 昇格）: `rm`/`cp`/`mv` 等が再帰フラグ（`-r`/`-R`）または複数対象の
-  glob 展開によりツリー粒度で作用する場合は、宛先ゾーンによらず **High**（`CheckDangerousArgPatterns`
-  相当の arg 軸）。例: `rm -rf <任意>`。
-- **AC-36**（`install` の権限フラグ）: `install` は宛先が safe-zone であっても、`-m` に setuid/setgid
+- **AC-21**（`dd` のデバイス入出力）: `dd` は **`if=` または `of=` がブロックデバイスのとき High**。
+  これは `if=/dev/sda of=$WORKDIR/disk.img` のような**全ブロックデバイス読取**を含む（現行実装が
+  `dd if=` を High とする保護を維持する）。**ブロックデバイスの判定はパス prefix（`/dev/*`）ではなく
+  ファイル種別（`S_IFBLK`、解決後の stat）で行う**。これにより `of=/dev/null`・`if=/dev/stdin` 等の
+  非ブロックデバイス（`/dev` 配下のキャラクタデバイス/疑似ファイル）を過剰ブロックしない。`if=`/`of=`
+  のいずれもブロックデバイスでない場合は `of=` の宛先ゾーン（AC-14〜18）に従う。
+- **AC-22**（再帰フラグの arg 昇格）: `rm`/`cp`/`mv` 等が**再帰フラグ（`-r`/`-R`/`--recursive`）**を伴い
+  ツリー粒度で作用する場合は、宛先ゾーンによらず **High**（`CheckDangerousArgPatterns` 相当の arg 軸）。
+  例: `rm -rf <任意>`。**複数オペランドの指定（`rm file1 file2`）自体は High 昇格条件としない**——シェル
+  展開後の `ExpandedArgs` では手動指定と glob 展開（`rm *`）を区別できず、一律 High にすると safe-zone の
+  日常操作（AC-16）の恩恵を損なうため。複数オペランドは各オペランドを個別に zoning する（AC-22b/AC-14〜
+  AC-16）。引数中に未展開の生 glob（`*`/`?`）が残る場合は宛先不確定として AC-18 の fail-safe に従う。
+- **AC-22a**（`install` の権限フラグ）: `install` は宛先が safe-zone であっても、`-m` に setuid/setgid
   ビット（例 `-m 4755`/`-m 2755`）を伴う、または `-o`/`-g` で所有者/グループを変更する場合は
   **High**（**Low に降格しない**）。`install -o root -m 4755 tool $WORKDIR/tool` のような setuid-root
   実行ファイル生成を safe-zone 経由で素通りさせない。権限付与軸（⑤・chmod-grant と同型）。
-- **AC-37**（作用する全オペランドの zoning）: source を除去/移動する操作（`mv`・`rm`・`shred`・
-  `unlink`）は宛先だけでなく**作用する全オペランド**を zoning 対象とする。source が trust-critical の
-  ときは宛先が safe でも **High**（例 `mv /etc/passwd $WORKDIR/passwd` は `/etc` から trust-critical
-  ファイルを除去する）。`cp` は source を読むのみで mutate しないため source は zoning 対象外。
-- **AC-38**（coreutils 次元との整合）: 現行 `CoreutilsCommandRisk`
+- **AC-22b**（作用する全オペランドの zoning）: 破壊/移動の対象オペランドをすべて zoning する。
+  - `mv`: **移動元（source）と宛先（destination）の双方**を zoning 対象とする。source が trust-critical
+    なら宛先が safe でも **High**（例 `mv /etc/passwd $WORKDIR/passwd` は `/etc` から trust-critical
+    ファイルを除去する）。
+  - `rm`/`shred`/`unlink`: 構文上「宛先」概念がなく、**削除/破壊対象となる全オペランド（source）**を
+    zoning 対象とする。いずれかが trust-critical なら High。
+  - `cp`: source を読むのみで mutate しないため source は zoning 対象外（宛先のみ）。
+- **AC-22c**（coreutils 次元との整合）: 現行 `CoreutilsCommandRisk`
   ([coreutils.go](../../../internal/runner/base/security/coreutils.go)) は coreutils 単一バイナリ
   ディレクトリ（固定 secure PATH 配下）で `rm`/`dd`=High、`cp`/`mv`/不明 applet=fail-safe High を返し、
   最終 max 合成により後段のゾーン判定では降格できない。**safe-zone Low（AC-16）を成立させるため、
   これら applet について coreutils 次元をゾーンモデルと整合させる（無条件 High を抑止し軸2 の判定に
   委ねる）よう改修することを要件とする**。降格は AC-17/AC-18 の安全要件を満たす場合に限る。
-- **AC-39**（`tee`/`sponge` のファイル書き込み）: `tee`（および moreutils `sponge`）は stdin を引数の
+- **AC-22d**（`tee`/`sponge` のファイル書き込み）: `tee`（および moreutils `sponge`）は stdin を引数の
   FILE に書き込むため、ロケーション定義コマンドとして **FILE オペランドを zoning 対象**とする。FILE が
   trust-critical（例 `echo x | tee /usr/bin/y`・`tee /etc/passwd`）なら **High**、safe-zone なら Low、
   それ以外は Medium。`tee` の非フラグ引数はすべて書き込み先 FILE（`-a`/`-i`/`-p` 等のフラグを除く）。
@@ -321,6 +332,11 @@ backstop は allowlist + ハッシュ固定。AC-26 と整合）。
 
 ## 6. スコープ外の根拠
 
+- **ユーザー自身のデータ自己破壊の保護**: 本ツールはシステムの完全性と信頼境界の保護を主目的とする。
+  そのため、**safe-zone（指定 workdir・出力先・private temp 等）内におけるユーザー自身によるデータの
+  自己破壊（例: `rm -rf ~/`、safe-zone 配下の上書き）の防止は守備範囲外（Out of Scope）**とする。これは
+  AC-16（safe-zone での Low 化）の設計前提であり、safe-zone 内の破壊的操作が Low となる根拠でもある
+  （[00_notes.md](00_notes.md) のスコープ判断と一致）。
 - **`RiskLevel` の段階定義変更・新レベル追加**: Low/Medium/High/Critical の意味づけ・段数は維持。
   本タスクは「どのコマンドをどのレベルに分類するか」を一貫化するのみ。特に kernel/auth を Critical に
   しないのは、Critical=無条件ブロック（実行不可）であり正当な特権バッチ用途を壊すため（D6/D8）。

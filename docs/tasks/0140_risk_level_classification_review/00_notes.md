@@ -258,7 +258,7 @@ low      — それ以外（safe-zone 内のロケーション定義コマンド
 | D1 | **2 軸モデル採用**：最終リスク = `max(軸1: コマンド階級[name固定], 軸2: 呼び出し危険度[arg/宛先ゾーン])` | 論点1補足 |
 | D2 | **改訂版・統一原則を採用**（critical/high/medium/low の 4 段、High に **④信頼境界の破壊**を新規追加） | 論点1補足 |
 | D3 | **Critical 定義の尖鋭化**：任意内側コマンドを透過実行する特権昇格ラッパ（sudo/su/pkexec/doas）に限定。無条件ブロック＝実行不可を意味する | 発見事項D-1, 論点5 |
-| D4 | **ロケーション定義コマンドは 3 ゾーン・パス関数**（critical→High / ordinary→Medium / safe-zone→Low）。Low 化は安全要件 5 点（正規化解決・safe-zone 限定・/tmp 非無条件・パース不能/glob は下げない）を満たす場合のみ | 論点4補足 |
+| D4 | **ロケーション定義コマンドは 3 ゾーン・パス関数**（trust-critical→High / ordinary→Medium / safe-zone→Low）。Low 化は安全要件 5 点（正規化解決・safe-zone 限定・/tmp 非無条件・パース不能/glob は下げない）を満たす場合のみ | 論点4補足 |
 | D5 | **精密化の線引き**：package manager=一律名前のみ粗粒度／基本コマンド（cp/mv/mkdir/rmdir/ln 等）=引数解析。基準＝フラグ安定性 × 使用頻度 | 論点4補足 |
 | D6 | **`visudo` 等 権限付与／認証境界系 = High**（Critical にしない。正当な特権バッチが実行不可になるため） | 発見事項D-1 |
 | D7 | **`rm`/`rmdir`/`shred`/`dd` = 宛先ゾーン+arg 化**（`rm ~/file`=Low、`rm -r`/glob/critical-path=High）。現状 name のみ High からの変更につき**明示 AC + changelog 必須** | 発見事項D-3, 論点4補足 |
@@ -273,7 +273,7 @@ low      — それ以外（safe-zone 内のロケーション定義コマンド
 | コマンド | レベル | 判定方式 | 根拠（原則の該当項） |
 |---|---|---|---|
 | `iptables`/`nft`/`iptables-restore` | **High** | 名前のみ | ②FW=システム全体のセキュリティ境界変更 |
-| `iptables-save`（読取のみ） | **Low** | 名前のみ | 副作用なし |
+| `iptables-save`（既定 stdout=読取のみ） | **Low**（`-f <file>` 時は宛先 zoning で High 可） | 既定は名前のみ／`-f` は宛先依存 | 既定は副作用なし。`-f <file>` はファイル書込で 01 AC-08 に従い trust-critical 宛先なら High |
 | `grub-install`/`update-grub`/`grub-mkconfig`/`efibootmgr` | **High** | 名前のみ | ②永続的 boot 変更＋③任意 boot コード（systemctl-enable と同質） |
 | `setcap` | **High** | 名前のみ | ⑤能力付与（capability＝特権ベクタ。intrinsic） |
 | `ip`/`ifconfig`/`route` | **Medium** | 名前のみ（粗粒度） | 「ネットは原則 mid」。`ip route` の system 全体性は粗粒度で Medium に丸める（D5） |
