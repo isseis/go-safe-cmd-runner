@@ -39,6 +39,10 @@ const (
 
 	// Special character constants
 	arrowIndent = "  ↳"
+
+	// Slack attachment field titles reused across message builders
+	fieldTitleHostname = "Hostname"
+	fieldTitleRunID    = "Run ID"
 )
 
 // BackoffConfig defines the retry backoff configuration
@@ -331,7 +335,8 @@ type commandResultInfo struct {
 // Returns nil for invalid formats and logs details to debug log.
 func extractCommandResultsFromGroup(groupValue slog.Value) []commandResultInfo {
 	if groupValue.Kind() != slog.KindGroup {
-		slog.Debug("Command results extraction failed: unexpected value kind",
+		slog.Debug(
+			"Command results extraction failed: unexpected value kind",
 			"expected", slog.KindGroup,
 			"actual", groupValue.Kind(),
 			"function", "extractCommandResultsFromGroup",
@@ -341,7 +346,8 @@ func extractCommandResultsFromGroup(groupValue slog.Value) []commandResultInfo {
 
 	attrs := groupValue.Group()
 	if len(attrs) == 0 {
-		slog.Debug("Command results extraction: empty group",
+		slog.Debug(
+			"Command results extraction: empty group",
 			"function", "extractCommandResultsFromGroup",
 		)
 		return nil
@@ -358,7 +364,8 @@ func extractCommandResultsFromGroup(groupValue slog.Value) []commandResultInfo {
 		}
 
 		if attr.Value.Kind() != slog.KindGroup {
-			slog.Debug("Skipping non-group attribute in command results",
+			slog.Debug(
+				"Skipping non-group attribute in command results",
 				"index", i,
 				"key", attr.Key,
 				"kind", attr.Value.Kind(),
@@ -372,7 +379,8 @@ func extractCommandResultsFromGroup(groupValue slog.Value) []commandResultInfo {
 		cmdInfo := extractFromAttrs(cmdAttrs)
 
 		if cmdInfo.Name == "" {
-			slog.Debug("Skipping command result with missing name",
+			slog.Debug(
+				"Skipping command result with missing name",
 				"index", i,
 				"key", attr.Key,
 				"function", "extractCommandResultsFromGroup",
@@ -385,7 +393,8 @@ func extractCommandResultsFromGroup(groupValue slog.Value) []commandResultInfo {
 	}
 
 	if skipped > 0 {
-		slog.Debug("Command results extraction completed with some skipped items",
+		slog.Debug(
+			"Command results extraction completed with some skipped items",
 			"extracted", len(commands),
 			"skipped", skipped,
 			"total_attrs", len(attrs),
@@ -486,12 +495,12 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 			Short: true,
 		},
 		{
-			Title: "Hostname",
+			Title: fieldTitleHostname,
 			Value: hostname,
 			Short: true,
 		},
 		{
-			Title: "Run ID",
+			Title: fieldTitleRunID,
 			Value: s.runID,
 			Short: true,
 		},
@@ -590,12 +599,12 @@ func (s *SlackHandler) buildPreExecutionError(r slog.Record) SlackMessage {
 						Short: true,
 					},
 					{
-						Title: "Hostname",
+						Title: fieldTitleHostname,
 						Value: hostname,
 						Short: true,
 					},
 					{
-						Title: "Run ID",
+						Title: fieldTitleRunID,
 						Value: s.runID,
 						Short: true,
 					},
@@ -655,12 +664,12 @@ func (s *SlackHandler) buildSecurityAlert(r slog.Record) SlackMessage {
 						Short: false,
 					},
 					{
-						Title: "Hostname",
+						Title: fieldTitleHostname,
 						Value: hostname,
 						Short: true,
 					},
 					{
-						Title: "Run ID",
+						Title: fieldTitleRunID,
 						Value: s.runID,
 						Short: true,
 					},
@@ -719,7 +728,7 @@ func (s *SlackHandler) buildPrivilegedCommandFailure(r slog.Record) SlackMessage
 						Short: true,
 					},
 					{
-						Title: "Hostname",
+						Title: fieldTitleHostname,
 						Value: hostname,
 						Short: true,
 					},
@@ -729,7 +738,7 @@ func (s *SlackHandler) buildPrivilegedCommandFailure(r slog.Record) SlackMessage
 						Short: false,
 					},
 					{
-						Title: "Run ID",
+						Title: fieldTitleRunID,
 						Value: s.runID,
 						Short: true,
 					},
@@ -793,12 +802,12 @@ func (s *SlackHandler) buildPrivilegeEscalationFailure(r slog.Record) SlackMessa
 						Short: true,
 					},
 					{
-						Title: "Hostname",
+						Title: fieldTitleHostname,
 						Value: hostname,
 						Short: true,
 					},
 					{
-						Title: "Run ID",
+						Title: fieldTitleRunID,
 						Value: s.runID,
 						Short: true,
 					},

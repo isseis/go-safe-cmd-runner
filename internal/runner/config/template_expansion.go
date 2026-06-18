@@ -293,8 +293,8 @@ func expandArrayPlaceholder(
 			TemplateName: templateName,
 			Field:        field,
 			ParamName:    name,
-			Expected:     "array",
-			Actual:       "string",
+			Expected:     typeNameArray,
+			Actual:       typeNameString,
 		}
 
 	default:
@@ -325,7 +325,7 @@ func expandOptionalPlaceholder(
 			TemplateName: templateName,
 			Field:        field,
 			ParamName:    name,
-			Expected:     "string",
+			Expected:     typeNameString,
 			Actual:       fmt.Sprintf("%T", value),
 		}
 	}
@@ -377,7 +377,7 @@ func expandStringPlaceholders(
 					TemplateName: templateName,
 					Field:        field,
 					ParamName:    ph.name,
-					Expected:     "string",
+					Expected:     typeNameString,
 					Actual:       fmt.Sprintf("%T", value),
 				}
 			}
@@ -392,7 +392,7 @@ func expandStringPlaceholders(
 						TemplateName: templateName,
 						Field:        field,
 						ParamName:    ph.name,
-						Expected:     "string",
+						Expected:     typeNameString,
 						Actual:       fmt.Sprintf("%T", value),
 					}
 				}
