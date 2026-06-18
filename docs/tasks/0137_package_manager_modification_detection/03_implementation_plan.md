@@ -42,13 +42,13 @@
 | `command_analysis.go` `packageManagerNames` / `packageModifyingVerbs` | verb 方式マネージャ集合・変更系 verb 集合 | **不変**。dpkg/rpm は追加しない（02 §3.2 のゲート分離） |
 | `command_analysis.go` `SystemModificationRisk` (l.589〜) | システム変更次元の単一情報源 | シグネチャ・本体構造とも不変 |
 | `evaluator.go` l.231（top-level）/ `indirect_execution.go` l.840（RoleInterpreter 経路） | `SystemModificationRisk` を呼ぶ既存呼び出し元 | **変更不要**。検出拡張は top-level（normal/dry-run 共有）へ波及する。ラッパー内側（RoleInner）は `indirect_execution.go` l.803 で flat High floor（`ReasonIndirectExecutionWrapper`）に倒れ sysmod を経由しないが、結果は High（≥ Medium）で AC-18 を満たす |
-| `command_analysis_test.go` | `isSystemModification(cmd,args)` ヘルパ、`TestIsSystemModification_PackageManagerVerbs`、`TestIsSystemModification`（build タグなし、`package security`） | pacman の既存ケースは退行検証として維持。dpkg/rpm ケースを追加 |
-| `risk/test_helpers.go` / `evaluator_test.go` | `newVerifiedEvaluator()` / `verifiedCmd()` / `evalLevel`（`//go:build test`） | 再利用 |
-| `indirect_execution_test.go` | `TestIndirect_WrapperDestructive`（`env rm -rf`→High 等）/ `TestIndirect_WrapperSudoCritical`（`//go:build test`） | 同パターンで dpkg/rpm ラッパーケースを追加 |
-| `risk/coreutils_consistency_test.go` | 共有評価器の出力固定（`//go:build test`） | 同方式で dpkg/rpm 用の整合テストを新規作成 |
+| `internal/runner/base/security/command_analysis_test.go` | `isSystemModification(cmd,args)` ヘルパ、`TestIsSystemModification_PackageManagerVerbs`、`TestIsSystemModification`（build タグなし、`package security`） | pacman の既存ケースは退行検証として維持。dpkg/rpm ケースを追加 |
+| `internal/runner/base/risk/test_helpers.go` / `internal/runner/base/risk/evaluator_test.go` | `newVerifiedEvaluator()` / `verifiedCmd()` / `evalLevel`（`//go:build test`） | 再利用 |
+| `internal/runner/base/security/indirect_execution_test.go` | `TestIndirect_WrapperDestructive`（`env rm -rf`→High 等）/ `TestIndirect_WrapperSudoCritical`（`//go:build test`） | 同パターンで dpkg/rpm ラッパーケースを追加 |
+| `internal/runner/base/risk/coreutils_consistency_test.go` | 共有評価器の出力固定（`//go:build test`） | 同方式で dpkg/rpm 用の整合テストを新規作成 |
 
 新規追加（02 §3.3）: `package_manager_flags.go`（本体）、`package_manager_flags_test.go`（単体）、
-`risk/package_manager_consistency_test.go`（整合）。テストヘルパの新規追加は不要。
+`internal/runner/base/risk/package_manager_consistency_test.go`（整合）。テストヘルパの新規追加は不要。
 
 ---
 
@@ -77,9 +77,13 @@
 
 ### フェーズ 2: dpkg/rpm のデータ追加とテスト
 
-**対象ファイル**: `package_manager_flags.go`（変更）、`package_manager_flags_test.go`（新規）、
-`command_analysis_test.go`（変更）、`risk/evaluator_test.go`（変更）、
-`security/indirect_execution_test.go`（変更）、`risk/package_manager_consistency_test.go`（新規）
+**対象ファイル**: `internal/runner/base/security/package_manager_flags.go`（変更）、
+`internal/runner/base/security/package_manager_flags_test.go`（新規）、
+`internal/runner/base/security/command_analysis_test.go`（変更）、
+`internal/runner/base/risk/evaluator_test.go`（変更）、
+`internal/runner/base/security/indirect_execution_test.go`（変更）、
+`internal/runner/resource/audit_wiring_test.go`（変更）、
+`internal/runner/base/risk/package_manager_consistency_test.go`（新規）
 
 - [ ] **2-1**: `flagStyleManagers` に dpkg・rpm のエントリを追加する（値は 02 §3.1 の規則表どおり。
   dpkg: `irP` / `{--install,--remove,--purge,--unpack,--configure}` / exclude 空。rpm: `iUFe` /
@@ -104,20 +108,28 @@
 - [ ] **2-3**: `command_analysis_test.go::TestIsSystemModification_PackageManagerVerbs` に dpkg/rpm の
   代表ケース（`dpkg -i`→true、`dpkg -l`→false、`rpm -U`→true、`rpm -qi`→false）を追加する。pacman・verb の
   既存ケースは変更しない（AC-11 退行検証）。
-- [ ] **2-4**: `risk/evaluator_test.go::TestStandardEvaluator_EvaluateRisk_SystemModifications` に
+- [ ] **2-4**: `internal/runner/base/risk/evaluator_test.go::TestStandardEvaluator_EvaluateRisk_SystemModifications` に
   `dpkg -i pkg.deb`→`RiskLevelMedium`、`rpm -U pkg.rpm`→`RiskLevelMedium` を追加する（`evalLevel` 利用。AC-12）。
-- [ ] **2-5**: `risk/evaluator_test.go` に `TestEvaluateRisk_PackageManagerReasonCode`（新規）を追加し、
+- [ ] **2-5**: `internal/runner/base/risk/evaluator_test.go` に `TestEvaluateRisk_PackageManagerReasonCode`（新規）を追加し、
   `dpkg -i pkg.deb` の `plan.Assessment.ReasonCodes` に `risktypes.ReasonSystemModification` が含まれる
-  ことを検証する（AC-19）。
+  ことを検証する（分類が reason code を生成すること。AC-19 の前段）。
+- [ ] **2-5b**: `internal/runner/resource/audit_wiring_test.go` に `TestExecute_PackageManagerDenyAuditable`（新規）を
+  追加し、Medium かつ `ReasonSystemModification` を持つ**非ブロッキング**のプラン（dpkg/rpm の分類を模す。
+  既存 `fixedPlanEvaluator` を利用）を `max_allowed = low` で実行したとき、deny の監査エントリ
+  （`decision=deny`、`reason_codes` に `system_modification`、`resolved_path`）が出力されることを検証する。
+  既存 `TestExecute_RejectedCommandAuditable` のヘルパ（`newAuditingNormalManager` / `findRiskProfileEntry`）を
+  再利用する。これにより「閾値超過の deny が新分類の監査エントリとして記録される」ことを実経路で固定する（AC-19）。
 - [ ] **2-6**: `internal/runner/base/security/indirect_execution_test.go`（`package security`、
   `//go:build test`）に `TestIndirect_WrapperPackageManager`（新規）を追加し、ラッパー経由の実効リスクが
   直接実行と**同等以上（≥ Medium）**になることを検証する: `env dpkg -i pkg.deb`→`RiskLevelHigh`、
-  `timeout 60 rpm -U pkg.rpm`→`RiskLevelHigh`、`sudo rpm -U pkg.rpm`→`RiskLevelCritical`。
+  `timeout 60 rpm -U pkg.rpm`→`RiskLevelHigh`、`env sudo rpm -U pkg.rpm`→`RiskLevelCritical`。
   ラッパー内側（RoleInner）は 0136 で確立した flat High floor（`ReasonIndirectExecutionWrapper`）に
-  倒れるため High、sudo は特権昇格で Critical。いずれも dpkg/rpm の Medium が結果を引き下げないこと
+  倒れるため High、ラップした sudo は特権昇格で Critical（**直接 `sudo` は indirect 解析の対象外**＝
+  `AnalyzeIndirectExecution` は `IndirectNone` を返すため、`env` でラップした形にする。既存
+  `TestIndirect_WrapperSudoCritical` と同方式）。いずれも dpkg/rpm の Medium が結果を引き下げないこと
   （AC-14 の観測）と ≥ Medium であること（AC-18）を同時に示す。既存 `TestIndirect_WrapperDestructive`
   と同じテーブル形式・評価ヘルパを用いる。
-- [ ] **2-7**: `risk/package_manager_consistency_test.go`（新規・`//go:build test`）に
+- [ ] **2-7**: `internal/runner/base/risk/package_manager_consistency_test.go`（新規・`//go:build test`）に
   `TestPackageManagerRiskConsistency_RuntimeVsDryRun` を追加し、`coreutils_consistency_test.go` と同方式で、
   代表 dpkg/rpm コマンド集合に対し共有評価器（`newVerifiedEvaluator().EvaluateRisk`）が一意の実効リスクを
   返すことを固定する（実行時と dry-run が同一評価器を共有することの回帰防止。AC-13）。本テストは
@@ -131,10 +143,10 @@
 
 - [ ] **3-1**: `risk_assessment.ja.md` / `.md` の §3.1 表「その他のシステム変更コマンド」行に、dpkg/rpm の
   フラグ方式変更操作（dpkg: install/remove/purge/unpack/configure、rpm: install/upgrade/freshen/erase/
-  import/initdb/rebuilddb）を `medium` として追記する（AC-16）。
+  reinstall/import/initdb/rebuilddb）を `medium` として追記する（AC-16）。
 - [ ] **3-2**: 同 §8 移行ノートに破壊的変更の項目を追記する（旧 `low`/未指定の上記操作が `medium` で
   ブロックされる旨、回避策＝該当コマンドに `risk_level = "medium"` を明示、`--dry-run` での事前確認。
-  purge/erase/freshen を含む全操作種別を明示）（AC-20）。
+  purge/erase/freshen/reinstall を含む全操作種別を明示）（AC-20）。
 - [ ] **3-3**: 同 §3.1 注記または §7 脅威モデルと限界に、検出は dpkg/rpm/pacman 対象（ラッパー経由も評価）
   である一方、照会形・未列挙マネージャ（apk/snap 等）・multi-call（`busybox <pm>`）・リネームは対象外で
   `low` 通過しうること、allowlist+ハッシュ固定が前提であることを追記する（AC-21）。
@@ -166,8 +178,9 @@
   （大小区別・先頭文字・rpm 除外・修飾子併用・退化トークン）を固定（AC-01〜AC-09 / NF-001）。
 - **回帰（振る舞い不変）**: `command_analysis_test.go` の既存 pacman・verb ケースを無変更で維持
   （F-003 / AC-09 / AC-11）。
-- **統合（実効リスク・複合・間接・監査）**: `evaluator_test.go`（Medium・reason code）/
-  `indirect_execution_test.go`（ラッパー・sudo 複合）（AC-12/14/18/19）。
+- **統合（実効リスク・複合・間接・監査）**: `internal/runner/base/risk/evaluator_test.go`（top-level
+  Medium・reason code）/ `internal/runner/base/security/indirect_execution_test.go`（ラッパー・`env sudo`
+  複合）/ `internal/runner/resource/audit_wiring_test.go`（deny 監査エントリ）（AC-12/14/18/19）。
 - **整合（実行時/dry-run）**: `package_manager_consistency_test.go`（共有評価器出力固定）（AC-13）。
 - **文書（static）**: §7 の rg コマンドで存在・日英整合を確認（AC-15〜AC-17 / AC-20〜AC-22）。
 - 後方互換: 既存の verb 方式・systemctl/service・coreutils・破壊操作の判定は変更しない（回帰テストで担保）。
@@ -212,13 +225,13 @@
 | AC-09 pacman 回帰・許容差異 | test | `…::TestSystemModification_PacmanFlags`（`-S`/`-Syu`/`-Rns`/`-Ss`/`-Si`=true、`-Q`/`-Qi`/`-yS`=false）＋ `command_analysis_test.go::TestIsSystemModification_PackageManagerVerbs`（既存 pacman ケース無変更緑） |
 | AC-10 マネージャ名分岐の排除 | static | `rg -n "isPacmanModifyingFlag|isPacman\b" internal --glob '*.go'` → 0 件（期待: マッチなし） |
 | AC-11 verb 方式の非退行 | test | `command_analysis_test.go::TestIsSystemModification_PackageManagerVerbs`（apt/yum/dnf/yarn/npm/brew ケース無変更緑） |
-| AC-12 実効 Medium | test | `risk/evaluator_test.go::TestStandardEvaluator_EvaluateRisk_SystemModifications`（`dpkg -i`/`rpm -U`=`RiskLevelMedium`） |
-| AC-13 実行時/dry-run 一致 | test | `risk/package_manager_consistency_test.go::TestPackageManagerRiskConsistency_RuntimeVsDryRun` |
-| AC-14 最大値合成 | test | `security/indirect_execution_test.go::TestIndirect_WrapperPackageManager`（`env dpkg -i`=High／`sudo rpm -U`=Critical＝より高い次元が支配し、dpkg/rpm の Medium に引き下がらない）＋ 既存 `risk/evaluator_test.go::TestEvaluateRisk_MaxOfDimensionsOrderIndependent`（順序非依存の最大値不変条件。0136） |
-| AC-18 ラッパー/間接 | test | `security/indirect_execution_test.go::TestIndirect_WrapperPackageManager`（`env dpkg -i`／`timeout 60 rpm -U`=High、`sudo rpm -U`=Critical。いずれも ≥ Medium） |
-| AC-19 監査 reason code | test | `risk/evaluator_test.go::TestEvaluateRisk_PackageManagerReasonCode`（`ReasonSystemModification` を含む） |
+| AC-12 実効 Medium | test | `internal/runner/base/risk/evaluator_test.go::TestStandardEvaluator_EvaluateRisk_SystemModifications`（`dpkg -i`/`rpm -U`=`RiskLevelMedium`） |
+| AC-13 実行時/dry-run 一致 | test | `internal/runner/base/risk/package_manager_consistency_test.go::TestPackageManagerRiskConsistency_RuntimeVsDryRun` |
+| AC-14 最大値合成 | test | `internal/runner/base/security/indirect_execution_test.go::TestIndirect_WrapperPackageManager`（`env dpkg -i`=High／`env sudo rpm -U`=Critical＝より高い次元が支配し、dpkg/rpm の Medium に引き下がらない）＋ 既存 `internal/runner/base/risk/evaluator_test.go::TestEvaluateRisk_MaxOfDimensionsOrderIndependent`（順序非依存の最大値不変条件。0136） |
+| AC-18 ラッパー/間接 | test | `internal/runner/base/security/indirect_execution_test.go::TestIndirect_WrapperPackageManager`（`env dpkg -i`／`timeout 60 rpm -U`=High、`env sudo rpm -U`=Critical。いずれも ≥ Medium） |
+| AC-19 監査 reason code | test | `internal/runner/base/risk/evaluator_test.go::TestEvaluateRisk_PackageManagerReasonCode`（dpkg→`ReasonSystemModification` を分類が生成）＋ `internal/runner/resource/audit_wiring_test.go::TestExecute_PackageManagerDenyAuditable`（Medium+`system_modification` の閾値 deny が `decision=deny`・`reason_codes`・`resolved_path` 付きで監査記録される） |
 | AC-15 AC-34 上書き明記 | static | `rg -n "AC-34" docs/tasks/0137_package_manager_modification_detection/01_requirements.md` → §1.2 に「別途の要件変更として扱う」を上書きする記述がヒット（期待: マッチあり） |
-| AC-16 §3.1 表反映（日英） | static | `rg -n "dpkg|rpm" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` で §3.1 表行に dpkg/rpm の `medium` 記述がヒット（期待: 日英両ファイルでマッチ。値 `medium`・操作集合が一致） |
+| AC-16 §3.1 表反映（日英） | static | `rg -n "dpkg|rpm" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` で §3.1 表行に dpkg/rpm の `medium` 記述がヒット（期待: 日英両ファイルでマッチ。値 `medium`・操作集合（dpkg: install/remove/purge/unpack/configure、rpm: install/upgrade/freshen/erase/**reinstall**/import/initdb/rebuilddb）が一致） |
 | AC-17 開発者文書反映（日英） | static | `rg -n "dpkg.*rpm|フラグ方式|flag style" docs/dev/architecture_design/command-risk-evaluation.ja.md docs/dev/architecture_design/command-risk-evaluation.md` で「システム変更リスク」節に flag-style 検出と rpm 除外規則がヒット（期待: 日英両方マッチ） |
 | AC-20 移行ノート（日英） | static | `rg -n "dpkg|rpm" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` の §8 に破壊的変更・`risk_level = "medium"`・`--dry-run` を含む移行項目がヒット（期待: 日英両方マッチ） |
 | AC-21 検出限界（日英） | static | `rg -n "apk|snap|busybox|allowlist" docs/user/risk_assessment.ja.md docs/user/risk_assessment.md` で検出対象外・backstop 記述がヒット（期待: 日英両方マッチ） |
@@ -234,8 +247,9 @@ NF の検証: NF-001 は単体テストの境界ケース（上記 AC-01/03/05/0
 
 ## 8. クロス検索チェックリスト（`make lint`/`make test` で検出できない項目のみ）
 
-- [ ] **削除シンボルの残存参照**: `rg -n "isPacmanModifyingFlag" internal docs` → 0 件
-  （コード・コメント・docs。`docs/tasks/` 配下のスナップショットは歴史的記述として除外可）。
+- [ ] **削除シンボルの残存参照**: `rg -n "isPacmanModifyingFlag" internal docs --glob '!docs/tasks/**'`
+  → 0 件（コード・コメント・ライブ docs。`docs/tasks/` 配下のスナップショットは本タスクのコミット履歴・
+  設計記述として `isPacmanModifyingFlag` を含むため、検索対象から除外する）。
 - [ ] **`isPacman` ローカル変数の残存**: `rg -n "isPacman\b" internal --glob '*.go'` → 0 件。
 - [ ] **新規識別子の衝突確認**: `rg -n "flagStyleManagers|flagRule\b" internal --glob '*.go'` が
   `internal/runner/base/security` 配下のみであること（汎用名のため他パッケージ衝突がないこと）。
