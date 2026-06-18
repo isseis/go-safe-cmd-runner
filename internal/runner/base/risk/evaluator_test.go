@@ -106,10 +106,13 @@ func TestStandardEvaluator_EvaluateRisk_SystemModifications(t *testing.T) {
 		args     []string
 		expected runnertypes.RiskLevel
 	}{
-		// systemctl change verbs are now High, not Medium.
+		// Package managers and systemctl are High regardless of arguments.
 		{"systemctl restart", "systemctl", []string{"restart", "nginx"}, runnertypes.RiskLevelHigh},
-		{"apt install", "apt", []string{"install", "vim"}, runnertypes.RiskLevelMedium},
-		{"yum install", "yum", []string{"install", "vim"}, runnertypes.RiskLevelMedium},
+		{"apt install", "apt", []string{"install", "vim"}, runnertypes.RiskLevelHigh},
+		{"yum install", "yum", []string{"install", "vim"}, runnertypes.RiskLevelHigh},
+		// Same command, different arguments: a query is classified identically to
+		// an install, demonstrating the classification ignores arguments.
+		{"apt list (query)", "apt", []string{"list", "--installed"}, runnertypes.RiskLevelHigh},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -128,7 +131,6 @@ func TestStandardEvaluator_EvaluateRisk_SafeCommands(t *testing.T) {
 		{"echo command", "echo", []string{"Hello, World!"}},
 		{"ls command", "ls", []string{"-la", "/home"}},
 		{"cat command", "cat", []string{"/etc/passwd"}},
-		{"apt list (query)", "apt", []string{"list", "--installed"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -184,11 +186,12 @@ func TestEvaluateRisk_SystemctlChangeAndServiceHigh(t *testing.T) {
 	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "service", []string{"nginx", "start"}))
 }
 
-// systemctl read-only subcommands are a Medium floor; change/unknown are High.
-func TestEvaluateRisk_SystemctlSubcommandConditional(t *testing.T) {
+// systemctl is always High, including read-only subcommands; the classification
+// no longer inspects the subcommand.
+func TestEvaluateRisk_SystemctlAlwaysHigh(t *testing.T) {
 	ev := newVerifiedEvaluator()
-	assert.Equal(t, runnertypes.RiskLevelMedium, evalLevel(t, ev, "systemctl", []string{"status", "nginx"}))
-	assert.Equal(t, runnertypes.RiskLevelMedium, evalLevel(t, ev, "systemctl", []string{"show", "nginx"}))
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "systemctl", []string{"status", "nginx"}))
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "systemctl", []string{"show", "nginx"}))
 	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "systemctl", []string{"restart", "nginx"}))
 	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "systemctl", []string{"frobnicate", "nginx"}))
 }
@@ -197,6 +200,25 @@ func TestEvaluateRisk_SystemctlSubcommandConditional(t *testing.T) {
 func TestEvaluateRisk_ServiceAllActionsHigh(t *testing.T) {
 	ev := newVerifiedEvaluator()
 	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "service", []string{"nginx", "status"}))
+}
+
+// a privilege token wrapping a system-modification command is Critical (AC-08).
+func TestEvaluateRisk_SudoSystemModificationCritical(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	assert.Equal(t, runnertypes.RiskLevelCritical, evalLevel(t, ev, "/usr/bin/sudo", []string{"dpkg", "-i", "pkg.deb"}))
+	assert.Equal(t, runnertypes.RiskLevelCritical, evalLevel(t, ev, "/usr/bin/sudo", []string{"systemctl", "restart", "nginx"}))
+}
+
+// a directly executed system-modification command carries the system-modification
+// reason code in its assessment, so a deny is auditable as such (AC-09).
+func TestEvaluateRisk_SystemModificationReasonCode(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	for _, cmd := range []string{"dpkg", "systemctl"} {
+		plan, err := ev.EvaluateRisk(verifiedCmd(cmd, []string{"x"}))
+		require.NoError(t, err)
+		assert.Containsf(t, plan.Assessment.ReasonCodes, risktypes.ReasonSystemModification,
+			"%s must carry the system-modification reason code", cmd)
+	}
 }
 
 // profile-less commands given as absolute paths get their correct risk.

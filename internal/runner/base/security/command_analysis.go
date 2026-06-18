@@ -429,50 +429,29 @@ var findExecActions = map[string]struct{}{
 	"-okdir":   {},
 }
 
-// systemModificationCommandNames is the set of base command names that modify
-// system settings regardless of arguments.
-var systemModificationCommandNames = map[string]struct{}{
-	"systemctl":   {},
-	"service":     {},
-	"chkconfig":   {},
-	"update-rc.d": {},
-	"mount":       {},
-	"umount":      {},
-	"fdisk":       {},
-	"parted":      {},
-	"mkfs":        {},
-	"fsck":        {},
-	"crontab":     {},
-	"at":          {},
-	"batch":       {},
+// highSystemModificationNames are the package managers and service/init
+// management entry points. They are High regardless of arguments because they can
+// run unverified maintainer scripts or unit/init scripts under privilege (dpkg
+// postinst, rpm %post, pip setup.py, npm postinstall, systemd units, init
+// scripts), which is arbitrary code execution. The classification is name-only:
+// queries such as "apt list" are treated identically to "apt install".
+var highSystemModificationNames = map[string]struct{}{
+	// Package managers (dpkg/rpm included; they were previously undetected).
+	"apt": {}, "apt-get": {}, "yum": {}, "dnf": {}, "zypper": {},
+	"pacman": {}, "brew": {}, "pip": {}, "npm": {}, "yarn": {},
+	"dpkg": {}, "rpm": {},
+	// Service / init management.
+	"systemctl": {}, "service": {},
 }
 
-// packageManagerNames is the set of package managers whose install/remove style
-// operations count as system modification.
-var packageManagerNames = map[string]struct{}{
-	"apt":     {},
-	"apt-get": {},
-	"yum":     {},
-	"dnf":     {},
-	"zypper":  {},
-	"pacman":  {},
-	"brew":    {},
-	"pip":     {},
-	"npm":     {},
-	"yarn":    {},
-}
-
-// packageModifyingVerbs are package-manager subcommands that install, remove, or
-// otherwise modify installed software. The list is non-exhaustive (the threat
-// model backstops with allowlist + hash pinning); an unmatched verb falls through
-// to a non-modifying classification.
-var packageModifyingVerbs = map[string]struct{}{
-	"install": {}, "remove": {}, "uninstall": {}, "upgrade": {}, "update": {},
-	"purge": {}, "autoremove": {}, "dist-upgrade": {}, "full-upgrade": {},
-	"dselect-upgrade": {}, "clean": {}, "autoclean": {},
-	"groupinstall": {}, "groupremove": {}, "localinstall": {}, "localupdate": {},
-	"reinstall": {}, "add": {}, "tap": {}, "untap": {},
-	"i": {}, "un": {}, "up": {}, // common npm shorthands
+// mediumSystemModificationNames are name-matched commands that change system
+// state through defined operations rather than executing unverified code. They
+// stay at Medium for this dimension; the effective risk of some (mkfs, fdisk) can
+// still be High via the separate dangerous-argument-pattern dimension.
+var mediumSystemModificationNames = map[string]struct{}{
+	"chkconfig": {}, "update-rc.d": {},
+	"mount": {}, "umount": {}, "fdisk": {}, "parted": {},
+	"mkfs": {}, "fsck": {}, "crontab": {}, "at": {}, "batch": {},
 }
 
 // anyNameInSet reports whether any of the resolved command names is in set.
@@ -533,54 +512,22 @@ func IsDestructiveFileOperation(names map[string]struct{}, args []string) bool {
 	return false
 }
 
-// isSystemModificationByNames checks whether the command modifies system settings,
-// deciding from an already-resolved name set (matched by basename and resolved
-// symbolic links, so an absolute path such as /usr/sbin/systemctl is detected) so
-// callers that have already walked the symlink chain do not repeat the work.
-func isSystemModificationByNames(names map[string]struct{}, args []string) bool {
-	if anyNameInSet(names, systemModificationCommandNames) {
-		return true
-	}
-
-	if anyNameInSet(names, packageManagerNames) {
-		// Only consider install/remove/upgrade-style operations as system
-		// modification (a bare query such as "apt list" is not).
-		for _, arg := range args {
-			if _, ok := packageModifyingVerbs[arg]; ok {
-				return true
-			}
-		}
-	}
-
-	// Flag-style managers (pacman/dpkg/rpm) select their operation from option
-	// flags rather than a verb. This gate is independent of packageManagerNames so
-	// managers absent from the verb set still reach their flag rule.
-	for n := range names {
-		if rule, ok := flagStyleManagers[n]; ok && isFlagStyleModification(rule, args) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// SystemModificationRisk derives the system-modification risk for a command given
-// its resolved name set: systemctl is subcommand-conditional (read-only verbs stay
-// at a Medium floor, change/unknown verbs are High), service is always High (it
-// runs an unverified init script), and any other system-modification command
-// (mount, crontab, mkfs, package install/remove, ...) is Medium. It returns
-// RiskLevelUnknown when no system-modification dimension applies. The decision is
-// made entirely from the supplied resolved-name set (no re-extraction). This is
-// the single source for the dimension, used both by the top-level evaluator and
+// SystemModificationRisk derives the system-modification risk for a command from
+// its resolved name set alone, without inspecting arguments. Package managers and
+// service/init management (highSystemModificationNames) are High because they can
+// run unverified code under privilege; other state-changing commands
+// (mediumSystemModificationNames: mount, crontab, mkfs, ...) are Medium. It returns
+// RiskLevelUnknown when no system-modification dimension applies. The name set is
+// matched by basename and resolved symbolic links, so an absolute path such as
+// /usr/sbin/systemctl is detected; a name appearing only as an argument value
+// (e.g. "echo rpm") is not, because names holds resolved command names only. This
+// is the single source for the dimension, used both by the top-level evaluator and
 // by the wrapped-inner indirect-execution path.
-func SystemModificationRisk(names map[string]struct{}, args []string) runnertypes.RiskLevel {
-	if _, ok := names["systemctl"]; ok {
-		return SystemctlSubcommandRisk(args)
-	}
-	if _, ok := names["service"]; ok {
+func SystemModificationRisk(names map[string]struct{}) runnertypes.RiskLevel {
+	if anyNameInSet(names, highSystemModificationNames) {
 		return runnertypes.RiskLevelHigh
 	}
-	if isSystemModificationByNames(names, args) {
+	if anyNameInSet(names, mediumSystemModificationNames) {
 		return runnertypes.RiskLevelMedium
 	}
 	return runnertypes.RiskLevelUnknown

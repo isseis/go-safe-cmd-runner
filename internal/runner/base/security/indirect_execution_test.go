@@ -71,6 +71,28 @@ func TestIndirect_WrapperSudoCritical(t *testing.T) {
 	}
 }
 
+// TestIndirect_WrapperSystemModificationHighFloor verifies that a
+// system-modification command reached through a wrapper (env) is a High floor.
+// This is a regression guard: the wrapper inner is High regardless of its content
+// (it does not go through SystemModificationRisk), so the name-only classification
+// change does not affect this conclusion (AC-08).
+func TestIndirect_WrapperSystemModificationHighFloor(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"env dpkg", []string{"dpkg", "-i", "pkg.deb"}},
+		{"env systemctl restart", []string{"systemctl", "restart", "nginx"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := analyzeIndirectCmd("env", tc.args...)
+			assert.Equal(t, IndirectFloor, res.Kind)
+			assert.Equal(t, runnertypes.RiskLevelHigh, res.Level)
+		})
+	}
+}
+
 // TestIndirect_Taskset verifies taskset's inner command is resolved for both the
 // positional MASK form and the -c/--cpu-list form (separated, attached, clustered).
 // A value-supplied affinity means there is no positional MASK, so a privilege token

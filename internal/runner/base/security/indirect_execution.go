@@ -236,18 +236,17 @@ func skipLeadingOptions(args []string, spec optSpec) (idx int, reliable bool) {
 	return i, true
 }
 
-// firstOperand returns the first operand (non-option token) of args per spec, and
-// whether the scan was reliable. operand is "" when there is no operand or when
-// the scan was unreliable (an unknown-arity option made the boundary
-// indeterminate); reliable is false in the latter case so the caller can fail
-// closed. It is the string-returning convenience over skipLeadingOptions for
-// callers that want the subcommand/verb directly.
-func firstOperand(args []string, spec optSpec) (operand string, reliable bool) {
+// firstOperand returns the first operand (non-option token) of args per spec.
+// operand is "" when there is no operand or when the scan was unreliable (an
+// unknown-arity option made the boundary indeterminate), so a caller that treats
+// "" as "no subcommand" fails closed. It is the string-returning convenience over
+// skipLeadingOptions for callers that want the subcommand/verb directly.
+func firstOperand(args []string, spec optSpec) (operand string) {
 	idx, reliable := skipLeadingOptions(args, spec)
 	if !reliable || idx >= len(args) {
-		return "", reliable
+		return ""
 	}
-	return args[idx], true
+	return args[idx]
 }
 
 // scanShortCluster parses a clustered short-option token (e.g. "-tc") left to
@@ -837,7 +836,7 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 		level = max(level, cRisk)
 		codes = append(codes, risktypes.ReasonCoreutilsClassification)
 	}
-	if s := SystemModificationRisk(innerNames, innerArgs); s > runnertypes.RiskLevelUnknown {
+	if s := SystemModificationRisk(innerNames); s > runnertypes.RiskLevelUnknown {
 		level = max(level, s)
 		codes = append(codes, risktypes.ReasonSystemModification)
 	}

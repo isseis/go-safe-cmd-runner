@@ -209,13 +209,13 @@ func TestConsistency_RmAllForms(t *testing.T) {
 }
 
 // TestConsistency_Systemctl verifies the shared evaluator (runtime and
-// dry-run) classifies systemctl change verbs as High and read-only verbs at a
-// Medium floor.
+// dry-run) classifies systemctl as High regardless of the subcommand, including
+// read-only verbs such as status.
 func TestConsistency_Systemctl(t *testing.T) {
 	ev := newVerifiedEvaluator()
 	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "systemctl", []string{"restart", "nginx"}))
 	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/sbin/systemctl", []string{"stop", "nginx"}))
-	assert.Equal(t, runnertypes.RiskLevelMedium, evalLevel(t, ev, "systemctl", []string{"status", "nginx"}))
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "systemctl", []string{"status", "nginx"}))
 }
 
 // TestConsistency_ProfileCommands verifies profile-derived risk (claude,

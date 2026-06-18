@@ -120,6 +120,34 @@ func TestExecute_RejectedCommandAuditable(t *testing.T) {
 	mockExec.AssertNotCalled(t, "Execute", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
+// TestExecute_SystemModificationDenyAuditable verifies that a command denied for
+// system modification is audited (decision=deny) with the system-modification
+// reason code in its reason_codes, so a system-modification deny is auditable as
+// such (AC-09).
+func TestExecute_SystemModificationDenyAuditable(t *testing.T) {
+	denyPlan := risktypes.VerifiedCommandPlan{
+		Identity: &risktypes.VerifiedIdentity{ResolvedPath: "/usr/bin/dpkg", ContentHash: "sha256:abc"},
+		Assessment: risktypes.RiskAssessment{
+			Level:          runnertypes.RiskLevelHigh,
+			Blocking:       true,
+			BlockingReason: risktypes.ReasonSystemModification,
+			ReasonCodes:    []risktypes.ReasonCode{risktypes.ReasonSystemModification},
+		},
+	}
+	mgr, mockExec, buf := newAuditingNormalManager(fixedPlanEvaluator{plan: denyPlan})
+	cmd := executortestutil.CreateRuntimeCommand("/usr/bin/dpkg", []string{"-i", "pkg.deb"}, executortestutil.WithName("dpkg_cmd"))
+	group := createTestCommandGroup()
+
+	_, _, err := mgr.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
+	require.ErrorIs(t, err, runnertypes.ErrCommandSecurityViolation)
+
+	entry := findRiskProfileEntry(t, buf)
+	assert.Equal(t, "deny", entry["decision"])
+	assert.Equal(t, "system_modification", entry["blocking_reason"])
+	assert.Contains(t, entry["reason_codes"], "system_modification")
+	mockExec.AssertNotCalled(t, "Execute", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
 // newAuditingDryRunManager builds a DryRunResourceManager whose audit logger
 // writes JSON to the returned buffer, with a passthrough path resolver.
 func newAuditingDryRunManager(evaluator risk.Evaluator) (*DryRunResourceManager, *bytes.Buffer) {
