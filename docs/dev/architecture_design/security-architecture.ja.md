@@ -434,6 +434,8 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 }
 ```
 
+**間接実行リゾルバ（ラッパー経由インナー）**: ラッパー（`env`/`timeout`/`nice` 等）はインナーコマンドを抽出してリスク評価する（抽出は維持する）。特権昇格トークンは Critical、禁止形態（ローダ制御変数・`env -C`・解釈不能な `env -S`・find/xargs の子プロセス実行・動的ローダ直接起動・remote-shell ヘルパ・抽出不能・深さ上限超過・symlink 解決失敗）は Reject を優先し、それ以外の抽出可能な通常インナーは内容によらず一律 High（細粒度算出は行わない）。runner はラッパーセマンティクスを再実装せず、インナーの fd 束縛・自動ハッシュ検証も行わない（監査チェーンには記録するが実体固定ではない。タスク 0138）。直接スクリプト実行の shebang インタプリタ連鎖のみ従来どおり細粒度算出を維持する。
+
 **コマンドリスク分析**:
 - 低リスク: 標準システムユーティリティ（ls、cat、grep）
 - 中リスク: ファイル変更コマンド（cp、mv、chmod）、パッケージ管理（apt、yum）
