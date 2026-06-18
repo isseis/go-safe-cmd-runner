@@ -94,7 +94,7 @@ dimension にも該当せず **Low**。grep 確認済み（security パッケー
    「sudoers を安全に編集する」ことそのもの。さらに実装の Critical は**無条件ブロック
    ＝per-command でも実行不可**（論点5）。visudo/useradd には正当な特権バッチ用途があり、
    実行不可にすると壊れる。→ **visudo は High**（「権限付与=High」のバケツ、setcap と同列）が筋。
-   Critical 定義を「**任意の内側コマンドを透過実行する特権昇格ラッパ（sudo/su/pkexec/doas）。
+   Critical 定義を「**任意の内側コマンドを透過実行する特権昇格ラッパ（sudo/su/pkexec/doas/runuser/setpriv/capsh 等）。
    ゲートを完全バイパスするので無条件ブロック**」と尖らせると、sudo=Critical / visudo=High /
    insmod=High が同一理屈（論点5）で揃う。「sudoers 編集＝root 付与能力」と見て Critical に
    寄せる解釈も成立するため、**「Critical=実行不可」を受け入れるかが決定点**（推奨は High）。
@@ -139,7 +139,7 @@ named-file 粒度→Medium**（rm=named→Medium / rm -r=tree→High / mkfs=devi
 ```
 最終リスク = max(軸1: コマンド階級[name固定], 軸2: 呼び出し危険度[arg/宛先ゾーン])
 
-critical — 任意内側コマンドを透過実行する特権昇格ラッパ（sudo/su/pkexec/doas）。無条件ブロック。
+critical — 任意内側コマンドを透過実行する特権昇格ラッパ（sudo/su/pkexec/doas/runuser/setpriv/capsh 等）。無条件ブロック。
 high     — ①device/FS/ツリー粒度の不可逆破壊（能力 or 危険arg）
            ②永続的 system/boot/service/account/auth 変更
            ③高権限での任意コード実行（kernelモジュール, dlsym/LD_PRELOAD, interpreter, AI駆動）
@@ -257,11 +257,11 @@ low      — それ以外（safe-zone 内のロケーション定義コマンド
 |---|---|---|
 | D1 | **2 軸モデル採用**：最終リスク = `max(軸1: コマンド階級[name固定], 軸2: 呼び出し危険度[arg/宛先ゾーン])` | 論点1補足 |
 | D2 | **改訂版・統一原則を採用**（critical/high/medium/low の 4 段、High に **④信頼境界の破壊**を新規追加） | 論点1補足 |
-| D3 | **Critical 定義の尖鋭化**：任意内側コマンドを透過実行する特権昇格ラッパ（sudo/su/pkexec/doas）に限定。無条件ブロック＝実行不可を意味する | 発見事項D-1, 論点5 |
+| D3 | **Critical 定義の尖鋭化**：任意内側コマンドを透過実行する特権昇格ラッパ（sudo/su/pkexec/doas/runuser/setpriv/capsh 等）に限定。無条件ブロック＝実行不可を意味する | 発見事項D-1, 論点5 |
 | D4 | **ロケーション定義コマンドは 3 ゾーン・パス関数**（trust-critical→High / ordinary→Medium / safe-zone→Low）。Low 化は安全要件 5 点（正規化解決・safe-zone 限定・/tmp 非無条件・パース不能/glob は下げない）を満たす場合のみ | 論点4補足 |
 | D5 | **精密化の線引き**：package manager=一律名前のみ粗粒度／基本コマンド（cp/mv/mkdir/rmdir/ln 等）=引数解析。基準＝フラグ安定性 × 使用頻度 | 論点4補足 |
 | D6 | **`visudo` 等 権限付与／認証境界系 = High**（Critical にしない。正当な特権バッチが実行不可になるため） | 発見事項D-1 |
-| D7 | **`rm`/`rmdir`/`shred`/`dd` = 宛先ゾーン+arg 化**（`rm ~/file`=Low、`rm -r`/glob/critical-path=High）。現状 name のみ High からの変更につき**明示 AC + changelog 必須** | 発見事項D-3, 論点4補足 |
+| D7 | **`rm`/`rmdir`/`shred`/`dd` = 宛先ゾーン+arg 化**（`rm ~/file`=Low、`rm -r`/critical-path=High。本ランナーは glob 非展開のため `*` はリテラル扱い＝対象外）。現状 name のみ High からの変更につき**明示 AC + changelog 必須** | 発見事項D-3, 論点4補足 |
 | D8 | **カーネルモジュール（insmod/modprobe/rmmod/kexec）= High**（Critical にしない） | 論点5 |
 | D9 | **データ送信（egress: curl/scp/ssh/rsync）= Medium 据え置き**（C, As is）。AI⇔egress 非対称は**既知の限界として doc 明記** | 論点1補足, 発見事項C/D |
 | D10 | **0139 AC-06 乖離（fdisk/mkfs=Medium 維持 ⇄ 実装 High）は本タスク 0140 で訂正**（0139 は触らない） | 発見事項 冒頭, 論点6 |
@@ -279,8 +279,8 @@ low      — それ以外（safe-zone 内のロケーション定義コマンド
 | `ip`/`ifconfig`/`route` | **Medium** | 名前のみ（粗粒度） | 「ネットは原則 mid」。`ip route` の system 全体性は粗粒度で Medium に丸める（D5） |
 | `mount`/`umount` | **Medium**（既定）／**High** | mountpoint の宛先ゾーン | 既定は定義済み system 変更=Medium。**mountpoint が trust-critical（/usr/bin・/etc 等）なら ④信頼境界破壊（shadowing）→ High**。cp/mv と同じ宛先ゾーン判定を mountpoint に適用 |
 | `setfacl` | **Medium**（既定）／**High** | arg 条件（付与方向/対象） | chmod と同型。**付与方向（権限拡大）または critical リソース対象のみ High**、他 Medium |
-| LVM 破壊系：`lvremove`/`vgremove`/`pvremove`/`lvreduce`/`vgreduce`/`pvmove` | **High** | 名前のみ（別バイナリ） | ①大規模・不可逆なディスク/ボリューム破壊 |
-| LVM 作成/設定系：`lvcreate`/`lvextend`/`vgcreate`/`pvcreate`/`vgchange`/`lvchange` | **Medium** | 名前のみ（別バイナリ） | 永続的だが破壊を伴わない system 変更 |
+| LVM 破壊/デバイス初期化系：`lvremove`/`vgremove`/`pvremove`/`lvreduce`/`vgreduce`/`pvmove`/`lvresize`/`pvresize`/`pvcreate` | **High** | 名前のみ（別バイナリ） | ①大規模・不可逆なディスク/ボリューム破壊。`pvcreate` はデバイス初期化（01 AC-02 と整合） |
+| LVM 作成/設定系：`lvcreate`/`lvextend`/`vgcreate`/`vgchange`/`lvchange` | **Medium** | 名前のみ（別バイナリ） | 永続的だが破壊を伴わない system 変更 |
 
 - `mount`/`setfacl` は arg/宛先依存判定が要る（D4 の宛先ゾーン・dd of= と同類の精密化群）。実装段取りは `mkarch`。
 
