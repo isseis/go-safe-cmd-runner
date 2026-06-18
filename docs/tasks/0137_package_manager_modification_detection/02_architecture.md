@@ -200,9 +200,15 @@ type flagRule struct {
     excludeLongForms  map[string]struct{}
 }
 
-// flagStyleManagers maps a manager basename to its detection rule.
-// Adding a new flag-style manager = adding one entry here (AC-10 / NF-003).
-var flagStyleManagers map[string]flagRule
+// flagStyleManagers maps a manager basename to its detection rule. It is a
+// package-level map literal populated with one entry per flag-style manager
+// (values listed in the table below). Adding a new flag-style manager = adding
+// one entry here (AC-10 / NF-003).
+var flagStyleManagers = map[string]flagRule{
+    "pacman": { /* SRU / --sync,--remove,--upgrade / no exclude */ },
+    "dpkg":   { /* irP / --install,--remove,--purge,--unpack,--configure / no exclude */ },
+    "rpm":    { /* iUFe / --install,…,--reinstall,--import,… / exclude qV,--query,--verify */ },
+}
 ```
 
 判定の振る舞い（要件 AC を満たす規則）:
@@ -398,9 +404,9 @@ flowchart TD
     SC -->|"Yes"| SCR["SystemctlSubcommandRisk"]
     SC -->|"No"| SV{"service?"}
     SV -->|"Yes"| HIGH["High"]
-    SV -->|"No"| VERB{"verb 方式該当?<br>(packageModifyingVerbs)"}
+    SV -->|"No"| VERB{"verb 方式該当?<br>(name ∈ packageManagerNames<br>かつ arg ∈ packageModifyingVerbs)"}
     VERB -->|"Yes"| MED["Medium"]
-    VERB -->|"No"| FLAGLOOP["names 内の各フラグ方式<br>マネージャを flagStyleManagers から引く"]
+    VERB -->|"No"| FLAGLOOP["フラグ方式判定<br>(name ∈ flagStyleManagers の<br>各マネージャに規則を適用。<br>packageManagerNames ゲートとは独立)"]
     FLAGLOOP --> EXC{"いずれかのトークンが<br>除外(q/V)に該当?<br>(rpm のみ)"}
     EXC -->|"Yes"| UNK["Unknown（非該当）"]
     EXC -->|"No"| MOD{"変更フラグに該当?<br>(短形式文字含有 or<br>長形式完全一致)"}
