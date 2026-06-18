@@ -283,7 +283,7 @@ func SystemModificationRisk(names map[string]struct{}, args []string) runnertype
 | `internal/runner/base/security/package_manager_flags_test.go` | 新規 | ツール別規則の単体テスト（dpkg/rpm/pacman の肯定・否定・境界）。 | AC-01〜AC-09 / NF-001 | （新規） |
 | `internal/runner/base/security/command_analysis_test.go` | 変更 | `TestIsSystemModification_PackageManagerVerbs`（pacman ケースは退行検証として維持）・`TestIsSystemModification` に dpkg/rpm ケースを追加。 | AC-01〜AC-11 | 同左（拡張） |
 | `internal/runner/base/risk/evaluator_test.go` | 変更 | dpkg/rpm の top-level 実効リスク（Medium。AC-12）と監査 reason code（AC-19）の検証を追加。最大値合成の不変条件は既存 `TestEvaluateRisk_MaxOfDimensionsOrderIndependent` を参照。 | AC-12 / AC-19 | 同左（拡張） |
-| `internal/runner/base/security/indirect_execution_test.go` | 変更 | ラッパー/sudo 経由の dpkg/rpm 複合（`env dpkg -i`=High、`sudo rpm -U`=Critical。いずれも ≥ Medium で Medium が支配しない）の検証を追加。 | AC-14 / AC-18 | 同左（拡張） |
+| `internal/runner/base/security/indirect_execution_test.go` | 変更 | ラッパー経由の dpkg/rpm 複合（`env dpkg -i`=High、`env sudo rpm -U`=Critical。いずれも ≥ Medium で Medium が支配しない）の検証を追加。直接 `sudo` は `AnalyzeIndirectExecution` の対象外（`IndirectNone`）のため、ここでは `env` でラップした形で検証する。 | AC-14 / AC-18 | 同左（拡張） |
 | `internal/runner/base/risk/package_manager_consistency_test.go` | 新規 | 同一 dpkg/rpm コマンド集合で実行時/dry-run が同一実効リスクを返すことを共有評価器で固定（`coreutils_consistency_test.go` と同方式）。 | AC-13 | （新規） |
 
 ドキュメント変更（F-005。`docs/tasks/` 配下のスナップショットは対象外）:
@@ -462,7 +462,7 @@ flowchart TD
 | `pacman -Syu` | フラグ短形式 `S`/`U` | Medium | AC-09 |
 | `pacman -Q` | 非該当 | Unknown | AC-09 |
 | `env dpkg -i pkg.deb` | 間接実行（ラッパー内側 RoleInner は flat High floor） | High（≥ Medium） | AC-18 |
-| `sudo rpm -U pkg.rpm` | 特権昇格次元が支配 | Critical | AC-14 / AC-18 |
+| `env sudo rpm -U pkg.rpm` | ラッパー経由で特権昇格次元が支配 | Critical | AC-14 / AC-18 |
 
 ---
 
