@@ -75,10 +75,9 @@
   `TestIsSystemModification_PackageManagerVerbs` の pacman・verb ケース、`TestIsSystemModification`）が
   **変更なしで緑**であることを確認する。`rg -n "isPacmanModifyingFlag|isPacman\b" internal --glob '*.go'`
   が 0 件であることを確認する（AC-10 / NF-005）。
-  注: `make test` 緑・既存テスト無変更緑・`rg` 0 件・`security` パッケージのスコープ付き lint 0 件を確認。
-  リポジトリ全体の `make lint` は本タスクと無関係な既存 goconst 警告（`internal/terminal/*` 等）で失敗する
-  （golangci-lint v2 の goconst パッケージ横断集計による既存事象。main でも同一に失敗）。本変更由来の新規
-  指摘はなし。
+  注: `make fmt` → `make test`（緑）→ `make lint`（ピン留め版 golangci-lint v2.11.4 で 0 issues）を確認。
+  既存テスト（`TestIsSystemModification_PackageManagerVerbs` の pacman・verb ケース、`TestIsSystemModification`）は
+  無変更で緑。`rg` 0 件。本変更由来の新規 lint 指摘なし。
 
 ### PR-1 作成ポイント: per-tool flag mechanism refactor
 
@@ -88,7 +87,7 @@
 
 **レビュー観点**: pacman 既存挙動の不変（有効入力で退行なし）／`isPacman`・`isPacmanModifyingFlag` の完全削除／ゲート分離（verb=`packageManagerNames`、flag=`flagStyleManagers`）の正しさ
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
