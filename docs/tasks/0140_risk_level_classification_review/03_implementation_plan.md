@@ -35,6 +35,10 @@
   経路（現行 `EvaluateRisk` ルール）を shadow リリース中は feature flag 越しに保持する。**旧名集合エントリ・
   旧 `dangerousCommandPatterns` 名前のみエントリの物理削除は enforce を新へ切替えた後の cleanup**（§10）で行い、
   P1〜P4 では in-place 破壊置換をしない。P1〜P4 のテストは**新分類経路**を直接対象に新挙動を表明する。
+  - **既定 off の単一 shadow flag が「新ルール一式」を覆う**: 軸1 family 引き上げ・軸2 ゾーン・②③①抑止（引き下げ）・
+    P4 の `env`/`timeout` High・特権/ラッパ拡張など**本タスクの全 enforce 変更**は同一 flag でゲートする。これにより
+    どのフェーズの PR を独立にマージ/リリースしても**既定 enforce は不変**で旧 baseline が保たれ、P5a の旧/新差分
+    （newly-deny/newly-allow）ログが成立する（#8 の指摘）。flag-on のときのみ新挙動が enforce に反映される。
 - **Go ソースの識別子・コメント・文字列リテラルは英語**（[_context.md](../../../.claude/commands/_context.md)
   Source-language rule）。本計画書本文は日本語。テストソース（`*_test.go`・`testutil/`・`test_helpers*.go`）も同じ。
 
@@ -192,41 +196,57 @@
 
 **対象**: 新規 `security/path_resolve.go`・`security/safezone.go`、`security/types.go`（小）。
 
-- [ ] `path_resolve.go`: `ResolveOperandPath(operand, workDir string, leafDeref LeafDerefMode) (resolved string,
-  err error)`。02 §3.5 の高レベルシグネチャ（2 引数）を、leaf-symlink 追従方針を**明示パラメータ**で受ける形に
-  具体化する（同一 link を write は dereference・delete は非 dereference する操作別挙動を、隠れたグローバル状態
-  ではなく引数で表す。`LeafDerefMode` ∈ {`DerefFollow`（write 系）, `DerefKeepLink`（delete 系）}）。相対は
-  `workDir` 基点。未存在 leaf は存在する最深の親まで symlink 解決し残り末尾を `..`/`.` 畳み込みで合成。型付き
-  センチネル（深さ超過/到達不能/未確定）を返す。read-only。
+- [ ] **評価単位の解決コンテキストを導入する**（#1 の指摘）: stateless 関数では per-evaluation の memo/予算を全
+  オペランドにまたがって共有・強制できないため、解決を**コンテキスト持ちの形**にする。例:
+  `type operandResolver struct { workDir string; fs <lstat/stat/readlink seam>; memo map[string]resolvedZone; budget *costBudget }`
+  と `func (r *operandResolver) Resolve(operand string, leafDeref LeafDerefMode) (resolved string, err error)`。
+  1 コマンド評価につき 1 つ生成し、`memo`（解決済み親→ゾーン）と `budget`（`lstat`/`readlink` 総回数・component
+  深さの上限カウンタ）を全オペランドで共有する。上限超過は **fail-closed（`ZoneUnresolved`→High）**。02 §3.5 の
+  2 引数シグネチャは「高レベル」表記であり、本具体化（resolver context＋`leafDeref`）に展開する。
 - [ ] leaf-symlink 追従は**操作別**（write 系=`DerefFollow`でターゲット解決、delete 系=`DerefKeepLink`で非追従。
-  02 §3.5）。呼び出し側（各 `LocationKind`）が `LeafDerefMode` を指定する。
-- [ ] `safezone.go`: `SafeZone{Roots, TrustedRoots}` 型と `ResolveSafeZone(cmd *RuntimeCommand, cfg *Config)
-  SafeZone`（02 §3.4）。Roots=`EffectiveWorkDir`＋専用 temp（`$HOME`・`OutputFile` 親は**含めない**）。
-- [ ] `safezone.go`: per-operand `Trusted` 判定（02 §3.4 条件(1)〜(3)）。参照 identity は config の run-as 値
+  02 §3.5）。呼び出し側（各 `LocationKind`）が `LeafDerefMode` を指定する。相対は `workDir` 基点、未存在 leaf は
+  存在する最深の親まで解決し残り末尾を `..`/`.` 畳み込みで合成、解決不能は型付きセンチネル。read-only。
+- [ ] `safezone.go`: `SafeZone{Roots, TrustedRoots}` 型と `ResolveSafeZone(cmd, group, cfg)`（02 §3.4）。
+  **Roots = `EffectiveWorkDir` ＋ 構成済み専用 temp**。専用 temp は `EffectiveWorkDir` から導けない場合があるため
+  （#7 の指摘: グループ private temp/`__runner_workdir` は group workdir に保持され、command-level `workdir` が
+  `EffectiveWorkDir` を上書きし得る）、**`ResolveSafeZone` に temp 根を渡す plumbing を追加する**（`RuntimeGroup` または
+  解決済み temp パスを引数に取る）。plumbing できない/不要なら Roots 契約から専用 temp を**外す**（YAGNI）。
+  `$HOME`・`OutputFile` 親は**含めない**。
+- [ ] **`RunAsIdent`（解決済み UID/GID/補助 group）を zoning へ plumbing する**（#4 の指摘）: コマンド config の
+  run-as は名前文字列で、`security.Config` に UID/GID identity が無く、かつ zoning ファイルは `os/user` 使用禁止
+  （§2 P5 の static ガード）。よって run-as 名→`RunAsIdent` の解決は **zoning の外（評価器結線層、`os/user` 使用可）**で
+  行い、**precomputed `RunAsIdent` を `ZoningInput.RunAs` に載せて渡す**。zoning 側は live identity も zero identity も
+  使わない（さもないと AC-17(d) の Medium/Low 判定が configured run-as で誤る）。解決 seam の所在とテストを明記する。
+- [ ] `safezone.go`: per-operand `Trusted` 判定（02 §3.4 条件(1)〜(3)）。参照 identity は上記 precomputed `RunAsIdent`
   （live euid 不使用, AC-28）。所有者/権限探査は注入された `lstat`/`stat` seam 経由（§1.3 テスト可観測性）。
   leaf-symlink は最終ターゲットを解決して zoning（symlink→/etc/passwd→Critical）。条件不成立は `Trusted=false`。
-- [ ] `types.go`: `Config` に safe-zone 信頼ディレクトリ許可リスト（既定空）フィールドを追加。`DefaultConfig`/
-  glossary 整合は P6。
+- [ ] `types.go`＋**TOML ローダ plumbing**: `Config` に safe-zone 信頼ディレクトリ許可リスト（既定空）を追加するだけ
+  では deployment から設定できない（#2 の指摘: 現行 `[security]` spec は `trusted_gids` のみを運び、`runner.go` は
+  `DefaultConfig()` を作って当該フィールドを写すだけ）。**TOML `SecuritySpec` に `trusted_roots`（仮）を追加し、
+  loader→`runner.go` の `security.Config` への転送を加える**。これを欠くと production は常に空 `TrustedRoots` となり、
+  AC-17 の trusted safe-zone Low は `security.Config` を直接注入するテストでしか通らない。`DefaultConfig`/glossary
+  整合は P6。
 - [ ] `isWithinCriticalPaths(resolvedAbsPath string, criticalPaths []string) bool` を新設（02 §3.9, C2）。
   `common.IsPathWithinDirectory` ＋ `/` はルート完全一致のみ。`Config.SystemCriticalPaths` を解決後パスに適用。
-- [ ] **解決コスト予算とメモ化を明示的な成果物にする**（02 §3.5、#6 の指摘）: 評価単位で「解決済み親→ゾーン」を
-  メモ化し、**オペランド総数・総解決コスト（`lstat`/`readlink` 回数や component 深さ）に上限**を設ける。上限超過は
-  **fail-closed（`ZoneUnresolved`→High）**とし、`ExecuteCommand` ホットパスで多数オペランド/深い symlink が無制限の
-  FS I/O を誘発しないようにする。
 
 **新規テスト**:
-- [ ] `path_resolve_test.go::TestResolveOperandPath`: 相対→workDir 基点（`cp x`→`<workDir>/x`）、未存在 leaf の
-  親解決、親 symlink が critical を指す解決、深さ超過/サイクル→型付き err、write 系 leaf-symlink→ターゲット解決、
-  delete 系 leaf-symlink→非追従（AC-14, AC-17(a), AC-18）。`t.TempDir` で symlink ツリー構築。
-- [ ] `safezone_test.go::TestResolveSafeZone`: Roots に WorkDir/temp が入り `$HOME`/`OutputFile` 親が入らない
-  （AC-17(b)）。
+- [ ] `path_resolve_test.go::TestResolveOperandPath`: `operandResolver` 経由で、相対→workDir 基点
+  （`cp x`→`<workDir>/x`）、未存在 leaf の親解決、親 symlink が critical を指す解決、深さ超過/サイクル→型付き err、
+  write 系 leaf-symlink→ターゲット解決、delete 系 leaf-symlink→非追従（AC-14, AC-17(a), AC-18）。`t.TempDir` で
+  symlink ツリー構築。
+- [ ] `safezone_test.go::TestResolveSafeZone`: Roots に `EffectiveWorkDir`＋（plumbing した）専用 temp 根が入り、
+  `$HOME`/`OutputFile` 親が入らない（AC-17(b)）。command-level `workdir` が `EffectiveWorkDir` を上書きする場合と、
+  専用 temp（`__runner_workdir`）配下オペランドが temp 根として認識される場合を含める（#7）。
 - [ ] `safezone_test.go::TestSafeZone_TrustedPerOperand`: 信頼ルート配下でも run-as 書込可な起点は `Trusted=false`、
   admin 所有・run-as 書込不可なら `Trusted=true`、trust-critical と重複する safe-zone は非 safe（AC-17(c)/(d)）。
   所有権は注入 seam のモックで再現。
 - [ ] `path_resolve_test.go::TestIsWithinCriticalPaths`: `/usr/local/bin`→true（`/usr` 配下）、`/srv`/`/opt`→false、
   `/`（ルート）はルート自体のみ true、解決後パスで判定（生 prefix では判定しない）（AC-14, AC-15 整合）。
-- [ ] `path_resolve_test.go::TestResolveBudgetFailClosed`: オペランド総数/解決コストが上限を超える入力（多数オペランド・
-  深い symlink チェーン）で `ZoneUnresolved`→High に倒れ、メモ化により同一親の再解決が発生しないことを表明（02 §3.5, #6）。
+- [ ] `path_resolve_test.go::TestResolveBudgetFailClosed`: **単一 `operandResolver` をまたぐ**予算で、オペランド総数/
+  解決コストが上限を超える入力（多数オペランド・深い symlink チェーン）で `ZoneUnresolved`→High に倒れ、`memo` により
+  同一親が再解決されない（seam の呼出回数で確認）ことを表明（02 §3.5, #1/#6）。
+- [ ] `safezone_test.go::TestResolveRunAsIdent`: run-as 名→`RunAsIdent`（UID/GID/補助 group）の解決を評価器結線層で
+  行い、`ZoningInput.RunAs` に precomputed 値が載ること、zoning 側が live identity を読まないことを表明（#4, AC-17(d)）。
 
 **完了基準**: `go test -tags test ./internal/runner/base/security/...` が緑。
 
@@ -241,9 +261,15 @@
 - [ ] Kind 別オペランド抽出（02 §3.3 の表）。各 Kind を個別タスクで実装:
   - [ ] KindWriteCopy（cp）: 宛先のみ zoning、機微 source→Medium floor、`-p`/`-a` 特権メタデータ複製→High（AC-22b）。
   - [ ] KindWriteMove（mv/tee/sponge/truncate/sed -i）: mv は宛先＋source 双方、tee/sponge は全 FILE 引数（AC-22b/AC-22d）。
+    **`truncate` は対象 FILE 引数（`-s`/`--size`/`-r`/`--reference` の値を除く非フラグ引数）を書込先として zoning**
+    （`truncate /etc/passwd`→trust-critical High）。**`sed -i`（in-place）は被編集 FILE 引数を書込先として zoning**
+    （`sed -i … /usr/bin/tool`→High。`-i` 無しの sed は stdout で非対象）。両者を抽出規則とテストに明記する（#3）。
   - [ ] KindWriteInstall（install）: 宛先のみ＋setuid/setgid/`-o`/`-g`→軸 A High（AC-22a）。
   - [ ] KindCreate（mkdir/touch）: 作成対象 zoning（coreutils Low を P3 抑止で上書き可能に）。
   - [ ] KindDeleteTarget（rm/rmdir/unlink/shred）: 全オペランド zoning、safe-zone 外再帰→High、leaf-symlink 非追従（AC-22/AC-22b）。
+    **末尾 `/` 例外（#5）**: GNU/POSIX は symlink-to-dir に対する**末尾スラッシュを dereference**するため
+    （`rm -rf $WORKDIR/link/` は link 先ディレクトリの中身を消す）、**オペランドが `/` で終わる場合は delete でも
+    `DerefFollow`（ターゲット解決）**として zoning する。trusted safe-zone の `link/`→critical を Low に誤分類しない。
   - [ ] KindLink（ln）: 宛先＋source/リンク先双方、`-s` 相対 target はリンク親基点解決（AC-22b）。
   - [ ] KindDevice（dd）: `of=` 書込先/`if=` read source、ブロックデバイス→High、`/dev/null` 等無害シンク除外を
     critical 判定**より先**に評価、機微/trust-critical `if=`→Medium floor（AC-21）。**危険キャラクタデバイス
@@ -319,13 +345,17 @@
 - [ ] `TestLocationDefinedRisk_LeafSymlinkDeref`: write-deref vs delete-非追従の**分類結果**を表明（02 §3.4(3)/§3.5,
   AC-17/AC-22b）。`cp safe $WORKDIR/link`（link→`/etc/passwd`）→**High**（ターゲット解決）、`rm $WORKDIR/link`
   （同 link、**信頼された** safe-zone）→**Low**（safe-zone の link 削除＝非追従）、解決不能ターゲット→
-  `ZoneUnresolved`→**High**。
+  `ZoneUnresolved`→**High**。**末尾 `/` 例外（#5）**: `rm -rf $WORKDIR/dlink/`（dlink→`/etc`、trusted safe-zone）→
+  **High**（末尾スラッシュが symlink を dereference するため、Low に誤分類しない）。
 - [ ] `TestLocationDefinedRisk_Recursion`: safe-zone 外再帰→High（`rm -rf /etc/x`・`cp -a tree /opt/x`）、
   **信頼された** safe-zone 内再帰→Low（`rm -rf $WORKDIR/build`）（AC-22。Low は Trusted 成立時のみ）。
 - [ ] `TestLocationDefinedRisk_PermissionGrant`: `install -o root -m4755 …`・`cp -a /usr/bin/sudo $WORKDIR/sudo`・
   `chmod u+s`・`chattr -i /etc/shadow`→High（AC-20, AC-22a, AC-22b）。
 - [ ] `TestLocationDefinedRisk_AllOperands`: `mv /etc/passwd $WORKDIR/passwd`・`ln /etc/passwd $WORKDIR/passwd`・
-  `cp /etc/shadow $WORKDIR/...`→High/Medium floor（AC-22b）。
+  `cp /etc/shadow $WORKDIR/...`→High/Medium floor（AC-22b）。**`truncate /etc/passwd`・`sed -i s/x/y/ /usr/bin/tool`→
+  High**（in-place 書込先 zoning, #3）。**`ln -s` 相対 target のリンク親基点解決**（#11）: `ln -s ../../etc/passwd
+  $WORKDIR/sub/link`（link 親 `$WORKDIR/sub` 基点で `/etc/passwd` を指す）→**High**——リンク親基点と `EffectiveWorkDir`
+  基点で**解決先ゾーンが変わる**フィクスチャを用い、`EffectiveWorkDir` 基点に誤実装すると検出できるようにする。
 - [ ] `TestLocationDefinedRisk_Device`: `dd if=/dev/sda`・`dd of=/dev/sda`→High、`dd of=/dev/null`→非 High、
   `dd if=/etc/shadow of=$WORKDIR/shadow`→Medium floor（AC-21）。**危険キャラクタデバイス** `dd of=/dev/mem`・
   `dd of=/dev/kmem`・`dd of=/dev/port`・`dd if=/dev/mem`→**High**、無害シンク `dd of=/dev/zero`→非 High。
@@ -339,6 +369,9 @@
 - [ ] `TestLocationDefinedRisk_Archive`: 抽出モード判定を表明。`tar xf a.tar -C /etc`（trust-critical 展開先）→High、
   `tar xf a.tar`（`-C` 省略、`EffectiveWorkDir=/etc`）→High、**`tar -tf a.tar`（一覧、`EffectiveWorkDir=/etc`）→
   非昇格**、`unzip a.zip -d /etc`→High、**`unzip -l a.zip`（一覧）→非昇格**（AC-22e 注記/§3.3 KindArchive）。
+  **脱出/特権メタデータ floor（#10）**: **trusted safe-zone への展開**でも `tar -P`/`--absolute-names`・`--same-owner`/
+  `-p`/`--same-permissions`、`unzip -K`(SUID/SGID)/`unzip -:` を伴う場合は fail-safe **High**（safe-zone 内 `-C` でも
+  Low に降格しない。AC-22e/F-004 アーカイブ注意）。各フラグに 1 ケースを置く。
 - [ ] `TestLocationDefinedRisk_FlagWriter`: `curl -o /usr/bin/x`・`wget -O /etc/cron.d/x`・`iptables-save -f /etc/x`→High、
   safe-zone 宛先→Low（AC-08/AC-25）。**暗黙の書込先**も網羅: `curl -O <url>`（`--remote-name`＝URL 由来名を cwd へ）と
   `wget <url>`（既定＝URL 由来名を cwd へ）/`wget -P <dir>` を `EffectiveWorkDir=/etc` で評価し trust-critical→**High**
@@ -360,8 +393,13 @@
   （`cp -a … /usr/bin`=High）が順序非依存で max（AC-31）。
 
 **影響テスト更新**（02 §7.2）:
-- [ ] `evaluator_test.go::TestStandardEvaluator_EvaluateRisk_DestructiveFileOperations`: rm/dd の無条件 High→
-  宛先ゾーン依存（safe-zone=Low/ordinary=Medium）へ期待値更新。
+> **フラグ on/off の扱い（#6 の指摘）**: 軸2 と②③①抑止は P3 で**既定 off**（shadow flag）。よって**新 Low/Medium
+> 期待値を表明するテストは flag を on にしたフィクスチャ**（評価器を flag-on で生成、または per-test で flag を立てる）
+> で実行する。**flag off の既定経路では旧 enforce 挙動が保たれる**ことも別ケースで残す（PR-2 が baseline を失わない
+> ことの担保）。`location_zoning_test.go` の `LocationDefinedRisk` 直接呼び出しは flag に依存しない（軸2 ロジック単体）。
+- [ ] `evaluator_test.go::TestStandardEvaluator_EvaluateRisk_DestructiveFileOperations`: **flag-on フィクスチャで**
+  rm/dd の無条件 High→宛先ゾーン依存（safe-zone=Low/ordinary=Medium）へ期待値更新。**flag-off では従来 High が残る**
+  ケースを併記。
 - [ ] `evaluator_test.go::TestEvaluateRisk_AbsoluteRmRfHigh`: `/usr/bin/rm -rf` の対象ゾーンに応じた期待値更新
   （trust-critical/safe-zone 外なら High 維持）。
 - [ ] `coreutils_consistency_test.go::TestCoreutilsRiskConsistency_RuntimeVsDryRun` ほか: ロケーション定義 applet の
@@ -393,7 +431,9 @@
   内側ゲート/Reject。
 - [ ] `env`/`timeout` の High 化（AC-29a, 02 §3.7）: 専用集合 `redundantWrapperNames` を軸1 固定 High の一つとして
   扱う（独立 dimension は作らない）。理由コード `ReasonRedundantWrapper`（P5）。内側は間接実行で引き続きゲート
-  （`env modprobe x`→High、`sudo env …`→Critical）。Critical にはしない。
+  （`env modprobe x`→High、`sudo env …`→Critical）。Critical にはしない。**この High 引き上げも §1.2 の既定 off
+  shadow flag でゲートする**（PR-3 が単独で出ても `env`/`timeout` が即時 High enforce されず旧 baseline が残り、
+  P5a の newly-deny ログが成立する。#8 の指摘）。
 - [ ] `nice`/`ionice`/`stdbuf`/`setsid` は redundant floor を課さない（TOML 等価物無し）が RoleInner flat High floor は
   維持（AC-29a）。`env` loader 制御変数は従来どおり `ReasonForbiddenEnvVar` で Reject。
 
@@ -404,8 +444,12 @@
 - [ ] `TestIndirect_ExecWrappersExtended`: `chroot`/`unshare`/`nsenter`（COMMAND 有/無）→High 以上、`flock`/`watch`→
   内側ゲート、`ip netns exec ns rm -rf /`/`ip vrf exec red modprobe x`→内側ゲート（AC-29, AC-12）。
 - [ ] `TestIndirect_HelperExecOptions`: `ssh -o ProxyCommand=…`・`rsync -e <cmd>`→Reject/内側ゲート（AC-25）。
-- [ ] `TestIndirect_RedundantWrapperHigh`: `env FOO=bar ls`・`timeout 10 ls`→High、`env modprobe x`→High、
-  `sudo env …`→Critical、`nice ./tool`→High floor（redundant floor 無し）（AC-29a）。
+- [ ] `TestIndirect_RedundantWrapperHigh`: `env modprobe x`→High、`sudo env …`→Critical、`nice ./tool`→High floor
+  （redundant floor 無し）（AC-29a）。**redundant-wrapper 軸を単独で立証する直接ケース（#9）**: `env FOO=bar ls`/
+  `timeout 10 ls` は**内側コマンドの flat High でも High になる**ため新軸を証明しない。よって**内側コマンドの無い
+  bare 形**——`env FOO=bar`（代入/オプションのみ）・`timeout 10`（COMMAND 無し）——を `EvaluateRisk` で評価し、
+  `redundantWrapperNames` 由来の **High と `ReasonRedundantWrapper`** が付くことを表明する（旧 Medium/no-op が
+  生き残らないことを担保）。これらも flag-on フィクスチャで実行する（§影響テスト更新の方針）。
 - [ ] `evaluator_test.go`: `env modprobe x`→High 以上・`sudo useradd u`→Critical（AC-29）。
 - [ ] AC-24 回帰: `visudo`/`useradd`/`insmod`→High（Critical でない）を `evaluator_test.go` で表明。
 
