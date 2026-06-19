@@ -44,7 +44,7 @@
   ゾーン非依存の下限（F-003）、データ送信のローカル書込 High 化と max 合成（F-004）、単一権威ゾーン経路による
   既存の High 判定の置き換え（F-005）、結線・DTO・identity 注入（F-006）、決定性（F-007）。
 - **Out**:
-  - **コマンド名分類（判断軸1 High/Medium）・Critical 尖鋭化・env/timeout・ラッパ/特権・データ送信の名前→Medium 下限**
+  - **コマンド名分類（判断軸1 High/Medium）・Critical 限定・env/timeout・ラッパ/特権・データ送信の名前→Medium 下限**
     → 0141。`find -exec`/`-execdir`/`-ok`/`-okdir`・`ssh -o ProxyCommand`・`rsync -e` 等の**内側コマンド実行
     （間接実行 Reject）**も 0141/既存（本タスクは `find -delete`/`-fprint*` の**宛先 zoning** のみ）。
   - **オペランド毎の監査フィールドの logger 出力・変更ノート（changelog）・文書整合・sample config 追従・ガイド** → 0143
@@ -250,7 +250,7 @@
 
 ## 6. スコープ外の根拠
 
-- **コマンド名分類・ラッパ/特権は 0141**: コマンド名で決まるレベル、Critical 尖鋭化、env/timeout、間接実行
+- **コマンド名分類・ラッパ/特権は 0141**: コマンド名で決まるレベル、Critical 限定、env/timeout、間接実行
   （`find -exec`/ProxyCommand/`rsync -e`）は argv の宛先解析を伴わず 0141 の所掌（D5 の線引き）。
 - **logger 出力・文書・config 追従は 0143**: 監査フィールドの実際の JSON 出力、変更ノート、ユーザー/開発者文書、
   sample config の `risk_level` 追従は横断成果物として 0143 に集約する。
