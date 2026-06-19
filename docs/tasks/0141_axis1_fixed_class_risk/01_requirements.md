@@ -40,10 +40,10 @@ max 合成される。
   - ラッパー/間接実行経由の整合維持と env/timeout の High 化（F-008 のうちラッパ部分）。
   - 検出限界（名前ベース AI vs データ送信）の文書化（F-006 の doc 部分）。
 - **Out**:
-  - 宛先パスの信頼区分判定（trust-critical/ordinary/safe-zone）と、書込先オペランド抽出を伴う判定 → 0142。
+  - 宛先パスの信頼区分判定（trust-critical/ordinary/safe-zone）と、書込先オペランド抽出を伴う判定は 0142 が担当。
     特に `curl -o`/`scp` 等のローカル trust-critical 書込→High は 0142（本タスクはデータ送信の Medium 据え置きと
     ヘルパー実行の間接化のみ）。
-  - オペランド毎の監査フィールド・変更ノート（changelog）・文書整合・sample config 追従・ガイド最終化 → 0143。
+  - オペランド毎の監査フィールド・変更ノート（changelog）・文書整合・sample config 追従・ガイド最終化は 0143 が担当。
     （後方互換不要のため段階ロールアウト/フラグは設けない。）
   - `RiskLevel` の段数/意味づけ変更（新レベル追加しない）。
 
