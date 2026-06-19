@@ -33,7 +33,8 @@
 
 本タスクは [0140/00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md) §3 の
 **3 つの根本原因の訂正**を担う中核である:
-- **根本原因1**: argv パースサーフェスの発散を、**fail-closed 既定＋オペランド抽出仕様の網羅テスト**で有界化する。
+- **根本原因1**: 解析すべきコマンドライン引数（コマンド×フラグ×形式）の組み合わせが膨大・非有界で**個別列挙では
+  網羅しきれない**問題を、**fail-closed 既定＋オペランド抽出仕様の網羅テスト**で有界化する。
 - **根本原因2**: D7 の引き下げを「既存判定の選択的 max 抑止」でなく、**判断軸2 を唯一の判定者として既存の High 判定を
   置き換える**方式で実現する。
 - **根本原因4**: DTO 配置・identity 注入・config 結線を**端から端で明示**する。
@@ -167,7 +168,7 @@
 
 > **用語「機密ファイル」**: 内容が秘匿情報のファイル（読む/複製すると**情報が露出**するもの）。安全ゾーンへ
 > コピーしても内容（秘密）が漏れるため、**機密ファイル/trust-critical なコピー元の複製は safe-zone でも Medium 下限**にする
-> （AC-12/AC-10。これが「読み取り元」の floor）。判定集合は既存の `OutputCriticalPathPatterns`
+> （AC-12/AC-10。これが「読み取り元」の下限）。判定集合は既存の `OutputCriticalPathPatterns`
 > （[file_validation.go](../../../internal/runner/base/security/file_validation.go)）を流用し、例として:
 > 認証 DB（`/etc/shadow`・`/etc/sudoers`）、SSH/鍵（`id_rsa`・`id_ed25519`・`.ssh/`・`private_key`）、資格情報
 > （`.aws/credentials`・`.kube/config`・`.gnupg/`・`.docker/config.json`）、keystore/ウォレット（`wallet.dat`・`keystore`）等。
