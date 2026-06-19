@@ -596,6 +596,7 @@
 | Webhook | webhook | |
 | ようこそ | welcome | |
 | ワークフロー | workflow | |
+| 組み込み | wiring / integration | 新しい判定を実装するだけでなく、実際の実行経路（コンストラクタ→loader→runner→evaluator→logger）へ接続して本番で動かすこと（0140 根本原因4）。旧称「結線」（wiring 直訳）は使わない |
 | 回避策 | workaround | |
 | 作業ディレクトリ | working directory | |
 | 書き込み権限 | write permission | ファイル／ディレクトリへの書き込み可否 |

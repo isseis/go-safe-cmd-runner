@@ -38,13 +38,13 @@
 - **根本原因2**: D7 の引き下げを「既存判定の選択的 max 抑止」（High を出す既存判定を個別に無力化して最終 max を
   下げる旧方式。最終リスクは複数判定の max なので 1 つでも外し漏れると High が残る。詳細は F-005）でなく、
   判断軸2 を唯一の判定基準として既存の High 判定を置き換える方式で実現する。
-- **根本原因4**: DTO 配置・identity 注入・config 結線を端から端で明示する。
+- **根本原因4**: DTO 配置・identity 注入・config の組み込みを端から端で明示する。
 
 ## 2. スコープ
 
 - **In**: ファイル操作コマンドの宛先パス信頼区分の判定（F-001）、作用オペランド抽出と網羅テスト（F-002）、操作固有の下限
   （区分非依存。F-003）、データ送信のローカル書込 High 化と max 合成（F-004）、判断軸2 を唯一の判定基準とするパス信頼区分の判定経路による
-  既存の High 判定の置き換え（F-005）、結線・DTO・identity 注入（F-006）、決定性（F-007）。
+  既存の High 判定の置き換え（F-005）、組み込み・DTO・identity 注入（F-006）、決定性（F-007）。
 - **Out**:
   - コマンド名分類（判断軸1 High/Medium）・Critical 限定・env/timeout・ラッパ/特権・データ送信の名前→Medium 下限
     は 0141 が担当。`find -exec`/`-execdir`/`-ok`/`-okdir`・`ssh -o ProxyCommand`・`rsync -e` 等の内側コマンド実行
@@ -57,7 +57,7 @@
 ## 3. 横断制約（0140/00_decomposition.md §3 を継承）
 
 - **新分類は直接適用する**（後方互換不要。フラグ/shadow なし）。
-- **結線をフェーズ内に含める**（根本原因4）: 判断軸2 を `risk/evaluator.go` の `evaluateDimensions` へ結線し、`security.Config`
+- **組み込みをフェーズ内に含める**（根本原因4）: 判断軸2 を `risk/evaluator.go` の `evaluateDimensions` へ組み込み、`security.Config`
   （`SystemCriticalPaths`・信頼ディレクトリ許可リスト）を評価器へ通すコンストラクタ/`runner.go`/TOML ローダ改修を
   本タスクに含める。完了の判定基準（ビルド／テストを通す対象範囲）には、`risk` パッケージ単体だけでなく、本タスクが
   変更する統合パッケージ（`internal/runner`・`internal/runner/config`）までコンパイルが通ることを含める（具体的には
@@ -193,7 +193,7 @@
   - **必須テスト**（両寄与が同時に生きていることを検証）:
     - (i) safe-zone 宛先（`curl <url> -o $WORKDIR/safe`）→ **Medium**（書込先のパス信頼区分が Low でも名前下限が効く）
     - (ii) trust-critical 宛先（`curl -o /usr/bin/x`）→ **High**（書込先のパス信頼区分が名前下限を上回る）
-  - **前提**: 0141 の名前→Medium 下限が評価器に結線済みであること（0141 が再編する共有コード。§3）。未結線では (i) が見かけの下限で誤って通る。
+  - **前提**: 0141 の名前→Medium 下限が評価器に組み込み済みであること（0141 が再編する共有コード。§3）。未組み込みでは (i) が見かけの下限で誤って通る。
 
 ### F-005: 判断軸2 を唯一の判定基準とし、既存の High 判定を置き換える（根本原因2）
 
@@ -227,7 +227,7 @@
 - **AC-18**（max 合成）— 0140 AC-31: 最終リスクは適用される判定の max。判断軸1（コマンド名分類）と判断軸2（宛先
   パス信頼区分）が双方適用されるコマンドはその最大値（例 `cp -a … /usr/bin`＝High）。順序非依存。
 
-### F-006: 結線・DTO・identity 注入（根本原因4）
+### F-006: 組み込み・DTO・identity 注入（根本原因4）
 
 - **AC-19**（オペランド毎の監査 DTO の配置と内容検証）— 新規。0140/00 §3.4:
   - **規則**: オペランド毎の判定記録 DTO（`OperandZone`/`PathZone` 相当: Index/Raw/Resolved/Zone/MatchedCritical/Trusted/
@@ -236,19 +236,19 @@
   - **テスト**: 存在確認だけでなく格納値の正しさを検証。代表コマンド（`cp evil /usr/bin/ls`・symlink 経由・複数
     オペランド）で `RiskAssessment` から直接 `[]OperandZone` を読み、各要素の Index/Raw/Resolved/Zone/Trusted が期待
     どおりか表明（値が誤っても 0143 まで気付けない穴を塞ぐ）。
-- **AC-20**（`security.Config` の結線）— 新規。0140/00 §3.4:
+- **AC-20**（`security.Config` の組み込み）— 新規。0140/00 §3.4:
   - **規則**: deployment の `Config.SystemCriticalPaths` と信頼ディレクトリ許可リストを評価器へ通す。
-    `NewStandardEvaluator`・`runner.go` のコンストラクタ結線＋信頼ディレクトリの TOML `[security]` spec＋ローダ＋
+    `NewStandardEvaluator`・`runner.go` のコンストラクタへの組み込み＋信頼ディレクトリの TOML `[security]` spec＋ローダ＋
     runner 転送を本タスクで追加。
   - **根拠**: 無ければ configured 環境で AC-01/AC-04 が成立せず、テスト注入でしか通らない。
 - **AC-21**（identity 注入の純粋性）— 新規。0140/00 §3.4:
-  - **規則**: run-as 名→UID/GID/補助 group の解決はパス信頼区分判定の外（評価器結線層）で行い、precomputed `RunAsIdent` を
+  - **規則**: run-as 名→UID/GID/補助 group の解決はパス信頼区分判定の外（評価器の組み込み層）で行い、precomputed `RunAsIdent` を
     `ZoningInput` に注入。**パス信頼区分の判定は live identity（`os.Geteuid`/`os.Getuid`/`syscall`/`unix` の uid/gid/groups・
     `user.Current`）を読まない**。
   - **テスト（差分テストを主）**: 注入 `RunAsIdent` をテストプロセスの実 euid/gid と異なる値にし、Trusted/Low 判定が
     注入 identity に従って変わることを表明（決定性テストだけでは「単一プロセス内で euid 一定なら `os.Geteuid()` を
     読んでも決定的」になり live 参照の不在を証明できない）。
-  - **補助**: 上記 live-identity API を判断軸2 の結線コードが呼ばない grep ガード。
+  - **補助**: 上記 live-identity API を判断軸2 の組み込みコードが呼ばない grep ガード。
 
 ### F-007: 決定性・read-only
 

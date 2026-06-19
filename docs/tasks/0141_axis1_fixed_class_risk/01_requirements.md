@@ -53,9 +53,9 @@ max 合成される。
   shadow 機構は設けない。本タスクの enforce 引き上げ（判断軸1 High 化・env/timeout High・特権/ラッパ拡張）は
   新分類を直接適用（in-place 置換）する。破壊的変更（raise/lower）の周知は 0143 の変更ノート（changelog）に
   委ねる（[00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md) §3.2）。
-- **結線をフェーズ内に含める（根本原因4）**: 名前集合の追加に加え、判定が実際に `EvaluateRisk` の固定レベルへ
+- **組み込みをフェーズ内に含める（根本原因4）**: 名前集合の追加に加え、判定が実際に `EvaluateRisk` の固定レベルへ
   反映されるよう、評価器（`risk/evaluator.go`）・間接実行（`security/indirect_execution.go`）・特権 profile への
-  結線を本タスクのスコープに含める。完了基準は触れる統合パッケージをコンパイルする範囲（`./internal/runner/...`
+  組み込みを本タスクのスコープに含める。完了基準は触れる統合パッケージをコンパイルする範囲（`./internal/runner/...`
   または `make test`）とする。
 - **English ソース**: Go の識別子・コメント・文字列リテラルは英語（テストソース含む）。
 
