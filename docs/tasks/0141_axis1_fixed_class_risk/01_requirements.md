@@ -10,7 +10,7 @@
 | Reviewer | - |
 | Comments | - |
 
-> 本書は 0140 を 3 分割した第 1 タスク（**軸1＝名前固定階級**）の要件である。分割方針・root-cause 対処は
+> 本書は 0140 を 3 分割した第 1 タスク（**軸1＝名前固定階級**）の要件である。分割方針・根本原因への対処は
 > [0140/00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md)、原典の確定要件・
 > 根拠は [0140/01_requirements.md](../0140_risk_level_classification_review/01_requirements.md)（superseded）を
 > 参照する。本書は**軸1 分のみ**を再掲・精緻化する。**宛先パスの解析を伴う判定（軸2）は 0142**、**段階

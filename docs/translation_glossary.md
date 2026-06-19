@@ -428,7 +428,7 @@
 | 堅牢性 | robustness | |
 | 役割 | role | |
 | ルート | root | |
-| 根本原因 | root cause | |
+| 根本原因 | root cause | 日本語本文では「根本原因」に統一（英語表記 root-cause を混在させない） |
 | 回転 | rotation | |
 | 実行者 | runner | コマンド名としては `runner` |
 | ランタイム | runtime | |

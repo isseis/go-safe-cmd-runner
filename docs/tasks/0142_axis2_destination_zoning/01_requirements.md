@@ -10,7 +10,7 @@
 | Reviewer | - |
 | Comments | - |
 
-> 本書は 0140 を 3 分割した第 2 タスク（**軸2＝宛先ゾーン分類**）の要件である。分割方針・root-cause 訂正は
+> 本書は 0140 を 3 分割した第 2 タスク（**軸2＝宛先ゾーン分類**）の要件である。分割方針・根本原因の訂正は
 > [0140/00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md)、原典の確定要件・根拠は
 > [0140/01_requirements.md](../0140_risk_level_classification_review/01_requirements.md)（superseded）を参照する。
 > **名前固定階級・ラッパ/特権（軸1）は 0141**、**監査フィールドの logger 出力・変更ノート・文書は 0143**。
@@ -22,16 +22,17 @@
 fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（軸2）を追加する。
 
 本タスクは [0140/00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md) §3 の
-**3 つの root-cause 訂正**を担う中核である:
+**3 つの根本原因の訂正**を担う中核である:
 - **根本原因1**: argv パースサーフェスの発散を、**fail-closed 既定＋オペランド抽出仕様の網羅テスト**で有界化する。
-- **根本原因2**: D7 の引き下げを「max 抑止」でなく**単一権威ゾーン経路で旧 High 源を置換**して実現する。
+- **根本原因2**: D7 の引き下げを「既存判定の選択的 max 抑止」でなく、**軸2 を唯一の判定者として既存の High 判定を
+  置き換える**方式で実現する。
 - **根本原因4**: DTO 配置・identity 注入・config 結線を**端から端で明示**する。
 
 ## 2. スコープ
 
 - **In**: ロケーション定義コマンドの宛先ゾーン分類（F-001）、作用オペランド抽出と網羅テスト（F-002）、軸 A の
   ゾーン非依存 floor（F-003）、データ送信のローカル書込 High 化と max 合成（F-004）、単一権威ゾーン経路による
-  旧 High 源の置換（F-005）、結線・DTO・identity 注入（F-006）、決定性（F-007）。
+  既存の High 判定の置き換え（F-005）、結線・DTO・identity 注入（F-006）、決定性（F-007）。
 - **Out**:
   - **名前固定階級（軸1 High/Medium）・Critical 尖鋭化・env/timeout・ラッパ/特権・データ送信の名前→Medium floor**
     → 0141。`find -exec`/`-execdir`/`-ok`/`-okdir`・`ssh -o ProxyCommand`・`rsync -e` 等の**内側コマンド実行
@@ -64,7 +65,9 @@ fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（
 - **全オペランド × max**: 1 コマンドの**全作用オペランド**を zoning して max を取り（AC-07）、さらに**軸1 とも max
   合成**する（AC-18）。
 - **fail-closed 既定**: 解決/抽出が不確実なら `ZoneUnresolved`（書込/削除→**High**・読取主体→**Medium**。AC-05）。
-- **単一権威**: ロケーション定義 applet は軸2 が唯一の権威。**完全認識のときのみ**旧 High 源 5 系統を置換する（AC-17）。
+- **単一権威**: ロケーション定義コマンド（`rm`・`cp`・`dd` 等、宛先でレベルが決まるコマンド）は**軸2 を唯一の判定者**
+  とする。軸2 がコマンドを**完全に解釈できたときだけ**、これらを High に分類している**既存の5つの判定**を軸2 の
+  結果で置き換える（AC-17）。
 - **floor は降格不可**: 軸 A の floor（権限付与・デバイス・safe-zone 外再帰・機微 source）は **safe-zone でも Low に
   降格しない**（F-003）。
 
@@ -161,23 +164,26 @@ fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（
   **High**（書込先ゾーンが名前 floor を上回る）。**前提**: 本テストは 0141 の名前→Medium floor が評価器に結線済み
   であること（共有境界）を要し、未結線では (i) が phantom floor で誤って通るため、結線後に意味を持つ。（0140 AC-25 の書込先部分）
 
-### F-005: 単一権威ゾーン経路による旧 High 源の置換（根本原因2）
+### F-005: 軸2 を唯一の判定者とし、既存の High 判定を置き換える（根本原因2）
 
-- **AC-17**（軸2 が旧 High 源を置換）: ロケーション定義 applet については、軸2 の結果を**唯一の権威**とする。
-  当該 applet 向けの**旧 High 源 5 系統**——①`IsDestructiveFileOperation`、②`CoreutilsCommandRisk` の破壊系 High、
-  ③profile `DestructionRisk`、④`dangerousCommandPatterns`(rank6) の `rm -rf`/`dd if=` 等 applet エントリ、⑤coreutils
-  の setuid/setgid lstat floor——を**評価対象から外し**、`LocationResult` を唯一の寄与とする。
-  **抑止は「完全認識（complete positive recognition）」のときのみ**: (a) 抽出された**全オペランド**が非 `Unknown` の
-  確定ゾーンを返し、かつ (b) オペランド抽出器が**argv を完全消費**した（非フラグの未消費トークンが無く、パスを運び
-  得る未知の値取りフラグが無い）こと。**部分的/不確実なパース（一部オペランド未認識・未消費トークン残存・未知の
-  値取りフラグ）は `ZoneUnresolved` とし、①〜⑤の High を温存**する（「一部オペランドを認識した」だけで①〜⑤を
-  落とすと、未認識の危険形が benign ゾーン→net Low になる fail-open。AC-05/AC-07 の「全オペランド max・未解決→
-  High」が抑止後も floor として残る）。⑤の setuid floor は再パースせず既存 lstat シグナルを軸 A が流用する。非
-  ロケーション applet（`find -exec`・未知 applet 等）は従来どおり旧源/間接実行が担う（同名でも非ロケーション用途では
-  ④を無効化しない）。
+> **用語**: ここでの「既存の High 判定」とは、これらのコマンドを現在 High に分類しているコード上の判定経路を指す
+> （最終リスクは全判定の **max** で決まるため、引き下げにはこれらすべてを無力化する必要がある）。下記①〜⑤。
+
+- **AC-17**（軸2 が既存の High 判定を置き換える）: ロケーション定義コマンドは、軸2 の結果を**唯一の判定者**とする。
+  当該コマンドを High に分類している**既存の判定 5 系統**——①`IsDestructiveFileOperation`、②`CoreutilsCommandRisk` の
+  破壊系 High、③profile `DestructionRisk`、④`dangerousCommandPatterns`(rank6) の `rm -rf`/`dd if=` 等のコマンド
+  エントリ、⑤coreutils の setuid/setgid lstat floor——を**評価対象から外し**、`LocationResult` を唯一の寄与とする。
+  **置き換えは「完全認識（complete positive recognition）」のときのみ**: (a) 抽出された**全オペランド**が非 `Unknown`
+  の確定ゾーンを返し、かつ (b) オペランド抽出器が**argv を完全消費**した（非フラグの未消費トークンが無く、パスを
+  運び得る未知の値取りフラグが無い）こと。**部分的/不確実なパース（一部オペランド未認識・未消費トークン残存・
+  未知の値取りフラグ）のときは `ZoneUnresolved` とし、①〜⑤の High を残す**（「一部のオペランドを認識した」だけで
+  ①〜⑤を外すと、軸2 が理解できない危険な形が benign ゾーン→net Low となり素通りする＝fail-open。AC-05/AC-07 の
+  「全オペランド max・未解決→High」が置き換え後も floor として残る）。⑤の setuid floor は再パースせず既存 lstat
+  シグナルを軸 A が流用する。**ロケーション定義でないコマンド**（`find -exec` の内側実行・軸2 が扱わない未知の
+  コマンド等）は従来どおり既存判定/間接実行が担う（同名でも非ロケーション用途では④を無効化しない）。
   - **観測可能プロパティ（テスト対象）**: 信頼 safe-zone の `rm -rf $WORKDIR/build` は **Low**（④ rank6 や②coreutils の
-    固定 High で打ち消されない）。ordinary の `rm /srv/app/cache.dat` は **Medium**。未知フラグで宛先不確実な `rm` は
-    **High**（①〜⑤温存）。（0140 AC-22c を単一権威経路へ訂正）
+    固定 High で打ち消されない）。ordinary の `rm /srv/app/cache.dat` は **Medium**。未知フラグで宛先が不確実な `rm` は
+    **High**（①〜⑤を残す）。（0140 AC-22c を単一権威方式へ訂正）
 - **AC-18**（max 合成）: 最終リスクは適用 dimension の **max**。軸1（名前固定）と軸2（宛先ゾーン）の双方が適用される
   コマンドはその最大値（例 `cp -a … /usr/bin`＝High）。順序非依存。（0140 AC-31）
 
