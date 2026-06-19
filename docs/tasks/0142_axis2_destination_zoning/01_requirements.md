@@ -176,60 +176,74 @@
 
 ### F-004: データ送信のローカル書込 High 化と max 合成
 
-- **AC-16**（ローカル trust-critical 書込）: データ送信系の**ファイル書込/削除形**がローカルの trust-critical パスへ
-  作用する場合、④信頼境界破壊として **High**（`curl -o /usr/bin/x`・`curl -O <url>`＝URL 由来名を cwd へ・`wget -O
-  /etc/cron.d/x`・`wget` 既定・`wget -P <dir>`・`scp host:/x /usr/bin/x`・`sftp` バッチ書込・`rsync … <DEST>`／
-  `--delete`）。最終リスクは **`max(データ送信の名前→Medium〔0141〕, 書込先ゾーン)`**。**同一コマンドが 0141 と
-  0142 の両方で評価されるため、この max 合成の所有者・テストは 0142**。書込先抽出は F-002 の仕様表に含める。
-  **合成の必須テスト（両寄与が同時に生きていることを検証）**: (i) safe-zone 宛先への書込（`curl <url> -o $WORKDIR/safe`）は
-  **Medium**（書込先ゾーンが Low でも 0141 の名前下限が効く）、(ii) trust-critical 宛先（`curl -o /usr/bin/x`）は
-  **High**（書込先ゾーンが名前下限を上回る）。**前提**: 本テストは 0141 の名前→Medium 下限が評価器に結線済み
-  であること（共有境界）を要し、未結線では (i) が 見かけの下限で誤って通るため、結線後に意味を持つ。（0140 AC-25 の書込先部分）
+- **AC-16**（ローカル trust-critical 書込）— 0140 AC-25 の書込先部分:
+  - **規則**: データ送信系の**ファイル書込/削除形**がローカルの trust-critical パスへ作用する場合 → ④信頼境界破壊として
+    **High**。対象形（書込先の抽出は F-002 仕様表）:
+    - `curl -o /usr/bin/x`・`curl -O <url>`（URL 由来名を cwd へ）
+    - `wget -O /etc/cron.d/x`・`wget` 既定・`wget -P <dir>`
+    - `scp host:/x /usr/bin/x`・`sftp` バッチ書込
+    - `rsync … <DEST>`・`--delete`
+  - **合成**: 最終リスク = **`max(データ送信の名前→Medium〔0141〕, 書込先ゾーン)`**。同一コマンドが 0141/0142 両方で
+    評価されるため、**max 合成の所有者・テストは 0142**。
+  - **必須テスト**（両寄与が同時に生きていることを検証）:
+    - (i) safe-zone 宛先（`curl <url> -o $WORKDIR/safe`）→ **Medium**（書込先ゾーンが Low でも名前下限が効く）
+    - (ii) trust-critical 宛先（`curl -o /usr/bin/x`）→ **High**（書込先ゾーンが名前下限を上回る）
+  - **前提**: 0141 の名前→Medium 下限が評価器に結線済みであること（共有境界）。未結線では (i) が見かけの下限で誤って通る。
 
 ### F-005: 判断軸2 を唯一の判定者とし、既存の High 判定を置き換える（根本原因2）
 
 > **用語**: ここでの「既存の High 判定」とは、これらのコマンドを現在 High に分類しているコード上の判定経路を指す
 > （最終リスクは全判定の **max** で決まるため、引き下げにはこれらすべてを無力化する必要がある）。下記①〜⑤。
 
-- **AC-17**（判断軸2 が既存の High 判定を置き換える）: ファイル操作コマンドは、判断軸2 の結果を**唯一の判定者**とする。
-  当該コマンドを High に分類している**既存の判定 5 系統**——①`IsDestructiveFileOperation`、②`CoreutilsCommandRisk` の
-  破壊系 High、③profile `DestructionRisk`、④`dangerousCommandPatterns`(rank6) の `rm -rf`/`dd if=` 等のコマンド
-  エントリ、⑤coreutils の setuid/setgid lstat 下限——を**評価対象から外し**、`LocationResult` を唯一の寄与とする。
-  **置き換えは「完全認識（complete positive recognition）」のときのみ**: (a) 抽出された**全オペランド**が非 `Unknown`
-  の確定ゾーンを返し、かつ (b) オペランド抽出器が**argv を完全消費**した（非フラグの未消費トークンが無く、パスを
-  運び得る未知の値取りフラグが無い）こと。**部分的/不確実なパース（一部オペランド未認識・未消費トークン残存・
-  未知の値取りフラグ）のときは `ZoneUnresolved` とし、①〜⑤の High を残す**（「一部のオペランドを認識した」だけで
-  ①〜⑤を外すと、判断軸2 が理解できない危険な形が benign ゾーン→net Low となり素通りする＝fail-open。AC-05/AC-07 の
-  「全オペランド max・未解決→High」が置き換え後も下限として残る）。⑤の setuid 下限は再パースせず既存 lstat
-  シグナルを判断軸 A が流用する。**ファイル操作コマンド以外のコマンド**（`find -exec` の内側実行・判断軸2 が扱わない未知の
-  コマンド等）は従来どおり既存判定/間接実行が担う（同名でも非ロケーション用途では④を無効化しない）。
-  - **観測可能プロパティ（テスト対象）**: 信頼 safe-zone の `rm -rf $WORKDIR/build` は **Low**（④ rank6 や②coreutils の
-    固定 High で打ち消されない）。ordinary の `rm /srv/app/cache.dat` は **Medium**。未知フラグで宛先が不確実な `rm` は
-    **High**（①〜⑤を残す）。（0140 AC-22c を単一権威方式へ訂正）
-- **AC-18**（max 合成）: 最終リスクは**適用される判定の max**。判断軸1（コマンド名分類）と判断軸2（宛先ゾーン）の双方が適用される
-  コマンドはその最大値（例 `cp -a … /usr/bin`＝High）。順序非依存。（0140 AC-31）
+- **AC-17**（判断軸2 が既存の High 判定を置き換える）— 0140 AC-22c を単一権威方式へ訂正:
+  - **規則**: ファイル操作コマンドは判断軸2 の結果を**唯一の判定者**とし、`LocationResult` を唯一の寄与とする。当該
+    コマンドを High に分類している**既存の判定 5 系統を評価対象から外す**:
+
+    | # | 評価対象から外す既存判定 |
+    |---|---|
+    | ① | `IsDestructiveFileOperation` |
+    | ② | `CoreutilsCommandRisk` の破壊系 High |
+    | ③ | profile `DestructionRisk` |
+    | ④ | `dangerousCommandPatterns`(rank6) の `rm -rf`/`dd if=` 等のコマンドエントリ |
+    | ⑤ | coreutils の setuid/setgid lstat 下限 |
+
+  - **置き換え条件（完全認識のときのみ）**: (a) 抽出された**全オペランド**が非 `Unknown` の確定ゾーンを返し、かつ
+    (b) オペランド抽出器が **argv を完全消費**した（未消費の非フラグトークン無し・パスを運び得る未知の値取りフラグ無し）。
+  - **不完全認識のとき（fail-open 回避）**: 部分的/不確実なパース（一部オペランド未認識・未消費トークン残存・未知の値取り
+    フラグ）→ `ZoneUnresolved` とし **①〜⑤の High を残す**。「一部だけ認識した」で①〜⑤を外すと、理解できない危険形が
+    benign ゾーン→net Low で素通りする（fail-open）。AC-05/AC-07 の「全オペランド max・未解決→High」が置き換え後も下限として残る。
+  - **例外**: ⑤の setuid 下限は再パースせず既存 lstat シグナル（`hasSetuidOrSetgidBit` 相当）を判断軸 A が流用。
+    **ファイル操作コマンド以外**（`find -exec` の内側実行・判断軸2 が扱わない未知コマンド）は従来どおり既存判定/間接実行が
+    担う（同名でも非ファイル操作用途では④を無効化しない）。
+  - **観測可能プロパティ（テスト）**:
+    - 信頼 safe-zone `rm -rf $WORKDIR/build` → **Low**（④ rank6・②coreutils の固定 High で打ち消されない）
+    - ordinary `rm /srv/app/cache.dat` → **Medium**
+    - 未知フラグで宛先不確実な `rm` → **High**（①〜⑤を残す）
+- **AC-18**（max 合成）— 0140 AC-31: 最終リスクは**適用される判定の max**。判断軸1（コマンド名分類）と判断軸2（宛先
+  ゾーン）が双方適用されるコマンドはその最大値（例 `cp -a … /usr/bin`＝High）。順序非依存。
 
 ### F-006: 結線・DTO・identity 注入（根本原因4）
 
-- **AC-19**（オペランド毎の監査 DTO の配置と内容検証）: オペランド毎の判定記録 DTO（`OperandZone`/`PathZone` 相当: Index/
-  Raw/Resolved/Zone/MatchedCritical/Trusted/UnresolvedErr）を **`risktypes` に定義**し、`RiskAssessment` に格納する
-  （`security → risktypes` の一方向依存を維持。`security` に置くと循環）。**logger への JSON 出力は 0143**。本タスクは
-  `RiskAssessment` への格納までを担保するが、**presence だけでなく格納値の正しさを検証する**: 代表コマンド（例
-  `cp evil /usr/bin/ls`・symlink 経由・複数オペランド）について、`RiskAssessment` から直接 `[]OperandZone` を読み、
-  各要素の Index/Raw/Resolved/Zone/Trusted が期待どおりであることをテストする（値が誤っても 0143 まで気付けない
-  穴を塞ぐ）。（新規。0140/00 §3.4）
-- **AC-20**（`security.Config` の結線）: deployment の `Config.SystemCriticalPaths` と**信頼ディレクトリ許可リスト**を
-  評価器へ通す。`NewStandardEvaluator`・`runner.go` のコンストラクタ結線、および信頼ディレクトリの **TOML
-  `[security]` spec＋ローダ＋runner 転送**を本タスクで追加する（無ければ configured 環境で AC-01/AC-04 が成立せず、
-  テスト注入でしか通らない）。（新規。0140/00 §3.4）
-- **AC-21**（identity 注入の純粋性）: run-as 名→UID/GID/補助 group の解決は**zoning の外（評価器結線層）**で行い、
-  precomputed `RunAsIdent` を `ZoningInput` に注入する。**zoning は live identity（`os.Geteuid`/`os.Getuid`/
-  `syscall`/`unix` の uid/gid/groups・`user.Current`）を読まない**。検証は**差分テストを主**とする: 注入 `RunAsIdent` を
-  **テストプロセスの実 euid/gid と異なる値**に設定し、Trusted/Low 判定が**注入した identity に従って変わる**こと
-  （プロセス identity ではない）を表明する（決定性テストだけでは「単一プロセス内で euid が一定なら `os.Geteuid()` を
-  読んでも決定的」になり live 参照の不在を証明できないため、差分テストで担保する）。**補助**として `os/user`・
-  `os.Geteuid`/`os.Getuid`/`syscall`/`unix` の uid/gid/groups を判断軸2 plumbing が呼ばない grep ガードを置く。
-  （新規。0140/00 §3.4）
+- **AC-19**（オペランド毎の監査 DTO の配置と内容検証）— 新規。0140/00 §3.4:
+  - **規則**: per-operand 判定記録 DTO（`OperandZone`/`PathZone` 相当: Index/Raw/Resolved/Zone/MatchedCritical/Trusted/
+    UnresolvedErr）を **`risktypes` に定義**し、`RiskAssessment` に格納（`security → risktypes` 一方向依存を維持。
+    `security` に置くと循環）。logger への JSON 出力は **0143**。本タスクは `RiskAssessment` への格納までを担保。
+  - **テスト**: presence だけでなく**格納値の正しさ**を検証。代表コマンド（`cp evil /usr/bin/ls`・symlink 経由・複数
+    オペランド）で `RiskAssessment` から直接 `[]OperandZone` を読み、各要素の Index/Raw/Resolved/Zone/Trusted が期待
+    どおりか表明（値が誤っても 0143 まで気付けない穴を塞ぐ）。
+- **AC-20**（`security.Config` の結線）— 新規。0140/00 §3.4:
+  - **規則**: deployment の `Config.SystemCriticalPaths` と**信頼ディレクトリ許可リスト**を評価器へ通す。
+    `NewStandardEvaluator`・`runner.go` のコンストラクタ結線＋信頼ディレクトリの **TOML `[security]` spec＋ローダ＋
+    runner 転送**を本タスクで追加。
+  - **根拠**: 無ければ configured 環境で AC-01/AC-04 が成立せず、テスト注入でしか通らない。
+- **AC-21**（identity 注入の純粋性）— 新規。0140/00 §3.4:
+  - **規則**: run-as 名→UID/GID/補助 group の解決は**zoning の外（評価器結線層）**で行い、precomputed `RunAsIdent` を
+    `ZoningInput` に注入。**zoning は live identity（`os.Geteuid`/`os.Getuid`/`syscall`/`unix` の uid/gid/groups・
+    `user.Current`）を読まない**。
+  - **テスト（差分テストを主）**: 注入 `RunAsIdent` を**テストプロセスの実 euid/gid と異なる値**にし、Trusted/Low 判定が
+    **注入 identity に従って変わる**ことを表明（決定性テストだけでは「単一プロセス内で euid 一定なら `os.Geteuid()` を
+    読んでも決定的」になり live 参照の不在を証明できない）。
+  - **補助**: 上記 live-identity API を判断軸2 plumbing が呼ばない grep ガード。
 
 ### F-007: 決定性・read-only
 
