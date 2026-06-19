@@ -225,7 +225,7 @@
 ### F-006: 結線・DTO・identity 注入（根本原因4）
 
 - **AC-19**（オペランド毎の監査 DTO の配置と内容検証）— 新規。0140/00 §3.4:
-  - **規則**: per-operand 判定記録 DTO（`OperandZone`/`PathZone` 相当: Index/Raw/Resolved/Zone/MatchedCritical/Trusted/
+  - **規則**: オペランド毎の判定記録 DTO（`OperandZone`/`PathZone` 相当: Index/Raw/Resolved/Zone/MatchedCritical/Trusted/
     UnresolvedErr）を **`risktypes` に定義**し、`RiskAssessment` に格納（`security → risktypes` 一方向依存を維持。
     `security` に置くと循環）。logger への JSON 出力は **0143**。本タスクは `RiskAssessment` への格納までを担保。
   - **テスト**: presence だけでなく**格納値の正しさ**を検証。代表コマンド（`cp evil /usr/bin/ls`・symlink 経由・複数
