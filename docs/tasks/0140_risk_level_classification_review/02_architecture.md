@@ -100,6 +100,7 @@ graph TB
         CU["coreutils.go<br>CoreutilsCommandRisk"]
         IE["indirect_execution.go<br>ラッパ/特権昇格解析"]
         TY["types.go<br>Config.SystemCriticalPaths"]
+        FV["file_validation.go<br>EvaluateOutputSecurityRisk（部品共有）"]
     end
 
     subgraph rtypes ["internal/runner/base/risktypes/"]
@@ -114,10 +115,11 @@ graph TB
     LZ --> PR
     LZ --> CA
     LZ --> TY
+    LZ --> FV
     EV --> RC
     LZ --> RC
 
-    class CA,CU,IE,EV,TY,RC enhanced
+    class CA,CU,IE,EV,TY,RC,FV enhanced
     class LZ,SZ,PR newpkg
 ```
 
@@ -344,7 +346,7 @@ type SafeZone struct {
 
 // ResolveSafeZone は実行コンテキストと信頼ポリシー（Config 由来）から SafeZone を構築する。
 // 既存 dimension（SystemModificationRisk 等）と同じく free function とし、interface 化はしない。
-func ResolveSafeZone(cmd *runnertypes.RuntimeCommand, cfg *security.Config) SafeZone
+func ResolveSafeZone(cmd *runnertypes.RuntimeCommand, cfg *Config) SafeZone // security パッケージ内なので *Config
 ```
 
 **safe-zone の起点ディレクトリ（AC-17(b)）**: 曖昧な `$HOME` ではなく、`RuntimeCommand.EffectiveWorkDir`
@@ -434,7 +436,7 @@ func ResolveOperandPath(operand, workDir string) (resolved string, err error)
 
 | 改修点 | 対応 AC | 内容 |
 |---|---|---|
-| 特権昇格ファミリ拡張 | AC-23 | `pkexec`・`runuser`・`setpriv`・`capsh` を Critical 対象へ追加（現行 profile は `sudo`/`su`/`doas` のみ＝[command_analysis.go:31](../../../internal/runner/base/security/command_analysis.go) なので `pkexec` も未登録。同列に追加） |
+| 特権昇格ファミリ拡張 | AC-23 | `pkexec`・`runuser`・`setpriv`・`capsh` を Critical 対象へ追加（現行 profile は `sudo`/`su`/`doas` のみ＝[command_analysis.go:31](../../../internal/runner/base/security/command_analysis.go#L31) なので `pkexec` も未登録。同列に追加） |
 | 実行ラッパ拡張 | AC-29 | `chroot`/`unshare`/`nsenter`（名前空間/ルート変更）、`flock`/`watch`（コマンド文字列）を `wrapperSpecs` 系へ追加。内側は既存 RoleInner の flat High floor |
 | COMMAND 省略の暗黙シェル | AC-29 | `chroot/unshare/nsenter` が内側未指定なら暗黙シェル起動とみなし素通りさせない（High 以上） |
 | サブコマンド実行 | AC-12 | `ip netns exec`/`ip vrf exec <cmd>` を内側ゲート対象に |
