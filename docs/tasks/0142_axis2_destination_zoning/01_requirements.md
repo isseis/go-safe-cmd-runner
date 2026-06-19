@@ -1,4 +1,4 @@
-# 軸2: 宛先ゾーン分類の一貫化 — 要件定義書
+# 判断軸2: 宛先ゾーン分類の一貫化 — 要件定義書
 
 ## Document Status
 
@@ -10,33 +10,33 @@
 | Reviewer | - |
 | Comments | - |
 
-> 本書は 0140 を 3 分割した第 2 タスク（**軸2＝宛先ゾーン分類**）の要件である。分割方針・根本原因の訂正は
+> 本書は 0140 を 3 分割した第 2 タスク（**判断軸2＝宛先ゾーン分類**）の要件である。分割方針・根本原因の訂正は
 > [0140/00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md)、原典の確定要件・根拠は
 > [0140/01_requirements.md](../0140_risk_level_classification_review/01_requirements.md)（superseded）を参照する。
-> **コマンド名分類・ラッパ/特権（軸1）は 0141**、**監査フィールドの logger 出力・変更ノート・文書は 0143**。
+> **コマンド名分類・ラッパ/特権（判断軸1）は 0141**、**監査フィールドの logger 出力・変更ノート・文書は 0143**。
 
 ## 1. 背景と目的
 
 本タスクは**ファイル操作コマンド**——ファイル/ディレクトリを書込・上書・削除・リンク・展開・マウント・権限変更
-するコマンド（`cp`/`rm`/`dd`/`tar`/`mount`/`chmod` 等。read 専用は対象外）——を対象に、新 dimension（軸2）を
-追加する。軸2 は、これらコマンドの**作用先パスを解決してゾーン分類**（trust-critical→High / ordinary→Medium /
-safe-zone→Low / 解決不能→fail-closed floor）し、リスクを判定する。最終リスクは軸1（0141, コマンド名分類）と
+するコマンド（`cp`/`rm`/`dd`/`tar`/`mount`/`chmod` 等。read 専用は対象外）——を対象に、新しい判断軸（**判断軸2**）を
+追加する。判断軸2 は、これらコマンドの**作用先パスを解決してゾーン分類**（trust-critical→High / ordinary→Medium /
+safe-zone→Low / 解決不能→fail-closed floor）し、リスクを判定する。最終リスクは判断軸1（0141, コマンド名分類）と
 **max 合成**する。
 
 本タスクは [0140/00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md) §3 の
 **3 つの根本原因の訂正**を担う中核である:
 - **根本原因1**: argv パースサーフェスの発散を、**fail-closed 既定＋オペランド抽出仕様の網羅テスト**で有界化する。
-- **根本原因2**: D7 の引き下げを「既存判定の選択的 max 抑止」でなく、**軸2 を唯一の判定者として既存の High 判定を
+- **根本原因2**: D7 の引き下げを「既存判定の選択的 max 抑止」でなく、**判断軸2 を唯一の判定者として既存の High 判定を
   置き換える**方式で実現する。
 - **根本原因4**: DTO 配置・identity 注入・config 結線を**端から端で明示**する。
 
 ## 2. スコープ
 
-- **In**: ファイル操作コマンドの宛先ゾーン分類（F-001）、作用オペランド抽出と網羅テスト（F-002）、軸 A の
+- **In**: ファイル操作コマンドの宛先ゾーン分類（F-001）、作用オペランド抽出と網羅テスト（F-002）、判断軸 A の
   ゾーン非依存 floor（F-003）、データ送信のローカル書込 High 化と max 合成（F-004）、単一権威ゾーン経路による
   既存の High 判定の置き換え（F-005）、結線・DTO・identity 注入（F-006）、決定性（F-007）。
 - **Out**:
-  - **コマンド名分類（軸1 High/Medium）・Critical 尖鋭化・env/timeout・ラッパ/特権・データ送信の名前→Medium floor**
+  - **コマンド名分類（判断軸1 High/Medium）・Critical 尖鋭化・env/timeout・ラッパ/特権・データ送信の名前→Medium floor**
     → 0141。`find -exec`/`-execdir`/`-ok`/`-okdir`・`ssh -o ProxyCommand`・`rsync -e` 等の**内側コマンド実行
     （間接実行 Reject）**も 0141/既存（本タスクは `find -delete`/`-fprint*` の**宛先 zoning** のみ）。
   - **オペランド毎の監査フィールドの logger 出力・変更ノート（changelog）・文書整合・sample config 追従・ガイド** → 0143
@@ -47,12 +47,12 @@ safe-zone→Low / 解決不能→fail-closed floor）し、リスクを判定す
 ## 3. 横断制約（0140/00_decomposition.md §3 を継承）
 
 - **新分類は直接適用する**（後方互換不要。フラグ/shadow なし）。
-- **結線をフェーズ内に含める**（根本原因4）: 軸2 を `risk/evaluator.go` の dimension へ結線し、`security.Config`
+- **結線をフェーズ内に含める**（根本原因4）: 判断軸2 を `risk/evaluator.go` の `evaluateDimensions` へ結線し、`security.Config`
   （`SystemCriticalPaths`・信頼ディレクトリ許可リスト）を評価器へ通すコンストラクタ/`runner.go`/TOML ローダ改修を
   本タスクに含める。完了基準は触れる統合パッケージ（`internal/runner`・`internal/runner/config`）も**コンパイルする
   範囲**（`./internal/runner/...` または `make test`）。
-- **0141 の共有境界の上に直列で構築する**: `evaluator.go` の dimension ディスパッチ・`command_analysis.go` の名前集合は
-  0141 が再編済みである前提で、その上に軸2 を追加する。
+- **0141 の共有境界の上に直列で構築する**: `evaluator.go` の `evaluateDimensions`（判断軸のディスパッチ）・`command_analysis.go` の名前集合は
+  0141 が再編済みである前提で、その上に判断軸2 を追加する。
 - **English ソース**: Go の識別子・コメント・文字列リテラルは英語（テストソース含む）。
 
 ## 4. 機能要件と受け入れ基準
@@ -64,12 +64,12 @@ safe-zone→Low / 解決不能→fail-closed floor）し、リスクを判定す
 
 - **解決後パスで判定**: すべてのゾーン判定は、symlink チェーンを追従する**専用リゾルバ（AC-04(a)）**で得た正規化済み
   絶対パスで行う。文字列 prefix（`common.IsPathWithinDirectory` 単独）での判定は**非適合**。
-- **全オペランド × max**: 1 コマンドの**全作用オペランド**を zoning して max を取り（AC-07）、さらに**軸1 とも max
+- **全オペランド × max**: 1 コマンドの**全作用オペランド**を zoning して max を取り（AC-07）、さらに**判断軸1 とも max
   合成**する（AC-18）。
 - **fail-closed 既定**: 解決/抽出が不確実なら `ZoneUnresolved`（書込/削除→**High**・読取主体→**Medium**。AC-05）。
-- **単一権威**: ファイル操作コマンド（`rm`・`cp`・`dd` 等）は**軸2 を唯一の判定者**とする。軸2 がコマンドを
-  **完全に解釈できたときだけ**、これらを High に分類している**既存の5つの判定**を軸2 の結果で置き換える（AC-17）。
-- **floor は降格不可**: 軸 A の floor（権限付与・デバイス・safe-zone 外再帰・機微 source）は **safe-zone でも Low に
+- **単一権威**: ファイル操作コマンド（`rm`・`cp`・`dd` 等）は**判断軸2 を唯一の判定者**とする。判断軸2 がコマンドを
+  **完全に解釈できたときだけ**、これらを High に分類している**既存の5つの判定**を判断軸2 の結果で置き換える（AC-17）。
+- **floor は降格不可**: 判断軸 A の floor（権限付与・デバイス・safe-zone 外再帰・機微 source）は **safe-zone でも Low に
   降格しない**（F-003）。
 
 ### F-001: ゾーン分類モデル
@@ -125,7 +125,7 @@ safe-zone→Low / 解決不能→fail-closed floor）し、リスクを判定す
   | アーカイブ 抽出 vs 一覧 | `tar -x`/`unzip`＝展開先を zoning、`tar -t`/`unzip -l`＝非昇格、`tar --one-top-level=DIR`＝抽出先、`-C`/`-d` 省略時＝`EffectiveWorkDir` |
   | 末尾 `/` 付き削除 | symlink を dereference してターゲットを zoning |
   | `dd` デバイス | `if=`/`of=` をデバイス種別で判定（F-003 AC-10） |
-  | 権限/所有権付与 | world-write/所有権付与は軸 A（F-003 AC-08）へ |
+  | 権限/所有権付与 | world-write/所有権付与は判断軸 A（F-003 AC-08）へ |
   | データ送信 書込先 | `curl -o`/`-O`、`wget` 既定/`-O`/`-P <dir>`、`scp host:/x <DEST>`、`sftp` バッチ書込、`rsync … <DEST>`/`--delete`（F-004） |
 
 - **AC-06a**（仕様表と AC の連動）: **AC-08〜AC-16 で High/Medium 化と名指しされた全ての書込/削除/付与形は、
@@ -133,7 +133,7 @@ safe-zone→Low / 解決不能→fail-closed floor）し、リスクを判定す
 - **AC-07**（複数オペランド）: 1 コマンドの作用オペランドが複数のときは各々を zoning し **max** を取る（共通規則 4.0）。
   （0140 AC-31 の一部）
 
-### F-003: 軸 A の floor とオペランド別特則
+### F-003: 判断軸 A の floor とオペランド別特則
 
 **(a) ゾーン非依存の floor**（safe-zone でも Low に降格しない。共通規則 4.0）:
 
@@ -165,12 +165,12 @@ safe-zone→Low / 解決不能→fail-closed floor）し、リスクを判定す
   **High**（書込先ゾーンが名前 floor を上回る）。**前提**: 本テストは 0141 の名前→Medium floor が評価器に結線済み
   であること（共有境界）を要し、未結線では (i) が phantom floor で誤って通るため、結線後に意味を持つ。（0140 AC-25 の書込先部分）
 
-### F-005: 軸2 を唯一の判定者とし、既存の High 判定を置き換える（根本原因2）
+### F-005: 判断軸2 を唯一の判定者とし、既存の High 判定を置き換える（根本原因2）
 
 > **用語**: ここでの「既存の High 判定」とは、これらのコマンドを現在 High に分類しているコード上の判定経路を指す
 > （最終リスクは全判定の **max** で決まるため、引き下げにはこれらすべてを無力化する必要がある）。下記①〜⑤。
 
-- **AC-17**（軸2 が既存の High 判定を置き換える）: ファイル操作コマンドは、軸2 の結果を**唯一の判定者**とする。
+- **AC-17**（判断軸2 が既存の High 判定を置き換える）: ファイル操作コマンドは、判断軸2 の結果を**唯一の判定者**とする。
   当該コマンドを High に分類している**既存の判定 5 系統**——①`IsDestructiveFileOperation`、②`CoreutilsCommandRisk` の
   破壊系 High、③profile `DestructionRisk`、④`dangerousCommandPatterns`(rank6) の `rm -rf`/`dd if=` 等のコマンド
   エントリ、⑤coreutils の setuid/setgid lstat floor——を**評価対象から外し**、`LocationResult` を唯一の寄与とする。
@@ -178,14 +178,14 @@ safe-zone→Low / 解決不能→fail-closed floor）し、リスクを判定す
   の確定ゾーンを返し、かつ (b) オペランド抽出器が**argv を完全消費**した（非フラグの未消費トークンが無く、パスを
   運び得る未知の値取りフラグが無い）こと。**部分的/不確実なパース（一部オペランド未認識・未消費トークン残存・
   未知の値取りフラグ）のときは `ZoneUnresolved` とし、①〜⑤の High を残す**（「一部のオペランドを認識した」だけで
-  ①〜⑤を外すと、軸2 が理解できない危険な形が benign ゾーン→net Low となり素通りする＝fail-open。AC-05/AC-07 の
+  ①〜⑤を外すと、判断軸2 が理解できない危険な形が benign ゾーン→net Low となり素通りする＝fail-open。AC-05/AC-07 の
   「全オペランド max・未解決→High」が置き換え後も floor として残る）。⑤の setuid floor は再パースせず既存 lstat
-  シグナルを軸 A が流用する。**ファイル操作コマンド以外のコマンド**（`find -exec` の内側実行・軸2 が扱わない未知の
+  シグナルを判断軸 A が流用する。**ファイル操作コマンド以外のコマンド**（`find -exec` の内側実行・判断軸2 が扱わない未知の
   コマンド等）は従来どおり既存判定/間接実行が担う（同名でも非ロケーション用途では④を無効化しない）。
   - **観測可能プロパティ（テスト対象）**: 信頼 safe-zone の `rm -rf $WORKDIR/build` は **Low**（④ rank6 や②coreutils の
     固定 High で打ち消されない）。ordinary の `rm /srv/app/cache.dat` は **Medium**。未知フラグで宛先が不確実な `rm` は
     **High**（①〜⑤を残す）。（0140 AC-22c を単一権威方式へ訂正）
-- **AC-18**（max 合成）: 最終リスクは適用 dimension の **max**。軸1（コマンド名分類）と軸2（宛先ゾーン）の双方が適用される
+- **AC-18**（max 合成）: 最終リスクは**適用される判定の max**。判断軸1（コマンド名分類）と判断軸2（宛先ゾーン）の双方が適用される
   コマンドはその最大値（例 `cp -a … /usr/bin`＝High）。順序非依存。（0140 AC-31）
 
 ### F-006: 結線・DTO・identity 注入（根本原因4）
@@ -207,12 +207,12 @@ safe-zone→Low / 解決不能→fail-closed floor）し、リスクを判定す
   **テストプロセスの実 euid/gid と異なる値**に設定し、Trusted/Low 判定が**注入した identity に従って変わる**こと
   （プロセス identity ではない）を表明する（決定性テストだけでは「単一プロセス内で euid が一定なら `os.Geteuid()` を
   読んでも決定的」になり live 参照の不在を証明できないため、差分テストで担保する）。**補助**として `os/user`・
-  `os.Geteuid`/`os.Getuid`/`syscall`/`unix` の uid/gid/groups を軸2 plumbing が呼ばない grep ガードを置く。
+  `os.Geteuid`/`os.Getuid`/`syscall`/`unix` の uid/gid/groups を判断軸2 plumbing が呼ばない grep ガードを置く。
   （新規。0140/00 §3.4）
 
 ### F-007: 決定性・read-only
 
-- **AC-22**（runtime==dry-run・read-only）: 軸2 のパス解決は `lstat`/`readlink` のみの **read-only** で、runtime と
+- **AC-22**（runtime==dry-run・read-only）: 判断軸2 のパス解決は `lstat`/`readlink` のみの **read-only** で、runtime と
   dry-run で同一レベルを返す。結果は live euid・`$HOME` env に依存しない（AC-21）。（0140 AC-28／NF-003）
 - **AC-23**（解決コストの上限・fail-closed）: 解決は**評価単位でメモ化**（同一親の再解決をしない）し、**1 コマンド
   評価あたりのオペランド総数（>N）または symlink 追従ホップ総数（>M）が上限を超えたら `ZoneUnresolved`→High**

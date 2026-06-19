@@ -19,6 +19,7 @@
 | 〜に加えて | in addition to 〜 | |
 | アーキテクチャ設計書 | architecture design | |
 | 監査ログ | audit logging | セキュリティ監査の文脈 |
+| 判断軸 | axis | リスク判定の観点（判断軸1=コマンド名分類、判断軸2=宛先ゾーン分類）。旧称「軸」。コードの評価要素 `evaluateDimensions`（dimension）とは別概念で、要件文書では英語 dimension を用いず「判断軸／判定」と書く |
 | アクセス | access | |
 | 値 | value | |
 | 曖昧さ | ambiguity | |
