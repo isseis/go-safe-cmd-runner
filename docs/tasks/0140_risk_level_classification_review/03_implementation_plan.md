@@ -169,19 +169,21 @@
   返す新分類器 `SystemModificationFamily(names) (level, family, ok)` を新集合で実装し、**新 enforce 経路（P5a の
   feature flag で選択）からのみ参照**する。`SystemModificationRisk` を新分類器に委譲する切替は、enforce を新へ
   切替えた後の cleanup（§10）で行う（family 別理由コードは P5 で新経路に結線）。
-- [ ] 影響テスト更新: `command_analysis_test.go::TestSystemModificationRisk`（表 L1125-1135）で **Medium→High に
-  反転する全行**の期待値を変更する: `fdisk`/`parted`/`mkfs`/`fsck`（L1127-1130）・`crontab`/`at`/`batch`
-  （L1131-1133）・`chkconfig`/`update-rc.d`（L1134-1135）。`mount`/`umount`（L1125-1126）は Medium 維持。
-  さらに新 High/Medium ファミリ代表を追加。
+- [ ] 影響テスト（**shadow 期間は据え置き**）: `command_analysis_test.go::TestSystemModificationRisk`（表 L1125-1135）は
+  **旧 `SystemModificationRisk` 関数を直接呼ぶレガシー表明**であり、本関数は shadow 期間中 baseline として不変
+  （#3 の加法的導入）。よって fdisk/parted/mkfs/fsck・crontab/at/batch・chkconfig/update-rc.d の期待値は **Medium の
+  まま据え置き**、新挙動（High）は下記の新分類器テストで表明する。**Medium→High への期待値反転は切替後 cleanup
+  （§10）で実施**（その時点で `SystemModificationRisk` が新分類器へ委譲する）。
 - [ ] 影響テスト更新: `command_analysis_dangerous_test.go::TestValidator_IsDangerousRootCommand` は
   `DangerousRootPatterns`（types.go の別系統）に依存するため、本フェーズで意味が変わらないことを確認し、
   必要なら fdisk/mkfs の記述コメントのみ整合（挙動変更が無ければ据え置き）。
 
 **新規テスト**:
-- [ ] `command_analysis_test.go::TestSystemModificationRisk_HighFamilies`: 各 High 集合の代表名→High を表明
-  （AC-01〜AC-10a、各ファミリ最低 1 名）。
-- [ ] `command_analysis_test.go::TestSystemModificationRisk_MediumFamilies`: `lvcreate`/`vgcreate`/`ip`/
-  `ifconfig`/`route`/`mount`/`umount`→Medium、`iptables-save`/`ip6tables-save`→Unknown(=既定 Low) を表明
+- [ ] `command_analysis_test.go::TestSystemModificationFamily_HighFamilies`: **新分類器 `SystemModificationFamily`**
+  に対し各 High 集合の代表名→High と family 値を表明（AC-01〜AC-10a、各ファミリ最低 1 名）。レガシー
+  `SystemModificationRisk` ではなく新分類器を対象とする（shadow 期間は新分類器のみが新挙動を返す）。
+- [ ] `command_analysis_test.go::TestSystemModificationFamily_MediumFamilies`: 新分類器に対し `lvcreate`/`vgcreate`/
+  `ip`/`ifconfig`/`route`/`mount`/`umount`→Medium、`iptables-save`/`ip6tables-save`→Unknown(=既定 Low) を表明
   （AC-08 既定/AC-11/AC-12/AC-13）。
 
 **完了基準**: `go test -tags test ./internal/runner/base/security/... ./internal/runner/base/risk/...` が緑。
@@ -207,6 +209,10 @@
   glossary 整合は P6。
 - [ ] `isWithinCriticalPaths(resolvedAbsPath string, criticalPaths []string) bool` を新設（02 §3.9, C2）。
   `common.IsPathWithinDirectory` ＋ `/` はルート完全一致のみ。`Config.SystemCriticalPaths` を解決後パスに適用。
+- [ ] **解決コスト予算とメモ化を明示的な成果物にする**（02 §3.5、#6 の指摘）: 評価単位で「解決済み親→ゾーン」を
+  メモ化し、**オペランド総数・総解決コスト（`lstat`/`readlink` 回数や component 深さ）に上限**を設ける。上限超過は
+  **fail-closed（`ZoneUnresolved`→High）**とし、`ExecuteCommand` ホットパスで多数オペランド/深い symlink が無制限の
+  FS I/O を誘発しないようにする。
 
 **新規テスト**:
 - [ ] `path_resolve_test.go::TestResolveOperandPath`: 相対→workDir 基点（`cp x`→`<workDir>/x`）、未存在 leaf の
@@ -219,6 +225,8 @@
   所有権は注入 seam のモックで再現。
 - [ ] `path_resolve_test.go::TestIsWithinCriticalPaths`: `/usr/local/bin`→true（`/usr` 配下）、`/srv`/`/opt`→false、
   `/`（ルート）はルート自体のみ true、解決後パスで判定（生 prefix では判定しない）（AC-14, AC-15 整合）。
+- [ ] `path_resolve_test.go::TestResolveBudgetFailClosed`: オペランド総数/解決コストが上限を超える入力（多数オペランド・
+  深い symlink チェーン）で `ZoneUnresolved`→High に倒れ、メモ化により同一親の再解決が発生しないことを表明（02 §3.5, #6）。
 
 **完了基準**: `go test -tags test ./internal/runner/base/security/...` が緑。
 
@@ -262,14 +270,28 @@
   `ZoneUnresolved`→High（書込/削除）。Medium に倒さない。
 - [ ] 軸 A（ゾーン非依存 High）: setuid/setgid/world-write/trust-critical 所有権付与→High（AC-20, AC-22a）。
 - [ ] 複数オペランドは各々 zoning し max（AC-31）。
-- [ ] `evaluator.go`: `evaluateDimensions` に軸2 を結線（02 §3.10）。`ZoningInput` を `RuntimeCommand`
-  （`EffectiveWorkDir`）＋`Config`（`SystemCriticalPaths`・`ResolveSafeZone`）から組立て、`applies` のとき
-  `LocationResult.Level` を `addDimension` で max 合成し、`Operands` を監査へ運ぶ（P5）。
+- [ ] **shadow フラグ scaffolding を先に導入**（P5a の enforce 選択部を P3 冒頭へ前出し）: `EvaluateRisk` に
+  **既定 off の feature flag** を設け、新挙動（軸2＋②③①抑止）は flag が on のときだけ enforce に反映する。これにより
+  P3/PR-2 を独立にマージ/リリースしても**既定の enforce 挙動は不変**（旧 baseline が保たれ、P5a の newly-deny/
+  newly-allow 差分ログが成立する。#1 の指摘）。flag の旧/新並走と差分ログ本体は P5a。
+- [ ] **`StandardEvaluator` へ `security.Config` を結線**（#4）: 現行 `NewStandardEvaluator(networkAnalyzer)`
+  （[evaluator.go:37](../../../internal/runner/base/risk/evaluator.go#L37)）は Config を保持しない。コンストラクタと
+  `runner.go`（[runner.go:248](../../../internal/runner/runner.go#L248)）の生成箇所を改修し、deployment の
+  `Config.SystemCriticalPaths`・safe-zone 信頼ディレクトリ許可リストを評価器へ渡す（無ければ軸2 が既定/nil となり
+  configured 環境で AC-14/AC-17 が破れる）。
+- [ ] `evaluator.go`: `evaluateDimensions` に軸2 を結線（02 §3.10、上記 flag が on のときのみ enforce に反映）。
+  `ZoningInput` を `RuntimeCommand`（`EffectiveWorkDir`）＋結線済み `Config`（`SystemCriticalPaths`・
+  `ResolveSafeZone`）から組立て、`applies` のとき `LocationResult.Level` を `addDimension` で max 合成し、
+  `Operands` を監査へ運ぶ（P5）。
 - [ ] **②③①抑止の結線**（02 §3.8, AC-22c）。ロケーション定義 applet かつ軸2 `applies=true` のとき:
   - [ ] ①`IsDestructiveFileOperation`→High を `ZoneOrdinary`/`ZoneSafe` で寄与させない。**①抑止の除外**:
     `rsync --delete`/`--delete-before`/`--delete-after`（`IsDestructiveFileOperation` が拾う rsync 削除モード）は
     抑止しない——AC-33 の引き下げ対象外であり、宛先が ordinary/safe でも破壊 High を維持する（抑止は write-dest
-    zoning にのみ適用し、削除モードの destructive-High は残す）。`find -delete`/`find -exec` も同様に arg 軸で維持。
+    zoning にのみ適用し、削除モードの destructive-High は残す）。**ただし `find -delete` は除外しない**——AC-22e は
+    `find $WORKDIR -delete`→Low・trust-critical 起点→High と**探索起点の zoning を要求**するため、`find -delete` は
+    他の delete-target と同じく zone-authoritative とし、軸2 が探索起点を解決したら①の High net を抑止する（さもないと
+    `IsDestructiveFileOperation` の High が max に残り Low/Medium が観測できない。#3 の指摘）。`find -exec`/`-execdir`/
+    `-ok`/`-okdir` は引き続き間接実行 Reject（抑止ではなく拒否）、`rsync --delete` のみ①抑止から除外して High 維持。
   - [ ] ②`CoreutilsCommandRisk`→High を `ZoneOrdinary`/`ZoneSafe` で寄与させない（`coreutils.go` 改修。
     非ロケーション/未知 applet の fail-safe 分類は撤去しない）。**ただし `CoreutilsCommandRisk` が subcommand 分類
     より前に返す setuid/setgid ビット由来の High は抑止対象外（軸 A の権限付与＝非抑止 floor）**: setuid/setgid の
@@ -278,7 +300,8 @@
   - [ ] ③profile `DestructionRisk`→High（rm/dd）を `ZoneOrdinary`/`ZoneSafe` で寄与させない
     （`applyProfileFactors`/`ProfileFactorRisk` 経路）。
   - [ ] `ZoneUnresolved`/解決失敗のみ①〜③の High net を残す（唯一の fail-open 箇所のみ冗長 High）。
-  - [ ] `find -exec`/`rsync --delete` 等「引数による破壊/実行」は間接実行・arg 軸に残し、①〜③の安全網を
+  - [ ] `find -exec`（間接実行 Reject）/`rsync --delete`（①抑止除外）等「引数による破壊/実行」は arg 軸に残し、
+    ①〜③の安全網を
     非ロケーション applet には維持する。
 
 **新規テスト**（`location_zoning_test.go`）:
@@ -309,8 +332,9 @@
 - [ ] `TestLocationDefinedRisk_MountUmount`: trust-critical mountpoint/source→High、`umount -a`→High、
   既定→Medium（AC-19）。
 - [ ] `TestLocationDefinedRisk_Tee`/`Find`: tee 複数 FILE max（`tee safe /etc/passwd`→High, AC-22d）、
-  `find /etc -delete`→High・`find $WORKDIR -delete`→Low・`find -delete`（起点省略）→workdir 基点・
-  `find /etc -name '*.conf'`（読取専用）→非昇格（AC-22e）。
+  `find /etc -delete`→High・`find $WORKDIR -delete`→Low（**信頼された** safe-zone 起点）・`find -delete`（起点省略）→
+  workdir 基点・`find /etc -name '*.conf'`（読取専用）→非昇格（AC-22e）。`find -delete` の①抑止（evaluator 経由で
+  `find $WORKDIR -delete`→Low が観測される）は `TestEvaluateRisk_ZoneSuppressionGate` にケースを追加して表明する。
 - [ ] `TestLocationDefinedRisk_Mknod`: `mknod`→無条件 High（AC-16 注記）。
 - [ ] `TestLocationDefinedRisk_Archive`: 抽出モード判定を表明。`tar xf a.tar -C /etc`（trust-critical 展開先）→High、
   `tar xf a.tar`（`-C` 省略、`EffectiveWorkDir=/etc`）→High、**`tar -tf a.tar`（一覧、`EffectiveWorkDir=/etc`）→
@@ -356,8 +380,11 @@
 **対象**: `security/indirect_execution.go`、`security/command_analysis.go`（特権 profile・`redundantWrapperNames`）、
 `security/indirect_execution_test.go`。
 
-- [ ] 特権昇格ファミリ拡張（02 §3.6, AC-23）: `pkexec`/`runuser`/`setpriv`/`capsh` を Critical 対象へ追加
-  （L31 profile またはレゾルバへ）。`isPrivilegeCommand` が拾うことを確認。
+- [ ] 特権昇格ファミリ拡張（02 §3.6, AC-23）: `pkexec`/`runuser`/`setpriv`/`capsh` を Critical 対象へ追加。
+  **直接呼び出し（`/usr/bin/pkexec …`）は `EvaluateRisk` ランク3 が `ResolveProfile`→`IsPrivilege()` で分類する**ため、
+  新名を**特権 profile（command_analysis.go:31 の `NewProfile("sudo","su","doas")…PrivilegeRisk(Critical)`）に追加**する
+  （`isPrivilegeCommand` は profile を参照するため、profile に入れれば直接形・ネスト形の双方が拾われる。#7 の指摘）。
+  `isPrivilegeCommand` が拾うことも確認。
 - [ ] 実行ラッパ拡張（AC-29）: `chroot`/`unshare`/`nsenter`（名前空間/ルート変更）、`flock`/`watch`
   （コマンド文字列）を `wrapperSpecs` 系へ追加。RoleInner flat High floor を維持。
 - [ ] COMMAND 省略の暗黙シェル（AC-29）: `chroot`/`unshare`/`nsenter` が内側未指定でも High 以上（暗黙シェル起動）。
@@ -372,6 +399,8 @@
 
 **新規/更新テスト**（`indirect_execution_test.go`・`evaluator_test.go`）:
 - [ ] `TestIndirect_PrivilegeFamilyExtended`: `pkexec`/`runuser`/`setpriv`/`capsh`（および `sudo`/`su`/`doas`）→Critical（AC-23）。
+- [ ] `evaluator_test.go::TestEvaluateRisk_PrivilegeFamilyDirect`: **直接呼び出し** `/usr/bin/pkexec …`・`/usr/sbin/runuser …`・
+  `setpriv …`・`capsh …`→Critical（ランク3 `ResolveProfile` 経由。ネストの indirect だけでなく直接形も AC-23 を満たす）。
 - [ ] `TestIndirect_ExecWrappersExtended`: `chroot`/`unshare`/`nsenter`（COMMAND 有/無）→High 以上、`flock`/`watch`→
   内側ゲート、`ip netns exec ns rm -rf /`/`ip vrf exec red modprobe x`→内側ゲート（AC-29, AC-12）。
 - [ ] `TestIndirect_HelperExecOptions`: `ssh -o ProxyCommand=…`・`rsync -e <cmd>`→Reject/内側ゲート（AC-25）。
@@ -385,7 +414,8 @@
 ### Phase P5: 理由コード（family 別＋軸2）・監査フィールド・dry-run 一貫性（AC-30, AC-28, NF-001）
 
 **対象**: `risktypes/reason_codes.go`＋`reason_codes_test.go`、`risktypes/types.go`（`RiskAssessment`/
-`RiskAuditEntry`）、`risk/evaluator.go`、`resource/normal_manager.go`。
+`RiskAuditEntry`）、`risk/evaluator.go`、`resource/normal_manager.go`、**`internal/runner/base/audit/logger.go`**
+（`LogRiskProfile` が JSON 属性を組み立てる実体。#8 の指摘）。
 
 - [ ] 新規 `ReasonCode` を追加（02 §3.11）。最低限: `ReasonTrustBoundaryWrite`・`ReasonPermissionGrant`・
   `ReasonLocationZone`・`ReasonRedundantWrapper`、および軸1 family 別コード（カーネル/認証/ブート/FW/電源/
@@ -397,7 +427,9 @@
   `UnresolvedErr` 相当）を運ぶ構造化フィールドを **`RiskAssessment` に追加する（必須の書込先。`VerifiedCommandPlan`
   には追加しない）**——監査は `RiskAuditEntry.Assessment` を受け取るため、`RiskAssessment` に載せれば deny/shadow を
   含む全経路で `LogRiskProfile` に伝播する（§1.3 の決定。plan 側にのみ載せると denied/shadow 評価で AC-30 が破れる）。
-  `RiskAuditEntry` へ記録し `LogRiskProfile` で出力（02 §3.11）。
+  `RiskAuditEntry` へ記録するだけでなく、**`audit/logger.go` の `LogRiskProfile` が per-operand フィールド
+  （resolved_path/zone/matched_critical 等）を JSON 属性として実際に出力する**よう改修する（フィールドを構造体に
+  載せても logger が emit しなければ AC-30 のデバッグ可能性が満たされないため。#8）。
 - [ ] dry-run/runtime 一貫性: 軸2 が config の run-as 値を参照し live euid・`$HOME` env に依存しないことを保証
   （AC-28, 02 §3.9）。
 
@@ -418,10 +450,13 @@
   書込可能かに依存し、信頼ルートで一方の run-as が書込可・他方が不可なら正しい結果は Medium と Low で**異なる**ため。
   代わりに「軸2 結果は `ZoningInput.RunAs`（config 値）と FS 状態のみの決定的関数であり、live euid・`$HOME` env には
   依存しない」ことを表明する（02 §3.4/§5.2）。
-- [ ] **static 守備**（NF-003/§3.9 の非決定性排除）: `location_zoning.go`/`safezone.go`/`path_resolve.go` が
-  `os/user` を import せず `os.Geteuid`/`user.Current` を呼ばないことを grep ガード:
-  `rg -n "os/user|user\.Current|os\.Geteuid" internal/runner/base/security/{location_zoning,safezone,path_resolve}.go`
-  期待: マッチ無し。
+- [ ] **static 守備**（NF-003/§3.9 の非決定性排除）: 軸2 plumbing 全体が**live identity を読まない**ことを grep
+  ガードする。プロセス euid は実際には変動させられないため、これが主たる保証である（#5 の指摘）。**パターンと
+  ファイル範囲の両方を拡張**: `os.Geteuid`/`os.Getuid`/`syscall.Geteuid`/`syscall.Getuid`/`unix.Geteuid`/
+  `user.Current` と `os/user` import を、軸2 を組み立てる全ファイル（`location_zoning.go`/`safezone.go`/
+  `path_resolve.go` に加え、`ZoningInput` を組み立てる `risk/evaluator.go` の軸2 結線箇所）で検査:
+  `rg -n "os/user|user\.Current|os\.Gete?uid|syscall\.Gete?uid|unix\.Gete?uid" internal/runner/base/security/{location_zoning,safezone,path_resolve}.go internal/runner/base/risk/evaluator.go`
+  期待: マッチ無し（`evaluator.go` の既存の非軸2 identity 参照がある場合は、軸2 結線部に新規導入が無いことを差分で確認）。
 
 **完了基準**: `go test -tags test ./internal/runner/...` が緑。
 
@@ -469,8 +504,14 @@
   `output_capture_security.toml`/`command_template_example.toml` に加え、`template_backward_compat_test.go` の
   ハードコード列挙から漏れている `templates_backup_commands.toml`/`templates_docker_commands.toml`/
   `includes_example.toml`/`template_inheritance_example.toml`（rm/dpkg 等を含み得る）を必ず確認する。
-- [ ] `template_backward_compat_test.go` のロード対象列挙に、上記で `risk_level` を追加した sample を加え、ロード回帰が
-  全件を覆うようにする（ロード成功は AC-35 の必要条件。十分条件＝risk_level 妥当性は上記 static 走査で担保）。
+- [ ] **テンプレート/include を含む sample は別ロード経路で回帰する**（#9 の指摘）: `template_backward_compat_test.go`
+  の既存テストは `LoadConfigForTest` を使い**include 処理をスキップ**し、かつ `assert.Empty(t, cfg.CommandTemplates)`
+  （L71）で**テンプレート不在を表明**する。よって `[command_templates.*]`/`includes = [...]` を持つ sample
+  （`templates_backup_commands.toml`/`templates_docker_commands.toml`/`includes_example.toml`/
+  `template_inheritance_example.toml`/`command_template_example.toml`）を既存リストに足すと**回帰テストが落ちる**。
+  これらは **`LoadConfig`/`LoadConfigWithPath`（include/template 対応）を使う別テストケース**で読み込み、テンプレート
+  展開後のコマンドに対し risk_level 整合を表明する。テンプレートを持たない通常 sample のみ既存
+  `template_backward_compat_test.go` のリストへ追加する。
 - [ ] AC-36（ガイド最終化, **実装完了後のみ**）: `risk-level-classification-guide.ja.md` を実装確定挙動へ改訂・
   確定（現状 draft）。**日本語確定後に**英語版 `risk-level-classification-guide.md` を `/mktrans` で作成。
 
@@ -571,21 +612,21 @@ shadow モードで enforce が旧のまま。
 
 | AC | 検証 | 種別 | 場所 / コマンドと期待結果 |
 |---|---|---|---|
-| AC-01 | parted/fsck/wipefs/blkdiscard/sgdisk/gdisk/cgdisk/sfdisk/cfdisk/mkswap→High | test | `internal/runner/base/security/command_analysis_test.go::TestSystemModificationRisk_HighFamilies` |
-| AC-02 | LVM 破壊系→High | test | 同上 `::TestSystemModificationRisk_HighFamilies` |
-| AC-03 | mkfs/fdisk＋e2fsck/mke2fs/tune2fs/resize2fs→High | test | family 網羅は `TestSystemModificationRisk_HighFamilies`。`TestEvaluateRisk_DangerousArgPatternsRuntime` は `mkfs.*` 引数パターン由来 High の**回帰ガードのみ**（family 網羅ではない） |
-| AC-04 | insmod/modprobe/rmmod/kexec/sysctl→High | test | `command_analysis_test.go::TestSystemModificationRisk_HighFamilies` |
+| AC-01 | parted/fsck/wipefs/blkdiscard/sgdisk/gdisk/cgdisk/sfdisk/cfdisk/mkswap→High | test | `internal/runner/base/security/command_analysis_test.go::TestSystemModificationFamily_HighFamilies` |
+| AC-02 | LVM 破壊系→High | test | 同上 `::TestSystemModificationFamily_HighFamilies` |
+| AC-03 | mkfs/fdisk＋e2fsck/mke2fs/tune2fs/resize2fs→High | test | family 網羅は `TestSystemModificationFamily_HighFamilies`。`TestEvaluateRisk_DangerousArgPatternsRuntime` は `mkfs.*` 引数パターン由来 High の**回帰ガードのみ**（family 網羅ではない） |
+| AC-04 | insmod/modprobe/rmmod/kexec/sysctl→High | test | `command_analysis_test.go::TestSystemModificationFamily_HighFamilies` |
 | AC-05 | アカウント/認証 DB 系→High | test | 同上 |
 | AC-06 | ブート系→High | test | 同上 |
 | AC-07 | chkconfig/update-rc.d→High | test | 同上 |
 | AC-07a | shutdown/reboot/halt/poweroff/telinit→High | test | 同上 |
-| AC-08 | FW 系→High、iptables-save 既定→Low、`-f <file>`→zoning | test | `command_analysis_test.go::TestSystemModificationRisk_HighFamilies`/`_MediumFamilies`（iptables-save=Unknown）＋`location_zoning_test.go::TestLocationDefinedRisk_FlagWriter` |
-| AC-09 | setcap→High | test | `TestSystemModificationRisk_HighFamilies` |
+| AC-08 | FW 系→High、iptables-save 既定→Low、`-f <file>`→zoning | test | `command_analysis_test.go::TestSystemModificationFamily_HighFamilies`/`_MediumFamilies`（iptables-save=Unknown）＋`location_zoning_test.go::TestLocationDefinedRisk_FlagWriter` |
+| AC-09 | setcap→High | test | `TestSystemModificationFamily_HighFamilies` |
 | AC-10 | update-alternatives/dpkg-divert/alternatives/ldconfig→High | test | 同上 |
 | AC-10a | crontab/at/batch/systemd-run→High | test | 同上（新分類経路で High を返すことを表明。旧 Medium エントリの物理削除は切替後 cleanup） |
-| AC-11 | lvcreate/vgcreate/lvextend/vgchange/lvchange→Medium | test | `command_analysis_test.go::TestSystemModificationRisk_MediumFamilies` |
-| AC-12 | ip/ifconfig/route→Medium、`ip netns/vrf exec`→内側ゲート | test | `TestSystemModificationRisk_MediumFamilies`＋`indirect_execution_test.go::TestIndirect_ExecWrappersExtended` |
-| AC-13 | mount/umount 既定→Medium | test | `TestSystemModificationRisk_MediumFamilies` |
+| AC-11 | lvcreate/vgcreate/lvextend/vgchange/lvchange→Medium | test | `command_analysis_test.go::TestSystemModificationFamily_MediumFamilies` |
+| AC-12 | ip/ifconfig/route→Medium、`ip netns/vrf exec`→内側ゲート | test | `TestSystemModificationFamily_MediumFamilies`＋`indirect_execution_test.go::TestIndirect_ExecWrappersExtended` |
+| AC-13 | mount/umount 既定→Medium | test | `TestSystemModificationFamily_MediumFamilies` |
 | AC-14 | trust-critical 宛先→High（解決後パス判定） | test | `location_zoning_test.go::TestLocationDefinedRisk_Zones`＋`path_resolve_test.go::TestIsWithinCriticalPaths` |
 | AC-15 | ordinary→Medium | test | `TestLocationDefinedRisk_Zones`（`rm /srv/app/cache.dat`） |
 | AC-16 | safe-zone→Low | test | `TestLocationDefinedRisk_Zones`（workdir 配下） |
@@ -600,11 +641,11 @@ shadow モードで enforce が旧のまま。
 | AC-22c | safe-zone Low が固定 High で打ち消されない（3 系統抑止）＋fail-open 回帰防止 | test | `risk/evaluator_test.go::TestEvaluateRisk_ZoneSuppressionGate`（evaluator レベル。(i) safe-zone rm=Low・(ii) ordinary `rm /srv/app/cache.dat`=Medium・(iii) `ZoneUnresolved` rm/dd で①②③各 net が High・(iv) 未知 applet が High 維持） |
 | AC-22d | tee/sponge FILE zoning、複数 FILE max | test | `TestLocationDefinedRisk_Tee` |
 | AC-22e | find -exec/-execdir/-ok/-okdir Reject、-delete/-fprint*/起点 zoning | test | `location_zoning_test.go::TestLocationDefinedRisk_Find`（-delete/-fprint*/起点・読取専用非昇格）＋`indirect_execution_test.go::TestIndirect_FindXargsTargetGated`（4 primary すべて Reject。P3 で 4 primary 網羅を確認/拡張） |
-| AC-23 | sudo/su/pkexec/doas/runuser/setpriv/capsh→Critical | test | `indirect_execution_test.go::TestIndirect_PrivilegeFamilyExtended` |
+| AC-23 | sudo/su/pkexec/doas/runuser/setpriv/capsh→Critical（直接＋ネスト） | test | `indirect_execution_test.go::TestIndirect_PrivilegeFamilyExtended`（ネスト）＋`risk/evaluator_test.go::TestEvaluateRisk_PrivilegeFamilyDirect`（直接、ランク3 profile） |
 | AC-24 | visudo/useradd/insmod→High（Critical でない） | test | `risk/evaluator_test.go::TestEvaluateRisk_HighNotCritical`（新規） |
 | AC-25 | データ送信 Medium、ローカル trust-critical 書込→High、ProxyCommand/-e→間接 | test | `location_zoning_test.go::TestLocationDefinedRisk_FlagWriter`＋`indirect_execution_test.go::TestIndirect_HelperExecOptions` |
 | AC-26 | 検出限界の文書化 | static | 検出限界節に**3 アンカーすべて**が存在することを確認（単一キーワードでは不可）: (1) AI=High とデータ送信=Medium の非対称、(2) 未列挙/リネームバイナリ/multi-call の素通り、(3) allowlist＋ハッシュ固定が安全運用前提（0136 AC-66/67）。`rg -n "非対称\|リネーム\|multi-call\|allowlist\|ハッシュ" docs/user/risk_assessment.ja.md` で 3 アンカーの文を目視確認 |
-| AC-27 | fdisk/mkfs/parted/fsck=High（実装＋文書） | test, static | test: `TestSystemModificationRisk_HighFamilies`。static: `rg -n "parted\|fsck" docs/user/risk_assessment.ja.md` 期待: high 表記のみ（medium 行に parted/fsck が残らない） |
+| AC-27 | fdisk/mkfs/parted/fsck=High（実装＋文書） | test, static | test: `TestSystemModificationFamily_HighFamilies`。static: `rg -n "parted\|fsck" docs/user/risk_assessment.ja.md` 期待: high 表記のみ（medium 行に parted/fsck が残らない） |
 | AC-28 | runtime==dry-run、live euid/`$HOME` 非依存（固定 RunAsIdent 下で） | test, static | test: `risk/evaluator_test.go::TestEvaluateRisk_DryRunRuntimeInvariant`（runtime/dry-run 同値・固定 `RunAsIdent` 下で `$HOME` 2 値不変、no `t.Parallel`。異なる `RunAsIdent` で同値は要求しない）。static: 下記 `os/user`/`os.Geteuid` 不使用 grep ガード |
 | AC-29 | env modprobe→High、sudo useradd→Critical、chroot/unshare/nsenter（COMMAND 有無）、flock/watch | test | `indirect_execution_test.go::TestIndirect_ExecWrappersExtended`＋`evaluator_test.go`（env modprobe/sudo useradd） |
 | AC-29a | env/timeout→High、loader var 拒否、nice 等 floor 無しだが inner flat High | test | `indirect_execution_test.go::TestIndirect_RedundantWrapperHigh`＋既存 `TestIndirect_WrapperLoaderEnvRejected` |
@@ -613,7 +654,7 @@ shadow モードで enforce が旧のまま。
 | AC-32 | 移行ノート（引き上げ） | static | 移行ノート見出し（例「## 移行ノート」）配下に**引き上げ群が列挙**されることを確認（単なる `high` 一致では不可）: 軸1 新 High ファミリ（カーネル/認証/ブート/FW/電源/スケジューラ/信頼境界 intrinsic）・軸2 trust-critical（cp/mv/ln/install）・env/timeout、かつ「従来許可 config がブロックされ得る」旨と allowlist＋ハッシュ＋明示 `risk_level` 前提。`rg -n "移行ノート" docs/user/risk_assessment.ja.md` で節を特定し本文を目視 |
 | AC-33 | 移行ノート（引き下げ） | static | 移行ノート節に rm/rmdir/shred/unlink/dd の safe-zone/ordinary 引き下げが**「緩和方向（旧 deny→新 allow）」**として明示され、baseline=直近リリースが記載されることを目視確認（`rm`/`dd` の偶発出現と区別） |
 | AC-34 | risk_assessment/command-risk-evaluation/glossary 整合（日英） | static | (a) 引き上げ確認: `rg -n "fdisk\|parted\|fsck\|mkfs" docs/user/risk_assessment.md docs/user/risk_assessment.ja.md docs/dev/architecture_design/command-risk-evaluation.{ja,}.md` で high 分類を確認。(b) **medium 残存の不在**: `parted`/`fsck` が `medium` 行（現 `risk_assessment.ja.md` L80 の複合行）に残らないことを確認（high 一致だけでは複合行の medium 残存を見落とすため両方確認）。(c) glossary 用語（trust-critical/safe-zone/軸1/軸2）が 02 と一致。(d) `/mktrans` 由来で日英の章構成一致 |
-| AC-35 | sample/test config 追従 | test, static | test: `internal/runner/config/template_backward_compat_test.go`（既存 sample ロード回帰）。**ロード成功は必要だが不十分**（評価リスクは検証しない）ため static を主検証とする: `sample/*.toml` を**全件**（glob）走査し、本変更で High へ引き上がるコマンドを含むエントリに十分な `risk_level` が付与されていることを確認。ハードコード列挙から漏れる `command_template_example.toml`/`templates_backup_commands.toml`/`templates_docker_commands.toml`/`includes_example.toml`/`template_inheritance_example.toml` を必ず含める。`rg -n -A4 "^cmd = " sample/*.toml` で引き上げ対象エントリの `risk_level` を確認 |
+| AC-35 | sample/test config 追従 | test, static | test: テンプレート無し sample は `template_backward_compat_test.go`（`LoadConfigForTest`）で回帰、**テンプレート/include を含む sample は `LoadConfig`/`LoadConfigWithPath` を使う別ケース**で展開後コマンドの risk_level 整合を回帰（既存リストへの単純追加は `assert.Empty(CommandTemplates)` で落ちるため不可。#9）。**ロード成功は必要だが不十分**ため static を主検証とする: `sample/*.toml` を**全件**（glob）走査し、High へ引き上がるコマンドを含むエントリに十分な `risk_level` が付与されることを確認（`command_template_example.toml`/`templates_backup_commands.toml`/`templates_docker_commands.toml`/`includes_example.toml`/`template_inheritance_example.toml` を必ず含める）。`rg -n -A4 "^cmd = " sample/*.toml` |
 | AC-36 | ガイド最終化（実装後）・日本語確定→英語版 | manual, static | static: `risk-level-classification-guide.ja.md` の Status が `draft`→確定、`risk-level-classification-guide.md`（英語版）が存在。manual: 実装完了後に着手したこと（PR 順序）を PR で確認 |
 | NF-001 | ReasonCode 網羅性 | test | `internal/runner/base/risktypes/reason_codes_test.go::TestReasonCodes_AllDistinct` |
 | NF-002 | make test/lint/fmt 成功 | static | `make test && make lint`（`make fmt` 差分無し）期待: exit 0 |
