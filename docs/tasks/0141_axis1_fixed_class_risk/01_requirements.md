@@ -41,18 +41,16 @@ max 合成される。
   - **宛先パスのゾーン判定（trust-critical/ordinary/safe-zone）と、書込先オペランド抽出を伴う判定** → 0142。
     特に `curl -o`/`scp` 等の**ローカル trust-critical 書込→High** は 0142（本タスクはデータ送信の Medium 据え置きと
     ヘルパー実行の間接化のみ）。
-  - **段階ロールアウト（shadow/audit-only・デプロイ可能フラグ）・per-operand 監査フィールド・移行ノート・
-    sample config・ガイド最終化** → 0143。
+  - **per-operand 監査フィールド・変更ノート（changelog）・文書整合・sample config 追従・ガイド最終化** → 0143。
+    （後方互換不要のため段階ロールアウト/フラグは設けない。）
   - `RiskLevel` の段数/意味づけ変更（新レベル追加しない）。
 
 ## 3. 横断制約（0140/00_decomposition.md §3 を継承）
 
-- **ロールアウト切替点は本タスクが用意する（根本原因3／依存逆転の解消）**: 本タスクが**最小の切替点**
-  `RolloutMode ∈ {off, shadow, enforce}`（既定 `off`、constructor 注入）を導入し（[00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md) §3.2(1)）、
-  本タスクの全 enforce 引き上げ（軸1 High 化・env/timeout High・特権/ラッパ拡張）は**この切替点経由でのみ**
-  enforce へ反映する。旧 enforce 経路を保持し in-place 破壊置換をしない。テストは `off`（旧 baseline 不変）／
-  `enforce`（新挙動）の両モードを持つ。**切替点を TOML へ結線したデプロイ可能設定・`shadow` の差分ログは 0143**
-  が所有する（本タスクは切替点の導入と自タスク変更の切替点経由の反映までを担保し、後続タスクの成果物に依存しない）。
+- **新分類は直接適用する（後方互換不要）**: 本プロジェクトは後方互換性を要求しないため、ロールアウトフラグ／
+  shadow 機構は**設けない**。本タスクの enforce 引き上げ（軸1 High 化・env/timeout High・特権/ラッパ拡張）は
+  新分類を**直接適用（in-place 置換）**する。破壊的変更（raise/lower）の周知は 0143 の変更ノート（changelog）に
+  委ねる（[00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md) §3.2）。
 - **結線をフェーズ内に含める（根本原因4）**: 名前集合の追加に加え、判定が実際に `EvaluateRisk` の固定レベルへ
   反映されるよう、評価器（`risk/evaluator.go`）・間接実行（`security/indirect_execution.go`）・特権 profile への
   結線を本タスクのスコープに含める。完了基準は触れる統合パッケージをコンパイルする範囲（`./internal/runner/...`
@@ -144,14 +142,6 @@ max 合成される。
   redundant 由来の追加 floor を課さないが、抽出可能ラッパ内側の flat High floor は維持。`env` 経由の loader 制御
   変数（`LD_PRELOAD` 等）は従来どおり forbidden-env-var で拒否。（0140 AC-29a）
 
-### F-009: ロールアウト切替点の導入（根本原因3／依存逆転の解消）
-
-- **AC-24**: 本タスクが**ロールアウト切替点** `RolloutMode ∈ {off, shadow, enforce}`（既定 `off`、constructor 注入、
-  配置は `risktypes` または評価器結線層）を導入する。本タスクの全 enforce 引き上げ（AC-01〜AC-23 の High 化・
-  env/timeout・特権/ラッパ拡張）は**この切替点経由でのみ** enforce へ反映し、`off` では旧 baseline が不変である
-  こと、`enforce` で新挙動になることを**両モードでテスト**する。切替点の TOML デプロイ面・`shadow` 差分ログは 0143。
-  （新規。[00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md) §3.2(1)）
-
 ## 5. 非機能要件
 
 - **NF-001**: 本タスクが追加した `ReasonCode` は、**本タスク内で**網羅性/一意性テスト（`reason_codes_test.go`）を
@@ -169,6 +159,6 @@ max 合成される。
 
 - **宛先ゾーン判定は 0142**: trust-critical/ordinary/safe-zone の判定、書込先オペランド抽出、ローカル書込の High 化は
   argv 解析を要し、軸2（0142）の所掌。本タスクは名前/ラッパで決まる固定レベルに限定する（D5 の線引き）。
-- **ロールアウト/監査/文書は 0143**: 引き上げ・引き下げの同時周知、shadow 観測、監査フィールド、文書整合は
-  横断関心事として 0143 に集約する（根本原因3）。
+- **監査/文書は 0143**: 引き上げ・引き下げの周知（変更ノート）、per-operand 監査フィールド、文書整合は横断成果物
+  として 0143 に集約する。**後方互換不要のため段階ロールアウト/フラグは設けない**（根本原因3 の解消, §3.2）。
 - **`RiskLevel` 段数/新レベル**: 変更しない（0140 §6 を継承）。
