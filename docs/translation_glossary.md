@@ -332,6 +332,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 操作 | operation | |
+| 操作固有の下限 | operation-intrinsic floor | 判断軸2 の内部区分。コマンドが何を付与/実行するか（setuid 付与・デバイス IO・safe-zone 外再帰・機密ファイル複製 等）に内在し、宛先ゾーンに依らず効く下限。safe-zone でも Low に降格しない（0142 F-003）。原典 0140/01 の「軸 A」に相当。トップレベルの判断軸1/判断軸2 と紛れるため「判断軸 A」とは呼ばない |
 | オペランド | operand | コマンド引数（宛先/source/FILE 等）。判断軸2 のゾーニングの作用対象 |
 | ordinary | ordinary | 通常パス（`/srv`・`/opt` 等、trust-critical でも safe-zone でもないパス）。判断軸2 で Medium。リスクゾーンの一つ |
 | オプション | optional | |
