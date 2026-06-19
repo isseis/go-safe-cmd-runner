@@ -82,7 +82,7 @@
   完全に認識できたときだけ（＝完全認識：全オペランドが確定パス信頼区分を返し、かつ全コマンドライン引数を解析しきる。定義は AC-17）、
   これらを High に分類している既存の5つの判定を判断軸2 の結果で置き換える。
 - **操作固有の下限は safe-zone でも降格しない**: 次の下限に該当する場合、宛先が safe-zone（通常 → Low）でも Low に降格しない（定義は F-003）:
-  - 権限付与（setuid/setgid・world-write・所有権変更 等）
+  - 権限付与（setuid/setgid・world-writable・所有権変更 等）
   - デバイス IO（`dd` のブロック/危険キャラクタデバイス）
   - safe-zone 外への再帰（`rm -r`/`cp -R` 等が外へ及ぶ）
   - **機密ファイルの複製**（機密ファイル＝秘匿内容のファイル。`/etc/shadow`・SSH 鍵 等。複製＝情報露出）
@@ -143,7 +143,7 @@
   | アーカイブ 抽出 vs 一覧 | `tar -x`/`unzip`＝展開先のパス信頼区分を判定、`tar -t`/`unzip -l`＝非昇格、`tar --one-top-level=DIR`＝抽出先、`-C`/`-d` 省略時＝`EffectiveWorkDir` |
   | 末尾 `/` 付き削除 | symlink を dereference してターゲットのパス信頼区分を判定 |
   | `dd` デバイス | `if=`/`of=` をデバイス種別で判定（F-003 AC-10） |
-  | 権限/所有権付与 | world-write/所有権付与は操作固有の下限（F-003 AC-08）へ |
+  | 権限/所有権付与 | world-writable/所有権付与は操作固有の下限（F-003 AC-08）へ |
   | データ送信 書込先 | `curl -o`/`-O`、`wget` 既定/`-O`/`-P <dir>`、`scp host:/x <DEST>`、`sftp` バッチ書込、`rsync … <DEST>`/`--delete`（F-004） |
 
 - **AC-06a**（仕様表と AC の連動）: AC-08〜AC-16 で High/Medium 化と名指しされた全ての書込/削除/付与形は、
@@ -157,7 +157,7 @@
 
 | AC | 下限 | 条件 → **High** | 補足 | 対応 |
 |---|---|---|---|---|
-| AC-08 | 権限/所有権/属性付与 | setuid/setgid 付与・world-write 等の権限拡大・trust-critical 所有権変更・`chattr -i`（完全性制御除去） | 例 `chmod u+s`・`chmod 0777`・`chown root /usr/bin/x`・`chattr -i /etc/shadow` | 0140 AC-20 |
+| AC-08 | 権限/所有権/属性付与 | setuid/setgid 付与・world-writable 等の権限拡大・trust-critical 所有権変更・`chattr -i`（完全性制御除去） | 例 `chmod u+s`・`chmod 0777`・`chown root /usr/bin/x`・`chattr -i /etc/shadow` | 0140 AC-20 |
 | AC-09 | `install` 権限フラグ | `-m` に setuid/setgid、または `-o`/`-g` で所有者/グループ変更 | safe-zone でも降格しない | 0140 AC-22a |
 | AC-10 | `dd` デバイス IO | `if=`/`of=` がブロックまたは危険キャラクタデバイス（`/dev/mem`・`/dev/kmem`・`/dev/port` 等の物理/カーネルメモリ生アクセス） | 無害シンク（`/dev/null`・`/dev/zero`）除外。機密ファイル/trust-critical な `if=`（読み取り元） は **Medium 下限**。パス文字列でなくデバイス種別で判定 | 0140 AC-21 |
 | AC-11 | safe-zone 外への再帰 | `rm -r`/`-R`・`cp -R`/`-a` 等が作用対象を safe-zone の外（ordinary/trust-critical）に及ぼす | 信頼 safe-zone 内に閉じた再帰（`rm -rf $WORKDIR/build`）は Low。複数オペランド指定自体は昇格条件にせず各々パス信頼区分を判定 | 0140 AC-22 |
