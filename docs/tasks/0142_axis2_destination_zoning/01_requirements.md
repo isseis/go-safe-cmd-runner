@@ -58,7 +58,7 @@
 
 - **新分類は直接適用する**（後方互換不要。フラグ/shadow なし）。
 - **組み込みをフェーズ内に含める**（根本原因4）: 判断軸2 を `risk/evaluator.go` の `evaluateDimensions` へ組み込み、`security.Config`
-  （`SystemCriticalPaths`・信頼ディレクトリ許可リスト）を評価器へ通すコンストラクタ/`runner.go`/TOML ローダ改修を
+  （`SystemCriticalPaths`・信頼ディレクトリ許可リスト）をリスク評価ロジックへ通すコンストラクタ/`runner.go`/TOML ローダ改修を
   本タスクに含める。完了の判定基準（ビルド／テストを通す対象範囲）には、`risk` パッケージ単体だけでなく、本タスクが
   変更する統合パッケージ（`internal/runner`・`internal/runner/config`）までコンパイルが通ることを含める（具体的には
   `./internal/runner/...` のビルド、または `make test` 全体が成功すること）。
@@ -193,7 +193,7 @@
   - **必須テスト**（両寄与が同時に生きていることを検証）:
     - (i) safe-zone 宛先（`curl <url> -o $WORKDIR/safe`）は **Medium**（書込先のパス信頼区分が Low でも名前下限が効く）
     - (ii) trust-critical 宛先（`curl -o /usr/bin/x`）は **High**（書込先のパス信頼区分が名前下限を上回る）
-  - **前提**: 0141 の名前による Medium 下限が評価器に組み込み済みであること（0141 が再編する共有コード。§3）。未組み込みでは (i) が見かけの下限で誤って通る。
+  - **前提**: 0141 の名前による Medium 下限がリスク評価ロジックに組み込み済みであること（0141 が再編する共有コード。§3）。未組み込みでは (i) が見かけの下限で誤って通る。
 
 ### F-005: 判断軸2 を唯一の判定基準とし、既存の High 判定を置き換える（根本原因2）
 
@@ -237,12 +237,12 @@
     オペランド）で `RiskAssessment` から直接 `[]OperandZone` を読み、各要素の Index/Raw/Resolved/Zone/Trusted が期待
     どおりか表明（値が誤っても 0143 まで気付けない穴を塞ぐ）。
 - **AC-20**（`security.Config` の組み込み）— 新規。0140/00 §3.4:
-  - **規則**: deployment の `Config.SystemCriticalPaths` と信頼ディレクトリ許可リストを評価器へ通す。
+  - **規則**: deployment の `Config.SystemCriticalPaths` と信頼ディレクトリ許可リストをリスク評価ロジックへ通す。
     `NewStandardEvaluator`・`runner.go` のコンストラクタへの組み込み＋信頼ディレクトリの TOML `[security]` spec＋ローダ＋
     runner 転送を本タスクで追加。
   - **根拠**: 無ければ configured 環境で AC-01/AC-04 が成立せず、テスト注入でしか通らない。
 - **AC-21**（identity 注入の純粋性）— 新規。0140/00 §3.4:
-  - **規則**: run-as 名から UID/GID/補助 group への解決はパス信頼区分判定の外（評価器の組み込み層）で行い、precomputed `RunAsIdent` を
+  - **規則**: run-as 名から UID/GID/補助 group への解決はパス信頼区分判定の外（リスク評価ロジックの組み込み層）で行い、precomputed `RunAsIdent` を
     `ZoningInput` に注入。**パス信頼区分の判定は live identity（`os.Geteuid`/`os.Getuid`/`syscall`/`unix` の uid/gid/groups・
     `user.Current`）を読まない**。
   - **テスト（差分テストを主）**: 注入 `RunAsIdent` をテストプロセスの実 euid/gid と異なる値にし、Trusted/Low 判定が

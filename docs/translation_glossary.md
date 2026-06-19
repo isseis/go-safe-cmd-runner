@@ -436,6 +436,7 @@
 | 責務分担 | responsibility split | コンポーネント間の責務の切り分け |
 | リスク | risk | |
 | リスク判定 | risk evaluation | リスクレベルの算出 |
+| リスク評価ロジック | risk evaluator | リスクを評価し最終リスクレベルを決めるコード（`risk/evaluator.go`／`EvaluateRisk`。判断軸1/2 をディスパッチして統合）。英語直訳「評価器」は使わない（コード識別子 `evaluator.go` 等は除く） |
 | リスクレベル | risk level | |
 | 堅牢性 | robustness | |
 | 役割 | role | |
