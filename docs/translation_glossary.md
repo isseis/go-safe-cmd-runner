@@ -329,7 +329,8 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 操作 | operation | |
-| オペランド | operand | コマンド引数（宛先/source/FILE 等）。軸2 ゾーニングの作用対象 |
+| オペランド | operand | コマンド引数（宛先/source/FILE 等）。判断軸2 のゾーニングの作用対象 |
+| ordinary | ordinary | 通常パス（`/srv`・`/opt` 等、trust-critical でも safe-zone でもないパス）。判断軸2 で Medium。リスクゾーンの一つ |
 | オプション | optional | |
 | オプトイン | opt-in | risk_level = "high" を明示設定して許可する文脈 |
 | 最適化 | optimize / optimization | |
@@ -443,6 +444,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 安全 | safe | |
+| safe-zone | safe-zone | run 専用の作業/出力ディレクトリ・専用 temp（run が所有する安全領域）。判断軸2 で Low（信頼要件 AC-04 充足時。`$HOME`・共有 `/tmp` は含めない）。リスクゾーンの一つ |
 | 正規化済み解析結果 | normalized analysis result | 保存前に整形・選別された解析結果 |
 | 正規化済み特徴量 | normalized feature | runner 向けに整形された特徴量 |
 | 関心の分離 | separation of concerns | 設計パターンの文脈 |
@@ -506,6 +508,7 @@
 |--------|---------|------|
 | テンプレート | template | コマンドテンプレート機能の文脈 |
 | トランポリン | trampoline | 1命令で別アドレスに分岐するスタブ |
+| trust-critical | trust-critical | システム重要パス（`/usr`・`/etc`・`/boot` 等、書込でシステム/信頼境界を侵すパス。`Config.SystemCriticalPaths`）。判断軸2 で High。リスクゾーンの一つ |
 | テンプレート展開 | template expansion | コマンド定義への置換処理 |
 | テンプレートパラメータ | template parameter | `${...}` 形式の参照 |
 | タグ | tag | TOMLタグの文脈 |
