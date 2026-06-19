@@ -17,8 +17,8 @@ This is project-independent. It depends on nothing in `_context.md`.
   translator and editor"). This may be **a single persona** (single-reviewer mode,
   the default) or **a panel of two-or-more partitioned personas** (panel mode — see
   "Panel mode" below). A panel persona is specified as a role PLUS a non-overlapping
-  **mandate** (what it owns) and an explicit **out-of-scope** list (what its
-  counterpart owns).
+  **mandate** (what it owns) and an explicit **out-of-scope** list (what the other
+  panel personas own — for a two-reviewer panel this is simply the counterpart).
 - **FILES** — the list of files the subagent must read, given as resolved
   absolute path strings so the subagent does not rely on the caller's context.
 - **CRITERIA** — the checklist(s) the caller defines, to be copied verbatim into
@@ -70,8 +70,9 @@ A calling command opts into panel mode by supplying a PERSONA that is a panel
    but different titles mostly duplicate each other — you pay N× tokens for largely
    the same output. Each panel persona must get: (a) a **mandate** = the dimensions
    it owns and must go deep on; (b) an explicit **out-of-scope** list = the
-   dimensions its counterpart owns, which it must NOT report except as one-line
-   "OUT-OF-LANE FLAGS" at the end. Route the CRITERIA items to the reviewer whose
+   dimensions the other panel personas own (collectively, when the panel has more
+   than two), which it must NOT report except as one-line "OUT-OF-LANE FLAGS" at the
+   end. Route the CRITERIA items to the reviewer whose
    mandate covers them (an item may be shared only when both lenses genuinely apply).
 2. **Spawn all panel reviewers in parallel** — in a single message with multiple
    Agent tool calls — so wall-clock does not increase. Each prompt is self-contained
@@ -89,8 +90,8 @@ A calling command opts into panel mode by supplying a PERSONA that is a panel
    between mandates (a structural choice with an operational consequence) — this
    synthesis is panel mode's main risk to mitigate, since the parallel reviewers
    cannot see each other's output. For each "OUT-OF-LANE FLAG", the caller checks it
-   against the counterpart reviewer's mandate and findings during this synthesis and
-   promotes it to a real finding if it holds up.
+   against the mandate and findings of the panel persona(s) that own that dimension
+   during this synthesis and promotes it to a real finding if it holds up.
 4. **Then run the same fix / re-review loop** as the Procedure above on the merged
    findings. A verification pass may reuse panel mode or a single combined reviewer.
 
