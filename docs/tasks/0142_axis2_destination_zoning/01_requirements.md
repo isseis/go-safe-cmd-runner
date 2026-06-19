@@ -54,89 +54,100 @@ fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（
 
 ## 4. 機能要件と受け入れ基準
 
-> 各 AC は 0140/01 の対応 AC を継承する（末尾「対応」列）。**個別フラグの散文列挙はしない**（根本原因1）。確定
+> 各 AC は 0140/01 の対応 AC を継承する（「対応」列/末尾）。**個別フラグの散文列挙はしない**（根本原因1）。確定
 > 列挙・LocationKind 定義は 0142/02_architecture.md と実装の仕様表で確定する。
 
-### F-001: ゾーンモデルと fail-closed 既定
+### 4.0 共通の判定規則（全 AC に適用。各 AC で再掲しない）
 
-- **AC-01**（宛先ゾーン基本）: ロケーション定義コマンドの宛先が **trust-critical** のとき **High**。trust-critical 集合は
-  `(*Config).GetSystemCriticalPaths()`（[security/types.go](../../../internal/runner/base/security/types.go)）を正とし、
-  既定は `/`・`/bin`・`/sbin`・`/usr`・`/usr/bin`・`/usr/sbin`・`/etc`・`/var`・`/var/log`・`/boot`・`/sys`・`/proc`・
-  `/dev`・`/lib`・`/lib64`・`/root`（deployment 拡張可。AC-20）。`/usr` が含まれるため `/usr/local/bin` 等の配下も
-  trust-critical。**`/`（ルート）はルート完全一致のみ**（`/srv`・`/opt` 等の他トップレベルは ordinary）。判定は
-  **正規化・symlink 解決後の絶対パス**で行い、生の引数文字列 prefix では判定しない（AC-04(a)）。（0140 AC-14）
-- **AC-02**（ordinary）: trust-critical でも safe-zone でもない通常パスの named-file 操作は **Medium**
-  （例: `/srv`・`/opt` 配下）。**`/var`・`/var/log` は trust-critical（AC-01）なので ordinary の例・テスト
-  フィクスチャに使わない**。（0140 AC-15）
-- **AC-03**（safe-zone → Low）: 宛先が safe-zone 内かつ AC-04 の **Trusted** 条件を満たす named-file 操作は **Low**。
-  Trusted を満たさない safe-zone（run-as 書込可な一般 workdir 等）は **Medium** にフォールバックする。（0140 AC-16）
-- **AC-04**（safe-zone の定義と解決, 安全要件）: safe-zone 判定は次をすべて満たす。
-  (a) **正規化（symlink 解決後）の絶対パス**で判定する（`~/link→/etc`・`$HOME/../../etc` 等で破れない）。判定には
-      **symlink チェーン（leaf＋親）を安全に追従・解決する専用リゾルバ**（`ResolveCommandNames`/`walkSymlinkChain`
-      型の深さ制限つき追従。本タスクで新規実装し、未存在 leaf は最深の存在親まで解決して末尾を畳み込む）を用いる。
-      **symlink を解決しない文字列 prefix ヘルパー（`common.IsPathWithinDirectory` 単独）で代替してはならない**
-      （非適合）。`safefileio` は symlink を解決せず拒否する設計のため zoning には流用できない。**必須テスト**:
-      `cp evil $WORKDIR/link`（`link→/etc/passwd`）は **High**（ターゲット解決）であり Low にならないこと。
-  (b) safe-zone の起点は **`RuntimeCommand.EffectiveWorkDir` と構成済み専用 temp** に限定し、曖昧な `$HOME`・共有
-      `/tmp`・出力先の親ディレクトリは**含めない**。
-  (c) safe-zone が trust-critical と重複/配下のときは safe-zone として扱わず trust-critical（High）を優先する。
-  (d) **TOCTOU 耐性（per-operand Trusted）**: Low 降格は、解決後の各オペランドパスが**信頼ディレクトリ許可リスト
-      配下**にあり、かつ**経路要素が委譲先（run-as）から書込不可**（run-as 以外所有・group/other 非書込）である
-      ときに限る。満たせなければ Low に降格しない（fail-closed）。参照 identity は live euid でなく config の run-as
-      値（AC-21）。leaf が既存 symlink の場合は最終ターゲットで zoning する。（0140 AC-17）
-- **AC-05**（fail-closed 既定, 安全要件・根本原因1の本体）: 宛先オペランドを確実に解決できない/曖昧な形（未確定の
-  変数展開、未知・曖昧フラグで書込先を一意特定できない、解決コスト上限超過 等）は `ZoneUnresolved` とし、**Low に
-  しない**。floor は **Kind 依存**——書込/削除系は **High**、読取主体（cp source・`dd if=` 等）は **Medium**。
-  「不明フラグ＝安全」とは仮定しない。**読取主体の未解決を High でなく Medium とするのは意図的な非対称**（書込/削除の
-  最悪は破壊、読取の最悪は情報露出という脅威差。02 で根拠を保持し「うっかり緩和」を防ぐ）。（0140 AC-18 を
-  Kind 依存 High まで強化）
+- **解決後パスで判定**: すべてのゾーン判定は、symlink チェーンを追従する**専用リゾルバ（AC-04(a)）**で得た正規化済み
+  絶対パスで行う。文字列 prefix（`common.IsPathWithinDirectory` 単独）での判定は**非適合**。
+- **全オペランド × max**: 1 コマンドの**全作用オペランド**を zoning して max を取り（AC-07）、さらに**軸1 とも max
+  合成**する（AC-18）。
+- **fail-closed 既定**: 解決/抽出が不確実なら `ZoneUnresolved`（書込/削除→**High**・読取主体→**Medium**。AC-05）。
+- **単一権威**: ロケーション定義 applet は軸2 が唯一の権威。**完全認識のときのみ**旧 High 源 5 系統を置換する（AC-17）。
+- **floor は降格不可**: 軸 A の floor（権限付与・デバイス・safe-zone 外再帰・機微 source）は **safe-zone でも Low に
+  降格しない**（F-003）。
+
+### F-001: ゾーン分類モデル
+
+ゾーン → レベルの基本対応（条件はすべて解決後パス。共通規則 4.0）:
+
+| AC | ゾーン | 条件 | レベル | 対応 |
+|---|---|---|---|---|
+| AC-01 | trust-critical | `GetSystemCriticalPaths()` に一致/配下 | **High** | 0140 AC-14 |
+| AC-02 | ordinary | trust-critical でも safe-zone でもない通常パス | **Medium** | 0140 AC-15 |
+| AC-03 | safe-zone（Trusted 充足） | safe-zone 内かつ AC-04 充足 | **Low** | 0140 AC-16 |
+| AC-03 | safe-zone（Trusted 不成立） | safe-zone だが AC-04 不成立 | **Medium**（フォールバック） | 0140 AC-16 |
+| AC-05 | unresolved | 解決/抽出不能・曖昧（未確定変数展開・未知フラグ・上限超過 等） | 書込/削除=**High**・読取=**Medium** | 0140 AC-18 |
+
+各 AC の確定事項:
+- **AC-01**: trust-critical 集合は `(*Config).GetSystemCriticalPaths()`
+  （[security/types.go](../../../internal/runner/base/security/types.go)）を正とし、既定は `/`・`/bin`・`/sbin`・`/usr`・
+  `/usr/bin`・`/usr/sbin`・`/etc`・`/var`・`/var/log`・`/boot`・`/sys`・`/proc`・`/dev`・`/lib`・`/lib64`・`/root`
+  （deployment 拡張可。AC-20）。`/usr` 配下（`/usr/local/bin` 等）を含む。**`/` は完全一致のみ**（`/srv`・`/opt` 等は ordinary）。
+- **AC-02**: 例 `/srv`・`/opt` 配下。**`/var`・`/var/log` は trust-critical なので ordinary の例・テストフィクスチャに
+  使わない**。
+- **AC-05**: 「不明フラグ＝安全」とは仮定しない。**読取主体を High でなく Medium とするのは意図的な非対称**（書込/削除の
+  最悪＝破壊、読取の最悪＝情報露出という脅威差。02 で根拠を保持し「うっかり緩和」を防ぐ）。（0140 AC-18 を Kind 依存 High まで強化）
+
+- **AC-04**（safe-zone の定義と解決, 安全要件。0140 AC-17）: safe-zone 判定は次をすべて満たす。
+  - (a) **専用リゾルバ**で正規化（symlink 解決後）の絶対パスを得て判定する（`~/link→/etc`・`$HOME/../../etc` 等で
+    破れない）。リゾルバは `ResolveCommandNames`/`walkSymlinkChain` 型の**深さ制限つき symlink 追従**（leaf＋親。本
+    タスクで新規実装、未存在 leaf は最深の存在親まで解決して末尾を畳み込む）。**`common.IsPathWithinDirectory` 単独
+    （非解決）での代替は非適合**。`safefileio` は symlink を解決せず拒否する設計のため流用不可。**必須テスト**:
+    `cp evil $WORKDIR/link`（`link→/etc/passwd`）は **High**（ターゲット解決）であり Low にならない。
+  - (b) 起点は **`RuntimeCommand.EffectiveWorkDir` と構成済み専用 temp** に限定。曖昧な `$HOME`・共有 `/tmp`・出力先の
+    親ディレクトリは**含めない**。
+  - (c) safe-zone が trust-critical と重複/配下のときは trust-critical（High）を優先する。
+  - (d) **TOCTOU 耐性（per-operand Trusted）**: Low 降格は、解決後の各オペランドパスが**信頼ディレクトリ許可リスト
+    配下**かつ**経路要素が run-as から書込不可**（run-as 以外所有・group/other 非書込）のときに限る。満たせなければ
+    降格しない（fail-closed）。参照 identity は live euid でなく config の run-as 値（AC-21）。leaf が既存 symlink なら
+    最終ターゲットで zoning。
 
 ### F-002: 作用オペランドの抽出と網羅テスト（根本原因1）
 
-- **AC-06**（オペランド抽出の網羅性は仕様表＋テストで担保）: 各ロケーション定義コマンドの**作用オペランド**
-  （宛先/source/FILE/`if=`/`of=`/mountpoint/展開先 等）を抽出して zoning する。対象は `cp`・`mv`・`rm`・`rmdir`・
-  `unlink`・`shred`・`ln`・`mkdir`・`touch`・`install`・`tee`・`sponge`・`truncate`・`sed -i`・`tar`・`unzip`・`dd`・
-  `mount`・`umount`・`chmod`・`chown`・`chgrp`・`setfacl`・`chattr`・`mknod`・`find`（破壊/書込アクション）・データ
-  送信の書込形（F-004）。**個別フラグ/形は要件本文で列挙せず、コマンド→Kind→オペランド抽出規則を単一の仕様
-  （実装内テーブル）で表し、既知コマンド×代表フラグの表駆動（プロパティ/網羅）テストで被覆を担保**する。
-  少なくとも次の難所は仕様表のエントリとしてテスト行を持つ: in-place 編集（`truncate`/`sed -i`）、`ln -s` の相対
-  target（リンク親基点で解決）、アーカイブの抽出 vs 一覧（`tar -x`/`unzip` は展開先を zoning、`tar -t`/`unzip -l` は
-  非昇格、`tar --one-top-level=DIR` を抽出先として扱う、`-C`/`-d` 省略時は `EffectiveWorkDir`）、末尾 `/` 付き削除の
-  symlink dereference、world-write/所有権付与（軸 A・F-003）、`dd` の `if=`/`of=` デバイスオペランド、データ送信の
-  書込先抽出（`curl -o`/`-O`、`wget` 既定/`-O`/`-P <dir>`、`scp host:/x <DEST>`、`sftp` バッチ書込、`rsync … <DEST>`/
-  `--delete` の対象）。
+- **AC-06**（抽出の網羅性は仕様表＋テストで担保）: 各ロケーション定義コマンドの**作用オペランド**（宛先/source/
+  FILE/`if=`/`of=`/mountpoint/展開先 等）を抽出して zoning する。対象コマンドは cp・mv・rm・rmdir・unlink・shred・
+  ln・mkdir・touch・install・tee・sponge・truncate・`sed -i`・tar・unzip・dd・mount・umount・chmod・chown・chgrp・
+  setfacl・chattr・mknod・find（破壊/書込アクション）・データ送信の書込形（F-004）。**個別フラグ/形は要件本文で
+  列挙せず、コマンド→Kind→オペランド抽出規則を単一の仕様（実装内テーブル）で表し、既知コマンド×代表フラグの
+  表駆動（プロパティ/網羅）テストで被覆を担保**する。未知/曖昧形は fail-closed（AC-05）。
+  AC-06 の**必須テスト行**（仕様表のエントリとして持つ。下表の難所は最低限）:
+
+  | 難所 | 抽出/zoning 規則 |
+  |---|---|
+  | in-place 編集 | `truncate`/`sed -i` の被編集 FILE を書込先として zoning |
+  | `ln -s` 相対 target | リンク**親**ディレクトリ基点で解決（`EffectiveWorkDir` 基点ではない） |
+  | アーカイブ 抽出 vs 一覧 | `tar -x`/`unzip`＝展開先を zoning、`tar -t`/`unzip -l`＝非昇格、`tar --one-top-level=DIR`＝抽出先、`-C`/`-d` 省略時＝`EffectiveWorkDir` |
+  | 末尾 `/` 付き削除 | symlink を dereference してターゲットを zoning |
+  | `dd` デバイス | `if=`/`of=` をデバイス種別で判定（F-003 AC-10） |
+  | 権限/所有権付与 | world-write/所有権付与は軸 A（F-003 AC-08）へ |
+  | データ送信 書込先 | `curl -o`/`-O`、`wget` 既定/`-O`/`-P <dir>`、`scp host:/x <DEST>`、`sftp` バッチ書込、`rsync … <DEST>`/`--delete`（F-004） |
+
 - **AC-06a**（仕様表と AC の連動）: **AC-08〜AC-16 で High/Medium 化と名指しされた全ての書込/削除/付与形は、
-  オペランド抽出仕様表に対応するテスト行を持つ**こと（散文 AC と仕様表のドリフト防止＝根本原因1）。未知/曖昧形は
-  fail-closed（AC-05）。
-- **AC-07**（複数オペランド）: 1 コマンドの作用オペランドが複数のときは各々を zoning し **max** を取る。（0140 AC-31 の一部）
+  オペランド抽出仕様表に対応するテスト行を持つ**こと（散文 AC と仕様表のドリフト防止＝根本原因1）。
+- **AC-07**（複数オペランド）: 1 コマンドの作用オペランドが複数のときは各々を zoning し **max** を取る（共通規則 4.0）。
+  （0140 AC-31 の一部）
 
-### F-003: 軸 A（ゾーン非依存の floor）
+### F-003: 軸 A の floor とオペランド別特則
 
-- **AC-08**（権限/所有権/属性の付与）: setuid/setgid 付与・world-write 等の権限拡大・trust-critical 対象への所有権
-  変更・完全性制御除去（`chattr -i`）は、**宛先ゾーンに依らず High**（`chmod u+s`・`chmod 0777`・`chown root
-  /usr/bin/x`・`chattr -i /etc/shadow` 等）。（0140 AC-20）
-- **AC-09**（`install` の権限フラグ）: `install` が `-m` に setuid/setgid を伴う、または `-o`/`-g` で所有者/グループを
-  変更する場合は **High**（safe-zone でも Low に降格しない）。（0140 AC-22a）
-- **AC-10**（`dd` のデバイス入出力）: `if=`/`of=` が**ブロックデバイスまたは危険キャラクタデバイス**（`/dev/mem`・
-  `/dev/kmem`・`/dev/port` 等の物理/カーネルメモリ生アクセス）のとき **High**。無害シンク（`/dev/null`・`/dev/zero`）
-  は除外。機微/trust-critical な `if=` source の複製は safe-zone 宛先でも **Medium**（情報露出 floor）。判定はパス
-  文字列でなく**デバイス種別**で行う。（0140 AC-21）
-- **AC-11**（ツリー再帰の昇格）: 再帰操作（`rm -r`/`-R`・`cp -R`/`-a` 等）が**作用対象を safe-zone の外（ordinary/
-  trust-critical）に及ぼす**場合は **High**。**信頼された safe-zone 内に閉じた再帰**（`rm -rf $WORKDIR/build`）は
-  Low のまま。複数オペランド指定自体は昇格条件にせず各々 zoning する。（0140 AC-22）
-- **AC-12**（作用する全オペランドの zoning）: 破壊/移動の全オペランドを zoning する。`mv` は宛先＋source 双方
-  （trust-critical source なら High）、`rm`/`shred`/`unlink` は全削除対象、`ln` は宛先＋source/リンク先双方、`cp` は
-  宛先で判定するが**機微/trust-critical source の複製**は safe-zone でも Low に降格しない（Medium 下限）、`-p`/`-a`
-  での特権メタデータ複製（setuid/root 所有 source）は High。（0140 AC-22b）
-- **AC-13**（`mount`/`umount`）: 対象が trust-critical のとき **High**——`mount` は mountpoint と source 双方
-  （`--bind`/`--rbind`/`--move` の trust-critical source、デバイス source を含む）、`umount` は対象 FS/ディレクトリ。
-  `umount -a` は無条件 **High**。それ以外は Medium。（0140 AC-19）
-- **AC-14**（`tee`/`sponge` の書込）: 非フラグ FILE 引数を書込先として zoning し、複数 FILE は各々 zoning して max
-  （いずれかが trust-critical なら High）。`tee` は内側コマンドを実行しない。（0140 AC-22d）
-- **AC-15**（`find` の破壊/書込アクション）: `find -delete`（ツリー破壊）・`-fprint*`（FILE 書込）を伴う場合、探索
-  起点（省略時 `EffectiveWorkDir`）/書込先 FILE を zoning する（trust-critical 起点なら High、信頼 safe-zone 起点なら
-  Low）。読取専用検索は昇格しない。`-exec`/`-execdir`/`-ok`/`-okdir` の**内側コマンド実行は間接実行 Reject**（0141/
-  既存の所掌で、本タスクの zoning 対象外）。（0140 AC-22e のうち zoning 部分）
+**(a) ゾーン非依存の floor**（safe-zone でも Low に降格しない。共通規則 4.0）:
+
+| AC | floor | 条件 → **High** | 補足 | 対応 |
+|---|---|---|---|---|
+| AC-08 | 権限/所有権/属性付与 | setuid/setgid 付与・world-write 等の権限拡大・trust-critical 所有権変更・`chattr -i`（完全性制御除去） | 例 `chmod u+s`・`chmod 0777`・`chown root /usr/bin/x`・`chattr -i /etc/shadow` | 0140 AC-20 |
+| AC-09 | `install` 権限フラグ | `-m` に setuid/setgid、または `-o`/`-g` で所有者/グループ変更 | safe-zone でも降格しない | 0140 AC-22a |
+| AC-10 | `dd` デバイス IO | `if=`/`of=` がブロックまたは危険キャラクタデバイス（`/dev/mem`・`/dev/kmem`・`/dev/port` 等の物理/カーネルメモリ生アクセス） | 無害シンク（`/dev/null`・`/dev/zero`）除外。機微/trust-critical な `if=` source は **Medium 下限**。パス文字列でなく**デバイス種別**で判定 | 0140 AC-21 |
+| AC-11 | safe-zone 外への再帰 | `rm -r`/`-R`・`cp -R`/`-a` 等が作用対象を safe-zone の外（ordinary/trust-critical）に及ぼす | 信頼 safe-zone 内に閉じた再帰（`rm -rf $WORKDIR/build`）は Low。複数オペランド指定自体は昇格条件にせず各々 zoning | 0140 AC-22 |
+
+**(b) コマンド別のオペランド特則**（どのオペランドを zoning するか。ゾーンに従うが下記の上乗せ/例外あり）:
+
+| AC | コマンド | zoning 対象 | 特則 | 対応 |
+|---|---|---|---|---|
+| AC-12 | cp/mv/rm/shred/unlink/ln | 全オペランド（mv/ln は source も） | trust-critical source の mv/ln は High。`cp` 宛先判定だが**機微/trust-critical source 複製**は safe-zone でも Medium 下限、`cp -p`/`-a` の特権メタデータ複製（setuid/root 所有 source）は High | 0140 AC-22b |
+| AC-13 | mount/umount | mountpoint＋source | trust-critical→High（`--bind`/`--rbind`/`--move` source・デバイス source 含む）、`umount -a`→無条件 High、他は Medium | 0140 AC-19 |
+| AC-14 | tee/sponge | 全 FILE 引数（非フラグ） | 複数 FILE は各々 zoning して max。内側コマンドは実行しない | 0140 AC-22d |
+| AC-15 | find（破壊/書込） | 探索起点（省略時 `EffectiveWorkDir`）/書込先 FILE | `-delete`/`-fprint*` を zoning（trust-critical 起点→High、信頼 safe-zone 起点→Low）、読取専用は非昇格、`-exec`/`-execdir`/`-ok`/`-okdir` の内側実行は**間接実行 Reject**（0141/既存。本タスク対象外） | 0140 AC-22e |
 
 ### F-004: データ送信のローカル書込 High 化と max 合成
 
