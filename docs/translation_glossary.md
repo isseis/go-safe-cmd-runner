@@ -461,7 +461,7 @@
 | Secret | secret | 機密情報・秘密情報 |
 | Self-signed certificate | self-signed certificate | 自己署名証明書 |
 | Sensitive data | sensitive data | 機密データ |
-| 機微 source | sensitive source | 内容が秘匿情報の source ファイル（読む/複製で情報露出）。例: `/etc/shadow`・SSH 秘密鍵・`.aws/credentials` 等（判定集合は `OutputCriticalPathPatterns`）。複製は safe-zone でも Medium 下限（判断軸2 の読取 source floor） |
+| 機密ファイル | sensitive file | 内容が秘匿情報のファイル（読む/複製で情報露出）。例: `/etc/shadow`・SSH 秘密鍵・`.aws/credentials` 等（判定集合は `OutputCriticalPathPatterns`）。これを source とする複製は safe-zone でも Medium 下限（判断軸2 の読取 source floor）。旧称「機微 source」 |
 | セクション | section | |
 | セキュリティ | security | |
 | セキュアデフォルト | secure default | |
