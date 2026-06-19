@@ -75,15 +75,22 @@ A calling command opts into panel mode by supplying a PERSONA that is a panel
    mandate covers them (an item may be shared only when both lenses genuinely apply).
 2. **Spawn all panel reviewers in parallel** — in a single message with multiple
    Agent tool calls — so wall-clock does not increase. Each prompt is self-contained
-   (embed FILES as absolute paths; copy that reviewer's CRITERIA subset verbatim;
+   (embed FILES as absolute paths; copy that reviewer's CRITERIA verbatim;
    state mandate + out-of-scope; require the same Severity/Location/Problem/Suggestion
-   output format).
+   output format). Two ways to give CRITERIA — the calling command picks one and is
+   consistent: (a) **pre-routed** — give each reviewer only the checklist subset its
+   mandate owns; or (b) **shared floor** — give every reviewer the full checklist and
+   have each report only the items within its mandate, deferring the rest as one-line
+   OUT-OF-LANE FLAGS. Shared floor needs no item-by-item routing and avoids coverage
+   gaps from mis-routing; pre-routing minimizes each reviewer's reading.
 3. **Synthesize before fixing.** The caller (not a subagent) merges the panel
    outputs: **dedup** overlapping findings; **reconcile** conflicting severities
    (take the higher); and **reconstruct cross-cutting issues** that sit in the seam
    between mandates (a structural choice with an operational consequence) — this
-   synthesis is panel mode's main risk to mitigate, since no single reviewer sees
-   both halves. Promote any "OUT-OF-LANE FLAG" that the owning lens confirms.
+   synthesis is panel mode's main risk to mitigate, since the parallel reviewers
+   cannot see each other's output. For each "OUT-OF-LANE FLAG", the caller checks it
+   against the counterpart reviewer's mandate and findings during this synthesis and
+   promotes it to a real finding if it holds up.
 4. **Then run the same fix / re-review loop** as the Procedure above on the merged
    findings. A verification pass may reuse panel mode or a single combined reviewer.
 
