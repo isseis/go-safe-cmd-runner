@@ -22,10 +22,12 @@
 追加する。判断軸2 は、これらコマンドの**作用先パスを解決し、安全ゾーンに分類**してリスクを判定する。ゾーンと
 レベルの対応はおおむね次のとおり（厳密な定義・パス集合は §4 F-001／AC-04）:
 
-- **trust-critical**（システム重要パス。`/usr`・`/etc`・`/boot` 等、書込でシステム/信頼境界を侵すパス）→ **High**
-- **ordinary**（通常パス。`/srv`・`/opt` 等、trust-critical でも safe-zone でもないパス）→ **Medium**
-- **safe-zone**（run 専用の作業/出力ディレクトリ・専用 temp。run が所有する安全領域）→ **Low**
-- **解決不能（unresolved）**（パスを確定できない/曖昧）→ **fail-closed floor**（書込/削除=High・読取=Medium）
+| ゾーン | 説明（代表パス） | レベル |
+|---|---|---|
+| **trust-critical** | システム重要パス（`/usr`・`/etc`・`/boot` 等、書込でシステム/信頼境界を侵すパス） | **High** |
+| **ordinary** | 通常パス（`/srv`・`/opt` 等、trust-critical でも safe-zone でもないパス） | **Medium** |
+| **safe-zone** | run 専用の作業/出力ディレクトリ・専用 temp（run が所有する安全領域） | **Low** |
+| **解決不能（unresolved）** | パスを確定できない/曖昧 | **fail-closed floor**（書込/削除=High・読取=Medium） |
 
 最終リスクは判断軸1（0141, コマンド名分類）と **max 合成**する。
 
