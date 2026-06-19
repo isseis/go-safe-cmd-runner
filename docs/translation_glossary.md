@@ -451,6 +451,7 @@
 | 正規化済み解析結果 | normalized analysis result | 保存前に整形・選別された解析結果 |
 | 正規化済み特徴量 | normalized feature | runner 向けに整形された特徴量 |
 | 関心の分離 | separation of concerns | 設計パターンの文脈 |
+| 唯一の判定基準 | single authority | ファイル操作コマンドのリスクを判断軸2 の結果だけで決め、既存の High 判定群を置き換える方式（0142 F-005）。直訳「単一権威」は使わない |
 | 符号拡張 | sign extension | 上位ビットを符号ビットで埋める操作 |
 | スライス（Fatバイナリの） | slice (Fat binary) | Fat バイナリの各アーキテクチャ断面 |
 | スタックトレース | stack trace | |
