@@ -13,7 +13,7 @@
 > 本書は 0140 を 3 分割した第 2 タスク（**軸2＝宛先ゾーン分類**）の要件である。分割方針・根本原因の訂正は
 > [0140/00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md)、原典の確定要件・根拠は
 > [0140/01_requirements.md](../0140_risk_level_classification_review/01_requirements.md)（superseded）を参照する。
-> **名前固定階級・ラッパ/特権（軸1）は 0141**、**監査フィールドの logger 出力・変更ノート・文書は 0143**。
+> **コマンド名分類・ラッパ/特権（軸1）は 0141**、**監査フィールドの logger 出力・変更ノート・文書は 0143**。
 
 ## 1. 背景と目的
 
@@ -34,7 +34,7 @@ fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（
   ゾーン非依存 floor（F-003）、データ送信のローカル書込 High 化と max 合成（F-004）、単一権威ゾーン経路による
   既存の High 判定の置き換え（F-005）、結線・DTO・identity 注入（F-006）、決定性（F-007）。
 - **Out**:
-  - **名前固定階級（軸1 High/Medium）・Critical 尖鋭化・env/timeout・ラッパ/特権・データ送信の名前→Medium floor**
+  - **コマンド名分類（軸1 High/Medium）・Critical 尖鋭化・env/timeout・ラッパ/特権・データ送信の名前→Medium floor**
     → 0141。`find -exec`/`-execdir`/`-ok`/`-okdir`・`ssh -o ProxyCommand`・`rsync -e` 等の**内側コマンド実行
     （間接実行 Reject）**も 0141/既存（本タスクは `find -delete`/`-fprint*` の**宛先 zoning** のみ）。
   - **オペランド毎の監査フィールドの logger 出力・変更ノート（changelog）・文書整合・sample config 追従・ガイド** → 0143
@@ -184,7 +184,7 @@ fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（
   - **観測可能プロパティ（テスト対象）**: 信頼 safe-zone の `rm -rf $WORKDIR/build` は **Low**（④ rank6 や②coreutils の
     固定 High で打ち消されない）。ordinary の `rm /srv/app/cache.dat` は **Medium**。未知フラグで宛先が不確実な `rm` は
     **High**（①〜⑤を残す）。（0140 AC-22c を単一権威方式へ訂正）
-- **AC-18**（max 合成）: 最終リスクは適用 dimension の **max**。軸1（名前固定）と軸2（宛先ゾーン）の双方が適用される
+- **AC-18**（max 合成）: 最終リスクは適用 dimension の **max**。軸1（コマンド名分類）と軸2（宛先ゾーン）の双方が適用される
   コマンドはその最大値（例 `cp -a … /usr/bin`＝High）。順序非依存。（0140 AC-31）
 
 ### F-006: 結線・DTO・identity 注入（根本原因4）
@@ -229,7 +229,7 @@ fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（
 
 ## 6. スコープ外の根拠
 
-- **名前固定階級・ラッパ/特権は 0141**: 名前で決まる固定レベル、Critical 尖鋭化、env/timeout、間接実行
+- **コマンド名分類・ラッパ/特権は 0141**: コマンド名で決まるレベル、Critical 尖鋭化、env/timeout、間接実行
   （`find -exec`/ProxyCommand/`rsync -e`）は argv の宛先解析を伴わず 0141 の所掌（D5 の線引き）。
 - **logger 出力・文書・config 追従は 0143**: 監査フィールドの実際の JSON 出力、変更ノート、ユーザー/開発者文書、
   sample config の `risk_level` 追従は横断成果物として 0143 に集約する。

@@ -57,6 +57,7 @@
 |--------|---------|------|
 | 能力 | capability | |
 | コードパス | code path | 実行経路の文脈 |
+| コマンド名分類 | command-name classification | 軸1。コマンド名だけでリスクレベルが決まる（引数を見ない）分類。軸2＝宛先ゾーン分類と対。旧称「名前固定階級」は使わない |
 | コンパイル単位 | compilation unit | ELFバイナリの文脈 |
 | 定数 | constant | プログラムの定数値 |
 | 制御フロー | control flow | |
