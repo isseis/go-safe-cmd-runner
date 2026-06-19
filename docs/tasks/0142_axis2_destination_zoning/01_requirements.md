@@ -59,8 +59,9 @@
 - **新分類は直接適用する**（後方互換不要。フラグ/shadow なし）。
 - **結線をフェーズ内に含める**（根本原因4）: 判断軸2 を `risk/evaluator.go` の `evaluateDimensions` へ結線し、`security.Config`
   （`SystemCriticalPaths`・信頼ディレクトリ許可リスト）を評価器へ通すコンストラクタ/`runner.go`/TOML ローダ改修を
-  本タスクに含める。完了基準は触れる統合パッケージ（`internal/runner`・`internal/runner/config`）も**コンパイルする
-  範囲**（`./internal/runner/...` または `make test`）。
+  本タスクに含める。**完了の判定基準（ビルド／テストを通す対象範囲）には、`risk` パッケージ単体だけでなく、本タスクが
+  変更する統合パッケージ（`internal/runner`・`internal/runner/config`）までコンパイルが通ることを含める**（具体的には
+  `./internal/runner/...` のビルド、または `make test` 全体が成功すること）。
 - **0141 が再編する共有コードの上に直列で構築する**: `evaluator.go` の `evaluateDimensions`（判断軸のディスパッチ）・`command_analysis.go` の名前集合は
   0141 が再編済みである前提で、その上に判断軸2 を追加する（この両タスクが共に触る共有コード＝0140/00 §実装順序の「共有境界」）。
 - **English ソース**: Go の識別子・コメント・文字列リテラルは英語（テストソース含む）。
@@ -260,8 +261,8 @@
 
 - **NF-001**: 本タスクが追加した `ReasonCode`（例: 信頼境界書込・権限付与・ゾーン由来）は、**本タスク内で**網羅性/
   一意性テストを緑に保つ（family 区別の最終化は 0143）。（0140 NF-001）
-- **NF-002**: `make test`・`make lint`・`make fmt` が成功する。完了基準は統合パッケージ（`internal/runner`・
-  `internal/runner/config`）をコンパイルする範囲とする。（0140 NF-002）
+- **NF-002**: `make test`・`make lint`・`make fmt` が成功する。完了の判定基準には、`risk` パッケージ単体だけでなく、
+  本タスクが変更する統合パッケージ（`internal/runner`・`internal/runner/config`）までコンパイルが通ることを含める。（0140 NF-002）
 - **NF-003**: 判定は決定的で副作用がなく、safe-zone 判定のパス解決は読取のみ（AC-22）。（0140 NF-003）
 
 ## 6. スコープ外の根拠
