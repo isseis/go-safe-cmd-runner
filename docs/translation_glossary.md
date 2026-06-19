@@ -19,7 +19,7 @@
 | 〜に加えて | in addition to 〜 | |
 | アーキテクチャ設計書 | architecture design | |
 | 監査ログ | audit logging | セキュリティ監査の文脈 |
-| 判断軸 | axis | リスク判定の観点（判断軸1=コマンド名分類、判断軸2=宛先ゾーン分類）。旧称「軸」。コードの評価要素 `evaluateDimensions`（dimension）とは別概念で、要件文書では英語 dimension を用いず「判断軸／判定」と書く |
+| 判断軸 | axis | リスク判定の観点（判断軸1=コマンド名分類、判断軸2=宛先パス信頼区分）。旧称「軸」。コードの評価要素 `evaluateDimensions`（dimension）とは別概念で、要件文書では英語 dimension を用いず「判断軸／判定」と書く |
 | アクセス | access | |
 | 値 | value | |
 | 曖昧さ | ambiguity | |
@@ -58,7 +58,7 @@
 |--------|---------|------|
 | 能力 | capability | |
 | コードパス | code path | 実行経路の文脈 |
-| コマンド名分類 | command-name classification | 軸1。コマンド名だけでリスクレベルが決まる（引数を見ない）分類。軸2＝宛先ゾーン分類と対。旧称「名前固定階級」は使わない |
+| コマンド名分類 | command-name classification | 軸1。コマンド名だけでリスクレベルが決まる（引数を見ない）分類。軸2＝宛先パス信頼区分と対。旧称「名前固定階級」は使わない |
 | コンパイル単位 | compilation unit | ELFバイナリの文脈 |
 | 定数 | constant | プログラムの定数値 |
 | 制御フロー | control flow | |
@@ -183,7 +183,7 @@
 | フィードバック | feedback | |
 | ファイル | file | |
 | ファイルパス | file path | |
-| ファイル操作コマンド | file-operation command | ファイル/ディレクトリを書込/上書/削除/リンク/展開/マウント/権限変更するコマンド（cp/rm/dd/tar/mount/chmod 等。read 専用は除く）。軸2 のゾーン判定の対象。旧称「ロケーション定義コマンド」は使わない |
+| ファイル操作コマンド | file-operation command | ファイル/ディレクトリを書込/上書/削除/リンク/展開/マウント/権限変更するコマンド（cp/rm/dd/tar/mount/chmod 等。read 専用は除く）。軸2 のパス信頼区分の判定の対象。旧称「ロケーション定義コマンド」は使わない |
 | フィールド | field | |
 | フィールド名 | field name | |
 | 初めて | first-time | |
@@ -334,7 +334,7 @@
 | 操作 | operation | |
 | 操作固有の下限 | operation-intrinsic floor | 判断軸2 の内部区分。コマンドが何を付与/実行するか（setuid 付与・デバイス IO・safe-zone 外再帰・機密ファイル複製 等）に内在し、宛先ゾーンに依らず効く下限。safe-zone でも Low に降格しない（0142 F-003）。原典 0140/01 の「軸 A」に相当。トップレベルの判断軸1/判断軸2 と紛れるため「判断軸 A」とは呼ばない |
 | オペランド | operand | コマンド引数（宛先/source/FILE 等）。判断軸2 のゾーニングの作用対象 |
-| ordinary | ordinary | 通常パス（`/srv`・`/opt` 等、trust-critical でも safe-zone でもないパス）。判断軸2 で Medium。リスクゾーンの一つ |
+| ordinary | ordinary | 通常パス（`/srv`・`/opt` 等、trust-critical でも safe-zone でもないパス）。判断軸2 で Medium。パス信頼区分の値の一つ |
 | オプション | optional | |
 | オプトイン | opt-in | risk_level = "high" を明示設定して許可する文脈 |
 | 最適化 | optimize / optimization | |
@@ -354,6 +354,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 前駆ノード | predecessor node | CFGにおける先行ノード |
+| パス信頼区分 | path trust category | 判断軸2 が、ファイルパスをその位置の信頼/安全度で分類した区分。値は trust-critical（High）/ordinary（Medium）/safe-zone（Low）/解決不能（unresolved, fail-closed 下限）。旧称・単独の「ゾーン」は一般的すぎるため使わない（値名 safe-zone/trust-critical/ordinary は英語のまま） |
 | パッケージ | package | |
 | パラメータ | parameter | |
 | パラメータ値 | parameter value | Template parameter value |
@@ -448,7 +449,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 安全 | safe | |
-| safe-zone | safe-zone | run 専用の作業/出力ディレクトリ・専用 temp（run が所有する安全領域）。判断軸2 で Low（信頼要件 AC-04 充足時。`$HOME`・共有 `/tmp` は含めない）。リスクゾーンの一つ |
+| safe-zone | safe-zone | run 専用の作業/出力ディレクトリ・専用 temp（run が所有する安全領域）。判断軸2 で Low（信頼要件 AC-04 充足時。`$HOME`・共有 `/tmp` は含めない）。パス信頼区分の値の一つ |
 | 正規化済み解析結果 | normalized analysis result | 保存前に整形・選別された解析結果 |
 | 正規化済み特徴量 | normalized feature | runner 向けに整形された特徴量 |
 | 関心の分離 | separation of concerns | 設計パターンの文脈 |
@@ -515,7 +516,7 @@
 |--------|---------|------|
 | テンプレート | template | コマンドテンプレート機能の文脈 |
 | トランポリン | trampoline | 1命令で別アドレスに分岐するスタブ |
-| trust-critical | trust-critical | システム重要パス（`/usr`・`/etc`・`/boot` 等、書込でシステム/信頼境界を侵すパス。`Config.SystemCriticalPaths`）。判断軸2 で High。リスクゾーンの一つ |
+| trust-critical | trust-critical | システム重要パス（`/usr`・`/etc`・`/boot` 等、書込でシステム/信頼境界を侵すパス。`Config.SystemCriticalPaths`）。判断軸2 で High。パス信頼区分の値の一つ |
 | テンプレート展開 | template expansion | コマンド定義への置換処理 |
 | テンプレートパラメータ | template parameter | `${...}` 形式の参照 |
 | タグ | tag | TOMLタグの文脈 |
@@ -606,7 +607,7 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
-| ゾーン分類 | zone classification / zoning | 判断軸2。作用先パスを解決し安全ゾーン（trust-critical/ordinary/safe-zone）に分類してリスクを判定する処理。動詞「ゾーン分類する」も使う。旧称・英語表記 `zoning` は要件文書では使わない（コード識別子・ディレクトリ名 `axis2_destination_zoning` は除く） |
+| パス信頼区分の判定 | zone classification / zoning | 判断軸2。作用先パスを解決しパス信頼区分（trust-critical/ordinary/safe-zone）に分類してリスクを判定する処理。動詞「パス信頼区分を判定する」も使う。旧称「ゾーン分類」・英語表記 `zoning` は要件文書では使わない（コード識別子・ディレクトリ名 `axis2_destination_zoning` は除く） |
 
 ---
 
