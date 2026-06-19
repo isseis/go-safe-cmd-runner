@@ -17,9 +17,11 @@
 
 ## 1. 背景と目的
 
-ロケーション定義コマンド（ファイルを書込/上書/削除/リンク/展開/touch するもの）の脅威は**宛先パスの関数**で
-決まる。本タスクは宛先を**ゾーン分類**（trust-critical→High / ordinary→Medium / safe-zone→Low / 解決不能→
-fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（軸2）を追加する。
+本タスクは**ファイル操作コマンド**——ファイル/ディレクトリを書込・上書・削除・リンク・展開・マウント・権限変更
+するコマンド（`cp`/`rm`/`dd`/`tar`/`mount`/`chmod` 等。read 専用は対象外）——を対象に、新 dimension（軸2）を
+追加する。軸2 は、これらコマンドの**作用先パスを解決してゾーン分類**（trust-critical→High / ordinary→Medium /
+safe-zone→Low / 解決不能→fail-closed floor）し、リスクを判定する。最終リスクは軸1（0141, コマンド名分類）と
+**max 合成**する。
 
 本タスクは [0140/00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md) §3 の
 **3 つの根本原因の訂正**を担う中核である:
@@ -30,7 +32,7 @@ fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（
 
 ## 2. スコープ
 
-- **In**: ロケーション定義コマンドの宛先ゾーン分類（F-001）、作用オペランド抽出と網羅テスト（F-002）、軸 A の
+- **In**: ファイル操作コマンドの宛先ゾーン分類（F-001）、作用オペランド抽出と網羅テスト（F-002）、軸 A の
   ゾーン非依存 floor（F-003）、データ送信のローカル書込 High 化と max 合成（F-004）、単一権威ゾーン経路による
   既存の High 判定の置き換え（F-005）、結線・DTO・identity 注入（F-006）、決定性（F-007）。
 - **Out**:
@@ -65,9 +67,8 @@ fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（
 - **全オペランド × max**: 1 コマンドの**全作用オペランド**を zoning して max を取り（AC-07）、さらに**軸1 とも max
   合成**する（AC-18）。
 - **fail-closed 既定**: 解決/抽出が不確実なら `ZoneUnresolved`（書込/削除→**High**・読取主体→**Medium**。AC-05）。
-- **単一権威**: ロケーション定義コマンド（`rm`・`cp`・`dd` 等、宛先でレベルが決まるコマンド）は**軸2 を唯一の判定者**
-  とする。軸2 がコマンドを**完全に解釈できたときだけ**、これらを High に分類している**既存の5つの判定**を軸2 の
-  結果で置き換える（AC-17）。
+- **単一権威**: ファイル操作コマンド（`rm`・`cp`・`dd` 等）は**軸2 を唯一の判定者**とする。軸2 がコマンドを
+  **完全に解釈できたときだけ**、これらを High に分類している**既存の5つの判定**を軸2 の結果で置き換える（AC-17）。
 - **floor は降格不可**: 軸 A の floor（権限付与・デバイス・safe-zone 外再帰・機微 source）は **safe-zone でも Low に
   降格しない**（F-003）。
 
@@ -109,7 +110,7 @@ fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（
 
 ### F-002: 作用オペランドの抽出と網羅テスト（根本原因1）
 
-- **AC-06**（抽出の網羅性は仕様表＋テストで担保）: 各ロケーション定義コマンドの**作用オペランド**（宛先/source/
+- **AC-06**（抽出の網羅性は仕様表＋テストで担保）: 各ファイル操作コマンドの**作用オペランド**（宛先/source/
   FILE/`if=`/`of=`/mountpoint/展開先 等）を抽出して zoning する。対象コマンドは cp・mv・rm・rmdir・unlink・shred・
   ln・mkdir・touch・install・tee・sponge・truncate・`sed -i`・tar・unzip・dd・mount・umount・chmod・chown・chgrp・
   setfacl・chattr・mknod・find（破壊/書込アクション）・データ送信の書込形（F-004）。**個別フラグ/形は要件本文で
@@ -169,7 +170,7 @@ fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（
 > **用語**: ここでの「既存の High 判定」とは、これらのコマンドを現在 High に分類しているコード上の判定経路を指す
 > （最終リスクは全判定の **max** で決まるため、引き下げにはこれらすべてを無力化する必要がある）。下記①〜⑤。
 
-- **AC-17**（軸2 が既存の High 判定を置き換える）: ロケーション定義コマンドは、軸2 の結果を**唯一の判定者**とする。
+- **AC-17**（軸2 が既存の High 判定を置き換える）: ファイル操作コマンドは、軸2 の結果を**唯一の判定者**とする。
   当該コマンドを High に分類している**既存の判定 5 系統**——①`IsDestructiveFileOperation`、②`CoreutilsCommandRisk` の
   破壊系 High、③profile `DestructionRisk`、④`dangerousCommandPatterns`(rank6) の `rm -rf`/`dd if=` 等のコマンド
   エントリ、⑤coreutils の setuid/setgid lstat floor——を**評価対象から外し**、`LocationResult` を唯一の寄与とする。
@@ -179,7 +180,7 @@ fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（
   未知の値取りフラグ）のときは `ZoneUnresolved` とし、①〜⑤の High を残す**（「一部のオペランドを認識した」だけで
   ①〜⑤を外すと、軸2 が理解できない危険な形が benign ゾーン→net Low となり素通りする＝fail-open。AC-05/AC-07 の
   「全オペランド max・未解決→High」が置き換え後も floor として残る）。⑤の setuid floor は再パースせず既存 lstat
-  シグナルを軸 A が流用する。**ロケーション定義でないコマンド**（`find -exec` の内側実行・軸2 が扱わない未知の
+  シグナルを軸 A が流用する。**ファイル操作コマンド以外のコマンド**（`find -exec` の内側実行・軸2 が扱わない未知の
   コマンド等）は従来どおり既存判定/間接実行が担う（同名でも非ロケーション用途では④を無効化しない）。
   - **観測可能プロパティ（テスト対象）**: 信頼 safe-zone の `rm -rf $WORKDIR/build` は **Low**（④ rank6 や②coreutils の
     固定 High で打ち消されない）。ordinary の `rm /srv/app/cache.dat` は **Medium**。未知フラグで宛先が不確実な `rm` は

@@ -180,6 +180,7 @@
 | フィードバック | feedback | |
 | ファイル | file | |
 | ファイルパス | file path | |
+| ファイル操作コマンド | file-operation command | ファイル/ディレクトリを書込/上書/削除/リンク/展開/マウント/権限変更するコマンド（cp/rm/dd/tar/mount/chmod 等。read 専用は除く）。軸2 のゾーン判定の対象。旧称「ロケーション定義コマンド」は使わない |
 | フィールド | field | |
 | フィールド名 | field name | |
 | 初めて | first-time | |
