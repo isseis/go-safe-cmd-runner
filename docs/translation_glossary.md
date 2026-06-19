@@ -450,6 +450,7 @@
 | スコープ | scope | 変数スコープの文脈 |
 | スクリプト | script | |
 | 検索 | search | |
+| 切替点 | seam | ロールアウトの enforce 挙動をモード値で切り替える注入点（feature-flag の接合点。Michael Feathers の seam＝その場所を書き換えずに振る舞いを差し替えられる点）。文脈により switch point。広義の共有コード境界は shared boundary（共有境界）と区別 |
 | Secret | secret | 機密情報・秘密情報 |
 | Self-signed certificate | self-signed certificate | 自己署名証明書 |
 | Sensitive data | sensitive data | 機密データ |
@@ -459,6 +460,7 @@
 | 分離 | separation | |
 | シリアライズ | serialize / serialization | |
 | セットアップ | setup | |
+| 共有境界 | shared boundary | 複数タスク/モジュールが共に触る共有コード境界（広義の seam）。狭義の切替点（seam）と区別 |
 | シェル | shell | |
 | サイレントに | silently | |
 | シンプルさ | simplicity | |

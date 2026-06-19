@@ -47,12 +47,12 @@ max 合成される。
 
 ## 3. 横断制約（0140/00_decomposition.md §3 を継承）
 
-- **ロールアウト seam は本タスクが用意する（根本原因3／依存逆転の解消）**: 本タスクが**最小 seam**
+- **ロールアウト切替点は本タスクが用意する（根本原因3／依存逆転の解消）**: 本タスクが**最小の切替点**
   `RolloutMode ∈ {off, shadow, enforce}`（既定 `off`、constructor 注入）を導入し（[00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md) §3.2(1)）、
-  本タスクの全 enforce 引き上げ（軸1 High 化・env/timeout High・特権/ラッパ拡張）は**この seam 越しにのみ**
+  本タスクの全 enforce 引き上げ（軸1 High 化・env/timeout High・特権/ラッパ拡張）は**この切替点経由でのみ**
   enforce へ反映する。旧 enforce 経路を保持し in-place 破壊置換をしない。テストは `off`（旧 baseline 不変）／
-  `enforce`（新挙動）の両モードを持つ。**seam を TOML へ結線したデプロイ可能設定・`shadow` の差分ログは 0143**
-  が所有する（本タスクは seam の導入と自タスク変更の seam 越し反映までを担保し、後続タスクの成果物に依存しない）。
+  `enforce`（新挙動）の両モードを持つ。**切替点を TOML へ結線したデプロイ可能設定・`shadow` の差分ログは 0143**
+  が所有する（本タスクは切替点の導入と自タスク変更の切替点経由の反映までを担保し、後続タスクの成果物に依存しない）。
 - **結線をフェーズ内に含める（根本原因4）**: 名前集合の追加に加え、判定が実際に `EvaluateRisk` の固定レベルへ
   反映されるよう、評価器（`risk/evaluator.go`）・間接実行（`security/indirect_execution.go`）・特権 profile への
   結線を本タスクのスコープに含める。完了基準は触れる統合パッケージをコンパイルする範囲（`./internal/runner/...`
@@ -144,12 +144,12 @@ max 合成される。
   redundant 由来の追加 floor を課さないが、抽出可能ラッパ内側の flat High floor は維持。`env` 経由の loader 制御
   変数（`LD_PRELOAD` 等）は従来どおり forbidden-env-var で拒否。（0140 AC-29a）
 
-### F-009: ロールアウト seam の導入（根本原因3／依存逆転の解消）
+### F-009: ロールアウト切替点の導入（根本原因3／依存逆転の解消）
 
-- **AC-24**: 本タスクが**ロールアウト seam** `RolloutMode ∈ {off, shadow, enforce}`（既定 `off`、constructor 注入、
+- **AC-24**: 本タスクが**ロールアウト切替点** `RolloutMode ∈ {off, shadow, enforce}`（既定 `off`、constructor 注入、
   配置は `risktypes` または評価器結線層）を導入する。本タスクの全 enforce 引き上げ（AC-01〜AC-23 の High 化・
-  env/timeout・特権/ラッパ拡張）は**この seam 越しにのみ** enforce へ反映し、`off` では旧 baseline が不変である
-  こと、`enforce` で新挙動になることを**両モードでテスト**する。seam の TOML デプロイ面・`shadow` 差分ログは 0143。
+  env/timeout・特権/ラッパ拡張）は**この切替点経由でのみ** enforce へ反映し、`off` では旧 baseline が不変である
+  こと、`enforce` で新挙動になることを**両モードでテスト**する。切替点の TOML デプロイ面・`shadow` 差分ログは 0143。
   （新規。[00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md) §3.2(1)）
 
 ## 5. 非機能要件
