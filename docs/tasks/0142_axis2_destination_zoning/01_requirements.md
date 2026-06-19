@@ -165,6 +165,14 @@
 | AC-14 | tee/sponge | 全 FILE 引数（非フラグ） | 複数 FILE は各々 zoning して max。内側コマンドは実行しない | 0140 AC-22d |
 | AC-15 | find（破壊/書込） | 探索起点（省略時 `EffectiveWorkDir`）/書込先 FILE | `-delete`/`-fprint*` を zoning（trust-critical 起点→High、信頼 safe-zone 起点→Low）、読取専用は非昇格、`-exec`/`-execdir`/`-ok`/`-okdir` の内側実行は**間接実行 Reject**（0141/既存。本タスク対象外） | 0140 AC-22e |
 
+> **用語「機微 source」**: 内容が秘匿情報の source ファイル（読む/複製すると**情報が露出**するもの）。安全ゾーンへ
+> コピーしても内容（秘密）が漏れるため、**機微/trust-critical な source の複製は safe-zone でも Medium 下限**にする
+> （AC-12/AC-10。これが「読取 source」の floor）。判定集合は既存の `OutputCriticalPathPatterns`
+> （[file_validation.go](../../../internal/runner/base/security/file_validation.go)）を流用し、例として:
+> 認証 DB（`/etc/shadow`・`/etc/sudoers`）、SSH/鍵（`id_rsa`・`id_ed25519`・`.ssh/`・`private_key`）、資格情報
+> （`.aws/credentials`・`.kube/config`・`.gnupg/`・`.docker/config.json`）、keystore/ウォレット（`wallet.dat`・`keystore`）等。
+> 完全な read 系分類は将来課題（§6）。
+
 ### F-004: データ送信のローカル書込 High 化と max 合成
 
 - **AC-16**（ローカル trust-critical 書込）: データ送信系の**ファイル書込/削除形**がローカルの trust-critical パスへ
