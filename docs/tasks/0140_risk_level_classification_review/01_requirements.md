@@ -1,5 +1,9 @@
 # コマンド名ベース リスクレベル分類の一貫化 — 要件定義書
 
+> **【Superseded / 履歴】** 本書は 0141/0142/0143 へ**分割・継承**された（PR #765 のレビューを受けた
+> root-cause 対処。詳細は [00_decomposition.md](00_decomposition.md)）。確定要件は各後続タスクの
+> `01_requirements.md` を正とする。本書は経緯保存のため内容・承認状態を改変せず残す。
+
 ## Document Status
 
 | Item | Value |
