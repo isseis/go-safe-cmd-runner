@@ -461,7 +461,7 @@
 | Secret | secret | 機密情報・秘密情報 |
 | Self-signed certificate | self-signed certificate | 自己署名証明書 |
 | Sensitive data | sensitive data | 機密データ |
-| 機密ファイル | sensitive file | 内容が秘匿情報のファイル（読む/複製で情報露出）。例: `/etc/shadow`・SSH 秘密鍵・`.aws/credentials` 等（判定集合は `OutputCriticalPathPatterns`）。これを source とする複製は safe-zone でも Medium 下限（判断軸2 の読取 source floor）。旧称「機微 source」 |
+| 機密ファイル | sensitive file | 内容が秘匿情報のファイル（読む/複製で情報露出）。例: `/etc/shadow`・SSH 秘密鍵・`.aws/credentials` 等（判定集合は `OutputCriticalPathPatterns`）。これをコピー元とする複製は safe-zone でも Medium 下限（判断軸2 の読み取り元の下限）。旧称「機微 source」 |
 | セクション | section | |
 | セキュリティ | security | |
 | セキュアデフォルト | secure default | |
@@ -483,6 +483,7 @@
 | Webhook URL | webhook URL | |
 | スライス | slice | Go言語のスライス型 |
 | ソース | source | データソースの文脈 |
+| 読み取り元 | source (operand) | ファイル操作コマンドが複製/参照のために読む入力（`cp` のコピー元・`dd` の `if=` 等）。判断軸2 の情報露出 floor の対象。文脈により コピー元/移動元/リンク元/マウント元 |
 | スペル | spelling | |
 | 具体的 | specific | |
 | 仕様 | specification | |

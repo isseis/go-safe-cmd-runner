@@ -27,7 +27,7 @@
 | **trust-critical** | システム重要パス（`/usr`・`/etc`・`/boot` 等、書込でシステム/信頼境界を侵すパス） | **High** |
 | **ordinary** | 通常パス（`/srv`・`/opt` 等、trust-critical でも safe-zone でもないパス） | **Medium** |
 | **safe-zone** | run 専用の作業/出力ディレクトリ・専用 temp（run が所有する安全領域） | **Low** |
-| **解決不能（unresolved）** | パスを確定できない/曖昧 | **fail-closed 下限**（書込/削除先=High・読取 source〔`cp` source・`dd` `if=`〕=Medium） |
+| **解決不能（unresolved）** | パスを確定できない/曖昧 | **fail-closed 下限**（書込/削除先=High・読み取り元〔`cp` のコピー元・`dd` `if=`〕=Medium） |
 
 最終リスクは判断軸1（0141, コマンド名分類）と **max 合成**する。
 
@@ -74,11 +74,11 @@
   絶対パスで行う。文字列 prefix（`common.IsPathWithinDirectory` 単独）での判定は**非適合**。
 - **全オペランド × max**: 1 コマンドの**全作用オペランド**を zoning して max を取り（AC-07）、さらに**判断軸1 とも max
   合成**する（AC-18）。
-- **fail-closed 既定**: 解決/抽出が不確実なら `ZoneUnresolved`（書込/削除先→**High**・読取 source〔`cp` source・`dd` `if=` 等〕→**Medium**。AC-05）。
+- **fail-closed 既定**: 解決/抽出が不確実なら `ZoneUnresolved`（書込/削除先→**High**・読み取り元〔`cp` のコピー元・`dd` `if=` 等〕→**Medium**。AC-05）。
 - **単一権威**: ファイル操作コマンド（`rm`・`cp`・`dd` 等）は**判断軸2 を唯一の判定者**とする。判断軸2 がコマンドを
   **完全に解釈できたときだけ**、これらを High に分類している**既存の5つの判定**を判断軸2 の結果で置き換える（AC-17）。
-- **下限は降格不可**: 判断軸 A の下限（権限付与・デバイス・safe-zone 外再帰・**機密ファイル**＝秘匿内容の source
-  ファイル〔`/etc/shadow`・SSH 鍵 等。複製＝情報露出。定義は F-003〕）は **safe-zone でも Low に降格しない**（F-003）。
+- **下限は降格不可**: 判断軸 A の下限（権限付与・デバイス・safe-zone 外再帰・**機密ファイル**＝秘匿内容のファイル
+  〔`/etc/shadow`・SSH 鍵 等。コピー＝情報露出。定義は F-003〕）は **safe-zone でも Low に降格しない**（F-003）。
 
 ### F-001: ゾーン分類モデル
 
@@ -90,7 +90,7 @@
 | AC-02 | ordinary | trust-critical でも safe-zone でもない通常パス | **Medium** | 0140 AC-15 |
 | AC-03 | safe-zone（Trusted 充足） | safe-zone 内かつ AC-04 充足 | **Low** | 0140 AC-16 |
 | AC-03 | safe-zone（Trusted 不成立） | safe-zone だが AC-04 不成立 | **Medium**（フォールバック） | 0140 AC-16 |
-| AC-05 | unresolved | 解決/抽出不能・曖昧（未確定変数展開・未知フラグ・上限超過 等） | 書込/削除先=**High**・読取 source〔`cp` source・`dd` `if=`〕=**Medium** | 0140 AC-18 |
+| AC-05 | unresolved | 解決/抽出不能・曖昧（未確定変数展開・未知フラグ・上限超過 等） | 書込/削除先=**High**・読み取り元〔`cp` のコピー元・`dd` `if=`〕=**Medium** | 0140 AC-18 |
 
 各 AC の確定事項:
 - **AC-01**: trust-critical 集合は `(*Config).GetSystemCriticalPaths()`
@@ -99,11 +99,11 @@
   （deployment 拡張可。AC-20）。`/usr` 配下（`/usr/local/bin` 等）を含む。**`/` は完全一致のみ**（`/srv`・`/opt` 等は ordinary）。
 - **AC-02**: 例 `/srv`・`/opt` 配下。**`/var`・`/var/log` は trust-critical なので ordinary の例・テストフィクスチャに
   使わない**。
-- **AC-05**: ここで「**読取 source**」とは、ファイル操作コマンドが**複製元として読むパス**（`cp` の source、`dd` の
-  `if=` 等）を指す。コマンド自体は mutating（書込/削除）だが、source は読み取られるため**情報露出**リスクを持つ
+- **AC-05**: ここで「**読み取り元**」とは、ファイル操作コマンドが**複製/参照のために読むパス**（`cp` のコピー元、`dd` の
+  `if=` 等）を指す。コマンド自体は mutating（書込/削除）だが、それを読み取るため**情報露出**リスクを持つ
   （`cp /etc/shadow $WORKDIR/x` 等）——read **専用**コマンド（`cat` 等。本タスク対象外）とは別概念。「不明フラグ＝
-  安全」とは仮定しない。**未解決の読取 source を High でなく Medium とするのは意図的な非対称**（書込/削除の最悪＝破壊、
-  読取 source の最悪＝情報露出という脅威差。完全な read モデルは将来課題＝§6）。02 で根拠を保持し「うっかり緩和」を
+  安全」とは仮定しない。**未解決の読み取り元を High でなく Medium とするのは意図的な非対称**（書込/削除の最悪＝破壊、
+  読み取り元の最悪＝情報露出という脅威差。完全な read モデルは将来課題＝§6）。02 で根拠を保持し「うっかり緩和」を
   防ぐ。（0140 AC-18 を Kind 依存 High まで強化）
 
 - **AC-04**（safe-zone の定義と解決, 安全要件。0140 AC-17）: safe-zone 判定は次をすべて満たす。
@@ -122,7 +122,7 @@
 
 ### F-002: 作用オペランドの抽出と網羅テスト（根本原因1）
 
-- **AC-06**（抽出の網羅性は仕様表＋テストで担保）: 各ファイル操作コマンドの**作用オペランド**（宛先/source/
+- **AC-06**（抽出の網羅性は仕様表＋テストで担保）: 各ファイル操作コマンドの**作用オペランド**（宛先/読み取り元/
   FILE/`if=`/`of=`/mountpoint/展開先 等）を抽出して zoning する。対象コマンドは cp・mv・rm・rmdir・unlink・shred・
   ln・mkdir・touch・install・tee・sponge・truncate・`sed -i`・tar・unzip・dd・mount・umount・chmod・chown・chgrp・
   setfacl・chattr・mknod・find（破壊/書込アクション）・データ送信の書込形（F-004）。**個別フラグ/形は要件本文で
@@ -153,21 +153,21 @@
 |---|---|---|---|---|
 | AC-08 | 権限/所有権/属性付与 | setuid/setgid 付与・world-write 等の権限拡大・trust-critical 所有権変更・`chattr -i`（完全性制御除去） | 例 `chmod u+s`・`chmod 0777`・`chown root /usr/bin/x`・`chattr -i /etc/shadow` | 0140 AC-20 |
 | AC-09 | `install` 権限フラグ | `-m` に setuid/setgid、または `-o`/`-g` で所有者/グループ変更 | safe-zone でも降格しない | 0140 AC-22a |
-| AC-10 | `dd` デバイス IO | `if=`/`of=` がブロックまたは危険キャラクタデバイス（`/dev/mem`・`/dev/kmem`・`/dev/port` 等の物理/カーネルメモリ生アクセス） | 無害シンク（`/dev/null`・`/dev/zero`）除外。機密ファイル/trust-critical な `if=` source は **Medium 下限**。パス文字列でなく**デバイス種別**で判定 | 0140 AC-21 |
+| AC-10 | `dd` デバイス IO | `if=`/`of=` がブロックまたは危険キャラクタデバイス（`/dev/mem`・`/dev/kmem`・`/dev/port` 等の物理/カーネルメモリ生アクセス） | 無害シンク（`/dev/null`・`/dev/zero`）除外。機密ファイル/trust-critical な `if=`（読み取り元） は **Medium 下限**。パス文字列でなく**デバイス種別**で判定 | 0140 AC-21 |
 | AC-11 | safe-zone 外への再帰 | `rm -r`/`-R`・`cp -R`/`-a` 等が作用対象を safe-zone の外（ordinary/trust-critical）に及ぼす | 信頼 safe-zone 内に閉じた再帰（`rm -rf $WORKDIR/build`）は Low。複数オペランド指定自体は昇格条件にせず各々 zoning | 0140 AC-22 |
 
 **(b) コマンド別のオペランド特則**（どのオペランドを zoning するか。ゾーンに従うが下記の上乗せ/例外あり）:
 
 | AC | コマンド | zoning 対象 | 特則 | 対応 |
 |---|---|---|---|---|
-| AC-12 | cp/mv/rm/shred/unlink/ln | 全オペランド（mv/ln は source も） | trust-critical source の mv/ln は High。`cp` 宛先判定だが**機密ファイル/trust-critical source 複製**は safe-zone でも Medium 下限、`cp -p`/`-a` の特権メタデータ複製（setuid/root 所有 source）は High | 0140 AC-22b |
-| AC-13 | mount/umount | mountpoint＋source | trust-critical→High（`--bind`/`--rbind`/`--move` source・デバイス source 含む）、`umount -a`→無条件 High、他は Medium | 0140 AC-19 |
+| AC-12 | cp/mv/rm/shred/unlink/ln | 全オペランド（mv は移動元・ln はリンク元も） | trust-critical な移動元/リンク元の mv/ln は High。`cp` は宛先判定だが**機密ファイル/trust-critical なコピー元の複製**は safe-zone でも Medium 下限、`cp -p`/`-a` の特権メタデータ複製（setuid/root 所有のコピー元）は High | 0140 AC-22b |
+| AC-13 | mount/umount | mountpoint＋マウント元 | trust-critical→High（`--bind`/`--rbind`/`--move` のマウント元・デバイス含む）、`umount -a`→無条件 High、他は Medium | 0140 AC-19 |
 | AC-14 | tee/sponge | 全 FILE 引数（非フラグ） | 複数 FILE は各々 zoning して max。内側コマンドは実行しない | 0140 AC-22d |
 | AC-15 | find（破壊/書込） | 探索起点（省略時 `EffectiveWorkDir`）/書込先 FILE | `-delete`/`-fprint*` を zoning（trust-critical 起点→High、信頼 safe-zone 起点→Low）、読取専用は非昇格、`-exec`/`-execdir`/`-ok`/`-okdir` の内側実行は**間接実行 Reject**（0141/既存。本タスク対象外） | 0140 AC-22e |
 
-> **用語「機密ファイル」**: 内容が秘匿情報の source ファイル（読む/複製すると**情報が露出**するもの）。安全ゾーンへ
-> コピーしても内容（秘密）が漏れるため、**機密ファイル/trust-critical な source の複製は safe-zone でも Medium 下限**にする
-> （AC-12/AC-10。これが「読取 source」の floor）。判定集合は既存の `OutputCriticalPathPatterns`
+> **用語「機密ファイル」**: 内容が秘匿情報のファイル（読む/複製すると**情報が露出**するもの）。安全ゾーンへ
+> コピーしても内容（秘密）が漏れるため、**機密ファイル/trust-critical なコピー元の複製は safe-zone でも Medium 下限**にする
+> （AC-12/AC-10。これが「読み取り元」の floor）。判定集合は既存の `OutputCriticalPathPatterns`
 > （[file_validation.go](../../../internal/runner/base/security/file_validation.go)）を流用し、例として:
 > 認証 DB（`/etc/shadow`・`/etc/sudoers`）、SSH/鍵（`id_rsa`・`id_ed25519`・`.ssh/`・`private_key`）、資格情報
 > （`.aws/credentials`・`.kube/config`・`.gnupg/`・`.docker/config.json`）、keystore/ウォレット（`wallet.dat`・`keystore`）等。
