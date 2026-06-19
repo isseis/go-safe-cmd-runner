@@ -37,7 +37,7 @@ fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（
   - **名前固定階級（軸1 High/Medium）・Critical 尖鋭化・env/timeout・ラッパ/特権・データ送信の名前→Medium floor**
     → 0141。`find -exec`/`-execdir`/`-ok`/`-okdir`・`ssh -o ProxyCommand`・`rsync -e` 等の**内側コマンド実行
     （間接実行 Reject）**も 0141/既存（本タスクは `find -delete`/`-fprint*` の**宛先 zoning** のみ）。
-  - **per-operand 監査フィールドの logger 出力・変更ノート（changelog）・文書整合・sample config 追従・ガイド** → 0143
+  - **オペランド毎の監査フィールドの logger 出力・変更ノート（changelog）・文書整合・sample config 追従・ガイド** → 0143
     （本タスクは DTO 定義と `RiskAssessment` への格納まで）。
   - `RiskLevel` の段数/意味づけ変更（新レベル追加しない）。
   - **後方互換不要のため段階ロールアウト/フラグは設けない**（新分類は直接適用。0140/00 §3.2）。
@@ -102,7 +102,7 @@ fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（
   - (b) 起点は **`RuntimeCommand.EffectiveWorkDir` と構成済み専用 temp** に限定。曖昧な `$HOME`・共有 `/tmp`・出力先の
     親ディレクトリは**含めない**。
   - (c) safe-zone が trust-critical と重複/配下のときは trust-critical（High）を優先する。
-  - (d) **TOCTOU 耐性（per-operand Trusted）**: Low 降格は、解決後の各オペランドパスが**信頼ディレクトリ許可リスト
+  - (d) **TOCTOU 耐性（オペランド毎のTrusted）**: Low 降格は、解決後の各オペランドパスが**信頼ディレクトリ許可リスト
     配下**かつ**経路要素が run-as から書込不可**（run-as 以外所有・group/other 非書込）のときに限る。満たせなければ
     降格しない（fail-closed）。参照 identity は live euid でなく config の run-as 値（AC-21）。leaf が既存 symlink なら
     最終ターゲットで zoning。
@@ -189,7 +189,7 @@ fail-closed floor）し、軸1（0141）と **max 合成**する新 dimension（
 
 ### F-006: 結線・DTO・identity 注入（根本原因4）
 
-- **AC-19**（per-operand 監査 DTO の配置と内容検証）: per-operand 判定記録 DTO（`OperandZone`/`PathZone` 相当: Index/
+- **AC-19**（オペランド毎の監査 DTO の配置と内容検証）: オペランド毎の判定記録 DTO（`OperandZone`/`PathZone` 相当: Index/
   Raw/Resolved/Zone/MatchedCritical/Trusted/UnresolvedErr）を **`risktypes` に定義**し、`RiskAssessment` に格納する
   （`security → risktypes` の一方向依存を維持。`security` に置くと循環）。**logger への JSON 出力は 0143**。本タスクは
   `RiskAssessment` への格納までを担保するが、**presence だけでなく格納値の正しさを検証する**: 代表コマンド（例

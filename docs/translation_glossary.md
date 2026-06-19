@@ -326,6 +326,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 操作 | operation | |
+| オペランド | operand | コマンド引数（宛先/source/FILE 等）。軸2 ゾーニングの作用対象 |
 | オプション | optional | |
 | オプトイン | opt-in | risk_level = "high" を明示設定して許可する文脈 |
 | 最適化 | optimize / optimization | |
@@ -356,6 +357,7 @@
 | Pattern | pattern | パターン |
 | Payload | payload | ペイロード |
 | パフォーマンス | performance | |
+| オペランド毎 | per-operand | オペランド（コマンド引数）ごと。Trusted 判定・監査記録・DTO の文脈。英語表記 per-operand を混在させない |
 | プレースホルダー | placeholder | Template parameter syntax like ${...} |
 | プレースホルダー構文 | placeholder syntax | |
 | ポリシー拒否 | policy deny | リスクゲートによる拒否（検証不能による拒否と区別） |
