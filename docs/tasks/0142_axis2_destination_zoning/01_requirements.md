@@ -27,7 +27,7 @@
 | **trust-critical** | システム重要パス（`/usr`・`/etc`・`/boot` 等、書込でシステム/信頼境界を侵すパス） | **High** |
 | **ordinary** | 通常パス（`/srv`・`/opt` 等、trust-critical でも safe-zone でもないパス） | **Medium** |
 | **safe-zone** | run 専用の作業/出力ディレクトリ・専用 temp（run が所有する安全領域） | **Low** |
-| **解決不能（unresolved）** | パスを確定できない/曖昧 | **fail-closed floor**（書込/削除=High・読取=Medium） |
+| **解決不能（unresolved）** | パスを確定できない/曖昧 | **fail-closed 下限**（書込/削除=High・読取=Medium） |
 
 最終リスクは判断軸1（0141, コマンド名分類）と **max 合成**する。
 
@@ -41,10 +41,10 @@
 ## 2. スコープ
 
 - **In**: ファイル操作コマンドの宛先ゾーン分類（F-001）、作用オペランド抽出と網羅テスト（F-002）、判断軸 A の
-  ゾーン非依存 floor（F-003）、データ送信のローカル書込 High 化と max 合成（F-004）、単一権威ゾーン経路による
+  ゾーン非依存の下限（F-003）、データ送信のローカル書込 High 化と max 合成（F-004）、単一権威ゾーン経路による
   既存の High 判定の置き換え（F-005）、結線・DTO・identity 注入（F-006）、決定性（F-007）。
 - **Out**:
-  - **コマンド名分類（判断軸1 High/Medium）・Critical 尖鋭化・env/timeout・ラッパ/特権・データ送信の名前→Medium floor**
+  - **コマンド名分類（判断軸1 High/Medium）・Critical 尖鋭化・env/timeout・ラッパ/特権・データ送信の名前→Medium 下限**
     → 0141。`find -exec`/`-execdir`/`-ok`/`-okdir`・`ssh -o ProxyCommand`・`rsync -e` 等の**内側コマンド実行
     （間接実行 Reject）**も 0141/既存（本タスクは `find -delete`/`-fprint*` の**宛先 zoning** のみ）。
   - **オペランド毎の監査フィールドの logger 出力・変更ノート（changelog）・文書整合・sample config 追従・ガイド** → 0143
@@ -77,7 +77,7 @@
 - **fail-closed 既定**: 解決/抽出が不確実なら `ZoneUnresolved`（書込/削除→**High**・読取主体→**Medium**。AC-05）。
 - **単一権威**: ファイル操作コマンド（`rm`・`cp`・`dd` 等）は**判断軸2 を唯一の判定者**とする。判断軸2 がコマンドを
   **完全に解釈できたときだけ**、これらを High に分類している**既存の5つの判定**を判断軸2 の結果で置き換える（AC-17）。
-- **floor は降格不可**: 判断軸 A の floor（権限付与・デバイス・safe-zone 外再帰・機微 source）は **safe-zone でも Low に
+- **下限は降格不可**: 判断軸 A の下限（権限付与・デバイス・safe-zone 外再帰・機微 source）は **safe-zone でも Low に
   降格しない**（F-003）。
 
 ### F-001: ゾーン分類モデル
@@ -141,11 +141,11 @@
 - **AC-07**（複数オペランド）: 1 コマンドの作用オペランドが複数のときは各々を zoning し **max** を取る（共通規則 4.0）。
   （0140 AC-31 の一部）
 
-### F-003: 判断軸 A の floor とオペランド別特則
+### F-003: 判断軸 A の下限とオペランド別特則
 
-**(a) ゾーン非依存の floor**（safe-zone でも Low に降格しない。共通規則 4.0）:
+**(a) ゾーン非依存の下限**（safe-zone でも Low に降格しない。共通規則 4.0）:
 
-| AC | floor | 条件 → **High** | 補足 | 対応 |
+| AC | 下限 | 条件 → **High** | 補足 | 対応 |
 |---|---|---|---|---|
 | AC-08 | 権限/所有権/属性付与 | setuid/setgid 付与・world-write 等の権限拡大・trust-critical 所有権変更・`chattr -i`（完全性制御除去） | 例 `chmod u+s`・`chmod 0777`・`chown root /usr/bin/x`・`chattr -i /etc/shadow` | 0140 AC-20 |
 | AC-09 | `install` 権限フラグ | `-m` に setuid/setgid、または `-o`/`-g` で所有者/グループ変更 | safe-zone でも降格しない | 0140 AC-22a |
@@ -169,9 +169,9 @@
   `--delete`）。最終リスクは **`max(データ送信の名前→Medium〔0141〕, 書込先ゾーン)`**。**同一コマンドが 0141 と
   0142 の両方で評価されるため、この max 合成の所有者・テストは 0142**。書込先抽出は F-002 の仕様表に含める。
   **合成の必須テスト（両寄与が同時に生きていることを検証）**: (i) safe-zone 宛先への書込（`curl <url> -o $WORKDIR/safe`）は
-  **Medium**（書込先ゾーンが Low でも 0141 の名前 floor が効く）、(ii) trust-critical 宛先（`curl -o /usr/bin/x`）は
-  **High**（書込先ゾーンが名前 floor を上回る）。**前提**: 本テストは 0141 の名前→Medium floor が評価器に結線済み
-  であること（共有境界）を要し、未結線では (i) が phantom floor で誤って通るため、結線後に意味を持つ。（0140 AC-25 の書込先部分）
+  **Medium**（書込先ゾーンが Low でも 0141 の名前下限が効く）、(ii) trust-critical 宛先（`curl -o /usr/bin/x`）は
+  **High**（書込先ゾーンが名前下限を上回る）。**前提**: 本テストは 0141 の名前→Medium 下限が評価器に結線済み
+  であること（共有境界）を要し、未結線では (i) が 見かけの下限で誤って通るため、結線後に意味を持つ。（0140 AC-25 の書込先部分）
 
 ### F-005: 判断軸2 を唯一の判定者とし、既存の High 判定を置き換える（根本原因2）
 
@@ -181,13 +181,13 @@
 - **AC-17**（判断軸2 が既存の High 判定を置き換える）: ファイル操作コマンドは、判断軸2 の結果を**唯一の判定者**とする。
   当該コマンドを High に分類している**既存の判定 5 系統**——①`IsDestructiveFileOperation`、②`CoreutilsCommandRisk` の
   破壊系 High、③profile `DestructionRisk`、④`dangerousCommandPatterns`(rank6) の `rm -rf`/`dd if=` 等のコマンド
-  エントリ、⑤coreutils の setuid/setgid lstat floor——を**評価対象から外し**、`LocationResult` を唯一の寄与とする。
+  エントリ、⑤coreutils の setuid/setgid lstat 下限——を**評価対象から外し**、`LocationResult` を唯一の寄与とする。
   **置き換えは「完全認識（complete positive recognition）」のときのみ**: (a) 抽出された**全オペランド**が非 `Unknown`
   の確定ゾーンを返し、かつ (b) オペランド抽出器が**argv を完全消費**した（非フラグの未消費トークンが無く、パスを
   運び得る未知の値取りフラグが無い）こと。**部分的/不確実なパース（一部オペランド未認識・未消費トークン残存・
   未知の値取りフラグ）のときは `ZoneUnresolved` とし、①〜⑤の High を残す**（「一部のオペランドを認識した」だけで
   ①〜⑤を外すと、判断軸2 が理解できない危険な形が benign ゾーン→net Low となり素通りする＝fail-open。AC-05/AC-07 の
-  「全オペランド max・未解決→High」が置き換え後も floor として残る）。⑤の setuid floor は再パースせず既存 lstat
+  「全オペランド max・未解決→High」が置き換え後も下限として残る）。⑤の setuid 下限は再パースせず既存 lstat
   シグナルを判断軸 A が流用する。**ファイル操作コマンド以外のコマンド**（`find -exec` の内側実行・判断軸2 が扱わない未知の
   コマンド等）は従来どおり既存判定/間接実行が担う（同名でも非ロケーション用途では④を無効化しない）。
   - **観測可能プロパティ（テスト対象）**: 信頼 safe-zone の `rm -rf $WORKDIR/build` は **Low**（④ rank6 や②coreutils の
@@ -244,5 +244,5 @@
   sample config の `risk_level` 追従は横断成果物として 0143 に集約する。
 - **段階ロールアウト/フラグは無し**: 後方互換不要のため（0140/00 §3.2）。
 - **`RiskLevel` 段数/新レベル**: 変更しない（0140 §6 を継承）。
-- **完全な情報漏えい（read）モデル**: 機微 source の floor は導入するが、完全な read 系分類は将来課題
+- **完全な情報漏えい（read）モデル**: 機微 source の下限は導入するが、完全な read 系分類は将来課題
   （0140/02 §9 を継承）。

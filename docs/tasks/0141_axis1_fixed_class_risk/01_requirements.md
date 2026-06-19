@@ -93,8 +93,8 @@ max 合成される。
 
 - **AC-13**: LVM 作成/設定系 `lvcreate`・`vgcreate`・`lvextend`・`vgchange`・`lvchange` → **Medium**。（0140 AC-11）
 - **AC-14**: `ip`・`ifconfig`・`route` → **Medium**（名前のみ・粗粒度）。ただし `ip netns exec <NAME> <cmd>`・
-  `ip vrf exec <NAME> <cmd>` は内側 `<cmd>` の**間接実行**として扱い、最終リスク = **内側 `<cmd>` の評価値を下限
-  High で floor**（例: `ip netns exec ns rm -rf /` → 内側評価かつ最低 High、`ip netns exec ns modprobe x` → High）。
+  `ip vrf exec <NAME> <cmd>` は内側 `<cmd>` の**間接実行**として扱い、最終リスク = **内側 `<cmd>` の評価値を
+  High 以上に引き上げる（下限 High）**（例: `ip netns exec ns rm -rf /` → 内側評価かつ最低 High、`ip netns exec ns modprobe x` → High）。
   内側を抽出できない形は Reject。（0140 AC-12）
 - **AC-15**: `mount`/`umount` の**既定**は **Medium**を維持する（対象 trust-critical の引き上げは 0142）。（0140 AC-13）
 
@@ -135,13 +135,13 @@ max 合成される。
 - **AC-22**: ラッパー/間接実行経由の判定: `env modprobe x` → **High**、`sudo useradd u` → **Critical**。
   名前空間/ルート変更ラッパ `chroot`・`unshare`・`nsenter`、コマンド文字列ラッパ `flock`・`watch` も間接実行
   ファミリに**追加**し（現状 `wrapperSpecs` に未登録＝新規配線）、内側コマンドをゲートして外側で素通りさせない:
-  最終リスク = 内側評価値を**下限 High で floor**（`flock f cmd`・`watch cmd`・`unshare -r <cmd>`・`nsenter -t 1 <cmd>`）。
+  最終リスク = 内側評価値を**High 以上に引き上げる（下限 High）**（`flock f cmd`・`watch cmd`・`unshare -r <cmd>`・`nsenter -t 1 <cmd>`）。
   **COMMAND を省略した形**（`chroot /mnt`・`unshare`・`nsenter -t 1 -m`）は暗黙シェル起動とみなし内側未指定でも
   **High 以上**（`unshare -r`・`nsenter -t 1` 等の特権/名前空間エスケープ形を素通りさせない）。（0140 AC-29）
 - **AC-23**: 安全な TOML 代替がある実行ラッパ `env`（→ `env_vars`/`env_import`）・`timeout`（→ `timeout`）は
   直接呼び出しを **High** に分類する（benign 形も含む）。内側は間接実行で引き続きゲート（`env dpkg -i`→High、
   `sudo env …`→Critical）。**Critical にはしない**。代替の無いラッパ（`nice`/`ionice`/`stdbuf`/`setsid`）には
-  redundant 由来の追加 floor を課さないが、抽出可能ラッパ内側の flat High floor は維持。`env` 経由の loader 制御
+  redundant 由来の追加の下限を課さないが、抽出可能ラッパ内側の一律 High 下限は維持。`env` 経由の loader 制御
   変数（`LD_PRELOAD` 等）は従来どおり forbidden-env-var で拒否。（0140 AC-29a）
 
 ## 5. 非機能要件
