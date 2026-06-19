@@ -104,8 +104,7 @@
   （[security/types.go](../../../internal/runner/base/security/types.go)）を正とし、既定は `/`・`/bin`・`/sbin`・`/usr`・
   `/usr/bin`・`/usr/sbin`・`/etc`・`/var`・`/var/log`・`/boot`・`/sys`・`/proc`・`/dev`・`/lib`・`/lib64`・`/root`
   （deployment 拡張可。AC-20）。`/usr` 配下（`/usr/local/bin` 等）を含む。**`/` は完全一致のみ**（`/srv`・`/opt` 等は ordinary）。
-- **AC-02**: 例 `/srv`・`/opt` 配下。**`/var`・`/var/log` は trust-critical なので ordinary の例・テストフィクスチャに
-  使わない**。
+- **AC-02**: 例 `/srv`・`/opt` 配下。※`/var`・`/var/log` は trust-critical なので ordinary の例・テストフィクスチャには使わない。
 - **AC-05**: ここで「**読み取り元**」とは、ファイル操作コマンドが**複製/参照のために読むパス**（`cp` のコピー元、`dd` の
   `if=` 等）を指す。コマンド自体は書込/削除を行うが、それを読み取るため**情報露出**リスクを持つ
   （`cp /etc/shadow $WORKDIR/x` 等）——read **専用**コマンド（`cat` 等。本タスク対象外）とは別概念。「不明フラグ＝
