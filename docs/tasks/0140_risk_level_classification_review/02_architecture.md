@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-06-19 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-09-19 |
+| Reviewer | isseis |
 | Comments | - |
 
 > 本書は [01_requirements.md](01_requirements.md)（`approved`）の受け入れ基準を実装可能な設計へ落とす。
