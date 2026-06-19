@@ -475,7 +475,7 @@
 | 分離 | separation | |
 | シリアライズ | serialize / serialization | |
 | セットアップ | setup | |
-| 共有境界 | shared boundary | 複数タスク/モジュールが共に触る共有コード境界（広義の seam）。狭義の切替点（seam）と区別 |
+| 共有コード | shared code | 複数タスク/モジュールが共に触るコード（0140 では `evaluateDimensions`〔判断軸の振り分け〕と名前集合）。旧称「共有境界」は使わない。標準用語「信頼境界（trust boundary）」とは別概念 |
 | シェル | shell | |
 | サイレントに | silently | |
 | シンプルさ | simplicity | |
