@@ -163,8 +163,12 @@
   `{[]string{"format"}, High, "Disk formatting"}` **の物理削除は切替後 cleanup（§10）に予約**（shadow 期間は重複の
   まま：同一 High なので enforce 差は生じない）。引数パターン行 `{"dd","if="}`/`{"chmod","777"}`/`{"rm","-rf"}`/
   `{"sudo","rm"}`/`{"chown","root"}`/network 系は**そのまま残す**。
-- [ ] `SystemModificationRisk` を新集合で照合するよう更新（互換シグネチャ維持）。family を返す兄弟
-  `SystemModificationFamily(names) (level, family, ok)` を追加（02 §3.2、family 別理由コード用。P5 で結線）。
+- [ ] 新分類は**別関数として追加**し、`SystemModificationRisk`（旧 enforce 経路が直接呼ぶ）は shadow 期間中
+  **改変しない**（02 §6.4 の「旧経路を保持し新経路を並走」を満たすため。in-place で `SystemModificationRisk` を
+  書き換えると `fdisk`/`crontab` 等が即時 High enforce され旧 baseline が失われ shadow 差分が取れない）。family を
+  返す新分類器 `SystemModificationFamily(names) (level, family, ok)` を新集合で実装し、**新 enforce 経路（P5a の
+  feature flag で選択）からのみ参照**する。`SystemModificationRisk` を新分類器に委譲する切替は、enforce を新へ
+  切替えた後の cleanup（§10）で行う（family 別理由コードは P5 で新経路に結線）。
 - [ ] 影響テスト更新: `command_analysis_test.go::TestSystemModificationRisk`（表 L1125-1135）で **Medium→High に
   反転する全行**の期待値を変更する: `fdisk`/`parted`/`mkfs`/`fsck`（L1127-1130）・`crontab`/`at`/`batch`
   （L1131-1133）・`chkconfig`/`update-rc.d`（L1134-1135）。`mount`/`umount`（L1125-1126）は Medium 維持。
@@ -186,11 +190,14 @@
 
 **対象**: 新規 `security/path_resolve.go`・`security/safezone.go`、`security/types.go`（小）。
 
-- [ ] `path_resolve.go`: `ResolveOperandPath(operand, workDir string) (resolved string, err error)`（02 §3.5
-  シグネチャ）。相対は `workDir` 基点。未存在 leaf は存在する最深の親まで symlink 解決し残り末尾を `..`/`.`
-  畳み込みで合成。型付きセンチネル（深さ超過/到達不能/未確定）を返す。read-only。
-- [ ] `path_resolve.go`: leaf-symlink 追従は**操作別**（write 系=ターゲット解決、delete 系=追従しない。02 §3.5）。
-  追従可否は呼び出し側 Kind から指定するパラメータで切替える。
+- [ ] `path_resolve.go`: `ResolveOperandPath(operand, workDir string, leafDeref LeafDerefMode) (resolved string,
+  err error)`。02 §3.5 の高レベルシグネチャ（2 引数）を、leaf-symlink 追従方針を**明示パラメータ**で受ける形に
+  具体化する（同一 link を write は dereference・delete は非 dereference する操作別挙動を、隠れたグローバル状態
+  ではなく引数で表す。`LeafDerefMode` ∈ {`DerefFollow`（write 系）, `DerefKeepLink`（delete 系）}）。相対は
+  `workDir` 基点。未存在 leaf は存在する最深の親まで symlink 解決し残り末尾を `..`/`.` 畳み込みで合成。型付き
+  センチネル（深さ超過/到達不能/未確定）を返す。read-only。
+- [ ] leaf-symlink 追従は**操作別**（write 系=`DerefFollow`でターゲット解決、delete 系=`DerefKeepLink`で非追従。
+  02 §3.5）。呼び出し側（各 `LocationKind`）が `LeafDerefMode` を指定する。
 - [ ] `safezone.go`: `SafeZone{Roots, TrustedRoots}` 型と `ResolveSafeZone(cmd *RuntimeCommand, cfg *Config)
   SafeZone`（02 §3.4）。Roots=`EffectiveWorkDir`＋専用 temp（`$HOME`・`OutputFile` 親は**含めない**）。
 - [ ] `safezone.go`: per-operand `Trusted` 判定（02 §3.4 条件(1)〜(3)）。参照 identity は config の run-as 値
@@ -234,9 +241,14 @@
     critical 判定**より先**に評価、機微/trust-critical `if=`→Medium floor（AC-21）。
   - [ ] KindMount（mount/umount）: mountpoint＋source 双方、`umount -a`→無条件 High（AC-19）。
   - [ ] KindPermission（chmod/chown/chgrp/setfacl/chattr）: 権限拡大/setuid/`chattr -i`/trust-critical→High（AC-20）。
-  - [ ] KindArchive（tar/unzip）: `-C`/`-d` 展開先（省略時 `EffectiveWorkDir`）、脱出メンバ/特権メタデータ復元→fail-safe High（AC-22e 注記）。
+  - [ ] KindArchive（tar/unzip）: **抽出モードを判定してから** zoning する。`tar -x`/`--extract`・`unzip`（既定抽出）
+    のみ展開先（`-C`/`-d`、省略時 `EffectiveWorkDir`）を書込先として zoning する。**読取専用モード（`tar -t`/`--list`・
+    `tar -tf`・`unzip -l`/`-v`）は昇格しない**（`/etc` 配下の `tar -tf a.tar` を High にしない）。抽出時の脱出メンバ/
+    特権メタデータ復元→fail-safe High（AC-22e 注記）。抽出/一覧の判別不能時は fail-closed（書込とみなす）。
   - [ ] KindFlagWriter（curl -o/-O・wget -O/-P/既定・iptables-save -f・rsync DEST/--delete）: 書込先 zoning、明示先無しは
-    `EffectiveWorkDir` 配下の URL 由来名、解析不能は fail-closed High（AC-08/AC-25）。
+    `EffectiveWorkDir` 配下の URL 由来名、解析不能は fail-closed High（AC-08/AC-25）。**`rsync --delete`（および
+    `--delete-before`/`--delete-after`）は破壊操作のため①抑止から除外**——下記「①抑止の除外」を参照（AC-33 は
+    `rm`/`rmdir`/`shred`/`unlink`/`dd` のみ引き下げを認め、`rsync --delete` の引き下げは認めない）。
   - [ ] KindMknod（mknod）: 無条件 High（AC-16 注記）。
   - [ ] `find` の破壊/書込アクション: 探索起点（省略時 `EffectiveWorkDir`）を zoning、`-delete`=ツリー破壊、
     `-fprint*`=FILE zoning、読取専用は非昇格（AC-22e）。
@@ -251,9 +263,15 @@
   （`EffectiveWorkDir`）＋`Config`（`SystemCriticalPaths`・`ResolveSafeZone`）から組立て、`applies` のとき
   `LocationResult.Level` を `addDimension` で max 合成し、`Operands` を監査へ運ぶ（P5）。
 - [ ] **②③①抑止の結線**（02 §3.8, AC-22c）。ロケーション定義 applet かつ軸2 `applies=true` のとき:
-  - [ ] ①`IsDestructiveFileOperation`→High を `ZoneOrdinary`/`ZoneSafe` で寄与させない。
+  - [ ] ①`IsDestructiveFileOperation`→High を `ZoneOrdinary`/`ZoneSafe` で寄与させない。**①抑止の除外**:
+    `rsync --delete`/`--delete-before`/`--delete-after`（`IsDestructiveFileOperation` が拾う rsync 削除モード）は
+    抑止しない——AC-33 の引き下げ対象外であり、宛先が ordinary/safe でも破壊 High を維持する（抑止は write-dest
+    zoning にのみ適用し、削除モードの destructive-High は残す）。`find -delete`/`find -exec` も同様に arg 軸で維持。
   - [ ] ②`CoreutilsCommandRisk`→High を `ZoneOrdinary`/`ZoneSafe` で寄与させない（`coreutils.go` 改修。
-    非ロケーション/未知 applet の fail-safe 分類は撤去しない）。
+    非ロケーション/未知 applet の fail-safe 分類は撤去しない）。**ただし `CoreutilsCommandRisk` が subcommand 分類
+    より前に返す setuid/setgid ビット由来の High は抑止対象外（軸 A の権限付与＝非抑止 floor）**: setuid/setgid の
+    付いた coreutils ハードリンク（例 setuid 付き `rm`）の safe-zone `rm $WORKDIR/x` を Low に降格させない。抑止は
+    宛先ゾーン由来の destructive-High に限定し、setuid floor は残す。
   - [ ] ③profile `DestructionRisk`→High（rm/dd）を `ZoneOrdinary`/`ZoneSafe` で寄与させない
     （`applyProfileFactors`/`ProfileFactorRisk` 経路）。
   - [ ] `ZoneUnresolved`/解決失敗のみ①〜③の High net を残す（唯一の fail-open 箇所のみ冗長 High）。
@@ -263,16 +281,21 @@
 **新規テスト**（`location_zoning_test.go`）:
 - [ ] `TestLocationDefinedRisk_Zones`: trust-critical→High（`cp evil /usr/bin/ls`・`mv x /etc/passwd`・
   `ln -sf x /usr/bin/python`・`install -m755 x /usr/sbin/y`, AC-14）／ordinary→Medium（`rm /srv/app/cache.dat`・
-  `cp a /opt/data/b`, AC-15）／safe-zone→Low（workdir 配下 cp/mv/rm/mkdir, AC-16）。
+  `cp a /opt/data/b`, AC-15）／safe-zone→Low（AC-16）。**safe-zone Low ケースは「信頼された」起点でのみ成立する**
+  （02 §3.4/§5.2: run-as 書込可な一般 workdir は Trusted にならず Medium に倒れる）。よって Low フィクスチャは
+  **admin 所有・run-as 書込不可の `TrustedRoots` 配下**を注入 seam のモックで再現する。加えて**負例**として
+  「run-as 書込可な workdir（既定の `t.TempDir` 相当）の `rm $WORKDIR/x`→**Medium**（Low に降格しない）」を
+  必ず含める（AC-17(d) の TOCTOU フォールバック）。
 - [ ] `TestLocationDefinedRisk_FailSafe`: Kind-floor 分岐を**1 行/分岐の表**で網羅（AC-18, 02 §3.5）。最低限:
   書込/削除系（KindWriteCopy/WriteMove/WriteInstall/FlagWriter/DeleteTarget/Device `of=`）の未解決→**High**、
   読取主体（cp source・`dd if=`）の未解決→**Medium**（Low でも High でもない境界を明示）、未知の値取りフラグ
   （`-t <unknownconsumed>` 等で書込先を消費・特定不能）→`ZoneUnresolved`→**High**。
 - [ ] `TestLocationDefinedRisk_LeafSymlinkDeref`: write-deref vs delete-非追従の**分類結果**を表明（02 §3.4(3)/§3.5,
   AC-17/AC-22b）。`cp safe $WORKDIR/link`（link→`/etc/passwd`）→**High**（ターゲット解決）、`rm $WORKDIR/link`
-  （同 link）→**Low**（safe-zone の link 削除＝非追従）、解決不能ターゲット→`ZoneUnresolved`→**High**。
+  （同 link、**信頼された** safe-zone）→**Low**（safe-zone の link 削除＝非追従）、解決不能ターゲット→
+  `ZoneUnresolved`→**High**。
 - [ ] `TestLocationDefinedRisk_Recursion`: safe-zone 外再帰→High（`rm -rf /etc/x`・`cp -a tree /opt/x`）、
-  safe-zone 内再帰→Low（`rm -rf $WORKDIR/build`）（AC-22）。
+  **信頼された** safe-zone 内再帰→Low（`rm -rf $WORKDIR/build`）（AC-22。Low は Trusted 成立時のみ）。
 - [ ] `TestLocationDefinedRisk_PermissionGrant`: `install -o root -m4755 …`・`cp -a /usr/bin/sudo $WORKDIR/sudo`・
   `chmod u+s`・`chattr -i /etc/shadow`→High（AC-20, AC-22a, AC-22b）。
 - [ ] `TestLocationDefinedRisk_AllOperands`: `mv /etc/passwd $WORKDIR/passwd`・`ln /etc/passwd $WORKDIR/passwd`・
@@ -285,17 +308,26 @@
   `find /etc -delete`→High・`find $WORKDIR -delete`→Low・`find -delete`（起点省略）→workdir 基点・
   `find /etc -name '*.conf'`（読取専用）→非昇格（AC-22e）。
 - [ ] `TestLocationDefinedRisk_Mknod`: `mknod`→無条件 High（AC-16 注記）。
+- [ ] `TestLocationDefinedRisk_Archive`: 抽出モード判定を表明。`tar xf a.tar -C /etc`（trust-critical 展開先）→High、
+  `tar xf a.tar`（`-C` 省略、`EffectiveWorkDir=/etc`）→High、**`tar -tf a.tar`（一覧、`EffectiveWorkDir=/etc`）→
+  非昇格**、`unzip a.zip -d /etc`→High、**`unzip -l a.zip`（一覧）→非昇格**（AC-22e 注記/§3.3 KindArchive）。
 - [ ] `TestLocationDefinedRisk_FlagWriter`: `curl -o /usr/bin/x`・`wget -O /etc/cron.d/x`・`iptables-save -f /etc/x`→High、
-  safe-zone 宛先→Low（AC-08/AC-25）。
+  safe-zone 宛先→Low（AC-08/AC-25）。**暗黙の書込先**も網羅: `curl -O <url>`（`--remote-name`＝URL 由来名を cwd へ）と
+  `wget <url>`（既定＝URL 由来名を cwd へ）/`wget -P <dir>` を `EffectiveWorkDir=/etc` で評価し trust-critical→**High**
+  （Medium ネットワーク次元に留めない, AC-25）。**`rsync --delete … <ordinary/safe DEST>`→High を維持**（①抑止の
+  除外。AC-33 の引き下げ対象でないことを表明）。
 - [ ] **3 系統抑止ゲート（evaluator レベルの専用テスト）** `evaluator_test.go::TestEvaluateRisk_ZoneSuppressionGate`:
   `EvaluateRisk` 経由（①②③と軸2 が `addDimension` で合成される層）で表明する。`coreutils_consistency_test.go`（②単独）
   では①③の漏れを検出できないため**置き換えない**。ケース:
-  - (i) safe-zone `rm $WORKDIR/x`→**Low**（①②③抑止）。
+  - (i) **信頼された** safe-zone（admin 所有・run-as 書込不可。モック注入）の `rm $WORKDIR/x`→**Low**（①②③抑止）。
+    対の負例として run-as 書込可な workdir の同操作→**Medium**（Trusted 不成立フォールバック）。
   - (ii) ordinary `rm /srv/app/cache.dat`→**Medium**（①②③抑止）。
   - (iii) `ZoneUnresolved` な rm/dd（未知フラグ/解決失敗の宛先）→**High**: ①`IsDestructiveFileOperation`・
     ②`CoreutilsCommandRisk`・③profile `DestructionRisk` の**各 net が個別に残る**ことを 3 ケースで表明
     （fail-open 回帰防止, D7）。
   - (iv) 非ロケーション/未知 applet が `EvaluateRisk` 経由でも High を維持（②の安全網非撤去, AC-22c）。
+  - (v) setuid/setgid 付き coreutils ハードリンクの safe-zone `rm $WORKDIR/x`→**High**（②の setuid floor は
+    抑止対象外。`TestCoreutilsRiskConsistency_Setuid` の不変条件が evaluator 経由でも保たれる）。
 - [ ] `evaluator_test.go::TestEvaluateRisk_MaxOfDimensionsOrderIndependent` を拡張: 軸1×軸2 同時該当
   （`cp -a … /usr/bin`=High）が順序非依存で max（AC-31）。
 
@@ -357,9 +389,11 @@
 - [ ] `reason_codes_test.go::TestReasonCodes_AllDistinct` の `all` スライス（L13）へ新規コードを全登録（NF-001）。
 - [ ] 軸1 family→理由コード対応を `SystemModificationFamily`（P1）の family 値から付与（一括
   `ReasonSystemModification` 集約をしない。02 §3.11）。
-- [ ] per-operand 監査キャリアを新設: `RiskAssessment`（または `VerifiedCommandPlan`）へ `[]OperandZone`
-  （`Index`/`Raw`/`Resolved`/`Zone`/`MatchedCritical`/`Trusted`/`UnresolvedErr`）相当を運ぶ構造化フィールドを
-  追加し、`RiskAuditEntry` へ記録、`LogRiskProfile` で出力（02 §3.11）。
+- [ ] per-operand 監査キャリアを新設: `[]OperandZone`（`Index`/`Raw`/`Resolved`/`Zone`/`MatchedCritical`/`Trusted`/
+  `UnresolvedErr` 相当）を運ぶ構造化フィールドを **`RiskAssessment` に追加する（必須の書込先。`VerifiedCommandPlan`
+  には追加しない）**——監査は `RiskAuditEntry.Assessment` を受け取るため、`RiskAssessment` に載せれば deny/shadow を
+  含む全経路で `LogRiskProfile` に伝播する（§1.3 の決定。plan 側にのみ載せると denied/shadow 評価で AC-30 が破れる）。
+  `RiskAuditEntry` へ記録し `LogRiskProfile` で出力（02 §3.11）。
 - [ ] dry-run/runtime 一貫性: 軸2 が config の run-as 値を参照し live euid・`$HOME` env に依存しないことを保証
   （AC-28, 02 §3.9）。
 
@@ -372,10 +406,14 @@
   オペランドを持つコマンドを構築し、出力された `RiskAuditEntry`（`Assessment` 経由）に per-operand の
   `Resolved`/`Zone`/`MatchedCritical` が含まれることを表明（AC-30, 02 §3.11 のデバッグ可能性）。
 - [ ] `evaluator_test.go::TestEvaluateRisk_DryRunRuntimeInvariant`: 同一コマンドで runtime/dry-run 同値（AC-28）。
-  **`$HOME`/`HOME` env 不変**は `t.Setenv` で 2 値検証（`t.Setenv` 使用のため本テストは `t.Parallel()` を**使わない**）。
-  **run-as 非依存**は euid を変える代わりに**構造的に**検証する: 異なる `RunAsIdent` を 2 つ与えて軸2 結果が
-  `ZoningInput.RunAs` のみの関数であること（live euid 非依存）を表明する（02 §3.4。unprivileged テストで euid は
-  変更不可なため euid 変動はテストしない）。
+  **環境不変性は「固定した同一 `RunAsIdent` の下で」検証する**: `$HOME`/`HOME` env を `t.Setenv` で 2 値に変え、かつ
+  live euid を変えても（プロセス euid は unprivileged では変更不可のため、評価コードが `os.Geteuid`/`user.Current` を
+  参照しないことを下記 grep ガードで担保し合わせて主張する）軸2 分類が不変であることを表明する（`t.Setenv` 使用のため
+  `t.Parallel()` を**使わない**）。
+  **`RunAsIdent` を変えた場合に結果が同一になることは要求しない**——AC-17(d) の Trusted 判定は run-as が経路要素を
+  書込可能かに依存し、信頼ルートで一方の run-as が書込可・他方が不可なら正しい結果は Medium と Low で**異なる**ため。
+  代わりに「軸2 結果は `ZoningInput.RunAs`（config 値）と FS 状態のみの決定的関数であり、live euid・`$HOME` env には
+  依存しない」ことを表明する（02 §3.4/§5.2）。
 - [ ] **static 守備**（NF-003/§3.9 の非決定性排除）: `location_zoning.go`/`safezone.go`/`path_resolve.go` が
   `os/user` を import せず `os.Geteuid`/`user.Current` を呼ばないことを grep ガード:
   `rg -n "os/user|user\.Current|os\.Geteuid" internal/runner/base/security/{location_zoning,safezone,path_resolve}.go`
@@ -500,11 +538,11 @@ shadow モードで enforce が旧のまま。
 - 既存テストヘルパー（`risk/test_helpers.go`・`security/test_helpers.go`、いずれも `//go:build test`）を流用。
 - **新規ヘルパー（軸2 で複数テストが共有するため、配置を確定する。[test_organization.md](../../dev/developer_guide/test_organization.md)）**:
   - symlink ツリー構築ヘルパー（`safezone_test.go`/`path_resolve_test.go`/`location_zoning_test.go` で共有）は
-    `security/test_helpers_zoning.go`（`//go:build test`, package 内・Classification B。private な zoning 型/解決
-    seam に触れるため）。
+    `internal/runner/base/security/test_helpers_zoning.go`（`//go:build test`, package 内・Classification B。private な
+    zoning 型/解決 seam に触れるため）。
   - 所有権/権限探査 seam のモック（条件(2) の root-free 検証用、§1.3）は、production の探査 seam が `common.FileSystem`
-    互換の public インタフェースなら `security/testutil/helpers.go`（Classification A, `//go:build test`）。private
-    seam に依存する場合は同じ `test_helpers_zoning.go` に置く。
+    互換の public インタフェースなら `internal/runner/base/security/testutil/helpers.go`（Classification A,
+    `//go:build test`）。private seam に依存する場合は同じ `internal/runner/base/security/test_helpers_zoning.go` に置く。
   - 上記 seam が `//go:build test` の非 `_test.go` から参照される場合、当該ファイルは `go test -tags test ./...` で
     コンパイルされること（各フェーズ完了基準で担保）。
 
@@ -563,7 +601,7 @@ shadow モードで enforce が旧のまま。
 | AC-25 | データ送信 Medium、ローカル trust-critical 書込→High、ProxyCommand/-e→間接 | test | `location_zoning_test.go::TestLocationDefinedRisk_FlagWriter`＋`indirect_execution_test.go::TestIndirect_HelperExecOptions` |
 | AC-26 | 検出限界の文書化 | static | 検出限界節に**3 アンカーすべて**が存在することを確認（単一キーワードでは不可）: (1) AI=High とデータ送信=Medium の非対称、(2) 未列挙/リネームバイナリ/multi-call の素通り、(3) allowlist＋ハッシュ固定が安全運用前提（0136 AC-66/67）。`rg -n "非対称\|リネーム\|multi-call\|allowlist\|ハッシュ" docs/user/risk_assessment.ja.md` で 3 アンカーの文を目視確認 |
 | AC-27 | fdisk/mkfs/parted/fsck=High（実装＋文書） | test, static | test: `TestSystemModificationRisk_HighFamilies`。static: `rg -n "parted\|fsck" docs/user/risk_assessment.ja.md` 期待: high 表記のみ（medium 行に parted/fsck が残らない） |
-| AC-28 | runtime==dry-run、`$HOME` env 不変・run-as 非依存（構造的） | test, static | test: `risk/evaluator_test.go::TestEvaluateRisk_DryRunRuntimeInvariant`（runtime/dry-run 同値・`$HOME` 2 値不変・`RunAsIdent` 2 値で同値、no `t.Parallel`）。static: 上記 `os/user`/`os.Geteuid` 不使用 grep ガード |
+| AC-28 | runtime==dry-run、live euid/`$HOME` 非依存（固定 RunAsIdent 下で） | test, static | test: `risk/evaluator_test.go::TestEvaluateRisk_DryRunRuntimeInvariant`（runtime/dry-run 同値・固定 `RunAsIdent` 下で `$HOME` 2 値不変、no `t.Parallel`。異なる `RunAsIdent` で同値は要求しない）。static: 下記 `os/user`/`os.Geteuid` 不使用 grep ガード |
 | AC-29 | env modprobe→High、sudo useradd→Critical、chroot/unshare/nsenter（COMMAND 有無）、flock/watch | test | `indirect_execution_test.go::TestIndirect_ExecWrappersExtended`＋`evaluator_test.go`（env modprobe/sudo useradd） |
 | AC-29a | env/timeout→High、loader var 拒否、nice 等 floor 無しだが inner flat High | test | `indirect_execution_test.go::TestIndirect_RedundantWrapperHigh`＋既存 `TestIndirect_WrapperLoaderEnvRejected` |
 | AC-30 | deny 時の理由コード記録＋per-operand 監査 | test | `risk/evaluator_test.go::TestEvaluateRisk_LocationReasonCodes`＋`internal/runner/resource/audit_wiring_test.go::TestAudit_PerOperandZoneRecorded` |
