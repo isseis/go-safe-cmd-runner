@@ -381,6 +381,7 @@
 | 実践的 | practical | |
 | 予測 | predictable / prediction | |
 | プレフィックス | prefix | |
+| 前方一致 | prefix match | パスが特定の文字列で始まるかだけで判定する文字列照合（symlink を解決しない）。判断軸2 のパス信頼区分の判定では非適合（要解決後パス。0142 AC-04）。英語「文字列 prefix」は使わない |
 | 前提条件 | prerequisite | |
 | 防ぐ | prevent | セキュリティの文脈 |
 | 保持 | preserve / preservation | |
