@@ -273,7 +273,7 @@ const (
 | KindCreate（mkdir/touch） | 作成対象パス | coreutils 既定 Low。trust-critical 宛先（`mkdir /etc/x`）は軸2 で High（§3.8 で coreutils Low を抑止）。safe-zone なら Low |
 | KindDeleteTarget（rm/rmdir/unlink/shred） | 削除対象の全オペランド（AC-22b）。`-r`/`-R` で safe-zone 外なら再帰 High（AC-22） | **leaf-symlink は追従しない**（unlink は symlink 実体を消す＝safe-zone の link を削除する分類。§3.5） |
 | KindLink（ln） | **宛先と source/リンク先の双方**。`ln -s` の相対 target は**リンク親ディレクトリ基点**で解決（`EffectiveWorkDir` でなく）。hard link source は通常解決。trust-critical を指す別名生成は High（AC-22b） | — |
-| KindDevice（dd） | **`of=` は書込先**（ブロックデバイス→High、`/dev/null` 等の無害シンクは除外＝下記、通常ファイルは宛先ゾーン）。**`if=` は read source**（ブロックデバイス→High、機微/trust-critical→Medium 下限。cp source と同型。AC-21） | 無害デバイス除外は critical-path 判定**より先**に評価（`/dev` は critical 集合だが `dd of=/dev/null` は High にしない） |
+| KindDevice（dd） | **`of=` は書込先**（ブロックデバイス→High、`/dev/null` 等の無害シンクは除外＝下記、通常ファイルは宛先ゾーン）。**`if=` は read source**（ブロックデバイス→High、機微/trust-critical→Medium 下限。cp source と同型。AC-21）。**危険キャラクタデバイス（`/dev/mem`・`/dev/kmem`・`/dev/port` 等の物理/カーネルメモリ生アクセス）も `if=`/`of=` で High**（AC-21 が委譲した「`/dev` 配下の扱い」の確定。デバイス種別はブロックデバイス＋危険キャラクタデバイスを対象とし、無害シンクは除外） | 無害デバイス除外は critical-path 判定**より先**に評価（`/dev` は critical 集合だが `dd of=/dev/null` は High にしない） |
 | KindMount（mount/umount） | **mountpoint と source の双方**（`--bind`/`--rbind`/`--move` の trust-critical source、デバイス source `/dev/sdaN` を含む）。`umount` は対象 FS/ディレクトリ | `umount -a`（全 FS）は無条件 **High**（AC-19） |
 | KindPermission（chmod/chown/chgrp/setfacl/chattr） | 変更対象パス（軸 A・⑤） | 権限拡大/setuid/`chattr -i`/trust-critical 対象→High（AC-20） |
 | KindArchive（tar/unzip） | 展開先（`-C`/`-d`）。**`-C`/`-d` 省略時は `EffectiveWorkDir`** を展開先として zoning（`/etc` workdir の `tar xf` は trust-critical→High） | 展開ルート脱出メンバ・特権メタデータ復元は fail-safe High（AC-22e 注記） |

@@ -238,7 +238,10 @@
   - [ ] KindDeleteTarget（rm/rmdir/unlink/shred）: 全オペランド zoning、safe-zone 外再帰→High、leaf-symlink 非追従（AC-22/AC-22b）。
   - [ ] KindLink（ln）: 宛先＋source/リンク先双方、`-s` 相対 target はリンク親基点解決（AC-22b）。
   - [ ] KindDevice（dd）: `of=` 書込先/`if=` read source、ブロックデバイス→High、`/dev/null` 等無害シンク除外を
-    critical 判定**より先**に評価、機微/trust-critical `if=`→Medium floor（AC-21）。
+    critical 判定**より先**に評価、機微/trust-critical `if=`→Medium floor（AC-21）。**危険キャラクタデバイス
+    （`/dev/mem`・`/dev/kmem`・`/dev/port` 等、物理/カーネルメモリへの生アクセス）も `if=`/`of=` で High**（無害シンク
+    `/dev/null`・`/dev/zero` 等は除外）。AC-21 が 02 へ委譲した「`/dev` 配下の扱い」の確定（02 §3.3 KindDevice に追記）
+    に従い、デバイス種別判定はブロックデバイスと危険キャラクタデバイスの両方を対象とする。
   - [ ] KindMount（mount/umount）: mountpoint＋source 双方、`umount -a`→無条件 High（AC-19）。
   - [ ] KindPermission（chmod/chown/chgrp/setfacl/chattr）: 権限拡大/setuid/`chattr -i`/trust-critical→High（AC-20）。
   - [ ] KindArchive（tar/unzip）: **抽出モードを判定してから** zoning する。`tar -x`/`--extract`・`unzip`（既定抽出）
@@ -301,7 +304,8 @@
 - [ ] `TestLocationDefinedRisk_AllOperands`: `mv /etc/passwd $WORKDIR/passwd`・`ln /etc/passwd $WORKDIR/passwd`・
   `cp /etc/shadow $WORKDIR/...`→High/Medium floor（AC-22b）。
 - [ ] `TestLocationDefinedRisk_Device`: `dd if=/dev/sda`・`dd of=/dev/sda`→High、`dd of=/dev/null`→非 High、
-  `dd if=/etc/shadow of=$WORKDIR/shadow`→Medium floor（AC-21）。
+  `dd if=/etc/shadow of=$WORKDIR/shadow`→Medium floor（AC-21）。**危険キャラクタデバイス** `dd of=/dev/mem`・
+  `dd of=/dev/kmem`・`dd of=/dev/port`・`dd if=/dev/mem`→**High**、無害シンク `dd of=/dev/zero`→非 High。
 - [ ] `TestLocationDefinedRisk_MountUmount`: trust-critical mountpoint/source→High、`umount -a`→High、
   既定→Medium（AC-19）。
 - [ ] `TestLocationDefinedRisk_Tee`/`Find`: tee 複数 FILE max（`tee safe /etc/passwd`→High, AC-22d）、
@@ -589,7 +593,7 @@ shadow モードで enforce が旧のまま。
 | AC-18 | 宛先不確定→Low にしない（Kind 依存 floor） | test | `location_zoning_test.go::TestLocationDefinedRisk_FailSafe` |
 | AC-19 | mount/umount 対象 zoning、umount -a→High | test | `TestLocationDefinedRisk_MountUmount` |
 | AC-20 | 権限/所有権/属性付与→High | test | `TestLocationDefinedRisk_PermissionGrant` |
-| AC-21 | dd ブロックデバイス→High、/dev/null 除外、機微 if=→Medium | test | `TestLocationDefinedRisk_Device` |
+| AC-21 | dd ブロック＋危険キャラクタデバイス（/dev/mem 等）→High、/dev/null・/dev/zero 除外、機微 if=→Medium | test | `TestLocationDefinedRisk_Device` |
 | AC-22 | safe-zone 外再帰→High、内再帰→Low | test | `TestLocationDefinedRisk_Recursion` |
 | AC-22a | install setuid/setgid/-o/-g→High | test | `TestLocationDefinedRisk_PermissionGrant` |
 | AC-22b | 全オペランド zoning（mv/rm/ln source・cp 機微 source） | test | `TestLocationDefinedRisk_AllOperands` |
