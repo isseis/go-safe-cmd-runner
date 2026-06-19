@@ -294,6 +294,7 @@
 | マッチング | matching | パターンマッチングの文脈 |
 | 最大 | maximum | 通常 "max" ではなく "maximum" を使用 |
 | 最大許容リスクレベル | maximum allowed risk level | リスク判定の文脈 |
+| 選択的 max 抑止 | selective max-suppression | 最終リスク（複数判定の max）を下げるため、High を出す各判定を個別に無力化して max への寄与から外す旧方式。1 つでも外し漏れると High が残るため脆い。0140 で「判断軸2 による一括置き換え」へ訂正（採用しない方式の呼称） |
 | マルチコール | multicall | 単一バイナリが複数サブコマンドを兼ねる方式 |
 | 意味的 | semantic | |
 | メモ化 | memoization | 計算結果のキャッシング |
