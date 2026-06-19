@@ -81,9 +81,11 @@ A calling command opts into panel mode by supplying a PERSONA that is a panel
    output format). Two ways to give CRITERIA — the calling command picks one and is
    consistent: (a) **pre-routed** — give each reviewer only the checklist subset its
    mandate owns; or (b) **shared floor** — give every reviewer the full checklist and
-   have each report only the items within its mandate, deferring the rest as one-line
-   OUT-OF-LANE FLAGS. Shared floor needs no item-by-item routing and avoids coverage
-   gaps from mis-routing; pre-routing minimizes each reviewer's reading.
+   have each report only the items within its mandate, raising an out-of-mandate item
+   ONLY as a one-line OUT-OF-LANE FLAG when it actually spots a potential issue there
+   (it does NOT enumerate clean out-of-mandate checklist items — silence means no
+   concern). Shared floor needs no item-by-item routing and avoids coverage gaps from
+   mis-routing; pre-routing minimizes each reviewer's reading.
 3. **Synthesize before fixing.** The caller (not a subagent) merges the panel
    outputs: **dedup** overlapping findings; **reconcile** conflicting severities
    (take the higher); and **reconstruct cross-cutting issues** that sit in the seam
