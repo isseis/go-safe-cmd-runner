@@ -47,7 +47,7 @@
 - **Out**:
   - **コマンド名分類（判断軸1 High/Medium）・Critical 限定・env/timeout・ラッパ/特権・データ送信の名前→Medium 下限**
     → 0141。`find -exec`/`-execdir`/`-ok`/`-okdir`・`ssh -o ProxyCommand`・`rsync -e` 等の**内側コマンド実行
-    （間接実行 Reject）**も 0141/既存（本タスクは `find -delete`/`-fprint*` の**宛先 zoning** のみ）。
+    （間接実行 Reject）**も 0141/既存（本タスクは `find -delete`/`-fprint*` の**宛先のゾーン分類** のみ）。
   - **オペランド毎の監査フィールドの logger 出力・変更ノート（changelog）・文書整合・sample config 追従・ガイド** → 0143
     （本タスクは DTO 定義と `RiskAssessment` への格納まで）。
   - `RiskLevel` の段数/意味づけ変更（新レベル追加しない）。
@@ -73,7 +73,7 @@
 
 - **解決後パスで判定**: すべてのゾーン判定は、symlink チェーンを追従する**専用リゾルバ（AC-04(a)）**で得た正規化済み
   絶対パスで行う。文字列 prefix（`common.IsPathWithinDirectory` 単独）での判定は**非適合**。
-- **全オペランド × max**: 1 コマンドの**全作用オペランド**を zoning して max を取り（AC-07）、さらに**判断軸1 とも max
+- **全オペランド × max**: 1 コマンドの**全作用オペランド**をゾーン分類して max を取り（AC-07）、さらに**判断軸1 とも max
   合成**する（AC-18）。
 - **fail-closed 既定**: 解決/抽出が不確実なら `ZoneUnresolved`（書込/削除先→**High**・読み取り元〔`cp` のコピー元・`dd` `if=` 等〕→**Medium**。AC-05）。
 - **単一権威**: ファイル操作コマンド（`rm`・`cp`・`dd` 等）は**判断軸2 を唯一の判定基準**とする。判断軸2 がコマンドを
@@ -101,7 +101,7 @@
 - **AC-02**: 例 `/srv`・`/opt` 配下。**`/var`・`/var/log` は trust-critical なので ordinary の例・テストフィクスチャに
   使わない**。
 - **AC-05**: ここで「**読み取り元**」とは、ファイル操作コマンドが**複製/参照のために読むパス**（`cp` のコピー元、`dd` の
-  `if=` 等）を指す。コマンド自体は mutating（書込/削除）だが、それを読み取るため**情報露出**リスクを持つ
+  `if=` 等）を指す。コマンド自体は書込/削除を行うが、それを読み取るため**情報露出**リスクを持つ
   （`cp /etc/shadow $WORKDIR/x` 等）——read **専用**コマンド（`cat` 等。本タスク対象外）とは別概念。「不明フラグ＝
   安全」とは仮定しない。**未解決の読み取り元を High でなく Medium とするのは意図的な非対称**（書込/削除の最悪＝破壊、
   読み取り元の最悪＝情報露出という脅威差。完全な read モデルは将来課題＝§6）。02 で根拠を保持し「うっかり緩和」を
@@ -119,31 +119,31 @@
   - (d) **TOCTOU 耐性（オペランド毎のTrusted）**: Low 降格は、解決後の各オペランドパスが**信頼ディレクトリ許可リスト
     配下**かつ**経路要素が run-as から書込不可**（run-as 以外所有・group/other 非書込）のときに限る。満たせなければ
     降格しない（fail-closed）。参照 identity は live euid でなく config の run-as 値（AC-21）。leaf が既存 symlink なら
-    最終ターゲットで zoning。
+    最終ターゲットでゾーン分類。
 
 ### F-002: 作用オペランドの抽出と網羅テスト（根本原因1）
 
 - **AC-06**（抽出の網羅性は仕様表＋テストで担保）: 各ファイル操作コマンドの**作用オペランド**（宛先/読み取り元/
-  FILE/`if=`/`of=`/mountpoint/展開先 等）を抽出して zoning する。対象コマンドは cp・mv・rm・rmdir・unlink・shred・
+  FILE/`if=`/`of=`/mountpoint/展開先 等）を抽出してゾーン分類する。対象コマンドは cp・mv・rm・rmdir・unlink・shred・
   ln・mkdir・touch・install・tee・sponge・truncate・`sed -i`・tar・unzip・dd・mount・umount・chmod・chown・chgrp・
   setfacl・chattr・mknod・find（破壊/書込アクション）・データ送信の書込形（F-004）。**個別フラグ/形は要件本文で
   列挙せず、コマンド→Kind→オペランド抽出規則を単一の仕様（実装内テーブル）で表し、既知コマンド×代表フラグの
   表駆動（プロパティ/網羅）テストで被覆を担保**する。未知/曖昧形は fail-closed（AC-05）。
   AC-06 の**必須テスト行**（仕様表のエントリとして持つ。下表の難所は最低限）:
 
-  | 難所 | 抽出/zoning 規則 |
+  | 難所 | 抽出/ゾーン分類規則 |
   |---|---|
-  | in-place 編集 | `truncate`/`sed -i` の被編集 FILE を書込先として zoning |
+  | in-place 編集 | `truncate`/`sed -i` の被編集 FILE を書込先としてゾーン分類 |
   | `ln -s` 相対 target | リンク**親**ディレクトリ基点で解決（`EffectiveWorkDir` 基点ではない） |
-  | アーカイブ 抽出 vs 一覧 | `tar -x`/`unzip`＝展開先を zoning、`tar -t`/`unzip -l`＝非昇格、`tar --one-top-level=DIR`＝抽出先、`-C`/`-d` 省略時＝`EffectiveWorkDir` |
-  | 末尾 `/` 付き削除 | symlink を dereference してターゲットを zoning |
+  | アーカイブ 抽出 vs 一覧 | `tar -x`/`unzip`＝展開先をゾーン分類、`tar -t`/`unzip -l`＝非昇格、`tar --one-top-level=DIR`＝抽出先、`-C`/`-d` 省略時＝`EffectiveWorkDir` |
+  | 末尾 `/` 付き削除 | symlink を dereference してターゲットをゾーン分類 |
   | `dd` デバイス | `if=`/`of=` をデバイス種別で判定（F-003 AC-10） |
   | 権限/所有権付与 | world-write/所有権付与は判断軸 A（F-003 AC-08）へ |
   | データ送信 書込先 | `curl -o`/`-O`、`wget` 既定/`-O`/`-P <dir>`、`scp host:/x <DEST>`、`sftp` バッチ書込、`rsync … <DEST>`/`--delete`（F-004） |
 
 - **AC-06a**（仕様表と AC の連動）: **AC-08〜AC-16 で High/Medium 化と名指しされた全ての書込/削除/付与形は、
   オペランド抽出仕様表に対応するテスト行を持つ**こと（散文 AC と仕様表のドリフト防止＝根本原因1）。
-- **AC-07**（複数オペランド）: 1 コマンドの作用オペランドが複数のときは各々を zoning し **max** を取る（共通規則 4.0）。
+- **AC-07**（複数オペランド）: 1 コマンドの作用オペランドが複数のときは各々をゾーン分類し **max** を取る（共通規則 4.0）。
   （0140 AC-31 の一部）
 
 ### F-003: 判断軸 A の下限とオペランド別特則
@@ -155,16 +155,16 @@
 | AC-08 | 権限/所有権/属性付与 | setuid/setgid 付与・world-write 等の権限拡大・trust-critical 所有権変更・`chattr -i`（完全性制御除去） | 例 `chmod u+s`・`chmod 0777`・`chown root /usr/bin/x`・`chattr -i /etc/shadow` | 0140 AC-20 |
 | AC-09 | `install` 権限フラグ | `-m` に setuid/setgid、または `-o`/`-g` で所有者/グループ変更 | safe-zone でも降格しない | 0140 AC-22a |
 | AC-10 | `dd` デバイス IO | `if=`/`of=` がブロックまたは危険キャラクタデバイス（`/dev/mem`・`/dev/kmem`・`/dev/port` 等の物理/カーネルメモリ生アクセス） | 無害シンク（`/dev/null`・`/dev/zero`）除外。機密ファイル/trust-critical な `if=`（読み取り元） は **Medium 下限**。パス文字列でなく**デバイス種別**で判定 | 0140 AC-21 |
-| AC-11 | safe-zone 外への再帰 | `rm -r`/`-R`・`cp -R`/`-a` 等が作用対象を safe-zone の外（ordinary/trust-critical）に及ぼす | 信頼 safe-zone 内に閉じた再帰（`rm -rf $WORKDIR/build`）は Low。複数オペランド指定自体は昇格条件にせず各々 zoning | 0140 AC-22 |
+| AC-11 | safe-zone 外への再帰 | `rm -r`/`-R`・`cp -R`/`-a` 等が作用対象を safe-zone の外（ordinary/trust-critical）に及ぼす | 信頼 safe-zone 内に閉じた再帰（`rm -rf $WORKDIR/build`）は Low。複数オペランド指定自体は昇格条件にせず各々ゾーン分類 | 0140 AC-22 |
 
-**(b) コマンド別のオペランド特則**（どのオペランドを zoning するか。ゾーンに従うが下記の上乗せ/例外あり）:
+**(b) コマンド別のオペランド特則**（どのオペランドをゾーン分類するか。ゾーンに従うが下記の上乗せ/例外あり）:
 
-| AC | コマンド | zoning 対象 | 特則 | 対応 |
+| AC | コマンド | ゾーン分類対象 | 特則 | 対応 |
 |---|---|---|---|---|
 | AC-12 | cp/mv/rm/shred/unlink/ln | 全オペランド（mv は移動元・ln はリンク元も） | trust-critical な移動元/リンク元の mv/ln は High。`cp` は宛先判定だが**機密ファイル/trust-critical なコピー元の複製**は safe-zone でも Medium 下限、`cp -p`/`-a` の特権メタデータ複製（setuid/root 所有のコピー元）は High | 0140 AC-22b |
 | AC-13 | mount/umount | mountpoint＋マウント元 | trust-critical→High（`--bind`/`--rbind`/`--move` のマウント元・デバイス含む）、`umount -a`→無条件 High、他は Medium | 0140 AC-19 |
-| AC-14 | tee/sponge | 全 FILE 引数（非フラグ） | 複数 FILE は各々 zoning して max。内側コマンドは実行しない | 0140 AC-22d |
-| AC-15 | find（破壊/書込） | 探索起点（省略時 `EffectiveWorkDir`）/書込先 FILE | `-delete`/`-fprint*` を zoning（trust-critical 起点→High、信頼 safe-zone 起点→Low）、読取専用は非昇格、`-exec`/`-execdir`/`-ok`/`-okdir` の内側実行は**間接実行 Reject**（0141/既存。本タスク対象外） | 0140 AC-22e |
+| AC-14 | tee/sponge | 全 FILE 引数（非フラグ） | 複数 FILE は各々ゾーン分類 して max。内側コマンドは実行しない | 0140 AC-22d |
+| AC-15 | find（破壊/書込） | 探索起点（省略時 `EffectiveWorkDir`）/書込先 FILE | `-delete`/`-fprint*` をゾーン分類（trust-critical 起点→High、信頼 safe-zone 起点→Low）、読取専用は非昇格、`-exec`/`-execdir`/`-ok`/`-okdir` の内側実行は**間接実行 Reject**（0141/既存。本タスク対象外） | 0140 AC-22e |
 
 > **用語「機密ファイル」**: 内容が秘匿情報のファイル（読む/複製すると**情報が露出**するもの）。安全ゾーンへ
 > コピーしても内容（秘密）が漏れるため、**機密ファイル/trust-critical なコピー元の複製は safe-zone でも Medium 下限**にする
@@ -211,7 +211,7 @@
     (b) オペランド抽出器が **argv を完全消費**した（未消費の非フラグトークン無し・パスを運び得る未知の値取りフラグ無し）。
   - **不完全認識のとき（fail-open 回避）**: 部分的/不確実なパース（一部オペランド未認識・未消費トークン残存・未知の値取り
     フラグ）→ `ZoneUnresolved` とし **①〜⑤の High を残す**。「一部だけ認識した」で①〜⑤を外すと、理解できない危険形が
-    benign ゾーン→net Low で素通りする（fail-open）。AC-05/AC-07 の「全オペランド max・未解決→High」が置き換え後も下限として残る。
+    低リスクゾーンと誤判定され Low で素通りする（fail-open）。AC-05/AC-07 の「全オペランド max・未解決→High」が置き換え後も下限として残る。
   - **例外**: ⑤の setuid 下限は再パースせず既存 lstat シグナル（`hasSetuidOrSetgidBit` 相当）を判断軸 A が流用。
     **ファイル操作コマンド以外**（`find -exec` の内側実行・判断軸2 が扱わない未知コマンド）は従来どおり既存判定/間接実行が
     担う（同名でも非ファイル操作用途では④を無効化しない）。
@@ -228,7 +228,7 @@
   - **規則**: オペランド毎の判定記録 DTO（`OperandZone`/`PathZone` 相当: Index/Raw/Resolved/Zone/MatchedCritical/Trusted/
     UnresolvedErr）を **`risktypes` に定義**し、`RiskAssessment` に格納（`security → risktypes` 一方向依存を維持。
     `security` に置くと循環）。logger への JSON 出力は **0143**。本タスクは `RiskAssessment` への格納までを担保。
-  - **テスト**: presence だけでなく**格納値の正しさ**を検証。代表コマンド（`cp evil /usr/bin/ls`・symlink 経由・複数
+  - **テスト**: 存在確認だけでなく**格納値の正しさ**を検証。代表コマンド（`cp evil /usr/bin/ls`・symlink 経由・複数
     オペランド）で `RiskAssessment` から直接 `[]OperandZone` を読み、各要素の Index/Raw/Resolved/Zone/Trusted が期待
     どおりか表明（値が誤っても 0143 まで気付けない穴を塞ぐ）。
 - **AC-20**（`security.Config` の結線）— 新規。0140/00 §3.4:
@@ -237,13 +237,13 @@
     runner 転送**を本タスクで追加。
   - **根拠**: 無ければ configured 環境で AC-01/AC-04 が成立せず、テスト注入でしか通らない。
 - **AC-21**（identity 注入の純粋性）— 新規。0140/00 §3.4:
-  - **規則**: run-as 名→UID/GID/補助 group の解決は**zoning の外（評価器結線層）**で行い、precomputed `RunAsIdent` を
-    `ZoningInput` に注入。**zoning は live identity（`os.Geteuid`/`os.Getuid`/`syscall`/`unix` の uid/gid/groups・
+  - **規則**: run-as 名→UID/GID/補助 group の解決は**ゾーン分類の外（評価器結線層）**で行い、precomputed `RunAsIdent` を
+    `ZoningInput` に注入。**ゾーン分類は live identity（`os.Geteuid`/`os.Getuid`/`syscall`/`unix` の uid/gid/groups・
     `user.Current`）を読まない**。
   - **テスト（差分テストを主）**: 注入 `RunAsIdent` を**テストプロセスの実 euid/gid と異なる値**にし、Trusted/Low 判定が
     **注入 identity に従って変わる**ことを表明（決定性テストだけでは「単一プロセス内で euid 一定なら `os.Geteuid()` を
     読んでも決定的」になり live 参照の不在を証明できない）。
-  - **補助**: 上記 live-identity API を判断軸2 plumbing が呼ばない grep ガード。
+  - **補助**: 上記 live-identity API を判断軸2 の結線コードが呼ばない grep ガード。
 
 ### F-007: 決定性・read-only
 
@@ -252,7 +252,7 @@
 - **AC-23**（解決コストの上限・fail-closed）: 解決は**評価単位でメモ化**（同一親の再解決をしない）し、**1 コマンド
   評価あたりのオペランド総数（>N）または symlink 追従ホップ総数（>M）が上限を超えたら `ZoneUnresolved`→High**
   （書込/削除）に倒す（具体値 N/M は 02/実装で確定）。**必須テスト**: 上限を超える入力（多数オペランド・深い
-  symlink チェーン）で fail-closed（High）になり、メモ化により seam 呼出回数が線形に収まることを表明する
+  symlink チェーン）で fail-closed（High）になり、メモ化により注入関数（lstat/stat）の呼出回数が線形に収まることを表明する
   （ExecuteCommand ホットパスでの無制限 FS I/O・DoS を防ぐ）。（新規／0140/02 §3.5）
 
 ## 5. 非機能要件

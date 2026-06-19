@@ -598,6 +598,12 @@
 | Wrapper | wrapper | ラッパー |
 | 書き込み | write | |
 
+### Z
+
+| 日本語 | English | 備考 |
+|--------|---------|------|
+| ゾーン分類 | zone classification / zoning | 判断軸2。作用先パスを解決し安全ゾーン（trust-critical/ordinary/safe-zone）に分類してリスクを判定する処理。動詞「ゾーン分類する」も使う。旧称・英語表記 `zoning` は要件文書では使わない（コード識別子・ディレクトリ名 `axis2_destination_zoning` は除く） |
+
 ---
 
 ## フレーズ・表現

@@ -83,7 +83,7 @@ max 合成される。
 - **AC-07**: ブート時サービス有効化 `chkconfig`・`update-rc.d` → **High**（`systemctl`/`service` と同質）。（0140 AC-07）
 - **AC-08**: 電源状態/ランレベル `shutdown`・`reboot`・`halt`・`poweroff`・`telinit` → **High**。（0140 AC-07a）
 - **AC-09**: ファイアウォール `iptables`・`ip6tables`・`(ip6)tables-restore`・`nft`・`ufw`・`firewall-cmd` →
-  **High**。`iptables-save`/`ip6tables-save`（stdout）は既定 **Low**（`-f <file>` 出力の宛先 zoning は 0142）。（0140 AC-08）
+  **High**。`iptables-save`/`ip6tables-save`（stdout）は既定 **Low**（`-f <file>` 出力の宛先のゾーン分類 は 0142）。（0140 AC-08）
 - **AC-10**: 能力付与 `setcap` → **High**。（0140 AC-09）
 - **AC-11**: 信頼境界の置換 intrinsic `update-alternatives`・`dpkg-divert`・`alternatives`・`ldconfig` →
   **High**（宛先によらず）。（0140 AC-10）
@@ -139,7 +139,7 @@ max 合成される。
   **COMMAND を省略した形**（`chroot /mnt`・`unshare`・`nsenter -t 1 -m`）は暗黙シェル起動とみなし内側未指定でも
   **High 以上**（`unshare -r`・`nsenter -t 1` 等の特権/名前空間エスケープ形を素通りさせない）。（0140 AC-29）
 - **AC-23**: 安全な TOML 代替がある実行ラッパ `env`（→ `env_vars`/`env_import`）・`timeout`（→ `timeout`）は
-  直接呼び出しを **High** に分類する（benign 形も含む）。内側は間接実行で引き続きゲート（`env dpkg -i`→High、
+  直接呼び出しを **High** に分類する（無害に見える形も含む）。内側は間接実行で引き続きゲート（`env dpkg -i`→High、
   `sudo env …`→Critical）。**Critical にはしない**。代替の無いラッパ（`nice`/`ionice`/`stdbuf`/`setsid`）には
   redundant 由来の追加の下限を課さないが、抽出可能ラッパ内側の一律 High 下限は維持。`env` 経由の loader 制御
   変数（`LD_PRELOAD` 等）は従来どおり forbidden-env-var で拒否。（0140 AC-29a）
