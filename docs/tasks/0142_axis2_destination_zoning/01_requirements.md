@@ -27,14 +27,13 @@
 | **trust-critical** | システム重要パス（`/usr`・`/etc`・`/boot` 等、書込でシステム/信頼境界を侵すパス） | **High** |
 | **ordinary** | 通常パス（`/srv`・`/opt` 等、trust-critical でも safe-zone でもないパス） | **Medium** |
 | **safe-zone** | run 専用の作業/出力ディレクトリ・専用 temp（run が所有する安全領域） | **Low** |
-| **解決不能（unresolved）** | パスを確定できない/曖昧 | **fail-closed 下限**（書込/削除=High・読取=Medium） |
+| **解決不能（unresolved）** | パスを確定できない/曖昧 | **fail-closed 下限**（書込/削除先=High・読取 source〔`cp` source・`dd` `if=`〕=Medium） |
 
 最終リスクは判断軸1（0141, コマンド名分類）と **max 合成**する。
 
 本タスクは [0140/00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md) §3 の
 **3 つの根本原因の訂正**を担う中核である:
-- **根本原因1**: 解析すべきコマンドライン引数（コマンド×フラグ×形式）の組み合わせが膨大・非有界で**個別列挙では
-  網羅しきれない**問題を、**fail-closed 既定＋オペランド抽出仕様の網羅テスト**で有界化する。
+- **根本原因1**: argv パースサーフェスの発散を、**fail-closed 既定＋オペランド抽出仕様の網羅テスト**で有界化する。
 - **根本原因2**: D7 の引き下げを「既存判定の選択的 max 抑止」でなく、**判断軸2 を唯一の判定者として既存の High 判定を
   置き換える**方式で実現する。
 - **根本原因4**: DTO 配置・identity 注入・config 結線を**端から端で明示**する。
@@ -75,7 +74,7 @@
   絶対パスで行う。文字列 prefix（`common.IsPathWithinDirectory` 単独）での判定は**非適合**。
 - **全オペランド × max**: 1 コマンドの**全作用オペランド**を zoning して max を取り（AC-07）、さらに**判断軸1 とも max
   合成**する（AC-18）。
-- **fail-closed 既定**: 解決/抽出が不確実なら `ZoneUnresolved`（書込/削除→**High**・読取主体→**Medium**。AC-05）。
+- **fail-closed 既定**: 解決/抽出が不確実なら `ZoneUnresolved`（書込/削除先→**High**・読取 source〔`cp` source・`dd` `if=` 等〕→**Medium**。AC-05）。
 - **単一権威**: ファイル操作コマンド（`rm`・`cp`・`dd` 等）は**判断軸2 を唯一の判定者**とする。判断軸2 がコマンドを
   **完全に解釈できたときだけ**、これらを High に分類している**既存の5つの判定**を判断軸2 の結果で置き換える（AC-17）。
 - **下限は降格不可**: 判断軸 A の下限（権限付与・デバイス・safe-zone 外再帰・機微 source）は **safe-zone でも Low に
@@ -91,7 +90,7 @@
 | AC-02 | ordinary | trust-critical でも safe-zone でもない通常パス | **Medium** | 0140 AC-15 |
 | AC-03 | safe-zone（Trusted 充足） | safe-zone 内かつ AC-04 充足 | **Low** | 0140 AC-16 |
 | AC-03 | safe-zone（Trusted 不成立） | safe-zone だが AC-04 不成立 | **Medium**（フォールバック） | 0140 AC-16 |
-| AC-05 | unresolved | 解決/抽出不能・曖昧（未確定変数展開・未知フラグ・上限超過 等） | 書込/削除=**High**・読取=**Medium** | 0140 AC-18 |
+| AC-05 | unresolved | 解決/抽出不能・曖昧（未確定変数展開・未知フラグ・上限超過 等） | 書込/削除先=**High**・読取 source〔`cp` source・`dd` `if=`〕=**Medium** | 0140 AC-18 |
 
 各 AC の確定事項:
 - **AC-01**: trust-critical 集合は `(*Config).GetSystemCriticalPaths()`
@@ -100,8 +99,12 @@
   （deployment 拡張可。AC-20）。`/usr` 配下（`/usr/local/bin` 等）を含む。**`/` は完全一致のみ**（`/srv`・`/opt` 等は ordinary）。
 - **AC-02**: 例 `/srv`・`/opt` 配下。**`/var`・`/var/log` は trust-critical なので ordinary の例・テストフィクスチャに
   使わない**。
-- **AC-05**: 「不明フラグ＝安全」とは仮定しない。**読取主体を High でなく Medium とするのは意図的な非対称**（書込/削除の
-  最悪＝破壊、読取の最悪＝情報露出という脅威差。02 で根拠を保持し「うっかり緩和」を防ぐ）。（0140 AC-18 を Kind 依存 High まで強化）
+- **AC-05**: ここで「**読取 source**」とは、ファイル操作コマンドが**複製元として読むパス**（`cp` の source、`dd` の
+  `if=` 等）を指す。コマンド自体は mutating（書込/削除）だが、source は読み取られるため**情報露出**リスクを持つ
+  （`cp /etc/shadow $WORKDIR/x` 等）——read **専用**コマンド（`cat` 等。本タスク対象外）とは別概念。「不明フラグ＝
+  安全」とは仮定しない。**未解決の読取 source を High でなく Medium とするのは意図的な非対称**（書込/削除の最悪＝破壊、
+  読取 source の最悪＝情報露出という脅威差。完全な read モデルは将来課題＝§6）。02 で根拠を保持し「うっかり緩和」を
+  防ぐ。（0140 AC-18 を Kind 依存 High まで強化）
 
 - **AC-04**（safe-zone の定義と解決, 安全要件。0140 AC-17）: safe-zone 判定は次をすべて満たす。
   - (a) **専用リゾルバ**で正規化（symlink 解決後）の絶対パスを得て判定する（`~/link→/etc`・`$HOME/../../etc` 等で
