@@ -46,7 +46,7 @@
   （区分非依存。F-003）、データ送信のローカル書込 High 化と max 合成（F-004）、判断軸2 を唯一の判定基準とするパス信頼区分の判定経路による
   既存の High 判定の置き換え（F-005）、組み込み・DTO・identity 注入（F-006）、決定性（F-007）。
 - **Out**:
-  - コマンド名分類（判断軸1 High/Medium）・Critical 限定・env/timeout・ラッパ/特権・データ送信の名前→Medium 下限
+  - コマンド名分類（判断軸1 High/Medium）・Critical 限定・env/timeout・ラッパ/特権・データ送信の名前による Medium 下限
     は 0141 が担当。`find -exec`/`-execdir`/`-ok`/`-okdir`・`ssh -o ProxyCommand`・`rsync -e` 等の内側コマンド実行
     （間接実行 Reject）も 0141/既存（本タスクは `find -delete`/`-fprint*` の宛先のパス信頼区分判定のみ）。
   - オペランド毎の監査フィールドの logger 出力・変更ノート（changelog）・文書整合・sample config 追従・ガイドは 0143 が担当
@@ -77,7 +77,7 @@
   絶対パスで行う。文字列の前方一致（`common.IsPathWithinDirectory` 単独）での判定は**非適合**。
 - **全オペランドの max**: 1 コマンドの全作用オペランドのパス信頼区分を判定して、その max を取り（AC-07）、さらに判断軸1 とも max
   合成する（AC-18）。
-- **fail-closed 既定**: 解決/抽出が不確実なら `ZoneUnresolved`（書込/削除先→**High**・読み取り元〔`cp` のコピー元・`dd` `if=` 等〕→**Medium**。AC-05）。
+- **fail-closed 既定**: 解決/抽出が不確実なら `ZoneUnresolved`（書込/削除先は **High**、読み取り元〔`cp` のコピー元・`dd` `if=` 等〕は **Medium**。AC-05）。
 - **唯一の判定基準**: ファイル操作コマンド（`rm`・`cp`・`dd` 等）は判断軸2 を唯一の判定基準とする。判断軸2 がコマンドを
   完全に認識できたときだけ（＝完全認識：全オペランドが確定パス信頼区分を返し、かつ全コマンドライン引数を解析しきる。定義は AC-17）、
   これらを High に分類している既存の5つの判定を判断軸2 の結果で置き換える。
@@ -89,7 +89,7 @@
 
 ### F-001: パス信頼区分モデル
 
-パス信頼区分 → レベルの基本対応（条件はすべて解決後パス。共通規則 4.0）:
+パス信頼区分とレベルの基本対応（条件はすべて解決後パス。共通規則 4.0）:
 
 | AC | パス信頼区分 | 条件 | レベル | 対応 |
 |---|---|---|---|---|
@@ -155,7 +155,7 @@
 
 (a) 区分非依存の下限（safe-zone でも Low に降格しない。共通規則 4.0）:
 
-| AC | 下限 | 条件 → **High** | 補足 | 対応 |
+| AC | 下限 | High となる条件 | 補足 | 対応 |
 |---|---|---|---|---|
 | AC-08 | 権限/所有権/属性付与 | setuid/setgid 付与・world-writable 等の権限拡大・trust-critical 所有権変更・`chattr -i`（完全性制御除去） | 例 `chmod u+s`・`chmod 0777`・`chown root /usr/bin/x`・`chattr -i /etc/shadow` | 0140 AC-20 |
 | AC-09 | `install` 権限フラグ | `-m` に setuid/setgid、または `-o`/`-g` で所有者/グループ変更 | safe-zone でも降格しない | 0140 AC-22a |
@@ -167,9 +167,9 @@
 | AC | コマンド | パス信頼区分の判定対象 | 特則 | 対応 |
 |---|---|---|---|---|
 | AC-12 | cp/mv/rm/shred/unlink/ln | 全オペランド（mv は移動元・ln はリンク元も） | trust-critical な移動元/リンク元の mv/ln は High。`cp` は宛先判定だが機密ファイル/trust-critical なコピー元の複製は safe-zone でも Medium 下限、`cp -p`/`-a` の特権メタデータ複製（setuid/root 所有のコピー元）は High | 0140 AC-22b |
-| AC-13 | mount/umount | mountpoint＋マウント元 | trust-critical→High（`--bind`/`--rbind`/`--move` のマウント元・デバイス含む）、`umount -a`→無条件 High、他は Medium | 0140 AC-19 |
+| AC-13 | mount/umount | mountpoint＋マウント元 | trust-critical は High（`--bind`/`--rbind`/`--move` のマウント元・デバイス含む）、`umount -a` は無条件 High、他は Medium | 0140 AC-19 |
 | AC-14 | tee/sponge | 全 FILE 引数（非フラグ） | 複数 FILE は各々パス信頼区分を判定して max。内側コマンドは実行しない | 0140 AC-22d |
-| AC-15 | find（破壊/書込） | 探索起点（省略時 `EffectiveWorkDir`）/書込先 FILE | `-delete`/`-fprint*` のパス信頼区分を判定（trust-critical 起点→High、信頼 safe-zone 起点→Low）、読取専用は非昇格、`-exec`/`-execdir`/`-ok`/`-okdir` の内側実行は**間接実行 Reject**（0141/既存。本タスク対象外） | 0140 AC-22e |
+| AC-15 | find（破壊/書込） | 探索起点（省略時 `EffectiveWorkDir`）/書込先 FILE | `-delete`/`-fprint*` のパス信頼区分を判定（trust-critical 起点は High、信頼 safe-zone 起点は Low）、読取専用は非昇格、`-exec`/`-execdir`/`-ok`/`-okdir` の内側実行は**間接実行 Reject**（0141/既存。本タスク対象外） | 0140 AC-22e |
 
 > **用語「機密ファイル」**: 内容が秘匿情報のファイル（読む/複製すると情報が露出するもの）。safe-zone へ
 > コピーしても内容（秘密）が漏れるため、機密ファイル/trust-critical なコピー元の複製は safe-zone でも Medium 下限にする
@@ -182,18 +182,18 @@
 ### F-004: データ送信のローカル書込 High 化と max 合成
 
 - **AC-16**（ローカル trust-critical 書込）— 0140 AC-25 の書込先部分:
-  - **規則**: データ送信系のファイル書込/削除形がローカルの trust-critical パスへ作用する場合 → ④信頼境界破壊として
+  - **規則**: データ送信系のファイル書込/削除形がローカルの trust-critical パスへ作用する場合は ④信頼境界破壊として
     **High**。対象形（書込先の抽出は F-002 仕様表）:
     - `curl -o /usr/bin/x`・`curl -O <url>`（URL 由来名を cwd へ）
     - `wget -O /etc/cron.d/x`・`wget` 既定・`wget -P <dir>`
     - `scp host:/x /usr/bin/x`・`sftp` バッチ書込
     - `rsync … <DEST>`・`--delete`
-  - **合成**: 最終リスク = `max(データ送信の名前→Medium〔0141〕, 書込先のパス信頼区分)`。同一コマンドが 0141/0142 両方で
+  - **合成**: 最終リスク = `max(データ送信の名前による Medium〔0141〕, 書込先のパス信頼区分)`。同一コマンドが 0141/0142 両方で
     評価されるため、max 合成の所有者・テストは 0142。
   - **必須テスト**（両寄与が同時に生きていることを検証）:
-    - (i) safe-zone 宛先（`curl <url> -o $WORKDIR/safe`）→ **Medium**（書込先のパス信頼区分が Low でも名前下限が効く）
-    - (ii) trust-critical 宛先（`curl -o /usr/bin/x`）→ **High**（書込先のパス信頼区分が名前下限を上回る）
-  - **前提**: 0141 の名前→Medium 下限が評価器に組み込み済みであること（0141 が再編する共有コード。§3）。未組み込みでは (i) が見かけの下限で誤って通る。
+    - (i) safe-zone 宛先（`curl <url> -o $WORKDIR/safe`）は **Medium**（書込先のパス信頼区分が Low でも名前下限が効く）
+    - (ii) trust-critical 宛先（`curl -o /usr/bin/x`）は **High**（書込先のパス信頼区分が名前下限を上回る）
+  - **前提**: 0141 の名前による Medium 下限が評価器に組み込み済みであること（0141 が再編する共有コード。§3）。未組み込みでは (i) が見かけの下限で誤って通る。
 
 ### F-005: 判断軸2 を唯一の判定基準とし、既存の High 判定を置き換える（根本原因2）
 
@@ -215,15 +215,15 @@
   - **置き換え条件（完全認識のときのみ）**: (a) 抽出された全オペランドが非 `Unknown` の確定パス信頼区分を返し、かつ
     (b) オペランド抽出器が全コマンドライン引数を解析しきった（未解析の非フラグトークン無し・パスを運び得る未知の値取りフラグ無し）。
   - **不完全認識のとき（fail-open 回避）**: 部分的/不確実なパース（一部オペランド未認識・未解析トークン残存・未知の値取り
-    フラグ）→ `ZoneUnresolved` とし **①〜⑤の High を残す**。「一部だけ認識した」で①〜⑤を外すと、理解できない危険形が
-    安全な区分と誤判定され Low で素通りする（fail-open）。AC-05/AC-07 の「全オペランド max・未解決→High」が置き換え後も下限として残る。
+    フラグ）は `ZoneUnresolved` とし **①〜⑤の High を残す**。「一部だけ認識した」で①〜⑤を外すと、理解できない危険形が
+    安全な区分と誤判定され Low で素通りする（fail-open）。AC-05/AC-07 の「全オペランド max・未解決は High」が置き換え後も下限として残る。
   - **例外**: ⑤の setuid 下限は再パースせず既存 lstat シグナル（`hasSetuidOrSetgidBit` 相当）を操作固有の下限の判定が流用。
     ファイル操作コマンド以外（`find -exec` の内側実行・判断軸2 が扱わない未知コマンド）は従来どおり既存判定/間接実行が
     担う（同名でも非ファイル操作用途では④を無効化しない）。
   - **観測可能プロパティ（テスト）**:
-    - 信頼 safe-zone `rm -rf $WORKDIR/build` → **Low**（④ rank6・②coreutils の固定 High で打ち消されない）
-    - ordinary `rm /srv/app/cache.dat` → **Medium**
-    - 未知フラグで宛先不確実な `rm` → **High**（①〜⑤を残す）
+    - 信頼 safe-zone `rm -rf $WORKDIR/build` は **Low**（④ rank6・②coreutils の固定 High で打ち消されない）
+    - ordinary `rm /srv/app/cache.dat` は **Medium**
+    - 未知フラグで宛先不確実な `rm` は **High**（①〜⑤を残す）
 - **AC-18**（max 合成）— 0140 AC-31: 最終リスクは適用される判定の max。判断軸1（コマンド名分類）と判断軸2（宛先
   パス信頼区分）が双方適用されるコマンドはその最大値（例 `cp -a … /usr/bin`＝High）。順序非依存。
 
@@ -242,7 +242,7 @@
     runner 転送を本タスクで追加。
   - **根拠**: 無ければ configured 環境で AC-01/AC-04 が成立せず、テスト注入でしか通らない。
 - **AC-21**（identity 注入の純粋性）— 新規。0140/00 §3.4:
-  - **規則**: run-as 名→UID/GID/補助 group の解決はパス信頼区分判定の外（評価器の組み込み層）で行い、precomputed `RunAsIdent` を
+  - **規則**: run-as 名から UID/GID/補助 group への解決はパス信頼区分判定の外（評価器の組み込み層）で行い、precomputed `RunAsIdent` を
     `ZoningInput` に注入。**パス信頼区分の判定は live identity（`os.Geteuid`/`os.Getuid`/`syscall`/`unix` の uid/gid/groups・
     `user.Current`）を読まない**。
   - **テスト（差分テストを主）**: 注入 `RunAsIdent` をテストプロセスの実 euid/gid と異なる値にし、Trusted/Low 判定が
@@ -255,7 +255,7 @@
 - **AC-22**（runtime==dry-run・read-only）: 判断軸2 のパス解決は `lstat`/`readlink` のみの read-only で、runtime と
   dry-run で同一レベルを返す。結果は live euid・`$HOME` env に依存しない（AC-21）。（0140 AC-28／NF-003）
 - **AC-23**（解決コストの上限・fail-closed）: 解決は評価単位でメモ化（同一親の再解決をしない）し、**1 コマンド
-  評価あたりのオペランド総数（>N）または symlink 追従ホップ総数（>M）が上限を超えたら `ZoneUnresolved`→High**
+  評価あたりのオペランド総数（>N）または symlink 追従ホップ総数（>M）が上限を超えたら `ZoneUnresolved` は High**
   （書込/削除）に倒す（具体値 N/M は 02/実装で確定）。必須テスト: 上限を超える入力（多数オペランド・深い
   symlink チェーン）で fail-closed（High）になり、メモ化により注入関数（lstat/stat）の呼出回数が線形に収まることを表明する
   （ExecuteCommand ホットパスでの無制限 FS I/O・DoS を防ぐ）。（新規／0140/02 §3.5）

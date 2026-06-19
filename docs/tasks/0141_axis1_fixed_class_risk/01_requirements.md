@@ -41,7 +41,7 @@ max 合成される。
   - 検出限界（名前ベース AI vs データ送信）の文書化（F-006 の doc 部分）。
 - **Out**:
   - 宛先パスの信頼区分判定（trust-critical/ordinary/safe-zone）と、書込先オペランド抽出を伴う判定は 0142 が担当。
-    特に `curl -o`/`scp` 等のローカル trust-critical 書込→High は 0142（本タスクはデータ送信の Medium 据え置きと
+    特に `curl -o`/`scp` 等のローカル trust-critical 書込は High（0142）（本タスクはデータ送信の Medium 据え置きと
     ヘルパー実行の間接化のみ）。
   - オペランド毎の監査フィールド・変更ノート（changelog）・文書整合・sample config 追従・ガイド最終化は 0143 が担当。
     （後方互換不要のため段階ロールアウト/フラグは設けない。）
@@ -74,27 +74,27 @@ max 合成される。
 
 ### F-002: 永続システム変更・特権コード実行・権限付与・信頼境界の High 化
 
-- **AC-04**: カーネル/モジュール・パラメータ `insmod`・`modprobe`・`rmmod`・`kexec`・`sysctl` → High（引数に
+- **AC-04**: カーネル/モジュール・パラメータ `insmod`・`modprobe`・`rmmod`・`kexec`・`sysctl` は High（引数に
   よらず。名前のみ粗粒度のため read-only な `sysctl -a` も fail-safe High＝引数で例外を作らない）。（0140 AC-04）
 - **AC-05**: アカウント・認証 DB 系 `useradd`/`usermod`/`userdel`/`groupadd`/.../`passwd`/`chage`/`newusers`/
-  `vipw`/`vigr`/`visudo` → High。（0140 AC-05）
+  `vipw`/`vigr`/`visudo` は High。（0140 AC-05）
 - **AC-06**: ブートローダ/エントリ/カーネルイメージ改変 `grub-install`/`grub2-*`/`update-grub`/`efibootmgr`/
-  `kernel-install`/`installkernel` → High。（0140 AC-06）
-- **AC-07**: ブート時サービス有効化 `chkconfig`・`update-rc.d` → High（`systemctl`/`service` と同質）。（0140 AC-07）
-- **AC-08**: 電源状態/ランレベル `shutdown`・`reboot`・`halt`・`poweroff`・`telinit` → High。（0140 AC-07a）
-- **AC-09**: ファイアウォール `iptables`・`ip6tables`・`(ip6)tables-restore`・`nft`・`ufw`・`firewall-cmd` →
+  `kernel-install`/`installkernel` は High。（0140 AC-06）
+- **AC-07**: ブート時サービス有効化 `chkconfig`・`update-rc.d` は High（`systemctl`/`service` と同質）。（0140 AC-07）
+- **AC-08**: 電源状態/ランレベル `shutdown`・`reboot`・`halt`・`poweroff`・`telinit` は High。（0140 AC-07a）
+- **AC-09**: ファイアウォール `iptables`・`ip6tables`・`(ip6)tables-restore`・`nft`・`ufw`・`firewall-cmd` は
   High。`iptables-save`/`ip6tables-save`（stdout）は既定 Low（`-f <file>` 出力の宛先のパス信頼区分判定は 0142）。（0140 AC-08）
-- **AC-10**: 能力付与 `setcap` → High。（0140 AC-09）
-- **AC-11**: 信頼境界の置換 intrinsic `update-alternatives`・`dpkg-divert`・`alternatives`・`ldconfig` →
+- **AC-10**: 能力付与 `setcap` は High。（0140 AC-09）
+- **AC-11**: 信頼境界の置換 intrinsic `update-alternatives`・`dpkg-divert`・`alternatives`・`ldconfig` は
   High（宛先によらず）。（0140 AC-10）
-- **AC-12**: ジョブ/遅延・transient 実行 `crontab`・`at`・`batch`・`systemd-run` → High。（0140 AC-10a）
+- **AC-12**: ジョブ/遅延・transient 実行 `crontab`・`at`・`batch`・`systemd-run` は High。（0140 AC-10a）
 
 ### F-003: 限定スコープのシステム変更の Medium 化
 
-- **AC-13**: LVM 作成/設定系 `lvcreate`・`vgcreate`・`lvextend`・`vgchange`・`lvchange` → Medium。（0140 AC-11）
-- **AC-14**: `ip`・`ifconfig`・`route` → Medium（名前のみ・粗粒度）。ただし `ip netns exec <NAME> <cmd>`・
+- **AC-13**: LVM 作成/設定系 `lvcreate`・`vgcreate`・`lvextend`・`vgchange`・`lvchange` は Medium。（0140 AC-11）
+- **AC-14**: `ip`・`ifconfig`・`route` は Medium（名前のみ・粗粒度）。ただし `ip netns exec <NAME> <cmd>`・
   `ip vrf exec <NAME> <cmd>` は内側 `<cmd>` の間接実行として扱い、最終リスク = 内側 `<cmd>` の評価値を
-  High 以上に引き上げる（下限 High）（例: `ip netns exec ns rm -rf /` → 内側評価かつ最低 High、`ip netns exec ns modprobe x` → High）。
+  High 以上に引き上げる（下限 High）（例: `ip netns exec ns rm -rf /` は 内側評価かつ最低 High、`ip netns exec ns modprobe x` は High）。
   内側を抽出できない形は Reject。（0140 AC-12）
 - **AC-15**: `mount`/`umount` の既定は Mediumを維持する（対象 trust-critical の引き上げは 0142）。（0140 AC-13）
 
@@ -127,20 +127,20 @@ max 合成される。
 ### F-007: 0139 AC-06 乖離の訂正
 
 - **AC-21**: 0139 AC-06（fdisk/mkfs=Medium 維持）と実装の乖離を、fdisk/mkfs/parted/fsck=High を正として
-  訂正する（`parted`/`fsck` を Medium→High に引き上げる）。0139 のドキュメントは触らず、訂正の文書反映は
+  訂正する（`parted`/`fsck` を Medium から High に引き上げる）。0139 のドキュメントは触らず、訂正の文書反映は
   0143。（0140 AC-27）
 
 ### F-008: ラッパ/間接実行の整合と env/timeout の High 化
 
-- **AC-22**: ラッパー/間接実行経由の判定: `env modprobe x` → High、`sudo useradd u` → Critical。
+- **AC-22**: ラッパー/間接実行経由の判定: `env modprobe x` は High、`sudo useradd u` は Critical。
   名前空間/ルート変更ラッパ `chroot`・`unshare`・`nsenter`、コマンド文字列ラッパ `flock`・`watch` も間接実行
   ファミリに追加し（現状 `wrapperSpecs` に未登録＝新規配線）、内側コマンドをゲートして外側で素通りさせない:
   最終リスク = 内側評価値をHigh 以上に引き上げる（下限 High）（`flock f cmd`・`watch cmd`・`unshare -r <cmd>`・`nsenter -t 1 <cmd>`）。
   COMMAND を省略した形（`chroot /mnt`・`unshare`・`nsenter -t 1 -m`）は暗黙シェル起動とみなし内側未指定でも
   High 以上（`unshare -r`・`nsenter -t 1` 等の特権/名前空間エスケープ形を素通りさせない）。（0140 AC-29）
 - **AC-23**: 安全な TOML 代替がある実行ラッパ `env`（→ `env_vars`/`env_import`）・`timeout`（→ `timeout`）は
-  直接呼び出しを High に分類する（無害に見える形も含む）。内側は間接実行で引き続きゲート（`env dpkg -i`→High、
-  `sudo env …`→Critical）。Critical にはしない。代替の無いラッパ（`nice`/`ionice`/`stdbuf`/`setsid`）には
+  直接呼び出しを High に分類する（無害に見える形も含む）。内側は間接実行で引き続きゲート（`env dpkg -i` は High、
+  `sudo env …` は Critical）。Critical にはしない。代替の無いラッパ（`nice`/`ionice`/`stdbuf`/`setsid`）には
   redundant 由来の追加の下限を課さないが、抽出可能ラッパ内側の一律 High 下限は維持。`env` 経由の loader 制御
   変数（`LD_PRELOAD` 等）は従来どおり forbidden-env-var で拒否。（0140 AC-29a）
 
