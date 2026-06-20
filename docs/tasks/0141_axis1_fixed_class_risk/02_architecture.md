@@ -698,5 +698,3 @@ DTO・パッケージ依存は既存のまま（`security → risktypes → runn
   `stdbuf`/`setsid` は据え置く（§3.3(c)）。
 - **ロールアウトフラグ・shadow を設けない**: 後方互換不要のため新分類を直接適用する
   （[00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md) §3.2）。
-</content>
-</invoke>
