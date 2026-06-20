@@ -12,7 +12,7 @@
 
 > 本書は 0140 を 3 分割した第 1 タスク（判断軸1＝コマンド名分類）の設計である。要件は
 > [01_requirements.md](01_requirements.md)、分割方針・根本原因への対処方針は
-> [0140/00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md)、原典の確定アーキは
+> [0140/00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md)、原典の確定アーキテクチャは
 > [0140/02_architecture.md](../0140_risk_level_classification_review/02_architecture.md)（superseded）を参照する。
 > 既存のリスク評価パイプライン（順位 1〜8）の全体像は
 > [0136/02_architecture.md](../0136_runtime_risk_evaluation_enforcement/02_architecture.md)、間接実行リゾルバの全体像は
@@ -178,7 +178,7 @@ sequenceDiagram
     W->>W: 特権トークンでない & 抽出可能
     W-->>A: IndirectFloor (High, RoleInner)
     A-->>E: Floor(High)
-    Note over E: env は redundant-with-config<br>→ 無コマンド形でも High 下限
+    Note over E: env は redundant-with-config<br>→ no-command 形でも High 下限
     E->>S: 順位4: 直接 modprobe を分類 (参考)
     S-->>E: High (kernel module)
     Note over E: 最終 = max(Floor High, ...) = High
@@ -229,8 +229,9 @@ func (p CommandRiskProfile) IsPrivilege() bool
 
 **現状の名前集合（変更前）と本タスクの差分**: 現状の `highSystemModificationNames` はパッケージマネージャ群
 ＋`systemctl`/`service` のみ、`mediumSystemModificationNames` は `chkconfig`/`update-rc.d`/`mount`/`umount`/
-`fdisk`/`parted`/`mkfs`/`fsck`/`crontab`/`at`/`batch` である。したがって本タスクの大半は **Medium→High の移動では
-なく純粋な新規 High 追加** であり、移動は次の 2 種に限られる:
+`fdisk`/`parted`/`mkfs`/`fsck`/`crontab`/`at`/`batch` である。したがって本タスクの大半は **既存からの
+移動ではなく純粋な新規追加（High／Medium）** であり、既存からの移動は Medium→High の 1 種のみである。内訳は次の
+とおり:
 
 - **Medium→High へ移動**: `parted`・`fsck`（AC-21）、`crontab`・`at`・`batch`（AC-12）、`chkconfig`・`update-rc.d`（AC-07）。
   これらは現状 Medium 集合にあり、High 集合へ移す。
@@ -264,12 +265,12 @@ func SystemModificationRisk(names map[string]struct{}) runnertypes.RiskLevel
 
 留意点:
 
-- **`mkfs.*`/`fsck.*` 等の variant（現状の被覆を正確に）**: 現状 `CheckDangerousArgPatterns` は `mkfs.` プレフィクス
+- **`mkfs.*`/`fsck.*` 等のサフィックス付き派生名（現状の対象範囲を正確に）**: 現状 `CheckDangerousArgPatterns` は `mkfs.` プレフィクス
   （`strings.HasPrefix(n, "mkfs.")`）のみを High 特例化しており、`mkfs.ext4` は既に High。一方 **`fsck.*` のプレフィクス
   特例は存在せず**、`fsck.ext4` は現状 Medium（`mediumSystemModificationNames`）止まりである。また静的
   `dangerousCommandPatterns` には `mkfs`/`fdisk` はあるが `parted`/`fsck` は無い。したがって AC-01／AC-03 を満たすには、
   bare 名（`mkfs`/`fdisk`/`parted`/`fsck`）の High 化を `SystemModificationRisk` 側で担保することに加え、`mkfs.` と
-  同様の **`fsck.*` variant 規則** を追加する（bare 名集合だけでは `fsck.ext4` を捕捉できない）。`mkfs.` と `fsck.` で
+  同様の **`fsck.*` 派生名規則** を追加する（bare 名集合だけでは `fsck.ext4` を捕捉できない）。`mkfs.` と `fsck.` で
   max 合成される。
 - **`iptables-save`/`ip6tables-save`（stdout）**: 既定 Low のまま据え置く（`-f <file>` 出力先のパス信頼区分判定は
   0142）。High 名集合へは含めない（AC-09）。
@@ -314,13 +315,13 @@ type IndirectExecutionResult struct {
 > 適合しない。本タスクが追加する 5 コマンドはいずれもこの固定モデルに収まらず、**専用ハンドラ**（既存の
 > `analyzeEnv`/`analyzeTaskset` と同様の per-command 関数）を要する。理由を以下に明示する。
 
-- **COMMAND 省略形 = 暗黙シェル起動（no-command=High）**: `chroot /mnt`・`unshare`・`nsenter -t 1 -m` のように
+- **no-command 形（COMMAND 省略形）= 暗黙シェル起動（High）**: `chroot /mnt`・`unshare`・`nsenter -t 1 -m` のように
   内側コマンドを伴わない形は、対象ツールがシェルを起動するため、内側未指定でも **High 下限** を返す
   （`unshare -r`・`nsenter -t 1` 等の特権/名前空間エスケープ形を素通りさせない）。これは汎用 `analyzeWrapper`
   （`nice`/`ionice`/`stdbuf`/`setsid` 等）の no-command **Medium** 下限とは異なるため、**汎用ラッパ経路には載せられない**
   （専用ハンドラで no-command 分岐を High に倒す）。なお `env`/`timeout` の no-command 形も §(c) により High になるが、
   その High は暗黙シェル起動ではなく redundant-with-config（安全な TOML 代替がある）に由来する別経路である。
-- **`chroot NEWROOT [COMMAND]` の先頭ポジショナル**: `chroot` は先頭に NEWROOT ポジショナル（例 `/mnt`）を取り、
+- **`chroot NEWROOT [COMMAND]` の先頭の位置引数**: `chroot` は先頭に NEWROOT という位置引数（例 `/mnt`）を取り、
   その後に COMMAND が省略可能。固定 `positionals=1` モデルでは `chroot /mnt` の `/mnt` を内側コマンドと誤抽出する
   （`/mnt` は `/` 始まりのため `strings.HasPrefix(cmd, "-")` の reject ガードにも掛からない）。よって NEWROOT を
   読み飛ばしつつ no-command を判別する専用処理が要る。
@@ -363,9 +364,9 @@ High に分類する（無害に見える形も含む）。
 **実装上の注意（下限は 2 つの異なる経路に存在する）**: `env` の no-command 下限は `analyzeEnv` 内（複数箇所）で、
 `timeout` の no-command 下限は `nice`/`ionice`/`stdbuf`/`setsid` 等と共有の汎用 `analyzeWrapper` 内で発行される。
 `env` は `analyzeWrapper` を通らない（専用 `analyzeEnv` へ分岐する）ため、単一テーブルでは両者を駆動できない。
-したがって **no-command 下限のレベルを「ラッパ名 ∈ `{env, timeout}` なら High、それ以外は Medium」と各パース箇所で
-名前キーで選択する**（`timeout` 用には汎用ラッパ経路の floor レベルをラッパ種別ごとに持てるよう拡張する）。
-名前キー判定はパース箇所（ラッパ抽出時）で行うため、トップレベルでも他ラッパにネストされた `timeout`（例
+したがって、**no-command 下限のレベルを各パース箇所でラッパ名により切り替える**——`env`/`timeout` なら High、
+それ以外は Medium とする（`timeout` 用には、汎用ラッパ経路の floor レベルをラッパ種別ごとに保持できるよう拡張する）。
+この切り替えはパース箇所（ラッパ抽出時）で行うため、トップレベルでも他ラッパにネストされた `timeout`（例
 `nice timeout 5`）でも一貫して High になる。レベル差のみで、reason code は既存の `ReasonIndirectExecutionWrapper` を
 流用する。テストでトップレベル `timeout 5`=High とネスト `nice timeout 5`=High の双方を固定する（§7.1）。
 
@@ -396,10 +397,10 @@ High に分類する（無害に見える形も含む）。
 >    検出されている。本タスクはこれを「一律 Reject」から「値を上記契約で抽出 → 内側ゲート（下限 High）、抽出不能なら
 >    Reject」へ変更する（rsync を当該 Reject 経路から移管）。
 > 2. **`ssh -o ProxyCommand=`/`LocalCommand=` の新規検出**: `ssh` は現状 `remoteShellOptionPrefixes` に存在せず
->    （rsync/tar のみ）、`-o KEY=VALUE` のサブオプション解析も存在しない。本タスクは rank-2 間接実行経路に、`-o` を
->    値オプションとして認識し（分離形 `-o ProxyCommand=…`・連結形 `-oProxyCommand=…`・分離値 `-o` `ProxyCommand=…`）、
->    その `KEY=VALUE` 内の `ProxyCommand`/`LocalCommand` の値を上記契約で抽出する**新規サブパーサ**を追加する。
->    これは単純なオプション名一致である rsync `-e` より難易度が高く、別ケースとして扱う。`ssh` の Medium プロファイル
+>    （rsync/tar のみ）、`-o KEY=VALUE` のサブオプション解析も存在しない。本タスクは rank-2 間接実行経路に
+>    **新規サブパーサ**を追加する。これは `-o` を値オプションとして認識し（分離形 `-o ProxyCommand=…`・連結形
+>    `-oProxyCommand=…`・分離値 `-o` `ProxyCommand=…`）、その `KEY=VALUE` 内の `ProxyCommand`/`LocalCommand` の値を
+>    上記契約で抽出する。これは単純なオプション名一致である rsync `-e` より難易度が高く、別ケースとして扱う。`ssh` の Medium プロファイル
 >    （AC-18）と本 High 下限は max 合成され実効 High になるが、検出は rank-2（プロファイル評価より前）で行う。
 
 > **既存方針への意図的な例外（インライン明示）**
@@ -426,7 +427,7 @@ High に分類する（無害に見える形も含む）。
 （High へ引き上げない）。ローカル trust-critical 書込形（`curl -o /usr/bin/x` 等）の High 化、および
 `max(名前 Medium, 書込先 High)` の合成は 0142 の所掌であり、本タスクは Medium 据え置きのみを担保する。
 
-現状の `commandProfileDefinitions` の被覆を正確に述べる: `curl`/`wget`（Always, Medium）・`scp`/`ssh`（Always,
+現状の `commandProfileDefinitions` の対象範囲を正確に述べる: `curl`/`wget`（Always, Medium）・`scp`/`ssh`（Always,
 Medium）・`nc`/`netcat`/`telnet`（Always, Medium）は無条件 Medium。`rsync` は `ConditionalNetwork()`（サブコマンド
 無し）であり、`ProfileFactorRisk` が Medium を返すのはリモートスタイル引数（`host:path` 形）が存在するときのみで、
 ローカルのみの `rsync /a /b` は現状 Low である。`sftp` は profile が無く現状 Low。
@@ -449,7 +450,7 @@ High 化は 0142）。それ以外のレベル変更は行わない。
 
 | ファイル | 区分 | 責務／変更内容 | 反映 AC | 要更新の既存テスト |
 |---|---|---|---|---|
-| `internal/runner/base/security/command_analysis.go` | 変更 | `commandProfileDefinitions` へ特権ラッパ（`pkexec`/`runuser`/`setpriv`/`capsh`）と `sftp` Medium を追加。`highSystemModificationNames`／`mediumSystemModificationNames` を拡張（大半は新規 High 追加。移動は `parted`/`fsck`/`crontab`/`at`/`batch`/`chkconfig`/`update-rc.d` の Medium→High のみ）。kernel/auth/boot/power/FW/setcap/trust-intrinsic/`systemd-run`/デバイス破壊系を High 新規追加、LVM 作成・`ip`/`ifconfig`/`route` を Medium 新規追加。`fsck.*` variant 規則を追加（§3.2） | AC-01〜AC-18, AC-21 | `command_analysis_test.go::TestSystemModificationRisk`（`parted`/`fsck`/`crontab`/`at`/`batch`/`chkconfig`/`update-rc.d`=Medium）、`TestCommandRiskProfiles_PrivilegeEscalation`／`TestMigration_IsPrivilegeConsistency`（特権=sudo/su/doas のみ） |
+| `internal/runner/base/security/command_analysis.go` | 変更 | `commandProfileDefinitions` へ特権ラッパ（`pkexec`/`runuser`/`setpriv`/`capsh`）と `sftp` Medium を追加。`highSystemModificationNames`／`mediumSystemModificationNames` を拡張（大半は新規 High 追加。移動は `parted`/`fsck`/`crontab`/`at`/`batch`/`chkconfig`/`update-rc.d` の Medium→High のみ）。kernel/auth/boot/power/FW/setcap/trust-intrinsic/`systemd-run`/デバイス破壊系を High 新規追加、LVM 作成・`ip`/`ifconfig`/`route` を Medium 新規追加。`fsck.*` 派生名規則を追加（§3.2） | AC-01〜AC-18, AC-21 | `command_analysis_test.go::TestSystemModificationRisk`（`parted`/`fsck`/`crontab`/`at`/`batch`/`chkconfig`/`update-rc.d`=Medium）、`TestCommandRiskProfiles_PrivilegeEscalation`／`TestMigration_IsPrivilegeConsistency`（特権=sudo/su/doas のみ） |
 | `internal/runner/base/security/indirect_execution.go` | 変更 | 専用ハンドラ（固定 `wrapperSpec` では表現不可、§3.3(a)）で `chroot`/`unshare`/`nsenter`/`flock`/`watch` を追加（no-command=High 下限）。`ip netns/vrf exec` の内側抽出。`env`/`timeout` の redundant-with-config High 下限（名前キー、ネストでも適用）。`rsync -e`/`--rsh` を Reject→抽出ゲート化（`analyzeRemoteShellOption` から移管）、`ssh -o ProxyCommand`/`LocalCommand` の新規 `-o` サブパーサ追加。コマンド文字列は fail-closed トークナイザ契約（§3.3(d)）に束縛。`tar --to-command`/`--checkpoint-action` は Reject 据え置き | AC-14, AC-19, AC-22, AC-23 | `indirect_execution_test.go::TestIndirect_CommandExecOptionsGated`（rsync=Reject。tar は据え置き）、`TestIndirect_WrapperNoCommandMedium`（env/timeout no-command=Medium） |
 | `internal/runner/base/risk/evaluator.go` | 参照（基本不変） | 順位 1〜8 の構造・取り込み方は不変。本タスクの分類拡張は evaluator が既に呼ぶ `security` 関数群に閉じる。0142 が `evaluateDimensions` をこの上に構築する（[00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md) §2） | — | `evaluator_test.go::TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation`（特権=sudo/su/doas のみ。pkexec 等を追加） |
 | `docs/dev/architecture_design/command-risk-evaluation.ja.md` | 変更 | 名前ベース AI 検出の検出限界（AC-20）を追記 | AC-20 | （doc。`static` 検証） |
@@ -468,7 +469,7 @@ High 化は 0142）。それ以外のレベル変更は行わない。
 - **Critical（無条件ブロック）**: 特権昇格ラッパ。`IndirectCritical`／順位 3 の Critical plan。理由コード
   `ReasonPrivilegeEscalation`。
 - **Reject（Blocking deny）**: 抽出不能なヘルパー実行オプション、`ip … exec` の内側欠落、ローダ制御変数
-  （`ReasonForbiddenEnvVar`）、抽出不能ラッパー（`ReasonIndirectExecutionRejected`）。`tar --to-command`/
+  （`ReasonForbiddenEnvVar`）、抽出不能ラッパ（`ReasonIndirectExecutionRejected`）。`tar --to-command`/
   `--checkpoint-action` は Reject 据え置き。
 
 fail-closed の原則は既存どおり: 名前解決失敗（`ErrorClassSymlinkResolution`）、オプション境界の不確定
@@ -624,7 +625,7 @@ DTO・パッケージ依存は既存のまま（`security → risktypes → runn
 - **システム変更名分類（AC-01〜AC-15, AC-21）**: `TestSystemModificationRisk` を表駆動で拡張。High 層・Medium 層の
   代表コマンドが期待レベルを返すこと、特に `parted`/`fsck`/`crontab`/`at`/`batch`/`chkconfig`/`update-rc.d` の
   Medium→High、kernel/auth/boot/power/FW/setcap/trust-intrinsic/`systemd-run`・デバイス破壊系の新規 High、LVM 作成・
-  `ip`/`ifconfig`/`route` の新規 Medium を検証。`fsck.ext4` 等の variant が High になること（`fsck.*` 規則）も検証。
+  `ip`/`ifconfig`/`route` の新規 Medium を検証。`fsck.ext4` 等の派生名が High になること（`fsck.*` 規則）も検証。
 - **特権ラッパ（AC-16, AC-17）**: `TestCommandRiskProfiles_PrivilegeEscalation`／`TestMigration_IsPrivilegeConsistency`／
   `evaluator_test.go::TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation` に `pkexec`/`runuser`/`setpriv`/`capsh` を
   追加し、直接形・ネスト形（`env pkexec …`）が Critical になること、F-002 系（`visudo`/`insmod`）が High であって
@@ -693,7 +694,7 @@ DTO・パッケージ依存は既存のまま（`security → risktypes → runn
   検討余地はあるが、現要件（有限の固定名集合）には過剰であり採らない（[01_requirements.md](01_requirements.md) §6）。
 - **rsync -e / ssh ProxyCommand の Reject→extract+gate 緩和（AC-19）**: 既存方針（0138 §3.4 の一律 Reject）からの
   意図的な例外。根拠・既存テストへの影響は §3.3(d) にインライン記載。`tar --to-command` を例外に含めない理由も同箇所。
-- **`env`/`timeout` の no-command を High に引き上げ（AC-23）**: 0138 §3.4 が「無コマンド = Medium 下限」を維持と
+- **`env`/`timeout` の no-command 形を High に引き上げ（AC-23）**: 0138 §3.4 が「no-command 形 = Medium 下限」を維持と
   していたのに対し、本タスクは redundant-with-config 由来で `env`/`timeout` のみ High へ引き上げる。`nice`/`ionice`/
   `stdbuf`/`setsid` は据え置く（§3.3(c)）。
 - **ロールアウトフラグ・shadow を設けない**: 後方互換不要のため新分類を直接適用する
