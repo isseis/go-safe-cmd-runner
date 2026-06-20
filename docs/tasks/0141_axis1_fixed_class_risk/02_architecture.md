@@ -316,9 +316,10 @@ type IndirectExecutionResult struct {
 
 - **COMMAND 省略形 = 暗黙シェル起動（no-command=High）**: `chroot /mnt`・`unshare`・`nsenter -t 1 -m` のように
   内側コマンドを伴わない形は、対象ツールがシェルを起動するため、内側未指定でも **High 下限** を返す
-  （`unshare -r`・`nsenter -t 1` 等の特権/名前空間エスケープ形を素通りさせない）。これは `env`/`timeout` の
-  no-command 形（§(c)）の Medium 下限とも、汎用 `analyzeWrapper` の no-command Medium 下限とも異なるため、
-  **汎用ラッパ経路（Medium 下限を返す）には載せられない**。専用ハンドラで no-command 分岐を High に倒す必要がある。
+  （`unshare -r`・`nsenter -t 1` 等の特権/名前空間エスケープ形を素通りさせない）。これは汎用 `analyzeWrapper`
+  （`nice`/`ionice`/`stdbuf`/`setsid` 等）の no-command **Medium** 下限とは異なるため、**汎用ラッパ経路には載せられない**
+  （専用ハンドラで no-command 分岐を High に倒す）。なお `env`/`timeout` の no-command 形も §(c) により High になるが、
+  その High は暗黙シェル起動ではなく redundant-with-config（安全な TOML 代替がある）に由来する別経路である。
 - **`chroot NEWROOT [COMMAND]` の先頭ポジショナル**: `chroot` は先頭に NEWROOT ポジショナル（例 `/mnt`）を取り、
   その後に COMMAND が省略可能。固定 `positionals=1` モデルでは `chroot /mnt` の `/mnt` を内側コマンドと誤抽出する
   （`/mnt` は `/` 始まりのため `strings.HasPrefix(cmd, "-")` の reject ガードにも掛からない）。よって NEWROOT を
@@ -339,7 +340,12 @@ type IndirectExecutionResult struct {
 `evaluateInnerAs`（`RoleInner`）でゲートする。最終リスク = 内側評価値を High 以上に引き上げる（下限 High）。
 
 - 例: `ip netns exec ns rm -rf /` → 内側評価かつ最低 High、`ip netns exec ns modprobe x` → High。
-- 内側を抽出できない形（サブコマンドが `exec` でない、`<cmd>` 欠落、`<NAME>` 抽出不能）は Reject。
+- **間接実行として扱うのは `netns exec`／`vrf exec` の形のみ**。`exec` 以外のサブコマンド（`ip netns list`／`add`／
+  `delete`、`ip vrf show` 等）は間接実行ではない（`IndirectNone`）として、通常の `ip`（Medium、経路2）で評価する。
+  ブロックはしない。
+- Reject になるのは、`netns`／`vrf` の `exec` 形であることは確定したが内側を安全に抽出できない場合に限る
+  （`exec` の後に `<cmd>` が無い、`<NAME>` を抽出できない等）。すなわち「`exec` 形だが抽出不能」のみ fail-closed で
+  Reject であり、非 `exec` サブコマンドは対象外。
 
 #### (c) `env` / `timeout` を redundant-with-config として High 化（AC-23）
 
@@ -426,7 +432,9 @@ Medium）・`nc`/`netcat`/`telnet`（Always, Medium）は無条件 Medium。`rsy
 ローカルのみの `rsync /a /b` は現状 Low である。`sftp` は profile が無く現状 Low。
 
 本タスクは AC-18 の「データ送信の判断軸で Medium を維持」を満たすため、欠落しているデータ送信系（`sftp`）の Medium
-network profile を補完する。`rsync` の Medium はリモートスタイル引数がある形に条件付き（無条件ではない）であり、これは
+network profile を補完する。`sftp` は `ssh`/`scp` と同質（常にリモート接続、AlwaysNetwork の Medium）であるため、
+実装上は新規 profile を起こすのではなく既存の `NewProfile("ssh", "scp")` を `NewProfile("ssh", "scp", "sftp")` へ
+拡張する（DRY）。`rsync` の Medium はリモートスタイル引数がある形に条件付き（無条件ではない）であり、これは
 「データ送信の判断軸」としての据え置きであって、本タスクで無条件 Medium へ引き上げることはしない（書込先合成の
 High 化は 0142）。それ以外のレベル変更は行わない。
 
