@@ -436,7 +436,7 @@
 | 責務分担 | responsibility split | コンポーネント間の責務の切り分け |
 | リスク | risk | |
 | リスク判定 | risk evaluation | リスクレベルの算出 |
-| リスク評価ロジック | risk evaluator | リスクを評価し最終リスクレベルを決めるコード（`risk/evaluator.go`／`EvaluateRisk`。判断軸1/2 をディスパッチして統合）。英語直訳「評価器」は使わない（コード識別子 `evaluator.go` 等は除く） |
+| リスク評価ロジック | risk evaluation logic | リスクを評価し最終リスクレベルを決めるコード（`risk/evaluator.go`／`EvaluateRisk`。判断軸1/2 をディスパッチして統合）。既存英語文書（`command-risk-evaluation.md`）と整合。英語直訳「評価器」/「risk evaluator」は使わない（コード識別子 `evaluator.go` 等は除く） |
 | リスクレベル | risk level | |
 | 堅牢性 | robustness | |
 | 役割 | role | |
@@ -611,7 +611,7 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
-| パス信頼区分の判定 | zone classification / zoning | 判断軸2。作用先パスを解決しパス信頼区分（trust-critical/ordinary/safe-zone）に分類してリスクを判定する処理。動詞「パス信頼区分を判定する」も使う。旧称「ゾーン分類」・英語表記 `zoning` は要件文書では使わない（コード識別子・ディレクトリ名 `axis2_destination_zoning` は除く） |
+| パス信頼区分の判定 | zone classification | 判断軸2。作用先パスを解決しパス信頼区分（trust-critical/ordinary/safe-zone）に分類してリスクを判定する処理。動詞「パス信頼区分を判定する」も使う。旧称「ゾーン分類」・英語表記 `zoning` は要件文書では使わない（コード識別子・ディレクトリ名 `axis2_destination_zoning` は除く。英語列から `zoning` を外し誤用を防ぐ） |
 
 ---
 
