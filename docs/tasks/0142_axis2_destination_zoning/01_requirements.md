@@ -46,11 +46,12 @@
   （区分非依存。F-003）、データ送信のローカル書込 High 化と max 合成（F-004）、判断軸2 を唯一の判定基準とするパス信頼区分の判定経路による
   既存の High 判定の置き換え（F-005）、組み込み・DTO・identity 注入（F-006）、決定性（F-007）。
 - **Out**:
-  - コマンド名分類（判断軸1 High/Medium）・Critical 限定・env/timeout・ラッパ/特権・データ送信の名前による Medium 下限
-    は 0141 が担当。`find -exec`/`-execdir`/`-ok`/`-okdir`・`ssh -o ProxyCommand`・`rsync -e` 等の内側コマンド実行
-    （間接実行 Reject）も 0141/既存（本タスクは `find -delete`/`-fprint*` の宛先のパス信頼区分判定のみ）。
-  - オペランド毎の監査フィールドの logger 出力・変更ノート（changelog）・文書整合・sample config 追従・ガイドは 0143 が担当
-    （本タスクは DTO 定義と `RiskAssessment` への格納まで）。
+  - **0141 が担当する項目**: コマンド名分類（判断軸1 の High/Medium）、Critical 限定、env/timeout、ラッパ/特権、
+    データ送信の名前による Medium 下限。さらに `find -exec`/`-execdir`/`-ok`/`-okdir`・`ssh -o ProxyCommand`・`rsync -e`
+    等の内側コマンド実行（間接実行 Reject）も 0141/既存が担当する（本タスクは `find -delete`/`-fprint*` の宛先の
+    パス信頼区分判定のみ）。
+  - **0143 が担当する項目**: オペランド毎の監査フィールドの logger 出力、変更ノート（changelog）、文書整合、
+    sample config 追従、ガイド（本タスクは DTO 定義と `RiskAssessment` への格納まで）。
   - `RiskLevel` の段数/意味づけ変更（新レベル追加しない）。
   - 後方互換不要のため段階ロールアウト/フラグは設けない（新分類は直接適用。0140/00 §3.2）。
 
