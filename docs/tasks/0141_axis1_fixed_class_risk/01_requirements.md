@@ -93,7 +93,7 @@ max 合成される。
 
 - **AC-13**: LVM 作成/設定系 `lvcreate`・`vgcreate`・`lvextend`・`vgchange`・`lvchange` は Medium。（0140 AC-11）
 - **AC-14**: `ip`・`ifconfig`・`route` は Medium（名前のみ・粗粒度）。ただし `ip netns exec <NAME> <cmd>`・
-  `ip vrf exec <NAME> <cmd>` は内側 `<cmd>` の間接実行として扱い、最終リスク = 内側 `<cmd>` の評価値を
+  `ip vrf exec <NAME> <cmd>` は内側 `<cmd>` の間接実行（AC-22 と同じ間接実行ファミリ）として扱い、最終リスク = 内側 `<cmd>` の評価値を
   High 以上に引き上げる（下限 High）（例: `ip netns exec ns rm -rf /` は 内側評価かつ最低 High、`ip netns exec ns modprobe x` は High）。
   内側を抽出できない形は Reject。（0140 AC-12）
 - **AC-15**: `mount`/`umount` の既定は Mediumを維持する（対象 trust-critical の引き上げは 0142）。（0140 AC-13）
