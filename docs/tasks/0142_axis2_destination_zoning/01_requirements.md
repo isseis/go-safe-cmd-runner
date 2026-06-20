@@ -13,7 +13,7 @@
 > 本書は 0140 を 3 分割した第 2 タスク（判断軸2＝宛先パス信頼区分）の要件である。分割方針・根本原因の訂正は
 > [0140/00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md)、原典の確定要件・根拠は
 > [0140/01_requirements.md](../0140_risk_level_classification_review/01_requirements.md)（superseded）を参照する。
-> コマンド名分類・ラッパ/特権（判断軸1）は 0141、監査フィールドの logger 出力・変更ノート・文書は 0143。
+> コマンド名分類・ラッパ/特権（判断軸1）は 0141、監査フィールドの logger 出力・移行ノート・文書は 0143。
 
 ## 1. 背景と目的
 
@@ -56,7 +56,7 @@
     等）の名前による Medium 下限（引数を見ず名前だけで最低 Medium）。さらに `find -exec`/`-execdir`/`-ok`/`-okdir`・`ssh -o ProxyCommand`・`rsync -e`
     等の内側コマンド実行（間接実行 Reject）も 0141/既存が担当する（本タスクは `find -delete`/`-fprint*` の宛先の
     パス信頼区分判定のみ）。
-  - **0143 が担当する項目**: オペランド毎の監査フィールドの logger 出力、変更ノート（changelog）、文書整合、
+  - **0143 が担当する項目**: オペランド毎の監査フィールドの logger 出力、移行ノート（changelog）、文書整合、
     sample config 追従、ガイド（本タスクは DTO 定義と `RiskAssessment` への格納まで）。
   - `RiskLevel` の段数/意味づけ変更（新レベル追加しない）。
   - 後方互換不要のため段階ロールアウト/フラグは設けない（新分類は直接適用。0140/00 §3.2）。
@@ -241,9 +241,14 @@
   - **規則**: オペランド毎の判定記録 DTO（`OperandZone`/`PathZone` 相当: Index/Raw/Resolved/Zone/MatchedCritical/Trusted/
     UnresolvedErr）を `risktypes` に定義し、`RiskAssessment` に格納（`security → risktypes` 一方向依存を維持。
     `security` に置くと循環）。logger への JSON 出力は 0143。本タスクは `RiskAssessment` への格納までを担保。
+  - **空・解決不能の区別（0143 が消費する契約）**: carrier（`[]OperandZone`）は、判断軸2 非適用のコマンド（ファイル
+    操作でない）では**空（要素ゼロ）**とし、判断軸2 を適用したが解決不能のオペランドは `Zone==unresolved` の要素
+    として残す。この「空」と「適用したが解決不能」を 0142 の格納で区別可能にする（0143 AC-01 が監査出力の存在条件
+    として消費する。区別が無いと監査ログで両者が同一に見える）。詳細な carrier 形状（フィールド名・型）は 0142/02 で確定。
   - **テスト**: 存在確認だけでなく格納値の正しさを検証。代表コマンド（`cp evil /usr/bin/ls`・symlink 経由・複数
     オペランド）で `RiskAssessment` から直接 `[]OperandZone` を読み、各要素の Index/Raw/Resolved/Zone/Trusted が期待
-    どおりか表明（値が誤っても 0143 まで気付けない穴を塞ぐ）。
+    どおりか表明（値が誤っても 0143 まで気付けない穴を塞ぐ）。判断軸2 非適用コマンドで carrier が空、解決不能で
+    `Zone==unresolved` 要素を持つことも表明する。
 - **AC-20**（`security.Config` の組み込み）— 新規。0140/00 §3.4:
   - **規則**: deployment の `Config.SystemCriticalPaths` と信頼ディレクトリ許可リストをリスク評価ロジックへ通す。
     `NewStandardEvaluator`・`runner.go` のコンストラクタへの組み込み＋信頼ディレクトリの TOML `[security]` spec＋ローダ＋
@@ -280,7 +285,7 @@
 
 - **コマンド名分類・ラッパ/特権は 0141**: コマンド名で決まるレベル、Critical 限定、env/timeout、間接実行
   （`find -exec`/ProxyCommand/`rsync -e`）は argv の宛先解析を伴わず 0141 の所掌（D5 の線引き）。
-- **logger 出力・文書・config 追従は 0143**: 監査フィールドの実際の JSON 出力、変更ノート、ユーザー/開発者文書、
+- **logger 出力・文書・config 追従は 0143**: 監査フィールドの実際の JSON 出力、移行ノート、ユーザー/開発者文書、
   sample config の `risk_level` 追従は横断成果物として 0143 に集約する。
 - **段階ロールアウト/フラグは無し**: 後方互換不要のため（0140/00 §3.2）。
 - **`RiskLevel` 段数/新レベル**: 変更しない（0140 §6 を継承）。

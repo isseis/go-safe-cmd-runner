@@ -103,7 +103,9 @@
     - carrier が空のコマンドでは `operand_zones` キーが**無い**こと、deny 経路でも出力されることを表明。
     - **漏えい否定テスト（S-1）**: Raw/Resolved/`UnresolvedErr` に秘匿パターン（資格情報を含むパス等）を持つオペランドを
       与え、出力で当該秘匿値が**マスクされている**ことを表明（存在テストでなく漏えいの否定）。
-    （0140 AC-30 のうち監査出力部分／0140/00 §3.4）
+    （新規 AC＝[00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md) §3.4・§4 の新規 AC 注記
+    「オペランド毎の監査フィールドの logger 出力」／0142 AC-19 からの引き継ぎ。deny 時の理由コード記録〔0140 AC-30〕は
+    AC-02 が継承）
 
 ### F-002: deny 時の理由コード記録と監査ストリームの family 区別の最終化
 
@@ -153,8 +155,8 @@
   - 開発者向け: [command-risk-evaluation.ja.md](../../../docs/dev/architecture_design/command-risk-evaluation.ja.md) →
     [command-risk-evaluation.md](../../../docs/dev/architecture_design/command-risk-evaluation.md)
   - 用語集: [docs/translation_glossary.md](../../../docs/translation_glossary.md) に本一連で用いた用語（パス信頼区分／
-    trust-critical／safe-zone／オペランド毎判定 等）を追加し、訳語を統一する。**「移行ノート」と「変更ノート」
-    （changelog）の語が 0141/0142/0143 間で揺れているため（N-4）、用語集で 1 語へ統一する**。
+    trust-critical／safe-zone／オペランド毎判定 等）を追加し、訳語を統一する。**changelog の和語は「移行ノート」を
+    canonical とし（0141/0142/0143 で統一済み。N-4）、用語集に登録する**。
   - 0141 が開発者文書へ暫定追記した検出限界（0141 AC-20）の最終整合・日英反映を本タスクが所有する。
   - **完了条件（observable 化, B-3）**: レビュアの主観でなく、次のチェックリストの充足をもって完了とする
     （0140 で起きた「文書↔実装の乖離」の再生産を防ぐ）:
@@ -199,9 +201,10 @@
 - **NF-002**: `make test`・`make lint`・`make fmt` がすべて成功する。本タスクは監査出力（`internal/runner/base/audit`）と
   config（`sample/`・テスト用 config）に触れるため、完了の判定基準にはこれらを含む `make test` 全体の成功を含める。
   （0140 NF-002）
-- **NF-003**: 監査出力は決定的で、同一 `RiskAssessment` に対し常に同一フィールドを書く。本タスクは新たな FS 副作用や
-  非決定な入力（live identity 等）を監査経路へ持ち込まない（パス解決・identity の決定性は 0142 が担保済み）。
-  （0140 NF-003）
+- **NF-003**（横断 NF: AC-28 runtime==dry-run を含む）: 監査出力は決定的で、同一 `RiskAssessment` に対し常に同一
+  フィールドを書く。本タスクは新たな FS 副作用や非決定な入力（live identity 等）を監査経路へ持ち込まない（パス解決・
+  identity の決定性は 0142 が担保済み）。**AC-28 は全タスク横断 NF だが、本タスクは runtime のパス/identity 評価を
+  追加せず監査出力と文書のみを扱うため、本タスクのスコープでは自明に充足（N/A）**。（0140 NF-003／AC-28）
 - **NF-004**（ログレベル方針, S-4）: `command_risk_profile` のログレベル選択（`LogRiskProfile` の既存
   [riskLogLevel](../../../internal/runner/base/audit/logger.go)。allow かつ Low は Debug）は本タスクのスコープ外で
   既存挙動を踏襲する。ただし**引き下げ（緩和）対象コマンド（AC-05）の allow-Low は Debug に落ちると本番ログ設定で
