@@ -19,6 +19,7 @@
 | 〜に加えて | in addition to 〜 | |
 | アーキテクチャ設計書 | architecture design | |
 | 監査ログ | audit logging | セキュリティ監査の文脈 |
+| 判断軸 | axis | リスク判定の観点（判断軸1=コマンド名分類、判断軸2=宛先パス信頼区分）。旧称「軸」。コードの評価要素 `evaluateDimensions`（dimension）とは別概念で、要件文書では英語 dimension を用いず「判断軸／判定」と書く |
 | アクセス | access | |
 | 値 | value | |
 | 曖昧さ | ambiguity | |
@@ -57,6 +58,7 @@
 |--------|---------|------|
 | 能力 | capability | |
 | コードパス | code path | 実行経路の文脈 |
+| コマンド名分類 | command-name classification | 軸1。コマンド名だけでリスクレベルが決まる（引数を見ない）分類。軸2＝宛先パス信頼区分と対。旧称「名前固定階級」は使わない |
 | コンパイル単位 | compilation unit | ELFバイナリの文脈 |
 | 定数 | constant | プログラムの定数値 |
 | 制御フロー | control flow | |
@@ -168,7 +170,9 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | フェイルクローズド | fail-closed | エラー時に安全側（実行中止）へ倒す設計 |
+| フェイルオープン | fail-open | 不明・エラー時に許可側（実行継続）へ倒す設計。fail-closed の対義。要件文書では「避けるべき挙動」を指す文脈で使う |
 | フェイルセーフ | fail-safe | 不明時に安全側のリスクへ倒す設計 |
+| 下限 | floor | リスクの最低保証。最終リスクはこの値以上になる（max をとるため、より高い判定があればそちらが勝つ）。例「Medium 下限」＝最低でも Medium。動作は「X 以上に引き上げる／X を下限とする」。英語 floor を本文で使わない |
 | fd 束縛 | fd binding / fd-bind | 検証済みファイルディスクリプタへ実行実体を束縛すること |
 | 誤検出 | false positive | 誤ってSYSCALL命令として検出すること |
 | 第一線の防御 | first line of defense | セキュリティの文脈。許可リスト＋ハッシュ固定を指す主防御 |
@@ -179,6 +183,7 @@
 | フィードバック | feedback | |
 | ファイル | file | |
 | ファイルパス | file path | |
+| ファイル操作コマンド | file-operation command | ファイル/ディレクトリを書込/上書/削除/リンク/展開/マウント/権限変更するコマンド（cp/rm/dd/tar/mount/chmod 等。read 専用は除く）。軸2 のパス信頼区分の判定の対象。旧称「ロケーション定義コマンド」は使わない |
 | フィールド | field | |
 | フィールド名 | field name | |
 | 初めて | first-time | |
@@ -289,6 +294,7 @@
 | マッチング | matching | パターンマッチングの文脈 |
 | 最大 | maximum | 通常 "max" ではなく "maximum" を使用 |
 | 最大許容リスクレベル | maximum allowed risk level | リスク判定の文脈 |
+| 選択的 max 抑止 | selective max-suppression | 最終リスク（複数判定の max）を下げるため、High を出す各判定を個別に無力化して max への寄与から外す旧方式。1 つでも外し漏れると High が残るため脆い。0140 で「判断軸2 による一括置き換え」へ訂正（採用しない方式の呼称） |
 | マルチコール | multicall | 単一バイナリが複数サブコマンドを兼ねる方式 |
 | 意味的 | semantic | |
 | メモ化 | memoization | 計算結果のキャッシング |
@@ -326,6 +332,9 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 操作 | operation | |
+| 操作固有の下限 | operation-intrinsic floor | 判断軸2 の内部区分。コマンドが何を付与/実行するか（setuid 付与・デバイス IO・safe-zone 外再帰・機密ファイル複製 等）に内在し、宛先ゾーンに依らず効く下限。safe-zone でも Low に降格しない（0142 F-003）。原典 0140/01 の「軸 A」に相当。トップレベルの判断軸1/判断軸2 と紛れるため「判断軸 A」とは呼ばない |
+| オペランド | operand | コマンド引数（宛先/source/FILE 等）。判断軸2 のゾーニングの作用対象 |
+| ordinary | ordinary | 通常パス（`/srv`・`/opt` 等、trust-critical でも safe-zone でもないパス）。判断軸2 で Medium。パス信頼区分の値の一つ |
 | オプション | optional | |
 | オプトイン | opt-in | risk_level = "high" を明示設定して許可する文脈 |
 | 最適化 | optimize / optimization | |
@@ -345,6 +354,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 前駆ノード | predecessor node | CFGにおける先行ノード |
+| パス信頼区分 | path trust category | 判断軸2 が、ファイルパスをその位置の信頼/安全度で分類した区分。値は trust-critical（High）/ordinary（Medium）/safe-zone（Low）/解決不能（unresolved, fail-closed 下限）。旧称・単独の「ゾーン」は一般的すぎるため使わない（値名 safe-zone/trust-critical/ordinary は英語のまま） |
 | パッケージ | package | |
 | パラメータ | parameter | |
 | パラメータ値 | parameter value | Template parameter value |
@@ -356,6 +366,7 @@
 | Pattern | pattern | パターン |
 | Payload | payload | ペイロード |
 | パフォーマンス | performance | |
+| オペランド毎 | per-operand | オペランド（コマンド引数）ごと。Trusted 判定・監査記録・DTO の文脈。英語表記 per-operand を混在させない |
 | プレースホルダー | placeholder | Template parameter syntax like ${...} |
 | プレースホルダー構文 | placeholder syntax | |
 | ポリシー拒否 | policy deny | リスクゲートによる拒否（検証不能による拒否と区別） |
@@ -370,6 +381,7 @@
 | 実践的 | practical | |
 | 予測 | predictable / prediction | |
 | プレフィックス | prefix | |
+| 前方一致 | prefix match | パスが特定の文字列で始まるかだけで判定する文字列照合（symlink を解決しない）。判断軸2 のパス信頼区分の判定では非適合（要解決後パス。0142 AC-04）。英語「文字列 prefix」は使わない |
 | 前提条件 | prerequisite | |
 | 防ぐ | prevent | セキュリティの文脈 |
 | 保持 | preserve / preservation | |
@@ -424,11 +436,12 @@
 | 責務分担 | responsibility split | コンポーネント間の責務の切り分け |
 | リスク | risk | |
 | リスク判定 | risk evaluation | リスクレベルの算出 |
+| リスク評価ロジック | risk evaluation logic | リスクを評価し最終リスクレベルを決めるコード（`risk/evaluator.go`／`EvaluateRisk`。判断軸1/2 をディスパッチして統合）。既存英語文書（`command-risk-evaluation.md`）と整合。英語直訳「評価器」/「risk evaluator」は使わない（コード識別子 `evaluator.go` 等は除く） |
 | リスクレベル | risk level | |
 | 堅牢性 | robustness | |
 | 役割 | role | |
 | ルート | root | |
-| 根本原因 | root cause | |
+| 根本原因 | root cause | 日本語本文では「根本原因」に統一（英語表記 root-cause を混在させない） |
 | 回転 | rotation | |
 | 実行者 | runner | コマンド名としては `runner` |
 | ランタイム | runtime | |
@@ -438,9 +451,11 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 安全 | safe | |
+| safe-zone | safe-zone | run 専用の作業/出力ディレクトリ・専用 temp（run が所有する安全領域）。判断軸2 で Low（信頼要件 AC-04 充足時。`$HOME`・共有 `/tmp` は含めない）。パス信頼区分の値の一つ |
 | 正規化済み解析結果 | normalized analysis result | 保存前に整形・選別された解析結果 |
 | 正規化済み特徴量 | normalized feature | runner 向けに整形された特徴量 |
 | 関心の分離 | separation of concerns | 設計パターンの文脈 |
+| 唯一の判定基準 | single authority | ファイル操作コマンドのリスクを判断軸2 の結果だけで決め、既存の High 判定群を置き換える方式（0142 F-005）。直訳「単一権威」は使わない |
 | 符号拡張 | sign extension | 上位ビットを符号ビットで埋める操作 |
 | スライス（Fatバイナリの） | slice (Fat binary) | Fat バイナリの各アーキテクチャ断面 |
 | スタックトレース | stack trace | |
@@ -453,12 +468,14 @@
 | Secret | secret | 機密情報・秘密情報 |
 | Self-signed certificate | self-signed certificate | 自己署名証明書 |
 | Sensitive data | sensitive data | 機密データ |
+| 機密ファイル | sensitive file | 内容が秘匿情報のファイル（読む/複製で情報露出）。例: `/etc/shadow`・SSH 秘密鍵・`.aws/credentials` 等（判定集合は `OutputCriticalPathPatterns`）。これをコピー元とする複製は safe-zone でも Medium 下限（判断軸2 の読み取り元の下限）。旧称「機微 source」 |
 | セクション | section | |
 | セキュリティ | security | |
 | セキュアデフォルト | secure default | |
 | 分離 | separation | |
 | シリアライズ | serialize / serialization | |
 | セットアップ | setup | |
+| 共有コード | shared code | 複数タスク/モジュールが共に触るコード（0140 では `evaluateDimensions`〔判断軸の振り分け〕と名前集合）。旧称「共有境界」は使わない。標準用語「信頼境界（trust boundary）」とは別概念 |
 | シェル | shell | |
 | サイレントに | silently | |
 | シンプルさ | simplicity | |
@@ -473,6 +490,7 @@
 | Webhook URL | webhook URL | |
 | スライス | slice | Go言語のスライス型 |
 | ソース | source | データソースの文脈 |
+| 読み取り元 | source (operand) | ファイル操作コマンドが複製/参照のために読む入力（`cp` のコピー元・`dd` の `if=` 等）。判断軸2 の情報露出 floor の対象。文脈により コピー元/移動元/リンク元/マウント元 |
 | スペル | spelling | |
 | 具体的 | specific | |
 | 仕様 | specification | |
@@ -500,6 +518,8 @@
 |--------|---------|------|
 | テンプレート | template | コマンドテンプレート機能の文脈 |
 | トランポリン | trampoline | 1命令で別アドレスに分岐するスタブ |
+| trust-critical | trust-critical | システム重要パス（`/usr`・`/etc`・`/boot` 等、書込でシステム/信頼境界を侵すパス。`Config.SystemCriticalPaths`）。判断軸2 で High。パス信頼区分の値の一つ |
+| Trusted | trusted (operand) | オペランドが安全要件 AC-04 を満たす状態＝「信頼ディレクトリ許可リスト配下」かつ「経路要素が run-as から書込不可（TOCTOU 安全）」。Trusted のみ safe-zone を Low に降格、非 Trusted は Medium（fail-closed）。DTO フィールド `OperandZone.Trusted`（bool） |
 | テンプレート展開 | template expansion | コマンド定義への置換処理 |
 | テンプレートパラメータ | template parameter | `${...}` 形式の参照 |
 | タグ | tag | TOMLタグの文脈 |
@@ -579,12 +599,19 @@
 | Webhook | webhook | |
 | ようこそ | welcome | |
 | ワークフロー | workflow | |
+| 組み込み | wiring / integration | 新しい判定を実装するだけでなく、実際の実行経路（コンストラクタ→loader→runner→evaluator→logger）へ接続して本番で動かすこと（0140 根本原因4）。旧称「結線」（wiring 直訳）は使わない |
 | 回避策 | workaround | |
 | 作業ディレクトリ | working directory | |
 | 書き込み権限 | write permission | ファイル／ディレクトリへの書き込み可否 |
 | ワークスペース | workspace | |
 | Wrapper | wrapper | ラッパー |
 | 書き込み | write | |
+
+### Z
+
+| 日本語 | English | 備考 |
+|--------|---------|------|
+| パス信頼区分の判定 | zone classification | 判断軸2。作用先パスを解決しパス信頼区分（trust-critical/ordinary/safe-zone）に分類してリスクを判定する処理。動詞「パス信頼区分を判定する」も使う。旧称「ゾーン分類」・英語表記 `zoning` は要件文書では使わない（コード識別子・ディレクトリ名 `axis2_destination_zoning` は除く。英語列から `zoning` を外し誤用を防ぐ） |
 
 ---
 
