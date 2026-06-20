@@ -77,7 +77,7 @@ Work in the following order.
    - **CRITERIA**: every item from the Technical correctness checklist, the Conditional checks section, and the Readability and consistency checklist below, copied verbatim. For Conditional checks, evaluate each item that applies to the plan; mark inapplicable items N/A (N/A is not a finding). In panel mode, give both reviewers all of them as the shared floor (option (b) in `.claude/commands/_lib/review-subagent-pattern.md`), but each reports only items within its mandate, raising an out-of-mandate item ONLY as a one-line OUT-OF-LANE FLAG when it actually spots a potential issue there (it does not enumerate clean out-of-mandate items); the Conditional checks are Reviewer B's, except the phase-names/order item which is Reviewer A's (it is an architecture-alignment concern in A's mandate).
    - **Synthesis** (panel mode only): after the parallel panel returns, YOU (not a subagent) merge the two outputs per the Panel-mode "Synthesize" step in `.claude/commands/_lib/review-subagent-pattern.md` — dedup overlapping findings, reconcile conflicting severities to the higher, reconstruct the full AC→{task,test} matrix from both reviewers' AC checks (so no AC is dropped from either the build or the verify side), and promote any confirmed OUT-OF-LANE FLAG. Then run the fix / re-review loop on the merged findings.
 
-   Extra rule: commit the implementation plan document only after all review passes are complete (in panel mode, after the Synthesis step above) and all Critical and Major issues are resolved.
+   Extra rule: do not commit yet. After this engineering review (in panel mode, after the Synthesis step above), a Japanese prose-quality pass runs (step 9 below); commit the implementation plan document only after BOTH passes are complete and all Critical and Major issues from both are resolved.
 
 **Technical correctness checklist (use verbatim as evaluation criteria in the subagent prompt above):**
 - [ ] `02_architecture.md` is `approved`.
@@ -117,5 +117,20 @@ Work in the following order.
 - [ ] Redundant or repetitive content is removed; design details already in the architecture document are referenced rather than restated.
 - [ ] Ambiguous or overly terse expressions are rewritten in direct, plain Japanese so readers do not need prior context to understand what is expected.
 - [ ] When a planning decision changes an artifact's name, extension, implementation language, or invocation, every reference to it (filename, section header, prose, completion/verification command) is updated consistently — no `.sh` filename paired with a `go run …go` description.
+
+9. Run the Japanese prose-quality pass by invoking the `japrose` command
+   (`.claude/commands/japrose.md`) on the created implementation plan document (path in
+   `_context.md`). It runs a technical-editor review focused on natural Japanese —
+   literal-translation tone, unusual/incorrect word usage, hard-to-follow sentences,
+   terms used before they are defined (so the document reads top-to-bottom), and
+   terminology consistency with the glossary and with `02_architecture.md` — and
+   applies the fixes. The engineering review (step 8) checks plan correctness and AC
+   traceability; this pass checks that the document reads as clear, natural Japanese.
+   The two are complementary.
+   - Run this **after** step 8's Critical and Major issues are resolved, so prose is
+     not polished on text that step 8 then rewrites.
+   - `japrose`, when invoked as this sub-step, does not commit; this command owns the
+     commit (see the step 8 extra rule). Resolve all Critical and Major prose findings
+     before committing.
 
 When finished, provide a concise summary of what you created and any assumptions you had to make.

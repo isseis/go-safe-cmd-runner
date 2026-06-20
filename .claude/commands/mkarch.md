@@ -62,7 +62,9 @@ Work in the following order.
    - **CRITERIA**: give BOTH reviewers every item from the Technical correctness checklist and the Readability and consistency checklist below, copied verbatim, as the shared floor — but each reviewer reports only items within its mandate, raising an out-of-mandate item ONLY as a one-line OUT-OF-LANE FLAG when it actually spots a potential issue there (it does not enumerate clean out-of-mandate items). Reviewer B additionally applies its operational mandate above beyond the checklists.
    - **Synthesis**: after the parallel panel returns, YOU (not a subagent) merge the two outputs per the Panel-mode "Synthesize" step in `.claude/commands/_lib/review-subagent-pattern.md` — dedup overlapping findings, reconcile conflicting severities to the higher, and reconstruct any cross-cutting issue sitting in the seam between the two mandates (a structural choice with an operational consequence). Then run the fix / re-review loop on the merged findings.
 
-   Extra rule: commit only after all review passes are complete and all Critical and Major issues are resolved.
+   Extra rule: do not commit yet. After this engineering review, a Japanese
+   prose-quality pass runs (step 9 below); commit only after BOTH passes are complete
+   and all Critical and Major issues from both are resolved.
 
 **Technical correctness checklist (use verbatim as evaluation criteria in the subagent prompt above):**
 - [ ] `01_requirements.md` is `approved`.
@@ -93,5 +95,19 @@ Work in the following order.
 - [ ] Ambiguous or overly terse expressions are rewritten in direct, plain Japanese. Readers should not need context from prior review discussions to understand the text.
 - [ ] Architectural decisions that depend on constraints not obvious from the requirements are explained inline.
 - [ ] The body describes the current system; rationale for removed or superseded designs and cross-task history is confined to a bounded appendix or blockquote, not interleaved with current-state description.
+
+9. Run the Japanese prose-quality pass by invoking the `japrose` command
+   (`.claude/commands/japrose.md`) on the created architecture document (path in
+   `_context.md`). It runs a technical-editor review focused on natural Japanese —
+   literal-translation tone, unusual/incorrect word usage, hard-to-follow sentences,
+   terms used before they are defined (so the document reads top-to-bottom), and
+   terminology consistency with the glossary — and applies the fixes. The engineering
+   review (step 8) checks design correctness; this pass checks that the document reads
+   as clear, natural Japanese. The two are complementary.
+   - Run this **after** step 8's Critical and Major issues are resolved, so prose is
+     not polished on text that step 8 then rewrites.
+   - `japrose`, when invoked as this sub-step, does not commit; this command owns the
+     commit (see the step 8 extra rule). Resolve all Critical and Major prose findings
+     before committing.
 
 When finished, provide a concise summary of what you created and any assumptions you had to make.
