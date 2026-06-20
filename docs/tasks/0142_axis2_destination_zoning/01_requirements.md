@@ -128,9 +128,10 @@
   - (b) 起点は `RuntimeCommand.EffectiveWorkDir` と構成済み専用 temp に限定。曖昧な `$HOME`・共有 `/tmp`・出力先の
     親ディレクトリは含めない。
   - (c) safe-zone が trust-critical と重複/配下のときは trust-critical（High）を優先する。
-  - (d) **TOCTOU 耐性（オペランド毎のTrusted）**: Low 降格は、解決後の各オペランドパスが信頼ディレクトリ許可リスト
-    配下かつ経路要素が run-as から書込不可（run-as 以外所有・group/other 非書込）のときに限る。満たせなければ
-    降格しない（fail-closed）。参照 identity は live euid でなく config の run-as 値（AC-21）。leaf が既存 symlink なら
+  - (d) **TOCTOU 耐性（オペランド毎の Trusted 判定）**: 解決後の各オペランドパスが信頼ディレクトリ許可リスト
+    配下、かつ経路要素が run-as から書込不可（run-as 以外所有・group/other 非書込）であるとき、そのオペランドを
+    **Trusted** と呼ぶ。safe-zone の Low 降格は Trusted のときに限り、非 Trusted（いずれかを満たさない）なら
+    降格しない（fail-closed → Medium）。参照 identity は live euid でなく config の run-as 値（AC-21）。leaf が既存 symlink なら
     最終ターゲットでパス信頼区分を判定。
 
 ### F-002: 作用オペランドの抽出と網羅テスト（根本原因1）

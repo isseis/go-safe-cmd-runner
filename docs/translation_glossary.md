@@ -519,6 +519,7 @@
 | テンプレート | template | コマンドテンプレート機能の文脈 |
 | トランポリン | trampoline | 1命令で別アドレスに分岐するスタブ |
 | trust-critical | trust-critical | システム重要パス（`/usr`・`/etc`・`/boot` 等、書込でシステム/信頼境界を侵すパス。`Config.SystemCriticalPaths`）。判断軸2 で High。パス信頼区分の値の一つ |
+| Trusted | trusted (operand) | オペランドが安全要件 AC-04 を満たす状態＝「信頼ディレクトリ許可リスト配下」かつ「経路要素が run-as から書込不可（TOCTOU 安全）」。Trusted のみ safe-zone を Low に降格、非 Trusted は Medium（fail-closed）。DTO フィールド `OperandZone.Trusted`（bool） |
 | テンプレート展開 | template expansion | コマンド定義への置換処理 |
 | テンプレートパラメータ | template parameter | `${...}` 形式の参照 |
 | タグ | tag | TOMLタグの文脈 |
