@@ -26,8 +26,10 @@
 ### 1.1 設計原則
 
 - **判断軸1 は「コマンド名（とラッパ構造）だけで決まる固定レベル」に限定する**。argv 中の宛先パスの信頼区分判定
-  （trust-critical/ordinary/safe-zone）は判断軸2（0142）の所掌であり、本タスクは触れない。最終リスクは従来どおり
-  全判定の max で合成され、本タスクが整理した「名前で決まるレベル」は判断軸2 と max 合成される。
+  （trust-critical/ordinary/safe-zone）は判断軸2（0142）の所掌であり、本タスクは触れない。最終リスクは、まず
+  deny ゲート（identity・間接実行 Reject/Critical・特権 Critical）を優先順に短絡評価し、いずれも発火しない場合に
+  限り残りの判定を max 合成して決まる（§1.2）。本タスクが整理した「名前で決まるレベル」のうち、特権昇格は
+  短絡ゲート、それ以外（システム変更名・間接実行 Floor・データ送信ほか）は判断軸2 と max 合成される。
 - **既存ディメンションへ素直に組み込む（DRY・YAGNI）**。本タスクは新しい評価経路や新レベルを追加しない。引き上げ
   対象は既存の名前ベース・ディメンション（システム変更／特権／間接実行ラッパ）の**分類集合の拡張・再配置**として
   表現する。新しい分類関数や新 `RiskLevel` 段は導入しない（[01_requirements.md](01_requirements.md) §6）。
@@ -41,56 +43,82 @@
 
 ### 1.2 概念モデル
 
-判断軸1 は、コマンド名・ラッパ構造から「固定のリスクレベル」を決める判定群である。下図は本タスクが扱う
-4 つの固定レベル経路と、それらが判断軸2 と max 合成されて最終リスクになる関係を示す。
+判断軸1 は、コマンド名・ラッパ構造から「固定のリスクレベル」を決める判定群である。評価は一律の並列ではなく、
+まず **deny ゲート**（identity → 間接実行 Reject/Critical → 特権 Critical）を優先順に短絡評価し、いずれも
+発火しない場合に**限り**、残りの次元と判断軸2 を並列に max 合成する。特権昇格ラッパ判定は「Critical を確定して
+短絡するゲート」であり、判断軸2 とは排他である（特権ラッパはファイル操作コマンドでないため宛先パスを持たない）。
 
 ```mermaid
 flowchart TD
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef problem fill:#ffe6e6,stroke:#d62728,stroke-width:2px,color:#7b0000;
 
     ARGV[("コマンド名 + argv<br>(RuntimeCommand)")]
 
-    subgraph Axis1["判断軸1: コマンド名分類 (本タスク)"]
-        PRIV["特権昇格ラッパ判定<br>(ResolveProfile)"]
+    subgraph Gates["deny ゲート（優先順に短絡評価）"]
+        IDG["identity ゲート<br>(未検証ハッシュ → 拒否)"]
+        IGATE["間接実行 Reject / Critical<br>(AnalyzeIndirectExecution)"]
+        PRIV["特権昇格ラッパ判定<br>(ResolveProfile + IsPrivilege)"]
+    end
+
+    DENY["Critical / Reject 確定<br>(短絡し以降を評価しない)"]
+
+    subgraph Parallel["いずれのゲートも非発火のときのみ評価"]
         SYS["システム変更名分類<br>(SystemModificationRisk)"]
-        IND["実行ラッパ / 間接実行判定<br>(AnalyzeIndirectExecution)"]
-        NET["データ送信名分類<br>(network / data-exfil profile)"]
+        INDF["間接実行 Floor<br>(AnalyzeIndirectExecution)"]
+        NET["データ送信名分類<br>(network / data-exfil)"]
+        OTH["危険引数 / arbitrary-code /<br>バイナリ解析 ほか"]
     end
 
     AXIS2["判断軸2: 宛先パス信頼区分<br>(0142, スコープ外)"]
+    MAX{"最終リスク = max"}
 
-    ARGV --> PRIV
-    ARGV --> SYS
-    ARGV --> IND
-    ARGV --> NET
-    ARGV -.->|"0142 が担当"| AXIS2
+    ARGV --> IDG
+    IDG -->|"発火"| DENY
+    IDG -->|"通過"| IGATE
+    IGATE -->|"発火"| DENY
+    IGATE -->|"通過"| PRIV
+    PRIV -->|"特権ラッパ = Critical"| DENY
+    PRIV -->|"非特権 = 通過"| Parallel
+    PRIV -.->|"非特権時のみ (0142)"| AXIS2
 
-    PRIV -->|"Critical"| MAX{"最終リスク = max"}
-    SYS -->|"High / Medium"| MAX
-    IND -->|"High 下限 / Critical / Reject"| MAX
-    NET -->|"Medium 据え置き"| MAX
-    AXIS2 -.->|"High / Medium / Low を 0142 で合成"| MAX
+    SYS --> MAX
+    INDF --> MAX
+    NET --> MAX
+    OTH --> MAX
+    AXIS2 -.->|"0142 で合成"| MAX
 
     class ARGV data
-    class PRIV,SYS,IND,NET enhanced
-    class AXIS2 process
+    class IDG,IGATE,OTH,AXIS2 process
+    class PRIV,SYS,INDF,NET enhanced
+    class DENY problem
     class MAX process
 
     %% Legend
     subgraph Legend["凡例"]
         L1["既存（変更なし）"]
         L2["本タスクで変更/拡張"]
-        L3[("入力データ")]
+        L3["deny（短絡）"]
+        L4[("入力データ")]
     end
     class L1 process
     class L2 enhanced
-    class L3 data
+    class L3 problem
+    class L4 data
 ```
 
-> 矢印 `A → B` は「A の入力／判定結果が B へ流れる」を表す。実線は本タスクが整理する判断軸1 の経路、点線は
-> 本タスクのスコープ外（判断軸2＝0142）で合成される経路を表す。`{ }`（ひし形）は全経路の最大値を取る合成点。
+> 矢印 `A → B` は処理の流れを表す。`deny ゲート` は優先順（identity → 間接実行 → 特権）に評価し、`発火` した
+> ゲートは Critical/Reject を確定して**短絡**する（以降を評価しない）。すべて `通過` したときに限り、残りの次元と
+> 判断軸2（点線・0142 スコープ外）を `{ }`（ひし形＝max）で合成する。
+
+> **特権昇格ラッパを「並列 max の一寄与」でなく「短絡ゲート」とする理由**: (1) Critical はリスクレベルの最上位で
+> `max(Critical, X) = Critical` のため、短絡しても結果レベルを取りこぼさない（並列 max とレベル等価）。(2) 特権昇格
+> ラッパは内側コマンドを透過実行するラッパでありファイル操作コマンドではないため、宛先パスを区分する判断軸2 とは
+> 排他で、特権確定時に判断軸2 を評価する意味がない。(3) 既存 `EvaluateRisk` も順位3 で特権を短絡 Critical にしており
+> （[risk/evaluator.go](../../../internal/runner/base/risk/evaluator.go)）、本モデルは実装に忠実。identity ゲートは
+> 「未検証バイナリは分類自体を信頼できない」ため特権より前に置く（fail-closed）。
 
 ### 1.3 本タスクが変更する 4 経路と要件の対応
 
