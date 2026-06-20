@@ -51,8 +51,9 @@
   - **F-006**: 組み込み・DTO・identity 注入
   - **F-007**: 決定性
 - **Out**:
-  - **0141 が担当する項目**: コマンド名分類（判断軸1 の High/Medium）、Critical 限定、env/timeout、ラッパ/特権、
-    データ送信の名前による Medium 下限。さらに `find -exec`/`-execdir`/`-ok`/`-okdir`・`ssh -o ProxyCommand`・`rsync -e`
+  - **0141 が担当する項目**: コマンド名分類（判断軸1 の High/Medium）、Critical 限定（Critical＝無条件ブロックを
+    `sudo`/`pkexec` 等の特権昇格ラッパのみに絞る）、env/timeout、ラッパ/特権、データ送信コマンド（`curl`/`wget`/`scp`
+    等）の名前による Medium 下限（引数を見ず名前だけで最低 Medium）。さらに `find -exec`/`-execdir`/`-ok`/`-okdir`・`ssh -o ProxyCommand`・`rsync -e`
     等の内側コマンド実行（間接実行 Reject）も 0141/既存が担当する（本タスクは `find -delete`/`-fprint*` の宛先の
     パス信頼区分判定のみ）。
   - **0143 が担当する項目**: オペランド毎の監査フィールドの logger 出力、変更ノート（changelog）、文書整合、
