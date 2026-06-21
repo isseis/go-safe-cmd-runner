@@ -364,7 +364,7 @@ type IndirectExecutionResult struct {
   `-` 始まりトークンを内側と判定した場合も Reject に倒す。
 - **`flock`/`watch` のコマンド文字列形**: `flock <file> <cmd>` はトークン列だが、`flock -c "<cmd-string>"` と
   `watch "<cmd-string>"` は `/bin/sh -c` に渡されるシェルコマンド文字列であり、トークン列ではない。コマンド文字列の
-  抽出は §(d) と同じ **fail-closed トークナイザ契約**（シェルメタ文字を含む文字列は抽出せず Reject）に従う。
+  抽出は §(d) と同じ **シェルコマンド文字列の fail-closed 分割規約**（シェルメタ文字を含む文字列は抽出せず Reject）に従う。
   抽出可能な場合は first-token を内側コマンドとしてゲート（下限 High）、抽出不能形は Reject。
 
 #### (b) `ip netns exec` / `ip vrf exec` の内側ゲート（AC-14）
@@ -410,7 +410,7 @@ High に分類する（無害に見える形も含む）。
 （評価値、下限 High）、抽出不能なら Reject。これはオプション名の検出であり、宛先パスの信頼区分解析ではない
 （判断軸2 と区別。AC-19）。
 
-> **fail-closed トークナイザ契約（最重要・fail-open 回避の要）**
+> **シェルコマンド文字列の fail-closed 分割規約（tokenizer contract、最重要・fail-open 回避の要）**
 >
 > オプション値（`rsync -e` の値、`ssh -o ProxyCommand=` の値、§(a) の `flock -c`/`watch` 文字列）は、ツールが
 > `/bin/sh -c` でシェル解釈する**コマンド文字列**であり、単純なトークン列ではない。素朴な「先頭トークンだけ取って
@@ -484,7 +484,7 @@ High 化は 0142）。それ以外のレベル変更は行わない。
 | ファイル | 区分 | 責務／変更内容 | 反映 AC | 要更新の既存テスト |
 |---|---|---|---|---|
 | `internal/runner/base/security/command_analysis.go` | 変更 | `commandProfileDefinitions` へ特権ラッパ（`pkexec`/`runuser`/`setpriv`/`capsh`）と `sftp` Medium を追加。`highSystemModificationNames`／`mediumSystemModificationNames` を拡張（大半は新規 High 追加。移動は `parted`/`fsck`/`crontab`/`at`/`batch`/`chkconfig`/`update-rc.d` の Medium→High のみ）。kernel/auth/boot/power/FW/setcap/trust-intrinsic/`systemd-run`/デバイス破壊系を High 新規追加、LVM 作成・`ip`/`ifconfig`/`route` を Medium 新規追加。`fsck.*` 派生名規則を追加（§3.2） | AC-01〜AC-18, AC-21 | `command_analysis_test.go::TestSystemModificationRisk`（`parted`/`fsck`/`crontab`/`at`/`batch`/`chkconfig`/`update-rc.d`=Medium）、`TestCommandRiskProfiles_PrivilegeEscalation`／`TestMigration_IsPrivilegeConsistency`（特権=sudo/su/doas のみ） |
-| `internal/runner/base/security/indirect_execution.go` | 変更 | 専用ハンドラ（固定 `wrapperSpec` では表現不可、§3.3(a)）で `chroot`/`unshare`/`nsenter`/`flock`/`watch` を追加（no-command=High 下限）。`ip netns/vrf exec` の内側抽出。`env`/`timeout` の redundant-with-config High 下限（名前キー、ネストでも適用）。`rsync -e`/`--rsh` を Reject→抽出ゲート化（`analyzeRemoteShellOption` から移管）、`ssh -o ProxyCommand`/`LocalCommand` の新規 `-o` サブパーサ追加。コマンド文字列は fail-closed トークナイザ契約（§3.3(d)）に束縛。`tar --to-command`/`--checkpoint-action` は Reject 据え置き | AC-14, AC-19, AC-22, AC-23 | `indirect_execution_test.go::TestIndirect_CommandExecOptionsGated`（rsync=Reject。tar は据え置き）、`TestIndirect_WrapperNoCommandMedium`（env/timeout no-command=Medium） |
+| `internal/runner/base/security/indirect_execution.go` | 変更 | 専用ハンドラ（固定 `wrapperSpec` では表現不可、§3.3(a)）で `chroot`/`unshare`/`nsenter`/`flock`/`watch` を追加（no-command=High 下限）。`ip netns/vrf exec` の内側抽出。`env`/`timeout` の redundant-with-config High 下限（名前キー、ネストでも適用）。`rsync -e`/`--rsh` を Reject→抽出ゲート化（`analyzeRemoteShellOption` から移管）、`ssh -o ProxyCommand`/`LocalCommand` の新規 `-o` サブパーサ追加。コマンド文字列は §3.3(d) の fail-closed 分割規約に束縛。`tar --to-command`/`--checkpoint-action` は Reject 据え置き | AC-14, AC-19, AC-22, AC-23 | `indirect_execution_test.go::TestIndirect_CommandExecOptionsGated`（rsync=Reject。tar は据え置き）、`TestIndirect_WrapperNoCommandMedium`（env/timeout no-command=Medium） |
 | `internal/runner/base/risk/evaluator.go` | 参照（基本不変） | 順位 1〜8 の構造・取り込み方は不変。本タスクの分類拡張は evaluator が既に呼ぶ `security` 関数群に閉じる。0142 が `evaluateDimensions` をこの上に構築する（[00_decomposition.md](../0140_risk_level_classification_review/00_decomposition.md) §2） | — | `evaluator_test.go::TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation`（特権=sudo/su/doas のみ。pkexec 等を追加） |
 | `docs/dev/architecture_design/command-risk-evaluation.ja.md` | 変更 | 名前ベース AI 検出の検出限界（AC-20）を追記 | AC-20 | （doc。`static` 検証） |
 
@@ -672,7 +672,7 @@ DTO・パッケージ依存は既存のまま（`security → risktypes → runn
     ネストした `nice timeout 5`=High の双方を固定し、名前キー適用がネスト深さに依らないことを検証。
   - `ssh -o ProxyCommand=…`/`rsync -e ssh`=High 下限・抽出不能=Reject（`TestIndirect_CommandExecOptionsGated` の
     rsync ケースを Reject→High/Reject へ更新、`tar` ケースは Reject 据え置きの回帰確認、ssh ケースを新規追加）。
-    fail-closed トークナイザ契約の検証として、シェルメタ文字を含む値（`rsync -e 'ssh; rm -rf /'`・
+    シェルコマンド文字列の fail-closed 分割規約の検証として、シェルメタ文字を含む値（`rsync -e 'ssh; rm -rf /'`・
     `ssh -o ProxyCommand='nc %h %p; modprobe x'`・置換形）が Reject になること、特権トークンを含む抽出可能形
     （`rsync -e 'sudo cmd'`）が Critical になることを検証。
 
