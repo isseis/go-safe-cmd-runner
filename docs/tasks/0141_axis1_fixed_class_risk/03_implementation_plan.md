@@ -1,0 +1,445 @@
+# 判断軸1: コマンド名分類の一貫化 — 実装計画書
+
+## Document Status
+
+| Item | Value |
+|---|---|
+| Status | `draft` |
+| Created | 2026-06-21 |
+| Review date | - |
+| Reviewer | - |
+| Comments | - |
+
+> 本書は [01_requirements.md](01_requirements.md)（`approved`）と [02_architecture.md](02_architecture.md)（`approved`）に基づく
+> 判断軸1（コマンド名分類）の実装計画である。設計の詳細・図は重複させず、必要箇所で 02 の節を参照する。
+
+---
+
+## 1. 実装概要
+
+### 1.1 目的
+
+コマンド名（とラッパ構造）だけで決まる固定リスクレベルの分類を、改訂統一原則へ一貫化する。具体的には
+(A) 大規模・不可逆破壊系および永続システム変更系の High 化、(B) 限定スコープのシステム変更の Medium 化、
+(C) Critical の特権昇格ラッパへの限定と profile 拡張、(D) ラッパ/間接実行経由の整合維持と `env`/`timeout` の
+High 化、(E) データ送信系の Medium 据え置き補完と検出限界の文書化を行う（設計の全体像は
+[02_architecture.md §1](02_architecture.md) を参照）。
+
+### 1.2 実装原則
+
+- **新評価経路・新レベルを追加しない**。既存の名前ベース判定（`SystemModificationRisk` の名前集合、特権 profile、
+  間接実行リゾルバのラッパ集合・オプション処理）の**拡張**として表現する（[02_architecture.md §1.1](02_architecture.md)）。
+- **新しい `ReasonCode` を導入しない**。既存コードを流用する（NF-001、[02_architecture.md §4](02_architecture.md)）。
+- **Go ソース（識別子・コメント・文字列リテラル）は英語**。テストソースも含む（要件 §3）。
+- **各 Phase 完了時に `make fmt`→`make test`→`make lint` を緑にする**（NF-002）。
+
+### 1.3 既存コード調査結果
+
+調査対象の現状と本タスクで必要な変更を以下に示す。変更が不要な領域は記載しない。
+
+#### (a) `internal/runner/base/security/command_analysis.go`
+
+- **`highSystemModificationNames`**（[command_analysis.go:438](../../../internal/runner/base/security/command_analysis.go#L438)）: 現状は
+  `apt`/`apt-get`/`yum`/`dnf`/`zypper`/`pacman`/`brew`/`pip`/`npm`/`yarn`/`dpkg`/`rpm`/`systemctl`/`service` のみ。
+  → AC-01〜AC-12 の High 群を追加する。
+- **`mediumSystemModificationNames`**（[command_analysis.go:451](../../../internal/runner/base/security/command_analysis.go#L451)）: 現状は
+  `chkconfig`/`update-rc.d`/`mount`/`umount`/`fdisk`/`parted`/`mkfs`/`fsck`/`crontab`/`at`/`batch`。
+  → `parted`/`fsck`/`crontab`/`at`/`batch`/`chkconfig`/`update-rc.d` を High 集合へ**移動**し、`fdisk`/`mkfs` も High へ。
+    残る Medium は `mount`/`umount`、加えて AC-13/AC-14 の新規 Medium（LVM 作成系・`ip`/`ifconfig`/`route`）。
+- **`SystemModificationRisk`**（[command_analysis.go:526](../../../internal/runner/base/security/command_analysis.go#L526)）: 名前集合→レベルの純関数。シグネチャ変更なし。
+- **`CheckDangerousArgPatterns` / `dangerousCommandPatterns`**（[command_analysis.go:542](../../../internal/runner/base/security/command_analysis.go#L542),
+  [:216](../../../internal/runner/base/security/command_analysis.go#L216)）: `mkfs.` プレフィクス特例は既存。`dangerousCommandPatterns` には `mkfs`/`fdisk` はあるが
+  `parted`/`fsck` は無く、`fsck.*` プレフィクス特例も無い（`fsck.ext4` は現状 Medium 止まり）。
+  → `fsck.*` 派生名規則を追加（[02_architecture.md §3.2 留意点](02_architecture.md)）。
+- **`commandProfileDefinitions`**（[command_analysis.go:29](../../../internal/runner/base/security/command_analysis.go#L29)）: 特権 profile は `NewProfile("sudo","su","doas")`
+  のみ。ネットワーク profile は `NewProfile("ssh","scp")`（[:64](../../../internal/runner/base/security/command_analysis.go#L64)）で `sftp` を含まない（`sftp` は現状 profile 無し=Low）。
+  → 特権 profile に `pkexec`/`runuser`/`setpriv`/`capsh` を追加（AC-16）、`NewProfile("ssh","scp")` を
+    `NewProfile("ssh","scp","sftp")` へ拡張（AC-18）。
+
+#### (b) `internal/runner/base/security/indirect_execution.go`
+
+- **`wrapperSpecs`**（[indirect_execution.go:92](../../../internal/runner/base/security/indirect_execution.go#L92)）: `timeout`/`nice`/`ionice`/`nohup`/`stdbuf`/`setsid`/`time`/`chrt`。
+  `chroot`/`unshare`/`nsenter`/`flock`/`watch` は固定 `wrapperSpec` モデルに収まらないため**専用ハンドラ**で追加
+  （[02_architecture.md §3.3(a)](02_architecture.md)）。
+- **`analyzeWrapper` の no-command Medium 下限**（[indirect_execution.go:681](../../../internal/runner/base/security/indirect_execution.go#L681)）: `timeout` を含む汎用ラッパ共有。
+  → `timeout` のみ High 下限へ（ラッパ種別ごとに floor レベルを保持できるよう拡張。[02_architecture.md §3.3(c)](02_architecture.md)）。
+- **`analyzeEnv` の no-command Medium 下限**（[indirect_execution.go:585](../../../internal/runner/base/security/indirect_execution.go#L585), [:597](../../../internal/runner/base/security/indirect_execution.go#L597) の 2 箇所）:
+  `env` は専用 `analyzeEnv` を通り `analyzeWrapper` を通らない。→ 両箇所を High 下限へ（AC-23）。
+- **`remoteShellOptionPrefixes` / `analyzeRemoteShellOption`**（[indirect_execution.go:125](../../../internal/runner/base/security/indirect_execution.go#L125), [:1015](../../../internal/runner/base/security/indirect_execution.go#L1015)）:
+  `rsync {-e, --rsh}`・`tar {--to-command, --checkpoint-action}` を一律 Reject。`ssh` は未登録。
+  → `rsync -e`/`--rsh` を「抽出→内側ゲート（下限 High）、抽出不能のみ Reject」へ移管、`ssh -o ProxyCommand`/`LocalCommand`
+    の新規 `-o` サブパーサ追加、`tar` は Reject 据え置き（AC-19、[02_architecture.md §3.3(d)](02_architecture.md)）。
+- **fail-closed 分割規約の流用元**: `analyzeEnvSplitString`（[indirect_execution.go:646](../../../internal/runner/base/security/indirect_execution.go#L646)）が
+  `strings.ContainsAny(s, "\\'\"$#`")` でシェルメタ文字を含む値を Reject する規約を持つ。AC-19 と `flock -c`/`watch`
+  のコマンド文字列抽出はこれと同一規約に束縛する。
+- **`evaluateInnerAs`**（[indirect_execution.go:765](../../../internal/runner/base/security/indirect_execution.go#L765)）: `RoleInner` のフラット High 下限・`isPrivilegeCommand` 判定は既存。
+  特権 profile 拡張だけで直接形・ネスト形の両経路（`isPrivilegeCommand` は profile 参照）が整う。シグネチャ変更なし。
+- **doc コメントの更新が必要な箇所**:
+  - `IndirectCritical` の doc コメント（[indirect_execution.go:29-30](../../../internal/runner/base/security/indirect_execution.go#L29)）が特権トークンを `(sudo/su/doas)` と例示。
+  - `IndirectFloor` の doc コメント（[indirect_execution.go:38-42](../../../internal/runner/base/security/indirect_execution.go#L38)）が「env with no command -> Medium」と記述。
+  - いずれも本タスクの拡張に合わせて更新する（§2 P2・P5 に明示）。
+
+#### (c) `internal/runner/base/risk/evaluator.go`
+
+- 順位 1〜8 の構造・取り込み方は不変（[evaluator.go:55](../../../internal/runner/base/risk/evaluator.go#L55)）。本タスクの拡張は evaluator が既に呼ぶ
+  `security` 関数群（`SystemModificationRisk`/`ResolveProfile`/`AnalyzeIndirectExecution`/`CheckDangerousArgPatterns`）に
+  閉じるため、evaluator.go のコード変更は不要（参照のみ）。
+
+#### (d) ドキュメント
+
+- `docs/dev/architecture_design/command-risk-evaluation.ja.md` は AI 検出の限界（AC-20）を追記する対象。
+  なお同ファイル [:298](../../../docs/dev/architecture_design/command-risk-evaluation.ja.md) はシステム変更名の現行分類（`parted`/`fsck` 等を Medium）を列挙しているが、**この分類リストの
+  訂正・日英反映は 0143 の所掌**であり本タスクでは触れない（[02_architecture.md §3.2, §3.5](02_architecture.md)）。本タスクで
+  追記するのは AI 検出限界の節のみ。一時的な記述不整合は 0143 完了までの受容済みリスクとして扱う。
+
+#### (e) 既存テスト（要更新の所在）
+
+| テスト | 所在 | 現状 | 必要変更 |
+|---|---|---|---|
+| `TestSystemModificationRisk` | [command_analysis_test.go:1102](../../../internal/runner/base/security/command_analysis_test.go#L1102) | `parted`/`fsck`/`crontab`/`at`/`batch`/`chkconfig`/`update-rc.d`=Medium | High へ変更＋新規 High/Medium 群を追加 |
+| `TestCommandRiskProfiles_PrivilegeEscalation` | [:1346](../../../internal/runner/base/security/command_analysis_test.go#L1346) | privilegeCommands={sudo,su,doas} | pkexec/runuser/setpriv/capsh を追加 |
+| `TestMigration_IsPrivilegeConsistency` | [:1571](../../../internal/runner/base/security/command_analysis_test.go#L1571) | privilegeCommands={sudo,su,doas} | 同上を privilege 側へ追加 |
+| `TestMigration_RiskLevelConsistency` | [:1447](../../../internal/runner/base/security/command_analysis_test.go#L1447) | privilege=Critical は sudo/su/doas のみ | pkexec 等=Critical、sftp=Medium を追加 |
+| `TestMigration_NetworkTypeConsistency` | [:1501](../../../internal/runner/base/security/command_analysis_test.go#L1501) | noneNetwork に sudo/su/doas; alwaysNetwork に sftp 無し | pkexec 等を noneNetwork、sftp を alwaysNetwork へ追加 |
+| `TestCommandRiskProfiles_NetworkCommands` | [:1361](../../../internal/runner/base/security/command_analysis_test.go#L1361) | sftp 無し | sftp=NetworkTypeAlways を追加 |
+| `TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation` | [evaluator_test.go:36](../../../internal/runner/base/risk/evaluator_test.go#L36) | {sudo,su,doas} | pkexec/runuser/setpriv/capsh を追加 |
+| `TestEvaluateRisk_NoProfileAbsolutePath` | [evaluator_test.go:230](../../../internal/runner/base/risk/evaluator_test.go#L230) | `/usr/bin/crontab`=Medium | crontab を High へ変更（同テストの `mount`=Medium は不変） |
+| `TestIndirect_WrapperNoCommandMedium` | [indirect_execution_test.go:281](../../../internal/runner/base/security/indirect_execution_test.go#L281) | env/timeout no-command=Medium | env/timeout を High へ（後述のとおりテスト分割） |
+| `TestIndirect_UnextractableWrapperRejected` | [indirect_execution_test.go:693-695](../../../internal/runner/base/security/indirect_execution_test.go#L693) | `env FOO=bar`=Medium の対比ブロック | env no-command=High へ変更（コメント「env with no command is Medium」も更新） |
+| `TestIndirect_CommandExecOptionsGated` | [:877](../../../internal/runner/base/security/indirect_execution_test.go#L877) | rsync 各形=IndirectReject。case struct は `want IndirectExecutionKind` のみ（Level 非保持） | 抽出可能=High/抽出不能=Reject へ更新。tar は据え置き。ssh ケース新規追加。**case struct に期待 `Level`/特権 reason を追加**（High と Critical を区別するため） |
+
+新規のテストヘルパー／モックは不要。既存ヘルパー（`cmdNameSet`・`analyzeIndirectCmd`・`hasReason`・
+`newVerifiedEvaluator`・`verifiedCmd`・`evalLevel`）を再利用する（test_organization 指針の新規ファイル追加は発生しない）。
+
+> **全件監査の根拠**: 上表は、引き上げ対象名（`parted`/`fsck`/`fdisk`/`mkfs`/`crontab`/`at`/`batch`/`chkconfig`/
+> `update-rc.d` および新規 High 名）と `env`/`timeout` no-command の現行アサーションを、全 `*_test.go` を横断検索して
+> 列挙した結果である（`rg -n "RiskLevelMedium" --glob '*_test.go'` 等で確認済み）。`command_analysis_dangerous_test.go`
+> の `/sbin/fdisk`・`validator_dangerous_patterns_test.go` の `{"mkfs","fdisk"}` は `IsDangerousRootCommand`／
+> `ValidateDangerousRootPatterns`（DangerousRootPatterns 設定機構）を検証するもので `SystemModificationRisk`／
+> `CheckDangerousArgPatterns` とは独立のため、本タスクの引き上げの影響を受けない（更新不要）。
+
+---
+
+## 2. 実装ステップ（Phase 別）
+
+Phase 構成と順序・依存は [02_architecture.md §8](02_architecture.md) に従う。各 Phase の完了時に
+`make fmt`→`make test`→`make lint` を緑にする（NF-002）。
+
+### P1: システム変更名集合の再配置・拡張（AC-01〜AC-15, AC-21）
+
+**対象ファイル**: `internal/runner/base/security/command_analysis.go`、`command_analysis_test.go`
+
+- [ ] `highSystemModificationNames` に F-001 大規模破壊系を追加: `wipefs`/`blkdiscard`/`sgdisk`/`gdisk`/`cgdisk`/
+  `sfdisk`/`cfdisk`/`mkswap`、bare 名 `parted`/`fsck`/`fdisk`/`mkfs`（AC-01, AC-03, AC-21）。
+- [ ] `highSystemModificationNames` に F-001 LVM 破壊/デバイス初期化系を追加: `lvremove`/`vgremove`/`pvremove`/
+  `lvreduce`/`vgreduce`/`pvmove`/`lvresize`/`pvresize`/`pvcreate`（AC-02）。
+- [ ] `highSystemModificationNames` に F-001 直接 FS ユーティリティを追加: `e2fsck`/`mke2fs`/`tune2fs`/`resize2fs`
+  ほか（AC-03。確定列挙は [01_requirements.md §4](01_requirements.md) を正とする）。要件・アーキともに末尾を「等」と
+  しており closed set ではないため、末尾の残り（`xfs_*`/`btrfs` 系等）の採否は実装者判断とし PR レビューで確定する
+  （WHAT/HOW 分離の方針。アーキ §3.2）。
+- [ ] `highSystemModificationNames` に F-002 群を追加: kernel/module `insmod`/`modprobe`/`rmmod`/`kexec`/`sysctl`
+  （AC-04）、account/auth `useradd`/`usermod`/`userdel`/`groupadd`/…/`passwd`/`chage`/`newusers`/`vipw`/`vigr`/
+  `visudo`（AC-05）、bootloader `grub-install`/`grub2-*`/`update-grub`/`efibootmgr`/`kernel-install`/`installkernel`
+  （AC-06）、boot service `chkconfig`/`update-rc.d`（AC-07）、power `shutdown`/`reboot`/`halt`/`poweroff`/`telinit`
+  （AC-08）、firewall `iptables`/`ip6tables`/`(ip6)tables-restore`/`nft`/`ufw`/`firewall-cmd`（AC-09。`iptables-save`/
+  `ip6tables-save` は含めない）、capability `setcap`（AC-10）、trust-intrinsic `update-alternatives`/`dpkg-divert`/
+  `alternatives`/`ldconfig`（AC-11）、scheduler `crontab`/`at`/`batch`/`systemd-run`（AC-12）。
+- [ ] `mediumSystemModificationNames` を再構成: 上記で High へ移した名（`parted`/`fsck`/`fdisk`/`mkfs`/`crontab`/
+  `at`/`batch`/`chkconfig`/`update-rc.d`）を除去し、`mount`/`umount` を残す（AC-15）。LVM 作成系
+  `lvcreate`/`vgcreate`/`lvextend`/`vgchange`/`lvchange`（AC-13）と `ip`/`ifconfig`/`route`（AC-14）を新規追加。
+- [ ] `CheckDangerousArgPatterns` に `fsck.*` 派生名規則を追加する（`mkfs.` と同じ前方一致特例。`fsck.ext4` 等を
+  High 化。[02_architecture.md §3.2 留意点](02_architecture.md)）。`mkfs.` と max 合成される。
+- [ ] `highSystemModificationNames`/`mediumSystemModificationNames` の doc コメントを新分類に合わせて更新する
+  （現コメントは「package managers + service/init」「mount, crontab, mkfs ...」の例示。英語で記述）。
+- [ ] `TestSystemModificationRisk` を更新: `parted`/`fsck`/`crontab`/`at`/`batch`/`chkconfig`/`update-rc.d` の期待値を
+  High へ変更し、AC-01〜AC-12 の High 代表（`wipefs`/`lvremove`/`modprobe`/`useradd`/`visudo`/`grub-install`/
+  `shutdown`/`iptables`/`setcap`/`update-alternatives`/`ldconfig`/`systemd-run` 等）、AC-13/AC-14 の Medium 代表
+  （`lvcreate`/`vgcreate`/`ip`/`ifconfig`/`route`）を表駆動で追加する。`iptables-save`/`ip6tables-save` は
+  Unknown（=不一致名。evaluator 層では既定 Low に落ちる。この層では寄与しないことを示す。AC-09）として追加する。
+- [ ] `evaluator_test.go::TestEvaluateRisk_NoProfileAbsolutePath`（[:230](../../../internal/runner/base/risk/evaluator_test.go#L230)）の `/usr/bin/crontab`=Medium
+  アサーションを High へ変更する（同テストの `/usr/bin/mount`=Medium は Medium 据え置きのため不変）。
+- [ ] `CheckDangerousArgPatterns` の `fsck.*` 規則を検証する**新規の直接ユニットテスト**を `command_analysis_test.go`
+  に追加する（例 `TestCheckDangerousArgPatterns_FsFamily`）。`fsck.ext4`=High、`mkfs.ext4`=High（既存 `mkfs.` 規則の
+  回帰）、bare `fsck`/`mkfs` が `SystemModificationRisk` 経由で High（max 合成）になることを検証する。
+  注: 現状 `CheckDangerousArgPatterns` の直接ユニットテストは存在せず、`mkfs.ext4`=High は evaluator 層の
+  `evaluator_test.go::TestEvaluateRisk_DangerousArgPatternsRuntime`（[:237](../../../internal/runner/base/risk/evaluator_test.go#L237)）のみが担保している。本タスクは
+  関数直下の単体検証を新設する（`command_analysis_dangerous_test.go` は `IsDangerousRootCommand` 系専用のため
+  対象外）。
+
+**完了基準**: 上記テストが緑。`make test` が `./internal/runner/...` を含めて緑。
+
+### P2: 特権 profile 拡張（AC-16, AC-17）
+
+**対象ファイル**: `internal/runner/base/security/command_analysis.go`、`indirect_execution.go`（doc コメント）、
+`command_analysis_test.go`、`internal/runner/base/risk/evaluator_test.go`
+
+- [ ] `commandProfileDefinitions` の特権 profile を `NewProfile("sudo","su","doas")` から
+  `NewProfile("sudo","su","doas","pkexec","runuser","setpriv","capsh")` へ拡張する（`PrivilegeRisk(Critical, …)` の
+  まま。[02_architecture.md §3.1](02_architecture.md)）。
+- [ ] `IndirectCritical` の doc コメント（[indirect_execution.go:29-30](../../../internal/runner/base/security/indirect_execution.go#L29)）の特権トークン例示を更新する。
+  変更前: `// IndirectCritical means a privilege-escalation token (sudo/su/doas) was found`
+  変更後: `// IndirectCritical means a privilege-escalation token (sudo/su/doas/pkexec/runuser/setpriv/capsh) was found`
+  （後続行 `// as the effective target; the command is Critical (always denied).` は不変）。
+- [ ] `TestCommandRiskProfiles_PrivilegeEscalation` の `privilegeCommands` に `pkexec`/`runuser`/`setpriv`/`capsh` を
+  追加する。
+- [ ] `TestMigration_IsPrivilegeConsistency` の `privilegeCommands` に同 4 名を追加する。
+- [ ] `TestMigration_RiskLevelConsistency` に同 4 名=Critical を追加する。
+- [ ] `TestMigration_NetworkTypeConsistency` の `noneNetwork` に同 4 名を追加する（特権ラッパはネットワーク profile を
+  持たない）。
+- [ ] `TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation`（evaluator_test.go）のコマンド列に同 4 名を追加し、
+  直接形 `/usr/bin/pkexec …` 等が Critical になることを検証する。
+- [ ] ネスト形が Critical になることを `indirect_execution_test.go::TestIndirect_BypassAttackerScenarios`
+  （[:947](../../../internal/runner/base/security/indirect_execution_test.go#L947)）の attacker シナリオ表にケース追加して検証する。`pkexec` だけでなく
+  `runuser`/`setpriv`/`capsh` の 4 名すべてについて `env <name> …`=IndirectCritical を確認する（profile 登録漏れの
+  片側バイパスを防ぐため全名を網羅）。
+- [ ] AC-17 の確認: F-002 系（`visudo`/`useradd`/`insmod` 等）が High であって Critical でないことを検証する。
+  `TestSystemModificationRisk`（High。P1）に加え、evaluator レベルで `visudo`/`insmod` の最終 Level が High かつ
+  特権 Critical でないことを確認するケースを `evaluator_test.go` に追加する。
+
+**完了基準**: 上記テストが緑。`pkexec`/`runuser`/`setpriv`/`capsh` の直接形・ネスト形が Critical、F-002 系が High。
+**依存**: なし（P1 と独立だが、AC-17 検証は P1 の High 分類を前提とする）。
+
+### P3: 間接実行ラッパ拡張（chroot/unshare/nsenter/flock/watch、AC-22）
+
+**対象ファイル**: `internal/runner/base/security/indirect_execution.go`、`indirect_execution_test.go`
+
+- [ ] `chroot` 専用ハンドラを追加: 先頭の NEWROOT 位置引数を読み飛ばし、後続 COMMAND を `evaluateInnerAs`
+  （`RoleInner`）でゲート（下限 High）。COMMAND 省略形（`chroot /mnt`）は暗黙シェル起動として **High 下限**を返す
+  （[02_architecture.md §3.3(a)](02_architecture.md)）。
+- [ ] `unshare`/`nsenter` 専用ハンドラを追加: 各ツールの**値を取るオプションを網羅的に** `valueOpts` 登録し
+  （`-t`/`-S`/`-G`/`-w` 等。`nsenter` と `unshare` で集合が異なる）、operand 境界を確定して内側 COMMAND をゲート。
+  no-command 形（`unshare`/`nsenter -t 1 -m`）は暗黙シェル High 下限。境界不確定・`-` 始まり誤抽出は Reject（fail-closed）。
+- [ ] `flock`/`watch` 専用ハンドラを追加: `flock <file> <cmd>` はトークン列として first-token をゲート。
+  `flock -c "<cmd-string>"`・`watch "<cmd-string>"` は §3.3(d) と同一の fail-closed 分割規約で抽出（シェルメタ文字を
+  含めば Reject、クリーン分割時のみ first-token をゲートし以降を内側 args として持ち回る）。
+- [ ] `analyzeIndirect`（[indirect_execution.go:312](../../../internal/runner/base/security/indirect_execution.go#L312)）のディスパッチに上記ハンドラの名前判定を追加する（既存の
+  `env`/`taskset` 専用分岐と同じ位置づけ。disposition 強度の順序を崩さない）。
+- [ ] 新ラッパの内側ゲートテスト `TestIndirect_NamespaceWrappersGated` を追加（`indirect_execution_test.go`）:
+  `chroot /mnt rm -rf /`・`unshare -r modprobe x`・`nsenter -t 1 sh`・`flock f cmd`・`watch cmd` が High 以上、
+  特権トークン内側（`unshare -r sudo`）が Critical、抽出不能形が Reject になることを検証する。case struct は
+  期待 `Kind` と（Floor 時の）`Level` を保持する。
+- [ ] no-command 暗黙シェル High のテスト `TestIndirect_NoCommandImplicitShellHigh` を追加:
+  `chroot /mnt`・`unshare`・`nsenter -t 1 -m` が IndirectFloor かつ Level=High になることを検証する（汎用ラッパの
+  no-command Medium とは別経路であることを固定）。
+- [ ] バイパス回帰を `TestIndirect_NamespaceWrappersGated` に含める: `nsenter -S 0 sh` のようにオプション値（`0`）を
+  内側コマンドと誤抽出して `sh` をゲートし損なわないこと（value-option 網羅の確認）。
+
+**完了基準**: 上記テストが緑。新ラッパ経由で危険内側を素通りさせない。
+**依存**: P1（システム変更名集合の参照）・P2（特権 profile の参照）。
+
+### P4: `ip netns/vrf exec` の内側ゲート（AC-14）
+
+**対象ファイル**: `internal/runner/base/security/indirect_execution.go`、`indirect_execution_test.go`
+
+- [ ] `ip netns exec <NAME> <cmd>`・`ip vrf exec <NAME> <cmd>` を間接実行ファミリとして処理するハンドラを追加:
+  `<NAME>` を読み飛ばし内側 `<cmd>` を `evaluateInnerAs`（`RoleInner`）でゲート（下限 High）。
+- [ ] `exec` 以外のサブコマンド（`ip netns list`/`add`/`delete`、`ip vrf show` 等）は `IndirectNone` として通常の
+  `ip`（Medium、P1）に委ねる（ブロックしない。[02_architecture.md §3.3(b)](02_architecture.md)）。
+- [ ] `exec` 形だが内側を安全に抽出できない場合（`exec` の後に `<cmd>` 無し、`<NAME>` 抽出不能）のみ Reject。
+- [ ] テスト `TestIndirect_IpExecGated` を追加（`indirect_execution_test.go`）: `ip netns exec ns rm -rf /`=High・
+  `ip netns exec ns modprobe x`=High、`ip vrf exec v sh`=High、内側欠落（`ip netns exec ns`）=Reject、非 `exec`
+  サブコマンド（`ip netns list`）=`IndirectNone`（=`ip` Medium 評価へ委譲）を検証する。
+
+**完了基準**: 上記テストが緑。
+**依存**: P3（間接実行ファミリの拡張基盤）。
+
+### P5: `env`/`timeout` の redundant-High とヘルパーオプション抽出（AC-19, AC-23）
+
+**対象ファイル**: `internal/runner/base/security/indirect_execution.go`、`indirect_execution_test.go`
+
+- [ ] `analyzeEnv` の no-command 下限 2 箇所（[indirect_execution.go:585](../../../internal/runner/base/security/indirect_execution.go#L585), [:597](../../../internal/runner/base/security/indirect_execution.go#L597)）を Medium→High へ変更する
+  （`env FOO=bar` 単独・`env` 単独。reason code は既存 `ReasonIndirectExecutionWrapper` を流用）。
+- [ ] 汎用 `analyzeWrapper` の no-command 下限（[indirect_execution.go:681](../../../internal/runner/base/security/indirect_execution.go#L681)）を、ラッパ種別ごとに floor レベルを
+  保持できるよう拡張し、`timeout` のみ High・それ以外（`nice`/`ionice`/`stdbuf`/`setsid` 等）は Medium 据え置きと
+  する。レベル切替はパース箇所（ラッパ抽出時）で行い、トップレベル `timeout 5` でもネスト `nice timeout 5` でも
+  一貫して High になるようにする（[02_architecture.md §3.3(c)](02_architecture.md)）。
+- [ ] `IndirectFloor` の doc コメント（[indirect_execution.go:38-42](../../../internal/runner/base/security/indirect_execution.go#L38)）の no-command 例示を更新する。
+  変更前: `// level (env with no command -> Medium; inline shell/interpreter, package`
+  変更後: `// level (env/timeout with no command -> High; nice/stdbuf/... with no command`
+  `// -> Medium; inline shell/interpreter, package`
+  （以降の「script runner -> High; …」の記述は不変。英語で記述し、文の連続性を保つよう調整する）。
+- [ ] `rsync -e`/`--rsh` を `analyzeRemoteShellOption` の一律 Reject から「値を §3.3(d) 分割規約で抽出→内側ゲート
+  （下限 High、特権トークンは Critical）、抽出不能なら Reject」へ移管する（`remoteShellOptionPrefixes` の `rsync`
+  エントリを当該 Reject 経路から外し、抽出ゲート経路へ配線）。`tar` は Reject 据え置き。
+- [ ] `ssh -o ProxyCommand=`/`LocalCommand=` の新規 `-o` サブパーサを rank-2 経路に追加する。`-o` を値オプションと
+  認識（分離 `-o ProxyCommand=…`・連結 `-oProxyCommand=…`・分離値 `-o` `ProxyCommand=…`・空白区切り
+  `-o "ProxyCommand …"`）し、値中の `ProxyCommand`/`LocalCommand` を `KEY=VALUE` と `KEY VALUE` の両形式で認識、
+  コマンド文字列を分割規約で抽出して内側ゲート（下限 High）、抽出不能なら Reject（[02_architecture.md §3.3(d)](02_architecture.md)）。
+- [ ] `TestIndirect_WrapperNoCommandMedium`（[indirect_execution_test.go:281](../../../internal/runner/base/security/indirect_execution_test.go#L281)）を分割する:
+  - [ ] env/timeout ケース（`env FOO=bar`・`env` bare・`timeout 5`）を新テスト `TestIndirect_EnvTimeoutNoCommandHigh`
+    へ移し、期待値 High とする。加えてネスト `nice timeout 5`=High を追加する。
+  - [ ] `nice`/`ionice`/`stdbuf`/`setsid` 等の no-command=Medium 据え置きを `TestIndirect_WrapperNoCommandMedium` に
+    残す（名称と期待値が一致するようケースを入れ替える）。
+- [ ] `TestIndirect_UnextractableWrapperRejected`（[indirect_execution_test.go:693-695](../../../internal/runner/base/security/indirect_execution_test.go#L693)）の
+  `env FOO=bar`=Medium 対比ブロックを High へ更新する。あわせて同箇所のコメント
+  `// Contrast: env with no command is Medium, not Reject.` を `env` no-command=High の意味に合わせて英語で更新する
+  （例: `// Contrast: env with no command is a High floor (redundant-with-config), not Reject.`）。
+- [ ] `env dpkg -i`=High・`sudo env …`/`env sudo …`=Critical・`env LD_PRELOAD=…`=Reject の既存挙動が維持される
+  ことを回帰確認する（既存 `TestIndirect_WrapperLoaderEnvRejected`・`TestIndirect_BypassAttackerScenarios` で担保。
+  不足あれば追加）。
+- [ ] `TestIndirect_CommandExecOptionsGated`（[indirect_execution_test.go:877](../../../internal/runner/base/security/indirect_execution_test.go#L877)）を更新する:
+  - [ ] case struct を拡張する。現状は `want IndirectExecutionKind` のみで Level/reason を検証できない。抽出可能形の
+    下限 High と特権トークンの Critical を区別するため、期待 `Level runnertypes.RiskLevel`（および必要なら期待 reason）
+    フィールドを追加し、各ケースで assert する。
+  - [ ] rsync の抽出可能形（`rsync -e ssh`・`--rsh=ssh`・`-essh`・`-avze ssh`）の期待値を IndirectReject から
+    IndirectFloor（Level=High）へ変更する。
+  - [ ] tar の `--to-command`/`--checkpoint-action` ケースは IndirectReject 据え置きの回帰確認として残す。
+  - [ ] ssh ケースを新規追加: `ssh -o ProxyCommand=…`=High、空白区切り `ssh -o "ProxyCommand …"`=High。
+  - [ ] fail-closed 分割規約の検証ケースを追加: シェルメタ文字を含む値（`rsync -e 'ssh; rm -rf /'`・
+    `ssh -o ProxyCommand='nc %h %p; modprobe x'`・置換形 `rsync -e "$(printf sudo)"`）が Reject、特権トークンを含む
+    抽出可能形（`rsync -e 'sudo cmd'`）が Critical になることを検証する。
+
+**完了基準**: 上記テストが緑。`env`/`timeout` が無害形含め High、ヘルパーオプションが抽出ゲート/Reject に分かれる。
+**依存**: P3（間接実行ファミリの拡張基盤）。
+
+### P6: データ送信 Medium 補完（sftp）と検出限界の文書追記（AC-18, AC-20）
+
+**対象ファイル**: `internal/runner/base/security/command_analysis.go`、`command_analysis_test.go`、
+`docs/dev/architecture_design/command-risk-evaluation.ja.md`
+
+- [ ] `commandProfileDefinitions` の `NewProfile("ssh","scp")`（[command_analysis.go:64](../../../internal/runner/base/security/command_analysis.go#L64)）を `NewProfile("ssh","scp","sftp")`
+  へ拡張する（AlwaysNetwork・Medium。DRY のため新規 profile を起こさない。[02_architecture.md §3.4](02_architecture.md)）。
+- [ ] `TestCommandRiskProfiles_NetworkCommands` に `sftp`=NetworkTypeAlways を追加する。
+- [ ] `TestMigration_RiskLevelConsistency` に `sftp`=Medium を追加する。
+- [ ] `TestMigration_NetworkTypeConsistency` の `alwaysNetwork` に `sftp` を追加する。
+- [ ] `command-risk-evaluation.ja.md` に AI 検出の限界（AC-20）を、固有の見出し
+  `### 名前ベース AI 検出の限界` を持つ節として追記する: 名前ベース AI 検出（`claude`/`gemini` 等=High）は一般
+  データ送信（Medium）を塞ぐものではなく salient な明示ケースの defense-in-depth であること、未列挙/リネーム/
+  multi-call が素通りし得ること、安全運用は allowlist＋ハッシュ固定が前提であることを明記する
+  （[02_architecture.md §3.5](02_architecture.md)）。既存の allowlist＋ハッシュ固定の記述（[:437](../../../docs/dev/architecture_design/command-risk-evaluation.ja.md), [:438](../../../docs/dev/architecture_design/command-risk-evaluation.ja.md)）と整合させる。
+  見出し文字列はこの節に固有で、AC-20 の `static` 検証アンカーになる。
+
+**完了基準**: 上記テストが緑。`sftp` が Medium/AlwaysNetwork。AC-20 の追記が doc に存在する。
+**依存**: なし。
+
+---
+
+## 3. 実装順序とマイルストーン
+
+[02_architecture.md §8](02_architecture.md) の Phase 順に実装する。
+
+| マイルストーン | 含む Phase | 成果物 | 依存 |
+|---|---|---|---|
+| M1: 名前ベース固定分類の確立 | P1, P2 | システム変更名 High/Medium 再配置、特権 profile 拡張、`fsck.*` 規則 | なし |
+| M2: ラッパ/間接実行の整合 | P3, P4, P5 | 新ラッパ・ip-exec・env/timeout High・ヘルパーオプション抽出 | M1 |
+| M3: データ送信据え置きと文書化 | P6 | sftp Medium 補完、AC-20 doc 追記 | なし（M1/M2 と並行可） |
+
+各マイルストーン末で `make fmt`→`make test`→`make lint` を緑にする（NF-002）。M2 内では P3 が前提で、P4 と P5 は
+いずれも P3 のみに依存する独立な兄弟（相互依存なし）。Phase 単位の正確な依存は §2 各 Phase の `依存` 行を正とする。
+
+---
+
+## 4. テスト戦略
+
+詳細なケースは [02_architecture.md §7](02_architecture.md) を正とし、ここでは観点と所在を示す。
+
+### 4.1 単体テスト
+
+- **システム変更名分類（P1）**: `TestSystemModificationRisk` を表駆動で拡張。High/Medium 各層の代表名と
+  `iptables-save`=Unknown、`fsck.*` 派生名の High（`CheckDangerousArgPatterns`）を検証。
+- **特権ラッパ（P2）**: profile 系テスト 4 種＋evaluator テストへ `pkexec`/`runuser`/`setpriv`/`capsh` を追加。
+  直接形 Critical・ネスト形 Critical・F-002 系 High（非 Critical）を検証。
+- **間接実行（P3〜P5）**: 新ラッパの内側ゲート/no-command High、`ip … exec` の内側ゲートと非 exec 委譲、
+  env/timeout の no-command High とネスト一貫性、ヘルパーオプションの抽出ゲート/Reject、fail-closed 分割規約
+  （シェルメタ文字 Reject・特権トークン Critical）を検証。
+- **データ送信（P6）**: `sftp` の Medium/AlwaysNetwork を profile テストへ追加。
+
+### 4.2 統合テスト
+
+- `EvaluateRisk` レベルで、引き上げ対象コマンドが deny されたとき対応する理由コードが評価結果に付与されること
+  （NF-001）。`env modprobe`／直接 `modprobe` が双方 High になる整合を `evaluator_test.go` に追加する。
+
+### 4.3 セキュリティテスト
+
+- バイパス回帰: 新ラッパ・ip-exec・ヘルパーオプション経由で危険内側（`rm -rf`/`modprobe`/`sudo`）を素通り
+  させないこと、特権ラッパ列挙漏れ（`pkexec` のネスト）が Critical を逃さないことを既存 attacker シナリオ表に
+  ケース追加して検証する。
+- 理由コード網羅性: `reason_codes_test.go::TestReasonCodes_AllDistinct` は本タスクで新規コードを追加しないため
+  不変（回帰確認のみ）。
+
+### 4.4 後方互換性
+
+本プロジェクトは後方互換性を要求しない（要件 §3）。新分類は直接適用するため、互換テストは設けない。破壊的変更
+（raise/lower）の周知・sample config 追従は 0143 の所掌。
+
+---
+
+## 5. リスク管理
+
+| リスク | 影響 | 緩和策 |
+|---|---|---|
+| `nsenter`/`unshare` の value-option 取りこぼし | オプション値を内側コマンドと誤抽出し fail-open | 各ツールの値オプションを網羅登録し、境界不確定は Reject。バイパス回帰テスト（`nsenter -S 0 sh`）で固定 |
+| ヘルパーオプションのコマンド文字列を素朴分割 | trailer・置換・特権トークンの取りこぼし | 既存 `analyzeEnvSplitString` の fail-closed 分割規約に束縛。シェルメタ文字 Reject・特権 Critical をテストで固定 |
+| `timeout` の no-command 下限がネストで Medium に戻る | `nice timeout 5` が High に上がらない | floor レベルをパース箇所（ラッパ抽出時）でラッパ名により切替。トップレベルとネストの双方をテストで固定 |
+| doc の一時的不整合（システム変更名分類リスト） | 開発者向け doc が新分類と齟齬 | 0143 が文書整合を所有することを §1.3(d) に明示。本タスクは AC-20 追記のみ |
+| 既存テストの期待値変更漏れ | High 化したコマンドが Medium のまま緑になる | §1.3(e) の更新所在表に沿って全該当テストを更新。`make test` で検出 |
+
+スケジュールリスク: 本タスクは既存集合・処理の拡張に閉じ、新パッケージ・新型を伴わないため、Phase 単位で独立に
+完了・検証できる。
+
+---
+
+## 6. 実装チェックリスト
+
+- [ ] **P1**: システム変更名 High/Medium 再配置＋`fsck.*` 規則＋`TestSystemModificationRisk` 更新
+- [ ] **P2**: 特権 profile 拡張＋`IndirectCritical` コメント更新＋privilege/evaluator テスト更新＋AC-17 確認
+- [ ] **P3**: chroot/unshare/nsenter/flock/watch 専用ハンドラ＋内側ゲート/no-command High テスト
+- [ ] **P4**: `ip netns/vrf exec` 内側ゲート＋非 exec 委譲テスト
+- [ ] **P5**: env/timeout redundant-High＋`IndirectFloor` コメント更新＋rsync/ssh ヘルパーオプション抽出＋テスト分割/更新
+- [ ] **P6**: sftp Medium 補完＋profile テスト更新＋AC-20 doc 追記
+- [ ] 全 Phase 末で `make fmt`→`make test`→`make lint` 緑（NF-002）
+
+---
+
+## 7. 受け入れ基準検証
+
+各 AC を、それを検証するタスク/テストへ対応づける。`test`=実行可能テスト、`static`=rg/grep/コンパイル、
+`manual`=PR 観察。各 AC は最低 1 つの `test` または `static` を持つ。
+
+| AC | 区分 | 検証 |
+|---|---|---|
+| AC-01 | test | `command_analysis_test.go::TestSystemModificationRisk`（`parted`/`fsck`/`wipefs`/`blkdiscard`/`sgdisk`/`gdisk`/`cgdisk`/`sfdisk`/`cfdisk`/`mkswap`=High） |
+| AC-02 | test | `command_analysis_test.go::TestSystemModificationRisk`（`lvremove`/`vgremove`/`pvremove`/`lvreduce`/`vgreduce`/`pvmove`/`lvresize`/`pvresize`/`pvcreate`=High） |
+| AC-03 | test | `command_analysis_test.go::TestSystemModificationRisk`（`mkfs`/`fdisk`/`e2fsck`/`mke2fs`/`tune2fs`/`resize2fs`=High）＋ 新規 `command_analysis_test.go::TestCheckDangerousArgPatterns_FsFamily`（`mkfs.ext4`/`fsck.ext4`=High、bare `mkfs`/`fsck` の max 合成 High） |
+| AC-04 | test | `command_analysis_test.go::TestSystemModificationRisk`（`insmod`/`modprobe`/`rmmod`/`kexec`/`sysctl`=High） |
+| AC-05 | test | `command_analysis_test.go::TestSystemModificationRisk`（`useradd`/`usermod`/`userdel`/`groupadd`/`passwd`/`chage`/`newusers`/`vipw`/`vigr`/`visudo`=High） |
+| AC-06 | test | `command_analysis_test.go::TestSystemModificationRisk`（`grub-install`/`grub2-install`/`update-grub`/`efibootmgr`/`kernel-install`/`installkernel`=High） |
+| AC-07 | test | `command_analysis_test.go::TestSystemModificationRisk`（`chkconfig`/`update-rc.d`=High） |
+| AC-08 | test | `command_analysis_test.go::TestSystemModificationRisk`（`shutdown`/`reboot`/`halt`/`poweroff`/`telinit`=High） |
+| AC-09 | test | `command_analysis_test.go::TestSystemModificationRisk`（`iptables`/`ip6tables`/`nft`/`ufw`/`firewall-cmd`=High、`iptables-save`/`ip6tables-save`=Unknown） |
+| AC-10 | test | `command_analysis_test.go::TestSystemModificationRisk`（`setcap`=High） |
+| AC-11 | test | `command_analysis_test.go::TestSystemModificationRisk`（`update-alternatives`/`dpkg-divert`/`alternatives`/`ldconfig`=High） |
+| AC-12 | test | `command_analysis_test.go::TestSystemModificationRisk`（`crontab`/`at`/`batch`/`systemd-run`=High） |
+| AC-13 | test | `command_analysis_test.go::TestSystemModificationRisk`（`lvcreate`/`vgcreate`/`lvextend`/`vgchange`/`lvchange`=Medium） |
+| AC-14 | test | `command_analysis_test.go::TestSystemModificationRisk`（`ip`/`ifconfig`/`route`=Medium）＋ `indirect_execution_test.go`（`ip netns exec ns rm -rf /`=High、`ip netns exec ns modprobe x`=High、内側欠落=Reject、`ip netns list`=IndirectNone） |
+| AC-15 | test | `command_analysis_test.go::TestSystemModificationRisk`（`mount`/`umount`=Medium） |
+| AC-16 | test | `command_analysis_test.go::TestCommandRiskProfiles_PrivilegeEscalation`／`TestMigration_IsPrivilegeConsistency`／`TestMigration_RiskLevelConsistency`（`pkexec`/`runuser`/`setpriv`/`capsh`=Critical/IsPrivilege）＋ `evaluator_test.go::TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation`（4 名の直接形 Critical）＋ `indirect_execution_test.go::TestIndirect_BypassAttackerScenarios`（`env pkexec`/`env runuser`/`env setpriv`/`env capsh`=IndirectCritical の 4 ケース） |
+| AC-17 | test | `command_analysis_test.go::TestSystemModificationRisk`（`visudo`/`useradd`/`insmod`=High）＋ `evaluator_test.go`（新規ケース: `/usr/sbin/visudo`・`/sbin/insmod` の最終 Level=High かつ `BlockingReason != ReasonPrivilegeEscalation`） |
+| AC-18 | test | `command_analysis_test.go::TestMigration_RiskLevelConsistency`（profile の `BaseRiskLevel()`==Medium を `curl`/`wget`/`scp`/`sftp`/`ssh`/`nc` で確認。`rsync` は `ConditionalNetwork()` ゆえ `BaseRiskLevel()`==Medium だが実効 Medium はリモートスタイル引数時のみ＝据え置きで High 化しない、アーキ §3.4）＋ `TestCommandRiskProfiles_NetworkCommands`／`TestMigration_NetworkTypeConsistency`（`sftp`=AlwaysNetwork） |
+| AC-19 | test | `indirect_execution_test.go::TestIndirect_CommandExecOptionsGated`（case struct 拡張後。`rsync -e ssh`/`--rsh=ssh`/`-essh`/`-avze ssh`=IndirectFloor かつ Level=High、抽出不能=Reject、`ssh -o ProxyCommand=…`/空白区切り=Level High、`tar --to-command`/`--checkpoint-action`=Reject 据え置き、シェルメタ文字値=Reject、特権トークン `rsync -e 'sudo cmd'`=IndirectCritical） |
+| AC-20 | static | `rg -n "名前ベース AI 検出の限界" docs/dev/architecture_design/command-risk-evaluation.ja.md` 期待: 追記した固有見出しが 1 件ヒットする（既存記述と衝突しない一意マーカー。本文に未列挙/リネーム/multi-call/defense-in-depth/allowlist の論点を含む） |
+| AC-21 | test | `command_analysis_test.go::TestSystemModificationRisk`（`parted`/`fsck`/`fdisk`/`mkfs`=High。AC-01/AC-03 と同テストで担保） |
+| AC-22 | test | `indirect_execution_test.go::TestIndirect_NamespaceWrappersGated`（`chroot`/`unshare`/`nsenter`/`flock`/`watch` の内側ゲート High・特権内側 Critical・抽出不能 Reject・`nsenter -S 0 sh` 誤抽出回帰）＋ `TestIndirect_NoCommandImplicitShellHigh`（`chroot /mnt`/`unshare`/`nsenter -t 1 -m`=Level High）＋ `evaluator_test.go`（`env modprobe x` の最終 Level=High 追加ケース。`sudo useradd u`=Critical は既存 `TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation` の sudo 経路で担保） |
+| AC-23 | test | `indirect_execution_test.go::TestIndirect_EnvTimeoutNoCommandHigh`（`env FOO=bar`/`env`/`timeout 5` no-command=High、ネスト `nice timeout 5`=High）＋ `TestIndirect_WrapperNoCommandMedium`（`nice`/`ionice`/`stdbuf`/`setsid` no-command=Medium 据え置き）＋ `TestIndirect_UnextractableWrapperRejected`（`env FOO=bar`=High へ更新）＋ `TestIndirect_WrapperLoaderEnvRejected`（`env LD_PRELOAD`=Reject）／`TestIndirect_BypassAttackerScenarios`（`env dpkg`=High・`sudo env`=Critical）の回帰 |
+| NF-001 | test | `evaluator_test.go`（新規ケース: `env modprobe`／直接 `modprobe` が双方 High かつ `ReasonSystemModification` 付与。引き上げ対象 deny 時に対応 reason code が評価結果に載ること）＋ `risktypes/reason_codes_test.go::TestReasonCodes_AllDistinct`（新規コード無しの回帰） |
+| NF-002 | static | `make test && make lint` が成功し、`make fmt && git diff --exit-code` が差分なし（exit 0）で完了する |
+| NF-003 | static + manual | static: `SystemModificationRisk`/`ResolveProfile` のシグネチャは `map[string]struct{}` のみを引数に取り FS ハンドル・identity を持たない純関数であり、`TestSystemModificationRisk`／`TestMigration_*` が同一入力で決定的に同値を返すことを担保（runtime==dry-run は自明）。manual: P1〜P5 で追加・変更する判定経路の関数本体が書込・ネットワーク・identity 参照を含まず symlink メタ参照（`Lstat`/`Readlink`）に留まることを PR で確認 |
+
+---
+
+## 8. 成功基準
+
+- **機能完全性**: AC-01〜AC-23 のすべてが §7 の対応テスト/検証で緑。
+- **品質**: `make test`・`make lint`・`make fmt` がすべて成功（NF-002）。新規 `ReasonCode` を導入しない（NF-001）。
+- **セキュリティ**: 新ラッパ・ip-exec・ヘルパーオプション経由のバイパス回帰がすべて deny/High。特権ラッパの
+  直接形・ネスト形が Critical。fail-closed 分割規約がシェルメタ文字・置換・特権トークンを取りこぼさない。
+- **文書**: AC-20 の検出限界が `command-risk-evaluation.ja.md` に追記済み。
+
+---
+
+## 9. 次のステップ
+
+- 本実装計画書のレビューと承認（Reviewer による status 更新）。
+- 承認後、`docs/dev/developer_guide/requirements_process.md` の手順に従い P1 から実装に着手する。
+- 引き上げ/引き下げの移行ノート（changelog）・sample/test config 追従・ユーザー向け文書の最終整合・日英反映・
+  オペランド毎の監査 family 区別は後続タスク 0142（判断軸2）・0143（監査/文書）が所有する（本タスクのスコープ外）。
