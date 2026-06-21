@@ -202,6 +202,12 @@
     - (i) safe-zone 宛先（`curl <url> -o $WORKDIR/safe`）は **Medium**（書込先のパス信頼区分が Low でも名前下限が効く）
     - (ii) trust-critical 宛先（`curl -o /usr/bin/x`）は **High**（書込先のパス信頼区分が名前下限を上回る）
   - **前提**: 0141 の名前による Medium 下限がリスク評価ロジックに組み込み済みであること（0141 が再編する共有コード。§3）。未組み込みでは (i) が見かけの下限で誤って通る。
+  - **検討事項（メモ・0141 のレビューより）**: 0141 の `rsync` は条件付き Medium で、リモート終端があるとき（`hasNetworkArguments`＝
+    引数に `://` を含む、または SSH 形式 `user@host:path`／`host:path`）のみ Medium、純ローカルは Low。この検出は
+    ヒューリスティックで、rsync デーモンの**二重コロン記法のうち末尾パスを伴わない bare module**（`rsync src host::module`）を
+    取りこぼしうる（`host::module/path` や `rsync://…` は検出される）。本タスクで rsync の宛先合成（AC-16）を実装する際、
+    リモート書込先オペランドの抽出とあわせて、`hasNetworkArguments` への `host::module` 検出追加を検討する（`rsync` 全体を
+    無条件 Medium へ格上げするより、過剰分類を起こさず隙間だけを塞げる）。0141 のコマンド名分類スコープ外のため本タスクで扱う。
 
 ### F-005: 判断軸2 を唯一の判定基準とし、既存の High 判定を置き換える（根本原因2）
 
