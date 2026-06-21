@@ -47,6 +47,8 @@ gh api graphql -F owner=OWNER -F repo=REPO -F number=NUMBER -f query='
 
 Only process threads where `isResolved: false`. If there are none, stop.
 
+This query caps at 100 threads (`reviewThreads(first:100)`) and 10 comments per thread (`comments(first:10)`). If a run hits either cap — 100 threads returned, or a thread already showing 10 comments — page through with `after:` cursors (or narrow the query) until the set is complete, because the root-cause pass below assumes the full set. On a small PR these caps are not reached and no pagination is needed.
+
 ## Synthesize Across Threads (root-cause pass)
 
 Before fixing threads one by one, look at them **together**. Per-comment spot-fixes miss the case where several comments are symptoms of one root cause or a missing general principle — fixing each in isolation produces churn and leaves the cause in place. This pass runs once, up front, and feeds the per-thread pass below.
@@ -58,9 +60,9 @@ Before fixing threads one by one, look at them **together**. Per-comment spot-fi
 3. **Gate — only synthesize when the signal is real.** Act on a cluster only when one of these holds; otherwise skip straight to per-thread handling:
    - three or more related Valid threads, or
    - a cluster concentrated on one file / surface / subsystem, or
-   - the same area drawing comments across multiple review rounds.
+   - the same area recurring across review rounds you have already handled this session (from your run history), or sustained back-and-forth within a thread.
 
-   A lone comment, or unrelated comments, get per-thread handling. Do **not** invent a root cause to justify a larger change.
+   A lone comment, or unrelated comments, get per-thread handling. Do **not** invent a root cause to justify a larger change. Base every gate signal only on data you actually have — the fetched threads and their comments (paginated to completeness above), plus your session memory of prior rounds — not on metadata the query does not return (timestamps, review IDs).
 
 4. **Find the root cause / missing principle.** For each qualifying cluster, ask: would a single structural change — and/or recording a general principle (an invariant, a shared helper, a completeness rule, a data table that becomes the single source of truth) — resolve the whole cluster **and prevent recurrence**? The goal is to fix the cause, not each symptom.
 
