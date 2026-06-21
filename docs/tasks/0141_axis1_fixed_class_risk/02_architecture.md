@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-06-20 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-06-21 |
+| Reviewer | isseis |
 | Comments | - |
 
 > 本書は 0140 を 3 分割した第 1 タスク（判断軸1＝コマンド名分類）の設計である。要件は
