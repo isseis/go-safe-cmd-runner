@@ -90,7 +90,7 @@ these inputs:
 
 **Hard constraints (use verbatim; the reviewer must flag any fix that would violate one of these as out of scope):**
 - [ ] 技術的な内容・事実・数値・固有名・構造・節の順序・見出し・文書ステータスを変更しない。表現だけを直す。
-- [ ] コードブロック（```～```）の内部、Mermaid のノード/エッジ識別子、バッククォート内のコード識別子・コマンド名・関数名・型名は変更しない。地の文と図のラベルのみが対象。
+- [ ] コードブロック（```～```）の内部は変更しない——**ただし Mermaid 図のラベル/キャプションの表示テキストは対象とする**（Mermaid は ```mermaid のフェンス内にあるが、その表示テキストの日本語は本コマンドの対象）。Mermaid のノード/エッジ識別子、およびバッククォート内のコード識別子・コマンド名・関数名・型名は変更しない。編集対象は地の文と Mermaid 図のラベル/キャプションの表示テキストのみ。
 - [ ] 用語集の語を保持し、新しい用語を勝手に導入しない。より良い語が必要なら、置換せずに指摘として挙げる。
 - [ ] 既に文書内で一貫して使われている確立表現（例: fail-closed、max 合成、profile、Reject/Critical/High 等）を、「カタカナ/英語だから」という理由だけで言い換えない。
 
@@ -101,8 +101,9 @@ From the review findings, apply the fixes to the document in place:
 - Fix all Critical and Major findings. Apply Minor fixes at your discretion.
 - For an **undefined-term** finding, prefer defining the term briefly at its first
   occurrence; use a pointer to where it is defined later (e.g.「後述の §X で定義」) when
-  an inline definition would disrupt the flow; reorder only when it does not disturb the
-  structure.
+  an inline definition would disrupt the flow. Do **not** reorder sections or move
+  content to fix it — the structure-preservation Hard constraint forbids that; use a
+  local inline definition or a forward pointer only.
 - Never change meaning, numbers, code, or section order to satisfy a prose finding. If
   a finding cannot be fixed without violating a Hard constraint, leave the text and
   note why.
