@@ -29,7 +29,7 @@
   （trust-critical/ordinary/safe-zone）は判断軸2（0142）の所掌であり、本タスクは触れない。最終リスクは、まず
   deny ゲート（identity・間接実行 Reject/Critical・特権 Critical）を優先順に短絡評価し、いずれも発火しない場合に
   限り残りの判定を max 合成して決まる（§1.2）。本タスクが整理した「名前で決まるレベル」のうち、特権昇格は
-  短絡ゲート、それ以外（システム変更名・間接実行 Floor・データ送信ほか）は判断軸2 と max 合成される。
+  短絡ゲート、それ以外（システム変更名・間接実行の下限（Floor）・データ送信ほか）は判断軸2 と max 合成される。
 - **既存の判定へ素直に組み込む（DRY・YAGNI）**。本タスクは新しい評価経路や新レベルを追加しない。引き上げ対象は
   既存の名前ベース判定——システム変更名の評価基準（dimension）と、特権・間接実行の短絡ゲート——の
   **分類集合の拡張・再配置**として表現する。新しい分類関数や新しい `RiskLevel` 段階は導入しない
@@ -72,7 +72,7 @@ flowchart TD
 
     subgraph Parallel["いずれのゲートも非発火のときのみ評価"]
         SYS["システム変更名分類<br>(SystemModificationRisk)"]
-        INDF["間接実行 Floor<br>(AnalyzeIndirectExecution)"]
+        INDF["間接実行の下限<br>(Floor / AnalyzeIndirectExecution)"]
         NET["データ送信名分類<br>(network / data-exfil)"]
         OTH["危険引数 / arbitrary-code /<br>バイナリ解析 ほか"]
     end
