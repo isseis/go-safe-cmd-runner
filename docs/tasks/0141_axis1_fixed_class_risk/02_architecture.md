@@ -343,7 +343,7 @@ type IndirectExecutionResult struct {
 （最終リスク = 内側評価値を High 以上に引き上げる＝`RoleInner` のフラット High 下限。特権トークンは Critical、
 ローダ変数等の禁止形は Reject）。
 
-> **配線方針（`wrapperSpec` で表現できる範囲と専用ハンドラの切り分け）**: 既存の `wrapperSpec` は
+> **ラッパの追加方法（`wrapperSpec` か専用ハンドラかの切り分け）**: 既存の `wrapperSpec` は
 > 「`valueOpts`＋固定個数の `positionals` の後に COMMAND」しか表現できず、`nice`/`timeout` のような単純形にしか
 > 適合しない。本タスクが追加する 5 コマンドはいずれもこの固定モデルに収まらず、**専用ハンドラ**（既存の
 > `analyzeEnv`/`analyzeTaskset` と同様の per-command 関数）を要する。理由を以下に明示する。
