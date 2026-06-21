@@ -106,8 +106,8 @@ Work in the following order.
    as clear, natural Japanese. The two are complementary.
    - Run this **after** step 8's Critical and Major issues are resolved, so prose is
      not polished on text that step 8 then rewrites.
-   - `japrose`, when invoked as this sub-step, does not commit; this command owns the
-     commit (see the step 8 extra rule). Resolve all Critical and Major prose findings
-     before committing.
+   - `japrose`, when invoked as this sub-step, does not commit. After both step 8 and
+     step 9 are complete and all Critical and Major issues from both passes are
+     resolved, commit the created architecture document.
 
 When finished, provide a concise summary of what you created and any assumptions you had to make.

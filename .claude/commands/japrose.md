@@ -68,8 +68,13 @@ these inputs:
   structure, and section order. It must look for real problems and not rubber-stamp;
   if a category is clean it says so explicitly rather than inventing findings. It must
   prioritize the places where a reader actually stumbles over exhaustive nitpicking.
-- **FILES**: the target document and the translation glossary (path in `_context.md`),
-  as resolved absolute-path strings.
+- **FILES**: the target document; the translation glossary (path in `_context.md`);
+  and, when the target is a task document under `docs/tasks/<task>/`, the sibling task
+  documents in the same directory that exist (`01_requirements.md`,
+  `02_architecture.md`, `03_implementation_plan.md`) — all as resolved absolute-path
+  strings. The sibling documents are **read-only reference** so the reviewer can check
+  terminology consistency against them (e.g. a plan vs. its architecture); only the
+  target document is edited.
 - **CRITERIA**: every item from the Prose-quality checklist and the Hard constraints
   below, copied verbatim.
 
@@ -78,7 +83,7 @@ these inputs:
 - [ ] 意図した意味に対して技術的に誤った/一般的でない語（例: "coverage" を「被覆」と当てる類）が、普通の日本語の語へ置き換えられている。
 - [ ] 不要なカタカナ英語・生の英語が自然な日本語へ置き換えられている。ただし用語集に載る確立した専門用語、本文書で確立した略語、およびバッククォート内のコード識別子・コマンド名・型名は対象外（むやみに言い換えない）。
 - [ ] 長すぎる一文・曖昧な係り受け・主語の欠落・詰め込みすぎの文が、意味を保ったまま分割・整理されて読みやすくなっている。
-- [ ] 用語・略語・専門語が、読み進める順序で定義より前に使われていない（未定義の先行使用がない）。ある場合は、初出での簡潔な定義、または定義箇所への前方参照（例:「§X で定義」）で、頭から読んで理解できるようになっている。
+- [ ] 用語・略語・専門語が、読み進める順序で定義より前に使われていない（未定義の先行使用がない）。ある場合は、初出での簡潔な定義、または後続の定義箇所への参照（例:「後述の §X で定義」）で、頭から読んで理解できるようになっている。
 - [ ] 同一概念には常に同一の日本語表記が使われ、用語集に一致している。用語集が「旧称」と記す語は使われていない。
 - [ ] 冗長・回りくどい言い回しが、意味を変えずに簡潔にされている。
 - [ ] 図（Mermaid）のラベル・キャプション中の日本語にも上記が適用されている（ノード識別子・コード識別子は除く）。
@@ -95,8 +100,9 @@ From the review findings, apply the fixes to the document in place:
 
 - Fix all Critical and Major findings. Apply Minor fixes at your discretion.
 - For an **undefined-term** finding, prefer defining the term briefly at its first
-  occurrence; use a forward pointer (e.g.「§X で定義」) when an inline definition would
-  disrupt the flow; reorder only when it does not disturb the structure.
+  occurrence; use a pointer to where it is defined later (e.g.「後述の §X で定義」) when
+  an inline definition would disrupt the flow; reorder only when it does not disturb the
+  structure.
 - Never change meaning, numbers, code, or section order to satisfy a prose finding. If
   a finding cannot be fixed without violating a Hard constraint, leave the text and
   note why.
