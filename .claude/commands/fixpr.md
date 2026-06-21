@@ -51,12 +51,12 @@ Only process threads where `isResolved: false`. If there are none, stop.
 
 Before fixing threads one by one, look at them **together**. Per-comment spot-fixes miss the case where several comments are symptoms of one root cause or a missing general principle — fixing each in isolation produces churn and leaves the cause in place. This pass runs once, up front, and feeds the per-thread pass below.
 
-1. **Read the full set first.** Load every unresolved thread (above) and do a quick validity triage of each (Valid / Invalid / Unclear, per Step 1's criteria) so you know which are real before acting.
+1. **Read the full set first.** Load every unresolved thread (above) and do a quick validity triage of each (Valid / Invalid / Unclear, per the criteria in Step 1 under "Address Each Unresolved Thread") so you know which are real before acting.
 
 2. **Cluster.** Group the Valid (and Unclear) threads by shared root cause — same file or surface, same kind of defect, or the same invariant being violated.
 
 3. **Gate — only synthesize when the signal is real.** Act on a cluster only when one of these holds; otherwise skip straight to per-thread handling:
-   - roughly three or more related Valid threads, or
+   - three or more related Valid threads, or
    - a cluster concentrated on one file / surface / subsystem, or
    - the same area drawing comments across multiple review rounds.
 
@@ -65,7 +65,7 @@ Before fixing threads one by one, look at them **together**. Per-comment spot-fi
 4. **Find the root cause / missing principle.** For each qualifying cluster, ask: would a single structural change — and/or recording a general principle (an invariant, a shared helper, a completeness rule, a data table that becomes the single source of truth) — resolve the whole cluster **and prevent recurrence**? The goal is to fix the cause, not each symptom.
 
 5. **Apply once, if in scope.** If yes and the change is within the PR's scope:
-   - Make the structural change a single, self-contained change. Run the build checks (defined in `.claude/commands/_context.md`, Tech-stack convention), then commit it **once** — not one commit per symptom.
+   - Make the structural change a single, self-contained change. Run the build checks (defined in `.claude/commands/_context.md`, Tech-stack convention) to confirm no errors, then commit it **once** — not one commit per symptom.
    - Optionally record the principle/invariant in the artifact itself (a code comment, a design or plan document), **including how future same-class comments should be handled**, so the cause does not recur and the next review can be triaged against it.
 
 6. **Guardrails (all required).**
