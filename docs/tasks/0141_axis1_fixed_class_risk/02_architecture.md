@@ -410,7 +410,7 @@ High に分類する（無害に見える形も含む）。
 （評価値、下限 High）、抽出不能なら Reject。これはオプション名の検出であり、宛先パスの信頼区分解析ではない
 （判断軸2 と区別。AC-19）。
 
-> **シェルコマンド文字列の fail-closed 分割規約（tokenizer contract、最重要・fail-open 回避の要）**
+> **シェルコマンド文字列の fail-closed 分割規約（最重要・fail-open 回避の要）**
 >
 > オプション値（`rsync -e` の値、`ssh -o ProxyCommand=` の値、§(a) の `flock -c`/`watch` 文字列）は、ツールが
 > `/bin/sh -c` でシェル解釈する**コマンド文字列**であり、単純なトークン列ではない。素朴な「先頭トークンだけ取って
@@ -418,7 +418,7 @@ High に分類する（無害に見える形も含む）。
 > `ssh -o ProxyCommand='nc %h %p; modprobe evil'` は `nc` と判定し trailer を取りこぼす、`rsync -e "$(printf sudo)"` は
 > 置換のため `sudo`＝Critical を取りこぼす）。
 >
-> したがって**抽出は既存の `analyzeEnvSplitString`（`env -S`）と同一の fail-closed 契約に束縛する**:
+> したがって**抽出は既存の `analyzeEnvSplitString`（`env -S`）と同一の fail-closed 分割規約に束縛する**:
 > 値がシェルメタ文字（`\ ' " $ # \``、および `;` `|` `&` 等）を含む、あるいは忠実な whitespace 分割に還元できない
 > 場合は **ゲートせず Reject**。クリーンに whitespace 分割できる値のみ first-token を内側コマンドとして評価し、
 > **first-token 以降の全トークンを内側 args として持ち回る**（trailer を黙って捨てない。なお `;`/`|`/`&` を含めば
@@ -427,13 +427,13 @@ High に分類する（無害に見える形も含む）。
 >
 > **2 つの実装サブケース（難易度が異なる）**:
 > 1. **`rsync -e`/`--rsh` の再分類**: `rsync` は既に `remoteShellOptionPrefixes`（`analyzeRemoteShellOption`）で
->    検出されている。本タスクはこれを「一律 Reject」から「値を上記契約で抽出 → 内側ゲート（下限 High）、抽出不能なら
+>    検出されている。本タスクはこれを「一律 Reject」から「値を上記の分割規約で抽出 → 内側ゲート（下限 High）、抽出不能なら
 >    Reject」へ変更する（rsync を当該 Reject 経路から移管）。
 > 2. **`ssh -o ProxyCommand=`/`LocalCommand=` の新規検出**: `ssh` は現状 `remoteShellOptionPrefixes` に存在せず
 >    （rsync/tar のみ）、`-o KEY=VALUE` のサブオプション解析も存在しない。本タスクは rank-2 間接実行経路に
 >    **新規サブパーサ**を追加する。これは `-o` を値オプションとして認識し（分離形 `-o ProxyCommand=…`・連結形
 >    `-oProxyCommand=…`・分離値 `-o` `ProxyCommand=…`）、その `KEY=VALUE` 内の `ProxyCommand`/`LocalCommand` の値を
->    上記契約で抽出する。これは単純なオプション名一致である rsync `-e` より難易度が高く、別ケースとして扱う。`ssh` の Medium プロファイル
+>    上記の分割規約で抽出する。これは単純なオプション名一致である rsync `-e` より難易度が高く、別ケースとして扱う。`ssh` の Medium プロファイル
 >    （AC-18）と本 High 下限は max 合成され実効 High になるが、検出は rank-2（プロファイル評価より前）で行う。
 
 > **既存方針への意図的な例外（インライン明示）**
