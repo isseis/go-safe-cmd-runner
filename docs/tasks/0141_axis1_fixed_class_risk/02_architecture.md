@@ -358,10 +358,12 @@ type IndirectExecutionResult struct {
   その後に COMMAND が省略可能。固定 `positionals=1` モデルでは `chroot /mnt` の `/mnt` を内側コマンドと誤抽出する
   （`/mnt` は `/` 始まりのため `strings.HasPrefix(cmd, "-")` の reject ガードにも掛からない）。よって NEWROOT を
   読み飛ばしつつ no-command を判別する専用処理が要る。
-- **`nsenter`/`unshare` の value-option grammar**: これらは `-t PID`・`-m`/`-u`/`-n` 等、値を取るオプションと取らない
-  オプションが混在し、既存の純フラグ系ラッパより option grammar が複雑である。`valueOpts` を取りこぼすと operand
-  境界を誤り、`-t` の値（PID）を内側コマンドと誤抽出する。fail-closed 規約に従い、境界不確定は Reject、誤って
-  `-` 始まりトークンを内側と判定した場合も Reject に倒す。
+- **`nsenter`/`unshare` の value-option grammar**: これらは値を取るオプションが `-t PID` 以外にも複数あり
+  （`-S UID`・`-G GID`・`-w DIR` 等）、値を取らないオプション（`unshare -r` 等）と混在する。しかも値を取る集合は
+  `nsenter` と `unshare` で異なる。`valueOpts` を取りこぼすと operand 境界を誤り、オプションの値（PID・UID/GID 等）を
+  内側コマンドと誤抽出して内側の検証をすり抜ける（例: `nsenter -S 0 sh` の `0` を内側コマンドと誤判定し、本来の `sh` を
+  ゲートし損なう＝fail-open）。よって実装では `-t` だけでなく**各ツールの値を取るオプションを網羅的に** `valueOpts` へ
+  登録する。fail-closed 規約に従い、境界不確定は Reject、誤って `-` 始まりトークンを内側と判定した場合も Reject に倒す。
 - **`flock`/`watch` のコマンド文字列形**: `flock <file> <cmd>` はトークン列だが、`flock -c "<cmd-string>"` と
   `watch "<cmd-string>"` は `/bin/sh -c` に渡されるシェルコマンド文字列であり、トークン列ではない。コマンド文字列の
   抽出は §(d) と同じ **シェルコマンド文字列の fail-closed 分割規約**（シェルメタ文字を含む文字列は抽出せず Reject）に従う。
@@ -432,8 +434,11 @@ High に分類する（無害に見える形も含む）。
 > 2. **`ssh -o ProxyCommand=`/`LocalCommand=` の新規検出**: `ssh` は現状 `remoteShellOptionPrefixes` に存在せず
 >    （rsync/tar のみ）、`-o KEY=VALUE` のサブオプション解析も存在しない。本タスクは rank-2 間接実行経路に
 >    **新規サブパーサ**を追加する。これは `-o` を値オプションとして認識し（分離形 `-o ProxyCommand=…`・連結形
->    `-oProxyCommand=…`・分離値 `-o` `ProxyCommand=…`）、その `KEY=VALUE` 内の `ProxyCommand`/`LocalCommand` の値を
->    上記の分割規約で抽出する。これは単純なオプション名一致である rsync `-e` より難易度が高く、別ケースとして扱う。`ssh` の Medium プロファイル
+>    `-oProxyCommand=…`・分離値 `-o` `ProxyCommand=…`、および空白区切り形 `-o "ProxyCommand …"`）、その値の中の
+>    `ProxyCommand`/`LocalCommand` を **`KEY=VALUE`（等号区切り）と `KEY VALUE`（最初の空白/タブ区切り）の両形式**で
+>    認識し、コマンド文字列を上記の分割規約で抽出する。OpenSSH は等号区切りと空白区切りの両方を受け付けるため、
+>    等号のみ対応にすると空白区切りの `ProxyCommand` を取りこぼして rank-2 ゲートをバイパスし、通常の `ssh`（Medium）
+>    として通る fail-open になる。これは単純なオプション名一致である rsync `-e` より難易度が高く、別ケースとして扱う。`ssh` の Medium プロファイル
 >    （AC-18）と本 High 下限は max 合成され実効 High になるが、検出は rank-2（プロファイル評価より前）で行う。
 
 > **既存方針への意図的な例外（インライン明示）**
