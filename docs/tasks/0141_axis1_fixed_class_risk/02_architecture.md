@@ -32,7 +32,7 @@
   短絡ゲート、それ以外（システム変更名・間接実行 Floor・データ送信ほか）は判断軸2 と max 合成される。
 - **既存の判定へ素直に組み込む（DRY・YAGNI）**。本タスクは新しい評価経路や新レベルを追加しない。引き上げ対象は
   既存の名前ベース判定——システム変更名の dimension と、特権・間接実行の短絡ゲート——の**分類集合の拡張・再配置**
-  として表現する。新しい分類関数や新 `RiskLevel` 段は導入しない（[01_requirements.md](01_requirements.md) §6）。
+  として表現する。新しい分類関数や新しい `RiskLevel` 段階は導入しない（[01_requirements.md](01_requirements.md) §6）。
   - 用語: 本書では用語集（[translation_glossary.md](../../translation_glossary.md)）に倣い、**判断軸（axis）** を
     要件レベルの観点（判断軸1/判断軸2）に、**dimension** を `evaluateDimensions` が順位4-8 で max 合成する個々の
     評価因子の意味に限定して使う。特権・間接実行の Reject/Critical は短絡**ゲート**であって dimension ではない。
@@ -583,7 +583,7 @@ flowchart TD
 ### 5.3 TOCTOU / 決定性
 
 名前ベース分類は symlink 連鎖を strict 解決（`ResolveCommandNames`、cycle/depth/解決失敗は fail-closed）した上で
-名前集合に対して行う。identity の fd 束縛・ハッシュ検証は既存の順位 1 / 実行段が担い、本タスクは変更しない。
+名前集合に対して行う。identity の fd 束縛・ハッシュ検証は既存の順位 1 / 実行段階が担い、本タスクは変更しない。
 ラッパ内側は元々 fd 束縛対象外であり（[0138](../0138_indirect_inner_command_risk/02_architecture.md) §5.2）、本タスクの
 ヘルパーオプション抽出（AC-19）もこの前提を踏襲する（抽出できても内側はハッシュ検証されないため High 下限に倒す）。
 
@@ -721,7 +721,7 @@ DTO・パッケージ依存は既存のまま（`security → risktypes → runn
 > 本体（§1〜§9）は現在の設計を記述する。以下は、要件・既存方針と異なる選択をした箇所の根拠のみを記録する。
 
 - **新評価経路・新レベルを追加しない（YAGNI）**: 引き上げ要件は既存の名前ベース dimension への集合拡張で
-  満たせるため、判断軸1 専用の新分類関数や新 `RiskLevel` 段は設けない。より一般的な「設定駆動の分類テーブル」化も
+  満たせるため、判断軸1 専用の新分類関数や新しい `RiskLevel` 段階は設けない。より一般的な「設定駆動の分類テーブル」化も
   検討余地はあるが、現要件（有限の固定名集合）には過剰であり採らない（[01_requirements.md](01_requirements.md) §6）。
 - **rsync -e / ssh ProxyCommand の Reject→extract+gate 緩和（AC-19）**: 既存方針（0138 §3.4 の一律 Reject）からの
   意図的な例外。根拠・既存テストへの影響は §3.3(d) にインライン記載。`tar --to-command` を例外に含めない理由も同箇所。
