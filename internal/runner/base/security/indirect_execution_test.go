@@ -1137,15 +1137,22 @@ func TestIndirect_IpExecGated(t *testing.T) {
 		{"netns exec destructive inner", []string{"netns", "exec", "ns", "rm", "-rf", "/"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		{"netns exec system-modification inner", []string{"netns", "exec", "ns", "modprobe", "x"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		{"vrf exec inner", []string{"vrf", "exec", "v", "sh"}, IndirectFloor, runnertypes.RiskLevelHigh},
-		// A privilege token inside the namespace is Critical.
+		// A privilege token inside the namespace is Critical (both objects share code).
 		{"netns exec privilege inner", []string{"netns", "exec", "ns", "sudo", "id"}, IndirectCritical, 0},
+		{"vrf exec privilege inner", []string{"vrf", "exec", "v", "sudo", "id"}, IndirectCritical, 0},
 		// Global option insertion must not bypass the inner gate: a "-json" flag and a
 		// "-n NAME" value-option before the object word are skipped, not mistaken for
 		// the object.
 		{"global flag before netns exec", []string{"-json", "netns", "exec", "ns", "rm", "-rf", "/"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		{"global value-option before netns exec", []string{"-n", "foo", "netns", "exec", "ns", "sh"}, IndirectFloor, runnertypes.RiskLevelHigh},
-		// An exec form whose inner command (or NAME) is missing fails closed.
+		// An exec form whose inner command (or NAME) is missing fails closed; both the
+		// "no NAME" and "NAME present but no command" branches, for both objects.
 		{"netns exec missing inner reject", []string{"netns", "exec", "ns"}, IndirectReject, 0},
+		{"vrf exec missing name reject", []string{"vrf", "exec"}, IndirectReject, 0},
+		{"vrf exec missing inner reject", []string{"vrf", "exec", "v"}, IndirectReject, 0},
+		// The COMMAND position still begins with "-" (option parsing mislocated it or
+		// the form is malformed): fail closed rather than gate a "-"-prefixed token.
+		{"netns exec dash-prefixed inner reject", []string{"netns", "exec", "ns", "-x", "cmd"}, IndirectReject, 0},
 		// Non-exec subcommands and other objects are not indirect execution: delegate
 		// to the normal ip (Medium) evaluation.
 		{"netns list delegates", []string{"netns", "list"}, IndirectNone, 0},
