@@ -881,15 +881,21 @@ func analyzeNamespaceWrapper(spec optSpec, positionals int, args []string, depth
 	if !reliable {
 		return reject()
 	}
-	idx += positionals
-	if idx >= len(args) {
-		// No inner command: the tool launches an implicit shell. High floor.
-		return floor(runnertypes.RiskLevelHigh, risktypes.ReasonIndirectExecutionWrapper)
-	}
-	if strings.HasPrefix(args[idx], "-") {
+	// A mandatory positional (chroot's NEWROOT) that is not present means the form
+	// is malformed, not a no-command implicit shell, so fail closed.
+	if idx+positionals > len(args) {
 		return reject()
 	}
-	return evaluateInnerAs(args[idx], args[idx+1:], depth, role)
+	cmdIdx := idx + positionals
+	if cmdIdx == len(args) {
+		// Positionals present but no inner command: the tool launches an implicit
+		// shell. High floor.
+		return floor(runnertypes.RiskLevelHigh, risktypes.ReasonIndirectExecutionWrapper)
+	}
+	if strings.HasPrefix(args[cmdIdx], "-") {
+		return reject()
+	}
+	return evaluateInnerAs(args[cmdIdx], args[cmdIdx+1:], depth, role)
 }
 
 // flockOptSpec lists flock's own leading options (those that precede the lock

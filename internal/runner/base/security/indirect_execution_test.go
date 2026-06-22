@@ -1029,6 +1029,9 @@ func TestIndirect_NamespaceWrappersGated(t *testing.T) {
 	}{
 		// chroot: NEWROOT positional is skipped, then the COMMAND is gated.
 		{"chroot inner destructive", "chroot", []string{"/mnt", "rm", "-rf", "/"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// chroot's NEWROOT is mandatory: an option-only form with no NEWROOT is
+		// malformed (not a no-command implicit shell) and fails closed.
+		{"chroot missing newroot reject", "chroot", []string{"--skip-chdir"}, IndirectReject, 0},
 		{"chroot userspec attached then privilege", "chroot", []string{"--userspec=0:0", "/mnt", "sudo", "id"}, IndirectCritical, 0},
 		{"chroot userspec separated then privilege", "chroot", []string{"--userspec", "0:0", "/mnt", "sudo", "id"}, IndirectCritical, 0},
 		// unshare: -w/-S/-G consume a value; -m (optional-argument) and -r (flag) do not.
