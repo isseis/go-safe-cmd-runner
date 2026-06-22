@@ -211,7 +211,9 @@ High 化、(E) データ送信系の Medium 据え置き補完と検出限界の
 > リダイレクト・プロセス置換・glob・履歴展開メタ文字を順次足し続ける羽目になり、漏れがそのまま fail-open になる）。
 > したがって本タスクの cmd-string 抽出は **allowlist 方式**を正とする: 値の全文字が**保守的な安全集合**
 > `[A-Za-z0-9 \t _ . / : % @ , = + -]`（英数字・空白/タブ・`_./:%@,=+-`）のみで構成される場合に**限り**クリーンな
-> whitespace 分割で first-token を内側ゲートし、**1 文字でも安全集合外を含めば Reject**。この安全集合は正当な
+> whitespace 分割で first-token を内側ゲートし、**1 文字でも安全集合外を含めば Reject**。**空文字列・空白のみの値は
+> first-token が存在しない（`strings.Fields` が空スライス→`tokens[0]` で panic）ため、分割前に明示的に空判定して Reject**
+> （安全集合は通すが「分割後トークン ≥ 1」を満たさない値は不可）。この安全集合は正当な
 > ProxyCommand/`--rsh` 値（例 `ssh -W %h:%p bastion`、`nc -X connect -x proxy:3128 %h %p`）を通しつつ、シェルに意味を持つ
 > 文字を一律に弾く——新しいメタ文字の登場で規約を追補する必要がなくなり、「メタ文字 X を足し忘れた」型の fail-open を
 > 構造的に閉じる（denylist 個別拡張の打ち切り）。`analyzeEnvSplitString` 流用箇所も本 allowlist へ寄せる。
