@@ -47,7 +47,7 @@ gh api graphql -F owner=OWNER -F repo=REPO -F number=NUMBER -f query='
 
 Only process threads where `isResolved: false`. If there are none, stop.
 
-This query caps at 100 threads (`reviewThreads(first:100)`) and 10 comments per thread (`comments(first:10)`). If a run hits either cap — 100 threads returned, or a thread already showing 10 comments — page through with `after:` cursors (or narrow the query) until the set is complete, because the root-cause pass below assumes the full set. On a small PR these caps are not reached and no pagination is needed.
+This query caps at 100 threads (`reviewThreads(first:100)`) and 10 comments per thread (`comments(first:10)`). If a run hits either cap — 100 threads returned, or a thread already showing 10 comments — the query as written cannot reach the rest: add `pageInfo { hasNextPage endCursor }` to the capped connection, add an `$after: String` variable, and re-issue with `after: $after`, looping while `hasNextPage` is true, until the set is complete (the root-cause pass below assumes the full set). Alternatively narrow the query (e.g. by `path`). On a small PR these caps are not reached and no pagination is needed.
 
 ## Synthesize Across Threads (root-cause pass)
 
