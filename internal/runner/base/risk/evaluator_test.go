@@ -227,7 +227,7 @@ func TestEvaluateRisk_NoProfileAbsolutePath(t *testing.T) {
 	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/bin/rmdir", []string{"d"}), "rmdir is destructive")
 	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/bin/shred", []string{"f"}), "shred is destructive")
 	assert.Equal(t, runnertypes.RiskLevelMedium, evalLevel(t, ev, "/usr/bin/mount", []string{"/dev/sda1", "/mnt"}), "mount is system modification")
-	assert.Equal(t, runnertypes.RiskLevelMedium, evalLevel(t, ev, "/usr/bin/crontab", []string{"-l"}), "crontab is system modification")
+	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/bin/crontab", []string{"-l"}), "crontab is a High scheduler even for a query form")
 }
 
 // dangerous argument patterns contribute to the effective risk at runtime.

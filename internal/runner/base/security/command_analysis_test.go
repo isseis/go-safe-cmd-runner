@@ -1121,18 +1121,115 @@ func TestSystemModificationRisk(t *testing.T) {
 		// Service / init management -> High.
 		{"systemctl", cmdNameSet("systemctl"), runnertypes.RiskLevelHigh},
 		{"service", cmdNameSet("service"), runnertypes.RiskLevelHigh},
-		// Medium name-matched commands stay Medium.
+		// F-001/F-007: large-scale / irreversible destruction -> High (parted/fsck/
+		// fdisk/mkfs moved up from Medium; AC-01, AC-03, AC-21).
+		{"parted", cmdNameSet("parted"), runnertypes.RiskLevelHigh},
+		{"fsck", cmdNameSet("fsck"), runnertypes.RiskLevelHigh},
+		{"fdisk", cmdNameSet("fdisk"), runnertypes.RiskLevelHigh},
+		{"mkfs", cmdNameSet("mkfs"), runnertypes.RiskLevelHigh},
+		{"wipefs", cmdNameSet("wipefs"), runnertypes.RiskLevelHigh},
+		{"blkdiscard", cmdNameSet("blkdiscard"), runnertypes.RiskLevelHigh},
+		{"sgdisk", cmdNameSet("sgdisk"), runnertypes.RiskLevelHigh},
+		{"gdisk", cmdNameSet("gdisk"), runnertypes.RiskLevelHigh},
+		{"cgdisk", cmdNameSet("cgdisk"), runnertypes.RiskLevelHigh},
+		{"sfdisk", cmdNameSet("sfdisk"), runnertypes.RiskLevelHigh},
+		{"cfdisk", cmdNameSet("cfdisk"), runnertypes.RiskLevelHigh},
+		{"mkswap", cmdNameSet("mkswap"), runnertypes.RiskLevelHigh},
+		// AC-02: LVM destruction / device initialization -> High.
+		{"lvremove", cmdNameSet("lvremove"), runnertypes.RiskLevelHigh},
+		{"vgremove", cmdNameSet("vgremove"), runnertypes.RiskLevelHigh},
+		{"pvremove", cmdNameSet("pvremove"), runnertypes.RiskLevelHigh},
+		{"lvreduce", cmdNameSet("lvreduce"), runnertypes.RiskLevelHigh},
+		{"vgreduce", cmdNameSet("vgreduce"), runnertypes.RiskLevelHigh},
+		{"pvmove", cmdNameSet("pvmove"), runnertypes.RiskLevelHigh},
+		{"lvresize", cmdNameSet("lvresize"), runnertypes.RiskLevelHigh},
+		{"pvresize", cmdNameSet("pvresize"), runnertypes.RiskLevelHigh},
+		{"pvcreate", cmdNameSet("pvcreate"), runnertypes.RiskLevelHigh},
+		// AC-03: direct filesystem utilities -> High.
+		{"e2fsck", cmdNameSet("e2fsck"), runnertypes.RiskLevelHigh},
+		{"mke2fs", cmdNameSet("mke2fs"), runnertypes.RiskLevelHigh},
+		{"tune2fs", cmdNameSet("tune2fs"), runnertypes.RiskLevelHigh},
+		{"resize2fs", cmdNameSet("resize2fs"), runnertypes.RiskLevelHigh},
+		// AC-04: kernel modules and parameters -> High.
+		{"insmod", cmdNameSet("insmod"), runnertypes.RiskLevelHigh},
+		{"modprobe", cmdNameSet("modprobe"), runnertypes.RiskLevelHigh},
+		{"rmmod", cmdNameSet("rmmod"), runnertypes.RiskLevelHigh},
+		{"kexec", cmdNameSet("kexec"), runnertypes.RiskLevelHigh},
+		{"sysctl", cmdNameSet("sysctl"), runnertypes.RiskLevelHigh},
+		// AC-05: account / auth database mutation -> High.
+		{"useradd", cmdNameSet("useradd"), runnertypes.RiskLevelHigh},
+		{"usermod", cmdNameSet("usermod"), runnertypes.RiskLevelHigh},
+		{"userdel", cmdNameSet("userdel"), runnertypes.RiskLevelHigh},
+		{"groupadd", cmdNameSet("groupadd"), runnertypes.RiskLevelHigh},
+		{"groupmod", cmdNameSet("groupmod"), runnertypes.RiskLevelHigh},
+		{"groupdel", cmdNameSet("groupdel"), runnertypes.RiskLevelHigh},
+		{"gpasswd", cmdNameSet("gpasswd"), runnertypes.RiskLevelHigh},
+		{"passwd", cmdNameSet("passwd"), runnertypes.RiskLevelHigh},
+		{"chpasswd", cmdNameSet("chpasswd"), runnertypes.RiskLevelHigh},
+		{"chage", cmdNameSet("chage"), runnertypes.RiskLevelHigh},
+		{"newusers", cmdNameSet("newusers"), runnertypes.RiskLevelHigh},
+		{"adduser", cmdNameSet("adduser"), runnertypes.RiskLevelHigh},
+		{"deluser", cmdNameSet("deluser"), runnertypes.RiskLevelHigh},
+		{"addgroup", cmdNameSet("addgroup"), runnertypes.RiskLevelHigh},
+		{"delgroup", cmdNameSet("delgroup"), runnertypes.RiskLevelHigh},
+		{"vipw", cmdNameSet("vipw"), runnertypes.RiskLevelHigh},
+		{"vigr", cmdNameSet("vigr"), runnertypes.RiskLevelHigh},
+		{"visudo", cmdNameSet("visudo"), runnertypes.RiskLevelHigh},
+		// AC-06: bootloader / boot entries / kernel image (>=2 grub2-* variants to
+		// detect expansion gaps in the family).
+		{"grub-install", cmdNameSet("grub-install"), runnertypes.RiskLevelHigh},
+		{"grub-mkconfig", cmdNameSet("grub-mkconfig"), runnertypes.RiskLevelHigh},
+		{"grub2-install", cmdNameSet("grub2-install"), runnertypes.RiskLevelHigh},
+		{"grub2-mkconfig", cmdNameSet("grub2-mkconfig"), runnertypes.RiskLevelHigh},
+		{"grub2-set-default", cmdNameSet("grub2-set-default"), runnertypes.RiskLevelHigh},
+		{"update-grub", cmdNameSet("update-grub"), runnertypes.RiskLevelHigh},
+		{"efibootmgr", cmdNameSet("efibootmgr"), runnertypes.RiskLevelHigh},
+		{"kernel-install", cmdNameSet("kernel-install"), runnertypes.RiskLevelHigh},
+		{"installkernel", cmdNameSet("installkernel"), runnertypes.RiskLevelHigh},
+		// AC-07: boot-time service enablement -> High (moved up from Medium).
+		{"chkconfig", cmdNameSet("chkconfig"), runnertypes.RiskLevelHigh},
+		{"update-rc.d", cmdNameSet("update-rc.d"), runnertypes.RiskLevelHigh},
+		// AC-08: power state / runlevel -> High.
+		{"shutdown", cmdNameSet("shutdown"), runnertypes.RiskLevelHigh},
+		{"reboot", cmdNameSet("reboot"), runnertypes.RiskLevelHigh},
+		{"halt", cmdNameSet("halt"), runnertypes.RiskLevelHigh},
+		{"poweroff", cmdNameSet("poweroff"), runnertypes.RiskLevelHigh},
+		{"telinit", cmdNameSet("telinit"), runnertypes.RiskLevelHigh},
+		// AC-09: firewall -> High; the *-save (stdout) variants stay Unknown.
+		{"iptables", cmdNameSet("iptables"), runnertypes.RiskLevelHigh},
+		{"ip6tables", cmdNameSet("ip6tables"), runnertypes.RiskLevelHigh},
+		{"iptables-restore", cmdNameSet("iptables-restore"), runnertypes.RiskLevelHigh},
+		{"ip6tables-restore", cmdNameSet("ip6tables-restore"), runnertypes.RiskLevelHigh},
+		{"nft", cmdNameSet("nft"), runnertypes.RiskLevelHigh},
+		{"ufw", cmdNameSet("ufw"), runnertypes.RiskLevelHigh},
+		{"firewall-cmd", cmdNameSet("firewall-cmd"), runnertypes.RiskLevelHigh},
+		{"iptables-save unknown", cmdNameSet("iptables-save"), runnertypes.RiskLevelUnknown},
+		{"ip6tables-save unknown", cmdNameSet("ip6tables-save"), runnertypes.RiskLevelUnknown},
+		// AC-10: capability grants -> High.
+		{"setcap", cmdNameSet("setcap"), runnertypes.RiskLevelHigh},
+		// AC-11: trust-boundary replacement intrinsics -> High.
+		{"update-alternatives", cmdNameSet("update-alternatives"), runnertypes.RiskLevelHigh},
+		{"dpkg-divert", cmdNameSet("dpkg-divert"), runnertypes.RiskLevelHigh},
+		{"alternatives", cmdNameSet("alternatives"), runnertypes.RiskLevelHigh},
+		{"ldconfig", cmdNameSet("ldconfig"), runnertypes.RiskLevelHigh},
+		// AC-12: job / delayed / transient schedulers -> High (moved up from Medium).
+		{"crontab", cmdNameSet("crontab"), runnertypes.RiskLevelHigh},
+		{"at", cmdNameSet("at"), runnertypes.RiskLevelHigh},
+		{"batch", cmdNameSet("batch"), runnertypes.RiskLevelHigh},
+		{"systemd-run", cmdNameSet("systemd-run"), runnertypes.RiskLevelHigh},
+		// F-003: limited-scope changes stay / become Medium.
 		{"mount", cmdNameSet("mount"), runnertypes.RiskLevelMedium},
 		{"umount", cmdNameSet("umount"), runnertypes.RiskLevelMedium},
-		{"fdisk", cmdNameSet("fdisk"), runnertypes.RiskLevelMedium},
-		{"parted", cmdNameSet("parted"), runnertypes.RiskLevelMedium},
-		{"mkfs", cmdNameSet("mkfs"), runnertypes.RiskLevelMedium},
-		{"fsck", cmdNameSet("fsck"), runnertypes.RiskLevelMedium},
-		{"crontab", cmdNameSet("crontab"), runnertypes.RiskLevelMedium},
-		{"at", cmdNameSet("at"), runnertypes.RiskLevelMedium},
-		{"batch", cmdNameSet("batch"), runnertypes.RiskLevelMedium},
-		{"chkconfig", cmdNameSet("chkconfig"), runnertypes.RiskLevelMedium},
-		{"update-rc.d", cmdNameSet("update-rc.d"), runnertypes.RiskLevelMedium},
+		// AC-13: LVM creation / configuration -> Medium.
+		{"lvcreate", cmdNameSet("lvcreate"), runnertypes.RiskLevelMedium},
+		{"vgcreate", cmdNameSet("vgcreate"), runnertypes.RiskLevelMedium},
+		{"lvextend", cmdNameSet("lvextend"), runnertypes.RiskLevelMedium},
+		{"vgchange", cmdNameSet("vgchange"), runnertypes.RiskLevelMedium},
+		{"lvchange", cmdNameSet("lvchange"), runnertypes.RiskLevelMedium},
+		// AC-14: coarse network configuration -> Medium.
+		{"ip", cmdNameSet("ip"), runnertypes.RiskLevelMedium},
+		{"ifconfig", cmdNameSet("ifconfig"), runnertypes.RiskLevelMedium},
+		{"route", cmdNameSet("route"), runnertypes.RiskLevelMedium},
 		// Non-matching names -> Unknown. Because the function takes only the
 		// resolved name set, a pm name that appears only as an argument value (e.g.
 		// "echo rpm") can never reach this dimension; that guarantee is structural,
@@ -1149,6 +1246,51 @@ func TestSystemModificationRisk(t *testing.T) {
 			assert.Equal(t, tt.want, SystemModificationRisk(tt.names))
 		})
 	}
+}
+
+// TestSystemModificationRisk_AllNamesEnumerated enforces closed-set completeness:
+// every name in highSystemModificationNames must classify as High and every name
+// in mediumSystemModificationNames as Medium. Unlike the representative table
+// above, this ranges over the actual constant sets, so a name added to a set but
+// mishandled -- or an expansion of an open family (grub2-*, account/auth) that
+// silently falls to Low -- is caught rather than passing on sampled coverage.
+func TestSystemModificationRisk_AllNamesEnumerated(t *testing.T) {
+	for name := range highSystemModificationNames {
+		t.Run("high/"+name, func(t *testing.T) {
+			assert.Equalf(t, runnertypes.RiskLevelHigh, SystemModificationRisk(cmdNameSet(name)),
+				"%q is in highSystemModificationNames but did not classify as High", name)
+		})
+	}
+	for name := range mediumSystemModificationNames {
+		t.Run("medium/"+name, func(t *testing.T) {
+			assert.Equalf(t, runnertypes.RiskLevelMedium, SystemModificationRisk(cmdNameSet(name)),
+				"%q is in mediumSystemModificationNames but did not classify as Medium", name)
+		})
+	}
+}
+
+// TestCheckDangerousArgPatterns_FsFamily verifies the mkfs.* / fsck.* prefix rules
+// in CheckDangerousArgPatterns, and that the bare "mkfs"/"fsck" names reach High
+// via SystemModificationRisk (the two dimensions compose with max in the evaluator).
+func TestCheckDangerousArgPatterns_FsFamily(t *testing.T) {
+	t.Run("mkfs.ext4 is High via prefix rule", func(t *testing.T) {
+		level, reason := CheckDangerousArgPatterns(cmdNameSet("mkfs.ext4"), nil)
+		assert.Equal(t, runnertypes.RiskLevelHigh, level)
+		assert.NotEmpty(t, reason)
+	})
+	t.Run("fsck.ext4 is High via prefix rule", func(t *testing.T) {
+		level, reason := CheckDangerousArgPatterns(cmdNameSet("fsck.ext4"), nil)
+		assert.Equal(t, runnertypes.RiskLevelHigh, level)
+		assert.NotEmpty(t, reason)
+	})
+	// Bare mkfs/fsck have no "." suffix, so the prefix rules do not match them;
+	// their High classification comes from SystemModificationRisk (max-composed).
+	t.Run("bare mkfs is High via SystemModificationRisk", func(t *testing.T) {
+		assert.Equal(t, runnertypes.RiskLevelHigh, SystemModificationRisk(cmdNameSet("mkfs")))
+	})
+	t.Run("bare fsck is High via SystemModificationRisk", func(t *testing.T) {
+		assert.Equal(t, runnertypes.RiskLevelHigh, SystemModificationRisk(cmdNameSet("fsck")))
+	})
 }
 
 // TestFindExecAllActions verifies that find's exec-style actions
