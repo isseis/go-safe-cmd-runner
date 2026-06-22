@@ -1099,6 +1099,15 @@ func TestIsDestructive_BasenameBackwardCompat(t *testing.T) {
 // (queries are treated identically to installs), the remaining name-matched
 // commands are Medium, and anything else (or a name appearing only as an argument
 // value) is Unknown. Matching is by basename and resolved symlinks.
+// TestSystemModificationRisk pins each acceptance-criteria command name to its
+// expected level, plus the negative (Unknown) and path-resolution cases. It is
+// complementary to TestSystemModificationRisk_AllNamesEnumerated, not redundant
+// with it: that test ranges the constant sets and catches a member at the wrong
+// level, but cannot catch a required name dropped from the sets entirely (an
+// absent name is never iterated). The explicit rows here go through
+// SystemModificationRisk, so an omitted name yields Unknown and fails -- this is
+// the omission guard. The Unknown rows (iptables-save, substring non-matches) and
+// the absolute-path row are unique to this test.
 func TestSystemModificationRisk(t *testing.T) {
 	tests := []struct {
 		name  string
