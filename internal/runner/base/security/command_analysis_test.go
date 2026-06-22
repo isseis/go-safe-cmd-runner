@@ -1099,207 +1099,52 @@ func TestIsDestructive_BasenameBackwardCompat(t *testing.T) {
 // (queries are treated identically to installs), the remaining name-matched
 // commands are Medium, and anything else (or a name appearing only as an argument
 // value) is Unknown. Matching is by basename and resolved symlinks.
-// systemModificationRiskCases drives TestSystemModificationRisk. Its High/Medium
-// rows must enumerate every name in highSystemModificationNames and
-// mediumSystemModificationNames; TestSystemModificationRisk_RepresentativeTableComplete
-// enforces that, so the table is a complete omission guard (a required name dropped
-// from a set yields Unknown and fails here) without relying on review to spot gaps.
-// It also holds the negative (Unknown) and path-resolution cases that ranging the
-// sets cannot cover.
-var systemModificationRiskCases = []struct {
-	name  string
-	names map[string]struct{}
-	want  runnertypes.RiskLevel
-}{
-	// Package managers -> High, install and query alike.
-	{"apt", cmdNameSet("apt"), runnertypes.RiskLevelHigh},
-	{"apt-get", cmdNameSet("apt-get"), runnertypes.RiskLevelHigh},
-	{"yum", cmdNameSet("yum"), runnertypes.RiskLevelHigh},
-	{"dnf", cmdNameSet("dnf"), runnertypes.RiskLevelHigh},
-	{"zypper", cmdNameSet("zypper"), runnertypes.RiskLevelHigh},
-	{"pacman", cmdNameSet("pacman"), runnertypes.RiskLevelHigh},
-	{"brew", cmdNameSet("brew"), runnertypes.RiskLevelHigh},
-	{"pip", cmdNameSet("pip"), runnertypes.RiskLevelHigh},
-	{"npm", cmdNameSet("npm"), runnertypes.RiskLevelHigh},
-	{"yarn", cmdNameSet("yarn"), runnertypes.RiskLevelHigh},
-	{"dpkg", cmdNameSet("dpkg"), runnertypes.RiskLevelHigh},
-	{"rpm", cmdNameSet("rpm"), runnertypes.RiskLevelHigh},
-	// Service / init management -> High.
-	{"systemctl", cmdNameSet("systemctl"), runnertypes.RiskLevelHigh},
-	{"service", cmdNameSet("service"), runnertypes.RiskLevelHigh},
-	// Large-scale / irreversible destruction -> High (parted/fsck/fdisk/mkfs
-	// moved up from Medium).
-	{"parted", cmdNameSet("parted"), runnertypes.RiskLevelHigh},
-	{"fsck", cmdNameSet("fsck"), runnertypes.RiskLevelHigh},
-	{"fdisk", cmdNameSet("fdisk"), runnertypes.RiskLevelHigh},
-	{"mkfs", cmdNameSet("mkfs"), runnertypes.RiskLevelHigh},
-	{"wipefs", cmdNameSet("wipefs"), runnertypes.RiskLevelHigh},
-	{"blkdiscard", cmdNameSet("blkdiscard"), runnertypes.RiskLevelHigh},
-	{"sgdisk", cmdNameSet("sgdisk"), runnertypes.RiskLevelHigh},
-	{"gdisk", cmdNameSet("gdisk"), runnertypes.RiskLevelHigh},
-	{"cgdisk", cmdNameSet("cgdisk"), runnertypes.RiskLevelHigh},
-	{"sfdisk", cmdNameSet("sfdisk"), runnertypes.RiskLevelHigh},
-	{"cfdisk", cmdNameSet("cfdisk"), runnertypes.RiskLevelHigh},
-	{"mkswap", cmdNameSet("mkswap"), runnertypes.RiskLevelHigh},
-	// LVM destruction / device initialization -> High.
-	{"lvremove", cmdNameSet("lvremove"), runnertypes.RiskLevelHigh},
-	{"vgremove", cmdNameSet("vgremove"), runnertypes.RiskLevelHigh},
-	{"pvremove", cmdNameSet("pvremove"), runnertypes.RiskLevelHigh},
-	{"lvreduce", cmdNameSet("lvreduce"), runnertypes.RiskLevelHigh},
-	{"vgreduce", cmdNameSet("vgreduce"), runnertypes.RiskLevelHigh},
-	{"pvmove", cmdNameSet("pvmove"), runnertypes.RiskLevelHigh},
-	{"lvresize", cmdNameSet("lvresize"), runnertypes.RiskLevelHigh},
-	{"pvresize", cmdNameSet("pvresize"), runnertypes.RiskLevelHigh},
-	{"pvcreate", cmdNameSet("pvcreate"), runnertypes.RiskLevelHigh},
-	// Direct filesystem utilities -> High.
-	{"e2fsck", cmdNameSet("e2fsck"), runnertypes.RiskLevelHigh},
-	{"mke2fs", cmdNameSet("mke2fs"), runnertypes.RiskLevelHigh},
-	{"tune2fs", cmdNameSet("tune2fs"), runnertypes.RiskLevelHigh},
-	{"resize2fs", cmdNameSet("resize2fs"), runnertypes.RiskLevelHigh},
-	{"xfs_repair", cmdNameSet("xfs_repair"), runnertypes.RiskLevelHigh},
-	{"xfs_growfs", cmdNameSet("xfs_growfs"), runnertypes.RiskLevelHigh},
-	{"xfs_admin", cmdNameSet("xfs_admin"), runnertypes.RiskLevelHigh},
-	{"btrfs", cmdNameSet("btrfs"), runnertypes.RiskLevelHigh},
-	// Kernel modules and parameters -> High.
-	{"insmod", cmdNameSet("insmod"), runnertypes.RiskLevelHigh},
-	{"modprobe", cmdNameSet("modprobe"), runnertypes.RiskLevelHigh},
-	{"rmmod", cmdNameSet("rmmod"), runnertypes.RiskLevelHigh},
-	{"kexec", cmdNameSet("kexec"), runnertypes.RiskLevelHigh},
-	{"sysctl", cmdNameSet("sysctl"), runnertypes.RiskLevelHigh},
-	// Account / auth database mutation -> High.
-	{"useradd", cmdNameSet("useradd"), runnertypes.RiskLevelHigh},
-	{"usermod", cmdNameSet("usermod"), runnertypes.RiskLevelHigh},
-	{"userdel", cmdNameSet("userdel"), runnertypes.RiskLevelHigh},
-	{"groupadd", cmdNameSet("groupadd"), runnertypes.RiskLevelHigh},
-	{"groupmod", cmdNameSet("groupmod"), runnertypes.RiskLevelHigh},
-	{"groupdel", cmdNameSet("groupdel"), runnertypes.RiskLevelHigh},
-	{"gpasswd", cmdNameSet("gpasswd"), runnertypes.RiskLevelHigh},
-	{"passwd", cmdNameSet("passwd"), runnertypes.RiskLevelHigh},
-	{"chpasswd", cmdNameSet("chpasswd"), runnertypes.RiskLevelHigh},
-	{"chage", cmdNameSet("chage"), runnertypes.RiskLevelHigh},
-	{"newusers", cmdNameSet("newusers"), runnertypes.RiskLevelHigh},
-	{"adduser", cmdNameSet("adduser"), runnertypes.RiskLevelHigh},
-	{"deluser", cmdNameSet("deluser"), runnertypes.RiskLevelHigh},
-	{"addgroup", cmdNameSet("addgroup"), runnertypes.RiskLevelHigh},
-	{"delgroup", cmdNameSet("delgroup"), runnertypes.RiskLevelHigh},
-	{"vipw", cmdNameSet("vipw"), runnertypes.RiskLevelHigh},
-	{"vigr", cmdNameSet("vigr"), runnertypes.RiskLevelHigh},
-	{"visudo", cmdNameSet("visudo"), runnertypes.RiskLevelHigh},
-	{"chsh", cmdNameSet("chsh"), runnertypes.RiskLevelHigh},
-	{"chfn", cmdNameSet("chfn"), runnertypes.RiskLevelHigh},
-	// Bootloader / boot entries / kernel image (>=2 grub2-* variants to detect
-	// expansion gaps in the family).
-	{"grub-install", cmdNameSet("grub-install"), runnertypes.RiskLevelHigh},
-	{"grub-mkconfig", cmdNameSet("grub-mkconfig"), runnertypes.RiskLevelHigh},
-	{"grub-set-default", cmdNameSet("grub-set-default"), runnertypes.RiskLevelHigh},
-	{"grub-reboot", cmdNameSet("grub-reboot"), runnertypes.RiskLevelHigh},
-	{"grub-editenv", cmdNameSet("grub-editenv"), runnertypes.RiskLevelHigh},
-	{"grub2-install", cmdNameSet("grub2-install"), runnertypes.RiskLevelHigh},
-	{"grub2-mkconfig", cmdNameSet("grub2-mkconfig"), runnertypes.RiskLevelHigh},
-	{"grub2-set-default", cmdNameSet("grub2-set-default"), runnertypes.RiskLevelHigh},
-	{"grub2-reboot", cmdNameSet("grub2-reboot"), runnertypes.RiskLevelHigh},
-	{"grub2-editenv", cmdNameSet("grub2-editenv"), runnertypes.RiskLevelHigh},
-	{"update-grub", cmdNameSet("update-grub"), runnertypes.RiskLevelHigh},
-	{"update-grub2", cmdNameSet("update-grub2"), runnertypes.RiskLevelHigh},
-	{"efibootmgr", cmdNameSet("efibootmgr"), runnertypes.RiskLevelHigh},
-	{"kernel-install", cmdNameSet("kernel-install"), runnertypes.RiskLevelHigh},
-	{"installkernel", cmdNameSet("installkernel"), runnertypes.RiskLevelHigh},
-	// Boot-time service enablement -> High (moved up from Medium).
-	{"chkconfig", cmdNameSet("chkconfig"), runnertypes.RiskLevelHigh},
-	{"update-rc.d", cmdNameSet("update-rc.d"), runnertypes.RiskLevelHigh},
-	// Power state / runlevel -> High.
-	{"shutdown", cmdNameSet("shutdown"), runnertypes.RiskLevelHigh},
-	{"reboot", cmdNameSet("reboot"), runnertypes.RiskLevelHigh},
-	{"halt", cmdNameSet("halt"), runnertypes.RiskLevelHigh},
-	{"poweroff", cmdNameSet("poweroff"), runnertypes.RiskLevelHigh},
-	{"telinit", cmdNameSet("telinit"), runnertypes.RiskLevelHigh},
-	// Firewall -> High; the *-save (stdout) variants stay Unknown.
-	{"iptables", cmdNameSet("iptables"), runnertypes.RiskLevelHigh},
-	{"ip6tables", cmdNameSet("ip6tables"), runnertypes.RiskLevelHigh},
-	{"iptables-restore", cmdNameSet("iptables-restore"), runnertypes.RiskLevelHigh},
-	{"ip6tables-restore", cmdNameSet("ip6tables-restore"), runnertypes.RiskLevelHigh},
-	{"nft", cmdNameSet("nft"), runnertypes.RiskLevelHigh},
-	{"ufw", cmdNameSet("ufw"), runnertypes.RiskLevelHigh},
-	{"firewall-cmd", cmdNameSet("firewall-cmd"), runnertypes.RiskLevelHigh},
-	{"ebtables", cmdNameSet("ebtables"), runnertypes.RiskLevelHigh},
-	{"arptables", cmdNameSet("arptables"), runnertypes.RiskLevelHigh},
-	{"iptables-save unknown", cmdNameSet("iptables-save"), runnertypes.RiskLevelUnknown},
-	{"ip6tables-save unknown", cmdNameSet("ip6tables-save"), runnertypes.RiskLevelUnknown},
-	// Capability grants -> High.
-	{"setcap", cmdNameSet("setcap"), runnertypes.RiskLevelHigh},
-	// Trust-boundary replacement intrinsics -> High.
-	{"update-alternatives", cmdNameSet("update-alternatives"), runnertypes.RiskLevelHigh},
-	{"dpkg-divert", cmdNameSet("dpkg-divert"), runnertypes.RiskLevelHigh},
-	{"alternatives", cmdNameSet("alternatives"), runnertypes.RiskLevelHigh},
-	{"ldconfig", cmdNameSet("ldconfig"), runnertypes.RiskLevelHigh},
-	// Job / delayed / transient schedulers -> High (moved up from Medium).
-	{"crontab", cmdNameSet("crontab"), runnertypes.RiskLevelHigh},
-	{"at", cmdNameSet("at"), runnertypes.RiskLevelHigh},
-	{"batch", cmdNameSet("batch"), runnertypes.RiskLevelHigh},
-	{"systemd-run", cmdNameSet("systemd-run"), runnertypes.RiskLevelHigh},
-	// Limited-scope changes stay / become Medium.
-	{"mount", cmdNameSet("mount"), runnertypes.RiskLevelMedium},
-	{"umount", cmdNameSet("umount"), runnertypes.RiskLevelMedium},
-	// LVM creation / configuration -> Medium.
-	{"lvcreate", cmdNameSet("lvcreate"), runnertypes.RiskLevelMedium},
-	{"vgcreate", cmdNameSet("vgcreate"), runnertypes.RiskLevelMedium},
-	{"lvextend", cmdNameSet("lvextend"), runnertypes.RiskLevelMedium},
-	{"vgextend", cmdNameSet("vgextend"), runnertypes.RiskLevelMedium},
-	{"vgchange", cmdNameSet("vgchange"), runnertypes.RiskLevelMedium},
-	{"lvchange", cmdNameSet("lvchange"), runnertypes.RiskLevelMedium},
-	{"pvchange", cmdNameSet("pvchange"), runnertypes.RiskLevelMedium},
-	// Coarse network configuration -> Medium.
-	{"ip", cmdNameSet("ip"), runnertypes.RiskLevelMedium},
-	{"ifconfig", cmdNameSet("ifconfig"), runnertypes.RiskLevelMedium},
-	{"route", cmdNameSet("route"), runnertypes.RiskLevelMedium},
-	{"iwconfig", cmdNameSet("iwconfig"), runnertypes.RiskLevelMedium},
-	{"iw", cmdNameSet("iw"), runnertypes.RiskLevelMedium},
-	// Non-matching names -> Unknown. Because the function takes only the
-	// resolved name set, a pm name that appears only as an argument value (e.g.
-	// "echo rpm") can never reach this dimension; that guarantee is structural,
-	// so these cases just confirm an unrelated command yields Unknown.
-	{"echo", cmdNameSet("echo"), runnertypes.RiskLevelUnknown},
-	{"ls", cmdNameSet("ls"), runnertypes.RiskLevelUnknown},
-	// symlink / absolute path resolution.
-	{"/usr/sbin/systemctl absolute", cmdNameSet("/usr/sbin/systemctl"), runnertypes.RiskLevelHigh},
-	// A substring match must not be treated as systemctl.
-	{"systemctl-helper not matched", cmdNameSet("systemctl-helper"), runnertypes.RiskLevelUnknown},
-}
-
-func TestSystemModificationRisk(t *testing.T) {
-	for _, tt := range systemModificationRiskCases {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, SystemModificationRisk(tt.names))
+// TestSystemModificationRisk_AllNamesEnumerated ranges the constant sets and
+// asserts each member classifies at its set's level. Ranging the sets (rather than
+// a hand-maintained parallel table) means the check cannot drift: a name added to a
+// set is covered automatically, and a name placed in both sets fails because it
+// cannot be both High and Medium. It does not guard against a required name being
+// deleted from a set -- that is left to code review and the AC traceability in the
+// plan (the YAGNI trade-off for not maintaining a parallel name list).
+func TestSystemModificationRisk_AllNamesEnumerated(t *testing.T) {
+	for name := range highSystemModificationNames {
+		t.Run("high/"+name, func(t *testing.T) {
+			assert.Equalf(t, runnertypes.RiskLevelHigh, SystemModificationRisk(cmdNameSet(name)),
+				"%q is in highSystemModificationNames but did not classify as High", name)
+		})
+	}
+	for name := range mediumSystemModificationNames {
+		t.Run("medium/"+name, func(t *testing.T) {
+			assert.Equalf(t, runnertypes.RiskLevelMedium, SystemModificationRisk(cmdNameSet(name)),
+				"%q is in mediumSystemModificationNames but did not classify as Medium", name)
 		})
 	}
 }
 
-// TestSystemModificationRisk_RepresentativeTableComplete enforces that the
-// representative table (systemModificationRiskCases) lists every name in the
-// constant sets at its expected level. This converts a drifted table -- a name
-// added to a set but not to the table -- into a local test failure instead of a
-// review comment, and makes the table a complete omission guard. Combined with the
-// per-row assertions in TestSystemModificationRisk it also catches a name placed in
-// both sets, since a single row's level cannot satisfy both the High and the Medium
-// requirement.
-func TestSystemModificationRisk_RepresentativeTableComplete(t *testing.T) {
-	// Level each set name is asserted at by the table's High/Medium rows.
-	asserted := make(map[string]runnertypes.RiskLevel)
-	for _, tc := range systemModificationRiskCases {
-		if tc.want != runnertypes.RiskLevelHigh && tc.want != runnertypes.RiskLevelMedium {
-			continue
-		}
-		for n := range tc.names {
-			asserted[n] = tc.want
-		}
+// TestSystemModificationRisk_NegativesAndResolution covers what ranging the sets
+// cannot: names that must NOT match (Unknown), and that matching is by resolved
+// basename -- an absolute path matches, a substring does not.
+func TestSystemModificationRisk_NegativesAndResolution(t *testing.T) {
+	tests := []struct {
+		name  string
+		names map[string]struct{}
+		want  runnertypes.RiskLevel
+	}{
+		// Non-matching names -> Unknown. The firewall *-save variants write to
+		// stdout and are intentionally excluded from the High set.
+		{"echo", cmdNameSet("echo"), runnertypes.RiskLevelUnknown},
+		{"ls", cmdNameSet("ls"), runnertypes.RiskLevelUnknown},
+		{"iptables-save", cmdNameSet("iptables-save"), runnertypes.RiskLevelUnknown},
+		{"ip6tables-save", cmdNameSet("ip6tables-save"), runnertypes.RiskLevelUnknown},
+		// Matching is by resolved basename: an absolute path matches; a substring
+		// (systemctl-helper) does not.
+		{"/usr/sbin/systemctl absolute", cmdNameSet("/usr/sbin/systemctl"), runnertypes.RiskLevelHigh},
+		{"systemctl-helper not matched", cmdNameSet("systemctl-helper"), runnertypes.RiskLevelUnknown},
 	}
-	for name := range highSystemModificationNames {
-		assert.Equalf(t, runnertypes.RiskLevelHigh, asserted[name],
-			"%q is in highSystemModificationNames but has no High row in systemModificationRiskCases", name)
-	}
-	for name := range mediumSystemModificationNames {
-		assert.Equalf(t, runnertypes.RiskLevelMedium, asserted[name],
-			"%q is in mediumSystemModificationNames but has no Medium row in systemModificationRiskCases", name)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, SystemModificationRisk(tt.names))
+		})
 	}
 }
 
