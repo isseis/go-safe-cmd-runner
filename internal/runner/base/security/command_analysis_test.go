@@ -1366,7 +1366,7 @@ func TestCommandRiskProfiles_Completeness(t *testing.T) {
 
 func TestCommandRiskProfiles_PrivilegeEscalation(t *testing.T) {
 	// Test that all privilege escalation commands are properly flagged
-	privilegeCommands := []string{"sudo", "su", "doas"}
+	privilegeCommands := []string{"sudo", "su", "doas", "pkexec", "runuser", "setpriv", "capsh"}
 	for _, cmd := range privilegeCommands {
 		t.Run(cmd, func(t *testing.T) {
 			profile, exists := commandRiskProfiles[cmd]
@@ -1474,6 +1474,10 @@ func TestMigration_RiskLevelConsistency(t *testing.T) {
 		{"sudo", runnertypes.RiskLevelCritical},
 		{"su", runnertypes.RiskLevelCritical},
 		{"doas", runnertypes.RiskLevelCritical},
+		{"pkexec", runnertypes.RiskLevelCritical},
+		{"runuser", runnertypes.RiskLevelCritical},
+		{"setpriv", runnertypes.RiskLevelCritical},
+		{"capsh", runnertypes.RiskLevelCritical},
 
 		// System modification - High
 		{"systemctl", runnertypes.RiskLevelHigh},
@@ -1534,7 +1538,7 @@ func TestMigration_NetworkTypeConsistency(t *testing.T) {
 		"dotnet", "mono", "pwsh", "powershell",
 	}
 	conditionalNetwork := []string{"git", "rsync"}
-	noneNetwork := []string{"sudo", "su", "doas", "systemctl", "service", "rm", "dd"}
+	noneNetwork := []string{"sudo", "su", "doas", "pkexec", "runuser", "setpriv", "capsh", "systemctl", "service", "rm", "dd"}
 
 	for _, cmd := range alwaysNetwork {
 		t.Run("AlwaysNetwork_"+cmd, func(t *testing.T) {
@@ -1590,7 +1594,7 @@ func TestMigration_NetworkSubcommandsConsistency(t *testing.T) {
 
 // TestMigration_IsPrivilegeConsistency verifies IsPrivilege flag is correctly set
 func TestMigration_IsPrivilegeConsistency(t *testing.T) {
-	privilegeCommands := []string{"sudo", "su", "doas"}
+	privilegeCommands := []string{"sudo", "su", "doas", "pkexec", "runuser", "setpriv", "capsh"}
 	nonPrivilegeCommands := []string{"rm", "dd", "curl", "git", "systemctl"}
 
 	for _, cmd := range privilegeCommands {

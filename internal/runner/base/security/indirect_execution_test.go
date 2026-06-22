@@ -952,6 +952,13 @@ func TestIndirect_BypassAttackerScenarios(t *testing.T) {
 		want IndirectExecutionKind
 	}{
 		{"env sudo", "env", []string{"sudo", "rm", "-rf", "/"}, IndirectCritical},
+		// Every privilege wrapper registered in the privilege profile must be
+		// Critical when nested, so a profile-registration gap cannot leave one
+		// wrapper as a one-sided bypass.
+		{"env pkexec", "env", []string{"pkexec", "rm", "-rf", "/"}, IndirectCritical},
+		{"env runuser", "env", []string{"runuser", "-u", "root", "rm"}, IndirectCritical},
+		{"env setpriv", "env", []string{"setpriv", "--reuid", "0", "rm"}, IndirectCritical},
+		{"env capsh", "env", []string{"capsh", "--", "-c", "rm"}, IndirectCritical},
 		{"env rm", "env", []string{"rm", "-rf", "/"}, IndirectFloor},
 		{"env PATH swap", "env", []string{"PATH=/tmp", "rm"}, IndirectReject},
 		{"env LD_PRELOAD", "env", []string{"LD_PRELOAD=/tmp/x.so", "ls"}, IndirectReject},
