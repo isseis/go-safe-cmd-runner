@@ -53,11 +53,10 @@ func TestEvaluateRisk_SystemModHighNotPrivilegeCritical(t *testing.T) {
 	ev := newVerifiedEvaluator()
 	for _, cmd := range []string{"/usr/sbin/visudo", "/usr/sbin/useradd", "/sbin/insmod"} {
 		t.Run(cmd, func(t *testing.T) {
-			plan, err := ev.EvaluateRisk(verifiedCmd(cmd, []string{"x"}))
-			require.NoError(t, err)
-			assert.Equal(t, runnertypes.RiskLevelHigh, plan.Assessment.Level, "%s must be High", cmd)
-			assert.NotEqual(t, risktypes.ReasonPrivilegeEscalation, plan.Assessment.BlockingReason,
-				"%s must not be flagged as privilege escalation", cmd)
+			// evalLevel asserts the command is not Blocking; a wrongly-Critical
+			// privilege classification would be Blocking, so this together with
+			// Level==High proves the command is High and not Critical-privilege.
+			assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, cmd, []string{"x"}), "%s must be High", cmd)
 		})
 	}
 }
