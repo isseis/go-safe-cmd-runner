@@ -486,9 +486,9 @@ var highSystemModificationNames = map[string]struct{}{
 
 // mediumSystemModificationNames are name-matched commands that change system state
 // within a limited scope (no unverified code, no large-scale/irreversible damage);
-// see the inline groups below. Note that "ip netns exec"/"ip vrf exec" are also
-// handled as indirect execution (the inner command is gated); the Medium here is
-// the floor for plain "ip" usage.
+// see the inline groups below. The Medium here is the floor for plain "ip" usage;
+// inner-command gating for "ip netns exec"/"ip vrf exec" is handled separately by
+// the indirect-execution path (added in a later phase of this task).
 var mediumSystemModificationNames = map[string]struct{}{
 	"mount": {}, "umount": {},
 	// LVM creation / configuration (limited, non-destructive scope).
@@ -585,8 +585,10 @@ func SystemModificationRisk(names map[string]struct{}) runnertypes.RiskLevel {
 // reason when no pattern matches.
 func CheckDangerousArgPatterns(names map[string]struct{}, args []string) (runnertypes.RiskLevel, string) {
 	// mkfs.<fstype> / fsck.<fstype> variants (mkfs.ext4, fsck.ext4, ...) create or
-	// check/repair filesystems and are high risk; the static pattern list and the
-	// system-modification name set only cover the bare "mkfs"/"fsck" names.
+	// check/repair filesystems and are high risk. The bare "mkfs"/"fsck" names are
+	// already High elsewhere (mkfs via the static pattern list and the
+	// system-modification name set; fsck via the name set only), but those match
+	// exact names, so the ".<fstype>" variants need this prefix rule.
 	for n := range names {
 		if strings.HasPrefix(n, "mkfs.") {
 			return runnertypes.RiskLevelHigh, "Filesystem creation (mkfs family)"
