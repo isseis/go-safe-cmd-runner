@@ -429,19 +429,14 @@ var findExecActions = map[string]struct{}{
 	"-okdir":   {},
 }
 
-// highSystemModificationNames are commands whose system-modification risk is High
-// based on name alone, regardless of arguments. They fall into two broad classes:
-// (1) package managers and service/init management entry points that can run
-// unverified maintainer/unit/init scripts under privilege (dpkg postinst, rpm
-// %post, pip setup.py, npm postinstall, systemd units, init scripts) -- arbitrary
-// code execution; and (2) large-scale or irreversible destruction and persistent
-// system-state changes (disk/partition/filesystem/LVM mutation, kernel module and
-// parameter changes, account/auth-database mutation, bootloader/firmware changes,
-// power-state/runlevel changes, firewall changes, capability grants, trust-boundary
-// replacements, and job/transient schedulers). The classification is name-only:
-// read-mostly invocations such as "sysctl -a" are treated identically to a write,
-// fail-safe. The effective risk of a few names (mkfs, fdisk) is also High via the
-// separate dangerous-argument-pattern dimension; both compose with max.
+// highSystemModificationNames are commands classified High by name alone,
+// regardless of arguments, in two broad classes: (1) entry points that can run
+// unverified code under privilege (package-manager maintainer scripts,
+// service/init units), and (2) large-scale or irreversible destruction and
+// persistent system-state changes. The classification is name-only and fail-safe:
+// read-mostly forms such as "sysctl -a" are treated like a write. A few names
+// (mkfs, fdisk) are also High via CheckDangerousArgPatterns; both compose with max.
+// The per-group inline comments below name each category.
 var highSystemModificationNames = map[string]struct{}{
 	// Package managers (dpkg/rpm included; they were previously undetected).
 	"apt": {}, "apt-get": {}, "yum": {}, "dnf": {}, "zypper": {},
@@ -490,10 +485,8 @@ var highSystemModificationNames = map[string]struct{}{
 }
 
 // mediumSystemModificationNames are name-matched commands that change system state
-// within a limited scope rather than executing unverified code or causing
-// large-scale/irreversible damage. They stay at Medium for this dimension:
-// mount/umount, LVM creation/configuration, and coarse network configuration
-// (ip/ifconfig/route). Note that "ip netns exec"/"ip vrf exec" are additionally
+// within a limited scope (no unverified code, no large-scale/irreversible damage);
+// see the inline groups below. Note that "ip netns exec"/"ip vrf exec" are also
 // handled as indirect execution (the inner command is gated); the Medium here is
 // the floor for plain "ip" usage.
 var mediumSystemModificationNames = map[string]struct{}{
