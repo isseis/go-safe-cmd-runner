@@ -1042,6 +1042,13 @@ func TestIndirect_NamespaceWrappersGated(t *testing.T) {
 		{"nsenter -t value -w optional-arg privilege", "nsenter", []string{"-t", "1", "-w", "sudo", "id"}, IndirectCritical, 0},
 		// Value-option coverage: -S consumes "0", so sh (not 0) is the gated command.
 		{"nsenter -S value then sh", "nsenter", []string{"-S", "0", "sh"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// Clustered optional-argument + value-option is ambiguous (the real tools
+		// disagree on whether "-rS"/"-mS" binds "S" to -r/-m as an attached value or
+		// parses -S separately), so the scan fails closed rather than risk swallowing
+		// the inner command ("sudo") as -S's value.
+		{"nsenter -rS cluster ambiguous reject", "nsenter", []string{"-rS", "sudo", "id"}, IndirectReject, 0},
+		{"nsenter -mS cluster ambiguous reject", "nsenter", []string{"-mS", "sudo", "id"}, IndirectReject, 0},
+		{"unshare -mS cluster ambiguous reject", "unshare", []string{"-mS", "sudo", "id"}, IndirectReject, 0},
 		// flock: -w consumes a value, the lock operand is skipped, then the command.
 		{"flock -w value lock then privilege", "flock", []string{"-w", "10", "/tmp/l", "sudo", "id"}, IndirectCritical, 0},
 		{"flock -c command string privilege", "flock", []string{"/tmp/l", "-c", "sudo id"}, IndirectCritical, 0},
@@ -1060,6 +1067,11 @@ func TestIndirect_NamespaceWrappersGated(t *testing.T) {
 		// the command is the inner command's argument, not watch's option.
 		{"watch -x argv destructive", "watch", []string{"-x", "rm", "-rf", "/"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		{"watch -x argv privilege", "watch", []string{"-x", "sudo", "-n", "1"}, IndirectCritical, 0},
+		// "-x" clustered with the interval flag still enables exec mode.
+		{"watch -xn exec with interval privilege", "watch", []string{"-xn", "1", "sudo"}, IndirectCritical, 0},
+		// "-nx" is -n with attached value "x", NOT the -x exec flag, so watch stays in
+		// command-string mode and the ";" hidden among the operands fails closed.
+		{"watch -nx attached value not exec mode reject", "watch", []string{"-nx", "ls", "-l", ";", "sudo", "id"}, IndirectReject, 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

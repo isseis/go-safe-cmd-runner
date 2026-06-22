@@ -174,6 +174,18 @@ type optSpec struct {
 	// fail-closed unknown policy (e.g. systemctl) does not treat its own flags as
 	// unknown. May be nil.
 	boolOpts map[string]struct{}
+	// optionalArgOpts are options with a getopt optional_argument: they bind a value
+	// only in the attached form (--opt=VALUE, -oVALUE), never by consuming the
+	// following token. They differ from boolOpts ONLY inside a short cluster: an
+	// optional-argument option consumes the remainder of the token as its optional
+	// value, so a later value-option letter in the same cluster is NOT a separate
+	// option. Because tools disagree on this (util-linux nsenter treats "-mS" as -m
+	// with attached value "S"; unshare treats it as -m then -S), a clustered
+	// optional-argument option that is not the last letter is ambiguous and the scan
+	// fails closed. Listing such an option as a valueOpt would let it swallow a
+	// separated operand (the inner command); omitting it entirely would let a later
+	// value-option letter in a cluster do the same. May be nil.
+	optionalArgOpts map[string]struct{}
 	// unknown selects how an unrecognized option is treated (see the policies).
 	unknown unknownOptionPolicy
 }
@@ -209,6 +221,9 @@ func skipLeadingOptions(args []string, spec optSpec) (idx int, reliable bool) {
 			}
 			if _, ok := spec.boolOpts[t]; ok {
 				continue // known value-less option
+			}
+			if _, ok := spec.optionalArgOpts[t]; ok {
+				continue // optional-argument long option without "=": binds no value
 			}
 			if strings.Contains(t, "=") {
 				continue // attached value (--opt=value): self-contained
@@ -262,6 +277,18 @@ func scanShortCluster(t string, spec optSpec) (consumesNext, ok bool) {
 		opt := "-" + string(t[j])
 		if _, isValue := spec.valueOpts[opt]; isValue {
 			return j == len(t)-1, true
+		}
+		if _, isOptional := spec.optionalArgOpts[opt]; isOptional {
+			// An optional-argument option binds the remainder of the cluster as its
+			// attached value. If it is the last letter it simply has no attached value;
+			// either way it never consumes the following token. When it is NOT the last
+			// letter, whether the rest is its value or a continuation of the cluster is
+			// tool-specific (see optSpec.optionalArgOpts), so fail closed rather than
+			// risk swallowing or exposing the inner command.
+			if j == len(t)-1 {
+				return false, true
+			}
+			return false, false
 		}
 		if _, isBool := spec.boolOpts[opt]; isBool {
 			continue // known value-less short option
@@ -787,13 +814,14 @@ var unshareOptSpec = optSpec{
 		"-S", "--setuid", "-G", "--setgid", "--map-user", "--map-group",
 		"--map-users", "--map-groups", "--owner",
 	),
+	optionalArgOpts: setOf(
+		"-m", "--mount", "-u", "--uts", "-i", "--ipc", "-n", "--net",
+		"-p", "--pid", "-U", "--user", "-C", "--cgroup", "-T", "--time",
+		"--mount-proc", "--mount-binfmt", "--kill-child",
+	),
 	boolOpts: setOf(
-		// Value-less flags.
 		"-r", "--map-root-user", "-c", "--map-current-user", "--map-auto",
 		"-f", "--fork",
-		// Optional-argument long forms (short forms auto-skip as value-less).
-		"--mount", "--uts", "--ipc", "--net", "--pid", "--user", "--cgroup",
-		"--time", "--mount-proc", "--mount-binfmt", "--kill-child",
 	),
 	unknown: shortOptsAreBoolean,
 }
@@ -803,14 +831,15 @@ var nsenterOptSpec = optSpec{
 		"-t", "--target", "-N", "--net-socket", "-W", "--wdns",
 		"-S", "--setuid", "-G", "--setgid",
 	),
+	optionalArgOpts: setOf(
+		"-m", "--mount", "-u", "--uts", "-i", "--ipc", "-n", "--net",
+		"-p", "--pid", "-U", "--user", "-C", "--cgroup", "-T", "--time",
+		"-r", "--root", "-w", "--wd",
+	),
 	boolOpts: setOf(
-		// Value-less flags.
 		"-a", "--all", "--user-parent", "--preserve-credentials", "--keep-caps",
 		"-e", "--env", "-F", "--no-fork", "-c", "--join-cgroup",
 		"-Z", "--follow-context",
-		// Optional-argument long forms (short forms auto-skip as value-less).
-		"--mount", "--uts", "--ipc", "--net", "--pid", "--cgroup", "--user",
-		"--time", "--root", "--wd",
 	),
 	unknown: shortOptsAreBoolean,
 }
@@ -919,11 +948,12 @@ func analyzeFlock(args []string, depth int, role risktypes.ArtifactRole) Indirec
 // also switches watch's execution mode (argv vs /bin/sh -c), which analyzeWatch
 // detects separately. -c is --color (a flag), not a value option.
 var watchOptSpec = optSpec{
-	valueOpts: setOf("-n", "--interval", "-q", "--equexit"),
+	valueOpts:       setOf("-n", "--interval", "-q", "--equexit"),
+	optionalArgOpts: setOf("-d", "--differences"),
 	boolOpts: setOf(
 		"-b", "--beep", "-c", "--color", "-C", "--no-color", "-e", "--errexit",
 		"-g", "--chgexit", "-p", "--precise", "-r", "--no-rerun", "-t", "--no-title",
-		"-w", "--no-wrap", "-x", "--exec", "--differences",
+		"-w", "--no-wrap", "-x", "--exec",
 	),
 	unknown: shortOptsAreBoolean,
 }
@@ -952,22 +982,34 @@ func analyzeWatch(args []string, depth int, role risktypes.ArtifactRole) Indirec
 }
 
 // watchExecRequested reports whether watch's -x/--exec flag appears among its
-// leading options. It skips the value of -n/--interval and -q/--equexit so a value
-// that happens to be "-x" is not mistaken for the flag (which would switch the
-// mode to argv and skip the fail-closed command-string split, a fail-open).
+// leading options. It must not mistake an option's value for the flag: a separated
+// value-option's value (e.g. the "x" in "-n x") and a short value-option's
+// attached value (e.g. the "x" in "-nx", which is -n's value, not -x) are skipped,
+// so they cannot switch the mode to argv and bypass the fail-closed command-string
+// split (a fail-open).
 func watchExecRequested(opts []string) bool {
 	i := 0
 	for i < len(opts) {
 		t := opts[i]
+		if t == "--exec" {
+			return true
+		}
 		if _, ok := watchOptSpec.valueOpts[t]; ok {
 			i += 2 // separated value-option: skip the option and its value
 			continue
 		}
-		if t == "-x" || t == "--exec" {
-			return true
-		}
-		if strings.HasPrefix(t, "-") && !strings.HasPrefix(t, "--") && t != "-" && shortFlagInBundle(t, 'x') {
-			return true
+		// A short cluster (single dash, not "--"): scan its letters left to right,
+		// stopping at the first value-option whose attached value is the remainder of
+		// the token (not more flag letters).
+		if strings.HasPrefix(t, "-") && !strings.HasPrefix(t, "--") && t != "-" {
+			for j := 1; j < len(t); j++ {
+				if t[j] == 'x' {
+					return true
+				}
+				if _, isValue := watchOptSpec.valueOpts["-"+string(t[j])]; isValue {
+					break // the rest of the token is this option's attached value
+				}
+			}
 		}
 		i++
 	}
@@ -987,7 +1029,7 @@ func isShellCommandStringSafe(s string) bool {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
 		case r == ' ' || r == '\t':
-		case strings.ContainsRune("_./:%@,=+-", r):
+		case r == '_', r == '.', r == '/', r == ':', r == '%', r == '@', r == ',', r == '=', r == '+', r == '-':
 		default:
 			return false
 		}

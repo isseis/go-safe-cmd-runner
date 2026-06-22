@@ -147,18 +147,22 @@ High 化、(E) データ送信系の Medium 据え置き補完と検出限界の
   (2) **bool**（値を取らない。`timeout --foreground`・`chroot --skip-chdir` 等）、(3) **optional-argument**（getopt の
   `optional_argument`。値は**連結形でしか束縛されない**＝`-m=FILE`/`-mFILE`。分離トークンは消費しない。`nsenter`/`unshare`
   の名前空間オプション `-m`/`-u`/`-i`/`-n`/`-p`/`-U`/`-C`/`-T` 等）。
-  **実装メモ（オペランド境界では bool と optional-argument は等価）**: オペランド境界の特定という目的では (2) と (3) は
-  同一に振る舞う（どちらも分離次トークンを消費せず、連結/`=` 付き形は同一トークン内で自己完結する）ため、既存 `optSpec` の
-  `valueOpts`＋`boolOpts` の 2 フィールドで 3 クラスを表現できる——**optional-argument は専用フィールドを新設せず `boolOpts`
-  （long 形）と「未知 short は値なし扱い」（`shortOptsAreBoolean` 下の short 形 auto-skip）で表す**。新規フィールドは
-  bool と挙動が完全一致し DRY 違反になるため設けない（YAGNI）。`wrapperSpec` の拡張も不要（P5 の `timeout` floor は
-  別途 `boolOpts` 追加で対応）。
+  **実装（`optSpec` を 3 クラスへ拡張: `optionalArgOpts` フィールドを新設）**: 単独トークンや long 形ではオペランド境界上
+  bool と optional-argument は同一に振る舞うが、**short クラスタ内では異なる**——optional-argument は残余トークンを
+  自分の連結値として束縛しクラスタを終端する（`-mS` は `-m` の値 `S`）のに対し、bool は次の文字も option として読み進める
+  （`-rS` で `-S` を別 option と解釈し次トークンを食う）。この差が fail-open を生む（実機検証: `nsenter -rS sudo id` は
+  `-r` が `S` を取り `sudo` がコマンドだが、optional-argument を bool 同様に扱うと `-S` が `sudo` を値として食い `sudo` を
+  取りこぼす）。さらに同じ `-mS` でも **util-linux 内でツール差がある**（`nsenter` は `-m` が `S` を連結値に取り、`unshare` は
+  `-m` 無引数＋`-S` 別 option）。したがって optional-argument は専用 `optionalArgOpts` で表現し、`scanShortCluster` で
+  **クラスタ末尾でない optional-argument は曖昧として fail-closed（Reject）**、末尾なら連結値なしで次トークン非消費とする。
 - **optional-argument を `valueOpts` に登録してはならない**（最重要不変条件）。登録すると分離形で次トークン（しばしば内側
-  コマンド）を値として食い、`unshare -m sudo id` の `sudo` を取りこぼす。optional-argument は bool 同様 `boolOpts`（long 形）
-  へ入れる／short 形は auto-skip させ、分離トークンを消費せず最初の operand を内側コマンドとしてゲートする。
+  コマンド）を値として食い、`unshare -m sudo id` の `sudo` を取りこぼす。**`boolOpts` でもならない**——short クラスタで
+  クラスタを終端しないため、後続の value-option 文字が次トークンを食う fail-open になる（`nsenter -rS sudo` で `sudo` を
+  取りこぼす）。専用 `optionalArgOpts` へ入れること。
   **arity は各ツールの実挙動で確定する**: `--help` の `[=<…>]` 表記が必ずしも分離形非消費を意味しない（実機検証で
-  `nsenter -S`/`-G` は分離値を消費する＝value、`nsenter -r`/`-w` は消費しない＝optional-argument。`unshare -S`/`-G`/`-R`/`-w` は
-  必須値、`-m` 等は optional-argument）。各セルは実コマンドで確認し、消費するものだけ `valueOpts` に入れる。
+  `nsenter -S`/`-G` は分離値を消費する＝value、`nsenter -r`/`-w`/`-m` 等は消費しない＝optional-argument。`unshare -S`/`-G`/`-R`/`-w` は
+  必須値、`-m` 等は optional-argument）。各セルは実コマンドで確認し、消費するものだけ `valueOpts`、連結のみ束縛するものを
+  `optionalArgOpts` に入れる。
 - **単純なオプション文法を持つハンドラ**（新規の `chroot`/`unshare`/`nsenter`/`flock`/`watch`/`ip` exec、既存の
   `analyzeWrapper`・`xargsTarget`・`packageRunnerVerb`）は、オプションスキップを**ハンド-rolled ループでなく共有
   `skipLeadingOptions` 経由**で行う（専用ハンドラの存在自体はアーキ §3.3(a) のとおり維持。共有するのは「オペランド
