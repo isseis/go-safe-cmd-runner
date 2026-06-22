@@ -1121,6 +1121,71 @@ func TestIndirect_NoCommandImplicitShellHigh(t *testing.T) {
 	}
 }
 
+// TestIndirect_IpExecGated verifies "ip netns exec" / "ip vrf exec" gate their
+// inner command, that ip's global options are skipped (in singleDashLong mode) so
+// an inserted global cannot shift the object word and bypass the gate, and that a
+// non-exec ip subcommand is left to the normal ip (Medium) classification rather
+// than treated as indirect execution.
+func TestIndirect_IpExecGated(t *testing.T) {
+	cases := []struct {
+		name      string
+		args      []string
+		wantKind  IndirectExecutionKind
+		wantLevel runnertypes.RiskLevel // only checked when wantKind is IndirectFloor
+	}{
+		// The inner command of an exec form is gated at least to a High floor.
+		{"netns exec destructive inner", []string{"netns", "exec", "ns", "rm", "-rf", "/"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"netns exec system-modification inner", []string{"netns", "exec", "ns", "modprobe", "x"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"vrf exec inner", []string{"vrf", "exec", "v", "sh"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// A privilege token inside the namespace is Critical (both objects share code).
+		{"netns exec privilege inner", []string{"netns", "exec", "ns", "sudo", "id"}, IndirectCritical, 0},
+		{"vrf exec privilege inner", []string{"vrf", "exec", "v", "sudo", "id"}, IndirectCritical, 0},
+		// Global option insertion must not bypass the inner gate: a "-json" flag and a
+		// "-n NAME" value-option before the object word are skipped, not mistaken for
+		// the object.
+		{"global flag before netns exec", []string{"-json", "netns", "exec", "ns", "rm", "-rf", "/"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"global value-option before netns exec", []string{"-n", "foo", "netns", "exec", "ns", "sh"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// -color/-c is a flag (iproute2 -c[olor][={always|auto|never}]): bare -color
+		// does NOT consume the next token, so the object word is still found and the
+		// inner command is gated. Listing -color in valueOpts would swallow "netns"
+		// here and miss the gate, so these lock the flag classification.
+		{"global bare color flag before netns exec", []string{"-color", "netns", "exec", "ns", "sh"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"global short color flag before netns exec", []string{"-c", "netns", "exec", "ns", "sh"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// The color value binds only in the attached "=" form, handled as a
+		// self-contained option, so the object word is still located.
+		{"global color attached value before netns exec", []string{"-color=always", "netns", "exec", "ns", "sh"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// Bare -color does not consume "always": "always" becomes the (in real ip,
+		// invalid) object word, so this is not an exec form and delegates to ip Medium
+		// — consistent with real ip rejecting object "always" and executing nothing.
+		{"global bare color does not consume next token", []string{"-color", "always", "netns", "exec", "ns", "sh"}, IndirectNone, 0},
+		// An exec form whose inner command (or NAME) is missing fails closed; both the
+		// "no NAME" and "NAME present but no command" branches, for both objects.
+		{"netns exec missing inner reject", []string{"netns", "exec", "ns"}, IndirectReject, 0},
+		{"vrf exec missing name reject", []string{"vrf", "exec"}, IndirectReject, 0},
+		{"vrf exec missing inner reject", []string{"vrf", "exec", "v"}, IndirectReject, 0},
+		// The COMMAND position still begins with "-" (option parsing mislocated it or
+		// the form is malformed): fail closed rather than gate a "-"-prefixed token.
+		{"netns exec dash-prefixed inner reject", []string{"netns", "exec", "ns", "-x", "cmd"}, IndirectReject, 0},
+		// Non-exec subcommands and other objects are not indirect execution: delegate
+		// to the normal ip (Medium) evaluation.
+		{"netns list delegates", []string{"netns", "list"}, IndirectNone, 0},
+		{"vrf show delegates", []string{"vrf", "show"}, IndirectNone, 0},
+		{"link show delegates", []string{"link", "show"}, IndirectNone, 0},
+		// An unrecognized global option makes the operand boundary unreliable, so the
+		// scan fails closed: a hidden "netns exec" must not slip through to Medium.
+		{"unknown global option reject", []string{"-zzz", "netns", "exec", "ns", "rm"}, IndirectReject, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := analyzeIndirectCmd("ip", tc.args...)
+			assert.Equal(t, tc.wantKind, res.Kind)
+			if tc.wantKind == IndirectFloor {
+				assert.Equal(t, tc.wantLevel, res.Level)
+			}
+		})
+	}
+}
+
 // TestIndirect_ShebangFifoNotRead verifies readShebang does not block when the
 // command path is a FIFO (a denial-of-service vector): the regular-file guard
 // rejects it before os.Open, so analysis returns promptly as not-a-shebang.
