@@ -1145,6 +1145,19 @@ func TestIndirect_IpExecGated(t *testing.T) {
 		// the object.
 		{"global flag before netns exec", []string{"-json", "netns", "exec", "ns", "rm", "-rf", "/"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		{"global value-option before netns exec", []string{"-n", "foo", "netns", "exec", "ns", "sh"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// -color/-c is a flag (iproute2 -c[olor][={always|auto|never}]): bare -color
+		// does NOT consume the next token, so the object word is still found and the
+		// inner command is gated. Listing -color in valueOpts would swallow "netns"
+		// here and miss the gate, so these lock the flag classification.
+		{"global bare color flag before netns exec", []string{"-color", "netns", "exec", "ns", "sh"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"global short color flag before netns exec", []string{"-c", "netns", "exec", "ns", "sh"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// The color value binds only in the attached "=" form, handled as a
+		// self-contained option, so the object word is still located.
+		{"global color attached value before netns exec", []string{"-color=always", "netns", "exec", "ns", "sh"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// Bare -color does not consume "always": "always" becomes the (in real ip,
+		// invalid) object word, so this is not an exec form and delegates to ip Medium
+		// — consistent with real ip rejecting object "always" and executing nothing.
+		{"global bare color does not consume next token", []string{"-color", "always", "netns", "exec", "ns", "sh"}, IndirectNone, 0},
 		// An exec form whose inner command (or NAME) is missing fails closed; both the
 		// "no NAME" and "NAME present but no command" branches, for both objects.
 		{"netns exec missing inner reject", []string{"netns", "exec", "ns"}, IndirectReject, 0},

@@ -1094,8 +1094,13 @@ func watchExecRequested(opts []string) bool {
 // than getopt short-option clusters, so the spec is scanned in singleDashLong mode:
 // each "-token" is one whole option. Value-taking globals (-family/-f, -batch/-b,
 // -loops/-l, -rcvbuf/-rc, -netns/-n) consume the following token; the rest are
-// flags. An unrecognized global makes the operand boundary unreliable (a value
-// option could hide the object), so the scan fails closed and analyzeIPExec rejects.
+// flags. -color/-c is a flag here, NOT a value option: iproute2 documents it as
+// -c[olor][={always|auto|never}] and binds the value only in the attached "=" form
+// (handled by the "=" branch of skipLeadingOptions); bare -color does not consume
+// the next token. Listing -color in valueOpts would be a fail-open, swallowing the
+// object word of "ip -color netns exec ns <cmd>" and missing the inner gate.
+// An unrecognized global makes the operand boundary unreliable (a value option
+// could hide the object), so the scan fails closed and analyzeIPExec rejects.
 var ipOptSpec = optSpec{
 	singleDashLong: true,
 	valueOpts: setOf(
