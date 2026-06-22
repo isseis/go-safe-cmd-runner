@@ -1075,6 +1075,9 @@ func TestIndirect_NamespaceWrappersGated(t *testing.T) {
 		// "-nx" is -n with attached value "x", NOT the -x exec flag, so watch stays in
 		// command-string mode and the ";" hidden among the operands fails closed.
 		{"watch -nx attached value not exec mode reject", "watch", []string{"-nx", "ls", "-l", ";", "sudo", "id"}, IndirectReject, 0},
+		// "-dx" is -d (--differences, optional-argument) with attached value "x", NOT
+		// the -x exec flag, so the same fail-closed split applies.
+		{"watch -dx attached value not exec mode reject", "watch", []string{"-dx", "ls", "-l", ";", "sudo", "id"}, IndirectReject, 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

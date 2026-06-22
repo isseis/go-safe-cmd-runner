@@ -793,15 +793,15 @@ func analyzeTaskset(args []string, depth int, role risktypes.ArtifactRole) Indir
 //
 // getopt optional_argument options (unshare/nsenter namespace flags such as -m,
 // and nsenter -r/-w) bind a value only in the attached form (-m=FILE / -mFILE); a
-// separated next token is an operand (the inner COMMAND). They must NOT be listed
-// as valueOpts, which would swallow the inner command (e.g. "unshare -m sudo id"
-// would lose sudo). Their short forms need no positive listing (skipLeadingOptions
-// treats an unrecognized short option as value-less, which is exactly the
-// optional-argument operand behavior); their long forms are listed as boolOpts so
-// they are recognized rather than failing closed as unknown long options. Only
-// options that consume the following token are listed in valueOpts. nsenter -S/-G
-// empirically consume their separated value (verified against the real tool), so
-// they are valueOpts even though --help renders them with the optional "[=<uid>]".
+// separated next token is an operand (the inner COMMAND). They are listed in
+// optionalArgOpts (both short and long forms). They must NOT be listed as
+// valueOpts, which would swallow the inner command (e.g. "unshare -m sudo id"
+// would lose sudo); listing the short form is required so scanShortCluster can
+// detect the clustered-ambiguity case (-mS) and fail closed rather than continue
+// into a later value-option that would consume the next token. Only options that
+// consume the following token are listed in valueOpts. nsenter -S/-G empirically
+// consume their separated value (verified against the real tool), so they are
+// valueOpts even though --help renders them with the optional "[=<uid>]".
 var chrootOptSpec = optSpec{
 	valueOpts: setOf("--userspec", "--groups"),
 	boolOpts:  setOf("--skip-chdir"),
@@ -1005,14 +1005,20 @@ func watchExecRequested(opts []string) bool {
 			continue
 		}
 		// A short cluster (single dash, not "--"): scan its letters left to right,
-		// stopping at the first value-option whose attached value is the remainder of
-		// the token (not more flag letters).
+		// stopping at the first value-option or optional-argument option whose
+		// attached value is the remainder of the token (not more flag letters). For
+		// example "-nx" is -n's value "x" and "-dx" is -d's value "x", neither is the
+		// -x exec flag.
 		if strings.HasPrefix(t, "-") && !strings.HasPrefix(t, "--") && t != "-" {
 			for j := 1; j < len(t); j++ {
 				if t[j] == 'x' {
 					return true
 				}
-				if _, isValue := watchOptSpec.valueOpts["-"+string(t[j])]; isValue {
+				opt := "-" + string(t[j])
+				if _, isValue := watchOptSpec.valueOpts[opt]; isValue {
+					break // the rest of the token is this option's attached value
+				}
+				if _, isOptional := watchOptSpec.optionalArgOpts[opt]; isOptional {
 					break // the rest of the token is this option's attached value
 				}
 			}
