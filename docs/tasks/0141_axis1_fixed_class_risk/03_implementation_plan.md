@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-06-21 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-06-22 |
+| Reviewer | isseis |
 | Comments | - |
 
 > 本書は [01_requirements.md](01_requirements.md)（`approved`）と [02_architecture.md](02_architecture.md)（`approved`）に基づく
