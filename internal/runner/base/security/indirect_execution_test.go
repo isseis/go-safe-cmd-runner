@@ -1039,6 +1039,14 @@ func TestIndirect_NamespaceWrappersGated(t *testing.T) {
 		{"unshare -m optional-arg privilege", "unshare", []string{"-m", "sudo", "id"}, IndirectCritical, 0},
 		{"unshare -w value privilege", "unshare", []string{"-w", "/tmp", "sudo", "id"}, IndirectCritical, 0},
 		{"unshare -r flag privilege", "unshare", []string{"-r", "sudo", "id"}, IndirectCritical, 0},
+		// --map-users/--map-groups take a REQUIRED value (verified against the real
+		// tool: "unshare --map-users sudoXYZ" reports "invalid mapping 'sudoXYZ'", so
+		// the token is consumed as the mapping spec, not treated as the command).
+		// They therefore belong in valueOpts: the value is consumed and the following
+		// "sudo" is the gated inner command. Misclassifying them as optional-argument
+		// would skip the value, treat "0:0:1" as the command, and miss "sudo".
+		{"unshare --map-users value privilege", "unshare", []string{"--map-users", "0:0:1", "sudo", "id"}, IndirectCritical, 0},
+		{"unshare --map-groups value privilege", "unshare", []string{"--map-groups", "0:0:1", "sudo", "id"}, IndirectCritical, 0},
 		// nsenter: -t/-S consume a value; -m/-w (optional-argument) do not.
 		{"nsenter -t value then sh", "nsenter", []string{"-t", "1", "sh"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		{"nsenter -m optional-arg privilege", "nsenter", []string{"-m", "sudo", "id"}, IndirectCritical, 0},

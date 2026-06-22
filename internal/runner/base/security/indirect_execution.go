@@ -264,41 +264,97 @@ func firstOperand(args []string, spec optSpec) (operand string) {
 	return args[idx]
 }
 
+// optClass is the getopt arity class of a short option within a cluster. It is the
+// single classification every short-cluster scan shares, so the rule "a value or
+// optional-argument option ends the cluster (the remainder is its attached value)"
+// is decided in exactly one place (classifyShortOpt) rather than re-derived per
+// scan site. Any new caller that walks a short cluster MUST classify each letter
+// through classifyShortOpt instead of testing the option maps directly.
+type optClass int
+
+const (
+	// optClassValue takes a value: as the last letter of a cluster it consumes the
+	// following token; otherwise the remainder of the token is its attached value.
+	// Either way the cluster ends.
+	optClassValue optClass = iota
+	// optClassOptional has a getopt optional_argument: it binds a value only in the
+	// attached form, so it never consumes the following token; the remainder of the
+	// token (if any) is its attached value, ending the cluster.
+	optClassOptional
+	// optClassBool is a value-less flag: the cluster scan continues past it.
+	optClassBool
+	// optClassUnknown is an unrecognized option; the caller resolves its arity by
+	// the unknown-option policy.
+	optClassUnknown
+)
+
+// classifyShortOpt returns the arity class of the one-letter short option opt
+// (e.g. "-c") per spec. valueOpts and optionalArgOpts are checked before boolOpts
+// so a misregistration is caught by tests rather than silently treated as a flag.
+func classifyShortOpt(opt string, spec optSpec) optClass {
+	if _, ok := spec.valueOpts[opt]; ok {
+		return optClassValue
+	}
+	if _, ok := spec.optionalArgOpts[opt]; ok {
+		return optClassOptional
+	}
+	if _, ok := spec.boolOpts[opt]; ok {
+		return optClassBool
+	}
+	return optClassUnknown
+}
+
 // scanShortCluster parses a clustered short-option token (e.g. "-tc") left to
 // right. consumesNext is true when a value-taking option is the LAST character of
 // the cluster and therefore takes the following token as its separated value; a
 // value-taking option that is not last takes the remainder of the token as an
-// attached value and ends the cluster either way. ok is false when an
-// unrecognized option makes the cluster's arity indeterminate under the
-// anyUnknownIsUnreliable policy, so the caller fails closed; under
-// shortOptsAreBoolean an unrecognized short option is assumed value-less.
+// attached value and ends the cluster either way. ok is false when the cluster's
+// arity is indeterminate (an unrecognized option under the anyUnknownIsUnreliable
+// policy, or an optional-argument option that is not the cluster's last letter,
+// whose remainder is tool-specifically its value or more options), so the caller
+// fails closed; under shortOptsAreBoolean an unrecognized short option is assumed
+// value-less.
 func scanShortCluster(t string, spec optSpec) (consumesNext, ok bool) {
 	for j := 1; j < len(t); j++ {
-		opt := "-" + string(t[j])
-		if _, isValue := spec.valueOpts[opt]; isValue {
+		switch classifyShortOpt("-"+string(t[j]), spec) {
+		case optClassValue:
 			return j == len(t)-1, true
-		}
-		if _, isOptional := spec.optionalArgOpts[opt]; isOptional {
-			// An optional-argument option binds the remainder of the cluster as its
-			// attached value. If it is the last letter it simply has no attached value;
-			// either way it never consumes the following token. When it is NOT the last
-			// letter, whether the rest is its value or a continuation of the cluster is
-			// tool-specific (see optSpec.optionalArgOpts), so fail closed rather than
-			// risk swallowing or exposing the inner command.
+		case optClassOptional:
 			if j == len(t)-1 {
-				return false, true
+				return false, true // last letter: no attached value, does not consume next
 			}
-			return false, false
-		}
-		if _, isBool := spec.boolOpts[opt]; isBool {
+			return false, false // ambiguous mid-cluster (see optSpec.optionalArgOpts): fail closed
+		case optClassBool:
 			continue // known value-less short option
+		case optClassUnknown:
+			if spec.unknown == anyUnknownIsUnreliable {
+				return false, false
+			}
+			// shortOptsAreBoolean / allUnknownAreBoolean: assume value-less, keep scanning.
 		}
-		if spec.unknown == anyUnknownIsUnreliable {
-			return false, false
-		}
-		// shortOptsAreBoolean / allUnknownAreBoolean: assume value-less, keep scanning.
 	}
 	return false, true
+}
+
+// leadingClusterHasFlag reports whether the value-less flag letter `flag` appears
+// in the short-option cluster token t before any option that binds an attached
+// value. It shares the cluster-termination rule with scanShortCluster via
+// classifyShortOpt: a value or optional-argument option binds the remainder of the
+// token as its attached value (not more flag letters), so the scan stops there.
+// This is how a flag is detected without mistaking an option's attached value for
+// it (e.g. the "x" in "-nx" is -n's value, and in "-dx" is -d's optional value,
+// neither is the -x flag).
+func leadingClusterHasFlag(t string, flag byte, spec optSpec) bool {
+	for j := 1; j < len(t); j++ {
+		if t[j] == flag {
+			return true
+		}
+		switch classifyShortOpt("-"+string(t[j]), spec) {
+		case optClassValue, optClassOptional:
+			return false // the remainder of the token is this option's attached value
+		}
+	}
+	return false
 }
 
 // shortFlagInBundle reports whether arg is a single-dash short-option token (not a
@@ -989,10 +1045,12 @@ func analyzeWatch(args []string, depth int, role risktypes.ArtifactRole) Indirec
 
 // watchExecRequested reports whether watch's -x/--exec flag appears among its
 // leading options. It must not mistake an option's value for the flag: a separated
-// value-option's value (e.g. the "x" in "-n x") and a short value-option's
-// attached value (e.g. the "x" in "-nx", which is -n's value, not -x) are skipped,
-// so they cannot switch the mode to argv and bypass the fail-closed command-string
-// split (a fail-open).
+// value-option's value (e.g. the "x" in "-n x") and a short value/optional-argument
+// option's attached value (e.g. the "x" in "-nx" is -n's value and in "-dx" is -d's
+// value, neither is -x) must not switch the mode to argv and bypass the fail-closed
+// command-string split (a fail-open). Short clusters are interpreted through the
+// shared leadingClusterHasFlag so this stays consistent with the operand-boundary
+// scan (scanShortCluster).
 func watchExecRequested(opts []string) bool {
 	i := 0
 	for i < len(opts) {
@@ -1004,24 +1062,9 @@ func watchExecRequested(opts []string) bool {
 			i += 2 // separated value-option: skip the option and its value
 			continue
 		}
-		// A short cluster (single dash, not "--"): scan its letters left to right,
-		// stopping at the first value-option or optional-argument option whose
-		// attached value is the remainder of the token (not more flag letters). For
-		// example "-nx" is -n's value "x" and "-dx" is -d's value "x", neither is the
-		// -x exec flag.
-		if strings.HasPrefix(t, "-") && !strings.HasPrefix(t, "--") && t != "-" {
-			for j := 1; j < len(t); j++ {
-				if t[j] == 'x' {
-					return true
-				}
-				opt := "-" + string(t[j])
-				if _, isValue := watchOptSpec.valueOpts[opt]; isValue {
-					break // the rest of the token is this option's attached value
-				}
-				if _, isOptional := watchOptSpec.optionalArgOpts[opt]; isOptional {
-					break // the rest of the token is this option's attached value
-				}
-			}
+		if strings.HasPrefix(t, "-") && !strings.HasPrefix(t, "--") && t != "-" &&
+			leadingClusterHasFlag(t, 'x', watchOptSpec) {
+			return true
 		}
 		i++
 	}
