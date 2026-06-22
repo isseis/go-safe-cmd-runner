@@ -389,6 +389,14 @@ func analyzeIndirect(cmdPath string, args []string, depth int, role risktypes.Ar
 		return analyzeTaskset(args, depth, role)
 	}
 
+	// Namespace / root-change wrappers (chroot/unshare/nsenter) and command-string
+	// wrappers (flock/watch) transparently exec an inner COMMAND. They need
+	// dedicated handlers (their option grammar does not fit the fixed wrapperSpec
+	// model); the dispatch is factored out to keep this function's branching bounded.
+	if res, ok := analyzeDedicatedWrapper(names, args, depth, role); ok {
+		return res
+	}
+
 	// Other wrappers: extract the inner command and assess its risk (the runner
 	// does not re-implement the wrapper; the wrapper itself adds no execution beyond
 	// the inner command). wrapperNames is iterated in sorted order so selection is
@@ -751,6 +759,269 @@ func analyzeTaskset(args []string, depth int, role risktypes.ArtifactRole) Indir
 		return reject() // mis-located command boundary: fail closed
 	}
 	return evaluateInnerAs(args[i], args[i+1:], depth, role)
+}
+
+// Option specs for the namespace / root-change wrappers. Arities are taken from
+// each tool's --help (GNU coreutils chroot; util-linux unshare/nsenter 2.41.3).
+//
+// getopt optional_argument options (unshare/nsenter namespace flags such as -m,
+// and nsenter -r/-w) bind a value only in the attached form (-m=FILE / -mFILE); a
+// separated next token is an operand (the inner COMMAND). They must NOT be listed
+// as valueOpts, which would swallow the inner command (e.g. "unshare -m sudo id"
+// would lose sudo). Their short forms need no positive listing (skipLeadingOptions
+// treats an unrecognized short option as value-less, which is exactly the
+// optional-argument operand behavior); their long forms are listed as boolOpts so
+// they are recognized rather than failing closed as unknown long options. Only
+// options that consume the following token are listed in valueOpts. nsenter -S/-G
+// empirically consume their separated value (verified against the real tool), so
+// they are valueOpts even though --help renders them with the optional "[=<uid>]".
+var chrootOptSpec = optSpec{
+	valueOpts: setOf("--userspec", "--groups"),
+	boolOpts:  setOf("--skip-chdir"),
+	unknown:   shortOptsAreBoolean,
+}
+
+var unshareOptSpec = optSpec{
+	valueOpts: setOf(
+		"-l", "--load-interp", "--propagation", "-R", "--root", "-w", "--wd",
+		"-S", "--setuid", "-G", "--setgid", "--map-user", "--map-group",
+		"--map-users", "--map-groups", "--owner",
+	),
+	boolOpts: setOf(
+		// Value-less flags.
+		"-r", "--map-root-user", "-c", "--map-current-user", "--map-auto",
+		"-f", "--fork",
+		// Optional-argument long forms (short forms auto-skip as value-less).
+		"--mount", "--uts", "--ipc", "--net", "--pid", "--user", "--cgroup",
+		"--time", "--mount-proc", "--mount-binfmt", "--kill-child",
+	),
+	unknown: shortOptsAreBoolean,
+}
+
+var nsenterOptSpec = optSpec{
+	valueOpts: setOf(
+		"-t", "--target", "-N", "--net-socket", "-W", "--wdns",
+		"-S", "--setuid", "-G", "--setgid",
+	),
+	boolOpts: setOf(
+		// Value-less flags.
+		"-a", "--all", "--user-parent", "--preserve-credentials", "--keep-caps",
+		"-e", "--env", "-F", "--no-fork", "-c", "--join-cgroup",
+		"-Z", "--follow-context",
+		// Optional-argument long forms (short forms auto-skip as value-less).
+		"--mount", "--uts", "--ipc", "--net", "--pid", "--cgroup", "--user",
+		"--time", "--root", "--wd",
+	),
+	unknown: shortOptsAreBoolean,
+}
+
+// analyzeDedicatedWrapper dispatches the namespace/root-change wrappers
+// (chroot/unshare/nsenter) and command-string wrappers (flock/watch) to their
+// dedicated handlers. handled is false when none of these wrapper names is present
+// in the command's resolved name set, so the caller continues with the remaining
+// indirect-execution checks.
+func analyzeDedicatedWrapper(names map[string]struct{}, args []string, depth int, role risktypes.ArtifactRole) (res IndirectExecutionResult, handled bool) {
+	if _, ok := names["chroot"]; ok {
+		return analyzeNamespaceWrapper(chrootOptSpec, 1, args, depth, role), true
+	}
+	if _, ok := names["unshare"]; ok {
+		return analyzeNamespaceWrapper(unshareOptSpec, 0, args, depth, role), true
+	}
+	if _, ok := names["nsenter"]; ok {
+		return analyzeNamespaceWrapper(nsenterOptSpec, 0, args, depth, role), true
+	}
+	if _, ok := names["flock"]; ok {
+		return analyzeFlock(args, depth, role), true
+	}
+	if _, ok := names["watch"]; ok {
+		return analyzeWatch(args, depth, role), true
+	}
+	return IndirectExecutionResult{}, false
+}
+
+// analyzeNamespaceWrapper gates the inner COMMAND of chroot/unshare/nsenter.
+// positionals is the number of operands the wrapper consumes before COMMAND
+// (chroot's NEWROOT = 1; unshare/nsenter = 0). A missing COMMAND means the tool
+// spawns an implicit shell, so the floor is High (not the generic wrapper Medium)
+// to avoid letting a namespace/privilege escape (unshare -r, nsenter -t 1) pass
+// unevaluated. An operand boundary made unreliable by an unknown-arity option, or
+// a COMMAND token that still begins with "-" (option parsing mislocated it), fails
+// closed.
+func analyzeNamespaceWrapper(spec optSpec, positionals int, args []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
+	idx, reliable := skipLeadingOptions(args, spec)
+	if !reliable {
+		return reject()
+	}
+	idx += positionals
+	if idx >= len(args) {
+		// No inner command: the tool launches an implicit shell. High floor.
+		return floor(runnertypes.RiskLevelHigh, risktypes.ReasonIndirectExecutionWrapper)
+	}
+	if strings.HasPrefix(args[idx], "-") {
+		return reject()
+	}
+	return evaluateInnerAs(args[idx], args[idx+1:], depth, role)
+}
+
+// flockOptSpec lists flock's own leading options (those that precede the lock
+// operand). flock is non-permutation: -c/--command is recognized only as the token
+// immediately after the lock operand (the form "flock -c CMD FILE" is invalid on
+// the real tool), so -c is deliberately absent here and handled in analyzeFlock.
+var flockOptSpec = optSpec{
+	valueOpts: setOf("-w", "--timeout", "-E", "--conflict-exit-code"),
+	boolOpts: setOf(
+		"-s", "--shared", "-x", "--exclusive", "-u", "--unlock", "-n", "--nonblock",
+		"-o", "--close", "-F", "--no-fork", "--fcntl", "--verbose",
+	),
+	unknown: shortOptsAreBoolean,
+}
+
+// analyzeFlock gates the inner command of a flock invocation. flock takes a lock
+// operand (a file/directory path or a numeric file descriptor) followed by either
+// "<command> [args]" or "-c <command-string>"; the bare "flock <fd>" form runs no
+// command. The lock operand is located by skipping flock's own leading options;
+// flock does not parse its own options after the lock operand, so a "-" there
+// belongs to the inner command.
+func analyzeFlock(args []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
+	idx, reliable := skipLeadingOptions(args, flockOptSpec)
+	if !reliable {
+		return reject()
+	}
+	if idx >= len(args) {
+		// Options only, no lock operand: an incomplete form with no extractable
+		// command. Fail closed.
+		return reject()
+	}
+	lockOperand := args[idx]
+	rest := args[idx+1:]
+	if len(rest) == 0 {
+		// "flock <fd>" (a bare numeric descriptor) runs no command and is not an
+		// indirect-execution form. A non-numeric lock operand with no command is an
+		// incomplete form, so fail closed.
+		if isAllDigits(lockOperand) {
+			return IndirectExecutionResult{Kind: IndirectNone}
+		}
+		return reject()
+	}
+	if rest[0] == "-c" || rest[0] == "--command" {
+		// "flock <file> -c <command-string>": the next token is a /bin/sh -c string.
+		// rest[0] is the -c option, so a missing string means rest has only that token.
+		if len(rest) == 1 {
+			return reject()
+		}
+		return gateShellCommandString(rest[1], depth, role)
+	}
+	// "flock <file> <command> [args]": gate the command token directly.
+	return evaluateInnerAs(rest[0], rest[1:], depth, role)
+}
+
+// watchOptSpec lists watch's own options. -x/--exec is a value-less flag here but
+// also switches watch's execution mode (argv vs /bin/sh -c), which analyzeWatch
+// detects separately. -c is --color (a flag), not a value option.
+var watchOptSpec = optSpec{
+	valueOpts: setOf("-n", "--interval", "-q", "--equexit"),
+	boolOpts: setOf(
+		"-b", "--beep", "-c", "--color", "-C", "--no-color", "-e", "--errexit",
+		"-g", "--chgexit", "-p", "--precise", "-r", "--no-rerun", "-t", "--no-title",
+		"-w", "--no-wrap", "-x", "--exec", "--differences",
+	),
+	unknown: shortOptsAreBoolean,
+}
+
+// analyzeWatch gates the inner command of a watch invocation. Without -x/--exec,
+// watch joins all of its operands with single spaces and runs the result through
+// /bin/sh -c, so the whole operand tail is one command string that must be split
+// fail-closed (a ";"/"|"/"&" or newline between operands would otherwise hide a
+// command). With -x/--exec, watch execvp's the operands directly as an argv list,
+// so the first operand is the command and the rest are its arguments (even tokens
+// beginning with "-", which belong to the inner command, not to watch).
+func analyzeWatch(args []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
+	idx, reliable := skipLeadingOptions(args, watchOptSpec)
+	if !reliable {
+		return reject()
+	}
+	if idx >= len(args) {
+		// watch requires a command; an option-only form has nothing to gate.
+		return reject()
+	}
+	operands := args[idx:]
+	if watchExecRequested(args[:idx]) {
+		return evaluateInnerAs(operands[0], operands[1:], depth, role)
+	}
+	return gateShellCommandString(strings.Join(operands, " "), depth, role)
+}
+
+// watchExecRequested reports whether watch's -x/--exec flag appears among its
+// leading options. It skips the value of -n/--interval and -q/--equexit so a value
+// that happens to be "-x" is not mistaken for the flag (which would switch the
+// mode to argv and skip the fail-closed command-string split, a fail-open).
+func watchExecRequested(opts []string) bool {
+	i := 0
+	for i < len(opts) {
+		t := opts[i]
+		if _, ok := watchOptSpec.valueOpts[t]; ok {
+			i += 2 // separated value-option: skip the option and its value
+			continue
+		}
+		if t == "-x" || t == "--exec" {
+			return true
+		}
+		if strings.HasPrefix(t, "-") && !strings.HasPrefix(t, "--") && t != "-" && shortFlagInBundle(t, 'x') {
+			return true
+		}
+		i++
+	}
+	return false
+}
+
+// isShellCommandStringSafe reports whether a /bin/sh -c command string consists
+// only of the conservative allowlist the runner is willing to split. Only ASCII
+// letters, digits, whitespace, and "_./:%@,=+-" may appear; any other character
+// (shell grouping,
+// substitution, separators, redirection, glob, history, or a newline) forces a
+// fail-closed Reject instead of a naive split that could miss a hidden command.
+// The set passes legitimate ProxyCommand/--rsh values (e.g. "ssh -W %h:%p bastion",
+// "nc -X connect -x proxy:3128 %h %p") while rejecting anything with shell meaning.
+func isShellCommandStringSafe(s string) bool {
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == ' ' || r == '\t':
+		case strings.ContainsRune("_./:%@,=+-", r):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// gateShellCommandString extracts the inner command from a /bin/sh -c command
+// string using the fail-closed allowlist split, then gates it as a wrapper inner.
+// A value containing any character outside the safe set, or one with no first
+// token (empty or whitespace-only), is rejected.
+func gateShellCommandString(s string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
+	if !isShellCommandStringSafe(s) {
+		return reject()
+	}
+	tokens := strings.Fields(s)
+	if len(tokens) == 0 {
+		return reject()
+	}
+	return evaluateInnerAs(tokens[0], tokens[1:], depth, role)
+}
+
+// isAllDigits reports whether s is a non-empty run of ASCII digits, used to
+// recognize flock's bare file-descriptor operand ("flock 9").
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // evaluateInnerAs evaluates a wrapper's extracted inner command (or a shebang
