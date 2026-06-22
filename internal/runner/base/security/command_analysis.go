@@ -489,9 +489,9 @@ var highSystemModificationNames = map[string]struct{}{
 
 // mediumSystemModificationNames are name-matched commands that change system state
 // within a limited scope (no unverified code, no large-scale/irreversible damage);
-// see the inline groups below. The Medium here is the floor for plain "ip" usage;
-// inner-command gating for "ip netns exec"/"ip vrf exec" is handled separately by
-// the indirect-execution path (added in a later phase of this task).
+// see the inline groups below. For "ip" this is the baseline floor; argument-aware
+// gating (e.g. of an inner command) is the separate indirect-execution dimension's
+// job, not this name-only one.
 var mediumSystemModificationNames = map[string]struct{}{
 	"mount": {}, "umount": {},
 	// LVM creation / configuration (limited, non-destructive scope).
