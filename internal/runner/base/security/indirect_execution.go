@@ -174,6 +174,18 @@ type optSpec struct {
 	// fail-closed unknown policy (e.g. systemctl) does not treat its own flags as
 	// unknown. May be nil.
 	boolOpts map[string]struct{}
+	// optionalArgOpts are options with a getopt optional_argument: they bind a value
+	// only in the attached form (--opt=VALUE, -oVALUE), never by consuming the
+	// following token. They differ from boolOpts ONLY inside a short cluster: an
+	// optional-argument option consumes the remainder of the token as its optional
+	// value, so a later value-option letter in the same cluster is NOT a separate
+	// option. Because tools disagree on this (util-linux nsenter treats "-mS" as -m
+	// with attached value "S"; unshare treats it as -m then -S), a clustered
+	// optional-argument option that is not the last letter is ambiguous and the scan
+	// fails closed. Listing such an option as a valueOpt would let it swallow a
+	// separated operand (the inner command); omitting it entirely would let a later
+	// value-option letter in a cluster do the same. May be nil.
+	optionalArgOpts map[string]struct{}
 	// unknown selects how an unrecognized option is treated (see the policies).
 	unknown unknownOptionPolicy
 }
@@ -209,6 +221,9 @@ func skipLeadingOptions(args []string, spec optSpec) (idx int, reliable bool) {
 			}
 			if _, ok := spec.boolOpts[t]; ok {
 				continue // known value-less option
+			}
+			if _, ok := spec.optionalArgOpts[t]; ok {
+				continue // optional-argument long option without "=": binds no value
 			}
 			if strings.Contains(t, "=") {
 				continue // attached value (--opt=value): self-contained
@@ -249,29 +264,97 @@ func firstOperand(args []string, spec optSpec) (operand string) {
 	return args[idx]
 }
 
+// optClass is the getopt arity class of a short option within a cluster. It is the
+// single classification every short-cluster scan shares, so the rule "a value or
+// optional-argument option ends the cluster (the remainder is its attached value)"
+// is decided in exactly one place (classifyShortOpt) rather than re-derived per
+// scan site. Any new caller that walks a short cluster MUST classify each letter
+// through classifyShortOpt instead of testing the option maps directly.
+type optClass int
+
+const (
+	// optClassValue takes a value: as the last letter of a cluster it consumes the
+	// following token; otherwise the remainder of the token is its attached value.
+	// Either way the cluster ends.
+	optClassValue optClass = iota
+	// optClassOptional has a getopt optional_argument: it binds a value only in the
+	// attached form, so it never consumes the following token; the remainder of the
+	// token (if any) is its attached value, ending the cluster.
+	optClassOptional
+	// optClassBool is a value-less flag: the cluster scan continues past it.
+	optClassBool
+	// optClassUnknown is an unrecognized option; the caller resolves its arity by
+	// the unknown-option policy.
+	optClassUnknown
+)
+
+// classifyShortOpt returns the arity class of the one-letter short option opt
+// (e.g. "-c") per spec. valueOpts and optionalArgOpts are checked before boolOpts
+// so a misregistration is caught by tests rather than silently treated as a flag.
+func classifyShortOpt(opt string, spec optSpec) optClass {
+	if _, ok := spec.valueOpts[opt]; ok {
+		return optClassValue
+	}
+	if _, ok := spec.optionalArgOpts[opt]; ok {
+		return optClassOptional
+	}
+	if _, ok := spec.boolOpts[opt]; ok {
+		return optClassBool
+	}
+	return optClassUnknown
+}
+
 // scanShortCluster parses a clustered short-option token (e.g. "-tc") left to
 // right. consumesNext is true when a value-taking option is the LAST character of
 // the cluster and therefore takes the following token as its separated value; a
 // value-taking option that is not last takes the remainder of the token as an
-// attached value and ends the cluster either way. ok is false when an
-// unrecognized option makes the cluster's arity indeterminate under the
-// anyUnknownIsUnreliable policy, so the caller fails closed; under
-// shortOptsAreBoolean an unrecognized short option is assumed value-less.
+// attached value and ends the cluster either way. ok is false when the cluster's
+// arity is indeterminate (an unrecognized option under the anyUnknownIsUnreliable
+// policy, or an optional-argument option that is not the cluster's last letter,
+// whose remainder is tool-specifically its value or more options), so the caller
+// fails closed; under shortOptsAreBoolean an unrecognized short option is assumed
+// value-less.
 func scanShortCluster(t string, spec optSpec) (consumesNext, ok bool) {
 	for j := 1; j < len(t); j++ {
-		opt := "-" + string(t[j])
-		if _, isValue := spec.valueOpts[opt]; isValue {
+		switch classifyShortOpt("-"+string(t[j]), spec) {
+		case optClassValue:
 			return j == len(t)-1, true
-		}
-		if _, isBool := spec.boolOpts[opt]; isBool {
+		case optClassOptional:
+			if j == len(t)-1 {
+				return false, true // last letter: no attached value, does not consume next
+			}
+			return false, false // ambiguous mid-cluster (see optSpec.optionalArgOpts): fail closed
+		case optClassBool:
 			continue // known value-less short option
+		case optClassUnknown:
+			if spec.unknown == anyUnknownIsUnreliable {
+				return false, false
+			}
+			// shortOptsAreBoolean / allUnknownAreBoolean: assume value-less, keep scanning.
 		}
-		if spec.unknown == anyUnknownIsUnreliable {
-			return false, false
-		}
-		// shortOptsAreBoolean / allUnknownAreBoolean: assume value-less, keep scanning.
 	}
 	return false, true
+}
+
+// leadingClusterHasFlag reports whether the value-less flag letter `flag` appears
+// in the short-option cluster token t before any option that binds an attached
+// value. It shares the cluster-termination rule with scanShortCluster via
+// classifyShortOpt: a value or optional-argument option binds the remainder of the
+// token as its attached value (not more flag letters), so the scan stops there.
+// This is how a flag is detected without mistaking an option's attached value for
+// it (e.g. the "x" in "-nx" is -n's value, and in "-dx" is -d's optional value,
+// neither is the -x flag).
+func leadingClusterHasFlag(t string, flag byte, spec optSpec) bool {
+	for j := 1; j < len(t); j++ {
+		if t[j] == flag {
+			return true
+		}
+		switch classifyShortOpt("-"+string(t[j]), spec) {
+		case optClassValue, optClassOptional:
+			return false // the remainder of the token is this option's attached value
+		}
+	}
+	return false
 }
 
 // shortFlagInBundle reports whether arg is a single-dash short-option token (not a
@@ -387,6 +470,14 @@ func analyzeIndirect(cmdPath string, args []string, depth int, role risktypes.Ar
 	// and miss a privilege token for the -c form).
 	if _, ok := names["taskset"]; ok {
 		return analyzeTaskset(args, depth, role)
+	}
+
+	// Namespace / root-change wrappers (chroot/unshare/nsenter) and command-string
+	// wrappers (flock/watch) transparently exec an inner COMMAND. They need
+	// dedicated handlers (their option grammar does not fit the fixed wrapperSpec
+	// model); the dispatch is factored out to keep this function's branching bounded.
+	if res, ok := analyzeDedicatedWrapper(names, args, depth, role); ok {
+		return res
 	}
 
 	// Other wrappers: extract the inner command and assess its risk (the runner
@@ -751,6 +842,283 @@ func analyzeTaskset(args []string, depth int, role risktypes.ArtifactRole) Indir
 		return reject() // mis-located command boundary: fail closed
 	}
 	return evaluateInnerAs(args[i], args[i+1:], depth, role)
+}
+
+// Option specs for the namespace / root-change wrappers. Arities are taken from
+// each tool's --help (GNU coreutils chroot; util-linux unshare/nsenter 2.41.3).
+//
+// getopt optional_argument options (unshare/nsenter namespace flags such as -m,
+// and nsenter -r/-w) bind a value only in the attached form (-m=FILE / -mFILE); a
+// separated next token is an operand (the inner COMMAND). They are listed in
+// optionalArgOpts (both short and long forms). They must NOT be listed as
+// valueOpts, which would swallow the inner command (e.g. "unshare -m sudo id"
+// would lose sudo); listing the short form is required so scanShortCluster can
+// detect the clustered-ambiguity case (-mS) and fail closed rather than continue
+// into a later value-option that would consume the next token. Only options that
+// consume the following token are listed in valueOpts. nsenter -S/-G empirically
+// consume their separated value (verified against the real tool), so they are
+// valueOpts even though --help renders them with the optional "[=<uid>]".
+var chrootOptSpec = optSpec{
+	valueOpts: setOf("--userspec", "--groups"),
+	boolOpts:  setOf("--skip-chdir"),
+	unknown:   shortOptsAreBoolean,
+}
+
+var unshareOptSpec = optSpec{
+	valueOpts: setOf(
+		"-l", "--load-interp", "--propagation", "-R", "--root", "-w", "--wd",
+		"-S", "--setuid", "-G", "--setgid", "--map-user", "--map-group",
+		"--map-users", "--map-groups", "--owner",
+	),
+	optionalArgOpts: setOf(
+		"-m", "--mount", "-u", "--uts", "-i", "--ipc", "-n", "--net",
+		"-p", "--pid", "-U", "--user", "-C", "--cgroup", "-T", "--time",
+		"--mount-proc", "--mount-binfmt", "--kill-child",
+	),
+	boolOpts: setOf(
+		"-r", "--map-root-user", "-c", "--map-current-user", "--map-auto",
+		"-f", "--fork",
+	),
+	unknown: shortOptsAreBoolean,
+}
+
+var nsenterOptSpec = optSpec{
+	valueOpts: setOf(
+		"-t", "--target", "-N", "--net-socket", "-W", "--wdns",
+		"-S", "--setuid", "-G", "--setgid",
+	),
+	optionalArgOpts: setOf(
+		"-m", "--mount", "-u", "--uts", "-i", "--ipc", "-n", "--net",
+		"-p", "--pid", "-U", "--user", "-C", "--cgroup", "-T", "--time",
+		"-r", "--root", "-w", "--wd",
+	),
+	boolOpts: setOf(
+		"-a", "--all", "--user-parent", "--preserve-credentials", "--keep-caps",
+		"-e", "--env", "-F", "--no-fork", "-c", "--join-cgroup",
+		"-Z", "--follow-context",
+	),
+	unknown: shortOptsAreBoolean,
+}
+
+// analyzeDedicatedWrapper dispatches the namespace/root-change wrappers
+// (chroot/unshare/nsenter) and command-string wrappers (flock/watch) to their
+// dedicated handlers. handled is false when none of these wrapper names is present
+// in the command's resolved name set, so the caller continues with the remaining
+// indirect-execution checks.
+func analyzeDedicatedWrapper(names map[string]struct{}, args []string, depth int, role risktypes.ArtifactRole) (res IndirectExecutionResult, handled bool) {
+	if _, ok := names["chroot"]; ok {
+		return analyzeNamespaceWrapper(chrootOptSpec, 1, args, depth, role), true
+	}
+	if _, ok := names["unshare"]; ok {
+		return analyzeNamespaceWrapper(unshareOptSpec, 0, args, depth, role), true
+	}
+	if _, ok := names["nsenter"]; ok {
+		return analyzeNamespaceWrapper(nsenterOptSpec, 0, args, depth, role), true
+	}
+	if _, ok := names["flock"]; ok {
+		return analyzeFlock(args, depth, role), true
+	}
+	if _, ok := names["watch"]; ok {
+		return analyzeWatch(args, depth, role), true
+	}
+	return IndirectExecutionResult{}, false
+}
+
+// analyzeNamespaceWrapper gates the inner COMMAND of chroot/unshare/nsenter.
+// positionals is the number of operands the wrapper consumes before COMMAND
+// (chroot's NEWROOT = 1; unshare/nsenter = 0). A missing COMMAND means the tool
+// spawns an implicit shell, so the floor is High (not the generic wrapper Medium)
+// to avoid letting a namespace/privilege escape (unshare -r, nsenter -t 1) pass
+// unevaluated. An operand boundary made unreliable by an unknown-arity option, or
+// a COMMAND token that still begins with "-" (option parsing mislocated it), fails
+// closed.
+func analyzeNamespaceWrapper(spec optSpec, positionals int, args []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
+	idx, reliable := skipLeadingOptions(args, spec)
+	if !reliable {
+		return reject()
+	}
+	// A mandatory positional (chroot's NEWROOT) that is not present means the form
+	// is malformed, not a no-command implicit shell, so fail closed.
+	if idx+positionals > len(args) {
+		return reject()
+	}
+	cmdIdx := idx + positionals
+	if cmdIdx == len(args) {
+		// Positionals present but no inner command: the tool launches an implicit
+		// shell. High floor.
+		return floor(runnertypes.RiskLevelHigh, risktypes.ReasonIndirectExecutionWrapper)
+	}
+	if strings.HasPrefix(args[cmdIdx], "-") {
+		return reject()
+	}
+	return evaluateInnerAs(args[cmdIdx], args[cmdIdx+1:], depth, role)
+}
+
+// flockOptSpec lists flock's own leading options (those that precede the lock
+// operand). flock is non-permutation: -c/--command is recognized only as the token
+// immediately after the lock operand (the form "flock -c CMD FILE" is invalid on
+// the real tool), so -c is deliberately absent here and handled in analyzeFlock.
+var flockOptSpec = optSpec{
+	valueOpts: setOf("-w", "--timeout", "-E", "--conflict-exit-code"),
+	boolOpts: setOf(
+		"-s", "--shared", "-x", "--exclusive", "-u", "--unlock", "-n", "--nonblock",
+		"-o", "--close", "-F", "--no-fork", "--fcntl", "--verbose",
+	),
+	unknown: shortOptsAreBoolean,
+}
+
+// analyzeFlock gates the inner command of a flock invocation. flock takes a lock
+// operand (a file/directory path or a numeric file descriptor) followed by either
+// "<command> [args]" or "-c <command-string>"; the bare "flock <fd>" form runs no
+// command. The lock operand is located by skipping flock's own leading options;
+// flock does not parse its own options after the lock operand, so a "-" there
+// belongs to the inner command.
+func analyzeFlock(args []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
+	idx, reliable := skipLeadingOptions(args, flockOptSpec)
+	if !reliable {
+		return reject()
+	}
+	if idx >= len(args) {
+		// Options only, no lock operand: an incomplete form with no extractable
+		// command. Fail closed.
+		return reject()
+	}
+	lockOperand := args[idx]
+	rest := args[idx+1:]
+	if len(rest) == 0 {
+		// "flock <fd>" (a bare numeric descriptor) runs no command and is not an
+		// indirect-execution form. A non-numeric lock operand with no command is an
+		// incomplete form, so fail closed.
+		if isAllDigits(lockOperand) {
+			return IndirectExecutionResult{Kind: IndirectNone}
+		}
+		return reject()
+	}
+	if rest[0] == "-c" || rest[0] == "--command" {
+		// "flock <file> -c <command-string>": the next token is a /bin/sh -c string.
+		// rest[0] is the -c option, so a missing string means rest has only that token.
+		if len(rest) == 1 {
+			return reject()
+		}
+		return gateShellCommandString(rest[1], depth, role)
+	}
+	// "flock <file> <command> [args]": gate the command token directly.
+	return evaluateInnerAs(rest[0], rest[1:], depth, role)
+}
+
+// watchOptSpec lists watch's own options. -x/--exec is a value-less flag here but
+// also switches watch's execution mode (argv vs /bin/sh -c), which analyzeWatch
+// detects separately. -c is --color (a flag), not a value option.
+var watchOptSpec = optSpec{
+	valueOpts:       setOf("-n", "--interval", "-q", "--equexit"),
+	optionalArgOpts: setOf("-d", "--differences"),
+	boolOpts: setOf(
+		"-b", "--beep", "-c", "--color", "-C", "--no-color", "-e", "--errexit",
+		"-g", "--chgexit", "-p", "--precise", "-r", "--no-rerun", "-t", "--no-title",
+		"-w", "--no-wrap", "-x", "--exec",
+	),
+	unknown: shortOptsAreBoolean,
+}
+
+// analyzeWatch gates the inner command of a watch invocation. Without -x/--exec,
+// watch joins all of its operands with single spaces and runs the result through
+// /bin/sh -c, so the whole operand tail is one command string that must be split
+// fail-closed (a ";"/"|"/"&" or newline between operands would otherwise hide a
+// command). With -x/--exec, watch execvp's the operands directly as an argv list,
+// so the first operand is the command and the rest are its arguments (even tokens
+// beginning with "-", which belong to the inner command, not to watch).
+func analyzeWatch(args []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
+	idx, reliable := skipLeadingOptions(args, watchOptSpec)
+	if !reliable {
+		return reject()
+	}
+	if idx >= len(args) {
+		// watch requires a command; an option-only form has nothing to gate.
+		return reject()
+	}
+	operands := args[idx:]
+	if watchExecRequested(args[:idx]) {
+		return evaluateInnerAs(operands[0], operands[1:], depth, role)
+	}
+	return gateShellCommandString(strings.Join(operands, " "), depth, role)
+}
+
+// watchExecRequested reports whether watch's -x/--exec flag appears among its
+// leading options. It must not mistake an option's value for the flag: a separated
+// value-option's value (e.g. the "x" in "-n x") and a short value/optional-argument
+// option's attached value (e.g. the "x" in "-nx" is -n's value and in "-dx" is -d's
+// value, neither is -x) must not switch the mode to argv and bypass the fail-closed
+// command-string split (a fail-open). Short clusters are interpreted through the
+// shared leadingClusterHasFlag so this stays consistent with the operand-boundary
+// scan (scanShortCluster).
+func watchExecRequested(opts []string) bool {
+	i := 0
+	for i < len(opts) {
+		t := opts[i]
+		if t == "--exec" {
+			return true
+		}
+		if _, ok := watchOptSpec.valueOpts[t]; ok {
+			i += 2 // separated value-option: skip the option and its value
+			continue
+		}
+		if strings.HasPrefix(t, "-") && !strings.HasPrefix(t, "--") && t != "-" &&
+			leadingClusterHasFlag(t, 'x', watchOptSpec) {
+			return true
+		}
+		i++
+	}
+	return false
+}
+
+// isShellCommandStringSafe reports whether a /bin/sh -c command string consists
+// only of the conservative allowlist the runner is willing to split. Only ASCII
+// letters, digits, whitespace, and "_./:%@,=+-" may appear; any other character
+// (shell grouping,
+// substitution, separators, redirection, glob, history, or a newline) forces a
+// fail-closed Reject instead of a naive split that could miss a hidden command.
+// The set passes legitimate ProxyCommand/--rsh values (e.g. "ssh -W %h:%p bastion",
+// "nc -X connect -x proxy:3128 %h %p") while rejecting anything with shell meaning.
+func isShellCommandStringSafe(s string) bool {
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == ' ' || r == '\t':
+		case r == '_', r == '.', r == '/', r == ':', r == '%', r == '@', r == ',', r == '=', r == '+', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// gateShellCommandString extracts the inner command from a /bin/sh -c command
+// string using the fail-closed allowlist split, then gates it as a wrapper inner.
+// A value containing any character outside the safe set, or one with no first
+// token (empty or whitespace-only), is rejected.
+func gateShellCommandString(s string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
+	if !isShellCommandStringSafe(s) {
+		return reject()
+	}
+	tokens := strings.Fields(s)
+	if len(tokens) == 0 {
+		return reject()
+	}
+	return evaluateInnerAs(tokens[0], tokens[1:], depth, role)
+}
+
+// isAllDigits reports whether s is a non-empty run of ASCII digits, used to
+// recognize flock's bare file-descriptor operand ("flock 9").
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // evaluateInnerAs evaluates a wrapper's extracted inner command (or a shebang

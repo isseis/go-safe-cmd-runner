@@ -1012,6 +1012,115 @@ func TestIndirect_PlainCommandNotIndirect(t *testing.T) {
 	}
 }
 
+// TestIndirect_NamespaceWrappersGated verifies the namespace/root-change and
+// command-string wrappers (chroot/unshare/nsenter/flock/watch) gate their inner
+// command: a privilege token inside is Critical, an ordinary inner command is at
+// least a High floor, and an unextractable form is rejected. Option-skipping
+// regressions (a value-option's value, an optional-argument's separated operand,
+// the watch operand concatenation) are folded in so an inner command is neither
+// missed nor mis-located.
+func TestIndirect_NamespaceWrappersGated(t *testing.T) {
+	cases := []struct {
+		name      string
+		cmd       string
+		args      []string
+		wantKind  IndirectExecutionKind
+		wantLevel runnertypes.RiskLevel // only checked when wantKind is IndirectFloor
+	}{
+		// chroot: NEWROOT positional is skipped, then the COMMAND is gated.
+		{"chroot inner destructive", "chroot", []string{"/mnt", "rm", "-rf", "/"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// chroot's NEWROOT is mandatory: an option-only form with no NEWROOT is
+		// malformed (not a no-command implicit shell) and fails closed.
+		{"chroot missing newroot reject", "chroot", []string{"--skip-chdir"}, IndirectReject, 0},
+		{"chroot userspec attached then privilege", "chroot", []string{"--userspec=0:0", "/mnt", "sudo", "id"}, IndirectCritical, 0},
+		{"chroot userspec separated then privilege", "chroot", []string{"--userspec", "0:0", "/mnt", "sudo", "id"}, IndirectCritical, 0},
+		// unshare: -w/-S/-G consume a value; -m (optional-argument) and -r (flag) do not.
+		{"unshare -r modprobe", "unshare", []string{"-r", "modprobe", "x"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"unshare -m optional-arg privilege", "unshare", []string{"-m", "sudo", "id"}, IndirectCritical, 0},
+		{"unshare -w value privilege", "unshare", []string{"-w", "/tmp", "sudo", "id"}, IndirectCritical, 0},
+		{"unshare -r flag privilege", "unshare", []string{"-r", "sudo", "id"}, IndirectCritical, 0},
+		// --map-users/--map-groups take a REQUIRED value (verified against the real
+		// tool: "unshare --map-users sudoXYZ" reports "invalid mapping 'sudoXYZ'", so
+		// the token is consumed as the mapping spec, not treated as the command).
+		// They therefore belong in valueOpts: the value is consumed and the following
+		// "sudo" is the gated inner command. Misclassifying them as optional-argument
+		// would skip the value, treat "0:0:1" as the command, and miss "sudo".
+		{"unshare --map-users value privilege", "unshare", []string{"--map-users", "0:0:1", "sudo", "id"}, IndirectCritical, 0},
+		{"unshare --map-groups value privilege", "unshare", []string{"--map-groups", "0:0:1", "sudo", "id"}, IndirectCritical, 0},
+		// nsenter: -t/-S consume a value; -m/-w (optional-argument) do not.
+		{"nsenter -t value then sh", "nsenter", []string{"-t", "1", "sh"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"nsenter -m optional-arg privilege", "nsenter", []string{"-m", "sudo", "id"}, IndirectCritical, 0},
+		{"nsenter -t value -w optional-arg privilege", "nsenter", []string{"-t", "1", "-w", "sudo", "id"}, IndirectCritical, 0},
+		// Value-option coverage: -S consumes "0", so sh (not 0) is the gated command.
+		{"nsenter -S value then sh", "nsenter", []string{"-S", "0", "sh"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// Clustered optional-argument + value-option is ambiguous (the real tools
+		// disagree on whether "-rS"/"-mS" binds "S" to -r/-m as an attached value or
+		// parses -S separately), so the scan fails closed rather than risk swallowing
+		// the inner command ("sudo") as -S's value.
+		{"nsenter -rS cluster ambiguous reject", "nsenter", []string{"-rS", "sudo", "id"}, IndirectReject, 0},
+		{"nsenter -mS cluster ambiguous reject", "nsenter", []string{"-mS", "sudo", "id"}, IndirectReject, 0},
+		{"unshare -mS cluster ambiguous reject", "unshare", []string{"-mS", "sudo", "id"}, IndirectReject, 0},
+		// flock: -w consumes a value, the lock operand is skipped, then the command.
+		{"flock -w value lock then privilege", "flock", []string{"-w", "10", "/tmp/l", "sudo", "id"}, IndirectCritical, 0},
+		{"flock -c command string privilege", "flock", []string{"/tmp/l", "-c", "sudo id"}, IndirectCritical, 0},
+		{"flock fd-only form", "flock", []string{"9"}, IndirectNone, 0},
+		{"flock argv generic inner", "flock", []string{"f", "cmd"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// watch without -x joins all operands into one /bin/sh -c string.
+		{"watch privilege", "watch", []string{"sudo", "id"}, IndirectCritical, 0},
+		{"watch -n value privilege", "watch", []string{"-n", "1", "sudo", "id"}, IndirectCritical, 0},
+		{"watch -q value privilege", "watch", []string{"-q", "1", "sudo", "id"}, IndirectCritical, 0},
+		{"watch -c color flag privilege", "watch", []string{"-c", "sudo", "id"}, IndirectCritical, 0},
+		{"watch generic inner", "watch", []string{"cmd"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// watch operand concatenation: a ";" between operands hides "sudo id", so the
+		// joined string contains a shell separator and fails closed.
+		{"watch concat shell separator reject", "watch", []string{"ls", "-l", ";", "sudo", "id"}, IndirectReject, 0},
+		// watch -x runs the operands as an argv list (no /bin/sh -c), so "-n" after
+		// the command is the inner command's argument, not watch's option.
+		{"watch -x argv destructive", "watch", []string{"-x", "rm", "-rf", "/"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"watch -x argv privilege", "watch", []string{"-x", "sudo", "-n", "1"}, IndirectCritical, 0},
+		// "-x" clustered with the interval flag still enables exec mode.
+		{"watch -xn exec with interval privilege", "watch", []string{"-xn", "1", "sudo"}, IndirectCritical, 0},
+		// "-nx" is -n with attached value "x", NOT the -x exec flag, so watch stays in
+		// command-string mode and the ";" hidden among the operands fails closed.
+		{"watch -nx attached value not exec mode reject", "watch", []string{"-nx", "ls", "-l", ";", "sudo", "id"}, IndirectReject, 0},
+		// "-dx" is -d (--differences, optional-argument) with attached value "x", NOT
+		// the -x exec flag, so the same fail-closed split applies.
+		{"watch -dx attached value not exec mode reject", "watch", []string{"-dx", "ls", "-l", ";", "sudo", "id"}, IndirectReject, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := analyzeIndirectCmd(tc.cmd, tc.args...)
+			assert.Equal(t, tc.wantKind, res.Kind)
+			if tc.wantKind == IndirectFloor {
+				assert.Equal(t, tc.wantLevel, res.Level)
+			}
+		})
+	}
+}
+
+// TestIndirect_NoCommandImplicitShellHigh verifies the namespace/root-change
+// wrappers return a High floor (not the generic wrapper Medium) when no inner
+// command is given: these tools launch an implicit shell, so a namespace/privilege
+// escape must not pass unevaluated.
+func TestIndirect_NoCommandImplicitShellHigh(t *testing.T) {
+	cases := []struct {
+		name string
+		cmd  string
+		args []string
+	}{
+		{"chroot newroot only", "chroot", []string{"/mnt"}},
+		{"unshare bare", "unshare", nil},
+		{"nsenter target and mount, no command", "nsenter", []string{"-t", "1", "-m"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := analyzeIndirectCmd(tc.cmd, tc.args...)
+			assert.Equal(t, IndirectFloor, res.Kind)
+			assert.Equal(t, runnertypes.RiskLevelHigh, res.Level)
+		})
+	}
+}
+
 // TestIndirect_ShebangFifoNotRead verifies readShebang does not block when the
 // command path is a FIFO (a denial-of-service vector): the regular-file guard
 // rejects it before os.Open, so analysis returns promptly as not-a-shebang.
