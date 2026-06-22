@@ -28,7 +28,7 @@ const (
 // This uses CommandRiskProfile with explicit risk factor separation
 var commandProfileDefinitions = []CommandProfileDef{
 	// Privilege escalation commands
-	NewProfile("sudo", "su", "doas").
+	NewProfile("sudo", "su", "doas", "pkexec", "runuser", "setpriv", "capsh").
 		PrivilegeRisk(runnertypes.RiskLevelCritical, "Allows execution with elevated privileges, can compromise entire system").
 		Build(),
 

@@ -22,7 +22,7 @@ var (
 // This is the new structure that will replace CommandRiskProfile after migration.
 //
 // The profile separates risk into distinct factors:
-//   - PrivilegeRisk: Privilege escalation (sudo, su, doas)
+//   - PrivilegeRisk: Privilege escalation (e.g. sudo, su)
 //   - NetworkRisk: Network operations (curl, wget, ssh)
 //   - DestructionRisk: Destructive operations (rm, dd, format)
 //   - DataExfilRisk: Data exfiltration to external services
@@ -32,7 +32,7 @@ var (
 // Use ProfileBuilder and NewProfile() to create instances with validation.
 type CommandRiskProfile struct {
 	// Individual risk factors (explicit separation)
-	PrivilegeRisk   RiskFactor // Risk from privilege escalation (sudo, su, doas)
+	PrivilegeRisk   RiskFactor // Risk from privilege escalation (e.g. sudo, su)
 	NetworkRisk     RiskFactor // Risk from network operations
 	DestructionRisk RiskFactor // Risk from destructive operations (rm, dd, format)
 	DataExfilRisk   RiskFactor // Risk from data exfiltration to external services

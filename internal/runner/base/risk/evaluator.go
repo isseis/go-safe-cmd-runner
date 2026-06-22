@@ -127,7 +127,8 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 	}
 
 	// Rank 3: privilege escalation -> Critical (always denied). Detected through
-	// the resolved profile so sudo/su/doas cannot be missed via a symlink alias.
+	// the resolved profile so a privilege command (e.g. sudo, su) cannot be missed
+	// via a symlink alias.
 	// names was resolved once (strict) at the top of EvaluateRisk.
 	profile, profileFound := security.ResolveProfile(names)
 	if profileFound && profile.IsPrivilege() {

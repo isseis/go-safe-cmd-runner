@@ -26,7 +26,7 @@ type IndirectExecutionKind int
 const (
 	// IndirectNone means the command is not a recognized indirect-execution form.
 	IndirectNone IndirectExecutionKind = iota
-	// IndirectCritical means a privilege-escalation token (sudo/su/doas) was found
+	// IndirectCritical means a privilege-escalation token (sudo/su/doas/pkexec/runuser/setpriv/capsh) was found
 	// as the effective target; the command is Critical (always denied).
 	IndirectCritical
 	// IndirectReject means the form cannot be identity-bound until exec (an
@@ -1197,7 +1197,7 @@ func isLoaderControlVar(name string) bool {
 }
 
 // isPrivilegeCommand reports whether the command escalates privilege
-// (sudo/su/doas), matched through its risk profile by the given pre-resolved name
+// (e.g. sudo, su), matched through its risk profile by the given pre-resolved name
 // set.
 func isPrivilegeCommand(names map[string]struct{}) bool {
 	p, ok := ResolveProfile(names)

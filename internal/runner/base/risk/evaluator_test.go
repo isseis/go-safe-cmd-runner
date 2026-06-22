@@ -35,12 +35,28 @@ func evalLevel(t *testing.T, ev Evaluator, cmd string, args []string) runnertype
 
 func TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation(t *testing.T) {
 	ev := newVerifiedEvaluator()
-	for _, cmd := range []string{"sudo", "su", "doas"} {
+	for _, cmd := range []string{"sudo", "su", "doas", "pkexec", "runuser", "setpriv", "capsh"} {
 		t.Run(cmd, func(t *testing.T) {
 			plan, err := ev.EvaluateRisk(verifiedCmd(cmd, []string{"ls"}))
 			require.NoError(t, err)
 			assert.Equal(t, runnertypes.RiskLevelCritical, plan.Assessment.Level)
 			assert.Equal(t, risktypes.ReasonPrivilegeEscalation, plan.Assessment.BlockingReason)
+		})
+	}
+}
+
+// TestEvaluateRisk_SystemModHighNotPrivilegeCritical verifies that
+// permission/auth-boundary and kernel-module commands (visudo, useradd, insmod)
+// are High system modification and are not escalated to the Critical privilege
+// rank, so a per-command allow can still run a legitimate privileged batch.
+func TestEvaluateRisk_SystemModHighNotPrivilegeCritical(t *testing.T) {
+	ev := newVerifiedEvaluator()
+	for _, cmd := range []string{"/usr/sbin/visudo", "/usr/sbin/useradd", "/sbin/insmod"} {
+		t.Run(cmd, func(t *testing.T) {
+			// evalLevel asserts the command is not Blocking; a wrongly-Critical
+			// privilege classification would be Blocking, so this together with
+			// Level==High proves the command is High and not Critical-privilege.
+			assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, cmd, []string{"x"}), "%s must be High", cmd)
 		})
 	}
 }
