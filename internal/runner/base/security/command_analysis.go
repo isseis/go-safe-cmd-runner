@@ -463,6 +463,7 @@ var highSystemModificationNames = map[string]struct{}{
 	"groupdel": {}, "gpasswd": {}, "passwd": {}, "chpasswd": {}, "chage": {},
 	"newusers": {}, "adduser": {}, "deluser": {}, "addgroup": {}, "delgroup": {},
 	"vipw": {}, "vigr": {}, "visudo": {}, "chsh": {}, "chfn": {},
+	"chgpasswd": {}, "groupmems": {},
 	// Bootloader / boot entries / kernel image installation. Both the grub-* (Debian)
 	// and grub2-* (RHEL) families are expanded to their known concrete names (an
 	// exact-name map cannot hold a glob).
@@ -471,6 +472,7 @@ var highSystemModificationNames = map[string]struct{}{
 	"grub2-install": {}, "grub2-mkconfig": {}, "grub2-set-default": {},
 	"grub2-reboot": {}, "grub2-editenv": {}, "update-grub": {}, "update-grub2": {},
 	"efibootmgr": {}, "kernel-install": {}, "installkernel": {},
+	"update-initramfs": {}, "dracut": {},
 	// Boot-time service enablement (same class as systemctl/service).
 	"chkconfig": {}, "update-rc.d": {},
 	// Power state / runlevel.
@@ -496,7 +498,7 @@ var mediumSystemModificationNames = map[string]struct{}{
 	"mount": {}, "umount": {},
 	// LVM creation / configuration (limited, non-destructive scope).
 	"lvcreate": {}, "vgcreate": {}, "lvextend": {}, "vgextend": {},
-	"vgchange": {}, "lvchange": {}, "pvchange": {},
+	"vgchange": {}, "lvchange": {}, "pvchange": {}, "lvrename": {}, "vgrename": {},
 	// Coarse network configuration (wired and wireless).
 	"ip": {}, "ifconfig": {}, "route": {}, "iwconfig": {}, "iw": {},
 }
@@ -560,9 +562,10 @@ func IsDestructiveFileOperation(names map[string]struct{}, args []string) bool {
 }
 
 // SystemModificationRisk derives the system-modification risk for a command from
-// its resolved name set alone, without inspecting arguments. Package managers and
-// service/init management (highSystemModificationNames) are High because they can
-// run unverified code under privilege; other state-changing commands
+// its resolved name set alone, without inspecting arguments. Commands in
+// highSystemModificationNames are High because they can run unverified code under
+// privilege or cause large-scale/irreversible system changes (see that set's doc
+// for the categories); other limited-scope state-changing commands
 // (mediumSystemModificationNames: mount, ip, lvcreate, ...) are Medium. It returns
 // RiskLevelUnknown when no system-modification dimension applies. The name set is
 // matched by basename and resolved symbolic links, so an absolute path such as
