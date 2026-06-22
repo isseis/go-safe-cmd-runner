@@ -499,7 +499,8 @@ var highSystemModificationNames = map[string]struct{}{
 var mediumSystemModificationNames = map[string]struct{}{
 	"mount": {}, "umount": {},
 	// LVM creation / configuration (limited, non-destructive scope).
-	"lvcreate": {}, "vgcreate": {}, "lvextend": {}, "vgchange": {}, "lvchange": {},
+	"lvcreate": {}, "vgcreate": {}, "lvextend": {}, "vgextend": {},
+	"vgchange": {}, "lvchange": {},
 	// Coarse network configuration.
 	"ip": {}, "ifconfig": {}, "route": {},
 }

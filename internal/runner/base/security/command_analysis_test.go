@@ -1224,6 +1224,7 @@ func TestSystemModificationRisk(t *testing.T) {
 		{"lvcreate", cmdNameSet("lvcreate"), runnertypes.RiskLevelMedium},
 		{"vgcreate", cmdNameSet("vgcreate"), runnertypes.RiskLevelMedium},
 		{"lvextend", cmdNameSet("lvextend"), runnertypes.RiskLevelMedium},
+		{"vgextend", cmdNameSet("vgextend"), runnertypes.RiskLevelMedium},
 		{"vgchange", cmdNameSet("vgchange"), runnertypes.RiskLevelMedium},
 		{"lvchange", cmdNameSet("lvchange"), runnertypes.RiskLevelMedium},
 		// Coarse network configuration -> Medium.
