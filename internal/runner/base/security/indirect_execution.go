@@ -186,6 +186,13 @@ type optSpec struct {
 	// separated operand (the inner command); omitting it entirely would let a later
 	// value-option letter in a cluster do the same. May be nil.
 	optionalArgOpts map[string]struct{}
+	// singleDashLong treats a single-dash multi-character token (-json, -family) as
+	// one whole long option rather than a getopt short-option cluster. It is for
+	// tools that use single-dash long options (ip), where the whole token is looked
+	// up in valueOpts/boolOpts/optionalArgOpts exactly like a "--" option. When
+	// false (the default), single-dash tokens are parsed letter by letter as a short
+	// cluster. May not be combined with short-cluster grammar on the same spec.
+	singleDashLong bool
 	// unknown selects how an unrecognized option is treated (see the policies).
 	unknown unknownOptionPolicy
 }
@@ -213,8 +220,10 @@ func skipLeadingOptions(args []string, spec optSpec) (idx int, reliable bool) {
 			break // operand
 		}
 		i++
-		if strings.HasPrefix(t, "--") {
-			// Long option.
+		if strings.HasPrefix(t, "--") || spec.singleDashLong {
+			// Long option (a "--opt" token, or a single-dash long option such as ip's
+			// "-json"/"-family" when the spec is in singleDashLong mode). The whole
+			// token is the option name, not a cluster of one-letter options.
 			if _, ok := spec.valueOpts[t]; ok {
 				i++ // separated value: skip the option's value too
 				continue
@@ -470,6 +479,15 @@ func analyzeIndirect(cmdPath string, args []string, depth int, role risktypes.Ar
 	// and miss a privilege token for the -c form).
 	if _, ok := names["taskset"]; ok {
 		return analyzeTaskset(args, depth, role)
+	}
+
+	// ip netns exec / ip vrf exec transparently exec an inner command in a network
+	// namespace / VRF, so the inner command is gated. Any other ip form (a non-exec
+	// subcommand or a bare ip) returns IndirectNone from the handler and is left to
+	// the normal ip (Medium) classification; no later check matches "ip", so
+	// returning here is equivalent to falling through to IndirectNone.
+	if _, ok := names["ip"]; ok {
+		return analyzeIPExec(args, depth, role)
 	}
 
 	// Namespace / root-change wrappers (chroot/unshare/nsenter) and command-string
@@ -1069,6 +1087,77 @@ func watchExecRequested(opts []string) bool {
 		i++
 	}
 	return false
+}
+
+// ipOptSpec lists ip's global options, those that precede the object word (such as
+// "netns"/"vrf"). ip uses single-dash long options (-json, -family, -netns) rather
+// than getopt short-option clusters, so the spec is scanned in singleDashLong mode:
+// each "-token" is one whole option. Value-taking globals (-family/-f, -batch/-b,
+// -loops/-l, -rcvbuf/-rc, -netns/-n) consume the following token; the rest are
+// flags. An unrecognized global makes the operand boundary unreliable (a value
+// option could hide the object), so the scan fails closed and analyzeIPExec rejects.
+var ipOptSpec = optSpec{
+	singleDashLong: true,
+	valueOpts: setOf(
+		"-family", "-f", "-batch", "-b", "-loops", "-l",
+		"-rcvbuf", "-rc", "-netns", "-n",
+	),
+	boolOpts: setOf(
+		"-json", "-j", "-pretty", "-p", "-stats", "-s", "-statistics",
+		"-details", "-d", "-oneline", "-o", "-resolve", "-r",
+		"-numeric", "-N", "-all", "-a", "-color", "-c",
+		"-timestamp", "-t", "-tshort", "-ts", "-iec",
+		"-brief", "-br", "-human", "-human-readable", "-h",
+		"-force", "-echo", "-e", "-4", "-6", "-0", "-B", "-M",
+	),
+	unknown: anyUnknownIsUnreliable,
+}
+
+// analyzeIPExec gates the inner command of "ip netns exec <NAME> <cmd>" and
+// "ip vrf exec <NAME> <cmd>", which transparently exec <cmd> in a network namespace
+// or VRF. ip's global options are skipped first (in singleDashLong mode) so an
+// inserted global such as "-json" or "-n NAME" cannot shift the object word and let
+// the inner command slip past the gate. Only the netns/vrf "exec" form is indirect
+// execution; any other ip form (a non-exec subcommand, a bare "ip", or a different
+// object) is IndirectNone and left to the normal ip (Medium) classification rather
+// than blocked. The exec form whose inner command cannot be safely extracted (a
+// missing NAME or COMMAND, an inner token still beginning with "-", or an unreliable
+// option boundary) fails closed.
+func analyzeIPExec(args []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
+	idx, reliable := skipLeadingOptions(args, ipOptSpec)
+	if !reliable {
+		// A global option of unknown arity could hide a "netns exec" object behind it,
+		// so fail closed rather than fall through to the Medium ip evaluation.
+		return reject()
+	}
+	rest := args[idx:]
+	// Operands: object ("netns"/"vrf"), then the "exec" subcommand, then NAME, then
+	// COMMAND. Only this exact prefix is indirect execution.
+	if len(rest) == 0 || (rest[0] != "netns" && rest[0] != "vrf") {
+		return IndirectExecutionResult{Kind: IndirectNone}
+	}
+	sub := rest[1:]
+	if len(sub) == 0 || sub[0] != "exec" {
+		// A non-exec subcommand (ip netns list, ip vrf show) or a bare object: not
+		// indirect execution; leave it to the normal ip (Medium) classification.
+		return IndirectExecutionResult{Kind: IndirectNone}
+	}
+	// exec form confirmed: sub == ["exec", NAME, cmd, args...]. Skip NAME, gate cmd.
+	operands := sub[1:]
+	if len(operands) == 0 {
+		return reject() // "ip <object> exec" with no NAME: cannot extract the command.
+	}
+	cmdPart := operands[1:] // operands == [NAME, cmd, args...]; drop NAME.
+	if len(cmdPart) == 0 {
+		return reject() // NAME present but no command.
+	}
+	inner := cmdPart[0]
+	if strings.HasPrefix(inner, "-") {
+		// The COMMAND position still begins with "-": option parsing mislocated it or
+		// the form is malformed. Fail closed.
+		return reject()
+	}
+	return evaluateInnerAs(inner, cmdPart[1:], depth, role)
 }
 
 // isShellCommandStringSafe reports whether a /bin/sh -c command string consists
