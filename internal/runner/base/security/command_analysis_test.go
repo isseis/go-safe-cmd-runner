@@ -1184,10 +1184,15 @@ func TestSystemModificationRisk(t *testing.T) {
 		{"vipw", cmdNameSet("vipw"), runnertypes.RiskLevelHigh},
 		{"vigr", cmdNameSet("vigr"), runnertypes.RiskLevelHigh},
 		{"visudo", cmdNameSet("visudo"), runnertypes.RiskLevelHigh},
+		{"chsh", cmdNameSet("chsh"), runnertypes.RiskLevelHigh},
+		{"chfn", cmdNameSet("chfn"), runnertypes.RiskLevelHigh},
 		// Bootloader / boot entries / kernel image (>=2 grub2-* variants to detect
 		// expansion gaps in the family).
 		{"grub-install", cmdNameSet("grub-install"), runnertypes.RiskLevelHigh},
 		{"grub-mkconfig", cmdNameSet("grub-mkconfig"), runnertypes.RiskLevelHigh},
+		{"grub-set-default", cmdNameSet("grub-set-default"), runnertypes.RiskLevelHigh},
+		{"grub-reboot", cmdNameSet("grub-reboot"), runnertypes.RiskLevelHigh},
+		{"grub-editenv", cmdNameSet("grub-editenv"), runnertypes.RiskLevelHigh},
 		{"grub2-install", cmdNameSet("grub2-install"), runnertypes.RiskLevelHigh},
 		{"grub2-mkconfig", cmdNameSet("grub2-mkconfig"), runnertypes.RiskLevelHigh},
 		{"grub2-set-default", cmdNameSet("grub2-set-default"), runnertypes.RiskLevelHigh},
@@ -1212,6 +1217,8 @@ func TestSystemModificationRisk(t *testing.T) {
 		{"nft", cmdNameSet("nft"), runnertypes.RiskLevelHigh},
 		{"ufw", cmdNameSet("ufw"), runnertypes.RiskLevelHigh},
 		{"firewall-cmd", cmdNameSet("firewall-cmd"), runnertypes.RiskLevelHigh},
+		{"ebtables", cmdNameSet("ebtables"), runnertypes.RiskLevelHigh},
+		{"arptables", cmdNameSet("arptables"), runnertypes.RiskLevelHigh},
 		{"iptables-save unknown", cmdNameSet("iptables-save"), runnertypes.RiskLevelUnknown},
 		{"ip6tables-save unknown", cmdNameSet("ip6tables-save"), runnertypes.RiskLevelUnknown},
 		// Capability grants -> High.
@@ -1236,10 +1243,13 @@ func TestSystemModificationRisk(t *testing.T) {
 		{"vgextend", cmdNameSet("vgextend"), runnertypes.RiskLevelMedium},
 		{"vgchange", cmdNameSet("vgchange"), runnertypes.RiskLevelMedium},
 		{"lvchange", cmdNameSet("lvchange"), runnertypes.RiskLevelMedium},
+		{"pvchange", cmdNameSet("pvchange"), runnertypes.RiskLevelMedium},
 		// Coarse network configuration -> Medium.
 		{"ip", cmdNameSet("ip"), runnertypes.RiskLevelMedium},
 		{"ifconfig", cmdNameSet("ifconfig"), runnertypes.RiskLevelMedium},
 		{"route", cmdNameSet("route"), runnertypes.RiskLevelMedium},
+		{"iwconfig", cmdNameSet("iwconfig"), runnertypes.RiskLevelMedium},
+		{"iw", cmdNameSet("iw"), runnertypes.RiskLevelMedium},
 		// Non-matching names -> Unknown. Because the function takes only the
 		// resolved name set, a pm name that appears only as an argument value (e.g.
 		// "echo rpm") can never reach this dimension; that guarantee is structural,

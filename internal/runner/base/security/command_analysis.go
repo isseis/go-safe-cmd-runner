@@ -462,12 +462,14 @@ var highSystemModificationNames = map[string]struct{}{
 	"useradd": {}, "usermod": {}, "userdel": {}, "groupadd": {}, "groupmod": {},
 	"groupdel": {}, "gpasswd": {}, "passwd": {}, "chpasswd": {}, "chage": {},
 	"newusers": {}, "adduser": {}, "deluser": {}, "addgroup": {}, "delgroup": {},
-	"vipw": {}, "vigr": {}, "visudo": {},
-	// Bootloader / boot entries / kernel image installation. The grub2-* family is
-	// expanded to its known concrete names (an exact-name map cannot hold a glob).
-	"grub-install": {}, "grub-mkconfig": {}, "grub2-install": {},
-	"grub2-mkconfig": {}, "grub2-set-default": {}, "grub2-reboot": {},
-	"grub2-editenv": {}, "update-grub": {}, "update-grub2": {},
+	"vipw": {}, "vigr": {}, "visudo": {}, "chsh": {}, "chfn": {},
+	// Bootloader / boot entries / kernel image installation. Both the grub-* (Debian)
+	// and grub2-* (RHEL) families are expanded to their known concrete names (an
+	// exact-name map cannot hold a glob).
+	"grub-install": {}, "grub-mkconfig": {}, "grub-set-default": {},
+	"grub-reboot": {}, "grub-editenv": {},
+	"grub2-install": {}, "grub2-mkconfig": {}, "grub2-set-default": {},
+	"grub2-reboot": {}, "grub2-editenv": {}, "update-grub": {}, "update-grub2": {},
 	"efibootmgr": {}, "kernel-install": {}, "installkernel": {},
 	// Boot-time service enablement (same class as systemctl/service).
 	"chkconfig": {}, "update-rc.d": {},
@@ -476,6 +478,7 @@ var highSystemModificationNames = map[string]struct{}{
 	// Firewall (iptables-save/ip6tables-save write to stdout and stay Low).
 	"iptables": {}, "ip6tables": {}, "iptables-restore": {},
 	"ip6tables-restore": {}, "nft": {}, "ufw": {}, "firewall-cmd": {},
+	"ebtables": {}, "arptables": {},
 	// Capability grants.
 	"setcap": {},
 	// Trust-boundary replacement intrinsics.
@@ -493,9 +496,9 @@ var mediumSystemModificationNames = map[string]struct{}{
 	"mount": {}, "umount": {},
 	// LVM creation / configuration (limited, non-destructive scope).
 	"lvcreate": {}, "vgcreate": {}, "lvextend": {}, "vgextend": {},
-	"vgchange": {}, "lvchange": {},
-	// Coarse network configuration.
-	"ip": {}, "ifconfig": {}, "route": {},
+	"vgchange": {}, "lvchange": {}, "pvchange": {},
+	// Coarse network configuration (wired and wireless).
+	"ip": {}, "ifconfig": {}, "route": {}, "iwconfig": {}, "iw": {},
 }
 
 // anyNameInSet reports whether any of the resolved command names is in set.
