@@ -429,12 +429,14 @@ var findExecActions = map[string]struct{}{
 	"-okdir":   {},
 }
 
-// highSystemModificationNames are the package managers and service/init
-// management entry points. They are High regardless of arguments because they can
-// run unverified maintainer scripts or unit/init scripts under privilege (dpkg
-// postinst, rpm %post, pip setup.py, npm postinstall, systemd units, init
-// scripts), which is arbitrary code execution. The classification is name-only:
-// queries such as "apt list" are treated identically to "apt install".
+// highSystemModificationNames are commands classified High by name alone,
+// regardless of arguments, in two broad classes: (1) entry points that can run
+// unverified code under privilege (package-manager maintainer scripts,
+// service/init units), and (2) large-scale or irreversible destruction and
+// persistent system-state changes. The classification is name-only and fail-safe:
+// read-mostly forms such as "sysctl -a" are treated like a write. A few names
+// (mkfs, fdisk) are also High via CheckDangerousArgPatterns; both compose with max.
+// The per-group inline comments below name each category.
 var highSystemModificationNames = map[string]struct{}{
 	// Package managers (dpkg/rpm included; they were previously undetected).
 	"apt": {}, "apt-get": {}, "yum": {}, "dnf": {}, "zypper": {},
@@ -442,16 +444,63 @@ var highSystemModificationNames = map[string]struct{}{
 	"dpkg": {}, "rpm": {},
 	// Service / init management.
 	"systemctl": {}, "service": {},
+	// Large-scale / irreversible disk and partition destruction. Bare "parted",
+	// "fsck", "fdisk", "mkfs" are High here; their ".<fstype>" variants are also
+	// High via CheckDangerousArgPatterns (mkfs.*, fsck.*).
+	"wipefs": {}, "blkdiscard": {}, "sgdisk": {}, "gdisk": {}, "cgdisk": {},
+	"sfdisk": {}, "cfdisk": {}, "mkswap": {},
+	"parted": {}, "fsck": {}, "fdisk": {}, "mkfs": {},
+	// LVM destruction / device initialization.
+	"lvremove": {}, "vgremove": {}, "pvremove": {}, "lvreduce": {},
+	"vgreduce": {}, "pvmove": {}, "lvresize": {}, "pvresize": {}, "pvcreate": {},
+	// Direct filesystem utilities (mutating).
+	"e2fsck": {}, "mke2fs": {}, "tune2fs": {}, "resize2fs": {},
+	"xfs_repair": {}, "xfs_growfs": {}, "xfs_admin": {}, "btrfs": {},
+	// Kernel modules and parameters.
+	"insmod": {}, "modprobe": {}, "rmmod": {}, "kexec": {}, "sysctl": {},
+	// Account / authentication database mutation.
+	"useradd": {}, "usermod": {}, "userdel": {}, "groupadd": {}, "groupmod": {},
+	"groupdel": {}, "gpasswd": {}, "passwd": {}, "chpasswd": {}, "chage": {},
+	"newusers": {}, "adduser": {}, "deluser": {}, "addgroup": {}, "delgroup": {},
+	"vipw": {}, "vigr": {}, "visudo": {}, "chsh": {}, "chfn": {},
+	"chgpasswd": {}, "groupmems": {},
+	// Bootloader / boot entries / kernel image installation. Both the grub-* (Debian)
+	// and grub2-* (RHEL) families are expanded to their known concrete names (an
+	// exact-name map cannot hold a glob).
+	"grub-install": {}, "grub-mkconfig": {}, "grub-set-default": {},
+	"grub-reboot": {}, "grub-editenv": {},
+	"grub2-install": {}, "grub2-mkconfig": {}, "grub2-set-default": {},
+	"grub2-reboot": {}, "grub2-editenv": {}, "update-grub": {}, "update-grub2": {},
+	"efibootmgr": {}, "kernel-install": {}, "installkernel": {},
+	"update-initramfs": {}, "dracut": {},
+	// Boot-time service enablement (same class as systemctl/service).
+	"chkconfig": {}, "update-rc.d": {},
+	// Power state / runlevel.
+	"shutdown": {}, "reboot": {}, "halt": {}, "poweroff": {}, "telinit": {},
+	// Firewall (iptables-save/ip6tables-save write to stdout and stay Low).
+	"iptables": {}, "ip6tables": {}, "iptables-restore": {},
+	"ip6tables-restore": {}, "nft": {}, "ufw": {}, "firewall-cmd": {},
+	"ebtables": {}, "arptables": {},
+	// Capability grants.
+	"setcap": {},
+	// Trust-boundary replacement intrinsics.
+	"update-alternatives": {}, "dpkg-divert": {}, "alternatives": {}, "ldconfig": {},
+	// Job / delayed / transient execution schedulers.
+	"crontab": {}, "at": {}, "batch": {}, "systemd-run": {},
 }
 
-// mediumSystemModificationNames are name-matched commands that change system
-// state through defined operations rather than executing unverified code. They
-// stay at Medium for this dimension; the effective risk of some (mkfs, fdisk) can
-// still be High via the separate dangerous-argument-pattern dimension.
+// mediumSystemModificationNames are name-matched commands that change system state
+// within a limited scope (no unverified code, no large-scale/irreversible damage);
+// see the inline groups below. For "ip" this is the baseline floor; argument-aware
+// gating (e.g. of an inner command) is the separate indirect-execution dimension's
+// job, not this name-only one.
 var mediumSystemModificationNames = map[string]struct{}{
-	"chkconfig": {}, "update-rc.d": {},
-	"mount": {}, "umount": {}, "fdisk": {}, "parted": {},
-	"mkfs": {}, "fsck": {}, "crontab": {}, "at": {}, "batch": {},
+	"mount": {}, "umount": {},
+	// LVM creation / configuration (limited, non-destructive scope).
+	"lvcreate": {}, "vgcreate": {}, "lvextend": {}, "vgextend": {},
+	"vgchange": {}, "lvchange": {}, "pvchange": {}, "lvrename": {}, "vgrename": {},
+	// Coarse network configuration (wired and wireless).
+	"ip": {}, "ifconfig": {}, "route": {}, "iwconfig": {}, "iw": {},
 }
 
 // anyNameInSet reports whether any of the resolved command names is in set.
@@ -513,10 +562,11 @@ func IsDestructiveFileOperation(names map[string]struct{}, args []string) bool {
 }
 
 // SystemModificationRisk derives the system-modification risk for a command from
-// its resolved name set alone, without inspecting arguments. Package managers and
-// service/init management (highSystemModificationNames) are High because they can
-// run unverified code under privilege; other state-changing commands
-// (mediumSystemModificationNames: mount, crontab, mkfs, ...) are Medium. It returns
+// its resolved name set alone, without inspecting arguments. Commands in
+// highSystemModificationNames are High because they can run unverified code under
+// privilege or cause large-scale/irreversible system changes (see that set's doc
+// for the categories); other limited-scope state-changing commands
+// (mediumSystemModificationNames: mount, ip, lvcreate, ...) are Medium. It returns
 // RiskLevelUnknown when no system-modification dimension applies. The name set is
 // matched by basename and resolved symbolic links, so an absolute path such as
 // /usr/sbin/systemctl is detected; a name appearing only as an argument value
@@ -540,11 +590,17 @@ func SystemModificationRisk(names map[string]struct{}) runnertypes.RiskLevel {
 // patterns take precedence over Medium. Returns RiskLevelUnknown with an empty
 // reason when no pattern matches.
 func CheckDangerousArgPatterns(names map[string]struct{}, args []string) (runnertypes.RiskLevel, string) {
-	// mkfs.<fstype> variants (mkfs.ext4, mkfs.xfs, ...) create filesystems and
-	// are high risk; the static pattern list only covers the bare "mkfs" name.
+	// mkfs.<fstype> / fsck.<fstype> variants (mkfs.ext4, fsck.ext4, ...) create or
+	// check/repair filesystems and are high risk. The bare "mkfs"/"fsck" names are
+	// already High elsewhere (mkfs via the static pattern list and the
+	// system-modification name set; fsck via the name set only), but those match
+	// exact names, so the ".<fstype>" variants need this prefix rule.
 	for n := range names {
 		if strings.HasPrefix(n, "mkfs.") {
 			return runnertypes.RiskLevelHigh, "Filesystem creation (mkfs family)"
+		}
+		if strings.HasPrefix(n, "fsck.") {
+			return runnertypes.RiskLevelHigh, "Filesystem check/repair (fsck family)"
 		}
 	}
 

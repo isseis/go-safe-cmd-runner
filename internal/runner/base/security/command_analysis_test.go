@@ -1099,49 +1099,46 @@ func TestIsDestructive_BasenameBackwardCompat(t *testing.T) {
 // (queries are treated identically to installs), the remaining name-matched
 // commands are Medium, and anything else (or a name appearing only as an argument
 // value) is Unknown. Matching is by basename and resolved symlinks.
-func TestSystemModificationRisk(t *testing.T) {
+// TestSystemModificationRisk_AllNamesEnumerated ranges the constant sets and
+// asserts each member classifies at its set's level. Ranging the sets (rather than
+// a hand-maintained parallel table) means the check cannot drift: a name added to a
+// set is covered automatically, and a name placed in both sets fails because it
+// cannot be both High and Medium. It does not guard against a required name being
+// deleted from a set -- that is left to code review and the AC traceability in the
+// plan (the YAGNI trade-off for not maintaining a parallel name list).
+func TestSystemModificationRisk_AllNamesEnumerated(t *testing.T) {
+	for name := range highSystemModificationNames {
+		t.Run("high/"+name, func(t *testing.T) {
+			assert.Equalf(t, runnertypes.RiskLevelHigh, SystemModificationRisk(cmdNameSet(name)),
+				"%q is in highSystemModificationNames but did not classify as High", name)
+		})
+	}
+	for name := range mediumSystemModificationNames {
+		t.Run("medium/"+name, func(t *testing.T) {
+			assert.Equalf(t, runnertypes.RiskLevelMedium, SystemModificationRisk(cmdNameSet(name)),
+				"%q is in mediumSystemModificationNames but did not classify as Medium", name)
+		})
+	}
+}
+
+// TestSystemModificationRisk_NegativesAndResolution covers what ranging the sets
+// cannot: names that must NOT match (Unknown), and that matching is by resolved
+// basename -- an absolute path matches, a substring does not.
+func TestSystemModificationRisk_NegativesAndResolution(t *testing.T) {
 	tests := []struct {
 		name  string
 		names map[string]struct{}
 		want  runnertypes.RiskLevel
 	}{
-		// Package managers -> High, install and query alike.
-		{"apt", cmdNameSet("apt"), runnertypes.RiskLevelHigh},
-		{"apt-get", cmdNameSet("apt-get"), runnertypes.RiskLevelHigh},
-		{"yum", cmdNameSet("yum"), runnertypes.RiskLevelHigh},
-		{"dnf", cmdNameSet("dnf"), runnertypes.RiskLevelHigh},
-		{"zypper", cmdNameSet("zypper"), runnertypes.RiskLevelHigh},
-		{"pacman", cmdNameSet("pacman"), runnertypes.RiskLevelHigh},
-		{"brew", cmdNameSet("brew"), runnertypes.RiskLevelHigh},
-		{"pip", cmdNameSet("pip"), runnertypes.RiskLevelHigh},
-		{"npm", cmdNameSet("npm"), runnertypes.RiskLevelHigh},
-		{"yarn", cmdNameSet("yarn"), runnertypes.RiskLevelHigh},
-		{"dpkg", cmdNameSet("dpkg"), runnertypes.RiskLevelHigh},
-		{"rpm", cmdNameSet("rpm"), runnertypes.RiskLevelHigh},
-		// Service / init management -> High.
-		{"systemctl", cmdNameSet("systemctl"), runnertypes.RiskLevelHigh},
-		{"service", cmdNameSet("service"), runnertypes.RiskLevelHigh},
-		// Medium name-matched commands stay Medium.
-		{"mount", cmdNameSet("mount"), runnertypes.RiskLevelMedium},
-		{"umount", cmdNameSet("umount"), runnertypes.RiskLevelMedium},
-		{"fdisk", cmdNameSet("fdisk"), runnertypes.RiskLevelMedium},
-		{"parted", cmdNameSet("parted"), runnertypes.RiskLevelMedium},
-		{"mkfs", cmdNameSet("mkfs"), runnertypes.RiskLevelMedium},
-		{"fsck", cmdNameSet("fsck"), runnertypes.RiskLevelMedium},
-		{"crontab", cmdNameSet("crontab"), runnertypes.RiskLevelMedium},
-		{"at", cmdNameSet("at"), runnertypes.RiskLevelMedium},
-		{"batch", cmdNameSet("batch"), runnertypes.RiskLevelMedium},
-		{"chkconfig", cmdNameSet("chkconfig"), runnertypes.RiskLevelMedium},
-		{"update-rc.d", cmdNameSet("update-rc.d"), runnertypes.RiskLevelMedium},
-		// Non-matching names -> Unknown. Because the function takes only the
-		// resolved name set, a pm name that appears only as an argument value (e.g.
-		// "echo rpm") can never reach this dimension; that guarantee is structural,
-		// so these cases just confirm an unrelated command yields Unknown.
+		// Non-matching names -> Unknown. The firewall *-save variants write to
+		// stdout and are intentionally excluded from the High set.
 		{"echo", cmdNameSet("echo"), runnertypes.RiskLevelUnknown},
 		{"ls", cmdNameSet("ls"), runnertypes.RiskLevelUnknown},
-		// symlink / absolute path resolution.
+		{"iptables-save", cmdNameSet("iptables-save"), runnertypes.RiskLevelUnknown},
+		{"ip6tables-save", cmdNameSet("ip6tables-save"), runnertypes.RiskLevelUnknown},
+		// Matching is by resolved basename: an absolute path matches; a substring
+		// (systemctl-helper) does not.
 		{"/usr/sbin/systemctl absolute", cmdNameSet("/usr/sbin/systemctl"), runnertypes.RiskLevelHigh},
-		// A substring match must not be treated as systemctl.
 		{"systemctl-helper not matched", cmdNameSet("systemctl-helper"), runnertypes.RiskLevelUnknown},
 	}
 	for _, tt := range tests {
@@ -1149,6 +1146,30 @@ func TestSystemModificationRisk(t *testing.T) {
 			assert.Equal(t, tt.want, SystemModificationRisk(tt.names))
 		})
 	}
+}
+
+// TestCheckDangerousArgPatterns_FsFamily verifies the mkfs.* / fsck.* prefix rules
+// in CheckDangerousArgPatterns, and that the bare "mkfs"/"fsck" names reach High
+// via SystemModificationRisk (the two dimensions compose with max in the evaluator).
+func TestCheckDangerousArgPatterns_FsFamily(t *testing.T) {
+	t.Run("mkfs.ext4 is High via prefix rule", func(t *testing.T) {
+		level, reason := CheckDangerousArgPatterns(cmdNameSet("mkfs.ext4"), nil)
+		assert.Equal(t, runnertypes.RiskLevelHigh, level)
+		assert.NotEmpty(t, reason)
+	})
+	t.Run("fsck.ext4 is High via prefix rule", func(t *testing.T) {
+		level, reason := CheckDangerousArgPatterns(cmdNameSet("fsck.ext4"), nil)
+		assert.Equal(t, runnertypes.RiskLevelHigh, level)
+		assert.NotEmpty(t, reason)
+	})
+	// Bare mkfs/fsck have no "." suffix, so the prefix rules do not match them;
+	// their High classification comes from SystemModificationRisk (max-composed).
+	t.Run("bare mkfs is High via SystemModificationRisk", func(t *testing.T) {
+		assert.Equal(t, runnertypes.RiskLevelHigh, SystemModificationRisk(cmdNameSet("mkfs")))
+	})
+	t.Run("bare fsck is High via SystemModificationRisk", func(t *testing.T) {
+		assert.Equal(t, runnertypes.RiskLevelHigh, SystemModificationRisk(cmdNameSet("fsck")))
+	})
 }
 
 // TestFindExecAllActions verifies that find's exec-style actions
