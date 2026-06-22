@@ -1121,8 +1121,8 @@ func TestSystemModificationRisk(t *testing.T) {
 		// Service / init management -> High.
 		{"systemctl", cmdNameSet("systemctl"), runnertypes.RiskLevelHigh},
 		{"service", cmdNameSet("service"), runnertypes.RiskLevelHigh},
-		// F-001/F-007: large-scale / irreversible destruction -> High (parted/fsck/
-		// fdisk/mkfs moved up from Medium; AC-01, AC-03, AC-21).
+		// Large-scale / irreversible destruction -> High (parted/fsck/fdisk/mkfs
+		// moved up from Medium).
 		{"parted", cmdNameSet("parted"), runnertypes.RiskLevelHigh},
 		{"fsck", cmdNameSet("fsck"), runnertypes.RiskLevelHigh},
 		{"fdisk", cmdNameSet("fdisk"), runnertypes.RiskLevelHigh},
@@ -1135,7 +1135,7 @@ func TestSystemModificationRisk(t *testing.T) {
 		{"sfdisk", cmdNameSet("sfdisk"), runnertypes.RiskLevelHigh},
 		{"cfdisk", cmdNameSet("cfdisk"), runnertypes.RiskLevelHigh},
 		{"mkswap", cmdNameSet("mkswap"), runnertypes.RiskLevelHigh},
-		// AC-02: LVM destruction / device initialization -> High.
+		// LVM destruction / device initialization -> High.
 		{"lvremove", cmdNameSet("lvremove"), runnertypes.RiskLevelHigh},
 		{"vgremove", cmdNameSet("vgremove"), runnertypes.RiskLevelHigh},
 		{"pvremove", cmdNameSet("pvremove"), runnertypes.RiskLevelHigh},
@@ -1145,18 +1145,18 @@ func TestSystemModificationRisk(t *testing.T) {
 		{"lvresize", cmdNameSet("lvresize"), runnertypes.RiskLevelHigh},
 		{"pvresize", cmdNameSet("pvresize"), runnertypes.RiskLevelHigh},
 		{"pvcreate", cmdNameSet("pvcreate"), runnertypes.RiskLevelHigh},
-		// AC-03: direct filesystem utilities -> High.
+		// Direct filesystem utilities -> High.
 		{"e2fsck", cmdNameSet("e2fsck"), runnertypes.RiskLevelHigh},
 		{"mke2fs", cmdNameSet("mke2fs"), runnertypes.RiskLevelHigh},
 		{"tune2fs", cmdNameSet("tune2fs"), runnertypes.RiskLevelHigh},
 		{"resize2fs", cmdNameSet("resize2fs"), runnertypes.RiskLevelHigh},
-		// AC-04: kernel modules and parameters -> High.
+		// Kernel modules and parameters -> High.
 		{"insmod", cmdNameSet("insmod"), runnertypes.RiskLevelHigh},
 		{"modprobe", cmdNameSet("modprobe"), runnertypes.RiskLevelHigh},
 		{"rmmod", cmdNameSet("rmmod"), runnertypes.RiskLevelHigh},
 		{"kexec", cmdNameSet("kexec"), runnertypes.RiskLevelHigh},
 		{"sysctl", cmdNameSet("sysctl"), runnertypes.RiskLevelHigh},
-		// AC-05: account / auth database mutation -> High.
+		// Account / auth database mutation -> High.
 		{"useradd", cmdNameSet("useradd"), runnertypes.RiskLevelHigh},
 		{"usermod", cmdNameSet("usermod"), runnertypes.RiskLevelHigh},
 		{"userdel", cmdNameSet("userdel"), runnertypes.RiskLevelHigh},
@@ -1175,8 +1175,8 @@ func TestSystemModificationRisk(t *testing.T) {
 		{"vipw", cmdNameSet("vipw"), runnertypes.RiskLevelHigh},
 		{"vigr", cmdNameSet("vigr"), runnertypes.RiskLevelHigh},
 		{"visudo", cmdNameSet("visudo"), runnertypes.RiskLevelHigh},
-		// AC-06: bootloader / boot entries / kernel image (>=2 grub2-* variants to
-		// detect expansion gaps in the family).
+		// Bootloader / boot entries / kernel image (>=2 grub2-* variants to detect
+		// expansion gaps in the family).
 		{"grub-install", cmdNameSet("grub-install"), runnertypes.RiskLevelHigh},
 		{"grub-mkconfig", cmdNameSet("grub-mkconfig"), runnertypes.RiskLevelHigh},
 		{"grub2-install", cmdNameSet("grub2-install"), runnertypes.RiskLevelHigh},
@@ -1186,16 +1186,16 @@ func TestSystemModificationRisk(t *testing.T) {
 		{"efibootmgr", cmdNameSet("efibootmgr"), runnertypes.RiskLevelHigh},
 		{"kernel-install", cmdNameSet("kernel-install"), runnertypes.RiskLevelHigh},
 		{"installkernel", cmdNameSet("installkernel"), runnertypes.RiskLevelHigh},
-		// AC-07: boot-time service enablement -> High (moved up from Medium).
+		// Boot-time service enablement -> High (moved up from Medium).
 		{"chkconfig", cmdNameSet("chkconfig"), runnertypes.RiskLevelHigh},
 		{"update-rc.d", cmdNameSet("update-rc.d"), runnertypes.RiskLevelHigh},
-		// AC-08: power state / runlevel -> High.
+		// Power state / runlevel -> High.
 		{"shutdown", cmdNameSet("shutdown"), runnertypes.RiskLevelHigh},
 		{"reboot", cmdNameSet("reboot"), runnertypes.RiskLevelHigh},
 		{"halt", cmdNameSet("halt"), runnertypes.RiskLevelHigh},
 		{"poweroff", cmdNameSet("poweroff"), runnertypes.RiskLevelHigh},
 		{"telinit", cmdNameSet("telinit"), runnertypes.RiskLevelHigh},
-		// AC-09: firewall -> High; the *-save (stdout) variants stay Unknown.
+		// Firewall -> High; the *-save (stdout) variants stay Unknown.
 		{"iptables", cmdNameSet("iptables"), runnertypes.RiskLevelHigh},
 		{"ip6tables", cmdNameSet("ip6tables"), runnertypes.RiskLevelHigh},
 		{"iptables-restore", cmdNameSet("iptables-restore"), runnertypes.RiskLevelHigh},
@@ -1205,28 +1205,28 @@ func TestSystemModificationRisk(t *testing.T) {
 		{"firewall-cmd", cmdNameSet("firewall-cmd"), runnertypes.RiskLevelHigh},
 		{"iptables-save unknown", cmdNameSet("iptables-save"), runnertypes.RiskLevelUnknown},
 		{"ip6tables-save unknown", cmdNameSet("ip6tables-save"), runnertypes.RiskLevelUnknown},
-		// AC-10: capability grants -> High.
+		// Capability grants -> High.
 		{"setcap", cmdNameSet("setcap"), runnertypes.RiskLevelHigh},
-		// AC-11: trust-boundary replacement intrinsics -> High.
+		// Trust-boundary replacement intrinsics -> High.
 		{"update-alternatives", cmdNameSet("update-alternatives"), runnertypes.RiskLevelHigh},
 		{"dpkg-divert", cmdNameSet("dpkg-divert"), runnertypes.RiskLevelHigh},
 		{"alternatives", cmdNameSet("alternatives"), runnertypes.RiskLevelHigh},
 		{"ldconfig", cmdNameSet("ldconfig"), runnertypes.RiskLevelHigh},
-		// AC-12: job / delayed / transient schedulers -> High (moved up from Medium).
+		// Job / delayed / transient schedulers -> High (moved up from Medium).
 		{"crontab", cmdNameSet("crontab"), runnertypes.RiskLevelHigh},
 		{"at", cmdNameSet("at"), runnertypes.RiskLevelHigh},
 		{"batch", cmdNameSet("batch"), runnertypes.RiskLevelHigh},
 		{"systemd-run", cmdNameSet("systemd-run"), runnertypes.RiskLevelHigh},
-		// F-003: limited-scope changes stay / become Medium.
+		// Limited-scope changes stay / become Medium.
 		{"mount", cmdNameSet("mount"), runnertypes.RiskLevelMedium},
 		{"umount", cmdNameSet("umount"), runnertypes.RiskLevelMedium},
-		// AC-13: LVM creation / configuration -> Medium.
+		// LVM creation / configuration -> Medium.
 		{"lvcreate", cmdNameSet("lvcreate"), runnertypes.RiskLevelMedium},
 		{"vgcreate", cmdNameSet("vgcreate"), runnertypes.RiskLevelMedium},
 		{"lvextend", cmdNameSet("lvextend"), runnertypes.RiskLevelMedium},
 		{"vgchange", cmdNameSet("vgchange"), runnertypes.RiskLevelMedium},
 		{"lvchange", cmdNameSet("lvchange"), runnertypes.RiskLevelMedium},
-		// AC-14: coarse network configuration -> Medium.
+		// Coarse network configuration -> Medium.
 		{"ip", cmdNameSet("ip"), runnertypes.RiskLevelMedium},
 		{"ifconfig", cmdNameSet("ifconfig"), runnertypes.RiskLevelMedium},
 		{"route", cmdNameSet("route"), runnertypes.RiskLevelMedium},
