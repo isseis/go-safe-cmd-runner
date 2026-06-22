@@ -1197,7 +1197,7 @@ func isLoaderControlVar(name string) bool {
 }
 
 // isPrivilegeCommand reports whether the command escalates privilege
-// (sudo/su/doas), matched through its risk profile by the given pre-resolved name
+// (e.g. sudo, su), matched through its risk profile by the given pre-resolved name
 // set.
 func isPrivilegeCommand(names map[string]struct{}) bool {
 	p, ok := ResolveProfile(names)
