@@ -152,7 +152,9 @@
 **作業内容**:
 - [ ] `ResolveOperandPath(operand, base string, maxHops int) (resolved string, err error)` を実装（設計 §3.3）。
       symlink チェーンを leaf＋親で追従し、正規化済み絶対パスを返す。相対オペランドは `base`（`ln -s` 相対 target は
-      リンク親、他は `EffectiveWorkDir`）基点で解決。read-only（`lstat`/`readlink` のみ）。
+      リンク親、他は `EffectiveWorkDir`）基点で解決。チェーン追従中に遭遇する中間の相対 symlink は、そのリンク自身が
+      存在する親ディレクトリを基点に解決する（`base`/`EffectiveWorkDir` 基点ではない。パストラバーサル・区分誤判定の防止）。
+      read-only（`lstat`/`readlink` のみ）。
 - [ ] 未存在 leaf を「最深の存在親」まで解決して末尾を畳み込む。**最深存在親が symlink のときは解決を確定できないため
       エラー**（呼び出し側で `ZoneUnresolved`＝書込/削除 High、設計 §3.3 注）。
 - [ ] cycle・深さ超過（`maxHops` 超）・mid-chain の `readlink`/`lstat` 失敗で `error` を返す（fail-closed、設計 §4）。
@@ -160,8 +162,10 @@
       （既定は実 os、テストは呼出回数を数えるスタブを注入。`StandardEvaluator.openIdentity` と同じ注入パターン）。注入集合は
       read-only の `lstat`/`readlink` のみとし、symlink を追従する `os.Stat` は含めない（設計 §3.3 の read-only 制約。`os.Stat` を
       混ぜると経路要素の所有権検査が symlink ターゲットを見てしまい区分判定を欺けるため）。
-- [ ] メモ化: 解決のメモ化を 1 回の判定呼び出し内にスコープし、鍵は**解決後の絶対パス**とする。identity 依存の Trusted
-      判定そのものはキャッシュしない（設計 §3.3(e)）。
+- [ ] メモ化: 解決のメモ化を 1 回の判定呼び出し内にスコープし、鍵は**解決対象の入力パス（中間パスを含む）**とする。これにより
+      共有する親チェーンの `lstat`/`readlink` 結果を 1 回に畳む（解決後の絶対パスを鍵にすると、解決を終えるまで鍵が得られず
+      再解決を防げない＝AC-23 の線形計数が成り立たない）。identity 依存の Trusted 判定そのものはキャッシュしない（設計 §3.3(e)
+      の鍵の記述を精緻化）。
 - [ ] Trusted 述語を実装（設計 §3.3(d)）: 解決後パスが `TrustedDirectories` 配下、かつ**safe-zone 起点の親以上**の経路
       要素が run-as から書込不可（run-as 以外所有・group/other 非書込）のとき Trusted。参照 identity は注入 `RunAsIdent`
       （live euid 不参照）。書込不可検査の対象は**起点ディレクトリの親以上**に限定（起点配下は対象外、設計 §3.3(d) の根拠）。
@@ -491,13 +495,20 @@
 | AC-23 解決コスト上限 | test | `security/operand_path_resolver_test.go::TestResolutionCeiling`＋`::TestMemoizationLinear` | 上限超過=High、呼出線形 |
 | NF-001 reason code 網羅/一意 | test | `risktypes/reason_codes_test.go::TestReasonCodes_AllDistinct` | 新 7 定数含め緑 |
 | NF-002 ビルド/テスト緑 | static | `make test && make lint`（または `go build -tags test ./internal/runner/...`） | 終了コード 0 |
-| NF-003 決定的・read-only | test+static | test: `::TestDeterminismRuntimeEqualsDryRun`／static: `rg -n 'os\.(Create|CreateTemp|Remove|RemoveAll|WriteFile|Mkdir|MkdirAll|MkdirTemp|OpenFile|Symlink|Link|Rename|Chmod|Chown|Lchown|Chtimes|Truncate|NewFile)' internal/runner/base/security/destination_zoning.go internal/runner/base/security/operand_path_resolver.go`（期待: **マッチ 0 件**） | 書込系 API 不在（read-only） |
+| NF-003 決定的・read-only | test+static | test: `::TestDeterminismRuntimeEqualsDryRun`／static: `rg -n '(os|syscall|unix)\.(Create|CreateTemp|Remove|RemoveAll|WriteFile|Mkdir|MkdirAll|MkdirTemp|OpenFile|Symlink|Link|Rename|Chmod|Chown|Lchown|Chtimes|Truncate|NewFile|Write|Unlink|Rmdir|Fchmod|Fchown)' internal/runner/base/security/destination_zoning.go internal/runner/base/security/operand_path_resolver.go`（期待: **マッチ 0 件**） | 書込系 API 不在（read-only） |
 
 > **grep ガードの正規表現に関する注意（ripgrep のメタ文字）**: ripgrep 既定（Rust regex）では `|` が選択（alternation）で、`\|` は
 > **リテラルのパイプ文字**になる。`\|` を選択のつもりで使うとパターンが空振りし、危険 API が存在してもガードが「0 件＝合格」と
 > 誤判定する（fail-open）。よって選択は素の `|` で書く（上記 NF-003 行・下記 AC-21 ガードとも修正済み）。
 >
-> grep ガード（AC-21 static）の具体コマンド: `rg -n 'os\.Get(euid|uid|gid|egid|groups)|user\.Current|syscall\.Get(euid|uid|gid|egid|groups)|unix\.Get(euid|uid|gid|egid|groups)' internal/runner/base/security/destination_zoning.go internal/runner/base/security/operand_path_resolver.go` の期待結果は **マッチ 0 件**（uid/euid/gid/egid/groups を `os`/`syscall`/`unix` の各パッケージで網羅）。`live_identity_guard_test.go` がこの検査をテストとして実行する。
+> grep ガード（AC-21 static）の具体コマンド: `rg -n 'os\.Get(euid|uid|gid|egid|groups)|user\.(Current|Lookup)|syscall\.Get(euid|uid|gid|egid|groups)|unix\.Get(euid|uid|gid|egid|groups)' internal/runner/base/security/destination_zoning.go internal/runner/base/security/operand_path_resolver.go` の期待結果は **マッチ 0 件**（uid/euid/gid/egid/groups を `os`/`syscall`/`unix` の各パッケージで網羅し、`user.Current`／`user.Lookup*` の OS ユーザーDB 参照も塞ぐ）。`live_identity_guard_test.go` がこの検査をテストとして実行する。
+>
+> **静的 grep ガードの位置づけ（再発防止の原則）**: NF-003／AC-21 の grep は禁止 API の**非網羅な denylist** であり、完全性の
+> 保証ではない。read-only／live-identity 不参照の**権威ある保証は挙動テスト**——`TestDeterminismRuntimeEqualsDryRun`
+> （runtime==dry-run）と `TestRunAsIdentDifferential`（注入 identity と実 euid を変えて判定が変わることを表明）——が担う。grep は
+> defense-in-depth の二次チェックとして、代表的な書込／identity API を低コストに塞ぐ。将来「API X が漏れている」との指摘は、
+> X が安価なら正規表現へ追加し、そうでなくても上記挙動テストが本質的に捕捉することを確認すれば足りる（正規表現の網羅性
+> 自体を完全性条件にはしない）。
 > **自己検証（正のコントロール）を必須にする**: ガードテストは、検査用の正規表現がコンパイルでき、かつ既知の悪例文字列
 > （例 `"os.Geteuid()"`・`"os.Create(p)"`）に**必ずマッチする**ことを表明する正のコントロールを含める。これにより将来の
 > タイプミスでパターンが空振りに戻っても、ガードが沈黙で壊れることを防ぐ。

@@ -452,7 +452,7 @@ func ResolveOperandPath(operand, base string, maxHops int) (resolved string, err
   - safe-zone の Low 降格は Trusted のときに限り、非 Trusted なら降格しない（fail-closed → Medium）。参照 identity は
     注入 `RunAsIdent`（live euid ではない）。leaf が既存 symlink なら最終ターゲットで区分判定する。
 - (e) **メモ化の鍵とスコープ（AC-23）**: 解決のメモ化は 1 回の `ClassifyDestinationZone` 呼び出し（＝単一コマンド・
-  単一 `RunAsIdent`）の内側にスコープし、鍵は**解決後の絶対パス**とする。キャッシュするのは read-only な解決結果
+  単一 `RunAsIdent`）の内側にスコープし、鍵は**解決対象の入力パス（中間パスを含む）**とする。キャッシュするのは read-only な解決結果
   （`lstat`/`readlink`）のみで、identity 依存の Trusted 判定そのものはキャッシュしない（あるいは鍵へ identity を
   含める）。これにより同一 base/identity の前提が崩れず、クロス identity のキャッシュ誤用を避ける。
 
