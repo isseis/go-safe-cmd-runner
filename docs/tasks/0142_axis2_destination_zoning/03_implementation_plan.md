@@ -366,40 +366,38 @@
 ### Phase 5: データ送信書込先合成＋rsync `host::module` 検出（AC-16）
 
 **変更ファイル**:
-- 変更 `internal/runner/base/security/destination_zoning.go`（`KindDataTransferWrite` のリモート終端判定）
-- 変更 `internal/runner/base/security/network_analyzer.go`（`host::module` 検出を `rsync` 限定で追加。グローバルな `hasNetworkArguments` を全コマンドへは広げない）
-- 変更 `internal/runner/base/security/command_analysis.go`（`containsSSHStyleAddress` 周辺、必要時）
+- 変更 `internal/runner/base/security/destination_zoning_spec.go`（`KindDataTransferWrite` 抽出器＝curl/wget/scp/sftp/rsync、`isRemoteTerminus`／`host::module` 判定）
+- 変更 `internal/runner/base/security/destination_zoning.go`（`remoteEgress` の Medium 床）
 - 変更 `internal/runner/base/risk/destination_zoning_integration_test.go`
-- 変更 `internal/runner/base/security/network_analyzer_test.go`
-- 変更 `internal/runner/base/security/command_analysis_test.go`
+- 変更 `internal/runner/base/security/destination_zoning_test.go`
+- 変更 `internal/runner/base/security/network_analyzer_test.go`（`host::module`/`std::string` が global では非検出の回帰）
+- **不変**: `network_analyzer.go`・`command_analysis.go`（`hasNetworkArguments`/`containsSSHStyleAddress` は変更しない。下記の設計選択を参照）
 
 **作業内容**:
-- [ ] `KindDataTransferWrite` の書込先抽出（`curl -o`/`-O`・`wget` 既定/`-O`/`-P <dir>`・`scp host:/x DEST`・`sftp` バッチ書込・
-      `rsync … DEST`/`--delete`）を仕様表に実装（設計 §3.5）。
-- [ ] 最終リスク = `max(データ送信の名前 Medium〔0141〕, 書込先のパス信頼区分)` を合成する（max 合成の所有者は本タスク、AC-16）。
-- [ ] rsync のリモート終端判定に `host::module`（二重コロン bare module、末尾パス無し）を追加（設計 §3.5(1)）。リモート宛先の
-      ときは zone 対象のローカルパスが無く egress（名前ベース Medium）が支配、ローカル宛先のときのみ書込先区分と max。
-- [ ] `host::module`（二重コロン bare module）の egress 検出は **`rsync` コマンドに限定**して有効化する（設計 §3.5(2)）。
-      `hasNetworkArguments` は profile 無しの全コマンドへ広く適用される（`evaluator.go` の `!profileFound && HasNetworkArguments(args)`）
-      ため、ここへ無条件に `host::module` を足すと `std::string`／`HTTP::Tiny`／`Namespace::Class` のような `::` を含む無関係な引数まで
-      誤検出して過剰分類する（左側をホスト名様トークン `[A-Za-z0-9.-]+` に限定しても `std`／`HTTP` 等が合致し防げない）。よって検出は
-      コマンド名が `rsync` のときだけ有効化する（rsync 専用の引数解析＝`KindDataTransferWrite` 抽出に閉じ込めるか、`hasNetworkArguments`
-      をコマンド名で gate する）。`/` を含むトークンや純ローカルパスは巻き込まない。`rsync` 全体の無条件 Medium 格上げはしない。
+- [x] `KindDataTransferWrite` の書込先抽出（`curl -o`/`-O`・`wget` 既定/`-O`/`-P <dir>`・`scp … DEST`・`sftp`・
+      `rsync … DEST`/`--delete`）を仕様表に実装（設計 §3.5）。ローカル書込先は zone 判定、リモート宛先（scp/rsync/sftp）は
+      `remoteEgress`（ローカルパス無し）とする。
+- [x] 最終リスク = `max(データ送信の名前 Medium〔0141〕, 書込先のパス信頼区分)` を合成する（評価層の dimension max が所有。
+      curl/wget の egress Medium は network profile（不抑止）から、rsync `host::module` の egress Medium は axis-2 の
+      `remoteEgress` 床から供給される、AC-16）。
+- [x] rsync/scp のリモート終端判定に `host::module`（二重コロン bare module、末尾パス無し）を追加（設計 §3.5(1)）。リモート宛先の
+      ときは zone 対象のローカルパスが無く egress（Medium）が支配、ローカル宛先のときのみ書込先区分。
+- [x] **設計選択**: `host::module` の egress 検出は **rsync/scp の `KindDataTransferWrite` 抽出器内に閉じ込めた**（設計 §3.5(2) の
+      第 1 案）。`hasNetworkArguments` は変更しない。理由: `hasNetworkArguments` は profile 無しの全コマンドへ広く適用されるため、
+      ここへ `host::module` を足すと `std::string`／`HTTP::Tiny` 等を誤検出する。抽出器に閉じ込めることで rsync/scp のみで検出し、
+      無関係コマンドの過剰分類をゼロにする。egress の理由コードは既存 `ReasonNetworkArgument` を流用。
 
 **成功基準**:
-- [ ] (i) `curl <url> -o $WORKDIR/safe`=Medium。**Medium の出所**を表明する（単なるレベル==Medium では既存 network profile の
-      Medium と区別できない、canary の落とし穴。設計 §3.5）。出所表明は次のいずれか:
-  - 既存 Medium profile を持たないデータ送信書込形を選び「Medium への唯一の経路が名前下限」状況を作る（**自己完結で推奨**。
-    0141 の理由コード識別子の確定に依存しない）、または
-  - `RiskAssessment.ReasonCodes` に 0141 名前下限由来の理由コードを含むことを表明（この場合、当該理由コード定数が 0141 で確定済み
-    かを §10 のクロス検索で事前確認する）。
-- [ ] (ii) `curl -o /usr/bin/x`=High（書込先が名前下限を上回る、AC-16）。
-- [ ] `rsync src host::module`=Medium（egress 由来、理由コードで出所表明）。
-- [ ] 純ローカル `rsync /a /b`=Low（過剰分類しない）。
-- [ ] `rsync /local /usr/bin/x`（ローカル trust-critical 宛先）=High（書込先区分が支配）。
-- [ ] **非 rsync の `::` 引数は過剰分類しない**（`host::module` 検出の rsync 限定の回帰）: profile 無しのコマンドに `std::string`／
-      `HTTP::Tiny`／`Namespace::Class` 等の `::` を含む引数を与えても network 引数（`ReasonNetworkArgument` Medium）に誤分類されない
-      （`network_analyzer_test.go`／`command_analysis_test.go`）。
+- [x] (i) `curl <url> -o $WORKDIR/safe`=Medium。**Medium の出所**を `RiskAssessment.ReasonCodes` に `ReasonProfileNetwork`
+      （0141 名前由来の network profile Medium）が含まれることで表明（canary 回避。`TestDataTransferWriteComposition`）。
+- [x] (ii) `curl -o /usr/bin/x`=High（書込先が名前下限を上回る、AC-16）。
+- [x] `rsync src host::module`=Medium（egress 由来、`ReasonNetworkArgument` で出所表明）。
+- [x] 純ローカル `rsync $WORKDIR/a $WORKDIR/b`=Low（過剰分類しない）。
+- [x] `rsync $WORKDIR/a /usr/bin/x`（ローカル trust-critical 宛先）=High（書込先区分が支配）。
+- [x] **非 rsync の `::` 引数は過剰分類しない**: `HasNetworkArguments` が `std::string`／`HTTP::Tiny`／`Namespace::Class`／
+      `host::module` を global では非検出（`network_analyzer_test.go::TestHasNetworkArguments_DoubleColonNotMatched`）。
+- [x] sftp の限界（明示）: sftp の実書込は対話/`-b` バッチにあり argv に現れないため、`remoteEgress`（Medium）として扱う
+      （argv からローカル trust-critical 書込を判別できない既知の限界。profile Medium と同水準）。
 
 ### PR-5 作成ポイント: data-transfer-write composition and rsync host::module detection
 

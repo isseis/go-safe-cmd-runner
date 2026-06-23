@@ -102,6 +102,17 @@ func classifyDestinationZone(input ZoningInput, names map[string]struct{}, cmdPa
 		res.ReasonCodes = appendReason(res.ReasonCodes, risktypes.ReasonTrustBoundaryWrite)
 	}
 
+	// A data-transfer command writing to a remote destination has no local path to
+	// zone-classify; it contributes a network-egress Medium floor. For a remote
+	// rsync host::module this is the only egress signal, since the global
+	// network-argument check intentionally does not match a bare module.
+	if ext.remoteEgress {
+		if res.Level < runnertypes.RiskLevelMedium {
+			res.Level = runnertypes.RiskLevelMedium
+		}
+		res.ReasonCodes = appendReason(res.ReasonCodes, risktypes.ReasonNetworkArgument)
+	}
+
 	// Resolution-cost ceiling: too many operands fails closed rather than walking
 	// the filesystem unboundedly.
 	if input.MaxOperands > 0 && len(ext.operands) > input.MaxOperands {

@@ -3,6 +3,7 @@ package security
 import (
 	"io/fs"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -29,7 +30,11 @@ type extraction struct {
 	grantsPermission bool // chmod setuid/world-writable, install -m setuid or -o/-g, chattr i
 	preserveMeta     bool // cp -p / -a (privileged-metadata copy)
 	umountAll        bool // umount -a (unconditional High)
-	operands         []rawOperand
+	// remoteEgress marks a data-transfer command whose destination is remote
+	// (e.g. rsync to host:path / host::module / rsync://...). There is no local
+	// path to zone-classify; the command contributes a network-egress Medium floor.
+	remoteEgress bool
+	operands     []rawOperand
 }
 
 // commandSpec maps a command family to its extraction rule.
@@ -108,6 +113,11 @@ var zoningSpecs = map[string]commandSpec{
 	"setfacl": {KindPermission, extractSetfacl},
 	"chattr":  {KindPermission, extractChattr},
 	"find":    {KindFindDestructive, extractFind},
+	"curl":    {KindDataTransferWrite, extractCurl},
+	"wget":    {KindDataTransferWrite, extractWget},
+	"scp":     {KindDataTransferWrite, extractScp},
+	"sftp":    {KindDataTransferWrite, extractSftp},
+	"rsync":   {KindDataTransferWrite, extractRsync},
 }
 
 // scanFlags separates positionals from flags. recognized is false when a token
@@ -835,6 +845,132 @@ func extractFind(args []string) extraction {
 		ext.operands = append(ext.operands, rawOperand{raw: root, role: risktypes.OperandRoleWrite})
 	}
 	return ext
+}
+
+// hostTokenRe matches a bare host/module token (no path separators), used to
+// recognize an rsync daemon double-colon module (host::module).
+var hostTokenRe = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
+
+// isRemoteTerminus reports whether an rsync/scp operand denotes a remote location:
+// a URL (rsync://...), an SSH-style host:path / user@host:path, or an rsync daemon
+// bare module host::module. host::module is the gap the existing
+// hasNetworkArguments misses (no '/' in the path part); detecting it here, only
+// inside the rsync/scp extractors, keeps the global network-argument check
+// unchanged so unrelated "::" arguments (std::string, HTTP::Tiny) are never
+// misclassified.
+func isRemoteTerminus(arg string) bool {
+	if strings.Contains(arg, "://") {
+		return true
+	}
+	if i := strings.Index(arg, "::"); i > 0 {
+		if hostTokenRe.MatchString(arg[:i]) {
+			return true
+		}
+	}
+	return containsSSHStyleAddress([]string{arg})
+}
+
+// extractCurl extracts curl's local write destination (-o FILE, or -O which writes
+// the URL basename into the working directory). The URL is a remote read source;
+// its egress Medium is supplied by curl's network profile.
+func extractCurl(args []string) extraction {
+	valueFlags := set("-o", "--output", "-H", "--header", "-d", "--data", "--data-raw", "--data-binary",
+		"-u", "--user", "-A", "--user-agent", "-e", "--referer", "-x", "--proxy", "-b", "--cookie",
+		"-c", "--cookie-jar", "-K", "--config", "-T", "--upload-file", "-w", "--write-out",
+		"-m", "--max-time", "--connect-timeout", "-X", "--request", "--url", "--retry", "--limit-rate",
+		"-C", "--continue-at", "-r", "--range", "--cacert", "--cert", "--key")
+	boolFlags := set("-O", "--remote-name", "-L", "--location", "-s", "--silent", "-S", "--show-error",
+		"-f", "--fail", "-k", "--insecure", "-v", "--verbose", "-i", "--include", "-I", "--head",
+		"-g", "--progress-bar", "-J", "--remote-header-name", "-#", "-q", "-z")
+	pos, captured, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
+	ext := extraction{applies: true, recognized: recognized}
+	if out := firstNonEmpty(captured["-o"], captured["--output"]); out != "" && out != "-" {
+		ext.operands = append(ext.operands, rawOperand{raw: out, role: risktypes.OperandRoleWrite})
+	} else if hasAny(args, set("-O", "--remote-name")) {
+		// -O writes a file named from the URL into the working directory.
+		ext.operands = append(ext.operands, rawOperand{raw: ".", role: risktypes.OperandRoleWrite})
+	}
+	_ = pos // URL positionals are remote read sources (egress via the profile).
+	return ext
+}
+
+// extractWget extracts wget's local write destination (-O FILE, -P DIR, or the
+// working directory by default).
+func extractWget(args []string) extraction {
+	valueFlags := set("-O", "--output-document", "-P", "--directory-prefix", "-o", "--output-file",
+		"-a", "--append-output", "--header", "--user", "--password", "--limit-rate", "-t", "--tries",
+		"-T", "--timeout", "--user-agent", "-U", "--referer", "--post-data", "--post-file", "-e", "--execute",
+		"--ca-certificate", "--certificate")
+	boolFlags := set("-q", "--quiet", "-v", "--verbose", "-c", "--continue", "-N", "--timestamping",
+		"-r", "--recursive", "-np", "--no-parent", "-nc", "--no-clobber", "-nv", "--no-verbose",
+		"--no-check-certificate", "-d", "--debug", "-b", "--background")
+	pos, captured, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
+	ext := extraction{applies: true, recognized: recognized}
+	switch {
+	case firstNonEmpty(captured["-O"], captured["--output-document"]) != "":
+		out := firstNonEmpty(captured["-O"], captured["--output-document"])
+		if out != "-" {
+			ext.operands = append(ext.operands, rawOperand{raw: out, role: risktypes.OperandRoleWrite})
+		}
+	case firstNonEmpty(captured["-P"], captured["--directory-prefix"]) != "":
+		ext.operands = append(ext.operands, rawOperand{raw: firstNonEmpty(captured["-P"], captured["--directory-prefix"]), role: risktypes.OperandRoleWrite})
+	default:
+		// wget writes the URL basename into the working directory by default.
+		ext.operands = append(ext.operands, rawOperand{raw: ".", role: risktypes.OperandRoleWrite})
+	}
+	_ = pos
+	return ext
+}
+
+// extractScp extracts scp's destination (the final operand). A remote destination
+// is an upload (egress); a local destination is zone-classified.
+func extractScp(args []string) extraction {
+	valueFlags := set("-P", "-i", "-o", "-c", "-F", "-l", "-S", "-J", "-T")
+	boolFlags := set("-r", "-p", "-q", "-v", "-C", "-B", "-3", "-4", "-6", "-A", "-O", "-R")
+	return extractRemoteCopy(args, valueFlags, boolFlags)
+}
+
+// extractRsync extracts rsync's destination (the final operand). A remote
+// destination (host:path / host::module / rsync://...) is an upload (egress); a
+// local destination is zone-classified. --delete acts on the destination tree.
+func extractRsync(args []string) extraction {
+	valueFlags := set("-e", "--rsh", "--rsync-path", "--exclude", "--include", "--exclude-from",
+		"--include-from", "-f", "--filter", "--files-from", "--compare-dest", "--copy-dest", "--link-dest",
+		"--bwlimit", "--timeout", "--port", "--out-format", "--log-file", "-T", "--temp-dir",
+		"--partial-dir", "--chmod", "--chown", "-M", "--remote-option", "--max-size", "--min-size", "--modify-window")
+	boolFlags := set("-a", "--archive", "-v", "--verbose", "-r", "--recursive", "-z", "--compress",
+		"-P", "--progress", "--partial", "-u", "--update", "-n", "--dry-run", "--delete", "--delete-after",
+		"--delete-excluded", "-x", "--one-file-system", "-l", "-p", "-t", "-g", "-o", "-D", "-H", "-A", "-X",
+		"-S", "-W", "--numeric-ids", "-q", "--quiet", "-h", "--human-readable", "-c", "--checksum",
+		"--existing", "--ignore-existing", "-R", "--relative", "-L", "--copy-links", "-k", "-K")
+	return extractRemoteCopy(args, valueFlags, boolFlags)
+}
+
+// extractRemoteCopy is the shared SRC... DEST extractor for scp/rsync.
+func extractRemoteCopy(args []string, valueFlags, boolFlags map[string]struct{}) extraction {
+	pos, _, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
+	ext := extraction{applies: true, recognized: recognized}
+	if len(pos) < minSpecAndTarget {
+		ext.recognized = false
+		return ext
+	}
+	dest := pos[len(pos)-1]
+	if isRemoteTerminus(dest) {
+		// Upload to a remote location: there is no local path to zone-classify; the
+		// egress floor (Medium) applies.
+		ext.remoteEgress = true
+		return ext
+	}
+	ext.operands = append(ext.operands, rawOperand{raw: dest, role: risktypes.OperandRoleWrite})
+	return ext
+}
+
+// extractSftp treats sftp as a network egress: its actual writes live in an
+// interactive session or a -b batch file, not in argv, so there is no local path
+// to zone-classify and the egress Medium floor applies.
+func extractSftp(args []string) extraction {
+	_ = args
+	return extraction{applies: true, recognized: true, remoteEgress: true}
 }
 
 // operandFloor returns the operation-specific risk floor for one operand (and the

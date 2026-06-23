@@ -994,3 +994,19 @@ func TestClassify_DistinctReasonCodes(t *testing.T) {
 		})
 	}
 }
+
+// TestHasNetworkArguments_DoubleColonNotMatched pins that the global
+// network-argument check does NOT match "::" forms (a bare rsync module, or
+// unrelated language tokens like std::string). The rsync daemon bare-module
+// terminus is recognized only inside the rsync data-transfer extractor, so an
+// unprofiled command carrying a "::" argument is never misclassified as a network
+// operation.
+func TestHasNetworkArguments_DoubleColonNotMatched(t *testing.T) {
+	for _, arg := range []string{"host::module", "std::string", "HTTP::Tiny", "Namespace::Class"} {
+		assert.False(t, HasNetworkArguments([]string{arg}),
+			"%q must not be treated as a network argument globally", arg)
+	}
+	// Forms with a real path part are still detected.
+	assert.True(t, HasNetworkArguments([]string{"host:/abs/path"}))
+	assert.True(t, HasNetworkArguments([]string{"https://example.com/x"}))
+}

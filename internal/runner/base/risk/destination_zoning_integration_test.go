@@ -116,6 +116,45 @@ func TestAxis2NonFileOpUnaffected(t *testing.T) {
 	}
 }
 
+// TestDataTransferWriteComposition: the final risk of a data-transfer command is
+// the max of its name-based egress Medium and its write destination's zone.
+func TestDataTransferWriteComposition(t *testing.T) {
+	wd := filepath.Join(t.TempDir(), "work")
+	require.NoError(t, os.MkdirAll(wd, 0o700))
+	ev := newZoningEvaluator(wd, zoningForeignIdent())
+
+	// (i) Download into a safe-zone: the write destination is Low, so the Medium
+	// comes only from the name-based egress (curl's network profile). Asserting the
+	// reason code avoids the canary trap of matching the level alone.
+	safe := evalAssessInDir(t, ev, "curl", []string{"http://example.com/f", "-o", filepath.Join(wd, "safe")}, wd)
+	assert.Equal(t, runnertypes.RiskLevelMedium, safe.Level)
+	assert.Contains(t, safe.ReasonCodes, risktypes.ReasonProfileNetwork,
+		"the Medium must come from the name-based egress, not only the level")
+
+	// (ii) Download into a trust-critical path: the write destination dominates.
+	assert.Equal(t, runnertypes.RiskLevelHigh,
+		evalLevelInDir(t, ev, "curl", []string{"http://example.com/f", "-o", "/usr/bin/x"}, wd),
+		"a trust-critical write destination is High")
+
+	// rsync to a daemon bare module (host::module) is remote egress -> Medium, sourced
+	// from axis-2's network-egress floor (the global network-arg check misses a bare
+	// module).
+	mod := evalAssessInDir(t, ev, "rsync", []string{filepath.Join(wd, "src"), "host::module"}, wd)
+	assert.Equal(t, runnertypes.RiskLevelMedium, mod.Level)
+	assert.Contains(t, mod.ReasonCodes, risktypes.ReasonNetworkArgument)
+
+	// A purely local rsync into a safe-zone is not over-classified (no false egress).
+	require.NoError(t, os.MkdirAll(filepath.Join(wd, "a"), 0o700))
+	assert.Equal(t, runnertypes.RiskLevelLow,
+		evalLevelInDir(t, ev, "rsync", []string{filepath.Join(wd, "a"), filepath.Join(wd, "b")}, wd),
+		"local rsync into a safe-zone stays Low")
+
+	// A local rsync into a trust-critical destination is High (write zone dominates).
+	assert.Equal(t, runnertypes.RiskLevelHigh,
+		evalLevelInDir(t, ev, "rsync", []string{filepath.Join(wd, "a"), "/usr/bin/x"}, wd),
+		"local rsync into a trust-critical destination is High")
+}
+
 // TestOperandZonesStored: the per-operand audit records are carried on the
 // assessment for a file operation, and absent for a non-file-operation command.
 func TestOperandZonesStored(t *testing.T) {

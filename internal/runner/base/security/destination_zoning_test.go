@@ -560,6 +560,40 @@ func TestACLGrantsWrite_DefaultEntry(t *testing.T) {
 	assert.False(t, aclGrantsWrite("u:alice:rwx"), "a user ACL is not a group/other grant")
 }
 
+// --- data-transfer write destination (axis-2 contribution) ---
+
+func TestDataTransferWrite(t *testing.T) {
+	wd := zoningWorkdir(t)
+	in := zoningInput(wd, foreignIdent())
+
+	// curl/wget local write destination is zone-classified (egress Medium is added
+	// at the evaluator layer by the network profile, not here).
+	assert.Equal(t, runnertypes.RiskLevelLow,
+		classify(in, "curl", "http://x/y", "-o", filepath.Join(wd, "f")).Level)
+	assert.Equal(t, runnertypes.RiskLevelHigh,
+		classify(in, "curl", "-o", "/usr/bin/x", "http://x/y").Level)
+	assert.Equal(t, runnertypes.RiskLevelHigh,
+		classify(in, "wget", "-O", "/etc/cron.d/x", "http://x/y").Level)
+
+	// rsync to a remote daemon bare module: remote egress Medium (no local zone).
+	mod := classify(in, "rsync", filepath.Join(wd, "src"), "host::module")
+	assert.Equal(t, runnertypes.RiskLevelMedium, mod.Level)
+	assert.Contains(t, mod.ReasonCodes, risktypes.ReasonNetworkArgument)
+	assert.Empty(t, mod.Operands, "a remote destination has no local operand to zone")
+
+	// rsync to a remote host:path is likewise remote egress.
+	assert.Equal(t, runnertypes.RiskLevelMedium,
+		classify(in, "rsync", filepath.Join(wd, "src"), "host:/remote/path").Level)
+
+	// Purely local rsync into a safe-zone is not over-classified.
+	assert.Equal(t, runnertypes.RiskLevelLow,
+		classify(in, "rsync", filepath.Join(wd, "a"), filepath.Join(wd, "b")).Level)
+
+	// Local rsync into a trust-critical destination is High.
+	assert.Equal(t, runnertypes.RiskLevelHigh,
+		classify(in, "rsync", filepath.Join(wd, "a"), "/usr/bin/x").Level)
+}
+
 // --- carrier empty vs applied-but-unresolved ---
 
 func TestOperandZones_EmptyVsUnresolved(t *testing.T) {
