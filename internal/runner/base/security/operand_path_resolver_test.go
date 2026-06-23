@@ -76,7 +76,9 @@ func TestResolveOperandPath_NonexistentLeaf(t *testing.T) {
 	assert.Equal(t, filepath.Join(root, "a", "b", "c"), got2)
 }
 
-// TestResolveOperandPath_Cycle asserts a symlink cycle fails closed with an error.
+// TestResolveOperandPath_Cycle asserts a true symlink cycle fails closed: the hop
+// counter bounds the loop (no visited-node set, which would false-positive on
+// legitimately repeated nodes).
 func TestResolveOperandPath_Cycle(t *testing.T) {
 	root := tempRoot(t)
 	a := filepath.Join(root, "a")
@@ -87,6 +89,22 @@ func TestResolveOperandPath_Cycle(t *testing.T) {
 	_, err := ResolveOperandPath(a, "", MaxSymlinkDepth)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrOperandResolution)
+}
+
+// TestResolveOperandPath_RepeatedSymlinkNode is the regression for the cycle
+// false-positive: a single symlink that a path legitimately traverses more than
+// once must resolve, not be rejected. With `link -> .` (a self-referential dir
+// symlink), `link/link/link/x` resolves to the real `x` under root.
+func TestResolveOperandPath_RepeatedSymlinkNode(t *testing.T) {
+	root := tempRoot(t)
+	link := filepath.Join(root, "link")
+	require.NoError(t, os.Symlink(".", link)) // link -> its own parent (root)
+	target := filepath.Join(root, "x")
+	require.NoError(t, os.WriteFile(target, nil, 0o644))
+
+	got, err := ResolveOperandPath(filepath.Join(link, "link", "link", "x"), "", MaxSymlinkDepth)
+	require.NoError(t, err)
+	assert.Equal(t, target, got)
 }
 
 // TestResolveOperandPath_DepthExceeded asserts a chain longer than maxHops fails

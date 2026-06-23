@@ -94,7 +94,6 @@ func (r *operandResolver) resolve(operand, base string, maxHops int) (string, er
 	// "." or ".." elements to special-case.
 	components := splitAbs(path)
 	dest := string(filepath.Separator)
-	visited := make(map[string]struct{})
 	hops := 0
 
 	for i := 0; i < len(components); i++ {
@@ -128,16 +127,17 @@ func (r *operandResolver) resolve(operand, base string, maxHops int) (string, er
 			continue
 		}
 
-		// Symlink: follow it. Count the hop and guard against cycles and runaway
-		// chains so the hot path cannot be driven into unbounded filesystem I/O.
+		// Symlink: follow it. The hop counter alone bounds both runaway chains and
+		// true cycles, so the hot path cannot be driven into unbounded filesystem
+		// I/O. A visited-node set is deliberately NOT used: the same symlink node
+		// can be traversed more than once on a legitimate, terminating path (e.g.
+		// `/a/b -> /a` makes `/a/b/b/b` resolve to `/a`), so flagging a repeat node
+		// as a cycle would be a false positive. This mirrors filepath.EvalSymlinks,
+		// which likewise bounds resolution by a link-walk counter, not a visited set.
 		hops++
 		if hops > maxHops {
 			return "", fmt.Errorf("%w: symlink depth exceeded at %q", ErrOperandResolution, node)
 		}
-		if _, seen := visited[node]; seen {
-			return "", fmt.Errorf("%w: symlink cycle at %q", ErrOperandResolution, node)
-		}
-		visited[node] = struct{}{}
 
 		target, err := r.readlink(node)
 		if err != nil {
