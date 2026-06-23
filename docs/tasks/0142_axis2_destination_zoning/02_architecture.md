@@ -564,10 +564,22 @@ High に分類している既存 5 系統の破壊系 High 寄与を評価対象
     の `ReasonCodes` に 0141 名前下限由来の理由コードが含まれること、または既存 Medium profile を持たないデータ送信
     書込形を選んで「Medium への唯一の経路が名前下限である」状況で検証する。
 - **前提**: 0141 の名前による Medium 下限がリスク評価ロジックに組み込み済みであること（完了済み。§前文）。
-- **`rsync` 二重コロン記法の隙間（メモ）**: 0141 の `hasNetworkArguments` は rsync デーモンの bare module
-  （`rsync src host::module`）を取りこぼしうる。本タスクで rsync の宛先合成を実装する際、リモート書込先オペランド
-  抽出とあわせて `host::module` 検出の追加を検討する（`rsync` 全体を無条件 Medium に上げるより、過剰分類を起こさず
-  隙間だけ塞ぐ）。これは 0141 のコマンド名分類スコープ外のため本タスクで扱う（AC-16 検討事項）。
+- **`rsync` 二重コロン記法の隙間（本タスクで確定して塞ぐ）**: 既存の `hasNetworkArguments` が検出するリモート終端は
+  `://`・`user@host:path`・`host:path`（`/` または `~` を含むパス）であり、rsync デーモンの**二重コロン bare module 形
+  `host::module`**（末尾パス無し。`host::module/path` は `/` を含むため既に検出される）を取りこぼす。これにより
+  `rsync src host::module` はリモート書込にもかかわらず egress（名前ベース Medium）が立たず Low になりうる。本タスクは
+  この隙間を**確定して塞ぐ**（AC-16 の所掌。0141 のコマンド名分類スコープ外）。確定する設計は次のとおり:
+  - **(1) 宛先オペランド抽出（`KindDataTransferWrite` の rsync）でリモート終端を判定する**: `host:path`・
+    `user@host:path`・`rsync://…` に加え `host::module` をリモート宛先として認識する。リモート宛先のときは zone 判定の
+    対象となるローカルパスが無いため、実効レベルは egress（名前ベース Medium）が支配する（ローカル宛先のときのみ
+    書込先のパス信頼区分と max 合成する）。
+  - **(2) `hasNetworkArguments` に `host::module` 検出を追加する**: 二重コロンの左側がホスト名様トークン
+    （`[A-Za-z0-9.-]+`）で右側がモジュール名様トークンの形（`host::module`）を検出条件に加える。これにより
+    `rsync src host::module` が egress Medium に分類される。**過剰分類を避けるための限定**: 左側をホスト名文字に限定し、
+    `s/::/.../` のような `/` を含むトークンや C++ スコープ様の式を巻き込まない。なお誤検出が起きても引き上げは Medium
+    までで安全側（fail-safe）。`rsync` 全体を無条件 Medium へ格上げはしない（過剰分類を起こさず隙間だけ塞ぐ）。
+  - **必須テスト**: `rsync src host::module` が Medium（egress 由来。理由コードで出所を表明）、純ローカル `rsync /a /b` が
+    Low（過剰分類しない）、`rsync /local /usr/bin/x`（ローカル trust-critical 宛先）が High（書込先区分が支配）。
 
 ### 3.6 config 組み込みと identity 注入（AC-20, AC-21）
 
@@ -640,6 +652,7 @@ type SecuritySpec struct {
 | `internal/runner/base/risktypes/reason_codes.go` | 変更 | 判断軸2 の `ReasonCode` family を追加（§4）。網羅性/一意性テストを緑に保つ | NF-001 | `reason_codes_test.go::TestReasonCodes_AllDistinct`（新コードを登録） |
 | `internal/runner/base/security/destination_zoning.go` | 新規 | `LocationKind`/`ZoningInput`/`LocationResult`・オペランド抽出仕様表・区分判定・操作固有の下限・`ClassifyDestinationZone` | AC-01〜AC-16 | — |
 | `internal/runner/base/security/operand_path_resolver.go` | 新規 | symlink 追従の専用リゾルバ（leaf＋親・深さ制限・メモ化）・Trusted 述語 | AC-04, AC-23 | — |
+| `internal/runner/base/security/network_analyzer.go`（`hasNetworkArguments`）／`command_analysis.go`（`containsSSHStyleAddress`） | 変更 | rsync デーモンの `host::module` 形をリモート終端として検出（§3.5）。ホスト名様左側に限定し過剰分類を避ける | AC-16 | `network_analyzer_test.go`／`command_analysis_test.go`（`host::module`=リモート、純ローカルは非ネットワークの回帰追加） |
 | `internal/runner/base/security/types.go` | 変更 | `Config` に `TrustedDirectories []string` を追加 | AC-20 | — |
 | `internal/runner/base/risk/evaluator.go` | 変更 | `evaluateDimensions` に判断軸2 を組み込み、完全認識時に既存 5 系統を抑止し `LocationResult` を唯一の寄与に。`NewStandardEvaluator` に `*security.Config` 引数追加。`RunAsIdent` 注入フィールド | AC-17, AC-18, AC-20, AC-21 | `coreutils_consistency_test.go::{TestConsistency_RmAllForms,TestConsistency_DestructiveAbsolutePath,TestCoreutilsRiskConsistency_Setuid}`、`evaluator_test.go`（破壊系ケース） |
 | `internal/runner/runner.go` | 変更 | `security.Config` に `TrustedDirectories` を転送し、呼び出し鎖（`createResourceManager`・両 `create*ResourceManager`・`resolveRiskEvaluator`）へ securityConfig を通して `NewStandardEvaluator` へ渡す（§3.6）。normal/dry-run の両経路に同一に渡す | AC-20, AC-22 | — |
