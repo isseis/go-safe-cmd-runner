@@ -189,14 +189,29 @@ func (r *operandResolver) isTrustedOperand(resolved, origin string, trustedDirs 
 	if resolved == "" || origin == "" {
 		return false
 	}
-	if !withinAnyDir(resolved, trustedDirs) {
+	// Both must be absolute: a relative origin would make the filepath.Dir ascent
+	// terminate at "." and skip the real system ancestors (/, /home, ...), and a
+	// relative resolved cannot be reasoned about. Fail closed.
+	if !filepath.IsAbs(resolved) || !filepath.IsAbs(origin) {
+		return false
+	}
+	cleanResolved := filepath.Clean(resolved)
+	cleanOrigin := filepath.Clean(origin)
+	// The operand must actually be inside (or equal to) the safe-zone anchor;
+	// otherwise the ancestor check would inspect an unrelated directory's chain and
+	// could wrongly mark it Trusted. This guards the predicate's own precondition so
+	// callers cannot misuse it.
+	if cleanResolved != cleanOrigin && !common.IsPathWithinDirectory(cleanResolved, cleanOrigin) {
+		return false
+	}
+	if !withinAnyDir(cleanResolved, trustedDirs) {
 		return false
 	}
 
 	// Clean origin so a trailing separator does not make filepath.Dir return the
 	// origin directory itself (which is intentionally excluded from the check)
 	// instead of its parent.
-	dir := filepath.Dir(filepath.Clean(origin))
+	dir := filepath.Dir(cleanOrigin)
 	for {
 		info, err := r.lstat(dir)
 		if err != nil {
@@ -229,21 +244,29 @@ func withinAnyDir(path string, dirs []string) bool {
 	return false
 }
 
-// isWritableByRunAs reports whether the run-as identity could write to (create,
-// rename, or delete entries in) the file described by info. It follows the
-// group/other write-bit logic of checkWritePermission, including the sticky-bit
-// exemption: a world-writable directory with the sticky bit set (e.g. /tmp) does
-// not let the identity rename or delete entries it does not own, so it is not a
-// repoint risk. Ownership by the identity is itself treated as writable. Group
-// membership is read from the precomputed RunAsIdent (no live system lookup). If
-// ownership cannot be determined the result is true (writable) so the caller fails
-// closed to "not Trusted".
+// isWritableByRunAs reports whether the run-as identity could repoint the entry
+// described by info (rename or delete it, or chmod it to gain write) and thereby
+// redirect the safe-zone anchor. It is NOT a general "can create here" check: a
+// sticky world-writable directory (e.g. /tmp) allows creating new entries but not
+// renaming or deleting entries owned by others, so it is not a repoint risk and is
+// reported as non-writable. Group membership is read from the precomputed
+// RunAsIdent (no live system lookup). If ownership cannot be determined the result
+// is true so the caller fails closed to "not Trusted".
 func isWritableByRunAs(info fs.FileInfo, ident risktypes.RunAsIdent) bool {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return true
 	}
 	mode := info.Mode()
+
+	// root bypasses permission bits and can repoint any entry, and a non-root owner
+	// of any ancestor could swap a symlink that root then follows. So under a root
+	// run-as every ancestor is treated as writable: the Trusted predicate is
+	// intentionally degenerate (a root command never earns the safe-zone Low; see
+	// architecture 3.6) rather than fail open.
+	if ident.UID == 0 {
+		return true
+	}
 
 	// Ownership alone is a repoint risk: the owner can always chmod the entry to
 	// grant itself write, so an ancestor owned by the run-as identity is treated

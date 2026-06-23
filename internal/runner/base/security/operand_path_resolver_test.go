@@ -269,6 +269,25 @@ func TestTrustedPredicate(t *testing.T) {
 	assert.False(t, r.isTrustedOperand("/etc/passwd", origin, trustedDirs, identOther),
 		"a path outside the trusted dirs should not be Trusted")
 
+	// Inside the trusted dirs but NOT inside the safe-zone origin: the predicate
+	// must not Trust it (it would otherwise inspect an unrelated ancestor chain).
+	sibling := filepath.Join(root, "sibling")
+	assert.False(t, r.isTrustedOperand(sibling, origin, trustedDirs, identOther),
+		"a path outside the safe-zone origin should not be Trusted")
+
+	// A relative origin or resolved path fails closed (the ancestor ascent would
+	// otherwise terminate at "." and skip real system ancestors).
+	assert.False(t, r.isTrustedOperand("relative/file", origin, trustedDirs, identOther),
+		"a relative resolved path should not be Trusted")
+	assert.False(t, r.isTrustedOperand(resolved, "relative/origin", trustedDirs, identOther),
+		"a relative origin should not be Trusted")
+
+	// A root run-as is intentionally degenerate: root can write anywhere, so no
+	// operand is Trusted regardless of ancestor ownership/permissions.
+	identRoot := risktypes.RunAsIdent{UID: 0, GID: 0}
+	assert.False(t, r.isTrustedOperand(resolved, origin, trustedDirs, identRoot),
+		"a root run-as should never earn the safe-zone Low")
+
 	// Making origin's parent world-writable without a sticky bit makes the foreign
 	// identity able to repoint the anchor: no longer Trusted.
 	require.NoError(t, os.Chmod(root, 0o777))
