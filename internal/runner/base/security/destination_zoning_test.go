@@ -223,11 +223,14 @@ func TestFloor_PermissionGrant(t *testing.T) {
 
 	assert.Equal(t, runnertypes.RiskLevelHigh, classify(in, "chmod", "u+s", safe).Level, "setuid grant")
 	assert.Equal(t, runnertypes.RiskLevelHigh, classify(in, "chmod", "0777", safe).Level, "world-writable")
+	assert.Equal(t, runnertypes.RiskLevelHigh, classify(in, "chmod", "04755", safe).Level, "leading-zero octal setuid")
+	assert.Equal(t, runnertypes.RiskLevelHigh, classify(in, "chmod", "02755", safe).Level, "leading-zero octal setgid")
 	assert.Equal(t, runnertypes.RiskLevelHigh, classify(in, "chown", "root", "/usr/bin/x").Level, "trust-critical ownership change")
 	assert.Equal(t, runnertypes.RiskLevelHigh, classify(in, "chattr", "-i", safe).Level, "immutable attribute change")
 
 	// A non-granting chmod on a safe-zone file stays Low.
 	assert.Equal(t, runnertypes.RiskLevelLow, classify(in, "chmod", "0644", safe).Level, "plain mode in safe-zone")
+	assert.Equal(t, runnertypes.RiskLevelLow, classify(in, "chmod", "0755", safe).Level, "leading-zero non-granting mode in safe-zone")
 }
 
 // --- install permission flags ---
@@ -351,6 +354,39 @@ func TestOperandSpecific_Find(t *testing.T) {
 
 	assert.Equal(t, runnertypes.RiskLevelHigh, classify(in, "find", wd, "-fprintf", "/usr/bin/out", "%p").Level,
 		"find -fprintf to a trust-critical destination is High")
+}
+
+// --- tar extraction is recognized (so the legacy-High downgrade path is live) ---
+
+func TestTarExtractRecognized(t *testing.T) {
+	wd := zoningWorkdir(t)
+	in := zoningInput(wd, foreignIdent())
+
+	safe := classify(in, "tar", "-xf", "a.tar", "-C", wd)
+	assert.True(t, safe.Recognized, "a parseable tar extract must be fully recognized")
+	assert.Equal(t, runnertypes.RiskLevelLow, safe.Level, "extracting into a Trusted safe-zone is Low")
+
+	bundled := classify(in, "tar", "xzf", "a.tar", "-C", wd)
+	assert.True(t, bundled.Recognized, "a dash-less bundled mode (xzf) is recognized")
+	assert.Equal(t, runnertypes.RiskLevelLow, bundled.Level)
+
+	crit := classify(in, "tar", "--extract", "--file", "a.tar", "-C", "/usr/local")
+	assert.True(t, crit.Recognized)
+	assert.Equal(t, runnertypes.RiskLevelHigh, crit.Level, "extracting into /usr is trust-critical High")
+}
+
+// --- mknod creates the named node (only NAME is a path operand) ---
+
+func TestOperandSpecific_Mknod(t *testing.T) {
+	wd := zoningWorkdir(t)
+	in := zoningInput(wd, foreignIdent())
+
+	assert.Equal(t, runnertypes.RiskLevelHigh, classify(in, "mknod", "/dev/foo", "c", "1", "3").Level,
+		"creating a node under /dev is trust-critical High")
+	assert.Equal(t, runnertypes.RiskLevelLow, classify(in, "mknod", filepath.Join(wd, "node"), "c", "1", "3").Level,
+		"a node in a Trusted safe-zone is Low; TYPE/MAJOR/MINOR are not path operands")
+	assert.Equal(t, runnertypes.RiskLevelHigh, classify(in, "mknod", "-m", "4755", filepath.Join(wd, "node"), "c", "1", "3").Level,
+		"mknod -m setuid grants permission -> High")
 }
 
 // --- carrier empty vs applied-but-unresolved ---

@@ -3,6 +3,7 @@ package security
 import (
 	"io/fs"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -49,13 +50,6 @@ const minACLFields = 3
 // attribute letter.
 const minChattrModeLen = 2
 
-// Octal chmod mode lengths: three permission digits, optionally preceded by a
-// special digit (setuid/setgid/sticky).
-const (
-	octalModeLen            = 3
-	octalModeLenWithSpecial = 4
-)
-
 func set(items ...string) map[string]struct{} {
 	m := make(map[string]struct{}, len(items))
 	for _, it := range items {
@@ -101,6 +95,7 @@ var zoningSpecs = map[string]commandSpec{
 	"tar":     {KindArchiveExtract, extractTar},
 	"unzip":   {KindArchiveExtract, extractUnzip},
 	"dd":      {KindDeviceIO, extractDD},
+	"mknod":   {KindWriteFile, extractMknod},
 	"mount":   {KindMount, extractMount},
 	"umount":  {KindMount, extractUmount},
 	"chmod":   {KindPermission, extractChmod},
@@ -421,7 +416,10 @@ func extractInstall(args []string) extraction {
 func extractTar(args []string) extraction {
 	valueFlags := set("-f", "--file", "-C", "--directory", "--one-top-level")
 	boolFlags := set("-v", "--verbose", "-z", "--gzip", "-j", "--bzip2", "-J", "--xz", "-p",
-		"--preserve-permissions", "-k", "--keep-old-files", "--no-same-owner", "-m", "--touch")
+		"--preserve-permissions", "-k", "--keep-old-files", "--no-same-owner", "-m", "--touch",
+		// Mode letters/long forms, so a recognized extract form (e.g. -xf, --extract)
+		// is not falsely treated as unparsed and floored to High.
+		"-x", "-t", "-c", "--extract", "--get", "--list", "--create")
 	// tar accepts a leading bundled mode token without a dash (e.g. "xzf").
 	mode := tarMode(args)
 
@@ -533,6 +531,25 @@ func extractDD(args []string) extraction {
 			ext.operands = append(ext.operands, rawOperand{raw: val, role: risktypes.OperandRoleRead})
 		}
 	}
+	return ext
+}
+
+func extractMknod(args []string) extraction {
+	valueFlags := set("-m", "--mode", "-Z", "--context")
+	boolFlags := set("-v", "--verbose")
+	pos, captured, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
+	ext := extraction{applies: true, recognized: recognized}
+	for _, m := range append(append([]string{}, captured["-m"]...), captured["--mode"]...) {
+		if chmodGrantsHigh(m) {
+			ext.grantsPermission = true
+		}
+	}
+	// mknod NAME TYPE [MAJOR MINOR]: only NAME is a path operand.
+	if len(pos) == 0 {
+		ext.recognized = false
+		return ext
+	}
+	ext.operands = append(ext.operands, rawOperand{raw: pos[0], role: risktypes.OperandRoleWrite})
 	return ext
 }
 
@@ -869,18 +886,19 @@ func chmodGrantsHigh(mode string) bool {
 		return false
 	}
 	if isOctal(mode) {
-		switch len(mode) {
-		case octalModeLenWithSpecial:
-			special := mode[0] - '0'
-			if special&0o6 != 0 { // setuid (4) or setgid (2)
-				return true
-			}
-			return (mode[3]-'0')&0o2 != 0 // world-write
-		case octalModeLen:
-			return (mode[2]-'0')&0o2 != 0
-		default:
+		// Parse numerically so any digit count (3, 4, or a leading-zero 5 like
+		// 04755) is handled: a missed special/world-write bit would be a
+		// setuid/world-writable grant escaping the High floor (fail-open).
+		v, err := strconv.ParseInt(mode, 8, 32)
+		if err != nil {
 			return false
 		}
+		const (
+			setuidBit     = 0o4000
+			setgidBit     = 0o2000
+			worldWriteBit = 0o0002
+		)
+		return v&(setuidBit|setgidBit) != 0 || v&worldWriteBit != 0
 	}
 	// Symbolic: an added/assigned setuid/setgid bit, or world-write for a clause
 	// whose "who" includes other or all.
