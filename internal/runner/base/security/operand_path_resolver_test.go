@@ -169,6 +169,45 @@ func TestMemoizationLinear(t *testing.T) {
 	assert.Less(t, lstatN, naiveN, "memoization must reduce the call count")
 }
 
+// TestMemoizationSymlinkParentNotFolded locks in the memo's documented scope: only
+// existing non-symlink nodes are memoized, so a shared symlink parent is followed
+// once per operand (readlink == K) rather than folded. Cost stays bounded and
+// linear in K; it is not the symlink-free D+K of TestMemoizationLinear.
+func TestMemoizationSymlinkParentNotFolded(t *testing.T) {
+	root := tempRoot(t)
+	realDir := filepath.Join(root, "real")
+	require.NoError(t, os.MkdirAll(realDir, 0o755))
+	link := filepath.Join(root, "link")
+	require.NoError(t, os.Symlink(realDir, link)) // absolute target
+
+	const k = 5
+	operands := make([]string, k)
+	for i := range k {
+		require.NoError(t, os.WriteFile(filepath.Join(realDir, fmt.Sprintf("f%d", i)), nil, 0o644))
+		operands[i] = filepath.Join(link, fmt.Sprintf("f%d", i))
+	}
+
+	var lstatN, readlinkN int
+	r := newOperandResolver(
+		func(p string) (fs.FileInfo, error) { lstatN++; return os.Lstat(p) },
+		func(p string) (string, error) { readlinkN++; return os.Readlink(p) },
+	)
+	for i, op := range operands {
+		got, err := r.resolve(op, "", MaxSymlinkDepth)
+		require.NoError(t, err)
+		assert.Equal(t, filepath.Join(realDir, fmt.Sprintf("f%d", i)), got,
+			"a symlink parent must resolve to the real target")
+	}
+
+	// The symlink node is never memoized, so it is read once per operand.
+	assert.Equal(t, k, readlinkN, "shared symlink parent is followed once per operand")
+	// Exact lstat budget: op0 walks root (depth d0) + link + real + f0 = d0+3;
+	// each later operand replays root/real from the memo and only lstats link + its
+	// leaf = 2. Total d0 + 3 + 2*(K-1).
+	d0 := len(splitAbs(root))
+	assert.Equal(t, d0+3+2*(k-1), lstatN, "symlink parent is re-walked but real nodes stay memoized")
+}
+
 // TestTrustedPredicate is the differential for the Trusted predicate: the verdict
 // depends on the injected RunAsIdent (not the live euid that owns the fixtures)
 // and on the writability of origin's ancestors.
