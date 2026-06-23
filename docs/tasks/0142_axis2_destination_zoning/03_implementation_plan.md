@@ -215,61 +215,68 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/782）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: オペランド抽出仕様表＋区分判定＋操作固有の下限（AC-01〜AC-15）
 
 **変更ファイル**:
-- 新規 `internal/runner/base/security/destination_zoning.go`
+- 新規 `internal/runner/base/security/destination_zoning.go`（型・オーケストレーション・区分判定）
+- 新規 `internal/runner/base/security/destination_zoning_spec.go`（コマンド仕様テーブル・抽出・操作固有の下限）
 - 新規 `internal/runner/base/security/destination_zoning_test.go`
-- 変更（必要時）`internal/runner/base/security/test_helpers_zoning.go`
+- `test_helpers_zoning.go` は作成せず（共有ヘルパは既存 `_test.go`（`tempRoot`・`cmdNameSet`）で足りる）
 
 **作業内容**:
-- [ ] `LocationKind`（`KindNone`〜`KindDataTransferWrite`）・`ZoningInput`・`LocationResult` を定義（設計 §3.2）。
-- [ ] コマンド→`LocationKind`→オペランド抽出規則を**単一の仕様テーブル**として実装（AC-06／根本原因1、設計 §3.2）。
+- [x] `LocationKind`（`KindNone`〜`KindDataTransferWrite`）・`ZoningInput`・`LocationResult` を定義（設計 §3.2）。
+      `ZoningInput` に `OutputCriticalPathPatterns`（機密複製の下限の判定集合）を注入フィールドとして追加（純関数化のため。設計 §3.2 更新済み）。
+- [x] コマンド→`LocationKind`→オペランド抽出規則を**単一の仕様テーブル**（`zoningSpecs`）として実装（AC-06／根本原因1、設計 §3.2）。
       対象コマンドは要件 §F-002（cp/mv/rm/rmdir/unlink/shred/ln/mkdir/touch/install/tee/sponge/truncate/`sed -i`/tar/
-      unzip/dd/mount/umount/chmod/chown/chgrp/setfacl/chattr/find＋データ送信書込形）。難所のエントリは要件 §F-002 の表を正とする。
-- [ ] 各オペランドに `OperandRole`（write/read）を付与する（unresolved の非対称下限のため、AC-05）。
-- [ ] `ClassifyDestinationZone(input ZoningInput, names map[string]struct{}, cmdPath string, args []string) LocationResult`
+      unzip/dd/mount/umount/chmod/chown/chgrp/setfacl/chattr/find）。データ送信書込形（`KindDataTransferWrite`）は型のみ定義し
+      抽出は P5。難所のエントリは要件 §F-002 の表を正とする。
+- [x] 各オペランドに `OperandRole`（write/read）を付与する（unresolved の非対称下限のため、AC-05）。
+- [x] `ClassifyDestinationZone(input ZoningInput, names map[string]struct{}, cmdPath string, args []string) LocationResult`
       を実装（設計 §3.2）。抽出→`ResolveOperandPath` で解決→区分判定→操作固有の下限→全オペランド max。
-      1 コマンド評価につき `operandResolver` を 1 つ生成し全オペランドで共有（メモ化で `lstat`/`readlink` を畳む）。
-- [ ] （PR-2 レビュー由来の繰り越し）`isTrustedOperand` の祖先書込可否を `operandResolver` にキャッシュし、K オペランドで
-      `origin` 祖先（深さ Do）への `lstat` が重複しないようにする。**鍵には identity を含める**（または resolver インスタンスを
-      単一 identity にスコープする）。鍵を dir のみにすると、同一 resolver を異なる `RunAsIdent` で問い合わせたとき
-      stale な書込可否を返し Trusted 判定を誤る（PR-2 で却下した dir-only 案の不具合）。本キャッシュの線形コストは下の
-      解決コスト上限テストで担保する。
-- [ ] パス信頼区分の判定（AC-01〜AC-05）: trust-critical（`SystemCriticalPaths` 一致/配下、`/` は完全一致のみ）→High、
-      ordinary→Medium、safe-zone（Trusted→Low／非 Trusted→Medium フォールバック）、unresolved（write=High・read=Medium）。
-      safe-zone が trust-critical と重複/配下のときは trust-critical 優先（AC-04(c)）。
-- [ ] 操作固有の下限を区分判定後に上乗せ（safe-zone でも Low に降格しない、AC-08〜AC-12、設計 §3.2 表）:
-  - [ ] 権限/所有権/属性付与（setuid/setgid・world-writable・trust-critical 所有権変更・`chattr -i`）→ High（AC-08, AC-09）。
-        setuid/setgid シグナルは `hasSetuidOrSetgidBit` を**流用**（再パースしない、設計 §3.2 注）。
-  - [ ] `dd` デバイス IO（`if=`/`of=` がブロック/危険キャラクタデバイス。`/dev/null`・`/dev/zero` 除外）→ High。機密/
-        trust-critical な `if=` は Medium 下限。パス文字列でなくデバイス種別で判定（AC-10）。
-  - [ ] safe-zone 外への再帰（`rm -r`/`cp -R`/`-a` 等が外へ及ぶ）→ High（AC-11）。
-  - [ ] 機密ファイル複製（コピー元が機密/trust-critical）→ Medium 下限（読み取り元、AC-12）。判定集合は既存
-        `Config.OutputCriticalPathPatterns` を流用（設計 §3.2 注、DRY）。
-- [ ] コマンド別オペランド特則を実装（AC-12〜AC-15、設計 §3.2／要件 §F-003(b)）: mv/ln の移動元/リンク元、`cp -p`/`-a` の
-      特権メタデータ複製 High、mount/umount（mountpoint＋マウント元、`umount -a` 無条件 High）、tee/sponge（全 FILE max）、
-      find（`-delete`/`-fprint*` の宛先判定、`-exec` 系の内側実行は本タスク対象外＝0141/既存）。
-- [ ] `LocationResult.Recognized` を計算（完全認識: 全オペランドが非 `ZoneUnresolved` かつ全 argv を解析しきった、設計 §3.4）。
-      未解析トークン/未知の値取りフラグが残れば `Recognized=false`＋`ZoneUnresolved` 下限。
-- [ ] 各オペランドの判定を `[]OperandZone`（Index/Raw/Resolved/Zone/Role/MatchedCritical/Trusted/UnresolvedErr）として記録し
+      1 コマンド評価につき `operandResolver` を 1 つ生成し全オペランドで共有（メモ化で `lstat`/`readlink` を畳む）。デバイス種別判定の
+      テスト注入のため、resolver を受け取る内部 `classifyDestinationZone` を分離（公開 API は実 os resolver を生成）。
+- （P7 へ繰り越し / PR-2 レビュー由来。本項は P3 の作業対象外のため task checkbox を付けない）`isTrustedOperand` の
+      祖先書込可否キャッシュは P7（解決コスト上限テストと同居）で導入する。現状は 1 コマンド 1 resolver でパス解決はメモ化済み。
+      祖先書込可否は identity 依存のため、`operandResolver` への素朴な dir-only キャッシュは複数 identity 問い合わせ（テスト等）で
+      stale になる。鍵に identity を含めるか単一 identity スコープの確立が要るため、検証テスト（線形呼出）と合わせて P7 で導入する。
+      Do は小さく現状コストは線形に収まる。
+- [x] パス信頼区分の判定（AC-01〜AC-05）: trust-critical（`SystemCriticalPaths` 一致/配下、`/` は完全一致のみ）→**書込=High／読み取り=Medium**
+      （情報露出。設計 §6.2 の `cp /etc/shadow` 例に一致）、ordinary→Medium、safe-zone（Trusted→Low／非 Trusted→Medium フォールバック）、
+      unresolved（write=High・read=Medium）。safe-zone が trust-critical と重複/配下のときは trust-critical 優先（AC-04(c)）。
+- [x] 操作固有の下限を区分判定後に上乗せ（safe-zone でも Low に降格しない、AC-08〜AC-12、設計 §3.2 表）:
+  - [x] 権限/所有権/属性付与（setuid/setgid・world-writable・trust-critical 所有権変更・`chattr -i`）→ High（AC-08, AC-09）。
+        chmod/install の付与は argv（`chmodGrantsHigh`）から、`chattr` は属性トークンの `i` から検出。`cp -p`/`-a` の特権メタデータ源
+        （setuid/root 所有）は解決後パスを注入 `lstat` で検査（read-only）。**コマンド・バイナリ自体の setuid lstat 下限（⑤）の
+        `hasSetuidOrSetgidBit` 流用は P4 の置き換え時の例外**であり本 Phase の付与下限とは別（設計 §3.2 注／§3.4 例外）。
+  - [x] `dd` デバイス IO は**デバイス種別**で判定（パス文字列でない）: dd オペランドはゾーンでなくデバイス種別で評価し、ブロック/
+        危険キャラクタデバイス→High、無害シンク（`/dev/null`/`/dev/zero` 等）→Low（`/dev` が trust-critical でも降格可能なのは dd の
+        この経路のみ）。機密/trust-critical な `if=`（read、非デバイス）は Medium 下限（AC-10）。
+  - [x] safe-zone 外への再帰（`rm -r`/`cp -R`/`-a` 等が ordinary/trust-critical へ及ぶ）→ High（AC-11）。信頼 safe-zone 内に閉じた再帰は Low。
+  - [x] 機密ファイル複製（コピー元が機密/trust-critical）→ Medium 下限（読み取り元、AC-12）。判定集合は注入された
+        `OutputCriticalPathPatterns`（既存 `Config` 由来）を流用（設計 §3.2 注、DRY）。
+- [x] コマンド別オペランド特則を実装（AC-12〜AC-15、設計 §3.2／要件 §F-003(b)）: mv の移動元（role=write）/ln のリンク先 target
+      （trust-critical→High floor）、`cp -p`/`-a` の特権メタデータ複製 High、mount/umount（全 positional＝mountpoint＋マウント元、
+      `umount -a` 無条件 High）、tee/sponge（全 FILE max）、find（`-delete`/`-fprint*` の宛先判定、`-exec` 系の内側実行は本タスク対象外）。
+- [x] `LocationResult.Recognized` を計算（完全認識: 全 argv を解析しきった **かつ全オペランドが解決済み（非 `ZoneUnresolved`）**。
+      未解析トークン/未知フラグ、または解決不能オペランドが残れば `Recognized=false`＋不完全認識時は High 下限へ倒す、設計 §3.4）。
+- [x] 各オペランドの判定を `[]OperandZone`（Index/Raw/Resolved/Zone/Role/MatchedCritical/Trusted/UnresolvedErr）として記録し
       `LocationResult.Operands` に格納。判定由来の `ReasonCode` を `LocationResult.ReasonCodes` に積む。「空（非適用）」と「適用済み
-      解決不能（`Zone==ZoneUnresolved` 要素）」を区別可能にする（0143 AC-01 の消費契約、設計 §3.1）。この区別は AC-19 検証で**2 つの
-      独立したケース**として表明する（非ファイル操作コマンド→`len(OperandZones)==0`、適用済み解決不能→`Zone==ZoneUnresolved` 要素を持つ）。
+      解決不能（`Zone==ZoneUnresolved` 要素）」を区別可能にする（0143 AC-01 の消費契約、設計 §3.1）。この区別は **2 つの独立したケース**
+      として表明する（非ファイル操作コマンド→`len(OperandZones)==0`、適用済み解決不能→`Zone==ZoneUnresolved` 要素を持つ）。
 
 **成功基準**:
-- [ ] 既知コマンド×代表フラグの表駆動テストで、要件 §F-002 の難所（in-place 編集・`ln -s` 相対 target・アーカイブ抽出 vs 一覧・
-      末尾 `/` 削除・`dd` デバイス・権限/所有権付与・データ送信書込先）が各々テスト行を持つ（AC-06, AC-06a）。
-- [ ] AC-08〜AC-15 で名指しされた全書込/削除/付与形が仕様表のテスト行を持つ（AC 本文と仕様表のドリフト防止、AC-06a）。
-- [ ] 区分判定テスト: trust-critical（`/usr/local/bin`=High・`/` 完全一致のみ）・ordinary（`/srv`/`/opt`=Medium）・
-      safe-zone（Trusted=Low／非 Trusted=Medium）・unresolved（write=High・read=Medium）。`/var`・`/var/log` は trust-critical の
-      ため ordinary フィクスチャに使わない（設計 §7.1）。
-- [ ] 操作固有の下限が safe-zone でも降格しないこと（`chmod u+s`・`chmod 0777`・`chown root /usr/bin/x`・`chattr -i`・
-      `dd of=/dev/sda`・`rm -r` 外部・`cp /etc/shadow $WORKDIR/x`、AC-08〜AC-12）。
-- [ ] 複数オペランドの max（AC-07、設計 §6.2 の `cp /etc/shadow $WORKDIR/x`=Medium 例を含む）。
+- [x] 既知コマンド×代表フラグの表駆動テストで、要件 §F-002 の難所（in-place 編集・`ln -s` 相対 target・アーカイブ抽出 vs 一覧・
+      末尾 `/` 削除・権限付与）が各々テスト行を持つ（`TestOperandExtraction_SpecTable`）。`dd` デバイスは `TestFloor_DeviceIO`、
+      データ送信書込先は P5。
+- [x] 名指しされた全書込/削除/付与形が仕様表のテスト行を持つ（`TestOperandSpecific_*`・`TestFloor_*`、ドリフト防止）。
+- [x] 区分判定テスト: trust-critical（`/usr/bin` 配下=High・`/` 完全一致のみ）・ordinary（`/srv`/`/opt`=Medium）・
+      safe-zone（Trusted=Low／非 Trusted=Medium）・unresolved（write=High・read=Medium）。
+- [x] 操作固有の下限が safe-zone でも降格しないこと（`chmod u+s`・`chmod 0777`・`chown root /usr/bin/x`・`chattr -i`・
+      `dd of=/dev/sda`・`rm -r` 外部・`cp /etc/shadow $WORKDIR/x`）。
+- [x] 複数オペランドの max（設計 §6.2 の `cp /etc/shadow $WORKDIR/x`=Medium 例を含む、`TestMultipleOperandsMax`）。
 
 ### PR-3 作成ポイント: destination zoning classifier and operation floors
 
@@ -279,8 +286,8 @@
 
 **推奨タイトル**: `feat(0142): add ClassifyDestinationZone with extraction spec table and floors`
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/783）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -611,7 +618,7 @@
 PR 単位で完了を追跡する（PR 構成は §3.2、各 PR の作成ポイントは Phase 末尾の「PR-N 作成ポイント」節を参照）。
 
 - [x] PR-1 マージ済み（対象ステップ: P1）— DTO・型・reason code family（`risktypes`）／`TestReasonCodes_AllDistinct` 緑
-- [ ] PR-2 マージ済み（対象ステップ: P2）— 専用リゾルバ＋Trusted 述語／symlink 偽装・fail-closed・メモ化・差分テスト緑
+- [x] PR-2 マージ済み（対象ステップ: P2）— 専用リゾルバ＋Trusted 述語／symlink 偽装・fail-closed・メモ化・差分テスト緑
 - [ ] PR-3 マージ済み（対象ステップ: P3）— `ClassifyDestinationZone`（仕様表＋区分判定＋操作固有の下限＋特則）／表駆動・区分・下限テスト緑
 - [ ] PR-4 マージ済み（対象ステップ: P4）— `evaluateDimensions` 組み込み＋5 系統抑止／観測可能プロパティ・取りこぼし防止条件・既存テスト更新緑
 - [ ] PR-5 マージ済み（対象ステップ: P5）— データ送信書込先合成＋rsync `host::module`／(i)(ii)・rsync 3 ケース緑
