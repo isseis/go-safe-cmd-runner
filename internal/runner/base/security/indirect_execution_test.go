@@ -959,6 +959,14 @@ func TestIndirect_CommandExecOptionsGated(t *testing.T) {
 		{"ssh -o ProxyCommand=", "ssh", []string{"-o", "ProxyCommand=ssh -W %h:%p bastion", "host"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		{"ssh -o ProxyCommand space", "ssh", []string{"-o", "ProxyCommand ssh -W %h:%p bastion", "host"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		{"ssh -oProxyCommand attached", "ssh", []string{"-oProxyCommand=ssh -W %h:%p bastion", "host"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// OpenSSH accepts whitespace around the "=" separator, so "ProxyCommand = sudo
+		// id" must extract "sudo" (Critical), not "=" (which would be a bypass).
+		{"ssh -o ProxyCommand spaces around equals", "ssh", []string{"-o", "ProxyCommand = sudo id", "host"}, IndirectCritical, 0},
+		{"ssh -o ProxyCommand space before equals", "ssh", []string{"-o", "ProxyCommand =sudo id", "host"}, IndirectCritical, 0},
+		// Space-form value that itself contains "=" (an env assignment) must keep the
+		// keyword intact: "env" is the inner command, not a mis-split key. Asserting a
+		// gated outcome (not IndirectNone) guards against splitting on the value's "=".
+		{"ssh -o ProxyCommand value with equals", "ssh", []string{"-o", "ProxyCommand env X=1 sudo id", "host"}, IndirectCritical, 0},
 		{"ssh -o LocalCommand sudo", "ssh", []string{"-o", "LocalCommand=sudo id", "host"}, IndirectCritical, 0},
 		{"ssh -o proxycommand lowercase sudo", "ssh", []string{"-o", "proxycommand=sudo id", "host"}, IndirectCritical, 0},
 		{"ssh -o LocalCommand separator", "ssh", []string{"-o", "LocalCommand=nc %h %p; modprobe x", "host"}, IndirectReject, 0},

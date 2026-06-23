@@ -1703,17 +1703,32 @@ func analyzeSSHProxyCommand(args []string, depth int, role risktypes.ArtifactRol
 // splitSSHOption splits an ssh -o option value into its keyword and the rest.
 // OpenSSH accepts both "KEY=VALUE" and "KEY VALUE", so the separator is whichever of
 // '=' or the first whitespace appears first.
+//
+// This mirrors OpenSSH's strdelim, which treats whitespace and '=' alike as the
+// keyword/value delimiter: the keyword ends at the first whitespace-or-'=', and the
+// run between keyword and value (any whitespace plus at most one '=') is consumed, so
+// "K=V", "K V", "K =V", "K= V", and "K = V" all yield the same key/value. Splitting
+// only on whichever of '=' / whitespace comes first would leave a stray '=' in the
+// value for the "K = V" form (the gate would then see "=" as the inner command and
+// miss a real one, e.g. "ProxyCommand = sudo id"), and unconditionally splitting on
+// the first '=' would mis-split a "K V" form whose value itself contains '='
+// (e.g. "ProxyCommand env X=1 nc"). Both are fail-open, so neither shortcut is used.
 func splitSSHOption(v string) (key, rest string) {
-	eq := strings.IndexByte(v, '=')
-	sp := strings.IndexAny(v, " \t")
-	switch {
-	case eq < 0 && sp < 0:
-		return v, ""
-	case eq >= 0 && (sp < 0 || eq < sp):
-		return v[:eq], v[eq+1:]
-	default:
-		return v[:sp], v[sp+1:]
+	end := len(v)
+	for i := 0; i < len(v); i++ {
+		if v[i] == ' ' || v[i] == '\t' || v[i] == '=' {
+			end = i
+			break
+		}
 	}
+	key = v[:end]
+	r := strings.TrimLeft(v[end:], " \t")
+	// At most one '=' separates the keyword from the value; any whitespace around it
+	// is also part of the delimiter run.
+	if rem, ok := strings.CutPrefix(r, "="); ok {
+		r = strings.TrimLeft(rem, " \t")
+	}
+	return key, r
 }
 
 // packageManagerBuiltins are subcommands of yarn/pnpm that manage packages
