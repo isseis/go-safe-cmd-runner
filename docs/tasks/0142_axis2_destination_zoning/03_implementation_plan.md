@@ -162,9 +162,12 @@
       （既定は実 os、テストは呼出回数を数えるスタブを注入。`StandardEvaluator.openIdentity` と同じ注入パターン）。注入集合は
       read-only の `lstat`/`readlink` のみとし、symlink を追従する `os.Stat` は含めない（設計 §3.3 の read-only 制約。`os.Stat` を
       混ぜると経路要素の所有権検査が symlink ターゲットを見てしまい区分判定を欺けるため）。
-- [ ] メモ化: 解決のメモ化を 1 回の判定呼び出し内にスコープし、鍵は**解決対象の入力パス（中間パスを含む）**とする。これにより
-      共有する親チェーンの `lstat`/`readlink` 結果を 1 回に畳む（解決後の絶対パスを鍵にすると、解決を終えるまで鍵が得られず
-      再解決を防げない＝AC-23 の線形計数が成り立たない）。identity 依存の Trusted 判定そのものはキャッシュしない（設計 §3.3(e)
+- [ ] メモ化: 解決のメモ化を 1 回の判定呼び出し内にスコープし、鍵は**解決対象ノードの絶対パス（中間ノードを含む）**とする。
+      relative なオペランド／relative な symlink target は基点ディレクトリと結合・正規化した絶対パスにしてから鍵にする（relative
+      文字列そのものを鍵にすると、異なる基点下の同名 relative——例 `/dir1/link` と `/dir2/link` がともに `../target` を指す——で
+      誤ヒットする）。鍵は当該ノードを **symlink 追従する前**の絶対パスであり、追従後の解決済み絶対パスではない（追従後を鍵に
+      すると解決完了まで鍵が得られず循環する）。これにより共有する親チェーンの `lstat`/`readlink` 結果を 1 回に畳む（AC-23 の
+      線形計数の前提）。identity 依存の Trusted 判定そのものはキャッシュしない（設計 §3.3(e)
       の鍵の記述を精緻化）。
 - [ ] Trusted 述語を実装（設計 §3.3(d)）: 解決後パスが `TrustedDirectories` 配下、かつ**safe-zone 起点の親以上**の経路
       要素が run-as から書込不可（run-as 以外所有・group/other 非書込）のとき Trusted。参照 identity は注入 `RunAsIdent`
@@ -284,7 +287,7 @@
 
 **変更ファイル**:
 - 変更 `internal/runner/base/security/destination_zoning.go`（`KindDataTransferWrite` のリモート終端判定）
-- 変更 `internal/runner/base/security/network_analyzer.go`（`hasNetworkArguments` に `host::module` 追加）
+- 変更 `internal/runner/base/security/network_analyzer.go`（`host::module` 検出を `rsync` 限定で追加。グローバルな `hasNetworkArguments` を全コマンドへは広げない）
 - 変更 `internal/runner/base/security/command_analysis.go`（`containsSSHStyleAddress` 周辺、必要時）
 - 変更 `internal/runner/base/risk/destination_zoning_integration_test.go`
 - 変更 `internal/runner/base/security/network_analyzer_test.go`
@@ -296,8 +299,12 @@
 - [ ] 最終リスク = `max(データ送信の名前 Medium〔0141〕, 書込先のパス信頼区分)` を合成する（max 合成の所有者は本タスク、AC-16）。
 - [ ] rsync のリモート終端判定に `host::module`（二重コロン bare module、末尾パス無し）を追加（設計 §3.5(1)）。リモート宛先の
       ときは zone 対象のローカルパスが無く egress（名前ベース Medium）が支配、ローカル宛先のときのみ書込先区分と max。
-- [ ] `hasNetworkArguments` に `host::module` 検出を追加（設計 §3.5(2)）: 左側をホスト名様トークン（`[A-Za-z0-9.-]+`）に限定し、
-      `/` を含むトークンや C++ スコープ様式を巻き込まない（過剰分類回避）。`rsync` 全体の無条件 Medium 格上げはしない。
+- [ ] `host::module`（二重コロン bare module）の egress 検出は **`rsync` コマンドに限定**して有効化する（設計 §3.5(2)）。
+      `hasNetworkArguments` は profile 無しの全コマンドへ広く適用される（`evaluator.go` の `!profileFound && HasNetworkArguments(args)`）
+      ため、ここへ無条件に `host::module` を足すと `std::string`／`HTTP::Tiny`／`Namespace::Class` のような `::` を含む無関係な引数まで
+      誤検出して過剰分類する（左側をホスト名様トークン `[A-Za-z0-9.-]+` に限定しても `std`／`HTTP` 等が合致し防げない）。よって検出は
+      コマンド名が `rsync` のときだけ有効化する（rsync 専用の引数解析＝`KindDataTransferWrite` 抽出に閉じ込めるか、`hasNetworkArguments`
+      をコマンド名で gate する）。`/` を含むトークンや純ローカルパスは巻き込まない。`rsync` 全体の無条件 Medium 格上げはしない。
 
 **成功基準**:
 - [ ] (i) `curl <url> -o $WORKDIR/safe`=Medium。**Medium の出所**を表明する（単なるレベル==Medium では既存 network profile の
@@ -310,6 +317,9 @@
 - [ ] `rsync src host::module`=Medium（egress 由来、理由コードで出所表明）。
 - [ ] 純ローカル `rsync /a /b`=Low（過剰分類しない）。
 - [ ] `rsync /local /usr/bin/x`（ローカル trust-critical 宛先）=High（書込先区分が支配）。
+- [ ] **非 rsync の `::` 引数は過剰分類しない**（`host::module` 検出の rsync 限定の回帰）: profile 無しのコマンドに `std::string`／
+      `HTTP::Tiny`／`Namespace::Class` 等の `::` を含む引数を与えても network 引数（`ReasonNetworkArgument` Medium）に誤分類されない
+      （`network_analyzer_test.go`／`command_analysis_test.go`）。
 
 ### Phase 6: config 組み込み＋identity 注入（AC-20, AC-21）
 
@@ -485,7 +495,7 @@
 | AC-13 mount/umount | test | `security/destination_zoning_test.go::TestOperandSpecific_Mount` | trust-critical=High、`umount -a`=High |
 | AC-14 tee/sponge | test | `security/destination_zoning_test.go::TestOperandSpecific_Tee` | 全 FILE の max、内側未実行 |
 | AC-15 find 破壊 | test | `security/destination_zoning_test.go::TestOperandSpecific_Find` | `-delete`/`-fprint*` の宛先判定、読取専用非昇格 |
-| AC-16 データ送信書込先＋max | test | `risk/destination_zoning_integration_test.go::TestDataTransferWriteComposition` | (i)=Medium(出所=名前)、(ii)=High、rsync 3 ケース |
+| AC-16 データ送信書込先＋max | test | `risk/destination_zoning_integration_test.go::TestDataTransferWriteComposition`＋`security/network_analyzer_test.go`（非 rsync `::` 非過剰分類） | (i)=Medium(出所=名前)、(ii)=High、rsync 3 ケース、非 rsync `std::string` 非ネットワーク |
 | AC-17 既存 High 置き換え | test | `risk/destination_zoning_integration_test.go::TestAxis2ReplacesLegacyHigh` | safe-zone=Low／ordinary=Medium／unresolved=High |
 | AC-18 max 合成 | test | `risk/destination_zoning_integration_test.go::TestAxis1Axis2MaxComposition` | `cp -a … /usr/bin`=High、順序非依存 |
 | AC-19 監査 DTO 格納 | test | `risk/destination_zoning_integration_test.go::TestOperandZonesStored` | 各要素の値検証、非適用=空・解決不能=`Zone==ZoneUnresolved` |
