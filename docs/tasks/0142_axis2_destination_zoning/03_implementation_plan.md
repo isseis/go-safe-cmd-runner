@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-06-23 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-06-23 |
+| Reviewer | isseis |
 | Comments | - |
 
 > 本書は 0140 を 3 分割した第 2 タスク（判断軸2＝宛先パス信頼区分）の実装計画である。要件は
@@ -126,21 +126,34 @@
 - 新規 `internal/runner/base/risktypes/operand_zone_test.go`
 
 **作業内容**:
-- [ ] `operand_zone.go` に `PathTrustZone`（`ZoneTrustCritical`/`ZoneOrdinary`/`ZoneSafeZone`/`ZoneUnresolved`）を定義（設計 §3.1）。
-- [ ] `operand_zone.go` に `OperandRole`（`OperandRoleWrite`/`OperandRoleRead`）を定義（設計 §3.1）。
-- [ ] `operand_zone.go` に `OperandZone` 構造体（`Index`/`Raw`/`Resolved`/`Zone`/`Role`/`MatchedCritical`/`Trusted`/`UnresolvedErr`）を定義（設計 §3.1）。
-- [ ] `operand_zone.go` に `RunAsIdent` 構造体（`UID`/`GID`/`Groups`）を定義（設計 §3.1）。
-- [ ] `types.go` の `RiskAssessment` に `OperandZones []OperandZone` フィールドを追加（既存フィールドは不変、設計 §3.1）。
-- [ ] `reason_codes.go` に新 family 7 定数を追加（設計 §4）: `ReasonTrustBoundaryWrite`=`"trust_boundary_write"`・
+- [x] `operand_zone.go` に `PathTrustZone`（`ZoneTrustCritical`/`ZoneOrdinary`/`ZoneSafeZone`/`ZoneUnresolved`）を定義（設計 §3.1）。
+- [x] `operand_zone.go` に `OperandRole`（`OperandRoleWrite`/`OperandRoleRead`）を定義（設計 §3.1）。
+- [x] `operand_zone.go` に `OperandZone` 構造体（`Index`/`Raw`/`Resolved`/`Zone`/`Role`/`MatchedCritical`/`Trusted`/`UnresolvedErr`）を定義（設計 §3.1）。
+- [x] `operand_zone.go` に `RunAsIdent` 構造体（`UID`/`GID`/`Groups`）を定義（設計 §3.1）。
+- [x] `types.go` の `RiskAssessment` に `OperandZones []OperandZone` フィールドを追加（既存フィールドは不変、設計 §3.1）。
+- [x] `reason_codes.go` に新 family 7 定数を追加（設計 §4）: `ReasonTrustBoundaryWrite`=`"trust_boundary_write"`・
       `ReasonDestinationZone`=`"destination_zone"`・`ReasonPermissionGrant`=`"permission_grant"`・`ReasonDeviceIO`=`"device_io"`・
       `ReasonRecursiveOutsideSafeZone`=`"recursive_outside_safe_zone"`・`ReasonSensitiveSourceCopy`=`"sensitive_source_copy"`・
       `ReasonUnresolvedDestination`=`"unresolved_destination"`。
-- [ ] `reason_codes_test.go` の全定数スライス（`:13`）へ上記 7 定数を登録する（登録漏れ防止）。
+- [x] `reason_codes_test.go` の全定数スライス（`:13`）へ上記 7 定数を登録する（登録漏れ防止）。
 
 **成功基準**:
-- [ ] `go build -tags test ./internal/runner/base/risktypes/` が通る。
-- [ ] `TestReasonCodes_AllDistinct` が新 7 定数を含めて緑（空値なし・重複なし、NF-001）。
-- [ ] `operand_zone_test.go` が `OperandZone` のゼロ値・各 enum 値の文字列表現を表明（型定義の健全性）。
+- [x] `go build -tags test ./internal/runner/base/risktypes/` が通る。
+- [x] `TestReasonCodes_AllDistinct` が新 7 定数を含めて緑（空値なし・重複なし、NF-001）。
+- [x] `operand_zone_test.go` が `OperandZone` のゼロ値・各 enum 値の文字列表現を表明（型定義の健全性）。
+
+### PR-1 作成ポイント: risktypes data model and reason codes
+
+**対象ステップ**: P1
+
+**推奨タイトル**: `feat(0142): add operand-zone DTO and destination reason codes`
+
+**レビュー観点**: reason code の一意性/網羅性（NF-001・全定数スライス登録漏れ防止） / `OperandZone`・`RunAsIdent` 型定義の健全性 / 既存 `RiskAssessment` への非破壊追加
+
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/781）
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: 専用リゾルバ＋Trusted 述語（AC-04, AC-23）
 
@@ -187,6 +200,19 @@
       assert する（D・K・期待値は実装で確定）。
 - [ ] Trusted 述語の差分テスト: 注入 `RunAsIdent` を実 euid/gid と異なる値にし、起点親の所有者/権限により Trusted が
       切り替わる（AC-04(d)・AC-21 の先行検証）。
+
+### PR-2 作成ポイント: read-only operand path resolver and Trusted predicate
+
+**対象ステップ**: P2
+
+**推奨タイトル**: `feat(0142): add read-only operand path resolver and Trusted predicate`
+
+**レビュー観点**: symlink 追従の read-only 性（`lstat`/`readlink` のみ、`os.Stat` 不参照） / メモ化キーの正しさ（相対パスのクロス基点衝突・循環の回避） / fail-closed（cycle・深さ超過・未存在 leaf が symlink） / 注入 `RunAsIdent` による Trusted 判定の決定性
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: オペランド抽出仕様表＋区分判定＋操作固有の下限（AC-01〜AC-15）
 
@@ -235,6 +261,19 @@
       `dd of=/dev/sda`・`rm -r` 外部・`cp /etc/shadow $WORKDIR/x`、AC-08〜AC-12）。
 - [ ] 複数オペランドの max（AC-07、設計 §6.2 の `cp /etc/shadow $WORKDIR/x`=Medium 例を含む）。
 
+### PR-3 作成ポイント: destination zoning classifier and operation floors
+
+**対象ステップ**: P3
+
+**レビュー観点**: オペランド抽出仕様表の網羅（要件 §F-002 の難所が各々テスト行を持つ） / 区分判定（trust-critical/ordinary/safe-zone/unresolved、重複は trust-critical 優先） / 操作固有の下限が safe-zone でも非降格 / 完全認識（`Recognized`）の計算と複数オペランド max
+
+**推奨タイトル**: `feat(0142): add ClassifyDestinationZone with extraction spec table and floors`
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 4: `evaluateDimensions` 組み込み＋既存 5 系統の完全認識時抑止（AC-17, AC-18）
 
 **変更ファイル**:
@@ -248,6 +287,12 @@
 - [ ] `evaluateDimensions` に判断軸2 ディスパッチを追加（設計 §3.4・§6.1）: `ClassifyDestinationZone` を呼び、
       `Applies==true && Recognized==true` のときだけ既存 5 系統の破壊系 High 寄与を抑止し `LocationResult.Level` を唯一の
       寄与にする。不完全認識/非ファイル操作のときは既存 5 系統をそのまま残す（fail-open 回避）。
+- [ ] **注入シーム（PR 独立緑のため、§3.2 参照）**: `StandardEvaluator` に `ZoningInput` を組み立てるための**注入可能フィールド**
+      （securityConfig＋precomputed `RunAsIdent`、既存 `openIdentity` と同じ注入様式）を**本 Phase で導入**し、`evaluateDimensions`
+      はそこから `ZoningInput` を作ってディスパッチする。本 Phase の統合テストは評価器を**直接注入**（`WithRiskEvaluator`／テスト
+      コンストラクタで config・identity を設定）して `NewRunner` を経由しない。公開 `NewStandardEvaluator(*security.Config)` 引数追加・
+      本番 run-as 名解決・`runner.go` 配線・`Config`/`SecuritySpec`/`loader` のフィールド追加は **P6** が担い、本フィールドを本番経路へ
+      接続する（よって本 Phase は P6 を待たず緑）。
 - [ ] ① `IsDestructiveFileOperation`（`evaluator.go:229`）の寄与を完全認識時に飛ばす。
 - [ ] ② `CoreutilsCommandRisk` の破壊系 High 寄与（`evaluator.go:218-224`）を完全認識時に飛ばす。**binary 解析抑止に使う
       `coreutilsHandled`（`:263`）は維持**し、破壊系 High の加算のみ抑止する（両者を分離）。
@@ -282,6 +327,26 @@
       ことの確認。設計 §3.4 表）: ④の `chmod 777`=High・`chown root`（trust-critical 宛先=High／ordinary=Medium）が
       §3.2 の権限付与下限/区分で同等以上になることを表明（「外したが再確立されない隙間」を塞ぐ）。
 - [ ] 非ファイル操作コマンド（同名でも `find -exec` の内側実行等）では④等を無効化しないこと。
+
+### PR-4 作成ポイント: evaluateDimensions integration and legacy High suppression
+
+**対象ステップ**: P4
+
+**推奨タイトル**: `feat(0142): integrate axis-2 zoning into evaluateDimensions and suppress legacy High`
+
+**レビュー観点**: 完全認識（`Applies && Recognized`）時のみ 5 系統抑止（不完全認識は 5 系統 High を残し fail-open 回避） / `coreutilsHandled` の破壊系 High 抑止と binary 解析抑止の分離 / `DestructionRisk` のコンポーネント粒度抑止（他因子の取りこぼし防止） / 取りこぼし防止条件の再確立と判断軸1×2 の max 合成
+
+> **レビュー上の注意（本 PR は最大かつ最難。①〜⑤を独立に評価する）**: 本 PR は 5 系統（①`IsDestructiveFileOperation`／
+> ②`CoreutilsCommandRisk`／③profile `DestructionRisk`／④`CheckDangerousArgPatterns`／⑤setuid lstat 下限）の抑止と、
+> 既存テスト 4 本（`coreutils_consistency_test.go` 3 本＋`evaluator_test.go`）の宛先依存化を 1 PR に含む。各抑止は**独立した
+> fail-open リスク**を持つため、①〜⑤を個別に——各々が §3.4 取りこぼし防止表の対応行と P4 成功基準のどの行で再確立されるかを
+> 突き合わせて——レビューすること。**分割しない**理由: 段階ロールアウト/フラグを設けない方針（§1.2）のため、抑止を別 PR に
+> 切り出すと中間状態で既存テストが二重カウントで赤くなり、各 PR 独立緑を満たせない。よって 5 系統＋テスト更新は不可分の単位。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: データ送信書込先合成＋rsync `host::module` 検出（AC-16）
 
@@ -321,6 +386,19 @@
       `HTTP::Tiny`／`Namespace::Class` 等の `::` を含む引数を与えても network 引数（`ReasonNetworkArgument` Medium）に誤分類されない
       （`network_analyzer_test.go`／`command_analysis_test.go`）。
 
+### PR-5 作成ポイント: data-transfer-write composition and rsync host::module detection
+
+**対象ステップ**: P5
+
+**推奨タイトル**: `feat(0142): compose data-transfer-write zone and scope rsync host::module egress`
+
+**レビュー観点**: Medium の出所表明（既存 network profile Medium と区別、canary 偽陽性回避） / `host::module` 検出の rsync 限定（`std::string`／`HTTP::Tiny` 等の過剰分類回避） / 純ローカル rsync の非昇格 / 名前下限と書込先パス信頼区分の max 合成
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 6: config 組み込み＋identity 注入（AC-20, AC-21）
 
 **変更ファイル**:
@@ -335,9 +413,10 @@
 **作業内容**:
 - [ ] `security.Config` に `TrustedDirectories []string` を追加（設計 §3.6）。
 - [ ] `SecuritySpec` に `TrustedDirectories []string toml:"trusted_directories"` を追加（既存 `TrustedGIDs` と並置、設計 §3.6）。
-- [ ] `NewStandardEvaluator` に `*security.Config` 引数を 1 つ追加（既存引数・戻り型は不変、設計 §3.6）。
-- [ ] `StandardEvaluator` に `*security.Config` フィールドと run-as 解決ロジック（注入可能フィールド、既定は os/user ベース）を
-      追加（既存 `openIdentity` と同じ注入パターン、設計 §3.6）。
+- [ ] `NewStandardEvaluator` に `*security.Config` 引数を 1 つ追加（既存引数・戻り型は不変、設計 §3.6）。本引数で、**P4 で導入した
+      `StandardEvaluator` の注入可能フィールド**（securityConfig＋`RunAsIdent`）を本番経路から populate する（テストは P4 同様に直接注入）。
+- [ ] `StandardEvaluator` の run-as 解決ロジック（既定は os/user ベース、注入可能、既存 `openIdentity` と同じ注入パターン）を実装する
+      （注入フィールド自体の導入は P4。本 Phase は本番の run-as 名→identity 解決を与える、設計 §3.6）。
 - [ ] run-as 名→`RunAsIdent` の解決を評価層（組み込み層）で行い、precomputed 値を `ZoningInput` へ注入（設計 §3.6・AC-21）。
       `ClassifyDestinationZone` 以下は live identity API を読まない。
 - [ ] run-as 未設定時は **runner が起動時に確定した original 実行 identity** を注入時に一度だけ解決して用いる。`RunAsIdent` の
@@ -355,6 +434,19 @@
 - [ ] identity 注入の差分テスト: 注入 `RunAsIdent` をテストプロセスの実 euid/gid と**異なる**値にし、Trusted/Low 判定が注入
       identity に従って変わる（AC-21、決定性テストでは証明できない live 不参照を表明）。
 - [ ] run-as 名解決失敗で `ZoneUnresolved`（High）に倒れる（AC-21 fail-closed）。
+
+### PR-6 作成ポイント: config wiring and run-as identity injection
+
+**対象ステップ**: P6
+
+**推奨タイトル**: `feat(0142): wire TrustedDirectories config and inject run-as identity`
+
+**レビュー観点**: `securityConfig` を normal/dry-run 両経路へ同一に転送（AC-22 一貫性） / run-as 名解決失敗の fail-closed（`ZoneUnresolved` High） / `RunAsIdent` zero 値を「未設定」既定にしない（起動時 original identity 解決） / `[security] trusted_directories` の自動デコードと runner への転送経路
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 7: 決定性・上限の統合テスト・grep ガード（AC-22, AC-23）
 
@@ -376,6 +468,19 @@
 - [ ] 上限超過で High・呼出回数が線形（AC-23）。
 - [ ] grep ガードが緑（live-identity API の不在、AC-21）。
 
+### PR-7 作成ポイント: determinism, cost ceiling, and live-identity grep guard
+
+**対象ステップ**: P7
+
+**推奨タイトル**: `test(0142): add determinism, resolution-ceiling, and live-identity guard tests`
+
+**レビュー観点**: runtime==dry-run の決定性表明（AC-22） / 上限超過の fail-closed と注入 `lstat`/`readlink` の線形呼出（AC-23） / grep ガードの正のコントロール（既知の悪例文字列が必ずマッチ、空振り＝fail-open 検出） / live-identity API の不在（AC-21）
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ---
 
 ## 3. 実装順序とマイルストーン
@@ -386,12 +491,46 @@
 | P2 | 専用リゾルバ＋Trusted 述語（`security`） | AC-04, AC-23 | P1 |
 | P3 | `ClassifyDestinationZone`（抽出仕様表＋区分判定＋操作固有の下限） | AC-01〜AC-15 | P2 |
 | P4 | `evaluateDimensions` 組み込み＋既存 5 系統抑止 | AC-17, AC-18 | P3 |
-| P5 | データ送信書込先合成＋rsync `host::module` | AC-16 | P3 |
+| P5 | データ送信書込先合成＋rsync `host::module` | AC-16 | P3, P4（risk 層の統合テストが P4 のディスパッチを要する） |
 | P6 | config 組み込み＋identity 注入（本番経路） | AC-20, AC-21 | P4 |
 | P7 | 決定性・上限・grep ガードの統合検証 | AC-22, AC-23, NF-003 | P4-P6 |
 
 各マイルストーン完了時に `make fmt`→`make test`→`make lint` を緑にする。最終マイルストーンの完了基準は、中核 2 パッケージに
 加え統合パッケージ（`./internal/runner/...` または `make test` 全体）がコンパイル・緑であること（NF-002）。
+
+### 3.2 PR 構成
+
+各 Phase は単一の関心事を持ち、それ自身でグリーンゲート（`make test && make lint`）を満たす独立単位であるため、Phase 単位で
+1 PR にマッピングする（依存順、並べ替えなし）。最大の難所である P4（評価層の置き換え）は単独 PR に隔離する。本機能は
+`internal/` 内に閉じ、`cmd/` 層の変更はない（最も本番寄りの P6 配線も `internal/runner` 内）。
+
+| PR | 対象ステップ | 主な変更内容 |
+|---|---|---|
+| PR-1 | P1 | `risktypes` に `OperandZone` 系 DTO・`RunAsIdent`・新 reason code 7 種を追加（既存 `RiskAssessment` へ非破壊追加） |
+| PR-2 | P2 | `security` に read-only オペランドパスリゾルバと Trusted 述語を実装（`lstat`/`readlink` のみ、メモ化、fail-closed） |
+| PR-3 | P3 | `ClassifyDestinationZone`（抽出仕様表＋区分判定＋操作固有の下限＋コマンド別特則） |
+| PR-4 | P4 | `evaluateDimensions` へ判断軸2 を組み込み、完全認識時に既存 5 系統の破壊系 High を抑止（高リスク・単独隔離） |
+| PR-5 | P5 | データ送信書込先の max 合成と rsync `host::module` 検出（rsync 限定・過剰分類回避） |
+| PR-6 | P6 | `TrustedDirectories` config 組み込みと run-as identity 注入（本番経路へ securityConfig 転送） |
+| PR-7 | P7 | 決定性・解決コスト上限・live-identity grep ガードの統合検証 |
+
+依存関係: PR-2 は PR-1（`RunAsIdent` 等）に、PR-3 は PR-2（`ResolveOperandPath`）に、PR-4 は PR-3 に、PR-5 は PR-3＋PR-4
+（risk 層の統合テストがディスパッチを要する）に、PR-6 は PR-4 に、PR-7 は PR-4〜PR-6 に依存する。この順序で各 PR の
+依存は先行 PR で満たされる。
+
+**各 PR が単独で緑になるための注入シーム（buildability contract）**: 各 PR が「未来 PR のスタブ無しで `make test` 緑」に
+なるのは、信頼区分判定が `security.Config` を直接読まず、**呼び出し側が組み立てて注入する入力**（`ZoningInput`＝
+`SystemCriticalPaths`/`TrustedDirectories`/`RunAsIdent` を保持、設計 §3.2）と評価器の注入可能フィールド経由で値を受けるためである。
+具体的には:
+
+- **PR-2／PR-3**: `ResolveOperandPath`・Trusted 述語・`ClassifyDestinationZone` は `TrustedDirectories`/`SystemCriticalPaths` を
+  **引数／`ZoningInput` フィールド**で受け取り、`security.Config.TrustedDirectories` を参照しない（同フィールドと本番転送は PR-6）。
+  テストは `ZoningInput` を直接構築して safe-zone=Low（Trusted）等を表明する。よって PR-6 を待たずコンパイル・緑になる。
+- **PR-4**: `evaluateDimensions` は `StandardEvaluator` の**注入可能フィールド**（securityConfig＋precomputed `RunAsIdent`、既存
+  `openIdentity` と同じ注入様式）から `ZoningInput` を組み立ててディスパッチする。このフィールドは PR-4 で導入し、PR-4 の統合
+  テストは評価器を**直接注入**（`WithRiskEvaluator`／テストコンストラクタ）して `NewRunner` を経由しない。公開 API の
+  `NewStandardEvaluator(*security.Config)` 引数追加・本番 run-as 名解決・`runner.go` 配線・`Config`/`SecuritySpec`/`loader` の
+  フィールド追加は PR-6 が担い、PR-4 が導入した注入フィールドを本番経路へ接続する。したがって PR-4 は PR-6 を待たず緑になる。
 
 ---
 
@@ -459,14 +598,16 @@
 
 ## 6. 実装チェックリスト
 
-- [ ] **P1**: DTO・型・reason code family（`risktypes`）／`TestReasonCodes_AllDistinct` 緑
-- [ ] **P2**: 専用リゾルバ＋Trusted 述語／symlink 偽装・fail-closed・メモ化・差分テスト緑
-- [ ] **P3**: `ClassifyDestinationZone`（仕様表＋区分判定＋操作固有の下限＋特則）／表駆動・区分・下限テスト緑
-- [ ] **P4**: `evaluateDimensions` 組み込み＋5 系統抑止／観測可能プロパティ・取りこぼし防止条件・既存テスト更新緑
-- [ ] **P5**: データ送信書込先合成＋rsync `host::module`／(i)(ii)・rsync 3 ケース緑
-- [ ] **P6**: config 組み込み＋identity 注入（本番経路）／spec パース・差分テスト・fail-closed 緑
-- [ ] **P7**: 決定性・上限・grep ガード／runtime==dry-run・線形呼出・live 不参照 緑
-- [ ] 全 Phase 完了後: `make fmt`→`make test`→`make lint` 全緑、`./internal/runner/...` コンパイル（NF-002）
+PR 単位で完了を追跡する（PR 構成は §3.2、各 PR の作成ポイントは Phase 末尾の「PR-N 作成ポイント」節を参照）。
+
+- [ ] PR-1 マージ済み（対象ステップ: P1）— DTO・型・reason code family（`risktypes`）／`TestReasonCodes_AllDistinct` 緑
+- [ ] PR-2 マージ済み（対象ステップ: P2）— 専用リゾルバ＋Trusted 述語／symlink 偽装・fail-closed・メモ化・差分テスト緑
+- [ ] PR-3 マージ済み（対象ステップ: P3）— `ClassifyDestinationZone`（仕様表＋区分判定＋操作固有の下限＋特則）／表駆動・区分・下限テスト緑
+- [ ] PR-4 マージ済み（対象ステップ: P4）— `evaluateDimensions` 組み込み＋5 系統抑止／観測可能プロパティ・取りこぼし防止条件・既存テスト更新緑
+- [ ] PR-5 マージ済み（対象ステップ: P5）— データ送信書込先合成＋rsync `host::module`／(i)(ii)・rsync 3 ケース緑
+- [ ] PR-6 マージ済み（対象ステップ: P6）— config 組み込み＋identity 注入（本番経路）／spec パース・差分テスト・fail-closed 緑
+- [ ] PR-7 マージ済み（対象ステップ: P7）— 決定性・上限・grep ガード／runtime==dry-run・線形呼出・live 不参照 緑
+- [ ] 全 PR マージ後: `make fmt`→`make test`→`make lint` 全緑、`./internal/runner/...` コンパイル（NF-002）
 
 ---
 
@@ -546,8 +687,10 @@
 
 ## 10. クロス検索チェックリスト（`make lint`/`make test` で検出できない項目のみ）
 
-- [ ] `NewStandardEvaluator` の呼び出し箇所を全列挙し、新 `*security.Config` 引数を全て更新: `rg -n "NewStandardEvaluator\(" -g '*.go' internal`（本番＋テストの全呼び出しに引数追加。引数追加はコンパイルで検出されるが、テスト注入箇所の見落とし防止に列挙する）。
-- [ ] reason code 新 7 定数の二重定義・タイポ確認: `rg -n "trust_boundary_write|destination_zone|permission_grant|device_io|recursive_outside_safe_zone|sensitive_source_copy|unresolved_destination" -g '*.go' internal`（定義は `reason_codes.go` の 1 箇所のみ）。
-- [ ] `TrustedDirectories` の用語一貫性（設計・要件・spec・loader・config sample で同一表記。sample config 追従自体は 0143）: `rg -n "trusted_directories|TrustedDirectories" -g '*.go' internal`。
-- [ ] 設計 §3.4 で「不変」とした `security/coreutils_test.go` の `CoreutilsCommandRisk` テストが誤って変更されていないこと（関数挙動は不変、置き換えは評価層のみ）。
-- [ ] AC-16(i) の出所表明で 0141 名前下限由来の理由コードを参照する場合は、その定数が 0141 で確定済みかを事前確認: `rg -n "ReasonCode = \"" internal/runner/base/risktypes/reason_codes.go`（データ送信の名前下限に対応する定数名を特定。未確定なら自己完結の canary 形を採る）。
+各項目は、対応する変更を導入する PR の作成前に実行するゲートである（末尾の owning PR を参照）。
+
+- [ ] **（PR-6）** `NewStandardEvaluator` の呼び出し箇所を全列挙し、新 `*security.Config` 引数を全て更新: `rg -n "NewStandardEvaluator\(" -g '*.go' internal`（本番＋テストの全呼び出しに引数追加。引数追加はコンパイルで検出されるが、テスト注入箇所の見落とし防止に列挙する）。
+- [ ] **（PR-1）** reason code 新 7 定数の二重定義・タイポ確認: `rg -n "trust_boundary_write|destination_zone|permission_grant|device_io|recursive_outside_safe_zone|sensitive_source_copy|unresolved_destination" -g '*.go' internal`（定義は `reason_codes.go` の 1 箇所のみ）。
+- [ ] **（PR-6）** `TrustedDirectories` の用語一貫性（設計・要件・spec・loader・config sample で同一表記。sample config 追従自体は 0143）: `rg -n "trusted_directories|TrustedDirectories" -g '*.go' internal`。
+- [ ] **（PR-4）** 設計 §3.4 で「不変」とした `security/coreutils_test.go` の `CoreutilsCommandRisk` テストが誤って変更されていないこと（関数挙動は不変、置き換えは評価層のみ）。
+- [ ] **（PR-5）** AC-16(i) の出所表明で 0141 名前下限由来の理由コードを参照する場合は、その定数が 0141 で確定済みかを事前確認: `rg -n "ReasonCode = \"" internal/runner/base/risktypes/reason_codes.go`（データ送信の名前下限に対応する定数名を特定。未確定なら自己完結の canary 形を採る）。
