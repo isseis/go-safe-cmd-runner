@@ -177,10 +177,15 @@ func ProfileNetworkApplies(profile CommandRiskProfile, args []string) bool {
 // RiskLevelUnknown with no codes when no factor applies. This is the single
 // source for the profile dimension, used by the evaluator and the wrapped-inner
 // indirect-execution path.
-func ProfileFactorRisk(profile CommandRiskProfile, args []string) (runnertypes.RiskLevel, []risktypes.ReasonCode) {
+//
+// suppressDestruction drops only the destruction factor (used when axis-2
+// destination zoning fully recognizes a file-operation command and replaces the
+// legacy destruction classification); the other factors and their codes are
+// unaffected, so the profile's network/data-exfil contributions are preserved.
+func ProfileFactorRisk(profile CommandRiskProfile, args []string, suppressDestruction bool) (runnertypes.RiskLevel, []risktypes.ReasonCode) {
 	level := runnertypes.RiskLevelUnknown
 	var codes []risktypes.ReasonCode
-	if profile.DestructionRisk.Level > runnertypes.RiskLevelLow {
+	if !suppressDestruction && profile.DestructionRisk.Level > runnertypes.RiskLevelLow {
 		level = max(level, profile.DestructionRisk.Level)
 		codes = append(codes, risktypes.ReasonProfileDestruction)
 	}

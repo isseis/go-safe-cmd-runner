@@ -1356,7 +1356,9 @@ func evaluateInnerAs(inner string, innerArgs []string, depth int, role risktypes
 	// human-readable reasons are carried so the audit log of a wrapped command
 	// keeps the same descriptions as the direct invocation.
 	if profile, ok := ResolveProfile(innerNames); ok {
-		if pl, pcodes := ProfileFactorRisk(profile, innerArgs); pl > runnertypes.RiskLevelUnknown {
+		// Inner (wrapped) commands are not subject to axis-2 destination zoning, so
+		// the destruction factor is never suppressed here.
+		if pl, pcodes := ProfileFactorRisk(profile, innerArgs, false); pl > runnertypes.RiskLevelUnknown {
 			level = max(level, pl)
 			codes = append(codes, pcodes...)
 			reasons = append(reasons, profile.GetRiskReasons()...)

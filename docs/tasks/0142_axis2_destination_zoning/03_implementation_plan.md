@@ -301,49 +301,47 @@
 - 新規 `internal/runner/base/risk/destination_zoning_integration_test.go`
 
 **作業内容**:
-- [ ] `evaluateDimensions` に判断軸2 ディスパッチを追加（設計 §3.4・§6.1）: `ClassifyDestinationZone` を呼び、
+- [x] `evaluateDimensions` に判断軸2 ディスパッチを追加（設計 §3.4・§6.1）: `ClassifyDestinationZone` を呼び、
       `Applies==true && Recognized==true` のときだけ既存 5 系統の破壊系 High 寄与を抑止し `LocationResult.Level` を唯一の
       寄与にする。不完全認識/非ファイル操作のときは既存 5 系統をそのまま残す（fail-open 回避）。
-- [ ] **注入シーム（PR 独立緑のため、§3.2 参照）**: `StandardEvaluator` に `ZoningInput` を組み立てるための**注入可能フィールド**
-      （securityConfig＋precomputed `RunAsIdent`、既存 `openIdentity` と同じ注入様式）を**本 Phase で導入**し、`evaluateDimensions`
-      はそこから `ZoningInput` を作ってディスパッチする。本 Phase の統合テストは評価器を**直接注入**（`WithRiskEvaluator`／テスト
-      コンストラクタで config・identity を設定）して `NewRunner` を経由しない。公開 `NewStandardEvaluator(*security.Config)` 引数追加・
-      本番 run-as 名解決・`runner.go` 配線・`Config`/`SecuritySpec`/`loader` のフィールド追加は **P6** が担い、本フィールドを本番経路へ
-      接続する（よって本 Phase は P6 を待たず緑）。
-- [ ] ① `IsDestructiveFileOperation`（`evaluator.go:229`）の寄与を完全認識時に飛ばす。
-- [ ] ② `CoreutilsCommandRisk` の破壊系 High 寄与（`evaluator.go:218-224`）を完全認識時に飛ばす。**binary 解析抑止に使う
-      `coreutilsHandled`（`:263`）は維持**し、破壊系 High の加算のみ抑止する（両者を分離）。
-- [ ] ③ profile `DestructionRisk` を**破壊コンポーネント粒度**で抑止（設計 §3.4）: `ProfileFactorRisk`/`applyProfileFactors`
-      に `DestructionRisk` のみ無効化するフラグを渡す。他因子（`NetworkRisk`/`DataExfilRisk` 等）と `NetworkType`/`Reasons` は
-      引き続き適用する。
-- [ ] ④ `CheckDangerousArgPatterns`（`evaluator.go:243`）の寄与を完全認識のファイル操作コマンドで抑止する。
-  - [ ] **抑止はディスパッチ粒度**で行う（`Applies && Recognized` のときに④の寄与加算をまとめて飛ばす）。
-        `CheckDangerousArgPatterns` は複数エントリのマッチを単一レベル（`ReasonDangerousArgPattern`）へ畳み込んで返すため、
-        ③のように関数内で破壊コンポーネントだけを抜く方式は適用できない。当該コマンドで④を呼ばない（または④の戻り値を
-        加算しない）形にする。
-  - [ ] 取りこぼし防止: 完全認識のファイル操作コマンドでは④の一致エントリは破壊系（`{rm,-rf}`/`{dd,if=}`/`{chmod,777}`/
-        `{chown,root}`）であり、これらは判断軸2 の区分/操作固有の下限で再確立される（設計 §3.4 表）。`wget`/`curl`/`nc` 等の
-        ネットワーク系エントリは**データ送信書込形にのみ一致**し、その egress Medium は④ではなく 0141 の名前下限と AC-16 の
-        合成（§3.5）で再確立されるため、④抑止で取りこぼさない。
-  - [ ] `nc`/`netcat`（ファイル操作でも 0142 のデータ送信書込形でもないコマンド）は `Applies==false` で従来どおり④が効く。
-- [ ] ⑤ setuid/setgid lstat 下限は**再パースせず**、`hasSetuidOrSetgidBit` 相当の既存シグナルを操作固有の下限（Phase 3）が
-      流用する（設計 §3.2 注・§3.4 例外）。
-- [ ] `RiskAssessment.Level` を判断軸1 と max 合成（AC-18）。`LocationResult.ReasonCodes` を `RiskAssessment.ReasonCodes` に追記。
-- [ ] 既存テストを宛先依存へ更新（設計 §3.4 のインライン記載に従う）:
-  - [ ] `coreutils_consistency_test.go::TestConsistency_RmAllForms` を更新（信頼 safe-zone=Low／trust-critical=High／unresolved=High）。
-  - [ ] `coreutils_consistency_test.go::TestConsistency_DestructiveAbsolutePath` を更新（trust-critical 絶対パス=High は維持、safe-zone 絶対パス=Low）。
-  - [ ] `coreutils_consistency_test.go::TestCoreutilsRiskConsistency_Setuid` を更新（setuid は権限付与下限で High を維持）。
-  - [ ] `evaluator_test.go::TestEvaluateRisk_AbsoluteRmRfHigh` 等の破壊系ケースを宛先依存へ更新。
+- [x] **注入シーム（PR 独立緑のため、§3.2 参照）**: `StandardEvaluator` に axis-2 入力を組み立てるための**注入可能フィールド**
+      （`zoning *zoningParams`、既存 `openIdentity` と同じ注入様式。nil=axis-2 無効＝レガシー挙動）を本 Phase で導入し、
+      `evaluateDimensions` はそこから `ZoningInput` を作ってディスパッチする。**設計差分**: 注入を生の `*security.Config` でなく
+      専用 struct `zoningParams`（systemCriticalPaths／trustedDirectories／outputCriticalPathPatterns／dedicatedTempDir／runAsIdent）
+      とした。理由: `Config.TrustedDirectories` フィールド追加は P6 の所掌のため、P4 で `*security.Config` を注入すると同フィールドが
+      未存在でコンパイルできない。`zoningParams` は P6 で `security.Config`＋run-as 解決から populate する。統合テストは評価器を
+      **直接注入**（`newZoningEvaluator` テストコンストラクタ）して `NewRunner` を経由しない。公開 `NewStandardEvaluator` の引数追加・
+      本番 run-as 名解決・`runner.go` 配線・`Config`/`SecuritySpec`/`loader` のフィールド追加は **P6**（よって本 Phase は P6 を待たず緑）。
+- [x] ① `IsDestructiveFileOperation` の寄与を完全認識時に飛ばす。
+- [x] ② `CoreutilsCommandRisk` の破壊系 High 寄与を完全認識時に飛ばす。**binary 解析抑止に使う `coreutilsHandled` は維持**し、
+      破壊系 High の加算のみ抑止する（両者を分離。`applyCoreutilsRisk` ヘルパに切り出し）。
+- [x] ③ profile `DestructionRisk` を**破壊コンポーネント粒度**で抑止（設計 §3.4）: `ProfileFactorRisk`/`applyProfileFactors`
+      に `suppressDestruction` フラグを渡す。他因子（`NetworkRisk`/`DataExfilRisk` 等）と `NetworkType`/`Reasons` は引き続き適用する。
+- [x] ④ `CheckDangerousArgPatterns` の寄与を完全認識のファイル操作コマンドで**ディスパッチ粒度**で抑止する（`Applies && Recognized`
+      のとき④を呼ばない）。一致エントリは破壊系で、判断軸2 の区分/操作固有の下限で再確立される（設計 §3.4 表）。`wget`/`curl`/`nc` 等の
+      ネットワーク系エントリは④抑止対象外（`Applies==false` のため従来どおり効く）。
+- [x] ⑤ setuid/setgid lstat 下限は**再パースせず**、既存シグナルを流用する。完全認識で②coreutils を抑止する経路では、
+      `CommandHasSetuidOrSetgidBit`（`hasSetuidOrSetgidBit` の公開ラッパ）で setuid バイナリ High を再確立する（設計 §3.2 注・§3.4 例外）。
+- [x] `RiskAssessment.Level` を判断軸1 と max 合成（AC-18）。`LocationResult.ReasonCodes` を `RiskAssessment.ReasonCodes` に追記し、
+      `OperandZones` を格納（`foldZoning` ヘルパ）。
+- [x] **multicall の保守的扱い（fail-closed の明示）**: `coreutils rm …`（multicall）はコマンド名が `coreutils` で axis-2 が rm 操作に
+      分解しないため `Applies==false` となり、レガシー分類（②）が残って宛先非依存に High のまま（fail-closed＝安全、過剰分類）。
+      multicall の宛先依存分解は本タスク対象外（将来拡張）。
+- [x] 既存テストを宛先依存へ更新:
+  - [x] `coreutils_consistency_test.go::TestConsistency_RmAllForms`（basename/absolute は trust-critical=High／safe-zone=Low、
+        multicall は上記のとおり保守的に High）。
+  - [x] `coreutils_consistency_test.go::TestConsistency_DestructiveAbsolutePath`（trust-critical=High／safe-zone=Low）。
+  - [x] `coreutils_consistency_test.go::TestCoreutilsRiskConsistency_Setuid`（setuid バイナリは⑤再確立で High を維持）。
+  - [x] `evaluator_test.go::TestEvaluateRisk_AbsoluteRmRfHigh` を `TestEvaluateRisk_RmRfDestinationDependent` に改名し宛先依存へ。
 
 **成功基準**:
-- [ ] 信頼 safe-zone `rm -rf $WORKDIR/build`=Low（④rank6・②coreutils の固定 High で打ち消されない、AC-17）。
-- [ ] ordinary `rm /srv/app/cache.dat`=Medium（AC-17）。
-- [ ] 未知フラグで宛先不確実な `rm`=High（①〜⑤を残す、AC-17）。
-- [ ] `cp -a … /usr/bin`=High（判断軸1×判断軸2 の max、順序非依存、AC-18）。
-- [ ] 置き換えの取りこぼし防止条件（外した 5 系統が捕捉していた危険判定を、判断軸2 が同等以上のレベルで取りこぼさず再確立する
-      ことの確認。設計 §3.4 表）: ④の `chmod 777`=High・`chown root`（trust-critical 宛先=High／ordinary=Medium）が
-      §3.2 の権限付与下限/区分で同等以上になることを表明（「外したが再確立されない隙間」を塞ぐ）。
-- [ ] 非ファイル操作コマンド（同名でも `find -exec` の内側実行等）では④等を無効化しないこと。
+- [x] 信頼 safe-zone `rm -rf $WORKDIR/build`=Low（`TestAxis2ReplacesLegacyHigh`、AC-17）。
+- [x] ordinary `rm /srv/app/cache.dat`=Medium（AC-17）。
+- [x] 未知フラグで宛先不確実な `rm`=High（①〜⑤を残す、AC-17）。
+- [x] `cp -a … /usr/bin`=High（判断軸1×判断軸2 の max、`TestAxis1Axis2MaxComposition`、AC-18）。
+- [x] 置き換えの取りこぼし防止条件（`TestAxis2RecuperatesSuppressedHigh`）: `chmod 0777`（safe-zone でも High）・
+      `chown root`（trust-critical 宛先=High／ordinary=Medium）が §3.2 の権限付与下限/区分で再確立されることを表明。
+- [x] 非ファイル操作コマンドでは axis-2 が分類を変えないこと（`TestAxis2NonFileOpUnaffected`、zoning 有無で同一レベル）。
 
 ### PR-4 作成ポイント: evaluateDimensions integration and legacy High suppression
 
@@ -431,7 +429,8 @@
 - [ ] `security.Config` に `TrustedDirectories []string` を追加（設計 §3.6）。
 - [ ] `SecuritySpec` に `TrustedDirectories []string toml:"trusted_directories"` を追加（既存 `TrustedGIDs` と並置、設計 §3.6）。
 - [ ] `NewStandardEvaluator` に `*security.Config` 引数を 1 つ追加（既存引数・戻り型は不変、設計 §3.6）。本引数で、**P4 で導入した
-      `StandardEvaluator` の注入可能フィールド**（securityConfig＋`RunAsIdent`）を本番経路から populate する（テストは P4 同様に直接注入）。
+      `StandardEvaluator.zoning *zoningParams` 注入フィールド**を本番経路から populate する（`security.Config` の
+      `SystemCriticalPaths`/`TrustedDirectories`/`OutputCriticalPathPatterns`＋run-as 解決 `RunAsIdent` から構築。テストは P4 同様に直接注入）。
 - [ ] `StandardEvaluator` の run-as 解決ロジック（既定は os/user ベース、注入可能、既存 `openIdentity` と同じ注入パターン）を実装する
       （注入フィールド自体の導入は P4。本 Phase は本番の run-as 名→identity 解決を与える、設計 §3.6）。
 - [ ] run-as 名→`RunAsIdent` の解決を評価層（組み込み層）で行い、precomputed 値を `ZoningInput` へ注入（設計 §3.6・AC-21）。
@@ -543,11 +542,13 @@
 - **PR-2／PR-3**: `ResolveOperandPath`・Trusted 述語・`ClassifyDestinationZone` は `TrustedDirectories`/`SystemCriticalPaths` を
   **引数／`ZoningInput` フィールド**で受け取り、`security.Config.TrustedDirectories` を参照しない（同フィールドと本番転送は PR-6）。
   テストは `ZoningInput` を直接構築して safe-zone=Low（Trusted）等を表明する。よって PR-6 を待たずコンパイル・緑になる。
-- **PR-4**: `evaluateDimensions` は `StandardEvaluator` の**注入可能フィールド**（securityConfig＋precomputed `RunAsIdent`、既存
-  `openIdentity` と同じ注入様式）から `ZoningInput` を組み立ててディスパッチする。このフィールドは PR-4 で導入し、PR-4 の統合
-  テストは評価器を**直接注入**（`WithRiskEvaluator`／テストコンストラクタ）して `NewRunner` を経由しない。公開 API の
-  `NewStandardEvaluator(*security.Config)` 引数追加・本番 run-as 名解決・`runner.go` 配線・`Config`/`SecuritySpec`/`loader` の
-  フィールド追加は PR-6 が担い、PR-4 が導入した注入フィールドを本番経路へ接続する。したがって PR-4 は PR-6 を待たず緑になる。
+- **PR-4**: `evaluateDimensions` は `StandardEvaluator` の**注入可能フィールド** `zoning *zoningParams`（既存 `openIdentity` と
+  同じ注入様式。nil=axis-2 無効）から `ZoningInput` を組み立ててディスパッチする。`zoningParams` は生の `*security.Config` でなく
+  専用 struct（`Config.TrustedDirectories` 追加が PR-6 のため、PR-4 で `*security.Config` を注入すると未存在フィールドでコンパイル
+  不能）。このフィールドは PR-4 で導入し、PR-4 の統合テストは評価器を**直接注入**（`newZoningEvaluator` テストコンストラクタ）して
+  `NewRunner` を経由しない。公開 API の `NewStandardEvaluator` 引数追加・本番 run-as 名解決・`runner.go` 配線・
+  `Config`/`SecuritySpec`/`loader` のフィールド追加は PR-6 が担い、`zoningParams` を `security.Config`＋run-as 解決から populate して
+  本番経路へ接続する。したがって PR-4 は PR-6 を待たず緑になる。
 
 ---
 

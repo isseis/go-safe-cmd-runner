@@ -189,9 +189,18 @@ func TestEvaluateRisk_ProfileStepNoChangeWithoutProfile(t *testing.T) {
 }
 
 // an absolute-path destructive command is High.
-func TestEvaluateRisk_AbsoluteRmRfHigh(t *testing.T) {
-	ev := newVerifiedEvaluator()
-	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/bin/rm", []string{"-rf", "/tmp/x"}))
+// With axis-2 zoning enabled, rm -rf is classified by its destination zone (it is
+// no longer unconditionally High): trust-critical destination -> High, a
+// recursive delete confined to a Trusted safe-zone -> Low.
+func TestEvaluateRisk_RmRfDestinationDependent(t *testing.T) {
+	wd := filepath.Join(t.TempDir(), "work")
+	require.NoError(t, os.MkdirAll(filepath.Join(wd, "build"), 0o700))
+	ev := newZoningEvaluator(wd, zoningForeignIdent())
+
+	assert.Equal(t, runnertypes.RiskLevelHigh,
+		evalLevelInDir(t, ev, "/usr/bin/rm", []string{"-rf", "/usr/local/lib/x"}, wd))
+	assert.Equal(t, runnertypes.RiskLevelLow,
+		evalLevelInDir(t, ev, "/usr/bin/rm", []string{"-rf", filepath.Join(wd, "build")}, wd))
 }
 
 // systemctl change verbs and service (all actions) are High.

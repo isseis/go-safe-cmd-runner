@@ -136,8 +136,10 @@ func TestCoreutilsRiskConsistency_RuntimeVsDryRun(t *testing.T) {
 }
 
 // TestCoreutilsRiskConsistency_Setuid verifies that a setuid coreutils binary
-// (even with a safe name) is High under the shared evaluator, so normal and
-// dry-run both treat it as High.
+// (even with a safe name and a safe-zone destination that would otherwise be Low)
+// is High: when axis 2 fully recognizes the file operation it suppresses the
+// legacy destructive dimensions but re-establishes the setuid/setgid-binary signal
+// from the existing lstat signal.
 //
 // This is a separate test because the setuid bit may be silently ignored by the
 // OS (non-root on macOS), in which case the test is skipped.
@@ -156,15 +158,20 @@ func TestCoreutilsRiskConsistency_Setuid(t *testing.T) {
 		t.Skip("Skipping: OS silently ignored setuid bit (non-root on macOS)")
 	}
 
-	evaluator := newVerifiedEvaluator()
-	plan, err := evaluator.EvaluateRisk(verifiedCmd(path, nil))
+	wd := filepath.Join(t.TempDir(), "work")
+	require.NoError(t, os.MkdirAll(wd, 0o700))
+	evaluator := newZoningEvaluator(wd, zoningForeignIdent())
+	// mkdir into a Trusted safe-zone would be Low on its destination alone; the
+	// setuid bit on the binary keeps it High.
+	plan, err := evaluator.EvaluateRisk(verifiedCmdInDir(path, []string{filepath.Join(wd, "d")}, wd))
 	require.NoError(t, err)
 	assert.Equal(t, runnertypes.RiskLevelHigh, plan.Assessment.Level)
 }
 
-// TestConsistency_DestructiveAbsolutePath verifies a destructive command given by
-// absolute path is High via the shared evaluator that both runtime and dry-run
-// use.
+// TestConsistency_DestructiveAbsolutePath verifies that, with axis-2 zoning, a
+// destructive command given by absolute path is classified by its destination:
+// a trust-critical destination is High, a Trusted safe-zone destination is Low
+// (the legacy unconditional-High classification is replaced).
 //
 // Overriding coreutilsDir forbids t.Parallel().
 func TestConsistency_DestructiveAbsolutePath(t *testing.T) {
@@ -172,15 +179,26 @@ func TestConsistency_DestructiveAbsolutePath(t *testing.T) {
 	security.SetCoreutilsDirForTest(t, tmp)
 	rm := makeConsistencyBinary(t, tmp, "rm")
 
-	ev := newVerifiedEvaluator()
-	plan, err := ev.EvaluateRisk(verifiedCmd(rm, []string{"-rf", "/tmp/x"}))
+	wd := filepath.Join(t.TempDir(), "work")
+	require.NoError(t, os.MkdirAll(filepath.Join(wd, "build"), 0o700))
+	ev := newZoningEvaluator(wd, zoningForeignIdent())
+
+	high, err := ev.EvaluateRisk(verifiedCmdInDir(rm, []string{"-rf", "/usr/local/lib/x"}, wd))
 	require.NoError(t, err)
-	assert.Equal(t, runnertypes.RiskLevelHigh, plan.Assessment.Level)
+	assert.Equal(t, runnertypes.RiskLevelHigh, high.Assessment.Level, "trust-critical destination")
+
+	low, err := ev.EvaluateRisk(verifiedCmdInDir(rm, []string{"-rf", filepath.Join(wd, "build")}, wd))
+	require.NoError(t, err)
+	assert.Equal(t, runnertypes.RiskLevelLow, low.Assessment.Level, "Trusted safe-zone destination")
 }
 
-// TestConsistency_RmAllForms verifies rm reaches High through the shared
-// evaluator whether invoked by basename, absolute coreutils path, or coreutils
-// multicall entrypoint.
+// TestConsistency_RmAllForms verifies rm classification through the shared
+// evaluator across invocation forms. A trust-critical destination is High in
+// every form. A Trusted safe-zone destination is Low for the direct forms
+// (basename, absolute coreutils path), which axis 2 recognizes as rm; the
+// coreutils multicall entrypoint ("coreutils rm ...") is named "coreutils", which
+// axis 2 does not destructure into an rm operation, so it stays conservatively
+// High via the retained legacy classification (fail-closed, not fail-open).
 //
 // Overriding coreutilsDir forbids t.Parallel().
 func TestConsistency_RmAllForms(t *testing.T) {
@@ -189,21 +207,32 @@ func TestConsistency_RmAllForms(t *testing.T) {
 	rm := makeConsistencyBinary(t, tmp, "rm")
 	coreutils := makeConsistencyBinary(t, tmp, "coreutils")
 
-	ev := newVerifiedEvaluator()
+	wd := filepath.Join(t.TempDir(), "work")
+	require.NoError(t, os.MkdirAll(filepath.Join(wd, "build"), 0o700))
+	ev := newZoningEvaluator(wd, zoningForeignIdent())
+
+	critical := "/usr/local/lib/x"
+	safe := filepath.Join(wd, "build")
 	tests := []struct {
-		name string
-		cmd  string
-		args []string
+		name     string
+		cmd      string
+		crit     []string
+		low      []string
+		safeWant runnertypes.RiskLevel
 	}{
-		{"basename", "rm", []string{"-rf", "/tmp/x"}},         // destructive-name dimension
-		{"absolute coreutils", rm, []string{"-rf", "/tmp/x"}}, // coreutils classification
-		{"multicall", coreutils, []string{"rm", "-rf", "/tmp/x"}},
+		{"basename", "rm", []string{"-rf", critical}, []string{"-rf", safe}, runnertypes.RiskLevelLow},
+		{"absolute coreutils", rm, []string{"-rf", critical}, []string{"-rf", safe}, runnertypes.RiskLevelLow},
+		{"multicall", coreutils, []string{"rm", "-rf", critical}, []string{"rm", "-rf", safe}, runnertypes.RiskLevelHigh},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			plan, err := ev.EvaluateRisk(verifiedCmd(tt.cmd, tt.args))
+			high, err := ev.EvaluateRisk(verifiedCmdInDir(tt.cmd, tt.crit, wd))
 			require.NoError(t, err)
-			assert.Equal(t, runnertypes.RiskLevelHigh, plan.Assessment.Level)
+			assert.Equal(t, runnertypes.RiskLevelHigh, high.Assessment.Level, "trust-critical")
+
+			low, err := ev.EvaluateRisk(verifiedCmdInDir(tt.cmd, tt.low, wd))
+			require.NoError(t, err)
+			assert.Equal(t, tt.safeWant, low.Assessment.Level, "safe-zone")
 		})
 	}
 }
