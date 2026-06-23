@@ -600,7 +600,7 @@
 
 PR 単位で完了を追跡する（PR 構成は §3.2、各 PR の作成ポイントは Phase 末尾の「PR-N 作成ポイント」節を参照）。
 
-- [ ] PR-1 マージ済み（対象ステップ: P1）— DTO・型・reason code family（`risktypes`）／`TestReasonCodes_AllDistinct` 緑
+- [x] PR-1 マージ済み（対象ステップ: P1）— DTO・型・reason code family（`risktypes`）／`TestReasonCodes_AllDistinct` 緑
 - [ ] PR-2 マージ済み（対象ステップ: P2）— 専用リゾルバ＋Trusted 述語／symlink 偽装・fail-closed・メモ化・差分テスト緑
 - [ ] PR-3 マージ済み（対象ステップ: P3）— `ClassifyDestinationZone`（仕様表＋区分判定＋操作固有の下限＋特則）／表駆動・区分・下限テスト緑
 - [ ] PR-4 マージ済み（対象ステップ: P4）— `evaluateDimensions` 組み込み＋5 系統抑止／観測可能プロパティ・取りこぼし防止条件・既存テスト更新緑
