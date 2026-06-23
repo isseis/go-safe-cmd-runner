@@ -310,6 +310,10 @@ func (e *StandardEvaluator) evaluateDimensions(
 			return risktypes.RiskAssessment{}, err
 		}
 		if blocked != nil {
+			// Carry the per-operand audit records onto the deny so a recognized file
+			// operation denied for an uncertain binary still records its zoning (the
+			// level fold below is skipped on this fail-closed deny path).
+			blocked.OperandZones = zone.Operands
 			return *blocked, nil
 		}
 	}
@@ -334,7 +338,12 @@ func applyCoreutilsRisk(a *risktypes.RiskAssessment, cmdPath string, coreutilsRi
 		addDimension(a, coreutilsRisk, risktypes.ReasonCoreutilsClassification)
 		return
 	}
-	if setuid, err := security.CommandHasSetuidOrSetgidBit(cmdPath); err == nil && setuid {
+	setuid, err := security.CommandHasSetuidOrSetgidBit(cmdPath)
+	if err != nil || setuid {
+		// A stat failure here is anomalous (CoreutilsCommandRisk stat'd the same
+		// binary without error moments ago) and must not silently drop the
+		// setuid-binary signal, which would be a High->Low regression. Fail closed
+		// to High on either a set bit or an unexpected error.
 		addDimension(a, runnertypes.RiskLevelHigh, risktypes.ReasonPermissionGrant)
 	}
 }
