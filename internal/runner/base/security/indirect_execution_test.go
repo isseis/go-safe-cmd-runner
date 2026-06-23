@@ -926,7 +926,12 @@ func TestIndirect_CommandExecOptionsGated(t *testing.T) {
 		{"rsync -e", "rsync", []string{"-e", "ssh -p 22", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		{"rsync --rsh=", "rsync", []string{"--rsh=ssh", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		{"rsync -essh attached", "rsync", []string{"-essh", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
-		{"rsync -avze bundle", "rsync", []string{"-avze", "ssh", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"rsync -avze bundle end", "rsync", []string{"-avze", "ssh", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// Mid-bundle: -e is not the last letter, so its value is the token remainder
+		// ("vz"), NOT the next token. Reading the next token here would mis-extract
+		// "src" (a path operand) and under-gate. Gating "vz" as a (bogus) command name
+		// still yields a High floor, locking the remainder-precedence rule.
+		{"rsync -aevz mid-bundle", "rsync", []string{"-aevz", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		// A privilege token inside the helper string is Critical.
 		{"rsync -e sudo", "rsync", []string{"-e", "sudo cmd", "src", "dst"}, IndirectCritical, 0},
 		// A safe-set-only value (no shell metacharacters) is split cleanly and gated.
@@ -1137,6 +1142,11 @@ func TestIndirect_NamespaceWrappersGated(t *testing.T) {
 		// flock: -w consumes a value, the lock operand is skipped, then the command.
 		{"flock -w value lock then privilege", "flock", []string{"-w", "10", "/tmp/l", "sudo", "id"}, IndirectCritical, 0},
 		{"flock -c command string privilege", "flock", []string{"/tmp/l", "-c", "sudo id"}, IndirectCritical, 0},
+		// flock's -c command string goes through the fail-closed allowlist split: a
+		// shell separator or newline cannot be faithfully tokenized, so it is rejected
+		// rather than gating only the first token and dropping the hidden command.
+		{"flock -c separator reject", "flock", []string{"/tmp/l", "-c", "sudo; id"}, IndirectReject, 0},
+		{"flock -c newline reject", "flock", []string{"/tmp/l", "-c", "sudo\nid"}, IndirectReject, 0},
 		{"flock fd-only form", "flock", []string{"9"}, IndirectNone, 0},
 		{"flock argv generic inner", "flock", []string{"f", "cmd"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		// watch without -x joins all operands into one /bin/sh -c string.
@@ -1148,6 +1158,9 @@ func TestIndirect_NamespaceWrappersGated(t *testing.T) {
 		// watch operand concatenation: a ";" between operands hides "sudo id", so the
 		// joined string contains a shell separator and fails closed.
 		{"watch concat shell separator reject", "watch", []string{"ls", "-l", ";", "sudo", "id"}, IndirectReject, 0},
+		// A newline in the joined operand string is also outside the safe set, so the
+		// fail-closed split rejects it rather than gating only the first line.
+		{"watch concat newline reject", "watch", []string{"ls\nsudo id"}, IndirectReject, 0},
 		// watch -x runs the operands as an argv list (no /bin/sh -c), so "-n" after
 		// the command is the inner command's argument, not watch's option.
 		{"watch -x argv destructive", "watch", []string{"-x", "rm", "-rf", "/"}, IndirectFloor, runnertypes.RiskLevelHigh},

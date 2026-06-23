@@ -1629,7 +1629,13 @@ func rsyncRemoteShellValue(args []string) (value string, found, extractable bool
 			return a[len("--rsh="):], true, true
 		case shortFlagInBundle(a, 'e'):
 			// Short attached/bundle form. The flag letters precede any attached "=value";
-			// the remainder of the token after 'e' is -e's value.
+			// the remainder of the token after 'e' is -e's value. This intentionally
+			// does not getopt-classify the letters before 'e': a preceding short
+			// value-option (e.g. -B in "-Be ssh") would, in real getopt, bind the 'e'
+			// as ITS value, so treating 'e' as -e here over-extracts. That is
+			// fail-closed (it gates a bogus inner rather than missing -e), so the
+			// simpler scan is preferred; do not "fix" it into a next-token read, which
+			// would fail open.
 			flags := a[1:]
 			if eq := strings.IndexByte(flags, '='); eq >= 0 {
 				flags = flags[:eq]
