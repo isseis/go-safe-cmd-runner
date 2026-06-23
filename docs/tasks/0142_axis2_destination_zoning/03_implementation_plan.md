@@ -156,8 +156,10 @@
 - [ ] 未存在 leaf を「最深の存在親」まで解決して末尾を畳み込む。**最深存在親が symlink のときは解決を確定できないため
       エラー**（呼び出し側で `ZoneUnresolved`＝書込/削除 High、設計 §3.3 注）。
 - [ ] cycle・深さ超過（`maxHops` 超）・mid-chain の `readlink`/`lstat` 失敗で `error` を返す（fail-closed、設計 §4）。
-- [ ] AC-23 の解決コスト計測のため、リゾルバが `lstat`/`readlink`/`stat` を**注入可能な関数セット**経由で呼ぶ構造にする
-      （既定は実 os、テストは呼出回数を数えるスタブを注入。`StandardEvaluator.openIdentity` と同じ注入パターン）。
+- [ ] AC-23 の解決コスト計測のため、リゾルバが `lstat`/`readlink` を**注入可能な関数セット**経由で呼ぶ構造にする
+      （既定は実 os、テストは呼出回数を数えるスタブを注入。`StandardEvaluator.openIdentity` と同じ注入パターン）。注入集合は
+      read-only の `lstat`/`readlink` のみとし、symlink を追従する `os.Stat` は含めない（設計 §3.3 の read-only 制約。`os.Stat` を
+      混ぜると経路要素の所有権検査が symlink ターゲットを見てしまい区分判定を欺けるため）。
 - [ ] メモ化: 解決のメモ化を 1 回の判定呼び出し内にスコープし、鍵は**解決後の絶対パス**とする。identity 依存の Trusted
       判定そのものはキャッシュしない（設計 §3.3(e)）。
 - [ ] Trusted 述語を実装（設計 §3.3(d)）: 解決後パスが `TrustedDirectories` 配下、かつ**safe-zone 起点の親以上**の経路
@@ -349,7 +351,7 @@
 **作業内容**:
 - [ ] 決定性テスト（AC-22）: 同一入力・同一 FS 状態で runtime 経路と dry-run 経路が同一レベルを返すことを表明。
 - [ ] 解決コスト上限テスト（AC-23）: 多数オペランド（>N）・深い symlink チェーン（>M）で fail-closed（High）になり、メモ化により
-      注入 `lstat`/`stat` 呼出回数が線形に収まることを表明。
+      注入 `lstat`/`readlink` 呼出回数が線形に収まることを表明。
 - [ ] grep ガード（AC-21 補助）: 判断軸2 の組み込みコード（`destination_zoning.go`・`operand_path_resolver.go`）が live-identity
       API（`os.Geteuid`/`os.Getuid`/`syscall`/`unix` の uid/gid/groups・`user.Current`）を呼ばないことを `rg`（§7 footnote の選択
       `|` を用いた正規表現）で検査するテスト。**正のコントロール**（既知の悪例文字列が必ずマッチすること）を併せて表明し、
@@ -489,13 +491,13 @@
 | AC-23 解決コスト上限 | test | `security/operand_path_resolver_test.go::TestResolutionCeiling`＋`::TestMemoizationLinear` | 上限超過=High、呼出線形 |
 | NF-001 reason code 網羅/一意 | test | `risktypes/reason_codes_test.go::TestReasonCodes_AllDistinct` | 新 7 定数含め緑 |
 | NF-002 ビルド/テスト緑 | static | `make test && make lint`（または `go build -tags test ./internal/runner/...`） | 終了コード 0 |
-| NF-003 決定的・read-only | test+static | test: `::TestDeterminismRuntimeEqualsDryRun`／static: `rg -n 'os\.(Create|Remove|RemoveAll|WriteFile|Mkdir|MkdirAll|OpenFile|Symlink|Link|Rename|Chmod|Chown|Truncate|NewFile)' internal/runner/base/security/destination_zoning.go internal/runner/base/security/operand_path_resolver.go`（期待: **マッチ 0 件**） | 書込系 API 不在（read-only） |
+| NF-003 決定的・read-only | test+static | test: `::TestDeterminismRuntimeEqualsDryRun`／static: `rg -n 'os\.(Create|CreateTemp|Remove|RemoveAll|WriteFile|Mkdir|MkdirAll|MkdirTemp|OpenFile|Symlink|Link|Rename|Chmod|Chown|Lchown|Chtimes|Truncate|NewFile)' internal/runner/base/security/destination_zoning.go internal/runner/base/security/operand_path_resolver.go`（期待: **マッチ 0 件**） | 書込系 API 不在（read-only） |
 
 > **grep ガードの正規表現に関する注意（ripgrep のメタ文字）**: ripgrep 既定（Rust regex）では `|` が選択（alternation）で、`\|` は
 > **リテラルのパイプ文字**になる。`\|` を選択のつもりで使うとパターンが空振りし、危険 API が存在してもガードが「0 件＝合格」と
 > 誤判定する（fail-open）。よって選択は素の `|` で書く（上記 NF-003 行・下記 AC-21 ガードとも修正済み）。
 >
-> grep ガード（AC-21 static）の具体コマンド: `rg -n 'os\.Geteuid|os\.Getuid|user\.Current|syscall\.Get(euid|uid|gid|egid)|unix\.Get(euid|uid|gid|egid)|unix\.Getgroups' internal/runner/base/security/destination_zoning.go internal/runner/base/security/operand_path_resolver.go` の期待結果は **マッチ 0 件**。`live_identity_guard_test.go` がこの検査をテストとして実行する。
+> grep ガード（AC-21 static）の具体コマンド: `rg -n 'os\.Get(euid|uid|gid|egid|groups)|user\.Current|syscall\.Get(euid|uid|gid|egid|groups)|unix\.Get(euid|uid|gid|egid|groups)' internal/runner/base/security/destination_zoning.go internal/runner/base/security/operand_path_resolver.go` の期待結果は **マッチ 0 件**（uid/euid/gid/egid/groups を `os`/`syscall`/`unix` の各パッケージで網羅）。`live_identity_guard_test.go` がこの検査をテストとして実行する。
 > **自己検証（正のコントロール）を必須にする**: ガードテストは、検査用の正規表現がコンパイルでき、かつ既知の悪例文字列
 > （例 `"os.Geteuid()"`・`"os.Create(p)"`）に**必ずマッチする**ことを表明する正のコントロールを含める。これにより将来の
 > タイプミスでパターンが空振りに戻っても、ガードが沈黙で壊れることを防ぐ。
