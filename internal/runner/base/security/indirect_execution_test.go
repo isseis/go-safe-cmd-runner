@@ -981,6 +981,14 @@ func TestIndirect_CommandExecOptionsGated(t *testing.T) {
 		// A plain ssh with no ProxyCommand/LocalCommand option is left to Medium.
 		{"ssh plain", "ssh", []string{"-p", "22", "host"}, IndirectNone, 0},
 		{"ssh -o unrelated option", "ssh", []string{"-o", "StrictHostKeyChecking=no", "host"}, IndirectNone, 0},
+		// scp and sftp pass -o through to ssh, so they carry the same ProxyCommand/
+		// LocalCommand local-exec capability and must be gated identically; without a
+		// helper option they fall through to the normal (Medium) classification.
+		{"scp -o ProxyCommand sudo", "scp", []string{"-o", "ProxyCommand=sudo id", "host:f", "."}, IndirectCritical, 0},
+		{"sftp -o ProxyCommand sudo", "sftp", []string{"-o", "ProxyCommand=sudo id", "host"}, IndirectCritical, 0},
+		{"scp -o ProxyCommand benign", "scp", []string{"-o", "ProxyCommand=ssh -W %h:%p bastion", "host:f", "."}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"scp plain", "scp", []string{"src", "host:dst"}, IndirectNone, 0},
+		{"sftp plain", "sftp", []string{"host"}, IndirectNone, 0},
 		// Multiple helper-exec options: every occurrence is evaluated and the worst
 		// (most restrictive) outcome wins, so a benign option cannot mask a dangerous
 		// later one (order-independent). ssh applies ProxyCommand and LocalCommand both.
