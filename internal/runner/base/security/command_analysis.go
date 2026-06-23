@@ -61,7 +61,7 @@ var commandProfileDefinitions = []CommandProfileDef{
 		NetworkRisk(runnertypes.RiskLevelMedium, "Establishes network connections").
 		AlwaysNetwork().
 		Build(),
-	NewProfile("ssh", "scp").
+	NewProfile("ssh", "scp", "sftp").
 		NetworkRisk(runnertypes.RiskLevelMedium, "Remote operations via network").
 		AlwaysNetwork().
 		Build(),

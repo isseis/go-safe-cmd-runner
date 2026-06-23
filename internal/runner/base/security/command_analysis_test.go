@@ -1389,6 +1389,7 @@ func TestCommandRiskProfiles_NetworkCommands(t *testing.T) {
 		{"wget is always network", "wget", NetworkTypeAlways},
 		{"ssh is always network", "ssh", NetworkTypeAlways},
 		{"scp is always network", "scp", NetworkTypeAlways},
+		{"sftp is always network", "sftp", NetworkTypeAlways},
 		{"nc is always network", "nc", NetworkTypeAlways},
 		{"netcat is always network", "netcat", NetworkTypeAlways},
 		{"telnet is always network", "telnet", NetworkTypeAlways},
@@ -1503,6 +1504,7 @@ func TestMigration_RiskLevelConsistency(t *testing.T) {
 		{"telnet", runnertypes.RiskLevelMedium},
 		{"ssh", runnertypes.RiskLevelMedium},
 		{"scp", runnertypes.RiskLevelMedium},
+		{"sftp", runnertypes.RiskLevelMedium},
 		{"aws", runnertypes.RiskLevelMedium},
 
 		// Network commands (conditional) - Medium (changed from Low)
@@ -1525,7 +1527,7 @@ func TestMigration_RiskLevelConsistency(t *testing.T) {
 // TestMigration_NetworkTypeConsistency verifies that network types are correctly migrated
 func TestMigration_NetworkTypeConsistency(t *testing.T) {
 	alwaysNetwork := []string{
-		"curl", "wget", "nc", "netcat", "telnet", "ssh", "scp", "aws",
+		"curl", "wget", "nc", "netcat", "telnet", "ssh", "scp", "sftp", "aws",
 		"claude", "gemini", "chatgpt", "gpt", "openai", "anthropic",
 		// Shells - can execute arbitrary network commands
 		"bash", "sh", "dash", "zsh", "ksh", "csh", "tcsh", "fish",
