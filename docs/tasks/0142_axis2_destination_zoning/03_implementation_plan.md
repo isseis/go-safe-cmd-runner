@@ -233,6 +233,12 @@
 - [ ] 各オペランドに `OperandRole`（write/read）を付与する（unresolved の非対称下限のため、AC-05）。
 - [ ] `ClassifyDestinationZone(input ZoningInput, names map[string]struct{}, cmdPath string, args []string) LocationResult`
       を実装（設計 §3.2）。抽出→`ResolveOperandPath` で解決→区分判定→操作固有の下限→全オペランド max。
+      1 コマンド評価につき `operandResolver` を 1 つ生成し全オペランドで共有（メモ化で `lstat`/`readlink` を畳む）。
+- [ ] （PR-2 レビュー由来の繰り越し）`isTrustedOperand` の祖先書込可否を `operandResolver` にキャッシュし、K オペランドで
+      `origin` 祖先（深さ Do）への `lstat` が重複しないようにする。**鍵には identity を含める**（または resolver インスタンスを
+      単一 identity にスコープする）。鍵を dir のみにすると、同一 resolver を異なる `RunAsIdent` で問い合わせたとき
+      stale な書込可否を返し Trusted 判定を誤る（PR-2 で却下した dir-only 案の不具合）。本キャッシュの線形コストは下の
+      解決コスト上限テストで担保する。
 - [ ] パス信頼区分の判定（AC-01〜AC-05）: trust-critical（`SystemCriticalPaths` 一致/配下、`/` は完全一致のみ）→High、
       ordinary→Medium、safe-zone（Trusted→Low／非 Trusted→Medium フォールバック）、unresolved（write=High・read=Medium）。
       safe-zone が trust-critical と重複/配下のときは trust-critical 優先（AC-04(c)）。
