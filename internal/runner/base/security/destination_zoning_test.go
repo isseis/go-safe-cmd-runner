@@ -585,6 +585,14 @@ func TestDataTransferWrite(t *testing.T) {
 	assert.Equal(t, runnertypes.RiskLevelMedium,
 		classify(in, "rsync", filepath.Join(wd, "src"), "host:/remote/path").Level)
 
+	// The relative remote forms (host:file, host:, user@host:file) are also egress
+	// (rsync's positional rule: a colon before the first slash means remote).
+	for _, dest := range []string{"host:file", "host:", "user@host:file"} {
+		r := classify(in, "rsync", filepath.Join(wd, "src"), dest)
+		assert.Equal(t, runnertypes.RiskLevelMedium, r.Level, "rsync to %q is remote egress", dest)
+		assert.Empty(t, r.Operands, "remote dest %q has no local operand", dest)
+	}
+
 	// Purely local rsync into a safe-zone is not over-classified.
 	assert.Equal(t, runnertypes.RiskLevelLow,
 		classify(in, "rsync", filepath.Join(wd, "a"), filepath.Join(wd, "b")).Level)

@@ -847,27 +847,35 @@ func extractFind(args []string) extraction {
 	return ext
 }
 
-// hostTokenRe matches a bare host/module token (no path separators), used to
-// recognize an rsync daemon double-colon module (host::module).
+// hostTokenRe matches a bare host token (no path separators, optional leading
+// user@ stripped by the caller), used to recognize an rsync/scp remote host.
 var hostTokenRe = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
 
-// isRemoteTerminus reports whether an rsync/scp operand denotes a remote location:
-// a URL (rsync://...), an SSH-style host:path / user@host:path, or an rsync daemon
-// bare module host::module. host::module is the gap the existing
-// hasNetworkArguments misses (no '/' in the path part); detecting it here, only
-// inside the rsync/scp extractors, keeps the global network-argument check
-// unchanged so unrelated "::" arguments (std::string, HTTP::Tiny) are never
-// misclassified.
+// isRemoteTerminus reports whether an rsync/scp operand denotes a remote location.
+// It uses rsync's own positional rule: a ':' appearing before the first '/' is the
+// remote host separator. This uniformly covers host:path, user@host:path, the
+// daemon bare module host::module, AND the relative form host:file / host: (the
+// last of which the global hasNetworkArguments misses because the path part has no
+// '/'). A local path never has a ':' before its first '/'. URLs (rsync://...) are
+// matched first. This detection stays inside the rsync/scp extractors, so the
+// global network-argument check is unchanged and unrelated "::" arguments
+// (std::string, HTTP::Tiny) on other commands are never misclassified.
 func isRemoteTerminus(arg string) bool {
 	if strings.Contains(arg, "://") {
 		return true
 	}
-	if i := strings.Index(arg, "::"); i > 0 {
-		if hostTokenRe.MatchString(arg[:i]) {
-			return true
-		}
+	colon := strings.IndexByte(arg, ':')
+	if colon <= 0 {
+		return false
 	}
-	return containsSSHStyleAddress([]string{arg})
+	if slash := strings.IndexByte(arg, '/'); slash >= 0 && slash < colon {
+		return false // a '/' before the ':' means a local path (./a:b, /abs:x)
+	}
+	host := arg[:colon]
+	if at := strings.IndexByte(host, '@'); at >= 0 {
+		host = host[at+1:]
+	}
+	return host != "" && hostTokenRe.MatchString(host)
 }
 
 // extractCurl extracts curl's local write destination (-o FILE, or -O which writes

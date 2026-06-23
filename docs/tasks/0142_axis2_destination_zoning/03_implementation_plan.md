@@ -380,8 +380,10 @@
 - [x] 最終リスク = `max(データ送信の名前 Medium〔0141〕, 書込先のパス信頼区分)` を合成する（評価層の dimension max が所有。
       curl/wget の egress Medium は network profile（不抑止）から、rsync `host::module` の egress Medium は axis-2 の
       `remoteEgress` 床から供給される、AC-16）。
-- [x] rsync/scp のリモート終端判定に `host::module`（二重コロン bare module、末尾パス無し）を追加（設計 §3.5(1)）。リモート宛先の
-      ときは zone 対象のローカルパスが無く egress（Medium）が支配、ローカル宛先のときのみ書込先区分。
+- [x] rsync/scp のリモート終端判定は **rsync 自身の位置規則**（最初の `/` より前に `:` があればリモートホスト区切り）で実装。
+      これにより `host:path`・`user@host:path`・daemon bare module `host::module`・**相対形 `host:file`/`host:`** を一様に検出する
+      （相対形は path 部に `/` を持たないため global `hasNetworkArguments` が取りこぼす同類の隙間。設計 §3.5(1)、レビュー Issue 1）。
+      リモート宛先のときは zone 対象のローカルパスが無く egress（Medium）が支配、ローカル宛先のときのみ書込先区分。
 - [x] **設計選択**: `host::module` の egress 検出は **rsync/scp の `KindDataTransferWrite` 抽出器内に閉じ込めた**（設計 §3.5(2) の
       第 1 案）。`hasNetworkArguments` は変更しない。理由: `hasNetworkArguments` は profile 無しの全コマンドへ広く適用されるため、
       ここへ `host::module` を足すと `std::string`／`HTTP::Tiny` 等を誤検出する。抽出器に閉じ込めることで rsync/scp のみで検出し、
