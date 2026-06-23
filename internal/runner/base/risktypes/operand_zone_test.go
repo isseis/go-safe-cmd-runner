@@ -50,7 +50,7 @@ func TestRunAsIdent_ZeroValue(t *testing.T) {
 
 // TestRiskAssessment_OperandZonesEmptyByDefault documents the empty-vs-applied
 // contract: a fresh RiskAssessment has no operand zones, meaning axis 2 did not
-// apply (see OperandZone doc comment, consumed by task 0143).
+// apply (see OperandZone doc comment; consumed by the audit logger).
 func TestRiskAssessment_OperandZonesEmptyByDefault(t *testing.T) {
 	var ra RiskAssessment
 	assert.Empty(t, ra.OperandZones)

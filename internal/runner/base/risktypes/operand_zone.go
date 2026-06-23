@@ -31,10 +31,10 @@ const (
 )
 
 // OperandZone is the per-operand audit record. It is stored on RiskAssessment so
-// both the allow and deny paths can carry it to the audit logger (logger output
-// is task 0143). An empty []OperandZone means axis 2 did not apply (not a
-// file-operation command); an applied-but-unresolvable operand remains as an
-// element with Zone == ZoneUnresolved.
+// both the allow and deny paths can carry it to the audit logger. An empty
+// []OperandZone means axis 2 did not apply (not a file-operation command); an
+// applied-but-unresolvable operand remains as an element with
+// Zone == ZoneUnresolved.
 type OperandZone struct {
 	// Index is the operand position within the command.
 	Index int

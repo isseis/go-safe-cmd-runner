@@ -133,7 +133,7 @@ type RiskAssessment struct {
 	NetworkType string
 	// OperandZones carries the per-operand destination-zoning audit records
 	// (axis 2). Empty when axis 2 did not apply; see OperandZone for the
-	// empty-vs-unresolved contract consumed by task 0143.
+	// empty-vs-unresolved contract consumed by the audit logger.
 	OperandZones []OperandZone
 }
 
