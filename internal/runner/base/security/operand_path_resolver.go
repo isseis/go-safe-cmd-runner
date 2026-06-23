@@ -193,7 +193,10 @@ func (r *operandResolver) isTrustedOperand(resolved, origin string, trustedDirs 
 		return false
 	}
 
-	dir := filepath.Dir(origin)
+	// Clean origin so a trailing separator does not make filepath.Dir return the
+	// origin directory itself (which is intentionally excluded from the check)
+	// instead of its parent.
+	dir := filepath.Dir(filepath.Clean(origin))
 	for {
 		info, err := r.lstat(dir)
 		if err != nil {

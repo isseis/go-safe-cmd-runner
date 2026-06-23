@@ -23,16 +23,22 @@ func tempRoot(t *testing.T) string {
 }
 
 // TestResolveOperandPath_SymlinkTarget asserts the leaf symlink is followed to its
-// target, so a safe-zone-looking path that points at a trust-critical location is
-// classified by the target (cp evil $WORKDIR/link, link -> /etc/passwd).
+// target, so a safe-zone-looking path that points elsewhere is classified by the
+// target (the cp evil $WORKDIR/link, link -> trust-critical case in Phase 3). The
+// target is a real file with an absolute symlink so the expected resolved path is
+// stable across platforms (a hard-coded /etc could itself be a symlink).
 func TestResolveOperandPath_SymlinkTarget(t *testing.T) {
 	root := tempRoot(t)
+	target := filepath.Join(root, "elsewhere", "secret")
+	require.NoError(t, os.MkdirAll(filepath.Dir(target), 0o755))
+	require.NoError(t, os.WriteFile(target, nil, 0o600))
+
 	link := filepath.Join(root, "link")
-	require.NoError(t, os.Symlink("/etc/passwd", link))
+	require.NoError(t, os.Symlink(target, link)) // absolute target
 
 	got, err := ResolveOperandPath(link, "", MaxSymlinkDepth)
 	require.NoError(t, err)
-	assert.Equal(t, "/etc/passwd", got)
+	assert.Equal(t, target, got)
 }
 
 // TestResolveOperandPath_RelativeSymlinkTarget asserts an `ln -s` relative target
@@ -245,6 +251,12 @@ func TestTrustedPredicate(t *testing.T) {
 	identOther := risktypes.RunAsIdent{UID: euid + 1, GID: egid + 1}
 	assert.True(t, r.isTrustedOperand(resolved, origin, trustedDirs, identOther),
 		"foreign run-as over non-writable ancestors should be Trusted")
+
+	// A trailing separator on origin must not make the ancestor check start at
+	// origin itself (filepath.Dir of an uncleaned trailing-slash path returns the
+	// dir itself); the verdict must match the no-slash case.
+	assert.True(t, r.isTrustedOperand(resolved, origin+"/", trustedDirs, identOther),
+		"a trailing separator on origin should not change the verdict")
 
 	// The same call with an identity that owns the ancestors is not Trusted: the
 	// owner could chmod to repoint the safe-zone anchor. The live euid is constant
