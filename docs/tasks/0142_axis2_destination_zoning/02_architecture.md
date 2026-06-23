@@ -116,7 +116,7 @@ flowchart TD
 
 | # | 経路 | 変更内容 | 反映 AC |
 |---|---|---|---|
-| 1 | パス信頼区分モデル＋オペランド抽出 | `security` に新規分類器（オペランド抽出仕様表・専用リゾルバ・区分判定・操作固有の下限）を追加 | AC-01〜AC-15 |
+| 1 | パス信頼区分モデル＋オペランド抽出 | `security` にパス信頼区分の判定ロジック（オペランド抽出仕様表・専用リゾルバ・区分判定・操作固有の下限）を新規追加 | AC-01〜AC-15 |
 | 2 | データ送信の書込先合成 | データ送信系の書込先のパス信頼区分を判定し `max(名前 Medium〔0141〕, 書込先区分)` を合成 | AC-16 |
 | 3 | 既存 High 判定の置き換え | 完全認識のとき `evaluateDimensions` が既存 5 系統を外し `LocationResult` を唯一の寄与にする | AC-17, AC-18 |
 | 4 | 監査 DTO・config 組み込み・identity 注入 | `OperandZone` を `risktypes` に定義し `RiskAssessment` へ格納。`security.Config` と `RunAsIdent` を評価層へ通す | AC-19, AC-20, AC-21 |
@@ -199,7 +199,7 @@ flowchart LR
     CONFIG["internal/runner/config<br>(TOML ローダ)"]
     RUNNER["internal/runner<br>(runner.go)"]
     RISK["internal/runner/base/risk<br>(evaluator.go)"]
-    SEC["internal/runner/base/security<br>(パス信頼区分の分類器)"]
+    SEC["internal/runner/base/security<br>(パス信頼区分の判定ロジック)"]
     RT["internal/runner/base/risktypes<br>(OperandZone DTO)"]
     RNT["internal/runner/base/runnertypes<br>(SecuritySpec)"]
 
@@ -333,7 +333,7 @@ type RiskAssessment struct {
 }
 ```
 
-### 3.2 宛先パス信頼区分の分類器（`security`、AC-01〜AC-15）
+### 3.2 宛先パス信頼区分の判定ロジック（`security`、AC-01〜AC-15）
 
 判断軸2 の中核は `security` パッケージに新規追加する。オペランド抽出・パス解決・区分判定・操作固有の下限を
 すべて含む純関数として実装し、live identity・env を読まない（決定性）。`OperandZone` 群を含む
@@ -479,7 +479,7 @@ High に分類している既存 5 系統の破壊系 High 寄与を評価対象
 | ⑤ | coreutils の setuid/setgid lstat 下限 | [coreutils.go](../../../internal/runner/base/security/coreutils.go) |
 
 **完全認識の定義（positive recognition、fail-open 回避）**: (a) 抽出された全オペランドが非 `ZoneUnresolved` の確定
-区分を返し、かつ (b) オペランド抽出器が全コマンドライン引数を解析しきった（未解析の非フラグトークン無し・パスを
+区分を返し、かつ (b) オペランド抽出処理が全コマンドライン引数を解析しきった（未解析の非フラグトークン無し・パスを
 運び得る未知の値取りフラグ無し）。この両条件が `LocationResult.Recognized == true` に対応する。
 
 **不完全認識のとき**: 部分的/不確実なパース（一部オペランド未認識・未解析トークン残存・未知の値取りフラグ）は
@@ -588,8 +588,8 @@ High に分類している既存 5 系統の破壊系 High 寄与を評価対象
   - **根拠**: 無ければ configured 環境で AC-01/AC-04 がテスト注入でしか成立しない（[0140/00 §3.4](../0140_risk_level_classification_review/00_decomposition.md)）。
 
 `StandardEvaluator` は既存フィールド（`networkAnalyzer`・注入可能な `openIdentity`）に加え、判断軸2 用に
-`*security.Config` と run-as 解決器（注入可能フィールド、AC-21）の 2 つを持つ。コンストラクタは `*security.Config`
-引数を 1 つ追加し、run-as 解決器は既定値（os/user ベース）を内部で設定する（テストは差し替え可能）。
+`*security.Config` と run-as 解決ロジック（注入可能フィールド、AC-21）の 2 つを持つ。コンストラクタは `*security.Config`
+引数を 1 つ追加し、run-as 解決ロジックは既定値（os/user ベース）を内部で設定する（テストは差し替え可能）。
 
 ```go
 // NewStandardEvaluator gains a *security.Config argument so axis 2 can read the
