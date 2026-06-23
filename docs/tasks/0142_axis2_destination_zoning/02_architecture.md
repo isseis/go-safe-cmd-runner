@@ -373,6 +373,10 @@ type ZoningInput struct {
     SystemCriticalPaths []string    // from security.Config (AC-01)
     TrustedDirectories  []string    // trusted-directory allowlist (AC-04(d))
     RunAsIdent          RunAsIdent  // injected identity for the Trusted predicate
+    // OutputCriticalPathPatterns is the sensitive-file substring set (reused from
+    // security.Config) for the sensitive-source-copy floor. Injected here so the
+    // judgment stays a pure function of ZoningInput.
+    OutputCriticalPathPatterns []string
     MaxOperands         int         // resolution-cost ceiling N (AC-23)
     MaxSymlinkHops      int         // resolution-cost ceiling M (AC-23)
 }
