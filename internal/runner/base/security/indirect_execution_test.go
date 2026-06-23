@@ -279,6 +279,36 @@ func TestIndirect_InnerCommandGated(t *testing.T) {
 // TestIndirect_WrapperNoCommandMedium verifies a wrapper invoked with no inner
 // command is Medium and is distinct from an unextractable (rejected) form.
 func TestIndirect_WrapperNoCommandMedium(t *testing.T) {
+	// Wrappers with no safe TOML alternative keep a Medium no-command floor (env and
+	// timeout, which are redundant-with-config, are High and covered separately by
+	// TestIndirect_EnvTimeoutNoCommandHigh).
+	cases := []struct {
+		name string
+		cmd  string
+		args []string
+	}{
+		{"nice bare", "nice", nil},
+		{"nice adjustment only", "nice", []string{"-n", "10"}},
+		{"ionice class only", "ionice", []string{"-c", "2"}},
+		{"stdbuf bare", "stdbuf", nil},
+		{"setsid bare", "setsid", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := analyzeIndirectCmd(tc.cmd, tc.args...)
+			assert.Equal(t, IndirectFloor, res.Kind)
+			assert.Equal(t, runnertypes.RiskLevelMedium, res.Level)
+		})
+	}
+}
+
+// TestIndirect_EnvTimeoutNoCommandHigh verifies env and timeout, which have safe
+// TOML alternatives (env_vars/env_import, timeout), contribute a High floor even in
+// a no-command form. The floor is per-wrapper and applies through nesting, so
+// "nice timeout 5" is High as well. A timeout form carrying only value-less options
+// (timeout --foreground 5, timeout -v 5) reaches the High floor instead of failing
+// closed on an unrecognized option.
+func TestIndirect_EnvTimeoutNoCommandHigh(t *testing.T) {
 	cases := []struct {
 		name string
 		cmd  string
@@ -287,12 +317,15 @@ func TestIndirect_WrapperNoCommandMedium(t *testing.T) {
 		{"env only assignment", "env", []string{"FOO=bar"}},
 		{"env bare", "env", nil},
 		{"timeout duration only", "timeout", []string{"5"}},
+		{"nice timeout nested", "nice", []string{"timeout", "5"}},
+		{"timeout --foreground no command", "timeout", []string{"--foreground", "5"}},
+		{"timeout -v no command", "timeout", []string{"-v", "5"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			res := analyzeIndirectCmd(tc.cmd, tc.args...)
 			assert.Equal(t, IndirectFloor, res.Kind)
-			assert.Equal(t, runnertypes.RiskLevelMedium, res.Level)
+			assert.Equal(t, runnertypes.RiskLevelHigh, res.Level)
 		})
 	}
 }
@@ -689,10 +722,10 @@ func TestIndirect_UnextractableWrapperRejected(t *testing.T) {
 	assert.Equal(t, IndirectReject, analyzeIndirectCmd("timeout", "--mystery-opt", "/val", "sudo", "ls").Kind)
 	assert.Equal(t, IndirectReject, analyzeIndirectCmd("nice", "--mystery-opt", "/val", "sudo", "ls").Kind)
 
-	// Contrast: env with no command is Medium, not Reject.
+	// Contrast: env with no command is a High floor (redundant-with-config), not Reject.
 	noCmd := analyzeIndirectCmd("env", "FOO=bar")
 	assert.Equal(t, IndirectFloor, noCmd.Kind)
-	assert.Equal(t, runnertypes.RiskLevelMedium, noCmd.Level)
+	assert.Equal(t, runnertypes.RiskLevelHigh, noCmd.Level)
 
 	// The "--" option terminator is a valid form, not an unknown option: the
 	// following token is the command and must still be evaluated, even when the
@@ -872,39 +905,116 @@ func TestIndirect_EnvShebangInterpreterNotFlattened(t *testing.T) {
 	})
 }
 
-// TestIndirect_CommandExecOptionsGated verifies command options that run an
-// external helper from a child process are rejected.
+// TestIndirect_CommandExecOptionsGated verifies the helper-execution options that
+// run a local command. rsync -e/--rsh and ssh -o ProxyCommand/LocalCommand extract
+// the helper command string and gate it (High floor, Critical for a privilege
+// token, Reject for a value that cannot be safely split); tar's child-process
+// helpers remain a flat Reject.
 func TestIndirect_CommandExecOptionsGated(t *testing.T) {
 	cases := []struct {
 		name string
 		cmd  string
 		args []string
 		want IndirectExecutionKind
+		// level is asserted only when want is IndirectFloor (the extractable forms),
+		// to distinguish a High floor from the Critical privilege case.
+		level runnertypes.RiskLevel
 	}{
-		{"rsync -e", "rsync", []string{"-e", "ssh -p 22", "src", "dst"}, IndirectReject},
-		{"rsync --rsh=", "rsync", []string{"--rsh=ssh", "src", "dst"}, IndirectReject},
-		{"rsync -essh attached", "rsync", []string{"-essh", "src", "dst"}, IndirectReject},
-		{"rsync -avze bundle", "rsync", []string{"-avze", "ssh", "src", "dst"}, IndirectReject},
-		{"tar --to-command=", "tar", []string{"--to-command=/tmp/x", "-cf", "a.tar", "."}, IndirectReject},
-		{"tar --checkpoint-action=", "tar", []string{"--checkpoint-action=exec=sh", "-cf", "a.tar", "."}, IndirectReject},
-		{"tar plain", "tar", []string{"-cf", "a.tar", "."}, IndirectNone},
+		// rsync -e/--rsh: the helper command string is extracted and gated to a High
+		// floor (extracted and gated rather than rejected). The getopt value-binding
+		// forms (separated, attached, bundle-end, attached-long) are all covered.
+		{"rsync -e", "rsync", []string{"-e", "ssh -p 22", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"rsync --rsh=", "rsync", []string{"--rsh=ssh", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"rsync -essh attached", "rsync", []string{"-essh", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"rsync -avze bundle end", "rsync", []string{"-avze", "ssh", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// Mid-bundle: -e is not the last letter, so its value is the token remainder
+		// ("vz"), NOT the next token. The next token here is "sudo" specifically so the
+		// rule is strictly locked: the correct remainder read gates "vz" -> a benign
+		// High floor, whereas a regression to a next-token read would gate "sudo" ->
+		// Critical. Asserting High (not Critical) fails if the precedence is broken.
+		{"rsync -aevz mid-bundle", "rsync", []string{"-aevz", "sudo", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// Attached "=" separator forms: -e=VALUE and -avze=VALUE bind VALUE (the "="
+		// is stripped), so the attached value is gated, not the next token. A privilege
+		// token is used in both the plain and bundle form so the strip is actually
+		// locked: without it the gate would read the next token ("src") and miss the
+		// privilege command (a fail-open) instead of returning Critical. (A benign
+		// value would stay High whether or not the "=" is stripped, so it would not
+		// catch the regression.)
+		{"rsync -e= privilege", "rsync", []string{"-e=sudo", "src", "dst"}, IndirectCritical, 0},
+		{"rsync -avze= bundle privilege", "rsync", []string{"-avze=sudo", "src", "dst"}, IndirectCritical, 0},
+		// A privilege token inside the helper string is Critical.
+		{"rsync -e sudo", "rsync", []string{"-e", "sudo cmd", "src", "dst"}, IndirectCritical, 0},
+		// A safe-set-only value (no shell metacharacters) is split cleanly and gated.
+		{"rsync -e safe proxy chain", "rsync", []string{"-e", "nc -X connect -x proxy:3128 %h %p", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// A value with shell metacharacters cannot be split faithfully -> Reject.
+		{"rsync -e separator", "rsync", []string{"-e", "ssh; rm -rf /", "src", "dst"}, IndirectReject, 0},
+		{"rsync -e substitution", "rsync", []string{"-e", "$(printf sudo)", "src", "dst"}, IndirectReject, 0},
+		{"rsync -e subshell", "rsync", []string{"-e", "(sudo id)", "src", "dst"}, IndirectReject, 0},
+		{"rsync -e newline", "rsync", []string{"-e", "ssh\nsudo id", "src", "dst"}, IndirectReject, 0},
+		// An -e/--rsh option present but with no value token cannot be extracted -> Reject.
+		{"rsync -e no value", "rsync", []string{"-e"}, IndirectReject, 0},
+		// A plain rsync with no -e/--rsh is left to the normal (Medium) classification.
+		{"rsync plain", "rsync", []string{"src", "dst"}, IndirectNone, 0},
+		// ssh -o ProxyCommand/LocalCommand: the helper command string is extracted and
+		// gated. ProxyCommand and LocalCommand are verified symmetrically so neither is
+		// left unchecked. The keyword is case-insensitive.
+		{"ssh -o ProxyCommand=", "ssh", []string{"-o", "ProxyCommand=ssh -W %h:%p bastion", "host"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"ssh -o ProxyCommand space", "ssh", []string{"-o", "ProxyCommand ssh -W %h:%p bastion", "host"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"ssh -oProxyCommand attached", "ssh", []string{"-oProxyCommand=ssh -W %h:%p bastion", "host"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// OpenSSH accepts whitespace around the "=" separator, so "ProxyCommand = sudo
+		// id" must extract "sudo" (Critical), not "=" (which would be a bypass).
+		{"ssh -o ProxyCommand spaces around equals", "ssh", []string{"-o", "ProxyCommand = sudo id", "host"}, IndirectCritical, 0},
+		{"ssh -o ProxyCommand space before equals", "ssh", []string{"-o", "ProxyCommand =sudo id", "host"}, IndirectCritical, 0},
+		// Space-form value that itself contains "=" (an env assignment) must keep the
+		// keyword intact: "env" is the inner command, not a mis-split key. Asserting a
+		// gated outcome (not IndirectNone) guards against splitting on the value's "=".
+		{"ssh -o ProxyCommand value with equals", "ssh", []string{"-o", "ProxyCommand env X=1 sudo id", "host"}, IndirectCritical, 0},
+		{"ssh -o LocalCommand sudo", "ssh", []string{"-o", "LocalCommand=sudo id", "host"}, IndirectCritical, 0},
+		{"ssh -o proxycommand lowercase sudo", "ssh", []string{"-o", "proxycommand=sudo id", "host"}, IndirectCritical, 0},
+		{"ssh -o LocalCommand separator", "ssh", []string{"-o", "LocalCommand=nc %h %p; modprobe x", "host"}, IndirectReject, 0},
+		{"ssh -o ProxyCommand subshell", "ssh", []string{"-o", "ProxyCommand={ sudo id; }", "host"}, IndirectReject, 0},
+		{"ssh -o ProxyCommand newline", "ssh", []string{"-o", "ProxyCommand=ssh\nsudo id", "host"}, IndirectReject, 0},
+		// A newline (any ASCII whitespace) is a keyword/value delimiter for OpenSSH, so
+		// "ProxyCommand\nsudo id" parses as ProxyCommand=sudo id and must reach the gate
+		// as Critical, not be missed because the key absorbed the newline.
+		{"ssh -o ProxyCommand newline delimiter", "ssh", []string{"-o", "ProxyCommand\nsudo id", "host"}, IndirectCritical, 0},
+		// A plain ssh with no ProxyCommand/LocalCommand option is left to Medium.
+		{"ssh plain", "ssh", []string{"-p", "22", "host"}, IndirectNone, 0},
+		{"ssh -o unrelated option", "ssh", []string{"-o", "StrictHostKeyChecking=no", "host"}, IndirectNone, 0},
+		// Multiple helper-exec options: every occurrence is evaluated and the worst
+		// (most restrictive) outcome wins, so a benign option cannot mask a dangerous
+		// later one (order-independent). ssh applies ProxyCommand and LocalCommand both.
+		{"ssh multiple -o malicious second", "ssh", []string{"-o", "ProxyCommand=ssh bastion", "-o", "LocalCommand=sudo id", "host"}, IndirectCritical, 0},
+		{"ssh multiple -o malicious first", "ssh", []string{"-o", "LocalCommand=sudo id", "-o", "ProxyCommand=ssh bastion", "host"}, IndirectCritical, 0},
+		{"ssh multiple -o safe then reject", "ssh", []string{"-o", "ProxyCommand=ssh bastion", "-o", "ProxyCommand=nc %h %p; evil", "host"}, IndirectReject, 0},
+		{"rsync multiple -e malicious second", "rsync", []string{"-e", "ssh", "-e", "sudo cmd", "src", "dst"}, IndirectCritical, 0},
+		{"rsync multiple -e malicious first", "rsync", []string{"-e", "sudo cmd", "-e", "ssh", "src", "dst"}, IndirectCritical, 0},
+		{"rsync multiple -e safe then reject", "rsync", []string{"-e", "ssh", "-e", "ssh; evil", "src", "dst"}, IndirectReject, 0},
+		// tar's child-process helpers stay a flat Reject (their command string cannot
+		// be safely extracted from tar's archive processing).
+		{"tar --to-command=", "tar", []string{"--to-command=/tmp/x", "-cf", "a.tar", "."}, IndirectReject, 0},
+		{"tar --checkpoint-action=", "tar", []string{"--checkpoint-action=exec=sh", "-cf", "a.tar", "."}, IndirectReject, 0},
+		{"tar plain", "tar", []string{"-cf", "a.tar", "."}, IndirectNone, 0},
 		// The "--" terminator ends option scanning: an operand that looks like a
 		// helper option (e.g. a destination literally named "-e") must not be
 		// rejected as a remote-shell form.
-		{"rsync -- -e operand", "rsync", []string{"--", "-e", "dst"}, IndirectNone},
-		{"tar -- --to-command operand", "tar", []string{"-cf", "a.tar", "--", "--to-command"}, IndirectNone},
+		{"rsync -- -e operand", "rsync", []string{"--", "-e", "dst"}, IndirectNone, 0},
+		{"tar -- --to-command operand", "tar", []string{"-cf", "a.tar", "--", "--to-command"}, IndirectNone, 0},
 		// A value-taking option's value that looks like a helper flag must not be
 		// matched as the helper: here "--to-command" is the directory argument to
 		// tar -C, not the helper option.
-		{"tar -C value looks like helper", "tar", []string{"-C", "--to-command", "-cf", "a.tar", "."}, IndirectNone},
-		{"tar -f value looks like helper", "tar", []string{"-f", "--checkpoint-action", "-c", "."}, IndirectNone},
+		{"tar -C value looks like helper", "tar", []string{"-C", "--to-command", "-cf", "a.tar", "."}, IndirectNone, 0},
+		{"tar -f value looks like helper", "tar", []string{"-f", "--checkpoint-action", "-c", "."}, IndirectNone, 0},
 		// But the genuine helper option in a normal position is still rejected.
-		{"tar --to-command genuine", "tar", []string{"--to-command", "/tmp/x", "-cf", "a.tar", "."}, IndirectReject},
+		{"tar --to-command genuine", "tar", []string{"--to-command", "/tmp/x", "-cf", "a.tar", "."}, IndirectReject, 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			res := analyzeIndirectCmd(tc.cmd, tc.args...)
 			assert.Equal(t, tc.want, res.Kind)
+			if tc.want == IndirectFloor {
+				assert.Equal(t, tc.level, res.Level)
+			}
 		})
 	}
 }
@@ -1063,6 +1173,11 @@ func TestIndirect_NamespaceWrappersGated(t *testing.T) {
 		// flock: -w consumes a value, the lock operand is skipped, then the command.
 		{"flock -w value lock then privilege", "flock", []string{"-w", "10", "/tmp/l", "sudo", "id"}, IndirectCritical, 0},
 		{"flock -c command string privilege", "flock", []string{"/tmp/l", "-c", "sudo id"}, IndirectCritical, 0},
+		// flock's -c command string goes through the fail-closed allowlist split: a
+		// shell separator or newline cannot be faithfully tokenized, so it is rejected
+		// rather than gating only the first token and dropping the hidden command.
+		{"flock -c separator reject", "flock", []string{"/tmp/l", "-c", "sudo; id"}, IndirectReject, 0},
+		{"flock -c newline reject", "flock", []string{"/tmp/l", "-c", "sudo\nid"}, IndirectReject, 0},
 		{"flock fd-only form", "flock", []string{"9"}, IndirectNone, 0},
 		{"flock argv generic inner", "flock", []string{"f", "cmd"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		// watch without -x joins all operands into one /bin/sh -c string.
@@ -1074,6 +1189,9 @@ func TestIndirect_NamespaceWrappersGated(t *testing.T) {
 		// watch operand concatenation: a ";" between operands hides "sudo id", so the
 		// joined string contains a shell separator and fails closed.
 		{"watch concat shell separator reject", "watch", []string{"ls", "-l", ";", "sudo", "id"}, IndirectReject, 0},
+		// A newline in the joined operand string is also outside the safe set, so the
+		// fail-closed split rejects it rather than gating only the first line.
+		{"watch concat newline reject", "watch", []string{"ls\nsudo id"}, IndirectReject, 0},
 		// watch -x runs the operands as an argv list (no /bin/sh -c), so "-n" after
 		// the command is the inner command's argument, not watch's option.
 		{"watch -x argv destructive", "watch", []string{"-x", "rm", "-rf", "/"}, IndirectFloor, runnertypes.RiskLevelHigh},

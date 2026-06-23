@@ -35,10 +35,10 @@ const (
 	// helper). It is a Blocking deny.
 	IndirectReject
 	// IndirectFloor means the form is allowable but contributes a minimum risk
-	// level (env with no command -> Medium; inline shell/interpreter, package
-	// script runner -> High; a wrapped extractable inner command -> a flat High
-	// floor regardless of the inner's content) that is folded into the
-	// effective-risk maximum.
+	// level (env/timeout with no command -> High; nice/stdbuf/... with no command
+	// -> Medium; inline shell/interpreter, package script runner -> High; a wrapped
+	// extractable inner command -> a flat High floor regardless of the inner's
+	// content) that is folded into the effective-risk maximum.
 	IndirectFloor
 )
 
@@ -76,9 +76,21 @@ type wrapperSpec struct {
 	// valueOpts are options that consume the following token as their value
 	// (e.g. timeout -s SIGNAL), so that token is not mistaken for the COMMAND.
 	valueOpts map[string]struct{}
+	// boolOpts are the wrapper's known value-less options (e.g. timeout
+	// --foreground). They are skipped as flags, so a no-command form that carries
+	// only such options (timeout --foreground 5) reaches the no-command floor below
+	// instead of failing closed when an unrecognized long option makes the operand
+	// boundary unreliable. May be nil.
+	boolOpts map[string]struct{}
 	// positionals is the number of positional arguments that precede the COMMAND
 	// (timeout DURATION, chrt PRIORITY, taskset MASK).
 	positionals int
+	// noCommandFloor is the floor level returned when the wrapper carries no inner
+	// command (e.g. "timeout 5" with no COMMAND). timeout is redundant-with-config
+	// (the runner has a native timeout setting), so its no-command form is a High
+	// floor; the others have no safe TOML alternative and stay Medium. The zero
+	// value (RiskLevelUnknown) means "use the default Medium floor".
+	noCommandFloor runnertypes.RiskLevel
 }
 
 // wrapperSpecs is the curated set of wrappers whose inner command the runner can
@@ -90,14 +102,19 @@ type wrapperSpec struct {
 // excluded: it execs the helper from its own child process, so the runner cannot
 // identity-bind it (handled as a child-process exec form below).
 var wrapperSpecs = map[string]wrapperSpec{
-	"timeout": {valueOpts: setOf("-s", "--signal", "-k", "--kill-after"), positionals: 1},
-	"nice":    {valueOpts: setOf("-n", "--adjustment"), positionals: 0},
-	"ionice":  {valueOpts: setOf("-c", "--class", "-n", "--classdata", "-p", "--pid"), positionals: 0},
-	"nohup":   {positionals: 0},
-	"stdbuf":  {valueOpts: setOf("-i", "--input", "-o", "--output", "-e", "--error"), positionals: 0},
-	"setsid":  {positionals: 0},
-	"time":    {valueOpts: setOf("-o", "--output", "-f", "--format"), positionals: 0},
-	"chrt":    {valueOpts: setOf("-T", "--sched-runtime", "-P", "--sched-period", "-D", "--sched-deadline"), positionals: 1},
+	"timeout": {
+		valueOpts:      setOf("-s", "--signal", "-k", "--kill-after"),
+		boolOpts:       setOf("--foreground", "--preserve-status", "-v", "--verbose"),
+		positionals:    1,
+		noCommandFloor: runnertypes.RiskLevelHigh,
+	},
+	"nice":   {valueOpts: setOf("-n", "--adjustment"), positionals: 0},
+	"ionice": {valueOpts: setOf("-c", "--class", "-n", "--classdata", "-p", "--pid"), positionals: 0},
+	"nohup":  {positionals: 0},
+	"stdbuf": {valueOpts: setOf("-i", "--input", "-o", "--output", "-e", "--error"), positionals: 0},
+	"setsid": {positionals: 0},
+	"time":   {valueOpts: setOf("-o", "--output", "-f", "--format"), positionals: 0},
+	"chrt":   {valueOpts: setOf("-T", "--sched-runtime", "-P", "--sched-period", "-D", "--sched-deadline"), positionals: 1},
 }
 
 // wrapperNames is the sorted list of wrapperSpecs keys. analyzeIndirect iterates
@@ -119,12 +136,15 @@ var interpreterInlineCommands = setOf(
 )
 
 // remoteShellOptionPrefixes map a command to the options that make it execute an
-// external helper from its own child process (rsync's remote shell, tar's output
-// filter / checkpoint action). The helper is not runner-execed, so it cannot be
-// identity-bound and the form is rejected.
+// external helper from its own child process (tar's output filter / checkpoint
+// action). The helper is not runner-execed, so it cannot be identity-bound and the
+// form is rejected. rsync's -e/--rsh is handled separately
+// (analyzeRsyncRemoteShell), which extracts and gates its value rather than
+// rejecting: that value is rsync's remote-shell command line, which rsync
+// whitespace-splits into an argv and execs directly (no implicit shell), so the
+// runner can split it the same way.
 var remoteShellOptionPrefixes = map[string][]string{
-	"rsync": {"-e", "--rsh"},
-	"tar":   {"--to-command", "--checkpoint-action"},
+	"tar": {"--to-command", "--checkpoint-action"},
 }
 
 // setOf builds a set from the given keys.
@@ -461,9 +481,18 @@ func analyzeIndirect(cmdPath string, args []string, depth int, role risktypes.Ar
 		return reject()
 	}
 
-	// Remote-shell / output-filter helpers (rsync -e, tar --to-command): the
-	// helper runs from the tool's child process. Reject.
+	// Output-filter helpers (tar --to-command/--checkpoint-action): the helper runs
+	// from the tool's child process and cannot be identity-bound. Reject.
 	if res, ok := analyzeRemoteShellOption(names, args); ok {
+		return res
+	}
+
+	// rsync -e/--rsh and ssh -o ProxyCommand/LocalCommand run a local helper command
+	// whose command string the runner can extract from the option value. Gate it
+	// like any wrapper inner (High floor, Critical for a privilege token, Reject when
+	// the value cannot be safely split). A form carrying no such option falls through
+	// to the normal (Medium) classification.
+	if res, ok := analyzeHelperExecOption(names, args, depth, role); ok {
 		return res
 	}
 
@@ -691,7 +720,10 @@ func analyzeEnv(args []string, depth int, role risktypes.ArtifactRole) IndirectE
 				}
 				return resolveInner(args[j], args[j+1:], pathOverridden, depth, role)
 			}
-			return floor(runnertypes.RiskLevelMedium, risktypes.ReasonIndirectExecutionWrapper)
+			// env with no inner command (only assignments after "--"). env is a
+			// redundant-with-config wrapper (env_vars/env_import), so even a harmless
+			// no-command form contributes a High floor.
+			return floor(runnertypes.RiskLevelHigh, risktypes.ReasonIndirectExecutionWrapper)
 		}
 		if strings.HasPrefix(t, "-") {
 			// Unknown env option: it may or may not consume a value, so the inner
@@ -701,9 +733,10 @@ func analyzeEnv(args []string, depth int, role risktypes.ArtifactRole) IndirectE
 		// First non-option, non-assignment token is the inner command.
 		return resolveInner(t, args[i+1:], pathOverridden, depth, role)
 	}
-	// env with no inner command (only assignments/options): suspicious but not a
-	// concrete exec of another artifact. Medium floor.
-	return floor(runnertypes.RiskLevelMedium, risktypes.ReasonIndirectExecutionWrapper)
+	// env with no inner command (only assignments/options): env is a
+	// redundant-with-config wrapper (env_vars/env_import), so even this harmless
+	// no-command form contributes a High floor.
+	return floor(runnertypes.RiskLevelHigh, risktypes.ReasonIndirectExecutionWrapper)
 }
 
 // envSplitArg detects env's -S/--split-string at position i. isSplit is true when
@@ -777,7 +810,7 @@ func resolveInner(inner string, innerArgs []string, pathOverridden bool, depth i
 // analyzeWrapper skips a wrapper's options and positional arguments and evaluates
 // the inner command it runs.
 func analyzeWrapper(spec wrapperSpec, args []string, depth int, role risktypes.ArtifactRole) IndirectExecutionResult {
-	idx, reliable := skipLeadingOptions(args, optSpec{valueOpts: spec.valueOpts, unknown: shortOptsAreBoolean})
+	idx, reliable := skipLeadingOptions(args, optSpec{valueOpts: spec.valueOpts, boolOpts: spec.boolOpts, unknown: shortOptsAreBoolean})
 	// An option of unknown arity may have consumed the real command token; the
 	// parse position is unreliable, so fail closed.
 	if !reliable {
@@ -786,8 +819,14 @@ func analyzeWrapper(spec wrapperSpec, args []string, depth int, role risktypes.A
 	idx += spec.positionals
 	if idx >= len(args) {
 		// No inner command (e.g. "timeout 5" with no COMMAND). Like env with no
-		// command, treat as a Medium floor rather than rejecting outright.
-		return floor(runnertypes.RiskLevelMedium, risktypes.ReasonIndirectExecutionWrapper)
+		// command, treat as a floor rather than rejecting outright. The floor level
+		// is per-wrapper: redundant-with-config wrappers (timeout) contribute High,
+		// the rest the default Medium.
+		floorLevel := spec.noCommandFloor
+		if floorLevel == runnertypes.RiskLevelUnknown {
+			floorLevel = runnertypes.RiskLevelMedium
+		}
+		return floor(floorLevel, risktypes.ReasonIndirectExecutionWrapper)
 	}
 	// The extracted inner command should be a program name/path, never an option.
 	// If it still begins with "-", option parsing mis-located the command (e.g. an
@@ -1469,11 +1508,12 @@ var remoteShellValueOpts = map[string]map[string]struct{}{
 	),
 }
 
-// analyzeRemoteShellOption rejects rsync -e / tar --to-command style helpers,
-// which the tool runs from its own child process. It skips the values of known
-// value-taking options and stops at the "--" terminator so an option value or a
-// post-terminator operand that happens to look like a helper flag is not
-// misclassified as one (a false Blocking deny).
+// analyzeRemoteShellOption rejects tar --to-command/--checkpoint-action style
+// helpers, which the tool runs from its own child process. It skips the values of
+// known value-taking options and stops at the "--" terminator so an option value or
+// a post-terminator operand that happens to look like a helper flag is not
+// misclassified as one (a false Blocking deny). rsync's -e/--rsh is handled by
+// analyzeRsyncRemoteShell, which extracts and gates the helper rather than rejecting.
 func analyzeRemoteShellOption(names map[string]struct{}, args []string) (IndirectExecutionResult, bool) {
 	for cmd, prefixes := range remoteShellOptionPrefixes {
 		if _, ok := names[cmd]; !ok {
@@ -1521,6 +1561,217 @@ func matchesRemoteShellOption(arg, p string) bool {
 	}
 	return false
 }
+
+// analyzeHelperExecOption dispatches the helper-execution options whose local
+// command the runner can extract from an option value: rsync -e/--rsh and ssh -o
+// ProxyCommand/LocalCommand. handled is false when neither command's helper option
+// is present, so the caller continues with the remaining indirect-execution checks
+// (and ultimately the normal name-based classification).
+func analyzeHelperExecOption(names map[string]struct{}, args []string, depth int, role risktypes.ArtifactRole) (IndirectExecutionResult, bool) {
+	if _, ok := names["rsync"]; ok {
+		if res, ok := analyzeRsyncRemoteShell(args, depth, role); ok {
+			return res, true
+		}
+	}
+	if _, ok := names["ssh"]; ok {
+		if res, ok := analyzeSSHProxyCommand(args, depth, role); ok {
+			return res, true
+		}
+	}
+	return IndirectExecutionResult{}, false
+}
+
+// analyzeRsyncRemoteShell extracts and gates the helper command of rsync's
+// -e/--rsh option. rsync whitespace-splits this value into an argv and execs it
+// directly as the remote shell (no implicit /bin/sh -c), so the value is gated with
+// the same fail-closed allowlist split used for genuine shell strings: that split
+// rejects shell metacharacters, which is a safe over-approximation here (rsync would
+// not interpret them, so rejecting only over-blocks). A privilege token is Critical,
+// any other extractable command a High floor, an unsafe value a reject, so rsync -e
+// is treated as an extractable inner command rather than a flat reject.
+//
+// Every -e/--rsh occurrence up to a "--" terminator is evaluated and merged to the
+// worst (most restrictive) outcome, not just the first: an attacker could otherwise
+// prepend a benign "-e ssh" and append "-e 'sudo ...'" to slip the dangerous value
+// past the gate. Taking the worst across all occurrences is fail-closed regardless of
+// which one rsync's own option parsing would ultimately use.
+//
+// handled is false when no -e/--rsh option is present, leaving rsync to its normal
+// (Medium) classification.
+func analyzeRsyncRemoteShell(args []string, depth int, role risktypes.ArtifactRole) (IndirectExecutionResult, bool) {
+	valueOpts := remoteShellValueOpts["rsync"]
+	var worst IndirectExecutionResult
+	found := false
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
+		}
+		value, advance, isOpt, extractable := rsyncRemoteShellOptionAt(args, i)
+		if isOpt {
+			found = true
+			// A present option whose value token is missing cannot be extracted, so it
+			// fails closed (reject).
+			res := reject()
+			if extractable {
+				res = gateShellCommandString(value, depth, role)
+			}
+			worst = mergeIndirectResults(worst, res)
+			i += advance
+			continue
+		}
+		// A known value-taking option's value is skipped so a value that happens to
+		// look like "-e" is not matched as the helper.
+		if _, ok := valueOpts[a]; ok {
+			i++
+		}
+	}
+	return worst, found
+}
+
+// rsyncRemoteShellOptionAt reports whether args[i] is an -e/--rsh option and extracts
+// its value per getopt's value-binding rule: the remainder of the option's own token
+// is the value (-essh -> "ssh", -aevz -> -e binds "vz", -e=ssh / -avze=ssh -> "ssh"
+// after stripping the "=" separator), or, when the option is the last letter of a
+// bundle with no attached remainder, the next token (-avze ssh -> "ssh"). advance is
+// the number of extra tokens consumed (1 when the value is the following token, 0 for
+// an attached value). extractable is false when the option is present but its value
+// token is missing.
+func rsyncRemoteShellOptionAt(args []string, i int) (value string, advance int, isOpt, extractable bool) {
+	a := args[i]
+	switch {
+	case a == "-e" || a == "--rsh":
+		if i+1 >= len(args) {
+			return "", 0, true, false
+		}
+		return args[i+1], 1, true, true
+	case strings.HasPrefix(a, "--rsh="):
+		return a[len("--rsh="):], 0, true, true
+	case shortFlagInBundle(a, 'e'):
+		// Short attached/bundle form. shortFlagInBundle guarantees 'e' lies in the
+		// flag portion (before any "="), so the first 'e' in the token is the -e flag
+		// and its value is the remainder of the token after it. A single leading "="
+		// on that remainder is the "-e=ssh"/"-avze=ssh" separator form and is stripped,
+		// so the attached value (which may itself be a command such as "sudo") is gated
+		// rather than dropped for a next-token read. This intentionally does not
+		// getopt-classify the letters before 'e': a preceding short value-option (e.g.
+		// -B in "-Be ssh") would, in real getopt, bind the 'e' as ITS value, so treating
+		// 'e' as -e here over-extracts. That is fail-closed (it gates a bogus inner
+		// rather than missing -e), so the simpler scan is preferred; do not "fix" it
+		// into a next-token read, which would fail open.
+		remainder := strings.TrimPrefix(a[strings.IndexByte(a, 'e')+1:], "=")
+		if remainder != "" {
+			return remainder, 0, true, true
+		}
+		// 'e' was the last letter of the bundle (-avze): the value is the next token.
+		if i+1 >= len(args) {
+			return "", 0, true, false
+		}
+		return args[i+1], 1, true, true
+	}
+	return "", 0, false, false
+}
+
+// analyzeSSHProxyCommand detects ssh's -o ProxyCommand=/-o LocalCommand= options,
+// which make ssh run a local helper command, and gates that command string. OpenSSH
+// accepts the option as "-o KEY=VALUE" or "-o KEY VALUE", separated or attached
+// (-oKEY=...), and its keyword is case-insensitive (so the key is lower-cased before
+// comparison; an exact-case match would let "-o proxycommand=..." slip past). The
+// command string is gated with the fail-closed allowlist split (a privilege token is
+// Critical, any other extractable command a High floor, an unsafe value a reject).
+// handled is false when no ProxyCommand/LocalCommand is present, leaving ssh to its
+// normal (Medium) classification.
+//
+// The scan deliberately runs over every argument (up to a "--" terminator) rather
+// than stopping at ssh's first non-option (the hostname, where OpenSSH itself stops
+// parsing local options). Stopping at the hostname would be more precise -- a
+// "-o ProxyCommand=" sitting after the hostname is part of the REMOTE command, not a
+// local option -- but locating the hostname reliably requires modeling ssh's whole
+// option grammar (every separated-value option such as "-p 22" must be skipped, or
+// its value would be mistaken for the hostname). An incomplete model would stop too
+// early and skip a genuine local "-o ProxyCommand" that follows, a fail-open. Since
+// scanning the whole argv can only ever match MORE "-o ProxyCommand/LocalCommand"
+// options, never fewer, the worst case here is an over-block of a remote-command
+// token that literally spells "-o ProxyCommand=" (rare, and fail-closed-safe), which
+// is preferred over the fail-open risk of an imperfect hostname boundary.
+//
+// Every matching -o ProxyCommand/LocalCommand is evaluated and merged to the worst
+// (most restrictive) outcome, not just the first. ssh accepts multiple -o options and
+// applies them all (ProxyCommand and LocalCommand even run different programs), so
+// returning on the first match would let an attacker hide a dangerous later option
+// behind a benign earlier one (a fail-open).
+func analyzeSSHProxyCommand(args []string, depth int, role risktypes.ArtifactRole) (IndirectExecutionResult, bool) {
+	var worst IndirectExecutionResult
+	found := false
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
+		}
+		var oval string
+		switch {
+		case a == "-o":
+			if i+1 >= len(args) {
+				continue // -o with no value: not a ProxyCommand/LocalCommand form.
+			}
+			oval = args[i+1]
+			i++
+		case strings.HasPrefix(a, "-o") && len(a) > 2:
+			oval = a[len("-o"):] // attached form: -oProxyCommand=...
+		default:
+			continue
+		}
+		key, cmd := splitSSHOption(oval)
+		switch strings.ToLower(key) {
+		case "proxycommand", "localcommand":
+			worst = mergeIndirectResults(worst, gateShellCommandString(cmd, depth, role))
+			found = true
+		}
+	}
+	return worst, found
+}
+
+// splitSSHOption splits an ssh -o option value into its keyword and the rest.
+// OpenSSH accepts both "KEY=VALUE" and "KEY VALUE", so the separator is whichever of
+// '=' or the first whitespace appears first.
+//
+// This mirrors OpenSSH's strdelim, which treats whitespace and '=' alike as the
+// keyword/value delimiter: the keyword ends at the first whitespace-or-'=', and the
+// run between keyword and value (any whitespace plus at most one '=') is consumed, so
+// "K=V", "K V", "K =V", "K= V", and "K = V" all yield the same key/value. Splitting
+// only on whichever of '=' / whitespace comes first would leave a stray '=' in the
+// value for the "K = V" form (the gate would then see "=" as the inner command and
+// miss a real one, e.g. "ProxyCommand = sudo id"), and unconditionally splitting on
+// the first '=' would mis-split a "K V" form whose value itself contains '='
+// (e.g. "ProxyCommand env X=1 nc"). Both are fail-open, so neither shortcut is used.
+//
+// "whitespace" is the full ASCII whitespace set (space, tab, newline, CR, vertical
+// tab, form feed), matching OpenSSH. Treating only space/tab as a delimiter would let
+// "ProxyCommand\nsudo id" parse here as the key "ProxyCommand\nsudo" (no match, so the
+// helper is not gated) while ssh itself splits on the newline and runs "sudo id" -- a
+// fail-open.
+func splitSSHOption(v string) (key, rest string) {
+	end := strings.IndexAny(v, sshOptionDelimiters)
+	if end < 0 {
+		return v, "" // bare keyword, no value
+	}
+	key = v[:end]
+	r := strings.TrimLeft(v[end:], sshWhitespace)
+	// At most one '=' separates the keyword from the value; any whitespace around it
+	// is also part of the delimiter run.
+	if rem, ok := strings.CutPrefix(r, "="); ok {
+		r = strings.TrimLeft(rem, sshWhitespace)
+	}
+	return key, r
+}
+
+// sshWhitespace is the ASCII whitespace OpenSSH's strdelim treats as a token
+// separator; sshOptionDelimiters adds '=', which separates an option keyword from its
+// value.
+const (
+	sshWhitespace       = " \t\n\r\v\f"
+	sshOptionDelimiters = sshWhitespace + "="
+)
 
 // packageManagerBuiltins are subcommands of yarn/pnpm that manage packages
 // rather than run a package.json script. Anything else passed to yarn/pnpm is a
@@ -1675,6 +1926,56 @@ func hasDynamicLoaderName(names map[string]struct{}) bool {
 		}
 	}
 	return false
+}
+
+// Restrictiveness ranks for the indirect-execution outcomes, from least to most
+// restrictive, so a scan over repeated helper-exec options can keep the worst.
+// Critical (always denied) outranks Reject (blocking deny), which outranks Floor (a
+// risk floor), which outranks None.
+const (
+	rankIndirectNone = iota
+	rankIndirectFloor
+	rankIndirectReject
+	rankIndirectCritical
+)
+
+// indirectKindRank maps an outcome kind to its restrictiveness rank.
+func indirectKindRank(k IndirectExecutionKind) int {
+	switch k {
+	case IndirectCritical:
+		return rankIndirectCritical
+	case IndirectReject:
+		return rankIndirectReject
+	case IndirectFloor:
+		return rankIndirectFloor
+	default: // IndirectNone
+		return rankIndirectNone
+	}
+}
+
+// mergeIndirectResults returns the more restrictive of two indirect-execution
+// outcomes. When the kinds differ it keeps the higher-ranked one (see
+// indirectKindRank); when both are Floor it keeps the higher risk level and unions
+// the audit metadata (reason codes, reasons, artifacts) so every contributing option
+// stays traceable. A zero-value (IndirectNone) accumulator merges to whichever result
+// is non-None, so callers can start from the zero value.
+func mergeIndirectResults(a, b IndirectExecutionResult) IndirectExecutionResult {
+	ra, rb := indirectKindRank(a.Kind), indirectKindRank(b.Kind)
+	if ra != rb {
+		if ra > rb {
+			return a
+		}
+		return b
+	}
+	if a.Kind != IndirectFloor {
+		return a // same non-Floor kind: either is representative
+	}
+	merged := a
+	merged.Level = max(a.Level, b.Level)
+	merged.ReasonCodes = common.DedupeStable(append(append([]risktypes.ReasonCode{}, a.ReasonCodes...), b.ReasonCodes...))
+	merged.Reasons = common.DedupeStable(append(append([]string{}, a.Reasons...), b.Reasons...))
+	merged.Artifacts = append(append([]risktypes.ExecutedArtifact{}, a.Artifacts...), b.Artifacts...)
+	return merged
 }
 
 // critical builds a Critical (privilege escalation) result.
