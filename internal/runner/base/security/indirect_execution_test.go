@@ -928,10 +928,11 @@ func TestIndirect_CommandExecOptionsGated(t *testing.T) {
 		{"rsync -essh attached", "rsync", []string{"-essh", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		{"rsync -avze bundle end", "rsync", []string{"-avze", "ssh", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		// Mid-bundle: -e is not the last letter, so its value is the token remainder
-		// ("vz"), NOT the next token. Reading the next token here would mis-extract
-		// "src" (a path operand) and under-gate. Gating "vz" as a (bogus) command name
-		// still yields a High floor, locking the remainder-precedence rule.
-		{"rsync -aevz mid-bundle", "rsync", []string{"-aevz", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// ("vz"), NOT the next token. The next token here is "sudo" specifically so the
+		// rule is strictly locked: the correct remainder read gates "vz" -> a benign
+		// High floor, whereas a regression to a next-token read would gate "sudo" ->
+		// Critical. Asserting High (not Critical) fails if the precedence is broken.
+		{"rsync -aevz mid-bundle", "rsync", []string{"-aevz", "sudo", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
 		// A privilege token inside the helper string is Critical.
 		{"rsync -e sudo", "rsync", []string{"-e", "sudo cmd", "src", "dst"}, IndirectCritical, 0},
 		// A safe-set-only value (no shell metacharacters) is split cleanly and gated.
