@@ -1589,78 +1589,87 @@ func analyzeHelperExecOption(names map[string]struct{}, args []string, depth int
 // not interpret them, so rejecting only over-blocks). A privilege token is Critical,
 // any other extractable command a High floor, an unsafe value a reject, so rsync -e
 // is treated as an extractable inner command rather than a flat reject.
+//
+// Every -e/--rsh occurrence up to a "--" terminator is evaluated and merged to the
+// worst (most restrictive) outcome, not just the first: an attacker could otherwise
+// prepend a benign "-e ssh" and append "-e 'sudo ...'" to slip the dangerous value
+// past the gate. Taking the worst across all occurrences is fail-closed regardless of
+// which one rsync's own option parsing would ultimately use.
+//
 // handled is false when no -e/--rsh option is present, leaving rsync to its normal
 // (Medium) classification.
 func analyzeRsyncRemoteShell(args []string, depth int, role risktypes.ArtifactRole) (IndirectExecutionResult, bool) {
-	value, found, extractable := rsyncRemoteShellValue(args)
-	if !found {
-		return IndirectExecutionResult{}, false
-	}
-	if !extractable {
-		// The option is present but its value token is missing, so the helper cannot
-		// be extracted. Fail closed.
-		return reject(), true
-	}
-	return gateShellCommandString(value, depth, role), true
-}
-
-// rsyncRemoteShellValue locates rsync's -e/--rsh option and returns its value using
-// getopt's rule for a value-taking short option: the remainder of the option's own
-// token is the value (-essh -> "ssh", -aevz -> -e binds "vz", -e=ssh / -avze=ssh ->
-// "ssh" after stripping the "=" separator), or, when the option is the last letter of
-// a bundle with no attached remainder, the next token (-avze ssh -> "ssh"). found is
-// false when no -e/--rsh is present; extractable is false when the option is present
-// but its value token is missing. Known value-taking options' values are skipped
-// first so a value that happens to look like "-e" is not matched as the helper, and
-// scanning stops at the "--" terminator.
-func rsyncRemoteShellValue(args []string) (value string, found, extractable bool) {
 	valueOpts := remoteShellValueOpts["rsync"]
-	skipValue := false
+	var worst IndirectExecutionResult
+	found := false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {
 			break
 		}
-		if skipValue {
-			skipValue = false
+		value, advance, isOpt, extractable := rsyncRemoteShellOptionAt(args, i)
+		if isOpt {
+			found = true
+			// A present option whose value token is missing cannot be extracted, so it
+			// fails closed (reject).
+			res := reject()
+			if extractable {
+				res = gateShellCommandString(value, depth, role)
+			}
+			worst = mergeIndirectResults(worst, res)
+			i += advance
 			continue
 		}
-		switch {
-		case a == "-e" || a == "--rsh":
-			if i+1 >= len(args) {
-				return "", true, false
-			}
-			return args[i+1], true, true
-		case strings.HasPrefix(a, "--rsh="):
-			return a[len("--rsh="):], true, true
-		case shortFlagInBundle(a, 'e'):
-			// Short attached/bundle form. shortFlagInBundle guarantees 'e' lies in the
-			// flag portion (before any "="), so the first 'e' in the token is the -e
-			// flag and its value is the remainder of the token after it. A single
-			// leading "=" on that remainder is the "-e=ssh"/"-avze=ssh" separator form
-			// and is stripped, so the attached value (which may itself be a command such
-			// as "sudo") is gated rather than dropped for a next-token read. This
-			// intentionally does not getopt-classify the letters before 'e': a preceding
-			// short value-option (e.g. -B in "-Be ssh") would, in real getopt, bind the
-			// 'e' as ITS value, so treating 'e' as -e here over-extracts. That is
-			// fail-closed (it gates a bogus inner rather than missing -e), so the
-			// simpler scan is preferred; do not "fix" it into a next-token read, which
-			// would fail open.
-			remainder := strings.TrimPrefix(a[strings.IndexByte(a, 'e')+1:], "=")
-			if remainder != "" {
-				return remainder, true, true
-			}
-			// 'e' was the last letter of the bundle (-avze): the value is the next token.
-			if i+1 >= len(args) {
-				return "", true, false
-			}
-			return args[i+1], true, true
-		}
+		// A known value-taking option's value is skipped so a value that happens to
+		// look like "-e" is not matched as the helper.
 		if _, ok := valueOpts[a]; ok {
-			skipValue = true // skip this value-option's value on the next iteration
+			i++
 		}
 	}
-	return "", false, false
+	return worst, found
+}
+
+// rsyncRemoteShellOptionAt reports whether args[i] is an -e/--rsh option and extracts
+// its value per getopt's value-binding rule: the remainder of the option's own token
+// is the value (-essh -> "ssh", -aevz -> -e binds "vz", -e=ssh / -avze=ssh -> "ssh"
+// after stripping the "=" separator), or, when the option is the last letter of a
+// bundle with no attached remainder, the next token (-avze ssh -> "ssh"). advance is
+// the number of extra tokens consumed (1 when the value is the following token, 0 for
+// an attached value). extractable is false when the option is present but its value
+// token is missing.
+func rsyncRemoteShellOptionAt(args []string, i int) (value string, advance int, isOpt, extractable bool) {
+	a := args[i]
+	switch {
+	case a == "-e" || a == "--rsh":
+		if i+1 >= len(args) {
+			return "", 0, true, false
+		}
+		return args[i+1], 1, true, true
+	case strings.HasPrefix(a, "--rsh="):
+		return a[len("--rsh="):], 0, true, true
+	case shortFlagInBundle(a, 'e'):
+		// Short attached/bundle form. shortFlagInBundle guarantees 'e' lies in the
+		// flag portion (before any "="), so the first 'e' in the token is the -e flag
+		// and its value is the remainder of the token after it. A single leading "="
+		// on that remainder is the "-e=ssh"/"-avze=ssh" separator form and is stripped,
+		// so the attached value (which may itself be a command such as "sudo") is gated
+		// rather than dropped for a next-token read. This intentionally does not
+		// getopt-classify the letters before 'e': a preceding short value-option (e.g.
+		// -B in "-Be ssh") would, in real getopt, bind the 'e' as ITS value, so treating
+		// 'e' as -e here over-extracts. That is fail-closed (it gates a bogus inner
+		// rather than missing -e), so the simpler scan is preferred; do not "fix" it
+		// into a next-token read, which would fail open.
+		remainder := strings.TrimPrefix(a[strings.IndexByte(a, 'e')+1:], "=")
+		if remainder != "" {
+			return remainder, 0, true, true
+		}
+		// 'e' was the last letter of the bundle (-avze): the value is the next token.
+		if i+1 >= len(args) {
+			return "", 0, true, false
+		}
+		return args[i+1], 1, true, true
+	}
+	return "", 0, false, false
 }
 
 // analyzeSSHProxyCommand detects ssh's -o ProxyCommand=/-o LocalCommand= options,
@@ -1685,7 +1694,15 @@ func rsyncRemoteShellValue(args []string) (value string, found, extractable bool
 // options, never fewer, the worst case here is an over-block of a remote-command
 // token that literally spells "-o ProxyCommand=" (rare, and fail-closed-safe), which
 // is preferred over the fail-open risk of an imperfect hostname boundary.
+//
+// Every matching -o ProxyCommand/LocalCommand is evaluated and merged to the worst
+// (most restrictive) outcome, not just the first. ssh accepts multiple -o options and
+// applies them all (ProxyCommand and LocalCommand even run different programs), so
+// returning on the first match would let an attacker hide a dangerous later option
+// behind a benign earlier one (a fail-open).
 func analyzeSSHProxyCommand(args []string, depth int, role risktypes.ArtifactRole) (IndirectExecutionResult, bool) {
+	var worst IndirectExecutionResult
+	found := false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {
@@ -1707,10 +1724,11 @@ func analyzeSSHProxyCommand(args []string, depth int, role risktypes.ArtifactRol
 		key, cmd := splitSSHOption(oval)
 		switch strings.ToLower(key) {
 		case "proxycommand", "localcommand":
-			return gateShellCommandString(cmd, depth, role), true
+			worst = mergeIndirectResults(worst, gateShellCommandString(cmd, depth, role))
+			found = true
 		}
 	}
-	return IndirectExecutionResult{}, false
+	return worst, found
 }
 
 // splitSSHOption splits an ssh -o option value into its keyword and the rest.
@@ -1897,6 +1915,56 @@ func hasDynamicLoaderName(names map[string]struct{}) bool {
 		}
 	}
 	return false
+}
+
+// Restrictiveness ranks for the indirect-execution outcomes, from least to most
+// restrictive, so a scan over repeated helper-exec options can keep the worst.
+// Critical (always denied) outranks Reject (blocking deny), which outranks Floor (a
+// risk floor), which outranks None.
+const (
+	rankIndirectNone = iota
+	rankIndirectFloor
+	rankIndirectReject
+	rankIndirectCritical
+)
+
+// indirectKindRank maps an outcome kind to its restrictiveness rank.
+func indirectKindRank(k IndirectExecutionKind) int {
+	switch k {
+	case IndirectCritical:
+		return rankIndirectCritical
+	case IndirectReject:
+		return rankIndirectReject
+	case IndirectFloor:
+		return rankIndirectFloor
+	default: // IndirectNone
+		return rankIndirectNone
+	}
+}
+
+// mergeIndirectResults returns the more restrictive of two indirect-execution
+// outcomes. When the kinds differ it keeps the higher-ranked one (see
+// indirectKindRank); when both are Floor it keeps the higher risk level and unions
+// the audit metadata (reason codes, reasons, artifacts) so every contributing option
+// stays traceable. A zero-value (IndirectNone) accumulator merges to whichever result
+// is non-None, so callers can start from the zero value.
+func mergeIndirectResults(a, b IndirectExecutionResult) IndirectExecutionResult {
+	ra, rb := indirectKindRank(a.Kind), indirectKindRank(b.Kind)
+	if ra != rb {
+		if ra > rb {
+			return a
+		}
+		return b
+	}
+	if a.Kind != IndirectFloor {
+		return a // same non-Floor kind: either is representative
+	}
+	merged := a
+	merged.Level = max(a.Level, b.Level)
+	merged.ReasonCodes = common.DedupeStable(append(append([]risktypes.ReasonCode{}, a.ReasonCodes...), b.ReasonCodes...))
+	merged.Reasons = common.DedupeStable(append(append([]string{}, a.Reasons...), b.Reasons...))
+	merged.Artifacts = append(append([]risktypes.ExecutedArtifact{}, a.Artifacts...), b.Artifacts...)
+	return merged
 }
 
 // critical builds a Critical (privilege escalation) result.

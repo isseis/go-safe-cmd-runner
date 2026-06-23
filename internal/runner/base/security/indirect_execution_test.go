@@ -975,6 +975,15 @@ func TestIndirect_CommandExecOptionsGated(t *testing.T) {
 		// A plain ssh with no ProxyCommand/LocalCommand option is left to Medium.
 		{"ssh plain", "ssh", []string{"-p", "22", "host"}, IndirectNone, 0},
 		{"ssh -o unrelated option", "ssh", []string{"-o", "StrictHostKeyChecking=no", "host"}, IndirectNone, 0},
+		// Multiple helper-exec options: every occurrence is evaluated and the worst
+		// (most restrictive) outcome wins, so a benign option cannot mask a dangerous
+		// later one (order-independent). ssh applies ProxyCommand and LocalCommand both.
+		{"ssh multiple -o malicious second", "ssh", []string{"-o", "ProxyCommand=ssh bastion", "-o", "LocalCommand=sudo id", "host"}, IndirectCritical, 0},
+		{"ssh multiple -o malicious first", "ssh", []string{"-o", "LocalCommand=sudo id", "-o", "ProxyCommand=ssh bastion", "host"}, IndirectCritical, 0},
+		{"ssh multiple -o safe then reject", "ssh", []string{"-o", "ProxyCommand=ssh bastion", "-o", "ProxyCommand=nc %h %p; evil", "host"}, IndirectReject, 0},
+		{"rsync multiple -e malicious second", "rsync", []string{"-e", "ssh", "-e", "sudo cmd", "src", "dst"}, IndirectCritical, 0},
+		{"rsync multiple -e malicious first", "rsync", []string{"-e", "sudo cmd", "-e", "ssh", "src", "dst"}, IndirectCritical, 0},
+		{"rsync multiple -e safe then reject", "rsync", []string{"-e", "ssh", "-e", "ssh; evil", "src", "dst"}, IndirectReject, 0},
 		// tar's child-process helpers stay a flat Reject (their command string cannot
 		// be safely extracted from tar's archive processing).
 		{"tar --to-command=", "tar", []string{"--to-command=/tmp/x", "-cf", "a.tar", "."}, IndirectReject, 0},
