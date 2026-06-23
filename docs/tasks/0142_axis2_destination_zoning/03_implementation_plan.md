@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-06-23 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-06-23 |
+| Reviewer | isseis |
 | Comments | - |
 
 > 本書は 0140 を 3 分割した第 2 タスク（判断軸2＝宛先パス信頼区分）の実装計画である。要件は
