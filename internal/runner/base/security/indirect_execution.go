@@ -1562,18 +1562,26 @@ func matchesRemoteShellOption(arg, p string) bool {
 	return false
 }
 
+// sshProxyOptionTools are the commands that accept ssh's -o ProxyCommand/
+// LocalCommand options and thus can run a local helper command through them. scp and
+// sftp pass -o straight through to ssh, so they carry the same local-exec capability
+// as ssh itself and must go through the same gate; otherwise
+// "scp -o ProxyCommand=<cmd> host:f ." would run <cmd> locally while being scored as
+// a plain Medium network command (a fail-open).
+var sshProxyOptionTools = setOf("ssh", "scp", "sftp")
+
 // analyzeHelperExecOption dispatches the helper-execution options whose local
-// command the runner can extract from an option value: rsync -e/--rsh and ssh -o
-// ProxyCommand/LocalCommand. handled is false when neither command's helper option
-// is present, so the caller continues with the remaining indirect-execution checks
-// (and ultimately the normal name-based classification).
+// command the runner can extract from an option value: rsync -e/--rsh and the ssh
+// family's (-o ProxyCommand/LocalCommand). handled is false when neither command's
+// helper option is present, so the caller continues with the remaining
+// indirect-execution checks (and ultimately the normal name-based classification).
 func analyzeHelperExecOption(names map[string]struct{}, args []string, depth int, role risktypes.ArtifactRole) (IndirectExecutionResult, bool) {
 	if _, ok := names["rsync"]; ok {
 		if res, ok := analyzeRsyncRemoteShell(args, depth, role); ok {
 			return res, true
 		}
 	}
-	if _, ok := names["ssh"]; ok {
+	if anyNameInSet(names, sshProxyOptionTools) {
 		if res, ok := analyzeSSHProxyCommand(args, depth, role); ok {
 			return res, true
 		}
