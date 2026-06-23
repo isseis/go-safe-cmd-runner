@@ -972,6 +972,10 @@ func TestIndirect_CommandExecOptionsGated(t *testing.T) {
 		{"ssh -o LocalCommand separator", "ssh", []string{"-o", "LocalCommand=nc %h %p; modprobe x", "host"}, IndirectReject, 0},
 		{"ssh -o ProxyCommand subshell", "ssh", []string{"-o", "ProxyCommand={ sudo id; }", "host"}, IndirectReject, 0},
 		{"ssh -o ProxyCommand newline", "ssh", []string{"-o", "ProxyCommand=ssh\nsudo id", "host"}, IndirectReject, 0},
+		// A newline (any ASCII whitespace) is a keyword/value delimiter for OpenSSH, so
+		// "ProxyCommand\nsudo id" parses as ProxyCommand=sudo id and must reach the gate
+		// as Critical, not be missed because the key absorbed the newline.
+		{"ssh -o ProxyCommand newline delimiter", "ssh", []string{"-o", "ProxyCommand\nsudo id", "host"}, IndirectCritical, 0},
 		// A plain ssh with no ProxyCommand/LocalCommand option is left to Medium.
 		{"ssh plain", "ssh", []string{"-p", "22", "host"}, IndirectNone, 0},
 		{"ssh -o unrelated option", "ssh", []string{"-o", "StrictHostKeyChecking=no", "host"}, IndirectNone, 0},

@@ -1744,23 +1744,34 @@ func analyzeSSHProxyCommand(args []string, depth int, role risktypes.ArtifactRol
 // miss a real one, e.g. "ProxyCommand = sudo id"), and unconditionally splitting on
 // the first '=' would mis-split a "K V" form whose value itself contains '='
 // (e.g. "ProxyCommand env X=1 nc"). Both are fail-open, so neither shortcut is used.
+//
+// "whitespace" is the full ASCII whitespace set (space, tab, newline, CR, vertical
+// tab, form feed), matching OpenSSH. Treating only space/tab as a delimiter would let
+// "ProxyCommand\nsudo id" parse here as the key "ProxyCommand\nsudo" (no match, so the
+// helper is not gated) while ssh itself splits on the newline and runs "sudo id" -- a
+// fail-open.
 func splitSSHOption(v string) (key, rest string) {
-	end := len(v)
-	for i := 0; i < len(v); i++ {
-		if v[i] == ' ' || v[i] == '\t' || v[i] == '=' {
-			end = i
-			break
-		}
+	end := strings.IndexAny(v, sshOptionDelimiters)
+	if end < 0 {
+		return v, "" // bare keyword, no value
 	}
 	key = v[:end]
-	r := strings.TrimLeft(v[end:], " \t")
+	r := strings.TrimLeft(v[end:], sshWhitespace)
 	// At most one '=' separates the keyword from the value; any whitespace around it
 	// is also part of the delimiter run.
 	if rem, ok := strings.CutPrefix(r, "="); ok {
-		r = strings.TrimLeft(rem, " \t")
+		r = strings.TrimLeft(rem, sshWhitespace)
 	}
 	return key, r
 }
+
+// sshWhitespace is the ASCII whitespace OpenSSH's strdelim treats as a token
+// separator; sshOptionDelimiters adds '=', which separates an option keyword from its
+// value.
+const (
+	sshWhitespace       = " \t\n\r\v\f"
+	sshOptionDelimiters = sshWhitespace + "="
+)
 
 // packageManagerBuiltins are subcommands of yarn/pnpm that manage packages
 // rather than run a package.json script. Anything else passed to yarn/pnpm is a
