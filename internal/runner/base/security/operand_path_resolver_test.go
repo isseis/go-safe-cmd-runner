@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
@@ -294,4 +295,39 @@ func TestTrustedPredicate(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
 	assert.False(t, r.isTrustedOperand(resolved, origin, trustedDirs, identOther),
 		"a world-writable non-sticky ancestor should not be Trusted")
+}
+
+// TestIsWritableByRunAs_StickyExemption verifies the sticky-bit exemption is
+// symmetric across the group- and other-write bits: a sticky directory restricts
+// rename/delete to each entry's owner, so it is not a repoint risk via either bit.
+func TestIsWritableByRunAs_StickyExemption(t *testing.T) {
+	root := tempRoot(t)
+	dir := filepath.Join(root, "d")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+
+	info, err := os.Lstat(dir)
+	require.NoError(t, err)
+	gid := info.Sys().(*syscall.Stat_t).Gid
+	euid := uint32(os.Geteuid())
+	// A run-as that does not own dir but shares its group.
+	ident := risktypes.RunAsIdent{UID: euid + 1, GID: gid}
+
+	// Group-writable, no sticky: repoint risk -> writable.
+	require.NoError(t, os.Chmod(dir, 0o070))
+	info, err = os.Lstat(dir)
+	require.NoError(t, err)
+	assert.True(t, isWritableByRunAs(info, ident), "group-writable non-sticky dir is writable")
+
+	// Group-writable, sticky: not a repoint risk -> not writable.
+	require.NoError(t, os.Chmod(dir, os.ModeSticky|0o070))
+	info, err = os.Lstat(dir)
+	require.NoError(t, err)
+	assert.False(t, isWritableByRunAs(info, ident), "group-writable sticky dir is not a repoint risk")
+
+	// Other-writable, sticky: same exemption (regression for the prior behavior).
+	identOther := risktypes.RunAsIdent{UID: euid + 1, GID: gid + 1}
+	require.NoError(t, os.Chmod(dir, os.ModeSticky|0o002))
+	info, err = os.Lstat(dir)
+	require.NoError(t, err)
+	assert.False(t, isWritableByRunAs(info, identOther), "other-writable sticky dir is not a repoint risk")
 }

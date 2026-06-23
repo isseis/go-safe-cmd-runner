@@ -244,6 +244,12 @@ func withinAnyDir(path string, dirs []string) bool {
 	return false
 }
 
+// Directory write-permission bits inspected by the repoint check.
+const (
+	modeGroupWrite = 0o020
+	modeOtherWrite = 0o002
+)
+
 // isWritableByRunAs reports whether the run-as identity could repoint the entry
 // described by info (rename or delete it, or chmod it to gain write) and thereby
 // redirect the safe-zone anchor. It is NOT a general "can create here" check: a
@@ -274,10 +280,15 @@ func isWritableByRunAs(info fs.FileInfo, ident risktypes.RunAsIdent) bool {
 	if st.Uid == ident.UID {
 		return true
 	}
-	if mode&0o020 != 0 && runAsInGroup(st.Gid, ident) {
-		return true
-	}
-	if mode&0o002 != 0 {
+
+	// Group-write (when run-as is in the group) or other-write grants the ability
+	// to repoint entries, EXCEPT on a sticky directory: the sticky bit restricts
+	// rename/delete to each entry's owner regardless of which write bit applies, so
+	// it is not a repoint risk. The exemption is symmetric across the group and
+	// other bits.
+	groupWrite := mode&modeGroupWrite != 0 && runAsInGroup(st.Gid, ident)
+	otherWrite := mode&modeOtherWrite != 0
+	if groupWrite || otherWrite {
 		if mode.IsDir() && mode&fs.ModeSticky != 0 {
 			return false
 		}
