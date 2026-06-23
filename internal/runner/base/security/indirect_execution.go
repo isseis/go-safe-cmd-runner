@@ -1672,6 +1672,19 @@ func rsyncRemoteShellValue(args []string) (value string, found, extractable bool
 // Critical, any other extractable command a High floor, an unsafe value a reject).
 // handled is false when no ProxyCommand/LocalCommand is present, leaving ssh to its
 // normal (Medium) classification.
+//
+// The scan deliberately runs over every argument (up to a "--" terminator) rather
+// than stopping at ssh's first non-option (the hostname, where OpenSSH itself stops
+// parsing local options). Stopping at the hostname would be more precise -- a
+// "-o ProxyCommand=" sitting after the hostname is part of the REMOTE command, not a
+// local option -- but locating the hostname reliably requires modeling ssh's whole
+// option grammar (every separated-value option such as "-p 22" must be skipped, or
+// its value would be mistaken for the hostname). An incomplete model would stop too
+// early and skip a genuine local "-o ProxyCommand" that follows, a fail-open. Since
+// scanning the whole argv can only ever match MORE "-o ProxyCommand/LocalCommand"
+// options, never fewer, the worst case here is an over-block of a remote-command
+// token that literally spells "-o ProxyCommand=" (rare, and fail-closed-safe), which
+// is preferred over the fail-open risk of an imperfect hostname boundary.
 func analyzeSSHProxyCommand(args []string, depth int, role risktypes.ArtifactRole) (IndirectExecutionResult, bool) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
