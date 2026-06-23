@@ -395,7 +395,7 @@ func ClassifyDestinationZone(input ZoningInput, names map[string]struct{}, cmdPa
 
 **オペランド抽出仕様表（AC-06／根本原因1）**: コマンド→`LocationKind`→オペランド抽出規則の対応を、コード内の
 **単一テーブル**として持つ。要件本文・本設計は個別フラグを網羅列挙せず、既知コマンド×代表フラグの表駆動
-（網羅）テストで被覆を担保する（§7.1）。仕様表が持つべき難所のエントリ（in-place 編集・`ln -s` 相対 target・
+（網羅）テストで網羅性を担保する（§7.1）。仕様表が持つべき難所のエントリ（in-place 編集・`ln -s` 相対 target・
 アーカイブ抽出 vs 一覧・末尾 `/` 削除・`dd` デバイス・権限/所有権付与・データ送信書込先）は
 [01_requirements.md](01_requirements.md) §F-002 の表を正とする。未知/曖昧形は `ZoneUnresolved`（fail-closed）。
 
@@ -501,7 +501,7 @@ High に分類している既存 5 系統の破壊系 High 寄与を評価対象
 1 profile に破壊＋他因子が同居しても取りこぼし（他因子を落とす）／過剰（破壊 High を残す）を起こさないよう、
 無効化は破壊コンポーネント粒度で定義する。
 
-**置き換えの被覆不変条件（①〜⑤ ⊆ §3.2 の下限・区分）**: 「5 系統をまとめて外す」が High の取りこぼし（fail-open）に
+**置き換えの取りこぼし防止条件（①〜⑤ ⊆ §3.2 の下限・区分）**: 「5 系統をまとめて外す」が High の取りこぼし（fail-open）に
 ならないことを保証するため、外す各系統が捕捉していた水準を判断軸2 のどの規則が同等以上に再確立するかを表で固定する。
 
 | 外す系統 | 旧来の捕捉 | 判断軸2 での再確立 |
@@ -512,7 +512,7 @@ High に分類している既存 5 系統の破壊系 High 寄与を評価対象
 | ④ `dangerousCommandPatterns` rank6 | `{rm,-rf}` High・`{dd,if=}` High・`{chmod,777}` High・`{chown,root}` Medium | `rm -rf`＝再帰下限（AC-11）／区分、`dd if=`＝デバイス IO 下限（AC-10）、`chmod 777`＝world-writable 権限付与下限（AC-08, High）、`chown root`＝所有権変更（trust-critical 宛先は権限付与下限で High、ordinary 宛先は区分 Medium）で同等以上 |
 | ⑤ coreutils setuid lstat 下限 | setuid/setgid バイナリ High | 既存 lstat シグナル（`hasSetuidOrSetgidBit` 相当）を権限付与下限が**そのまま流用**（再パースしない） |
 
-> この被覆不変条件をテストで固定する（§7.2）。とくに ④ の `chmod 777`／`chown root` が §3.2 の権限付与下限／区分で
+> この取りこぼし防止条件をテストで固定する（§7.2）。とくに ④ の `chmod 777`／`chown root` が §3.2 の権限付与下限／区分で
 > 同等以上のレベルになることを表明し、「外したが再確立されない隙間」を塞ぐ。
 
 > **既存方針への意図的な例外（インライン明示・command 仕様の要請）**
