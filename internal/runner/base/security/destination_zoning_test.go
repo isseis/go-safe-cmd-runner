@@ -521,6 +521,45 @@ func TestExtractorHardening2(t *testing.T) {
 	})
 }
 
+// --- review-round 4 hardening ---
+
+func TestExtractorHardening3(t *testing.T) {
+	wd := zoningWorkdir(t)
+	in := zoningInput(wd, foreignIdent())
+
+	t.Run("sed_script_via_e_flag", func(t *testing.T) {
+		// With -e, every positional is an edited file (no inline-script positional).
+		got := classify(in, "sed", "-i", "-e", "s/a/b/", "/usr/bin/x")
+		assert.True(t, got.Recognized, "sed -i -e ... file must recognize the file")
+		assert.Equal(t, runnertypes.RiskLevelHigh, got.Level)
+	})
+
+	t.Run("ln_long_target_directory", func(t *testing.T) {
+		// --target-directory must be honored like -t.
+		got := classify(in, "ln", "-s", "--target-directory", "/usr/local/bin", "/etc/passwd")
+		require.NotEmpty(t, got.Operands)
+		assert.Equal(t, runnertypes.RiskLevelHigh, got.Level, "link dir /usr/local/bin is trust-critical")
+	})
+
+	t.Run("tar_one_top_level_optional_arg", func(t *testing.T) {
+		// Bare --one-top-level before the mode must not consume -xf; recognized.
+		got := classify(in, "tar", "--one-top-level", "-xf", "a.tar")
+		assert.True(t, got.Recognized, "--one-top-level is optional-arg; must not eat -xf")
+		// --one-top-level=DIR uses DIR as the extraction destination.
+		crit := classify(in, "tar", "--one-top-level=/usr/local", "-xf", "a.tar")
+		assert.True(t, crit.Recognized)
+		assert.Equal(t, runnertypes.RiskLevelHigh, crit.Level)
+	})
+}
+
+func TestACLGrantsWrite_DefaultEntry(t *testing.T) {
+	assert.True(t, aclGrantsWrite("default:g:staff:rwx"), "default group-write ACL is a grant")
+	assert.True(t, aclGrantsWrite("d:o::rwx"), "default other-write ACL is a grant")
+	assert.True(t, aclGrantsWrite("g:staff:rw"), "plain group-write ACL is a grant")
+	assert.False(t, aclGrantsWrite("default:g:staff:r-x"), "default group without write is not a grant")
+	assert.False(t, aclGrantsWrite("u:alice:rwx"), "a user ACL is not a group/other grant")
+}
+
 // --- carrier empty vs applied-but-unresolved ---
 
 func TestOperandZones_EmptyVsUnresolved(t *testing.T) {

@@ -275,10 +275,13 @@ func extractLink(args []string) extraction {
 	pos, captured, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
 	ext := extraction{applies: true, recognized: recognized}
 
-	if tdirs := captured["-t"]; len(tdirs) > 0 {
+	if tdirs := append(append([]string{}, captured["-t"]...), captured["--target-directory"]...); len(tdirs) > 0 {
 		appendTargetDir(&ext, tdirs)
 		for _, t := range pos {
 			ext.operands = append(ext.operands, rawOperand{raw: t, role: risktypes.OperandRoleRead})
+		}
+		if len(pos) == 0 {
+			ext.recognized = false
 		}
 		return ext
 	}
@@ -349,14 +352,24 @@ func extractSed(args []string) extraction {
 	if !inPlace {
 		return extraction{applies: false, recognized: true}
 	}
-	pos, _, _, recognized := scanFlags(rest, valueFlags, boolFlags, nil)
+	pos, captured, _, recognized := scanFlags(rest, valueFlags, boolFlags, nil)
 	ext := extraction{applies: true, recognized: recognized}
-	// The first positional is the sed script; the rest are edited files.
-	if len(pos) <= 1 {
+	// When the script is supplied via -e/-f, every positional is an edited file;
+	// otherwise the first positional is the inline script and the rest are files.
+	hasScriptFlag := len(captured["-e"]) > 0 || len(captured["--expression"]) > 0 ||
+		len(captured["-f"]) > 0 || len(captured["--file"]) > 0
+	files := pos
+	if !hasScriptFlag {
+		if len(pos) <= 1 {
+			ext.recognized = false
+			return ext
+		}
+		files = pos[1:]
+	} else if len(pos) == 0 {
 		ext.recognized = false
 		return ext
 	}
-	for _, f := range pos[1:] {
+	for _, f := range files {
 		ext.operands = append(ext.operands, rawOperand{raw: f, role: risktypes.OperandRoleWrite})
 	}
 	return ext
@@ -458,9 +471,13 @@ func extractInstall(args []string) extraction {
 }
 
 func extractTar(args []string) extraction {
-	valueFlags := set("-f", "--file", "-C", "--directory", "--one-top-level")
+	valueFlags := set("-f", "--file", "-C", "--directory")
 	boolFlags := set("-v", "--verbose", "-z", "--gzip", "-j", "--bzip2", "-J", "--xz", "-p",
 		"--preserve-permissions", "-k", "--keep-old-files", "--no-same-owner", "-m", "--touch",
+		// --one-top-level takes an OPTIONAL argument (only via =DIR); treat the flag
+		// itself as boolean for recognition and read =DIR separately, so
+		// `tar --one-top-level -xf a.tar` is not misparsed.
+		"--one-top-level",
 		// Mode letters/long forms, so a recognized extract form (e.g. -xf, --extract)
 		// is not falsely treated as unparsed and floored to High.
 		"-x", "-t", "-c", "--extract", "--get", "--list", "--create")
@@ -475,8 +492,10 @@ func extractTar(args []string) extraction {
 		// Listing does not write.
 		return extraction{applies: false, recognized: true}
 	case 'x':
-		dir := firstNonEmpty(captured["-C"], captured["--directory"], captured["--one-top-level"])
+		dir := firstNonEmpty(captured["-C"], captured["--directory"], attachedValue(args, "--one-top-level"))
 		if dir == "" {
+			// A bare --one-top-level derives its directory from the archive name
+			// under the working directory; default to the working directory.
 			dir = "."
 		}
 		ext.operands = append(ext.operands, rawOperand{raw: dir, role: risktypes.OperandRoleWrite})
@@ -1006,6 +1025,11 @@ func aclGrantsWrite(entry string) bool {
 			continue
 		}
 		who := strings.ToLower(strings.TrimSpace(fields[0]))
+		// A default-ACL entry (default:g:staff:rwx or d:g:...) shifts the who field
+		// by one; without this the group/other class would be missed (fail-open).
+		if (who == "d" || who == "default") && len(fields) > minACLFields {
+			who = strings.ToLower(strings.TrimSpace(fields[1]))
+		}
 		perms := fields[len(fields)-1]
 		if (who == "g" || who == "group" || who == "o" || who == "other") && strings.Contains(perms, "w") {
 			return true
@@ -1031,4 +1055,17 @@ func firstNonEmpty(lists ...[]string) string {
 		}
 	}
 	return ""
+}
+
+// attachedValue returns the values of an optional-argument flag given in the
+// attached --flag=value form (the only form GNU getopt accepts for optional args).
+func attachedValue(args []string, flag string) []string {
+	prefix := flag + "="
+	var vals []string
+	for _, a := range args {
+		if v, ok := strings.CutPrefix(a, prefix); ok {
+			vals = append(vals, v)
+		}
+	}
+	return vals
 }

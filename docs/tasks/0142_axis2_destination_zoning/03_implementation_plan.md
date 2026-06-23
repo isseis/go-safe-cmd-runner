@@ -238,10 +238,11 @@
       を実装（設計 §3.2）。抽出→`ResolveOperandPath` で解決→区分判定→操作固有の下限→全オペランド max。
       1 コマンド評価につき `operandResolver` を 1 つ生成し全オペランドで共有（メモ化で `lstat`/`readlink` を畳む）。デバイス種別判定の
       テスト注入のため、resolver を受け取る内部 `classifyDestinationZone` を分離（公開 API は実 os resolver を生成）。
-- [-] （PR-2 レビュー由来の繰り越し）`isTrustedOperand` の祖先書込可否キャッシュは **P7 へ繰り越し**（解決コスト上限テストと同居）。
-      現状は 1 コマンド 1 resolver でパス解決はメモ化済み。祖先書込可否は identity 依存のため、`operandResolver` への素朴な dir-only
-      キャッシュは複数 identity 問い合わせ（テスト等）で stale になる。鍵に identity を含めるか単一 identity スコープの確立が要るため、
-      検証テスト（線形呼出）と合わせて P7 で導入する。Do は小さく現状コストは線形に収まる。
+- （P7 へ繰り越し / PR-2 レビュー由来。本項は P3 の作業対象外のため task checkbox を付けない）`isTrustedOperand` の
+      祖先書込可否キャッシュは P7（解決コスト上限テストと同居）で導入する。現状は 1 コマンド 1 resolver でパス解決はメモ化済み。
+      祖先書込可否は identity 依存のため、`operandResolver` への素朴な dir-only キャッシュは複数 identity 問い合わせ（テスト等）で
+      stale になる。鍵に identity を含めるか単一 identity スコープの確立が要るため、検証テスト（線形呼出）と合わせて P7 で導入する。
+      Do は小さく現状コストは線形に収まる。
 - [x] パス信頼区分の判定（AC-01〜AC-05）: trust-critical（`SystemCriticalPaths` 一致/配下、`/` は完全一致のみ）→**書込=High／読み取り=Medium**
       （情報露出。設計 §6.2 の `cp /etc/shadow` 例に一致）、ordinary→Medium、safe-zone（Trusted→Low／非 Trusted→Medium フォールバック）、
       unresolved（write=High・read=Medium）。safe-zone が trust-critical と重複/配下のときは trust-critical 優先（AC-04(c)）。
@@ -259,8 +260,8 @@
 - [x] コマンド別オペランド特則を実装（AC-12〜AC-15、設計 §3.2／要件 §F-003(b)）: mv の移動元（role=write）/ln のリンク先 target
       （trust-critical→High floor）、`cp -p`/`-a` の特権メタデータ複製 High、mount/umount（全 positional＝mountpoint＋マウント元、
       `umount -a` 無条件 High）、tee/sponge（全 FILE max）、find（`-delete`/`-fprint*` の宛先判定、`-exec` 系の内側実行は本タスク対象外）。
-- [x] `LocationResult.Recognized` を計算（完全認識: 全 argv を解析しきった。未解析トークン/未知フラグが残れば `Recognized=false`＋
-      不完全認識時は High 下限へ倒す、設計 §3.4）。
+- [x] `LocationResult.Recognized` を計算（完全認識: 全 argv を解析しきった **かつ全オペランドが解決済み（非 `ZoneUnresolved`）**。
+      未解析トークン/未知フラグ、または解決不能オペランドが残れば `Recognized=false`＋不完全認識時は High 下限へ倒す、設計 §3.4）。
 - [x] 各オペランドの判定を `[]OperandZone`（Index/Raw/Resolved/Zone/Role/MatchedCritical/Trusted/UnresolvedErr）として記録し
       `LocationResult.Operands` に格納。判定由来の `ReasonCode` を `LocationResult.ReasonCodes` に積む。「空（非適用）」と「適用済み
       解決不能（`Zone==ZoneUnresolved` 要素）」を区別可能にする（0143 AC-01 の消費契約、設計 §3.1）。この区別は **2 つの独立したケース**
