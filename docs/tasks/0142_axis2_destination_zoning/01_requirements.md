@@ -141,7 +141,7 @@
   ln・mkdir・touch・install・tee・sponge・truncate・`sed -i`・tar・unzip・dd・mount・umount・chmod・chown・chgrp・
   setfacl・chattr・mknod・find（破壊/書込アクション）・データ送信の書込形（F-004）。個別フラグ/形は要件本文で
   列挙せず、コマンド→Kind→オペランド抽出規則を単一の仕様（実装内テーブル）で表し、既知コマンド×代表フラグの
-  表駆動（プロパティ/網羅）テストで被覆を担保する。未知/曖昧形は fail-closed（AC-05）。
+  表駆動（プロパティ/網羅）テストで網羅性を担保する。未知/曖昧形は fail-closed（AC-05）。
   AC-06 の必須テスト行（仕様表のエントリとして持つ。下表の難所は最低限）:
 
   | 難所 | 抽出/パス信頼区分の判定規則 |
