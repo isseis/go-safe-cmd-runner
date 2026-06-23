@@ -933,6 +933,13 @@ func TestIndirect_CommandExecOptionsGated(t *testing.T) {
 		// High floor, whereas a regression to a next-token read would gate "sudo" ->
 		// Critical. Asserting High (not Critical) fails if the precedence is broken.
 		{"rsync -aevz mid-bundle", "rsync", []string{"-aevz", "sudo", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		// Attached "=" separator forms: -e=VALUE and -avze=VALUE bind VALUE (the "="
+		// is stripped), so the attached value is gated, not the next token. "-e=sudo"
+		// in particular must surface as Critical: reading the next token ("dst") here
+		// instead would drop the privilege command (a fail-open).
+		{"rsync -e= attached", "rsync", []string{"-e=ssh", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"rsync -avze= bundle attached", "rsync", []string{"-avze=ssh", "src", "dst"}, IndirectFloor, runnertypes.RiskLevelHigh},
+		{"rsync -e= privilege", "rsync", []string{"-e=sudo", "src", "dst"}, IndirectCritical, 0},
 		// A privilege token inside the helper string is Critical.
 		{"rsync -e sudo", "rsync", []string{"-e", "sudo cmd", "src", "dst"}, IndirectCritical, 0},
 		// A safe-set-only value (no shell metacharacters) is split cleanly and gated.

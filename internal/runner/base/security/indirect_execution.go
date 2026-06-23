@@ -140,7 +140,9 @@ var interpreterInlineCommands = setOf(
 // action). The helper is not runner-execed, so it cannot be identity-bound and the
 // form is rejected. rsync's -e/--rsh is handled separately
 // (analyzeRsyncRemoteShell), which extracts and gates its value rather than
-// rejecting: that value is a single /bin/sh -c command string the runner can split.
+// rejecting: that value is rsync's remote-shell command line, which rsync
+// whitespace-splits into an argv and execs directly (no implicit shell), so the
+// runner can split it the same way.
 var remoteShellOptionPrefixes = map[string][]string{
 	"tar": {"--to-command", "--checkpoint-action"},
 }
@@ -1580,10 +1582,13 @@ func analyzeHelperExecOption(names map[string]struct{}, args []string, depth int
 }
 
 // analyzeRsyncRemoteShell extracts and gates the helper command of rsync's
-// -e/--rsh option, whose value is a single /bin/sh -c command string. The command
-// string is gated with the fail-closed allowlist split (a privilege token is
-// Critical, any other extractable command a High floor, an unsafe value a reject),
-// so rsync -e is treated as an extractable inner command rather than a flat reject.
+// -e/--rsh option. rsync whitespace-splits this value into an argv and execs it
+// directly as the remote shell (no implicit /bin/sh -c), so the value is gated with
+// the same fail-closed allowlist split used for genuine shell strings: that split
+// rejects shell metacharacters, which is a safe over-approximation here (rsync would
+// not interpret them, so rejecting only over-blocks). A privilege token is Critical,
+// any other extractable command a High floor, an unsafe value a reject, so rsync -e
+// is treated as an extractable inner command rather than a flat reject.
 // handled is false when no -e/--rsh option is present, leaving rsync to its normal
 // (Medium) classification.
 func analyzeRsyncRemoteShell(args []string, depth int, role risktypes.ArtifactRole) (IndirectExecutionResult, bool) {
@@ -1601,8 +1606,9 @@ func analyzeRsyncRemoteShell(args []string, depth int, role risktypes.ArtifactRo
 
 // rsyncRemoteShellValue locates rsync's -e/--rsh option and returns its value using
 // getopt's rule for a value-taking short option: the remainder of the option's own
-// token is the value (-essh -> "ssh", -aevz -> -e binds "vz"), or, when the option
-// is the last letter of a bundle, the next token (-avze ssh -> "ssh"). found is
+// token is the value (-essh -> "ssh", -aevz -> -e binds "vz", -e=ssh / -avze=ssh ->
+// "ssh" after stripping the "=" separator), or, when the option is the last letter of
+// a bundle with no attached remainder, the next token (-avze ssh -> "ssh"). found is
 // false when no -e/--rsh is present; extractable is false when the option is present
 // but its value token is missing. Known value-taking options' values are skipped
 // first so a value that happens to look like "-e" is not matched as the helper, and
@@ -1628,19 +1634,19 @@ func rsyncRemoteShellValue(args []string) (value string, found, extractable bool
 		case strings.HasPrefix(a, "--rsh="):
 			return a[len("--rsh="):], true, true
 		case shortFlagInBundle(a, 'e'):
-			// Short attached/bundle form. The flag letters precede any attached "=value";
-			// the remainder of the token after 'e' is -e's value. This intentionally
-			// does not getopt-classify the letters before 'e': a preceding short
-			// value-option (e.g. -B in "-Be ssh") would, in real getopt, bind the 'e'
-			// as ITS value, so treating 'e' as -e here over-extracts. That is
+			// Short attached/bundle form. shortFlagInBundle guarantees 'e' lies in the
+			// flag portion (before any "="), so the first 'e' in the token is the -e
+			// flag and its value is the remainder of the token after it. A single
+			// leading "=" on that remainder is the "-e=ssh"/"-avze=ssh" separator form
+			// and is stripped, so the attached value (which may itself be a command such
+			// as "sudo") is gated rather than dropped for a next-token read. This
+			// intentionally does not getopt-classify the letters before 'e': a preceding
+			// short value-option (e.g. -B in "-Be ssh") would, in real getopt, bind the
+			// 'e' as ITS value, so treating 'e' as -e here over-extracts. That is
 			// fail-closed (it gates a bogus inner rather than missing -e), so the
 			// simpler scan is preferred; do not "fix" it into a next-token read, which
 			// would fail open.
-			flags := a[1:]
-			if eq := strings.IndexByte(flags, '='); eq >= 0 {
-				flags = flags[:eq]
-			}
-			remainder := flags[strings.IndexByte(flags, 'e')+1:]
+			remainder := strings.TrimPrefix(a[strings.IndexByte(a, 'e')+1:], "=")
 			if remainder != "" {
 				return remainder, true, true
 			}
