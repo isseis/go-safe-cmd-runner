@@ -262,6 +262,10 @@ sequenceDiagram
 
 ## 3. コンポーネント設計
 
+> **本章の Go コード例の規約**: 本章の Go コード例（型・インタフェース・定数定義）のコメントは**英語で記述する**。
+> ソース言語規約（`_context.md`: Go のコメント・識別子・文字列リテラルは英語）に合わせ、コード例をそのまま実装へ
+> 転記しても非準拠コメントが混入しないようにするためである。コード例の外側の地の文・注釈は日本語のままとする。
+
 ### 3.1 監査 DTO とパス信頼区分の型（`risktypes`、AC-19）
 
 オペランド毎の判定記録 DTO は `risktypes` に定義する。**配置根拠**: 監査キャリアは `risktypes.RiskAssessment`
@@ -321,10 +325,10 @@ type RunAsIdent struct {
 `RiskAssessment` に監査キャリアを 1 フィールド追加する（既存フィールドは不変）:
 
 ```go
-// (risktypes/types.go の RiskAssessment へ追加するフィールドのみ抜粋)
+// (excerpt: only the field added to RiskAssessment in risktypes/types.go)
 type RiskAssessment struct {
-    // ... 既存フィールド（Level / Blocking / BlockingReason / ErrorClass /
-    //     ReasonCodes / Reasons / NetworkType）は不変 ...
+    // ... existing fields (Level / Blocking / BlockingReason / ErrorClass /
+    //     ReasonCodes / Reasons / NetworkType) unchanged ...
 
     // OperandZones carries the per-operand destination-zoning audit records
     // (axis 2). Empty when axis 2 did not apply; see OperandZone for the
@@ -619,8 +623,8 @@ func NewStandardEvaluator(networkAnalyzer *security.NetworkAnalyzer, securityCon
 // SecuritySpec maps to the [security] section. A field is added alongside the
 // existing TrustedGIDs.
 type SecuritySpec struct {
-    TrustedGIDs        []uint32 `toml:"trusted_gids"`        // 既存
-    TrustedDirectories []string `toml:"trusted_directories"` // 新規: AC-04(d) の信頼ディレクトリ許可リスト
+    TrustedGIDs        []uint32 `toml:"trusted_gids"`        // existing
+    TrustedDirectories []string `toml:"trusted_directories"` // new: trusted-directory allowlist (AC-04(d))
 }
 ```
 
@@ -683,15 +687,15 @@ type SecuritySpec struct {
 （`reason_codes_test.go`）を緑に保つ（NF-001。family 区別の最終化は 0143）:
 
 ```go
-// 判断軸2 が追加する ReasonCode（snake_case の文字列値）。
+// ReasonCode values added by axis 2 (snake_case string values).
 const (
-    ReasonTrustBoundaryWrite      ReasonCode = "trust_boundary_write"       // trust-critical への書込/削除 (AC-01)
-    ReasonDestinationZone         ReasonCode = "destination_zone"           // ordinary 宛先由来の Medium (AC-02)
-    ReasonPermissionGrant         ReasonCode = "permission_grant"           // setuid/world-writable/所有権/属性付与 (AC-08, AC-09)
-    ReasonDeviceIO                ReasonCode = "device_io"                  // dd ブロック/危険キャラクタデバイス (AC-10)
-    ReasonRecursiveOutsideSafeZone ReasonCode = "recursive_outside_safe_zone" // safe-zone 外への再帰 (AC-11)
-    ReasonSensitiveSourceCopy     ReasonCode = "sensitive_source_copy"      // 機密ファイル/trust-critical 複製 (AC-12)
-    ReasonUnresolvedDestination   ReasonCode = "unresolved_destination"     // fail-closed 解決不能 (AC-05)
+    ReasonTrustBoundaryWrite      ReasonCode = "trust_boundary_write"       // write/delete to a trust-critical path (AC-01)
+    ReasonDestinationZone         ReasonCode = "destination_zone"           // Medium from an ordinary destination (AC-02)
+    ReasonPermissionGrant         ReasonCode = "permission_grant"           // setuid/world-writable/ownership/attribute grant (AC-08, AC-09)
+    ReasonDeviceIO                ReasonCode = "device_io"                  // dd block/dangerous character device (AC-10)
+    ReasonRecursiveOutsideSafeZone ReasonCode = "recursive_outside_safe_zone" // recursion outside the safe-zone (AC-11)
+    ReasonSensitiveSourceCopy     ReasonCode = "sensitive_source_copy"      // sensitive-file/trust-critical source copy (AC-12)
+    ReasonUnresolvedDestination   ReasonCode = "unresolved_destination"     // fail-closed unresolved operand (AC-05)
 )
 ```
 
