@@ -389,6 +389,77 @@ func TestOperandSpecific_Mknod(t *testing.T) {
 		"mknod -m setuid grants permission -> High")
 }
 
+// --- review-round extractor/recognition hardening ---
+
+func TestExtractorHardening(t *testing.T) {
+	wd := zoningWorkdir(t)
+	in := zoningInput(wd, foreignIdent())
+
+	t.Run("attached_short_value_flag_not_dropped", func(t *testing.T) {
+		// tar -C/usr (attached value) must extract to /usr, not default to cwd.
+		got := classify(in, "tar", "-x", "-f", "a.tar", "-C/usr/local")
+		assert.True(t, got.Recognized)
+		assert.Equal(t, runnertypes.RiskLevelHigh, got.Level, "attached -C value must not be dropped")
+	})
+
+	t.Run("install_directory_mode_all_write", func(t *testing.T) {
+		// install -d treats every positional as a directory to create.
+		got := classify(in, "install", "-d", filepath.Join(wd, "a"), "/usr/local/b")
+		assert.Equal(t, runnertypes.RiskLevelHigh, got.Level, "a trust-critical dir in -d mode is High")
+		require.Len(t, got.Operands, 2)
+		for _, oz := range got.Operands {
+			assert.Equal(t, risktypes.OperandRoleWrite, oz.Role)
+		}
+	})
+
+	t.Run("chown_from_keeps_owner_spec", func(t *testing.T) {
+		// `chown --from=alice bob /usr/bin/x`: bob is the owner spec, /usr/bin/x the
+		// target. The owner spec must not be treated as a target.
+		got := classify(in, "chown", "--from=alice", "bob", "/usr/bin/x")
+		require.Len(t, got.Operands, 1)
+		assert.Equal(t, "/usr/bin/x", got.Operands[0].Raw)
+		assert.Equal(t, runnertypes.RiskLevelHigh, got.Level)
+	})
+
+	t.Run("find_fprintf_missing_arg_fails_closed", func(t *testing.T) {
+		got := classify(in, "find", wd, "-fprintf")
+		assert.False(t, got.Recognized, "missing -fprintf output file is unparsed")
+		assert.Equal(t, runnertypes.RiskLevelHigh, got.Level, "unrecognized form fails closed to High")
+	})
+
+	t.Run("tee_no_file_not_applicable", func(t *testing.T) {
+		got := classify(in, "tee")
+		assert.False(t, got.Applies, "tee with no FILE writes only to stdout")
+	})
+
+	t.Run("ln_single_arg_records_implicit_link", func(t *testing.T) {
+		// ln /usr/bin/ls -> implicit link "ls" in the work dir; both operands recorded.
+		got := classify(in, "ln", "/usr/bin/ls")
+		require.Len(t, got.Operands, 2)
+		roles := map[risktypes.OperandRole]bool{}
+		for _, oz := range got.Operands {
+			roles[oz.Role] = true
+		}
+		assert.True(t, roles[risktypes.OperandRoleRead] && roles[risktypes.OperandRoleWrite],
+			"single-arg ln records both the target (read) and the implicit link (write)")
+	})
+
+	t.Run("ln_symbolic_relative_target_resolves", func(t *testing.T) {
+		// A relative symlink target resolves against the (relative) link parent,
+		// anchored at the work dir; it must not become unexpectedly unresolved.
+		require.NoError(t, os.MkdirAll(filepath.Join(wd, "sub"), 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(wd, "sub", "tgt"), nil, 0o644))
+		got := classify(in, "ln", "-s", "tgt", "sub/link")
+		assert.True(t, got.Recognized, "a relative ln base must be anchored, not left unresolved")
+		assert.Equal(t, runnertypes.RiskLevelLow, got.Level)
+	})
+
+	t.Run("unresolved_operand_sets_recognized_false", func(t *testing.T) {
+		res := classifyDestinationZone(in, cmdNameSet("rm"), "rm", []string{"/x"}, erroringResolver())
+		assert.False(t, res.Recognized, "an unresolved operand must defeat full recognition")
+	})
+}
+
 // --- carrier empty vs applied-but-unresolved ---
 
 func TestOperandZones_EmptyVsUnresolved(t *testing.T) {

@@ -144,43 +144,46 @@ func scanFlags(args []string, valueFlags, boolFlags, recursiveFlags map[string]s
 		if _, ok := boolFlags[name]; ok {
 			continue
 		}
-		// A long flag (--foo) we do not know, or a short cluster like -rf.
+		// An unknown long flag (--foo): fail closed (it may take a value).
 		if strings.HasPrefix(a, "--") {
 			recognized = false
 			continue
 		}
-		if rec, ok := scanShortFlagCluster(a, valueFlags, boolFlags, recursiveFlags); ok {
-			if rec {
+		// A short cluster (single dash, e.g. -rf, or a value flag with an attached
+		// value like -C/usr). A value flag inside the cluster captures the rest of
+		// the token as its value, or the next token if none is attached; dropping
+		// that value would default an extraction directory to the cwd (fail-open).
+		clusterOK := true
+		for k, c := range a[1:] {
+			key := "-" + string(c)
+			if _, isRec := recursiveFlags[key]; isRec {
 				recursive = true
+				continue
 			}
-			continue
+			if _, isVal := valueFlags[key]; isVal {
+				rest := a[2+k:] // characters after c within this token
+				switch {
+				case rest != "":
+					captured[key] = append(captured[key], rest)
+				case i+1 < len(args):
+					captured[key] = append(captured[key], args[i+1])
+					i++
+				default:
+					clusterOK = false
+				}
+				break // a value flag consumes the remainder of the cluster
+			}
+			if _, isBool := boolFlags[key]; isBool {
+				continue
+			}
+			clusterOK = false
+			break
 		}
-		recognized = false
+		if !clusterOK {
+			recognized = false
+		}
 	}
 	return positionals, captured, recursive, recognized
-}
-
-// scanShortFlagCluster handles a bundled single-dash flag group (e.g. -rf). It returns
-// ok=false if any character is not a known short bool/recursive flag, so the
-// caller fails closed.
-func scanShortFlagCluster(token string, valueFlags, boolFlags, recursiveFlags map[string]struct{}) (recursive, ok bool) {
-	for _, c := range token[1:] {
-		key := "-" + string(c)
-		if _, isVal := valueFlags[key]; isVal {
-			// A value-taking flag inside a cluster consumes the remainder; treat as
-			// recognized to avoid misreading it, without trying to locate operands.
-			return recursive, true
-		}
-		if _, isRec := recursiveFlags[key]; isRec {
-			recursive = true
-			continue
-		}
-		if _, isBool := boolFlags[key]; isBool {
-			continue
-		}
-		return recursive, false
-	}
-	return recursive, true
 }
 
 func extractCopyMove(args []string, isMove bool) extraction {
@@ -279,18 +282,25 @@ func extractLink(args []string) extraction {
 		return ext
 	}
 
+	// A relative target resolves against the link's parent only for a symbolic
+	// link; a hard link's target resolves against the working directory.
+	isSymlink := hasAny(args, set("-s", "--symbolic"))
 	switch len(pos) {
 	case 0:
 		ext.recognized = false
 	case 1:
-		// ln TARGET -> link with TARGET's basename in the working directory.
+		// ln TARGET -> a link named after TARGET's basename in the working
+		// directory: record both the target (read) and the implicit link (write).
 		ext.operands = append(ext.operands, rawOperand{raw: pos[0], role: risktypes.OperandRoleRead})
+		ext.operands = append(ext.operands, rawOperand{raw: filepath.Base(pos[0]), role: risktypes.OperandRoleWrite})
 	default:
-		// ln TARGET LINKNAME: a relative target resolves against the link's parent.
 		linkName := pos[len(pos)-1]
-		linkParent := filepath.Dir(linkName)
+		var targetBase string
+		if isSymlink {
+			targetBase = filepath.Dir(linkName)
+		}
 		for _, t := range pos[:len(pos)-1] {
-			ext.operands = append(ext.operands, rawOperand{raw: t, role: risktypes.OperandRoleRead, base: linkParent})
+			ext.operands = append(ext.operands, rawOperand{raw: t, role: risktypes.OperandRoleRead, base: targetBase})
 		}
 		ext.operands = append(ext.operands, rawOperand{raw: linkName, role: risktypes.OperandRoleWrite})
 	}
@@ -362,6 +372,10 @@ func extractTee(args []string) extraction {
 	valueFlags := set("--output-error")
 	boolFlags := set("-a", "--append", "-i", "--ignore-interrupts", "-p")
 	pos, _, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
+	if len(pos) == 0 {
+		// tee with no FILE writes only to stdout: axis 2 does not apply.
+		return extraction{applies: false, recognized: true}
+	}
 	ext := extraction{applies: true, recognized: recognized}
 	for _, p := range pos {
 		ext.operands = append(ext.operands, rawOperand{raw: p, role: risktypes.OperandRoleWrite})
@@ -389,6 +403,17 @@ func extractInstall(args []string) extraction {
 		ext.grantsPermission = true
 	}
 
+	// Directory-creation mode: every positional is a directory to create (write).
+	if hasAny(args, set("-d", "--directory")) {
+		for _, p := range pos {
+			ext.operands = append(ext.operands, rawOperand{raw: p, role: risktypes.OperandRoleWrite})
+		}
+		if len(pos) == 0 {
+			ext.recognized = false
+		}
+		return ext
+	}
+
 	if tdirs := append(append([]string{}, captured["-t"]...), captured["--target-directory"]...); len(tdirs) > 0 {
 		appendTargetDir(&ext, tdirs)
 		for _, s := range pos {
@@ -401,7 +426,7 @@ func extractInstall(args []string) extraction {
 	case 0:
 		ext.recognized = false
 	case 1:
-		// install -d DIR, or a single FILE: treat as a write destination.
+		// A single FILE: treat as a write destination.
 		ext.operands = append(ext.operands, rawOperand{raw: pos[0], role: risktypes.OperandRoleWrite})
 	default:
 		dest := pos[len(pos)-1]
@@ -608,9 +633,10 @@ func extractOwner(args []string) extraction {
 	recursiveFlags := set("-R", "--recursive")
 	pos, captured, recursive, recognized := scanFlags(args, valueFlags, boolFlags, recursiveFlags)
 	ext := extraction{applies: true, recognized: recognized, recursive: recursive}
-	// chown/chgrp with --reference takes only files; otherwise pos[0] is the owner spec.
+	// Only --reference removes the owner/group spec positional. With --from (a
+	// filter) there is still a spec positional: `chown --from=alice bob file`.
 	targets := pos
-	if len(captured["--reference"]) == 0 && len(captured["--from"]) == 0 {
+	if len(captured["--reference"]) == 0 {
 		if len(pos) < minSpecAndTarget {
 			ext.recognized = false
 			return ext
@@ -700,9 +726,10 @@ func isChattrMode(token string) bool {
 	if token[0] != '+' && token[0] != '-' && token[0] != '=' {
 		return false
 	}
-	const attrLetters = "aAcCdDeFijmPsStTu"
 	for _, c := range token[1:] {
-		if !strings.ContainsRune(attrLetters, c) {
+		switch c {
+		case 'a', 'A', 'c', 'C', 'd', 'D', 'e', 'F', 'i', 'j', 'm', 'P', 's', 'S', 't', 'T', 'u':
+		default:
 			return false
 		}
 	}
@@ -736,6 +763,10 @@ func extractFind(args []string) extraction {
 			if i+1 < len(args) {
 				ext.operands = append(ext.operands, rawOperand{raw: args[i+1], role: risktypes.OperandRoleWrite})
 				i++
+			} else {
+				// Missing the required output-file argument: cannot parse the
+				// destination, so fail closed rather than report a parsed result.
+				ext.recognized = false
 			}
 		case "-exec", "-execdir", "-ok", "-okdir":
 			// Inner execution is handled by the indirect-execution path, not axis 2.

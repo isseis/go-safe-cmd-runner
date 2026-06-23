@@ -115,6 +115,13 @@ func classifyDestinationZone(input ZoningInput, names map[string]struct{}, cmdPa
 		oz := r.classifyOperand(idx, op, spec, input)
 		res.Operands = append(res.Operands, oz)
 
+		// Full recognition requires every operand to resolve: an unresolved operand
+		// must not let a later phase treat the command as fully recognized and
+		// suppress the legacy High dimensions (fail-open).
+		if oz.Zone == risktypes.ZoneUnresolved {
+			res.Recognized = false
+		}
+
 		if spec.kind == KindDeviceIO {
 			// dd operands are judged by device KIND, not by the path's zone: a
 			// harmless sink (/dev/null) stays Low even though /dev is a critical
@@ -162,6 +169,11 @@ func (r *operandResolver) classifyOperand(idx int, op rawOperand, _ commandSpec,
 	base := input.EffectiveWorkDir
 	if op.base != "" {
 		base = op.base
+		// A per-operand base (e.g. an ln link's parent directory) may be relative;
+		// anchor it at the working directory so the resolver gets an absolute base.
+		if !filepath.IsAbs(base) {
+			base = filepath.Join(input.EffectiveWorkDir, base)
+		}
 	}
 	resolved, err := r.resolve(op.raw, base, input.MaxSymlinkHops)
 	if err != nil {
@@ -188,13 +200,16 @@ func (r *operandResolver) classifyZone(resolved string, input ZoningInput) (zone
 		if c == "" {
 			continue
 		}
-		if c == string(filepath.Separator) {
+		// Clean the configured path so a trailing slash or "." segment does not
+		// defeat the exact-"/" check or the containment comparison.
+		cleanC := filepath.Clean(c)
+		if cleanC == string(filepath.Separator) {
 			if clean == string(filepath.Separator) {
 				return risktypes.ZoneTrustCritical, c, false
 			}
 			continue
 		}
-		if clean == filepath.Clean(c) || common.IsPathWithinDirectory(clean, c) {
+		if clean == cleanC || common.IsPathWithinDirectory(clean, cleanC) {
 			return risktypes.ZoneTrustCritical, c, false
 		}
 	}
