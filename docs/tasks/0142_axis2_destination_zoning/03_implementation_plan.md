@@ -214,7 +214,7 @@
 **レビュー観点**: symlink 追従の read-only 性（`lstat`/`readlink` のみ、`os.Stat` 不参照） / メモ化キーの正しさ（相対パスのクロス基点衝突・循環の回避） / fail-closed（cycle・深さ超過・未存在 leaf が symlink） / 注入 `RunAsIdent` による Trusted 判定の決定性
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/782）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
