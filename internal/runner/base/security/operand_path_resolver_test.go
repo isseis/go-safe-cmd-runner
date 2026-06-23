@@ -1,0 +1,209 @@
+package security
+
+import (
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// tempRoot returns the test's temp dir with any symlinks resolved, so fixture
+// paths built under it contain no unexpected symlink components that would skew
+// resolver call counts.
+func tempRoot(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	return root
+}
+
+// TestResolveOperandPath_SymlinkTarget asserts the leaf symlink is followed to its
+// target, so a safe-zone-looking path that points at a trust-critical location is
+// classified by the target (cp evil $WORKDIR/link, link -> /etc/passwd).
+func TestResolveOperandPath_SymlinkTarget(t *testing.T) {
+	root := tempRoot(t)
+	link := filepath.Join(root, "link")
+	require.NoError(t, os.Symlink("/etc/passwd", link))
+
+	got, err := ResolveOperandPath(link, "", MaxSymlinkDepth)
+	require.NoError(t, err)
+	assert.Equal(t, "/etc/passwd", got)
+}
+
+// TestResolveOperandPath_RelativeSymlinkTarget asserts an `ln -s` relative target
+// resolves against the link's own parent directory, not against the supplied base.
+func TestResolveOperandPath_RelativeSymlinkTarget(t *testing.T) {
+	root := tempRoot(t)
+	linkDir := filepath.Join(root, "sub")
+	require.NoError(t, os.MkdirAll(linkDir, 0o755))
+	target := filepath.Join(linkDir, "target")
+	require.NoError(t, os.WriteFile(target, nil, 0o644))
+
+	link := filepath.Join(linkDir, "link")
+	require.NoError(t, os.Symlink("target", link)) // relative target
+
+	otherBase := filepath.Join(root, "other")
+	require.NoError(t, os.MkdirAll(otherBase, 0o755))
+
+	// The operand is absolute, so base is irrelevant for the operand itself; the
+	// relative target must still resolve against linkDir, not otherBase.
+	got, err := ResolveOperandPath(link, otherBase, MaxSymlinkDepth)
+	require.NoError(t, err)
+	assert.Equal(t, target, got)
+
+	// A relative operand, in contrast, does resolve against base.
+	got2, err := ResolveOperandPath("target", linkDir, MaxSymlinkDepth)
+	require.NoError(t, err)
+	assert.Equal(t, target, got2)
+}
+
+// TestResolveOperandPath_NonexistentLeaf asserts a not-yet-created leaf folds onto
+// its existing real parent, so a write destination classifies by that parent.
+func TestResolveOperandPath_NonexistentLeaf(t *testing.T) {
+	root := tempRoot(t)
+	got, err := ResolveOperandPath(filepath.Join(root, "newfile"), "", MaxSymlinkDepth)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(root, "newfile"), got)
+
+	// Several non-existent trailing components fold together.
+	got2, err := ResolveOperandPath(filepath.Join(root, "a", "b", "c"), "", MaxSymlinkDepth)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(root, "a", "b", "c"), got2)
+}
+
+// TestResolveOperandPath_Cycle asserts a symlink cycle fails closed with an error.
+func TestResolveOperandPath_Cycle(t *testing.T) {
+	root := tempRoot(t)
+	a := filepath.Join(root, "a")
+	b := filepath.Join(root, "b")
+	require.NoError(t, os.Symlink(b, a))
+	require.NoError(t, os.Symlink(a, b))
+
+	_, err := ResolveOperandPath(a, "", MaxSymlinkDepth)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrOperandResolution)
+}
+
+// TestResolveOperandPath_DepthExceeded asserts a chain longer than maxHops fails
+// closed, while the same chain resolves when the budget is sufficient.
+func TestResolveOperandPath_DepthExceeded(t *testing.T) {
+	root := tempRoot(t)
+	target := filepath.Join(root, "target")
+	require.NoError(t, os.WriteFile(target, nil, 0o644))
+
+	prev := target
+	const chainLen = 5
+	for i := range chainLen {
+		link := filepath.Join(root, fmt.Sprintf("l%d", i))
+		require.NoError(t, os.Symlink(prev, link))
+		prev = link
+	}
+
+	_, err := ResolveOperandPath(prev, "", 2)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrOperandResolution)
+
+	got, err := ResolveOperandPath(prev, "", MaxSymlinkDepth)
+	require.NoError(t, err)
+	assert.Equal(t, target, got)
+}
+
+// TestResolveOperandPath_MidChainLstatError asserts a non-ENOENT lstat failure
+// fails closed (read-only resolution cannot recover a permission error).
+func TestResolveOperandPath_MidChainLstatError(t *testing.T) {
+	r := newOperandResolver(
+		func(string) (fs.FileInfo, error) { return nil, os.ErrPermission },
+		os.Readlink,
+	)
+	_, err := r.resolve("/some/abs/path", "", MaxSymlinkDepth)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrOperandResolution)
+}
+
+// TestMemoizationLinear is the falsifiable resolution-cost assertion: K operands
+// sharing one parent chain of depth D resolve with D+K lstat calls when the memo
+// folds the shared chain, versus K*(D+1) without it.
+func TestMemoizationLinear(t *testing.T) {
+	root := tempRoot(t)
+	sharedDir := filepath.Join(root, "p1", "p2", "p3")
+	require.NoError(t, os.MkdirAll(sharedDir, 0o755))
+
+	const k = 5
+	leaves := make([]string, k)
+	for i := range k {
+		leaf := filepath.Join(sharedDir, fmt.Sprintf("f%d", i))
+		require.NoError(t, os.WriteFile(leaf, nil, 0o644))
+		leaves[i] = leaf
+	}
+	d := len(splitAbs(sharedDir)) // depth of the shared parent chain below root
+
+	// Memoized: one resolver shared across all operands.
+	var lstatN, readlinkN int
+	r := newOperandResolver(
+		func(p string) (fs.FileInfo, error) { lstatN++; return os.Lstat(p) },
+		func(p string) (string, error) { readlinkN++; return os.Readlink(p) },
+	)
+	for _, leaf := range leaves {
+		_, err := r.resolve(leaf, "", MaxSymlinkDepth)
+		require.NoError(t, err)
+	}
+	assert.Equal(t, d+k, lstatN, "memoized lstat calls should fold the shared parent chain to D+K")
+	assert.Equal(t, 0, readlinkN, "no symlinks in the fixture")
+
+	// Naive: a fresh resolver (empty memo) per operand re-walks the whole chain.
+	var naiveN int
+	for _, leaf := range leaves {
+		nr := newOperandResolver(
+			func(p string) (fs.FileInfo, error) { naiveN++; return os.Lstat(p) },
+			os.Readlink,
+		)
+		_, err := nr.resolve(leaf, "", MaxSymlinkDepth)
+		require.NoError(t, err)
+	}
+	assert.Equal(t, k*(d+1), naiveN, "without memo each operand re-walks D+1 nodes")
+	assert.Less(t, lstatN, naiveN, "memoization must reduce the call count")
+}
+
+// TestTrustedPredicate is the differential for the Trusted predicate: the verdict
+// depends on the injected RunAsIdent (not the live euid that owns the fixtures)
+// and on the writability of origin's ancestors.
+func TestTrustedPredicate(t *testing.T) {
+	root := tempRoot(t)
+	origin := filepath.Join(root, "work")
+	require.NoError(t, os.MkdirAll(origin, 0o700))
+	resolved := filepath.Join(origin, "file")
+	trustedDirs := []string{root}
+
+	r := newOperandResolver(os.Lstat, os.Readlink)
+	euid := uint32(os.Geteuid())
+	egid := uint32(os.Getgid())
+
+	// An identity that does NOT own the fixtures: every ancestor is non-writable
+	// (owned by the real euid, 0700; /tmp is sticky), so the operand is Trusted.
+	identOther := risktypes.RunAsIdent{UID: euid + 1, GID: egid + 1}
+	assert.True(t, r.isTrustedOperand(resolved, origin, trustedDirs, identOther),
+		"foreign run-as over non-writable ancestors should be Trusted")
+
+	// The same call with an identity that owns the ancestors is not Trusted: the
+	// owner could chmod to repoint the safe-zone anchor. The live euid is constant
+	// across both calls, so only the injected identity changed the verdict.
+	identSelf := risktypes.RunAsIdent{UID: euid, GID: egid}
+	assert.False(t, r.isTrustedOperand(resolved, origin, trustedDirs, identSelf),
+		"run-as owning the ancestors should not be Trusted")
+
+	// Outside the trusted-directory allowlist is never Trusted.
+	assert.False(t, r.isTrustedOperand("/etc/passwd", origin, trustedDirs, identOther),
+		"a path outside the trusted dirs should not be Trusted")
+
+	// Making origin's parent world-writable without a sticky bit makes the foreign
+	// identity able to repoint the anchor: no longer Trusted.
+	require.NoError(t, os.Chmod(root, 0o777))
+	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
+	assert.False(t, r.isTrustedOperand(resolved, origin, trustedDirs, identOther),
+		"a world-writable non-sticky ancestor should not be Trusted")
+}
