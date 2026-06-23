@@ -395,7 +395,7 @@ func ClassifyDestinationZone(input ZoningInput, names map[string]struct{}, cmdPa
 
 **オペランド抽出仕様表（AC-06／根本原因1）**: コマンド→`LocationKind`→オペランド抽出規則の対応を、コード内の
 **単一テーブル**として持つ。要件本文・本設計は個別フラグを網羅列挙せず、既知コマンド×代表フラグの表駆動
-（網羅）テストで網羅性を担保する（§7.1）。仕様表が持つべき難所のエントリ（in-place 編集・`ln -s` 相対 target・
+テストで網羅性を担保する（§7.1）。仕様表が持つべき難所のエントリ（in-place 編集・`ln -s` 相対 target・
 アーカイブ抽出 vs 一覧・末尾 `/` 削除・`dd` デバイス・権限/所有権付与・データ送信書込先）は
 [01_requirements.md](01_requirements.md) §F-002 の表を正とする。未知/曖昧形は `ZoneUnresolved`（fail-closed）。
 

@@ -505,7 +505,7 @@
 | AC-23 解決コスト上限 | test | `security/operand_path_resolver_test.go::TestResolutionCeiling`＋`::TestMemoizationLinear` | 上限超過=High、呼出線形 |
 | NF-001 reason code 網羅/一意 | test | `risktypes/reason_codes_test.go::TestReasonCodes_AllDistinct` | 新 7 定数含め緑 |
 | NF-002 ビルド/テスト緑 | static | `make test && make lint`（または `go build -tags test ./internal/runner/...`） | 終了コード 0 |
-| NF-003 決定的・read-only | test+static | test: `::TestDeterminismRuntimeEqualsDryRun`／static: `rg -n '(os|syscall|unix)\.(Create|CreateTemp|Remove|RemoveAll|WriteFile|Mkdir|MkdirAll|MkdirTemp|OpenFile|Symlink|Link|Rename|Chmod|Chown|Lchown|Chtimes|Truncate|NewFile|Write|Unlink|Rmdir|Fchmod|Fchown)' internal/runner/base/security/destination_zoning.go internal/runner/base/security/operand_path_resolver.go`（期待: **マッチ 0 件**） | 書込系 API 不在（read-only） |
+| NF-003 決定的・read-only | test+static | test: `::TestDeterminismRuntimeEqualsDryRun`／static: `rg -n 'os\.(Create|CreateTemp|Remove|RemoveAll|WriteFile|Mkdir|MkdirAll|MkdirTemp|OpenFile|Symlink|Link|Rename|Chmod|Chown|Lchown|Chtimes|Truncate|NewFile)|(syscall|unix)\.(Write|Pwrite|Unlink|Unlinkat|Rmdir|Mkdir|Mkdirat|Open|Openat|Symlink|Link|Rename|Chmod|Fchmod|Chown|Fchown|Lchown|Truncate|Ftruncate)' internal/runner/base/security/destination_zoning.go internal/runner/base/security/operand_path_resolver.go`（期待: **マッチ 0 件**） | 書込系 API 不在（read-only） |
 
 > **grep ガードの正規表現に関する注意（ripgrep のメタ文字）**: ripgrep 既定（Rust regex）では `|` が選択（alternation）で、`\|` は
 > **リテラルのパイプ文字**になる。`\|` を選択のつもりで使うとパターンが空振りし、危険 API が存在してもガードが「0 件＝合格」と
