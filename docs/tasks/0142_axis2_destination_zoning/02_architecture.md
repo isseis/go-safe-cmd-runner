@@ -436,10 +436,17 @@ func ResolveOperandPath(operand, base string, maxHops int) (resolved string, err
 - (b) **safe-zone の起点**: `EffectiveWorkDir` と構成済み専用 temp に限定する。曖昧な `$HOME`・共有 `/tmp`・
   出力先の親ディレクトリは起点に含めない（AC-04(b)）。
 - (c) **重複の優先**: safe-zone が trust-critical と重複/配下のときは trust-critical（High）を優先する（AC-04(c)）。
-- (d) **Trusted 述語（TOCTOU 耐性、AC-04(d)）**: 解決後の各オペランドパスが `TrustedDirectories` 配下、かつ経路
-  要素が run-as から書込不可（run-as 以外所有・group/other 非書込）のとき、そのオペランドを **Trusted** とする。
-  safe-zone の Low 降格は Trusted のときに限り、非 Trusted なら降格しない（fail-closed → Medium）。参照 identity は
-  注入 `RunAsIdent`（live euid ではない）。leaf が既存 symlink なら最終ターゲットで区分判定する。
+- (d) **Trusted 述語（TOCTOU 耐性、AC-04(d)）**: 解決後の各オペランドパスが `TrustedDirectories` 配下であり、かつ
+  **safe-zone 起点（`EffectiveWorkDir`／専用 temp）の親より上位の経路要素**が run-as から書込不可（run-as 以外所有・
+  group/other 非書込）のとき、そのオペランドを **Trusted** とする。
+  - **書込不可検査の対象範囲（AC-03 との整合）**: safe-zone は run が所有し run-as から書込可能な領域であるため、起点
+    ディレクトリ自身とその配下を「run-as から書込不可」にはできない（できれば run が書き込めず安全領域の用をなさない）。
+    したがって書込不可検査の対象は**起点ディレクトリの親以上**に限定する。これにより run-as が安全領域の係留点を別の
+    場所へ付け替える（repoint する）ことを防ぎつつ、起点配下への正当な書込は許す。起点配下に作られた symlink は専用
+    リゾルバが追従して最終ターゲットで区分判定するため別途捕捉される。この限定により AC-03 の safe-zone=Low が到達可能に
+    保たれる（起点配下まで書込不可を要求すると、run 所有の safe-zone は決して Trusted にならず Low 降格が成立しない）。
+  - safe-zone の Low 降格は Trusted のときに限り、非 Trusted なら降格しない（fail-closed → Medium）。参照 identity は
+    注入 `RunAsIdent`（live euid ではない）。leaf が既存 symlink なら最終ターゲットで区分判定する。
 - (e) **メモ化の鍵とスコープ（AC-23）**: 解決のメモ化は 1 回の `ClassifyDestinationZone` 呼び出し（＝単一コマンド・
   単一 `RunAsIdent`）の内側にスコープし、鍵は**解決後の絶対パス**とする。キャッシュするのは read-only な解決結果
   （`lstat`/`readlink`）のみで、identity 依存の Trusted 判定そのものはキャッシュしない（あるいは鍵へ identity を
@@ -750,8 +757,9 @@ flowchart TD
 ### 5.3 TOCTOU / 決定性
 
 - **TOCTOU 耐性（Trusted 述語、AC-04(d)）**: safe-zone の Low 降格は、解決後パスが `TrustedDirectories` 配下かつ
-  経路要素が run-as から書込不可（run-as 以外所有・group/other 非書込）のときに限る。攻撃者が書込可能な経路では
-  降格せず Medium に倒れるため、評価と実行の間に宛先を差し替えても Low で素通りしない。
+  safe-zone 起点の親以上の経路要素が run-as から書込不可（run-as 以外所有・group/other 非書込）のときに限る（検査範囲の
+  根拠は §3.3(d)）。安全領域の係留点を run-as が付け替え不能なため、評価と実行の間に起点ごと宛先を差し替えても Low で
+  素通りしない。係留点が付け替え可能（親が書込可能）なら降格せず Medium に倒れる。
 - **決定性（AC-21, AC-22）**: パス解決は read-only（`lstat`/`readlink`）で、判定は注入 `RunAsIdent`・注入パス集合
   と評価時点の FS 状態に依存する。**同一入力かつ同一 FS 状態**であれば runtime と dry-run で同一レベルを返す。live
   euid・`$HOME` env は参照しない。未存在 leaf の最深存在親が symlink の場合は `ZoneUnresolved`（High）に倒し、FS 状態
