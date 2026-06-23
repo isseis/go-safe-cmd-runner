@@ -84,4 +84,23 @@ const (
 	// ReasonNetworkArgument marks a network-style argument (URL or SSH-style
 	// address) detected on a command without a network profile.
 	ReasonNetworkArgument ReasonCode = "network_argument"
+
+	// Destination-path trust-zoning codes (axis 2). Each marks the origin of a
+	// level contributed by classifying a file operation's destination/source
+	// operands by trust zone.
+
+	// ReasonTrustBoundaryWrite marks a write/delete to a trust-critical path.
+	ReasonTrustBoundaryWrite ReasonCode = "trust_boundary_write"
+	// ReasonDestinationZone marks a Medium from an ordinary destination.
+	ReasonDestinationZone ReasonCode = "destination_zone"
+	// ReasonPermissionGrant marks a setuid/world-writable/ownership/attribute grant.
+	ReasonPermissionGrant ReasonCode = "permission_grant"
+	// ReasonDeviceIO marks dd I/O to a block or dangerous character device.
+	ReasonDeviceIO ReasonCode = "device_io"
+	// ReasonRecursiveOutsideSafeZone marks recursion reaching outside the safe-zone.
+	ReasonRecursiveOutsideSafeZone ReasonCode = "recursive_outside_safe_zone"
+	// ReasonSensitiveSourceCopy marks a copy whose source is sensitive/trust-critical.
+	ReasonSensitiveSourceCopy ReasonCode = "sensitive_source_copy"
+	// ReasonUnresolvedDestination marks a fail-closed unresolved operand.
+	ReasonUnresolvedDestination ReasonCode = "unresolved_destination"
 )

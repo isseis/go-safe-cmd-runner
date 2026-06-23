@@ -126,21 +126,21 @@
 - 新規 `internal/runner/base/risktypes/operand_zone_test.go`
 
 **作業内容**:
-- [ ] `operand_zone.go` に `PathTrustZone`（`ZoneTrustCritical`/`ZoneOrdinary`/`ZoneSafeZone`/`ZoneUnresolved`）を定義（設計 §3.1）。
-- [ ] `operand_zone.go` に `OperandRole`（`OperandRoleWrite`/`OperandRoleRead`）を定義（設計 §3.1）。
-- [ ] `operand_zone.go` に `OperandZone` 構造体（`Index`/`Raw`/`Resolved`/`Zone`/`Role`/`MatchedCritical`/`Trusted`/`UnresolvedErr`）を定義（設計 §3.1）。
-- [ ] `operand_zone.go` に `RunAsIdent` 構造体（`UID`/`GID`/`Groups`）を定義（設計 §3.1）。
-- [ ] `types.go` の `RiskAssessment` に `OperandZones []OperandZone` フィールドを追加（既存フィールドは不変、設計 §3.1）。
-- [ ] `reason_codes.go` に新 family 7 定数を追加（設計 §4）: `ReasonTrustBoundaryWrite`=`"trust_boundary_write"`・
+- [x] `operand_zone.go` に `PathTrustZone`（`ZoneTrustCritical`/`ZoneOrdinary`/`ZoneSafeZone`/`ZoneUnresolved`）を定義（設計 §3.1）。
+- [x] `operand_zone.go` に `OperandRole`（`OperandRoleWrite`/`OperandRoleRead`）を定義（設計 §3.1）。
+- [x] `operand_zone.go` に `OperandZone` 構造体（`Index`/`Raw`/`Resolved`/`Zone`/`Role`/`MatchedCritical`/`Trusted`/`UnresolvedErr`）を定義（設計 §3.1）。
+- [x] `operand_zone.go` に `RunAsIdent` 構造体（`UID`/`GID`/`Groups`）を定義（設計 §3.1）。
+- [x] `types.go` の `RiskAssessment` に `OperandZones []OperandZone` フィールドを追加（既存フィールドは不変、設計 §3.1）。
+- [x] `reason_codes.go` に新 family 7 定数を追加（設計 §4）: `ReasonTrustBoundaryWrite`=`"trust_boundary_write"`・
       `ReasonDestinationZone`=`"destination_zone"`・`ReasonPermissionGrant`=`"permission_grant"`・`ReasonDeviceIO`=`"device_io"`・
       `ReasonRecursiveOutsideSafeZone`=`"recursive_outside_safe_zone"`・`ReasonSensitiveSourceCopy`=`"sensitive_source_copy"`・
       `ReasonUnresolvedDestination`=`"unresolved_destination"`。
-- [ ] `reason_codes_test.go` の全定数スライス（`:13`）へ上記 7 定数を登録する（登録漏れ防止）。
+- [x] `reason_codes_test.go` の全定数スライス（`:13`）へ上記 7 定数を登録する（登録漏れ防止）。
 
 **成功基準**:
-- [ ] `go build -tags test ./internal/runner/base/risktypes/` が通る。
-- [ ] `TestReasonCodes_AllDistinct` が新 7 定数を含めて緑（空値なし・重複なし、NF-001）。
-- [ ] `operand_zone_test.go` が `OperandZone` のゼロ値・各 enum 値の文字列表現を表明（型定義の健全性）。
+- [x] `go build -tags test ./internal/runner/base/risktypes/` が通る。
+- [x] `TestReasonCodes_AllDistinct` が新 7 定数を含めて緑（空値なし・重複なし、NF-001）。
+- [x] `operand_zone_test.go` が `OperandZone` のゼロ値・各 enum 値の文字列表現を表明（型定義の健全性）。
 
 ### PR-1 作成ポイント: risktypes data model and reason codes
 

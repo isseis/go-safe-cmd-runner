@@ -40,6 +40,13 @@ func TestReasonCodes_AllDistinct(t *testing.T) {
 		ReasonForbiddenEnvVar,
 		ReasonNonAbsolutePath,
 		ReasonNetworkArgument,
+		ReasonTrustBoundaryWrite,
+		ReasonDestinationZone,
+		ReasonPermissionGrant,
+		ReasonDeviceIO,
+		ReasonRecursiveOutsideSafeZone,
+		ReasonSensitiveSourceCopy,
+		ReasonUnresolvedDestination,
 	}
 
 	seen := make(map[ReasonCode]struct{}, len(all))
