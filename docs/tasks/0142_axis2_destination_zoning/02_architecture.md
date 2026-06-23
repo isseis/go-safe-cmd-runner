@@ -403,6 +403,17 @@ func ClassifyDestinationZone(input ZoningInput, names map[string]struct{}, cmdPa
 アーカイブ抽出 vs 一覧・末尾 `/` 削除・`dd` デバイス・権限/所有権付与・データ送信書込先）は
 [01_requirements.md](01_requirements.md) §F-002 の表を正とする。未知/曖昧形は `ZoneUnresolved`（fail-closed）。
 
+> **オペランド抽出は best-effort、安全保証は fail-closed（設計原則・レビュー triage 規準）**: 各コマンドの引数文法は
+> GNU/util-linux 固有で多様（エイリアス綴り・オプション引数・mode/ACL の値内文法等）のため、抽出器は best-effort で
+> あり完全な getopt 実装ではない。**セキュリティ保証は抽出精度ではなく `Recognized` の fail-closed contract** が担う:
+> 共通スキャナはトークンを暗黙に捨てず（各トークンは既知フラグ・捕捉した値・positional のいずれか）、未知/曖昧なら
+> `Recognized=false`→High＋既存判定を残す。したがって解析の不備は**過剰分類（fail-closed）に縮退**し、fail-open には
+> ならない。fail-open になりうる狭い 2 経路は (1) スキャナが値形を取り落とす、(2) 抽出器が捕捉済みの path 値を無視する
+> ／値内パーサ（chmod/ACL）が不完全、のみで、いずれも個別修正＋テストで塞ぐ。**将来のフラグ系レビュー指摘の triage**:
+> 過剰分類（fail-closed）は磨き込み（任意・低優先）、取りこぼし（fail-open）は欠陥（修正＋テスト必須）として扱う。
+> 抽出器の宣言的フラグ仕様＋単一 getopt パーサ＋「path を運ぶ value flag は必ず operand 化」完全性メタテストへの
+> **集中リファクタは後続タスク（0144 予定）**に切り出す（§9）。
+
 **操作固有の下限（AC-08〜AC-12、区分非依存）**: 次に該当するオペランドは、宛先が safe-zone でも Low に降格させず
 High（または下限相当）を返す。これらは `ClassifyDestinationZone` 内で区分判定の後に上乗せされる。
 
@@ -934,6 +945,13 @@ sequenceDiagram
   現在の `OperandRole`（write/read）と fail-closed の非対称は、将来 read モデルを足すときの拡張点になる。
 - **オペランド抽出仕様表の拡張**: 新しいファイル操作コマンド/フラグは仕様表へのエントリ追加で完結し、評価フローの
   構造変更を要さない。未知/曖昧形は常に `ZoneUnresolved`（fail-closed）に倒れるため、列挙漏れは安全側に作用する。
+- **オペランド抽出の集中リファクタ（後続タスク 0144 予定）**: 現状はコマンドごとの bespoke 抽出器であり、エイリアス綴り・
+  オプション引数・値内文法の取りこぼしがレビューで繰り返し顕在化した（いずれも fail-closed へ縮退、実害のある fail-open は
+  個別修正済み。§3.2 の best-effort 原則を参照）。根本対応として、(1) コマンド別の**宣言的フラグ仕様**（value flag の全綴り＋
+  optional-arg 標識、bool flag、operand ロール）、(2) それを消費する**単一の getopt パーサ**（`=`/付随値/クラスタ/`--`/optional-arg/
+  エイリアス正規化を一元処理）、(3)「path を運ぶ value flag は必ず operand 化される」ことを保証する**完全性メタテスト**を
+  別タスクで導入する。これによりエイリアス/optional-arg/fail-closed 一貫性の各クラスを構造的に根絶する。本タスクは
+  fail-closed 保証の下で best-effort 抽出を維持する。
 - **監査の family 区別（0143）**: 本タスクは `RiskAssessment.OperandZones` に格納まで、logger への JSON 出力・
   family 区別の最終化は 0143。`reason_codes_test.go` の網羅性テストはタスクごとに自コードを登録する方式で、0143 の
   コード細分化に拡張余地を残す。
