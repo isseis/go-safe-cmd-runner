@@ -461,8 +461,10 @@ func ResolveOperandPath(operand, base string, maxHops int) (resolved string, err
 > どの経路要素が存在するかに依存する。同一グループ内の先行コマンドが中間ディレクトリを作る（しかもそれが symlink で
 > ある）と、dry-run（先行コマンド未実行）と runtime（実行済み）で最深の存在親が変わり、同一コマンド文字列でも
 > レベルが変わりうる。よって AC-22 の「runtime==dry-run」は **「同一入力かつ同一ファイルシステム状態」** の範囲で
-> 成立すると明記する。さらに fail-closed を優先し、**未存在 leaf の最深存在親が symlink のとき**はターゲットを
-> 安全に確定できないため `ZoneUnresolved`（書込/削除=High）に倒す。これは
+> 成立すると明記する。リゾルバは経路要素を 1 つずつ追従する完全正規化方式を採り、**存在する symlink 要素は常に追従する**ため、
+> 末尾を畳み込む対象（最深の存在親）は常に解決済みの実ディレクトリになる（未解決 symlink の下に宛先を置かない）。すなわち
+> 「最深存在親が symlink」という状態は構造的に発生せず、fail-closed は mid-chain の非 ENOENT な `lstat`/`readlink` 失敗を
+> `error`（呼び出し側で `ZoneUnresolved`＝書込/削除 High）に倒すことで担保する。これは
 > [security-architecture.md の TOCTOU 既知制限](../../dev/architecture_design/security-architecture.md)（評価と実行の
 > 間の競合は脅威モデル境界外）と整合し、評価と実行の間の残存競合は同制限の範囲で受容する。
 

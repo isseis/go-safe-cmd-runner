@@ -152,8 +152,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/781）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: 専用リゾルバ＋Trusted 述語（AC-04, AC-23）
 
@@ -163,43 +163,47 @@
 - 新規（必要時）`internal/runner/base/security/test_helpers_zoning.go`（`//go:build test`）
 
 **作業内容**:
-- [ ] `ResolveOperandPath(operand, base string, maxHops int) (resolved string, err error)` を実装（設計 §3.3）。
+- [x] `ResolveOperandPath(operand, base string, maxHops int) (resolved string, err error)` を実装（設計 §3.3）。
       symlink チェーンを leaf＋親で追従し、正規化済み絶対パスを返す。相対オペランドは `base`（`ln -s` 相対 target は
       リンク親、他は `EffectiveWorkDir`）基点で解決。チェーン追従中に遭遇する中間の相対 symlink は、そのリンク自身が
       存在する親ディレクトリを基点に解決する（`base`/`EffectiveWorkDir` 基点ではない。パストラバーサル・区分誤判定の防止）。
       read-only（`lstat`/`readlink` のみ）。
-- [ ] 未存在 leaf を「最深の存在親」まで解決して末尾を畳み込む。**最深存在親が symlink のときは解決を確定できないため
-      エラー**（呼び出し側で `ZoneUnresolved`＝書込/削除 High、設計 §3.3 注）。
-- [ ] cycle・深さ超過（`maxHops` 超）・mid-chain の `readlink`/`lstat` 失敗で `error` を返す（fail-closed、設計 §4）。
-- [ ] AC-23 の解決コスト計測のため、リゾルバが `lstat`/`readlink` を**注入可能な関数セット**経由で呼ぶ構造にする
+- [x] 未存在 leaf を「最深の存在親」まで解決して末尾を畳み込む。**実装は経路要素を 1 つずつ追従する完全正規化方式**を採り、
+      存在する symlink 要素は常に追従するため、末尾を畳み込む対象（最深の存在親）は常に解決済みの実ディレクトリになる。
+      よって「最深存在親が symlink」という状態は構造的に発生せず、専用のエラー分岐は不要（fail-closed は次項の
+      mid-chain 非 ENOENT 失敗のエラーで担保。設計 §3.3 注の意図＝未解決 symlink 下に宛先を置かないことを保証）。
+- [x] cycle・深さ超過（`maxHops` 超）・mid-chain の `readlink`/`lstat` 失敗（ENOENT 以外）で `error` を返す（fail-closed、設計 §4）。
+- [x] 解決コスト計測のため、リゾルバが `lstat`/`readlink` を**注入可能な関数セット**経由で呼ぶ構造にする
       （既定は実 os、テストは呼出回数を数えるスタブを注入。`StandardEvaluator.openIdentity` と同じ注入パターン）。注入集合は
       read-only の `lstat`/`readlink` のみとし、symlink を追従する `os.Stat` は含めない（設計 §3.3 の read-only 制約。`os.Stat` を
       混ぜると経路要素の所有権検査が symlink ターゲットを見てしまい区分判定を欺けるため）。
-- [ ] メモ化: 解決のメモ化を 1 回の判定呼び出し内にスコープし、鍵は**解決対象ノードの絶対パス（中間ノードを含む）**とする。
+- [x] メモ化: 解決のメモ化を 1 回の判定呼び出し内にスコープし、鍵は**解決対象ノードの絶対パス（中間ノードを含む）**とする。
       relative なオペランド／relative な symlink target は基点ディレクトリと結合・正規化した絶対パスにしてから鍵にする（relative
       文字列そのものを鍵にすると、異なる基点下の同名 relative——例 `/dir1/link` と `/dir2/link` がともに `../target` を指す——で
       誤ヒットする）。鍵は当該ノードを **symlink 追従する前**の絶対パスであり、追従後の解決済み絶対パスではない（追従後を鍵に
-      すると解決完了まで鍵が得られず循環する）。これにより共有する親チェーンの `lstat`/`readlink` 結果を 1 回に畳む（AC-23 の
-      線形計数の前提）。identity 依存の Trusted 判定そのものはキャッシュしない（設計 §3.3(e)
-      の鍵の記述を精緻化）。
-- [ ] Trusted 述語を実装（設計 §3.3(d)）: 解決後パスが `TrustedDirectories` 配下、かつ**safe-zone 起点の親以上**の経路
-      要素が run-as から書込不可（run-as 以外所有・group/other 非書込）のとき Trusted。参照 identity は注入 `RunAsIdent`
-      （live euid 不参照）。書込不可検査の対象は**起点ディレクトリの親以上**に限定（起点配下は対象外、設計 §3.3(d) の根拠）。
+      すると解決完了まで鍵が得られず循環する）。メモ化対象は存在する非 symlink ノード（実ディレクトリ/ファイル）のみとし、
+      これにより共有する親チェーンの `lstat`/`readlink` 結果を 1 回に畳む（線形計数の前提）。identity 依存の Trusted 判定
+      そのものはキャッシュしない（設計 §3.3(e) の鍵の記述を精緻化）。
+- [x] Trusted 述語を実装（設計 §3.3(d)）: 解決後パスが `TrustedDirectories` 配下、かつ**safe-zone 起点の親以上**の経路
+      要素が run-as から書込不可（run-as 所有は chmod で自己書込付与可能なため書込可とみなす・group/other 書込ビット・
+      ただし sticky ディレクトリは other 書込を除外）のとき Trusted。参照 identity は注入 `RunAsIdent`（live euid 不参照）。
+      書込不可検査の対象は**起点ディレクトリの親以上**に限定（起点配下は対象外、設計 §3.3(d) の根拠）。group 判定は
+      precomputed `RunAsIdent.Groups`（live なシステム参照なし）。
 
 **成功基準**:
-- [ ] `go test -tags test ./internal/runner/base/security/...` が通る（`//go:build test` の `test_helpers_zoning.go` を**同一タグで
-      コンパイル**し、型/シグネチャ誤りを本 Phase で検出する。`-tags test` 無しの `go build` では同ファイルが除外され検出されない）。
-- [ ] `cp evil $WORKDIR/link`（`link→/etc/passwd`）が High（ターゲット解決で trust-critical）になり Low にならない
-      （`operand_path_resolver_test.go`、設計 §7.1）。
-- [ ] `ln -s` 相対 target がリンク親基点で解決される（`EffectiveWorkDir` 基点ではない）。
-- [ ] 深い symlink チェーン（`maxHops` 超）・cycle で `error`（→ fail-closed）になる。
-- [ ] メモ化の**反証可能な呼出回数表明**（AC-23）: 共通の親チェーン（深さ D）を共有する K 個のオペランドを持つフィクスチャを
-      用意し、注入 `lstat`/`readlink` スタブの呼出回数を数える。メモ化**有り**では共有親の解決は 1 回に畳まれるため
-      呼出回数が「概ね D + K（各 leaf 1 回＋共有親 1 回分）」の定数式に等しいことを `==`（または僅差の `<=`）で表明し、メモ化を
-      外した場合の素朴な「K×(D+1)」と**有意に小さい**ことを対比する。「線形」のような非反証的表現は用いず、具体的な期待値で
-      assert する（D・K・期待値は実装で確定）。
-- [ ] Trusted 述語の差分テスト: 注入 `RunAsIdent` を実 euid/gid と異なる値にし、起点親の所有者/権限により Trusted が
-      切り替わる（AC-04(d)・AC-21 の先行検証）。
+- [x] `go test -tags test ./internal/runner/base/security/...` が通る。本 Phase は単一テストファイル
+      `operand_path_resolver_test.go`（`package security` ホワイトボックス）にヘルパを内包し、共有が生じないため
+      `test_helpers_zoning.go` は作成しない（test_organization の「共有が生じない場合は作らない」に従う。`//go:build test`
+      専用ファイルの追加は Phase 3 で共有が生じた時点で行う）。
+- [x] `cp evil $WORKDIR/link`（`link→/etc/passwd`）のターゲット解決を表明（`operand_path_resolver_test.go::TestResolveOperandPath_SymlinkTarget`
+      で leaf symlink が `/etc/passwd` に解決される＝Phase 3 の trust-critical High の前提。区分判定自体は Phase 3）。
+- [x] `ln -s` 相対 target がリンク親基点で解決される（`EffectiveWorkDir`／`base` 基点ではない）。
+- [x] 深い symlink チェーン（`maxHops` 超）・cycle で `error`（→ fail-closed）になる。
+- [x] メモ化の**反証可能な呼出回数表明**: 共通の親チェーン（深さ D）を共有する K 個のオペランドを持つフィクスチャで
+      注入 `lstat` スタブの呼出回数が `D + K` に等しいことを `==` で表明し、メモ化を外した素朴な `K×(D+1)` と対比して
+      有意に小さいことを表明（`TestMemoizationLinear`、D・K は実装で確定）。
+- [x] Trusted 述語の差分テスト: 注入 `RunAsIdent` を実 euid/gid と異なる値にし、起点親の所有者/権限により Trusted が
+      切り替わる（`TestTrustedPredicate`）。
 
 ### PR-2 作成ポイント: read-only operand path resolver and Trusted predicate
 
@@ -209,8 +213,8 @@
 
 **レビュー観点**: symlink 追従の read-only 性（`lstat`/`readlink` のみ、`os.Stat` 不参照） / メモ化キーの正しさ（相対パスのクロス基点衝突・循環の回避） / fail-closed（cycle・深さ超過・未存在 leaf が symlink） / 注入 `RunAsIdent` による Trusted 判定の決定性
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/782）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -229,6 +233,12 @@
 - [ ] 各オペランドに `OperandRole`（write/read）を付与する（unresolved の非対称下限のため、AC-05）。
 - [ ] `ClassifyDestinationZone(input ZoningInput, names map[string]struct{}, cmdPath string, args []string) LocationResult`
       を実装（設計 §3.2）。抽出→`ResolveOperandPath` で解決→区分判定→操作固有の下限→全オペランド max。
+      1 コマンド評価につき `operandResolver` を 1 つ生成し全オペランドで共有（メモ化で `lstat`/`readlink` を畳む）。
+- [ ] （PR-2 レビュー由来の繰り越し）`isTrustedOperand` の祖先書込可否を `operandResolver` にキャッシュし、K オペランドで
+      `origin` 祖先（深さ Do）への `lstat` が重複しないようにする。**鍵には identity を含める**（または resolver インスタンスを
+      単一 identity にスコープする）。鍵を dir のみにすると、同一 resolver を異なる `RunAsIdent` で問い合わせたとき
+      stale な書込可否を返し Trusted 判定を誤る（PR-2 で却下した dir-only 案の不具合）。本キャッシュの線形コストは下の
+      解決コスト上限テストで担保する。
 - [ ] パス信頼区分の判定（AC-01〜AC-05）: trust-critical（`SystemCriticalPaths` 一致/配下、`/` は完全一致のみ）→High、
       ordinary→Medium、safe-zone（Trusted→Low／非 Trusted→Medium フォールバック）、unresolved（write=High・read=Medium）。
       safe-zone が trust-critical と重複/配下のときは trust-critical 優先（AC-04(c)）。
@@ -600,7 +610,7 @@
 
 PR 単位で完了を追跡する（PR 構成は §3.2、各 PR の作成ポイントは Phase 末尾の「PR-N 作成ポイント」節を参照）。
 
-- [ ] PR-1 マージ済み（対象ステップ: P1）— DTO・型・reason code family（`risktypes`）／`TestReasonCodes_AllDistinct` 緑
+- [x] PR-1 マージ済み（対象ステップ: P1）— DTO・型・reason code family（`risktypes`）／`TestReasonCodes_AllDistinct` 緑
 - [ ] PR-2 マージ済み（対象ステップ: P2）— 専用リゾルバ＋Trusted 述語／symlink 偽装・fail-closed・メモ化・差分テスト緑
 - [ ] PR-3 マージ済み（対象ステップ: P3）— `ClassifyDestinationZone`（仕様表＋区分判定＋操作固有の下限＋特則）／表駆動・区分・下限テスト緑
 - [ ] PR-4 マージ済み（対象ステップ: P4）— `evaluateDimensions` 組み込み＋5 系統抑止／観測可能プロパティ・取りこぼし防止条件・既存テスト更新緑
