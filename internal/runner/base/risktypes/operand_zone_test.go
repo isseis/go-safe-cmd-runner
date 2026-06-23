@@ -38,8 +38,8 @@ func TestOperandZone_ZeroValue(t *testing.T) {
 }
 
 // TestRunAsIdent_ZeroValue documents the zero value of the injected identity. The
-// zoning logic must not treat the zero value as "unset" (see AC-21 / design 3.6);
-// this test only pins the struct's zero shape.
+// zoning logic must not treat the zero value as "unset" (uid 0 is root, a real
+// identity); this test only pins the struct's zero shape.
 func TestRunAsIdent_ZeroValue(t *testing.T) {
 	var id RunAsIdent
 

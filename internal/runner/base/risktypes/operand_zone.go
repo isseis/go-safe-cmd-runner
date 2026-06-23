@@ -57,8 +57,9 @@ type OperandZone struct {
 }
 
 // RunAsIdent is the precomputed identity used for the Trusted predicate. It is
-// resolved from the config run-as values OUTSIDE the zoning judgment (AC-21); the
-// judgment never reads live identity (os.Geteuid/os.Getuid/user.Current).
+// resolved from the config run-as values OUTSIDE the zoning judgment; the
+// judgment never reads live identity (os.Geteuid/os.Getuid/user.Current) so its
+// result is deterministic and identical between dry-run and runtime.
 type RunAsIdent struct {
 	UID    uint32
 	GID    uint32
