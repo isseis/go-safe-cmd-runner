@@ -151,7 +151,7 @@
 **レビュー観点**: reason code の一意性/網羅性（NF-001・全定数スライス登録漏れ防止） / `OperandZone`・`RunAsIdent` 型定義の健全性 / 既存 `RiskAssessment` への非破壊追加
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/781）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
