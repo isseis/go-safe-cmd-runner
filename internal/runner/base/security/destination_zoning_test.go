@@ -460,6 +460,67 @@ func TestExtractorHardening(t *testing.T) {
 	})
 }
 
+// --- review-round 3 hardening ---
+
+func TestExtractorHardening2(t *testing.T) {
+	wd := zoningWorkdir(t)
+	in := zoningInput(wd, foreignIdent())
+	safe := filepath.Join(wd, "x")
+
+	t.Run("chmod_symbolic_setuid_combined", func(t *testing.T) {
+		// setuid 's' combined with other perms must still be detected (fail-open).
+		assert.Equal(t, runnertypes.RiskLevelHigh, classify(in, "chmod", "u+xs", safe).Level)
+		assert.Equal(t, runnertypes.RiskLevelHigh, classify(in, "chmod", "u=rws", safe).Level)
+		assert.Equal(t, runnertypes.RiskLevelHigh, classify(in, "chmod", "g+rs", safe).Level)
+		// removal of setuid is not a grant.
+		assert.Equal(t, runnertypes.RiskLevelLow, classify(in, "chmod", "u-s", safe).Level)
+		assert.Equal(t, runnertypes.RiskLevelLow, classify(in, "chmod", "u+rx", safe).Level)
+	})
+
+	t.Run("tar_positional_not_misread_as_mode", func(t *testing.T) {
+		// "a.tar" contains 'c'/'t'; with -x before it should still be extract mode.
+		got := classify(in, "tar", "-x", "-f", "a.tar", "-C", "/usr/local")
+		assert.True(t, got.Recognized)
+		assert.Equal(t, runnertypes.RiskLevelHigh, got.Level, "positional a.tar must not be read as mode")
+	})
+
+	t.Run("mkdir_mode_grant", func(t *testing.T) {
+		assert.Equal(t, runnertypes.RiskLevelHigh, classify(in, "mkdir", "-m", "0777", safe).Level,
+			"mkdir -m 0777 is a world-writable grant even in a safe-zone")
+		assert.Equal(t, runnertypes.RiskLevelLow, classify(in, "mkdir", "-m", "0755", safe).Level)
+	})
+
+	t.Run("copy_target_dir_no_source_fails_closed", func(t *testing.T) {
+		got := classify(in, "cp", "-t", wd)
+		assert.False(t, got.Recognized, "cp -t with no source files is incomplete")
+	})
+
+	t.Run("install_target_dir_no_source_fails_closed", func(t *testing.T) {
+		got := classify(in, "install", "-t", wd)
+		assert.False(t, got.Recognized, "install -t with no source files is incomplete")
+	})
+
+	t.Run("dd_no_operand_not_applicable", func(t *testing.T) {
+		got := classify(in, "dd", "bs=4k", "count=1")
+		assert.False(t, got.Applies, "dd without if=/of= is stdin/stdout only")
+	})
+
+	t.Run("chattr_value_flag_missing_value_fails_closed", func(t *testing.T) {
+		got := classify(in, "chattr", "+i", safe, "-v")
+		assert.False(t, got.Recognized, "a trailing value flag with no value fails closed")
+	})
+
+	t.Run("ln_multi_target_dir_base", func(t *testing.T) {
+		// ln -s a b destdir: relative targets resolve against destdir.
+		require.NoError(t, os.MkdirAll(filepath.Join(wd, "dst"), 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(wd, "dst", "a"), nil, 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(wd, "dst", "b"), nil, 0o644))
+		got := classify(in, "ln", "-s", "a", "b", filepath.Join(wd, "dst"))
+		assert.True(t, got.Recognized)
+		assert.Equal(t, runnertypes.RiskLevelLow, got.Level)
+	})
+}
+
 // --- carrier empty vs applied-but-unresolved ---
 
 func TestOperandZones_EmptyVsUnresolved(t *testing.T) {

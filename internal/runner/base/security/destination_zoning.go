@@ -218,8 +218,15 @@ func (r *operandResolver) classifyZone(resolved string, input ZoningInput) (zone
 		if origin == "" {
 			continue
 		}
-		if clean == filepath.Clean(origin) || common.IsPathWithinDirectory(clean, origin) {
-			t := r.isTrustedOperand(clean, origin, input.TrustedDirectories, input.RunAsIdent)
+		// A non-absolute origin cannot anchor a safe-zone: ancestor traversal would
+		// terminate early and the containment check is meaningless. Skip it so the
+		// operand classifies ordinary rather than a spuriously Trusted safe-zone.
+		if !filepath.IsAbs(origin) {
+			continue
+		}
+		cleanOrigin := filepath.Clean(origin)
+		if clean == cleanOrigin || common.IsPathWithinDirectory(clean, cleanOrigin) {
+			t := r.isTrustedOperand(clean, cleanOrigin, input.TrustedDirectories, input.RunAsIdent)
 			return risktypes.ZoneSafeZone, "", t
 		}
 	}

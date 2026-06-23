@@ -50,6 +50,10 @@ const minACLFields = 3
 // attribute letter.
 const minChattrModeLen = 2
 
+// lnTargetDirThreshold: more positionals than this (i.e. 3+) means the final ln
+// argument is a destination directory rather than a single link name.
+const lnTargetDirThreshold = 2
+
 func set(items ...string) map[string]struct{} {
 	m := make(map[string]struct{}, len(items))
 	for _, it := range items {
@@ -204,17 +208,14 @@ func extractCopyMove(args []string, isMove bool) extraction {
 		srcRole = risktypes.OperandRoleWrite
 	}
 
-	if tdirs := captured["-t"]; len(tdirs) > 0 {
+	if tdirs := append(append([]string{}, captured["-t"]...), captured["--target-directory"]...); len(tdirs) > 0 {
 		appendTargetDir(&ext, tdirs)
 		for _, s := range pos {
 			ext.operands = append(ext.operands, rawOperand{raw: s, role: srcRole})
 		}
-		return ext
-	}
-	if tdirs := captured["--target-directory"]; len(tdirs) > 0 {
-		appendTargetDir(&ext, tdirs)
-		for _, s := range pos {
-			ext.operands = append(ext.operands, rawOperand{raw: s, role: srcRole})
+		if len(pos) == 0 {
+			// -t with no source files is an incomplete copy/move: fail closed.
+			ext.recognized = false
 		}
 		return ext
 	}
@@ -297,7 +298,14 @@ func extractLink(args []string) extraction {
 		linkName := pos[len(pos)-1]
 		var targetBase string
 		if isSymlink {
-			targetBase = filepath.Dir(linkName)
+			// More than one target plus a final argument means the final argument is
+			// the directory the links are created in, so a relative target resolves
+			// against it; the two-argument form resolves against the link's parent.
+			if len(pos) > lnTargetDirThreshold {
+				targetBase = linkName
+			} else {
+				targetBase = filepath.Dir(linkName)
+			}
 		}
 		for _, t := range pos[:len(pos)-1] {
 			ext.operands = append(ext.operands, rawOperand{raw: t, role: risktypes.OperandRoleRead, base: targetBase})
@@ -355,10 +363,17 @@ func extractSed(args []string) extraction {
 }
 
 func extractSimpleWrite(args []string, valueFlags map[string]struct{}) extraction {
-	boolFlags := set("-a", "--append", "-c", "--no-create", "-m", "-h", "--no-dereference", "-p", "--parents",
+	boolFlags := set("-a", "--append", "-c", "--no-create", "-h", "--no-dereference", "-p", "--parents",
 		"-v", "--verbose", "-f", "-i", "-r")
-	pos, _, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
+	pos, captured, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
 	ext := extraction{applies: true, recognized: recognized}
+	// A mode-granting flag (e.g. mkdir -m 0777 / -m u+s) is a permission grant even
+	// in a safe-zone (only meaningful when -m is in this command's valueFlags).
+	for _, m := range append(append([]string{}, captured["-m"]...), captured["--mode"]...) {
+		if chmodGrantsHigh(m) {
+			ext.grantsPermission = true
+		}
+	}
 	for _, p := range pos {
 		ext.operands = append(ext.operands, rawOperand{raw: p, role: risktypes.OperandRoleWrite})
 	}
@@ -419,6 +434,10 @@ func extractInstall(args []string) extraction {
 		for _, s := range pos {
 			ext.operands = append(ext.operands, rawOperand{raw: s, role: risktypes.OperandRoleRead})
 		}
+		if len(pos) == 0 {
+			// -t with no source files is an incomplete install: fail closed.
+			ext.recognized = false
+		}
 		return ext
 	}
 
@@ -477,8 +496,14 @@ func extractTar(args []string) extraction {
 
 // tarMode returns 'x'/'t'/'c' from the first mode-bearing token, or 0 if unknown.
 func tarMode(args []string) byte {
-	for _, a := range args {
+	for i, a := range args {
 		if a == "" {
+			continue
+		}
+		// Only the first token may be a dash-less mode bundle (e.g. "xzf"); any
+		// other non-flag token is a positional (e.g. "a.tar") and must not be
+		// scanned for mode letters, or "a.tar" would be misread as create/list.
+		if i > 0 && !strings.HasPrefix(a, "-") {
 			continue
 		}
 		token := a
@@ -555,6 +580,11 @@ func extractDD(args []string) extraction {
 		case "if":
 			ext.operands = append(ext.operands, rawOperand{raw: val, role: risktypes.OperandRoleRead})
 		}
+	}
+	// dd with neither if= nor of= reads stdin and writes stdout: axis 2 does not
+	// apply. (A parse failure above is preserved so a malformed dd still fails.)
+	if len(ext.operands) == 0 && ext.recognized {
+		return extraction{applies: false, recognized: true}
 	}
 	return ext
 }
@@ -697,7 +727,11 @@ func extractChattr(args []string) extraction {
 		if len(a) >= 2 && a[0] == '-' {
 			name := a
 			if _, ok := valueFlags[name]; ok {
-				i++ // skip value
+				if i+1 < len(args) {
+					i++ // skip the value token
+				} else {
+					ext.recognized = false // value flag missing its value
+				}
 				continue
 			}
 			if _, ok := boolFlags[name]; ok {
@@ -931,20 +965,25 @@ func chmodGrantsHigh(mode string) bool {
 		)
 		return v&(setuidBit|setgidBit) != 0 || v&worldWriteBit != 0
 	}
-	// Symbolic: an added/assigned setuid/setgid bit, or world-write for a clause
-	// whose "who" includes other or all.
-	if strings.Contains(mode, "+s") || strings.Contains(mode, "=s") {
-		return true
-	}
+	// Symbolic: a clause that ADDS or ASSIGNS (+/=) an s bit grants setuid/setgid,
+	// or grants world-write when its "who" includes other or all. The perm letters
+	// must be parsed per clause (a substring match like "+s" misses "u+xs").
 	for _, clause := range strings.Split(mode, ",") {
-		for _, op := range []string{"+", "="} {
-			if idx := strings.Index(clause, op); idx >= 0 {
-				who := clause[:idx]
-				perm := clause[idx+1:]
-				if (who == "" || strings.ContainsAny(who, "oa")) && strings.Contains(perm, "w") {
-					return true
-				}
-			}
+		idx := strings.IndexAny(clause, "+=-")
+		if idx < 0 {
+			continue
+		}
+		op := clause[idx]
+		if op == '-' {
+			continue // removal is not a grant
+		}
+		who := clause[:idx]
+		perm := clause[idx+1:]
+		if strings.ContainsRune(perm, 's') {
+			return true
+		}
+		if (who == "" || strings.ContainsAny(who, "oa")) && strings.ContainsRune(perm, 'w') {
+			return true
 		}
 	}
 	return false
