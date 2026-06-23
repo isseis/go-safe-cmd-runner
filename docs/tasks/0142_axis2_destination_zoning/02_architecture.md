@@ -903,7 +903,7 @@ sequenceDiagram
 | P2 | 専用リゾルバ（symlink 追従・leaf＋親・深さ制限・メモ化）＋ Trusted 述語 | AC-04, AC-23 | P1 |
 | P3 | オペランド抽出仕様表＋区分判定＋操作固有の下限（`ClassifyDestinationZone`） | AC-01〜AC-12 | P2 |
 | P4 | `evaluateDimensions` 組み込み＋既存 5 系統の完全認識時抑止 | AC-17, AC-18 | P3 |
-| P5 | データ送信書込先合成（rsync `host::module` 検討含む） | AC-16 | P3 |
+| P5 | データ送信書込先合成（rsync `host::module` 検出の追加含む） | AC-16 | P3 |
 | P6 | config 組み込み（`security.Config`/`SecuritySpec`/ローダ/runner 転送）＋ identity 注入 | AC-20, AC-21 | P4 |
 | P7 | 決定性・上限の統合テスト、grep ガード | AC-22, AC-23 | P4-P6 |
 
