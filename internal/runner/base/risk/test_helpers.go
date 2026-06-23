@@ -60,6 +60,30 @@ func newEvaluatorWithStore(store security.RecordStore) Evaluator {
 	return ev
 }
 
+// newZoningEvaluator returns a verified evaluator with axis-2 destination zoning
+// enabled. The safe-zone origin and trusted-directory allowlist are workdir;
+// SystemCriticalPaths and the sensitive-file patterns use the security defaults;
+// the Trusted predicate uses the injected run-as identity (never the live euid).
+func newZoningEvaluator(workdir string, ident risktypes.RunAsIdent) Evaluator {
+	cfg := security.DefaultConfig()
+	ev := newVerifiedEvaluator().(*StandardEvaluator)
+	ev.zoning = &zoningParams{
+		systemCriticalPaths:        cfg.SystemCriticalPaths,
+		trustedDirectories:         []string{workdir},
+		outputCriticalPathPatterns: cfg.OutputCriticalPathPatterns,
+		runAsIdent:                 ident,
+	}
+	return ev
+}
+
+// verifiedCmdInDir is verifiedCmd with the command's EffectiveWorkDir set (the
+// axis-2 safe-zone origin).
+func verifiedCmdInDir(cmd string, args []string, workdir string) *runnertypes.RuntimeCommand {
+	c := verifiedCmd(cmd, args)
+	c.EffectiveWorkDir = workdir
+	return c
+}
+
 // newAnalysisDisabledEvaluator returns an evaluator with binary analysis disabled
 // (no record store), so the identity gate denies every command.
 func newAnalysisDisabledEvaluator() Evaluator {
