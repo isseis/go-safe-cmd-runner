@@ -800,7 +800,8 @@ func matchesPattern(names map[string]struct{}, cmdArgs []string, pattern []strin
 }
 
 // CommandHasSetuidOrSetgidBit reports whether the binary at the resolved absolute
-// path carries a setuid/setgid bit. It exposes the internal lstat-based signal so
+// path carries a setuid/setgid bit (via os.Stat, which follows symlinks). It
+// exposes the internal stat-based signal so
 // the axis-2 dispatch can re-establish the setuid-binary High when the legacy
 // coreutils dimension is suppressed (reusing the existing signal rather than
 // re-parsing).

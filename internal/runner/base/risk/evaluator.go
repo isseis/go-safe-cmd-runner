@@ -326,7 +326,7 @@ func (e *StandardEvaluator) evaluateDimensions(
 // applyCoreutilsRisk folds the coreutils single-binary classification into the
 // assessment. On full axis-2 recognition the legacy destructive/unknown High is
 // dropped (axis 2's zone level replaces it) but the setuid/setgid-binary signal is
-// preserved from the existing lstat signal (a coreutils hardlink is never expected
+// preserved from the existing stat-based signal (a coreutils hardlink is never expected
 // to be setuid; a set bit is a compromise indicator independent of the
 // destination). coreutilsHandled stays the caller's gate for binary-analysis
 // suppression; this only governs the risk contribution.
