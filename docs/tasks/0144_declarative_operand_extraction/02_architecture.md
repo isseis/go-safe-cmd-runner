@@ -221,6 +221,12 @@ func parseArgs(flags []FlagSpec, args []string) ParseResult
 > 決定性の制約（NF-003）: `ToExtraction` は `Values` を**正規キーの直接参照のみ**で読み、`for range` で走査しない。
 > オペランドの順序は `Positionals`（スライス）と各フラグの明示参照から決め、map の反復順に依存させない。
 > これにより `Operands`/`ReasonCodes` の順序が実行ごとに揺れない（観測可能挙動の同一性、AC-10）。
+>
+> 短縮連結中の引数付きフラグの規則: クラスタ内で引数付きフラグ（`ArityRequired`/`ArityOptional`）に達したら、その文字以降の
+> クラスタ残余をその付随値として解釈する。残余が無い場合、`ArityRequired` は次の語を値に取り、`ArityOptional` は値なしとする
+> （分離後続語は取らない）。例: `tar -xzf a.tar` は `-f`（値）が末尾なので次の語 `a.tar` を値に取る。`sed -ir` は省略可引数フラグ
+> `-i` がクラスタ内に来た形で、`r` は `-i` の付随値であり `-i -r` とは解さない（GNU getopt の「省略可引数は付随形のみ」に一致）。
+> この曖昧になりやすい形の解釈は `getopt_test.go` の表で固定する（AC-03/AC-06）。
 
 ### 3.2 値内文法ヘルパ（既存・不変）
 
@@ -241,13 +247,14 @@ func parseArgs(flags []FlagSpec, args []string) ParseResult
 |---|---|---|---|
 | `getopt.go` | 新規 | 単一 getopt パーサ `parseArgs` と `ParseResult` | フラグ形式を一元処理（F-002） |
 | `flag_spec.go` | 新規 | `FlagSpec`/`CommandFlagSpec`/`FlagArity`/`ValueRole` と全コマンドの宣言的仕様表 | フラグ知識のデータ化（F-001） |
-| `destination_zoning_spec.go` | 変更 | `zoningSpecs` を `CommandFlagSpec` 参照へ移行。getopt 適合コマンドの個別抽出処理を `ToExtraction`（非フラグ引数の役割割当・値内文法呼出）へ縮小し、重複フラグ集合定義と旧 `scanFlags` を撤去。混在/非適合コマンド（chattr の属性トークン・dd の key=value。§3.5）は専用の `ToExtraction` を維持する。ただし chattr の通常フラグは `FlagSpec` で宣言する | 値内文法ヘルパは存置 |
+| `destination_zoning_spec.go` | 変更 | `zoningSpecs` を `CommandFlagSpec` 参照へ移行。getopt 適合コマンドの個別抽出処理を `ToExtraction`（非フラグ引数の役割割当・値内文法呼出）へ縮小し、重複フラグ集合定義と旧 `scanFlags` を撤去。事前正規化が必要なコマンド（tar・chattr）は属性/モードトークンを分離してから `parseArgs` に通し、getopt 非適合（dd の key=value）のみ専用の `ToExtraction` を維持する（§3.5） | 値内文法ヘルパ（`tarMode`/`isChattrMode` 等）は存置 |
 | `destination_zoning.go` | 不変 | `classifyDestinationZone` ほか区分判定・リスクレベル合成 | `extraction` 入力契約は不変 |
 | `operand_path_resolver.go` | 不変 | パス解決・Trusted 述語 | 本タスク対象外（0142 PR-2 で確定） |
 | `getopt_test.go` | 新規 | 単一パーサの表駆動テスト（AC-03〜AC-06）・大入力/長連結の病的ケース | |
 | `flag_spec_test.go` | 新規 | 完全性メタテスト（AC-07）・アリティ不変条件チェック・回帰代表ケース（AC-08） | |
 | `extraction_diff_test.go` | 新規 | 差分テスト: 旧実装（凍結）と新実装を生成コーパスで突き合わせ、`extraction` を全フィールド一致で検証（§7） | 挙動保存の主たる担保 |
 | `destination_zoning_test.go` | 不変 | 既存の挙動テスト（AC-09）。**期待値変更があれば本タスク不適合** | 無改変で緑が必須 |
+| `risk/live_identity_guard_test.go` | 変更（0142 既存） | 対象ファイル集合に `getopt.go`・`flag_spec.go` を追加（NF-003 静的ガードの再利用。§7） | 新規ガードは作らない |
 
 ### 3.4 型関係
 
@@ -300,13 +307,12 @@ classDiagram
 | 形態 | 対象 | 取り扱い |
 |---|---|---|
 | getopt 適合（大多数） | cp/mv/rm/ln/touch/install/chmod/chown/setfacl/tee/find/curl/wget/scp/rsync 等 | 宣言的 `Flags` ＋ `parseArgs` ＋ 薄い `ToExtraction`（`ParseResult` のみ参照） |
-| 事前正規化が必要 | tar | `normalizeTarArgs` で第1語（`xzf` 形）を `-xzf` へ正規化してから `parseArgs` に通す。`tarMode` はモード判定に存置 |
-| getopt ＋ 専用トークンの混在 | chattr | 通常のフラグ（`-v`/`-p`/`-R` 等）は `FlagSpec` で宣言して `parseArgs` に処理させ、`+i`/`-i`/`=...` の属性トークンのみ `ToExtraction` で `isChattrMode` により特別扱いする（フラグ知識はデータ側に保つ） |
+| 事前正規化が必要 | tar・chattr | tar: `normalizeTarArgs` で第1語（`xzf` 形）を `-xzf` へ正規化してから `parseArgs` に通す（`tarMode` はモード判定に存置）。chattr: `isChattrMode` に合致する属性モードトークン（`+i`/`-a`/`=j` 等）を `parseArgs` の前に分離する。マイナス始まりの属性削除（例 `chattr -i file` の `-i`）は getopt の未知フラグと衝突するため、この事前分離が必須。残りの通常フラグ（`-v`/`-p`/`-R` 等）は `FlagSpec` で宣言し `parseArgs` が処理する（フラグ知識はデータ側に保つ） |
 | getopt 非適合 | dd（`if=`/`of=` の key=value のみ。フラグを持たない） | `Flags` を空にし、`ToExtraction` 内で生 argv を専用解析（従来挙動を維持）。完全性メタテストは宣言フラグが無いため自明に通り、挙動保存は差分テスト（§7）で担保 |
 
 > このため要件 F-002 の「単一パーサが全 argv を扱う」は「getopt 形式を一元化する」意であり、key=value や属性トークンの
-> ような非 getopt 文法までパーサに取り込む意味ではない。chattr の通常フラグは宣言データへ寄せ（重複実装を避ける）、
-> 属性トークンと dd の key=value のみを意図的な例外として `ToExtraction` 側に残す。
+> ような非 getopt 文法までパーサに取り込む意味ではない。tar・chattr は事前正規化で getopt 形へ整えてから `parseArgs` に通し、
+> フラグ知識は宣言データへ寄せる（重複実装を避ける）。dd の key=value のみを意図的な例外として `ToExtraction` 側に残す。
 
 ## 4. エラーハンドリング設計
 
@@ -434,6 +440,12 @@ flowchart TD
   さらに `zoningSpecs` の全エントリ（件数はハードコードせず実集合を range）×代表フラグで `LocationResult` 同一性を固定。
   AC-09/AC-10 は例示ベースであり、未列挙の入力形は上記差分テストが補完する（残存リスクの明示）。
 - fail-closed（AC-11）: 未知/曖昧形・値欠落・必須非フラグ引数欠落・解決不能で `Recognized=false`→High 下限。
+- 静的ガード（NF-003 補助）: 新規 `getopt.go`・`flag_spec.go` を 0142 の live-identity 静的ガード
+  （`risk/live_identity_guard_test.go::TestNoLiveIdentityInZoning`）の対象ファイル集合へ**追加**する（新規ガードは作らず既存を
+  再利用）。同ガードの禁止 API 集合（`os`/`syscall`/`unix` の uid/gid/euid/egid/groups・環境（Getenv/Environ 等）・プロセス生成
+  （StartProcess/ForkExec/Exec）・live FS パス解決（filepath.Abs/EvalSymlinks/Glob）・`os/user` の Current/Lookup*）を流用し、
+  `parseArgs`/`ToExtraction` が live identity・環境・非決定 API を参照しないことを機械検証する。これは best-effort な denylist で、
+  権威ある担保は決定性テストと差分テスト（挙動・read-only）が持つ。
 - 非機能（NF-001/NF-003）: `make fmt`/`make test`/`make lint` 緑、`./internal/runner/...` コンパイル。決定性・read-only。
 
 ## 8. 実装優先順位
