@@ -570,6 +570,8 @@
   純ローカルは非ネットワークの回帰（AC-16）。
 - **`risktypes/operand_zone_test.go`・`reason_codes_test.go`**: DTO 型健全性・reason code 網羅性/一意性（AC-19, NF-001）。
 - **`runnertypes/spec_test.go`**: `[security] trusted_directories` パース（AC-20）。
+- **`risk/runas_identity_test.go`**: 本番 run-as 解決器の分岐（user 単独/group 単独/両方/未知ユーザー・グループの
+  fail-closed）と起動時 original identity の確定（AC-21 補助）。
 
 ### 4.2 統合テスト
 - **`risk/destination_zoning_integration_test.go`**: `evaluateDimensions` 経由の置き換え観測可能プロパティ（AC-17）・

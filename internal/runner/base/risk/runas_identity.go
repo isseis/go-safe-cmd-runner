@@ -10,15 +10,21 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 )
 
-// originalExecutionIdentity returns the identity of the current process. It is the
-// default run-as identity for commands that set no run_as_user/run_as_group, and
-// is resolved once at evaluator construction (the embedding layer). The zoning
-// judgment itself never reads live identity; it consumes only this precomputed
-// value. The zero value (uid 0) is never used as an implicit "unset" default,
-// which is why this is resolved explicitly.
+// originalExecutionIdentity returns the original execution identity of the current
+// process: the real uid/gid plus supplementary groups. It is the default run-as
+// identity for commands that set no run_as_user/run_as_group, and is resolved once
+// at evaluator construction (NewStandardEvaluator, called from runner.go at
+// startup) -- before any per-command privilege change, so the captured values are
+// the original invoking identity. The real uid (os.Getuid) is the invoking user
+// even under a setuid binary, which is the conservative trust basis. This is
+// captured directly from the process rather than from the privilege manager, which
+// exposes no original-identity getter and is absent when no command requests
+// privileges. The zoning judgment itself never reads live identity; it consumes
+// only this precomputed value. The zero value (uid 0) is never used as an implicit
+// "unset" default, which is why this is resolved explicitly.
 func originalExecutionIdentity() risktypes.RunAsIdent {
-	// #nosec G115 -- safe: os.Getuid/Getgid/Getgroups return system IDs, which are
-	// non-negative and fit in uint32 on all supported platforms.
+	// #nosec G115 -- safe: os.Getuid/os.Getgid/syscall.Getgroups return system IDs,
+	// which are non-negative and fit in uint32 on all supported platforms.
 	ident := risktypes.RunAsIdent{
 		UID: uint32(os.Getuid()),
 		GID: uint32(os.Getgid()),
