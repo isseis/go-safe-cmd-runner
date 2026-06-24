@@ -38,28 +38,33 @@ func forbiddenLiveIdentityPackage(importPath string) bool {
 	return importPath == "unix" || strings.HasSuffix(importPath, "/unix")
 }
 
-// forbiddenLiveIdentityRef reports whether importPath.fn is a live-identity or
-// ambient-environment read that the axis-2 zoning code must never reference: the
-// judgment consumes only the precomputed RunAsIdent injected at construction, so
-// reading the live process identity or the environment ($HOME and friends) would make
-// the verdict depend on live euid / env and diverge between dry-run and runtime. The
-// set covers the os/syscall/unix uid/gid/euid/egid/groups getters, the environment
-// readers (Getenv/LookupEnv/Environ and the os.User*Dir / ExpandEnv helpers), and the
-// os/user database lookups (Current and the Lookup* family). Matching is by resolved
-// import path, not local identifier, so an aliased import cannot bypass it. It is a
-// non-exhaustive regression guardrail, not a completeness proof.
+// forbiddenLiveIdentityRef reports whether importPath.fn is a live-identity,
+// ambient-environment, or other live/non-deterministic process-state read that the
+// axis-2 zoning code must never reference: the judgment consumes only the precomputed
+// RunAsIdent and the injected EffectiveWorkDir, so reading the live process identity,
+// the environment ($HOME / TMPDIR / ...), the live working directory, or live process
+// IDs would make the verdict depend on ambient state and diverge between dry-run and
+// runtime. The set covers the os/syscall/unix uid/gid/euid/egid/groups getters, the
+// environment readers (Getenv/LookupEnv/Environ, os.ExpandEnv, os.TempDir, the
+// os.User*Dir helpers), the live working directory and process IDs (Getwd/Getpid/
+// Getppid/Gettid), and the os/user database lookups (Current and the Lookup* family).
+// Matching is by resolved import path, not local identifier, so an aliased import
+// cannot bypass it. It is a non-exhaustive regression guardrail, not a completeness
+// proof.
 func forbiddenLiveIdentityRef(importPath, fn string) bool {
 	switch {
 	case importPath == "os":
 		switch fn {
 		case "Geteuid", "Getuid", "Getgid", "Getegid", "Getgroups",
-			"Getenv", "LookupEnv", "Environ", "ExpandEnv",
-			"UserHomeDir", "UserConfigDir", "UserCacheDir":
+			"Getenv", "LookupEnv", "Environ", "ExpandEnv", "TempDir",
+			"UserHomeDir", "UserConfigDir", "UserCacheDir",
+			"Getwd", "Getpid", "Getppid":
 			return true
 		}
 	case importPath == "syscall" || importPath == "unix" || strings.HasSuffix(importPath, "/unix"):
 		switch fn {
-		case "Geteuid", "Getuid", "Getgid", "Getegid", "Getgroups", "Environ", "Getenv":
+		case "Geteuid", "Getuid", "Getgid", "Getegid", "Getgroups", "Environ", "Getenv",
+			"Getwd", "Getpid", "Getppid", "Gettid":
 			return true
 		}
 	case importPath == "os/user":
