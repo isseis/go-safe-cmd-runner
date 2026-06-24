@@ -596,13 +596,23 @@ func TestDataTransferWrite(t *testing.T) {
 	assert.Equal(t, runnertypes.RiskLevelMedium,
 		classify(in, "rsync", filepath.Join(wd, "src"), "host:/remote/path").Level)
 
-	// The relative remote forms (host:file, host:, user@host:file) are also egress
-	// (rsync's positional rule: a colon before the first slash means remote).
-	for _, dest := range []string{"host:file", "host:", "user@host:file"} {
+	// The relative remote forms (host:file, host:, user@host:file) and bracketed
+	// IPv6 forms are also egress (rsync's positional rule: a colon before the first
+	// slash means remote; IPv6 hosts are bracketed).
+	for _, dest := range []string{
+		"host:file", "host:", "user@host:file",
+		"[::1]:file", "[2001:db8::1]:/path", "user@[::1]:file",
+	} {
 		r := classify(in, "rsync", filepath.Join(wd, "src"), dest)
 		assert.Equal(t, runnertypes.RiskLevelMedium, r.Level, "rsync to %q is remote egress", dest)
 		assert.False(t, hasWriteOperand(r.Operands), "remote dest %q has no local write operand", dest)
 	}
+
+	// scp -T is boolean (disable strict filename checking); it must not consume the
+	// following SRC, so a normal local-dest scp is still recognized and zoned.
+	scpT := classify(in, "scp", "-T", filepath.Join(wd, "src"), "/usr/bin/x")
+	assert.True(t, scpT.Recognized, "scp -T is boolean and must not shift operands")
+	assert.Equal(t, runnertypes.RiskLevelHigh, scpT.Level, "scp into a trust-critical dest is High")
 
 	// A sensitive local source uploaded to a remote destination is Medium and the
 	// source is recorded (the local-source extraction closes the audit/zoning gap).

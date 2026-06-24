@@ -854,28 +854,43 @@ var hostTokenRe = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
 // isRemoteTerminus reports whether an rsync/scp operand denotes a remote location.
 // It uses rsync's own positional rule: a ':' appearing before the first '/' is the
 // remote host separator. This uniformly covers host:path, user@host:path, the
-// daemon bare module host::module, AND the relative form host:file / host: (the
-// last of which the global hasNetworkArguments misses because the path part has no
-// '/'). A local path never has a ':' before its first '/'. URLs (rsync://...) are
-// matched first. This detection stays inside the rsync/scp extractors, so the
-// global network-argument check is unchanged and unrelated "::" arguments
-// (std::string, HTTP::Tiny) on other commands are never misclassified.
+// daemon bare module host::module, the relative form host:file / host: (which the
+// global hasNetworkArguments misses because the path part has no '/'), and the
+// bracketed IPv6 form [::1]:path / user@[2001:db8::1]:/path. A local path never has
+// a ':' before its first '/'. URLs (rsync://...) are matched first. This detection
+// stays inside the rsync/scp extractors, so the global network-argument check is
+// unchanged and unrelated "::" arguments (std::string, HTTP::Tiny) on other
+// commands are never misclassified.
 func isRemoteTerminus(arg string) bool {
 	if strings.Contains(arg, "://") {
 		return true
 	}
-	colon := strings.IndexByte(arg, ':')
+	// Strip a leading user@ when the '@' precedes any '/' or ':' (otherwise it is
+	// part of a path or the host token, not a user prefix).
+	rest := arg
+	if at := strings.IndexByte(rest, '@'); at >= 0 {
+		slash := strings.IndexByte(rest, '/')
+		colon := strings.IndexByte(rest, ':')
+		if (slash < 0 || at < slash) && (colon < 0 || at < colon) {
+			rest = rest[at+1:]
+		}
+	}
+	// Bracketed IPv6 host: [ipv6]:path (the colons live inside the brackets, so the
+	// positional rule below cannot be applied directly).
+	if strings.HasPrefix(rest, "[") {
+		if cb := strings.IndexByte(rest, ']'); cb > 1 && cb+1 < len(rest) && rest[cb+1] == ':' {
+			return !strings.ContainsRune(rest[:cb], '/')
+		}
+		return false
+	}
+	colon := strings.IndexByte(rest, ':')
 	if colon <= 0 {
 		return false
 	}
-	if slash := strings.IndexByte(arg, '/'); slash >= 0 && slash < colon {
+	if slash := strings.IndexByte(rest, '/'); slash >= 0 && slash < colon {
 		return false // a '/' before the ':' means a local path (./a:b, /abs:x)
 	}
-	host := arg[:colon]
-	if at := strings.IndexByte(host, '@'); at >= 0 {
-		host = host[at+1:]
-	}
-	return host != "" && hostTokenRe.MatchString(host)
+	return hostTokenRe.MatchString(rest[:colon])
 }
 
 // extractCurl extracts curl's local write destination (-o FILE, or -O which writes
@@ -947,8 +962,11 @@ func extractWget(args []string) extraction {
 // extractScp extracts scp's destination (the final operand). A remote destination
 // is an upload (egress); a local destination is zone-classified.
 func extractScp(args []string) extraction {
-	valueFlags := set("-P", "-i", "-o", "-c", "-F", "-l", "-S", "-J", "-T")
-	boolFlags := set("-r", "-p", "-q", "-v", "-C", "-B", "-3", "-4", "-6", "-A", "-O", "-R")
+	// scp -T (disable strict filename checking) is boolean, unlike rsync -T
+	// (--temp-dir, value-taking); listing it as value-taking would consume the next
+	// token and shift SRC/DEST.
+	valueFlags := set("-P", "-i", "-o", "-c", "-F", "-l", "-S", "-J")
+	boolFlags := set("-r", "-p", "-q", "-v", "-C", "-B", "-3", "-4", "-6", "-A", "-O", "-R", "-T")
 	return extractRemoteCopy(args, valueFlags, boolFlags)
 }
 
