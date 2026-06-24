@@ -428,7 +428,7 @@ flowchart TD
 - 単体（単一パーサ, `getopt_test.go`）: 表駆動で全フラグ形式を網羅（AC-03）。語を暗黙に捨てない・未知/欠落で
   `Recognized=false`（AC-04）。別名正規化で表記違いが同一結果（AC-05）。引数省略可は付随形のみ・分離後続語を
   消費しない（AC-06）。大量 argv・長い短縮連結の病的入力で線形・fail-closed を確認。
-- 完全性メタtest／不変条件（`flag_spec_test.go`）:
+- 完全性メタテスト／不変条件（`flag_spec_test.go`）:
   - 全コマンド仕様の各引数付きフラグが `ValueRole != ValueUnset` を持つ（operand 化 or 非 path 明示）。未分類は失敗（AC-07）。
   - アリティ不変条件（§3.1）: 現行で次の語を消費するフラグが `ArityOptional` に誤分類されていないことを、旧実装の
     挙動（または明示の許可リスト）と突き合わせて検証する（C-2 の fail-open を防ぐ）。
