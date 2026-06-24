@@ -504,7 +504,7 @@
 
 **レビュー観点**: runtime==dry-run の決定性表明（AC-22） / 上限超過の fail-closed と注入 `lstat`/`readlink` の線形呼出（AC-23） / grep ガードの正のコントロール（既知の悪例文字列が必ずマッチ、空振り＝fail-open 検出） / live-identity API の不在（AC-21）
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
