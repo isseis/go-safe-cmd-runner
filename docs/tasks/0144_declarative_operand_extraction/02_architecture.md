@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-06-24 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-06-25 |
+| Reviewer | isseis |
 | Comments | - |
 
 > 本書は [01_requirements.md](01_requirements.md) の設計である。用語（オペランド・引数付きフラグ・真偽フラグ・
