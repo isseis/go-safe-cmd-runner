@@ -96,6 +96,9 @@
       起きるため、構造体をまるごと比較する。対象は `extraction` の全 8 フィールド（`applies`/`recognized`/`recursive`/
       `grantsPermission`/`preserveMeta`/`umountAll`/`remoteEgress`/`operands`。順序・role・base を含む）である（設計 §7）。
       dd・chattr の異常形（`dd if=` 欠落・`chattr +i`/`-i`）もコーパスに含める。
+- [ ] 差分比較の nil/空スライス対策: `reflect.DeepEqual(nil, []rawOperand{})` は `false` のため、旧/新で `operands` が一方 nil・
+      他方 空スライスだと誤って不一致になる。比較前に `operands` の nil↔空を正規化する小ヘルパを挟む（または `go-cmp` の
+      `cmpopts.EquateEmpty` を使う。導入可否は実装時に判断）。「空オペランドは nil に揃える」など正規化規則をテスト内に明記する。
 
 **成功基準**:
 - [ ] 完全性メタテストとアリティ不変条件チェックが緑。
@@ -144,7 +147,12 @@
       internal/runner/base/security/operand_path_resolver_test.go` が**空**であること（新規ケースは別ファイルに置くため、既存 2 ファイルは
       機械的に無改変であることを保証する）。
 - [ ] `live_identity_guard_test.go` の `zoningGuardedFiles` に `../security/getopt.go`・`../security/flag_spec.go` を追加する
-      （新規ガードは作らず既存を再利用。設計 §7）。
+      （新規ガードは作らず既存を再利用。設計 §7）。再利用する 0142 ガードの禁止 API 集合は既に以下を網羅しており、本タスクで
+      拡充は不要（追加確認のみ）: `os`/`syscall`/`unix` の uid/gid/euid/egid/groups getter、`os/user` の `Current`/`Lookup*`
+      （ユーザー/グループ・ルックアップ）、環境（`Getenv`/`LookupEnv`/`Environ`）、プロセス生成（`StartProcess`/`ForkExec`/`Exec`）、
+      live FS パス解決（`filepath.Abs`/`EvalSymlinks`/`Glob`）。スコープは判断軸2 の分類ファイルに限定され、正当な identity 解決層
+      （risk パッケージの `runas_identity.go` 等）は対象外。ガードは best-effort な denylist であり、権威は決定性テスト・差分テスト
+      （振る舞いテスト）が持つ。
 
 **成功基準**:
 - [ ] AC-09〜AC-11 が緑。`TestNoLiveIdentityInZoning` が新規 2 ファイルを含めて緑。
@@ -183,6 +191,7 @@
 | chattr の `-i` 等が未知フラグ誤認 | fail-closed（過剰分類） | chattr は事前正規化で属性トークンを分離してから `parseArgs`（設計 §3.5） |
 | `Values` の map 反復で順序非決定 | `Operands`/`ReasonCodes` 順序揺れ | `ToExtraction` は正規キー直接参照のみ・順序は `NonFlagArgs` から（設計 §3.1）。差分テストが順序差を検出 |
 | 移行途中の中間状態での退行 | 一時的なバグ | コマンド単位移行＋各段階で差分・既存テスト緑をゲート（常に緑のチェックポイント） |
+| 差分テストの nil/空スライス誤判定 | 偽の不一致でゲート誤作動 | 比較前に `operands` の nil↔空を正規化（または `cmpopts.EquateEmpty`）。正規化規則をテスト内に明記（Phase 2） |
 
 ## 6. 実装チェックリスト
 
