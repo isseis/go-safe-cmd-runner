@@ -258,3 +258,46 @@ func TestRunAsResolutionFailsClosed(t *testing.T) {
 		evalLevelRunAs(t, ev, "touch", []string{filepath.Join(wd, "x")}, wd, "ghost"),
 		"an unresolved run-as identity fails closed -> the write is High")
 }
+
+// TestDeterminismRuntimeEqualsDryRun: the zoning judgment is a pure function of the
+// command, the filesystem state, and the injected config/identity, so two evaluators
+// built from the same config return the same risk level, reason codes, and
+// per-operand zones. The runtime and dry-run paths are equivalent structurally
+// rather than by this test: both build the evaluator through the single
+// resolveRiskEvaluator(securityConfig) call site, and P6's TestConfigWiredEndToEnd
+// covers that the config reaches the judgment. Independence from the live euid is
+// covered by TestRunAsIdentDifferential; independence from the environment ($HOME)
+// is enforced statically by TestNoLiveIdentityInZoning (the zoning code reads no env
+// getter). This test pins the remaining property: determinism across constructions.
+func TestDeterminismRuntimeEqualsDryRun(t *testing.T) {
+	wd := filepath.Join(t.TempDir(), "work")
+	require.NoError(t, os.MkdirAll(filepath.Join(wd, "build"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(wd, "src"), nil, 0o644))
+	cfg := security.DefaultConfig()
+	cfg.TrustedDirectories = []string{wd}
+
+	cases := []struct {
+		cmd  string
+		args []string
+	}{
+		{"rm", []string{"-rf", filepath.Join(wd, "build")}},                        // safe-zone Low
+		{"cp", []string{"-a", filepath.Join(wd, "src"), "/usr/bin"}},               // trust-critical High
+		{"touch", []string{"/srv/app/x"}},                                          // ordinary Medium
+		{"curl", []string{"http://example.com/f", "-o", filepath.Join(wd, "out")}}, // egress Medium
+	}
+	for _, tc := range cases {
+		t.Run(tc.cmd, func(t *testing.T) {
+			// Construct fresh evaluators per case so no accumulated state can let the
+			// two stay in lockstep; each assertion compares independent constructions.
+			runtimeEv := newConfigEvaluator(cfg)
+			dryRunEv := newConfigEvaluator(cfg)
+			r, err := runtimeEv.EvaluateRisk(verifiedCmdInDir(tc.cmd, tc.args, wd))
+			require.NoError(t, err)
+			d, err := dryRunEv.EvaluateRisk(verifiedCmdInDir(tc.cmd, tc.args, wd))
+			require.NoError(t, err)
+			assert.Equal(t, r.Assessment.Level, d.Assessment.Level, "level must be identical on both paths")
+			assert.Equal(t, r.Assessment.ReasonCodes, d.Assessment.ReasonCodes, "reason codes must be identical")
+			assert.Equal(t, r.Assessment.OperandZones, d.Assessment.OperandZones, "per-operand zones must be identical")
+		})
+	}
+}
