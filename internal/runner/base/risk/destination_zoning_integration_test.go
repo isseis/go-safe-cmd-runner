@@ -260,11 +260,15 @@ func TestRunAsResolutionFailsClosed(t *testing.T) {
 }
 
 // TestDeterminismRuntimeEqualsDryRun: the zoning judgment is a pure function of the
-// command, the filesystem state, and the injected config/identity -- so the normal
-// (runtime) and dry-run paths, which build the evaluator identically via
-// resolveRiskEvaluator(securityConfig), return the same risk level, reason codes,
-// and per-operand zones. The result also does not depend on the $HOME env, which is
-// changed between the two evaluator constructions to prove it is not read.
+// command, the filesystem state, and the injected config/identity, so two evaluators
+// built from the same config return the same risk level, reason codes, and
+// per-operand zones. The runtime and dry-run paths are equivalent structurally
+// rather than by this test: both build the evaluator through the single
+// resolveRiskEvaluator(securityConfig) call site, and P6's TestConfigWiredEndToEnd
+// covers that the config reaches the judgment. Independence from the live euid is
+// covered by TestRunAsIdentDifferential; independence from the environment ($HOME)
+// is enforced statically by TestNoLiveIdentityInZoning (the zoning code reads no env
+// getter). This test pins the remaining property: determinism across constructions.
 func TestDeterminismRuntimeEqualsDryRun(t *testing.T) {
 	wd := filepath.Join(t.TempDir(), "work")
 	require.NoError(t, os.MkdirAll(filepath.Join(wd, "build"), 0o700))
@@ -272,10 +276,7 @@ func TestDeterminismRuntimeEqualsDryRun(t *testing.T) {
 	cfg := security.DefaultConfig()
 	cfg.TrustedDirectories = []string{wd}
 
-	// Two evaluators standing in for the runtime and dry-run paths; both paths
-	// construct the evaluator the same way (P6 threads securityConfig identically).
 	runtimeEv := newConfigEvaluator(cfg)
-	t.Setenv("HOME", "/nonexistent-home-should-be-ignored")
 	dryRunEv := newConfigEvaluator(cfg)
 
 	cases := []struct {

@@ -13,15 +13,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// liveIdentityAPIs matches the live-identity calls that the axis-2 zoning code must
-// never make: the judgment consumes only the precomputed RunAsIdent injected at
-// construction, so reading the live process identity would make the verdict depend
-// on the live euid / $HOME and diverge between dry-run and runtime. The pattern is a
-// non-exhaustive denylist of the concrete getters (os/syscall/unix uid/gid/euid/egid
-// /groups) and the os/user database lookups -- a regression guardrail, not a
-// completeness proof.
+// liveIdentityAPIs matches the live-identity and ambient-environment calls that the
+// axis-2 zoning code must never make: the judgment consumes only the precomputed
+// RunAsIdent injected at construction, so reading the live process identity or the
+// environment ($HOME) would make the verdict depend on live euid / $HOME and diverge
+// between dry-run and runtime. The pattern is a non-exhaustive denylist of the
+// concrete getters (os/syscall/unix uid/gid/euid/egid/groups), the os/user database
+// lookups, and the env/home readers -- a regression guardrail, not a completeness
+// proof.
 var liveIdentityAPIs = regexp.MustCompile(
-	`os\.Get(euid|uid|gid|egid|groups)|user\.(Current|Lookup)|syscall\.Get(euid|uid|gid|egid|groups)|unix\.Get(euid|uid|gid|egid|groups)`,
+	`os\.Get(euid|uid|gid|egid|groups)|user\.(Current|Lookup)|syscall\.Get(euid|uid|gid|egid|groups)|unix\.Get(euid|uid|gid|egid|groups)|os\.(Getenv|LookupEnv|UserHomeDir)`,
 )
 
 // zoningGuardedFiles are the axis-2 classification sources that must stay free of
@@ -42,6 +43,7 @@ func TestNoLiveIdentityInZoning(t *testing.T) {
 	for _, bad := range []string{
 		"os.Geteuid()", "os.Getuid()", "os.Getgid()", "os.Getgroups()",
 		"syscall.Getegid()", "unix.Getgroups()", "user.Current()", "user.LookupGroup(name)",
+		"os.Getenv(\"HOME\")", "os.UserHomeDir()", "os.LookupEnv(\"HOME\")",
 	} {
 		assert.Regexp(t, liveIdentityAPIs, bad, "positive control: pattern must match %q", bad)
 	}
@@ -53,12 +55,18 @@ func TestNoLiveIdentityInZoning(t *testing.T) {
 		require.NoErrorf(t, err, "guarded file must exist (a move/rename must not silently void this guard): %s", path)
 		require.NotEmptyf(t, src, "guarded file must be non-empty: %s", path)
 
+		// The pass/fail decision scans the whole file so a call split across lines
+		// cannot evade the guard; the per-line loop only collects readable locations.
+		if !liveIdentityAPIs.MatchString(string(src)) {
+			continue
+		}
 		var hits []string
 		for i, line := range strings.Split(string(src), "\n") {
 			if liveIdentityAPIs.MatchString(line) {
 				hits = append(hits, fmt.Sprintf("%s:%d: %s", path, i+1, strings.TrimSpace(line)))
 			}
 		}
-		assert.Emptyf(t, hits, "axis-2 zoning code must not read live identity:\n%s", strings.Join(hits, "\n"))
+		assert.Failf(t, "axis-2 zoning code must not read live identity or environment",
+			"%s", strings.Join(hits, "\n"))
 	}
 }
