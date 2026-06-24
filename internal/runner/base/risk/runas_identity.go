@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/user"
 	"strconv"
-	"syscall"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 )
@@ -23,13 +22,13 @@ import (
 // only this precomputed value. The zero value (uid 0) is never used as an implicit
 // "unset" default, which is why this is resolved explicitly.
 func originalExecutionIdentity() risktypes.RunAsIdent {
-	// #nosec G115 -- safe: os.Getuid/os.Getgid/syscall.Getgroups return system IDs,
+	// #nosec G115 -- safe: os.Getuid/os.Getgid/os.Getgroups return system IDs,
 	// which are non-negative and fit in uint32 on all supported platforms.
 	ident := risktypes.RunAsIdent{
 		UID: uint32(os.Getuid()),
 		GID: uint32(os.Getgid()),
 	}
-	if gids, err := syscall.Getgroups(); err == nil {
+	if gids, err := os.Getgroups(); err == nil {
 		ident.Groups = make([]uint32, 0, len(gids))
 		for _, g := range gids {
 			ident.Groups = append(ident.Groups, uint32(g)) // #nosec G115 -- system GID, non-negative and fits uint32
