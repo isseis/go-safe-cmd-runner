@@ -4,8 +4,10 @@ package risk
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -13,72 +15,100 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// liveIdentityAPIs matches the live-identity and ambient-environment calls that the
-// axis-2 zoning code must never make: the judgment consumes only the precomputed
-// RunAsIdent injected at construction, so reading the live process identity or the
-// environment ($HOME and friends) would make the verdict depend on live euid / env
-// and diverge between dry-run and runtime. The denylist covers the concrete getters
-// (os/syscall/unix uid/gid/euid/egid/groups), the os/user database lookups, and the
-// environment readers (os/syscall/unix Getenv/LookupEnv/Environ and the os.User*Dir
-// / ExpandEnv helpers). The trailing `\s*\(` requires an actual call, so a mention
-// in a comment or string (e.g. documenting that an API is forbidden) is not a false
-// positive, while still catching a call split across lines. It is a non-exhaustive
-// regression guardrail, not a completeness proof.
-var liveIdentityAPIs = regexp.MustCompile(
-	`(os\.Get(euid|uid|gid|egid|groups)|user\.(Current|Lookup\w*)|(syscall|unix)\.Get(euid|uid|gid|egid|groups)|os\.(Getenv|LookupEnv|UserHomeDir|Environ|ExpandEnv|UserConfigDir|UserCacheDir)|(syscall|unix)\.(Environ|Getenv))\s*\(`,
-)
-
 // zoningGuardedFiles are the axis-2 classification sources that must stay free of
-// live-identity reads. Paths are relative to this package directory (go test runs in
-// the package directory). destination_zoning_spec.go is included because its command
-// specs, operand extractors, and operation floors are core classification logic.
+// live-identity and ambient-environment reads. Paths are relative to this package
+// directory (go test runs in the package directory). destination_zoning_spec.go is
+// included because its command specs, operand extractors, and operation floors are
+// core classification logic.
 var zoningGuardedFiles = []string{
 	"../security/destination_zoning.go",
 	"../security/destination_zoning_spec.go",
 	"../security/operand_path_resolver.go",
 }
 
-// TestNoLiveIdentityInZoning is the static guard for the identity-purity contract:
-// the axis-2 classification code reads no live process identity. A positive control
-// asserts the pattern actually matches known-bad calls, so a silently-broken pattern
-// -- which would pass vacuously (a fail-open) -- is itself caught. The guarded files
-// are required to exist and be non-empty so a rename cannot void the guard silently.
-func TestNoLiveIdentityInZoning(t *testing.T) {
-	// Positive control: the pattern must match each known-bad call form.
-	for _, bad := range []string{
-		"os.Geteuid()", "os.Getuid()", "os.Getgid()", "os.Getgroups()",
-		"syscall.Getegid()", "unix.Getgroups()", "user.Current()", "user.LookupGroup(name)",
-		"os.Getenv(\"HOME\")", "os.UserHomeDir()", "os.LookupEnv(\"HOME\")",
-		"os.Environ()", "os.ExpandEnv(\"$HOME\")", "os.UserConfigDir()", "os.UserCacheDir()",
-		"syscall.Environ()", "unix.Environ()", "syscall.Getenv(\"HOME\")", "unix.Getenv(\"HOME\")",
-	} {
-		assert.Regexp(t, liveIdentityAPIs, bad, "positive control: pattern must match %q", bad)
+// forbiddenLiveIdentityCall reports whether a pkg.fn selector is a live-identity or
+// ambient-environment read that the axis-2 zoning code must never call: the judgment
+// consumes only the precomputed RunAsIdent injected at construction, so reading the
+// live process identity or the environment ($HOME and friends) would make the verdict
+// depend on live euid / env and diverge between dry-run and runtime. The set covers
+// the os/syscall/unix uid/gid/euid/egid/groups getters, the environment readers
+// (Getenv/LookupEnv/Environ and the os.User*Dir / ExpandEnv helpers), and the os/user
+// database lookups (Current and the Lookup* family). It is a non-exhaustive
+// regression guardrail, not a completeness proof.
+func forbiddenLiveIdentityCall(pkg, fn string) bool {
+	switch pkg {
+	case "os":
+		switch fn {
+		case "Geteuid", "Getuid", "Getgid", "Getegid", "Getgroups",
+			"Getenv", "LookupEnv", "Environ", "ExpandEnv",
+			"UserHomeDir", "UserConfigDir", "UserCacheDir":
+			return true
+		}
+	case "syscall", "unix":
+		switch fn {
+		case "Geteuid", "Getuid", "Getgid", "Getegid", "Getgroups", "Environ", "Getenv":
+			return true
+		}
+	case "user":
+		return fn == "Current" || strings.HasPrefix(fn, "Lookup")
 	}
-	// Negative controls: a precomputed-identity reference must not match, and a mention
-	// of a forbidden API without a call (e.g. in a comment) must not be a false positive.
-	assert.NotRegexp(t, liveIdentityAPIs, "input.RunAsIdent.UID", "the precomputed identity reference is allowed")
-	assert.NotRegexp(t, liveIdentityAPIs, "// never call os.Getenv here", "a mention without a call is not a violation")
+	return false
+}
+
+// liveIdentityCallsIn parses Go source and returns "file:line: pkg.fn" for each
+// forbidden call it contains. It inspects the AST's call expressions only, so it is
+// immune to the false positives a raw-text scan suffers: forbidden names appearing in
+// comments or string literals (e.g. documenting that an API is forbidden) are not
+// calls and are ignored, and source formatting / line splits do not matter.
+func liveIdentityCallsIn(t *testing.T, name, src string) []string {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, name, src, 0)
+	require.NoErrorf(t, err, "parse %s", name)
+
+	var hits []string
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		if forbiddenLiveIdentityCall(pkg.Name, sel.Sel.Name) {
+			hits = append(hits, fmt.Sprintf("%s:%d: %s.%s", name, fset.Position(call.Pos()).Line, pkg.Name, sel.Sel.Name))
+		}
+		return true
+	})
+	return hits
+}
+
+// TestNoLiveIdentityInZoning is the static guard for the identity-purity contract:
+// the axis-2 classification code reads no live process identity or environment. The
+// guarded files are required to exist and be non-empty so a rename cannot void the
+// guard silently.
+func TestNoLiveIdentityInZoning(t *testing.T) {
+	// Control: a real call is flagged, while the same text in a comment and in a
+	// string literal is ignored. This proves the AST check inspects calls only -- so
+	// it cannot be vacuously defeated (a fail-open) nor false-positive on documentation.
+	control := "package p\n" +
+		"import \"os\"\n" +
+		"// os.Geteuid() in a comment must be ignored\n" +
+		"func f() { _ = \"os.Getenv() in a string\"; _ = os.Geteuid() }\n"
+	assert.Equal(t, []string{"control.go:4: os.Geteuid"}, liveIdentityCallsIn(t, "control.go", control),
+		"the AST check must flag the real call only, ignoring the comment and the string literal")
 
 	for _, path := range zoningGuardedFiles {
 		src, err := os.ReadFile(path)
 		require.NoErrorf(t, err, "guarded file must exist (a move/rename must not silently void this guard): %s", path)
 		require.NotEmptyf(t, src, "guarded file must be non-empty: %s", path)
 
-		// The pass/fail decision scans the whole file so a call split across lines
-		// cannot evade the guard; the per-line loop only collects readable locations.
-		if !liveIdentityAPIs.MatchString(string(src)) {
-			continue
-		}
-		var hits []string
-		for i, line := range strings.Split(string(src), "\n") {
-			if liveIdentityAPIs.MatchString(line) {
-				hits = append(hits, fmt.Sprintf("%s:%d: %s", path, i+1, strings.TrimSpace(line)))
-			}
-		}
-		if len(hits) == 0 {
-			hits = append(hits, fmt.Sprintf("%s: matched on whole-file scan (the call may span lines)", path))
-		}
-		assert.Failf(t, "axis-2 zoning code must not read live identity or environment",
-			"%s", strings.Join(hits, "\n"))
+		hits := liveIdentityCallsIn(t, path, string(src))
+		assert.Emptyf(t, hits, "axis-2 zoning code must not read live identity or environment:\n%s", strings.Join(hits, "\n"))
 	}
 }
