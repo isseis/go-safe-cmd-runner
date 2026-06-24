@@ -87,9 +87,10 @@ flowchart TD
 
 ### 2.1 コンポーネント配置
 
-リファクタは `internal/runner/base/security` パッケージ内に閉じる。新規 2 ファイルを追加し、抽出処理の
+本番コード（実装）のリファクタは `internal/runner/base/security` パッケージ内に閉じる。新規 2 ファイルを追加し、抽出処理の
 本体（`destination_zoning_spec.go`）を薄い意味づけへ置き換える。区分判定（`destination_zoning.go`）と
-リゾルバ（`operand_path_resolver.go`）は変更しない。
+リゾルバ（`operand_path_resolver.go`）は変更しない。唯一の例外はテストで、0142 の live-identity 静的ガードは
+`internal/runner/base/risk` パッケージにあるため、その対象ファイル集合へ新規 2 ファイルを追加する更新のみを行う（§3.3・§7）。
 
 ```mermaid
 graph TB
@@ -232,6 +233,11 @@ func parseArgs(flags []FlagSpec, args []string) ParseResult
 > （分離後続語は取らない）。例: `tar -xzf a.tar` は `-f`（値）が末尾なので次の語 `a.tar` を値に取る。`sed -ir` は省略可引数フラグ
 > `-i` がクラスタ内に来た形で、`r` は `-i` の付随値であり `-i -r` とは解さない（GNU getopt の「省略可引数は付随形のみ」に一致）。
 > この曖昧になりやすい形の解釈は `getopt_test.go` の表で固定する（AC-03/AC-06）。
+>
+> 設計上のトレードオフ: この規則は GNU getopt 準拠で確定的だが、省略可引数の短縮フラグがクラスタ内にあると残余を必ず値に
+> 取る。例えば `-o` が省略可引数・`-v` が真偽フラグのとき `-ov` は `-o -v` ではなく `-o` の値 `v` と解釈される。実 CLI で
+> この形が真に `-o -v` を意味するコマンドがあれば、`chattr` と同様に事前正規化（§3.5）で個別対応する。対象コマンドの
+> 省略可引数（`tar --one-top-level`・`sed -i`）は実 CLI と本規則が一致するため、現時点で事前正規化を要する衝突はない。
 
 ### 3.2 値内文法ヘルパ（既存・不変）
 
@@ -259,7 +265,7 @@ func parseArgs(flags []FlagSpec, args []string) ParseResult
 | `flag_spec_test.go` | 新規 | 完全性メタテスト（AC-07）・アリティ不変条件チェック・回帰代表ケース（AC-08） | |
 | `extraction_diff_test.go` | 新規 | 差分テスト: 旧実装（凍結）と新実装を生成コーパスで突き合わせ、`extraction` を全フィールド一致で検証（§7） | 挙動保存の主たる担保 |
 | `destination_zoning_test.go` | 不変 | 既存の挙動テスト（AC-09）。**期待値変更があれば本タスク不適合** | 無改変で緑が必須 |
-| `risk/live_identity_guard_test.go` | 変更（0142 既存） | 対象ファイル集合に `getopt.go`・`flag_spec.go` を追加（NF-003 静的ガードの再利用。§7） | 新規ガードは作らない |
+| `internal/runner/base/risk/live_identity_guard_test.go` | 変更（0142 既存・別パッケージ） | 対象ファイル集合に `getopt.go`・`flag_spec.go` を追加（NF-003 静的ガードの再利用。§7） | 新規ガードは作らない |
 
 ### 3.4 型関係
 
@@ -447,7 +453,7 @@ flowchart TD
   AC-09/AC-10 は例示ベースであり、未列挙の入力形は上記差分テストが補完する（残存リスクの明示）。
 - fail-closed（AC-11）: 未知/曖昧形・値欠落・必須非フラグ引数欠落・解決不能で `Recognized=false`→High 下限。
 - 静的ガード（NF-003 補助）: 新規 `getopt.go`・`flag_spec.go` を 0142 の live-identity 静的ガード
-  （`risk/live_identity_guard_test.go::TestNoLiveIdentityInZoning`）の対象ファイル集合へ**追加**する（新規ガードは作らず既存を
+  （`internal/runner/base/risk/live_identity_guard_test.go::TestNoLiveIdentityInZoning`）の対象ファイル集合へ**追加**する（新規ガードは作らず既存を
   再利用）。同ガードの禁止 API 集合（`os`/`syscall`/`unix` の uid/gid/euid/egid/groups・環境（Getenv/Environ 等）・プロセス生成
   （StartProcess/ForkExec/Exec）・live FS パス解決（filepath.Abs/EvalSymlinks/Glob）・`os/user` の Current/Lookup*）を流用し、
   `parseArgs`/`ToExtraction` が live identity・環境・非決定 API を参照しないことを機械検証する。これは best-effort な denylist で、
