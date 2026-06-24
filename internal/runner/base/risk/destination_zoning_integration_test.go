@@ -276,9 +276,6 @@ func TestDeterminismRuntimeEqualsDryRun(t *testing.T) {
 	cfg := security.DefaultConfig()
 	cfg.TrustedDirectories = []string{wd}
 
-	runtimeEv := newConfigEvaluator(cfg)
-	dryRunEv := newConfigEvaluator(cfg)
-
 	cases := []struct {
 		cmd  string
 		args []string
@@ -290,6 +287,10 @@ func TestDeterminismRuntimeEqualsDryRun(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.cmd, func(t *testing.T) {
+			// Construct fresh evaluators per case so no accumulated state can let the
+			// two stay in lockstep; each assertion compares independent constructions.
+			runtimeEv := newConfigEvaluator(cfg)
+			dryRunEv := newConfigEvaluator(cfg)
 			r, err := runtimeEv.EvaluateRisk(verifiedCmdInDir(tc.cmd, tc.args, wd))
 			require.NoError(t, err)
 			d, err := dryRunEv.EvaluateRisk(verifiedCmdInDir(tc.cmd, tc.args, wd))
