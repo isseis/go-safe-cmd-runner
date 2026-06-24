@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-06-23 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-06-24 |
+| Reviewer | isseis |
 | Comments | - |
 
 > 本書は 0142（判断軸2: 宛先パス信頼区分）で導入したオペランド抽出層の集中リファクタを扱う後続タスクの要件である。
