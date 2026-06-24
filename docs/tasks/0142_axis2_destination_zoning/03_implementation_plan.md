@@ -464,7 +464,7 @@
 
 **レビュー観点**: `securityConfig` を normal/dry-run 両経路へ同一に転送（AC-22 一貫性） / run-as 名解決失敗の fail-closed（`ZoneUnresolved` High） / `RunAsIdent` zero 値を「未設定」既定にしない（起動時 original identity 解決） / `[security] trusted_directories` の自動デコードと runner への転送経路
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
