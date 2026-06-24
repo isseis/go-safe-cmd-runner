@@ -176,7 +176,7 @@ const (
 
 // FlagSpec は 1 つの論理フラグの宣言的仕様。別名（短縮形・長形式）は Names に集約する。
 type FlagSpec struct {
-    Names     []string  // すべての表記（例: ["-t", "--target-directory"]）。Names[0] を正規キーとする
+    Names     []string  // すべての表記（例: ["-t", "--target-directory"]）。空は不可（1 要素以上）。Names[0] を正規キーとする
     Arity     FlagArity
     Recursive bool      // 再帰フラグ（例: -r/-R/-a）
     Value     ValueRole // Arity が引数付き（Required/Optional）のときの値の役割
@@ -221,6 +221,11 @@ func parseArgs(flags []FlagSpec, args []string) ParseResult
 > 決定性の制約（NF-003）: `ToExtraction` は `Values` を**正規キーの直接参照のみ**で読み、`for range` で走査しない。
 > オペランドの順序は `Positionals`（スライス）と各フラグの明示参照から決め、map の反復順に依存させない。
 > これにより `Operands`/`ReasonCodes` の順序が実行ごとに揺れない（観測可能挙動の同一性、AC-10）。
+>
+> キー参照の単一の真実源: `ToExtraction` が値を引く正規キーは、当該フラグの `FlagSpec`（の `Names[0]`）から得る。
+> 別名文字列を `ToExtraction` 側に重複してハードコードしない。これにより `Names` の並べ替えや綴り誤りで取得漏れ
+> （値＝path の取りこぼし＝fail-open 方向）が生じない。`Values` を全別名で多重登録する代わりにこの方式を採るのは、
+> 並行キーの重複保持（保守時の不整合源）を避けるためである。万一の不整合は差分テスト（§7）が検出する。
 >
 > 短縮連結中の引数付きフラグの規則: クラスタ内で引数付きフラグ（`ArityRequired`/`ArityOptional`）に達したら、その文字以降の
 > クラスタ残余をその付随値として解釈する。残余が無い場合、`ArityRequired` は次の語を値に取り、`ArityOptional` は値なしとする
@@ -429,6 +434,7 @@ flowchart TD
   `Recognized=false`（AC-04）。別名正規化で表記違いが同一結果（AC-05）。引数省略可は付随形のみ・分離後続語を
   消費しない（AC-06）。大量 argv・長い短縮連結の病的入力で線形・fail-closed を確認。
 - 完全性メタテスト／不変条件（`flag_spec_test.go`）:
+  - 全 `FlagSpec` の `Names` が 1 要素以上（空でない）こと。空だと `Names[0]` 参照でパニックするため、定義時点で機械検出する。
   - 全コマンド仕様の各引数付きフラグが `ValueRole != ValueUnset` を持つ（operand 化 or 非 path 明示）。未分類は失敗（AC-07）。
   - アリティ不変条件（§3.1）: 現行で次の語を消費するフラグが `ArityOptional` に誤分類されていないことを、旧実装の
     挙動（または明示の許可リスト）と突き合わせて検証する（C-2 の fail-open を防ぐ）。
