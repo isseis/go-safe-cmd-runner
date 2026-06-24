@@ -27,12 +27,14 @@ var zoningGuardedFiles = []string{
 }
 
 // forbiddenLiveIdentityPackage reports whether importPath is one of the packages
-// whose live-identity / environment readers are forbidden in the zoning code.
-// golang.org/x/sys/unix is matched by suffix so a vendored or differently-rooted
-// path still resolves.
+// whose live-identity / environment readers are forbidden in the zoning code, or
+// os/exec (which would let the zoning code shell out to query system state). os/exec
+// is forbidden wholesale (every function), since pure classification never executes
+// anything. golang.org/x/sys/unix is matched by suffix so a vendored or
+// differently-rooted path still resolves.
 func forbiddenLiveIdentityPackage(importPath string) bool {
 	switch importPath {
-	case "os", "syscall", "os/user":
+	case "os", "syscall", "os/user", "os/exec":
 		return true
 	}
 	return importPath == "unix" || strings.HasSuffix(importPath, "/unix")
@@ -46,11 +48,13 @@ func forbiddenLiveIdentityPackage(importPath string) bool {
 // IDs would make the verdict depend on ambient state and diverge between dry-run and
 // runtime. The set covers the os/syscall/unix uid/gid/euid/egid/groups getters, the
 // environment readers (Getenv/LookupEnv/Environ, os.ExpandEnv, os.TempDir, the
-// os.User*Dir helpers), the live working directory and process IDs (Getwd/Getpid/
-// Getppid/Gettid), and the os/user database lookups (Current and the Lookup* family).
-// Matching is by resolved import path, not local identifier, so an aliased import
-// cannot bypass it. It is a non-exhaustive regression guardrail, not a completeness
-// proof.
+// os.User*Dir helpers), live process/system state (Getwd/Getpid/Getppid/Gettid,
+// os.Hostname, os.Executable), the raw syscall entry points (Syscall/Syscall6/
+// RawSyscall/RawSyscall6, which could reach any of the above directly), the os/user
+// database lookups (Current and the Lookup* family), and any os/exec reference
+// (executing a command to query state). Matching is by resolved import path, not local
+// identifier, so an aliased import cannot bypass it. It is a non-exhaustive regression
+// guardrail, not a completeness proof.
 func forbiddenLiveIdentityRef(importPath, fn string) bool {
 	switch {
 	case importPath == "os":
@@ -58,17 +62,20 @@ func forbiddenLiveIdentityRef(importPath, fn string) bool {
 		case "Geteuid", "Getuid", "Getgid", "Getegid", "Getgroups",
 			"Getenv", "LookupEnv", "Environ", "ExpandEnv", "TempDir",
 			"UserHomeDir", "UserConfigDir", "UserCacheDir",
-			"Getwd", "Getpid", "Getppid":
+			"Getwd", "Getpid", "Getppid", "Hostname", "Executable":
 			return true
 		}
 	case importPath == "syscall" || importPath == "unix" || strings.HasSuffix(importPath, "/unix"):
 		switch fn {
 		case "Geteuid", "Getuid", "Getgid", "Getegid", "Getgroups", "Environ", "Getenv",
-			"Getwd", "Getpid", "Getppid", "Gettid":
+			"Getwd", "Getpid", "Getppid", "Gettid",
+			"Syscall", "Syscall6", "RawSyscall", "RawSyscall6":
 			return true
 		}
 	case importPath == "os/user":
 		return fn == "Current" || strings.HasPrefix(fn, "Lookup")
+	case importPath == "os/exec":
+		return true // pure classification never executes a command
 	}
 	return false
 }
@@ -171,6 +178,15 @@ func TestNoLiveIdentityInZoning(t *testing.T) {
 	valHits := liveIdentityRefsIn(t, "val.go", valCtl)
 	require.Len(t, valHits, 1)
 	assert.Contains(t, valHits[0], "os.Geteuid", "a forbidden API referenced as a value must be flagged")
+
+	// Control 4: any reference to os/exec is flagged (the whole package is forbidden;
+	// pure classification never executes a command).
+	execCtl := "package p\n" +
+		"import \"os/exec\"\n" +
+		"func e() { _ = exec.Command(\"true\") }\n"
+	execHits := liveIdentityRefsIn(t, "exec.go", execCtl)
+	require.Len(t, execHits, 1)
+	assert.Contains(t, execHits[0], "exec.Command", "any os/exec reference must be flagged")
 
 	for _, path := range zoningGuardedFiles {
 		src, err := os.ReadFile(path)
