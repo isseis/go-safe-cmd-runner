@@ -193,19 +193,19 @@ func initializeDefaultComponents(opts *runnerOptions, configSpec *runnertypes.Co
 }
 
 // createResourceManager creates a resource manager for dry-run or normal mode
-func createResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSpec, validator *security.Validator) error {
+func createResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSpec, validator *security.Validator, securityConfig *security.Config) error {
 	if opts.resourceManager != nil {
 		return nil
 	}
 	if opts.dryRun {
-		return createDryRunResourceManager(opts, opts.verificationManager, validator)
+		return createDryRunResourceManager(opts, opts.verificationManager, validator, securityConfig)
 	}
-	return createNormalResourceManager(opts, configSpec, opts.verificationManager, validator)
+	return createNormalResourceManager(opts, configSpec, opts.verificationManager, validator, securityConfig)
 }
 
 // createDryRunResourceManager creates a resource manager for dry-run mode
 // verificationManager is required (must not be nil) to ensure verification manager is properly initialized
-func createDryRunResourceManager(opts *runnerOptions, verificationManager *verification.Manager, validator *security.Validator) error {
+func createDryRunResourceManager(opts *runnerOptions, verificationManager *verification.Manager, validator *security.Validator, securityConfig *security.Config) error {
 	if verificationManager == nil {
 		return ErrVerificationManagerRequiredDryRun
 	}
@@ -225,7 +225,7 @@ func createDryRunResourceManager(opts *runnerOptions, verificationManager *verif
 		verificationManager,
 		outputMgr,
 		opts.dryRunOptions,
-		resolveRiskEvaluator(opts, verificationManager),
+		resolveRiskEvaluator(opts, verificationManager, securityConfig),
 		opts.auditLogger,
 	)
 	if err != nil {
@@ -239,18 +239,21 @@ func createDryRunResourceManager(opts *runnerOptions, verificationManager *verif
 // standard evaluator from the verification manager's analysis dependencies when
 // none was injected. Shared by the normal and dry-run paths so both modes evaluate
 // risk identically.
-func resolveRiskEvaluator(opts *runnerOptions, verificationManager *verification.Manager) risk.Evaluator {
+func resolveRiskEvaluator(opts *runnerOptions, verificationManager *verification.Manager, securityConfig *security.Config) risk.Evaluator {
 	if opts.riskEvaluator != nil {
 		return opts.riskEvaluator
 	}
 	deps := verificationManager.GetAnalysisDeps()
 	networkAnalyzer := security.NewNetworkAnalyzer(runtime.GOOS, deps)
-	return risk.NewStandardEvaluator(networkAnalyzer)
+	// securityConfig enables axis-2 destination zoning (SystemCriticalPaths /
+	// TrustedDirectories). It is passed identically on the normal and dry-run paths
+	// so both modes classify risk the same way.
+	return risk.NewStandardEvaluator(networkAnalyzer, securityConfig)
 }
 
 // createNormalResourceManager creates a resource manager for normal mode
 // verificationManager is required (must not be nil) to ensure verification manager is properly initialized
-func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec, verificationManager *verification.Manager, validator *security.Validator) error {
+func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec, verificationManager *verification.Manager, validator *security.Validator, securityConfig *security.Config) error {
 	if verificationManager == nil {
 		return ErrVerificationManagerRequiredNormal
 	}
@@ -260,7 +263,7 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 
 	outputMgr := output.NewDefaultOutputCaptureManager(validator)
 
-	evaluator := resolveRiskEvaluator(opts, verificationManager)
+	evaluator := resolveRiskEvaluator(opts, verificationManager, securityConfig)
 
 	resourceManager, err := resource.NewDefaultResourceManager(resource.Config{
 		Executor:         opts.executor,
@@ -307,6 +310,8 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 	// Transfer trusted GIDs from config spec without aliasing immutable input.
 	// On macOS, this value is ignored by platform-specific trusted group logic.
 	securityConfig.TrustedGIDs = append([]uint32(nil), configSpec.Security.TrustedGIDs...)
+	// Transfer the trusted-directory allowlist (axis-2 safe-zone anchors).
+	securityConfig.TrustedDirectories = append([]string(nil), configSpec.Security.TrustedDirectories...)
 
 	// Create validator with merged security config
 	validator, err := security.NewValidator(securityConfig, security.WithGroupMembership(gmProvider))
@@ -327,7 +332,7 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 	initializeDefaultComponents(opts, configSpec)
 
 	// Create resource manager if not provided
-	if err := createResourceManager(opts, configSpec, validator); err != nil {
+	if err := createResourceManager(opts, configSpec, validator, securityConfig); err != nil {
 		return nil, err
 	}
 

@@ -31,7 +31,7 @@ func (cleanRecordStore) LoadRecord(_ string) (*fileanalysis.Record, error) {
 
 func defaultTestEvaluator() risk.Evaluator {
 	deps := security.AnalysisDeps{RecordStore: cleanRecordStore{}}
-	return risk.NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, deps))
+	return risk.NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, deps), nil)
 }
 
 // permissiveTestEvaluator always allows commands at Low risk. It is used by

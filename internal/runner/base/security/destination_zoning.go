@@ -54,6 +54,11 @@ type ZoningInput struct {
 	OutputCriticalPathPatterns []string             // sensitive-file substrings (sensitive-source-copy floor)
 	MaxOperands                int                  // resolution-cost ceiling on operand count
 	MaxSymlinkHops             int                  // per-operand symlink-hop ceiling
+	// IdentityUnresolved marks that the command's run-as name could not be resolved
+	// to an identity. The judgment then fails closed: every operand is treated as
+	// ZoneUnresolved (write High / read Medium) rather than trusting an unknown
+	// identity to grant a safe-zone Low.
+	IdentityUnresolved bool
 }
 
 // LocationResult is the axis-2 verdict for one command.
@@ -176,6 +181,15 @@ func classifyDestinationZone(input ZoningInput, names map[string]struct{}, cmdPa
 // the per-operand audit fields.
 func (r *operandResolver) classifyOperand(idx int, op rawOperand, _ commandSpec, input ZoningInput) risktypes.OperandZone {
 	oz := risktypes.OperandZone{Index: idx, Raw: op.raw, Role: op.role}
+
+	// The run-as identity could not be resolved: without it the Trusted predicate
+	// cannot be evaluated, so fail closed to ZoneUnresolved rather than risk a
+	// spurious safe-zone Low.
+	if input.IdentityUnresolved {
+		oz.Zone = risktypes.ZoneUnresolved
+		oz.UnresolvedErr = "run-as identity unresolved"
+		return oz
+	}
 
 	base := input.EffectiveWorkDir
 	if op.base != "" {

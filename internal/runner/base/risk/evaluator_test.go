@@ -18,7 +18,7 @@ import (
 )
 
 func TestNewStandardEvaluator(t *testing.T) {
-	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
+	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}), nil)
 	require.NotNil(t, evaluator)
 	assert.IsType(t, &StandardEvaluator{}, evaluator)
 }
@@ -603,7 +603,7 @@ func TestEvaluateRisk_DynamicLoaderBlocking(t *testing.T) {
 // the executor can bind execution to that inode.
 func TestEvaluateRisk_AllowedPlanCarriesVerifiedFd(t *testing.T) {
 	// Use the real opener (default), so a real on-disk file is required.
-	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{RecordStore: fakeRecordStore{}}))
+	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{RecordStore: fakeRecordStore{}}), nil)
 
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "tool")

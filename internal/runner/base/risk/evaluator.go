@@ -29,11 +29,11 @@ type identityOpener func(cmd *runnertypes.RuntimeCommand) (*risktypes.VerifiedId
 
 // zoningParams holds the precomputed, command-independent inputs for the axis-2
 // destination-zoning dispatch. It is an injectable field on StandardEvaluator
-// (nil = axis 2 disabled, the default until the production wiring populates it):
-// while nil the evaluator keeps the legacy destructive classification unchanged.
-// It is a dedicated struct rather than a raw *security.Config so this phase does
-// not depend on the config-field additions made by a later phase; the production
-// wiring later fills it from the security config plus the resolved run-as identity.
+// (nil = axis 2 disabled): while nil the evaluator keeps the legacy destructive
+// classification unchanged. It is a dedicated struct rather than a raw
+// *security.Config so a command's per-command run-as identity (resolved at
+// dispatch time) does not belong here; runAsIdent is the DEFAULT identity used
+// when a command sets no run-as (the original execution identity, resolved once).
 type zoningParams struct {
 	systemCriticalPaths        []string
 	trustedDirectories         []string
@@ -41,6 +41,13 @@ type zoningParams struct {
 	dedicatedTempDir           string
 	runAsIdent                 risktypes.RunAsIdent
 }
+
+// runAsResolver resolves a run-as user/group name pair to the identity used by the
+// Trusted predicate. It is an injectable field (default: os/user based) so tests
+// can supply an identity differing from the live euid, proving the judgment never
+// reads live identity. An empty user and group means "no run-as": the caller uses
+// the default identity instead of calling this.
+type runAsResolver func(user, group string) (risktypes.RunAsIdent, error)
 
 // maxZoningOperands bounds the operands resolved per command (cost ceiling); an
 // invocation with more fails closed rather than walking the filesystem
@@ -51,18 +58,36 @@ const maxZoningOperands = 64
 type StandardEvaluator struct {
 	networkAnalyzer *security.NetworkAnalyzer
 	openIdentity    identityOpener
-	// zoning is the injectable axis-2 input (nil = disabled). Populated by tests in
-	// this phase and by the production wiring later (same injection style as
-	// openIdentity).
+	// zoning is the injectable axis-2 input (nil = disabled). Populated from the
+	// security config by NewStandardEvaluator, or directly by tests.
 	zoning *zoningParams
+	// resolveRunAs resolves a command's run-as user/group to an identity (default:
+	// os/user based; overridable in tests). Always set so a command with a run-as
+	// can be resolved even when zoning was injected directly.
+	resolveRunAs runAsResolver
 }
 
-// NewStandardEvaluator creates a new standard risk evaluator with a prebuilt network analyzer.
-func NewStandardEvaluator(networkAnalyzer *security.NetworkAnalyzer) Evaluator {
-	return &StandardEvaluator{
+// NewStandardEvaluator creates a new standard risk evaluator. securityConfig
+// enables axis-2 destination zoning (its SystemCriticalPaths / TrustedDirectories
+// / OutputCriticalPathPatterns drive the classification); pass nil to disable
+// axis 2 (legacy behavior). When enabled, the default run-as identity (used for
+// commands without a run_as_user) is the original execution identity, resolved
+// once here -- the zoning judgment itself never reads live identity.
+func NewStandardEvaluator(networkAnalyzer *security.NetworkAnalyzer, securityConfig *security.Config) Evaluator {
+	e := &StandardEvaluator{
 		networkAnalyzer: networkAnalyzer,
 		openIdentity:    openVerifiedIdentity,
+		resolveRunAs:    resolveRunAsIdent,
 	}
+	if securityConfig != nil {
+		e.zoning = &zoningParams{
+			systemCriticalPaths:        securityConfig.SystemCriticalPaths,
+			trustedDirectories:         securityConfig.TrustedDirectories,
+			outputCriticalPathPatterns: securityConfig.OutputCriticalPathPatterns,
+			runAsIdent:                 originalExecutionIdentity(),
+		}
+	}
+	return e
 }
 
 // EvaluateRisk analyzes a command and returns a VerifiedCommandPlan whose
@@ -364,15 +389,35 @@ func foldZoning(a *risktypes.RiskAssessment, zone security.LocationResult) {
 }
 
 // zoningInput assembles the per-command axis-2 input from the injected,
-// command-independent zoning parameters plus this command's working directory.
+// command-independent zoning parameters plus this command's working directory and
+// run-as identity. A command's run_as_user/group is resolved here (the embedding
+// layer); the zoning judgment receives only the precomputed identity. If the
+// run-as name cannot be resolved, IdentityUnresolved is set so the judgment fails
+// closed (every operand ZoneUnresolved) rather than trusting an unknown identity.
 func (e *StandardEvaluator) zoningInput(cmd *runnertypes.RuntimeCommand) security.ZoningInput {
 	z := e.zoning
+	ident := z.runAsIdent // default: the original execution identity (run-as unset)
+	identUnresolved := false
+	// cmd.RunAsUser/RunAsGroup require a non-nil Spec (always set in production via
+	// NewRuntimeCommand). Guard so a Spec-less command falls back to the default
+	// identity rather than panicking.
+	if cmd.Spec != nil {
+		if u, g := cmd.RunAsUser(), cmd.RunAsGroup(); u != "" || g != "" {
+			resolved, err := e.resolveRunAs(u, g)
+			if err != nil {
+				identUnresolved = true
+			} else {
+				ident = resolved
+			}
+		}
+	}
 	return security.ZoningInput{
 		EffectiveWorkDir:           cmd.EffectiveWorkDir,
 		DedicatedTempDir:           z.dedicatedTempDir,
 		SystemCriticalPaths:        z.systemCriticalPaths,
 		TrustedDirectories:         z.trustedDirectories,
-		RunAsIdent:                 z.runAsIdent,
+		RunAsIdent:                 ident,
+		IdentityUnresolved:         identUnresolved,
 		OutputCriticalPathPatterns: z.outputCriticalPathPatterns,
 		MaxOperands:                maxZoningOperands,
 		MaxSymlinkHops:             security.MaxSymlinkDepth,

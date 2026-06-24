@@ -3,12 +3,14 @@
 package risk
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -179,4 +181,80 @@ func TestOperandZonesStored(t *testing.T) {
 	// A non-file-operation command does not apply axis 2: empty carrier.
 	nb := evalAssessInDir(t, ev, "systemctl", []string{"status", "nginx"}, wd)
 	assert.Empty(t, nb.OperandZones, "axis 2 did not apply -> empty carrier")
+}
+
+// TestConfigWiredEndToEnd: an evaluator built through the production
+// NewStandardEvaluator(networkAnalyzer, securityConfig) path classifies file
+// operations by zone, proving the security config's SystemCriticalPaths reach the
+// axis-2 judgment (not only the directly-injected zoningParams used by other
+// tests). With no run_as set, the default identity is the original execution
+// identity, so a trust-critical write is High regardless of the live euid.
+func TestConfigWiredEndToEnd(t *testing.T) {
+	wd := filepath.Join(t.TempDir(), "work")
+	require.NoError(t, os.MkdirAll(wd, 0o700))
+	cfg := security.DefaultConfig()
+	cfg.TrustedDirectories = []string{wd}
+	ev := newConfigEvaluator(cfg)
+
+	assert.Equal(t, runnertypes.RiskLevelHigh,
+		evalLevelInDir(t, ev, "touch", []string{"/usr/bin/x"}, wd),
+		"a system-critical write from config is High")
+	assert.Equal(t, runnertypes.RiskLevelMedium,
+		evalLevelInDir(t, ev, "touch", []string{"/srv/app/x"}, wd),
+		"an ordinary write is Medium")
+}
+
+// evalLevelRunAs evaluates a command whose run_as_user is set, so the evaluator
+// resolves a per-command run-as identity via its (injectable) resolveRunAs.
+func evalLevelRunAs(t *testing.T, ev Evaluator, cmd string, args []string, workdir, runAsUser string) runnertypes.RiskLevel {
+	t.Helper()
+	plan, err := ev.EvaluateRisk(verifiedCmdRunAs(cmd, args, workdir, runAsUser))
+	require.NoError(t, err)
+	assert.False(t, plan.Assessment.Blocking, "command %q must not be Blocking", cmd)
+	return plan.Assessment.Level
+}
+
+// TestRunAsIdentDifferential: the safe-zone Trusted predicate follows the
+// per-command run-as identity resolved at dispatch, NOT the live euid. With the
+// SAME live euid across both evaluations, a foreign identity (which does not own
+// the safe-zone's ancestors) yields Trusted/Low, while the real owner identity
+// yields non-Trusted/Medium. This also proves TrustedDirectories from config
+// reaches the judgment (Low requires the destination be within a trusted dir).
+func TestRunAsIdentDifferential(t *testing.T) {
+	wd := filepath.Join(t.TempDir(), "work")
+	require.NoError(t, os.MkdirAll(wd, 0o700))
+	cfg := security.DefaultConfig()
+	cfg.TrustedDirectories = []string{wd}
+	ev := newConfigEvaluator(cfg)
+
+	foreign := risktypes.RunAsIdent{UID: uint32(os.Geteuid()) + 1, GID: uint32(os.Getgid()) + 1}
+	self := risktypes.RunAsIdent{UID: uint32(os.Geteuid()), GID: uint32(os.Getgid())}
+
+	ev.resolveRunAs = func(_, _ string) (risktypes.RunAsIdent, error) { return foreign, nil }
+	assert.Equal(t, runnertypes.RiskLevelLow,
+		evalLevelRunAs(t, ev, "touch", []string{filepath.Join(wd, "x")}, wd, "someuser"),
+		"a foreign run-as that cannot reach the safe-zone's ancestors is Trusted -> Low")
+
+	ev.resolveRunAs = func(_, _ string) (risktypes.RunAsIdent, error) { return self, nil }
+	assert.Equal(t, runnertypes.RiskLevelMedium,
+		evalLevelRunAs(t, ev, "touch", []string{filepath.Join(wd, "x")}, wd, "someuser"),
+		"the safe-zone owner is not Trusted -> Medium (verdict followed the injected identity, not the live euid)")
+}
+
+// TestRunAsResolutionFailsClosed: when a command's run-as name cannot be resolved,
+// the judgment fails closed -- every operand is treated as unresolved, so a write
+// is High rather than trusting an unknown identity.
+func TestRunAsResolutionFailsClosed(t *testing.T) {
+	wd := filepath.Join(t.TempDir(), "work")
+	require.NoError(t, os.MkdirAll(wd, 0o700))
+	cfg := security.DefaultConfig()
+	cfg.TrustedDirectories = []string{wd}
+	ev := newConfigEvaluator(cfg)
+
+	ev.resolveRunAs = func(_, _ string) (risktypes.RunAsIdent, error) {
+		return risktypes.RunAsIdent{}, errors.New("unknown user")
+	}
+	assert.Equal(t, runnertypes.RiskLevelHigh,
+		evalLevelRunAs(t, ev, "touch", []string{filepath.Join(wd, "x")}, wd, "ghost"),
+		"an unresolved run-as identity fails closed -> the write is High")
 }
