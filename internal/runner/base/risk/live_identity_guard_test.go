@@ -38,17 +38,17 @@ func forbiddenLiveIdentityPackage(importPath string) bool {
 	return importPath == "unix" || strings.HasSuffix(importPath, "/unix")
 }
 
-// forbiddenLiveIdentityCall reports whether importPath.fn is a live-identity or
-// ambient-environment read that the axis-2 zoning code must never call: the judgment
-// consumes only the precomputed RunAsIdent injected at construction, so reading the
-// live process identity or the environment ($HOME and friends) would make the verdict
-// depend on live euid / env and diverge between dry-run and runtime. The set covers
-// the os/syscall/unix uid/gid/euid/egid/groups getters, the environment readers
-// (Getenv/LookupEnv/Environ and the os.User*Dir / ExpandEnv helpers), and the os/user
-// database lookups (Current and the Lookup* family). Matching is by resolved import
-// path, not local identifier, so an aliased import cannot bypass it. It is a
+// forbiddenLiveIdentityRef reports whether importPath.fn is a live-identity or
+// ambient-environment read that the axis-2 zoning code must never reference: the
+// judgment consumes only the precomputed RunAsIdent injected at construction, so
+// reading the live process identity or the environment ($HOME and friends) would make
+// the verdict depend on live euid / env and diverge between dry-run and runtime. The
+// set covers the os/syscall/unix uid/gid/euid/egid/groups getters, the environment
+// readers (Getenv/LookupEnv/Environ and the os.User*Dir / ExpandEnv helpers), and the
+// os/user database lookups (Current and the Lookup* family). Matching is by resolved
+// import path, not local identifier, so an aliased import cannot bypass it. It is a
 // non-exhaustive regression guardrail, not a completeness proof.
-func forbiddenLiveIdentityCall(importPath, fn string) bool {
+func forbiddenLiveIdentityRef(importPath, fn string) bool {
 	switch {
 	case importPath == "os":
 		switch fn {
@@ -68,15 +68,18 @@ func forbiddenLiveIdentityCall(importPath, fn string) bool {
 	return false
 }
 
-// liveIdentityCallsIn parses Go source and returns "file:line: detail" for each
-// forbidden call (or forbidden dot-import) it contains. It inspects the AST's call
-// expressions only, so forbidden names appearing in comments or string literals are
-// ignored, and formatting / line splits do not matter. Each selector's local package
-// identifier is resolved to its import path via the file's import declarations, so an
-// aliased import (import myos "os"; myos.Getenv()) cannot bypass the guard. A dot
-// import of a forbidden package is itself reported, since it would make the calls
-// unqualified and defeat selector-based detection.
-func liveIdentityCallsIn(t *testing.T, name, src string) []string {
+// liveIdentityRefsIn parses Go source and returns "file:line: detail" for each
+// forbidden reference (or forbidden dot-import) it contains. It inspects every
+// selector expression in the AST -- not just call expressions -- so a forbidden API
+// taken as a value (fn := os.Geteuid; fn()) or passed as an argument is caught, not
+// only a direct call. Because it walks the AST, forbidden names appearing in comments
+// or string literals are not selector nodes and are ignored, and formatting / line
+// splits do not matter. Each selector's local package identifier is resolved to its
+// import path via the file's import declarations, so an aliased import
+// (import myos "os"; myos.Getenv()) cannot bypass the guard. A dot import of a
+// forbidden package is itself reported, since it would make references unqualified and
+// defeat selector-based detection.
+func liveIdentityRefsIn(t *testing.T, name, src string) []string {
 	t.Helper()
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, name, src, 0)
@@ -96,8 +99,9 @@ func liveIdentityCallsIn(t *testing.T, name, src string) []string {
 			local = imp.Name.Name
 		}
 		if local == "." {
-			// A dot import makes the package's functions callable unqualified, which
-			// selector inspection cannot see; for a forbidden package that is a bypass.
+			// A dot import makes the package's functions referenceable unqualified,
+			// which selector inspection cannot see; for a forbidden package that is a
+			// bypass.
 			if forbiddenLiveIdentityPackage(path) {
 				hits = append(hits, fmt.Sprintf("%s:%d: dot-import of %q defeats the guard", name, fset.Position(imp.Pos()).Line, path))
 			}
@@ -107,11 +111,7 @@ func liveIdentityCallsIn(t *testing.T, name, src string) []string {
 	}
 
 	ast.Inspect(file, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
+		sel, ok := n.(*ast.SelectorExpr)
 		if !ok {
 			return true
 		}
@@ -123,8 +123,8 @@ func liveIdentityCallsIn(t *testing.T, name, src string) []string {
 		if !ok {
 			importPath = pkg.Name // not an imported package; fall back to the identifier
 		}
-		if forbiddenLiveIdentityCall(importPath, sel.Sel.Name) {
-			hits = append(hits, fmt.Sprintf("%s:%d: %s.%s", name, fset.Position(call.Pos()).Line, pkg.Name, sel.Sel.Name))
+		if forbiddenLiveIdentityRef(importPath, sel.Sel.Name) {
+			hits = append(hits, fmt.Sprintf("%s:%d: %s.%s", name, fset.Position(sel.Pos()).Line, pkg.Name, sel.Sel.Name))
 		}
 		return true
 	})
@@ -138,7 +138,7 @@ func liveIdentityCallsIn(t *testing.T, name, src string) []string {
 func TestNoLiveIdentityInZoning(t *testing.T) {
 	// Control 1: an aliased forbidden import is still detected (matching is by import
 	// path, not local name), while the same text in a comment and a string literal is
-	// ignored and a non-forbidden call (strings) is not flagged.
+	// ignored and a non-forbidden reference (strings) is not flagged.
 	aliasCtl := "package p\n" + // 1
 		"import (\n" + // 2
 		"\tmyos \"os\"\n" + // 3
@@ -146,24 +146,33 @@ func TestNoLiveIdentityInZoning(t *testing.T) {
 		")\n" + // 5
 		"// myos.Geteuid() in a comment must be ignored\n" + // 6
 		"func f() string { _ = \"myos.Getenv() in a string\"; _ = myos.Geteuid(); return strings.TrimSpace(\"x\") }\n" // 7
-	assert.Equal(t, []string{"alias.go:7: myos.Geteuid"}, liveIdentityCallsIn(t, "alias.go", aliasCtl),
-		"the AST check must resolve the alias to os and flag the call only, ignoring the comment, the string, and strings.TrimSpace")
+	assert.Equal(t, []string{"alias.go:7: myos.Geteuid"}, liveIdentityRefsIn(t, "alias.go", aliasCtl),
+		"the check must resolve the alias to os and flag the reference only, ignoring the comment, the string, and strings.TrimSpace")
 
 	// Control 2: a dot import of a forbidden package is reported (it would make the
-	// calls unqualified and bypass selector detection).
+	// references unqualified and bypass selector detection).
 	dotCtl := "package p\n" +
 		"import . \"os\"\n" +
 		"func g() { _ = Geteuid() }\n"
-	dotHits := liveIdentityCallsIn(t, "dot.go", dotCtl)
+	dotHits := liveIdentityRefsIn(t, "dot.go", dotCtl)
 	require.Len(t, dotHits, 1)
 	assert.Contains(t, dotHits[0], "dot-import", "a dot import of a forbidden package must be flagged")
+
+	// Control 3: a forbidden API taken as a value (not directly called) is flagged --
+	// inspecting selector expressions, not only calls, closes the fn := os.Geteuid bypass.
+	valCtl := "package p\n" +
+		"import \"os\"\n" +
+		"func h() func() int { return os.Geteuid }\n"
+	valHits := liveIdentityRefsIn(t, "val.go", valCtl)
+	require.Len(t, valHits, 1)
+	assert.Contains(t, valHits[0], "os.Geteuid", "a forbidden API referenced as a value must be flagged")
 
 	for _, path := range zoningGuardedFiles {
 		src, err := os.ReadFile(path)
 		require.NoErrorf(t, err, "guarded file must exist (a move/rename must not silently void this guard): %s", path)
 		require.NotEmptyf(t, src, "guarded file must be non-empty: %s", path)
 
-		hits := liveIdentityCallsIn(t, path, string(src))
+		hits := liveIdentityRefsIn(t, path, string(src))
 		assert.Emptyf(t, hits, "axis-2 zoning code must not read live identity or environment:\n%s", strings.Join(hits, "\n"))
 	}
 }
