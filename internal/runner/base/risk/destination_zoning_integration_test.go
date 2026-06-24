@@ -230,12 +230,12 @@ func TestRunAsIdentDifferential(t *testing.T) {
 	foreign := risktypes.RunAsIdent{UID: uint32(os.Geteuid()) + 1, GID: uint32(os.Getgid()) + 1}
 	self := risktypes.RunAsIdent{UID: uint32(os.Geteuid()), GID: uint32(os.Getgid())}
 
-	ev.resolveRunAs = func(_, _ string) (risktypes.RunAsIdent, error) { return foreign, nil }
+	ev.resolveRunAs = func(_ risktypes.RunAsIdent, _, _ string) (risktypes.RunAsIdent, error) { return foreign, nil }
 	assert.Equal(t, runnertypes.RiskLevelLow,
 		evalLevelRunAs(t, ev, "touch", []string{filepath.Join(wd, "x")}, wd, "someuser"),
 		"a foreign run-as that cannot reach the safe-zone's ancestors is Trusted -> Low")
 
-	ev.resolveRunAs = func(_, _ string) (risktypes.RunAsIdent, error) { return self, nil }
+	ev.resolveRunAs = func(_ risktypes.RunAsIdent, _, _ string) (risktypes.RunAsIdent, error) { return self, nil }
 	assert.Equal(t, runnertypes.RiskLevelMedium,
 		evalLevelRunAs(t, ev, "touch", []string{filepath.Join(wd, "x")}, wd, "someuser"),
 		"the safe-zone owner is not Trusted -> Medium (verdict followed the injected identity, not the live euid)")
@@ -251,7 +251,7 @@ func TestRunAsResolutionFailsClosed(t *testing.T) {
 	cfg.TrustedDirectories = []string{wd}
 	ev := newConfigEvaluator(cfg)
 
-	ev.resolveRunAs = func(_, _ string) (risktypes.RunAsIdent, error) {
+	ev.resolveRunAs = func(_ risktypes.RunAsIdent, _, _ string) (risktypes.RunAsIdent, error) {
 		return risktypes.RunAsIdent{}, errors.New("unknown user")
 	}
 	assert.Equal(t, runnertypes.RiskLevelHigh,

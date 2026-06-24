@@ -656,6 +656,9 @@ type SecuritySpec struct {
   同質の純解決で、テストが任意の identity を注入できるようリスク評価ロジックの注入可能フィールドとして持つ（既存の
   `openIdentity` フィールドと同じ注入パターン）。`ClassifyDestinationZone` 以下は live identity API
   （`os.Geteuid`/`os.Getuid`/`syscall`/`unix` の uid/gid/groups・`user.Current`）を読まない。
+  解決器（`resolveRunAsIdent`）には**構築時に一度だけ確定した base identity を引数で渡す**。group 単独形（user 名なし）は
+  base の uid/補助 group を保持し gid のみ上書きするため、base を渡さず解決時にプロセス identity を再読すると live 依存に
+  なってしまう。base を渡すことで解決時に live identity を読まないことを保証する（決定性・AC-22 とも整合）。
   - **run-as 未設定時の `RunAsIdent`（既定経路の確定）**: `RunAsUser()`/`RunAsGroup()` は未設定時に空文字を返す
     （大多数のコマンドはこの形）。空のとき `RunAsIdent` は **runner が起動時に確定した original 実行 identity** を
     **注入時に一度だけ**解決して用いる。具体的には `NewStandardEvaluator`（`runner.go` から起動時に呼ばれる）の中で

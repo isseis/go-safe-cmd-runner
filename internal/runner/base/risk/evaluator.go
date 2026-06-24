@@ -43,11 +43,15 @@ type zoningParams struct {
 }
 
 // runAsResolver resolves a run-as user/group name pair to the identity used by the
-// Trusted predicate. It is an injectable field (default: os/user based) so tests
-// can supply an identity differing from the live euid, proving the judgment never
-// reads live identity. An empty user and group means "no run-as": the caller uses
-// the default identity instead of calling this.
-type runAsResolver func(user, group string) (risktypes.RunAsIdent, error)
+// Trusted predicate, starting from a precomputed base identity (the default
+// execution identity captured once at construction). It is an injectable field
+// (default: os/user based) so tests can supply an identity differing from the live
+// euid, proving the judgment never reads live identity. Passing the base in (rather
+// than re-reading the process) keeps the group-only form (which keeps the base
+// uid/groups) from depending on live process identity at evaluation time. An empty
+// user and group means "no run-as": the caller uses the base identity directly
+// instead of calling this.
+type runAsResolver func(base risktypes.RunAsIdent, user, group string) (risktypes.RunAsIdent, error)
 
 // maxZoningOperands bounds the operands resolved per command (cost ceiling); an
 // invocation with more fails closed rather than walking the filesystem
@@ -403,7 +407,7 @@ func (e *StandardEvaluator) zoningInput(cmd *runnertypes.RuntimeCommand) securit
 	// identity rather than panicking.
 	if cmd.Spec != nil {
 		if u, g := cmd.RunAsUser(), cmd.RunAsGroup(); u != "" || g != "" {
-			resolved, err := e.resolveRunAs(u, g)
+			resolved, err := e.resolveRunAs(ident, u, g)
 			if err != nil {
 				identUnresolved = true
 			} else {

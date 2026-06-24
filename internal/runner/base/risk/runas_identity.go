@@ -38,15 +38,18 @@ func originalExecutionIdentity() risktypes.RunAsIdent {
 }
 
 // resolveRunAsIdent resolves a run-as user/group name pair to a RunAsIdent via the
-// OS user database (the same lookups the privilege manager uses). It is the
-// production runAsResolver. A failure (unknown user or group) is returned so the
-// caller fails closed rather than trusting an unresolved identity.
+// OS user database (the same lookups the privilege manager uses), starting from the
+// given base identity. It is the production runAsResolver. A failure (unknown user
+// or group) is returned so the caller fails closed rather than trusting an
+// unresolved identity.
 //
 // Forms: user only -> the user's uid/primary gid/supplementary groups; group only
-// -> the current identity with the gid overridden; both -> the user's identity
-// with the gid overridden by the named group.
-func resolveRunAsIdent(userName, groupName string) (risktypes.RunAsIdent, error) {
-	ident := originalExecutionIdentity()
+// -> the base identity with the gid overridden; both -> the user's identity with
+// the gid overridden by the named group. The base is passed in (the default
+// identity captured once at construction) so the group-only form does not re-read
+// live process identity at evaluation time.
+func resolveRunAsIdent(base risktypes.RunAsIdent, userName, groupName string) (risktypes.RunAsIdent, error) {
+	ident := base
 
 	if userName != "" {
 		u, err := user.Lookup(userName)
