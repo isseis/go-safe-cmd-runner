@@ -898,6 +898,13 @@ func extractCurl(args []string) extraction {
 		// -O writes a file named from the URL into the working directory.
 		ext.operands = append(ext.operands, rawOperand{raw: ".", role: risktypes.OperandRoleWrite})
 	}
+	// An uploaded local file (-T/--upload-file) is a read source, so a sensitive
+	// upload is detected and audited (parity with scp/rsync).
+	for _, up := range append(append([]string{}, captured["-T"]...), captured["--upload-file"]...) {
+		if up != "" && up != "-" {
+			ext.operands = append(ext.operands, rawOperand{raw: up, role: risktypes.OperandRoleRead})
+		}
+	}
 	_ = pos // URL positionals are remote read sources (egress via the profile).
 	return ext
 }
@@ -925,6 +932,13 @@ func extractWget(args []string) extraction {
 	default:
 		// wget writes the URL basename into the working directory by default.
 		ext.operands = append(ext.operands, rawOperand{raw: ".", role: risktypes.OperandRoleWrite})
+	}
+	// An uploaded local file (--post-file) is a read source (sensitive-upload
+	// detection + audit), parity with scp/rsync.
+	for _, up := range captured["--post-file"] {
+		if up != "" && up != "-" {
+			ext.operands = append(ext.operands, rawOperand{raw: up, role: risktypes.OperandRoleRead})
+		}
 	}
 	_ = pos
 	return ext
