@@ -410,7 +410,7 @@
 **レビュー観点**: Medium の出所表明（既存 network profile Medium と区別、canary 偽陽性回避） / `host::module` 検出の rsync 限定（`std::string`／`HTTP::Tiny` 等の過剰分類回避） / 純ローカル rsync の非昇格 / 名前下限と書込先パス信頼区分の max 合成
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/785）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
