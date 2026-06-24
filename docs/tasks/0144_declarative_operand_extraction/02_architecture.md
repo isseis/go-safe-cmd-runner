@@ -268,7 +268,7 @@ func parseArgs(flags []FlagSpec, args []string) ParseResult
 | `operand_path_resolver.go` | 不変 | パス解決・Trusted 述語 | 本タスク対象外（0142 PR-2 で確定） |
 | `getopt_test.go` | 新規 | 単一パーサの表駆動テスト（AC-03〜AC-06）・大入力/長連結の病的ケース | |
 | `flag_spec_test.go` | 新規 | 完全性メタテスト（AC-07）・アリティ不変条件チェック・回帰代表ケース（AC-08） | |
-| `extraction_diff_test.go` | 新規 | 差分テスト: 旧実装（凍結）と新実装を生成コーパスで突き合わせ、`extraction` を全フィールド一致で検証（§7） | 挙動保存の主たる担保 |
+| `extraction_diff_test.go` | 新規 | 差分テスト: 旧実装（凍結）と新実装を生成コーパスで突き合わせ、`extraction` を `reflect.DeepEqual` で構造体全体一致検証（§7） | 挙動保存の主たる担保 |
 | `destination_zoning_test.go` | 不変 | 既存の挙動テスト（AC-09）。**期待値変更があれば本タスク不適合** | 無改変で緑が必須 |
 | `internal/runner/base/risk/live_identity_guard_test.go` | 変更（0142 既存・別パッケージ） | 対象ファイル集合に `getopt.go`・`flag_spec.go` を追加（NF-003 静的ガードの再利用。§7） | 新規ガードは作らない |
 
@@ -439,8 +439,9 @@ flowchart TD
 - 差分テスト（`extraction_diff_test.go`, 挙動保存の主担保）: 旧実装（個別抽出処理）をビルドタグまたは凍結コピーで
   残し、各コマンド×{各フラグの全形: `-x` / `-x=v` / `-xv` / `-x v` / 連結 / `--long` / `--long=v` / 引数省略可の付随形・分離形 /
   `--` / 先頭 `-` / 空語 / 重複フラグ}＋少量のファズ argv の生成コーパスで、`old.extract(argv)` と新実装の `extraction` を
-  **全フィールド一致**（`recognized`/`recursive`/`grantsPermission`/`preserveMeta`/`umountAll`/`remoteEgress`/operand の順序・
-  role・base）で照合する。getopt 非適合（dd・chattr）の異常形（`dd if=` 欠落、`chattr +i` 等）もコーパスに含める。
+  `reflect.DeepEqual` で**構造体全体**（`applies` を含む全 8 フィールド・operand の順序/role/base）一致比較する（個別列挙だと
+  `applies` 等の取りこぼしや将来追加の漏れが起きるため構造体まるごと比較する）。getopt 非適合（dd・chattr）の異常形
+  （`dd if=` 欠落、`chattr +i` 等）もコーパスに含める。
   この差分が緑であることを各コマンド移行のゲートとする（§8）。
 - 単体（単一パーサ, `getopt_test.go`）: 表駆動で全フラグ形式を網羅（AC-03）。語を暗黙に捨てない・未知/欠落で
   `Recognized=false`（AC-04）。別名正規化で表記違いが同一結果（AC-05）。引数省略可は付随形のみ・分離後続語を
