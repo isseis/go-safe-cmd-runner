@@ -258,3 +258,44 @@ func TestRunAsResolutionFailsClosed(t *testing.T) {
 		evalLevelRunAs(t, ev, "touch", []string{filepath.Join(wd, "x")}, wd, "ghost"),
 		"an unresolved run-as identity fails closed -> the write is High")
 }
+
+// TestDeterminismRuntimeEqualsDryRun: the zoning judgment is a pure function of the
+// command, the filesystem state, and the injected config/identity -- so the normal
+// (runtime) and dry-run paths, which build the evaluator identically via
+// resolveRiskEvaluator(securityConfig), return the same risk level, reason codes,
+// and per-operand zones. The result also does not depend on the $HOME env, which is
+// changed between the two evaluator constructions to prove it is not read.
+func TestDeterminismRuntimeEqualsDryRun(t *testing.T) {
+	wd := filepath.Join(t.TempDir(), "work")
+	require.NoError(t, os.MkdirAll(filepath.Join(wd, "build"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(wd, "src"), nil, 0o644))
+	cfg := security.DefaultConfig()
+	cfg.TrustedDirectories = []string{wd}
+
+	// Two evaluators standing in for the runtime and dry-run paths; both paths
+	// construct the evaluator the same way (P6 threads securityConfig identically).
+	runtimeEv := newConfigEvaluator(cfg)
+	t.Setenv("HOME", "/nonexistent-home-should-be-ignored")
+	dryRunEv := newConfigEvaluator(cfg)
+
+	cases := []struct {
+		cmd  string
+		args []string
+	}{
+		{"rm", []string{"-rf", filepath.Join(wd, "build")}},                        // safe-zone Low
+		{"cp", []string{"-a", filepath.Join(wd, "src"), "/usr/bin"}},               // trust-critical High
+		{"touch", []string{"/srv/app/x"}},                                          // ordinary Medium
+		{"curl", []string{"http://example.com/f", "-o", filepath.Join(wd, "out")}}, // egress Medium
+	}
+	for _, tc := range cases {
+		t.Run(tc.cmd, func(t *testing.T) {
+			r, err := runtimeEv.EvaluateRisk(verifiedCmdInDir(tc.cmd, tc.args, wd))
+			require.NoError(t, err)
+			d, err := dryRunEv.EvaluateRisk(verifiedCmdInDir(tc.cmd, tc.args, wd))
+			require.NoError(t, err)
+			assert.Equal(t, r.Assessment.Level, d.Assessment.Level, "level must be identical on both paths")
+			assert.Equal(t, r.Assessment.ReasonCodes, d.Assessment.ReasonCodes, "reason codes must be identical")
+			assert.Equal(t, r.Assessment.OperandZones, d.Assessment.OperandZones, "per-operand zones must be identical")
+		})
+	}
+}

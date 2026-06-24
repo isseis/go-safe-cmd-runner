@@ -674,3 +674,25 @@ func TestOperandZones_EmptyVsUnresolved(t *testing.T) {
 	assert.Equal(t, "/etc/shadow", src.Resolved)
 	assert.Equal(t, risktypes.ZoneTrustCritical, src.Zone)
 }
+
+// TestResolutionCeiling: the operand-count ceiling fails closed -- a command with
+// more operands than MaxOperands is forced to High and not Recognized rather than
+// walking the filesystem unboundedly (DoS guard on the ExecuteCommand hot path).
+// The companion symlink-hop ceiling is covered by TestResolveOperandPath_DepthExceeded
+// and TestResolveOperandPath_Cycle.
+func TestResolutionCeiling(t *testing.T) {
+	in := zoningInput(zoningWorkdir(t), foreignIdent())
+	in.MaxOperands = 2
+
+	over := classify(in, "rm", "/srv/a", "/srv/b", "/srv/c")
+	assert.Equal(t, runnertypes.RiskLevelHigh, over.Level, "exceeding the operand ceiling fails closed to High")
+	assert.False(t, over.Recognized, "an over-ceiling command is not fully recognized")
+	assert.Contains(t, over.ReasonCodes, risktypes.ReasonUnresolvedDestination)
+	assert.Empty(t, over.Operands, "the ceiling short-circuits before per-operand resolution")
+
+	// At the ceiling the same command classifies normally (the ceiling does not
+	// itself force High): two ordinary deletes are Medium and Recognized.
+	within := classify(in, "rm", "/srv/a", "/srv/b")
+	assert.Equal(t, runnertypes.RiskLevelMedium, within.Level, "within the ceiling, ordinary deletes are Medium")
+	assert.True(t, within.Recognized)
+}
