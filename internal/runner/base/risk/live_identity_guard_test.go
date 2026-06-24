@@ -59,7 +59,10 @@ func forbiddenLiveIdentityPackage(importPath string) bool {
 // path/filepath helpers that touch the live filesystem or CWD (Abs/EvalSymlinks/Glob;
 // the pure helpers Join/Clean/... stay allowed). Matching is by resolved import path, not local
 // identifier, so an aliased import cannot bypass it. It is a non-exhaustive regression
-// guardrail, not a completeness proof.
+// guardrail, not a completeness proof: this set is intentionally frozen (the authoritative
+// guarantee is the behavioral tests TestDeterminismRuntimeEqualsDryRun and
+// TestRunAsIdentDifferential). Add an entry only for a genuinely new bypass class, not for
+// one-more-API within a covered category.
 func forbiddenLiveIdentityRef(importPath, fn string) bool {
 	switch {
 	case importPath == "os":
