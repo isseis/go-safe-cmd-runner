@@ -138,7 +138,7 @@ sequenceDiagram
     alt 未知フラグ / 引数付きフラグの値欠落
         P-->>S: ParseResult{Recognized:false, ...}
     else 全語を分類
-        P-->>S: ParseResult{Recognized:true, Values, Positionals}
+        P-->>S: ParseResult{Recognized:true, Values, NonFlagArgs}
     end
     S->>S: 非フラグ引数へ役割割当・値内文法（chmod/setfacl/tar 等）を適用
     S-->>C: extraction（operands・recursive・grantsPermission・recognized 等）
@@ -180,7 +180,7 @@ type FlagSpec struct {
     Names     []string  // すべての表記（例: ["-t", "--target-directory"]）。空は不可（1 要素以上）。Names[0] を正規キーとする
     Arity     FlagArity
     Recursive bool      // 再帰フラグ（例: -r/-R/-a）
-    Value     ValueRole // Arity が引数付き（Required/Optional）のときの値の役割
+    Value     ValueRole // Arity が引数付き（Required/Optional）のときの値の役割。ArityNone では ValueUnset であること
 }
 
 // CommandFlagSpec は 1 コマンドの宣言的仕様と、解析結果を extraction へ写す意味づけ関数。
@@ -204,13 +204,17 @@ type CommandFlagSpec struct {
 ```go
 // ParseResult は単一 getopt パーサの出力。フラグ値は表記別名を正規化済み。
 // 引数なしフラグ（真偽/再帰）は Values に空スライスで現れ、キーの存在が「出現」を表す
-// （出現フラグを別マップで二重管理しない）。
+// （出現フラグを別マップで二重管理しない）。出現判定は必ず HasFlag を使う。
 type ParseResult struct {
-    Values      map[string][]string // 正規キー（Names[0]）→ 捕捉した値（引数なしは空スライス）
+    Values      map[string][]string // 正規キー（Names[0]）→ 捕捉した値（引数なしフラグは空スライス）
     Recursive   bool                // 再帰フラグが 1 つ以上出現したか
-    Positionals []string            // 非フラグ引数（フラグでもフラグの値でもない語）
+    NonFlagArgs []string            // 非フラグ引数（フラグでもフラグの値でもない語）
     Recognized  bool                // 全語を分類できたか（false は fail-closed）
 }
+
+// HasFlag は指定フラグ（正規キー）が出現したかを返す。引数なしフラグは空スライスで格納されるため
+// len(Values[k]) > 0 では出現を判定できず誤検出する。出現判定は本メソッドに集約する。
+func (p ParseResult) HasFlag(canonicalKey string) bool
 
 // parseArgs は全コマンドが共有する唯一のフラグ解析器。宣言的仕様（フラグ集合のみ。Kind/ToExtraction には
 // 依存しない）を消費し argv を統一的に解析する。一元処理する形式: --flag=value / 付随短縮値 -C/usr /
@@ -220,7 +224,8 @@ func parseArgs(flags []FlagSpec, args []string) ParseResult
 ```
 
 > 決定性の制約（NF-003）: `ToExtraction` は `Values` を**正規キーの直接参照のみ**で読み、`for range` で走査しない。
-> オペランドの順序は `Positionals`（スライス）と各フラグの明示参照から決め、map の反復順に依存させない。
+> オペランドの順序は `NonFlagArgs`（スライス）と各フラグの明示参照から決め、map の反復順に依存させない。
+> フラグの出現判定は `HasFlag`（またはキー存在判定）を使い、`len(Values[k]) > 0` では判定しない（引数なしフラグの誤検出を避ける）。
 > これにより `Operands`/`ReasonCodes` の順序が実行ごとに揺れない（観測可能挙動の同一性、AC-10）。
 >
 > キー参照の単一の真実源: `ToExtraction` が値を引く正規キーは、当該フラグの `FlagSpec`（の `Names[0]`）から得る。
@@ -288,8 +293,9 @@ classDiagram
         <<struct>>
         +Values map[string][]string
         +Recursive bool
-        +Positionals []string
+        +NonFlagArgs []string
         +Recognized bool
+        +HasFlag(canonicalKey string) bool
     }
     class extraction {
         <<struct>>
@@ -441,6 +447,7 @@ flowchart TD
   消費しない（AC-06）。大量 argv・長い短縮連結の病的入力で線形・fail-closed を確認。
 - 完全性メタテスト／不変条件（`flag_spec_test.go`）:
   - 全 `FlagSpec` の `Names` が 1 要素以上（空でない）こと。空だと `Names[0]` 参照でパニックするため、定義時点で機械検出する。
+  - `Arity == ArityNone`（真偽/再帰フラグ）の `FlagSpec` は `Value == ValueUnset` であること。引数なしフラグに値の役割を付けた定義ミスを検出する。
   - 全コマンド仕様の各引数付きフラグが `ValueRole != ValueUnset` を持つ（operand 化 or 非 path 明示）。未分類は失敗（AC-07）。
   - アリティ不変条件（§3.1）: 現行で次の語を消費するフラグが `ArityOptional` に誤分類されていないことを、旧実装の
     挙動（または明示の許可リスト）と突き合わせて検証する（C-2 の fail-open を防ぐ）。
