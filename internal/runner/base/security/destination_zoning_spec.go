@@ -3,6 +3,7 @@ package security
 import (
 	"io/fs"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -29,7 +30,11 @@ type extraction struct {
 	grantsPermission bool // chmod setuid/world-writable, install -m setuid or -o/-g, chattr i
 	preserveMeta     bool // cp -p / -a (privileged-metadata copy)
 	umountAll        bool // umount -a (unconditional High)
-	operands         []rawOperand
+	// remoteEgress marks a data-transfer command whose destination is remote
+	// (e.g. rsync to host:path / host::module / rsync://...). There is no local
+	// path to zone-classify; the command contributes a network-egress Medium floor.
+	remoteEgress bool
+	operands     []rawOperand
 }
 
 // commandSpec maps a command family to its extraction rule.
@@ -108,6 +113,11 @@ var zoningSpecs = map[string]commandSpec{
 	"setfacl": {KindPermission, extractSetfacl},
 	"chattr":  {KindPermission, extractChattr},
 	"find":    {KindFindDestructive, extractFind},
+	"curl":    {KindDataTransferWrite, extractCurl},
+	"wget":    {KindDataTransferWrite, extractWget},
+	"scp":     {KindDataTransferWrite, extractScp},
+	"sftp":    {KindDataTransferWrite, extractSftp},
+	"rsync":   {KindDataTransferWrite, extractRsync},
 }
 
 // scanFlags separates positionals from flags. recognized is false when a token
@@ -837,6 +847,181 @@ func extractFind(args []string) extraction {
 	return ext
 }
 
+// hostTokenRe matches a bare host token (no path separators, optional leading
+// user@ stripped by the caller), used to recognize an rsync/scp remote host.
+var hostTokenRe = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
+
+// isRemoteTerminus reports whether an rsync/scp operand denotes a remote location.
+// It uses rsync's own positional rule: a ':' appearing before the first '/' is the
+// remote host separator. This uniformly covers host:path, user@host:path, the
+// daemon bare module host::module, the relative form host:file / host: (which the
+// global hasNetworkArguments misses because the path part has no '/'), and the
+// bracketed IPv6 form [::1]:path / user@[2001:db8::1]:/path. A local path never has
+// a ':' before its first '/'. URLs (rsync://...) are matched first. This detection
+// stays inside the rsync/scp extractors, so the global network-argument check is
+// unchanged and unrelated "::" arguments (std::string, HTTP::Tiny) on other
+// commands are never misclassified.
+func isRemoteTerminus(arg string) bool {
+	if strings.Contains(arg, "://") {
+		return true
+	}
+	// Strip a leading user@ when the '@' precedes any '/' or ':' (otherwise it is
+	// part of a path or the host token, not a user prefix).
+	rest := arg
+	if at := strings.IndexByte(rest, '@'); at >= 0 {
+		slash := strings.IndexByte(rest, '/')
+		colon := strings.IndexByte(rest, ':')
+		if (slash < 0 || at < slash) && (colon < 0 || at < colon) {
+			rest = rest[at+1:]
+		}
+	}
+	// Bracketed IPv6 host: [ipv6]:path (the colons live inside the brackets, so the
+	// positional rule below cannot be applied directly).
+	if strings.HasPrefix(rest, "[") {
+		if cb := strings.IndexByte(rest, ']'); cb > 1 && cb+1 < len(rest) && rest[cb+1] == ':' {
+			return !strings.ContainsRune(rest[:cb], '/')
+		}
+		return false
+	}
+	colon := strings.IndexByte(rest, ':')
+	if colon <= 0 {
+		return false
+	}
+	if slash := strings.IndexByte(rest, '/'); slash >= 0 && slash < colon {
+		return false // a '/' before the ':' means a local path (./a:b, /abs:x)
+	}
+	return hostTokenRe.MatchString(rest[:colon])
+}
+
+// extractCurl extracts curl's local write destination (-o FILE, or -O which writes
+// the URL basename into the working directory). The URL is a remote read source;
+// its egress Medium is supplied by curl's network profile.
+func extractCurl(args []string) extraction {
+	valueFlags := set("-o", "--output", "-H", "--header", "-d", "--data", "--data-raw", "--data-binary",
+		"-u", "--user", "-A", "--user-agent", "-e", "--referer", "-x", "--proxy", "-b", "--cookie",
+		"-c", "--cookie-jar", "-K", "--config", "-T", "--upload-file", "-w", "--write-out",
+		"-m", "--max-time", "--connect-timeout", "-X", "--request", "--url", "--retry", "--limit-rate",
+		"-C", "--continue-at", "-r", "--range", "--cacert", "--cert", "--key")
+	boolFlags := set("-O", "--remote-name", "-L", "--location", "-s", "--silent", "-S", "--show-error",
+		"-f", "--fail", "-k", "--insecure", "-v", "--verbose", "-i", "--include", "-I", "--head",
+		"-g", "--progress-bar", "-J", "--remote-header-name", "-#", "-q", "-z")
+	pos, captured, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
+	ext := extraction{applies: true, recognized: recognized}
+	if out := firstNonEmpty(captured["-o"], captured["--output"]); out != "" && out != "-" {
+		ext.operands = append(ext.operands, rawOperand{raw: out, role: risktypes.OperandRoleWrite})
+	} else if hasAny(args, set("-O", "--remote-name")) {
+		// -O writes a file named from the URL into the working directory.
+		ext.operands = append(ext.operands, rawOperand{raw: ".", role: risktypes.OperandRoleWrite})
+	}
+	// An uploaded local file (-T/--upload-file) is a read source, so a sensitive
+	// upload is detected and audited (parity with scp/rsync).
+	for _, up := range append(append([]string{}, captured["-T"]...), captured["--upload-file"]...) {
+		if up != "" && up != "-" {
+			ext.operands = append(ext.operands, rawOperand{raw: up, role: risktypes.OperandRoleRead})
+		}
+	}
+	_ = pos // URL positionals are remote read sources (egress via the profile).
+	return ext
+}
+
+// extractWget extracts wget's local write destination (-O FILE, -P DIR, or the
+// working directory by default).
+func extractWget(args []string) extraction {
+	valueFlags := set("-O", "--output-document", "-P", "--directory-prefix", "-o", "--output-file",
+		"-a", "--append-output", "--header", "--user", "--password", "--limit-rate", "-t", "--tries",
+		"-T", "--timeout", "--user-agent", "-U", "--referer", "--post-data", "--post-file", "-e", "--execute",
+		"--ca-certificate", "--certificate")
+	boolFlags := set("-q", "--quiet", "-v", "--verbose", "-c", "--continue", "-N", "--timestamping",
+		"-r", "--recursive", "-np", "--no-parent", "-nc", "--no-clobber", "-nv", "--no-verbose",
+		"--no-check-certificate", "-d", "--debug", "-b", "--background")
+	pos, captured, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
+	ext := extraction{applies: true, recognized: recognized}
+	switch {
+	case firstNonEmpty(captured["-O"], captured["--output-document"]) != "":
+		out := firstNonEmpty(captured["-O"], captured["--output-document"])
+		if out != "-" {
+			ext.operands = append(ext.operands, rawOperand{raw: out, role: risktypes.OperandRoleWrite})
+		}
+	case firstNonEmpty(captured["-P"], captured["--directory-prefix"]) != "":
+		ext.operands = append(ext.operands, rawOperand{raw: firstNonEmpty(captured["-P"], captured["--directory-prefix"]), role: risktypes.OperandRoleWrite})
+	default:
+		// wget writes the URL basename into the working directory by default.
+		ext.operands = append(ext.operands, rawOperand{raw: ".", role: risktypes.OperandRoleWrite})
+	}
+	// An uploaded local file (--post-file) is a read source (sensitive-upload
+	// detection + audit), parity with scp/rsync.
+	for _, up := range captured["--post-file"] {
+		if up != "" && up != "-" {
+			ext.operands = append(ext.operands, rawOperand{raw: up, role: risktypes.OperandRoleRead})
+		}
+	}
+	_ = pos
+	return ext
+}
+
+// extractScp extracts scp's destination (the final operand). A remote destination
+// is an upload (egress); a local destination is zone-classified.
+func extractScp(args []string) extraction {
+	// scp -T (disable strict filename checking) is boolean, unlike rsync -T
+	// (--temp-dir, value-taking); listing it as value-taking would consume the next
+	// token and shift SRC/DEST.
+	valueFlags := set("-P", "-i", "-o", "-c", "-F", "-l", "-S", "-J")
+	boolFlags := set("-r", "-p", "-q", "-v", "-C", "-B", "-3", "-4", "-6", "-A", "-O", "-R", "-T")
+	return extractRemoteCopy(args, valueFlags, boolFlags)
+}
+
+// extractRsync extracts rsync's destination (the final operand). A remote
+// destination (host:path / host::module / rsync://...) is an upload (egress); a
+// local destination is zone-classified. --delete acts on the destination tree.
+func extractRsync(args []string) extraction {
+	valueFlags := set("-e", "--rsh", "--rsync-path", "--exclude", "--include", "--exclude-from",
+		"--include-from", "-f", "--filter", "--files-from", "--compare-dest", "--copy-dest", "--link-dest",
+		"--bwlimit", "--timeout", "--port", "--out-format", "--log-file", "-T", "--temp-dir",
+		"--partial-dir", "--chmod", "--chown", "-M", "--remote-option", "--max-size", "--min-size", "--modify-window")
+	boolFlags := set("-a", "--archive", "-v", "--verbose", "-r", "--recursive", "-z", "--compress",
+		"-P", "--progress", "--partial", "-u", "--update", "-n", "--dry-run", "--delete", "--delete-after",
+		"--delete-excluded", "-x", "--one-file-system", "-l", "-p", "-t", "-g", "-o", "-D", "-H", "-A", "-X",
+		"-S", "-W", "--numeric-ids", "-q", "--quiet", "-h", "--human-readable", "-c", "--checksum",
+		"--existing", "--ignore-existing", "-R", "--relative", "-L", "--copy-links", "-k", "-K")
+	return extractRemoteCopy(args, valueFlags, boolFlags)
+}
+
+// extractRemoteCopy is the shared SRC... DEST extractor for scp/rsync.
+func extractRemoteCopy(args []string, valueFlags, boolFlags map[string]struct{}) extraction {
+	pos, _, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
+	ext := extraction{applies: true, recognized: recognized}
+	if len(pos) < minSpecAndTarget {
+		ext.recognized = false
+		return ext
+	}
+	dest := pos[len(pos)-1]
+	srcs := pos[:len(pos)-1]
+	if isRemoteTerminus(dest) {
+		// Upload to a remote location: there is no local path to zone-classify for
+		// the destination; the egress floor (Medium) applies. The local sources are
+		// still read operands (sensitive/trust-critical source detection + audit).
+		ext.remoteEgress = true
+	} else {
+		ext.operands = append(ext.operands, rawOperand{raw: dest, role: risktypes.OperandRoleWrite})
+	}
+	// Local sources are read operands; a remote source has no local path to resolve
+	// (resolving it would fail and fail-close the whole command to High), so skip it.
+	for _, src := range srcs {
+		if !isRemoteTerminus(src) {
+			ext.operands = append(ext.operands, rawOperand{raw: src, role: risktypes.OperandRoleRead})
+		}
+	}
+	return ext
+}
+
+// extractSftp treats sftp as a network egress: its actual writes live in an
+// interactive session or a -b batch file, not in argv, so there is no local path
+// to zone-classify and the egress Medium floor applies.
+func extractSftp(args []string) extraction {
+	_ = args
+	return extraction{applies: true, recognized: true, remoteEgress: true}
+}
+
 // operandFloor returns the operation-specific risk floor for one operand (and the
 // reason for it). Floors are applied after the zone level and never demote a
 // safe-zone operand below their level.
@@ -869,13 +1054,17 @@ func (r *operandResolver) operandFloor(oz risktypes.OperandZone, op rawOperand, 
 		}
 	}
 
-	// Copy floors on the read source.
-	if spec.kind == KindCopyMove && op.role == risktypes.OperandRoleRead {
-		// Privileged-metadata copy: cp -p/-a of a setuid or root-owned source.
-		if ext.preserveMeta && oz.Resolved != "" && r.sourceIsPrivileged(oz.Resolved) {
-			raise(runnertypes.RiskLevelHigh, risktypes.ReasonPermissionGrant)
-		}
-		// Sensitive-source copy -> Medium read floor.
+	// Privileged-metadata copy: cp -p/-a of a setuid or root-owned source.
+	if spec.kind == KindCopyMove && op.role == risktypes.OperandRoleRead &&
+		ext.preserveMeta && oz.Resolved != "" && r.sourceIsPrivileged(oz.Resolved) {
+		raise(runnertypes.RiskLevelHigh, risktypes.ReasonPermissionGrant)
+	}
+
+	// Sensitive-source copy -> Medium read floor. Applies to both cp/mv and the
+	// data-transfer copies (scp/rsync), so a sensitive source copied into a
+	// safe-zone is Medium regardless of which copy command is used.
+	if op.role == risktypes.OperandRoleRead &&
+		(spec.kind == KindCopyMove || spec.kind == KindDataTransferWrite) {
 		if oz.Zone == risktypes.ZoneTrustCritical || matchesSensitive(oz.Resolved, input.OutputCriticalPathPatterns) {
 			raise(runnertypes.RiskLevelMedium, risktypes.ReasonSensitiveSourceCopy)
 		}
