@@ -30,11 +30,14 @@ var zoningGuardedFiles = []string{
 // whose live-identity / environment readers are forbidden in the zoning code, or
 // os/exec (which would let the zoning code shell out to query system state). os/exec
 // is forbidden wholesale (every function), since pure classification never executes
-// anything. golang.org/x/sys/unix is matched by suffix so a vendored or
-// differently-rooted path still resolves.
+// anything. path/filepath is listed so a dot import of it is flagged, because its
+// live-filesystem / live-CWD helpers (Abs/EvalSymlinks/Glob) must not be reachable
+// unqualified (the safe filepath helpers Join/Clean/... are still allowed under a
+// normal import; see forbiddenLiveIdentityRef). golang.org/x/sys/unix is matched by
+// suffix so a vendored or differently-rooted path still resolves.
 func forbiddenLiveIdentityPackage(importPath string) bool {
 	switch importPath {
-	case "os", "syscall", "os/user", "os/exec":
+	case "os", "syscall", "os/user", "os/exec", "path/filepath":
 		return true
 	}
 	return importPath == "unix" || strings.HasSuffix(importPath, "/unix")
@@ -50,9 +53,11 @@ func forbiddenLiveIdentityPackage(importPath string) bool {
 // environment readers (Getenv/LookupEnv/Environ, os.ExpandEnv, os.TempDir, the
 // os.User*Dir helpers), live process/system state (Getwd/Getpid/Getppid/Gettid,
 // os.Hostname, os.Executable), the raw syscall entry points (Syscall/Syscall6/
-// RawSyscall/RawSyscall6, which could reach any of the above directly), the os/user
-// database lookups (Current and the Lookup* family), and any os/exec reference
-// (executing a command to query state). Matching is by resolved import path, not local
+// RawSyscall/RawSyscall6) and process-spawn entry points (os.StartProcess,
+// syscall.ForkExec/Exec/Fork), the os/user database lookups (Current and the Lookup*
+// family), any os/exec reference (executing a command to query state), and the
+// path/filepath helpers that touch the live filesystem or CWD (Abs/EvalSymlinks/Glob;
+// the pure helpers Join/Clean/... stay allowed). Matching is by resolved import path, not local
 // identifier, so an aliased import cannot bypass it. It is a non-exhaustive regression
 // guardrail, not a completeness proof.
 func forbiddenLiveIdentityRef(importPath, fn string) bool {
@@ -62,20 +67,26 @@ func forbiddenLiveIdentityRef(importPath, fn string) bool {
 		case "Geteuid", "Getuid", "Getgid", "Getegid", "Getgroups",
 			"Getenv", "LookupEnv", "Environ", "ExpandEnv", "TempDir",
 			"UserHomeDir", "UserConfigDir", "UserCacheDir",
-			"Getwd", "Getpid", "Getppid", "Hostname", "Executable":
+			"Getwd", "Getpid", "Getppid", "Hostname", "Executable",
+			"StartProcess":
 			return true
 		}
 	case importPath == "syscall" || importPath == "unix" || strings.HasSuffix(importPath, "/unix"):
 		switch fn {
 		case "Geteuid", "Getuid", "Getgid", "Getegid", "Getgroups", "Environ", "Getenv",
 			"Getwd", "Getpid", "Getppid", "Gettid",
-			"Syscall", "Syscall6", "RawSyscall", "RawSyscall6":
+			"Syscall", "Syscall6", "RawSyscall", "RawSyscall6",
+			"ForkExec", "Exec", "Fork":
 			return true
 		}
 	case importPath == "os/user":
 		return fn == "Current" || strings.HasPrefix(fn, "Lookup")
 	case importPath == "os/exec":
 		return true // pure classification never executes a command
+	case importPath == "path/filepath":
+		// Only the live-filesystem / live-CWD helpers are forbidden; the pure path
+		// helpers (Join/Clean/IsAbs/Dir/...) the resolver relies on stay allowed.
+		return fn == "Abs" || fn == "EvalSymlinks" || fn == "Glob"
 	}
 	return false
 }
@@ -187,6 +198,17 @@ func TestNoLiveIdentityInZoning(t *testing.T) {
 	execHits := liveIdentityRefsIn(t, "exec.go", execCtl)
 	require.Len(t, execHits, 1)
 	assert.Contains(t, execHits[0], "exec.Command", "any os/exec reference must be flagged")
+
+	// Control 5: path/filepath is selective -- the live-FS/CWD helpers (Abs) are
+	// flagged while the pure helpers the resolver uses (Join) are not, and a comment
+	// mentioning filepath.EvalSymlinks (as operand_path_resolver.go does) is ignored.
+	fpCtl := "package p\n" +
+		"import \"path/filepath\"\n" +
+		"// mirrors filepath.EvalSymlinks, but does not call it\n" +
+		"func d() string { _ = filepath.Join(\"a\", \"b\"); s, _ := filepath.Abs(\"x\"); return s }\n"
+	fpHits := liveIdentityRefsIn(t, "fp.go", fpCtl)
+	require.Len(t, fpHits, 1)
+	assert.Contains(t, fpHits[0], "filepath.Abs", "filepath.Abs is flagged while filepath.Join and the comment are not")
 
 	for _, path := range zoningGuardedFiles {
 		src, err := os.ReadFile(path)
