@@ -149,10 +149,13 @@
 - [ ] `live_identity_guard_test.go` の `zoningGuardedFiles` に `../security/getopt.go`・`../security/flag_spec.go` を追加する
       （新規ガードは作らず既存を再利用。設計 §7）。再利用する 0142 ガードの禁止 API 集合は既に以下を網羅しており、本タスクで
       拡充は不要（追加確認のみ）: `os`/`syscall`/`unix` の uid/gid/euid/egid/groups getter、`os/user` の `Current`/`Lookup*`
-      （ユーザー/グループ・ルックアップ）、環境（`Getenv`/`LookupEnv`/`Environ`）、プロセス生成（`StartProcess`/`ForkExec`/`Exec`）、
-      live FS パス解決（`filepath.Abs`/`EvalSymlinks`/`Glob`）。スコープは判断軸2 の分類ファイルに限定され、正当な identity 解決層
-      （risk パッケージの `runas_identity.go` 等）は対象外。ガードは best-effort な denylist であり、権威は決定性テスト・差分テスト
-      （振る舞いテスト）が持つ。
+      （ユーザー/グループ・ルックアップ）、環境（`Getenv`/`LookupEnv`/`Environ`）、プロセス生成（`StartProcess`/`ForkExec`/`Exec`/
+      `Fork` と生のシステムコール `Syscall`/`Syscall6`/`RawSyscall`/`RawSyscall6`）、live FS パス解決（`filepath.Abs`/`EvalSymlinks`/
+      `Glob`）。スコープは判断軸2 の分類ファイルに限定され、正当な identity 解決層（risk パッケージの `runas_identity.go` 等）は対象外。
+      同ガードはバイパス耐性として、(a) 禁止パッケージの dot import 検出、(b) 別名 import の実 import パスへの解決、(c) 呼出だけでなく
+      全 `*ast.SelectorExpr` の検査（値参照・引数渡しも捕捉）、(d) 既知の悪例が必ずマッチする正のコントロール、を**既に実装済み**。
+      本タスクでの追加実装は不要で、新規 2 ファイルを対象集合へ加えるのみ。ガードは best-effort な denylist であり、権威は
+      決定性テスト・差分テスト（振る舞いテスト）が持つ。
 
 **成功基準**:
 - [ ] AC-09〜AC-11 が緑。`TestNoLiveIdentityInZoning` が新規 2 ファイルを含めて緑。
