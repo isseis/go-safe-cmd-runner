@@ -376,7 +376,9 @@
 **作業内容**:
 - [x] `KindDataTransferWrite` の書込先抽出（`curl -o`/`-O`・`wget` 既定/`-O`/`-P <dir>`・`scp … DEST`・`sftp`・
       `rsync … DEST`/`--delete`）を仕様表に実装（設計 §3.5）。ローカル書込先は zone 判定、リモート宛先（scp/rsync/sftp）は
-      `remoteEgress`（ローカルパス無し）とする。
+      `remoteEgress`（ローカル書込パス無し）とする。**scp/rsync のローカル送信元（`!isRemoteTerminus`）も read オペランドとして
+      抽出**する（ローカル→ローカル `rsync /etc/shadow $WORKDIR/dst` の機密複製 Medium 下限が `cp` と同等に効く・アップロード時の
+      監査記録、レビュー Issue）。機密複製の Medium 下限は `KindCopyMove`／`KindDataTransferWrite` の双方に適用する。
 - [x] 最終リスク = `max(データ送信の名前 Medium〔0141〕, 書込先のパス信頼区分)` を合成する（評価層の dimension max が所有。
       curl/wget の egress Medium は network profile（不抑止）から、rsync `host::module` の egress Medium は axis-2 の
       `remoteEgress` 床から供給される、AC-16）。

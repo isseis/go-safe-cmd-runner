@@ -963,13 +963,22 @@ func extractRemoteCopy(args []string, valueFlags, boolFlags map[string]struct{})
 		return ext
 	}
 	dest := pos[len(pos)-1]
+	srcs := pos[:len(pos)-1]
 	if isRemoteTerminus(dest) {
-		// Upload to a remote location: there is no local path to zone-classify; the
-		// egress floor (Medium) applies.
+		// Upload to a remote location: there is no local path to zone-classify for
+		// the destination; the egress floor (Medium) applies. The local sources are
+		// still read operands (sensitive/trust-critical source detection + audit).
 		ext.remoteEgress = true
-		return ext
+	} else {
+		ext.operands = append(ext.operands, rawOperand{raw: dest, role: risktypes.OperandRoleWrite})
 	}
-	ext.operands = append(ext.operands, rawOperand{raw: dest, role: risktypes.OperandRoleWrite})
+	// Local sources are read operands; a remote source has no local path to resolve
+	// (resolving it would fail and fail-close the whole command to High), so skip it.
+	for _, src := range srcs {
+		if !isRemoteTerminus(src) {
+			ext.operands = append(ext.operands, rawOperand{raw: src, role: risktypes.OperandRoleRead})
+		}
+	}
 	return ext
 }
 
@@ -1013,13 +1022,17 @@ func (r *operandResolver) operandFloor(oz risktypes.OperandZone, op rawOperand, 
 		}
 	}
 
-	// Copy floors on the read source.
-	if spec.kind == KindCopyMove && op.role == risktypes.OperandRoleRead {
-		// Privileged-metadata copy: cp -p/-a of a setuid or root-owned source.
-		if ext.preserveMeta && oz.Resolved != "" && r.sourceIsPrivileged(oz.Resolved) {
-			raise(runnertypes.RiskLevelHigh, risktypes.ReasonPermissionGrant)
-		}
-		// Sensitive-source copy -> Medium read floor.
+	// Privileged-metadata copy: cp -p/-a of a setuid or root-owned source.
+	if spec.kind == KindCopyMove && op.role == risktypes.OperandRoleRead &&
+		ext.preserveMeta && oz.Resolved != "" && r.sourceIsPrivileged(oz.Resolved) {
+		raise(runnertypes.RiskLevelHigh, risktypes.ReasonPermissionGrant)
+	}
+
+	// Sensitive-source copy -> Medium read floor. Applies to both cp/mv and the
+	// data-transfer copies (scp/rsync), so a sensitive source copied into a
+	// safe-zone is Medium regardless of which copy command is used.
+	if op.role == risktypes.OperandRoleRead &&
+		(spec.kind == KindCopyMove || spec.kind == KindDataTransferWrite) {
 		if oz.Zone == risktypes.ZoneTrustCritical || matchesSensitive(oz.Resolved, input.OutputCriticalPathPatterns) {
 			raise(runnertypes.RiskLevelMedium, risktypes.ReasonSensitiveSourceCopy)
 		}
