@@ -373,6 +373,10 @@ type ZoningInput struct {
     SystemCriticalPaths []string    // from security.Config (AC-01)
     TrustedDirectories  []string    // trusted-directory allowlist (AC-04(d))
     RunAsIdent          RunAsIdent  // injected identity for the Trusted predicate
+    // OutputCriticalPathPatterns is the sensitive-file substring set (reused from
+    // security.Config) for the sensitive-source-copy floor. Injected here so the
+    // judgment stays a pure function of ZoningInput.
+    OutputCriticalPathPatterns []string
     MaxOperands         int         // resolution-cost ceiling N (AC-23)
     MaxSymlinkHops      int         // resolution-cost ceiling M (AC-23)
 }
@@ -398,6 +402,17 @@ func ClassifyDestinationZone(input ZoningInput, names map[string]struct{}, cmdPa
 テストで網羅性を担保する（§7.1）。仕様表が持つべき難所のエントリ（in-place 編集・`ln -s` 相対 target・
 アーカイブ抽出 vs 一覧・末尾 `/` 削除・`dd` デバイス・権限/所有権付与・データ送信書込先）は
 [01_requirements.md](01_requirements.md) §F-002 の表を正とする。未知/曖昧形は `ZoneUnresolved`（fail-closed）。
+
+> **オペランド抽出は best-effort、安全保証は fail-closed（設計原則・レビュー triage 規準）**: 各コマンドの引数文法は
+> GNU/util-linux 固有で多様（エイリアス綴り・オプション引数・mode/ACL の値内文法等）のため、抽出器は best-effort で
+> あり完全な getopt 実装ではない。**セキュリティ保証は抽出精度ではなく `Recognized` の fail-closed contract** が担う:
+> 共通スキャナはトークンを暗黙に捨てず（各トークンは既知フラグ・捕捉した値・positional のいずれか）、未知/曖昧なら
+> `Recognized=false`→High＋既存判定を残す。したがって解析の不備は**過剰分類（fail-closed）に縮退**し、fail-open には
+> ならない。fail-open になりうる狭い 2 経路は (1) スキャナが値形を取り落とす、(2) 抽出器が捕捉済みの path 値を無視する
+> ／値内パーサ（chmod/ACL）が不完全、のみで、いずれも個別修正＋テストで塞ぐ。**将来のフラグ系レビュー指摘の triage**:
+> 過剰分類（fail-closed）は磨き込み（任意・低優先）、取りこぼし（fail-open）は欠陥（修正＋テスト必須）として扱う。
+> 抽出器の宣言的フラグ仕様＋単一 getopt パーサ＋「path を運ぶ value flag は必ず operand 化」完全性メタテストへの
+> **集中リファクタは後続タスク（0144 予定）**に切り出す（§9）。
 
 **操作固有の下限（AC-08〜AC-12、区分非依存）**: 次に該当するオペランドは、宛先が safe-zone でも Low に降格させず
 High（または下限相当）を返す。これらは `ClassifyDestinationZone` 内で区分判定の後に上乗せされる。
@@ -641,11 +656,19 @@ type SecuritySpec struct {
   同質の純解決で、テストが任意の identity を注入できるようリスク評価ロジックの注入可能フィールドとして持つ（既存の
   `openIdentity` フィールドと同じ注入パターン）。`ClassifyDestinationZone` 以下は live identity API
   （`os.Geteuid`/`os.Getuid`/`syscall`/`unix` の uid/gid/groups・`user.Current`）を読まない。
+  解決器（`resolveRunAsIdent`）には**構築時に一度だけ確定した base identity を引数で渡す**。group 単独形（user 名なし）は
+  base の uid/補助 group を保持し gid のみ上書きするため、base を渡さず解決時にプロセス identity を再読すると live 依存に
+  なってしまう。base を渡すことで解決時に live identity を読まないことを保証する（決定性・AC-22 とも整合）。
   - **run-as 未設定時の `RunAsIdent`（既定経路の確定）**: `RunAsUser()`/`RunAsGroup()` は未設定時に空文字を返す
-    （大多数のコマンドはこの形）。空のとき `RunAsIdent` は **runner が起動時に確定した original 実行 identity**
-    （`runner.go` が privilege 管理から得る originalUID／そのプライマリ・補助 group）を**注入時に一度だけ**
-    解決して用いる。**判定時に `os.Geteuid()` を読むことは禁止**であり、空 run-as の identity も注入時に
-    config／起動コンテキストから precompute する（live 参照しないため runtime と dry-run で同一。AC-21/AC-22）。
+    （大多数のコマンドはこの形）。空のとき `RunAsIdent` は **runner が起動時に確定した original 実行 identity** を
+    **注入時に一度だけ**解決して用いる。具体的には `NewStandardEvaluator`（`runner.go` から起動時に呼ばれる）の中で
+    プロセスの real uid/gid／補助 group（`os.Getuid`/`os.Getgid`/`syscall.Getgroups`）を**評価器構築時に一度だけ**
+    取得する（`originalExecutionIdentity`）。構築はコマンド実行前の起動段階で行われ、per-command の privilege 変更
+    より必ず前なので、取得値は original な invoking identity であり、setuid バイナリ下でも real uid は呼出ユーザを
+    指す（保守的な trust 基礎）。`PrivilegeManager` インターフェースは original identity の getter を公開せず、
+    privilege を要求するコマンドが無い場合は nil となるため、privilege 管理からではなくプロセスから直接取得する。
+    **判定時に `os.Geteuid()` を読むことは禁止**であり、空 run-as の identity も注入時に
+    起動コンテキストから precompute する（live 参照しないため runtime と dry-run で同一。AC-21/AC-22）。
     `RunAsIdent` の zero 値（`UID:0`＝root）を「未設定」の暗黙既定にしてはならない（root は全パスを書込可能と
     みなされ Trusted 判定が degenerate になるため、明示的に original identity を注入する）。
   - **解決失敗時の扱い（fail-closed）**: 注入時に run-as 名が解決できない（未知ユーザー/グループ）場合は、
@@ -930,6 +953,13 @@ sequenceDiagram
   現在の `OperandRole`（write/read）と fail-closed の非対称は、将来 read モデルを足すときの拡張点になる。
 - **オペランド抽出仕様表の拡張**: 新しいファイル操作コマンド/フラグは仕様表へのエントリ追加で完結し、評価フローの
   構造変更を要さない。未知/曖昧形は常に `ZoneUnresolved`（fail-closed）に倒れるため、列挙漏れは安全側に作用する。
+- **オペランド抽出の集中リファクタ（後続タスク 0144 予定）**: 現状はコマンドごとの bespoke 抽出器であり、エイリアス綴り・
+  オプション引数・値内文法の取りこぼしがレビューで繰り返し顕在化した（いずれも fail-closed へ縮退、実害のある fail-open は
+  個別修正済み。§3.2 の best-effort 原則を参照）。根本対応として、(1) コマンド別の**宣言的フラグ仕様**（value flag の全綴り＋
+  optional-arg 標識、bool flag、operand ロール）、(2) それを消費する**単一の getopt パーサ**（`=`/付随値/クラスタ/`--`/optional-arg/
+  エイリアス正規化を一元処理）、(3)「path を運ぶ value flag は必ず operand 化される」ことを保証する**完全性メタテスト**を
+  別タスクで導入する。これによりエイリアス/optional-arg/fail-closed 一貫性の各クラスを構造的に根絶する。本タスクは
+  fail-closed 保証の下で best-effort 抽出を維持する。
 - **監査の family 区別（0143）**: 本タスクは `RiskAssessment.OperandZones` に格納まで、logger への JSON 出力・
   family 区別の最終化は 0143。`reason_codes_test.go` の網羅性テストはタスクごとに自コードを登録する方式で、0143 の
   コード細分化に拡張余地を残す。

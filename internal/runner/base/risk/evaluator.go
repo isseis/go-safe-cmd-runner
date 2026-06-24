@@ -27,18 +27,71 @@ type Evaluator interface {
 // openVerifiedIdentity.
 type identityOpener func(cmd *runnertypes.RuntimeCommand) (*risktypes.VerifiedIdentity, error)
 
+// zoningParams holds the precomputed, command-independent inputs for the axis-2
+// destination-zoning dispatch. It is an injectable field on StandardEvaluator
+// (nil = axis 2 disabled): while nil the evaluator keeps the legacy destructive
+// classification unchanged. It is a dedicated struct rather than a raw
+// *security.Config so a command's per-command run-as identity (resolved at
+// dispatch time) does not belong here; runAsIdent is the DEFAULT identity used
+// when a command sets no run-as (the original execution identity, resolved once).
+type zoningParams struct {
+	systemCriticalPaths        []string
+	trustedDirectories         []string
+	outputCriticalPathPatterns []string
+	dedicatedTempDir           string
+	runAsIdent                 risktypes.RunAsIdent
+}
+
+// runAsResolver resolves a run-as user/group name pair to the identity used by the
+// Trusted predicate, starting from a precomputed base identity (the default
+// execution identity captured once at construction). It is an injectable field
+// (default: os/user based) so tests can supply an identity differing from the live
+// euid, proving the judgment never reads live identity. Passing the base in (rather
+// than re-reading the process) keeps the group-only form (which keeps the base
+// uid/groups) from depending on live process identity at evaluation time. An empty
+// user and group means "no run-as": the caller uses the base identity directly
+// instead of calling this.
+type runAsResolver func(base risktypes.RunAsIdent, user, group string) (risktypes.RunAsIdent, error)
+
+// maxZoningOperands bounds the operands resolved per command (cost ceiling); an
+// invocation with more fails closed rather than walking the filesystem
+// unboundedly. It is a small constant well above any real file-operation arity.
+const maxZoningOperands = 64
+
 // StandardEvaluator implements risk evaluation using predefined patterns
 type StandardEvaluator struct {
 	networkAnalyzer *security.NetworkAnalyzer
 	openIdentity    identityOpener
+	// zoning is the injectable axis-2 input (nil = disabled). Populated from the
+	// security config by NewStandardEvaluator, or directly by tests.
+	zoning *zoningParams
+	// resolveRunAs resolves a command's run-as user/group to an identity (default:
+	// os/user based; overridable in tests). Always set so a command with a run-as
+	// can be resolved even when zoning was injected directly.
+	resolveRunAs runAsResolver
 }
 
-// NewStandardEvaluator creates a new standard risk evaluator with a prebuilt network analyzer.
-func NewStandardEvaluator(networkAnalyzer *security.NetworkAnalyzer) Evaluator {
-	return &StandardEvaluator{
+// NewStandardEvaluator creates a new standard risk evaluator. securityConfig
+// enables axis-2 destination zoning (its SystemCriticalPaths / TrustedDirectories
+// / OutputCriticalPathPatterns drive the classification); pass nil to disable
+// axis 2 (legacy behavior). When enabled, the default run-as identity (used for
+// commands without a run_as_user) is the original execution identity, resolved
+// once here -- the zoning judgment itself never reads live identity.
+func NewStandardEvaluator(networkAnalyzer *security.NetworkAnalyzer, securityConfig *security.Config) Evaluator {
+	e := &StandardEvaluator{
 		networkAnalyzer: networkAnalyzer,
 		openIdentity:    openVerifiedIdentity,
+		resolveRunAs:    resolveRunAsIdent,
 	}
+	if securityConfig != nil {
+		e.zoning = &zoningParams{
+			systemCriticalPaths:        securityConfig.SystemCriticalPaths,
+			trustedDirectories:         securityConfig.TrustedDirectories,
+			outputCriticalPathPatterns: securityConfig.OutputCriticalPathPatterns,
+			runAsIdent:                 originalExecutionIdentity(),
+		}
+	}
+	return e
 }
 
 // EvaluateRisk analyzes a command and returns a VerifiedCommandPlan whose
@@ -212,6 +265,19 @@ func (e *StandardEvaluator) evaluateDimensions(
 
 	a := risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow}
 
+	// Axis 2: destination-path trust zoning. For a recognized file-operation command
+	// the destination zone is the authoritative classification and replaces the
+	// legacy fixed-High destructive dimensions (1, 2-destructive, 3, 4). When axis 2
+	// does not apply (not a file op) or recognizes the command only partially, the
+	// legacy dimensions stand so a form we could not fully parse is never downgraded
+	// (fail-open avoidance). Disabled (legacy behavior) when zoning is not injected.
+	var zone security.LocationResult
+	suppressLegacy := false
+	if e.zoning != nil {
+		zone = security.ClassifyDestinationZone(e.zoningInput(cmd), names, cmdPath, args)
+		suppressLegacy = zone.Applies && zone.Recognized
+	}
+
 	// Rank 4: coreutils single-binary classification. When it applies it is
 	// authoritative and suppresses the binary-analysis dimension (including its
 	// uncertain/missing-record signal), but other dimensions still contribute.
@@ -219,14 +285,12 @@ func (e *StandardEvaluator) evaluateDimensions(
 	if err != nil {
 		return blockingAssessment(risktypes.ReasonCoreutilsClassification, risktypes.ErrorClassCoreutilsFileInfo), nil
 	}
-	if coreutilsHandled {
-		addDimension(&a, coreutilsRisk, risktypes.ReasonCoreutilsClassification)
-	}
+	applyCoreutilsRisk(&a, cmdPath, coreutilsRisk, coreutilsHandled, suppressLegacy)
 
-	// Destructive operations and system modification (order-independent max).
-	// names was resolved once (strict) by the caller and is shared by every
-	// name-based dimension below.
-	if security.IsDestructiveFileOperation(names, args) {
+	// (1) Destructive file operation. Suppressed on full axis-2 recognition (the
+	// zone/floors re-establish High where warranted). names was resolved once
+	// (strict) by the caller and is shared by every name-based dimension below.
+	if !suppressLegacy && security.IsDestructiveFileOperation(names, args) {
 		addDimension(&a, runnertypes.RiskLevelHigh, risktypes.ReasonDestructiveFileOperation)
 	}
 	if sysmod := security.SystemModificationRisk(names); sysmod > runnertypes.RiskLevelUnknown {
@@ -235,13 +299,22 @@ func (e *StandardEvaluator) evaluateDimensions(
 
 	// Rank 5: profile factors (privilege handled at rank 3; system modification
 	// handled above so the static SystemModRisk High is not imported unconditionally).
+	// (3) On full axis-2 recognition the destruction factor is suppressed at
+	// component granularity; the other factors (network/data-exfil) and
+	// NetworkType/Reasons still apply.
 	if profileFound {
-		applyProfileFactors(&a, profile, args)
+		applyProfileFactors(&a, profile, args, suppressLegacy)
 	}
 
-	// Rank 6: dangerous argument patterns (rm -rf, dd if=, chmod -R 777, ...).
-	if level, _ := security.CheckDangerousArgPatterns(names, args); level > runnertypes.RiskLevelUnknown {
-		addDimension(&a, level, risktypes.ReasonDangerousArgPattern)
+	// Rank 6: dangerous argument patterns (rm -rf, dd if=, chmod -R 777, ...). (4)
+	// Suppressed at dispatch granularity on full axis-2 recognition: the function
+	// folds multiple matches into one level, so it cannot be filtered component-wise;
+	// the matched destructive entries are re-established by axis 2's zone and
+	// operation-specific floors.
+	if !suppressLegacy {
+		if level, _ := security.CheckDangerousArgPatterns(names, args); level > runnertypes.RiskLevelUnknown {
+			addDimension(&a, level, risktypes.ReasonDangerousArgPattern)
+		}
 	}
 
 	// Rank 7: arbitrary-code-execution runners (shells/interpreters/build runners)
@@ -266,11 +339,93 @@ func (e *StandardEvaluator) evaluateDimensions(
 			return risktypes.RiskAssessment{}, err
 		}
 		if blocked != nil {
+			// Carry the per-operand audit records onto the deny so a recognized file
+			// operation denied for an uncertain binary still records its zoning (the
+			// level fold below is skipped on this fail-closed deny path).
+			blocked.OperandZones = zone.Operands
 			return *blocked, nil
 		}
 	}
 
+	foldZoning(&a, zone)
+
 	return a, nil
+}
+
+// applyCoreutilsRisk folds the coreutils single-binary classification into the
+// assessment. On full axis-2 recognition the legacy destructive/unknown High is
+// dropped (axis 2's zone level replaces it) but the setuid/setgid-binary signal is
+// preserved from the existing stat-based signal (a coreutils hardlink is never expected
+// to be setuid; a set bit is a compromise indicator independent of the
+// destination). coreutilsHandled stays the caller's gate for binary-analysis
+// suppression; this only governs the risk contribution.
+func applyCoreutilsRisk(a *risktypes.RiskAssessment, cmdPath string, coreutilsRisk runnertypes.RiskLevel, coreutilsHandled, suppressLegacy bool) {
+	if !coreutilsHandled {
+		return
+	}
+	if !suppressLegacy {
+		addDimension(a, coreutilsRisk, risktypes.ReasonCoreutilsClassification)
+		return
+	}
+	setuid, err := security.CommandHasSetuidOrSetgidBit(cmdPath)
+	if err != nil || setuid {
+		// A stat failure here is anomalous (CoreutilsCommandRisk stat'd the same
+		// binary without error moments ago) and must not silently drop the
+		// setuid-binary signal, which would be a High->Low regression. Fail closed
+		// to High on either a set bit or an unexpected error.
+		addDimension(a, runnertypes.RiskLevelHigh, risktypes.ReasonPermissionGrant)
+	}
+}
+
+// foldZoning folds the axis-2 result into the maximum and carries its per-operand
+// audit records. On full recognition this is the replacement for the suppressed
+// destructive dimensions; when it applies but is only partially recognized it
+// contributes the fail-closed unresolved floor (the legacy dimensions were kept);
+// when it does not apply (including zoning disabled, the zero value) it contributes
+// nothing.
+func foldZoning(a *risktypes.RiskAssessment, zone security.LocationResult) {
+	if !zone.Applies {
+		return
+	}
+	a.Level = max(a.Level, zone.Level)
+	a.ReasonCodes = common.DedupeStable(append(a.ReasonCodes, zone.ReasonCodes...))
+	a.OperandZones = zone.Operands
+}
+
+// zoningInput assembles the per-command axis-2 input from the injected,
+// command-independent zoning parameters plus this command's working directory and
+// run-as identity. A command's run_as_user/group is resolved here (the embedding
+// layer); the zoning judgment receives only the precomputed identity. If the
+// run-as name cannot be resolved, IdentityUnresolved is set so the judgment fails
+// closed (every operand ZoneUnresolved) rather than trusting an unknown identity.
+func (e *StandardEvaluator) zoningInput(cmd *runnertypes.RuntimeCommand) security.ZoningInput {
+	z := e.zoning
+	ident := z.runAsIdent // default: the original execution identity (run-as unset)
+	identUnresolved := false
+	// cmd.RunAsUser/RunAsGroup require a non-nil Spec (always set in production via
+	// NewRuntimeCommand). Guard so a Spec-less command falls back to the default
+	// identity rather than panicking.
+	if cmd.Spec != nil {
+		if u, g := cmd.RunAsUser(), cmd.RunAsGroup(); u != "" || g != "" {
+			resolved, err := e.resolveRunAs(ident, u, g)
+			if err != nil {
+				identUnresolved = true
+			} else {
+				ident = resolved
+			}
+		}
+	}
+	return security.ZoningInput{
+		EffectiveWorkDir:           cmd.EffectiveWorkDir,
+		DedicatedTempDir:           z.dedicatedTempDir,
+		SystemCriticalPaths:        z.systemCriticalPaths,
+		TrustedDirectories:         z.trustedDirectories,
+		RunAsIdent:                 ident,
+		IdentityUnresolved:         identUnresolved,
+		OutputCriticalPathPatterns: z.outputCriticalPathPatterns,
+		MaxOperands:                maxZoningOperands,
+		MaxSymlinkHops:             security.MaxSymlinkDepth,
+	}
 }
 
 // addDimension folds one dimension's level into the assessment (taking the max)
@@ -284,8 +439,8 @@ func addDimension(a *risktypes.RiskAssessment, level runnertypes.RiskLevel, code
 
 // applyProfileFactors folds the profile's non-privilege, non-system-modification
 // risk factors into the assessment and records the human-readable reasons.
-func applyProfileFactors(a *risktypes.RiskAssessment, profile security.CommandRiskProfile, args []string) {
-	if level, codes := security.ProfileFactorRisk(profile, args); level > runnertypes.RiskLevelUnknown {
+func applyProfileFactors(a *risktypes.RiskAssessment, profile security.CommandRiskProfile, args []string, suppressDestruction bool) {
+	if level, codes := security.ProfileFactorRisk(profile, args, suppressDestruction); level > runnertypes.RiskLevelUnknown {
 		for _, code := range codes {
 			addDimension(a, level, code)
 		}

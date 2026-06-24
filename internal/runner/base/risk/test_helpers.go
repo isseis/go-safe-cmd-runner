@@ -55,7 +55,50 @@ func newVerifiedEvaluator() Evaluator {
 // synthetic absolute paths (see testBinDir) without placing real files on disk.
 func newEvaluatorWithStore(store security.RecordStore) Evaluator {
 	deps := security.AnalysisDeps{RecordStore: store}
-	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, deps)).(*StandardEvaluator)
+	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, deps), nil).(*StandardEvaluator)
+	ev.openIdentity = fakeIdentityOpener
+	return ev
+}
+
+// newZoningEvaluator returns a verified evaluator with axis-2 destination zoning
+// enabled. The safe-zone origin and trusted-directory allowlist are workdir;
+// SystemCriticalPaths and the sensitive-file patterns use the security defaults;
+// the Trusted predicate uses the injected run-as identity (never the live euid).
+func newZoningEvaluator(workdir string, ident risktypes.RunAsIdent) Evaluator {
+	cfg := security.DefaultConfig()
+	ev := newVerifiedEvaluator().(*StandardEvaluator)
+	ev.zoning = &zoningParams{
+		systemCriticalPaths:        cfg.SystemCriticalPaths,
+		trustedDirectories:         []string{workdir},
+		outputCriticalPathPatterns: cfg.OutputCriticalPathPatterns,
+		runAsIdent:                 ident,
+	}
+	return ev
+}
+
+// verifiedCmdInDir is verifiedCmd with the command's EffectiveWorkDir set (the
+// axis-2 safe-zone origin).
+func verifiedCmdInDir(cmd string, args []string, workdir string) *runnertypes.RuntimeCommand {
+	c := verifiedCmd(cmd, args)
+	c.EffectiveWorkDir = workdir
+	return c
+}
+
+// verifiedCmdRunAs is verifiedCmdInDir with a run_as_user set (via a CommandSpec),
+// so the evaluator resolves a per-command run-as identity.
+func verifiedCmdRunAs(cmd string, args []string, workdir, runAsUser string) *runnertypes.RuntimeCommand {
+	c := verifiedCmdInDir(cmd, args, workdir)
+	c.Spec = &runnertypes.CommandSpec{RunAsUser: runAsUser}
+	return c
+}
+
+// newConfigEvaluator builds an evaluator through the production NewStandardEvaluator
+// path (axis-2 zoning driven by securityConfig), with a clean record store and a
+// descriptor-free identity opener so synthetic test paths classify without real
+// binaries. This exercises the config wiring rather than direct zoning injection.
+func newConfigEvaluator(securityConfig *security.Config) *StandardEvaluator {
+	deps := security.AnalysisDeps{RecordStore: fakeRecordStore{}}
+	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, deps), securityConfig).(*StandardEvaluator)
 	ev.openIdentity = fakeIdentityOpener
 	return ev
 }
@@ -63,7 +106,7 @@ func newEvaluatorWithStore(store security.RecordStore) Evaluator {
 // newAnalysisDisabledEvaluator returns an evaluator with binary analysis disabled
 // (no record store), so the identity gate denies every command.
 func newAnalysisDisabledEvaluator() Evaluator {
-	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{})).(*StandardEvaluator)
+	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}), nil).(*StandardEvaluator)
 	ev.openIdentity = fakeIdentityOpener
 	return ev
 }

@@ -18,7 +18,7 @@ import (
 )
 
 func TestNewStandardEvaluator(t *testing.T) {
-	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}))
+	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}), nil)
 	require.NotNil(t, evaluator)
 	assert.IsType(t, &StandardEvaluator{}, evaluator)
 }
@@ -189,9 +189,18 @@ func TestEvaluateRisk_ProfileStepNoChangeWithoutProfile(t *testing.T) {
 }
 
 // an absolute-path destructive command is High.
-func TestEvaluateRisk_AbsoluteRmRfHigh(t *testing.T) {
-	ev := newVerifiedEvaluator()
-	assert.Equal(t, runnertypes.RiskLevelHigh, evalLevel(t, ev, "/usr/bin/rm", []string{"-rf", "/tmp/x"}))
+// With axis-2 zoning enabled, rm -rf is classified by its destination zone (it is
+// no longer unconditionally High): trust-critical destination -> High, a
+// recursive delete confined to a Trusted safe-zone -> Low.
+func TestEvaluateRisk_RmRfDestinationDependent(t *testing.T) {
+	wd := filepath.Join(t.TempDir(), "work")
+	require.NoError(t, os.MkdirAll(filepath.Join(wd, "build"), 0o700))
+	ev := newZoningEvaluator(wd, zoningForeignIdent())
+
+	assert.Equal(t, runnertypes.RiskLevelHigh,
+		evalLevelInDir(t, ev, "/usr/bin/rm", []string{"-rf", "/usr/local/lib/x"}, wd))
+	assert.Equal(t, runnertypes.RiskLevelLow,
+		evalLevelInDir(t, ev, "/usr/bin/rm", []string{"-rf", filepath.Join(wd, "build")}, wd))
 }
 
 // systemctl change verbs and service (all actions) are High.
@@ -594,7 +603,7 @@ func TestEvaluateRisk_DynamicLoaderBlocking(t *testing.T) {
 // the executor can bind execution to that inode.
 func TestEvaluateRisk_AllowedPlanCarriesVerifiedFd(t *testing.T) {
 	// Use the real opener (default), so a real on-disk file is required.
-	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{RecordStore: fakeRecordStore{}}))
+	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{RecordStore: fakeRecordStore{}}), nil)
 
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "tool")

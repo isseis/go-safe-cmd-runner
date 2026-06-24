@@ -114,6 +114,13 @@ type SecuritySpec struct {
 	// other non-macOS platforms. On macOS, this field is ignored.
 	// When omitted, only default whitelist entries are used.
 	TrustedGIDs []uint32 `toml:"trusted_gids"`
+
+	// TrustedDirectories is the allowlist of directories that may anchor a
+	// run-owned safe-zone for destination-path trust zoning. A safe-zone operand
+	// is downgraded to Low only when it lies within one of these directories and
+	// the anchoring ancestors are not writable by the run-as identity. When
+	// omitted, no directory is trusted (safe-zone operands fall back to Medium).
+	TrustedDirectories []string `toml:"trusted_directories"`
 }
 
 // GlobalSpec contains global configuration options loaded from TOML file.
