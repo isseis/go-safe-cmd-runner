@@ -656,11 +656,19 @@ type SecuritySpec struct {
   同質の純解決で、テストが任意の identity を注入できるようリスク評価ロジックの注入可能フィールドとして持つ（既存の
   `openIdentity` フィールドと同じ注入パターン）。`ClassifyDestinationZone` 以下は live identity API
   （`os.Geteuid`/`os.Getuid`/`syscall`/`unix` の uid/gid/groups・`user.Current`）を読まない。
+  解決器（`resolveRunAsIdent`）には**構築時に一度だけ確定した base identity を引数で渡す**。group 単独形（user 名なし）は
+  base の uid/補助 group を保持し gid のみ上書きするため、base を渡さず解決時にプロセス identity を再読すると live 依存に
+  なってしまう。base を渡すことで解決時に live identity を読まないことを保証する（決定性・AC-22 とも整合）。
   - **run-as 未設定時の `RunAsIdent`（既定経路の確定）**: `RunAsUser()`/`RunAsGroup()` は未設定時に空文字を返す
-    （大多数のコマンドはこの形）。空のとき `RunAsIdent` は **runner が起動時に確定した original 実行 identity**
-    （`runner.go` が privilege 管理から得る originalUID／そのプライマリ・補助 group）を**注入時に一度だけ**
-    解決して用いる。**判定時に `os.Geteuid()` を読むことは禁止**であり、空 run-as の identity も注入時に
-    config／起動コンテキストから precompute する（live 参照しないため runtime と dry-run で同一。AC-21/AC-22）。
+    （大多数のコマンドはこの形）。空のとき `RunAsIdent` は **runner が起動時に確定した original 実行 identity** を
+    **注入時に一度だけ**解決して用いる。具体的には `NewStandardEvaluator`（`runner.go` から起動時に呼ばれる）の中で
+    プロセスの real uid/gid／補助 group（`os.Getuid`/`os.Getgid`/`syscall.Getgroups`）を**評価器構築時に一度だけ**
+    取得する（`originalExecutionIdentity`）。構築はコマンド実行前の起動段階で行われ、per-command の privilege 変更
+    より必ず前なので、取得値は original な invoking identity であり、setuid バイナリ下でも real uid は呼出ユーザを
+    指す（保守的な trust 基礎）。`PrivilegeManager` インターフェースは original identity の getter を公開せず、
+    privilege を要求するコマンドが無い場合は nil となるため、privilege 管理からではなくプロセスから直接取得する。
+    **判定時に `os.Geteuid()` を読むことは禁止**であり、空 run-as の identity も注入時に
+    起動コンテキストから precompute する（live 参照しないため runtime と dry-run で同一。AC-21/AC-22）。
     `RunAsIdent` の zero 値（`UID:0`＝root）を「未設定」の暗黙既定にしてはならない（root は全パスを書込可能と
     みなされ Trusted 判定が degenerate になるため、明示的に original identity を注入する）。
   - **解決失敗時の扱い（fail-closed）**: 注入時に run-as 名が解決できない（未知ユーザー/グループ）場合は、

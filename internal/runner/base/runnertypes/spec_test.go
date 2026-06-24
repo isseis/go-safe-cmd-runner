@@ -209,6 +209,46 @@ cmd = "/bin/echo"
 			wantErr: false,
 		},
 		{
+			name: "valid config with security trusted directories",
+			toml: `
+version = "1.0"
+
+[global]
+timeout = 300
+
+[security]
+trusted_directories = ["/srv/run/work", "/opt/run/tmp"]
+
+[[groups]]
+name = "test"
+
+[[groups.commands]]
+name = "hello"
+cmd = "/bin/echo"
+`,
+			want: &ConfigSpec{
+				Version: "1.0",
+				Global: GlobalSpec{
+					Timeout: tu.Int32Ptr(300),
+				},
+				Security: SecuritySpec{
+					TrustedDirectories: []string{"/srv/run/work", "/opt/run/tmp"},
+				},
+				Groups: []GroupSpec{
+					{
+						Name: "test",
+						Commands: []CommandSpec{
+							{
+								Name: "hello",
+								Cmd:  "/bin/echo",
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "security section omitted keeps backward compatibility",
 			toml: `
 version = "1.0"

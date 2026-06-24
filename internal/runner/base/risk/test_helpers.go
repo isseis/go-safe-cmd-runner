@@ -55,7 +55,7 @@ func newVerifiedEvaluator() Evaluator {
 // synthetic absolute paths (see testBinDir) without placing real files on disk.
 func newEvaluatorWithStore(store security.RecordStore) Evaluator {
 	deps := security.AnalysisDeps{RecordStore: store}
-	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, deps)).(*StandardEvaluator)
+	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, deps), nil).(*StandardEvaluator)
 	ev.openIdentity = fakeIdentityOpener
 	return ev
 }
@@ -84,10 +84,29 @@ func verifiedCmdInDir(cmd string, args []string, workdir string) *runnertypes.Ru
 	return c
 }
 
+// verifiedCmdRunAs is verifiedCmdInDir with a run_as_user set (via a CommandSpec),
+// so the evaluator resolves a per-command run-as identity.
+func verifiedCmdRunAs(cmd string, args []string, workdir, runAsUser string) *runnertypes.RuntimeCommand {
+	c := verifiedCmdInDir(cmd, args, workdir)
+	c.Spec = &runnertypes.CommandSpec{RunAsUser: runAsUser}
+	return c
+}
+
+// newConfigEvaluator builds an evaluator through the production NewStandardEvaluator
+// path (axis-2 zoning driven by securityConfig), with a clean record store and a
+// descriptor-free identity opener so synthetic test paths classify without real
+// binaries. This exercises the config wiring rather than direct zoning injection.
+func newConfigEvaluator(securityConfig *security.Config) *StandardEvaluator {
+	deps := security.AnalysisDeps{RecordStore: fakeRecordStore{}}
+	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, deps), securityConfig).(*StandardEvaluator)
+	ev.openIdentity = fakeIdentityOpener
+	return ev
+}
+
 // newAnalysisDisabledEvaluator returns an evaluator with binary analysis disabled
 // (no record store), so the identity gate denies every command.
 func newAnalysisDisabledEvaluator() Evaluator {
-	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{})).(*StandardEvaluator)
+	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}), nil).(*StandardEvaluator)
 	ev.openIdentity = fakeIdentityOpener
 	return ev
 }

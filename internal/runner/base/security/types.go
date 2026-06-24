@@ -146,6 +146,10 @@ type Config struct {
 	// TrustedGIDs is an additional trusted group GID list from config.
 	// This field is effective on non-macOS platforms and ignored on macOS.
 	TrustedGIDs []uint32
+	// TrustedDirectories is the allowlist of directories that may anchor a
+	// run-owned safe-zone for destination-path trust zoning (axis 2). Empty by
+	// default; populated from the [security] config section.
+	TrustedDirectories []string
 	// testPermissiveMode is only available in test builds and allows relaxed directory permissions
 	testPermissiveMode bool
 }
