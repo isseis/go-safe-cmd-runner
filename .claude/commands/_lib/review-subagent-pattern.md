@@ -46,7 +46,10 @@ After receiving findings:
 - Apply Minor fixes at your discretion.
 - If any Critical or Major issue required a fix, spawn a second review subagent
   to verify the fixes. Repeat, subject to the three-pass limit below, until the
-  subagent reports no Critical or Major issues.
+  subagent reports no Critical or Major issues. A **verification** pass confirms a
+  bounded set of already-located fixes rather than searching the whole artifact for
+  unknown problems, so it may run on a cheaper model than the initial review (see
+  "Model tiering" below).
 - After three review passes, continue only if the remaining Critical or Major
   issues are concrete, scoped to ARTIFACT, and clearly fixable without expanding
   the scope. Otherwise, stop and report the remaining issues instead of
@@ -54,6 +57,27 @@ After receiving findings:
 
 The calling command may add an extra rule after this procedure (e.g. "commit
 only after all review passes are complete"). Follow any such rule.
+
+## Model tiering (cost control)
+
+The two kinds of pass have different difficulty, so they need not run on the same
+model:
+
+- **Initial (discovery) review** — searches the whole ARTIFACT for unknown
+  problems across every CRITERIA item. This is the hard, high-recall task; run it
+  on the session's default model. Do **not** downgrade it — a cheaper model here
+  misses findings, which is the expensive failure mode.
+- **Verification re-review** — confirms that a bounded, already-located set of
+  Critical/Major fixes was applied correctly and introduced no regression. This is
+  a narrower check and **may run on a cheaper model**. When spawning the
+  verification subagent, pass the explicit list of fixes to confirm and request a
+  cheaper model (the Agent tool's `model` parameter, e.g. a faster/cheaper tier);
+  if the cheaper pass reports anything ambiguous or a new Critical/Major issue,
+  re-run that pass once on the default model before trusting it.
+
+This keeps recall where it matters (discovery) while cutting cost on the repeated
+confirmation passes. It composes with panel mode below: the discovery panel runs
+on the default model; a single combined verification pass may run cheaper.
 
 ## Panel mode (multiple partitioned reviewers)
 
