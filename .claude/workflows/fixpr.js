@@ -327,10 +327,14 @@ const actionable = withDatabaseId.filter(t => t.replyBody)
 if (actionable.length > 0) {
   // Build the list of reply+resolve commands to run sequentially in one agent
   // call, avoiding the per-thread parallel fan-out that risks RPM/TPM rate limits.
+  // NOTE: the reply endpoint REQUIRES the pull number:
+  //   POST /repos/{owner}/{repo}/pulls/{pull_number}/comments/{comment_id}/replies
+  // Verified working across many runs. Do NOT drop /pulls/${number} — a path without
+  // it (.../pulls/comments/...) is a different resource and 404s for replies.
   const replyCommands = actionable.map(item => {
     const replyBodyPayload = JSON.stringify({ body: item.replyBody })
     return `# Thread ${item.threadId} (comment ${item.databaseId})
-gh api repos/${item.owner}/${item.repo}/pulls/comments/${item.databaseId}/replies \\
+gh api repos/${item.owner}/${item.repo}/pulls/${item.number}/comments/${item.databaseId}/replies \\
   -X POST --input - <<'PAYLOAD'
 ${replyBodyPayload}
 PAYLOAD
