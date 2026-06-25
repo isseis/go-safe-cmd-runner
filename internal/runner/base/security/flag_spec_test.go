@@ -68,6 +68,9 @@ func TestArityInvariant(t *testing.T) {
 	const next = "NEXTVALUE"
 	for cmd, spec := range commandFlagSpecs {
 		for _, f := range spec.Flags {
+			if !assert.NotEmpty(t, f.Names, "%s: a FlagSpec has no names", cmd) {
+				continue // guard f.Names[0]; TestSpecCompleteness reports this in detail
+			}
 			key := f.Names[0]
 			for _, name := range f.Names {
 				res := parseArgs(spec.Flags, []string{name, next})

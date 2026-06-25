@@ -155,6 +155,14 @@
       `Values` を正規キー（`FlagSpec` 由来）で読む（map を `for range` しない。設計 §3.1 決定性制約）。
 - [ ] tar・chattr は事前正規化を挟む（tar: `normalizeTarArgs`、chattr: `isChattrMode` 合致トークンを `parseArgs` 前に分離）。
       dd は `Flags` を空にし `ToExtraction` 内で `if=`/`of=` を専用解析（設計 §3.5）。
+- [ ] floor/制御シグナルの導出方針（現行が宣言フラグ集合の外で読むフラグ）: 現行は一部のフラグを `scanFlags` の集合外で
+      `hasAny` 等により読み、floor/制御の判定に使う。Phase 3 の `ToExtraction` でも同じシグナルを導出できるようにする。原則:
+      宣言しても `recognized` が現行と変わらないものは仕様に宣言して `HasFlag` で導出する（例 unzip `-l`/`-Z`: 現行の listing 経路は
+      既に `recognized=true` を返すため宣言は忠実。Phase 2 で宣言済み）。宣言すると `recognized` が変わるものは宣言せず、`ToExtraction`
+      が生 argv（第 2 引数）から導出して `recognized` を忠実に保つ（例 cp/mv の preserveMeta 用 `-p`/`--preserve`: 現行は未宣言ゆえ
+      `cp -p` は `recognized=false`。宣言すると `recognized=true` に変わるため宣言しない。`-a`/`--archive` は再帰フラグとして宣言済みで
+      `HasFlag("-a")` で取れるので、preserveMeta = `HasFlag("-a") || (生 argv に -p/--preserve)` とする。dd/chattr の生 argv 利用と同じ
+      限定的拡張）。長形再帰フラグだけは「是正（recognized=true）」を選んだ唯一の例外（上記決定参照）。
 - [ ] 凍結オラクルの非気密性に対処する: `extraction_legacy_test.go` は値内文法ヘルパ（`tarMode`/`normalizeTarArgs`/
       `isChattrMode`/`isRemoteTerminus`/`chmodGrantsHigh`/`aclGrantsWrite`/`hostTokenRe`/`set`）を production と共有して呼ぶため、
       これらを Phase 3 で変更すると旧/新が同時に変わり差分テストがすり抜ける。本フェーズでは原則これらを変更しない。`git diff` で

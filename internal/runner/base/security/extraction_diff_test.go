@@ -28,7 +28,7 @@ func TestExtractionDifferential(t *testing.T) {
 			legacy := normalizeExtraction(legacyZoningSpecs[cmd](args))
 			prod := normalizeExtraction(zoningSpecs[cmd].extract(args))
 			if !reflect.DeepEqual(legacy, prod) {
-				t.Errorf("cmd=%q args=%q diverged\n  legacy=%+v\n  prod  =%+v", cmd, args, legacy, prod)
+				t.Errorf("cmd=%q args=%v diverged\n  legacy=%+v\n  prod  =%+v", cmd, args, legacy, prod)
 			}
 		}
 	}
