@@ -284,9 +284,20 @@
 
 ## 付録 A: 実 CLI フラグ典拠表（フェーズ 1 成果物）
 
-各コマンドの宣言フラグ（`flag_spec.go` 現行）を実 CLI と突き合わせた結果。典拠は、当環境にインストール済みのコマンドは
-その `--help`（GNU coreutils 9.7 / GNU tar 1.35 / util-linux / curl）を一次典拠とし、未インストールのコマンド
-（`sponge`/`unzip`/`setfacl`/`wget`/`scp`/`rsync`/`sftp`/`chattr`）は当該 man ページを典拠とする。
+各コマンドの宣言フラグ（`flag_spec.go` 現行）を実 CLI と突き合わせた結果。
+
+**典拠の方針（和集合）**: 本タスクの「実 CLI」は GNU coreutils と uutils（Rust 版。Ubuntu 26.04 以降の既定）の**和集合**とする。
+いずれか一方の実装に存在するフラグは「実在」とみなして宣言を残す／追加し、**どちらの実装にも存在しないフラグのみ**を過剰認識として
+削除する。これは本タスクの目的（どの実 CLI にも無い共有ヘルパ由来のゴミフラグの除去）に最も忠実で、GNU/uutils いずれのホストでも
+誤分類しない。§A.1 の削除対象（`sponge -r`・`mkdir -a` 等）は GNU・uutils のどちらにも存在しないため、和集合方針でも削除が成立する。
+
+**ground truth**: 当環境のインストールは混在しており、`cp`/`mv`/`rm` は GNU coreutils 9.7、`rmdir`/`unlink`/`ln`/`mkdir`/`touch`/
+`install`/`shred`/`truncate`/`mknod`/`chmod`/`chown`/`chgrp`/`dd`/`tee` は uutils 0.8.0 の `--help` を採取した（`tar` は GNU tar 1.35、
+`mount`/`umount` は util-linux、`curl` は curl）。一方の実装しか手元に無いコマンドは、他方を当該 man ページ／公式ドキュメントで補完する。
+未インストール（`sponge`/`unzip`/`setfacl`/`wget`/`scp`/`rsync`/`sftp`/`chattr`）は man ページを典拠とする。実装間で差のあるフラグは
+和集合の方針に従い、由来（GNU/uutils）を備考に記す。なお `--help`/`--version`（および uutils の `-h`＝`--help` 等の短縮形）はファイル操作の
+安全性に無関係なため、既存方針どおり宣言しない。したがって `mkdir` の削除対象 `-h` は現行宣言の `-h`＝`--no-dereference`（別名の誤宣言）を
+指し、help の `-h` ではない。
 
 **列の意味**: 「削除」＝実 CLI に無い宣言フラグ（過剰認識。除去対象、すべて真偽フラグで fail-closed 方向）。「追加/修正」＝
 実 CLI にあるが未宣言、または別名・アリティ・役割の誤り（既存 `ToExtraction` で正しく扱えるデータのみの是正）。「備考（スコープ外）」＝
@@ -321,7 +332,7 @@
 | `shred` | なし | 追加: `--random-source`(NonPath)。修正: `-u`/`--remove` は任意引数（現行真偽。非 path） | — | `shred --help` |
 | `truncate` | なし | なし（全宣言が実在） | — | `truncate --help` |
 | `tee` | なし | なし（`-a`/`--append`・`-i`/`--ignore-interrupts`・`-p`・`--output-error` すべて実在） | — | `tee --help` |
-| `chmod` | なし | 追加: `-H`・`-h`/`--no-dereference`・`-L`・`-P`・`--dereference`（真偽） | `--reference=RFILE`（参照ファイル値かつモード位置引数を省く解釈変更）は `extractChmod` 改修を要するため追加せず。未宣言＝fail-closed | `chmod --help` |
+| `chmod` | なし | 追加: `-H`・`-L`・`-P`（真偽。GNU・uutils 共通）。さらに `-h`/`--no-dereference`・`--dereference`（真偽）— これらは uutils 0.8.0 が持ち GNU `chmod` には無いが、和集合方針により保持/追加する | `--reference=RFILE`（参照ファイル値かつモード非フラグ引数を省く解釈変更）は `extractChmod` 改修を要するため追加せず。未宣言＝fail-closed | uutils 0.8.0 `chmod --help` ＋ GNU `chmod(1)` |
 | `chown` / `chgrp` | なし | 追加: `--preserve-root`/`--no-preserve-root`（真偽）。保持: `--from`(NonPath)・`--reference`(NonPath)・`-R`/`--recursive`・`-v`・`-c`/`--changes`・`-f`/`--silent`/`--quiet`・`-h`/`--no-dereference`・`-H`・`-L`・`-P`・`--dereference` | — | `chown --help`・`chgrp --help`（`chgrp` も `--from`/`--reference` を実装。`ownerFlags` 共有は妥当） |
 | `sed` | なし | なし（`-i`/`-e`/`-f`/`-l`/`-n`/`-r`/`-E`/`-s`/`-z`/`-u`・`--posix`/`--debug`/`--sandbox`/`--follow-symlinks` すべて実在） | — | `sed --help` |
 | `tar` | なし（現行 `tarFlagSet` の宣言は実在） | 照合のうえ長形の漏れがあれば補完 | — | GNU tar 1.35 `tar --help` |
