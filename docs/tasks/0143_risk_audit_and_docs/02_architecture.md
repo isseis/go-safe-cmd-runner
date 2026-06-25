@@ -76,10 +76,18 @@ flowchart TD
 
 > 矢印 A → B は「確定データ A を成果物 B へ反映する（B は A を読み取り専用入力とする）」を表す。エッジのラベルは
 > 対応する機能要件（F-00x）を示す。
->
-> 凡例（ノード色）:
-> - 青（data）= 先行タスクが確定させた読み取り専用の入力データ
-> - 緑（enhanced）= 本タスクが追加・変更する成果物
+
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+
+    D1[("読み取り専用の入力データ")] --> E1["追加・変更する成果物"]
+    class D1 data
+    class E1 enhanced
+```
 
 ---
 
@@ -121,11 +129,20 @@ flowchart LR
 
 > 矢印 A → B は「A が B を呼び出す／A のデータが B へ流れる」を表す。ラベルの「実装済み」は先行タスクで既に存在する
 > 経路、「本タスク」は本設計で追加する経路を示す。
->
-> 凡例（ノード色）:
-> - 青（data）= データ（プラン・エントリ・出力ログ）
-> - オレンジ（process）= 既存のまま変更しないコンポーネント
-> - 緑（enhanced）= 本タスクで変更するコンポーネント
+
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+
+    D1[("データ（プラン・エントリ・出力ログ）")] --> P1["既存のまま変更しないコンポーネント"] --> E1["本タスクで変更するコンポーネント"]
+    class D1 data
+    class P1 process
+    class E1 enhanced
+```
 
 `RiskAssessment.OperandZones` は評価器（`risk/evaluator.go` の `foldZoning` 等）で既に格納され、
 `VerifiedCommandPlan.Assessment` → `RiskAuditEntry.Assessment` の経路で `LogRiskProfile` まで到達している。
@@ -435,11 +452,20 @@ flowchart TD
 ```
 
 > 矢印 A → B は「データ A が経路 B を通る／脅威 A に対策 B を適用する／対策 B に残存リスク B' が伴う」を表す。
->
-> 凡例（ノード色）:
-> - 青（data）= データ（オペランド入力・出力ログ）
-> - 緑（enhanced）= 本タスクで追加する防御
-> - 赤（problem）= 顕在化し得る脅威・残存リスク
+
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef problem fill:#ffe6e6,stroke:#d62728,stroke-width:2px,color:#7b0000;
+
+    D1[("データ（オペランド入力・出力ログ）")] --> E1["本タスクで追加する防御"] --> P1["顕在化し得る脅威・残存リスク"]
+    class D1 data
+    class E1 enhanced
+    class P1 problem
+```
 
 ### 5.2 セキュリティ設計パターン
 
@@ -497,10 +523,18 @@ flowchart TD
 ```
 
 > 矢印 A → B は「処理 A の次に処理 B へ進む」を表し、菱形は分岐条件を示す。
->
-> 凡例（ノード色）:
-> - オレンジ（process）= 既存のまま変更しない処理
-> - 緑（enhanced）= 本タスクで追加する処理・分岐
+
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+
+    P1["既存のまま変更しない処理"] --> E1["本タスクで追加する処理・分岐"]
+    class P1 process
+    class E1 enhanced
+```
 
 ### 6.2 副作用契約（フラグ／モード別）
 
