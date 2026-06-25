@@ -203,8 +203,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（#797）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4: 挙動同一性・fail-closed・静的ガード
 
@@ -213,15 +213,15 @@
 - 変更 `internal/runner/base/risk/live_identity_guard_test.go`（対象ファイル集合の拡張）
 
 **作業内容**:
-- [ ] `LocationResult` 同一性テスト `TestLocationResultParity`（AC-10）を `destination_zoning_parity_test.go` に追加: `zoningSpecs` の
+- [x] `LocationResult` 同一性テスト `TestLocationResultParity`（AC-10）を `destination_zoning_parity_test.go` に追加: `zoningSpecs` の
       全エントリ（件数はハードコードせず実集合を range）×代表フラグで、リファクタ後の `LocationResult`（`Applies`/`Recognized`/`Level`/
       `Operands`/`ReasonCodes`）が期待値と一致することを表駆動で固定する。
-- [ ] fail-closed テスト（AC-11）を `destination_zoning_parity_test.go` に追加: 未知/曖昧形・引数欠落・必須非フラグ引数欠落・解決不能で
+- [x] fail-closed テスト（AC-11）を `destination_zoning_parity_test.go` に追加: 未知/曖昧形・引数欠落・必須非フラグ引数欠落・解決不能で
       `Recognized=false`→High 下限。
-- [ ] 既存テスト無改変の確認（AC-09）: `git diff origin/main -- internal/runner/base/security/destination_zoning_test.go
+- [x] 既存テスト無改変の確認（AC-09）: `git diff origin/main -- internal/runner/base/security/destination_zoning_test.go
       internal/runner/base/security/operand_path_resolver_test.go` が**空**であること（新規ケースは別ファイルに置くため、既存 2 ファイルは
       機械的に無改変であることを保証する）。
-- [ ] `live_identity_guard_test.go` の `zoningGuardedFiles` に `../security/getopt.go`・`../security/flag_spec.go` を追加する
+- [x] `live_identity_guard_test.go` の `zoningGuardedFiles` に `../security/getopt.go`・`../security/flag_spec.go` を追加する
       （新規ガードは作らず既存を再利用。設計 §7）。再利用する 0142 ガードの禁止 API 集合は既に以下を網羅しており、本タスクで
       拡充は不要（追加確認のみ）: `os`/`syscall`/`unix` の uid/gid/euid/egid/groups getter、`os/user` の `Current`/`Lookup*`
       （ユーザー/グループ・ルックアップ）、環境（`Getenv`/`LookupEnv`/`Environ`）、プロセス生成（`StartProcess`/`ForkExec`/`Exec`/
@@ -233,8 +233,8 @@
       決定性テスト・差分テスト（振る舞いテスト）が持つ。
 
 **成功基準**:
-- [ ] AC-09〜AC-11 が緑。`TestNoLiveIdentityInZoning` が新規 2 ファイルを含めて緑。
-- [ ] `make fmt && make test && make lint` が緑、`./internal/runner/...` がコンパイル。
+- [x] AC-09〜AC-11 が緑。`TestNoLiveIdentityInZoning` が新規 2 ファイルを含めて緑。
+- [x] `make fmt && make test && make lint` が緑、`./internal/runner/...` がコンパイル。
 
 ### PR-4 作成ポイント: behavior parity, fail-closed tests, and static guard
 
@@ -244,8 +244,8 @@
 
 **レビュー観点**: `LocationResult` 同一性（`zoningSpecs` 全件 range）と fail-closed の網羅 / 既存 2 テストファイルが無改変（`git diff` 空）であることの確認 / 静的ガードへの新規 2 ファイル追加（既存ガード再利用・API 拡充不要）
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（#798）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

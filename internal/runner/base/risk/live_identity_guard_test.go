@@ -19,11 +19,15 @@ import (
 // live-identity and ambient-environment reads. Paths are relative to this package
 // directory (go test runs in the package directory). destination_zoning_spec.go is
 // included because its command specs, operand extractors, and operation floors are
-// core classification logic.
+// core classification logic; getopt.go and flag_spec.go (task 0144) are the single
+// parser and the declarative flag table that the extractors now consume, so they are
+// guarded too.
 var zoningGuardedFiles = []string{
 	"../security/destination_zoning.go",
 	"../security/destination_zoning_spec.go",
 	"../security/operand_path_resolver.go",
+	"../security/getopt.go",
+	"../security/flag_spec.go",
 }
 
 // forbiddenLiveIdentityPackage reports whether importPath is one of the packages
