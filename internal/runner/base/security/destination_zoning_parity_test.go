@@ -91,8 +91,9 @@ func TestExtractionRegressionCases(t *testing.T) {
 	})
 
 	t.Run("over-recognition removal: removed flags yield recognized=false", func(t *testing.T) {
-		// AC-02: representative inputs from 01_requirements.md §1.1 and Appendix A.
-		// Each was recognized=true before 0145; after cleanup it must be recognized=false.
+		// Representative inputs for over-recognition removal (0145): flags present
+		// in the legacy shared-helper set but absent from the real CLI (man pages).
+		// Each was recognized=true before the fix; after cleanup it must be recognized=false.
 		cases := []struct{ cmd, flag, operand string }{
 			{"sponge", "-r", "file"},
 			{"mkdir", "-a", "dir"},
@@ -186,8 +187,8 @@ func TestRemovedOverRecognizedFlagsFailClosed(t *testing.T) {
 // Each representative writes under the Trusted work dir, so every operand resolves into
 // the Trusted safe-zone (Level Low, no reason codes) unless a network egress raises it;
 // the per-case `roles` pins the operand count and ordering (Index/Role), and the loop
-// pins the resolved zone fields (Zone/Trusted/MatchedCritical) and ReasonCodes that
-// AC-10 enumerates. Resolved is the temp work-dir path (asserted non-empty, not by exact
+// pins the resolved zone fields (Zone/Trusted/MatchedCritical) and ReasonCodes.
+// Resolved is the temp work-dir path (asserted non-empty, not by exact
 // value). Operation floors that raise the level are pinned by TestLocationResultFloors.
 func TestLocationResultParity(t *testing.T) {
 	low := runnertypes.RiskLevelLow

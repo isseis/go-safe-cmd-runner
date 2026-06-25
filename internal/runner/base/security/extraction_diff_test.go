@@ -70,7 +70,7 @@ var diffExclusions = map[string]func(args []string) bool{
 		return isLongRecursionDeviation(args, "--recursive", "--archive") ||
 			// removal: cluster of removed -r and -a (mv --help)
 			exactArgvMatch(args, "-ra", "s", "d") ||
-			// AC-02 representative: mv -s SRC DST (mv --help: no -s flag)
+			// over-recognition removal: mv -s SRC DST (mv --help: no -s flag)
 			exactArgvMatch(args, "-s", "s", "d") ||
 			// removal: cluster with removed -r and kept -f (mv --help: no -r flag)
 			exactArgvMatch(args, "-rf", "s", "d") ||
@@ -95,7 +95,7 @@ var diffExclusions = map[string]func(args []string) bool{
 	// rmdirFlags, so the auto-corpus never generates {"--recursive","a","b"} for rmdir).
 	"rmdir": func(args []string) bool {
 		return isLongRecursionDeviation(args, "--recursive") ||
-			// AC-02 representative: rmdir -r DIR (rmdir --help: no -r flag)
+			// over-recognition removal: rmdir -r DIR (rmdir --help: no -r flag)
 			exactArgvMatch(args, "-r", "d") ||
 			// cluster with removed -r and kept -p (rmdir --help: no -r flag)
 			exactArgvMatch(args, "-rp", "d")
@@ -103,11 +103,11 @@ var diffExclusions = map[string]func(args []string) bool{
 
 	// unlink 0145 deviation (over-recognition removal, recognized=true->false): unlink has
 	// no flags (unlink --help). Any flag token now yields recognized=false.
-	// The 0144 --recursive predicate is retained but dead (nil Flags → auto-corpus never
+	// The 0144 --recursive predicate is retained but dead (nil Flags -> auto-corpus never
 	// generates {"--recursive","a","b"} for unlink).
 	"unlink": func(args []string) bool {
 		return isLongRecursionDeviation(args, "--recursive") ||
-			// AC-02 representative: unlink -r FILE (unlink --help: no options)
+			// over-recognition removal: unlink -r FILE (unlink --help: no options)
 			exactArgvMatch(args, "-r", "f") ||
 			// cluster of two removed flags (unlink --help: no options)
 			exactArgvMatch(args, "-rf", "f")
@@ -116,7 +116,7 @@ var diffExclusions = map[string]func(args []string) bool{
 	// sponge 0145 deviation (over-recognition removal, recognized=true->false): sponge
 	// has only -a/--append (moreutils sponge(1)). Other flags now yield recognized=false.
 	"sponge": func(args []string) bool {
-		// AC-02 representative: sponge -r FILE (sponge(1): no -r flag)
+		// over-recognition removal: sponge -r FILE (sponge(1): no -r flag)
 		return exactArgvMatch(args, "-r", "f") ||
 			// cluster of two removed flags (sponge(1): only -a/--append exists)
 			exactArgvMatch(args, "-rv", "f")
@@ -125,7 +125,7 @@ var diffExclusions = map[string]func(args []string) bool{
 	// mkdir 0145 deviations: (a) over-recognition removal for flags absent from real mkdir;
 	// (b) addition of -Z/--context (recognized=false->true; mkdir --help).
 	"mkdir": func(args []string) bool {
-		return exactArgvMatch(args, "-a", "d") || // AC-02: no -a flag (mkdir --help)
+		return exactArgvMatch(args, "-a", "d") || // over-recognition removal: no -a flag (mkdir --help)
 			exactArgvMatch(args, "-af", "d") || // cluster of two removed flags
 			// addition: -Z/--context (mkdir --help)
 			exactArgvMatch(args, "-Z", "a", "b") ||
@@ -135,7 +135,7 @@ var diffExclusions = map[string]func(args []string) bool{
 	// touch 0145 deviations: (a) over-recognition removal for -p (touch --help);
 	// (b) additions of -m and --time (recognized=false->true; touch --help).
 	"touch": func(args []string) bool {
-		return exactArgvMatch(args, "-p", "f") || // AC-02: no -p flag (touch --help)
+		return exactArgvMatch(args, "-p", "f") || // over-recognition removal: no -p flag (touch --help)
 			// addition: -m boolean (touch --help)
 			exactArgvMatch(args, "-m", "a", "b") ||
 			// addition: --time value flag (touch --help)
@@ -185,7 +185,7 @@ var diffExclusions = map[string]func(args []string) bool{
 			exactArgvMatch(args, "--random-source=v", "a", "b")
 	},
 
-	// install 0145: (a) -b/--backup changed ArityRequired->ArityOptional — bare form no
+	// install 0145: (a) -b/--backup changed ArityRequired->ArityOptional -- bare form no
 	// longer consumes the next token as the backup suffix (install --help);
 	// (b) new flags added: --strip-program, -P/--preserve-context, -U/--unprivileged,
 	// -Z/--context (optional).
@@ -356,7 +356,7 @@ var diffFixtures = map[string][][]string{
 		{"a"},
 		// existing: cluster of removed -r and -a (mv --help has neither)
 		{"-ra", "s", "d"},
-		// AC-02 representative (mv --help: no -s/--symbolic-link flag)
+		// over-recognition removal (mv --help: no -s/--symbolic-link flag)
 		{"-s", "s", "d"},
 		// cluster with removed -r and kept -f (mv --help: no -r flag)
 		{"-rf", "s", "d"},
@@ -367,7 +367,7 @@ var diffFixtures = map[string][][]string{
 		{"d"},
 		{"-p", "d"},
 		{"-v", "d"},
-		// AC-02 representative (rmdir --help: no -r flag)
+		// over-recognition removal (rmdir --help: no -r flag)
 		{"-r", "d"},
 		// cluster with removed -r and kept -p (rmdir --help: no -r flag)
 		{"-rp", "d"},
@@ -375,7 +375,7 @@ var diffFixtures = map[string][][]string{
 	// unlink 0145: unlink has no flags (unlink --help); any flag is unrecognized
 	"unlink": {
 		{"f"},
-		// AC-02 representative (unlink --help: no options at all)
+		// over-recognition removal (unlink --help: no options at all)
 		{"-r", "f"},
 		// cluster of two removed flags (unlink --help: no options at all)
 		{"-rf", "f"},
@@ -398,7 +398,7 @@ var diffFixtures = map[string][][]string{
 		{"-r", "ref", "f"},
 		{"-t", "2401010000", "f"},
 		{"-c", "f"},
-		// AC-02 representative (touch --help: no -p/--parents flag)
+		// over-recognition removal (touch --help: no -p/--parents flag)
 		{"-p", "f"},
 	},
 	"mkdir": {
@@ -406,7 +406,7 @@ var diffFixtures = map[string][][]string{
 		{"-m", "0777", "d"},
 		{"-m", "u+s", "d"},
 		{"-p", "a/b"},
-		// AC-02 representative (mkdir --help: no -a flag)
+		// over-recognition removal (mkdir --help: no -a flag)
 		{"-a", "d"},
 		// cluster of two removed flags (mkdir --help: no -a or -f flags)
 		{"-af", "d"},
@@ -415,7 +415,7 @@ var diffFixtures = map[string][][]string{
 	"sponge": {
 		{"f"},
 		{},
-		// AC-02 representative (moreutils sponge(1): no -r flag)
+		// over-recognition removal (moreutils sponge(1): no -r flag)
 		{"-r", "f"},
 		// cluster of two removed flags (sponge(1): only -a/--append exists)
 		{"-rv", "f"},
