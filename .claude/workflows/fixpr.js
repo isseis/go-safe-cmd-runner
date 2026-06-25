@@ -144,7 +144,9 @@ gh api graphql -F owner=OWNER -F repo=REPO -F number=NUMBER -f query='
 
 3. Filter to nodes where isResolved=false.
 4. For each thread, use the FIRST comment's databaseId, path, line, url.
-   Concatenate ALL comments into the body field, prefixing each with "@author: ".
+   Concatenate the fetched comments (capped at first:10 per thread) into the body field,
+   prefixing each with "@author: ". Note: on busy threads there may be more than 10 comments;
+   the body will only contain the first 10 fetched.
    The threadId is the node "id" from reviewThreads (not the comment id).
 5. Set capHit=true if pageInfo.hasNextPage is true (more threads exist beyond the
    100-node cap); otherwise capHit=false.
@@ -257,9 +259,10 @@ const buildResult = valid.length > 0
 1. ${BUILD_CHECKS}
 2. If all pass:
    git add -A
-   git diff --cached --quiet || git commit -m "fix: address PR #${pr.number} review comments"
-3. Get the commit SHA: git log -1 --format=%H
-4. Return success=true and commitSha.
+   git diff --cached --quiet && COMMITTED=0 || COMMITTED=1
+   if [ "$COMMITTED" = "1" ]; then git commit -m "fix: address PR #${pr.number} review comments"; fi
+3. Only if a commit was actually created (COMMITTED=1), get the commit SHA: git log -1 --format=%H. Otherwise use empty string.
+4. Return success=true and commitSha (empty string if no commit was made).
 If any check fails, return success=false and the error output in the error field. Do NOT commit on failure.`,
       { schema: BUILD_SCHEMA, model: 'haiku', effort: 'low', phase: 'Build' }
     )
@@ -291,7 +294,7 @@ const appliedThreadIds = new Set(fixes.filter(f => f.applied).map(f => f.threadI
 const threadIndex = {}
 for (const t of pr.threads) threadIndex[t.threadId] = t
 
-const actionable = triage.threads
+const candidateThreads = triage.threads
   .filter(t => t.verdict === 'invalid' || (t.verdict === 'valid' && appliedThreadIds.has(t.threadId)))
   .map(t => ({
     threadId:   t.threadId,
@@ -301,6 +304,14 @@ const actionable = triage.threads
     repo:       pr.repo,
     number:     pr.number,
   }))
+
+// Threads missing a databaseId cannot be replied to automatically — surface them
+// for manual resolution instead of silently dropping them.
+const missingDatabaseIdUrls = candidateThreads
+  .filter(t => !t.databaseId)
+  .map(t => (threadIndex[t.threadId] || {}).url || t.threadId)
+
+const actionable = candidateThreads
   .filter(t => t.databaseId)
   .filter(t => t.replyBody)
 
@@ -344,8 +355,8 @@ await agent(
    have not drafted concrete replacement text, SKIP the edit entirely so the real
    PR description is preserved.
    gh pr edit ${pr.number} --title "NEW TITLE" --body-file - <<'EOF'
-   ...updated body...
-   EOF
+...updated body...
+EOF
 4. git push`,
   { model: 'haiku', effort: 'low', phase: 'Wrap' }
 )
@@ -356,6 +367,8 @@ const unclearUrls = unclear.map(t => (threadIndex[t.threadId] || {}).url || t.th
 const unappliedValidUrls = valid
   .filter(t => !appliedThreadIds.has(t.threadId))
   .map(t => (threadIndex[t.threadId] || {}).url || t.threadId)
+// Threads that were actionable but lacked a databaseId need manual resolution.
+const manualUrls = missingDatabaseIdUrls
 
 // Per-thread assessment for the post-run report: what each comment raised, how
 // much it mattered (severity), and whether a fix was actually applied. This is
@@ -373,7 +386,7 @@ return {
   pr:         `${pr.owner}/${pr.repo}#${pr.number}`,
   fixed:      fixes.filter(f => f.applied).length,
   invalid:    invalid.length,
-  unclear:    [...unclearUrls, ...unappliedValidUrls],
+  unclear:    [...unclearUrls, ...unappliedValidUrls, ...manualUrls],
   clusters:   triage.clusters.length,
   commit:     buildResult.commitSha || '(none)',
   assessment,
