@@ -155,6 +155,14 @@
       `Values` を正規キー（`FlagSpec` 由来）で読む（map を `for range` しない。設計 §3.1 決定性制約）。
 - [ ] tar・chattr は事前正規化を挟む（tar: `normalizeTarArgs`、chattr: `isChattrMode` 合致トークンを `parseArgs` 前に分離）。
       dd は `Flags` を空にし `ToExtraction` 内で `if=`/`of=` を専用解析（設計 §3.5）。
+- [ ] 凍結オラクルの非気密性に対処する: `extraction_legacy_test.go` は値内文法ヘルパ（`tarMode`/`normalizeTarArgs`/
+      `isChattrMode`/`isRemoteTerminus`/`chmodGrantsHigh`/`aclGrantsWrite`/`hostTokenRe`/`set`）を production と共有して呼ぶため、
+      これらを Phase 3 で変更すると旧/新が同時に変わり差分テストがすり抜ける。本フェーズでは原則これらを変更しない。`git diff` で
+      対象関数が未変更であることを確認する。やむを得ず変更する場合は、変更前に当該ヘルパを `legacyXxx` として凍結ファイルへコピーして
+      からにする。
+- [ ] 長形再帰フラグの意図的逸脱を差分テストに反映する: 移行で `cp`/`mv` の `--recursive`/`--archive`、`rm` の `--recursive`
+      （長形のみ）が `recognized=false→true` に変わる。`extraction_diff_test.go` の `diffExclusions`（Phase 2 で空のフックを用意済み）に
+      当該コマンド×長形に厳密一致する述語のみを登録して除外し、除外理由をコメントに明記する（同フラグの他の入力形を巻き込まないこと）。
 - [ ] 各コマンドの移行ごとに、当該コマンドの差分テスト（`extraction_diff_test.go`）と既存テスト（`destination_zoning_test.go`）が
       緑であることをゲートとする。緑にならない限り次のコマンドへ進まない。
 - [ ] 回帰代表ケース（AC-08）を `destination_zoning_parity_test.go`（新規）に追加する（既存 `destination_zoning_test.go` は無改変に保つ）。

@@ -22,11 +22,49 @@ func TestExtractionDifferential(t *testing.T) {
 	for cmd := range zoningSpecs {
 		spec := commandFlagSpecs[cmd]
 		for _, args := range diffCorpus(cmd, spec) {
+			if excludedFromDiff(cmd, args) {
+				continue
+			}
 			legacy := normalizeExtraction(legacyZoningSpecs[cmd](args))
 			prod := normalizeExtraction(zoningSpecs[cmd].extract(args))
 			if !reflect.DeepEqual(legacy, prod) {
 				t.Errorf("cmd=%q args=%q diverged\n  legacy=%+v\n  prod  =%+v", cmd, args, legacy, prod)
 			}
+		}
+	}
+}
+
+// diffExclusions lists, per command, the inputs where the new implementation is allowed
+// to diverge from the frozen legacy oracle ON PURPOSE. It is EMPTY in Phase 2 (the
+// harness is tautological, so there is nothing to excuse yet). Phase 3 populates it for
+// the one documented deviation -- long-form recursion flags (cp/mv --recursive and
+// --archive, rm --recursive) flip recognized=false->true; see the decision history in
+// 02_architecture.md. Keep each predicate as narrow as possible (match only the exact
+// diverging argv shape) so it never masks a real regression on the same flag.
+var diffExclusions = map[string]func(args []string) bool{}
+
+// excludedFromDiff reports whether (cmd, args) is an intentional, documented divergence.
+func excludedFromDiff(cmd string, args []string) bool {
+	if pred, ok := diffExclusions[cmd]; ok {
+		return pred(args)
+	}
+	return false
+}
+
+// TestLegacyZoningSpecsCoverage asserts the frozen oracle covers exactly the live
+// command set, so a command added to zoningSpecs without a frozen counterpart fails
+// here cleanly instead of panicking on a nil func inside TestExtractionDifferential.
+func TestLegacyZoningSpecsCoverage(t *testing.T) {
+	for cmd := range zoningSpecs {
+		_, ok := legacyZoningSpecs[cmd]
+		if !ok {
+			t.Errorf("zoningSpecs has %q but legacyZoningSpecs does not", cmd)
+		}
+	}
+	for cmd := range legacyZoningSpecs {
+		_, ok := zoningSpecs[cmd]
+		if !ok {
+			t.Errorf("legacyZoningSpecs has %q but zoningSpecs does not", cmd)
 		}
 	}
 }
@@ -184,6 +222,8 @@ var diffFixtures = map[string][][]string{
 		{"-delete"},
 		{".", "-name", "x", "-delete"},
 		{"/p", "-fprint", "/o"},
+		{"/p", "-fprint0", "/o"},
+		{"/p", "-fprintf", "/o", "%p"},
 		{"/p", "-exec", "rm", ";"},
 		{"/p", "-print"},
 		{"/p", "-fprint"},

@@ -2,6 +2,21 @@
 
 package security
 
+// This file is a FROZEN verbatim copy of the pre-refactor argv-extraction layer
+// (legacyExtractXxx + legacyScanFlags + their local helpers), kept as the immutable
+// oracle for TestExtractionDifferential. Do not edit it to make a test pass.
+//
+// Frozen-by-contract dependency: these legacy extractors call value-grammar helpers
+// that live in production (destination_zoning_spec.go) and are NOT copied here:
+// tarMode, normalizeTarArgs, isChattrMode, isRemoteTerminus, chmodGrantsHigh (isOctal),
+// aclGrantsWrite, hostTokenRe, and set. The refactor treats these as invariant, so the
+// oracle reuses them rather than duplicating them. That reuse means the oracle is only
+// hermetic as long as those helpers stay unchanged: if Phase 3 ever needs to modify one
+// of them, copy it into this file first (as legacyXxx) so the oracle keeps the
+// pre-refactor behavior; otherwise the oracle and production would drift together and
+// the differential test could stay green while behavior changed. The Phase 3 migration
+// verifies (git diff) that these helpers are untouched.
+
 import (
 	"path/filepath"
 	"strings"
