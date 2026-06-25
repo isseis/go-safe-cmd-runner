@@ -22,14 +22,16 @@ func (r ParseResult) HasFlag(canonicalKey string) bool {
 	return ok
 }
 
-// argParser holds the mutable state threaded through one parseArgs call: the flag
-// lookup table, the argv being scanned, the cursor into it, and the result being
-// built. Keeping this state on a struct (rather than passing a closure plus indices
-// between free functions) is the idiomatic Go way to share it across the helpers.
+// argParser holds the state shared across one parseArgs call: the flag lookup table
+// and the argv being scanned (both read-only after setup), plus the result being
+// accumulated. The cursor into argv is NOT stored here; it is a local owned by the
+// parseArgs loop, which is its single writer. Helpers read the cursor and report back
+// (via consumedNext) whether they took the following token, instead of mutating it.
+// Using a struct with methods (rather than passing a closure and indices between free
+// functions) is the idiomatic Go way to share this.
 type argParser struct {
 	byName map[string]*FlagSpec
 	args   []string
-	i      int
 	res    ParseResult
 }
 
@@ -49,24 +51,32 @@ func parseArgs(flags []FlagSpec, args []string) ParseResult {
 		args:   args,
 		res:    ParseResult{Values: make(map[string][]string), Recognized: true},
 	}
-	for i := range flags {
-		f := &flags[i]
+	for _, f := range flags {
 		for _, n := range f.Names {
-			p.byName[n] = f
+			p.byName[n] = &f
 		}
 	}
 
+	// i is the cursor and the loop is its only writer. Each token is the "--"
+	// terminator, a non-flag argument, or a flag token. A flag that takes a separate
+	// value also consumes the next token; parseFlagToken reports that via consumedNext
+	// so the loop skips it. A non-recognized token records fail-closed but does not
+	// stop the scan.
 	endOpts := false
-	for p.i = 0; p.i < len(p.args); p.i++ {
-		a := p.args[p.i]
+	for i := 0; i < len(p.args); i++ {
+		a := p.args[i]
 		switch {
 		case !endOpts && a == "--":
 			endOpts = true
 		case endOpts || len(a) < 2 || a[0] != '-':
 			p.res.NonFlagArgs = append(p.res.NonFlagArgs, a)
 		default:
-			if !p.parseFlagToken(a) {
+			consumedNext, ok := p.parseFlagToken(i)
+			if !ok {
 				p.res.Recognized = false
+			}
+			if consumedNext {
+				i++
 			}
 		}
 	}
@@ -86,35 +96,37 @@ func (p *argParser) mark(f *FlagSpec, vals ...string) {
 	}
 }
 
-// parseFlagToken classifies one option token (a, already known to start with '-' and
-// not be "--"). It advances the cursor when a value flag consumes the next token, and
-// returns false when the token cannot be fully recognized (unknown flag or missing
-// required value), so the caller can set Recognized=false.
-func (p *argParser) parseFlagToken(a string) bool {
+// parseFlagToken classifies the option token at args[i] (known to start with '-' and
+// not be "--"). consumedNext is true when the flag took args[i+1] as its value, so the
+// caller skips it. ok is false when the token cannot be fully recognized (unknown flag
+// or missing required value), so the caller can set Recognized=false.
+func (p *argParser) parseFlagToken(i int) (consumedNext, ok bool) {
+	a := p.args[i]
 	name, val, hasEq := strings.Cut(a, "=")
-	if f, ok := p.byName[name]; ok {
-		return p.markNamedFlag(f, val, hasEq)
+	if f, found := p.byName[name]; found {
+		return p.markNamedFlag(f, i, val, hasEq)
 	}
 	// An unknown long flag (--foo) may take a value, so fail closed.
 	if strings.HasPrefix(a, "--") {
-		return false
+		return false, false
 	}
-	return p.parseShortCluster(a)
+	return p.parseShortCluster(i)
 }
 
-// markNamedFlag records an exactly-spelled flag and consumes its value per arity. It
-// returns false only when a required value is missing.
-func (p *argParser) markNamedFlag(f *FlagSpec, val string, hasEq bool) bool {
+// markNamedFlag records an exactly-spelled flag and consumes its value per arity.
+// consumedNext is true when a required value was taken from args[i+1]; ok is false only
+// when a required value is missing.
+func (p *argParser) markNamedFlag(f *FlagSpec, i int, val string, hasEq bool) (consumedNext, ok bool) {
 	switch f.Arity {
 	case ArityRequired:
 		switch {
 		case hasEq:
 			p.mark(f, val)
-		case p.i+1 < len(p.args):
-			p.mark(f, p.args[p.i+1])
-			p.i++
+		case i+1 < len(p.args):
+			p.mark(f, p.args[i+1])
+			return true, true
 		default:
-			return false // required value missing at end of argv
+			return false, false // required value missing at end of argv
 		}
 	case ArityOptional:
 		if hasEq {
@@ -125,19 +137,20 @@ func (p *argParser) markNamedFlag(f *FlagSpec, val string, hasEq bool) bool {
 	default: // ArityNone
 		p.mark(f) // boolean/recursion flag; any attached =value is ignored (legacy parity)
 	}
-	return true
+	return false, true
 }
 
-// parseShortCluster parses a short-flag cluster (e.g. -rf, or a value flag with an
-// attached value like -C/usr). A value flag inside the cluster captures the rest of
-// the token as its value (or, when required and nothing is attached, the next token);
-// dropping that value would default a destination to the cwd (fail-open). It returns
-// false on an unknown cluster char or a required value with nothing to consume.
-func (p *argParser) parseShortCluster(a string) bool {
+// parseShortCluster parses a short-flag cluster at args[i] (e.g. -rf, or a value flag
+// with an attached value like -C/usr). A value flag inside the cluster captures the
+// rest of the token as its value, or args[i+1] when nothing is attached (consumedNext);
+// dropping that value would default a destination to the cwd (fail-open). ok is false
+// on an unknown cluster char or a required value with nothing to consume.
+func (p *argParser) parseShortCluster(i int) (consumedNext, ok bool) {
+	a := p.args[i]
 	for k, c := range a[1:] {
-		f, ok := p.byName["-"+string(c)]
-		if !ok {
-			return false
+		f, found := p.byName["-"+string(c)]
+		if !found {
+			return false, false
 		}
 		if f.Arity == ArityNone {
 			p.mark(f)
@@ -150,15 +163,15 @@ func (p *argParser) parseShortCluster(a string) bool {
 		switch {
 		case rest != "":
 			p.mark(f, rest)
-		case f.Arity == ArityRequired && p.i+1 < len(p.args):
-			p.mark(f, p.args[p.i+1])
-			p.i++
+		case f.Arity == ArityRequired && i+1 < len(p.args):
+			p.mark(f, p.args[i+1])
+			return true, true
 		case f.Arity == ArityOptional:
 			p.mark(f) // optional, no attached value; do not consume the next token
 		default:
-			return false // required value flag with nothing to consume
+			return false, false // required value flag with nothing to consume
 		}
-		return true // a value flag consumes the remainder of the cluster
+		return false, true // a value flag consumes the remainder of the cluster
 	}
-	return true
+	return false, true
 }
