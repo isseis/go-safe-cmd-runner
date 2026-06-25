@@ -70,13 +70,13 @@
 
 **対象成果物**: 本書 付録 A「実 CLI フラグ典拠表」。
 
-- [ ] `commandFlagSpecs` の全登録コマンドについて、権威ある仕様を典拠として現行宣言フラグと突き合わせ、(a) 過剰認識（削除すべき
+- [x] `commandFlagSpecs` の全登録コマンドについて、権威ある仕様を典拠として現行宣言フラグと突き合わせ、(a) 過剰認識（削除すべき
   真偽フラグ）、(b) 宣言漏れ（追加すべきフラグ）、(c) 表記・アリティ・値役割の不一致 を一覧化する。典拠は付録 A に明記する（AC-01）。
   - 典拠の所在: GNU coreutils コマンド（`cp`/`mv`/`rm`/`rmdir`/`unlink`/`ln`/`mkdir`/`touch`/`install`/`shred`/`truncate`/`mknod`/
     `chmod`/`chown`/`chgrp`/`dd`）は GNU coreutils マニュアル、`sed` は GNU sed マニュアル、`tar` は GNU tar マニュアル、`mount`/`umount`/
     `chattr` は util-linux / e2fsprogs マニュアル、`setfacl` は acl パッケージ man、`sponge` は moreutils man、`tee` は coreutils、
     `unzip` は Info-ZIP man、`curl`/`wget`/`scp`/`rsync`/`sftp` は各 man ページ。
-- [ ] 付録 A の各行に「削除/追加/修正」の別と典拠（man ページ名）を記す。要件 §1.1 が挙げた代表例（`sponge`/`mkdir`/`touch`・
+- [x] 付録 A の各行に「削除/追加/修正」の別と典拠（man ページ名）を記す。要件 §1.1 が挙げた代表例（`sponge`/`mkdir`/`touch`・
   `rmdir`/`unlink`・`mv`）は既に典拠付きで確定しているため、後述のフェーズ 2 で確定入力として扱う。
 
 **完了条件**: 全コマンドの是正内容（削除・追加・修正）が付録 A に典拠付きで確定している。
@@ -89,7 +89,7 @@
 
 **レビュー観点**: 付録 A の各コマンドの典拠（man ページ）が正確か / 削除・追加・修正の別が要件 §1.1 と整合するか / `commandFlagSpecs` の全登録コマンドが網羅されているか
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
@@ -282,17 +282,54 @@
 
 ---
 
-## 付録 A: 実 CLI フラグ典拠表（フェーズ 1 で確定）
+## 付録 A: 実 CLI フラグ典拠表（フェーズ 1 成果物）
 
-> 本表はフェーズ 1 の成果物であり、実装着手時に各コマンドの man ページ典拠で確定・追記する。下記の代表行は要件 §1.1 で典拠付きで
-> 確定済みのもの。残コマンド（`ln`・`install`・`shred`・`truncate`・`tee`・`mknod`・`tar`・`unzip`・`mount`・`umount`・`chmod`・
-> `chown`・`chgrp`・`setfacl`・`chattr`・`sed`・`curl`・`wget`・`scp`・`rsync`）はフェーズ 1 で行を追加する。
+各コマンドの宣言フラグ（`flag_spec.go` 現行）を実 CLI と突き合わせた結果。典拠は、当環境にインストール済みのコマンドは
+その `--help`（GNU coreutils 9.7 / GNU tar 1.35 / util-linux / curl）を一次典拠とし、未インストールのコマンド
+（`sponge`/`unzip`/`setfacl`/`wget`/`scp`/`rsync`/`sftp`/`chattr`）は当該 man ページを典拠とする。
 
-| コマンド | 是正の別 | 対象フラグ | 典拠 |
+**列の意味**: 「削除」＝実 CLI に無い宣言フラグ（過剰認識。除去対象、すべて真偽フラグで fail-closed 方向）。「追加/修正」＝
+実 CLI にあるが未宣言、または別名・アリティ・役割の誤り（既存 `ToExtraction` で正しく扱えるデータのみの是正）。「備考（スコープ外）」＝
+追加に `ToExtraction` の解釈ロジック改修を要するため本タスク（データのみ）では扱わず、未知フラグとして fail-closed のまま残す
+安全な漏れ。
+
+**スコープ原則**: 真偽フラグ・非 path 値フラグの追加はデータのみで安全に行える。path を運ぶ値フラグの追加は `ToExtraction` が当該値を
+オペランド化する必要があり、`destination_zoning_spec.go` 不変の制約に反するため本タスクでは追加せず備考に記す（未宣言＝fail-closed で安全）。
+
+### A.1 共有ヘルパ由来の過剰認識（本タスクの主眼）
+
+| コマンド | 削除（過剰認識） | 追加/修正（データのみ） | 典拠 |
 |---|---|---|---|
-| `sponge` | 削除 | `-c`/`-h`/`-p`/`-v`/`-f`/`-i`/`-r`（実在は `-a` のみ） | moreutils `sponge(1)` |
-| `mkdir` | 削除 | `-a`/`-c`/`-h`/`-f`/`-i`/`-r`（実在は `-m`/`-p`/`-v`/`-Z`） | GNU coreutils `mkdir(1)` |
-| `touch` | 削除 | `-p`/`-v`/`-i` | GNU coreutils `touch(1)` |
-| `unlink` | 削除 | `rm` 由来の全オプション（実在はオプション無し） | GNU coreutils `unlink(1)` |
-| `rmdir` | 削除 | `-r`/`-R`/`-f`/`-i`/`-I`/`-d` 等（実在は `-p`/`-v`/`--ignore-fail-on-non-empty`） | GNU coreutils `rmdir(1)` |
-| `mv` | 削除 | `-r`/`-R`/`-a`/`-s`/`-l`/`-L`/`-P`/`-H`/`-d`/`-x`（再帰・リンク・デリファレンス系） | GNU coreutils `mv(1)` |
+| `mv` | `-r`/`-R`/`--recursive`・`-a`/`--archive`・`-d`・`-L`/`--dereference`・`-P`/`--no-dereference`・`-H`・`-s`/`--symbolic-link`・`-l`/`--link`・`-x`/`--one-file-system` | 追加: `-Z`/`--context`・`--strip-trailing-slashes`（真偽）。保持: `-t`/`--target-directory`(Write)・`-S`/`--suffix`(NonPath)・`-f`・`-i`・`-n`・`-u`・`-v`・`-b`/`--backup`・`-T`/`--no-target-directory` | `mv --help` |
+| `rm` | `-p`/`--parents`・`--ignore-fail-on-non-empty`（`rmdir` 由来） | 保持: `-r`/`-R`/`--recursive`・`-f`/`--force`・`-i`・`-I`・`--interactive`・`-v`/`--verbose`・`-d`/`--dir`・`--one-file-system`。追加: `--preserve-root`/`--no-preserve-root`（真偽） | `rm --help` |
+| `rmdir` | `-r`/`-R`/`--recursive`・`-f`/`--force`・`-i`・`-I`・`--interactive`・`-d`/`--dir`・`--one-file-system` | 保持: `-p`/`--parents`・`-v`/`--verbose`・`--ignore-fail-on-non-empty` | `rmdir --help` |
+| `unlink` | 宣言フラグ全件（実 CLI にオプション無し）→ `Flags` を空にする | — | `unlink --help` |
+| `mkdir` | `-a`・`-c`・`-h`・`-f`・`-i`・`-r` | 保持: `-m`/`--mode`(NonPath)・`-p`/`--parents`・`-v`/`--verbose`。追加: `-Z`/`--context`（真偽） | `mkdir --help` |
+| `sponge` | `-c`・`-h`・`-p`・`-v`・`-f`・`-i`・`-r`（実在は `-a` のみ） | 保持: `-a` | moreutils `sponge(1)` |
+| `touch` | `-p`/`--parents`・`-v`/`--verbose`・`-i` | 修正: `-a` の誤別名 `--append` を除去（`touch -a` に長形なし）。追加: `-m`（真偽）・`--time`(NonPath)。保持: `-r`/`--reference`(NonPath)・`-d`/`--date`(NonPath)・`-t`(NonPath)・`-a`・`-c`/`--no-create`・`-h`/`--no-dereference`・`-f` | `touch --help` |
+
+> `cp` は `copyMoveFlags` の「残す側」。現行宣言（`-t`/`-S`/`-r`/`-R`/`-a`/`-f`/`-i`/`-n`/`-v`/`-u`/`-d`/`-L`/`-P`/`-H`/`-s`/`-l`/`-T`/`-b`/`-x`）は
+> すべて実 CLI に実在（`cp --help`）。削除なし。`extractCopyMove` は `cp`/`mv` で共有を維持し、`mv` 専用集合のみ新設する。
+
+### A.2 個別宣言コマンド
+
+| コマンド | 削除（過剰認識） | 追加/修正（データのみ） | 備考（スコープ外の安全な漏れ） | 典拠 |
+|---|---|---|---|---|
+| `mknod` | `-v`/`--verbose`（実在せず） | 保持: `-m`/`--mode`(NonPath)・`-Z`/`--context`。修正: `-Z` は真偽/任意引数（現行 `ArityRequired` を見直し。非 path のため影響軽微） | — | `mknod --help` |
+| `ln` | なし | 追加: `--logical`(`-L` 長形)・`--physical`(`-P` 長形)・`--backup`(`-b` 長形)（真偽）。保持: `-t`/`--target-directory`(Write)・`-s`/`--symbolic`・`-S`/`--suffix`(NonPath)・`-f`・`-n`・`-r`・`-v`・`-i`・`-T`・`-b`・`-L`・`-P` | — | `ln --help` |
+| `install` | なし | 追加: `-P`/`--preserve-context`・`-U`/`--unprivileged`・`-Z`・`--context`・`--strip-program`（真偽/値）。修正: `-b` は真偽（`--backup` は任意引数。現行 `valueFlag` 見直し、非 path） | — | `install --help` |
+| `shred` | なし | 追加: `--random-source`(NonPath)。修正: `-u`/`--remove` は任意引数（現行真偽。非 path） | — | `shred --help` |
+| `truncate` | なし | なし（全宣言が実在） | — | `truncate --help` |
+| `tee` | なし | なし（`-a`/`--append`・`-i`/`--ignore-interrupts`・`-p`・`--output-error` すべて実在） | — | `tee --help` |
+| `chmod` | なし | 追加: `-H`・`-h`/`--no-dereference`・`-L`・`-P`・`--dereference`（真偽） | `--reference=RFILE`（参照ファイル値かつモード位置引数を省く解釈変更）は `extractChmod` 改修を要するため追加せず。未宣言＝fail-closed | `chmod --help` |
+| `chown` / `chgrp` | なし | 追加: `--preserve-root`/`--no-preserve-root`（真偽）。保持: `--from`(NonPath)・`--reference`(NonPath)・`-R`/`--recursive`・`-v`・`-c`/`--changes`・`-f`/`--silent`/`--quiet`・`-h`/`--no-dereference`・`-H`・`-L`・`-P`・`--dereference` | — | `chown --help`・`chgrp --help`（`chgrp` も `--from`/`--reference` を実装。`ownerFlags` 共有は妥当） |
+| `sed` | なし | なし（`-i`/`-e`/`-f`/`-l`/`-n`/`-r`/`-E`/`-s`/`-z`/`-u`・`--posix`/`--debug`/`--sandbox`/`--follow-symlinks` すべて実在） | — | `sed --help` |
+| `tar` | なし（現行 `tarFlagSet` の宣言は実在） | 照合のうえ長形の漏れがあれば補完 | — | GNU tar 1.35 `tar --help` |
+| `mount` / `umount` | なし（現行宣言は実在） | 照合のうえ過不足を補正 | — | util-linux `mount --help`・`umount --help` |
+| `unzip` | 要照合 | Info-ZIP man と照合。現行（`-d`(Write)・`-x`(値)・`-o`/`-n`/`-q`/`-qq`/`-v`/`-j`/`-a`/`-u`/`-f`、`-l`/`-Z` 意図的未宣言）の過不足を補正 | — | Info-ZIP `unzip(1)` |
+| `setfacl` | 要照合 | acl man と照合 | — | acl `setfacl(1)` |
+| `chattr` | 要照合 | e2fsprogs man と照合（現行 `chattrFlagSet`） | — | e2fsprogs `chattr(1)` |
+| `curl` / `wget` / `scp` / `rsync` | 要照合（0144 で手作りした集合のため過剰認識リスクは低い） | 各 man と照合し過不足を補正。path 運搬値フラグ（`curl -o`/`-T`・`wget -O`/`-P`/`--post-file`）の役割・アリティは現行どおり保存 | path 運搬値フラグの新規追加で `ToExtraction` 改修が要るものは追加せず備考化 | curl `--help all`・`wget(1)`・`scp(1)`・`rsync(1)` |
+
+> `dd`・`find`・`sftp` はフラグを宣言せず（`dd` は `if=`/`of=` の key=value、`find` は述語の位置解析、`sftp` はバッチ/対話）、
+> 本タスクの対象外。
