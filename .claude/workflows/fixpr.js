@@ -199,6 +199,12 @@ concern on its merits, not just whether you will act on it)
   "must-fix"     — a real bug, or a correctness/security defect
   "worth-fixing" — a legitimate improvement (clarity, convention, robustness) but not a bug
   "no-harm"      — cosmetic only, OR the comment is invalid/inapplicable: safe to ignore
+Calibration: rate by the WORST outcome when the affected code path executes, not by
+how often it executes. A defect that breaks shell/code syntax or makes a command
+fail (e.g. an indented heredoc terminator, a malformed quote) is "must-fix" even if
+its branch is rarely taken — rarity lowers likelihood, not the kind of defect. Do
+not downgrade a real bug to "worth-fixing" just because it sits in a guarded or
+seldom-run branch.
 
 topic — one concise English phrase naming what the comment raised (e.g.
 "heredoc terminator indentation", "stale Go version in prompt"). Used in the
