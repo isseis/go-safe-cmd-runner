@@ -37,12 +37,6 @@ type extraction struct {
 	operands     []rawOperand
 }
 
-// commandSpec maps a command family to its extraction rule.
-type commandSpec struct {
-	kind    LocationKind
-	extract func(args []string) extraction
-}
-
 // minSpecAndTarget is the minimum positional count for a permission command: the
 // mode/owner/attribute spec plus at least one target file.
 const minSpecAndTarget = 2
@@ -68,149 +62,34 @@ func set(items ...string) map[string]struct{} {
 }
 
 // lookupSpec finds the spec for a command by matching its resolved name set (and
-// the basename of cmdPath) against the registry.
-func lookupSpec(names map[string]struct{}, cmdPath string) (commandSpec, bool) {
+// the basename of cmdPath) against the declarative registry.
+func lookupSpec(names map[string]struct{}, cmdPath string) (CommandFlagSpec, bool) {
 	if base := filepath.Base(cmdPath); base != "" && base != "." && base != string(filepath.Separator) {
-		if s, ok := zoningSpecs[base]; ok {
+		if s, ok := commandFlagSpecs[base]; ok {
 			return s, true
 		}
 	}
 	for n := range names {
-		if s, ok := zoningSpecs[n]; ok {
+		if s, ok := commandFlagSpecs[n]; ok {
 			return s, true
 		}
 	}
-	return commandSpec{}, false
+	return CommandFlagSpec{}, false
 }
 
-// zoningSpecs is the single command -> extraction-rule table.
-var zoningSpecs = map[string]commandSpec{
-	"cp":       {KindCopyMove, func(a []string) extraction { return extractCopyMove(a, false) }},
-	"mv":       {KindCopyMove, func(a []string) extraction { return extractCopyMove(a, true) }},
-	"rm":       {KindRemove, extractRemove},
-	"rmdir":    {KindRemove, extractRemove},
-	"unlink":   {KindRemove, extractRemove},
-	"shred":    {KindRemove, extractShred},
-	"ln":       {KindLink, extractLink},
-	"truncate": {KindInPlaceEdit, extractTruncate},
-	"sed":      {KindInPlaceEdit, extractSed},
-	"touch": {KindWriteFile, func(a []string) extraction {
-		return extractSimpleWrite(a, set("-r", "--reference", "-d", "--date", "-t"))
-	}},
-	"mkdir":   {KindWriteFile, func(a []string) extraction { return extractSimpleWrite(a, set("-m", "--mode")) }},
-	"tee":     {KindWriteFile, extractTee},
-	"sponge":  {KindWriteFile, func(a []string) extraction { return extractSimpleWrite(a, nil) }},
-	"install": {KindWriteFile, extractInstall},
-	"tar":     {KindArchiveExtract, extractTar},
-	"unzip":   {KindArchiveExtract, extractUnzip},
-	"dd":      {KindDeviceIO, extractDD},
-	"mknod":   {KindWriteFile, extractMknod},
-	"mount":   {KindMount, extractMount},
-	"umount":  {KindMount, extractUmount},
-	"chmod":   {KindPermission, extractChmod},
-	"chown":   {KindPermission, extractOwner},
-	"chgrp":   {KindPermission, extractOwner},
-	"setfacl": {KindPermission, extractSetfacl},
-	"chattr":  {KindPermission, extractChattr},
-	"find":    {KindFindDestructive, extractFind},
-	"curl":    {KindDataTransferWrite, extractCurl},
-	"wget":    {KindDataTransferWrite, extractWget},
-	"scp":     {KindDataTransferWrite, extractScp},
-	"sftp":    {KindDataTransferWrite, extractSftp},
-	"rsync":   {KindDataTransferWrite, extractRsync},
-}
+// The functions below are the per-command ToExtraction semantics. A getopt-conformant
+// command reads its flag values from the ParseResult alone (by canonical key = Names[0],
+// never by ranging the Values map); the raw argv is used only for the cluster-blind
+// hasAny floor/control checks (which legacy did on raw argv and must stay cluster-blind),
+// and for the non-getopt grammars (dd's key=value, chattr's attribute tokens, tar's
+// normalization, find's positional predicates).
 
-// scanFlags separates positionals from flags. recognized is false when a token
-// that starts with '-' is not a known flag (it could be a value-taking flag whose
-// value would otherwise be misread as an operand) or when a value flag is missing
-// its value. captured records the values of value-taking flags.
-func scanFlags(args []string, valueFlags, boolFlags, recursiveFlags map[string]struct{}) (positionals []string, captured map[string][]string, recursive, recognized bool) {
-	recognized = true
-	captured = make(map[string][]string)
-	endOpts := false
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if !endOpts && a == "--" {
-			endOpts = true
-			continue
-		}
-		if endOpts || len(a) < 2 || a[0] != '-' {
-			positionals = append(positionals, a)
-			continue
-		}
-
-		name, val, hasEq := strings.Cut(a, "=")
-		if _, ok := recursiveFlags[name]; ok {
-			recursive = true
-		}
-		if _, ok := valueFlags[name]; ok {
-			switch {
-			case hasEq:
-				captured[name] = append(captured[name], val)
-			case i+1 < len(args):
-				captured[name] = append(captured[name], args[i+1])
-				i++
-			default:
-				recognized = false
-			}
-			continue
-		}
-		if _, ok := boolFlags[name]; ok {
-			continue
-		}
-		// An unknown long flag (--foo): fail closed (it may take a value).
-		if strings.HasPrefix(a, "--") {
-			recognized = false
-			continue
-		}
-		// A short cluster (single dash, e.g. -rf, or a value flag with an attached
-		// value like -C/usr). A value flag inside the cluster captures the rest of
-		// the token as its value, or the next token if none is attached; dropping
-		// that value would default an extraction directory to the cwd (fail-open).
-		clusterOK := true
-		for k, c := range a[1:] {
-			key := "-" + string(c)
-			if _, isRec := recursiveFlags[key]; isRec {
-				recursive = true
-				continue
-			}
-			if _, isVal := valueFlags[key]; isVal {
-				rest := a[2+k:] // characters after c within this token
-				switch {
-				case rest != "":
-					captured[key] = append(captured[key], rest)
-				case i+1 < len(args):
-					captured[key] = append(captured[key], args[i+1])
-					i++
-				default:
-					clusterOK = false
-				}
-				break // a value flag consumes the remainder of the cluster
-			}
-			if _, isBool := boolFlags[key]; isBool {
-				continue
-			}
-			clusterOK = false
-			break
-		}
-		if !clusterOK {
-			recognized = false
-		}
-	}
-	return positionals, captured, recursive, recognized
-}
-
-func extractCopyMove(args []string, isMove bool) extraction {
-	valueFlags := set("-t", "--target-directory", "-S", "--suffix")
-	boolFlags := set("-f", "--force", "-i", "--interactive", "-n", "--no-clobber", "-v", "--verbose",
-		"-u", "--update", "-d", "-L", "--dereference", "-P", "--no-dereference", "-H", "-s", "--symbolic-link",
-		"-l", "--link", "-T", "--no-target-directory", "-b", "--backup", "-x", "--one-file-system")
-	recursiveFlags := set("-r", "-R", "--recursive", "-a", "--archive")
-	preserveFlags := set("-a", "--archive", "-p", "--preserve")
-
-	pos, captured, recursive, recognized := scanFlags(args, valueFlags, boolFlags, recursiveFlags)
-	ext := extraction{applies: true, recognized: recognized, recursive: recursive}
-	ext.preserveMeta = hasAny(args, preserveFlags)
+func extractCopyMove(pr ParseResult, args []string, isMove bool) extraction {
+	ext := extraction{applies: true, recognized: pr.Recognized, recursive: pr.Recursive}
+	// preserveMeta is a cluster-blind whole-token check on raw argv (legacy parity):
+	// cp -ra does NOT see -a here. The -p/--preserve forms are not declared flags, so
+	// this is the only place they are observed.
+	ext.preserveMeta = hasAny(args, set("-a", "--archive", "-p", "--preserve"))
 
 	srcRole := risktypes.OperandRoleRead
 	if isMove {
@@ -218,18 +97,19 @@ func extractCopyMove(args []string, isMove bool) extraction {
 		srcRole = risktypes.OperandRoleWrite
 	}
 
-	if tdirs := append(append([]string{}, captured["-t"]...), captured["--target-directory"]...); len(tdirs) > 0 {
+	if tdirs := pr.Values["-t"]; len(tdirs) > 0 {
 		appendTargetDir(&ext, tdirs)
-		for _, s := range pos {
+		for _, s := range pr.NonFlagArgs {
 			ext.operands = append(ext.operands, rawOperand{raw: s, role: srcRole})
 		}
-		if len(pos) == 0 {
+		if len(pr.NonFlagArgs) == 0 {
 			// -t with no source files is an incomplete copy/move: fail closed.
 			ext.recognized = false
 		}
 		return ext
 	}
 
+	pos := pr.NonFlagArgs
 	if len(pos) == 0 {
 		ext.recognized = false
 		return ext
@@ -249,43 +129,26 @@ func appendTargetDir(ext *extraction, dirs []string) {
 	}
 }
 
-func extractRemove(args []string) extraction {
-	boolFlags := set("-f", "--force", "-i", "-I", "--interactive", "-v", "--verbose", "-d", "--dir",
-		"--one-file-system", "-p", "--parents", "--ignore-fail-on-non-empty")
-	recursiveFlags := set("-r", "-R", "--recursive")
-	pos, _, recursive, recognized := scanFlags(args, nil, boolFlags, recursiveFlags)
-	ext := extraction{applies: true, recognized: recognized, recursive: recursive}
-	for _, p := range pos {
+// extractAllWrite makes every non-flag argument a write operand and fails closed when
+// there is none. Shared by rm/rmdir/unlink (KindRemove), shred, truncate, and mount.
+func extractAllWrite(pr ParseResult, _ []string) extraction {
+	ext := extraction{applies: true, recognized: pr.Recognized, recursive: pr.Recursive}
+	for _, p := range pr.NonFlagArgs {
 		ext.operands = append(ext.operands, rawOperand{raw: p, role: risktypes.OperandRoleWrite})
 	}
-	if len(pos) == 0 {
+	if len(pr.NonFlagArgs) == 0 {
 		ext.recognized = false
 	}
 	return ext
 }
 
-func extractShred(args []string) extraction {
-	valueFlags := set("-n", "--iterations", "-s", "--size")
-	boolFlags := set("-f", "--force", "-u", "--remove", "-v", "--verbose", "-z", "--zero", "-x", "--exact")
-	pos, _, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
-	ext := extraction{applies: true, recognized: recognized}
-	for _, p := range pos {
-		ext.operands = append(ext.operands, rawOperand{raw: p, role: risktypes.OperandRoleWrite})
-	}
-	if len(pos) == 0 {
-		ext.recognized = false
-	}
-	return ext
-}
+func extractRemove(pr ParseResult, args []string) extraction { return extractAllWrite(pr, args) }
 
-func extractLink(args []string) extraction {
-	valueFlags := set("-t", "--target-directory", "-S", "--suffix")
-	boolFlags := set("-s", "--symbolic", "-f", "--force", "-n", "--no-dereference", "-r", "--relative",
-		"-v", "--verbose", "-i", "--interactive", "-T", "--no-target-directory", "-b", "-L", "-P")
-	pos, captured, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
-	ext := extraction{applies: true, recognized: recognized}
+func extractLink(pr ParseResult, args []string) extraction {
+	ext := extraction{applies: true, recognized: pr.Recognized}
+	pos := pr.NonFlagArgs
 
-	if tdirs := append(append([]string{}, captured["-t"]...), captured["--target-directory"]...); len(tdirs) > 0 {
+	if tdirs := pr.Values["-t"]; len(tdirs) > 0 {
 		appendTargetDir(&ext, tdirs)
 		for _, t := range pos {
 			ext.operands = append(ext.operands, rawOperand{raw: t, role: risktypes.OperandRoleRead})
@@ -297,7 +160,8 @@ func extractLink(args []string) extraction {
 	}
 
 	// A relative target resolves against the link's parent only for a symbolic
-	// link; a hard link's target resolves against the working directory.
+	// link; a hard link's target resolves against the working directory. This is a
+	// cluster-blind whole-token check on raw argv (legacy parity).
 	isSymlink := hasAny(args, set("-s", "--symbolic"))
 	switch len(pos) {
 	case 0:
@@ -328,27 +192,11 @@ func extractLink(args []string) extraction {
 	return ext
 }
 
-func extractTruncate(args []string) extraction {
-	valueFlags := set("-s", "--size", "-r", "--reference")
-	boolFlags := set("-c", "--no-create", "-o", "--io-blocks")
-	pos, _, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
-	ext := extraction{applies: true, recognized: recognized}
-	for _, p := range pos {
-		ext.operands = append(ext.operands, rawOperand{raw: p, role: risktypes.OperandRoleWrite})
-	}
-	if len(pos) == 0 {
-		ext.recognized = false
-	}
-	return ext
-}
-
-func extractSed(args []string) extraction {
+func extractSed(_ ParseResult, args []string) extraction {
 	// sed edits in place only with -i / --in-place (which may carry an attached
 	// backup suffix, e.g. -i.bak). Without it, sed writes to stdout, so axis 2 does
-	// not apply.
-	valueFlags := set("-e", "--expression", "-f", "--file", "-l", "--line-length")
-	boolFlags := set("-n", "--quiet", "--silent", "-r", "-E", "--regexp-extended", "-s", "--separate",
-		"-z", "--null-data", "-u", "--unbuffered", "--posix", "--debug", "--sandbox", "--follow-symlinks")
+	// not apply. The in-place detection and the inline-script positional rule do not
+	// fit the generic getopt shape, so -i tokens are split out and the rest re-parsed.
 	inPlace := false
 	var rest []string
 	for _, a := range args {
@@ -362,12 +210,12 @@ func extractSed(args []string) extraction {
 	if !inPlace {
 		return extraction{applies: false, recognized: true}
 	}
-	pos, captured, _, recognized := scanFlags(rest, valueFlags, boolFlags, nil)
-	ext := extraction{applies: true, recognized: recognized}
+	pr := parseArgs(sedRestFlagSet, rest)
+	ext := extraction{applies: true, recognized: pr.Recognized}
 	// When the script is supplied via -e/-f, every positional is an edited file;
 	// otherwise the first positional is the inline script and the rest are files.
-	hasScriptFlag := len(captured["-e"]) > 0 || len(captured["--expression"]) > 0 ||
-		len(captured["-f"]) > 0 || len(captured["--file"]) > 0
+	hasScriptFlag := pr.HasFlag("-e") || pr.HasFlag("-f")
+	pos := pr.NonFlagArgs
 	files := pos
 	if !hasScriptFlag {
 		if len(pos) <= 1 {
@@ -385,63 +233,68 @@ func extractSed(args []string) extraction {
 	return ext
 }
 
-func extractSimpleWrite(args []string, valueFlags map[string]struct{}) extraction {
-	boolFlags := set("-a", "--append", "-c", "--no-create", "-h", "--no-dereference", "-p", "--parents",
-		"-v", "--verbose", "-f", "-i", "-r")
-	pos, captured, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
-	ext := extraction{applies: true, recognized: recognized}
+// sedRestFlags is the flag set used to re-parse sed's argv after the -i / --in-place
+// tokens are stripped. It mirrors the sed flags declared in commandFlagSpecs minus -i.
+// sedRestFlagSet is sed's flag set MINUS -i/--in-place (which extractSed splits out
+// before parsing). Built once (immutable); extractSed re-parses with it on every call.
+var sedRestFlagSet = []FlagSpec{
+	valueFlag(ValueNonPath, "-e", "--expression"),
+	valueFlag(ValueNonPath, "-f", "--file"),
+	valueFlag(ValueNonPath, "-l", "--line-length"),
+	boolFlag("-n", "--quiet", "--silent"), boolFlag("-r", "-E", "--regexp-extended"),
+	boolFlag("-s", "--separate"), boolFlag("-z", "--null-data"), boolFlag("-u", "--unbuffered"),
+	boolFlag("--posix"), boolFlag("--debug"), boolFlag("--sandbox"), boolFlag("--follow-symlinks"),
+}
+
+func extractSimpleWrite(pr ParseResult, _ []string) extraction {
+	ext := extraction{applies: true, recognized: pr.Recognized}
 	// A mode-granting flag (e.g. mkdir -m 0777 / -m u+s) is a permission grant even
-	// in a safe-zone (only meaningful when -m is in this command's valueFlags).
-	for _, m := range append(append([]string{}, captured["-m"]...), captured["--mode"]...) {
+	// in a safe-zone. -m is declared only for the commands where it is value-taking
+	// (mkdir); for sponge/touch the key is simply absent.
+	for _, m := range pr.Values["-m"] {
 		if chmodGrantsHigh(m) {
 			ext.grantsPermission = true
 		}
 	}
-	for _, p := range pos {
+	for _, p := range pr.NonFlagArgs {
 		ext.operands = append(ext.operands, rawOperand{raw: p, role: risktypes.OperandRoleWrite})
 	}
-	if len(pos) == 0 {
+	if len(pr.NonFlagArgs) == 0 {
 		ext.recognized = false
 	}
 	return ext
 }
 
-func extractTee(args []string) extraction {
-	valueFlags := set("--output-error")
-	boolFlags := set("-a", "--append", "-i", "--ignore-interrupts", "-p")
-	pos, _, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
-	if len(pos) == 0 {
+func extractTee(pr ParseResult, _ []string) extraction {
+	if len(pr.NonFlagArgs) == 0 {
 		// tee with no FILE writes only to stdout: axis 2 does not apply.
 		return extraction{applies: false, recognized: true}
 	}
-	ext := extraction{applies: true, recognized: recognized}
-	for _, p := range pos {
+	ext := extraction{applies: true, recognized: pr.Recognized}
+	for _, p := range pr.NonFlagArgs {
 		ext.operands = append(ext.operands, rawOperand{raw: p, role: risktypes.OperandRoleWrite})
 	}
 	return ext
 }
 
-func extractInstall(args []string) extraction {
-	valueFlags := set("-m", "--mode", "-o", "--owner", "-g", "--group", "-t", "--target-directory",
-		"-S", "--suffix", "-b", "--backup")
-	boolFlags := set("-d", "--directory", "-D", "-v", "--verbose", "-p", "--preserve-timestamps",
-		"-c", "-C", "--compare", "-s", "--strip", "-T", "--no-target-directory")
-	pos, captured, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
-	ext := extraction{applies: true, recognized: recognized}
+func extractInstall(pr ParseResult, args []string) extraction {
+	ext := extraction{applies: true, recognized: pr.Recognized}
 
 	// Permission/ownership grant: -m with a setuid/setgid mode, or any -o/-g.
-	if modes := append(append([]string{}, captured["-m"]...), captured["--mode"]...); len(modes) > 0 {
-		for _, m := range modes {
-			if chmodGrantsHigh(m) {
-				ext.grantsPermission = true
-			}
+	for _, m := range pr.Values["-m"] {
+		if chmodGrantsHigh(m) {
+			ext.grantsPermission = true
 		}
 	}
-	if len(captured["-o"]) > 0 || len(captured["--owner"]) > 0 || len(captured["-g"]) > 0 || len(captured["--group"]) > 0 {
+	if pr.HasFlag("-o") || pr.HasFlag("-g") {
 		ext.grantsPermission = true
 	}
 
+	pos := pr.NonFlagArgs
+
 	// Directory-creation mode: every positional is a directory to create (write).
+	// Cluster-blind whole-token check on raw argv (legacy parity): install -dv does
+	// NOT see -d here.
 	if hasAny(args, set("-d", "--directory")) {
 		for _, p := range pos {
 			ext.operands = append(ext.operands, rawOperand{raw: p, role: risktypes.OperandRoleWrite})
@@ -452,7 +305,7 @@ func extractInstall(args []string) extraction {
 		return ext
 	}
 
-	if tdirs := append(append([]string{}, captured["-t"]...), captured["--target-directory"]...); len(tdirs) > 0 {
+	if tdirs := pr.Values["-t"]; len(tdirs) > 0 {
 		appendTargetDir(&ext, tdirs)
 		for _, s := range pos {
 			ext.operands = append(ext.operands, rawOperand{raw: s, role: risktypes.OperandRoleRead})
@@ -480,29 +333,24 @@ func extractInstall(args []string) extraction {
 	return ext
 }
 
-func extractTar(args []string) extraction {
-	valueFlags := set("-f", "--file", "-C", "--directory")
-	boolFlags := set("-v", "--verbose", "-z", "--gzip", "-j", "--bzip2", "-J", "--xz", "-p",
-		"--preserve-permissions", "-k", "--keep-old-files", "--no-same-owner", "-m", "--touch",
-		// --one-top-level takes an OPTIONAL argument (only via =DIR); treat the flag
-		// itself as boolean for recognition and read =DIR separately, so
-		// `tar --one-top-level -xf a.tar` is not misparsed.
-		"--one-top-level",
-		// Mode letters/long forms, so a recognized extract form (e.g. -xf, --extract)
-		// is not falsely treated as unparsed and floored to High.
-		"-x", "-t", "-c", "--extract", "--get", "--list", "--create")
-	// tar accepts a leading bundled mode token without a dash (e.g. "xzf").
+func extractTar(_ ParseResult, args []string) extraction {
+	// tar accepts a leading bundled mode token without a dash (e.g. "xzf"); mode is
+	// read from the raw argv and the rest re-parsed after normalization. The dispatcher's
+	// ParseResult is ignored because it was parsed without normalization.
 	mode := tarMode(args)
-
-	pos, captured, _, recognized := scanFlags(normalizeTarArgs(args), valueFlags, boolFlags, nil)
-	ext := extraction{applies: true, recognized: recognized}
+	pr := parseArgs(tarFlagSet, normalizeTarArgs(args))
+	ext := extraction{applies: true, recognized: pr.Recognized}
 
 	switch mode {
 	case 't':
 		// Listing does not write.
 		return extraction{applies: false, recognized: true}
 	case 'x':
-		dir := firstNonEmpty(captured["-C"], captured["--directory"], attachedValue(args, "--one-top-level"))
+		// Per-spelling precedence, matching the pre-refactor extractor: -C, then
+		// --directory, then --one-top-level read from the RAW argv (legacy read it via an
+		// attached-value scan, so it is found even when normalization folds the first
+		// bare token into -f or when the flag sits after a "--" terminator).
+		dir := firstNonEmpty(pr.Values["-C"], pr.Values["--directory"], attachedValue(args, "--one-top-level"))
 		if dir == "" {
 			// A bare --one-top-level derives its directory from the archive name
 			// under the working directory; default to the working directory.
@@ -511,14 +359,13 @@ func extractTar(args []string) extraction {
 		ext.operands = append(ext.operands, rawOperand{raw: dir, role: risktypes.OperandRoleWrite})
 		return ext
 	case 'c':
-		archive := firstNonEmpty(captured["-f"], captured["--file"])
+		archive := firstNonEmpty(pr.Values["-f"], pr.Values["--file"])
 		if archive != "" && archive != "-" {
 			ext.operands = append(ext.operands, rawOperand{raw: archive, role: risktypes.OperandRoleWrite})
 		}
 		return ext
 	default:
 		ext.recognized = false
-		_ = pos
 		return ext
 	}
 }
@@ -572,29 +419,28 @@ func normalizeTarArgs(args []string) []string {
 	if first == "" || first[0] == '-' {
 		return args
 	}
-	// A leading bundle like "xzf" -> "-xzf" so scanFlags reads it as flags.
+	// A leading bundle like "xzf" -> "-xzf" so parseArgs reads it as flags.
 	return append([]string{"-" + first}, args[1:]...)
 }
 
-func extractUnzip(args []string) extraction {
-	valueFlags := set("-d", "-x")
-	boolFlags := set("-o", "-n", "-q", "-qq", "-v", "-j", "-a", "-u", "-f")
-	listing := hasAny(args, set("-l", "-Z"))
-	pos, captured, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
-	if listing {
+func extractUnzip(pr ParseResult, args []string) extraction {
+	// Listing (-l/-Z) is detected cluster-blind on raw argv (legacy parity): -l/-Z are
+	// deliberately NOT declared flags, so unzip -lo is recognized=false (the cluster hits
+	// the unknown -l) while unzip -l is applies=false.
+	if hasAny(args, set("-l", "-Z")) {
 		return extraction{applies: false, recognized: true}
 	}
-	ext := extraction{applies: true, recognized: recognized}
-	dir := firstNonEmpty(captured["-d"])
+	ext := extraction{applies: true, recognized: pr.Recognized}
+	dir := firstNonEmpty(pr.Values["-d"])
 	if dir == "" {
 		dir = "."
 	}
 	ext.operands = append(ext.operands, rawOperand{raw: dir, role: risktypes.OperandRoleWrite})
-	_ = pos
 	return ext
 }
 
-func extractDD(args []string) extraction {
+func extractDD(_ ParseResult, args []string) extraction {
+	// dd has no getopt flags: it parses if=/of= key=value pairs directly from raw argv.
 	ext := extraction{applies: true, recognized: true}
 	for _, a := range args {
 		key, val, ok := strings.Cut(a, "=")
@@ -618,61 +464,37 @@ func extractDD(args []string) extraction {
 	return ext
 }
 
-func extractMknod(args []string) extraction {
-	valueFlags := set("-m", "--mode", "-Z", "--context")
-	boolFlags := set("-v", "--verbose")
-	pos, captured, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
-	ext := extraction{applies: true, recognized: recognized}
-	for _, m := range append(append([]string{}, captured["-m"]...), captured["--mode"]...) {
+func extractMknod(pr ParseResult, _ []string) extraction {
+	ext := extraction{applies: true, recognized: pr.Recognized}
+	for _, m := range pr.Values["-m"] {
 		if chmodGrantsHigh(m) {
 			ext.grantsPermission = true
 		}
 	}
 	// mknod NAME TYPE [MAJOR MINOR]: only NAME is a path operand.
-	if len(pos) == 0 {
+	if len(pr.NonFlagArgs) == 0 {
 		ext.recognized = false
 		return ext
 	}
-	ext.operands = append(ext.operands, rawOperand{raw: pos[0], role: risktypes.OperandRoleWrite})
+	ext.operands = append(ext.operands, rawOperand{raw: pr.NonFlagArgs[0], role: risktypes.OperandRoleWrite})
 	return ext
 }
 
-func extractMount(args []string) extraction {
-	valueFlags := set("-t", "--types", "-o", "--options", "-O")
-	boolFlags := set("-a", "--all", "-r", "--read-only", "-w", "--rw", "-v", "--verbose", "-n",
-		"--bind", "--rbind", "--move", "-B", "-R", "-M", "-f", "--fake")
-	pos, _, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
-	ext := extraction{applies: true, recognized: recognized}
-	// Every positional (device/source and mountpoint) is a write target.
-	for _, p := range pos {
+func extractUmount(pr ParseResult, args []string) extraction {
+	// umountAll is a cluster-blind whole-token check on raw argv (legacy parity).
+	ext := extraction{applies: true, recognized: pr.Recognized, umountAll: hasAny(args, set("-a", "--all"))}
+	for _, p := range pr.NonFlagArgs {
 		ext.operands = append(ext.operands, rawOperand{raw: p, role: risktypes.OperandRoleWrite})
 	}
-	if len(pos) == 0 {
+	if len(pr.NonFlagArgs) == 0 && !ext.umountAll {
 		ext.recognized = false
 	}
 	return ext
 }
 
-func extractUmount(args []string) extraction {
-	valueFlags := set("-t", "--types", "-O")
-	boolFlags := set("-a", "--all", "-r", "--read-only", "-v", "--verbose", "-n", "-l", "--lazy",
-		"-f", "--force", "-R", "--recursive", "-d")
-	pos, _, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
-	ext := extraction{applies: true, recognized: recognized, umountAll: hasAny(args, set("-a", "--all"))}
-	for _, p := range pos {
-		ext.operands = append(ext.operands, rawOperand{raw: p, role: risktypes.OperandRoleWrite})
-	}
-	if len(pos) == 0 && !ext.umountAll {
-		ext.recognized = false
-	}
-	return ext
-}
-
-func extractChmod(args []string) extraction {
-	boolFlags := set("-R", "--recursive", "-v", "--verbose", "-c", "--changes", "-f", "--silent", "--quiet")
-	recursiveFlags := set("-R", "--recursive")
-	pos, _, recursive, recognized := scanFlags(args, nil, boolFlags, recursiveFlags)
-	ext := extraction{applies: true, recognized: recognized, recursive: recursive}
+func extractChmod(pr ParseResult, _ []string) extraction {
+	ext := extraction{applies: true, recognized: pr.Recognized, recursive: pr.Recursive}
+	pos := pr.NonFlagArgs
 	if len(pos) < minSpecAndTarget {
 		ext.recognized = false
 		return ext
@@ -685,17 +507,13 @@ func extractChmod(args []string) extraction {
 	return ext
 }
 
-func extractOwner(args []string) extraction {
-	valueFlags := set("--from", "--reference")
-	boolFlags := set("-R", "--recursive", "-v", "--verbose", "-c", "--changes", "-f", "--silent", "--quiet",
-		"-h", "--no-dereference", "-H", "-L", "-P", "--dereference")
-	recursiveFlags := set("-R", "--recursive")
-	pos, captured, recursive, recognized := scanFlags(args, valueFlags, boolFlags, recursiveFlags)
-	ext := extraction{applies: true, recognized: recognized, recursive: recursive}
+func extractOwner(pr ParseResult, _ []string) extraction {
+	ext := extraction{applies: true, recognized: pr.Recognized, recursive: pr.Recursive}
+	pos := pr.NonFlagArgs
 	// Only --reference removes the owner/group spec positional. With --from (a
 	// filter) there is still a spec positional: `chown --from=alice bob file`.
 	targets := pos
-	if len(captured["--reference"]) == 0 {
+	if !pr.HasFlag("--reference") {
 		if len(pos) < minSpecAndTarget {
 			ext.recognized = false
 			return ext
@@ -711,31 +529,35 @@ func extractOwner(args []string) extraction {
 	return ext
 }
 
-func extractSetfacl(args []string) extraction {
-	valueFlags := set("-m", "--modify", "-x", "--remove", "-M", "--modify-file", "-X", "--restore", "-n")
-	boolFlags := set("-R", "--recursive", "-b", "--remove-all", "-k", "--remove-default", "-d", "--default",
-		"-v", "--version", "-t", "-p", "--restore-stdin")
-	recursiveFlags := set("-R", "--recursive")
-	pos, captured, recursive, recognized := scanFlags(args, valueFlags, boolFlags, recursiveFlags)
-	ext := extraction{applies: true, recognized: recognized, recursive: recursive}
+func extractSetfacl(pr ParseResult, _ []string) extraction {
+	ext := extraction{applies: true, recognized: pr.Recognized, recursive: pr.Recursive}
 	// An ACL entry that grants write to group or other expands permission.
-	for _, m := range append(append([]string{}, captured["-m"]...), captured["--modify"]...) {
+	for _, m := range pr.Values["-m"] {
 		if aclGrantsWrite(m) {
 			ext.grantsPermission = true
 		}
 	}
-	for _, t := range pos {
+	for _, t := range pr.NonFlagArgs {
 		ext.operands = append(ext.operands, rawOperand{raw: t, role: risktypes.OperandRoleWrite})
 	}
-	if len(pos) == 0 {
+	if len(pr.NonFlagArgs) == 0 {
 		ext.recognized = false
 	}
 	return ext
 }
 
-func extractChattr(args []string) extraction {
-	valueFlags := set("-v", "-p")
-	boolFlags := set("-R", "-f", "-V", "-H", "-L", "-P")
+func extractChattr(_ ParseResult, args []string) extraction {
+	// chattr is parsed WHOLE-TOKEN, not via the getopt parser: the real chattr CLI (and
+	// the pre-refactor extractor) match each option token in full and never split a
+	// cluster, so -VR is an unknown token (recognized=false), not -V -R. parseArgs would
+	// split it and wrongly recognize it. Attribute tokens (+i/-a/=j) carry the mode;
+	// -v/-p take a value; the rest are options or target files. The whole-token name sets
+	// (chattrValueNames/chattrBoolNames) are derived once from chattrFlagSet, so the
+	// knowledge still lives in the declarative table. A literal "--" is an unknown whole
+	// token here (recognized=false), matching legacy (chattr has no getopt "--"
+	// terminator). The dispatcher's ParseResult is ignored.
+	valueNames, boolNames := chattrValueNames, chattrBoolNames
+
 	ext := extraction{applies: true, recognized: true}
 	var targets []string
 	hasMode := false
@@ -747,15 +569,13 @@ func extractChattr(args []string) extraction {
 		if isChattrMode(a) {
 			hasMode = true
 			if strings.ContainsRune(a[1:], 'i') {
-				// Adding or removing the immutable attribute is an integrity-control
-				// change.
+				// Adding or removing the immutable attribute is an integrity-control change.
 				ext.grantsPermission = true
 			}
 			continue
 		}
 		if len(a) >= 2 && a[0] == '-' {
-			name := a
-			if _, ok := valueFlags[name]; ok {
+			if _, ok := valueNames[a]; ok {
 				if i+1 < len(args) {
 					i++ // skip the value token
 				} else {
@@ -763,10 +583,10 @@ func extractChattr(args []string) extraction {
 				}
 				continue
 			}
-			if _, ok := boolFlags[name]; ok {
+			if _, ok := boolNames[a]; ok {
 				continue
 			}
-			ext.recognized = false
+			ext.recognized = false // unknown option token (whole-token match, no cluster split)
 			continue
 		}
 		targets = append(targets, a)
@@ -799,7 +619,9 @@ func isChattrMode(token string) bool {
 	return true
 }
 
-func extractFind(args []string) extraction {
+func extractFind(_ ParseResult, args []string) extraction {
+	// find parses roots and predicates positionally, not as getopt flags. The
+	// dispatcher's ParseResult is ignored.
 	ext := extraction{applies: true, recognized: true}
 	// Roots precede the first predicate (a token starting with '-', '(', '!').
 	var roots []string
@@ -896,100 +718,59 @@ func isRemoteTerminus(arg string) bool {
 // extractCurl extracts curl's local write destination (-o FILE, or -O which writes
 // the URL basename into the working directory). The URL is a remote read source;
 // its egress Medium is supplied by curl's network profile.
-func extractCurl(args []string) extraction {
-	valueFlags := set("-o", "--output", "-H", "--header", "-d", "--data", "--data-raw", "--data-binary",
-		"-u", "--user", "-A", "--user-agent", "-e", "--referer", "-x", "--proxy", "-b", "--cookie",
-		"-c", "--cookie-jar", "-K", "--config", "-T", "--upload-file", "-w", "--write-out",
-		"-m", "--max-time", "--connect-timeout", "-X", "--request", "--url", "--retry", "--limit-rate",
-		"-C", "--continue-at", "-r", "--range", "--cacert", "--cert", "--key")
-	boolFlags := set("-O", "--remote-name", "-L", "--location", "-s", "--silent", "-S", "--show-error",
-		"-f", "--fail", "-k", "--insecure", "-v", "--verbose", "-i", "--include", "-I", "--head",
-		"-g", "--progress-bar", "-J", "--remote-header-name", "-#", "-q", "-z")
-	pos, captured, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
-	ext := extraction{applies: true, recognized: recognized}
-	if out := firstNonEmpty(captured["-o"], captured["--output"]); out != "" && out != "-" {
+func extractCurl(pr ParseResult, args []string) extraction {
+	ext := extraction{applies: true, recognized: pr.Recognized}
+	if out := firstNonEmpty(pr.Values["-o"]); out != "" && out != "-" {
 		ext.operands = append(ext.operands, rawOperand{raw: out, role: risktypes.OperandRoleWrite})
 	} else if hasAny(args, set("-O", "--remote-name")) {
-		// -O writes a file named from the URL into the working directory.
+		// -O writes a file named from the URL into the working directory. Cluster-blind
+		// whole-token check on raw argv (legacy parity): curl -OL does NOT see -O here.
 		ext.operands = append(ext.operands, rawOperand{raw: ".", role: risktypes.OperandRoleWrite})
 	}
 	// An uploaded local file (-T/--upload-file) is a read source, so a sensitive
 	// upload is detected and audited (parity with scp/rsync).
-	for _, up := range append(append([]string{}, captured["-T"]...), captured["--upload-file"]...) {
+	for _, up := range pr.Values["-T"] {
 		if up != "" && up != "-" {
 			ext.operands = append(ext.operands, rawOperand{raw: up, role: risktypes.OperandRoleRead})
 		}
 	}
-	_ = pos // URL positionals are remote read sources (egress via the profile).
+	// URL positionals are remote read sources (egress via the profile).
 	return ext
 }
 
 // extractWget extracts wget's local write destination (-O FILE, -P DIR, or the
 // working directory by default).
-func extractWget(args []string) extraction {
-	valueFlags := set("-O", "--output-document", "-P", "--directory-prefix", "-o", "--output-file",
-		"-a", "--append-output", "--header", "--user", "--password", "--limit-rate", "-t", "--tries",
-		"-T", "--timeout", "--user-agent", "-U", "--referer", "--post-data", "--post-file", "-e", "--execute",
-		"--ca-certificate", "--certificate")
-	boolFlags := set("-q", "--quiet", "-v", "--verbose", "-c", "--continue", "-N", "--timestamping",
-		"-r", "--recursive", "-np", "--no-parent", "-nc", "--no-clobber", "-nv", "--no-verbose",
-		"--no-check-certificate", "-d", "--debug", "-b", "--background")
-	pos, captured, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
-	ext := extraction{applies: true, recognized: recognized}
+func extractWget(pr ParseResult, _ []string) extraction {
+	ext := extraction{applies: true, recognized: pr.Recognized}
 	switch {
-	case firstNonEmpty(captured["-O"], captured["--output-document"]) != "":
-		out := firstNonEmpty(captured["-O"], captured["--output-document"])
+	case firstNonEmpty(pr.Values["-O"]) != "":
+		out := firstNonEmpty(pr.Values["-O"])
 		if out != "-" {
 			ext.operands = append(ext.operands, rawOperand{raw: out, role: risktypes.OperandRoleWrite})
 		}
-	case firstNonEmpty(captured["-P"], captured["--directory-prefix"]) != "":
-		ext.operands = append(ext.operands, rawOperand{raw: firstNonEmpty(captured["-P"], captured["--directory-prefix"]), role: risktypes.OperandRoleWrite})
+	case firstNonEmpty(pr.Values["-P"]) != "":
+		ext.operands = append(ext.operands, rawOperand{raw: firstNonEmpty(pr.Values["-P"]), role: risktypes.OperandRoleWrite})
 	default:
 		// wget writes the URL basename into the working directory by default.
 		ext.operands = append(ext.operands, rawOperand{raw: ".", role: risktypes.OperandRoleWrite})
 	}
 	// An uploaded local file (--post-file) is a read source (sensitive-upload
 	// detection + audit), parity with scp/rsync.
-	for _, up := range captured["--post-file"] {
+	for _, up := range pr.Values["--post-file"] {
 		if up != "" && up != "-" {
 			ext.operands = append(ext.operands, rawOperand{raw: up, role: risktypes.OperandRoleRead})
 		}
 	}
-	_ = pos
 	return ext
 }
 
-// extractScp extracts scp's destination (the final operand). A remote destination
-// is an upload (egress); a local destination is zone-classified.
-func extractScp(args []string) extraction {
-	// scp -T (disable strict filename checking) is boolean, unlike rsync -T
-	// (--temp-dir, value-taking); listing it as value-taking would consume the next
-	// token and shift SRC/DEST.
-	valueFlags := set("-P", "-i", "-o", "-c", "-F", "-l", "-S", "-J")
-	boolFlags := set("-r", "-p", "-q", "-v", "-C", "-B", "-3", "-4", "-6", "-A", "-O", "-R", "-T")
-	return extractRemoteCopy(args, valueFlags, boolFlags)
-}
-
-// extractRsync extracts rsync's destination (the final operand). A remote
-// destination (host:path / host::module / rsync://...) is an upload (egress); a
-// local destination is zone-classified. --delete acts on the destination tree.
-func extractRsync(args []string) extraction {
-	valueFlags := set("-e", "--rsh", "--rsync-path", "--exclude", "--include", "--exclude-from",
-		"--include-from", "-f", "--filter", "--files-from", "--compare-dest", "--copy-dest", "--link-dest",
-		"--bwlimit", "--timeout", "--port", "--out-format", "--log-file", "-T", "--temp-dir",
-		"--partial-dir", "--chmod", "--chown", "-M", "--remote-option", "--max-size", "--min-size", "--modify-window")
-	boolFlags := set("-a", "--archive", "-v", "--verbose", "-r", "--recursive", "-z", "--compress",
-		"-P", "--progress", "--partial", "-u", "--update", "-n", "--dry-run", "--delete", "--delete-after",
-		"--delete-excluded", "-x", "--one-file-system", "-l", "-p", "-t", "-g", "-o", "-D", "-H", "-A", "-X",
-		"-S", "-W", "--numeric-ids", "-q", "--quiet", "-h", "--human-readable", "-c", "--checksum",
-		"--existing", "--ignore-existing", "-R", "--relative", "-L", "--copy-links", "-k", "-K")
-	return extractRemoteCopy(args, valueFlags, boolFlags)
-}
-
-// extractRemoteCopy is the shared SRC... DEST extractor for scp/rsync.
-func extractRemoteCopy(args []string, valueFlags, boolFlags map[string]struct{}) extraction {
-	pos, _, _, recognized := scanFlags(args, valueFlags, boolFlags, nil)
-	ext := extraction{applies: true, recognized: recognized}
+// extractRemoteCopy is the shared SRC... DEST extractor for scp/rsync. A remote
+// destination (host:path / host::module / rsync://...) is an upload (egress); a local
+// destination is zone-classified. The flag grammars differ (declared per command), but
+// the positional handling is identical, so both commands share this ToExtraction.
+func extractRemoteCopy(pr ParseResult, _ []string) extraction {
+	ext := extraction{applies: true, recognized: pr.Recognized}
+	pos := pr.NonFlagArgs
 	if len(pos) < minSpecAndTarget {
 		ext.recognized = false
 		return ext
@@ -1017,15 +798,14 @@ func extractRemoteCopy(args []string, valueFlags, boolFlags map[string]struct{})
 // extractSftp treats sftp as a network egress: its actual writes live in an
 // interactive session or a -b batch file, not in argv, so there is no local path
 // to zone-classify and the egress Medium floor applies.
-func extractSftp(args []string) extraction {
-	_ = args
+func extractSftp(_ ParseResult, _ []string) extraction {
 	return extraction{applies: true, recognized: true, remoteEgress: true}
 }
 
 // operandFloor returns the operation-specific risk floor for one operand (and the
 // reason for it). Floors are applied after the zone level and never demote a
 // safe-zone operand below their level.
-func (r *operandResolver) operandFloor(oz risktypes.OperandZone, op rawOperand, spec commandSpec, ext extraction, input ZoningInput) (runnertypes.RiskLevel, risktypes.ReasonCode) {
+func (r *operandResolver) operandFloor(oz risktypes.OperandZone, op rawOperand, spec CommandFlagSpec, ext extraction, input ZoningInput) (runnertypes.RiskLevel, risktypes.ReasonCode) {
 	floor := runnertypes.RiskLevelLow
 	reason := risktypes.ReasonCode("")
 	raise := func(l runnertypes.RiskLevel, rc risktypes.ReasonCode) {
@@ -1042,7 +822,7 @@ func (r *operandResolver) operandFloor(oz risktypes.OperandZone, op rawOperand, 
 
 	// Linking to a trust-critical target is High (a symlink into a system path is a
 	// trust-boundary handle), even though the target is read, not written.
-	if spec.kind == KindLink && oz.Zone == risktypes.ZoneTrustCritical {
+	if spec.Kind == KindLink && oz.Zone == risktypes.ZoneTrustCritical {
 		raise(runnertypes.RiskLevelHigh, risktypes.ReasonTrustBoundaryWrite)
 	}
 
@@ -1055,7 +835,7 @@ func (r *operandResolver) operandFloor(oz risktypes.OperandZone, op rawOperand, 
 	}
 
 	// Privileged-metadata copy: cp -p/-a of a setuid or root-owned source.
-	if spec.kind == KindCopyMove && op.role == risktypes.OperandRoleRead &&
+	if spec.Kind == KindCopyMove && op.role == risktypes.OperandRoleRead &&
 		ext.preserveMeta && oz.Resolved != "" && r.sourceIsPrivileged(oz.Resolved) {
 		raise(runnertypes.RiskLevelHigh, risktypes.ReasonPermissionGrant)
 	}
@@ -1064,7 +844,7 @@ func (r *operandResolver) operandFloor(oz risktypes.OperandZone, op rawOperand, 
 	// data-transfer copies (scp/rsync), so a sensitive source copied into a
 	// safe-zone is Medium regardless of which copy command is used.
 	if op.role == risktypes.OperandRoleRead &&
-		(spec.kind == KindCopyMove || spec.kind == KindDataTransferWrite) {
+		(spec.Kind == KindCopyMove || spec.Kind == KindDataTransferWrite) {
 		if oz.Zone == risktypes.ZoneTrustCritical || matchesSensitive(oz.Resolved, input.OutputCriticalPathPatterns) {
 			raise(runnertypes.RiskLevelMedium, risktypes.ReasonSensitiveSourceCopy)
 		}
@@ -1246,8 +1026,10 @@ func firstNonEmpty(lists ...[]string) string {
 	return ""
 }
 
-// attachedValue returns the values of an optional-argument flag given in the
-// attached --flag=value form (the only form GNU getopt accepts for optional args).
+// attachedValue returns the values of an optional-argument flag given in the attached
+// --flag=value form (the only form GNU getopt accepts for optional args). tar reads
+// --one-top-level from the RAW argv with this, so a value is found even when argv
+// normalization or a "--" terminator would otherwise hide it from the parser.
 func attachedValue(args []string, flag string) []string {
 	prefix := flag + "="
 	var vals []string

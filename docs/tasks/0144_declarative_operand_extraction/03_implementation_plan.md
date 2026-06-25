@@ -139,54 +139,59 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（#795）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: コマンド単位の移行と旧実装の撤去
 
 **変更ファイル**:
 - 変更 `internal/runner/base/security/destination_zoning_spec.go`
-- 変更 `internal/runner/base/security/flag_spec.go`（必要に応じ仕様の調整）
+- 変更 `internal/runner/base/security/flag_spec.go`（仕様の調整＋各コマンドの `ToExtraction` を充填し本番レジストリ化）
+- 変更 `internal/runner/base/security/destination_zoning.go`（ディスパッチの型移行: `lookupSpec` が `CommandFlagSpec` を返し、
+  `classifyDestinationZone` が `spec.ToExtraction(parseArgs(spec.Flags, args), args)` を呼ぶ。`spec.kind`→`spec.Kind`、
+  `classifyOperand`/`operandFloor` の引数型を `CommandFlagSpec` へ。§1.3 では「不変」と記したが、レジストリ型の移行に伴い
+  ディスパッチ箇所のみ最小変更が必要）
 - 新規 `internal/runner/base/security/destination_zoning_parity_test.go`（回帰代表ケースと挙動同一性テストの追加先。既存 `_test.go` は無改変に保つ）
 
 **作業内容**:
-- [ ] `zoningSpecs` の各エントリを 1 コマンドずつ `CommandFlagSpec`＋`ToExtraction`（`parseArgs` を消費）へ移行する。移行中は
+- [x] `zoningSpecs` の各エントリを 1 コマンドずつ `CommandFlagSpec`＋`ToExtraction`（`parseArgs` を消費）へ移行する。移行中は
       旧 `extract` 経路と新経路が一時的に共存してよい（設計 §8）。getopt 適合コマンドの `ToExtraction` は `ParseResult` のみ参照し、
       `Values` を正規キー（`FlagSpec` 由来）で読む（map を `for range` しない。設計 §3.1 決定性制約）。
-- [ ] tar・chattr は事前正規化を挟む（tar: `normalizeTarArgs`、chattr: `isChattrMode` 合致トークンを `parseArgs` 前に分離）。
+- [x] tar・chattr は事前正規化を挟む（tar: `normalizeTarArgs`、chattr: `isChattrMode` 合致トークンを `parseArgs` 前に分離）。
       dd は `Flags` を空にし `ToExtraction` 内で `if=`/`of=` を専用解析（設計 §3.5）。
-- [ ] floor/制御シグナルの導出方針（現行が宣言フラグ集合の外で読むフラグ）: 現行は一部のフラグを `scanFlags` の集合外で
-      `hasAny` 等により読み、floor/制御の判定に使う。Phase 3 の `ToExtraction` でも同じシグナルを導出できるようにする。原則:
-      宣言しても `recognized` が現行と変わらないものは仕様に宣言して `HasFlag` で導出する（例 unzip `-l`/`-Z`: 現行の listing 経路は
-      既に `recognized=true` を返すため宣言は忠実。Phase 2 で宣言済み）。宣言すると `recognized` が変わるものは宣言せず、`ToExtraction`
-      が生 argv（第 2 引数）から導出して `recognized` を忠実に保つ（例 cp/mv の preserveMeta 用 `-p`/`--preserve`: 現行は未宣言ゆえ
-      `cp -p` は `recognized=false`。宣言すると `recognized=true` に変わるため宣言しない。`-a`/`--archive` は再帰フラグとして宣言済みで
-      `HasFlag("-a")` で取れるので、preserveMeta = `HasFlag("-a") || (生 argv に -p/--preserve)` とする。dd/chattr の生 argv 利用と同じ
-      限定的拡張）。長形再帰フラグだけは「是正（recognized=true）」を選んだ唯一の例外（上記決定参照）。
-- [ ] 凍結オラクルの非気密性に対処する: `extraction_legacy_test.go` は値内文法ヘルパ（`tarMode`/`normalizeTarArgs`/
+- [x] floor/制御シグナルの導出方針（現行が `hasAny` で読むフラグ）: 現行は一部の floor/制御判定（cp/mv の preserveMeta、
+      ln の symbolic、install の directory モード、umount の `-a`、curl の `-O`、unzip の listing）を `scanFlags` とは別に `hasAny` で
+      行う。**重要**: 現行 `hasAny` は `=` で Cut した語**全体**で照合する**クラスタ非対応**（whole-token）であり、`cp -ra` では
+      `-a` を見ない（preserveMeta=false）、`unzip -lo` では listing を検出しない。`parseArgs`/`HasFlag` はクラスタ対応のため
+      これらに置き換えると挙動が変わる。よって挙動保存の原則は「**現行が `hasAny` で読む判定は新 `ToExtraction` でも同じ
+      クラスタ非対応の `hasAny`（生 argv）で読む**」（`hasAny` ヘルパは撤去せず存置する）。値・非フラグ引数・recursive・recognized
+      の抽出は `parseArgs`（クラスタ対応、現行 `scanFlags` と一致）で行う。各フラグの宣言可否はこの判定とは独立で、現行 `scanFlags` の
+      集合に含まれるフラグのみ宣言する（含まれない `cp -p`/`--preserve`・unzip `-l`/`-Z` は**宣言しない**。宣言すると未知→既知化で
+      クラスタ形の `recognized` が変わるため）。長形再帰フラグだけは「是正（recognized=true）」を選んだ唯一の例外（上記決定参照）。
+- [x] 凍結オラクルの非気密性に対処する: `extraction_legacy_test.go` は値内文法ヘルパ（`tarMode`/`normalizeTarArgs`/
       `isChattrMode`/`isRemoteTerminus`/`chmodGrantsHigh`/`aclGrantsWrite`/`hostTokenRe`/`set`）を production と共有して呼ぶため、
       これらを Phase 3 で変更すると旧/新が同時に変わり差分テストがすり抜ける。本フェーズでは原則これらを変更しない。`git diff` で
       対象関数が未変更であることを確認する。やむを得ず変更する場合は、変更前に当該ヘルパを `legacyXxx` として凍結ファイルへコピーして
       からにする。
-- [ ] 長形再帰フラグの意図的逸脱を差分テストに反映する: 移行で `cp`/`mv` の `--recursive`/`--archive`、`rm` の `--recursive`
+- [x] 長形再帰フラグの意図的逸脱を差分テストに反映する: 移行で `cp`/`mv` の `--recursive`/`--archive`、`rm` の `--recursive`
       （長形のみ）が `recognized=false→true` に変わる。`extraction_diff_test.go` の `diffExclusions`（Phase 2 で空のフックを用意済み）に
       当該コマンド×長形に厳密一致する述語のみを登録して除外し、除外理由をコメントに明記する（同フラグの他の入力形を巻き込まないこと）。
-- [ ] 各コマンドの移行ごとに、当該コマンドの差分テスト（`extraction_diff_test.go`）と既存テスト（`destination_zoning_test.go`）が
+- [x] 各コマンドの移行ごとに、当該コマンドの差分テスト（`extraction_diff_test.go`）と既存テスト（`destination_zoning_test.go`）が
       緑であることをゲートとする。緑にならない限り次のコマンドへ進まない。
-- [ ] 回帰代表ケース（AC-08）を `destination_zoning_parity_test.go`（新規）に追加する（既存 `destination_zoning_test.go` は無改変に保つ）。
+- [x] 回帰代表ケース（AC-08）を `destination_zoning_parity_test.go`（新規）に追加する（既存 `destination_zoning_test.go` は無改変に保つ）。
       既存の `TestExtractorHardening*`/`TestACLGrantsWrite_DefaultEntry`/`TestTarExtractRecognized` が既にカバーするケースは再掲せず、
       未カバー分のみ追加: 別名表記・引数省略可・`sed -e`・`chmod` シンボリック setuid・`setfacl` default ACL・`chown`/`chgrp` の
       `--from`/`--reference`・`ln` シンボリック/ハードリンク・`tar` 第1語限定モード解析。
-- [ ] 全コマンド移行後、`scanFlags` と production 側の各 `extractXxx`（および各抽出処理内の重複フラグ集合定義）を撤去する。
+- [x] 全コマンド移行後、`scanFlags` と production 側の各 `extractXxx`（および各抽出処理内の重複フラグ集合定義）を撤去する。
       旧 `commandSpec` 型が未使用になれば併せて撤去する。
 
 **成功基準**:
-- [ ] 全コマンドで差分テストが緑。
-- [ ] 旧 `scanFlags`・production 側 `extractXxx`・重複フラグ集合が完全に撤去されている。一次確認は §10 の `rg` グレップ
+- [x] 全コマンドで差分テストが緑。
+- [x] 旧 `scanFlags`・production 側 `extractXxx`・重複フラグ集合が完全に撤去されている。一次確認は §10 の `rg` グレップ
       （production コードでマッチ 0）と `make lint` の `unused` リンタ（未使用の非公開関数を検出）。`make deadcode` は半移行で旧関数が
       `zoningSpecs` から到達可能なまま残ると「取り残し」を検出できない（到達可能＝未使用ではない）ため、補助的な確認に留める。
       凍結スナップショットはテスト専用のため対象外。
-- [ ] `make fmt && make test && make lint` が緑。
+- [x] `make fmt && make test && make lint` が緑。
 
 ### PR-3 作成ポイント: migrate commands to the parser and remove legacy extractors
 
@@ -196,8 +201,8 @@
 
 **レビュー観点**: 挙動保存（各コマンドで差分テスト緑をゲートするコマンド単位移行の安全性。本リファクタ最大のリスク） / tar・chattr の事前正規化と dd の非 getopt 扱い（設計 §3.5） / 旧 `scanFlags`・`extractXxx`・重複フラグ集合の完全撤去（`make deadcode` 確認） / 決定性（`Values` を `for range` せず正規キー参照）
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（#797）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
