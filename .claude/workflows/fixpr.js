@@ -266,19 +266,25 @@ const actionable = triage.threads
 
 await parallel(actionable.map(item => () => {
   const replyBodyJson = JSON.stringify(item.replyBody)
+  // Per-thread temp path: these agents run concurrently, so a shared filename
+  // would let one agent overwrite another's reply body. databaseId is unique
+  // per thread, so it makes the path collision-free.
+  const tmpPath = `/tmp/pr_reply_body_${item.databaseId}.json`
   return agent(
     `Post a reply to a GitHub PR review thread then resolve it.
 
-1. Write the reply body to a temp file to avoid shell quoting issues:
-   cat > /tmp/pr_reply_body.json << 'ENDJSON'
+1. Write the reply body to a unique temp file to avoid shell quoting issues:
+   cat > ${tmpPath} << 'ENDJSON'
    ${replyBodyJson}
    ENDJSON
 
    Then post:
    gh api repos/${item.owner}/${item.repo}/pulls/${item.number}/comments/${item.databaseId}/replies \\
-     -X POST --input /tmp/pr_reply_body.json
+     -X POST --input ${tmpPath}
 
    (Or use: gh api ... -X POST -f body=${replyBodyJson} if the above does not work.)
+
+   Then remove the temp file: rm -f ${tmpPath}
 
 2. Resolve the thread:
    gh api graphql -F threadId=${item.threadId} \\
