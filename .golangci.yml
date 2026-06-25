@@ -146,3 +146,12 @@ linters:
         text: "SA5011"
         linters:
           - staticcheck
+
+      # extraction_legacy_test.go (task 0144) is a deliberate verbatim copy of the
+      # pre-refactor extractors, kept as an immutable oracle for the differential
+      # behavior-preservation test. dupl anchors the clone on the production file, so
+      # the _test.go exclusion above does not catch it; match the snapshot by name.
+      # This duplication disappears in Phase 3 when the production originals are removed.
+      - linters:
+          - dupl
+        text: "extraction_legacy_test\\.go"

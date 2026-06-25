@@ -504,3 +504,10 @@ flowchart TD
   本タスクの不適合として扱う（要件 AC-09）。
 - データ送信書込形（`KindDataTransferWrite`: curl/wget/scp/sftp/rsync）の抽出規則とネットワーク下限合成は 0142 P5 で確定済みの
   挙動である。本リファクタはこれを**そのまま保存**する（意味変更はしない。要件スコープ §2 Out）。差分テストの対象に含める。
+- 長形再帰フラグの意図的逸脱（2026-06-25 決定）: 現行 `scanFlags` は cp/mv の `--recursive`/`--archive` と rm の `--recursive` を
+  `recursiveFlags` のみに登録し `boolFlags` に入れていないため、これらの長形は `recursive=true` かつ `recognized=false`
+  （fail-closed→High 下限）になる。これは現行のフェイルクローズ寄りの不具合である。単一 getopt パーサ＋宣言的仕様では同一フラグの
+  全表記を 1 エントリにまとめるため、長形も `recognized=true` として認識する（＝挙動を是正）。影響は当該 3 コマンド×長形のみで、
+  短形 `-r`/`-R`/`-a` と chmod/chown/chgrp/setfacl の長形（`boolFlags` にも登録済み）は不変。是正の方向は安全側（safe-zone の
+  spurious な High を Low に正すのみ。ordinary/critical 宛先は再帰により High を維持）であり、既存テストはこの長形を使用していない。
+  本書 §7 の挙動保存（AC-10）に対する**意図的かつ限定的な逸脱**として記録し、差分テストでは当該入力を理由付きで除外する。

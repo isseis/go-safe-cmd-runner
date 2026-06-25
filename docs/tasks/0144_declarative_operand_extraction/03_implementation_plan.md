@@ -80,8 +80,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（#794）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: 宣言的仕様表・完全性メタテスト・差分テスト基盤
 
@@ -92,36 +92,42 @@
 - 新規 `internal/runner/base/security/extraction_diff_test.go`
 
 **作業内容**:
-- [ ] `flag_spec.go` に全対象コマンドの `CommandFlagSpec`（`Flags` の `FlagSpec` 群と `Kind`）を定義する（設計 §3.1）。同一フラグの
+- [x] `flag_spec.go` に全対象コマンドの `CommandFlagSpec`（`Flags` の `FlagSpec` 群と `Kind`）を定義する（設計 §3.1）。同一フラグの
       全表記を 1 つの `FlagSpec.Names` にまとめ（AC-01）、引数の必須/省略可を `Arity` で区別する。アリティ不変条件（設計 §3.1）を守る:
       現行で次の語を必ず消費するフラグは `ArityRequired`、`ArityOptional` は実 CLI で省略可なフラグのみ。
-- [ ] `flag_spec_test.go` に完全性メタテスト `TestSpecCompleteness` を追加（AC-07）: 全 `FlagSpec.Names` が 1 要素以上／
+- [x] `flag_spec_test.go` に完全性メタテスト `TestSpecCompleteness` を追加（AC-07）: 全 `FlagSpec.Names` が 1 要素以上／
       `ArityNone` の `FlagSpec` は `Value == ValueUnset`／引数付きフラグは `Value != ValueUnset`（operand 化 or 非 path 明示）。
-- [ ] `flag_spec_test.go` に `TestArityInvariant` を追加: 各 `ArityRequired` フラグに `--flag NEXT`（分離形）を与えると NEXT が
+- [x] `flag_spec_test.go` に `TestArityInvariant` を追加: 各 `ArityRequired` フラグに `--flag NEXT`（分離形）を与えると NEXT が
       値として消費されること、各 `ArityOptional` フラグでは分離後続語が消費されないことを、凍結 `legacyExtractXxx` の挙動と
       突き合わせて確認する。これにより「現行で次の語を消費するフラグが `ArityOptional` へ誤分類される」fail-open（リスク表 行2）を
       機械検出する。
-- [ ] `extraction_legacy_test.go` に現行の `extractXxx` 群を `legacyExtractXxx` として**凍結コピー**する（`//go:build test`、
+- [x] `extraction_legacy_test.go` に現行の `extractXxx` 群を `legacyExtractXxx` として**凍結コピー**する（`//go:build test`、
       テスト専用、`private` 型 `extraction` を使うため同一パッケージ）。差分テストの不変なオラクルとし、以降変更しない。
-- [ ] `extraction_diff_test.go` を追加: 各コマンド×{各フラグの全形（`-x`/`-x=v`/`-xv`/`-x v`/連結/`--long`/`--long=v`/引数省略可の
+- [x] `extraction_diff_test.go` を追加: 各コマンド×{各フラグの全形（`-x`/`-x=v`/`-xv`/`-x v`/連結/`--long`/`--long=v`/引数省略可の
       付随形・分離形/`--`/先頭 `-`/空語/重複フラグ）＋少量のファズ}の生成コーパスで、`legacyExtractXxx` と新実装の `extraction` を
       `reflect.DeepEqual` で**構造体全体**を一致比較する。フィールドを個別列挙すると `applies` 等の取りこぼしや将来追加の漏れが
       起きるため、構造体をまるごと比較する。対象は `extraction` の全 8 フィールド（`applies`/`recognized`/`recursive`/
       `grantsPermission`/`preserveMeta`/`umountAll`/`remoteEgress`/`operands`。順序・role・base を含む）である（設計 §7）。
       dd・chattr の異常形（`dd if=` 欠落・`chattr +i`/`-i`）もコーパスに含める。
-- [ ] 差分比較の nil/空スライス対策: `reflect.DeepEqual(nil, []rawOperand{})` は `false` のため、旧/新で `operands` が一方 nil・
+- [x] 差分比較の nil/空スライス対策: `reflect.DeepEqual(nil, []rawOperand{})` は `false` のため、旧/新で `operands` が一方 nil・
       他方 空スライスだと誤って不一致になる。比較前に `operands` の nil↔空を正規化する小ヘルパを挟む（または `go-cmp` の
       `cmpopts.EquateEmpty` を使う。導入可否は実装時に判断）。「空オペランドは nil に揃える」など正規化規則をテスト内に明記する。
-- [ ] 既知パリティ項目（長形再帰フラグ）の扱いを決める: 現行 `scanFlags` は `--recursive`/`--archive` を `recursiveFlags` のみに
+- [x] 既知パリティ項目（長形再帰フラグ）の扱いを決める: 現行 `scanFlags` は `--recursive`/`--archive` を `recursiveFlags` のみに
       登録し `boolFlags` に入れていないため、長形は「未知の `--` フラグ」として `recognized=false`（fail-closed）になる一方、
       短形 `-r`/`-a` はクラスタ経路で `recognized=true` になる。新仕様では同フラグを 1 つの `FlagSpec.Names` にまとめるため長形も
       `recognized=true` となり、差分テストが `recognized` 不一致を検出する。これは現行のフェイルクローズ寄りの不具合であり、差分テスト
       の不一致は意図的な判断で解消する（仕様で長形を認識する＝挙動を是正し設計 §7 の逸脱として明記する、または現行の挙動を保つ）。
       **凍結スナップショットを書き換えて緑にしてはならない**。同型の他フラグ（`recursiveFlags` のみに含まれる長形）も併せて点検する。
+      - **決定（2026-06-25, isseis）**: 「是正（長形を認識）」を採用する。発散は cp/mv の `--recursive`/`--archive`、rm の
+        `--recursive`（いずれも長形のみ）に限られ、短形 `-r`/`-R`/`-a` と chmod/chown/chgrp/setfacl の長形（`boolFlags` にも
+        登録済み）は不変。既存テストはこの長形を使っておらず、是正は spurious な High を除く精度改善（safe-zone のみ High→Low、
+        ordinary/critical は再帰で High 維持）で安全側。Phase 2 では宣言のみ（`commandFlagSpecs` で長形を再帰フラグとして宣言）。
+        Phase 3 で本番が `parseArgs` を使うと差分テストがこの 3 コマンド×長形で `recognized` 不一致を検出するため、当該入力を
+        **意図的逸脱として明示的に除外**し（除外理由をテスト内に明記）、設計 §7・付録（決定履歴）に逸脱を記録する。
 
 **成功基準**:
-- [ ] 完全性メタテストとアリティ不変条件チェックが緑。
-- [ ] 凍結スナップショットと差分テスト基盤がコンパイルでき、移行前は旧実装同士で恒真（基盤の健全性確認）。
+- [x] 完全性メタテストとアリティ不変条件チェックが緑。
+- [x] 凍結スナップショットと差分テスト基盤がコンパイルでき、移行前は旧実装同士で恒真（基盤の健全性確認）。
 
 ### PR-2 作成ポイント: declarative spec table, completeness meta-test, differential harness
 
@@ -131,8 +137,8 @@
 
 **レビュー観点**: 宣言的仕様表のアリティ不変条件（必須→省略可の誤分類防止） / 完全性メタテスト（Names 非空・`ArityNone→ValueUnset`・引数付きは `ValueRole != ValueUnset`） / 凍結スナップショットと差分テスト基盤（`reflect.DeepEqual` 構造体全体・nil↔空の正規化・移行前の恒真性）
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（#795）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -149,6 +155,22 @@
       `Values` を正規キー（`FlagSpec` 由来）で読む（map を `for range` しない。設計 §3.1 決定性制約）。
 - [ ] tar・chattr は事前正規化を挟む（tar: `normalizeTarArgs`、chattr: `isChattrMode` 合致トークンを `parseArgs` 前に分離）。
       dd は `Flags` を空にし `ToExtraction` 内で `if=`/`of=` を専用解析（設計 §3.5）。
+- [ ] floor/制御シグナルの導出方針（現行が宣言フラグ集合の外で読むフラグ）: 現行は一部のフラグを `scanFlags` の集合外で
+      `hasAny` 等により読み、floor/制御の判定に使う。Phase 3 の `ToExtraction` でも同じシグナルを導出できるようにする。原則:
+      宣言しても `recognized` が現行と変わらないものは仕様に宣言して `HasFlag` で導出する（例 unzip `-l`/`-Z`: 現行の listing 経路は
+      既に `recognized=true` を返すため宣言は忠実。Phase 2 で宣言済み）。宣言すると `recognized` が変わるものは宣言せず、`ToExtraction`
+      が生 argv（第 2 引数）から導出して `recognized` を忠実に保つ（例 cp/mv の preserveMeta 用 `-p`/`--preserve`: 現行は未宣言ゆえ
+      `cp -p` は `recognized=false`。宣言すると `recognized=true` に変わるため宣言しない。`-a`/`--archive` は再帰フラグとして宣言済みで
+      `HasFlag("-a")` で取れるので、preserveMeta = `HasFlag("-a") || (生 argv に -p/--preserve)` とする。dd/chattr の生 argv 利用と同じ
+      限定的拡張）。長形再帰フラグだけは「是正（recognized=true）」を選んだ唯一の例外（上記決定参照）。
+- [ ] 凍結オラクルの非気密性に対処する: `extraction_legacy_test.go` は値内文法ヘルパ（`tarMode`/`normalizeTarArgs`/
+      `isChattrMode`/`isRemoteTerminus`/`chmodGrantsHigh`/`aclGrantsWrite`/`hostTokenRe`/`set`）を production と共有して呼ぶため、
+      これらを Phase 3 で変更すると旧/新が同時に変わり差分テストがすり抜ける。本フェーズでは原則これらを変更しない。`git diff` で
+      対象関数が未変更であることを確認する。やむを得ず変更する場合は、変更前に当該ヘルパを `legacyXxx` として凍結ファイルへコピーして
+      からにする。
+- [ ] 長形再帰フラグの意図的逸脱を差分テストに反映する: 移行で `cp`/`mv` の `--recursive`/`--archive`、`rm` の `--recursive`
+      （長形のみ）が `recognized=false→true` に変わる。`extraction_diff_test.go` の `diffExclusions`（Phase 2 で空のフックを用意済み）に
+      当該コマンド×長形に厳密一致する述語のみを登録して除外し、除外理由をコメントに明記する（同フラグの他の入力形を巻き込まないこと）。
 - [ ] 各コマンドの移行ごとに、当該コマンドの差分テスト（`extraction_diff_test.go`）と既存テスト（`destination_zoning_test.go`）が
       緑であることをゲートとする。緑にならない限り次のコマンドへ進まない。
 - [ ] 回帰代表ケース（AC-08）を `destination_zoning_parity_test.go`（新規）に追加する（既存 `destination_zoning_test.go` は無改変に保つ）。
