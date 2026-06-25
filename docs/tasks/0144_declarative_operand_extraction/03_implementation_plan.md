@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-06-25 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-06-25 |
+| Reviewer | isseis |
 | Comments | - |
 
 > 本書は [02_architecture.md](02_architecture.md)（approved）の実装計画である。設計の詳細（型・パーサ・解析形態・脅威モデル）は
