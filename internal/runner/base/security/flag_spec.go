@@ -104,7 +104,7 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 		boolFlag("-s", "--symbolic"), boolFlag("-f", "--force"), boolFlag("-n", "--no-dereference"),
 		boolFlag("-r", "--relative"), boolFlag("-v", "--verbose"), boolFlag("-i", "--interactive"),
 		boolFlag("-T", "--no-target-directory"),
-		boolFlag("-b", "--backup"), boolFlag("-L", "--logical"), boolFlag("-P", "--physical"),
+		boolFlag("-b"), optionalFlag(ValueNonPath, "--backup"), boolFlag("-L", "--logical"), boolFlag("-P", "--physical"),
 	}, ToExtraction: extractLink},
 
 	"truncate": {Kind: KindInPlaceEdit, Flags: []FlagSpec{
@@ -139,7 +139,7 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 	"mkdir": {Kind: KindWriteFile, Flags: []FlagSpec{
 		valueFlag(ValueNonPath, "-m", "--mode"),
 		boolFlag("-p", "--parents"), boolFlag("-v", "--verbose"),
-		boolFlag("-Z", "--context"),
+		boolFlag("-Z"), optionalFlag(ValueNonPath, "--context"),
 	}, ToExtraction: extractSimpleWrite},
 	// sponge: only -a/--append is a real sponge flag (moreutils sponge(1)).
 	"sponge": {Kind: KindWriteFile, Flags: []FlagSpec{
@@ -158,14 +158,14 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 		valueFlag(ValueWrite, "-t", "--target-directory"),
 		valueFlag(ValueNonPath, "-S", "--suffix"),
 		// -b is boolean; --backup[=CONTROL] takes an optional non-path control word (install --help).
-		optionalFlag(ValueNonPath, "-b", "--backup"),
+		boolFlag("-b"), optionalFlag(ValueNonPath, "--backup"),
 		valueFlag(ValueNonPath, "--strip-program"),
 		boolFlag("-d", "--directory"), boolFlag("-D"), boolFlag("-v", "--verbose"),
 		boolFlag("-p", "--preserve-timestamps"), boolFlag("-c"), boolFlag("-C", "--compare"),
 		boolFlag("-s", "--strip"), boolFlag("-T", "--no-target-directory"),
 		boolFlag("-P", "--preserve-context"), boolFlag("-U", "--unprivileged"),
 		// -Z and --context[=CTX] are aliases with an optional SELinux context value (install --help).
-		optionalFlag(ValueNonPath, "-Z", "--context"),
+		boolFlag("-Z"), optionalFlag(ValueNonPath, "--context"),
 	}, ToExtraction: extractInstall},
 
 	"tar": {Kind: KindArchiveExtract, Flags: tarFlagSet, ToExtraction: extractTar},
@@ -191,7 +191,7 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 	// -Z/--context[=CTX] takes an optional SELinux context value (mknod --help).
 	"mknod": {Kind: KindWriteFile, Flags: []FlagSpec{
 		valueFlag(ValueNonPath, "-m", "--mode"),
-		optionalFlag(ValueNonPath, "-Z", "--context"),
+		boolFlag("-Z"), optionalFlag(ValueNonPath, "--context"),
 	}, ToExtraction: extractMknod},
 
 	"mount": {Kind: KindMount, Flags: []FlagSpec{
@@ -263,7 +263,7 @@ func cpFlags() []FlagSpec {
 		boolFlag("-v", "--verbose"), boolFlag("-u", "--update"), boolFlag("-d"),
 		boolFlag("-L", "--dereference"), boolFlag("-P", "--no-dereference"), boolFlag("-H"),
 		boolFlag("-s", "--symbolic-link"), boolFlag("-l", "--link"), boolFlag("-T", "--no-target-directory"),
-		boolFlag("-b", "--backup"), boolFlag("-x", "--one-file-system"),
+		boolFlag("-b"), optionalFlag(ValueNonPath, "--backup"), boolFlag("-x", "--one-file-system"),
 	}
 }
 
@@ -276,8 +276,8 @@ func mvFlags() []FlagSpec {
 		valueFlag(ValueNonPath, "-S", "--suffix"),
 		boolFlag("-f", "--force"), boolFlag("-i", "--interactive"), boolFlag("-n", "--no-clobber"),
 		boolFlag("-v", "--verbose"), boolFlag("-u", "--update"),
-		boolFlag("-T", "--no-target-directory"), boolFlag("-b", "--backup"),
-		boolFlag("-Z", "--context"), boolFlag("--strip-trailing-slashes"),
+		boolFlag("-T", "--no-target-directory"), boolFlag("-b"), optionalFlag(ValueNonPath, "--backup"),
+		boolFlag("-Z"), optionalFlag(ValueNonPath, "--context"), boolFlag("--strip-trailing-slashes"),
 	}
 }
 

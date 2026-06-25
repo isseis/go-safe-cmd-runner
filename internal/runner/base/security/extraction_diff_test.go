@@ -77,6 +77,7 @@ var diffExclusions = map[string]func(args []string) bool{
 			// addition: -Z/--context and --strip-trailing-slashes (mv --help)
 			exactArgvMatch(args, "-Z", "a", "b") ||
 			exactArgvMatch(args, "--context", "a", "b") ||
+			exactArgvMatch(args, "--context=v", "a", "b") ||
 			exactArgvMatch(args, "--strip-trailing-slashes", "a", "b")
 	},
 
@@ -129,7 +130,8 @@ var diffExclusions = map[string]func(args []string) bool{
 			exactArgvMatch(args, "-af", "d") || // cluster of two removed flags
 			// addition: -Z/--context (mkdir --help)
 			exactArgvMatch(args, "-Z", "a", "b") ||
-			exactArgvMatch(args, "--context", "a", "b")
+			exactArgvMatch(args, "--context", "a", "b") ||
+			exactArgvMatch(args, "--context=v", "a", "b")
 	},
 
 	// touch 0145 deviations: (a) over-recognition removal for -p (touch --help);
@@ -146,6 +148,7 @@ var diffExclusions = map[string]func(args []string) bool{
 	// ln 0145: added --backup/--logical/--physical long forms for -b/-L/-P (ln --help).
 	"ln": func(args []string) bool {
 		return exactArgvMatch(args, "--backup", "a", "b") ||
+			exactArgvMatch(args, "--backup=v", "a", "b") ||
 			exactArgvMatch(args, "--logical", "a", "b") ||
 			exactArgvMatch(args, "--physical", "a", "b")
 	},
@@ -176,7 +179,8 @@ var diffExclusions = map[string]func(args []string) bool{
 	// consuming it as the required context value.
 	"mknod": func(args []string) bool {
 		return exactArgvMatch(args, "-Z", "a", "b") ||
-			exactArgvMatch(args, "--context", "a", "b")
+			exactArgvMatch(args, "--context", "a", "b") ||
+			exactArgvMatch(args, "-ZZQ", "a")
 	},
 
 	// shred 0145: added --random-source value flag (shred --help).
