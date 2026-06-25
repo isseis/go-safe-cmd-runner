@@ -54,10 +54,17 @@ const TRIAGE_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        required: ['threadId', 'verdict', 'replyBody'],
+        required: ['threadId', 'verdict', 'severity', 'topic', 'replyBody'],
         properties: {
           threadId:  { type: 'string' },
           verdict:   { type: 'string', enum: ['valid', 'invalid', 'unclear'] },
+          // How much the raised issue actually matters, independent of verdict:
+          //   must-fix      — a real bug / correctness or security defect
+          //   worth-fixing  — a legitimate improvement (clarity, convention, robustness)
+          //   no-harm       — cosmetic, or invalid/inapplicable: safe to ignore
+          severity:  { type: 'string', enum: ['must-fix', 'worth-fixing', 'no-harm'] },
+          // One concise phrase naming what the comment raised (for the summary report).
+          topic:     { type: 'string' },
           replyBody: { type: 'string' },
         },
       },
@@ -177,10 +184,23 @@ Project conventions:
 - Comments: English only; one-line max; explain WHY, not WHAT
 - Build checks: ${BUILD_CHECKS}
 
-For EACH thread: read the source file at path:line for context, then classify:
+For EACH thread: read the source file at path:line for context, then classify
+two independent dimensions.
+
+verdict — is the suggestion right for this codebase?
   "valid"   — fix clearly improves correctness, clarity, or convention alignment
   "invalid" — suggestion is wrong or inapplicable in this context
   "unclear" — genuinely uncertain
+
+severity — how much does the raised issue actually matter? (judge the underlying
+concern on its merits, not just whether you will act on it)
+  "must-fix"     — a real bug, or a correctness/security defect
+  "worth-fixing" — a legitimate improvement (clarity, convention, robustness) but not a bug
+  "no-harm"      — cosmetic only, OR the comment is invalid/inapplicable: safe to ignore
+
+topic — one concise English phrase naming what the comment raised (e.g.
+"heredoc terminator indentation", "stale Go version in prompt"). Used in the
+post-run summary so the user sees what each comment was about at a glance.
 
 Set replyBody to a concise English sentence:
   valid:   describe the fix (used as the PR reply after applying)
@@ -337,12 +357,24 @@ const unappliedValidUrls = valid
   .filter(t => !appliedThreadIds.has(t.threadId))
   .map(t => (threadIndex[t.threadId] || {}).url || t.threadId)
 
+// Per-thread assessment for the post-run report: what each comment raised, how
+// much it mattered (severity), and whether a fix was actually applied. This is
+// the evaluation the summary renders so the user is not left with bare counts.
+const assessment = triage.threads.map(t => ({
+  topic:    t.topic,
+  severity: t.severity,
+  verdict:  t.verdict,
+  applied:  appliedThreadIds.has(t.threadId),
+  url:      (threadIndex[t.threadId] || {}).url || t.threadId,
+}))
+
 return {
-  status:   'done',
-  pr:       `${pr.owner}/${pr.repo}#${pr.number}`,
-  fixed:    fixes.filter(f => f.applied).length,
-  invalid:  invalid.length,
-  unclear:  [...unclearUrls, ...unappliedValidUrls],
-  clusters: triage.clusters.length,
-  commit:   buildResult.commitSha || '(none)',
+  status:     'done',
+  pr:         `${pr.owner}/${pr.repo}#${pr.number}`,
+  fixed:      fixes.filter(f => f.applied).length,
+  invalid:    invalid.length,
+  unclear:    [...unclearUrls, ...unappliedValidUrls],
+  clusters:   triage.clusters.length,
+  commit:     buildResult.commitSha || '(none)',
+  assessment,
 }
