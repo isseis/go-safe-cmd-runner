@@ -176,7 +176,7 @@ structural change resolves all of them. Describe the structural change.
 
 Threads to triage:
 ${JSON.stringify(pr.threads, null, 2)}`,
-  { schema: TRIAGE_SCHEMA, phase: 'Triage' }
+  { schema: TRIAGE_SCHEMA, model: 'sonnet', phase: 'Triage' }
 )
 
 const valid   = triage.threads.filter(t => t.verdict === 'valid')
@@ -206,7 +206,7 @@ ${JSON.stringify(triage.clusters, null, 2)}
 
 Per-thread fixes (valid threads):
 ${JSON.stringify(valid, null, 2)}`,
-    { schema: FIX_SCHEMA, phase: 'Fix' }
+    { schema: FIX_SCHEMA, model: 'sonnet', phase: 'Fix' }
   )
   fixes.push(...fixResult.fixes)
 }
@@ -220,7 +220,7 @@ const buildResult = valid.length > 0
 
 1. ${BUILD_CHECKS}
 2. If all pass:
-   git add -u
+   git add -A
    git commit -m "fix: address PR #${pr.number} review comments"
 3. Get the commit SHA: git log -1 --format=%H
 4. Return success=true and commitSha.
@@ -266,6 +266,9 @@ const actionable = triage.threads
 
 await parallel(actionable.map(item => () => {
   const replyBodyJson = JSON.stringify(item.replyBody)
+  // The replies endpoint expects a JSON object {"body": ...}, not a bare string,
+  // so wrap the body. --input sends this file as the raw request body.
+  const replyBodyPayload = JSON.stringify({ body: item.replyBody })
   // Per-thread temp path: these agents run concurrently, so a shared filename
   // would let one agent overwrite another's reply body. databaseId is unique
   // per thread, so it makes the path collision-free.
@@ -273,9 +276,11 @@ await parallel(actionable.map(item => () => {
   return agent(
     `Post a reply to a GitHub PR review thread then resolve it.
 
-1. Write the reply body to a unique temp file to avoid shell quoting issues:
+1. Write the reply body to a unique temp file to avoid shell quoting issues.
+   The file must contain a JSON object with a "body" field (the replies
+   endpoint rejects a bare JSON string with HTTP 422):
    cat > ${tmpPath} << 'ENDJSON'
-   ${replyBodyJson}
+   ${replyBodyPayload}
    ENDJSON
 
    Then post:
@@ -301,7 +306,12 @@ await agent(
 
 1. gh pr view ${pr.number} --json title,body
 2. git log --oneline -10
-3. If the description is significantly stale (approach changed, scope shifted):
+3. Only if the description is significantly stale (approach changed, scope shifted),
+   AND you have drafted a concrete final title and body from the actual PR content:
+   run gh pr edit with those real values. The strings "NEW TITLE" and
+   "...updated body..." below are PLACEHOLDERS — never pass them literally; if you
+   have not drafted concrete replacement text, SKIP the edit entirely so the real
+   PR description is preserved.
    gh pr edit ${pr.number} --title "NEW TITLE" --body "$(cat <<'EOF'
    ...updated body...
    EOF
