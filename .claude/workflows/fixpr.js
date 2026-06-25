@@ -11,7 +11,10 @@ export const meta = {
   ],
 }
 
-// Build checks for this Go project (from .claude/commands/_context.md)
+// Build checks for this Go project. Source of truth is the "Build checks" row in
+// .claude/commands/_context.md (Tech-stack convention); a workflow script cannot
+// read that markdown at runtime, so this mirrors it — keep the two in sync if the
+// build commands change there.
 const BUILD_CHECKS = 'make fmt && make test && make lint'
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
@@ -24,6 +27,7 @@ const PR_SCHEMA = {
     owner:  { type: 'string' },
     repo:   { type: 'string' },
     number: { type: 'integer' },
+    capHit: { type: 'boolean' },
     threads: {
       type: 'array',
       items: {
@@ -133,7 +137,9 @@ gh api graphql -F owner=OWNER -F repo=REPO -F number=NUMBER -f query='
 3. Filter to nodes where isResolved=false.
 4. For each, take the FIRST comment: use its databaseId, body, path, line, url.
    The threadId is the node "id" from reviewThreads (not the comment id).
-5. Return found=true with all threads.`,
+5. Set capHit=true if the raw reviewThreads list returned exactly 100 nodes
+   (the query cap — more threads may exist beyond it); otherwise capHit=false.
+6. Return found=true with all threads.`,
   { schema: PR_SCHEMA, model: 'haiku', effort: 'low', phase: 'Fetch' }
 )
 
@@ -146,6 +152,14 @@ if (pr.threads.length === 0) {
   return { status: 'nothing-to-do' }
 }
 
+// The Fetch query caps reviewThreads at 100 (no pagination). On a PR that hits
+// the cap, threads beyond 100 are silently invisible to this run — surface it so
+// the gap is not mistaken for completeness. Re-running fixpr after resolving the
+// first batch picks up the remainder.
+if (pr.capHit) {
+  log('WARNING: hit the 100-thread fetch cap — there may be more unresolved threads; re-run after this batch.')
+}
+
 log(`PR #${pr.number} (${pr.owner}/${pr.repo}) — ${pr.threads.length} unresolved threads`)
 
 // ── Phase 2: Triage (sonnet — requires code reasoning) ────────────────────
@@ -155,7 +169,7 @@ const triage = await agent(
   `Triage these unresolved PR review threads for ${pr.owner}/${pr.repo}#${pr.number}.
 
 Project conventions:
-- Go 1.22+ codebase, security-focused, interface-driven design
+- Go 1.26 codebase (per go.mod), security-focused, interface-driven design
 - YAGNI/DRY: no premature abstractions
 - Modern Go idioms: slices/maps packages, errors.Is/As, any instead of interface{}, etc.
 - Comments: English only; one-line max; explain WHY, not WHAT
@@ -268,31 +282,20 @@ const actionable = triage.threads
   .filter(t => t.databaseId)
 
 await parallel(actionable.map(item => () => {
-  const replyBodyJson = JSON.stringify(item.replyBody)
-  // The replies endpoint expects a JSON object {"body": ...}, not a bare string,
-  // so wrap the body. --input sends this file as the raw request body.
+  // The replies endpoint expects a JSON object {"body": ...}, not a bare string.
+  // Pipe it to `gh api --input -` via a quoted heredoc: stdin avoids both shell
+  // quoting issues and any temp file (no shared path, so no concurrency race, and
+  // nothing to clean up).
   const replyBodyPayload = JSON.stringify({ body: item.replyBody })
-  // Per-thread temp path: these agents run concurrently, so a shared filename
-  // would let one agent overwrite another's reply body. databaseId is unique
-  // per thread, so it makes the path collision-free.
-  const tmpPath = `/tmp/pr_reply_body_${item.databaseId}.json`
   return agent(
     `Post a reply to a GitHub PR review thread then resolve it.
 
-1. Write the reply body to a unique temp file to avoid shell quoting issues.
-   The file must contain a JSON object with a "body" field (the replies
-   endpoint rejects a bare JSON string with HTTP 422):
-   cat > ${tmpPath} << 'ENDJSON'
-   ${replyBodyPayload}
-   ENDJSON
-
-   Then post:
+1. Post the reply by piping the JSON payload to gh api via stdin (the quoted
+   'PAYLOAD' heredoc passes the body verbatim — no shell expansion, no temp file):
    gh api repos/${item.owner}/${item.repo}/pulls/${item.number}/comments/${item.databaseId}/replies \\
-     -X POST --input ${tmpPath}
-
-   (Or use: gh api ... -X POST -f body=${replyBodyJson} if the above does not work.)
-
-   Then remove the temp file: rm -f ${tmpPath}
+     -X POST --input - <<'PAYLOAD'
+   ${replyBodyPayload}
+   PAYLOAD
 
 2. Resolve the thread:
    gh api graphql -F threadId=${item.threadId} \\
