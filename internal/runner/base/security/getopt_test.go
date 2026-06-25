@@ -119,7 +119,7 @@ func TestParseArgs_FailClosed(t *testing.T) {
 }
 
 // TestParseArgs_AliasNormalization verifies spelling variants of one flag normalize
-// to the same canonical key (AC-05).
+// to the same canonical key.
 func TestParseArgs_AliasNormalization(t *testing.T) {
 	short := parseArgs(optFlags(), []string{"-t", "/dst"})
 	long := parseArgs(optFlags(), []string{"--target-directory", "/dst"})
@@ -136,7 +136,7 @@ func TestParseArgs_AliasNormalization(t *testing.T) {
 }
 
 // TestParseArgs_OptionalArg verifies optional-argument flags take a value only in the
-// attached form and never consume a separate following token (AC-06).
+// attached form and never consume a separate following token.
 func TestParseArgs_OptionalArg(t *testing.T) {
 	// Bare long optional flag: present, no value; the following token is a non-flag arg.
 	bare := parseArgs(optFlags(), []string{"--one-top-level", "a.tar"})
