@@ -97,9 +97,10 @@ var diffExclusions = map[string]func(args []string) bool{
 	"rmdir": func(args []string) bool {
 		return isLongRecursionDeviation(args, "--recursive") ||
 			// over-recognition removal: rmdir -r DIR (rmdir --help: no -r flag)
-			exactArgvMatch(args, "-r", "d") ||
+			// Two positionals so a value-taking -r reintroduction still leaves an operand.
+			exactArgvMatch(args, "-r", "d", "d2") ||
 			// cluster with removed -r and kept -p (rmdir --help: no -r flag)
-			exactArgvMatch(args, "-rp", "d")
+			exactArgvMatch(args, "-rp", "d", "d2")
 	},
 
 	// unlink 0145 deviation (over-recognition removal, recognized=true->false): unlink has
@@ -109,9 +110,10 @@ var diffExclusions = map[string]func(args []string) bool{
 	"unlink": func(args []string) bool {
 		return isLongRecursionDeviation(args, "--recursive") ||
 			// over-recognition removal: unlink -r FILE (unlink --help: no options)
-			exactArgvMatch(args, "-r", "f") ||
+			// Two positionals so a value-taking -r reintroduction still leaves an operand.
+			exactArgvMatch(args, "-r", "f", "f2") ||
 			// cluster of two removed flags (unlink --help: no options)
-			exactArgvMatch(args, "-rf", "f")
+			exactArgvMatch(args, "-rf", "f", "f2")
 	},
 
 	// sponge 0145 deviation (over-recognition removal, recognized=true->false): sponge
@@ -371,18 +373,20 @@ var diffFixtures = map[string][][]string{
 		{"d"},
 		{"-p", "d"},
 		{"-v", "d"},
-		// over-recognition removal (rmdir --help: no -r flag)
-		{"-r", "d"},
+		// over-recognition removal (rmdir --help: no -r flag). Two positionals so a
+		// falsely reintroduced value-taking -r still leaves an operand (recognized=true).
+		{"-r", "d", "d2"},
 		// cluster with removed -r and kept -p (rmdir --help: no -r flag)
-		{"-rp", "d"},
+		{"-rp", "d", "d2"},
 	},
 	// unlink 0145: unlink has no flags (unlink --help); any flag is unrecognized
 	"unlink": {
 		{"f"},
-		// over-recognition removal (unlink --help: no options at all)
-		{"-r", "f"},
+		// over-recognition removal (unlink --help: no options at all). Two positionals so
+		// a falsely reintroduced value-taking -r still leaves an operand (recognized=true).
+		{"-r", "f", "f2"},
 		// cluster of two removed flags (unlink --help: no options at all)
-		{"-rf", "f"},
+		{"-rf", "f", "f2"},
 	},
 	"shred":    {{"-u", "f"}, {"-n", "3", "f"}, {"f"}},
 	"ln":       {{"-s", "/t", "l"}, {"t", "l"}, {"t"}, {"-s", "a", "b", "dir"}, {"-t", "/d", "a"}, {"-s", "/t"}, {"-sf", "/t", "l"}, {"-sf", "a", "b", "dir"}},

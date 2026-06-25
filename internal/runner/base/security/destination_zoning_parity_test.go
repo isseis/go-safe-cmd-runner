@@ -173,7 +173,7 @@ func TestRemovedOverRecognizedFlagsFailClosed(t *testing.T) {
 		for _, flag := range flags {
 			cmd, flag := cmd, flag
 			t.Run(cmd+"/"+flag, func(t *testing.T) {
-				e := runExtraction(t, cmd, flag, "target")
+				e := runExtraction(t, cmd, flag, "target1", "target2")
 				assert.False(t, e.recognized,
 					"cmd=%q flag=%q: expected recognized=false (over-recognition removed)", cmd, flag)
 			})
