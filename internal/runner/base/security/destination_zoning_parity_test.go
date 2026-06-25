@@ -103,53 +103,62 @@ func TestExtractionRegressionCases(t *testing.T) {
 	})
 }
 
-// TestLocationResultParity pins the full LocationResult for a representative invocation
-// of EVERY registered command. The case table is ranged against commandFlagSpecs
-// (not a hardcoded count), so a newly registered command without a parity case fails
-// here. Each representative writes under the Trusted work dir, so the expected level is
-// Low unless an operation floor or network egress raises it.
+// TestLocationResultParity pins the LocationResult for a representative invocation of
+// EVERY registered command. The case table is ranged against commandFlagSpecs (not a
+// hardcoded count), so a newly registered command without a parity case fails here.
+// Each representative writes under the Trusted work dir, so every operand resolves into
+// the Trusted safe-zone (Level Low, no reason codes) unless a network egress raises it;
+// the per-case `roles` pins the operand count and ordering (Index/Role), and the loop
+// pins the resolved zone fields (Zone/Trusted/MatchedCritical) and ReasonCodes that
+// AC-10 enumerates. Resolved is the temp work-dir path (asserted non-empty, not by exact
+// value). Operation floors that raise the level are pinned by TestLocationResultFloors.
 func TestLocationResultParity(t *testing.T) {
 	low := runnertypes.RiskLevelLow
 	medium := runnertypes.RiskLevelMedium
+	w := risktypes.OperandRoleWrite
+	r := risktypes.OperandRoleRead
 	wd := zoningWorkdir(t)
 	in := zoningInput(wd, foreignIdent()) // foreign ident over a TrustedDirectory => safe-zone Low
 	p := func(name string) string { return filepath.Join(wd, name) }
 
 	cases := map[string]struct {
-		args  []string
-		level runnertypes.RiskLevel
+		args    []string
+		level   runnertypes.RiskLevel
+		roles   []risktypes.OperandRole // expected operand order/roles
+		reasons []risktypes.ReasonCode  // expected ReasonCodes (nil => none)
 	}{
-		"cp":       {[]string{p("s"), p("d")}, low},
-		"mv":       {[]string{p("s"), p("d")}, low},
-		"rm":       {[]string{p("f")}, low},
-		"rmdir":    {[]string{p("d")}, low},
-		"unlink":   {[]string{p("f")}, low},
-		"shred":    {[]string{p("f")}, low},
-		"ln":       {[]string{"-s", p("t"), p("l")}, low},
-		"truncate": {[]string{"-s", "0", p("f")}, low},
-		"sed":      {[]string{"-i", "s/a/b/", p("f")}, low},
-		"touch":    {[]string{p("f")}, low},
-		"mkdir":    {[]string{p("d")}, low},
-		"tee":      {[]string{p("f")}, low},
-		"sponge":   {[]string{p("f")}, low},
-		"install":  {[]string{p("s"), p("d")}, low},
-		"tar":      {[]string{"-xf", p("a.tar"), "-C", wd}, low},
-		"unzip":    {[]string{"-d", wd, p("a.zip")}, low},
-		"dd":       {[]string{"of=" + p("x")}, low},
-		"mknod":    {[]string{p("n"), "c", "1", "3"}, low},
-		"mount":    {[]string{p("dev"), p("mnt")}, low},
-		"umount":   {[]string{p("mnt")}, low},
-		"chmod":    {[]string{"644", p("f")}, low},
-		"chown":    {[]string{"root", p("f")}, low},
-		"chgrp":    {[]string{"staff", p("f")}, low},
-		"setfacl":  {[]string{"-m", "u:bob:r", p("f")}, low},
-		"chattr":   {[]string{"+a", p("f")}, low},
-		"find":     {[]string{wd, "-delete"}, low},
-		"curl":     {[]string{"-o", p("out"), "http://example/x"}, low},
-		"wget":     {[]string{"-O", p("out"), "http://example/x"}, low},
-		"scp":      {[]string{p("s"), p("d")}, low},
-		"sftp":     {[]string{p("d")}, medium}, // sftp is always a network egress
-		"rsync":    {[]string{p("s"), p("d")}, low},
+		"cp":       {[]string{p("s"), p("d")}, low, []risktypes.OperandRole{w, r}, nil},
+		"mv":       {[]string{p("s"), p("d")}, low, []risktypes.OperandRole{w, w}, nil},
+		"rm":       {[]string{p("f")}, low, []risktypes.OperandRole{w}, nil},
+		"rmdir":    {[]string{p("d")}, low, []risktypes.OperandRole{w}, nil},
+		"unlink":   {[]string{p("f")}, low, []risktypes.OperandRole{w}, nil},
+		"shred":    {[]string{p("f")}, low, []risktypes.OperandRole{w}, nil},
+		"ln":       {[]string{"-s", p("t"), p("l")}, low, []risktypes.OperandRole{r, w}, nil},
+		"truncate": {[]string{"-s", "0", p("f")}, low, []risktypes.OperandRole{w}, nil},
+		"sed":      {[]string{"-i", "s/a/b/", p("f")}, low, []risktypes.OperandRole{w}, nil},
+		"touch":    {[]string{p("f")}, low, []risktypes.OperandRole{w}, nil},
+		"mkdir":    {[]string{p("d")}, low, []risktypes.OperandRole{w}, nil},
+		"tee":      {[]string{p("f")}, low, []risktypes.OperandRole{w}, nil},
+		"sponge":   {[]string{p("f")}, low, []risktypes.OperandRole{w}, nil},
+		"install":  {[]string{p("s"), p("d")}, low, []risktypes.OperandRole{w, r}, nil},
+		"tar":      {[]string{"-xf", p("a.tar"), "-C", wd}, low, []risktypes.OperandRole{w}, nil},
+		"unzip":    {[]string{"-d", wd, p("a.zip")}, low, []risktypes.OperandRole{w}, nil},
+		"dd":       {[]string{"of=" + p("x")}, low, []risktypes.OperandRole{w}, nil},
+		"mknod":    {[]string{p("n"), "c", "1", "3"}, low, []risktypes.OperandRole{w}, nil},
+		"mount":    {[]string{p("dev"), p("mnt")}, low, []risktypes.OperandRole{w, w}, nil},
+		"umount":   {[]string{p("mnt")}, low, []risktypes.OperandRole{w}, nil},
+		"chmod":    {[]string{"644", p("f")}, low, []risktypes.OperandRole{w}, nil},
+		"chown":    {[]string{"root", p("f")}, low, []risktypes.OperandRole{w}, nil},
+		"chgrp":    {[]string{"staff", p("f")}, low, []risktypes.OperandRole{w}, nil},
+		"setfacl":  {[]string{"-m", "u:bob:r", p("f")}, low, []risktypes.OperandRole{w}, nil},
+		"chattr":   {[]string{"+a", p("f")}, low, []risktypes.OperandRole{w}, nil},
+		"find":     {[]string{wd, "-delete"}, low, []risktypes.OperandRole{w}, nil},
+		"curl":     {[]string{"-o", p("out"), "http://example/x"}, low, []risktypes.OperandRole{w}, nil},
+		"wget":     {[]string{"-O", p("out"), "http://example/x"}, low, []risktypes.OperandRole{w}, nil},
+		"scp":      {[]string{p("s"), p("d")}, low, []risktypes.OperandRole{w, r}, nil},
+		// sftp is always a network egress: no local operand, network-argument Medium floor.
+		"sftp":  {[]string{p("d")}, medium, nil, []risktypes.ReasonCode{risktypes.ReasonNetworkArgument}},
+		"rsync": {[]string{p("s"), p("d")}, low, []risktypes.OperandRole{w, r}, nil},
 	}
 
 	for cmd := range commandFlagSpecs {
@@ -160,6 +169,18 @@ func TestLocationResultParity(t *testing.T) {
 			assert.True(t, got.Applies, "Applies")
 			assert.True(t, got.Recognized, "Recognized; operands=%+v reasons=%v", got.Operands, got.ReasonCodes)
 			assert.Equal(t, tc.level, got.Level, "Level; operands=%+v reasons=%v", got.Operands, got.ReasonCodes)
+			assert.ElementsMatch(t, tc.reasons, got.ReasonCodes, "ReasonCodes")
+
+			require.Len(t, got.Operands, len(tc.roles), "operand count")
+			for i, oz := range got.Operands {
+				assert.Equal(t, i, oz.Index, "operand %d Index", i)
+				assert.Equal(t, tc.roles[i], oz.Role, "operand %d Role", i)
+				// Every representative resolves into the Trusted safe-zone.
+				assert.Equal(t, risktypes.ZoneSafeZone, oz.Zone, "operand %d Zone", i)
+				assert.True(t, oz.Trusted, "operand %d Trusted", i)
+				assert.Empty(t, oz.MatchedCritical, "operand %d MatchedCritical", i)
+				assert.NotEmpty(t, oz.Resolved, "operand %d Resolved", i)
+			}
 		})
 	}
 }
