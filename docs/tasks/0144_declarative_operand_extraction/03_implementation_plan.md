@@ -78,7 +78,7 @@
 
 **レビュー観点**: `parseArgs` の形式網羅と fail-closed（未知/欠落で `Recognized=false`） / 短縮連結中の引数付きフラグ規則・引数省略可の付随形限定 / `FlagArity`・`ValueRole`・`FlagSpec`/`CommandFlagSpec` の型設計（正規キー単一源・決定性制約）
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
