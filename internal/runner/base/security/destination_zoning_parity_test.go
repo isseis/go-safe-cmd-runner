@@ -90,6 +90,28 @@ func TestExtractionRegressionCases(t *testing.T) {
 			"a hard link's target resolves against the working directory (no base override)")
 	})
 
+	t.Run("over-recognition removal: removed flags yield recognized=false", func(t *testing.T) {
+		// Representative inputs for over-recognition removal (0145): flags present
+		// in the legacy shared-helper set but absent from the real CLI (man pages).
+		// Each was recognized=true before the fix; after cleanup it must be recognized=false.
+		cases := []struct{ cmd, flag, operand string }{
+			{"sponge", "-r", "file"},
+			{"mkdir", "-a", "dir"},
+			{"touch", "-p", "file"},
+			{"unlink", "-r", "file"},
+			{"rmdir", "-r", "dir"},
+			{"mv", "-s", "src"},
+		}
+		for _, tc := range cases {
+			tc := tc
+			t.Run(tc.cmd+"/"+tc.flag, func(t *testing.T) {
+				e := runExtraction(t, tc.cmd, tc.flag, tc.operand)
+				assert.False(t, e.recognized,
+					"cmd=%q flag=%q should be recognized=false after over-recognition removal", tc.cmd, tc.flag)
+			})
+		}
+	})
+
 	t.Run("tar mode parsed from the first word only", func(t *testing.T) {
 		extract := runExtraction(t, "tar", "xzf", "a.tar")
 		assert.True(t, extract.applies)
@@ -103,14 +125,70 @@ func TestExtractionRegressionCases(t *testing.T) {
 	})
 }
 
+// TestRemovedOverRecognizedFlagsFailClosed verifies that every flag removed by the
+// 0145 over-recognition cleanup yields recognized=false on the production path. The
+// source-of-truth set removedOverRecognizedFlags is ranged directly so that a forgotten
+// entry fails here rather than silently going untested.
+func TestRemovedOverRecognizedFlagsFailClosed(t *testing.T) {
+	// removedOverRecognizedFlags maps each de-shared command to the flags that existed in
+	// the legacy shared-helper set but are absent from the real CLI (per Appendix A of
+	// 03_implementation_plan.md). Each flag is tested as a standalone argv token.
+	removedOverRecognizedFlags := map[string][]string{
+		// mv --help: recursion/link/dereference flags absent from real mv
+		"mv": {
+			"-r", "-R", "--recursive", "-a", "--archive", "-d",
+			"-L", "--dereference", "-P", "--no-dereference", "-H",
+			"-s", "--symbolic-link", "-l", "--link", "-x", "--one-file-system",
+		},
+		// rm --help: rmdir-specific flags absent from real rm
+		"rm": {"-p", "--parents", "--ignore-fail-on-non-empty"},
+		// rmdir --help: only -p/-v/--ignore-fail-on-non-empty are real rmdir flags
+		"rmdir": {
+			"-r", "-R", "--recursive", "-f", "--force",
+			"-i", "-I", "--interactive", "-d", "--dir", "--one-file-system",
+		},
+		// unlink --help: no options whatsoever
+		"unlink": {
+			"-r", "-R", "--recursive", "-f", "--force",
+			"-i", "-I", "--interactive", "-d", "--dir", "--one-file-system",
+			"-p", "--parents", "--ignore-fail-on-non-empty",
+		},
+		// mkdir --help: only -m/-p/-v/-Z are real mkdir flags
+		"mkdir": {
+			"-a", "--append", "-c", "--no-create", "-h", "--no-dereference",
+			"-f", "-i", "-r",
+		},
+		// sponge(1): only -a/--append is a real sponge flag
+		"sponge": {
+			"-c", "--no-create", "-h", "--no-dereference",
+			"-p", "--parents", "-v", "--verbose", "-f", "-i", "-r",
+		},
+		// touch --help: -p/-v/-i are not real touch flags
+		"touch": {"-p", "--parents", "-v", "--verbose", "-i", "--append"},
+		// mknod --help: -v/--verbose is not a real mknod flag
+		"mknod": {"-v", "--verbose"},
+	}
+
+	for cmd, flags := range removedOverRecognizedFlags {
+		for _, flag := range flags {
+			cmd, flag := cmd, flag
+			t.Run(cmd+"/"+flag, func(t *testing.T) {
+				e := runExtraction(t, cmd, flag, "target1", "target2")
+				assert.False(t, e.recognized,
+					"cmd=%q flag=%q: expected recognized=false (over-recognition removed)", cmd, flag)
+			})
+		}
+	}
+}
+
 // TestLocationResultParity pins the LocationResult for a representative invocation of
 // EVERY registered command. The case table is ranged against commandFlagSpecs (not a
 // hardcoded count), so a newly registered command without a parity case fails here.
 // Each representative writes under the Trusted work dir, so every operand resolves into
 // the Trusted safe-zone (Level Low, no reason codes) unless a network egress raises it;
 // the per-case `roles` pins the operand count and ordering (Index/Role), and the loop
-// pins the resolved zone fields (Zone/Trusted/MatchedCritical) and ReasonCodes that
-// AC-10 enumerates. Resolved is the temp work-dir path (asserted non-empty, not by exact
+// pins the resolved zone fields (Zone/Trusted/MatchedCritical) and ReasonCodes.
+// Resolved is the temp work-dir path (asserted non-empty, not by exact
 // value). Operation floors that raise the level are pinned by TestLocationResultFloors.
 func TestLocationResultParity(t *testing.T) {
 	low := runnertypes.RiskLevelLow

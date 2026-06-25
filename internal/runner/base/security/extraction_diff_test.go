@@ -4,6 +4,7 @@ package security
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -47,29 +48,191 @@ func TestExtractionDifferential(t *testing.T) {
 }
 
 // diffExclusions lists, per command, the inputs where the new implementation is allowed
-// to diverge from the frozen legacy oracle ON PURPOSE. Phase 3 populates it for the one
-// documented deviation -- long-form recursion flags (cp/mv --recursive and --archive,
-// rm/rmdir/unlink --recursive) flip recognized=false->true; see the decision history in
-// 02_architecture.md. Keep each predicate as narrow as possible (match only the exact
-// diverging argv shape) so it never masks a real regression on the same flag.
+// to diverge from the frozen legacy oracle ON PURPOSE. Keep each predicate as narrow as
+// possible (match only the exact diverging argv shape, all tokens and length) so it
+// never masks a real regression on the same flag.
 var diffExclusions = map[string]func(args []string) bool{
-	// Documented intended deviation (decision 2026-06-25, see 02_architecture.md decision
-	// history / 03_implementation_plan.md Phase 2): the legacy scanFlags registered the
-	// long-form recursion spellings (--recursive / --archive) only as recursion flags, not
-	// as boolean flags, so a long form fell through to the unknown-"--"-flag branch and set
-	// recognized=false (fail-closed). The short forms -r/-R/-a went through the cluster
-	// path and stayed recognized=true. The declarative spec collapses every spelling into
-	// one FlagSpec, so the long form is now recognized=true (a precision improvement that
-	// removes a spurious High). These predicates excuse ONLY that exact recognized flip on
-	// the long-form-recursion inputs the corpus generates (`<flag> a b`); the short forms
-	// and every other input are still compared.
-	"cp": func(args []string) bool { return isLongRecursionDeviation(args, "--recursive", "--archive") },
-	"mv": func(args []string) bool { return isLongRecursionDeviation(args, "--recursive", "--archive") },
-	// rm/rmdir/unlink share removeFlags(), which declares --recursive as a recursion flag;
-	// legacy extractRemove failed closed on it for all three commands.
-	"rm":     func(args []string) bool { return isLongRecursionDeviation(args, "--recursive") },
-	"rmdir":  func(args []string) bool { return isLongRecursionDeviation(args, "--recursive") },
-	"unlink": func(args []string) bool { return isLongRecursionDeviation(args, "--recursive") },
+	// 0144 deviation (long-form recursion, recognized=false->true): the legacy scanFlags
+	// registered --recursive/--archive as recursion flags only, so the long form fell
+	// through to the unknown-"--"-flag branch (recognized=false). The declarative spec
+	// collapses every spelling into one FlagSpec, so the long form is now recognized=true.
+	// cp keeps all former copyMoveFlags entries, so only the long-form deviation applies.
+	"cp": func(args []string) bool {
+		return isLongRecursionDeviation(args, "--recursive", "--archive")
+	},
+
+	// mv 0145 deviations: (a) over-recognition removal (recognized=true->false) for
+	// flags absent from real mv; (b) additions of -Z/--context and
+	// --strip-trailing-slashes (recognized=false->true; mv --help).
+	// The 0144 long-form recursion predicate is retained but dead (--recursive/--archive
+	// are not in mvFlags; kept for documentation continuity).
+	"mv": func(args []string) bool {
+		return isLongRecursionDeviation(args, "--recursive", "--archive") ||
+			// removal: cluster of removed -r and -a (mv --help)
+			exactArgvMatch(args, "-ra", "s", "d") ||
+			// over-recognition removal: mv -s SRC DST (mv --help: no -s flag)
+			exactArgvMatch(args, "-s", "s", "d") ||
+			// removal: cluster with removed -r and kept -f (mv --help: no -r flag)
+			exactArgvMatch(args, "-rf", "s", "d") ||
+			// addition: -Z/--context and --strip-trailing-slashes (mv --help)
+			exactArgvMatch(args, "-Z", "a", "b") ||
+			exactArgvMatch(args, "--context", "a", "b") ||
+			exactArgvMatch(args, "--context=v", "a", "b") ||
+			exactArgvMatch(args, "--strip-trailing-slashes", "a", "b")
+	},
+
+	// rm 0144 deviation (--recursive recognized=false->true) plus 0145 additions
+	// (--preserve-root/--no-preserve-root recognized=false->true; rm --help).
+	"rm": func(args []string) bool {
+		return isLongRecursionDeviation(args, "--recursive") ||
+			exactArgvMatch(args, "--preserve-root", "a", "b") ||
+			exactArgvMatch(args, "--no-preserve-root", "a", "b")
+	},
+
+	// rmdir 0145 deviation (over-recognition removal, recognized=true->false): rmdir now
+	// has only -p/-v/--ignore-fail-on-non-empty (rmdir --help). Inputs using the removed
+	// rm-heritage flags yield recognized=false.
+	// The 0144 --recursive predicate is retained but now dead (--recursive is not in
+	// rmdirFlags, so the auto-corpus never generates {"--recursive","a","b"} for rmdir).
+	"rmdir": func(args []string) bool {
+		return isLongRecursionDeviation(args, "--recursive") ||
+			// over-recognition removal: rmdir -r DIR (rmdir --help: no -r flag)
+			// Two positionals so a value-taking -r reintroduction still leaves an operand.
+			exactArgvMatch(args, "-r", "d", "d2") ||
+			// cluster with removed -r and kept -p (rmdir --help: no -r flag)
+			exactArgvMatch(args, "-rp", "d", "d2")
+	},
+
+	// unlink 0145 deviation (over-recognition removal, recognized=true->false): unlink has
+	// no flags (unlink --help). Any flag token now yields recognized=false.
+	// The 0144 --recursive predicate is retained but dead (nil Flags -> auto-corpus never
+	// generates {"--recursive","a","b"} for unlink).
+	"unlink": func(args []string) bool {
+		return isLongRecursionDeviation(args, "--recursive") ||
+			// over-recognition removal: unlink -r FILE (unlink --help: no options)
+			// Two positionals so a value-taking -r reintroduction still leaves an operand.
+			exactArgvMatch(args, "-r", "f", "f2") ||
+			// cluster of two removed flags (unlink --help: no options)
+			exactArgvMatch(args, "-rf", "f", "f2")
+	},
+
+	// sponge 0145 deviation (over-recognition removal, recognized=true->false): sponge
+	// has only -a/--append (moreutils sponge(1)). Other flags now yield recognized=false.
+	"sponge": func(args []string) bool {
+		// over-recognition removal: sponge -r FILE (sponge(1): no -r flag)
+		return exactArgvMatch(args, "-r", "f") ||
+			// cluster of two removed flags (sponge(1): only -a/--append exists)
+			exactArgvMatch(args, "-rv", "f")
+	},
+
+	// mkdir 0145 deviations: (a) over-recognition removal for flags absent from real mkdir;
+	// (b) addition of -Z/--context (recognized=false->true; mkdir --help).
+	"mkdir": func(args []string) bool {
+		return exactArgvMatch(args, "-a", "d") || // over-recognition removal: no -a flag (mkdir --help)
+			exactArgvMatch(args, "-af", "d") || // cluster of two removed flags
+			// addition: -Z/--context (mkdir --help)
+			exactArgvMatch(args, "-Z", "a", "b") ||
+			exactArgvMatch(args, "--context", "a", "b") ||
+			exactArgvMatch(args, "--context=v", "a", "b")
+	},
+
+	// touch 0145 deviations: (a) over-recognition removal for -p (touch --help);
+	// (b) additions of -m and --time (recognized=false->true; touch --help).
+	"touch": func(args []string) bool {
+		return exactArgvMatch(args, "-p", "f") || // over-recognition removal: no -p flag (touch --help)
+			// addition: -m boolean (touch --help)
+			exactArgvMatch(args, "-m", "a", "b") ||
+			// addition: --time value flag (touch --help)
+			exactArgvMatch(args, "--time", "v", "a", "b") ||
+			exactArgvMatch(args, "--time=v", "a", "b")
+	},
+
+	// ln 0145: added --backup/--logical/--physical long forms for -b/-L/-P (ln --help).
+	"ln": func(args []string) bool {
+		return exactArgvMatch(args, "--backup", "a", "b") ||
+			exactArgvMatch(args, "--backup=v", "a", "b") ||
+			exactArgvMatch(args, "--logical", "a", "b") ||
+			exactArgvMatch(args, "--physical", "a", "b")
+	},
+
+	// chmod 0145: added -H/-L/-P and -h/--no-dereference/--dereference (chmod --help,
+	// uutils 0.8.0 and GNU+uutils union policy).
+	"chmod": func(args []string) bool {
+		return exactArgvMatch(args, "-H", "a", "b") ||
+			exactArgvMatch(args, "-L", "a", "b") ||
+			exactArgvMatch(args, "-P", "a", "b") ||
+			exactArgvMatch(args, "-h", "a", "b") ||
+			exactArgvMatch(args, "--no-dereference", "a", "b") ||
+			exactArgvMatch(args, "--dereference", "a", "b")
+	},
+
+	// chown/chgrp 0145: added --preserve-root/--no-preserve-root (chown/chgrp --help).
+	"chown": func(args []string) bool {
+		return exactArgvMatch(args, "--preserve-root", "a", "b") ||
+			exactArgvMatch(args, "--no-preserve-root", "a", "b")
+	},
+	"chgrp": func(args []string) bool {
+		return exactArgvMatch(args, "--preserve-root", "a", "b") ||
+			exactArgvMatch(args, "--no-preserve-root", "a", "b")
+	},
+
+	// mknod 0145: -Z/--context changed from ArityRequired to ArityOptional (mknod --help);
+	// the bare optional form {"-Z","a","b"} now leaves "a" as a non-flag arg instead of
+	// consuming it as the required context value.
+	"mknod": func(args []string) bool {
+		return exactArgvMatch(args, "-Z", "a", "b") ||
+			exactArgvMatch(args, "--context", "a", "b") ||
+			exactArgvMatch(args, "-ZZQ", "a")
+	},
+
+	// shred 0145: added --random-source value flag (shred --help).
+	"shred": func(args []string) bool {
+		return exactArgvMatch(args, "--random-source", "v", "a", "b") ||
+			exactArgvMatch(args, "--random-source=v", "a", "b")
+	},
+
+	// install 0145: (a) -b/--backup changed ArityRequired->ArityOptional -- bare form no
+	// longer consumes the next token as the backup suffix (install --help);
+	// (b) new flags added: --strip-program, -P/--preserve-context, -U/--unprivileged,
+	// -Z/--context (optional).
+	"install": func(args []string) bool {
+		// -b/--backup arity change: bare form, value is now a non-flag arg (install --help)
+		return exactArgvMatch(args, "-b", "a", "b") ||
+			exactArgvMatch(args, "--backup", "a", "b") ||
+			exactArgvMatch(args, "-b", "ctl", "s", "d") ||
+			// new --strip-program (install --help)
+			exactArgvMatch(args, "--strip-program", "v", "a", "b") ||
+			exactArgvMatch(args, "--strip-program=v", "a", "b") ||
+			// new -P/--preserve-context (install --help)
+			exactArgvMatch(args, "-P", "a", "b") ||
+			exactArgvMatch(args, "--preserve-context", "a", "b") ||
+			// new -U/--unprivileged (install --help)
+			exactArgvMatch(args, "-U", "a", "b") ||
+			exactArgvMatch(args, "--unprivileged", "a", "b") ||
+			// new -Z/--context optional (install --help); includes cluster -ZZQ
+			exactArgvMatch(args, "-Z", "a", "b") ||
+			exactArgvMatch(args, "-Z=v", "a", "b") ||
+			exactArgvMatch(args, "-Zv", "a", "b") ||
+			exactArgvMatch(args, "--context", "a", "b") ||
+			exactArgvMatch(args, "--context=v", "a", "b") ||
+			exactArgvMatch(args, "-ZZQ", "a")
+	},
+}
+
+// exactArgvMatch reports whether args is exactly the specified tokens (length and every
+// element must match). Used by diffExclusions predicates to achieve full-argv precision:
+// unlike position-only checks (args[0]=="-r"), this never matches a different argv shape
+// where the same token appears at a different index or with different surrounding tokens.
+func exactArgvMatch(args []string, tokens ...string) bool {
+	if len(args) != len(tokens) {
+		return false
+	}
+	for i, tok := range tokens {
+		if args[i] != tok {
+			return false
+		}
+	}
+	return true
 }
 
 // isLongRecursionDeviation reports whether args is exactly one of the long-form recursion
@@ -80,12 +243,7 @@ func isLongRecursionDeviation(args []string, longFlags ...string) bool {
 	if len(args) != 3 || args[1] != "a" || args[2] != "b" {
 		return false
 	}
-	for _, f := range longFlags {
-		if args[0] == f {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(longFlags, args[0])
 }
 
 // excludedFromDiff reports whether (cmd, args) is an intentional, documented divergence.
@@ -197,8 +355,39 @@ var diffFixtures = map[string][][]string{
 		{"-rap", "s", "d"},
 		{"-rp", "s", "d"},
 	},
-	"mv":       {{"s", "d"}, {"-t", "/d", "a", "b"}, {"-f", "s", "d"}, {"a"}, {"-ra", "s", "d"}},
-	"rm":       {{"-rf", "a"}, {"-r", "a", "b"}, {"a"}, {"-f"}, {"-rfv", "a"}},
+	"mv": {
+		{"s", "d"},
+		{"-t", "/d", "a", "b"},
+		{"-f", "s", "d"},
+		{"a"},
+		// existing: cluster of removed -r and -a (mv --help has neither)
+		{"-ra", "s", "d"},
+		// over-recognition removal (mv --help: no -s/--symbolic-link flag)
+		{"-s", "s", "d"},
+		// cluster with removed -r and kept -f (mv --help: no -r flag)
+		{"-rf", "s", "d"},
+	},
+	"rm": {{"-rf", "a"}, {"-r", "a", "b"}, {"a"}, {"-f"}, {"-rfv", "a"}},
+	// rmdir 0145: -r and clusters with removed flags (rmdir --help: no -r/-f flags)
+	"rmdir": {
+		{"d"},
+		{"-p", "d"},
+		{"-v", "d"},
+		// over-recognition removal (rmdir --help: no -r flag). Two positionals so a
+		// falsely reintroduced value-taking -r still leaves an operand (recognized=true).
+		{"-r", "d", "d2"},
+		// cluster with removed -r and kept -p (rmdir --help: no -r flag)
+		{"-rp", "d", "d2"},
+	},
+	// unlink 0145: unlink has no flags (unlink --help); any flag is unrecognized
+	"unlink": {
+		{"f"},
+		// over-recognition removal (unlink --help: no options at all). Two positionals so
+		// a falsely reintroduced value-taking -r still leaves an operand (recognized=true).
+		{"-r", "f", "f2"},
+		// cluster of two removed flags (unlink --help: no options at all)
+		{"-rf", "f", "f2"},
+	},
 	"shred":    {{"-u", "f"}, {"-n", "3", "f"}, {"f"}},
 	"ln":       {{"-s", "/t", "l"}, {"t", "l"}, {"t"}, {"-s", "a", "b", "dir"}, {"-t", "/d", "a"}, {"-s", "/t"}, {"-sf", "/t", "l"}, {"-sf", "a", "b", "dir"}},
 	"truncate": {{"-s", "0", "f"}, {"-r", "ref", "f"}, {"f"}},
@@ -212,10 +401,33 @@ var diffFixtures = map[string][][]string{
 		{"s/a/b/"},
 		{"-i", "s/a/b/"},
 	},
-	"touch":  {{"f"}, {"-r", "ref", "f"}, {"-t", "2401010000", "f"}, {"-c", "f"}},
-	"mkdir":  {{"d"}, {"-m", "0777", "d"}, {"-m", "u+s", "d"}, {"-p", "a/b"}},
-	"tee":    {{"f"}, {"-a", "f"}, {}},
-	"sponge": {{"f"}, {}},
+	"touch": {
+		{"f"},
+		{"-r", "ref", "f"},
+		{"-t", "2401010000", "f"},
+		{"-c", "f"},
+		// over-recognition removal (touch --help: no -p/--parents flag)
+		{"-p", "f"},
+	},
+	"mkdir": {
+		{"d"},
+		{"-m", "0777", "d"},
+		{"-m", "u+s", "d"},
+		{"-p", "a/b"},
+		// over-recognition removal (mkdir --help: no -a flag)
+		{"-a", "d"},
+		// cluster of two removed flags (mkdir --help: no -a or -f flags)
+		{"-af", "d"},
+	},
+	"tee": {{"f"}, {"-a", "f"}, {}},
+	"sponge": {
+		{"f"},
+		{},
+		// over-recognition removal (moreutils sponge(1): no -r flag)
+		{"-r", "f"},
+		// cluster of two removed flags (sponge(1): only -a/--append exists)
+		{"-rv", "f"},
+	},
 	"install": {
 		{"-m", "4755", "s", "d"},
 		{"-o", "root", "s", "d"},

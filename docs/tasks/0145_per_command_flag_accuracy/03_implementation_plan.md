@@ -91,87 +91,88 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/802）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### フェーズ 2: 共有ヘルパ分割と実 CLI 整合（`flag_spec.go`）
 
 付録 A に基づき `flag_spec.go` を編集する。意味づけ関数（`ToExtraction`）はコマンド間で共有のまま保つ（[02 §1.2](02_architecture.md)）。
 
 **共有ヘルパの分割（de-share。過剰認識除去の構造的原因）:**
-- [ ] `removeFlags()` を分割する。`rm` 専用ヘルパ（実 CLI フラグ集合: `-r`/`-R`/`--recursive`・`-f`/`--force`・`-i`・`-I`・
+- [x] `removeFlags()` を分割する。`rm` 専用ヘルパ（実 CLI フラグ集合: `-r`/`-R`/`--recursive`・`-f`/`--force`・`-i`・`-I`・
   `--interactive`・`-v`/`--verbose`・`-d`/`--dir`・`--one-file-system`・`--preserve-root`/`--no-preserve-root` 等）を残し、
   `rmdir` 専用（`-p`/`--parents`・`-v`/`--verbose`・`--ignore-fail-on-non-empty`）と `unlink` 専用（オプション無し＝空 `[]FlagSpec`）を
   新設する。`Flags` を分割しても `ToExtraction` は分岐させず、`rm`/`rmdir`/`unlink` は引き続き同一の `extractRemove`
   （`extractAllWrite` への委譲）を共有する（`cp`/`mv` の `extractCopyMove`・`mkdir`/`sponge` の `extractSimpleWrite` と同様）。
-- [ ] `simpleWriteFlags()` を分割する。`mkdir` 専用（`-m`/`--mode`・`-p`/`--parents`・`-v`/`--verbose`・`-Z`/`--context`）と
+- [x] `simpleWriteFlags()` を分割する。`mkdir` 専用（`-m`/`--mode`・`-p`/`--parents`・`-v`/`--verbose`・`-Z`/`--context`）と
   `sponge` 専用（`-a`/`--append` のみ）を新設する。`extractSimpleWrite` は共有を維持する。
-- [ ] `copyMoveFlags()` を分割する。`cp` 専用（再帰・リンク・デリファレンス系を含む cp 実 CLI 集合）を残し、`mv` 専用（`-f`/`--force`・
+- [x] `copyMoveFlags()` を分割する。`cp` 専用（再帰・リンク・デリファレンス系を含む cp 実 CLI 集合）を残し、`mv` 専用（`-f`/`--force`・
   `-i`/`--interactive`・`-n`/`--no-clobber`・`-u`/`--update`・`-v`/`--verbose`・`-t`/`--target-directory`〔`ValueWrite`〕・
   `-T`/`--no-target-directory`・`-b`/`--backup`・`-S`/`--suffix`〔`ValueNonPath`〕・`--strip-trailing-slashes`・`-Z`/`--context` 等）を
   新設する。`mv` 専用には再帰・リンク・デリファレンス系（`-r`/`-R`/`-a`/`-s`/`-l`/`-L`/`-P`/`-H`/`-d`/`-x`）を含めない。`extractCopyMove` は `cp`/`mv` で共有を維持し、argv を直接走査して `preserveMeta` を求める処理（`-a`/`--archive`/`-p`/`--preserve` を見る）には触れない（[02 §3.2](02_architecture.md)）。
 
 **個別宣言の修正（要件 §1.1 の確定分）:**
-- [ ] `touch` から真偽フラグ `-p`/`--parents`・`-v`/`--verbose`・`-i` を削除する。値フラグ `-r`/`--reference`（`ArityRequired`/
+- [x] `touch` から真偽フラグ `-p`/`--parents`・`-v`/`--verbose`・`-i` を削除する。値フラグ `-r`/`--reference`（`ArityRequired`/
   `ValueNonPath`）と他の実フラグは保存する（[02 §3.2](02_architecture.md)）。
 
 **残コマンドの整合（付録 A に基づく）:**
-- [ ] 残りの登録コマンド（`ln`・`install`・`shred`・`truncate`・`tee`・`mknod`・`tar`・`unzip`・`mount`・`umount`・`chmod`・
+- [x] 残りの登録コマンド（`ln`・`install`・`shred`・`truncate`・`tee`・`mknod`・`tar`・`unzip`・`mount`・`umount`・`chmod`・
   `chown`・`chgrp`・`setfacl`・`chattr`・`sed`・`curl`・`wget`・`scp`・`rsync`）について、付録 A の是正（削除・追加・修正）を適用する。
   値フラグの追加・役割修正では実 CLI に即した `ValueRole`（path は `ValueWrite`/`ValueRead`、非 path は `ValueNonPath`）と `Arity` を
   付与する（[02 §5.2](02_architecture.md)）。`dd`・`find`・`sftp`（フラグ非宣言）は対象外。
-- [ ] 特殊フラグの解釈依存（AC-03a）を保存する: `chown`/`chgrp` の `--reference`/`--from`（`ArityRequired`）、`ln` の `-s`/`--symbolic`
+- [x] 特殊フラグの解釈依存（AC-03a）を保存する: `chown`/`chgrp` の `--reference`/`--from`（`ArityRequired`）、`ln` の `-s`/`--symbolic`
   および `-t`/`--target-directory`（`ArityRequired`/`ValueWrite`）、`sed` の `-e`/`-f`（`ArityRequired`）と `-i`/`--in-place`
   （`ArityOptional`）。これらの表記・アリティ・役割を変えない（[02 §3.2](02_architecture.md)）。
 
 **フェーズ 2 完了ゲート:**
-- [ ] `go test -tags test ./internal/runner/base/security/` を実行し、データ駆動メタテスト（`TestSpecCompleteness`・
+- [x] `go test -tags test ./internal/runner/base/security/` を実行し、データ駆動メタテスト（`TestSpecCompleteness`・
   `TestArityInvariant`・`TestSpecNoDuplicateNames`・`TestEveryCommandHasExtractor`）が緑であることを確認する（AC-06）。
 
 ### フェーズ 3: 逸脱登録と肯定表明（テストコード）
 
 **差分テストの意図的逸脱登録（`extraction_diff_test.go`）:**
-- [ ] 既存 `diffFixtures` を**全 de-share コマンド**（`cp`/`mv`/`rm`/`rmdir`/`unlink`/`mkdir`/`sponge`）について機械的に監査し、
+- [x] 既存 `diffFixtures` を**全 de-share コマンド**（`cp`/`mv`/`rm`/`rmdir`/`unlink`/`mkdir`/`sponge`）について機械的に監査し、
   フェーズ 2 で削除したフラグのトークンを含む既存入力を網羅特定する（少なくとも `diffFixtures["mv"]` の `{"-ra","s","d"}`。なお
   `diffFixtures["rm"]` の `-rf`/`-rfv` 等は `rm` が保持するフラグのため対象外）。残存 fixture に削除トークンが 1 つも含まれない
   ことを確認する。
-- [ ] AC-02 の代表入力を `diffFixtures` へ追加する: `sponge -r FILE`・`mkdir -a DIR`・`touch -p FILE`・`unlink -r FILE`・
+- [x] AC-02 の代表入力を `diffFixtures` へ追加する: `sponge -r FILE`・`mkdir -a DIR`・`touch -p FILE`・`unlink -r FILE`・
   `rmdir -r DIR`・`mv -s SRC DST`。各 de-share コマンドにつき削除フラグを含む**クラスタ形**（例 `mv -rf SRC DST`・`sponge -rv FILE`）も
   最低 1 つ追加する（[02 §7](02_architecture.md)）。削除フラグは整合後の `Flags` から外れ `diffCorpus` の自動生成対象でなくなるため、これらの
   fixture が当該乖離を差分テストに乗せる唯一の経路である。
-- [ ] 上で特定・追加した乖離入力**すべて**を `diffExclusions` へ登録する（追加と登録は対で必須。登録漏れがあると
+- [x] 上で特定・追加した乖離入力**すべて**を `diffExclusions` へ登録する（追加と登録は対で必須。登録漏れがあると
   `TestExtractionDifferential` が赤になる）。各述語は、既存 `isLongRecursionDeviation` と同じく argv の長さと全トークンを完全一致で
   判定する共有ヘルパ経由とする。`args[0]=="-r"` のような位置を問わない緩い一致をインラインで書かない。各述語には man ページ典拠を
   記す英語コメントを添える（AC-04、[02 §3.3](02_architecture.md)）。
-- [ ] `go test -tags test -run TestExtractionDifferential ./internal/runner/base/security/` が緑であることを確認する（AC-04）。
+- [x] `go test -tags test -run TestExtractionDifferential ./internal/runner/base/security/` が緑であることを確認する（AC-04）。
 
 **削除フラグ網羅メタテスト（`destination_zoning_parity_test.go`）:**
-- [ ] 削除した過剰認識フラグを単一のソース集合（テスト内データ。例 `removedOverRecognizedFlags map[string][]string`）として定義し、
+- [x] 削除した過剰認識フラグを単一のソース集合（テスト内データ。例 `removedOverRecognizedFlags map[string][]string`）として定義し、
   各（コマンド×削除フラグ）入力が本番経路（`parseArgs`＋`ToExtraction`）で `recognized=false` になることを `range` 検証する新テスト
   `TestRemovedOverRecognizedFlagsFailClosed` を追加する。手書きの並行リストに依存せずソース集合を直接走査する（[02 §7](02_architecture.md)、AC-02/AC-05）。
 
 **肯定側の回帰アサーション（`destination_zoning_parity_test.go`）:**
-- [ ] `TestExtractionRegressionCases` に AC-02 代表入力の `recognized=false` を表明する `t.Run` 群を追加する（`runExtraction` で
+- [x] `TestExtractionRegressionCases` に AC-02 代表入力の `recognized=false` を表明する `t.Run` 群を追加する（`runExtraction` で
   `extraction.recognized == false` を確認）。
-- [ ] 値役割・アリティを path 役割へ／から変更した各フラグについて、捕捉値が `extraction.operands` に期待どおり現れる
+- [x] 値役割・アリティを path 役割へ／から変更した各フラグについて、捕捉値が `extraction.operands` に期待どおり現れる
   （または正しく現れない）ことを目印値で表明する `t.Run` を追加する（[02 §5.2](02_architecture.md)、AC-05）。とくに既存の path 運搬フラグ
   （`curl` `-o`〔`ValueWrite`〕/`-T`〔`ValueRead`〕・`wget` `-O`/`-P`〔`ValueWrite`〕/`--post-file`〔`ValueRead`〕・`install` `-t`〔`ValueWrite`〕・
   `tar` `-f`/`-C`/`--directory`/`--one-top-level`〔`ValueWrite`〕・`ln` `-t`〔`ValueWrite`〕）の役割・アリティを付録 A の是正で変更する場合は、
   当該フラグのオペランド出現を必ず再固定する（格下げによる fail-open を防ぐ）。
+  *付録 A で役割未変更のため、既存の `TestExtractionRegressionCases` および `TestLocationResultParity` がカバーするアサーションで十分。*
 
 **回帰の維持:**
-- [ ] `go test -tags test ./internal/runner/base/security/` 全体が緑であることを確認する。`TestExtractionRegressionCases`（既存の
+- [x] `go test -tags test ./internal/runner/base/security/` 全体が緑であることを確認する。`TestExtractionRegressionCases`（既存の
   `chown --from`/`sed -e`/`ln symbolic` 等の解釈保存サブテストを含む）・`TestLocationResultParity`・`TestLocationResultFloors`・
   `TestFailClosed`・`destination_zoning_test.go`・`operand_path_resolver_test.go` が緑であること（AC-03a/AC-06/AC-07）。
-- [ ] 既存テストの期待値を変更した場合は、その入力が安全側挙動変化に該当する根拠を本書「AC-07 根拠記録」へ記す（無根拠の変更は不適合）。
+- [x] 既存テストの期待値を変更した場合は、その入力が安全側挙動変化に該当する根拠を本書「AC-07 根拠記録」へ記す（無根拠の変更は不適合）。
 
 ### フェーズ 4: 安全性確認と非機能
 
-- [ ] すべての挙動変化が安全側であることを確認・記録する（AC-05）: (a) 過剰認識除去はすべて `recognized=true→false`、(b) 宣言漏れ追加・
+- [x] すべての挙動変化が安全側であることを確認・記録する（AC-05）: (a) 過剰認識除去はすべて `recognized=true→false`、(b) 宣言漏れ追加・
   役割修正で path 値の取りこぼし（fail-open）が無いことを、`TestRemovedOverRecognizedFlagsFailClosed` と肯定アサーションで確認する。
-- [ ] 各意図的逸脱の理由（どのコマンドのどのフラグで何がどう変わるか）が `diffExclusions` の英語コメントと本書に記録されていることを
+- [x] 各意図的逸脱の理由（どのコマンドのどのフラグで何がどう変わるか）が `diffExclusions` の英語コメントと本書に記録されていることを
   確認する（AC-04）。
-- [ ] `make fmt` → `make test` → `make lint` を実行し、すべて成功することを確認する（NF-001）。
+- [x] `make fmt` → `make test` → `make lint` を実行し、すべて成功することを確認する（NF-001）。
 
 ### PR-2 作成ポイント: flag-spec real-CLI alignment and test lock-in
 
@@ -181,8 +182,8 @@
 
 **レビュー観点**: 共有ヘルパ分割後も `ToExtraction` が `cp`/`mv`・`rm`/`rmdir`/`unlink`・`mkdir`/`sponge` で共有を維持しているか / `touch`（個別宣言）から真偽フラグ `-p`/`-v`/`-i` のみが削除され値フラグ `-r`（`ArityRequired`/`ValueNonPath`）が保存されているか / 削除フラグが真偽フラグに限られ過剰認識除去が fail-closed 方向（`recognized=true→false`）か / 役割変更フラグのオペランド出現が肯定アサーションで再固定され fail-open を防いでいるか / 差分テストの逸脱登録が全トークン完全一致で無関係入力を巻き込まないか
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/803）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
