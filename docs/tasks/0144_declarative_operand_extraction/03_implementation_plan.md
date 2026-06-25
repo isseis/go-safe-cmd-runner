@@ -319,7 +319,7 @@
 | AC-10 LocationResult 同一性 | test | `security/destination_zoning_parity_test.go::TestLocationResultParity`（`commandFlagSpecs` 全件 range×代表フラグ、`Operands`/`ReasonCodes` を含む）＋`security/destination_zoning_parity_test.go::TestLocationResultFloors`＋差分テスト `security/extraction_diff_test.go::TestExtractionDifferential`（凍結オラクル vs 新実装を `reflect.DeepEqual` 全フィールド） | リファクタ前後で全フィールド同一 |
 | AC-11 fail-closed の保存 | test | 既存（無改変）`security/destination_zoning_test.go::TestUnresolvedAsymmetry`＋`security/getopt_test.go::TestParseArgs_FailClosed`＋`security/destination_zoning_parity_test.go::TestFailClosed`（未知フラグ・値欠落・必須位置引数欠落・解決不能） | 未知/欠落/解決不能で High 下限 |
 | NF-001 ビルド/テスト緑 | static | `make fmt && make test && make lint`（終了コード 0） | 0 |
-| NF-003 決定性・read-only | test+static | test: `security/extraction_diff_test.go::TestExtractionDiff`（決定的一致）／static: `internal/runner/base/risk/live_identity_guard_test.go::TestNoLiveIdentityInZoning` の対象に `getopt.go`・`flag_spec.go` を追加して緑 | live identity/環境/非決定 API 不参照 |
+| NF-003 決定性・read-only | test+static | test: `security/extraction_diff_test.go::TestExtractionDifferential`（決定的一致）／static: `internal/runner/base/risk/live_identity_guard_test.go::TestNoLiveIdentityInZoning` の対象に `getopt.go`・`flag_spec.go` を追加して緑 | live identity/環境/非決定 API 不参照 |
 
 ## 8. 成功基準
 
