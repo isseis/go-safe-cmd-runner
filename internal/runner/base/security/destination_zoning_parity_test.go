@@ -164,7 +164,7 @@ func TestRemovedOverRecognizedFlagsFailClosed(t *testing.T) {
 			"-p", "--parents", "-v", "--verbose", "-f", "-i", "-r",
 		},
 		// touch --help: -p/-v/-i are not real touch flags
-		"touch": {"-p", "--parents", "-v", "--verbose", "-i"},
+		"touch": {"-p", "--parents", "-v", "--verbose", "-i", "--append"},
 		// mknod --help: -v/--verbose is not a real mknod flag
 		"mknod": {"-v", "--verbose"},
 	}
