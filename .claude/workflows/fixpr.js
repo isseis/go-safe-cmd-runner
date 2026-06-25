@@ -120,7 +120,7 @@ gh api graphql -F owner=OWNER -F repo=REPO -F number=NUMBER -f query='
           nodes {
             id
             isResolved
-            comments(first:10) {
+            comments(first:1) {
               nodes { id databaseId body path line url }
             }
           }
@@ -221,7 +221,7 @@ const buildResult = valid.length > 0
 1. ${BUILD_CHECKS}
 2. If all pass:
    git add -A
-   git commit -m "fix: address PR #${pr.number} review comments"
+   git diff --cached --quiet || git commit -m "fix: address PR #${pr.number} review comments"
 3. Get the commit SHA: git log -1 --format=%H
 4. Return success=true and commitSha.
 If any check fails, return success=false and the error output in the error field. Do NOT commit on failure.`,
@@ -248,12 +248,15 @@ for (const f of fixes) {
   if (f.replyBody) replyOverrides[f.threadId] = f.replyBody
 }
 
+// Set of threadIds where fixes were actually applied
+const appliedThreadIds = new Set(fixes.filter(f => f.applied).map(f => f.threadId))
+
 // Look up original thread data (databaseId) by threadId
 const threadIndex = {}
 for (const t of pr.threads) threadIndex[t.threadId] = t
 
 const actionable = triage.threads
-  .filter(t => t.verdict !== 'unclear')
+  .filter(t => t.verdict === 'invalid' || (t.verdict === 'valid' && appliedThreadIds.has(t.threadId)))
   .map(t => ({
     threadId:   t.threadId,
     databaseId: (threadIndex[t.threadId] || {}).databaseId,
@@ -312,10 +315,9 @@ await agent(
    "...updated body..." below are PLACEHOLDERS — never pass them literally; if you
    have not drafted concrete replacement text, SKIP the edit entirely so the real
    PR description is preserved.
-   gh pr edit ${pr.number} --title "NEW TITLE" --body "$(cat <<'EOF'
+   gh pr edit ${pr.number} --title "NEW TITLE" --body-file - <<'EOF'
    ...updated body...
    EOF
-   )"
 4. git push`,
   { model: 'haiku', effort: 'low', phase: 'Wrap' }
 )
@@ -323,13 +325,16 @@ await agent(
 // ── Return summary ────────────────────────────────────────────────────────
 
 const unclearUrls = unclear.map(t => (threadIndex[t.threadId] || {}).url || t.threadId)
+const unappliedValidUrls = valid
+  .filter(t => !appliedThreadIds.has(t.threadId))
+  .map(t => (threadIndex[t.threadId] || {}).url || t.threadId)
 
 return {
   status:   'done',
   pr:       `${pr.owner}/${pr.repo}#${pr.number}`,
   fixed:    fixes.filter(f => f.applied).length,
   invalid:  invalid.length,
-  unclear:  unclearUrls,
+  unclear:  [...unclearUrls, ...unappliedValidUrls],
   clusters: triage.clusters.length,
   commit:   buildResult.commitSha || '(none)',
 }
