@@ -246,8 +246,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（#798）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ## 3. 実装順序とマイルストーン
 
@@ -297,27 +297,27 @@
 
 ## 6. 実装チェックリスト
 
-- [ ] PR-1 マージ済み（対象: Phase 1。パーサ・型・パーサテスト緑）
-- [ ] PR-2 マージ済み（対象: Phase 2。仕様表・メタテスト・差分テスト基盤）
-- [ ] PR-3 マージ済み（対象: Phase 3。全コマンド移行・旧実装撤去・回帰ケース）
-- [ ] PR-4 マージ済み（対象: Phase 4。同一性・fail-closed・静的ガード）
-- [ ] 全 PR マージ後: `make fmt`→`make test`→`make lint` 全緑、`./internal/runner/...` コンパイル（NF-001）
+- [x] PR-1 マージ済み（対象: Phase 1。パーサ・型・パーサテスト緑）（#794）
+- [x] PR-2 マージ済み（対象: Phase 2。仕様表・メタテスト・差分テスト基盤）（#795）
+- [x] PR-3 マージ済み（対象: Phase 3。全コマンド移行・旧実装撤去・回帰ケース）（#797）
+- [x] PR-4 マージ済み（対象: Phase 4。同一性・fail-closed・静的ガード）（#798）
+- [x] 全 PR マージ後: `make fmt`→`make test`→`make lint` 全緑、`./internal/runner/...` コンパイル（NF-001）
 
 ## 7. 受け入れ基準の検証
 
 | AC | 種別 | 検証 | 期待 |
 |---|---|---|---|
-| AC-01 単一宣言テーブル・全表記1エントリ | test | `security/flag_spec_test.go::TestFlagSpec_AllSpellingsOneEntry`（例: `cp` の `-t`/`--target-directory` が単一 `FlagSpec.Names`） | 同一フラグの全表記が 1 エントリ |
-| AC-02 別名追加がデータ1箇所で完結 | test | `security/flag_spec_test.go::TestAliasAddition_NoCodeBranch`（`Names` に別名を加えると当該別名経由で値が取れる） | コード分岐追加不要で値取得可 |
+| AC-01 単一宣言テーブル・全表記1エントリ | test | `security/flag_spec_test.go::TestSpecNoDuplicateNames`（各表記が 1 エントリにのみ出現）＋`security/flag_spec_test.go::TestAliasAddition`（`cp` の `-t`/`--target-directory` が単一の正規キーへ） | 同一フラグの全表記が 1 エントリ |
+| AC-02 別名追加がデータ1箇所で完結 | test | `security/flag_spec_test.go::TestAliasAddition`（`Names` に別名を加えると当該別名経由で値が取れる） | コード分岐追加不要で値取得可 |
 | AC-03 全フラグ形式の一元処理 | test | `security/getopt_test.go::TestParseArgs_Forms`（表駆動） | 各形式が正しく解析される |
 | AC-04 語を捨てない・未知/欠落で fail-closed | test | `security/getopt_test.go::TestParseArgs_FailClosed` | 未知/欠落で `Recognized=false` |
 | AC-05 別名正規化で同一結果 | test | `security/getopt_test.go::TestParseArgs_AliasNormalization` | 表記違いが同一抽出結果 |
 | AC-06 引数省略可は付随形のみ | test | `security/getopt_test.go::TestParseArgs_OptionalArg`（`tar --one-top-level -xf a.tar`・`sed -ir`）＋`security/flag_spec_test.go::TestArityInvariant`（必須→省略可の誤分類検出） | 分離後続語を消費しない・クラスタ規則どおり・アリティ不変 |
 | AC-07 完全性メタテスト | test | `security/flag_spec_test.go::TestSpecCompleteness`（Names 非空・`ArityNone→ValueUnset`・引数付きは `ValueRole != ValueUnset`） | 未分類・不整合で失敗 |
-| AC-08 回帰代表ケース | test | 既存（無改変）`security/destination_zoning_test.go::TestExtractorHardening`/`TestExtractorHardening2`/`TestExtractorHardening3`/`TestACLGrantsWrite_DefaultEntry`/`TestTarExtractRecognized`＋不足分を `security/destination_zoning_parity_test.go` に追加 | 各代表ケースが緑 |
+| AC-08 回帰代表ケース | test | 既存（無改変）`security/destination_zoning_test.go::TestExtractorHardening`/`TestExtractorHardening2`/`TestExtractorHardening3`/`TestACLGrantsWrite_DefaultEntry`/`TestTarExtractRecognized`＋不足分を `security/destination_zoning_parity_test.go::TestExtractionRegressionCases` に追加 | 各代表ケースが緑 |
 | AC-09 既存テスト無改変緑 | test+static | test: `go test -tags test ./internal/runner/base/security/`／static: `git diff origin/main -- internal/runner/base/security/destination_zoning_test.go internal/runner/base/security/operand_path_resolver_test.go` の出力が**空**（新規ケースは別ファイルに置くため既存 2 ファイルは無改変） | 既存テストが変更なしで緑 |
-| AC-10 LocationResult 同一性 | test | `security/destination_zoning_parity_test.go::TestLocationResultParity`（`zoningSpecs` 全件 range×代表フラグ）＋差分テスト `security/extraction_diff_test.go::TestExtractionDiff`（`reflect.DeepEqual` 全フィールド） | リファクタ前後で全フィールド同一 |
-| AC-11 fail-closed の保存 | test | 既存（無改変）`security/destination_zoning_test.go::TestUnresolvedAsymmetry`＋`security/getopt_test.go::TestParseArgs_FailClosed`＋`security/destination_zoning_parity_test.go` の分類器 fail-closed ケース | 未知/欠落/解決不能で High 下限 |
+| AC-10 LocationResult 同一性 | test | `security/destination_zoning_parity_test.go::TestLocationResultParity`（`commandFlagSpecs` 全件 range×代表フラグ、`Operands`/`ReasonCodes` を含む）＋`security/destination_zoning_parity_test.go::TestLocationResultFloors`＋差分テスト `security/extraction_diff_test.go::TestExtractionDifferential`（凍結オラクル vs 新実装を `reflect.DeepEqual` 全フィールド） | リファクタ前後で全フィールド同一 |
+| AC-11 fail-closed の保存 | test | 既存（無改変）`security/destination_zoning_test.go::TestUnresolvedAsymmetry`＋`security/getopt_test.go::TestParseArgs_FailClosed`＋`security/destination_zoning_parity_test.go::TestFailClosed`（未知フラグ・値欠落・必須位置引数欠落・解決不能） | 未知/欠落/解決不能で High 下限 |
 | NF-001 ビルド/テスト緑 | static | `make fmt && make test && make lint`（終了コード 0） | 0 |
 | NF-003 決定性・read-only | test+static | test: `security/extraction_diff_test.go::TestExtractionDiff`（決定的一致）／static: `internal/runner/base/risk/live_identity_guard_test.go::TestNoLiveIdentityInZoning` の対象に `getopt.go`・`flag_spec.go` を追加して緑 | live identity/環境/非決定 API 不参照 |
 
