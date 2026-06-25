@@ -164,11 +164,14 @@ func (p *argParser) parseShortCluster(i int) (consumedNext, ok bool) {
 			continue
 		}
 		// c begins at byte 1+k within a (1 for the leading dash); the attached value is
-		// everything after c. utf8.RuneLen(c) is the allocation-free byte length of c, so
+		// everything after c. Re-decode at that position for c's true byte width:
+		// DecodeRuneInString reports width 1 for a malformed byte (whereas
+		// utf8.RuneLen(utf8.RuneError) over-reports 3), so the index stays in bounds and
 		// a multi-byte rune is never sliced in half. Note: for a short option the '=' is
 		// PART of the value (-C=v means -C with value "=v"), matching getopt and the
 		// legacy scanFlags; it must not be stripped here.
-		rest := a[1+k+utf8.RuneLen(c):]
+		_, cWidth := utf8.DecodeRuneInString(a[1+k:])
+		rest := a[1+k+cWidth:]
 		switch {
 		case rest != "":
 			p.mark(f, rest)

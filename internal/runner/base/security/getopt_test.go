@@ -200,6 +200,21 @@ func TestParseArgs_ShortClusterAttachedEquals(t *testing.T) {
 	assert.Equal(t, []string{"src"}, got.NonFlagArgs, "the next token must not be consumed")
 }
 
+// TestParseArgs_MalformedUTF8 pins that argv tokens containing invalid UTF-8 bytes
+// (possible on Unix) are handled without panicking. A standalone malformed byte is an
+// unknown short flag and fails closed; malformed bytes trailing a value flag are
+// captured as that flag's opaque value without a slice-bounds panic.
+func TestParseArgs_MalformedUTF8(t *testing.T) {
+	// A lone malformed byte is not a known flag -> fail closed, no panic.
+	bad := parseArgs(optFlags(), []string{string([]byte{'-', 0xff})})
+	assert.False(t, bad.Recognized, "a malformed-byte short flag must fail closed")
+
+	// Malformed bytes attached to a value flag are captured as the value, no panic.
+	val := parseArgs(optFlags(), []string{string([]byte{'-', 't', 0xff})})
+	assert.True(t, val.Recognized)
+	assert.Equal(t, []string{string([]byte{0xff})}, val.Values["-t"])
+}
+
 // TestParseArgs_HasFlag verifies presence detection for a no-argument flag, where the
 // value slice is empty (the len>0 trap).
 func TestParseArgs_HasFlag(t *testing.T) {
