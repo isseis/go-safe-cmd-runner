@@ -42,18 +42,18 @@ func TestSpecNoDuplicateNames(t *testing.T) {
 	}
 }
 
-// TestSpecCoversZoningCommands verifies the declarative table has exactly the same
-// command keys as the live zoningSpecs registry, so no command lacks a spec and no
-// stale entry lingers. The key set is ranged (not a hardcoded count) so adding or
-// removing a command surfaces here.
+// TestSpecCoversZoningCommands verifies the declarative table (now the single live
+// registry) has exactly the same command keys as the frozen legacy oracle, so no command
+// lacks a spec and no stale entry lingers. The key set is ranged (not a hardcoded count)
+// so adding or removing a command surfaces here.
 func TestSpecCoversZoningCommands(t *testing.T) {
-	for cmd := range zoningSpecs {
+	for cmd := range legacyZoningSpecs {
 		_, ok := commandFlagSpecs[cmd]
-		assert.True(t, ok, "zoningSpecs has %q but commandFlagSpecs does not", cmd)
+		assert.True(t, ok, "legacyZoningSpecs has %q but commandFlagSpecs does not", cmd)
 	}
 	for cmd := range commandFlagSpecs {
-		_, ok := zoningSpecs[cmd]
-		assert.True(t, ok, "commandFlagSpecs has %q but zoningSpecs does not", cmd)
+		_, ok := legacyZoningSpecs[cmd]
+		assert.True(t, ok, "commandFlagSpecs has %q but legacyZoningSpecs does not", cmd)
 	}
 }
 

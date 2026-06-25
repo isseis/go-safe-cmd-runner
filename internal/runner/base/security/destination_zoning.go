@@ -89,7 +89,7 @@ func classifyDestinationZone(input ZoningInput, names map[string]struct{}, cmdPa
 		return LocationResult{Applies: false}
 	}
 
-	ext := spec.extract(args)
+	ext := spec.ToExtraction(parseArgs(spec.Flags, args), args)
 	if !ext.applies {
 		// A known command in a non-writing form (sed without -i, tar -t, unzip -l,
 		// find without a destructive action): axis 2 does not apply.
@@ -138,7 +138,7 @@ func classifyDestinationZone(input ZoningInput, names map[string]struct{}, cmdPa
 			res.Recognized = false
 		}
 
-		if spec.kind == KindDeviceIO {
+		if spec.Kind == KindDeviceIO {
 			// dd operands are judged by device KIND, not by the path's zone: a
 			// harmless sink (/dev/null) stays Low even though /dev is a critical
 			// path, and a raw device is High. This is the one place where the level
@@ -179,7 +179,7 @@ func classifyDestinationZone(input ZoningInput, names map[string]struct{}, cmdPa
 
 // classifyOperand resolves one operand and classifies its trust zone, recording
 // the per-operand audit fields.
-func (r *operandResolver) classifyOperand(idx int, op rawOperand, _ commandSpec, input ZoningInput) risktypes.OperandZone {
+func (r *operandResolver) classifyOperand(idx int, op rawOperand, _ CommandFlagSpec, input ZoningInput) risktypes.OperandZone {
 	oz := risktypes.OperandZone{Index: idx, Raw: op.raw, Role: op.role}
 
 	// The run-as identity could not be resolved: without it the Trusted predicate

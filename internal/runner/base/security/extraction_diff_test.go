@@ -9,17 +9,17 @@ import (
 
 // TestExtractionDifferential is the primary behavior-preservation gate. For
 // every zoned command it runs a broad generated corpus through both the frozen legacy
-// extractor (legacyZoningSpecs) and the live production path (zoningSpecs), and requires
-// the whole extraction struct to match. Comparing the struct as a whole -- rather than
-// listing fields -- means a missed field (e.g. applies) or a future field is covered
-// automatically.
+// extractor (legacyZoningSpecs) and the live production path (commandFlagSpecs'
+// ToExtraction over parseArgs), and requires the whole extraction struct to match.
+// Comparing the struct as a whole -- rather than listing fields -- means a missed field
+// (e.g. applies) or a future field is covered automatically.
 //
-// Before any command is migrated (Phase 2) both sides are the same code, so this is
-// tautologically green; that proves the harness is sound and, crucially, that the
-// frozen copy is a faithful transcription (any transcription error shows up here as a
-// mismatch). In Phase 3 each command's migration is gated on this staying green.
+// In Phase 2 both sides were the same code, so this was tautologically green; that proved
+// the harness is sound and that the frozen copy is a faithful transcription. In Phase 3
+// each command's migration to the declarative parser is gated on this staying green
+// (modulo the documented intended deviations in diffExclusions).
 func TestExtractionDifferential(t *testing.T) {
-	for cmd := range zoningSpecs {
+	for cmd := range commandFlagSpecs {
 		// Fail fast and cleanly if a command lacks a frozen oracle or a flag spec,
 		// rather than panicking on a nil func below (test order is not guaranteed, so
 		// TestLegacyZoningSpecsCoverage may not have reported the mismatch yet).
@@ -38,7 +38,7 @@ func TestExtractionDifferential(t *testing.T) {
 				continue
 			}
 			legacy := normalizeExtraction(legacyFn(args))
-			prod := normalizeExtraction(zoningSpecs[cmd].extract(args))
+			prod := normalizeExtraction(spec.ToExtraction(parseArgs(spec.Flags, args), args))
 			if !reflect.DeepEqual(legacy, prod) {
 				t.Errorf("cmd=%q args=%v diverged\n  legacy=%+v\n  prod  =%+v", cmd, args, legacy, prod)
 			}
@@ -47,13 +47,46 @@ func TestExtractionDifferential(t *testing.T) {
 }
 
 // diffExclusions lists, per command, the inputs where the new implementation is allowed
-// to diverge from the frozen legacy oracle ON PURPOSE. It is EMPTY in Phase 2 (the
-// harness is tautological, so there is nothing to excuse yet). Phase 3 populates it for
-// the one documented deviation -- long-form recursion flags (cp/mv --recursive and
-// --archive, rm --recursive) flip recognized=false->true; see the decision history in
+// to diverge from the frozen legacy oracle ON PURPOSE. Phase 3 populates it for the one
+// documented deviation -- long-form recursion flags (cp/mv --recursive and --archive,
+// rm/rmdir/unlink --recursive) flip recognized=false->true; see the decision history in
 // 02_architecture.md. Keep each predicate as narrow as possible (match only the exact
 // diverging argv shape) so it never masks a real regression on the same flag.
-var diffExclusions = map[string]func(args []string) bool{}
+var diffExclusions = map[string]func(args []string) bool{
+	// Documented intended deviation (decision 2026-06-25, see 02_architecture.md decision
+	// history / 03_implementation_plan.md Phase 2): the legacy scanFlags registered the
+	// long-form recursion spellings (--recursive / --archive) only as recursion flags, not
+	// as boolean flags, so a long form fell through to the unknown-"--"-flag branch and set
+	// recognized=false (fail-closed). The short forms -r/-R/-a went through the cluster
+	// path and stayed recognized=true. The declarative spec collapses every spelling into
+	// one FlagSpec, so the long form is now recognized=true (a precision improvement that
+	// removes a spurious High). These predicates excuse ONLY that exact recognized flip on
+	// the long-form-recursion inputs the corpus generates (`<flag> a b`); the short forms
+	// and every other input are still compared.
+	"cp": func(args []string) bool { return isLongRecursionDeviation(args, "--recursive", "--archive") },
+	"mv": func(args []string) bool { return isLongRecursionDeviation(args, "--recursive", "--archive") },
+	// rm/rmdir/unlink share removeFlags(), which declares --recursive as a recursion flag;
+	// legacy extractRemove failed closed on it for all three commands.
+	"rm":     func(args []string) bool { return isLongRecursionDeviation(args, "--recursive") },
+	"rmdir":  func(args []string) bool { return isLongRecursionDeviation(args, "--recursive") },
+	"unlink": func(args []string) bool { return isLongRecursionDeviation(args, "--recursive") },
+}
+
+// isLongRecursionDeviation reports whether args is exactly one of the long-form recursion
+// inputs the corpus auto-generates for a recursion flag (`<longFlag> a b`). It matches
+// only that precise shape so the exclusion never masks a regression on the same flag in
+// any other position or form (e.g. the short forms -r/-R/-a, or attached/= variants).
+func isLongRecursionDeviation(args []string, longFlags ...string) bool {
+	if len(args) != 3 || args[1] != "a" || args[2] != "b" {
+		return false
+	}
+	for _, f := range longFlags {
+		if args[0] == f {
+			return true
+		}
+	}
+	return false
+}
 
 // excludedFromDiff reports whether (cmd, args) is an intentional, documented divergence.
 func excludedFromDiff(cmd string, args []string) bool {
@@ -67,16 +100,16 @@ func excludedFromDiff(cmd string, args []string) bool {
 // command set, so a command added to zoningSpecs without a frozen counterpart fails
 // here cleanly instead of panicking on a nil func inside TestExtractionDifferential.
 func TestLegacyZoningSpecsCoverage(t *testing.T) {
-	for cmd := range zoningSpecs {
+	for cmd := range commandFlagSpecs {
 		_, ok := legacyZoningSpecs[cmd]
 		if !ok {
-			t.Errorf("zoningSpecs has %q but legacyZoningSpecs does not", cmd)
+			t.Errorf("commandFlagSpecs has %q but legacyZoningSpecs does not", cmd)
 		}
 	}
 	for cmd := range legacyZoningSpecs {
-		_, ok := zoningSpecs[cmd]
+		_, ok := commandFlagSpecs[cmd]
 		if !ok {
-			t.Errorf("legacyZoningSpecs has %q but zoningSpecs does not", cmd)
+			t.Errorf("legacyZoningSpecs has %q but commandFlagSpecs does not", cmd)
 		}
 	}
 }
@@ -156,11 +189,18 @@ var diffFixtures = map[string][][]string{
 		{"-t", "/d"},
 		{"s", "d"},
 		{"a"},
+		// Multi-flag clusters exercise the cluster-blind hasAny preserveMeta path:
+		// -ra has -a in a cluster (preserveMeta must be true via raw whole-token? No:
+		// hasAny is whole-token, so "-ra" does NOT match "-a"; preserveMeta=false),
+		// while -rap likewise does not match. These pin the cluster-blind behavior.
+		{"-ra", "s", "d"},
+		{"-rap", "s", "d"},
+		{"-rp", "s", "d"},
 	},
-	"mv":       {{"s", "d"}, {"-t", "/d", "a", "b"}, {"-f", "s", "d"}, {"a"}},
-	"rm":       {{"-rf", "a"}, {"-r", "a", "b"}, {"a"}, {"-f"}},
+	"mv":       {{"s", "d"}, {"-t", "/d", "a", "b"}, {"-f", "s", "d"}, {"a"}, {"-ra", "s", "d"}},
+	"rm":       {{"-rf", "a"}, {"-r", "a", "b"}, {"a"}, {"-f"}, {"-rfv", "a"}},
 	"shred":    {{"-u", "f"}, {"-n", "3", "f"}, {"f"}},
-	"ln":       {{"-s", "/t", "l"}, {"t", "l"}, {"t"}, {"-s", "a", "b", "dir"}, {"-t", "/d", "a"}, {"-s", "/t"}},
+	"ln":       {{"-s", "/t", "l"}, {"t", "l"}, {"t"}, {"-s", "a", "b", "dir"}, {"-t", "/d", "a"}, {"-s", "/t"}, {"-sf", "/t", "l"}, {"-sf", "a", "b", "dir"}},
 	"truncate": {{"-s", "0", "f"}, {"-r", "ref", "f"}, {"f"}},
 	"sed": {
 		{"-i", "s/a/b/", "f"},
@@ -183,6 +223,10 @@ var diffFixtures = map[string][][]string{
 		{"-t", "/d", "s"},
 		{"-b", "ctl", "s", "d"},
 		{"s", "d"},
+		// -dv clusters the directory-mode -d with -v: hasAny is whole-token, so it does
+		// NOT match the clustered -d (directory mode off), exercising the cluster-blind path.
+		{"-dv", "dir"},
+		{"-vd", "dir"},
 	},
 	"tar": {
 		{"xzf", "a.tar"},
@@ -195,7 +239,17 @@ var diffFixtures = map[string][][]string{
 		{"--extract", "-f", "a.tar"},
 		{"-cf", "out.tar", "s"},
 	},
-	"unzip": {{"a.zip"}, {"-d", "/d", "a.zip"}, {"-l", "a.zip"}, {"-o", "a.zip"}},
+	"unzip": {
+		{"a.zip"},
+		{"-d", "/d", "a.zip"},
+		{"-l", "a.zip"},
+		{"-o", "a.zip"},
+		// -lo / -ld cluster the (undeclared) listing flag -l with another flag: hasAny is
+		// whole-token so it does NOT see -l inside the cluster (listing off), while the
+		// cluster scan hits the unknown -l and sets recognized=false. Pins cluster-blind.
+		{"-lo", "a.zip"},
+		{"-ld", "/d", "a.zip"},
+	},
 	"dd": {
 		{"if=/etc/passwd", "of=/tmp/x"},
 		{"of=/dev/sda"},
@@ -207,7 +261,7 @@ var diffFixtures = map[string][][]string{
 	},
 	"mknod":  {{"n", "c", "1", "3"}, {"-m", "0666", "n", "b", "8", "0"}, {"n"}},
 	"mount":  {{"/dev/sda1", "/mnt"}, {"-t", "ext4", "/dev/sda1", "/mnt"}, {"-a"}, {"/mnt"}},
-	"umount": {{"/mnt"}, {"-a"}, {"-l", "/mnt"}, {"-R", "/mnt"}},
+	"umount": {{"/mnt"}, {"-a"}, {"-l", "/mnt"}, {"-R", "/mnt"}, {"-af"}, {"-lf", "/mnt"}},
 	"chmod":  {{"u+s", "f"}, {"0777", "f"}, {"-R", "g+w", "f"}, {"u-s", "f"}, {"f"}, {"4755", "f"}},
 	"chown":  {{"--from=alice", "bob", "f"}, {"--reference=ref", "f"}, {"root:root", "f"}, {"-R", "root", "f"}, {"f"}},
 	"chgrp":  {{"staff", "f"}, {"--reference=ref", "f"}, {"-R", "staff", "f"}, {"f"}},
@@ -228,6 +282,11 @@ var diffFixtures = map[string][][]string{
 		{"+i"},
 		{"-V", "f"},
 		{"+a", "f1", "f2"},
+		// chattr is parsed whole-token (no cluster split): -VR and -Rf are unknown
+		// tokens (recognized=false), NOT -V -R / -R -f. These pin that behavior.
+		{"-VR", "+i", "f"},
+		{"-Rf", "+i", "f"},
+		{"--", "-x", "f"},
 	},
 	"find": {
 		{"/p", "-delete"},
@@ -247,6 +306,11 @@ var diffFixtures = map[string][][]string{
 		{"http://x"},
 		{"-fsSL", "http://x"},
 		{"-o", "-", "http://x"},
+		// -OL clusters -O (whole-token hasAny detects it? No: hasAny is whole-token, so
+		// "-OL" does NOT match "-O"; -O write defaulting off) with -L; the cluster scan
+		// recognizes both as bool. Pins the cluster-blind -O detection.
+		{"-OL", "http://x"},
+		{"-LO", "http://x"},
 	},
 	"wget": {
 		{"-O", "out", "http://x"},

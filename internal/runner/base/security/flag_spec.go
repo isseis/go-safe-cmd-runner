@@ -65,29 +65,34 @@ func optionalFlag(role ValueRole, names ...string) FlagSpec {
 	return FlagSpec{Names: names, Arity: ArityOptional, Value: role}
 }
 
-// commandFlagSpecs is the declarative flag table for every zoned command. Phase 2
-// introduces the data and the meta-tests that validate it; the per-command
-// ToExtraction that consumes it is wired command-by-command in Phase 3, so
-// ToExtraction is nil here. Keys mirror zoningSpecs. Each value flag's role records
-// how the legacy extractor uses its captured value: ValueWrite/ValueRead when the
-// value becomes an operand, ValueNonPath when the value is consumed only for a floor
-// signal or ignored. Arity mirrors the legacy behavior (a flag that consumes the next
-// token is ArityRequired) so the migration preserves parsing exactly.
+// commandFlagSpecs is the single declarative registry for every zoned command: its Kind,
+// declared flags, and the thin ToExtraction that maps a parsed result into an extraction.
+// The dispatcher (classifyDestinationZone) looks a command up here and runs
+// spec.ToExtraction(parseArgs(spec.Flags, args), args). Each value flag's role records how
+// the extractor uses its captured value: ValueWrite/ValueRead when the value becomes an
+// operand, ValueNonPath when the value is consumed only for a floor signal or ignored.
+// Arity mirrors the real CLI behavior (a flag that consumes the next token is
+// ArityRequired) so parsing matches the pre-refactor extractors exactly.
 var commandFlagSpecs = map[string]CommandFlagSpec{
-	// cp/mv share the same flag grammar (extractCopyMove); only ToExtraction differs.
-	"cp": {Kind: KindCopyMove, Flags: copyMoveFlags()},
-	"mv": {Kind: KindCopyMove, Flags: copyMoveFlags()},
+	// cp/mv share the same flag grammar (copyMoveFlags); only ToExtraction differs
+	// (mv's source is itself a write because the move removes it).
+	"cp": {Kind: KindCopyMove, Flags: copyMoveFlags(), ToExtraction: func(pr ParseResult, args []string) extraction {
+		return extractCopyMove(pr, args, false)
+	}},
+	"mv": {Kind: KindCopyMove, Flags: copyMoveFlags(), ToExtraction: func(pr ParseResult, args []string) extraction {
+		return extractCopyMove(pr, args, true)
+	}},
 
-	"rm":     {Kind: KindRemove, Flags: removeFlags()},
-	"rmdir":  {Kind: KindRemove, Flags: removeFlags()},
-	"unlink": {Kind: KindRemove, Flags: removeFlags()},
+	"rm":     {Kind: KindRemove, Flags: removeFlags(), ToExtraction: extractRemove},
+	"rmdir":  {Kind: KindRemove, Flags: removeFlags(), ToExtraction: extractRemove},
+	"unlink": {Kind: KindRemove, Flags: removeFlags(), ToExtraction: extractRemove},
 
 	"shred": {Kind: KindRemove, Flags: []FlagSpec{
 		valueFlag(ValueNonPath, "-n", "--iterations"),
 		valueFlag(ValueNonPath, "-s", "--size"),
 		boolFlag("-f", "--force"), boolFlag("-u", "--remove"), boolFlag("-v", "--verbose"),
 		boolFlag("-z", "--zero"), boolFlag("-x", "--exact"),
-	}},
+	}, ToExtraction: extractAllWrite},
 
 	"ln": {Kind: KindLink, Flags: []FlagSpec{
 		valueFlag(ValueWrite, "-t", "--target-directory"),
@@ -95,13 +100,13 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 		boolFlag("-s", "--symbolic"), boolFlag("-f", "--force"), boolFlag("-n", "--no-dereference"),
 		boolFlag("-r", "--relative"), boolFlag("-v", "--verbose"), boolFlag("-i", "--interactive"),
 		boolFlag("-T", "--no-target-directory"), boolFlag("-b"), boolFlag("-L"), boolFlag("-P"),
-	}},
+	}, ToExtraction: extractLink},
 
 	"truncate": {Kind: KindInPlaceEdit, Flags: []FlagSpec{
 		valueFlag(ValueNonPath, "-s", "--size"),
 		valueFlag(ValueNonPath, "-r", "--reference"),
 		boolFlag("-c", "--no-create"), boolFlag("-o", "--io-blocks"),
-	}},
+	}, ToExtraction: extractAllWrite},
 
 	"sed": {Kind: KindInPlaceEdit, Flags: []FlagSpec{
 		optionalFlag(ValueNonPath, "-i", "--in-place"),
@@ -111,7 +116,7 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 		boolFlag("-n", "--quiet", "--silent"), boolFlag("-r", "-E", "--regexp-extended"),
 		boolFlag("-s", "--separate"), boolFlag("-z", "--null-data"), boolFlag("-u", "--unbuffered"),
 		boolFlag("--posix"), boolFlag("--debug"), boolFlag("--sandbox"), boolFlag("--follow-symlinks"),
-	}},
+	}, ToExtraction: extractSed},
 
 	// touch: -r takes a reference file (valueFlags shadows the shared -r boolean).
 	"touch": {Kind: KindWriteFile, Flags: []FlagSpec{
@@ -120,15 +125,15 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 		valueFlag(ValueNonPath, "-t"),
 		boolFlag("-a", "--append"), boolFlag("-c", "--no-create"), boolFlag("-h", "--no-dereference"),
 		boolFlag("-p", "--parents"), boolFlag("-v", "--verbose"), boolFlag("-f"), boolFlag("-i"),
-	}},
+	}, ToExtraction: extractSimpleWrite},
 
-	"mkdir":  {Kind: KindWriteFile, Flags: simpleWriteFlags(valueFlag(ValueNonPath, "-m", "--mode"))},
-	"sponge": {Kind: KindWriteFile, Flags: simpleWriteFlags()},
+	"mkdir":  {Kind: KindWriteFile, Flags: simpleWriteFlags(valueFlag(ValueNonPath, "-m", "--mode")), ToExtraction: extractSimpleWrite},
+	"sponge": {Kind: KindWriteFile, Flags: simpleWriteFlags(), ToExtraction: extractSimpleWrite},
 
 	"tee": {Kind: KindWriteFile, Flags: []FlagSpec{
 		valueFlag(ValueNonPath, "--output-error"),
 		boolFlag("-a", "--append"), boolFlag("-i", "--ignore-interrupts"), boolFlag("-p"),
-	}},
+	}, ToExtraction: extractTee},
 
 	"install": {Kind: KindWriteFile, Flags: []FlagSpec{
 		valueFlag(ValueNonPath, "-m", "--mode"),
@@ -140,18 +145,9 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 		boolFlag("-d", "--directory"), boolFlag("-D"), boolFlag("-v", "--verbose"),
 		boolFlag("-p", "--preserve-timestamps"), boolFlag("-c"), boolFlag("-C", "--compare"),
 		boolFlag("-s", "--strip"), boolFlag("-T", "--no-target-directory"),
-	}},
+	}, ToExtraction: extractInstall},
 
-	"tar": {Kind: KindArchiveExtract, Flags: []FlagSpec{
-		valueFlag(ValueWrite, "-f", "--file"),
-		valueFlag(ValueWrite, "-C", "--directory"),
-		optionalFlag(ValueWrite, "--one-top-level"),
-		boolFlag("-v", "--verbose"), boolFlag("-z", "--gzip"), boolFlag("-j", "--bzip2"),
-		boolFlag("-J", "--xz"), boolFlag("-p", "--preserve-permissions"), boolFlag("-k", "--keep-old-files"),
-		boolFlag("--no-same-owner"), boolFlag("-m", "--touch"),
-		boolFlag("-x"), boolFlag("-t"), boolFlag("-c"),
-		boolFlag("--extract"), boolFlag("--get"), boolFlag("--list"), boolFlag("--create"),
-	}},
+	"tar": {Kind: KindArchiveExtract, Flags: tarFlags(), ToExtraction: extractTar},
 
 	"unzip": {Kind: KindArchiveExtract, Flags: []FlagSpec{
 		valueFlag(ValueWrite, "-d"),
@@ -164,16 +160,17 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 		// reproduces the legacy behavior with the same whole-token hasAny.
 		boolFlag("-o"), boolFlag("-n"), boolFlag("-q"), boolFlag("-qq"), boolFlag("-v"),
 		boolFlag("-j"), boolFlag("-a"), boolFlag("-u"), boolFlag("-f"),
-	}},
+	}, ToExtraction: extractUnzip},
 
-	// dd has no getopt flags: its if=/of= key=value grammar is parsed in ToExtraction.
-	"dd": {Kind: KindDeviceIO, Flags: nil},
+	// dd has no getopt flags: its if=/of= key=value grammar is parsed in ToExtraction
+	// (the passed ParseResult is ignored).
+	"dd": {Kind: KindDeviceIO, Flags: nil, ToExtraction: extractDD},
 
 	"mknod": {Kind: KindWriteFile, Flags: []FlagSpec{
 		valueFlag(ValueNonPath, "-m", "--mode"),
 		valueFlag(ValueNonPath, "-Z", "--context"),
 		boolFlag("-v", "--verbose"),
-	}},
+	}, ToExtraction: extractMknod},
 
 	"mount": {Kind: KindMount, Flags: []FlagSpec{
 		valueFlag(ValueNonPath, "-t", "--types"),
@@ -182,7 +179,7 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 		boolFlag("-a", "--all"), boolFlag("-r", "--read-only"), boolFlag("-w", "--rw"),
 		boolFlag("-v", "--verbose"), boolFlag("-n"), boolFlag("--bind"), boolFlag("--rbind"),
 		boolFlag("--move"), boolFlag("-B"), boolFlag("-R"), boolFlag("-M"), boolFlag("-f", "--fake"),
-	}},
+	}, ToExtraction: extractAllWrite},
 
 	"umount": {Kind: KindMount, Flags: []FlagSpec{
 		valueFlag(ValueNonPath, "-t", "--types"),
@@ -190,15 +187,15 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 		boolFlag("-a", "--all"), boolFlag("-r", "--read-only"), boolFlag("-v", "--verbose"),
 		boolFlag("-n"), boolFlag("-l", "--lazy"), boolFlag("-f", "--force"),
 		boolFlag("-R", "--recursive"), boolFlag("-d"),
-	}},
+	}, ToExtraction: extractUmount},
 
 	"chmod": {Kind: KindPermission, Flags: []FlagSpec{
 		recursiveFlag("-R", "--recursive"),
 		boolFlag("-v", "--verbose"), boolFlag("-c", "--changes"), boolFlag("-f", "--silent", "--quiet"),
-	}},
+	}, ToExtraction: extractChmod},
 
-	"chown": {Kind: KindPermission, Flags: ownerFlags()},
-	"chgrp": {Kind: KindPermission, Flags: ownerFlags()},
+	"chown": {Kind: KindPermission, Flags: ownerFlags(), ToExtraction: extractOwner},
+	"chgrp": {Kind: KindPermission, Flags: ownerFlags(), ToExtraction: extractOwner},
 
 	"setfacl": {Kind: KindPermission, Flags: []FlagSpec{
 		valueFlag(ValueNonPath, "-m", "--modify"),
@@ -209,26 +206,23 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 		recursiveFlag("-R", "--recursive"),
 		boolFlag("-b", "--remove-all"), boolFlag("-k", "--remove-default"), boolFlag("-d", "--default"),
 		boolFlag("-v", "--version"), boolFlag("-t"), boolFlag("-p", "--restore-stdin"),
-	}},
+	}, ToExtraction: extractSetfacl},
 
 	// chattr: attribute mode tokens (+i/-a/=j) are split out before parseArgs; the
 	// remaining options are declared here.
-	"chattr": {Kind: KindPermission, Flags: []FlagSpec{
-		valueFlag(ValueNonPath, "-v"),
-		valueFlag(ValueNonPath, "-p"),
-		boolFlag("-R"), boolFlag("-f"), boolFlag("-V"), boolFlag("-H"), boolFlag("-L"), boolFlag("-P"),
-	}},
+	"chattr": {Kind: KindPermission, Flags: chattrFlags(), ToExtraction: extractChattr},
 
-	// find parses roots and predicates positionally, not as getopt flags.
-	"find": {Kind: KindFindDestructive, Flags: nil},
+	// find parses roots and predicates positionally, not as getopt flags (the passed
+	// ParseResult is ignored).
+	"find": {Kind: KindFindDestructive, Flags: nil, ToExtraction: extractFind},
 
-	"curl":  {Kind: KindDataTransferWrite, Flags: curlFlags()},
-	"wget":  {Kind: KindDataTransferWrite, Flags: wgetFlags()},
-	"scp":   {Kind: KindDataTransferWrite, Flags: scpFlags()},
-	"rsync": {Kind: KindDataTransferWrite, Flags: rsyncFlags()},
+	"curl":  {Kind: KindDataTransferWrite, Flags: curlFlags(), ToExtraction: extractCurl},
+	"wget":  {Kind: KindDataTransferWrite, Flags: wgetFlags(), ToExtraction: extractWget},
+	"scp":   {Kind: KindDataTransferWrite, Flags: scpFlags(), ToExtraction: extractRemoteCopy},
+	"rsync": {Kind: KindDataTransferWrite, Flags: rsyncFlags(), ToExtraction: extractRemoteCopy},
 
 	// sftp's writes live in an interactive session / -b batch file, not argv.
-	"sftp": {Kind: KindDataTransferWrite, Flags: nil},
+	"sftp": {Kind: KindDataTransferWrite, Flags: nil, ToExtraction: extractSftp},
 }
 
 func copyMoveFlags() []FlagSpec {
@@ -275,6 +269,33 @@ func ownerFlags() []FlagSpec {
 		boolFlag("-v", "--verbose"), boolFlag("-c", "--changes"), boolFlag("-f", "--silent", "--quiet"),
 		boolFlag("-h", "--no-dereference"), boolFlag("-H"), boolFlag("-L"), boolFlag("-P"),
 		boolFlag("--dereference"),
+	}
+}
+
+// tarFlags is the declared flag set for tar. It is used both in commandFlagSpecs["tar"]
+// and inside extractTar, which re-parses the normalized argv with the same flags.
+func tarFlags() []FlagSpec {
+	return []FlagSpec{
+		valueFlag(ValueWrite, "-f", "--file"),
+		valueFlag(ValueWrite, "-C", "--directory"),
+		optionalFlag(ValueWrite, "--one-top-level"),
+		boolFlag("-v", "--verbose"), boolFlag("-z", "--gzip"), boolFlag("-j", "--bzip2"),
+		boolFlag("-J", "--xz"), boolFlag("-p", "--preserve-permissions"), boolFlag("-k", "--keep-old-files"),
+		boolFlag("--no-same-owner"), boolFlag("-m", "--touch"),
+		boolFlag("-x"), boolFlag("-t"), boolFlag("-c"),
+		boolFlag("--extract"), boolFlag("--get"), boolFlag("--list"), boolFlag("--create"),
+	}
+}
+
+// chattrFlags is the declared flag set for chattr (the regular options only). The
+// attribute mode tokens (+i/-a/=j) are split out before parseArgs in extractChattr, so
+// they are not declared here. Used both in commandFlagSpecs["chattr"] and inside
+// extractChattr, which re-parses the remaining tokens with the same flags.
+func chattrFlags() []FlagSpec {
+	return []FlagSpec{
+		valueFlag(ValueNonPath, "-v"),
+		valueFlag(ValueNonPath, "-p"),
+		boolFlag("-R"), boolFlag("-f"), boolFlag("-V"), boolFlag("-H"), boolFlag("-L"), boolFlag("-P"),
 	}
 }
 
