@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-06-25 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-06-25 |
+| Reviewer | isseis |
 | Comments | - |
 
 > 本書は 0144（オペランド抽出の宣言的フラグ仕様化）で導入した宣言的フラグ仕様表
