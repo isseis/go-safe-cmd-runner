@@ -74,23 +74,27 @@ func optionalFlag(role ValueRole, names ...string) FlagSpec {
 // Arity mirrors the real CLI behavior (a flag that consumes the next token is
 // ArityRequired) so parsing matches the pre-refactor extractors exactly.
 var commandFlagSpecs = map[string]CommandFlagSpec{
-	// cp/mv share the same flag grammar (copyMoveFlags); only ToExtraction differs
-	// (mv's source is itself a write because the move removes it).
-	"cp": {Kind: KindCopyMove, Flags: copyMoveFlags(), ToExtraction: func(pr ParseResult, args []string) extraction {
+	// cp and mv share ToExtraction (extractCopyMove) but have distinct flag sets: mv
+	// lacks cp's recursion, link-creation, and dereference flags (cp --help vs mv --help).
+	"cp": {Kind: KindCopyMove, Flags: cpFlags(), ToExtraction: func(pr ParseResult, args []string) extraction {
 		return extractCopyMove(pr, args, false)
 	}},
-	"mv": {Kind: KindCopyMove, Flags: copyMoveFlags(), ToExtraction: func(pr ParseResult, args []string) extraction {
+	"mv": {Kind: KindCopyMove, Flags: mvFlags(), ToExtraction: func(pr ParseResult, args []string) extraction {
 		return extractCopyMove(pr, args, true)
 	}},
 
-	"rm":     {Kind: KindRemove, Flags: removeFlags(), ToExtraction: extractRemove},
-	"rmdir":  {Kind: KindRemove, Flags: removeFlags(), ToExtraction: extractRemove},
-	"unlink": {Kind: KindRemove, Flags: removeFlags(), ToExtraction: extractRemove},
+	// rm/rmdir/unlink share extractRemove (via extractAllWrite) but have distinct flag
+	// sets: rmdir's options are -p/-v/--ignore-fail-on-non-empty only; unlink has none.
+	"rm":     {Kind: KindRemove, Flags: rmFlags(), ToExtraction: extractRemove},
+	"rmdir":  {Kind: KindRemove, Flags: rmdirFlags(), ToExtraction: extractRemove},
+	"unlink": {Kind: KindRemove, Flags: nil, ToExtraction: extractRemove},
 
 	"shred": {Kind: KindRemove, Flags: []FlagSpec{
 		valueFlag(ValueNonPath, "-n", "--iterations"),
 		valueFlag(ValueNonPath, "-s", "--size"),
-		boolFlag("-f", "--force"), boolFlag("-u", "--remove"), boolFlag("-v", "--verbose"),
+		valueFlag(ValueNonPath, "--random-source"),
+		// -u/--remove[=HOW]: optional argument (shred --help); HOW is non-path.
+		boolFlag("-f", "--force"), optionalFlag(ValueNonPath, "-u", "--remove"), boolFlag("-v", "--verbose"),
 		boolFlag("-z", "--zero"), boolFlag("-x", "--exact"),
 	}, ToExtraction: extractAllWrite},
 
@@ -99,7 +103,8 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 		valueFlag(ValueNonPath, "-S", "--suffix"),
 		boolFlag("-s", "--symbolic"), boolFlag("-f", "--force"), boolFlag("-n", "--no-dereference"),
 		boolFlag("-r", "--relative"), boolFlag("-v", "--verbose"), boolFlag("-i", "--interactive"),
-		boolFlag("-T", "--no-target-directory"), boolFlag("-b"), boolFlag("-L"), boolFlag("-P"),
+		boolFlag("-T", "--no-target-directory"),
+		boolFlag("-b", "--backup"), boolFlag("-L", "--logical"), boolFlag("-P", "--physical"),
 	}, ToExtraction: extractLink},
 
 	"truncate": {Kind: KindInPlaceEdit, Flags: []FlagSpec{
@@ -118,17 +123,28 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 		boolFlag("--posix"), boolFlag("--debug"), boolFlag("--sandbox"), boolFlag("--follow-symlinks"),
 	}, ToExtraction: extractSed},
 
-	// touch: -r takes a reference file (valueFlags shadows the shared -r boolean).
+	// touch: -r takes a reference file (value flag, shadows any shared boolean -r).
+	// Real touch has no --append long form for -a; -p/-v/-i are not real touch flags.
 	"touch": {Kind: KindWriteFile, Flags: []FlagSpec{
 		valueFlag(ValueNonPath, "-r", "--reference"),
 		valueFlag(ValueNonPath, "-d", "--date"),
 		valueFlag(ValueNonPath, "-t"),
-		boolFlag("-a", "--append"), boolFlag("-c", "--no-create"), boolFlag("-h", "--no-dereference"),
-		boolFlag("-p", "--parents"), boolFlag("-v", "--verbose"), boolFlag("-f"), boolFlag("-i"),
+		valueFlag(ValueNonPath, "--time"),
+		boolFlag("-a"), // no --append long form in real touch (touch --help)
+		boolFlag("-c", "--no-create"), boolFlag("-h", "--no-dereference"),
+		boolFlag("-f"), boolFlag("-m"),
 	}, ToExtraction: extractSimpleWrite},
 
-	"mkdir":  {Kind: KindWriteFile, Flags: simpleWriteFlags(valueFlag(ValueNonPath, "-m", "--mode")), ToExtraction: extractSimpleWrite},
-	"sponge": {Kind: KindWriteFile, Flags: simpleWriteFlags(), ToExtraction: extractSimpleWrite},
+	// mkdir: -a/-c/-h/-f/-i/-r are not real mkdir flags (mkdir --help); only -m/-p/-v/-Z.
+	"mkdir": {Kind: KindWriteFile, Flags: []FlagSpec{
+		valueFlag(ValueNonPath, "-m", "--mode"),
+		boolFlag("-p", "--parents"), boolFlag("-v", "--verbose"),
+		boolFlag("-Z", "--context"),
+	}, ToExtraction: extractSimpleWrite},
+	// sponge: only -a/--append is a real sponge flag (moreutils sponge(1)).
+	"sponge": {Kind: KindWriteFile, Flags: []FlagSpec{
+		boolFlag("-a", "--append"),
+	}, ToExtraction: extractSimpleWrite},
 
 	"tee": {Kind: KindWriteFile, Flags: []FlagSpec{
 		valueFlag(ValueNonPath, "--output-error"),
@@ -141,10 +157,15 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 		valueFlag(ValueNonPath, "-g", "--group"),
 		valueFlag(ValueWrite, "-t", "--target-directory"),
 		valueFlag(ValueNonPath, "-S", "--suffix"),
-		valueFlag(ValueNonPath, "-b", "--backup"),
+		// -b is boolean; --backup[=CONTROL] takes an optional non-path control word (install --help).
+		optionalFlag(ValueNonPath, "-b", "--backup"),
+		valueFlag(ValueNonPath, "--strip-program"),
 		boolFlag("-d", "--directory"), boolFlag("-D"), boolFlag("-v", "--verbose"),
 		boolFlag("-p", "--preserve-timestamps"), boolFlag("-c"), boolFlag("-C", "--compare"),
 		boolFlag("-s", "--strip"), boolFlag("-T", "--no-target-directory"),
+		boolFlag("-P", "--preserve-context"), boolFlag("-U", "--unprivileged"),
+		// -Z and --context[=CTX] are aliases with an optional SELinux context value (install --help).
+		optionalFlag(ValueNonPath, "-Z", "--context"),
 	}, ToExtraction: extractInstall},
 
 	"tar": {Kind: KindArchiveExtract, Flags: tarFlagSet, ToExtraction: extractTar},
@@ -166,10 +187,11 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 	// (the passed ParseResult is ignored).
 	"dd": {Kind: KindDeviceIO, Flags: nil, ToExtraction: extractDD},
 
+	// mknod: -v/--verbose is not a real mknod flag (mknod --help).
+	// -Z/--context[=CTX] takes an optional SELinux context value (mknod --help).
 	"mknod": {Kind: KindWriteFile, Flags: []FlagSpec{
 		valueFlag(ValueNonPath, "-m", "--mode"),
-		valueFlag(ValueNonPath, "-Z", "--context"),
-		boolFlag("-v", "--verbose"),
+		optionalFlag(ValueNonPath, "-Z", "--context"),
 	}, ToExtraction: extractMknod},
 
 	"mount": {Kind: KindMount, Flags: []FlagSpec{
@@ -189,9 +211,13 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 		boolFlag("-R", "--recursive"), boolFlag("-d"),
 	}, ToExtraction: extractUmount},
 
+	// chmod: -H/-L/-P and -h/--no-dereference/--dereference added per chmod --help (uutils
+	// 0.8.0); --dereference is uutils-only but included per the GNU+uutils union policy.
 	"chmod": {Kind: KindPermission, Flags: []FlagSpec{
 		recursiveFlag("-R", "--recursive"),
 		boolFlag("-v", "--verbose"), boolFlag("-c", "--changes"), boolFlag("-f", "--silent", "--quiet"),
+		boolFlag("-H"), boolFlag("-L"), boolFlag("-P"),
+		boolFlag("-h", "--no-dereference"), boolFlag("--dereference"),
 	}, ToExtraction: extractChmod},
 
 	"chown": {Kind: KindPermission, Flags: ownerFlags(), ToExtraction: extractOwner},
@@ -225,7 +251,9 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 	"sftp": {Kind: KindDataTransferWrite, Flags: nil, ToExtraction: extractSftp},
 }
 
-func copyMoveFlags() []FlagSpec {
+// cpFlags is cp's declarative flag set. cp retains all former copyMoveFlags entries
+// because every one exists in the real cp CLI (cp --help).
+func cpFlags() []FlagSpec {
 	return []FlagSpec{
 		valueFlag(ValueWrite, "-t", "--target-directory"),
 		valueFlag(ValueNonPath, "-S", "--suffix"),
@@ -239,26 +267,39 @@ func copyMoveFlags() []FlagSpec {
 	}
 }
 
-func removeFlags() []FlagSpec {
+// mvFlags is mv's declarative flag set. mv does not have cp's recursion (-r/-R/-a),
+// link-creation (-s/-l), dereference (-d/-L/-P/-H), or one-file-system (-x) flags
+// (mv --help). -Z/--context and --strip-trailing-slashes are real mv flags.
+func mvFlags() []FlagSpec {
+	return []FlagSpec{
+		valueFlag(ValueWrite, "-t", "--target-directory"),
+		valueFlag(ValueNonPath, "-S", "--suffix"),
+		boolFlag("-f", "--force"), boolFlag("-i", "--interactive"), boolFlag("-n", "--no-clobber"),
+		boolFlag("-v", "--verbose"), boolFlag("-u", "--update"),
+		boolFlag("-T", "--no-target-directory"), boolFlag("-b", "--backup"),
+		boolFlag("-Z", "--context"), boolFlag("--strip-trailing-slashes"),
+	}
+}
+
+// rmFlags is rm's declarative flag set. -p/--parents and --ignore-fail-on-non-empty
+// are rmdir flags, not rm flags (rm --help). --preserve-root/--no-preserve-root added.
+func rmFlags() []FlagSpec {
 	return []FlagSpec{
 		recursiveFlag("-r", "-R", "--recursive"),
 		boolFlag("-f", "--force"), boolFlag("-i"), boolFlag("-I"), boolFlag("--interactive"),
 		boolFlag("-v", "--verbose"), boolFlag("-d", "--dir"), boolFlag("--one-file-system"),
-		boolFlag("-p", "--parents"), boolFlag("--ignore-fail-on-non-empty"),
+		boolFlag("--preserve-root"), boolFlag("--no-preserve-root"),
 	}
 }
 
-// simpleWriteFlags returns the shared boolean set used by mkdir and sponge, plus any
-// command-specific value flags supplied by the caller. touch does NOT use this helper:
-// it is declared explicitly because its -r is value-taking (a reference file), which
-// shadows the shared boolean -r.
-func simpleWriteFlags(extra ...FlagSpec) []FlagSpec {
-	flags := append([]FlagSpec{}, extra...)
-	return append(flags,
-		boolFlag("-a", "--append"), boolFlag("-c", "--no-create"), boolFlag("-h", "--no-dereference"),
-		boolFlag("-p", "--parents"), boolFlag("-v", "--verbose"), boolFlag("-f"), boolFlag("-i"),
-		boolFlag("-r"),
-	)
+// rmdirFlags is rmdir's declarative flag set. Only -p/--parents, -v/--verbose, and
+// --ignore-fail-on-non-empty are real rmdir flags (rmdir --help); rm's recursion and
+// force flags are absent.
+func rmdirFlags() []FlagSpec {
+	return []FlagSpec{
+		boolFlag("-p", "--parents"), boolFlag("-v", "--verbose"),
+		boolFlag("--ignore-fail-on-non-empty"),
+	}
 }
 
 func ownerFlags() []FlagSpec {
@@ -269,6 +310,7 @@ func ownerFlags() []FlagSpec {
 		boolFlag("-v", "--verbose"), boolFlag("-c", "--changes"), boolFlag("-f", "--silent", "--quiet"),
 		boolFlag("-h", "--no-dereference"), boolFlag("-H"), boolFlag("-L"), boolFlag("-P"),
 		boolFlag("--dereference"),
+		boolFlag("--preserve-root"), boolFlag("--no-preserve-root"),
 	}
 }
 
