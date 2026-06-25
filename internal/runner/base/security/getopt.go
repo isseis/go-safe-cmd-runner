@@ -2,12 +2,6 @@ package security
 
 import "strings"
 
-// clusterCharValueOffset is the index, within a short-flag token, of the first
-// character after the current cluster char: 1 for the leading dash plus 1 for the
-// char itself. For token a and cluster position k (index into a[1:]), the attached
-// value is a[clusterCharValueOffset+k:].
-const clusterCharValueOffset = 2
-
 // ParseResult is the output of the single getopt parser. Flag values are keyed by the
 // flag's canonical name (FlagSpec.Names[0]), so a spelling variant ("-t" vs
 // "--target-directory") yields the same key. A no-argument flag is recorded with an
@@ -135,7 +129,10 @@ func parseShortCluster(a string, args []string, i *int, byName map[string]*FlagS
 			mark(f)
 			continue
 		}
-		rest := a[clusterCharValueOffset+k:] // characters after c within this token
+		// c begins at byte 1+k within a (1 for the leading dash); the attached value is
+		// everything after c. Use len(string(c)) rather than a fixed offset so a
+		// multi-byte rune is not sliced in half.
+		rest := a[1+k+len(string(c)):]
 		switch {
 		case rest != "":
 			mark(f, rest)
