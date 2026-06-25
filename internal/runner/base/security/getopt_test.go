@@ -79,6 +79,18 @@ func TestParseArgs_Forms(t *testing.T) {
 			wantNonFlag: nil,
 			wantRec:     true,
 		},
+		{
+			name:        "duplicate value flag accumulates values in order",
+			args:        []string{"-t", "/a", "-t", "/b"},
+			wantValues:  map[string][]string{"-t": {"/a", "/b"}},
+			wantNonFlag: nil,
+		},
+		{
+			name:        "empty token is a non-flag argument",
+			args:        []string{"", "x"},
+			wantValues:  map[string][]string{},
+			wantNonFlag: []string{"", "x"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -160,6 +172,18 @@ func TestParseArgs_OptionalArg(t *testing.T) {
 	assert.True(t, bareShort.HasFlag("-i"))
 	assert.Empty(t, bareShort.Values["-i"])
 	assert.Equal(t, []string{"x"}, bareShort.NonFlagArgs)
+}
+
+// TestParseArgs_NoArgFlagIgnoresAttachedValue pins that a no-argument flag given an
+// attached =value (e.g. --force=x) stays recognized and present but carries no value;
+// the attached value is dropped. This matches legacy scanFlags: tightening it to
+// fail-closed would break behavioral parity.
+func TestParseArgs_NoArgFlagIgnoresAttachedValue(t *testing.T) {
+	got := parseArgs(optFlags(), []string{"--force=x", "a"})
+	assert.True(t, got.Recognized)
+	assert.True(t, got.HasFlag("-f"))
+	assert.Empty(t, got.Values["-f"], "attached value on a no-arg flag is dropped")
+	assert.Equal(t, []string{"a"}, got.NonFlagArgs)
 }
 
 // TestParseArgs_HasFlag verifies presence detection for a no-argument flag, where the

@@ -112,6 +112,12 @@
 - [ ] 差分比較の nil/空スライス対策: `reflect.DeepEqual(nil, []rawOperand{})` は `false` のため、旧/新で `operands` が一方 nil・
       他方 空スライスだと誤って不一致になる。比較前に `operands` の nil↔空を正規化する小ヘルパを挟む（または `go-cmp` の
       `cmpopts.EquateEmpty` を使う。導入可否は実装時に判断）。「空オペランドは nil に揃える」など正規化規則をテスト内に明記する。
+- [ ] 既知パリティ項目（長形再帰フラグ）の扱いを決める: 現行 `scanFlags` は `--recursive`/`--archive` を `recursiveFlags` のみに
+      登録し `boolFlags` に入れていないため、長形は「未知の `--` フラグ」として `recognized=false`（fail-closed）になる一方、
+      短形 `-r`/`-a` はクラスタ経路で `recognized=true` になる。新仕様では同フラグを 1 つの `FlagSpec.Names` にまとめるため長形も
+      `recognized=true` となり、差分テストが `recognized` 不一致を検出する。これは現行のフェイルクローズ寄りの不具合であり、差分テスト
+      の不一致は意図的な判断で解消する（仕様で長形を認識する＝挙動を是正し設計 §7 の逸脱として明記する、または現行の挙動を保つ）。
+      **凍結スナップショットを書き換えて緑にしてはならない**。同型の他フラグ（`recursiveFlags` のみに含まれる長形）も併せて点検する。
 
 **成功基準**:
 - [ ] 完全性メタテストとアリティ不変条件チェックが緑。
