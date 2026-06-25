@@ -12,13 +12,14 @@ const (
 )
 
 // ValueRole classifies the value captured by an argument-taking flag. ValueUnset is
-// the zero value and marks an unclassified value flag; the completeness meta-test
-// rejects it, so every argument-taking flag must declare a concrete role.
+// the zero value and marks a flag that takes no value; it is valid only for ArityNone.
+// Every argument-taking flag (ArityRequired or ArityOptional) must declare a concrete
+// role.
 type ValueRole int
 
 // Value roles for argument-taking flags.
 const (
-	ValueUnset   ValueRole = iota // unclassified (zero-value sentinel; fails the completeness meta-test)
+	ValueUnset   ValueRole = iota // no value captured; valid only for ArityNone flags
 	ValueNonPath                  // a non-path value that may be ignored (explicitly classified)
 	ValueWrite                    // the value is a write-destination operand
 	ValueRead                     // the value is a read-source operand
