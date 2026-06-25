@@ -238,6 +238,14 @@ var diffFixtures = map[string][][]string{
 		{"-tf", "a.tar"},
 		{"--extract", "-f", "a.tar"},
 		{"-cf", "out.tar", "s"},
+		// Mixed-spelling and hidden-value cases that must keep per-spelling precedence
+		// and read --one-top-level from raw argv (extractTar drops to a single dir/
+		// archive, so a wrong/dropped pick would change the write path).
+		{"--directory=/d", "-C", "/e", "-xf", "a.tar"},
+		{"-C", "/e", "--directory=/d", "-xf", "a.tar"},
+		{"--file", "b", "-f", "a", "-c", "src"},
+		{"f", "--one-top-level=/d", "-x"},
+		{"--", "--one-top-level=/d", "-x"},
 	},
 	"unzip": {
 		{"a.zip"},

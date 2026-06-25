@@ -346,7 +346,11 @@ func extractTar(_ ParseResult, args []string) extraction {
 		// Listing does not write.
 		return extraction{applies: false, recognized: true}
 	case 'x':
-		dir := firstNonEmpty(pr.Values["-C"], pr.Values["--one-top-level"])
+		// Per-spelling precedence, matching the pre-refactor extractor: -C, then
+		// --directory, then --one-top-level read from the RAW argv (legacy read it via an
+		// attached-value scan, so it is found even when normalization folds the first
+		// bare token into -f or when the flag sits after a "--" terminator).
+		dir := firstNonEmpty(pr.Values["-C"], pr.Values["--directory"], attachedValue(args, "--one-top-level"))
 		if dir == "" {
 			// A bare --one-top-level derives its directory from the archive name
 			// under the working directory; default to the working directory.
@@ -355,7 +359,7 @@ func extractTar(_ ParseResult, args []string) extraction {
 		ext.operands = append(ext.operands, rawOperand{raw: dir, role: risktypes.OperandRoleWrite})
 		return ext
 	case 'c':
-		archive := firstNonEmpty(pr.Values["-f"])
+		archive := firstNonEmpty(pr.Values["-f"], pr.Values["--file"])
 		if archive != "" && archive != "-" {
 			ext.operands = append(ext.operands, rawOperand{raw: archive, role: risktypes.OperandRoleWrite})
 		}
@@ -1029,4 +1033,19 @@ func firstNonEmpty(lists ...[]string) string {
 		}
 	}
 	return ""
+}
+
+// attachedValue returns the values of an optional-argument flag given in the attached
+// --flag=value form (the only form GNU getopt accepts for optional args). tar reads
+// --one-top-level from the RAW argv with this, so a value is found even when argv
+// normalization or a "--" terminator would otherwise hide it from the parser.
+func attachedValue(args []string, flag string) []string {
+	prefix := flag + "="
+	var vals []string
+	for _, a := range args {
+		if v, ok := strings.CutPrefix(a, prefix); ok {
+			vals = append(vals, v)
+		}
+	}
+	return vals
 }

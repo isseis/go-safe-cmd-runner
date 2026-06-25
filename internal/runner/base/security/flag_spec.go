@@ -275,9 +275,17 @@ func ownerFlags() []FlagSpec {
 // tarFlags is the declared flag set for tar. It is used both in commandFlagSpecs["tar"]
 // and inside extractTar, which re-parses the normalized argv with the same flags.
 func tarFlags() []FlagSpec {
+	// -f/--file and -C/--directory are deliberately declared as SEPARATE entries rather
+	// than grouped aliases. extractTar picks a single archive/dir via firstNonEmpty with
+	// per-spelling precedence (captured["-f"] before captured["--file"], etc.). Grouping
+	// them under one canonical key would merge both spellings in argv order, so a value
+	// given via the lower-precedence spelling could win (or a dropped spelling could lose
+	// a write path), diverging from the pre-refactor extractor.
 	return []FlagSpec{
-		valueFlag(ValueWrite, "-f", "--file"),
-		valueFlag(ValueWrite, "-C", "--directory"),
+		valueFlag(ValueWrite, "-f"),
+		valueFlag(ValueWrite, "--file"),
+		valueFlag(ValueWrite, "-C"),
+		valueFlag(ValueWrite, "--directory"),
 		optionalFlag(ValueWrite, "--one-top-level"),
 		boolFlag("-v", "--verbose"), boolFlag("-z", "--gzip"), boolFlag("-j", "--bzip2"),
 		boolFlag("-J", "--xz"), boolFlag("-p", "--preserve-permissions"), boolFlag("-k", "--keep-old-files"),
