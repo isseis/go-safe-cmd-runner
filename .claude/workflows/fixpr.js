@@ -132,7 +132,7 @@ gh api graphql -F owner=OWNER -F repo=REPO -F number=NUMBER -f query='
           nodes {
             id
             isResolved
-            comments(first:10) {
+            comments(first:100) {
               nodes { id databaseId body path line url author { login } }
             }
           }
@@ -266,7 +266,7 @@ const buildResult = valid.length > 0
 2. If all pass:
    git add -A
    git diff --cached --quiet && COMMITTED=0 || COMMITTED=1
-   if [ "$COMMITTED" = "1" ]; then git commit -m "fix: address PR #${pr.number} review comments"; fi
+   if [ "$COMMITTED" = "1" ]; then git commit -m "fix: address PR #${pr.number} review comments" || { COMMITTED=0; false; }; fi
 3. Only if a commit was actually created (COMMITTED=1), get the commit SHA: git log -1 --format=%H. Otherwise use empty string.
 4. Return success=true and commitSha (empty string if no commit was made).
 If any check fails, return success=false and the error output in the error field. Do NOT commit on failure.`,
@@ -317,9 +317,12 @@ const missingDatabaseIdUrls = candidateThreads
   .filter(t => !t.databaseId)
   .map(t => (threadIndex[t.threadId] || {}).url || t.threadId)
 
-const actionable = candidateThreads
-  .filter(t => t.databaseId)
-  .filter(t => t.replyBody)
+const withDatabaseId = candidateThreads.filter(t => t.databaseId)
+const emptyReplyUrls = withDatabaseId
+  .filter(t => !t.replyBody)
+  .map(t => (threadIndex[t.threadId] || {}).url || t.threadId)
+
+const actionable = withDatabaseId.filter(t => t.replyBody)
 
 if (actionable.length > 0) {
   // Build the list of reply+resolve commands to run sequentially in one agent
@@ -331,7 +334,7 @@ gh api repos/${item.owner}/${item.repo}/pulls/${item.number}/comments/${item.dat
   -X POST --input - <<'PAYLOAD'
 ${replyBodyPayload}
 PAYLOAD
-gh api graphql -F threadId=${item.threadId} \\
+&& gh api graphql -F threadId=${item.threadId} \\
   -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}'`
   }).join('\n\n')
 
@@ -392,7 +395,7 @@ return {
   pr:         `${pr.owner}/${pr.repo}#${pr.number}`,
   fixed:      fixes.filter(f => f.applied).length,
   invalid:    invalid.length,
-  unclear:    [...unclearUrls, ...unappliedValidUrls, ...manualUrls],
+  unclear:    [...unclearUrls, ...unappliedValidUrls, ...manualUrls, ...emptyReplyUrls],
   clusters:   triage.clusters.length,
   commit:     buildResult.commitSha || '(none)',
   assessment,
