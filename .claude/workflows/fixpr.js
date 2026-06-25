@@ -6,7 +6,7 @@ export const meta = {
     { title: 'Triage', detail: 'Classify threads and identify root-cause clusters' },
     { title: 'Fix',    detail: 'Apply all code fixes in one pass' },
     { title: 'Build',  detail: 'Single build check + commit' },
-    { title: 'Reply',  detail: 'Post replies and resolve threads in parallel' },
+    { title: 'Reply',  detail: 'Post replies and resolve threads sequentially in one agent' },
     { title: 'Wrap',   detail: 'PR description check and push' },
   ],
 }
@@ -254,7 +254,7 @@ if (buildResult.commitSha) {
   log(`Build passed — commit ${buildResult.commitSha}`)
 }
 
-// ── Phase 5: Reply + resolve (haiku, parallel) ────────────────────────────
+// ── Phase 5: Reply + resolve (haiku, single sequential agent) ─────────────
 
 phase('Reply')
 
