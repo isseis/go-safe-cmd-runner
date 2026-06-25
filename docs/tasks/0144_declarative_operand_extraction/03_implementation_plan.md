@@ -56,19 +56,32 @@
 - 新規 `internal/runner/base/security/getopt_test.go`
 
 **作業内容**:
-- [ ] `flag_spec.go` に `FlagArity`（`ArityNone`/`ArityRequired`/`ArityOptional`）・`ValueRole`（`ValueUnset`/`ValueNonPath`/
+- [x] `flag_spec.go` に `FlagArity`（`ArityNone`/`ArityRequired`/`ArityOptional`）・`ValueRole`（`ValueUnset`/`ValueNonPath`/
       `ValueWrite`/`ValueRead`）・`FlagSpec`・`CommandFlagSpec` の型を定義する（設計 §3.1）。`parseArgs` が `FlagSpec` に依存するため
       型は本フェーズで先に置く（仕様表の中身は Phase 2）。
-- [ ] `getopt.go` に `parseArgs(flags []FlagSpec, args []string) ParseResult`・`ParseResult`・`HasFlag(canonicalKey string) bool`
+- [x] `getopt.go` に `parseArgs(flags []FlagSpec, args []string) ParseResult`・`ParseResult`・`HasFlag(canonicalKey string) bool`
       を実装する（設計 §3.1）。一元処理する形式: `--flag=value`・付随短縮値・短縮連結・`--`・引数省略可・別名正規化。
       短縮連結中の引数付きフラグ規則と引数省略可の付随形限定は設計 §3.1 の規則に従う。総 argv 長に対して線形。
-- [ ] `getopt_test.go`（表駆動）を追加: 全形式の網羅（AC-03）／語を暗黙に捨てない・未知フラグ・引数必須フラグの値欠落で
+- [x] `getopt_test.go`（表駆動）を追加: 全形式の網羅（AC-03）／語を暗黙に捨てない・未知フラグ・引数必須フラグの値欠落で
       `Recognized=false`（AC-04）／別名正規化で表記違いが同一結果（AC-05）／引数省略可は付随形のみ・分離後続語を消費しない・
       クラスタ内省略可（`sed -ir` → `-i` の値 `r`）（AC-06）／大量 argv・長い短縮連結の病的入力。
 
 **成功基準**:
-- [ ] `go test -tags test ./internal/runner/base/security/` で `getopt_test.go` が緑。
-- [ ] `make fmt && make test && make lint` が緑。
+- [x] `go test -tags test ./internal/runner/base/security/` で `getopt_test.go` が緑。
+- [x] `make fmt && make test && make lint` が緑。
+
+### PR-1 作成ポイント: getopt parser and flag-spec types
+
+**対象ステップ**: Phase 1
+
+**推奨タイトル**: `feat(0144): add single getopt parser and flag-spec types`
+
+**レビュー観点**: `parseArgs` の形式網羅と fail-closed（未知/欠落で `Recognized=false`） / 短縮連結中の引数付きフラグ規則・引数省略可の付随形限定 / `FlagArity`・`ValueRole`・`FlagSpec`/`CommandFlagSpec` の型設計（正規キー単一源・決定性制約）
+
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（#794）
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: 宣言的仕様表・完全性メタテスト・差分テスト基盤
 
@@ -99,10 +112,29 @@
 - [ ] 差分比較の nil/空スライス対策: `reflect.DeepEqual(nil, []rawOperand{})` は `false` のため、旧/新で `operands` が一方 nil・
       他方 空スライスだと誤って不一致になる。比較前に `operands` の nil↔空を正規化する小ヘルパを挟む（または `go-cmp` の
       `cmpopts.EquateEmpty` を使う。導入可否は実装時に判断）。「空オペランドは nil に揃える」など正規化規則をテスト内に明記する。
+- [ ] 既知パリティ項目（長形再帰フラグ）の扱いを決める: 現行 `scanFlags` は `--recursive`/`--archive` を `recursiveFlags` のみに
+      登録し `boolFlags` に入れていないため、長形は「未知の `--` フラグ」として `recognized=false`（fail-closed）になる一方、
+      短形 `-r`/`-a` はクラスタ経路で `recognized=true` になる。新仕様では同フラグを 1 つの `FlagSpec.Names` にまとめるため長形も
+      `recognized=true` となり、差分テストが `recognized` 不一致を検出する。これは現行のフェイルクローズ寄りの不具合であり、差分テスト
+      の不一致は意図的な判断で解消する（仕様で長形を認識する＝挙動を是正し設計 §7 の逸脱として明記する、または現行の挙動を保つ）。
+      **凍結スナップショットを書き換えて緑にしてはならない**。同型の他フラグ（`recursiveFlags` のみに含まれる長形）も併せて点検する。
 
 **成功基準**:
 - [ ] 完全性メタテストとアリティ不変条件チェックが緑。
 - [ ] 凍結スナップショットと差分テスト基盤がコンパイルでき、移行前は旧実装同士で恒真（基盤の健全性確認）。
+
+### PR-2 作成ポイント: declarative spec table, completeness meta-test, differential harness
+
+**対象ステップ**: Phase 2
+
+**推奨タイトル**: `feat(0144): add declarative flag spec, completeness meta-test, and differential harness`
+
+**レビュー観点**: 宣言的仕様表のアリティ不変条件（必須→省略可の誤分類防止） / 完全性メタテスト（Names 非空・`ArityNone→ValueUnset`・引数付きは `ValueRole != ValueUnset`） / 凍結スナップショットと差分テスト基盤（`reflect.DeepEqual` 構造体全体・nil↔空の正規化・移行前の恒真性）
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: コマンド単位の移行と旧実装の撤去
 
@@ -128,8 +160,24 @@
 
 **成功基準**:
 - [ ] 全コマンドで差分テストが緑。
-- [ ] `make deadcode` で旧 `extractXxx`/`scanFlags` の取り残しがない（凍結スナップショットはテスト専用のため対象外）。
+- [ ] 旧 `scanFlags`・production 側 `extractXxx`・重複フラグ集合が完全に撤去されている。一次確認は §10 の `rg` グレップ
+      （production コードでマッチ 0）と `make lint` の `unused` リンタ（未使用の非公開関数を検出）。`make deadcode` は半移行で旧関数が
+      `zoningSpecs` から到達可能なまま残ると「取り残し」を検出できない（到達可能＝未使用ではない）ため、補助的な確認に留める。
+      凍結スナップショットはテスト専用のため対象外。
 - [ ] `make fmt && make test && make lint` が緑。
+
+### PR-3 作成ポイント: migrate commands to the parser and remove legacy extractors
+
+**対象ステップ**: Phase 3
+
+**推奨タイトル**: `refactor(0144): migrate operand extraction to the declarative spec and remove legacy extractors`
+
+**レビュー観点**: 挙動保存（各コマンドで差分テスト緑をゲートするコマンド単位移行の安全性。本リファクタ最大のリスク） / tar・chattr の事前正規化と dd の非 getopt 扱い（設計 §3.5） / 旧 `scanFlags`・`extractXxx`・重複フラグ集合の完全撤去（`make deadcode` 確認） / 決定性（`Values` を `for range` せず正規キー参照）
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4: 挙動同一性・fail-closed・静的ガード
 
@@ -161,6 +209,19 @@
 - [ ] AC-09〜AC-11 が緑。`TestNoLiveIdentityInZoning` が新規 2 ファイルを含めて緑。
 - [ ] `make fmt && make test && make lint` が緑、`./internal/runner/...` がコンパイル。
 
+### PR-4 作成ポイント: behavior parity, fail-closed tests, and static guard
+
+**対象ステップ**: Phase 4
+
+**推奨タイトル**: `test(0144): add behavior-parity and fail-closed tests; extend live-identity guard`
+
+**レビュー観点**: `LocationResult` 同一性（`zoningSpecs` 全件 range）と fail-closed の網羅 / 既存 2 テストファイルが無改変（`git diff` 空）であることの確認 / 静的ガードへの新規 2 ファイル追加（既存ガード再利用・API 拡充不要）
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ## 3. 実装順序とマイルストーン
 
 | Phase | マイルストーン（成果物） | 反映 AC | 依存 |
@@ -169,6 +230,17 @@
 | P2 | 宣言的仕様表＋完全性メタテスト＋差分テスト基盤 | AC-01, AC-07 | P1 |
 | P3 | コマンド単位移行＋旧実装撤去＋回帰代表ケース | AC-02, AC-08 | P2 |
 | P4 | 挙動同一性・fail-closed・静的ガード | AC-09, AC-10, AC-11 | P3 |
+
+各フェーズは独立してグリーンゲートを通過でき、関心も 1 つにまとまるため、1 フェーズ＝1 PR とする（並べ替え不要）。`internal/` 内に閉じ `cmd/` 変更は無いため internal-before-cmd の制約は該当しない。
+
+### 3.2 PR 構成
+
+| PR | 対象 | 主な変更内容 |
+|---|---|---|
+| PR-1 | Phase 1 | 単一 getopt パーサ（`getopt.go`）＋型定義（`flag_spec.go` の型）＋パーサ表駆動テスト（`getopt_test.go`） |
+| PR-2 | Phase 2 | 宣言的仕様表（`flag_spec.go`）＋完全性/アリティ不変メタテスト（`flag_spec_test.go`）＋凍結スナップショット・差分テスト基盤（`extraction_legacy_test.go`/`extraction_diff_test.go`） |
+| PR-3 | Phase 3 | コマンド単位移行（`destination_zoning_spec.go`）＋旧 `scanFlags`/`extractXxx` 撤去＋回帰代表ケース（`destination_zoning_parity_test.go`）。本リファクタ最大のリスクを単独 PR に隔離（各コマンドは差分ゲートで機械的に検証）。レビュー困難なほど大きくなる場合は、非機械的な特別形（tar・chattr・dd。§3.5）を後続 PR に切り出す |
+| PR-4 | Phase 4 | 挙動同一性表・fail-closed テスト（`destination_zoning_parity_test.go`）＋静的ガード拡張（`risk/live_identity_guard_test.go`） |
 
 ## 4. テスト戦略
 
@@ -198,10 +270,10 @@
 
 ## 6. 実装チェックリスト
 
-- [ ] Phase 1 完了（パーサ・型・パーサテスト緑）
-- [ ] Phase 2 完了（仕様表・メタテスト・差分基盤）
-- [ ] Phase 3 完了（全コマンド移行・旧実装撤去・回帰ケース）
-- [ ] Phase 4 完了（同一性・fail-closed・静的ガード）
+- [ ] PR-1 マージ済み（対象: Phase 1。パーサ・型・パーサテスト緑）
+- [ ] PR-2 マージ済み（対象: Phase 2。仕様表・メタテスト・差分テスト基盤）
+- [ ] PR-3 マージ済み（対象: Phase 3。全コマンド移行・旧実装撤去・回帰ケース）
+- [ ] PR-4 マージ済み（対象: Phase 4。同一性・fail-closed・静的ガード）
 - [ ] 全 PR マージ後: `make fmt`→`make test`→`make lint` 全緑、`./internal/runner/...` コンパイル（NF-001）
 
 ## 7. 受け入れ基準の検証
