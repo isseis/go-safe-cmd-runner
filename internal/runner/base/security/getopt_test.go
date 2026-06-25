@@ -1,0 +1,189 @@
+package security
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+// optFlags is a representative flag set exercising each arity, recursion, and
+// spelling aliases, used by the parser tests below.
+func optFlags() []FlagSpec {
+	return []FlagSpec{
+		{Names: []string{"-t", "--target-directory"}, Arity: ArityRequired, Value: ValueWrite},
+		{Names: []string{"-C", "--directory"}, Arity: ArityRequired, Value: ValueNonPath},
+		{Names: []string{"-r", "-R", "--recursive"}, Arity: ArityNone, Recursive: true},
+		{Names: []string{"-f", "--force"}, Arity: ArityNone},
+		{Names: []string{"--one-top-level"}, Arity: ArityOptional, Value: ValueWrite},
+		{Names: []string{"-i", "--in-place"}, Arity: ArityOptional, Value: ValueNonPath},
+	}
+}
+
+// TestParseArgs_Forms covers the flag forms the single parser unifies.
+func TestParseArgs_Forms(t *testing.T) {
+	cases := []struct {
+		name        string
+		args        []string
+		wantValues  map[string][]string
+		wantNonFlag []string
+		wantRec     bool
+	}{
+		{
+			name:        "long flag with attached value",
+			args:        []string{"--target-directory=/dst", "a", "b"},
+			wantValues:  map[string][]string{"-t": {"/dst"}},
+			wantNonFlag: []string{"a", "b"},
+		},
+		{
+			name:        "long flag with separate value",
+			args:        []string{"--target-directory", "/dst", "a"},
+			wantValues:  map[string][]string{"-t": {"/dst"}},
+			wantNonFlag: []string{"a"},
+		},
+		{
+			name:        "short flag with attached value",
+			args:        []string{"-C/usr", "x"},
+			wantValues:  map[string][]string{"-C": {"/usr"}},
+			wantNonFlag: []string{"x"},
+		},
+		{
+			name:        "short flag with separate value",
+			args:        []string{"-t", "/dst"},
+			wantValues:  map[string][]string{"-t": {"/dst"}},
+			wantNonFlag: nil,
+		},
+		{
+			name:        "short cluster of boolean and recursion flags",
+			args:        []string{"-rf", "x"},
+			wantValues:  map[string][]string{"-r": {}, "-f": {}},
+			wantNonFlag: []string{"x"},
+			wantRec:     true,
+		},
+		{
+			name:        "double dash terminates option parsing",
+			args:        []string{"--", "-t", "x"},
+			wantValues:  map[string][]string{},
+			wantNonFlag: []string{"-t", "x"},
+		},
+		{
+			name:        "single dash is a non-flag argument",
+			args:        []string{"-", "x"},
+			wantValues:  map[string][]string{},
+			wantNonFlag: []string{"-", "x"},
+		},
+		{
+			name:        "value flag at cluster tail captures next token",
+			args:        []string{"-rt", "/dst"},
+			wantValues:  map[string][]string{"-r": {}, "-t": {"/dst"}},
+			wantNonFlag: nil,
+			wantRec:     true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseArgs(optFlags(), tc.args)
+			assert.True(t, got.Recognized, "valid input must be recognized")
+			assert.Equal(t, tc.wantRec, got.Recursive)
+			assert.Equal(t, tc.wantNonFlag, got.NonFlagArgs)
+			assert.Equal(t, tc.wantValues, got.Values)
+		})
+	}
+}
+
+// TestParseArgs_FailClosed verifies that no token is silently dropped: an unknown
+// flag or a missing required value sets Recognized=false.
+func TestParseArgs_FailClosed(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"unknown long flag", []string{"--unknown", "x"}},
+		{"unknown long flag with value form", []string{"--unknown=v", "x"}},
+		{"required value missing at end", []string{"-t"}},
+		{"required long value missing at end", []string{"--target-directory"}},
+		{"unknown short flag", []string{"-z"}},
+		{"unknown char in cluster", []string{"-rz"}},
+		{"required value flag at cluster tail with nothing to consume", []string{"-rt"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseArgs(optFlags(), tc.args)
+			assert.False(t, got.Recognized, "%v must fail closed", tc.args)
+		})
+	}
+
+	// A fully-known input is recognized (happy path).
+	ok := parseArgs(optFlags(), []string{"-rf", "-t", "/dst", "src"})
+	assert.True(t, ok.Recognized)
+}
+
+// TestParseArgs_AliasNormalization verifies spelling variants of one flag normalize
+// to the same canonical key (AC-05).
+func TestParseArgs_AliasNormalization(t *testing.T) {
+	short := parseArgs(optFlags(), []string{"-t", "/dst"})
+	long := parseArgs(optFlags(), []string{"--target-directory", "/dst"})
+	assert.Equal(t, short.Values, long.Values, "spelling variants must produce the same Values")
+	assert.Equal(t, []string{"/dst"}, short.Values["-t"])
+
+	// A recursion alias normalizes to the canonical recursion key and sets Recursive.
+	rLong := parseArgs(optFlags(), []string{"--recursive"})
+	rShort := parseArgs(optFlags(), []string{"-R"})
+	assert.True(t, rLong.Recursive)
+	assert.True(t, rShort.Recursive)
+	assert.True(t, rLong.HasFlag("-r"))
+	assert.True(t, rShort.HasFlag("-r"))
+}
+
+// TestParseArgs_OptionalArg verifies optional-argument flags take a value only in the
+// attached form and never consume a separate following token (AC-06).
+func TestParseArgs_OptionalArg(t *testing.T) {
+	// Bare long optional flag: present, no value; the following token is a non-flag arg.
+	bare := parseArgs(optFlags(), []string{"--one-top-level", "a.tar"})
+	assert.True(t, bare.Recognized)
+	assert.True(t, bare.HasFlag("--one-top-level"))
+	assert.Empty(t, bare.Values["--one-top-level"], "bare optional flag has no value")
+	assert.Equal(t, []string{"a.tar"}, bare.NonFlagArgs, "the next token must not be consumed")
+
+	// Attached long form captures the value.
+	attached := parseArgs(optFlags(), []string{"--one-top-level=/top", "a.tar"})
+	assert.Equal(t, []string{"/top"}, attached.Values["--one-top-level"])
+	assert.Equal(t, []string{"a.tar"}, attached.NonFlagArgs)
+
+	// Optional short flag inside a cluster takes the remainder as its value (sed -ir).
+	cluster := parseArgs(optFlags(), []string{"-ir"})
+	assert.True(t, cluster.Recognized)
+	assert.Equal(t, []string{"r"}, cluster.Values["-i"], "-ir means -i with attached value r, not -i -r")
+
+	// Bare optional short flag: present, no value; the next token is not consumed.
+	bareShort := parseArgs(optFlags(), []string{"-i", "x"})
+	assert.True(t, bareShort.HasFlag("-i"))
+	assert.Empty(t, bareShort.Values["-i"])
+	assert.Equal(t, []string{"x"}, bareShort.NonFlagArgs)
+}
+
+// TestParseArgs_HasFlag verifies presence detection for a no-argument flag, where the
+// value slice is empty (the len>0 trap).
+func TestParseArgs_HasFlag(t *testing.T) {
+	got := parseArgs(optFlags(), []string{"-f"})
+	assert.True(t, got.HasFlag("-f"), "a no-arg flag that appeared is present")
+	assert.Empty(t, got.Values["-f"], "a no-arg flag is stored as an empty slice")
+	assert.False(t, got.HasFlag("-t"), "a flag that did not appear is absent")
+}
+
+// TestParseArgs_Pathological confirms large and deeply clustered inputs are handled
+// linearly without panicking.
+func TestParseArgs_Pathological(t *testing.T) {
+	many := make([]string, 10000)
+	for i := range many {
+		many[i] = "p"
+	}
+	got := parseArgs(optFlags(), many)
+	assert.True(t, got.Recognized)
+	assert.Len(t, got.NonFlagArgs, 10000)
+
+	longCluster := "-" + strings.Repeat("rf", 5000) // all known boolean/recursion chars
+	gotCluster := parseArgs(optFlags(), []string{longCluster})
+	assert.True(t, gotCluster.Recognized)
+	assert.True(t, gotCluster.Recursive)
+}

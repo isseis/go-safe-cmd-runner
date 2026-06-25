@@ -56,19 +56,19 @@
 - 新規 `internal/runner/base/security/getopt_test.go`
 
 **作業内容**:
-- [ ] `flag_spec.go` に `FlagArity`（`ArityNone`/`ArityRequired`/`ArityOptional`）・`ValueRole`（`ValueUnset`/`ValueNonPath`/
+- [x] `flag_spec.go` に `FlagArity`（`ArityNone`/`ArityRequired`/`ArityOptional`）・`ValueRole`（`ValueUnset`/`ValueNonPath`/
       `ValueWrite`/`ValueRead`）・`FlagSpec`・`CommandFlagSpec` の型を定義する（設計 §3.1）。`parseArgs` が `FlagSpec` に依存するため
       型は本フェーズで先に置く（仕様表の中身は Phase 2）。
-- [ ] `getopt.go` に `parseArgs(flags []FlagSpec, args []string) ParseResult`・`ParseResult`・`HasFlag(canonicalKey string) bool`
+- [x] `getopt.go` に `parseArgs(flags []FlagSpec, args []string) ParseResult`・`ParseResult`・`HasFlag(canonicalKey string) bool`
       を実装する（設計 §3.1）。一元処理する形式: `--flag=value`・付随短縮値・短縮連結・`--`・引数省略可・別名正規化。
       短縮連結中の引数付きフラグ規則と引数省略可の付随形限定は設計 §3.1 の規則に従う。総 argv 長に対して線形。
-- [ ] `getopt_test.go`（表駆動）を追加: 全形式の網羅（AC-03）／語を暗黙に捨てない・未知フラグ・引数必須フラグの値欠落で
+- [x] `getopt_test.go`（表駆動）を追加: 全形式の網羅（AC-03）／語を暗黙に捨てない・未知フラグ・引数必須フラグの値欠落で
       `Recognized=false`（AC-04）／別名正規化で表記違いが同一結果（AC-05）／引数省略可は付随形のみ・分離後続語を消費しない・
       クラスタ内省略可（`sed -ir` → `-i` の値 `r`）（AC-06）／大量 argv・長い短縮連結の病的入力。
 
 **成功基準**:
-- [ ] `go test -tags test ./internal/runner/base/security/` で `getopt_test.go` が緑。
-- [ ] `make fmt && make test && make lint` が緑。
+- [x] `go test -tags test ./internal/runner/base/security/` で `getopt_test.go` が緑。
+- [x] `make fmt && make test && make lint` が緑。
 
 ### PR-1 作成ポイント: getopt parser and flag-spec types
 
