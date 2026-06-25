@@ -20,12 +20,24 @@ import (
 // mismatch). In Phase 3 each command's migration is gated on this staying green.
 func TestExtractionDifferential(t *testing.T) {
 	for cmd := range zoningSpecs {
-		spec := commandFlagSpecs[cmd]
+		// Fail fast and cleanly if a command lacks a frozen oracle or a flag spec,
+		// rather than panicking on a nil func below (test order is not guaranteed, so
+		// TestLegacyZoningSpecsCoverage may not have reported the mismatch yet).
+		legacyFn, ok := legacyZoningSpecs[cmd]
+		if !ok {
+			t.Errorf("no legacy extractor for %q (legacyZoningSpecs is missing it)", cmd)
+			continue
+		}
+		spec, ok := commandFlagSpecs[cmd]
+		if !ok {
+			t.Errorf("no commandFlagSpec for %q", cmd)
+			continue
+		}
 		for _, args := range diffCorpus(cmd, spec) {
 			if excludedFromDiff(cmd, args) {
 				continue
 			}
-			legacy := normalizeExtraction(legacyZoningSpecs[cmd](args))
+			legacy := normalizeExtraction(legacyFn(args))
 			prod := normalizeExtraction(zoningSpecs[cmd].extract(args))
 			if !reflect.DeepEqual(legacy, prod) {
 				t.Errorf("cmd=%q args=%v diverged\n  legacy=%+v\n  prod  =%+v", cmd, args, legacy, prod)

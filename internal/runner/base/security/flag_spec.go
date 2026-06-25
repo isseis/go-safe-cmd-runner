@@ -253,8 +253,10 @@ func removeFlags() []FlagSpec {
 	}
 }
 
-// simpleWriteFlags returns the shared boolean set of the simple-write commands
-// (touch/mkdir/sponge), plus any command-specific value flags supplied by the caller.
+// simpleWriteFlags returns the shared boolean set used by mkdir and sponge, plus any
+// command-specific value flags supplied by the caller. touch does NOT use this helper:
+// it is declared explicitly because its -r is value-taking (a reference file), which
+// shadows the shared boolean -r.
 func simpleWriteFlags(extra ...FlagSpec) []FlagSpec {
 	flags := append([]FlagSpec{}, extra...)
 	return append(flags,
