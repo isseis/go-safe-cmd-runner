@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-06-25 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-06-25 |
+| Reviewer | isseis |
 | Comments | - |
 
 > 本書は [01_requirements.md](01_requirements.md)（要件）と [02_architecture.md](02_architecture.md)（設計）の実装計画である。
