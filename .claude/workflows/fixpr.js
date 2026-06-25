@@ -132,7 +132,7 @@ gh api graphql -F owner=OWNER -F repo=REPO -F number=NUMBER -f query='
           nodes {
             id
             isResolved
-            comments(first:100) {
+            comments(first:10) {
               nodes { id databaseId body path line url author { login } }
             }
           }
@@ -330,7 +330,7 @@ if (actionable.length > 0) {
   const replyCommands = actionable.map(item => {
     const replyBodyPayload = JSON.stringify({ body: item.replyBody })
     return `# Thread ${item.threadId} (comment ${item.databaseId})
-gh api repos/${item.owner}/${item.repo}/pulls/${item.number}/comments/${item.databaseId}/replies \\
+gh api repos/${item.owner}/${item.repo}/pulls/comments/${item.databaseId}/replies \\
   -X POST --input - <<'PAYLOAD'
 ${replyBodyPayload}
 PAYLOAD
