@@ -147,7 +147,7 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 		boolFlag("-s", "--strip"), boolFlag("-T", "--no-target-directory"),
 	}, ToExtraction: extractInstall},
 
-	"tar": {Kind: KindArchiveExtract, Flags: tarFlags(), ToExtraction: extractTar},
+	"tar": {Kind: KindArchiveExtract, Flags: tarFlagSet, ToExtraction: extractTar},
 
 	"unzip": {Kind: KindArchiveExtract, Flags: []FlagSpec{
 		valueFlag(ValueWrite, "-d"),
@@ -210,7 +210,7 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 
 	// chattr: attribute mode tokens (+i/-a/=j) are split out before parseArgs; the
 	// remaining options are declared here.
-	"chattr": {Kind: KindPermission, Flags: chattrFlags(), ToExtraction: extractChattr},
+	"chattr": {Kind: KindPermission, Flags: chattrFlagSet, ToExtraction: extractChattr},
 
 	// find parses roots and predicates positionally, not as getopt flags (the passed
 	// ParseResult is ignored).
@@ -274,38 +274,55 @@ func ownerFlags() []FlagSpec {
 
 // tarFlags is the declared flag set for tar. It is used both in commandFlagSpecs["tar"]
 // and inside extractTar, which re-parses the normalized argv with the same flags.
-func tarFlags() []FlagSpec {
-	// -f/--file and -C/--directory are deliberately declared as SEPARATE entries rather
-	// than grouped aliases. extractTar picks a single archive/dir via firstNonEmpty with
-	// per-spelling precedence (captured["-f"] before captured["--file"], etc.). Grouping
-	// them under one canonical key would merge both spellings in argv order, so a value
-	// given via the lower-precedence spelling could win (or a dropped spelling could lose
-	// a write path), diverging from the pre-refactor extractor.
-	return []FlagSpec{
-		valueFlag(ValueWrite, "-f"),
-		valueFlag(ValueWrite, "--file"),
-		valueFlag(ValueWrite, "-C"),
-		valueFlag(ValueWrite, "--directory"),
-		optionalFlag(ValueWrite, "--one-top-level"),
-		boolFlag("-v", "--verbose"), boolFlag("-z", "--gzip"), boolFlag("-j", "--bzip2"),
-		boolFlag("-J", "--xz"), boolFlag("-p", "--preserve-permissions"), boolFlag("-k", "--keep-old-files"),
-		boolFlag("--no-same-owner"), boolFlag("-m", "--touch"),
-		boolFlag("-x"), boolFlag("-t"), boolFlag("-c"),
-		boolFlag("--extract"), boolFlag("--get"), boolFlag("--list"), boolFlag("--create"),
-	}
+// tarFlagSet is tar's declarative flag set. It is built once (immutable) because
+// extractTar re-parses with it on every call (after normalization); rebuilding the
+// slice per call would be wasted work.
+//
+// -f/--file and -C/--directory are deliberately declared as SEPARATE entries rather
+// than grouped aliases. extractTar picks a single archive/dir via firstNonEmpty with
+// per-spelling precedence (captured["-f"] before captured["--file"], etc.). Grouping
+// them under one canonical key would merge both spellings in argv order, so a value
+// given via the lower-precedence spelling could win (or a dropped spelling could lose
+// a write path), diverging from the pre-refactor extractor.
+var tarFlagSet = []FlagSpec{
+	valueFlag(ValueWrite, "-f"),
+	valueFlag(ValueWrite, "--file"),
+	valueFlag(ValueWrite, "-C"),
+	valueFlag(ValueWrite, "--directory"),
+	optionalFlag(ValueWrite, "--one-top-level"),
+	boolFlag("-v", "--verbose"), boolFlag("-z", "--gzip"), boolFlag("-j", "--bzip2"),
+	boolFlag("-J", "--xz"), boolFlag("-p", "--preserve-permissions"), boolFlag("-k", "--keep-old-files"),
+	boolFlag("--no-same-owner"), boolFlag("-m", "--touch"),
+	boolFlag("-x"), boolFlag("-t"), boolFlag("-c"),
+	boolFlag("--extract"), boolFlag("--get"), boolFlag("--list"), boolFlag("--create"),
 }
 
-// chattrFlags is the declared flag set for chattr (the regular options only). The
+// chattrFlagSet is the declared flag set for chattr (the regular options only). The
 // attribute mode tokens (+i/-a/=j) are split out before parseArgs in extractChattr, so
-// they are not declared here. Used both in commandFlagSpecs["chattr"] and inside
-// extractChattr, which re-parses the remaining tokens with the same flags.
-func chattrFlags() []FlagSpec {
-	return []FlagSpec{
-		valueFlag(ValueNonPath, "-v"),
-		valueFlag(ValueNonPath, "-p"),
-		boolFlag("-R"), boolFlag("-f"), boolFlag("-V"), boolFlag("-H"), boolFlag("-L"), boolFlag("-P"),
-	}
+// they are not declared here. Built once (immutable); extractChattr derives its
+// whole-token name sets from it via chattrValueNames/chattrBoolNames.
+var chattrFlagSet = []FlagSpec{
+	valueFlag(ValueNonPath, "-v"),
+	valueFlag(ValueNonPath, "-p"),
+	boolFlag("-R"), boolFlag("-f"), boolFlag("-V"), boolFlag("-H"), boolFlag("-L"), boolFlag("-P"),
 }
+
+// chattrValueNames/chattrBoolNames are the whole-token lookup sets extractChattr uses,
+// computed once from chattrFlagSet (the flag knowledge still lives in the table).
+var chattrValueNames, chattrBoolNames = func() (valueNames, boolNames map[string]struct{}) {
+	valueNames = make(map[string]struct{})
+	boolNames = make(map[string]struct{})
+	for _, f := range chattrFlagSet {
+		for _, n := range f.Names {
+			if f.Arity == ArityNone {
+				boolNames[n] = struct{}{}
+			} else {
+				valueNames[n] = struct{}{}
+			}
+		}
+	}
+	return valueNames, boolNames
+}()
 
 func curlFlags() []FlagSpec {
 	return []FlagSpec{

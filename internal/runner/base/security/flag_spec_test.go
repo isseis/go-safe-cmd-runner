@@ -42,18 +42,15 @@ func TestSpecNoDuplicateNames(t *testing.T) {
 	}
 }
 
-// TestSpecCoversZoningCommands verifies the declarative table (now the single live
-// registry) has exactly the same command keys as the frozen legacy oracle, so no command
-// lacks a spec and no stale entry lingers. The key set is ranged (not a hardcoded count)
-// so adding or removing a command surfaces here.
-func TestSpecCoversZoningCommands(t *testing.T) {
-	for cmd := range legacyZoningSpecs {
-		_, ok := commandFlagSpecs[cmd]
-		assert.True(t, ok, "legacyZoningSpecs has %q but commandFlagSpecs does not", cmd)
-	}
-	for cmd := range commandFlagSpecs {
-		_, ok := legacyZoningSpecs[cmd]
-		assert.True(t, ok, "commandFlagSpecs has %q but legacyZoningSpecs does not", cmd)
+// TestEveryCommandHasExtractor verifies the production invariant that every registry
+// entry has a ToExtraction wired, so the dispatcher never calls a nil function. This is
+// a production-only check (no dependency on the test-tagged legacy oracle), so it also
+// compiles under a plain `go test` without the build tag. The legacy<->new command-set
+// equality is checked separately by TestLegacyZoningSpecsCoverage (which lives with the
+// frozen oracle behind //go:build test).
+func TestEveryCommandHasExtractor(t *testing.T) {
+	for cmd, spec := range commandFlagSpecs {
+		assert.NotNil(t, spec.ToExtraction, "%s: CommandFlagSpec has a nil ToExtraction (the dispatcher would panic)", cmd)
 	}
 }
 

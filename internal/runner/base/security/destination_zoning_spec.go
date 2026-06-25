@@ -210,7 +210,7 @@ func extractSed(_ ParseResult, args []string) extraction {
 	if !inPlace {
 		return extraction{applies: false, recognized: true}
 	}
-	pr := parseArgs(sedRestFlags(), rest)
+	pr := parseArgs(sedRestFlagSet, rest)
 	ext := extraction{applies: true, recognized: pr.Recognized}
 	// When the script is supplied via -e/-f, every positional is an edited file;
 	// otherwise the first positional is the inline script and the rest are files.
@@ -235,15 +235,15 @@ func extractSed(_ ParseResult, args []string) extraction {
 
 // sedRestFlags is the flag set used to re-parse sed's argv after the -i / --in-place
 // tokens are stripped. It mirrors the sed flags declared in commandFlagSpecs minus -i.
-func sedRestFlags() []FlagSpec {
-	return []FlagSpec{
-		valueFlag(ValueNonPath, "-e", "--expression"),
-		valueFlag(ValueNonPath, "-f", "--file"),
-		valueFlag(ValueNonPath, "-l", "--line-length"),
-		boolFlag("-n", "--quiet", "--silent"), boolFlag("-r", "-E", "--regexp-extended"),
-		boolFlag("-s", "--separate"), boolFlag("-z", "--null-data"), boolFlag("-u", "--unbuffered"),
-		boolFlag("--posix"), boolFlag("--debug"), boolFlag("--sandbox"), boolFlag("--follow-symlinks"),
-	}
+// sedRestFlagSet is sed's flag set MINUS -i/--in-place (which extractSed splits out
+// before parsing). Built once (immutable); extractSed re-parses with it on every call.
+var sedRestFlagSet = []FlagSpec{
+	valueFlag(ValueNonPath, "-e", "--expression"),
+	valueFlag(ValueNonPath, "-f", "--file"),
+	valueFlag(ValueNonPath, "-l", "--line-length"),
+	boolFlag("-n", "--quiet", "--silent"), boolFlag("-r", "-E", "--regexp-extended"),
+	boolFlag("-s", "--separate"), boolFlag("-z", "--null-data"), boolFlag("-u", "--unbuffered"),
+	boolFlag("--posix"), boolFlag("--debug"), boolFlag("--sandbox"), boolFlag("--follow-symlinks"),
 }
 
 func extractSimpleWrite(pr ParseResult, _ []string) extraction {
@@ -338,7 +338,7 @@ func extractTar(_ ParseResult, args []string) extraction {
 	// read from the raw argv and the rest re-parsed after normalization. The dispatcher's
 	// ParseResult is ignored because it was parsed without normalization.
 	mode := tarMode(args)
-	pr := parseArgs(tarFlags(), normalizeTarArgs(args))
+	pr := parseArgs(tarFlagSet, normalizeTarArgs(args))
 	ext := extraction{applies: true, recognized: pr.Recognized}
 
 	switch mode {
@@ -551,21 +551,12 @@ func extractChattr(_ ParseResult, args []string) extraction {
 	// the pre-refactor extractor) match each option token in full and never split a
 	// cluster, so -VR is an unknown token (recognized=false), not -V -R. parseArgs would
 	// split it and wrongly recognize it. Attribute tokens (+i/-a/=j) carry the mode;
-	// -v/-p take a value; the rest are options or target files. The flag sets are derived
-	// from chattrFlags() so the knowledge still lives in the declarative table. A literal
-	// "--" is an unknown whole token here (recognized=false), matching legacy (chattr has
-	// no getopt "--" terminator). The dispatcher's ParseResult is ignored.
-	valueNames := make(map[string]struct{})
-	boolNames := make(map[string]struct{})
-	for _, f := range chattrFlags() {
-		for _, n := range f.Names {
-			if f.Arity == ArityNone {
-				boolNames[n] = struct{}{}
-			} else {
-				valueNames[n] = struct{}{}
-			}
-		}
-	}
+	// -v/-p take a value; the rest are options or target files. The whole-token name sets
+	// (chattrValueNames/chattrBoolNames) are derived once from chattrFlagSet, so the
+	// knowledge still lives in the declarative table. A literal "--" is an unknown whole
+	// token here (recognized=false), matching legacy (chattr has no getopt "--"
+	// terminator). The dispatcher's ParseResult is ignored.
+	valueNames, boolNames := chattrValueNames, chattrBoolNames
 
 	ext := extraction{applies: true, recognized: true}
 	var targets []string
