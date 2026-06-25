@@ -121,11 +121,12 @@ gh api graphql -F owner=OWNER -F repo=REPO -F number=NUMBER -f query='
     repository(owner:$owner, name:$repo) {
       pullRequest(number:$number) {
         reviewThreads(first:100) {
+          pageInfo { hasNextPage }
           nodes {
             id
             isResolved
-            comments(first:1) {
-              nodes { id databaseId body path line url }
+            comments(first:10) {
+              nodes { id databaseId body path line url author { login } }
             }
           }
         }
@@ -135,10 +136,11 @@ gh api graphql -F owner=OWNER -F repo=REPO -F number=NUMBER -f query='
 '
 
 3. Filter to nodes where isResolved=false.
-4. For each, take the FIRST comment: use its databaseId, body, path, line, url.
+4. For each thread, use the FIRST comment's databaseId, path, line, url.
+   Concatenate ALL comments into the body field, prefixing each with "@author: ".
    The threadId is the node "id" from reviewThreads (not the comment id).
-5. Set capHit=true if the raw reviewThreads list returned exactly 100 nodes
-   (the query cap — more threads may exist beyond it); otherwise capHit=false.
+5. Set capHit=true if pageInfo.hasNextPage is true (more threads exist beyond the
+   100-node cap); otherwise capHit=false.
 6. Return found=true with all threads.`,
   { schema: PR_SCHEMA, model: 'haiku', effort: 'low', phase: 'Fetch' }
 )
@@ -280,29 +282,32 @@ const actionable = triage.threads
     number:     pr.number,
   }))
   .filter(t => t.databaseId)
+  .filter(t => t.replyBody)
 
-await parallel(actionable.map(item => () => {
-  // The replies endpoint expects a JSON object {"body": ...}, not a bare string.
-  // Pipe it to `gh api --input -` via a quoted heredoc: stdin avoids both shell
-  // quoting issues and any temp file (no shared path, so no concurrency race, and
-  // nothing to clean up).
-  const replyBodyPayload = JSON.stringify({ body: item.replyBody })
-  return agent(
-    `Post a reply to a GitHub PR review thread then resolve it.
+if (actionable.length > 0) {
+  // Build the list of reply+resolve commands to run sequentially in one agent
+  // call, avoiding the per-thread parallel fan-out that risks RPM/TPM rate limits.
+  const replyCommands = actionable.map(item => {
+    const replyBodyPayload = JSON.stringify({ body: item.replyBody })
+    return `# Thread ${item.threadId} (comment ${item.databaseId})
+gh api repos/${item.owner}/${item.repo}/pulls/${item.number}/comments/${item.databaseId}/replies \\
+  -X POST --input - <<'PAYLOAD'
+${replyBodyPayload}
+PAYLOAD
+gh api graphql -F threadId=${item.threadId} \\
+  -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}'`
+  }).join('\n\n')
 
-1. Post the reply by piping the JSON payload to gh api via stdin (the quoted
-   'PAYLOAD' heredoc passes the body verbatim — no shell expansion, no temp file):
-   gh api repos/${item.owner}/${item.repo}/pulls/${item.number}/comments/${item.databaseId}/replies \\
-     -X POST --input - <<'PAYLOAD'
-   ${replyBodyPayload}
-   PAYLOAD
+  await agent(
+    `Post replies and resolve threads for PR #${pr.number} by running the following
+commands sequentially. Each block posts a reply then resolves the thread.
+The quoted 'PAYLOAD' heredoc passes the body verbatim — no shell expansion.
+The heredoc terminator must be at column 0 for the shell to recognise it.
 
-2. Resolve the thread:
-   gh api graphql -F threadId=${item.threadId} \\
-     -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}'`,
-    { model: 'haiku', effort: 'low', phase: 'Reply', label: `reply:${item.databaseId}` }
+${replyCommands}`,
+    { model: 'haiku', effort: 'low', phase: 'Reply' }
   )
-}))
+}
 
 // ── Phase 6: Wrap — PR description check + push (haiku) ───────────────────
 
