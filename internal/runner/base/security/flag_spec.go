@@ -156,11 +156,12 @@ var commandFlagSpecs = map[string]CommandFlagSpec{
 	"unzip": {Kind: KindArchiveExtract, Flags: []FlagSpec{
 		valueFlag(ValueWrite, "-d"),
 		valueFlag(ValueNonPath, "-x"),
-		// -l/-Z select listing (non-writing) mode. Legacy detects them via hasAny
-		// (outside its flag sets) and returns applies=false,recognized=true. Declaring
-		// them as booleans is faithful -- the legacy listing path already yields
-		// recognized=true -- and lets Phase 3's ToExtraction detect listing via HasFlag.
-		boolFlag("-l"), boolFlag("-Z"),
+		// -l/-Z (listing mode) are deliberately NOT declared. Legacy leaves them out of
+		// its flag sets and detects listing with a cluster-blind whole-token hasAny:
+		// `unzip -l` early-returns applies=false,recognized=true, while `unzip -lo` is
+		// recognized=false (the cluster hits the unknown -l). Declaring -l/-Z would make
+		// the parser recognize -lo (recognized=true), diverging. Phase 3's ToExtraction
+		// reproduces the legacy behavior with the same whole-token hasAny.
 		boolFlag("-o"), boolFlag("-n"), boolFlag("-q"), boolFlag("-qq"), boolFlag("-v"),
 		boolFlag("-j"), boolFlag("-a"), boolFlag("-u"), boolFlag("-f"),
 	}},
