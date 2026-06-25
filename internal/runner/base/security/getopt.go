@@ -4,19 +4,21 @@ import "strings"
 
 // ParseResult is the output of the single getopt parser. Flag values are keyed by the
 // flag's canonical name (FlagSpec.Names[0]), so a spelling variant ("-t" vs
-// "--target-directory") yields the same key. A no-argument flag is recorded with an
-// empty (non-nil) slice, so its presence is the existence of the key, not a non-empty
-// length: use HasFlag for presence.
+// "--target-directory") yields the same key. A flag that captured no value is recorded
+// with an empty (non-nil) slice -- this covers both a no-argument flag and an
+// optional-argument flag given without a value. Presence is therefore the existence of
+// the key, not a non-empty length: use HasFlag for presence, and never infer arity or
+// value-presence from len(values).
 type ParseResult struct {
-	Values      map[string][]string // canonical flag name -> captured values (empty slice for no-arg flags)
+	Values      map[string][]string // canonical flag name -> captured values (empty slice when the flag captured no value)
 	Recursive   bool                // a recursion flag appeared at least once
 	NonFlagArgs []string            // arguments that are neither a flag nor a flag's value
-	Recognized  bool                // every token was classified (false is fail-closed)
+	Recognized  bool                // false if any option-like token was unrecognized (fail-closed)
 }
 
 // HasFlag reports whether the flag with the given canonical key (FlagSpec.Names[0])
-// appeared. It must be used for presence checks: len(Values[k]) > 0 misdetects a
-// no-argument flag, which is stored as an empty slice.
+// appeared. It must be used for presence checks: len(Values[k]) > 0 misdetects a flag
+// that captured no value, which is stored as an empty slice.
 func (r ParseResult) HasFlag(canonicalKey string) bool {
 	_, ok := r.Values[canonicalKey]
 	return ok
@@ -35,16 +37,18 @@ type argParser struct {
 	res    ParseResult
 }
 
-// parseArgs is the single getopt parser shared by every command. It consumes a flag
-// set (only the flags; it never inspects Kind or ToExtraction) and classifies argv.
+// parseArgs is the single getopt parser shared by every command. It takes only the
+// flag specs -- not the command's Kind or ToExtraction, which the caller applies -- and
+// classifies argv.
 //
-// Contract: it never silently drops a token. Each argument becomes a recognized flag,
-// a captured flag value, or a NonFlagArg. An unknown flag or a missing required value
-// sets Recognized=false (fail-closed) rather than guessing. It handles --flag=value,
-// an attached short value (-C/usr), a short cluster (-rf), the -- option terminator,
-// optional arguments (attached form only), and spelling-alias normalization (values
-// recorded under the canonical name). It is pure: linear in total argv length, with
-// no filesystem, environment, or process-identity access.
+// Contract: it never silently misclassifies an option-like token as a positional. Each
+// argument becomes a recognized flag, a captured flag value, or a NonFlagArg; an
+// unknown flag or a flag missing its required value instead sets Recognized=false
+// (fail-closed) and is not added to NonFlagArgs. It handles --flag=value, an attached
+// short value (-C/usr), a short cluster (-rf), the -- option terminator, optional
+// arguments (attached form only), and spelling-alias normalization (values recorded
+// under the canonical name). It is pure: linear in total argv length, with no
+// filesystem, environment, or process-identity access.
 func parseArgs(flags []FlagSpec, args []string) ParseResult {
 	p := &argParser{
 		byName: make(map[string]*FlagSpec),
