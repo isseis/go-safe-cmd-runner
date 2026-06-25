@@ -32,7 +32,7 @@ func (r ParseResult) HasFlag(canonicalKey string) bool {
 // Using a struct with methods (rather than passing a closure and indices between free
 // functions) is the idiomatic Go way to share this.
 type argParser struct {
-	byName map[string]*FlagSpec
+	byName map[string]FlagSpec
 	args   []string
 	res    ParseResult
 }
@@ -51,13 +51,13 @@ type argParser struct {
 // filesystem, environment, or process-identity access.
 func parseArgs(flags []FlagSpec, args []string) ParseResult {
 	p := &argParser{
-		byName: make(map[string]*FlagSpec),
+		byName: make(map[string]FlagSpec),
 		args:   args,
 		res:    ParseResult{Values: make(map[string][]string), Recognized: true},
 	}
 	for _, f := range flags {
 		for _, n := range f.Names {
-			p.byName[n] = &f
+			p.byName[n] = f
 		}
 	}
 
@@ -89,7 +89,7 @@ func parseArgs(flags []FlagSpec, args []string) ParseResult {
 
 // mark records a flag's presence under its canonical key and appends any captured
 // values (none for a bare boolean or value-less optional flag).
-func (p *argParser) mark(f *FlagSpec, vals ...string) {
+func (p *argParser) mark(f FlagSpec, vals ...string) {
 	key := f.Names[0]
 	if _, ok := p.res.Values[key]; !ok {
 		p.res.Values[key] = []string{}
@@ -120,7 +120,7 @@ func (p *argParser) parseFlagToken(i int) (consumedNext, ok bool) {
 // markNamedFlag records an exactly-spelled flag and consumes its value per arity.
 // consumedNext is true when a required value was taken from args[i+1]; ok is false only
 // when a required value is missing.
-func (p *argParser) markNamedFlag(f *FlagSpec, i int, val string, hasEq bool) (consumedNext, ok bool) {
+func (p *argParser) markNamedFlag(f FlagSpec, i int, val string, hasEq bool) (consumedNext, ok bool) {
 	switch f.Arity {
 	case ArityRequired:
 		switch {
