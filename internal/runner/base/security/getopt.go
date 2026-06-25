@@ -1,6 +1,9 @@
 package security
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // ParseResult is the output of the single getopt parser. Flag values are keyed by the
 // flag's canonical name (FlagSpec.Names[0]), so a spelling variant ("-t" vs
@@ -161,9 +164,11 @@ func (p *argParser) parseShortCluster(i int) (consumedNext, ok bool) {
 			continue
 		}
 		// c begins at byte 1+k within a (1 for the leading dash); the attached value is
-		// everything after c. Use len(string(c)) rather than a fixed offset so a
-		// multi-byte rune is not sliced in half.
-		rest := a[1+k+len(string(c)):]
+		// everything after c. utf8.RuneLen(c) is the allocation-free byte length of c, so
+		// a multi-byte rune is never sliced in half. Note: for a short option the '=' is
+		// PART of the value (-C=v means -C with value "=v"), matching getopt and the
+		// legacy scanFlags; it must not be stripped here.
+		rest := a[1+k+utf8.RuneLen(c):]
 		switch {
 		case rest != "":
 			p.mark(f, rest)

@@ -186,6 +186,20 @@ func TestParseArgs_NoArgFlagIgnoresAttachedValue(t *testing.T) {
 	assert.Equal(t, []string{"a"}, got.NonFlagArgs)
 }
 
+// TestParseArgs_ShortClusterAttachedEquals locks getopt short-option semantics: inside
+// a short cluster the '=' is part of the attached value (-rt=/dst means -t with value
+// "=/dst"), not a key/value separator. This matches GNU getopt for short options and
+// the legacy scanFlags behavior, so it must not be "fixed" by stripping the '=': doing
+// so would break behavioral parity and could turn a captured value into an empty one
+// that falls through to consume the next token.
+func TestParseArgs_ShortClusterAttachedEquals(t *testing.T) {
+	got := parseArgs(optFlags(), []string{"-rt=/dst", "src"})
+	assert.True(t, got.Recognized)
+	assert.True(t, got.Recursive)
+	assert.Equal(t, []string{"=/dst"}, got.Values["-t"], "short-option '=' is part of the value, not a separator")
+	assert.Equal(t, []string{"src"}, got.NonFlagArgs, "the next token must not be consumed")
+}
+
 // TestParseArgs_HasFlag verifies presence detection for a no-argument flag, where the
 // value slice is empty (the len>0 trap).
 func TestParseArgs_HasFlag(t *testing.T) {
