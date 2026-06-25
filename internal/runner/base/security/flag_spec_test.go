@@ -89,7 +89,7 @@ func TestArityInvariant(t *testing.T) {
 	}
 }
 
-// TestAliasAddition demonstrates the declarative-table goal (AC-01/AC-02): all
+// TestAliasAddition demonstrates the declarative-table goal: all
 // spellings of one value flag share a single entry and a single canonical key, and
 // adding a new spelling to Names is the only change needed for that spelling to work --
 // no parsing-code branch.

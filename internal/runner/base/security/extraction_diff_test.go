@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestExtractionDifferential is the primary behavior-preservation gate (design §7). For
+// TestExtractionDifferential is the primary behavior-preservation gate. For
 // every zoned command it runs a broad generated corpus through both the frozen legacy
 // extractor (legacyZoningSpecs) and the live production path (zoningSpecs), and requires
 // the whole extraction struct to match. Comparing the struct as a whole -- rather than
@@ -50,7 +50,7 @@ func shortFlag(name string) bool {
 // diffCorpus builds a broad set of argv inputs for one command: generic edge forms,
 // every declared flag in each of its surface forms, and the per-command fixtures that
 // exercise the special grammars (dd key=value, chattr/tar/sed/find, remote copies) and
-// the AC-08 regression cases.
+// the documented regression cases.
 func diffCorpus(cmd string, spec CommandFlagSpec) [][]string {
 	var corpus [][]string
 	add := func(args ...string) { corpus = append(corpus, args) }
@@ -94,7 +94,7 @@ func diffCorpus(cmd string, spec CommandFlagSpec) [][]string {
 }
 
 // diffFixtures are hand-written argvs per command targeting the special grammars and
-// the AC-08 regression cases that the auto-generated single-flag forms do not cover.
+// the documented regression cases that the auto-generated single-flag forms do not cover.
 var diffFixtures = map[string][][]string{
 	"cp": {
 		{"-r", "s", "d"},
