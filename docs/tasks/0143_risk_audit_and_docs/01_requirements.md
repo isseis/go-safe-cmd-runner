@@ -204,7 +204,7 @@
   - **網羅の担保（B-3）**: 「`make test` が緑」だけでは、テストに載っていない sample config の追従漏れ（fail-silent）を
     検知できない。よって完了条件に**対象 config の網羅的な洗い出し**を含める: 引き上げ対象コマンド名（判断軸1 の
     High/Medium 化対象・判断軸2 の trust-critical 書込形）に加え、**0145 で過剰認識除去により fail-closed 化した
-    無効フラグ形**（`sponge -r`／`mkdir -a`／`unlink -r`／`mv -s` 等）を含む sample/test config を grep で列挙し、各々に
+    無効フラグ形**（`sponge -r`／`mkdir -a`／`touch -p`／`unlink -r`／`rmdir -r` 等）を含む sample/test config を grep で列挙し、各々に
     対し `risk_level` 付与済み、または新分類下で意図した結果（deny/allow）になることを確認する。
   - **検証**: 上記で列挙した config が `make test` 内でロード・評価でき、テスト用 config が新分類で**意図せず** deny
     されないこと（意図的に deny を検証する config はその旨を明示）。
