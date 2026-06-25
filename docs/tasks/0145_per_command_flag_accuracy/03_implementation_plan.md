@@ -28,7 +28,7 @@
   正しい `ValueRole`/`Arity` 付与で fail-open を防ぐ（[02 §5](02_architecture.md)）。
 - **意図的逸脱の管理**: 凍結オラクル（pre-0145 挙動を表す独立オラクル）を基準とする差分テストからの逸脱を `diffExclusions` へ
   厳密一致で登録し、肯定側の回帰テストで新挙動を表明する（[02 §3.3](02_architecture.md)）。
-- **生 argv 信号の保存**: `preserveMeta` 等の `Flags` と独立な生 argv スキャンには触れない（[02 §3.2](02_architecture.md)）。
+- **argv を直接走査して決まる信号を保つ**: `preserveMeta` 等は宣言フラグ（`Flags`）と独立に argv を直接走査して決まるため、その走査処理には手を加えない（[02 §3.2](02_architecture.md)）。
 
 ### 1.3 既存コード調査結果
 
@@ -45,7 +45,7 @@
 
 **本番コード — 不変（変更不可）:**
 - `destination_zoning_spec.go`（`extractRemove`/`extractSimpleWrite`/`extractCopyMove`/`extractSed`/`extractOwner`/`extractLink` ほか
-  `ToExtraction` 群、および `preserveMeta` 等の生 argv スキャン）、`getopt.go`、`destination_zoning.go`、`operand_path_resolver.go`。
+  `ToExtraction` 群、および `preserveMeta` 等を argv から直接求める走査処理）、`getopt.go`、`destination_zoning.go`、`operand_path_resolver.go`。
 
 **テストコード — 変更対象:**
 - `extraction_diff_test.go`（`//go:build test`）: `diffExclusions`・`diffFixtures` を更新。現状の `diffExclusions` には 0144 で確定した
@@ -96,8 +96,7 @@
 - [ ] `copyMoveFlags()` を分割する。`cp` 専用（再帰・リンク・デリファレンス系を含む cp 実 CLI 集合）を残し、`mv` 専用（`-f`/`--force`・
   `-i`/`--interactive`・`-n`/`--no-clobber`・`-u`/`--update`・`-v`/`--verbose`・`-t`/`--target-directory`〔`ValueWrite`〕・
   `-T`/`--no-target-directory`・`-b`/`--backup`・`-S`/`--suffix`〔`ValueNonPath`〕・`--strip-trailing-slashes`・`-Z`/`--context` 等）を
-  新設する。`mv` 専用には再帰・リンク・デリファレンス系（`-r`/`-R`/`-a`/`-s`/`-l`/`-L`/`-P`/`-H`/`-d`/`-x`）を含めない。`extractCopyMove` は `cp`/`mv` で共有を維持し、生 argv の `preserveMeta`
-  スキャン（`-a`/`--archive`/`-p`/`--preserve`）には触れない（[02 §3.2](02_architecture.md)）。
+  新設する。`mv` 専用には再帰・リンク・デリファレンス系（`-r`/`-R`/`-a`/`-s`/`-l`/`-L`/`-P`/`-H`/`-d`/`-x`）を含めない。`extractCopyMove` は `cp`/`mv` で共有を維持し、argv を直接走査して `preserveMeta` を求める処理（`-a`/`--archive`/`-p`/`--preserve` を見る）には触れない（[02 §3.2](02_architecture.md)）。
 
 **個別宣言の修正（要件 §1.1 の確定分）:**
 - [ ] `touch` から真偽フラグ `-p`/`--parents`・`-v`/`--verbose`・`-i` を削除する。値フラグ `-r`/`--reference`（`ArityRequired`/
@@ -171,7 +170,7 @@
 | M4 | フェーズ 4: 確認 | 安全側確認の記録＋`make fmt`/`make test`/`make lint` 緑（AC-05/NF-001） |
 
 > 各コマンドの整合は独立に進められ、差分テスト（登録済み逸脱以外は緑）・メタテスト・既存挙動テストの緑をコマンド単位のゲートとする
-> （[02 §8](02_architecture.md)）。ただし生 argv 信号（`preserveMeta` 等）を共有する `cp`/`mv` では [02 §3.2](02_architecture.md) の不変条件を守る。
+> （[02 §8](02_architecture.md)）。ただし argv を直接走査して決まる信号（`preserveMeta` 等）を共有する `cp`/`mv` では [02 §3.2](02_architecture.md) の不変条件を守る。
 
 ## 4. テスト戦略
 
@@ -197,7 +196,7 @@
 |---|---|---|
 | 典拠誤り（man ページ解釈ミス）で実 CLI と不一致 | 過剰認識/宣言漏れの残存 | 付録 A に典拠を明記し、削除分は `TestRemovedOverRecognizedFlagsFailClosed`、追加・修正分は肯定アサーションで検証 |
 | 役割の誤分類（path を `ValueNonPath` と誤る） | fail-open（path 無評価通過） | メタテストは `ValueUnset` のみ検出するため、役割変更フラグは肯定アサーションでオペランド出現を固定（[02 §5.2](02_architecture.md)） |
-| 生 argv 信号の誤削除 | `cp`/`mv` のメタ保持 High 下限取りこぼし | `destination_zoning_spec.go` に触れない方針を厳守（[02 §3.2](02_architecture.md)）。差分テストが乖離を検出 |
+| argv を直接走査して決まる信号の誤削除 | `cp`/`mv` のメタ保持 High 下限取りこぼし | `destination_zoning_spec.go` に触れない方針を厳守（[02 §3.2](02_architecture.md)）。差分テストが乖離を検出 |
 | 既存 `diffFixtures` の削除フラグ入力の見落とし | 差分テスト赤 or 退行の隠蔽 | フェーズ 3 で既存 `diffFixtures` を監査し乖離入力を網羅登録 |
 
 ## 6. 実装チェックリスト
@@ -221,7 +220,7 @@
 
 | AC | 検証種別 | 検証場所・コマンド | 合格条件 |
 |---|---|---|---|
-| AC-01（全コマンド実 CLI 整合） | static | 付録 A に全 `commandFlagSpecs` 登録コマンドの是正内容と典拠が記載されていること。`rg -n 'valueFlag\|boolFlag\|recursiveFlag\|optionalFlag' internal/runner/base/security/flag_spec.go` で宣言を付録 A と突き合わせ | 全コマンドが付録 A の典拠と一致 |
+| AC-01（全コマンド実 CLI 整合） | static | 付録 A に全 `commandFlagSpecs` 登録コマンドの是正内容と典拠が記載されていること。`rg -n 'valueFlag|boolFlag|recursiveFlag|optionalFlag' internal/runner/base/security/flag_spec.go` で宣言を付録 A と突き合わせ | 全コマンドが付録 A の典拠と一致 |
 | AC-01 | test | `internal/runner/base/security/flag_spec_test.go::TestSpecCompleteness`、同 `::TestArityInvariant`、同 `::TestSpecNoDuplicateNames` | 緑 |
 | AC-02（過剰認識除去の表明） | test | `internal/runner/base/security/destination_zoning_parity_test.go::TestRemovedOverRecognizedFlagsFailClosed` | 削除フラグ全件で `recognized=false`（`sponge -r`/`mkdir -a`/`touch -p`/`unlink -r`/`rmdir -r`/`mv -s` を含む） |
 | AC-02 | test | `internal/runner/base/security/destination_zoning_parity_test.go::TestExtractionRegressionCases`（AC-02 代表入力の `t.Run` 群） | 各代表入力で `recognized=false` |
