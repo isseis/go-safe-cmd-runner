@@ -1,9 +1,11 @@
 package security
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,7 +20,7 @@ func runExtraction(t *testing.T, cmd string, args ...string) extraction {
 }
 
 // TestExtractionRegressionCases pins the representative cases that 0142's reviews and
-// past rules surfaced (AC-08). These assert explicit expected extractions, an oracle
+// past rules surfaced. These assert explicit expected extractions, an oracle
 // independent of the legacy-vs-new differential test (which would not catch a defect
 // shared by both the frozen copy and the new code). Cases already covered by
 // destination_zoning_test.go are not repeated here.
@@ -98,5 +100,120 @@ func TestExtractionRegressionCases(t *testing.T) {
 
 		create := runExtraction(t, "tar", "cf", "out.tar", "src")
 		assert.Equal(t, []rawOperand{{raw: "out.tar", role: write}}, create.operands)
+	})
+}
+
+// TestLocationResultParity pins the full LocationResult for a representative invocation
+// of EVERY registered command. The case table is ranged against commandFlagSpecs
+// (not a hardcoded count), so a newly registered command without a parity case fails
+// here. Each representative writes under the Trusted work dir, so the expected level is
+// Low unless an operation floor or network egress raises it.
+func TestLocationResultParity(t *testing.T) {
+	low := runnertypes.RiskLevelLow
+	medium := runnertypes.RiskLevelMedium
+	wd := zoningWorkdir(t)
+	in := zoningInput(wd, foreignIdent()) // foreign ident over a TrustedDirectory => safe-zone Low
+	p := func(name string) string { return filepath.Join(wd, name) }
+
+	cases := map[string]struct {
+		args  []string
+		level runnertypes.RiskLevel
+	}{
+		"cp":       {[]string{p("s"), p("d")}, low},
+		"mv":       {[]string{p("s"), p("d")}, low},
+		"rm":       {[]string{p("f")}, low},
+		"rmdir":    {[]string{p("d")}, low},
+		"unlink":   {[]string{p("f")}, low},
+		"shred":    {[]string{p("f")}, low},
+		"ln":       {[]string{"-s", p("t"), p("l")}, low},
+		"truncate": {[]string{"-s", "0", p("f")}, low},
+		"sed":      {[]string{"-i", "s/a/b/", p("f")}, low},
+		"touch":    {[]string{p("f")}, low},
+		"mkdir":    {[]string{p("d")}, low},
+		"tee":      {[]string{p("f")}, low},
+		"sponge":   {[]string{p("f")}, low},
+		"install":  {[]string{p("s"), p("d")}, low},
+		"tar":      {[]string{"-xf", p("a.tar"), "-C", wd}, low},
+		"unzip":    {[]string{"-d", wd, p("a.zip")}, low},
+		"dd":       {[]string{"of=" + p("x")}, low},
+		"mknod":    {[]string{p("n"), "c", "1", "3"}, low},
+		"mount":    {[]string{p("dev"), p("mnt")}, low},
+		"umount":   {[]string{p("mnt")}, low},
+		"chmod":    {[]string{"644", p("f")}, low},
+		"chown":    {[]string{"root", p("f")}, low},
+		"chgrp":    {[]string{"staff", p("f")}, low},
+		"setfacl":  {[]string{"-m", "u:bob:r", p("f")}, low},
+		"chattr":   {[]string{"+a", p("f")}, low},
+		"find":     {[]string{wd, "-delete"}, low},
+		"curl":     {[]string{"-o", p("out"), "http://example/x"}, low},
+		"wget":     {[]string{"-O", p("out"), "http://example/x"}, low},
+		"scp":      {[]string{p("s"), p("d")}, low},
+		"sftp":     {[]string{p("d")}, medium}, // sftp is always a network egress
+		"rsync":    {[]string{p("s"), p("d")}, low},
+	}
+
+	for cmd := range commandFlagSpecs {
+		tc, ok := cases[cmd]
+		require.Truef(t, ok, "no LocationResult parity case for command %q (add one)", cmd)
+		t.Run(cmd, func(t *testing.T) {
+			got := classify(in, cmd, tc.args...)
+			assert.True(t, got.Applies, "Applies")
+			assert.True(t, got.Recognized, "Recognized; operands=%+v reasons=%v", got.Operands, got.ReasonCodes)
+			assert.Equal(t, tc.level, got.Level, "Level; operands=%+v reasons=%v", got.Operands, got.ReasonCodes)
+		})
+	}
+}
+
+// TestLocationResultFloors pins the non-Low operation floors: permission grant,
+// non-writing forms (Applies=false), unconditional umount -a, and remote network egress.
+func TestLocationResultFloors(t *testing.T) {
+	wd := zoningWorkdir(t)
+	in := zoningInput(wd, foreignIdent())
+	p := func(name string) string { return filepath.Join(wd, name) }
+
+	t.Run("chmod setuid grants permission -> High", func(t *testing.T) {
+		assert.Equal(t, runnertypes.RiskLevelHigh, classify(in, "chmod", "u+s", p("f")).Level)
+	})
+	t.Run("tar listing does not apply", func(t *testing.T) {
+		assert.False(t, classify(in, "tar", "-tf", p("a.tar")).Applies)
+	})
+	t.Run("sed without -i does not apply", func(t *testing.T) {
+		assert.False(t, classify(in, "sed", "s/a/b/", p("f")).Applies)
+	})
+	t.Run("umount -a is unconditional High", func(t *testing.T) {
+		assert.Equal(t, runnertypes.RiskLevelHigh, classify(in, "umount", "-a").Level)
+	})
+	t.Run("scp to a remote destination is a network egress", func(t *testing.T) {
+		got := classify(in, "scp", p("s"), "host:/remote/d")
+		assert.Equal(t, runnertypes.RiskLevelMedium, got.Level)
+	})
+	t.Run("rsync to a remote destination is a network egress", func(t *testing.T) {
+		got := classify(in, "rsync", "-a", p("s"), "host:/remote/d")
+		assert.Equal(t, runnertypes.RiskLevelMedium, got.Level)
+	})
+}
+
+// TestFailClosed pins the fail-closed contract: an unknown flag, a value flag
+// missing its value, a missing required spec/target positional, and an unresolvable
+// operand all yield Recognized=false (and the unresolvable write also folds to High).
+func TestFailClosed(t *testing.T) {
+	wd := zoningWorkdir(t)
+	in := zoningInput(wd, foreignIdent())
+	p := func(name string) string { return filepath.Join(wd, name) }
+
+	t.Run("unknown flag", func(t *testing.T) {
+		assert.False(t, classify(in, "cp", "--bogus-zzz", p("s"), p("d")).Recognized)
+	})
+	t.Run("value flag missing its value", func(t *testing.T) {
+		assert.False(t, classify(in, "tar", "-x", "-C").Recognized)
+	})
+	t.Run("missing required spec and target", func(t *testing.T) {
+		// chmod needs a mode plus at least one target file.
+		assert.False(t, classify(in, "chmod", "644").Recognized)
+	})
+	t.Run("unresolvable write operand -> High and not recognized", func(t *testing.T) {
+		res := classifyDestinationZone(in, cmdNameSet("rm"), "rm", []string{"/x"}, erroringResolver())
+		assert.False(t, res.Recognized)
+		assert.Equal(t, runnertypes.RiskLevelHigh, res.Level)
 	})
 }
