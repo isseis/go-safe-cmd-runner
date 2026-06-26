@@ -138,7 +138,7 @@ flowchart LR
 
 | 条件 | floor |
 |---|---|
-| 特権付与（setuid/setgid・world-write・trust-critical 所有権） | High |
+| 権限付与（setuid/setgid・world-write の付与。`chmod`/`install`/`setfacl`/`chattr`） | High |
 | 内側コマンド実行（`find -exec` 等） | High / 拒否 |
 
 **軸 B: ファイル入出力の対象（ゾーン依存）**
