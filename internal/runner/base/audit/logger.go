@@ -276,6 +276,35 @@ func (l *Logger) LogRiskProfile(ctx context.Context, entry risktypes.RiskAuditEn
 		attrs = append(attrs, slog.Any("chain", chain))
 	}
 
+	// Per-operand trust-zone records. Present only when axis 2 applied (a file
+	// operation): an empty/nil carrier means axis 2 did not apply, so the key is
+	// omitted (same len()>0 guard as reason_codes/chain; never write []/null).
+	// Raw/Resolved/UnresolvedErr may carry secrets, so each is routed through the
+	// same boundary redaction as command_args. This boundary redaction is the
+	// ONLY control for these strings: the RedactingHandler does not recurse into
+	// slice/map elements passed via slog.Any (the same reason chain.Path stays
+	// unmasked), so a miss here leaks verbatim. Zone/Role/MatchedCritical/Index/
+	// Trusted are enum, fixed-path, or non-string values and are not masked.
+	// Elements are map[string]any (not map[string]string like chain) to preserve
+	// the int Index and bool Trusted as typed JSON values.
+	if len(assessment.OperandZones) > 0 {
+		zones := make([]map[string]any, len(assessment.OperandZones))
+		for i := range assessment.OperandZones {
+			oz := &assessment.OperandZones[i]
+			zones[i] = map[string]any{
+				"index":            oz.Index,
+				"raw":              argRedactor.RedactText(oz.Raw),
+				"resolved":         argRedactor.RedactText(oz.Resolved),
+				"zone":             string(oz.Zone),
+				"role":             string(oz.Role),
+				"matched_critical": oz.MatchedCritical,
+				"trusted":          oz.Trusted,
+				"unresolved_err":   argRedactor.RedactText(oz.UnresolvedErr),
+			}
+		}
+		attrs = append(attrs, slog.Any("operand_zones", zones))
+	}
+
 	l.logger.LogAttrs(ctx, riskLogLevel(assessment.Level, entry.Decision), "Command risk profile", attrs...)
 }
 

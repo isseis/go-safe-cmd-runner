@@ -394,6 +394,147 @@ func TestLogRiskProfile_ArgMasking(t *testing.T) {
 	assert.Contains(t, joined, "admin", "non-sensitive arg preserved")
 }
 
+// TestLogRiskProfile_OperandZones verifies the per-operand trust-zone records are
+// emitted with each subfield carrying the carrier value, that an unresolved
+// operand keeps its cause while leaving resolved empty, that an empty carrier
+// omits the key, and that the key is still emitted on a deny path.
+func TestLogRiskProfile_OperandZones(t *testing.T) {
+	zones := []risktypes.OperandZone{
+		{
+			Index:           0,
+			Raw:             "/usr/bin/ls",
+			Resolved:        "/usr/bin/ls",
+			Zone:            risktypes.ZoneTrustCritical,
+			Role:            risktypes.OperandRoleWrite,
+			MatchedCritical: "/usr/bin",
+			Trusted:         false,
+		},
+		{
+			Index:    1,
+			Raw:      "src",
+			Resolved: "/work/src",
+			Zone:     risktypes.ZoneSafeZone,
+			Role:     risktypes.OperandRoleRead,
+			Trusted:  true,
+		},
+		{
+			Index:         2,
+			Raw:           "/work/ghost",
+			Resolved:      "", // unresolved: no resolved path
+			Zone:          risktypes.ZoneUnresolved,
+			Role:          risktypes.OperandRoleWrite,
+			UnresolvedErr: "lstat /work/ghost: no such file or directory",
+		},
+	}
+
+	t.Run("present with subfields, including unresolved", func(t *testing.T) {
+		entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
+			CommandName: "cp",
+			Mode:        risktypes.ModeNormal,
+			Decision:    risktypes.DecisionAllow,
+			Assessment: risktypes.RiskAssessment{
+				Level:        runnertypes.RiskLevelHigh,
+				OperandZones: zones,
+			},
+		})
+
+		got, ok := entry["operand_zones"].([]any)
+		require.True(t, ok, "operand_zones should be an array")
+		require.Len(t, got, 3)
+
+		write := got[0].(map[string]any)
+		assert.Equal(t, float64(0), write["index"])
+		assert.Equal(t, "/usr/bin/ls", write["raw"])
+		assert.Equal(t, "/usr/bin/ls", write["resolved"])
+		assert.Equal(t, "trust-critical", write["zone"])
+		assert.Equal(t, "write", write["role"])
+		assert.Equal(t, "/usr/bin", write["matched_critical"])
+		assert.Equal(t, false, write["trusted"])
+
+		read := got[1].(map[string]any)
+		assert.Equal(t, "read", read["role"])
+		assert.Equal(t, "safe-zone", read["zone"])
+		assert.Equal(t, true, read["trusted"])
+
+		// An applied-but-unresolvable operand: resolved is empty (distinguishing
+		// it from non-application) and the cause is preserved.
+		unresolved := got[2].(map[string]any)
+		assert.Equal(t, "unresolved", unresolved["zone"])
+		assert.Empty(t, unresolved["resolved"], "unresolved operand has no resolved path")
+		assert.Equal(t, "lstat /work/ghost: no such file or directory", unresolved["unresolved_err"])
+	})
+
+	t.Run("empty carrier omits the key", func(t *testing.T) {
+		entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
+			CommandName: "systemctl",
+			Mode:        risktypes.ModeNormal,
+			Decision:    risktypes.DecisionAllow,
+			Assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelHigh},
+		})
+		assert.NotContains(t, entry, "operand_zones", "empty carrier must not write the key")
+	})
+
+	t.Run("emitted on a deny path", func(t *testing.T) {
+		entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
+			CommandName: "cp",
+			Mode:        risktypes.ModeNormal,
+			Decision:    risktypes.DecisionDeny,
+			Assessment: risktypes.RiskAssessment{
+				Level:        runnertypes.RiskLevelHigh,
+				OperandZones: zones,
+			},
+		})
+		got, ok := entry["operand_zones"].([]any)
+		require.True(t, ok, "operand_zones should be present on a deny with a carrier")
+		assert.Len(t, got, 3)
+	})
+}
+
+// TestLogRiskProfile_OperandZoneMasking verifies secrets embedded in the operand
+// Raw/Resolved/UnresolvedErr strings are masked through the same redaction as
+// command_args, while non-sensitive path components are preserved (the mask is
+// surgical, not a whole-field drop). This boundary redaction is the only control
+// for these strings, so the negation is load-bearing (S-1).
+func TestLogRiskProfile_OperandZoneMasking(t *testing.T) {
+	entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
+		CommandName: "curl",
+		Mode:        risktypes.ModeNormal,
+		Decision:    risktypes.DecisionAllow,
+		Assessment: risktypes.RiskAssessment{
+			Level: runnertypes.RiskLevelMedium,
+			OperandZones: []risktypes.OperandZone{
+				{
+					Index:         0,
+					Raw:           "/data/dump?token=supersecretvalue",
+					Resolved:      "/data/dump?token=supersecretvalue",
+					Zone:          risktypes.ZoneUnresolved,
+					Role:          risktypes.OperandRoleWrite,
+					UnresolvedErr: "open failed for password=hunter2 backend",
+				},
+			},
+		},
+	})
+
+	got, ok := entry["operand_zones"].([]any)
+	require.True(t, ok, "operand_zones should be an array")
+	require.Len(t, got, 1)
+	oz := got[0].(map[string]any)
+
+	raw := oz["raw"].(string)
+	resolved := oz["resolved"].(string)
+	unresolvedErr := oz["unresolved_err"].(string)
+
+	// (i) The secret values must not appear, replaced by the redaction placeholder.
+	assert.NotContains(t, raw, "supersecretvalue", "raw secret must be masked")
+	assert.NotContains(t, resolved, "supersecretvalue", "resolved secret must be masked")
+	assert.NotContains(t, unresolvedErr, "hunter2", "unresolved_err secret must be masked")
+	assert.Contains(t, raw, "[REDACTED]")
+	assert.Contains(t, unresolvedErr, "[REDACTED]")
+
+	// (ii) Non-sensitive path components are preserved (surgical mask).
+	assert.Contains(t, raw, "/data/dump", "non-sensitive path component preserved")
+}
+
 // TestLogRiskProfile_Chain verifies an indirect-execution chain records
 // every executed/loaded artifact so the chain is correlatable from one entry.
 func TestLogRiskProfile_Chain(t *testing.T) {
