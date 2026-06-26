@@ -104,3 +104,89 @@ const (
 	// ReasonUnresolvedDestination marks a fail-closed unresolved operand.
 	ReasonUnresolvedDestination ReasonCode = "unresolved_destination"
 )
+
+// ReasonFamily groups reason codes by their origin so the audit stream can
+// mechanically distinguish, for incident correlation, whether a reason came from
+// name/profile classification (axis 1), destination trust-zoning (axis 2), a
+// runtime argument, and so on. It is audit metadata only and does not affect the
+// allow/deny decision.
+type ReasonFamily string
+
+const (
+	// FamilyNameClassification is name/profile-derived classification (axis 1).
+	FamilyNameClassification ReasonFamily = "name_classification"
+	// FamilyPrivilege is privilege escalation.
+	FamilyPrivilege ReasonFamily = "privilege"
+	// FamilyBinaryAnalysis is derived from binary-analysis signals.
+	FamilyBinaryAnalysis ReasonFamily = "binary_analysis"
+	// FamilyUncertain is a fail-closed uncertainty.
+	FamilyUncertain ReasonFamily = "uncertain"
+	// FamilyRuntimeArgument is derived from the runtime, arguments, or invocation form.
+	FamilyRuntimeArgument ReasonFamily = "runtime_argument"
+	// FamilyPathTrustZone is destination-path trust-zoning (axis 2).
+	FamilyPathTrustZone ReasonFamily = "path_trust_zone"
+)
+
+// reasonFamilies maps every ReasonCode to its family. This table is the canonical
+// enumeration of all reason codes: the exhaustiveness and family-assignment tests
+// derive their code set from its keys rather than a parallel hardcoded list, so a
+// newly added ReasonCode is caught only if it is also added here (Go cannot
+// reflect over a const block). Adding a new code therefore requires adding it to
+// this table.
+var reasonFamilies = map[ReasonCode]ReasonFamily{
+	// Name/profile classification (axis 1).
+	ReasonDestructiveFileOperation: FamilyNameClassification,
+	ReasonSystemModification:       FamilyNameClassification,
+	ReasonCoreutilsClassification:  FamilyNameClassification,
+	ReasonProfileDestruction:       FamilyNameClassification,
+	ReasonProfileDataExfil:         FamilyNameClassification,
+	ReasonProfileNetwork:           FamilyNameClassification,
+	ReasonProfileSystemMod:         FamilyNameClassification,
+
+	// Privilege.
+	ReasonPrivilegeEscalation: FamilyPrivilege,
+	ReasonProfilePrivilege:    FamilyPrivilege,
+
+	// Binary analysis.
+	ReasonBinaryAnalysisNetwork:      FamilyBinaryAnalysis,
+	ReasonBinaryAnalysisDynamicLoad:  FamilyBinaryAnalysis,
+	ReasonBinaryAnalysisExec:         FamilyBinaryAnalysis,
+	ReasonBinaryAnalysisSVC:          FamilyBinaryAnalysis,
+	ReasonBinaryAnalysisMprotectExec: FamilyBinaryAnalysis,
+
+	// Uncertain (fail-closed).
+	ReasonUncertainMissingRecord:      FamilyUncertain,
+	ReasonUncertainSchemaMismatch:     FamilyUncertain,
+	ReasonUncertainHashMismatch:       FamilyUncertain,
+	ReasonUncertainUnsupportedFormat:  FamilyUncertain,
+	ReasonUncertainUnverifiedIdentity: FamilyUncertain,
+	ReasonAnalysisDisabled:            FamilyUncertain,
+
+	// Runtime, argument, or invocation form.
+	ReasonArbitraryCodeExecution:    FamilyRuntimeArgument,
+	ReasonDangerousArgPattern:       FamilyRuntimeArgument,
+	ReasonSymlinkResolutionFailed:   FamilyRuntimeArgument,
+	ReasonIdentityUnbound:           FamilyRuntimeArgument,
+	ReasonIndirectExecutionRejected: FamilyRuntimeArgument,
+	ReasonIndirectExecutionWrapper:  FamilyRuntimeArgument,
+	ReasonForbiddenEnvVar:           FamilyRuntimeArgument,
+	ReasonNonAbsolutePath:           FamilyRuntimeArgument,
+	ReasonNetworkArgument:           FamilyRuntimeArgument,
+
+	// Destination-path trust-zoning (axis 2).
+	ReasonTrustBoundaryWrite:       FamilyPathTrustZone,
+	ReasonDestinationZone:          FamilyPathTrustZone,
+	ReasonPermissionGrant:          FamilyPathTrustZone,
+	ReasonDeviceIO:                 FamilyPathTrustZone,
+	ReasonRecursiveOutsideSafeZone: FamilyPathTrustZone,
+	ReasonSensitiveSourceCopy:      FamilyPathTrustZone,
+	ReasonUnresolvedDestination:    FamilyPathTrustZone,
+}
+
+// FamilyOf returns the family a reason code belongs to. A code absent from the
+// table returns ("", false); the family-assignment test treats that as a missing
+// assignment to be fixed rather than a runtime condition.
+func FamilyOf(code ReasonCode) (ReasonFamily, bool) {
+	f, ok := reasonFamilies[code]
+	return f, ok
+}

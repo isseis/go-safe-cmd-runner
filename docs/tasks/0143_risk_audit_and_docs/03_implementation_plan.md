@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-06-26 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-06-26 |
+| Reviewer | isseis |
 | Comments | - |
 
 > 本書は [01_requirements.md](01_requirements.md)（`approved`）と [02_architecture.md](02_architecture.md)（`approved`）を
@@ -126,15 +126,15 @@
 
 **対象ファイル**: [internal/runner/base/audit/logger.go](../../../internal/runner/base/audit/logger.go)
 
-- [ ] `LogRiskProfile` 内の `chain` ブロック直後に `operand_zones` 構築ブロックを追加する。存在条件は
+- [x] `LogRiskProfile` 内の `chain` ブロック直後に `operand_zones` 構築ブロックを追加する。存在条件は
       `len(entry.Assessment.OperandZones) > 0`（[02_architecture.md](02_architecture.md) §3.2）。空・nil ではキーを付けない。
-- [ ] 各 `OperandZone` を 1 要素 `map[string]any` として構築する（`Index`(int)/`Trusted`(bool) を型保持するため
+- [x] 各 `OperandZone` を 1 要素 `map[string]any` として構築する（`Index`(int)/`Trusted`(bool) を型保持するため
       `chain` の `map[string]string` ではなく `map[string]any` を用いる）。キーは `index`/`raw`/`resolved`/`zone`/`role`/
       `matched_critical`/`trusted`/`unresolved_err`（snake_case 英語）。
-- [ ] `raw`/`resolved`/`unresolved_err` の文字列値は `argRedactor.RedactText(...)` を**経由してから**格納する。
+- [x] `raw`/`resolved`/`unresolved_err` の文字列値は `argRedactor.RedactText(...)` を**経由してから**格納する。
       `zone`/`role`/`matched_critical`/`index`/`trusted` はマスクしない（[02_architecture.md](02_architecture.md) §3.2）。
-- [ ] 構築した配列を `attrs = append(attrs, slog.Any("operand_zones", zones))` で追加する。
-- [ ] シグネチャは変更しない。`make fmt` → `make test` → `make lint` を緑に保つ。
+- [x] 構築した配列を `attrs = append(attrs, slog.Any("operand_zones", zones))` で追加する。
+- [x] シグネチャは変更しない。`make fmt` → `make test` → `make lint` を緑に保つ。
 
 **成功基準**: Step 1.4 のテストが緑。`LogRiskProfile` の他フィールド出力は不変。
 
@@ -142,14 +142,14 @@
 
 **対象ファイル**: [internal/runner/base/risktypes/reason_codes.go](../../../internal/runner/base/risktypes/reason_codes.go)
 
-- [ ] `type ReasonFamily string` と 6 個の family 定数を追加する（[02_architecture.md](02_architecture.md) §3.3）:
+- [x] `type ReasonFamily string` と 6 個の family 定数を追加する（[02_architecture.md](02_architecture.md) §3.3）:
       `FamilyNameClassification`=`"name_classification"`、`FamilyPrivilege`=`"privilege"`、
       `FamilyBinaryAnalysis`=`"binary_analysis"`、`FamilyUncertain`=`"uncertain"`、
       `FamilyRuntimeArgument`=`"runtime_argument"`、`FamilyPathTrustZone`=`"path_trust_zone"`。
-- [ ] 全 36 `ReasonCode` を family へ対応づける `map[ReasonCode]ReasonFamily`（非公開・パッケージ変数）を定義する。割当は
+- [x] 全 36 `ReasonCode` を family へ対応づける `map[ReasonCode]ReasonFamily`（非公開・パッケージ変数）を定義する。割当は
       [02_architecture.md](02_architecture.md) §3.3 の family 割当表（全件）に従う。このテーブルを「コードの正準な列挙」とする。
-- [ ] `func FamilyOf(code ReasonCode) (ReasonFamily, bool)` を追加する。テーブルに無いコードは `("", false)` を返す。
-- [ ] 既存 `ReasonCode` 定数の文字列値・意味・並びは変更しない。
+- [x] `func FamilyOf(code ReasonCode) (ReasonFamily, bool)` を追加する。テーブルに無いコードは `("", false)` を返す。
+- [x] 既存 `ReasonCode` 定数の文字列値・意味・並びは変更しない。
 
 **成功基準**: Step 1.3 のテストが緑。
 
@@ -157,17 +157,17 @@
 
 **対象ファイル**: [internal/runner/base/risktypes/reason_codes_test.go](../../../internal/runner/base/risktypes/reason_codes_test.go)
 
-- [ ] `TestReasonCodes_AllDistinct` のハードコード `all := []ReasonCode{...}`（36 件）を削除し、family テーブルのキー集合
+- [x] `TestReasonCodes_AllDistinct` のハードコード `all := []ReasonCode{...}`（36 件）を削除し、family テーブルのキー集合
       （`slices.Collect(maps.Keys(...))` 等）から導出するよう書き換える。並行リストを廃する
       （[02_architecture.md](02_architecture.md) §3.3、メモリ「リスト漏れはソース集合の range で検証」方針）。文字列値の
       非空・一意（重複した string 値が無い）の表明は維持する。
-- [ ] `TestReasonFamily_AllCodesAssigned` を追加: family テーブルの各値が定義済み 6 family のいずれかであり、空でないこと
+- [x] `TestReasonFamily_AllCodesAssigned` を追加: family テーブルの各値が定義済み 6 family のいずれかであり、空でないこと
       を表明する（family 割当の網羅。exhaustive/distinct とは別の保証＝S-2）。
-- [ ] ground-truth アンカーを追加: 同テストで family テーブルの要素数が期待値（現状 36。確定分類の全 `ReasonCode` 数）に
+- [x] ground-truth アンカーを追加: 同テストで family テーブルの要素数が期待値（現状 36。確定分類の全 `ReasonCode` 数）に
       等しいことを表明する。Go は const ブロックをリフレクション列挙できず、新規 `ReasonCode` をテーブルへ未追記のままにすると
       table 由来のテストでは検出できないため（旧ハードコード `all` リストが担っていた独立証跡の代替）、件数アンカーで
       テーブルへの追記漏れを検出する。期待値はコメントで根拠（reason_codes.go の定数数）を併記する。
-- [ ] `TestReasonFamily_OfReturnsAssignedFamily` を追加: テーブルの各コードに対し `FamilyOf(code)` が `ok=true` と
+- [x] `TestReasonFamily_OfReturnsAssignedFamily` を追加: テーブルの各コードに対し `FamilyOf(code)` が `ok=true` と
       テーブル値どおりの family を返すこと、未知コード（例 `ReasonCode("__nonexistent__")`）に対し `ok=false` を返すことを
       表明する。
 
@@ -177,15 +177,15 @@
 
 **対象ファイル**: [internal/runner/base/audit/logger_test.go](../../../internal/runner/base/audit/logger_test.go)
 
-- [ ] `TestLogRiskProfile_OperandZones` を追加: 複数オペランド（write/read 混在、symlink 解決済み・unresolved を含む）の
+- [x] `TestLogRiskProfile_OperandZones` を追加: 複数オペランド（write/read 混在、symlink 解決済み・unresolved を含む）の
       `OperandZones` を持つ entry を既存ヘルパ `logRiskProfileEntry` で出力し、`operand_zones` 配列の各要素の
       `index`/`raw`/`resolved`/`zone`/`role`/`trusted` が carrier の値どおりであることを表明する。
-- [ ] 同テストで `ZoneUnresolved` の要素について、`resolved` が**空**であり `unresolved_err` が（redaction 後の）原因
+- [x] 同テストで `ZoneUnresolved` の要素について、`resolved` が**空**であり `unresolved_err` が（redaction 後の）原因
       メッセージを保持することを表明する（「適用済みだが解決不能」を「非適用」から区別する load-bearing な信号
       ＝[02_architecture.md](02_architecture.md) §2.2・§3.1）。
-- [ ] 同テストに「carrier 空（`nil`/`len()==0`）では `operand_zones` キーが**無い**」ケースと、「deny（`DecisionDeny`）
+- [x] 同テストに「carrier 空（`nil`/`len()==0`）では `operand_zones` キーが**無い**」ケースと、「deny（`DecisionDeny`）
       経路でも carrier があれば出力される」ケースを追加する。
-- [ ] `TestLogRiskProfile_OperandZoneMasking` を追加（漏えい否定／S-1）: `Raw`/`Resolved`/`UnresolvedErr` に
+- [x] `TestLogRiskProfile_OperandZoneMasking` を追加（漏えい否定／S-1）: `Raw`/`Resolved`/`UnresolvedErr` に
       `key=value` 形式の秘匿トークン（例 `/data/dump?token=supersecretvalue`、`UnresolvedErr` に `password=...`）を持つ
       オペランドを与え、出力で (i) 当該秘匿値が**現れず** `[REDACTED]` に置換されていること、(ii) 秘匿でないパス成分
       （例 `/data/dump`）は**保持される**こと（マスクが外科的で、フィールド全体を落とさないこと）を表明する。既存
@@ -207,26 +207,30 @@
 > なお `newVerifiedEvaluator`/`newZoningEvaluator` は descriptor-free な `fakeIdentityOpener` を用いるため、生成される
 > プランは OS リソースを保持せず、`VerifiedCommandPlan.Close`/`t.Cleanup` は不要である。
 
-- [ ] `TestLogRiskProfile_DenyReasonCodes_EndToEnd` を追加し、3 代表 deny を実評価器で生成して `audit.LogRiskProfile`
-      （`audit.NewAuditLoggerWithCustom` + Debug レベル JSON バッファ）へ流し、`reason_codes`／`blocking_reason` を表明する:
-  - [ ] 判断軸1 由来: `/sbin/insmod` を `newVerifiedEvaluator()` で評価し、`reason_codes` に `system_modification`
+- [x] `TestLogRiskProfile_DenyReasonCodes_EndToEnd` を追加し、3 代表 deny を実評価器で生成して `audit.LogRiskProfile`
+      （`audit.NewAuditLoggerWithCustom` + Debug レベル JSON バッファ）へ流し、各ケースで `reason_codes` に対応コードが
+      現れることを表明する。3 代表はいずれも High の ceiling deny（非 Blocking）であり `BlockingReason` を持たないため、
+      `blocking_reason` キーが付かないことも併せて確認する。Blocking/Critical deny の `blocking_reason` 出力は既存
+      `audit_wiring_test.go`（`fixedPlanEvaluator` 駆動）が担保済みのため重複させない:
+  - [x] 判断軸1 由来: `/sbin/insmod` を `newVerifiedEvaluator()` で評価し、`reason_codes` に `system_modification`
         （`ReasonSystemModification`）が含まれることを表明。
-  - [ ] 判断軸2 由来: trust-critical への書込（例 `cp` の宛先が `SystemCriticalPaths` 配下）を `newZoningEvaluator(...)` で
+  - [x] 判断軸2 由来: trust-critical への書込（例 `cp` の宛先が `SystemCriticalPaths` 配下）を `newZoningEvaluator(...)` で
         評価し、`reason_codes` に `trust_boundary_write`（`ReasonTrustBoundaryWrite`）が含まれることを表明（S-3: axis 2 ブロックの
         定数名を正確に引く）。
-  - [ ] 危険引数パターン由来: `dd if=...of=/dev/sdb` を評価し、`reason_codes` に `dangerous_arg_pattern`
+  - [x] 危険引数パターン由来: `dd if=...of=/dev/sdb` を評価し、`reason_codes` に `dangerous_arg_pattern`
         （`ReasonDangerousArgPattern`）が含まれることを表明。
-  - [ ] entry の `Decision` は `plan.Assessment.Blocking` から `DecisionDeny` を設定する。
-- [ ] 各ケースで使用する `ReasonCode` 定数は [reason_codes.go](../../../internal/runner/base/risktypes/reason_codes.go) の実在
+  - [x] entry の `Decision` は `DecisionDeny` を設定し、`MaxAllowedRisk=Low` で「High が Low 上限で deny される」ceiling
+        deny をモデル化する（3 代表は非 Blocking のため deny はマネージャの上限判定で生じる）。
+- [x] 各ケースで使用する `ReasonCode` 定数は [reason_codes.go](../../../internal/runner/base/risktypes/reason_codes.go) の実在
       シンボルを参照する（文字列リテラル直書きを避ける）。
 
 **成功基準**: 追加テストが緑。`go test -tags test ./internal/runner/base/risk/` 成功。
 
 #### Step 1.6: Phase 1 完了ゲート
 
-- [ ] `make fmt` 実行後の差分なし。
-- [ ] `make test` 全件緑。
-- [ ] `make lint` エラーなし。
+- [x] `make fmt` 実行後の差分なし。
+- [x] `make test` 全件緑。
+- [x] `make lint` エラーなし。
 
 ### Phase 2 — sample/test config 追従（F-005/AC-07）
 
@@ -421,12 +425,12 @@ family テーブルを唯一の列挙源とした並行リスト廃止／AC-02 e
 
 ## 6. 実装チェックリスト
 
-- [ ] Step 1.1: `operand_zones` 出力・redaction 配線（logger.go）
-- [ ] Step 1.2: `ReasonFamily`・family テーブル・`FamilyOf`（reason_codes.go）
-- [ ] Step 1.3: 網羅・family テスト更新（reason_codes_test.go）
-- [ ] Step 1.4: `operand_zones` 出力・漏えい否定テスト（logger_test.go）
-- [ ] Step 1.5: deny 理由コード e2e テスト（新規 audit_reason_codes_test.go）
-- [ ] Step 1.6: Phase 1 完了ゲート（fmt/test/lint）
+- [x] Step 1.1: `operand_zones` 出力・redaction 配線（logger.go）
+- [x] Step 1.2: `ReasonFamily`・family テーブル・`FamilyOf`（reason_codes.go）
+- [x] Step 1.3: 網羅・family テスト更新（reason_codes_test.go）
+- [x] Step 1.4: `operand_zones` 出力・漏えい否定テスト（logger_test.go）
+- [x] Step 1.5: deny 理由コード e2e テスト（新規 audit_reason_codes_test.go）
+- [x] Step 1.6: Phase 1 完了ゲート（fmt/test/lint）
 - [ ] Phase 2: sample/test config 追従と検証
 - [ ] Step 3.1: 移行ノート（引き上げ・引き下げ独立ブロック・NF-004・0139 上書き）
 - [ ] Step 3.2: ユーザー/開発者文書の整合（除去確認・0144/0145 反映・operand_zones 追記）
