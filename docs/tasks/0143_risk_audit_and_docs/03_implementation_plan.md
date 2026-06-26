@@ -492,5 +492,3 @@ family テーブルを唯一の列挙源とした並行リスト廃止／AC-02 e
 
 - 本実装計画書のレビューと `approved` への更新（人手）。
 - `approved` 後、Phase 1 から実装に着手する。
-</content>
-</invoke>
