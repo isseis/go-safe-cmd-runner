@@ -331,7 +331,7 @@ record -d /path/to/hashes /usr/bin/mycommand
 
 | コマンド群 | 代表例 | 補足 |
 |------|------|------|
-| ディスク・パーティション破壊系 | `fdisk`/`parted`/`mkfs`/`fsck`/`wipefs`/`blkdiscard`/`sgdisk`/`sfdisk`/`mkswap`、LVM 破壊系（`lvremove`/`vgremove`/`pvremove` 等） | 大規模・不可逆な破壊。`fdisk`/`mkfs`/`parted`/`fsck` は従来は中リスク扱いだったが High へ引き上げ |
+| ディスク・パーティション破壊系 | `fdisk`/`parted`/`mkfs`/`fsck`/`wipefs`/`blkdiscard`/`sgdisk`/`gdisk`/`cgdisk`/`sfdisk`/`cfdisk`/`mkswap`、LVM 破壊系（`lvremove`/`vgremove`/`pvremove` 等） | 大規模・不可逆な破壊。`fdisk`/`mkfs`/`parted`/`fsck` は従来は中リスク扱いだったが High へ引き上げ |
 | カーネルモジュール・パラメータ | `insmod`/`modprobe`/`rmmod`/`kexec`/`sysctl` | カーネル状態の変更・高権限での任意コードロード |
 | アカウント・認証 DB | `useradd`/`usermod`/`userdel`/`passwd`/`chpasswd`/`visudo` 等 | 永続的なアカウント・認証変更 |
 | ブート設定・カーネルイメージ | `grub-install`/`grub-mkconfig`/`efibootmgr`/`kernel-install`/`update-initramfs` 等 | 起動構成の変更 |

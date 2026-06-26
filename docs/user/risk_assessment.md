@@ -71,29 +71,32 @@ The runner matches commands by their resolved absolute path and basename (symbol
 | Detected condition | Calculated risk |
 |--------------------|----------------|
 | Privilege-escalation commands: `sudo`/`su`/`doas`, etc. | `critical` |
-| Destructive file operations: `rm -rf`, `dd`, `chmod -R 777`, etc. | `high` |
-| Filesystem/partition tools: `mkfs`/`mkfs.*`, `fdisk`, etc. | `high` |
+| Disk, partition/filesystem destruction: `mkfs`/`mkfs.*`/`fdisk`/`parted`/`fsck`/`wipefs`/`blkdiscard`, LVM destruction (`lvremove`, etc.) | `high` |
+| Kernel, account, boot, firewall, capability grant, trust-boundary replacement, and job/deferred-execution: `insmod`/`modprobe`/`useradd`/`passwd`/`grub-install`/`iptables`/`setcap`/`update-alternatives`/`ldconfig`/`crontab`/`at`/`systemd-run`, etc. | `high` |
 | Shells, interpreters, and build/task runners: `bash`/`sh`/`python`/`node`/`ruby`/`perl`/`make`/`cmake`/`gradle`, etc. | `high` |
 | Package managers: `apt`/`apt-get`/`yum`/`dnf`/`zypper`/`pacman`/`brew`/`pip`/`npm`/`yarn`/`dpkg`/`rpm` (regardless of subcommand/arguments) | `high` |
 | `systemctl` (all subcommands, including read-only `status`/`show`/`is-active`, etc.) | `high` |
 | `service` (all actions, because it runs an unverified init script) | `high` |
-| Other system-modifying commands (`mount`/`umount`/`parted`/`fsck`/`crontab`/`at`/`batch`/`chkconfig`/`update-rc.d`, etc.) | `medium` |
+| Limited-scope system modification commands: network configuration `ip`/`ifconfig`/`route`, LVM creation/configuration (`lvcreate`, etc.) | `medium` |
 | Network commands: `curl`/`wget`/`ssh`/`scp`, etc. | `medium` |
 | None of the above | `low` |
 
-> Shells, interpreters, and build/task runners are `high` regardless of arguments, because they can execute arbitrary code (a script, an inline `-c`/`-e` snippet, or a build target).
-> Package managers and `systemctl`/`service` are classified `high` solely by the resolved binary name, without parsing subcommands or arguments, because they can run unverified maintainer scripts or unit/init scripts (dpkg `postinst`, rpm `%post`, pip `setup.py`, npm `postinstall`, etc.) under privilege. Queries (`apt list`/`dpkg -l`/`systemctl status`, etc.) are `high` as well.
+Supplementary notes:
+
+- **Shells, interpreters, and build/task runners**: `high` regardless of arguments, because they can execute arbitrary code (a script, an inline `-c`/`-e` snippet, or a build target).
+- **Package managers and `systemctl`/`service`**: classified `high` solely by the resolved binary name, without parsing subcommands or arguments, because they can run unverified maintainer scripts or unit/init scripts (dpkg `postinst`, rpm `%post`, pip `setup.py`, npm `postinstall`, etc.) under privilege. Queries (`apt list`/`dpkg -l`/`systemctl status`, etc.) are `high` as well.
+- **File-operation commands (`rm`/`dd`/`cp`/`mv`/`ln`/`chmod`/`chown`/`mount`/`umount`, etc.)**: the risk level is not fixed by name alone — it is determined by the path trust category of the target path (§3.5).
 
 ### 3.2 coreutils Single-Binary Classification
 
-On distributions that ship coreutils as a single multi-call binary in a dedicated coreutils directory (for example the Rust coreutils binary at `/usr/lib/cargo/bin/coreutils` on Ubuntu 26.04+), every applet shares one executable and therefore one hash. For a command resolved to that directory, the risk is classified from the **subcommand** (applet) — including the `coreutils <applet> ...` multicall form — rather than from the shared binary's analysis signals.
+On distributions that ship coreutils as a single multi-call binary in a dedicated coreutils directory (for example the Rust coreutils binary at `/usr/lib/cargo/bin/coreutils` on Ubuntu 26.04+), each subcommand shares one executable and therefore one hash (in a multi-call binary, these subcommands are also called applets). For a command resolved to that directory, the risk is classified from the **subcommand** — including the `coreutils <subcommand> ...` multicall form — rather than from the shared binary's analysis signals.
 
 | coreutils subcommand class | Calculated risk |
 |----------------------------|----------------|
-| Known-safe read-only / informational subcommands (`echo`, `cat`, `ls`, `mkdir`, ...) | `low` |
+| Known-safe non-destructive subcommands (read-only, informational, and create-only subcommands that do not implicitly overwrite or delete, such as `mkdir`. Examples: `echo`, `cat`, `ls`, `mkdir`, ...) | `low` |
 | Destructive subcommands (`rm`, `dd`, `shred`, `truncate`, ...), or any unknown/unidentifiable subcommand (fail-safe) | `high` |
 
-Only subcommands on the curated safe list are `low`; everything else — including an unparseable multicall invocation that might hide a destructive applet — is `high`. There is no `medium` coreutils class. A binary carrying a setuid/setgid bit is also `high`. For such a verified coreutils binary, the binary-analysis dimension (§3.3) is suppressed for the safe subcommands so that, for example, `echo` stays `low` even though the shared multi-call binary links network or `exec` symbols. Hash verification is still required — suppression applies only to the binary-analysis signal, not to identity verification.
+Only subcommands on the curated safe list are `low`; everything else — including an unparseable multicall invocation that might hide a destructive subcommand — is `high`. There is no `medium` coreutils class. A binary carrying a setuid/setgid bit is also `high`. For such a verified coreutils binary, the binary-analysis dimension (§3.3) is suppressed for the safe subcommands so that, for example, `echo` stays `low` even though the shared multi-call binary links network or `exec` symbols. Hash verification is still required — suppression applies only to the binary-analysis signal, not to identity verification.
 
 (This mechanism is specific to the unified coreutils directory. Other multi-call binaries such as BusyBox are not covered by it; they are evaluated by the general rules in §3.1 and §3.3.)
 
@@ -130,7 +133,36 @@ The runner is fail-closed: a command whose binary identity cannot be confirmed i
 | Symbolic-link resolution fails (cannot resolve the real target) | **Deny** (blocking) |
 | Unexpected record load error | **Error** (run aborts) |
 
-> A blocking deny is independent of `risk_level`: even `risk_level = "high"` does not permit a command whose identity could not be verified. This is intentional — the runner must not execute a binary it cannot confirm.
+> A blocking deny is independent of `risk_level`: even `risk_level = "high"` does not permit a command whose identity could not be verified. This is intentional — the runner does not execute a binary whose identity cannot be confirmed.
+
+### 3.5 File-Operation Command Path Trust Category (assessed on every run)
+
+For **file-operation commands** such as `cp`/`mv`/`rm`/`rmdir`/`unlink`/`shred`/`ln`/`install`/`tee`/`dd`/`chmod`/`chown`/`rsync`/`mount`, the risk level is not fixed by the command name alone — it is determined by the **path trust category** (trust zone) of the target path that the arguments point to (write destination, link target, deletion target, device). Paths are evaluated as resolved, normalized absolute paths (not prefix matching).
+
+| Path trust category | Example | Calculated risk |
+|---------------------|---------|----------------|
+| trust-critical (system-critical paths: `/usr`, `/etc`, `/boot`, `/dev`, `/var`, etc. and their subdirectories) | `cp app /usr/local/bin/app`, `ln -sf x /etc/cron.d/job` | `high` |
+| ordinary (normal paths that are neither trust-critical nor safe-zone, e.g. `/srv`, `/opt`) | `rm /srv/app/tmp` | `medium` |
+| safe-zone (run-designated working/output directories and dedicated temp; meeting the trust requirements) | `cp report.csv $WORKDIR/out/` | `low` |
+| Unresolvable (variable expansion not yet determined, symlink resolution failure, etc.; fail-closed) | — | The command-level calculated risk is unconditionally raised to `high` (per-operand internal detail: write=`high`/read=`medium`; the final risk is always `high`) |
+
+In addition to the zone, there are floors that apply regardless of the target zone and do not decrease to `low` even in a safe-zone.
+
+| Condition | Calculated risk |
+|-----------|----------------|
+| Privilege grant (setuid/setgid or world-write grant via `chmod`/`install`/`setfacl`/`chattr`, etc.) | `high` |
+| Block-device I/O (`dd of=/dev/sdb`, etc.) | `high` |
+| Tree-recursive operation reaching outside the safe-zone (`rm -r /etc`, `cp -a … /usr`, etc.) | `high` |
+| Copying a sensitive file (`cp /etc/shadow …`, etc., where the source is a sensitive file) | `medium` (cannot be `low`) |
+
+Downgrading to safe-zone (`low`) requires all of the following safety requirements to be met:
+
+- The target is within an allowlisted trusted directory.
+- The path components are not writable by the running user (cannot be substituted between evaluation and execution — TOCTOU-safe).
+
+If these requirements cannot be met, or if an unrecognized flag makes the form uninterpretable, the risk is raised to `high` on the safe side (fail-closed). If the configured `risk_level` is below `"high"`, execution is rejected.
+
+> Changes in classification relative to earlier versions (escalations and de-escalations) are summarized in the migration notes (§8).
 
 ## 4. How to Verify the Calculated Risk
 
@@ -241,7 +273,9 @@ Understanding what the risk assessment does and does not protect against is esse
 
 ## 8. Migration Notes
 
-If you are upgrading from an earlier version, several commands are now evaluated at a higher risk than before. Review your existing `risk_level` settings against the following changes and use `--dry-run` to confirm before deploying:
+If you are upgrading from an earlier version, several commands are now evaluated at a higher risk than before. Review your existing `risk_level` settings against the following changes and use `--dry-run` to confirm before deploying.
+
+§8.5–§8.7 describe changes that are **escalations (more restrictive)** in the finalized classification; §8.8 describes changes that are **de-escalations (more permissive)**. Escalations are immediately visible as rejections at runtime, but de-escalations are permitted silently, so pay particular attention to the security-relaxation block in §8.8.
 
 ### 8.1 Commands Whose Risk Classification Changed
 
@@ -290,3 +324,53 @@ As a result, package-manager install/update configurations previously permitted 
 - Multi-call forms (`busybox <pm>`, etc., where the package-manager name appears as an argument of `busybox`).
 
 **Retraction of the previous approach (background)**: this change **replaces (retracts)** the package-manager flag-style and verb-style detection introduced by the unreleased 0137 (which classified only install/remove-style subcommands as modifying operations and excluded queries such as `apt list`/`pacman -Q`), as well as the `systemctl` subcommand-granularity classification (read-only as `medium`, change verbs as `high`). Those granularities were judged excessive for this tool's threat model, were not relied upon by real configurations, and were not worth the maintenance cost.
+
+### 8.5 Axis 1: Escalation by Command Name (Breaking Change)
+
+The finalized classification extends the command-name classification (axis 1) where the risk level is determined by the command name alone. The following command groups are **High** by name alone regardless of arguments. The baseline for comparison is the most recent release's behavior. Configurations that were previously permitted at `medium` or the default `low` may be blocked because the calculated risk (`high`) exceeds the configured `risk_level`. Set `risk_level = "high"` explicitly on those commands.
+
+| Command group | Representative examples | Notes |
+|---------------|------------------------|-------|
+| Disk and partition destruction | `fdisk`/`parted`/`mkfs`/`fsck`/`wipefs`/`blkdiscard`/`sgdisk`/`gdisk`/`cgdisk`/`sfdisk`/`cfdisk`/`mkswap`, LVM destruction (`lvremove`/`vgremove`/`pvremove`, etc.) | Large-scale, irreversible destruction. `fdisk`/`mkfs`/`parted`/`fsck` were previously treated as medium risk; now raised to High |
+| Kernel modules and parameters | `insmod`/`modprobe`/`rmmod`/`kexec`/`sysctl` | Modifies kernel state; loads arbitrary code under high privilege |
+| Account and authentication DB | `useradd`/`usermod`/`userdel`/`passwd`/`chpasswd`/`visudo`, etc. | Persistent account and authentication changes |
+| Boot configuration and kernel image | `grub-install`/`grub-mkconfig`/`efibootmgr`/`kernel-install`/`update-initramfs`, etc. | Modifies boot configuration |
+| Service enablement, power, and runlevel | `chkconfig`/`update-rc.d`/`shutdown`/`reboot`/`halt`/`poweroff`, etc. | `chkconfig`/`update-rc.d` were previously `medium` |
+| Firewall | `iptables`/`ip6tables`/`nft`/`ufw`/`firewall-cmd`, etc. | Modifies network policy |
+| Capability grant | `setcap` | Grants privilege and capabilities |
+| Trust-boundary replacement | `update-alternatives`/`alternatives`/`dpkg-divert`/`ldconfig` | Replaces trusted binaries/configuration (can neutralize allowlist + hash pinning) |
+| Job, deferred, and transient execution | `crontab`/`at`/`batch`/`systemd-run` | Arbitrary code execution via deferred execution. Previously `medium` |
+
+### 8.6 Axis 2: Escalation by Destination Path Trust Category (Breaking Change)
+
+The finalized classification adds path trust category classification (axis 2) for file-operation commands (`cp`/`mv`/`rm`/`ln`/`install`/`tee`/`dd`/`chmod`/`chown`/`rsync`/`mount`, etc.), where the risk level is determined by the **path trust category** of the target path (see §3.5 for details). The following forms were previously not detected and passed through as `low`, but are raised in the finalized classification.
+
+- Write, link, or permission-change target is **trust-critical** (`/usr`, `/etc`, `/boot`, `/dev`, `/var`, etc. and their subdirectories) → **High**. Examples: `cp build/app /usr/local/bin/app`, `ln -sf x /etc/cron.d/job`, `chown root:root /usr/bin/tool`.
+- Block-device I/O (`dd of=/dev/sdb`, etc.) → **High**.
+- Recursive deletion or recursive copy reaching outside the safe-zone (`rm -r /var/log/old`, etc.) → **High**.
+- Privilege grant (setuid/setgid or world-write grant via `chmod 4755`, `install -m 4755`, etc.) → **High**. (Ownership changes to trust-critical targets via `chown`, etc. are High as "target is trust-critical" above.)
+
+### 8.7 Fail-Closed for Invalid Flags (Breaking Change)
+
+Flag parsing has been aligned with the actual flag set of each CLI, removing acceptance of flags that do not exist in the real CLI (over-recognition). Commands given a flag that does not exist in the real CLI are treated as forms that "cannot be fully interpreted" (recognized=false), and the calculated risk is **raised to High** (fail-closed). Whether execution is ultimately permitted depends on a comparison with the configured `risk_level` (configurations with `risk_level` below `"high"` will be rejected). This is a precision correction rather than a classification escalation, but configurations that previously passed these forms through as recognized may now be rejected as High.
+
+- Examples: `sponge -r` / `mkdir -a` / `touch -p` / `unlink -r` / `rmdir -r` / `mv -s` (none of these flags exist in the real CLI).
+- The safety guarantee is provided by the fail-closed `recognized` contract: uninterpretable forms are never passed through as `low` — they are always raised to high (the final decision on whether to permit execution is then compared against `risk_level`).
+
+### 8.8 ⚠️ Security Relaxation (De-escalation): Destructive Commands in safe-zone/ordinary
+
+> ⚠️ **This is a security relaxation change.** Some commands that were previously always blocked may be permitted under the finalized classification. De-escalations are permitted silently at runtime (fail-silent), so they are documented separately from escalations. The baseline for comparison is the most recent release's behavior.
+
+By making axis 2 the sole classification authority for file-operation command risk, the destructive commands `rm`/`rmdir`/`shred`/`unlink`/`dd` — previously unconditionally `high` — now have their risk determined by the path trust category of the target path.
+
+| Relaxation condition (target path trust category) | New calculated risk | Example |
+|--------------------------------------------------|---------------------|---------|
+| safe-zone (run-designated working/output directory; meets trust requirements and recursion stays within) | `low` (previously `high`) | `rm -rf $WORKDIR/build` |
+| ordinary (`/srv`, `/opt`, etc.; neither trust-critical nor safe-zone) | `medium` (previously `high`) | `rm /srv/app/tmp` |
+| trust-critical, or recursion outside safe-zone, or device I/O | `high` (unchanged) | `rm -r /etc`, `dd of=/dev/sdb` |
+
+> **Operational note (audit trail loss)**: Commands that are allowed and become low due to de-escalation emit the `command_risk_profile` audit entry at Debug level (`riskLogLevel`). With typical production log-level settings (Info or above), this entry — including `operand_zones` (which path, which zone, and why it was permitted) — is lost entirely, making it impossible to retroactively justify the allow of a relaxed command. To retain audit trails for relaxed commands, set the log level to Debug or below.
+
+### 8.9 Relationship with 0139 (Overwrite)
+
+The finalized classification (axis 1 and axis 2) takes precedence over the system-modification risk description introduced by 0139 in any sections that conflict (the 0139 document body is not modified). The authoritative current source for risk classification is this migration note and the descriptions in §3.

@@ -192,8 +192,9 @@ When the resolved profile indicates privilege escalation, it is **Critical** (al
 
 From here on, it is **order-independent**: it evaluates all applicable dimensions and takes the maximum (`addDimension` takes the `max` while accumulating reason codes). The initial value is `Low`. If it hits a dimension that requires fail-closed handling along the way (a coreutils file-info retrieval failure, or an uncertain binary analysis), it returns a **Blocking deny**.
 
-- **Rank 4: coreutils single-binary classification** (`security.CoreutilsCommandRisk`). When it applies, it is treated as authoritative and suppresses the binary-analysis dimension (Rank 8). However, the other dimensions still contribute.
-- **Destructive file operation** (`security.IsDestructiveFileOperation`) → High.
+- **Axis 2: Destination path trust category** (`security.ClassifyDestinationZone`). Determines the risk level by the path trust category of the destination path of a file-operation command (see below). For a file-operation command that was **fully recognized** (`Applies && Recognized`), this result is treated as authoritative and **suppresses** the fixed-High destruction dimensions (destructive file operation, applicable dangerous argument patterns, profile destruction factor, and coreutils destructive/unknown High), replacing them. When partially recognized or non-applicable, it does not suppress, so that a form that cannot be fully recognized is not under-evaluated (avoiding fail-open).
+- **Rank 4: coreutils single-binary classification** (`security.CoreutilsCommandRisk`). When it applies, it is treated as authoritative and suppresses the binary-analysis dimension (Rank 8). However, the other dimensions still contribute (when axis 2 fully recognizes the command, the destructive/unknown High is dropped and only the setuid signal is retained).
+- **Destructive file operation** (`security.IsDestructiveFileOperation`) → High (suppressed when axis 2 fully recognizes the command).
 - **System modification** (`security.SystemModificationRisk`) → Medium/High (see below).
 - **Rank 5: profile factors** (`applyProfileFactors` → `security.ProfileFactorRisk`). Because privilege is handled in Rank 3 and system modification is handled above, only the three factors of destruction, data exfiltration, and applicable network are folded here. The human-readable reasons of the profile (`GetRiskReasons`) and the `NetworkType` are also recorded.
 - **Rank 6: dangerous argument patterns** (`security.CheckDangerousArgPatterns`): `rm -rf`, `dd if=`, `chmod 777`, `mkfs.*`, etc.
@@ -292,14 +293,28 @@ Consistency is verified by `Validate()` (for example, if `NetworkTypeAlways`, th
 
 System modification is decided by the dedicated function `SystemModificationRisk(names)` (this, not the profile's `SystemModRisk`, is the single source of truth on the evaluation path). The decision is made **solely by whether the resolved binary name (its basename and symlink-resolution result) is contained in the High/Medium name sets below**, without consulting the arguments (subcommands/flags).
 
-- Package managers (`apt`, `apt-get`, `yum`, `dnf`, `zypper`, `pacman`, `brew`, `pip`, `npm`, `yarn`, `dpkg`, `rpm`) → **High**. Because they can run unverified maintainer scripts (dpkg `postinst`, rpm `%post`, pip `setup.py`, npm `postinstall`, etc.) under privilege, they are uniformly High regardless of subcommand (a query such as `apt list` is also High).
-- `systemctl`: all subcommands are uniformly **High** (including read-only `status`/`show`/`list-*`, because it handles unverified units).
-- `service`: because it runs an unverified init script, always **High**.
-- Other system administration commands (`mount`, `umount`, `fdisk`, `parted`, `mkfs`, `fsck`, `crontab`, `at`, `batch`, `chkconfig`, `update-rc.d`) → **Medium** (they change system state through defined operations rather than executing unverified code under privilege).
+High (`highSystemModificationNames`) falls into two broad categories. Both are High by name alone regardless of arguments (a read-mostly invocation such as `sysctl -a` is treated the same as a write, as a fail-safe).
 
-When none of these applies, it returns `RiskLevelUnknown` and the system-modification dimension does not contribute.
+- Entry points that can run unverified code under privilege:
+  - Package managers (`apt`, `apt-get`, `yum`, `dnf`, `zypper`, `pacman`, `brew`, `pip`, `npm`, `yarn`, `dpkg`, `rpm`). They can run unverified maintainer scripts (dpkg `postinst`, rpm `%post`, pip `setup.py`, npm `postinstall`, etc.) under privilege, so they are uniformly High regardless of subcommand (a query such as `apt list` is also High).
+  - `systemctl` (all subcommands, including read-only `status`/`show`/`list-*`) and `service` (runs an unverified init script).
+- Large-scale, irreversible destruction or persistent system-state modification:
+  - Disk/partition destruction (`wipefs`, `blkdiscard`, `sgdisk`, `gdisk`, `cgdisk`, `sfdisk`, `cfdisk`, `mkswap`, `parted`, `fsck`, `fdisk`, `mkfs`), direct filesystem utilities (`e2fsck`, `mke2fs`, `tune2fs`, `resize2fs`, `xfs_*`, `btrfs`), LVM destruction (`lvremove`, `vgremove`, `pvremove`, `lvreduce`, etc.).
+  - Kernel modules and parameters (`insmod`, `modprobe`, `rmmod`, `kexec`, `sysctl`).
+  - Account and authentication DB (`useradd`, `usermod`, `userdel`, `passwd`, `chpasswd`, `visudo`, etc.).
+  - Bootloader and kernel image (`grub-install`, `grub-mkconfig`, `efibootmgr`, `kernel-install`, `update-initramfs`, `dracut`, etc.).
+  - Service enablement, power, and runlevel (`chkconfig`, `update-rc.d`, `shutdown`, `reboot`, `halt`, `poweroff`, `telinit`).
+  - Firewall (`iptables`, `ip6tables`, `nft`, `ufw`, `firewall-cmd`, `ebtables`, `arptables`).
+  - Capability grant (`setcap`) and trust-boundary replacement (`update-alternatives`, `alternatives`, `dpkg-divert`, `ldconfig`).
+  - Job, deferred, and transient execution schedulers (`crontab`, `at`, `batch`, `systemd-run`).
 
-> **Coarsening (retraction of 0137 / systemctl subcommand granularity)**: this classification formerly had systemctl subcommand parsing (read-only=Medium / change=High) and the package-manager flag-style and verb-style detection introduced by 0137 (which classified only install/remove-style verbs as Medium and excluded queries). These were retracted because they were excessive for the threat model and not relied upon by real configurations, and the logic was simplified to name-match fixed levels. The old subcommand/flag-parsing implementation and its symbols have been removed.
+Medium (`mediumSystemModificationNames`) is limited to limited-scope system-state modifications that do not involve running unverified code under privilege or large-scale, irreversible destruction.
+
+- `mount`, `umount`, LVM creation/configuration (`lvcreate`, `vgcreate`, `lvextend`, `vgchange`, etc.), and coarse network configuration (`ip`, `ifconfig`, `route`, `iwconfig`, `iw`).
+
+When none of these applies, it returns `RiskLevelUnknown` and the system-modification dimension does not contribute. `fdisk`/`mkfs` are High via this name set and also via `CheckDangerousArgPatterns` (and the `mkfs.*`/`fsck.*` prefix rules); the two are combined with max.
+
+> **Coarsening (retraction of 0137 / systemctl subcommand granularity)**: this classification formerly had systemctl subcommand parsing (read-only=Medium / change=High) and the package-manager flag-style and verb-style detection introduced by 0137 (which classified only install/remove-style verbs as Medium and excluded queries). These were retracted because they were excessive for the threat model and not relied upon by real configurations, and the logic was simplified to name-match fixed levels. The old implementation of subcommand/flag parsing and its associated symbols have been removed.
 
 ### Arbitrary-Code-Execution Runner (`IsArbitraryCodeExecutionRunner`)
 
@@ -375,6 +390,37 @@ Decision conditions and behavior:
   - Everything else (under the directory but unclassified / unidentifiable) → **High** (the fail-safe default; it falls to High rather than Medium so that, when `coreutils <subcmd>` cannot be analyzed, a destructive subcommand cannot be hidden)
 - If the stat of the setuid check results in an error, the runtime path **propagates the error and is fail-closed** (a Blocking deny).
 
+## Destination Path Trust Category (Axis 2 / `ClassifyDestinationZone`)
+
+For file-operation commands (all entries in `commandFlagSpecs`: `cp`/`mv`/`rm`/`rmdir`/`unlink`/`shred`/`ln`/`truncate`/`sed`/`touch`/`mkdir`/`sponge`/`tee`/`install`/`mknod`/`tar`/`unzip`/`dd`/`chmod`/`chown`/`chgrp`/`setfacl`/`chattr`/`find`/`rsync`/`scp`/`sftp`/`curl`/`wget`/`mount`/`umount`), the risk level is determined by the **path trust category** of the target path (write destination, link target, deletion target, device, or read source) pointed to by the arguments (`security.ClassifyDestinationZone`, `destination_zoning.go`). Permission-change commands (`chmod`/`chown`/`chgrp`/`setfacl`/`chattr`) use `KindPermission`; data-transfer commands (`curl`/`wget`/`scp`/`sftp`/`rsync`) use `KindDataTransferWrite`; `find` is applied only when it involves a destructive action. This is the **single authority** that replaces fixed-High destruction classification (when fully recognized: `evaluateDimensions` suppresses `IsDestructiveFileOperation`, applicable `CheckDangerousArgPatterns`, profile destruction factors, and coreutils destructive/unknown High).
+
+The classification result (`LocationResult`) contains:
+
+- `Applies`: true when the command is a file-operation command and the form involves a write (false for `sed` without `-i`, `tar -t`, `unzip -l`, or `find` without a destructive action).
+- `Recognized`: **full recognition**. True when all of argv can be interpreted and all operands can be resolved; false if either condition is not met.
+- `Level` / `ReasonCodes` / `Operands`: the combined level, reason codes, and per-operand evaluation (an array of `OperandZone`; the carrier for the audit output `operand_zones`).
+
+Zone classification and per-operand floors:
+
+| Zone | Example | Level |
+|------|---------|-------|
+| trust-critical (`Config.SystemCriticalPaths`; `/usr`, `/etc`, `/boot`, `/dev`, `/var`, etc.) | Destination `/usr/bin` | High |
+| ordinary (a normal path that is neither trust-critical nor safe-zone) | Destination `/srv` | Medium |
+| safe-zone (under the trusted-directory allowlist and not writable by run-as — TOCTOU-safe) | Destination `$WORKDIR` | Low |
+| Unresolvable (`ZoneUnresolved`; variable expansion not yet determined, symlink resolution failure, unresolved identity, etc.) | — | write=High / read=Medium (asymmetric fail-closed) |
+
+In addition to the zone, operation-intrinsic floors apply regardless of the target zone (privilege grant = High [setuid/world-write grants by `chmod`, setuid/`-o`/`-g` by `install -m`, `chattr`/`setfacl`, etc. set `grantsPermission`; ownership changes by `chown` have no dedicated floor — a trust-critical destination becomes High through the zone classification], block-device I/O `dd of=/dev/sdb` = High, tree recursion extending outside the safe-zone = High, `cp -p`/`-a` privileged metadata copy = High, copying a sensitive file = Medium floor). For `dd`, device I/O is classified by the device type, not the path zone (`/dev/null` and similar harmless sinks are Low; raw devices are High).
+
+> **The fail-closed `Recognized` contract bears the safety guarantee**: a form that was not fully recognized (`Recognized=false`) does not suppress the fixed-High dimensions, and axis 2 itself also imposes **High as the minimum** (raising `res.Level` to High and attaching `ReasonUnresolvedDestination`). This ensures the effective risk is always High or above (fail-closed). The final allow/deny decision is determined by comparing this effective risk against the configured `risk_level` ceiling (`risk_level` below `"high"` results in a deny).
+
+### Declarative Flag Specification and Single getopt Parser (0144/0145)
+
+Operand extraction is performed not by per-command custom argument parsers, but by a **declarative flag specification** (`commandFlagSpecs` in `flag_spec.go`: command → `CommandFlagSpec` [Kind / Flags / ToExtraction]) and the **single getopt parser** (`getopt.go`) that drives it (the centralized refactor in 0144; behavior-preserving). The correctness of each command's flag set is guaranteed by the completeness meta-test (`flag_spec_test.go`).
+
+0145 aligned each command's flag set with the **actual CLI (the union of GNU coreutils and uutils)** and removed acceptance of flags that do not exist in the real CLI (over-recognition; a safe-side behavior change). For example, `touch -p`/`-i`, `mkdir -a`/`-c`/`-h`/`-f`/`-i`/`-r`, and `sponge -r` are not declared because they do not exist in the real CLI. Inputs providing these flags are treated by the getopt parser as unknown flags, making `Recognized=false`, and the fail-closed floor described above raises the effective risk to High. Configurations with `risk_level` below `"high"` are denied (`recognized=true → false`).
+
+The former over-recognition — "also pass flags not in the real CLI through as recognized" — has been resolved and is not retained as an old constraint. The safety guarantee is still borne by the fail-closed `Recognized` contract.
+
 ## Difference Between the Runtime Path and the Dry-Run Path
 
 There are two entry points for risk evaluation, but **both share the same `EvaluateRisk`**. The difference is only "how the result is handled" (a separate dry-run-specific logic such as the former `AnalyzeCommandSecurity` has been removed).
@@ -418,6 +464,15 @@ Main fields:
 - `verification_unavailable`: indicates that verification/analysis was unavailable in the dry-run
 - `command_args`: the masked command arguments
 - `chain`: each entity executed or loaded during indirect execution (path / role / disposition / content_hash)
+- `operand_zones`: the per-operand evaluation result of axis 2 (destination path trust category). Each element has `index` / `raw` / `resolved` / `zone` / `role` / `matched_critical` / `trusted` / `unresolved_err`. `raw` / `resolved` / `unresolved_err` are masked through the same output-boundary redaction as `command_args`. Output only when axis 2 applied to the command (carrier `len() > 0`); the key is omitted entirely when the carrier is empty or nil (same presence condition as `reason_codes` / `risk_factors`).
+
+**3-state decode of `operand_zones`**: the presence or absence of the key alone is not sufficient to conclude "no risk." Read it together with `error_class` in the same entry.
+
+| Entry form | Meaning |
+|------|------|
+| No `operand_zones`, no `error_class` | Axis 2 **not applicable** (not a file-operation command); carrier is empty |
+| No `operand_zones`, `error_class` present | A deny that **failed before axis 2 was reached** (identity failure, path-resolution failure, symlink-resolution failure, etc.); carrier itself is absent |
+| `operand_zones` present (may include `zone:"unresolved"`) | Axis 2 **applied**. An `unresolved` element represents a fail-closed response to an unresolvable operand (write=High / read=Medium) |
 
 The log level corresponds to the risk level, and is further raised to **at least Warn in the case of a deny** (so that even a Medium command denied under a Low ceiling can be found by a Warn/Error search).
 
@@ -438,6 +493,16 @@ Risk evaluation is **one layer of defense in depth**; it does not block every th
 - **Matching is basename-centered, exact match**: the runtime risk evaluation matches command-name rules by **exact** basename (after symlink resolution), not by substring — `lsrm` is not treated as `rm`, and `systemctl-helper` is not treated as `systemctl`. The limit is that it **does not handle hard links or renames**: a dangerous binary placed under a different basename will not have its risk computed correctly even though it is verified. The mitigation is again allowlist + hash pinning. (Symbolic links are resolved; hard links share content and hash but not name.)
 - **`output_file` is assessed by a separate subsystem, not folded into the command risk**: the command's runtime risk evaluation (`EvaluateRisk`, the subject of this document) does not add the output destination to the command's effective risk. The output path is still validated and risk-assessed independently by the output subsystem (`internal/runner/base/output`): it is checked for path traversal and dangerous characters (`ValidateAndResolvePath`), its directory and file are checked for symlink components and write permission (`security.Validator.ValidateOutputWritePermission`), and the destination is assigned its own risk level — Critical for system-critical files/directories and sensitive key files, High for system or sensitive-config directories, Low under the working directory or the user's home directory, Medium otherwise (`AnalyzeOutput` / `evaluateSecurityRisk`, surfaced in the dry-run preview). The point to keep in mind is only that this output-path risk is tracked separately from the command's effective risk, not that the output path is unchecked.
 - **Relationship to the root-execution danger checks (separate system, exact vs partial match)**: there is a separate validator-side check aimed at root execution (`Validator.IsDangerousRootCommand` / `HasDangerousRootArgs`). It is a **different system with a different policy**: the root-oriented argument check uses **partial (substring) matching** on argument values (`HasDangerousRootArgs` via `strings.Contains`), whereas the runtime risk evaluation described in this document uses **exact basename matching** for command-name rules. The two are applied on different paths and are **not integrated** in this task. Their relationship: the root-execution checks belong to the validator/security-analysis path for privileged execution, and the runtime risk evaluation (`EvaluateRisk`) is the gate that decides allow/deny against `risk_level`. When more than one rule applies to a command, the runtime evaluation takes the **maximum** across all applicable dimensions (a more specific dangerous classification is never lowered by a more general one), and the short-circuiting deny gates (identity → indirect execution → privilege escalation) take precedence over the maximum-of-dimensions. Running a command as root does not by itself change the computed risk level; privilege escalation is detected separately (the `sudo`/`su`/`doas` tokens → `critical`).
+
+### Limitations of Name-Based AI Detection
+
+The name-based detection of AI services (the profile that classifies `claude`/`gemini`/`chatgpt`, etc. as High, `commandProfileDefinitions`) is not a mechanism for blocking general data transmission (the Medium of `curl`/`wget`/`scp`/`sftp`/`rsync`/`ssh`/`nc`, etc.). It is merely **one layer of defense-in-depth for salient, explicit cases** and does not exhaustively block sensitive data exfiltration to external services by command name. The specific limits are:
+
+- **Unlisted tools pass through**: AI clients not listed in the profile (new or emerging services, in-house tools, etc.) do not receive this High classification and are computed at the Medium of the data-exfiltration dimension (or Low if neither the profile nor the arguments contain network indicators).
+- **Can be bypassed by renaming**: because runtime evaluation matches by **exact basename** (after symlink resolution; see "Matching is basename-centered, exact match" above), copying or hard-linking `claude` under a different basename bypasses the High detection (symbolic links are resolved, but hard links and renames are not handled).
+- **Multi-call is not captured**: because the name-based classification looks only at the name of the individual command, a multi-step exfiltration — such as saving data to a temporary file with `curl` and sending it with a separate command — can pass through with each step at Medium or below.
+
+Safe operation against sensitive data exfiltration therefore does not depend on name-based AI detection; it assumes the combination of an **allowlist of permitted commands with hash pinning** (`verify_files`) (the same mitigation as "blocklist approach" above). Name-based AI detection serves as a backstop that additionally raises salient cases to High within that allowlist.
 
 ## Summary
 
