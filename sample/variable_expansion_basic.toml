@@ -33,6 +33,9 @@ name = "copy_file"
 description = "Copy file using variables in args"
 cmd = "/bin/cp"
 args = ["%{home}/source.txt", "%{backup_dir}/backup.txt"]
+# A copy into an ordinary destination (/opt/backups) is classified Medium by the
+# destination trust zone, so the command must allow at least Medium to run.
+risk_level = "medium"
 env_import = ["home=HOME"]
 [groups.commands.vars]
 backup_dir = "/opt/backups"
