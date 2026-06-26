@@ -1,16 +1,16 @@
 # リスクレベル分類ガイド（概念モデル）
 
 > **位置づけ**: 本書は「コマンドがどのリスクレベルに分類されるか」を**自分で導出できる**ように、
-> 分類の統一原則 → 2 軸ルール → 相互作用（max）→ 計算手順の順で解説する概念ガイド（たたき台）。
+> 分類の統一原則 → 2 軸ルール → 相互作用（max）→ 計算手順の順で解説する概念ガイド。
 > 実装レベルの判定アルゴリズム（ランク1〜8・`EvaluateRisk`）は
 > [command-risk-evaluation.ja.md](command-risk-evaluation.ja.md)、確定した受け入れ基準は
 > [タスク 0140 要件定義書](../../tasks/0140_risk_level_classification_review/01_requirements.md) を参照。
 >
 > | Item | Value |
 > |---|---|
-> | Status | `draft`（0140 設計に整合。**実装完了後に確定挙動へ改訂予定**） |
+> | Status | `approved`（0141・0142・0144・0145 の確定挙動に整合） |
 > | 対象読者 | 本システムを初めて理解するアーキテクト / SRE / レビュアー |
-> | 最終化手順 | ①コード実装完了 → ②本書を実装に合わせ改訂・確定 → ③英語版作成（[0140 AC-36](../../tasks/0140_risk_level_classification_review/01_requirements.md)）。**英語版は実装・日本語確定前には作成しない** |
+> | 整合範囲 | 判断軸1（コマンド名分類）・判断軸2（宛先パス信頼区分）・max 合成・Critical 限定・safe-zone の安全要件を確定挙動へ整合済み。詳細な分類表は [command-risk-evaluation.ja.md](command-risk-evaluation.ja.md)・[risk_assessment.ja.md](../../user/risk_assessment.ja.md) を参照 |
 
 ## この文書の読み方（漸進的詳細化）
 
@@ -138,7 +138,7 @@ flowchart LR
 
 | 条件 | floor |
 |---|---|
-| 特権付与（setuid/setgid・world-write・trust-critical 所有権） | High |
+| 権限付与（setuid/setgid・world-write の付与。`chmod`/`install`/`setfacl`/`chattr`） | High |
 | 内側コマンド実行（`find -exec` 等） | High / 拒否 |
 
 **軸 B: ファイル入出力の対象（ゾーン依存）**
