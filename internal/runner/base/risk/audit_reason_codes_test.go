@@ -29,8 +29,9 @@ func logDenyReasonCodes(t *testing.T, plan risktypes.VerifiedCommandPlan) []any 
 	t.Helper()
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	require.NotNil(t, plan.Identity, "plan.Identity must not be nil before logging deny reason codes")
 	audit.NewAuditLoggerWithCustom(logger).LogRiskProfile(context.Background(), risktypes.RiskAuditEntry{
-		CommandName:    plan.Assessment.Level.String(),
+		CommandName:    plan.Identity.ResolvedPath,
 		Mode:           risktypes.ModeNormal,
 		MaxAllowedRisk: runnertypes.RiskLevelLow,
 		Decision:       risktypes.DecisionDeny,
@@ -63,6 +64,7 @@ func TestLogRiskProfile_DenyReasonCodes_EndToEnd(t *testing.T) {
 		plan, err := ev.EvaluateRisk(verifiedCmd("/sbin/insmod", []string{"mod.ko"}))
 		require.NoError(t, err)
 		require.Equal(t, runnertypes.RiskLevelHigh, plan.Assessment.Level)
+		require.NotNil(t, plan.Identity)
 
 		codes := logDenyReasonCodes(t, plan)
 		assert.Contains(t, codes, string(risktypes.ReasonSystemModification))
@@ -78,6 +80,7 @@ func TestLogRiskProfile_DenyReasonCodes_EndToEnd(t *testing.T) {
 		plan, err := ev.EvaluateRisk(verifiedCmdInDir("cp", []string{"-a", src, "/usr/bin"}, wd))
 		require.NoError(t, err)
 		require.Equal(t, runnertypes.RiskLevelHigh, plan.Assessment.Level)
+		require.NotNil(t, plan.Identity)
 
 		codes := logDenyReasonCodes(t, plan)
 		assert.Contains(t, codes, string(risktypes.ReasonTrustBoundaryWrite))
@@ -88,6 +91,7 @@ func TestLogRiskProfile_DenyReasonCodes_EndToEnd(t *testing.T) {
 		plan, err := ev.EvaluateRisk(verifiedCmd("dd", []string{"if=/dev/zero", "of=/dev/sdb"}))
 		require.NoError(t, err)
 		require.Equal(t, runnertypes.RiskLevelHigh, plan.Assessment.Level)
+		require.NotNil(t, plan.Identity)
 
 		codes := logDenyReasonCodes(t, plan)
 		assert.Contains(t, codes, string(risktypes.ReasonDangerousArgPattern))
