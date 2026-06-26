@@ -308,6 +308,7 @@
 | 中級者 | intermediate (user) | |
 | 移行 | migration | |
 | 移行ガイド | migration guide | |
+| 移行ノート | migration note | 破壊的変更（引き上げ・引き下げ）を運用者へ周知する changelog。changelog の和語は「移行ノート」を canonical とし統一する（`移行`/`移行ガイド` と区別）。Task 0141/0142/0143 |
 | 最小 | minimum | |
 | 混合型 | mixed-type | |
 | Mock | mock | テストのモック |
@@ -334,6 +335,7 @@
 | 操作 | operation | |
 | 操作固有の下限 | operation-intrinsic floor | 判断軸2 の内部区分。コマンドが何を付与/実行するか（setuid 付与・デバイス IO・safe-zone 外再帰・機密ファイル複製 等）に内在し、宛先ゾーンに依らず効く下限。safe-zone でも Low に降格しない（0142 F-003）。原典 0140/01 の「軸 A」に相当。トップレベルの判断軸1/判断軸2 と紛れるため「判断軸 A」とは呼ばない |
 | オペランド | operand | コマンド引数（宛先/source/FILE 等）。判断軸2 のゾーニングの作用対象 |
+| オペランド毎判定 | per-operand evaluation | 判断軸2 が各オペランドを個別にパス信頼区分へ分類した結果（`OperandZone` の配列・監査の `operand_zones`）。`オペランド毎`(per-operand) の判定結果を指す |
 | ordinary | ordinary | 通常パス（`/srv`・`/opt` 等、trust-critical でも safe-zone でもないパス）。判断軸2 で Medium。パス信頼区分の値の一つ |
 | オプション | optional | |
 | オプトイン | opt-in | risk_level = "high" を明示設定して許可する文脈 |
@@ -727,6 +729,7 @@
 | 2026-06-18 | command-risk-evaluation 文書（output_file 検証）関連の用語を追加 (dangerous character, path traversal, write permission) |
 | 2026-06-18 | 間接実行インナーコマンドのリスク一律 High 化（Task 0138）関連の用語を追加 (inner command, fd binding, opt-in, residual risk) |
 | 2026-06-18 | システム変更リスク粗粒度化（Task 0139）関連の用語を追加 (first line of defense) |
+| 2026-06-26 | 監査・文書整合（Task 0143）関連の用語を追加・整合 (migration note〔canonical〕, per-operand evaluation) |
 
 ---
 

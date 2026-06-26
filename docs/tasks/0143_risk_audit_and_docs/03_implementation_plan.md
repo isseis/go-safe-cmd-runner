@@ -262,19 +262,19 @@
 
 **対象ファイル**: [docs/user/risk_assessment.ja.md](../../../docs/user/risk_assessment.ja.md) の「§8 移行ノート」
 
-- [ ] **引き上げ（AC-04）**: Low/Medium→High への引き上げ（0141 の判断軸1 High 化・0142 の trust-critical 書込）により、
+- [x] **引き上げ（AC-04）**: Low/Medium→High への引き上げ（0141 の判断軸1 High 化・0142 の trust-critical 書込）により、
       従来許可していた config がブロックされ得ることを記載する。安全運用（allowlist + ハッシュ固定 + 明示的 `risk_level`）を
-      併記する。
-- [ ] **0145 fail-closed 化の周知（AC-04 側）**: 実 CLI に無いフラグの受理を除去した結果、当該フラグ形を recognized のまま
+      併記する。（§8.5・§8.6 に記載）
+- [x] **0145 fail-closed 化の周知（AC-04 側）**: 実 CLI に無いフラグの受理を除去した結果、当該フラグ形を recognized のまま
       通していた config が新たに High で deny され得ること（`sponge -r`/`mkdir -a`/`touch -p`/`unlink -r`/`rmdir -r`/`mv -s` 等）を
-      **引き上げ側の周知**として明記する（緩和方向ではないため AC-05 の独立警告ブロックには含めない）。
-- [ ] **引き下げ（AC-05）**: High→Medium/Low に引き下がるコマンド（`rm`/`rmdir`/`shred`/`unlink`/`dd` の safe-zone/ordinary
+      **引き上げ側の周知**として明記する（緩和方向ではないため AC-05 の独立警告ブロックには含めない）。（§8.7 に記載）
+- [x] **引き下げ（AC-05）**: High→Medium/Low に引き下がるコマンド（`rm`/`rmdir`/`shred`/`unlink`/`dd` の safe-zone/ordinary
       ケース＝0142 の D7）を **セキュリティ緩和方向の変更（security relaxation）** として、引き上げリストへ埋没させず
-      **独立した見出し／警告ブロック**で提示する。対象コマンド・緩和条件（safe-zone/ordinary）・baseline（直近リリース挙動）を明記する。
-- [ ] **NF-004 運用注記**: 引き下げ対象の allow-Low は `riskLogLevel` により Debug 出力となり、本番ログ設定では
+      **独立した見出し／警告ブロック**で提示する。対象コマンド・緩和条件（safe-zone/ordinary）・baseline（直近リリース挙動）を明記する。（§8.8 に独立見出し＋警告ブロックで記載）
+- [x] **NF-004 運用注記**: 引き下げ対象の allow-Low は `riskLogLevel` により Debug 出力となり、本番ログ設定では
       `operand_zones` を含むエントリごと失われ得ること、緩和コマンドの監査証跡を残すにはログレベルを Debug 以下にする回避策を、
-      AC-05 ブロック内に運用注記として記載する。
-- [ ] **0139 との上書き関係（AC-06(c)）**: 0139 と本一連で記述が衝突する箇所は、本一連の分類が上書きする関係を移行ノート側で明示する。
+      AC-05 ブロック内に運用注記として記載する。（§8.8 の運用注記に記載）
+- [x] **0139 との上書き関係（AC-06(c)）**: 0139 と本一連で記述が衝突する箇所は、本一連の分類が上書きする関係を移行ノート側で明示する。（§8.9 に記載）
 
 **成功基準**: 引き上げ・引き下げが同一移行ノート内に存在し、引き下げが独立見出し／警告ブロックとして示され、引き上げ記述に
 紛れて見落とされないこと（Step 3.5 の静的検証）。
@@ -284,17 +284,22 @@
 **対象ファイル**: [docs/user/risk_assessment.ja.md](../../../docs/user/risk_assessment.ja.md)・
 [docs/dev/architecture_design/command-risk-evaluation.ja.md](../../../docs/dev/architecture_design/command-risk-evaluation.ja.md)
 
-- [ ] **(a) 追加の網羅**: 実装で High/Medium/Low に確定した全コマンド分類を各文書の分類表へ反映する。
-- [ ] **(b) 除去の確認**: 旧記述を除去する。最低限、(i) 旧「fdisk/mkfs=Medium」、(ii) 旧「`rm`/`dd` の無条件 High」、
-      (iii) `command-risk-evaluation.ja.md` のシステム管理系コマンドを Medium とする行（`mount`/`umount`/`parted`/`fsck`/
-      `crontab`/`at`/`batch`/`chkconfig`/`update-rc.d` を一括列挙）から **`parted`/`fsck`** を削除し（0141 が High へ訂正済み）、
-      同行を High 側の該当箇所へ移すこと。同行に残る他コマンド（`mount`/`umount`/`crontab`/`at`/`batch`/`chkconfig`/
-      `update-rc.d`）が確定分類でも Medium のままであることを確認した上で、部分修正で行の整合を崩さないようにする。上記が
-      いずれの文書（日本語版・対応する英語版は Phase 4 で反映）にも残っていないことを確認する。
-- [ ] **0144/0145 の反映**: 検出限界・フラグ解析の節を、(i) 現行アーキテクチャ（宣言的フラグ仕様 `flag_spec.go` ＋単一 getopt
+- [x] **(a) 追加の網羅**: 実装で High/Medium/Low に確定した全コマンド分類を各文書の分類表へ反映する。（user §3.1/§3.5、
+      dev `SystemModificationRisk`・新設「宛先パス信頼区分（判断軸2）」節に反映）
+- [x] **(b) 除去の確認**: 旧記述を除去する。最低限、(i) 旧「fdisk/mkfs=Medium」、(ii) 旧「`rm`/`dd` の無条件 High」、
+      (iii) `command-risk-evaluation.ja.md` のシステム管理系コマンドを Medium とする行から、**確定分類で High となる名前を削除**して
+      High 側へ移すこと。
+      **【計画からの修正・ground-truth 整合】**: 本項 (iii) は当初 `parted`/`fsck` のみを削除し `crontab`/`at`/`batch`/
+      `chkconfig`/`update-rc.d` は Medium のままと想定していたが、実装（`internal/runner/base/security/command_analysis.go`
+      の `highSystemModificationNames`）を確認した結果、`fdisk`/`parted`/`mkfs`/`fsck` に加え `crontab`/`at`/`batch`/
+      `chkconfig`/`update-rc.d` も **High** であった（分類ガイド §4 とも一致）。よって Medium 行に残すのは `mount`/`umount`
+      （＋ネットワーク設定 `ip`/`ifconfig` 系・LVM 作成系）のみとし、上記を High 側へ移した。確定分類との整合を優先する。
+      旧記述がいずれの文書にも残っていないことを確認した（Step 3.5 grep ヒット 0）。
+- [x] **0144/0145 の反映**: 検出限界・フラグ解析の節を、(i) 現行アーキテクチャ（宣言的フラグ仕様 `flag_spec.go` ＋単一 getopt
       パーサ＋完全性メタテスト）を反映し、(ii) 0145 で解消した過剰認識（実 CLI に無いフラグの受理）を旧制約として残さない
-      よう更新する。fail-closed `Recognized` contract が安全保証を担う点は不変として明記する。
-- [ ] **operand_zones の追記**: `command-risk-evaluation.ja.md` の監査セクションへ `operand_zones` フィールドの説明と、
+      よう更新する。fail-closed `Recognized` contract が安全保証を担う点は不変として明記する。（dev 新設節「宣言的フラグ仕様と
+      単一 getopt パーサ（0144／0145）」に記載）
+- [x] **operand_zones の追記**: `command-risk-evaluation.ja.md` の監査セクションへ `operand_zones` フィールドの説明と、
       [02_architecture.md](02_architecture.md) §2.2 の「3 状態デコード規則」（キー無し・error_class 有無による判別）を反映する。
 
 **成功基準**: Step 3.5 の除去確認 grep が成功（旧記述ヒット 0）。分類表が確定分類と一致。
@@ -303,8 +308,8 @@
 
 **対象ファイル**: [docs/translation_glossary.md](../../../docs/translation_glossary.md)
 
-- [ ] `移行ノート`（English: `migration note`）を canonical エントリとして追加する（changelog の和語は「移行ノート」で統一）。
-- [ ] 本一連で用いた用語のうち未登録のものを追加する（`オペランド毎判定` 等）。`パス信頼区分`/`trust-critical`/`safe-zone`/
+- [x] `移行ノート`（English: `migration note`）を canonical エントリとして追加する（changelog の和語は「移行ノート」で統一）。
+- [x] 本一連で用いた用語のうち未登録のものを追加する（`オペランド毎判定` 等）。`パス信頼区分`/`trust-critical`/`safe-zone`/
       `オペランド毎`(per-operand) は登録済みのため訳語の整合のみ確認する。
 
 **成功基準**: Step 3.5 の用語集 grep が成功。
@@ -313,22 +318,23 @@
 
 **対象ファイル**: [docs/dev/architecture_design/risk-level-classification-guide.ja.md](../../../docs/dev/architecture_design/risk-level-classification-guide.ja.md)
 
-- [ ] ガイドの分類記述を確定挙動（判断軸1/判断軸2・max 合成・Critical 限定・safe-zone の安全要件）へ改訂し、AC-06 の分類表と
-      齟齬が無いようにする。
-- [ ] 冒頭の Document Status の Status を `draft` から確定状態（`approved` 相当の確定）へ遷移させる。
+- [x] ガイドの分類記述を確定挙動（判断軸1/判断軸2・max 合成・Critical 限定・safe-zone の安全要件）へ改訂し、AC-06 の分類表と
+      齟齬が無いようにする。（§4 の High/Medium ファミリ・§5 ゾーン・§6 相互作用が実装と一致。`chroot`/`unshare`/`ip netns exec`
+      等のラッパも実装に存在することを確認）
+- [x] 冒頭の Document Status の Status を `draft` から確定状態（`approved`）へ遷移させる。
 
 **成功基準**: Status が遷移済み。分類記述が AC-06 分類表と一致（Step 3.5 の静的確認＋目視）。
 
 #### Step 3.5: Phase 3 静的検証（AC-04/AC-05/AC-06/AC-08）
 
-- [ ] 引き下げ独立ブロックの存在確認:
-      `rg -n -e 'security relaxation' -e '引き下げ' docs/user/risk_assessment.ja.md`（独立見出し／警告ブロックを目視確認）。
-- [ ] 除去確認（旧記述ヒット 0 を期待）:
+- [x] 引き下げ独立ブロックの存在確認:
+      `rg -n -e 'security relaxation' -e '引き下げ' docs/user/risk_assessment.ja.md`（独立見出し／警告ブロックを目視確認）。（§8.8 ✓）
+- [x] 除去確認（旧記述ヒット 0 を期待）:
       `rg -n -e 'fdisk' -e 'mkfs' docs/user/risk_assessment.ja.md docs/dev/architecture_design/command-risk-evaluation.ja.md | rg -i 'medium'`
-      および `parted`/`fsck` がシステム管理系→Medium 行に残らないことの確認。
-- [ ] 用語集確認: `rg -n '移行ノート' docs/translation_glossary.md`（ヒット有りを期待）。
-- [ ] ガイド Status 確認: `rg -n 'Status' docs/dev/architecture_design/risk-level-classification-guide.ja.md`（`draft` でないことを確認）。
-- [ ] 日本語版をコミットする（英語版は Phase 4）。
+      および `parted`/`fsck` がシステム管理系→Medium 行に残らないことの確認。（0 ヒット ✓）
+- [x] 用語集確認: `rg -n '移行ノート' docs/translation_glossary.md`（ヒット有りを期待）。（✓）
+- [x] ガイド Status 確認: `rg -n 'Status' docs/dev/architecture_design/risk-level-classification-guide.ja.md`（`draft` でないことを確認）。（`approved` ✓）
+- [x] 日本語版をコミットする（英語版は Phase 4）。
 
 ### Phase 4 — 英語版反映（F-004/F-006/AC-06/AC-08）
 
@@ -432,11 +438,11 @@ family テーブルを唯一の列挙源とした並行リスト廃止／AC-02 e
 - [x] Step 1.5: deny 理由コード e2e テスト（新規 audit_reason_codes_test.go）
 - [x] Step 1.6: Phase 1 完了ゲート（fmt/test/lint）
 - [x] Phase 2: sample/test config 追従と検証
-- [ ] Step 3.1: 移行ノート（引き上げ・引き下げ独立ブロック・NF-004・0139 上書き）
-- [ ] Step 3.2: ユーザー/開発者文書の整合（除去確認・0144/0145 反映・operand_zones 追記）
-- [ ] Step 3.3: 用語集（移行ノート canonical 追加）
-- [ ] Step 3.4: 分類ガイド最終化・Status 遷移（日本語版）
-- [ ] Step 3.5: Phase 3 静的検証・日本語版コミット
+- [x] Step 3.1: 移行ノート（引き上げ・引き下げ独立ブロック・NF-004・0139 上書き）
+- [x] Step 3.2: ユーザー/開発者文書の整合（除去確認・0144/0145 反映・operand_zones 追記）
+- [x] Step 3.3: 用語集（移行ノート canonical 追加）
+- [x] Step 3.4: 分類ガイド最終化・Status 遷移（日本語版）
+- [x] Step 3.5: Phase 3 静的検証・日本語版コミット
 - [ ] Phase 4: 英語版 3 文書を `/mktrans` で反映・新規作成
 
 ---
@@ -483,12 +489,12 @@ family テーブルを唯一の列挙源とした並行リスト廃止／AC-02 e
 
 `make lint`/`make test` が検出できない残存参照・整合のみを対象とする（§7 の AC 検証表と重複する rg は再掲しない）。
 
-- [ ] `TestReasonCodes_AllDistinct` のハードコード `all` リスト削除後、同リストへの残存参照が無いこと:
-      `rg -n 'all := \[\]ReasonCode' internal/runner/base/risktypes/` 期待: ヒット 0。
-- [ ] 新規シンボル名の衝突確認（汎用名のため）:
-      `rg -n -e 'ReasonFamily' -e 'func FamilyOf' --type go` 期待: 定義は reason_codes.go の 1 箇所のみ。
-- [ ] 文書・用語集間の訳語整合: `移行ノート`/`オペランド毎判定` が用語集と各文書で一致して使われていること（目視＋
-      `rg -n 'changelog' docs/` で旧和語の混在が無いことを確認）。
+- [x] `TestReasonCodes_AllDistinct` のハードコード `all` リスト削除後、同リストへの残存参照が無いこと:
+      `rg -n 'all := \[\]ReasonCode' internal/runner/base/risktypes/` 期待: ヒット 0。（✓ Phase 1）
+- [x] 新規シンボル名の衝突確認（汎用名のため）:
+      `rg -n -e 'ReasonFamily' -e 'func FamilyOf' --type go` 期待: 定義は reason_codes.go の 1 箇所のみ。（✓ Phase 1）
+- [x] 文書・用語集間の訳語整合: `移行ノート`/`オペランド毎判定` が用語集と各文書で一致して使われていること（目視＋
+      `rg -n 'changelog' docs/` で旧和語の混在が無いことを確認）。（✓ 公開文書に旧和語混在なし）
 
 ---
 
