@@ -236,7 +236,7 @@
 
 **対象**: [sample/](../../../sample/) 配下および全 testdata の `.toml`
 
-- [ ] 引き上げ・fail-closed 化対象コマンドを使う config を grep で網羅列挙する。対象コマンド名は次を含む（判断軸1 High/Medium
+- [x] 引き上げ・fail-closed 化対象コマンドを使う config を grep で網羅列挙する。対象コマンド名は次を含む（判断軸1 High/Medium
       化対象＝`ln`/`insmod`/`fdisk`/`mkfs`/`parted`/`fsck` 等、判断軸2 trust-critical 書込形＝`cp`/`mv`/`rsync`/`chmod`/`chown` 等、
       0145 で fail-closed 化した無効フラグ形＝`sponge`/`mkdir`/`touch`/`unlink`/`rmdir` 等）
       （[01_requirements.md](01_requirements.md) AC-07 の列挙に準拠）。
@@ -244,13 +244,13 @@
       `rg -n --glob '*.toml' -e 'cmd\s*=\s*"(/[^"]*/)?(rm|dd|shred|unlink|rmdir|mkdir|touch|mv|sponge|ln|fdisk|mkfs|insmod|parted|fsck|cp|rsync|chmod|chown)"' sample cmd internal`
       判断軸2 の `cp`/`mv`/`rsync`/`chmod`/`chown` は**宛先パス依存**で deny するため、名前ヒットしても宛先ゾーンに応じて
       意図結果を個別確認する（一律 deny にはならない）。
-- [ ] 列挙された各 config について、次のいずれかを満たすことを確認・対応する:
-  - [ ] 新分類で deny され得るものは適切な `risk_level` を付与する（例: 判断軸1 で High 化した名前を `cmd` に持つ config を新設・
+- [x] 列挙された各 config について、次のいずれかを満たすことを確認・対応する:
+  - [x] 新分類で deny され得るものは適切な `risk_level` を付与する（例: 判断軸1 で High 化した名前を `cmd` に持つ config を新設・
         変更する場合は `risk_level="high"` を付与）、または
-  - [ ] 新分類下でも意図した結果（allow/deny）になることを確認する。意図的に deny を検証する config はその旨をコメント等で明示する。
-  - [ ] 0145 の無効フラグ形（`sponge -r`/`mkdir -a`/`touch -p`/`unlink -r`/`rmdir -r`/`mv -s` 等）を使う config が**無い**こと、
+  - [x] 新分類下でも意図した結果（allow/deny）になることを確認する。意図的に deny を検証する config はその旨をコメント等で明示する。
+  - [x] 0145 の無効フラグ形（`sponge -r`/`mkdir -a`/`touch -p`/`unlink -r`/`rmdir -r`/`mv -s` 等）を使う config が**無い**こと、
         または存在する場合は fail-closed（High deny）が意図どおりであることを確認する。
-- [ ] 上記 config が `make test` 内でロード・評価でき、テスト用 config が新分類で**意図せず** deny されないことを確認する。
+- [x] 上記 config が `make test` 内でロード・評価でき、テスト用 config が新分類で**意図せず** deny されないことを確認する。
 
 **成功基準**: 列挙 grep の各ヒットに対応済み。`make test` 全件緑。
 
@@ -431,7 +431,7 @@ family テーブルを唯一の列挙源とした並行リスト廃止／AC-02 e
 - [x] Step 1.4: `operand_zones` 出力・漏えい否定テスト（logger_test.go）
 - [x] Step 1.5: deny 理由コード e2e テスト（新規 audit_reason_codes_test.go）
 - [x] Step 1.6: Phase 1 完了ゲート（fmt/test/lint）
-- [ ] Phase 2: sample/test config 追従と検証
+- [x] Phase 2: sample/test config 追従と検証
 - [ ] Step 3.1: 移行ノート（引き上げ・引き下げ独立ブロック・NF-004・0139 上書き）
 - [ ] Step 3.2: ユーザー/開発者文書の整合（除去確認・0144/0145 反映・operand_zones 追記）
 - [ ] Step 3.3: 用語集（移行ノート canonical 追加）

@@ -70,6 +70,9 @@ name = "backup_with_timestamp"
 description = "Create backup path with date and user"
 cmd = "/bin/mkdir"
 args = ["-p", "%{backup_root}/%{date}/%{user}/data"]
+# Writing under the trust-critical /var tree is classified High by the destination
+# trust zone, so the command must allow High to run.
+risk_level = "high"
 [groups.commands.vars]
 backup_root = "/var/backups"
 date = "2025-10-01"

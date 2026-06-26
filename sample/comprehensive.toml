@@ -87,6 +87,9 @@ name = "create_temp_file"
 description = "Create temporary file in temp directory"
 cmd = "touch"
 args = ["test_temp_file.txt"]
+# A write whose destination is not a trusted safe-zone is classified Medium by the
+# destination trust zone, so the command must allow at least Medium to run.
+risk_level = "medium"
 
 [[groups.commands]]
 name = "list_temp_contents"
@@ -111,6 +114,9 @@ name = "create_file_with_workdir_path"
 description = "Create file with workdir path in filename"
 cmd = "touch"
 args = ["%{__runner_workdir}/workdir_reference.txt"]
+# A workdir write is Medium under the destination trust zone (the run-as identity
+# is not the safe-zone's trusted owner), so allow at least Medium.
+risk_level = "medium"
 
 # Group 4: Working directory tests
 [[groups]]
@@ -129,6 +135,9 @@ name = "create_workdir_file"
 description = "Create file in custom working directory"
 cmd = "touch"
 args = ["workdir_test_file.txt"]
+# A write into the custom working directory is Medium under the destination trust
+# zone, so allow at least Medium.
+risk_level = "medium"
 
 # Group 5: Environment variable and internal variable tests
 [[groups]]
