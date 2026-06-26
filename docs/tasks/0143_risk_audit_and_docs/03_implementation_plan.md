@@ -453,7 +453,7 @@ family テーブルを唯一の列挙源とした並行リスト廃止／AC-02 e
 | AC-05 | 引き下げの視認上の埋没なし | Step 3.1 | manual | PR で独立見出し／警告ブロックの視認性を確認 |
 | AC-06 | (b) 旧記述の除去（fdisk/mkfs=Medium・rm/dd 無条件 High・parted/fsck=Medium） | Step 3.2 | static | `rg -n -e 'fdisk' -e 'mkfs' -e 'parted' -e 'fsck' docs/user/risk_assessment.ja.md docs/dev/architecture_design/command-risk-evaluation.ja.md \| rg -i 'medium'` 期待: 確定分類と矛盾するヒット 0 |
 | AC-06 | (a) 確定分類の全コマンド反映 / (c) 0139 上書き明示 | Step 3.2/3.1 | manual | PR で分類表の網羅と移行ノートの 0139 上書き記述を確認 |
-| AC-07 | sample/test config の追従と網羅列挙 | Phase 2 | static | `rg -n --glob '*.toml' -e 'cmd\s*=\s*"(/[^"]*/)?(rm\|dd\|shred\|unlink\|rmdir\|mkdir\|touch\|mv\|sponge\|ln\|fdisk\|mkfs\|insmod\|parted\|fsck\|cp\|rsync\|chmod\|chown)"' sample cmd internal` 期待: 各ヒットに `risk_level` 付与済み or 意図結果を確認済み |
+| AC-07 | sample/test config の追従と網羅列挙 | Phase 2 | static | `rg -n --glob '*.toml' -e 'cmd\s*=\s*"(/[^"]*/)?(rm&#124;dd&#124;shred&#124;unlink&#124;rmdir&#124;mkdir&#124;touch&#124;mv&#124;sponge&#124;ln&#124;fdisk&#124;mkfs&#124;insmod&#124;parted&#124;fsck&#124;cp&#124;rsync&#124;chmod&#124;chown)"' sample cmd internal` 期待: 各ヒットに `risk_level` 付与済み or 意図結果を確認済み |
 | AC-07 | config がロード・評価でき意図せぬ deny なし | Phase 2 | test | `make test`（config をロードする統合テスト全体が緑） |
 | AC-08 | (b) ガイド Status の確定遷移 | Step 3.4 | static | `rg -n 'Status' docs/dev/architecture_design/risk-level-classification-guide.ja.md` 期待: `draft` でない |
 | AC-08 | (c) 英語版の存在 | Phase 4 | static | `test -f docs/dev/architecture_design/risk-level-classification-guide.md` 期待: 存在 |
