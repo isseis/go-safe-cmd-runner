@@ -331,7 +331,7 @@ The finalized classification extends the command-name classification (axis 1) wh
 
 | Command group | Representative examples | Notes |
 |---------------|------------------------|-------|
-| Disk and partition destruction | `fdisk`/`parted`/`mkfs`/`fsck`/`wipefs`/`blkdiscard`/`sgdisk`/`sfdisk`/`mkswap`, LVM destruction (`lvremove`/`vgremove`/`pvremove`, etc.) | Large-scale, irreversible destruction. `fdisk`/`mkfs`/`parted`/`fsck` were previously treated as medium risk; now raised to High |
+| Disk and partition destruction | `fdisk`/`parted`/`mkfs`/`fsck`/`wipefs`/`blkdiscard`/`sgdisk`/`gdisk`/`cgdisk`/`sfdisk`/`cfdisk`/`mkswap`, LVM destruction (`lvremove`/`vgremove`/`pvremove`, etc.) | Large-scale, irreversible destruction. `fdisk`/`mkfs`/`parted`/`fsck` were previously treated as medium risk; now raised to High |
 | Kernel modules and parameters | `insmod`/`modprobe`/`rmmod`/`kexec`/`sysctl` | Modifies kernel state; loads arbitrary code under high privilege |
 | Account and authentication DB | `useradd`/`usermod`/`userdel`/`passwd`/`chpasswd`/`visudo`, etc. | Persistent account and authentication changes |
 | Boot configuration and kernel image | `grub-install`/`grub-mkconfig`/`efibootmgr`/`kernel-install`/`update-initramfs`, etc. | Modifies boot configuration |

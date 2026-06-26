@@ -299,7 +299,7 @@ High (`highSystemModificationNames`) falls into two broad categories. Both are H
   - Package managers (`apt`, `apt-get`, `yum`, `dnf`, `zypper`, `pacman`, `brew`, `pip`, `npm`, `yarn`, `dpkg`, `rpm`). They can run unverified maintainer scripts (dpkg `postinst`, rpm `%post`, pip `setup.py`, npm `postinstall`, etc.) under privilege, so they are uniformly High regardless of subcommand (a query such as `apt list` is also High).
   - `systemctl` (all subcommands, including read-only `status`/`show`/`list-*`) and `service` (runs an unverified init script).
 - Large-scale, irreversible destruction or persistent system-state modification:
-  - Disk/partition destruction (`wipefs`, `blkdiscard`, `sgdisk`, `gdisk`, `sfdisk`, `cfdisk`, `mkswap`, `parted`, `fsck`, `fdisk`, `mkfs`), direct filesystem utilities (`e2fsck`, `mke2fs`, `tune2fs`, `resize2fs`, `xfs_*`, `btrfs`), LVM destruction (`lvremove`, `vgremove`, `pvremove`, `lvreduce`, etc.).
+  - Disk/partition destruction (`wipefs`, `blkdiscard`, `sgdisk`, `gdisk`, `cgdisk`, `sfdisk`, `cfdisk`, `mkswap`, `parted`, `fsck`, `fdisk`, `mkfs`), direct filesystem utilities (`e2fsck`, `mke2fs`, `tune2fs`, `resize2fs`, `xfs_*`, `btrfs`), LVM destruction (`lvremove`, `vgremove`, `pvremove`, `lvreduce`, etc.).
   - Kernel modules and parameters (`insmod`, `modprobe`, `rmmod`, `kexec`, `sysctl`).
   - Account and authentication DB (`useradd`, `usermod`, `userdel`, `passwd`, `chpasswd`, `visudo`, etc.).
   - Bootloader and kernel image (`grub-install`, `grub-mkconfig`, `efibootmgr`, `kernel-install`, `update-initramfs`, `dracut`, etc.).

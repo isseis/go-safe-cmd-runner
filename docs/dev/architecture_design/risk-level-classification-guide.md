@@ -141,7 +141,8 @@ In addition to the zone, the following minimums also apply within axis 2 (condit
 | Block-device I/O (`dd if=`/`of=`) | High |
 | Tree recursion extending outside the safe-zone (`rm -r /etc`, etc.) | High |
 | Copying a sensitive file (`cp /etc/shadow`, etc.) | Medium (not below Medium) |
-| Unresolvable destination (variable expansion not yet determined, etc.) | Medium (not below Medium) |
+| Unresolvable destination — write or delete (variable expansion not yet determined, etc.) | High |
+| Unresolvable destination — read (variable expansion not yet determined, etc.) | Medium (not below Medium) |
 | Target is ordinary | Medium |
 | Target is safe-zone (safety requirements met, recursion stays within) | Low |
 
