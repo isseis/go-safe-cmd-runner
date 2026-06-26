@@ -208,7 +208,10 @@
 > プランは OS リソースを保持せず、`VerifiedCommandPlan.Close`/`t.Cleanup` は不要である。
 
 - [x] `TestLogRiskProfile_DenyReasonCodes_EndToEnd` を追加し、3 代表 deny を実評価器で生成して `audit.LogRiskProfile`
-      （`audit.NewAuditLoggerWithCustom` + Debug レベル JSON バッファ）へ流し、`reason_codes`／`blocking_reason` を表明する:
+      （`audit.NewAuditLoggerWithCustom` + Debug レベル JSON バッファ）へ流し、各ケースで `reason_codes` に対応コードが
+      現れることを表明する。3 代表はいずれも High の ceiling deny（非 Blocking）であり `BlockingReason` を持たないため、
+      `blocking_reason` キーが付かないことも併せて確認する。Blocking/Critical deny の `blocking_reason` 出力は既存
+      `audit_wiring_test.go`（`fixedPlanEvaluator` 駆動）が担保済みのため重複させない:
   - [x] 判断軸1 由来: `/sbin/insmod` を `newVerifiedEvaluator()` で評価し、`reason_codes` に `system_modification`
         （`ReasonSystemModification`）が含まれることを表明。
   - [x] 判断軸2 由来: trust-critical への書込（例 `cp` の宛先が `SystemCriticalPaths` 配下）を `newZoningEvaluator(...)` で
@@ -216,7 +219,8 @@
         定数名を正確に引く）。
   - [x] 危険引数パターン由来: `dd if=...of=/dev/sdb` を評価し、`reason_codes` に `dangerous_arg_pattern`
         （`ReasonDangerousArgPattern`）が含まれることを表明。
-  - [x] entry の `Decision` は `plan.Assessment.Blocking` から `DecisionDeny` を設定する。
+  - [x] entry の `Decision` は `DecisionDeny` を設定し、`MaxAllowedRisk=Low` で「High が Low 上限で deny される」ceiling
+        deny をモデル化する（3 代表は非 Blocking のため deny はマネージャの上限判定で生じる）。
 - [x] 各ケースで使用する `ReasonCode` 定数は [reason_codes.go](../../../internal/runner/base/risktypes/reason_codes.go) の実在
       シンボルを参照する（文字列リテラル直書きを避ける）。
 

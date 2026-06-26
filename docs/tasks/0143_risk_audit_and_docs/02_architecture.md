@@ -570,7 +570,8 @@ flowchart LR
 
 - **deny 時の理由コード記録（AC-02, end-to-end）**: 判断軸1 由来（`insmod`＝`system_modification`）・判断軸2 由来
   （trust-critical 書込＝`trust_boundary_write`）・危険引数パターン由来（`dd if=`＝`dangerous_arg_pattern`）の代表 deny を
-  捕捉し、`reason_codes`／`blocking_reason` に正しい理由コードが記録されることを表明。判断軸2 由来コードは
+  捕捉し、`reason_codes` に正しい理由コードが記録されることを表明（3 代表は非 Blocking の ceiling deny のため
+  `blocking_reason` キーは付かず、Blocking/Critical deny の `blocking_reason` 記録は `audit_wiring_test.go` が担保）。判断軸2 由来コードは
   [reason_codes.go](../../../internal/runner/base/risktypes/reason_codes.go) の "axis 2" ブロックの定数名を正確に引く（S-3）。
 - **sample/test config 追従（AC-07）**: 列挙した config が `make test` 内でロード・評価でき、テスト用 config が新分類で
   意図せず deny されないことを表明（意図的に deny を検証する config はその旨を明示）。

@@ -40,6 +40,12 @@ func logDenyReasonCodes(t *testing.T, plan risktypes.VerifiedCommandPlan) []any 
 	var entry map[string]any
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &entry), "failed to parse JSON log output")
 	assert.Equal(t, "deny", entry["decision"])
+	// These subjects are ceiling denies (non-blocking High), so the assessment
+	// carries no BlockingReason and the entry omits blocking_reason. Pin that
+	// here so a subject that silently became a blocking deny would be noticed;
+	// the blocking_reason of a blocking/Critical deny is covered separately by
+	// audit_wiring_test.go.
+	assert.NotContains(t, entry, "blocking_reason")
 	codes, ok := entry["reason_codes"].([]any)
 	require.True(t, ok, "reason_codes should be an array")
 	return codes

@@ -22,19 +22,20 @@ func allReasonCodes() []ReasonCode {
 	return slices.Collect(maps.Keys(reasonFamilies))
 }
 
-// TestReasonCodes_AllDistinct verifies that every defined reason code has a
-// distinct, non-empty string value. A duplicate value would make two different
-// reasons indistinguishable in the audit log.
+// TestReasonCodes_AllDistinct verifies that every reason code has a non-empty
+// string value and that no two codes share a value. Because the code set is
+// derived from the family table's keys (which are ReasonCode values), code-level
+// uniqueness is structural; the load-bearing distinctness check is that two
+// constants assigned the same string literal would collapse to a single key,
+// which the size anchor in TestReasonFamily_AllCodesAssigned catches. The
+// value-uniqueness loop below also keeps teeth if the source set is ever changed
+// back to an explicit slice.
 func TestReasonCodes_AllDistinct(t *testing.T) {
 	all := allReasonCodes()
 
-	seen := make(map[ReasonCode]struct{}, len(all))
 	values := make(map[string]struct{}, len(all))
 	for _, rc := range all {
 		assert.NotEmpty(t, string(rc), "reason code must have a non-empty string value")
-		_, dup := seen[rc]
-		assert.Falsef(t, dup, "duplicate reason code value: %q", rc)
-		seen[rc] = struct{}{}
 		_, dupVal := values[string(rc)]
 		assert.Falsef(t, dupVal, "duplicate reason code string value: %q", rc)
 		values[string(rc)] = struct{}{}
