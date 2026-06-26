@@ -340,10 +340,10 @@
 
 > 各日本語版の確定・コミット後に `/mktrans` で英語版へ反映する。
 
-- [ ] [risk_assessment.md](../../../docs/user/risk_assessment.md) を `/mktrans` で日本語版から反映する。
-- [ ] [command-risk-evaluation.md](../../../docs/dev/architecture_design/command-risk-evaluation.md) を `/mktrans` で反映する。
-- [ ] 英語版 `risk-level-classification-guide.md` を `/mktrans` で**新規作成**する（実装・日本語確定前には作成しない条件を満たす）。
-- [ ] 各英語版が日本語版と構造一致（見出し・段落構造）であることを確認する。
+- [x] [risk_assessment.md](../../../docs/user/risk_assessment.md) を `/mktrans` で日本語版から反映する。
+- [x] [command-risk-evaluation.md](../../../docs/dev/architecture_design/command-risk-evaluation.md) を `/mktrans` で反映する。
+- [x] 英語版 `risk-level-classification-guide.md` を `/mktrans` で**新規作成**する（実装・日本語確定前には作成しない条件を満たす）。
+- [x] 各英語版が日本語版と構造一致（見出し・段落構造）であることを確認する。
 
 **成功基準**: AC-08 完了条件 (c)（英語版が存在し日本語版と構造一致）を満たす。
 
@@ -443,7 +443,7 @@ family テーブルを唯一の列挙源とした並行リスト廃止／AC-02 e
 - [x] Step 3.3: 用語集（移行ノート canonical 追加）
 - [x] Step 3.4: 分類ガイド最終化・Status 遷移（日本語版）
 - [x] Step 3.5: Phase 3 静的検証・日本語版コミット
-- [ ] Phase 4: 英語版 3 文書を `/mktrans` で反映・新規作成
+- [x] Phase 4: 英語版 3 文書を `/mktrans` で反映・新規作成
 
 ---
 
