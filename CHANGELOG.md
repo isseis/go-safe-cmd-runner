@@ -37,7 +37,7 @@ Records created by a previous version are incompatible with the current `verify`
 
 #### File Path Trust-Zone Risk Elevation (Axis-2)
 
-Write operations targeting trust-critical paths (`/etc`, `/usr`, `/lib`, `/boot`, `/var`, etc.) are now assessed as **High** risk, even when the operation itself (e.g., `cp`, `install`) was previously assessed as Medium.
+Write operations targeting trust-critical paths (`/etc`, `/usr`, `/lib`, `/boot`, `/var`, `/sbin`, device nodes, etc.) are now assessed as **High** risk, even when the operation itself (e.g., `cp`, `install`) was previously assessed as Medium.
 
 **Migration:** Review commands that write to system paths. Add `risk_level = "high"` where needed, or restructure commands to write to a safe working directory first.
 
@@ -122,8 +122,6 @@ Syscall occurrences in file records are now grouped by syscall number. Each sysc
 
 Flag recognition for file operation commands is now derived from their actual CLI documentation (union of GNU coreutils and uutils). Flags not present in either reference are no longer recognized, preventing false-positive safe assessments.
 
-### Breaking Changes
-
 #### Removal of `verify_standard_paths` Feature
 
 The `verify_standard_paths` configuration field and all related code have been
@@ -150,8 +148,6 @@ regardless of their directory.
   The field is no longer recognized; configs containing it will fail to load
   with an "unknown field" error.
 - Update any code that references the removed types or functions listed above.
-
-### Added
 
 #### Shebang Interpreter Tracking
 
@@ -355,8 +351,6 @@ repo = "/backup/repo"
 - User guide: `docs/user/command_templates.md`
 - Sample configuration: `sample/command_template_example.toml`
 
-### Changed
-
 #### ResolvedPath Type Safety and safefileio API Migration
 
 Strengthened the `common.ResolvedPath` type to carry symlink-resolution semantics, and migrated the `safefileio` public API to require `ResolvedPath` arguments.
@@ -460,8 +454,6 @@ timestamp = "20250114"
 - Better support for complex value types (strings, arrays, nested tables)
 - Consistent with standard TOML practices
 - Easier validation and error reporting
-
-### Added
 
 #### Group-Level Command Allowlist (`cmd_allowed`)
 
@@ -670,8 +662,6 @@ Environment variables (5):
 **Performance:**
 - The overhead for displaying the final environment in dry-run mode is negligible (less than 10% in tests), ensuring minimal impact on performance.
 
-### Breaking Changes
-
 #### Timeout Behavior Change
 
 **BREAKING**: `timeout = 0` now means unlimited execution (previously defaulted to 60 seconds)
@@ -729,8 +719,6 @@ All TOML configuration field names have been updated to improve clarity and cons
 - **Default behavior change**: Groups without `workdir` now automatically generate temporary directories instead of using current directory
 - **Automatic cleanup**: Temporary directories are automatically deleted after group execution (unless `--keep-temp-dirs` is specified)
 
-### Added
-
 - Support for unlimited command execution with `timeout = 0`
 - Enhanced timeout hierarchy resolution (command → global → system default)
 - Security monitoring for unlimited execution commands
@@ -750,8 +738,6 @@ All TOML configuration field names have been updated to improve clarity and cons
   - Circular reference detection for environment variables
   - Sample configuration: `sample/verify_files_expansion.toml`
   - Documentation: Added section 7.11 to variable expansion user guide
-
-### Changed
 
 - Timeout configuration now uses nullable integers for better control
 - Improved timeout resolution logic with clear inheritance hierarchy

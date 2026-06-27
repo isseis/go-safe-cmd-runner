@@ -446,7 +446,7 @@ For detailed configuration file documentation, refer to the following documents:
 - **Risk Categories**:
   - **Low**: Basic operations (ls, cat, grep), or operations involving writes to safe-zone locations (`/tmp`, auto-generated working directories)
   - **Medium**: File modifications (cp, mv) to ordinary paths, system modifications (mount, crontab), read-only subcommands such as `systemctl status`/`show`
-  - **High**: Package management (apt, yum, dpkg, etc.), write operations targeting trust-critical paths (`/etc`, `/usr`, `/lib`, `/boot`, `/var`, etc.), destructive operations
+  - **High**: Package management (apt, yum, dpkg, etc.), write operations targeting trust-critical paths (`/etc`, `/usr`, `/lib`, `/boot`, `/var`, `/sbin`, device nodes, etc.), destructive operations
   - **Critical**: Privilege escalation (sudo, su) - always blocked
 
 ### Environment Isolation
@@ -543,7 +543,7 @@ For detailed usage instructions, configuration examples, and troubleshooting, re
 
 ### Prerequisites
 
-- Go 1.26 or later
+- Go 1.26.2 or later
 - golangci-lint (for development)
 - gofumpt (for code formatting)
 
