@@ -93,7 +93,7 @@ Common use cases include scheduled backups, system maintenance tasks, and delega
 - **Interactive Terminal Support**: Color-coded output with enhanced visibility
 - **Smart Terminal Detection**: Automatic detection of terminal capabilities
 - **Color Control**: Support for CLICOLOR, NO_COLOR, CLICOLOR_FORCE environment variables
-- **Slack Integration**: Real-time notifications for security events
+- **Slack Integration**: Real-time notifications for security events, with `slack_allowed_host` webhook URL host validation
 - **Sensitive Data Redaction**: Automatic filtering of sensitive information
 - **ULID Execution Tracking**: Time-ordered execution tracking
 
@@ -439,13 +439,14 @@ For detailed configuration file documentation, refer to the following documents:
 
 ### Risk-Based Security Controls
 
-- **Automatic Risk Assessment**: Command classification by risk level
+- **Automatic Risk Assessment**: Command classification combining inherent command characteristics (Axis-1) with the path trust category of operands (Axis-2)
 - **Configurable Thresholds**: Risk level limits per command
 - **Automatic Blocking**: Automatic blocking of high-risk commands
+- **Risk Audit Logging**: Records the allow/deny rationale with reason codes and operand zone information
 - **Risk Categories**:
-  - **Low**: Basic operations (ls, cat, grep)
-  - **Medium**: File modifications (cp, mv), other system modifications (mount, crontab)
-  - **High**: Package management (apt, yum, dpkg, etc.), system administration (systemctl, service), destructive operations
+  - **Low**: Basic operations (ls, cat, grep), or operations involving writes to safe-zone locations (`/tmp`, auto-generated working directories)
+  - **Medium**: File modifications (cp, mv) to ordinary paths, system modifications (mount, crontab), read-only subcommands such as `systemctl status`/`show`
+  - **High**: Package management (apt, yum, dpkg, etc.), write operations targeting trust-critical paths (`/etc`, `/usr`, `/lib`, `/boot`, `/var`, etc.), destructive operations
   - **Critical**: Privilege escalation (sudo, su) - always blocked
 
 ### Environment Isolation
@@ -542,7 +543,7 @@ For detailed usage instructions, configuration examples, and troubleshooting, re
 
 ### Prerequisites
 
-- Go 1.23 or later (required for slices package and range over count)
+- Go 1.26 or later
 - golangci-lint (for development)
 - gofumpt (for code formatting)
 
