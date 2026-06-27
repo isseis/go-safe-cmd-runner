@@ -9,6 +9,119 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+#### `slack_allowed_host` Required for Slack Webhook Notifications
+
+If `GSCR_SLACK_WEBHOOK_URL_SUCCESS` or `GSCR_SLACK_WEBHOOK_URL_ERROR` environment variables are set,
+the `slack_allowed_host` field must now be configured in the `[global]` section.
+Startup fails with a configuration error if Slack webhook environment variables are present but `slack_allowed_host` is not set.
+
+**Migration:**
+Add `slack_allowed_host` to the `[global]` section of your configuration:
+```toml
+[global]
+slack_allowed_host = "hooks.slack.com"
+```
+
+#### File Record Schema Version: v16 → v17
+
+The `detected_syscalls` field in file records has been restructured.
+Records created by a previous version are incompatible with the current `verify` and `runner` commands.
+
+**Migration:** Re-record all commands with `record --force`.
+
+#### Risk Assessment Behavioral Changes
+
+- **`risk_level = "unknown"` rejected**: Previously silently treated as 0; now fails with a configuration error at load time.
+- **Uncertain binaries denied**: Commands whose binary analysis record is missing or cannot be read are now always denied at runtime, regardless of the configured `risk_level`. Previously they were allowed with a warning.
+- **`systemctl status`/`show` reclassified to Medium**: These read-only subcommands are no longer assessed as High. Configurations that set `risk_level = "medium"` for these commands now work correctly.
+
+#### File Path Trust-Zone Risk Elevation (Axis-2)
+
+Write operations targeting trust-critical paths (`/etc`, `/usr`, `/lib`, `/boot`, `/var`, `/sbin`, device nodes, etc.) are now assessed as **High** risk, even when the operation itself (e.g., `cp`, `install`) was previously assessed as Medium.
+
+**Migration:** Review commands that write to system paths. Add `risk_level = "high"` where needed, or restructure commands to write to a safe working directory first.
+
+#### Strict Flag Validation for File Operation Commands
+
+File operation commands (e.g., `ln`, `mkdir`, `chmod`) are now validated against their actual flag specifications. Commands referencing non-existent flags are assessed as **High** risk (fail-closed).
+
+**Migration:** Remove invalid flags from command arguments or add `risk_level = "high"` if the risk is acceptable.
+
+### Added
+
+#### Slack Webhook URL Host Allowlist (`slack_allowed_host`)
+
+New `[global]` field `slack_allowed_host` restricts Slack webhook notifications to a specific hostname, preventing SSRF attacks if environment variables are compromised.
+
+**Configuration:**
+```toml
+[global]
+slack_allowed_host = "hooks.slack.com"
+```
+
+- Startup rejects webhook URLs whose host does not match `slack_allowed_host`
+- Logging initialization is now two-phase: console/file logging starts first, Slack logging is added after TOML validation succeeds
+
+#### Risk Profile Audit Logging
+
+Command executions now emit structured audit log entries containing the complete risk assessment result:
+- `RiskAuditEntry` with correlation fields (ULID, command path, risk level, reason code)
+- Reason codes identify the specific rule that determined the allow/deny decision
+- Operand zone information for file operation commands (safe-zone, ordinary, trust-critical)
+- Available in both normal and dry-run execution modes
+
+#### Dry-Run Allow/Deny Preview
+
+`--dry-run` mode now evaluates risk using the same `StandardEvaluator` as normal mode, accurately predicting whether each command would be allowed or denied at runtime. The previous divergent implementation could produce incorrect predictions.
+
+#### File Path Trust-Zoning for File Operations (Axis-2)
+
+File operation commands are now assessed based on the trust zone of their destination paths, in addition to the command's inherent risk (Axis-1):
+
+- **Safe-zone** (`/tmp`, auto-generated working directories): destructive operations (e.g., `rm`) assessed as **Low**
+- **Ordinary paths**: assessed as **Medium**
+- **Trust-critical paths** (`/etc`, `/usr`, `/lib`, `/boot`, `/var`, `/sbin`, device nodes): write operations assessed as **High**
+
+This enables legitimate maintenance scripts that clean up temporary files to use `risk_level = "low"` while ensuring writes to system paths remain tightly controlled.
+
+#### Risk Reason Codes and Operand Zones in Audit Output
+
+Risk audit log entries now include:
+- `reason_code`: machine-readable code identifying the specific evaluation rule (e.g., `trust_boundary_write`, `privilege_escalation`, `unknown_binary`)
+- `reason_family`: grouping of related reason codes
+- `operand_zones`: per-operand path resolution and trust-zone classification for file operations
+
+### Changed
+
+#### `detected_syscalls` JSON Structure (Schema v17)
+
+Syscall occurrences in file records are now grouped by syscall number. Each syscall number appears once with an `occurrences` array containing detection details, reducing record size for binaries that trigger the same syscall repeatedly.
+
+**Old format:**
+```json
+"detected_syscalls": [
+  {"name": "mprotect", "address": "0x1000", ...},
+  {"name": "mprotect", "address": "0x2000", ...}
+]
+```
+
+**New format:**
+```json
+"detected_syscalls": [
+  {"name": "mprotect", "occurrences": [{"address": "0x1000"}, {"address": "0x2000"}]}
+]
+```
+
+#### Risk Assessment Completeness and Accuracy
+
+- All risk factors from command profiles (e.g., full command path `^/usr/bin/rm$` patterns) are now evaluated at runtime, not just basename matching.
+- Symlink resolution failures in risk assessment now safely deny execution instead of silently bypassing checks.
+- Dry-run mode uses the same risk evaluator as normal mode (single source of truth).
+
+#### Flag Specification Aligned to Real CLI
+
+Flag recognition for file operation commands is now derived from their actual CLI documentation (union of GNU coreutils and uutils). Flags not present in either reference are no longer recognized, preventing false-positive safe assessments.
+
 #### Removal of `verify_standard_paths` Feature
 
 The `verify_standard_paths` configuration field and all related code have been
@@ -35,8 +148,6 @@ regardless of their directory.
   The field is no longer recognized; configs containing it will fail to load
   with an "unknown field" error.
 - Update any code that references the removed types or functions listed above.
-
-### Added
 
 #### Shebang Interpreter Tracking
 
@@ -240,8 +351,6 @@ repo = "/backup/repo"
 - User guide: `docs/user/command_templates.md`
 - Sample configuration: `sample/command_template_example.toml`
 
-### Changed
-
 #### ResolvedPath Type Safety and safefileio API Migration
 
 Strengthened the `common.ResolvedPath` type to carry symlink-resolution semantics, and migrated the `safefileio` public API to require `ResolvedPath` arguments.
@@ -345,8 +454,6 @@ timestamp = "20250114"
 - Better support for complex value types (strings, arrays, nested tables)
 - Consistent with standard TOML practices
 - Easier validation and error reporting
-
-### Added
 
 #### Group-Level Command Allowlist (`cmd_allowed`)
 
@@ -555,8 +662,6 @@ Environment variables (5):
 **Performance:**
 - The overhead for displaying the final environment in dry-run mode is negligible (less than 10% in tests), ensuring minimal impact on performance.
 
-### Breaking Changes
-
 #### Timeout Behavior Change
 
 **BREAKING**: `timeout = 0` now means unlimited execution (previously defaulted to 60 seconds)
@@ -614,8 +719,6 @@ All TOML configuration field names have been updated to improve clarity and cons
 - **Default behavior change**: Groups without `workdir` now automatically generate temporary directories instead of using current directory
 - **Automatic cleanup**: Temporary directories are automatically deleted after group execution (unless `--keep-temp-dirs` is specified)
 
-### Added
-
 - Support for unlimited command execution with `timeout = 0`
 - Enhanced timeout hierarchy resolution (command → global → system default)
 - Security monitoring for unlimited execution commands
@@ -635,8 +738,6 @@ All TOML configuration field names have been updated to improve clarity and cons
   - Circular reference detection for environment variables
   - Sample configuration: `sample/verify_files_expansion.toml`
   - Documentation: Added section 7.11 to variable expansion user guide
-
-### Changed
 
 - Timeout configuration now uses nullable integers for better control
 - Improved timeout resolution logic with clear inheritance hierarchy
