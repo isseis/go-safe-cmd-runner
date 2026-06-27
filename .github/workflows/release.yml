@@ -71,7 +71,7 @@ jobs:
       - name: Extract release notes from CHANGELOG.md
         id: changelog
         run: |
-          # Extract the section for this version (between ## [v...] and the next ## [)
+          # Extract the section for this version (between ## [1.0.0] and the next ## [)
           version="${{ github.ref_name }}"
           # Strip leading 'v' to match CHANGELOG headings like ## [1.0.0]
           version_bare="${version#v}"
