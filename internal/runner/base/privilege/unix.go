@@ -25,9 +25,9 @@ var ErrUnsupportedOperationType = errors.New("unsupported operation type")
 // ErrIdentityLeak is returned when effective UID/GID do not match real UID/GID after privilege restoration.
 var ErrIdentityLeak = errors.New("privilege identity leak detected")
 
-// ErrSavedSetNotSupported is returned by readSavedIDs on platforms that do not
-// support the saved-set-uid/gid concept (non-Linux). The caller must skip the
-// saved-set invariant check when this error is returned.
+// ErrSavedSetNotSupported is returned by readSavedIDs on platforms where this
+// project does not implement reading the saved-set-uid/gid (non-Linux). The
+// caller must skip the saved-set invariant check when this error is returned.
 var ErrSavedSetNotSupported = errors.New("saved-set IDs not supported on this platform")
 
 // UnixPrivilegeManager implements privilege management for Unix systems using setuid
@@ -121,8 +121,8 @@ func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.Elevati
 		return nil, fmt.Errorf("failed to read saved-set IDs before execution: %w", err)
 	}
 
-	// On platforms that don't support saved-set IDs (non-Linux), use sentinel
-	// values so the saved-set invariant check is structurally skipped.
+	// On platforms where reading saved-set IDs is not implemented (non-Linux),
+	// use sentinel values so the saved-set invariant check is structurally skipped.
 	if errors.Is(err, ErrSavedSetNotSupported) {
 		suid = -1
 		sgid = -1
@@ -238,8 +238,8 @@ func (m *UnixPrivilegeManager) restorePrivilegesAndMetrics(execCtx *executionCon
 		// change when the process explicitly calls setresuid/setresgid, so any
 		// mismatch after restore indicates a privilege leak.
 		//
-		// On platforms that don't support saved-set IDs (non-Linux), the capture
-		// uses sentinel value -1 and readSavedIDs returns ErrSavedSetNotSupported.
+		// On platforms where reading saved-set IDs is not implemented (non-Linux),
+		// the capture uses sentinel value -1 and readSavedIDs returns ErrSavedSetNotSupported.
 		// The check is structurally skipped in that case via the originalSUID >= 0
 		// gate, rather than relying on both sides returning the same constant.
 		if execCtx.originalSUID >= 0 {
