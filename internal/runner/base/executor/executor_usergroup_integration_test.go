@@ -74,8 +74,11 @@ func userGroupIDs(t *testing.T, u *user.User) []int {
 // carry over this (root) process's supplementary groups.
 func TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot(t *testing.T) {
 	targetUser := os.Getenv("TEST_RUNAS_TARGET_USER")
-	if ok, reason := canRunPrivilegedIntegrationTest(os.Getuid(), targetUser); !ok {
+	if ok, reason := canRunPrivilegedIntegrationTest(os.Geteuid(), targetUser); !ok {
 		t.Skip(reason)
+	}
+	if targetUser == "root" {
+		t.Fatal("TEST_RUNAS_TARGET_USER must not be \"root\": the group-isolation assertions below become vacuous when the target user's own group list includes gid 0")
 	}
 
 	u, err := user.Lookup(targetUser)
