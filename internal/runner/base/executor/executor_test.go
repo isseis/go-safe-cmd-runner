@@ -34,9 +34,15 @@ var (
 // mockRunAsResolver returns a resolver that always succeeds with the given
 // identity. It is used in tests that exercise the user/group execution path
 // without needing actual OS user/group resolution.
+//
+// Groups is set to a non-nil (possibly empty) slice to match the success
+// contract of the production resolver (risktypes.ResolveRunAsIdent), which
+// only returns nil Groups when supplementary group enumeration failed. The
+// executor fails closed on nil Groups, so a mock that leaves it as the zero
+// value would be indistinguishable from that failure case.
 func mockRunAsResolver(uid, gid uint32) func(base risktypes.RunAsIdent, userName, groupName string) (risktypes.RunAsIdent, error) {
 	return func(_ risktypes.RunAsIdent, _, _ string) (risktypes.RunAsIdent, error) {
-		return risktypes.RunAsIdent{UID: uid, GID: gid}, nil
+		return risktypes.RunAsIdent{UID: uid, GID: gid, Groups: []uint32{}}, nil
 	}
 }
 

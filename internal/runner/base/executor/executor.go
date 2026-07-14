@@ -22,11 +22,14 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
-// stagedExecMode is the permission of a staged command copy: owner read+execute
-// only. Ownership is chowned to the run-as uid/gid (see stageFromFD) when a
-// credential is available, so the target user can still execute it without
-// exposing the copy to other users sharing the staging parent directory (e.g. /tmp).
-const stagedExecMode = 0o500
+// stagedExecMode is the permission of a staged command copy: owner
+// read+execute, group read+execute, others none. The staging directory and
+// file remain owned by root/parent (see stageFromFD); only the group is
+// chgrp'd to the run-as gid, so the target user can execute the staged copy
+// via group permission without being able to chown/chmod it (which owner
+// rights would allow) and without exposing it to other users sharing the
+// staging parent directory (e.g. /tmp).
+const stagedExecMode = 0o550
 
 // ErrPrivilegeLeak is returned when effective UID/GID do not match real UID/GID after execution.
 var ErrPrivilegeLeak = errors.New("privilege leak detected")
@@ -197,6 +200,16 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 			"user", cmd.RunAsUser(),
 			"group", cmd.RunAsGroup())
 		return nil, fmt.Errorf("%w: %w", ErrRunAsIdentityResolution, err)
+	}
+	// ResolveRunAsIdent silently returns nil Groups when supplementary group
+	// enumeration fails (it does not surface that as an error); fail closed
+	// here instead of passing nil straight into the process credential.
+	if resolvedIdent.Groups == nil {
+		e.Logger.Error("Failed to resolve run-as supplementary groups",
+			"error", ErrRunAsIdentityResolution,
+			"user", cmd.RunAsUser(),
+			"group", cmd.RunAsGroup())
+		return nil, ErrRunAsIdentityResolution
 	}
 
 	// Build the Credential for the child process. NoSetGroups: false ensures
@@ -468,17 +481,27 @@ func (e *DefaultExecutor) prepareExecCommand(ctx context.Context, plan *risktype
 	return exec.CommandContext(ctx, path, args...), noop, nil
 }
 
+// stagingDirMode is the permission of the staging directory: owner
+// read+write+execute, group execute only (to traverse into it), others none.
+// The directory stays owned by root/parent; only the group is chgrp'd to the
+// run-as gid (see stageFromFD), so the target user can traverse it via group
+// permission but cannot replace/rename the directory contents (which owner
+// write rights would allow), closing the TOCTOU directory-replacement gap.
+const stagingDirMode = 0o710
+
 // stageFromFD copies the verified inode out of the held descriptor into a private
 // read-only file and returns its path plus a cleanup function. The bytes are read
 // from the verified descriptor (not re-opened from the path), so a swapped path
-// cannot substitute different content. The staged copy lives in an owner-only
-// (0700) temp directory and is created 0500 (read+execute, owner only).
+// cannot substitute different content. The staging directory and staged file
+// remain owned by root/parent throughout.
 //
 // When cred is non-nil (run-as execution), both the staging directory and the
-// staged file are chowned to cred's uid/gid so the target user -- running as a
-// different, unprivileged uid -- can traverse and execute them despite the
-// owner-only permissions; this keeps the staged copy inaccessible to any other
-// user sharing the staging parent directory (e.g. /tmp).
+// staged file are chgrp'd (not chowned) to cred's gid, leaving the owner as
+// root/parent. This lets the target user -- running as a different,
+// unprivileged uid -- traverse and execute them via group permission, without
+// granting that user chown/chmod rights over the staged copy (which owner
+// rights would allow) and without exposing the copy to any other user sharing
+// the staging parent directory (e.g. /tmp).
 func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred *syscall.Credential) (string, func(), error) {
 	dir, err := os.MkdirTemp("", "scr-stage-")
 	if err != nil {
@@ -490,14 +513,19 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 		}
 	}
 
-	// Chown the staging directory to the run-as identity so that user (running
-	// as a different, unprivileged uid) can traverse it; the parent process here
-	// still runs privileged (root), so Chown is permitted.
+	// Chgrp (uid -1 leaves owner unchanged, keeping root/parent as owner) the
+	// staging directory to the run-as gid so that user (running as a
+	// different, unprivileged uid) can traverse it via group permission; the
+	// parent process here still runs privileged (root), so Chown is permitted.
 	if cred != nil {
-		// #nosec G115 -- cred.Uid/Gid are uint32 parsed via strconv.ParseUint(s, 10, 32), so they fit in int (64-bit on all supported platforms).
-		if err := os.Chown(dir, int(cred.Uid), int(cred.Gid)); err != nil {
+		// #nosec G115 -- cred.Gid is uint32 parsed via strconv.ParseUint(s, 10, 32), so it fits in int (64-bit on all supported platforms).
+		if err := os.Chown(dir, -1, int(cred.Gid)); err != nil {
 			cleanup()
-			return "", nil, fmt.Errorf("failed to chown staging directory to uid=%d gid=%d: %w", cred.Uid, cred.Gid, err)
+			return "", nil, fmt.Errorf("failed to chgrp staging directory to gid=%d: %w", cred.Gid, err)
+		}
+		if err := os.Chmod(dir, stagingDirMode); err != nil {
+			cleanup()
+			return "", nil, fmt.Errorf("failed to chmod staging directory: %w", err)
 		}
 	}
 
@@ -555,13 +583,14 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 		return "", nil, fmt.Errorf("failed to close staged command file: %w", err)
 	}
 
-	// Chown the staged file to the run-as identity so that user can execute it
-	// despite the owner-only 0500 mode.
+	// Chgrp (uid -1 leaves owner as root/parent) the staged file to the run-as
+	// gid so that user can execute it via group permission despite not owning
+	// it, preventing the target user from chown/chmod'ing the staged copy.
 	if cred != nil {
-		// #nosec G115 -- cred.Uid/Gid are uint32 parsed via strconv.ParseUint(s, 10, 32), so they fit in int (64-bit on all supported platforms).
-		if err := os.Chown(stagedPath, int(cred.Uid), int(cred.Gid)); err != nil {
+		// #nosec G115 -- cred.Gid is uint32 parsed via strconv.ParseUint(s, 10, 32), so it fits in int (64-bit on all supported platforms).
+		if err := os.Chown(stagedPath, -1, int(cred.Gid)); err != nil {
 			cleanup()
-			return "", nil, fmt.Errorf("failed to chown staged command file to uid=%d gid=%d: %w", cred.Uid, cred.Gid, err)
+			return "", nil, fmt.Errorf("failed to chgrp staged command file to gid=%d: %w", cred.Gid, err)
 		}
 	}
 
