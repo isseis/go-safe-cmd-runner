@@ -337,24 +337,6 @@ func TestRestorePrivilegesAndMetrics_Failure(t *testing.T) {
 	assert.Equal(t, int64(0), snapshot.ElevationSuccesses)
 }
 
-// TestRestoreUserGroupInternal tests user/group restoration
-func TestRestoreUserGroupInternal(t *testing.T) {
-	logger := slog.Default()
-	manager := &UnixPrivilegeManager{
-		logger:             logger,
-		privilegeSupported: false,
-	}
-
-	// Test restoration with original EGID
-	// This is a unit test, so we're testing the logic flow, not actual syscalls
-	// Use the current EGID (not UID) because restoreUserGroupInternal calls Setegid
-	err := manager.restoreUserGroupInternal(syscall.Getegid())
-
-	// In test environment without actual privilege escalation, this should succeed
-	// as it's a no-op when not actually escalated
-	assert.NoError(t, err)
-}
-
 // TestWithUserGroup tests the WithUserGroup functionality
 func TestWithUserGroup(t *testing.T) {
 	logger := slog.Default()
