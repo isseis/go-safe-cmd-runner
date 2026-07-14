@@ -136,10 +136,8 @@ Post a reply and resolve the thread using the following commands sequentially (o
 ```bash
 # Thread <threadId> (comment <databaseId>)
 gh api repos/<owner>/<repo>/pulls/<number>/comments/<databaseId>/replies \
-  -X POST --input - <<'PAYLOAD'
-{"body": "<replyBody>"}
-PAYLOAD
-&& gh api graphql -F threadId=<threadId> \
+  -f body="<replyBody>" \
+  && gh api graphql -F threadId=<threadId> \
   -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}'
 ```
 

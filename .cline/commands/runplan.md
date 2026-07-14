@@ -105,7 +105,7 @@ Work in order.
     fi
 
     # Check 2: no non-ASCII characters in Go source
-    if echo "$CHANGED" | xargs rg -Pn '[^\x00-\x7F]' 2>/dev/null; then
+    if echo "$CHANGED" | xargs rg -n '[^\\x00-\\x7F]' 2>/dev/null; then
       echo "REVIEW: non-ASCII found — verify each is intentional"
     else
       echo "OK: all ASCII"
