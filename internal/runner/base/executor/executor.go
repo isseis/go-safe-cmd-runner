@@ -436,9 +436,10 @@ func applyCredential(execCmd *exec.Cmd, cred *syscall.Credential) {
 //     for tests).
 //
 // cred is the run-as credential resolved by the caller (nil for normal
-// execution). When non-nil, the staging path chowns the staged directory and
-// file to cred's uid/gid so the target user can access them without exposing
-// the copy to other users sharing the staging parent directory (e.g. /tmp).
+// execution). When non-nil, the staging path chgrp's (owner stays root/parent)
+// the staged directory and file to cred's gid so the target user can access
+// them without exposing the copy to other users sharing the staging parent
+// directory (e.g. /tmp).
 //
 // Without a verified descriptor it execs the already-resolved path directly (no
 // re-resolution).
@@ -492,8 +493,7 @@ const stagingDirMode = 0o710
 // stageFromFD copies the verified inode out of the held descriptor into a private
 // read-only file and returns its path plus a cleanup function. The bytes are read
 // from the verified descriptor (not re-opened from the path), so a swapped path
-// cannot substitute different content. The staging directory and staged file
-// remain owned by root/parent throughout.
+// cannot substitute different content.
 //
 // When cred is non-nil (run-as execution), both the staging directory and the
 // staged file are chgrp'd (not chowned) to cred's gid, leaving the owner as
@@ -501,7 +501,9 @@ const stagingDirMode = 0o710
 // unprivileged uid -- traverse and execute them via group permission, without
 // granting that user chown/chmod rights over the staged copy (which owner
 // rights would allow) and without exposing the copy to any other user sharing
-// the staging parent directory (e.g. /tmp).
+// the staging parent directory (e.g. /tmp). When cred is nil (normal
+// execution), no chgrp occurs and the staging directory and staged file are
+// owned by the current, typically non-root, invoking user.
 func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred *syscall.Credential) (string, func(), error) {
 	dir, err := os.MkdirTemp("", "scr-stage-")
 	if err != nil {
@@ -581,6 +583,16 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	if err := dst.Close(); err != nil {
 		cleanup()
 		return "", nil, fmt.Errorf("failed to close staged command file: %w", err)
+	}
+
+	// os.OpenFile's mode is subject to the process umask, so in hardened
+	// environments (e.g. umask 0027/0077) the group execute bit requested via
+	// stagedExecMode could be silently stripped. Explicitly chmod the staged
+	// file so its permissions are deterministic regardless of umask, mirroring
+	// how the staging directory is already explicitly chmod'd above.
+	if err := os.Chmod(stagedPath, stagedExecMode); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("failed to chmod staged command file: %w", err)
 	}
 
 	// Chgrp (uid -1 leaves owner as root/parent) the staged file to the run-as
