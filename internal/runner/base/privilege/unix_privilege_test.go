@@ -37,7 +37,7 @@ func TestPrepareExecution_Success(t *testing.T) {
 				RunAsGroup:  "testgroup",
 			},
 			expectedPrivEscalation:  true,
-			expectedUserGroupChange: true,
+			expectedUserGroupChange: false,
 		},
 		{
 			name: "user_group_dryrun",
@@ -135,6 +135,48 @@ func TestPerformElevation_Success(t *testing.T) {
 		err := manager.performElevation(execCtx)
 		assert.NoError(t, err)
 	})
+}
+
+// TestChangeUserGroupInternal_NotCalledForUserGroupExecution verifies that
+// OperationUserGroupExecution no longer calls changeUserGroupInternal (the
+// parent process no longer switches identity to the target user; that is
+// delegated to SysProcAttr.Credential in the executor).
+func TestChangeUserGroupInternal_NotCalledForUserGroupExecution(t *testing.T) {
+	logger := slog.Default()
+
+	seteuidCalled := false
+	setegidCalled := false
+
+	manager := &UnixPrivilegeManager{
+		logger:             logger,
+		privilegeSupported: true,
+		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
+		syscallSeteuid: func(_ int) error {
+			seteuidCalled = true
+			return nil
+		},
+		syscallSetegid: func(_ int) error {
+			setegidCalled = true
+			return nil
+		},
+		identityVerifier: func() error {
+			return nil
+		},
+	}
+
+	// OperationUserGroupExecution should only escalate privileges (root),
+	// not change the parent's identity via changeUserGroupInternal.
+	fn := func() error {
+		return nil
+	}
+
+	err := manager.WithUserGroup("testuser", "testgroup", fn)
+	assert.NoError(t, err)
+
+	// syscallSeteuid/syscallSetegid should NOT be called because
+	// changeUserGroupInternal is skipped for OperationUserGroupExecution.
+	assert.False(t, seteuidCalled, "syscallSeteuid should not be called for UserGroupExecution")
+	assert.False(t, setegidCalled, "syscallSetegid should not be called for UserGroupExecution")
 }
 
 // TestPerformElevation_Failure tests privilege elevation failures
@@ -293,24 +335,6 @@ func TestRestorePrivilegesAndMetrics_Failure(t *testing.T) {
 	snapshot := manager.GetMetrics()
 	// When panicValue is not nil, success should not be recorded
 	assert.Equal(t, int64(0), snapshot.ElevationSuccesses)
-}
-
-// TestRestoreUserGroupInternal tests user/group restoration
-func TestRestoreUserGroupInternal(t *testing.T) {
-	logger := slog.Default()
-	manager := &UnixPrivilegeManager{
-		logger:             logger,
-		privilegeSupported: false,
-	}
-
-	// Test restoration with original EGID
-	// This is a unit test, so we're testing the logic flow, not actual syscalls
-	// Use the current EGID (not UID) because restoreUserGroupInternal calls Setegid
-	err := manager.restoreUserGroupInternal(syscall.Getegid())
-
-	// In test environment without actual privilege escalation, this should succeed
-	// as it's a no-op when not actually escalated
-	assert.NoError(t, err)
 }
 
 // TestWithUserGroup tests the WithUserGroup functionality

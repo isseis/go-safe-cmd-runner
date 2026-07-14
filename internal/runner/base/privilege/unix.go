@@ -140,7 +140,7 @@ func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.Elevati
 	switch elevationCtx.Operation {
 	case runnertypes.OperationUserGroupExecution:
 		execCtx.needsPrivilegeEscalation = true
-		execCtx.needsUserGroupChange = true
+		execCtx.needsUserGroupChange = false
 	case runnertypes.OperationUserGroupDryRun:
 		execCtx.needsPrivilegeEscalation = false
 		execCtx.needsUserGroupChange = true
@@ -205,12 +205,10 @@ func (m *UnixPrivilegeManager) handleCleanupAndMetrics(execCtx *executionContext
 
 // restorePrivilegesAndMetrics handles privilege restoration and metrics recording
 func (m *UnixPrivilegeManager) restorePrivilegesAndMetrics(execCtx *executionContext, panicValue any, shutdownContext string, duration time.Duration) {
-	if execCtx.needsUserGroupChange && execCtx.elevationCtx.Operation != runnertypes.OperationUserGroupDryRun {
-		if err := m.restoreUserGroupInternal(execCtx.originalEGID); err != nil {
-			m.emergencyShutdown(err, fmt.Sprintf("user_group_restore_failure_%s", shutdownContext))
-		}
-	}
-
+	// Note: no branch restores the effective group ID here. The only operation with
+	// needsUserGroupChange=true is OperationUserGroupDryRun (see prepareExecution),
+	// which never actually changes identity (changeUserGroupInternal returns early
+	// in dry-run mode), so there is nothing to restore.
 	if execCtx.needsPrivilegeEscalation {
 		if err := m.restorePrivileges(); err != nil {
 			m.emergencyShutdown(err, shutdownContext)
@@ -224,8 +222,9 @@ func (m *UnixPrivilegeManager) restorePrivilegesAndMetrics(execCtx *executionCon
 	// Defense-in-depth: verify EUID==UID and EGID==GID after every non-dry-run privilege
 	// operation. This is an independent check of the privilege manager's own restoration
 	// logic and catches any leakage regardless of which restore path ran.
-	needsVerification := execCtx.needsPrivilegeEscalation ||
-		(execCtx.needsUserGroupChange && execCtx.elevationCtx.Operation != runnertypes.OperationUserGroupDryRun)
+	// Only privilege escalation changes identity in production; the sole needsUserGroupChange
+	// operation is dry-run, which never mutates identity, so escalation alone gates verification.
+	needsVerification := execCtx.needsPrivilegeEscalation
 	if needsVerification {
 		if err := m.identityVerifier(); err != nil {
 			m.emergencyShutdown(err, fmt.Sprintf("identity_verification_failure_%s", shutdownContext))
@@ -571,21 +570,6 @@ func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName strin
 		"target_uid", targetUID,
 		"target_gid", targetGID)
 	m.logger.Info("User/group privileges changed successfully", successLogAttrs...)
-
-	return nil
-}
-
-// restoreUserGroupInternal restores the original effective group ID only
-// Note: User ID restoration is handled by restorePrivileges() to avoid conflicts
-func (m *UnixPrivilegeManager) restoreUserGroupInternal(originalEGID int) error {
-	// Only restore group ID - user ID will be restored by restorePrivileges()
-	if err := syscall.Setegid(originalEGID); err != nil {
-		return fmt.Errorf("failed to restore effective group ID to %d: %w", originalEGID, err)
-	}
-
-	m.logger.Debug("User/group privileges partially restored (group only)",
-		"restored_egid", originalEGID,
-		"note", "user ID will be restored by privilege restoration")
 
 	return nil
 }
