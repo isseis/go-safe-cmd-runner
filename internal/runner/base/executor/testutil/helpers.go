@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -279,14 +278,4 @@ func CreateRuntimeCommandFromSpec(spec *runnertypes.CommandSpec) *runnertypes.Ru
 		EffectiveTimeout:  effectiveTimeout,
 		TimeoutResolution: resolutionContext,
 	}
-}
-
-// NormalizeRunAsIdent normalizes a RunAsIdent for deep equality comparison by
-// converting empty slices to nil. This prevents false test failures when comparing
-// structs containing slices, where nil and []T{} are not considered equal.
-func NormalizeRunAsIdent(ident risktypes.RunAsIdent) risktypes.RunAsIdent {
-	if len(ident.Groups) == 0 {
-		ident.Groups = nil
-	}
-	return ident
 }
