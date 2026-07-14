@@ -22,9 +22,12 @@ type resolverCall struct {
 }
 
 // capturingResolver returns a resolver that records every call it receives and
-// always resolves to ident, so a test can assert on both what the executor
-// passed in and (indirectly, via the mock privilege manager's elevation log)
-// what came out.
+// always resolves to ident, so a test can assert on the base identity and
+// user/group names the executor passed in. It does not prove what the executor
+// does with ident afterward (building SysProcAttr.Credential and reaching
+// execve is exercised end-to-end only in the privileged integration tests);
+// the mock privilege manager's elevation log records only the RunAsUser/
+// RunAsGroup strings, not the resolved uid/gid/groups.
 func capturingResolver(calls *[]resolverCall, ident risktypes.RunAsIdent) func(risktypes.RunAsIdent, string, string) (risktypes.RunAsIdent, error) {
 	return func(base risktypes.RunAsIdent, userName, groupName string) (risktypes.RunAsIdent, error) {
 		*calls = append(*calls, resolverCall{base: base, userName: userName, groupName: groupName})
@@ -36,9 +39,11 @@ func capturingResolver(calls *[]resolverCall, ident risktypes.RunAsIdent) func(r
 // three run_as forms (user only, group only, both), the executor calls the run-as
 // resolver with the shared original-execution-identity base and the exact
 // user/group names from the command -- the wiring that feeds the kernel-level
-// Credential. The resolver itself (tested independently in the risktypes
-// package against the real OS user database) is responsible for turning those
-// arguments into the target uid/gid/supplementary-groups.
+// Credential. This proves only the inputs to the resolver; the resolver's own
+// output semantics (target uid/gid/supplementary-groups per form, including
+// group-only inheriting supplementary groups from the base rather than the
+// named group) are verified against the real OS user database in
+// risktypes/runas_ident_test.go, and are not re-verified here.
 func TestExecuteWithUserGroup_ResolverArgs_ThreeForms(t *testing.T) {
 	tests := []struct {
 		name          string

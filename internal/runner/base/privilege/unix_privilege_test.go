@@ -5,6 +5,7 @@ package privilege
 import (
 	"errors"
 	"log/slog"
+	"os/user"
 	"syscall"
 	"testing"
 	"time"
@@ -177,6 +178,54 @@ func TestChangeUserGroupInternal_NotCalledForUserGroupExecution(t *testing.T) {
 	// changeUserGroupInternal is skipped for OperationUserGroupExecution.
 	assert.False(t, seteuidCalled, "syscallSeteuid should not be called for UserGroupExecution")
 	assert.False(t, setegidCalled, "syscallSetegid should not be called for UserGroupExecution")
+}
+
+// TestChangeUserGroupInternal_NotCalledForUserGroupDryRun verifies that
+// dry-run mode validates and logs the would-be user/group change without
+// actually calling syscallSeteuid/syscallSetegid, so no supplementary-group
+// or identity mutation happens for a preview-only run.
+func TestChangeUserGroupInternal_NotCalledForUserGroupDryRun(t *testing.T) {
+	logger := slog.Default()
+
+	seteuidCalled := false
+	setegidCalled := false
+
+	manager := &UnixPrivilegeManager{
+		logger:             logger,
+		privilegeSupported: true,
+		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
+		syscallSeteuid: func(_ int) error {
+			seteuidCalled = true
+			return nil
+		},
+		syscallSetegid: func(_ int) error {
+			setegidCalled = true
+			return nil
+		},
+		identityVerifier: func() error {
+			return nil
+		},
+	}
+
+	// changeUserGroupInternal resolves the named user/group via the real OS user
+	// database even in dry-run mode (only the actual seteuid/setegid calls are
+	// skipped), so this must name a user that exists on the test host.
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+
+	elevationCtx := runnertypes.ElevationContext{
+		Operation: runnertypes.OperationUserGroupDryRun,
+		RunAsUser: currentUser.Username,
+	}
+	fn := func() error {
+		return nil
+	}
+
+	err = manager.WithPrivileges(elevationCtx, fn)
+	assert.NoError(t, err)
+
+	assert.False(t, seteuidCalled, "syscallSeteuid should not be called for a dry-run")
+	assert.False(t, setegidCalled, "syscallSetegid should not be called for a dry-run")
 }
 
 // TestPerformElevation_Failure tests privilege elevation failures
