@@ -14,7 +14,7 @@
 高品質に実装されており、一般的な攻撃ベクトルの多くは既に塞がれています。
 
 - 事前ハッシュ検証（設定ファイル・env ファイル・実行バイナリ）を実行前に強制
-- 本番ビルドではハッシュディレクトリを固定（`/usr/local/etc/go-safe-cmd-runner/hashes`）し、任意ハッシュDI攻撃を排除
+- 本番ビルドではハッシュディレクトリを固定（`/usr/local/etc/go-safe-cmd-runner/hashes`）し、任意ハッシュディレクトリ攻撃を排除
 - 固定 PATH・シンボリックリンク攻撃対策（`openat2 RESOLVE_NO_SYMLINKS` + フォールバック）・TOCTOU 対策
 - fd バインド実行（検証済み inode を `/proc/self/fd` 経由で実行）による検証〜実行間 TOCTOU の遮断
 - リスク評価器による「identity ゲート → 間接実行 → 特権昇格 → 各次元の最大値」というフェイルクローズ設計
