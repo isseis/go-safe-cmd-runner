@@ -308,6 +308,21 @@ PoC（概念実証）で確認する**（要件 01 §4 / レポート 00 §4 の
 - **PoC で不成立だった場合の代替**（優先順）: (1) `/proc` パス解決を避け、複製 fd に対し
   `execveat(fd, "", AT_EMPTY_PATH)` 相当で exec する、(2) `PR_SET_DUMPABLE` で dumpable を維持する、
   (3) staging fallback に倒す。採否は PoC 結果を本節にインラインで記録する。
+- **PoC 結果**: Linux 6.12.76 (arm64) で検証。root (euid=0) プロセスが非 root ユーザー
+  （nobody:uid=65534/gid=65534、daemon:uid=1/gid=1）へ `SysProcAttr.Credential` で降格しながら
+  `/proc/self/fd/<n>` を argv[0] に指定した `execve` が成功することを確認した。子プロセスの
+  dumpable フラグは 0（デフォルト、`PR_SET_DUMPABLE` 未設定）のままで EACCES は発生しなかった。
+  fd-bound 実行と `Credential` の組み合わせは本カーネル上で競合しない。※実装者は Phase 1 で
+  この前提が成立するカーネル範囲を確認する（§3.1.3 の既知リスクに明記した dumpable クリア問題は
+  `execve` 前に子プロセスが明示的に `setuid`/`setgroups` を呼ぶケースの懸念であり、`Credential` による
+  `execve` 時一括設定では親の dumpable は変更されないため発生しなかった）。
+  選定方式: 現行の fd-bound 実行を維持する。PoC 不成立時の代替（(1)〜(3)）は不要。
+  検証環境・手順・結果を以下に記録する。
+  - 環境: Linux arm64-dev-box 6.12.76-linuxkit #1 SMP aarch64 GNU/Linux (Ubuntu 26.04 LTS)
+  - 手順: root で `go run` し、対象バイナリを `os.Open` → `syscall.Dup` → `/proc/self/fd/<n>` を
+    `exec.Command` に与え、`SysProcAttr.Credential`（`Uid`, `Gid`, `NoSetGroups: false`）を設定して
+    `Run()`。`/bin/true`（gnutrue へのシンボリックリンク）を `nobody` ユーザーとして実行。
+  - 結果: exit code 0。複数ターゲットユーザー（nobody、daemon）で同様に成功。
 - **staging fallback の所有権**（非 Linux／fd-exec 無効時）: 現行は親が対象ユーザーの EUID でコピーを作り、
   コピーは対象ユーザー所有・`0o500` だった。新方式では親が root のままコピーを作るため所有は root になる。
   - **コピーを対象ユーザーへ chown してはならない**。所有者になった run_as ユーザーは `0o500` を
