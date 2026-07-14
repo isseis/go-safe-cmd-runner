@@ -140,7 +140,7 @@ func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.Elevati
 	switch elevationCtx.Operation {
 	case runnertypes.OperationUserGroupExecution:
 		execCtx.needsPrivilegeEscalation = true
-		execCtx.needsUserGroupChange = true
+		execCtx.needsUserGroupChange = false
 	case runnertypes.OperationUserGroupDryRun:
 		execCtx.needsPrivilegeEscalation = false
 		execCtx.needsUserGroupChange = true
