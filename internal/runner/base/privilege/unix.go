@@ -222,8 +222,9 @@ func (m *UnixPrivilegeManager) restorePrivilegesAndMetrics(execCtx *executionCon
 	// Defense-in-depth: verify EUID==UID and EGID==GID after every non-dry-run privilege
 	// operation. This is an independent check of the privilege manager's own restoration
 	// logic and catches any leakage regardless of which restore path ran.
-	needsVerification := execCtx.needsPrivilegeEscalation ||
-		(execCtx.needsUserGroupChange && execCtx.elevationCtx.Operation != runnertypes.OperationUserGroupDryRun)
+	// Only privilege escalation changes identity in production; the sole needsUserGroupChange
+	// operation is dry-run, which never mutates identity, so escalation alone gates verification.
+	needsVerification := execCtx.needsPrivilegeEscalation
 	if needsVerification {
 		if err := m.identityVerifier(); err != nil {
 			m.emergencyShutdown(err, fmt.Sprintf("identity_verification_failure_%s", shutdownContext))
