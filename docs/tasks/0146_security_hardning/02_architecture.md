@@ -235,6 +235,7 @@ flowchart TB
         direction LR
         LP["現状の欠陥箇所"]:::problem
         LE["新方式の処理"]:::enhanced
+        LD["共通/標準の処理"]
     end
 
     Before ~~~ After ~~~ Legend
@@ -269,8 +270,10 @@ flowchart TB
       同じ規則）。これにより AC-01 の「起動元の補助グループを 1 つも引き継がない」を group-only でも満たす。
     - user・group 両指定: ユーザーの identity を土台に gid のみ group で上書き。
   - **補助グループ列挙のビルド依存**: cgo 有効時は `getgrouplist(3)`（nsswitch 準拠）、
-    純 Go ビルド（`osusergo`）では `/etc/group` のみを参照する。取得不能時は nil（＝補助グループを空へ）で
-    フェイルセーフ側に倒れる。この差はビルド依存であり、dry-run と実行時の一貫性のため §5.3 に制約として記す。
+    純 Go ビルド（`osusergo`）では `/etc/group` のみを参照する。取得不能時はエラーとして扱い、
+    後述のフェイルクローズド規則（AC-02）に従って実行を中止する（root の補助グループを空へ倒すフェイル
+    セーフは採らない）。cgo/純 Go 間の列挙結果の差異はビルド依存として許容するが、dry-run と実行時の
+    一貫性のため §5.3 に制約として記す。
 - **フェイルクローズド**: identity 解決（未知ユーザー/グループ、補助グループ列挙不能）または `Credential`
   設定に失敗した場合は、コマンドを実行せずエラーを返し非ゼロ終了する。root の補助グループを保持したまま
   実行を継続しない（AC-02）。
@@ -518,6 +521,7 @@ flowchart TD
 
     subgraph Legend["凡例"]
         LE["変更/追加処理"]:::enhanced
+        LD["既存/標準の処理"]
     end
 ```
 
@@ -694,8 +698,9 @@ sequenceDiagram
     end
 ```
 
-> `suid==開始時suid` は「操作開始時に捕捉した親の saved-set-uid と一致すること」を意味する（real UID との
-> 比較ではない）。setuid-root 配備では開始時 suid は `0` であり、それが期待値となる（§3.1.2 参照）。
+> 実線矢印 `->>` は同期メッセージ送信、破線矢印 `-->>` は応答メッセージを表す。`suid==開始時suid` は
+> 「操作開始時に捕捉した親の saved-set-uid と一致すること」を意味する（real UID との比較ではない）。
+> setuid-root 配備では開始時 suid は `0` であり、それが期待値となる（§3.1.2 参照）。
 
 ### 6.2 dry-run 未検証内容の扱い
 
@@ -718,6 +723,7 @@ flowchart TD
 
     subgraph Legend["凡例"]
         LE["変更/追加処理"]:::enhanced
+        LD["既存/標準の処理"]
     end
 ```
 
