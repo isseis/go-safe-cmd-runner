@@ -84,6 +84,7 @@ linters:
             - github.com/stretchr/testify/require
             - github.com/stretchr/testify/mock
             - golang.org/x/arch
+            - golang.org/x/sys
             - golang.org/x/term
 
 

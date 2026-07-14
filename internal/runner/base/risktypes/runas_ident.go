@@ -1,30 +1,34 @@
-package risk
+package risktypes
 
 import (
 	"fmt"
 	"os"
 	"os/user"
 	"strconv"
-
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
+	"sync"
 )
 
-// originalExecutionIdentity returns the original execution identity of the current
+// OriginalExecutionIdentity returns the original execution identity of the current
 // process: the real uid/gid plus supplementary groups. It is the default run-as
 // identity for commands that set no run_as_user/run_as_group, and is resolved once
-// at evaluator construction (NewStandardEvaluator, called from runner.go at
-// startup) -- before any per-command privilege change, so the captured values are
-// the original invoking identity. The real uid (os.Getuid) is the invoking user
-// even under a setuid binary, which is the conservative trust basis. This is
-// captured directly from the process rather than from the privilege manager, which
-// exposes no original-identity getter and is absent when no command requests
-// privileges. The zoning judgment itself never reads live identity; it consumes
-// only this precomputed value. The zero value (uid 0) is never used as an implicit
-// "unset" default, which is why this is resolved explicitly.
-func originalExecutionIdentity() risktypes.RunAsIdent {
+// (via sync.OnceValue) at first call — before any per-command privilege change, so
+// the captured values are the original invoking identity. The real uid (os.Getuid)
+// is the invoking user even under a setuid binary, which is the conservative trust
+// basis. This is captured directly from the process rather than from the privilege
+// manager, which exposes no original-identity getter and is absent when no command
+// requests privileges. The zoning judgment itself never reads live identity; it
+// consumes only this precomputed value. The zero value (uid 0) is never used as an
+// implicit "unset" default, which is why this is resolved explicitly.
+//
+// OriginalExecutionIdentity is wrapped in sync.OnceValue so the first caller
+// (typically the risk evaluator at construction time, before privilege escalation)
+// captures the value once, and all subsequent callers (including the executor)
+// receive the same cached value. This ensures the risk evaluator's base identity
+// and the executor's Credential base are identical.
+var OriginalExecutionIdentity = sync.OnceValue(func() RunAsIdent {
 	// #nosec G115 -- safe: os.Getuid/os.Getgid/os.Getgroups return system IDs,
 	// which are non-negative and fit in uint32 on all supported platforms.
-	ident := risktypes.RunAsIdent{
+	ident := RunAsIdent{
 		UID: uint32(os.Getuid()),
 		GID: uint32(os.Getgid()),
 	}
@@ -35,9 +39,9 @@ func originalExecutionIdentity() risktypes.RunAsIdent {
 		}
 	}
 	return ident
-}
+})
 
-// resolveRunAsIdent resolves a run-as user/group name pair to a RunAsIdent via the
+// ResolveRunAsIdent resolves a run-as user/group name pair to a RunAsIdent via the
 // OS user database (the same lookups the privilege manager uses), starting from the
 // given base identity. It is the production runAsResolver. A failure (unknown user
 // or group) is returned so the caller fails closed rather than trusting an
@@ -48,21 +52,21 @@ func originalExecutionIdentity() risktypes.RunAsIdent {
 // the gid overridden by the named group. The base is passed in (the default
 // identity captured once at construction) so the group-only form does not re-read
 // live process identity at evaluation time.
-func resolveRunAsIdent(base risktypes.RunAsIdent, userName, groupName string) (risktypes.RunAsIdent, error) {
+func ResolveRunAsIdent(base RunAsIdent, userName, groupName string) (RunAsIdent, error) {
 	ident := base
 
 	if userName != "" {
 		u, err := user.Lookup(userName)
 		if err != nil {
-			return risktypes.RunAsIdent{}, fmt.Errorf("resolve run-as user %q: %w", userName, err)
+			return RunAsIdent{}, fmt.Errorf("resolve run-as user %q: %w", userName, err)
 		}
 		uid, err := strconv.ParseUint(u.Uid, 10, 32)
 		if err != nil {
-			return risktypes.RunAsIdent{}, fmt.Errorf("parse uid for run-as user %q: %w", userName, err)
+			return RunAsIdent{}, fmt.Errorf("parse uid for run-as user %q: %w", userName, err)
 		}
 		gid, err := strconv.ParseUint(u.Gid, 10, 32)
 		if err != nil {
-			return risktypes.RunAsIdent{}, fmt.Errorf("parse primary gid for run-as user %q: %w", userName, err)
+			return RunAsIdent{}, fmt.Errorf("parse primary gid for run-as user %q: %w", userName, err)
 		}
 		ident.UID = uint32(uid)
 		ident.GID = uint32(gid)
@@ -72,11 +76,11 @@ func resolveRunAsIdent(base risktypes.RunAsIdent, userName, groupName string) (r
 	if groupName != "" {
 		g, err := user.LookupGroup(groupName)
 		if err != nil {
-			return risktypes.RunAsIdent{}, fmt.Errorf("resolve run-as group %q: %w", groupName, err)
+			return RunAsIdent{}, fmt.Errorf("resolve run-as group %q: %w", groupName, err)
 		}
 		gid, err := strconv.ParseUint(g.Gid, 10, 32)
 		if err != nil {
-			return risktypes.RunAsIdent{}, fmt.Errorf("parse gid for run-as group %q: %w", groupName, err)
+			return RunAsIdent{}, fmt.Errorf("parse gid for run-as group %q: %w", groupName, err)
 		}
 		ident.GID = uint32(gid)
 	}

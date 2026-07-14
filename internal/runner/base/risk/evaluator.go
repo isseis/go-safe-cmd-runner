@@ -81,14 +81,14 @@ func NewStandardEvaluator(networkAnalyzer *security.NetworkAnalyzer, securityCon
 	e := &StandardEvaluator{
 		networkAnalyzer: networkAnalyzer,
 		openIdentity:    openVerifiedIdentity,
-		resolveRunAs:    resolveRunAsIdent,
+		resolveRunAs:    risktypes.ResolveRunAsIdent,
 	}
 	if securityConfig != nil {
 		e.zoning = &zoningParams{
 			systemCriticalPaths:        securityConfig.SystemCriticalPaths,
 			trustedDirectories:         securityConfig.TrustedDirectories,
 			outputCriticalPathPatterns: securityConfig.OutputCriticalPathPatterns,
-			runAsIdent:                 originalExecutionIdentity(),
+			runAsIdent:                 risktypes.OriginalExecutionIdentity(),
 		}
 	}
 	return e

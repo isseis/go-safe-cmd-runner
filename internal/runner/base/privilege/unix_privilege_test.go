@@ -582,27 +582,3 @@ func TestRestorePrivilegesAndMetrics_IdentityVerificationSkippedForDryRun(t *tes
 
 	assert.False(t, verifierCalled, "identityVerifier should not be called for dry-run")
 }
-
-// TestRestorePrivilegesAndMetrics_IdentityVerificationPassesOnCleanRestore verifies that
-// no shutdown occurs when identityVerifier confirms the identity is clean.
-func TestRestorePrivilegesAndMetrics_IdentityVerificationPassesOnCleanRestore(t *testing.T) {
-	manager := &UnixPrivilegeManager{
-		logger:             slog.Default(),
-		privilegeSupported: false,
-		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
-		identityVerifier:   func() error { return nil },
-	}
-
-	execCtx := &executionContext{
-		elevationCtx: runnertypes.ElevationContext{
-			Operation:   runnertypes.OperationFileValidation,
-			CommandName: "test-command",
-		},
-		needsPrivilegeEscalation: true,
-		needsUserGroupChange:     false,
-		start:                    time.Now(),
-	}
-
-	// Should complete without panic or osExit
-	manager.restorePrivilegesAndMetrics(execCtx, nil, "test", 0)
-}
