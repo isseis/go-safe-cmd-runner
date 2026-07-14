@@ -23,8 +23,14 @@ import (
 )
 
 // stagedExecMode is the permission of a staged command copy: owner read+execute
-// only, with write withheld so the verified copy cannot be modified before exec.
-const stagedExecMode = 0o500
+// and others read+execute (world readable but not writable), so the verified copy
+// cannot be modified before exec and is readable by all users.
+const stagedExecMode = 0o555
+
+// stagedDirMode is the permission of the staging directory: owner rwx, others r-x
+// (world executable but not writable). This allows child processes with different
+// uid/gid to traverse the directory and execute the staged binary.
+const stagedDirMode = 0o711
 
 // ErrPrivilegeLeak is returned when effective UID/GID do not match real UID/GID after execution.
 var ErrPrivilegeLeak = errors.New("privilege leak detected")
@@ -446,12 +452,21 @@ func (e *DefaultExecutor) prepareExecCommand(ctx context.Context, plan *risktype
 // stageFromFD copies the verified inode out of the held descriptor into a private
 // read-only file and returns its path plus a cleanup function. The bytes are read
 // from the verified descriptor (not re-opened from the path), so a swapped path
-// cannot substitute different content. The staged copy lives in a 0700 temp
-// directory and is created 0500 (read+execute, no write).
+// cannot substitute different content. The staged copy lives in a 0711 temp
+// directory and is created 0555 (read+execute for all, no write).
 func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity) (string, func(), error) {
 	dir, err := os.MkdirTemp("", "scr-stage-")
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create staging directory: %w", err)
+	}
+	// Change directory permissions to stagedDirMode (rwx--x--x) to allow
+	// other users to execute staged binaries. Child process with different uid/gid
+	// must be able to traverse the directory. Staged binary is in 0o555 (world
+	// readable but not writable), so world-executable directory is safe.
+	// #nosec G302 -- directory must be traversable by child process with different uid/gid
+	if err := os.Chmod(dir, stagedDirMode); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", nil, fmt.Errorf("failed to chmod staging directory to 0o711: %w", err)
 	}
 	cleanup := func() {
 		if rmErr := os.RemoveAll(dir); rmErr != nil {
