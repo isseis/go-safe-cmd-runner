@@ -19,9 +19,9 @@
 要件書が設計判断に委ねた主要論点は次の 2 点であり、本書で結論を確定する。
 
 - 補助グループ／saved-set-uid のアトミック設定機構（要件 F-001 / F-002、前提・依存節）
-  → **§3.1 で `os/exec` の `SysProcAttr.Credential` 採用を確定**する。
+  → §3.1 で `os/exec` の `SysProcAttr.Credential` 採用を確定する。
 - ファイルサイズ上限の設定可能化／上限分離の可否（要件 F-006）
-  → **§3.6 で「本タスクでは実装せず、根拠をドキュメント化するにとどめる」を確定**する。
+  → §3.6 で「本タスクでは実装せず、根拠をドキュメント化するにとどめる」を確定する。
 
 用語は [`docs/translation_glossary.md`](../../translation_glossary.md) に従う（「フェイルクローズド」「Redaction」等）。
 
@@ -42,9 +42,9 @@
 
 ### 1.2 コンセプトモデル
 
-本タスクが堅牢化するのは、信頼境界を跨ぐ 3 つの**面**である。いずれも「信頼境界の起点となるデータ →
-本タスクで堅牢化するコンポーネント → 到達先データ」という**一方向・一直線の流れ**であり、互いに独立している。
-そのため下図では 3 つの面を**同一方向（左→右）の並行レーン**として並べ、各面が同じ形（起点 → 堅牢化対象 →
+本タスクが堅牢化するのは、信頼境界を跨ぐ 3 つの面である。いずれも「信頼境界の起点となるデータ →
+本タスクで堅牢化するコンポーネント → 到達先データ」という一方向・一直線の流れであり、互いに独立している。
+そのため下図では 3 つの面を同一方向（左→右）の並行レーンとして並べ、各面が同じ形（起点 → 堅牢化対象 →
 到達先）で読めるようにする。
 
 | 面 | 信頼境界の起点 | 堅牢化するコンポーネント | 到達先 | 対応要件 |
@@ -168,12 +168,12 @@ flowchart LR
 | `internal/redaction/value_detector.go`（新規） | F-003 | キー名に依存しない値ベースの秘密検出・マスク（既知フォーマット）。 | 新規テスト |
 | `internal/redaction/redactor.go` | F-003 | `Config` に `ValueDetector` を統合し、`RedactText` から値ベース検出を適用。 | `redactor_test.go` |
 | `internal/redaction/sensitive_patterns.go` | F-003 | 既知フォーマット用パターンの定義追加（既存キー名パターンは維持）。 | `sensitive_patterns_test.go` |
-| `internal/verification/manager.go` | F-004 | `readAndVerifyFileWithReadFallback` の**2 つのフォールバック経路（検証器 nil／検証失敗）両方**で、検証を通さず返した内容を「未検証（UNVERIFIED）」として検証サマリへ伝播。 | `manager_test.go` |
+| `internal/verification/manager.go` | F-004 | `readAndVerifyFileWithReadFallback` の2 つのフォールバック経路（検証器 nil／検証失敗）両方で、検証を通さず返した内容を「未検証（UNVERIFIED）」として検証サマリへ伝播。 | `manager_test.go` |
 | `internal/verification/result_collector.go` / `types.go` | F-004 | 未検証内容採用のフラグ（`UsedUnverifiedContent`）と、その理由（`skipped_no_validator` / `verify_failed_<reason>`）を検証サマリに保持。 | `result_collector_test.go` |
 | `internal/runner/resource/formatter.go` ほか dry-run 出力 | F-004 | UNVERIFIED を出力上で明示表示（text / json 両形式）。 | dry-run 出力系テスト |
 | `internal/runner/resource/dryrun_manager.go` | F-004 | 未検証内容採用時の dry-run 終了コード判定（§3.4.3 の終了コード対応表）。 | `dryrun_manager_test.go` |
 | `internal/runner/resource/types.go` | F-004 | `FailOnVerificationUnavailable` の対象拡張に伴う doc コメント・意味変更（§3.4.3）。終了コード定数の対応を明確化。 | `dryrun_manager_test.go` |
-| `cmd/record/main.go` | F-005 | `RunTOCTOUPermissionCheck` の戻り値を評価し、違反があれば ERROR ログ出力のうえ**無条件で**非ゼロ終了（ハッシュ生成せず。バイパスフラグは設けない）。`hashDirPermissions` を `0o750` → `0o700`。 | `main_test.go` |
+| `cmd/record/main.go` | F-005 | `RunTOCTOUPermissionCheck` の戻り値を評価し、違反があれば ERROR ログ出力のうえ無条件で非ゼロ終了（ハッシュ生成せず。バイパスフラグは設けない）。`hashDirPermissions` を `0o750` → `0o700`。 | `main_test.go` |
 | `docs/user/runner_command.*.md`, `record_command.*.md`, `security-risk-assessment.*.md` ほか | F-003, F-004, F-005, F-006, F-007 | 運用前提・限界の明文化（各 AC 参照）。 | `static` 検証 |
 
 ---
@@ -196,13 +196,13 @@ flowchart LR
   （要件 F-002 / AC-05）。復元は `restoreUserGroupInternal` → `restorePrivileges` の二段構えで複雑。
 
 これらは「親プロセスを対象ユーザーへ seteuid する」構造自体に起因するため、同構造を保ったまま
-`setgroups` を足すより、**子プロセスの identity をカーネルが `execve` 時に確定する方式**へ移すほうが
+`setgroups` を足すより、子プロセスの identity をカーネルが `execve` 時に確定する方式へ移すほうが
 根本的な解決になる。要件書・レポートの推奨（`SysProcAttr.Credential`）と一致する。
 
 #### 3.1.2 採用する新方式
 
-run-as コマンド実行に限り、次の流れに変更する（**ファイル検証等の親プロセス内特権処理は現行
-`WithPrivileges` を維持**。要件 F-002 の許容範囲）。
+run-as コマンド実行に限り、次の流れに変更する（ファイル検証等の親プロセス内特権処理は現行
+`WithPrivileges` を維持。要件 F-002 の許容範囲）。
 
 ```mermaid
 flowchart TB
@@ -245,30 +245,30 @@ flowchart TB
 
 新方式の要点:
 
-- **親プロセスは root のまま**（対象ユーザーへは切替えない）。対象ユーザー identity は
+- **親プロセスは root のまま**: 対象ユーザーへは切替えず、対象ユーザー identity は
   `execCmd.SysProcAttr.Credential{Uid, Gid, Groups, NoSetGroups: false}` に載せ、`execve` 時に
-  カーネルが real/effective/saved の uid/gid と補助グループを**アトミックに一括設定**する。
-  - `NoSetGroups: false` により補助グループが対象ユーザーのものへ**明示的に再設定**され、root の
-    補助グループは継承されない（AC-01）。**子プロセス**の suid も対象 uid になるため、子側に
+  カーネルが real/effective/saved の uid/gid と補助グループをアトミックに一括設定する。
+  - `NoSetGroups: false` により補助グループが対象ユーザーのものへ明示的に再設定され、root の
+    補助グループは継承されない（AC-01）。子プロセスの suid も対象 uid になるため、子側に
     saved-set-uid=0 は残らない（AC-05）。これは子の性質であり、親の性質ではない（後述の親不変条件と区別する）。
   - 親が「対象ユーザーへ seteuid される区間」は消滅する（AC-05 option (a)）。
-- **run-as identity（uid/gid/補助グループ）の決定**は、既存 `internal/runner/base/risk/runas_identity.go` の
-  `resolveRunAsIdent(base, userName, groupName)` を**唯一の解決関数として共有**する。risk 側の
-  パス信頼区分の判定と executor 側の Credential 生成が**同一関数**を呼ぶことで、両者が同じ集合を返すことをコードで保証する
+- **run-as identity 解決の一元化**: 既存 `internal/runner/base/risk/runas_identity.go` の
+  `resolveRunAsIdent(base, userName, groupName)` を唯一の解決関数として共有する。risk 側の
+  パス信頼区分の判定と executor 側の Credential 生成が同一関数を呼ぶことで、両者が同じ集合を返すことをコードで保証する
   （並行実装を作らない。DRY）。そのため本タスクでこの関数を `risk` パッケージから、`risk` と
   `executor`/`privilege` の双方が依存できる中立な位置（`risktypes` 近傍を想定）へ移設する。
   `RunAsIdent` 型も既存の `risktypes.RunAsIdent`（`UID/GID uint32`, `Groups []uint32`）を再利用し、
   新しい identity 型は追加しない。
-  - **3 形態すべてを定義**（`resolveRunAsIdent` の既存規則）: `base` は「起動元プロセスの元 identity」
+  - **3 形態すべてを定義**: `resolveRunAsIdent` の既存規則に基づき、`base` は「起動元プロセスの元 identity」
     （run_as を指定しないコマンドの既定であり、group-only 形態の土台）。
     - user 指定あり: そのユーザーの uid / 主 gid / 補助グループ（`base` は上書きされる）。
-    - group 指定のみ: `base` の uid・補助グループを保ち gid のみ上書き。**この形態では補助グループが
-      `base`（＝起動元）のものになる**ため、setuid-root 配備では root の補助グループが残る。したがって
+    - group 指定のみ: `base` の uid・補助グループを保ち gid のみ上書き。この形態では補助グループが
+      `base`（＝起動元）のものになため、setuid-root 配備では root の補助グループが残る。したがって
       group-only 形態の `base` には「起動元プロセスの元 identity（`os.Getuid`/`Getgid`/`Getgroups`）」を用い、
       昇格中の root の現在の identity を読まない（`risk/runas_identity.go` が構築時に元 identity を捕捉するのと
       同じ規則）。これにより AC-01 の「起動元の補助グループを 1 つも引き継がない」を group-only でも満たす。
     - user・group 両指定: ユーザーの identity を土台に gid のみ group で上書き。
-  - `os.Getgroups`／`user.GroupIds()` は **cgo 有効時は `getgrouplist(3)`（nsswitch 準拠）**、
+  - **補助グループ列挙のビルド依存**: cgo 有効時は `getgrouplist(3)`（nsswitch 準拠）、
     純 Go ビルド（`osusergo`）では `/etc/group` のみを参照する。取得不能時は nil（＝補助グループを空へ）で
     フェイルセーフ側に倒れる。この差はビルド依存であり、dry-run と実行時の一貫性のため §5.3 に制約として記す。
 - **フェイルクローズド**: identity 解決（未知ユーザー/グループ、補助グループ列挙不能）または `Credential`
@@ -277,19 +277,19 @@ flowchart TB
 - **PrivilegeManager 側の役割変更**: `OperationUserGroupExecution` は「root 昇格のみ・親のユーザー/グループ
   切替なし」に変更する。親を対象ユーザーへ切替える `changeUserGroupInternal` 呼び出しは実行経路から外す。
   dry-run 経路（`OperationUserGroupDryRun`）は従来どおり検証・ログのみで identity 変更を行わない（AC-04）。
-- **親プロセスの不変条件チェックの拡張**（AC-06）: 復元後の検証に saved-set-uid/gid（suid/sgid）を加える。
+- **親プロセスの不変条件チェックの拡張**: 復元後の検証に saved-set-uid/gid（suid/sgid）を加える（AC-06）。
   - **重要**: 親の suid を `real UID` と比較してはならない。setuid-root 配備では親の suid は起動時から `0`
     であり、それは次操作の再昇格・ファイル検証のための正当な状態である（`real UID` は非 0 の起動ユーザー）。
-    正しい不変条件は「**操作開始時に捕捉した suid/sgid から変化していないこと**」である。このため
+    正しい不変条件は「操作開始時に捕捉した suid/sgid から変化していないこと」である。このため
     `executionContext` に操作開始時の suid/sgid を捕捉し（現状は `originalEUID`/`originalEGID` のみ捕捉）、
     復元後にそれと一致するかを検証する。setuid-root では期待値 `0`、native root では `0`。
-  - 既存の EUID==UID / EGID==GID 検証は維持し（AC-07、`restorePrivileges` により euid は元へ戻る）、
+  - **既存検証は維持**: EUID==UID / EGID==GID 検証は維持し（AC-07、`restorePrivileges` により euid は元へ戻る）、
     いずれかが操作開始時と異なれば既存の emergency shutdown（即時プロセス停止）を行う。
-  - suid/sgid の読み取りは `golang.org/x/sys/unix.Getresuid`/`Getresgid`（**標準 `syscall` には無い**、
+  - **suid/sgid 読み取りの実装**: `golang.org/x/sys/unix.Getresuid`/`Getresgid`（標準 `syscall` には無い、
     Linux/対応 Unix のみ）を用いる。`unix.go` は `//go:build !windows` で darwin も含むため、非 Linux では
     ガードした no-op（suid 検証を省略）とする（F-007 の「macOS は開発・限定用途」と整合）。
 
-#### 3.1.3 fd-bound 実行・staging fallback との整合（**要 PoC**）
+#### 3.1.3 fd-bound 実行・staging fallback との整合（要 PoC）
 
 `DefaultExecutor` は検証済み inode を fd-bound（`/proc/self/fd/<n>` を argv[0] に与え、複製 fd を
 `ExtraFiles` で渡す。Linux）または staging コピー（非 Linux）で実行する（検証〜実行間 TOCTOU 遮断）。
@@ -298,7 +298,7 @@ PoC（概念実証）で確認する**（要件 01 §4 / レポート 00 §4 の
 
 - **既知のリスク（fd-bound + Credential setuid）**: 子プロセスが `execve` 前に `setgroups`/`setgid`/`setuid`
   で権限降格すると **dumpable フラグ**がクリアされ、カーネルは `/proc/<pid>` を `root:root` 所有へ戻し
-  `/proc/<pid>/fd` の探索を制限し得る。この後で `/proc/self/fd/<n>` を**文字列パスとして**解決する
+  `/proc/<pid>/fd` の探索を制限し得る。この後で `/proc/self/fd/<n>` を文字列パスとして解決する
   `execve` は、降格済みの子から `EACCES` になる可能性がある（`fexecve` over `/proc` の既知問題と同型）。
   本番ターゲットは Linux + fd-bound + run_as（F-007）であり、ここが壊れると run_as 実行が本番で機能しない
   （AC-04 回帰・機能停止）。
@@ -310,7 +310,7 @@ PoC（概念実証）で確認する**（要件 01 §4 / レポート 00 §4 の
   - **コピーを対象ユーザーへ chown してはならない**。所有者になった run_as ユーザーは `0o500` を
     `chmod +w` で覆して検証済みバイトを差し替えられ、検証〜exec 間の置換（staging が防ぐはずの TOCTOU）を
     再導入する。run_as ユーザーは本ツールの脅威モデルでは攻撃者になり得る。
-  - **対策**: コピーは **root 所有のまま**、他者に実行のみ許す `0o555`（ディレクトリは `0o711`）とし、
+  - **対策**: コピーは root 所有のまま、他者に実行のみ許す `0o555`（ディレクトリは `0o711`）とし、
     書込みは誰にも与えない。run_as ユーザーは exec できるが `chmod` 権限を持たない。
   - staging は開発・限定用途の経路であり、本番は fd-bound 実行である（F-007）。
 
@@ -345,14 +345,14 @@ type identityChecker func() error
 
 #### 3.3.1 なぜキー名パターンだけでは不十分か
 
-現状の `redaction` は主に**キー名/変数名**の正規表現（`password|token|secret|key|api_key` 等）に依存し、
+現状の `redaction` は主にキー名/変数名の正規表現（`password|token|secret|key|api_key` 等）に依存し、
 値検出 `IsSensitiveValue` も同じキー向けパターンを流用している。よって、キー名を伴わずに値だけが
 コマンド引数・stdout/stderr・環境変数値へ現れた場合（`AKIA…`、JWT、PEM ブロック等）を取りこぼす。
-これらはログや **Slack 通知** へ平文で載り得る（要件 F-003 / AC-08）。
+これらはログや Slack 通知へ平文で載り得る（要件 F-003 / AC-08）。
 
 #### 3.3.2 追加する値ベース検出器
 
-`internal/redaction` に**値そのもの**を対象とする検出器 `ValueDetector` を追加し、既知フォーマットを
+`internal/redaction` に値そのものを対象とする検出器 `ValueDetector` を追加し、既知フォーマットを
 マスクする。少なくとも次を対象とする（AC-08）。
 
 - クラウド資格情報プレフィックス: AWS（`AKIA`/`ASIA` 等）、GitHub（`ghp_`/`gho_`/`ghs_` 等）、
@@ -361,7 +361,7 @@ type identityChecker func() error
 - `Bearer <token>`。
 - URL 埋め込み credential（`scheme://user:pass@host`）。
 
-高エントロピー文字列ヒューリスティックは、誤検出リスクを踏まえ**本タスクでは実装しない**
+高エントロピー文字列ヒューリスティックは、誤検出リスクを踏まえ本タスクでは実装しない**
 （要件スコープ外の任意事項）。将来の拡張点として §9 に記す。
 
 #### 3.3.3 既存 Redaction 経路への接続（漏れの防止）
@@ -370,7 +370,7 @@ type identityChecker func() error
 内容には必ず適用する」ことを求める。現状の二層防御（Layer 1: `SanitizeOutputForLogging`、
 Layer 2: `RedactingHandler`）は共通して `redaction.Config.RedactText` を経由する。したがって
 `ValueDetector` を `Config` に統合し `RedactText`（および `RedactLogAttribute`/`redactLogAttributeWithContext`
-の値判定）から呼ぶことで、**両層・全出力先（file / syslog / Slack）へ一括適用**され、経路ごとの
+の値判定）から呼ぶことで、両層・全出力先（file / syslog / Slack）へ一括適用され、経路ごとの
 実装漏れを避けられる（DRY）。
 
 ```mermaid
@@ -408,7 +408,7 @@ flowchart LR
 `ValueDetector` は組み立て済みのフィールド値（コマンド結果を格納した `slog.Attr`。Slack formatter が
 生成する `cmd_N` 等のネストグループを含む）に対して適用する。`RedactingHandler` は
 `redactLogAttributeWithContext` で `KindGroup` を再帰処理するため、`RedactText` へ統合すれば
-ネストグループ内の値も再帰的に対象になる。**未組み立ての生ストリームチャンク**（`outputWrapper.Write` が
+ネストグループ内の値も再帰的に対象になる。未組み立ての生ストリームチャンク（`outputWrapper.Write` が
 受け取る途中バイト列）ではなく、組み立て後の値に対して適用することを実装上の前提とする（チャンク境界を
 跨ぐ秘密値の取りこぼしを避けるため。§5.3 に残余限界を記す）。
 
@@ -416,8 +416,7 @@ flowchart LR
 
 Slack 送信は `internal/logging/slack_handler.go` が担い、`RedactingHandler` に包まれるため §3.3.3 の
 値ベースマスキングが適用される（`SlackHandler.Handle` はマスク済み `slog.Attr` からペイロードを組み立てる）。
-加えて AC-10 の要求（自由記述本文に未マスクの生コマンド出力を載せない）に対し、
-**「送信前に値ベースマスキングを必ず通す」方式**を採用する（`RedactingHandler` 経由の保証を維持しつつ、
+加えて AC-10 の要求（自由記述本文に未マスクの生コマンド出力を載せない）に対し、「送信前に値ベースマスキングを必ず通す」方式を採用する（`RedactingHandler` 経由の保証を維持しつつ、
 コマンド出力は Layer 1 で生成時点でマスク済み）。フィールド・ホワイトリスト化は本タスクでは追加要件とせず、
 既存の長さ制限（stdout 1000 / stderr 500 文字）とマスキングの二重化で担保する。
 
@@ -430,18 +429,18 @@ Slack 送信は `internal/logging/slack_handler.go` が担い、`RedactingHandle
 
 #### 3.4.1 現状の危うさと 2 つのフォールバック経路
 
-`Manager.readAndVerifyFileWithReadFallback` は、検証を通さずに `os.ReadFile` で内容を返す経路を **2 つ**持つ。
-本設計は**両方**を対象にする（片方だけを塞ぐと CI の主用途を取りこぼす）。
+`Manager.readAndVerifyFileWithReadFallback` は、検証を通さずに `os.ReadFile` で内容を返す経路を 2 つ持つ。
+本設計は両方を対象にする（片方だけを塞ぐと CI の主用途を取りこぼす）。
 
 1. **検証器 nil 経路**（`m.fileValidator == nil`）: 検証をスキップして即 `os.ReadFile`。dry-run では、
    ハッシュディレクトリが書込み不可（`os.ErrPermission`、例: sudo なしの CI）だと `fileValidator` が
-   **実行全体で nil** になる（`newManagerInternal`）。この場合、設定/テンプレートの読み込みは**すべて**
+   **実行全体で nil** になる（`newManagerInternal`）。この場合、設定/テンプレートの読み込みはすべて
    この経路を通り、現状は `ResultCollector` に一切記録されない。F-004 が想定する CI の主用途はここである。
 2. **検証失敗経路**（dry-run で `VerifyAndRead` 失敗）: 失敗を `ResultCollector` に記録したうえで
    `os.ReadFile` で読み直す。ハッシュ不一致（`ReasonHashMismatch`）等の改ざん兆候を含む。
 
 対象範囲の正確化（AC-13 の「全経路」の実体）: 上記は `VerifyAndReadConfigFile`（設定）と
-`VerifyAndReadTemplateFile`（テンプレート）が通る。**env ファイルは別経路**であり、
+`VerifyAndReadTemplateFile`（テンプレート）が通る。env ファイルは別経路であり、
 `VerifyEnvironmentFile` は内容を読まず dry-run では nil を返し、env 内容の読み込みは別の場所
 （`config` ローダの `SafeReadFile` 等）で行われる。したがって「設定・テンプレート」は本節の
 `readAndVerifyFileWithReadFallback` で、env 経路は当該読み込み箇所での UNVERIFIED 記録として扱う。
@@ -457,24 +456,24 @@ Slack 送信は `internal/logging/slack_handler.go` が担い、`RedactingHandle
   `ReasonHashMismatch`/`ReasonHashFileNotFound` 等）。
 - 経路 1 は現状 `ResultCollector` に記録されないため、`readAndVerifyFileWithReadFallback` の nil 経路にも
   記録呼び出しを追加する。
-- dry-run 出力（text / json 両形式）で該当ファイル内容を **UNVERIFIED として検証済みと区別表示**し、
+- dry-run 出力（text / json 両形式）で該当ファイル内容を UNVERIFIED として検証済みと区別表示し、
   理由区分（検証スキップ／検証失敗）も併記する。
 
 #### 3.4.3 hard fail の提供・終了コード・既定（AC-14）
 
-既存の `--dry-run-fail-unverified`（`FailOnVerificationUnavailable`）は、現状「**この環境で検証できなかった
-コマンド identity**（例: 開発機で未記録）」の deny を、専用の終了コード
+既存の `--dry-run-fail-unverified`（`FailOnVerificationUnavailable`）は、現状この環境で検証できなかった
+コマンド identity（例: 開発機で未記録）」の deny を、専用の終了コード
 `DryRunExitVerificationUnavailable`（= 3）で hard fail にするフラグである。F-004 の未検証ファイル内容は
-概念が異なり、とくに **ハッシュ不一致は改ざんの兆候（policy deny 相当）** であって「環境で検証不能」ではない。
+概念が異なり、とくにハッシュ不一致は改ざんの兆候（policy deny 相当）であって「環境で検証不能」ではない。
 
 本設計は、フラグ増殖を避けて `--dry-run-fail-unverified` を「dry-run で未検証成果物を採用したら hard fail」の
-単一スイッチとして共有する一方、**終了コードは概念別に分ける**（改ざん兆候を「環境で検証不能」に埋没させない）。
+単一スイッチとして共有する一方、終了コードは概念別に分ける（改ざん兆候を「環境で検証不能」に埋没させない）。
 
 | 未検証の事象 | 意味 | フラグ指定時の終了コード |
 |---|---|---|
 | コマンド identity が環境で検証不能（既存） | 環境起因 | `DryRunExitVerificationUnavailable`（3、既存） |
-| 設定/テンプレートを**検証スキップ**で採用（経路 1） | 環境起因（検証器なし） | `DryRunExitVerificationUnavailable`（3） |
-| 設定/テンプレートの**検証失敗**（ハッシュ不一致・not-found、経路 2） | 改ざん兆候（policy deny 相当） | policy-deny 終了コード（既存の deny コード。3 とは別） |
+| 設定/テンプレートを検証スキップで採用（経路 1） | 環境起因（検証器なし） | `DryRunExitVerificationUnavailable`（3） |
+| 設定/テンプレートの検証失敗（ハッシュ不一致・not-found、経路 2） | 改ざん兆候（policy deny 相当） | policy-deny 終了コード（既存の deny コード。3 とは別） |
 
 - **既定（フラグなし）**: dry-run は継続。未検証内容は UNVERIFIED として明示するが終了コードは 0
   （正常系 dry-run を回帰させない。AC-15）。
@@ -486,14 +485,14 @@ Slack 送信は `internal/logging/slack_handler.go` が担い、`RedactingHandle
 
 > **既存ポリシーの例外と影響**:
 > `FailOnVerificationUnavailable` は Task 0136（`docs/tasks/0136_runtime_risk_evaluation_enforcement/02_architecture.md`
-> §5.3 / AC-58）で「**検証不能 deny（環境起因）**」を通常 deny と区別する運用フラグとして導入された。
+> §5.3 / AC-58）で「検証不能 deny（環境起因）」を通常 deny と区別する運用フラグとして導入された。
 > 本設計はフラグの適用対象を「未検証成果物全般」へ拡張する意図的な変更である。
 > - 元ポリシーの所在: Task 0136 の上記アーキテクチャ文書、および実装
 >   `internal/runner/resource/types.go`（`FailOnVerificationUnavailable`・`DryRunExitVerificationUnavailable` の
 >   doc コメント）、`internal/runner/resource/dryrun_manager.go` の該当分岐。
 > - 例外理由: ハッシュ不一致による設定ファイル未検証は改ざんの兆候であり、CI で hard fail できることが
->   要件（AC-14）。別フラグ新設は運用者に 2 つの近接概念を強いるため避ける。ただし**終了コードは概念別に
->   分離**し、改ざん兆候を環境起因コードに埋没させない。
+>   要件（AC-14）。別フラグ新設は運用者に 2 つの近接概念を強いるため避ける。ただし終了コードは概念別に
+>   分離し、改ざん兆候を環境起因コードに埋没させない。
 > - 旧挙動を前提とするテスト: `internal/runner/resource/dryrun_manager_test.go` の
 >   `FailOnVerificationUnavailable` 関連ケース、および `cmd/runner` の該当フラグ挙動テスト。
 >   これらは対象拡張・終了コード分離に合わせて期待値を更新する。
@@ -527,8 +526,8 @@ flowchart TD
 変更点:
 
 - `RunTOCTOUPermissionCheck` の戻り値（`[]TOCTOUViolation`）を評価し、違反が 1 件以上あれば
-  **違反ディレクトリと具体的な権限問題（是正方法を含む）を ERROR ログに出力**のうえ、ハッシュレコードを
-  生成・保存せず**無条件で**非ゼロ終了する（AC-16）。
+  違反ディレクトリと具体的な権限問題（是正方法を含む）を ERROR ログに出力のうえ、ハッシュレコードを
+  生成・保存せず無条件で非ゼロ終了する（AC-16）。
   - **権限違反を継続するバイパス手段は設けない**。ハッシュDB は本システムの信頼の起点であり、TOCTOU
     チェックが弾く違反（非 sticky の world-writable 祖先、非信頼グループが書ける祖先）は、まさに攻撃者が
     ハッシュレコードを差し替え得る状況そのものである。継続用のエスケープハッチはこの脆弱性を警告付きで
@@ -537,7 +536,7 @@ flowchart TD
     継続を要する具体的用途も存在しないため、バイパスフラグ（`--allow-insecure-perms` 等）は導入しない（AC-18）。
   - **既存 `--force` に権限違反バイパスを兼ねさせない**。`--force` は「既存ハッシュファイルの上書き」という
     日常的で無害な指定であり、ここに権限違反バイパスを載せると、再記録のため常用する運用者が信頼の起点の
-    fail-closed を**気付かず無効化**してしまう。`--force` の意味は上書き専用のまま維持する（AC-18）。
+    fail-closed を気付かず無効化してしまう。`--force` の意味は上書き専用のまま維持する（AC-18）。
 - ハッシュディレクトリ作成権限 `hashDirPermissions` を `0o750` → `0o700` に変更し、
   world/group-writable を許さない（AC-17）。
 - **処理順序（実装上の注意）**: 現状 `mkdirAll` はディレクトリ作成を `parseArgs` 内で行い、TOCTOU チェックは
@@ -545,13 +544,13 @@ flowchart TD
   `processFiles`（ハッシュ生成）より前**で行い、書込み可能な祖先の下に作られたディレクトリでレコードを
   生成しないようにする。TOCTOU チェックは祖先も対象にする（`CollectTOCTOUCheckDirs`）ため、作成後でも
   既存の world/group-writable な祖先を検出できる。
-- **アップグレード時の挙動（移行）**: `os.MkdirAll` は**既存ディレクトリの mode を変更しない**ため、`0o700` は
+- **アップグレード時の挙動（移行）**: `os.MkdirAll` 既存ディレクトリの mode を変更しないため、`0o700` は
   新規作成時のみ適用される。既存 `0o750` 配備のディレクトリは自動的には是正されない（`0o750` は
   group-writable ではないため書込み中心の TOCTOU チェックでは違反にならない）。既存配備の是正は運用手順
   （手動 `chmod 0700`）としてドキュメント化し、自動 chmod は本タスクのスコープ外とする。
   - `0o700` により group 読み取りも失われる。record と runner が同一の管理者権限で運用される前提（AC-19）を
     満たす配備では問題にならないが、ハッシュDB を非 root で読む監視・付随ツールがある配備ではこの前提を
-    ドキュメントで明示する。既存ハッシュDB との**フォーマット互換は保持**され（NF-001）、
+    ドキュメントで明示する。既存ハッシュDB とのフォーマット互換は保持され（NF-001）、
     変わるのはディレクトリのパーミッションのみ。
 
 ### 3.6 F-006 / F-007: 前提・限界のドキュメント化
@@ -563,7 +562,7 @@ flowchart TD
   ドキュメントに明記する。
   - **設定可能化／上限分離の可否検討（AC-21、要件が本書に委ねた論点）**: ハッシュ計算は既に
     ストリーミング化されているが、解析（`filevalidator` の `maxFileSize = 1GB`、`safefileio` の 128MB）は
-    メモリ上限に依存する。**本タスクでは実装を行わない**と結論する。理由は (1) 要件スコープが「前提の明文化と
+    メモリ上限に依存する。本タスクでは実装を行わないと結論する。理由は (1) 要件スコープが「前提の明文化と
     可否検討まで」であること、(2) 現時点で具体的な大容量検証の要求がなく YAGNI に反すること、(3) 上限分離は
     アナライザ全体のメモリモデル見直しを要し、堅牢化タスクの範囲を超えること。将来必要になった場合の
     拡張余地として §9 に記録する。
@@ -773,7 +772,7 @@ flowchart TD
   staging）を選定し結果を §3.1.3 にインライン記録する。
 - **Phase 1 — F-001 / F-002（最優先）**: `SysProcAttr.Credential` 移行。executor と privilege の役割変更、
   run-as identity 解決の共有関数化（`risk` から移設し双方が呼ぶ）、操作開始時 suid/sgid 捕捉と検証。
-  staging fallback は **root 所有のまま `0o555`**（chown しない）。
+  staging fallback は root 所有のまま `0o555`（chown しない）。
 - **Phase 2 — F-003**: `ValueDetector` 追加と `RedactText` 統合、Slack 経路の適用確認。
 - **Phase 3 — F-005 / F-004**: record の fail-closed 化（バイパス手段なし）・`0o700`、
   dry-run UNVERIFIED 明示（2 経路）と hard fail・終了コード分離。
