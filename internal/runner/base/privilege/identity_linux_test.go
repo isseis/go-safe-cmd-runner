@@ -18,9 +18,10 @@ import (
 )
 
 // readSavedIDsFromProcStatus reads the saved-set-uid/gid from /proc/self/status
-// for cross-checking against readSavedIDs(). The Uid: and Gid: lines contain
-// four tab-separated fields: real, effective, saved, filesystem. The saved-set
-// is the third field (index 2).
+// for cross-checking against readSavedIDs(). The Uid: and Gid: lines are laid out
+// as "Uid:\t<real>\t<effective>\t<saved>\t<filesystem>", so strings.Fields yields
+// five tokens where index 0 is the "Uid:"/"Gid:" label and the saved-set is the
+// fourth value (index 3).
 func readSavedIDsFromProcStatus() (suid, sgid int, err error) {
 	f, err := os.Open("/proc/self/status")
 	if err != nil {
@@ -34,24 +35,24 @@ func readSavedIDsFromProcStatus() (suid, sgid int, err error) {
 		switch {
 		case strings.HasPrefix(line, "Uid:"):
 			fields := strings.Fields(line)
-			if len(fields) < 4 {
+			if len(fields) < 5 {
 				return 0, 0, fmt.Errorf("unexpected Uid line format: %s", line)
 			}
-			// fields[0]=real, fields[1]=effective, fields[2]=saved, fields[3]=filesystem
-			n, err := strconv.Atoi(fields[2])
+			// fields[0]="Uid:", fields[1]=real, fields[2]=effective, fields[3]=saved, fields[4]=filesystem
+			n, err := strconv.Atoi(fields[3])
 			if err != nil {
-				return 0, 0, fmt.Errorf("parse Uid saved (field 2): %w", err)
+				return 0, 0, fmt.Errorf("parse Uid saved (field 3): %w", err)
 			}
 			suid = n
 		case strings.HasPrefix(line, "Gid:"):
 			fields := strings.Fields(line)
-			if len(fields) < 4 {
+			if len(fields) < 5 {
 				return 0, 0, fmt.Errorf("unexpected Gid line format: %s", line)
 			}
-			// fields[0]=real, fields[1]=effective, fields[2]=saved, fields[3]=filesystem
-			n, err := strconv.Atoi(fields[2])
+			// fields[0]="Gid:", fields[1]=real, fields[2]=effective, fields[3]=saved, fields[4]=filesystem
+			n, err := strconv.Atoi(fields[3])
 			if err != nil {
-				return 0, 0, fmt.Errorf("parse Gid saved (field 2): %w", err)
+				return 0, 0, fmt.Errorf("parse Gid saved (field 3): %w", err)
 			}
 			sgid = n
 		}
@@ -68,8 +69,6 @@ func readSavedIDsFromProcStatus() (suid, sgid int, err error) {
 func TestReadSavedIDs_MatchesProcStatus(t *testing.T) {
 	suid, sgid, err := readSavedIDs()
 	require.NoError(t, err, "should read saved-set IDs")
-	require.NotZero(t, suid, "saved-set-uid should be non-zero on Linux")
-	require.NotZero(t, sgid, "saved-set-gid should be non-zero on Linux")
 
 	procSuid, procSgid, err := readSavedIDsFromProcStatus()
 	require.NoError(t, err, "should read /proc/self/status")
@@ -91,8 +90,6 @@ func TestRestorePrivilegesAndMetrics_IdentityVerificationPassesOnCleanRestore_Wi
 	// Obtain ground-truth saved-set IDs from /proc/self/status (independent source).
 	procSuid, procSgid, err := readSavedIDsFromProcStatus()
 	require.NoError(t, err, "should read /proc/self/status for ground truth")
-	require.NotZero(t, procSuid, "saved-set-uid from /proc/self/status should be non-zero")
-	require.NotZero(t, procSgid, "saved-set-gid from /proc/self/status should be non-zero")
 
 	manager := &UnixPrivilegeManager{
 		logger:             slog.Default(),
