@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"os"
 	"testing"
 	"time"
 
@@ -313,6 +314,13 @@ func TestValidate(t *testing.T) {
 
 func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 	t.Run("user_group_execution_fails_without_cap_setuid", func(t *testing.T) {
+		// Skip if running as root: with CAP_SETUID/CAP_SETGID (e.g. root in some
+		// Docker CI setups), SysProcAttr.Credential would succeed instead of
+		// failing with EPERM, invalidating this test's assertion.
+		if os.Getuid() == 0 {
+			t.Skip("Skipping EPERM assertion when running as root")
+		}
+
 		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
