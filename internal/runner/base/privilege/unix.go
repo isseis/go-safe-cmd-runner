@@ -104,15 +104,21 @@ type executionContext struct {
 	needsUserGroupChange bool
 	originalEUID         int
 	originalEGID         int
+	originalSUID         int
+	originalSGID         int
 	start                time.Time
 }
 
 // prepareExecution validates and prepares the execution context
 func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.ElevationContext) (*executionContext, error) {
+	suid, sgid := readSavedIDs()
+
 	execCtx := &executionContext{
 		elevationCtx: elevationCtx,
 		originalEUID: syscall.Geteuid(),
 		originalEGID: syscall.Getegid(),
+		originalSUID: suid,
+		originalSGID: sgid,
 		start:        time.Now(),
 	}
 
@@ -208,6 +214,20 @@ func (m *UnixPrivilegeManager) restorePrivilegesAndMetrics(execCtx *executionCon
 	if needsVerification {
 		if err := m.identityVerifier(); err != nil {
 			m.emergencyShutdown(err, fmt.Sprintf("identity_verification_failure_%s", shutdownContext))
+		}
+
+		// Verify saved-set-uid/gid are unchanged since capture. This is a stronger
+		// invariant than EUID==UID: it catches cases where EUID was restored but
+		// the saved-set was corrupted (e.g. by a partial seteuid that left the
+		// saved-set as the previous effective UID). The saved-set should only
+		// change when the process explicitly calls setresuid/setresgid, so any
+		// mismatch after restore indicates a privilege leak.
+		suid, sgid := readSavedIDs()
+		if suid != execCtx.originalSUID || sgid != execCtx.originalSGID {
+			err := fmt.Errorf("saved-set-uid/gid changed after restore: "+
+				"original suid=%d, sgid=%d; post-restore suid=%d, sgid=%d: %w",
+				execCtx.originalSUID, execCtx.originalSGID, suid, sgid, ErrIdentityLeak)
+			m.emergencyShutdown(err, fmt.Sprintf("saved_set_identity_verification_failure_%s", shutdownContext))
 		}
 	}
 }

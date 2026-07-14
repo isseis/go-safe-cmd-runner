@@ -586,6 +586,9 @@ func TestRestorePrivilegesAndMetrics_IdentityVerificationSkippedForDryRun(t *tes
 // TestRestorePrivilegesAndMetrics_IdentityVerificationPassesOnCleanRestore verifies that
 // no shutdown occurs when identityVerifier confirms the identity is clean.
 func TestRestorePrivilegesAndMetrics_IdentityVerificationPassesOnCleanRestore(t *testing.T) {
+	// Capture the actual saved-set IDs so the post-restore verification passes.
+	suid, sgid := readSavedIDs()
+
 	manager := &UnixPrivilegeManager{
 		logger:             slog.Default(),
 		privilegeSupported: false,
@@ -600,6 +603,8 @@ func TestRestorePrivilegesAndMetrics_IdentityVerificationPassesOnCleanRestore(t 
 		},
 		needsPrivilegeEscalation: true,
 		needsUserGroupChange:     false,
+		originalSUID:             suid,
+		originalSGID:             sgid,
 		start:                    time.Now(),
 	}
 
