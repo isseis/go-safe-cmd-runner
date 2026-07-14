@@ -308,6 +308,26 @@ PoC（概念実証）で確認する**（要件 01 §4 / レポート 00 §4 の
 - **PoC で不成立だった場合の代替**（優先順）: (1) `/proc` パス解決を避け、複製 fd に対し
   `execveat(fd, "", AT_EMPTY_PATH)` 相当で exec する、(2) `PR_SET_DUMPABLE` で dumpable を維持する、
   (3) staging fallback に倒す。採否は PoC 結果を本節にインラインで記録する。
+- **PoC 結果**: Linux 6.12.76-linuxkit (arm64) で検証。root (euid=0) プロセスが非 root ユーザー
+  （nobody:uid=65534/gid=65534、daemon:uid=1/gid=1）へ `SysProcAttr.Credential` で降格しながら
+  `/proc/self/fd/<n>` を argv[0] に指定した `execve` が **exit code 0・EACCES なしで成功**する
+  ことを確認した。`Credential` は Go ランタイムが子プロセス内で `execve` 直前に
+  `setgroups`/`setgid`/`setuid` を発行して適用するため、本 PoC は上記「既知のリスク」が指す
+  「子が権限降格したうえで `/proc/self/fd/<n>` を解決する」経路そのものを実行している。それでも
+  本カーネルでは解決が成功し、run_as 経路は機能した。
+  - **観測できたこと／できていないこと**: 本 PoC が確認したのは「降格後の `/proc/self/fd/<n>` 解決が
+    成功する」という観測結果のみである。子プロセスの dumpable フラグ値そのものは取得していない
+    （権限降格に伴い dumpable は 0 へクリアされるが、`prctl(PR_GET_DUMPABLE)` による直接測定は
+    行っていない）。dumpable が 0 でも本カーネルで EACCES にならない理由（exec するタスク自身の
+    `/proc/self` へのアクセス扱い等）は未確定である。※実装者は Phase 1 でこの前提が成立する
+    カーネル範囲を `prctl(PR_GET_DUMPABLE)` 等で確認する。
+  - **選定方式**: 現行の fd-bound 実行を維持する。PoC 不成立時の代替（(1)〜(3)）は不要。
+  - **環境**: `uname -a` = `Linux arm64-dev-box 6.12.76-linuxkit #1 SMP aarch64 GNU/Linux`、Ubuntu 26.04 LTS。
+  - **手順**: root で `go run` し、対象バイナリを `os.Open` → `syscall.Dup`（複製 fd を `ExtraFiles`
+    で子へ渡す）→ その fd を指す `/proc/self/fd/<n>` を argv[0] として `exec.Command` に与え、
+    `SysProcAttr.Credential`（`Uid`, `Gid`, `NoSetGroups: false`）を設定して `Run()`。対象バイナリは
+    `/bin/true`。※本番経路と同じく複製 fd は `ExtraFiles` で受け渡す。
+  - **結果**: exit code 0。複数ターゲットユーザー（nobody、daemon）で同様に成功。
 - **staging fallback の所有権**（非 Linux／fd-exec 無効時）: 現行は親が対象ユーザーの EUID でコピーを作り、
   コピーは対象ユーザー所有・`0o500` だった。新方式では親が root のままコピーを作るため所有は root になる。
   - **コピーを対象ユーザーへ chown してはならない**。所有者になった run_as ユーザーは `0o500` を
