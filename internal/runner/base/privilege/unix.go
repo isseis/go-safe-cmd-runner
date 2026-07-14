@@ -25,6 +25,11 @@ var ErrUnsupportedOperationType = errors.New("unsupported operation type")
 // ErrIdentityLeak is returned when effective UID/GID do not match real UID/GID after privilege restoration.
 var ErrIdentityLeak = errors.New("privilege identity leak detected")
 
+// ErrSavedSetNotSupported is returned by readSavedIDs on platforms that do not
+// support the saved-set-uid/gid concept (non-Linux). The caller must skip the
+// saved-set invariant check when this error is returned.
+var ErrSavedSetNotSupported = errors.New("saved-set IDs not supported on this platform")
+
 // UnixPrivilegeManager implements privilege management for Unix systems using setuid
 type UnixPrivilegeManager struct {
 	logger             *slog.Logger
@@ -112,8 +117,15 @@ type executionContext struct {
 // prepareExecution validates and prepares the execution context
 func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.ElevationContext) (*executionContext, error) {
 	suid, sgid, err := readSavedIDs()
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrSavedSetNotSupported) {
 		return nil, fmt.Errorf("failed to read saved-set IDs before execution: %w", err)
+	}
+
+	// On platforms that don't support saved-set IDs (non-Linux), use sentinel
+	// values so the saved-set invariant check is structurally skipped.
+	if errors.Is(err, ErrSavedSetNotSupported) {
+		suid = -1
+		sgid = -1
 	}
 
 	execCtx := &executionContext{
@@ -225,16 +237,23 @@ func (m *UnixPrivilegeManager) restorePrivilegesAndMetrics(execCtx *executionCon
 		// saved-set as the previous effective UID). The saved-set should only
 		// change when the process explicitly calls setresuid/setresgid, so any
 		// mismatch after restore indicates a privilege leak.
-		suid, sgid, err := readSavedIDs()
-		if err != nil {
-			m.emergencyShutdown(fmt.Errorf("failed to read saved-set IDs after restore: %w", err),
-				fmt.Sprintf("saved_set_read_failure_%s", shutdownContext))
-		}
-		if suid != execCtx.originalSUID || sgid != execCtx.originalSGID {
-			err := fmt.Errorf("saved-set-uid/gid changed after restore: "+
-				"original suid=%d, sgid=%d; post-restore suid=%d, sgid=%d: %w",
-				execCtx.originalSUID, execCtx.originalSGID, suid, sgid, ErrIdentityLeak)
-			m.emergencyShutdown(err, fmt.Sprintf("saved_set_identity_verification_failure_%s", shutdownContext))
+		//
+		// On platforms that don't support saved-set IDs (non-Linux), the capture
+		// uses sentinel value -1 and readSavedIDs returns ErrSavedSetNotSupported.
+		// The check is structurally skipped in that case via the originalSUID >= 0
+		// gate, rather than relying on both sides returning the same constant.
+		if execCtx.originalSUID >= 0 {
+			suid, sgid, err := readSavedIDs()
+			if err != nil {
+				m.emergencyShutdown(fmt.Errorf("failed to read saved-set IDs after restore: %w", err),
+					fmt.Sprintf("saved_set_read_failure_%s", shutdownContext))
+			}
+			if suid != execCtx.originalSUID || sgid != execCtx.originalSGID {
+				err := fmt.Errorf("saved-set-uid/gid changed after restore: "+
+					"original suid=%d, sgid=%d; post-restore suid=%d, sgid=%d: %w",
+					execCtx.originalSUID, execCtx.originalSGID, suid, sgid, ErrIdentityLeak)
+				m.emergencyShutdown(err, fmt.Sprintf("saved_set_identity_verification_failure_%s", shutdownContext))
+			}
 		}
 	}
 }
