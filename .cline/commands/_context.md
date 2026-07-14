@@ -1,6 +1,3 @@
-<!-- vim: set fileencoding=utf-8:
--->
-
 # Project context
 
 - task root: `docs/tasks/`
@@ -17,7 +14,10 @@
 - requirements: `01_requirements.md`
 - architecture: `02_architecture.md`
 - document_status keyword: `ドキュメントステータス`
+- document_status values: `draft` → `approved`
+- document language: Japanese
 - language: Go
+- source-language rule: Go comments, identifiers, and string literals must be English
 - shared test helpers: `testutil/` (cross-package use) or `test_helpers.go` / `test_helpers_<category>.go` (package-internal, with the `//go:build test` tag)
 
 - build:
@@ -27,14 +27,11 @@
   - deadcode: `make deadcode`
   - green-gate (combined): `make fmt && make test && make lint && make deadcode`
 
-- Domain-specific (bsky-cleaner):
+- Domain-specific (go-safe-cmd-runner):
   - translation glossary: `docs/translation_glossary.md`
   - translation language pair: Japanese (primary) ⇄ English *(reference only — mktrans.md determines direction from file extension)*
   - Invariants for generated values: (none — this project is a consumer of upstream APIs, so ID/name generation rules belong to those upstream APIs)
-  - Invariants for `--dry-run`: no external write/delete/unfollow side effects; every external API call must be skipped or use a read-only equivalent (e.g. `app.bsky.feed.getPosts` instead of `com.atproto.repo.deleteRecord`)
-  - Invariants for sessions:
-    - `Client.Login` stores the session JWT in-memory on the `Client` struct; it does not persist or log the password. On failure the client is left unauthenticated (session stays nil). There is no `Close`/`Logout` method — the session is ephemeral and lives only for the client's lifetime.
-  - Porting steps (nothing to port; bsky-cleaner is the original implementation)
-
-<!-- vim: set fileencoding=utf-8:
--->
+  - Invariants for `--dry-run`: no external write/delete/unfollow side effects; every external API
+  - Conditional security guide: `docs/dev/architecture_design/security-architecture.md`
+  - Conditional-guide trigger: the feature touches privilege elevation/de-escalation, command execution, file path validation, file integrity verification, or sends notifications (e.g. Slack)
+  - Target client environments: Slack (`make slack-notify-test`, `make slack-group-notification-test`)
