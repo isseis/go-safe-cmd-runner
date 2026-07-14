@@ -81,7 +81,8 @@ func TestExecuteWithUserGroup_ResolverArgs_ThreeForms(t *testing.T) {
 			_, _ = exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
 			require.Len(t, calls, 1, "resolver should be called exactly once")
-			assert.Equal(t, risktypes.OriginalExecutionIdentity(), calls[0].base,
+			assert.Equal(t, executortestutil.NormalizeRunAsIdent(risktypes.OriginalExecutionIdentity()),
+				executortestutil.NormalizeRunAsIdent(calls[0].base),
 				"resolver base must be the shared original-execution-identity cache, not a freshly re-read identity")
 			assert.Equal(t, tt.wantUserName, calls[0].userName)
 			assert.Equal(t, tt.wantGroupName, calls[0].groupName)
