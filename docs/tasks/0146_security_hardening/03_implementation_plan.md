@@ -704,7 +704,7 @@ staging fallback を暫定採用する場合の Phase 1 実装方針（Step 1-6 
 
 **AC-01**: run-as で起動されたコマンドの補助グループ集合が対象ユーザーの初期補助グループ集合と一致し、起動元プロセスの補助グループを1つも引き継がない。
 - 種別: `test`
-- テスト: 二段構え。(1) 対象ユーザーの初期補助グループ集合の実データでの解決（`getgrouplist` 相当、group-only での起動元固有グループ非混入を含む）は `internal/runner/base/risktypes/runas_ident_test.go`（Step 1-1、実 OS ユーザー DB を用いる `TestResolveRunAsIdent_UserOnly`/`_GroupOnly`/`_UserAndGroup`）で検証済み。(2) executor がその解決関数へ正しい base identity・user/group 名を渡す配線（user-only/group-only/both の3形態）は `internal/runner/base/executor/executor_usergroup_test.go`（Step 1-8）で検証する。(2) は解決関数への入力のみを検証し、解決関数の出力（実際の uid/gid/補助グループ値）の再検証はしない。
+- テスト: 三段構え。(1) 対象ユーザーの初期補助グループ集合の実データでの解決（`getgrouplist` 相当、group-only での起動元固有グループ非混入を含む）は `internal/runner/base/risktypes/runas_ident_test.go`（Step 1-1、実 OS ユーザー DB を用いる `TestResolveRunAsIdent_UserOnly`/`_GroupOnly`/`_UserAndGroup`）で検証済み。(2) executor がその解決関数へ正しい base identity・user/group 名を渡す配線（user-only/group-only/both の3形態）は `internal/runner/base/executor/executor_usergroup_test.go`（Step 1-8）で検証する。(2) は解決関数への入力のみを検証し、解決関数の出力（実際の uid/gid/補助グループ値）の再検証はしない。(3) カーネルが実際に `SysProcAttr.Credential` を適用した後の子プロセスの補助グループが対象ユーザーの補助グループ集合と一致し、起動元（root）の補助グループを引き継がないことのエンドツーエンド検証は `internal/runner/base/executor/executor_usergroup_integration_test.go::TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot`（Step 1-9、`//go:build integration`、root/フィクスチャユーザー環境でのみ実行される）で行う。(1)(2) はユニットテストとして常時 CI で実行されるのに対し、(3) は権限付き環境が必要なため通常は実行時 skip される（`go test -tags "test integration"` かつ `TEST_RUNAS_TARGET_USER` 設定時のみ実施）。
 
 **AC-02**: 補助グループの決定・設定失敗時、コマンドを実行せずフェイルクローズする。
 - 種別: `test`

@@ -6,6 +6,14 @@
 // than the "integration_skip.go" name floated in the implementation plan --
 // that name would not compile as a test at all, since only files ending in
 // _test.go are recognized as tests.
+//
+// Build/run requires BOTH tags, not just "integration": this file imports
+// the executor/testutil helper package, which itself is gated by
+// //go:build test || performance. Compiling with only -tags integration
+// fails with an unrelated-looking "build constraints exclude all Go files"
+// error from the testutil package. Use:
+//
+//	go test -tags "test integration" ./internal/runner/base/executor/...
 package executor_test
 
 import (
@@ -92,6 +100,19 @@ func TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot(t *testing.T) {
 	gotGroups := parseGroupIDs(t, result.Stdout)
 	assert.ElementsMatch(t, wantGroups, gotGroups,
 		"run-as child's supplementary groups must match the target user's own group list exactly")
+
+	// gid 0 ("root") is the invoking process's own primary gid (this test only
+	// runs as root, per canRunPrivilegedIntegrationTest), so it always appears
+	// in this process's own `id -G`. Asserting its absence from the child's
+	// groups is an environment-independent check of the core AC-01 property
+	// (the run-as child must not inherit the invoker's identity) -- unlike
+	// diffing against os.Getgroups() below, which only exercises anything on
+	// hosts where root happens to carry extra supplementary groups (e.g.
+	// "docker"), and is a no-op on a bare root with none.
+	if !slices.Contains(wantGroups, 0) {
+		assert.NotContains(t, gotGroups, 0,
+			"run-as child must not carry over the invoking root process's own group (gid 0)")
+	}
 
 	rootGroups, err := os.Getgroups()
 	require.NoError(t, err)
