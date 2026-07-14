@@ -29,6 +29,11 @@ const stagedExecMode = 0o500
 // ErrPrivilegeLeak is returned when effective UID/GID do not match real UID/GID after execution.
 var ErrPrivilegeLeak = errors.New("privilege leak detected")
 
+// ErrRunAsIdentityResolution is returned when run-as identity resolution fails
+// (unknown user/group, supplementary group enumeration failure). The command is
+// not executed and the process exits non-zero (fail-closed, AC-02).
+var ErrRunAsIdentityResolution = errors.New("failed to resolve run-as identity (uid/gid/supplementary groups)")
+
 // Error definitions
 var (
 	ErrEmptyCommand                  = errors.New("command cannot be empty")
@@ -45,12 +50,13 @@ var (
 // DefaultExecutor is the default implementation of CommandExecutor
 type DefaultExecutor struct {
 	FS              FileSystem
-	PrivMgr         runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
-	AuditLogger     *audit.Logger                // Optional audit logger for privileged operations
-	Logger          *slog.Logger                 // Optional logger for command execution logging
-	osExit          func(code int)               // injectable for testing; defaults to os.Exit
-	identityChecker func() error                 // injectable for testing; defaults to defaultIdentityChecker
-	fdExecDisabled  bool                         // injectable for testing; forces the staging fallback even on Linux
+	PrivMgr         runnertypes.PrivilegeManager                                                              // Optional privilege manager for privileged commands
+	AuditLogger     *audit.Logger                                                                             // Optional audit logger for privileged operations
+	Logger          *slog.Logger                                                                              // Optional logger for command execution logging
+	osExit          func(code int)                                                                            // injectable for testing; defaults to os.Exit
+	identityChecker func() error                                                                              // injectable for testing; defaults to defaultIdentityChecker
+	runAsResolver   func(base risktypes.RunAsIdent, userName, groupName string) (risktypes.RunAsIdent, error) // injectable for testing; defaults to risktypes.ResolveRunAsIdent
+	fdExecDisabled  bool                                                                                      // injectable for testing; forces the staging fallback even on Linux
 }
 
 // Option is a functional option for configuring DefaultExecutor
@@ -79,6 +85,7 @@ func NewDefaultExecutor(opts ...Option) CommandExecutor {
 		Logger:          slog.Default(),
 		osExit:          os.Exit,
 		identityChecker: defaultIdentityChecker,
+		runAsResolver:   risktypes.ResolveRunAsIdent,
 	}
 
 	for _, opt := range opts {
@@ -130,7 +137,11 @@ func (e *DefaultExecutor) Execute(ctx context.Context, plan *risktypes.VerifiedC
 	return result, err
 }
 
-// executeWithUserGroup handles command execution with user/group privilege changes with audit logging and metrics
+// executeWithUserGroup handles command execution with user/group privilege changes with audit logging and metrics.
+// It resolves the run-as identity and sets SysProcAttr.Credential on the child
+// process so the kernel sets uid/gid/supplementary groups atomically at execve
+// time (AC-01, AC-05). On resolution failure the command is not executed and an
+// error is returned (fail-closed, AC-02).
 func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *risktypes.VerifiedCommandPlan, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	startTime := time.Now()
 	var metrics audit.PrivilegeMetrics
@@ -164,6 +175,28 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 		return nil, ErrEmptyCommand
 	}
 
+	// Resolve the run-as identity before privilege escalation. This uses the
+	// shared OriginalExecutionIdentity cache (sync.OnceValue) so the same base
+	// identity is used by both the risk evaluator and the executor (DRY).
+	// The base is captured once at process start, before any privilege change.
+	resolvedIdent, err := e.runAsResolver(risktypes.OriginalExecutionIdentity(), cmd.RunAsUser(), cmd.RunAsGroup())
+	if err != nil {
+		e.Logger.Error("Failed to resolve run-as identity",
+			"error", err,
+			"user", cmd.RunAsUser(),
+			"group", cmd.RunAsGroup())
+		return nil, fmt.Errorf("%w: %v", ErrRunAsIdentityResolution, err)
+	}
+
+	// Build the Credential for the child process. NoSetGroups: false ensures
+	// supplementary groups are reset to the target user's groups (AC-01).
+	cred := &syscall.Credential{
+		Uid:         resolvedIdent.UID,
+		Gid:         resolvedIdent.GID,
+		Groups:      resolvedIdent.Groups,
+		NoSetGroups: false,
+	}
+
 	// Create elevation context for user/group execution
 	executionCtx := runnertypes.ElevationContext{
 		Operation:   runnertypes.OperationUserGroupExecution,
@@ -176,9 +209,9 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 	var result *Result
 	privilegeStart := time.Now()
 	e.Logger.Debug("Calling WithPrivileges for user/group execution", "command", cmd.Name(), "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
-	err := e.PrivMgr.WithPrivileges(executionCtx, func() error {
+	err = e.PrivMgr.WithPrivileges(executionCtx, func() error {
 		var execErr error
-		result, execErr = e.executeCommandWithPath(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter)
+		result, execErr = e.executeCommandWithPath(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter, cred)
 		return execErr
 	})
 	privilegeDuration := time.Since(privilegeStart)
@@ -225,7 +258,7 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, plan *risktypes.Ver
 		return nil, fmt.Errorf("%w: %s", ErrPathNotAbsolute, cmd.ExpandedCmd)
 	}
 
-	return e.executeCommandWithPath(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter)
+	return e.executeCommandWithPath(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter, nil)
 }
 
 // executeCommandWithPath executes a command with the given resolved path.
@@ -237,7 +270,11 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, plan *risktypes.Ver
 // executed directly (no re-resolution); the evaluator's identity gate denies
 // unverified binaries before they reach an allowed plan, so this branch does not
 // weaken the production guarantee.
-func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, plan *risktypes.VerifiedCommandPlan, path string, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
+//
+// cred is the kernel-level credential to pass to the child process via
+// SysProcAttr.Credential (used for run-as execution). When nil, no credential
+// override is applied (normal execution).
+func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, plan *risktypes.VerifiedCommandPlan, path string, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter, cred *syscall.Credential) (*Result, error) {
 	// Log the command being executed at DEBUG level
 	cmdLine := FormatCommandForLog(path, cmd.ExpandedArgs)
 	e.Logger.Debug("Executing command",
@@ -253,6 +290,16 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, plan *risk
 		return nil, err
 	}
 	defer cleanup()
+
+	// Set SysProcAttr.Credential for run-as execution. When cred is non-nil,
+	// the kernel sets uid/gid/supplementary groups atomically at execve time
+	// (AC-01, AC-05). For normal execution (cred == nil), no credential is set.
+	if cred != nil {
+		if execCmd.SysProcAttr == nil {
+			execCmd.SysProcAttr = &syscall.SysProcAttr{}
+		}
+		execCmd.SysProcAttr.Credential = cred
+	}
 
 	// Set up stdin to null device for security and stability:
 	// 1. Security: Prevents child processes from reading unexpected input from stdin

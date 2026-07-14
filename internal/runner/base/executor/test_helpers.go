@@ -5,6 +5,8 @@ package executor
 
 import (
 	"log/slog"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 )
 
 // WithFileSystem sets the file system for the executor
@@ -41,5 +43,14 @@ func WithIdentityChecker(fn func() error) Option {
 func WithFdExecDisabled() Option {
 	return func(e *DefaultExecutor) {
 		e.fdExecDisabled = true
+	}
+}
+
+// WithRunAsResolver replaces the default run-as identity resolver for testing.
+// The resolver is called during executeWithUserGroup to resolve user/group names
+// to a RunAsIdent before building the SysProcAttr.Credential.
+func WithRunAsResolver(resolver func(base risktypes.RunAsIdent, userName, groupName string) (risktypes.RunAsIdent, error)) Option {
+	return func(e *DefaultExecutor) {
+		e.runAsResolver = resolver
 	}
 }
