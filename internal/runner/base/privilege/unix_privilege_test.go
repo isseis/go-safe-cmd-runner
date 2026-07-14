@@ -606,3 +606,110 @@ func TestRestorePrivilegesAndMetrics_IdentityVerificationSkippedForDryRun(t *tes
 
 	assert.False(t, verifierCalled, "identityVerifier should not be called for dry-run")
 }
+
+// TestRestorePrivilegesAndMetrics_SavedSetUnchanged_Passes verifies the
+// setuid-root scenario: the saved-set-uid/gid captured before the operation
+// (suid=0, the setuid-root binary's saved set) is still 0 after restore, and
+// this must be compared against the captured value -- not against the real
+// UID -- so a legitimately root-owned saved-set does not trip the invariant.
+func TestRestorePrivilegesAndMetrics_SavedSetUnchanged_Passes(t *testing.T) {
+	manager := &UnixPrivilegeManager{
+		logger:             slog.Default(),
+		privilegeSupported: true,
+		osExit:             func(code int) { t.Fatalf("emergencyShutdown called unexpectedly with code %d", code) },
+		identityVerifier:   func() error { return nil },
+		readSavedIDs:       func() (suid, sgid int, err error) { return 0, 0, nil },
+	}
+
+	execCtx := &executionContext{
+		elevationCtx: runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationFileValidation,
+			CommandName: "test-command",
+		},
+		needsPrivilegeEscalation: true,
+		originalSUID:             0,
+		originalSGID:             0,
+		start:                    time.Now(),
+	}
+
+	manager.restorePrivilegesAndMetrics(execCtx, nil, "test", 0)
+	// No assertion beyond "did not panic/exit": osExit fails the test if called.
+}
+
+// TestRestorePrivilegesAndMetrics_SavedSetChanged_TriggersShutdown verifies
+// that when the saved-set-uid/gid read after restoration differs from the
+// value captured at operation start, emergencyShutdown fires even though the
+// EUID==UID/EGID==GID check (identityVerifier) alone reports success -- the
+// saved-set check is a strictly stronger invariant than the real/effective
+// check.
+func TestRestorePrivilegesAndMetrics_SavedSetChanged_TriggersShutdown(t *testing.T) {
+	var exitCode int
+	exitCalled := false
+	testOsExit := func(code int) {
+		exitCode = code
+		exitCalled = true
+		panic("os.Exit called")
+	}
+
+	manager := &UnixPrivilegeManager{
+		logger:             slog.Default(),
+		privilegeSupported: true,
+		osExit:             testOsExit,
+		identityVerifier:   func() error { return nil },
+		readSavedIDs:       func() (suid, sgid int, err error) { return 1000, 1000, nil },
+	}
+
+	execCtx := &executionContext{
+		elevationCtx: runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationFileValidation,
+			CommandName: "test-command",
+		},
+		needsPrivilegeEscalation: true,
+		originalSUID:             0,
+		originalSGID:             0,
+		start:                    time.Now(),
+	}
+
+	assert.PanicsWithValue(t, "os.Exit called", func() {
+		manager.restorePrivilegesAndMetrics(execCtx, nil, "test", 0)
+	}, "emergencyShutdown should be called when saved-set-uid/gid changed since capture")
+
+	assert.True(t, exitCalled, "os.Exit should have been called")
+	assert.Equal(t, 1, exitCode, "exit code should be 1")
+}
+
+// TestRestorePrivilegesAndMetrics_SavedSetCheckSkipped_NonLinux verifies that
+// the saved-set invariant check is structurally skipped (not merely
+// coincidentally passing) on platforms where it cannot be read: a captured
+// sentinel of -1 (what prepareExecution stores when readSavedIDs reports
+// ErrSavedSetNotSupported) must prevent readSavedIDs from being consulted
+// again during restore, even though the injected mock is preconfigured to
+// report a "changed" value that would otherwise trigger emergencyShutdown.
+func TestRestorePrivilegesAndMetrics_SavedSetCheckSkipped_NonLinux(t *testing.T) {
+	readSavedIDsCalled := false
+	manager := &UnixPrivilegeManager{
+		logger:             slog.Default(),
+		privilegeSupported: true,
+		osExit:             func(code int) { t.Fatalf("emergencyShutdown called unexpectedly with code %d", code) },
+		identityVerifier:   func() error { return nil },
+		readSavedIDs: func() (suid, sgid int, err error) {
+			readSavedIDsCalled = true
+			return 1000, 1000, nil
+		},
+	}
+
+	execCtx := &executionContext{
+		elevationCtx: runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationFileValidation,
+			CommandName: "test-command",
+		},
+		needsPrivilegeEscalation: true,
+		originalSUID:             -1,
+		originalSGID:             -1,
+		start:                    time.Now(),
+	}
+
+	manager.restorePrivilegesAndMetrics(execCtx, nil, "test", 0)
+
+	assert.False(t, readSavedIDsCalled, "readSavedIDs must not be consulted during restore when the saved-set is not supported")
+}
