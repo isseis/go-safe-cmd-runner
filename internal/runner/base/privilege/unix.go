@@ -111,7 +111,10 @@ type executionContext struct {
 
 // prepareExecution validates and prepares the execution context
 func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.ElevationContext) (*executionContext, error) {
-	suid, sgid := readSavedIDs()
+	suid, sgid, err := readSavedIDs()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read saved-set IDs before execution: %w", err)
+	}
 
 	execCtx := &executionContext{
 		elevationCtx: elevationCtx,
@@ -222,7 +225,11 @@ func (m *UnixPrivilegeManager) restorePrivilegesAndMetrics(execCtx *executionCon
 		// saved-set as the previous effective UID). The saved-set should only
 		// change when the process explicitly calls setresuid/setresgid, so any
 		// mismatch after restore indicates a privilege leak.
-		suid, sgid := readSavedIDs()
+		suid, sgid, err := readSavedIDs()
+		if err != nil {
+			m.emergencyShutdown(fmt.Errorf("failed to read saved-set IDs after restore: %w", err),
+				fmt.Sprintf("saved_set_read_failure_%s", shutdownContext))
+		}
 		if suid != execCtx.originalSUID || sgid != execCtx.originalSGID {
 			err := fmt.Errorf("saved-set-uid/gid changed after restore: "+
 				"original suid=%d, sgid=%d; post-restore suid=%d, sgid=%d: %w",

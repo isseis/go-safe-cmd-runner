@@ -63,7 +63,8 @@ func readSavedIDsFromProcStatus() (suid, sgid int, err error) {
 // same saved-set-uid/gid as /proc/self/status. This is a Linux-specific test
 // that exercises the production code path.
 func TestReadSavedIDs_MatchesProcStatus(t *testing.T) {
-	suid, sgid := readSavedIDs()
+	suid, sgid, err := readSavedIDs()
+	require.NoError(t, err, "should read saved-set IDs")
 	require.NotZero(t, suid, "saved-set-uid should be non-zero on Linux")
 	require.NotZero(t, sgid, "saved-set-gid should be non-zero on Linux")
 
