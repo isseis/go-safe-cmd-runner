@@ -4,13 +4,15 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege/testutil"
+	executortestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
+	privilegetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,6 +30,21 @@ var (
 	lsCmd       = executortestutil.ResolveCommand("ls")
 	whoamiCmd   = executortestutil.ResolveCommand("whoami")
 )
+
+// mockRunAsResolver returns a resolver that always succeeds with the given
+// identity. It is used in tests that exercise the user/group execution path
+// without needing actual OS user/group resolution.
+//
+// Groups is set to a non-nil (possibly empty) slice to match the success
+// contract of the production resolver (risktypes.ResolveRunAsIdent), which
+// only returns nil Groups when supplementary group enumeration failed. The
+// executor fails closed on nil Groups, so a mock that leaves it as the zero
+// value would be indistinguishable from that failure case.
+func mockRunAsResolver(uid, gid uint32) func(base risktypes.RunAsIdent, userName, groupName string) (risktypes.RunAsIdent, error) {
+	return func(_ risktypes.RunAsIdent, _, _ string) (risktypes.RunAsIdent, error) {
+		return risktypes.RunAsIdent{UID: uid, GID: gid, Groups: []uint32{}}, nil
+	}
+}
 
 func TestExecute_Success(t *testing.T) {
 	tests := []struct {
@@ -302,20 +319,31 @@ func TestValidate(t *testing.T) {
 // The following tests were moved from usergroup_test.go
 
 func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
-	t.Run("user_group_execution_success", func(t *testing.T) {
+	t.Run("user_group_execution_fails_without_cap_setuid", func(t *testing.T) {
+		// Skip if running as root: with CAP_SETUID/CAP_SETGID (e.g. root in some
+		// Docker CI setups), SysProcAttr.Credential would succeed instead of
+		// failing with EPERM, invalidating this test's assertion.
+		if os.Getuid() == 0 {
+			t.Skip("Skipping EPERM assertion when running as root")
+		}
+
 		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executortestutil.MockFileSystem{}),
+			executor.WithRunAsResolver(mockRunAsResolver(1000, 1000)),
 		)
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup"))
 
 		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
-		assert.NoError(t, err)
+		// The mock privilege manager doesn't actually set CAP_SETUID/CAP_SETGID,
+		// so SysProcAttr.Credential causes EPERM at execve time.
+		assert.Error(t, err)
 		assert.NotNil(t, result)
-		assert.Equal(t, 0, result.ExitCode)
+		assert.Equal(t, -1, result.ExitCode)
+		assert.Contains(t, err.Error(), "operation not permitted")
 
 		// Verify that user/group privilege escalation was called
 		assert.Contains(t, mockPriv.ElevationCalls, "user_group_change:testuser:testgroup")
@@ -357,6 +385,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executortestutil.MockFileSystem{}),
+			executor.WithRunAsResolver(mockRunAsResolver(1000, 1000)),
 		)
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("invaliduser"), executortestutil.WithRunAsGroup("invalidgroup"))
@@ -368,39 +397,57 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		assert.Contains(t, err.Error(), "user/group privilege execution failed")
 	})
 
-	t.Run("only_user_specified", func(t *testing.T) {
+	t.Run("only_user_specified_fails_without_cap_setuid", func(t *testing.T) {
+		// Skip if running as root: with CAP_SETUID/CAP_SETGID (e.g. root in some
+		// Docker CI setups), SysProcAttr.Credential would succeed instead of
+		// failing with EPERM, invalidating this test's assertion.
+		if os.Getuid() == 0 {
+			t.Skip("Skipping EPERM assertion when running as root")
+		}
+
 		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executortestutil.MockFileSystem{}),
+			executor.WithRunAsResolver(mockRunAsResolver(1000, 1000)),
 		)
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"))
 
 		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
-		assert.NoError(t, err)
+		assert.Error(t, err)
 		assert.NotNil(t, result)
-		assert.Equal(t, 0, result.ExitCode)
+		assert.Equal(t, -1, result.ExitCode)
+		assert.Contains(t, err.Error(), "operation not permitted")
 
 		// Verify that user/group privilege escalation was called with empty group
 		assert.Contains(t, mockPriv.ElevationCalls, "user_group_change:testuser:")
 	})
 
-	t.Run("only_group_specified", func(t *testing.T) {
+	t.Run("only_group_specified_fails_without_cap_setuid", func(t *testing.T) {
+		// Skip if running as root: with CAP_SETUID/CAP_SETGID (e.g. root in some
+		// Docker CI setups), SysProcAttr.Credential would succeed instead of
+		// failing with EPERM, invalidating this test's assertion.
+		if os.Getuid() == 0 {
+			t.Skip("Skipping EPERM assertion when running as root")
+		}
+
 		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executortestutil.MockFileSystem{}),
+			executor.WithRunAsResolver(mockRunAsResolver(1000, 1000)),
 		)
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsGroup("testgroup"))
 
 		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
-		assert.NoError(t, err)
+		assert.Error(t, err)
 		assert.NotNil(t, result)
-		assert.Equal(t, 0, result.ExitCode)
+		assert.Equal(t, -1, result.ExitCode)
+		assert.Contains(t, err.Error(), "operation not permitted")
 
 		// Verify that user/group privilege escalation was called with empty user
 		assert.Contains(t, mockPriv.ElevationCalls, "user_group_change::testgroup")
@@ -409,19 +456,29 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 
 func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 	t.Run("privileged_with_user_group_both_specified", func(t *testing.T) {
+		// Skip if running as root: with CAP_SETUID/CAP_SETGID (e.g. root in some
+		// Docker CI setups), SysProcAttr.Credential would succeed instead of
+		// failing with EPERM, invalidating this test's assertion.
+		if os.Getuid() == 0 {
+			t.Skip("Skipping EPERM assertion when running as root")
+		}
+
 		// Test case where user/group are specified
 		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executortestutil.MockFileSystem{}),
+			executor.WithRunAsResolver(mockRunAsResolver(1000, 1000)),
 		)
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup"))
 
 		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
-		assert.NoError(t, err)
+		// The mock privilege manager doesn't actually set CAP_SETUID/CAP_SETGID.
+		assert.Error(t, err)
 		assert.NotNil(t, result)
+		assert.Contains(t, err.Error(), "operation not permitted")
 
 		// Should use user/group execution, not privileged execution
 		assert.Contains(t, mockPriv.ElevationCalls, "user_group_change:testuser:testgroup")
@@ -458,9 +515,10 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 		errorContains string
 	}{
 		{
-			name:        "valid absolute path works for user/group command",
-			cmd:         executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup")),
-			expectError: false,
+			name:          "valid absolute path fails with operation not permitted",
+			cmd:           executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup")),
+			expectError:   true,
+			errorContains: "operation not permitted",
 		},
 		{
 			name:          "relative working directory fails for user/group command",
@@ -469,21 +527,29 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			errorContains: "does not exist", // Basic validation fails first (directory existence check)
 		},
 		{
-			name:        "absolute working directory works for user/group command",
-			cmd:         executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir("/tmp"), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup")),
-			expectError: false,
+			name:          "absolute working directory fails with operation not permitted",
+			cmd:           executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir("/tmp"), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup")),
+			expectError:   true,
+			errorContains: "operation not permitted",
 		},
 		{
 			name:          "path with relative components fails in standard validation",
 			cmd:           executortestutil.CreateRuntimeCommand("/bin/../bin/echo", []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup")),
 			expectError:   true,
-			errorContains: "command path contains relative path components", // Error message from standard validation
+			errorContains: "command path contains relative path components",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a mock filesystem for directory validation
+			// Skip cases relying on EPERM from SysProcAttr.Credential if running as
+			// root: with CAP_SETUID/CAP_SETGID (e.g. root in some Docker CI setups),
+			// the credential change would succeed instead of failing with EPERM,
+			// invalidating the assertion.
+			if tt.errorContains == "operation not permitted" && os.Getuid() == 0 {
+				t.Skip("Skipping EPERM assertion when running as root")
+			}
+
 			mockFS := &executortestutil.MockFileSystem{
 				ExistingPaths: map[string]bool{
 					"/tmp": true,
@@ -494,6 +560,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			exec := executor.NewDefaultExecutor(
 				executor.WithPrivilegeManager(mockPrivMgr),
 				executor.WithFileSystem(mockFS),
+				executor.WithRunAsResolver(mockRunAsResolver(1000, 1000)),
 			)
 
 			ctx := context.Background()
@@ -513,12 +580,21 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 	}
 }
 
-// TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging tests audit logging for user/group command execution
+// TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging tests audit logging for user/group command execution.
+// Note: The mock privilege manager does not actually change the process identity,
+// so SysProcAttr.Credential causes "operation not permitted" at exec time.
+// Audit logging only fires on success, so on failure we verify no audit log is produced.
 func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
-	t.Run("audit_logging_successful_execution", func(t *testing.T) {
+	t.Run("audit_logging_not_invoked_on_failure", func(t *testing.T) {
+		// Skip if running as root: with CAP_SETUID/CAP_SETGID (e.g. root in some
+		// Docker CI setups), SysProcAttr.Credential would succeed instead of
+		// failing with EPERM, invalidating this test's assertion.
+		if os.Getuid() == 0 {
+			t.Skip("Skipping EPERM assertion when running as root")
+		}
+
 		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
 
-		// Create a real audit logger with custom slog handler to capture logs
 		var logBuffer bytes.Buffer
 		logger := slog.New(slog.NewJSONHandler(&logBuffer, nil))
 		auditLogger := audit.NewAuditLoggerWithCustom(logger)
@@ -527,22 +603,22 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executortestutil.MockFileSystem{}),
 			executor.WithAuditLogger(auditLogger),
+			executor.WithRunAsResolver(mockRunAsResolver(1000, 1000)),
 		)
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithName("test_audit_user_group"), executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup"))
 
 		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
-		assert.NoError(t, err)
+		// The command fails because the mock privilege manager doesn't actually
+		// change identity, so SysProcAttr.Credential causes EPERM.
+		assert.Error(t, err)
 		assert.NotNil(t, result)
-		assert.Equal(t, 0, result.ExitCode)
+		assert.Equal(t, -1, result.ExitCode)
 
-		// Verify audit logging was called
+		// Audit logging is only invoked on success, so no audit log expected.
 		logOutput := logBuffer.String()
-		assert.Contains(t, logOutput, "user_group_execution")
-		assert.Contains(t, logOutput, "test_audit_user_group")
-		assert.Contains(t, logOutput, "testuser")
-		assert.Contains(t, logOutput, "testgroup")
+		assert.Empty(t, logOutput)
 	})
 
 	t.Run("no_audit_logging_when_logger_nil", func(t *testing.T) {
@@ -551,28 +627,29 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executortestutil.MockFileSystem{}),
-			// No audit logger provided
+			executor.WithRunAsResolver(mockRunAsResolver(1000, 1000)),
 		)
 
 		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithName("test_no_audit"), executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup"))
 
 		result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
-		assert.NoError(t, err)
+		// The command fails because the mock privilege manager doesn't actually
+		// change identity, so SysProcAttr.Credential causes EPERM.
+		assert.Error(t, err)
 		assert.NotNil(t, result)
-		assert.Equal(t, 0, result.ExitCode)
-		// No assertions about logging since no logger is provided
+		assert.Equal(t, -1, result.ExitCode)
 	})
 }
 
 // TestDefaultExecutor_UserGroupPrivilegeElevationFailure tests privilege elevation failure scenarios
-// This replaces the deleted TestDefaultExecutor_PrivilegeElevationFailure test for user/group commands
 func TestDefaultExecutor_UserGroupPrivilegeElevationFailure(t *testing.T) {
 	mockPrivMgr := privilegetestutil.NewFailingMockPrivilegeManager(true)
 
 	exec := executor.NewDefaultExecutor(
 		executor.WithPrivilegeManager(mockPrivMgr),
 		executor.WithFileSystem(&executortestutil.MockFileSystem{}),
+		executor.WithRunAsResolver(mockRunAsResolver(1000, 1000)),
 	)
 
 	cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("root"), executortestutil.WithRunAsGroup("wheel"))
@@ -588,9 +665,7 @@ func TestDefaultExecutor_UserGroupPrivilegeElevationFailure(t *testing.T) {
 }
 
 // TestDefaultExecutor_UserGroupBackwardCompatibility tests backward compatibility with non-privileged commands
-// This replaces the deleted TestDefaultExecutor_BackwardCompatibility test
 func TestDefaultExecutor_UserGroupBackwardCompatibility(t *testing.T) {
-	// Test that existing code without privilege manager still works for normal commands
 	exec := executor.NewDefaultExecutor(
 		executor.WithFileSystem(&executortestutil.MockFileSystem{}),
 	)
@@ -630,9 +705,9 @@ func TestDefaultExecutor_UserGroupPrivileges_StderrCapture(t *testing.T) {
 			),
 			privileged:     true,
 			expectedStdout: "",
-			expectedStderr: "error output",
-			expectedExit:   255,
-			errContains:    []string{"user/group privilege execution failed", "exit status 255"},
+			expectedStderr: "",
+			expectedExit:   -1,
+			errContains:    []string{"user/group privilege execution failed", "operation not permitted"},
 		},
 		{
 			name: "normal command failure captures stderr",
@@ -656,19 +731,29 @@ func TestDefaultExecutor_UserGroupPrivileges_StderrCapture(t *testing.T) {
 				executortestutil.WithRunAsUser("testuser"),
 			),
 			privileged:     true,
-			expectedStdout: "stdout message",
-			expectedStderr: "stderr message",
-			expectedExit:   42,
-			errContains:    []string{"user/group privilege execution failed", "exit status 42"},
+			expectedStdout: "",
+			expectedStderr: "",
+			expectedExit:   -1,
+			errContains:    []string{"user/group privilege execution failed", "operation not permitted"},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			// Skip privileged cases relying on EPERM from SysProcAttr.Credential if
+			// running as root: with CAP_SETUID/CAP_SETGID (e.g. root in some Docker
+			// CI setups), the credential change would succeed instead of failing
+			// with EPERM, invalidating the assertion. Normal (non-privileged) cases
+			// are unaffected and still run.
+			if tc.privileged && os.Getuid() == 0 {
+				t.Skip("Skipping EPERM assertion when running as root")
+			}
+
 			var opts []executor.Option
 			if tc.privileged {
 				mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
 				opts = append(opts, executor.WithPrivilegeManager(mockPriv))
+				opts = append(opts, executor.WithRunAsResolver(mockRunAsResolver(1000, 1000)))
 			}
 			opts = append(opts, executor.WithFileSystem(&executortestutil.MockFileSystem{}))
 			exec := executor.NewDefaultExecutor(opts...)
@@ -700,7 +785,6 @@ func TestDefaultExecutor_UserGroupPrivileges_StderrCapture(t *testing.T) {
 }
 
 // TestDefaultExecutor_UserGroupRootExecution tests running commands as root user
-// This provides equivalent functionality to the deleted privileged=true tests
 func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 	tests := []struct {
 		name               string
@@ -713,10 +797,11 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 		expectElevations   []string
 	}{
 		{
-			name:               "root user command executes with elevation",
+			name:               "root user command fails without real elevation",
 			cmd:                executortestutil.CreateRuntimeCommand(whoamiCmd, []string{}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("root")),
 			privilegeSupported: true,
-			expectError:        false,
+			expectError:        true,
+			errorMessage:       "user/group privilege execution failed",
 			noPrivilegeManager: false,
 			expectElevations:   []string{"user_group_change:root:"},
 		},
@@ -741,20 +826,30 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 		{
 			name:               "normal command bypasses privilege manager",
 			cmd:                executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir("")),
-			privilegeSupported: false, // Should not matter
+			privilegeSupported: false,
 			expectError:        false,
 			noPrivilegeManager: false,
-			expectElevations:   []string{}, // No elevations expected
+			expectElevations:   []string{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// The "root user command fails without real elevation" case relies on
+			// SysProcAttr.Credential failing with EPERM under the mock privilege
+			// manager. If the test process itself is root (e.g. some Docker CI
+			// setups run as root with CAP_SETUID/CAP_SETGID), the credential change
+			// to uid=0/gid=0 succeeds instead, so the command succeeds too.
+			if tt.name == "root user command fails without real elevation" && os.Getuid() == 0 {
+				tt.expectError = false
+				tt.errorMessage = ""
+				tt.expectedErrorType = nil
+			}
+
 			mockPrivMgr := privilegetestutil.NewMockPrivilegeManager(tt.privilegeSupported)
 
 			var exec executor.CommandExecutor
 			if tt.noPrivilegeManager {
-				// Create executor without privilege manager
 				exec = executor.NewDefaultExecutor(
 					executor.WithFileSystem(&executortestutil.MockFileSystem{}),
 				)
@@ -762,6 +857,7 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 				exec = executor.NewDefaultExecutor(
 					executor.WithPrivilegeManager(mockPrivMgr),
 					executor.WithFileSystem(&executortestutil.MockFileSystem{}),
+					executor.WithRunAsResolver(mockRunAsResolver(0, 0)),
 				)
 			}
 
@@ -772,11 +868,9 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err)
-				// Check based on expected error type
 				if tt.expectedErrorType != nil {
 					assert.ErrorIs(t, err, tt.expectedErrorType)
 				} else if tt.errorMessage != "" {
-					// Fall back to message check only if no error type is specified
 					assert.Contains(t, err.Error(), tt.errorMessage)
 				}
 			} else {
@@ -786,7 +880,6 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 
 			if !tt.noPrivilegeManager {
 				if len(tt.expectElevations) == 0 && mockPrivMgr.ElevationCalls == nil {
-					// Both nil and empty slice are acceptable for no elevations - no assertion needed
 					assert.True(t, true, "No elevations expected and none occurred")
 				} else {
 					assert.Equal(t, tt.expectElevations, mockPrivMgr.ElevationCalls)

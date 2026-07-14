@@ -22,12 +22,24 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
-// stagedExecMode is the permission of a staged command copy: owner read+execute
-// only, with write withheld so the verified copy cannot be modified before exec.
-const stagedExecMode = 0o500
+// stagedExecMode is the permission of a staged command copy: owner
+// read+execute, group read+execute, others none. The staging directory and
+// file remain owned by root/parent (see stageFromFD); only the group is
+// chgrp'd to the run-as gid, so the target user can execute the staged copy
+// via group permission without being able to chown/chmod it (which owner
+// rights would allow) and without exposing it to other users sharing the
+// staging parent directory (e.g. /tmp).
+const stagedExecMode = 0o550
 
 // ErrPrivilegeLeak is returned when effective UID/GID do not match real UID/GID after execution.
 var ErrPrivilegeLeak = errors.New("privilege leak detected")
+
+// ErrRunAsIdentityResolution is returned when run-as identity resolution fails
+// (unknown user/group, supplementary group enumeration failure). The command is
+// not executed and an error is returned to the caller (fail-closed); this is
+// distinct from the separate privilege-leak invariant check, which does call
+// os.Exit.
+var ErrRunAsIdentityResolution = errors.New("failed to resolve run-as identity (uid/gid/supplementary groups)")
 
 // Error definitions
 var (
@@ -45,12 +57,13 @@ var (
 // DefaultExecutor is the default implementation of CommandExecutor
 type DefaultExecutor struct {
 	FS              FileSystem
-	PrivMgr         runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
-	AuditLogger     *audit.Logger                // Optional audit logger for privileged operations
-	Logger          *slog.Logger                 // Optional logger for command execution logging
-	osExit          func(code int)               // injectable for testing; defaults to os.Exit
-	identityChecker func() error                 // injectable for testing; defaults to defaultIdentityChecker
-	fdExecDisabled  bool                         // injectable for testing; forces the staging fallback even on Linux
+	PrivMgr         runnertypes.PrivilegeManager                                                              // Optional privilege manager for privileged commands
+	AuditLogger     *audit.Logger                                                                             // Optional audit logger for privileged operations
+	Logger          *slog.Logger                                                                              // Optional logger for command execution logging
+	osExit          func(code int)                                                                            // injectable for testing; defaults to os.Exit
+	identityChecker func() error                                                                              // injectable for testing; defaults to defaultIdentityChecker
+	runAsResolver   func(base risktypes.RunAsIdent, userName, groupName string) (risktypes.RunAsIdent, error) // injectable for testing; defaults to risktypes.ResolveRunAsIdent
+	fdExecDisabled  bool                                                                                      // injectable for testing; forces the staging fallback even on Linux
 }
 
 // Option is a functional option for configuring DefaultExecutor
@@ -79,6 +92,7 @@ func NewDefaultExecutor(opts ...Option) CommandExecutor {
 		Logger:          slog.Default(),
 		osExit:          os.Exit,
 		identityChecker: defaultIdentityChecker,
+		runAsResolver:   risktypes.ResolveRunAsIdent,
 	}
 
 	for _, opt := range opts {
@@ -130,7 +144,11 @@ func (e *DefaultExecutor) Execute(ctx context.Context, plan *risktypes.VerifiedC
 	return result, err
 }
 
-// executeWithUserGroup handles command execution with user/group privilege changes with audit logging and metrics
+// executeWithUserGroup handles command execution with user/group privilege changes with audit logging and metrics.
+// It resolves the run-as identity and sets SysProcAttr.Credential on the child
+// process so the kernel sets uid/gid/supplementary groups atomically at execve
+// time. On resolution failure the command is not executed and an error is
+// returned (fail-closed).
 func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *risktypes.VerifiedCommandPlan, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	startTime := time.Now()
 	var metrics audit.PrivilegeMetrics
@@ -164,6 +182,45 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 		return nil, ErrEmptyCommand
 	}
 
+	// Resolve the run-as identity before privilege escalation. This uses the
+	// shared OriginalExecutionIdentity cache (sync.OnceValue) so the same base
+	// identity is used by both the risk evaluator and the executor (DRY).
+	// The base is captured once at process start, before any privilege change.
+	// Fall back to the default resolver if none was injected (e.g. a bare
+	// &DefaultExecutor{} literal), so this fails closed with an error instead of
+	// panicking on a nil call.
+	resolver := e.runAsResolver
+	if resolver == nil {
+		resolver = risktypes.ResolveRunAsIdent
+	}
+	resolvedIdent, err := resolver(risktypes.OriginalExecutionIdentity(), cmd.RunAsUser(), cmd.RunAsGroup())
+	if err != nil {
+		e.Logger.Error("Failed to resolve run-as identity",
+			"error", err,
+			"user", cmd.RunAsUser(),
+			"group", cmd.RunAsGroup())
+		return nil, fmt.Errorf("%w: %w", ErrRunAsIdentityResolution, err)
+	}
+	// ResolveRunAsIdent silently returns nil Groups when supplementary group
+	// enumeration fails (it does not surface that as an error); fail closed
+	// here instead of passing nil straight into the process credential.
+	if resolvedIdent.Groups == nil {
+		e.Logger.Error("Failed to resolve run-as supplementary groups",
+			"error", ErrRunAsIdentityResolution,
+			"user", cmd.RunAsUser(),
+			"group", cmd.RunAsGroup())
+		return nil, ErrRunAsIdentityResolution
+	}
+
+	// Build the Credential for the child process. NoSetGroups: false ensures
+	// supplementary groups are reset to the target user's groups.
+	cred := &syscall.Credential{
+		Uid:         resolvedIdent.UID,
+		Gid:         resolvedIdent.GID,
+		Groups:      resolvedIdent.Groups,
+		NoSetGroups: false,
+	}
+
 	// Create elevation context for user/group execution
 	executionCtx := runnertypes.ElevationContext{
 		Operation:   runnertypes.OperationUserGroupExecution,
@@ -176,9 +233,9 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 	var result *Result
 	privilegeStart := time.Now()
 	e.Logger.Debug("Calling WithPrivileges for user/group execution", "command", cmd.Name(), "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
-	err := e.PrivMgr.WithPrivileges(executionCtx, func() error {
+	err = e.PrivMgr.WithPrivileges(executionCtx, func() error {
 		var execErr error
-		result, execErr = e.executeCommandWithPath(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter)
+		result, execErr = e.executeCommandWithPath(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter, cred)
 		return execErr
 	})
 	privilegeDuration := time.Since(privilegeStart)
@@ -225,7 +282,7 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, plan *risktypes.Ver
 		return nil, fmt.Errorf("%w: %s", ErrPathNotAbsolute, cmd.ExpandedCmd)
 	}
 
-	return e.executeCommandWithPath(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter)
+	return e.executeCommandWithPath(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter, nil)
 }
 
 // executeCommandWithPath executes a command with the given resolved path.
@@ -237,7 +294,11 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, plan *risktypes.Ver
 // executed directly (no re-resolution); the evaluator's identity gate denies
 // unverified binaries before they reach an allowed plan, so this branch does not
 // weaken the production guarantee.
-func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, plan *risktypes.VerifiedCommandPlan, path string, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
+//
+// cred is the kernel-level credential to pass to the child process via
+// SysProcAttr.Credential (used for run-as execution). When nil, no credential
+// override is applied (normal execution).
+func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, plan *risktypes.VerifiedCommandPlan, path string, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter, cred *syscall.Credential) (*Result, error) {
 	// Log the command being executed at DEBUG level
 	cmdLine := FormatCommandForLog(path, cmd.ExpandedArgs)
 	e.Logger.Debug("Executing command",
@@ -248,11 +309,16 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, plan *risk
 
 	// Bind execution to the verified descriptor when one is available.
 	// #nosec G204 - The command and arguments are validated before execution with e.Validate()
-	execCmd, cleanup, err := e.prepareExecCommand(ctx, plan, path, cmd.ExpandedArgs)
+	execCmd, cleanup, err := e.prepareExecCommand(ctx, plan, path, cmd.ExpandedArgs, cred)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
+
+	// Set SysProcAttr.Credential for run-as execution. When cred is non-nil,
+	// the kernel sets uid/gid/supplementary groups atomically at execve time.
+	// For normal execution (cred == nil), no credential is set.
+	applyCredential(execCmd, cred)
 
 	// Set up stdin to null device for security and stability:
 	// 1. Security: Prevents child processes from reading unexpected input from stdin
@@ -343,6 +409,20 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, plan *risk
 	return result, nil
 }
 
+// applyCredential sets execCmd.SysProcAttr.Credential to cred when cred is
+// non-nil, so the kernel sets uid/gid/supplementary groups atomically at
+// execve time. Extracted as its own function so the wiring is unit-testable
+// without actually running a command.
+func applyCredential(execCmd *exec.Cmd, cred *syscall.Credential) {
+	if cred == nil {
+		return
+	}
+	if execCmd.SysProcAttr == nil {
+		execCmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	execCmd.SysProcAttr.Credential = cred
+}
+
 // prepareExecCommand builds the *exec.Cmd to run, binding it to the verified
 // file descriptor when the plan supplies one. It returns a cleanup function the
 // caller must defer; cleanup closes any duplicated descriptor and removes any
@@ -355,9 +435,15 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, plan *risk
 //     a private file and exec that copy (non-Linux, or when fd exec is disabled
 //     for tests).
 //
+// cred is the run-as credential resolved by the caller (nil for normal
+// execution). When non-nil, the staging path chgrp's (owner stays root/parent)
+// the staged directory and file to cred's gid so the target user can access
+// them without exposing the copy to other users sharing the staging parent
+// directory (e.g. /tmp).
+//
 // Without a verified descriptor it execs the already-resolved path directly (no
 // re-resolution).
-func (e *DefaultExecutor) prepareExecCommand(ctx context.Context, plan *risktypes.VerifiedCommandPlan, path string, args []string) (*exec.Cmd, func(), error) {
+func (e *DefaultExecutor) prepareExecCommand(ctx context.Context, plan *risktypes.VerifiedCommandPlan, path string, args []string, cred *syscall.Credential) (*exec.Cmd, func(), error) {
 	noop := func() {}
 
 	var identity *risktypes.VerifiedIdentity
@@ -382,7 +468,7 @@ func (e *DefaultExecutor) prepareExecCommand(ctx context.Context, plan *risktype
 			}, nil
 		}
 
-		stagedPath, stagingCleanup, err := e.stageFromFD(identity)
+		stagedPath, stagingCleanup, err := e.stageFromFD(identity, cred)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -396,12 +482,29 @@ func (e *DefaultExecutor) prepareExecCommand(ctx context.Context, plan *risktype
 	return exec.CommandContext(ctx, path, args...), noop, nil
 }
 
+// stagingDirMode is the permission of the staging directory: owner
+// read+write+execute, group execute only (to traverse into it), others none.
+// The directory stays owned by root/parent; only the group is chgrp'd to the
+// run-as gid (see stageFromFD), so the target user can traverse it via group
+// permission but cannot replace/rename the directory contents (which owner
+// write rights would allow), closing the TOCTOU directory-replacement gap.
+const stagingDirMode = 0o710
+
 // stageFromFD copies the verified inode out of the held descriptor into a private
 // read-only file and returns its path plus a cleanup function. The bytes are read
 // from the verified descriptor (not re-opened from the path), so a swapped path
-// cannot substitute different content. The staged copy lives in a 0700 temp
-// directory and is created 0500 (read+execute, no write).
-func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity) (string, func(), error) {
+// cannot substitute different content.
+//
+// When cred is non-nil (run-as execution), both the staging directory and the
+// staged file are chgrp'd (not chowned) to cred's gid, leaving the owner as
+// root/parent. This lets the target user -- running as a different,
+// unprivileged uid -- traverse and execute them via group permission, without
+// granting that user chown/chmod rights over the staged copy (which owner
+// rights would allow) and without exposing the copy to any other user sharing
+// the staging parent directory (e.g. /tmp). When cred is nil (normal
+// execution), no chgrp occurs and the staging directory and staged file are
+// owned by the current, typically non-root, invoking user.
+func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred *syscall.Credential) (stagedPath string, cleanupFn func(), err error) {
 	dir, err := os.MkdirTemp("", "scr-stage-")
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create staging directory: %w", err)
@@ -409,6 +512,29 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity) (str
 	cleanup := func() {
 		if rmErr := os.RemoveAll(dir); rmErr != nil {
 			e.Logger.Warn("Failed to remove staging directory", "error", rmErr, "dir", dir)
+		}
+	}
+	// On any error return below, the staging directory (and whatever was
+	// written into it so far) must not leak: this defer runs cleanup
+	// whenever the named return err is non-nil, so each error path below
+	// only needs to `return ..., err` without repeating cleanup() itself.
+	defer func() {
+		if err != nil {
+			cleanup()
+		}
+	}()
+
+	// Chgrp (uid -1 leaves owner unchanged, keeping root/parent as owner) the
+	// staging directory to the run-as gid so that user (running as a
+	// different, unprivileged uid) can traverse it via group permission; the
+	// parent process here still runs privileged (root), so Chown is permitted.
+	if cred != nil {
+		// #nosec G115 -- cred.Gid is uint32 parsed via strconv.ParseUint(s, 10, 32), so it fits in int (64-bit on all supported platforms).
+		if err := os.Chown(dir, -1, int(cred.Gid)); err != nil {
+			return "", nil, fmt.Errorf("failed to chgrp staging directory to gid=%d: %w", cred.Gid, err)
+		}
+		if err := os.Chmod(dir, stagingDirMode); err != nil {
+			return "", nil, fmt.Errorf("failed to chmod staging directory: %w", err)
 		}
 	}
 
@@ -419,13 +545,11 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity) (str
 	// which never moves that shared offset.
 	dup, err := syscall.Dup(identity.FD.Fd())
 	if err != nil {
-		cleanup()
 		return "", nil, fmt.Errorf("failed to duplicate verified fd for staging: %w", err)
 	}
 	src := os.NewFile(uintptr(dup), identity.ResolvedPath) // #nosec G115 -- dup is a valid non-negative fd from syscall.Dup; int->uintptr cannot overflow
 	if src == nil {
 		_ = syscall.Close(dup)
-		cleanup()
 		return "", nil, ErrNoVerifiedFD
 	}
 	defer func() {
@@ -435,7 +559,6 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity) (str
 	}()
 	info, err := src.Stat()
 	if err != nil {
-		cleanup()
 		return "", nil, fmt.Errorf("failed to stat verified fd for staging: %w", err)
 	}
 
@@ -446,27 +569,43 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity) (str
 	if name == "." || name == string(filepath.Separator) || name == "" {
 		name = "command"
 	}
-	stagedPath := filepath.Join(dir, name)
-	// #nosec G304 G302 - stagedPath is a freshly created file (O_EXCL) inside our
+	path := filepath.Join(dir, name)
+	// #nosec G304 G302 - path is a freshly created file (O_EXCL) inside our
 	// own 0700 MkdirTemp directory; the basename derives from the already-verified
 	// resolved path, not untrusted input. The execute bit (0500) is required to
 	// exec the staged copy and write is intentionally withheld.
-	dst, err := os.OpenFile(stagedPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, stagedExecMode)
+	dst, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, stagedExecMode)
 	if err != nil {
-		cleanup()
 		return "", nil, fmt.Errorf("failed to create staged command file: %w", err)
 	}
 	if _, err := io.Copy(dst, io.NewSectionReader(src, 0, info.Size())); err != nil {
 		_ = dst.Close()
-		cleanup()
 		return "", nil, fmt.Errorf("failed to stage verified command: %w", err)
 	}
 	if err := dst.Close(); err != nil {
-		cleanup()
 		return "", nil, fmt.Errorf("failed to close staged command file: %w", err)
 	}
 
-	return stagedPath, cleanup, nil
+	// os.OpenFile's mode is subject to the process umask, so in hardened
+	// environments (e.g. umask 0027/0077) the group execute bit requested via
+	// stagedExecMode could be silently stripped. Explicitly chmod the staged
+	// file so its permissions are deterministic regardless of umask, mirroring
+	// how the staging directory is already explicitly chmod'd above.
+	if err := os.Chmod(path, stagedExecMode); err != nil {
+		return "", nil, fmt.Errorf("failed to chmod staged command file: %w", err)
+	}
+
+	// Chgrp (uid -1 leaves owner as root/parent) the staged file to the run-as
+	// gid so that user can execute it via group permission despite not owning
+	// it, preventing the target user from chown/chmod'ing the staged copy.
+	if cred != nil {
+		// #nosec G115 -- cred.Gid is uint32 parsed via strconv.ParseUint(s, 10, 32), so it fits in int (64-bit on all supported platforms).
+		if err := os.Chown(path, -1, int(cred.Gid)); err != nil {
+			return "", nil, fmt.Errorf("failed to chgrp staged command file to gid=%d: %w", cred.Gid, err)
+		}
+	}
+
+	return path, cleanup, nil
 }
 
 // Validate implements the CommandExecutor interface
