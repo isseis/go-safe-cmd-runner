@@ -494,6 +494,7 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	// as a different, unprivileged uid) can traverse it; the parent process here
 	// still runs privileged (root), so Chown is permitted.
 	if cred != nil {
+		// #nosec G115 -- cred.Uid/Gid are uint32 parsed via strconv.ParseUint(s, 10, 32), so they fit in int (64-bit on all supported platforms).
 		if err := os.Chown(dir, int(cred.Uid), int(cred.Gid)); err != nil {
 			cleanup()
 			return "", nil, fmt.Errorf("failed to chown staging directory to uid=%d gid=%d: %w", cred.Uid, cred.Gid, err)
@@ -557,6 +558,7 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	// Chown the staged file to the run-as identity so that user can execute it
 	// despite the owner-only 0500 mode.
 	if cred != nil {
+		// #nosec G115 -- cred.Uid/Gid are uint32 parsed via strconv.ParseUint(s, 10, 32), so they fit in int (64-bit on all supported platforms).
 		if err := os.Chown(stagedPath, int(cred.Uid), int(cred.Gid)); err != nil {
 			cleanup()
 			return "", nil, fmt.Errorf("failed to chown staged command file to uid=%d gid=%d: %w", cred.Uid, cred.Gid, err)
