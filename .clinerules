@@ -37,28 +37,28 @@ Long commit or pull request messages may be truncated when passed as inline argu
 
 ```bash
 # 1. Write the commit message to a temp file using write_to_file
-#  (path: /tmp/git-commit-msg-YYYYMMDD-HHMMSS.txt)
+#  (path: .git/git-commit-msg-YYYYMMDD-HHMMSS.txt)
 # 2. Then execute:
-git commit -F /tmp/git-commit-msg-YYYYMMDD-HHMMSS.txt
+git commit -F .git/git-commit-msg-YYYYMMDD-HHMMSS.txt
 # 3. Clean up:
-rm -f /tmp/git-commit-msg-YYYYMMDD-HHMMSS.txt
+rm -f .git/git-commit-msg-YYYYMMDD-HHMMSS.txt
 ```
 
 ### gh pr create with long messages
 
 ```bash
 # 1. Write the PR body to a temp file using write_to_file
-#  (path: /tmp/pr-body-YYYYMMDD-HHMMSS.md)
+#  (path: .git/pr-body-YYYYMMDD-HHMMSS.md)
 # 2. Then execute:
-gh pr create --title "feat: add new feature" --body-file /tmp/pr-body-YYYYMMDD-HHMMSS.md
+gh pr create --title "feat: add new feature" --body-file .git/pr-body-YYYYMMDD-HHMMSS.md
 # 3. Clean up:
-rm -f /tmp/pr-body-YYYYMMDD-HHMMSS.md
+rm -f .git/pr-body-YYYYMMDD-HHMMSS.md
 ```
 
 ### General rule
 
 For any command that accepts a message/body argument and may truncate long inline input:
 
-1. Use `write_to_file` to write the message content to a temporary file (e.g., `/tmp/git-commit-msg-*` or `/tmp/pr-body-*`)
+1. Use `write_to_file` to write the message content to a temporary file (e.g., `.git/git-commit-msg-*` or `.git/pr-body-*`)
 2. Use the `-F` flag to read from that file
 3. Clean up the temporary file with `rm -f` after the command succeeds
