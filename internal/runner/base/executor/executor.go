@@ -37,7 +37,7 @@ var ErrPrivilegeLeak = errors.New("privilege leak detected")
 
 // ErrRunAsIdentityResolution is returned when run-as identity resolution fails
 // (unknown user/group, supplementary group enumeration failure). The command is
-// not executed and the process exits non-zero (fail-closed, AC-02).
+// not executed and the process exits non-zero (fail-closed).
 var ErrRunAsIdentityResolution = errors.New("failed to resolve run-as identity (uid/gid/supplementary groups)")
 
 // Error definitions
@@ -146,8 +146,8 @@ func (e *DefaultExecutor) Execute(ctx context.Context, plan *risktypes.VerifiedC
 // executeWithUserGroup handles command execution with user/group privilege changes with audit logging and metrics.
 // It resolves the run-as identity and sets SysProcAttr.Credential on the child
 // process so the kernel sets uid/gid/supplementary groups atomically at execve
-// time (AC-01, AC-05). On resolution failure the command is not executed and an
-// error is returned (fail-closed, AC-02).
+// time. On resolution failure the command is not executed and an error is
+// returned (fail-closed).
 func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *risktypes.VerifiedCommandPlan, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	startTime := time.Now()
 	var metrics audit.PrivilegeMetrics
@@ -195,7 +195,7 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 	}
 
 	// Build the Credential for the child process. NoSetGroups: false ensures
-	// supplementary groups are reset to the target user's groups (AC-01).
+	// supplementary groups are reset to the target user's groups.
 	cred := &syscall.Credential{
 		Uid:         resolvedIdent.UID,
 		Gid:         resolvedIdent.GID,
@@ -298,8 +298,8 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, plan *risk
 	defer cleanup()
 
 	// Set SysProcAttr.Credential for run-as execution. When cred is non-nil,
-	// the kernel sets uid/gid/supplementary groups atomically at execve time
-	// (AC-01, AC-05). For normal execution (cred == nil), no credential is set.
+	// the kernel sets uid/gid/supplementary groups atomically at execve time.
+	// For normal execution (cred == nil), no credential is set.
 	if cred != nil {
 		if execCmd.SysProcAttr == nil {
 			execCmd.SysProcAttr = &syscall.SysProcAttr{}

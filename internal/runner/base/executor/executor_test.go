@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
@@ -20,10 +21,13 @@ import (
 // This is required because executor now expects absolute, symlink-resolved paths
 // (resolved by PathResolver.ResolvePath in production).
 var (
-	echoCmd   = executortestutil.ResolveCommand("echo")
-	pwdCmd    = executortestutil.ResolveCommand("pwd")
-	shCmd     = executortestutil.ResolveCommand("sh")
-	whoamiCmd = executortestutil.ResolveCommand("whoami")
+	echoCmd     = executortestutil.ResolveCommand("echo")
+	pwdCmd      = executortestutil.ResolveCommand("pwd")
+	shCmd       = executortestutil.ResolveCommand("sh")
+	sleepCmd    = executortestutil.ResolveCommand("sleep")
+	printenvCmd = executortestutil.ResolveCommand("printenv")
+	lsCmd       = executortestutil.ResolveCommand("ls")
+	whoamiCmd   = executortestutil.ResolveCommand("whoami")
 )
 
 // mockRunAsResolver returns a resolver that always succeeds with the given
@@ -107,6 +111,198 @@ func TestExecute_Success(t *testing.T) {
 				}
 
 				assert.Equal(t, tt.expectedStderr, result.Stderr, "Stderr should match expected value")
+			}
+		})
+	}
+}
+
+func TestExecute_Failure(t *testing.T) {
+	tests := []struct {
+		name    string
+		cmd     *runnertypes.RuntimeCommand
+		env     map[string]string
+		timeout time.Duration
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "non-existent command",
+			cmd:     executortestutil.CreateRuntimeCommand("/nonexistent/command12345", []string{}, executortestutil.WithWorkDir("")),
+			env:     map[string]string{},
+			wantErr: true,
+			errMsg:  "no such file or directory",
+		},
+		{
+			name:    "command with non-zero exit status",
+			cmd:     executortestutil.CreateRuntimeCommand(shCmd, []string{"-c", "exit 1"}, executortestutil.WithWorkDir("")),
+			env:     map[string]string{},
+			wantErr: true,
+			errMsg:  "command execution failed",
+		},
+		{
+			name:    "command writing to stderr",
+			cmd:     executortestutil.CreateRuntimeCommand(shCmd, []string{"-c", "echo 'error message' >&2; exit 0"}, executortestutil.WithWorkDir("")),
+			env:     map[string]string{},
+			wantErr: false, // This should succeed but capture stderr
+		},
+		{
+			name:    "command that takes time (for timeout test)",
+			cmd:     executortestutil.CreateRuntimeCommand(sleepCmd, []string{"2"}, executortestutil.WithWorkDir("")),
+			env:     map[string]string{},
+			timeout: 100 * time.Millisecond,
+			wantErr: true,
+			errMsg:  "signal: killed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fileSystem := &executortestutil.MockFileSystem{
+				ExistingPaths: make(map[string]bool),
+			}
+
+			// Set up directory existence for working directory tests
+			if tt.cmd.EffectiveWorkDir != "" {
+				fileSystem.ExistingPaths[tt.cmd.EffectiveWorkDir] = true
+			}
+
+			outputWriter := &executortestutil.MockOutputWriter{}
+
+			e := executor.NewDefaultExecutor(
+				executor.WithFileSystem(fileSystem),
+			)
+
+			ctx := context.Background()
+			if tt.timeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, tt.timeout)
+				defer cancel()
+			}
+
+			result, err := e.Execute(ctx, nil, tt.cmd, tt.env, outputWriter)
+
+			if tt.wantErr {
+				assert.Error(t, err, "Expected error but got none")
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg, "Error message should contain expected text")
+				}
+			} else {
+				require.NoError(t, err, "Unexpected error")
+				require.NotNil(t, result, "Result should not be nil")
+
+				// For the stderr test case, check that stderr was captured
+				if tt.name == "command writing to stderr" {
+					assert.NotEmpty(t, outputWriter.Outputs, "Should have captured output")
+				}
+			}
+		})
+	}
+}
+
+func TestExecute_ContextCancellation(t *testing.T) {
+	fileSystem := &executortestutil.MockFileSystem{
+		ExistingPaths: make(map[string]bool),
+	}
+
+	e := executor.NewDefaultExecutor(
+		executor.WithFileSystem(fileSystem),
+	)
+
+	// Create a context that we'll cancel
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Start a long-running command
+	cmd := executortestutil.CreateRuntimeCommand(sleepCmd, []string{"10"}, executortestutil.WithWorkDir(""))
+
+	// Cancel the context immediately
+	cancel()
+
+	result, err := e.Execute(ctx, nil, cmd, map[string]string{}, &executortestutil.MockOutputWriter{})
+
+	// Should get an error due to context cancellation
+	assert.Error(t, err, "Expected error due to context cancellation")
+	assert.ErrorIs(t, err, context.Canceled, "Error should indicate context cancellation")
+	assert.NotNil(t, result, "Result should still be returned even on failure")
+}
+
+func TestExecute_EnvironmentVariables(t *testing.T) {
+	// Test that only filtered environment variables are passed to executed commands
+	// and os.Environ() variables are not leaked through
+	fileSystem := &executortestutil.MockFileSystem{
+		ExistingPaths: make(map[string]bool),
+	}
+
+	e := executor.NewDefaultExecutor(
+		executor.WithFileSystem(fileSystem),
+	)
+
+	// Set a test environment variable in the runner process
+	t.Setenv("LEAKED_VAR", "should_not_appear")
+
+	cmd := executortestutil.CreateRuntimeCommand(printenvCmd, []string{}, executortestutil.WithWorkDir(""))
+
+	// Only provide filtered variables through envVars parameter
+	envVars := map[string]string{
+		"FILTERED_VAR": "allowed_value",
+		"PATH":         "/usr/bin:/bin", // Common required variable
+	}
+
+	ctx := context.Background()
+	result, err := e.Execute(ctx, nil, cmd, envVars, &executortestutil.MockOutputWriter{})
+
+	require.NoError(t, err, "Execute should not return an error")
+	require.NotNil(t, result, "Result should not be nil")
+
+	// Check that only allowed variables are present in the output
+	assert.Contains(t, result.Stdout, "FILTERED_VAR=allowed_value", "Filtered variable should be present")
+	assert.Contains(t, result.Stdout, "PATH=/usr/bin:/bin", "PATH variable should be present")
+	assert.NotContains(t, result.Stdout, "LEAKED_VAR=should_not_appear", "Leaked variable should not be present")
+}
+
+func TestValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		cmd     *runnertypes.RuntimeCommand
+		wantErr bool
+	}{
+		{
+			name:    "empty command",
+			cmd:     executortestutil.CreateRuntimeCommand("", []string{}, executortestutil.WithWorkDir("")),
+			wantErr: true,
+		},
+		{
+			name:    "valid command",
+			cmd:     executortestutil.CreateRuntimeCommand(echoCmd, []string{"hello"}, executortestutil.WithWorkDir("")),
+			wantErr: false,
+		},
+		{
+			name:    "invalid directory",
+			cmd:     executortestutil.CreateRuntimeCommand(lsCmd, []string{}, executortestutil.WithWorkDir("/nonexistent/directory")),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fileSystem := &executortestutil.MockFileSystem{
+				ExistingPaths: make(map[string]bool),
+			}
+
+			// Set up directory existence based on test case
+			if tt.cmd.EffectiveWorkDir != "" {
+				// For non-empty EffectiveWorkDir, configure whether it exists
+				fileSystem.ExistingPaths[tt.cmd.EffectiveWorkDir] = !tt.wantErr
+			}
+
+			e := executor.NewDefaultExecutor(
+				executor.WithFileSystem(fileSystem),
+			)
+
+			err := e.Validate(tt.cmd)
+			if tt.wantErr {
+				assert.Error(t, err, "Expected error but got none")
+			} else {
+				assert.NoError(t, err, "Unexpected error")
 			}
 		})
 	}

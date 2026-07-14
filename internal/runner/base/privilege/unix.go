@@ -44,6 +44,19 @@ type UnixPrivilegeManager struct {
 	syscallSetegid func(gid int) error
 	// identityVerifier checks that EUID==UID and EGID==GID; injectable for testing
 	identityVerifier func() error
+	// readSavedIDs reads the process's saved-set-uid/gid; injectable for testing
+	readSavedIDs func() (suid, sgid int, err error)
+}
+
+// getReadSavedIDs returns m.readSavedIDs if injected for testing, otherwise
+// the package-level readSavedIDs implementation. Manager literals constructed
+// without setting the field (e.g. in existing tests) fall back to the real
+// implementation rather than panicking on a nil func field.
+func (m *UnixPrivilegeManager) getReadSavedIDs() func() (suid, sgid int, err error) {
+	if m.readSavedIDs != nil {
+		return m.readSavedIDs
+	}
+	return readSavedIDs
 }
 
 func newPlatformManager(logger *slog.Logger) Manager {
@@ -55,6 +68,7 @@ func newPlatformManager(logger *slog.Logger) Manager {
 		syscallSeteuid:     syscall.Seteuid,
 		syscallSetegid:     syscall.Setegid,
 		identityVerifier:   defaultIdentityVerifier,
+		readSavedIDs:       readSavedIDs,
 	}
 }
 
@@ -116,7 +130,7 @@ type executionContext struct {
 
 // prepareExecution validates and prepares the execution context
 func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.ElevationContext) (*executionContext, error) {
-	suid, sgid, err := readSavedIDs()
+	suid, sgid, err := m.getReadSavedIDs()()
 	if err != nil && !errors.Is(err, ErrSavedSetNotSupported) {
 		return nil, fmt.Errorf("failed to read saved-set IDs before execution: %w", err)
 	}
@@ -242,7 +256,7 @@ func (m *UnixPrivilegeManager) restorePrivilegesAndMetrics(execCtx *executionCon
 		// The check is structurally skipped in that case via the originalSUID >= 0
 		// gate, rather than relying on both sides returning the same constant.
 		if execCtx.originalSUID >= 0 {
-			suid, sgid, err := readSavedIDs()
+			suid, sgid, err := m.getReadSavedIDs()()
 			if err != nil {
 				m.emergencyShutdown(fmt.Errorf("failed to read saved-set IDs after restore: %w", err),
 					fmt.Sprintf("saved_set_read_failure_%s", shutdownContext))
