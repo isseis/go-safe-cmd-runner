@@ -504,7 +504,7 @@ const stagingDirMode = 0o710
 // the staging parent directory (e.g. /tmp). When cred is nil (normal
 // execution), no chgrp occurs and the staging directory and staged file are
 // owned by the current, typically non-root, invoking user.
-func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred *syscall.Credential) (string, func(), error) {
+func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred *syscall.Credential) (stagedPath string, cleanupFn func(), err error) {
 	dir, err := os.MkdirTemp("", "scr-stage-")
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create staging directory: %w", err)
@@ -514,6 +514,15 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 			e.Logger.Warn("Failed to remove staging directory", "error", rmErr, "dir", dir)
 		}
 	}
+	// On any error return below, the staging directory (and whatever was
+	// written into it so far) must not leak: this defer runs cleanup
+	// whenever the named return err is non-nil, so each error path below
+	// only needs to `return ..., err` without repeating cleanup() itself.
+	defer func() {
+		if err != nil {
+			cleanup()
+		}
+	}()
 
 	// Chgrp (uid -1 leaves owner unchanged, keeping root/parent as owner) the
 	// staging directory to the run-as gid so that user (running as a
@@ -522,11 +531,9 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	if cred != nil {
 		// #nosec G115 -- cred.Gid is uint32 parsed via strconv.ParseUint(s, 10, 32), so it fits in int (64-bit on all supported platforms).
 		if err := os.Chown(dir, -1, int(cred.Gid)); err != nil {
-			cleanup()
 			return "", nil, fmt.Errorf("failed to chgrp staging directory to gid=%d: %w", cred.Gid, err)
 		}
 		if err := os.Chmod(dir, stagingDirMode); err != nil {
-			cleanup()
 			return "", nil, fmt.Errorf("failed to chmod staging directory: %w", err)
 		}
 	}
@@ -538,13 +545,11 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	// which never moves that shared offset.
 	dup, err := syscall.Dup(identity.FD.Fd())
 	if err != nil {
-		cleanup()
 		return "", nil, fmt.Errorf("failed to duplicate verified fd for staging: %w", err)
 	}
 	src := os.NewFile(uintptr(dup), identity.ResolvedPath) // #nosec G115 -- dup is a valid non-negative fd from syscall.Dup; int->uintptr cannot overflow
 	if src == nil {
 		_ = syscall.Close(dup)
-		cleanup()
 		return "", nil, ErrNoVerifiedFD
 	}
 	defer func() {
@@ -554,7 +559,6 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	}()
 	info, err := src.Stat()
 	if err != nil {
-		cleanup()
 		return "", nil, fmt.Errorf("failed to stat verified fd for staging: %w", err)
 	}
 
@@ -565,23 +569,20 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	if name == "." || name == string(filepath.Separator) || name == "" {
 		name = "command"
 	}
-	stagedPath := filepath.Join(dir, name)
-	// #nosec G304 G302 - stagedPath is a freshly created file (O_EXCL) inside our
+	path := filepath.Join(dir, name)
+	// #nosec G304 G302 - path is a freshly created file (O_EXCL) inside our
 	// own 0700 MkdirTemp directory; the basename derives from the already-verified
 	// resolved path, not untrusted input. The execute bit (0500) is required to
 	// exec the staged copy and write is intentionally withheld.
-	dst, err := os.OpenFile(stagedPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, stagedExecMode)
+	dst, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, stagedExecMode)
 	if err != nil {
-		cleanup()
 		return "", nil, fmt.Errorf("failed to create staged command file: %w", err)
 	}
 	if _, err := io.Copy(dst, io.NewSectionReader(src, 0, info.Size())); err != nil {
 		_ = dst.Close()
-		cleanup()
 		return "", nil, fmt.Errorf("failed to stage verified command: %w", err)
 	}
 	if err := dst.Close(); err != nil {
-		cleanup()
 		return "", nil, fmt.Errorf("failed to close staged command file: %w", err)
 	}
 
@@ -590,8 +591,7 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	// stagedExecMode could be silently stripped. Explicitly chmod the staged
 	// file so its permissions are deterministic regardless of umask, mirroring
 	// how the staging directory is already explicitly chmod'd above.
-	if err := os.Chmod(stagedPath, stagedExecMode); err != nil {
-		cleanup()
+	if err := os.Chmod(path, stagedExecMode); err != nil {
 		return "", nil, fmt.Errorf("failed to chmod staged command file: %w", err)
 	}
 
@@ -600,13 +600,12 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	// it, preventing the target user from chown/chmod'ing the staged copy.
 	if cred != nil {
 		// #nosec G115 -- cred.Gid is uint32 parsed via strconv.ParseUint(s, 10, 32), so it fits in int (64-bit on all supported platforms).
-		if err := os.Chown(stagedPath, -1, int(cred.Gid)); err != nil {
-			cleanup()
+		if err := os.Chown(path, -1, int(cred.Gid)); err != nil {
 			return "", nil, fmt.Errorf("failed to chgrp staged command file to gid=%d: %w", cred.Gid, err)
 		}
 	}
 
-	return stagedPath, cleanup, nil
+	return path, cleanup, nil
 }
 
 // Validate implements the CommandExecutor interface
