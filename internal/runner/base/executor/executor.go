@@ -466,7 +466,7 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity) (str
 	// #nosec G302 -- directory must be traversable by child process with different uid/gid
 	if err := os.Chmod(dir, stagedDirMode); err != nil {
 		_ = os.RemoveAll(dir)
-		return "", nil, fmt.Errorf("failed to chmod staging directory to 0o711: %w", err)
+		return "", nil, fmt.Errorf("failed to chmod staging directory to %#o: %w", stagedDirMode, err)
 	}
 	cleanup := func() {
 		if rmErr := os.RemoveAll(dir); rmErr != nil {

@@ -392,6 +392,13 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 	})
 
 	t.Run("only_user_specified_fails_without_cap_setuid", func(t *testing.T) {
+		// Skip if running as root: with CAP_SETUID/CAP_SETGID (e.g. root in some
+		// Docker CI setups), SysProcAttr.Credential would succeed instead of
+		// failing with EPERM, invalidating this test's assertion.
+		if os.Getuid() == 0 {
+			t.Skip("Skipping EPERM assertion when running as root")
+		}
+
 		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
@@ -413,6 +420,13 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 	})
 
 	t.Run("only_group_specified_fails_without_cap_setuid", func(t *testing.T) {
+		// Skip if running as root: with CAP_SETUID/CAP_SETGID (e.g. root in some
+		// Docker CI setups), SysProcAttr.Credential would succeed instead of
+		// failing with EPERM, invalidating this test's assertion.
+		if os.Getuid() == 0 {
+			t.Skip("Skipping EPERM assertion when running as root")
+		}
+
 		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
@@ -436,6 +450,13 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 
 func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 	t.Run("privileged_with_user_group_both_specified", func(t *testing.T) {
+		// Skip if running as root: with CAP_SETUID/CAP_SETGID (e.g. root in some
+		// Docker CI setups), SysProcAttr.Credential would succeed instead of
+		// failing with EPERM, invalidating this test's assertion.
+		if os.Getuid() == 0 {
+			t.Skip("Skipping EPERM assertion when running as root")
+		}
+
 		// Test case where user/group are specified
 		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
@@ -515,6 +536,14 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Skip cases relying on EPERM from SysProcAttr.Credential if running as
+			// root: with CAP_SETUID/CAP_SETGID (e.g. root in some Docker CI setups),
+			// the credential change would succeed instead of failing with EPERM,
+			// invalidating the assertion.
+			if tt.errorContains == "operation not permitted" && os.Getuid() == 0 {
+				t.Skip("Skipping EPERM assertion when running as root")
+			}
+
 			mockFS := &executortestutil.MockFileSystem{
 				ExistingPaths: map[string]bool{
 					"/tmp": true,
@@ -551,6 +580,13 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 // Audit logging only fires on success, so on failure we verify no audit log is produced.
 func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 	t.Run("audit_logging_not_invoked_on_failure", func(t *testing.T) {
+		// Skip if running as root: with CAP_SETUID/CAP_SETGID (e.g. root in some
+		// Docker CI setups), SysProcAttr.Credential would succeed instead of
+		// failing with EPERM, invalidating this test's assertion.
+		if os.Getuid() == 0 {
+			t.Skip("Skipping EPERM assertion when running as root")
+		}
+
 		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
 
 		var logBuffer bytes.Buffer
@@ -698,6 +734,15 @@ func TestDefaultExecutor_UserGroupPrivileges_StderrCapture(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			// Skip privileged cases relying on EPERM from SysProcAttr.Credential if
+			// running as root: with CAP_SETUID/CAP_SETGID (e.g. root in some Docker
+			// CI setups), the credential change would succeed instead of failing
+			// with EPERM, invalidating the assertion. Normal (non-privileged) cases
+			// are unaffected and still run.
+			if tc.privileged && os.Getuid() == 0 {
+				t.Skip("Skipping EPERM assertion when running as root")
+			}
+
 			var opts []executor.Option
 			if tc.privileged {
 				mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
@@ -784,6 +829,17 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// The "root user command fails without real elevation" case relies on
+			// SysProcAttr.Credential failing with EPERM under the mock privilege
+			// manager. If the test process itself is root (e.g. some Docker CI
+			// setups run as root with CAP_SETUID/CAP_SETGID), the credential change
+			// to uid=0/gid=0 succeeds instead, so the command succeeds too.
+			if tt.name == "root user command fails without real elevation" && os.Getuid() == 0 {
+				tt.expectError = false
+				tt.errorMessage = ""
+				tt.expectedErrorType = nil
+			}
+
 			mockPrivMgr := privilegetestutil.NewMockPrivilegeManager(tt.privilegeSupported)
 
 			var exec executor.CommandExecutor
