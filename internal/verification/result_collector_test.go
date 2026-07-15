@@ -274,7 +274,7 @@ func TestRecordUnverifiedContent_WithFailureReason(t *testing.T) {
 	rc.RecordUnverifiedContent(
 		"/etc/test.toml",
 		"config",
-		UnverifiedReason("verify_failed_"+string(ReasonHashMismatch)),
+		UnverifiedReasonFromFailure(ReasonHashMismatch),
 		ReasonHashMismatch,
 	)
 
@@ -310,8 +310,8 @@ func TestRecordUnverifiedContent_Multiple(t *testing.T) {
 	rc := NewResultCollector("/test/path")
 
 	rc.RecordUnverifiedContent("/a.toml", "config", UnverifiedReasonNoValidator, "")
-	rc.RecordUnverifiedContent("/b.toml", "template", UnverifiedReason("verify_failed_"+string(ReasonHashFileNotFound)), ReasonHashFileNotFound)
-	rc.RecordUnverifiedContent("/c.toml", "config", UnverifiedReason("verify_failed_"+string(ReasonPermissionDenied)), ReasonPermissionDenied)
+	rc.RecordUnverifiedContent("/b.toml", "template", UnverifiedReasonFromFailure(ReasonHashFileNotFound), ReasonHashFileNotFound)
+	rc.RecordUnverifiedContent("/c.toml", "config", UnverifiedReasonFromFailure(ReasonPermissionDenied), ReasonPermissionDenied)
 
 	summary := rc.GetSummary()
 

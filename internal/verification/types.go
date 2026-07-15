@@ -136,7 +136,20 @@ const (
 	// file validator was configured for this manager instance (e.g. dry-run
 	// on a machine where the hash directory is not writable).
 	UnverifiedReasonNoValidator UnverifiedReason = "skipped_no_validator"
+
+	// unverifiedReasonVerifyFailedPrefix prefixes the underlying FailureReason
+	// to form the UnverifiedReason recorded when verification was attempted
+	// and failed but the content was still adopted via the dry-run fallback.
+	unverifiedReasonVerifyFailedPrefix = "verify_failed_"
 )
+
+// UnverifiedReasonFromFailure builds the UnverifiedReason recorded when
+// verification was attempted and failed but the content was still adopted
+// via the dry-run fallback. Centralized so the verify_failed_<reason> format
+// has a single source of truth shared by production code and tests.
+func UnverifiedReasonFromFailure(reason FailureReason) UnverifiedReason {
+	return UnverifiedReason(unverifiedReasonVerifyFailedPrefix + string(reason))
+}
 
 // UnverifiedFileUsage records a single instance where a file's content was
 // adopted by dry-run without successful hash verification. The reason is

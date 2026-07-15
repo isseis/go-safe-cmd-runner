@@ -1083,6 +1083,31 @@ func TestReadAndVerifyFileWithReadFallback_NoValidator_DryRunRecordsUnverified(t
 	assert.Nil(t, entry.Failure, "no failure reason should be attached for skipped_no_validator")
 }
 
+// TestReadAndVerifyFileWithReadFallback_FallbackReadAlsoFails_DoesNotRecordUnverified
+// covers the case where verification fails AND the subsequent os.ReadFile
+// fallback also fails (e.g. the file does not exist at all). No content was
+// ever adopted in this case, so the summary must not contain a misleading
+// UNVERIFIED entry for it.
+func TestReadAndVerifyFileWithReadFallback_FallbackReadAlsoFails_DoesNotRecordUnverified(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+
+	manager, err := NewManagerForTest(tmpDir, WithDryRunMode(), WithSkipHashDirectoryValidation())
+	require.NoError(t, err)
+
+	// The file is never created, so both hash verification and the
+	// os.ReadFile fallback fail.
+	missingFile := filepath.Join(tmpDir, "missing.conf")
+
+	content, err := manager.readAndVerifyFileWithReadFallback(missingFile, "test-context")
+	assert.Error(t, err, "both verification and the fallback read should fail")
+	assert.Nil(t, content)
+
+	summary := manager.GetVerificationSummary()
+	require.NotNil(t, summary)
+	assert.False(t, summary.UsedUnverifiedContent, "no content was adopted, so UNVERIFIED must not be recorded")
+	assert.Empty(t, summary.UnverifiedFiles)
+}
+
 // TestValidateSecurityConstraints tests the validateSecurityConstraints function
 func TestValidateSecurityConstraints(t *testing.T) {
 	t.Run("testing_mode_with_skip_validation", func(t *testing.T) {

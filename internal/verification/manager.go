@@ -427,13 +427,16 @@ func (m *Manager) verifyFileWithHash(filePath string, context string) (string, e
 func (m *Manager) readAndVerifyFileWithReadFallback(filePath string, context string) ([]byte, error) {
 	if m.fileValidator == nil {
 		// File validator is disabled - fallback to normal file reading.
-		// In dry-run mode this means the content is adopted without any
-		// hash verification, so record it as UNVERIFIED.
-		if m.isDryRun && m.resultCollector != nil {
+		// #nosec G304 - filePath comes from verified configuration and is sanitized by path resolver
+		content, err := os.ReadFile(filePath)
+		// In dry-run mode, content actually adopted without any hash
+		// verification is recorded as UNVERIFIED. Only record when the read
+		// itself succeeded: a read failure means no content was adopted, so
+		// recording here would misrepresent the summary.
+		if m.isDryRun && m.resultCollector != nil && err == nil {
 			m.resultCollector.RecordUnverifiedContent(filePath, context, UnverifiedReasonNoValidator, "")
 		}
-		// #nosec G304 - filePath comes from verified configuration and is sanitized by path resolver
-		return os.ReadFile(filePath)
+		return content, err
 	}
 
 	// Perform verification and reading
@@ -450,13 +453,18 @@ func (m *Manager) readAndVerifyFileWithReadFallback(filePath string, context str
 		}
 
 		// In dry-run mode, try to read the file even if verification failed.
-		// The file's content is now being adopted without successful
-		// verification, so mark it as UNVERIFIED for downstream consumers.
 		if err != nil {
 			reason := determineFailureReason(err)
-			m.resultCollector.RecordUnverifiedContent(filePath, context, UnverifiedReason("verify_failed_"+string(reason)), reason)
 			// #nosec G304 - filePath comes from verified configuration
 			content, err = os.ReadFile(filePath)
+			// The file's content is now being adopted without successful
+			// verification, so mark it as UNVERIFIED for downstream
+			// consumers. Only record when the fallback read itself
+			// succeeded: if it also failed, no content was adopted, so
+			// recording here would misrepresent the summary.
+			if err == nil {
+				m.resultCollector.RecordUnverifiedContent(filePath, context, UnverifiedReasonFromFailure(reason), reason)
+			}
 		}
 	}
 
