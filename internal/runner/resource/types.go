@@ -88,12 +88,31 @@ type DryRunOptions struct {
 	// Security analysis configuration
 	HashDir string `json:"hash_dir"` // Directory containing hash files
 
-	// FailOnVerificationUnavailable, when true, makes a verification-unavailable deny
-	// (a command that could not be verified in this environment) fail the dry-run:
-	// the preview exit code becomes the distinct DryRunExitVerificationUnavailable,
-	// which CI can treat as a build failure while still telling it apart from a
-	// policy deny. When false (the default), a verification-unavailable deny is
-	// reported as a note only and does not fail the dry-run (exit 0).
+	// FailOnVerificationUnavailable is the single CI-facing opt-in for the
+	// --dry-run-fail-unverified flag. When true, any unverified content adopted
+	// by the dry-run preview causes the preview to fail with a distinct exit
+	// code so CI can treat it as a build failure while still distinguishing
+	// between an environment cause and a tampering signal.
+	//
+	// Two classes of unverified content map to two distinct exit codes:
+	//
+	//   - Environment cause (e.g. no hash directory available, the validator
+	//     was skipped because of an environment error). These unverified
+	//     contents exit with DryRunExitVerificationUnavailable (= 3), which
+	//     preserves the existing semantics of the flag from task 0136
+	//     (verification-unavailable deny).
+	//   - Tampering signal (hash mismatch, hash file not found, etc.). These
+	//     are recorded in the verification summary as a verify_failed_<reason>
+	//     entry and the failure reason propagates to a policy-deny exit code
+	//     (DryRunExitPolicyDeny) so the tampering signal is not buried in the
+	//     environment-cause code.
+	//
+	// When false (the default), unverified content is reported as a note in
+	// the dry-run output (the file_verification section marks the file as
+	// "UNVERIFIED") but the dry-run still exits 0. See
+	// docs/tasks/0146_security_hardening/02_architecture.md §3.4.3 for the
+	// full design and docs/user/runner_command.md for the user-facing
+	// documentation.
 	FailOnVerificationUnavailable bool `json:"fail_on_verification_unavailable"`
 }
 

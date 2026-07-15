@@ -130,35 +130,71 @@ func (f *TextFormatter) writeSummary(buf *strings.Builder, result *DryRunResult)
 	buf.WriteString("\n")
 }
 
-// writeFileVerification writes the file verification section
-func (f *TextFormatter) writeFileVerification(buf *strings.Builder, verification *verification.FileVerificationSummary, opts FormatterOptions) {
-	if verification == nil {
+// writeFileVerification writes the file verification section. Files whose content
+// was adopted without successful hash verification are surfaced under a distinct
+// "UNVERIFIED" section so they cannot be confused with verified content. The
+// reason for each unverified usage is shown alongside the path; hash-mismatch
+// failures are emphasized with a "security_risk: high" annotation because they
+// may indicate tampering (see docs/tasks/0146_security_hardening/02_architecture.md
+// §3.4.2 / §3.4.3).
+func (f *TextFormatter) writeFileVerification(buf *strings.Builder, summary *verification.FileVerificationSummary, opts FormatterOptions) {
+	if summary == nil {
 		return
 	}
 
 	buf.WriteString("===== File Verification =====\n\n")
 
 	// Hash directory status
-	fmt.Fprintf(buf, "Hash Directory: %s\n", verification.HashDirStatus.Path)
-	fmt.Fprintf(buf, "  Exists: %t\n", verification.HashDirStatus.Exists)
-	fmt.Fprintf(buf, "  Validated: %t\n", verification.HashDirStatus.Validated)
+	fmt.Fprintf(buf, "Hash Directory: %s\n", summary.HashDirStatus.Path)
+	fmt.Fprintf(buf, "  Exists: %t\n", summary.HashDirStatus.Exists)
+	fmt.Fprintf(buf, "  Validated: %t\n", summary.HashDirStatus.Validated)
 
 	// Summary statistics
-	fmt.Fprintf(buf, "Total Files: %d\n", verification.TotalFiles)
-	fmt.Fprintf(buf, "  Verified: %d\n", verification.VerifiedFiles)
-	fmt.Fprintf(buf, "  Failed: %d\n", verification.FailedFiles)
-	fmt.Fprintf(buf, "Duration: %v\n", verification.Duration)
+	fmt.Fprintf(buf, "Total Files: %d\n", summary.TotalFiles)
+	fmt.Fprintf(buf, "  Verified: %d\n", summary.VerifiedFiles)
+	fmt.Fprintf(buf, "  Failed: %d\n", summary.FailedFiles)
+	fmt.Fprintf(buf, "Duration: %v\n", summary.Duration)
 
-	// Failures (if any and detail level permits)
-	if len(verification.Failures) > 0 && opts.DetailLevel >= DetailLevelDetailed {
+	// Failures (if any and detail level permits). Hash-mismatch is highlighted
+	// as a tampering signal and tagged with security_risk: high, regardless of
+	// whether the unverified content was later adopted via the dry-run
+	// fallback.
+	if len(summary.Failures) > 0 && opts.DetailLevel >= DetailLevelDetailed {
 		buf.WriteString("\nFailures:\n")
-		for i, failure := range verification.Failures {
+		for i, failure := range summary.Failures {
 			marker := f.formatLevelMarker(failure.Level)
 			fmt.Fprintf(buf, "%d. [%s] %s\n", i+1, marker, failure.Path)
 			fmt.Fprintf(buf, "   Reason: %s\n", f.formatReason(failure.Reason))
+			if failure.Reason == verification.ReasonHashMismatch {
+				buf.WriteString("   security_risk: high\n")
+			}
 			fmt.Fprintf(buf, "   Context: %s\n", failure.Context)
 			if failure.Message != "" {
 				fmt.Fprintf(buf, "   Message: %s\n", failure.Message)
+			}
+		}
+	}
+
+	// Unverified content (if any and detail level permits). This section
+	// shows every file whose content was used by the dry-run preview without
+	// successful hash verification, regardless of the verification failure
+	// path (skipped_no_validator or verify_failed_<reason>). The path is
+	// clearly marked "UNVERIFIED" so it cannot be confused with verified
+	// content above.
+	if summary.UsedUnverifiedContent && len(summary.UnverifiedFiles) > 0 && opts.DetailLevel >= DetailLevelDetailed {
+		buf.WriteString("\nUNVERIFIED (content adopted without successful hash verification):\n")
+		for i, usage := range summary.UnverifiedFiles {
+			marker := f.formatUnverifiedMarker(usage)
+			fmt.Fprintf(buf, "%d. [%s] %s\n", i+1, marker, usage.Path)
+			fmt.Fprintf(buf, "   Reason: %s\n", usage.Reason)
+			if usage.Failure != nil {
+				fmt.Fprintf(buf, "   Failure: %s\n", f.formatReason(*usage.Failure))
+				if *usage.Failure == verification.ReasonHashMismatch {
+					buf.WriteString("   security_risk: high\n")
+				}
+			}
+			if usage.Context != "" {
+				fmt.Fprintf(buf, "   Context: %s\n", usage.Context)
 			}
 		}
 	}
@@ -196,6 +232,20 @@ func (f *TextFormatter) formatLevelMarker(level string) string {
 	default:
 		return strings.ToUpper(level)
 	}
+}
+
+// formatUnverifiedMarker formats a marker for an unverified file usage. The
+// marker distinguishes "skipped_no_validator" (environment cause: no validator
+// was available, e.g. dry-run on a machine without the hash directory) from
+// "verify_failed_<reason>" (verification was attempted and failed, which may
+// indicate tampering when the reason is hash_mismatch). Hash-mismatch is
+// tagged "TAMPER" so the operator can see at a glance which unverified files
+// deserve investigation.
+func (f *TextFormatter) formatUnverifiedMarker(usage verification.UnverifiedFileUsage) string {
+	if usage.Failure != nil && *usage.Failure == verification.ReasonHashMismatch {
+		return "UNVERIFIED-TAMPER"
+	}
+	return "UNVERIFIED"
 }
 
 // writeResourceAnalyses writes the resource analyses section
