@@ -313,8 +313,9 @@ func TestRunTOCTOU_NoViolation_Continues(t *testing.T) {
 }
 
 // TestRunTOCTOU_ViolationLogsErrorAndExits verifies that when a TOCTOU violation
-// is detected, record logs ERROR (not WARN), prints the violation to stderr,
-// and exits non-zero without generating hashes.
+// is detected, record logs ERROR (not WARN) with per-path violation details via
+// slog, prints a generic permission-violation summary to stderr, and exits
+// non-zero without generating hashes.
 func TestRunTOCTOU_ViolationLogsErrorAndExits(t *testing.T) {
 	hashDir := tu.SafeTempDir(t)
 	targetFile := filepath.Join(hashDir, "target.txt")

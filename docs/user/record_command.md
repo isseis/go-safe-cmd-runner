@@ -525,7 +525,7 @@ echo "Test setup completed!"
 Record is the root of trust for hash-based file integrity verification. The hash database it generates is the foundation that the `runner` and `verify` commands rely on to detect tampering. To maintain this trust:
 
 - **Run record as root or a dedicated administrator account** with exclusive access to the hash directory.
-- **Ensure the hash directory and all of its parent directories have secure permissions** (owner-only write access, no group or world writability). Record enforces this on every run — if it detects a world-writable or group-writable directory in the hash directory's ancestor chain, it will refuse to generate hashes (fail closed, non-zero exit).
+- **Ensure the hash directory and all of its parent directories have secure permissions** (owner-only write access, no group or world writability). Record enforces this on every run — if it detects a non-sticky world-writable or unsafe group-writable directory in the hash directory's ancestor chain, it will refuse to generate hashes (fail closed, non-zero exit).
 - **Do not run record in untrusted directories** (e.g., `/tmp`, shared volumes accessible to non-administrators).
 - **There is no bypass flag for permission violations.** The `--force` flag only controls overwriting of existing hash files, not security checks.
 - **If you are upgrading from a deployment with `0o750` hash directories:** `os.MkdirAll` does not change permissions of existing directories. Manually correct existing hash directories with `chmod 0700 <hash-dir>`.

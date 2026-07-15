@@ -136,11 +136,15 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	violations := security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, logger)
 	if len(violations) > 0 {
 		for _, v := range violations {
+			remediation := fmt.Sprintf("fix directory permissions/ownership and re-run record (reported violation: %v)", v.Err)
+			if errors.Is(v.Err, security.ErrInvalidDirPermissions) {
+				remediation = fmt.Sprintf("fix directory permissions with chmod (e.g. chmod go-w %s) and re-run record", v.Path)
+			}
 			logger.Error(
 				"hash directory permission violation detected — refusing to record",
 				slog.String("path", v.Path),
 				slog.String("violation", v.Err.Error()),
-				slog.String("remediation", fmt.Sprintf("fix directory permissions with chmod (e.g. chmod go-w %s) and re-run record", v.Path)),
+				slog.String("remediation", remediation),
 			)
 		}
 		fmt.Fprintln(stderr, "Error: permission violation in hash directory or its ancestor directories — refusing to generate hash records. Fix directory permissions and re-run.") //nolint:errcheck
