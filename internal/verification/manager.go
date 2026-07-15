@@ -419,11 +419,24 @@ func (m *Manager) verifyFileWithHash(filePath string, context string) (string, e
 //
 // "WithReadFallback" refers to both of the above "fall back to file reading"
 // behaviors taken as a whole.
+//
+// In dry-run mode, both fallback paths additionally mark the adopted content
+// as UNVERIFIED via the ResultCollector so downstream consumers (text/json
+// output, --dry-run-fail-unverified exit code) can distinguish unverified
+// content from successfully verified content.
 func (m *Manager) readAndVerifyFileWithReadFallback(filePath string, context string) ([]byte, error) {
 	if m.fileValidator == nil {
-		// File validator is disabled - fallback to normal file reading
+		// File validator is disabled - fallback to normal file reading.
 		// #nosec G304 - filePath comes from verified configuration and is sanitized by path resolver
-		return os.ReadFile(filePath)
+		content, err := os.ReadFile(filePath)
+		// In dry-run mode, content actually adopted without any hash
+		// verification is recorded as UNVERIFIED. Only record when the read
+		// itself succeeded: a read failure means no content was adopted, so
+		// recording here would misrepresent the summary.
+		if m.isDryRun && m.resultCollector != nil && err == nil {
+			m.resultCollector.RecordUnverifiedContent(filePath, context, UnverifiedReasonNoValidator, "")
+		}
+		return content, err
 	}
 
 	// Perform verification and reading
@@ -439,10 +452,19 @@ func (m *Manager) readAndVerifyFileWithReadFallback(filePath string, context str
 			logVerificationFailure(filePath, context, err, "File verification and read")
 		}
 
-		// In dry-run mode, try to read the file even if verification failed
+		// In dry-run mode, try to read the file even if verification failed.
 		if err != nil {
+			reason := determineFailureReason(err)
 			// #nosec G304 - filePath comes from verified configuration
 			content, err = os.ReadFile(filePath)
+			// The file's content is now being adopted without successful
+			// verification, so mark it as UNVERIFIED for downstream
+			// consumers. Only record when the fallback read itself
+			// succeeded: if it also failed, no content was adopted, so
+			// recording here would misrepresent the summary.
+			if err == nil {
+				m.resultCollector.RecordUnverifiedContent(filePath, context, UnverifiedReasonFromFailure(reason), reason)
+			}
 		}
 	}
 

@@ -21,12 +21,14 @@ const (
 
 // ResultCollector collects file verification results in dry-run mode
 type ResultCollector struct {
-	mu            sync.Mutex
-	startTime     time.Time
-	totalFiles    int
-	verifiedFiles int
-	failures      []FileVerificationFailure
-	hashDirStatus HashDirectoryStatus
+	mu              sync.Mutex
+	startTime       time.Time
+	totalFiles      int
+	verifiedFiles   int
+	failures        []FileVerificationFailure
+	usedUnverified  bool
+	unverifiedFiles []UnverifiedFileUsage
+	hashDirStatus   HashDirectoryStatus
 }
 
 // NewResultCollector creates a new ResultCollector
@@ -72,6 +74,35 @@ func (rc *ResultCollector) RecordFailure(filePath string, err error, context str
 	rc.failures = append(rc.failures, failure)
 }
 
+// RecordUnverifiedContent records that a file's content was adopted without
+// successful hash verification. The reason explains why (no validator
+// configured, or verification failed). The failure parameter is optional:
+// pass an empty string for the no-validator case, or the underlying
+// FailureReason (e.g. ReasonHashMismatch) when verification was attempted
+// and failed.
+//
+// This flag is independent of RecordSuccess/RecordFailure: a file whose
+// verification fails but whose content is then read anyway (dry-run
+// fallback) should be recorded as BOTH a failure (for the verification
+// attempt) and an unverified usage (for the adopted content).
+func (rc *ResultCollector) RecordUnverifiedContent(filePath, context string, reason UnverifiedReason, failure FailureReason) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+
+	usage := UnverifiedFileUsage{
+		Path:    filePath,
+		Reason:  string(reason),
+		Context: context,
+	}
+	if failure != "" {
+		f := failure
+		usage.Failure = &f
+	}
+
+	rc.usedUnverified = true
+	rc.unverifiedFiles = append(rc.unverifiedFiles, usage)
+}
+
 // SetHashDirStatus sets the hash directory status
 func (rc *ResultCollector) SetHashDirStatus(exists bool) {
 	rc.mu.Lock()
@@ -92,13 +123,26 @@ func (rc *ResultCollector) GetSummary() FileVerificationSummary {
 	failuresCopy := make([]FileVerificationFailure, len(rc.failures))
 	copy(failuresCopy, rc.failures)
 
+	// Deep copy unverified files slice to prevent data races, including the
+	// memory pointed to by the Failure field
+	unverifiedCopy := make([]UnverifiedFileUsage, len(rc.unverifiedFiles))
+	for i := range rc.unverifiedFiles {
+		unverifiedCopy[i] = rc.unverifiedFiles[i]
+		if rc.unverifiedFiles[i].Failure != nil {
+			unverifiedCopy[i].Failure = new(FailureReason)
+			*unverifiedCopy[i].Failure = *rc.unverifiedFiles[i].Failure
+		}
+	}
+
 	return FileVerificationSummary{
-		TotalFiles:    rc.totalFiles,
-		VerifiedFiles: rc.verifiedFiles,
-		FailedFiles:   len(rc.failures),
-		Duration:      duration,
-		HashDirStatus: rc.hashDirStatus,
-		Failures:      failuresCopy,
+		TotalFiles:            rc.totalFiles,
+		VerifiedFiles:         rc.verifiedFiles,
+		FailedFiles:           len(rc.failures),
+		Duration:              duration,
+		HashDirStatus:         rc.hashDirStatus,
+		Failures:              failuresCopy,
+		UsedUnverifiedContent: rc.usedUnverified,
+		UnverifiedFiles:       unverifiedCopy,
 	}
 }
 

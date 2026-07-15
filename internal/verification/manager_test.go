@@ -278,7 +278,8 @@ func TestNewManagerProduction(t *testing.T) {
 		err := mockFS.AddDir(testHashDir, 0o755)
 		require.NoError(t, err)
 
-		manager, err := newManagerInternal(testHashDir,
+		manager, err := newManagerInternal(
+			testHashDir,
 			withFSInternal(mockFS),
 			withFileValidatorDisabledInternal(),
 			withCreationMode(CreationModeProduction),
@@ -292,7 +293,8 @@ func TestNewManagerProduction(t *testing.T) {
 
 	t.Run("validates production constraints", func(t *testing.T) {
 		// Test that non-default directory is rejected in production mode
-		_, err := newManagerInternal("/custom/hash/dir",
+		_, err := newManagerInternal(
+			"/custom/hash/dir",
 			withFSInternal(commontestutil.NewMockFileSystem()),
 			withFileValidatorDisabledInternal(),
 			withCreationMode(CreationModeProduction),
@@ -340,7 +342,8 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 		// We need to use the real filesystem for path resolution, not the mock
 		// For integration testing, we disable security validation to focus on PATH resolution
 		testPathResolver := NewPathResolver(testSecurePath)
-		manager, err := NewManagerForTest(testHashDir,
+		manager, err := NewManagerForTest(
+			testHashDir,
 			WithFileValidatorDisabled(),
 			WithPathResolver(testPathResolver),
 		)
@@ -364,7 +367,8 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 		// Create a manager with a custom path resolver using our test secure path
 		// For integration testing, we disable security validation to focus on PATH resolution
 		testPathResolver := NewPathResolver(testSecurePath)
-		manager, err := NewManagerForTest(testHashDir,
+		manager, err := NewManagerForTest(
+			testHashDir,
 			WithFileValidatorDisabled(),
 			WithPathResolver(testPathResolver),
 		)
@@ -387,7 +391,8 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 		// Create a manager with a custom path resolver using our test secure path
 		// For integration testing, we disable security validation to focus on PATH resolution
 		testPathResolver := NewPathResolver(testSecurePath)
-		manager, err := NewManagerForTest(testHashDir,
+		manager, err := NewManagerForTest(
+			testHashDir,
 			WithFileValidatorDisabled(),
 			WithPathResolver(testPathResolver),
 		)
@@ -1019,7 +1024,88 @@ func TestReadAndVerifyFileWithReadFallback_DryRunLogging(t *testing.T) {
 		logOutput := logBuffer.String()
 		assert.Contains(t, logOutput, "security_risk", "log should contain security_risk attribute")
 		assert.Contains(t, logOutput, "dry-run mode", "log should indicate dry-run mode")
+
+		// The content was adopted without successful verification; the
+		// summary must mark it as UNVERIFIED for downstream consumers.
+		summary := manager.GetVerificationSummary()
+		require.NotNil(t, summary)
+		assert.True(t, summary.UsedUnverifiedContent, "summary should mark the file as UNVERIFIED")
+		require.Equal(t, 1, len(summary.UnverifiedFiles), "expected one unverified file in the summary")
+		entry := summary.UnverifiedFiles[0]
+		assert.Equal(t, testFile, entry.Path)
+		assert.Equal(t, "test-context", entry.Context)
+		assert.Equal(t, "verify_failed_hash_file_not_found", entry.Reason)
+		require.NotNil(t, entry.Failure)
+		assert.Equal(t, ReasonHashFileNotFound, *entry.Failure)
 	})
+}
+
+// TestReadAndVerifyFileWithReadFallback_NoValidator_DryRunRecordsUnverified
+// covers fallback path 1: the file validator is nil (dry-run on a machine
+// where the hash directory is not writable) and the file is read directly via
+// os.ReadFile. The summary must mark the content as UNVERIFIED with the
+// skipped_no_validator reason, even though no failure was recorded.
+func TestReadAndVerifyFileWithReadFallback_NoValidator_DryRunRecordsUnverified(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+
+	// Build a dry-run manager with the file validator explicitly disabled so
+	// that the readAndVerifyFileWithReadFallback path takes the validator==nil
+	// branch and falls through to os.ReadFile.
+	manager, err := newManagerInternal(
+		tmpDir,
+		withCreationMode(CreationModeTesting),
+		withSecurityLevel(SecurityLevelRelaxed),
+		withFileValidatorDisabledInternal(),
+		withSkipHashDirectoryValidationInternal(),
+		withDryRunModeInternal(),
+	)
+	require.NoError(t, err)
+	require.NotNil(t, manager.resultCollector, "result collector should be initialised in dry-run mode")
+	require.Nil(t, manager.fileValidator, "file validator should be disabled for this test")
+
+	testFile := filepath.Join(tmpDir, "test.conf")
+	err = os.WriteFile(testFile, []byte("no-validator content"), 0o644)
+	require.NoError(t, err)
+
+	content, err := manager.readAndVerifyFileWithReadFallback(testFile, "test-context")
+	require.NoError(t, err, "dry-run should fall back to plain read when validator is nil")
+	assert.Equal(t, "no-validator content", string(content))
+
+	summary := manager.GetVerificationSummary()
+	require.NotNil(t, summary)
+	assert.True(t, summary.UsedUnverifiedContent, "summary should flag UNVERIFIED content")
+	require.Equal(t, 1, len(summary.UnverifiedFiles), "expected exactly one unverified file")
+
+	entry := summary.UnverifiedFiles[0]
+	assert.Equal(t, testFile, entry.Path)
+	assert.Equal(t, "test-context", entry.Context)
+	assert.Equal(t, "skipped_no_validator", entry.Reason)
+	assert.Nil(t, entry.Failure, "no failure reason should be attached for skipped_no_validator")
+}
+
+// TestReadAndVerifyFileWithReadFallback_FallbackReadAlsoFails_DoesNotRecordUnverified
+// covers the case where verification fails AND the subsequent os.ReadFile
+// fallback also fails (e.g. the file does not exist at all). No content was
+// ever adopted in this case, so the summary must not contain a misleading
+// UNVERIFIED entry for it.
+func TestReadAndVerifyFileWithReadFallback_FallbackReadAlsoFails_DoesNotRecordUnverified(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+
+	manager, err := NewManagerForTest(tmpDir, WithDryRunMode(), WithSkipHashDirectoryValidation())
+	require.NoError(t, err)
+
+	// The file is never created, so both hash verification and the
+	// os.ReadFile fallback fail.
+	missingFile := filepath.Join(tmpDir, "missing.conf")
+
+	content, err := manager.readAndVerifyFileWithReadFallback(missingFile, "test-context")
+	assert.Error(t, err, "both verification and the fallback read should fail")
+	assert.Nil(t, content)
+
+	summary := manager.GetVerificationSummary()
+	require.NotNil(t, summary)
+	assert.False(t, summary.UsedUnverifiedContent, "no content was adopted, so UNVERIFIED must not be recorded")
+	assert.Empty(t, summary.UnverifiedFiles)
 }
 
 // TestValidateSecurityConstraints tests the validateSecurityConstraints function
@@ -1172,7 +1258,8 @@ func TestManagerCreationWithFileValidator(t *testing.T) {
 		tmpDir := tu.SafeTempDir(t)
 
 		// Create manager with dry run mode through internal options
-		manager, err := newManagerInternal(tmpDir,
+		manager, err := newManagerInternal(
+			tmpDir,
 			withCreationMode(CreationModeTesting), // Use testing mode to avoid production constraints
 			withSkipHashDirectoryValidationInternal(),
 			withFileValidatorDisabledInternal(),
