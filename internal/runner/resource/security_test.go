@@ -341,7 +341,7 @@ func TestDryRun_UnverifiedContentExitCode(t *testing.T) {
 			assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelHigh},
 			summary:     unverifiedSummaryFromFailureReason("/etc/app/cfg.toml", "config", verification.ReasonHashMismatch),
 			expected:    DryRunExitPolicyDeny,
-			description: "policy-deny is exit 1; tampering in this case is also 1 but the path is policy-deny",
+			description: "policy deny is recorded first; tampering would also map to exit 1, but the recorded path is the policy deny",
 		},
 	}
 
