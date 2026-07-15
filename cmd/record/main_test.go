@@ -173,10 +173,11 @@ func TestProcessFiles_SkipsNonELF(t *testing.T) {
 	assert.NotContains(t, stderr.String(), "Syscall analysis failed")
 }
 
-// TestRunTOCTOU_ContinuesOnWorldWritableDir verifies that the record command
-// continues processing even when the file's parent directory is world-writable.
-// Ensures record warns but does not abort on TOCTOU violations.
-func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
+// TestRunTOCTOU_FailsClosedOnWorldWritableDir verifies that the record command
+// fails closed (non-zero exit, no hash generated) when the file's parent directory
+// is world-writable. The hash DB is the root of trust — permission violations
+// in ancestor directories must prevent hash record generation.
+func TestRunTOCTOU_FailsClosedOnWorldWritableDir(t *testing.T) {
 	// Create a world-writable directory with a target file
 	worldWritableDir := tu.SafeTempDir(t)
 	err := os.Chmod(worldWritableDir, 0o777)
@@ -194,12 +195,12 @@ func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	// record should continue (exit 0) despite the TOCTOU violation
+	// record must fail closed on TOCTOU violations — no hash generated, non-zero exit
 	exitCode := run([]string{"-d", hashDir, targetFile}, testRunDeps(hashDir), stdout, stderr)
 
-	// record does NOT abort on TOCTOU violations — it only logs a warning
-	assert.Equal(t, 0, exitCode, "record should continue (exit 0) despite world-writable directory")
-	assert.Contains(t, stdout.String(), "OK", "file should have been processed")
+	assert.NotEqual(t, 0, exitCode, "record must fail closed (non-zero exit) on world-writable directory")
+	assert.Contains(t, stderr.String(), "permission violation", "stderr must report permission violation")
+	assert.NotContains(t, stdout.String(), "OK", "no hash file should have been generated")
 }
 
 func extractHashFilePathFromStdout(t *testing.T, output string) string {
@@ -280,4 +281,100 @@ func TestRun_ReRecordOldSchemaWithoutForce(t *testing.T) {
 	recorded, err := validator.LoadRecord(targetFile)
 	require.NoError(t, err)
 	assert.Equal(t, fileanalysis.CurrentSchemaVersion, recorded.SchemaVersion)
+}
+
+// fakeDirPermChecker implements security.DirectoryPermChecker for testing.
+type fakeDirPermChecker struct {
+	validateDirFn func(path string) error
+}
+
+func (f *fakeDirPermChecker) ValidateDirectoryPermissions(path string) error {
+	return f.validateDirFn(path)
+}
+
+// TestRunTOCTOU_NoViolation_Continues verifies that record continues with hash
+// generation when no TOCTOU violations are detected in the hash directory.
+func TestRunTOCTOU_NoViolation_Continues(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	targetFile := filepath.Join(hashDir, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	d := testRunDeps(hashDir)
+	d.toctouChecker = &fakeDirPermChecker{validateDirFn: func(_ string) error { return nil }}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"-d", hashDir, targetFile}, d, stdout, stderr)
+
+	require.Equal(t, 0, exitCode, "stderr: %s", stderr.String())
+	assert.Contains(t, stdout.String(), "OK", "hash generation should proceed without TOCTOU violations")
+}
+
+// TestRunTOCTOU_ViolationLogsErrorAndExits verifies that when a TOCTOU violation
+// is detected, record logs ERROR (not WARN), prints the violation to stderr,
+// and exits non-zero without generating hashes.
+func TestRunTOCTOU_ViolationLogsErrorAndExits(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	targetFile := filepath.Join(hashDir, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	d := testRunDeps(hashDir)
+	d.toctouChecker = &fakeDirPermChecker{validateDirFn: func(_ string) error {
+		return errors.New("world-writable directory")
+	}}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"-d", hashDir, targetFile}, d, stdout, stderr)
+
+	assert.NotEqual(t, 0, exitCode, "record must exit non-zero on TOCTOU violation")
+	assert.Contains(t, stderr.String(), "permission violation", "stderr must report permission violation")
+	assert.NotContains(t, stdout.String(), "OK", "no hash should be generated on violation")
+}
+
+// TestRunTOCTOU_ForceFlagDoesNotBypassViolation verifies that --force does NOT
+// bypass TOCTOU permission violations. --force is for overwriting existing hash
+// files only, not for overriding security checks.
+func TestRunTOCTOU_ForceFlagDoesNotBypassViolation(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	targetFile := filepath.Join(hashDir, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	d := testRunDeps(hashDir)
+	d.toctouChecker = &fakeDirPermChecker{validateDirFn: func(_ string) error {
+		return errors.New("world-writable directory")
+	}}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"-force", "-d", hashDir, targetFile}, d, stdout, stderr)
+
+	assert.NotEqual(t, 0, exitCode, "record must exit non-zero even with --force on TOCTOU violation")
+	assert.Contains(t, stderr.String(), "permission violation", "stderr must report permission violation despite --force")
+	assert.NotContains(t, stdout.String(), "OK", "no hash should be generated even with --force")
+}
+
+// TestHashDirPermissions_0o700 verifies that newly created hash directories use
+// 0o700 permissions (owner rwx only, no group/other access).
+func TestHashDirPermissions_0o700(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	// Remove the hashDir so parseArgs creates it fresh
+	require.NoError(t, os.Remove(hashDir))
+
+	d := testRunDeps(hashDir)
+	// Restore real mkdirAll so we test actual permissions
+	d.mkdirAll = os.MkdirAll
+
+	stderr := &bytes.Buffer{}
+	cfg, _, err := parseArgs([]string{"-d", hashDir, "dummy.txt"}, d, stderr)
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+
+	info, err := os.Stat(hashDir)
+	require.NoError(t, err)
+	assert.True(t, info.IsDir())
+	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm(), "hash directory must be created with 0o700")
 }

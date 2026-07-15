@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	hashDirPermissions = 0o750
+	hashDirPermissions = 0o700
 	libcCacheSubDir    = "lib-cache"
 )
 
@@ -40,6 +40,7 @@ type deps struct {
 	elfDynlibAnalyzerFactory   func() *elfdynlib.DynLibAnalyzer       // nil means dynlib analysis is disabled
 	machoDynlibAnalyzerFactory func() *machodylib.MachODynLibAnalyzer // nil means Mach-O dynlib analysis is disabled
 	mkdirAll                   func(path string, perm os.FileMode) error
+	toctouChecker              security.DirectoryPermChecker // nil means use NewDirectoryPermChecker
 }
 
 func defaultDeps() deps {
@@ -93,14 +94,19 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	}
 
 	// Run TOCTOU permission check on directories referenced by this operation.
-	// record does not have a config with verify_files or commands; check the files being
-	// recorded and the hash directory. Violations are logged as warnings only — record
-	// continues even if the check fails.
-	secValidator, secErr := security.NewDirectoryPermChecker()
-	if secErr != nil {
-		// NewDirectoryPermChecker only fails when standalone checker setup fails,
-		// which is not recoverable in this startup path.
-		panic(fmt.Sprintf("security validator initialisation failed: %v", secErr))
+	// The hash DB is the root of trust — any permission violation in its ancestor
+	// directories means an attacker could replace hash records. Fail closed: refuse
+	// to generate hash records when violations are detected. No bypass flag is
+	// provided; fix the directory permissions with chmod and re-run.
+	secValidator := d.toctouChecker
+	var secErr error
+	if secValidator == nil {
+		secValidator, secErr = security.NewDirectoryPermChecker()
+		if secErr != nil {
+			// NewDirectoryPermChecker only fails when standalone checker setup fails,
+			// which is not recoverable in this startup path.
+			panic(fmt.Sprintf("security validator initialisation failed: %v", secErr))
+		}
 	}
 	absFiles := make([]string, 0, len(cfg.files))
 	for _, f := range cfg.files {
@@ -122,8 +128,21 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 			absHashDir = abs
 		}
 	}
+	logger := slog.Default()
 	toctouDirs := security.CollectTOCTOUCheckDirs(absFiles, nil, absHashDir)
-	security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
+	violations := security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, logger)
+	if len(violations) > 0 {
+		for _, v := range violations {
+			logger.Error(
+				"hash directory permission violation detected — refusing to record",
+				slog.String("path", v.Path),
+				slog.String("violation", v.Err.Error()),
+				slog.String("remediation", "fix directory permissions with chmod (e.g. chmod go-w '+v.Path+') and re-run record"),
+			)
+		}
+		fmt.Fprintln(stderr, "Error: permission violation in hash directory or its ancestor directories — refusing to generate hash records. Fix directory permissions and re-run.") //nolint:errcheck
+		return 1
+	}
 
 	safeFS := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
