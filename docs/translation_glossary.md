@@ -142,6 +142,7 @@
 | End-to-End | end-to-end | |
 | エントリーポイント | entry point | |
 | 環境 | environment | |
+| 環境起因 | environment cause | 検証不能／未検証の原因分類。改ざん兆候と対比される |
 | 環境変数 | environment variable | |
 | エラー | error | |
 | エラーメッセージ | error message | |
@@ -555,6 +556,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 未定義 | undefined | |
+| 未検証 | unverified | ハッシュ検証に成功していない設定／テンプレートコンテンツの文脈 |
 | 未展開 | unexpanded | 変数展開の文脈 |
 | 一意 | unique | |
 | ユニオン | union | 設定のマージの文脈 |
@@ -730,6 +732,7 @@
 | 2026-06-18 | 間接実行インナーコマンドのリスク一律 High 化（Task 0138）関連の用語を追加 (inner command, fd binding, opt-in, residual risk) |
 | 2026-06-18 | システム変更リスク粗粒度化（Task 0139）関連の用語を追加 (first line of defense) |
 | 2026-06-26 | 監査・文書整合（Task 0143）関連の用語を追加・整合 (migration note〔canonical〕, per-operand evaluation) |
+| 2026-07-16 | 未検証の設定／テンプレートコンテンツ（Task 0146）関連の用語を追加 (unverified, environment cause) |
 
 ---
 
