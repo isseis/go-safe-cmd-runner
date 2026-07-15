@@ -665,7 +665,7 @@ Setting `-dry-run-fail-unverified` opts a verification-unavailable deny into bei
 Separately from the exit-code behavior above, the dry-run output marks configuration and template files that were adopted without successful hash verification (e.g., no hash database was available, or the recorded hash was missing or mismatched and the dry-run fell back to `os.ReadFile`) under a distinct **`UNVERIFIED`** section in the file-verification report:
 
 - *Environment cause* (no validator was configured for the dry-run, e.g., the hash directory was not writable): reason `skipped_no_validator`.
-- *Tampering signal* (verification was attempted and failed, e.g., a `hash_mismatch` between the recorded hash and the on-disk content): reason `verify_failed_<failure_reason>`, tagged **`UNVERIFIED-TAMPER`** and annotated `security_risk: high` so it cannot be missed.
+- *Verification attempted and failed*: reason `verify_failed_<failure_reason>`. Among these, only a `hash_mismatch` between the recorded hash and the on-disk content — a possible tampering signal — is tagged **`UNVERIFIED-TAMPER`** and annotated `security_risk: high` so it cannot be missed; other `verify_failed_<failure_reason>` entries (e.g., a missing hash file) are shown under the plain `UNVERIFIED` marker without that annotation.
 
 This is always shown at the `detailed`/`full` detail level. When `-dry-run-fail-unverified` is set, adopting unverified content also causes the dry-run to fail, with an exit code that distinguishes the cause: exit code `3` for an environment cause (e.g., `skipped_no_validator`), and exit code `1` for a tampering signal (e.g., `verify_failed_<reason>` / `hash_mismatch`). Without the flag, unverified content is shown as a note only and the dry-run exits `0`.
 

@@ -503,12 +503,11 @@ func (r *Runner) GetDryRunResults() *resource.DryRunResult {
 		// computing dry-run results, so that PreviewExitCode (invoked as part
 		// of GetDryRunResults) can factor unverified configuration/template
 		// content into the exit-code mapping.
-		if summary := r.verificationManager.GetVerificationSummary(); summary != nil {
-			if setter, ok := r.resourceManager.(interface {
-				SetFileVerification(*verification.FileVerificationSummary)
-			}); ok {
-				setter.SetFileVerification(summary)
-			}
+		summary := r.verificationManager.GetVerificationSummary()
+		if setter, ok := r.resourceManager.(interface {
+			SetFileVerification(*verification.FileVerificationSummary)
+		}); ok {
+			setter.SetFileVerification(summary)
 		}
 	}
 	result := r.resourceManager.GetDryRunResults()

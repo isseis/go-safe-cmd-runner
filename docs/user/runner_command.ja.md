@@ -665,7 +665,7 @@ shred -u debug.txt  # secure deletion
 上記の終了コード挙動とは別に、ドライラン出力は、ハッシュ検証に成功せずに採用された設定／テンプレートファイル（例：ハッシュ DB が利用できない、あるいは記録されたハッシュが欠落／不一致で、ドライランが `os.ReadFile` にフォールバックした場合）を、ファイル検証レポート内の独立した **`UNVERIFIED`** セクションに区別表示します。
 
 - *環境起因*（ドライラン用バリデータが未設定、例：ハッシュディレクトリが書き込み不可）: 理由 `skipped_no_validator`。
-- *改ざん兆候*（検証を試みたが失敗した、例：記録ハッシュとディスク内容との `hash_mismatch`）: 理由 `verify_failed_<failure_reason>`、**`UNVERIFIED-TAMPER`** タグと `security_risk: high` 注釈が付与され見落とされないようにする。
+- *検証を試みたが失敗*: 理由 `verify_failed_<failure_reason>`。このうち、記録ハッシュとディスク内容との不一致を示す `hash_mismatch`（改ざんの可能性がある兆候）のみが **`UNVERIFIED-TAMPER`** タグと `security_risk: high` 注釈付きで見落とされないように表示される。それ以外の `verify_failed_<failure_reason>`（例：ハッシュファイルが見つからない場合）は、その注釈なしで通常の `UNVERIFIED` マーカーとして表示される。
 
 これは `detailed`/`full` の詳細レベルで常に表示されます。`-dry-run-fail-unverified` を指定した場合、未検証コンテンツの採用もドライランを失敗させ、原因を区別する終了コードが返されます。環境起因（例：`skipped_no_validator`）は終了コード `3`、改ざん兆候（例：`verify_failed_<reason>` / `hash_mismatch`）は終了コード `1` です。フラグを指定していない場合、未検証コンテンツは注記としてのみ表示され、ドライランは終了コード `0` で終わります。
 

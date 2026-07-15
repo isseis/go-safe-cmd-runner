@@ -216,7 +216,7 @@ func unverifiedSummaryFromFailureReason(path, context string, reason verificatio
 		FailedFiles:           1,
 		UsedUnverifiedContent: true,
 		UnverifiedFiles: []verification.UnverifiedFileUsage{
-			{Path: path, Context: context, Failure: &f},
+			{Path: path, Reason: string(verification.UnverifiedReasonFromFailure(reason)), Context: context, Failure: &f},
 		},
 	}
 }
@@ -230,7 +230,7 @@ func unverifiedSummaryNoValidator(path, context string) *verification.FileVerifi
 		FailedFiles:           0,
 		UsedUnverifiedContent: true,
 		UnverifiedFiles: []verification.UnverifiedFileUsage{
-			{Path: path, Context: context, Failure: nil},
+			{Path: path, Reason: string(verification.UnverifiedReasonNoValidator), Context: context, Failure: nil},
 		},
 	}
 }
