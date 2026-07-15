@@ -122,9 +122,16 @@ func (rc *ResultCollector) GetSummary() FileVerificationSummary {
 	failuresCopy := make([]FileVerificationFailure, len(rc.failures))
 	copy(failuresCopy, rc.failures)
 
-	// Deep copy unverified files slice to prevent data races
+	// Deep copy unverified files slice to prevent data races, including the
+	// memory pointed to by the Failure field
 	unverifiedCopy := make([]UnverifiedFileUsage, len(rc.unverifiedFiles))
-	copy(unverifiedCopy, rc.unverifiedFiles)
+	for i := range rc.unverifiedFiles {
+		unverifiedCopy[i] = rc.unverifiedFiles[i]
+		if rc.unverifiedFiles[i].Failure != nil {
+			unverifiedCopy[i].Failure = new(FailureReason)
+			*unverifiedCopy[i].Failure = *rc.unverifiedFiles[i].Failure
+		}
+	}
 
 	return FileVerificationSummary{
 		TotalFiles:            rc.totalFiles,
