@@ -198,7 +198,7 @@ record -d ../hashes /etc/config.toml
 
 **Automatic Directory Creation**
 
-If the specified directory does not exist, it will be created automatically (permissions: 0750).
+If the specified directory does not exist, it will be created automatically (permissions: 0700).
 
 ```bash
 # Works even if directory doesn't exist
@@ -208,7 +208,7 @@ record -d /new/hash/directory /usr/bin/backup.sh
 
 **About Permissions**
 
-- Hash directories are created with 0750 permissions (owner: rwx, group: r-x, others: ---)
+- Hash directories are created with 0700 permissions (owner: rwx, group: ---, others: ---)
 - Hash files are created with 0640 permissions (owner: rw-, group: r--, others: ---)
 
 **Recommended Settings for Production Environment**
@@ -217,7 +217,7 @@ record -d /new/hash/directory /usr/bin/backup.sh
 # Use standard directory in production environment
 sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
 sudo chown root:root /usr/local/etc/go-safe-cmd-runner/hashes
-sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
+sudo chmod 700 /usr/local/etc/go-safe-cmd-runner/hashes
 
 # Record hash
 sudo record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
@@ -270,6 +270,7 @@ record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 
 **Notes**
 
+- The `-force` flag is for overwriting existing hash files only. It does NOT bypass permission violation checks. If record detects insecure permissions in the hash directory's ancestor chain, it will refuse to generate hashes regardless of `-force`.
 - The `-force` flag overwrites existing hash files without warning
 - Be careful not to accidentally overwrite important hash files
 - In production environments, it is recommended to take backups before use
@@ -327,7 +328,7 @@ HASH_DIR="/usr/local/etc/go-safe-cmd-runner/hashes"
 # Create hash directory
 sudo mkdir -p "$HASH_DIR"
 sudo chown root:root "$HASH_DIR"
-sudo chmod 755 "$HASH_DIR"
+sudo chmod 700 "$HASH_DIR"
 
 # Record hashes of configuration files
 echo "Recording configuration files..."
@@ -431,7 +432,7 @@ jobs:
       - name: Create hash directory
         run: |
           sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
-          sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
+          sudo chmod 700 /usr/local/etc/go-safe-cmd-runner/hashes
 
       - name: Record hashes for scripts
         run: |
@@ -518,6 +519,16 @@ runner -config ./test/test-config.toml -dry-run
 
 echo "Test setup completed!"
 ```
+
+### 4.7 Security: Record Must Be Run in a Trusted Environment
+
+Record is the root of trust for hash-based file integrity verification. The hash database it generates is the foundation that the `runner` and `verify` commands rely on to detect tampering. To maintain this trust:
+
+- **Run record as root or a dedicated administrator account** with exclusive access to the hash directory.
+- **Ensure the hash directory and all of its parent directories have secure permissions** (owner-only write access, no group or world writability). Record enforces this on every run — if it detects a non-sticky world-writable or unsafe group-writable directory in the hash directory's ancestor chain, it will refuse to generate hashes (fail closed, non-zero exit).
+- **Do not run record in untrusted directories** (e.g., `/tmp`, shared volumes accessible to non-administrators).
+- **There is no bypass flag for permission violations.** The `--force` flag only controls overwriting of existing hash files, not security checks.
+- **If you are upgrading from a deployment with `0o750` hash directories:** `os.MkdirAll` does not change permissions of existing directories. Manually correct existing hash directories with `chmod 0700 <hash-dir>`.
 
 ## 5. Troubleshooting
 
