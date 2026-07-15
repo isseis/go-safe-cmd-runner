@@ -182,7 +182,7 @@ func (c *Config) RedactText(text string) string {
 }
 ```
 
-**Value-Based Detection (新增)**:
+**Value-Based Detection (New)**:
 In addition to key-name-based redaction, the system now detects and masks secrets by their **value format** alone, even when no recognizable key name is present. The `ValueDetector` covers the following known formats:
 
 - AWS access key IDs (`AKIA`/`ASIA` prefix)
@@ -195,7 +195,7 @@ In addition to key-name-based redaction, the system now detects and masks secret
 
 **Scope**: Value-based detection is applied to command arguments, stdout, stderr, and environment variable values through the unified `RedactText` function. This single integration point covers all output destinations — file logs, syslog, and Slack notifications — ensuring no path bypasses masking.
 
-**Limitations**: Detection is limited to the known formats listed above. Unknown credential formats, custom token schemes, and high-entropy strings are not detected. Secrets split across log fields or stream chunk boundaries may also be missed. **Configuring jobs to send full command output to Slack is strongly discouraged**; the masking layer is a defense-in-depth measure, not a substitute for avoiding unnecessary exposure.
+**Limitations**: Detection is limited to the known formats listed above. Unknown credential formats, custom token schemes, and high-entropy strings are not detected. Secrets split across log fields or stream chunk boundaries may also be missed. Unlike the other formats, the GCP entry is not a self-identifying value format: a service-account key ID is an opaque hex string indistinguishable from any other hash by value alone, so it is only recognized next to its JSON field name (`"private_key_id"`). The actual GCP credential material — the `private_key` PEM block — is still masked independent of key name by the PEM detector above. **Configuring jobs to send full command output to Slack is strongly discouraged**; the masking layer is a defense-in-depth measure, not a substitute for avoiding unnecessary exposure.
 
 #### 2. Risk-Based Command Control (`internal/runner/risk/`)
 

@@ -12,18 +12,27 @@ var valueDetectorPatterns = struct {
 	awsKeyID    *regexp.Regexp // AWS access key IDs: AKIA, ASIA, etc.
 	githubToken *regexp.Regexp // GitHub tokens: ghp_, gho_, ghs_, etc.
 	slackToken  *regexp.Regexp // Slack tokens: xoxb-, xoxp-, xoxa-, xoxr-, etc.
-	gcpSAKey    *regexp.Regexp // GCP service account key: json-key pattern
+	gcpSAKey    *regexp.Regexp // GCP service account key ID field (see doc comment on gcpSAKey below)
 	pemPrivate  *regexp.Regexp // PEM private key blocks: -----BEGIN ... PRIVATE KEY-----
-	bearerToken *regexp.Regexp // Bearer tokens: standard OAuth pattern
-	urlCred     *regexp.Regexp // URL-embedded credentials: scheme://user:pass@host
+	bearerToken *regexp.Regexp // Bearer tokens: standard OAuth pattern; group 1 is the "Bearer " prefix
+	urlCred     *regexp.Regexp // URL-embedded credentials: scheme://user:pass@host; group 1 is "scheme://"
 }{
 	awsKeyID:    regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b|\bASIA[0-9A-Z]{16}\b`),
 	githubToken: regexp.MustCompile(`\bgh[pors]_\s*[A-Za-z0-9_]{36,}\b`),
 	slackToken:  regexp.MustCompile(`\bxox[bpar]-[0-9]{10,}-[0-9]{10,}-[a-zA-Z0-9]+\b`),
+	// NOTE: unlike the other patterns in this set, this one is NOT independent of key
+	// context - it anchors on the literal JSON field name "private_key_id" because a
+	// GCP service-account key ID has no self-identifying value format (it is an opaque
+	// hex fingerprint, indistinguishable from any other hex string by value alone). It
+	// is also not itself secret material: the actual credential in a GCP service-account
+	// JSON key file is the "private_key" PEM block, which is already caught independent
+	// of key name by pemPrivate below. This pattern is kept as defense-in-depth (it masks
+	// the fingerprint too) but does not by itself satisfy "detection independent of key
+	// name" for the GCP category; see docs/user/security-risk-assessment.md Limitations.
 	gcpSAKey:    regexp.MustCompile(`"private_key_id"\s*:\s*"[a-f0-9]{32,}"`),
 	pemPrivate:  regexp.MustCompile(`(?s)-----BEGIN\s[A-Z\s]*PRIVATE\sKEY-----.*?-----END\s[A-Z\s]*PRIVATE\sKEY-----`),
-	bearerToken: regexp.MustCompile(`(?i)Bearer\s+([A-Za-z0-9\-._~+/]+=*)`),
-	urlCred:     regexp.MustCompile(`(?i)\b[a-z][a-z0-9+\-.]*://[^/?:]+:([^@?]+)@`),
+	bearerToken: regexp.MustCompile(`(?i)(Bearer\s+)[A-Za-z0-9\-._~+/]+=*`),
+	urlCred:     regexp.MustCompile(`(?i)(\b[a-z][a-z0-9+\-.]*://)[^/?:]+:[^@?]+@`),
 }
 
 // ValueDetector detects and masks sensitive values in text based on value format,
@@ -48,19 +57,15 @@ func (d *ValueDetector) Mask(text string) string {
 	}
 
 	result := text
-	patterns := []*regexp.Regexp{
-		valueDetectorPatterns.awsKeyID,
-		valueDetectorPatterns.githubToken,
-		valueDetectorPatterns.slackToken,
-		valueDetectorPatterns.gcpSAKey,
-		valueDetectorPatterns.pemPrivate,
-		valueDetectorPatterns.bearerToken,
-		valueDetectorPatterns.urlCred,
-	}
-
-	for _, re := range patterns {
-		result = re.ReplaceAllString(result, d.placeholder)
-	}
+	result = valueDetectorPatterns.awsKeyID.ReplaceAllString(result, d.placeholder)
+	result = valueDetectorPatterns.githubToken.ReplaceAllString(result, d.placeholder)
+	result = valueDetectorPatterns.slackToken.ReplaceAllString(result, d.placeholder)
+	result = valueDetectorPatterns.gcpSAKey.ReplaceAllString(result, d.placeholder)
+	result = valueDetectorPatterns.pemPrivate.ReplaceAllString(result, d.placeholder)
+	// Preserve the "Bearer " prefix and the URL scheme so masked output stays
+	// readable (e.g. "Bearer [REDACTED]" instead of a bare placeholder).
+	result = valueDetectorPatterns.bearerToken.ReplaceAllString(result, "${1}"+d.placeholder)
+	result = valueDetectorPatterns.urlCred.ReplaceAllString(result, "${1}"+d.placeholder+"@")
 
 	return result
 }

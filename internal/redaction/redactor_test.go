@@ -1949,6 +1949,23 @@ func TestRedactText_ValueBasedDetection_BypassWhenNil(t *testing.T) {
 		"key=value redaction should work, but value-based detection should be skipped")
 }
 
+// TestRedactText_ValueBasedDetection_DefaultConfigMasksByDefault verifies AC-11:
+// value-based masking is active by default (DefaultConfig wires a non-nil
+// ValueDetector) without requiring any explicit opt-in. Plaintext values are only
+// produced when a caller explicitly bypasses redaction (e.g. the CLI's
+// --show-sensitive flag, which operates upstream of this package and is covered by
+// its own tests; see internal/runner/group_executor_test.go and
+// internal/runner/resource/types_test.go for that flag's own default-off behavior).
+func TestRedactText_ValueBasedDetection_DefaultConfigMasksByDefault(t *testing.T) {
+	config := DefaultConfig()
+
+	result := config.RedactText("session used AKIAIOSFODNN7EXAMPLE without a recognizable key name")
+
+	assert.NotContains(t, result, "AKIAIOSFODNN7EXAMPLE",
+		"DefaultConfig must mask known secret value formats by default (AC-11)")
+	assert.Contains(t, result, config.Placeholder)
+}
+
 // TestRedactingHandler_ValueBasedDetection_Layer2 verifies that the RedactingHandler
 // (Layer 2 / Slack path) also masks value-format secrets through the ValueDetector
 // integrated into RedactText. This confirms the Slack notification path is covered.

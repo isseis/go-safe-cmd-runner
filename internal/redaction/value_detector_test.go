@@ -47,6 +47,10 @@ func TestValueDetector_Mask_PositiveCases(t *testing.T) {
 			input: "token: " + "xoxb-" + "000000000000-111111111111-zzzzzzzzzzzzzzzzzzzz",
 		},
 		{
+			name:  "GCP service account private_key_id field",
+			input: `{"type": "service_account", "private_key_id": "abcd1234ef5678abcd1234ef5678abcd1234ef56"}`,
+		},
+		{
 			name: "PEM private key block",
 			input: `-----BEGIN RSA PRIVATE KEY-----
 MIIEpAIBAAKCAQEA...
@@ -164,6 +168,27 @@ func TestValueDetector_Mask_AllPatternsReturnSamePlaceholder(t *testing.T) {
 		// text must not contain credential-looking substrings.
 		// (We don't assert exact count because patterns may overlap.)
 	}
+}
+
+// TestValueDetector_Mask_PreservesNonSecretContext verifies that Bearer and
+// URL-credential masking replaces only the secret portion, leaving the
+// non-secret structural context (the "Bearer " prefix, the URL scheme and
+// host) intact for log readability.
+func TestValueDetector_Mask_PreservesNonSecretContext(t *testing.T) {
+	const placeholder = "[MASKED]"
+	d := NewValueDetector(placeholder)
+
+	t.Run("Bearer prefix is preserved", func(t *testing.T) {
+		result := d.Mask("Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc")
+		assert.Contains(t, result, "Bearer "+placeholder)
+		assert.NotContains(t, result, "eyJhbGciOiJIUzI1NiJ9")
+	})
+
+	t.Run("URL scheme and host are preserved", func(t *testing.T) {
+		result := d.Mask("https://admin:hunter2@api.example.com/v1")
+		assert.Contains(t, result, "https://"+placeholder+"@api.example.com/v1")
+		assert.NotContains(t, result, "hunter2")
+	})
 }
 
 func TestValueDetector_Mask_EmptyInput(t *testing.T) {
