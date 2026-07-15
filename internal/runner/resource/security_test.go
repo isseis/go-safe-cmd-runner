@@ -8,6 +8,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -202,4 +203,187 @@ func TestDryRun_PrivilegeEscalationDenied(t *testing.T) {
 	assert.Equal(t, "critical", result.Analysis.Impact.SecurityRisk)
 	assert.Contains(t, result.Analysis.Impact.Description, "DENY")
 	assert.Equal(t, DryRunExitPolicyDeny, mgr.PreviewExitCode())
+}
+
+// unverifiedSummaryFromFailureReason returns a FileVerificationSummary with a
+// single verify_failed_<reason> entry. The dry-run manager treats any
+// non-nil Failure field as a tampering signal.
+func unverifiedSummaryFromFailureReason(path, context string, reason verification.FailureReason) *verification.FileVerificationSummary {
+	f := reason
+	return &verification.FileVerificationSummary{
+		TotalFiles:            1,
+		VerifiedFiles:         0,
+		FailedFiles:           1,
+		UsedUnverifiedContent: true,
+		UnverifiedFiles: []verification.UnverifiedFileUsage{
+			{Path: path, Context: context, Failure: &f},
+		},
+	}
+}
+
+// unverifiedSummaryNoValidator returns a FileVerificationSummary with a
+// single skipped_no_validator entry (environment cause).
+func unverifiedSummaryNoValidator(path, context string) *verification.FileVerificationSummary {
+	return &verification.FileVerificationSummary{
+		TotalFiles:            1,
+		VerifiedFiles:         0,
+		FailedFiles:           0,
+		UsedUnverifiedContent: true,
+		UnverifiedFiles: []verification.UnverifiedFileUsage{
+			{Path: path, Context: context, Failure: nil},
+		},
+	}
+}
+
+// TestHasTamperingSignal verifies the helper distinguishes environment-cause
+// unverified usage (no Failure) from tampering signals (any non-nil Failure).
+// It is the single source of truth for the priority order documented in
+// dryrun_manager.go (PreviewExitCode).
+func TestHasTamperingSignal(t *testing.T) {
+	mismatch := verification.ReasonHashMismatch
+	notFound := verification.ReasonHashFileNotFound
+
+	tests := []struct {
+		name string
+		in   []verification.UnverifiedFileUsage
+		want bool
+	}{
+		{"nil usages", nil, false},
+		{"empty usages", []verification.UnverifiedFileUsage{}, false},
+		{"only environment cause", []verification.UnverifiedFileUsage{{Path: "/etc/a.toml"}}, false},
+		{"one tampering signal", []verification.UnverifiedFileUsage{{Path: "/etc/a.toml", Failure: &mismatch}}, true},
+		{
+			"environment cause mixed with tampering signal",
+			[]verification.UnverifiedFileUsage{
+				{Path: "/etc/env.toml"},
+				{Path: "/etc/tampered.toml", Failure: &notFound},
+			},
+			true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, hasTamperingSignal(tt.in))
+		})
+	}
+}
+
+// TestDryRun_UnverifiedContentExitCode verifies the --dry-run-fail-unverified
+// flag maps unverified content to distinct exit codes depending on whether the
+// cause is environmental (no validator, exit 3) or a tampering signal
+// (verify_failed_<reason>, exit 1). It also covers the default note-only
+// behavior (exit 0) and the priority order when a policy deny coexists with
+// unverified content. See AC-13 / AC-14 / 02_architecture.md §3.4.3.
+func TestDryRun_UnverifiedContentExitCode(t *testing.T) {
+	tests := []struct {
+		name        string
+		opts        *DryRunOptions
+		assessment  risktypes.RiskAssessment // all commands share this assessment
+		summary     *verification.FileVerificationSummary
+		expected    int
+		description string
+	}{
+		{
+			name:        "no unverified content, all allow",
+			opts:        &DryRunOptions{DetailLevel: DetailLevelDetailed},
+			assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
+			summary:     nil,
+			expected:    DryRunExitAllow,
+			description: "AC-15: clean run stays exit 0",
+		},
+		{
+			name:        "environment cause unverified, flag off",
+			opts:        &DryRunOptions{DetailLevel: DetailLevelDetailed},
+			assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
+			summary:     unverifiedSummaryNoValidator("/etc/app/cfg.toml", "config"),
+			expected:    DryRunExitAllow,
+			description: "AC-15: default note-only behavior; no opt-in keeps exit 0",
+		},
+		{
+			name:        "tampering signal unverified, flag off",
+			opts:        &DryRunOptions{DetailLevel: DetailLevelDetailed},
+			assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
+			summary:     unverifiedSummaryFromFailureReason("/etc/app/cfg.toml", "config", verification.ReasonHashMismatch),
+			expected:    DryRunExitAllow,
+			description: "AC-15: tampering without opt-in still exit 0 (dry-run is a preview)",
+		},
+		{
+			name:        "environment cause unverified, flag on",
+			opts:        &DryRunOptions{DetailLevel: DetailLevelDetailed, FailOnVerificationUnavailable: true},
+			assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
+			summary:     unverifiedSummaryNoValidator("/etc/app/cfg.toml", "config"),
+			expected:    DryRunExitVerificationUnavailable,
+			description: "AC-14: environment cause -> exit 3",
+		},
+		{
+			name:        "tampering signal unverified, flag on",
+			opts:        &DryRunOptions{DetailLevel: DetailLevelDetailed, FailOnVerificationUnavailable: true},
+			assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
+			summary:     unverifiedSummaryFromFailureReason("/etc/app/cfg.toml", "config", verification.ReasonHashMismatch),
+			expected:    DryRunExitPolicyDeny,
+			description: "AC-14: tampering signal -> exit 1 (not 3)",
+		},
+		{
+			name:       "mixed unverified, flag on, tampering dominates",
+			opts:       &DryRunOptions{DetailLevel: DetailLevelDetailed, FailOnVerificationUnavailable: true},
+			assessment: risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
+			summary: mergeUnverifiedSummaries(
+				unverifiedSummaryNoValidator("/etc/app/cfg.toml", "config"),
+				unverifiedSummaryFromFailureReason("/etc/app/tmpl.toml", "template", verification.ReasonHashFileNotFound),
+			),
+			expected:    DryRunExitPolicyDeny,
+			description: "AC-14: when tampering and environment coexist, tampering wins",
+		},
+		{
+			name:        "policy deny dominates unverified tampering",
+			opts:        &DryRunOptions{DetailLevel: DetailLevelDetailed, FailOnVerificationUnavailable: true},
+			assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelHigh},
+			summary:     unverifiedSummaryFromFailureReason("/etc/app/cfg.toml", "config", verification.ReasonHashMismatch),
+			expected:    DryRunExitPolicyDeny,
+			description: "policy-deny is exit 1; tampering in this case is also 1 but the path is policy-deny",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mgr := newPreviewManager(t, tt.opts, keyedRiskEvaluator{"cmd": tt.assessment})
+			cmd := executortestutil.CreateRuntimeCommand("/usr/bin/cmd", nil,
+				executortestutil.WithName("cmd"), executortestutil.WithRiskLevel("high"))
+			_, _, err := mgr.ExecuteCommand(context.Background(), cmd, previewTestGroup(), map[string]string{})
+			require.NoError(t, err)
+			mgr.SetFileVerification(tt.summary)
+			assert.Equal(t, tt.expected, mgr.PreviewExitCode(), tt.description)
+		})
+	}
+}
+
+// TestDryRun_SetFileVerificationNilClears verifies SetFileVerification(nil)
+// restores the manager to its environment-only behavior (no UNVERIFIED exits
+// even with the opt-in set), so a runner that defers verification does not
+// pin a stale summary.
+func TestDryRun_SetFileVerificationNilClears(t *testing.T) {
+	opts := &DryRunOptions{DetailLevel: DetailLevelDetailed, FailOnVerificationUnavailable: true}
+	mgr := newPreviewManager(t, opts, keyedRiskEvaluator{"cmd": {Level: runnertypes.RiskLevelLow}})
+
+	mgr.SetFileVerification(unverifiedSummaryFromFailureReason("/etc/app/cfg.toml", "config", verification.ReasonHashMismatch))
+	assert.Equal(t, DryRunExitPolicyDeny, mgr.PreviewExitCode(),
+		"sanity: tampering signal + opt-in -> exit 1")
+
+	mgr.SetFileVerification(nil)
+	assert.Equal(t, DryRunExitAllow, mgr.PreviewExitCode(),
+		"clearing the summary should drop the tampering signal exit code")
+}
+
+// mergeUnverifiedSummaries combines two FileVerificationSummary values into a
+// single one, used by the mixed-cause test above. The Total/Failed counts and
+// HashDirStatus are not relevant to the exit-code decision (only the
+// UsedUnverifiedContent flag and the UnverifiedFiles slice are), so the
+// implementation only copies those.
+func mergeUnverifiedSummaries(a, b *verification.FileVerificationSummary) *verification.FileVerificationSummary {
+	merged := *a
+	merged.UnverifiedFiles = append([]verification.UnverifiedFileUsage{}, a.UnverifiedFiles...)
+	merged.UnverifiedFiles = append(merged.UnverifiedFiles, b.UnverifiedFiles...)
+	merged.UsedUnverifiedContent = true
+	return &merged
 }
