@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValueDetector_Mask_PositiveCases(t *testing.T) {
@@ -159,9 +160,8 @@ func TestValueDetector_Mask_AllPatternsReturnSamePlaceholder(t *testing.T) {
 
 	for _, input := range inputs {
 		result := d.Mask(input)
-		if result == input {
-			continue // this input may not match any pattern, skip
-		}
+		require.NotEqual(t, input, result,
+			"expected input to be masked, but it was left unchanged: %q", input)
 		assert.Contains(t, result, placeholder,
 			"masked text must contain the placeholder: %q -> %q", input, result)
 		// The placeholder should exactly replace the matched part, and any remaining

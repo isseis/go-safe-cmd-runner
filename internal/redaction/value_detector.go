@@ -3,6 +3,7 @@ package redaction
 
 import (
 	"regexp"
+	"strings"
 )
 
 // valueDetectorPatterns holds compiled regex patterns for value-based secret detection.
@@ -29,7 +30,7 @@ var valueDetectorPatterns = struct {
 	// of key name by pemPrivate below. This pattern is kept as defense-in-depth (it masks
 	// the fingerprint too) but does not by itself satisfy "detection independent of key
 	// name" for the GCP category; see docs/user/security-risk-assessment.md Limitations.
-	gcpSAKey:    regexp.MustCompile(`("private_key_id"\s*:\s*")[a-f0-9]{32,}(")`),
+	gcpSAKey:    regexp.MustCompile(`("private_key_id"\s*:\s*")[a-fA-F0-9]{32,}(")`),
 	pemPrivate:  regexp.MustCompile(`(?s)-----BEGIN\s[A-Z\s]*PRIVATE\sKEY-----.*?-----END\s[A-Z\s]*PRIVATE\sKEY-----`),
 	bearerToken: regexp.MustCompile(`(?i)(Bearer\s+)[A-Za-z0-9\-._~+/]+=*`),
 	urlCred:     regexp.MustCompile(`(?i)(\b[a-z][a-z0-9+\-.]*://)[^/?:]+:[^/@?]+@`),
@@ -56,17 +57,23 @@ func (d *ValueDetector) Mask(text string) string {
 		return text
 	}
 
+	// ReplaceAllString treats "$0"/"$1"/etc. in the replacement string as
+	// expansions of the match/capture groups. Escape literal "$" characters
+	// in the placeholder so a placeholder configured with "$1"-like text is
+	// always treated literally instead of re-injecting matched (secret) text.
+	escapedPlaceholder := strings.ReplaceAll(d.placeholder, "$", "$$")
+
 	result := text
-	result = valueDetectorPatterns.awsKeyID.ReplaceAllString(result, d.placeholder)
-	result = valueDetectorPatterns.githubToken.ReplaceAllString(result, d.placeholder)
-	result = valueDetectorPatterns.slackToken.ReplaceAllString(result, d.placeholder)
-	result = valueDetectorPatterns.pemPrivate.ReplaceAllString(result, d.placeholder)
+	result = valueDetectorPatterns.awsKeyID.ReplaceAllString(result, escapedPlaceholder)
+	result = valueDetectorPatterns.githubToken.ReplaceAllString(result, escapedPlaceholder)
+	result = valueDetectorPatterns.slackToken.ReplaceAllString(result, escapedPlaceholder)
+	result = valueDetectorPatterns.pemPrivate.ReplaceAllString(result, escapedPlaceholder)
 	// Preserve the "Bearer " prefix, the URL scheme, and the surrounding
 	// "private_key_id":"..." JSON structure so masked output stays readable
 	// (e.g. "Bearer [REDACTED]" instead of a bare placeholder).
-	result = valueDetectorPatterns.gcpSAKey.ReplaceAllString(result, "${1}"+d.placeholder+"${2}")
-	result = valueDetectorPatterns.bearerToken.ReplaceAllString(result, "${1}"+d.placeholder)
-	result = valueDetectorPatterns.urlCred.ReplaceAllString(result, "${1}"+d.placeholder+"@")
+	result = valueDetectorPatterns.gcpSAKey.ReplaceAllString(result, "${1}"+escapedPlaceholder+"${2}")
+	result = valueDetectorPatterns.bearerToken.ReplaceAllString(result, "${1}"+escapedPlaceholder)
+	result = valueDetectorPatterns.urlCred.ReplaceAllString(result, "${1}"+escapedPlaceholder+"@")
 
 	return result
 }
