@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 
@@ -793,7 +795,8 @@ func TestCommandGroup_NewFields(t *testing.T) {
 			// Create runner with mock resource manager to avoid actually executing commands
 			mockResourceManager := &MockResourceManager{}
 			mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-				resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "test output", Stderr: ""}, nil)
+				resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "test output", Stderr: ""}, nil,
+			)
 
 			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 			require.NoError(t, err) // Load basic environment
@@ -1286,6 +1289,10 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 			},
 		},
 	})
+	// Runner.GetDryRunResults wires the verification summary into the
+	// resource manager before computing the preview exit code (see
+	// TestRunner_GetDryRunResults_WiresFileVerificationBeforeExitCode).
+	mockResourceManager.On("SetFileVerification", mock.Anything).Return()
 
 	// Create runner with mock resource manager
 	runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-dry-run"))
@@ -1315,6 +1322,76 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 
 	// Verify mock expectations
 	mockResourceManager.AssertExpectations(t)
+}
+
+// TestRunner_GetDryRunResults_WiresFileVerificationBeforeExitCode is a
+// regression test for a weakreview finding on task 0146 PR-9: the dry-run
+// exit-code split between a tampering signal (hash mismatch, exit 1) and an
+// environment cause (no validator, exit 3) was implemented entirely inside
+// resource.DryRunResourceManager, but nothing in the production call path
+// ever invoked its SetFileVerification setter, so the exit code never
+// reflected unverified content outside of unit tests that called the setter
+// directly. This test drives the real production path
+// (Runner.GetDryRunResults) and asserts the resource manager receives the
+// verification summary -- with the hash-mismatch tampering signal recorded
+// -- before GetDryRunResults is asked to compute the preview exit code.
+func TestRunner_GetDryRunResults_WiresFileVerificationBeforeExitCode(t *testing.T) {
+	setupSafeTestEnv(t)
+
+	tmpDir := t.TempDir()
+	hashDir := filepath.Join(tmpDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o750))
+
+	configFile := filepath.Join(tmpDir, "config.toml")
+	require.NoError(t, os.WriteFile(configFile, []byte("test config"), 0o600))
+
+	// Record a hash for configFile that does not match its actual content,
+	// simulating a tampered file (the same technique as
+	// verification.createWrongHashRecord).
+	getter := filevalidator.NewHybridHashFilePathGetter()
+	store, err := fileanalysis.NewStore(hashDir, getter)
+	require.NoError(t, err)
+	resolvedConfigPath, err := common.NewResolvedPath(configFile)
+	require.NoError(t, err)
+	require.NoError(t, store.Update(resolvedConfigPath, func(record *fileanalysis.Record) error {
+		record.ContentHash = "sha256:" + strings.Repeat("0", 64)
+		return nil
+	}))
+
+	vm, err := verification.NewManagerForTest(hashDir, verification.WithDryRunMode(), verification.WithSkipHashDirectoryValidation())
+	require.NoError(t, err)
+
+	// Trigger the dry-run read-fallback path: verification fails (hash
+	// mismatch) but the content is still returned, and the failure is
+	// recorded as an unverified-content tampering signal.
+	content, err := vm.VerifyAndReadConfigFile(configFile)
+	require.NoError(t, err)
+	require.Equal(t, "test config", string(content))
+
+	mockResourceManager := &MockResourceManager{}
+	var calledInOrder []string
+	mockResourceManager.On("SetFileVerification", mock.MatchedBy(func(summary *verification.FileVerificationSummary) bool {
+		if summary == nil || !summary.UsedUnverifiedContent || len(summary.UnverifiedFiles) != 1 {
+			return false
+		}
+		usage := summary.UnverifiedFiles[0]
+		return usage.Path == configFile && usage.Failure != nil && *usage.Failure == verification.ReasonHashMismatch
+	})).Run(func(mock.Arguments) {
+		calledInOrder = append(calledInOrder, "SetFileVerification")
+	}).Return()
+	mockResourceManager.On("GetDryRunResults").Run(func(mock.Arguments) {
+		calledInOrder = append(calledInOrder, "GetDryRunResults")
+	}).Return(&resource.DryRunResult{})
+
+	runner, err := NewRunner(&runnertypes.ConfigSpec{Version: "1.0"}, WithResourceManager(mockResourceManager), WithVerificationManager(vm), WithRunID("test-wiring"))
+	require.NoError(t, err)
+
+	result := runner.GetDryRunResults()
+	require.NotNil(t, result)
+
+	mockResourceManager.AssertExpectations(t)
+	assert.Equal(t, []string{"SetFileVerification", "GetDryRunResults"}, calledInOrder,
+		"SetFileVerification must be called before GetDryRunResults so the preview exit code (computed inside GetDryRunResults) reflects unverified content")
 }
 
 // TestRunner_OutputCaptureWithTOMLConfig tests TOML configuration parsing for output capture

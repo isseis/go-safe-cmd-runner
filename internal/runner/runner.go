@@ -496,27 +496,32 @@ func (r *Runner) CleanupAllResources() error {
 	return r.resourceManager.CleanupAllTempDirs()
 }
 
+// fileVerificationSetter is an interface for recording the file-verification
+// summary before the dry-run preview exit code is computed. This interface
+// allows type-safe checking without depending on concrete types.
+type fileVerificationSetter interface {
+	SetFileVerification(summary *verification.FileVerificationSummary)
+}
+
 // GetDryRunResults returns dry-run analysis results if available
 func (r *Runner) GetDryRunResults() *resource.DryRunResult {
+	var summary *verification.FileVerificationSummary
 	if r.verificationManager != nil {
-		// Record the file verification summary on the resource manager before
-		// computing dry-run results, so that PreviewExitCode (invoked as part
-		// of GetDryRunResults) can factor unverified configuration/template
-		// content into the exit-code mapping.
-		summary := r.verificationManager.GetVerificationSummary()
-		if setter, ok := r.resourceManager.(interface {
-			SetFileVerification(*verification.FileVerificationSummary)
-		}); ok {
+		summary = r.verificationManager.GetVerificationSummary()
+	}
+	if summary != nil {
+		// Record the summary on the resource manager *before* asking it for
+		// results, since GetDryRunResults computes PreviewExitCode and the
+		// exit code must reflect any unverified content adopted during dry-run.
+		if setter, ok := r.resourceManager.(fileVerificationSetter); ok {
 			setter.SetFileVerification(summary)
 		}
 	}
+
 	result := r.resourceManager.GetDryRunResults()
-	if result != nil && r.verificationManager != nil {
-		// Add file verification summary to the result
-		summary := r.verificationManager.GetVerificationSummary()
-		if summary != nil {
-			result.FileVerification = summary
-		}
+	if result != nil && summary != nil {
+		// Add file verification summary to the result for display purposes.
+		result.FileVerification = summary
 	}
 	return result
 }

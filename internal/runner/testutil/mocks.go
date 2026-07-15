@@ -9,6 +9,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -110,4 +111,12 @@ func (m *MockResourceManager) RecordGroupAnalysis(groupName string, debugInfo *r
 func (m *MockResourceManager) UpdateCommandDebugInfo(token resource.CommandToken, debugInfo *resource.DebugInfo) error {
 	args := m.Called(token, debugInfo)
 	return args.Error(0)
+}
+
+// SetFileVerification records the file-verification summary for the dry-run
+// preview exit code. Implementing this optional interface lets tests verify
+// that callers (e.g. runner.Runner.GetDryRunResults) wire the summary in
+// before asking for dry-run results, matching resource.DryRunResourceManager.
+func (m *MockResourceManager) SetFileVerification(summary *verification.FileVerificationSummary) {
+	m.Called(summary)
 }
