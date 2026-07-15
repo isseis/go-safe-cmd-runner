@@ -244,6 +244,94 @@ func TestResultCollector_Duration(t *testing.T) {
 	assert.GreaterOrEqual(t, summary.Duration, 10*time.Millisecond, "Duration should be at least 10ms")
 }
 
+// TestRecordUnverifiedContent_NoValidator covers the no-validator case (skipped
+// because no file validator is configured). UsedUnverifiedContent should be
+// true and the failure pointer should be nil.
+func TestRecordUnverifiedContent_NoValidator(t *testing.T) {
+	rc := NewResultCollector("/test/path")
+
+	rc.RecordUnverifiedContent("/etc/test.toml", "config", UnverifiedReasonNoValidator, "")
+
+	summary := rc.GetSummary()
+
+	assert.True(t, summary.UsedUnverifiedContent, "UsedUnverifiedContent should be true")
+	require.Equal(t, 1, len(summary.UnverifiedFiles), "expected 1 unverified file")
+
+	entry := summary.UnverifiedFiles[0]
+	assert.Equal(t, "/etc/test.toml", entry.Path)
+	assert.Equal(t, "config", entry.Context)
+	assert.Equal(t, "skipped_no_validator", entry.Reason)
+	assert.Nil(t, entry.Failure, "no failure reason should be attached for skipped_no_validator")
+}
+
+// TestRecordUnverifiedContent_WithFailureReason covers the verify-failed
+// case (verification was attempted and failed, but the content was still
+// adopted via the dry-run fallback). UsedUnverifiedContent should be true and
+// the failure pointer should reflect the underlying FailureReason.
+func TestRecordUnverifiedContent_WithFailureReason(t *testing.T) {
+	rc := NewResultCollector("/test/path")
+
+	rc.RecordUnverifiedContent(
+		"/etc/test.toml",
+		"config",
+		UnverifiedReason("verify_failed_"+string(ReasonHashMismatch)),
+		ReasonHashMismatch,
+	)
+
+	summary := rc.GetSummary()
+
+	assert.True(t, summary.UsedUnverifiedContent)
+	require.Equal(t, 1, len(summary.UnverifiedFiles))
+
+	entry := summary.UnverifiedFiles[0]
+	assert.Equal(t, "/etc/test.toml", entry.Path)
+	assert.Equal(t, "config", entry.Context)
+	assert.Equal(t, "verify_failed_hash_mismatch", entry.Reason)
+	require.NotNil(t, entry.Failure)
+	assert.Equal(t, ReasonHashMismatch, *entry.Failure)
+}
+
+// TestRecordUnverifiedContent_DefaultFalse covers that a collector that has
+// not been asked to record any unverified content reports false and an empty
+// list, so that downstream consumers can rely on a zero-value summary.
+func TestRecordUnverifiedContent_DefaultFalse(t *testing.T) {
+	rc := NewResultCollector("/test/path")
+
+	summary := rc.GetSummary()
+
+	assert.False(t, summary.UsedUnverifiedContent)
+	assert.Empty(t, summary.UnverifiedFiles)
+}
+
+// TestRecordUnverifiedContent_Multiple covers accumulation of multiple
+// unverified files (one per record call) and that the deep-copy in
+// GetSummary isolates the returned slice from later mutations.
+func TestRecordUnverifiedContent_Multiple(t *testing.T) {
+	rc := NewResultCollector("/test/path")
+
+	rc.RecordUnverifiedContent("/a.toml", "config", UnverifiedReasonNoValidator, "")
+	rc.RecordUnverifiedContent("/b.toml", "template", UnverifiedReason("verify_failed_"+string(ReasonHashFileNotFound)), ReasonHashFileNotFound)
+	rc.RecordUnverifiedContent("/c.toml", "config", UnverifiedReason("verify_failed_"+string(ReasonPermissionDenied)), ReasonPermissionDenied)
+
+	summary := rc.GetSummary()
+
+	assert.True(t, summary.UsedUnverifiedContent)
+	require.Equal(t, 3, len(summary.UnverifiedFiles))
+	assert.Equal(t, "/a.toml", summary.UnverifiedFiles[0].Path)
+	assert.Equal(t, "/b.toml", summary.UnverifiedFiles[1].Path)
+	assert.Equal(t, "/c.toml", summary.UnverifiedFiles[2].Path)
+	assert.Nil(t, summary.UnverifiedFiles[0].Failure)
+	require.NotNil(t, summary.UnverifiedFiles[1].Failure)
+	assert.Equal(t, ReasonHashFileNotFound, *summary.UnverifiedFiles[1].Failure)
+	require.NotNil(t, summary.UnverifiedFiles[2].Failure)
+	assert.Equal(t, ReasonPermissionDenied, *summary.UnverifiedFiles[2].Failure)
+
+	// Recording again after a GetSummary call should not mutate the previously
+	// returned slice (deep-copy invariant).
+	rc.RecordUnverifiedContent("/d.toml", "config", UnverifiedReasonNoValidator, "")
+	assert.Equal(t, 3, len(summary.UnverifiedFiles), "summary should not change after further records")
+}
+
 func TestResultCollector_MixedResults(t *testing.T) {
 	rc := NewResultCollector("/test/path")
 

@@ -419,9 +419,19 @@ func (m *Manager) verifyFileWithHash(filePath string, context string) (string, e
 //
 // "WithReadFallback" refers to both of the above "fall back to file reading"
 // behaviors taken as a whole.
+//
+// In dry-run mode, both fallback paths additionally mark the adopted content
+// as UNVERIFIED via the ResultCollector so downstream consumers (text/json
+// output, --dry-run-fail-unverified exit code) can distinguish unverified
+// content from successfully verified content.
 func (m *Manager) readAndVerifyFileWithReadFallback(filePath string, context string) ([]byte, error) {
 	if m.fileValidator == nil {
-		// File validator is disabled - fallback to normal file reading
+		// File validator is disabled - fallback to normal file reading.
+		// In dry-run mode this means the content is adopted without any
+		// hash verification, so record it as UNVERIFIED.
+		if m.isDryRun && m.resultCollector != nil {
+			m.resultCollector.RecordUnverifiedContent(filePath, context, UnverifiedReasonNoValidator, "")
+		}
 		// #nosec G304 - filePath comes from verified configuration and is sanitized by path resolver
 		return os.ReadFile(filePath)
 	}
@@ -439,8 +449,12 @@ func (m *Manager) readAndVerifyFileWithReadFallback(filePath string, context str
 			logVerificationFailure(filePath, context, err, "File verification and read")
 		}
 
-		// In dry-run mode, try to read the file even if verification failed
+		// In dry-run mode, try to read the file even if verification failed.
+		// The file's content is now being adopted without successful
+		// verification, so mark it as UNVERIFIED for downstream consumers.
 		if err != nil {
+			reason := determineFailureReason(err)
+			m.resultCollector.RecordUnverifiedContent(filePath, context, UnverifiedReason("verify_failed_"+string(reason)), reason)
 			// #nosec G304 - filePath comes from verified configuration
 			content, err = os.ReadFile(filePath)
 		}

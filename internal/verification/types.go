@@ -123,6 +123,33 @@ const (
 	ReasonPermissionDenied FailureReason = "permission_denied"
 )
 
+// UnverifiedReason explains why a file's content was adopted without
+// successful hash verification. It is distinct from FailureReason because
+// the two are recorded in different states: FailureReason describes a
+// verification that was attempted and reported, while UnverifiedReason
+// explains why verification was skipped (no validator) or fell through
+// (verification failed but dry-run continued with the unverified content).
+type UnverifiedReason string
+
+const (
+	// UnverifiedReasonNoValidator indicates the file was adopted because no
+	// file validator was configured for this manager instance (e.g. dry-run
+	// on a machine where the hash directory is not writable).
+	UnverifiedReasonNoValidator UnverifiedReason = "skipped_no_validator"
+)
+
+// UnverifiedFileUsage records a single instance where a file's content was
+// adopted by dry-run without successful hash verification. The reason is
+// either UnverifiedReasonNoValidator or a verify_failed_<FailureReason>
+// value (kept as a string to avoid coupling UnverifiedReason to the
+// FailureReason enumeration).
+type UnverifiedFileUsage struct {
+	Path    string         `json:"path"`
+	Reason  string         `json:"reason"`
+	Context string         `json:"context"`
+	Failure *FailureReason `json:"failure_reason,omitempty"`
+}
+
 // FileVerificationFailure represents a single file verification failure
 type FileVerificationFailure struct {
 	Path    string        `json:"path"`
@@ -141,10 +168,12 @@ type HashDirectoryStatus struct {
 
 // FileVerificationSummary represents the summary of file verification in dry-run mode
 type FileVerificationSummary struct {
-	TotalFiles    int                       `json:"total_files"`
-	VerifiedFiles int                       `json:"verified_files"`
-	FailedFiles   int                       `json:"failed_files"`
-	Duration      time.Duration             `json:"duration"`
-	HashDirStatus HashDirectoryStatus       `json:"hash_dir_status"`
-	Failures      []FileVerificationFailure `json:"failures,omitempty"`
+	TotalFiles            int                       `json:"total_files"`
+	VerifiedFiles         int                       `json:"verified_files"`
+	FailedFiles           int                       `json:"failed_files"`
+	Duration              time.Duration             `json:"duration"`
+	HashDirStatus         HashDirectoryStatus       `json:"hash_dir_status"`
+	Failures              []FileVerificationFailure `json:"failures,omitempty"`
+	UsedUnverifiedContent bool                      `json:"used_unverified_content"`
+	UnverifiedFiles       []UnverifiedFileUsage     `json:"unverified_files,omitempty"`
 }
