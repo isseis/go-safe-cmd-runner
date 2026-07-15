@@ -22,14 +22,20 @@ type Config struct {
 	// KeyValuePatterns contains keys for key=value or header redaction
 	// e.g. ["password", "token", "Authorization: "]
 	KeyValuePatterns []string
+	// ValueDetector detects sensitive values based on value format (e.g., AWS keys,
+	// GitHub tokens, PEM blocks) independent of key-name context. When nil, value-based
+	// detection is skipped. DefaultConfig sets this to a detector with the same placeholder.
+	ValueDetector *ValueDetector
 }
 
 // DefaultConfig returns default redaction configuration
 func DefaultConfig() *Config {
+	placeholder := "[REDACTED]"
 	return &Config{
-		Placeholder:      "[REDACTED]",
+		Placeholder:      placeholder,
 		Patterns:         DefaultSensitivePatterns(),
 		KeyValuePatterns: DefaultKeyValuePatterns(),
+		ValueDetector:    NewValueDetector(placeholder),
 	}
 }
 
@@ -51,7 +57,8 @@ type ErrorCollector interface {
 	RecordFailure(key string, err error)
 }
 
-// RedactText removes or redacts potentially sensitive information from text
+// RedactText removes or redacts potentially sensitive information from text.
+// Applies both key-name-based patterns and value-format-based detection.
 func (c *Config) RedactText(text string) string {
 	if text == "" {
 		return text
@@ -62,6 +69,14 @@ func (c *Config) RedactText(text string) string {
 	// Apply key=value pattern redaction
 	for _, key := range c.KeyValuePatterns {
 		result = c.performKeyValueRedaction(result, key, c.Placeholder)
+	}
+
+	// Apply value-format-based detection (e.g., AWS keys, GitHub tokens, PEM blocks).
+	// This runs after key=value redaction so that structured key=value pairs get
+	// precise masking first, then bare secrets in the remaining text are caught.
+	// When ValueDetector is nil, this step is skipped (backward compatible).
+	if c.ValueDetector != nil {
+		result = c.ValueDetector.Mask(result)
 	}
 
 	return result
@@ -533,7 +548,8 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 	if ctx.depth >= maxRedactionDepth {
 		// Depth limit reached: return placeholder to prevent information leakage
 		// Log at Debug level
-		r.failureLogger.Debug("Recursion depth limit reached - returning placeholder for security",
+		r.failureLogger.Debug(
+			"Recursion depth limit reached - returning placeholder for security",
 			"attribute_key", key,
 			"depth", maxRedactionDepth,
 			"note", "This is not an error - DoS prevention measure",
@@ -557,7 +573,8 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 
 				// 1. Log detailed information to file/stderr only (excludes Slack)
 				// This uses failureLogger which was configured to exclude Slack handler
-				r.failureLogger.Warn("Redaction failed - detailed log",
+				r.failureLogger.Warn(
+					"Redaction failed - detailed log",
 					"attribute_key", key,
 					"panic_value", rec,
 					"panic_type", fmt.Sprintf("%T", rec),
@@ -567,7 +584,8 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 
 				// 2. Log safe summary to all destinations (includes Slack)
 				// This uses slog.Default() which goes through RedactingHandler
-				slog.Warn("Redaction failed - see logs for details",
+				slog.Warn(
+					"Redaction failed - see logs for details",
 					"attribute_key", key,
 					"panic_type", fmt.Sprintf("%T", rec),
 					"log_category", "redaction_failure_summary",
@@ -622,7 +640,8 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactionContext) (slog.Attr, error) {
 	// 1. Check recursion depth
 	if ctx.depth >= maxRedactionDepth {
-		r.failureLogger.Debug("Recursion depth limit reached for slice - returning placeholder for security",
+		r.failureLogger.Debug(
+			"Recursion depth limit reached for slice - returning placeholder for security",
 			"attribute_key", key,
 			"depth", maxRedactionDepth,
 		)
@@ -662,7 +681,8 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 						elementKey := fmt.Sprintf("%s[%d]", key, i)
 
 						// 1. Log detailed information to file/stderr only (excludes Slack)
-						r.failureLogger.Warn("Redaction failed for slice element - detailed log",
+						r.failureLogger.Warn(
+							"Redaction failed for slice element - detailed log",
 							"attribute_key", elementKey,
 							"element_index", i,
 							"panic_value", rec,
@@ -672,7 +692,8 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 						)
 
 						// 2. Log safe summary to all destinations (includes Slack)
-						slog.Warn("Redaction failed for slice element - see logs for details",
+						slog.Warn(
+							"Redaction failed for slice element - see logs for details",
 							"attribute_key", elementKey,
 							"element_index", i,
 							"panic_type", fmt.Sprintf("%T", rec),

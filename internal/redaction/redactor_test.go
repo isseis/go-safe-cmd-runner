@@ -1221,7 +1221,8 @@ func TestRedactingHandler_CommandResults_Integration(t *testing.T) {
 			redactingHandler := NewRedactingHandler(handler, config, nil)
 			logger := slog.New(redactingHandler)
 
-			logger.Info("test",
+			logger.Info(
+				"test",
 				slog.String(common.GroupSummaryAttrs.Status, "success"),
 				slog.String(common.GroupSummaryAttrs.Group, "test_group"),
 				slog.Any(common.GroupSummaryAttrs.Commands, tt.results),
@@ -1410,7 +1411,8 @@ func TestRedactingHandler_NonLogValuer(t *testing.T) {
 	logger := slog.New(redactingHandler)
 
 	// Test with various non-LogValuer types
-	logger.Info("Test message",
+	logger.Info(
+		"Test message",
 		"int", slog.IntValue(123),
 		"bool", slog.BoolValue(true),
 		"float", slog.Float64Value(3.14),
@@ -1879,7 +1881,160 @@ func TestProductionLoggerSetup(t *testing.T) {
 	}, "Production setup should not panic - failureLogger is correctly configured without RedactingHandler")
 }
 
-// BenchmarkRedactingHandler_String benchmarks RedactingHandler with simple string attributes
+// TestRedactText_ValueBasedDetection verifies that RedactText masks known value
+// formats (AWS keys, GitHub tokens, etc.) through the ValueDetector integration.
+// This tests the Layer 1 path (SanitizeOutputForLogging).
+func TestRedactText_ValueBasedDetection(t *testing.T) {
+	config := DefaultConfig()
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "AWS access key ID is masked",
+			input: "export KEY=AKIAIOSFODNN7EXAMPLE",
+		},
+		{
+			name:  "GitHub token ghp_ is masked",
+			input: "GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789ab",
+		},
+		{
+			name:  "Slack bot token is masked",
+			input: "SLACK_TOKEN=" + "xoxb-" + "999999999999-888888888888-zzzzzzzzzzzzzzzzzzzz",
+		},
+		{
+			name:  "PEM private key block is masked",
+			input: "key data:\n-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----",
+		},
+		{
+			name:  "Bearer token is masked",
+			input: "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc",
+		},
+		{
+			name:  "URL credentials are masked",
+			input: "Fetching from https://admin:hunter2@api.example.com/data",
+		},
+		{
+			name:  "GCP service account key is masked",
+			input: `{"private_key_id": "abcd1234ef5678abcd1234ef5678abcd1234ef56"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := config.RedactText(tt.input)
+			assert.NotEqual(t, tt.input, result,
+				"RedactText should modify input by masking sensitive values")
+			assert.Contains(t, result, "[REDACTED]",
+				"Masked output must contain the redaction placeholder")
+		})
+	}
+}
+
+// TestRedactText_ValueBasedDetection_BypassWhenNil verifies that when ValueDetector
+// is nil, RedactText still works with key=value patterns but skips value-based detection.
+// This ensures backward compatibility for callers that construct Config directly.
+func TestRedactText_ValueBasedDetection_BypassWhenNil(t *testing.T) {
+	config := Config{
+		Placeholder:      "[HIDDEN]",
+		Patterns:         DefaultSensitivePatterns(),
+		KeyValuePatterns: []string{"password"},
+		ValueDetector:    nil, // explicitly nil
+	}
+
+	// Key=value pattern should still work
+	result := config.RedactText("password=secret value AKIAIOSFODNN7EXAMPLE")
+	assert.Equal(t, "password=[HIDDEN] value AKIAIOSFODNN7EXAMPLE", result,
+		"key=value redaction should work, but value-based detection should be skipped")
+}
+
+// TestRedactText_ValueBasedDetection_DefaultConfigMasksByDefault verifies AC-11:
+// value-based masking is active by default (DefaultConfig wires a non-nil
+// ValueDetector) without requiring any explicit opt-in. Plaintext values are only
+// produced when a caller explicitly bypasses redaction (e.g. the CLI's
+// --show-sensitive flag, which operates upstream of this package and is covered by
+// its own tests; see internal/runner/group_executor_test.go and
+// internal/runner/resource/types_test.go for that flag's own default-off behavior).
+func TestRedactText_ValueBasedDetection_DefaultConfigMasksByDefault(t *testing.T) {
+	config := DefaultConfig()
+
+	result := config.RedactText("session used AKIAIOSFODNN7EXAMPLE without a recognizable key name")
+
+	assert.NotContains(t, result, "AKIAIOSFODNN7EXAMPLE",
+		"DefaultConfig must mask known secret value formats by default (AC-11)")
+	assert.Contains(t, result, config.Placeholder)
+}
+
+// TestRedactingHandler_ValueBasedDetection_Layer2 verifies that the RedactingHandler
+// (Layer 2 / Slack path) also masks value-format secrets through the ValueDetector
+// integrated into RedactText. This confirms the Slack notification path is covered.
+func TestRedactingHandler_ValueBasedDetection_Layer2(t *testing.T) {
+	var buf bytes.Buffer
+	baseHandler := slog.NewJSONHandler(&buf, nil)
+
+	failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
+	logger := slog.New(handler)
+
+	// Log a string attribute containing an AWS key -- should be masked by ValueDetector
+	logger.Info(
+		"command output",
+		"stdout", "Found credentials: AKIAIOSFODNN7EXAMPLE in log",
+	)
+
+	// Parse JSON output
+	output := buf.String()
+	assert.NotEmpty(t, output)
+
+	var entry map[string]any
+	err := json.Unmarshal([]byte(output), &entry)
+	require.NoError(t, err, "RedactingHandler should produce valid JSON")
+
+	// The stdout value should be redacted
+	stdout, ok := entry["stdout"].(string)
+	require.True(t, ok, "stdout attribute should be a string")
+	assert.Contains(t, stdout, "[REDACTED]",
+		"stdout value containing AWS key should be masked by ValueDetector")
+	assert.NotContains(t, stdout, "AKIA",
+		"stdout value must not contain unmasked AWS key prefix")
+}
+
+// TestRedactingHandler_ValueBasedDetection_NestedGroup verifies that value-based
+// detection works on nested group attributes (e.g., cmd_N subgroups via Slack).
+func TestRedactingHandler_ValueBasedDetection_NestedGroup(t *testing.T) {
+	var buf bytes.Buffer
+	baseHandler := slog.NewJSONHandler(&buf, nil)
+
+	failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
+	logger := slog.New(handler)
+
+	// Simulate a nested group structure (like Slack's cmd_N grouping)
+	logger.Info(
+		"command results",
+		"cmd_1", slog.GroupValue(
+			slog.String("command", "echo"),
+			slog.String("stdout", "token=ghp_abcdefghijklmnopqrstuvwxyz0123456789ab"),
+			slog.String("stderr", ""),
+		),
+	)
+
+	output := buf.String()
+	assert.NotEmpty(t, output)
+
+	var entry map[string]any
+	err := json.Unmarshal([]byte(output), &entry)
+	require.NoError(t, err)
+
+	cmd1, ok := entry["cmd_1"].(map[string]any)
+	require.True(t, ok, "cmd_1 should be a nested object")
+	stdout, ok := cmd1["stdout"].(string)
+	require.True(t, ok)
+	assert.NotContains(t, stdout, "ghp_",
+		"Nested group stdout must not contain unmasked GitHub token prefix")
+}
+
 func BenchmarkRedactingHandler_String(b *testing.B) {
 	baseHandler := slog.NewJSONHandler(io.Discard, nil)
 
@@ -1891,7 +2046,8 @@ func BenchmarkRedactingHandler_String(b *testing.B) {
 
 	b.ResetTimer()
 	for range b.N {
-		logger.Info("test message",
+		logger.Info(
+			"test message",
 			"user", "testuser",
 			"action", "login",
 			"timestamp", timestamp,
@@ -1911,7 +2067,8 @@ func BenchmarkRedactingHandler_String_WithSensitiveData(b *testing.B) {
 
 	b.ResetTimer()
 	for range b.N {
-		logger.Info("test message",
+		logger.Info(
+			"test message",
 			"user", "testuser",
 			"credentials", "password=secret123 token=abc456",
 			"timestamp", timestamp,
@@ -1933,7 +2090,8 @@ func BenchmarkRedactingHandler_LogValuer(b *testing.B) {
 
 	b.ResetTimer()
 	for range b.N {
-		logger.Info("test message",
+		logger.Info(
+			"test message",
 			"user", "testuser",
 			"data", valuer,
 			"timestamp", timestamp,
@@ -1959,7 +2117,8 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) {
 
 	b.ResetTimer()
 	for range b.N {
-		logger.Info("test message",
+		logger.Info(
+			"test message",
 			"user", "testuser",
 			"items", slice,
 			"timestamp", timestamp,
@@ -1984,7 +2143,8 @@ func BenchmarkRedactingHandler_Mixed(b *testing.B) {
 
 	b.ResetTimer()
 	for range b.N {
-		logger.Info("test message",
+		logger.Info(
+			"test message",
 			"user", "testuser",
 			"simple_string", "normal data",
 			"sensitive_string", "password=mypass",
@@ -2031,7 +2191,8 @@ func BenchmarkRedactLogAttribute_String(b *testing.B) {
 // BenchmarkRedactLogAttribute_Group benchmarks RedactLogAttribute with group values
 func BenchmarkRedactLogAttribute_Group(b *testing.B) {
 	config := DefaultConfig()
-	attr := slog.Group("user",
+	attr := slog.Group(
+		"user",
 		slog.String("name", "testuser"),
 		slog.String("password", "secret123"),
 		slog.String("token", "abc456"),
