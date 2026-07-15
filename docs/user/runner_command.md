@@ -651,17 +651,23 @@ shred -u debug.txt  # secure deletion
 
 **Overview**
 
-In dry-run mode, treats a command that **could not be verified in this environment** as a hard failure (non-zero exit) instead of the default behavior of reporting it as a note and exiting with code 0. With task 0146, the flag's scope was extended to also cover "unverified content" — configuration and template files that the dry-run loaded without successful hash verification (e.g., when no hash database is available, or when the recorded hash was missing or mismatched and the dry-run fell back to `os.ReadFile`).
+In dry-run mode, treats a command that **could not be verified in this environment** as a hard failure (non-zero exit) instead of the default behavior of reporting it as a note and exiting with code 0.
 
-A dry-run distinguishes three kinds of deny by the process exit code:
+A dry-run distinguishes two kinds of deny by the process exit code:
 
 - **Policy deny** — the computed effective risk exceeds the command's `risk_level`, or a non-environment Blocking deny (e.g., a symlink-resolution failure, or an indirect-execution form that cannot be bound). Always exits non-zero.
 - **Verification-unavailable deny** — binary analysis / file verification is unavailable in this environment, so the command's identity cannot be confirmed *here* (for example, a local or CI dry-run where the production hash database is not configured, or the command's identity hash has not been established). By default this is reported only as a note and does **not** fail the dry-run (exit code 0), so a preview run is not spuriously broken. (A genuine policy violation such as a missing or mismatched analysis record is a policy deny, not a verification-unavailable deny.)
-- **Unverified content** (task 0146) — a configuration or template file was adopted without successful hash verification because the dry-run fell back to the `os.ReadFile` path. Two sub-cases are surfaced distinctly in the output and assigned to different exit codes when the flag is set:
-  - *Environment cause* (no validator was configured for the dry-run, e.g., the hash directory was not writable). The file appears in the output under the **`UNVERIFIED`** section with reason `skipped_no_validator` and a `security_risk: low` annotation. With `-dry-run-fail-unverified` this exits with code `3` (verification-unavailable) because the cause is the environment, not tampering.
-  - *Tampering signal* (verification was attempted and failed, e.g., a `hash_mismatch` between the recorded hash and the on-disk content). The file appears with reason `verify_failed_<failure_reason>`, is tagged **`UNVERIFIED-TAMPER`**, and is annotated `security_risk: high`. With `-dry-run-fail-unverified` this exits with code `1` (policy deny) so the tampering signal is not buried in the environment-cause code.
 
-Setting `-dry-run-fail-unverified` opts both verification-unavailable denies and unverified-content cases into being treated as a failure, returning distinct exit codes that keep environment cause and tampering signal distinguishable in CI logs.
+Setting `-dry-run-fail-unverified` opts a verification-unavailable deny into being treated as a failure, returning a dedicated exit code that is distinguishable from a real policy deny.
+
+**Unverified configuration/template content (display only, not yet wired to this flag)**
+
+Separately from the exit-code behavior above, the dry-run output marks configuration and template files that were adopted without successful hash verification (e.g., no hash database was available, or the recorded hash was missing or mismatched and the dry-run fell back to `os.ReadFile`) under a distinct **`UNVERIFIED`** section in the file-verification report, regardless of this flag:
+
+- *Environment cause* (no validator was configured for the dry-run, e.g., the hash directory was not writable): reason `skipped_no_validator`.
+- *Tampering signal* (verification was attempted and failed, e.g., a `hash_mismatch` between the recorded hash and the on-disk content): reason `verify_failed_<failure_reason>`, tagged **`UNVERIFIED-TAMPER`** and annotated `security_risk: high` so it cannot be missed.
+
+This is always shown at the `detailed`/`full` detail level, at exit code 0, whether or not `-dry-run-fail-unverified` is set. **Extending `-dry-run-fail-unverified` to also hard-fail on this unverified content (with its own exit code, split by environment-cause vs. tampering-signal) is planned but not yet implemented** — see `docs/tasks/0146_security_hardening/03_implementation_plan.md` Step 4-6. Today, a hash-mismatched config file is surfaced in the output but does not affect the dry-run's exit code either way.
 
 **Syntax**
 
@@ -673,35 +679,30 @@ runner -config <path> -dry-run -dry-run-fail-unverified
 
 | Exit code | Meaning |
 |-----------|---------|
-| `0` | All commands are allowed, or only environment-induced denies were observed (note-only under the default behavior) |
-| `1` | Policy deny — at least one command's effective risk exceeds its `risk_level`, a non-environment Blocking deny, or an unverified content with a tampering signal (e.g., `verify_failed_hash_mismatch`) |
-| `3` | Verification-unavailable deny, or unverified content with an environment cause (e.g., `skipped_no_validator`) — only when `-dry-run-fail-unverified` is set |
+| `0` | All commands are allowed, or a verification-unavailable deny under the default (note-only) behavior |
+| `1` | Policy deny — at least one command's effective risk exceeds its `risk_level`, or a non-environment Blocking deny |
+| `3` | Verification-unavailable deny — only when `-dry-run-fail-unverified` is set |
 
 **Use Cases**
 
-- **CI verifiability gate**: in a CI environment that has the production hash database, use `-dry-run-fail-unverified` to fail the build when any command cannot be verified or any configuration file is unverified, catching missing hash records (environment cause) and hash mismatches (tampering signal) before deployment.
-- **Local preview (default)**: omit the flag for local previews that lack the production hash database, so an environment-induced unverified content is shown in the `UNVERIFIED` section as a note without failing the run. A `UNVERIFIED-TAMPER` entry is always highlighted regardless of the flag and should be investigated even when the run exits 0.
+- **CI verifiability gate**: in a CI environment that has the production hash database, use `-dry-run-fail-unverified` to fail the build when any command cannot be verified, catching missing hash records before deployment.
+- **Local preview (default)**: omit the flag for local previews that lack the production hash database, so a verification-unavailable deny is shown as a note without failing the run. Check the `UNVERIFIED` section of the output for adopted-but-unverified configuration/template files, especially any `UNVERIFIED-TAMPER` entry, since these do not currently affect the exit code.
 
 **Usage Examples**
 
 ```bash
-# Default: a verification-unavailable deny or an environment-induced unverified
-# content is reported as a note (exit code 0). UNVERIFIED-TAMPER entries are
-# still highlighted and require investigation even at this exit code.
+# Default: a verification-unavailable deny is reported as a note (exit code 0)
 runner -config config.toml -dry-run
 
-# CI: fail on a verification-unavailable deny (exit code 3) or an
-# unverified content with a tampering signal (exit code 1).
+# CI: fail on a verification-unavailable deny (exit code 3)
 runner -config config.toml -dry-run -dry-run-fail-unverified
 ```
 
 **Notes**
 
 - A policy deny (exit code `1`) takes precedence over a verification-unavailable deny (exit code `3`).
-- The default behavior (flag absent) does **not** fail the dry-run, even when unverified content is adopted. The `UNVERIFIED` section in the dry-run output is the indicator for operators to investigate.
-- Hash-mismatch (`UNVERIFIED-TAMPER`) is annotated `security_risk: high` in the dry-run output regardless of the flag, so the tampering signal is not hidden by the default exit-0 behavior.
 - This flag only affects dry-run; it has no effect without `-dry-run`.
-- See `docs/tasks/0146_security_hardening/02_architecture.md` §3.4 for the full design and the unverified-content state machine.
+- See `docs/tasks/0146_security_hardening/02_architecture.md` §3.4 for the full design, including the planned (not yet implemented) extension of this flag to unverified configuration/template content.
 
 ### 3.3 Log Configuration
 
