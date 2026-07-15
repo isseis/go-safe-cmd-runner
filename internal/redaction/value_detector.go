@@ -12,7 +12,7 @@ var valueDetectorPatterns = struct {
 	awsKeyID    *regexp.Regexp // AWS access key IDs: AKIA, ASIA, etc.
 	githubToken *regexp.Regexp // GitHub tokens: ghp_, gho_, ghs_, etc.
 	slackToken  *regexp.Regexp // Slack tokens: xoxb-, xoxp-, xoxa-, xoxr-, etc.
-	gcpSAKey    *regexp.Regexp // GCP service account key ID field (see doc comment on gcpSAKey below)
+	gcpSAKey    *regexp.Regexp // GCP service account key ID field; group 1 is the "private_key_id":" prefix, group 2 is the closing quote (see doc comment on gcpSAKey below)
 	pemPrivate  *regexp.Regexp // PEM private key blocks: -----BEGIN ... PRIVATE KEY-----
 	bearerToken *regexp.Regexp // Bearer tokens: standard OAuth pattern; group 1 is the "Bearer " prefix
 	urlCred     *regexp.Regexp // URL-embedded credentials: scheme://user:pass@host; group 1 is "scheme://"
@@ -29,10 +29,10 @@ var valueDetectorPatterns = struct {
 	// of key name by pemPrivate below. This pattern is kept as defense-in-depth (it masks
 	// the fingerprint too) but does not by itself satisfy "detection independent of key
 	// name" for the GCP category; see docs/user/security-risk-assessment.md Limitations.
-	gcpSAKey:    regexp.MustCompile(`"private_key_id"\s*:\s*"[a-f0-9]{32,}"`),
+	gcpSAKey:    regexp.MustCompile(`("private_key_id"\s*:\s*")[a-f0-9]{32,}(")`),
 	pemPrivate:  regexp.MustCompile(`(?s)-----BEGIN\s[A-Z\s]*PRIVATE\sKEY-----.*?-----END\s[A-Z\s]*PRIVATE\sKEY-----`),
 	bearerToken: regexp.MustCompile(`(?i)(Bearer\s+)[A-Za-z0-9\-._~+/]+=*`),
-	urlCred:     regexp.MustCompile(`(?i)(\b[a-z][a-z0-9+\-.]*://)[^/?:]+:[^@?]+@`),
+	urlCred:     regexp.MustCompile(`(?i)(\b[a-z][a-z0-9+\-.]*://)[^/?:]+:[^/@?]+@`),
 }
 
 // ValueDetector detects and masks sensitive values in text based on value format,
@@ -60,10 +60,11 @@ func (d *ValueDetector) Mask(text string) string {
 	result = valueDetectorPatterns.awsKeyID.ReplaceAllString(result, d.placeholder)
 	result = valueDetectorPatterns.githubToken.ReplaceAllString(result, d.placeholder)
 	result = valueDetectorPatterns.slackToken.ReplaceAllString(result, d.placeholder)
-	result = valueDetectorPatterns.gcpSAKey.ReplaceAllString(result, d.placeholder)
 	result = valueDetectorPatterns.pemPrivate.ReplaceAllString(result, d.placeholder)
-	// Preserve the "Bearer " prefix and the URL scheme so masked output stays
-	// readable (e.g. "Bearer [REDACTED]" instead of a bare placeholder).
+	// Preserve the "Bearer " prefix, the URL scheme, and the surrounding
+	// "private_key_id":"..." JSON structure so masked output stays readable
+	// (e.g. "Bearer [REDACTED]" instead of a bare placeholder).
+	result = valueDetectorPatterns.gcpSAKey.ReplaceAllString(result, "${1}"+d.placeholder+"${2}")
 	result = valueDetectorPatterns.bearerToken.ReplaceAllString(result, "${1}"+d.placeholder)
 	result = valueDetectorPatterns.urlCred.ReplaceAllString(result, "${1}"+d.placeholder+"@")
 

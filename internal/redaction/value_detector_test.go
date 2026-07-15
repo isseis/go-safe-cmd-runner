@@ -189,6 +189,23 @@ func TestValueDetector_Mask_PreservesNonSecretContext(t *testing.T) {
 		assert.Contains(t, result, "https://"+placeholder+"@api.example.com/v1")
 		assert.NotContains(t, result, "hunter2")
 	})
+
+	t.Run("GCP private_key_id field name and JSON structure are preserved", func(t *testing.T) {
+		result := d.Mask(`{"private_key_id": "abcd1234ef5678abcd1234ef5678abcd1234ef56"}`)
+		assert.Contains(t, result, `"private_key_id": "`+placeholder+`"`)
+		assert.NotContains(t, result, "abcd1234ef5678abcd1234ef5678abcd1234ef56")
+	})
+}
+
+// TestValueDetector_Mask_URLWithPortAndAtInPath verifies that a URL with an
+// explicit port and a path segment containing "@" (but no embedded
+// credentials) is not falsely matched as having a password containing "/".
+func TestValueDetector_Mask_URLWithPortAndAtInPath(t *testing.T) {
+	d := NewValueDetector("[MASKED]")
+	input := "https://api.example.com:8080/path@something"
+	result := d.Mask(input)
+	assert.Equal(t, input, result,
+		"URL with port and path segment containing @ but no credentials must not be masked")
 }
 
 func TestValueDetector_Mask_EmptyInput(t *testing.T) {
