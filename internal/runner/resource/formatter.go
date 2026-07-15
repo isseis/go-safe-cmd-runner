@@ -235,12 +235,9 @@ func (f *TextFormatter) formatLevelMarker(level string) string {
 }
 
 // formatUnverifiedMarker formats a marker for an unverified file usage. The
-// marker distinguishes "skipped_no_validator" (environment cause: no validator
-// was available, e.g. dry-run on a machine without the hash directory) from
-// "verify_failed_<reason>" (verification was attempted and failed, which may
-// indicate tampering when the reason is hash_mismatch). Hash-mismatch is
-// tagged "TAMPER" so the operator can see at a glance which unverified files
-// deserve investigation.
+// marker only distinguishes a hash-mismatch tampering signal ("UNVERIFIED-TAMPER")
+// from every other unverified cause ("UNVERIFIED"); the skipped_no_validator vs.
+// verify_failed_<reason> distinction is conveyed separately by the "Reason:" line.
 func (f *TextFormatter) formatUnverifiedMarker(usage verification.UnverifiedFileUsage) string {
 	if usage.Failure != nil && *usage.Failure == verification.ReasonHashMismatch {
 		return "UNVERIFIED-TAMPER"
