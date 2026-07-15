@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -377,4 +378,33 @@ func TestHashDirPermissions_0o700(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, info.IsDir())
 	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm(), "hash directory must be created with 0o700")
+}
+
+// TestRunTOCTOU_ViolationLogsRemediationWithActualPath verifies that the ERROR
+// log's remediation hint contains the actual violating path, not an unresolved
+// string-concatenation template.
+func TestRunTOCTOU_ViolationLogsRemediationWithActualPath(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	targetFile := filepath.Join(hashDir, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	d := testRunDeps(hashDir)
+	d.toctouChecker = &fakeDirPermChecker{validateDirFn: func(path string) error {
+		return fmt.Errorf("world-writable directory: %s", path)
+	}}
+
+	var logBuf bytes.Buffer
+	prevLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prevLogger) })
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-d", hashDir, targetFile}, d, stdout, stderr)
+
+	assert.NotEqual(t, 0, exitCode)
+	logOutput := logBuf.String()
+	assert.Contains(t, logOutput, "remediation=", "log must include a remediation hint")
+	assert.Contains(t, logOutput, hashDir, "remediation hint must contain the actual violating path")
+	assert.NotContains(t, logOutput, "'+v.Path+'", "remediation hint must not contain unresolved template syntax")
 }

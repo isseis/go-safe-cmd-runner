@@ -130,6 +130,9 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	}
 	logger := slog.Default()
 	toctouDirs := security.CollectTOCTOUCheckDirs(absFiles, nil, absHashDir)
+	// RunTOCTOUPermissionCheck already logs each violation at WARN; the ERROR log
+	// below is intentionally in addition to it, since record (unlike other callers
+	// of this shared check) escalates violations to a fail-closed, non-zero exit.
 	violations := security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, logger)
 	if len(violations) > 0 {
 		for _, v := range violations {
@@ -137,7 +140,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 				"hash directory permission violation detected — refusing to record",
 				slog.String("path", v.Path),
 				slog.String("violation", v.Err.Error()),
-				slog.String("remediation", "fix directory permissions with chmod (e.g. chmod go-w '+v.Path+') and re-run record"),
+				slog.String("remediation", fmt.Sprintf("fix directory permissions with chmod (e.g. chmod go-w %s) and re-run record", v.Path)),
 			)
 		}
 		fmt.Fprintln(stderr, "Error: permission violation in hash directory or its ancestor directories — refusing to generate hash records. Fix directory permissions and re-run.") //nolint:errcheck

@@ -198,7 +198,7 @@ record -d ../hashes /etc/config.toml
 
 **ディレクトリの自動作成**
 
-指定したディレクトリが存在しない場合、自動的に作成されます（権限: 0750）。
+指定したディレクトリが存在しない場合、自動的に作成されます（権限: 0700）。
 
 ```bash
 # ディレクトリが存在しない場合でもOK
@@ -208,7 +208,7 @@ record -d /new/hash/directory /usr/bin/backup.sh
 
 **権限について**
 
-- ハッシュディレクトリは 0750 権限で作成されます（所有者: rwx, グループ: r-x, その他: ---）
+- ハッシュディレクトリは 0700 権限で作成されます（所有者: rwx, グループ: ---, その他: ---）
 - ハッシュファイルは 0640 権限で作成されます（所有者: rw-, グループ: r--, その他: ---）
 
 **本番環境での推奨設定**
@@ -217,7 +217,7 @@ record -d /new/hash/directory /usr/bin/backup.sh
 # 本番環境では標準ディレクトリを使用
 sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
 sudo chown root:root /usr/local/etc/go-safe-cmd-runner/hashes
-sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
+sudo chmod 700 /usr/local/etc/go-safe-cmd-runner/hashes
 
 # ハッシュを記録
 sudo record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
@@ -270,6 +270,7 @@ record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 
 **注意事項**
 
+- `-force` フラグは既存のハッシュファイルの上書き専用です。権限違反チェックをバイパスするものではありません。ハッシュディレクトリの祖先ディレクトリに安全でない権限を検出した場合、`-force` の指定に関わらず record はハッシュ生成を拒否します。
 - `-force` フラグは既存のハッシュファイルを警告なしで上書きします
 - 誤って重要なハッシュファイルを上書きしないよう注意してください
 - 本番環境では、バックアップを取ってから使用することを推奨します
@@ -327,7 +328,7 @@ HASH_DIR="/usr/local/etc/go-safe-cmd-runner/hashes"
 # ハッシュディレクトリの作成
 sudo mkdir -p "$HASH_DIR"
 sudo chown root:root "$HASH_DIR"
-sudo chmod 755 "$HASH_DIR"
+sudo chmod 700 "$HASH_DIR"
 
 # 設定ファイルのハッシュを記録
 echo "Recording configuration files..."
@@ -431,7 +432,7 @@ jobs:
       - name: Create hash directory
         run: |
           sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
-          sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
+          sudo chmod 700 /usr/local/etc/go-safe-cmd-runner/hashes
 
       - name: Record hashes for scripts
         run: |
@@ -519,6 +520,16 @@ runner -config ./test/test-config.toml -dry-run
 echo "Test setup completed!"
 ```
 
+### 4.7 セキュリティ: record は信頼できる管理者権限・クリーンな環境で実行すること
+
+record は、ハッシュベースのファイル整合性検証における**信頼の起点**です。record が生成するハッシュDBは、`runner` コマンドや `verify` コマンドが改ざんを検出するための土台になります。この信頼を維持するため、**record は信頼できる管理者権限・クリーンな環境で実行してください**。具体的には次の点を守ってください。
+
+- **record は root またはハッシュディレクトリへの排他的アクセス権を持つ専用の管理者アカウントで実行してください。**
+- **ハッシュディレクトリおよびその祖先ディレクトリすべてに安全な権限（所有者のみ書き込み可能で、グループ・その他への書き込みを許さない）を設定してください。** record は実行のたびにこれを強制します。ハッシュディレクトリの祖先チェーンに world-writable または group-writable なディレクトリを検出した場合、ハッシュ生成を拒否します（フェイルクローズド、非ゼロ終了）。
+- **信頼できないディレクトリ（`/tmp` や、管理者以外もアクセスできる共有ボリューム等）で record を実行しないでください。**
+- **権限違反を無視して続行するバイパスフラグは存在しません。** `-force` フラグは既存のハッシュファイルの上書きのみを制御し、セキュリティチェックには影響しません。
+- **`0o750` 権限のハッシュディレクトリを使っていた環境からアップグレードする場合:** `os.MkdirAll` は既存ディレクトリの権限を変更しません。既存のハッシュディレクトリは `chmod 0700 <ハッシュディレクトリ>` で手動で是正してください。
+
 ## 5. トラブルシューティング
 
 ### 5.1 ファイルが見つからない
@@ -557,7 +568,7 @@ Error creating validator: permission denied: /usr/local/etc/go-safe-cmd-runner/h
 ls -ld /usr/local/etc/go-safe-cmd-runner/hashes
 
 # 権限を修正（管理者権限が必要）
-sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
+sudo chmod 700 /usr/local/etc/go-safe-cmd-runner/hashes
 
 # または sudo で record を実行
 sudo record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh

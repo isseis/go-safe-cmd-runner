@@ -774,7 +774,7 @@ staging fallback を暫定採用する場合の Phase 1 実装方針（Step 1-6 
 
 **AC-16**: record 実行時、権限違反検出で無条件非ゼロ終了しハッシュを生成・保存しない。違反ディレクトリと権限問題を ERROR ログに出力する。
 - 種別: `test`
-- テスト: `cmd/record/main_test.go::TestRunTOCTOU_ContinuesOnWorldWritableDir`（Step 3-1 で反転）+ Step 3-3 の新規テスト
+- テスト: `cmd/record/main_test.go::TestRunTOCTOU_FailsClosedOnWorldWritableDir`（Step 3-1 で `TestRunTOCTOU_ContinuesOnWorldWritableDir` から反転・改名）+ Step 3-3 の新規テスト（`TestRunTOCTOU_ViolationLogsErrorAndExits` 等）
 
 **AC-17**: ハッシュディレクトリが world/group-writable を許さない権限（`0o700` 相当）で作成される。
 - 種別: `test`
