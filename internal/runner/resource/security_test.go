@@ -274,7 +274,7 @@ func TestHasTamperingSignal(t *testing.T) {
 // cause is environmental (no validator, exit 3) or a tampering signal
 // (verify_failed_<reason>, exit 1). It also covers the default note-only
 // behavior (exit 0) and the priority order when a policy deny coexists with
-// unverified content. See AC-13 / AC-14 / 02_architecture.md §3.4.3.
+// unverified content.
 func TestDryRun_UnverifiedContentExitCode(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -290,7 +290,7 @@ func TestDryRun_UnverifiedContentExitCode(t *testing.T) {
 			assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
 			summary:     nil,
 			expected:    DryRunExitAllow,
-			description: "AC-15: clean run stays exit 0",
+			description: "clean run stays exit 0",
 		},
 		{
 			name:        "environment cause unverified, flag off",
@@ -298,7 +298,7 @@ func TestDryRun_UnverifiedContentExitCode(t *testing.T) {
 			assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
 			summary:     unverifiedSummaryNoValidator("/etc/app/cfg.toml", "config"),
 			expected:    DryRunExitAllow,
-			description: "AC-15: default note-only behavior; no opt-in keeps exit 0",
+			description: "default note-only behavior; no opt-in keeps exit 0",
 		},
 		{
 			name:        "tampering signal unverified, flag off",
@@ -306,7 +306,7 @@ func TestDryRun_UnverifiedContentExitCode(t *testing.T) {
 			assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
 			summary:     unverifiedSummaryFromFailureReason("/etc/app/cfg.toml", "config", verification.ReasonHashMismatch),
 			expected:    DryRunExitAllow,
-			description: "AC-15: tampering without opt-in still exit 0 (dry-run is a preview)",
+			description: "tampering without opt-in still exit 0 (dry-run is a preview)",
 		},
 		{
 			name:        "environment cause unverified, flag on",
@@ -314,7 +314,7 @@ func TestDryRun_UnverifiedContentExitCode(t *testing.T) {
 			assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
 			summary:     unverifiedSummaryNoValidator("/etc/app/cfg.toml", "config"),
 			expected:    DryRunExitVerificationUnavailable,
-			description: "AC-14: environment cause -> exit 3",
+			description: "environment cause -> exit 3",
 		},
 		{
 			name:        "tampering signal unverified, flag on",
@@ -322,7 +322,7 @@ func TestDryRun_UnverifiedContentExitCode(t *testing.T) {
 			assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
 			summary:     unverifiedSummaryFromFailureReason("/etc/app/cfg.toml", "config", verification.ReasonHashMismatch),
 			expected:    DryRunExitPolicyDeny,
-			description: "AC-14: tampering signal -> exit 1 (not 3)",
+			description: "tampering signal -> exit 1 (not 3)",
 		},
 		{
 			name:       "mixed unverified, flag on, tampering dominates",
@@ -333,7 +333,7 @@ func TestDryRun_UnverifiedContentExitCode(t *testing.T) {
 				unverifiedSummaryFromFailureReason("/etc/app/tmpl.toml", "template", verification.ReasonHashFileNotFound),
 			),
 			expected:    DryRunExitPolicyDeny,
-			description: "AC-14: when tampering and environment coexist, tampering wins",
+			description: "when tampering and environment coexist, tampering wins",
 		},
 		{
 			name:        "policy deny dominates unverified tampering",

@@ -99,7 +99,7 @@ type DryRunOptions struct {
 	//     existing semantics of the flag from task 0136
 	//     (verification-unavailable deny).
 	//   - Tampering signal (hash mismatch, hash file not found, file read
-	//     error, permission denied — verification was attempted and
+	//     error, permission denied: verification was attempted and
 	//     reported as failed): exit code DryRunExitPolicyDeny (= 1) so the
 	//     tampering signal is not buried in the environment-cause code.
 	//
@@ -108,7 +108,7 @@ type DryRunOptions struct {
 	// "UNVERIFIED" and tags hash-mismatch failures with security_risk: high)
 	// but the dry-run still exits 0, so a local dry-run without the
 	// production hash database is not spuriously broken. See
-	// docs/tasks/0146_security_hardening/02_architecture.md §3.4.3 for the
+	// docs/tasks/0146_security_hardening/02_architecture.md (3.4.3) for the
 	// full design and docs/user/runner_command.md for the user-facing
 	// documentation.
 	FailOnVerificationUnavailable bool `json:"fail_on_verification_unavailable"`
@@ -127,7 +127,7 @@ const (
 	// analysis/verification being unavailable in this environment. It is
 	// also returned for environment-cause unverified content adopted via the
 	// dry-run fallback (skipped_no_validator), per
-	// docs/tasks/0146_security_hardening/02_architecture.md §3.4.3. It is
+	// docs/tasks/0146_security_hardening/02_architecture.md (3.4.3). It is
 	// distinct from DryRunExitPolicyDeny so CI can tell "could not verify"
 	// apart from a real policy deny and from a tampering signal
 	// (verify_failed_<reason>, which maps to DryRunExitPolicyDeny). Without
@@ -200,14 +200,14 @@ type DryRunResult struct {
 	Warnings         []DryRunWarning                       `json:"warnings"`
 	// PreviewExitCode is the process exit code the dry-run preview recommends.
 	// Priority (highest first):
-	//   1. DryRunExitPolicyDeny (= 1) — a command would be denied by policy,
+	//   1. DryRunExitPolicyDeny (= 1): a command would be denied by policy,
 	//      or any unverified content carries a tampering signal
 	//      (verify_failed_<reason>) and FailOnVerificationUnavailable is set.
-	//   2. DryRunExitVerificationUnavailable (= 3) — only environment-cause
+	//   2. DryRunExitVerificationUnavailable (= 3): only environment-cause
 	//      unverified content (skipped_no_validator) or
 	//      verification-unavailable denies are present and
 	//      FailOnVerificationUnavailable is set.
-	//   3. DryRunExitAllow (= 0) — every previewed command would be allowed
+	//   3. DryRunExitAllow (= 0): every previewed command would be allowed
 	//      and no unverified content was adopted, or the operator did not
 	//      opt into FailOnVerificationUnavailable (the default; dry-run is
 	//      a preview).

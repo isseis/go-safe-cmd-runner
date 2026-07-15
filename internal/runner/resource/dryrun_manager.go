@@ -82,8 +82,8 @@ type DryRunResourceManager struct {
 	// configuration/template files, and consulted by previewExitCodeLocked so
 	// that the --dry-run-fail-unverified flag can map "content adopted without
 	// successful hash verification" to the right exit code (environment cause
-	// -> 3, tampering signal -> 1). See 02_architecture.md §3.4.3 and
-	// 03_implementation_plan.md Step 4-6.
+	// -> 3, tampering signal -> 1). See docs/tasks/0146_security_hardening/02_architecture.md
+	// for the full design.
 	fileVerification *verification.FileVerificationSummary
 
 	// State management
@@ -422,7 +422,7 @@ func (d *DryRunResourceManager) recordPreviewDecision(cmd *runnertypes.RuntimeCo
 // PreviewExitCode returns the process exit code for the dry-run preview. The
 // priority, from highest to lowest, is:
 //
-//  1. A policy deny (DryRunExitPolicyDeny, = 1) — a command would be denied by
+//  1. A policy deny (DryRunExitPolicyDeny, = 1): a command would be denied by
 //     the risk gate. Dominates everything else so a real policy violation is
 //     never masked by an environment-cause exit code.
 //  2. A tampering signal (verify_failed_<reason>, e.g. hash mismatch) recorded
@@ -436,7 +436,7 @@ func (d *DryRunResourceManager) recordPreviewDecision(cmd *runnertypes.RuntimeCo
 //     FailOnVerificationUnavailable is set, this maps to
 //     DryRunExitVerificationUnavailable (= 3). By default it is reported only
 //     as a note (exit 0).
-//  4. 0 (DryRunExitAllow) — every previewed command would be allowed and no
+//  4. 0 (DryRunExitAllow): every previewed command would be allowed and no
 //     unverified content was adopted.
 func (d *DryRunResourceManager) PreviewExitCode() int {
 	d.mu.RLock()
@@ -457,7 +457,8 @@ func (d *DryRunResourceManager) previewExitCodeLocked() int {
 			// Tampering signal: only escalate when the operator opted in via
 			// --dry-run-fail-unverified. Without the opt-in we keep the default
 			// note-only, exit-0 behavior so a local dry-run is not broken by a
-			// missing hash database. See AC-14 / 02_architecture.md §3.4.3.
+			// missing hash database. See
+			// docs/tasks/0146_security_hardening/02_architecture.md (3.4.3).
 			if d.failOnVerificationUnavailable {
 				return DryRunExitPolicyDeny
 			}
