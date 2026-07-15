@@ -77,8 +77,9 @@ func (rc *ResultCollector) RecordFailure(filePath string, err error, context str
 // RecordUnverifiedContent records that a file's content was adopted without
 // successful hash verification. The reason explains why (no validator
 // configured, or verification failed). The failure parameter is optional:
-// pass nil for the no-validator case, or the underlying FailureReason
-// (e.g. ReasonHashMismatch) when verification was attempted and failed.
+// pass an empty string for the no-validator case, or the underlying
+// FailureReason (e.g. ReasonHashMismatch) when verification was attempted
+// and failed.
 //
 // This flag is independent of RecordSuccess/RecordFailure: a file whose
 // verification fails but whose content is then read anyway (dry-run
