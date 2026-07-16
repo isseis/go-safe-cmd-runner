@@ -695,8 +695,8 @@ staging fallback を暫定採用する場合の Phase 1 実装方針（Step 1-6 
 - [x] PR-8 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3 / 4-4）
 - [x] PR-9 マージ済み（対象ステップ: 4-5 / 4-6 / 4-7）
 - [x] PR-10 マージ済み（対象ステップ: 5-1 / 5-2 / 5-3）（実装完了・マージ待ち。PR 作成・レビュー・マージはステップ 5a として本 runplan セッション外で実施）
-- [ ] 全 PR で `make fmt && make test && make lint` がグリーン
-- [ ] 本書「7. 受け入れ基準の検証」の全 AC が検証済み
+- [x] 全 PR で `make fmt && make test && make lint` がグリーン
+- [x] 本書「7. 受け入れ基準の検証」の全 AC が検証済み
 
 ### 6.1 成功基準（総合）
 
@@ -822,10 +822,10 @@ staging fallback を暫定採用する場合の Phase 1 実装方針（Step 1-6 
 
 `make lint`/`make test` では検出できない項目のみを対象とする（AC 検証表と重複する `rg` コマンドはここに含めない）。
 
-- [ ] `resolveRunAsIdent`（小文字開始、移設前の名前）への残存参照がないことを確認する: `rg -n "resolveRunAsIdent" --type go` — 期待結果: ヒットなし（`risktypes.ResolveRunAsIdent` に統一されていること）。
-- [ ] `internal/runner/base/risk/runas_identity.go`・`runas_identity_test.go` が削除され、残存参照がないことを確認する: `rg -n "risk/runas_identity" --type go`。
-- [ ] `hashDirPermissions`・`0o750` の残存参照が `cmd/record/main.go` 以外にないことを確認する: `rg -n "0o750" cmd/record/`。
-- [ ] `stagedExecMode`（`0o500` → `0o550` 変更後）の残存する `0o500` 参照がないことを確認する: `rg -n "0o500" internal/runner/base/executor/`。
+- [x] `resolveRunAsIdent`（小文字開始、移設前の名前）への残存参照がないことを確認する: `rg -n "resolveRunAsIdent" --type go` — 期待結果: ヒットなし（`risktypes.ResolveRunAsIdent` に統一されていること）。（2026-07-16 確認: ヒットなし）
+- [x] `internal/runner/base/risk/runas_identity.go`・`runas_identity_test.go` が削除され、残存参照がないことを確認する: `rg -n "risk/runas_identity" --type go`。（2026-07-16 確認: ヒットなし）
+- [x] `hashDirPermissions`・`0o750` の残存参照が `cmd/record/main.go` 以外にないことを確認する: `rg -n "0o750" cmd/record/`。（2026-07-16 確認: ヒットなし、`hashDirPermissions` は `0o700` に変更済み）
+- [x] `stagedExecMode`（`0o500` → `0o550` 変更後）の残存する `0o500` 参照がないことを確認する: `rg -n "0o500" internal/runner/base/executor/`。（2026-07-16 確認: ヒットなし）
 
 ---
 
