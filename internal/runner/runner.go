@@ -498,6 +498,18 @@ func (r *Runner) CleanupAllResources() error {
 
 // GetDryRunResults returns dry-run analysis results if available
 func (r *Runner) GetDryRunResults() *resource.DryRunResult {
+	if r.verificationManager != nil {
+		// Record the file verification summary on the resource manager before
+		// computing dry-run results, so that PreviewExitCode (invoked as part
+		// of GetDryRunResults) can factor unverified configuration/template
+		// content into the exit-code mapping.
+		summary := r.verificationManager.GetVerificationSummary()
+		if setter, ok := r.resourceManager.(interface {
+			SetFileVerification(*verification.FileVerificationSummary)
+		}); ok {
+			setter.SetFileVerification(summary)
+		}
+	}
 	result := r.resourceManager.GetDryRunResults()
 	if result != nil && r.verificationManager != nil {
 		// Add file verification summary to the result

@@ -16,6 +16,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
 // Static errors
@@ -74,6 +75,16 @@ type DryRunResourceManager struct {
 	// deny was caused by verification being unavailable.
 	previewPolicyDeny              bool
 	previewVerificationUnavailable bool
+
+	// fileVerification is the file-verification summary produced by the
+	// verification.Manager for the dry-run preview. It is set via
+	// SetFileVerification once the verification manager has finished walking the
+	// configuration/template files, and consulted by previewExitCodeLocked so
+	// that the --dry-run-fail-unverified flag can map "content adopted without
+	// successful hash verification" to the right exit code (environment cause
+	// -> 3, tampering signal -> 1). See docs/tasks/0146_security_hardening/02_architecture.md
+	// for the full design.
+	fileVerification *verification.FileVerificationSummary
 
 	// State management
 	mu sync.RWMutex
@@ -408,10 +419,25 @@ func (d *DryRunResourceManager) recordPreviewDecision(cmd *runnertypes.RuntimeCo
 	})
 }
 
-// PreviewExitCode returns the process exit code for the dry-run preview. A policy
-// deny dominates and yields DryRunExitPolicyDeny. Otherwise a verification-unavailable
-// deny yields DryRunExitVerificationUnavailable when FailOnVerificationUnavailable is
-// set, or 0 (note-only) by default. It is 0 when every command is allowed.
+// PreviewExitCode returns the process exit code for the dry-run preview. The
+// priority, from highest to lowest, is:
+//
+//  1. A policy deny (DryRunExitPolicyDeny, = 1): a command would be denied by
+//     the risk gate. Dominates everything else so a real policy violation is
+//     never masked by an environment-cause exit code.
+//  2. A tampering signal (verify_failed_<reason>, e.g. hash mismatch) recorded
+//     in the file-verification summary as unverified content. When
+//     FailOnVerificationUnavailable is set, this maps to DryRunExitPolicyDeny
+//     (= 1) so the tampering signal is not buried in the environment-cause
+//     code. By default (no opt-in) it is reported only as a note and the
+//     dry-run still exits 0 (dry-run is a preview).
+//  3. An environment-cause unverified content (skipped_no_validator) or a
+//     verification-unavailable deny from the risk gate. When
+//     FailOnVerificationUnavailable is set, this maps to
+//     DryRunExitVerificationUnavailable (= 3). By default it is reported only
+//     as a note (exit 0).
+//  4. 0 (DryRunExitAllow): every previewed command would be allowed and no
+//     unverified content was adopted.
 func (d *DryRunResourceManager) PreviewExitCode() int {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -419,23 +445,62 @@ func (d *DryRunResourceManager) PreviewExitCode() int {
 }
 
 // previewExitCodeLocked computes the preview exit code. The caller must hold mu
-// (read or write).
-//
-// A genuine policy deny always fails (DryRunExitPolicyDeny). A
-// verification-unavailable deny is environment-induced ("could not verify here"):
-// by default it does not fail the dry-run (DryRunExitAllow) and is reported only
-// as a note, so a local/CI dry-run without the production hash database is not
-// spuriously broken. FailOnVerificationUnavailable opts CI into failing on it with
-// the distinct DryRunExitVerificationUnavailable code, which stays distinguishable
-// from a real policy deny.
+// (read or write). See PreviewExitCode for the full priority order and the
+// relationship between unverified content (verify_failed_* vs skipped_no_validator)
+// and the exit-code mapping.
 func (d *DryRunResourceManager) previewExitCodeLocked() int {
 	if d.previewPolicyDeny {
 		return DryRunExitPolicyDeny
+	}
+	if d.fileVerification != nil && d.fileVerification.UsedUnverifiedContent {
+		if hasTamperingSignal(d.fileVerification.UnverifiedFiles) {
+			// Tampering signal: only escalate when the operator opted in via
+			// --dry-run-fail-unverified. Without the opt-in we keep the default
+			// note-only, exit-0 behavior so a local dry-run is not broken by a
+			// missing hash database. See
+			// docs/tasks/0146_security_hardening/02_architecture.md (3.4.3).
+			if d.failOnVerificationUnavailable {
+				return DryRunExitPolicyDeny
+			}
+		} else if d.failOnVerificationUnavailable {
+			// Environment cause (no validator): distinct exit code so CI can
+			// tell "could not verify" apart from a real policy deny.
+			return DryRunExitVerificationUnavailable
+		}
 	}
 	if d.previewVerificationUnavailable && d.failOnVerificationUnavailable {
 		return DryRunExitVerificationUnavailable
 	}
 	return DryRunExitAllow
+}
+
+// SetFileVerification records the file-verification summary for the dry-run
+// preview. It is invoked by the runner once the verification manager has
+// finished walking the configuration and template files (see
+// runner.Runner.GetDryRunResults). A nil summary clears the field so the
+// preview returns to its environment-only behavior.
+//
+// Concurrent calls are serialized with mu. The summary is treated as
+// read-only after assignment; previewExitCodeLocked inspects it without
+// copying and so requires the lock held by the caller.
+func (d *DryRunResourceManager) SetFileVerification(summary *verification.FileVerificationSummary) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.fileVerification = summary
+}
+
+// hasTamperingSignal reports whether any unverified file usage carries a
+// concrete FailureReason (verify_failed_<reason>) rather than only a
+// skipped_no_validator environment cause. Hash mismatch, hash file not
+// found, file read error, and permission denied are all tampering-signals
+// here: verification was attempted and reported as failed.
+func hasTamperingSignal(usages []verification.UnverifiedFileUsage) bool {
+	for _, u := range usages {
+		if u.Failure != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // auditRiskDecision emits the dry-run command_risk_profile audit entry. The

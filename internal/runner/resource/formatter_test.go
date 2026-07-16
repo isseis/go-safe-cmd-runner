@@ -1097,3 +1097,245 @@ func TestJSONFormatter_FormatResult_WithFileVerification(t *testing.T) {
 	assert.Equal(t, "error", parsed.FileVerification.Failures[0].Level)
 	assert.Equal(t, "test", parsed.FileVerification.Failures[0].Context)
 }
+
+// TestTextFormatter_WriteFileVerification_HashMismatchSecurityRisk verifies that
+// hash-mismatch failures are tagged with "security_risk: high" in the text
+// formatter output, regardless of whether the unverified content was adopted
+// (unverified content in the FileVerification summary).
+func TestTextFormatter_WriteFileVerification_HashMismatchSecurityRisk(t *testing.T) {
+	formatter := NewTextFormatter()
+	result := &DryRunResult{
+		Metadata: &ResultMetadata{
+			GeneratedAt: time.Now(),
+			RunID:       "test-hash-mismatch-security",
+		},
+		ResourceAnalyses: []Analysis{},
+		FileVerification: &verification.FileVerificationSummary{
+			TotalFiles:    2,
+			VerifiedFiles: 1,
+			FailedFiles:   1,
+			HashDirStatus: verification.HashDirectoryStatus{
+				Path:      "/path/to/hashes",
+				Exists:    true,
+				Validated: true,
+			},
+			Failures: []verification.FileVerificationFailure{
+				{
+					Path:    "/usr/bin/tampered",
+					Reason:  verification.ReasonHashMismatch,
+					Level:   "error",
+					Message: "hash mismatch detected",
+					Context: "global",
+				},
+			},
+		},
+	}
+
+	opts := FormatterOptions{DetailLevel: DetailLevelDetailed}
+	output, err := formatter.FormatResult(result, opts)
+	require.NoError(t, err)
+
+	// Failures section must include the security_risk: high annotation for
+	// hash-mismatch reasons.
+	assert.Contains(t, output, "[ERROR] /usr/bin/tampered")
+	assert.Contains(t, output, "Reason: Hash mismatch (potential tampering)")
+	assert.Contains(t, output, "security_risk: high")
+}
+
+// TestTextFormatter_WriteFileVerification_UnverifiedSection verifies the text
+// formatter surfaces the "UNVERIFIED" section when the verification summary
+// reports unverified content usage.
+func TestTextFormatter_WriteFileVerification_UnverifiedSection(t *testing.T) {
+	formatter := NewTextFormatter()
+	hashMismatch := verification.ReasonHashMismatch
+
+	result := &DryRunResult{
+		Metadata: &ResultMetadata{
+			GeneratedAt: time.Now(),
+			RunID:       "test-unverified-section",
+		},
+		ResourceAnalyses: []Analysis{},
+		FileVerification: &verification.FileVerificationSummary{
+			TotalFiles:            3,
+			VerifiedFiles:         1,
+			FailedFiles:           0,
+			UsedUnverifiedContent: true,
+			HashDirStatus: verification.HashDirectoryStatus{
+				Path:      "/path/to/hashes",
+				Exists:    false,
+				Validated: false,
+			},
+			UnverifiedFiles: []verification.UnverifiedFileUsage{
+				{
+					Path:    "/etc/app/config.toml",
+					Reason:  string(verification.UnverifiedReasonNoValidator),
+					Context: "config",
+				},
+				{
+					Path:    "/etc/app/tampered.toml",
+					Reason:  string(verification.UnverifiedReasonFromFailure(hashMismatch)),
+					Context: "config",
+					Failure: &hashMismatch,
+				},
+			},
+		},
+	}
+
+	opts := FormatterOptions{DetailLevel: DetailLevelDetailed}
+	output, err := formatter.FormatResult(result, opts)
+	require.NoError(t, err)
+
+	// UNVERIFIED section header is present.
+	assert.Contains(t, output, "UNVERIFIED (content adopted without successful hash verification):")
+
+	// First entry: skipped_no_validator -> plain "UNVERIFIED" marker, no security_risk.
+	assert.Contains(t, output, "[UNVERIFIED] /etc/app/config.toml")
+	assert.Contains(t, output, "Reason: skipped_no_validator")
+	assert.Contains(t, output, "Context: config")
+
+	// Second entry: verify_failed_hash_mismatch -> "UNVERIFIED-TAMPER" marker
+	// and "security_risk: high" annotation.
+	assert.Contains(t, output, "[UNVERIFIED-TAMPER] /etc/app/tampered.toml")
+	assert.Contains(t, output, "Reason: verify_failed_hash_mismatch")
+	assert.Contains(t, output, "Failure: Hash mismatch (potential tampering)")
+	assert.Contains(t, output, "security_risk: high")
+
+	// No failures section should appear in this test (no failures recorded).
+	assert.NotContains(t, output, "Failures:")
+}
+
+// TestTextFormatter_WriteFileVerification_UnverifiedHiddenAtSummaryLevel
+// verifies the UNVERIFIED section is only rendered at detailed/full level,
+// matching the existing failures-section policy.
+func TestTextFormatter_WriteFileVerification_UnverifiedHiddenAtSummaryLevel(t *testing.T) {
+	formatter := NewTextFormatter()
+	result := &DryRunResult{
+		Metadata: &ResultMetadata{
+			GeneratedAt: time.Now(),
+			RunID:       "test-unverified-summary",
+		},
+		ResourceAnalyses: []Analysis{},
+		FileVerification: &verification.FileVerificationSummary{
+			TotalFiles:            2,
+			VerifiedFiles:         0,
+			FailedFiles:           0,
+			UsedUnverifiedContent: true,
+			HashDirStatus: verification.HashDirectoryStatus{
+				Path: "/path/to/hashes",
+			},
+			UnverifiedFiles: []verification.UnverifiedFileUsage{
+				{
+					Path:   "/etc/app/config.toml",
+					Reason: string(verification.UnverifiedReasonNoValidator),
+				},
+			},
+		},
+	}
+
+	opts := FormatterOptions{DetailLevel: DetailLevelSummary}
+	output, err := formatter.FormatResult(result, opts)
+	require.NoError(t, err)
+
+	// At summary level the UNVERIFIED section is hidden.
+	assert.NotContains(t, output, "UNVERIFIED (content adopted without successful hash verification):")
+	// The path itself is also hidden.
+	assert.NotContains(t, output, "/etc/app/config.toml")
+}
+
+// TestTextFormatter_WriteFileVerification_HashMismatchFailureSecurityRiskInFailures
+// verifies the security_risk: high annotation appears under "Failures:" (not
+// only under "UNVERIFIED:") for hash-mismatch failures.
+func TestTextFormatter_WriteFileVerification_HashMismatchFailureSecurityRiskInFailures(t *testing.T) {
+	formatter := NewTextFormatter()
+	result := &DryRunResult{
+		Metadata: &ResultMetadata{
+			GeneratedAt: time.Now(),
+			RunID:       "test-failures-security-risk",
+		},
+		ResourceAnalyses: []Analysis{},
+		FileVerification: &verification.FileVerificationSummary{
+			TotalFiles:    3,
+			VerifiedFiles: 2,
+			FailedFiles:   1,
+			HashDirStatus: verification.HashDirectoryStatus{
+				Path:      "/path/to/hashes",
+				Exists:    true,
+				Validated: true,
+			},
+			Failures: []verification.FileVerificationFailure{
+				{
+					Path:    "/usr/bin/suspicious",
+					Reason:  verification.ReasonHashMismatch,
+					Level:   "error",
+					Message: "hash mismatch detected",
+					Context: "global",
+				},
+			},
+		},
+	}
+
+	opts := FormatterOptions{DetailLevel: DetailLevelDetailed}
+	output, err := formatter.FormatResult(result, opts)
+	require.NoError(t, err)
+
+	// Locate the Failures section and ensure security_risk: high appears within
+	// it (not after UNVERIFIED). A simple contains check is enough because we
+	// expect exactly one occurrence of the failure.
+	failuresIdx := strings.Index(output, "Failures:")
+	require.GreaterOrEqual(t, failuresIdx, 0, "Failures section not found")
+	afterFailures := output[failuresIdx:]
+	assert.Contains(t, afterFailures, "[ERROR] /usr/bin/suspicious")
+	assert.Contains(t, afterFailures, "security_risk: high")
+}
+
+// TestJSONFormatter_FormatResult_UnverifiedInJSON verifies the JSON formatter
+// preserves the UsedUnverifiedContent flag and the UnverifiedFiles array
+// verbatim in the JSON output.
+func TestJSONFormatter_FormatResult_UnverifiedInJSON(t *testing.T) {
+	formatter := NewJSONFormatter()
+	hashMismatch := verification.ReasonHashMismatch
+
+	result := &DryRunResult{
+		Metadata: &ResultMetadata{
+			GeneratedAt: time.Now(),
+			RunID:       "test-json-unverified",
+		},
+		Status:           StatusSuccess,
+		Phase:            PhaseCompleted,
+		ResourceAnalyses: []Analysis{},
+		FileVerification: &verification.FileVerificationSummary{
+			TotalFiles:            2,
+			VerifiedFiles:         1,
+			FailedFiles:           0,
+			UsedUnverifiedContent: true,
+			HashDirStatus: verification.HashDirectoryStatus{
+				Path: "/test/hashes",
+			},
+			UnverifiedFiles: []verification.UnverifiedFileUsage{
+				{
+					Path:    "/etc/app/tampered.toml",
+					Reason:  string(verification.UnverifiedReasonFromFailure(hashMismatch)),
+					Context: "config",
+					Failure: &hashMismatch,
+				},
+			},
+		},
+	}
+
+	opts := FormatterOptions{DetailLevel: DetailLevelDetailed}
+	output, err := formatter.FormatResult(result, opts)
+	require.NoError(t, err)
+
+	var parsed DryRunResult
+	err = json.Unmarshal([]byte(output), &parsed)
+	require.NoError(t, err)
+
+	require.NotNil(t, parsed.FileVerification)
+	assert.True(t, parsed.FileVerification.UsedUnverifiedContent)
+	require.Len(t, parsed.FileVerification.UnverifiedFiles, 1)
+	assert.Equal(t, "/etc/app/tampered.toml", parsed.FileVerification.UnverifiedFiles[0].Path)
+	assert.Equal(t, "verify_failed_hash_mismatch", parsed.FileVerification.UnverifiedFiles[0].Reason)
+	assert.Equal(t, "config", parsed.FileVerification.UnverifiedFiles[0].Context)
+	require.NotNil(t, parsed.FileVerification.UnverifiedFiles[0].Failure)
+	assert.Equal(t, verification.ReasonHashMismatch, *parsed.FileVerification.UnverifiedFiles[0].Failure)
+}
