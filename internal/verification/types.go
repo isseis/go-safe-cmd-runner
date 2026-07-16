@@ -123,6 +123,21 @@ const (
 	ReasonPermissionDenied FailureReason = "permission_denied"
 )
 
+// IsTamperingSignal reports whether the failure reason is concrete evidence of
+// tampering, as opposed to an environment cause that merely prevented
+// verification from completing. Only hash_mismatch qualifies as a tampering
+// signal; all other reasons are treated as environment causes.
+func (r FailureReason) IsTamperingSignal() bool {
+	return r == ReasonHashMismatch
+}
+
+// IsTamperingSignal reports whether this unverified file usage carries a
+// tampering signal. A usage with no failure reason (skipped_no_validator) is
+// an environment cause, never a tampering signal.
+func (u UnverifiedFileUsage) IsTamperingSignal() bool {
+	return u.Failure != nil && u.Failure.IsTamperingSignal()
+}
+
 // UnverifiedReason explains why a file's content was adopted without
 // successful hash verification. It is distinct from FailureReason because
 // the two are recorded in different states: FailureReason describes a

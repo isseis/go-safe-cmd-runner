@@ -239,7 +239,7 @@ func (f *TextFormatter) formatLevelMarker(level string) string {
 // from every other unverified cause ("UNVERIFIED"); the skipped_no_validator vs.
 // verify_failed_<reason> distinction is conveyed separately by the "Reason:" line.
 func (f *TextFormatter) formatUnverifiedMarker(usage verification.UnverifiedFileUsage) string {
-	if usage.Failure != nil && *usage.Failure == verification.ReasonHashMismatch {
+	if usage.IsTamperingSignal() {
 		return "UNVERIFIED-TAMPER"
 	}
 	return "UNVERIFIED"
@@ -252,7 +252,7 @@ func (f *TextFormatter) formatUnverifiedMarker(usage verification.UnverifiedFile
 // is the only one flagged. Shared by TextFormatter and JSONFormatter so both
 // output formats annotate the same failures identically.
 func securityRiskForFailureReason(reason verification.FailureReason) string {
-	if reason == verification.ReasonHashMismatch {
+	if reason.IsTamperingSignal() {
 		return "high"
 	}
 	return ""
