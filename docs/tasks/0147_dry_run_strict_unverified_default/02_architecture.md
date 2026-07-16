@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-07-16 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 設計レビューを受け、F-005（`verify_files` の検証失敗を終了コードへ反映。§5.5）と F-006（非ゼロ終了の根拠を詳細レベルによらず出力。§4.1 / §6.3）を要件へ追加し、本設計へ反映した。さらに F-005 の検討過程で、`VerifyEnvironmentFile`（`internal/verification/manager.go`）が production の呼び出し元を持たない死んだコードであることが判明し、事前クリーンアップとして F-007（削除。AC-28。§5.8）を要件へ追加した。これに伴い、防御的に検討していた AC-21（env コンテキストの `hash_mismatch` 個別分類）は production から到達し得ないため定義しないこととした（意図的な欠番）。要件書は再承認待ち（`draft`）。残る未解決の論点はない（§10 参照） |
+| Review date | 2026-07-16 |
+| Reviewer | isseis |
+| Comments | |
 
 ## 1. 設計の全体像
 
