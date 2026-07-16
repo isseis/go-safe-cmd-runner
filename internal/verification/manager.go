@@ -88,41 +88,6 @@ func (m *Manager) verifyAndReadFile(filePath string, fileType string) ([]byte, e
 	return content, nil
 }
 
-// VerifyEnvironmentFile verifies the integrity of an environment file using hash validation
-func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
-	slog.Debug("Starting environment file verification",
-		"env_file_path", envFilePath,
-		"hash_directory", m.hashDir)
-
-	// Ensure hash directory is validated
-	if err := m.ensureHashDirectoryValidated(); err != nil {
-		return err
-	}
-
-	// Verify file hash using filevalidator (with privilege fallback)
-	if err := m.verifyFile(envFilePath, "env"); err != nil {
-		// In dry-run mode, the failure is already recorded and logged by
-		// verifyFile; treat it as non-fatal here.
-		if m.isDryRun {
-			return nil
-		}
-		slog.Error("Environment file verification failed",
-			"env_file_path", envFilePath,
-			"error", err)
-		return &OpError{
-			Op:   "VerifyHash",
-			Path: envFilePath,
-			Err:  err,
-		}
-	}
-
-	slog.Info("Environment file verification completed successfully",
-		"env_file_path", envFilePath,
-		"hash_directory", m.hashDir)
-
-	return nil
-}
-
 // ValidateHashDirectory validates the hash directory security
 func (m *Manager) ValidateHashDirectory() error {
 	// Skip hash directory validation if explicitly requested or in dry-run mode
