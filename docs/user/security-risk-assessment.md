@@ -153,6 +153,46 @@ func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode
 - ✅ **Kernel-Level Protection**: Leveraging latest security features with openat2
 - ✅ **Path Manipulation Prevention**: Base64 encoding and symbolic link disabling
 
+#### Assumptions and Limitations (File Size and non-Linux TOCTOU)
+
+The tool imposes upper bounds on the size of files it can safely read and analyze. These limits
+are intentional defenses against memory-exhaustion attacks and must be understood as operational
+assumptions for production deployments.
+
+**File size limits (two distinct constants)**:
+
+- **`safefileio.MaxFileSize` (128 MB)**: Applies to safe reads of configuration files, templates,
+  and similar content via `SafeReadFile`. Defined as `128 * 1024 * 1024` in
+  `internal/safefileio/safe_file.go` as a memory-exhaustion safeguard. Files exceeding this
+  limit are rejected with `ErrFileTooLarge`.
+- **`filevalidator.maxFileSize` (1 GB)**: Applies to binary analysis (ELF / Mach-O, etc.).
+  Defined as `1 << 30` in `internal/filevalidator/validator.go` to bound analysis time and
+  memory consumption. This value is shared with `elfanalyzer`/`machoanalyzer`.
+
+These are **two separate constants** and must not be conflated. 128 MB is comfortable headroom
+for binary analysis, but 1 GB is exclusively for binary analysis. **This task does not implement
+threshold configurability or limit separation** (splitting hash computation from analysis). The
+reasons are: (1) the requirements scope is limited to documenting the assumption and
+recording the design decision; (2) there is no concrete demand for large-file verification today
+(YAGNI); (3) limit separation would require revisiting the memory model of the analyzers as a
+whole, which exceeds the scope of this hardening task. A future task can revisit this if a
+concrete need arises.
+
+**Production target and non-Linux environments**:
+
+- Production deployments target **Linux kernel 5.6+ (with `openat2` support)**. `openat2(2)`
+  atomically combines path resolution and `open`, fundamentally eliminating the TOCTOU race
+  window between verification and execution.
+- On non-Linux environments (macOS, etc., without `openat2` support), the system falls back to
+  `safeOpenFileFallback`, which uses a two-stage check: verify the parent directory is not a
+  symbolic link → open with `O_NOFOLLOW` → re-verify. This implementation is robust but, in
+  principle, **cannot match the atomicity of `openat2`** and a very small TOCTOU race window
+  remains (acknowledged in the code comments).
+- Therefore, **macOS and similar platforms are limited to development or restricted use**. All
+  production deployments must use Linux with `openat2` available. On kernels without `openat2`
+  support (Linux 5.5 or older), running the tool in production implies accepting the theoretical
+  possibility of file substitution between verification and execution.
+
 ---
 
 ## 🔍 Recent Improvements

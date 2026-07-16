@@ -498,6 +498,9 @@
 | 具体的 | specific | |
 | 仕様 | specification | |
 | スタックオーバーフロー | stack overflow | 再帰呼び出しの文脈 |
+| saved-set-uid | saved-set-uid | Linux のプロセス credential。`setuid(2)` で設定され、execve 時に実 UID として使われ得る保存 UID。0146 で `executionContext.originalSUID` として捕捉・復元後不変条件検証の対象。日本語表記のままか "saved set-UID" と書く |
+| saved-set-gid | saved-set-gid | Linux のプロセス credential。`setgid(2)` で設定され、execve 時に実 GID として使われ得る保存 GID。0146 で `executionContext.originalSGID` として捕捉・復元後不変条件検証の対象 |
+| 補助グループ | supplementary group | プロセスが所属する主グループ以外の追加グループ。`getgrouplist(3)` で列挙。0146 の run-as identity 解決で対象ユーザーの補助グループ集合を取得し、`SysProcAttr.Credential.Groups` 経由でカーネル側アトミック設定に渡す |
 | 単独 | standalone | |
 | 標準 | standard | |
 | 標準パス | standard path | |
@@ -733,6 +736,7 @@
 | 2026-06-18 | システム変更リスク粗粒度化（Task 0139）関連の用語を追加 (first line of defense) |
 | 2026-06-26 | 監査・文書整合（Task 0143）関連の用語を追加・整合 (migration note〔canonical〕, per-operand evaluation) |
 | 2026-07-16 | 未検証の設定／テンプレートコンテンツ（Task 0146）関連の用語を追加 (unverified, environment cause) |
+| 2026-07-16 | F-006/F-007 ドキュメント化（Task 0146 Phase 4）関連の用語を追加 (saved-set-uid, saved-set-gid, supplementary group) |
 
 ---
 
