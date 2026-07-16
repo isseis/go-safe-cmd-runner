@@ -165,8 +165,8 @@ func (f *TextFormatter) writeFileVerification(buf *strings.Builder, summary *ver
 			marker := f.formatLevelMarker(failure.Level)
 			fmt.Fprintf(buf, "%d. [%s] %s\n", i+1, marker, failure.Path)
 			fmt.Fprintf(buf, "   Reason: %s\n", f.formatReason(failure.Reason))
-			if failure.Reason == verification.ReasonHashMismatch {
-				buf.WriteString("   security_risk: high\n")
+			if risk := securityRiskForFailureReason(failure.Reason); risk != "" {
+				fmt.Fprintf(buf, "   security_risk: %s\n", risk)
 			}
 			fmt.Fprintf(buf, "   Context: %s\n", failure.Context)
 			if failure.Message != "" {
@@ -189,8 +189,8 @@ func (f *TextFormatter) writeFileVerification(buf *strings.Builder, summary *ver
 			fmt.Fprintf(buf, "   Reason: %s\n", usage.Reason)
 			if usage.Failure != nil {
 				fmt.Fprintf(buf, "   Failure: %s\n", f.formatReason(*usage.Failure))
-				if *usage.Failure == verification.ReasonHashMismatch {
-					buf.WriteString("   security_risk: high\n")
+				if risk := securityRiskForFailureReason(*usage.Failure); risk != "" {
+					fmt.Fprintf(buf, "   security_risk: %s\n", risk)
 				}
 			}
 			if usage.Context != "" {
@@ -243,6 +243,19 @@ func (f *TextFormatter) formatUnverifiedMarker(usage verification.UnverifiedFile
 		return "UNVERIFIED-TAMPER"
 	}
 	return "UNVERIFIED"
+}
+
+// securityRiskForFailureReason returns the security_risk annotation for a
+// verification failure reason, or "" if the reason does not warrant one.
+// Hash mismatch is the only reason that is concrete evidence of tampering
+// (as opposed to an environment cause like a missing hash directory), so it
+// is the only one flagged. Shared by TextFormatter and JSONFormatter so both
+// output formats annotate the same failures identically.
+func securityRiskForFailureReason(reason verification.FailureReason) string {
+	if reason == verification.ReasonHashMismatch {
+		return "high"
+	}
+	return ""
 }
 
 // writeResourceAnalyses writes the resource analyses section
@@ -388,12 +401,100 @@ func (f *JSONFormatter) FormatResult(result *DryRunResult, opts FormatterOptions
 		// keep all details
 	}
 
-	data, err := json.MarshalIndent(&resultCopy, "", "  ")
+	// Wrap in jsonDryRunResult so FileVerification (if present) carries the
+	// same security_risk annotation as the text formatter, rather than
+	// requiring JSON consumers to re-derive "hash_mismatch means tampering"
+	// themselves.
+	wrapped := jsonDryRunResult{
+		DryRunResult:     &resultCopy,
+		FileVerification: newJSONFileVerificationSummary(resultCopy.FileVerification),
+	}
+
+	data, err := json.MarshalIndent(&wrapped, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 
 	return string(data), nil
+}
+
+// jsonDryRunResult overrides DryRunResult.FileVerification with the
+// security_risk-annotated jsonFileVerificationSummary for JSON output. The
+// explicit field at depth 0 takes precedence over the promoted field of the
+// same JSON name from the embedded *DryRunResult (depth 1), per
+// encoding/json's field-resolution rules.
+type jsonDryRunResult struct {
+	*DryRunResult
+	FileVerification *jsonFileVerificationSummary `json:"file_verification,omitempty"`
+}
+
+// jsonFileVerificationSummary mirrors verification.FileVerificationSummary
+// for JSON output, annotating each failure and unverified-file usage with a
+// derived security_risk field (see securityRiskForFailureReason) so the JSON
+// output carries the same tampering signal the text formatter shows.
+type jsonFileVerificationSummary struct {
+	TotalFiles            int                              `json:"total_files"`
+	VerifiedFiles         int                              `json:"verified_files"`
+	FailedFiles           int                              `json:"failed_files"`
+	Duration              time.Duration                    `json:"duration"`
+	HashDirStatus         verification.HashDirectoryStatus `json:"hash_dir_status"`
+	Failures              []jsonFileVerificationFailure    `json:"failures,omitempty"`
+	UsedUnverifiedContent bool                             `json:"used_unverified_content"`
+	UnverifiedFiles       []jsonUnverifiedFileUsage        `json:"unverified_files,omitempty"`
+}
+
+// jsonFileVerificationFailure augments verification.FileVerificationFailure
+// with a derived security_risk annotation.
+type jsonFileVerificationFailure struct {
+	verification.FileVerificationFailure
+	SecurityRisk string `json:"security_risk,omitempty"`
+}
+
+// jsonUnverifiedFileUsage augments verification.UnverifiedFileUsage with a
+// derived security_risk annotation for hash-mismatch tampering signals.
+type jsonUnverifiedFileUsage struct {
+	verification.UnverifiedFileUsage
+	SecurityRisk string `json:"security_risk,omitempty"`
+}
+
+// newJSONFileVerificationSummary converts a verification.FileVerificationSummary
+// into its JSON representation, computing the security_risk annotation for
+// each failure and unverified-file usage. Returns nil if summary is nil, so
+// the "file_verification" key is omitted entirely (matching the existing
+// `omitempty` behavior for dry-run results with no file verification data).
+func newJSONFileVerificationSummary(summary *verification.FileVerificationSummary) *jsonFileVerificationSummary {
+	if summary == nil {
+		return nil
+	}
+
+	out := &jsonFileVerificationSummary{
+		TotalFiles:            summary.TotalFiles,
+		VerifiedFiles:         summary.VerifiedFiles,
+		FailedFiles:           summary.FailedFiles,
+		Duration:              summary.Duration,
+		HashDirStatus:         summary.HashDirStatus,
+		UsedUnverifiedContent: summary.UsedUnverifiedContent,
+	}
+
+	for _, failure := range summary.Failures {
+		out.Failures = append(out.Failures, jsonFileVerificationFailure{
+			FileVerificationFailure: failure,
+			SecurityRisk:            securityRiskForFailureReason(failure.Reason),
+		})
+	}
+
+	for _, usage := range summary.UnverifiedFiles {
+		risk := ""
+		if usage.Failure != nil {
+			risk = securityRiskForFailureReason(*usage.Failure)
+		}
+		out.UnverifiedFiles = append(out.UnverifiedFiles, jsonUnverifiedFileUsage{
+			UnverifiedFileUsage: usage,
+			SecurityRisk:        risk,
+		})
+	}
+
+	return out
 }
 
 // redactSensitiveInfo redacts sensitive information from the result

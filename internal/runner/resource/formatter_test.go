@@ -1339,3 +1339,75 @@ func TestJSONFormatter_FormatResult_UnverifiedInJSON(t *testing.T) {
 	require.NotNil(t, parsed.FileVerification.UnverifiedFiles[0].Failure)
 	assert.Equal(t, verification.ReasonHashMismatch, *parsed.FileVerification.UnverifiedFiles[0].Failure)
 }
+
+// TestJSONFormatter_FormatResult_SecurityRiskAnnotation verifies that the JSON
+// formatter annotates hash-mismatch failures and unverified-file usages with
+// a "security_risk": "high" field, mirroring the "security_risk: high" the
+// text formatter already writes (see securityRiskForFailureReason). Other
+// failure reasons (e.g. a missing hash directory) must not carry the
+// annotation, and it must be present in both the "failures" and
+// "unverified_files" arrays.
+func TestJSONFormatter_FormatResult_SecurityRiskAnnotation(t *testing.T) {
+	formatter := NewJSONFormatter()
+	hashMismatch := verification.ReasonHashMismatch
+
+	result := &DryRunResult{
+		Metadata: &ResultMetadata{
+			GeneratedAt: time.Now(),
+			RunID:       "test-json-security-risk",
+		},
+		ResourceAnalyses: []Analysis{},
+		FileVerification: &verification.FileVerificationSummary{
+			TotalFiles:            2,
+			FailedFiles:           2,
+			UsedUnverifiedContent: true,
+			Failures: []verification.FileVerificationFailure{
+				{
+					Path:   "/usr/bin/tampered",
+					Reason: verification.ReasonHashMismatch,
+					Level:  "error",
+				},
+				{
+					Path:   "/etc/app/missing-hash-dir",
+					Reason: verification.ReasonHashDirNotFound,
+					Level:  "warn",
+				},
+			},
+			UnverifiedFiles: []verification.UnverifiedFileUsage{
+				{
+					Path:    "/etc/app/tampered.toml",
+					Reason:  string(verification.UnverifiedReasonFromFailure(hashMismatch)),
+					Context: "config",
+					Failure: &hashMismatch,
+				},
+			},
+		},
+	}
+
+	opts := FormatterOptions{DetailLevel: DetailLevelDetailed}
+	output, err := formatter.FormatResult(result, opts)
+	require.NoError(t, err)
+
+	var parsed struct {
+		FileVerification struct {
+			Failures []struct {
+				Path         string `json:"path"`
+				SecurityRisk string `json:"security_risk"`
+			} `json:"failures"`
+			UnverifiedFiles []struct {
+				Path         string `json:"path"`
+				SecurityRisk string `json:"security_risk"`
+			} `json:"unverified_files"`
+		} `json:"file_verification"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(output), &parsed))
+
+	require.Len(t, parsed.FileVerification.Failures, 2)
+	assert.Equal(t, "/usr/bin/tampered", parsed.FileVerification.Failures[0].Path)
+	assert.Equal(t, "high", parsed.FileVerification.Failures[0].SecurityRisk)
+	assert.Equal(t, "/etc/app/missing-hash-dir", parsed.FileVerification.Failures[1].Path)
+	assert.Empty(t, parsed.FileVerification.Failures[1].SecurityRisk)
+
+	require.Len(t, parsed.FileVerification.UnverifiedFiles, 1)
+	assert.Equal(t, "high", parsed.FileVerification.UnverifiedFiles[0].SecurityRisk)
+}
