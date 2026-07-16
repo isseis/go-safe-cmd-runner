@@ -164,10 +164,11 @@ assumptions for production deployments.
 - **`safefileio.MaxFileSize` (128 MB)**: Applies to safe reads of configuration files, templates,
   and similar content via `SafeReadFile`. Defined as `128 * 1024 * 1024` in
   `internal/safefileio/safe_file.go` as a memory-exhaustion safeguard. Files exceeding this
-  limit are rejected with `ErrFileTooLarge`.
+  limit are rejected with `safefileio.ErrFileTooLarge`.
 - **`filevalidator.maxFileSize` (1 GB)**: Applies to binary analysis (ELF / Mach-O, etc.).
   Defined as `1 << 30` in `internal/filevalidator/validator.go` to bound analysis time and
-  memory consumption. This value is shared with `elfanalyzer`/`machoanalyzer`.
+  memory consumption. `elfanalyzer` and `machoanalyzer` each define their own independent
+  `maxFileSize` constant matching the same 1 GB limit, rather than referencing a shared symbol.
 
 These are **two separate constants** and must not be conflated. 128 MB is comfortable headroom
 for configuration files and templates, but 1 GB is exclusively for binary analysis. **This task does not implement
@@ -183,7 +184,8 @@ concrete need arises.
 - Production deployments target **Linux kernel 5.6+ (with `openat2` support)**. `openat2(2)`
   atomically combines path resolution and `open`, fundamentally eliminating the TOCTOU race
   window between verification and execution.
-- On non-Linux environments (macOS, etc., without `openat2` support), the system falls back to
+- Whenever `openat2` is unavailable or explicitly disabled (via `DisableOpenat2`) — including
+  non-Linux environments such as macOS, and Linux kernels older than 5.6 — the system falls back to
   `safeOpenFileFallback`, which uses a two-stage check: verify the parent directory is not a
   symbolic link → open with `O_NOFOLLOW` → re-verify. This implementation is robust but, in
   principle, **cannot match the atomicity of `openat2`** and a very small TOCTOU race window

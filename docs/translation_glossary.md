@@ -498,9 +498,9 @@
 | 具体的 | specific | |
 | 仕様 | specification | |
 | スタックオーバーフロー | stack overflow | 再帰呼び出しの文脈 |
-| saved-set-uid | saved-set-uid | Linux のプロセス credential。`setuid(2)` で設定され、execve 時に実 UID として使われ得る保存 UID。0146 で `executionContext.originalSUID` として捕捉・復元後不変条件検証の対象。日本語表記のままか "saved set-UID" と書く |
-| saved-set-gid | saved-set-gid | Linux のプロセス credential。`setgid(2)` で設定され、execve 時に実 GID として使われ得る保存 GID。0146 で `executionContext.originalSGID` として捕捉・復元後不変条件検証の対象 |
-| 補助グループ | supplementary group | プロセスが所属する主グループ以外の追加グループ。`getgrouplist(3)` で列挙。0146 の run-as identity 解決で対象ユーザーの補助グループ集合を取得し、`SysProcAttr.Credential.Groups` 経由でカーネル側アトミック設定に渡す |
+| saved-set-uid | saved-set-uid | Linux のプロセス credential の1つ（保存 UID）。本プロジェクトでは実 UID として使う目的ではなく、`readSavedIDs()`（`Getresuid(2)` の第3戻り値）経由で権限降格前に `executionContext.originalSUID` として捕捉し、権限復元後に同じ値へ戻っているかを再検証することで、意図しない権限変化・リークを検出するために用いる。日本語表記のままか "saved set-UID" と書く |
+| saved-set-gid | saved-set-gid | Linux のプロセス credential の1つ（保存 GID）。本プロジェクトでは実 GID として使う目的ではなく、`readSavedIDs()`（`Getresgid(2)` の第3戻り値）経由で権限降格前に `executionContext.originalSGID` として捕捉し、権限復元後に同じ値へ戻っているかを再検証することで、意図しない権限変化・リークを検出するために用いる |
+| 補助グループ | supplementary group | プロセスが所属する主グループ以外の追加グループ。0146 の run-as identity 解決では `os/user` パッケージ（`user.Lookup` → `GroupIds()`）経由で対象ユーザーの補助グループ集合を取得し、`SysProcAttr.Credential.Groups` 経由でカーネル側アトミック設定に渡す。列挙方式はビルド依存: cgo 有効時は `getgrouplist(3)`（nsswitch 準拠、`internal/groupmembership` の cgo 実装と同様の仕組み）、純 Go ビルド（`osusergo`）では `/etc/group`（`internal/groupmembership` の非 cgo 実装と同様）のみを参照する |
 | 単独 | standalone | |
 | 標準 | standard | |
 | 標準パス | standard path | |

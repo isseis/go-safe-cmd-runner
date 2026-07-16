@@ -162,10 +162,11 @@ func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode
 
 - **`safefileio.MaxFileSize`（128 MB）**: 設定ファイル・テンプレート等の安全な読み込み（`SafeReadFile`）に
   適用される上限。`internal/safefileio/safe_file.go` で `128 * 1024 * 1024` として定義され、
-  メモリ枯渇対策です。これを超えるファイルは `ErrFileTooLarge` で拒否されます。
+  メモリ枯渇対策です。これを超えるファイルは `safefileio.ErrFileTooLarge` で拒否されます。
 - **`filevalidator.maxFileSize`（1 GB）**: バイナリ解析（ELF / Mach-O 等）に適用される上限。
   `internal/filevalidator/validator.go` で `1 << 30` として定義され、解析時間とメモリ使用量を
-  抑制するための別個の定数です。`elfanalyzer`/`machoanalyzer` と共通の値です。
+  抑制するための別個の定数です。`elfanalyzer`/`machoanalyzer` もそれぞれ同じ 1 GB の上限に合わせた
+  独自の定数を個別に定義しており、共通のシンボルを参照しているわけではありません。
 
 両者は **別々の定数** であり混同しないでください。128 MB は設定ファイルやテンプレートには十分な余裕がありますが、
 1 GB はバイナリ解析専用です。**本タスクでは閾値の設定可能化や上限分離（ハッシュ計算と解析の分離）は
@@ -177,8 +178,10 @@ func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode
 
 - 本番ターゲットは **Linux カーネル 5.6+ (openat2 対応)** を前提とします。`openat2(2)` は path 解決と
   open をアトミックに行うことで、検証〜実行間の TOCTOU 競合ウィンドウを根本的に排除します。
-- non-Linux 環境（macOS 等、`openat2` 非対応）では `safeOpenFileFallback` による「親ディレクトリの
-  非シンボリックリンク確認 → `O_NOFOLLOW` open → 再確認」の二段階チェックで代替します。実装は堅牢ですが、
+- `openat2` が利用できない場合、または（`DisableOpenat2` により）明示的に無効化されている場合は、
+  macOS 等の non-Linux 環境に限らず Linux カーネル 5.6 未満の場合も含めて常に `safeOpenFileFallback`
+  による「親ディレクトリの非シンボリックリンク確認 → `O_NOFOLLOW` open → 再確認」の二段階チェックで
+  代替します。実装は堅牢ですが、
   原理的に `openat2` のアトミック性には及ばず、**極めて短い TOCTOU 競合ウィンドウが残ります**（コード内
   コメントでも認識済み）。
 - このため、**macOS 等は開発・限定用途に限る**運用を推奨します。本番運用は必ず Linux + `openat2` 環境を
