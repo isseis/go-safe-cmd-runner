@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `reviewed` |
+| Status | `approved` |
 | Created | 2026-07-16 |
 | Review date | 2026-07-16 |
-| Reviewer | Claude Code / Issei Suzuki |
-| Comments | コード実測に基づくレビュー実施。影響箇所・影響テストの補完、AC-05 / AC-08 の検証方法の是正を反映。**Q-01〜Q-03 は全件解決済み（§5）**。Q-02 の決定（`file_read_error` / `permission_denied` を環境起因へ変更）により `hash_mismatch` のみが exit 1 となり、F-002 の分類・AC-11・AC-13 を更新。Q-03 の決定により F-004（AC-18 / AC-19）を追加。 |
+| Reviewer | isseis |
+| Comments | |
 
 ## 1. 背景と目的
 
