@@ -498,6 +498,9 @@
 | 具体的 | specific | |
 | 仕様 | specification | |
 | スタックオーバーフロー | stack overflow | 再帰呼び出しの文脈 |
+| saved-set-uid | saved-set-uid | Linux のプロセス credential の1つ（保存 UID）。本プロジェクトでは実 UID として使う目的ではなく、`readSavedIDs()`（`Getresuid(2)` の第3戻り値）経由で権限降格前に `executionContext.originalSUID` として捕捉し、権限復元後に同じ値へ戻っているかを再検証することで、意図しない権限変化・リークを検出するために用いる。日本語表記のままか "saved set-UID" と書く |
+| saved-set-gid | saved-set-gid | Linux のプロセス credential の1つ（保存 GID）。本プロジェクトでは実 GID として使う目的ではなく、`readSavedIDs()`（`Getresgid(2)` の第3戻り値）経由で権限降格前に `executionContext.originalSGID` として捕捉し、権限復元後に同じ値へ戻っているかを再検証することで、意図しない権限変化・リークを検出するために用いる |
+| 補助グループ | supplementary group | プロセスが所属する主グループ以外の追加グループ。0146 の run-as identity 解決では `os/user` パッケージ（`user.Lookup` → `GroupIds()`）経由で対象ユーザーの補助グループ集合を取得し、`SysProcAttr.Credential.Groups` 経由でカーネル側アトミック設定に渡す。列挙方式はビルド依存: cgo 有効時は `getgrouplist(3)`（nsswitch 準拠、`internal/groupmembership` の cgo 実装と同様の仕組み）、純 Go ビルド（`osusergo`）では `/etc/group`（`internal/groupmembership` の非 cgo 実装と同様）のみを参照する |
 | 単独 | standalone | |
 | 標準 | standard | |
 | 標準パス | standard path | |
@@ -733,6 +736,7 @@
 | 2026-06-18 | システム変更リスク粗粒度化（Task 0139）関連の用語を追加 (first line of defense) |
 | 2026-06-26 | 監査・文書整合（Task 0143）関連の用語を追加・整合 (migration note〔canonical〕, per-operand evaluation) |
 | 2026-07-16 | 未検証の設定／テンプレートコンテンツ（Task 0146）関連の用語を追加 (unverified, environment cause) |
+| 2026-07-16 | F-006/F-007 ドキュメント化（Task 0146 Phase 4）関連の用語を追加 (saved-set-uid, saved-set-gid, supplementary group) |
 
 ---
 
