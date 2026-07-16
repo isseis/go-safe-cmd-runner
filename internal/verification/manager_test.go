@@ -501,62 +501,6 @@ func TestVerifyAndReadConfigFile(t *testing.T) {
 	})
 }
 
-// TestVerifyEnvironmentFile tests the VerifyEnvironmentFile method
-func TestVerifyEnvironmentFile(t *testing.T) {
-	t.Run("successful_environment_file_verification", func(t *testing.T) {
-		// Create temporary directory and test env file
-		tmpDir := tu.SafeTempDir(t)
-		envPath := filepath.Join(tmpDir, ".env")
-		envContent := `DATABASE_URL=postgresql://localhost/test
-		API_KEY=test_key_123
-		DEBUG=true
-		`
-
-		err := os.WriteFile(envPath, []byte(envContent), 0o600)
-		require.NoError(t, err)
-
-		// Create manager for testing with hash directory validation skipped
-		manager, err := NewManagerForTest(tmpDir, WithFileValidatorDisabled(), WithSkipHashDirectoryValidation())
-		require.NoError(t, err)
-
-		// Test verification
-		err = manager.VerifyEnvironmentFile(envPath)
-
-		// Should succeed when file validator is disabled
-		assert.NoError(t, err)
-	})
-
-	t.Run("environment_file_verification_failure", func(t *testing.T) {
-		tmpDir := tu.SafeTempDir(t)
-
-		// Create manager without disabling file validator
-		manager, err := NewManagerForTest(tmpDir)
-		require.NoError(t, err)
-
-		nonExistentEnv := filepath.Join(tmpDir, "nonexistent.env")
-
-		// Test with non-existent file
-		err = manager.VerifyEnvironmentFile(nonExistentEnv)
-
-		// Should fail for non-existent file
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), nonExistentEnv)
-	})
-
-	t.Run("hash_directory_validation_failure", func(t *testing.T) {
-		manager := invalidHashDirManager()
-
-		envPath := "/some/.env"
-
-		// Test with invalid hash directory
-		err := manager.VerifyEnvironmentFile(envPath)
-
-		// Should fail hash directory validation
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "hash directory validation failed")
-	})
-}
-
 // TestVerifyGlobalFiles tests the VerifyGlobalFiles method
 func TestVerifyGlobalFiles(t *testing.T) {
 	t.Run("successful_global_files_verification", func(t *testing.T) {

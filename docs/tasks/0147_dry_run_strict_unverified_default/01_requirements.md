@@ -232,10 +232,17 @@ F-001（常時 hard fail 化）の目的を完全に満たす。
 
 終了コードの判定は検証失敗（`Failures`）の**発生源を問わず一律**に行う。したがって本要件で
 新設する判定は、`verify_files` に限らず `Failures` に記録される任意の検証失敗へ自動的に
-適用される。env ファイルの検証（`VerifyEnvironmentFile`）も同じ経路（`Failures` への記録）を
-使うが、**現時点で production の呼び出し元が存在しない**（リポジトリ全体の grep で確認済み。
-テストのみが呼び出す）。したがって env ファイルは AC-21 として防御的に分類を定義するに留め、
-E2E ではなくユニットテストで担保する（`hash_directory_not_found` に対する AC-08 と同じ扱い）。
+適用される。
+
+なお env ファイルの検証（`VerifyEnvironmentFile`）も同じ経路（`Failures` への記録）を
+使う設計だったが、F-007 のとおり production の呼び出し元が存在しない死んだコードであり
+本タスクで削除する。削除後は `Failures` に env コンテキストのエントリを生成する production
+経路がそもそも存在しないため、「env コンテキストの `hash_mismatch` を個別に分類する」という
+シナリオ自体が起こり得ない。この分類は AC-20 が検証する「`Failures` の `hash_mismatch` は
+発生源によらず exit 1 になる」という一般則の特殊ケースに過ぎず、発生し得ないケースを
+ユニットテストのフィクスチャで人為的に再現しても実装の正しさに関する追加の保証にはならない
+ため、独立した AC としては定義しない（AC-21 は意図的な欠番。理由は本節末尾の「AC 番号に
+ついて」を参照）。
 
 **分類**: F-002 の分類表と同一の軸を適用する。すなわち `Failures` に記録された理由のうち
 `hash_mismatch` のみを改ざん兆候（exit 1）とし、他の理由（`hash_file_not_found` /
@@ -253,9 +260,6 @@ E2E ではなくユニットテストで担保する（`hash_directory_not_found
 **Acceptance Criteria**:
 - **AC-20**: `global.verify_files` または `groups[].verify_files` に列挙されたファイルの
   検証が `hash_mismatch` で失敗した場合、dry-run は `DryRunExitPolicyDeny`（= 1）を返す。
-- **AC-21**: `Failures` に env コンテキストの `hash_mismatch` が記録された場合、終了コード
-  判定はこれを `DryRunExitPolicyDeny`（= 1）へ写像する。env ファイル検証は現時点で
-  production の呼び出し元が無いため、本 AC はユニットテストで担保する（防御的定義）。
 - **AC-22**: `verify_files` の `hash_mismatch` 以外の検証失敗（例: `hash_file_not_found`）は、
   `hash_mismatch` を伴わない場合 `DryRunExitVerificationUnavailable`（= 3）を返す。
 - **AC-23**: `verify_files` の `hash_mismatch` と、環境起因の未検証成果物・検証失敗が
@@ -263,6 +267,12 @@ E2E ではなくユニットテストで担保する（`hash_directory_not_found
   埋没しない。
 - **AC-24**: 上記の反映は終了コードの決定にのみ影響し、dry-run 出力上の `Failures` 表示、
   `security_risk` 注釈、ログレベルは変更されない。
+
+**AC 番号について**: AC-21 は **意図的な欠番**（env コンテキストの `hash_mismatch` を
+個別分類する AC として検討されたが、F-007 で `VerifyEnvironmentFile` を削除した結果、
+当該コンテキストを production から生成する経路が存在しなくなり、AC-20 の一般則で
+既に担保されるため独立の AC としては採用しなかった）。要件プロセスの規則
+（欠番は許容、既存番号の振り直し禁止）に従い、AC-22 以降の番号はそのまま維持する。
 
 ### F-006: 非ゼロ終了の根拠を詳細レベルによらず出力する
 
@@ -293,6 +303,37 @@ F-001 / F-005 の常時 hard fail 化により、`Failures` または `Unverifie
 - **AC-27**: すべての検証が成功した正常系（`Failures` と `UnverifiedFiles` がともに空）の
   `summary` テキスト出力にはこれらのセクションが現れず、従来どおり簡潔なままである
   （回帰しない）。
+
+### F-007: 事前クリーンアップ — 死んだコード `VerifyEnvironmentFile` の削除
+
+`internal/verification/manager.go` の `VerifyEnvironmentFile` は、`-env-file`
+コマンドラインオプション向けの検証関数だったが、当該オプションは 2025-09 に削除された
+（`9c944c78` "doc: remove text referring obsolete -env-file command line option"）。
+オプション削除時にドキュメント（`docs/design-implementation-overview.md` 等）からは
+env ファイル検証への言及が除去されたが、コード自体は取り残された。
+
+リポジトリ全体の grep で確認した限り production の呼び出し元は存在しておらず
+（テストコードからのみ呼び出されていた）、その唯一の呼び出し元であったテストコードも
+本タスクで本関数とともに削除された。またタスク 0146 の調査
+（`docs/tasks/0146_security_hardening/03_implementation_plan.md` の該当メモ）でも、
+env ファイルの実内容を読み込む production 経路自体が存在しないことが確認済みである。
+加えてこの関数は検証のみを行い内容を返さない設計であり、`VerifyAndReadConfigFile` /
+`VerifyAndReadTemplateFile` が担う「検証と読み込みを同一 I/O で行うことで TOCTOU を
+防ぐ」パターンに従っていない。将来 env ファイル検証を復活させる場合も、このシグネチャを
+そのまま再利用するべきではなく、新規に設計し直すべきである。
+
+当初 F-005 では、env コンテキストの `Failures` を個別に分類する AC-21 を防御的に定義する
+案があったが、本関数を削除すると env コンテキストの `Failures` エントリを生成する
+production 経路がそもそも存在しなくなるため、その AC は「起こり得ないケースを検証する」
+ものになり不要と判断した（F-005 の「AC 番号について」を参照。AC-21 は意図的な欠番）。
+NFR-03（デッドコードを残さない）を満たすため、本関数の削除自体は本タスクの一部として
+実施する。
+
+**Acceptance Criteria**:
+- **AC-28**: `internal/verification/manager.go` から `VerifyEnvironmentFile` が削除されて
+  いる。あわせて `internal/verification/manager_test.go` の
+  `TestVerifyEnvironmentFile` が削除されている。`make build` および `make test` が
+  通ることをもって、他に呼び出し元が存在しないことを確認する。
 
 ## 3. 影響を受ける既存テスト
 
