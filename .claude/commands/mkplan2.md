@@ -29,7 +29,7 @@ Work in the following order.
    - **Risk isolation**: Place high-risk or complex steps (e.g. recovery flows, concurrency) in their own PRs so they can be reviewed in detail without unrelated noise.
    - **Internal-before-cmd**: Changes to `internal/` packages should land before the `cmd/` layer that depends on them.
    - **Small over large**: Prefer more, smaller PRs over fewer large ones; 3–6 PRs is a reasonable target for a medium-sized feature.
-   - **Model requirement**: Decide which capability tier the implementing model needs for each PR, so a frontier model is spent where it pays off and the rest is left to a cheaper model backed by the `weakreview` pass. Label each PR:
+   - **Model requirement**: Decide which capability tier the implementing model needs for each PR, so a frontier model is spent where it pays off and the rest is left to a cheaper model backed by the `weakreview.md` pass. Label each PR:
      - `frontier-required` — the PR contains a step that requires an unprecedented design decision (e.g. a Phase 0-style PoC or feasibility probe), or a step matching `mkplan.md` step 8's panel-mode triggers (a heavy integration-test / CI / external-resource surface, or a security-gate / migration step such as a staged rollout or simultaneous behavior raises and lowers).
      - `frontier-recommended` — the PR contains a step whose approach is not yet settled (the plan's `既存コード調査結果` section lists two or more competing implementation approaches for it), a step matching two or more of `mkplan.md`'s Conditional checks, or an isolated high-risk/complex step (e.g. recovery flows, concurrency, state machines).
      - `standard` — everything else.
