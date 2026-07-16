@@ -695,7 +695,7 @@ staging fallback を暫定採用する場合の Phase 1 実装方針（Step 1-6 
 - [x] PR-7 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4）
 - [x] PR-8 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3 / 4-4）
 - [x] PR-9 マージ済み（対象ステップ: 4-5 / 4-6 / 4-7）
-- [x] PR-10 マージ済み（対象ステップ: 5-1 / 5-2 / 5-3）（**実装完了・マージ待ち。PR 作成・レビュー・マージはステップ 5a として本 runplan セッション外で実施**）
+- [ ] PR-10 マージ済み（対象ステップ: 5-1 / 5-2 / 5-3）（実装完了・マージ待ち。PR 作成・レビュー・マージはステップ 5a として本 runplan セッション外で実施）
 - [ ] 全 PR で `make fmt && make test && make lint` がグリーン
 - [ ] 本書「7. 受け入れ基準の検証」の全 AC が検証済み
 
@@ -813,7 +813,7 @@ staging fallback を暫定採用する場合の Phase 1 実装方針（Step 1-6 
 
 **AC-22**: 本番ターゲットが Linux + openat2 前提であり、non-Linux 環境の TOCTOU 残余ウィンドウと macOS 等の開発・限定用途がドキュメントに明記される。
 - 種別: `static` + `manual`
-- 検証コマンド: `rg -n "TOCTOU.*残余|残余.*TOCTOU|開発・限定用途" docs/user/security-risk-assessment.ja.md`
+- 検証コマンド: `rg -n "TOCTOU.*競合ウィンドウが残|開発・限定用途" docs/user/security-risk-assessment.ja.md`
 - 期待結果: Step 5-2 で追記した記述がヒットする
 - 手動確認: 追記内容が `internal/safefileio/safe_file.go` の `safeOpenFileFallback` の実際の二段階チェック実装（既存の openat2 記述セクションが参照している実装）と整合していることを確認する。
 

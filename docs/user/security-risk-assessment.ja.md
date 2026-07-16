@@ -179,7 +179,7 @@ func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode
   open をアトミックに行うことで、検証〜実行間の TOCTOU 競合ウィンドウを根本的に排除します。
 - non-Linux 環境（macOS 等、`openat2` 非対応）では `safeOpenFileFallback` による「親ディレクトリの
   非シンボリックリンク確認 → `O_NOFOLLOW` open → 再確認」の二段階チェックで代替します。実装は堅牢ですが、
-  原理的に `openat2` のアトミック性には及ばず、**極短の TOCTOU 競合ウィンドウが残ります**（コード内
+  原理的に `openat2` のアトミック性には及ばず、**極めて短い TOCTOU 競合ウィンドウが残ります**（コード内
   コメントでも認識済み）。
 - このため、**macOS 等は開発・限定用途に限る**運用を推奨します。本番運用は必ず Linux + `openat2` 環境を
   使用してください。`openat2` 非対応のカーネル（Linux 5.5 以下）で本番運用した場合、最悪のケースでは
