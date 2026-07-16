@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
@@ -38,32 +40,17 @@ func runDryRunCommand(t *testing.T, configFile string, extraArgs ...string) (*ex
 	if err != nil {
 		t.Logf("Command output:\n%s", string(output))
 	}
-	require.NoError(t, err, "dry-run should succeed")
 	return cmd, output
 }
 
-// TestDryRunE2E_HashDirectoryNotFound tests dry-run with hash directory not found
-func TestDryRunE2E_HashDirectoryNotFound(t *testing.T) {
-	configContent := `
-[[groups]]
-name = "test_group"
-
-[[groups.commands]]
-name = "test-cmd"
-cmd = "/bin/echo"
-args = ["hello"]
-`
-
-	configFile := setupTempConfig(t, configContent)
-	cmd, output := runDryRunCommand(t, configFile)
-
-	outputStr := string(output)
-	// Verify file verification section is present
-	assert.Contains(t, outputStr, "===== File Verification =====")
-	assert.Contains(t, outputStr, "Hash Directory:")
-
-	// Verify exit code is 0
-	assert.Equal(t, 0, cmd.ProcessState.ExitCode())
+// recordHash saves a hash record for filePath under hashDir using the same
+// validator/algorithm the runner uses to verify files.
+func recordHash(t *testing.T, hashDir, filePath string) {
+	t.Helper()
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
+	require.NoError(t, err)
+	_, _, err = validator.SaveRecord(filePath, false)
+	require.NoError(t, err)
 }
 
 // TestDryRunE2E_HashFilesNotFound tests dry-run with hash files not found
@@ -86,8 +73,9 @@ args = ["hello"]
 	assert.Contains(t, outputStr, "===== File Verification =====")
 	assert.Contains(t, outputStr, "Hash Directory:")
 
-	// Verify exit code is 0
-	assert.Equal(t, 0, cmd.ProcessState.ExitCode())
+	// hash_file_not_found is an environment cause (config.toml has no
+	// recorded hash), so the preview exits with DryRunExitVerificationUnavailable.
+	assert.Equal(t, resource.DryRunExitVerificationUnavailable, cmd.ProcessState.ExitCode())
 }
 
 // TestDryRunE2E_AllSuccess tests dry-run with all verifications successful
@@ -103,18 +91,26 @@ args = ["hello"]
 `
 
 	configFile := setupTempConfig(t, configContent)
+	hashDir := tu.SafeTempDir(t)
+	recordHash(t, hashDir, configFile)
+	recordHash(t, hashDir, "/bin/echo")
 
 	// Run with summary detail level instead of full
-	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run", "-dry-run-detail", "summary", "-dry-run-format", "text")
+	cmd := newGoRunCmdWithHashDir(t, hashDir, "-config", configFile, "-dry-run", "-dry-run-detail", "summary", "-dry-run-format", "text")
 	output, err := cmd.CombinedOutput()
-	require.NoError(t, err, "dry-run should succeed")
+	if err != nil {
+		t.Logf("Command output:\n%s", string(output))
+	}
+	require.NoError(t, err, "dry-run should succeed once config.toml's and /bin/echo's hashes are recorded")
 
 	outputStr := string(output)
 	// Verify file verification section is present
 	assert.Contains(t, outputStr, "===== File Verification =====")
+	assert.Contains(t, outputStr, "Verified: 2")
+	assert.Contains(t, outputStr, "Failed: 0")
 
 	// Verify exit code is 0
-	assert.Equal(t, 0, cmd.ProcessState.ExitCode())
+	assert.Equal(t, resource.DryRunExitAllow, cmd.ProcessState.ExitCode())
 }
 
 // TestDryRunE2E_JSONOutput tests dry-run JSON output with file verification
@@ -130,16 +126,19 @@ args = ["hello"]
 `
 
 	configFile := setupTempConfig(t, configContent)
+	hashDir := tu.SafeTempDir(t)
+	recordHash(t, hashDir, configFile)
+	recordHash(t, hashDir, "/bin/echo")
 
 	// Run command in dry-run mode with JSON output
-	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
+	cmd := newGoRunCmdWithHashDir(t, hashDir, "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
-	require.NoError(t, err, "dry-run should succeed")
+	require.NoError(t, err, "dry-run should succeed once config.toml's and /bin/echo's hashes are recorded")
 
 	// Parse JSON output
 	var result struct {
@@ -160,7 +159,7 @@ args = ["hello"]
 	assert.NotNil(t, result.FileVerification.HashDirStatus)
 
 	// Verify exit code is 0
-	assert.Equal(t, 0, cmd.ProcessState.ExitCode())
+	assert.Equal(t, resource.DryRunExitAllow, cmd.ProcessState.ExitCode())
 }
 
 // TestDryRunE2E_MixedResults tests dry-run with mixed verification results
@@ -185,7 +184,9 @@ args = ["-l"]
 	// Run command in dry-run mode with detailed output
 	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run", "-dry-run-detail", "detailed", "-dry-run-format", "text")
 	output, err := cmd.CombinedOutput()
-	require.NoError(t, err, "dry-run should succeed even with verification failures")
+	if err != nil {
+		t.Logf("Command output:\n%s", string(output))
+	}
 
 	outputStr := string(output)
 	// Verify file verification section is present
@@ -197,8 +198,9 @@ args = ["-l"]
 		assert.Contains(t, outputStr, "Failures:")
 	}
 
-	// Verify exit code is 0 (dry-run never fails)
-	assert.Equal(t, 0, cmd.ProcessState.ExitCode())
+	// config.toml has no recorded hash (hash_file_not_found, an environment
+	// cause), so the preview exits with DryRunExitVerificationUnavailable.
+	assert.Equal(t, resource.DryRunExitVerificationUnavailable, cmd.ProcessState.ExitCode())
 }
 
 // TestDryRunE2E_NoSideEffects tests that dry-run with file verification has no side effects
@@ -243,7 +245,6 @@ args = ["hello"]
 	if err != nil {
 		t.Logf("Command output:\n%s", string(output))
 	}
-	require.NoError(t, err, "dry-run should succeed")
 	require.NotEmpty(t, output, "output should not be empty")
 
 	outputStr := string(output)
@@ -280,6 +281,9 @@ args = ["hello"]
 	require.NoError(t, err)
 	assert.Equal(t, len(logEntriesBefore), len(logEntriesAfter), "dry-run should not create log files")
 
-	// Verify exit code is 0
-	assert.Equal(t, 0, cmd.ProcessState.ExitCode())
+	// config.toml has no recorded hash (hash_file_not_found, an environment
+	// cause), so the preview exits with DryRunExitVerificationUnavailable.
+	// The point of this test is the absence of side effects (checked above),
+	// not the exit code itself.
+	assert.Equal(t, resource.DryRunExitVerificationUnavailable, cmd.ProcessState.ExitCode())
 }

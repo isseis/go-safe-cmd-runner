@@ -1,13 +1,16 @@
+//go:build test
+
 package main
 
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -373,9 +376,19 @@ args = ["1"]
 			require.NoError(t, err)
 			tmpFile.Close()
 
+			// Pre-record hashes for the config file and /bin/sleep so the
+			// dry-run verifies cleanly and does not hard-fail on unverified
+			// content; this test only cares about the timeout debug output.
+			hashDir := tu.SafeTempDir(t)
+			validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
+			require.NoError(t, err)
+			_, _, err = validator.SaveRecord(tmpFile.Name(), false)
+			require.NoError(t, err)
+			_, _, err = validator.SaveRecord("/bin/sleep", false)
+			require.NoError(t, err)
+
 			// Run command in dry-run mode
-			cmd := exec.Command("go", "run", ".", "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full")
-			cmd.Dir = "."
+			cmd := newGoRunCmdWithHashDir(t, hashDir, "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full")
 
 			output, err := cmd.CombinedOutput()
 			require.NoError(t, err, "dry-run should succeed: %s", string(output))
