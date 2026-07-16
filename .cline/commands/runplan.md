@@ -21,29 +21,27 @@ Work in order.
 2. Read `03_implementation_plan.md`. If the document status is not `approved`, stop and report.
 
 2.5. Check whether PR boundary design is needed.
-  - Count `### フェーズ` headers in the plan. If there are 2 or more and no `### PR-` sections exist, design PR boundaries yourself before proceeding:
-    - Read the full implementation plan to understand all phases.
-    - Group phases into PRs such that each PR is independently reviewable and testable (each PR should pass the green gate on its own).
-    - Insert `### PR-N 作成ポイント` sections into the plan document at the boundaries you've chosen, with the following required format:
-      ```
-      ### PR-N 作成ポイント
-      - **対象ステップ**: <phase titles covered by this PR>
+  - Count `### フェーズ` headers in the plan. If there are 2 or more and no `### PR-` sections exist, stop and report: PR boundary design is missing. Ask the user to design PR boundaries manually and review them before re-running this command — do not design or insert `### PR-N 作成ポイント` sections yourself. (Point the user to the required format below if they need a reference.)
 
-      **推奨タイトル**: <PR title>
+    Required format for each `### PR-N 作成ポイント` section, for reference:
+    ```
+    ### PR-N 作成ポイント
+    - **対象ステップ**: <phase titles covered by this PR>
 
-      **レビュー観点**:
-      - <review item 1>
-      - <review item 2>
+    **推奨タイトル**: <PR title>
 
-      PR checkpoint checkboxes (used by step 4/5a to detect PR boundaries):
-      - [ ] グリーンゲート通過: `make fmt && make test && make lint && make deadcode`
-      - [ ] PR を作成した
-      - [ ] PR がマージされた
-      - [ ] 次のブランチへ切り替えた
-      ```
-      - `**対象ステップ**` is required — step 4 reads it to determine which phases are covered.
-      - The four checkboxes are required — step 4 detects PR checkpoints by scanning for these unchecked items, and step 5a progresses through them in order.
-    - After inserting PR markers, re-read the implementation plan document so the updated content is in context.
+    **レビュー観点**:
+    - <review item 1>
+    - <review item 2>
+
+    PR checkpoint checkboxes (used by step 4/5a to detect PR boundaries):
+    - [ ] グリーンゲート通過: `make fmt && make test && make lint && make deadcode`
+    - [ ] PR を作成した
+    - [ ] PR がマージされた
+    - [ ] 次のブランチへ切り替えた
+    ```
+    - `**対象ステップ**` is required — step 4 reads it to determine which phases are covered.
+    - The four checkboxes are required — step 4 detects PR checkpoints by scanning for these unchecked items, and step 5a progresses through them in order.
   - If PR markers already exist, skip this step and continue.
 
 3. Read `01_requirements.md`, `02_architecture.md` (both in the target task directory), and `docs/dev/developer_guide/test_organization.md`.
