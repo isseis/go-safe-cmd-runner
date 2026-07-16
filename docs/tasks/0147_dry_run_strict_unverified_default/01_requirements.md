@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-07-16 |
 | Review date | 2026-07-16 |
 | Reviewer | isseis |
-| Comments | 2026-07-16: 設計レビューで判明した論点を受け、F-005（`verify_files` の検証失敗を終了コードへ反映。AC-20〜AC-24）と F-006（非ゼロ終了の根拠を詳細レベルによらず出力。AC-25〜AC-27）を追加。env ファイル検証は production の呼び出し元が無く AC-21 として防御的に定義。スコープ拡張のため再承認が必要 |
+| Comments | |
 
 ## 1. 背景と目的
 
