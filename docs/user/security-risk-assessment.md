@@ -170,7 +170,7 @@ assumptions for production deployments.
   memory consumption. This value is shared with `elfanalyzer`/`machoanalyzer`.
 
 These are **two separate constants** and must not be conflated. 128 MB is comfortable headroom
-for binary analysis, but 1 GB is exclusively for binary analysis. **This task does not implement
+for configuration files and templates, but 1 GB is exclusively for binary analysis. **This task does not implement
 threshold configurability or limit separation** (splitting hash computation from analysis). The
 reasons are: (1) the requirements scope is limited to documenting the assumption and
 recording the design decision; (2) there is no concrete demand for large-file verification today
