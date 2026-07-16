@@ -11,6 +11,12 @@
 > for domain-specific examples (step 5) and for Go-specific rules (`testutil/`,
 > `test_helpers.go`, `//go:build test`) when changing tech stacks. The review step
 > uses the shared procedure in `.claude/commands/_lib/review-subagent-pattern.md`.
+> Before starting an implementation session, check the `**実装モデル要件**` field of
+> the `### PR-N 作成ポイント` marker covering the work you are about to pick up (see
+> `_context.md`, "PR marker conventions"): `frontier-required` means run this session
+> on a frontier model; `frontier-recommended` prefers one; `standard` may run on a
+> cheaper model, with `weakreview.md` as the follow-up check. This does not change
+> any step below.
 
 Your goal is to implement one task under `docs/tasks/` by following its `03_implementation_plan.md`.
 

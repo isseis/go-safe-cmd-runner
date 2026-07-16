@@ -49,8 +49,9 @@ what changes under which condition:
 PR boundary markers embedded in the implementation plan use these labels:
 
 - Section heading: `### PR-N 作成ポイント: <scope label in English>`
-- Fields: `**対象ステップ**`, `**推奨タイトル**`, `**レビュー観点**`
+- Fields: `**対象ステップ**`, `**推奨タイトル**`, `**レビュー観点**`, `**実装モデル要件**`, `**判定理由**`
 - Conventional commit scope format: `feat(<task-id>): <concise English title>`
+- Implementation model tiers (`**実装モデル要件**` values): `frontier-required`, `frontier-recommended`, `standard` — assigned by `mkplan2.md` (step 4, "Model requirement"), read by `runplan.md` when choosing the implementing model
 
 ---
 
