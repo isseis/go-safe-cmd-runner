@@ -55,12 +55,20 @@
 2. 未検証理由の **環境起因／改ざん兆候の分離を実態に合わせて再定義** し、常時有効化に
    よってブートストラップ工程が「ポリシー拒否」と誤報されることを防ぐ（F-002）。
 3. 上記の破壊的変更を **ユーザードキュメントへ反映** する（F-003）。
+4. `verify_files`（`global.verify_files` / `groups[].verify_files`）の検証失敗を dry-run の
+   終了コードへ反映し、改ざん兆候（`hash_mismatch`）を CI で検知できるようにする（F-005）。
+   従来これらの検証失敗は dry-run では終了コードに反映されず exit 0 のままであり、常時
+   hard fail 化の目的（改ざん兆候の検知）を部分的にしか満たしていなかった。
+5. 非ゼロ終了の根拠（`Failures` / `UNVERIFIED` セクション）を、詳細レベル
+   （`-dry-run-detail`）によらず出力し、`summary` 指定時でも終了コードの原因を
+   標準出力から追跡できるようにする（F-006）。
 
 ### スコープ外
 
-- **dry-run 出力の表示内容の変更**。`UNVERIFIED` / `UNVERIFIED-TAMPER` セクションの
-  表示、`security_risk` 注釈、ログレベルは本タスクでは変更しない。本タスクは
-  終了コードの決定ロジックに限定する。
+- **dry-run 出力の表示「内容」の変更**。`Failures` / `UNVERIFIED` / `UNVERIFIED-TAMPER`
+  セクションの各行の項目、`security_risk` 注釈、マーカー、ログレベルは本タスクでは変更しない。
+  ただしこれらのセクションを **どの詳細レベルで表示するか**（表示の可視性）は F-006 で変更する
+  （表示内容自体は不変）。
 - **非 dry-run（実行経路）の挙動変更**。実行経路は従来どおりフェイルクローズドであり、
   本タスクの対象外。
 - **リスク評価アルゴリズム自体の変更**。リスクゲートによる policy deny /
@@ -88,7 +96,7 @@
 
 ## 2. 機能要件
 
-本書の AC は AC-01〜AC-19。
+本書の AC は AC-01〜AC-27（AC-20〜AC-24 は F-005、AC-25〜AC-27 は F-006 で追加）。
 
 ### F-001: `-dry-run-fail-unverified` の削除と strict 挙動の常時有効化
 
@@ -207,6 +215,84 @@ comment、フラグに依存するテスト、`docs/translation_glossary.md` の
 本要件のレビュー時に、対象ファイルのハッシュを事前記録した状態で dry-run が
 exit 0（`Verified: 2` / `Failed: 0` / ALLOW）となることを実測で確認済みであり、
 AC-18 は実現可能である。具体的な実装方法は `03_implementation_plan.md` で扱う。
+
+### F-005: `verify_files` の検証失敗の終了コード反映
+
+設定ファイル／テンプレートファイル以外にも、`global.verify_files` /
+`groups[].verify_files` に列挙されたファイルは dry-run 時にハッシュ検証される。しかし現状
+これらの検証失敗は、内容を採用しないため「未検証成果物」
+（`FileVerificationSummary.UnverifiedFiles`）ではなく検証失敗
+（`FileVerificationSummary.Failures`）にのみ記録され、dry-run の終了コード決定
+（`UsedUnverifiedContent` を入口条件とする）に反映されない。その結果、これらのファイルに
+`hash_mismatch`（改ざん兆候）があっても dry-run は exit 0 を返す。
+
+`verify_files` は任意の成果物をハッシュで固定するための機構であり、改ざん検知の主要な対象で
+ある。本要件は、これらの検証失敗も F-002 と同一の分類軸で終了コードへ反映し、
+F-001（常時 hard fail 化）の目的を完全に満たす。
+
+終了コードの判定は検証失敗（`Failures`）の**発生源を問わず一律**に行う。したがって本要件で
+新設する判定は、`verify_files` に限らず `Failures` に記録される任意の検証失敗へ自動的に
+適用される。env ファイルの検証（`VerifyEnvironmentFile`）も同じ経路（`Failures` への記録）を
+使うが、**現時点で production の呼び出し元が存在しない**（リポジトリ全体の grep で確認済み。
+テストのみが呼び出す）。したがって env ファイルは AC-21 として防御的に分類を定義するに留め、
+E2E ではなくユニットテストで担保する（`hash_directory_not_found` に対する AC-08 と同じ扱い）。
+
+**分類**: F-002 の分類表と同一の軸を適用する。すなわち `Failures` に記録された理由のうち
+`hash_mismatch` のみを改ざん兆候（exit 1）とし、他の理由（`hash_file_not_found` /
+`hash_directory_not_found` / `file_read_error` / `permission_denied`）は環境起因（exit 3）と
+する。優先順位は F-002 と統合し、`UnverifiedFiles` と `Failures` の**和集合**に対して判定する
+（いずれか一方にでも `hash_mismatch` があれば exit 1）。
+
+**スコープ**: 本要件は dry-run の終了コード決定にのみ影響する。非 dry-run（実行経路）は
+従来どおり `verify_files` の検証失敗で hard fail する（本タスクの対象外）。表示側
+（`Failures` セクション、`security_risk` 注釈、ログレベル）は変更しない。
+
+**影響範囲（破壊的変更）**: `verify_files` に列挙したファイルのハッシュを未登録・不一致の
+まま dry-run を実行していた既存の呼び出しは、exit 0 から exit 3 または exit 1 へ変わる。
+
+**Acceptance Criteria**:
+- **AC-20**: `global.verify_files` または `groups[].verify_files` に列挙されたファイルの
+  検証が `hash_mismatch` で失敗した場合、dry-run は `DryRunExitPolicyDeny`（= 1）を返す。
+- **AC-21**: `Failures` に env コンテキストの `hash_mismatch` が記録された場合、終了コード
+  判定はこれを `DryRunExitPolicyDeny`（= 1）へ写像する。env ファイル検証は現時点で
+  production の呼び出し元が無いため、本 AC はユニットテストで担保する（防御的定義）。
+- **AC-22**: `verify_files` の `hash_mismatch` 以外の検証失敗（例: `hash_file_not_found`）は、
+  `hash_mismatch` を伴わない場合 `DryRunExitVerificationUnavailable`（= 3）を返す。
+- **AC-23**: `verify_files` の `hash_mismatch` と、環境起因の未検証成果物・検証失敗が
+  混在する場合、`DryRunExitPolicyDeny`（= 1）が優先される。改ざん兆候が環境起因のコードに
+  埋没しない。
+- **AC-24**: 上記の反映は終了コードの決定にのみ影響し、dry-run 出力上の `Failures` 表示、
+  `security_risk` 注釈、ログレベルは変更されない。
+
+### F-006: 非ゼロ終了の根拠を詳細レベルによらず出力する
+
+現状、dry-run のテキスト出力では、検証失敗（`Failures`）および未検証成果物（`UNVERIFIED` /
+`UNVERIFIED-TAMPER`）の各セクションが `-dry-run-detail detailed` / `full` でのみ出力され、
+`summary` では省略される。既定は `detailed` のため通常は問題にならないが、`summary` を
+明示的に指定した場合、F-001 / F-005 によって dry-run が非ゼロ終了するにもかかわらず、
+その根拠（どのファイルが、なぜ）が標準出力に現れない（説明のない拒否）。
+
+F-001 / F-005 の常時 hard fail 化により、`Failures` または `UnverifiedFiles` に要素が
+1 件でもあれば dry-run は必ず非ゼロ終了する。すなわちこれらのセクションに載る情報は
+すべて終了コードの根拠であり、詳細レベルで省略してよい補助情報ではない。本要件は、
+これらのセクションを **詳細レベルによらず出力する**（要素が存在する場合は常に表示する）。
+
+**表示内容の不変性**: 各セクションの行項目・`security_risk` 注釈・マーカーは変更しない
+（F-005 のスコープ外と一致）。本要件が変えるのは「どの詳細レベルで表示するか」だけである。
+正常系（両セクションとも空）では従来どおり何も表示されず、`summary` の簡潔さは保たれる。
+
+**対象**: テキスト出力（`-dry-run-format text`）。JSON 出力（`-dry-run-format json`）は
+現状すでに詳細レベルによらず全データを含むため、変更不要。
+
+**Acceptance Criteria**:
+- **AC-25**: `-dry-run-detail summary` かつ `-dry-run-format text` において、`Failures` が
+  1 件以上ある場合、その一覧（ファイルパスと理由）が標準出力に現れる。
+- **AC-26**: `-dry-run-detail summary` かつ `-dry-run-format text` において、
+  `UnverifiedFiles` が 1 件以上ある場合、その一覧（ファイルパス・理由・`UNVERIFIED` /
+  `UNVERIFIED-TAMPER` マーカー）が標準出力に現れる。
+- **AC-27**: すべての検証が成功した正常系（`Failures` と `UnverifiedFiles` がともに空）の
+  `summary` テキスト出力にはこれらのセクションが現れず、従来どおり簡潔なままである
+  （回帰しない）。
 
 ## 3. 影響を受ける既存テスト
 
