@@ -31,7 +31,7 @@ Work in the following order.
    - **Small over large**: Prefer more, smaller PRs over fewer large ones; 3–6 PRs is a reasonable target for a medium-sized feature.
    - **Model requirement**: Decide which capability tier the implementing model needs for each PR, so a frontier model is spent where it pays off and the rest is left to a cheaper model backed by the `weakreview` pass. Label each PR:
      - `frontier-required` — the PR contains a step that requires an unprecedented design decision (e.g. a Phase 0-style PoC or feasibility probe), or a step matching `mkplan.md` step 8's panel-mode triggers (a heavy integration-test / CI / external-resource surface, or a security-gate / migration step such as a staged rollout or simultaneous behavior raises and lowers).
-     - `frontier-recommended` — the PR contains a step whose approach is not yet settled (the plan's `既存コード調査結果` section lists two or more competing implementation approaches for it), or a step matching two or more of `mkplan.md`'s Conditional checks.
+     - `frontier-recommended` — the PR contains a step whose approach is not yet settled (the plan's `既存コード調査結果` section lists two or more competing implementation approaches for it), a step matching two or more of `mkplan.md`'s Conditional checks, or an isolated high-risk/complex step (e.g. recovery flows, concurrency, state machines).
      - `standard` — everything else.
 
      Derive these labels in the same analysis pass as **Risk isolation** — they read the same signals (step risk, complexity, external surface). Do not re-analyse the steps a second time for labelling.
