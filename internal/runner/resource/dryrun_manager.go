@@ -78,8 +78,8 @@ type DryRunResourceManager struct {
 
 	// fileVerification is the file-verification summary produced by the
 	// verification.Manager for the dry-run preview. It is set via
-	// SetFileVerification once the verification manager has finished walking the
-	// configuration/template files, and consulted by previewExitCodeLocked so
+	// FinalizeDryRunResults once the verification manager has finished walking
+	// the configuration/template files, and consulted by previewExitCodeLocked so
 	// that the --dry-run-fail-unverified flag can map "content adopted without
 	// successful hash verification" to the right exit code (environment cause
 	// -> 3, tampering signal -> 1). See docs/tasks/0146_security_hardening/02_architecture.md
@@ -474,11 +474,13 @@ func (d *DryRunResourceManager) previewExitCodeLocked() int {
 	return DryRunExitAllow
 }
 
-// SetFileVerification records the file-verification summary for the dry-run
-// preview. It is invoked by the runner once the verification manager has
-// finished walking the configuration and template files (see
-// runner.Runner.GetDryRunResults). A nil summary clears the field so the
-// preview returns to its environment-only behavior.
+// SetFileVerification records the file-verification summary used by
+// PreviewExitCode. A nil summary clears the field so the preview returns to
+// its environment-only behavior. Production code should prefer
+// FinalizeDryRunResults, which records the summary and returns the
+// finalized results in one locked call; this standalone setter remains for
+// callers (e.g. PreviewExitCode-focused tests) that only need to update the
+// recorded summary.
 //
 // Concurrent calls are serialized with mu. The summary is treated as
 // read-only after assignment; previewExitCodeLocked inspects it without
@@ -797,6 +799,32 @@ func (d *DryRunResourceManager) GetDryRunResults() *DryRunResult {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	return d.refreshDryRunResultLocked()
+}
+
+// FinalizeDryRunResults records fileVerification and returns the finalized
+// dry-run results in a single locked operation. Consolidating the two steps
+// removes the ordering dependency that a separate SetFileVerification +
+// GetDryRunResults pair would otherwise place on the caller: PreviewExitCode
+// (computed inside refreshDryRunResultLocked) always reflects the summary
+// passed here.
+func (d *DryRunResourceManager) FinalizeDryRunResults(fileVerification *verification.FileVerificationSummary) *DryRunResult {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.fileVerification = fileVerification
+
+	result := d.refreshDryRunResultLocked()
+	if result != nil {
+		result.FileVerification = fileVerification
+	}
+	return result
+}
+
+// refreshDryRunResultLocked updates d.dryRunResult from current state
+// (resource analyses, execution status, summary, preview exit code) and
+// returns it. The caller must hold mu.
+func (d *DryRunResourceManager) refreshDryRunResultLocked() *DryRunResult {
 	if d.dryRunResult == nil {
 		return nil
 	}

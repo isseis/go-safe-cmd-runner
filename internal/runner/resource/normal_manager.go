@@ -15,6 +15,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
 // Static errors
@@ -395,6 +396,12 @@ func (n *NormalResourceManager) SendNotification(_ string, _ map[string]any) err
 
 // GetDryRunResults returns nil in normal mode since there are no dry-run results
 func (n *NormalResourceManager) GetDryRunResults() *DryRunResult {
+	return nil
+}
+
+// FinalizeDryRunResults returns nil in normal mode since there are no
+// dry-run results; fileVerification is ignored.
+func (n *NormalResourceManager) FinalizeDryRunResults(_ *verification.FileVerificationSummary) *DryRunResult {
 	return nil
 }
 

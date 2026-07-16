@@ -1280,7 +1280,7 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 	)
 
 	// Mock dry-run results
-	mockResourceManager.On("GetDryRunResults").Return(&resource.DryRunResult{
+	mockResourceManager.On("FinalizeDryRunResults", mock.Anything).Return(&resource.DryRunResult{
 		ResourceAnalyses: []resource.Analysis{
 			{
 				Type:      resource.TypeCommand,
@@ -1289,10 +1289,6 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 			},
 		},
 	})
-	// Runner.GetDryRunResults wires the verification summary into the
-	// resource manager before computing the preview exit code (see
-	// TestRunner_GetDryRunResults_WiresFileVerificationBeforeExitCode).
-	mockResourceManager.On("SetFileVerification", mock.Anything).Return()
 
 	// Create runner with mock resource manager
 	runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-dry-run"))
@@ -1329,12 +1325,14 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 // exit-code split between a tampering signal (hash mismatch, exit 1) and an
 // environment cause (no validator, exit 3) was implemented entirely inside
 // resource.DryRunResourceManager, but nothing in the production call path
-// ever invoked its SetFileVerification setter, so the exit code never
-// reflected unverified content outside of unit tests that called the setter
-// directly. This test drives the real production path
-// (Runner.GetDryRunResults) and asserts the resource manager receives the
-// verification summary -- with the hash-mismatch tampering signal recorded
-// -- before GetDryRunResults is asked to compute the preview exit code.
+// ever wired the verification summary in, so the exit code never reflected
+// unverified content outside of unit tests that called the setter directly.
+// This test drives the real production path (Runner.GetDryRunResults) and
+// asserts the resource manager's FinalizeDryRunResults receives the
+// verification summary with the hash-mismatch tampering signal recorded.
+// The set-then-get ordering this test used to guard against is no longer
+// possible to get wrong: Runner.GetDryRunResults now delegates to the single
+// atomic resource.Manager.FinalizeDryRunResults call.
 func TestRunner_GetDryRunResults_WiresFileVerificationBeforeExitCode(t *testing.T) {
 	setupSafeTestEnv(t)
 
@@ -1369,19 +1367,13 @@ func TestRunner_GetDryRunResults_WiresFileVerificationBeforeExitCode(t *testing.
 	require.Equal(t, "test config", string(content))
 
 	mockResourceManager := &MockResourceManager{}
-	var calledInOrder []string
-	mockResourceManager.On("SetFileVerification", mock.MatchedBy(func(summary *verification.FileVerificationSummary) bool {
+	mockResourceManager.On("FinalizeDryRunResults", mock.MatchedBy(func(summary *verification.FileVerificationSummary) bool {
 		if summary == nil || !summary.UsedUnverifiedContent || len(summary.UnverifiedFiles) != 1 {
 			return false
 		}
 		usage := summary.UnverifiedFiles[0]
 		return usage.Path == configFile && usage.Failure != nil && *usage.Failure == verification.ReasonHashMismatch
-	})).Run(func(mock.Arguments) {
-		calledInOrder = append(calledInOrder, "SetFileVerification")
-	}).Return()
-	mockResourceManager.On("GetDryRunResults").Run(func(mock.Arguments) {
-		calledInOrder = append(calledInOrder, "GetDryRunResults")
-	}).Return(&resource.DryRunResult{})
+	})).Return(&resource.DryRunResult{})
 
 	runner, err := NewRunner(&runnertypes.ConfigSpec{Version: "1.0"}, WithResourceManager(mockResourceManager), WithVerificationManager(vm), WithRunID("test-wiring"))
 	require.NoError(t, err)
@@ -1390,8 +1382,6 @@ func TestRunner_GetDryRunResults_WiresFileVerificationBeforeExitCode(t *testing.
 	require.NotNil(t, result)
 
 	mockResourceManager.AssertExpectations(t)
-	assert.Equal(t, []string{"SetFileVerification", "GetDryRunResults"}, calledInOrder,
-		"SetFileVerification must be called before GetDryRunResults so the preview exit code (computed inside GetDryRunResults) reflects unverified content")
 }
 
 // TestRunner_OutputCaptureWithTOMLConfig tests TOML configuration parsing for output capture

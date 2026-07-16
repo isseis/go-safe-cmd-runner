@@ -113,10 +113,12 @@ func (m *MockResourceManager) UpdateCommandDebugInfo(token resource.CommandToken
 	return args.Error(0)
 }
 
-// SetFileVerification records the file-verification summary for the dry-run
-// preview exit code. Implementing this optional interface lets tests verify
-// that callers (e.g. runner.Runner.GetDryRunResults) wire the summary in
-// before asking for dry-run results, matching resource.DryRunResourceManager.
-func (m *MockResourceManager) SetFileVerification(summary *verification.FileVerificationSummary) {
-	m.Called(summary)
+// FinalizeDryRunResults records the file-verification summary and returns
+// the finalized dry-run results, matching resource.DryRunResourceManager.
+func (m *MockResourceManager) FinalizeDryRunResults(fileVerification *verification.FileVerificationSummary) *resource.DryRunResult {
+	args := m.Called(fileVerification)
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*resource.DryRunResult)
 }

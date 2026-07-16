@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
 const (
@@ -73,6 +74,15 @@ type Manager interface {
 
 	// Dry-run results (returns nil for normal execution mode)
 	GetDryRunResults() *DryRunResult
+
+	// FinalizeDryRunResults records fileVerification (nil clears any
+	// previously recorded summary) and atomically returns the finalized
+	// dry-run results, with PreviewExitCode computed from the summary just
+	// recorded. Returns nil for normal execution mode. Callers that need the
+	// exit code to reflect a verification summary must use this instead of
+	// GetDryRunResults, since a separate "set then get" pair would leave the
+	// ordering up to the caller.
+	FinalizeDryRunResults(fileVerification *verification.FileVerificationSummary) *DryRunResult
 
 	// Dry-run analysis recording (no-op for normal execution mode)
 	RecordGroupAnalysis(groupName string, debugInfo *DebugInfo) error

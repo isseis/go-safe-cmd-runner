@@ -12,6 +12,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risk"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
 // Config holds all dependencies and settings for DefaultResourceManager.
@@ -124,6 +125,15 @@ func (d *DefaultResourceManager) SendNotification(message string, details map[st
 func (d *DefaultResourceManager) GetDryRunResults() *DryRunResult {
 	if d.mode == ExecutionModeDryRun {
 		return d.dryrun.GetDryRunResults()
+	}
+	return nil
+}
+
+// FinalizeDryRunResults delegates to the dry-run manager when in dry-run
+// mode; otherwise a no-op returning nil.
+func (d *DefaultResourceManager) FinalizeDryRunResults(fileVerification *verification.FileVerificationSummary) *DryRunResult {
+	if d.mode == ExecutionModeDryRun {
+		return d.dryrun.FinalizeDryRunResults(fileVerification)
 	}
 	return nil
 }

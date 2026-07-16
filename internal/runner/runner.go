@@ -496,35 +496,17 @@ func (r *Runner) CleanupAllResources() error {
 	return r.resourceManager.CleanupAllTempDirs()
 }
 
-// fileVerificationSetter is an interface for recording the file-verification
-// summary before the dry-run preview exit code is computed. This interface
-// allows type-safe checking without depending on concrete types.
-type fileVerificationSetter interface {
-	SetFileVerification(summary *verification.FileVerificationSummary)
-}
-
 // GetDryRunResults returns dry-run analysis results if available
 func (r *Runner) GetDryRunResults() *resource.DryRunResult {
 	var summary *verification.FileVerificationSummary
 	if r.verificationManager != nil {
 		summary = r.verificationManager.GetVerificationSummary()
 	}
-	// Record the summary on the resource manager *before* asking it for
-	// results, since GetDryRunResults computes PreviewExitCode and the
-	// exit code must reflect any unverified content adopted during dry-run.
-	// This call is unconditional (even when summary is nil) because
-	// SetFileVerification's contract treats a nil summary as an intentional
-	// clear of any previously recorded value.
-	if setter, ok := r.resourceManager.(fileVerificationSetter); ok {
-		setter.SetFileVerification(summary)
-	}
-
-	result := r.resourceManager.GetDryRunResults()
-	if result != nil && summary != nil {
-		// Add file verification summary to the result for display purposes.
-		result.FileVerification = summary
-	}
-	return result
+	// FinalizeDryRunResults records summary and computes PreviewExitCode in a
+	// single call, so the exit code always reflects any unverified content
+	// adopted during dry-run without relying on the caller to sequence a
+	// separate set-then-get pair correctly.
+	return r.resourceManager.FinalizeDryRunResults(summary)
 }
 
 // executionErrorSetter is an interface for setting execution errors in dry-run mode.
