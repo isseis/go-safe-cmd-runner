@@ -312,8 +312,9 @@ F-001 / F-005 の常時 hard fail 化により、`Failures` または `Unverifie
 オプション削除時にドキュメント（`docs/design-implementation-overview.md` 等）からは
 env ファイル検証への言及が除去されたが、コード自体は取り残された。
 
-リポジトリ全体の grep で確認した限り production の呼び出し元は存在せず
-（`internal/verification/manager_test.go` のみが呼び出す）。またタスク 0146 の調査
+リポジトリ全体の grep で確認した限り production の呼び出し元は存在しておらず
+（テストコードからのみ呼び出されていた）、その唯一の呼び出し元であったテストコードも
+本タスクで本関数とともに削除された。またタスク 0146 の調査
 （`docs/tasks/0146_security_hardening/03_implementation_plan.md` の該当メモ）でも、
 env ファイルの実内容を読み込む production 経路自体が存在しないことが確認済みである。
 加えてこの関数は検証のみを行い内容を返さない設計であり、`VerifyAndReadConfigFile` /
