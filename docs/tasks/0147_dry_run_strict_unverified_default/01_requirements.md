@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-07-16 |
 | Review date | 2026-07-16 |
 | Reviewer | isseis |
-| Comments | F-007 追加（死んだコード `VerifyEnvironmentFile` の事前クリーンアップ）によるスコープ拡張のため再承認待ち |
+| Comments | |
 
 ## 1. 背景と目的
 
