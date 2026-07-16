@@ -85,10 +85,17 @@
 - 未検証理由（`UnverifiedReason`）は `skipped_no_validator` と
   `verify_failed_<FailureReason>` の 2 形式で、`FailureReason` は 5 値
   （`internal/verification/types.go:110-123`）。
-- **ハッシュディレクトリが存在しない場合、runner は起動時に当該ディレクトリを作成する**
-  （検証マネージャ初期化時）。実測（`-ldflags` で存在しないハッシュディレクトリを指定し
-  dry-run 実行）では、ディレクトリが作成されたうえで各ファイルが
-  `verify_failed_hash_file_not_found` となり、`hash_directory_not_found` は発生しなかった。
+- **この自動作成は dry-run（`filevalidator` 初期化経路）に限定される挙動であり、
+  本番実行では発生しない。** 本番経路では `validateSecurityConstraints()`
+  （`internal/verification/manager.go:492`）が `filevalidator.New`（同 `:511`）より
+  先に実行され、`validateHashDirectoryWithFS()` がハッシュディレクトリ不在を
+  hard fail として扱う（＝本番は起動時にエラー終了し、ディレクトリを作成しない）。
+  一方 `NewManagerForDryRun` のみが `withSkipHashDirectoryValidationInternal()` を
+  渡すことでこの検証をスキップし、`filevalidator.New` まで到達する。その内部で呼ばれる
+  `fileanalysis.NewStore` がハッシュディレクトリを作成する。実測（`-ldflags` で
+  存在しないハッシュディレクトリを指定し dry-run 実行）では、ディレクトリが
+  作成されたうえで各ファイルが `verify_failed_hash_file_not_found` となり、
+  `hash_directory_not_found` は発生しなかった。
   `ReasonHashDirNotFound` は `filevalidator.ErrHashDirNotExist`
   （`internal/verification/result_collector.go:162-163`）からのみ生成される。
   この事実は Q-01 および AC-08 の検証方法に影響する（§5 参照）。
@@ -105,6 +112,13 @@
 `flag` パッケージによる未定義フラグエラーで終了する）。
 
 **影響箇所**（リポジトリ全体の grep で確定。doc comment 中の言及も NFR-03 の対象に含む）:
+
+> **注記**: この「リポジトリ全体の grep」は、§1の「前提・依存」で明記したとおり
+> **凍結された過去タスク文書（0136 / 0146 など）を意図的に除外**している。したがって
+> `docs/tasks/0136_runtime_risk_evaluation_enforcement/03_implementation_plan.md` や
+> `docs/tasks/0146_security_hardening/{00_security_risk_report,02_architecture,03_implementation_plan}.md`
+> に残る `-dry-run-fail-unverified` への言及は、本表が網羅していないことを承知の上での
+> 除外であり、本表を「リポジトリ全体での完全な件数」として読むべきではない。
 
 | ファイル | 箇所 | 内容 |
 |---|---|---|
@@ -183,7 +197,7 @@
 `formatUnverifiedMarker()` は同一の述語を持つことになる。両者は同一パッケージ
 （`internal/runner/resource`）にあるため、`UnverifiedFileUsage` 1 件を判定する
 非公開ヘルパー（例: `isTamperingSignal(usage)`）へ抽出し、両者から呼び出すこと。
-判定が二重定義され将来乖離することを防ぐ（CLAUDE.md の DRY 方針）。これは
+判定が二重定義され将来乖離することを防ぐ（`CLAUDE.md` の DRY 方針）。これは
 リファクタリングであり、表示の挙動は変えない（AC-14 と両立する）。
 
 **AC-14（表示への非波及）の根拠**: `hasTamperingSignal()` の現在の呼び出し元は
@@ -290,9 +304,9 @@ dry-run が exit 0（`Verified: 2` / `Failed: 0` / ALLOW）となることを実
 - `TestDryRunE2E_AllSuccess` は **ハッシュを一切記録しておらず**「全検証成功」を
   再現していない（実測: `Verified: 0` / `Failed: 2`）。→ ハッシュ事前記録へ修正（AC-18）。
 
-上表の「変更後の期待」は AC-19 / AC-18 適用**前**の素の挙動を示す。適用後は
+上表の「変更後の期待」は `AC-19` / `AC-18` 適用**前**の素の挙動を示す。適用後は
 `TestDryRunE2E_HashDirectoryNotFound` は消滅し、`TestDryRunE2E_AllSuccess` は
-exit 0 のままとなる（ハッシュを記録するため）。
+`exit 0` のままとなる（ハッシュを記録するため）。
 
 **カバレッジの所在**:
 
