@@ -21,9 +21,8 @@ import (
 func recordDryRunJSONHashes(t *testing.T, configFile string) string {
 	t.Helper()
 	hashDir := tu.SafeTempDir(t)
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
-	require.NoError(t, err)
-	_, _, err = validator.SaveRecord(configFile, false)
+	validator := filevalidator.NewTestDynLibValidator(t, hashDir)
+	_, _, err := validator.SaveRecord(configFile, false)
 	require.NoError(t, err)
 	_, _, err = validator.SaveRecord("/bin/echo", false)
 	require.NoError(t, err)

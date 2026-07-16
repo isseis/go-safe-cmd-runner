@@ -380,8 +380,7 @@ args = ["1"]
 			// dry-run verifies cleanly and does not hard-fail on unverified
 			// content; this test only cares about the timeout debug output.
 			hashDir := tu.SafeTempDir(t)
-			validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
-			require.NoError(t, err)
+			validator := filevalidator.NewTestDynLibValidator(t, hashDir)
 			_, _, err = validator.SaveRecord(tmpFile.Name(), false)
 			require.NoError(t, err)
 			_, _, err = validator.SaveRecord("/bin/sleep", false)

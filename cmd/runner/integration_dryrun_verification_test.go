@@ -47,9 +47,8 @@ func runDryRunCommand(t *testing.T, configFile string, extraArgs ...string) (*ex
 // validator/algorithm the runner uses to verify files.
 func recordHash(t *testing.T, hashDir, filePath string) {
 	t.Helper()
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
-	require.NoError(t, err)
-	_, _, err = validator.SaveRecord(filePath, false)
+	validator := filevalidator.NewTestDynLibValidator(t, hashDir)
+	_, _, err := validator.SaveRecord(filePath, false)
 	require.NoError(t, err)
 }
 

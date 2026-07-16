@@ -382,8 +382,7 @@ func buildRunnerBinary(t *testing.T, configPath string) string {
 	binaryPath := filepath.Join(tmpDir, "runner")
 	ldflags := hashDirLDFlags(hashDir)
 
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
-	require.NoError(t, err)
+	validator := filevalidator.NewTestDynLibValidator(t, hashDir)
 	absConfigPath, err := filepath.Abs(configPath)
 	require.NoError(t, err)
 	_, _, err = validator.SaveRecord(absConfigPath, false)
