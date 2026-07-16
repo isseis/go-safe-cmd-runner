@@ -509,13 +509,14 @@ func (r *Runner) GetDryRunResults() *resource.DryRunResult {
 	if r.verificationManager != nil {
 		summary = r.verificationManager.GetVerificationSummary()
 	}
-	if summary != nil {
-		// Record the summary on the resource manager *before* asking it for
-		// results, since GetDryRunResults computes PreviewExitCode and the
-		// exit code must reflect any unverified content adopted during dry-run.
-		if setter, ok := r.resourceManager.(fileVerificationSetter); ok {
-			setter.SetFileVerification(summary)
-		}
+	// Record the summary on the resource manager *before* asking it for
+	// results, since GetDryRunResults computes PreviewExitCode and the
+	// exit code must reflect any unverified content adopted during dry-run.
+	// This call is unconditional (even when summary is nil) because
+	// SetFileVerification's contract treats a nil summary as an intentional
+	// clear of any previously recorded value.
+	if setter, ok := r.resourceManager.(fileVerificationSetter); ok {
+		setter.SetFileVerification(summary)
 	}
 
 	result := r.resourceManager.GetDryRunResults()
