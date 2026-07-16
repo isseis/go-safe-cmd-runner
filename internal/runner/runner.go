@@ -498,27 +498,15 @@ func (r *Runner) CleanupAllResources() error {
 
 // GetDryRunResults returns dry-run analysis results if available
 func (r *Runner) GetDryRunResults() *resource.DryRunResult {
+	var summary *verification.FileVerificationSummary
 	if r.verificationManager != nil {
-		// Record the file verification summary on the resource manager before
-		// computing dry-run results, so that PreviewExitCode (invoked as part
-		// of GetDryRunResults) can factor unverified configuration/template
-		// content into the exit-code mapping.
-		summary := r.verificationManager.GetVerificationSummary()
-		if setter, ok := r.resourceManager.(interface {
-			SetFileVerification(*verification.FileVerificationSummary)
-		}); ok {
-			setter.SetFileVerification(summary)
-		}
+		summary = r.verificationManager.GetVerificationSummary()
 	}
-	result := r.resourceManager.GetDryRunResults()
-	if result != nil && r.verificationManager != nil {
-		// Add file verification summary to the result
-		summary := r.verificationManager.GetVerificationSummary()
-		if summary != nil {
-			result.FileVerification = summary
-		}
-	}
-	return result
+	// FinalizeDryRunResults records summary and computes PreviewExitCode in a
+	// single call, so the exit code always reflects any unverified content
+	// adopted during dry-run without relying on the caller to sequence a
+	// separate set-then-get pair correctly.
+	return r.resourceManager.FinalizeDryRunResults(summary)
 }
 
 // executionErrorSetter is an interface for setting execution errors in dry-run mode.

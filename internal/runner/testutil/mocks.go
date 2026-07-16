@@ -9,6 +9,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -110,4 +111,14 @@ func (m *MockResourceManager) RecordGroupAnalysis(groupName string, debugInfo *r
 func (m *MockResourceManager) UpdateCommandDebugInfo(token resource.CommandToken, debugInfo *resource.DebugInfo) error {
 	args := m.Called(token, debugInfo)
 	return args.Error(0)
+}
+
+// FinalizeDryRunResults records the file-verification summary and returns
+// the finalized dry-run results, matching resource.DryRunResourceManager.
+func (m *MockResourceManager) FinalizeDryRunResults(fileVerification *verification.FileVerificationSummary) *resource.DryRunResult {
+	args := m.Called(fileVerification)
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*resource.DryRunResult)
 }
