@@ -30,11 +30,9 @@
 
 しかしこの根拠を再検討した結果、既定を exit 0 に据える正当性は乏しいと判断した。
 
-1. **フラグは終了コードのみを変える。** `-dry-run-fail-unverified` は
-   `cmd/runner/main.go:407-415` で `DryRunOptions` に渡された後、
-   `internal/runner/resource/dryrun_manager.go` の `previewExitCodeLocked()` の分岐に
-   しか影響しない。プレビュー本体（コマンド列の展開、ファイル検証、`UNVERIFIED`
-   セクションを含むレポート出力）はフラグの有無に関わらず同一である。
+1. **フラグは終了コードのみを変える。** プレビュー本体（コマンド列の展開、ファイル検証、
+   `UNVERIFIED` セクションを含むレポート出力）はフラグの有無に関わらず同一であり、
+   フラグは終了コードの決定にのみ影響する。
 2. **したがって「ローカルでプレビューを目視する」用途はフラグ常時有効でも成立する。**
    0136/0146 が既定 exit 0 の根拠として挙げていた「本番ハッシュ DB を持たないローカル
    環境でのプレビュー」「設定ファイル作成中のブートストラップ」は、いずれも人間が出力を
@@ -44,9 +42,8 @@
    `UNVERIFIED-TAMPER`（`hash_mismatch`、改ざん兆候）を含む場合ですら CI を緑にしてしまう。
 
 一方で、常時有効化をそのまま適用すると **既存の分類が実態に合わない** 問題が顕在化する。
-`hasTamperingSignal()`（`internal/runner/resource/dryrun_manager.go:494-504`）は
-`Failure != nil` の全ケースを「改ざん兆候」とみなし exit 1（policy deny）へ倒す。
-これはフラグがオプトインである限り影響が限定的だったが、常時有効化すると
+現在の実装は、検証失敗の原因を問わず一律に「改ざん兆候」とみなし exit 1（policy deny）へ
+倒している。これはフラグがオプトインである限り影響が限定的だったが、常時有効化すると
 **ハッシュ未登録・ハッシュ DB 未整備という環境起因の状況が「ポリシー拒否」として
 報告される**ことになり、`skipped_no_validator` のみを環境起因（exit 3）とする現在の
 線引きが破綻する。本タスクではこの分類も併せて是正する。
@@ -62,8 +59,7 @@
 ### スコープ外
 
 - **dry-run 出力の表示内容の変更**。`UNVERIFIED` / `UNVERIFIED-TAMPER` セクションの
-  表示、`security_risk` 注釈（`getSecurityRisk()`、`internal/verification/result_collector.go:189`）、
-  ログレベル（`determineLogLevel()`、同 `:176`）は本タスクでは変更しない。本タスクは
+  表示、`security_risk` 注釈、ログレベルは本タスクでは変更しない。本タスクは
   終了コードの決定ロジックに限定する。
 - **非 dry-run（実行経路）の挙動変更**。実行経路は従来どおりフェイルクローズドであり、
   本タスクの対象外。
@@ -83,22 +79,12 @@
   指定している場合、および未検証成果物がある状態で dry-run の exit 0 に依存している
   場合の双方が影響を受ける。
 - 未検証理由（`UnverifiedReason`）は `skipped_no_validator` と
-  `verify_failed_<FailureReason>` の 2 形式で、`FailureReason` は 5 値
-  （`internal/verification/types.go:110-123`）。
-- **この自動作成は dry-run（`filevalidator` 初期化経路）に限定される挙動であり、
-  本番実行では発生しない。** 本番経路では `validateSecurityConstraints()`
-  （`internal/verification/manager.go:492`）が `filevalidator.New`（同 `:511`）より
-  先に実行され、`validateHashDirectoryWithFS()` がハッシュディレクトリ不在を
-  hard fail として扱う（＝本番は起動時にエラー終了し、ディレクトリを作成しない）。
-  一方 `NewManagerForDryRun` のみが `withSkipHashDirectoryValidationInternal()` を
-  渡すことでこの検証をスキップし、`filevalidator.New` まで到達する。その内部で呼ばれる
-  `fileanalysis.NewStore` がハッシュディレクトリを作成する。実測（`-ldflags` で
-  存在しないハッシュディレクトリを指定し dry-run 実行）では、ディレクトリが
-  作成されたうえで各ファイルが `verify_failed_hash_file_not_found` となり、
-  `hash_directory_not_found` は発生しなかった。
-  `ReasonHashDirNotFound` は `filevalidator.ErrHashDirNotExist`
-  （`internal/verification/result_collector.go:162-163`）からのみ生成される。
-  この事実は Q-01 および AC-08 の検証方法に影響する（§5 参照）。
+  `verify_failed_<FailureReason>` の 2 形式で、`FailureReason` は 5 値ある。
+- **ハッシュディレクトリの不在は dry-run では自動的に解消され、本番実行では
+  hard fail として扱われる。** 実測（存在しないハッシュディレクトリを指定して
+  dry-run 実行）では、ディレクトリが作成されたうえで各ファイルが
+  `verify_failed_hash_file_not_found` となり、`hash_directory_not_found` は
+  発生しなかった。この事実は Q-01 および AC-08 の検証方法に影響する（§5 参照）。
 
 ## 2. 機能要件
 
@@ -111,31 +97,13 @@
 扱う。フラグは互換のための no-op として残さず、完全に削除する（指定された場合は Go の
 `flag` パッケージによる未定義フラグエラーで終了する）。
 
-**影響箇所**（リポジトリ全体の grep で確定。doc comment 中の言及も NFR-03 の対象に含む）:
-
-> **注記**: この「リポジトリ全体の grep」は、§1の「前提・依存」で明記したとおり
-> **凍結された過去タスク文書（0136 / 0146 など）を意図的に除外**している。したがって
-> `docs/tasks/0136_runtime_risk_evaluation_enforcement/03_implementation_plan.md` や
-> `docs/tasks/0146_security_hardening/{00_security_risk_report,02_architecture,03_implementation_plan}.md`
-> に残る `-dry-run-fail-unverified` への言及は、本表が網羅していないことを承知の上での
-> 除外であり、本表を「リポジトリ全体での完全な件数」として読むべきではない。
-
-| ファイル | 箇所 | 内容 |
-|---|---|---|
-| `cmd/runner/main.go` | `:47` | `dryRunFailUnverified` 変数 |
-| | `:78` | `flag.BoolVar` 定義 |
-| | `:413` | `DryRunOptions` への代入 |
-| `internal/runner/resource/types.go` | `:91-114` | `FailOnVerificationUnavailable` フィールドと doc comment |
-| | `:126` | `DryRunExitVerificationUnavailable` 定数の doc comment |
-| | `:205-212` | `DryRunResult.PreviewExitCode` の doc comment（優先順位の記述） |
-| `internal/runner/resource/dryrun_manager.go` | `:51` | `failOnVerificationUnavailable` フィールド宣言 |
-| | `:83` | 構造体 doc comment 中のフラグ言及 |
-| | `:120` | `opts` から内部フィールドへの伝搬 |
-| | `:422-475` | `PreviewExitCode` / `previewExitCodeLocked` の分岐と doc comment |
-| | `:494-504` | `hasTamperingSignal()`（F-002 で再定義） |
-| `internal/verification/manager.go` | `:425` | doc comment 中の `--dry-run-fail-unverified` 言及 |
-| `internal/runner/resource/security_test.go` | `:152`, `:177`, `:272`, `:313-366` | テスト側のフラグ参照（§3 参照） |
-| `docs/translation_glossary.md` | `:733` | 変更履歴行（F-003 で扱う） |
+**影響範囲**: フラグ本体（変数・`flag` 定義・`DryRunOptions` への伝搬）、フラグを
+保持する構造体フィールドとその doc comment、フラグに言及する他パッケージの doc
+comment、フラグに依存するテスト、`docs/translation_glossary.md` の変更履歴が対象。
+リポジトリ全体の grep で確定するが、**凍結された過去タスク文書（0136 / 0146 など、
+§1「前提・依存」参照）は意図的に除外**しており、そこに残る言及は本タスクの対象外。
+削除対象シンボルの具体的なファイル・行番号一覧は `03_implementation_plan.md` で管理する
+（NFR-03 により doc comment 中の言及も削除対象に含む）。
 
 **Acceptance Criteria**:
 - **AC-01**: `-dry-run-fail-unverified` を指定して `runner` を起動すると、未定義フラグ
@@ -154,9 +122,9 @@
 
 ### F-002: 未検証理由の環境起因／改ざん兆候の再分類
 
-`hasTamperingSignal()` が `Failure != nil` を一律に改ざん兆候として扱う現行の分類を
-改め、`FailureReason` の値ごとに「環境起因（この環境では検証できない／記録が無い）」と
-「改ざん兆候（検証を試みて不整合を検出した）」を区別する。
+検証失敗を一律に改ざん兆候として扱う現行の分類を改め、`FailureReason` の値ごとに
+「環境起因（この環境では検証できない／記録が無い）」と「改ざん兆候（検証を試みて
+不整合を検出した）」を区別する。
 
 **分類の定義**:
 
@@ -171,39 +139,14 @@
 
 すなわち **`hash_mismatch` のみが exit 1、他の全理由は exit 3** となる。
 
-**設計上の注記 1（分類軸）**: 本表の軸は「**検証を試行し、記録との不整合を実際に
-検出したか**」である。`hash_mismatch` だけがこれを満たす。他の 4 理由は
-「検証できなかった」に留まり、改ざんの積極的な証拠ではないため環境起因とする。
-この軸は `getSecurityRisk()`（`internal/verification/result_collector.go:189-200`）や
-`determineLogLevel()`（同 `:176-186`）とは**異なる軸**であり、両者の値が一致しなくても
-矛盾ではない。`getSecurityRisk()` は「本番実行時にどの程度危険か」を測り、
-`hash_file_not_found` / `file_read_error` / `permission_denied` を medium とするが、
-これらは本表では環境起因（exit 3）である。`determineLogLevel()` が
-`hash_file_not_found` を ERROR とする理由も「本番実行では失敗するから」
-（同 `:181` のコメント）であり、改ざん兆候だからではない。
-
-**設計上の注記 2（表示との一致）**: 本分類により、終了コードの改ざん兆候判定は
-表示側の `formatUnverifiedMarker()`（`internal/runner/resource/formatter.go:240-246`）と
-**完全に一致する**（いずれも `Failure == ReasonHashMismatch` のみを改ざん兆候とみなす）。
-その結果、以下が 1 対 1 で対応する一貫したモデルとなり、利用者は dry-run 出力から
-終了コードの理由を読み取れる。
-
-| 表示 | `security_risk` | 終了コード |
-|---|---|---|
-| `UNVERIFIED-TAMPER`（`hash_mismatch`） | high | `1` |
-| `UNVERIFIED`（他の全理由） | medium / low | `3` |
-
-**設計上の注記 3（DRY）**: 上記のとおり `hasTamperingSignal()` と
-`formatUnverifiedMarker()` は同一の述語を持つことになる。両者は同一パッケージ
-（`internal/runner/resource`）にあるため、`UnverifiedFileUsage` 1 件を判定する
-非公開ヘルパー（例: `isTamperingSignal(usage)`）へ抽出し、両者から呼び出すこと。
-判定が二重定義され将来乖離することを防ぐ（`CLAUDE.md` の DRY 方針）。これは
-リファクタリングであり、表示の挙動は変えない（AC-14 と両立する）。
-
-**AC-14（表示への非波及）の根拠**: `hasTamperingSignal()` の現在の呼び出し元は
-`previewExitCodeLocked()` のみである（grep で確認済み）。表示は独立した
-`formatUnverifiedMarker()` が決定しており、その判定条件は本タスクで変更しない。
-したがって終了コード分類の変更は表示へ波及しない。
+**分類の根拠**: 本表の軸は「検証を試行し、記録との不整合を実際に検出したか」である。
+`hash_mismatch` だけがこれを満たし、他の 4 理由は「検証できなかった」に留まるため
+環境起因とする。この軸は、表示側が付与する `security_risk` 注釈やログレベルとは
+異なる軸であり、両者の値が一致しなくても矛盾ではない（表示側は本タスクで変更しない。
+スコープ外を参照）。また本分類は、表示側で「改ざん兆候」とみなす条件（`hash_mismatch`
+のみ）と一致するため、利用者は dry-run 出力の表示と終了コードを一貫した理由として
+読み取れる。判定ロジックの実装方法（表示側・終了コード側で共通の判定関数を使う等）は
+設計文書で扱う。
 
 **Acceptance Criteria**:
 - **AC-07**: `skipped_no_validator` のみを含む未検証成果物は
@@ -231,11 +174,10 @@
 `-dry-run-fail-unverified` の削除と常時 hard fail 化を、ユーザー向けドキュメントへ
 反映する。破壊的変更である旨と移行方法を明記する。
 
-**影響箇所**:
-- `docs/user/runner_command.md:650-705`（`-dry-run-fail-unverified` 節、終了コード表、
-  Use Cases、Usage Examples、Notes）
-- `docs/user/runner_command.ja.md:650-705`（同上・日本語版）
-- `docs/translation_glossary.md`（当該フラグ由来の用語エントリ）
+**影響範囲**: `docs/user/runner_command.md` および `.ja.md` の
+`-dry-run-fail-unverified` 節（終了コード表、Use Cases、Usage Examples、Notes）と、
+`docs/translation_glossary.md` の当該フラグ由来の用語エントリ。具体的な行範囲は
+`03_implementation_plan.md` で管理する。
 
 **Acceptance Criteria**:
 - **AC-15**: `docs/user/runner_command.md` および `docs/user/runner_command.ja.md` から
@@ -248,7 +190,7 @@
 
 ### F-004: 既存 E2E テストの是正（Q-03 の決定により本タスクで実施）
 
-§3.1 で判明したテスト名と実態の乖離を是正する。これは AC-05 を検証可能にするために
+§3 で判明したテスト名と実態の乖離を是正する。これは AC-05 を検証可能にするために
 必須であり、かつ現状のテストが「検証成功」を偽って主張している状態を解消する。
 
 **Acceptance Criteria**:
@@ -262,72 +204,29 @@
   `hash_directory_not_found` の検証は AC-08 のユニットテストに一本化する
   （重複テストを残さない＝DRY）。
 
-**実装上の注記**: AC-18 のハッシュ事前記録は、既存の
-`filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})`
-＋ `SaveRecord()`（`internal/filevalidator/validator.go:245`）で実現できる。
-`cmd/runner/integration_security_test.go:461` に同 API の利用例がある。
-本要件のレビュー時に、`config.toml` と `/bin/echo` のハッシュを記録した状態で
-dry-run が exit 0（`Verified: 2` / `Failed: 0` / ALLOW）となることを実測で確認済み。
+本要件のレビュー時に、対象ファイルのハッシュを事前記録した状態で dry-run が
+exit 0（`Verified: 2` / `Failed: 0` / ALLOW）となることを実測で確認済みであり、
+AC-18 は実現可能である。具体的な実装方法は `03_implementation_plan.md` で扱う。
 
 ## 3. 影響を受ける既存テスト
 
-本変更は既存テストの期待値変更を伴う。**実測（`go run` で E2E テストと同一条件を再現）に
-基づき、影響範囲は当初想定より広い**ことが判明した。網羅的な一覧は
-`03_implementation_plan.md` で確定させる。
+本変更は既存の E2E テスト（`cmd/runner/integration_dryrun_verification_test.go`）と
+ユニットテスト（`internal/runner/resource/security_test.go`）の期待値変更を伴う。
+実測により、影響範囲は当初想定より広いことが判明した。具体的なテスト単位の
+変更内容・対応 AC の一覧は `03_implementation_plan.md` で管理する。
 
-### 3.1 E2E テスト（`cmd/runner/integration_dryrun_verification_test.go`）
+実測で判明した特筆すべき事実（F-004 の根拠）:
 
-`newGoRunCmd()`（`cmd/runner/testutil_ldflags_test.go:27-35`）は **空の一時ディレクトリ**を
-既定ハッシュディレクトリとして `-ldflags` 埋め込みする。したがって当該ファイルの
-**全 E2E テストがハッシュ未登録状態で動作しており**、実測では各実行が
-`verify_failed_hash_file_not_found` の未検証成果物を採用し、かつリスクゲートの
-検証不能 deny（`uncertain_unverified_identity`）を伴う。両者とも F-002 では exit 3 に写像
-されるため、**同ファイルの exit 0 アサーションは 6 件すべてが exit 3 へ変わる**。
-
-| テスト | 現在の期待 | 変更後の期待 | 対応 AC |
-|---|---|---|---|
-| `:46` `TestDryRunE2E_HashDirectoryNotFound` | exit 0 | exit 3 | AC-09 / AC-04 |
-| `:70` `TestDryRunE2E_HashFilesNotFound` | exit 0 | exit 3 | AC-09 / AC-04 |
-| `:94` `TestDryRunE2E_AllSuccess` | exit 0 | exit 3 | AC-09 / AC-04 |
-| `:121` `TestDryRunE2E_JSONOutput` | exit 0 | exit 3 | AC-09 / AC-04 |
-| `:167` `TestDryRunE2E_MixedResults` | exit 0（「dry-run never fails」コメント付き） | exit 3 | AC-09 / AC-04 |
-| `:205` `TestDryRunE2E_NoSideEffects` | exit 0 | exit 3 | AC-09 / AC-04 |
-| `:32-41` `runDryRunCommand()` ヘルパー | `require.NoError(t, err, "dry-run should succeed")` | 非ゼロ終了を許容する形へ改修（`:39`） | AC-03 |
-
-**テスト名と実態の乖離**: 実測により以下が判明した。**Q-03 の決定により本タスクで
-是正する**（F-004）。
-
-- `TestDryRunE2E_HashDirectoryNotFound` は **ハッシュディレクトリ不在を再現していない**。
-  `newGoRunCmd()` が作成する空ディレクトリを使うため、`TestDryRunE2E_HashFilesNotFound`
-  と**セットアップも期待も完全に同一**であり、実際に発生する理由は
-  `hash_file_not_found` である。→ 削除（AC-19）。
-- `TestDryRunE2E_AllSuccess` は **ハッシュを一切記録しておらず**「全検証成功」を
-  再現していない（実測: `Verified: 0` / `Failed: 2`）。→ ハッシュ事前記録へ修正（AC-18）。
-
-上表の「変更後の期待」は `AC-19` / `AC-18` 適用**前**の素の挙動を示す。適用後は
-`TestDryRunE2E_HashDirectoryNotFound` は消滅し、`TestDryRunE2E_AllSuccess` は
-`exit 0` のままとなる（ハッシュを記録するため）。
-
-**カバレッジの所在**:
-
-- **AC-05**（全検証成功で exit 0）: 既存 E2E に有効なカバレッジが無いため、
-  F-004 / AC-18 で担保する。
-- **AC-08**（`hash_directory_not_found` で exit 3）: 前提・依存に記したとおり、runner が
-  ハッシュディレクトリを起動時に作成するため **E2E では再現できない**。
-  `UnverifiedFileUsage` を合成する**ユニットテストで検証する**。
-
-### 3.2 ユニットテスト（`internal/runner/resource/security_test.go`）
-
-| テスト | 現在の期待 | 変更後の期待 | 対応 AC |
-|---|---|---|---|
-| `:128-147` `TestDryRun_AnalysisUnavailableDenyPreview` | `DryRunExitAllow`（`:147`） | `DryRunExitVerificationUnavailable` | AC-04 |
-| `:153-185` `TestDryRun_VerificationUnavailableExitCode` の `:171` "verification unavailable not a failure by default" | `DryRunExitAllow` | `DryRunExitVerificationUnavailable` | AC-04 |
-| 同 `:172` "verification unavailable escalated to distinct code" | `failOnVerif: true` で exit 3 | フラグ軸を削除（既定で exit 3）。`:171` と重複するため統合 | AC-04 |
-| `:272-374` `TestDryRun_UnverifiedContentExitCode` | `failOnVerif` によるテーブル駆動 | フラグ軸を削除し F-002 の分類軸（6 理由 × 混在）へ再構成 | AC-07〜AC-13 |
-
-再構成後のテーブルは、`skipped_no_validator` と `FailureReason` 5 値の計 6 ケースに
-加え、AC-13 の混在ケース（`hash_mismatch` + 環境起因理由 → exit 1）を含めること。
-`hash_directory_not_found` のケースは E2E で再現不能なため、ここで担保する（AC-08）。
+- 既存 E2E テストの一部は、ハッシュディレクトリが未登録の状態で実行されており、
+  結果として `TestDryRunE2E_HashDirectoryNotFound` は実際には
+  `hash_directory_not_found` を再現しておらず、`TestDryRunE2E_HashFilesNotFound` と
+  セットアップ・期待が完全に重複している。→ 重複テストとして削除する（AC-19）。
+- `TestDryRunE2E_AllSuccess` はハッシュを事前記録しておらず、名前が示す「全検証成功」
+  を実際には再現していない。→ ハッシュ事前記録へ修正する（AC-18）。
+- **AC-05**（全検証成功で exit 0）と **AC-08**（`hash_directory_not_found` で exit 3）は、
+  既存 E2E に有効なカバレッジが無い。AC-05 は F-004（AC-18 の修正）で担保し、AC-08 は
+  runner がハッシュディレクトリを起動時に自動作成するため E2E では再現不能であり、
+  ユニットテストで担保する。
 
 ## 4. 非機能要件
 
@@ -343,24 +242,19 @@ dry-run が exit 0（`Verified: 2` / `Failed: 0` / ALLOW）となることを実
 
 - **Q-01（解決）**: `verify_failed_hash_directory_not_found` の分類。
   **決定: 環境起因（exit 3）とする。**
-  経緯: 本理由は要件検討時の選択肢提示から漏れていた
-  （`internal/runner/resource/types.go:101-104` の doc comment 自体が 5 値中 4 値しか
-  列挙しておらず、それを元に選択肢を作成したため）。
+  経緯: 本理由は要件検討時の選択肢提示から漏れていた。
   調査結果: 実測により、runner はハッシュディレクトリが存在しない場合に**これを
   起動時に作成する**ため、dry-run プレビュー経路で `hash_directory_not_found` は
   発生しないことを確認した（§1 前提・依存）。本分類は**到達不能な経路に対する
   防御的な定義**であり、実挙動への影響は無い。AC-08 はユニットテストで担保する
-  （§3.2）。
+  （§3 参照）。
 - **Q-02（解決）**: `file_read_error` / `permission_denied` の分類。
   **決定: 環境起因（exit 3）とする**（当初案の「改ざん兆候（exit 1）据え置き」から
   **変更**）。
   影響: これにより **`hash_mismatch` のみが exit 1** となり、分類が大幅に単純化された。
   副次的効果として、当初レビューで指摘した「表示は素の `UNVERIFIED` なのに exit 1」
   という乖離が**解消**され、終了コードが表示（`UNVERIFIED-TAMPER`）および
-  `security_risk`（high）と 1 対 1 で対応する一貫したモデルとなった
-  （F-002 設計上の注記 2）。さらに `hasTamperingSignal()` と
-  `formatUnverifiedMarker()` の述語が一致するため、共通ヘルパーへの抽出が可能に
-  なった（同注記 3）。
+  `security_risk`（high）と 1 対 1 で対応する一貫したモデルとなった。
 - **Q-03（解決）**: `TestDryRunE2E_HashDirectoryNotFound` /
   `TestDryRunE2E_AllSuccess` の名称と実態の乖離。
   **決定: 本タスクで修正する。** F-004（AC-18 / AC-19）として要件化した。
