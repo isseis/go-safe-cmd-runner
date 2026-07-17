@@ -379,6 +379,40 @@ func TestNewStore_NotADirectory(t *testing.T) {
 	assert.Contains(t, err.Error(), "not a directory")
 }
 
+func TestNewStoreReadOnly_MissingDirectory_ReturnsErrorWithoutCreating(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	analysisDir := filepath.Join(tmpDir, "new", "nested", "dir")
+
+	_, err := os.Stat(analysisDir)
+	assert.True(t, os.IsNotExist(err))
+
+	store, err := NewStoreReadOnly(analysisDir, &mockPathGetter{})
+	require.Error(t, err)
+	assert.Nil(t, store)
+
+	_, statErr := os.Stat(analysisDir)
+	assert.True(t, os.IsNotExist(statErr), "directory must not be created by NewStoreReadOnly")
+}
+
+func TestNewStoreReadOnly_ExistingDirectory(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+
+	store, err := NewStoreReadOnly(tmpDir, &mockPathGetter{})
+	require.NoError(t, err)
+	assert.NotNil(t, store)
+}
+
+func TestNewStoreReadOnly_NotADirectory(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	notADir := filepath.Join(tmpDir, "file.txt")
+
+	err := os.WriteFile(notADir, []byte("not a directory"), 0o644)
+	require.NoError(t, err)
+
+	_, err = NewStoreReadOnly(notADir, &mockPathGetter{})
+	assert.ErrorIs(t, err, ErrAnalysisDirNotDirectory)
+}
+
 func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
