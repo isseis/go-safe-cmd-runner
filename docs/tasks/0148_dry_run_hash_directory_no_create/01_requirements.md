@@ -61,6 +61,9 @@ dry-run は「プレビューであり本番環境に副作用を及ぼさない
 | `verify_failed_hash_file_not_found` | 環境起因 | `3` |
 | `skipped_no_validator` | 環境起因 | `3` |
 
+（注: 上表は利用者が観測する報告形式 `verify_failed_` 接頭辞付きの名称で記載している。内部値
+との 2 層の対応関係は §2 の「理由名の 2 層について」で後述する。）
+
 3 者はいずれも環境起因（exit 3）であるため、**本タスクによって dry-run の終了コードは変化
 しない**。本タスクが解消するのは (a) ディレクトリ作成という副作用、(b) 報告される未検証理由が
 実態（ディレクトリ不在）と一致しないこと、の 2 点である。
@@ -144,7 +147,7 @@ dry-run でハッシュディレクトリが不在の場合、検証対象ファ
 dry-run がハッシュディレクトリを作成しないこと、および不在時の未検証理由が
 `hash_directory_not_found`（exit 3）であることを、ユーザー向けドキュメントへ反映する。
 
-**影響範囲**: `docs/user/runner_command.md` および `.ja.md` の dry-run / 終了コードに関する節。
+**影響範囲**: `docs/user/runner_command.md` および `docs/user/runner_command.ja.md` の dry-run / 終了コードに関する節。
 具体的な行範囲は `03_implementation_plan.md` で管理する。
 
 **Acceptance Criteria**:
