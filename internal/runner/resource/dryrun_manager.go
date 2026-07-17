@@ -46,9 +46,8 @@ type DryRunResourceManager struct {
 
 	// Risk evaluation and audit. The same evaluator as normal mode is used so the
 	// dry-run preview reproduces the runtime allow/deny decision (read-only).
-	riskEvaluator                 risk.Evaluator
-	auditLogger                   *audit.Logger
-	failOnVerificationUnavailable bool
+	riskEvaluator risk.Evaluator
+	auditLogger   *audit.Logger
 
 	// Output capture dependencies
 	outputManager output.CaptureManager
@@ -80,10 +79,9 @@ type DryRunResourceManager struct {
 	// verification.Manager for the dry-run preview. It is set via
 	// FinalizeDryRunResults once the verification manager has finished walking
 	// the configuration/template files, and consulted by previewExitCodeLocked so
-	// that the --dry-run-fail-unverified flag can map "content adopted without
-	// successful hash verification" to the right exit code (environment cause
-	// -> 3, tampering signal -> 1). See docs/tasks/0146_security_hardening/02_architecture.md
-	// for the full design.
+	// that unverified content (UnverifiedFiles) and verification failures
+	// (Failures) together determine the exit code: tampering signal
+	// (hash_mismatch) -> 1, environment cause only -> 3.
 	fileVerification *verification.FileVerificationSummary
 
 	// State management
@@ -112,13 +110,12 @@ func NewDryRunResourceManagerWithOutput(exec executor.CommandExecutor, privMgr r
 
 	// Extract security analysis configuration from options
 	return &DryRunResourceManager{
-		executor:                      exec,
-		privilegeManager:              privMgr,
-		pathResolver:                  pathResolver,
-		riskEvaluator:                 evaluator,
-		auditLogger:                   auditLogger,
-		failOnVerificationUnavailable: opts.FailOnVerificationUnavailable,
-		outputManager:                 outputMgr,
+		executor:         exec,
+		privilegeManager: privMgr,
+		pathResolver:     pathResolver,
+		riskEvaluator:    evaluator,
+		auditLogger:      auditLogger,
+		outputManager:    outputMgr,
 
 		dryRunOptions: opts,
 		dryRunResult: &DryRunResult{
@@ -422,22 +419,16 @@ func (d *DryRunResourceManager) recordPreviewDecision(cmd *runnertypes.RuntimeCo
 // PreviewExitCode returns the process exit code for the dry-run preview. The
 // priority, from highest to lowest, is:
 //
-//  1. A policy deny (DryRunExitPolicyDeny, = 1): a command would be denied by
-//     the risk gate. Dominates everything else so a real policy violation is
-//     never masked by an environment-cause exit code.
-//  2. A tampering signal (verify_failed_<reason>, e.g. hash mismatch) recorded
-//     in the file-verification summary as unverified content. When
-//     FailOnVerificationUnavailable is set, this maps to DryRunExitPolicyDeny
-//     (= 1) so the tampering signal is not buried in the environment-cause
-//     code. By default (no opt-in) it is reported only as a note and the
-//     dry-run still exits 0 (dry-run is a preview).
-//  3. An environment-cause unverified content (skipped_no_validator) or a
-//     verification-unavailable deny from the risk gate. When
-//     FailOnVerificationUnavailable is set, this maps to
-//     DryRunExitVerificationUnavailable (= 3). By default it is reported only
-//     as a note (exit 0).
-//  4. 0 (DryRunExitAllow): every previewed command would be allowed and no
-//     unverified content was adopted.
+//  1. DryRunExitPolicyDeny (= 1): a policy deny from the risk gate.
+//  2. DryRunExitPolicyDeny (= 1): any unverified content or verification
+//     failure carries a tampering signal (hash_mismatch, verified by
+//     IsTamperingSignal). Dominates environment-cause exits so a real
+//     tampering signal is never buried.
+//  3. DryRunExitVerificationUnavailable (= 3): unverified content or
+//     verification failures exist but are environment-cause only (no
+//     hash_mismatch), or a verification-unavailable deny from the risk gate.
+//  4. DryRunExitAllow (= 0): every previewed command would be allowed and no
+//     unverified content or verification failure exists.
 func (d *DryRunResourceManager) PreviewExitCode() int {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -445,30 +436,23 @@ func (d *DryRunResourceManager) PreviewExitCode() int {
 }
 
 // previewExitCodeLocked computes the preview exit code. The caller must hold mu
-// (read or write). See PreviewExitCode for the full priority order and the
-// relationship between unverified content (verify_failed_* vs skipped_no_validator)
-// and the exit-code mapping.
+// (read or write). The priority is documented in PreviewExitCode above:
+// policy deny -> tampering signal -> environment cause -> allow.
 func (d *DryRunResourceManager) previewExitCodeLocked() int {
 	if d.previewPolicyDeny {
 		return DryRunExitPolicyDeny
 	}
-	if d.fileVerification != nil && d.fileVerification.UsedUnverifiedContent {
-		if hasTamperingSignal(d.fileVerification.UnverifiedFiles) {
-			// Tampering signal: only escalate when the operator opted in via
-			// --dry-run-fail-unverified. Without the opt-in we keep the default
-			// note-only, exit-0 behavior so a local dry-run is not broken by a
-			// missing hash database. See
-			// docs/tasks/0146_security_hardening/02_architecture.md (3.4.3).
-			if d.failOnVerificationUnavailable {
-				return DryRunExitPolicyDeny
-			}
-		} else if d.failOnVerificationUnavailable {
-			// Environment cause (no validator): distinct exit code so CI can
-			// tell "could not verify" apart from a real policy deny.
+	if d.fileVerification != nil {
+		if hasTamperingSignal(d.fileVerification.UnverifiedFiles) ||
+			hasFailureTamperingSignal(d.fileVerification.Failures) {
+			return DryRunExitPolicyDeny
+		}
+		if len(d.fileVerification.UnverifiedFiles) > 0 ||
+			len(d.fileVerification.Failures) > 0 {
 			return DryRunExitVerificationUnavailable
 		}
 	}
-	if d.previewVerificationUnavailable && d.failOnVerificationUnavailable {
+	if d.previewVerificationUnavailable {
 		return DryRunExitVerificationUnavailable
 	}
 	return DryRunExitAllow
@@ -492,13 +476,25 @@ func (d *DryRunResourceManager) SetFileVerification(summary *verification.FileVe
 }
 
 // hasTamperingSignal reports whether any unverified file usage carries a
-// concrete FailureReason (verify_failed_<reason>) rather than only a
-// skipped_no_validator environment cause. Hash mismatch, hash file not
-// found, file read error, and permission denied are all tampering-signals
-// here: verification was attempted and reported as failed.
+// tampering signal as defined by verification.IsTamperingSignal. Only
+// hash_mismatch qualifies; all other reasons (hash_file_not_found, file
+// read error, permission denied, skipped_no_validator) are environment
+// causes.
 func hasTamperingSignal(usages []verification.UnverifiedFileUsage) bool {
 	for _, u := range usages {
-		if u.Failure != nil {
+		if u.IsTamperingSignal() {
+			return true
+		}
+	}
+	return false
+}
+
+// hasFailureTamperingSignal reports whether any recorded verification
+// failure carries a tampering signal (hash_mismatch). It covers failures
+// recorded as Failures rather than adopted content, e.g. verify_files.
+func hasFailureTamperingSignal(failures []verification.FileVerificationFailure) bool {
+	for _, f := range failures {
+		if f.Reason.IsTamperingSignal() {
 			return true
 		}
 	}

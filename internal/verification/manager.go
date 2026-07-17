@@ -387,7 +387,7 @@ func (m *Manager) verifyFileWithHash(filePath string, context string) (string, e
 //
 // In dry-run mode, both fallback paths additionally mark the adopted content
 // as UNVERIFIED via the ResultCollector so downstream consumers (text/json
-// output, --dry-run-fail-unverified exit code) can distinguish unverified
+// output, the dry-run preview exit code) can distinguish unverified
 // content from successfully verified content.
 func (m *Manager) readAndVerifyFileWithReadFallback(filePath string, context string) ([]byte, error) {
 	if m.fileValidator == nil {

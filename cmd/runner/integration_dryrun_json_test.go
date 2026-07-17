@@ -8,9 +8,26 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// recordDryRunJSONHashes creates a hash directory and pre-records hashes for
+// configFile and /bin/echo so a dry-run of a config using /bin/echo verifies
+// cleanly and does not hard-fail on unverified content. Returns the hash
+// directory to embed via newGoRunCmdWithHashDir.
+func recordDryRunJSONHashes(t *testing.T, configFile string) string {
+	t.Helper()
+	hashDir := tu.SafeTempDir(t)
+	validator := filevalidator.NewTestDynLibValidator(t, hashDir)
+	_, _, err := validator.SaveRecord(configFile, false)
+	require.NoError(t, err)
+	_, _, err = validator.SaveRecord("/bin/echo", false)
+	require.NoError(t, err)
+	return hashDir
+}
 
 func TestDryRun_JSON_OutputStructure(t *testing.T) {
 	tests := []struct {
@@ -56,7 +73,8 @@ args = ["hello"]
 
 			// Run command in dry-run mode with JSON output
 			// Capture stdout and stderr separately to verify JSON output separation
-			cmd := newGoRunCmd(t, "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
+			hashDir := recordDryRunJSONHashes(t, tmpFile.Name())
+			cmd := newGoRunCmdWithHashDir(t, hashDir, "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
 
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
@@ -194,7 +212,8 @@ args = ["hello"]
 			tmpFile.Close()
 
 			// Run command in dry-run mode with JSON output
-			cmd := newGoRunCmd(t, "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
+			hashDir := recordDryRunJSONHashes(t, tmpFile.Name())
+			cmd := newGoRunCmdWithHashDir(t, hashDir, "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
 
 			output, err := cmd.Output() // Use Output() instead of CombinedOutput() to get only stdout
 			require.NoError(t, err, "dry-run should succeed")

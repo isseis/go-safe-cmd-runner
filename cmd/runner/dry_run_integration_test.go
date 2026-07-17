@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -21,12 +22,11 @@ import (
 
 // TestDryRunJSONOutput_WithDebugInfo tests that JSON dry-run output includes debug information
 func TestDryRunJSONOutput_WithDebugInfo(t *testing.T) {
-	// Build the runner binary
-	runnerBinary := buildRunnerBinary(t)
-	defer os.Remove(runnerBinary)
-
-	// Get test config path
+	// Get test config path and build the runner binary (with the config's
+	// hash pre-recorded so the dry-run verifies cleanly)
 	configPath := filepath.Join("testdata", "dry_run_debug_test.toml")
+	runnerBinary := buildRunnerBinary(t, configPath)
+	defer os.Remove(runnerBinary)
 
 	// Set required environment variables for the test
 	env := []string{
@@ -136,12 +136,11 @@ func TestDryRunJSONOutput_WithDebugInfo(t *testing.T) {
 
 // TestDryRunJSONOutput_DetailLevels tests that different detail levels produce appropriate output
 func TestDryRunJSONOutput_DetailLevels(t *testing.T) {
-	// Build the runner binary
-	runnerBinary := buildRunnerBinary(t)
-	defer os.Remove(runnerBinary)
-
-	// Get test config path
+	// Get test config path and build the runner binary (with the config's
+	// hash pre-recorded so the dry-run verifies cleanly)
 	configPath := filepath.Join("testdata", "dry_run_debug_test.toml")
+	runnerBinary := buildRunnerBinary(t, configPath)
+	defer os.Remove(runnerBinary)
 
 	// Set required environment variables
 	env := []string{
@@ -247,12 +246,11 @@ func TestDryRunJSONOutput_DetailLevels(t *testing.T) {
 
 // TestDryRunTextOutput_Unchanged tests that text output format is unchanged after modifications
 func TestDryRunTextOutput_Unchanged(t *testing.T) {
-	// Build the runner binary
-	runnerBinary := buildRunnerBinary(t)
-	defer os.Remove(runnerBinary)
-
-	// Get test config path
+	// Get test config path and build the runner binary (with the config's
+	// hash pre-recorded so the dry-run verifies cleanly)
 	configPath := filepath.Join("testdata", "dry_run_debug_test.toml")
+	runnerBinary := buildRunnerBinary(t, configPath)
+	defer os.Remove(runnerBinary)
 
 	// Set required environment variables
 	env := []string{
@@ -291,12 +289,11 @@ func TestDryRunTextOutput_Unchanged(t *testing.T) {
 
 // TestDryRunSensitiveMasking tests that sensitive information is properly masked
 func TestDryRunSensitiveMasking(t *testing.T) {
-	// Build the runner binary
-	runnerBinary := buildRunnerBinary(t)
-	defer os.Remove(runnerBinary)
-
-	// Get test config path
+	// Get test config path and build the runner binary (with the config's
+	// hash pre-recorded so the dry-run verifies cleanly)
 	configPath := filepath.Join("testdata", "dry_run_debug_test.toml")
+	runnerBinary := buildRunnerBinary(t, configPath)
+	defer os.Remove(runnerBinary)
 
 	// Set required environment variables (including sensitive ones)
 	env := []string{
@@ -370,8 +367,12 @@ func TestDryRunSensitiveMasking(t *testing.T) {
 
 // Helper functions
 
-// buildRunnerBinary builds the runner binary for testing
-func buildRunnerBinary(t *testing.T) string {
+// buildRunnerBinary builds the runner binary for testing, with hashDir
+// embedded as the default hash directory. The hash for configPath and for
+// the "echo" binary resolved via PATH is pre-recorded in hashDir so a
+// dry-run of testdata/dry_run_debug_test.toml (which runs "echo") verifies
+// cleanly and does not hard-fail on unverified content.
+func buildRunnerBinary(t *testing.T, configPath string) string {
 	t.Helper()
 
 	// Create temporary directory for binary
@@ -381,6 +382,16 @@ func buildRunnerBinary(t *testing.T) string {
 	binaryPath := filepath.Join(tmpDir, "runner")
 	ldflags := hashDirLDFlags(hashDir)
 
+	validator := filevalidator.NewTestDynLibValidator(t, hashDir)
+	absConfigPath, err := filepath.Abs(configPath)
+	require.NoError(t, err)
+	_, _, err = validator.SaveRecord(absConfigPath, false)
+	require.NoError(t, err)
+	echoPath, err := exec.LookPath("echo")
+	require.NoError(t, err)
+	_, _, err = validator.SaveRecord(echoPath, false)
+	require.NoError(t, err)
+
 	// Build the binary
 	cmd := exec.Command("go", "build", "-tags", "test", "-ldflags", ldflags, "-o", binaryPath, ".")
 	cmd.Dir = "." // Current directory (cmd/runner)
@@ -388,7 +399,7 @@ func buildRunnerBinary(t *testing.T) string {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 	require.NoError(t, err, "failed to build runner binary: %s", stderr.String())
 
 	return binaryPath
@@ -449,12 +460,11 @@ func findAllResourceAnalysesByType(result resource.DryRunResult, resType resourc
 
 // TestJSONValidStructure tests that JSON output is well-formed and can be parsed by standard tools
 func TestJSONValidStructure(t *testing.T) {
-	// Build the runner binary
-	runnerBinary := buildRunnerBinary(t)
-	defer os.Remove(runnerBinary)
-
-	// Get test config path
+	// Get test config path and build the runner binary (with the config's
+	// hash pre-recorded so the dry-run verifies cleanly)
 	configPath := filepath.Join("testdata", "dry_run_debug_test.toml")
+	runnerBinary := buildRunnerBinary(t, configPath)
+	defer os.Remove(runnerBinary)
 
 	// Set required environment variables
 	env := []string{

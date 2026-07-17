@@ -108,7 +108,17 @@ BINARY_TEST_VERIFY=build/test/verify
 BINARY_TEST_RUNNER=build/test/runner
 
 # Build flags to embed configuration values
-BUILD_FLAGS=-ldflags "-s -w -X main.DefaultHashDirectory=$(DEFAULT_HASH_DIRECTORY)"
+BUILD_FLAGS=-ldflags "-s -w -X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=$(DEFAULT_HASH_DIRECTORY)"
+
+# Hash directory for the test binaries (e2e-test). Unlike DEFAULT_HASH_DIRECTORY,
+# this lives under the repo checkout so it is owned by the invoking user; record's
+# TOCTOU ownership check refuses to trust a hash source/directory owned by
+# someone other than root or the real UID, which a plain `sudo record` would
+# violate for a repo-owned file such as sample/comprehensive.toml (the source
+# directory is owned by the checkout user, not root). Recording without sudo
+# into a self-owned directory avoids that violation entirely.
+TEST_HASH_DIRECTORY=$(CURDIR)/build/test/hashes
+BUILD_FLAGS_TEST_HASH=-ldflags "-s -w -X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=$(TEST_HASH_DIRECTORY)"
 
 # Find all Go source files to use as dependencies for the build
 GO_SOURCES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
@@ -119,7 +129,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test test-ci test-ci-cgo1 test-ci-cgo0 test-all benchmark hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test unit-test-cgo1 unit-test-cgo0 e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
+.PHONY: all lint build run clean test test-ci test-ci-cgo1 test-ci-cgo0 test-all benchmark hash hash-integration-test hash-e2e-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test unit-test-cgo1 unit-test-cgo0 e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
 
 all: security-check
 
@@ -157,17 +167,19 @@ $(BINARY_RUNNER): $(GO_SOURCES)
 	$(GOBUILD) $(BUILD_FLAGS) -o $@ -v cmd/runner/main.go
 
 # Test binary build rules
+# These embed TEST_HASH_DIRECTORY (not DEFAULT_HASH_DIRECTORY) so e2e-test can
+# record and verify hashes as the invoking user, without sudo.
 $(BINARY_TEST_RECORD): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
-	$(GOBUILD) $(BUILD_FLAGS) -tags test -o $@ -v ./cmd/record
+	$(GOBUILD) $(BUILD_FLAGS_TEST_HASH) -tags test -o $@ -v ./cmd/record
 
 $(BINARY_TEST_VERIFY): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
-	$(GOBUILD) $(BUILD_FLAGS) -tags test -o $@ -v cmd/verify/main.go
+	$(GOBUILD) $(BUILD_FLAGS_TEST_HASH) -tags test -o $@ -v cmd/verify/main.go
 
 $(BINARY_TEST_RUNNER): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
-	$(GOBUILD) $(BUILD_FLAGS) -tags test -o $@ -v cmd/runner/main.go
+	$(GOBUILD) $(BUILD_FLAGS_TEST_HASH) -tags test -o $@ -v cmd/runner/main.go
 
 clean:
 	$(GOCLEAN)
@@ -388,6 +400,29 @@ hash-integration-test: $(BINARY_RECORD)
 	$(foreach file, $(HASH_INTEGRATION_TEST_TARGETS), \
 		$(SUDOCMD) $(BINARY_RECORD) -force -hash-dir $(DEFAULT_HASH_DIRECTORY) $(file);)
 
+# Update hash for e2e-test target
+# Includes: config file, all files referenced in verify_files, and every
+# command referenced in sample/comprehensive.toml. Under the dry-run
+# hard-fail-unverified default, any command without a recorded hash is denied
+# as uncertain_unverified_identity, so this list must track comprehensive.toml.
+HASH_E2E_TEST_TARGETS := \
+	./sample/comprehensive.toml \
+	/etc/passwd \
+	/bin/sh \
+	/bin/echo \
+	/usr/bin/whoami \
+	/usr/bin/env \
+	/usr/bin/id \
+	/usr/bin/printenv \
+	/usr/bin/touch \
+	/usr/bin/ls \
+	/usr/bin/pwd \
+	/usr/bin/sleep
+
+hash-e2e-test: $(BINARY_TEST_RECORD)
+	$(foreach file, $(HASH_E2E_TEST_TARGETS), \
+		$(BINARY_TEST_RECORD) -force -hash-dir $(TEST_HASH_DIRECTORY) $(file);)
+
 # Test build with test tags enabled
 build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 
@@ -437,7 +472,7 @@ unit-test-cgo0:
 	$(ENVSET) CGO_ENABLED=0 $(GOTEST) -tags test -p 4 -v ./...
 
 # End-to-end tests - validates binary execution and security checks
-e2e-test: build-test
+e2e-test: build-test hash-e2e-test
 	$(ENVSET) $(BINARY_TEST_RUNNER) -dry-run -config ./sample/comprehensive.toml
 	$(PYTHON) scripts/test_additional_security_checks.py
 

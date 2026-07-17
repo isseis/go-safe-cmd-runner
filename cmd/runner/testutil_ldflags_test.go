@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -20,16 +21,35 @@ func hashDirLDFlags(hashDir string) string {
 	return fmt.Sprintf("-X '%s=%s'", hashDirPackage, hashDir)
 }
 
-// newGoRunCmd returns an *exec.Cmd that runs the current package via `go run`
-// with a freshly created temporary directory embedded as the default hash
-// directory via -ldflags. The directory is automatically cleaned up when the
-// test ends. appArgs are passed to the compiled binary after ".".
+// newGoRunCmdWithHashDir returns an *exec.Cmd that runs a freshly built copy
+// of the current package's binary with hashDir embedded as the default hash
+// directory via -ldflags. appArgs are passed to the binary.
+//
+// The binary is built directly (rather than invoked via `go run`) because
+// `go run` does not propagate the child process's real exit code: on a
+// non-zero exit it always reports exit code 1 to the caller (printing the
+// real code to stderr as "exit status N" instead). Tests that assert a
+// specific dry-run exit code (e.g. DryRunExitVerificationUnavailable = 3)
+// need the real code on cmd.ProcessState.ExitCode().
+func newGoRunCmdWithHashDir(t *testing.T, hashDir string, appArgs ...string) *exec.Cmd {
+	t.Helper()
+	ldflags := hashDirLDFlags(hashDir)
+	binaryPath := filepath.Join(tu.SafeTempDir(t), "runner")
+	build := exec.Command("go", "build", "-tags", "test", "-ldflags", ldflags, "-o", binaryPath, ".")
+	build.Dir = "."
+	buildOutput, err := build.CombinedOutput()
+	if err != nil {
+		t.Fatalf("failed to build runner binary: %v\n%s", err, buildOutput)
+	}
+	return exec.Command(binaryPath, appArgs...)
+}
+
+// newGoRunCmd returns an *exec.Cmd that runs a freshly built copy of the
+// current package's binary with a freshly created temporary directory
+// embedded as the default hash directory via -ldflags. The directory is
+// automatically cleaned up when the test ends. appArgs are passed to the
+// binary.
 func newGoRunCmd(t *testing.T, appArgs ...string) *exec.Cmd {
 	t.Helper()
-	hashDir := tu.SafeTempDir(t)
-	ldflags := hashDirLDFlags(hashDir)
-	args := append([]string{"run", "-ldflags", ldflags, "."}, appArgs...)
-	cmd := exec.Command("go", args...)
-	cmd.Dir = "."
-	return cmd
+	return newGoRunCmdWithHashDir(t, tu.SafeTempDir(t), appArgs...)
 }
