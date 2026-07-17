@@ -353,7 +353,7 @@ args = ["hello"]
 	// uncertain_unverified_identity from polluting the exit code.
 	// Only verify_files' hash_mismatch should push the code to deny.
 	recordHash(t, hashDir, configFile)
-	recordHash(t, hashDir, "/usr/lib/cargo/bin/coreutils/echo")
+	recordHash(t, hashDir, "/bin/echo")
 
 	cmd := newGoRunCmdWithHashDir(t, hashDir, "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text")
 
