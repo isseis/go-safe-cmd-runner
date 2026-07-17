@@ -378,6 +378,11 @@ args = ["hello"]
 	assert.Contains(t, outputStr, targetFile, "output should reference the tampered file")
 	assert.Contains(t, outputStr, "Hash mismatch", "output should indicate hash mismatch")
 
+	// Confirm exactly one verification failure occurred (the tampered
+	// verify_files entry) and no other files failed verification, so the
+	// deny exit code below is unambiguously attributable to it.
+	assert.Contains(t, outputStr, "Failed: 1", "exactly one file should fail verification")
+
 	// The exit code must be DryRunExitPolicyDeny (1) -- tampering signal from
 	// verify_files.
 	assert.Equal(t, resource.DryRunExitPolicyDeny, cmd.ProcessState.ExitCode(),

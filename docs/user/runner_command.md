@@ -651,7 +651,7 @@ shred -u debug.txt  # secure deletion
 
 **Overview**
 
-In dry-run mode, any command whose identity could not be verified (verification-unavailable deny) — as well as any configuration/template file adopted without successful hash verification, and any `verify_files` verification failure — is **always treated as a hard failure** (non-zero exit). There is no opt-out flag; this is the only behaviour.
+In dry-run mode, any command whose identity could not be verified (verification-unavailable deny) — as well as any configuration/template file adopted without successful hash verification, and any `verify_files` verification failure — is **always treated as a hard failure** (non-zero exit). There is no opt-out flag; this is the only behavior.
 
 The dry-run exit code distinguishes three conditions:
 
@@ -711,9 +711,9 @@ runner -config config.toml -dry-run -dry-run-detail full
 
 **Breaking Change Notice**
 
-The `-dry-run-fail-unverified` flag has been **removed** (it is no longer recognised; passing it results in an undefined-flag error). The behaviour that was previously opt-in via the flag is now **always active**:
+The `-dry-run-fail-unverified` flag has been **removed** (it is no longer recognized; passing it results in an undefined-flag error). The behavior that was previously opt-in via the flag is now **always active**:
 
-- If your invocation already included `-dry-run-fail-unverified`, simply remove the flag — the behaviour is identical.
+- If your invocation already included `-dry-run-fail-unverified`, simply remove the flag — the behavior is identical.
 - If your invocation did **not** include the flag, note that a dry-run with an incomplete or missing hash database will now exit **non-zero** (code `3` when no tampering signal is present) instead of the previous exit `0`. Update any scripts that relied on exit `0` from dry-run with unverified content.
 
 **Operational Rule**
@@ -723,7 +723,7 @@ All non-zero dry-run exits should be treated as failures. Exit code `3` is diagn
 **Notes**
 
 - A policy deny or tampering signal (exit `1`) takes precedence over an environment cause (exit `3`).
-- The exit-code behaviour is always active; it cannot be disabled.
+- The exit-code behavior is always active; it cannot be disabled.
 
 ### 3.3 Log Configuration
 
