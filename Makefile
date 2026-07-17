@@ -108,7 +108,7 @@ BINARY_TEST_VERIFY=build/test/verify
 BINARY_TEST_RUNNER=build/test/runner
 
 # Build flags to embed configuration values
-BUILD_FLAGS=-ldflags "-s -w -X main.DefaultHashDirectory=$(DEFAULT_HASH_DIRECTORY)"
+BUILD_FLAGS=-ldflags "-s -w -X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=$(DEFAULT_HASH_DIRECTORY)"
 
 # Hash directory for the test binaries (e2e-test). Unlike DEFAULT_HASH_DIRECTORY,
 # this lives under the repo checkout so it is owned by the invoking user; record's
