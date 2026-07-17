@@ -286,3 +286,105 @@ args = ["hello"]
 	// not the exit code itself.
 	assert.Equal(t, resource.DryRunExitVerificationUnavailable, cmd.ProcessState.ExitCode())
 }
+
+// TestDryRunE2E_RemovedFlagRejected verifies that passing the removed
+// -dry-run-fail-unverified flag causes the runner to reject it as an
+// undefined flag and exit non-zero.
+func TestDryRunE2E_RemovedFlagRejected(t *testing.T) {
+	configContent := `
+[[groups]]
+name = "test_group"
+
+[[groups.commands]]
+name = "test-cmd"
+cmd = "/bin/echo"
+args = ["hello"]
+`
+
+	configFile := setupTempConfig(t, configContent)
+	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run", "-dry-run-fail-unverified")
+	output, err := cmd.CombinedOutput()
+
+	// The runner must reject the undefined flag.
+	assert.Error(t, err, "runner should fail with removed flag")
+	exitErr, ok := err.(*exec.ExitError)
+	require.True(t, ok, "error should be ExitError")
+	assert.NotEqual(t, 0, exitErr.ExitCode(), "exit code should be non-zero")
+	assert.Contains(t, string(output), "flag provided but not defined",
+		"output should contain Go's undefined-flag error message")
+}
+
+// TestDryRunE2E_VerifyFilesHashMismatch verifies that a verify_files
+// hash_mismatch causes the dry-run preview to exit with
+// DryRunExitPolicyDeny (1), while the config file itself is correctly
+// verified so the exit code is solely attributed to verify_files.
+func TestDryRunE2E_VerifyFilesHashMismatch(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+
+	// Create a target file and record its initial hash.
+	targetFile := filepath.Join(tu.SafeTempDir(t), "verify_target.txt")
+	err := os.WriteFile(targetFile, []byte("original content"), 0o644)
+	require.NoError(t, err)
+	recordHash(t, hashDir, targetFile)
+
+	// Tamper with the target file so its content no longer matches the
+	// recorded hash.
+	err = os.WriteFile(targetFile, []byte("tampered content"), 0o644)
+	require.NoError(t, err)
+
+	// Use /bin/true as the group command rather than /bin/echo. On some
+	// environments /bin/echo (and other coreutils) are symlinks straight
+	// into a Rust-based coreutils install (e.g.
+	// /usr/lib/cargo/bin/coreutils/echo) that isn't present on every CI
+	// runner. /bin/true stays low-risk like echo but, where such a
+	// transitional coreutils setup exists, resolves to a local sibling
+	// (e.g. /bin/gnutrue) instead of reaching outside /bin.
+	const cmdPath = "/bin/true"
+
+	configContent := `
+version = "1.0"
+
+[global]
+verify_files = ["` + targetFile + `"]
+
+[[groups]]
+name = "test_group"
+
+[[groups.commands]]
+name = "test-cmd"
+cmd = "` + cmdPath + `"
+args = ["hello"]
+`
+	configFile := setupTempConfig(t, configContent)
+
+	// Record the config file's hash so it is correctly verified. Also
+	// record the command binary's hash to avoid an unrelated
+	// uncertain_unverified_identity from polluting the exit code.
+	// Only verify_files' hash_mismatch should push the code to deny.
+	recordHash(t, hashDir, configFile)
+	recordHash(t, hashDir, cmdPath)
+
+	cmd := newGoRunCmdWithHashDir(t, hashDir, "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text")
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("Command output:\n%s", string(output))
+	}
+
+	outputStr := string(output)
+	// Verify the tampered file appears in the output with a hash-mismatch
+	// indication. The formatter uses the human-readable "Hash mismatch"
+	// label, not the raw FailureReason enum name.
+	assert.Contains(t, outputStr, targetFile, "output should reference the tampered file")
+	assert.Contains(t, outputStr, "Hash mismatch", "output should indicate hash mismatch")
+
+	// Confirm exactly one verification failure occurred (the tampered
+	// verify_files entry) and no other files failed verification, so the
+	// deny exit code below is unambiguously attributable to it.
+	assert.Contains(t, outputStr, "Failed: 1", "exactly one file should fail verification")
+
+	// The exit code must be DryRunExitPolicyDeny (1) -- tampering signal from
+	// verify_files.
+	assert.Equal(t, resource.DryRunExitPolicyDeny, cmd.ProcessState.ExitCode(),
+		"verify_files hash_mismatch must cause exit 1")
+}

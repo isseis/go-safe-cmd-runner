@@ -531,6 +531,7 @@
 | タグ | tag | TOMLタグの文脈 |
 | タスク | task | |
 | 改ざん | tampering | |
+| 改ざん兆候 | tampering signal | hash_mismatch のみが該当する、検証を試行し不整合を検出した状態。環境起因と対比される |
 | 一時 | temporary | |
 | ターミナル | terminal | |
 | テスト | test / testing | |
@@ -560,6 +561,7 @@
 |--------|---------|------|
 | 未定義 | undefined | |
 | 未検証 | unverified | ハッシュ検証に成功していない設定／テンプレートコンテンツの文脈 |
+| 未検証成果物 | unverified artifact | ハッシュ検証に成功しないまま dry-run プレビューが内容を採用した設定／テンプレートファイル。UnverifiedFileUsage に対応 |
 | 未展開 | unexpanded | 変数展開の文脈 |
 | 一意 | unique | |
 | ユニオン | union | 設定のマージの文脈 |
@@ -737,6 +739,7 @@
 | 2026-06-26 | 監査・文書整合（Task 0143）関連の用語を追加・整合 (migration note〔canonical〕, per-operand evaluation) |
 | 2026-07-16 | 未検証の設定／テンプレートコンテンツ（Task 0146）関連の用語を追加 (unverified, environment cause) |
 | 2026-07-16 | F-006/F-007 ドキュメント化（Task 0146 Phase 4）関連の用語を追加 (saved-set-uid, saved-set-gid, supplementary group) |
+| 2026-07-17 | dry-run 常時 hard fail 化（Task 0147）関連の用語を追加 (tampering signal, unverified artifact) |
 
 ---
 
