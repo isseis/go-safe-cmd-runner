@@ -902,7 +902,10 @@ func TestTextFormatter_FormatResult_WithFileVerification(t *testing.T) {
 		},
 	}
 
-	t.Run("Summary level hides failures", func(t *testing.T) {
+	// Under -dry-run-detail summary, the Failures section must remain visible
+	// because its presence is part of the non-zero exit-code evidence. This
+	// used to be hidden at summary level.
+	t.Run("Summary level shows failures", func(t *testing.T) {
 		opts := FormatterOptions{DetailLevel: DetailLevelSummary}
 		output, err := formatter.FormatResult(result, opts)
 		assert.NoError(t, err)
@@ -910,8 +913,8 @@ func TestTextFormatter_FormatResult_WithFileVerification(t *testing.T) {
 		assert.Contains(t, output, "Total Files: 10")
 		assert.Contains(t, output, "Verified: 7")
 		assert.Contains(t, output, "Failed: 1")
-		assert.NotContains(t, output, "Failures:")
-		assert.NotContains(t, output, "/usr/bin/suspicious")
+		assert.Contains(t, output, "Failures:")
+		assert.Contains(t, output, "/usr/bin/suspicious")
 	})
 
 	t.Run("Detailed level shows failures", func(t *testing.T) {
@@ -1204,10 +1207,12 @@ func TestTextFormatter_WriteFileVerification_UnverifiedSection(t *testing.T) {
 	assert.NotContains(t, output, "Failures:")
 }
 
-// TestTextFormatter_WriteFileVerification_UnverifiedHiddenAtSummaryLevel
-// verifies the UNVERIFIED section is only rendered at detailed/full level,
-// matching the existing failures-section policy.
-func TestTextFormatter_WriteFileVerification_UnverifiedHiddenAtSummaryLevel(t *testing.T) {
+// TestTextFormatter_WriteFileVerification_UnverifiedShownAtSummaryLevel
+// verifies the UNVERIFIED section is rendered at summary level too, because
+// unverified content always causes a non-zero dry-run exit and the section
+// is part of the exit-code evidence. This used to be hidden at summary
+// level.
+func TestTextFormatter_WriteFileVerification_UnverifiedShownAtSummaryLevel(t *testing.T) {
 	formatter := NewTextFormatter()
 	result := &DryRunResult{
 		Metadata: &ResultMetadata{
@@ -1236,10 +1241,54 @@ func TestTextFormatter_WriteFileVerification_UnverifiedHiddenAtSummaryLevel(t *t
 	output, err := formatter.FormatResult(result, opts)
 	require.NoError(t, err)
 
-	// At summary level the UNVERIFIED section is hidden.
+	// At summary level the UNVERIFIED section is now visible.
+	assert.Contains(t, output, "UNVERIFIED (content adopted without successful hash verification):")
+	// The path itself is also visible.
+	assert.Contains(t, output, "/etc/app/config.toml")
+}
+
+// TestTextFormatter_WriteFileVerification_SummaryLevelEmptySectionsHidden
+// verifies that on the success path (no failures, no unverified files) the
+// summary-level text output does not render the "Failures:" or "UNVERIFIED"
+// section headers. This guards against the new visibility behavior
+// accidentally turning a clean dry-run into a noisy one.
+func TestTextFormatter_WriteFileVerification_SummaryLevelEmptySectionsHidden(t *testing.T) {
+	formatter := NewTextFormatter()
+	result := &DryRunResult{
+		Metadata: &ResultMetadata{
+			GeneratedAt: time.Now(),
+			RunID:       "test-summary-empty-sections",
+		},
+		ResourceAnalyses: []Analysis{},
+		FileVerification: &verification.FileVerificationSummary{
+			TotalFiles:    5,
+			VerifiedFiles: 5,
+			FailedFiles:   0,
+			Duration:      time.Millisecond * 100,
+			HashDirStatus: verification.HashDirectoryStatus{
+				Path:      "/path/to/hashes",
+				Exists:    true,
+				Validated: true,
+			},
+			Failures:        []verification.FileVerificationFailure{},
+			UnverifiedFiles: nil, // empty; UsedUnverifiedContent defaults to false
+		},
+	}
+
+	opts := FormatterOptions{DetailLevel: DetailLevelSummary}
+	output, err := formatter.FormatResult(result, opts)
+	require.NoError(t, err)
+
+	// Summary header still present so the section is anchored in the report.
+	assert.Contains(t, output, "===== File Verification =====")
+	assert.Contains(t, output, "Total Files: 5")
+	assert.Contains(t, output, "Verified: 5")
+	assert.Contains(t, output, "Failed: 0")
+
+	// Neither section header should be emitted when the corresponding slice
+	// is empty.
+	assert.NotContains(t, output, "Failures:")
 	assert.NotContains(t, output, "UNVERIFIED (content adopted without successful hash verification):")
-	// The path itself is also hidden.
-	assert.NotContains(t, output, "/etc/app/config.toml")
 }
 
 // TestTextFormatter_WriteFileVerification_HashMismatchFailureSecurityRiskInFailures
