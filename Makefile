@@ -119,7 +119,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test test-ci test-ci-cgo1 test-ci-cgo0 test-all benchmark hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test unit-test-cgo1 unit-test-cgo0 e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
+.PHONY: all lint build run clean test test-ci test-ci-cgo1 test-ci-cgo0 test-all benchmark hash hash-integration-test hash-e2e-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test unit-test-cgo1 unit-test-cgo0 e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
 
 all: security-check
 
@@ -388,6 +388,32 @@ hash-integration-test: $(BINARY_RECORD)
 	$(foreach file, $(HASH_INTEGRATION_TEST_TARGETS), \
 		$(SUDOCMD) $(BINARY_RECORD) -force -hash-dir $(DEFAULT_HASH_DIRECTORY) $(file);)
 
+# Update hash for e2e-test target
+# Includes: config file, all files referenced in verify_files, and every
+# command referenced in sample/comprehensive.toml. Under the dry-run
+# hard-fail-unverified default, any command without a recorded hash is denied
+# as uncertain_unverified_identity, so this list must track comprehensive.toml.
+HASH_E2E_TEST_TARGETS := \
+	./sample/comprehensive.toml \
+	/etc/passwd \
+	/bin/sh \
+	/bin/echo \
+	/usr/bin/whoami \
+	/usr/bin/env \
+	/usr/bin/id \
+	/usr/bin/printenv \
+	/usr/bin/touch \
+	/usr/bin/ls \
+	/usr/bin/pwd \
+	/usr/bin/sleep
+
+hash-e2e-test: $(BINARY_RECORD)
+	$(foreach file, $(HASH_E2E_TEST_TARGETS), \
+		$(SUDOCMD) $(BINARY_RECORD) -force -hash-dir $(DEFAULT_HASH_DIRECTORY) $(file);)
+	$(SUDOCMD) $(CHMOD) 755 $(dir $(DEFAULT_HASH_DIRECTORY)) $(DEFAULT_HASH_DIRECTORY)
+	$(SUDOCMD) find $(DEFAULT_HASH_DIRECTORY) -type d -exec $(CHMOD) 755 {} +
+	$(SUDOCMD) find $(DEFAULT_HASH_DIRECTORY) -type f -exec $(CHMOD) 644 {} +
+
 # Test build with test tags enabled
 build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 
@@ -437,7 +463,7 @@ unit-test-cgo0:
 	$(ENVSET) CGO_ENABLED=0 $(GOTEST) -tags test -p 4 -v ./...
 
 # End-to-end tests - validates binary execution and security checks
-e2e-test: build-test
+e2e-test: build-test hash-e2e-test
 	$(ENVSET) $(BINARY_TEST_RUNNER) -dry-run -config ./sample/comprehensive.toml
 	$(PYTHON) scripts/test_additional_security_checks.py
 

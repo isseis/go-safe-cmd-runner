@@ -49,6 +49,10 @@ name = "environment_display"
 description = "Display environment variables"
 cmd = "env"
 args = []
+# `env` (even with no args) is always classified High risk: it is capable of
+# launching an arbitrary program as a subprocess, so the risk gate treats it
+# as an indirect-execution wrapper regardless of the arguments given here.
+risk_level = "high"
 
 # Group 2: Security and privilege tests
 [[groups]]
