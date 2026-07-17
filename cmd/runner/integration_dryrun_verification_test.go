@@ -332,6 +332,15 @@ func TestDryRunE2E_VerifyFilesHashMismatch(t *testing.T) {
 	err = os.WriteFile(targetFile, []byte("tampered content"), 0o644)
 	require.NoError(t, err)
 
+	// Use /bin/true as the group command rather than /bin/echo. On some
+	// environments /bin/echo (and other coreutils) are symlinks straight
+	// into a Rust-based coreutils install (e.g.
+	// /usr/lib/cargo/bin/coreutils/echo) that isn't present on every CI
+	// runner. /bin/true stays low-risk like echo but, where such a
+	// transitional coreutils setup exists, resolves to a local sibling
+	// (e.g. /bin/gnutrue) instead of reaching outside /bin.
+	const cmdPath = "/bin/true"
+
 	configContent := `
 version = "1.0"
 
@@ -343,17 +352,17 @@ name = "test_group"
 
 [[groups.commands]]
 name = "test-cmd"
-cmd = "/bin/echo"
+cmd = "` + cmdPath + `"
 args = ["hello"]
 `
 	configFile := setupTempConfig(t, configContent)
 
 	// Record the config file's hash so it is correctly verified. Also
-	// record the echo binary's hash to avoid an unrelated
+	// record the command binary's hash to avoid an unrelated
 	// uncertain_unverified_identity from polluting the exit code.
 	// Only verify_files' hash_mismatch should push the code to deny.
 	recordHash(t, hashDir, configFile)
-	recordHash(t, hashDir, "/bin/echo")
+	recordHash(t, hashDir, cmdPath)
 
 	cmd := newGoRunCmdWithHashDir(t, hashDir, "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text")
 
