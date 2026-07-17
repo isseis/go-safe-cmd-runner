@@ -110,6 +110,16 @@ BINARY_TEST_RUNNER=build/test/runner
 # Build flags to embed configuration values
 BUILD_FLAGS=-ldflags "-s -w -X main.DefaultHashDirectory=$(DEFAULT_HASH_DIRECTORY)"
 
+# Hash directory for the test binaries (e2e-test). Unlike DEFAULT_HASH_DIRECTORY,
+# this lives under the repo checkout so it is owned by the invoking user; record's
+# TOCTOU ownership check refuses to trust a hash source/directory owned by
+# someone other than root or the real UID, which a plain `sudo record` would
+# violate for a repo-owned file such as sample/comprehensive.toml (the source
+# directory is owned by the checkout user, not root). Recording without sudo
+# into a self-owned directory avoids that violation entirely.
+TEST_HASH_DIRECTORY=$(CURDIR)/build/test/hashes
+BUILD_FLAGS_TEST_HASH=-ldflags "-s -w -X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=$(TEST_HASH_DIRECTORY)"
+
 # Find all Go source files to use as dependencies for the build
 GO_SOURCES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
 
@@ -157,17 +167,19 @@ $(BINARY_RUNNER): $(GO_SOURCES)
 	$(GOBUILD) $(BUILD_FLAGS) -o $@ -v cmd/runner/main.go
 
 # Test binary build rules
+# These embed TEST_HASH_DIRECTORY (not DEFAULT_HASH_DIRECTORY) so e2e-test can
+# record and verify hashes as the invoking user, without sudo.
 $(BINARY_TEST_RECORD): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
-	$(GOBUILD) $(BUILD_FLAGS) -tags test -o $@ -v ./cmd/record
+	$(GOBUILD) $(BUILD_FLAGS_TEST_HASH) -tags test -o $@ -v ./cmd/record
 
 $(BINARY_TEST_VERIFY): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
-	$(GOBUILD) $(BUILD_FLAGS) -tags test -o $@ -v cmd/verify/main.go
+	$(GOBUILD) $(BUILD_FLAGS_TEST_HASH) -tags test -o $@ -v cmd/verify/main.go
 
 $(BINARY_TEST_RUNNER): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
-	$(GOBUILD) $(BUILD_FLAGS) -tags test -o $@ -v cmd/runner/main.go
+	$(GOBUILD) $(BUILD_FLAGS_TEST_HASH) -tags test -o $@ -v cmd/runner/main.go
 
 clean:
 	$(GOCLEAN)
@@ -407,12 +419,9 @@ HASH_E2E_TEST_TARGETS := \
 	/usr/bin/pwd \
 	/usr/bin/sleep
 
-hash-e2e-test: $(BINARY_RECORD)
+hash-e2e-test: $(BINARY_TEST_RECORD)
 	$(foreach file, $(HASH_E2E_TEST_TARGETS), \
-		$(SUDOCMD) $(BINARY_RECORD) -force -hash-dir $(DEFAULT_HASH_DIRECTORY) $(file);)
-	$(SUDOCMD) $(CHMOD) 755 $(dir $(DEFAULT_HASH_DIRECTORY)) $(DEFAULT_HASH_DIRECTORY)
-	$(SUDOCMD) find $(DEFAULT_HASH_DIRECTORY) -type d -exec $(CHMOD) 755 {} +
-	$(SUDOCMD) find $(DEFAULT_HASH_DIRECTORY) -type f -exec $(CHMOD) 644 {} +
+		$(BINARY_TEST_RECORD) -force -hash-dir $(TEST_HASH_DIRECTORY) $(file);)
 
 # Test build with test tags enabled
 build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
