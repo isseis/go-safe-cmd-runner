@@ -174,10 +174,10 @@ flowchart TD
 
 ```mermaid
 sequenceDiagram
-    participant CM as cmd/runner
-    participant MG as verification.Manager
-    participant FV as filevalidator.Validator (read-only)
-    participant RC as ResultCollector
+    participant CM as "cmd/runner"
+    participant MG as "verification.Manager"
+    participant FV as "filevalidator.Validator (read-only)"
+    participant RC as "ResultCollector"
 
     CM->>MG: NewManagerForDryRun()
     MG->>FV: NewReadOnly(algorithm, hashDir, cfg)
@@ -450,7 +450,7 @@ flowchart TD
 
 ### 7.1 ユニットテスト
 
-- `internal/fileanalysis`: `NewStoreReadOnly` が (a) 不在時に作成せず不在状態の Store を返す、
+- `internal/fileanalysis`: `NewStoreReadOnly` が (a) 不在時に作成せずエラーを返す、
   (b) 存在時は従来どおり解決済みパスで構築する、(c) 非ディレクトリでエラーを返す、を検証。
 - `internal/filevalidator`: `NewReadOnly` が (a) 不在時にディレクトリを作成しない（作成有無を
   ファイルシステムで確認）、(b) 不在状態 Validator の `Verify` / `VerifyWithHash` /
