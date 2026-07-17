@@ -83,17 +83,30 @@ dry-run は「プレビューであり本番環境に副作用を及ぼさない
   「E2E で再現不能な防御的定義」として扱い、重複する E2E テスト
   `TestDryRunE2E_HashDirectoryNotFound` を削除する（0147 AC-19）。本タスクは同経路を
   **再現可能**にするため、当該理由の忠実な E2E テストを新規に追加する（削除の巻き戻しではなく、
-  実態に合致した新規テスト）。
+  実態に合致した新規テスト。F-005 / AC-10 として要件化する）。
 - ハッシュディレクトリの作成は `internal/fileanalysis`（`NewStore` の `os.MkdirAll`）で行われ、
   `internal/filevalidator`（`New`）を経由して `internal/verification` の dry-run マネージャ生成
   （`NewManagerForDryRun`）から到達する。3 パッケージが関係する。
-- 未検証理由 `hash_directory_not_found` は `internal/verification` に既存の `FailureReason`
-  （`ReasonHashDirNotFound`）として定義済みであり、`filevalidator.ErrHashDirNotExist` から
-  `determineFailureReason` で写像される。本タスクは新しい理由値を追加しない。
+- 未検証理由 `hash_directory_not_found`（報告形式 `verify_failed_hash_directory_not_found`）は
+  `internal/verification` に既存の `FailureReason`（`ReasonHashDirNotFound`）として定義済みであり、
+  `filevalidator.ErrHashDirNotExist` から `determineFailureReason` で写像される。本タスクは新しい
+  理由値を追加しない。
+- dry-run マネージャは既にハッシュディレクトリの存在を追跡している。マネージャ生成時に
+  `fs.FileExists(hashDir)` を評価し、その結果を `resultCollector.SetHashDirStatus(...)` へ
+  記録する（`internal/verification/manager.go`）。F-002 の「不在を忠実に報告」は、この既存機構を
+  作成（`os.MkdirAll`）に依存しない形へ整合させることで達成できる見込みであり、設計では新機構の
+  追加より既存経路の再利用を優先する（DRY）。
 
 ## 2. 機能要件
 
-本書の AC は AC-01〜AC-09。
+本書の AC は AC-01〜AC-10。
+
+**理由名の 2 層について**: 本書では内部の `FailureReason` 値と、それを dry-run 出力へ表示する
+際の報告形式を区別する。内部値は `hash_directory_not_found`（`internal/verification` の
+`ReasonHashDirNotFound`）であり、報告時は `verify_failed_` 接頭辞
+（`internal/verification/types.go` の `unverifiedReasonVerifyFailedPrefix`）が付いて
+`verify_failed_hash_directory_not_found` として現れる。両者は同一事象の内部表現と報告表現である。
+本書の AC は原則として利用者が観測する**報告形式**（`verify_failed_...`）で記述する。
 
 ### F-001: dry-run はハッシュディレクトリを作成しない
 
@@ -115,14 +128,16 @@ dry-run でハッシュディレクトリが不在の場合、検証対象ファ
 
 **Acceptance Criteria**:
 - **AC-03**: ハッシュディレクトリが不在の dry-run では、検証対象の各ファイルの未検証理由が
-  `hash_directory_not_found` になる（`hash_file_not_found` へ格下げされない）。
+  `verify_failed_hash_directory_not_found` になる（`verify_failed_hash_file_not_found` へ
+  格下げされない）。
 - **AC-04**: 同状況で、未検証理由は `skipped_no_validator` にならない（バリデータは構成された
   うえで「ディレクトリが無い」と報告する）。
 - **AC-05**: 同状況の dry-run の終了コードは `DryRunExitVerificationUnavailable`（= 3）である
   （0147 の分類に従い、環境起因のため）。
 - **AC-06**: 同状況で、`verify_files`（`global.verify_files` / `groups[].verify_files`）および
-  env ファイルの検証失敗も `hash_directory_not_found`（環境起因）として扱われ、`hash_mismatch`
-  を伴わない限り exit 1 にはならない（0147 F-005 の分類軸と整合する）。
+  env ファイルの検証失敗も `verify_failed_hash_directory_not_found`（環境起因）として扱われ、
+  `verify_failed_hash_mismatch` を伴わない限り exit 1 にはならない（0147 F-005 の分類軸と
+  整合する）。
 
 ### F-003: ドキュメント更新
 
@@ -146,11 +161,24 @@ dry-run がハッシュディレクトリを作成しないこと、および不
 - **AC-09**: 本番実行（非 dry-run）で不在のハッシュディレクトリを指定した場合、従来どおり
   hard fail する。また `record` コマンドは従来どおり、不在のハッシュディレクトリを自動作成する。
 
+### F-005: 不在ケースの忠実な E2E テスト
+
+0147 は「dry-run がハッシュディレクトリを自動作成する」実測を前提に、`hash_directory_not_found` を
+E2E で再現不能な防御的定義として扱い、重複 E2E テスト `TestDryRunE2E_HashDirectoryNotFound` を
+削除した（0147 AC-19）。本タスクは同経路を再現可能にするため、実態（作成しない・忠実に報告する）に
+合致した E2E テストを新規に追加する（削除の巻き戻しではない）。
+
+**Acceptance Criteria**:
+- **AC-10**: 不在のハッシュディレクトリを指定した dry-run を、実行後にディレクトリが作成されて
+  いないこと（AC-01）と、検証対象ファイルが `verify_failed_hash_directory_not_found`（exit 3、
+  AC-03・AC-05）として報告されることを併せて検証する E2E テストが存在する。
+
 ## 3. 非機能要件
 
 - **NFR-01**: 本変更はセキュリティ既定値を安全側へ倒すもの（副作用の除去・分類の忠実化）で
-  あり、いかなる設定・フラグによっても「dry-run がディレクトリを作成する」旧挙動へ戻せて
-  はならない。
+  ある。旧挙動を復活させる設定・フラグを新設しないだけでなく、dry-run 経路のハッシュ
+  ディレクトリ作成コードパス自体を除去することで、旧挙動が復活しうる分岐を残さない
+  （検証手段は NFR-03 のデッドコード除去と AC-01 の非作成確認による）。
 - **NFR-02**: `make test` および `make lint` が通ること。
 - **NFR-03**: read-only 化に伴い不要となるコード（例: dry-run 専用のディレクトリ作成
   フォールバック）を残さないこと（デッドコードを残さない）。ただし `record` コマンドが使う
@@ -160,9 +188,11 @@ dry-run がハッシュディレクトリを作成しないこと、および不
 
 以下は設計フェーズ（`02_architecture.md`）で確定する論点である。
 
-- **Q-01**: read-only 時のパス解決。不在ディレクトリに対する `common.NewResolvedPath` は解決に
-  失敗する。read-only の `Store` 構築時にパス解決を遅延させるか、raw パスを保持するかを設計で
-  確定する。
+- **Q-01**: read-only 時のパス解決。`fileanalysis.NewStore` は `os.MkdirAll` の**後**に
+  `common.NewResolvedPath` を呼ぶため、作成をスキップすると不在ディレクトリのパス解決に失敗し、
+  バリデータ構築自体が失敗しうる。この失敗を放置すると `fileValidator` が nil のままとなり、
+  未検証理由が AC-04 の禁じる `skipped_no_validator` へ転ぶ。したがって本論点の解（パス解決の
+  遅延、または raw パス保持）は **AC-04 の達成条件**であり、設計で確定する。
 - **Q-02**: ハッシュディレクトリのパスが「存在するがディレクトリではない」場合の dry-run での
   扱い（`hash_directory_not_found` として報告するか、ハードエラーとするか）。本タスクの主眼で
   ある「不在」ケースとは別のエッジであり、現挙動（`ErrHashPathNotDir` / `ErrAnalysisDirNotDirectory`）
