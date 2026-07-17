@@ -281,7 +281,7 @@
 
 **判定理由**: `deferredErr` の早期リターンチェックを `Verify`・`VerifyWithHash`・`VerifyAndRead`・`LoadRecord` の 4 メソッドすべてに一貫して適用しないと、いずれか 1 箇所の漏れが不在ディレクトリでの `nil` store 参照パニックへ直結する、孤立した高リスクロジックである（Risk isolation 該当）。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
