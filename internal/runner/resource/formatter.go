@@ -130,14 +130,22 @@ func (f *TextFormatter) writeSummary(buf *strings.Builder, result *DryRunResult)
 	buf.WriteString("\n")
 }
 
-// writeFileVerification writes the file verification section. Files whose content
-// was adopted without successful hash verification are surfaced under a distinct
-// "UNVERIFIED" section so they cannot be confused with verified content. The
-// reason for each unverified usage is shown alongside the path; hash-mismatch
-// failures are emphasized with a "security_risk: high" annotation because they
-// may indicate tampering (see docs/tasks/0146_security_hardening/02_architecture.md
-// §3.4.2 / §3.4.3).
-func (f *TextFormatter) writeFileVerification(buf *strings.Builder, summary *verification.FileVerificationSummary, opts FormatterOptions) {
+// writeFileVerification writes the file verification section. Files whose
+// content was adopted without successful hash verification are surfaced under
+// a distinct "UNVERIFIED" section so they cannot be confused with verified
+// content. The reason for each unverified usage is shown alongside the path;
+// hash-mismatch failures are emphasized with a "security_risk: high"
+// annotation because they may indicate tampering (see
+// docs/tasks/0146_security_hardening/02_architecture.md §3.4.2 / §3.4.3).
+//
+// The "Failures" and "UNVERIFIED" sections are emitted regardless of the
+// detail level whenever the corresponding slice is non-empty. Because the
+// dry-run exit code is non-zero whenever a failure or unverified content is
+// present, these sections are part of the exit-code evidence and must be
+// visible even under "-dry-run-detail summary". When both slices are empty
+// (the success path) the section headers are omitted so the summary output
+// remains concise.
+func (f *TextFormatter) writeFileVerification(buf *strings.Builder, summary *verification.FileVerificationSummary, _ FormatterOptions) {
 	if summary == nil {
 		return
 	}
@@ -155,11 +163,13 @@ func (f *TextFormatter) writeFileVerification(buf *strings.Builder, summary *ver
 	fmt.Fprintf(buf, "  Failed: %d\n", summary.FailedFiles)
 	fmt.Fprintf(buf, "Duration: %v\n", summary.Duration)
 
-	// Failures (if any and detail level permits). Hash-mismatch is highlighted
-	// as a tampering signal and tagged with security_risk: high, regardless of
-	// whether the unverified content was later adopted via the dry-run
-	// fallback.
-	if len(summary.Failures) > 0 && opts.DetailLevel >= DetailLevelDetailed {
+	// Failures. Hash-mismatch is highlighted as a tampering signal and tagged
+	// with security_risk: high, regardless of whether the unverified content
+	// was later adopted via the dry-run fallback. Emitted whenever the slice
+	// is non-empty, irrespective of the detail level: because any failure
+	// causes a non-zero dry-run exit, the section is part of the exit-code
+	// evidence and must be visible even under "-dry-run-detail summary".
+	if len(summary.Failures) > 0 {
 		buf.WriteString("\nFailures:\n")
 		for i, failure := range summary.Failures {
 			marker := f.formatLevelMarker(failure.Level)
@@ -175,13 +185,16 @@ func (f *TextFormatter) writeFileVerification(buf *strings.Builder, summary *ver
 		}
 	}
 
-	// Unverified content (if any and detail level permits). This section
-	// shows every file whose content was used by the dry-run preview without
-	// successful hash verification, regardless of the verification failure
-	// path (skipped_no_validator or verify_failed_<reason>). The path is
-	// clearly marked "UNVERIFIED" so it cannot be confused with verified
-	// content above.
-	if summary.UsedUnverifiedContent && len(summary.UnverifiedFiles) > 0 && opts.DetailLevel >= DetailLevelDetailed {
+	// Unverified content. This section shows every file whose content was
+	// used by the dry-run preview without successful hash verification,
+	// regardless of the verification failure path (skipped_no_validator or
+	// verify_failed_<reason>). The path is clearly marked "UNVERIFIED" so it
+	// cannot be confused with verified content above. Emitted whenever the
+	// slice is non-empty, irrespective of the detail level: because any
+	// unverified content causes a non-zero dry-run exit, the section is part
+	// of the exit-code evidence and must be visible even under
+	// "-dry-run-detail summary".
+	if summary.UsedUnverifiedContent && len(summary.UnverifiedFiles) > 0 {
 		buf.WriteString("\nUNVERIFIED (content adopted without successful hash verification):\n")
 		for i, usage := range summary.UnverifiedFiles {
 			marker := f.formatUnverifiedMarker(usage)
