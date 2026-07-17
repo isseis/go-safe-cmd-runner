@@ -205,10 +205,10 @@ func TestDryRun_PrivilegeEscalationDenied(t *testing.T) {
 	assert.Equal(t, DryRunExitPolicyDeny, mgr.PreviewExitCode())
 }
 
-// unverifiedSummaryFromFailureReason returns a FileVerificationSummary with a
+// unverifiedSummaryHashMismatch returns a FileVerificationSummary with a
 // single verify_failed_hash_mismatch entry (the only non-nil Failure that
 // is classified as a tampering signal).
-func unverifiedSummaryFromFailureReason(path, context string) *verification.FileVerificationSummary {
+func unverifiedSummaryHashMismatch(path, context string) *verification.FileVerificationSummary {
 	f := verification.ReasonHashMismatch
 	return &verification.FileVerificationSummary{
 		TotalFiles:            1,
@@ -314,7 +314,7 @@ func TestDryRun_UnverifiedContentExitCode(t *testing.T) {
 		{
 			name:        "tampering signal unverified",
 			assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
-			summary:     unverifiedSummaryFromFailureReason("/etc/app/cfg.toml", "config"),
+			summary:     unverifiedSummaryHashMismatch("/etc/app/cfg.toml", "config"),
 			expected:    DryRunExitPolicyDeny,
 			description: "hash_mismatch -> exit 1",
 		},
@@ -323,7 +323,7 @@ func TestDryRun_UnverifiedContentExitCode(t *testing.T) {
 			assessment: risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
 			summary: mergeUnverifiedSummaries(
 				unverifiedSummaryNoValidator("/etc/app/cfg.toml", "config"),
-				unverifiedSummaryFromFailureReason("/etc/app/tmpl.toml", "template"),
+				unverifiedSummaryHashMismatch("/etc/app/tmpl.toml", "template"),
 			),
 			expected:    DryRunExitPolicyDeny,
 			description: "when tampering and environment coexist, tampering wins",
@@ -331,7 +331,7 @@ func TestDryRun_UnverifiedContentExitCode(t *testing.T) {
 		{
 			name:        "policy deny dominates unverified tampering",
 			assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelHigh},
-			summary:     unverifiedSummaryFromFailureReason("/etc/app/cfg.toml", "config"),
+			summary:     unverifiedSummaryHashMismatch("/etc/app/cfg.toml", "config"),
 			expected:    DryRunExitPolicyDeny,
 			description: "policy deny is recorded first; tampering would also map to exit 1",
 		},
@@ -382,7 +382,7 @@ func TestDryRun_SetFileVerificationNilClears(t *testing.T) {
 	opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
 	mgr := newPreviewManager(t, opts, keyedRiskEvaluator{"cmd": {Level: runnertypes.RiskLevelLow}})
 
-	mgr.SetFileVerification(unverifiedSummaryFromFailureReason("/etc/app/cfg.toml", "config"))
+	mgr.SetFileVerification(unverifiedSummaryHashMismatch("/etc/app/cfg.toml", "config"))
 	assert.Equal(t, DryRunExitPolicyDeny, mgr.PreviewExitCode(),
 		"sanity: tampering signal -> exit 1")
 
