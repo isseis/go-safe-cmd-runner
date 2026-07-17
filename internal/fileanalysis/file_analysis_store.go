@@ -56,6 +56,12 @@ func NewStore(analysisDir string, pathGetter common.HashFilePathGetter) (*Store,
 		return nil, fmt.Errorf("%w: %s", ErrAnalysisDirNotDirectory, analysisDir)
 	}
 
+	return newStoreFromExistingDir(analysisDir, pathGetter)
+}
+
+// newStoreFromExistingDir builds a Store from an existing analysisDir.
+// It resolves the path and returns a Store with the resolved directory.
+func newStoreFromExistingDir(analysisDir string, pathGetter common.HashFilePathGetter) (*Store, error) {
 	resolvedDir, err := common.NewResolvedPath(analysisDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve analysis directory: %w", err)
@@ -65,6 +71,20 @@ func NewStore(analysisDir string, pathGetter common.HashFilePathGetter) (*Store,
 		analysisDir: resolvedDir,
 		pathGetter:  pathGetter,
 	}, nil
+}
+
+// NewStoreReadOnly creates a new Store without creating analysisDir.
+// It returns an error if analysisDir does not exist or is not a directory.
+func NewStoreReadOnly(analysisDir string, pathGetter common.HashFilePathGetter) (*Store, error) {
+	info, err := os.Lstat(analysisDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to access analysis result directory: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("%w: %s", ErrAnalysisDirNotDirectory, analysisDir)
+	}
+
+	return newStoreFromExistingDir(analysisDir, pathGetter)
 }
 
 // Load loads the analysis record for the given file path.

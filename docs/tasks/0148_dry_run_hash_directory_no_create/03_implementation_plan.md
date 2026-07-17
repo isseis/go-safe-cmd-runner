@@ -163,23 +163,23 @@
 **対象ファイル**: `internal/fileanalysis/file_analysis_store.go`,
 `internal/fileanalysis/file_analysis_store_test.go`
 
-- [ ] **ステップ 1-1**: `NewStore`（41-68 行目）の 59-67 行目（`common.NewResolvedPath` 呼び出し以降）を
+- [x] **ステップ 1-1**: `NewStore`（41-68 行目）の 59-67 行目（`common.NewResolvedPath` 呼び出し以降）を
       `newStoreFromExistingDir(analysisDir string, pathGetter common.HashFilePathGetter) (*Store, error)`
       という非公開ヘルパーへ切り出す。`NewStore` はこのヘルパーを呼び出すように書き換える。
-- [ ] **ステップ 1-2**: `NewStoreReadOnly(analysisDir string, pathGetter common.HashFilePathGetter) (*Store, error)`
+- [x] **ステップ 1-2**: `NewStoreReadOnly(analysisDir string, pathGetter common.HashFilePathGetter) (*Store, error)`
       を追加する。`os.Lstat(analysisDir)` を行い、エラーなら
       `fmt.Errorf("failed to access analysis result directory: %w", err)` を返し（`os.MkdirAll`
       は呼ばない）、ディレクトリでなければ `fmt.Errorf("%w: %s", ErrAnalysisDirNotDirectory, analysisDir)`
       を返す。存在してディレクトリなら `newStoreFromExistingDir` を呼んで返す。
-- [ ] **ステップ 1-3**: `TestNewStoreReadOnly_MissingDirectory_ReturnsErrorWithoutCreating` を追加する。
+- [x] **ステップ 1-3**: `TestNewStoreReadOnly_MissingDirectory_ReturnsErrorWithoutCreating` を追加する。
       `TestNewStore_CreatesDirectory`（340-357 行目）と対になるよう、存在しないパスを渡して
       エラーが返ること、かつ `os.Stat` で当該パスが作成されていないことを確認する。
-- [ ] **ステップ 1-4**: `TestNewStoreReadOnly_ExistingDirectory` を追加する。`TestNewStore_ExistingDirectory`
+- [x] **ステップ 1-4**: `TestNewStoreReadOnly_ExistingDirectory` を追加する。`TestNewStore_ExistingDirectory`
       （359-366 行目）と同じ構成（既存の一時ディレクトリを渡して成功する）。
-- [ ] **ステップ 1-5**: `TestNewStoreReadOnly_NotADirectory` を追加する。`TestNewStore_NotADirectory`
+- [x] **ステップ 1-5**: `TestNewStoreReadOnly_NotADirectory` を追加する。`TestNewStore_NotADirectory`
       （368-380 行目）と同じ構成（ファイルパスを渡して `ErrAnalysisDirNotDirectory` を含むエラーが
       返る）。
-- [ ] **ステップ 1-6**: `TestNewStore_CreatesDirectory` / `TestNewStore_ExistingDirectory` / `TestNewStore_NotADirectory`
+- [x] **ステップ 1-6**: `TestNewStore_CreatesDirectory` / `TestNewStore_ExistingDirectory` / `TestNewStore_NotADirectory`
       がリファクタリング後も無変更で成立することを `go test -tags test ./internal/fileanalysis/...`
       で確認する（回帰確認）。
 
