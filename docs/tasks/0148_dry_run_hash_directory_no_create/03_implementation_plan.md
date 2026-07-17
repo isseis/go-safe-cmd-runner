@@ -163,33 +163,50 @@
 **対象ファイル**: `internal/fileanalysis/file_analysis_store.go`,
 `internal/fileanalysis/file_analysis_store_test.go`
 
-- [ ] `NewStore`（41-68 行目）の 59-67 行目（`common.NewResolvedPath` 呼び出し以降）を
+- [ ] **ステップ 1-1**: `NewStore`（41-68 行目）の 59-67 行目（`common.NewResolvedPath` 呼び出し以降）を
       `newStoreFromExistingDir(analysisDir string, pathGetter common.HashFilePathGetter) (*Store, error)`
       という非公開ヘルパーへ切り出す。`NewStore` はこのヘルパーを呼び出すように書き換える。
-- [ ] `NewStoreReadOnly(analysisDir string, pathGetter common.HashFilePathGetter) (*Store, error)`
+- [ ] **ステップ 1-2**: `NewStoreReadOnly(analysisDir string, pathGetter common.HashFilePathGetter) (*Store, error)`
       を追加する。`os.Lstat(analysisDir)` を行い、エラーなら
       `fmt.Errorf("failed to access analysis result directory: %w", err)` を返し（`os.MkdirAll`
       は呼ばない）、ディレクトリでなければ `fmt.Errorf("%w: %s", ErrAnalysisDirNotDirectory, analysisDir)`
       を返す。存在してディレクトリなら `newStoreFromExistingDir` を呼んで返す。
-- [ ] `TestNewStoreReadOnly_MissingDirectory_ReturnsErrorWithoutCreating` を追加する。
+- [ ] **ステップ 1-3**: `TestNewStoreReadOnly_MissingDirectory_ReturnsErrorWithoutCreating` を追加する。
       `TestNewStore_CreatesDirectory`（340-357 行目）と対になるよう、存在しないパスを渡して
       エラーが返ること、かつ `os.Stat` で当該パスが作成されていないことを確認する。
-- [ ] `TestNewStoreReadOnly_ExistingDirectory` を追加する。`TestNewStore_ExistingDirectory`
+- [ ] **ステップ 1-4**: `TestNewStoreReadOnly_ExistingDirectory` を追加する。`TestNewStore_ExistingDirectory`
       （359-366 行目）と同じ構成（既存の一時ディレクトリを渡して成功する）。
-- [ ] `TestNewStoreReadOnly_NotADirectory` を追加する。`TestNewStore_NotADirectory`
+- [ ] **ステップ 1-5**: `TestNewStoreReadOnly_NotADirectory` を追加する。`TestNewStore_NotADirectory`
       （368-380 行目）と同じ構成（ファイルパスを渡して `ErrAnalysisDirNotDirectory` を含むエラーが
       返る）。
-- [ ] `TestNewStore_CreatesDirectory` / `TestNewStore_ExistingDirectory` / `TestNewStore_NotADirectory`
+- [ ] **ステップ 1-6**: `TestNewStore_CreatesDirectory` / `TestNewStore_ExistingDirectory` / `TestNewStore_NotADirectory`
       がリファクタリング後も無変更で成立することを `go test -tags test ./internal/fileanalysis/...`
       で確認する（回帰確認）。
+
+### PR-1 作成ポイント: fileanalysis read-only store
+
+**対象ステップ**: 1-1 / 1-2 / 1-3 / 1-4 / 1-5 / 1-6
+
+**推奨タイトル**: `feat(0148): add read-only Store construction to internal/fileanalysis`
+
+**レビュー観点**: `newStoreFromExistingDir` への切り出しが `NewStore` の既存挙動を変えていないか / `NewStoreReadOnly` が `os.MkdirAll` を一切呼ばないか / 既存 3 テストが無変更で回帰していないか
+
+**実装モデル要件**: standard
+
+**判定理由**: 既存 `NewStore` のヘルパー切り出しと、既存テストと対になる 3 本の新規テスト追加のみで、未確定の設計判断や競合する実装方針は無い。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### フェーズ 2: `internal/filevalidator` — read-only Validator（遅延エラー）
 
 **対象ファイル**: `internal/filevalidator/validator.go`, `internal/filevalidator/validator_test.go`,
 `internal/filevalidator/validator_error_test.go`
 
-- [ ] `Validator` 構造体（151-172 行目）へ `deferredErr error` フィールドを追加する。
-- [ ] `NewReadOnly(algorithm HashAlgorithm, hashDir string, cfg ValidatorConfig) (*Validator, error)`
+- [ ] **ステップ 2-1**: `Validator` 構造体（151-172 行目）へ `deferredErr error` フィールドを追加する。
+- [ ] **ステップ 2-2**: `NewReadOnly(algorithm HashAlgorithm, hashDir string, cfg ValidatorConfig) (*Validator, error)`
       を追加する。実装は次のとおり。
       1. `algorithm == nil` なら `ErrNilAlgorithm` を返す（`New` は `newValidator` 経由でこの
          チェックを行うが、`NewReadOnly` の不在ディレクトリ分岐は `newValidator` を経由しないため、
@@ -207,7 +224,7 @@
          - それ以外（`Lstat` が権限エラー等で失敗）: `&Validator{deferredErr: err}, nil` を返す
            （構築成功）。`err` はそのまま保持するため、`errors.Is(err, os.ErrPermission)` は
            `result_collector.go` の `determineFailureReason` でそのまま機能する。
-- [ ] `Verify`（1075 行目）、`VerifyWithHash`（1099 行目）、`VerifyAndRead`（1199 行目）、
+- [ ] **ステップ 2-3**: `Verify`（1075 行目）、`VerifyWithHash`（1099 行目）、`VerifyAndRead`（1199 行目）、
       `LoadRecord`（453 行目）の各先頭に、次の 2 行を追加する（戻り値の型に応じてゼロ値を調整）。
       ```go
       if v.deferredErr != nil {
@@ -216,25 +233,25 @@
       ```
       （`VerifyWithHash` は `return "", v.deferredErr`、`VerifyAndRead` は
       `return nil, v.deferredErr`、`LoadRecord` は `return nil, v.deferredErr`。）
-- [ ] `HashDirAvailable() bool` を追加する。`return v.deferredErr == nil` のみを返す。
-- [ ] `TestNewReadOnly_MissingDirectory_DoesNotCreateDirectory` を `validator_test.go` の
+- [ ] **ステップ 2-4**: `HashDirAvailable() bool` を追加する。`return v.deferredErr == nil` のみを返す。
+- [ ] **ステップ 2-5**: `TestNewReadOnly_MissingDirectory_DoesNotCreateDirectory` を `validator_test.go` の
       `TestNew_CreatesDirectory`（596-617 行目）の近くに追加する。存在しないパスを渡し、
       `NewReadOnly` がエラーなく `*Validator` を返すこと、かつ `os.Stat` で当該パスが作成されて
       いないことを確認する。
-- [ ] `TestNewReadOnly_MissingDirectory_VerifyReturnsErrHashDirNotExist` を追加する。上記で得た
+- [ ] **ステップ 2-6**: `TestNewReadOnly_MissingDirectory_VerifyReturnsErrHashDirNotExist` を追加する。上記で得た
       `*Validator` に対して `Verify`・`VerifyWithHash`・`VerifyAndRead`・`LoadRecord` をそれぞれ
       呼び、いずれも `errors.Is(err, ErrHashDirNotExist)` が真であることを確認する（テーブル駆動で
       4 メソッドをまとめてよい）。
-- [ ] `TestNewReadOnly_ExistingDirectory_VerifiesSuccessfully` を追加する。`TestNew`
+- [ ] **ステップ 2-7**: `TestNewReadOnly_ExistingDirectory_VerifiesSuccessfully` を追加する。`TestNew`
       （102-140 行目付近）の「valid」ケースに相当する構成で、既存ディレクトリに対して
       `NewReadOnly` → `SaveRecord`（通常の `New` で作成した別 Validator、または同一
       ディレクトリを対象に `New` で先に記録してから `NewReadOnly` で検証する）→ `Verify` が成功する
       ことを確認する。
-- [ ] `TestNewReadOnly_NotADirectory` を追加する。ファイルパスを渡し、`errors.Is(err, ErrHashPathNotDir)`
+- [ ] **ステップ 2-8**: `TestNewReadOnly_NotADirectory` を追加する。ファイルパスを渡し、`errors.Is(err, ErrHashPathNotDir)`
       を確認する。
-- [ ] `TestNewReadOnly_NilAlgorithm` を追加する。`algorithm` に `nil` を渡し、
+- [ ] **ステップ 2-9**: `TestNewReadOnly_NilAlgorithm` を追加する。`algorithm` に `nil` を渡し、
       `errors.Is(err, ErrNilAlgorithm)` を確認する。
-- [ ] `validator_error_test.go`（`//go:build linux || freebsd || openbsd || netbsd`、既存の
+- [ ] **ステップ 2-10**: `validator_error_test.go`（`//go:build linux || freebsd || openbsd || netbsd`、既存の
       「unreadable directory」サブテスト 126-145 行目と同じ chmod パターンを踏襲）へ
       `TestNewReadOnly_ParentUnreadable_DeferredPermissionError` を追加する。手順:
       1. `tempDir` 配下に `restricted` ディレクトリを作成する。
@@ -249,13 +266,30 @@
       「unreadable directory」テスト（126-145 行目）も同じ制約を前提としており、本タスクで
       新たに導入する制約ではないため、既存規約に倣い root 検知は追加しない。
 
+### PR-2 作成ポイント: filevalidator read-only validator with deferred errors
+
+**対象ステップ**: 2-1 / 2-2 / 2-3 / 2-4 / 2-5 / 2-6 / 2-7 / 2-8 / 2-9 / 2-10
+
+**推奨タイトル**: `feat(0148): add read-only Validator with deferred errors`
+
+**レビュー観点**: `deferredErr` を保持したまま構築成功させる 4 分岐（存在/不在/非ディレクトリ/権限エラー）が `02_architecture.md` §3.1・§5.3 の Q-01〜Q-03 と一致しているか / `Verify`・`VerifyWithHash`・`VerifyAndRead`・`LoadRecord` の 4 メソッド全てで `deferredErr` チェック漏れがないか / chmod を使う権限テストが CI の root 実行下で偽陽性になる既知の制約を正しく踏襲しているか
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: `deferredErr` の早期リターンチェックを `Verify`・`VerifyWithHash`・`VerifyAndRead`・`LoadRecord` の 4 メソッドすべてに一貫して適用しないと、いずれか 1 箇所の漏れが不在ディレクトリでの `nil` store 参照パニックへ直結する、孤立した高リスクロジックである（Risk isolation 該当）。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### フェーズ 3: `internal/verification` — dry-run の read-only 化
 
 **対象ファイル**: `internal/verification/manager.go`, `internal/verification/manager_production.go`,
 `internal/verification/manager_test.go`, `internal/verification/manager_production_test.go`,
 `internal/verification/types.go`, 新規 `internal/verification/manager_permission_test.go`
 
-- [ ] `manager.go` 474-494 行目を次の内容へ置き換える。
+- [ ] **ステップ 3-1**: `manager.go` 474-494 行目を次の内容へ置き換える。
       ```go
       // Initialize file validator with hybrid hash path getter
       var hashDirAvailable bool
@@ -282,7 +316,7 @@
       ```
       （`errors` パッケージが `os.ErrPermission` 分岐削除後も他用途で使われているか確認し、未使用に
       なった場合のみ import を削除する。）
-- [ ] `manager.go` 508-527 行目（dry-run の `resultCollector` 初期化ブロック）を次の内容へ
+- [ ] **ステップ 3-2**: `manager.go` 508-527 行目（dry-run の `resultCollector` 初期化ブロック）を次の内容へ
       置き換える。`opts.fileValidatorEnabled` が偽の場合（現状はテスト専用の
       `withFileValidatorDisabledInternal()` 経由でのみ到達する）は `hashDirAvailable` が初期化
       されないため、従来どおり `opts.fs.FileExists` による判定を残す。読み取り専用バリデータが
@@ -320,44 +354,7 @@
           }
       }
       ```
-- [ ] `manager_production.go` の `logDryRunManagerCreation`（87-105 行目）の 96 行目
-      `"file_validator_enabled", true,` の直後に `"construction_mode", "read_only",` を追加する。
-- [ ] `manager_test.go` 987-991 行目のコメントを次のとおり書き換える。
-      - Before:
-        ```go
-        // TestReadAndVerifyFileWithReadFallback_NoValidator_DryRunRecordsUnverified
-        // covers fallback path 1: the file validator is nil (dry-run on a machine
-        // where the hash directory is not writable) and the file is read directly via
-        // os.ReadFile. The summary must mark the content as UNVERIFIED with the
-        // skipped_no_validator reason, even though no failure was recorded.
-        ```
-      - After:
-        ```go
-        // TestReadAndVerifyFileWithReadFallback_NoValidator_DryRunRecordsUnverified
-        // covers fallback path 1: the file validator is nil (verification is
-        // explicitly disabled for this manager instance, e.g. via
-        // withFileValidatorDisabledInternal in tests) and the file is read
-        // directly via os.ReadFile. The summary must mark the content as
-        // UNVERIFIED with the skipped_no_validator reason, even though no
-        // failure was recorded.
-        ```
-- [ ] `types.go` 149-153 行目のコメントを次のとおり書き換える（値は変更しない）。
-      - Before:
-        ```go
-        // UnverifiedReasonNoValidator indicates the file was adopted because no
-        // file validator was configured for this manager instance (e.g. dry-run
-        // on a machine where the hash directory is not writable).
-        UnverifiedReasonNoValidator UnverifiedReason = "skipped_no_validator"
-        ```
-      - After:
-        ```go
-        // UnverifiedReasonNoValidator indicates the file was adopted because no
-        // file validator was configured for this manager instance (verification
-        // itself is disabled; a missing or unreadable hash directory is reported
-        // via FailureReason instead, e.g. ReasonHashDirNotFound).
-        UnverifiedReasonNoValidator UnverifiedReason = "skipped_no_validator"
-        ```
-- [ ] `manager_test.go` に `TestVerifyConfigFile_DryRun_MissingHashDir` を追加する
+- [ ] **ステップ 3-3**: `manager_test.go` に `TestVerifyConfigFile_DryRun_MissingHashDir` を追加する
       （`TestVerifyConfigFile_DryRun_HashFileNotFound`、1357-1385 行目、と対になる構成）。
       - `tmpDir := tu.SafeTempDir(t)`、`hashDir := filepath.Join(tmpDir, "does-not-exist")`
         （作成しない）、`configFile := createTestFile(t, tmpDir, "config.toml", []byte("test config"))`。
@@ -370,14 +367,14 @@
         `summary.UnverifiedFiles[0].Reason` が `"verify_failed_hash_directory_not_found"`
         （`"skipped_no_validator"` ではないこと）であることを確認する。
       - `os.Stat(hashDir)` が `os.IsNotExist` を満たすことを確認する（AC-01）。
-- [ ] `manager_test.go` に `TestVerifyGlobalFiles_DryRun_MissingHashDir_RecordsHashDirNotFound` を
+- [ ] **ステップ 3-4**: `manager_test.go` に `TestVerifyGlobalFiles_DryRun_MissingHashDir_RecordsHashDirNotFound` を
       追加する。存在しない `hashDir` で `createDryRunManager` を構築し、`createRuntimeGlobal` で
       作成した `GlobalVerificationInput`（`ExpandedVerifyFiles` に実在する 1 ファイルを含む）を
       `manager.VerifyGlobalFiles` に渡す。戻り値の `err` が `nil`、`result.FailedFiles` に
       当該ファイルが含まれること、`summary.Failures[0].Reason == ReasonHashDirNotFound` を確認する。
       これは `global.verify_files` が通る `verifyFile`（`manager.go` 150 行目）を直接検証する
       （AC-06 前半）。
-- [ ] `manager_test.go` に `TestVerifyGroupFiles_DryRun_MissingHashDir_RecordsHashDirNotFound` を
+- [ ] **ステップ 3-5**: `manager_test.go` に `TestVerifyGroupFiles_DryRun_MissingHashDir_RecordsHashDirNotFound` を
       追加する。同様に `createRuntimeGroup` を使い、`manager.VerifyGroupFiles` を経由する
       `verifyFileWithHash`（`manager.go` 213 行目）を検証する（AC-06 後半）。
       `groups[].verify_files` はいずれも `readAndVerifyFileWithReadFallback` /
@@ -399,7 +396,7 @@
       ファイル検証が復活した場合も同じ写像が適用されることは設計上保証されるが、これは本タスクの
       実装によって新たに証明されるものではない。AC-06 の検証は `verify_files`
       （global・group の両方）と、共通経路を実際に使う設定ファイル読み込みに対してのみ行う。
-- [ ] 新規ファイル `internal/verification/manager_permission_test.go`
+- [ ] **ステップ 3-6**: 新規ファイル `internal/verification/manager_permission_test.go`
       （`//go:build linux || freebsd || openbsd || netbsd`、`package verification`）を作成し、
       `TestNewManagerInternal_DryRun_HashDirParentUnreadable_RecordsPermissionDenied` を追加する。
       `internal/filevalidator/validator_error_test.go` の「unreadable directory」パターン
@@ -408,7 +405,7 @@
       `withCreationMode(CreationModeTesting)` ・ `withSecurityLevel(SecurityLevelRelaxed)` で構築、
       対象ファイルを 1 件検証して `summary.Failures[0].Reason == ReasonPermissionDenied` を確認する
       （AC-04・Q-03(d) の固定化）。root 実行時の制約は上記フェーズ 2 のテストと同様。
-- [ ] `manager_production_test.go` の `"auto_creates_missing_hash_dir_and_enables_validator"`
+- [ ] **ステップ 3-7**: `manager_production_test.go` の `"auto_creates_missing_hash_dir_and_enables_validator"`
       サブテスト（136-155 行目）を次のとおり書き換える。
       - サブテスト名を `"does_not_create_missing_hash_dir_but_initializes_read_only_validator"`
         に変更する。
@@ -420,10 +417,7 @@
       - `_, statErr := os.Stat(nonexistentHashDir)` の直後を
         `assert.True(t, os.IsNotExist(statErr), "hash directory must not be auto-created in dry-run mode")`
         へ変更する（従来の `assert.NoError` を反転）。
-- [ ] `manager_production_test.go` の `"dry_run_security_audit_logging"` サブテスト
-      （157-178 行目）と `TestDryRunManagerLogging`（231-253 行目）の両方へ、
-      `assert.Contains(t, logOutput, "construction_mode=read_only")` を追加する。
-- [ ] `manager_test.go` に `TestNewManagerInternal_DryRun_HashPathNotDirectory_HardFails` を追加する。
+- [ ] **ステップ 3-8**: `manager_test.go` に `TestNewManagerInternal_DryRun_HashPathNotDirectory_HardFails` を追加する。
       ハッシュディレクトリのパスとして通常ファイル（ディレクトリではないパス）を渡した
       `newManagerInternal`（`withDryRunModeInternal()` ・ `withSkipHashDirectoryValidationInternal()`
       を付与）がエラーを返し、`errors.Is(err, filevalidator.ErrHashPathNotDir)` を満たすことを
@@ -433,11 +427,86 @@
       ハードエラー」という不変条件が本タスクの変更後も保たれることを確認する（AC には対応しないが、
       Q-02 の回帰防止として追加する）。
 
+### PR-3 作成ポイント: verification dry-run core wiring to read-only validator
+
+**対象ステップ**: 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7 / 3-8
+
+**推奨タイトル**: `feat(0148): wire dry-run manager to read-only validator`
+
+**レビュー観点**: `os.ErrPermission` フォールバック削除後に `skipped_no_validator` へ落ちる経路が残っていないか / `SetHashDirStatus` の単一情報源化（`HashDirAvailable()` 由来 vs `opts.fs.FileExists` フォールバック）の分岐条件が正しいか / 旧挙動（自動作成）を前提にしていた既存テスト（`"auto_creates_missing_hash_dir_and_enables_validator"`）の書き換えが新挙動と整合しているか / AC-03〜AC-06 を検証する新規テストが `verifyFile`・`verifyFileWithHash`・`readAndVerifyFileWithReadFallback` の各経路を網羅しているか
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: 既存の権限フォールバック分岐を削除し `permission_denied` への分類変更（セキュリティ関連の再分類）と `SetHashDirStatus` の情報源変更を同時に行う統合ステップであり、4 つの呼び出し経路（`verifyFile`／`verifyFileWithHash`／`readAndVerifyFileWithReadFallback`／権限エラー経路）へ一貫して適用しないと `skipped_no_validator` への回帰や `HashDirStatus` の不整合を招く。加えて旧挙動を前提にした既存テスト（ステップ 3-7）の書き換えが必須であり、Risk isolation の対象に該当する。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+- [ ] **ステップ 3-9**: `manager_production.go` の `logDryRunManagerCreation`（87-105 行目）の 96 行目
+      `"file_validator_enabled", true,` の直後に `"construction_mode", "read_only",` を追加する。
+- [ ] **ステップ 3-10**: `manager_test.go` 987-991 行目のコメントを次のとおり書き換える。
+      - Before:
+        ```go
+        // TestReadAndVerifyFileWithReadFallback_NoValidator_DryRunRecordsUnverified
+        // covers fallback path 1: the file validator is nil (dry-run on a machine
+        // where the hash directory is not writable) and the file is read directly via
+        // os.ReadFile. The summary must mark the content as UNVERIFIED with the
+        // skipped_no_validator reason, even though no failure was recorded.
+        ```
+      - After:
+        ```go
+        // TestReadAndVerifyFileWithReadFallback_NoValidator_DryRunRecordsUnverified
+        // covers fallback path 1: the file validator is nil (verification is
+        // explicitly disabled for this manager instance, e.g. via
+        // withFileValidatorDisabledInternal in tests) and the file is read
+        // directly via os.ReadFile. The summary must mark the content as
+        // UNVERIFIED with the skipped_no_validator reason, even though no
+        // failure was recorded.
+        ```
+- [ ] **ステップ 3-11**: `types.go` 149-153 行目のコメントを次のとおり書き換える（値は変更しない）。
+      - Before:
+        ```go
+        // UnverifiedReasonNoValidator indicates the file was adopted because no
+        // file validator was configured for this manager instance (e.g. dry-run
+        // on a machine where the hash directory is not writable).
+        UnverifiedReasonNoValidator UnverifiedReason = "skipped_no_validator"
+        ```
+      - After:
+        ```go
+        // UnverifiedReasonNoValidator indicates the file was adopted because no
+        // file validator was configured for this manager instance (verification
+        // itself is disabled; a missing or unreadable hash directory is reported
+        // via FailureReason instead, e.g. ReasonHashDirNotFound).
+        UnverifiedReasonNoValidator UnverifiedReason = "skipped_no_validator"
+        ```
+- [ ] **ステップ 3-12**: `manager_production_test.go` の `"dry_run_security_audit_logging"` サブテスト
+      （157-178 行目）と `TestDryRunManagerLogging`（231-253 行目）の両方へ、
+      `assert.Contains(t, logOutput, "construction_mode=read_only")` を追加する。
+
+### PR-4 作成ポイント: dry-run audit log construction-mode field and stale-comment cleanup
+
+**対象ステップ**: 3-9 / 3-10 / 3-11 / 3-12
+
+**推奨タイトル**: `feat(0148): add construction_mode audit log field for dry-run validator`
+
+**レビュー観点**: `"construction_mode", "read_only"` の追加位置が既存の属性順序・命名規則と整合しているか / 書き換えたコメント（`manager_test.go`・`types.go`）が実装（PR-3 の read-only 化）後の実態と一致しているか / 監査ログのアサーション追加がログ属性名の変更に追従しているか
+
+**実装モデル要件**: standard
+
+**判定理由**: 監査ログへの属性追加とコメント文言の修正のみであり、PR-3 の挙動変更それ自体には依存しない独立した軽微な変更で、未確定の設計判断は無い。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### フェーズ 4: 忠実な E2E テストの新規追加
 
 **対象ファイル**: `cmd/runner/integration_dryrun_verification_test.go`
 
-- [ ] `TestDryRunE2E_HashDirectoryNotFound` を追加する。
+- [ ] **ステップ 4-1**: `TestDryRunE2E_HashDirectoryNotFound` を追加する。
       - `hashDir := filepath.Join(tu.SafeTempDir(t), "does-not-exist")`（作成しない）。
       - `configContent` は他の E2E テスト（56-78 行目）と同様、`/bin/echo` を実行する 1 グループの
         最小構成。
@@ -457,21 +526,38 @@
       - `_, statErr := os.Stat(hashDir)` の後 `assert.True(t, os.IsNotExist(statErr))`
         （AC-01。実行後にディレクトリが作成されていないことを確認する）。
 
+### PR-5 作成ポイント: faithful dry-run E2E test for missing hash directory
+
+**対象ステップ**: 4-1
+
+**推奨タイトル**: `test(0148): add faithful E2E test for missing hash directory in dry-run`
+
+**レビュー観点**: `TestDryRunE2E_JSONOutput` など既存 E2E テストと同じヘルパー（`setupTempConfig` / `newGoRunCmdWithHashDir`）を正しく再利用しているか / AC-01・AC-03・AC-05 の 3 つのアサーションが 1 テスト内で漏れなく検証されているか / 実行後にハッシュディレクトリが作成されていないことの確認が確実に行われているか
+
+**実装モデル要件**: standard
+
+**判定理由**: 既存の `TestDryRunE2E_JSONOutput` 等と同じ確立済みのヘルパー・パターンを踏襲するのみで、未確定の設計判断は無い。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### フェーズ 5: ユーザードキュメント更新
 
 **対象ファイル**: `docs/user/runner_command.md`, `docs/user/runner_command.ja.md`
 
-- [ ] `docs/user/runner_command.md` 674 行目を書き換える。
+- [ ] **ステップ 5-1**: `docs/user/runner_command.md` 674 行目を書き換える。
       - Before:
         `- *Environment cause* (no validator configured, e.g., hash directory not writable): reason `skipped_no_validator`.`
       - After:
         ``- *Environment cause* (no validator configured for this manager instance): reason `skipped_no_validator`. A missing or unreadable hash directory is reported as `verify_failed_hash_directory_not_found` or `verify_failed_permission_denied` instead (see below), not `skipped_no_validator`.``
-- [ ] `docs/user/runner_command.ja.md` 674 行目を書き換える。
+- [ ] **ステップ 5-2**: `docs/user/runner_command.ja.md` 674 行目を書き換える。
       - Before:
         `- *環境起因*（バリデータ未設定、例：ハッシュディレクトリが書き込み不可）: 理由 `skipped_no_validator`。`
       - After:
         ``- *環境起因*（このマネージャインスタンスでバリデータ自体が未設定）: 理由 `skipped_no_validator`。ハッシュディレクトリが不在または読み取り不可の場合は、`skipped_no_validator` ではなく後述の `verify_failed_hash_directory_not_found` や `verify_failed_permission_denied` として報告されます。``
-- [ ] `docs/user/runner_command.md` の「`verify_files` failures」段落（679-681 行目）の直後、
+- [ ] **ステップ 5-3**: `docs/user/runner_command.md` の「`verify_files` failures」段落（679-681 行目）の直後、
       「**Syntax**」（683 行目）の直前に、次の見出しと本文を追加する。
       ```markdown
       **Hash directory handling (dry-run)**
@@ -485,7 +571,7 @@
       entries, and env files. Only the `record` command and production
       execution create the hash directory automatically.
       ```
-- [ ] `docs/user/runner_command.ja.md` の「`verify_files` の検証失敗」段落（679-681 行目）の直後、
+- [ ] **ステップ 5-4**: `docs/user/runner_command.ja.md` の「`verify_files` の検証失敗」段落（679-681 行目）の直後、
       「**文法**」（683 行目）の直前に、次の見出しと本文を追加する。
       ```markdown
       **ハッシュディレクトリの扱い（dry-run）**
@@ -497,8 +583,25 @@
       この扱いは設定ファイル・テンプレート・`verify_files`・env ファイルのすべてに共通です。
       ハッシュディレクトリを自動作成するのは `record` コマンドおよび本番実行のみです。
       ```
-- [ ] 上記追加後、両ファイルの新設見出しが同じ相対位置（`verify_files` の失敗段落の直後、
+- [ ] **ステップ 5-5**: 上記追加後、両ファイルの新設見出しが同じ相対位置（`verify_files` の失敗段落の直後、
       Syntax/文法見出しの直前）にあることを目視確認する。
+
+### PR-6 作成ポイント: user documentation for dry-run hash directory handling
+
+**対象ステップ**: 5-1 / 5-2 / 5-3 / 5-4 / 5-5
+
+**推奨タイトル**: `docs(0148): document dry-run hash directory read-only handling`
+
+**レビュー観点**: 英語版・日本語版の追加段落が内容として対応しているか（訳抜け・訳過剰が無いか）/ 674 行目の書き換えが `skipped_no_validator` と `hash_directory_not_found`/`permission_denied` の区別を正確に説明しているか / 新設見出しの挿入位置が両ファイルで一致しているか
+
+**実装モデル要件**: standard
+
+**判定理由**: テキストのみの変更であり、静的検証（`rg` による見出し存在確認と目視レビュー）で十分に検証できる。未確定の設計判断は無い。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ## 3. 実装順序とマイルストーン
 
@@ -513,6 +616,21 @@
 | M4 | フェーズ 4 完了 | `go test -tags test ./cmd/runner/...` が通る |
 | M5 | フェーズ 5 完了 | ドキュメント差分のレビュー完了 |
 | M6 | 全体完了 | `make test && make lint` が通る（グリーンゲート） |
+
+上記マイルストーンはフェーズ完了の目安であり、PR 単位の分割・実装モデル要件・グリーンゲート
+条件は下記 §3.2 を正とする（フェーズ 3 は PR-3・PR-4 の 2 本に分割されるため、M3 の
+`go test -tags test ./internal/verification/...` は両 PR マージ後に満たされる条件である）。
+
+### 3.2 PR 構成
+
+| PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | 1-1 / 1-2 / 1-3 / 1-4 / 1-5 / 1-6 | `internal/fileanalysis` に `NewStoreReadOnly` を追加（作成しない Store 構築） | standard |
+| PR-2 | 2-1 / 2-2 / 2-3 / 2-4 / 2-5 / 2-6 / 2-7 / 2-8 / 2-9 / 2-10 | `internal/filevalidator` に遅延エラー状態を持つ `NewReadOnly` を追加 | frontier-recommended |
+| PR-3 | 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7 / 3-8 | `internal/verification` の dry-run マネージャ生成を `NewReadOnly` へ切り替え、権限フォールバックを除去 | frontier-recommended |
+| PR-4 | 3-9 / 3-10 / 3-11 / 3-12 | 監査ログへ `construction_mode` 属性を追加、関連コメントの陳腐化を解消 | standard |
+| PR-5 | 4-1 | 不在ハッシュディレクトリの忠実な E2E テストを新規追加 | standard |
+| PR-6 | 5-1 / 5-2 / 5-3 / 5-4 / 5-5 | `docs/user/runner_command.md` / `.ja.md` の dry-run 挙動記述を更新 | standard |
 
 ## 4. テスト戦略
 
@@ -542,11 +660,12 @@
 
 ## 6. 実装チェックリスト
 
-- [ ] フェーズ 1: `internal/fileanalysis` の変更・テスト追加が完了している
-- [ ] フェーズ 2: `internal/filevalidator` の変更・テスト追加が完了している
-- [ ] フェーズ 3: `internal/verification` の変更・テスト追加・既存テスト修正が完了している
-- [ ] フェーズ 4: E2E テストの追加が完了している
-- [ ] フェーズ 5: ユーザードキュメントの更新が完了している
+- [ ] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3 / 1-4 / 1-5 / 1-6）
+- [ ] PR-2 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3 / 2-4 / 2-5 / 2-6 / 2-7 / 2-8 / 2-9 / 2-10）
+- [ ] PR-3 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7 / 3-8）
+- [ ] PR-4 マージ済み（対象ステップ: 3-9 / 3-10 / 3-11 / 3-12）
+- [ ] PR-5 マージ済み（対象ステップ: 4-1）
+- [ ] PR-6 マージ済み（対象ステップ: 5-1 / 5-2 / 5-3 / 5-4 / 5-5）
 - [ ] `make fmt` を実行し、フォーマット差分がない
 - [ ] `make test` が通る
 - [ ] `make lint` が通る
