@@ -217,6 +217,9 @@
            で `store` を構築し、`common.NewResolvedPath(hashDir)` で解決したうえで
            `newValidator(algorithm, resolvedHashDir, hashFilePathGetter, cfg)` を呼び、
            `v.store = store` を設定して返す（`New` の 194-201 行目と同型の組み立て）。
+           `NewStoreReadOnly` と `NewResolvedPath` の各呼び出しは、`New` の既存パターン
+           （194-201 行目）と同様にエラーを都度チェックし、エラーがあれば `nil, err` を
+           そのまま返す。
          - `err == nil && !info.IsDir()`: `fmt.Errorf("%w: %s", ErrHashPathNotDir, hashDir)` を返す
            （構築失敗）。
          - `os.IsNotExist(err)`: `&Validator{deferredErr: fmt.Errorf("%w: %s", ErrHashDirNotExist, hashDir)}, nil`
@@ -525,6 +528,9 @@
         （AC-05）。
       - `_, statErr := os.Stat(hashDir)` の後 `assert.True(t, os.IsNotExist(statErr))`
         （AC-01。実行後にディレクトリが作成されていないことを確認する）。
+      - dry-run はエラー終了（終了コード 3）するため、コマンド実行時に `*exec.ExitError` が
+        返る。`TestDryRunE2E_HashFilesNotFound`（55-78 行目）と同様、この戻り値に対して
+        `require.NoError` は行わず、`cmd.ProcessState.ExitCode()` の値のみをアサートする。
 
 ### PR-5 作成ポイント: faithful dry-run E2E test for missing hash directory
 
