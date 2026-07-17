@@ -194,7 +194,7 @@ func (f *TextFormatter) writeFileVerification(buf *strings.Builder, summary *ver
 	// unverified content causes a non-zero dry-run exit, the section is part
 	// of the exit-code evidence and must be visible even under
 	// "-dry-run-detail summary".
-	if summary.UsedUnverifiedContent && len(summary.UnverifiedFiles) > 0 {
+	if len(summary.UnverifiedFiles) > 0 {
 		buf.WriteString("\nUNVERIFIED (content adopted without successful hash verification):\n")
 		for i, usage := range summary.UnverifiedFiles {
 			marker := f.formatUnverifiedMarker(usage)
