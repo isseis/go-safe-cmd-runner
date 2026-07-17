@@ -410,8 +410,7 @@ func TestNewStoreReadOnly_NotADirectory(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = NewStoreReadOnly(notADir, &mockPathGetter{})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not a directory")
+	assert.ErrorIs(t, err, ErrAnalysisDirNotDirectory)
 }
 
 func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
