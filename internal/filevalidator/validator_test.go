@@ -1619,3 +1619,92 @@ func TestBuildArgEvalResults(t *testing.T) {
 		})
 	}
 }
+
+// TestNewReadOnly_MissingDirectory_DoesNotCreateDirectory verifies that NewReadOnly
+// does not create the hash directory when it is missing, and returns a Validator
+// with deferred error instead of failing construction.
+func TestNewReadOnly_MissingDirectory_DoesNotCreateDirectory(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "does-not-exist")
+
+	_, err := os.Lstat(hashDir)
+	require.True(t, os.IsNotExist(err))
+
+	v, err := NewReadOnly(&SHA256{}, hashDir, ValidatorConfig{})
+	require.NoError(t, err)
+	require.NotNil(t, v)
+
+	_, err = os.Lstat(hashDir)
+	assert.True(t, os.IsNotExist(err), "hash directory must not be auto-created by NewReadOnly")
+}
+
+// TestNewReadOnly_MissingDirectory_VerifyReturnsErrHashDirNotExist verifies that
+// all four Verify/Load methods surface the deferred ErrHashDirNotExist error.
+func TestNewReadOnly_MissingDirectory_VerifyReturnsErrHashDirNotExist(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "does-not-exist")
+	testFile := filepath.Join(tempDir, "some-file.txt")
+	require.NoError(t, os.WriteFile(testFile, []byte("content"), 0o644))
+
+	v, err := NewReadOnly(&SHA256{}, hashDir, ValidatorConfig{})
+	require.NoError(t, err)
+	require.NotNil(t, v)
+
+	err = v.Verify(testFile)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrHashDirNotExist)
+
+	_, err = v.VerifyWithHash(testFile)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrHashDirNotExist)
+
+	_, err = v.VerifyAndRead(testFile)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrHashDirNotExist)
+
+	_, err = v.LoadRecord(testFile)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrHashDirNotExist)
+}
+
+// TestNewReadOnly_ExistingDirectory_VerifiesSuccessfully verifies that NewReadOnly
+// with an existing, populated hash directory works like New for verification.
+func TestNewReadOnly_ExistingDirectory_VerifiesSuccessfully(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	testFile := filepath.Join(tempDir, "myfile.txt")
+	require.NoError(t, os.WriteFile(testFile, []byte("hello, read-only world"), 0o644))
+
+	vRec, err := New(&SHA256{}, hashDir, ValidatorConfig{})
+	require.NoError(t, err)
+	_, _, err = vRec.SaveRecord(testFile, false)
+	require.NoError(t, err)
+
+	v, err := NewReadOnly(&SHA256{}, hashDir, ValidatorConfig{})
+	require.NoError(t, err)
+	require.NotNil(t, v)
+
+	err = v.Verify(testFile)
+	require.NoError(t, err)
+}
+
+// TestNewReadOnly_NotADirectory verifies that NewReadOnly returns ErrHashPathNotDir
+// when the path exists but is not a directory.
+func TestNewReadOnly_NotADirectory(t *testing.T) {
+	tempDir := safeTempDir(t)
+	filePath := filepath.Join(tempDir, "regular-file")
+	require.NoError(t, os.WriteFile(filePath, []byte("content"), 0o644))
+
+	_, err := NewReadOnly(&SHA256{}, filePath, ValidatorConfig{})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrHashPathNotDir)
+}
+
+// TestNewReadOnly_NilAlgorithm verifies that NewReadOnly returns ErrNilAlgorithm
+// when algorithm is nil.
+func TestNewReadOnly_NilAlgorithm(t *testing.T) {
+	v, err := NewReadOnly(nil, "/tmp", ValidatorConfig{})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrNilAlgorithm)
+	assert.Nil(t, v)
+}

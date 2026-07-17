@@ -91,6 +91,36 @@ func TestErrorCases(t *testing.T) {
 	}
 }
 
+// TestNewReadOnly_ParentUnreadable_DeferredPermissionError verifies that
+// NewReadOnly returns a working Validator (construction succeeds) when the
+// parent of the hash directory is unreadable, and that Verify surfaces the
+// permission error via the deferred-error mechanism.
+// When running as root, chmod 0o000 does not deny access and this test
+// is a no-op (same constraint as the existing "unreadable directory" test).
+func TestNewReadOnly_ParentUnreadable_DeferredPermissionError(t *testing.T) {
+	tempDir := safeTempDir(t)
+	restrictedDir := filepath.Join(tempDir, "restricted")
+	require.NoError(t, os.Mkdir(restrictedDir, 0o700))
+
+	// hashDir does not exist — NewReadOnly will Lstat it and that Lstat must
+	// fail because the parent is unreadable.
+	hashDir := filepath.Join(restrictedDir, "hashes")
+
+	require.NoError(t, os.Chmod(restrictedDir, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(restrictedDir, 0o700) })
+
+	v, err := NewReadOnly(&SHA256{}, hashDir, ValidatorConfig{})
+	require.NoError(t, err)
+	require.NotNil(t, v)
+
+	// Verify must return the deferred permission error.
+	testFile := filepath.Join(tempDir, "some-file.txt")
+	require.NoError(t, os.WriteFile(testFile, []byte("content"), 0o644))
+	err = v.Verify(testFile)
+	require.Error(t, err)
+	assert.True(t, os.IsPermission(err), "expected a permission error, got: %v", err)
+}
+
 // TestFilesystemEdgeCases tests various edge cases related to filesystem operations
 func TestFilesystemEdgeCases(t *testing.T) {
 	tempDir := safeTempDir(t)

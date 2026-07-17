@@ -133,6 +133,68 @@ func (v *Validator) Store() *fileanalysis.Store {
 	return v.store
 }
 
+// NewReadOnly creates a Validator that does not create the hash directory.
+// It inspects hashDir via Lstat and acts according to its state:
+//   - exists and is a directory: builds a read-only Store via NewStoreReadOnly
+//     and returns a fully functional Validator.
+//   - does not exist: returns a Validator with deferredErr set to ErrHashDirNotExist
+//     (construction succeeds; Verify/LoadRecord surface the error per file).
+//   - exists but is not a directory: returns ErrHashPathNotDir (hard error, same as New).
+//   - Lstat fails with a permission error: returns a Validator with deferredErr set
+//     to the raw error so determineFailureReason maps it to ReasonPermissionDenied.
+//
+// dry-run calls no write operations through this validator; SaveRecord is never
+// invoked on this path.
+func NewReadOnly(algorithm HashAlgorithm, hashDir string, cfg ValidatorConfig) (*Validator, error) {
+	if algorithm == nil {
+		return nil, ErrNilAlgorithm
+	}
+
+	hashFilePathGetter := NewHybridHashFilePathGetter()
+
+	info, err := os.Lstat(hashDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &Validator{
+				deferredErr: fmt.Errorf("%w: %s", ErrHashDirNotExist, hashDir),
+			}, nil
+		}
+		// Permission or other Lstat error: keep it as deferredErr
+		// so determineFailureReason can map os.ErrPermission correctly.
+		return &Validator{
+			deferredErr: err,
+		}, nil
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("%w: %s", ErrHashPathNotDir, hashDir)
+	}
+
+	store, err := fileanalysis.NewStoreReadOnly(hashDir, hashFilePathGetter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open analysis store in read-only mode: %w", err)
+	}
+
+	resolvedHashDir, err := common.NewResolvedPath(hashDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve hash directory path %q: %w", hashDir, err)
+	}
+
+	v, err := newValidator(algorithm, resolvedHashDir, hashFilePathGetter, cfg)
+	if err != nil {
+		return nil, err
+	}
+	v.store = store
+
+	return v, nil
+}
+
+// HashDirAvailable reports whether the hash directory is usable for verification.
+// It returns false when NewReadOnly deferred an error (missing or inaccessible
+// directory), and true otherwise.
+func (v *Validator) HashDirAvailable() bool {
+	return v.deferredErr == nil
+}
+
 // ValidatorConfig configures optional analyzers and caches for Validator.
 // Zero values disable the corresponding analysis features.
 type ValidatorConfig struct {
@@ -169,6 +231,13 @@ type Validator struct {
 	// processedInterpreterAnalysis caches shebang interpreter analysis records during one Validator lifetime.
 	processedInterpreterAnalysis map[libCacheKey]*fileanalysis.Record
 	includeDebugInfo             bool
+
+	// deferredErr holds an error detected at construction time
+	// (e.g. missing or inaccessible hash directory) that is surfaced
+	// when any Verify/Load method is called, rather than failing
+	// construction. Only NewReadOnly sets this; New and NewForRecord
+	// always leave it nil.
+	deferredErr error
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
@@ -451,6 +520,10 @@ func (v *Validator) prefixedHashForPath(filePath string) (string, error) {
 
 // LoadRecord returns the full analysis record for the given file path.
 func (v *Validator) LoadRecord(filePath string) (*fileanalysis.Record, error) {
+	if v.deferredErr != nil {
+		return nil, v.deferredErr
+	}
+
 	targetPath, err := validatePath(filePath)
 	if err != nil {
 		return nil, err
@@ -1073,6 +1146,10 @@ func isKnownVDSO(soname string) bool {
 // Verify checks if the file at filePath matches its recorded hash.
 // Returns ErrMismatch if the hashes don't match, or ErrHashFileNotFound if no hash is recorded.
 func (v *Validator) Verify(filePath string) error {
+	if v.deferredErr != nil {
+		return v.deferredErr
+	}
+
 	// Validate the file path
 	targetPath, err := validatePath(filePath)
 	if err != nil {
@@ -1097,6 +1174,10 @@ func (v *Validator) Verify(filePath string) error {
 // callers can forward it to downstream consumers (e.g. ELF analysis) without
 // a redundant read of the file.
 func (v *Validator) VerifyWithHash(filePath string) (string, error) {
+	if v.deferredErr != nil {
+		return "", v.deferredErr
+	}
+
 	targetPath, err := validatePath(filePath)
 	if err != nil {
 		return "", err
@@ -1197,6 +1278,10 @@ func (v *Validator) verifyAndReadContent(targetPath common.ResolvedPath, readCon
 
 // VerifyAndRead atomically verifies file integrity and returns its content to prevent TOCTOU attacks
 func (v *Validator) VerifyAndRead(filePath string) ([]byte, error) {
+	if v.deferredErr != nil {
+		return nil, v.deferredErr
+	}
+
 	// Validate the file path
 	targetPath, err := validatePath(filePath)
 	if err != nil {
