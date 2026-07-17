@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-07-16 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-07-17 |
+| Reviewer | isseis |
 | Comments | - |
 
 ## 1. 背景と目的
