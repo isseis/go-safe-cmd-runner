@@ -131,7 +131,8 @@ func (v *Validator) ValidateConfig(config *runnertypes.Config) (*ValidationResul
 #### SHA-256ハッシュ検証とハッシュファイル命名
 
 ハッシュファイル名は `HybridHashFilePathGetter` により生成されます。通常のパスは可逆な
-置換エスケープ方式（`~path` 形式）でエンコードし、`NAME_MAX` を超える長いパスのみ SHA-256
+置換エスケープ方式（`~path` 形式）でエンコードし、`MaxFilenameLength`（250。一般的な `NAME_MAX`
+の 255 に対する安全マージン）を超える長いパスのみ SHA-256
 フォールバックに委譲します。ファイル内容自体の整合性検証には SHA-256 を使用します。
 
 ```go
@@ -139,7 +140,7 @@ func (h *HybridHashFilePathGetter) GetHashFilePath(hashDir common.ResolvedPath, 
     // 1. 通常は置換+エスケープでエンコード（例: /home/user/file.txt → ~home~user~file.txt）
     encodedName, err := h.encoder.Encode(filePath.String())
     // ...
-    // 2. NAME_MAX を超える場合のみ SHA-256 フォールバック（AbCdEf123456.json）
+    // 2. MaxFilenameLength（250）を超える場合のみ SHA-256 フォールバック（AbCdEf123456.json）
     // 3. hashDir と結合して返す
 }
 ```
