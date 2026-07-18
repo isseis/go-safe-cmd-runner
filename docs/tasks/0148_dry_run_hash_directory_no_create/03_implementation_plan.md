@@ -446,8 +446,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 - [ ] **ステップ 3-9**: `manager_production.go` の `logDryRunManagerCreation`（87-105 行目）の 96 行目
       `"file_validator_enabled", true,` の直後に `"construction_mode", "read_only",` を追加する。
