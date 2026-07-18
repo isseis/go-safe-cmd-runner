@@ -671,7 +671,7 @@ shred -u debug.txt  # secure deletion
 
 ドライラン出力は、ハッシュ検証に成功せずに採用された設定／テンプレートファイルを、ファイル検証レポート内の独立した **`UNVERIFIED`** セクションに区別表示します。
 
-- *環境起因*（バリデータ未設定、例：ハッシュディレクトリが書き込み不可）: 理由 `skipped_no_validator`。
+- *環境起因*（このマネージャインスタンスでバリデータ自体が未設定）: 理由 `skipped_no_validator`。ハッシュディレクトリが不在または読み取り不可の場合は、`skipped_no_validator` ではなく後述の `verify_failed_hash_directory_not_found` や `verify_failed_permission_denied` として報告されます。
 - *検証を試みたが失敗*: 理由 `verify_failed_<failure_reason>`。このうち `hash_mismatch`（改ざんの可能性がある兆候）のみが **`UNVERIFIED-TAMPER`** タグと `security_risk: high` 注釈付きで表示され、他の失敗理由は通常の `UNVERIFIED` マーカーとして表示されます。
 
 **`Failures`** および **`UNVERIFIED`** の両セクションは、要素が存在する限り、**すべての詳細レベル**（`summary`、`detailed`、`full`）で表示されます。両セクションが空（全ファイル検証成功）の場合は表示されず、`summary` の簡潔さは保たれます。
@@ -679,6 +679,15 @@ shred -u debug.txt  # secure deletion
 **`verify_files` の検証失敗**
 
 `global.verify_files` および `groups[].verify_files` に列挙されたファイルは dry-run 時に検証され、失敗は `Failures` セクションに記録されて終了コードに反映されます。分類は上記と同じです（改ざん兆候 → `1`、環境起因 → `3`）。
+
+**ハッシュディレクトリの扱い（dry-run）**
+
+dry-run はハッシュディレクトリを作成しません。設定されたハッシュディレクトリが存在しない
+場合、dry-run は read-only な確認のみを行い作成を試みません。検証が必要な各ファイルは
+環境起因の理由 `hash_directory_not_found`（採用したが未検証のコンテンツは
+`verify_failed_hash_directory_not_found`）として報告され、終了コードは `3` になります。
+この扱いは設定ファイル・テンプレート・`verify_files`・env ファイルのすべてに共通です。
+ハッシュディレクトリを自動作成するのは `record` コマンドおよび本番実行のみです。
 
 **文法**
 

@@ -671,7 +671,7 @@ The priority order is:
 
 The dry-run output marks config/template files that were adopted without successful hash verification under a distinct **`UNVERIFIED`** section in the file-verification report:
 
-- *Environment cause* (no validator configured, e.g., hash directory not writable): reason `skipped_no_validator`.
+- *Environment cause* (no validator configured for this manager instance): reason `skipped_no_validator`. A missing or unreadable hash directory is reported as `verify_failed_hash_directory_not_found` or `verify_failed_permission_denied` instead (see below), not `skipped_no_validator`.
 - *Verification attempted and failed*: reason `verify_failed_<failure_reason>`. Only a `hash_mismatch` — a possible tampering signal — is tagged **`UNVERIFIED-TAMPER`** and annotated `security_risk: high`; other failure reasons are shown under the plain `UNVERIFIED` marker.
 
 Both the **`Failures`** and **`UNVERIFIED`** sections are displayed at **all detail levels** (`summary`, `detailed`, `full`) whenever they are non-empty. When both sections are empty (all files verified successfully) they are not shown, keeping `summary` output concise.
@@ -679,6 +679,17 @@ Both the **`Failures`** and **`UNVERIFIED`** sections are displayed at **all det
 **`verify_files` failures**
 
 `global.verify_files` and `groups[].verify_files` entries are verified during dry-run. Their failures are recorded in the `Failures` section and reflected in the exit code using the same classification (tampering signal → `1`, environment cause → `3`).
+
+**Hash directory handling (dry-run)**
+
+Dry-run never creates the hash directory, even when it does not exist. In
+that case dry-run performs a read-only check only; every file requiring
+verification is reported with the environment-cause reason
+`hash_directory_not_found` (`verify_failed_hash_directory_not_found` for
+content adopted without verification), and the exit code is `3`. This
+applies uniformly to the configuration file, templates, `verify_files`
+entries, and env files. Only the `record` command and production
+execution create the hash directory automatically.
 
 **Syntax**
 

@@ -593,17 +593,17 @@
 
 **対象ファイル**: `docs/user/runner_command.md`, `docs/user/runner_command.ja.md`
 
-- [ ] **ステップ 5-1**: `docs/user/runner_command.md` 674 行目を書き換える。
+- [x] **ステップ 5-1**: `docs/user/runner_command.md` 674 行目を書き換える。
       - Before:
         `- *Environment cause* (no validator configured, e.g., hash directory not writable): reason `skipped_no_validator`.`
       - After:
         ``- *Environment cause* (no validator configured for this manager instance): reason `skipped_no_validator`. A missing or unreadable hash directory is reported as `verify_failed_hash_directory_not_found` or `verify_failed_permission_denied` instead (see below), not `skipped_no_validator`.``
-- [ ] **ステップ 5-2**: `docs/user/runner_command.ja.md` 674 行目を書き換える。
+- [x] **ステップ 5-2**: `docs/user/runner_command.ja.md` 674 行目を書き換える。
       - Before:
         `- *環境起因*（バリデータ未設定、例：ハッシュディレクトリが書き込み不可）: 理由 `skipped_no_validator`。`
       - After:
         ``- *環境起因*（このマネージャインスタンスでバリデータ自体が未設定）: 理由 `skipped_no_validator`。ハッシュディレクトリが不在または読み取り不可の場合は、`skipped_no_validator` ではなく後述の `verify_failed_hash_directory_not_found` や `verify_failed_permission_denied` として報告されます。``
-- [ ] **ステップ 5-3**: `docs/user/runner_command.md` の「`verify_files` failures」段落（679-681 行目）の直後、
+- [x] **ステップ 5-3**: `docs/user/runner_command.md` の「`verify_files` failures」段落（679-681 行目）の直後、
       「**Syntax**」（683 行目）の直前に、次の見出しと本文を追加する。
       ```markdown
       **Hash directory handling (dry-run)**
@@ -617,7 +617,7 @@
       entries, and env files. Only the `record` command and production
       execution create the hash directory automatically.
       ```
-- [ ] **ステップ 5-4**: `docs/user/runner_command.ja.md` の「`verify_files` の検証失敗」段落（679-681 行目）の直後、
+- [x] **ステップ 5-4**: `docs/user/runner_command.ja.md` の「`verify_files` の検証失敗」段落（679-681 行目）の直後、
       「**文法**」（683 行目）の直前に、次の見出しと本文を追加する。
       ```markdown
       **ハッシュディレクトリの扱い（dry-run）**
@@ -629,7 +629,7 @@
       この扱いは設定ファイル・テンプレート・`verify_files`・env ファイルのすべてに共通です。
       ハッシュディレクトリを自動作成するのは `record` コマンドおよび本番実行のみです。
       ```
-- [ ] **ステップ 5-5**: 上記追加後、両ファイルの新設見出しが同じ相対位置（`verify_files` の失敗段落の直後、
+- [x] **ステップ 5-5**: 上記追加後、両ファイルの新設見出しが同じ相対位置（`verify_files` の失敗段落の直後、
       Syntax/文法見出しの直前）にあることを目視確認する。
 
 ### PR-6 作成ポイント: user documentation for dry-run hash directory handling
