@@ -20,7 +20,7 @@ const (
 // This implementation provides:
 //   - Efficient encoding for typical paths (1.00x expansion ratio)
 //   - Mathematical reversibility for normal encoding
-//   - Automatic SHA256 fallback for paths exceeding NAME_MAX limits
+//   - Automatic SHA256 fallback for paths exceeding MaxFilenameLength (250)
 //   - Full compatibility with the HashFilePathGetter interface
 //
 // Encoding strategy:
@@ -47,7 +47,7 @@ func NewHybridHashFilePathGetter() *HybridHashFilePathGetter {
 //
 // This implementation uses hybrid encoding:
 //  1. Attempt normal substitution+escape encoding (no extension)
-//  2. If result exceeds NAME_MAX limits, delegate to SHA256PathHashGetter
+//  2. If result exceeds MaxFilenameLength (250), delegate to SHA256PathHashGetter
 //  3. Combine with hash directory
 //
 // Parameters:

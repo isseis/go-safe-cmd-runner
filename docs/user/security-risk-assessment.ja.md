@@ -2,7 +2,7 @@
 
 ## 📋 文書情報
 - **作成日**: 2025年09月08日
-- **最終更新日**: 2025年10月01日
+- **最終更新日**: 2026年07月18日
 - **対象システム**: go-safe-cmd-runner
 - **評価範囲**: ソフトウェアセキュリティリスク分析と運用上の考慮事項
 - **対象読者**: ソフトウェアエンジニア、セキュリティ専門家、プロダクトマネージャー、運用エンジニア
@@ -25,7 +25,7 @@ go-safe-cmd-runnerは、セキュリティを重視したGoベースのコマン
 **ビジネスへの影響**:
 - 📈 **高い信頼性**: 包括的なエラーハンドリングによりシステム障害を削減
 - 🔒 **セキュリティ保証**: 内蔵保護機能により攻撃表面を最小化
-- � **保守性**: クリーンなアーキテクチャにより長期開発をサポート
+- 🔧 **保守性**: クリーンなアーキテクチャにより長期開発をサポート
 
 ---
 
@@ -50,8 +50,12 @@ go-safe-cmd-runnerは、セキュリティを重視したGoベースのコマン
 | 設定検証タイミング | 使用前完全検証 | ✅ 優秀 |
 | ハッシュディレクトリ保護 | カスタム指定完全禁止 | ✅ 優秀 |
 | コマンド許可リスト | グローバル正規表現 + グループレベル完全パス | ✅ 優秀 |
+| リスクベース実行制御 | 多因子リスク評価（`risk_level` 上限宣言） | ✅ 優秀 |
+| バイナリ静的解析 | ELF/Mach-O のsyscall・動的ライブラリ解析 | ✅ 優秀 |
+| dry-run セキュリティ | 未検証成果物の常時 hard fail・read-only 検証 | ✅ 優秀 |
 | 出力ファイルセキュリティ | 権限分離・制限権限 | ✅ 良好 |
 | 変数展開セキュリティ | allowlist連携 | ✅ 良好 |
+| 機密情報リダクション | キー名検出 + 値フォーマット検出 | ✅ 良好 |
 
 ---
 
@@ -124,27 +128,37 @@ func (v *Validator) ValidateConfig(config *runnertypes.Config) (*ValidationResul
 
 **🎯 目的**: 改ざん検知とパストラバーサル攻撃防止
 
-#### SHA-256ハッシュ検証
+#### SHA-256ハッシュ検証とハッシュファイル命名
+
+ハッシュファイル名は `HybridHashFilePathGetter` により生成されます。通常のパスは可逆な
+置換エスケープ方式（`~path` 形式）でエンコードし、`MaxFilenameLength`（250。一般的な `NAME_MAX`
+の 255 に対する安全マージン）を超える長いパスのみ SHA-256
+フォールバックに委譲します。ファイル内容自体の整合性検証には SHA-256 を使用します。
+
 ```go
-func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath common.ResolvedPath) (string, error) {
-    h := sha256.Sum256([]byte(filePath.String()))
-    hashStr := base64.URLEncoding.EncodeToString(h[:])
-    return filepath.Join(hashDir, hashStr[:12]+".json"), nil
+func (h *HybridHashFilePathGetter) GetHashFilePath(hashDir common.ResolvedPath, filePath common.ResolvedPath) (string, error) {
+    // 1. 通常は置換+エスケープでエンコード（例: /home/user/file.txt → ~home~user~file.txt）
+    encodedName, err := h.encoder.Encode(filePath.String())
+    // ...
+    // 2. MaxFilenameLength（250）を超える場合のみ SHA-256 フォールバック（AbCdEf123456.json）
+    // 3. hashDir と結合して返す
 }
 ```
 
 #### openat2によるパストラバーサル対策
 ```go
-func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode) (*os.File, error) {
-    if fs.openat2Available {
-        how := openHow{
-            flags:   uint64(flag),
-            mode:    uint64(perm),
-            resolve: ResolveNoSymlinks, // シンボリックリンク無効化
-        }
-        fd, err := openat2(AtFdcwd, absPath, &how)
-        // ...
+func (fs *osFS) safeOpenFileInternal(absPath string, flag int, perm os.FileMode) (*os.File, error) {
+    if !fs.openat2Available {
+        // openat2 非対応環境ではポータブルな二段階検証にフォールバック
+        return safeOpenFileFallback(absPath, flag, perm)
     }
+    how := openHow{
+        flags:   uint64(flag),
+        mode:    uint64(perm),
+        resolve: ResolveNoSymlinks, // シンボリックリンク解決を無効化（アトミック）
+    }
+    fd, err := openat2(AtFdcwd, absPath, &how)
+    // ...
 }
 ```
 
@@ -169,10 +183,8 @@ func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode
   独自の定数を個別に定義しており、共通のシンボルを参照しているわけではありません。
 
 両者は **別々の定数** であり混同しないでください。128 MB は設定ファイルやテンプレートには十分な余裕がありますが、
-1 GB はバイナリ解析専用です。**本タスクでは閾値の設定可能化や上限分離（ハッシュ計算と解析の分離）は
-実装しません**。理由は (1) 要件スコープが「前提の明文化と可否検討まで」である、(2) 現時点で
-具体的な大容量検証の要求がなく YAGNI に反する、(3) 上限分離はアナライザ全体のメモリモデル見直しを
-要し堅牢化タスクの範囲を超える、の 3 点です。将来必要になった場合に別タスクとして検討します。
+1 GB はバイナリ解析専用です。これらの閾値は設定変更できず（固定値）、ハッシュ計算自体にはサイズ制限は
+ありませんが、解析処理においては 1 GB の上限が適用されます。
 
 **本番ターゲットと non-Linux 環境**:
 
@@ -190,13 +202,11 @@ func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode
 
 ---
 
-## 🔍 最近の改善事項
+## 🔍 追加のセキュリティ機能
 
-### 新規実装されたセキュリティ機能
+### 1. 拡張ログ・監査システム (`internal/logging/`, `internal/redaction/`)
 
-#### 1. 拡張ログ・監査システム (`internal/logging/`, `internal/redaction/`)
-
-**実装されたセキュリティ機能**:
+**セキュリティ機能**:
 - **機密データリダクション**: APIキー、パスワード、トークンの自動保護
 - **構造化ログ**: 解析性向上と監査証跡の完全記録
 - **デコレータパターン**: 柔軟で構成可能なロギングパイプライン
@@ -217,8 +227,8 @@ func (c *Config) RedactText(text string) string {
 }
 ```
 
-**値ベース検出（新規）**:
-キー名ベースのリダクションに加えて、キー名が認識できない形で出現した秘密値も **値のフォーマット**のみから検出・マスクする機能が追加されました。`ValueDetector`は以下の既知フォーマットを検出対象とします：
+**値ベース検出**:
+キー名ベースのリダクションに加えて、キー名が認識できない形で出現した秘密値も **値のフォーマット**のみから検出・マスクします。`ValueDetector`は以下の既知フォーマットを検出対象とします：
 
 - AWS アクセスキーID（`AKIA`/`ASIA`プレフィックス）
 - GitHub トークン（`ghp_`/`gho_`/`ghs_`プレフィックス）
@@ -232,49 +242,66 @@ func (c *Config) RedactText(text string) string {
 
 **限界**: 検出は上記の既知フォーマットに限られます。未知の credential 形式、独自トークンスキーム、高エントロピー文字列は検出されません。ログフィールドやストリームチャンク境界を跨いで分割された秘密値も取りこぼす可能性があります。GCP の項目のみ他と性質が異なり、値そのものに識別可能なフォーマットがありません（サービスアカウントのキーIDは単なる16進文字列であり、値だけでは他のハッシュ値と区別できません）。そのため JSON のフィールド名（`"private_key_id"`）と隣接する場合のみ検出されます。実際の GCP 資格情報本体である `private_key` の PEM ブロックは、上記の PEM 検出によりキー名に依存せずマスクされます。**Slackにコマンド全体の出力を載せる設定は避けるべきです**。マスキング層は多層防御の一環であり、不必要な露出の代替手段ではありません。
 
-#### 2. リスクベースコマンド制御 (`internal/runner/risk/`)
+### 2. リスクベースコマンド制御 (`internal/runner/base/risk/`)
 
-**動的セキュリティ制御**:
-- **リアルタイムリスク評価**: コマンド実行前の動的リスク判定
-- **適応的制御**: リスクレベルに応じた自動ブロック・警告
+**多因子リスク評価**:
+`risk_level` は「このコマンドに許可するリスクの**上限**」を宣言するもので、runner は実行前に
+コマンドのリスクを自動算出し、算出値が `risk_level` を超えていると実行を拒否します。リスクは
+**複数の独立した因子の最大値**として算出されます。
+
+- **コマンド名・引数評価**: 特権昇格・破壊的操作・危険な引数パターンの検出
+- **コマンドプロファイル要因**: 権限付与・ネットワーク通信・データ持ち出し・システム変更の分類
+- **バイナリ静的解析結果の参照**: `record` 時に記録した syscall・動的ライブラリ解析結果を再利用
 - **監査統合**: 全リスク評価結果の完全記録
 
 ```go
-func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
-    if isPrivEsc, _ := security.IsPrivilegeEscalationCommand(cmd.Cmd); isPrivEsc {
-        return runnertypes.RiskLevelCritical, nil
-    }
-    if security.IsDestructiveFileOperation(cmd.Cmd, cmd.Args) {
-        return runnertypes.RiskLevelHigh, nil
-    }
-    return runnertypes.RiskLevelLow, nil
+func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error) {
+    // 特権昇格コマンドは最上位（Critical）
+    // 破壊的ファイル操作・システム変更・任意コード実行は High
+    // ネットワーク引数等は Medium
+    // 各因子を addDimension で積み上げ、実効リスクは全因子の最大値
+    a := risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow}
+    // ...
+    return plan, nil
 }
 ```
 
-#### 3. ユーザー・グループ管理強化 (`internal/groupmembership/`)
+リスク算出の詳細な仕組みと `risk_level` 設定の指針は [リスク評価ガイド](risk_assessment.ja.md)
+を参照してください。
+
+#### バイナリ静的解析（`record` 時）
+
+`record` コマンドは実行ファイルを解析し、その結果をハッシュ DB に記録します。runner 実行時は
+この記録を参照してリスクを判定するため、実行時の解析コストを避けつつ危険な挙動を検出できます。
+
+- **ELF/Mach-O syscall 解析** (`internal/security/elfanalyzer`, `internal/security/machoanalyzer`):
+  実行ファイルが呼び出す可能性のあるシステムコールを静的に抽出し、`mprotect(PROT_EXEC)` による
+  動的コード実行や `exec` 系 syscall 等を検出
+- **動的ライブラリの推移的解析** (`internal/dynlib`, キャッシュは `internal/libccache`):
+  依存する共有ライブラリを推移的に辿り、間接的に到達可能な syscall を解析。解析結果は
+  ライブラリ単位でキャッシュし再解析を回避
+- **shebang スクリプト解析** (`internal/shebang`): スクリプトのインタプリタを解決し、
+  インタプリタ実行ファイルのリスクをスクリプトのリスクに反映
+
+### 3. ユーザー・グループ管理 (`internal/groupmembership/`)
 
 **権限境界の厳格化**:
 - **CGO/非CGO対応**: 環境に依存しない権限検証
 - **キャッシュ機能**: パフォーマンス向上と一貫性確保
 - **クロスプラットフォーム**: 統一されたユーザー・グループ管理
 
-#### 4. 安全な端末出力制御 (`internal/terminal/`, `internal/color/`)
+### 4. 安全な端末出力制御 (`internal/terminal/`, `internal/ansicolor/`)
 
 **出力セキュリティ**:
 - **端末能力検出**: CI/CD環境の自動判別
 - **エスケープシーケンス制御**: ターミナルインジェクション防止
 - **保守的デフォルト**: 不明環境では安全側に動作
 
-### クリティカルセキュリティ修正
+### 5. 設定の使用前検証と信頼境界
 
-#### 1. 設定検証タイミングの修正 (Task 0021)
+設定ファイルは、その内容を使用する前に必ず検証されます。処理は以下の順序で進み、検証が完了するまで
+一切の設定内容を信頼しません。
 
-**🚨 発見された脆弱性**: 未検証設定データの使用
-- 設定ファイル検証前に、未検証の設定内容でシステム初期化が実行
-- 悪意ある設定による作業ディレクトリ操作、ログレベル変更が可能
-- 外部通知先（Slack Webhook）への機密情報漏洩リスク
-
-**✅ 実装された対策**:
 ```go
 func run(runID string) error {
     // 1. ハッシュディレクトリ検証（最優先）
@@ -290,24 +317,22 @@ func run(runID string) error {
 }
 ```
 
-**セキュリティ効果**:
 - ✅ **デフォルト拒否**: 検証完了まで全操作を禁止
 - ✅ **早期検証**: 攻撃表面の最小化
-- ✅ **信頼境界明確化**: 検証済みデータのみ使用
+- ✅ **信頼境界明確化**: 検証済みデータのみ使用（作業ディレクトリ・ログレベル・Slack Webhook 等の
+  設定は検証後にのみ反映）
 
-#### 2. ハッシュディレクトリ保護強化 (Task 0022)
+### 6. ハッシュディレクトリ保護
 
-**🚨 発見された脆弱性**: カスタムハッシュディレクトリ指定による特権昇格
-- `--hash-directory`オプションで攻撃者が任意ディレクトリを指定可能
-- 偽ハッシュファイルを配置し、悪意あるコマンドの「検証成功」を偽装
-- setuidバイナリ実行時の特権昇格攻撃が成立
+本番環境ではハッシュディレクトリはデフォルトディレクトリのみを使用し、外部からの指定を受け付けません。
+これにより、偽ハッシュファイルを配置して悪意あるコマンドの「検証成功」を偽装する攻撃（特に setuid
+バイナリ実行時の特権昇格）を防止します。
 
-**✅ 実装された対策**:
 ```go
-// プロダクション環境: デフォルトディレクトリのみ
+// 本番環境: デフォルトディレクトリのみ
 func NewManager() (*Manager, error) {
     // cmdcommon.DefaultHashDirectory のみ使用
-    // 外部指定を完全に禁止
+    // 外部指定を受け付けない
 }
 
 // テスト環境: ビルドタグで分離
@@ -317,14 +342,11 @@ func NewManagerForTest(hashDir string, options ...Option) (*Manager, error) {
 }
 ```
 
-**セキュリティ効果**:
-- ✅ **コマンドライン引数削除**: `--hash-directory`フラグ完全廃止
+- ✅ **カスタム指定不可**: `--hash-directory` のようなフラグは存在しない
 - ✅ **ゼロトラスト**: カスタムハッシュディレクトリを一切信頼しない
-- ✅ **多層防御**: コンパイル時・ビルドタグ・CI/CDでの保護
+- ✅ **多層防御**: コンパイル時・ビルドタグ・CI/CD での保護
 
-#### 3. 出力ファイル・変数展開のセキュリティ (Task 0025, 0026)
-
-**新規セキュリティ機能**:
+### 7. 出力ファイル・変数展開のセキュリティ
 
 **出力ファイルセキュリティ**:
 - **権限分離**: 出力ファイルは実UID権限で作成（EUID変更の影響なし）
@@ -337,6 +359,19 @@ func NewManagerForTest(hashDir string, options ...Option) (*Manager, error) {
 - **循環参照検出**: 最大15回反復で無限ループ防止
 - **シェル実行なし**: `$(...)`、`` `...` ``未サポート
 - **コマンド検証**: 展開後のコマンドパスを再検証
+
+### 8. dry-run のセキュリティ
+
+dry-run は本番実行と同じ検証結果を返し、状態を変更しません。dry-run で「問題なし」と判断できた設定は、
+本番実行でも同じ可否になります。
+
+- **未検証成果物の常時 hard fail**: 「この環境では検証できなかった」コマンドは、dry-run でも常に
+  hard fail として扱われる
+- **ハッシュディレクトリの read-only 検証**: dry-run はハッシュディレクトリを **作成しません**。
+  ディレクトリが存在しない場合も副作用として作成せず read-only で検証し、本番実行と同じく不在を
+  hard fail として扱う。監査ログには検証の構築モード（`construction_mode`）を記録
+- ✅ **dry-run と本番の挙動一致**: dry-run の結果が本番実行の可否を正しく予測
+- ✅ **副作用の排除**: dry-run が状態を変更しない（最小権限・冪等性）
 
 ---
 
@@ -360,17 +395,19 @@ func NewManagerForTest(hashDir string, options ...Option) (*Manager, error) {
 
 1. **依存関係の定期更新**: 脆弱性データベースとの自動統合
 2. **パフォーマンス監視**: リソース使用量制限の実装
-3. **テストカバレッジ**: セキュリティクリティカルパス90%以上達成
+3. **テストカバレッジ**: セキュリティクリティカルパスのカバレッジを90%以上へ向上（現状約85%）
 4. **静的解析強化**: より高度なコード品質チェック
 
 ### 外部依存関係セキュリティ
 
 | パッケージ | バージョン | リスクレベル | 状況 |
 |-----------|------------|-------------|------|
-| go-toml/v2 | v2.0.8 | 🟡 中 | 積極的メンテナンス、既知CVEなし |
-| godotenv | v1.5.1 | 🟢 低 | 安定、最小限の攻撃表面 |
-| testify | v1.8.3 | 🟢 低 | テストのみ依存、限定的暴露 |
-| ulid/v2 | v2.1.1 | 🟢 低 | 最新更新、暗号学的に安全 |
+| go-toml/v2 | v2.0.9 | 🟡 中 | 積極的メンテナンス、既知CVEなし |
+| ulid/v2 | v2.1.1 | 🟢 低 | 暗号学的に安全な ID 生成 |
+| golang.org/x/arch | v0.24.0 | 🟢 低 | バイナリ静的解析（命令デコード）に使用 |
+| golang.org/x/sys | v0.35.0 | 🟢 低 | openat2 等のシステムコール呼び出し |
+| golang.org/x/term | v0.34.0 | 🟢 低 | 端末能力検出 |
+| testify | v1.8.4 | 🟢 低 | テストのみ依存、限定的暴露 |
 
 ### 運用上の注意事項
 
@@ -386,7 +423,7 @@ func NewManagerForTest(hashDir string, options ...Option) (*Manager, error) {
 
 ---
 
-## �️ 改善ロードマップ
+## 🛠️ 改善ロードマップ
 
 ### 高優先度 (1-2週間)
 
@@ -440,13 +477,13 @@ type SecurityError struct {
 
 ---
 
-## � 運用ガイド
+## 🚀 運用ガイド
 
 ### デプロイメント手順
 
 **1. システム要件**
 - Linux カーネル 5.6+ (openat2 サポート)
-- Go 1.21+ (開発環境)
+- Go 1.26+ (開発環境)
 - 適切なファイルシステム権限
 
 **2. セキュリティ設定**
@@ -528,19 +565,14 @@ security_violations: 0   # セキュリティ違反ゼロ
 - [設計実装概要](../dev/design-implementation-overview.ja.md)
 - [セキュリティアーキテクチャ](../dev/security-architecture.ja.md)
 - [ハッシュファイル命名規則](../dev/hash-file-naming-adr.ja.md)
-
-### タスクドキュメント
-- [設定検証タイミング修正](../tasks/0021_config_verification_timing/)
-- [ハッシュディレクトリセキュリティ強化](../tasks/0022_hash_directory_security_enhancement/)
-- [コマンド出力機能](../tasks/0025_command_output/)
-- [変数展開機能](../tasks/0026_variable_expansion/)
+- [リスク評価ガイド](risk_assessment.ja.md)
 
 ---
 
 ## 📋 文書管理
 
 **レビュースケジュール**:
-- **次回レビュー**: 2026年01月01日
+- **次回レビュー**: 2026年10月01日
 - **四半期レビュー**: 3ヶ月毎
 - **年次包括評価**: 2026年9月
 
