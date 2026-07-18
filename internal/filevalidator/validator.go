@@ -173,9 +173,9 @@ type Validator struct {
 	// deferredErr holds a hash-directory access error detected at read-only
 	// construction time (NewReadOnly): missing directory, or an Lstat failure
 	// such as permission denied. Verify / VerifyWithHash / VerifyAndRead /
-	// LoadRecord return this error immediately instead of touching the
-	// filesystem, so the failure is reported per file rather than at
-	// construction time. Always nil for Validators built via New.
+	// LoadRecord / SaveRecord return this error immediately instead of
+	// touching the filesystem, so the failure is reported per file rather
+	// than at construction time. Always nil for Validators built via New.
 	deferredErr error
 }
 
@@ -245,7 +245,10 @@ func newValidator(algorithm HashAlgorithm, hashDir common.ResolvedPath, hashFile
 }
 
 // NewReadOnly creates a Validator that never creates the hash directory.
-// It inspects hashDir via a single Lstat call and constructs accordingly:
+// It starts with an Lstat call to check whether hashDir exists, then
+// constructs accordingly (the existing-directory branch performs further
+// filesystem inspection via fileanalysis.NewStoreReadOnly and
+// common.NewResolvedPath):
 //   - exists and is a directory: builds a read-only Store via
 //     fileanalysis.NewStoreReadOnly and returns a fully functional Validator,
 //     identical in behavior to one built by New.

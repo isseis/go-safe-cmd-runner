@@ -222,11 +222,13 @@
            そのまま返す。
          - `err == nil && !info.IsDir()`: `fmt.Errorf("%w: %s", ErrHashPathNotDir, hashDir)` を返す
            （構築失敗）。
-         - `os.IsNotExist(err)`: `&Validator{deferredErr: fmt.Errorf("%w: %s", ErrHashDirNotExist, hashDir)}, nil`
-           を返す（構築成功、`store` は nil のまま）。
-         - それ以外（`Lstat` が権限エラー等で失敗）: `&Validator{deferredErr: err}, nil` を返す
-           （構築成功）。`err` はそのまま保持するため、`errors.Is(err, os.ErrPermission)` は
-           `result_collector.go` の `determineFailureReason` でそのまま機能する。
+         - `os.IsNotExist(err)`: `newDeferredValidator(algorithm, hashFilePathGetter, cfg,
+           fmt.Errorf("%w: %s", ErrHashDirNotExist, hashDir)), nil` を返す（構築成功、`store` は
+           ゼロ値のまま）。
+         - それ以外（`Lstat` が権限エラー等で失敗）: `newDeferredValidator(algorithm,
+           hashFilePathGetter, cfg, err), nil` を返す（構築成功）。`err` はそのまま保持するため、
+           `errors.Is(err, os.ErrPermission)` は `result_collector.go` の `determineFailureReason`
+           でそのまま機能する。
 - [x] **ステップ 2-3**: `Verify`（1075 行目）、`VerifyWithHash`（1099 行目）、`VerifyAndRead`（1199 行目）、
       `LoadRecord`（453 行目）の各先頭に、次の 2 行を追加する（戻り値の型に応じてゼロ値を調整）。
       ```go
