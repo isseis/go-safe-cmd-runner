@@ -514,8 +514,9 @@
 
 - [x] **ステップ 4-1**: `TestDryRunE2E_HashDirectoryNotFound` を追加する。
       - `hashDir := filepath.Join(tu.SafeTempDir(t), "does-not-exist")`（作成しない）。
-      - `configContent` は他の E2E テスト（56-78 行目）と同様、`/bin/echo` を実行する 1 グループの
-        最小構成。
+      - `configContent` は他の E2E テスト（56-78 行目）と同様、`/bin/true` を実行する 1 グループの
+        最小構成（一部の CI 環境で `/bin/echo` が存在しない coreutils へのシンボリックリンクに
+        なっている問題を避けるため、このファイルの他テストと同じく `/bin/true` を用いる）。
       - `configFile := setupTempConfig(t, configContent)`。
       - `cmd := newGoRunCmdWithHashDir(t, hashDir, "-config", configFile, "-dry-run",
         "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")` で実行し、
@@ -525,8 +526,9 @@
       - `result.FileVerification.Failures` に `Reason == verification.ReasonHashDirNotFound` の
         エントリが 1 件以上含まれることを確認する（AC-03）。
       - `result.FileVerification.UnverifiedFiles` に
-        `Reason == "verify_failed_hash_directory_not_found"` のエントリが 1 件以上含まれることを
-        確認する（AC-03）。
+        `Reason == string(verification.UnverifiedReasonFromFailure(verification.ReasonHashDirNotFound))`
+        のエントリが 1 件以上含まれることを確認する（生の文字列リテラルではなく、本番コードと
+        同じ単一の情報源を共有する）（AC-03）。
       - `assert.Equal(t, resource.DryRunExitVerificationUnavailable, cmd.ProcessState.ExitCode())`
         （AC-05）。
       - `_, statErr := os.Stat(hashDir)` の後 `assert.True(t, os.IsNotExist(statErr))`
