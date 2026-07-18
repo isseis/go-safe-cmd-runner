@@ -403,7 +403,7 @@ Configurations judged "no problem" by dry-run yield the same outcome in a produc
 
 1. **Regular Dependency Updates**: Automatic integration with vulnerability databases
 2. **Performance Monitoring**: Implementation of resource usage limits
-3. **Test Coverage**: Achieve 90%+ coverage for security-critical paths
+3. **Test Coverage**: Improve security-critical path coverage to 90%+ (currently ~85%)
 4. **Enhanced Static Analysis**: More advanced code quality checks
 
 ### External Dependency Security
