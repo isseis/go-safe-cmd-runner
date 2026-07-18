@@ -15,7 +15,7 @@ import (
 // when the hash directory does not exist and its parent cannot be traversed (Lstat returns
 // a permission error rather than IsNotExist), the dry-run manager still constructs
 // successfully and records the failure as ReasonPermissionDenied rather than aborting or
-// falling back to skipped_no_validator (02_architecture.md Q-03).
+// falling back to skipped_no_validator.
 //
 // Like the filevalidator "unreadable directory" tests, this test is meaningless when run as
 // root, since chmod 0o000 does not deny access to root. This is an existing constraint of

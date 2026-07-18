@@ -1458,8 +1458,9 @@ func TestVerifyGroupFiles_DryRun_MissingHashDir_RecordsHashDirNotFound(t *testin
 
 // TestNewManagerInternal_DryRun_HashPathNotDirectory_HardFails tests that when the hash
 // directory path points to a regular file rather than a directory, dry-run manager
-// construction still fails hard (02_architecture.md Q-02 and §3.2), the same as before
-// this task's read-only construction was introduced.
+// construction still fails hard, the same as before read-only construction was
+// introduced. A misconfigured non-directory path is a distinct case from a merely
+// missing directory and is not silently downgraded to a per-file environment cause.
 func TestNewManagerInternal_DryRun_HashPathNotDirectory_HardFails(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	hashDirPath := createTestFile(t, tmpDir, "not-a-directory", []byte("content"))
