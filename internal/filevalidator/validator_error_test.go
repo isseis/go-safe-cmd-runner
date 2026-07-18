@@ -168,6 +168,40 @@ func TestFilesystemEdgeCases(t *testing.T) {
 	})
 }
 
+// TestNewReadOnly_ParentUnreadable_DeferredPermissionError tests that when
+// hashDir does not exist and its parent directory cannot be traversed
+// (Lstat returns a permission error rather than IsNotExist), NewReadOnly
+// still succeeds construction and defers the permission error to Verify,
+// per 02_architecture.md Q-03 (the successor to the removed dry-run
+// os.ErrPermission fallback).
+//
+// Like the "unreadable directory" subtest above, this test is meaningless
+// when run as root, since chmod 0o000 does not deny access to root. This is
+// an existing constraint of this file's permission tests, not one newly
+// introduced here.
+func TestNewReadOnly_ParentUnreadable_DeferredPermissionError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("Skipping privilege test when running as root")
+	}
+	tempDir := safeTempDir(t)
+	restrictedDir := filepath.Join(tempDir, "restricted")
+	require.NoError(t, os.Mkdir(restrictedDir, 0o755))
+
+	// hashDir is a path under restrictedDir that is never created.
+	hashDir := filepath.Join(restrictedDir, "hashes")
+
+	require.NoError(t, os.Chmod(restrictedDir, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(restrictedDir, 0o755) })
+
+	validator, err := NewReadOnly(&SHA256{}, hashDir, ValidatorConfig{})
+	require.NoError(t, err, "NewReadOnly should succeed even when Lstat fails with a permission error")
+	require.NotNil(t, validator)
+	assert.False(t, validator.HashDirAvailable())
+
+	verifyErr := validator.Verify(filepath.Join(tempDir, "any_file.txt"))
+	assert.ErrorIs(t, verifyErr, os.ErrPermission)
+}
+
 // TestErrorMessages verifies that error messages are clear and helpful
 func TestErrorMessages(t *testing.T) {
 	tempDir := safeTempDir(t)

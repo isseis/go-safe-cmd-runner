@@ -205,8 +205,8 @@
 **対象ファイル**: `internal/filevalidator/validator.go`, `internal/filevalidator/validator_test.go`,
 `internal/filevalidator/validator_error_test.go`
 
-- [ ] **ステップ 2-1**: `Validator` 構造体（151-172 行目）へ `deferredErr error` フィールドを追加する。
-- [ ] **ステップ 2-2**: `NewReadOnly(algorithm HashAlgorithm, hashDir string, cfg ValidatorConfig) (*Validator, error)`
+- [x] **ステップ 2-1**: `Validator` 構造体（151-172 行目）へ `deferredErr error` フィールドを追加する。
+- [x] **ステップ 2-2**: `NewReadOnly(algorithm HashAlgorithm, hashDir string, cfg ValidatorConfig) (*Validator, error)`
       を追加する。実装は次のとおり。
       1. `algorithm == nil` なら `ErrNilAlgorithm` を返す（`New` は `newValidator` 経由でこの
          チェックを行うが、`NewReadOnly` の不在ディレクトリ分岐は `newValidator` を経由しないため、
@@ -222,12 +222,14 @@
            そのまま返す。
          - `err == nil && !info.IsDir()`: `fmt.Errorf("%w: %s", ErrHashPathNotDir, hashDir)` を返す
            （構築失敗）。
-         - `os.IsNotExist(err)`: `&Validator{deferredErr: fmt.Errorf("%w: %s", ErrHashDirNotExist, hashDir)}, nil`
-           を返す（構築成功、`store` は nil のまま）。
-         - それ以外（`Lstat` が権限エラー等で失敗）: `&Validator{deferredErr: err}, nil` を返す
-           （構築成功）。`err` はそのまま保持するため、`errors.Is(err, os.ErrPermission)` は
-           `result_collector.go` の `determineFailureReason` でそのまま機能する。
-- [ ] **ステップ 2-3**: `Verify`（1075 行目）、`VerifyWithHash`（1099 行目）、`VerifyAndRead`（1199 行目）、
+         - `os.IsNotExist(err)`: `newDeferredValidator(algorithm, hashFilePathGetter, cfg,
+           fmt.Errorf("%w: %s", ErrHashDirNotExist, hashDir)), nil` を返す（構築成功、`store` は
+           ゼロ値のまま）。
+         - それ以外（`Lstat` が権限エラー等で失敗）: `newDeferredValidator(algorithm,
+           hashFilePathGetter, cfg, err), nil` を返す（構築成功）。`err` はそのまま保持するため、
+           `errors.Is(err, os.ErrPermission)` は `result_collector.go` の `determineFailureReason`
+           でそのまま機能する。
+- [x] **ステップ 2-3**: `Verify`（1075 行目）、`VerifyWithHash`（1099 行目）、`VerifyAndRead`（1199 行目）、
       `LoadRecord`（453 行目）の各先頭に、次の 2 行を追加する（戻り値の型に応じてゼロ値を調整）。
       ```go
       if v.deferredErr != nil {
@@ -236,25 +238,25 @@
       ```
       （`VerifyWithHash` は `return "", v.deferredErr`、`VerifyAndRead` は
       `return nil, v.deferredErr`、`LoadRecord` は `return nil, v.deferredErr`。）
-- [ ] **ステップ 2-4**: `HashDirAvailable() bool` を追加する。`return v.deferredErr == nil` のみを返す。
-- [ ] **ステップ 2-5**: `TestNewReadOnly_MissingDirectory_DoesNotCreateDirectory` を `validator_test.go` の
+- [x] **ステップ 2-4**: `HashDirAvailable() bool` を追加する。`return v.deferredErr == nil` のみを返す。
+- [x] **ステップ 2-5**: `TestNewReadOnly_MissingDirectory_DoesNotCreateDirectory` を `validator_test.go` の
       `TestNew_CreatesDirectory`（596-617 行目）の近くに追加する。存在しないパスを渡し、
       `NewReadOnly` がエラーなく `*Validator` を返すこと、かつ `os.Stat` で当該パスが作成されて
       いないことを確認する。
-- [ ] **ステップ 2-6**: `TestNewReadOnly_MissingDirectory_VerifyReturnsErrHashDirNotExist` を追加する。上記で得た
+- [x] **ステップ 2-6**: `TestNewReadOnly_MissingDirectory_VerifyReturnsErrHashDirNotExist` を追加する。上記で得た
       `*Validator` に対して `Verify`・`VerifyWithHash`・`VerifyAndRead`・`LoadRecord` をそれぞれ
       呼び、いずれも `errors.Is(err, ErrHashDirNotExist)` が真であることを確認する（テーブル駆動で
       4 メソッドをまとめてよい）。
-- [ ] **ステップ 2-7**: `TestNewReadOnly_ExistingDirectory_VerifiesSuccessfully` を追加する。`TestNew`
+- [x] **ステップ 2-7**: `TestNewReadOnly_ExistingDirectory_VerifiesSuccessfully` を追加する。`TestNew`
       （102-140 行目付近）の「valid」ケースに相当する構成で、既存ディレクトリに対して
       `NewReadOnly` → `SaveRecord`（通常の `New` で作成した別 Validator、または同一
       ディレクトリを対象に `New` で先に記録してから `NewReadOnly` で検証する）→ `Verify` が成功する
       ことを確認する。
-- [ ] **ステップ 2-8**: `TestNewReadOnly_NotADirectory` を追加する。ファイルパスを渡し、`errors.Is(err, ErrHashPathNotDir)`
+- [x] **ステップ 2-8**: `TestNewReadOnly_NotADirectory` を追加する。ファイルパスを渡し、`errors.Is(err, ErrHashPathNotDir)`
       を確認する。
-- [ ] **ステップ 2-9**: `TestNewReadOnly_NilAlgorithm` を追加する。`algorithm` に `nil` を渡し、
+- [x] **ステップ 2-9**: `TestNewReadOnly_NilAlgorithm` を追加する。`algorithm` に `nil` を渡し、
       `errors.Is(err, ErrNilAlgorithm)` を確認する。
-- [ ] **ステップ 2-10**: `validator_error_test.go`（`//go:build linux || freebsd || openbsd || netbsd`、既存の
+- [x] **ステップ 2-10**: `validator_error_test.go`（`//go:build linux || freebsd || openbsd || netbsd`、既存の
       「unreadable directory」サブテスト 126-145 行目と同じ chmod パターンを踏襲）へ
       `TestNewReadOnly_ParentUnreadable_DeferredPermissionError` を追加する。手順:
       1. `tempDir` 配下に `restricted` ディレクトリを作成する。
@@ -281,8 +283,8 @@
 
 **判定理由**: `deferredErr` の早期リターンチェックを `Verify`・`VerifyWithHash`・`VerifyAndRead`・`LoadRecord` の 4 メソッドすべてに一貫して適用しないと、いずれか 1 箇所の漏れが不在ディレクトリでの `nil` store 参照パニックへ直結する、孤立した高リスクロジックである（Risk isolation 該当）。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

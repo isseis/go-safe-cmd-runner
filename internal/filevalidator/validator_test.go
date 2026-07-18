@@ -616,6 +616,104 @@ func TestNew_CreatesDirectory(t *testing.T) {
 	require.NotNil(t, store, "Store should return non-nil store")
 }
 
+// TestNewReadOnly_MissingDirectory_DoesNotCreateDirectory tests that
+// NewReadOnly succeeds without creating hashDir when it does not exist,
+// unlike New (see TestNew_CreatesDirectory).
+func TestNewReadOnly_MissingDirectory_DoesNotCreateDirectory(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "nonexistent_subdir")
+
+	_, err := os.Stat(hashDir)
+	require.True(t, os.IsNotExist(err), "hashDir should not exist before calling NewReadOnly")
+
+	validator, err := NewReadOnly(&SHA256{}, hashDir, ValidatorConfig{})
+	require.NoError(t, err, "NewReadOnly should succeed even though hashDir doesn't exist")
+	require.NotNil(t, validator)
+
+	_, statErr := os.Stat(hashDir)
+	assert.True(t, os.IsNotExist(statErr), "hashDir must not be created by NewReadOnly")
+}
+
+// TestNewReadOnly_MissingDirectory_VerifyReturnsErrHashDirNotExist tests that
+// all read methods on a Validator built for a missing directory surface
+// ErrHashDirNotExist immediately, without touching the filesystem.
+func TestNewReadOnly_MissingDirectory_VerifyReturnsErrHashDirNotExist(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "nonexistent_subdir")
+
+	validator, err := NewReadOnly(&SHA256{}, hashDir, ValidatorConfig{})
+	require.NoError(t, err)
+	require.NotNil(t, validator)
+	require.False(t, validator.HashDirAvailable(), "HashDirAvailable should be false for a missing hash directory")
+
+	testFilePath := filepath.Join(tempDir, "some_file.txt")
+	require.NoError(t, os.WriteFile(testFilePath, []byte("content"), 0o644))
+
+	t.Run("Verify", func(t *testing.T) {
+		err := validator.Verify(testFilePath)
+		assert.ErrorIs(t, err, ErrHashDirNotExist)
+	})
+	t.Run("VerifyWithHash", func(t *testing.T) {
+		_, err := validator.VerifyWithHash(testFilePath)
+		assert.ErrorIs(t, err, ErrHashDirNotExist)
+	})
+	t.Run("VerifyAndRead", func(t *testing.T) {
+		_, err := validator.VerifyAndRead(testFilePath)
+		assert.ErrorIs(t, err, ErrHashDirNotExist)
+	})
+	t.Run("LoadRecord", func(t *testing.T) {
+		_, err := validator.LoadRecord(testFilePath)
+		assert.ErrorIs(t, err, ErrHashDirNotExist)
+	})
+}
+
+// TestNewReadOnly_ExistingDirectory_VerifiesSuccessfully tests that
+// NewReadOnly builds a fully functional Validator when hashDir already
+// exists, matching the New + SaveRecord + Verify round trip.
+func TestNewReadOnly_ExistingDirectory_VerifiesSuccessfully(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o750))
+
+	// Record the file using the normal (writable) constructor.
+	writer, err := New(&SHA256{}, hashDir, ValidatorConfig{})
+	require.NoError(t, err)
+
+	testFilePath := filepath.Join(tempDir, "test.txt")
+	require.NoError(t, os.WriteFile(testFilePath, []byte("test content"), 0o644))
+	_, _, err = writer.SaveRecord(testFilePath, false)
+	require.NoError(t, err)
+
+	// Verify it using a read-only Validator.
+	reader, err := NewReadOnly(&SHA256{}, hashDir, ValidatorConfig{})
+	require.NoError(t, err)
+	require.NotNil(t, reader)
+	assert.True(t, reader.HashDirAvailable(), "HashDirAvailable should be true for an existing hash directory")
+
+	assert.NoError(t, reader.Verify(testFilePath))
+}
+
+// TestNewReadOnly_NotADirectory tests that NewReadOnly fails construction
+// (hard error, not a deferred one) when hashDir exists but is a regular file,
+// matching New's behavior for the same input (Q-02 in 02_architecture.md).
+func TestNewReadOnly_NotADirectory(t *testing.T) {
+	tempDir := safeTempDir(t)
+	notADir := filepath.Join(tempDir, "not_a_dir")
+	require.NoError(t, os.WriteFile(notADir, []byte("content"), 0o644))
+
+	validator, err := NewReadOnly(&SHA256{}, notADir, ValidatorConfig{})
+	assert.ErrorIs(t, err, ErrHashPathNotDir)
+	assert.Nil(t, validator)
+}
+
+// TestNewReadOnly_NilAlgorithm tests that NewReadOnly rejects a nil algorithm
+// before inspecting hashDir at all.
+func TestNewReadOnly_NilAlgorithm(t *testing.T) {
+	validator, err := NewReadOnly(nil, safeTempDir(t), ValidatorConfig{})
+	assert.ErrorIs(t, err, ErrNilAlgorithm)
+	assert.Nil(t, validator)
+}
+
 // collidingHashFilePathGetter always maps every file path to the same
 // record file, simulating a hash file path collision.
 type collidingHashFilePathGetter struct {
