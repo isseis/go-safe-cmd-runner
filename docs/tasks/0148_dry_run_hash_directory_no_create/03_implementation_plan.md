@@ -504,17 +504,19 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### フェーズ 4: 忠実な E2E テストの新規追加
 
-**対象ファイル**: `cmd/runner/integration_dryrun_verification_test.go`
+**対象ファイル**: `cmd/runner/integration_dryrun_verification_test.go`,
+`internal/verification/manager.go`
 
-- [ ] **ステップ 4-1**: `TestDryRunE2E_HashDirectoryNotFound` を追加する。
+- [x] **ステップ 4-1**: `TestDryRunE2E_HashDirectoryNotFound` を追加する。
       - `hashDir := filepath.Join(tu.SafeTempDir(t), "does-not-exist")`（作成しない）。
-      - `configContent` は他の E2E テスト（56-78 行目）と同様、`/bin/echo` を実行する 1 グループの
-        最小構成。
+      - `configContent` は他の E2E テスト（56-78 行目）と同様、`/bin/true` を実行する 1 グループの
+        最小構成（一部の CI 環境で `/bin/echo` が存在しない coreutils へのシンボリックリンクに
+        なっている問題を避けるため、このファイルの他テストと同じく `/bin/true` を用いる）。
       - `configFile := setupTempConfig(t, configContent)`。
       - `cmd := newGoRunCmdWithHashDir(t, hashDir, "-config", configFile, "-dry-run",
         "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")` で実行し、
@@ -524,8 +526,9 @@
       - `result.FileVerification.Failures` に `Reason == verification.ReasonHashDirNotFound` の
         エントリが 1 件以上含まれることを確認する（AC-03）。
       - `result.FileVerification.UnverifiedFiles` に
-        `Reason == "verify_failed_hash_directory_not_found"` のエントリが 1 件以上含まれることを
-        確認する（AC-03）。
+        `Reason == string(verification.UnverifiedReasonFromFailure(verification.ReasonHashDirNotFound))`
+        のエントリが 1 件以上含まれることを確認する（生の文字列リテラルではなく、本番コードと
+        同じ単一の情報源を共有する）（AC-03）。
       - `assert.Equal(t, resource.DryRunExitVerificationUnavailable, cmd.ProcessState.ExitCode())`
         （AC-05）。
       - `_, statErr := os.Stat(hashDir)` の後 `assert.True(t, os.IsNotExist(statErr))`
@@ -533,10 +536,45 @@
       - dry-run はエラー終了（終了コード 3）するため、コマンド実行時に `*exec.ExitError` が
         返る。`TestDryRunE2E_HashFilesNotFound`（55-78 行目）と同様、この戻り値に対して
         `require.NoError` は行わず、`cmd.ProcessState.ExitCode()` の値のみをアサートする。
+- [x] **ステップ 4-2**（PR-3 実装と PR-5 E2E テストの間の発覚した逸脱への追従）:
+      ステップ 4-1 の E2E テストを実行したところ、dry-run プレビューは `verifyFile`/
+      `verifyFileWithHash`/`readAndVerifyFileWithReadFallback` の共通経路で `ReasonHashDirNotFound`
+      を記録できるが、その後 `internal/runner/group_executor.go` のコマンドごとの
+      `VerifyCommandDynLibDeps`（`internal/verification/manager.go` `verifyDynLibDeps`）と
+      `VerifyCommandShebangInterpreter` が `m.fileValidator.LoadRecord(cmdPath)` を呼び、
+      `filevalidator.ErrHashDirNotExist`（`NewReadOnly` が保持する遅延エラー）を
+      `fmt.Errorf("failed to load record for ... verification: %w", err)` でラップして返す。
+      グループエグゼキュータがこのエラーを fatal として返すため、dry-run がプレビューを出力
+      せず終了コード 1（`system_error`）で終了する。これは `02_architecture.md` §5.3 Q-03
+      が「dry-run は中断せずプレビューを継続する」と定める挙動、および
+      §3.1 が「`verifyDynLibDeps` / `VerifyCommandShebangInterpreter` / `verifyInterpreterHash`
+      も `deferredErr` 機構の恩恵を受け、一貫した扱いになる」と定める挙動に対する逸脱で
+      ある。本ステップで以下を実装し、計画を記述に合わせて是正する。
+      1. `internal/verification/manager.go` `verifyDynLibDeps`（`LoadRecord` 直後）に、
+         `errors.Is(err, filevalidator.ErrHashDirNotExist)` の場合に `return nil` を追加
+         する（`ErrRecordNotFound` と同じ「no record available」扱い）。「Old schema」
+         分岐および最終 `return fmt.Errorf(...)` の前（既存 `ErrRecordNotFound` 分岐の直後）
+         に挿入する。`NewReadOnly` の不在および権限系の遅延エラーは dry-run 専用経路でのみ
+         発生し、いずれも per-file 検証が `ReasonHashDirNotFound`/`ReasonPermissionDenied`
+         として既に忠実に報告しているため、ここで追加ログを出さずに沈黙させてもドライランの
+         プレビュー出力に欠落は生じない（設計上の判断、§3.1 を満たす）。
+      2. `internal/verification/manager.go` `VerifyCommandShebangInterpreter`
+         （`LoadRecord` 直後）にも同様に `errors.Is(err, filevalidator.ErrHashDirNotExist)`
+         分岐を追加する。`ErrRecordNotFound` 分岐の直後、既存 `SchemaVersionMismatchError`
+         分岐の前に挿入する。
+      3. `verifyInterpreterHash` は変更不要。理由は「`Verify` の戻り値の種類」ではなく
+         「到達可能性」にある。`verifyInterpreterHash` の 3 つの呼び出し箇所
+         （`VerifyCommandShebangInterpreter` 内）はいずれも、上記 2. でガードした
+         `LoadRecord` の**成功後**にのみ実行される。ハッシュディレクトリ不在時は
+         `LoadRecord` が `ErrHashDirNotExist`（`NewReadOnly` の `deferredErr`）を返し、
+         追加した分岐が `return nil` するため、`verifyInterpreterHash` には到達しない。
+         したがって `verifyInterpreterHash` 内の `m.fileValidator.Verify` が不在由来の
+         `ErrHashDirNotExist` を観測することは実運用上あり得ず、ここへ分岐を追加しても
+         デッドコードになる（YAGNI、§4 の重複回避方針と整合）。
 
 ### PR-5 作成ポイント: faithful dry-run E2E test for missing hash directory
 
-**対象ステップ**: 4-1
+**対象ステップ**: 4-1 / 4-2
 
 **推奨タイトル**: `test(0148): add faithful E2E test for missing hash directory in dry-run`
 
@@ -546,8 +584,8 @@
 
 **判定理由**: 既存の `TestDryRunE2E_JSONOutput` 等と同じ確立済みのヘルパー・パターンを踏襲するのみで、未確定の設計判断は無い。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -637,7 +675,7 @@
 | PR-2 | 2-1 / 2-2 / 2-3 / 2-4 / 2-5 / 2-6 / 2-7 / 2-8 / 2-9 / 2-10 | `internal/filevalidator` に遅延エラー状態を持つ `NewReadOnly` を追加 | frontier-recommended |
 | PR-3 | 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7 / 3-8 | `internal/verification` の dry-run マネージャ生成を `NewReadOnly` へ切り替え、権限フォールバックを除去 | frontier-recommended |
 | PR-4 | 3-9 / 3-10 / 3-11 / 3-12 | 監査ログへ `construction_mode` 属性を追加、関連コメントの陳腐化を解消 | standard |
-| PR-5 | 4-1 | 不在ハッシュディレクトリの忠実な E2E テストを新規追加 | standard |
+| PR-5 | 4-1 / 4-2 | 不在ハッシュディレクトリの忠実な E2E テストを新規追加、および `verifyDynLibDeps`/`VerifyCommandShebangInterpreter` の遅延エラーソフトフェイル | standard |
 | PR-6 | 5-1 / 5-2 / 5-3 / 5-4 / 5-5 | `docs/user/runner_command.md` / `.ja.md` の dry-run 挙動記述を更新 | standard |
 
 ## 4. テスト戦略
@@ -672,7 +710,7 @@
 - [ ] PR-2 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3 / 2-4 / 2-5 / 2-6 / 2-7 / 2-8 / 2-9 / 2-10）
 - [ ] PR-3 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7 / 3-8）
 - [ ] PR-4 マージ済み（対象ステップ: 3-9 / 3-10 / 3-11 / 3-12）
-- [ ] PR-5 マージ済み（対象ステップ: 4-1）
+- [ ] PR-5 マージ済み（対象ステップ: 4-1 / 4-2）
 - [ ] PR-6 マージ済み（対象ステップ: 5-1 / 5-2 / 5-3 / 5-4 / 5-5）
 - [ ] `make fmt` を実行し、フォーマット差分がない
 - [ ] `make test` が通る

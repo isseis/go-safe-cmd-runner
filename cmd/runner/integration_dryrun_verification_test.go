@@ -388,3 +388,100 @@ args = ["hello"]
 	assert.Equal(t, resource.DryRunExitPolicyDeny, cmd.ProcessState.ExitCode(),
 		"verify_files hash_mismatch must cause exit 1")
 }
+
+// TestDryRunE2E_HashDirectoryNotFound tests that when the hash directory
+// does not exist, dry-run:
+//   - does not create the hash directory as a side effect,
+//   - reports the failure faithfully as ReasonHashDirNotFound rather than
+//     downgrading it to hash_file_not_found,
+//   - records adopted content with the verify_failed_hash_directory_not_found
+//     unverified reason instead of skipped_no_validator,
+//   - exits with DryRunExitVerificationUnavailable (3).
+func TestDryRunE2E_HashDirectoryNotFound(t *testing.T) {
+	configContent := `
+[[groups]]
+name = "test_group"
+
+[[groups.commands]]
+name = "test-cmd"
+cmd = "/bin/true"
+args = ["hello"]
+`
+
+	configFile := setupTempConfig(t, configContent)
+
+	// Pick a non-existent path under a fresh temp directory so the
+	// runner never sees an existing hash directory.
+	hashDir := filepath.Join(tu.SafeTempDir(t), "does-not-exist")
+
+	cmd := newGoRunCmdWithHashDir(t, hashDir,
+		"-config", configFile,
+		"-dry-run",
+		"-dry-run-detail", "full",
+		"-dry-run-format", "json",
+		"-log-level", "error")
+
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// The dry-run preview is expected to exit with a non-zero status
+	// (DryRunExitVerificationUnavailable). The command therefore returns
+	// an *exec.ExitError; require that specifically so a failure to even
+	// start the process (which would leave ProcessState nil) fails the test
+	// gracefully instead of panicking on ExitCode() below.
+	if err := cmd.Run(); err != nil {
+		t.Logf("Command stderr:\n%s", stderr.String())
+		t.Logf("Command exit error: %v", err)
+		var exitErr *exec.ExitError
+		require.ErrorAs(t, err, &exitErr,
+			"command must exit with a non-zero status, not fail to start")
+	}
+
+	require.NotNil(t, cmd.ProcessState, "ProcessState must not be nil")
+	assert.Equal(t, resource.DryRunExitVerificationUnavailable, cmd.ProcessState.ExitCode(),
+		"missing hash directory must produce exit code 3")
+
+	var result struct {
+		Status           string                                `json:"status"`
+		Phase            string                                `json:"phase"`
+		FileVerification *verification.FileVerificationSummary `json:"file_verification,omitempty"`
+	}
+	err := json.Unmarshal([]byte(stdout.String()), &result)
+	require.NoError(t, err, "stdout should be valid JSON")
+
+	require.NotNil(t, result.FileVerification, "file_verification should be present in JSON output")
+	assert.False(t, result.FileVerification.HashDirStatus.Exists,
+		"HashDirStatus.Exists should be false when the hash directory is missing")
+
+	require.NotEmpty(t, result.FileVerification.Failures,
+		"at least one failure should be reported for the missing hash directory")
+	foundDirNotFound := false
+	for _, failure := range result.FileVerification.Failures {
+		if failure.Reason == verification.ReasonHashDirNotFound {
+			foundDirNotFound = true
+			break
+		}
+	}
+	assert.True(t, foundDirNotFound,
+		"Failures should include a ReasonHashDirNotFound entry")
+
+	require.NotEmpty(t, result.FileVerification.UnverifiedFiles,
+		"at least one unverified file should be recorded when the hash directory is missing")
+	expectedUnverifiedReason := string(verification.UnverifiedReasonFromFailure(verification.ReasonHashDirNotFound))
+	foundVerifyFailedDirNotFound := false
+	for _, u := range result.FileVerification.UnverifiedFiles {
+		if u.Reason == expectedUnverifiedReason {
+			foundVerifyFailedDirNotFound = true
+			break
+		}
+	}
+	assert.True(t, foundVerifyFailedDirNotFound,
+		"UnverifiedFiles should include a verify_failed_hash_directory_not_found entry")
+
+	// The hash directory must not have been created as a side effect of
+	// the dry-run preview.
+	_, statErr := os.Stat(hashDir)
+	assert.True(t, os.IsNotExist(statErr),
+		"dry-run must not create the hash directory")
+}

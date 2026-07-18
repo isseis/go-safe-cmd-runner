@@ -598,6 +598,17 @@ func (m *Manager) VerifyCommandDynLibDeps(cmdPath string) error {
 	return m.verifyDynLibDeps(cmdPath)
 }
 
+// isDeferredHashDirUnavailable reports whether err is a deferred error raised by
+// a read-only Validator because the hash directory was absent or unreadable.
+// During dry-run, LoadRecord surfaces both filevalidator.ErrHashDirNotExist (the
+// directory does not exist) and a raw os.ErrPermission (the directory exists but
+// is not readable). Both mean per-file verification already reports the condition
+// as hash_directory_not_found, so dependent checks (dynlib, shebang) must soft-fail
+// rather than abort the dry-run preview.
+func isDeferredHashDirUnavailable(err error) bool {
+	return errors.Is(err, filevalidator.ErrHashDirNotExist) || errors.Is(err, os.ErrPermission)
+}
+
 // verifyDynLibDeps performs dynamic library integrity verification when a
 // DynLibDeps snapshot is present in the analysis record.
 func (m *Manager) verifyDynLibDeps(cmdPath string) error {
@@ -609,6 +620,13 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 	if err != nil {
 		// No hash record: binary is not hash-verified, so dynlib check is not applicable.
 		if errors.Is(err, fileanalysis.ErrRecordNotFound) {
+			return nil
+		}
+		// Missing or unreadable hash directory (dry-run with a read-only Validator
+		// that captured the absence/inaccessibility as a deferred error): per-file
+		// verification already reports this as hash_directory_not_found; the dynlib
+		// check is not applicable and must not abort the dry-run preview.
+		if isDeferredHashDirUnavailable(err) {
 			return nil
 		}
 		// Old schema record (schema_version < CurrentSchemaVersion): predates dynlib
@@ -722,6 +740,13 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 	record, err := m.fileValidator.LoadRecord(cmdPath)
 	if err != nil {
 		if errors.Is(err, fileanalysis.ErrRecordNotFound) {
+			return nil
+		}
+		// Missing or unreadable hash directory (dry-run with a read-only Validator
+		// that captured the absence/inaccessibility as a deferred error): per-file
+		// verification already reports this as hash_directory_not_found; the shebang
+		// check is not applicable and must not abort the dry-run preview.
+		if isDeferredHashDirUnavailable(err) {
 			return nil
 		}
 		if schemaErr, ok := errors.AsType[*fileanalysis.SchemaVersionMismatchError](err); ok && schemaErr.Actual < schemaErr.Expected {
