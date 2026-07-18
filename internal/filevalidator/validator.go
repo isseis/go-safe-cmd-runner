@@ -251,7 +251,11 @@ func newValidator(algorithm HashAlgorithm, hashDir common.ResolvedPath, hashFile
 // common.NewResolvedPath):
 //   - exists and is a directory: builds a read-only Store via
 //     fileanalysis.NewStoreReadOnly and returns a fully functional Validator,
-//     identical in behavior to one built by New.
+//     identical in behavior to one built by New. If NewStoreReadOnly or
+//     common.NewResolvedPath fails with a permission error (e.g. hashDir is
+//     a symlink into a directory this process cannot traverse), construction
+//     still succeeds with deferredErr set to that error, same as the
+//     Lstat-failure branch below.
 //   - does not exist: construction still succeeds; the returned Validator
 //     carries deferredErr set to ErrHashDirNotExist. Path resolution
 //     (common.NewResolvedPath) is skipped in this case because it requires
@@ -284,11 +288,18 @@ func NewReadOnly(algorithm HashAlgorithm, hashDir string, cfg ValidatorConfig) (
 	case err == nil && info.IsDir():
 		store, err := fileanalysis.NewStoreReadOnly(hashDir, hashFilePathGetter)
 		if err != nil {
+			// A symlinked hashDir can fail EvalSymlinks with EACCES even though Lstat succeeded; defer like other access errors.
+			if errors.Is(err, os.ErrPermission) {
+				return newDeferredValidator(algorithm, hashFilePathGetter, cfg, err), nil
+			}
 			return nil, fmt.Errorf("failed to open analysis store: %w", err)
 		}
 
 		resolvedHashDir, err := common.NewResolvedPath(hashDir)
 		if err != nil {
+			if errors.Is(err, os.ErrPermission) {
+				return newDeferredValidator(algorithm, hashFilePathGetter, cfg, err), nil
+			}
 			return nil, fmt.Errorf("failed to resolve hash directory path %q: %w", hashDir, err)
 		}
 

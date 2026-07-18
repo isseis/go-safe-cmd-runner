@@ -472,25 +472,26 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	manager.dynlibVerifier = elfdynlib.NewDynLibVerifier(safeFS)
 
 	// Initialize file validator with hybrid hash path getter
+	var hashDirAvailable bool
 	if opts.fileValidatorEnabled {
-		validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
-		if err != nil {
-			// In dry-run mode, a permission error creating the hash directory is
-			// recoverable: the operator may be checking configuration on a machine
-			// where the hash directory is not writable (e.g. CI without sudo).
-			// Binary analysis will be skipped for commands without a content hash,
-			// but dry-run output remains useful for configuration validation.
-			// All other errors (invalid path, not a directory, etc.) are fatal
-			// in both modes.
-			if opts.isDryRun && errors.Is(err, os.ErrPermission) {
-				slog.Info("Hash directory not writable in dry-run mode; file verification and binary analysis will be skipped",
-					"hash_directory", hashDir)
-			} else {
-				return nil, fmt.Errorf("failed to initialize file validator: %w", err)
-			}
+		var (
+			validator *filevalidator.Validator
+			err       error
+		)
+		if opts.isDryRun {
+			// Dry-run performs a read-only construction: a missing or
+			// inaccessible hash directory is captured as a deferred error
+			// and reported per file via determineFailureReason, instead of
+			// being created as a side effect.
+			validator, err = filevalidator.NewReadOnly(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 		} else {
-			manager.fileValidator = validator
+			validator, err = filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize file validator: %w", err)
+		}
+		manager.fileValidator = validator
+		hashDirAvailable = validator.HashDirAvailable()
 	}
 
 	// Initialize path resolver with secure fixed PATH (do not inherit from environment)
@@ -509,20 +510,29 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	if opts.isDryRun {
 		manager.resultCollector = NewResultCollector(hashDir)
 
-		// Check if hash directory exists
-		exists, err := opts.fs.FileExists(hashDir)
-		switch {
-		case err != nil:
-			slog.Info("Unable to check hash directory existence in dry-run mode",
-				"hash_directory", hashDir,
-				"error", err)
-			manager.resultCollector.SetHashDirStatus(false)
-		case !exists:
-			slog.Info("Hash directory does not exist in dry-run mode",
-				"hash_directory", hashDir)
-			manager.resultCollector.SetHashDirStatus(false)
-		default:
-			manager.resultCollector.SetHashDirStatus(true)
+		if opts.fileValidatorEnabled {
+			// hashDirAvailable was derived above from the read-only
+			// Validator's own Lstat result; reuse it as the single source
+			// of truth instead of probing the filesystem a second time.
+			manager.resultCollector.SetHashDirStatus(hashDirAvailable)
+		} else {
+			// File validation is disabled for this manager instance (test-only
+			// today), so no Validator was constructed to derive hashDirAvailable
+			// from. Fall back to the pre-existing filesystem probe.
+			exists, err := opts.fs.FileExists(hashDir)
+			switch {
+			case err != nil:
+				slog.Info("Unable to check hash directory existence in dry-run mode",
+					"hash_directory", hashDir,
+					"error", err)
+				manager.resultCollector.SetHashDirStatus(false)
+			case !exists:
+				slog.Info("Hash directory does not exist in dry-run mode",
+					"hash_directory", hashDir)
+				manager.resultCollector.SetHashDirStatus(false)
+			default:
+				manager.resultCollector.SetHashDirStatus(true)
+			}
 		}
 	}
 

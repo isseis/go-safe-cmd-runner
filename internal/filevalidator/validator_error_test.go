@@ -202,6 +202,40 @@ func TestNewReadOnly_ParentUnreadable_DeferredPermissionError(t *testing.T) {
 	assert.ErrorIs(t, verifyErr, os.ErrPermission)
 }
 
+// TestNewReadOnly_ExistingDirUnresolvable_DeferredPermissionError tests the
+// err == nil && info.IsDir() branch of NewReadOnly: hashDir itself exists and
+// is Lstat-able (via a relative path, which the kernel resolves against the
+// already-open cwd without re-checking ancestor search permissions), but
+// resolving its absolute, symlink-free path via fileanalysis.NewStoreReadOnly
+// / common.NewResolvedPath fails with EACCES because an ancestor directory of
+// cwd is unreadable. NewReadOnly must defer this error like the other
+// access-error branches instead of failing construction outright.
+func TestNewReadOnly_ExistingDirUnresolvable_DeferredPermissionError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("Skipping privilege test when running as root")
+	}
+	tempDir := safeTempDir(t)
+	restrictedDir := filepath.Join(tempDir, "restricted")
+	workDir := filepath.Join(restrictedDir, "workdir")
+	hashDir := filepath.Join(workDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o755))
+
+	t.Chdir(workDir)
+
+	require.NoError(t, os.Chmod(restrictedDir, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(restrictedDir, 0o755) })
+
+	// Relative path: os.Lstat resolves it against the process's cwd directly,
+	// so it succeeds even though "restricted" (an ancestor of cwd) is unreadable.
+	validator, err := NewReadOnly(&SHA256{}, "hashes", ValidatorConfig{})
+	require.NoError(t, err, "NewReadOnly should succeed even when the hash directory's absolute path cannot be resolved")
+	require.NotNil(t, validator)
+	assert.False(t, validator.HashDirAvailable())
+
+	verifyErr := validator.Verify(filepath.Join(workDir, "any_file.txt"))
+	assert.ErrorIs(t, verifyErr, os.ErrPermission)
+}
+
 // TestErrorMessages verifies that error messages are clear and helpful
 func TestErrorMessages(t *testing.T) {
 	tempDir := safeTempDir(t)
