@@ -445,7 +445,7 @@
 **判定理由**: 既存の権限フォールバック分岐を削除し `permission_denied` への分類変更（セキュリティ関連の再分類）と `SetHashDirStatus` の情報源変更を同時に行う統合ステップであり、4 つの呼び出し経路（`verifyFile`／`verifyFileWithHash`／`readAndVerifyFileWithReadFallback`／権限エラー経路）へ一貫して適用しないと `skipped_no_validator` への回帰や `HashDirStatus` の不整合を招く。加えて旧挙動を前提にした既存テスト（ステップ 3-7）の書き換えが必須であり、Risk isolation の対象に該当する。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
