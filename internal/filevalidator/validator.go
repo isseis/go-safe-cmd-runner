@@ -299,16 +299,38 @@ func NewReadOnly(algorithm HashAlgorithm, hashDir string, cfg ValidatorConfig) (
 		// Exists but is not a directory: hard error, same as New.
 		return nil, fmt.Errorf("%w: %s", ErrHashPathNotDir, hashDir)
 	case os.IsNotExist(err):
-		return &Validator{
-			deferredErr: fmt.Errorf("%w: %s", ErrHashDirNotExist, hashDir),
-		}, nil
+		return newDeferredValidator(algorithm, hashFilePathGetter, cfg,
+			fmt.Errorf("%w: %s", ErrHashDirNotExist, hashDir)), nil
 	default:
 		// Lstat failed for another reason (e.g. permission denied on a
 		// parent directory). Keep err as-is so determineFailureReason can
 		// map errors.Is(err, os.ErrPermission) to ReasonPermissionDenied.
-		return &Validator{
-			deferredErr: err,
-		}, nil
+		return newDeferredValidator(algorithm, hashFilePathGetter, cfg, err), nil
+	}
+}
+
+// newDeferredValidator builds a Validator carrying deferredErr for the
+// NewReadOnly branches where the hash directory is missing or inaccessible.
+// It initializes the same non-hash-dir fields as newValidator (fileSystem,
+// optional analyzers/caches, includeDebugInfo) so that any method guarded by
+// a deferredErr check that later gets bypassed, or that reads these fields
+// before checking deferredErr, does not panic on a nil field. hashDir, store,
+// and hashFilePathGetter-derived state are intentionally left zero-valued
+// since they require the hash directory to exist.
+func newDeferredValidator(algorithm HashAlgorithm, hashFilePathGetter common.HashFilePathGetter, cfg ValidatorConfig, deferredErr error) *Validator {
+	return &Validator{
+		algorithm:           algorithm,
+		hashFilePathGetter:  hashFilePathGetter,
+		fileSystem:          safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
+		elfDynlibAnalyzer:   cfg.ELFDynLibAnalyzer,
+		machoDynlibAnalyzer: cfg.MachODynLibAnalyzer,
+		binaryAnalyzer:      cfg.BinaryAnalyzer,
+		syscallAnalyzer:     cfg.SyscallAnalyzer,
+		libcCache:           cfg.LibcCache,
+		libSystemCache:      cfg.LibSystemCache,
+		machoSyscallTable:   cfg.MachoSyscallTable,
+		includeDebugInfo:    cfg.DebugInfo,
+		deferredErr:         deferredErr,
 	}
 }
 
@@ -327,6 +349,10 @@ func (v *Validator) HashDirAvailable() bool {
 // hash file path (possible with SHA256 fallback encoding for very long paths).
 // Existing fields (e.g., SyscallAnalysis) in the record are preserved when updating.
 func (v *Validator) SaveRecord(filePath string, force bool) (string, string, error) {
+	if v.deferredErr != nil {
+		return "", "", v.deferredErr
+	}
+
 	// Validate the file path
 	targetPath, err := validatePath(filePath)
 	if err != nil {
