@@ -180,6 +180,9 @@ func TestFilesystemEdgeCases(t *testing.T) {
 // an existing constraint of this file's permission tests, not one newly
 // introduced here.
 func TestNewReadOnly_ParentUnreadable_DeferredPermissionError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("Skipping privilege test when running as root")
+	}
 	tempDir := safeTempDir(t)
 	restrictedDir := filepath.Join(tempDir, "restricted")
 	require.NoError(t, os.Mkdir(restrictedDir, 0o755))
