@@ -611,6 +611,13 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 		if errors.Is(err, fileanalysis.ErrRecordNotFound) {
 			return nil
 		}
+		// Missing hash directory (dry-run with a read-only Validator that captured
+		// the absence as a deferred error): per-file verification already reports
+		// this as hash_directory_not_found; the dynlib check is not applicable
+		// and must not abort the dry-run preview.
+		if errors.Is(err, filevalidator.ErrHashDirNotExist) {
+			return nil
+		}
 		// Old schema record (schema_version < CurrentSchemaVersion): predates dynlib
 		// tracking. Treat as no DynLibDeps data available and skip the check.
 		// Records with a newer schema (Actual > Expected) are rejected as usual.
@@ -722,6 +729,13 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 	record, err := m.fileValidator.LoadRecord(cmdPath)
 	if err != nil {
 		if errors.Is(err, fileanalysis.ErrRecordNotFound) {
+			return nil
+		}
+		// Missing hash directory (dry-run with a read-only Validator that captured
+		// the absence as a deferred error): per-file verification already reports
+		// this as hash_directory_not_found; the shebang check is not applicable
+		// and must not abort the dry-run preview.
+		if errors.Is(err, filevalidator.ErrHashDirNotExist) {
 			return nil
 		}
 		if schemaErr, ok := errors.AsType[*fileanalysis.SchemaVersionMismatchError](err); ok && schemaErr.Actual < schemaErr.Expected {
