@@ -52,3 +52,48 @@ func TestNewManagerInternal_DryRun_HashDirParentUnreadable_RecordsPermissionDeni
 	require.NotEmpty(t, summary.Failures)
 	require.Equal(t, ReasonPermissionDenied, summary.Failures[0].Reason)
 }
+
+// TestNewManagerInternal_DryRun_HashDirExistsButUnresolvable_RecordsPermissionDenied tests
+// the case where the hash directory itself exists and is Lstat-able (a relative path resolves
+// against the process's cwd without re-checking ancestor search permissions), but resolving its
+// absolute, symlink-free path fails with a permission error because an ancestor of cwd is
+// unreadable. This exercises the err == nil && info.IsDir() branch of filevalidator.NewReadOnly,
+// distinct from the parent-unreadable/Lstat-failure case above: dry-run construction must still
+// succeed and report the failure as ReasonPermissionDenied rather than aborting.
+func TestNewManagerInternal_DryRun_HashDirExistsButUnresolvable_RecordsPermissionDenied(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("Skipping privilege test when running as root")
+	}
+
+	tmpDir := tu.SafeTempDir(t)
+	restrictedDir := filepath.Join(tmpDir, "restricted")
+	workDir := filepath.Join(restrictedDir, "workdir")
+	hashDir := filepath.Join(workDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o755))
+
+	t.Chdir(workDir)
+
+	require.NoError(t, os.Chmod(restrictedDir, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(restrictedDir, 0o755) })
+
+	// Relative hashDir: os.Lstat resolves it against cwd directly, so it
+	// succeeds even though "restricted" (an ancestor of cwd) is unreadable.
+	manager, err := newManagerInternal("hashes",
+		withDryRunModeInternal(),
+		withSkipHashDirectoryValidationInternal(),
+		withCreationMode(CreationModeTesting),
+		withSecurityLevel(SecurityLevelRelaxed))
+	require.NoError(t, err)
+	require.NotNil(t, manager.fileValidator)
+
+	// Place the config file outside restrictedDir; a path inside it would be
+	// unreadable via its absolute path once restrictedDir is chmod 0o000.
+	configFile := createTestFile(t, tmpDir, "config.toml", []byte("test config"))
+	_, err = manager.VerifyAndReadConfigFile(configFile)
+	require.NoError(t, err, "dry-run mode should not return errors")
+
+	summary := manager.GetVerificationSummary()
+	require.NotNil(t, summary)
+	require.NotEmpty(t, summary.Failures)
+	require.Equal(t, ReasonPermissionDenied, summary.Failures[0].Reason)
+}
