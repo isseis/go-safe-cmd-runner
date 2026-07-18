@@ -186,8 +186,8 @@ assumptions for production deployments.
 
 These are **two separate constants** and must not be conflated. 128 MB is comfortable headroom
 for configuration files and templates, but 1 GB is exclusively for binary analysis. These
-thresholds are not configurable (fixed values), and hash computation and analysis share the
-same limits.
+thresholds are not configurable (fixed values); while there is no size limit on hash computation
+itself, a 1 GB limit is enforced during binary analysis.
 
 **Production target and non-Linux environments**:
 
