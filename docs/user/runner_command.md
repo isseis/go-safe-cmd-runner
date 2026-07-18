@@ -688,8 +688,10 @@ configured hash directory, every file requiring verification is reported
 with one of the following environment-cause reasons, and the exit code is
 `3` in either case:
 
-- When the hash directory does not exist: reason `hash_directory_not_found`.
-- When the hash directory exists but is unreadable: reason `permission_denied`.
+- When the hash directory does not exist: reason `hash_directory_not_found` (shown as `Hash directory not found` in the text-format report).
+- When the hash directory exists but is unreadable: reason `permission_denied` (shown as `Permission denied` in the text-format report).
+
+The raw reason codes above (`hash_directory_not_found`, `permission_denied`) appear verbatim only in JSON output; the text-format report renders the human-readable labels shown in parentheses.
 
 The `verify_failed_`-prefixed names for each reason
 (`verify_failed_hash_directory_not_found`,

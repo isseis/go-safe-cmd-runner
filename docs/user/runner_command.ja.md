@@ -686,8 +686,10 @@ dry-run はハッシュディレクトリを作成しません。dry-run は rea
 作成を試みません。設定されたハッシュディレクトリの状態に応じて、検証が必要な各ファイルは
 次の環境起因の理由で報告され、いずれの場合も終了コードは `3` になります。
 
-- ハッシュディレクトリが存在しない場合: 理由 `hash_directory_not_found`。
-- ハッシュディレクトリが存在するが読み取り不可の場合: 理由 `permission_denied`。
+- ハッシュディレクトリが存在しない場合: 理由 `hash_directory_not_found`（テキスト形式のレポートでは `Hash directory not found` と表示されます）。
+- ハッシュディレクトリが存在するが読み取り不可の場合: 理由 `permission_denied`（テキスト形式のレポートでは `Permission denied` と表示されます）。
+
+上記の生の理由コード（`hash_directory_not_found`、`permission_denied`）がそのまま現れるのは JSON 出力のみで、テキスト形式のレポートには括弧内に示した人間可読なラベルが表示されます。
 
 各理由の `verify_failed_` 接頭辞付きの名称（`verify_failed_hash_directory_not_found`、
 `verify_failed_permission_denied`）は、上記の内部ステータス名に対応するレポート形式の
