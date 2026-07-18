@@ -446,12 +446,12 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
-- [ ] **ステップ 3-9**: `manager_production.go` の `logDryRunManagerCreation`（87-105 行目）の 96 行目
+- [x] **ステップ 3-9**: `manager_production.go` の `logDryRunManagerCreation`（87-105 行目）の 96 行目
       `"file_validator_enabled", true,` の直後に `"construction_mode", "read_only",` を追加する。
-- [ ] **ステップ 3-10**: `manager_test.go` 987-991 行目のコメントを次のとおり書き換える。
+- [x] **ステップ 3-10**: `manager_test.go` 987-991 行目のコメントを次のとおり書き換える。
       - Before:
         ```go
         // TestReadAndVerifyFileWithReadFallback_NoValidator_DryRunRecordsUnverified
@@ -470,7 +470,7 @@
         // UNVERIFIED with the skipped_no_validator reason, even though no
         // failure was recorded.
         ```
-- [ ] **ステップ 3-11**: `types.go` 149-153 行目のコメントを次のとおり書き換える（値は変更しない）。
+- [x] **ステップ 3-11**: `types.go` 149-153 行目のコメントを次のとおり書き換える（値は変更しない）。
       - Before:
         ```go
         // UnverifiedReasonNoValidator indicates the file was adopted because no
@@ -486,7 +486,7 @@
         // via FailureReason instead, e.g. ReasonHashDirNotFound).
         UnverifiedReasonNoValidator UnverifiedReason = "skipped_no_validator"
         ```
-- [ ] **ステップ 3-12**: `manager_production_test.go` の `"dry_run_security_audit_logging"` サブテスト
+- [x] **ステップ 3-12**: `manager_production_test.go` の `"dry_run_security_audit_logging"` サブテスト
       （157-178 行目）と `TestDryRunManagerLogging`（231-253 行目）の両方へ、
       `assert.Contains(t, logOutput, "construction_mode=read_only")` を追加する。
 
@@ -502,8 +502,8 @@
 
 **判定理由**: 監査ログへの属性追加とコメント文言の修正のみであり、PR-3 の挙動変更それ自体には依存しない独立した軽微な変更で、未確定の設計判断は無い。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

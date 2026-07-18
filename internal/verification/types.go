@@ -148,8 +148,9 @@ type UnverifiedReason string
 
 const (
 	// UnverifiedReasonNoValidator indicates the file was adopted because no
-	// file validator was configured for this manager instance (e.g. dry-run
-	// on a machine where the hash directory is not writable).
+	// file validator was configured for this manager instance (verification
+	// itself is disabled; a missing or unreadable hash directory is reported
+	// via FailureReason instead, e.g. ReasonHashDirNotFound).
 	UnverifiedReasonNoValidator UnverifiedReason = "skipped_no_validator"
 
 	// unverifiedReasonVerifyFailedPrefix prefixes the underlying FailureReason

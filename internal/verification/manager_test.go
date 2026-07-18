@@ -985,10 +985,12 @@ func TestReadAndVerifyFileWithReadFallback_DryRunLogging(t *testing.T) {
 }
 
 // TestReadAndVerifyFileWithReadFallback_NoValidator_DryRunRecordsUnverified
-// covers fallback path 1: the file validator is nil (dry-run on a machine
-// where the hash directory is not writable) and the file is read directly via
-// os.ReadFile. The summary must mark the content as UNVERIFIED with the
-// skipped_no_validator reason, even though no failure was recorded.
+// covers fallback path 1: the file validator is nil (verification is
+// explicitly disabled for this manager instance, e.g. via
+// withFileValidatorDisabledInternal in tests) and the file is read
+// directly via os.ReadFile. The summary must mark the content as
+// UNVERIFIED with the skipped_no_validator reason, even though no
+// failure was recorded.
 func TestReadAndVerifyFileWithReadFallback_NoValidator_DryRunRecordsUnverified(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 

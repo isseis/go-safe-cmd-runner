@@ -94,6 +94,7 @@ func logDryRunManagerCreation() {
 		"mode", "dry-run",
 		"skip_hash_directory_validation", true,
 		"file_validator_enabled", true,
+		"construction_mode", "read_only",
 	}
 
 	// Add caller information if available
