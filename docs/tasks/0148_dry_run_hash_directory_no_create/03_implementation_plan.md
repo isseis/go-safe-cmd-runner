@@ -560,12 +560,15 @@
          （`LoadRecord` 直後）にも同様に `errors.Is(err, filevalidator.ErrHashDirNotExist)`
          分岐を追加する。`ErrRecordNotFound` 分岐の直後、既存 `SchemaVersionMismatchError`
          分岐の前に挿入する。
-      3. `verifyInterpreterHash` は `LoadRecord` を直接呼ばず、record の `DynLibDeps` 参照
-         または `m.fileValidator.Verify` を呼ぶため変更不要。`Verify` 経由で到達する
-         遅延エラーは `Verify` 自身が既に `deferredErr` を返すので、`verifyInterpreterHash`
-         まで伝播する時点で `ErrHashDirNotExist` 以外のエラーにはならない（一般に
-         `ErrHashFileNotFound` となる）。本ステップでは `verifyInterpreterHash` への変更は
-         追加しない（YAGNI、§4 の重複回避方針と整合）。
+      3. `verifyInterpreterHash` は変更不要。理由は「`Verify` の戻り値の種類」ではなく
+         「到達可能性」にある。`verifyInterpreterHash` の 3 つの呼び出し箇所
+         （`VerifyCommandShebangInterpreter` 内）はいずれも、上記 2. でガードした
+         `LoadRecord` の**成功後**にのみ実行される。ハッシュディレクトリ不在時は
+         `LoadRecord` が `ErrHashDirNotExist`（`NewReadOnly` の `deferredErr`）を返し、
+         追加した分岐が `return nil` するため、`verifyInterpreterHash` には到達しない。
+         したがって `verifyInterpreterHash` 内の `m.fileValidator.Verify` が不在由来の
+         `ErrHashDirNotExist` を観測することは実運用上あり得ず、ここへ分岐を追加しても
+         デッドコードになる（YAGNI、§4 の重複回避方針と整合）。
 
 ### PR-5 作成ポイント: faithful dry-run E2E test for missing hash directory
 
