@@ -235,8 +235,7 @@ type Validator struct {
 	// deferredErr holds an error detected at construction time
 	// (e.g. missing or inaccessible hash directory) that is surfaced
 	// when any Verify/Load method is called, rather than failing
-	// construction. Only NewReadOnly sets this; New and NewForRecord
-	// always leave it nil.
+	// construction. Only NewReadOnly sets this; New always leaves it nil.
 	deferredErr error
 }
 
