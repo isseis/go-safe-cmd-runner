@@ -1,0 +1,89 @@
+# 要件定義書: groupmembership のグループメンバー列挙 fail-open 是正
+
+## Document Status
+
+| Item | Value |
+|---|---|
+| Status | `draft` |
+| Created | 2026-07-19 |
+| Review date | - |
+| Reviewer | - |
+| Comments | - |
+
+## 関連 Issue
+
+- [#858 [Security][H-1] groupmembership: getGroupMembers のエラー握りつぶしによる fail-open](https://github.com/isseis/go-safe-cmd-runner/issues/858)
+- 詳細所見: [docs/tasks/0149_security_code_smell_audit_fable/findings/D1_groupmembership.md](../0149_security_code_smell_audit_fable/findings/D1_groupmembership.md) の H-1, M-1, M-2
+- 横断パターン: [#860 [Security][P1] エラー処理の縮退による fail-open パターンの横断修正](https://github.com/isseis/go-safe-cmd-runner/issues/860)（本タスクは groupmembership 分の H-1/M-1 を解消する）
+
+## 背景
+
+`internal/groupmembership` は `safefileio` 等が呼び出す、ハッシュファイル・設定ファイルの安全な読み書き判定に使われるセキュリティクリティカルなコンポーネントである。監査（D1_groupmembership.md）により、グループメンバー列挙の失敗系・意味論不一致が一貫して「メンバー 0 人」に縮退し、`isUserOnlyGroupMember` を経由して group-writable ファイルへの書き込み許可（fail-open）に到達する構造的リスクが指摘された。本タスクはこのうち以下 3 件をまとめて是正する。
+
+- **H-1**: CGO 版 `getGroupMembers`（`membership_cgo.go`）が `getgrgid_r` のエラー（ERANGE・NSS 障害・EINTR 等）と「グループが存在しない」を区別せず、いずれも `([]string{}, nil)` として返している。
+- **M-1**: `isUserOnlyGroupMember`（`manager.go:185-193`）が「プライマリグループについて明示メンバーが 0 人ならユーザーが唯一のメンバー」と仮定しており、複数ユーザーが同一プライマリグループを共有する環境（LDAP 等）で成立しない。
+- **M-2**: CGO 版（`gr_mem` のみ）と非 CGO 版（明示メンバー + プライマリ GID 一致ユーザーの和集合）とで `getGroupMembers` の意味論が異なり、`CGO_ENABLED` の設定次第でセキュリティ判定結果が変わる。
+
+3 件は監査の総評で「同一の fail-open 構造的リスクに合流する」とされており、CGO 版の列挙結果を非 CGO 版と同じ意味論（明示メンバー + プライマリメンバーの和集合）に揃えることで H-1 と M-2 を同時に解消でき、その結果 `isUserOnlyGroupMember` の M-1 相当の特例分岐（「明示メンバー 0 人 → 唯一のメンバー」）も不要になり削除できる、という関係にある。
+
+## 目的
+
+- グループメンバー列挙が失敗した場合に、書き込み安全性判定が「安全（fail-open）」側に縮退しないことを保証する（fail-closed）。
+- CGO 版・非 CGO 版で `getGroupMembers` が返す集合の意味論を一致させ、ビルド構成によってセキュリティ判定結果が変わらないようにする。
+- `isUserOnlyGroupMember` が「メンバー列挙失敗・空結果」を許可根拠に使わないようにする。
+
+## スコープ
+
+### 対象（本タスクで対応する）
+
+- `internal/groupmembership/membership_cgo.go`: C 関数 `get_group_members` と Go 関数 `getGroupMembers`（CGO ビルド版）。
+  - 「グループが見つからない」と「エラー」を区別し、エラー時は必ず non-nil error を返す。
+  - `getgrgid_r` が `ERANGE` を返した場合のバッファ拡大リトライ。
+  - `malloc`/`strdup` 失敗時のエラー伝播。
+  - 返却するメンバー集合を非 CGO 版と同じ意味論（明示メンバー + プライマリ GID 一致ユーザーの和集合）に揃える。
+- `internal/groupmembership/manager.go`: `isUserOnlyGroupMember` の「明示メンバー 0 人 → 唯一のメンバー」特例分岐の削除、および呼び出し元がエラー時に fail-closed になることの確認。
+- 上記変更に対する CGO 版・非 CGO 版共通のユニット/意味論テスト。
+
+### 対象外（別タスク・別 Issue とする）
+
+- M-3（`SUDO_UID` の無検証信頼）, M-4（`getProcessEUID` の命名/実装乖離）: 別 Issue で対応。
+- L-1〜L-4, I-1, I-2: 別 Issue またはバックログで対応。
+- `internal/security`, `internal/runner/base/security` など呼び出し元パッケージ内の仕様変更（本タスクは `groupmembership` パッケージ内の修正に閉じる。呼び出し元は現行の `(bool, error)` 契約を変えずに利用できる想定）。
+
+## 現状の問題点（詳細）
+
+1. **エラーと「見つからない」の混同（H-1）**: C 側 `get_group_members` は「グループが `/etc/group`（または NSS）に存在しない」「`getgrgid_r` のエラー（ERANGE・NSS/LDAP 障害・EINTR 等）」「`malloc`/`strdup` 失敗」のすべてを NULL 返却で表現しており、Go 側から区別できない（`membership_cgo.go:38-43, 52-57, 61-71`）。
+2. **ERANGE の未リトライ（H-1）**: `getgrgid_r` は `sysconf(_SC_GETGR_R_SIZE_MAX)` で確保した固定バッファを 1 回使うのみで、バッファ不足（ERANGE）時にリトライしない。メンバー数の多いグループで現実的に発生し得る。
+3. **プライマリグループの誤った空集合仮定（M-1）**: `isUserOnlyGroupMember` は「明示メンバー 0 人 → プライマリグループの唯一のメンバー」とみなす。共有プライマリグループ環境（例: 伝統的な `users` GID や LDAP で配布される共通プライマリ GID）では、`/etc/group` に他ユーザーが列挙されないため誤って許可される。
+4. **ビルド依存の意味論不一致（M-2）**: 非 CGO 版はプライマリ GID 一致ユーザーを `/etc/passwd` から収集して明示メンバーと合算するのに対し、CGO 版は `gr_mem`（明示メンバーのみ）しか返さない。同一システムでも `CGO_ENABLED` によって `isUserOnlyGroupMember` の結果が変わる。
+
+## 受け入れ基準（Acceptance Criteria）
+
+#### F-001: CGO 版 `getGroupMembers` の fail-closed 化（H-1）
+
+- **AC-01**: C 側は `getgrgid_r` が「グループが見つからない」（`result == NULL` かつ `s == 0`）と「エラー」（`s != 0`）を区別して Go 側に伝達する。
+- **AC-02**: `getgrgid_r` が `ERANGE`（`s == ERANGE`）を返した場合、バッファサイズを拡大して再試行する。再試行には上限を設け、上限到達時はエラーとして扱う。
+- **AC-03**: `malloc`/`strdup` の失敗はエラーとして Go 側に伝達される（グループが見つからない場合と区別可能である）。
+- **AC-04**: Go 関数 `getGroupMembers`（CGO 版）は、C 側がエラーを報告した場合に `(nil, non-nil error)` を返す。
+- **AC-05**: Go 関数 `getGroupMembers`（CGO 版）は、指定 GID のグループが存在しない場合（エラーではない）に `([]string{}, nil)` を返す（既存の正常系動作を維持する）。
+
+#### F-002: CGO 版・非 CGO 版の意味論統一（M-2）
+
+- **AC-06**: CGO 版 `getGroupMembers` は、明示メンバー（`gr_mem`）に加えて、指定 GID をプライマリ GID とするユーザーも結果に含める（和集合）。
+- **AC-07**: 同一の `/etc/group`・`/etc/passwd` 相当の入力に対し、CGO 版と非 CGO 版の `getGroupMembers` が同じメンバー集合（順不同）を返すことをテストで確認できる。
+
+#### F-003: `isUserOnlyGroupMember` の fail-closed 化（M-1）
+
+- **AC-08**: `isUserOnlyGroupMember` は「明示メンバー 0 人 → ユーザーが唯一のメンバー」という特例分岐を持たない（F-002 によりプライマリメンバーが列挙結果に含まれるため、特例が不要になる）。
+- **AC-09**: `GetGroupMembers` がエラーを返した場合、`isUserOnlyGroupMember` は `(false, error)` を返し、`CanUserSafelyWriteFile` の group-writable 分岐は書き込みを許可しない（fail-closed）。
+- **AC-10**: 単一ユーザーのみが所属するグループ（プライマリ・明示メンバーいずれの形でも）に対しては、従来どおり `isUserOnlyGroupMember` が `true` を返す（fail-closed 化による正常系の回帰がないことを確認する）。
+
+## 非機能要件
+
+- 既存の `GroupMembership` のキャッシュ機構（30 秒 TTL）の挙動は変更しない。
+- パフォーマンス: ERANGE リトライによるバッファ拡大は妥当な上限（例: 数 MB 程度）を設け、無限リトライやメモリ枯渇を招かないこと。
+- 既存の公開 API シグネチャ（`GetGroupMembers`, `IsUserInGroup`, `CanUserSafelyWriteFile` 等）を変更しない。
+
+## 参考
+
+- 良好な既存実装パターン: `membership_cgo.go` の `unsafe.Slice` 使用、count の境界検証（`validateGroupMemberCount`）は踏襲する。
