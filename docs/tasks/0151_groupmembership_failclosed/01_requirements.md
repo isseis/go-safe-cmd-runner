@@ -79,7 +79,7 @@
 
 #### F-003: `isUserOnlyGroupMember` の fail-closed 化（M-1）
 
-- **AC-08**: `isUserOnlyGroupMember` は「明示メンバー 0 人 → ユーザーが唯一のメンバー」という特例分岐を持たない（F-002 によりプライマリメンバーが列挙結果に含まれるため、特例が不要になる）。`isUserOnlyGroupMember` はビルド構成に依存しない共通コード（`manager.go`）であり、本 AC は CGO 版・非 CGO 版の両ビルドで成立する。
+- **AC-08**: `isUserOnlyGroupMember` は「明示メンバー 0 人 → ユーザーが唯一のメンバー」という特例分岐を持たない（F-002 によりプライマリメンバーが列挙結果に含まれるため、特例が不要になる）。これにより、`isUserOnlyGroupMember` 内のプライマリ GID 条件分岐（`manager.go` の `if uint32(userPrimaryGID) == groupGID` ブロック）を完全に削除し、単純なメンバー数とユーザー名の一致判定（`len(members) == 1 && members[0] == user.Username`）のみに簡素化する。本 AC は CGO 版・非 CGO 版の両ビルドで成立する。
 - **AC-09**: `GetGroupMembers` がエラーを返した場合、`isUserOnlyGroupMember` は `(false, error)` を返し、`CanUserSafelyWriteFile` の group-writable 分岐は書き込みを許可しない（fail-closed）。
 - **AC-10**: 単一ユーザーのみが所属するグループ（プライマリ・明示メンバーいずれの形でも）に対しては、従来どおり `isUserOnlyGroupMember` が `true` を返す（fail-closed 化・特例分岐削除による正常系の回帰がないことを、CGO 版・非 CGO 版の両ビルドで確認する）。
 - **AC-11**: `GetGroupMembers` が列挙エラーを返した場合、その結果（空集合・エラー）はキャッシュに格納されず、後続の呼び出しは列挙を再試行する（一時的な失敗が最大 TTL の間キャッシュされて fail-open/誤判定が固定化しないこと）。
