@@ -294,7 +294,7 @@
 `internal/verification/manager_test.go`, `internal/verification/manager_production_test.go`,
 `internal/verification/types.go`, 新規 `internal/verification/manager_permission_test.go`
 
-- [ ] **ステップ 3-1**: `manager.go` 474-494 行目を次の内容へ置き換える。
+- [x] **ステップ 3-1**: `manager.go` 474-494 行目を次の内容へ置き換える。
       ```go
       // Initialize file validator with hybrid hash path getter
       var hashDirAvailable bool
@@ -321,7 +321,7 @@
       ```
       （`errors` パッケージが `os.ErrPermission` 分岐削除後も他用途で使われているか確認し、未使用に
       なった場合のみ import を削除する。）
-- [ ] **ステップ 3-2**: `manager.go` 508-527 行目（dry-run の `resultCollector` 初期化ブロック）を次の内容へ
+- [x] **ステップ 3-2**: `manager.go` 508-527 行目（dry-run の `resultCollector` 初期化ブロック）を次の内容へ
       置き換える。`opts.fileValidatorEnabled` が偽の場合（現状はテスト専用の
       `withFileValidatorDisabledInternal()` 経由でのみ到達する）は `hashDirAvailable` が初期化
       されないため、従来どおり `opts.fs.FileExists` による判定を残す。読み取り専用バリデータが
@@ -359,7 +359,7 @@
           }
       }
       ```
-- [ ] **ステップ 3-3**: `manager_test.go` に `TestVerifyConfigFile_DryRun_MissingHashDir` を追加する
+- [x] **ステップ 3-3**: `manager_test.go` に `TestVerifyConfigFile_DryRun_MissingHashDir` を追加する
       （`TestVerifyConfigFile_DryRun_HashFileNotFound`、1357-1385 行目、と対になる構成）。
       - `tmpDir := tu.SafeTempDir(t)`、`hashDir := filepath.Join(tmpDir, "does-not-exist")`
         （作成しない）、`configFile := createTestFile(t, tmpDir, "config.toml", []byte("test config"))`。
@@ -372,14 +372,14 @@
         `summary.UnverifiedFiles[0].Reason` が `"verify_failed_hash_directory_not_found"`
         （`"skipped_no_validator"` ではないこと）であることを確認する。
       - `os.Stat(hashDir)` が `os.IsNotExist` を満たすことを確認する（AC-01）。
-- [ ] **ステップ 3-4**: `manager_test.go` に `TestVerifyGlobalFiles_DryRun_MissingHashDir_RecordsHashDirNotFound` を
+- [x] **ステップ 3-4**: `manager_test.go` に `TestVerifyGlobalFiles_DryRun_MissingHashDir_RecordsHashDirNotFound` を
       追加する。存在しない `hashDir` で `createDryRunManager` を構築し、`createRuntimeGlobal` で
       作成した `GlobalVerificationInput`（`ExpandedVerifyFiles` に実在する 1 ファイルを含む）を
       `manager.VerifyGlobalFiles` に渡す。戻り値の `err` が `nil`、`result.FailedFiles` に
       当該ファイルが含まれること、`summary.Failures[0].Reason == ReasonHashDirNotFound` を確認する。
       これは `global.verify_files` が通る `verifyFile`（`manager.go` 150 行目）を直接検証する
       （AC-06 前半）。
-- [ ] **ステップ 3-5**: `manager_test.go` に `TestVerifyGroupFiles_DryRun_MissingHashDir_RecordsHashDirNotFound` を
+- [x] **ステップ 3-5**: `manager_test.go` に `TestVerifyGroupFiles_DryRun_MissingHashDir_RecordsHashDirNotFound` を
       追加する。同様に `createRuntimeGroup` を使い、`manager.VerifyGroupFiles` を経由する
       `verifyFileWithHash`（`manager.go` 213 行目）を検証する（AC-06 後半）。
       `groups[].verify_files` はいずれも `readAndVerifyFileWithReadFallback` /
@@ -401,7 +401,7 @@
       ファイル検証が復活した場合も同じ写像が適用されることは設計上保証されるが、これは本タスクの
       実装によって新たに証明されるものではない。AC-06 の検証は `verify_files`
       （global・group の両方）と、共通経路を実際に使う設定ファイル読み込みに対してのみ行う。
-- [ ] **ステップ 3-6**: 新規ファイル `internal/verification/manager_permission_test.go`
+- [x] **ステップ 3-6**: 新規ファイル `internal/verification/manager_permission_test.go`
       （`//go:build linux || freebsd || openbsd || netbsd`、`package verification`）を作成し、
       `TestNewManagerInternal_DryRun_HashDirParentUnreadable_RecordsPermissionDenied` を追加する。
       `internal/filevalidator/validator_error_test.go` の「unreadable directory」パターン
@@ -410,7 +410,7 @@
       `withCreationMode(CreationModeTesting)` ・ `withSecurityLevel(SecurityLevelRelaxed)` で構築、
       対象ファイルを 1 件検証して `summary.Failures[0].Reason == ReasonPermissionDenied` を確認する
       （AC-04・Q-03(d) の固定化）。root 実行時の制約は上記フェーズ 2 のテストと同様。
-- [ ] **ステップ 3-7**: `manager_production_test.go` の `"auto_creates_missing_hash_dir_and_enables_validator"`
+- [x] **ステップ 3-7**: `manager_production_test.go` の `"auto_creates_missing_hash_dir_and_enables_validator"`
       サブテスト（136-155 行目）を次のとおり書き換える。
       - サブテスト名を `"does_not_create_missing_hash_dir_but_initializes_read_only_validator"`
         に変更する。
@@ -422,7 +422,7 @@
       - `_, statErr := os.Stat(nonexistentHashDir)` の直後を
         `assert.True(t, os.IsNotExist(statErr), "hash directory must not be auto-created in dry-run mode")`
         へ変更する（従来の `assert.NoError` を反転）。
-- [ ] **ステップ 3-8**: `manager_test.go` に `TestNewManagerInternal_DryRun_HashPathNotDirectory_HardFails` を追加する。
+- [x] **ステップ 3-8**: `manager_test.go` に `TestNewManagerInternal_DryRun_HashPathNotDirectory_HardFails` を追加する。
       ハッシュディレクトリのパスとして通常ファイル（ディレクトリではないパス）を渡した
       `newManagerInternal`（`withDryRunModeInternal()` ・ `withSkipHashDirectoryValidationInternal()`
       を付与）がエラーを返し、`errors.Is(err, filevalidator.ErrHashPathNotDir)` を満たすことを

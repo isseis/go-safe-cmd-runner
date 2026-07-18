@@ -1384,6 +1384,95 @@ func TestVerifyConfigFile_DryRun_HashFileNotFound(t *testing.T) {
 	assert.Equal(t, logLevelError, summary.Failures[0].Level)
 }
 
+// TestVerifyConfigFile_DryRun_MissingHashDir tests config file verification in dry-run mode
+// when the hash directory does not exist. The directory must not be created as a side effect,
+// and the failure must be reported as ReasonHashDirNotFound rather than being downgraded to
+// hash_file_not_found or rounded up to skipped_no_validator.
+func TestVerifyConfigFile_DryRun_MissingHashDir(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	hashDir := filepath.Join(tmpDir, "does-not-exist")
+	configFile := createTestFile(t, tmpDir, "config.toml", []byte("test config"))
+
+	manager := createDryRunManager(t, hashDir)
+	require.NotNil(t, manager.fileValidator, "validator must be constructed even when the hash directory is missing")
+
+	content, err := manager.VerifyAndReadConfigFile(configFile)
+	assert.NoError(t, err, "dry-run mode should not return errors")
+	assert.Equal(t, "test config", string(content), "should return file content")
+
+	summary := manager.GetVerificationSummary()
+	require.NotNil(t, summary)
+	assert.False(t, summary.HashDirStatus.Exists, "hash directory should be reported as not existing")
+	require.NotEmpty(t, summary.Failures)
+	assert.Equal(t, ReasonHashDirNotFound, summary.Failures[0].Reason)
+	require.NotEmpty(t, summary.UnverifiedFiles)
+	assert.Equal(t, string(UnverifiedReasonFromFailure(ReasonHashDirNotFound)), summary.UnverifiedFiles[0].Reason)
+
+	_, statErr := os.Stat(hashDir)
+	assert.True(t, os.IsNotExist(statErr), "hash directory must not be created by dry-run")
+}
+
+// TestVerifyGlobalFiles_DryRun_MissingHashDir_RecordsHashDirNotFound tests that
+// global.verify_files entries are reported with ReasonHashDirNotFound when the hash
+// directory does not exist, via the verifyFile code path.
+func TestVerifyGlobalFiles_DryRun_MissingHashDir_RecordsHashDirNotFound(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	hashDir := filepath.Join(tmpDir, "does-not-exist")
+	verifyFile := createTestFile(t, tmpDir, "global-verify.txt", []byte("content"))
+
+	manager := createDryRunManager(t, hashDir)
+
+	runtimeGlobal := createRuntimeGlobal([]string{verifyFile})
+	result, err := manager.VerifyGlobalFiles(runtimeGlobal)
+	assert.NoError(t, err, "dry-run mode should not return errors")
+	require.NotNil(t, result)
+	assert.Contains(t, result.FailedFiles, verifyFile)
+
+	summary := manager.GetVerificationSummary()
+	require.NotNil(t, summary)
+	require.NotEmpty(t, summary.Failures)
+	assert.Equal(t, ReasonHashDirNotFound, summary.Failures[0].Reason)
+}
+
+// TestVerifyGroupFiles_DryRun_MissingHashDir_RecordsHashDirNotFound tests that
+// groups[].verify_files entries are reported with ReasonHashDirNotFound when the hash
+// directory does not exist, via the verifyFileWithHash code path.
+func TestVerifyGroupFiles_DryRun_MissingHashDir_RecordsHashDirNotFound(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	hashDir := filepath.Join(tmpDir, "does-not-exist")
+	verifyFile := createTestFile(t, tmpDir, "group-verify.txt", []byte("content"))
+
+	manager := createDryRunManager(t, hashDir)
+
+	runtimeGroup := createRuntimeGroup([]string{verifyFile})
+	result, err := manager.VerifyGroupFiles(runtimeGroup)
+	assert.NoError(t, err, "dry-run mode should not return errors")
+	require.NotNil(t, result)
+	assert.Len(t, result.FailedFiles, 1)
+
+	summary := manager.GetVerificationSummary()
+	require.NotNil(t, summary)
+	require.NotEmpty(t, summary.Failures)
+	assert.Equal(t, ReasonHashDirNotFound, summary.Failures[0].Reason)
+}
+
+// TestNewManagerInternal_DryRun_HashPathNotDirectory_HardFails tests that when the hash
+// directory path points to a regular file rather than a directory, dry-run manager
+// construction still fails hard (02_architecture.md Q-02 and §3.2), the same as before
+// this task's read-only construction was introduced.
+func TestNewManagerInternal_DryRun_HashPathNotDirectory_HardFails(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	hashDirPath := createTestFile(t, tmpDir, "not-a-directory", []byte("content"))
+
+	_, err := newManagerInternal(hashDirPath,
+		withDryRunModeInternal(),
+		withSkipHashDirectoryValidationInternal(),
+		withCreationMode(CreationModeTesting),
+		withSecurityLevel(SecurityLevelRelaxed))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, filevalidator.ErrHashPathNotDir)
+}
+
 // TestVerifyGroupFiles_DryRun_HashMismatch tests group file verification in dry-run mode
 // when hash mismatch occurs (ERROR level logging)
 func TestVerifyGroupFiles_DryRun_HashMismatch(t *testing.T) {
