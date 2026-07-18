@@ -682,10 +682,17 @@ shred -u debug.txt  # secure deletion
 
 **ハッシュディレクトリの扱い（dry-run）**
 
-dry-run はハッシュディレクトリを作成しません。設定されたハッシュディレクトリが存在しない
-場合、dry-run は read-only な確認のみを行い作成を試みません。検証が必要な各ファイルは
-環境起因の理由 `hash_directory_not_found`（採用したが未検証のコンテンツは
-`verify_failed_hash_directory_not_found`）として報告され、終了コードは `3` になります。
+dry-run はハッシュディレクトリを作成しません。dry-run は read-only な確認のみを行い、
+作成を試みません。設定されたハッシュディレクトリの状態に応じて、検証が必要な各ファイルは
+次の環境起因の理由で報告され、いずれの場合も終了コードは `3` になります。
+
+- ハッシュディレクトリが存在しない場合: 理由 `hash_directory_not_found`。
+- ハッシュディレクトリが存在するが読み取り不可の場合: 理由 `permission_denied`。
+
+各理由の `verify_failed_` 接頭辞付きの名称（`verify_failed_hash_directory_not_found`、
+`verify_failed_permission_denied`）は、上記の内部ステータス名に対応するレポート形式の
+ステータスであり、採用したが未検証のコンテンツに用いられます。
+
 この扱いは設定ファイル・テンプレート・`verify_files`・env ファイルのすべてに共通です。
 ハッシュディレクトリを自動作成するのは `record` コマンドおよび本番実行のみです。
 

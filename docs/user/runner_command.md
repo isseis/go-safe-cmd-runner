@@ -682,12 +682,22 @@ Both the **`Failures`** and **`UNVERIFIED`** sections are displayed at **all det
 
 **Hash directory handling (dry-run)**
 
-Dry-run never creates the hash directory, even when it does not exist. In
-that case dry-run performs a read-only check only; every file requiring
-verification is reported with the environment-cause reason
-`hash_directory_not_found` (`verify_failed_hash_directory_not_found` for
-content adopted without verification), and the exit code is `3`. This
-applies uniformly to the configuration file, templates, `verify_files`
+Dry-run never creates the hash directory. Dry-run performs a read-only
+check only and never attempts to create it. Depending on the state of the
+configured hash directory, every file requiring verification is reported
+with one of the following environment-cause reasons, and the exit code is
+`3` in either case:
+
+- When the hash directory does not exist: reason `hash_directory_not_found`.
+- When the hash directory exists but is unreadable: reason `permission_denied`.
+
+The `verify_failed_`-prefixed names for each reason
+(`verify_failed_hash_directory_not_found`,
+`verify_failed_permission_denied`) are the report-format statuses
+corresponding to the internal status names above, and are used for content
+adopted without verification.
+
+This applies uniformly to the configuration file, templates, `verify_files`
 entries, and env files. Only the `record` command and production
 execution create the hash directory automatically.
 
