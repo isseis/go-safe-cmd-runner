@@ -211,8 +211,8 @@ flowchart LR
 - `Analyze` の呼び出し元（`cmd/record/main.go` 経由の `filevalidator`）は、既に `Analyze` のエラーを record 失敗として扱っているため、追加の変更は不要。
 - ただし、これまでエラーを握りつぶして続行していたケースがエラーになるため、実運用環境で一過性の I/O エラー等により record が失敗する可能性が増加する。このリスクは `01_requirements.md` の「リスクと留意事項」で既に特定されており、ユーザー向けエラーメッセージの品質確保と、構造化ログによる原因特定容易性の向上が実装時の課題となる。
 - 既存テストのうち、破壊された ELF ファイルや不正な Mach-O ファイルの解析が「エラーとして返る」ことを期待していないテスト（もし存在すれば）は、修正が必要。
-  - `internal/dynlib/elfdynlib/analyzer_test.go`: AC-04/AC-05/AC-06 に対応する fail-closed テストを新規追加する（既存テストの修正は不要と見込まれる）。
-  - `internal/dynlib/machodylib/analyzer_test.go`: 同上（AC-06 に対応するテストを新規追加）。
+  - `internal/dynlib/elfdynlib/analyzer_test.go`: AC-04/AC-05/AC-07 に対応する fail-closed テストを新規追加する（既存テストの修正は不要と見込まれる）。
+  - `internal/dynlib/machodylib/analyzer_test.go`: AC-06/AC-07/AC-08/AC-09 に対応するテストを新規追加。
 
 ---
 
