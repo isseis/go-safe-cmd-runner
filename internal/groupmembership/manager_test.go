@@ -916,4 +916,5 @@ func TestCanCurrentUserSafelyReadFile_EnumerationError(t *testing.T) {
 	canRead, err := gm.CanCurrentUserSafelyReadFile(99999, 0o660)
 	assert.False(t, canRead)
 	require.Error(t, err)
+	assert.ErrorIs(t, err, sentinelErr)
 }
