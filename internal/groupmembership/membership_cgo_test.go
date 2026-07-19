@@ -158,11 +158,16 @@ func TestGetGroupMembers_IncludesPrimaryGroupMembers(t *testing.T) {
 	primaryGID, err := strconv.ParseUint(currentUser.Gid, 10, 32)
 	require.NoError(t, err)
 
-	members, err := getGroupMembers(uint32(primaryGID))
+	_, found, err := getExplicitGroupMembers(uint32(primaryGID))
 	if err != nil {
-		t.Skipf("getGroupMembers(%d) failed: %v", primaryGID, err)
+		t.Skipf("getExplicitGroupMembers(%d) failed: %v", primaryGID, err)
+	}
+	if !found {
+		t.Skipf("primary GID %d has no corresponding group entry", primaryGID)
 	}
 
+	members, err := getGroupMembers(uint32(primaryGID))
+	require.NoError(t, err)
 	assert.Contains(t, members, currentUser.Username)
 }
 

@@ -27,6 +27,9 @@ func shouldSkipSemanticsTest(nsswitchContent string, goos string) (skip bool, re
 
 	for _, db := range []string{"passwd", "group"} {
 		sources := nssSources(nsswitchContent, db)
+		if len(sources) == 0 {
+			return true, "nsswitch.conf missing " + db + " entry"
+		}
 		for _, src := range sources {
 			if src != "files" && src != "systemd" {
 				return true, "nsswitch.conf source " + src + " for " + db + " is not files/systemd"
