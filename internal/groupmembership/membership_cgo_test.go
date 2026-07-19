@@ -5,6 +5,8 @@ package groupmembership
 import (
 	"errors"
 	"math"
+	"os/user"
+	"strconv"
 	"syscall"
 	"testing"
 
@@ -145,4 +147,34 @@ func TestGetExplicitGroupMembers_InvalidGID(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, found)
 	assert.Nil(t, members)
+}
+
+func TestGetGroupMembers_IncludesPrimaryGroupMembers(t *testing.T) {
+	currentUser, err := user.Current()
+	if err != nil {
+		t.Skipf("user.Current() failed: %v", err)
+	}
+
+	primaryGID, err := strconv.ParseUint(currentUser.Gid, 10, 32)
+	require.NoError(t, err)
+
+	members, err := getGroupMembers(uint32(primaryGID))
+	if err != nil {
+		t.Skipf("getGroupMembers(%d) failed: %v", primaryGID, err)
+	}
+
+	assert.Contains(t, members, currentUser.Username)
+}
+
+func TestGetGroupMembers_MergedCountExceedsMaximum(t *testing.T) {
+	explicit := make([]string, maxGroupMembers)
+	for i := range explicit {
+		explicit[i] = "explicit-user-" + strconv.Itoa(i)
+	}
+	primary := []string{"unique-primary-user"}
+
+	result, err := mergeGroupMembers(explicit, primary)
+	assert.Nil(t, result)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrGroupMemberCountExceedsMax))
 }
