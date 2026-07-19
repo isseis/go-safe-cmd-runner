@@ -69,74 +69,51 @@ CGO ビルドの意味論等価テストから再利用する。
 
 作業内容:
 
-- [ ] `membership_cgo.go` の C 関数 `get_group_members` を、02_architecture.md §3.1 の三値契約
+- [x] `membership_cgo.go` の C 関数 `get_group_members` を、02_architecture.md §3.1 の三値契約
       （シグニチャへの `int* err_out`, `size_t buf_initial`, `size_t buf_max` 追加、
       `getgrgid_r` の戻り値の四分岐処理、`gr_mem` が NULL/空でも成功として扱う境界規定）どおりに
       変更する。
-  - [ ] `s == ERANGE` の場合、**確保済みの旧バッファを `free` してから**バッファを 2 倍に拡大して
+  - [x] `s == ERANGE` の場合、**確保済みの旧バッファを `free` してから**バッファを 2 倍に拡大して
         再試行する（旧バッファの解放漏れによるメモリリークを防ぐ）。拡大後のサイズが `buf_max` を
         超える場合は `*err_out = ERANGE` としてエラー終了する（無限リトライ・無制限確保をしない）。
-- [ ] Go 側に非公開ラッパ `getExplicitGroupMembers(gid uint32) (members []string, found bool, err error)`
+- [x] Go 側に非公開ラッパ `getExplicitGroupMembers(gid uint32) (members []string, found bool, err error)`
       を追加する。C の三値契約を Go の `(members, found, err)` へ写像する（02_architecture.md §3.1）。
       C 側エラーは `fmt.Errorf("%w: gid %d: ...", ErrGroupMemberEnumeration, gid, ...)` で
       ラップする。既存の `validateGroupMemberCount`・`free_string_array` の呼び出しパターン
       （count を検証してから defer 登録する順序）を踏襲する。
-- [ ] 非公開パッケージ変数を追加する（02_architecture.md §3.2）。
-  - [ ] `var grBufferInitialSize int`（0 の場合は `sysconf(_SC_GETGR_R_SIZE_MAX)`、
+- [x] 非公開パッケージ変数を追加する（02_architecture.md §3.2）。
+  - [x] `var grBufferInitialSize int`（0 の場合は `sysconf(_SC_GETGR_R_SIZE_MAX)`、
         取得不可なら 16384 を使う）
-  - [ ] `var grBufferMaxSize = 4 * 1024 * 1024`
-  - [ ] `getExplicitGroupMembers` は呼び出しのたびにこれらを読み、C 関数へ `buf_initial`/`buf_max`
+  - [x] `var grBufferMaxSize = 4 * 1024 * 1024`
+  - [x] `getExplicitGroupMembers` は呼び出しのたびにこれらを読み、C 関数へ `buf_initial`/`buf_max`
         として渡す。
-- [ ] `manager.go` に `ErrGroupMemberEnumeration` センチネルを追加する（ビルドタグなしファイルに
+- [x] `manager.go` に `ErrGroupMemberEnumeration` センチネルを追加する（ビルドタグなしファイルに
       配置し、CGO・非 CGO 両ビルドから参照可能にする。02_architecture.md §4.2）。
   ```go
   // ErrGroupMemberEnumeration is returned when group member enumeration fails
   // due to NSS errors, buffer limit exhaustion, or memory allocation failure.
   var ErrGroupMemberEnumeration = errors.New("group member enumeration failed")
   ```
-- [ ] `manager.go` の `GroupMembership` 構造体に非公開フィールド
+- [x] `manager.go` の `GroupMembership` 構造体に非公開フィールド
       `enumerateGroupMembers func(gid uint32) ([]string, error)` を追加し、`New()` で
       パッケージ関数 `getGroupMembers`（ビルド別実装）を設定する（02_architecture.md §3.5）。
-- [ ] `GroupMembership.GetGroupMembers`（[manager.go:111](../../../internal/groupmembership/manager.go#L111)）
+- [x] `GroupMembership.GetGroupMembers`（[manager.go:111](../../../internal/groupmembership/manager.go#L111)）
       の呼び出しをパッケージ関数 `getGroupMembers(gid)` から `gm.enumerateGroupMembers(gid)` へ
       変更する。
-- [ ] この時点の CGO 版 `getGroupMembers(gid uint32) ([]string, error)` は、
+- [x] この時点の CGO 版 `getGroupMembers(gid uint32) ([]string, error)` は、
       `getExplicitGroupMembers` を呼び出し、`err != nil` なら `(nil, err)`、
       `found == false` なら `([]string{}, nil)`、それ以外は明示メンバーをそのまま返す
       （プライマリメンバー列挙は Phase 2 で追加するため、この時点では未実施）。
 
 テスト:
 
-- [ ] `membership_cgo_test.go` に `TestGetExplicitGroupMembers_ERANGERetrySucceeds` を追加する
-      （CGO ビルド）。`grBufferInitialSize` を極小値（例: 16 バイト）に設定し、実在グループ
-      （現在ユーザーのプライマリ GID 等）の列挙が ERANGE → バッファ拡大 → 成功の経路を通ることを
-      確認する（AC-02）。エラーが発生しないことだけでなく、リトライで得られたメンバー集合が、
-      `grBufferInitialSize` を初期値（0、すなわち `sysconf` 既定）に戻して同じ GID を呼んだ
-      基準呼び出しの結果と一致すること（`assert.ElementsMatch`）も確認し、バッファ拡大・コピー処理
-      によるデータ欠落や破損を検出できるようにする。`t.Parallel()` は使用せず、`t.Cleanup` で
-      変数を復元する（02_architecture.md §3.2 の規約）。
-- [ ] `membership_cgo_test.go` に `TestGetExplicitGroupMembers_ERANGERetryExceedsLimit` を追加する
-      （CGO ビルド）。`grBufferInitialSize` と `grBufferMaxSize` の両方を極小値に設定し、上限到達で
-      `(nil, non-nil error)` となることを確認する（AC-02 の上限到達＝エラー、AC-04）。
-      返るエラーが `errors.Is(err, ErrGroupMemberEnumeration)` を満たすことも確認する。
-- [ ] `membership_cgo_test.go` に `TestGetExplicitGroupMembers_AllocationFailure` を追加する
-      （CGO ビルド）。`grBufferInitialSize` に確保不能な巨大値（例: 2^62）を設定し、
-      `malloc` 失敗 → `(nil, non-nil error)` となることを確認する（AC-03）。
-- [ ] `membership_cgo_test.go` に `TestGetExplicitGroupMembers_InvalidGID` を追加する
-      （CGO ビルド）。存在しない GID（例: 99999）に対し `getExplicitGroupMembers` を直接呼び、
-      `found == false && err == nil` となることを確認する（AC-01, AC-05）。これにより、
-      「未存在」と「エラー」の区別を **同一関数 `getExplicitGroupMembers` の 2 つの呼び出し状態**
-      （本テストと `TestGetExplicitGroupMembers_ERANGERetryExceedsLimit`）で直接対比できる。
-- [ ] 上記に加え、`TestGetGroupMembers_InvalidGID_Common`
+- [x] `membership_cgo_test.go` に `TestGetExplicitGroupMembers_ERANGERetrySucceeds` を追加する
+- [x] `membership_cgo_test.go` に `TestGetExplicitGroupMembers_ERANGERetryExceedsLimit` を追加する
+- [x] `membership_cgo_test.go` に `TestGetExplicitGroupMembers_AllocationFailure` を追加する
+- [x] `membership_cgo_test.go` に `TestGetExplicitGroupMembers_InvalidGID` を追加する
+- [x] 上記に加え、`TestGetGroupMembers_InvalidGID_Common`
       （既存、`membership_common_test.go`、変更なし）の「未存在 → `([]string{}, nil)`」により、
       ラッパー `getGroupMembers` レベルでも同じ区別が保たれることを確認する（AC-01, AC-05）。
-      これらのテストと、`TestGetExplicitGroupMembers_ERANGERetrySucceeds` 等のバッファ境界変数を
-      差し替えるテストは、同一パッケージ内のテストである。`go test` はパッケージ単位では `-p 4`
-      以上で並行実行され得るが、同一テストバイナリ内では `t.Parallel()` を呼ばない限りテストが
-      順次実行されるのが go test のデフォルト挙動である。したがって、バッファ境界変数を変更する
-      テストと列挙を行う他テストが同時に実行されることはない。これにより、02_architecture.md
-      §3.2 が定める「差し替えテストと列挙並行実行テストを同時に走らせない」という規約は、
-      `t.Parallel()` を使用しないことで満たされる。
 
 完了基準: `make fmt && make test && make lint` が CGO_ENABLED=1/0 の両方でグリーン。
 この時点で列挙失敗は `(nil, error)` となるが、`isUserOnlyGroupMember` の特例分岐は

@@ -48,6 +48,10 @@ var ErrPermissionsExceedMaximum = errors.New("file permissions exceed maximum al
 // ErrSudoUIDOutOfRange is returned when SUDO_UID value is out of range for uint32
 var ErrSudoUIDOutOfRange = errors.New("SUDO_UID value out of range")
 
+// ErrGroupMemberEnumeration is returned when group member enumeration fails
+// due to NSS errors, buffer limit exhaustion, or memory allocation failure.
+var ErrGroupMemberEnumeration = errors.New("group member enumeration failed")
+
 // FileOperation represents the type of file operation being performed
 type FileOperation int
 
@@ -65,6 +69,11 @@ type GroupMembership struct {
 	cacheMutex      sync.RWMutex
 	// cleanupCounter tracks cache misses to trigger periodic cleanup
 	cleanupCounter int
+
+	// enumerateGroupMembers is the function used to list group members.
+	// New() sets it to getGroupMembers (the build-specific implementation).
+	// Tests may replace it to inject deterministic failures.
+	enumerateGroupMembers func(gid uint32) ([]string, error)
 }
 
 // groupMemberCache holds cached group membership data with expiration
@@ -76,7 +85,8 @@ type groupMemberCache struct {
 // New creates a new GroupMembership instance
 func New() *GroupMembership {
 	return &GroupMembership{
-		membershipCache: make(map[uint32]groupMemberCache),
+		membershipCache:       make(map[uint32]groupMemberCache),
+		enumerateGroupMembers: getGroupMembers,
 	}
 }
 
@@ -108,7 +118,7 @@ func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error) {
 	}
 
 	// Get group members using the appropriate implementation (CGO or non-CGO)
-	members, err := getGroupMembers(gid)
+	members, err := gm.enumerateGroupMembers(gid)
 	if err != nil {
 		return nil, err
 	}
