@@ -4,7 +4,7 @@ package groupmembership
 
 import (
 	"errors"
-	"fmt"
+	"math"
 	"syscall"
 	"testing"
 
@@ -125,17 +125,18 @@ func TestGetExplicitGroupMembers_AllocationFailure(t *testing.T) {
 	// bufsize > buf_max before calling malloc, so leaving buf_max at its
 	// default would trip that ERANGE check first and never reach malloc,
 	// making this indistinguishable from TestGetExplicitGroupMembers_ERANGERetryExceedsLimit.
-	grBufferInitialSize = 1 << 62
-	grBufferMaxSize = 1 << 62
+	// math.MaxInt/2 stays a valid int constant on both 32-bit and 64-bit
+	// platforms, unlike 1<<62 which overflows int on 32-bit builds.
+	grBufferInitialSize = math.MaxInt / 2
+	grBufferMaxSize = math.MaxInt / 2
 
 	currentGID := getCurrentUserGID(t)
 	_, found, err := getExplicitGroupMembers(currentGID)
 	require.Error(t, err)
 	assert.False(t, found)
 	assert.True(t, errors.Is(err, ErrGroupMemberEnumeration))
-	// The C errno is interpolated into the error message as plain text (not
-	// wrapped via %w), so match on the formatted value rather than errors.Is.
-	require.ErrorContains(t, err, fmt.Sprintf("C errno %d", syscall.ENOMEM))
+	// The C errno is now wrapped via %w, so callers can branch on it directly.
+	assert.True(t, errors.Is(err, syscall.ENOMEM))
 }
 
 func TestGetExplicitGroupMembers_InvalidGID(t *testing.T) {

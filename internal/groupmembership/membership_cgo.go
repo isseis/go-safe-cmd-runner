@@ -127,6 +127,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"syscall"
 	"unsafe"
 )
 
@@ -173,12 +174,14 @@ func getExplicitGroupMembers(gid uint32) (members []string, found bool, err erro
 	var count C.int
 	var cerr C.int
 
-	bufInitial := C.size_t(grBufferInitialSize)
-	bufMax := C.size_t(grBufferMaxSize)
+	// Clamp negative values before the signed->unsigned conversion; otherwise a
+	// negative int would wrap to a huge size_t and defeat the buf_max cap.
+	bufInitial := C.size_t(max(grBufferInitialSize, 0))
+	bufMax := C.size_t(max(grBufferMaxSize, 0))
 
 	cMembers := C.get_group_members(C.gid_t(gid), &count, &cerr, bufInitial, bufMax)
 	if cerr != 0 {
-		return nil, false, fmt.Errorf("%w: gid %d: C errno %d", ErrGroupMemberEnumeration, gid, int(cerr))
+		return nil, false, fmt.Errorf("%w: gid %d: C errno %d: %w", ErrGroupMemberEnumeration, gid, int(cerr), syscall.Errno(cerr))
 	}
 	if cMembers == nil {
 		return nil, false, nil
