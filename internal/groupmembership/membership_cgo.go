@@ -7,6 +7,7 @@ package groupmembership
 /*
 #include <sys/types.h>
 #include <grp.h>
+#include <pwd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -121,12 +122,99 @@ void free_string_array(char** arr, int count) {
     }
     free(arr);
 }
+
+// get_users_with_primary_gid returns all users whose primary GID matches gid.
+//
+// Two-value contract:
+//   non-NULL           : success. *count_out holds the number of users (>= 0).
+//   NULL && *err_out!=0: enumeration error. *err_out holds an errno-like value.
+//
+// This function is the sole caller of setpwent/getpwent/endpwent within the process.
+// Caller is responsible for freeing the returned array and its strings.
+char** get_users_with_primary_gid(gid_t gid, int* count_out, int* err_out) {
+    struct passwd *pw;
+    char **users = NULL;
+    int capacity = 0;
+    int count = 0;
+
+    *err_out = 0;
+    *count_out = 0;
+
+    setpwent();
+
+    for (;;) {
+        errno = 0;
+        pw = getpwent();
+        if (pw == NULL) {
+            if (errno != 0) {
+                *err_out = errno;
+            }
+            break;
+        }
+
+        if (pw->pw_gid != gid) {
+            continue;
+        }
+
+        if (count >= capacity) {
+            int new_capacity = capacity == 0 ? 16 : capacity * 2;
+            char **new_users = realloc(users, (new_capacity + 1) * sizeof(char*));
+            if (new_users == NULL) {
+                for (int i = 0; i < count; i++) {
+                    free(users[i]);
+                }
+                free(users);
+                endpwent();
+                *err_out = ENOMEM;
+                return NULL;
+            }
+            users = new_users;
+            capacity = new_capacity;
+        }
+
+        users[count] = strdup(pw->pw_name);
+        if (users[count] == NULL) {
+            for (int i = 0; i < count; i++) {
+                free(users[i]);
+            }
+            free(users);
+            endpwent();
+            *err_out = ENOMEM;
+            return NULL;
+        }
+        count++;
+    }
+
+    endpwent();
+
+    if (*err_out != 0) {
+        if (users != NULL) {
+            for (int i = 0; i < count; i++) {
+                free(users[i]);
+            }
+            free(users);
+        }
+        return NULL;
+    }
+
+    if (users == NULL) {
+        users = malloc(sizeof(char*));
+        if (users == NULL) {
+            *err_out = ENOMEM;
+            return NULL;
+        }
+    }
+    users[count] = NULL;
+    *count_out = count;
+    return users;
+}
 */
 import "C"
 
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"syscall"
 	"unsafe"
 )
@@ -188,7 +276,7 @@ func getExplicitGroupMembers(gid uint32) (members []string, found bool, err erro
 	}
 
 	if errv := validateGroupMemberCount(int(count)); errv != nil {
-		C.free_string_array(cMembers, 0)
+		C.free_string_array(cMembers, count)
 		return nil, false, fmt.Errorf("%w: gid %d: %w", ErrGroupMemberEnumeration, gid, errv)
 	}
 	defer C.free_string_array(cMembers, count)
@@ -202,7 +290,17 @@ func getExplicitGroupMembers(gid uint32) (members []string, found bool, err erro
 }
 
 // getGroupMembers returns all members of a group given its GID.
-// Phase 1 returns only explicit members; Phase 2 will add primary-GID members.
+//
+// Result is the union of explicit members (gr_mem) and users whose primary
+// GID matches the requested GID. This matches the non-CGO implementation
+// semantics.
+//
+// pwentMutex serialises all setpwent/getpwent/endpwent calls within this
+// package. It is held inside getUsersWithPrimaryGID.
+// Lock ordering: GroupMembership.cacheMutex -> pwentMutex.
+// Reverse acquisition is forbidden.
+var pwentMutex sync.Mutex
+
 func getGroupMembers(gid uint32) ([]string, error) {
 	members, found, err := getExplicitGroupMembers(gid)
 	if err != nil {
@@ -211,5 +309,57 @@ func getGroupMembers(gid uint32) ([]string, error) {
 	if !found {
 		return []string{}, nil
 	}
-	return members, nil
+
+	primary, err := getUsersWithPrimaryGID(gid)
+	if err != nil {
+		return nil, err
+	}
+
+	return mergeGroupMembers(members, primary)
+}
+
+// getUsersWithPrimaryGID returns users whose primary GID matches the given GID.
+func getUsersWithPrimaryGID(gid uint32) ([]string, error) {
+	pwentMutex.Lock()
+	defer pwentMutex.Unlock()
+	var count C.int
+	var cerr C.int
+
+	cUsers := C.get_users_with_primary_gid(C.gid_t(gid), &count, &cerr)
+	if cerr != 0 {
+		return nil, fmt.Errorf("%w: gid %d: %w", ErrGroupMemberEnumeration, gid, syscall.Errno(cerr))
+	}
+
+	if errv := validateGroupMemberCount(int(count)); errv != nil {
+		C.free_string_array(cUsers, count)
+		return nil, fmt.Errorf("%w: gid %d: %w", ErrGroupMemberEnumeration, gid, errv)
+	}
+	defer C.free_string_array(cUsers, count)
+
+	cArray := unsafe.Slice(cUsers, int(count))
+	users := make([]string, int(count))
+	for i, cStr := range cArray {
+		users[i] = C.GoString(cStr)
+	}
+	return users, nil
+}
+
+// mergeGroupMembers returns the union of explicit and primary member slices
+// with duplicate removal. Order is not guaranteed.
+func mergeGroupMembers(explicit, primary []string) ([]string, error) {
+	set := make(map[string]struct{})
+	for _, m := range explicit {
+		set[m] = struct{}{}
+	}
+	for _, m := range primary {
+		set[m] = struct{}{}
+	}
+	if errv := validateGroupMemberCount(len(set)); errv != nil {
+		return nil, fmt.Errorf("%w: merged member count: %w", ErrGroupMemberEnumeration, errv)
+	}
+	result := make([]string, 0, len(set))
+	for m := range set {
+		result = append(result, m)
+	}
+	return result, nil
 }
