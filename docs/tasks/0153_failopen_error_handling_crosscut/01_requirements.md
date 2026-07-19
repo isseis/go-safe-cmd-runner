@@ -13,7 +13,7 @@
 ## 関連 Issue
 
 - [#860 [Security][P1] エラー隠蔽による fail-open パターンの横断修正](https://github.com/isseis/go-safe-cmd-runner/issues/860)
-- 関連（解消済み）: [#858 [Security][H-1] groupmembership: getGroupMembers のエラー握りつぶしによる fail-open](https://github.com/isseis/go-safe-cmd-runner/issues/858) — D1 (groupmembership) H-1/M-1/M-2 は [docs/tasks/0150_groupmembership_getgrgid_failclosed](../0150_groupmembership_getgrgid_failclosed/) / [docs/tasks/0151_groupmembership_failclosed](../0151_groupmembership_failclosed/) で対応済み。#860 に挙げられている D1 の L-2/L-3 は本タスクでも対象外（未着手）。
+- 関連（解消済み）: [#858 [Security][H-1] groupmembership: getGroupMembers のエラー握りつぶしによる fail-open](https://github.com/isseis/go-safe-cmd-runner/issues/858) — D1 (groupmembership) H-1/M-1/M-2 は [docs/tasks/0150_groupmembership_getgrgid_failclosed](../0150_groupmembership_getgrgid_failclosed/) / [docs/tasks/0151_groupmembership_failclosed](../0151_groupmembership_failclosed/) で対応済み。[#860](https://github.com/isseis/go-safe-cmd-runner/issues/860) に挙げられている D1 の L-2/L-3 は本タスクでも対象外（未着手）。
 - 詳細所見:
   - [findings/C1_binary_analysis.md](../0149_security_code_smell_audit_fable/findings/C1_binary_analysis.md) F-1
   - [findings/C2_dynlib.md](../0149_security_code_smell_audit_fable/findings/C2_dynlib.md) F-3, F-5
@@ -22,7 +22,7 @@
 
 ## 背景
 
-Issue #860 は「解析・検証に失敗した場合、安全側ではなく『対象なし』『問題なし』と偽った判定に落ち込む」という同型の fail-open 欠陥がセキュリティクリティカル部に横断的に分布していると指摘している。このうち D1 (groupmembership) は既に #858 で個別対応済み（[0150](../0150_groupmembership_getgrgid_failclosed/)/[0151](../0151_groupmembership_failclosed/)）。本タスクは #860 に挙げられている残りの該当箇所（C1, C2, B3, A5 の各所見）をまとめて是正する。
+Issue #860 は「解析・検証に失敗した場合、安全側ではなく『対象なし』『問題なし』と偽った判定に落ち込む」という同型の fail-open 欠陥がセキュリティクリティカル部に横断的に分布していると指摘している。このうち D1 (groupmembership) は既に [#858](https://github.com/isseis/go-safe-cmd-runner/issues/858) で個別対応済み（[0150](../0150_groupmembership_getgrgid_failclosed/)/[0151](../0151_groupmembership_failclosed/)）。本タスクは [#860](https://github.com/isseis/go-safe-cmd-runner/issues/860) に挙げられている残りの該当箇所（C1, C2, B3, A5 の各所見）をまとめて是正する。
 
 現状コードを確認したところ、以下はいずれも未修正であることを確認済み（2026-07-19 時点）:
 
