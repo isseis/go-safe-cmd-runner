@@ -401,8 +401,9 @@ func (r *RedactingHandler) Handler() slog.Handler {
 
 // Handle redacts the log record and forwards it to the underlying handler
 func (r *RedactingHandler) Handle(ctx context.Context, record slog.Record) error {
-	// Create a new record with redacted attributes
-	newRecord := slog.NewRecord(record.Time, record.Level, record.Message, record.PC)
+	// Create a new record with redacted message and attributes
+	redactedMessage := r.config.RedactText(record.Message)
+	newRecord := slog.NewRecord(record.Time, record.Level, redactedMessage, record.PC)
 
 	record.Attrs(func(attr slog.Attr) bool {
 		// Use redactLogAttributeWithContext for full redaction support

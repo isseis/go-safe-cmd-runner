@@ -621,6 +621,57 @@ func TestRedactingHandler_Handle(t *testing.T) {
 	})
 }
 
+// TestRedactingHandler_Handle_MessageRedaction tests that record.Message is redacted
+func TestRedactingHandler_Handle_MessageRedaction(t *testing.T) {
+	t.Run("redacts key=value sensitive content in message", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+
+		ctx := context.Background()
+		record := slog.NewRecord(time.Now(), slog.LevelInfo, "Connecting with password=secret123 to server", 0)
+
+		err := handler.Handle(ctx, record)
+		require.NoError(t, err)
+		require.Len(t, mock.records, 1)
+
+		handledRecord := mock.records[0]
+		assert.NotContains(t, handledRecord.Message, "secret123")
+		assert.Contains(t, handledRecord.Message, "password=")
+		assert.Contains(t, handledRecord.Message, "[REDACTED]")
+	})
+
+	t.Run("redacts value-detected sensitive content in message", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+
+		ctx := context.Background()
+		record := slog.NewRecord(time.Now(), slog.LevelInfo, "Session used AKIAIOSFODNN7EXAMPLE without a recognizable key name", 0)
+
+		err := handler.Handle(ctx, record)
+		require.NoError(t, err)
+		require.Len(t, mock.records, 1)
+
+		handledRecord := mock.records[0]
+		assert.NotContains(t, handledRecord.Message, "AKIAIOSFODNN7EXAMPLE")
+		assert.Contains(t, handledRecord.Message, "key name")
+	})
+
+	t.Run("preserves non-sensitive message unchanged", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+
+		ctx := context.Background()
+		record := slog.NewRecord(time.Now(), slog.LevelInfo, "User logged in successfully", 0)
+
+		err := handler.Handle(ctx, record)
+		require.NoError(t, err)
+		require.Len(t, mock.records, 1)
+
+		handledRecord := mock.records[0]
+		assert.Equal(t, "User logged in successfully", handledRecord.Message)
+	})
+}
+
 // TestRedactingHandler_WithAttrs tests attribute addition with redaction
 func TestRedactingHandler_WithAttrs(t *testing.T) {
 	mock := newMockHandler()

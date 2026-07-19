@@ -75,11 +75,11 @@ recover は reflection を伴う複合値の処理のためのものであり、
 
 ## 実装チェックリスト
 
-- [ ] `internal/redaction/redactor.go` の `RedactingHandler.Handle` を修正し、
+- [x] `internal/redaction/redactor.go` の `RedactingHandler.Handle` を修正し、
       `record.Message` に `RedactText` を適用する
-- [ ] `internal/redaction/redactor_test.go` にメッセージ本文 redaction のテストを追加
+- [x] `internal/redaction/redactor_test.go` にメッセージ本文 redaction のテストを追加
       (AC-01, AC-02, AC-03)
-- [ ] `make fmt` / `make test` / `make lint` を実行し、既存テストにリグレッションがないこと
+- [x] `make fmt` / `make test` / `make lint` を実行し、既存テストにリグレッションがないこと
       を確認する (AC-04)
 - [ ] Issue #859 をクローズ（PR とリンク）
 
