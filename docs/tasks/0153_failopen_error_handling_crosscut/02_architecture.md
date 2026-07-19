@@ -80,6 +80,7 @@ flowchart LR
 | 修正対象パッケージ | 修正対象関数 | 所見 ID | 呼び出し元 |
 |---|---|---|---|
 | `internal/security/elfanalyzer/` | `standard_analyzer.go` — `lookupSyscallAnalysis` | C1 F-1 | `AnalyzeNetworkSymbols` |
+| `internal/elfmagic/`（新規） | `elfmagic.go` — `Is` | C2 F-3 | `elfdynlib.Analyze`, `elfanalyzer`（ELF マジック判定の共有実装） |
 | `internal/dynlib/elfdynlib/` | `analyzer.go` — `Analyze`, `parseELFDeps` | C2 F-3 | record コマンド（dynlib 解析） |
 | `internal/dynlib/machodylib/` | `analyzer.go` — `parseMachODeps`, `HasDynamicLibDeps` | C2 F-3, C2 F-5 | record コマンド / runner（dynlib 解析 / ErrDynLibDepsRequired 判定） |
 | `internal/verification/` | `manager.go` — `collectVerificationFiles`, `hasDynamicLibraryDeps` | B3 M1, B3 L1 | runner（group_executor） |
@@ -90,7 +91,8 @@ flowchart LR
 | 修正対象ファイル | 修正対象関数 | 所見 ID | 修正内容概要 |
 |---|---|---|---|
 | `internal/security/elfanalyzer/standard_analyzer.go` | `lookupSyscallAnalysis` | C1 F-1 | `default` エラーを fail-closed 化 |
-| `internal/dynlib/elfdynlib/analyzer.go` | `Analyze`, `parseELFDeps` | C2 F-3 | 子依存パース失敗・トップレベルエラーを fail-closed 化 |
+| `internal/elfmagic/elfmagic.go`（新規） | `Is` | C2 F-3 | ELF マジック判定を `elfanalyzer` と `elfdynlib` で共有する新規パッケージ |
+| `internal/dynlib/elfdynlib/analyzer.go` | `Analyze`, `parseELFDeps` | C2 F-3 | 子依存パース失敗・トップレベルエラーを fail-closed 化。マジック判定は `elfmagic.Is` を使用 |
 | `internal/dynlib/machodylib/analyzer.go` | `Analyze`, `HasDynamicLibDeps` | C2 F-3, C2 F-5 | `parseMachODeps` 失敗を fail-closed 化、`Seek`/`io.ReadFull` 失敗を fail-closed 化 |
 | `internal/verification/manager.go` | `collectVerificationFiles`, `hasDynamicLibraryDeps` | B3 M1, B3 L1 | パス解決失敗・`DynString` エラーを fail-closed 化 |
 | `internal/runner/base/risk/evaluator.go` | `applyBinaryAnalysis` | A5 Low-3 | `default` 節追加 |
@@ -157,7 +159,20 @@ flowchart LR
 
 #### 3.2.3 修正後
 
-**ELF トップレベル解析**: ELF マジックチェックを導入する。`elfdynlib` パッケージ内に `isELFMagic` 関数と ELF マジックバイト定数を新規定義する（`elfanalyzer.isELFMagic`（`standard_analyzer.go:288`）は同種の実装を既に持つが非公開関数のため他パッケージから再利用できず、`elfdynlib` パッケージ内で独立して定義する）。処理の分岐は以下のとおり:
+**ELF トップレベル解析**: ELF マジックチェックを導入する。判定ロジックは `elfanalyzer.isELFMagic`（`standard_analyzer.go:288`、非公開）と実質同一であり、`elfdynlib` 側にも同じ判定が新たに必要になる。以下の理由から、両パッケージで重複実装するのではなく、新規パッケージ `internal/elfmagic` を切り出して共有する:
+
+- **重複回避（DRY）**: ELF マジックバイト（`\x7fELF`）とその比較ロジックは、`elfanalyzer` と `elfdynlib` の双方が現時点で必要とする実装であり、将来に備えた予防的な抽象化ではない。
+- **依存方向の妥当性**: `elfanalyzer.isELFMagic` を公開して `elfdynlib` から import する案は、依存解決を担う基盤寄りの `elfdynlib` が、syscall リスク解析を担う上位レイヤの `elfanalyzer` に依存するという逆行した結合を生む。`internal/elfmagic` はどちらのパッケージにも属さない leaf ユーティリティとして両者から依存される形にし、依存方向を自然に保つ。
+- **コスト**: 新規ファイルは定数とごく短い比較関数のみ（10数行）。`elfanalyzer/standard_analyzer.go` は C1 F-1 の修正で既に本タスクの変更対象に含まれているため、そこでの置き換え（`isELFMagic` 呼び出しを `elfmagic.Is` に差し替え）は範囲外のコードへの侵食にはあたらない。
+
+`internal/elfmagic` パッケージの内容:
+- `Magic []byte`（`\x7fELF`）、`Len int`（4）を公開定数/変数として定義。
+- `Is(b []byte) bool`: 先頭 `Len` バイトが `Magic` と一致するかを判定する（既存の `isELFMagic` と同一のロジック）。
+- 依存先は `bytes` のみ。他パッケージへの依存を持たない leaf パッケージとする。
+
+`elfanalyzer/standard_analyzer.go` の既存 `isELFMagic`／`elfMagic`／`elfMagicLen` は `elfmagic.Is`／`elfmagic.Magic`／`elfmagic.Len` の呼び出しに置き換え、重複定義を削除する（`AnalyzeNetworkSymbols` 等の既存呼び出し元の挙動に変更はない）。
+
+`elfdynlib` 側は `elfmagic.Is` を用いて ELF トップレベル解析のマジックチェックを行う。処理の分岐は以下のとおり:
 
 1. ファイル先頭から ELF マジック（4 バイト）を読み取る。読み取りに失敗するかマジックが不一致の場合は、非 ELF ファイルとして `nil, nil` を返す（正常系のスクリプト等に対応）。
 2. マジック一致時は、Seek で先頭に戻したのち `elf.NewFile` を試行する。`elf.NewFile` 失敗時はエラーを返す（fail-closed）。
@@ -175,7 +190,10 @@ flowchart LR
 
 | ファイル | 関数/構造体 | 責務 | 変更種別 |
 |---|---|---|---|
-| `internal/dynlib/elfdynlib/analyzer.go` | `Analyze` | ELF トップレベル解析。マジックチェック導入、エラー伝播 | 修正 |
+| `internal/elfmagic/elfmagic.go` | `Magic`, `Len`, `Is` | ELF マジックバイトの定義と判定。`elfanalyzer`／`elfdynlib` から共有利用される leaf ユーティリティ | 追加（新規パッケージ） |
+| `internal/elfmagic/elfmagic_test.go` | `TestIs` | 新規追加 | 追加 |
+| `internal/security/elfanalyzer/standard_analyzer.go` | `isELFMagic`, `elfMagic`, `elfMagicLen` | 重複定義を削除し `elfmagic.Is`／`elfmagic.Magic`／`elfmagic.Len` の呼び出しに置き換え | 修正（削除+置換） |
+| `internal/dynlib/elfdynlib/analyzer.go` | `Analyze` | ELF トップレベル解析。`elfmagic.Is` によるマジックチェック導入、エラー伝播 | 修正 |
 | `internal/dynlib/elfdynlib/analyzer.go` | `Analyze`（BFSループ内） | 子依存パース失敗をエラー伝播 | 修正 |
 | `internal/dynlib/machodylib/analyzer.go` | `Analyze`（BFSループ内） | 子依存パース失敗をエラー伝播 | 修正 |
 | `internal/dynlib/elfdynlib/analyzer_test.go` | `TestAnalyze_TopLevelELFMagicMismatch` 他 | 新規追加 | 追加 |
@@ -184,7 +202,9 @@ flowchart LR
 
 #### 3.2.5 インタフェース変更
 
-なし。`Analyze` の戻り値シグネチャ（ELF: `([]fileanalysis.LibEntry, error)`、Mach-O: `([]fileanalysis.LibEntry, []AnalysisWarning, error)`）は変更しない。エラー伝播は既存のエラーリターンパスを使用する。
+`Analyze` 自体の戻り値シグネチャ（ELF: `([]fileanalysis.LibEntry, error)`、Mach-O: `([]fileanalysis.LibEntry, []AnalysisWarning, error)`）は変更しない。エラー伝播は既存のエラーリターンパスを使用する。
+
+新規に `internal/elfmagic` パッケージの公開 API（`Magic`, `Len`, `Is`）を追加する。`elfanalyzer` パッケージの `isELFMagic` 等は非公開関数であったため、削除・置換による外部インタフェースへの影響はない。
 
 #### 3.2.6 呼び出し元への影響
 
@@ -605,13 +625,13 @@ flowchart TD
 | Phase 3 | B3 M1（`collectVerificationFiles`） | なし | 中（シグネチャ変更あり） |
 | Phase 4 | C1 F-1（`lookupSyscallAnalysis`） | なし | 低（`default` 節の変更のみ） |
 | Phase 5 | C2 F-5（`HasDynamicLibDeps`） | なし | 低（エラー伝播追加のみ） |
-| Phase 6 | C2 F-3（ELF/Mach-O 子依存パース） | なし | 中（マジックチェック導入あり） |
+| Phase 6 | C2 F-3（ELF/Mach-O 子依存パース、`internal/elfmagic` 新設） | ファイル競合注意（下記） | 中（マジックチェック導入あり） |
 
-全フェーズは互いに独立しており、並行して実装可能である。
+機能的な依存関係はなく全フェーズ並行実装可能だが、Phase 6 は `internal/elfmagic` への切り出しに伴い `internal/security/elfanalyzer/standard_analyzer.go` を変更する。同ファイルは Phase 4（C1 F-1）でも変更対象であるため、両フェーズを別ブランチ/別PRで並行実装する場合はマージ時のファイル競合に注意する。
 
 ### 8.2 実装順序の根拠
 
-フェーズを変更量とリスクで昇順に並べている。Phase 1（A5 Low-3: `default` 節追加のみ）から着手し、Phase 6（C2 F-3: マジックチェック導入）を最後にすることで、各修正の影響を個別に確認しながら進められる。
+フェーズを変更量とリスクで昇順に並べている。Phase 1（A5 Low-3: `default` 節追加のみ）から着手し、Phase 6（C2 F-3: マジックチェック導入、`internal/elfmagic` 新設）を最後にすることで、各修正の影響を個別に確認しながら進められる。Phase 6 を最後に置くことで、`standard_analyzer.go` に対する Phase 4 の変更が先に確定し、Phase 6 での `isELFMagic` 置き換えがその上に素直に積み重なる。
 
 ---
 
@@ -622,6 +642,7 @@ flowchart TD
 - **エラー型の統一**: 現状、各パッケージが独自のエラー型を使用している。将来的に「エラー握りつぶしによる fail-open」パターンを静的に検出する lint ルールを導入できるよう、エラーハンドリングのパターンを統一することが考えられる。ただし、本タスクのスコープ外であり、YAGNI の原則から本設計では扱わない。
 - **slog.Warn の頻度**: ログレベルを `Debug` から `Warn` に格上げする箇所（AC-03, AC-04, AC-06）は、実運用上のログ出力量に影響を与えうる。`01_requirements.md` の非機能要件に従い、実装後にログ出力量の検証を行う必要がある。
 - **パフォーマンス**: ELF `Analyze` のマジックチェックは、解析対象バイナリ1件あたり `io.ReadFull(4)` + `Seek(0, SeekStart)` の2回の追加 syscall を発生させる。1回の record 処理で数万のバイナリを解析するユースケースでは線形のオーバーヘッドとなるが、追加コストは1バイナリあたり O(1) であり、ハッシュ計算（ファイル全体の読み取り）に比べて無視できる。`safefileio.SafeOpenFile` が返す File は Linux/macOS ともに `io.Seeker` を実装しており、Seek の型アサーション失敗による分析不能化は発生しない。
+- **Mach-O 側のマジック判定重複**: 本設計では ELF 側のマジック判定を `internal/elfmagic` に切り出したが、Mach-O 側には `internal/security/machoanalyzer/standard_analyzer.go` の `isMachOMagic`、同 `svc_scanner.go` の `isMachOMagicAll`、`internal/dynlib/machodylib/analyzer.go` の `looksLikeMachO` という3つの独立実装が既に存在する（判定対象マジック値の集合が異なる可能性があり要棚卸し）。本タスクのスコープ外のため対応せず、フォローアップとして [issue #876](https://github.com/isseis/go-safe-cmd-runner/issues/876) に切り出した。
 - **未着手の類似パターン**:
   - `internal/filevalidator/validator.go` の `//nolint:nilerr` パターン（`validator.go:1587`: Symtab 不在を空スライスに縮退、`validator.go:1652`: Mach-O パース失敗を `nil, nil` に縮退）は、本タスクと同型の fail-open パターンである。これらは record パス（`cmd/record/main.go`）のみに影響し、verify 時の fail-open には該当しない。`01_requirements.md` のスコープ定義に従い本タスクでは対象外とするが、将来のタスクで対応可能である。
   - D1 (groupmembership) L-2/L-3: `01_requirements.md` スコープ外。未着手。
