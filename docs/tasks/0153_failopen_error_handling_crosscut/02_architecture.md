@@ -116,11 +116,13 @@ flowchart LR
 `default` 節の挙動を変更する:
 - ログレベルを `slog.Debug` から `slog.Warn` に格上げする。
 - 戻り値を `binaryanalyzer.AnalysisError`（fail-closed）に変更する。
-- エラー文脈は `ErrSyscallAnalysisHighRisk` によるラップで上位に伝播させる。
+- エラー文脈は新規 sentinel error `ErrSyscallStoreIOError` によるラップで上位に伝播させる。
 
-運用上のトレーサビリティを確保するため、ログ出力には `"reason"` 構造化フィールドを追加し、値 `"store_io_error"` を設定する。これにより、オンコールエンジニアがログから「インフラ障害」と「本物のセキュリティ検知（`ErrSyscallAnalysisHighRisk` に一致するケース）」を区別できる。
+> **既存の `ErrSyscallAnalysisHighRisk` を再利用しない理由**: `ErrSyscallAnalysisHighRisk`（`standard_analyzer.go:41`）は既に `convertSyscallResult` 内で「未知 syscall の検出」「mprotect PROT_EXEC リスク検知」という、**解析が成功したうえで実際に高リスクと判定した**ケース専用の sentinel として使われている（同ファイル:352）。`default` ケースはストアの想定外 I/O エラーであり、解析自体が完了していない。両者を同一 sentinel に束ねると、`errors.Is(err, ErrSyscallAnalysisHighRisk)` だけでは「本物のセキュリティ検知」と「インフラ障害」を区別できなくなり、本設計の核心原則（§1.1: 「解析不能・エラー」と「対象なし・問題なし」の区別）と同種の区別を、今度はエラー型のレベルで壊してしまう。そのため `default` ケースには専用の新規 sentinel `ErrSyscallStoreIOError` を導入する。
 
-> **設計判断**: 既存の `ErrHashMismatch` ケースが使う `ErrSyscallHashMismatch` と、新しい `default` ケースが使う `ErrSyscallAnalysisHighRisk` は異なる sentinel error である。呼び出し元は `errors.Is(err, ErrSyscallHashMismatch)` でハッシュ不一致（改ざん検知）を、`errors.Is(err, ErrSyscallAnalysisHighRisk)` で解析系エラー（I/O 障害または高リスク検知）を区別できる。両者とも `AnalysisError` を返す点で制御フロー上の fail-closed 動作は同一だが、エラー種別の区別は監視・アラート設計に必要である。
+運用上のトレーサビリティを確保するため、ログ出力には `"reason"` 構造化フィールドを追加し、値 `"store_io_error"` を設定する。これにより、オンコールエンジニアがログおよびエラー型の両方から「インフラ障害（`ErrSyscallStoreIOError`）」と「本物のセキュリティ検知（`ErrSyscallAnalysisHighRisk`）」を区別できる。
+
+> **設計判断**: `default` ケースが使う新規 `ErrSyscallStoreIOError`、既存の `ErrHashMismatch` ケースが使う `ErrSyscallHashMismatch`、および `convertSyscallResult` が使う既存の `ErrSyscallAnalysisHighRisk` は、いずれも異なる sentinel error である。呼び出し元は `errors.Is(err, ErrSyscallHashMismatch)` でハッシュ不一致（改ざん検知）を、`errors.Is(err, ErrSyscallStoreIOError)` でストアの I/O 障害を、`errors.Is(err, ErrSyscallAnalysisHighRisk)` で解析成功後の高リスク検知を、それぞれ区別できる。三者とも `AnalysisError` を返す点で制御フロー上の fail-closed 動作は同一だが、エラー種別の区別は監視・アラート設計に必要である。
 
 #### 3.1.3 責務表
 
@@ -128,6 +130,7 @@ flowchart LR
 |---|---|---|---|
 | `internal/security/elfanalyzer/standard_analyzer.go` | `lookupSyscallAnalysis` | syscall analysis store の検索。想定外エラーを fail-closed（AnalysisError）で返す | 修正 |
 | `internal/security/elfanalyzer/standard_analyzer.go` | `AnalyzeNetworkSymbols` | 呼び出し元。AnalysisError を受け取った場合の既存の挙動で正しく動作する | 変更不要 |
+| `internal/security/elfanalyzer/errors.go`（または `standard_analyzer.go`） | `ErrSyscallStoreIOError`（新規 sentinel） | ストア I/O エラーを `ErrSyscallAnalysisHighRisk`（高リスク検知専用）と区別するための新規エラー変数 | 追加 |
 | `internal/security/elfanalyzer/analyzer_test.go` | `TestLookupSyscallAnalysis_StoreIOError` | 新規追加 | 追加 |
 
 #### 3.1.4 インタフェース変更
@@ -154,7 +157,7 @@ flowchart LR
 
 #### 3.2.3 修正後
 
-**ELF トップレベル解析**: ELF マジックチェックを導入する。`elfdynlib` パッケージ内に `isELFMagic` 関数と ELF マジックバイト定数を新規定義する（`elfanalyzer` への新規依存を避けるため、パッケージ内で独立して定義する）。処理の分岐は以下のとおり:
+**ELF トップレベル解析**: ELF マジックチェックを導入する。`elfdynlib` パッケージ内に `isELFMagic` 関数と ELF マジックバイト定数を新規定義する（`elfanalyzer.isELFMagic`（`standard_analyzer.go:288`）は同種の実装を既に持つが非公開関数のため他パッケージから再利用できず、`elfdynlib` パッケージ内で独立して定義する）。処理の分岐は以下のとおり:
 
 1. ファイル先頭から ELF マジック（4 バイト）を読み取る。読み取りに失敗するかマジックが不一致の場合は、非 ELF ファイルとして `nil, nil` を返す（正常系のスクリプト等に対応）。
 2. マジック一致時は、Seek で先頭に戻したのち `elf.NewFile` を試行する。`elf.NewFile` 失敗時はエラーを返す（fail-closed）。
@@ -286,7 +289,7 @@ flowchart LR
 #### 3.5.5 呼び出し元への影響
 
 - `verifyDynLibDeps`（同ファイル:664）は `hasDynamicLibraryDeps` のエラーを `fmt.Errorf` でラップして上位に伝播しているため、追加の変更は不要。
-- `verifyDynLibDeps` の呼び出し元 `VerifyCommandDynLibDeps`（同ファイル:592）は、このエラーを `VerifyCommandChains` → `group_executor` へ伝播する。dry-run モード時、`group_executor` は検証エラーを `ResultCollector` に記録し、致命的エラーとしては扱わない既存のパスが存在する。したがって、B3 L1 の修正は dry-run モードの非致命的挙動を変更しない。
+- `verifyDynLibDeps` の呼び出し元 `VerifyCommandDynLibDeps`（同ファイル:592）は、このエラーを `group_executor.go` の `verifyGroupFiles` 内の一括検証ループ（442行目、`dlErr`）へ伝播する。当該箇所はエラーを受け取ると即座に `return dlErr` し、`ExecuteGroup` まで伝播してグループ実行を中断する。この経路には `ResultCollector` 記録や dry-run 用のバイパスは存在しない（`ResultCollector` は `manager.go` の `verifyFileWithHash`、すなわちファイルハッシュ検証専用であり、dynlib 依存チェックの経路には関与しない）。したがって、**B3 L1 の修正により、これまで `(false, nil)` で静かに通過していたケースが、dry-run を含めてグループ実行を中断させるようになる**。これは AC-10/AC-15 が要求する fail-closed 化そのものであり意図した挙動だが、dry-run のプレビュー継続性には影響する（詳細は §5.3）。
 
 ---
 
@@ -350,11 +353,11 @@ flowchart LR
 
 ### 4.3 新規エラー型
 
-新規のエラー型は導入しない。既存のエラー型を以下のとおり再利用する:
+C1 F-1 の `default` ケース用に新規 sentinel error `ErrSyscallStoreIOError` を1つ導入する（既存の `ErrSyscallAnalysisHighRisk` は解析成功後の高リスク検知専用のため転用しない。理由は §3.1.2 を参照）。それ以外は既存のエラー型を以下のとおり再利用する:
 
-| 修正箇所 | 使用する既存型 / パターン |
+| 修正箇所 | 使用する型 / パターン |
 |---|---|
-| C1 F-1 | `binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.AnalysisError}`, `ErrSyscallAnalysisHighRisk` によるラップ |
+| C1 F-1 | `binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.AnalysisError}`, 新規 `ErrSyscallStoreIOError` によるラップ |
 | C2 F-3 | `fmt.Errorf("...: %w", err)` によるラップ |
 | C2 F-5 | `fmt.Errorf("...: %w", err)` によるラップ |
 | B3 M1 | `OpError` によるラップ |
@@ -429,18 +432,21 @@ flowchart TD
 
 - **record/verify の失敗率上昇**: これまでエラーを握りつぶして続行していた環境（一過性の I/O エラー等）では、record/verify が失敗するようになる。ユーザーへの影響を最小化するため、エラーメッセージは具体的な原因（どのファイルの、どの操作が、どのような理由で失敗したか）を含める。構造化ログフィールド（§4.2）により、オンコールエンジニアは障害カテゴリをプログラム的に特定できる。
 - **C2 F-3 BFS traversal の影響範囲**: 依存ツリー中の1つの破壊されたライブラリが、当該バイナリの全依存記録を失敗させる（§3.2.3 参照）。
-- **dry-run モード**: 本修正は dry-run モードにおいて以下の挙動となる:
-  - C1 F-1, C2 F-3, C2 F-5, B3 L1: 修正対象関数がエラーを返した場合、呼び出し元の group_executor は検証エラーを `ResultCollector` に記録し、dry-run では致命的エラーとして扱わない（既存の dry-run パスがこの挙動を維持する）。
-  - B3 M1: `VerifyGroupFiles` の `collectVerificationFiles` エラーは `OpError` として返る。group_executor の dry-run パスは `VerifyGroupFiles` のエラーを `ResultCollector` に記録し、プレビュー継続が可能である。
-  - dry-run と runtime の間で、一過性 I/O エラーにより結果が分岐する可能性は存在する。しかし、これは fail-closed 方針の不可避の帰結である。すなわち、fail-closed の定義上 dry-run は失敗を報告する側に倒れるため、dry-run が「安全」と報告した後に runtime が失敗することは起こらない。
+- **dry-run モード**: 修正箇所によって、dry-run 時の扱いが異なる（一括りに「非致命的」ではない点に注意）:
+  - **C2 F-3**: `record` コマンド（`cmd/record/main.go`）の解析経路でのみ発生する。`record` コマンドに `--dry-run` 相当のフラグは存在しない（`cmd/record/main.go` のフラグ定義を参照）ため、runner の dry-run モードとは無関係であり、修正後は record 処理自体がエラーで失敗する。
+  - **C1 F-1**: `EvaluateRisk` を経由し、`plan.Assessment.Blocking` として risk evaluator の結果に現れる。runner の dry-run 実行は `internal/runner/resource/dryrun_manager.go` の専用パスを持ち、そこでは `Blocking` を（`normal_manager.go` のように `ErrCommandSecurityViolation` で即中断するのではなく）分析結果に説明を付与する形で扱う。したがって C1 F-1 の fail-closed 化は、dry-run のプレビュー継続性を壊さない可能性が高い（実装時に `dryrun_manager.go` 経由のケースで確認する）。
+  - **C2 F-5 / B3 L1**: `VerifyCommandDynLibDeps` のエラーは `group_executor.go` の `verifyGroupFiles` 内の一括検証ループ（442行目）で即座に `return dlErr` され、`ExecuteGroup` まで伝播する。この経路に dry-run 用のバイパスは存在しない。したがって **dry-run でもグループ実行が中断されるようになる**（従来は `(false, nil)` で静かに通過していた）。
+  - **B3 M1**: `collectVerificationFiles` のエラーは `VerifyGroupFiles` 内で即座に `OpError` として返る（§3.4.2）。これは `VerifyGroupFiles` 内の既存 dry-run バイパス（`FailedFiles` 後処理限定、`m.isDryRun` チェック）よりも前の段階で発生するため、同様に **dry-run でも検証が中断される**。
+  - 上記のとおり、C2 F-5 / B3 L1 / B3 M1 は dry-run の非致命的挙動を変更する（これまで見えなかった fail-open 経路を dry-run でも顕在化させる）。これは fail-closed 化の意図と整合するが、運用者への影響（プレビューが以前より失敗しやすくなる）として明示し、リリースノート等で周知する必要がある。
 - **後方互換性**: 正常系（エラーが発生しないケース）の挙動は変更されない。すべての AC が正常系のリグレッション防止を要求している。
 
 ### 5.4 ロールアウト安全性
 
 本修正のデプロイにあたり、以下のリスクと推奨手順を考慮する:
 
-- **record データの再取得**: C2 F-3 修正後、依存ツリーに破壊されたライブラリを含むバイナリの record が新たに失敗するようになる。デプロイ前に、影響を受けるバイナリを特定するために、修正後のバイナリで `record --dry-run` を実行し、失敗するバイナリの一覧を事前に取得することを推奨する。
+- **record データの再取得**: C2 F-3 修正後、依存ツリーに破壊されたライブラリを含むバイナリの record が新たに失敗するようになる。`record` コマンドに dry-run 相当のフラグは存在しない（§5.3 参照）ため、デプロイ前に影響を受けるバイナリを特定するには、修正後のバイナリで実際に `record` を実行し、失敗するバイナリの一覧を確認する必要がある。
 - **段階的ロールアウト**: strict/lenient モードのトグルは本設計では提供しない（YAGNI）。fail-closed への移行は一括で行い、事前テストで影響範囲を確認する。
+- **runner dry-run プレビューの再確認**: §5.3 のとおり、C2 F-5 / B3 L1 / B3 M1 は runner の dry-run 実行を新たに中断させ得る。本番デプロイ前に、既存の運用構成（グループ定義）に対して修正後のバイナリで dry-run を実行し、想定外の中断が発生しないことを確認する。
 - **アラート設計**: C1 F-1 の `"reason": "store_io_error"` ログに対するアラートを設定し、syscall store の I/O 障害を検知できるようにする。
 
 ---
