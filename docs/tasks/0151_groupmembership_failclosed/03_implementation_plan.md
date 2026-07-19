@@ -155,34 +155,34 @@ CGO ビルドの意味論等価テストから再利用する。
 
 作業内容:
 
-- [ ] `membership_cgo.go` に C 関数 `get_users_with_primary_gid` を、02_architecture.md §3.3 の
+- [x] `membership_cgo.go` に C 関数 `get_users_with_primary_gid` を、02_architecture.md §3.3 の
       契約（`setpwent`→`getpwent`ループ→`endpwent` を 1 回の C 呼び出し内で完結、
       `errno` によるループ終端とエラーの区別、`pw_gid` 一致時の即時 `strdup`、
       `malloc`/`strdup` 失敗時の `ENOMEM`、一致 0 人は「成功・`*count_out = 0`」、
       エラーパスを含め `endpwent` を必ず対で呼ぶ）どおりに実装する。
-- [ ] パッケージレベルの `sync.Mutex` を `membership_cgo.go` に追加し、
+- [x] パッケージレベルの `sync.Mutex` を `membership_cgo.go` に追加し、
       `get_users_with_primary_gid` の呼び出し全体（C 呼び出し前後、Go 側マージ前まで）を
       シリアライズする。`getGroupMembers`（CGO 版）内部でこのミューテックスを取得・解放し、
       呼び出し元はミューテックスを意識しない。ロック順序は
       「`GroupMembership.cacheMutex` → 列挙ミューテックス」の一方向に固定し、
       コード内コメントで明記する（逆順取得の禁止。02_architecture.md §3.3）。
-  - [ ] `getGroupMembers` の Go 実装は本パッケージ内で唯一の
+  - [x] `getGroupMembers` の Go 実装は本パッケージ内で唯一の
         `setpwent`/`getpwent`/`endpwent` 呼び出し元であるという不変条件を、
         関数コメントに明記する（02_architecture.md §3.3, §5.4）。
-- [ ] Go 側非公開ラッパ `getUsersWithPrimaryGID(gid uint32) ([]string, error)` を追加し、
+- [x] Go 側非公開ラッパ `getUsersWithPrimaryGID(gid uint32) ([]string, error)` を追加し、
       三値契約の中間状態（未存在）を持たない二値契約とする。`getExplicitGroupMembers` と同じ
       C 境界の防御パターン（`validateGroupMemberCount` によるカウント検証 → 検証後に
       `defer free_string_array` 登録 → `unsafe.Slice` による変換）を適用する
       （02_architecture.md §1.1 の原則 4「既存資産の再利用」は `get_group_members` に限らず
       すべての C 境界関数に適用される）。
-- [ ] CGO 版 `getGroupMembers(gid uint32) ([]string, error)` を、02_architecture.md §3.4 の
+- [x] CGO 版 `getGroupMembers(gid uint32) ([]string, error)` を、02_architecture.md §3.4 の
       契約へ更新する。
-  - [ ] `getExplicitGroupMembers` がエラーなら `(nil, error)`。
-  - [ ] `found == false`（未存在）なら `getUsersWithPrimaryGID` を呼ばずに `([], nil)` を返す
+  - [x] `getExplicitGroupMembers` がエラーなら `(nil, error)`。
+  - [x] `found == false`（未存在）なら `getUsersWithPrimaryGID` を呼ばずに `([], nil)` を返す
         （非 CGO 版の早期リターンに合わせる境界確定。AC-07 の前提）。
-  - [ ] 存在する場合は `getUsersWithPrimaryGID` を呼び、エラーなら `(nil, error)`。
-   - [ ] マージ処理を非公開関数 `mergeGroupMembers(explicit, primary []string) ([]string, error)`
-         として `membership_cgo.go` に切り出す。明示メンバーとプライマリメンバーを
+  - [x] 存在する場合は `getUsersWithPrimaryGID` を呼び、エラーなら `(nil, error)`。
+   - [x] マージ処理を非公開関数 `mergeGroupMembers(explicit, primary []string) ([]string, error)`
+          として `membership_cgo.go` に切り出す。明示メンバーとプライマリメンバーを
          `map[string]struct{}` で和集合マージし
         （重複除去、順序保証なし）、マージ後の件数を `validateGroupMemberCount` で再検証する
         （02_architecture.md §5.5「件数上限」。マージにより単独の入力では上限を超えない
@@ -190,24 +190,24 @@ CGO ビルドの意味論等価テストから再利用する。
         マージ後の最終集合の双方を検証する）。関数として切り出すことで、実 NSS では再現困難な
         マージ後件数超過（下記テスト参照）を決定的にテストできる。`getGroupMembers` はこの
         `mergeGroupMembers` を呼び出す薄い実装とする。
-- [ ] 共有パースヘルパを新規ファイル `membership_files.go`（`//go:build !cgo || test`）へ移動する
+- [x] 共有パースヘルパを新規ファイル `membership_files.go`（`//go:build !cgo || test`）へ移動する
       （02_architecture.md §3.6）。ロジック変更は行わない。
-  - [ ] `groupEntry` 型を移動する。
-  - [ ] `parseGroupLine` を移動する。
-  - [ ] `parsePasswdLine` を移動する。
-  - [ ] `findGroupByGID` を移動する。
-  - [ ] `findUsersWithPrimaryGID` を移動する。
-  - [ ] `membership_nocgo.go` からこれら 5 シンボルの定義を削除し、`getGroupMembers` の実装
+  - [x] `groupEntry` 型を移動する。
+  - [x] `parseGroupLine` を移動する。
+  - [x] `parsePasswdLine` を移動する。
+  - [x] `findGroupByGID` を移動する。
+  - [x] `findUsersWithPrimaryGID` を移動する。
+  - [x] `membership_nocgo.go` からこれら 5 シンボルの定義を削除し、`getGroupMembers` の実装
         （呼び出しロジック）のみを残す（振る舞い不変）。
 
 テスト:
 
-- [ ] `membership_cgo_test.go` に `TestGetGroupMembers_IncludesPrimaryGroupMembers` を追加する
+- [x] `membership_cgo_test.go` に `TestGetGroupMembers_IncludesPrimaryGroupMembers` を追加する
       （CGO ビルド）。実行ユーザーのプライマリ GID を `getGroupMembers` で列挙し、結果に
       実行ユーザー名が含まれることを確認する（AC-06）。`user.Current()` が失敗する場合、または
       実行ユーザーのプライマリ GID に対応するグループエントリが存在しない場合は
       `t.Skip` する（02_architecture.md §7.1 の境界ケース。実装の欠陥ではない）。
-- [ ] `membership_cgo_test.go` に `TestGetGroupMembers_MergedCountExceedsMaximum` を追加する
+- [x] `membership_cgo_test.go` に `TestGetGroupMembers_MergedCountExceedsMaximum` を追加する
       （CGO ビルド、AC-06 に付随する境界値テスト）。`getExplicitGroupMembers` と
       `getUsersWithPrimaryGID` はそれぞれ `maxGroupMembers` 以下だが、和集合では
       `maxGroupMembers` を超えるケースを決定的に再現する必要がある。実 NSS でこれを再現するのは
@@ -217,20 +217,20 @@ CGO ビルドの意味論等価テストから再利用する。
       独立関数に対して、要素数の合計が `maxGroupMembers` を超える 2 つのスライス（重複なし）を
       渡して `(nil, error)`・`errors.Is(err, ErrGroupMemberCountExceedsMax)` を確認する。
       `getGroupMembers` はこの `mergeGroupMembers` を呼び出すだけの薄い実装とする。
-- [ ] 新規 `membership_semantics_test.go`（`//go:build cgo && test`）に
+- [x] 新規 `membership_semantics_test.go`（`//go:build cgo && test`）に
       `TestGetGroupMembers_CGOAndNoCGOSemanticsMatch` を追加する（AC-07）。
-  - [ ] スキップ判定（`/etc/nsswitch.conf` の `passwd`・`group` ソース確認、`runtime.GOOS`
+  - [x] スキップ判定（`/etc/nsswitch.conf` の `passwd`・`group` ソース確認、`runtime.GOOS`
         判定）は、テスト本体に埋め込まず、`membership_semantics_test.go` 内の非公開の純粋関数
         `shouldSkipSemanticsTest(nsswitchContent string, goos string) (skip bool, reason string)`
         として切り出す（分岐が 4 つ以上あるため、`test_organization.md` の
         「CI/変更検知ロジックはテスト可能な形に切り出す」思想に倣う）。
         本体テストはこの関数の戻り値に応じて `t.Skip(reason)` するだけにする。
-  - [ ] `shouldSkipSemanticsTest` の分岐（`/etc/nsswitch.conf` 不在 → 実行、
+  - [x] `shouldSkipSemanticsTest` の分岐（`/etc/nsswitch.conf` 不在 → 実行、
         `files`/`systemd` のみ → 実行、`files`・`systemd` 以外のソース（例: `sss`）を含む →
         スキップ、`goos == "darwin"` → 無条件スキップ）を表形式でカバーする単体テスト
         `TestShouldSkipSemanticsTest` を同ファイルに追加する（`cgo && test`。ファイル I/O を
         伴わない純粋関数のため、文字列を直接渡してテストする）。
-  - [ ] 本体テストは `/etc/group` に現れる全 GID について、CGO 版 `getGroupMembers` の結果と、
+  - [x] 本体テストは `/etc/group` に現れる全 GID について、CGO 版 `getGroupMembers` の結果と、
         `membership_files.go` のヘルパ（`findGroupByGID` → 存在すれば
         `findUsersWithPrimaryGID` と `groupEntry.members` の和集合）から計算した期待集合とを
         比較する（重複なし・順不同、`assert.ElementsMatch` 相当）。
