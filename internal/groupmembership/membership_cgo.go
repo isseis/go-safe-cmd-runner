@@ -12,47 +12,84 @@ package groupmembership
 #include <errno.h>
 #include <unistd.h>
 
-// get_group_members returns the members of a group given its GID
-// Returns a null-terminated array of strings, or NULL if error
-// Caller is responsible for freeing the returned array and its strings
-char** get_group_members(gid_t gid, int* count) {
+// get_group_members returns the members of a group given its GID.
+//
+// Three-value contract:
+//   non-NULL           : success. *count_out holds the number of members (>= 0).
+//   NULL && *err_out==0: group not found (not an error).
+//   NULL && *err_out!=0: enumeration error. *err_out holds an errno-like value.
+//
+// buf_initial / buf_max control ERANGE retry buffer sizing.
+// When buf_initial is 0 the function queries sysconf(_SC_GETGR_R_SIZE_MAX).
+//
+// Caller is responsible for freeing the returned array and its strings.
+char** get_group_members(gid_t gid, int* count_out, int* err_out,
+                         size_t buf_initial, size_t buf_max) {
     struct group grp;
     struct group *result;
     char *buf;
     size_t bufsize;
     int s;
 
-    // Get the required buffer size
-    bufsize = sysconf(_SC_GETGR_R_SIZE_MAX);
-    if (bufsize == -1) {
-        bufsize = 16384; // Default fallback size
+    *err_out = 0;
+    *count_out = 0;
+
+    bufsize = buf_initial > 0 ? buf_initial : (size_t)sysconf(_SC_GETGR_R_SIZE_MAX);
+    if (bufsize == (size_t)-1 || bufsize == 0) {
+        bufsize = 16384;
     }
 
-    buf = malloc(bufsize);
-    if (buf == NULL) {
-        *count = 0;
-        return NULL;
+    for (;;) {
+        if (bufsize > buf_max) {
+            *err_out = ERANGE;
+            return NULL;
+        }
+
+        buf = malloc(bufsize);
+        if (buf == NULL) {
+            *err_out = ENOMEM;
+            return NULL;
+        }
+
+        s = getgrgid_r(gid, &grp, buf, bufsize, &result);
+        if (s == ERANGE) {
+            free(buf);
+            size_t next = bufsize * 2;
+            if (next < bufsize) {
+                *err_out = ERANGE;
+                return NULL;
+            }
+            bufsize = next;
+            continue;
+        }
+
+        if (s != 0) {
+            free(buf);
+            *err_out = (s == -1) ? errno : s;
+            return NULL;
+        }
+
+        if (result == NULL) {
+            free(buf);
+            return NULL;
+        }
+
+        break;
     }
 
-    // Use thread-safe getgrgid_r instead of getgrgid
-    s = getgrgid_r(gid, &grp, buf, bufsize, &result);
-    if (s != 0 || result == NULL || grp.gr_mem == NULL) {
-        free(buf);
-        *count = 0;
-        return NULL;
-    }
-
-    // Count members
+    // Count members. gr_mem being NULL or empty is success (count=0), not "not found".
     int member_count = 0;
-    while (grp.gr_mem[member_count] != NULL) {
-        member_count++;
+    if (grp.gr_mem != NULL) {
+        while (grp.gr_mem[member_count] != NULL) {
+            member_count++;
+        }
     }
 
     // Allocate array for member names
     char** members = malloc((member_count + 1) * sizeof(char*));
     if (members == NULL) {
         free(buf);
-        *count = 0;
+        *err_out = ENOMEM;
         return NULL;
     }
 
@@ -60,20 +97,19 @@ char** get_group_members(gid_t gid, int* count) {
     for (int i = 0; i < member_count; i++) {
         members[i] = strdup(grp.gr_mem[i]);
         if (members[i] == NULL) {
-            // Free already allocated strings on error
             for (int j = 0; j < i; j++) {
                 free(members[j]);
             }
             free(members);
             free(buf);
-            *count = 0;
+            *err_out = ENOMEM;
             return NULL;
         }
     }
     members[member_count] = NULL;
 
-    free(buf); // Free the buffer allocated for getgrgid_r
-    *count = member_count;
+    free(buf);
+    *count_out = member_count;
     return members;
 }
 
@@ -91,6 +127,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"syscall"
 	"unsafe"
 )
 
@@ -106,6 +143,14 @@ var ErrInvalidGroupMemberCount = errors.New("invalid group member count from C")
 // exceeds the allowed maximum, preventing unsafe memory access.
 var ErrGroupMemberCountExceedsMax = errors.New("group member count exceeds maximum")
 
+// grBufferInitialSize is the initial buffer size for getgrgid_r calls.
+// When 0, sysconf(_SC_GETGR_R_SIZE_MAX) is used (falling back to 16384).
+// Tests may set this to a small value to deterministically trigger ERANGE retry.
+var grBufferInitialSize int
+
+// grBufferMaxSize is the absolute upper limit for getgrgid_r buffer growth.
+var grBufferMaxSize = 4 * 1024 * 1024
+
 // validateGroupMemberCount validates the group member count received from C.
 // It returns an error if count is negative or exceeds the maximum allowed.
 func validateGroupMemberCount(count int) error {
@@ -118,31 +163,53 @@ func validateGroupMemberCount(count int) error {
 	return nil
 }
 
-// getGroupMembers returns all members of a group given its GID
-func getGroupMembers(gid uint32) ([]string, error) {
+// getExplicitGroupMembers returns explicit (gr_mem) members of the group with the given GID.
+//
+// Three-value return:
+//
+//	found == true  : members contains the explicit group member names.
+//	found == false : group does not exist (not an error).
+//	err != nil     : NSS error, ERANGE limit, or allocation failure.
+func getExplicitGroupMembers(gid uint32) (members []string, found bool, err error) {
 	var count C.int
-	members := C.get_group_members(C.gid_t(gid), &count)
-	if members == nil {
-		return []string{}, nil
+	var cerr C.int
+
+	// Clamp negative values before the signed->unsigned conversion; otherwise a
+	// negative int would wrap to a huge size_t and defeat the buf_max cap.
+	bufInitial := C.size_t(max(grBufferInitialSize, 0))
+	bufMax := C.size_t(max(grBufferMaxSize, 0))
+
+	cMembers := C.get_group_members(C.gid_t(gid), &count, &cerr, bufInitial, bufMax)
+	if cerr != 0 {
+		return nil, false, fmt.Errorf("%w: gid %d: C errno %d: %w", ErrGroupMemberEnumeration, gid, int(cerr), syscall.Errno(cerr))
+	}
+	if cMembers == nil {
+		return nil, false, nil
 	}
 
-	// Validate count BEFORE registering the defer so that free_string_array is
-	// never called with an untrusted count.  If count is malformed, call
-	// free_string_array with count=0 so only the outer array is freed (the
-	// inner strings are leaked in this error path, but walking an unknown
-	// number of pointers would be more dangerous).
-	if err := validateGroupMemberCount(int(count)); err != nil {
-		C.free_string_array(members, 0)
+	if errv := validateGroupMemberCount(int(count)); errv != nil {
+		C.free_string_array(cMembers, 0)
+		return nil, false, fmt.Errorf("%w: gid %d: %w", ErrGroupMemberEnumeration, gid, errv)
+	}
+	defer C.free_string_array(cMembers, count)
+
+	cArray := unsafe.Slice(cMembers, int(count))
+	members = make([]string, int(count))
+	for i, cStr := range cArray {
+		members[i] = C.GoString(cStr)
+	}
+	return members, true, nil
+}
+
+// getGroupMembers returns all members of a group given its GID.
+// Phase 1 returns only explicit members; Phase 2 will add primary-GID members.
+func getGroupMembers(gid uint32) ([]string, error) {
+	members, found, err := getExplicitGroupMembers(gid)
+	if err != nil {
 		return nil, err
 	}
-	defer C.free_string_array(members, count)
-
-	// Use unsafe.Slice which is safer than the older unsafe pointer cast pattern.
-	cArray := unsafe.Slice(members, int(count))
-
-	result := make([]string, int(count))
-	for i, cStr := range cArray {
-		result[i] = C.GoString(cStr)
+	if !found {
+		return []string{}, nil
 	}
-	return result, nil
+	return members, nil
 }
