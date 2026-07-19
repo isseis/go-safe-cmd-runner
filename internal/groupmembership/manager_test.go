@@ -857,7 +857,7 @@ func TestGetGroupMembers_ErrorNotCached(t *testing.T) {
 func TestIsUserInGroup_NoRegressionWithPrimaryMembers(t *testing.T) {
 	currentUser, err := user.Current()
 	require.NoError(t, err)
-	currentUID, err := strconv.Atoi(currentUser.Uid)
+	currentUID, err := strconv.ParseUint(currentUser.Uid, 10, 32)
 	require.NoError(t, err)
 	currentPrimaryGID, err := strconv.ParseUint(currentUser.Gid, 10, 32)
 	require.NoError(t, err)
@@ -879,7 +879,7 @@ func TestIsUserInGroup_NoRegressionWithPrimaryMembers(t *testing.T) {
 	})
 
 	t.Run("non-member GID returns false", func(t *testing.T) {
-		gm := New()
+		gm := newWithEnumerator(func(_ uint32) ([]string, error) { return []string{}, nil })
 		isMember, err := gm.IsUserInGroup(uint32(currentUID), 99999)
 		assert.NoError(t, err)
 		assert.False(t, isMember)
@@ -891,7 +891,7 @@ func TestIsUserInGroup_NoRegressionWithPrimaryMembers(t *testing.T) {
 func TestIsUserInGroup_EnumerationError(t *testing.T) {
 	currentUser, err := user.Current()
 	require.NoError(t, err)
-	currentUID, err := strconv.Atoi(currentUser.Uid)
+	currentUID, err := strconv.ParseUint(currentUser.Uid, 10, 32)
 	require.NoError(t, err)
 
 	sentinelErr := errors.New("injected enumeration failure")
