@@ -35,18 +35,20 @@
 ### 1.2 概念モデル
 
 ```mermaid
-flowchart TD
+flowchart LR
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef problem fill:#ffe6e6,stroke:#d62728,stroke-width:2px,color:#7b0000;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
     subgraph Before["Before（現状）"]
+        direction TB
         S1["解析・検証処理"] -->|"エラー発生"| L1["slog.Debug"]
         L1 --> R1["「対象なし」「問題なし」に縮退<br>（fail-open）"]
         S1 -->|"成功"| N1["正常結果"]
     end
 
     subgraph After["After（修正後）"]
+        direction TB
         S2["解析・検証処理"] -->|"エラー発生"| L2["slog.Warn"]
         L2 --> R2["エラーとして伝播<br>（fail-closed）"]
         S2 -->|"成功"| N2["正常結果"]
@@ -57,36 +59,17 @@ flowchart TD
     class L2,R2 enhanced
     class N1,N2 process
 
-    R2 --> Caller["呼び出し元で<br>record/verify/risk評価が失敗"]
+    After --> Caller["呼び出し元で<br>record/verify/risk評価が失敗"]
     class Caller enhanced
 ```
 
 **矢印の意味**: 矢印 A → B は「A の後に B が実行される（制御フロー）」を表す。
 
-```mermaid
-flowchart TD
-    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
-    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
-
-    subgraph "概念: エラーと結果の分類"
-        E1["解析成功<br>+ 危険検出あり"] --> R1["fail-closed<br>（危険として報告）"]
-        E2["解析成功<br>+ 危険検出なし"] --> R2["安全<br>（そのまま通過）"]
-        E3["解析不能・エラー"] --> R3["fail-closed<br>（危険とみなして拒否）"]
-    end
-
-    class E1,E2,E3 process
-    class R1,R3 enhanced
-    class R2 process
-```
-
-**矢印の意味**: 矢印 A → B は「解析結果 A が B の制御判断に導かれる」ことを表す。
-
-#### Legend
-| Class | 意味 |
+| 解析結果 | 制御判断 |
 |---|---|
-| `process`（橙） | 既存コンポーネント（変更なし） |
-| `enhanced`（緑） | 修正対象コンポーネント |
-| `problem`（赤） | 問題のある既存コード |
+| 解析成功 + 危険検出あり | fail-closed（危険として報告） |
+| 解析成功 + 危険検出なし | 安全（そのまま通過） |
+| 解析不能・エラー | fail-closed（危険とみなして拒否） |
 
 ---
 
@@ -94,48 +77,13 @@ flowchart TD
 
 ### 2.1 修正対象パッケージの関係
 
-```mermaid
-flowchart LR
-    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
-    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
-
-    subgraph P1["internal/security/elfanalyzer/"]
-        SA["standard_analyzer.go<br>lookupSyscallAnalysis<br>（C1 F-1）"]
-    end
-
-    subgraph P2["internal/dynlib/elfdynlib/"]
-        EA["analyzer.go<br>Analyze / parseELFDeps<br>（C2 F-3）"]
-    end
-
-    subgraph P3["internal/dynlib/machodylib/"]
-        MA["analyzer.go<br>parseMachODeps / HasDynamicLibDeps<br>（C2 F-3, C2 F-5）"]
-    end
-
-    subgraph P4["internal/verification/"]
-        VM["manager.go<br>collectVerificationFiles<br>hasDynamicLibraryDeps<br>（B3 M1, B3 L1）"]
-    end
-
-    subgraph P5["internal/runner/base/risk/"]
-        RE["evaluator.go<br>applyBinaryAnalysis<br>（A5 Low-3）"]
-    end
-
-    SA -->|"呼び出し"| Caller1["AnalyzeNetworkSymbols"]
-    EA -->|"呼び出し"| Caller2["recordコマンド<br>（dynlib解析）"]
-    MA -->|"呼び出し"| Caller3["recordコマンド / runner<br>（dynlib解析 / ErrDynLibDepsRequired判定）"]
-    VM -->|"呼び出し"| Caller4["runner<br>（group_executor）"]
-    RE -->|"呼び出し"| Caller5["EvaluateRisk"]
-
-    class SA,EA,MA,VM,RE enhanced
-    class Caller1,Caller2,Caller3,Caller4,Caller5 process
-```
-
-**矢印の意味**: 矢印 A → B は「A（修正対象の関数）が B（呼び出し元）から呼ばれる」ことを表す。
-
-#### Legend
-| Class | 意味 |
-|---|---|
-| `process`（橙） | 既存コンポーネント（変更なし） |
-| `enhanced`（緑） | 修正対象コンポーネント |
+| 修正対象パッケージ | 修正対象関数 | 所見 ID | 呼び出し元 |
+|---|---|---|---|
+| `internal/security/elfanalyzer/` | `standard_analyzer.go` — `lookupSyscallAnalysis` | C1 F-1 | `AnalyzeNetworkSymbols` |
+| `internal/dynlib/elfdynlib/` | `analyzer.go` — `Analyze`, `parseELFDeps` | C2 F-3 | record コマンド（dynlib 解析） |
+| `internal/dynlib/machodylib/` | `analyzer.go` — `parseMachODeps`, `HasDynamicLibDeps` | C2 F-3, C2 F-5 | record コマンド / runner（dynlib 解析 / ErrDynLibDepsRequired 判定） |
+| `internal/verification/` | `manager.go` — `collectVerificationFiles`, `hasDynamicLibraryDeps` | B3 M1, B3 L1 | runner（group_executor） |
+| `internal/runner/base/risk/` | `evaluator.go` — `applyBinaryAnalysis` | A5 Low-3 | `EvaluateRisk` |
 
 ### 2.2 コンポーネント配置
 
