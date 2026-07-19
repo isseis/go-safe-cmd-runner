@@ -4,6 +4,8 @@ package groupmembership
 
 import (
 	"errors"
+	"fmt"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -113,15 +115,27 @@ func TestGetExplicitGroupMembers_ERANGERetryExceedsLimit(t *testing.T) {
 }
 
 func TestGetExplicitGroupMembers_AllocationFailure(t *testing.T) {
-	orig := grBufferInitialSize
-	t.Cleanup(func() { grBufferInitialSize = orig })
+	origInit := grBufferInitialSize
+	origMax := grBufferMaxSize
+	t.Cleanup(func() {
+		grBufferInitialSize = origInit
+		grBufferMaxSize = origMax
+	})
+	// buf_max must be raised alongside buf_initial: get_group_members checks
+	// bufsize > buf_max before calling malloc, so leaving buf_max at its
+	// default would trip that ERANGE check first and never reach malloc,
+	// making this indistinguishable from TestGetExplicitGroupMembers_ERANGERetryExceedsLimit.
 	grBufferInitialSize = 1 << 62
+	grBufferMaxSize = 1 << 62
 
 	currentGID := getCurrentUserGID(t)
 	_, found, err := getExplicitGroupMembers(currentGID)
 	require.Error(t, err)
 	assert.False(t, found)
 	assert.True(t, errors.Is(err, ErrGroupMemberEnumeration))
+	// The C errno is interpolated into the error message as plain text (not
+	// wrapped via %w), so match on the formatted value rather than errors.Is.
+	require.ErrorContains(t, err, fmt.Sprintf("C errno %d", syscall.ENOMEM))
 }
 
 func TestGetExplicitGroupMembers_InvalidGID(t *testing.T) {
