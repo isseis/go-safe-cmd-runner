@@ -310,8 +310,8 @@ func getGroupMembers(gid uint32) ([]string, error) {
 	}
 
 	pwentMutex.Lock()
+	defer pwentMutex.Unlock()
 	primary, err := getUsersWithPrimaryGID(gid)
-	pwentMutex.Unlock()
 	if err != nil {
 		return nil, err
 	}
