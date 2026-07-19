@@ -269,7 +269,7 @@ CGO ビルドの意味論等価テストから再利用する。
 
 作業内容:
 
-- [ ] `manager.go` の `isUserOnlyGroupMember`（[manager.go:166-197](../../../internal/groupmembership/manager.go#L166-L197)）を、
+- [x] `manager.go` の `isUserOnlyGroupMember`（[manager.go:166-197](../../../internal/groupmembership/manager.go#L166-L197)）を、
       現在のプライマリ GID 条件分岐込みの実装から、次の簡素化後の実装へ全体を置き換える。
 
   変更前（[manager.go:166-197](../../../internal/groupmembership/manager.go#L166-L197)、要旨）:
@@ -314,7 +314,7 @@ CGO ビルドの意味論等価テストから再利用する。
   この変更により、`user.Gid` のパース（`userPrimaryGID` の取得）と、それに伴う
   デッドコードとなるエラー分岐が削除される。このエラー分岐は判定の許否に影響しない
   付随的なものであり、除去による判定結果への影響はない（01_requirements.md 「M-1」節）。
-- [ ] 新規 `test_helpers.go`（`//go:build test`）に、列挙シームを差し替えるテスト専用
+- [x] 新規 `test_helpers.go`（`//go:build test`）に、列挙シームを差し替えるテスト専用
       コンストラクタを追加する（`test_organization.md` Classification B: 非公開フィールドへの
       アクセスが必要なため package-internal helper とする）。
   ```go
@@ -329,7 +329,7 @@ CGO ビルドの意味論等価テストから再利用する。
 
 テスト（いずれも CGO_ENABLED=1/0 の両ビルドで実行される。ビルドタグなしファイルのため）:
 
-- [ ] `manager_test.go` に `TestIsUserOnlyGroupMember_NoSpecialCasing` を追加する（AC-08, AC-10）。
+- [x] `manager_test.go` に `TestIsUserOnlyGroupMember_NoSpecialCasing` を追加する（AC-08, AC-10）。
       `os/user.Current()` で現在ユーザーの UID・ユーザー名を取得し、表形式で次を確認する。
       `GetGroupMembers` は GID 単位で 30 秒 TTL キャッシュする（[manager.go:85-123](../../../internal/groupmembership/manager.go#L85-L123)、変更なし）。
       そのため、**各表行は `newWithEnumerator` で新規に生成した別々の `GroupMembership` インスタンスを
@@ -341,15 +341,15 @@ CGO ビルドの意味論等価テストから再利用する。
       - 列挙結果 `[currentUser.Username]` → `true`（AC-10: 単一メンバーの正常系維持）
       - 列挙結果 `[currentUser.Username, "other-user"]` → `false`
       - 列挙結果 `["other-user"]` → `false`
-- [ ] `manager_test.go` に `TestIsUserOnlyGroupMember_EnumerationError` を追加する（AC-09）。
+- [x] `manager_test.go` に `TestIsUserOnlyGroupMember_EnumerationError` を追加する（AC-09）。
       `newWithEnumerator` で列挙関数が `(nil, someErr)` を返すよう固定し、
       `isUserOnlyGroupMember` が `(false, error)` を返すこと、返るエラーが `someErr` を
       `errors.Is` で包含することを確認する。
-- [ ] `manager_test.go` に `TestCanUserSafelyWriteFile_EnumerationError` を追加する（AC-09）。
+- [x] `manager_test.go` に `TestCanUserSafelyWriteFile_EnumerationError` を追加する（AC-09）。
       同様に列挙エラーを固定し、`CanUserSafelyWriteFile` の group-writable 分岐
       （所有者かつ `perm&0o020 != 0`）で書き込みが許可されない（`canWrite == false` かつ
       `err != nil`）ことを確認する。
-- [ ] `manager_test.go` に `TestGetGroupMembers_ErrorNotCached` を追加する（AC-11）。
+- [x] `manager_test.go` に `TestGetGroupMembers_ErrorNotCached` を追加する（AC-11）。
       `newWithEnumerator` に、1 回目の呼び出しでは `(nil, error)`、2 回目以降は
       `([]string{"user"}, nil)` を返すクロージャ（呼び出し回数をカウントする）を設定する。
       - 1 回目の `GetGroupMembers` 呼び出しがエラーを返すこと、`GetCacheStats().TotalEntries`
