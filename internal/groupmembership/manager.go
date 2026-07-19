@@ -174,35 +174,16 @@ func (gm *GroupMembership) IsUserInGroup(uid, gid uint32) (bool, error) {
 // This is useful for security validation where group write permissions are acceptable
 // only if the group has a single member who is the specified user
 func (gm *GroupMembership) isUserOnlyGroupMember(userUID int, groupGID uint32) (bool, error) {
-	// Get user information
 	user, err := user.LookupId(strconv.Itoa(userUID))
 	if err != nil {
 		return false, fmt.Errorf("failed to lookup user for UID %d: %w", userUID, err)
 	}
 
-	// Check if this is the user's primary group
-	userPrimaryGID, err := strconv.ParseUint(user.Gid, 10, 32)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse user's primary GID %s: %w", user.Gid, err)
-	}
-
-	// Get all explicit members of the group
 	members, err := gm.GetGroupMembers(groupGID)
 	if err != nil {
 		return false, fmt.Errorf("failed to get group members for GID %d: %w", groupGID, err)
 	}
 
-	if uint32(userPrimaryGID) == groupGID {
-		// This is the user's primary group
-		// User is the only member if there's exactly one member (the user themselves)
-		// or if there are no explicit members (depends on implementation)
-		if len(members) == 0 {
-			return true, nil // No explicit members, user is the only primary group member
-		}
-		return len(members) == 1 && members[0] == user.Username, nil
-	}
-	// This is not the user's primary group
-	// Check if there's exactly one explicit member and it's the specified user
 	return len(members) == 1 && members[0] == user.Username, nil
 }
 

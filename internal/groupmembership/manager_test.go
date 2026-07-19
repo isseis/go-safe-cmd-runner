@@ -1,12 +1,16 @@
 package groupmembership
 
 import (
+	"errors"
 	"os"
+	"os/user"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestGroupMembership tests the new GroupMembership struct
@@ -717,4 +721,133 @@ func TestGetProcessEUID(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Greater(t, currentUID, -1) // Should be non-negative
 	})
+}
+
+// TestIsUserOnlyGroupMember_NoSpecialCasing verifies that isUserOnlyGroupMember no longer
+// has a primary-GID special-case branch and uses only len(members)==1 && members[0]==user.Username.
+func TestIsUserOnlyGroupMember_NoSpecialCasing(t *testing.T) {
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+	currentUID, err := strconv.Atoi(currentUser.Uid)
+	require.NoError(t, err)
+	currentPrimaryGID, err := strconv.ParseUint(currentUser.Gid, 10, 32)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name       string
+		members    []string
+		wantIsOnly bool
+		wantErr    bool
+	}{
+		{
+			name:       "empty set returns false",
+			members:    []string{},
+			wantIsOnly: false,
+			wantErr:    false,
+		},
+		{
+			name:       "single current user returns true",
+			members:    []string{currentUser.Username},
+			wantIsOnly: true,
+			wantErr:    false,
+		},
+		{
+			name:       "current user plus other returns false",
+			members:    []string{currentUser.Username, "other-user"},
+			wantIsOnly: false,
+			wantErr:    false,
+		},
+		{
+			name:       "other user only returns false",
+			members:    []string{"other-user"},
+			wantIsOnly: false,
+			wantErr:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			members := tt.members
+			gm := newWithEnumerator(func(_ uint32) ([]string, error) {
+				return members, nil
+			})
+			isOnly, err := gm.isUserOnlyGroupMember(currentUID, uint32(currentPrimaryGID))
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.Equal(t, tt.wantIsOnly, isOnly)
+		})
+	}
+}
+
+// TestIsUserOnlyGroupMember_EnumerationError verifies that when enumeration fails,
+// isUserOnlyGroupMember returns (false, error) and the error wraps the enumeration error.
+func TestIsUserOnlyGroupMember_EnumerationError(t *testing.T) {
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+	currentUID, err := strconv.Atoi(currentUser.Uid)
+	require.NoError(t, err)
+
+	sentinelErr := errors.New("injected enumeration failure")
+	gm := newWithEnumerator(func(_ uint32) ([]string, error) {
+		return nil, sentinelErr
+	})
+
+	isOnly, err := gm.isUserOnlyGroupMember(currentUID, 0)
+	assert.False(t, isOnly)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, sentinelErr)
+}
+
+// TestCanUserSafelyWriteFile_EnumerationError verifies that when enumeration fails,
+// CanUserSafelyWriteFile does not allow the write on the group-writable path.
+func TestCanUserSafelyWriteFile_EnumerationError(t *testing.T) {
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+	currentUID, err := strconv.Atoi(currentUser.Uid)
+	require.NoError(t, err)
+
+	sentinelErr := errors.New("injected enumeration failure")
+	gm := newWithEnumerator(func(_ uint32) ([]string, error) {
+		return nil, sentinelErr
+	})
+
+	canWrite, err := gm.CanUserSafelyWriteFile(currentUID, uint32(currentUID), 0, 0o660)
+	assert.False(t, canWrite)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, sentinelErr)
+}
+
+// TestGetGroupMembers_ErrorNotCached verifies that enumeration errors are not cached
+// and can be retried.
+func TestGetGroupMembers_ErrorNotCached(t *testing.T) {
+	sentinelErr := errors.New("injected enumeration failure")
+
+	callCount := 0
+	gm := newWithEnumerator(func(_ uint32) ([]string, error) {
+		callCount++
+		if callCount == 1 {
+			return nil, sentinelErr
+		}
+		return []string{"user"}, nil
+	})
+
+	members, err := gm.GetGroupMembers(0)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, sentinelErr)
+	assert.Nil(t, members)
+	assert.Equal(t, 1, callCount)
+
+	stats := gm.GetCacheStats()
+	assert.Equal(t, 0, stats.TotalEntries)
+
+	members, err = gm.GetGroupMembers(0)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"user"}, members)
+	assert.Equal(t, 2, callCount)
+
+	stats = gm.GetCacheStats()
+	assert.Equal(t, 1, stats.TotalEntries)
 }
