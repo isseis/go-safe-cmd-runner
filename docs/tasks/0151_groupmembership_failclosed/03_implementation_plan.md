@@ -377,8 +377,8 @@ Phase 2 完了後は完全列挙環境で `userPrimaryGID == groupGID` かつ `l
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -390,28 +390,28 @@ Phase 2 完了後は完全列挙環境で `userPrimaryGID == groupGID` かつ `l
 
 作業内容:
 
-- [ ] Phase 1〜3 で `IsUserInGroup` 自体のロジックは変更していないため、本 Phase は新規テストの
+- [x] Phase 1〜3 で `IsUserInGroup` 自体のロジックは変更していないため、本 Phase は新規テストの
       追加のみで完了する（02_architecture.md §6.3 の分析どおり、`IsUserInGroup` は
       プライマリ GID 一致判定と補助グループ集合判定を列挙結果より先に確定するため、
       AC-06 によるプライマリメンバーの追加は `IsUserInGroup` の判定結果を変えない）。
 
 テスト（両ビルド）:
 
-- [ ] `manager_test.go` に `TestIsUserInGroup_NoRegressionWithPrimaryMembers` を追加する
-      （AC-12）。現在ユーザーの UID・プライマリ GID を用い、次を確認する。
-      - `IsUserInGroup(currentUID, currentPrimaryGID)` が `true` を返す
-        （プライマリ GID 一致判定で確定するため、列挙結果には依存しない）。
-      - 実行ユーザーが所属しない GID（例: `99999`）に対しては `false` を返す。
-      - `newWithEnumerator` で列挙結果に現在ユーザーを含めた場合と含めない場合の両方で、
-        上記いずれの結果も変化しないことを確認する（列挙結果の拡大が判定結果を変えないことの
-        直接的な確認）。
-- [ ] `manager_test.go` に `TestIsUserInGroup_EnumerationError` を追加する（AC-13）。
-      プライマリ GID・補助グループのいずれにも一致しない GID に対し、`newWithEnumerator` で
-      列挙エラーを固定し、`IsUserInGroup` が `(false, error)` を返すことを確認する。
-- [ ] `manager_test.go` に `TestCanCurrentUserSafelyReadFile_EnumerationError` を追加する
-      （AC-13）。列挙エラーを固定した `GroupMembership` に対し、group-writable なファイル
-      （現在ユーザーが所属しない GID）の `CanCurrentUserSafelyReadFile` が読み取りを
-      許可しない（`canRead == false` かつ `err != nil`）ことを確認する。
+- [x] `manager_test.go` に `TestIsUserInGroup_NoRegressionWithPrimaryMembers` を追加する
+       （AC-12）。現在ユーザーの UID・プライマリ GID を用い、次を確認する。
+       - `IsUserInGroup(currentUID, currentPrimaryGID)` が `true` を返す
+         （プライマリ GID 一致判定で確定するため、列挙結果には依存しない）。
+       - 実行ユーザーが所属しない GID（例: `99999`）に対しては `false` を返す。
+       - `newWithEnumerator` で列挙結果に現在ユーザーを含めた場合と含めない場合の両方で、
+         上記いずれの結果も変化しないことを確認する（列挙結果の拡大が判定結果を変えないことの
+         直接的な確認）。
+- [x] `manager_test.go` に `TestIsUserInGroup_EnumerationError` を追加する（AC-13）。
+       プライマリ GID・補助グループのいずれにも一致しない GID に対し、`newWithEnumerator` で
+       列挙エラーを固定し、`IsUserInGroup` が `(false, error)` を返すことを確認する。
+- [x] `manager_test.go` に `TestCanCurrentUserSafelyReadFile_EnumerationError` を追加する
+       （AC-13）。列挙エラーを固定した `GroupMembership` に対し、group-writable なファイル
+       （現在ユーザーが所属しない GID）の `CanCurrentUserSafelyReadFile` が読み取りを
+       許可しない（`canRead == false` かつ `err != nil`）ことを確認する。
 
 完了基準: `make fmt && make test && make lint` が CGO_ENABLED=1/0 の両方でグリーン。
 全 AC（AC-01〜AC-13）に対応するテストが揃い、パッケージ全体のテストスイートが通過する。
@@ -428,8 +428,8 @@ Phase 2 完了後は完全列挙環境で `userPrimaryGID == groupGID` かつ `l
 
 **判定理由**: テスト追加のみの変更であり、いずれのトリガーにも該当しないため。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

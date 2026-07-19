@@ -851,3 +851,70 @@ func TestGetGroupMembers_ErrorNotCached(t *testing.T) {
 	stats = gm.GetCacheStats()
 	assert.Equal(t, 1, stats.TotalEntries)
 }
+
+// TestIsUserInGroup_NoRegressionWithPrimaryMembers verifies that the primary
+// member enumeration addition does not change IsUserInGroup results.
+func TestIsUserInGroup_NoRegressionWithPrimaryMembers(t *testing.T) {
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+	currentUID, err := strconv.ParseUint(currentUser.Uid, 10, 32)
+	require.NoError(t, err)
+	currentPrimaryGID, err := strconv.ParseUint(currentUser.Gid, 10, 32)
+	require.NoError(t, err)
+
+	t.Run("primary GID match unaffected by enumeration expansion", func(t *testing.T) {
+		gmWithUser := newWithEnumerator(func(_ uint32) ([]string, error) {
+			return []string{currentUser.Username}, nil
+		})
+		isMember, err := gmWithUser.IsUserInGroup(uint32(currentUID), uint32(currentPrimaryGID))
+		assert.NoError(t, err)
+		assert.True(t, isMember)
+
+		gmWithoutUser := newWithEnumerator(func(_ uint32) ([]string, error) {
+			return []string{}, nil
+		})
+		isMember, err = gmWithoutUser.IsUserInGroup(uint32(currentUID), uint32(currentPrimaryGID))
+		assert.NoError(t, err)
+		assert.True(t, isMember)
+	})
+
+	t.Run("non-member GID returns false", func(t *testing.T) {
+		gm := newWithEnumerator(func(_ uint32) ([]string, error) { return []string{}, nil })
+		isMember, err := gm.IsUserInGroup(uint32(currentUID), 99999)
+		assert.NoError(t, err)
+		assert.False(t, isMember)
+	})
+}
+
+// TestIsUserInGroup_EnumerationError verifies that when enumeration fails,
+// IsUserInGroup propagates the error.
+func TestIsUserInGroup_EnumerationError(t *testing.T) {
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+	currentUID, err := strconv.ParseUint(currentUser.Uid, 10, 32)
+	require.NoError(t, err)
+
+	sentinelErr := errors.New("injected enumeration failure")
+	gm := newWithEnumerator(func(_ uint32) ([]string, error) {
+		return nil, sentinelErr
+	})
+
+	isMember, err := gm.IsUserInGroup(uint32(currentUID), 99999)
+	assert.False(t, isMember)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, sentinelErr)
+}
+
+// TestCanCurrentUserSafelyReadFile_EnumerationError verifies that when enumeration
+// fails, the read path is fail-closed.
+func TestCanCurrentUserSafelyReadFile_EnumerationError(t *testing.T) {
+	sentinelErr := errors.New("injected enumeration failure")
+	gm := newWithEnumerator(func(_ uint32) ([]string, error) {
+		return nil, sentinelErr
+	})
+
+	canRead, err := gm.CanCurrentUserSafelyReadFile(99999, 0o660)
+	assert.False(t, canRead)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, sentinelErr)
+}
