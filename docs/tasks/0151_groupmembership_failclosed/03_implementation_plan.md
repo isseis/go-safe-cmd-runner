@@ -397,21 +397,21 @@ Phase 2 完了後は完全列挙環境で `userPrimaryGID == groupGID` かつ `l
 
 テスト（両ビルド）:
 
-- [ ] `manager_test.go` に `TestIsUserInGroup_NoRegressionWithPrimaryMembers` を追加する
-      （AC-12）。現在ユーザーの UID・プライマリ GID を用い、次を確認する。
-      - `IsUserInGroup(currentUID, currentPrimaryGID)` が `true` を返す
-        （プライマリ GID 一致判定で確定するため、列挙結果には依存しない）。
-      - 実行ユーザーが所属しない GID（例: `99999`）に対しては `false` を返す。
-      - `newWithEnumerator` で列挙結果に現在ユーザーを含めた場合と含めない場合の両方で、
-        上記いずれの結果も変化しないことを確認する（列挙結果の拡大が判定結果を変えないことの
-        直接的な確認）。
-- [ ] `manager_test.go` に `TestIsUserInGroup_EnumerationError` を追加する（AC-13）。
-      プライマリ GID・補助グループのいずれにも一致しない GID に対し、`newWithEnumerator` で
-      列挙エラーを固定し、`IsUserInGroup` が `(false, error)` を返すことを確認する。
-- [ ] `manager_test.go` に `TestCanCurrentUserSafelyReadFile_EnumerationError` を追加する
-      （AC-13）。列挙エラーを固定した `GroupMembership` に対し、group-writable なファイル
-      （現在ユーザーが所属しない GID）の `CanCurrentUserSafelyReadFile` が読み取りを
-      許可しない（`canRead == false` かつ `err != nil`）ことを確認する。
+- [x] `manager_test.go` に `TestIsUserInGroup_NoRegressionWithPrimaryMembers` を追加する
+       （AC-12）。現在ユーザーの UID・プライマリ GID を用い、次を確認する。
+       - `IsUserInGroup(currentUID, currentPrimaryGID)` が `true` を返す
+         （プライマリ GID 一致判定で確定するため、列挙結果には依存しない）。
+       - 実行ユーザーが所属しない GID（例: `99999`）に対しては `false` を返す。
+       - `newWithEnumerator` で列挙結果に現在ユーザーを含めた場合と含めない場合の両方で、
+         上記いずれの結果も変化しないことを確認する（列挙結果の拡大が判定結果を変えないことの
+         直接的な確認）。
+- [x] `manager_test.go` に `TestIsUserInGroup_EnumerationError` を追加する（AC-13）。
+       プライマリ GID・補助グループのいずれにも一致しない GID に対し、`newWithEnumerator` で
+       列挙エラーを固定し、`IsUserInGroup` が `(false, error)` を返すことを確認する。
+- [x] `manager_test.go` に `TestCanCurrentUserSafelyReadFile_EnumerationError` を追加する
+       （AC-13）。列挙エラーを固定した `GroupMembership` に対し、group-writable なファイル
+       （現在ユーザーが所属しない GID）の `CanCurrentUserSafelyReadFile` が読み取りを
+       許可しない（`canRead == false` かつ `err != nil`）ことを確認する。
 
 完了基準: `make fmt && make test && make lint` が CGO_ENABLED=1/0 の両方でグリーン。
 全 AC（AC-01〜AC-13）に対応するテストが揃い、パッケージ全体のテストスイートが通過する。
