@@ -296,7 +296,8 @@ func getExplicitGroupMembers(gid uint32) (members []string, found bool, err erro
 // semantics.
 //
 // pwentMutex serialises all setpwent/getpwent/endpwent calls within this
-// package. Lock ordering: GroupMembership.cacheMutex -> pwentMutex.
+// package. It is held inside getUsersWithPrimaryGID.
+// Lock ordering: GroupMembership.cacheMutex -> pwentMutex.
 // Reverse acquisition is forbidden.
 var pwentMutex sync.Mutex
 
@@ -309,11 +310,7 @@ func getGroupMembers(gid uint32) ([]string, error) {
 		return []string{}, nil
 	}
 
-	primary, err := func() ([]string, error) {
-		pwentMutex.Lock()
-		defer pwentMutex.Unlock()
-		return getUsersWithPrimaryGID(gid)
-	}()
+	primary, err := getUsersWithPrimaryGID(gid)
 	if err != nil {
 		return nil, err
 	}
@@ -322,8 +319,9 @@ func getGroupMembers(gid uint32) ([]string, error) {
 }
 
 // getUsersWithPrimaryGID returns users whose primary GID matches the given GID.
-// The caller must hold pwentMutex.
 func getUsersWithPrimaryGID(gid uint32) ([]string, error) {
+	pwentMutex.Lock()
+	defer pwentMutex.Unlock()
 	var count C.int
 	var cerr C.int
 
