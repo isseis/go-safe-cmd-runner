@@ -309,9 +309,11 @@ func getGroupMembers(gid uint32) ([]string, error) {
 		return []string{}, nil
 	}
 
-	pwentMutex.Lock()
-	defer pwentMutex.Unlock()
-	primary, err := getUsersWithPrimaryGID(gid)
+	primary, err := func() ([]string, error) {
+		pwentMutex.Lock()
+		defer pwentMutex.Unlock()
+		return getUsersWithPrimaryGID(gid)
+	}()
 	if err != nil {
 		return nil, err
 	}
