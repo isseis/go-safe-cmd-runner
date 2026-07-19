@@ -1,4 +1,4 @@
-# 要件定義書: エラー処理の縮退による fail-open パターンの横断修正（残件）
+# 要件定義書: エラー隠蔽による fail-open パターンの横断修正（残件）
 
 ## Document Status
 
@@ -12,7 +12,7 @@
 
 ## 関連 Issue
 
-- [#860 [Security][P1] エラー処理の縮退による fail-open パターンの横断修正](https://github.com/isseis/go-safe-cmd-runner/issues/860)
+- [#860 [Security][P1] エラー隠蔽による fail-open パターンの横断修正](https://github.com/isseis/go-safe-cmd-runner/issues/860)
 - 関連（解消済み）: [#858 [Security][H-1] groupmembership: getGroupMembers のエラー握りつぶしによる fail-open](https://github.com/isseis/go-safe-cmd-runner/issues/858) — D1 (groupmembership) H-1/M-1/M-2 は [docs/tasks/0150_groupmembership_getgrgid_failclosed](../0150_groupmembership_getgrgid_failclosed/) / [docs/tasks/0151_groupmembership_failclosed](../0151_groupmembership_failclosed/) で対応済み。#860 に挙げられている D1 の L-2/L-3 は本タスクでも対象外（未着手）。
 - 詳細所見:
   - [findings/C1_binary_analysis.md](../0149_security_code_smell_audit_fable/findings/C1_binary_analysis.md) F-1
@@ -22,7 +22,7 @@
 
 ## 背景
 
-Issue #860 は「解析・検証に失敗した場合、安全側ではなく『対象なし』『問題なし』に倒れる」という同型の fail-open 欠陥がセキュリティクリティカル部に横断的に分布していると指摘している。このうち D1 (groupmembership) は既に #858 で個別対応済み（[0150](../0150_groupmembership_getgrgid_failclosed/)/[0151](../0151_groupmembership_failclosed/)）。本タスクは #860 に挙げられている残りの該当箇所（C1, C2, B3, A5 の各所見）をまとめて是正する。
+Issue #860 は「解析・検証に失敗した場合、安全側ではなく『対象なし』『問題なし』と偽った判定に落ち込む」という同型の fail-open 欠陥がセキュリティクリティカル部に横断的に分布していると指摘している。このうち D1 (groupmembership) は既に #858 で個別対応済み（[0150](../0150_groupmembership_getgrgid_failclosed/)/[0151](../0151_groupmembership_failclosed/)）。本タスクは #860 に挙げられている残りの該当箇所（C1, C2, B3, A5 の各所見）をまとめて是正する。
 
 現状コードを確認したところ、以下はいずれも未修正であることを確認済み（2026-07-19 時点）:
 
@@ -34,7 +34,7 @@ Issue #860 は「解析・検証に失敗した場合、安全側ではなく『
 
 ## 目的
 
-- 「解析不能・エラー」と「対象なし・問題なし」を型／制御フロー上で区別し、前者を一律 fail-closed（Blocking / AnalysisError 相当）に倒す設計原則を、#860 が指摘した残りの箇所に適用する。
+- 「解析不能・エラー」と「対象なし・問題なし」を型／制御フロー上で区別し、前者を一律 fail-closed（Blocking / AnalysisError 相当）として処理する設計原則を、#860 が指摘した残りの箇所に適用する。
 - 各修正が本来の解析対象（正常系）に副作用を与えないことをテストで保証する。
 
 ## スコープ
@@ -42,10 +42,10 @@ Issue #860 は「解析・検証に失敗した場合、安全側ではなく『
 ### 対象（本タスクで対応する）
 
 1. **C1 F-1**: `lookupSyscallAnalysis`（`internal/security/elfanalyzer/standard_analyzer.go`）の syscall analysis store 読み取りにおける想定外エラー（`ErrHashMismatch` 以外の `default` ケース）。
-2. **C2 F-3**: 子 ELF 依存パース失敗（`internal/dynlib/elfdynlib/analyzer.go`）、トップレベル `elf.NewFile`/`DynString` 失敗の「依存なし」への縮退、および Mach-O 側 `parseMachODeps` 失敗（`internal/dynlib/machodylib/analyzer.go`）。
-3. **C2 F-5**: `HasDynamicLibDeps`（`internal/dynlib/machodylib/analyzer.go`）の `Seek`/`io.ReadFull` 失敗が `(false, nil)` に縮退する箇所。
+2. **C2 F-3**: 子 ELF 依存パース失敗（`internal/dynlib/elfdynlib/analyzer.go`）、トップレベル `elf.NewFile`/`DynString` 失敗を「依存なし」と偽った判定にする箇所、および Mach-O 側 `parseMachODeps` 失敗（`internal/dynlib/machodylib/analyzer.go`）。
+3. **C2 F-5**: `HasDynamicLibDeps`（`internal/dynlib/machodylib/analyzer.go`）の `Seek`/`io.ReadFull` 失敗を `(false, nil)` と偽った判定にする箇所。
 4. **B3 M1**: `collectVerificationFiles`（`internal/verification/manager.go`）のコマンドパス解決失敗が warn + continue で検証対象集合から静かに脱落する箇所。
-5. **B3 L1**: `hasDynamicLibraryDeps`（`internal/verification/manager.go`）の `DynString(elf.DT_NEEDED)` エラーが `(false, nil)` に縮退する箇所。
+5. **B3 L1**: `hasDynamicLibraryDeps`（`internal/verification/manager.go`）の `DynString(elf.DT_NEEDED)` エラーを `(false, nil)` と偽った判定にする箇所。
 6. **A5 Low-3**: `applyBinaryAnalysis`（`internal/runner/base/risk/evaluator.go`）の `BinaryAnalysisClass` switch に `default` 節がなく、将来の未知クラス追加時に無寄与（fail-open）へ倒れる構造。
 
 ### 対象外（別 Issue・別タスクとする）
@@ -58,15 +58,15 @@ Issue #860 は「解析・検証に失敗した場合、安全側ではなく『
 
 ## 現状の問題点（詳細）
 
-### 1. C1 F-1: syscall analysis store の想定外エラーが fail-open へ縮退する
+### 1. C1 F-1: syscall analysis store の想定外エラーが fail-open へ落ち込む
 
 `internal/security/elfanalyzer/standard_analyzer.go:297-332` の `lookupSyscallAnalysis` は、`LoadSyscallAnalysis` のエラーのうち `ErrHashMismatch` は `AnalysisError`（fail-closed）に倒すが、`default`（想定外の I/O エラー等）は `slog.Debug` でログした上で `StaticBinary` を返す。呼び出し元（同ファイル:168-195）はこれを「ストアにエントリなし」と同一視し `NoNetworkSymbols` へフォールスルーする。CGO/静的リンクバイナリで record 時に検出されたネットワーク syscall が、verify 時の一過性 I/O エラーで検出漏れになり得る。
 
 ### 2. C2 F-3: 子依存パース失敗が fail-soft で遷移的依存の記録漏れを許す
 
-- `internal/dynlib/elfdynlib/analyzer.go:207-218`: 子 ELF パース失敗を `slog.Debug` で握り traversal をスキップ。
-- `internal/dynlib/elfdynlib/analyzer.go:115-127`: トップレベルの `elf.NewFile` 失敗・`DynString` エラーを `nil, nil`（依存なし）に縮退（`//nolint:nilerr`）。
-- `internal/dynlib/machodylib/analyzer.go:215-221`: `parseMachODeps` 失敗を `slog.Debug` で握る。
+- `internal/dynlib/elfdynlib/analyzer.go:207-218`: 子 ELF パース失敗を `slog.Debug` で無視し traversal をスキップ。
+- `internal/dynlib/elfdynlib/analyzer.go:115-127`: トップレベルの `elf.NewFile` 失敗・`DynString` エラーを `nil, nil`（依存なし）と偽った判定にする（`//nolint:nilerr`）。
+- `internal/dynlib/machodylib/analyzer.go:215-221`: `parseMachODeps` 失敗を `slog.Debug` で無視する。
 
 解決済みライブラリの子依存パースに失敗すると、そのサブツリー全体が記録・検証対象から漏れる。Mach-O 側の `HasDynamicLibDeps` は ELF マジック相当の判定（`looksLikeMachO`）でトップレベル失敗をエラー化しており非対称。
 
@@ -78,7 +78,7 @@ Issue #860 は「解析・検証に失敗した場合、安全側ではなく『
 
 `internal/verification/manager.go:264-277` は `m.pathResolver.ResolvePath(command.ExpandedCmd)` の失敗を `slog.Warn` して `continue` し、`VerifyGroupFiles` 自体は成功として返る。呼び出し元 (`internal/runner/group_executor.go`) は直後のループで再度 `ResolvePath` を呼ぶため、収集時に失敗し実行ループ実行前にファイルが出現した場合、ハッシュ検証集合に含まれないままコマンドが実行され得る（fail-open の窓）。
 
-### 5. B3 L1: hasDynamicLibraryDeps が DynString のエラーを握りつぶす
+### 5. B3 L1: hasDynamicLibraryDeps が DynString のエラーを無視する
 
 `internal/verification/manager.go:711-715` は `elfFile.DynString(elf.DT_NEEDED)` のエラーを `(false, nil)`（動的依存なし）として扱う。動的セクションが壊れている（または細工された）ELF は `ErrDynLibDepsRequired` を回避し、dynlib 検証要求をバイパスし得る。
 
@@ -132,5 +132,5 @@ Issue #860 は「解析・検証に失敗した場合、安全側ではなく『
 
 ## リスクと留意事項
 
-- F-002/F-003/F-004/F-005 は、これまで「エラーだが握りつぶして続行」していた経路を fail-closed 化するため、環境要因（一過性の I/O エラー、権限問題等）で record/verify が失敗しやすくなる可能性がある。ユーザー向けエラーメッセージが原因を特定しやすい内容になっていることを実装時に確認する。
+- F-002/F-003/F-004/F-005 は、これまで「エラーだが無視して続行」していた経路を fail-closed 化するため、環境要因（一過性の I/O エラー、権限問題等）で record/verify が失敗しやすくなる可能性がある。ユーザー向けエラーメッセージが原因を特定しやすい内容になっていることを実装時に確認する。
 - F-002 (AC-04) は「子依存パース失敗を解析全体の失敗にする」変更であり、既存の正当な（パース可能な）依存ツリーを持つ環境で誤って失敗させないよう、実装時に十分なテストケース（多階層依存、循環依存、既存の record 済みデータ）で確認する。
