@@ -1,4 +1,4 @@
-# アーキテクチャ設計書: エラー処理の縮退による fail-open パターンの横断修正（残件）
+# アーキテクチャ設計書: エラー隠蔽による fail-open パターンの横断修正（残件）
 
 ## Document Status
 
@@ -23,14 +23,14 @@
 
 本設計の核心は、以下の1つの設計原則に集約される:
 
-> **「解析不能・エラー」と「対象なし・問題なし」を型／制御フロー上で区別し、前者を一律 fail-closed に倒す。**
+> **「解析不能・エラー」と「対象なし・問題なし」を型／制御フロー上で区別し、前者を一律 fail-closed として処理する。**
 
-現状コードには、エラーをログ出力のみで握りつぶし「依存なし」「ネットワーク機能なし」「検証成功」に縮退させる fail-open パターンが、6つの異なるパッケージに横断的に存在する。本設計では、これら6箇所すべてに対して一貫した修正を適用する。
+現状コードには、エラーをログ出力のみで無視し「依存なし」「ネットワーク機能なし」「検証成功」と偽った判定をする fail-open パターンが、6つの異なるパッケージに横断的に存在する。本設計では、これら6箇所すべてに対して一貫した修正を適用する。
 
 具体的には:
-- エラーハンドリングの `default` 節 / `slog.Debug` 握りつぶし を `slog.Warn` へ格上げし、エラーを呼び出し元へ伝播させる。
+- エラーハンドリングの `default` 節 / `slog.Debug` 無視 を `slog.Warn` へ格上げし、エラーを呼び出し元へ伝播させる。
 - `(false, nil)` や `(nil, nil)` で「問題なし」と偽る箇所を、`(false, err)` またはエラー伝播に変更する。
-- `switch` 文に `default` 節を追加し、未知の値が追加された場合の安全側への倒れ込みを保証する。
+- `switch` 文に `default` 節を追加し、未知の値が追加された場合に安全側のデフォルト動作に落ち込むことを保証する。
 
 ### 1.2 概念モデル
 
@@ -43,7 +43,7 @@ flowchart LR
     subgraph Before["Before（現状）"]
         direction TB
         S1["解析・検証処理"] -->|"エラー発生"| L1["slog.Debug"]
-        L1 --> R1["「対象なし」「問題なし」に縮退<br>（fail-open）"]
+        L1 --> R1["「対象なし」「問題なし」と偽った判定<br>（fail-open）"]
         S1 -->|"成功"| N1["正常結果"]
     end
 
@@ -149,13 +149,13 @@ flowchart LR
 
 #### 3.2.1 現状（ELF側）
 
-**トップレベル解析**（`elfdynlib/analyzer.go:115-127`）: `elf.NewFile` 失敗・`DynString(DT_NEEDED)` エラーをいずれも `nil, nil`（依存なし）に縮退する（`//nolint:nilerr`）。
+**トップレベル解析**（`elfdynlib/analyzer.go:115-127`）: `elf.NewFile` 失敗・`DynString(DT_NEEDED)` エラーをいずれも `nil, nil`（依存なし）と偽った判定にする（`//nolint:nilerr`）。
 
-**BFS traversal 中の子依存パース失敗**（`elfdynlib/analyzer.go:207-218`）: `ErrDTRPATHNotSupported` のみ上位に伝播し、それ以外のパース失敗は `slog.Debug` + `continue` で子の traversal をスキップする（fail-open）。
+**BFS traversal 中の子依存パース失敗**（`elfdynlib/analyzer.go:207-218`）: `ErrDTRPATHNotSupported` のみ上位に伝播し、それ以外のパース失敗は `slog.Debug` + `continue` で子の traversal をスキップし無視する（fail-open）。
 
 #### 3.2.2 現状（Mach-O側）
 
-**BFS traversal 中の子依存パース失敗**（`machodylib/analyzer.go:215-221`）: `slog.Debug` + `continue` で子の traversal をスキップする（fail-open）。
+**BFS traversal 中の子依存パース失敗**（`machodylib/analyzer.go:215-221`）: `slog.Debug` + `continue` で子の traversal をスキップし無視する（fail-open）。
 
 #### 3.2.3 修正後
 
@@ -253,7 +253,7 @@ flowchart LR
 
 #### 3.4.1 現状
 
-`verification/manager.go:264-277` の `collectVerificationFiles` は、`pathResolver.ResolvePath` の失敗を `slog.Warn` + `continue` で握りつぶし、当該コマンドを検証対象集合から静かに除外する。`collectVerificationFiles` の戻り値は `map[string]struct{}` であり、エラーを返せないシグネチャである。
+`verification/manager.go:264-277` の `collectVerificationFiles` は、`pathResolver.ResolvePath` の失敗を `slog.Warn` + `continue` で無視し、当該コマンドを検証対象集合から静かに除外する。`collectVerificationFiles` の戻り値は `map[string]struct{}` であり、エラーを返せないシグネチャである。
 
 #### 3.4.2 修正後
 
@@ -286,7 +286,7 @@ flowchart LR
 
 #### 3.5.1 現状
 
-`verification/manager.go:711-715` の `hasDynamicLibraryDeps` は、`elfFile.DynString(elf.DT_NEEDED)` のエラーを `(false, nil)`（依存なし）に縮退する（fail-open）。動的セクションが破壊された ELF は `ErrDynLibDepsRequired` を回避し、dynlib 検証要求をバイパスし得る。
+`verification/manager.go:711-715` の `hasDynamicLibraryDeps` は、`elfFile.DynString(elf.DT_NEEDED)` のエラーを `(false, nil)`（依存なし）と偽った判定にする（fail-open）。動的セクションが破壊された ELF は `ErrDynLibDepsRequired` を回避し、dynlib 検証要求をバイパスし得る。
 
 #### 3.5.2 修正後
 
@@ -354,8 +354,8 @@ flowchart LR
 
 全6箇所の修正に共通するエラーハンドリングパターン:
 
-1. `slog.Debug` による握りつぶし → `slog.Warn` へ格上げ
-2. エラーを握りつぶして「問題なし」を返す → エラーを呼び出し元に伝播
+1. `slog.Debug` による無視 → `slog.Warn` へ格上げ
+2. エラーを無視して「問題なし」を返す → エラーを呼び出し元に伝播
 3. `switch` の `default` なし → `default` 節で fail-closed
 
 ### 4.2 エラーメッセージと構造化ログ設計
