@@ -513,7 +513,7 @@ flowchart TD
 
     A["getgrgid_r 呼び出し"] --> B{"戻り値 s / result"}
     B -->|"s == 0 かつ result == NULL"| NF["グループ未存在<br>→ ([], nil)"]
-    B -->|"s == ERANGE"| R{"バッファ < 上限（4 MiB）?"}
+    B -->|"s == ERANGE"| R{"バッファ &lt; 上限（4 MiB）?"}
     R -->|"Yes"| GROW["バッファ 2 倍 → 再試行"]
     GROW --> A
     R -->|"No"| E1["列挙エラー（ERANGE 上限到達）"]
