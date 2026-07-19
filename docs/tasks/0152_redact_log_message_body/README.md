@@ -87,8 +87,8 @@ recover は reflection を伴う複合値の処理のためのものであり、
 
 | AC | Test | Implementation | Verification |
 |---|---|---|---|
-| AC-01 | `internal/redaction/redactor_test.go::TestRedactingHandler_Handle_MessageRedaction`（新設予定） | `internal/redaction/redactor.go` `Handle` | key=value 形式メッセージが redact されることを確認 |
-| AC-02 | 同上 | 同上 | value 検出ベースの機密情報が redact されることを確認 |
+| AC-01 | `internal/redaction/redactor_test.go::TestRedactingHandler_Handle_MessageRedaction`（新設済み） | `internal/redaction/redactor.go` `Handle` | key=value 形式メッセージが redact されることを確認 |
+| AC-02 | `internal/redaction/redactor_test.go::TestRedactingHandler_Handle_MessageRedaction`（新設済み） | 同上 | value 検出ベースの機密情報が redact されることを確認 |
 | AC-03 | 同上 | 同上 | 非機密メッセージが変更されないことを確認 |
 | AC-04 | 既存 `TestRedactingHandler_*` 一式 | 同上 | `make test` 全体グリーン |
 

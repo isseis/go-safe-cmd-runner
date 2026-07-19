@@ -653,6 +653,7 @@ func TestRedactingHandler_Handle_MessageRedaction(t *testing.T) {
 
 		handledRecord := mock.records[0]
 		assert.NotContains(t, handledRecord.Message, "AKIAIOSFODNN7EXAMPLE")
+		assert.Contains(t, handledRecord.Message, "[REDACTED]")
 		assert.Contains(t, handledRecord.Message, "key name")
 	})
 
