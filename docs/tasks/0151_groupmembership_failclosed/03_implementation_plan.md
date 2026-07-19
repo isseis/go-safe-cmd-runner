@@ -390,7 +390,7 @@ Phase 2 完了後は完全列挙環境で `userPrimaryGID == groupGID` かつ `l
 
 作業内容:
 
-- [ ] Phase 1〜3 で `IsUserInGroup` 自体のロジックは変更していないため、本 Phase は新規テストの
+- [x] Phase 1〜3 で `IsUserInGroup` 自体のロジックは変更していないため、本 Phase は新規テストの
       追加のみで完了する（02_architecture.md §6.3 の分析どおり、`IsUserInGroup` は
       プライマリ GID 一致判定と補助グループ集合判定を列挙結果より先に確定するため、
       AC-06 によるプライマリメンバーの追加は `IsUserInGroup` の判定結果を変えない）。
