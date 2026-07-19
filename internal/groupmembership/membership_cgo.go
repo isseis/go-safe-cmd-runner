@@ -276,7 +276,7 @@ func getExplicitGroupMembers(gid uint32) (members []string, found bool, err erro
 	}
 
 	if errv := validateGroupMemberCount(int(count)); errv != nil {
-		C.free_string_array(cMembers, 0)
+		C.free_string_array(cMembers, count)
 		return nil, false, fmt.Errorf("%w: gid %d: %w", ErrGroupMemberEnumeration, gid, errv)
 	}
 	defer C.free_string_array(cMembers, count)
@@ -331,7 +331,7 @@ func getUsersWithPrimaryGID(gid uint32) ([]string, error) {
 	}
 
 	if errv := validateGroupMemberCount(int(count)); errv != nil {
-		C.free_string_array(cUsers, 0)
+		C.free_string_array(cUsers, count)
 		return nil, fmt.Errorf("%w: gid %d: %w", ErrGroupMemberEnumeration, gid, errv)
 	}
 	defer C.free_string_array(cUsers, count)

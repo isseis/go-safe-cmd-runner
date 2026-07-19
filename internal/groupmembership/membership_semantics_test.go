@@ -17,6 +17,9 @@ func shouldSkipSemanticsTest(nsswitchContent string, goos string) (skip bool, re
 	if goos == "darwin" {
 		return true, "macOS uses OpenDirectory; cannot guarantee files-only NSS"
 	}
+	if goos != "linux" {
+		return true, "only Linux is supported for semantics equivalence testing"
+	}
 
 	if nsswitchContent == "" {
 		return false, ""
@@ -161,16 +164,15 @@ func TestGetGroupMembers_CGOAndNoCGOSemanticsMatch(t *testing.T) {
 		cgoResult, err := getGroupMembers(gid)
 		require.NoError(t, err, "CGO getGroupMembers(%d) failed", gid)
 
-		expected := fileExpectedMembers(gid)
+		expected := fileExpectedMembers(t, gid)
 		assert.ElementsMatch(t, expected, cgoResult, "GID %d: CGO and file-based semantics differ", gid)
 	}
 }
 
-func fileExpectedMembers(gid uint32) []string {
+func fileExpectedMembers(t *testing.T, gid uint32) []string {
+	t.Helper()
 	entry, err := findGroupByGID(gid)
-	if err != nil {
-		return nil
-	}
+	require.NoError(t, err, "failed to find group by GID %d", gid)
 	if entry == nil {
 		return []string{}
 	}
@@ -185,10 +187,9 @@ func fileExpectedMembers(gid uint32) []string {
 		}
 	}
 	primaryUsers, err := findUsersWithPrimaryGID(gid)
-	if err == nil {
-		for _, u := range primaryUsers {
-			set[u] = struct{}{}
-		}
+	require.NoError(t, err, "failed to find users with primary GID %d", gid)
+	for _, u := range primaryUsers {
+		set[u] = struct{}{}
 	}
 	result := make([]string, 0, len(set))
 	for m := range set {
