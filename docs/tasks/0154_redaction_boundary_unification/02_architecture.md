@@ -218,25 +218,21 @@ sequenceDiagram
 
 ## 3. コンポーネント設計
 
-### 3.1 修正対象ファイルと責任範囲
+### 3.1 修正対象パッケージと責任分割
 
-| ファイル | 修正区分 | 責任 |
+本タスクの修正は以下の 4 パッケージに分布する。各パッケージの修正範囲は、既存のプライベート実装を拡張し、公開 API シグネチャは変更しない：
+
+| パッケージ | 責任 | 修正内容 |
 |---|---|---|
-| `internal/redaction/redactor.go` | 拡張 | F-001, F-002: `processKindAny` に map/struct 再帰を追加、`processSlice` に非 LogValuer 要素の再帰 redact を追加 |
-| `internal/redaction/redactor_test.go` | 追加 | F-001, F-002 の AC 検証テスト |
-| `internal/logging/slack_handler.go` | 拡張 | F-003: Slack 送信失敗ログのエラーから webhook URL を除去 |
-| `internal/logging/slack_handler_test.go` | 追加 | F-003 の AC 検証テスト |
-| `internal/runner/base/audit/logger.go` | 拡張 | F-004, F-005, F-006: 全メソッドに境界 redaction を適用、LogSecurityEvent の details キー名前空間分離 |
-| `internal/runner/base/audit/logger_test.go` | 追加 | F-004, F-005, F-006 の AC 検証テスト |
-| `internal/runner/base/security/environment_validation.go` | 拡張 | F-007: 値ベース redaction の追加、大文字小文字非対称性の解消 |
-| `internal/runner/base/security/environment_validation_test.go` | 追加 | F-007 の AC 検証テスト |
+| `internal/redaction` | RedactingHandler による再帰的 redaction の拡張 | F-001: map/struct 要素の再帰 redaction、F-002: slice 非 LogValuer 要素の再帰 redaction |
+| `internal/logging` | Slack ハンドラのエラーログ安全性向上 | F-003: エラー値から webhook URL を除去 |
+| `internal/runner/base/audit` | 監査ログメソッドの統一的な境界 redaction | F-004, F-005, F-006: LogUserGroupExecution, LogPrivilegeEscalation, LogSecurityEvent の 3 メソッドに統一的に境界 redaction を適用、details キー名前空間分離 |
+| `internal/runner/base/security` | 環境変数サニタイズの防御強化 | F-007: 値内容ベースの redaction 検査、キー名の大文字小文字非対称性解消 |
 
-**修正対象外（変更しないファイル）**:
-- `internal/redaction/redactor.go` の `Handle`、`WithAttrs`、`processLogValuer`、failureLogger 検証ロジック
-- `internal/redaction/sensitive_patterns.go`（SensitivePatterns 自体は変更不要）
-- `internal/redaction/value_detector.go`（ValueDetector 自体は変更不要）
-- `internal/runner/base/audit/logger.go` の `LogRiskProfile`（既に境界 redaction 実装済み）
-- `internal/runner/base/security/validator.go`（構造体定義のみ、フィールド追加の可能性あり）
+**不変部分**（本タスクでは変更しない）:
+- 既存の RedactingHandler プライベート実装の根本的な再設計
+- SensitivePatterns, ValueDetector の仕様変更
+- 公開メソッドのシグネチャ変更
 
 ### 3.2 RedactingHandler: map/struct 再帰（F-001）
 
@@ -267,39 +263,26 @@ flowchart TD
 
 #### 3.2.2 processMap（新規追加）
 
-`processMap` は map 型（`map[string]any` を主対象とし、他の comparable キー型もサポートする）の値を受け取り、各キー・値を再帰的に redact して新しい `map[string]any` を返す。
+map 型の値を受け取り、各キー・値を再帰的に redact する。以下の設計原則に従う：
 
-- **決定論的出力順序**: ログの再現性を確保するため、map のキーをソートしてからイテレートする。ソートはキーを `fmt.Sprint(key)` で文字列化した値の辞書順で行う。これにより、同一入力から常に同一順序の JSON 出力が得られる。
-- **非文字列キーの変換**: 出力先は `map[string]any` であるため、非文字列キーは `fmt.Sprint(key)` で文字列化する。この変換はキーが存在したことの痕跡をログに残すためのものであり、元のキー型の完全な復元は保証しない。
-- 深度制限: `maxRedactionDepth` を超過した場合、`RedactionFailurePlaceholder` を返す。この際、後述の `_redaction_status` 属性も同時に設定する（§4.2 参照）。
-- キー redaction: キーが `IsSensitiveKey` に一致する場合、値全体を `[REDACTED]` に置換する。非文字列キーの場合は `IsSensitiveKey` 検査をスキップする（キー名パターンは文字列キーにのみ意味を持つため）。
-- 値 redaction: 各エントリを `redactLogAttributeWithContext` に再帰的に通す。
-- fail-secure: 処理中の panic を recover し、`RedactionFailurePlaceholder` を返す。
-
-```
-# 戻り値の型（概念）
-func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionContext) (slog.Attr, error)
-```
+- **決定論的出力順序**: map のキーをソートしてからイテレートする。ソート順は、キーを文字列化した値の辞書順である。これにより同一入力から常に同一順序の JSON 出力が得られ、ログの再現性を確保する。
+- **非文字列キーの統一化**: 出力形式を `map[string]any` に統一するため、非文字列キーは文字列化する。出力には元のキーが存在したことの痕跡が残される。
+- **深度制限**: 再帰深度が上限に達した場合、安全側に倒してプレースホルダを返す（§4.2 参照）。
+- **キー機密性判定**: キーが機密パターンに一致する場合、値全体を redact する。非文字列キーのキー名パターン判定はスキップ。
+- **値の再帰処理**: 各エントリを再帰処理に通し、値の型に応じた適切な redaction を適用。
+- **fail-secure（panic 回復）**: 反射操作中の予期しない panic を recover し、プレースホルダを返す。
 
 #### 3.2.3 processStruct（新規追加）
 
-`processStruct` は任意の struct 型を受け取り、リフレクションで exported フィールドを列挙し、各フィールドを再帰的に redact する。出力形式は `map[string]any` に統一する。
+任意の struct 型を受け取り、リフレクションで exported フィールドを列挙し、各フィールドを再帰的に redact する。出力形式は `map[string]any` に統一し、JSON ハンドラが自然に処理できる構造で返す。
 
-- 深度制限: `maxRedactionDepth` を超過した場合、`RedactionFailurePlaceholder` を返す。
-- フィールド走査: `reflect.VisibleFields` で exported フィールドを取得する。フィールド名をキーとする `map[string]any` を構築する。
-- フィールド値 redaction: 各フィールド値を `reflect.Value.Interface()` で取り出し、文字列型の場合は `RedactText` を適用、さらに複合型（map/struct/slice）の場合は再帰処理する。
-- フォールバック（AC-04b）: 以下の具体的な struct 形状では安全側プレースホルダにフォールバックする。
-  - すべてのフィールドが unexported である struct（`reflect.VisibleFields` が空）
-  - 自己参照ポインタを含む循環参照 struct（`reflect` の深さ制限で検出不能な無限再帰のリスクがある場合、深度制限で捕捉する）
-  - `reflect.Value.Interface()` が panic するフィールドを含む struct
-- fail-secure: 処理中の panic を recover し、`RedactionFailurePlaceholder` を返す。
+- **深度制限**: 再帰深度が上限に達した場合、プレースホルダを返す。
+- **フィールド走査**: exported フィールドのみを対象とし、フィールド名をキーとして構築。
+- **フィールド値 redaction**: 各フィールド値を再帰処理に通す。文字列型は直接 redaction、複合型は再帰。
+- **フォールバック条件**: すべてのフィールドが unexported である struct、自己参照を含む循環参照 struct、反射操作が panic する struct は安全側プレースホルダにフォールバック。
+- **fail-secure（panic 回復）**: 反射操作中の予期しない panic を recover し、プレースホルダを返す。
 
-```
-# 戻り値の型（概念）
-func (r *RedactingHandler) processStruct(key string, structValue any, ctx redactionContext) (slog.Attr, error)
-```
-
-**「なぜ既存のアプローチでは不十分なのか」**: 現状の `processKindAny` は非 LogValuer・非 slice 型を「3. Unsupported type: pass through」として無加工で通す。このアプローチでは、`slog.Any("details", map[string]any{"api_key": "..."})` の `api_key` 値が `RedactText` を経由せずに JSON 直列化され、機密情報が漏洩する。AC-01〜AC-04 が要求する「型に依存せず redaction される」不変条件を満たすには、map/struct の再帰処理が必須である。
+**設計判断**: 現状の processKindAny は非 LogValuer・非 slice 型を無加工で通す。このため `slog.Any("details", map[string]any{"api_key": "..."})` の `api_key` 値が redaction を素通りし、機密情報が JSON 直列化される。AC-01〜AC-04 が「型に依存せず redaction される」不変条件を要求するため、map/struct の再帰処理は必須である。
 
 ### 3.3 RedactingHandler: processSlice の非 LogValuer 要素再帰 redaction（F-002）
 
@@ -322,128 +305,94 @@ func (r *RedactingHandler) processStruct(key string, structValue any, ctx redact
 
 #### 3.4.1 修正方針
 
-`slack_handler.go:845,869,878,884` の `slog.Any("error", err)` および同 903 行の `slog.Any("last_error", lastErr)` の計 5 箇所で、エラー値が `*url.Error` の場合に webhook URL が露出する。
+Slack 送信失敗時のエラーログから webhook URL を除去する。HTTP クライアントが返す `*url.Error` には URL フィールドが含まれ、ログに出力されると平文で露出する。
 
-修正方針は、**エラー値をログに渡す前に URL を除去した文字列に変換する**ことである。各 `slog.Any(...)` 呼び出しを `slog.String("error", sanitizeErrorForLog(err))`（`last_error` も同様）に変更する。
+修正方針は、**エラー値をログに渡す前に、構造的に URL 部分を除去する**ことである。エラー値に対してヘルパー関数を適用し、返される文字列値をログに記録する。
 
-#### 3.4.2 sanitizeErrorForLog（新規追加）
+#### 3.4.2 エラーサニタイズヘルパー（新規追加）
 
-`slack_handler.go` に非公開ヘルパー関数を追加する。
+非公開ヘルパー関数を追加し、エラー値を処理する。処理優先順位は以下の通り：
 
-```
-# 型シグネチャ（概念）
-func sanitizeErrorForLog(err error) string
-```
+1. **`*url.Error` の直接検出**: エラーが `*url.Error` 型である場合、その `Err` フィールド（URL ラップ前のエラー）のメッセージのみを抽出。URL フィールドを明示的に除外する。
+2. **ラップチェーンの走査**: エラーが別の型にラップされている場合（例: `fmt.Errorf("...: %w", urlErr)`）、チェーンを走査して `*url.Error` を探索。見つかった場合はその `Err` フィールドを使用。
+3. **フォールバック**: ラップチェーンに `*url.Error` が含まれない場合、エラー文字列全体に `RedactText` を適用。これにより、URL 形式でない機密パターンも検出される。
 
-処理内容（優先順位順）:
-1. `err` が `*url.Error` である場合、`err.Err.Error()` のみを返す（`err.URL` を除外）。これにより `*url.Error` の `Error()` メソッドが返す `Post "https://hooks.slack.com/...": dial tcp ...` から URL 部分が確実に除去される。
-2. `err` が `*url.Error` をラップしている場合（`fmt.Errorf("...: %w", urlErr)`）、`errors.As` でラップチェーンを辿って `*url.Error` を抽出する。抽出できた場合はその `Err` フィールドのエラーメッセージを使用する。ラップチェーンに `*url.Error` が含まれない場合は、`err.Error()` 全体に `RedactText` を適用する。
-3. それ以外のエラーは `err.Error()` をそのまま返す。
+**設計判断**: `*url.Error` の構造的な抽出を優先する理由は、Slack webhook URL 形式に特化したパターンマッチングよりも確実に URL を除去できるためである。エラー型の構造に基づく処理により、誤検出や漏洩漏れのリスクを最小化する。
 
-**設計判断**: 手順 2 で `errors.As` によるチェーン展開を採用する理由は、`RedactText` が Slack webhook URL 形式（`https://hooks.slack.com/services/...`）に特化したパターンを持たない可能性を考慮したものである。`errors.As` による構造的な URL 除去の方が、パターンベースの検出よりも確実に URL を除去できる。ラップチェーンに `*url.Error` が存在しない場合の `RedactText` フォールバックは、防御の最終ラインとして機能する。
-
-これにより、エラーの種別情報（タイムアウト、DNS エラー、接続拒否等）は保持しつつ、webhook URL のみを除去する（AC-10）。
+これにより、エラー種別情報（タイムアウト、DNS エラー、接続拒否等）は保持されつつ、webhook URL のみが除去される。
 
 ### 3.5 監査ログの境界 redaction 統一（F-004, F-005, F-006）
 
 #### 3.5.1 共通方針
 
-監査パッケージレベルで既に定義されている `argRedactor`（`redaction.DefaultConfig()`、`logger.go:31`）を全 4 メソッドで一貫して使用する。各メソッドは、ユーザ由来の文字列フィールドをログ属性に設定する前に `argRedactor.RedactText` を適用する。`LogRiskProfile` の既存実装（`logger.go:255-261`）と同一のパターンである。
+監査ログ出力では、既に確立した redaction メカニズム（`argRedactor.RedactText`）を全メソッドで一貫して適用する。これは既存の `LogRiskProfile` の実装パターンに準ずるものである。
 
-なお、ログ属性キー名は `internal/common/logschema.go` に定数として定義されているものもある（例: `common.PrivilegeEscalationFailureAttrs.Operation`、`common.PrivilegeEscalationFailureAttrs.CommandName`、`common.SecurityAlertAttrs.EventType`、`common.SecurityAlertAttrs.Severity`、`common.SecurityAlertAttrs.Message`）。実装時はこれらの定数を優先的に使用し、文字列リテラルの重複定義を避けること。
+各メソッドは、ユーザ由来の文字列フィールド（コマンド引数、stdout/stderr、操作名など）をログに出力する前に、機密パターンの検出と masking を行う。
 
 #### 3.5.2 LogUserGroupExecution（F-004）
 
-修正対象の属性:
+以下のユーザ由来フィールドに境界 redaction を適用する：
 
-| 属性キー | 現状 | 修正後 |
-|---|---|---|
-| `command_args` | `strings.Join(cmd.Args(), " ")` をそのまま | `argRedactor.RedactText(strings.Join(cmd.Args(), " "))` |
-| `expanded_command_args` | `strings.Join(cmd.ExpandedArgs, " ")` をそのまま | `argRedactor.RedactText(strings.Join(cmd.ExpandedArgs, " "))` |
-| `stdout` | `result.Stdout` をそのまま（失敗時のみ） | `argRedactor.RedactText(result.Stdout)` |
-| `stderr` | `result.Stderr` をそのまま（失敗時のみ） | `argRedactor.RedactText(result.Stderr)` |
+- コマンド引数（複数行まとめて渡される値）
+- 展開後のコマンド引数
+- コマンド実行失敗時の標準出力・標準エラー出力
+
+各値は `RedactText` を経由して masking される。
 
 #### 3.5.3 LogPrivilegeEscalation（F-005）
 
-修正対象の属性:
+以下のユーザ由来フィールドに境界 redaction を適用する：
 
-| 属性キー | 現状 | 修正後 |
-|---|---|---|
-| `operation` | `operation` をそのまま | `argRedactor.RedactText(operation)` |
-| `command_name` | `commandName` をそのまま | `argRedactor.RedactText(commandName)` |
+- 操作名（operation）
+- コマンド名（commandName）
 
 #### 3.5.4 LogSecurityEvent（F-005, F-006）
 
-修正対象:
+**メッセージの redaction（F-005）**:
 
-| 属性キー / 項目 | 現状 | 修正後 |
-|---|---|---|
-| `message` | `message` をそのまま | `argRedactor.RedactText(message)` |
-| `details` の値 | `slog.Any(key, value)` で無加工 | 値の型に応じた処理（下表参照） |
-| `details` のキー | そのまま | `"detail_" + key` にプレフィックス付与（キー衝突防止） |
+メッセージフィールドをログに出力する前に `RedactText` を適用。
 
-**`details` の値の型別処理**:
+**詳細情報（details）の処理（F-006）**:
 
-| 値の型 | 処理 | 出力形式 |
-|---|---|---|
-| 文字列（`string`） | `argRedactor.RedactText(value)` | `slog.String("detail_"+key, masked)` |
-| 数値（`int`, `float64` 等） | そのまま（redact 不要） | `slog.Int("detail_"+key, value)` 等、型に応じた slog メソッド |
-| bool | そのまま（redact 不要） | `slog.Bool("detail_"+key, value)` |
-| 複合型（`map`, `struct`, `slice`） | 文字列化せず `slog.Any` で渡す | `slog.Any("detail_"+key, value)` |
+`details` は任意の key-value 情報を保持する。処理方針は以下の通り：
 
-複合型の値は境界 redaction では文字列化・redact せず、`slog.Any` でそのまま渡す。これは F-001/F-002 により `RedactingHandler`（Layer 2）が map/struct/slice 要素を再帰的に redact するようになるため、二重防御のレイヤー間で役割を分担する設計である。境界 redaction（Layer 0）は文字列値の直接的な redact を担当し、複合型の再帰的な redact は Layer 2 に委ねる。テストでは `RedactingHandler` 非経由の素の `slog.Logger`（詳細は後述の §7.1 参照）を使用する AC-17 では複合型値の redact は検証せず、文字列値の redact のみを境界 redaction のテスト対象とする。複合型値の redact は F-001/F-002 のテスト（AC-01〜AC-05）で検証する。
+- **文字列値**: `RedactText` を適用してから `slog.String` で出力。
+- **数値・真偽値**: redaction 不要。そのまま出力。
+- **複合型（map/struct/slice）**: `slog.Any` で出力。Layer 2（RedactingHandler）の再帰 redaction に委ねる。
 
-**キー名前空間分離の設計判断**: `details` のキーに `"detail_"` プレフィックスを付与する。これにより `severity`、`audit_type`、`slack_notify`、`decision` 等の既存スキーマキーと衝突しなくなる（AC-18）。スキーマキーはプレフィックスなしのフラットなキーであり、本タスク修正時点では `"detail_"` で始まるスキーマキーは存在しない。**注意**: この命名規則（`"detail_"` プレフィックスをスキーマキーに使用しないこと）は将来のコード変更でも維持される必要がある規約である。新たなスキーマキーを追加する場合は、この命名規則を遵守すること。
+この設計は層別責任の分離である。Layer 0（境界 redaction）は文字列値の直接 masking を担当。Layer 2 は複合型の再帰的な redaction を担当。
 
-**後方互換性への影響**: このキー名変更により、`details` から展開されていた属性キーが `"detail_source_uid"` のように変化する。既存のログ監視クエリや SIEM ルールが `details` の旧キー名を直接参照している場合、それらは更新が必要である。この影響は §9.4（ロールアウト戦略）で詳述する。
+**キー名前空間分離**:
+
+`details` のキーに `"detail_"` プレフィックスを付与する。既存のスキーマキー（`severity`、`audit_type`、`decision` など）と衝突を防ぐため。
+
+**後方互換性**: キー名の変更により、既存のログ監視クエリやアラートルールの属性参照パスが変化する。詳細は §9.4 を参照。
 
 ### 3.6 SanitizeEnvironmentVariables の拡張（F-007）
 
 #### 3.6.1 値ベース redaction の追加
 
-現状の `SanitizeEnvironmentVariables`（`environment_validation.go:9-26`）は `isSensitiveEnvVar(key)` が `true` の場合にのみ値を `[REDACTED]` に置換する。AC-20 の要件を満たすため、キー名が機密と判定されなかった場合でも、値の内容を検査する。
+現状は環境変数のキー名が機密パターンに一致する場合のみ値を redact する。修正後は、キー名が機密と判定されなかった場合でも、値の内容を検査する。
 
-具体的には、`Validator.redactionConfig.RedactText(value)` を呼び出し、その戻り値が入力の `value` と異なる場合に「値が機密パターンを含む」と判定する。この判定は以下の設計上の前提に依存する:
+**判定メカニズム**:
 
-- `RedactText` は機密パターンが検出された場合、必ず出力を変更する（検出の成否が出力変化に現れる）
-- 逆に、機密パターンが存在しない入力に対しては元の文字列を変更せずに返す
+`RedactText` に値を渡し、その戻り値が入力と異なる場合に「値が機密パターンを含む」と判定する。これは既存の `RedactText` の契約（検出時に出力を変更、非検出時は入力を変更なく返す）に基づいている。
 
-この前提は既存の `RedactText` の契約の一部として確立されており、テスト（`TestRedactText_NoSensitiveInfo` 等）で検証されている。`ValueDetector.Mask` を含むため、PEM 秘密鍵ヘッダや JWT 等の値形式も検出対象となる。
+`ValueDetector.Mask` を含むため、PEM 秘密鍵ヘッダや JWT 等の値形式も検出対象となる。
 
-実際の置換値は既存と同様に `[REDACTED]` で統一する（`RedactText` の出力は使用せず、検出の成否のみを利用する）。
+値が機密と判定された場合、置換値は `[REDACTED]` で統一（`RedactText` の出力は使用せず、検出の成否のみを利用）。
 
-#### 3.6.2 大文字小文字非対称性の解消
+#### 3.6.2 大文字小文字の処理統一
 
-現状の `isSensitiveEnvVar`（`environment_validation.go:29-44`）は `sensitiveEnvRegexps` のマッチングに `strings.ToUpper(name)` を使用している。このため、利用者が `Config.SensitiveEnvVars` に小文字のカスタムパターン（例: `my_secret`）を設定しても、`strings.ToUpper` によって `MY_SECRET` に変換されてからマッチングされるため、小文字のみを含む正規表現が一致しなくなる。
+現状は環境変数キー名をすべて大文字に変換してからマッチングする。そのため、ユーザが設定したカスタムパターンが小文字のみを含む場合（例: `my_secret`）、大文字化によってマッチしなくなる。
 
-修正方針（AC-22）:
-- `sensitivePatterns.IsSensitiveEnvVar(name)`（`SensitivePatterns` 経由）は既に大文字小文字を適切に処理しているため変更不要
-- `sensitiveEnvRegexps` へのマッチングは、既存の `upperName` でのマッチングに加えて、元の `name`（変換前の文字列）でも試行する
-- これにより、既存の大文字パターン（`PASSWORD` 等）は `upperName` でマッチし、小文字カスタムパターンは元の `name` でのマッチングで捕捉される
+修正方針:
+
+既存のカスタムパターンマッチング処理に加えて、元のキー名（大文字化前）でのマッチングも試行する。これにより大文字・小文字両方のパターンを同時にサポート。既存の大文字パターン（`PASSWORD` など）は既存の処理で捕捉され、新規の小文字パターンも取り込める。
 
 ### 3.7 型定義・インタフェース（変更なし）
 
-本タスクでは新規の公開型やインタフェースを導入しない。既存のシグネチャを維持したまま内部実装を拡張する。
-
-既存の重要な型（再掲）:
-
-```go
-// internal/redaction/redactor.go（既存・変更なし）
-type Config struct {
-    Placeholder      string
-    Patterns         *SensitivePatterns
-    KeyValuePatterns []string
-    ValueDetector    *ValueDetector
-}
-
-type RedactingHandler struct { /* 内部フィールドは非公開 */ }
-
-// internal/runner/base/audit/logger.go（既存・変更なし）
-type Logger struct { /* 内部フィールドは非公開 */ }
-
-// internal/runner/base/security/validator.go（既存・変更なし）
-type Validator struct { /* 内部フィールドは非公開 */ }
-```
+本タスクでは新規の公開型やインタフェースを導入しない。すべての修正は既存の型定義を変更せず、非公開の実装を拡張する形式で行う。
 
 ## 4. エラーハンドリング設計
 
