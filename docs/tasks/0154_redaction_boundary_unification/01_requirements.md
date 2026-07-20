@@ -24,16 +24,16 @@
 
 Issue #861 は、`internal/redaction`（RedactingHandler）・`internal/logging`（Slack 送出経路）・`internal/runner/base/audit`（監査ログ）・`internal/runner/base/security`（環境変数サニタイズ）の 4 箇所に分布する redaction 欠落所見が、いずれも同型の根本原因に帰着すると指摘している。
 
-1. **`RedactingHandler` が `slog.Any` 経由の map/struct/slice 要素に再帰しない**（D2 M-1）。この制約は audit パッケージ側でも既知の前提として扱われており（`internal/runner/base/audit/logger.go:286-289` のコメント参照）、`LogRiskProfile` はこの制約を認識した上で `command_args`/`operand_zones` に境界 redaction（`argRedactor.RedactText`）を個別適用して回避している。
+1. **`RedactingHandler` が `slog.Any` 経由の map/struct/slice 要素に再帰しない**（D2 M-1）。この制約は audit パッケージ側でも既知の制約として扱われており（`internal/runner/base/audit/logger.go:286-289` のコメント参照）、`LogRiskProfile` はこの制約を認識した上で `command_args`/`operand_zones` に境界 redaction（`argRedactor.RedactText`）を個別適用して回避している。
 2. **`LogRiskProfile` が確立した「境界 redaction」の設計パターンが、同一パッケージ内の他 3 メソッド（`LogUserGroupExecution`/`LogSecurityEvent`/`LogPrivilegeEscalation`）に遡及適用されていない**（A7 M-1〜M-3）。
 3. **`SanitizeEnvironmentVariables` がキー名のみで判定し値を見ない**（A4 M-2）ため、キー名が中立な環境変数に格納された秘密情報（PEM、JWT 等）が非 redaction 経路（このメソッド自身の呼び出し元）で漏れる。
 4. **Slack webhook URL 自体が credential であるにもかかわらず、送信失敗時のエラーログ（`slog.Any("error", err)`）に平文で残る**（D2 M-3）。これも根本的には (1) の「`slog.Any` の値が文字列化・redaction されずに JSON 直列化される」という同じ制約の一表現である。
 
-これらはいずれも「audit/logging パッケージを通る文字列は必ず redaction される」という単一の不変条件の欠落箇所であり、まとめて解消することで再発防止（新規コード追加時に同型の漏れが生じない構造）を図る。
+これらはいずれも「audit/logging パッケージを通る文字列は必ず redaction される」という単一の不変条件が欠落している箇所であり、まとめて解消することで再発防止（新規コード追加時に同型の漏れが生じない構造）を図る。
 
 ## 目的
 
-- `RedactingHandler` が `slog.Any` で渡される値（map・struct・スライス要素）に対しても、文字列属性・スライス内 LogValuer と同等の redaction を適用するようにし、「型に依存せず redaction される」という不変条件を確立する。
+- `RedactingHandler` が `slog.Any` で渡される値（map・struct・スライス要素）に対しても、文字列属性・スライス内 LogValuer と同等の redaction を適用するようにし、「型に依存せず redaction される」という不変条件を保証する。
 - `internal/runner/base/audit` の全 4 メソッド（`LogUserGroupExecution`/`LogPrivilegeEscalation`/`LogSecurityEvent`/`LogRiskProfile`）で、ユーザ由来の文字列フィールドに対する境界 redaction の適用を対称にする。
 - Slack webhook URL がエラーログ経由で漏れる経路を塞ぐ。
 - `SanitizeEnvironmentVariables` がキー名だけでなく値の内容にも基づいて redaction するようにする。
@@ -68,11 +68,11 @@ Issue #861 は、`internal/redaction`（RedactingHandler）・`internal/logging`
 
 ### 2. D2 M-3: Slack webhook URL が送信失敗時のエラーログに漏れる
 
-`internal/logging/slack_handler.go:875-878` の `slog.Warn("Failed to send Slack request", slog.Any("error", err), ...)` は、`http.Client.Do` が返す `*url.Error` をそのまま `slog.Any` 属性として渡す。`*url.Error.Error()` は URL 全体（`hooks.slack.com/services/<token>` を含む）を含み、`processKindAny` の現状（前項）では error 値は LogValuer でも slice でもないため無加工で通り、JSON 直列化時に `*url.Error` のエクスポートフィールド（`URL` を含む）がそのまま出力される。webhook URL は Slack 公式に secret 扱いを要求される credential であり、これがログファイル・stderr に平文で残る。
+`internal/logging/slack_handler.go:875-878` の `slog.Warn("Failed to send Slack request", slog.Any("error", err), ...)` は、`http.Client.Do` が返す `*url.Error` をそのまま `slog.Any` の属性値として指定する。`*url.Error.Error()` は URL 全体（`hooks.slack.com/services/<token>` を含む）を含み、`processKindAny` の現状（前項）では error 値は LogValuer でも slice でもないため無加工で通り、JSON 直列化時に `*url.Error` のエクスポートフィールド（`URL` を含む）がそのまま出力される。webhook URL は Slack 公式により secret として扱うことを要求される credential であり、これがログファイル・stderr に平文で残る。
 
 ### 3. A7 M-1: `LogUserGroupExecution` が stdout/stderr を境界 redaction なしで記録する
 
-`internal/runner/base/audit/logger.go:100-109` は、コマンド失敗時（`ExitCode != 0`）に `result.Stdout`/`result.Stderr` を `slog.String` でそのまま属性に載せ、`slack_notify=true` を付与して Slack 送出経路に乗せる。`LogRiskProfile` が確立した境界 redaction（`argRedactor.RedactText`、`logger.go:255-261`）はここには適用されておらず、`RedactingHandler` のパターンベース redaction（既知パターンのみ対象）に依存した「ベストエフォート」の防御に留まる。
+`internal/runner/base/audit/logger.go:100-109` は、コマンド失敗時（`ExitCode != 0`）に `result.Stdout`/`result.Stderr` を `slog.String` でそのまま属性に載せ、`slack_notify=true` を付与して Slack 送出経路に乗せる。`LogRiskProfile` が確立した境界 redaction（`argRedactor.RedactText`、`logger.go:255-261`）はここには適用されておらず、`RedactingHandler` のパターンベース redaction（既知パターンのみ対象）に依存した「ベストエフォート」の防御にとどまる。
 
 ### 4. A7 M-2: 境界 redaction の適用がメソッド間で非対称
 
@@ -84,7 +84,7 @@ Issue #861 は、`internal/redaction`（RedactingHandler）・`internal/logging`
 
 ### 6. A4 M-2: `SanitizeEnvironmentVariables` が値を検査せずキー名のみで判定する
 
-`internal/runner/base/security/environment_validation.go:9-26` の `SanitizeEnvironmentVariables` は `isSensitiveEnvVar(key)` の結果のみで redaction 要否を決める。値そのものが秘匿情報（秘密鍵 PEM、JWT、AWS シークレット等）であっても、キー名が既知パターン（`PASSWORD`/`TOKEN`/`KEY`/`API` 等）に一致しなければ素通しする。加えて `sensitiveEnvRegexps` は `strings.ToUpper(name)` に対して適用される（`environment_validation.go:36`）ため、利用者が `Config.SensitiveEnvVars` に小文字のカスタムパターンを設定すると恒常的に不一致となる（設定のフットガン）。
+`internal/runner/base/security/environment_validation.go:9-26` の `SanitizeEnvironmentVariables` は `isSensitiveEnvVar(key)` の結果のみで redaction 要否を決める。値そのものが秘匿情報（秘密鍵 PEM、JWT、AWS シークレット等）であっても、キー名が既知パターン（`PASSWORD`/`TOKEN`/`KEY`/`API` 等）に一致しなければ素通しする。加えて `sensitiveEnvRegexps` は `strings.ToUpper(name)` に対して適用される（`environment_validation.go:36`）ため、利用者が `Config.SensitiveEnvVars` に小文字のカスタムパターンを設定すると恒常的に不一致となる（設定上の落とし穴）。
 
 ## 要件
 
@@ -95,14 +95,14 @@ Issue #861 は、`internal/redaction`（RedactingHandler）・`internal/logging`
 **Acceptance Criteria**:
 - **AC-01**: `slog.Any("details", map[string]any{"api_key": "secret-value"})` を出力すると、下流ハンドラが受け取る最終的な値（JSON 直列化結果を含む）に `secret-value` の平文が含まれない。
 - **AC-02**: `slog.Any("details", map[string]any{"note": "password=hunter2"})` のように、キー名は非機密だが値の内容が機密パターンに一致する場合も、値がマスクされる（キー名ベースの判定だけに依存しない）。
-- **AC-03**: ネストした map（`map[string]any{"outer": map[string]any{"token": "..."}}`）でも `maxRedactionDepth` の範囲内で再帰的に redaction が適用される。
+- **AC-03**: ネストされた map（`map[string]any{"outer": map[string]any{"token": "..."}}`）でも `maxRedactionDepth` の範囲内で再帰的に redaction が適用される。
 - **AC-04a**: struct 値（エクスポートされた文字列フィールドを持つ型）を `slog.Any` で渡した場合、フィールドごとに redaction が適用される（`map[string]any{"api_key": "secret-value"}` 相当の内容を持つ struct を渡すと、下流ハンドラが受け取る最終的な値に `secret-value` の平文が含まれない）。
 - **AC-04b**: フィールドごとの redaction が技術的に実装困難な struct 形状（unexported フィールドのみ、循環参照等）に限り、`RedactionFailurePlaceholder` 等の安全なプレースホルダへのフォールバックを許容する。この場合も redaction を経ずに機密文字列が下流へ渡らないことを検証する。
 - **AC-05**: 機密パターンを含まない map/struct 値は、redaction 適用後も実質的な内容（キー・値の対応関係）が保たれる（正常系への回帰がない）。
 
 ### F-002: `RedactingHandler.processSlice` の非 LogValuer 文字列要素への redaction 適用
 
-`processSlice` が処理する要素のうち、LogValuer でない文字列型要素にも `RedactText`（およびキー名ではなく値のみの判定であるため `IsSensitiveValue` 相当の判定）を適用する。
+`processSlice` が処理する要素のうち、LogValuer でない文字列型要素に対しても、`RedactText` による redaction を適用する。この際、キー名ではなく値の内容に基づいて判定する（`IsSensitiveValue` 相当の判定ロジック）。
 
 **Acceptance Criteria**:
 - **AC-06**: `slog.Any("args", []string{"--password=hunter2"})` を出力すると、対応するスライス要素中の `hunter2` が下流ハンドラの出力に平文で含まれない。
@@ -111,7 +111,7 @@ Issue #861 は、`internal/redaction`（RedactingHandler）・`internal/logging`
 
 ### F-003: Slack webhook URL のエラーログ漏洩防止
 
-`internal/logging/slack_handler.go` の Slack 送信失敗時のログ出力（リクエスト作成失敗・送信失敗等）で、webhook URL を含み得るエラー値をそのまま `slog.Any` で渡さず、URL を含まない形に要約してから記録する。
+`internal/logging/slack_handler.go` の Slack 送信失敗時のログ出力（リクエスト作成失敗・送信失敗等）で、webhook URL を含む可能性のあるエラー値をそのまま `slog.Any` で渡さず、URL を含まない形に要約してから記録する。
 
 **Acceptance Criteria**:
 - **AC-09**: webhook URL 疎通不可（DNS 解決失敗・接続拒否等、`*url.Error` を伴う失敗）を発生させた場合に出力されるログに、設定された webhook URL の文字列（トークン部分を含むパス）が平文で含まれない。
@@ -124,7 +124,7 @@ Issue #861 は、`internal/redaction`（RedactingHandler）・`internal/logging`
 **Acceptance Criteria**:
 - **AC-11**: `RedactingHandler` を経由しない素の `slog.Logger`（`NewAuditLoggerWithCustom` 等のテスト専用コンストラクタで注入）を使って `LogUserGroupExecution` を呼び出し、`result.Stderr` に `password=hunter2` を含めて実行を失敗させた場合、出力される `stderr` 属性の値に `hunter2` が平文で含まれない。
 - **AC-12**: 同様の条件で `cmd.Args()`/`cmd.ExpandedArgs` に機密パターンを含む引数を渡した場合、`command_args`/`expanded_command_args` 属性の値がマスクされる。
-- **AC-13**: 機密パターンを含まない stdout/stderr/引数は、redaction 適用後も内容が変化しない（正常系の監査ログが読みづらくならない）。
+- **AC-13**: 機密パターンを含まない stdout/stderr/引数は、redaction 適用後も内容が変化しない。
 
 ### F-005: `LogPrivilegeEscalation`・`LogSecurityEvent` の境界 redaction 適用
 
@@ -137,7 +137,7 @@ Issue #861 は、`internal/redaction`（RedactingHandler）・`internal/logging`
 
 ### F-006: `LogSecurityEvent` の `details` map の redaction とキー衝突防止
 
-`details map[string]any` の各値に境界 redaction を適用し、かつキーをスキーマ予約キーと衝突しない名前空間（prefix 付与等）に隔離する。
+`details map[string]any` の各値に境界 redaction を適用し、かつキーをスキーマ予約キーと衝突しない名前空間（プレフィックス付与等）に隔離する。
 
 **Acceptance Criteria**:
 - **AC-17**: `RedactingHandler` を経由しない `slog.Logger` を使って `LogSecurityEvent` を呼び出し、`details` に機密パターンを含む値（例: `map[string]any{"payload": "api_key=secret123"}`）を渡した場合、出力される対応属性の値に `secret123` が平文で含まれない。
@@ -146,7 +146,7 @@ Issue #861 は、`internal/redaction`（RedactingHandler）・`internal/logging`
 
 ### F-007: `SanitizeEnvironmentVariables` の値ベース redaction
 
-`SanitizeEnvironmentVariables` はキー名判定に加えて、値の内容に対しても redaction（`RedactText` および/または `ValueDetector` による値形式検出）を適用する。また `sensitiveEnvRegexps` の大文字小文字非対称性を解消する。
+`SanitizeEnvironmentVariables` はキー名判定に加えて、値の内容に対しても redaction（`RedactText` あるいは `ValueDetector` による値形式検出）を適用する。また `sensitiveEnvRegexps` の大文字小文字非対称性を解消する。
 
 **Acceptance Criteria**:
 - **AC-20**: キー名が既知の機密パターンに一致しない環境変数（例: `CONFIG_BLOB`）でも、値が機密形式（PEM 秘密鍵ヘッダ、JWT 等、既存の `ValueDetector`/`SensitivePatterns` が検出可能な形式）に一致する場合、`SanitizeEnvironmentVariables` の戻り値でその値がマスクされる。
@@ -155,11 +155,11 @@ Issue #861 は、`internal/redaction`（RedactingHandler）・`internal/logging`
 
 ## 非機能要件
 
-- 本タスクの各修正は、`internal/redaction`・`internal/logging`・`internal/runner/base/audit`・`internal/runner/base/security` の既存の公開 API シグネチャ（`RedactingHandler`, `Logger`, `Validator` の各メソッド）を変更しない。呼び出し側のコード変更を要求しない形で redaction の適用範囲のみを拡張する。
+- 本タスクの各修正は、`internal/redaction`・`internal/logging`・`internal/runner/base/audit`・`internal/runner/base/security` の既存の公開 API シグネチャ（`RedactingHandler`, `Logger`, `Validator` の各メソッド）を変更しない。呼び出し側を変更する必要がない形で redaction の適用範囲のみを拡張する。
 - 既存の `maxRedactionDepth`（DoS 防止のための再帰深度制限）の設計方針を、新たに追加する map/struct 再帰処理にも適用する。
-- 既存の fail-secure 方針（redaction 失敗時は `RedactionFailurePlaceholder` 等の安全側フォールバックを用いる）を、新規追加する処理経路にも一貫して適用する。
+- 既存の fail-secure 方針（redaction 失敗時は `RedactionFailurePlaceholder` 等の安全側フォールバックを用いる）を、新たに追加する処理経路にも一貫して適用する。
 
 ## 参考: 既存の良好な防御層（変更しないもの）
 
-- `LogRiskProfile` の境界 redaction（`argRedactor.RedactText` を `command_args`/`operand_zones` に適用）は既存のまま維持し、他メソッドをこれに合わせる形で拡張する。
+- `LogRiskProfile` の境界 redaction（`argRedactor.RedactText` を `command_args`/`operand_zones` に適用）は既存のまま維持し、他メソッドをこれに合わせるよう拡張する。
 - `RedactingHandler` の fail-secure 方針（regex compile 失敗・再帰深度超過・LogValue() panic のいずれも安全側プレースホルダーへ置換）、failureLogger の循環依存検証、Webhook URL 宛先検証の fail-closed 方針は本タスクの対象外であり変更しない。
