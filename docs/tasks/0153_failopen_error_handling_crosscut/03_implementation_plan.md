@@ -378,7 +378,7 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 すべての正常系 AC（AC-02, AC-07, AC-10, AC-13, AC-16, AC-18）は、既存テストでカバーされている。これらの AC の検証は以下の既存テストのパスで確認する:
 
 | AC | 既存テスト |
-|---|---|---|
+|---|---|
 | AC-02 | `TestStandardELFAnalyzer_SyscallLookup_NotFound`, `TestDynamicELF_SyscallFallback_NotRecorded` |
 | AC-07 | `internal/dynlib/elfdynlib/analyzer_test.go` の既存テスト全件、`internal/dynlib/machodylib/analyzer_test.go` の既存テスト全件 |
 | AC-13 | `TestVerifyGroupFiles` 系の既存テスト全件 |
@@ -413,7 +413,7 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 | AC-09 | test | `internal/dynlib/machodylib/analyzer_test.go::TestHasDynamicLibDeps_ReadFullError` | `io.ReadFull` 失敗（非EOF）時に `(false, non-nil err)` が返ること |
 | AC-10 | test | `internal/verification/manager_test.go::TestHasMachODynamicLibraryDeps_ErrorPropagation`（新規追加） | `hasMachODynamicLibraryDeps` が、I/O エラーを返す `HasDynamicLibDeps` のエラーを上位に伝播し `(false, non-nil err)` を返すこと |
 | AC-11 | test | `internal/verification/manager_test.go::TestVerifyGroupFiles_PathResolutionFailure` | パス解決失敗時に `VerifyGroupFiles` がエラーを返すこと |
-| AC-12 | static | `sed -n '/func (m \*Manager) collectVerificationFiles/,/^}/p' internal/verification/manager.go \| grep 'continue'` — `collectVerificationFiles` 内のパス解決失敗経路に `continue` が存在しないこと（`return error` に置き換わっている）。`VerifyGroupFiles` が当該ファイルの検証をスキップするコードパスがないことをコードレビューで確認 | `collectVerificationFiles` のシグネチャに `error` が追加されているため、呼び出し元 `VerifyGroupFiles` は戻り値エラーをチェックせざるを得ず（コンパイルエラー）、fail-open の窓は物理的に存在しない。これは静的保証（コンパイラ強制）であり、`test` ではなく `static` として検証する |
+| AC-12 | static | `sed -n '/func (m \*Manager) collectVerificationFiles/,/^}/p' internal/verification/manager.go | grep continue` — `collectVerificationFiles` 内のパス解決失敗経路に `continue` が存在しないこと（`return error` に置き換わっている）。`VerifyGroupFiles` が当該ファイルの検証をスキップするコードパスがないことをコードレビューで確認 | `collectVerificationFiles` のシグネチャに `error` が追加されているため、呼び出し元 `VerifyGroupFiles` は戻り値エラーをチェックせざるを得ず（コンパイルエラー）、fail-open の窓は物理的に存在しない。これは静的保証（コンパイラ強制）であり、`test` ではなく `static` として検証する |
 | AC-13 | test | `internal/verification/manager_test.go::TestVerifyGroupFiles_NormalPathResolution`（または既存の `TestVerifyGroupFiles_*` 系の拡張） | 正常にパス解決できるコマンドのみを含むグループで `VerifyGroupFiles` が成功すること。`collectVerificationFiles` 単体ではなく `VerifyGroupFiles` の公開 API レベルで検証する |
 | AC-14 | test | `internal/verification/manager_test.go::TestHasDynamicLibraryDeps_DynStringError` | `DynString` エラー時に `(false, non-nil err)` が返ること |
 | AC-15 | test | `internal/verification/manager_test.go::TestVerifyCommandDynLibDeps_DynStringError`（新規追加） | `hasDynamicLibraryDeps` の DynString エラーが `verifyDynLibDeps` → `VerifyCommandDynLibDeps` 経由で呼び出し元にエラーとして伝播すること |
