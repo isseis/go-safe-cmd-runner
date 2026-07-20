@@ -62,6 +62,7 @@ linters:
             - github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis
             - github.com/isseis/go-safe-cmd-runner/internal/dynlib
             - github.com/isseis/go-safe-cmd-runner/internal/elfdynlib
+            - github.com/isseis/go-safe-cmd-runner/internal/elfmagic
             - github.com/isseis/go-safe-cmd-runner/internal/fileanalysis
             - github.com/isseis/go-safe-cmd-runner/internal/libccache
             - github.com/isseis/go-safe-cmd-runner/internal/machodylib
@@ -102,6 +103,7 @@ linters:
             - github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis
             - github.com/isseis/go-safe-cmd-runner/internal/dynlib
             - github.com/isseis/go-safe-cmd-runner/internal/elfdynlib
+            - github.com/isseis/go-safe-cmd-runner/internal/elfmagic
             - github.com/isseis/go-safe-cmd-runner/internal/fileanalysis
             - github.com/isseis/go-safe-cmd-runner/internal/filevalidator
             - github.com/isseis/go-safe-cmd-runner/internal/libccache

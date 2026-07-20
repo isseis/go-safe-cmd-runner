@@ -214,10 +214,10 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 		// Parse child dependencies for BFS continuation
 		childDeps, childRpaths, parseErr := a.parseMachODeps(resolvedPath)
 		if parseErr != nil {
-			slog.Debug("Failed to parse child Mach-O dependencies",
-				"path", resolvedPath, "error", parseErr)
-
-			continue
+			slog.Warn("Failed to parse child Mach-O dependencies",
+				"path", resolvedPath, "error", parseErr,
+				"reason", "child_parse_error")
+			return nil, nil, fmt.Errorf("failed to parse %q: %w", resolvedPath, parseErr)
 		}
 
 		for _, childDep := range childDeps {

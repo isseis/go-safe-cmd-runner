@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
+	"github.com/isseis/go-safe-cmd-runner/internal/elfmagic"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
@@ -95,36 +96,21 @@ type resolveItem struct {
 // Returns nil (not an error) if the file is not ELF or has no DT_NEEDED entries.
 // Returns an error if any library cannot be resolved (FR-3.1.7).
 func (a *DynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntry, error) {
-	// Canonicalise the path upfront so that safefileio, error messages, and path
-	// comparisons all use the same resolved path consistently.
-	// safefileio rejects OS-managed symlinks such as /var -> /private/var on macOS.
 	var err error
 	binaryPath, err = filepath.EvalSymlinks(binaryPath)
 	if err != nil {
 		return nil, fmt.Errorf("resolving symlinks for %q: %w", binaryPath, err)
 	}
 
-	// Open file safely
-	file, err := a.fs.SafeOpenFile(binaryPath, os.O_RDONLY, 0)
+	elfFile, needed, file, err := a.openAndParseTopELF(binaryPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
+		return nil, err
+	}
+	if elfFile == nil {
+		return nil, nil // non-ELF or static binary
 	}
 	defer closeFile(file, binaryPath)
-
-	// Try to parse as ELF
-	elfFile, err := elf.NewFile(file)
-	if err != nil {
-		// Not an ELF file - this is normal for scripts etc.
-		return nil, nil //nolint:nilerr
-	}
 	defer closeELF(elfFile, binaryPath)
-
-	// Get DT_NEEDED entries
-	needed, err := elfFile.DynString(elf.DT_NEEDED)
-	if err != nil || len(needed) == 0 {
-		// No DT_NEEDED entries (static binary or no dependencies)
-		return nil, nil //nolint:nilerr
-	}
 
 	// Create resolver for this binary's architecture.
 	// a.cache was parsed once at NewDynLibAnalyzer() time and is reused here.
@@ -206,15 +192,10 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntry, er
 		// Parse child dependencies
 		childNeeded, childRUNPATH, err := a.parseELFDeps(resolvedPath)
 		if err != nil {
-			// ErrDTRPATHNotSupported must propagate: DT_RPATH in any dependency
-			// is a hard error. Other parse failures (non-ELF data sections, etc.)
-			// are non-fatal and we skip child traversal for that library.
-			if _, ok := errors.AsType[*ErrDTRPATHNotSupported](err); ok {
-				return nil, err
-			}
-			slog.Debug("Failed to parse child ELF dependencies",
-				"path", resolvedPath, "error", err)
-			continue
+			slog.Warn("Failed to parse child ELF dependencies",
+				"path", resolvedPath, "error", err,
+				"reason", "child_parse_error")
+			return nil, fmt.Errorf("failed to parse %q: %w", resolvedPath, err)
 		}
 
 		for _, childSoname := range childNeeded {
@@ -269,9 +250,61 @@ func computeFileHash(fs safefileio.FileSystem, path string) (string, error) {
 	return fmt.Sprintf("%s:%s", hashPrefix, hex.EncodeToString(h.Sum(nil))), nil
 }
 
+// openAndParseTopELF opens and parses the top-level binary at binaryPath.
+// It checks ELF magic first to distinguish non-ELF files from parse failures.
+// Returns (nil, nil, nil, nil) if the file is not ELF or is a static ELF (no DT_NEEDED).
+// Returns (*elf.File, needed, safefileio.File, nil) for a dynamic ELF with dependencies.
+// Returns (nil, nil, nil, error) for any I/O or parse error (fail-closed).
+// The caller is responsible for closing both the returned safefileio.File and *elf.File on the dynamic path.
+func (a *DynLibAnalyzer) openAndParseTopELF(binaryPath string) (*elf.File, []string, safefileio.File, error) {
+	file, err := a.fs.SafeOpenFile(binaryPath, os.O_RDONLY, 0)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to open file: %w", err)
+	}
+
+	var magic [elfmagic.Len]byte
+	if _, err := io.ReadFull(file, magic[:]); err != nil {
+		closeFile(file, binaryPath)
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, nil, nil, nil // file too short to be ELF
+		}
+		return nil, nil, nil, fmt.Errorf("failed to read ELF magic: %w", err)
+	}
+
+	if !elfmagic.Is(magic[:]) {
+		closeFile(file, binaryPath)
+		return nil, nil, nil, nil // not an ELF file
+	}
+
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		closeFile(file, binaryPath)
+		return nil, nil, nil, fmt.Errorf("failed to seek to start of file: %w", err)
+	}
+
+	elfFile, err := elf.NewFile(file)
+	if err != nil {
+		closeFile(file, binaryPath)
+		return nil, nil, nil, fmt.Errorf("failed to parse ELF binary: %w", err)
+	}
+
+	needed, err := elfFile.DynString(elf.DT_NEEDED)
+	if err != nil {
+		closeFile(file, binaryPath)
+		closeELF(elfFile, binaryPath)
+		return nil, nil, nil, fmt.Errorf("failed to read DT_NEEDED: %w", err)
+	}
+	if len(needed) == 0 {
+		closeFile(file, binaryPath)
+		closeELF(elfFile, binaryPath)
+		return nil, nil, nil, nil // static binary or no dependencies
+	}
+
+	return elfFile, needed, file, nil
+}
+
 // parseELFDeps opens the given path as ELF and extracts DT_NEEDED and DT_RUNPATH.
-// Returns ErrDTRPATHNotSupported if the library contains DT_RPATH.
-// Returns nil slices (not an error) if parsing fails for other reasons.
+// Returns an error if the file cannot be opened or parsed as ELF,
+// or if it contains DT_RPATH.
 func (a *DynLibAnalyzer) parseELFDeps(path string) (needed, runpath []string, err error) {
 	canonPath, err := filepath.EvalSymlinks(path)
 	if err != nil {

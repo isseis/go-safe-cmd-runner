@@ -1,7 +1,6 @@
 package elfanalyzer
 
 import (
-	"bytes"
 	"debug/elf"
 	"errors"
 	"fmt"
@@ -12,19 +11,11 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/elfmagic"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 )
-
-// elfMagicStr is the ELF magic number string literal.
-const elfMagicStr = "\x7fELF"
-
-// elfMagic is the ELF magic number bytes.
-var elfMagic = []byte(elfMagicStr)
-
-// elfMagicLen is the number of bytes in the ELF magic number.
-const elfMagicLen = len(elfMagicStr)
 
 // maxFileSize is the maximum file size for ELF analysis (1 GB).
 const maxFileSize = 1 << 30
@@ -133,15 +124,15 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	}
 
 	// Step 2: Check ELF magic number
-	magic := make([]byte, elfMagicLen)
-	if _, err := io.ReadFull(file, magic); err != nil {
+	var magic [elfmagic.Len]byte
+	if _, err := io.ReadFull(file, magic[:]); err != nil {
 		return binaryanalyzer.AnalysisOutput{
 			Result: binaryanalyzer.AnalysisError,
 			Error:  fmt.Errorf("failed to read magic number: %w", err),
 		}
 	}
 
-	if !isELFMagic(magic) {
+	if !elfmagic.Is(magic[:]) {
 		// File is not in ELF format (e.g., Mach-O on macOS, PE on Windows,
 		// or a script). The ELF analyzer cannot inspect it further.
 		return binaryanalyzer.AnalysisOutput{
@@ -285,14 +276,6 @@ func isLibcLibrary(lib string) bool {
 	base := filepath.Base(lib)
 	return strings.HasPrefix(base, "libc.so.") ||
 		strings.HasPrefix(base, "libc.musl-")
-}
-
-// isELFMagic checks if the given bytes match the ELF magic number.
-func isELFMagic(magic []byte) bool {
-	if len(magic) < elfMagicLen {
-		return false
-	}
-	return bytes.Equal(magic[:elfMagicLen], elfMagic)
 }
 
 // lookupSyscallAnalysis checks the syscall analysis store for analysis results.

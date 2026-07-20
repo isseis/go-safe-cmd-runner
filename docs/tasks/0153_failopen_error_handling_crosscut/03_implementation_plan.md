@@ -253,20 +253,20 @@
 
 #### Step 5-2: I/O エラーのテストを追加
 
-- [ ] **ファイル**: `internal/dynlib/machodylib/analyzer_test.go`
-- [ ] `TestHasDynamicLibDeps_SeekError` テストを追加する（AC-08）: Seek に失敗するモック `safefileio.File` を使用し、`HasDynamicLibDeps` が `(false, err)` を返すことを検証
-- [ ] `TestHasDynamicLibDeps_ReadFullError` テストを追加する（AC-09）: 読み取りに失敗するモックファイル（`io.ErrUnexpectedEOF` 以外のエラーを返す `io.Reader`）を使用し、`HasDynamicLibDeps` が `(false, err)` を返すことを検証
-- [ ] `TestHasDynamicLibDeps_ReadFullEOF` テストを追加する（境界値）: `io.EOF` または `io.ErrUnexpectedEOF` で読み取りが終了した場合、`HasDynamicLibDeps` が `(false, nil)` を返すことを検証（ファイルが 4 バイトに満たない非 Mach-O の正常系）
-- [ ] モックの注入方法: `HasDynamicLibDeps` は `safefileio.FileSystem` を引数に取るため、`safefileio` の既存モックインフラを利用する
+- [x] **ファイル**: `internal/dynlib/machodylib/analyzer_test.go`
+- [x] `TestHasDynamicLibDeps_SeekError` テストを追加する（AC-08）: Seek に失敗するモック `safefileio.File` を使用し、`HasDynamicLibDeps` が `(false, err)` を返すことを検証
+- [x] `TestHasDynamicLibDeps_ReadFullError` テストを追加する（AC-09）: 読み取りに失敗するモックファイル（`io.ErrUnexpectedEOF` 以外のエラーを返す `io.Reader`）を使用し、`HasDynamicLibDeps` が `(false, err)` を返すことを検証
+- [x] `TestHasDynamicLibDeps_ReadFullEOF` テストを追加する（境界値）: `io.EOF` または `io.ErrUnexpectedEOF` で読み取りが終了した場合、`HasDynamicLibDeps` が `(false, nil)` を返すことを検証（ファイルが 4 バイトに満たない非 Mach-O の正常系）
+- [x] モックの注入方法: `HasDynamicLibDeps` は `safefileio.FileSystem` を引数に取るため、`safefileio` の既存モックインフラを利用する
 
 **検証**: `go test -tags test -v ./internal/dynlib/machodylib/` （darwin 環境）がパスすること。linux 環境では `go test -tags test -run '^$' ./internal/dynlib/machodylib/` でコンパイルが通ることを確認する。
 
 #### Step 5-3: 呼び出し元のエラー伝播テスト（AC-10）
 
-- [ ] **ファイル**: `internal/verification/manager_test.go`
-- [ ] `TestHasMachODynamicLibraryDeps_ErrorPropagation` テストを追加する（AC-10）
-- [ ] テスト内容: I/O エラーを返す `safefileio.FileSystem` モックを使用し、`hasMachODynamicLibraryDeps(path)` が `(false, non-nil err)` を返すことを検証
-- [ ] `hasMachODynamicLibraryDeps` は `machodylib.HasDynamicLibDeps(path, m.safeFS)` のラッパーであるため、I/O エラーを返すモック `safeFS` を注入した `Manager` でテストする
+- [x] **ファイル**: `internal/verification/manager_test.go`
+- [x] `TestHasMachODynamicLibraryDeps_ErrorPropagation` テストを追加する（AC-10）
+- [x] テスト内容: I/O エラーを返す `safefileio.FileSystem` モックを使用し、`hasMachODynamicLibraryDeps(path)` が `(false, non-nil err)` を返すことを検証
+- [x] `hasMachODynamicLibraryDeps` は `machodylib.HasDynamicLibDeps(path, m.safeFS)` のラッパーであるため、I/O エラーを返すモック `safeFS` を注入した `Manager` でテストする
 
 **検証**: `go test -tags test -v ./internal/verification/` がパスすること。
 
@@ -284,48 +284,48 @@
 
 - [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 6: C2 F-3 — 子依存パース失敗の fail-closed 化
 
 #### Step 6-1: `internal/elfmagic` パッケージを新設する
 
-- [ ] **ファイル**: `internal/elfmagic/elfmagic.go`（新規）
-- [ ] パッケージ名: `elfmagic`
-- [ ] 以下の公開 API を定義する:
+- [x] **ファイル**: `internal/elfmagic/elfmagic.go`（新規）
+- [x] パッケージ名: `elfmagic`
+- [x] 以下の公開 API を定義する:
   - `var magic = []byte("\x7fELF")`（非公開; 呼び出し元は `Len` および `Is()` のみを使用する）
   - `const Len = 4`
   - `func Is(b []byte) bool`: 先頭 `Len` バイトが `magic` と一致するか判定
-- [ ] `bytes` パッケージのみに依存し、他パッケージへの依存を持たない
+- [x] `bytes` パッケージのみに依存し、他パッケージへの依存を持たない
 
-- [ ] **ファイル**: `internal/elfmagic/elfmagic_test.go`（新規）
-- [ ] `TestIs` テストを追加する:
+- [x] **ファイル**: `internal/elfmagic/elfmagic_test.go`（新規）
+- [x] `TestIs` テストを追加する:
   - 正しい ELF マジックバイト列（`\x7fELF...`）が `true` を返すこと
   - 短すぎるバイト列が `false` を返すこと
   - 不正なマジック（Mach-O の `\xcf\xfa\xed\xfe` 等）が `false` を返すこと
   - 空バイト列が `false` を返すこと
 
-**検証**: `go test -tags test -v ./internal/elfmagic/` がパスすること。
+**検証**: ✓ `go test -tags test -v ./internal/elfmagic/` がパスすること。
 
 #### Step 6-2: `elfanalyzer` 側のリファクタリング
 
-- [ ] **ファイル**: `internal/security/elfanalyzer/standard_analyzer.go`
-- [ ] `elfmagic` パッケージをインポートに追加する
-- [ ] `elfMagicStr`（21行目）、`elfMagic`（24行目）、`elfMagicLen`（27行目）の定義を削除する
-- [ ] `isELFMagic`（288-293行目）の関数定義を削除する
-- [ ] `isELFMagic(magic)` の呼び出し（141行目）を `elfmagic.Is(magic)` に置き換える
-- [ ] `elfMagicLen` の使用箇所（133行目）を `elfmagic.Len` に置き換える
-- [ ] **注意**: `bytes.Equal` は `isELFMagic` 内でのみ使用されていた。`isELFMagic` 削除に伴い `"bytes"` インポートも削除する（`go vet ./internal/security/elfanalyzer/` で unused import 警告が出ないことを確認）
-- [ ] **検証**: `go vet ./internal/security/elfanalyzer/` が unused import 警告を出さないこと
+- [x] **ファイル**: `internal/security/elfanalyzer/standard_analyzer.go`
+- [x] `elfmagic` パッケージをインポートに追加する
+- [x] `elfMagicStr`（21行目）、`elfMagic`（24行目）、`elfMagicLen`（27行目）の定義を削除する
+- [x] `isELFMagic`（288-293行目）の関数定義を削除する
+- [x] `isELFMagic(magic)` の呼び出し（141行目）を `elfmagic.Is(magic)` に置き換える
+- [x] `elfMagicLen` の使用箇所（133行目）を `elfmagic.Len` に置き換える
+- [x] **注意**: `bytes.Equal` は `isELFMagic` 内でのみ使用されていた。`isELFMagic` 削除に伴い `"bytes"` インポートも削除する（`go vet ./internal/security/elfanalyzer/` で unused import 警告が出ないことを確認）
+- [x] **検証**: `go vet ./internal/security/elfanalyzer/` が unused import 警告を出さないこと
 
-**検証**: `go test -tags test -v ./internal/security/elfanalyzer/` がパスすること。既存の `AnalyzeNetworkSymbols` 関連テストすべてがパスすることを確認。
+**検証**: ✓ `go test -tags test -v ./internal/security/elfanalyzer/` がパスすること。既存の `AnalyzeNetworkSymbols` 関連テストすべてがパスすることを確認。
 
 #### Step 6-3: ELF `Analyze` のトップレベル修正
 
-- [ ] **ファイル**: `internal/dynlib/elfdynlib/analyzer.go`
-- [ ] `elfmagic` パッケージをインポートに追加する
-- [ ] `Analyze` 関数（100-127行目）を修正する:
+- [x] **ファイル**: `internal/dynlib/elfdynlib/analyzer.go`
+- [x] `elfmagic` パッケージをインポートに追加する
+- [x] `Analyze` 関数（100-127行目）を修正する:
   - `SafeOpenFile` 後、`io.ReadFull(file, magic[:])` で ELF マジックを読み取る（`magic := make([]byte, elfmagic.Len)`）
     - `io.ReadFull` が `io.EOF` または `io.ErrUnexpectedEOF` を返した場合: 非 ELF（ファイルが小さすぎる）→ `return nil, nil`
     - `io.ReadFull` がそれ以外の I/O エラーを返した場合: `return nil, fmt.Errorf("failed to read ELF magic: %w", err)`（fail-closed）
@@ -338,65 +338,65 @@
       - `DynString` 失敗時: `return nil, fmt.Errorf("failed to read DT_NEEDED: %w", err)`（fail-closed）
       - `DynString` 成功 + `len(needed) == 0`: `return nil, nil`（依存なし・正常）
       - `DynString` 成功 + `len(needed) > 0`: 既存の BFS 処理に進む
-- [ ] 既存の `//nolint:nilerr` コメント（118行目、126行目）を削除する
-- [ ] **検証**: `grep -r 'nolint:nilerr' internal/dynlib/elfdynlib/` が空を返すこと。`make lint` が警告なしでパスすること
-- [ ] `SafeOpenFile` が返す `File` インタフェースは `io.Seeker` を埋め込んでいるため、`file.(io.Seeker)` の型アサーションは冗長である。型アサーションを削除し、`file.Seek` を直接呼び出すように簡略化する（`02_architecture.md` 9.1節 パフォーマンスの項、`internal/safefileio/safe_file.go` の `File` インタフェース定義を参照）
+- [x] 既存の `//nolint:nilerr` コメント（118行目、126行目）を削除する
+- [x] **検証**: `grep -r 'nolint:nilerr' internal/dynlib/elfdynlib/` が空を返すこと。`make lint` が警告なしでパスすること
+- [x] `SafeOpenFile` が返す `File` インタフェースは `io.Seeker` を埋め込んでいるため、`file.(io.Seeker)` の型アサーションは冗長である。型アサーションを削除し、`file.Seek` を直接呼び出すように簡略化する（`02_architecture.md` 9.1節 パフォーマンスの項、`internal/safefileio/safe_file.go` の `File` インタフェース定義を参照）
 
-**検証**: `go test -tags test -v ./internal/dynlib/elfdynlib/` がパスすること。
+**検証**: ✓ `go test -tags test -v ./internal/dynlib/elfdynlib/` がパスすること。
 
 #### Step 6-4: ELF トップレベルのテストを追加
 
-- [ ] **ファイル**: `internal/dynlib/elfdynlib/analyzer_test.go`（ビルドタグ: `linux`）
-- [ ] `TestAnalyze_NonELFFile` テストを追加する（AC-05 一部）: 非ELFファイル（プレーンテキスト等）の解析が `(nil, nil)` を返すこと
-- [ ] `TestAnalyze_ELFMagicMatchButParseFailure` テストを追加する（AC-05）: ELF マジックを持つがパース不能なファイルの解析がエラーを返すこと
-- [ ] `TestAnalyze_ELFMagicMatchButDynStringError` テストを追加する（AC-05）: ELF マジックを持ちパース可能だが DT_NEEDED セクションが破壊されたファイルの解析がエラーを返すこと
-- [ ] 正常系のリグレッション確認（AC-07）: 既存の `TestAnalyze_*` テストがすべてパスすることを確認する
+- [x] **ファイル**: `internal/dynlib/elfdynlib/analyzer_test.go`（ビルドタグ: `linux`）
+- [x] `TestAnalyze_NonELFFile` テストを追加する（AC-05 一部）: 非ELFファイル（プレーンテキスト等）の解析が `(nil, nil)` を返すこと（実装名: `TestAnalyze_NonELF`）
+- [x] `TestAnalyze_ELFMagicMatchButParseFailure` テストを追加する（AC-05）: ELF マジックを持つがパース不能なファイルの解析がエラーを返すこと
+- [x] `TestAnalyze_ELFMagicMatchButDynStringError` テストを追加する（AC-05）: ELF マジックを持ちパース可能だが DT_NEEDED セクションが破壊されたファイルの解析がエラーを返すこと
+- [x] 正常系のリグレッション確認（AC-07）: 既存の `TestAnalyze_*` テストがすべてパスすることを確認する
 
-**検証**: `go test -tags test -v ./internal/dynlib/elfdynlib/` がパスすること。
+**検証**: ✓ `go test -tags test -v ./internal/dynlib/elfdynlib/` がパスすること。
 
 #### Step 6-5: ELF 子依存パース失敗の修正
 
-- [ ] **ファイル**: `internal/dynlib/elfdynlib/analyzer.go`
-- [ ] BFS traversal 内の子依存パース失敗（207-218行目）を修正する:
+- [x] **ファイル**: `internal/dynlib/elfdynlib/analyzer.go`
+- [x] BFS traversal 内の子依存パース失敗（207-218行目）を修正する:
   - `slog.Debug` → `slog.Warn` に格上げ
   - 構造化フィールド `"reason": "child_parse_error"` を追加
-  - `continue` → `return nil, err`（fail-closed、解析全体を失敗させる）
-  - `ErrDTRPATHNotSupported` のケースは変更しない（既存どおりエラー伝播）
+  - `continue` → `return nil, fmt.Errorf("failed to parse %s: %w", resolvedPath, err)`（fail-closed、解析全体を失敗させる）
+  - `ErrDTRPATHNotSupported` も他エラーと同様に fmt.Errorf でラップされる（errors.As は %w を通じて正しく機能するため、呼び出し元への互換性は維持される）
 
 **検証**: `go test -tags test -v ./internal/dynlib/elfdynlib/` がパスすること。
 
 #### Step 6-6: ELF 子依存パース失敗のテストを追加
 
-- [ ] **ファイル**: `internal/dynlib/elfdynlib/analyzer_test.go`（ビルドタグ: `linux`）
-- [ ] `TestAnalyze_ChildParseFailure` テストを追加する（AC-04）: BFS traversal 中にパース不能な子 ELF に遭遇した場合、`Analyze` がエラーを返すことを検証
-- [ ] テストセットアップ: 既存の `buildTestELFWithDeps` ヘルパー（`elfdynlib/analyzer_test.go` 内、非公開）を使用して依存ツリーを構築し、孫ライブラリを破壊してパース失敗を引き起こす。孫ライブラリの破壊は ELF ヘッダの書き換えにより行う
-- [ ] エラーメッセージに失敗した子ライブラリのパスが含まれることの検証（AC-04 の blast radius 対応）
+- [x] **ファイル**: `internal/dynlib/elfdynlib/analyzer_test.go`（ビルドタグ: `linux`）
+- [x] `TestAnalyze_ChildParseFailure` テストを追加する（AC-04）: BFS traversal 中にパース不能な子 ELF に遭遇した場合、`Analyze` がエラーを返すことを検証
+- [x] テストセットアップ: 既存の `buildTestELFWithDeps` ヘルパー（`elfdynlib/analyzer_test.go` 内、非公開）を使用して依存ツリーを構築し、孫ライブラリを破壊してパース失敗を引き起こす。孫ライブラリの破壊は `os.WriteFile` による内容上書きで行う（ELF ヘッダの書き換えと同等の効果）
+- [x] エラーメッセージに失敗した子ライブラリのパスが含まれることの検証（AC-04 の blast radius 対応）
 
 **検証**: `go test -tags test -v ./internal/dynlib/elfdynlib/` がパスすること。
 
 #### Step 6-7: Mach-O 子依存パース失敗の修正
 
-- [ ] **ファイル**: `internal/dynlib/machodylib/analyzer.go`
-- [ ] BFS traversal 内の `parseMachODeps` 失敗（215-221行目）を修正する:
+- [x] **ファイル**: `internal/dynlib/machodylib/analyzer.go`
+- [x] BFS traversal 内の `parseMachODeps` 失敗（215-221行目）を修正する:
   - `slog.Debug` → `slog.Warn` に格上げ
   - 構造化フィールド `"reason": "child_parse_error"` を追加
-  - `continue` → `return nil, nil, parseErr`（fail-closed、解析全体を失敗させる。`Analyze` の戻り値シグネチャは `([]LibEntry, []AnalysisWarning, error)`）
+  - `continue` → `return nil, nil, fmt.Errorf("failed to parse %s: %w", resolvedPath, parseErr)`（fail-closed、エラーメッセージに失敗した子ライブラリのパスを含む）
 
 **検証**: `go test -tags test -v ./internal/dynlib/machodylib/`（darwin 環境）がパスすること。
 
 #### Step 6-8: Mach-O 子依存パース失敗のテストを追加
 
-- [ ] **ファイル**: `internal/dynlib/machodylib/analyzer_test.go`（ビルドタグ: `darwin`）
-- [ ] `TestAnalyze_ChildParseFailure` テストを追加する（AC-06）: BFS traversal 中にパース不能な子 Mach-O に遭遇した場合、`Analyze` がエラーを返すことを検証
-- [ ] 制約: darwin ビルドタグが必要なため、CI では macos 環境でのみ実行される。linux 環境ではコンパイル確認のみ。
+- [x] **ファイル**: `internal/dynlib/machodylib/analyzer_test.go`（ビルドタグ: `darwin`）
+- [x] `TestAnalyze_ChildParseFailure` テストを追加する（AC-06）: BFS traversal 中にパース不能な子 Mach-O に遭遇した場合、`Analyze` がエラーを返すことを検証
+- [x] 制約: darwin ビルドタグが必要なため、CI では macos 環境でのみ実行される。linux 環境ではコンパイル確認のみ。
 
 **検証**: `go test -tags test -v ./internal/dynlib/machodylib/`（darwin 環境）がパスすること。
 
 #### Step 6-9: 統合テスト（正常系リグレッション確認）
 
-- [ ] **ファイル**: 既存テストの再実行で確認する（新規ファイル追加不要）
-- [ ] AC-07 の検証: `go test -tags test -v ./internal/dynlib/elfdynlib/ ./internal/dynlib/machodylib/` の既存テストがすべてパスすることを確認する
-- [ ] 多階層依存、循環依存を持つ実バイナリに対する record/verify の正常系テストも、既存テストでカバーされていること
+- [x] **ファイル**: 既存テストの再実行で確認する（新規ファイル追加不要）
+- [x] AC-07 の検証: `go test -tags test -v ./internal/dynlib/elfdynlib/ ./internal/dynlib/machodylib/` の既存テストがすべてパスすることを確認する
+- [x] 多階層依存、循環依存を持つ実バイナリに対する record/verify の正常系テストも、既存テストでカバーされていること
 
 **検証**: `make test` の全テストがパスすること。
 
@@ -412,8 +412,8 @@
 
 **判定理由**: 該当トリガーなし。BFS traversal の blast radius はアーキテクチャ設計書 §3.2.3 で分析・緩和策（エラーメッセージへの子ライブラリパス明示）が策定済み。コード変更自体は error propagation と ELF magic check の範囲に留まり、並行性制御・リカバリフロー・状態機械のような実装複雑性を伴わない
 
-- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -566,19 +566,19 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 ### PR-4 作成ポイント: HasDynamicLibDeps I/O error fail-closed
 - [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 6: C2 F-3
-- [ ] Step 6-1: `internal/elfmagic` パッケージ新設
-- [ ] Step 6-2: `elfanalyzer` 側の `isELFMagic` 等リファクタリング
-- [ ] Step 6-3: ELF `Analyze` トップレベル修正
-- [ ] Step 6-4: ELF トップレベルのテスト追加
-- [ ] Step 6-5: ELF 子依存パース失敗の修正
-- [ ] Step 6-6: ELF 子依存パース失敗テスト追加
-- [ ] Step 6-7: Mach-O 子依存パース失敗の修正
-- [ ] Step 6-8: Mach-O 子依存パース失敗テスト追加
-- [ ] Step 6-9: 統合テスト（正常系リグレッション確認）
+- [x] Step 6-1: `internal/elfmagic` パッケージ新設
+- [x] Step 6-2: `elfanalyzer` 側の `isELFMagic` 等リファクタリング
+- [x] Step 6-3: ELF `Analyze` トップレベル修正
+- [x] Step 6-4: ELF トップレベルのテスト追加
+- [x] Step 6-5: ELF 子依存パース失敗の修正
+- [x] Step 6-6: ELF 子依存パース失敗テスト追加
+- [x] Step 6-7: Mach-O 子依存パース失敗の修正
+- [x] Step 6-8: Mach-O 子依存パース失敗テスト追加
+- [x] Step 6-9: 統合テスト（正常系リグレッション確認）
 
 ### PR-5 作成ポイント: dynlib parse failure fail-closed with shared ELF magic
 - [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
