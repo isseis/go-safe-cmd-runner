@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
-	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -244,10 +243,13 @@ risk_level = "medium"
 func TestIntegration_CmdAllowed_CommandNotAllowed(t *testing.T) {
 	env := setupTestEnvironment(t, "test-run-not-allowed")
 
-	// Use a path that does NOT match hardcoded allowed_commands patterns
-	// Hardcoded patterns: ^/bin/.*, ^/usr/bin/.*, ^/usr/sbin/.*, ^/usr/local/bin/.*
-	// So use a path like /opt/custom/bin/sh
-	testCmd := "/opt/custom/bin/notallowed"
+	// Create a command at a path that does NOT match hardcoded allowed_commands
+	// patterns (^/bin/.*, ^/usr/bin/.*, ^/usr/sbin/.*, ^/usr/local/bin/.*).
+	// With B3 M1 fail-closed, path resolution failure in collectVerificationFiles
+	// is a verification.Error (non-fatal). Creating the file ensures the allowlist
+	// check runs and returns ErrCommandNotAllowed.
+	testCmd := filepath.Join(env.TestDir, "notallowed")
+	require.NoError(t, os.WriteFile(testCmd, []byte("#!/bin/sh\necho test\n"), 0o755))
 
 	// Config without cmd_allowed - testCmd should be rejected by hardcoded patterns
 	configContent := fmt.Sprintf(`
@@ -272,13 +274,8 @@ args = ["arg1"]
 	ctx := context.Background()
 	err := r.Execute(ctx, nil)
 
-	// Expect error because command path doesn't exist and is not allowed
-	// The error could be either:
-	// 1. verification.ErrCommandNotFound if path resolution fails first
-	// 2. security.ErrCommandNotAllowed if security check fails first
 	require.Error(t, err, "Should reject command not in hardcoded patterns or cmd_allowed")
-	// Use errors.Is() to check for specific error types instead of fragile string matching
 	assert.True(t,
-		errors.Is(err, verification.ErrCommandNotFound) || errors.Is(err, security.ErrCommandNotAllowed),
-		"Error should be either ErrCommandNotFound or ErrCommandNotAllowed, got: %v", err)
+		errors.Is(err, security.ErrCommandNotAllowed),
+		"Error should be ErrCommandNotAllowed, got: %v", err)
 }

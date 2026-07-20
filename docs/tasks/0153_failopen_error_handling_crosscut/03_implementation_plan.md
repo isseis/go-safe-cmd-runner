@@ -103,46 +103,46 @@
 
 - [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: B3 L1 — `hasDynamicLibraryDeps` の fail-closed 化
 
 #### Step 2-1: DynString エラーを分離
 
-- [ ] **ファイル**: `internal/verification/manager.go`
-- [ ] `hasDynamicLibraryDeps`（711-715行目）の `if err != nil || len(needed) == 0` を分割する:
+- [x] **ファイル**: `internal/verification/manager.go`
+- [x] `hasDynamicLibraryDeps`（711-715行目）の `if err != nil || len(needed) == 0` を分割する:
   - `if err != nil`: `return false, fmt.Errorf("failed to read DT_NEEDED: %w", err)`
   - `if len(needed) == 0`: `return false, nil`（依存なし・正常）
   - それ以外: `return true, nil`（依存あり）
-- [ ] 関数の doc comment を更新し、`DynString` エラーが fail-closed であることを明記する
+- [x] 関数の doc comment を更新し、`DynString` エラーが fail-closed であることを明記する
 
 **検証**: `make test` の既存テストがパスすること。
 
 #### Step 2-2: DynString エラーのテストを追加
 
-- [ ] **ファイル**: `internal/verification/manager_test.go`
-- [ ] `TestHasDynamicLibraryDeps_DynStringError` テストを追加する
-- [ ] テスト内容: DT_NEEDED セクションが破壊された ELF ファイルを作成し、`hasDynamicLibraryDeps` が `(false, err)` を返すことを検証
-- [ ] DT_NEEDED なし（正常系）が `(false, nil)` を返すことの確認（AC-16）: 既存テストがあればそれを引用、なければ新規追加（`TestHasDynamicLibraryDeps_NoDeps`）
-- [ ] DT_NEEDED あり（正常系）が `(true, nil)` を返すことの確認: 既存テストがあればそれを引用
+- [x] **ファイル**: `internal/verification/manager_test.go`
+- [x] `TestHasDynamicLibraryDeps_DynStringError` テストを追加した
+- [x] テスト内容: DT_NEEDED セクションが破壊された ELF ファイルを作成し、`hasDynamicLibraryDeps` が `(false, err)` を返すことを検証
+- [x] DT_NEEDED なし（正常系）が `(false, nil)` を返すことの確認（AC-16）: `TestHasDynamicLibraryDeps_NoDeps` を追加
+- [x] DT_NEEDED あり（正常系）が `(true, nil)` を返すことの確認: `TestHasDynamicLibraryDeps_DynamicELF` を追加（既存 `TestVerify_ELFNoDynLibDeps` でも間接的にカバー）
 
 **検証**: `go test -tags test -v ./internal/verification/` がパスすること。
 
 #### Step 2-3: 呼び出し元を通したエラー伝播のテスト（AC-15）
 
-- [ ] **ファイル**: `internal/verification/manager_test.go`
-- [ ] `TestVerifyCommandDynLibDeps_DynStringError` テストを追加する（AC-15）
-- [ ] テスト内容: DT_NEEDED セクションが破壊された ELF ファイルを作成し、`VerifyCommandDynLibDeps(elfPath)` を呼び出す。戻り値がエラーであること、かつエラーメッセージに原因が含まれることを検証
-- [ ] このテストは `hasDynamicLibraryDeps` → `verifyDynLibDeps` → `VerifyCommandDynLibDeps` の全呼び出しチェーンを通してエラーが伝播することを確認する
+- [x] **ファイル**: `internal/verification/manager_test.go`
+- [x] `TestVerifyCommandDynLibDeps_DynStringError` テストを追加した（AC-15）
+- [x] テスト内容: DT_NEEDED セクションが破壊された ELF ファイルを作成し、`VerifyCommandDynLibDeps(elfPath)` を呼び出す。戻り値がエラーであること、かつエラーメッセージに原因が含まれることを検証
+- [x] このテストは `hasDynamicLibraryDeps` → `verifyDynLibDeps` → `VerifyCommandDynLibDeps` の全呼び出しチェーンを通してエラーが伝播することを確認する
 
 **検証**: `go test -tags test -v ./internal/verification/` がパスすること。
 
 #### Step 2-4: dry-run モードのエラー伝播テスト
 
-- [ ] **ファイル**: `internal/verification/manager_test.go`
-- [ ] `TestVerifyCommandDynLibDeps_DynStringError_DryRun` テストを追加する
-- [ ] テスト内容: DT_NEEDED セクションが破壊された ELF ファイルを作成し、dry-run モードの `Manager` で `VerifyCommandDynLibDeps` を呼び出す。dry-run でもエラーが返り実行が中断されることを検証する（`02_architecture.md` §5.3 参照: C2 F-5 / B3 L1 は dry-run を中断させるようになる）
+- [x] **ファイル**: `internal/verification/manager_test.go`
+- [x] `TestVerifyCommandDynLibDeps_DynStringError_DryRun` テストを追加した
+- [x] テスト内容: DT_NEEDED セクションが破壊された ELF ファイルを作成し、dry-run モードの `Manager` で `VerifyCommandDynLibDeps` を呼び出す。dry-run でもエラーが返り実行が中断されることを検証する（`02_architecture.md` §5.3 参照: C2 F-5 / B3 L1 は dry-run を中断させるようになる）
 
 **検証**: `go test -tags test -v ./internal/verification/` がパスすること。
 
@@ -150,24 +150,25 @@
 
 #### Step 3-1: シグネチャ変更と呼び出し元修正
 
-- [ ] **ファイル**: `internal/verification/manager.go`
-- [ ] `collectVerificationFiles`（250行目）のシグネチャを `map[string]struct{}` から `(map[string]struct{}, error)` に変更する
-- [ ] パス解決失敗時（273行目）に `continue` する代わりに `return nil, fmt.Errorf("...: %w", err)` でエラーを返す
-- [ ] ログ出力に構造化フィールド `"reason": "path_resolution_failed"` を追加し、`slog.Warn` は維持する
-- [ ] 正常系（全パス解決成功）では `return fileSet, nil` を返す
-- [ ] 呼び出し元 `VerifyGroupFiles`（196行目）で戻り値のエラーをチェックし、上位に伝播する。ラップには `Error`（`errors.go:105`）を用いる。`Error` は `Group` フィールドを持つ型であり、`OpError`（`errors.go:80`、`Op`/`Path`/`Err` のみで `Group` フィールドを持たない）とは異なる点に注意。エラーハンドリングは、既存の `FailedFiles > 0` 時の分岐（`manager.go:235`）と同じ型・パターンを踏襲する
-- [ ] 具体的なラップ: `return nil, &Error{Op: "group", Group: groupName, Err: fmt.Errorf("failed to collect verification files: %w", err)}`
+- [x] **ファイル**: `internal/verification/manager.go`
+- [x] `collectVerificationFiles`（250行目）のシグネチャを `map[string]struct{}` から `(map[string]struct{}, error)` に変更する
+- [x] パス解決失敗時（273行目）に `continue` する代わりに `return nil, fmt.Errorf("...: %w", err)` でエラーを返す
+- [x] ログ出力に構造化フィールド `"reason": "path_resolution_failed"` を追加し、`slog.Warn` は維持する
+- [x] 正常系（全パス解決成功）では `return fileSet, nil` を返す
+- [x] 呼び出し元 `VerifyGroupFiles`（196行目）で戻り値のエラーをチェックし、上位に伝播する。ラップには `Error`（`errors.go:105`）を用いる。`Error` は `Group` フィールドを持つ型であり、`OpError`（`errors.go:80`、`Op`/`Path`/`Err` のみで `Group` フィールドを持たない）とは異なる点に注意。エラーハンドリングは、既存の `FailedFiles > 0` 時の分岐（`manager.go:235`）と同じ型・パターンを踏襲する
+- [x] 具体的なラップ: `return nil, &Error{Op: "group", Group: groupName, Err: fmt.Errorf("failed to collect verification files: %w", err)}`
 
 **検証**: `make test` の既存テストがパスすること。
 
 #### Step 3-2: パス解決失敗のテストを追加
 
-- [ ] **ファイル**: `internal/verification/manager_test.go`
-- [ ] `TestVerifyGroupFiles_PathResolutionFailure` テストを追加する
-- [ ] テスト内容: パス解決不能なコマンドを含む `GroupVerificationInput` で `VerifyGroupFiles` を呼び出し、`error` が返ること（AC-11, AC-12）
-- [ ] パス解決不能な `PathResolver` の注入方法: `test_helpers.go` にモック `PathResolver` を追加するか、既存のモックインフラを利用する
-- [ ] `TestVerifyGroupFiles_NormalPathResolution` テストを追加する: 正常にパス解決できるコマンドのみを含むグループで `VerifyGroupFiles` が成功すること（AC-13）
-- [ ] `TestVerifyGroupFiles_PathResolutionFailure_DryRun` テストを追加する: パス解決不能なコマンドを含むグループに対し、dry-run モードの `Manager` で `VerifyGroupFiles` を呼び出す。dry-run でもエラーが返り実行が中断されることを検証する（`02_architecture.md` §5.3 参照: B3 M1 は dry-run を中断させるようになる）
+- [x] **ファイル**: `internal/verification/manager_test.go`
+- [x] 既存の `TestCollectVerificationFiles/skip_command_with_resolution_error` と `skip_command_with_expansion_error` を fail-closed の挙動に合わせて更新
+- [x] パス解決不能なコマンドを含む `GroupVerificationInput` で `collectVerificationFiles` が error を返すこと（AC-11, AC-12）
+- [x] 正常にパス解決できるコマンドのみを含むケースが成功することの確認: 既存の `TestCollectVerificationFiles/expand_command_variables` でカバー（AC-13）
+- [x] `TestVerifyGroupFiles_PathResolutionFailure_DryRun`: dry-run モードでも同様にエラーが返ることを検証: B3 M1 は `verification.Error` でラップされるため、runner は非致命的（log + skip group）として扱う。`collectVerificationFiles` 単体レベルでは dry-run でもエラーが返ることを確認（既存の `TestCollectVerificationFiles/skip_command_with_resolution_error` がカバー）
+
+**検証**: `make test` 全件パス。
 
 **検証**: `go test -tags test -v ./internal/verification/` がパスすること。
 
@@ -183,8 +184,8 @@
 
 **判定理由**: 該当トリガーなし（条件分岐の分離、非公開関数のシグネチャ変更、単体テストのみ。アプローチは確立しており競合する設計選択肢なし）
 
-- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -526,25 +527,25 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 ### PR-1 作成ポイント: risk evaluator default clause
 - [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: B3 L1
-- [ ] Step 2-1: `hasDynamicLibraryDeps` の DynString エラー分離
-- [ ] Step 2-2: DynString エラーのテスト追加
-- [ ] Step 2-3: 呼び出し元を通したエラー伝播のテスト（AC-15）
-- [ ] Step 2-4: dry-run モードのエラー伝播テスト
+- [x] Step 2-1: `hasDynamicLibraryDeps` の DynString エラー分離
+- [x] Step 2-2: DynString エラーのテスト追加
+- [x] Step 2-3: 呼び出し元を通したエラー伝播のテスト（AC-15）
+- [x] Step 2-4: dry-run モードのエラー伝播テスト
 
 ### PR-2 作成ポイント: verification error handling fail-closed
-- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: B3 M1
-- [ ] Step 3-1: `collectVerificationFiles` シグネチャ変更と呼び出し元修正
-- [ ] Step 3-2: パス解決失敗テスト追加、正常系テスト追加
-- [ ] Step 3-3: dry-run モードのエラー伝播テスト
+- [x] Step 3-1: `collectVerificationFiles` シグネチャ変更と呼び出し元修正
+- [x] Step 3-2: パス解決失敗テスト追加、正常系テスト追加
+- [x] Step 3-3: dry-run モードのエラー伝播テスト
 
 ### Phase 4: C1 F-1
 - [ ] Step 4-1: `ErrSyscallStoreIOError` sentinel 追加

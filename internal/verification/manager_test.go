@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -669,7 +670,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 		runtimeGroup := createRuntimeGroup([]string{"file1.txt", "file2.txt", "file3.txt"})
 
 		// Collect files
-		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
+		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
+		require.NoError(t, err)
 
 		// Should return a map with the same files
 		assert.Len(t, collectedFiles, 3)
@@ -688,7 +690,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 		runtimeGroup := createRuntimeGroup([]string{})
 
 		// Collect files
-		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
+		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
+		require.NoError(t, err)
 
 		// Should return empty map
 		assert.Empty(t, collectedFiles)
@@ -701,7 +704,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 		require.NoError(t, err)
 
 		// Collect files with nil input
-		collectedFiles := manager.collectVerificationFiles(nil)
+		collectedFiles, err := manager.collectVerificationFiles(nil)
+		require.NoError(t, err)
 
 		// Should return empty map
 		assert.Empty(t, collectedFiles)
@@ -717,7 +721,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 		runtimeGroup := createRuntimeGroup([]string{"file1.txt", "file2.txt", "file1.txt", "file3.txt", "file2.txt"})
 
 		// Collect files
-		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
+		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
+		require.NoError(t, err)
 
 		// Should automatically remove duplicates
 		assert.Len(t, collectedFiles, 3)
@@ -751,7 +756,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 		}
 
 		// Collect files (should use pre-expanded command)
-		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
+		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
+		require.NoError(t, err)
 
 		// Should resolve to the actual command path
 		assert.Len(t, collectedFiles, 1)
@@ -771,11 +777,10 @@ func TestCollectVerificationFiles(t *testing.T) {
 			},
 		}
 
-		// Collect files (should skip command with expansion error)
-		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
-
-		// Should return empty (command skipped due to expansion error)
-		assert.Empty(t, collectedFiles)
+		// Collect files: unresolvable command path now returns error (fail-closed)
+		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
+		assert.Error(t, err, "unresolvable command should return error (fail-closed)")
+		assert.Nil(t, collectedFiles)
 	})
 
 	t.Run("skip_command_with_resolution_error", func(t *testing.T) {
@@ -793,11 +798,10 @@ func TestCollectVerificationFiles(t *testing.T) {
 			},
 		}
 
-		// Collect files (should skip command with resolution error)
-		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
-
-		// Should return empty (command skipped due to resolution error)
-		assert.Empty(t, collectedFiles)
+		// Collect files should fail: path resolution errors are fail-closed
+		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
+		assert.Error(t, err, "path resolution failure should return error (fail-closed)")
+		assert.Nil(t, collectedFiles, "fileSet should be nil on error")
 	})
 }
 
@@ -1749,7 +1753,7 @@ func TestVerify_FutureSchemaVersion(t *testing.T) {
 // schema_version < CurrentSchemaVersion.
 // Old records predate NetworkSymbolAnalysis (schema_version 2); Store.Load
 // rejects them with SchemaVersionMismatchError before hash comparison, preventing execution.
-// This ensures AC-4: runners built against newer schema cannot silently execute
+// Old records predate NetworkSymbolAnalysis.
 // commands whose records were written by an older version.
 func TestVerifyGroupFiles_OldSchema_BlocksExecution(t *testing.T) {
 	hashDir := tu.SafeTempDir(t)
@@ -1771,4 +1775,213 @@ func TestVerifyGroupFiles_OldSchema_BlocksExecution(t *testing.T) {
 	assert.Nil(t, result, "result should be nil on failure")
 	assert.ErrorIs(t, verifyErr, ErrGroupVerificationFailed,
 		"error should be ErrGroupVerificationFailed")
+}
+
+// buildCorruptDynamicELF creates a minimal ELF64 LE (x86-64, ET_DYN) file with
+// a valid ELF header and section header table, but the SHT_DYNAMIC section's
+// sh_offset points beyond the file boundary. This causes DynString(DT_NEEDED) to
+// fail with a read error while elf.NewFile succeeds.
+func buildCorruptDynamicELF(t *testing.T, dir, fileName string) string {
+	t.Helper()
+
+	const (
+		elfHeaderSize = 64
+		shdrSize      = 64
+		elfClass64    = 2
+		elfDataLE     = 1
+		elfVersion    = 1
+		etDyn         = 3
+		emX8664       = 62
+		shnUndef      = 0
+		shtNull       = 0
+		shtStrtab     = 3
+		shtDynamic    = 6
+	)
+
+	le := binary.LittleEndian
+
+	shstrtabData := []byte("\x00.dynstr\x00.dynamic\x00.shstrtab\x00")
+	// name indices within shstrtabData
+	dynstrNameIdx := uint32(1)    // ".dynstr"
+	dynamicNameIdx := uint32(9)   // ".dynamic"
+	shstrtabNameIdx := uint32(18) // ".shstrtab"
+
+	numSections := uint16(4) // null, .dynstr, .dynamic, .shstrtab
+	shstrndx := uint16(3)
+
+	// File layout: ELF header → shstrtab data → section headers
+	shstrtabOff := uint64(elfHeaderSize)
+	shdrOff := shstrtabOff + uint64(len(shstrtabData))
+	fileSize := shdrOff + uint64(shdrSize)*uint64(numSections)
+
+	buf := make([]byte, fileSize)
+
+	// ELF header
+	buf[0] = 0x7f
+	buf[1] = 'E'
+	buf[2] = 'L'
+	buf[3] = 'F'
+	buf[4] = elfClass64
+	buf[5] = elfDataLE
+	buf[6] = elfVersion
+	// EI_OSABI..EI_ABIVERSION remain 0
+	// e_pad remains 0
+	le.PutUint16(buf[16:], uint16(etDyn))      // e_type
+	le.PutUint16(buf[18:], uint16(emX8664))    // e_machine
+	le.PutUint32(buf[20:], uint32(elfVersion)) // e_version
+	// e_entry = 0
+	// e_phoff = 0 (no program headers)
+	le.PutUint64(buf[40:], shdrOff) // e_shoff
+	// e_flags = 0
+	le.PutUint16(buf[52:], elfHeaderSize) // e_ehsize
+	le.PutUint16(buf[54:], uint16(0))     // e_phentsize
+	le.PutUint16(buf[56:], uint16(0))     // e_phnum
+	le.PutUint16(buf[58:], shdrSize)      // e_shentsize
+	le.PutUint16(buf[60:], numSections)   // e_shnum
+	le.PutUint16(buf[62:], shstrndx)      // e_shstrndx
+
+	// shstrtab data
+	copy(buf[shstrtabOff:], shstrtabData)
+
+	// Section headers at shdrOff
+	writeShdr := func(idx int, nameOff uint32, shType uint32, offset, size uint64) {
+		off := shdrOff + uint64(idx)*shdrSize
+		le.PutUint32(buf[off:], nameOff)
+		le.PutUint32(buf[off+4:], shType)
+		le.PutUint64(buf[off+8:], 0)  // sh_flags
+		le.PutUint64(buf[off+16:], 0) // sh_addr
+		le.PutUint64(buf[off+24:], offset)
+		le.PutUint64(buf[off+32:], size)
+		le.PutUint32(buf[off+40:], 0) // sh_link
+		le.PutUint32(buf[off+44:], 0) // sh_info
+		le.PutUint64(buf[off+48:], 0) // sh_addralign
+		le.PutUint64(buf[off+56:], 0) // sh_entsize
+	}
+
+	// Section 0: null
+	writeShdr(0, 0, shtNull, 0, 0)
+
+	// Section 1: .dynstr (SHT_STRTAB) — minimal valid entry
+	writeShdr(1, dynstrNameIdx, shtStrtab, shstrtabOff, uint64(len(shstrtabData)))
+
+	// Section 2: .dynamic (SHT_DYNAMIC) — corrupted: offset beyond file
+	corruptOff := fileSize + 999
+	writeShdr(2, dynamicNameIdx, shtDynamic, corruptOff, 16)
+
+	// Section 3: .shstrtab (SHT_STRTAB)
+	writeShdr(3, shstrtabNameIdx, shtStrtab, shstrtabOff, uint64(len(shstrtabData)))
+
+	path := filepath.Join(dir, fileName)
+	require.NoError(t, os.WriteFile(path, buf, 0o644))
+	return path
+}
+
+// TestHasDynamicLibraryDeps_DynStringError verifies that a corrupted ELF
+// dynamic section causes hasDynamicLibraryDeps to return (false, error).
+func TestHasDynamicLibraryDeps_DynStringError(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
+
+	corruptPath := buildCorruptDynamicELF(t, tmpDir, "corrupt.elf")
+
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	hasDeps, checkErr := m.hasDynamicLibraryDeps(corruptPath)
+	assert.False(t, hasDeps, "corrupted ELF should report no deps")
+	assert.Error(t, checkErr, "corrupted ELF should return error for DynString failure")
+	assert.Contains(t, checkErr.Error(), "DT_NEEDED")
+}
+
+// TestHasDynamicLibraryDeps_DynamicELF verifies that a dynamically linked ELF
+// returns (true, nil), confirming existing behavior is preserved.
+func TestHasDynamicLibraryDeps_DynamicELF(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("ELF test requires Linux")
+	}
+
+	hashDir := tu.SafeTempDir(t)
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	hasDeps, checkErr := m.hasDynamicLibraryDeps(resolveSymlinks(t, "/bin/ls"))
+	require.NoError(t, checkErr)
+	assert.True(t, hasDeps, "/bin/ls should have dynamic library deps")
+}
+
+// TestHasDynamicLibraryDeps_NoDeps verifies hasDynamicLibraryDeps returns (false, nil)
+// for a non-ELF file.
+func TestHasDynamicLibraryDeps_NoDeps(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
+
+	script := createTestFile(t, tmpDir, "script.sh", []byte("#!/bin/sh\necho hello\n"))
+
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	hasDeps, checkErr := m.hasDynamicLibraryDeps(script)
+	require.NoError(t, checkErr)
+	assert.False(t, hasDeps, "non-ELF file should report no deps")
+}
+
+// TestVerifyCommandDynLibDeps_DynStringError verifies that a DynString error
+// propagates through the full caller chain (hasDynamicLibraryDeps →
+// verifyDynLibDeps → VerifyCommandDynLibDeps).
+func TestVerifyCommandDynLibDeps_DynStringError(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
+
+	corruptPath := buildCorruptDynamicELF(t, tmpDir, "corrupt.elf")
+
+	// Write a v2 record with no DynLibDeps so that verifyDynLibDeps
+	// falls through to hasDynamicLibraryDeps.
+	getter := filevalidator.NewHybridHashFilePathGetter()
+	store, err := fileanalysis.NewStore(hashDir, getter)
+	require.NoError(t, err)
+	resolvedPath, err := common.NewResolvedPath(corruptPath)
+	require.NoError(t, err)
+	err = store.Update(resolvedPath, func(record *fileanalysis.Record) error {
+		record.ContentHash = "sha256:aabbcc"
+		return nil
+	})
+	require.NoError(t, err)
+
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	verifyErr := m.VerifyCommandDynLibDeps(corruptPath)
+	require.Error(t, verifyErr)
+	assert.Contains(t, verifyErr.Error(), "DT_NEEDED",
+		"error should include the root cause (DynString failure)")
+}
+
+// TestVerifyCommandDynLibDeps_DynStringError_DryRun verifies that a DynString
+// error causes VerifyCommandDynLibDeps to fail even in dry-run mode.
+// Before B3 L1, (false, nil) was silently returned; after the fix, dry-run
+// execution is interrupted by the propagated error.
+func TestVerifyCommandDynLibDeps_DynStringError_DryRun(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	tmpDir := tu.SafeTempDir(t)
+
+	corruptPath := buildCorruptDynamicELF(t, tmpDir, "corrupt.elf")
+
+	// Write a v2 record so the dry-run path reaches hasDynamicLibraryDeps.
+	getter := filevalidator.NewHybridHashFilePathGetter()
+	store, err := fileanalysis.NewStore(hashDir, getter)
+	require.NoError(t, err)
+	resolvedPath, err := common.NewResolvedPath(corruptPath)
+	require.NoError(t, err)
+	err = store.Update(resolvedPath, func(record *fileanalysis.Record) error {
+		record.ContentHash = "sha256:aabbcc"
+		return nil
+	})
+	require.NoError(t, err)
+
+	m, err := NewManagerForTest(hashDir, WithDryRunMode())
+	require.NoError(t, err)
+
+	verifyErr := m.VerifyCommandDynLibDeps(corruptPath)
+	require.Error(t, verifyErr, "dry-run mode should also propagate the DynString error")
+	assert.Contains(t, verifyErr.Error(), "DT_NEEDED")
 }

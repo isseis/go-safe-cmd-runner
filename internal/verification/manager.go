@@ -193,7 +193,15 @@ func (m *Manager) VerifyGroupFiles(input *GroupVerificationInput) (*Result, erro
 	}
 
 	// Collect all files to verify (explicit files + command files)
-	allFiles := m.collectVerificationFiles(input)
+	allFiles, err := m.collectVerificationFiles(input)
+	if err != nil {
+		groupName := input.Name
+		return nil, &Error{
+			Op:    "group",
+			Group: groupName,
+			Err:   fmt.Errorf("failed to collect verification files: %w", err),
+		}
+	}
 
 	result := &Result{
 		TotalFiles:    len(allFiles),
@@ -247,9 +255,12 @@ func (m *Manager) VerifyGroupFiles(input *GroupVerificationInput) (*Result, erro
 }
 
 // collectVerificationFiles collects all files to verify for a group.
-func (m *Manager) collectVerificationFiles(input *GroupVerificationInput) map[string]struct{} {
+// Returns the file set and nil error on success.
+// Path resolution failures are treated as fail-closed: the entire group
+// verification is aborted rather than silently skipping the command.
+func (m *Manager) collectVerificationFiles(input *GroupVerificationInput) (map[string]struct{}, error) {
 	if input == nil {
-		return make(map[string]struct{})
+		return make(map[string]struct{}), nil
 	}
 
 	// Use map to automatically eliminate duplicates
@@ -269,14 +280,15 @@ func (m *Manager) collectVerificationFiles(input *GroupVerificationInput) map[st
 				slog.Warn("Failed to resolve command path",
 					"group", input.Name,
 					"command", command.ExpandedCmd,
+					"reason", "path_resolution_failed",
 					"error", err.Error())
-				continue
+				return nil, fmt.Errorf("failed to resolve command path for '%s': %w", command.ExpandedCmd, err)
 			}
 			fileSet[resolvedPath] = struct{}{}
 		}
 	}
 
-	return fileSet
+	return fileSet, nil
 }
 
 // ResolvePath resolves a command to its full path with security validation
@@ -693,6 +705,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 // Errors are classified as follows:
 //   - SafeOpenFile failure (I/O error, permission denied, file not found) → (false, err): propagated to caller
 //   - elf.NewFile failure (not an ELF, bad magic)                         → (false, nil): file is not an ELF binary
+//   - DynString(DT_NEEDED) error (corrupted dynamic section)               → (false, err): propagated to caller (fail-closed)
 func (m *Manager) hasDynamicLibraryDeps(path string) (bool, error) {
 	file, err := m.safeFS.SafeOpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
@@ -709,7 +722,10 @@ func (m *Manager) hasDynamicLibraryDeps(path string) (bool, error) {
 	defer func() { _ = elfFile.Close() }()
 
 	needed, err := elfFile.DynString(elf.DT_NEEDED)
-	if err != nil || len(needed) == 0 {
+	if err != nil {
+		return false, fmt.Errorf("failed to read DT_NEEDED: %w", err)
+	}
+	if len(needed) == 0 {
 		return false, nil
 	}
 	return true, nil
