@@ -1873,6 +1873,9 @@ func TestRedactingHandler_StructRedaction(t *testing.T) {
 		// Should handle depth limit gracefully
 		output := buf.String()
 		assert.Contains(t, output, "Test message")
+		// Verify depth-limit behavior: the too-deep value should be replaced with placeholder
+		assert.Contains(t, output, "[REDACTION FAILED - OUTPUT SUPPRESSED]", "Depth-limited value should be redacted with placeholder")
+		assert.NotContains(t, output, "too deep", "Actual too-deep value should not appear in redacted output")
 	})
 }
 

@@ -646,6 +646,8 @@ func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionCon
 	}
 
 	// 2. Wrap in defer/recover for panic safety
+	var result map[string]any
+	var returnErr error
 	defer func() {
 		if rec := recover(); rec != nil {
 			// Panic occurred during map processing
@@ -657,6 +659,17 @@ func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionCon
 				"stack_trace", string(debug.Stack()),
 				"log_category", "redaction_failure_detail",
 			)
+			// Log safe summary to all destinations
+			slog.Warn(
+				"Redaction failed for map - see logs for details",
+				"attribute_key", key,
+				"panic_type", fmt.Sprintf("%T", rec),
+				"log_category", "redaction_failure_summary",
+				"details_in_log", true,
+			)
+			// Set safe return values
+			result = nil
+			returnErr = nil
 		}
 	}()
 
@@ -667,31 +680,29 @@ func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionCon
 	}
 
 	// 4. Collect and sort keys for deterministic output
-	var keys []string
-	for _, k := range rv.MapKeys() {
-		keys = append(keys, fmt.Sprint(k.Interface()))
+	type mapEntry struct {
+		keyStr string
+		keyVal reflect.Value
 	}
-	slices.Sort(keys)
+	mapKeys := rv.MapKeys()
+	entries := make([]mapEntry, 0, len(mapKeys))
+	for _, k := range mapKeys {
+		entries = append(entries, mapEntry{
+			keyStr: fmt.Sprint(k.Interface()),
+			keyVal: k,
+		})
+	}
+	slices.SortFunc(entries, func(a, b mapEntry) int {
+		return strings.Compare(a.keyStr, b.keyStr)
+	})
 
 	// 5. Process each entry
-	result := make(map[string]any)
+	result = make(map[string]any)
 	nextCtx := redactionContext{depth: ctx.depth + 1}
 
-	for _, keyStr := range keys {
-		// Find original key value for map lookup
-		var originalKey reflect.Value
-		for _, k := range rv.MapKeys() {
-			if fmt.Sprint(k.Interface()) == keyStr {
-				originalKey = k
-				break
-			}
-		}
-
-		if !originalKey.IsValid() {
-			continue
-		}
-
-		mapEntryValue := rv.MapIndex(originalKey).Interface()
+	for _, entry := range entries {
+		keyStr := entry.keyStr
+		mapEntryValue := rv.MapIndex(entry.keyVal).Interface()
 
 		// Check if key is sensitive - if so, mask the value
 		if r.config.Patterns.IsSensitiveKey(keyStr) {
@@ -706,7 +717,7 @@ func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionCon
 		}
 	}
 
-	return slog.Attr{Key: key, Value: slog.AnyValue(result)}, nil
+	return slog.Attr{Key: key, Value: slog.AnyValue(result)}, returnErr
 }
 
 // processStruct processes a struct value and recursively redacts its exported fields
@@ -722,8 +733,11 @@ func (r *RedactingHandler) processStruct(key string, structValue any, ctx redact
 	}
 
 	// 2. Wrap in defer/recover for panic safety
+	var result map[string]any
+	var returnErr error
 	defer func() {
 		if rec := recover(); rec != nil {
+			// Panic occurred during struct processing
 			r.failureLogger.Warn(
 				"Redaction failed for struct - detailed log",
 				"attribute_key", key,
@@ -732,6 +746,17 @@ func (r *RedactingHandler) processStruct(key string, structValue any, ctx redact
 				"stack_trace", string(debug.Stack()),
 				"log_category", "redaction_failure_detail",
 			)
+			// Log safe summary to all destinations
+			slog.Warn(
+				"Redaction failed for struct - see logs for details",
+				"attribute_key", key,
+				"panic_type", fmt.Sprintf("%T", rec),
+				"log_category", "redaction_failure_summary",
+				"details_in_log", true,
+			)
+			// Set safe return values
+			result = nil
+			returnErr = nil
 		}
 	}()
 
@@ -742,7 +767,7 @@ func (r *RedactingHandler) processStruct(key string, structValue any, ctx redact
 	}
 
 	// 4. Process exported fields
-	result := make(map[string]any)
+	result = make(map[string]any)
 	nextCtx := redactionContext{depth: ctx.depth + 1}
 	exportedFieldCount := 0
 
@@ -753,24 +778,21 @@ func (r *RedactingHandler) processStruct(key string, structValue any, ctx redact
 			continue
 		}
 
-		exportedFieldCount++
-
 		// Determine field key name from json tag or field name
 		fieldKey := field.Name
 		if jsonTag := field.Tag.Get("json"); jsonTag != "" {
 			// Parse json tag to handle options like "omitempty", "string"
 			if jsonTag == "-" {
-				// Skip fields with json:"-" tag
+				// Skip fields with json:"-" tag (don't count as exported)
 				continue
 			}
 			// Extract field name from tag (before any comma)
-			if tagName, _, found := strings.Cut(jsonTag, ","); found && tagName != "" {
+			if tagName, _, _ := strings.Cut(jsonTag, ","); tagName != "" {
 				fieldKey = tagName
-			} else if jsonTag != "" {
-				fieldKey = jsonTag
 			}
-			// If tagName is empty string (e.g., json:",omitempty"), fall back to field name
 		}
+
+		exportedFieldCount++
 
 		fieldValue := rv.Field(i).Interface()
 
@@ -787,7 +809,7 @@ func (r *RedactingHandler) processStruct(key string, structValue any, ctx redact
 		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
 	}
 
-	return slog.Attr{Key: key, Value: slog.AnyValue(result)}, nil
+	return slog.Attr{Key: key, Value: slog.AnyValue(result)}, returnErr
 }
 
 // processSlice processes a slice value and recursively redacts all elements.
@@ -911,25 +933,28 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 			}
 		} else {
 			// Non-LogValuer element: handle based on type
-			elementValue := reflect.ValueOf(element)
-			// For string elements, apply RedactText; for other types, process recursively
 			if str, ok := element.(string); ok {
 				// String element: apply RedactText directly
 				redactedStr := r.config.RedactText(str)
 				processedElements = append(processedElements, redactedStr)
-			} else if elementValue.Kind() == reflect.Ptr || elementValue.Kind() == reflect.Map ||
-				elementValue.Kind() == reflect.Struct || elementValue.Kind() == reflect.Slice ||
-				elementValue.Kind() == reflect.Interface {
-				// Complex types: process recursively
-				elementKey := fmt.Sprintf("%s[%d]", key, i)
-				redactedAttr := r.redactLogAttributeWithContext(
-					slog.Attr{Key: elementKey, Value: slog.AnyValue(element)},
-					nextCtx,
-				)
-				processedElements = append(processedElements, redactedAttr.Value.Any())
 			} else {
-				// Primitive types (int, bool, etc.): keep as-is
-				processedElements = append(processedElements, element)
+				elementValue := reflect.ValueOf(element)
+				switch elementValue.Kind() {
+				case reflect.Invalid:
+					// Nil element: keep as-is
+					processedElements = append(processedElements, element)
+				case reflect.Ptr, reflect.Map, reflect.Struct, reflect.Slice, reflect.Interface:
+					// Complex types: process recursively
+					elementKey := fmt.Sprintf("%s[%d]", key, i)
+					redactedAttr := r.redactLogAttributeWithContext(
+						slog.Attr{Key: elementKey, Value: slog.AnyValue(element)},
+						nextCtx,
+					)
+					processedElements = append(processedElements, redactedAttr.Value.Any())
+				default:
+					// Primitive types (int, bool, etc.): keep as-is
+					processedElements = append(processedElements, element)
+				}
 			}
 		}
 	}
