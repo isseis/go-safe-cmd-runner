@@ -132,6 +132,7 @@ func TestAnalyze_ChildParseFailure(t *testing.T) {
 
 	_, _, err := a.Analyze(rootPath)
 	require.Error(t, err, "should return error when child parse fails")
+	assert.Contains(t, err.Error(), lib2Path, "error should include the failing child library path")
 }
 
 // TestExtractDylibName verifies that dylibName correctly parses the

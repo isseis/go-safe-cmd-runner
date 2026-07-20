@@ -195,7 +195,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntry, er
 			slog.Warn("Failed to parse child ELF dependencies",
 				"path", resolvedPath, "error", err,
 				"reason", "child_parse_error")
-			return nil, fmt.Errorf("failed to parse %s: %w", resolvedPath, err)
+			return nil, fmt.Errorf("failed to parse %q: %w", resolvedPath, err)
 		}
 
 		for _, childSoname := range childNeeded {
