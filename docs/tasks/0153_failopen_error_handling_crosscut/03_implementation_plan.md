@@ -193,29 +193,29 @@
 
 #### Step 4-1: 新規 sentinel error の追加
 
-- [ ] **ファイル**: `internal/security/elfanalyzer/standard_analyzer.go`
-- [ ] `ErrSyscallStoreIOError` sentinel error を `var` ブロック（33行目付近）に追加する: `ErrSyscallStoreIOError = errors.New("syscall analysis store I/O error")`
-- [ ] **設計根拠**: `02_architecture.md` 3.1.2節を参照（`ErrSyscallAnalysisHighRisk` との分離理由）
+- [x] **ファイル**: `internal/security/elfanalyzer/standard_analyzer.go`
+- [x] `ErrSyscallStoreIOError` sentinel error を `var` ブロック（33行目付近）に追加する: `ErrSyscallStoreIOError = errors.New("syscall analysis store I/O error")`
+- [x] **設計根拠**: `02_architecture.md` 3.1.2節を参照（`ErrSyscallAnalysisHighRisk` との分離理由）
 
 #### Step 4-2: `default` 節の修正
 
-- [ ] **ファイル**: `internal/security/elfanalyzer/standard_analyzer.go`
-- [ ] `lookupSyscallAnalysis`（297-332行目）の `default` 節を修正する:
+- [x] **ファイル**: `internal/security/elfanalyzer/standard_analyzer.go`
+- [x] `lookupSyscallAnalysis`（297-332行目）の `default` 節を修正する:
   - `slog.Debug` → `slog.Warn` に格上げ
   - 構造化フィールド `"reason": "store_io_error"` を追加
   - 戻り値を `binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.AnalysisError, Error: fmt.Errorf("%w: %s", ErrSyscallStoreIOError, path)}` に変更する（`StaticBinary` へ縮退しない）
-- [ ] `ErrSyscallHashMismatch`・`RecordNotFound` のケースは変更しない（既存の fail-closed / キャッシュ不在フォールバック挙動を維持）
-- [ ] `convertSyscallResult` が使う `ErrSyscallAnalysisHighRisk` は変更しない（`02_architecture.md` 3.1.2節参照）
+- [x] `ErrSyscallHashMismatch`・`RecordNotFound` のケースは変更しない（既存の fail-closed / キャッシュ不在フォールバック挙動を維持）
+- [x] `convertSyscallResult` が使う `ErrSyscallAnalysisHighRisk` は変更しない（`02_architecture.md` 3.1.2節参照）
 
 **検証**: `make test` の既存テストがパスすること。
 
 #### Step 4-3: 想定外エラーのテストを追加
 
-- [ ] **ファイル**: `internal/security/elfanalyzer/analyzer_test.go`
-- [ ] `TestStandardELFAnalyzer_SyscallLookup_StoreIOError` テストを追加する（AC-01, AC-03）
-- [ ] テスト内容: `LoadSyscallAnalysis` が想定外エラー（`io.ErrUnexpectedEOF` 等）を返すモックストアを使用し、`AnalyzeNetworkSymbols` が `AnalysisError` を返し、かつ `errors.Is(err, ErrSyscallStoreIOError)` が `true` であることを検証
-- [ ] AC-03 のログレベル検証: テスト開始時に `prev := slog.Default(); defer slog.SetDefault(prev)` で既存のデフォルトロガーを退避し、`slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))` でハンドラーを設定する。テスト後に `slog.Warn` レベル以上のログが出力されたことを確認する（`bytes.Contains(buf.String(), "level=WARN")` などの TextHandler 形式のキーで検証）。**注意: `slog.SetDefault` はグローバル状態を変更するため、このテストは `t.Parallel()` を使用しないこと。または、コンポーネントにカスタム `slog.Logger` を注入する方式を推奨する。**
-- [ ] 既存の `TestStandardELFAnalyzer_SyscallLookup_NotFound`（AC-02）と `TestStandardELFAnalyzer_SyscallLookup_HashMismatch` は変更不要（既存挙動維持を確認）
+- [x] **ファイル**: `internal/security/elfanalyzer/analyzer_test.go`
+- [x] `TestStandardELFAnalyzer_SyscallLookup_StoreIOError` テストを追加する（AC-01, AC-03）
+- [x] テスト内容: `LoadSyscallAnalysis` が想定外エラー（`io.ErrUnexpectedEOF` 等）を返すモックストアを使用し、`AnalyzeNetworkSymbols` が `AnalysisError` を返し、かつ `errors.Is(err, ErrSyscallStoreIOError)` が `true` であることを検証
+- [x] AC-03 のログレベル検証: テスト開始時に `prev := slog.Default(); defer slog.SetDefault(prev)` で既存のデフォルトロガーを退避し、`slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))` でハンドラーを設定する。テスト後に `slog.Warn` レベル以上のログが出力されたことを確認する（`bytes.Contains(buf.String(), "level=WARN")` などの TextHandler 形式のキーで検証）。**注意: `slog.SetDefault` はグローバル状態を変更するため、このテストは `t.Parallel()` を使用しないこと。または、コンポーネントにカスタム `slog.Logger` を注入する方式を推奨する。**
+- [x] 既存の `TestStandardELFAnalyzer_SyscallLookup_NotFound`（AC-02）と `TestStandardELFAnalyzer_SyscallLookup_HashMismatch` は変更不要（既存挙動維持を確認）
 
 **検証**: `go test -tags test -v ./internal/security/elfanalyzer/` がパスすること。
 
