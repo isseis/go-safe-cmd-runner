@@ -648,7 +648,7 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 }
 
 // processMap processes a map value and recursively redacts keys and values
-func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionContext) (slog.Attr, error) {
+func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionContext) (attr slog.Attr, err error) {
 	// 1. Check recursion depth
 	if ctx.depth >= maxRedactionDepth {
 		r.failureLogger.Debug(
@@ -660,8 +660,6 @@ func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionCon
 	}
 
 	// 2. Wrap in defer/recover for panic safety
-	var result map[string]any
-	var returnErr error
 	defer func() {
 		if rec := recover(); rec != nil {
 			// Panic occurred during map processing
@@ -681,9 +679,9 @@ func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionCon
 				"log_category", "redaction_failure_summary",
 				"details_in_log", true,
 			)
-			// Set safe return values
-			result = nil
-			returnErr = nil
+			// Fail secure: return the placeholder instead of zero values
+			attr = slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
+			err = nil
 		}
 	}()
 
@@ -711,7 +709,7 @@ func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionCon
 	})
 
 	// 5. Process each entry
-	result = make(map[string]any)
+	result := make(map[string]any)
 	nextCtx := redactionContext{depth: ctx.depth + 1}
 
 	for _, entry := range entries {
@@ -731,11 +729,11 @@ func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionCon
 		}
 	}
 
-	return slog.Attr{Key: key, Value: slog.AnyValue(result)}, returnErr
+	return slog.Attr{Key: key, Value: slog.AnyValue(result)}, nil
 }
 
 // processStruct processes a struct value and recursively redacts its exported fields
-func (r *RedactingHandler) processStruct(key string, structValue any, ctx redactionContext) (slog.Attr, error) {
+func (r *RedactingHandler) processStruct(key string, structValue any, ctx redactionContext) (attr slog.Attr, err error) {
 	// 1. Check recursion depth
 	if ctx.depth >= maxRedactionDepth {
 		r.failureLogger.Debug(
@@ -747,8 +745,6 @@ func (r *RedactingHandler) processStruct(key string, structValue any, ctx redact
 	}
 
 	// 2. Wrap in defer/recover for panic safety
-	var result map[string]any
-	var returnErr error
 	defer func() {
 		if rec := recover(); rec != nil {
 			// Panic occurred during struct processing
@@ -768,9 +764,9 @@ func (r *RedactingHandler) processStruct(key string, structValue any, ctx redact
 				"log_category", "redaction_failure_summary",
 				"details_in_log", true,
 			)
-			// Set safe return values
-			result = nil
-			returnErr = nil
+			// Fail secure: return the placeholder instead of zero values
+			attr = slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
+			err = nil
 		}
 	}()
 
@@ -781,7 +777,7 @@ func (r *RedactingHandler) processStruct(key string, structValue any, ctx redact
 	}
 
 	// 4. Process exported fields
-	result = make(map[string]any)
+	result := make(map[string]any)
 	nextCtx := redactionContext{depth: ctx.depth + 1}
 	exportedFieldCount := 0
 
@@ -823,7 +819,7 @@ func (r *RedactingHandler) processStruct(key string, structValue any, ctx redact
 		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
 	}
 
-	return slog.Attr{Key: key, Value: slog.AnyValue(result)}, returnErr
+	return slog.Attr{Key: key, Value: slog.AnyValue(result)}, nil
 }
 
 // processSlice processes slice and array values and recursively redacts all elements.
