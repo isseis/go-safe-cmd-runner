@@ -127,7 +127,7 @@
 - [ ] パス解決失敗時（273行目）に `continue` する代わりに `return nil, fmt.Errorf("...: %w", err)` でエラーを返す
 - [ ] ログ出力に構造化フィールド `"reason": "path_resolution_failed"` を追加し、`slog.Warn` は維持する
 - [ ] 正常系（全パス解決成功）では `return fileSet, nil` を返す
-- [ ] 呼び出し元 `VerifyGroupFiles`（196行目）で戻り値のエラーをチェックし、`OpError` にラップして上位に伝播する
+- [ ] 呼び出し元 `VerifyGroupFiles`（196行目）で戻り値のエラーをチェックし、`Error`（`errors.go:105`、`Group` フィールドを持つ型。`OpError`（`errors.go:80`）ではない点に注意 — `OpError` は `Op`/`Path`/`Err` のみで `Group` フィールドを持たない）にラップして上位に伝播する。既存の `FailedFiles > 0` 時の分岐（`manager.go:235`）と同じ型・パターンを踏襲する
 - [ ] 具体的なラップ: `return nil, &Error{Op: "group", Group: groupName, Err: fmt.Errorf("failed to collect verification files: %w", err)}`
 
 **検証**: `make test` の既存テストがパスすること。
