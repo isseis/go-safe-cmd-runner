@@ -611,24 +611,23 @@ func HasDynamicLibDeps(path string, fs safefileio.FileSystem) (bool, error) {
 		return false, nil // no matching architecture
 	}
 
-	// Try as single-architecture Mach-O.
-	// Read the magic bytes first so we can distinguish "not Mach-O" (silent
-	// skip) from "looks like Mach-O but parse failed" (return error).
+	return checkSingleArchMachO(file)
+}
+
+// checkSingleArchMachO tries to parse file as a single-architecture Mach-O
+// binary. It reads the magic bytes first so we can distinguish "not Mach-O"
+// (silent skip) from "looks like Mach-O but parse failed" (return error).
+func checkSingleArchMachO(file safefileio.File) (bool, error) {
 	var magic [4]byte
-	if seeker, ok := file.(io.Seeker); ok {
-		if _, err := seeker.Seek(0, io.SeekStart); err != nil {
-			return false, nil
-		}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return false, fmt.Errorf("failed to seek to start of file: %w", err)
 	}
 
 	if _, err := io.ReadFull(file, magic[:]); err != nil {
-		return false, nil // too short to be Mach-O
-	}
-
-	if seeker, ok := file.(io.Seeker); ok {
-		if _, err := seeker.Seek(0, io.SeekStart); err != nil {
-			return false, nil
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return false, nil // too short to be Mach-O
 		}
+		return false, fmt.Errorf("failed to read Mach-O magic: %w", err)
 	}
 
 	machoFile, err := macho.NewFile(file)

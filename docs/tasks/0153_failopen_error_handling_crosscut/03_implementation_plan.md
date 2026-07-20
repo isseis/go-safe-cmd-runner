@@ -233,21 +233,21 @@
 
 - [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: C2 F-5 — `HasDynamicLibDeps` の fail-closed 化
 
 #### Step 5-1: `Seek` 失敗と `io.ReadFull` 失敗のエラー伝播
 
 - [ ] **ファイル**: `internal/dynlib/machodylib/analyzer.go`
-- [ ] `HasDynamicLibDeps`（617-632行目）の単一アーキテクチャ Mach-O パスを修正する:
+- [x] `HasDynamicLibDeps`（617-632行目）の単一アーキテクチャ Mach-O パスを修正する:
   - `Seek` 失敗（619-621行目）: `return false, nil` → `return false, fmt.Errorf("failed to seek to start of file: %w", err)` に変更
-  - `Seek` 失敗（629-631行目）: `return false, nil` → `return false, fmt.Errorf("failed to seek to start of file: %w", err)` に変更
+  - `Seek` 失敗（629-631行目）: 削除（`macho.NewFile` は `io.ReaderAt` を使用しシークオフセットに依存しないため、`ReadFull` 後の2回目の Seek は冗長）
   - `io.ReadFull` 失敗（624-626行目）:
     - `io.EOF` または `io.ErrUnexpectedEOF` の場合: `return false, nil`（非 Mach-O / ファイルが小さすぎる、正常）
     - それ以外のエラー: `return false, fmt.Errorf("failed to read Mach-O magic: %w", err)` に変更
-- [ ] ログ出力は既存実装に存在しないため、追加不要（エラー伝播のみ）
+- [x] ログ出力は既存実装に存在しないため、追加不要（エラー伝播のみ）
 
 **検証**: darwin 環境では `make test` がパスすること。linux CI では `GOOS=darwin GOARCH=arm64 go test -tags test -c ./internal/dynlib/machodylib/` でクロスコンパイル確認を行うこと。
 
@@ -282,8 +282,8 @@
 
 **判定理由**: 該当トリガーなし（I/O エラーのエラー伝播追加と単体テストのみ）
 
-- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -553,19 +553,19 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 - [x] Step 4-3: 想定外エラーテスト追加
 
 ### PR-3 作成ポイント: syscall store I/O error fail-closed
-- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
-- [ ] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [x] PR を作成した
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: C2 F-5
-- [ ] Step 5-1: `HasDynamicLibDeps` の I/O エラー伝播
-- [ ] Step 5-2: Seek エラー・ReadFull エラー・ReadFull EOF テスト追加
-- [ ] Step 5-3: 呼び出し元のエラー伝播テスト（AC-10）
+- [x] Step 5-1: `HasDynamicLibDeps` の I/O エラー伝播
+- [x] Step 5-2: Seek エラー・ReadFull エラー・ReadFull EOF テスト追加
+- [x] Step 5-3: 呼び出し元のエラー伝播テスト（AC-10）
 
 ### PR-4 作成ポイント: HasDynamicLibDeps I/O error fail-closed
-- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

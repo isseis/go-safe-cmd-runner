@@ -18,6 +18,8 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	safefileiotestutil "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1984,4 +1986,26 @@ func TestVerifyCommandDynLibDeps_DynStringError_DryRun(t *testing.T) {
 	verifyErr := m.VerifyCommandDynLibDeps(corruptPath)
 	require.Error(t, verifyErr, "dry-run mode should also propagate the DynString error")
 	assert.Contains(t, verifyErr.Error(), "DT_NEEDED")
+}
+
+// TestHasMachODynamicLibraryDeps_ErrorPropagation verifies that an I/O error
+// from HasDynamicLibDeps (triggered via SafeOpenFile failure on the mock FS)
+// is propagated through hasMachODynamicLibraryDeps to the caller.
+func TestHasMachODynamicLibraryDeps_ErrorPropagation(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	mockFS := &safefileiotestutil.MockFileSystem{
+		SafeOpenFileFunc: func(_ string, _ int, _ os.FileMode) (safefileio.File, error) {
+			return nil, errors.New("injected I/O error")
+		},
+	}
+	m.safeFS = mockFS
+
+	hasDeps, err := m.hasMachODynamicLibraryDeps("/some/path")
+	require.Error(t, err)
+	assert.False(t, hasDeps)
+	assert.Contains(t, err.Error(), "injected I/O error")
 }
