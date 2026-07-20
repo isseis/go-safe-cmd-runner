@@ -1615,6 +1615,391 @@ func TestRedactingHandler_SliceTypeConversion(t *testing.T) {
 		assert.Equal(t, "plain_string", anySlice[1])
 		assert.Equal(t, 123, anySlice[2])
 	})
+
+	t.Run("array with string elements - element-wise redaction", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+		logger := slog.New(handler)
+
+		// Test with array (fixed-size) containing sensitive strings
+		// Arrays should be processed element-wise just like slices
+		stringArray := [3]string{"password=secret123", "token=abc456", "normal_value"}
+		logger.Info("Test message", "data", slog.AnyValue(stringArray))
+
+		// Verify: array should be processed and converted to []any
+		require.Len(t, mock.records, 1)
+		record := mock.records[0]
+
+		var dataAttr slog.Attr
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == "data" {
+				dataAttr = attr
+				return false
+			}
+			return true
+		})
+
+		// Array should be converted to []any after processing
+		sliceValue := dataAttr.Value.Any()
+		anySlice, ok := sliceValue.([]any)
+		assert.True(t, ok, "Expected []any after processing array, got %T", sliceValue)
+		assert.Len(t, anySlice, 3)
+
+		// Verify each element was redacted appropriately
+		assert.Equal(t, "password=[REDACTED]", anySlice[0], "Array element with password pattern should be redacted")
+		assert.Equal(t, "token=[REDACTED]", anySlice[1], "Array element with token pattern should be redacted")
+		assert.Equal(t, "normal_value", anySlice[2], "Normal array element should be preserved")
+	})
+
+	t.Run("array with mixed types and sensitive content", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+		logger := slog.New(handler)
+
+		// Test with array of any containing different types
+		type mixedArray [4]any
+		arr := mixedArray{
+			"password=secret",
+			123,
+			"normal_text",
+			45.6,
+		}
+		logger.Info("Test message", "data", slog.AnyValue(arr))
+
+		require.Len(t, mock.records, 1)
+		record := mock.records[0]
+
+		var dataAttr slog.Attr
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == "data" {
+				dataAttr = attr
+				return false
+			}
+			return true
+		})
+
+		sliceValue := dataAttr.Value.Any()
+		anySlice, ok := sliceValue.([]any)
+		assert.True(t, ok, "Expected []any after processing array with mixed types, got %T", sliceValue)
+		assert.Len(t, anySlice, 4)
+
+		// First element with sensitive key=value should be redacted
+		assert.Equal(t, "password=[REDACTED]", anySlice[0])
+		// Non-string primitives should be preserved
+		assert.Equal(t, 123, anySlice[1])
+		assert.Equal(t, "normal_text", anySlice[2])
+		assert.Equal(t, 45.6, anySlice[3])
+	})
+
+	t.Run("slice of arrays - nested array elements are redacted", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+		logger := slog.New(handler)
+
+		// A slice whose elements are themselves fixed-size arrays. Each element
+		// must be recursed into individually, not passed through as opaque data.
+		nested := [][2]string{
+			{"password=secret1", "normal1"},
+			{"token=secret2", "normal2"},
+		}
+		logger.Info("Test message", "data", slog.AnyValue(nested))
+
+		require.Len(t, mock.records, 1)
+		record := mock.records[0]
+
+		var dataAttr slog.Attr
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == "data" {
+				dataAttr = attr
+				return false
+			}
+			return true
+		})
+
+		sliceValue := dataAttr.Value.Any()
+		anySlice, ok := sliceValue.([]any)
+		assert.True(t, ok, "Expected []any after processing slice of arrays, got %T", sliceValue)
+		assert.Len(t, anySlice, 2)
+
+		firstElem, ok := anySlice[0].([]any)
+		assert.True(t, ok, "Expected nested array to be converted to []any, got %T", anySlice[0])
+		assert.Equal(t, []any{"password=[REDACTED]", "normal1"}, firstElem)
+
+		secondElem, ok := anySlice[1].([]any)
+		assert.True(t, ok, "Expected nested array to be converted to []any, got %T", anySlice[1])
+		assert.Equal(t, []any{"token=[REDACTED]", "normal2"}, secondElem)
+	})
+}
+
+// TestRedactingHandler_MapRedaction tests map redaction functionality
+func TestRedactingHandler_MapRedaction(t *testing.T) {
+	config := DefaultConfig()
+
+	t.Run("SensitiveKeyMasking", func(t *testing.T) {
+		// Test that sensitive keys in maps are masked
+		var buf bytes.Buffer
+		handler := slog.NewJSONHandler(&buf, nil)
+		redactingHandler := NewRedactingHandler(handler, config, nil)
+		logger := slog.New(redactingHandler)
+
+		// Log a map with a sensitive key
+		sensitiveMap := map[string]any{
+			"api_key": "secret-value-123",
+		}
+		logger.Info("Test message", "details", slog.AnyValue(sensitiveMap))
+
+		// Parse JSON output
+		output := buf.String()
+		var logEntry map[string]any
+		err := json.Unmarshal([]byte(output), &logEntry)
+		require.NoError(t, err)
+
+		// Check that secret value is not present
+		assert.NotContains(t, output, "secret-value-123", "Sensitive value should be redacted")
+		assert.Contains(t, output, "[REDACTED]", "Should contain redaction placeholder")
+
+		// Positive control: verify secret appears via non-redacting JSON handler
+		var controlBuf bytes.Buffer
+		controlHandler := slog.NewJSONHandler(&controlBuf, nil)
+		controlLogger := slog.New(controlHandler)
+		controlLogger.Info("Test message", "details", slog.AnyValue(sensitiveMap))
+		controlOutput := controlBuf.String()
+		assert.Contains(t, controlOutput, "secret-value-123", "Secret should appear in non-redacting handler output, confirming redaction is actually preventing leakage")
+	})
+
+	t.Run("ValueContentDetection", func(t *testing.T) {
+		// Test that sensitive patterns in values are detected and masked
+		var buf bytes.Buffer
+		handler := slog.NewJSONHandler(&buf, nil)
+		redactingHandler := NewRedactingHandler(handler, config, nil)
+		logger := slog.New(redactingHandler)
+
+		// Log a map with sensitive content in value
+		dataMap := map[string]any{
+			"note": "password=hunter2",
+		}
+		logger.Info("Test message", "details", slog.AnyValue(dataMap))
+
+		output := buf.String()
+		assert.NotContains(t, output, "hunter2", "Sensitive value content should be redacted")
+		assert.Contains(t, output, "[REDACTED]", "Should contain redaction placeholder")
+	})
+
+	t.Run("NestedMap", func(t *testing.T) {
+		// Test that nested maps are recursively redacted
+		var buf bytes.Buffer
+		handler := slog.NewJSONHandler(&buf, nil)
+		redactingHandler := NewRedactingHandler(handler, config, nil)
+		logger := slog.New(redactingHandler)
+
+		nestedMap := map[string]any{
+			"outer": map[string]any{
+				"token": "secret-token-xyz",
+			},
+		}
+		logger.Info("Test message", "details", slog.AnyValue(nestedMap))
+
+		output := buf.String()
+		assert.NotContains(t, output, "secret-token-xyz", "Nested sensitive value should be redacted")
+	})
+
+	t.Run("DepthLimit", func(t *testing.T) {
+		// Test that depth limit is respected
+		var buf bytes.Buffer
+		handler := slog.NewJSONHandler(&buf, nil)
+		redactingHandler := NewRedactingHandler(handler, config, nil)
+		logger := slog.New(redactingHandler)
+
+		// Create deeply nested map to exceed depth limit
+		deepMap := map[string]any{
+			"level1": map[string]any{
+				"level2": map[string]any{
+					"level3": map[string]any{
+						"level4": map[string]any{
+							"level5": map[string]any{
+								"level6": map[string]any{
+									"level7": map[string]any{
+										"level8": map[string]any{
+											"level9": map[string]any{
+												"level10": map[string]any{
+													"level11": "this should be redacted due to depth limit",
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		logger.Info("Test message", "deep", slog.AnyValue(deepMap))
+
+		output := buf.String()
+		// At depth limit, should return placeholder
+		assert.Contains(t, output, "[REDACTION FAILED - OUTPUT SUPPRESSED]")
+		// The depth-limited leaf value must not leak anywhere in the output, even
+		// though the placeholder is present (regression guard: placeholder emitted
+		// but the suppressed value still leaks elsewhere).
+		assert.NotContains(t, output, "this should be redacted due to depth limit")
+	})
+
+	t.Run("NoSensitiveContent", func(t *testing.T) {
+		// Test that non-sensitive maps maintain their content
+		var buf bytes.Buffer
+		handler := slog.NewJSONHandler(&buf, nil)
+		redactingHandler := NewRedactingHandler(handler, config, nil)
+		logger := slog.New(redactingHandler)
+
+		nonSensitiveMap := map[string]any{
+			"name": "John",
+			"age":  30,
+			"city": "San Francisco",
+		}
+		logger.Info("Test message", "user", slog.AnyValue(nonSensitiveMap))
+
+		output := buf.String()
+		assert.Contains(t, output, "John", "Non-sensitive string should be preserved")
+		assert.Contains(t, output, "San Francisco", "Non-sensitive values should be preserved")
+	})
+
+	t.Run("NonStringKey", func(t *testing.T) {
+		// Test that non-string keys are handled
+		var buf bytes.Buffer
+		handler := slog.NewJSONHandler(&buf, nil)
+		redactingHandler := NewRedactingHandler(handler, config, nil)
+		logger := slog.New(redactingHandler)
+
+		// Create map with int keys
+		intKeyMap := map[int]string{
+			1: "first",
+			2: "second",
+		}
+		logger.Info("Test message", "items", slog.AnyValue(intKeyMap))
+
+		// Should not panic and should output something
+		output := buf.String()
+		assert.Contains(t, output, "Test message")
+	})
+}
+
+// TestRedactingHandler_StructRedaction tests struct redaction functionality
+func TestRedactingHandler_StructRedaction(t *testing.T) {
+	config := DefaultConfig()
+
+	type SensitiveStruct struct {
+		APIKey string `json:"api_key"`
+		Name   string
+		Secret string `json:"secret"`
+	}
+
+	t.Run("SensitiveFieldRedaction", func(t *testing.T) {
+		var buf bytes.Buffer
+		handler := slog.NewJSONHandler(&buf, nil)
+		redactingHandler := NewRedactingHandler(handler, config, nil)
+		logger := slog.New(redactingHandler)
+
+		data := SensitiveStruct{
+			APIKey: "secret-api-key-123",
+			Name:   "John",
+			Secret: "secret-data-456",
+		}
+		logger.Info("Test message", "data", slog.AnyValue(data))
+
+		output := buf.String()
+		assert.NotContains(t, output, "secret-api-key-123", "Sensitive field should be redacted")
+		assert.NotContains(t, output, "secret-data-456", "Secret field should be redacted")
+		assert.Contains(t, output, "John", "Non-sensitive field should be preserved")
+	})
+
+	t.Run("JsonTagFieldNaming", func(t *testing.T) {
+		var buf bytes.Buffer
+		handler := slog.NewJSONHandler(&buf, nil)
+		redactingHandler := NewRedactingHandler(handler, config, nil)
+		logger := slog.New(redactingHandler)
+
+		data := SensitiveStruct{
+			APIKey: "key123",
+			Name:   "Jane",
+			Secret: "secret123",
+		}
+		logger.Info("Test message", "data", slog.AnyValue(data))
+
+		output := buf.String()
+		// Should use json tag names, not Go field names
+		assert.Contains(t, output, "api_key", "JSON tag should be used as field name")
+	})
+
+	t.Run("NoSensitiveContent", func(t *testing.T) {
+		var buf bytes.Buffer
+		handler := slog.NewJSONHandler(&buf, nil)
+		redactingHandler := NewRedactingHandler(handler, config, nil)
+		logger := slog.New(redactingHandler)
+
+		// Use struct with non-sensitive field names to avoid pattern matching
+		type NormalStruct struct {
+			Username string `json:"username"`
+			Email    string `json:"email"`
+			Status   string `json:"status"`
+		}
+
+		data := NormalStruct{
+			Username: "alice",
+			Email:    "alice@example.com",
+			Status:   "active",
+		}
+		logger.Info("Test message", "data", slog.AnyValue(data))
+
+		output := buf.String()
+		assert.Contains(t, output, "alice")
+		assert.Contains(t, output, "alice@example.com")
+		assert.Contains(t, output, "active")
+	})
+
+	t.Run("DepthLimit", func(t *testing.T) {
+		var buf bytes.Buffer
+		handler := slog.NewJSONHandler(&buf, nil)
+		redactingHandler := NewRedactingHandler(handler, config, nil)
+		logger := slog.New(redactingHandler)
+
+		// Create a struct with deeply nested field
+		type DeepStruct struct {
+			Level1 map[string]any `json:"level1"`
+		}
+
+		deepData := DeepStruct{
+			Level1: map[string]any{
+				"level2": map[string]any{
+					"level3": map[string]any{
+						"level4": map[string]any{
+							"level5": map[string]any{
+								"level6": map[string]any{
+									"level7": map[string]any{
+										"level8": map[string]any{
+											"level9": map[string]any{
+												"level10": map[string]any{
+													"level11": "too deep",
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		logger.Info("Test message", "data", slog.AnyValue(deepData))
+		// Should handle depth limit gracefully
+		output := buf.String()
+		assert.Contains(t, output, "Test message")
+		// Verify depth-limit behavior: the too-deep value should be replaced with placeholder
+		assert.Contains(t, output, "[REDACTION FAILED - OUTPUT SUPPRESSED]", "Depth-limited value should be redacted with placeholder")
+		assert.NotContains(t, output, "too deep", "Actual too-deep value should not appear in redacted output")
+	})
 }
 
 // TestRedactingHandler_TwoTierLogging tests that panic handling produces

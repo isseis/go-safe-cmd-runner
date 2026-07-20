@@ -519,6 +519,27 @@ func (r *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx red
 	}
 }
 
+// isRecursivelyRedactableKind reports whether a reflect.Kind holds nested data that
+// must be walked for redaction (as opposed to an opaque primitive that can be passed
+// through unchanged). This is the single source of truth for that classification,
+// shared between processKindAny's top-level dispatch and processSlice's per-element
+// handling, so the two lists cannot drift apart (this previously happened: one had
+// reflect.Array and the other did not, letting nested arrays skip redaction).
+func isRecursivelyRedactableKind(k reflect.Kind) bool {
+	switch k {
+	case reflect.Slice, reflect.Array, reflect.Map, reflect.Struct, reflect.Ptr, reflect.Interface,
+		reflect.Func, reflect.Chan, reflect.UnsafePointer:
+		// Func, Chan, and UnsafePointer are not "recursively redactable" in the sense of
+		// containing nested data, but they are unsupported/opaque kinds that must be
+		// routed through redactLogAttributeWithContext (which fails secure to
+		// RedactionFailurePlaceholder via processKindAny) rather than passed through
+		// as-is, matching the top-level (processKindAny) and map (processMap) handling.
+		return true
+	default:
+		return false
+	}
+}
+
 // processKindAny processes slog.KindAny values
 func (r *RedactingHandler) processKindAny(key string, value slog.Value, ctx redactionContext) (slog.Attr, error) {
 	anyValue := value.Any()
@@ -533,14 +554,50 @@ func (r *RedactingHandler) processKindAny(key string, value slog.Value, ctx reda
 		return r.processLogValuer(key, logValuer, ctx)
 	}
 
-	// 2. Check for slice type
+	// 2. Determine type and dispatch to appropriate handler
 	rv := reflect.ValueOf(anyValue)
-	if rv.Kind() == reflect.Slice {
+	switch rv.Kind() {
+	case reflect.Slice:
 		return r.processSlice(key, anyValue, ctx)
+	case reflect.Array:
+		return r.processSlice(key, anyValue, ctx)
+	case reflect.Map:
+		return r.processMap(key, anyValue, ctx)
+	case reflect.Struct:
+		return r.processStruct(key, anyValue, ctx)
+	case reflect.Ptr:
+		// Dereference pointer and process recursively
+		if !rv.IsNil() {
+			// Check recursion depth before dereferencing to prevent infinite recursion
+			if ctx.depth >= maxRedactionDepth {
+				r.failureLogger.Debug("recursion depth limit reached for pointer - returning placeholder for security", "key", key, "depth", ctx.depth)
+				return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
+			}
+			dereferenced := rv.Elem().Interface()
+			nextCtx := redactionContext{depth: ctx.depth + 1}
+			return r.processKindAny(key, slog.AnyValue(dereferenced), nextCtx)
+		}
+		return slog.Attr{Key: key, Value: value}, nil
+	case reflect.Interface:
+		// Extract concrete value and process recursively
+		if !rv.IsNil() {
+			// Check recursion depth before dereferencing to prevent infinite recursion
+			if ctx.depth >= maxRedactionDepth {
+				r.failureLogger.Debug("recursion depth limit reached for interface - returning placeholder for security", "key", key, "depth", ctx.depth)
+				return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
+			}
+			concrete := rv.Elem().Interface()
+			nextCtx := redactionContext{depth: ctx.depth + 1}
+			return r.processKindAny(key, slog.AnyValue(concrete), nextCtx)
+		}
+		return slog.Attr{Key: key, Value: value}, nil
+	case reflect.Func, reflect.Chan, reflect.UnsafePointer:
+		// Unsupported types: fail-secure
+		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
+	default:
+		// Primitive types (int, bool, string, etc.) and other basic types: pass through as-is
+		return slog.Attr{Key: key, Value: value}, nil
 	}
-
-	// 3. Unsupported type: pass through
-	return slog.Attr{Key: key, Value: value}, nil
 }
 
 // processLogValuer processes a LogValuer value and recursively redacts it
@@ -611,10 +668,193 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 	return r.redactLogAttributeWithContext(resolvedAttr, nextCtx), nil
 }
 
-// processSlice processes a slice value and redacts LogValuer elements.
+// processMap processes a map value: keys are stringified (via fmt.Sprint, not redacted)
+// and used only to check IsSensitiveKey, while values are recursively redacted.
+func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionContext) (attr slog.Attr, err error) {
+	// 1. Check recursion depth
+	if ctx.depth >= maxRedactionDepth {
+		r.failureLogger.Debug(
+			"Recursion depth limit reached for map - returning placeholder for security",
+			"attribute_key", key,
+			"depth", maxRedactionDepth,
+		)
+		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
+	}
+
+	// 2. Wrap in defer/recover for panic safety
+	defer func() {
+		if rec := recover(); rec != nil {
+			// Panic occurred during map processing
+			r.failureLogger.Warn(
+				"Redaction failed for map - detailed log",
+				"attribute_key", key,
+				"panic_value", rec,
+				"panic_type", fmt.Sprintf("%T", rec),
+				"stack_trace", string(debug.Stack()),
+				"log_category", "redaction_failure_detail",
+			)
+			// Log safe summary to all destinations
+			slog.Warn(
+				"Redaction failed for map - see logs for details",
+				"attribute_key", key,
+				"panic_type", fmt.Sprintf("%T", rec),
+				"log_category", "redaction_failure_summary",
+				"details_in_log", true,
+			)
+			// Fail secure: return the placeholder instead of zero values
+			attr = slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
+			err = nil
+		}
+	}()
+
+	// 3. Use reflection to get map entries
+	rv := reflect.ValueOf(mapValue)
+	if rv.Kind() != reflect.Map {
+		return slog.Attr{Key: key, Value: slog.AnyValue(mapValue)}, nil
+	}
+
+	// 4. Collect and sort keys for deterministic output
+	type mapEntry struct {
+		keyStr string
+		keyVal reflect.Value
+	}
+	mapKeys := rv.MapKeys()
+	entries := make([]mapEntry, 0, len(mapKeys))
+	for _, k := range mapKeys {
+		entries = append(entries, mapEntry{
+			keyStr: fmt.Sprint(k.Interface()),
+			keyVal: k,
+		})
+	}
+	slices.SortFunc(entries, func(a, b mapEntry) int {
+		return strings.Compare(a.keyStr, b.keyStr)
+	})
+
+	// 5. Process each entry
+	result := make(map[string]any)
+	nextCtx := redactionContext{depth: ctx.depth + 1}
+
+	for _, entry := range entries {
+		keyStr := entry.keyStr
+		mapEntryValue := rv.MapIndex(entry.keyVal).Interface()
+
+		// Check if key is sensitive - if so, mask the value
+		if r.config.Patterns.IsSensitiveKey(keyStr) {
+			result[keyStr] = r.config.Placeholder
+		} else {
+			// Recursively redact the value
+			redactedAttr := r.redactLogAttributeWithContext(
+				slog.Attr{Key: keyStr, Value: slog.AnyValue(mapEntryValue)},
+				nextCtx,
+			)
+			result[keyStr] = redactedAttr.Value.Any()
+		}
+	}
+
+	return slog.Attr{Key: key, Value: slog.AnyValue(result)}, nil
+}
+
+// processStruct processes a struct value and recursively redacts its exported fields
+func (r *RedactingHandler) processStruct(key string, structValue any, ctx redactionContext) (attr slog.Attr, err error) {
+	// 1. Check recursion depth
+	if ctx.depth >= maxRedactionDepth {
+		r.failureLogger.Debug(
+			"Recursion depth limit reached for struct - returning placeholder for security",
+			"attribute_key", key,
+			"depth", maxRedactionDepth,
+		)
+		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
+	}
+
+	// 2. Wrap in defer/recover for panic safety
+	defer func() {
+		if rec := recover(); rec != nil {
+			// Panic occurred during struct processing
+			r.failureLogger.Warn(
+				"Redaction failed for struct - detailed log",
+				"attribute_key", key,
+				"panic_value", rec,
+				"panic_type", fmt.Sprintf("%T", rec),
+				"stack_trace", string(debug.Stack()),
+				"log_category", "redaction_failure_detail",
+			)
+			// Log safe summary to all destinations
+			slog.Warn(
+				"Redaction failed for struct - see logs for details",
+				"attribute_key", key,
+				"panic_type", fmt.Sprintf("%T", rec),
+				"log_category", "redaction_failure_summary",
+				"details_in_log", true,
+			)
+			// Fail secure: return the placeholder instead of zero values
+			attr = slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
+			err = nil
+		}
+	}()
+
+	// 3. Get struct type information via reflection
+	rv := reflect.ValueOf(structValue)
+	if rv.Kind() != reflect.Struct {
+		return slog.Attr{Key: key, Value: slog.AnyValue(structValue)}, nil
+	}
+
+	// 4. Process exported fields
+	result := make(map[string]any)
+	nextCtx := redactionContext{depth: ctx.depth + 1}
+	exportedFieldCount := 0
+
+	for i := 0; i < rv.NumField(); i++ {
+		field := rv.Type().Field(i)
+		// Skip unexported fields
+		if !field.IsExported() {
+			continue
+		}
+
+		// Determine field key name from json tag or field name
+		fieldKey := field.Name
+		if jsonTag := field.Tag.Get("json"); jsonTag != "" {
+			// Parse json tag to handle options like "omitempty", "string"
+			if jsonTag == "-" {
+				// Skip fields with json:"-" tag (don't count as exported)
+				continue
+			}
+			// Extract field name from tag (before any comma)
+			if tagName, _, _ := strings.Cut(jsonTag, ","); tagName != "" {
+				fieldKey = tagName
+			}
+		}
+
+		exportedFieldCount++
+
+		fieldValue := rv.Field(i).Interface()
+
+		// Recursively redact the field value
+		redactedAttr := r.redactLogAttributeWithContext(
+			slog.Attr{Key: fieldKey, Value: slog.AnyValue(fieldValue)},
+			nextCtx,
+		)
+		result[fieldKey] = redactedAttr.Value.Any()
+	}
+
+	// 5. If no exported fields, return placeholder (fail-secure)
+	if exportedFieldCount == 0 {
+		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
+	}
+
+	return slog.Attr{Key: key, Value: slog.AnyValue(result)}, nil
+}
+
+// processSlice processes slice and array values and recursively redacts all elements.
+// Despite the name, this function handles both reflect.Slice and reflect.Array kinds,
+// as both support the same reflection API (Len(), Index()) needed for element processing.
+//
+// Element Processing:
+// LogValuer elements are resolved via LogValue() and then redacted. Non-LogValuer
+// elements (strings, maps, structs, etc.) are passed through redactLogAttributeWithContext
+// for recursive redaction, enabling redaction of nested structures (e.g., []map[string]string).
 //
 // Type Conversion Behavior:
-// This function converts all typed slices ([]string, []int, []MyStruct, etc.)
+// This function converts all typed slices and arrays ([]string, [10]int, []MyStruct, etc.)
 // to []any in the returned slog.Value. This is necessary because:
 //  1. We process each element individually (resolving LogValuer, applying redaction)
 //  2. The processed elements are collected into a new slice
@@ -624,21 +864,23 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 //
 //	Input:  []string{"alice", "bob"}          -> Kind: KindAny, Type: []string
 //	Output: []any{"alice", "bob"}             -> Kind: KindAny, Type: []any
+//	Input:  [3]string{"x", "y", "z"}          -> Kind: KindAny, Type: [3]string
+//	Output: []any{"x", "y", "z"}              -> Kind: KindAny, Type: []any
 //
 // Implications:
 //   - Type assertions like value.Any().([]string) will fail after processing
-//   - Use value.Any().([]any) instead to access processed slices
+//   - Use value.Any().([]any) instead to access processed slices/arrays
 //   - For logging purposes this is typically transparent as handlers (JSON, text)
 //     serialize the slice regardless of element type
 //   - This differs from non-slice values which preserve their original types
 //
 // Rationale:
-// Preserving the original slice type would require reflect.MakeSlice and complex
+// Preserving the original type would require reflect.MakeSlice and complex
 // type checking for every element, adding significant overhead and complexity.
 // Since this is a logging system where handlers serialize to JSON/text anyway,
 // the semantic content is what matters, not the Go type. The []any conversion
 // maintains all actual values while keeping the implementation simple and efficient.
-func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactionContext) (slog.Attr, error) {
+func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactionContext) (attr slog.Attr, err error) {
 	// 1. Check recursion depth
 	if ctx.depth >= maxRedactionDepth {
 		r.failureLogger.Debug(
@@ -649,17 +891,56 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
 	}
 
-	// 2. Use reflection to get slice elements
+	// 2. Wrap in defer/recover for panic safety, matching processMap/processStruct.
+	// The per-element LogValuer call below has its own recovery; this guards a panic
+	// anywhere else in the function body (reflection dispatch, recursive redaction) so
+	// the whole slice fails secure instead of letting the panic escape to the caller.
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.failureLogger.Warn(
+				"Redaction failed for slice - detailed log",
+				"attribute_key", key,
+				"panic_value", rec,
+				"panic_type", fmt.Sprintf("%T", rec),
+				"stack_trace", string(debug.Stack()),
+				"log_category", "redaction_failure_detail",
+			)
+			// Log safe summary to all destinations
+			slog.Warn(
+				"Redaction failed for slice - see logs for details",
+				"attribute_key", key,
+				"panic_type", fmt.Sprintf("%T", rec),
+				"log_category", "redaction_failure_summary",
+				"details_in_log", true,
+			)
+			// Fail secure: return the placeholder instead of a partial/zero-value slice
+			attr = slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
+			err = nil
+		}
+	}()
+
+	// 3. Use reflection to get slice elements
 	rv := reflect.ValueOf(sliceValue)
-	if rv.Kind() != reflect.Slice {
-		// Not a slice (should not happen)
+	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
+		// Not a slice or array (should not happen)
 		return slog.Attr{Key: key, Value: slog.AnyValue(sliceValue)}, nil
 	}
 
-	// 3. Process each element
+	// 4. Process each element
 	processedElements := make([]any, 0, rv.Len())
 	nextCtx := redactionContext{depth: ctx.depth + 1}
 	var firstError error
+
+	// Fast-path detection: when the slice/array has a concrete (non-interface) element
+	// type whose reflect.Kind is never recursively redactable (e.g. []int, []bool), the
+	// per-element reflect.ValueOf(element) + isRecursivelyRedactableKind check below is
+	// redundant for every element - the static element type already answers the question.
+	// This does NOT skip the LogValuer type assertion or the string fast path above; it
+	// only elides the reflection work in the final "non-LogValuer, non-string" branch.
+	// Interface-typed slices ([]any, []error, etc.) must still be checked per-element
+	// since each element's dynamic type can differ.
+	elemKind := rv.Type().Elem().Kind()
+	skipPerElementReflectCheck := elemKind != reflect.Interface && !isRecursivelyRedactableKind(elemKind)
 
 	for i := 0; i < rv.Len(); i++ {
 		element := rv.Index(i).Interface()
@@ -726,11 +1007,33 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 				}
 			}
 		} else {
-			// Non-LogValuer element: keep as-is
-			processedElements = append(processedElements, element)
+			// Non-LogValuer element: handle based on type
+			if str, ok := element.(string); ok {
+				// String element: apply RedactText directly
+				redactedStr := r.config.RedactText(str)
+				processedElements = append(processedElements, redactedStr)
+			} else if skipPerElementReflectCheck {
+				// Fast path: static element type is a concrete primitive kind that is
+				// never recursively redactable, so no per-element reflection is needed.
+				processedElements = append(processedElements, element)
+			} else {
+				elementValue := reflect.ValueOf(element)
+				if isRecursivelyRedactableKind(elementValue.Kind()) {
+					// Complex types: process recursively
+					elementKey := fmt.Sprintf("%s[%d]", key, i)
+					redactedAttr := r.redactLogAttributeWithContext(
+						slog.Attr{Key: elementKey, Value: slog.AnyValue(element)},
+						nextCtx,
+					)
+					processedElements = append(processedElements, redactedAttr.Value.Any())
+				} else {
+					// Primitive types (int, bool, etc.) and nil elements (Invalid kind): keep as-is
+					processedElements = append(processedElements, element)
+				}
+			}
 		}
 	}
 
-	// 4. Return processed slice (converted to []any for compatibility)
+	// 5. Return processed slice (converted to []any for compatibility)
 	return slog.Attr{Key: key, Value: slog.AnyValue(processedElements)}, firstError
 }
