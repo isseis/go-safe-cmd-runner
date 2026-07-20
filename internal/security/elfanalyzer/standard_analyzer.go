@@ -124,15 +124,15 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	}
 
 	// Step 2: Check ELF magic number
-	magic := make([]byte, elfmagic.Len)
-	if _, err := io.ReadFull(file, magic); err != nil {
+	var magic [elfmagic.Len]byte
+	if _, err := io.ReadFull(file, magic[:]); err != nil {
 		return binaryanalyzer.AnalysisOutput{
 			Result: binaryanalyzer.AnalysisError,
 			Error:  fmt.Errorf("failed to read magic number: %w", err),
 		}
 	}
 
-	if !elfmagic.Is(magic) {
+	if !elfmagic.Is(magic[:]) {
 		// File is not in ELF format (e.g., Mach-O on macOS, PE on Windows,
 		// or a script). The ELF analyzer cannot inspect it further.
 		return binaryanalyzer.AnalysisOutput{

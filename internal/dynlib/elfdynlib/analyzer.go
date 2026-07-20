@@ -262,8 +262,8 @@ func (a *DynLibAnalyzer) openAndParseTopELF(binaryPath string) (*elf.File, []str
 		return nil, nil, nil, fmt.Errorf("failed to open file: %w", err)
 	}
 
-	magic := make([]byte, elfmagic.Len)
-	if _, err := io.ReadFull(file, magic); err != nil {
+	var magic [elfmagic.Len]byte
+	if _, err := io.ReadFull(file, magic[:]); err != nil {
 		closeFile(file, binaryPath)
 		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 			return nil, nil, nil, nil // file too short to be ELF
@@ -271,7 +271,7 @@ func (a *DynLibAnalyzer) openAndParseTopELF(binaryPath string) (*elf.File, []str
 		return nil, nil, nil, fmt.Errorf("failed to read ELF magic: %w", err)
 	}
 
-	if !elfmagic.Is(magic) {
+	if !elfmagic.Is(magic[:]) {
 		closeFile(file, binaryPath)
 		return nil, nil, nil, nil // not an ELF file
 	}
