@@ -687,3 +687,17 @@ func TestHasDynamicLibDeps_ReadFullEOF(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, hasDeps)
 }
+
+// TestHasDynamicLibDeps_ReadFullUnexpectedEOF verifies that HasDynamicLibDeps
+// returns (false, nil) when the file has 1–3 bytes (io.ErrUnexpectedEOF from
+// io.ReadFull), which is also treated as a non-Mach-O normal case.
+func TestHasDynamicLibDeps_ReadFullUnexpectedEOF(t *testing.T) {
+	tmp := realPath(t, t.TempDir())
+	path := filepath.Join(tmp, "short.bin")
+	require.NoError(t, os.WriteFile(path, []byte("ab"), 0o600))
+
+	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+	hasDeps, err := HasDynamicLibDeps(path, fs)
+	require.NoError(t, err)
+	assert.False(t, hasDeps)
+}
