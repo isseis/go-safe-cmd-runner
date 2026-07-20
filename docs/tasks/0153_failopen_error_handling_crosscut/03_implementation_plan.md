@@ -367,36 +367,36 @@
 
 #### Step 6-6: ELF 子依存パース失敗のテストを追加
 
-- [ ] **ファイル**: `internal/dynlib/elfdynlib/analyzer_test.go`（ビルドタグ: `linux`）
-- [ ] `TestAnalyze_ChildParseFailure` テストを追加する（AC-04）: BFS traversal 中にパース不能な子 ELF に遭遇した場合、`Analyze` がエラーを返すことを検証
-- [ ] テストセットアップ: 既存の `buildTestELFWithDeps` ヘルパー（`elfdynlib/analyzer_test.go` 内、非公開）を使用して依存ツリーを構築し、孫ライブラリを破壊してパース失敗を引き起こす。孫ライブラリの破壊は ELF ヘッダの書き換えにより行う
-- [ ] エラーメッセージに失敗した子ライブラリのパスが含まれることの検証（AC-04 の blast radius 対応）
+- [x] **ファイル**: `internal/dynlib/elfdynlib/analyzer_test.go`（ビルドタグ: `linux`）
+- [x] `TestAnalyze_ChildParseFailure` テストを追加する（AC-04）: BFS traversal 中にパース不能な子 ELF に遭遇した場合、`Analyze` がエラーを返すことを検証
+- [x] テストセットアップ: 既存の `buildTestELFWithDeps` ヘルパー（`elfdynlib/analyzer_test.go` 内、非公開）を使用して依存ツリーを構築し、孫ライブラリを破壊してパース失敗を引き起こす。孫ライブラリの破壊は `os.WriteFile` による内容上書きで行う（ELF ヘッダの書き換えと同等の効果）
+- [x] エラーメッセージに失敗した子ライブラリのパスが含まれることの検証（AC-04 の blast radius 対応）
 
 **検証**: `go test -tags test -v ./internal/dynlib/elfdynlib/` がパスすること。
 
 #### Step 6-7: Mach-O 子依存パース失敗の修正
 
-- [ ] **ファイル**: `internal/dynlib/machodylib/analyzer.go`
-- [ ] BFS traversal 内の `parseMachODeps` 失敗（215-221行目）を修正する:
+- [x] **ファイル**: `internal/dynlib/machodylib/analyzer.go`
+- [x] BFS traversal 内の `parseMachODeps` 失敗（215-221行目）を修正する:
   - `slog.Debug` → `slog.Warn` に格上げ
   - 構造化フィールド `"reason": "child_parse_error"` を追加
-  - `continue` → `return nil, nil, parseErr`（fail-closed、解析全体を失敗させる。`Analyze` の戻り値シグネチャは `([]LibEntry, []AnalysisWarning, error)`）
+  - `continue` → `return nil, nil, fmt.Errorf("failed to parse %s: %w", resolvedPath, parseErr)`（fail-closed、エラーメッセージに失敗した子ライブラリのパスを含む）
 
 **検証**: `go test -tags test -v ./internal/dynlib/machodylib/`（darwin 環境）がパスすること。
 
 #### Step 6-8: Mach-O 子依存パース失敗のテストを追加
 
-- [ ] **ファイル**: `internal/dynlib/machodylib/analyzer_test.go`（ビルドタグ: `darwin`）
-- [ ] `TestAnalyze_ChildParseFailure` テストを追加する（AC-06）: BFS traversal 中にパース不能な子 Mach-O に遭遇した場合、`Analyze` がエラーを返すことを検証
-- [ ] 制約: darwin ビルドタグが必要なため、CI では macos 環境でのみ実行される。linux 環境ではコンパイル確認のみ。
+- [x] **ファイル**: `internal/dynlib/machodylib/analyzer_test.go`（ビルドタグ: `darwin`）
+- [x] `TestAnalyze_ChildParseFailure` テストを追加する（AC-06）: BFS traversal 中にパース不能な子 Mach-O に遭遇した場合、`Analyze` がエラーを返すことを検証
+- [x] 制約: darwin ビルドタグが必要なため、CI では macos 環境でのみ実行される。linux 環境ではコンパイル確認のみ。
 
 **検証**: `go test -tags test -v ./internal/dynlib/machodylib/`（darwin 環境）がパスすること。
 
 #### Step 6-9: 統合テスト（正常系リグレッション確認）
 
-- [ ] **ファイル**: 既存テストの再実行で確認する（新規ファイル追加不要）
-- [ ] AC-07 の検証: `go test -tags test -v ./internal/dynlib/elfdynlib/ ./internal/dynlib/machodylib/` の既存テストがすべてパスすることを確認する
-- [ ] 多階層依存、循環依存を持つ実バイナリに対する record/verify の正常系テストも、既存テストでカバーされていること
+- [x] **ファイル**: 既存テストの再実行で確認する（新規ファイル追加不要）
+- [x] AC-07 の検証: `go test -tags test -v ./internal/dynlib/elfdynlib/ ./internal/dynlib/machodylib/` の既存テストがすべてパスすることを確認する
+- [x] 多階層依存、循環依存を持つ実バイナリに対する record/verify の正常系テストも、既存テストでカバーされていること
 
 **検証**: `make test` の全テストがパスすること。
 
