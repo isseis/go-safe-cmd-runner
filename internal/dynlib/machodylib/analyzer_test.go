@@ -102,7 +102,7 @@ func TestHasDynamicLibDeps_NonMachO(t *testing.T) {
 	require.NoError(t, os.WriteFile(notMachO, []byte("not a binary\n"), 0o600))
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
-	hasDeps, err := HasDynamicLibDeps(path, fs)
+	hasDeps, err := HasDynamicLibDeps(notMachO, fs)
 	require.NoError(t, err)
 	assert.False(t, hasDeps)
 }
