@@ -291,41 +291,41 @@
 
 #### Step 6-1: `internal/elfmagic` パッケージを新設する
 
-- [ ] **ファイル**: `internal/elfmagic/elfmagic.go`（新規）
-- [ ] パッケージ名: `elfmagic`
-- [ ] 以下の公開 API を定義する:
+- [x] **ファイル**: `internal/elfmagic/elfmagic.go`（新規）
+- [x] パッケージ名: `elfmagic`
+- [x] 以下の公開 API を定義する:
   - `var magic = []byte("\x7fELF")`（非公開; 呼び出し元は `Len` および `Is()` のみを使用する）
   - `const Len = 4`
   - `func Is(b []byte) bool`: 先頭 `Len` バイトが `magic` と一致するか判定
-- [ ] `bytes` パッケージのみに依存し、他パッケージへの依存を持たない
+- [x] `bytes` パッケージのみに依存し、他パッケージへの依存を持たない
 
-- [ ] **ファイル**: `internal/elfmagic/elfmagic_test.go`（新規）
-- [ ] `TestIs` テストを追加する:
+- [x] **ファイル**: `internal/elfmagic/elfmagic_test.go`（新規）
+- [x] `TestIs` テストを追加する:
   - 正しい ELF マジックバイト列（`\x7fELF...`）が `true` を返すこと
   - 短すぎるバイト列が `false` を返すこと
   - 不正なマジック（Mach-O の `\xcf\xfa\xed\xfe` 等）が `false` を返すこと
   - 空バイト列が `false` を返すこと
 
-**検証**: `go test -tags test -v ./internal/elfmagic/` がパスすること。
+**検証**: ✓ `go test -tags test -v ./internal/elfmagic/` がパスすること。
 
 #### Step 6-2: `elfanalyzer` 側のリファクタリング
 
-- [ ] **ファイル**: `internal/security/elfanalyzer/standard_analyzer.go`
-- [ ] `elfmagic` パッケージをインポートに追加する
-- [ ] `elfMagicStr`（21行目）、`elfMagic`（24行目）、`elfMagicLen`（27行目）の定義を削除する
-- [ ] `isELFMagic`（288-293行目）の関数定義を削除する
-- [ ] `isELFMagic(magic)` の呼び出し（141行目）を `elfmagic.Is(magic)` に置き換える
-- [ ] `elfMagicLen` の使用箇所（133行目）を `elfmagic.Len` に置き換える
-- [ ] **注意**: `bytes.Equal` は `isELFMagic` 内でのみ使用されていた。`isELFMagic` 削除に伴い `"bytes"` インポートも削除する（`go vet ./internal/security/elfanalyzer/` で unused import 警告が出ないことを確認）
-- [ ] **検証**: `go vet ./internal/security/elfanalyzer/` が unused import 警告を出さないこと
+- [x] **ファイル**: `internal/security/elfanalyzer/standard_analyzer.go`
+- [x] `elfmagic` パッケージをインポートに追加する
+- [x] `elfMagicStr`（21行目）、`elfMagic`（24行目）、`elfMagicLen`（27行目）の定義を削除する
+- [x] `isELFMagic`（288-293行目）の関数定義を削除する
+- [x] `isELFMagic(magic)` の呼び出し（141行目）を `elfmagic.Is(magic)` に置き換える
+- [x] `elfMagicLen` の使用箇所（133行目）を `elfmagic.Len` に置き換える
+- [x] **注意**: `bytes.Equal` は `isELFMagic` 内でのみ使用されていた。`isELFMagic` 削除に伴い `"bytes"` インポートも削除する（`go vet ./internal/security/elfanalyzer/` で unused import 警告が出ないことを確認）
+- [x] **検証**: `go vet ./internal/security/elfanalyzer/` が unused import 警告を出さないこと
 
-**検証**: `go test -tags test -v ./internal/security/elfanalyzer/` がパスすること。既存の `AnalyzeNetworkSymbols` 関連テストすべてがパスすることを確認。
+**検証**: ✓ `go test -tags test -v ./internal/security/elfanalyzer/` がパスすること。既存の `AnalyzeNetworkSymbols` 関連テストすべてがパスすることを確認。
 
 #### Step 6-3: ELF `Analyze` のトップレベル修正
 
-- [ ] **ファイル**: `internal/dynlib/elfdynlib/analyzer.go`
-- [ ] `elfmagic` パッケージをインポートに追加する
-- [ ] `Analyze` 関数（100-127行目）を修正する:
+- [x] **ファイル**: `internal/dynlib/elfdynlib/analyzer.go`
+- [x] `elfmagic` パッケージをインポートに追加する
+- [x] `Analyze` 関数（100-127行目）を修正する:
   - `SafeOpenFile` 後、`io.ReadFull(file, magic[:])` で ELF マジックを読み取る（`magic := make([]byte, elfmagic.Len)`）
     - `io.ReadFull` が `io.EOF` または `io.ErrUnexpectedEOF` を返した場合: 非 ELF（ファイルが小さすぎる）→ `return nil, nil`
     - `io.ReadFull` がそれ以外の I/O エラーを返した場合: `return nil, fmt.Errorf("failed to read ELF magic: %w", err)`（fail-closed）
@@ -338,21 +338,21 @@
       - `DynString` 失敗時: `return nil, fmt.Errorf("failed to read DT_NEEDED: %w", err)`（fail-closed）
       - `DynString` 成功 + `len(needed) == 0`: `return nil, nil`（依存なし・正常）
       - `DynString` 成功 + `len(needed) > 0`: 既存の BFS 処理に進む
-- [ ] 既存の `//nolint:nilerr` コメント（118行目、126行目）を削除する
-- [ ] **検証**: `grep -r 'nolint:nilerr' internal/dynlib/elfdynlib/` が空を返すこと。`make lint` が警告なしでパスすること
-- [ ] `SafeOpenFile` が返す `File` インタフェースは `io.Seeker` を埋め込んでいるため、`file.(io.Seeker)` の型アサーションは冗長である。型アサーションを削除し、`file.Seek` を直接呼び出すように簡略化する（`02_architecture.md` 9.1節 パフォーマンスの項、`internal/safefileio/safe_file.go` の `File` インタフェース定義を参照）
+- [x] 既存の `//nolint:nilerr` コメント（118行目、126行目）を削除する
+- [x] **検証**: `grep -r 'nolint:nilerr' internal/dynlib/elfdynlib/` が空を返すこと。`make lint` が警告なしでパスすること
+- [x] `SafeOpenFile` が返す `File` インタフェースは `io.Seeker` を埋め込んでいるため、`file.(io.Seeker)` の型アサーションは冗長である。型アサーションを削除し、`file.Seek` を直接呼び出すように簡略化する（`02_architecture.md` 9.1節 パフォーマンスの項、`internal/safefileio/safe_file.go` の `File` インタフェース定義を参照）
 
-**検証**: `go test -tags test -v ./internal/dynlib/elfdynlib/` がパスすること。
+**検証**: ✓ `go test -tags test -v ./internal/dynlib/elfdynlib/` がパスすること。
 
 #### Step 6-4: ELF トップレベルのテストを追加
 
-- [ ] **ファイル**: `internal/dynlib/elfdynlib/analyzer_test.go`（ビルドタグ: `linux`）
-- [ ] `TestAnalyze_NonELFFile` テストを追加する（AC-05 一部）: 非ELFファイル（プレーンテキスト等）の解析が `(nil, nil)` を返すこと
-- [ ] `TestAnalyze_ELFMagicMatchButParseFailure` テストを追加する（AC-05）: ELF マジックを持つがパース不能なファイルの解析がエラーを返すこと
-- [ ] `TestAnalyze_ELFMagicMatchButDynStringError` テストを追加する（AC-05）: ELF マジックを持ちパース可能だが DT_NEEDED セクションが破壊されたファイルの解析がエラーを返すこと
-- [ ] 正常系のリグレッション確認（AC-07）: 既存の `TestAnalyze_*` テストがすべてパスすることを確認する
+- [x] **ファイル**: `internal/dynlib/elfdynlib/analyzer_test.go`（ビルドタグ: `linux`）
+- [x] `TestAnalyze_NonELFFile` テストを追加する（AC-05 一部）: 非ELFファイル（プレーンテキスト等）の解析が `(nil, nil)` を返すこと（実装名: `TestAnalyze_NonELF`）
+- [x] `TestAnalyze_ELFMagicMatchButParseFailure` テストを追加する（AC-05）: ELF マジックを持つがパース不能なファイルの解析がエラーを返すこと
+- [x] `TestAnalyze_ELFMagicMatchButDynStringError` テストを追加する（AC-05）: ELF マジックを持ちパース可能だが DT_NEEDED セクションが破壊されたファイルの解析がエラーを返すこと
+- [x] 正常系のリグレッション確認（AC-07）: 既存の `TestAnalyze_*` テストがすべてパスすることを確認する
 
-**検証**: `go test -tags test -v ./internal/dynlib/elfdynlib/` がパスすること。
+**検証**: ✓ `go test -tags test -v ./internal/dynlib/elfdynlib/` がパスすること。
 
 #### Step 6-5: ELF 子依存パース失敗の修正
 
