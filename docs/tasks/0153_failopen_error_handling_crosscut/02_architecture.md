@@ -224,11 +224,11 @@ flowchart LR
 
 #### 3.3.2 修正後
 
-- `Seek` 失敗（2箇所）: I/O エラーとしてエラーを返す。
+- `Seek` 失敗（1箇所、`io.ReadFull` 前）: I/O エラーとしてエラーを返す。`macho.NewFile` は `io.ReaderAt` を使用しシークオフセットに依存しないため、`ReadFull` 後の2回目の Seek は削除した。
 - `io.ReadFull` 失敗: `io.EOF` / `io.ErrUnexpectedEOF` はファイルが Mach-O ヘッダ長（4バイト）に満たないことを示し、非 Mach-O ファイルの正常ケースであるため `(false, nil)` を返す。それ以外のエラーは I/O エラーとしてエラーを返す（fail-closed）。
 - ログ出力は追加しない（エラー伝播のみで十分であり、上位の呼び出し元で必要に応じてログ出力される）。
 
-> **Seek/ReadFull での型アサーション除去**: `HasDynamicLibDeps` の既存実装では `file.(io.Seeker)` の型アサーションを使用していたが、`safefileio.File` インタフェース（`safe_file.go:65-74`）は常に `io.Seeker` を含むため、型アサーションは冗長であった。本修正では型アサーションを除去し、`file.Seek()` を直接呼び出すように簡略化した。
+> **Seek/ReadFull での簡略化**: `HasDynamicLibDeps` の既存実装では `file.(io.Seeker)` の型アサーションと `macho.NewFile` 直前の `Seek(0, io.SeekStart)` を使用していた。`safefileio.File` インタフェース（`safe_file.go:65-74`）は常に `io.Seeker` を含むため型アサーションは冗長であり、かつ `macho.NewFile` は `io.ReaderAt` で読み取るため2回目の Seek も不要であった。本修正ではこれらを除去しコードを簡略化した。
 
 #### 3.3.3 責務表
 

@@ -630,10 +630,6 @@ func checkSingleArchMachO(file safefileio.File) (bool, error) {
 		return false, fmt.Errorf("failed to read Mach-O magic: %w", err)
 	}
 
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return false, fmt.Errorf("failed to seek to start of file: %w", err)
-	}
-
 	machoFile, err := macho.NewFile(file)
 	if err != nil {
 		if looksLikeMachO(magic[:]) {
