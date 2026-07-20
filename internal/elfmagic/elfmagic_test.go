@@ -39,6 +39,11 @@ func TestIs(t *testing.T) {
 			b:    []byte("MZ\x90\x00"),
 			want: false,
 		},
+		{
+			name: "partial ELF prefix",
+			b:    []byte("\x7f\x00\x00\x00"),
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {

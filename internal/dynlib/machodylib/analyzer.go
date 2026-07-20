@@ -217,7 +217,7 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 			slog.Warn("Failed to parse child Mach-O dependencies",
 				"path", resolvedPath, "error", parseErr,
 				"reason", "child_parse_error")
-			return nil, nil, parseErr
+			return nil, nil, fmt.Errorf("failed to parse %s: %w", resolvedPath, parseErr)
 		}
 
 		for _, childDep := range childDeps {

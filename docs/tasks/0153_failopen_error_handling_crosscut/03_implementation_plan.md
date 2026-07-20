@@ -356,12 +356,12 @@
 
 #### Step 6-5: ELF 子依存パース失敗の修正
 
-- [ ] **ファイル**: `internal/dynlib/elfdynlib/analyzer.go`
-- [ ] BFS traversal 内の子依存パース失敗（207-218行目）を修正する:
+- [x] **ファイル**: `internal/dynlib/elfdynlib/analyzer.go`
+- [x] BFS traversal 内の子依存パース失敗（207-218行目）を修正する:
   - `slog.Debug` → `slog.Warn` に格上げ
   - 構造化フィールド `"reason": "child_parse_error"` を追加
-  - `continue` → `return nil, err`（fail-closed、解析全体を失敗させる）
-  - `ErrDTRPATHNotSupported` のケースは変更しない（既存どおりエラー伝播）
+  - `continue` → `return nil, fmt.Errorf("failed to parse %s: %w", resolvedPath, err)`（fail-closed、解析全体を失敗させる）
+  - `ErrDTRPATHNotSupported` も他エラーと同様に fmt.Errorf でラップされる（errors.As は %w を通じて正しく機能するため、呼び出し元への互換性は維持される）
 
 **検証**: `go test -tags test -v ./internal/dynlib/elfdynlib/` がパスすること。
 

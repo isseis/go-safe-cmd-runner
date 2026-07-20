@@ -300,8 +300,8 @@ func (a *DynLibAnalyzer) openAndParseTopELF(binaryPath string) (*elf.File, []str
 }
 
 // parseELFDeps opens the given path as ELF and extracts DT_NEEDED and DT_RUNPATH.
-// Returns ErrDTRPATHNotSupported if the library contains DT_RPATH.
-// Returns nil slices (not an error) if parsing fails for other reasons.
+// Returns an error if the file cannot be opened or parsed as ELF,
+// or if it contains DT_RPATH.
 func (a *DynLibAnalyzer) parseELFDeps(path string) (needed, runpath []string, err error) {
 	canonPath, err := filepath.EvalSymlinks(path)
 	if err != nil {

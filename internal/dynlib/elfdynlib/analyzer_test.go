@@ -5,12 +5,14 @@ package elfdynlib
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	safefileiotestutil "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -301,6 +303,40 @@ func TestAnalyze_ELFMagicMatchButDynStringError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "failed to read DT_NEEDED")
+}
+
+// readErrorFile wraps a safefileio.File and returns an error on Read.
+type readErrorFile struct {
+	safefileio.File
+}
+
+func (f *readErrorFile) Read(_ []byte) (int, error) {
+	return 0, errors.New("simulated read error")
+}
+
+// TestAnalyze_ReadMagicError verifies that Analyze returns an error when
+// io.ReadFull fails to read the ELF magic bytes with a non-EOF error.
+func TestAnalyze_ReadMagicError(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "real.elf")
+	require.NoError(t, os.WriteFile(path, []byte("\x7fELFdata"), 0o644))
+
+	mockFS := &safefileiotestutil.MockFileSystem{
+		SafeOpenFileFunc: func(name string, flag int, perm os.FileMode) (safefileio.File, error) {
+			realFS := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+			f, err := realFS.SafeOpenFile(name, flag, perm)
+			if err != nil {
+				return nil, err
+			}
+			return &readErrorFile{File: f}, nil
+		},
+	}
+
+	a := &DynLibAnalyzer{fs: mockFS, cache: nil}
+	result, err := a.Analyze(path)
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "failed to read ELF magic")
 }
 
 // TestAnalyze_DynamicELF verifies that Analyze returns non-nil for a native
