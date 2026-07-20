@@ -1615,6 +1615,81 @@ func TestRedactingHandler_SliceTypeConversion(t *testing.T) {
 		assert.Equal(t, "plain_string", anySlice[1])
 		assert.Equal(t, 123, anySlice[2])
 	})
+
+	t.Run("array with string elements - element-wise redaction", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+		logger := slog.New(handler)
+
+		// Test with array (fixed-size) containing sensitive strings
+		// Arrays should be processed element-wise just like slices
+		stringArray := [3]string{"password=secret123", "token=abc456", "normal_value"}
+		logger.Info("Test message", "data", slog.AnyValue(stringArray))
+
+		// Verify: array should be processed and converted to []any
+		require.Len(t, mock.records, 1)
+		record := mock.records[0]
+
+		var dataAttr slog.Attr
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == "data" {
+				dataAttr = attr
+				return false
+			}
+			return true
+		})
+
+		// Array should be converted to []any after processing
+		sliceValue := dataAttr.Value.Any()
+		anySlice, ok := sliceValue.([]any)
+		assert.True(t, ok, "Expected []any after processing array, got %T", sliceValue)
+		assert.Len(t, anySlice, 3)
+
+		// Verify each element was redacted appropriately
+		assert.Equal(t, "password=[REDACTED]", anySlice[0], "Array element with password pattern should be redacted")
+		assert.Equal(t, "token=[REDACTED]", anySlice[1], "Array element with token pattern should be redacted")
+		assert.Equal(t, "normal_value", anySlice[2], "Normal array element should be preserved")
+	})
+
+	t.Run("array with mixed types and sensitive content", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+		logger := slog.New(handler)
+
+		// Test with array of any containing different types
+		type mixedArray [4]any
+		arr := mixedArray{
+			"password=secret",
+			123,
+			"normal_text",
+			45.6,
+		}
+		logger.Info("Test message", "data", slog.AnyValue(arr))
+
+		require.Len(t, mock.records, 1)
+		record := mock.records[0]
+
+		var dataAttr slog.Attr
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == "data" {
+				dataAttr = attr
+				return false
+			}
+			return true
+		})
+
+		sliceValue := dataAttr.Value.Any()
+		anySlice, ok := sliceValue.([]any)
+		assert.True(t, ok, "Expected []any after processing array with mixed types, got %T", sliceValue)
+		assert.Len(t, anySlice, 4)
+
+		// First element with sensitive key=value should be redacted
+		assert.Equal(t, "password=[REDACTED]", anySlice[0])
+		// Non-string primitives should be preserved
+		assert.Equal(t, 123, anySlice[1])
+		assert.Equal(t, "normal_text", anySlice[2])
+		assert.Equal(t, 45.6, anySlice[3])
+	})
 }
 
 // TestRedactingHandler_MapRedaction tests map redaction functionality

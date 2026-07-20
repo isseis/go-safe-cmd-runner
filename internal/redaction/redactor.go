@@ -826,7 +826,9 @@ func (r *RedactingHandler) processStruct(key string, structValue any, ctx redact
 	return slog.Attr{Key: key, Value: slog.AnyValue(result)}, returnErr
 }
 
-// processSlice processes a slice value and recursively redacts all elements.
+// processSlice processes slice and array values and recursively redacts all elements.
+// Despite the name, this function handles both reflect.Slice and reflect.Array kinds,
+// as both support the same reflection API (Len(), Index()) needed for element processing.
 //
 // Element Processing:
 // LogValuer elements are resolved via LogValue() and then redacted. Non-LogValuer
@@ -834,7 +836,7 @@ func (r *RedactingHandler) processStruct(key string, structValue any, ctx redact
 // for recursive redaction, enabling redaction of nested structures (e.g., []map[string]string).
 //
 // Type Conversion Behavior:
-// This function converts all typed slices ([]string, []int, []MyStruct, etc.)
+// This function converts all typed slices and arrays ([]string, [10]int, []MyStruct, etc.)
 // to []any in the returned slog.Value. This is necessary because:
 //  1. We process each element individually (resolving LogValuer, applying redaction)
 //  2. The processed elements are collected into a new slice
@@ -844,16 +846,18 @@ func (r *RedactingHandler) processStruct(key string, structValue any, ctx redact
 //
 //	Input:  []string{"alice", "bob"}          -> Kind: KindAny, Type: []string
 //	Output: []any{"alice", "bob"}             -> Kind: KindAny, Type: []any
+//	Input:  [3]string{"x", "y", "z"}          -> Kind: KindAny, Type: [3]string
+//	Output: []any{"x", "y", "z"}              -> Kind: KindAny, Type: []any
 //
 // Implications:
 //   - Type assertions like value.Any().([]string) will fail after processing
-//   - Use value.Any().([]any) instead to access processed slices
+//   - Use value.Any().([]any) instead to access processed slices/arrays
 //   - For logging purposes this is typically transparent as handlers (JSON, text)
 //     serialize the slice regardless of element type
 //   - This differs from non-slice values which preserve their original types
 //
 // Rationale:
-// Preserving the original slice type would require reflect.MakeSlice and complex
+// Preserving the original type would require reflect.MakeSlice and complex
 // type checking for every element, adding significant overhead and complexity.
 // Since this is a logging system where handlers serialize to JSON/text anyway,
 // the semantic content is what matters, not the Go type. The []any conversion
@@ -871,8 +875,8 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 
 	// 2. Use reflection to get slice elements
 	rv := reflect.ValueOf(sliceValue)
-	if rv.Kind() != reflect.Slice {
-		// Not a slice (should not happen)
+	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
+		// Not a slice or array (should not happen)
 		return slog.Attr{Key: key, Value: slog.AnyValue(sliceValue)}, nil
 	}
 
