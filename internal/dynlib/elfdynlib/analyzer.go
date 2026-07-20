@@ -102,13 +102,14 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntry, er
 		return nil, fmt.Errorf("resolving symlinks for %q: %w", binaryPath, err)
 	}
 
-	elfFile, needed, err := a.openAndParseTopELF(binaryPath)
+	elfFile, needed, file, err := a.openAndParseTopELF(binaryPath)
 	if err != nil {
 		return nil, err
 	}
 	if elfFile == nil {
 		return nil, nil // non-ELF or static binary
 	}
+	defer closeFile(file, binaryPath)
 	defer closeELF(elfFile, binaryPath)
 
 	// Create resolver for this binary's architecture.
@@ -251,52 +252,54 @@ func computeFileHash(fs safefileio.FileSystem, path string) (string, error) {
 
 // openAndParseTopELF opens and parses the top-level binary at binaryPath.
 // It checks ELF magic first to distinguish non-ELF files from parse failures.
-// Returns (nil, nil, nil) if the file is not ELF or is a static ELF (no DT_NEEDED).
-// Returns (*elf.File, needed, nil) for a dynamic ELF with dependencies.
-// Returns (nil, nil, error) for any I/O or parse error (fail-closed).
-// The caller is responsible for closing the returned *elf.File on the dynamic path.
-func (a *DynLibAnalyzer) openAndParseTopELF(binaryPath string) (*elf.File, []string, error) {
+// Returns (nil, nil, nil, nil) if the file is not ELF or is a static ELF (no DT_NEEDED).
+// Returns (*elf.File, needed, safefileio.File, nil) for a dynamic ELF with dependencies.
+// Returns (nil, nil, nil, error) for any I/O or parse error (fail-closed).
+// The caller is responsible for closing both the returned safefileio.File and *elf.File on the dynamic path.
+func (a *DynLibAnalyzer) openAndParseTopELF(binaryPath string) (*elf.File, []string, safefileio.File, error) {
 	file, err := a.fs.SafeOpenFile(binaryPath, os.O_RDONLY, 0)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to open file: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to open file: %w", err)
 	}
 
 	magic := make([]byte, elfmagic.Len)
 	if _, err := io.ReadFull(file, magic); err != nil {
 		closeFile(file, binaryPath)
 		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			return nil, nil, nil // file too short to be ELF
+			return nil, nil, nil, nil // file too short to be ELF
 		}
-		return nil, nil, fmt.Errorf("failed to read ELF magic: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to read ELF magic: %w", err)
 	}
 
 	if !elfmagic.Is(magic) {
 		closeFile(file, binaryPath)
-		return nil, nil, nil // not an ELF file
+		return nil, nil, nil, nil // not an ELF file
 	}
 
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		closeFile(file, binaryPath)
-		return nil, nil, fmt.Errorf("failed to seek to start of file: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to seek to start of file: %w", err)
 	}
 
 	elfFile, err := elf.NewFile(file)
 	if err != nil {
 		closeFile(file, binaryPath)
-		return nil, nil, fmt.Errorf("failed to parse ELF binary: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to parse ELF binary: %w", err)
 	}
 
 	needed, err := elfFile.DynString(elf.DT_NEEDED)
 	if err != nil {
+		closeFile(file, binaryPath)
 		closeELF(elfFile, binaryPath)
-		return nil, nil, fmt.Errorf("failed to read DT_NEEDED: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to read DT_NEEDED: %w", err)
 	}
 	if len(needed) == 0 {
+		closeFile(file, binaryPath)
 		closeELF(elfFile, binaryPath)
-		return nil, nil, nil // static binary or no dependencies
+		return nil, nil, nil, nil // static binary or no dependencies
 	}
 
-	return elfFile, needed, nil
+	return elfFile, needed, file, nil
 }
 
 // parseELFDeps opens the given path as ELF and extracts DT_NEEDED and DT_RUNPATH.
