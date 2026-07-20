@@ -323,7 +323,7 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.Fi
 				"reason", "store_io_error")
 			return binaryanalyzer.AnalysisOutput{
 				Result: binaryanalyzer.AnalysisError,
-				Error:  fmt.Errorf("%w: %s", ErrSyscallStoreIOError, path),
+				Error:  fmt.Errorf("%w: %s: %w", ErrSyscallStoreIOError, path, err),
 			}
 		}
 		return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
