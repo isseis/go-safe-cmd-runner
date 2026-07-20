@@ -582,7 +582,7 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 
 ### PR-5 作成ポイント: dynlib parse failure fail-closed with shared ELF magic
 - [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
