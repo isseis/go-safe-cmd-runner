@@ -880,7 +880,7 @@ func (r *RedactingHandler) processStruct(key string, structValue any, ctx redact
 // Since this is a logging system where handlers serialize to JSON/text anyway,
 // the semantic content is what matters, not the Go type. The []any conversion
 // maintains all actual values while keeping the implementation simple and efficient.
-func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactionContext) (slog.Attr, error) {
+func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactionContext) (attr slog.Attr, err error) {
 	// 1. Check recursion depth
 	if ctx.depth >= maxRedactionDepth {
 		r.failureLogger.Debug(
@@ -891,14 +891,42 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
 	}
 
-	// 2. Use reflection to get slice elements
+	// 2. Wrap in defer/recover for panic safety, matching processMap/processStruct.
+	// The per-element LogValuer call below has its own recovery; this guards a panic
+	// anywhere else in the function body (reflection dispatch, recursive redaction) so
+	// the whole slice fails secure instead of letting the panic escape to the caller.
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.failureLogger.Warn(
+				"Redaction failed for slice - detailed log",
+				"attribute_key", key,
+				"panic_value", rec,
+				"panic_type", fmt.Sprintf("%T", rec),
+				"stack_trace", string(debug.Stack()),
+				"log_category", "redaction_failure_detail",
+			)
+			// Log safe summary to all destinations
+			slog.Warn(
+				"Redaction failed for slice - see logs for details",
+				"attribute_key", key,
+				"panic_type", fmt.Sprintf("%T", rec),
+				"log_category", "redaction_failure_summary",
+				"details_in_log", true,
+			)
+			// Fail secure: return the placeholder instead of a partial/zero-value slice
+			attr = slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
+			err = nil
+		}
+	}()
+
+	// 3. Use reflection to get slice elements
 	rv := reflect.ValueOf(sliceValue)
 	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
 		// Not a slice or array (should not happen)
 		return slog.Attr{Key: key, Value: slog.AnyValue(sliceValue)}, nil
 	}
 
-	// 3. Process each element
+	// 4. Process each element
 	processedElements := make([]any, 0, rv.Len())
 	nextCtx := redactionContext{depth: ctx.depth + 1}
 	var firstError error
@@ -1006,6 +1034,6 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 		}
 	}
 
-	// 4. Return processed slice (converted to []any for compatibility)
+	// 5. Return processed slice (converted to []any for compatibility)
 	return slog.Attr{Key: key, Value: slog.AnyValue(processedElements)}, firstError
 }
