@@ -166,8 +166,8 @@
 
 - [ ] **ファイル**: `internal/security/elfanalyzer/analyzer_test.go`
 - [ ] `TestStandardELFAnalyzer_SyscallLookup_StoreIOError` テストを追加する（AC-01, AC-03）
-- [ ] テスト内容: `LoadSyscallAnalysis` が想定外エラー（`io.ErrUnexpectedEOF` 等）を返すモックストアを使用し、`AnalyzeNetworkSymbols` が `AnalysisError` を返し、かつ `err.Error` に `ErrSyscallStoreIOError` が含まれることを検証
-- [ ] AC-03 のログレベル検証: テスト開始時に `slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))` でハンドラーを設定し、テスト後に `slog.Warn` レベル以上のログが出力されたことを確認（`bytes.Contains(buf.String(), "WARN")`）
+- [ ] テスト内容: `LoadSyscallAnalysis` が想定外エラー（`io.ErrUnexpectedEOF` 等）を返すモックストアを使用し、`AnalyzeNetworkSymbols` が `AnalysisError` を返し、かつ `errors.Is(err, ErrSyscallStoreIOError)` が `true` であることを検証
+- [ ] AC-03 のログレベル検証: テスト開始時に `prev := slog.Default(); defer slog.SetDefault(prev)` で既存のデフォルトロガーを退避し、`slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))` でハンドラーを設定する。テスト後に `slog.Warn` レベル以上のログが出力されたことを確認する（`bytes.Contains(buf.String(), "\"level\":\"WARN\"")` などの構造化キーで検証）
 - [ ] 既存の `TestStandardELFAnalyzer_SyscallLookup_NotFound`（AC-02）と `TestStandardELFAnalyzer_SyscallLookup_HashMismatch` は変更不要（既存挙動維持を確認）
 
 **検証**: `go test -tags test -v ./internal/security/elfanalyzer/` がパスすること。
@@ -213,9 +213,9 @@
 - [ ] **ファイル**: `internal/elfmagic/elfmagic.go`（新規）
 - [ ] パッケージ名: `elfmagic`
 - [ ] 以下の公開 API を定義する:
-  - `var Magic = []byte("\x7fELF")`
+  - `var magic = []byte("\x7fELF")`（非公開; 呼び出し元は `Len` および `Is()` のみを使用する）
   - `const Len = 4`
-  - `func Is(b []byte) bool`: 先頭 `Len` バイトが `Magic` と一致するか判定
+  - `func Is(b []byte) bool`: 先頭 `Len` バイトが `magic` と一致するか判定
 - [ ] `bytes` パッケージのみに依存し、他パッケージへの依存を持たない
 
 - [ ] **ファイル**: `internal/elfmagic/elfmagic_test.go`（新規）
@@ -246,8 +246,12 @@
 - [ ] `elfmagic` パッケージをインポートに追加する
 - [ ] `Analyze` 関数（100-127行目）を修正する:
   - `SafeOpenFile` 後、`io.ReadFull(file, magic[:])` で ELF マジックを読み取る（`magic := make([]byte, elfmagic.Len)`）
+    - `io.ReadFull` が `io.EOF` または `io.ErrUnexpectedEOF` を返した場合: 非 ELF（ファイルが小さすぎる）→ `return nil, nil`
+    - `io.ReadFull` がそれ以外の I/O エラーを返した場合: `return nil, fmt.Errorf("failed to read ELF magic: %w", err)`（fail-closed）
   - `elfmagic.Is(magic)` が `false` の場合: 非 ELF → `return nil, nil`（既存の正常系挙動を維持、スクリプト等はエラーにしない）
-  - `elfmagic.Is(magic)` が `true` の場合: ファイルポインタを Seek で先頭に戻し、`elf.NewFile(file)` を試行
+  - `elfmagic.Is(magic)` が `true` の場合: `file.Seek(0, io.SeekStart)` でファイルポインタを先頭に戻す
+    - `Seek` エラーの場合: `return nil, fmt.Errorf("failed to seek to start of file: %w", err)`（fail-closed）
+    - `Seek` 成功時: `elf.NewFile(file)` を試行
     - `elf.NewFile` 失敗時: `return nil, fmt.Errorf("failed to parse ELF binary: %w", err)`（fail-closed）
     - `elf.NewFile` 成功時: `DynString(DT_NEEDED)` を試行
       - `DynString` 失敗時: `return nil, fmt.Errorf("failed to read DT_NEEDED: %w", err)`（fail-closed）
