@@ -30,7 +30,9 @@
 
 ### 1.2 実装方針
 
-- 各修正箇所は機能的な依存関係を持たないため、並行実装可能。ただし Phase 4（C1 F-1）と Phase 6（C2 F-3）は同一ファイル（`standard_analyzer.go`）を変更するため、マージ時に注意する。
+- 各修正箇所は機能的な依存関係を持たないため、並行実装可能。ただし以下のファイル競合に注意する:
+  - Phase 4（C1 F-1）と Phase 6（C2 F-3）は同一ファイル（`standard_analyzer.go`）を変更する。
+  - Phase 2（B3 L1: `hasDynamicLibraryDeps`）と Phase 3（B3 M1: `collectVerificationFiles`・`VerifyGroupFiles`）は同一ファイル（`manager.go`）を変更する。異なる関数への変更であり git merge 上は競合しにくいが、同一 PR での並行実装時は確認が推奨される。
 - 新規パッケージ `internal/elfmagic` は leaf ユーティリティとして設計され、他パッケージへの依存を持たない。
 - テストは各修正箇所の既存テストファイルに追加する。テストヘルパーが必要な場合はパッケージ内 `test_helpers.go`（`//go:build test`）を使用する。
 - 全テストは `go test -tags test -v ./...` で実行可能であり、`make test` で全件パスすることを確認する。
@@ -51,15 +53,16 @@
 #### 1.3.1 シンボル検証結果
 
 - `isELFMagic`（`standard_analyzer.go:288`）: 非公開。呼び出し元は `standard_analyzer.go:141` のみ — `elfmagic.Is` に置換可能。
-- `elfMagic`（`standard_analyzer.go:24`）: 非公開変数。`elfmagic.Magic` に置換。
+- `elfMagic`（`standard_analyzer.go:24`）: 非公開変数。削除（`elfmagic.Is` が内部で同一のバイト列を使用するため、公開定数としての露出は不要）。
 - `elfMagicLen`（`standard_analyzer.go:27`）: 非公開定数。`elfmagic.Len` に置換。
-- `elfMagicStr`（`standard_analyzer.go:21`）: 非公開定数。`elfmagic.Magic` の基データ。置換後は削除。
+- `elfMagicStr`（`standard_analyzer.go:21`）: 非公開定数。ELF マジックバイト列の文字列表現。置換後は削除。
 - 上記シンボルは `standard_analyzer.go:133`（`AnalyzeNetworkSymbols` 内）でも使用されており、すべて置換対象。
 - `ErrSyscallAnalysisHighRisk`（`standard_analyzer.go:41`）: 既存の `convertSyscallResult` 内で高リスク検知時に使用。C1 F-1 修正の `default` 節では**使用しない**（新規 `ErrSyscallStoreIOError` を導入）。
 - `ErrSyscallHashMismatch`（`errors.go:27`）: `lookupSyscallAnalysis` 内のハッシュ不一致ケースで使用。修正後も変更なし。
 - `blockingAssessment`（`evaluator.go:495`）: 非公開関数。A5 Low-3 の `default` 節で使用。
 - `BinaryAnalysisClass`（`risktypes/types.go:145-157`）: 現状 4 値（`Uncertain`/`Clean`/`Network`/`HighRisk`）。A5 Low-3 修正後は `default` 節で未知値を捕捉。
 - `looksLikeMachO`（`machodylib/analyzer.go`）: `HasDynamicLibDeps` 内で使用。既存参照あり。
+- **注意**: `internal/filevalidator/validator.go` にも独自の `elfMagic` / `elfMagicStr` 定義が存在する（`validator.go:1734-1738`、`openELFFile` から参照）。この3つ目の重複は本タスクの対象外（`01_requirements.md` スコープ外）であり、`internal/elfmagic` への統一は行わない。`validator.go` の変更を避けてリスクを最小化するため、設計上の意図的な除外である。
 
 ---
 
@@ -118,6 +121,14 @@
 
 **検証**: `go test -tags test -v ./internal/verification/` がパスすること。
 
+#### Step 2-4: dry-run モードのエラー伝播テスト
+
+- [ ] **ファイル**: `internal/verification/manager_test.go`
+- [ ] `TestVerifyCommandDynLibDeps_DynStringError_DryRun` テストを追加する
+- [ ] テスト内容: DT_NEEDED セクションが破壊された ELF ファイルを作成し、dry-run モードの `Manager` で `VerifyCommandDynLibDeps` を呼び出す。dry-run でもエラーが返り実行が中断されることを検証する（`02_architecture.md` §5.3 参照: C2 F-5 / B3 L1 は dry-run を中断させるようになる）
+
+**検証**: `go test -tags test -v ./internal/verification/` がパスすること。
+
 ### Phase 3: B3 M1 — `collectVerificationFiles` の fail-closed 化
 
 #### Step 3-1: シグネチャ変更と呼び出し元修正
@@ -127,7 +138,7 @@
 - [ ] パス解決失敗時（273行目）に `continue` する代わりに `return nil, fmt.Errorf("...: %w", err)` でエラーを返す
 - [ ] ログ出力に構造化フィールド `"reason": "path_resolution_failed"` を追加し、`slog.Warn` は維持する
 - [ ] 正常系（全パス解決成功）では `return fileSet, nil` を返す
-- [ ] 呼び出し元 `VerifyGroupFiles`（196行目）で戻り値のエラーをチェックし、`Error`（`errors.go:105`、`Group` フィールドを持つ型。`OpError`（`errors.go:80`）ではない点に注意 — `OpError` は `Op`/`Path`/`Err` のみで `Group` フィールドを持たない）にラップして上位に伝播する。既存の `FailedFiles > 0` 時の分岐（`manager.go:235`）と同じ型・パターンを踏襲する
+- [ ] 呼び出し元 `VerifyGroupFiles`（196行目）で戻り値のエラーをチェックし、上位に伝播する。ラップには `Error`（`errors.go:105`）を用いる。`Error` は `Group` フィールドを持つ型であり、`OpError`（`errors.go:80`、`Op`/`Path`/`Err` のみで `Group` フィールドを持たない）とは異なる点に注意。エラーハンドリングは、既存の `FailedFiles > 0` 時の分岐（`manager.go:235`）と同じ型・パターンを踏襲する
 - [ ] 具体的なラップ: `return nil, &Error{Op: "group", Group: groupName, Err: fmt.Errorf("failed to collect verification files: %w", err)}`
 
 **検証**: `make test` の既存テストがパスすること。
@@ -138,7 +149,8 @@
 - [ ] `TestVerifyGroupFiles_PathResolutionFailure` テストを追加する
 - [ ] テスト内容: パス解決不能なコマンドを含む `GroupVerificationInput` で `VerifyGroupFiles` を呼び出し、`error` が返ること（AC-11, AC-12）
 - [ ] パス解決不能な `PathResolver` の注入方法: `test_helpers.go` にモック `PathResolver` を追加するか、既存のモックインフラを利用する
-- [ ] `TestCollectVerificationFiles_NormalPathResolution` テストを追加する: 正常にパス解決できるコマンドのみを含むグループで `collectVerificationFiles` が成功すること（AC-13）
+- [ ] `TestVerifyGroupFiles_NormalPathResolution` テストを追加する: 正常にパス解決できるコマンドのみを含むグループで `VerifyGroupFiles` が成功すること（AC-13）
+- [ ] `TestVerifyGroupFiles_PathResolutionFailure_DryRun` テストを追加する: パス解決不能なコマンドを含むグループに対し、dry-run モードの `Manager` で `VerifyGroupFiles` を呼び出す。dry-run でもエラーが返り実行が中断されることを検証する（`02_architecture.md` §5.3 参照: B3 M1 は dry-run を中断させるようになる）
 
 **検証**: `go test -tags test -v ./internal/verification/` がパスすること。
 
@@ -157,7 +169,7 @@
   - `slog.Debug` → `slog.Warn` に格上げ
   - 構造化フィールド `"reason": "store_io_error"` を追加
   - 戻り値を `binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.AnalysisError, Error: fmt.Errorf("%w: %s", ErrSyscallStoreIOError, path)}` に変更する（`StaticBinary` へ縮退しない）
-- [ ] `ErrHashMismatch`・`RecordNotFound` のケースは変更しない（既存の fail-closed / キャッシュ不在フォールバック挙動を維持）
+- [ ] `ErrSyscallHashMismatch`・`RecordNotFound` のケースは変更しない（既存の fail-closed / キャッシュ不在フォールバック挙動を維持）
 - [ ] `convertSyscallResult` が使う `ErrSyscallAnalysisHighRisk` は変更しない（`02_architecture.md` 3.1.2節参照）
 
 **検証**: `make test` の既存テストがパスすること。
@@ -167,7 +179,7 @@
 - [ ] **ファイル**: `internal/security/elfanalyzer/analyzer_test.go`
 - [ ] `TestStandardELFAnalyzer_SyscallLookup_StoreIOError` テストを追加する（AC-01, AC-03）
 - [ ] テスト内容: `LoadSyscallAnalysis` が想定外エラー（`io.ErrUnexpectedEOF` 等）を返すモックストアを使用し、`AnalyzeNetworkSymbols` が `AnalysisError` を返し、かつ `errors.Is(err, ErrSyscallStoreIOError)` が `true` であることを検証
-- [ ] AC-03 のログレベル検証: テスト開始時に `prev := slog.Default(); defer slog.SetDefault(prev)` で既存のデフォルトロガーを退避し、`slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))` でハンドラーを設定する。テスト後に `slog.Warn` レベル以上のログが出力されたことを確認する（`bytes.Contains(buf.String(), "\"level\":\"WARN\"")` などの構造化キーで検証）
+- [ ] AC-03 のログレベル検証: テスト開始時に `prev := slog.Default(); defer slog.SetDefault(prev)` で既存のデフォルトロガーを退避し、`slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))` でハンドラーを設定する。テスト後に `slog.Warn` レベル以上のログが出力されたことを確認する（`bytes.Contains(buf.String(), "level=WARN")` などの TextHandler 形式のキーで検証）
 - [ ] 既存の `TestStandardELFAnalyzer_SyscallLookup_NotFound`（AC-02）と `TestStandardELFAnalyzer_SyscallLookup_HashMismatch` は変更不要（既存挙動維持を確認）
 
 **検証**: `go test -tags test -v ./internal/security/elfanalyzer/` がパスすること。
@@ -179,13 +191,13 @@
 - [ ] **ファイル**: `internal/dynlib/machodylib/analyzer.go`
 - [ ] `HasDynamicLibDeps`（617-632行目）の単一アーキテクチャ Mach-O パスを修正する:
   - `Seek` 失敗（619-621行目）: `return false, nil` → `return false, fmt.Errorf("failed to seek to start of file: %w", err)` に変更
-  - `Seek` 失敗（629-631行目）: 同様にエラー伝播に変更
+  - `Seek` 失敗（629-631行目）: `return false, nil` → `return false, fmt.Errorf("failed to seek to start of file: %w", err)` に変更
   - `io.ReadFull` 失敗（624-626行目）:
     - `io.EOF` または `io.ErrUnexpectedEOF` の場合: `return false, nil`（非 Mach-O / ファイルが小さすぎる、正常）
     - それ以外のエラー: `return false, fmt.Errorf("failed to read Mach-O magic: %w", err)` に変更
 - [ ] ログ出力は既存実装に存在しないため、追加不要（エラー伝播のみ）
 
-**検証**: `make test` が darwin ビルドタグでパスすること。
+**検証**: darwin 環境では `make test` がパスすること。linux CI では `GOOS=darwin GOARCH=arm64 go test -tags test -c ./internal/dynlib/machodylib/` でクロスコンパイル確認を行うこと。
 
 #### Step 5-2: I/O エラーのテストを追加
 
@@ -235,8 +247,8 @@
 - [ ] `isELFMagic`（288-293行目）の関数定義を削除する
 - [ ] `isELFMagic(magic)` の呼び出し（141行目）を `elfmagic.Is(magic)` に置き換える
 - [ ] `elfMagicLen` の使用箇所（133行目）を `elfmagic.Len` に置き換える
-- [ ] 不要になった `"bytes"` インポートを `isELFMagic` 削除後に確認し、ファイル内で `bytes` パッケージの他用途がなければインポートも削除する
-- [ ] **注意**: `bytes.Equal` は `isELFMagic` 内でのみ使用されていた。`isELFMagic` 削除後、ファイル内で `bytes` パッケージの他用途がなければインポートも削除する
+- [ ] **注意**: `bytes.Equal` は `isELFMagic` 内でのみ使用されていた。`isELFMagic` 削除に伴い `"bytes"` インポートも削除する（`go vet ./internal/security/elfanalyzer/` で unused import 警告が出ないことを確認）
+- [ ] **検証**: `go vet ./internal/security/elfanalyzer/` が unused import 警告を出さないこと
 
 **検証**: `go test -tags test -v ./internal/security/elfanalyzer/` がパスすること。既存の `AnalyzeNetworkSymbols` 関連テストすべてがパスすることを確認。
 
@@ -258,6 +270,7 @@
       - `DynString` 成功 + `len(needed) == 0`: `return nil, nil`（依存なし・正常）
       - `DynString` 成功 + `len(needed) > 0`: 既存の BFS 処理に進む
 - [ ] 既存の `//nolint:nilerr` コメント（118行目、126行目）を削除する
+- [ ] **検証**: `grep -r 'nolint:nilerr' internal/dynlib/elfdynlib/` が空を返すこと。`make lint` が警告なしでパスすること
 - [ ] `SafeOpenFile` が返す `File` は `io.Seeker` を実装しているため、Seek の型アサーションは不要（`02_architecture.md` 9.1節 パフォーマンスの項、`internal/safefileio/safe_file.go` の `File` インタフェース定義を参照）
 
 **検証**: `go test -tags test -v ./internal/dynlib/elfdynlib/` がパスすること。
@@ -352,9 +365,11 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 | C2 F-3 (ELF child) | `internal/dynlib/elfdynlib/analyzer_test.go` | `TestAnalyze_ChildParseFailure` | AC-04 |
 | C2 F-3 (Mach-O child) | `internal/dynlib/machodylib/analyzer_test.go` | `TestAnalyze_ChildParseFailure` | AC-06 |
 | C2 F-5 | `internal/dynlib/machodylib/analyzer_test.go` | `TestHasDynamicLibDeps_SeekError`, `TestHasDynamicLibDeps_ReadFullError` | AC-08, AC-09 |
-| B3 M1 | `internal/verification/manager_test.go` | `TestVerifyGroupFiles_PathResolutionFailure`, `TestCollectVerificationFiles_NormalPathResolution` | AC-11, AC-12, AC-13 |
+| B3 M1 | `internal/verification/manager_test.go` | `TestVerifyGroupFiles_PathResolutionFailure`, `TestVerifyGroupFiles_NormalPathResolution` | AC-11, AC-12, AC-13 |
 | B3 L1 | `internal/verification/manager_test.go` | `TestHasDynamicLibraryDeps_DynStringError` | AC-14 |
 | B3 L1 (caller) | `internal/verification/manager_test.go` | `TestVerifyCommandDynLibDeps_DynStringError` | AC-15 |
+| B3 L1 (dry-run) | `internal/verification/manager_test.go` | `TestVerifyCommandDynLibDeps_DynStringError_DryRun` | dry-run 中断検証 |
+| B3 M1 (dry-run) | `internal/verification/manager_test.go` | `TestVerifyGroupFiles_PathResolutionFailure_DryRun` | dry-run 中断検証 |
 | A5 Low-3 | `internal/runner/base/risk/evaluator_test.go` | `TestApplyBinaryAnalysis_DefaultBlocksUnknownClass` | AC-17 |
 | elfmagic 新設 | `internal/elfmagic/elfmagic_test.go` | `TestIs` | AC-05 の一部（マジック判定の正しさ） |
 
@@ -363,20 +378,21 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 すべての正常系 AC（AC-02, AC-07, AC-10, AC-13, AC-16, AC-18）は、既存テストでカバーされている。これらの AC の検証は以下の既存テストのパスで確認する:
 
 | AC | 既存テスト |
-|---|---|
+|---|---|---|
 | AC-02 | `TestStandardELFAnalyzer_SyscallLookup_NotFound`, `TestDynamicELF_SyscallFallback_NotRecorded` |
 | AC-07 | `internal/dynlib/elfdynlib/analyzer_test.go` の既存テスト全件、`internal/dynlib/machodylib/analyzer_test.go` の既存テスト全件 |
-| AC-10 | `TestHasMachODynamicLibraryDeps_ErrorPropagation`（新規、Step 5-3） |
 | AC-13 | `TestVerifyGroupFiles` 系の既存テスト全件 |
-| AC-16 | `TestHasDynamicLibraryDeps_*` の既存テスト（DT_NEEDED なしの正常系） |
+| AC-16 | `TestVerify_ELFNoDynLibDeps`（`DT_NEEDED` 読み取り後の動的依存なし ELF）、`TestVerify_NonELFNoDynLibDeps`（非 ELF が `(false, nil)` を返す） |
 | AC-18 | `TestBinaryAnalysisClass_ZeroValueIsUncertain`、`evaluator_test.go` の既存 `applyBinaryAnalysis` 関連テスト |
+
+> AC-10 は新規テスト（Step 5-3 `TestHasMachODynamicLibraryDeps_ErrorPropagation`）で検証するため、本表には含めていない。
 
 ### 4.3 テストヘルパー方針
 
 - C1 F-1: 既存の `mockSyscallAnalysisStore`（`analyzer_test.go` 内、非公開）を流用する。新規のテストヘルパーは不要。
 - C2 F-3 (ELF): 既存の `buildTestELFWithDeps` ヘルパー（`elfdynlib/analyzer_test.go` 内、非公開）を流用・拡張する。壊れた ELF の生成には新たに `buildBrokenELFWithDeps` のようなヘルパーを同ファイルに追加する。
-- B3 M1: パス解決失敗を注入するために、`test_helpers.go`（`//go:build test`）にモック `PathResolver` を追加する必要がある。
-- B3 L1: DT_NEEDED セクション破壊 ELF の生成には、`elfdynlib/analyzer_test.go` の ELF ビルダーの手法を参考に、`manager_test.go` 内に専用ヘルパーを追加する。または破壊 ELF を事前生成してテストフィクスチャとして使用する。
+- B3 M1: パス解決失敗を注入するために、`test_helpers.go`（`//go:build test`）にモック `PathResolver` を追加する必要がある。`VerifyGroupFiles` の dry-run モードテストでは `WithDryRunMode()` TestOption を使用する。
+- B3 L1: DT_NEEDED セクション破壊 ELF の生成には、`elfdynlib/analyzer_test.go` の ELF ビルダーの手法を参考に、`manager_test.go` 内に専用ヘルパーを追加する。または破壊 ELF を事前生成してテストフィクスチャとして使用する。B3 L1 はエラー伝播のみで構造化ログの追加は行わない（`slog.Warn` を追加してもログファイルへの出力であり、エラー伝播ですでに上位でログ出力されるため、二重ログを避ける設計判断）
 - その他: `elfmagic` のテストは自明なテーブルテストであり、ヘルパー不要。
 
 ---
@@ -397,8 +413,8 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 | AC-09 | test | `internal/dynlib/machodylib/analyzer_test.go::TestHasDynamicLibDeps_ReadFullError` | `io.ReadFull` 失敗（非EOF）時に `(false, non-nil err)` が返ること |
 | AC-10 | test | `internal/verification/manager_test.go::TestHasMachODynamicLibraryDeps_ErrorPropagation`（新規追加） | `hasMachODynamicLibraryDeps` が、I/O エラーを返す `HasDynamicLibDeps` のエラーを上位に伝播し `(false, non-nil err)` を返すこと |
 | AC-11 | test | `internal/verification/manager_test.go::TestVerifyGroupFiles_PathResolutionFailure` | パス解決失敗時に `VerifyGroupFiles` がエラーを返すこと |
-| AC-12 | test | AC-11 と同じテスト内で検証 | パス解決失敗時に `FailedFiles` に当該ファイルが含まれず、かつ実行経路（fail-open の窓）が存在しないこと |
-| AC-13 | test | `internal/verification/manager_test.go::TestCollectVerificationFiles_NormalPathResolution` | 正常系のパス解決が従来どおり成功すること |
+| AC-12 | static | `grep 'continue' internal/verification/manager.go` — `collectVerificationFiles` 内のパス解決失敗経路に `continue` が存在しないこと（`return error` に置き換わっている）。`VerifyGroupFiles` が当該ファイルの検証をスキップするコードパスがないことをコードレビューで確認 | `collectVerificationFiles` のシグネチャに `error` が追加されているため、呼び出し元 `VerifyGroupFiles` は戻り値エラーをチェックせざるを得ず（コンパイルエラー）、fail-open の窓は物理的に存在しない。これは静的保証（コンパイラ強制）であり、`test` ではなく `static` として検証する |
+| AC-13 | test | `internal/verification/manager_test.go::TestVerifyGroupFiles_NormalPathResolution`（または既存の `TestVerifyGroupFiles_*` 系の拡張） | 正常にパス解決できるコマンドのみを含むグループで `VerifyGroupFiles` が成功すること。`collectVerificationFiles` 単体ではなく `VerifyGroupFiles` の公開 API レベルで検証する |
 | AC-14 | test | `internal/verification/manager_test.go::TestHasDynamicLibraryDeps_DynStringError` | `DynString` エラー時に `(false, non-nil err)` が返ること |
 | AC-15 | test | `internal/verification/manager_test.go::TestVerifyCommandDynLibDeps_DynStringError`（新規追加） | `hasDynamicLibraryDeps` の DynString エラーが `verifyDynLibDeps` → `VerifyCommandDynLibDeps` 経由で呼び出し元にエラーとして伝播すること |
 | AC-16 | test | `internal/verification/manager_test.go` の既存テスト | DT_NEEDED なし（正常系）が `(false, nil)` を返すこと |
@@ -417,10 +433,12 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 - [ ] Step 2-1: `hasDynamicLibraryDeps` の DynString エラー分離
 - [ ] Step 2-2: DynString エラーのテスト追加
 - [ ] Step 2-3: 呼び出し元を通したエラー伝播のテスト（AC-15）
+- [ ] Step 2-4: dry-run モードのエラー伝播テスト
 
 ### Phase 3: B3 M1
 - [ ] Step 3-1: `collectVerificationFiles` シグネチャ変更と呼び出し元修正
 - [ ] Step 3-2: パス解決失敗テスト追加、正常系テスト追加
+- [ ] Step 3-3: dry-run モードのエラー伝播テスト
 
 ### Phase 4: C1 F-1
 - [ ] Step 4-1: `ErrSyscallStoreIOError` sentinel 追加

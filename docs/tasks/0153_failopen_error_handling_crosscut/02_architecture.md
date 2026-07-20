@@ -166,11 +166,11 @@ flowchart LR
 - **コスト**: 新規ファイルは定数とごく短い比較関数のみ（10数行）。`elfanalyzer/standard_analyzer.go` は C1 F-1 の修正で既に本タスクの変更対象に含まれているため、そこでの置き換え（`isELFMagic` 呼び出しを `elfmagic.Is` に差し替え）は範囲外のコードへの侵食にはあたらない。
 
 `internal/elfmagic` パッケージの内容:
-- `Magic []byte`（`\x7fELF`）、`Len int`（4）を公開定数/変数として定義。
-- `Is(b []byte) bool`: 先頭 `Len` バイトが `Magic` と一致するかを判定する（既存の `isELFMagic` と同一のロジック）。
+- `Len int`（4）を公開定数として定義。
+- `Is(b []byte) bool`: 先頭 `Len` バイトが ELF マジックと一致するかを判定する（既存の `isELFMagic` と同一のロジック）。マジックバイト値自体（`\x7fELF`）は非公開変数とし、外部パッケージは `Is()` と `Len` のみを使用する。
 - 依存先は `bytes` のみ。他パッケージへの依存を持たない leaf パッケージとする。
 
-`elfanalyzer/standard_analyzer.go` の既存 `isELFMagic`／`elfMagic`／`elfMagicLen` は `elfmagic.Is`／`elfmagic.Magic`／`elfmagic.Len` の呼び出しに置き換え、重複定義を削除する（`AnalyzeNetworkSymbols` 等の既存呼び出し元の挙動に変更はない）。
+`elfanalyzer/standard_analyzer.go` の既存 `isELFMagic`／`elfMagic`／`elfMagicLen` は `elfmagic.Is`／`elfmagic.Len` の呼び出しに置き換え、重複定義を削除する（`AnalyzeNetworkSymbols` 等の既存呼び出し元の挙動に変更はない）。
 
 `elfdynlib` 側は `elfmagic.Is` を用いて ELF トップレベル解析のマジックチェックを行う。処理の分岐は以下のとおり:
 
@@ -190,9 +190,9 @@ flowchart LR
 
 | ファイル | 関数/構造体 | 責務 | 変更種別 |
 |---|---|---|---|
-| `internal/elfmagic/elfmagic.go` | `Magic`, `Len`, `Is` | ELF マジックバイトの定義と判定。`elfanalyzer`／`elfdynlib` から共有利用される leaf ユーティリティ | 追加（新規パッケージ） |
+| `internal/elfmagic/elfmagic.go` | `Len`, `Is` | ELF マジックバイト長と判定。`elfanalyzer`／`elfdynlib` から共有利用される leaf ユーティリティ | 追加（新規パッケージ） |
 | `internal/elfmagic/elfmagic_test.go` | `TestIs` | 新規追加 | 追加 |
-| `internal/security/elfanalyzer/standard_analyzer.go` | `isELFMagic`, `elfMagic`, `elfMagicLen` | 重複定義を削除し `elfmagic.Is`／`elfmagic.Magic`／`elfmagic.Len` の呼び出しに置き換え | 修正（削除+置換） |
+| `internal/security/elfanalyzer/standard_analyzer.go` | `isELFMagic`, `elfMagic`, `elfMagicLen` | 重複定義を削除し `elfmagic.Is`／`elfmagic.Len` の呼び出しに置き換え | 修正（削除+置換） |
 | `internal/dynlib/elfdynlib/analyzer.go` | `Analyze` | ELF トップレベル解析。`elfmagic.Is` によるマジックチェック導入、エラー伝播 | 修正 |
 | `internal/dynlib/elfdynlib/analyzer.go` | `Analyze`（BFSループ内） | 子依存パース失敗をエラー伝播 | 修正 |
 | `internal/dynlib/machodylib/analyzer.go` | `Analyze`（BFSループ内） | 子依存パース失敗をエラー伝播 | 修正 |
@@ -204,7 +204,7 @@ flowchart LR
 
 `Analyze` 自体の戻り値シグネチャ（ELF: `([]fileanalysis.LibEntry, error)`、Mach-O: `([]fileanalysis.LibEntry, []AnalysisWarning, error)`）は変更しない。エラー伝播は既存のエラーリターンパスを使用する。
 
-新規に `internal/elfmagic` パッケージの公開 API（`Magic`, `Len`, `Is`）を追加する。`elfanalyzer` パッケージの `isELFMagic` 等は非公開関数であったため、削除・置換による外部インタフェースへの影響はない。
+新規に `internal/elfmagic` パッケージの公開 API（`Len`, `Is`）を追加する。`elfanalyzer` パッケージの `isELFMagic` 等は非公開関数であったため、削除・置換による外部インタフェースへの影響はない。
 
 #### 3.2.6 呼び出し元への影響
 
@@ -259,7 +259,7 @@ flowchart LR
 
 `collectVerificationFiles` のシグネチャを `(map[string]struct{}, error)` に変更する。パス解決失敗時は `slog.Warn` を出力した上でエラーを返す（fail-closed）。
 
-呼び出し元 `VerifyGroupFiles`（同ファイル:196）は、`collectVerificationFiles` の戻り値エラーをチェックし、`OpError` にラップして上位に伝播する。`VerifyGroupFiles` の外部シグネチャ（`(*Result, error)`）は変更不要である。
+呼び出し元 `VerifyGroupFiles`（同ファイル:196）は、`collectVerificationFiles` の戻り値エラーをチェックし、`Error`（`errors.go:105`、`Group` フィールドを持つ型）にラップして上位に伝播する。`VerifyGroupFiles` の外部シグネチャ（`(*Result, error)`）は変更不要である。
 
 ログ出力には `"reason": "path_resolution_failed"` 構造化フィールドを追加する。
 
@@ -380,7 +380,7 @@ C1 F-1 の `default` ケース用に新規 sentinel error `ErrSyscallStoreIOErro
 | C1 F-1 | `binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.AnalysisError}`, 新規 `ErrSyscallStoreIOError` によるラップ |
 | C2 F-3 | `fmt.Errorf("...: %w", err)` によるラップ |
 | C2 F-5 | `fmt.Errorf("...: %w", err)` によるラップ |
-| B3 M1 | `OpError` によるラップ |
+| B3 M1 | `Error`（`errors.go:105`、`Group` フィールドを持つ型）によるラップ |
 | B3 L1 | `fmt.Errorf("...: %w", err)` によるラップ |
 | A5 Low-3 | `blockingAssessment("", "")` — 既存の `Uncertain` ケースと同一パターン |
 
@@ -456,7 +456,7 @@ flowchart TD
   - **C2 F-3**: `record` コマンド（`cmd/record/main.go`）の解析経路でのみ発生する。`record` コマンドに `--dry-run` 相当のフラグは存在しない（`cmd/record/main.go` のフラグ定義を参照）ため、runner の dry-run モードとは無関係であり、修正後は record 処理自体がエラーで失敗する。
   - **C1 F-1**: `EvaluateRisk` を経由し、`plan.Assessment.Blocking` として risk evaluator の結果に現れる。runner の dry-run 実行は `internal/runner/resource/dryrun_manager.go` の専用パスを持ち、そこでは `Blocking` を（`normal_manager.go` のように `ErrCommandSecurityViolation` で即中断するのではなく）分析結果に説明を付与する形で扱う。したがって C1 F-1 の fail-closed 化は、dry-run のプレビュー継続性を壊さない可能性が高い（実装時に `dryrun_manager.go` 経由のケースで確認する）。
   - **C2 F-5 / B3 L1**: `VerifyCommandDynLibDeps` のエラーは `group_executor.go` の `verifyGroupFiles` 内の一括検証ループ（442行目）で即座に `return dlErr` され、`ExecuteGroup` まで伝播する。この経路に dry-run 用のバイパスは存在しない。したがって **dry-run でもグループ実行が中断されるようになる**（従来は `(false, nil)` で静かに通過していた）。
-  - **B3 M1**: `collectVerificationFiles` のエラーは `VerifyGroupFiles` 内で即座に `OpError` として返る（§3.4.2）。これは `VerifyGroupFiles` 内の既存 dry-run バイパス（`FailedFiles` 後処理限定、`m.isDryRun` チェック）よりも前の段階で発生するため、同様に **dry-run でも検証が中断される**。
+  - **B3 M1**: `collectVerificationFiles` のエラーは `VerifyGroupFiles` 内で即座に `Error`（`errors.go:105`、`Group` フィールドを持つ型）として返る（§3.4.2）。これは `VerifyGroupFiles` 内の既存 dry-run バイパス（`FailedFiles` 後処理限定、`m.isDryRun` チェック）よりも前の段階で発生するため、同様に **dry-run でも検証が中断される**。
   - 上記のとおり、C2 F-5 / B3 L1 / B3 M1 は dry-run の非致命的挙動を変更する（これまで見えなかった fail-open 経路を dry-run でも顕在化させる）。これは fail-closed 化の意図と整合するが、運用者への影響（プレビューが以前より失敗しやすくなる）として明示し、リリースノート等で周知する必要がある。
 - **後方互換性**: 正常系（エラーが発生しないケース）の挙動は変更されない。すべての AC が正常系のリグレッション防止を要求している。
 
