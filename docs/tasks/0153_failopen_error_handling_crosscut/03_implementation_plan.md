@@ -529,6 +529,12 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 - [ ] Step 2-3: 呼び出し元を通したエラー伝播のテスト（AC-15）
 - [ ] Step 2-4: dry-run モードのエラー伝播テスト
 
+### PR-2 作成ポイント: verification error handling fail-closed
+- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 3: B3 M1
 - [ ] Step 3-1: `collectVerificationFiles` シグネチャ変更と呼び出し元修正
 - [ ] Step 3-2: パス解決失敗テスト追加、正常系テスト追加
@@ -539,10 +545,22 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 - [ ] Step 4-2: `default` 節の修正
 - [ ] Step 4-3: 想定外エラーテスト追加
 
+### PR-3 作成ポイント: syscall store I/O error fail-closed
+- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 5: C2 F-5
 - [ ] Step 5-1: `HasDynamicLibDeps` の I/O エラー伝播
 - [ ] Step 5-2: Seek エラー・ReadFull エラー・ReadFull EOF テスト追加
 - [ ] Step 5-3: 呼び出し元のエラー伝播テスト（AC-10）
+
+### PR-4 作成ポイント: HasDynamicLibDeps I/O error fail-closed
+- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 6: C2 F-3
 - [ ] Step 6-1: `internal/elfmagic` パッケージ新設
@@ -554,6 +572,12 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 - [ ] Step 6-7: Mach-O 子依存パース失敗の修正
 - [ ] Step 6-8: Mach-O 子依存パース失敗テスト追加
 - [ ] Step 6-9: 統合テスト（正常系リグレッション確認）
+
+### PR-5 作成ポイント: dynlib parse failure fail-closed with shared ELF magic
+- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### 全体
 - [ ] `make fmt` 実行
