@@ -693,6 +693,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 // Errors are classified as follows:
 //   - SafeOpenFile failure (I/O error, permission denied, file not found) → (false, err): propagated to caller
 //   - elf.NewFile failure (not an ELF, bad magic)                         → (false, nil): file is not an ELF binary
+//   - DynString(DT_NEEDED) error (corrupted dynamic section)               → (false, err): propagated to caller (fail-closed)
 func (m *Manager) hasDynamicLibraryDeps(path string) (bool, error) {
 	file, err := m.safeFS.SafeOpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
@@ -709,7 +710,10 @@ func (m *Manager) hasDynamicLibraryDeps(path string) (bool, error) {
 	defer func() { _ = elfFile.Close() }()
 
 	needed, err := elfFile.DynString(elf.DT_NEEDED)
-	if err != nil || len(needed) == 0 {
+	if err != nil {
+		return false, fmt.Errorf("failed to read DT_NEEDED: %w", err)
+	}
+	if len(needed) == 0 {
 		return false, nil
 	}
 	return true, nil
