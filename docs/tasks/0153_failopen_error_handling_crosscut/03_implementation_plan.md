@@ -539,8 +539,8 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 ### PR-2 作成ポイント: verification error handling fail-closed
 - [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: B3 M1
 - [x] Step 3-1: `collectVerificationFiles` シグネチャ変更と呼び出し元修正
