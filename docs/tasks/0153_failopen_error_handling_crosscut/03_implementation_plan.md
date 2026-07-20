@@ -523,6 +523,12 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 - [x] Step 1-1: `default` 節を追加
 - [x] Step 1-2: 未知クラスのテストを追加
 
+### PR-1 作成ポイント: risk evaluator default clause
+- [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 2: B3 L1
 - [ ] Step 2-1: `hasDynamicLibraryDeps` の DynString エラー分離
 - [ ] Step 2-2: DynString エラーのテスト追加
