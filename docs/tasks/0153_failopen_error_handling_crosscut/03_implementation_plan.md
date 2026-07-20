@@ -519,11 +519,41 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 
 ## 6. 実装チェックリスト
 
-- [ ] PR-1 マージ済み（対象ステップ: 1-1 / 1-2）
-- [ ] PR-2 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3 / 2-4 / 3-1 / 3-2）
-- [ ] PR-3 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3）
-- [ ] PR-4 マージ済み（対象ステップ: 5-1 / 5-2 / 5-3）
-- [ ] PR-5 マージ済み（対象ステップ: 6-1 / 6-2 / 6-3 / 6-4 / 6-5 / 6-6 / 6-7 / 6-8 / 6-9）
+### Phase 1: A5 Low-3
+- [x] Step 1-1: `default` 節を追加
+- [x] Step 1-2: 未知クラスのテストを追加
+
+### Phase 2: B3 L1
+- [ ] Step 2-1: `hasDynamicLibraryDeps` の DynString エラー分離
+- [ ] Step 2-2: DynString エラーのテスト追加
+- [ ] Step 2-3: 呼び出し元を通したエラー伝播のテスト（AC-15）
+- [ ] Step 2-4: dry-run モードのエラー伝播テスト
+
+### Phase 3: B3 M1
+- [ ] Step 3-1: `collectVerificationFiles` シグネチャ変更と呼び出し元修正
+- [ ] Step 3-2: パス解決失敗テスト追加、正常系テスト追加
+- [ ] Step 3-3: dry-run モードのエラー伝播テスト
+
+### Phase 4: C1 F-1
+- [ ] Step 4-1: `ErrSyscallStoreIOError` sentinel 追加
+- [ ] Step 4-2: `default` 節の修正
+- [ ] Step 4-3: 想定外エラーテスト追加
+
+### Phase 5: C2 F-5
+- [ ] Step 5-1: `HasDynamicLibDeps` の I/O エラー伝播
+- [ ] Step 5-2: Seek エラー・ReadFull エラー・ReadFull EOF テスト追加
+- [ ] Step 5-3: 呼び出し元のエラー伝播テスト（AC-10）
+
+### Phase 6: C2 F-3
+- [ ] Step 6-1: `internal/elfmagic` パッケージ新設
+- [ ] Step 6-2: `elfanalyzer` 側の `isELFMagic` 等リファクタリング
+- [ ] Step 6-3: ELF `Analyze` トップレベル修正
+- [ ] Step 6-4: ELF トップレベルのテスト追加
+- [ ] Step 6-5: ELF 子依存パース失敗の修正
+- [ ] Step 6-6: ELF 子依存パース失敗テスト追加
+- [ ] Step 6-7: Mach-O 子依存パース失敗の修正
+- [ ] Step 6-8: Mach-O 子依存パース失敗テスト追加
+- [ ] Step 6-9: 統合テスト（正常系リグレッション確認）
 
 ### 全体
 - [ ] `make fmt` 実行
