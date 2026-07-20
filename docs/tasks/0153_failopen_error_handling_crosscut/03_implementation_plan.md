@@ -239,33 +239,36 @@
 
 #### Step 5-1: `Seek` 失敗と `io.ReadFull` 失敗のエラー伝播
 
-- [ ] **ファイル**: `internal/dynlib/machodylib/analyzer.go`
-- [ ] `HasDynamicLibDeps`（617-632行目）の単一アーキテクチャ Mach-O パスを修正する:
+- [x] **ファイル**: `internal/dynlib/machodylib/analyzer.go`
+- [x] `HasDynamicLibDeps`（617-632行目）の単一アーキテクチャ Mach-O パスを修正する:
   - `Seek` 失敗（619-621行目）: `return false, nil` → `return false, fmt.Errorf("failed to seek to start of file: %w", err)` に変更
   - `Seek` 失敗（629-631行目）: `return false, nil` → `return false, fmt.Errorf("failed to seek to start of file: %w", err)` に変更
   - `io.ReadFull` 失敗（624-626行目）:
     - `io.EOF` または `io.ErrUnexpectedEOF` の場合: `return false, nil`（非 Mach-O / ファイルが小さすぎる、正常）
     - それ以外のエラー: `return false, fmt.Errorf("failed to read Mach-O magic: %w", err)` に変更
-- [ ] ログ出力は既存実装に存在しないため、追加不要（エラー伝播のみ）
+- [x] ログ出力は既存実装に存在しないため、追加不要（エラー伝播のみ）
+- [x] **実装時のリファクタリング**: `HasDynamicLibDeps` の cyclomatic complexity が 22 で `gocyclo` 閾値（20）を超えたため、Fat バイナリ処理パス（`hasDepsFromFatBinary`）、単一アーキテクチャパス（`hasDepsFromSingleArchMachO`）、非キャッシュ依存判定（`hasNonCacheDeps`）の 3 つのヘルパー関数に分割した。Fat パスと単一アーキナリパスの両方で使われていた「非キャッシュ依存の有無を判定するループ」も `hasNonCacheDeps` に集約した（DRY）。本リファクタリングは「Fat バイナリ側の既存挙動は不変」「単一アーキナリ側の fail-closed 化は不変」を満たしており、AC-08/AC-09 を含む全 AC の検証結果に変更はない。
 
 **検証**: darwin 環境では `make test` がパスすること。linux CI では `GOOS=darwin GOARCH=arm64 go test -tags test -c ./internal/dynlib/machodylib/` でクロスコンパイル確認を行うこと。
 
 #### Step 5-2: I/O エラーのテストを追加
 
-- [ ] **ファイル**: `internal/dynlib/machodylib/analyzer_test.go`
-- [ ] `TestHasDynamicLibDeps_SeekError` テストを追加する（AC-08）: Seek に失敗するモック `safefileio.File` を使用し、`HasDynamicLibDeps` が `(false, err)` を返すことを検証
-- [ ] `TestHasDynamicLibDeps_ReadFullError` テストを追加する（AC-09）: 読み取りに失敗するモックファイル（`io.ErrUnexpectedEOF` 以外のエラーを返す `io.Reader`）を使用し、`HasDynamicLibDeps` が `(false, err)` を返すことを検証
-- [ ] `TestHasDynamicLibDeps_ReadFullEOF` テストを追加する（境界値）: `io.EOF` または `io.ErrUnexpectedEOF` で読み取りが終了した場合、`HasDynamicLibDeps` が `(false, nil)` を返すことを検証（ファイルが 4 バイトに満たない非 Mach-O の正常系）
-- [ ] モックの注入方法: `HasDynamicLibDeps` は `safefileio.FileSystem` を引数に取るため、`safefileio` の既存モックインフラを利用する
+- [x] **ファイル**: `internal/dynlib/machodylib/analyzer_test.go`
+- [x] `TestHasDynamicLibDeps_SeekError` テストを追加する（AC-08）: Seek に失敗するモック `safefileio.File` を使用し、`HasDynamicLibDeps` が `(false, err)` を返すことを検証
+- [x] `TestHasDynamicLibDeps_ReadFullError` テストを追加する（AC-09）: 読み取りに失敗するモックファイル（`io.ErrUnexpectedEOF` 以外のエラーを返す `io.Reader`）を使用し、`HasDynamicLibDeps` が `(false, err)` を返すことを検証
+- [x] `TestHasDynamicLibDeps_ReadFullEOF` テストを追加する（境界値）: `io.EOF` または `io.ErrUnexpectedEOF` で読み取りが終了した場合、`HasDynamicLibDeps` が `(false, nil)` を返すことを検証（ファイルが 4 バイトに満たない非 Mach-O の正常系）
+- [x] モックの注入方法: `HasDynamicLibDeps` は `safefileio.FileSystem` を引数に取るため、`safefileio` の既存モックインフラを利用する
 
 **検証**: `go test -tags test -v ./internal/dynlib/machodylib/` （darwin 環境）がパスすること。linux 環境では `go test -tags test -run '^$' ./internal/dynlib/machodylib/` でコンパイルが通ることを確認する。
 
 #### Step 5-3: 呼び出し元のエラー伝播テスト（AC-10）
 
-- [ ] **ファイル**: `internal/verification/manager_test.go`
-- [ ] `TestHasMachODynamicLibraryDeps_ErrorPropagation` テストを追加する（AC-10）
-- [ ] テスト内容: I/O エラーを返す `safefileio.FileSystem` モックを使用し、`hasMachODynamicLibraryDeps(path)` が `(false, non-nil err)` を返すことを検証
-- [ ] `hasMachODynamicLibraryDeps` は `machodylib.HasDynamicLibDeps(path, m.safeFS)` のラッパーであるため、I/O エラーを返すモック `safeFS` を注入した `Manager` でテストする
+- [x] **ファイル**: `internal/verification/manager_macho_test.go`（darwin ビルドタグ）
+- [x] `TestHasMachODynamicLibraryDeps_ErrorPropagation` テストを追加する（AC-10）
+- [x] テスト内容: I/O エラーを返す `safefileio.FileSystem` モックを使用し、`hasMachODynamicLibraryDeps(path)` が `(false, non-nil err)` を返すことを検証
+- [x] `hasMachODynamicLibraryDeps` は `machodylib.HasDynamicLibDeps(path, m.safeFS)` のラッパーであるため、I/O エラーを返すモック `safeFS` を注入した `Manager` でテストする
+- [x] **追加で実装したテスト**: `TestHasMachODynamicLibraryDeps_DryRun_ErrorPropagation` を追加し、dry-run モード（`WithDryRunMode`）でも `safeFS` の I/O エラーが伝播することを確認した。`02_architecture.md` §5.3 で定義された「C2 F-5 は dry-run を中断させる」挙動を検証する。
+- [x] **追加で実装した基盤**: AC-10 のテストを可能にするため、`internal/verification/types.go` に `safeFS safefileio.FileSystem` フィールドを `managerInternalOptions` に追加し、`withSafeFSInternal` 関数と `WithSafeFS` テストオプション（`test_helpers.go`）を追加した。`newManagerInternal` はオプションが `nil` の場合にのみデフォルトの `safefileio.FileSystem` を生成する（後方互換性維持）。
 
 **検証**: `go test -tags test -v ./internal/verification/` がパスすること。
 

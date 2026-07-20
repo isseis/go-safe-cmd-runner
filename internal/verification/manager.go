@@ -458,7 +458,10 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 		return nil, err
 	}
 
-	safeFS := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+	safeFS := opts.safeFS
+	if safeFS == nil {
+		safeFS = safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+	}
 
 	manager := &Manager{
 		hashDir:                     hashDir,

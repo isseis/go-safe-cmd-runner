@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
 // CreationMode represents how the Manager was created
@@ -29,6 +30,7 @@ const (
 // managerInternalOptions holds all configuration options for creating a Manager internally
 type managerInternalOptions struct {
 	fs                          common.FileSystem
+	safeFS                      safefileio.FileSystem
 	fileValidatorEnabled        bool
 	creationMode                CreationMode
 	securityLevel               SecurityLevel
@@ -104,6 +106,15 @@ func withDryRunModeInternal() InternalOption {
 func withDirectoryValidatorInternal(validator DirectoryValidator) InternalOption {
 	return func(opts *managerInternalOptions) {
 		opts.directoryValidator = validator
+	}
+}
+
+// withSafeFSInternal injects a custom safefileio.FileSystem used for binary
+// inspection (ELF/Mach-O magic checks, DT_NEEDED reads, etc.). Used by tests to
+// simulate I/O failures on those read paths.
+func withSafeFSInternal(fs safefileio.FileSystem) InternalOption {
+	return func(opts *managerInternalOptions) {
+		opts.safeFS = fs
 	}
 }
 

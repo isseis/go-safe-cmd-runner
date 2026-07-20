@@ -4,6 +4,7 @@ package verification
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	safefileiotestutil "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -293,4 +295,57 @@ func TestVerify_MachOLibraryTampered(t *testing.T) {
 	var hashErr *dynlib.ErrLibraryHashMismatch
 	assert.ErrorAs(t, verifyErr, &hashErr,
 		"expected ErrLibraryHashMismatch, got %T: %v", verifyErr, verifyErr)
+}
+
+// TestHasMachODynamicLibraryDeps_ErrorPropagation verifies that an I/O error
+// raised by machodylib.HasDynamicLibDeps is propagated through the Manager's
+// hasMachODynamicLibraryDeps wrapper. The injected safeFS makes
+// SafeOpenFile return an error, which represents the worst-case "I cannot tell
+// whether this binary has dynamic library dependencies" state. The Manager
+// must NOT silently treat this as "no deps" and return false; it must surface
+// the error so the runner can stop execution instead of bypassing the
+// ErrDynLibDepsRequired gate (fail-closed).
+//
+// This is the Manager-level companion to the lower-level fail-closed tests in
+// machodylib/analyzer_test.go (TestHasDynamicLibDeps_SeekError,
+// TestHasDynamicLibDeps_ReadFullError).
+func TestHasMachODynamicLibraryDeps_ErrorPropagation(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+
+	mockFS := safefileiotestutil.NewMockFileSystem()
+	ioErr := errors.New("simulated I/O failure during SafeOpenFile")
+	mockFS.SafeOpenFileFunc = func(_ string, _ int, _ os.FileMode) (safefileio.File, error) {
+		return nil, ioErr
+	}
+
+	m, err := NewManagerForTest(hashDir, WithSafeFS(mockFS))
+	require.NoError(t, err)
+
+	hasDeps, err := m.hasMachODynamicLibraryDeps("/some/macho/binary")
+	require.Error(t, err, "I/O error from machodylib.HasDynamicLibDeps must be propagated")
+	assert.False(t, hasDeps, "I/O error must not be reported as 'has dynamic library dependencies'")
+	assert.ErrorIs(t, err, ioErr, "underlying I/O error must be wrapped, not replaced")
+}
+
+// TestHasMachODynamicLibraryDeps_DryRun_ErrorPropagation verifies that an I/O
+// error from machodylib.HasDynamicLibDeps is also propagated in dry-run mode.
+// The architecture design specifies that the I/O-error-fail-closed change
+// causes dry-run to fail rather than continue silently, which is the intended
+// behavior for the fail-closed migration.
+func TestHasMachODynamicLibraryDeps_DryRun_ErrorPropagation(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+
+	mockFS := safefileiotestutil.NewMockFileSystem()
+	ioErr := errors.New("simulated I/O failure during SafeOpenFile (dry-run)")
+	mockFS.SafeOpenFileFunc = func(_ string, _ int, _ os.FileMode) (safefileio.File, error) {
+		return nil, ioErr
+	}
+
+	m, err := NewManagerForTest(hashDir, WithSafeFS(mockFS), WithDryRunMode())
+	require.NoError(t, err)
+
+	hasDeps, err := m.hasMachODynamicLibraryDeps("/some/macho/binary")
+	require.Error(t, err, "I/O error must be propagated even in dry-run mode")
+	assert.False(t, hasDeps)
+	assert.ErrorIs(t, err, ioErr)
 }

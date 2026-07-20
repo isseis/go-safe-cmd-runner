@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -43,6 +44,16 @@ func WithPathResolver(pathResolver *PathResolver) TestOption {
 func WithDryRunMode() TestOption {
 	return func(opts *managerInternalOptions) {
 		opts.isDryRun = true
+	}
+}
+
+// WithSafeFS sets a custom safefileio.FileSystem for testing. This allows tests
+// to inject I/O failures on the binary-inspection path (ELF magic / DT_NEEDED
+// reads and Mach-O magic / load-command reads) without touching the real
+// filesystem.
+func WithSafeFS(fs safefileio.FileSystem) TestOption {
+	return func(opts *managerInternalOptions) {
+		opts.safeFS = fs
 	}
 }
 
@@ -91,6 +102,10 @@ func NewManagerForTest(hashDir string, options ...TestOption) (*Manager, error) 
 
 	if internalOpts.isDryRun {
 		internalOptions = append(internalOptions, withDryRunModeInternal())
+	}
+
+	if internalOpts.safeFS != nil {
+		internalOptions = append(internalOptions, withSafeFSInternal(internalOpts.safeFS))
 	}
 
 	// Create manager with testing constraints (allows custom hash directory)

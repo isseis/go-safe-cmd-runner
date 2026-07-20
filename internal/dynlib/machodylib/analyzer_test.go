@@ -15,6 +15,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -601,4 +602,120 @@ func TestHasDynamicLibDeps_FatBinary_NonSharedCacheDep(t *testing.T) {
 	hasDeps, err := HasDynamicLibDeps(path, fs)
 	require.NoError(t, err)
 	assert.True(t, hasDeps, "Fat binary with non-dyld-cache dep should report true")
+}
+
+// --- Seek error path: HasDynamicLibDeps propagates Seek errors (fail-closed) ---
+
+// TestHasDynamicLibDeps_SeekError verifies that HasDynamicLibDeps returns
+// (false, non-nil err) when the underlying Seek fails. This prevents a
+// transient I/O error from being silently treated as "no dynamic library
+// dependencies", which would let a Mach-O binary bypass the
+// ErrDynLibDepsRequired gate in the runner.
+//
+// The mock File is configured to fail on Seek; the file is treated as not a
+// Fat binary (no Fat magic) and reaches the single-architecture path where
+// the first Seek(0, SeekStart) is issued.
+func TestHasDynamicLibDeps_SeekError(t *testing.T) {
+	mockFS := newMockFileSystemForHasDeps()
+	seekErr := errors.New("simulated seek failure")
+	mockFS.openFile = func(_ string, _ int, _ os.FileMode) (safefileio.File, error) {
+		// Provide enough bytes so the file is not classified as too short.
+		// The Seek will still fail before any read happens.
+		return &errorFile{
+			data:    []byte{0xCF, 0xFA, 0xED, 0xFE}, // MH_MAGIC_64 little-endian
+			seekErr: seekErr,
+		}, nil
+	}
+
+	hasDeps, err := HasDynamicLibDeps("/test/path", mockFS)
+	require.Error(t, err, "Seek failure must be propagated, not swallowed")
+	assert.False(t, hasDeps, "Seek failure must not be reported as a positive detection")
+	assert.ErrorIs(t, err, seekErr, "underlying Seek error must be wrapped, not replaced")
+	assert.Contains(t, err.Error(), "failed to seek to start of file",
+		"error message must identify the operation that failed")
+}
+
+// --- ReadFull error path: HasDynamicLibDeps propagates non-EOF ReadFull errors (fail-closed) ---
+
+// TestHasDynamicLibDeps_ReadFullError verifies that HasDynamicLibDeps returns
+// (false, non-nil err) when ReadFull fails with an error other than
+// io.EOF / io.ErrUnexpectedEOF. io.ReadFull wraps the underlying Reader's
+// error via errors.Join, so the original error is reachable via errors.Is.
+func TestHasDynamicLibDeps_ReadFullError(t *testing.T) {
+	mockFS := newMockFileSystemForHasDeps()
+	readErr := errors.New("simulated read failure")
+	mockFS.openFile = func(_ string, _ int, _ os.FileMode) (safefileio.File, error) {
+		return &errorFile{
+			data:    nil,
+			readErr: readErr,
+		}, nil
+	}
+
+	hasDeps, err := HasDynamicLibDeps("/test/path", mockFS)
+	require.Error(t, err, "non-EOF ReadFull failure must be propagated, not swallowed")
+	assert.False(t, hasDeps, "ReadFull failure must not be reported as a positive detection")
+	assert.Contains(t, err.Error(), "failed to read Mach-O magic",
+		"error message must identify the operation that failed")
+}
+
+// --- Boundary: io.EOF / io.ErrUnexpectedEOF on magic read returns (false, nil) ---
+
+// TestHasDynamicLibDeps_ReadFullEOF verifies that when ReadFull returns
+// io.EOF or io.ErrUnexpectedEOF, HasDynamicLibDeps returns (false, nil).
+// These errors indicate the file is too short to be a Mach-O and are
+// the documented "not a Mach-O" success path, which the Seek/ReadFull
+// error-propagation rules explicitly preserve.
+func TestHasDynamicLibDeps_ReadFullEOF(t *testing.T) {
+	t.Run("io.EOF", func(t *testing.T) {
+		mockFS := newMockFileSystemForHasDeps()
+		mockFS.openFile = func(_ string, _ int, _ os.FileMode) (safefileio.File, error) {
+			return &errorFile{data: nil}, nil
+		}
+		hasDeps, err := HasDynamicLibDeps("/test/path", mockFS)
+		require.NoError(t, err, "io.EOF on ReadFull must be treated as 'not a Mach-O'")
+		assert.False(t, hasDeps)
+	})
+
+	t.Run("io.ErrUnexpectedEOF", func(t *testing.T) {
+		mockFS := newMockFileSystemForHasDeps()
+		mockFS.openFile = func(_ string, _ int, _ os.FileMode) (safefileio.File, error) {
+			// 1 byte is less than the 4-byte magic length, so ReadFull returns
+			// io.ErrUnexpectedEOF without invoking the readErr hook.
+			return &errorFile{data: []byte{0xCF}}, nil
+		}
+		hasDeps, err := HasDynamicLibDeps("/test/path", mockFS)
+		require.NoError(t, err, "io.ErrUnexpectedEOF on ReadFull must be treated as 'not a Mach-O'")
+		assert.False(t, hasDeps)
+	})
+}
+
+// mockFileSystemForHasDeps returns a minimal safefileio.FileSystem mock whose
+// SafeOpenFile behaviour is fully controlled by the test. Only SafeOpenFile
+// is exercised by HasDynamicLibDeps error-path tests; the other methods are
+// stubbed to satisfy the interface and should never be called.
+func newMockFileSystemForHasDeps() *hdlDepsMockFS {
+	return &hdlDepsMockFS{}
+}
+
+type hdlDepsMockFS struct {
+	openFile func(name string, flag int, perm os.FileMode) (safefileio.File, error)
+}
+
+func (m *hdlDepsMockFS) SafeOpenFile(name string, flag int, perm os.FileMode) (safefileio.File, error) {
+	if m.openFile == nil {
+		return nil, errors.New("hdlDepsMockFS: openFile not configured")
+	}
+	return m.openFile(name, flag, perm)
+}
+
+func (m *hdlDepsMockFS) Remove(_ string) error {
+	panic("hdlDepsMockFS: Remove should not be called by HasDynamicLibDeps")
+}
+
+func (m *hdlDepsMockFS) AtomicMoveFile(_, _ string, _ os.FileMode) error {
+	panic("hdlDepsMockFS: AtomicMoveFile should not be called by HasDynamicLibDeps")
+}
+
+func (m *hdlDepsMockFS) GetGroupMembership() *groupmembership.GroupMembership {
+	panic("hdlDepsMockFS: GetGroupMembership should not be called by HasDynamicLibDeps")
 }

@@ -555,6 +555,12 @@ func looksLikeMachO(buf []byte) bool {
 //
 // Returns (false, nil) for non-Mach-O files, Mach-O files with no dependencies,
 // or Mach-O files whose dependencies are all dyld shared cache libraries.
+//
+// I/O errors (Seek, ReadFull) are propagated to the caller as errors so that
+// ambiguous "I cannot tell whether this is a Mach-O with deps" states cannot
+// be silently treated as "no deps" (fail-closed). The only exception is
+// io.EOF / io.ErrUnexpectedEOF on the magic read, which indicates the file is
+// too short to be a Mach-O and is reported as (false, nil).
 func HasDynamicLibDeps(path string, fs safefileio.FileSystem) (bool, error) {
 	file, err := fs.SafeOpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
@@ -566,68 +572,76 @@ func HasDynamicLibDeps(path string, fs safefileio.FileSystem) (bool, error) {
 	// Try as Fat binary first
 	fatFile, fatErr := macho.NewFatFile(file)
 	if fatErr == nil {
-		cpuType := goarchCPU(runtime.GOARCH)
-		if cpuType == 0 {
-			_ = fatFile.Close()
-
-			return false, nil
-		}
-
-		for _, arch := range fatFile.Arches {
-			if arch.Cpu == cpuType {
-				_ = fatFile.Close()
-
-				// Reuse the already-open file as the SectionReader source to
-				// avoid a second SafeOpenFile call and eliminate the TOCTOU race.
-				machoFile, err := macho.NewFile(
-					io.NewSectionReader(file, int64(arch.Offset), int64(arch.Size)))
-				if err != nil {
-					// Fat header was valid so this is a Mach-O file; treat parse
-					// failure as an error rather than silently returning false.
-					return false, fmt.Errorf("failed to parse Mach-O slice from Fat binary: %w", err)
-				}
-
-				defer func() { _ = machoFile.Close() }()
-
-				deps, _ := extractLoadCommands(machoFile)
-				for _, dep := range deps {
-					// Treat as dyld shared cache only when the install name is
-					// system-prefixed AND the file is absent from disk.
-					if IsDyldSharedCacheLib(dep.installName) {
-						if _, statErr := os.Stat(dep.installName); os.IsNotExist(statErr) {
-							continue
-						}
-					}
-
-					return true, nil
-				}
-
-				return false, nil
-			}
-		}
-
-		_ = fatFile.Close()
-
-		return false, nil // no matching architecture
+		return hasDepsFromFatBinary(file, fatFile)
 	}
 
-	// Try as single-architecture Mach-O.
-	// Read the magic bytes first so we can distinguish "not Mach-O" (silent
-	// skip) from "looks like Mach-O but parse failed" (return error).
+	return hasDepsFromSingleArchMachO(file)
+}
+
+// hasDepsFromFatBinary inspects a Fat Mach-O (already opened) and returns
+// whether it contains at least one non-dyld-shared-cache load command for
+// the native architecture. fatFile is closed before returning.
+func hasDepsFromFatBinary(file safefileio.File, fatFile *macho.FatFile) (bool, error) {
+	cpuType := goarchCPU(runtime.GOARCH)
+	if cpuType == 0 {
+		_ = fatFile.Close()
+
+		return false, nil
+	}
+
+	for _, arch := range fatFile.Arches {
+		if arch.Cpu == cpuType {
+			_ = fatFile.Close()
+
+			// Reuse the already-open file as the SectionReader source to
+			// avoid a second SafeOpenFile call and eliminate the TOCTOU race.
+			machoFile, err := macho.NewFile(
+				io.NewSectionReader(file, int64(arch.Offset), int64(arch.Size)))
+			if err != nil {
+				// Fat header was valid so this is a Mach-O file; treat parse
+				// failure as an error rather than silently returning false.
+				return false, fmt.Errorf("failed to parse Mach-O slice from Fat binary: %w", err)
+			}
+
+			defer func() { _ = machoFile.Close() }()
+
+			return hasNonCacheDeps(machoFile), nil
+		}
+	}
+
+	_ = fatFile.Close()
+
+	return false, nil // no matching architecture
+}
+
+// hasDepsFromSingleArchMachO inspects a single-architecture Mach-O file and
+// returns whether it contains at least one non-dyld-shared-cache load command.
+//
+// Read the magic bytes first so we can distinguish "not Mach-O" (silent skip)
+// from "looks like Mach-O but parse failed" (return error). Seek/ReadFull
+// errors are propagated (fail-closed) so the caller cannot be tricked into
+// treating "I/O failure" as "no deps". The only exception is
+// io.EOF / io.ErrUnexpectedEOF on the magic read, which simply means the
+// file is too short to be a Mach-O and is reported as (false, nil).
+func hasDepsFromSingleArchMachO(file safefileio.File) (bool, error) {
 	var magic [4]byte
 	if seeker, ok := file.(io.Seeker); ok {
 		if _, err := seeker.Seek(0, io.SeekStart); err != nil {
-			return false, nil
+			return false, fmt.Errorf("failed to seek to start of file: %w", err)
 		}
 	}
 
 	if _, err := io.ReadFull(file, magic[:]); err != nil {
-		return false, nil // too short to be Mach-O
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return false, nil // too short to be Mach-O
+		}
+
+		return false, fmt.Errorf("failed to read Mach-O magic: %w", err)
 	}
 
 	if seeker, ok := file.(io.Seeker); ok {
 		if _, err := seeker.Seek(0, io.SeekStart); err != nil {
-			return false, nil
+			return false, fmt.Errorf("failed to seek to start of file: %w", err)
 		}
 	}
 
@@ -642,6 +656,14 @@ func HasDynamicLibDeps(path string, fs safefileio.FileSystem) (bool, error) {
 
 	defer func() { _ = machoFile.Close() }()
 
+	return hasNonCacheDeps(machoFile), nil
+}
+
+// hasNonCacheDeps reports whether the given Mach-O has at least one
+// LC_LOAD_DYLIB / LC_LOAD_WEAK_DYLIB install name that is not in the dyld
+// shared cache (or that is on disk). A binary whose all deps are dyld shared
+// cache libraries is treated as having no on-disk dynlib deps.
+func hasNonCacheDeps(machoFile *macho.File) bool {
 	deps, _ := extractLoadCommands(machoFile)
 	for _, dep := range deps {
 		// Treat as dyld shared cache only when the install name is
@@ -652,8 +674,8 @@ func HasDynamicLibDeps(path string, fs safefileio.FileSystem) (bool, error) {
 			}
 		}
 
-		return true, nil
+		return true
 	}
 
-	return false, nil
+	return false
 }
