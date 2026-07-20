@@ -570,15 +570,15 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 - [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 6: C2 F-3
-- [ ] Step 6-1: `internal/elfmagic` パッケージ新設
-- [ ] Step 6-2: `elfanalyzer` 側の `isELFMagic` 等リファクタリング
-- [ ] Step 6-3: ELF `Analyze` トップレベル修正
-- [ ] Step 6-4: ELF トップレベルのテスト追加
-- [ ] Step 6-5: ELF 子依存パース失敗の修正
-- [ ] Step 6-6: ELF 子依存パース失敗テスト追加
-- [ ] Step 6-7: Mach-O 子依存パース失敗の修正
-- [ ] Step 6-8: Mach-O 子依存パース失敗テスト追加
-- [ ] Step 6-9: 統合テスト（正常系リグレッション確認）
+- [x] Step 6-1: `internal/elfmagic` パッケージ新設
+- [x] Step 6-2: `elfanalyzer` 側の `isELFMagic` 等リファクタリング
+- [x] Step 6-3: ELF `Analyze` トップレベル修正
+- [x] Step 6-4: ELF トップレベルのテスト追加
+- [x] Step 6-5: ELF 子依存パース失敗の修正
+- [x] Step 6-6: ELF 子依存パース失敗テスト追加
+- [x] Step 6-7: Mach-O 子依存パース失敗の修正
+- [x] Step 6-8: Mach-O 子依存パース失敗テスト追加
+- [x] Step 6-9: 統合テスト（正常系リグレッション確認）
 
 ### PR-5 作成ポイント: dynlib parse failure fail-closed with shared ELF magic
 - [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した

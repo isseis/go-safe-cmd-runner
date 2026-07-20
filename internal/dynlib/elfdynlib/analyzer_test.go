@@ -257,6 +257,52 @@ func TestAnalyze_StaticELF(t *testing.T) {
 	assert.Nil(t, result, "static ELF with no DT_NEEDED should return nil")
 }
 
+// TestAnalyze_ELFMagicMatchButParseFailure verifies that Analyze returns an error
+// when the file starts with ELF magic but cannot be parsed as a valid ELF.
+func TestAnalyze_ELFMagicMatchButParseFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "broken.elf")
+	data := make([]byte, 128)
+	copy(data, []byte("\x7fELF"))
+	require.NoError(t, os.WriteFile(path, data, 0o644))
+
+	a := newTestAnalyzer(t)
+	result, err := a.Analyze(path)
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "failed to parse ELF binary")
+}
+
+// TestAnalyze_ELFMagicMatchButDynStringError verifies that Analyze returns an error
+// when the file has valid ELF magic and parses, but DynString(DT_NEEDED) fails.
+// DynString reads the string table via ds.Link (sh_link of SHT_DYNAMIC). By corrupting
+// sh_link to an out-of-bounds section index, stringTable returns an error.
+func TestAnalyze_ELFMagicMatchButDynStringError(t *testing.T) {
+	tmpDir := t.TempDir()
+	elfPath := buildTestELFWithDeps(t, tmpDir, "hasdeps.elf", []string{"libfoo.so.1"}, "")
+
+	data, err := os.ReadFile(elfPath)
+	require.NoError(t, err)
+
+	// e_shoff is at bytes 40-47 in the ELF header (little-endian uint64).
+	// Section .dynamic is index 2; sh_link is at offset 40 within a 64-byte Shdr64.
+	le := binary.LittleEndian
+	eShoff := le.Uint64(data[40:48])
+	shdrSize := uint64(64)
+	dynSecIdx := uint64(2)
+	shLinkOff := eShoff + dynSecIdx*shdrSize + 40
+	le.PutUint32(data[shLinkOff:shLinkOff+4], 99)
+
+	corruptedPath := filepath.Join(tmpDir, "corrupt.elf")
+	require.NoError(t, os.WriteFile(corruptedPath, data, 0o644))
+
+	a := newTestAnalyzer(t)
+	result, err := a.Analyze(corruptedPath)
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "failed to read DT_NEEDED")
+}
+
 // TestAnalyze_DynamicELF verifies that Analyze returns non-nil for a native
 // dynamically linked binary.
 func TestAnalyze_DynamicELF(t *testing.T) {
@@ -331,6 +377,27 @@ func TestAnalyze_TransitiveDeps(t *testing.T) {
 	}
 	assert.Contains(t, sonames, "mid.so.1")
 	assert.Contains(t, sonames, "leaf.so.1")
+}
+
+// TestAnalyze_ChildParseFailure verifies that Analyze returns an error when
+// a child dependency cannot be parsed during BFS traversal (fail-closed).
+// The error message must include the path of the failed child library.
+func TestAnalyze_ChildParseFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	leaf := buildTestELFWithDeps(t, tmpDir, "leaf.so.1", nil, tmpDir)
+	buildTestELFWithDeps(t, tmpDir, "mid.so.1", []string{"leaf.so.1"}, tmpDir)
+	mainBin := buildTestELFWithDeps(t, tmpDir, "main_cpf",
+		[]string{"mid.so.1"}, tmpDir)
+
+	require.NoError(t, os.WriteFile(leaf, []byte("not an ELF"), 0o644))
+
+	a := newTestAnalyzer(t)
+	_, err := a.Analyze(mainBin)
+	require.Error(t, err, "should return error when child parse fails")
+
+	errStr := err.Error()
+	assert.Contains(t, errStr, leaf, "error should include the path of the failed child library")
 }
 
 // TestAnalyze_ResolutionFailure verifies that Analyze returns

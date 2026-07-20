@@ -102,9 +102,36 @@ func TestHasDynamicLibDeps_NonMachO(t *testing.T) {
 	require.NoError(t, os.WriteFile(notMachO, []byte("not a binary\n"), 0o600))
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
-	hasDeps, err := HasDynamicLibDeps(notMachO, fs)
+	hasDeps, err := HasDynamicLibDeps(path, fs)
 	require.NoError(t, err)
 	assert.False(t, hasDeps)
+}
+
+// TestAnalyze_ChildParseFailure verifies that Analyze returns an error when
+// a child Mach-O dependency cannot be parsed during BFS traversal (fail-closed).
+func TestAnalyze_ChildParseFailure(t *testing.T) {
+	nativeCPU := machodylibtestutil.NativeCPU()
+	tmp := realPath(t, t.TempDir())
+
+	lib2Path := filepath.Join(tmp, "lib2.dylib")
+	require.NoError(t, os.WriteFile(lib2Path,
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, nil, nil, nil), 0o600))
+
+	lib1Path := filepath.Join(tmp, "lib1.dylib")
+	require.NoError(t, os.WriteFile(lib1Path,
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, []string{lib2Path}, nil, nil), 0o600))
+
+	rootPath := filepath.Join(tmp, "root.bin")
+	require.NoError(t, os.WriteFile(rootPath,
+		machodylibtestutil.BuildMachOWithDeps(nativeCPU, []string{lib1Path}, nil, nil), 0o600))
+
+	require.NoError(t, os.WriteFile(lib2Path, []byte("corrupted"), 0o600))
+
+	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+	a := NewMachODynLibAnalyzer(fs)
+
+	_, _, err := a.Analyze(rootPath)
+	require.Error(t, err, "should return error when child parse fails")
 }
 
 // TestExtractDylibName verifies that dylibName correctly parses the
