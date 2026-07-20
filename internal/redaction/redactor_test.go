@@ -1690,6 +1690,45 @@ func TestRedactingHandler_SliceTypeConversion(t *testing.T) {
 		assert.Equal(t, "normal_text", anySlice[2])
 		assert.Equal(t, 45.6, anySlice[3])
 	})
+
+	t.Run("slice of arrays - nested array elements are redacted", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+		logger := slog.New(handler)
+
+		// A slice whose elements are themselves fixed-size arrays. Each element
+		// must be recursed into individually, not passed through as opaque data.
+		nested := [][2]string{
+			{"password=secret1", "normal1"},
+			{"token=secret2", "normal2"},
+		}
+		logger.Info("Test message", "data", slog.AnyValue(nested))
+
+		require.Len(t, mock.records, 1)
+		record := mock.records[0]
+
+		var dataAttr slog.Attr
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == "data" {
+				dataAttr = attr
+				return false
+			}
+			return true
+		})
+
+		sliceValue := dataAttr.Value.Any()
+		anySlice, ok := sliceValue.([]any)
+		assert.True(t, ok, "Expected []any after processing slice of arrays, got %T", sliceValue)
+		assert.Len(t, anySlice, 2)
+
+		firstElem, ok := anySlice[0].([]any)
+		assert.True(t, ok, "Expected nested array to be converted to []any, got %T", anySlice[0])
+		assert.Equal(t, []any{"password=[REDACTED]", "normal1"}, firstElem)
+
+		secondElem, ok := anySlice[1].([]any)
+		assert.True(t, ok, "Expected nested array to be converted to []any, got %T", anySlice[1])
+		assert.Equal(t, []any{"token=[REDACTED]", "normal2"}, secondElem)
+	})
 }
 
 // TestRedactingHandler_MapRedaction tests map redaction functionality

@@ -519,6 +519,21 @@ func (r *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx red
 	}
 }
 
+// isRecursivelyRedactableKind reports whether a reflect.Kind holds nested data that
+// must be walked for redaction (as opposed to an opaque primitive that can be passed
+// through unchanged). This is the single source of truth for that classification,
+// shared between processKindAny's top-level dispatch and processSlice's per-element
+// handling, so the two lists cannot drift apart (this previously happened: one had
+// reflect.Array and the other did not, letting nested arrays skip redaction).
+func isRecursivelyRedactableKind(k reflect.Kind) bool {
+	switch k {
+	case reflect.Slice, reflect.Array, reflect.Map, reflect.Struct, reflect.Ptr, reflect.Interface:
+		return true
+	default:
+		return false
+	}
+}
+
 // processKindAny processes slog.KindAny values
 func (r *RedactingHandler) processKindAny(key string, value slog.Value, ctx redactionContext) (slog.Attr, error) {
 	anyValue := value.Any()
@@ -953,11 +968,7 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 				processedElements = append(processedElements, redactedStr)
 			} else {
 				elementValue := reflect.ValueOf(element)
-				switch elementValue.Kind() {
-				case reflect.Invalid:
-					// Nil element: keep as-is
-					processedElements = append(processedElements, element)
-				case reflect.Ptr, reflect.Map, reflect.Struct, reflect.Slice, reflect.Interface:
+				if isRecursivelyRedactableKind(elementValue.Kind()) {
 					// Complex types: process recursively
 					elementKey := fmt.Sprintf("%s[%d]", key, i)
 					redactedAttr := r.redactLogAttributeWithContext(
@@ -965,8 +976,8 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 						nextCtx,
 					)
 					processedElements = append(processedElements, redactedAttr.Value.Any())
-				default:
-					// Primitive types (int, bool, etc.): keep as-is
+				} else {
+					// Primitive types (int, bool, etc.) and nil elements (Invalid kind): keep as-is
 					processedElements = append(processedElements, element)
 				}
 			}
