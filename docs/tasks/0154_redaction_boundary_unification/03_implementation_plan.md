@@ -129,7 +129,47 @@
 6. すべてのフィールドが unexported の場合、出力 map が空になるが、空 map を返すと機密情報が含まれないことが自明でなくなるため、安全性を優先して `RedactionFailurePlaceholder` を返す（アーキテクチャ §3.2.3 に従い、unexported-only struct も循環参照と同様にプレースホルダへフォールバックする）
 7. 全体を `defer/recover` で囲み、panic 時は既存の二段階ログパターンに従って出力し、`RedactionFailurePlaceholder` を返す
 
-#### 2.1.4 processSlice の非 LogValuer 要素再帰 redaction（F-002）
+#### 2.1.4 F-001 の単体テスト（map/struct）
+
+**ファイル**: `internal/redaction/redactor_test.go`
+
+- [ ] `TestRedactingHandler_MapRedaction` テストを追加（AC-01, AC-02, AC-03, AC-05）
+  - サブテスト `SensitiveKeyMasking`（AC-01）: `slog.Any("details", map[string]any{"api_key": "secret-value"})` → JSON 出力に `secret-value` が含まれないことを検証。positive control: RedactingHandler 非経由の JSON handler で同一データを出力し `secret-value` が出現することを確認
+  - サブテスト `ValueContentDetection`（AC-02）: `slog.Any("details", map[string]any{"note": "password=hunter2"})` → `hunter2` がマスクされることを検証
+  - サブテスト `NestedMap`（AC-03）: `map[string]any{"outer": map[string]any{"token": "..."}}` → 再帰的に redact されることを検証
+  - サブテスト `DepthLimit`（深度制限）: `maxRedactionDepth` を超える depth で呼び出し → `RedactionFailurePlaceholder` が返ることを検証
+  - サブテスト `PanicRecovery`（panic 回復）: map の reflect 操作に失敗するケース → `RedactionFailurePlaceholder` が返ることを検証
+  - サブテスト `NoSensitiveContent`（AC-05）: 非機密 map → 内容が保持されることを検証
+  - サブテスト `NonStringKey`: `map[int]string{1: "value"}` 等の非文字列キー → パニックせず処理されることを検証
+  - テストパターン: `slog.NewJSONHandler` に `RedactingHandler` をラップし、JSON 出力をパースして検証
+
+- [ ] `TestRedactingHandler_StructRedaction` テストを追加（AC-04a, AC-04b, AC-05）
+  - サブテスト `SensitiveFieldRedaction`（AC-04a）: `api_key` 相当の文字列フィールドを持つ struct → 値がマスクされることを検証
+  - サブテスト `JsonTagFieldNaming`（AC-04a）: `json:"field_name"` タグ付きフィールド → タグ名がキーとして使用されることを検証
+  - サブテスト `FallbackStructUnexportedOnly`（AC-04b）: unexported フィールドのみの struct → `RedactionFailurePlaceholder` にフォールバックし、機密情報が漏洩しないことを検証
+  - サブテスト `CircularReference`（AC-04b 補足）: 自己参照ポインタフィールド（`*T` が自身の型を指す）を持つ struct → パニックせず `RedactionFailurePlaceholder` を返すことを検証
+  - サブテスト `DepthLimit`（深度制限）: `maxRedactionDepth` を超える struct 処理 → `RedactionFailurePlaceholder` が返ることを検証
+  - サブテスト `PanicRecovery`（panic 回復）: struct の reflect 操作に失敗するケース → `RedactionFailurePlaceholder` が返ることを検証
+  - サブテスト `NoSensitiveContent`（AC-05）: 非機密 struct → 内容が保持されることを検証
+
+### PR-1 作成ポイント: RedactingHandler map/struct redaction
+
+**対象ステップ**: 2.1.1 / 2.1.2 / 2.1.3 / 2.1.4
+
+**推奨タイトル**: `feat(0154): add recursive map/struct redaction to RedactingHandler`
+
+**レビュー観点**: processKindAny の分岐拡張が map/struct/Ptr/Interface を正しく捕捉し、未対応型を fail-secure にフォールバックしているか / processMap のキーソート・深度制限・panic recovery が既存の fail-secure 方針と一貫しているか / processStruct の json タグ処理・循環参照検出・空フィールドフォールバックが適切か
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: processMap/processStruct の 2 つの新規再帰経路がいずれも reflection・深度制限・panic recovery を伴う複合的な処理であり、1 つの PR に集中する高リスク・高複雑度の変更群であるため
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+#### 2.1.5 processSlice の非 LogValuer 要素再帰 redaction（F-002）
 
 **ファイル**: `internal/redaction/redactor.go`
 
@@ -163,28 +203,9 @@
 2. これにより、文字列要素は `KindString` → `RedactText` 適用、map 要素は `KindAny` → `processMap`、struct 要素は `KindAny` → `processStruct`、プリミティブ型（int, bool 等）は適切な Kind で処理される
 3. `[]any` への型変換は既存の仕様を維持（`slog.AnyValue(processedElements)` で返す）
 
-#### 2.1.5 フェーズ 1 の単体テスト
+#### 2.1.6 F-002 の単体テスト（slice）+ ベンチマーク
 
 **ファイル**: `internal/redaction/redactor_test.go`
-
-- [ ] `TestRedactingHandler_MapRedaction` テストを追加（AC-01, AC-02, AC-03, AC-05）
-  - サブテスト `SensitiveKeyMasking`（AC-01）: `slog.Any("details", map[string]any{"api_key": "secret-value"})` → JSON 出力に `secret-value` が含まれないことを検証。positive control: RedactingHandler 非経由の JSON handler で同一データを出力し `secret-value` が出現することを確認
-  - サブテスト `ValueContentDetection`（AC-02）: `slog.Any("details", map[string]any{"note": "password=hunter2"})` → `hunter2` がマスクされることを検証
-  - サブテスト `NestedMap`（AC-03）: `map[string]any{"outer": map[string]any{"token": "..."}}` → 再帰的に redact されることを検証
-  - サブテスト `DepthLimit`（深度制限）: `maxRedactionDepth` を超える depth で呼び出し → `RedactionFailurePlaceholder` が返ることを検証
-  - サブテスト `PanicRecovery`（panic 回復）: map の reflect 操作に失敗するケース → `RedactionFailurePlaceholder` が返ることを検証
-  - サブテスト `NoSensitiveContent`（AC-05）: 非機密 map → 内容が保持されることを検証
-  - サブテスト `NonStringKey`: `map[int]string{1: "value"}` 等の非文字列キー → パニックせず処理されることを検証
-  - テストパターン: `slog.NewJSONHandler` に `RedactingHandler` をラップし、JSON 出力をパースして検証
-
-- [ ] `TestRedactingHandler_StructRedaction` テストを追加（AC-04a, AC-04b, AC-05）
-  - サブテスト `SensitiveFieldRedaction`（AC-04a）: `api_key` 相当の文字列フィールドを持つ struct → 値がマスクされることを検証
-  - サブテスト `JsonTagFieldNaming`（AC-04a）: `json:"field_name"` タグ付きフィールド → タグ名がキーとして使用されることを検証
-  - サブテスト `FallbackStructUnexportedOnly`（AC-04b）: unexported フィールドのみの struct → `RedactionFailurePlaceholder` にフォールバックし、機密情報が漏洩しないことを検証
-  - サブテスト `CircularReference`（AC-04b 補足）: 自己参照ポインタフィールド（`*T` が自身の型を指す）を持つ struct → パニックせず `RedactionFailurePlaceholder` を返すことを検証
-  - サブテスト `DepthLimit`（深度制限）: `maxRedactionDepth` を超える struct 処理 → `RedactionFailurePlaceholder` が返ることを検証
-  - サブテスト `PanicRecovery`（panic 回復）: struct の reflect 操作に失敗するケース → `RedactionFailurePlaceholder` が返ることを検証
-  - サブテスト `NoSensitiveContent`（AC-05）: 非機密 struct → 内容が保持されることを検証
 
 - [ ] `TestRedactingHandler_SliceStringElementRedaction` テストを追加（AC-06, AC-07, AC-08）
   - サブテスト `SensitiveStringElement`（AC-06）: `slog.Any("args", []string{"--password=hunter2"})` → `hunter2` が出力に含まれないことを検証。positive control: RedactingHandler 非経由の JSON handler で同一データを出力し `hunter2` が出現することを確認
@@ -192,9 +213,31 @@
   - サブテスト `NoSensitiveContent`（AC-07）: `[]string{"normal", "args"}` → 内容変化なし
   - サブテスト `MixedTypes`（AC-08）: `[]any{"string", 123, true, []string{"nested"}}` → パニックせず処理されることを検証
 
+- [ ] ベンチマークテスト `BenchmarkHandle_WithLargeMap` を追加（1,000 エントリの `map[string]string`。`02_architecture.md` §9.3）
+- [ ] ベンチマークテスト `BenchmarkHandle_WithWideStruct` を追加（50 フィールドの struct。`02_architecture.md` §9.3）
+
+#### 2.1.7 既存テストの確認
+
 - [x] 既存テストの確認
   - `TestRedactingHandler_MixedSlice` は非機密データのみを含むため、Phase 1 の変更後もパスする（検証済み）
   - `TestRedactingHandler_SliceTypeConversion` も非機密データのみのためパスする（検証済み）
+
+### PR-2 作成ポイント: RedactingHandler slice element recursion
+
+**対象ステップ**: 2.1.5 / 2.1.6 / 2.1.7
+
+**推奨タイトル**: `feat(0154): recursively redact non-LogValuer slice elements`
+
+**レビュー観点**: processSlice の非 LogValuer 要素が redactLogAttributeWithContext 経由で再帰 redact され、文字列に RedactText が適用されているか / slice 内の map/struct 要素が PR-1 で追加された processMap/processStruct に正しく委譲されるか / 既存の []any 型変換仕様が維持されているか
+
+**実装モデル要件**: standard
+
+**判定理由**: 該当するトリガーなし（設計アプローチ確定済み、既存の redactLogAttributeWithContext 経路を再利用した単純な拡張）
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### 2.2 フェーズ 2: Slack エラーログ sanitize（F-003）
 
@@ -237,6 +280,23 @@
   - サブテスト `ErrorTypePreserved`（AC-10）: タイムアウト・DNS エラー・接続拒否等のエラー種別情報が保持されることを検証
   - サブテスト `NonURLError`（AC-10）: URL を含まないエラーの文字列が保持されることを検証
   - サブテスト `NonURLErrorWithSensitiveValue`（AC-10 補足）: URL を含まないが `password=hunter2` を含むエラー → RedactText でマスクされることを検証
+
+### PR-3 作成ポイント: Slack error log URL sanitization
+
+**対象ステップ**: 2.2.1 / 2.2.2 / 2.2.3
+
+**推奨タイトル**: `feat(0154): sanitize Slack webhook URL from error logs`
+
+**レビュー観点**: sanitizeErrorForLog が *url.Error の構造的抽出を優先し nil inner error 時も panic しないか / errors.As によるラップチェーン走査が正しいか / 非 URL エラーも RedactText で機密パターンが検出されるか / sendToSlack 内の 5 箇所すべてが slog.String に置換されているか
+
+**実装モデル要件**: standard
+
+**判定理由**: 該当するトリガーなし（設計アプローチは確定済み、競合する実装方針なし、単一の低リスク変更）
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### 2.3 フェーズ 3: 監査ログの境界 redaction 統一（F-004, F-005, F-006）
 
@@ -329,6 +389,23 @@ for key, value := range details {
 
 **検証パターン**: `NewAuditLoggerWithCustom(slog.New(slog.NewJSONHandler(&buf, nil)))` で RedactingHandler 非経由の logger を使用し、JSON 出力を `json.Unmarshal` でパースして属性値を直接検証する。キー衝突防止（AC-18）では、JSON に複数の同名キーが存在しないこと、およびスキーマキーの値が期待通りであることを両方検証する。
 
+### PR-4 作成ポイント: Audit logger boundary redaction unification
+
+**対象ステップ**: 2.3.1 / 2.3.2 / 2.3.3 / 2.3.4
+
+**推奨タイトル**: `feat(0154): apply boundary redaction to all audit logger methods`
+
+**レビュー観点**: LogUserGroupExecution/LogPrivilegeEscalation/LogSecurityEvent の各メソッドで LogRiskProfile と同等の argRedactor.RedactText が適用されているか / LogSecurityEvent の details キー衝突防止（detail_ プレフィックス）が既存スキーマキー（severity/audit_type/slack_notify）を保護しているか / details 値の型別 switch 分岐が文字列・数値・真偽値・複合型を正しく処理し、複合型は Layer 2 に委譲しているか
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: F-006（LogSecurityEvent details）の detail_ プレフィックス導入がスキーマレベルでの新規設計判断であり、下流のログ監視クエリ・SIEM ルールに影響する中リスクの破壊的変更を含むため
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### 2.4 フェーズ 4: 環境変数サニタイズの拡張（F-007）
 
 #### 2.4.1 値ベース redaction の追加
@@ -392,7 +469,26 @@ isSensitiveEnvValue の実装:
 - [ ] `TestSanitizeEnvironmentVariables_PlaceholderConsistency` テストを追加
   - 置換値が `redaction.DefaultConfig().Placeholder` と一致することを検証
 
+### PR-5 作成ポイント: Environment variable sanitization extension
+
+**対象ステップ**: 2.4.1 / 2.4.2 / 2.4.3 / 2.4.4
+
+**推奨タイトル**: `feat(0154): extend env var sanitization with value-based detection`
+
+**レビュー観点**: isSensitiveEnvValue が RedactText の出力変更をもって機密検出の判定としており、ValueDetector.Mask を含む包括的検出になっているか / 大文字小文字の両方でパターンマッチングを試行し既存の大文字パターンとの後方互換性を保っているか / SanitizeEnvironmentVariables の置換値が [REDACTED] で一貫しているか
+
+**実装モデル要件**: standard
+
+**判定理由**: 該当するトリガーなし（既存の RedactText 契約と Validator.redactionConfig フィールドを再利用した単純拡張）
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### 2.5 横断的タスク
+
+以下のタスクは各 PR の完了条件（グリーンゲート）として組み込まれている。各 PR マーカーのチェックリストに従い、PR ごとに実施する。
 
 - [ ] `make fmt` を実行し、コードをフォーマットする
 - [ ] `make test` を実行し、全テストがパスすることを確認する
@@ -412,7 +508,17 @@ Phase 1 （RedactingHandler コア）
   └──→ Phase 4 （環境変数サニタイズ）: SanitizeEnvironmentVariables が ValueDetector に依存するが、ValueDetector は既存コードであり Phase 1 の変更に依存しない
 ```
 
-### 3.2 マイルストーン
+### 3.2 PR 構成
+
+| PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | 2.1.1 / 2.1.2 / 2.1.3 / 2.1.4 | processKindAny 拡張（map/struct/Ptr/Interface 分岐）、processMap/processStruct 新規実装、単体テスト（AC-01〜AC-05） | frontier-recommended |
+| PR-2 | 2.1.5 / 2.1.6 / 2.1.7 | processSlice 非 LogValuer 要素再帰 redaction、単体テスト（AC-06〜AC-08）、ベンチマーク | standard |
+| PR-3 | 2.2.1 / 2.2.2 / 2.2.3 | sanitizeErrorForLog ヘルパー追加、sendToSlack の 5 箇所の slog.Any→slog.String 置換、単体テスト（AC-09〜AC-10） | standard |
+| PR-4 | 2.3.1 / 2.3.2 / 2.3.3 / 2.3.4 | LogUserGroupExecution/LogPrivilegeEscalation/LogSecurityEvent への境界 redaction 適用、details キー名前空間分離（detail_ プレフィックス）、単体テスト（AC-11〜AC-19） | frontier-recommended |
+| PR-5 | 2.4.1 / 2.4.2 / 2.4.3 / 2.4.4 | isSensitiveEnvValue 追加、SanitizeEnvironmentVariables の値ベース redaction、大文字小文字非対称性解消、単体テスト（AC-20〜AC-22） | standard |
+
+### 3.3 マイルストーン
 
 | マイルストーン | 成果物 | 完了条件 |
 |---|---|---|
@@ -593,37 +699,58 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 
 以下の項目は `make lint` および `make test` では検出できないため、手動確認が必要である。
 
+### PR-1 クロスサーチ
+
+（PR-1 固有のクロスサーチ項目はない。実装に関する横断的確認は PR-2 クロスサーチを参照）
+
+### PR-2 クロスサーチ
+
+- [ ] `processSlice` のドキュメントコメント（line 614-640）が Phase 1 の変更（非 LogValuer 要素の再帰 redaction）を反映するよう更新されていること
+
+### PR-3 クロスサーチ
+
 - [ ] `slog.Any("error",` の残存参照確認: `rg -n 'slog\.Any\("error"' -g '*.go' internal/logging/slack_handler.go` の結果が 0 件であること（AC-09 の static 検証と重複しない独立した確認として）
 - [ ] `slog.Any("last_error",` の残存参照確認: `rg -n 'slog\.Any\("last_error"' -g '*.go' internal/logging/slack_handler.go` の結果が 0 件であること
+
+### PR-4 クロスサーチ
+
 - [ ] `detail_` プレフィックス付与により、既存の `LogSecurityEvent` 呼び出し元がキー名を直接参照している場合の影響確認: `rg -n 'LogSecurityEvent' -g '*.go' internal` の結果をレビュー（Go の `internal` パッケージ可視性によりリポジトリ全体をカバー）。呼び出し元は logger_test.go のみであり、特定の details キー名に依存していないことを確認済みのため、コードベース内の破壊的影響はない
 - [ ] `02_architecture.md` §5.4 で言及されている `logger.go:286-289` のコメント（「RedactingHandler does not recurse into slice/map elements」）の更新または削除（Phase 1 完了後、この制約は解消されるため）
-- [ ] `processSlice` のドキュメントコメント（line 614-640）が Phase 1 の変更（非 LogValuer 要素の再帰 redaction）を反映するよう更新されていること
+
+### PR-5 クロスサーチ
+
+- [ ] `isSensitiveEnvVar` 呼び出し元が大文字化のみの動作に依存していないことの確認
+- [ ] `SanitizeEnvironmentVariables` の全呼び出し元で `v.redactionConfig` が非 nil であることの確認
 
 ## 7. 実装チェックリスト
 
-### 7.1 フェーズ 1 チェックリスト
+### 7.1 PR-1 チェックリスト（F-001: map/struct 再帰 redaction）
 
 - [ ] `processKindAny` に Map/Struct/Ptr/Interface 分岐と捕捉されない型に対するフォールバックを追加
 - [ ] `processMap` 関数を新規実装
 - [ ] `processStruct` 関数を新規実装
-- [ ] `processSlice` の非 LogValuer 要素を再帰 redact に修正
-- [ ] `processSlice` のドキュメントコメント（line 614-640）を更新し、非 LogValuer 要素が `redactLogAttributeWithContext` 経由で再帰 redact されることを反映する
 - [ ] `TestRedactingHandler_MapRedaction` テストを追加（AC-01, AC-02, AC-03, AC-05）
 - [ ] `TestRedactingHandler_StructRedaction` テストを追加（AC-04a, AC-04b, AC-05）
-- [ ] `TestRedactingHandler_SliceStringElementRedaction` テストを追加（AC-06, AC-07, AC-08）
 - [ ] 深度制限・panic recovery のサブテストを追加
+- [ ] 既存テストの回帰確認（`make test` を `internal/redaction/` で実行）
+
+### 7.2 PR-2 チェックリスト（F-002: slice 要素再帰 redaction）
+
+- [ ] `processSlice` の非 LogValuer 要素を再帰 redact に修正
+- [ ] `processSlice` のドキュメントコメント（line 614-640）を更新し、非 LogValuer 要素が `redactLogAttributeWithContext` 経由で再帰 redact されることを反映する
+- [ ] `TestRedactingHandler_SliceStringElementRedaction` テストを追加（AC-06, AC-07, AC-08）
 - [ ] ベンチマークテスト `BenchmarkHandle_WithLargeMap` を追加（1,000 エントリの `map[string]string`。`02_architecture.md` §9.3）
 - [ ] ベンチマークテスト `BenchmarkHandle_WithWideStruct` を追加（50 フィールドの struct。`02_architecture.md` §9.3）
 - [ ] 既存テストの回帰確認（`make test` を `internal/redaction/` で実行）
 
-### 7.2 フェーズ 2 チェックリスト
+### 7.3 PR-3 チェックリスト（F-003: Slack エラーログ sanitize）
 
 - [ ] `sanitizeErrorForLog` ヘルパー関数を追加
 - [ ] `sendToSlack` の 5 箇所の `slog.Any("error", err)` / `slog.Any("last_error", lastErr)` を `slog.String("error", sanitizeErrorForLog(err))` / `slog.String("last_error", sanitizeErrorForLog(lastErr))` に置換
 - [ ] `TestSanitizeErrorForLog` テストを追加（AC-09, AC-10）
 - [ ] クロスサーチ: `slog.Any("error",` と `slog.Any("last_error",` の slack_handler.go 内の残存確認
 
-### 7.3 フェーズ 3 チェックリスト
+### 7.4 PR-4 チェックリスト（F-004/F-005/F-006: 監査ログ境界 redaction）
 
 - [ ] `LogUserGroupExecution` の `command_args` に `argRedactor.RedactText` を適用
 - [ ] `LogUserGroupExecution` の `expanded_command_args` に `argRedactor.RedactText` を適用
@@ -642,7 +769,7 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 - [ ] `logRiskProfileEntry` ヘルパーを再利用するか、必要な新規ヘルパーを同ファイルに追加
 - [ ] クロスサーチ: `logger.go:286-289` のコメントを更新（Phase 1 により制約解消）
 
-### 7.4 フェーズ 4 チェックリスト
+### 7.5 PR-5 チェックリスト（F-007: 環境変数サニタイズ拡張）
 
 - [ ] `isSensitiveEnvValue` ヘルパー関数を追加（`v.redactionConfig` の nil チェックを含む）
 - [ ] `SanitizeEnvironmentVariables` に値内容検査（`isSensitiveEnvValue`）を追加
@@ -652,12 +779,15 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 - [ ] ベンチマークテスト `BenchmarkSanitizeEnvironmentVariables_WithLargeEnv` を追加（200 エントリ。`02_architecture.md` §9.3）
 - [ ] 既存テストの回帰確認（`make test` を `internal/runner/base/security/` で実行）
 
-### 7.5 最終検証チェックリスト
+### 7.6 最終検証チェックリスト（全 PR マージ後）
 
-- [ ] `make fmt` を実行
-- [ ] `make test` を実行し全テストパスを確認
-- [ ] `make lint` を実行し lint エラーなしを確認
+- [ ] PR-1 マージ済み（対象ステップ: 2.1.1 / 2.1.2 / 2.1.3 / 2.1.4）
+- [ ] PR-2 マージ済み（対象ステップ: 2.1.5 / 2.1.6 / 2.1.7）
+- [ ] PR-3 マージ済み（対象ステップ: 2.2.1 / 2.2.2 / 2.2.3）
+- [ ] PR-4 マージ済み（対象ステップ: 2.3.1 / 2.3.2 / 2.3.3 / 2.3.4）
+- [ ] PR-5 マージ済み（対象ステップ: 2.4.1 / 2.4.2 / 2.4.3 / 2.4.4）
 - [ ] 全クロスサーチチェック項目を確認
+- [ ] リリースノートに `detail_` プレフィックス変更を記載
 
 ## 8. リスク管理
 
@@ -665,7 +795,7 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 |---|---|---|
 | Phase 1 の `processKindAny` catch-all 変更により既存ログ出力の情報が欠落する | 低 | コードベース監査により Func/Chan/UnsafePointer 型の `slog.Any` 呼び出しは存在しないことを確認済み（`02_architecture.md` §4.3）。また、int/bool 等のプリミティブ型は `slog.AnyValue` により適切な Kind に解決されるため catch-all に到達しない |
 | `detail_` プレフィックス変更が監視クエリを破壊する | 中 | リリースノートに明示的に記載。非本番環境での事前検証を推奨（`02_architecture.md` §9.4 参照）。`LogSecurityEvent` の外部呼び出し元は存在しないため、コードベース内の破壊的影響はない |
-| 再帰 redaction のパフォーマンス劣化 | 低 | `maxRedactionDepth=10` が深度を制限。ログ出力はコマンド実行のクリティカルパスではない。ベンチマークテスト（§7.1、§7.4）により現状からの増加率を計測する |
+| 再帰 redaction のパフォーマンス劣化 | 低 | `maxRedactionDepth=10` が深度を制限。ログ出力はコマンド実行のクリティカルパスではない。ベンチマークテスト（§7.2、§7.5）により現状からの増加率を計測する |
 
 ## 9. 次のステップ
 
