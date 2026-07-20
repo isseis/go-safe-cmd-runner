@@ -16,6 +16,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	safefileiotestutil "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -601,4 +602,88 @@ func TestHasDynamicLibDeps_FatBinary_NonSharedCacheDep(t *testing.T) {
 	hasDeps, err := HasDynamicLibDeps(path, fs)
 	require.NoError(t, err)
 	assert.True(t, hasDeps, "Fat binary with non-dyld-cache dep should report true")
+}
+
+// --- mock File implementations for I/O error injection ---
+
+var (
+	errSimulatedSeek = errors.New("simulated seek error")
+	errSimulatedRead = errors.New("simulated read error")
+)
+
+type seekErrorFile struct {
+	safefileio.File
+}
+
+func (f *seekErrorFile) Seek(offset int64, whence int) (int64, error) {
+	return 0, errSimulatedSeek
+}
+
+type readErrorFile struct {
+	safefileio.File
+}
+
+func (f *readErrorFile) Read(p []byte) (int, error) {
+	return 0, errSimulatedRead
+}
+
+// TestHasDynamicLibDeps_SeekError verifies that HasDynamicLibDeps returns
+// (false, error) when Seek to start of file fails.
+func TestHasDynamicLibDeps_SeekError(t *testing.T) {
+	tmp := realPath(t, t.TempDir())
+	path := filepath.Join(tmp, "test.bin")
+	require.NoError(t, os.WriteFile(path, []byte("data"), 0o600))
+
+	mockFS := &safefileiotestutil.MockFileSystem{
+		SafeOpenFileFunc: func(name string, flag int, perm os.FileMode) (safefileio.File, error) {
+			realFS := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+			f, err := realFS.SafeOpenFile(name, flag, perm)
+			if err != nil {
+				return nil, err
+			}
+			return &seekErrorFile{File: f}, nil
+		},
+	}
+
+	hasDeps, err := HasDynamicLibDeps(path, mockFS)
+	require.Error(t, err)
+	assert.False(t, hasDeps)
+	assert.Contains(t, err.Error(), "failed to seek to start of file")
+}
+
+// TestHasDynamicLibDeps_ReadFullError verifies that HasDynamicLibDeps returns
+// (false, error) when io.ReadFull fails with a non-EOF error.
+func TestHasDynamicLibDeps_ReadFullError(t *testing.T) {
+	tmp := realPath(t, t.TempDir())
+	path := filepath.Join(tmp, "test.bin")
+	require.NoError(t, os.WriteFile(path, []byte("data"), 0o600))
+
+	mockFS := &safefileiotestutil.MockFileSystem{
+		SafeOpenFileFunc: func(name string, flag int, perm os.FileMode) (safefileio.File, error) {
+			realFS := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+			f, err := realFS.SafeOpenFile(name, flag, perm)
+			if err != nil {
+				return nil, err
+			}
+			return &readErrorFile{File: f}, nil
+		},
+	}
+
+	hasDeps, err := HasDynamicLibDeps(path, mockFS)
+	require.Error(t, err)
+	assert.False(t, hasDeps)
+	assert.Contains(t, err.Error(), "failed to read Mach-O magic")
+}
+
+// TestHasDynamicLibDeps_ReadFullEOF verifies that HasDynamicLibDeps returns
+// (false, nil) when the file is too short to contain a Mach-O magic (EOF).
+func TestHasDynamicLibDeps_ReadFullEOF(t *testing.T) {
+	tmp := realPath(t, t.TempDir())
+	path := filepath.Join(tmp, "empty.bin")
+	require.NoError(t, os.WriteFile(path, []byte{}, 0o600))
+
+	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+	hasDeps, err := HasDynamicLibDeps(path, fs)
+	require.NoError(t, err)
+	assert.False(t, hasDeps)
 }

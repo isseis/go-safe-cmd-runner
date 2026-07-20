@@ -226,9 +226,9 @@ flowchart LR
 
 - `Seek` 失敗（2箇所）: I/O エラーとしてエラーを返す。
 - `io.ReadFull` 失敗: `io.EOF` / `io.ErrUnexpectedEOF` はファイルが Mach-O ヘッダ長（4バイト）に満たないことを示し、非 Mach-O ファイルの正常ケースであるため `(false, nil)` を返す。それ以外のエラーは I/O エラーとしてエラーを返す（fail-closed）。
-- ログ出力には `"reason": "io_error"` 構造化フィールドを追加する。
+- ログ出力は追加しない（エラー伝播のみで十分であり、上位の呼び出し元で必要に応じてログ出力される）。
 
-> **Seek/ReadFull でのディスクリプタ再利用**: `HasDynamicLibDeps` の既存実装では、`Seek` の型アサーション `file.(io.Seeker)` に失敗すると Seek ブロック全体がスキップされる（fail-open）。これは `safefileio.SafeOpenFile` が返す File が常に `io.Seeker` を実装するため、通常は発生しない。ただし、将来 `safefileio` の File 型が `io.Seeker` を実装しなくなった場合、このコードパスで ELF/Mach-O マジックが読み取れず、分析不能になる。このリスクは現在の実装では顕在化しないが、`safefileio` の変更時に注意が必要である。
+> **Seek/ReadFull での型アサーション除去**: `HasDynamicLibDeps` の既存実装では `file.(io.Seeker)` の型アサーションを使用していたが、`safefileio.File` インタフェース（`safe_file.go:65-74`）は常に `io.Seeker` を含むため、型アサーションは冗長であった。本修正では型アサーションを除去し、`file.Seek()` を直接呼び出すように簡略化した。
 
 #### 3.3.3 責務表
 
@@ -367,7 +367,7 @@ flowchart LR
 | C1 F-1 | `"store_io_error"` | syscall store の想定外 I/O エラーを区別 |
 | C2 F-3 (ELF child) | `"child_parse_error"` | 子 ELF パース失敗を区別 |
 | C2 F-3 (Mach-O child) | `"child_parse_error"` | 子 Mach-O パース失敗を区別 |
-| C2 F-5 | `"io_error"` | Seek/ReadFull 失敗を区別 |
+| C2 F-5 | 構造化ログなし（エラー伝播のみ） | Seek/ReadFull 失敗は fmt.Errorf ラップで上位に伝播 |
 | B3 M1 | `"path_resolution_failed"` | コマンドパス解決失敗を区別 |
 | B3 L1 | 構造化ログなし（エラー伝播のみ） | DynString エラーは fmt.Errorf ラップで上位に伝播 |
 

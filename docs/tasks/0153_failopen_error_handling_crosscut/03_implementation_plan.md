@@ -559,9 +559,9 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: C2 F-5
-- [ ] Step 5-1: `HasDynamicLibDeps` の I/O エラー伝播
-- [ ] Step 5-2: Seek エラー・ReadFull エラー・ReadFull EOF テスト追加
-- [ ] Step 5-3: 呼び出し元のエラー伝播テスト（AC-10）
+- [x] Step 5-1: `HasDynamicLibDeps` の I/O エラー伝播
+- [x] Step 5-2: Seek エラー・ReadFull エラー・ReadFull EOF テスト追加
+- [x] Step 5-3: 呼び出し元のエラー伝播テスト（AC-10）
 
 ### PR-4 作成ポイント: HasDynamicLibDeps I/O error fail-closed
 - [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
