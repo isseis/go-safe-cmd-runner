@@ -412,8 +412,6 @@ Slack 送信失敗時のエラーログから webhook URL を除去する。HTTP
 
 **すべてのフォールバックは機密情報を含まない**。`RedactionFailurePlaceholder` は `"[REDACTION FAILED - OUTPUT SUPPRESSED]"` であり、元の値のいかなる部分文字列も含まない。
 
-**監査可能性の強化**: フォールバック発生時、ログレコードに `_redaction_status` 属性を追加する。この属性の値は発生した失敗シナリオを示す文字列（例: `"depth_exceeded"`, `"panic_recovered"`, `"unsupported_kind"`）であり、プレースホルダと同一のログエントリに記録される。これにより、オンコール対応者がログエントリ単体で redaction 失敗の理由を特定できる。`failureLogger` による Debug レベルの詳細ログは補助的な情報として引き続き利用可能であり、`_redaction_status` は独立した監査証跡として機能する。
-
 ### 4.3 processKindAny のフォールバック拡張
 
 現状の `processKindAny` は「3. Unsupported type: pass through」として未知の型を無加工で通過させる。本修正では、map/struct/Ptr/Interface を明示的に処理した後も捕捉されない型（Func, Chan, UnsafePointer 等）に対しては、**安全側に倒して `RedactionFailurePlaceholder` を返す**。
@@ -447,13 +445,13 @@ flowchart TD
 
 - `maxRedactionDepth`（値: 10）を map/struct の再帰処理にも適用する
 - 深度超過時は `RedactionFailurePlaceholder` を返し、それ以上の再帰を行わない
-- 深度超過は `failureLogger` に Debug レベルで記録され、かつログエントリに `_redaction_status: "depth_exceeded"` が付与される（Slack には送信されない）
+- 深度超過は `failureLogger` に Debug レベルで記録される（Slack には送信されない）
 
 ### 5.3 機密情報の残留リスク評価
 
 | 経路 | 修正前リスク | 修正後リスク | 残留リスク |
 |---|---|---|---|
-| `slog.Any` map/struct 要素 | 高（全エクスポートフィールドが漏洩） | 低（全エントリ/フィールドが redact 対象） | 深度制限超過時のプレースホルダ置換による情報損失（`_redaction_status` で説明可能） |
+| `slog.Any` map/struct 要素 | 高（全エクスポートフィールドが漏洩） | 低（全エントリ/フィールドが redact 対象） | 深度制限超過時のプレースホルダ置換による情報損失（`failureLogger` の診断情報で説明可能） |
 | `slog.Any` スライス文字列要素 | 中（RedactText 非適用） | 低（RedactText 適用） | なし |
 | Slack エラーログ | 高（webhook URL が平文） | 低（URL 除去） | URL 除去によりトラブルシューティング情報が一部欠落（AC-10 により許容） |
 | 監査ログ（LogUserGroupExecution 他） | 高（コマンド引数の機密情報が平文） | 低（境界 redact 適用） | なし |
@@ -482,7 +480,7 @@ flowchart TD
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
 
     START["processMap(key, mapValue, ctx)"] --> DEPTH{"ctx.depth >= maxRedactionDepth?"}
-    DEPTH -->|"yes"| FB1["RedactionFailurePlaceholder<br>+ _redaction_status"]
+    DEPTH -->|"yes"| FB1["RedactionFailurePlaceholder"]
     DEPTH -->|"no"| REFLECT["reflect.ValueOf(mapValue)"]
     REFLECT --> SORT["キーをソート"]
     SORT --> ITER["ソート済みキー列でイテレート"]
