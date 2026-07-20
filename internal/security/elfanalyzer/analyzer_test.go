@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -471,8 +470,8 @@ func TestStandardELFAnalyzer_SyscallLookup_StoreIOError(t *testing.T) {
 	assert.ErrorContains(t, output.Error, testFile)
 
 	logOutput := buf.String()
-	assert.True(t, strings.Contains(logOutput, "level=WARN"), "expected WARN-level log, got: %s", logOutput)
-	assert.True(t, strings.Contains(logOutput, "reason=store_io_error"), "expected reason=store_io_error in log, got: %s", logOutput)
+	assert.Contains(t, logOutput, "level=WARN", "expected WARN-level log, got: %s", logOutput)
+	assert.Contains(t, logOutput, "reason=store_io_error", "expected reason=store_io_error in log, got: %s", logOutput)
 }
 
 func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
