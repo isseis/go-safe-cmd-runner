@@ -12,5 +12,10 @@ services:
       # 認証情報の永続化（Mac ホストと共有）
       - ~/.config/gh:/home/issei/.config/gh
       - ~/.claude:/home/issei/.claude
+      # GPG 鍵の永続化（Mac ホストと共有）
+      - gnupg-data:/home/issei/.gnupg
     # コンテナを維持するためのコマンド
     command: /bin/sh -c "while sleep 1000; do :; done"
+
+volumes:
+  gnupg-data:    # トップレベルに volumes セクションを追加して宣言が必要
