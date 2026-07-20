@@ -4,6 +4,7 @@ package elfanalyzer
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -465,6 +466,8 @@ func TestStandardELFAnalyzer_SyscallLookup_StoreIOError(t *testing.T) {
 
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	assert.ErrorIs(t, output.Error, ErrSyscallStoreIOError)
+	assert.False(t, errors.Is(output.Error, ErrSyscallAnalysisHighRisk),
+		"ErrSyscallStoreIOError must be distinguishable from ErrSyscallAnalysisHighRisk")
 	assert.ErrorContains(t, output.Error, testFile)
 
 	logOutput := buf.String()
