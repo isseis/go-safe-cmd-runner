@@ -72,20 +72,20 @@
 
 #### Step 1-1: `default` 節を追加
 
-- [ ] **ファイル**: `internal/runner/base/risk/evaluator.go`
-- [ ] `applyBinaryAnalysis`（461行目付近）の `switch result.Class` に `default` 節を追加する
-- [ ] `default` 節の内容: `blockingAssessment("", "")` で生成した `risktypes.RiskAssessment` に `result.ReasonCodes` を設定し、`&blocked, nil` を返す
-- [ ] 実装コードは既存の `Uncertain` ケースと同一パターンに従う（`02_architecture.md` 3.6.2節参照）
-- [ ] 既存の 4 ケース（`Uncertain`/`HighRisk`/`Network`/`Clean`）は変更しない
+- [x] **ファイル**: `internal/runner/base/risk/evaluator.go`
+- [x] `applyBinaryAnalysis`（461行目付近）の `switch result.Class` に `default` 節を追加する
+- [x] `default` 節の内容: `blockingAssessment("", "")` で生成した `risktypes.RiskAssessment` に `result.ReasonCodes` を設定し、`&blocked, nil` を返す
+- [x] 実装コードは既存の `Uncertain` ケースと同一パターンに従う（`02_architecture.md` 3.6.2節参照）
+- [x] 既存の 4 ケース（`Uncertain`/`HighRisk`/`Network`/`Clean`）は変更しない
 
 **検証**: `make test` の全テストがパスすること。既存の AC-18 のテストは変更不要（`risktypes/types_test.go::TestBinaryAnalysisClass_ZeroValueIsUncertain` はそのまま維持）。
 
 #### Step 1-2: 未知クラスのテストを追加
 
-- [ ] **ファイル**: `internal/runner/base/risk/evaluator_test.go`
+- [x] **ファイル**: `internal/runner/base/risk/evaluator_test.go`
 - [ ] `TestApplyBinaryAnalysis_DefaultBlocksUnknownClass` テストを追加する
 - [ ] テスト内容: 未知の `BinaryAnalysisClass` 値（例: `BinaryAnalysisClass(999)`）を `Classify` が返すモックを使用し、`applyBinaryAnalysis` が `*risktypes.RiskAssessment`（non-nil）を返すことを検証
-- [ ] 正常系の 4 クラス（`Uncertain`/`Clean`/`Network`/`HighRisk`）が従来どおり動作することの確認は、既存テストで担保されているため新しいテストケースの追加は不要
+- [x] 正常系の 4 クラス（`Uncertain`/`Clean`/`Network`/`HighRisk`）が従来どおり動作することの確認は、既存テストで担保されているため新しいテストケースの追加は不要
 
 **検証**: `go test -tags test -v ./internal/runner/base/risk/` がパスすること。
 
@@ -101,7 +101,7 @@
 
 **判定理由**: 該当トリガーなし（単純な `default` 節追加と単体テストのみ）
 
-- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
