@@ -179,7 +179,7 @@
 - [ ] **ファイル**: `internal/security/elfanalyzer/analyzer_test.go`
 - [ ] `TestStandardELFAnalyzer_SyscallLookup_StoreIOError` テストを追加する（AC-01, AC-03）
 - [ ] テスト内容: `LoadSyscallAnalysis` が想定外エラー（`io.ErrUnexpectedEOF` 等）を返すモックストアを使用し、`AnalyzeNetworkSymbols` が `AnalysisError` を返し、かつ `errors.Is(err, ErrSyscallStoreIOError)` が `true` であることを検証
-- [ ] AC-03 のログレベル検証: テスト開始時に `prev := slog.Default(); defer slog.SetDefault(prev)` で既存のデフォルトロガーを退避し、`slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))` でハンドラーを設定する。テスト後に `slog.Warn` レベル以上のログが出力されたことを確認する（`bytes.Contains(buf.String(), "level=WARN")` などの TextHandler 形式のキーで検証）
+- [ ] AC-03 のログレベル検証: テスト開始時に `prev := slog.Default(); defer slog.SetDefault(prev)` で既存のデフォルトロガーを退避し、`slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))` でハンドラーを設定する。テスト後に `slog.Warn` レベル以上のログが出力されたことを確認する（`bytes.Contains(buf.String(), "level=WARN")` などの TextHandler 形式のキーで検証）。**注意: `slog.SetDefault` はグローバル状態を変更するため、このテストは `t.Parallel()` を使用しないこと。または、コンポーネントにカスタム `slog.Logger` を注入する方式を推奨する。**
 - [ ] 既存の `TestStandardELFAnalyzer_SyscallLookup_NotFound`（AC-02）と `TestStandardELFAnalyzer_SyscallLookup_HashMismatch` は変更不要（既存挙動維持を確認）
 
 **検証**: `go test -tags test -v ./internal/security/elfanalyzer/` がパスすること。
@@ -271,7 +271,7 @@
       - `DynString` 成功 + `len(needed) > 0`: 既存の BFS 処理に進む
 - [ ] 既存の `//nolint:nilerr` コメント（118行目、126行目）を削除する
 - [ ] **検証**: `grep -r 'nolint:nilerr' internal/dynlib/elfdynlib/` が空を返すこと。`make lint` が警告なしでパスすること
-- [ ] `SafeOpenFile` が返す `File` は `io.Seeker` を実装しているため、Seek の型アサーションは不要（`02_architecture.md` 9.1節 パフォーマンスの項、`internal/safefileio/safe_file.go` の `File` インタフェース定義を参照）
+- [ ] `SafeOpenFile` が返す `File` インタフェースは `io.Seeker` を埋め込んでいるため、`file.(io.Seeker)` の型アサーションは冗長である。型アサーションを削除し、`file.Seek` を直接呼び出すように簡略化する（`02_architecture.md` 9.1節 パフォーマンスの項、`internal/safefileio/safe_file.go` の `File` インタフェース定義を参照）
 
 **検証**: `go test -tags test -v ./internal/dynlib/elfdynlib/` がパスすること。
 
@@ -413,7 +413,7 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 | AC-09 | test | `internal/dynlib/machodylib/analyzer_test.go::TestHasDynamicLibDeps_ReadFullError` | `io.ReadFull` 失敗（非EOF）時に `(false, non-nil err)` が返ること |
 | AC-10 | test | `internal/verification/manager_test.go::TestHasMachODynamicLibraryDeps_ErrorPropagation`（新規追加） | `hasMachODynamicLibraryDeps` が、I/O エラーを返す `HasDynamicLibDeps` のエラーを上位に伝播し `(false, non-nil err)` を返すこと |
 | AC-11 | test | `internal/verification/manager_test.go::TestVerifyGroupFiles_PathResolutionFailure` | パス解決失敗時に `VerifyGroupFiles` がエラーを返すこと |
-| AC-12 | static | `grep 'continue' internal/verification/manager.go` — `collectVerificationFiles` 内のパス解決失敗経路に `continue` が存在しないこと（`return error` に置き換わっている）。`VerifyGroupFiles` が当該ファイルの検証をスキップするコードパスがないことをコードレビューで確認 | `collectVerificationFiles` のシグネチャに `error` が追加されているため、呼び出し元 `VerifyGroupFiles` は戻り値エラーをチェックせざるを得ず（コンパイルエラー）、fail-open の窓は物理的に存在しない。これは静的保証（コンパイラ強制）であり、`test` ではなく `static` として検証する |
+| AC-12 | static | `sed -n '/func (m \*Manager) collectVerificationFiles/,/^}/p' internal/verification/manager.go \| grep 'continue'` — `collectVerificationFiles` 内のパス解決失敗経路に `continue` が存在しないこと（`return error` に置き換わっている）。`VerifyGroupFiles` が当該ファイルの検証をスキップするコードパスがないことをコードレビューで確認 | `collectVerificationFiles` のシグネチャに `error` が追加されているため、呼び出し元 `VerifyGroupFiles` は戻り値エラーをチェックせざるを得ず（コンパイルエラー）、fail-open の窓は物理的に存在しない。これは静的保証（コンパイラ強制）であり、`test` ではなく `static` として検証する |
 | AC-13 | test | `internal/verification/manager_test.go::TestVerifyGroupFiles_NormalPathResolution`（または既存の `TestVerifyGroupFiles_*` 系の拡張） | 正常にパス解決できるコマンドのみを含むグループで `VerifyGroupFiles` が成功すること。`collectVerificationFiles` 単体ではなく `VerifyGroupFiles` の公開 API レベルで検証する |
 | AC-14 | test | `internal/verification/manager_test.go::TestHasDynamicLibraryDeps_DynStringError` | `DynString` エラー時に `(false, non-nil err)` が返ること |
 | AC-15 | test | `internal/verification/manager_test.go::TestVerifyCommandDynLibDeps_DynStringError`（新規追加） | `hasDynamicLibraryDeps` の DynString エラーが `verifyDynLibDeps` → `VerifyCommandDynLibDeps` 経由で呼び出し元にエラーとして伝播すること |
