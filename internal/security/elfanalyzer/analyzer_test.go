@@ -3,6 +3,10 @@
 package elfanalyzer
 
 import (
+	"bytes"
+	"errors"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -440,6 +444,34 @@ func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 	// Hash mismatch means the binary has changed since record time: treat as AnalysisError.
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	assert.ErrorIs(t, output.Error, ErrSyscallHashMismatch)
+}
+
+func TestStandardELFAnalyzer_SyscallLookup_StoreIOError(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	testFile := filepath.Join(tmpDir, "static.elf")
+	elfanalyzertestutil.CreateStaticELFFile(t, testFile)
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	mockStore := &mockSyscallAnalysisStore{
+		err: io.ErrUnexpectedEOF,
+	}
+
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, mockStore)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
+
+	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
+	assert.ErrorIs(t, output.Error, ErrSyscallStoreIOError)
+	assert.False(t, errors.Is(output.Error, ErrSyscallAnalysisHighRisk),
+		"ErrSyscallStoreIOError must be distinguishable from ErrSyscallAnalysisHighRisk")
+	assert.ErrorContains(t, output.Error, testFile)
+
+	logOutput := buf.String()
+	assert.Contains(t, logOutput, "level=WARN", "expected WARN-level log, got: %s", logOutput)
+	assert.Contains(t, logOutput, "reason=store_io_error", "expected reason=store_io_error in log, got: %s", logOutput)
 }
 
 func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
