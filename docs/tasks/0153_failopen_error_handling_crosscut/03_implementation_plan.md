@@ -253,20 +253,20 @@
 
 #### Step 5-2: I/O エラーのテストを追加
 
-- [ ] **ファイル**: `internal/dynlib/machodylib/analyzer_test.go`
-- [ ] `TestHasDynamicLibDeps_SeekError` テストを追加する（AC-08）: Seek に失敗するモック `safefileio.File` を使用し、`HasDynamicLibDeps` が `(false, err)` を返すことを検証
-- [ ] `TestHasDynamicLibDeps_ReadFullError` テストを追加する（AC-09）: 読み取りに失敗するモックファイル（`io.ErrUnexpectedEOF` 以外のエラーを返す `io.Reader`）を使用し、`HasDynamicLibDeps` が `(false, err)` を返すことを検証
-- [ ] `TestHasDynamicLibDeps_ReadFullEOF` テストを追加する（境界値）: `io.EOF` または `io.ErrUnexpectedEOF` で読み取りが終了した場合、`HasDynamicLibDeps` が `(false, nil)` を返すことを検証（ファイルが 4 バイトに満たない非 Mach-O の正常系）
-- [ ] モックの注入方法: `HasDynamicLibDeps` は `safefileio.FileSystem` を引数に取るため、`safefileio` の既存モックインフラを利用する
+- [x] **ファイル**: `internal/dynlib/machodylib/analyzer_test.go`
+- [x] `TestHasDynamicLibDeps_SeekError` テストを追加する（AC-08）: Seek に失敗するモック `safefileio.File` を使用し、`HasDynamicLibDeps` が `(false, err)` を返すことを検証
+- [x] `TestHasDynamicLibDeps_ReadFullError` テストを追加する（AC-09）: 読み取りに失敗するモックファイル（`io.ErrUnexpectedEOF` 以外のエラーを返す `io.Reader`）を使用し、`HasDynamicLibDeps` が `(false, err)` を返すことを検証
+- [x] `TestHasDynamicLibDeps_ReadFullEOF` テストを追加する（境界値）: `io.EOF` または `io.ErrUnexpectedEOF` で読み取りが終了した場合、`HasDynamicLibDeps` が `(false, nil)` を返すことを検証（ファイルが 4 バイトに満たない非 Mach-O の正常系）
+- [x] モックの注入方法: `HasDynamicLibDeps` は `safefileio.FileSystem` を引数に取るため、`safefileio` の既存モックインフラを利用する
 
 **検証**: `go test -tags test -v ./internal/dynlib/machodylib/` （darwin 環境）がパスすること。linux 環境では `go test -tags test -run '^$' ./internal/dynlib/machodylib/` でコンパイルが通ることを確認する。
 
 #### Step 5-3: 呼び出し元のエラー伝播テスト（AC-10）
 
-- [ ] **ファイル**: `internal/verification/manager_test.go`
-- [ ] `TestHasMachODynamicLibraryDeps_ErrorPropagation` テストを追加する（AC-10）
-- [ ] テスト内容: I/O エラーを返す `safefileio.FileSystem` モックを使用し、`hasMachODynamicLibraryDeps(path)` が `(false, non-nil err)` を返すことを検証
-- [ ] `hasMachODynamicLibraryDeps` は `machodylib.HasDynamicLibDeps(path, m.safeFS)` のラッパーであるため、I/O エラーを返すモック `safeFS` を注入した `Manager` でテストする
+- [x] **ファイル**: `internal/verification/manager_test.go`
+- [x] `TestHasMachODynamicLibraryDeps_ErrorPropagation` テストを追加する（AC-10）
+- [x] テスト内容: I/O エラーを返す `safefileio.FileSystem` モックを使用し、`hasMachODynamicLibraryDeps(path)` が `(false, non-nil err)` を返すことを検証
+- [x] `hasMachODynamicLibraryDeps` は `machodylib.HasDynamicLibDeps(path, m.safeFS)` のラッパーであるため、I/O エラーを返すモック `safeFS` を注入した `Manager` でテストする
 
 **検証**: `go test -tags test -v ./internal/verification/` がパスすること。
 
@@ -284,8 +284,8 @@
 
 - [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 6: C2 F-3 — 子依存パース失敗の fail-closed 化
 
@@ -566,8 +566,8 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 ### PR-4 作成ポイント: HasDynamicLibDeps I/O error fail-closed
 - [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 6: C2 F-3
 - [ ] Step 6-1: `internal/elfmagic` パッケージ新設
