@@ -625,6 +625,82 @@ func TestEvaluateRisk_AllowedPlanCarriesVerifiedFd(t *testing.T) {
 // TestEvaluateRisk_OpenFailureBlocks confirms the fail-closed contract: when the
 // verified binary cannot be opened for fd-bound execution, the command is denied
 // rather than executed via an unbound path.
+func TestApplyClassResult_DefaultBlocksUnknownClass(t *testing.T) {
+	class := risktypes.BinaryAnalysisClass(999)
+	result := risktypes.BinaryAnalysisResult{
+		Class:       class,
+		ReasonCodes: []risktypes.ReasonCode{"unknown_signal"},
+	}
+
+	assessment := risktypes.RiskAssessment{}
+	blocked := applyClassResult(&assessment, result)
+
+	require.NotNil(t, blocked, "unknown class must return a blocking assessment")
+	assert.True(t, blocked.Blocking, "unknown class must be Blocking")
+	assert.Equal(t, "unknown_signal", string(blocked.BlockingReason))
+	assert.Equal(t, []risktypes.ReasonCode{"unknown_signal"}, blocked.ReasonCodes)
+}
+
+func TestApplyClassResult_KnownClassesUnchanged(t *testing.T) {
+	tests := []struct {
+		name         string
+		class        risktypes.BinaryAnalysisClass
+		reasonCodes  []risktypes.ReasonCode
+		wantBlocking bool
+		wantLevel    runnertypes.RiskLevel
+		wantReason   risktypes.ReasonCode
+	}{
+		{
+			name:         "Uncertain",
+			class:        risktypes.BinaryAnalysisUncertain,
+			reasonCodes:  []risktypes.ReasonCode{risktypes.ReasonAnalysisDisabled},
+			wantBlocking: true,
+			wantReason:   risktypes.ReasonAnalysisDisabled,
+		},
+		{
+			name:         "Clean",
+			class:        risktypes.BinaryAnalysisClean,
+			wantBlocking: false,
+		},
+		{
+			name:        "Network",
+			class:       risktypes.BinaryAnalysisNetwork,
+			reasonCodes: []risktypes.ReasonCode{risktypes.ReasonBinaryAnalysisNetwork},
+			wantLevel:   runnertypes.RiskLevelMedium,
+		},
+		{
+			name:        "HighRisk",
+			class:       risktypes.BinaryAnalysisHighRisk,
+			reasonCodes: []risktypes.ReasonCode{risktypes.ReasonBinaryAnalysisDynamicLoad},
+			wantLevel:   runnertypes.RiskLevelHigh,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := risktypes.BinaryAnalysisResult{
+				Class:       tt.class,
+				ReasonCodes: tt.reasonCodes,
+			}
+			assessment := risktypes.RiskAssessment{}
+			blocked := applyClassResult(&assessment, result)
+
+			if tt.wantBlocking {
+				require.NotNil(t, blocked)
+				assert.True(t, blocked.Blocking)
+				if tt.wantReason != "" {
+					assert.Equal(t, tt.wantReason, blocked.BlockingReason)
+				}
+			} else {
+				assert.Nil(t, blocked)
+			}
+			if tt.wantLevel != 0 {
+				assert.Equal(t, tt.wantLevel, assessment.Level)
+			}
+		})
+	}
+}
+
 func TestEvaluateRisk_OpenFailureBlocks(t *testing.T) {
 	ev := newVerifiedEvaluator().(*StandardEvaluator)
 	openErr := errors.New("open failed")

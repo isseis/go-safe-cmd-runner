@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
-| Created | 2026-07-19 |
-| Review date | - |
-| Reviewer | - |
+| Status | `approved` |
+| Created | 2026-07-20 |
+| Review date | 2026-07-20 |
+| Reviewer | isseis |
 | Comments | - |
 
 ## 関連ドキュメント
@@ -72,22 +72,39 @@
 
 #### Step 1-1: `default` 節を追加
 
-- [ ] **ファイル**: `internal/runner/base/risk/evaluator.go`
-- [ ] `applyBinaryAnalysis`（461行目付近）の `switch result.Class` に `default` 節を追加する
-- [ ] `default` 節の内容: `blockingAssessment("", "")` で生成した `risktypes.RiskAssessment` に `result.ReasonCodes` を設定し、`&blocked, nil` を返す
-- [ ] 実装コードは既存の `Uncertain` ケースと同一パターンに従う（`02_architecture.md` 3.6.2節参照）
-- [ ] 既存の 4 ケース（`Uncertain`/`HighRisk`/`Network`/`Clean`）は変更しない
+- [x] **ファイル**: `internal/runner/base/risk/evaluator.go`
+- [x] `applyBinaryAnalysis`（461行目付近）の `switch result.Class` に `default` 節を追加する
+- [x] `default` 節の内容: `blockingAssessment("", "")` で生成した `risktypes.RiskAssessment` に `result.ReasonCodes` を設定し、`&blocked, nil` を返す
+- [x] 実装コードは既存の `Uncertain` ケースと同一パターンに従う（`02_architecture.md` 3.6.2節参照）
+- [x] 既存の 4 ケース（`Uncertain`/`HighRisk`/`Network`/`Clean`）は変更しない
 
 **検証**: `make test` の全テストがパスすること。既存の AC-18 のテストは変更不要（`risktypes/types_test.go::TestBinaryAnalysisClass_ZeroValueIsUncertain` はそのまま維持）。
 
 #### Step 1-2: 未知クラスのテストを追加
 
-- [ ] **ファイル**: `internal/runner/base/risk/evaluator_test.go`
-- [ ] `TestApplyBinaryAnalysis_DefaultBlocksUnknownClass` テストを追加する
-- [ ] テスト内容: 未知の `BinaryAnalysisClass` 値（例: `BinaryAnalysisClass(999)`）を `Classify` が返すモックを使用し、`applyBinaryAnalysis` が `*risktypes.RiskAssessment`（non-nil）を返すことを検証
-- [ ] 正常系の 4 クラス（`Uncertain`/`Clean`/`Network`/`HighRisk`）が従来どおり動作することの確認は、既存テストで担保されているため新しいテストケースの追加は不要
+- [x] **ファイル**: `internal/runner/base/risk/evaluator_test.go`
+- [x] `TestApplyClassResult_DefaultBlocksUnknownClass` テストを追加する（実装では switch ロジックを `applyClassResult` に分離し、この関数を直接テストしている。モック `Classify` は不要）
+- [x] テスト内容: 未知の `BinaryAnalysisClass` 値（例: `BinaryAnalysisClass(999)`）を `applyClassResult` に渡し、`*risktypes.RiskAssessment`（non-nil Blocking）を返すことを検証
+- [x] 正常系の 4 クラス（`Uncertain`/`Clean`/`Network`/`HighRisk`）が従来どおり動作することの確認は、`TestApplyClassResult_KnownClassesUnchanged` で担保
 
 **検証**: `go test -tags test -v ./internal/runner/base/risk/` がパスすること。
+
+### PR-1 作成ポイント: risk evaluator default clause
+
+**対象ステップ**: 1-1 / 1-2
+
+**推奨タイトル**: `feat(0153): add default clause to applyBinaryAnalysis for fail-closed`
+
+**レビュー観点**: `default` 節が既存の 4 クラス（Uncertain/HighRisk/Network/Clean）に影響していないこと / 未知クラスが Blocking を返すこと / `blockingAssessment("", "")` の使用が既存の `Uncertain` ケースと一貫していること
+
+**実装モデル要件**: standard
+
+**判定理由**: 該当トリガーなし（単純な `default` 節追加と単体テストのみ）
+
+- [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [x] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: B3 L1 — `hasDynamicLibraryDeps` の fail-closed 化
 
@@ -154,6 +171,23 @@
 
 **検証**: `go test -tags test -v ./internal/verification/` がパスすること。
 
+### PR-2 作成ポイント: verification error handling fail-closed
+
+**対象ステップ**: 2-1 / 2-2 / 2-3 / 2-4 / 3-1 / 3-2
+
+**推奨タイトル**: `feat(0153): fail-closed error handling in verification manager`
+
+**レビュー観点**: `hasDynamicLibraryDeps` の DynString エラーと `len(needed)==0` が正しく分離されていること / `collectVerificationFiles` のシグネチャ変更が唯一の呼び出し元 `VerifyGroupFiles` に正しく伝播していること / dry-run モードでもエラーが伝播し実行が中断されること / 正常系（パス解決成功、DT_NEEDED なし）にリグレッションがないこと
+
+**実装モデル要件**: standard
+
+**判定理由**: 該当トリガーなし（条件分岐の分離、非公開関数のシグネチャ変更、単体テストのみ。アプローチは確立しており競合する設計選択肢なし）
+
+- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 4: C1 F-1 — `lookupSyscallAnalysis` の fail-closed 化
 
 #### Step 4-1: 新規 sentinel error の追加
@@ -183,6 +217,23 @@
 - [ ] 既存の `TestStandardELFAnalyzer_SyscallLookup_NotFound`（AC-02）と `TestStandardELFAnalyzer_SyscallLookup_HashMismatch` は変更不要（既存挙動維持を確認）
 
 **検証**: `go test -tags test -v ./internal/security/elfanalyzer/` がパスすること。
+
+### PR-3 作成ポイント: syscall store I/O error fail-closed
+
+**対象ステップ**: 4-1 / 4-2 / 4-3
+
+**推奨タイトル**: `feat(0153): fail-closed default case in lookupSyscallAnalysis`
+
+**レビュー観点**: 新規 `ErrSyscallStoreIOError` が既存の `ErrSyscallAnalysisHighRisk` および `ErrSyscallHashMismatch` と正しく区別されていること / `default` 節が `StaticBinary` ではなく `AnalysisError` を返すこと / ログレベルが `slog.Debug` から `slog.Warn` に格上げされ `"reason": "store_io_error"` が付与されていること
+
+**実装モデル要件**: standard
+
+**判定理由**: 該当トリガーなし（新規 sentinel error の追加、`default` 節の修正、単体テストのみ。設計判断はアーキテクチャ設計書 §3.1.2 で確定済み）
+
+- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: C2 F-5 — `HasDynamicLibDeps` の fail-closed 化
 
@@ -217,6 +268,23 @@
 - [ ] `hasMachODynamicLibraryDeps` は `machodylib.HasDynamicLibDeps(path, m.safeFS)` のラッパーであるため、I/O エラーを返すモック `safeFS` を注入した `Manager` でテストする
 
 **検証**: `go test -tags test -v ./internal/verification/` がパスすること。
+
+### PR-4 作成ポイント: HasDynamicLibDeps I/O error fail-closed
+
+**対象ステップ**: 5-1 / 5-2 / 5-3
+
+**推奨タイトル**: `feat(0153): fail-closed I/O error handling in HasDynamicLibDeps`
+
+**レビュー観点**: `Seek` 失敗と `io.ReadFull` 失敗が適切にエラー伝播されていること / `io.EOF` および `io.ErrUnexpectedEOF` が正常系（非 Mach-O）として扱われていること / 呼び出し元 `hasMachODynamicLibraryDeps` を通してエラーが正しく伝播すること / darwin ビルドタグ付きテストが linux 環境でコンパイル確認可能であること
+
+**実装モデル要件**: standard
+
+**判定理由**: 該当トリガーなし（I/O エラーのエラー伝播追加と単体テストのみ）
+
+- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 6: C2 F-3 — 子依存パース失敗の fail-closed 化
 
@@ -331,6 +399,23 @@
 
 **検証**: `make test` の全テストがパスすること。
 
+### PR-5 作成ポイント: dynlib parse failure fail-closed with shared ELF magic
+
+**対象ステップ**: 6-1 / 6-2 / 6-3 / 6-4 / 6-5 / 6-6 / 6-7 / 6-8 / 6-9
+
+**推奨タイトル**: `feat(0153): fail-closed dynlib parse failure with internal/elfmagic`
+
+**レビュー観点**: `internal/elfmagic` パッケージが他パッケージへの依存を持たない leaf ユーティリティであること / `elfanalyzer` 側の `isELFMagic` 等の削除が既存の `AnalyzeNetworkSymbols` の挙動に影響しないこと / ELF `Analyze` のトップレベル修正でマジック不一致（非ELF）が正常系として `(nil, nil)` を返すこと / BFS traversal 中の子依存パース失敗が解析全体の失敗として伝播すること
+
+**実装モデル要件**: standard
+
+**判定理由**: 該当トリガーなし。BFS traversal の blast radius はアーキテクチャ設計書 §3.2.3 で分析・緩和策（エラーメッセージへの子ライブラリパス明示）が策定済み。コード変更自体は error propagation と ELF magic check の範囲に留まり、並行性制御・リカバリフロー・状態機械のような実装複雑性を伴わない
+
+- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ---
 
 ## 3. 実装順序とマイルストーン
@@ -340,13 +425,22 @@
 | マイルストーン | 成果物 | 完了基準 |
 |---|---|---|
 | M1: A5 Low-3 | Phase 1 実装 + テスト | `go test -tags test -v ./internal/runner/base/risk/` パス |
-| M2: B3 L1 | Phase 2 実装 + テスト | `go test -tags test -v ./internal/verification/` パス |
-| M3: B3 M1 | Phase 3 実装 + テスト | `go test -tags test -v ./internal/verification/` パス |
-| M4: C1 F-1 | Phase 4 実装 + テスト | `go test -tags test -v ./internal/security/elfanalyzer/` パス |
-| M5: C2 F-5 | Phase 5 実装 + テスト | `go test -tags test ./internal/dynlib/machodylib/` パス（darwin） |
-| M6: C2 F-3 | Phase 6 実装 + テスト | `make test` 全件パス |
+| M2: B3 L1 + M1 | Phase 2 + Phase 3 実装 + テスト | `go test -tags test -v ./internal/verification/` パス |
+| M3: C1 F-1 | Phase 4 実装 + テスト | `go test -tags test -v ./internal/security/elfanalyzer/` パス |
+| M4: C2 F-5 | Phase 5 実装 + テスト | `go test -tags test ./internal/dynlib/machodylib/` パス（darwin） |
+| M5: C2 F-3 | Phase 6 実装 + テスト | `make test` 全件パス |
 
-### 3.2 推奨実装順序
+### 3.2 PR 構成
+
+| PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | 1-1 / 1-2 | `applyBinaryAnalysis` の `switch` に `default` 節を追加し未知クラスを Blocking 化 | standard |
+| PR-2 | 2-1 / 2-2 / 2-3 / 2-4 / 3-1 / 3-2 | `hasDynamicLibraryDeps` の DynString エラー分離、`collectVerificationFiles` のシグネチャ変更とエラー伝播 | standard |
+| PR-3 | 4-1 / 4-2 / 4-3 | `lookupSyscallAnalysis` の `default` 節を fail-closed 化、新規 sentinel `ErrSyscallStoreIOError` 追加 | standard |
+| PR-4 | 5-1 / 5-2 / 5-3 | `HasDynamicLibDeps` の `Seek`/`io.ReadFull` エラーを fail-closed 化 | standard |
+| PR-5 | 6-1 / 6-2 / 6-3 / 6-4 / 6-5 / 6-6 / 6-7 / 6-8 / 6-9 | `internal/elfmagic` 新設、`elfanalyzer` リファクタリング、ELF/Mach-O 子依存パース失敗の fail-closed 化 | standard |
+
+### 3.3 推奨実装順序
 
 Phase 1（A5 Low-3）から着手し、変更量・リスクの小さい順に進める。Phase 6（C2 F-3）を最後にすることで、Phase 4 の `standard_analyzer.go` 変更を先に確定させる。
 
@@ -426,14 +520,26 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 ## 6. 実装チェックリスト
 
 ### Phase 1: A5 Low-3
-- [ ] Step 1-1: `default` 節を追加
-- [ ] Step 1-2: 未知クラスのテストを追加
+- [x] Step 1-1: `default` 節を追加
+- [x] Step 1-2: 未知クラスのテストを追加
+
+### PR-1 作成ポイント: risk evaluator default clause
+- [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [x] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: B3 L1
 - [ ] Step 2-1: `hasDynamicLibraryDeps` の DynString エラー分離
 - [ ] Step 2-2: DynString エラーのテスト追加
 - [ ] Step 2-3: 呼び出し元を通したエラー伝播のテスト（AC-15）
 - [ ] Step 2-4: dry-run モードのエラー伝播テスト
+
+### PR-2 作成ポイント: verification error handling fail-closed
+- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: B3 M1
 - [ ] Step 3-1: `collectVerificationFiles` シグネチャ変更と呼び出し元修正
@@ -445,10 +551,22 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 - [ ] Step 4-2: `default` 節の修正
 - [ ] Step 4-3: 想定外エラーテスト追加
 
+### PR-3 作成ポイント: syscall store I/O error fail-closed
+- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 5: C2 F-5
 - [ ] Step 5-1: `HasDynamicLibDeps` の I/O エラー伝播
 - [ ] Step 5-2: Seek エラー・ReadFull エラー・ReadFull EOF テスト追加
 - [ ] Step 5-3: 呼び出し元のエラー伝播テスト（AC-10）
+
+### PR-4 作成ポイント: HasDynamicLibDeps I/O error fail-closed
+- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 6: C2 F-3
 - [ ] Step 6-1: `internal/elfmagic` パッケージ新設
@@ -460,6 +578,12 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 - [ ] Step 6-7: Mach-O 子依存パース失敗の修正
 - [ ] Step 6-8: Mach-O 子依存パース失敗テスト追加
 - [ ] Step 6-9: 統合テスト（正常系リグレッション確認）
+
+### PR-5 作成ポイント: dynlib parse failure fail-closed with shared ELF magic
+- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### 全体
 - [ ] `make fmt` 実行
@@ -476,6 +600,7 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 | リスク | 影響度 | 緩和策 |
 |---|---|---|
 | Phase 4 と Phase 6 のファイル競合（`standard_analyzer.go`） | 中 | Phase 4 を先に完了させる。並行実装時はマージ後の解決を明示的に行う |
+| PR-2 と PR-4 のファイル競合（`verification/manager_test.go`） | 低 | 両 PR ともテスト関数の追加であり、異なる位置への追加のためマージ競合の可能性は低い。並行実装時は念のため確認する |
 | C2 F-3 BFS traversal の blast radius（1つの破壊ライブラリで全依存記録失敗） | 高 | エラーメッセージに失敗した子ライブラリのパスを明示する（`02_architecture.md` 3.2.3節）。デプロイ前に修正後バイナリで実際の record をテストする |
 | B3 M1 のシグネチャ変更による呼び出し元への影響漏れ | 低 | `collectVerificationFiles` は非公開関数であり、呼び出し元は `VerifyGroupFiles` 内の 1 箇所のみ。コンパイルエラーで捕捉可能 |
 | darwin ビルドタグ付きテスト（Mach-O 系）の CI カバレッジ | 中 | テストは `darwin` ビルドタグを付与。linux CI ではコンパイル確認のみ（`-run '^$'`）。実動作確認は macos ランナーで行う |

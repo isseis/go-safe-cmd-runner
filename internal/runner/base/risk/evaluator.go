@@ -458,6 +458,14 @@ func (e *StandardEvaluator) applyBinaryAnalysis(a *risktypes.RiskAssessment, cmd
 	if err != nil {
 		return nil, err
 	}
+	return applyClassResult(a, result), nil
+}
+
+// applyClassResult maps a BinaryAnalysisResult to a RiskAssessment update. An
+// unknown class is treated as fail-closed (Blocking), mirroring the Uncertain
+// case. Known classes: Uncertain → Blocking, HighRisk/Network → elevate level,
+// Clean → no contribution.
+func applyClassResult(a *risktypes.RiskAssessment, result risktypes.BinaryAnalysisResult) *risktypes.RiskAssessment {
 	switch result.Class {
 	case risktypes.BinaryAnalysisUncertain:
 		blocked := blockingAssessment("", "")
@@ -465,7 +473,7 @@ func (e *StandardEvaluator) applyBinaryAnalysis(a *risktypes.RiskAssessment, cmd
 		if len(result.ReasonCodes) > 0 {
 			blocked.BlockingReason = result.ReasonCodes[0]
 		}
-		return &blocked, nil
+		return &blocked
 	case risktypes.BinaryAnalysisHighRisk:
 		a.Level = max(a.Level, runnertypes.RiskLevelHigh)
 		a.ReasonCodes = append(a.ReasonCodes, result.ReasonCodes...)
@@ -474,8 +482,15 @@ func (e *StandardEvaluator) applyBinaryAnalysis(a *risktypes.RiskAssessment, cmd
 		a.ReasonCodes = append(a.ReasonCodes, result.ReasonCodes...)
 	case risktypes.BinaryAnalysisClean:
 		// No contribution.
+	default:
+		blocked := blockingAssessment("", "")
+		blocked.ReasonCodes = result.ReasonCodes
+		if len(result.ReasonCodes) > 0 {
+			blocked.BlockingReason = result.ReasonCodes[0]
+		}
+		return &blocked
 	}
-	return nil, nil
+	return nil
 }
 
 // networkTypeString renders a NetworkOperationType for the audit NetworkType field.
