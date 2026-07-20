@@ -526,8 +526,8 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 ### PR-1 作成ポイント: risk evaluator default clause
 - [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: B3 L1
 - [ ] Step 2-1: `hasDynamicLibraryDeps` の DynString エラー分離
