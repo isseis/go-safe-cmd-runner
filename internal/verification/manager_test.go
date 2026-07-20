@@ -670,7 +670,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 		runtimeGroup := createRuntimeGroup([]string{"file1.txt", "file2.txt", "file3.txt"})
 
 		// Collect files
-		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
+		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
+		require.NoError(t, err)
 
 		// Should return a map with the same files
 		assert.Len(t, collectedFiles, 3)
@@ -689,7 +690,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 		runtimeGroup := createRuntimeGroup([]string{})
 
 		// Collect files
-		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
+		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
+		require.NoError(t, err)
 
 		// Should return empty map
 		assert.Empty(t, collectedFiles)
@@ -702,7 +704,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 		require.NoError(t, err)
 
 		// Collect files with nil input
-		collectedFiles := manager.collectVerificationFiles(nil)
+		collectedFiles, err := manager.collectVerificationFiles(nil)
+		require.NoError(t, err)
 
 		// Should return empty map
 		assert.Empty(t, collectedFiles)
@@ -718,7 +721,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 		runtimeGroup := createRuntimeGroup([]string{"file1.txt", "file2.txt", "file1.txt", "file3.txt", "file2.txt"})
 
 		// Collect files
-		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
+		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
+		require.NoError(t, err)
 
 		// Should automatically remove duplicates
 		assert.Len(t, collectedFiles, 3)
@@ -752,7 +756,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 		}
 
 		// Collect files (should use pre-expanded command)
-		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
+		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
+		require.NoError(t, err)
 
 		// Should resolve to the actual command path
 		assert.Len(t, collectedFiles, 1)
@@ -772,11 +777,10 @@ func TestCollectVerificationFiles(t *testing.T) {
 			},
 		}
 
-		// Collect files (should skip command with expansion error)
-		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
-
-		// Should return empty (command skipped due to expansion error)
-		assert.Empty(t, collectedFiles)
+		// Collect files: unresolvable command path now returns error (fail-closed)
+		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
+		assert.Error(t, err, "unresolvable command should return error (fail-closed)")
+		assert.Nil(t, collectedFiles)
 	})
 
 	t.Run("skip_command_with_resolution_error", func(t *testing.T) {
@@ -794,11 +798,10 @@ func TestCollectVerificationFiles(t *testing.T) {
 			},
 		}
 
-		// Collect files (should skip command with resolution error)
-		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
-
-		// Should return empty (command skipped due to resolution error)
-		assert.Empty(t, collectedFiles)
+		// Collect files should fail: path resolution errors are fail-closed
+		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
+		assert.Error(t, err, "path resolution failure should return error (fail-closed)")
+		assert.Nil(t, collectedFiles, "fileSet should be nil on error")
 	})
 }
 
@@ -1750,7 +1753,7 @@ func TestVerify_FutureSchemaVersion(t *testing.T) {
 // schema_version < CurrentSchemaVersion.
 // Old records predate NetworkSymbolAnalysis (schema_version 2); Store.Load
 // rejects them with SchemaVersionMismatchError before hash comparison, preventing execution.
-// This ensures AC-4: runners built against newer schema cannot silently execute
+// Old records predate NetworkSymbolAnalysis.
 // commands whose records were written by an older version.
 func TestVerifyGroupFiles_OldSchema_BlocksExecution(t *testing.T) {
 	hashDir := tu.SafeTempDir(t)
@@ -1874,7 +1877,7 @@ func buildCorruptDynamicELF(t *testing.T, dir, fileName string) string {
 }
 
 // TestHasDynamicLibraryDeps_DynStringError verifies that a corrupted ELF
-// dynamic section causes hasDynamicLibraryDeps to return (false, error) (AC-14).
+// dynamic section causes hasDynamicLibraryDeps to return (false, error).
 func TestHasDynamicLibraryDeps_DynStringError(t *testing.T) {
 	hashDir := tu.SafeTempDir(t)
 	tmpDir := tu.SafeTempDir(t)
@@ -1891,7 +1894,7 @@ func TestHasDynamicLibraryDeps_DynStringError(t *testing.T) {
 }
 
 // TestHasDynamicLibraryDeps_DynamicELF verifies that a dynamically linked ELF
-// returns (true, nil), confirming existing behavior is preserved (AC-16).
+// returns (true, nil), confirming existing behavior is preserved.
 func TestHasDynamicLibraryDeps_DynamicELF(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("ELF test requires Linux")
@@ -1907,7 +1910,7 @@ func TestHasDynamicLibraryDeps_DynamicELF(t *testing.T) {
 }
 
 // TestHasDynamicLibraryDeps_NoDeps verifies hasDynamicLibraryDeps returns (false, nil)
-// for a non-ELF file (AC-16).
+// for a non-ELF file.
 func TestHasDynamicLibraryDeps_NoDeps(t *testing.T) {
 	hashDir := tu.SafeTempDir(t)
 	tmpDir := tu.SafeTempDir(t)
@@ -1924,7 +1927,7 @@ func TestHasDynamicLibraryDeps_NoDeps(t *testing.T) {
 
 // TestVerifyCommandDynLibDeps_DynStringError verifies that a DynString error
 // propagates through the full caller chain (hasDynamicLibraryDeps →
-// verifyDynLibDeps → VerifyCommandDynLibDeps) (AC-15).
+// verifyDynLibDeps → VerifyCommandDynLibDeps).
 func TestVerifyCommandDynLibDeps_DynStringError(t *testing.T) {
 	hashDir := tu.SafeTempDir(t)
 	tmpDir := tu.SafeTempDir(t)

@@ -193,7 +193,15 @@ func (m *Manager) VerifyGroupFiles(input *GroupVerificationInput) (*Result, erro
 	}
 
 	// Collect all files to verify (explicit files + command files)
-	allFiles := m.collectVerificationFiles(input)
+	allFiles, err := m.collectVerificationFiles(input)
+	if err != nil {
+		groupName := input.Name
+		return nil, &Error{
+			Op:    "group",
+			Group: groupName,
+			Err:   fmt.Errorf("failed to collect verification files: %w", err),
+		}
+	}
 
 	result := &Result{
 		TotalFiles:    len(allFiles),
@@ -247,9 +255,12 @@ func (m *Manager) VerifyGroupFiles(input *GroupVerificationInput) (*Result, erro
 }
 
 // collectVerificationFiles collects all files to verify for a group.
-func (m *Manager) collectVerificationFiles(input *GroupVerificationInput) map[string]struct{} {
+// Returns the file set and nil error on success.
+// Path resolution failures are treated as fail-closed: the entire group
+// verification is aborted rather than silently skipping the command.
+func (m *Manager) collectVerificationFiles(input *GroupVerificationInput) (map[string]struct{}, error) {
 	if input == nil {
-		return make(map[string]struct{})
+		return make(map[string]struct{}), nil
 	}
 
 	// Use map to automatically eliminate duplicates
@@ -269,14 +280,15 @@ func (m *Manager) collectVerificationFiles(input *GroupVerificationInput) map[st
 				slog.Warn("Failed to resolve command path",
 					"group", input.Name,
 					"command", command.ExpandedCmd,
+					"reason", "path_resolution_failed",
 					"error", err.Error())
-				continue
+				return nil, fmt.Errorf("failed to resolve command path for '%s': %w", command.ExpandedCmd, err)
 			}
 			fileSet[resolvedPath] = struct{}{}
 		}
 	}
 
-	return fileSet
+	return fileSet, nil
 }
 
 // ResolvePath resolves a command to its full path with security validation
