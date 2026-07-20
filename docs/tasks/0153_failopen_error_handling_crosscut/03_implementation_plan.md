@@ -83,9 +83,9 @@
 #### Step 1-2: 未知クラスのテストを追加
 
 - [x] **ファイル**: `internal/runner/base/risk/evaluator_test.go`
-- [ ] `TestApplyBinaryAnalysis_DefaultBlocksUnknownClass` テストを追加する
-- [ ] テスト内容: 未知の `BinaryAnalysisClass` 値（例: `BinaryAnalysisClass(999)`）を `Classify` が返すモックを使用し、`applyBinaryAnalysis` が `*risktypes.RiskAssessment`（non-nil）を返すことを検証
-- [x] 正常系の 4 クラス（`Uncertain`/`Clean`/`Network`/`HighRisk`）が従来どおり動作することの確認は、既存テストで担保されているため新しいテストケースの追加は不要
+- [x] `TestApplyClassResult_DefaultBlocksUnknownClass` テストを追加する（実装では switch ロジックを `applyClassResult` に分離し、この関数を直接テストしている。モック `Classify` は不要）
+- [x] テスト内容: 未知の `BinaryAnalysisClass` 値（例: `BinaryAnalysisClass(999)`）を `applyClassResult` に渡し、`*risktypes.RiskAssessment`（non-nil Blocking）を返すことを検証
+- [x] 正常系の 4 クラス（`Uncertain`/`Clean`/`Network`/`HighRisk`）が従来どおり動作することの確認は、`TestApplyClassResult_KnownClassesUnchanged` で担保
 
 **検証**: `go test -tags test -v ./internal/runner/base/risk/` がパスすること。
 
