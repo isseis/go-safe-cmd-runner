@@ -555,8 +555,8 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 ### PR-3 作成ポイント: syscall store I/O error fail-closed
 - [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: C2 F-5
 - [x] Step 5-1: `HasDynamicLibDeps` の I/O エラー伝播
@@ -564,8 +564,8 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 - [x] Step 5-3: 呼び出し元のエラー伝播テスト（AC-10）
 
 ### PR-4 作成ポイント: HasDynamicLibDeps I/O error fail-closed
-- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
