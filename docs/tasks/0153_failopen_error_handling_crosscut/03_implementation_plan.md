@@ -426,8 +426,8 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 ## 6. 実装チェックリスト
 
 ### Phase 1: A5 Low-3
-- [ ] Step 1-1: `default` 節を追加
-- [ ] Step 1-2: 未知クラスのテストを追加
+- [x] Step 1-1: `default` 節を追加
+- [x] Step 1-2: 未知クラスのテストを追加
 
 ### Phase 2: B3 L1
 - [ ] Step 2-1: `hasDynamicLibraryDeps` の DynString エラー分離
