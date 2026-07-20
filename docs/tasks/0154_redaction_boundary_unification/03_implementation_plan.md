@@ -126,7 +126,7 @@
    - タグなし → Go のフィールド名をそのままキーに使用
    - 各フィールド値を `redactLogAttributeWithContext` で再帰 redact（`nextCtx`: depth+1）
 5. 結果を `map[string]any` に構築し、`slog.AnyValue` でラップして返す
-6. すべてのフィールドが unexported の場合、出力 map が空になる。空 map をそのまま返す（情報が欠落するが、unexported フィールドはそもそもログ出力対象外のため許容）
+6. すべてのフィールドが unexported の場合、出力 map が空になるが、空 map を返すと機密情報が含まれないことが自明でなくなるため、安全性を優先して `RedactionFailurePlaceholder` を返す（アーキテクチャ §3.2.3 に従い、unexported-only struct も循環参照と同様にプレースホルダへフォールバックする）
 7. 全体を `defer/recover` で囲み、panic 時は既存の二段階ログパターンに従って出力し、`RedactionFailurePlaceholder` を返す
 
 #### 2.1.4 processSlice の非 LogValuer 要素再帰 redaction（F-002）
@@ -180,8 +180,8 @@
 - [ ] `TestRedactingHandler_StructRedaction` テストを追加（AC-04a, AC-04b, AC-05）
   - サブテスト `SensitiveFieldRedaction`（AC-04a）: `api_key` 相当の文字列フィールドを持つ struct → 値がマスクされることを検証
   - サブテスト `JsonTagFieldNaming`（AC-04a）: `json:"field_name"` タグ付きフィールド → タグ名がキーとして使用されることを検証
-  - サブテスト `FallbackStructUnexportedOnly`（AC-04b）: unexported フィールドのみの struct → 空 map にフォールバックし、機密情報が漏洩しないことを検証
-  - サブテスト `CircularReference`（AC-04b 補足）: 自己参照ポインタフィールド（`*T` が自身の型を指す）を持つ struct → パニックせず安全な値（空 map またはプレースホルダ）を返すことを検証
+  - サブテスト `FallbackStructUnexportedOnly`（AC-04b）: unexported フィールドのみの struct → `RedactionFailurePlaceholder` にフォールバックし、機密情報が漏洩しないことを検証
+  - サブテスト `CircularReference`（AC-04b 補足）: 自己参照ポインタフィールド（`*T` が自身の型を指す）を持つ struct → パニックせず `RedactionFailurePlaceholder` を返すことを検証
   - サブテスト `DepthLimit`（深度制限）: `maxRedactionDepth` を超える struct 処理 → `RedactionFailurePlaceholder` が返ることを検証
   - サブテスト `PanicRecovery`（panic 回復）: struct の reflect 操作に失敗するケース → `RedactionFailurePlaceholder` が返ることを検証
   - サブテスト `NoSensitiveContent`（AC-05）: 非機密 struct → 内容が保持されることを検証
@@ -481,7 +481,7 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 
 - **検証方法**: `test`
 - **テスト場所**: `internal/redaction/redactor_test.go::TestRedactingHandler_StructRedaction/FallbackStructUnexportedOnly`
-- **検証内容**: unexported フィールドのみの struct で機密情報が漏洩せず、空 map にフォールバックすることを検証
+- **検証内容**: unexported フィールドのみの struct で機密情報が漏洩せず、`RedactionFailurePlaceholder` にフォールバックすることを検証
 
 ### 5.6 AC-05: 非機密 map/struct の内容保持
 
@@ -614,6 +614,8 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 - [ ] `TestRedactingHandler_StructRedaction` テストを追加（AC-04a, AC-04b, AC-05）
 - [ ] `TestRedactingHandler_SliceStringElementRedaction` テストを追加（AC-06, AC-07, AC-08）
 - [ ] 深度制限・panic recovery のサブテストを追加
+- [ ] ベンチマークテスト `BenchmarkHandle_WithLargeMap` を追加（1,000 エントリの `map[string]string`。`02_architecture.md` §9.3）
+- [ ] ベンチマークテスト `BenchmarkHandle_WithWideStruct` を追加（50 フィールドの struct。`02_architecture.md` §9.3）
 - [ ] 既存テストの回帰確認（`make test` を `internal/redaction/` で実行）
 
 ### 7.2 フェーズ 2 チェックリスト
@@ -649,6 +651,7 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 - [ ] `isSensitiveEnvVar` の既存の正規表現マッチングで元の名前（大文字化前）も試行するよう修正
 - [ ] `TestSanitizeEnvironmentVariables_ValueBasedDetection` テストを追加（AC-20, AC-21）
 - [ ] `TestValidator_isSensitiveEnvVar_CustomLowercasePattern` テストを追加（AC-22）
+- [ ] ベンチマークテスト `BenchmarkSanitizeEnvironmentVariables_WithLargeEnv` を追加（200 エントリ。`02_architecture.md` §9.3）
 - [ ] 既存テストの回帰確認（`make test` を `internal/runner/base/security/` で実行）
 
 ### 7.5 最終検証チェックリスト
@@ -664,7 +667,7 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 |---|---|---|
 | Phase 1 の `processKindAny` catch-all 変更により既存ログ出力の情報が欠落する | 低 | コードベース監査により Func/Chan/UnsafePointer 型の `slog.Any` 呼び出しは存在しないことを確認済み（`02_architecture.md` §4.3）。また、int/bool 等のプリミティブ型は `slog.AnyValue` により適切な Kind に解決されるため catch-all に到達しない |
 | `detail_` プレフィックス変更が監視クエリを破壊する | 中 | リリースノートに明示的に記載。非本番環境での事前検証を推奨（`02_architecture.md` §9.4 参照）。`LogSecurityEvent` の外部呼び出し元は存在しないため、コードベース内の破壊的影響はない |
-| 再帰 redaction のパフォーマンス劣化 | 低 | `maxRedactionDepth=10` が深度を制限。ログ出力はコマンド実行のクリティカルパスではない。ベンチマークテストは本計画では対象外（将来タスク） |
+| 再帰 redaction のパフォーマンス劣化 | 低 | `maxRedactionDepth=10` が深度を制限。ログ出力はコマンド実行のクリティカルパスではない。ベンチマークテスト（§7.1、§7.4）により現状からの増加率を計測する |
 
 ## 9. 次のステップ
 
