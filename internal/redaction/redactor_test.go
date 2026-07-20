@@ -1839,6 +1839,10 @@ func TestRedactingHandler_MapRedaction(t *testing.T) {
 		output := buf.String()
 		// At depth limit, should return placeholder
 		assert.Contains(t, output, "[REDACTION FAILED - OUTPUT SUPPRESSED]")
+		// The depth-limited leaf value must not leak anywhere in the output, even
+		// though the placeholder is present (regression guard: placeholder emitted
+		// but the suppressed value still leaks elsewhere).
+		assert.NotContains(t, output, "this should be redacted due to depth limit")
 	})
 
 	t.Run("NoSensitiveContent", func(t *testing.T) {

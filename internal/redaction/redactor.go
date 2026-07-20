@@ -527,7 +527,13 @@ func (r *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx red
 // reflect.Array and the other did not, letting nested arrays skip redaction).
 func isRecursivelyRedactableKind(k reflect.Kind) bool {
 	switch k {
-	case reflect.Slice, reflect.Array, reflect.Map, reflect.Struct, reflect.Ptr, reflect.Interface:
+	case reflect.Slice, reflect.Array, reflect.Map, reflect.Struct, reflect.Ptr, reflect.Interface,
+		reflect.Func, reflect.Chan, reflect.UnsafePointer:
+		// Func, Chan, and UnsafePointer are not "recursively redactable" in the sense of
+		// containing nested data, but they are unsupported/opaque kinds that must be
+		// routed through redactLogAttributeWithContext (which fails secure to
+		// RedactionFailurePlaceholder via processKindAny) rather than passed through
+		// as-is, matching the top-level (processKindAny) and map (processMap) handling.
 		return true
 	default:
 		return false
@@ -662,7 +668,8 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 	return r.redactLogAttributeWithContext(resolvedAttr, nextCtx), nil
 }
 
-// processMap processes a map value and recursively redacts keys and values
+// processMap processes a map value: keys are stringified (via fmt.Sprint, not redacted)
+// and used only to check IsSensitiveKey, while values are recursively redacted.
 func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionContext) (attr slog.Attr, err error) {
 	// 1. Check recursion depth
 	if ctx.depth >= maxRedactionDepth {
@@ -896,6 +903,17 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 	nextCtx := redactionContext{depth: ctx.depth + 1}
 	var firstError error
 
+	// Fast-path detection: when the slice/array has a concrete (non-interface) element
+	// type whose reflect.Kind is never recursively redactable (e.g. []int, []bool), the
+	// per-element reflect.ValueOf(element) + isRecursivelyRedactableKind check below is
+	// redundant for every element - the static element type already answers the question.
+	// This does NOT skip the LogValuer type assertion or the string fast path above; it
+	// only elides the reflection work in the final "non-LogValuer, non-string" branch.
+	// Interface-typed slices ([]any, []error, etc.) must still be checked per-element
+	// since each element's dynamic type can differ.
+	elemKind := rv.Type().Elem().Kind()
+	skipPerElementReflectCheck := elemKind != reflect.Interface && !isRecursivelyRedactableKind(elemKind)
+
 	for i := 0; i < rv.Len(); i++ {
 		element := rv.Index(i).Interface()
 
@@ -966,6 +984,10 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 				// String element: apply RedactText directly
 				redactedStr := r.config.RedactText(str)
 				processedElements = append(processedElements, redactedStr)
+			} else if skipPerElementReflectCheck {
+				// Fast path: static element type is a concrete primitive kind that is
+				// never recursively redactable, so no per-element reflection is needed.
+				processedElements = append(processedElements, element)
 			} else {
 				elementValue := reflect.ValueOf(element)
 				if isRecursivelyRedactableKind(elementValue.Kind()) {
