@@ -119,10 +119,10 @@
 
 1. 深度チェック: `ctx.depth >= maxRedactionDepth` なら `RedactionFailurePlaceholder` を返す
 2. `reflect.ValueOf(structValue)` で reflect 値を取得。`Kind` が `Struct` でない場合は入力値をそのまま返す（フォールバック）
-3. 循環参照検出: 深度チェックに加え、`reflect.Struct` の自己参照フィールド（ポインタ経由で自身と同じ型を指す）はプレースホルダにフォールバック
+3. 循環参照検出: 深度チェック（`maxRedactionDepth`）により無限再帰は防止済みのため、自己参照フィールド（ポインタ経由で自身と同じ型を指す）も深度制限付きで通常の再帰 redact 処理を許可する（プレースホルダにフォールバックしない）
 4. exported フィールドをイテレート:
    - `json:"-"` タグ → スキップ
-   - `json:"name"` タグ → タグ名をキーに使用
+    - `json:"name"` タグ → `strings.Cut(name, ",")` でカンマ分割し、先頭要素（純粋なタグ名）をキーに使用（`omitempty`/`string` オプションを除去）
    - タグなし → Go のフィールド名をそのままキーに使用
    - 各フィールド値を `redactLogAttributeWithContext` で再帰 redact（`nextCtx`: depth+1）
 5. 結果を `map[string]any` に構築し、`slog.AnyValue` でラップして返す
@@ -209,7 +209,7 @@
 処理（設計詳細は `02_architecture.md` §3.4.2 参照）:
 
 1. `err` が `*url.Error` 型であるか判定
-   - 一致: `urlErr.Err`（ラップされたエラー）が nil でなければその文字列を返す。nil の場合は `urlErr.Error()` 全体を返す（nil inner error の panic 防止）
+   - 一致: `urlErr.Err`（ラップされたエラー）が nil でなければその文字列を返す。nil の場合は `urlErr.Op` のみを含む安全な文字列（例: `"url error: " + urlErr.Op + " without URL"`）を返す。`urlErr.Error()` を呼び出すと除去対象の webhook URL が再び含まれてしまうため使用しない
    - 不一致: `errors.Unwrap(err)` でラップチェーンを走査。最大 10 階層までアンラップし、`*url.Error` を探索
 2. チェーン内に `*url.Error` が見つかった場合: その `Err` フィールドの文字列を返す
 3. 見つからなかった場合: `err.Error()` を `redaction.DefaultConfig().RedactText` に通して返す。これにより URL 形式でない機密パターン（パスワード等）も検出される
