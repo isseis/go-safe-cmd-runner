@@ -39,6 +39,9 @@ var (
 
 	// ErrSyscallAnalysisHighRisk indicates syscall analysis found high-risk results.
 	ErrSyscallAnalysisHighRisk = errors.New("syscall analysis high risk")
+
+	// ErrSyscallStoreIOError indicates a syscall analysis store I/O error.
+	ErrSyscallStoreIOError = errors.New("syscall analysis store I/O error")
 )
 
 // Compile-time check: StandardELFAnalyzer implements binaryanalyzer.BinaryAnalyzer.
@@ -314,10 +317,14 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.Fi
 				Error:  fmt.Errorf("%w: %s", ErrSyscallHashMismatch, path),
 			}
 		default:
-			// Unexpected error, log it before falling back.
-			slog.Debug("Syscall analysis lookup error",
+			slog.Warn("Syscall analysis lookup error",
 				"path", path,
-				"error", err)
+				"error", err,
+				"reason", "store_io_error")
+			return binaryanalyzer.AnalysisOutput{
+				Result: binaryanalyzer.AnalysisError,
+				Error:  fmt.Errorf("%w: %s", ErrSyscallStoreIOError, path),
+			}
 		}
 		return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
 	}

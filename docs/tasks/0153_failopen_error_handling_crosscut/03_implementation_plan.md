@@ -548,9 +548,9 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 - [x] Step 3-3: dry-run モードのエラー伝播テスト
 
 ### Phase 4: C1 F-1
-- [ ] Step 4-1: `ErrSyscallStoreIOError` sentinel 追加
-- [ ] Step 4-2: `default` 節の修正
-- [ ] Step 4-3: 想定外エラーテスト追加
+- [x] Step 4-1: `ErrSyscallStoreIOError` sentinel 追加
+- [x] Step 4-2: `default` 節の修正
+- [x] Step 4-3: 想定外エラーテスト追加
 
 ### PR-3 作成ポイント: syscall store I/O error fail-closed
 - [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
