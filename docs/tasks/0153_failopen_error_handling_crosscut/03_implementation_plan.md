@@ -553,7 +553,7 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 - [x] Step 4-3: 想定外エラーテスト追加
 
 ### PR-3 作成ポイント: syscall store I/O error fail-closed
-- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
