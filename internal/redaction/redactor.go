@@ -538,6 +538,8 @@ func (r *RedactingHandler) processKindAny(key string, value slog.Value, ctx reda
 	switch rv.Kind() {
 	case reflect.Slice:
 		return r.processSlice(key, anyValue, ctx)
+	case reflect.Array:
+		return r.processSlice(key, anyValue, ctx)
 	case reflect.Map:
 		return r.processMap(key, anyValue, ctx)
 	case reflect.Struct:

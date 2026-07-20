@@ -1644,8 +1644,13 @@ func TestRedactingHandler_MapRedaction(t *testing.T) {
 		assert.NotContains(t, output, "secret-value-123", "Sensitive value should be redacted")
 		assert.Contains(t, output, "[REDACTED]", "Should contain redaction placeholder")
 
-		// Positive control: verify secret is in original map
-		assert.Equal(t, "secret-value-123", sensitiveMap["api_key"], "Original map should be unchanged")
+		// Positive control: verify secret appears via non-redacting JSON handler
+		var controlBuf bytes.Buffer
+		controlHandler := slog.NewJSONHandler(&controlBuf, nil)
+		controlLogger := slog.New(controlHandler)
+		controlLogger.Info("Test message", "details", slog.AnyValue(sensitiveMap))
+		controlOutput := controlBuf.String()
+		assert.Contains(t, controlOutput, "secret-value-123", "Secret should appear in non-redacting handler output, confirming redaction is actually preventing leakage")
 	})
 
 	t.Run("ValueContentDetection", func(t *testing.T) {
