@@ -581,7 +581,7 @@ Phase 4 と Phase 6 を別ブランチで並行実装する場合、`standard_an
 - [x] Step 6-9: 統合テスト（正常系リグレッション確認）
 
 ### PR-5 作成ポイント: dynlib parse failure fail-closed with shared ELF magic
-- [ ] グリーンゲート（`make test && make lint`）がパスしていることを確認した
+- [x] グリーンゲート（`make test && make lint`）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
