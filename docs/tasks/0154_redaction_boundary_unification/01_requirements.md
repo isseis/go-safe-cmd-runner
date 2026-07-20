@@ -96,7 +96,8 @@ Issue #861 は、`internal/redaction`（RedactingHandler）・`internal/logging`
 - **AC-01**: `slog.Any("details", map[string]any{"api_key": "secret-value"})` を出力すると、下流ハンドラが受け取る最終的な値（JSON 直列化結果を含む）に `secret-value` の平文が含まれない。
 - **AC-02**: `slog.Any("details", map[string]any{"note": "password=hunter2"})` のように、キー名は非機密だが値の内容が機密パターンに一致する場合も、値がマスクされる（キー名ベースの判定だけに依存しない）。
 - **AC-03**: ネストした map（`map[string]any{"outer": map[string]any{"token": "..."}}`）でも `maxRedactionDepth` の範囲内で再帰的に redaction が適用される。
-- **AC-04**: struct 値（エクスポートされた文字列フィールドを持つ型）を `slog.Any` で渡した場合も、少なくとも fail-secure な扱い（フィールドごとの redaction、またはそれが実装困難な場合は `RedactionFailurePlaceholder` 等への安全なフォールバック）となり、redaction を経ずに機密文字列が下流へ渡らない。
+- **AC-04a**: struct 値（エクスポートされた文字列フィールドを持つ型）を `slog.Any` で渡した場合、フィールドごとに redaction が適用される（`map[string]any{"api_key": "secret-value"}` 相当の内容を持つ struct を渡すと、下流ハンドラが受け取る最終的な値に `secret-value` の平文が含まれない）。
+- **AC-04b**: フィールドごとの redaction が技術的に実装困難な struct 形状（unexported フィールドのみ、循環参照等）に限り、`RedactionFailurePlaceholder` 等の安全なプレースホルダへのフォールバックを許容する。この場合も redaction を経ずに機密文字列が下流へ渡らないことを検証する。
 - **AC-05**: 機密パターンを含まない map/struct 値は、redaction 適用後も実質的な内容（キー・値の対応関係）が保たれる（正常系への回帰がない）。
 
 ### F-002: `RedactingHandler.processSlice` の非 LogValuer 文字列要素への redaction 適用
