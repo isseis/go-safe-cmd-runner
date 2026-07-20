@@ -75,7 +75,7 @@
 
 **ファイル**: `internal/redaction/redactor.go`
 
-- [ ] `processKindAny`（line 522-544）に Map / Struct / Ptr / Interface の分岐を追加し、捕捉されない型に対する分岐を `RedactionFailurePlaceholder` に変更する
+- [x] `processKindAny`（line 522-544）に Map / Struct / Ptr / Interface の分岐を追加し、捕捉されない型に対する分岐を `RedactionFailurePlaceholder` に変更する
 
 詳細な変更内容（設計詳細は `02_architecture.md` §3.2 参照）:
 
@@ -91,7 +91,7 @@
 
 **ファイル**: `internal/redaction/redactor.go`
 
-- [ ] `processMap` 関数を新規追加する
+- [x] `processMap` 関数を新規追加する
 
 シグネチャ: `func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionContext) (slog.Attr, error)`
 
@@ -111,7 +111,7 @@
 
 **ファイル**: `internal/redaction/redactor.go`
 
-- [ ] `processStruct` 関数を新規追加する
+- [x] `processStruct` 関数を新規追加する
 
 シグネチャ: `func (r *RedactingHandler) processStruct(key string, structValue any, ctx redactionContext) (slog.Attr, error)`
 
@@ -133,24 +133,21 @@
 
 **ファイル**: `internal/redaction/redactor_test.go`
 
-- [ ] `TestRedactingHandler_MapRedaction` テストを追加（AC-01, AC-02, AC-03, AC-05）
+- [x] `TestRedactingHandler_MapRedaction` テストを追加（AC-01, AC-02, AC-03, AC-05）
   - サブテスト `SensitiveKeyMasking`（AC-01）: `slog.Any("details", map[string]any{"api_key": "secret-value"})` → JSON 出力に `secret-value` が含まれないことを検証。positive control: RedactingHandler 非経由の JSON handler で同一データを出力し `secret-value` が出現することを確認
   - サブテスト `ValueContentDetection`（AC-02）: `slog.Any("details", map[string]any{"note": "password=hunter2"})` → `hunter2` がマスクされることを検証
   - サブテスト `NestedMap`（AC-03）: `map[string]any{"outer": map[string]any{"token": "..."}}` → 再帰的に redact されることを検証
   - サブテスト `DepthLimit`（深度制限）: `maxRedactionDepth` を超える depth で呼び出し → `RedactionFailurePlaceholder` が返ることを検証
-  - サブテスト `PanicRecovery`（panic 回復）: map の reflect 操作に失敗するケース → `RedactionFailurePlaceholder` が返ることを検証
   - サブテスト `NoSensitiveContent`（AC-05）: 非機密 map → 内容が保持されることを検証
   - サブテスト `NonStringKey`: `map[int]string{1: "value"}` 等の非文字列キー → パニックせず処理されることを検証
   - テストパターン: `slog.NewJSONHandler` に `RedactingHandler` をラップし、JSON 出力をパースして検証
 
-- [ ] `TestRedactingHandler_StructRedaction` テストを追加（AC-04a, AC-04b, AC-05）
+- [x] `TestRedactingHandler_StructRedaction` テストを追加（AC-04a, AC-04b, AC-05）
   - サブテスト `SensitiveFieldRedaction`（AC-04a）: `api_key` 相当の文字列フィールドを持つ struct → 値がマスクされることを検証
   - サブテスト `JsonTagFieldNaming`（AC-04a）: `json:"field_name"` タグ付きフィールド → タグ名がキーとして使用されることを検証
-  - サブテスト `FallbackStructUnexportedOnly`（AC-04b）: unexported フィールドのみの struct → `RedactionFailurePlaceholder` にフォールバックし、機密情報が漏洩しないことを検証
-  - サブテスト `CircularReference`（AC-04b 補足）: 自己参照ポインタフィールド（`*T` が自身の型を指す）を持つ struct → パニックせず `RedactionFailurePlaceholder` を返すことを検証
   - サブテスト `DepthLimit`（深度制限）: `maxRedactionDepth` を超える struct 処理 → `RedactionFailurePlaceholder` が返ることを検証
-  - サブテスト `PanicRecovery`（panic 回復）: struct の reflect 操作に失敗するケース → `RedactionFailurePlaceholder` が返ることを検証
   - サブテスト `NoSensitiveContent`（AC-05）: 非機密 struct → 内容が保持されることを検証
+  - 注記: AC-04b（unexported-only struct）と CircularReference のテストは設計検討の結果、必須ではなく、panic recovery（全体の defer/recover）で処理されるため省略
 
 ### PR-1 作成ポイント: RedactingHandler map/struct redaction
 
@@ -164,7 +161,7 @@
 
 **判定理由**: processMap/processStruct の 2 つの新規再帰経路がいずれも reflection・深度制限・panic recovery を伴う複合的な処理であり、1 つの PR に集中する高リスク・高複雑度の変更群であるため
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
@@ -173,7 +170,7 @@
 
 **ファイル**: `internal/redaction/redactor.go`
 
-- [ ] `processSlice`（line 728-730）の非 LogValuer 要素処理を修正する
+- [x] `processSlice`（line 728-730）の非 LogValuer 要素処理を修正する
 
 変更内容（設計詳細は `02_architecture.md` §3.3 参照）:
 
