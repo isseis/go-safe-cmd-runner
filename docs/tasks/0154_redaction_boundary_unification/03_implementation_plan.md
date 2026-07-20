@@ -211,7 +211,7 @@
 1. `err` が `*url.Error` 型であるか判定
    - 一致: `urlErr.Err`（ラップされたエラー）が nil でなければその文字列を返す。nil の場合は `urlErr.Op` のみを含む安全な文字列（例: `"url error: " + urlErr.Op + " without URL"`）を返す。`urlErr.Error()` を呼び出すと除去対象の webhook URL が再び含まれてしまうため使用しない
    - 不一致: `errors.Unwrap(err)` でラップチェーンを走査。最大 10 階層までアンラップし、`*url.Error` を探索
-2. チェーン内に `*url.Error` が見つかった場合: その `Err` フィールドの文字列を返す
+2. チェーン内に `*url.Error` が見つかった場合: その `Err` フィールドが nil でなければその文字列を返す。nil の場合はステップ 1 と同様に URL を含まない安全な文字列を返す
 3. 見つからなかった場合: `err.Error()` を `redaction.DefaultConfig().RedactText` に通して返す。これにより URL 形式でない機密パターン（パスワード等）も検出される
 
 #### 2.2.2 sendToSlack のエラーログ置換
@@ -234,7 +234,7 @@
 
 - [ ] `TestSanitizeErrorForLog` テストを追加（AC-09, AC-10）
   - サブテスト `URLErrorDirect`（AC-09）: `&url.Error{Op: "Post", URL: "https://hooks.slack.com/services/T00/B00/xxxx", Err: errors.New("connection refused")}` → 出力に `hooks.slack.com/services/T00/B00/xxxx` が含まれないこと、かつ `connection refused` が含まれることを検証
-  - サブテスト `URLErrorNilInnerErr`（AC-09）: `&url.Error{Op: "Post", URL: "https://hooks.slack.com/services/xxx", Err: nil}` → panic せず処理されることを検証
+  - サブテスト `URLErrorNilInnerErr`（AC-09）: `&url.Error{Op: "Post", URL: "https://hooks.slack.com/services/xxx", Err: nil}` → panic せず処理され、かつ出力に URL が含まれないことを検証
   - サブテスト `URLErrorWrapped`（AC-09）: `fmt.Errorf("send failed: %w", urlErr)` → ラップチェーンから URL が除去されることを検証
   - サブテスト `ErrorTypePreserved`（AC-10）: タイムアウト・DNS エラー・接続拒否等のエラー種別情報が保持されることを検証
   - サブテスト `NonURLError`（AC-10）: URL を含まないエラーの文字列が保持されることを検証
