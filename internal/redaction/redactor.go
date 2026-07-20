@@ -545,15 +545,27 @@ func (r *RedactingHandler) processKindAny(key string, value slog.Value, ctx reda
 	case reflect.Ptr:
 		// Dereference pointer and process recursively
 		if !rv.IsNil() {
+			// Check recursion depth before dereferencing to prevent infinite recursion
+			if ctx.depth >= maxRedactionDepth {
+				r.failureLogger.Debug("recursion depth limit reached for pointer - returning placeholder for security", "key", key, "depth", ctx.depth)
+				return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
+			}
 			dereferenced := rv.Elem().Interface()
-			return r.processKindAny(key, slog.AnyValue(dereferenced), ctx)
+			nextCtx := redactionContext{depth: ctx.depth + 1}
+			return r.processKindAny(key, slog.AnyValue(dereferenced), nextCtx)
 		}
 		return slog.Attr{Key: key, Value: value}, nil
 	case reflect.Interface:
 		// Extract concrete value and process recursively
 		if !rv.IsNil() {
+			// Check recursion depth before dereferencing to prevent infinite recursion
+			if ctx.depth >= maxRedactionDepth {
+				r.failureLogger.Debug("recursion depth limit reached for interface - returning placeholder for security", "key", key, "depth", ctx.depth)
+				return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
+			}
 			concrete := rv.Elem().Interface()
-			return r.processKindAny(key, slog.AnyValue(concrete), ctx)
+			nextCtx := redactionContext{depth: ctx.depth + 1}
+			return r.processKindAny(key, slog.AnyValue(concrete), nextCtx)
 		}
 		return slog.Attr{Key: key, Value: value}, nil
 	case reflect.Func, reflect.Chan, reflect.UnsafePointer:
