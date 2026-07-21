@@ -100,7 +100,7 @@ verify 時の検証は「record 時に解決されたパス群のハッシュ照
 
 #### F-002: AtomicMoveFile のソース同一性保証
 
-- **AC-05**: `AtomicMoveFile`（`atomicMoveFileCore`）は、検証済みソース fd と実際に rename されるファイルが同一の inode であることを、rename 直前に取得した `(dev, ino)` の突き合わせ、または同等の原子性を持つ方式で保証する。なお、`os.Rename(path, path)` に先立つ stat 系呼び出しによる `(dev, ino)` 照合のみでは、rename がパス名で解決される以上、検査時点と rename 時点の間に別 inode への差し替えを許す TOCTOU 窓が残る。この窓を閉じるには fd アンカー方式（`renameat2` + `RENAME_NOREPLACE`、`linkat` + `AT_EMPTY_PATH` 等）が必要であり、採用する方式は architecture 文書で確定する。
+- **AC-05**: `AtomicMoveFile`（`atomicMoveFileCore`）は、検証済みソース fd と実際に rename されるファイルが同一の inode であることを、rename 直前に取得した `(dev, ino)` の突き合わせ、または同等の原子性を持つ方式で保証する。なお、`os.Rename(path, path)` に先立つ stat 系呼び出しによる `(dev, ino)` 照合のみでは、rename がパス名で解決される以上、検査時点と rename 時点の間に別 inode への差し替えを許す TOCTOU 窓が残る。この窓を閉じるには fd アンカー方式（`renameat2` + `RENAME_NOREPLACE`、`linkat` + `AT_EMPTY_PATH` 等）が必要であり、採用する方式は architecture 文書で確定する。本セキュリティ保証は、移動先ファイルの親ディレクトリが信頼できる所有者（root または厳格な権限（例：0o710）を持つ信頼できるユーザー）によって保護されていることを前提としている。
 - **AC-06**: 同一性が確認できない場合（ソースパスが検証後に差し替えられた場合）、rename を行わずエラーを返す（fail-closed）。改ざんがない正常系の移動は従来どおり成功する。
 
 #### F-003: record 時のハッシュ計算と解析の一貫性
@@ -111,7 +111,7 @@ verify 時の検証は「record 時に解決されたパス群のハッシュ照
 
 #### F-004: verify 時の依存解決再実行
 
-- **AC-10**: `DynLibVerifier.Verify`（またはその呼び出し元）は、verify 時に依存解決（RUNPATH/`$ORIGIN`、`@rpath` 候補ディレクトリの探索）を再実行し、得られた解決パス集合が record 時の記録済み集合と一致することを確認する。record 時より優先順位の高い探索位置に新たなライブラリが出現した場合、verify は失敗する。
+- **AC-10**: `VerifyCommandDynLibDeps` は、verify 時に依存解決（RUNPATH/`$ORIGIN`、`@rpath` 候補ディレクトリの探索）を再実行する際に、コマンドの実行環境（`envVars`）を受け入れ、使用することで、RUNPATH の `$ORIGIN` や環境変数展開など、実行時の動的な置換に基づく正確な依存解決を行う。得られた解決パス集合が record 時の記録済み集合と一致することを確認する。record 時より優先順位の高い探索位置に新たなライブラリが出現した場合、verify は失敗する。
 - **AC-11**: 環境が record 時から変化していない正常系では、verify は従来どおり成功する。
 
 #### F-005: PathResolver の Stat/EvalSymlinks 順序
