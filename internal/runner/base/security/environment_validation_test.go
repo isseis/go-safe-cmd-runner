@@ -1,8 +1,10 @@
 package security
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -153,6 +155,81 @@ func TestValidator_ValidateAllEnvironmentVars(t *testing.T) {
 		err := validator.ValidateAllEnvironmentVars(nil)
 		assert.NoError(t, err)
 	})
+}
+
+func TestSanitizeEnvironmentVariables_ValueBasedDetection(t *testing.T) {
+	validator, err := NewValidator(nil)
+	require.NoError(t, err)
+
+	t.Run("PEM private key header in value", func(t *testing.T) {
+		env := map[string]string{
+			"CONFIG_BLOB": "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----",
+		}
+		result := validator.SanitizeEnvironmentVariables(env)
+		assert.Equal(t, "[REDACTED]", result["CONFIG_BLOB"])
+	})
+
+	t.Run("password flag in value", func(t *testing.T) {
+		env := map[string]string{
+			"MY_VAR": "--password=hunter2",
+		}
+		result := validator.SanitizeEnvironmentVariables(env)
+		assert.Equal(t, "[REDACTED]", result["MY_VAR"])
+	})
+
+	t.Run("NoSensitiveContent", func(t *testing.T) {
+		env := map[string]string{
+			"CONFIG_BLOB": "some_normal_config_value",
+			"MY_VAR":      "normal_value",
+		}
+		result := validator.SanitizeEnvironmentVariables(env)
+		assert.Equal(t, "some_normal_config_value", result["CONFIG_BLOB"])
+		assert.Equal(t, "normal_value", result["MY_VAR"])
+	})
+
+	t.Run("EmptyValue", func(t *testing.T) {
+		env := map[string]string{
+			"CONFIG_BLOB": "",
+		}
+		result := validator.SanitizeEnvironmentVariables(env)
+		assert.Equal(t, "", result["CONFIG_BLOB"])
+	})
+}
+
+func TestValidator_isSensitiveEnvVar_CustomLowercasePattern(t *testing.T) {
+	config := DefaultConfig()
+	// Deliberately case-sensitive (no "(?i)") and keyword-free (avoids the
+	// built-in PASSWORD/SECRET/TOKEN/KEY/API/CREDENTIAL/AUTH patterns), so
+	// this test exercises only the original-name fallback added for AC-22,
+	// not the case-insensitive matching an "(?i)" flag would provide on its
+	// own or the built-in keyword matcher.
+	config.SensitiveEnvVars = []string{"my_custom_blah"}
+	validator, err := NewValidator(config)
+	require.NoError(t, err)
+
+	t.Run("lowercase match via original name", func(t *testing.T) {
+		assert.True(t, validator.isSensitiveEnvVar("my_custom_blah"))
+	})
+
+	t.Run("uppercased form does not spuriously match a lowercase-only pattern", func(t *testing.T) {
+		assert.False(t, validator.isSensitiveEnvVar("MY_CUSTOM_BLAH"))
+	})
+
+	t.Run("non-sensitive var returns false", func(t *testing.T) {
+		assert.False(t, validator.isSensitiveEnvVar("not_sensitive"))
+	})
+}
+
+func TestSanitizeEnvironmentVariables_PlaceholderConsistency(t *testing.T) {
+	validator, err := NewValidator(nil)
+	require.NoError(t, err)
+
+	env := map[string]string{
+		"API_PASSWORD": "secret123",
+	}
+	result := validator.SanitizeEnvironmentVariables(env)
+	assert.Equal(t, "[REDACTED]", result["API_PASSWORD"])
+	assert.Equal(t, redaction.DefaultConfig().Placeholder, result["API_PASSWORD"])
 }
 
 func TestValidator_isSensitiveEnvVar(t *testing.T) {
@@ -378,4 +455,23 @@ func TestIsVariableValueSafe(t *testing.T) {
 		err := IsVariableValueSafe("TEST_VAR", "")
 		assert.NoError(t, err, "Empty value should be safe")
 	})
+}
+
+func BenchmarkSanitizeEnvironmentVariables_WithLargeEnv(b *testing.B) {
+	validator, err := NewValidator(nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	env := make(map[string]string, 200)
+	for i := range 200 {
+		env[fmt.Sprintf("VAR_%d", i)] = fmt.Sprintf("value_%d", i)
+	}
+	env["API_KEY"] = "secret_value_123"
+	env["DB_PASSWORD"] = "super_secret_password"
+
+	b.ResetTimer()
+	for range b.N {
+		_ = validator.SanitizeEnvironmentVariables(env)
+	}
 }

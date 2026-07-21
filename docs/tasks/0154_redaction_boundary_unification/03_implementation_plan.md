@@ -401,8 +401,8 @@ for key, value := range details {
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（#895）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### 2.4 フェーズ 4: 環境変数サニタイズの拡張（F-007）
 
@@ -410,14 +410,14 @@ for key, value := range details {
 
 **ファイル**: `internal/runner/base/security/environment_validation.go`
 
-- [ ] `SanitizeEnvironmentVariables` のループ内（line 17-22）で、`v.isSensitiveEnvVar(key)` が false の場合に `v.isSensitiveEnvValue(value)` を追加で検査する。値が機密と判定された場合も `"[REDACTED]"` に置換する
-- [ ] `isSensitiveEnvValue` 非公開ヘルパー関数を新規追加する（実装詳細は §2.4.3 参照）
+- [x] `SanitizeEnvironmentVariables` のループ内（line 17-22）で、`v.isSensitiveEnvVar(key)` が false の場合に `v.isSensitiveEnvValue(value)` を追加で検査する。値が機密と判定された場合も `"[REDACTED]"` に置換する
+- [x] `isSensitiveEnvValue` 非公開ヘルパー関数を新規追加する（実装詳細は §2.4.3 参照）
 
 #### 2.4.2 大文字小文字非対称性の解消
 
 **ファイル**: `internal/runner/base/security/environment_validation.go`
 
-- [ ] `isSensitiveEnvVar`（line 36-41）の既存の正規表現マッチングで、`upperName` に加えて元の `name`（大文字化前）でもマッチングを試行する
+- [x] `isSensitiveEnvVar`（line 36-41）の既存の正規表現マッチングで、`upperName` に加えて元の `name`（大文字化前）でもマッチングを試行する
 
 変更概要:
 ```go
@@ -432,7 +432,7 @@ for _, re := range v.sensitiveEnvRegexps {
 
 **ファイル**: `internal/runner/base/security/environment_validation.go`
 
-- [ ] `isSensitiveEnvValue` 非公開ヘルパー関数を新規追加する
+- [x] `isSensitiveEnvValue` 非公開ヘルパー関数を新規追加する
 
 isSensitiveEnvValue の実装:
 1. 空文字列の場合は `false` を返す
@@ -450,21 +450,22 @@ isSensitiveEnvValue の実装:
 
 **ファイル**: `internal/runner/base/security/environment_validation_test.go`
 
-- [ ] `TestSanitizeEnvironmentVariables_ValueBasedDetection` テストを追加（AC-20, AC-21）
+- [x] `TestSanitizeEnvironmentVariables_ValueBasedDetection` テストを追加（AC-20, AC-21）
   - `CONFIG_BLOB`（キー名非機密）の値に `-----BEGIN RSA PRIVATE KEY-----`（PEM 秘密鍵ヘッダ）を設定 → 値が `[REDACTED]` になることを検証（AC-20）
   - `MY_VAR`（キー名非機密）の値に `--password=hunter2` を設定 → 値が `[REDACTED]` になることを検証（AC-20）
   - サブテスト `NoSensitiveContent`（AC-21）: キー名・値ともに非機密 → 値が変化しないことを検証
   - サブテスト `EmptyValue`（AC-21 補足）: 空文字列の値 → 変化しないことを検証
 
-- [ ] `TestValidator_isSensitiveEnvVar_CustomLowercasePattern` テストを追加（AC-22）
-  - `NewValidator` に `config.SensitiveEnvVars: ["my_secret"]` を渡す
-  - `isSensitiveEnvVar("MY_SECRET")` → `true`（大文字化による一致）
-  - `isSensitiveEnvVar("my_secret")` → `true`（元の名前での一致、これが本修正で新たに保証される）
+- [x] `TestValidator_isSensitiveEnvVar_CustomLowercasePattern` テストを追加（AC-22）
+  - `NewValidator` に `config.SensitiveEnvVars: ["my_custom_blah"]`（`(?i)` 不使用、組み込みキーワードとも非衝突）を渡す
+  - `isSensitiveEnvVar("my_custom_blah")` → `true`（元の名前での一致、これが本修正で新たに保証される）
+  - `isSensitiveEnvVar("MY_CUSTOM_BLAH")` → `false`（大文字化のみでは小文字限定パターンに一致しないことを確認し、過剰一致がないことを保証）
   - `isSensitiveEnvVar("not_sensitive")` → `false`
+  - 備考: 当初 `config.SensitiveEnvVars: ["my_secret"]` を使用していたが、組み込みキーワード判定（`.*SECRET.*`）による偽陽性を避けるためパターンを変更した際（コミット `717dc453`）、誤って `(?i)` フラグを付与しテストが本修正の効果を検証できなくなっていたため、`weakreview` により修正した
 
 テストパッケージ: `package security`（internal パッケージテストのため）
 
-- [ ] `TestSanitizeEnvironmentVariables_PlaceholderConsistency` テストを追加
+- [x] `TestSanitizeEnvironmentVariables_PlaceholderConsistency` テストを追加
   - 置換値が `redaction.DefaultConfig().Placeholder` と一致することを検証
 
 ### PR-5 作成ポイント: Environment variable sanitization extension
@@ -479,8 +480,8 @@ isSensitiveEnvValue の実装:
 
 **判定理由**: 該当するトリガーなし（既存の RedactText 契約と Validator.redactionConfig フィールドを再利用した単純拡張）
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（#896）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -691,7 +692,7 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 
 - **検証方法**: `test`
 - **テスト場所**: `internal/runner/base/security/environment_validation_test.go::TestValidator_isSensitiveEnvVar_CustomLowercasePattern`
-- **検証内容**: 小文字パターン `my_secret` を設定し、`my_secret` および `MY_SECRET` の両方が機密と判定されることを検証
+- **検証内容**: 大文字小文字非対称の小文字パターン `my_custom_blah`（`(?i)` 不使用）を設定し、元の名前 `my_custom_blah` が機密と判定されること、かつ大文字化した `MY_CUSTOM_BLAH` は（小文字限定パターンのため）機密と判定されないことを検証
 
 ## 6. クロスサーチチェックリスト
 
@@ -717,8 +718,8 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 
 ### PR-5 クロスサーチ
 
-- [ ] `isSensitiveEnvVar` 呼び出し元が大文字化のみの動作に依存していないことの確認
-- [ ] `SanitizeEnvironmentVariables` の全呼び出し元で `v.redactionConfig` が非 nil であることの確認
+- [x] `isSensitiveEnvVar` 呼び出し元が大文字化のみの動作に依存していないことの確認
+- [x] `SanitizeEnvironmentVariables` の全呼び出し元で `v.redactionConfig` が非 nil であることの確認
 
 ## 7. 実装チェックリスト
 
@@ -769,13 +770,13 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 
 ### 7.5 PR-5 チェックリスト（F-007: 環境変数サニタイズ拡張）
 
-- [ ] `isSensitiveEnvValue` ヘルパー関数を追加（`v.redactionConfig` の nil チェックを含む）
-- [ ] `SanitizeEnvironmentVariables` に値内容検査（`isSensitiveEnvValue`）を追加
-- [ ] `isSensitiveEnvVar` の既存の正規表現マッチングで元の名前（大文字化前）も試行するよう修正
-- [ ] `TestSanitizeEnvironmentVariables_ValueBasedDetection` テストを追加（AC-20, AC-21）
-- [ ] `TestValidator_isSensitiveEnvVar_CustomLowercasePattern` テストを追加（AC-22）
-- [ ] ベンチマークテスト `BenchmarkSanitizeEnvironmentVariables_WithLargeEnv` を追加（200 エントリ。`02_architecture.md` §9.3）
-- [ ] 既存テストの回帰確認（`make test` を `internal/runner/base/security/` で実行）
+- [x] `isSensitiveEnvValue` ヘルパー関数を追加（`v.redactionConfig` の nil チェックを含む）
+- [x] `SanitizeEnvironmentVariables` に値内容検査（`isSensitiveEnvValue`）を追加
+- [x] `isSensitiveEnvVar` の既存の正規表現マッチングで元の名前（大文字化前）も試行するよう修正
+- [x] `TestSanitizeEnvironmentVariables_ValueBasedDetection` テストを追加（AC-20, AC-21）
+- [x] `TestValidator_isSensitiveEnvVar_CustomLowercasePattern` テストを追加（AC-22）
+- [x] ベンチマークテスト `BenchmarkSanitizeEnvironmentVariables_WithLargeEnv` を追加（200 エントリ。`02_architecture.md` §9.3）
+- [x] 既存テストの回帰確認（`make test` を `internal/runner/base/security/` で実行）
 
 ### 7.6 最終検証チェックリスト（全 PR マージ後）
 
