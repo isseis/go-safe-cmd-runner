@@ -23,7 +23,7 @@
 
 ## 背景
 
-本コードベースは「検証(verify)は開いた fd の内容そのものを検査し、使用(exec/read)はその同じ fd から行う」という原則（fd バインド実行、`SafeOpenFile` の openat2 symlink 排除、`VerifyAndRead` 等）を主要経路で徹底しており、Issue #862 が参照する集約監査（0149）でも High 相当の欠陥は見つかっていない。しかし、この原則が及んでいない残存箇所が 5 系統ある。いずれも「検証済みパスへの書き込み権限」を前提条件とするため深層防御の欠落に留まり、単独では成立しにくいと評価されているが、多層防御の一角として埋めることが望ましい。
+本コードベースは「検証(verify)は開いた fd の内容そのものを検査し、使用(exec/read)はその同じ fd から行う」という原則（fd 束縛実行、`SafeOpenFile` の openat2 symlink 排除、`VerifyAndRead` 等）を主要経路で徹底しており、Issue #862 が参照する集約監査（0149）でも High 相当の欠陥は見つかっていない。しかし、この原則が及んでいない残存箇所が 5 系統ある。いずれも「検証済みパスへの書き込み権限」を前提条件とするため、深層防御が部分的に欠けた状態に留まり、単独では成立しにくいと評価されているが、多層防御の一角として埋めることが望ましい。
 
 1. **A5 Medium-1**: risk 評価の `openVerifiedIdentity` がグループ検証時点のハッシュと open 時点のファイル内容を突き合わせない。グループ内の先行コマンドが長時間実行される場合、この窓は数分〜数時間に及び得る。
 2. **B1 F-1**: `AtomicMoveFile` は fd で検証したソースを、最終的な移動では `os.Rename` によりパス名で行う。検証対象と移動対象の同一性を保証しない。
@@ -31,7 +31,7 @@
 4. **C2 F-1**: verify 時に依存解決（RUNPATH/$ORIGIN、@rpath 探索）を再実行しないため、record 後に探索優先度の高い位置へライブラリが追加された場合の「探索順シャドーイング」を検出できない。
 5. **B3 L3, L4**: `PathResolver.validateAndCacheCommand` の `Stat`→`EvalSymlinks` の順序、および shebang インタプリタの symlink 検査とカーネルの exec 時再解決の間に TOCTOU 窓が残る。
 
-これらはいずれも「検証と使用は同一 fd/同一読み取りから行う」という単一の設計原則の適用漏れであり、まとめて解消することで原則の一貫性を回復する。
+これらはいずれも「検証と使用は同一 fd/同一読み取りから行う」という単一の設計原則の適用漏れであり、まとめて対処することで原則の一貫性を回復する。
 
 ## 目的
 
@@ -56,18 +56,18 @@
 
 ### 対象外（別 Issue・別タスクとする、または本タスクでは対応しない）
 
-- A5 の Low/Info 所見（Low-1〜4, Info-1〜3）: Issue #862 の「該当箇所」リストに含まれない、TOCTOU とは異なる系統の所見（死んだ設定項目、audit 情報の非一貫性、switch の default 欠如等）。
+- A5 の Low/Info 所見（Low-1〜4, Info-1〜3）: Issue #862 の「該当箇所」リストに含まれない、TOCTOU とは異なる系統の所見（廃止済み設定項目、audit 情報の非一貫性、switch の default 欠如等）。
 - B1 の F-2〜F-9（F-1 を除く）: 非 Linux フォールバック経路の symlink TOCTOU（F-2）、fd リーク（F-3）、ロールバック欠如（F-4）、`Remove` の安全性契約（F-5）等は Issue #862 の「該当箇所」リストに含まれない別系統の所見。
 - B2 の B2-2, B2-4〜B2-13: 解析器無効時の温存ロジック（B2-2）、エラーハンドリング（B2-4, B2-5）、Mach-O 解析縮退（B2-6）等は Issue #862 の「該当箇所」リストに含まれない。
 - C2 の F-2〜F-6, Info 所見: ld.so.cache の Flags/HWCap 無視（F-2）、子依存パース失敗の fail-soft（F-3）、`ResolveRealPath` のエラー種別非区別（F-4）等は Issue #862 の「該当箇所」リストに含まれない別系統の所見。
 - B3 の M1, M2, L1, L2, Info 所見: `collectVerificationFiles` の fail-open（M1）、`isDeferredHashDirUnavailable` のゲート漏れ（M2）等は Issue #862 の「該当箇所」リストに含まれない別系統の所見（TOCTOU ではなく fail-open/fail-closed 設計の一貫性の問題）。
-- B3 L4 のコード側の完全排除（`execveat` 等によるインタプリタの fd バインド起動）: 各所見が「完全な排除は困難」と評価しており、本タスクでは残余リスクの文書化のみを対応範囲とする。将来的にコード側で対応する場合は別タスクとする。
+- B3 L4 のコード側の完全排除（`execveat` 等によるインタプリタの fd 束縛起動）: 完全な排除は困難と評価されているため、本タスクでは残余リスクの文書化のみを対応範囲とする。将来的にコード側で対応する場合は別タスクとする。
 
 ## 現状の問題点（詳細）
 
 ### 1. A5 Medium-1: ハッシュ検証時点と open 時点の間の窓
 
-実行バイナリのハッシュ検証（`VerifyGroupFiles`）はグループ開始時に一括で行われ、`cmd.ExpandedCmdContentHash` に伝播される。一方、fd バインド実行用のディスクリプタは各コマンドのリスク評価時に `openVerifiedIdentity`（`evaluator.go:570-580`）でパス指定により再 open される。open 後の窓は fd バインド実行（`fdexec_linux.go`）で閉じられているが、「ハッシュ検証時点」と「open 時点」の間の窓は残る。グループ内に長時間走るコマンドがあれば、この窓は数分〜数時間になり得る。
+実行バイナリのハッシュ検証（`VerifyGroupFiles`）はグループ開始時に一括で行われ、`cmd.ExpandedCmdContentHash` に伝播される。一方、fd 束縛実行用のディスクリプタは各コマンドのリスク評価時に `openVerifiedIdentity`（`evaluator.go:570-580`）でパス指定により再 open される。open 後の窓は fd 束縛実行（`fdexec_linux.go`）で閉じられているが、「ハッシュ検証時点」と「open 時点」の間の窓は残る。グループ内に長時間走るコマンドがあれば、この窓は数分〜数時間になり得る。
 
 ### 2. B1 F-1: AtomicMoveFile が fd で検証したソースをパスで rename する
 
@@ -79,7 +79,7 @@
 
 ### 4. C2 F-1: verify 時に依存解決を再実行しない
 
-verify 時の検証は「record 時に解決されたパス群のハッシュ照合」のみで、ローダの探索アルゴリズムを再実行しない。record 時に存在しなかったファイルが、より優先順位の高い探索位置（DT_RUNPATH の `$ORIGIN` 相対ディレクトリ、Mach-O の `@rpath` 候補ディレクトリ等）に後から置かれた場合、記録済みライブラリには一切触れずに実際のロード対象を差し替えられる。
+verify 時の検証は「record 時に解決されたパス群のハッシュ照合」のみで、ローダの探索アルゴリズムを再実行しない。record 時に存在しなかったファイルが、より優先順位の高い探索位置（`DT_RUNPATH` の `$ORIGIN` 相対ディレクトリ、Mach-O の `@rpath` 候補ディレクトリ等）に後から置かれた場合、記録済みライブラリには一切触れずに実際のロード対象を差し替えられる。
 
 ### 5. B3 L3: PathResolver の Stat→EvalSymlinks 間の TOCTOU
 
@@ -87,7 +87,7 @@ verify 時の検証は「record 時に解決されたパス群のハッシュ照
 
 ### 6. B3 L4: shebang symlink 検査と exec の間の残存窓
 
-`/bin/sh` 等の raw インタプリタパスを `filepath.EvalSymlinks` で検査し record 時の解決先と比較するが、実際のスクリプト実行時にはカーネルが exec 時点で shebang パスを再解決する。検査合格後〜exec の間にシンボリックリンクを差し替えられると、検証済みでないインタプリタが起動し得る。この窓は kernel 側の exec 時解決に起因するため、アプリケーション層のみでの完全排除は困難と評価されている。
+`/bin/sh` 等のインタプリタパスを `filepath.EvalSymlinks` で検査し record 時の解決先と比較するが、実際のスクリプト実行時にはカーネルが exec 時点で shebang パスを再解決する。検査合格後〜exec の間にシンボリックリンクを差し替えられると、検証済みでないインタプリタが起動し得る。この窓はカーネル側の exec 時解決に起因するため、アプリケーション層のみでの完全排除は困難と評価されている。
 
 ## Acceptance Criteria
 
@@ -95,7 +95,7 @@ verify 時の検証は「record 時に解決されたパス群のハッシュ照
 
 - **AC-01**: `openVerifiedIdentity` は、open した fd の内容から実測ハッシュを計算し、`cmd.ExpandedCmdContentHash` と比較する。不一致の場合、fd を close した上でエラーを返し、呼び出し元のリスク評価は fail-closed（Blocking）判定になる。
 - **AC-02**: open は `O_NONBLOCK` 付きで行い、`fstat` で通常ファイルであることを確認した後に `O_NONBLOCK` を解除する。パスが FIFO に差し替えられていた場合、open が無期限ブロックせずエラーとして扱われる。
-- **AC-03**: 改ざんがない正常系（open 時点の内容が検証済みハッシュと一致する）では、従来どおり fd バインド実行に必要な `VerifiedIdentity` が返る（既存の成功経路に回帰がない）。
+- **AC-03**: 改ざんがない正常系（open 時点の内容が検証済みハッシュと一致する）では、従来どおり fd 束縛実行に必要な `VerifiedIdentity` が返る（既存の成功経路に回帰がない）。
 - **AC-04**: ハッシュ不一致・FIFO 検出等による拒否は、他の identity gate 失敗（`ReasonIdentityUnbound` 等）と区別可能な reason code で audit ログに記録される。
 
 #### F-002: AtomicMoveFile のソース同一性保証
