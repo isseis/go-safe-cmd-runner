@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// sensitiveLogValuer is a minimal slog.LogValuer implementation used to
+// verify that LogSecurityEvent's details switch routes LogValuer values to
+// the slog.Any default branch (which resolves them via LogValue()).
+type sensitiveLogValuer struct {
+	value string
+}
+
+func (v sensitiveLogValuer) LogValue() slog.Value {
+	return slog.StringValue(v.value)
+}
 
 func TestNewAuditLogger(t *testing.T) {
 	auditLogger := audit.NewAuditLogger()
@@ -182,6 +194,257 @@ func TestLogger_LogSecurityEvent(t *testing.T) {
 			assert.Contains(t, logOutput, tt.eventType)
 			assert.Contains(t, logOutput, tt.severity)
 			assert.Contains(t, logOutput, tt.message)
+		})
+	}
+}
+
+// logUserGroupExecutionEntry runs LogUserGroupExecution against a fresh JSON
+// logger (no RedactingHandler) and returns the parsed log entry.
+func logUserGroupExecutionEntry(
+	t *testing.T,
+	cmd *runnertypes.RuntimeCommand,
+	result *audit.ExecutionResult,
+) map[string]any {
+	t.Helper()
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	audit.NewAuditLoggerWithCustom(logger).LogUserGroupExecution(
+		context.Background(), cmd, result, 0, audit.PrivilegeMetrics{},
+	)
+
+	var logEntry map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &logEntry), "failed to parse JSON log output")
+	return logEntry
+}
+
+// TestLogUserGroupExecution_OutputMasking verifies stdout/stderr recorded on a
+// failed command are boundary-redacted before being logged.
+func TestLogUserGroupExecution_OutputMasking(t *testing.T) {
+	t.Run("sensitive stderr masked", func(t *testing.T) {
+		cmd := executortestutil.CreateRuntimeCommand("/bin/false", []string{})
+		result := &audit.ExecutionResult{
+			Stdout:   "leaked token: apikey=letmein123",
+			Stderr:   "connection failed: password=hunter2",
+			ExitCode: 1,
+		}
+		// positive control: the secrets are actually present in the raw values.
+		require.Contains(t, result.Stdout, "letmein123")
+		require.Contains(t, result.Stderr, "hunter2")
+
+		entry := logUserGroupExecutionEntry(t, cmd, result)
+
+		stdout, ok := entry["stdout"].(string)
+		require.True(t, ok)
+		assert.NotContains(t, stdout, "letmein123", "secret must be masked")
+		assert.Contains(t, stdout, "[REDACTED]")
+
+		stderr, ok := entry["stderr"].(string)
+		require.True(t, ok)
+		assert.NotContains(t, stderr, "hunter2", "secret must be masked")
+		assert.Contains(t, stderr, "[REDACTED]")
+	})
+
+	t.Run("NoSensitiveContent", func(t *testing.T) {
+		cmd := executortestutil.CreateRuntimeCommand("/bin/false", []string{})
+		result := &audit.ExecutionResult{
+			Stdout:   "normal output",
+			Stderr:   "normal error",
+			ExitCode: 1,
+		}
+		entry := logUserGroupExecutionEntry(t, cmd, result)
+		assert.Equal(t, "normal output", entry["stdout"])
+		assert.Equal(t, "normal error", entry["stderr"])
+	})
+}
+
+// TestLogUserGroupExecution_ArgMasking verifies command_args/expanded_command_args
+// are boundary-redacted.
+func TestLogUserGroupExecution_ArgMasking(t *testing.T) {
+	t.Run("sensitive args masked", func(t *testing.T) {
+		cmd := executortestutil.CreateRuntimeCommand("/bin/echo", []string{"--password=supersecretvalue"})
+		result := &audit.ExecutionResult{ExitCode: 0}
+		// positive control
+		require.Contains(t, strings.Join(cmd.Args(), " "), "supersecretvalue")
+
+		entry := logUserGroupExecutionEntry(t, cmd, result)
+
+		args, ok := entry["command_args"].(string)
+		require.True(t, ok)
+		assert.NotContains(t, args, "supersecretvalue", "secret must be masked")
+		assert.Contains(t, args, "[REDACTED]")
+
+		expandedArgs, ok := entry["expanded_command_args"].(string)
+		require.True(t, ok)
+		assert.NotContains(t, expandedArgs, "supersecretvalue", "secret must be masked")
+		assert.Contains(t, expandedArgs, "[REDACTED]")
+	})
+
+	t.Run("NoSensitiveContent", func(t *testing.T) {
+		cmd := executortestutil.CreateRuntimeCommand("/bin/echo", []string{"--verbose", "value"})
+		result := &audit.ExecutionResult{ExitCode: 0}
+		entry := logUserGroupExecutionEntry(t, cmd, result)
+		assert.Equal(t, "--verbose value", entry["command_args"])
+	})
+}
+
+// TestLogPrivilegeEscalation_Masking verifies operation/commandName are
+// boundary-redacted.
+func TestLogPrivilegeEscalation_Masking(t *testing.T) {
+	logEntry := func(t *testing.T, operation, commandName string) map[string]any {
+		t.Helper()
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&buf, nil))
+		audit.NewAuditLoggerWithCustom(logger).LogPrivilegeEscalation(
+			context.Background(), operation, commandName, 1000, 0, true, 0,
+		)
+		var entry map[string]any
+		require.NoError(t, json.Unmarshal(buf.Bytes(), &entry))
+		return entry
+	}
+
+	t.Run("commandName and operation masked", func(t *testing.T) {
+		entry := logEntry(t, "run --token=secretopvalue", "cmd --token=secretcmdvalue")
+
+		operation, ok := entry["operation"].(string)
+		require.True(t, ok)
+		assert.NotContains(t, operation, "secretopvalue")
+		assert.Contains(t, operation, "[REDACTED]")
+
+		commandName, ok := entry["command_name"].(string)
+		require.True(t, ok)
+		assert.NotContains(t, commandName, "secretcmdvalue")
+		assert.Contains(t, commandName, "[REDACTED]")
+	})
+
+	t.Run("NoSensitiveContent", func(t *testing.T) {
+		entry := logEntry(t, "command_execution", "test_command")
+		assert.Equal(t, "command_execution", entry["operation"])
+		assert.Equal(t, "test_command", entry["command_name"])
+	})
+}
+
+// TestLogSecurityEvent_Masking verifies the message field is boundary-redacted.
+func TestLogSecurityEvent_Masking(t *testing.T) {
+	logEntry := func(t *testing.T, message string) map[string]any {
+		t.Helper()
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&buf, nil))
+		audit.NewAuditLoggerWithCustom(logger).LogSecurityEvent(
+			context.Background(), "event", "info", message, nil,
+		)
+		var entry map[string]any
+		require.NoError(t, json.Unmarshal(buf.Bytes(), &entry))
+		return entry
+	}
+
+	t.Run("sensitive message masked", func(t *testing.T) {
+		entry := logEntry(t, "leaked api_key=secret123")
+		message, ok := entry["message"].(string)
+		require.True(t, ok)
+		assert.NotContains(t, message, "secret123")
+		assert.Contains(t, message, "[REDACTED]")
+	})
+
+	t.Run("NoSensitiveContent", func(t *testing.T) {
+		entry := logEntry(t, "plain audit message")
+		assert.Equal(t, "plain audit message", entry["message"])
+	})
+}
+
+// TestLogSecurityEvent_DetailsRedaction verifies details values are redacted
+// (string values) or passed through with the correct slog type, and that
+// non-sensitive values remain readable.
+func TestLogSecurityEvent_DetailsRedaction(t *testing.T) {
+	logEntry := func(t *testing.T, details map[string]any) map[string]any {
+		t.Helper()
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&buf, nil))
+		audit.NewAuditLoggerWithCustom(logger).LogSecurityEvent(
+			context.Background(), "event", "info", "msg", details,
+		)
+		var entry map[string]any
+		require.NoError(t, json.Unmarshal(buf.Bytes(), &entry))
+		return entry
+	}
+
+	t.Run("sensitive string value masked", func(t *testing.T) {
+		entry := logEntry(t, map[string]any{"payload": "api_key=secret123"})
+		payload, ok := entry["detail_payload"].(string)
+		require.True(t, ok)
+		assert.NotContains(t, payload, "secret123")
+		assert.Contains(t, payload, "[REDACTED]")
+	})
+
+	t.Run("NoSensitiveContent", func(t *testing.T) {
+		entry := logEntry(t, map[string]any{"note": "normal detail"})
+		assert.Equal(t, "normal detail", entry["detail_note"])
+	})
+
+	t.Run("NumericAndBoolValues", func(t *testing.T) {
+		entry := logEntry(t, map[string]any{
+			"count":   42,
+			"ratio":   0.5,
+			"enabled": true,
+		})
+		assert.Equal(t, float64(42), entry["detail_count"])
+		assert.Equal(t, 0.5, entry["detail_ratio"])
+		assert.Equal(t, true, entry["detail_enabled"])
+	})
+
+	t.Run("CompositeValue", func(t *testing.T) {
+		entry := logEntry(t, map[string]any{
+			"nested": map[string]any{"inner": "value"},
+		})
+		nested, ok := entry["detail_nested"].(map[string]any)
+		require.True(t, ok, "composite detail values are output via slog.Any")
+		assert.Equal(t, "value", nested["inner"])
+	})
+
+	t.Run("LogValuerValue", func(t *testing.T) {
+		entry := logEntry(t, map[string]any{
+			"result": sensitiveLogValuer{value: "safe-value"},
+		})
+		assert.Equal(t, "safe-value", entry["detail_result"])
+	})
+}
+
+// TestLogSecurityEvent_DetailsKeyCollisionPrevention verifies that details
+// keys matching schema attribute names cannot overwrite the schema values.
+// It asserts on the raw JSON text (not just the unmarshaled map) so the check
+// does not depend on attribute-append order or on encoding/json's last-value-wins
+// behavior masking a real duplicate key.
+func TestLogSecurityEvent_DetailsKeyCollisionPrevention(t *testing.T) {
+	tests := []struct {
+		name         string
+		collidingKey string
+		fakeValue    any
+	}{
+		{"severity", "severity", "fake_value"},
+		{"audit_type", "audit_type", "fake_type"},
+		{"slack_notify", "slack_notify", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&buf, nil))
+			details := map[string]any{tt.collidingKey: tt.fakeValue}
+			audit.NewAuditLoggerWithCustom(logger).LogSecurityEvent(
+				context.Background(), "event", "critical", "msg", details,
+			)
+			logOutput := buf.String()
+
+			// The schema key must appear exactly once in the raw JSON: if the
+			// details value were not namespaced, a second "<key>": attribute
+			// would be emitted, which json.Unmarshal would silently collapse
+			// via last-value-wins, hiding the collision from a map-based assertion.
+			rawKey := `"` + tt.collidingKey + `":`
+			assert.Equal(t, 1, strings.Count(logOutput, rawKey),
+				"schema key %q must appear exactly once in raw JSON output", tt.collidingKey)
+
+			var entry map[string]any
+			require.NoError(t, json.Unmarshal(buf.Bytes(), &entry))
+			assert.Contains(t, entry, "detail_"+tt.collidingKey, "details value routed to the prefixed key")
 		})
 	}
 }

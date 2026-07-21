@@ -293,8 +293,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（#894）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### 2.3 フェーズ 3: 監査ログの境界 redaction 統一（F-004, F-005, F-006）
 
@@ -302,10 +302,10 @@
 
 **ファイル**: `internal/runner/base/audit/logger.go`
 
-- [ ] `LogUserGroupExecution` の `command_args`（line 71）に `argRedactor.RedactText` を適用する
-- [ ] `LogUserGroupExecution` の `expanded_command_args`（line 73）に `argRedactor.RedactText` を適用する
-- [ ] `LogUserGroupExecution` の失敗時 `stdout`（line 101）に `argRedactor.RedactText` を適用する
-- [ ] `LogUserGroupExecution` の失敗時 `stderr`（line 102）に `argRedactor.RedactText` を適用する
+- [x] `LogUserGroupExecution` の `command_args`（line 71）に `argRedactor.RedactText` を適用する
+- [x] `LogUserGroupExecution` の `expanded_command_args`（line 73）に `argRedactor.RedactText` を適用する
+- [x] `LogUserGroupExecution` の失敗時 `stdout`（line 101）に `argRedactor.RedactText` を適用する
+- [x] `LogUserGroupExecution` の失敗時 `stderr`（line 102）に `argRedactor.RedactText` を適用する
 
 変更例（`command_args`）:
 `strings.Join(cmd.Args(), " ")` → `argRedactor.RedactText(strings.Join(cmd.Args(), " "))`
@@ -314,15 +314,15 @@
 
 **ファイル**: `internal/runner/base/audit/logger.go`
 
-- [ ] `LogPrivilegeEscalation` の `operation`（line 127）に `argRedactor.RedactText` を適用する
-- [ ] `LogPrivilegeEscalation` の `commandName`（line 128）に `argRedactor.RedactText` を適用する
+- [x] `LogPrivilegeEscalation` の `operation`（line 127）に `argRedactor.RedactText` を適用する
+- [x] `LogPrivilegeEscalation` の `commandName`（line 128）に `argRedactor.RedactText` を適用する
 
 #### 2.3.3 LogSecurityEvent の修正（F-005, F-006）
 
 **ファイル**: `internal/runner/base/audit/logger.go`
 
-- [ ] `LogSecurityEvent` の `message`（line 165）に `argRedactor.RedactText` を適用する（F-005）
-- [ ] `details` イテレーション（line 172-174）を修正する（F-006）:
+- [x] `LogSecurityEvent` の `message`（line 165）に `argRedactor.RedactText` を適用する（F-005）
+- [x] `details` イテレーション（line 172-174）を修正する（F-006）:
   1. キーに `"detail_"` プレフィックスを付与
   2. 値が文字列の場合は `slog.String(prefixedKey, argRedactor.RedactText(v))` を使用
   3. 値が数値・真偽値の場合は適切な slog メソッドで出力（`slog.Int64(prefixedKey, int64(v))`、`slog.Float64(prefixedKey, v)`、`slog.Bool(prefixedKey, v)`）。型アサーションは個別の case で行い、暗黙のヘルパー関数は導入しない
@@ -356,31 +356,31 @@ for key, value := range details {
 
 テストパターンは既存の `logRiskProfileEntry` ヘルパーパターン（RedactingHandler 非経由の JSON handler でログ出力し、JSON をパースして検証）に準拠する。
 
-- [ ] `TestLogUserGroupExecution_OutputMasking` テストを追加（AC-11, AC-13）
+- [x] `TestLogUserGroupExecution_OutputMasking` テストを追加（AC-11, AC-13）
   - 失敗時の `stderr` に `password=hunter2` を含める → 出力に `hunter2` が含まれないことを検証（AC-11）
   - サブテスト `NoSensitiveContent`（AC-13）: 非機密 stdout/stderr → 内容保持
 
-- [ ] `TestLogUserGroupExecution_ArgMasking` テストを追加（AC-12, AC-13）
+- [x] `TestLogUserGroupExecution_ArgMasking` テストを追加（AC-12, AC-13）
   - `command_args` に `--password=supersecretvalue` を含める → マスクされることを検証（AC-12）
   - サブテスト `NoSensitiveContent`（AC-13）: 非機密引数 → 内容保持
 
-- [ ] `TestLogPrivilegeEscalation_Masking` テストを追加（AC-14, AC-16）
+- [x] `TestLogPrivilegeEscalation_Masking` テストを追加（AC-14, AC-16）
   - `commandName` に `--token=secret` を含める → マスクされることを検証（AC-14）
   - `operation` に機密パターンを含める → マスクされることを検証（AC-14）
   - サブテスト `NoSensitiveContent`（AC-16）: 非機密値 → 内容保持
 
-- [ ] `TestLogSecurityEvent_Masking` テストを追加（AC-15, AC-16）
+- [x] `TestLogSecurityEvent_Masking` テストを追加（AC-15, AC-16）
   - `message` に `api_key=secret123` を含める → マスクされることを検証（AC-15）
   - サブテスト `NoSensitiveContent`（AC-16）: 非機密メッセージ → 内容保持
 
-- [ ] `TestLogSecurityEvent_DetailsRedaction` テストを追加（AC-17, AC-19）
+- [x] `TestLogSecurityEvent_DetailsRedaction` テストを追加（AC-17, AC-19）
   - `details` に `map[string]any{"payload": "api_key=secret123"}` → 対応属性の値から `secret123` が除去されていることを検証（AC-17）
   - サブテスト `NoSensitiveContent`（AC-19）: 非機密 details → 内容が判別可能な形で残ることを検証
   - サブテスト `NumericAndBoolValues`（AC-19 補足）: 数値・真偽値 → 内容保持
   - サブテスト `CompositeValue`（AC-17 補足）: 複合型値（map/slice）→ `slog.Any` で出力されることを検証
   - サブテスト `LogValuerValue`: `slog.LogValuer` を実装する details 値 → `slog.Any` 分岐で正しく処理されることを検証
 
-- [ ] `TestLogSecurityEvent_DetailsKeyCollisionPrevention` テストを追加（AC-18）
+- [x] `TestLogSecurityEvent_DetailsKeyCollisionPrevention` テストを追加（AC-18）
   - `details` に `{"severity": "fake_value"}` を渡す → スキーマの `severity` 属性が `details` 由来の値で上書きされないことを検証
   - `details` に `{"audit_type": "fake_type"}` を渡す → スキーマ値が保護されることを検証
   - `details` に `{"slack_notify": true}` を渡す → キー衝突が発生しないことを検証
@@ -399,8 +399,8 @@ for key, value := range details {
 
 **判定理由**: F-006（LogSecurityEvent details）の detail_ プレフィックス導入がスキーマレベルでの新規設計判断であり、下流のログ監視クエリ・SIEM ルールに影響する中リスクの破壊的変更を含むため
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（#895）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -712,8 +712,8 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 
 ### PR-4 クロスサーチ
 
-- [ ] `detail_` プレフィックス付与により、既存の `LogSecurityEvent` 呼び出し元がキー名を直接参照している場合の影響確認: `rg -n 'LogSecurityEvent' -g '*.go' internal` の結果をレビュー（Go の `internal` パッケージ可視性によりリポジトリ全体をカバー）。呼び出し元は logger_test.go のみであり、特定の details キー名に依存していないことを確認済みのため、コードベース内の破壊的影響はない
-- [ ] `02_architecture.md` §5.4 で言及されている `logger.go:286-289` のコメント（「RedactingHandler does not recurse into slice/map elements」）の更新または削除（Phase 1 完了後、この制約は解消されるため）
+- [x] `detail_` プレフィックス付与により、既存の `LogSecurityEvent` 呼び出し元がキー名を直接参照している場合の影響確認: `rg -n 'LogSecurityEvent' -g '*.go' internal` の結果をレビュー（Go の `internal` パッケージ可視性によりリポジトリ全体をカバー）。呼び出し元は logger_test.go のみであり、特定の details キー名に依存していないことを確認済みのため、コードベース内の破壊的影響はない
+- [x] `02_architecture.md` §5.4 で言及されている `logger.go:286-289` のコメント（「RedactingHandler does not recurse into slice/map elements」）の更新または削除（Phase 1 完了後、この制約は解消されるため）
 
 ### PR-5 クロスサーチ
 
@@ -750,22 +750,22 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 
 ### 7.4 PR-4 チェックリスト（F-004/F-005/F-006: 監査ログ境界 redaction）
 
-- [ ] `LogUserGroupExecution` の `command_args` に `argRedactor.RedactText` を適用
-- [ ] `LogUserGroupExecution` の `expanded_command_args` に `argRedactor.RedactText` を適用
-- [ ] `LogUserGroupExecution` の失敗時 `stdout` に `argRedactor.RedactText` を適用
-- [ ] `LogUserGroupExecution` の失敗時 `stderr` に `argRedactor.RedactText` を適用
-- [ ] `LogPrivilegeEscalation` の `operation` に `argRedactor.RedactText` を適用
-- [ ] `LogPrivilegeEscalation` の `commandName` に `argRedactor.RedactText` を適用
-- [ ] `LogSecurityEvent` の `message` に `argRedactor.RedactText` を適用
-- [ ] `LogSecurityEvent` の `details` イテレーションを修正（プレフィックス付与、値の型別処理）
-- [ ] `TestLogUserGroupExecution_OutputMasking` テストを追加（AC-11, AC-13）
-- [ ] `TestLogUserGroupExecution_ArgMasking` テストを追加（AC-12, AC-13）
-- [ ] `TestLogPrivilegeEscalation_Masking` テストを追加（AC-14, AC-16）
-- [ ] `TestLogSecurityEvent_Masking` テストを追加（AC-15, AC-16）
-- [ ] `TestLogSecurityEvent_DetailsRedaction` テストを追加（AC-17, AC-19）
-- [ ] `TestLogSecurityEvent_DetailsKeyCollisionPrevention` テストを追加（AC-18）
-- [ ] `logRiskProfileEntry` ヘルパーを再利用するか、必要な新規ヘルパーを同ファイルに追加
-- [ ] クロスサーチ: `logger.go:286-289` のコメントを更新（Phase 1 により制約解消）
+- [x] `LogUserGroupExecution` の `command_args` に `argRedactor.RedactText` を適用
+- [x] `LogUserGroupExecution` の `expanded_command_args` に `argRedactor.RedactText` を適用
+- [x] `LogUserGroupExecution` の失敗時 `stdout` に `argRedactor.RedactText` を適用
+- [x] `LogUserGroupExecution` の失敗時 `stderr` に `argRedactor.RedactText` を適用
+- [x] `LogPrivilegeEscalation` の `operation` に `argRedactor.RedactText` を適用
+- [x] `LogPrivilegeEscalation` の `commandName` に `argRedactor.RedactText` を適用
+- [x] `LogSecurityEvent` の `message` に `argRedactor.RedactText` を適用
+- [x] `LogSecurityEvent` の `details` イテレーションを修正（プレフィックス付与、値の型別処理）
+- [x] `TestLogUserGroupExecution_OutputMasking` テストを追加（AC-11, AC-13）
+- [x] `TestLogUserGroupExecution_ArgMasking` テストを追加（AC-12, AC-13）
+- [x] `TestLogPrivilegeEscalation_Masking` テストを追加（AC-14, AC-16）
+- [x] `TestLogSecurityEvent_Masking` テストを追加（AC-15, AC-16）
+- [x] `TestLogSecurityEvent_DetailsRedaction` テストを追加（AC-17, AC-19）
+- [x] `TestLogSecurityEvent_DetailsKeyCollisionPrevention` テストを追加（AC-18）
+- [x] `logRiskProfileEntry` ヘルパーを再利用するか、必要な新規ヘルパーを同ファイルに追加（各テストで専用の logEntry ヘルパーを追加）
+- [x] クロスサーチ: `logger.go:286-289` のコメントを更新（Phase 1 により制約解消）
 
 ### 7.5 PR-5 チェックリスト（F-007: 環境変数サニタイズ拡張）
 
