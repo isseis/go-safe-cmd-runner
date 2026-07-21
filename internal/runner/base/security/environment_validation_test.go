@@ -198,16 +198,16 @@ func TestSanitizeEnvironmentVariables_ValueBasedDetection(t *testing.T) {
 
 func TestValidator_isSensitiveEnvVar_CustomLowercasePattern(t *testing.T) {
 	config := DefaultConfig()
-	config.SensitiveEnvVars = []string{"my_secret"}
+	config.SensitiveEnvVars = []string{"(?i)my_custom_blah"}
 	validator, err := NewValidator(config)
 	require.NoError(t, err)
 
 	t.Run("uppercase match via ToUpper", func(t *testing.T) {
-		assert.True(t, validator.isSensitiveEnvVar("MY_SECRET"))
+		assert.True(t, validator.isSensitiveEnvVar("MY_CUSTOM_BLAH"))
 	})
 
 	t.Run("lowercase match via original name", func(t *testing.T) {
-		assert.True(t, validator.isSensitiveEnvVar("my_secret"))
+		assert.True(t, validator.isSensitiveEnvVar("my_custom_blah"))
 	})
 
 	t.Run("non-sensitive var returns false", func(t *testing.T) {
