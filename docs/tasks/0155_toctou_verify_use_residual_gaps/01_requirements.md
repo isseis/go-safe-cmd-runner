@@ -94,13 +94,13 @@ verify 時の検証は「record 時に解決されたパス群のハッシュ照
 #### F-001: openVerifiedIdentity のハッシュ再検証
 
 - **AC-01**: `openVerifiedIdentity` は、open した fd の内容から実測ハッシュを計算し、`cmd.ExpandedCmdContentHash` と比較する。不一致の場合、fd を close した上でエラーを返し、呼び出し元のリスク評価は fail-closed（Blocking）判定になる。
-- **AC-02**: open は `O_NONBLOCK` 付きで行い、`fstat` で通常ファイルであることを確認した後に `O_NONBLOCK` を解除する。パスが FIFO に差し替えられていた場合、open が無期限ブロックせずエラーとして扱われる。
+- **AC-02**: open 後の `fstat` により通常ファイルであることを確認する（主要な保証）。`O_NONBLOCK` はパスが FIFO に差し替えられた場合の無期限ブロックを防ぐ安全網として open 時に付与し、`fstat` による通常ファイル確認後に解除する。通常ファイルに対する `O_NONBLOCK` は no-op であり、保証の本質は `fstat` にある点に注意すること。
 - **AC-03**: 改ざんがない正常系（open 時点の内容が検証済みハッシュと一致する）では、従来どおり fd 束縛実行に必要な `VerifiedIdentity` が返る（既存の成功経路に回帰がない）。
 - **AC-04**: ハッシュ不一致・FIFO 検出等による拒否は、他の identity gate 失敗（`ReasonIdentityUnbound` 等）と区別可能な reason code で audit ログに記録される。
 
 #### F-002: AtomicMoveFile のソース同一性保証
 
-- **AC-05**: `AtomicMoveFile`（`atomicMoveFileCore`）は、検証済みソース fd と実際に rename されるファイルが同一の inode であることを、rename 直前に取得した `(dev, ino)` の突き合わせ、または同等の原子性を持つ方式で保証する。
+- **AC-05**: `AtomicMoveFile`（`atomicMoveFileCore`）は、検証済みソース fd と実際に rename されるファイルが同一の inode であることを、rename 直前に取得した `(dev, ino)` の突き合わせ、または同等の原子性を持つ方式で保証する。なお、`os.Rename(path, path)` に先立つ stat 系呼び出しによる `(dev, ino)` 照合のみでは、rename がパス名で解決される以上、検査時点と rename 時点の間に別 inode への差し替えを許す TOCTOU 窓が残る。この窓を閉じるには fd アンカー方式（`renameat2` + `RENAME_NOREPLACE`、`linkat` + `AT_EMPTY_PATH` 等）が必要であり、採用する方式は architecture 文書で確定する。
 - **AC-06**: 同一性が確認できない場合（ソースパスが検証後に差し替えられた場合）、rename を行わずエラーを返す（fail-closed）。改ざんがない正常系の移動は従来どおり成功する。
 
 #### F-003: record 時のハッシュ計算と解析の一貫性
@@ -121,7 +121,7 @@ verify 時の検証は「record 時に解決されたパス群のハッシュ照
 
 #### F-006: shebang インタプリタ symlink 検査の残余リスク文書化
 
-- **AC-14**: `verifyInterpreterSymlinkTarget` の symlink 検査と実際の exec 時カーネル再解決の間に残る TOCTOU 窓について、(a) 構造的に完全排除が困難である理由、(b) 悪用の前提条件（インタプリタパスの symlink 差し替え権限）、(c) 残余リスクとして許容する判断が、設計文書またはセキュリティ文書（`docs/security/` 配下、具体的な配置場所は architecture 文書で確定する）に明記される。
+- **AC-14**: `verifyInterpreterSymlinkTarget` の symlink 検査と実際の exec 時カーネル再解決の間に残る TOCTOU 窓について、(a) 構造的に完全排除が困難である理由、(b) 悪用の前提条件（インタプリタパスの symlink 差し替え権限）、(c) 残余リスクとして許容する判断が、設計文書またはセキュリティ文書（`docs/security/` 配下、具体的な配置場所は architecture 文書で確定する）に明記される。本 AC は文書化のみの成果物であり暗黙に脱落しやすいため、配置先を architecture 文書で確定し、実装計画でも完了チェック項目として追跡すること。
 
 ## Success Criteria（要件レベル）
 
