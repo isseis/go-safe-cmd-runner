@@ -18,7 +18,7 @@ func (v *Validator) SanitizeEnvironmentVariables(envVars map[string]string) map[
 	for key, value := range envVars {
 		if v.isSensitiveEnvVar(key) || v.isSensitiveEnvValue(value) {
 			// Replace sensitive values with a placeholder
-			sanitized[key] = "[REDACTED]"
+			sanitized[key] = v.redactionConfig.Placeholder
 		} else {
 			sanitized[key] = value
 		}
@@ -41,7 +41,7 @@ func (v *Validator) isSensitiveEnvVar(name string) bool {
 	// (to support custom lowercase patterns configured via SensitiveEnvVars).
 	upperName := strings.ToUpper(name)
 	for _, re := range v.sensitiveEnvRegexps {
-		if re.MatchString(upperName) || re.MatchString(name) {
+		if re.MatchString(upperName) || (name != upperName && re.MatchString(name)) {
 			return true
 		}
 	}
@@ -55,9 +55,6 @@ func (v *Validator) isSensitiveEnvVar(name string) bool {
 // Empty values always return false.
 func (v *Validator) isSensitiveEnvValue(value string) bool {
 	if value == "" {
-		return false
-	}
-	if v.redactionConfig == nil {
 		return false
 	}
 	redacted := v.redactionConfig.RedactText(value)
