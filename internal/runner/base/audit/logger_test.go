@@ -218,7 +218,7 @@ func logUserGroupExecutionEntry(
 }
 
 // TestLogUserGroupExecution_OutputMasking verifies stdout/stderr recorded on a
-// failed command are boundary-redacted before being logged (AC-11, AC-13).
+// failed command are boundary-redacted before being logged.
 func TestLogUserGroupExecution_OutputMasking(t *testing.T) {
 	t.Run("sensitive stderr masked", func(t *testing.T) {
 		cmd := executortestutil.CreateRuntimeCommand("/bin/false", []string{})
@@ -252,7 +252,7 @@ func TestLogUserGroupExecution_OutputMasking(t *testing.T) {
 }
 
 // TestLogUserGroupExecution_ArgMasking verifies command_args/expanded_command_args
-// are boundary-redacted (AC-12, AC-13).
+// are boundary-redacted.
 func TestLogUserGroupExecution_ArgMasking(t *testing.T) {
 	t.Run("sensitive args masked", func(t *testing.T) {
 		cmd := executortestutil.CreateRuntimeCommand("/bin/echo", []string{"--password=supersecretvalue"})
@@ -277,7 +277,7 @@ func TestLogUserGroupExecution_ArgMasking(t *testing.T) {
 }
 
 // TestLogPrivilegeEscalation_Masking verifies operation/commandName are
-// boundary-redacted (AC-14, AC-16).
+// boundary-redacted.
 func TestLogPrivilegeEscalation_Masking(t *testing.T) {
 	logEntry := func(t *testing.T, operation, commandName string) map[string]any {
 		t.Helper()
@@ -312,8 +312,7 @@ func TestLogPrivilegeEscalation_Masking(t *testing.T) {
 	})
 }
 
-// TestLogSecurityEvent_Masking verifies the message field is boundary-redacted
-// (AC-15, AC-16).
+// TestLogSecurityEvent_Masking verifies the message field is boundary-redacted.
 func TestLogSecurityEvent_Masking(t *testing.T) {
 	logEntry := func(t *testing.T, message string) map[string]any {
 		t.Helper()
@@ -343,7 +342,7 @@ func TestLogSecurityEvent_Masking(t *testing.T) {
 
 // TestLogSecurityEvent_DetailsRedaction verifies details values are redacted
 // (string values) or passed through with the correct slog type, and that
-// non-sensitive values remain readable (AC-17, AC-19).
+// non-sensitive values remain readable.
 func TestLogSecurityEvent_DetailsRedaction(t *testing.T) {
 	logEntry := func(t *testing.T, details map[string]any) map[string]any {
 		t.Helper()
@@ -399,8 +398,7 @@ func TestLogSecurityEvent_DetailsRedaction(t *testing.T) {
 }
 
 // TestLogSecurityEvent_DetailsKeyCollisionPrevention verifies that details
-// keys matching schema attribute names cannot overwrite the schema values
-// (AC-18).
+// keys matching schema attribute names cannot overwrite the schema values.
 func TestLogSecurityEvent_DetailsKeyCollisionPrevention(t *testing.T) {
 	tests := []struct {
 		name          string
