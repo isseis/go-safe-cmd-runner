@@ -2086,6 +2086,7 @@ func TestRedactingHandler_SliceStringElementRedaction(t *testing.T) {
 		output := buf.String()
 		assert.NotContains(t, output, "hunter2", "Sensitive string in slice should be redacted")
 		assert.Contains(t, output, "[REDACTED]", "Should contain redaction placeholder")
+		assert.Contains(t, output, "--verbose", "Non-sensitive sibling element should be preserved, confirming redaction is targeted not blanket")
 
 		// Positive control: verify secret appears via non-redacting JSON handler
 		var controlBuf bytes.Buffer

@@ -702,7 +702,7 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 
 ### PR-2 クロスサーチ
 
-- [x] `processSlice` のドキュメントコメント（line 614-640）が Phase 1 の変更（非 LogValuer 要素の再帰 redaction）を反映するよう更新されていること
+- [x] `processSlice` のドキュメントコメント（line 847-882）が Phase 1 の変更（非 LogValuer 要素の再帰 redaction）を反映するよう更新されていること
 
 ### PR-3 クロスサーチ
 
@@ -734,7 +734,7 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 ### 7.2 PR-2 チェックリスト（F-002: slice 要素再帰 redaction）
 
 - [x] `processSlice` の非 LogValuer 要素を再帰 redact に修正
-- [x] `processSlice` のドキュメントコメント（line 614-640）を更新し、非 LogValuer 要素が `redactLogAttributeWithContext` 経由で再帰 redact されることを反映する
+- [x] `processSlice` のドキュメントコメント（line 847-882）を更新し、非 LogValuer 要素が `redactLogAttributeWithContext` 経由で再帰 redact されることを反映する
 - [x] `TestRedactingHandler_SliceStringElementRedaction` テストを追加（AC-06, AC-07, AC-08）
 - [x] ベンチマークテスト `BenchmarkRedactingHandler_WithLargeMap` を追加（1,000 エントリの `map[string]string`。`02_architecture.md` §9.3）
 - [x] ベンチマークテスト `BenchmarkRedactingHandler_WithWideStruct` を追加（50 フィールドの struct。`02_architecture.md` §9.3）
