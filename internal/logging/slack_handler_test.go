@@ -1179,6 +1179,8 @@ func TestSanitizeErrorForLog(t *testing.T) {
 			URL: "https://hooks.slack.com/services/T00/B00/xxxx",
 			Err: errors.New("connection refused"),
 		}
+		require.Contains(t, urlErr.Error(), "hooks.slack.com/services/T00/B00/xxxx",
+			"positive control: URL must be present in original error")
 		result := sanitizeErrorForLog(urlErr)
 		assert.NotContains(t, result, "hooks.slack.com/services/T00/B00/xxxx")
 		assert.Contains(t, result, "connection refused")
@@ -1190,6 +1192,8 @@ func TestSanitizeErrorForLog(t *testing.T) {
 			URL: "https://hooks.slack.com/services/xxx",
 			Err: nil,
 		}
+		require.Contains(t, urlErr.Error(), "hooks.slack.com/services/xxx",
+			"positive control: URL must be present in original error")
 		result := sanitizeErrorForLog(urlErr)
 		assert.NotContains(t, result, "hooks.slack.com")
 		assert.Contains(t, result, "url error:")
@@ -1203,6 +1207,22 @@ func TestSanitizeErrorForLog(t *testing.T) {
 			Err: errors.New("connection refused"),
 		}
 		wrapped := fmt.Errorf("send failed: %w", urlErr)
+		require.Contains(t, wrapped.Error(), "hooks.slack.com/services/T00/B00/xxxx",
+			"positive control: URL must be present in original wrapped error")
+		result := sanitizeErrorForLog(wrapped)
+		assert.NotContains(t, result, "hooks.slack.com")
+		assert.Contains(t, result, "connection refused")
+	})
+
+	t.Run("URLErrorDeeplyWrapped", func(t *testing.T) {
+		urlErr := &url.Error{
+			Op:  "Post",
+			URL: "https://hooks.slack.com/services/T00/B00/xxxx",
+			Err: errors.New("connection refused"),
+		}
+		wrapped := fmt.Errorf("middleware: %w", fmt.Errorf("request: %w", urlErr))
+		require.Contains(t, wrapped.Error(), "hooks.slack.com/services/T00/B00/xxxx",
+			"positive control: URL must be present in deeply wrapped error")
 		result := sanitizeErrorForLog(wrapped)
 		assert.NotContains(t, result, "hooks.slack.com")
 		assert.Contains(t, result, "connection refused")
@@ -1232,7 +1252,10 @@ func TestSanitizeErrorForLog(t *testing.T) {
 		assert.Equal(t, "some generic error", result)
 	})
 
-	t.Run("NonURLErrorWithSensitiveValue", func(t *testing.T) {
+	// TODO(0154-import-cycle): Apply RedactText fallback to non-URL errors.
+	// Once the import cycle between internal/redaction and internal/logging
+	// is resolved, this should assert NotContains(t, result, "hunter2").
+	t.Run("NonURLErrorWithSensitiveValueNotSanitized_KnownGap", func(t *testing.T) {
 		err := errors.New("failed with password=hunter2")
 		result := sanitizeErrorForLog(err)
 		assert.Equal(t, "failed with password=hunter2", result)

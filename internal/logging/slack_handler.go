@@ -840,6 +840,11 @@ func generateBackoffIntervals(base time.Duration, count int) []time.Duration {
 
 // sanitizeErrorForLog extracts a safe error string for logging,
 // stripping webhook URLs from *url.Error values.
+//
+// TODO(0154-import-cycle): Apply RedactText to non-URL errors as a
+// defense-in-depth fallback. This requires resolving the import cycle
+// between internal/redaction and internal/logging (redactor_test.go
+// imports logging for NewMultiHandler tests).
 func sanitizeErrorForLog(err error) string {
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
