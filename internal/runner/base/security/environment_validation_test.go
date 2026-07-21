@@ -472,6 +472,6 @@ func BenchmarkSanitizeEnvironmentVariables_WithLargeEnv(b *testing.B) {
 
 	b.ResetTimer()
 	for range b.N {
-		validator.SanitizeEnvironmentVariables(env)
+		_ = validator.SanitizeEnvironmentVariables(env)
 	}
 }

@@ -13,7 +13,7 @@ func (v *Validator) SanitizeEnvironmentVariables(envVars map[string]string) map[
 		return make(map[string]string)
 	}
 
-	sanitized := make(map[string]string)
+	sanitized := make(map[string]string, len(envVars))
 
 	for key, value := range envVars {
 		if v.isSensitiveEnvVar(key) || v.isSensitiveEnvValue(value) {
