@@ -100,7 +100,7 @@ verify 時の検証は「record 時に解決されたパス群のハッシュ照
 
 #### F-002: AtomicMoveFile のソース同一性保証
 
-- **AC-05**: `AtomicMoveFile`（`atomicMoveFileCore`）は、検証済みソース fd と実際に rename されるファイルが同一の inode であることを、rename 直前に取得した `(dev, ino)` の突き合わせ、または同等の原子性を持つ方式で保証する。なお、`os.Rename(path, path)` に先立つ stat 系呼び出しによる `(dev, ino)` 照合のみでは、rename がパス名で解決される以上、検査時点と rename 時点の間に別 inode への差し替えを許す TOCTOU 窓が残る。この窓を閉じるには fd アンカー方式（`renameat2` + `RENAME_NOREPLACE`、`linkat` + `AT_EMPTY_PATH` 等）が必要であり、採用する方式は architecture 文書で確定する。本セキュリティ保証は、移動先ファイルの親ディレクトリが信頼できる所有者（root または厳格な権限（例：0o710）を持つ信頼できるユーザー）によって保護されていることを前提としている。
+- **AC-05**: `AtomicMoveFile`（`atomicMoveFileCore`）は、検証済みソース fd と実際に rename されるファイルが同一の inode であることを、rename 直前に取得した `(dev, ino)` の突き合わせ、または同等の原子性を持つ方式で保証する。なお、`os.Rename(path, path)` に先立つ stat 系呼び出しによる `(dev, ino)` 照合のみでは、rename がパス名で解決される以上、検査時点と rename 時点の間に別 inode への差し替えを許す TOCTOU 窓が残る。この窓を閉じるには fd アンカー方式が必要であり、採用する具体的な方式は architecture 文書で確定する。本セキュリティ保証は、移動先ファイルの親ディレクトリが信頼できる所有者（root または厳格な権限（例：0o710）を持つ信頼できるユーザー）によって保護されていることを前提としている。
 - **AC-06**: 同一性が確認できない場合（ソースパスが検証後に差し替えられた場合）、rename を行わずエラーを返す（fail-closed）。改ざんがない正常系の移動は従来どおり成功する。
 
 #### F-003: record 時のハッシュ計算と解析の一貫性
@@ -121,7 +121,7 @@ verify 時の検証は「record 時に解決されたパス群のハッシュ照
 
 #### F-006: shebang インタプリタ symlink 検査の残余リスク文書化
 
-- **AC-14**: `verifyInterpreterSymlinkTarget` の symlink 検査と実際の exec 時カーネル再解決の間に残る TOCTOU 窓について、(a) 構造的に完全排除が困難である理由、(b) 悪用の前提条件（インタプリタパスの symlink 差し替え権限）、(c) 残余リスクとして許容する判断が、設計文書またはセキュリティ文書（`docs/security/` 配下、具体的な配置場所は architecture 文書で確定する）に明記される。本 AC は文書化のみの成果物であり暗黙に脱落しやすいため、配置先を architecture 文書で確定し、実装計画でも完了チェック項目として追跡すること。
+- **AC-14**: `verifyInterpreterSymlinkTarget` の symlink 検査と実際の exec 時カーネル再解決の間に残る TOCTOU 窓について、(a) 構造的に完全排除が困難である理由、(b) 悪用の前提条件（インタプリタパスの symlink 差し替え権限）、(c) 残余リスクとして許容する判断が、設計文書またはセキュリティ文書に明記される。配置先は architecture 文書で確定する。本 AC は文書化のみの成果物であり暗黙に脱落しやすいため、配置先を architecture 文書で確定し、実装計画でも完了チェック項目として追跡すること。
 
 ## Success Criteria（要件レベル）
 
