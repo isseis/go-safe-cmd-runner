@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -1167,5 +1169,100 @@ func TestExtractCommandResults_Wrapper(t *testing.T) {
 		require.Len(t, result, 1)
 		assert.Equal(t, "fromLogValuer", result[0].Name)
 		assert.Equal(t, 2, result[0].ExitCode)
+	})
+}
+
+func TestSanitizeErrorForLog(t *testing.T) {
+	t.Run("URLErrorDirect", func(t *testing.T) {
+		urlErr := &url.Error{
+			Op:  "Post",
+			URL: "https://hooks.slack.com/services/T00/B00/xxxx",
+			Err: errors.New("connection refused"),
+		}
+		require.Contains(t, urlErr.Error(), "hooks.slack.com/services/T00/B00/xxxx",
+			"positive control: URL must be present in original error")
+		result := sanitizeErrorForLog(urlErr)
+		assert.NotContains(t, result, "hooks.slack.com/services/T00/B00/xxxx")
+		assert.Contains(t, result, "connection refused")
+	})
+
+	t.Run("URLErrorNilInnerErr", func(t *testing.T) {
+		urlErr := &url.Error{
+			Op:  "Post",
+			URL: "https://hooks.slack.com/services/xxx",
+			Err: nil,
+		}
+		require.Contains(t, urlErr.Error(), "hooks.slack.com/services/xxx",
+			"positive control: URL must be present in original error")
+		result := sanitizeErrorForLog(urlErr)
+		assert.NotContains(t, result, "hooks.slack.com")
+		assert.Contains(t, result, "url error:")
+		assert.Contains(t, result, "without URL")
+	})
+
+	t.Run("URLErrorWrapped", func(t *testing.T) {
+		urlErr := &url.Error{
+			Op:  "Post",
+			URL: "https://hooks.slack.com/services/T00/B00/xxxx",
+			Err: errors.New("connection refused"),
+		}
+		wrapped := fmt.Errorf("send failed: %w", urlErr)
+		require.Contains(t, wrapped.Error(), "hooks.slack.com/services/T00/B00/xxxx",
+			"positive control: URL must be present in original wrapped error")
+		result := sanitizeErrorForLog(wrapped)
+		assert.NotContains(t, result, "hooks.slack.com")
+		assert.Contains(t, result, "connection refused")
+	})
+
+	t.Run("URLErrorDeeplyWrapped", func(t *testing.T) {
+		urlErr := &url.Error{
+			Op:  "Post",
+			URL: "https://hooks.slack.com/services/T00/B00/xxxx",
+			Err: errors.New("connection refused"),
+		}
+		wrapped := fmt.Errorf("middleware: %w", fmt.Errorf("request: %w", urlErr))
+		require.Contains(t, wrapped.Error(), "hooks.slack.com/services/T00/B00/xxxx",
+			"positive control: URL must be present in deeply wrapped error")
+		result := sanitizeErrorForLog(wrapped)
+		assert.NotContains(t, result, "hooks.slack.com")
+		assert.Contains(t, result, "connection refused")
+	})
+
+	t.Run("ErrorTypePreserved", func(t *testing.T) {
+		tests := []struct {
+			name        string
+			err         error
+			wantContain string
+		}{
+			{"timeout", errors.New("context deadline exceeded"), "context deadline exceeded"},
+			{"dns_error", errors.New("lookup hooks.slack.com: no such host"), "lookup hooks.slack.com: no such host"},
+			{"connection_refused", errors.New("connection refused"), "connection refused"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				result := sanitizeErrorForLog(tt.err)
+				assert.Contains(t, result, tt.wantContain)
+			})
+		}
+	})
+
+	t.Run("NilError", func(t *testing.T) {
+		result := sanitizeErrorForLog(nil)
+		assert.Equal(t, "", result)
+	})
+
+	t.Run("NonURLError", func(t *testing.T) {
+		err := errors.New("some generic error")
+		result := sanitizeErrorForLog(err)
+		assert.Equal(t, "some generic error", result)
+	})
+
+	// TODO(0154-import-cycle): Apply RedactText fallback to non-URL errors.
+	// Once the import cycle between internal/redaction and internal/logging
+	// is resolved, this should assert NotContains(t, result, "hunter2").
+	t.Run("NonURLErrorWithSensitiveValueNotSanitized_KnownGap", func(t *testing.T) {
+		err := errors.New("failed with password=hunter2")
+		result := sanitizeErrorForLog(err)
+		assert.Equal(t, "failed with password=hunter2", result)
 	})
 }

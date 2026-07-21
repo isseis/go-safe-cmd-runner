@@ -313,9 +313,9 @@ Slack 送信失敗時のエラーログから webhook URL を除去する。HTTP
 
 非公開ヘルパー関数を追加し、エラー値を処理する。処理優先順位は以下の通り：
 
-1. **`*url.Error` の直接検出**: エラーが `*url.Error` 型である場合、その `Err` フィールド（URL ラップ前のエラー）のメッセージのみを抽出。URL フィールドを明示的に除外する。`Err` フィールドが `nil` の場合があるため、nil チェックを行い、nil の場合は `url.Error` の文字列表現（`Error()` メソッドの返り値）をフォールバックとして使用する。これにより `*url.Error` が nil inner error で構築された場合の panic を防止する。
+1. **`*url.Error` の直接検出**: エラーが `*url.Error` 型である場合、その `Err` フィールド（URL ラップ前のエラー）のメッセージのみを抽出。URL フィールドを明示的に除外する。`Err` フィールドが `nil` の場合があるため、nil チェックを行い、nil の場合は安全なフォールバックとして `"url error: " + urlErr.Op + " without URL"` を使用し、URL を含めずに操作種別のみを出力する。これにより `*url.Error` が nil inner error で構築された場合の panic を防止する。
 2. **ラップチェーンの走査**: エラーが別の型にラップされている場合（例: `fmt.Errorf("...: %w", urlErr)`）、チェーンを走査して `*url.Error` を探索。見つかった場合はその `Err` フィールドを使用。
-3. **フォールバック**: ラップチェーンに `*url.Error` が含まれない場合、エラー文字列全体に `RedactText` を適用。これにより、URL 形式でない機密パターンも検出される。
+3. **フォールバック**: ラップチェーンに `*url.Error` が含まれない場合、エラー文字列をそのまま返す。`RedactText` による非 URL 機密パターン（パスワード等）の検出は、`internal/redaction` と `internal/logging` 間の import cycle（`redactor_test.go` が `logging.NewMultiHandler` を import しているため）のため保留。実装には `TODO(0154-import-cycle)` コメントを残し、将来 import cycle が解消されたら適用する。
 
 **設計判断**: `*url.Error` の構造的な抽出を優先する理由は、Slack webhook URL 形式に特化したパターンマッチングよりも確実に URL を除去できるためである。エラー型の構造に基づく処理により、誤検出や漏洩漏れのリスクを最小化する。
 

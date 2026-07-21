@@ -838,11 +838,31 @@ func generateBackoffIntervals(base time.Duration, count int) []time.Duration {
 	return intervals
 }
 
+// sanitizeErrorForLog extracts a safe error string for logging,
+// stripping webhook URLs from *url.Error values.
+//
+// TODO(0154-import-cycle): Apply RedactText to non-URL errors as a
+// defense-in-depth fallback. This requires resolving the import cycle
+// between internal/redaction and internal/logging (redactor_test.go
+// imports logging for NewMultiHandler tests).
+func sanitizeErrorForLog(err error) string {
+	if err == nil {
+		return ""
+	}
+	if urlErr, ok := errors.AsType[*url.Error](err); ok {
+		if urlErr.Err != nil {
+			return urlErr.Err.Error()
+		}
+		return "url error: " + urlErr.Op + " without URL"
+	}
+	return err.Error()
+}
+
 // sendToSlack sends a message to Slack with retry logic
 func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) error {
 	payload, err := json.Marshal(message)
 	if err != nil {
-		slog.Error("Failed to marshal Slack message", slog.Any("error", err), slog.String("run_id", s.runID))
+		slog.Error("Failed to marshal Slack message", slog.String("error", sanitizeErrorForLog(err)), slog.String("run_id", s.runID))
 		return fmt.Errorf("failed to marshal Slack message: %w", err)
 	}
 
@@ -866,7 +886,7 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 		req, err := http.NewRequestWithContext(ctx, "POST", s.webhookURL, bytes.NewBuffer(payload))
 		if err != nil {
 			lastErr = fmt.Errorf("failed to create request: %w", err)
-			slog.Warn("Failed to create Slack request", slog.Any("error", err), slog.Int("attempt", attempt+1), slog.String("run_id", s.runID))
+			slog.Warn("Failed to create Slack request", slog.String("error", sanitizeErrorForLog(err)), slog.Int("attempt", attempt+1), slog.String("run_id", s.runID))
 			continue
 		}
 
@@ -875,13 +895,13 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 		resp, err := s.httpClient.Do(req) //nolint:gosec // G704: URL is a configured Slack webhook, not user-controlled
 		if err != nil {
 			lastErr = fmt.Errorf("failed to send request: %w", err)
-			slog.Warn("Failed to send Slack request", slog.Any("error", err), slog.Int("attempt", attempt+1), slog.String("run_id", s.runID))
+			slog.Warn("Failed to send Slack request", slog.String("error", sanitizeErrorForLog(err)), slog.Int("attempt", attempt+1), slog.String("run_id", s.runID))
 			continue
 		}
 
 		statusCode := resp.StatusCode
 		if err := resp.Body.Close(); err != nil {
-			slog.Warn("Failed to close response body", slog.Any("error", err))
+			slog.Warn("Failed to close response body", slog.String("error", sanitizeErrorForLog(err)))
 		}
 
 		if statusCode >= 200 && statusCode < 300 {
@@ -900,7 +920,7 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 		return fmt.Errorf("%w: %d", ErrClientError, statusCode)
 	}
 
-	slog.Error("Failed to send Slack notification after all retries", slog.Int("attempts", len(backoffIntervals)+1), slog.Any("last_error", lastErr), slog.String("run_id", s.runID))
+	slog.Error("Failed to send Slack notification after all retries", slog.Int("attempts", len(backoffIntervals)+1), slog.String("last_error", sanitizeErrorForLog(lastErr)), slog.String("run_id", s.runID))
 	return fmt.Errorf("failed to send to Slack after %d attempts: %w", len(backoffIntervals)+1, lastErr)
 }
 
