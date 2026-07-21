@@ -223,14 +223,20 @@ func TestLogUserGroupExecution_OutputMasking(t *testing.T) {
 	t.Run("sensitive stderr masked", func(t *testing.T) {
 		cmd := executortestutil.CreateRuntimeCommand("/bin/false", []string{})
 		result := &audit.ExecutionResult{
-			Stdout:   "",
+			Stdout:   "leaked token: apikey=letmein123",
 			Stderr:   "connection failed: password=hunter2",
 			ExitCode: 1,
 		}
-		// positive control: the secret is actually present in the raw value.
+		// positive control: the secrets are actually present in the raw values.
+		require.Contains(t, result.Stdout, "letmein123")
 		require.Contains(t, result.Stderr, "hunter2")
 
 		entry := logUserGroupExecutionEntry(t, cmd, result)
+
+		stdout, ok := entry["stdout"].(string)
+		require.True(t, ok)
+		assert.NotContains(t, stdout, "letmein123", "secret must be masked")
+		assert.Contains(t, stdout, "[REDACTED]")
 
 		stderr, ok := entry["stderr"].(string)
 		require.True(t, ok)
@@ -266,6 +272,11 @@ func TestLogUserGroupExecution_ArgMasking(t *testing.T) {
 		require.True(t, ok)
 		assert.NotContains(t, args, "supersecretvalue", "secret must be masked")
 		assert.Contains(t, args, "[REDACTED]")
+
+		expandedArgs, ok := entry["expanded_command_args"].(string)
+		require.True(t, ok)
+		assert.NotContains(t, expandedArgs, "supersecretvalue", "secret must be masked")
+		assert.Contains(t, expandedArgs, "[REDACTED]")
 	})
 
 	t.Run("NoSensitiveContent", func(t *testing.T) {
