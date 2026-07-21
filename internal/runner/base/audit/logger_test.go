@@ -399,35 +399,41 @@ func TestLogSecurityEvent_DetailsRedaction(t *testing.T) {
 
 // TestLogSecurityEvent_DetailsKeyCollisionPrevention verifies that details
 // keys matching schema attribute names cannot overwrite the schema values.
+// It asserts on the raw JSON text (not just the unmarshaled map) so the check
+// does not depend on attribute-append order or on encoding/json's last-value-wins
+// behavior masking a real duplicate key.
 func TestLogSecurityEvent_DetailsKeyCollisionPrevention(t *testing.T) {
 	tests := []struct {
-		name          string
-		schemaKey     string
-		schemaValue   string
-		collidingKey  string
-		collidingFake string
+		name         string
+		collidingKey string
+		fakeValue    any
 	}{
-		{"severity", "severity", "critical", "severity", "fake_value"},
-		{"audit_type", "audit_type", "security_event", "audit_type", "fake_type"},
-		{"slack_notify", "slack_notify", "true", "slack_notify", "true"},
+		{"severity", "severity", "fake_value"},
+		{"audit_type", "audit_type", "fake_type"},
+		{"slack_notify", "slack_notify", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			logger := slog.New(slog.NewJSONHandler(&buf, nil))
-			details := map[string]any{tt.collidingKey: tt.collidingFake}
+			details := map[string]any{tt.collidingKey: tt.fakeValue}
 			audit.NewAuditLoggerWithCustom(logger).LogSecurityEvent(
 				context.Background(), "event", "critical", "msg", details,
 			)
+			logOutput := buf.String()
+
+			// The schema key must appear exactly once in the raw JSON: if the
+			// details value were not namespaced, a second "<key>": attribute
+			// would be emitted, which json.Unmarshal would silently collapse
+			// via last-value-wins, hiding the collision from a map-based assertion.
+			rawKey := `"` + tt.collidingKey + `":`
+			assert.Equal(t, 1, strings.Count(logOutput, rawKey),
+				"schema key %q must appear exactly once in raw JSON output", tt.collidingKey)
 
 			var entry map[string]any
 			require.NoError(t, json.Unmarshal(buf.Bytes(), &entry))
-
-			// The details-derived value lands in the "detail_"-prefixed key.
-			assert.Equal(t, tt.collidingFake, entry["detail_"+tt.collidingKey])
-			// The schema key is untouched by the details value.
-			assert.NotEqual(t, tt.collidingFake, entry[tt.schemaKey])
+			assert.Contains(t, entry, "detail_"+tt.collidingKey, "details value routed to the prefixed key")
 		})
 	}
 }

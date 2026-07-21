@@ -454,7 +454,7 @@ flowchart TD
 | `slog.Any` map/struct 要素 | 高（全エクスポートフィールドが漏洩） | 低（全エントリ/フィールドが redact 対象） | 深度制限超過時のプレースホルダ置換による情報損失（`failureLogger` の診断情報で説明可能） |
 | `slog.Any` スライス文字列要素 | 中（RedactText 非適用） | 低（RedactText 適用） | なし |
 | Slack エラーログ | 高（webhook URL が平文） | 低（URL 除去） | URL 除去によりトラブルシューティング情報が一部欠落（AC-10 により許容） |
-| 監査ログ（LogUserGroupExecution 他） | 高（コマンド引数の機密情報が平文） | 低（境界 redact 適用） | なし |
+| 監査ログ（LogUserGroupExecution 他） | 高（コマンド引数の機密情報が平文） | 低（境界 redact 適用） | `LogSecurityEvent` の `details` に渡される複合型（map/struct/slice）・`slog.LogValuer` 値は境界 redaction（Layer 0）の対象外で Layer 2 に委ねる（§3.5.4）。`RedactingHandler` を経由しない `Logger`（`NewAuditLoggerWithCustom` 等）にこの種の値を渡した場合、値は redact されない |
 | 環境変数サニタイズ | 中（値内容の機密情報が素通り） | 低（値検査追加） | ValueDetector の検出限界（未知の機密形式は未検出） |
 
 ### 5.4 例外ポリシー

@@ -171,7 +171,10 @@ func (l *Logger) LogSecurityEvent(
 	// Add custom details under a "detail_" namespace so caller-supplied keys
 	// cannot collide with (and overwrite) the schema attributes above. String
 	// values are boundary-redacted here; composite values (map/struct/slice)
-	// are left to the RedactingHandler's recursive redaction.
+	// and slog.LogValuer values are left to the RedactingHandler's recursive
+	// redaction (Layer 2). A Logger built without a RedactingHandler (e.g.
+	// NewAuditLoggerWithCustom with a plain slog.Logger) therefore has no
+	// masking for secrets nested inside a non-string details value.
 	for key, value := range details {
 		prefixedKey := "detail_" + key
 		switch v := value.(type) {
