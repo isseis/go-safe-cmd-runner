@@ -619,7 +619,7 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 
 - **検証方法**: `test`
 - **テスト場所**: `internal/logging/slack_handler_test.go::TestSanitizeErrorForLog/ErrorTypePreserved`
-- **検証内容**: 各種エラー（connection refused, timeout, DNS 等）の種別情報が保持されることを検証。`NonURLError` で URL を含まないエラーの情報も保持されること、`NonURLErrorWithSensitiveValue` で非 URL 機密パターンがマスクされることも検証
+- **検証内容**: 各種エラー（connection refused, timeout, DNS 等）の種別情報が保持されることを検証。`NonURLError` で URL を含まないエラーの情報も保持されること。`NonURLErrorWithSensitiveValueNotSanitized_KnownGap` は非 URL 機密パターンの RedactText マスクが import cycle により保留であることを確認（値がそのまま通過する）
 
 ### 5.12 AC-11: LogUserGroupExecution stdout/stderr 境界 redact
 
