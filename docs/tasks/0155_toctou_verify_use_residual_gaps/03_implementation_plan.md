@@ -47,7 +47,7 @@
 - `SaveRecord`（`internal/filevalidator/validator.go:365-387`）は `saveRecordCore` を呼び出す。
 - `saveRecordCore`（`internal/filevalidator/validator.go:388-411`）内で shebang・ハッシュ・各解析が別々に実行される。
 - 現状の入力形式：各解析器はパス名を受け取る。
-  - shebang: `shebang.ResolveInterpreter(scriptPath, ...)`
+  - shebang: `shebang.Parse(filePath, fs)` (filePath と safefileio.FileSystem を受け取る)
   - ハッシュ: `calculateHash(filePath string, ...)` (内部関数)
   - ELF dynlib: `binaryanalyzer.AnalyzeNetworkSymbols`, `elfdynlib.Analyzer.Analyze`
   - Mach-O: `machodylib` 関数群（パス名ベース）
@@ -286,7 +286,7 @@
 - [ ] `saveRecordCore` 実装変更:
   - shebang 解析、ハッシュ計算、各解析へ共有 fd を渡す
 - [ ] 各解析器の入力経路拡張:
-  - `shebang.ResolveInterpreter`: パス名に加え `io.ReaderAt` 入力対応
+   - `shebang.Parse`: パス名に加え `io.ReaderAt` 入力対応
   - `binaryanalyzer`: パス名に加え `io.ReaderAt` 入力対応
   - `elfdynlib.Analyzer.Analyze`: `io.ReaderAt` 入力対応
   - `machodylib` 関数: `io.ReaderAt` 入力対応
@@ -327,7 +327,7 @@
 |---|---|---|---|
 | **AC-01** | test | `internal/runner/base/risk/*_test.go` に新規テスト追加。`openVerifiedIdentity` が fd 内容のハッシュを検証済みハッシュと照合し、不一致時に `ErrIdentityHashMismatch` を返すことを確認 | テスト通過 |
 | **AC-02** | test | `internal/runner/base/risk/*_test.go` に新規テスト追加。path を FIFO に差し替えた場合に `ErrIdentityNotRegular` を返し、`O_NONBLOCK` が open ブロックを防ぎ、`fstat` による検査が有効であることを確認 | テスト通過 |
-| **AC-03** | test | 既存テスト `openVerifiedIdentityForTest` 等のテストが変更前と同じ結果を返すことを確認（回帰防止） | 既存テスト全て通過 |
+| **AC-03** | test | `internal/runner/base/executor/stagefromfd_test.go` の既存テスト `openVerifiedIdentityForTest` 等のテストが変更前と同じ結果を返すことを確認（回帰防止） | 既存テスト全て通過 |
 | **AC-04** | test | `internal/runner/base/risk/*_test.go` に新規テスト追加。`ErrIdentityHashMismatch` / `ErrIdentityNotRegular` が適切に `ReasonIdentityHashMismatch` / `ReasonIdentityNotRegular` に対応付けられ、audit ログに記録されることを確認 | テスト通過 |
 | **AC-05** | test | `internal/safefileio/*_test.go` に新規テスト追加。検証後に source path を別 inode へ差し替えても、移動されるのが検証済み inode であること（fd アンカー）を確認 | テスト通過 |
 | **AC-06** | test | 既存テスト `AtomicMoveFile` 系のテストが成功し、改ざんなし時の移動が fail-closed 後退を持たないことを確認 | 既存テスト全て通過 |
