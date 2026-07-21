@@ -638,8 +638,8 @@ Phase 1 が RedactingHandler のコア機能を拡張するため、全フェー
   - 200 エントリの環境変数 map → `SanitizeEnvironmentVariables` が全値に `RedactText` を呼び出す
 - **許容性の判断**: ログ出力はコマンド実行のクリティカルパスではない。ログレコードあたりの処理時間増加がミリ秒オーダーに収まる限り、コマンド実行走行への影響は無視できる。実装時にはベンチマークテストを追加し、現状の `Handle` 処理時間からの増加率を計測すること。
 - **ベンチマーク要件**: 以下のケースでベンチマークテストを作成すること:
-  - `BenchmarkHandle_WithLargeMap`（1,000 エントリの `map[string]string`）
-  - `BenchmarkHandle_WithWideStruct`（50 フィールドの struct）
+  - `BenchmarkRedactingHandler_WithLargeMap`（1,000 エントリの `map[string]string`）
+  - `BenchmarkRedactingHandler_WithWideStruct`（50 フィールドの struct）
   - `BenchmarkSanitizeEnvironmentVariables_WithLargeEnv`（200 エントリ）
 
 ### 9.4 ロールアウトと移行戦略

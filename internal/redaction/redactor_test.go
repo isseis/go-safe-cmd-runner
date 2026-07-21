@@ -2113,6 +2113,14 @@ func TestRedactingHandler_SliceStringElementRedaction(t *testing.T) {
 		assert.Contains(t, output, "[REDACTED]", "Should contain redaction placeholder")
 		assert.Contains(t, output, "/usr/bin/ls", "Non-sensitive map values should be preserved")
 		assert.Contains(t, output, "/usr/bin/cat", "Non-sensitive map values should be preserved")
+
+		// Positive control: verify secret appears via non-redacting JSON handler
+		var controlBuf bytes.Buffer
+		controlHandler := slog.NewJSONHandler(&controlBuf, nil)
+		controlLogger := slog.New(controlHandler)
+		controlLogger.Info("Test message", "items", slog.AnyValue(items))
+		controlOutput := controlBuf.String()
+		assert.Contains(t, controlOutput, "secret-token-abc", "Secret should appear in non-redacting handler output, confirming redaction is actually preventing leakage")
 	})
 
 	t.Run("NoSensitiveContent", func(t *testing.T) {
@@ -2142,6 +2150,27 @@ func TestRedactingHandler_SliceStringElementRedaction(t *testing.T) {
 		output := buf.String()
 		assert.Contains(t, output, "string", "String element should be preserved")
 		assert.Contains(t, output, "nested", "Nested array element should be preserved")
+
+		// Verify []any type conversion via mock handler
+		mock := newMockHandler()
+		redactingMock := NewRedactingHandler(mock, config, nil)
+		mockLogger := slog.New(redactingMock)
+		mockLogger.Info("Test message", "items", slog.AnyValue(mixedSlice))
+
+		require.Len(t, mock.records, 1)
+		record := mock.records[0]
+		var itemsAttr slog.Attr
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == "items" {
+				itemsAttr = attr
+				return false
+			}
+			return true
+		})
+		anySlice, ok := itemsAttr.Value.Any().([]any)
+		assert.True(t, ok, "Mixed slice should be converted to []any, got %T", itemsAttr.Value.Any())
+		// All elements should have survived redaction
+		assert.Len(t, anySlice, len(mixedSlice))
 	})
 }
 

@@ -210,8 +210,8 @@
   - サブテスト `NoSensitiveContent`（AC-07）: `[]string{"normal", "args"}` → 内容変化なし
   - サブテスト `MixedTypes`（AC-08）: `[]any{"string", 123, true, []string{"nested"}}` → パニックせず処理されることを検証
 
-- [x] ベンチマークテスト `BenchmarkHandle_WithLargeMap` を追加（1,000 エントリの `map[string]string`。`02_architecture.md` §9.3）
-- [x] ベンチマークテスト `BenchmarkHandle_WithWideStruct` を追加（50 フィールドの struct。`02_architecture.md` §9.3）
+- [x] ベンチマークテスト `BenchmarkRedactingHandler_WithLargeMap` を追加（1,000 エントリの `map[string]string`。`02_architecture.md` §9.3）
+- [x] ベンチマークテスト `BenchmarkRedactingHandler_WithWideStruct` を追加（50 フィールドの struct。`02_architecture.md` §9.3）
 
 #### 2.1.7 既存テストの確認
 
@@ -736,8 +736,8 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 - [x] `processSlice` の非 LogValuer 要素を再帰 redact に修正
 - [x] `processSlice` のドキュメントコメント（line 614-640）を更新し、非 LogValuer 要素が `redactLogAttributeWithContext` 経由で再帰 redact されることを反映する
 - [x] `TestRedactingHandler_SliceStringElementRedaction` テストを追加（AC-06, AC-07, AC-08）
-- [x] ベンチマークテスト `BenchmarkHandle_WithLargeMap` を追加（1,000 エントリの `map[string]string`。`02_architecture.md` §9.3）
-- [x] ベンチマークテスト `BenchmarkHandle_WithWideStruct` を追加（50 フィールドの struct。`02_architecture.md` §9.3）
+- [x] ベンチマークテスト `BenchmarkRedactingHandler_WithLargeMap` を追加（1,000 エントリの `map[string]string`。`02_architecture.md` §9.3）
+- [x] ベンチマークテスト `BenchmarkRedactingHandler_WithWideStruct` を追加（50 フィールドの struct。`02_architecture.md` §9.3）
 - [x] 既存テストの回帰確認（`make test` を `internal/redaction/` で実行）
 
 ### 7.3 PR-3 チェックリスト（F-003: Slack エラーログ sanitize）
