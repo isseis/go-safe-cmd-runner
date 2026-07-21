@@ -131,13 +131,32 @@
 
 ---
 
-## 3. テスト戦略
+## 3. テスト戦略と PR 構成
 
 ### 概要
 
 各 AC に対し、正常系（改ざんなし・回帰防止）と異常系（TOCTOU 窓を突く・fail-closed 確認）の双方のテストを実装する。
 
-### F-001 テスト戦略
+### 3.1 PR 構成
+
+本実装計画は 5 つの独立した修正（F-001 〜 F-006）を 5 つの PR に分割して実施する。各 PR は green gate（`make test && make lint`）を独立して通過し、内部層（`internal/`）の変更のみで構成される。
+
+| PR | 対象機能 | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | F-005 / F-001 | `validateAndCacheCommand` の `EvalSymlinks`→`Lstat` 順序変更 / `openVerifiedIdentity` のハッシュ検証・`O_NONBLOCK`・`fstat` 追加 / sentinel error と reason code 定義 | frontier-recommended |
+| PR-2 | F-004 | `VerifyCommandDynLibDeps` 署名変更（`envVars` 追加） / 依存解決再実行ロジック / 20+ テストファイルのモック期待更新 / グループ実行系の統合テスト | frontier-recommended |
+| PR-3 | F-003 | `SaveRecord` の共有 fd 束縛 / `saveRecordCore` で各解析器へ fd 伝播 / `analyzeOneLibrary` でハッシュキー照合 / store 境界でのハッシュ検証 / 各解析器の `io.ReaderAt` 入力対応 | frontier-recommended |
+| PR-4 | F-002 | `atomicMoveFileCore` の `linkat` ベース fd アンカー移動 / 一時リンク生成・クリーンアップ / エラー経路の defer 処理 | frontier-recommended |
+| PR-5 | F-006 | 02_architecture.md § 5.3 への F-006 残余リスク文書化（既に実施済み） | standard |
+
+**PR 独立性に関する注記**:
+
+- **PR-3（F-003）と PR-2（F-004）の独立性**: F-003 は各解析器の入力経路を拡張（パス名に加え `io.ReaderAt` を受け入れる）するが、既存のパス名ベース呼び出し規約は変更しない。F-004 の `VerifyCommandDynLibDeps` は verify 時にパス指定で `DynLibAnalyzer.Analyze` / `machodylib` を呼び出すため、既存呼び出し規約で動作し、F-003 がなくても green gate をパスする。したがって PR-2 は PR-3 に依存せず独立して実装できる。
+- **各 PR の green gate 独立性**: 全ての PR は内部層（`internal/`）のみを変更し、cmd 層への依存がない。各 PR は既存テスト全て通過を確認して green gate をパスする。
+
+### 3.2 テスト戦略
+
+#### F-001 テスト戦略
 
 - **正常系**（AC-03）: 内容一致時に VerifiedIdentity が返る。既存の `openVerifiedIdentityForTest` 等を活用し、回帰防止。
 - **異常系（AC-01,04）**:
@@ -146,7 +165,7 @@
   - パスを FIFO に差し替えた場合に `ErrIdentityNotRegular` を返す。
 - テスト場所: `internal/runner/base/risk/*_test.go`（既存テストに追加）
 
-### F-002 テスト戦略
+#### F-002 テスト戦略
 
 - **正常系**（AC-06）: 改ざんなしの移動が成功、内容保持。すべてのテストファイルは `t.TempDir()` で自動的にクリーンアップされる。
 - **異常系（AC-05）fd アンカー検証**:
@@ -157,7 +176,7 @@
   - 一時名の EEXIST エラーが適切に返されること。
 - テスト場所: `internal/safefileio/*_test.go`（既存テストに追加、すべてのテストは `t.TempDir()` を使用）
 
-### F-003 テスト戦略
+#### F-003 テスト戦略
 
 - **正常系**（AC-09）: 変更前と同一内容のレコード生成。
 - **異常系（AC-07）TOCTOU 注入**:
@@ -168,19 +187,19 @@
   - store 境界・analyzeOneLibrary でハッシュキー不一致時に ErrLibraryHashKeyMismatch を返す。
 - テスト場所: `internal/filevalidator/*_test.go`・`internal/dynamicanalysis/*_test.go`（既存テストに追加）
 
-### F-004 テスト戦略
+#### F-004 テスト戦略
 
 - **正常系**（AC-11）: 環境不変時に verify 成功。
 - **異常系**（AC-10）: record 後に高優先探索位置へ新規ライブラリ配置→verify 失敗。構造化エラーが soname・新旧パスを保持することを確認。
 - テスト場所: `internal/verification/manager_test.go`・`manager_macho_test.go`（既存テストに追加）
 
-### F-005 テスト戦略
+#### F-005 テスト戦略
 
 - **正常系**（AC-13）: 通常構成で解決済みパスが返りキャッシュされる。
 - **異常系**（AC-12）: 解決順序により、検証対象とキャッシュ対象が同一解決結果を指す。
 - テスト場所: `internal/verification/*_test.go`（既存テストに追加）
 
-### F-006 テスト戦略
+#### F-006 テスト戦略
 
 - **静的検証**（AC-14）: 02_architecture.md § 5.3 に (a)(b)(c) が記載されていることを確認。
 
@@ -223,6 +242,23 @@
   - `errors.Is(err, ErrIdentityHashMismatch)` → `ReasonIdentityHashMismatch`
   - `errors.Is(err, ErrIdentityNotRegular)` → `ReasonIdentityNotRegular`
 - [ ] 既存テスト全て通過（`reason_codes_test.go::TestReasonFamily_AllCodesAssigned` 含む）
+
+### PR-1 作成ポイント: path resolution and identity verification hardening
+
+**対象ステップ**: F-005 / F-001
+
+**推奨タイトル**: `feat(0155): path resolution and identity verification hardening`
+
+**レビュー観点**: `EvalSymlinks` 順序変更の正確性 / ハッシュ検証の実装 / sentinel error の定義と対応付け / reason code の登録と `totalReasonCodes` 更新の確認
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: F-001 は file integrity verification（ファイルハッシュ検証）に相当する Conditional trigger にマッチし、AC-01/AC-02 はセキュリティクリティカルな検証ロジックであるため
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: F-004 VerifyCommandDynLibDeps の envVars 追加
 
@@ -273,6 +309,23 @@
   - group execute が依存集合不一致で実行を中止する
   - reason code が構造化エラー（soname・新旧パス含む）として記録される
 
+### PR-2 作成ポイント: dependency resolution re-execution and interface coordination
+
+**対象ステップ**: F-004
+
+**推奨タイトル**: `feat(0155): dependency resolution re-execution with environment awareness`
+
+**レビュー観点**: インターフェース署名変更の影響範囲 / `envVars` パラメータのセマンティクス / 依存解決再実行ロジック / 20+ テストファイルのモック期待更新の整合性確認 / 構造化エラーの内容（soname・path・stage）
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: インターフェース署名変更は 20+ テストファイルに波及し、`envVars` のセマンティクス（環境非依存性の明示）が設計上の重要な判断であるため
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 3: F-003 SaveRecord の共有 fd 束縛
 
 **ファイル**:
@@ -285,11 +338,13 @@
   - fd を `io.ReaderAt` として全下流へ渡す
 - [ ] `saveRecordCore` 実装変更:
   - shebang 解析、ハッシュ計算、各解析へ共有 fd を渡す
-- [ ] 各解析器の入力経路拡張:
+- [ ] 各解析器の入力経路拡張（全 6 つの解析関数対応）:
    - `shebang.Parse`: パス名に加え `io.ReaderAt` 入力対応
-  - `binaryanalyzer`: パス名に加え `io.ReaderAt` 入力対応
+  - `binaryanalyzer.AnalyzeNetworkSymbols`: `io.ReaderAt` 入力対応
+  - `binaryanalyzer.analyzeELFSyscalls`: `io.ReaderAt` 入力対応
+  - `binaryanalyzer.analyzeMachoSyscalls`: `io.ReaderAt` 入力対応
   - `elfdynlib.Analyzer.Analyze`: `io.ReaderAt` 入力対応
-  - `machodylib` 関数: `io.ReaderAt` 入力対応
+  - `machodylib` 依存解決関数: `io.ReaderAt` 入力対応
 - [ ] `calculateHash` 実装変更:
   - `io.ReaderAt` から実測ハッシュを計算
 - [ ] `analyzeOneLibrary` 実装変更:
@@ -300,6 +355,23 @@
   - 期待ハッシュ `libHash` と実測ハッシュを照合
   - 不一致時に解析結果を記録せず `ErrLibraryHashKeyMismatch` return
 - [ ] 既存テスト全て通過
+
+### PR-3 作成ポイント: shared fd binding for record content consistency
+
+**対象ステップ**: F-003
+
+**推奨タイトル**: `feat(0155): shared fd binding for record content consistency`
+
+**レビュー観点**: 共有 fd の各解析器への伝播 / ハッシュ計算と解析の一貫性検証 / `io.ReaderAt` の正確な使用方法 / ライブラリハッシュキー照合の実装位置と境界の妥当性
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: F-003 は file integrity verification（内容一貫性）に相当し AC-07/AC-08 はセキュリティクリティカルであり、TOCTOU 注入テストによる検証が必須であるため
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4: F-002 atomicMoveFileCore の fd アンカー移動
 
@@ -313,9 +385,43 @@
 - [ ] 移動先最終検証の実装
 - [ ] 既存テスト全て通過
 
+### PR-4 作成ポイント: fd-anchored atomic file movement
+
+**対象ステップ**: F-002
+
+**推奨タイトル**: `feat(0155): fd-anchored atomic file movement with linkat`
+
+**レビュー観点**: `linkat` の安全性とクリーンアップロジック / エラーモード処理（EEXIST/EPERM/ETXTBSY） / 一時リンクリーク防止の defer 実装 / unlink 失敗時のセマンティクス
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: F-002 は file path handling（パス検証）と file operation（ファイル移動）に相当し、Linux 固有の複雑な状態遷移と新規エラーモード（`protected_hardlinks`、`EEXIST` による予測可能性への対抗）を含むため
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 5: F-006 の追跡
 
 - [ ] 02_architecture.md § 5.3 に (a)(b)(c) が記載されていることを確認（本タスク前で既に実施）
+
+### PR-5 作成ポイント: residual risk documentation
+
+**対象ステップ**: F-006
+
+**推奨タイトル**: `docs(0155): document residual TOCTOU risks in interpreter resolution`
+
+**レビュー観点**: 完全排除困難な理由の明確性 / 悪用の前提条件の正確性 / 許容判定の根拠の妥当性
+
+**実装モデル要件**: standard
+
+**判定理由**: コード変更なしの文書化のみであり、残余リスクは 02_architecture.md § 5.3 に既に記載済み
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -347,7 +453,7 @@
 ### AC-01: openVerifiedIdentity のハッシュ再検証
 
 **実装ステップ**:
-- Phase 1 での openVerifiedIdentity ハッシュ検証実装
+- PR-1 での openVerifiedIdentity ハッシュ検証実装
 
 **検証テスト**:
 - テスト場所: `internal/runner/base/risk/evaluator_test.go` (新規テスト追加)
@@ -359,7 +465,7 @@
 ### AC-02: 通常ファイル確認と O_NONBLOCK
 
 **実装ステップ**:
-- Phase 1 での openVerifiedIdentity に fstat と O_NONBLOCK 追加
+- PR-1 での openVerifiedIdentity に fstat と O_NONBLOCK 追加
 
 **検証テスト**:
 - テスト場所: `internal/runner/base/risk/evaluator_test.go` (新規テスト追加)
@@ -371,7 +477,7 @@
 ### AC-03: 正常系の回帰防止（openVerifiedIdentity）
 
 **実装ステップ**:
-- Phase 1 での openVerifiedIdentity ハッシュ検証実装
+- PR-1 での openVerifiedIdentity ハッシュ検証実装
 
 **検証テスト**:
 - テスト場所: `internal/runner/base/executor/stagefromfd_test.go`
@@ -383,7 +489,7 @@
 ### AC-04: reason code の区別可能性
 
 **実装ステップ**:
-- Phase 1 での reason code 定義と allowedPlan での分岐追加
+- PR-1 での reason code 定義と allowedPlan での分岐追加
 
 **検証テスト**:
 - テスト場所: `internal/runner/base/risk/evaluator_test.go` (新規テスト追加)
@@ -395,7 +501,7 @@
 ### AC-05: fd アンカー移動による同一性保証
 
 **実装ステップ**:
-- Phase 4 での atomicMoveFileCore 実装変更
+- PR-4 での atomicMoveFileCore 実装変更
 
 **検証テスト**:
 - テスト場所: `internal/safefileio/safe_file_test.go` (新規テスト追加)
@@ -407,7 +513,7 @@
 ### AC-06: 移動失敗時の fail-closed
 
 **実装ステップ**:
-- Phase 4 での atomicMoveFileCore 実装変更
+- PR-4 での atomicMoveFileCore 実装変更
 
 **検証テスト**:
 - テスト場所: `internal/safefileio/safe_file_test.go` (既存テスト維持)
@@ -419,7 +525,7 @@
 ### AC-07: 共有 fd への束縛（ハッシュと解析の一貫性）
 
 **実装ステップ**:
-- Phase 3 での SaveRecord 実装・各解析器の拡張
+- PR-3 での SaveRecord 実装・各解析器の拡張
 
 **検証テスト**:
 - テスト場所: `internal/filevalidator/validator_test.go` (新規テスト追加)
@@ -431,7 +537,7 @@
 ### AC-08: ライブラリハッシュキー照合
 
 **実装ステップ**:
-- Phase 3 での analyzeOneLibrary と store.LoadOrAnalyzeAndStore の実装変更
+- PR-3 での analyzeOneLibrary と store.LoadOrAnalyzeAndStore の実装変更
 
 **検証テスト**:
 - テスト場所: `internal/filevalidator/validator_test.go` (新規テスト追加) と `internal/dynamicanalysis/store_test.go` (新規テスト追加)
@@ -443,7 +549,7 @@
 ### AC-09: record 正常系の回帰防止
 
 **実装ステップ**:
-- Phase 3 での SaveRecord 実装・各解析器の拡張
+- PR-3 での SaveRecord 実装・各解析器の拡張
 
 **検証テスト**:
 - テスト場所: `internal/filevalidator/validator_shebang_test.go` 等（既存テスト維持）
@@ -455,7 +561,7 @@
 ### AC-10: verify 時の依存解決再実行
 
 **実装ステップ**:
-- Phase 2 での VerifyCommandDynLibDeps と verifyDynLibDeps の実装変更
+- PR-2 での VerifyCommandDynLibDeps と verifyDynLibDeps の実装変更
 
 **検証テスト**:
 - テスト場所: `internal/verification/manager_test.go` (新規テスト追加)
@@ -467,7 +573,7 @@
 ### AC-11: verify 正常系の回帰防止
 
 **実装ステップ**:
-- Phase 2 での VerifyCommandDynLibDeps と verifyDynLibDeps の実装変更
+- PR-2 での VerifyCommandDynLibDeps と verifyDynLibDeps の実装変更
 
 **検証テスト**:
 - テスト場所: `internal/verification/manager_test.go` (既存テスト維持)
@@ -479,7 +585,7 @@
 ### AC-12: validateAndCacheCommand の順序修正
 
 **実装ステップ**:
-- Phase 1 での validateAndCacheCommand 順序変更
+- PR-1 での validateAndCacheCommand 順序変更
 
 **検証テスト**:
 - テスト場所: `internal/verification/path_resolver_test.go` (新規テスト追加)
@@ -491,7 +597,7 @@
 ### AC-13: validateAndCacheCommand 正常系の回帰防止
 
 **実装ステップ**:
-- Phase 1 での validateAndCacheCommand 順序変更
+- PR-1 での validateAndCacheCommand 順序変更
 
 **検証テスト**:
 - テスト場所: `internal/verification/path_resolver_test.go` (既存テスト維持)
@@ -508,6 +614,18 @@
 **検証方法**: 静的確認
 - コマンド: `rg -n "完全排除が困難である理由" docs/tasks/0155.../02_architecture.md`
 - 期待結果: § 5.3 に (a)(b)(c) が記載されている
+
+---
+
+### 6.1 PR 完了トラッキング
+
+各 PR の実装状況を以下で追跡する。
+
+- [ ] PR-1 マージ済み（対象機能: F-005 / F-001）
+- [ ] PR-2 マージ済み（対象機能: F-004）
+- [ ] PR-3 マージ済み（対象機能: F-003）
+- [ ] PR-4 マージ済み（対象機能: F-002）
+- [ ] PR-5 マージ済み（対象機能: F-006）
 
 ---
 
