@@ -479,7 +479,7 @@ isSensitiveEnvValue の実装:
 
 **判定理由**: 該当するトリガーなし（既存の RedactText 契約と Validator.redactionConfig フィールドを再利用した単純拡張）
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
