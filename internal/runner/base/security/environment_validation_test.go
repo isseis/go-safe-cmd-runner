@@ -198,16 +198,21 @@ func TestSanitizeEnvironmentVariables_ValueBasedDetection(t *testing.T) {
 
 func TestValidator_isSensitiveEnvVar_CustomLowercasePattern(t *testing.T) {
 	config := DefaultConfig()
-	config.SensitiveEnvVars = []string{"(?i)my_custom_blah"}
+	// Deliberately case-sensitive (no "(?i)") and keyword-free (avoids the
+	// built-in PASSWORD/SECRET/TOKEN/KEY/API/CREDENTIAL/AUTH patterns), so
+	// this test exercises only the original-name fallback added for AC-22,
+	// not the case-insensitive matching an "(?i)" flag would provide on its
+	// own or the built-in keyword matcher.
+	config.SensitiveEnvVars = []string{"my_custom_blah"}
 	validator, err := NewValidator(config)
 	require.NoError(t, err)
 
-	t.Run("uppercase match via ToUpper", func(t *testing.T) {
-		assert.True(t, validator.isSensitiveEnvVar("MY_CUSTOM_BLAH"))
-	})
-
 	t.Run("lowercase match via original name", func(t *testing.T) {
 		assert.True(t, validator.isSensitiveEnvVar("my_custom_blah"))
+	})
+
+	t.Run("uppercased form does not spuriously match a lowercase-only pattern", func(t *testing.T) {
+		assert.False(t, validator.isSensitiveEnvVar("MY_CUSTOM_BLAH"))
 	})
 
 	t.Run("non-sensitive var returns false", func(t *testing.T) {

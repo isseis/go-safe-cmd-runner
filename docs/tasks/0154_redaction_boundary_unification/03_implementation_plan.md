@@ -457,10 +457,11 @@ isSensitiveEnvValue の実装:
   - サブテスト `EmptyValue`（AC-21 補足）: 空文字列の値 → 変化しないことを検証
 
 - [x] `TestValidator_isSensitiveEnvVar_CustomLowercasePattern` テストを追加（AC-22）
-  - `NewValidator` に `config.SensitiveEnvVars: ["my_secret"]` を渡す
-  - `isSensitiveEnvVar("MY_SECRET")` → `true`（大文字化による一致）
-  - `isSensitiveEnvVar("my_secret")` → `true`（元の名前での一致、これが本修正で新たに保証される）
+  - `NewValidator` に `config.SensitiveEnvVars: ["my_custom_blah"]`（`(?i)` 不使用、組み込みキーワードとも非衝突）を渡す
+  - `isSensitiveEnvVar("my_custom_blah")` → `true`（元の名前での一致、これが本修正で新たに保証される）
+  - `isSensitiveEnvVar("MY_CUSTOM_BLAH")` → `false`（大文字化のみでは小文字限定パターンに一致しないことを確認し、過剰一致がないことを保証）
   - `isSensitiveEnvVar("not_sensitive")` → `false`
+  - 備考: 当初 `config.SensitiveEnvVars: ["my_secret"]` を使用していたが、組み込みキーワード判定（`.*SECRET.*`）による偽陽性を避けるためパターンを変更した際（コミット `717dc453`）、誤って `(?i)` フラグを付与しテストが本修正の効果を検証できなくなっていたため、`weakreview` により修正した
 
 テストパッケージ: `package security`（internal パッケージテストのため）
 
@@ -691,7 +692,7 @@ positive control の具体例として、`TestLogUserGroupExecution_OutputMaskin
 
 - **検証方法**: `test`
 - **テスト場所**: `internal/runner/base/security/environment_validation_test.go::TestValidator_isSensitiveEnvVar_CustomLowercasePattern`
-- **検証内容**: 小文字パターン `my_secret` を設定し、`my_secret` および `MY_SECRET` の両方が機密と判定されることを検証
+- **検証内容**: 大文字小文字非対称の小文字パターン `my_custom_blah`（`(?i)` 不使用）を設定し、元の名前 `my_custom_blah` が機密と判定されること、かつ大文字化した `MY_CUSTOM_BLAH` は（小文字限定パターンのため）機密と判定されないことを検証
 
 ## 6. クロスサーチチェックリスト
 
