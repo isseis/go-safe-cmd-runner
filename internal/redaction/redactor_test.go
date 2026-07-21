@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -2069,6 +2070,81 @@ func TestRedactingHandler_TwoTierLogging(t *testing.T) {
 	assert.NotContains(t, summaryLog, "stack_trace")
 }
 
+// TestRedactingHandler_SliceStringElementRedaction tests recursive redaction of slice elements
+func TestRedactingHandler_SliceStringElementRedaction(t *testing.T) {
+	config := DefaultConfig()
+
+	t.Run("SensitiveStringElement", func(t *testing.T) {
+		var buf bytes.Buffer
+		handler := slog.NewJSONHandler(&buf, nil)
+		redactingHandler := NewRedactingHandler(handler, config, nil)
+		logger := slog.New(redactingHandler)
+
+		args := []string{"--password=hunter2", "--verbose"}
+		logger.Info("Test message", "args", slog.AnyValue(args))
+
+		output := buf.String()
+		assert.NotContains(t, output, "hunter2", "Sensitive string in slice should be redacted")
+		assert.Contains(t, output, "[REDACTED]", "Should contain redaction placeholder")
+
+		// Positive control: verify secret appears via non-redacting JSON handler
+		var controlBuf bytes.Buffer
+		controlHandler := slog.NewJSONHandler(&controlBuf, nil)
+		controlLogger := slog.New(controlHandler)
+		controlLogger.Info("Test message", "args", slog.AnyValue(args))
+		controlOutput := controlBuf.String()
+		assert.Contains(t, controlOutput, "hunter2", "Secret should appear in non-redacting handler output, confirming redaction is actually preventing leakage")
+	})
+
+	t.Run("SliceOfMaps", func(t *testing.T) {
+		var buf bytes.Buffer
+		handler := slog.NewJSONHandler(&buf, nil)
+		redactingHandler := NewRedactingHandler(handler, config, nil)
+		logger := slog.New(redactingHandler)
+
+		items := []map[string]string{
+			{"path": "/usr/bin/ls", "token": "secret-token-abc"},
+			{"path": "/usr/bin/cat"},
+		}
+		logger.Info("Test message", "items", slog.AnyValue(items))
+
+		output := buf.String()
+		assert.NotContains(t, output, "secret-token-abc", "Sensitive value in slice of maps should be redacted")
+		assert.Contains(t, output, "[REDACTED]", "Should contain redaction placeholder")
+		assert.Contains(t, output, "/usr/bin/ls", "Non-sensitive map values should be preserved")
+		assert.Contains(t, output, "/usr/bin/cat", "Non-sensitive map values should be preserved")
+	})
+
+	t.Run("NoSensitiveContent", func(t *testing.T) {
+		var buf bytes.Buffer
+		handler := slog.NewJSONHandler(&buf, nil)
+		redactingHandler := NewRedactingHandler(handler, config, nil)
+		logger := slog.New(redactingHandler)
+
+		args := []string{"normal", "args", "verbose"}
+		logger.Info("Test message", "args", slog.AnyValue(args))
+
+		output := buf.String()
+		assert.Contains(t, output, "normal", "Non-sensitive string should be preserved")
+		assert.Contains(t, output, "args", "Non-sensitive string should be preserved")
+		assert.Contains(t, output, "verbose", "Non-sensitive string should be preserved")
+	})
+
+	t.Run("MixedTypes", func(t *testing.T) {
+		var buf bytes.Buffer
+		handler := slog.NewJSONHandler(&buf, nil)
+		redactingHandler := NewRedactingHandler(handler, config, nil)
+		logger := slog.New(redactingHandler)
+
+		mixedSlice := []any{"string", 123, true, []string{"nested"}}
+		logger.Info("Test message", "items", slog.AnyValue(mixedSlice))
+
+		output := buf.String()
+		assert.Contains(t, output, "string", "String element should be preserved")
+		assert.Contains(t, output, "nested", "Nested array element should be preserved")
+	})
+}
+
 // TestContainsRedactingHandler tests the containsRedactingHandler helper function
 func TestContainsRedactingHandler(t *testing.T) {
 	tests := []struct {
@@ -2650,5 +2726,114 @@ func BenchmarkRedactLogAttribute_Any_LogValuer(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		_ = config.RedactLogAttribute(attr)
+	}
+}
+
+// BenchmarkRedactingHandler_WithLargeMap benchmarks RedactingHandler with a large 1,000 entry map
+func BenchmarkRedactingHandler_WithLargeMap(b *testing.B) {
+	baseHandler := slog.NewJSONHandler(io.Discard, nil)
+
+	failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
+	logger := slog.New(handler)
+
+	largeMap := make(map[string]string, 1000)
+	for i := range 1000 {
+		largeMap[fmt.Sprintf("key_%d", i)] = fmt.Sprintf("value_%d", i)
+	}
+	// Add a few sensitive entries to exercise the redaction path
+	largeMap["api_key"] = "secret-12345"
+	largeMap["token"] = "token-abcdef"
+
+	b.ResetTimer()
+	for range b.N {
+		logger.Info("test message", "large_map", slog.AnyValue(largeMap))
+	}
+}
+
+// BenchmarkRedactingHandler_WithWideStruct benchmarks RedactingHandler with a 50-field struct
+func BenchmarkRedactingHandler_WithWideStruct(b *testing.B) {
+	baseHandler := slog.NewJSONHandler(io.Discard, nil)
+
+	failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
+	logger := slog.New(handler)
+
+	type WideStruct struct {
+		Field01 string `json:"field_01"`
+		Field02 string `json:"field_02"`
+		Field03 string `json:"field_03"`
+		Field04 string `json:"field_04"`
+		Field05 string `json:"field_05"`
+		Field06 string `json:"field_06"`
+		Field07 string `json:"field_07"`
+		Field08 string `json:"field_08"`
+		Field09 string `json:"field_09"`
+		Field10 string `json:"field_10"`
+		Field11 string `json:"field_11"`
+		Field12 string `json:"field_12"`
+		Field13 string `json:"field_13"`
+		Field14 string `json:"field_14"`
+		Field15 string `json:"field_15"`
+		Field16 string `json:"field_16"`
+		Field17 string `json:"field_17"`
+		Field18 string `json:"field_18"`
+		Field19 string `json:"field_19"`
+		Field20 string `json:"field_20"`
+		Field21 string `json:"field_21"`
+		Field22 string `json:"field_22"`
+		Field23 string `json:"field_23"`
+		Field24 string `json:"field_24"`
+		Field25 string `json:"field_25"`
+		Field26 string `json:"field_26"`
+		Field27 string `json:"field_27"`
+		Field28 string `json:"field_28"`
+		Field29 string `json:"field_29"`
+		Field30 string `json:"field_30"`
+		Field31 string `json:"field_31"`
+		Field32 string `json:"field_32"`
+		Field33 string `json:"field_33"`
+		Field34 string `json:"field_34"`
+		Field35 string `json:"field_35"`
+		Field36 string `json:"field_36"`
+		Field37 string `json:"field_37"`
+		Field38 string `json:"field_38"`
+		Field39 string `json:"field_39"`
+		Field40 string `json:"field_40"`
+		Field41 string `json:"field_41"`
+		Field42 string `json:"field_42"`
+		Field43 string `json:"field_43"`
+		Field44 string `json:"field_44"`
+		Field45 string `json:"field_45"`
+		Field46 string `json:"field_46"`
+		Field47 string `json:"field_47"`
+		Field48 string `json:"field_48"`
+		Field49 string `json:"field_49"`
+		Field50 string `json:"field_50"`
+	}
+
+	ws := WideStruct{
+		Field01: "value_01", Field02: "value_02", Field03: "value_03",
+		Field04: "value_04", Field05: "value_05", Field06: "value_06",
+		Field07: "value_07", Field08: "value_08", Field09: "value_09",
+		Field10: "value_10", Field11: "value_11", Field12: "value_12",
+		Field13: "value_13", Field14: "value_14", Field15: "value_15",
+		Field16: "value_16", Field17: "value_17", Field18: "value_18",
+		Field19: "value_19", Field20: "value_20", Field21: "value_21",
+		Field22: "value_22", Field23: "value_23", Field24: "value_24",
+		Field25: "value_25", Field26: "password=secret", Field27: "value_27",
+		Field28: "value_28", Field29: "value_29", Field30: "value_30",
+		Field31: "value_31", Field32: "value_32", Field33: "value_33",
+		Field34: "value_34", Field35: "value_35", Field36: "value_36",
+		Field37: "value_37", Field38: "value_38", Field39: "value_39",
+		Field40: "value_40", Field41: "value_41", Field42: "value_42",
+		Field43: "value_43", Field44: "value_44", Field45: "value_45",
+		Field46: "value_46", Field47: "value_47", Field48: "value_48",
+		Field49: "value_49", Field50: "value_50",
+	}
+
+	b.ResetTimer()
+	for range b.N {
+		logger.Info("test message", "wide_struct", slog.AnyValue(ws))
 	}
 }
