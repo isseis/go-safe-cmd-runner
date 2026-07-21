@@ -100,13 +100,13 @@ verify 時の検証は「record 時に解決されたパス群のハッシュ照
 
 #### F-002: AtomicMoveFile のソース同一性保証
 
-- **AC-05**: `AtomicMoveFile`（`atomicMoveFileCore`）は、検証済みソース fd と実際に rename されるファイルが同一の inode であることを、rename 直前に取得した `(dev, ino)` の突き合わせ、または同等の原子性を持つ方式（例: 親ディレクトリ fd 基準の `renameat2`）で保証する。
+- **AC-05**: `AtomicMoveFile`（`atomicMoveFileCore`）は、検証済みソース fd と実際に rename されるファイルが同一の inode であることを、rename 直前に取得した `(dev, ino)` の突き合わせ、または同等の原子性を持つ方式で保証する。
 - **AC-06**: 同一性が確認できない場合（ソースパスが検証後に差し替えられた場合）、rename を行わずエラーを返す（fail-closed）。改ざんがない正常系の移動は従来どおり成功する。
 
 #### F-003: record 時のハッシュ計算と解析の一貫性
 
 - **AC-07**: `SaveRecord`/`saveRecordCore` における対象ファイルのハッシュ計算と内容解析（shebang/dynlib/ELF・Mach-O syscall 解析）は、同一の読み取り（共有 fd または読み込み済みバイト列）に基づいて行われる。読み取りの合間にファイルが差し替えられても、記録される `ContentHash` と解析結果は常に同一内容に対応する。
-- **AC-08**: `analyzeOneLibrary` は、解析対象の実測ハッシュを解析用の読み取りから計算し、呼び出し元が保持する `lib.Hash`（ハッシュキー）と比較する。不一致の場合、その解析結果を該当ハッシュキーの下に保存しない（記録失敗またはスキップとして扱い、詳細は architecture 文書で確定する）。
+- **AC-08**: `analyzeOneLibrary` は、解析対象の実測ハッシュを解析用の読み取りから計算し、呼び出し元が保持する `lib.Hash`（ハッシュキー）と比較する。不一致の場合、その解析結果を記録せず、検証を fail-closed（エラー）として扱う。
 - **AC-09**: 改ざんがない正常系（record 対象ファイルが操作中に変化しない）では、変更前と同一内容のレコードが生成される（既存の record 出力に回帰がない）。
 
 #### F-004: verify 時の依存解決再実行
