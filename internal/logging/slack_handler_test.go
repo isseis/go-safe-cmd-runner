@@ -1246,6 +1246,11 @@ func TestSanitizeErrorForLog(t *testing.T) {
 		}
 	})
 
+	t.Run("NilError", func(t *testing.T) {
+		result := sanitizeErrorForLog(nil)
+		assert.Equal(t, "", result)
+	})
+
 	t.Run("NonURLError", func(t *testing.T) {
 		err := errors.New("some generic error")
 		result := sanitizeErrorForLog(err)

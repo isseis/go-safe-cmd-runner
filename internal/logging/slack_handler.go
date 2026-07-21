@@ -846,6 +846,9 @@ func generateBackoffIntervals(base time.Duration, count int) []time.Duration {
 // between internal/redaction and internal/logging (redactor_test.go
 // imports logging for NewMultiHandler tests).
 func sanitizeErrorForLog(err error) string {
+	if err == nil {
+		return ""
+	}
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
 		if urlErr.Err != nil {
