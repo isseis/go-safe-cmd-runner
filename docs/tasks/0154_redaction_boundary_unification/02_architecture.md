@@ -313,7 +313,7 @@ Slack 送信失敗時のエラーログから webhook URL を除去する。HTTP
 
 非公開ヘルパー関数を追加し、エラー値を処理する。処理優先順位は以下の通り：
 
-1. **`*url.Error` の直接検出**: エラーが `*url.Error` 型である場合、その `Err` フィールド（URL ラップ前のエラー）のメッセージのみを抽出。URL フィールドを明示的に除外する。`Err` フィールドが `nil` の場合があるため、nil チェックを行い、nil の場合は `url.Error` の文字列表現（`Error()` メソッドの返り値）をフォールバックとして使用する。これにより `*url.Error` が nil inner error で構築された場合の panic を防止する。
+1. **`*url.Error` の直接検出**: エラーが `*url.Error` 型である場合、その `Err` フィールド（URL ラップ前のエラー）のメッセージのみを抽出。URL フィールドを明示的に除外する。`Err` フィールドが `nil` の場合があるため、nil チェックを行い、nil の場合は安全なフォールバックとして `"url error: " + urlErr.Op + " without URL"` を使用し、URL を含めずに操作種別のみを出力する。これにより `*url.Error` が nil inner error で構築された場合の panic を防止する。
 2. **ラップチェーンの走査**: エラーが別の型にラップされている場合（例: `fmt.Errorf("...: %w", urlErr)`）、チェーンを走査して `*url.Error` を探索。見つかった場合はその `Err` フィールドを使用。
 3. **フォールバック**: ラップチェーンに `*url.Error` が含まれない場合、エラー文字列をそのまま返す。`RedactText` による非 URL 機密パターン（パスワード等）の検出は、`internal/redaction` と `internal/logging` 間の import cycle（`redactor_test.go` が `logging.NewMultiHandler` を import しているため）のため保留。実装には `TODO(0154-import-cycle)` コメントを残し、将来 import cycle が解消されたら適用する。
 

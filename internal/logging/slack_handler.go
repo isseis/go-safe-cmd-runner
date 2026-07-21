@@ -849,8 +849,7 @@ func sanitizeErrorForLog(err error) string {
 	if err == nil {
 		return ""
 	}
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) {
+	if urlErr, ok := errors.AsType[*url.Error](err); ok {
 		if urlErr.Err != nil {
 			return urlErr.Err.Error()
 		}
