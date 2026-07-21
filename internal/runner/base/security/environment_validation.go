@@ -5,7 +5,9 @@ import (
 	"strings"
 )
 
-// SanitizeEnvironmentVariables removes or sanitizes sensitive environment variables
+// SanitizeEnvironmentVariables removes or sanitizes sensitive environment variables.
+// Values are redacted when the key name matches a sensitive pattern or when the value
+// itself contains sensitive content detected by RedactText.
 func (v *Validator) SanitizeEnvironmentVariables(envVars map[string]string) map[string]string {
 	if envVars == nil {
 		return make(map[string]string)
@@ -14,7 +16,7 @@ func (v *Validator) SanitizeEnvironmentVariables(envVars map[string]string) map[
 	sanitized := make(map[string]string)
 
 	for key, value := range envVars {
-		if v.isSensitiveEnvVar(key) {
+		if v.isSensitiveEnvVar(key) || v.isSensitiveEnvValue(value) {
 			// Replace sensitive values with a placeholder
 			sanitized[key] = "[REDACTED]"
 		} else {
@@ -25,22 +27,41 @@ func (v *Validator) SanitizeEnvironmentVariables(envVars map[string]string) map[
 	return sanitized
 }
 
-// isSensitiveEnvVar checks if an environment variable name matches sensitive patterns
+// isSensitiveEnvVar checks if an environment variable name matches sensitive patterns.
+// It tries the original name and the uppercased name to handle custom lowercase patterns
+// that would otherwise be missed by the ToUpper normalization.
 func (v *Validator) isSensitiveEnvVar(name string) bool {
 	// Use the new common functionality first
 	if v.sensitivePatterns.IsSensitiveEnvVar(name) {
 		return true
 	}
 
-	// Fallback to the legacy regex patterns for backward compatibility
+	// Fallback to the legacy regex patterns for backward compatibility.
+	// Match both the uppercased name (backward compat) and the original name
+	// (to support custom lowercase patterns configured via SensitiveEnvVars).
 	upperName := strings.ToUpper(name)
 	for _, re := range v.sensitiveEnvRegexps {
-		if re.MatchString(upperName) {
+		if re.MatchString(upperName) || re.MatchString(name) {
 			return true
 		}
 	}
 
 	return false
+}
+
+// isSensitiveEnvValue checks if an environment variable value contains sensitive content.
+// It delegates to RedactText and returns true when the value is modified,
+// indicating one or more sensitive patterns were detected.
+// Empty values always return false.
+func (v *Validator) isSensitiveEnvValue(value string) bool {
+	if value == "" {
+		return false
+	}
+	if v.redactionConfig == nil {
+		return false
+	}
+	redacted := v.redactionConfig.RedactText(value)
+	return redacted != value
 }
 
 // ValidateEnvironmentValue validates that an environment variable value is safe.
