@@ -68,9 +68,9 @@ func (l *Logger) LogUserGroupExecution(
 		slog.Int64("timestamp", time.Now().Unix()),
 		slog.String("command_name", cmd.Name()),
 		slog.String("command_path", cmd.Cmd()),
-		slog.String("command_args", strings.Join(cmd.Args(), " ")),
+		slog.String("command_args", argRedactor.RedactText(strings.Join(cmd.Args(), " "))),
 		slog.String("expanded_command_path", cmd.ExpandedCmd),
-		slog.String("expanded_command_args", strings.Join(cmd.ExpandedArgs, " ")),
+		slog.String("expanded_command_args", argRedactor.RedactText(strings.Join(cmd.ExpandedArgs, " "))),
 		slog.Int("exit_code", result.ExitCode),
 		slog.Int64("execution_duration_ms", duration.Milliseconds()),
 		slog.Int("user_id", os.Getuid()),
@@ -98,8 +98,8 @@ func (l *Logger) LogUserGroupExecution(
 	} else {
 		// Create new slice to avoid modifying baseAttrs
 		additionalAttrs := []slog.Attr{
-			slog.String("stdout", result.Stdout),
-			slog.String("stderr", result.Stderr),
+			slog.String("stdout", argRedactor.RedactText(result.Stdout)),
+			slog.String("stderr", argRedactor.RedactText(result.Stderr)),
 			slog.Bool("slack_notify", true), // Notify Slack for failed user/group commands
 			slog.String("message_type", "user_group_command_failure"),
 		}
@@ -124,8 +124,8 @@ func (l *Logger) LogPrivilegeEscalation(
 		slog.String("audit_type", "privilege_escalation"),
 		slog.Bool("audit", true), // Mark as audit event
 		slog.Int64("timestamp", time.Now().Unix()),
-		slog.String(common.PrivilegeEscalationFailureAttrs.Operation, operation),
-		slog.String(common.PrivilegeEscalationFailureAttrs.CommandName, commandName),
+		slog.String(common.PrivilegeEscalationFailureAttrs.Operation, argRedactor.RedactText(operation)),
+		slog.String(common.PrivilegeEscalationFailureAttrs.CommandName, argRedactor.RedactText(commandName)),
 		slog.Int(common.PrivilegeEscalationFailureAttrs.OriginalUID, originalUID),
 		slog.Int(common.PrivilegeEscalationFailureAttrs.TargetUID, targetUID),
 		slog.Bool("success", success),
@@ -162,15 +162,32 @@ func (l *Logger) LogSecurityEvent(
 		slog.Int64("timestamp", time.Now().Unix()),
 		slog.String(common.SecurityAlertAttrs.EventType, eventType),
 		slog.String(common.SecurityAlertAttrs.Severity, severity),
-		slog.String(common.SecurityAlertAttrs.Message, message),
+		slog.String(common.SecurityAlertAttrs.Message, argRedactor.RedactText(message)),
 		slog.Int("user_id", os.Getuid()),
 		slog.Int("effective_user_id", os.Geteuid()),
 		slog.Int("process_id", os.Getpid()),
 	}
 
-	// Add custom details
+	// Add custom details under a "detail_" namespace so caller-supplied keys
+	// cannot collide with (and overwrite) the schema attributes above. String
+	// values are boundary-redacted here; composite values (map/struct/slice)
+	// are left to the RedactingHandler's recursive redaction.
 	for key, value := range details {
-		attrs = append(attrs, slog.Any(key, value))
+		prefixedKey := "detail_" + key
+		switch v := value.(type) {
+		case string:
+			attrs = append(attrs, slog.String(prefixedKey, argRedactor.RedactText(v)))
+		case int:
+			attrs = append(attrs, slog.Int64(prefixedKey, int64(v)))
+		case int64:
+			attrs = append(attrs, slog.Int64(prefixedKey, v))
+		case float64:
+			attrs = append(attrs, slog.Float64(prefixedKey, v))
+		case bool:
+			attrs = append(attrs, slog.Bool(prefixedKey, v))
+		default:
+			attrs = append(attrs, slog.Any(prefixedKey, v))
+		}
 	}
 
 	// Add Slack notification for critical and high severity events
@@ -280,11 +297,11 @@ func (l *Logger) LogRiskProfile(ctx context.Context, entry risktypes.RiskAuditEn
 	// operation): an empty/nil carrier means axis 2 did not apply, so the key is
 	// omitted (same len()>0 guard as reason_codes/chain; never write []/null).
 	// Raw/Resolved/UnresolvedErr may carry secrets, so each is routed through the
-	// same boundary redaction as command_args. This boundary redaction is the
-	// ONLY control for these strings: the RedactingHandler does not recurse into
-	// slice/map elements passed via slog.Any (the same reason chain.Path stays
-	// unmasked), so a miss here leaks verbatim. Zone/Role/MatchedCritical/Index/
-	// Trusted are enum, fixed-path, or non-string values and are not masked.
+	// same boundary redaction as command_args. The RedactingHandler now also
+	// recurses into map/slice elements passed via slog.Any, so this boundary
+	// redaction is a second, redundant layer (defense-in-depth) rather than the
+	// only control. Zone/Role/MatchedCritical/Index/Trusted are enum, fixed-path,
+	// or non-string values and are not masked.
 	// Elements are map[string]any (not map[string]string like chain) to preserve
 	// the int Index and bool Trusted as typed JSON values.
 	if len(assessment.OperandZones) > 0 {
