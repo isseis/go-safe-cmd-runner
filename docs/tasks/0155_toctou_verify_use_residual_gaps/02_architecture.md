@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-07-21 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-07-26 |
+| Reviewer | isseis |
 | Comments | - |
 
 ## 関連文書
@@ -22,7 +22,7 @@
 
 ### 1.1 設計目的
 
-本タスクは、既存の主要経路で徹底されている単一の設計原則——**「検証(verify)は開いた fd の内容そのものを検査し、使用(exec/read)はその同じ fd（または同一の読み取り結果）から行う」**——が及んでいない 5 系統の残存箇所を、原則に沿って修正する。いずれも「検証済みパスへの書き込み権限」を攻撃者の前提条件とする多層防御の一角であり、単独で成立する脆弱性ではないが、原則の一貫性を回復するために埋める。
+本タスクは、既存の主要経路で徹底されている単一の設計原則である「検証(verify)は開いた fd の内容そのものを検査し、使用(exec/read)はその同じ fd（または同一の読み取り結果）から行う」が及んでいない 5 系統の残存箇所を、原則に沿って修正する。いずれも「検証済みパスへの書き込み権限」を攻撃者の前提条件とする多層防御の一角であり、単独で成立する脆弱性ではないが、原則の一貫性を回復するために埋める。
 
 ### 1.2 設計原則
 
@@ -190,10 +190,10 @@ sequenceDiagram
 
 - open 時に `O_NONBLOCK` を付与する（パスが FIFO に差し替えられた場合の無期限ブロックを防ぐ安全網）。
 - `fstat` により通常ファイルであることを確認する（保証の本質）。通常ファイル確認後に `O_NONBLOCK` を解除する。通常ファイルに対する `O_NONBLOCK` は no-op である点に注意する。
-- **同じ fd** から実測ハッシュを計算し、`cmd.ExpandedCmdContentHash` と比較する。ハッシュ計算は `io.NewSectionReader`（`pread` 相当）等で行い、fd のオフセットを進めない（fd は後続の exec 束縛でも共有されるため）。fd をハッシュ計算にも exec 束縛にも用いることで、**この fd が指す inode** を検証と exec の双方に束縛する。exec は `/proc/self/fd/<n>` 経由で同一 inode を開き直すため、fd のオフセットには依存しない。
+- **同じ fd** から実測ハッシュを計算し、`cmd.ExpandedCmdContentHash` と比較する。ハッシュ計算は `io.NewSectionReader`（`pread` 相当）等で行い、fd のオフセットを進めない（fd は後続の exec 束縛でも共有されるため）。fd をハッシュ計算にも exec 束縛にも用いることで、この fd が指す inode を検証と exec の双方に束縛する。exec は `/proc/self/fd/<n>` 経由で同一 inode を開き直すため、fd のオフセットには依存しない。
 - 不一致・非通常ファイルの場合は fd を close し、区別可能な sentinel error を返す。
 
-> **残余リスク（inode 内容の in-place 書き換え）**: 本修正は「検証と exec を同一 inode に束縛する」ことを保証するが、攻撃者が同じ inode を別の fd で開いて **in-place で内容を上書きする**窓（ハッシュ計算〜exec syscall の間）は構造的に残る。exec 進行中は `ETXTBSY`（`deny_write_access`）が効くが、この検査〜exec の隙間には効かない。前提条件は F-006 と同じ「検証済みパスへの書き込み権限」であり、[5.4 節](#54-f-001-inode-内容の-in-place-書き換えの残余リスク) に残余リスクとして明記する。
+> **残余リスク（inode 内容の in-place 書き換え）**: 本修正は「検証と exec を同一 inode に束縛する」ことを保証するが、攻撃者が同じ inode を別の fd で開いて in-place で内容を上書きする窓（ハッシュ計算〜exec syscall の間）は構造的に残る。exec 進行中は `ETXTBSY`（`deny_write_access`）が効くが、この検査〜exec の隙間には効かない。前提条件は F-006 と同じ「検証済みパスへの書き込み権限」であり、[5.4 節](#54-f-001-inode-内容の-in-place-書き換えの残余リスク) に残余リスクとして明記する。
 >
 > なお、`open`+`fstat` は「通常ファイル確認前に inode を open する」ため、キャラクタ/ブロックデバイスへ差し替えられた場合に open 時副作用を持ち得る。`O_NONBLOCK` が FIFO・一部デバイスの open ブロックを防ぐが、副作用の完全排除には `O_PATH` open→`fstat`→`/proc/self/fd/<n>` 再 open が必要である。本タスクでは通常ファイル確認（`fstat`）を主要な保証とし、この点も 5.4 節に記す。
 
@@ -238,7 +238,7 @@ const (
 
 - **一時リンクのリーク/ロールバック**: `linkat` 成功後〜`rename` 成功前にクラッシュ/失敗すると、移動先ディレクトリに一時ハードリンクが残る。`linkat` 以降のすべての失敗経路で一時名を unlink する `defer` ベースのクリーンアップを設ける。（非 Linux 経路のロールバック欠如 B1 F-4 はスコープ外だが、本修正が Linux 上に同種の状態を新設するため、ここで対処する。）
 - **一時名の予測可能性（`EEXIST` による妨害）**: `linkat` は既存 `newpath` を上書きせず `EEXIST` を返すため、予測可能な一時名は攻撃者による事前作成で移動を妨害され得る。一時名はランダムサフィックスを含む予測困難な名前とし、`EEXIST` はエラーとして扱う。
-- **`fs.protected_hardlinks`（近年のディストロで既定 =1）**: 非 root の実行者は、自身が所有せず書き込み権も持たないファイルへ `linkat` できず `EPERM` になり得る。`os.Rename` にはこの制約がないため、**非 root デプロイでの新規失敗モード**となる。既存の `AtomicMoveFile` 呼び出し元（例: `internal/runner/output/file.go`）が非 root で他所有ファイルを移動していないかを実装時に確認し、回帰する場合は前提条件として明記する。
+- **`fs.protected_hardlinks`（近年のディストロで既定 =1）**: 非 root の実行者は、自身が所有せず書き込み権も持たないファイルへ `linkat` できず `EPERM` になり得る。`os.Rename` にはこの制約がないため、非 root デプロイでの新規失敗モードとなる。既存の `AtomicMoveFile` 呼び出し元（例: `internal/runner/output/file.go`）が非 root で他所有ファイルを移動していないかを実装時に確認し、回帰する場合は前提条件として明記する。
 - **`unlink(src)` 失敗時のセマンティクス**: `rename` 成功後に元ソースの `unlink` が失敗した場合、両名が同一 inode を指す状態になる。この場合の返り値（エラーとするか、移動先は成立済みとして警告に留めるか）を定義する。本設計では「移動先は成立済み・元ソース残存」を警告付き成功ではなくエラーとして扱い、呼び出し元が後始末できるようにする。
 
 > **なぜ stat ベースの (dev, ino) 照合では不十分か**: AC-05 が明記するとおり、`os.Rename` がパス名で解決される以上、rename 直前に `(dev, ino)` を照合しても、照合時点と rename 時点の間に別 inode へ差し替える窓が残る。窓を構造的に閉じるには、パス名ではなく fd の指す inode を直接移動対象にする fd アンカー方式が必要である。
@@ -257,17 +257,17 @@ func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs File
 
 対象ファイルの記録は `SaveRecord`（[validator.go](../../../internal/filevalidator/validator.go)）を起点とし、その内部で (1) `resolveShebangInfo`（`shebang.Parse` によるスクリプト先頭行の解析）が **`saveRecordCore` を呼ぶ前に**独立して open する。続く `saveRecordCore` 配下で (2) `calculateHash`、(3) `analyzeRecordTarget`（`AnalyzeNetworkSymbols` / `analyzeELFSyscalls` / `analyzeMachoSyscalls` / `analyzeDynLibDeps`）が、いずれも同一パスを独立に open して読む。読み取りの合間にファイルが差し替えられると、`ContentHash` と解析結果（および shebang 情報）が食い違ったレコードが永続化され得る。
 
-**採用方式（共有 fd への束縛）**: 対象ファイルを **`SaveRecord` の起点で 1 回だけ安全に open**（`SafeOpenFile`）し、その fd を単一の「内容ソース」として shebang 解析・ハッシュ計算・各内容解析へ渡す。`ContentHash` はこの fd から計算し、各解析器も同じ fd（`io.ReaderAt` / `io.NewSectionReader`）を入力に受け取る。ファイルが差し替えられても、記録される `ContentHash`・解析結果・shebang 情報は常に同一 inode の同一読み取りに対応する。
+**採用方式（共有 fd への束縛）**: 対象ファイルを `SaveRecord` の起点で 1 回だけ安全に open（`SafeOpenFile`）し、その fd を単一の「内容ソース」として shebang 解析・ハッシュ計算・各内容解析へ渡す。`ContentHash` はこの fd から計算し、各解析器も同じ fd（`io.ReaderAt` / `io.NewSectionReader`）を入力に受け取る。ファイルが差し替えられても、記録される `ContentHash`・解析結果・shebang 情報は常に同一 inode の同一読み取りに対応する。
 
-> **共有 fd（`io.ReaderAt`）を採り、全バイトのメモリ読み込みは避ける**: 対象ファイルの上限は既存の `maxFileSize`（`validator.go` で `1 << 30` = 1 GiB）である。全バイトを単一 `[]byte` に読み込む方式は、既存の `calculateHash`（`algorithm.Sum(f)` によるストリーミング）や `computeFileHash`（大きな共有ライブラリ向けにストリーミングする旨のコメントあり）の最適化を後退させ、最大 1 GiB を常駐させる。共有 **fd** を `io.ReaderAt` として各解析器へ渡せば、同一 inode への束縛（AC-07 の要求）を満たしつつ全バイト常駐を避けられる。`debug/elf.NewFile` は `io.ReaderAt` を受け取るため、`io.NewSectionReader(fd, 0, size)` で再 open なしに解析できる。
+> **共有 fd（`io.ReaderAt`）を採り、全バイトのメモリ読み込みは避ける**: 対象ファイルの上限は既存の `maxFileSize`（`validator.go` で `1 << 30` = 1 GiB）である。全バイトを単一 `[]byte` に読み込む方式は、既存の `calculateHash`（`algorithm.Sum(f)` によるストリーミング）や `computeFileHash`（大きな共有ライブラリ向けにストリーミングする旨のコメントあり）の最適化を後退させ、最大 1 GiB を常駐させる。共有 fd を `io.ReaderAt` として各解析器へ渡せば、同一 inode への束縛（AC-07 の要求）を満たしつつ全バイト常駐を避けられる。`debug/elf.NewFile` は `io.ReaderAt` を受け取るため、`io.NewSectionReader(fd, 0, size)` で再 open なしに解析できる。
 
 解析器（`shebang`、`binaryanalyzer`、ELF/Mach-O syscall 解析、`elfdynlib`）は現状パス名を受け取るため、同一 fd（`io.ReaderAt`）を受け取れるよう入力経路を拡張する。`$ORIGIN` はバイナリ位置（`parentPath`）から導出されるため、`elfdynlib` の署名を変えず DRY を保つ。
 
 > **なぜ「解析後に再ハッシュして照合」ではなく同一読み取りか**: 再ハッシュ照合は窓を狭めるだけで、各解析器が別々に open している構造自体は残る。AC-07 は「同一の読み取り（共有 fd または読み込み済みバイト列）に基づく」ことを要求しており、窓を構造的に排除するには入力の一本化が必要である。
 
-**ライブラリ解析のハッシュキー照合（AC-08）**: 現状の `analyzeOneLibrary`（[validator.go](../../../internal/filevalidator/validator.go)）はサイズ検査用の open と ELF 解析用の再 open が分かれ、解析結果がハッシュキー `lib.Hash` に対応する保証がない。加えて、通常経路（store 有効時）では `loadOrAnalyzeLibrary`→ `dynamicanalysis.store.LoadOrAnalyzeAndStore(lib.Path, lib.Hash)` → `Analyzer.AnalyzeLibrary(libPath)`（[interfaces.go](../../../internal/dynamicanalysis/interfaces.go)）と辿る過程で **`lib.Hash` が interface 境界で脱落し**、`analyzeOneLibrary` 到達時には空である。したがって照合を `analyzeOneLibrary` に置くと通常経路で機能しない。
+**ライブラリ解析のハッシュキー照合（AC-08）**: 現状の `analyzeOneLibrary`（[validator.go](../../../internal/filevalidator/validator.go)）はサイズ検査用の open と ELF 解析用の再 open が分かれ、解析結果がハッシュキー `lib.Hash` に対応する保証がない。加えて、通常経路（store 有効時）では `loadOrAnalyzeLibrary`→ `dynamicanalysis.store.LoadOrAnalyzeAndStore(lib.Path, lib.Hash)` → `Analyzer.AnalyzeLibrary(libPath)`（[interfaces.go](../../../internal/dynamicanalysis/interfaces.go)）と辿る過程で `lib.Hash` が interface 境界で脱落し、`analyzeOneLibrary` 到達時には空である。したがって照合を `analyzeOneLibrary` に置くと通常経路で機能しない。
 
-そこで照合は、期待ハッシュ `libHash` と解析入力の双方を持つ **store 境界（`LoadOrAnalyzeAndStore`）** に置く。すなわち、解析に用いた読み取りから実測ハッシュを計算し `libHash` と比較し、不一致なら解析結果を記録せず fail-closed（エラー）とする。store を渡さない経路（`loadOrAnalyzeLibrary` が record の `LibEntry` を直接渡す）では、その `LibEntry.Hash` が空でないため `analyzeOneLibrary` 側で照合できる。両経路をカバーするため、[store.go](../../../internal/dynamicanalysis/store.go) と [validator.go](../../../internal/filevalidator/validator.go) の双方に照合点を持たせる。
+そこで照合は、期待ハッシュ `libHash` と解析入力の双方を持つ store 境界（`LoadOrAnalyzeAndStore`） に置く。すなわち、解析に用いた読み取りから実測ハッシュを計算し `libHash` と比較し、不一致なら解析結果を記録せず fail-closed（エラー）とする。store を渡さない経路（`loadOrAnalyzeLibrary` が record の `LibEntry` を直接渡す）では、その `LibEntry.Hash` が空でないため `analyzeOneLibrary` 側で照合できる。両経路をカバーするため、[store.go](../../../internal/dynamicanalysis/store.go) と [validator.go](../../../internal/filevalidator/validator.go) の双方に照合点を持たせる。
 
 ```go
 // store 境界。libHash は期待ハッシュ（呼び出し元が保持するハッシュキー）。
@@ -296,19 +296,19 @@ VerifyCommandDynLibDeps(cmdPath string) error
 VerifyCommandDynLibDeps(cmdPath string, envVars map[string]string) error
 ```
 
-> **`envVars` は現状の解決結果には影響しない（正直な設計上の位置づけ）**: 本タスクで再利用する ELF 解決器は環境を一切参照しない。`$ORIGIN` はバイナリ位置（`parentPath`）から導出され（[resolver.go](../../../internal/dynlib/elfdynlib/resolver.go)）、`LD_LIBRARY_PATH` は「record が無視し runner が消去する」既存ポリシーにより探索経路から意図的に除外され続ける。したがって `envVars` は `VerifyCommandDynLibDeps` の境界で受け取り解決層へ渡す（AC-10「受け入れ」を満たす）が、**現状の ELF/Mach-O 解決結果は環境非依存**である。この設計により、既存 `elfdynlib`/`machodylib` の署名を変えず DRY を保つ。環境が実際に解決へ影響する形（例: 将来 `$LIB`/`$PLATFORM` 等の環境依存置換を扱う）へ拡張する場合は、`Analyze`/`Resolve` の署名変更を伴う別対応とし、本タスクでは `LD_LIBRARY_PATH` を探索に復活させない（セキュリティポリシーの維持）。要件レビューでは、AC-10 の「使用する」を「解決層へ渡す（現状の解決結果は環境非依存）」と解釈することの可否を確認されたい。
+> **`envVars` は現状の解決結果には影響しない（正直な設計上の位置づけ）**: 本タスクで再利用する ELF 解決器は環境を一切参照しない。`$ORIGIN` はバイナリ位置（`parentPath`）から導出され（[resolver.go](../../../internal/dynlib/elfdynlib/resolver.go)）、`LD_LIBRARY_PATH` は「record が無視し runner が消去する」既存ポリシーにより探索経路から意図的に除外され続ける。したがって `envVars` は `VerifyCommandDynLibDeps` の境界で受け取り解決層へ渡す（AC-10「受け入れ」を満たす）が、現状の ELF/Mach-O 解決結果は環境非依存である。この設計により、既存 `elfdynlib`/`machodylib` の署名を変えず DRY を保つ。環境が実際に解決へ影響する形（例: 将来 `$LIB`/`$PLATFORM` 等の環境依存置換を扱う）へ拡張する場合は、`Analyze`/`Resolve` の署名変更を伴う別対応とし、本タスクでは `LD_LIBRARY_PATH` を探索に復活させない（セキュリティポリシーの維持）。要件レビューでは、AC-10 の「使用する」を「解決層へ渡す（現状の解決結果は環境非依存）」と解釈することの可否を確認されたい。
 
-> **前提（record 環境と verify 環境の同一性）と正当な変化（benign drift）**: 本方式は verify 時の**ライブ・ファイルシステム**に対して探索を再実行する。したがって record を行ったホストと verify を行うホストで**ライブラリ配置（`/etc/ld.so.cache`、アーキ既定ディレクトリ、`$ORIGIN` 相対の内容）が一致していること**が前提となる。`apt upgrade` や `ldconfig` による正当な変化、あるいは record ホストと prod ホストの配置差は、集合不一致として verify 失敗になり得る。運用契約として「システムライブラリ構成を変更したら record を再実行する」ことを明記する。攻撃形（record 済み解決パスより高優先の位置に新規ライブラリが出現）と正当な追加を区別できるよう、集合比較は少なくとも「record 済みの各 soname が同一パスへ解決され続けているか」を核とし、判定理由を構造化エラー（下記）に含める。段階的導入（フラグによるオプトイン）が必要かは要件レビューで確認されたい。
+> **前提（record 環境と verify 環境の同一性）と正当な変化（benign drift）**: 本方式は verify 時の**ライブ・ファイルシステム**に対して探索を再実行する。したがって record を行ったホストと verify を行うホストでライブラリ配置（`/etc/ld.so.cache`、アーキ既定ディレクトリ、`$ORIGIN` 相対の内容）が一致していることが前提となる。`apt upgrade` や `ldconfig` による正当な変化、あるいは record ホストと prod ホストの配置差は、集合不一致として verify 失敗になり得る。運用契約として「システムライブラリ構成を変更したら record を再実行する」ことを明記する。攻撃形（record 済み解決パスより高優先の位置に新規ライブラリが出現）と正当な追加を区別できるよう、集合比較は少なくとも「record 済みの各 soname が同一パスへ解決され続けているか」を核とし、判定理由を構造化エラー（下記）に含める。段階的導入（フラグによるオプトイン）が必要かは要件レビューで確認されたい。
 
 **監査可能性（構造化エラー）**: 拒否理由をオンコール担当が説明できるよう、不一致時のエラーには変化した soname・record 済み解決パス・今回解決されたパス・シャドーイングした探索段階を含める。既存の schema 不一致・record 欠損の soft-fail 判定（`isDeferredHashDirUnavailable` 等）は変更しない。
 
-> **既存テストへの影響**: 署名変更は広範に波及する。(a) `internal/verification` の直接呼び出しテスト（`manager_test.go`、`manager_macho_test.go`、`shebang_chain_verifier_test.go` 等）。(b) `ManagerInterface`（`interfaces.go`）とモック（`testutil/testify_mocks.go` および `testify_mocks_test.go`）。(c) **`.On("VerifyCommandDynLibDeps", …)` / `AssertCalled` のモック期待をもつ `internal/runner` 配下のテスト**（`group_executor_test.go`、`integration_dual_defense_test.go`、`e2e_slack_redaction_test.go`、`command_output_capture_test.go` 等）は、testify の引数数不一致で実行時に失敗するため、第 2 引数のマッチャ追加が必要。(d) 呼び出し元 [group_executor.go](../../../internal/runner/group_executor.go)。`group_executor.go` では `finalEnv` を dynlib 検証より前に用意する。
+> **既存テストへの影響**: 署名変更は広範に波及する。(a) `internal/verification` の直接呼び出しテスト（`manager_test.go`、`manager_macho_test.go`、`shebang_chain_verifier_test.go` 等）。(b) `ManagerInterface`（`interfaces.go`）とモック（`testutil/testify_mocks.go` および `testify_mocks_test.go`）。(c) `.On("VerifyCommandDynLibDeps", …)` / `AssertCalled` のモック期待をもつ `internal/runner` 配下のテスト（`group_executor_test.go`、`integration_dual_defense_test.go`、`e2e_slack_redaction_test.go`、`command_output_capture_test.go` 等）は、testify の引数数不一致で実行時に失敗するため、第 2 引数のマッチャ追加が必要。(d) 呼び出し元 [group_executor.go](../../../internal/runner/group_executor.go)。`group_executor.go` では `finalEnv` を dynlib 検証より前に用意する。
 
 ### 3.5 F-005: `PathResolver` の Stat/EvalSymlinks 順序
 
 現状の `validateAndCacheCommand`（[path_resolver.go](../../../internal/verification/path_resolver.go)）は `os.Stat`（symlink 追従）で存在・通常ファイル・実行ビットを確認した後、別システムコールの `filepath.EvalSymlinks` で正規化する。2 呼び出しの間にリンク先を差し替えられると、実行可否チェックとキャッシュされる解決済みパスが別ファイルを指し得る。
 
-**採用方式（解決を先に、検証を解決済みパスに）**: `filepath.EvalSymlinks` を先に実行して canonical パスを得て、その**解決済みパスに対して** `os.Lstat`（symlink を追従しない）で存在・通常ファイル・実行ビットを検証し、同じ解決済みパスをキャッシュする。canonical パスに対し `Lstat` を用いることで、`EvalSymlinks` と検証の間に葉（leaf）へ symlink を挿入された場合でも、検証対象が解決結果と異なる別ファイルになることを検出できる（symlink 追従の `os.Stat` を canonical パスに使うと、挿入された leaf symlink の先が検証されキャッシュ文字列と乖離し得る）。これにより「検証対象パス」と「キャッシュされる解決済みパス」が常に同一のパス解決結果を指す。
+**採用方式（解決を先に、検証を解決済みパスに）**: `filepath.EvalSymlinks` を先に実行して canonical パスを得て、その解決済みパスに対して `os.Lstat`（symlink を追従しない）で存在・通常ファイル・実行ビットを検証し、同じ解決済みパスをキャッシュする。canonical パスに対し `Lstat` を用いることで、`EvalSymlinks` と検証の間に葉（leaf）へ symlink を挿入された場合でも、検証対象が解決結果と異なる別ファイルになることを検出できる（symlink 追従の `os.Stat` を canonical パスに使うと、挿入された leaf symlink の先が検証されキャッシュ文字列と乖離し得る）。これにより「検証対象パス」と「キャッシュされる解決済みパス」が常に同一のパス解決結果を指す。
 
 > **窓の範囲（過大主張を避ける）**: 本修正は「検証対象とキャッシュ対象が同一解決結果を指す」という AC-12 の要求を満たすが、`EvalSymlinks` と `Lstat` は別システムコールであり、この 2 呼び出しの完全な原子化までは行わない。実行されるコマンドバイナリそのものの inode 束縛は F-001 の fd 束縛実行が担う。キャッシュされた解決パスを exec 以外で消費する経路（例: `verify_files` エントリ等の非 exec 消費者）については、消費時点までの再差し替え窓が残り得るが、これは本タスクのスコープ外である。
 
@@ -359,7 +359,7 @@ func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, 
 
 ### 5.1 脅威モデル
 
-全 5 系統に共通する攻撃者像は、**検証済みパス（またはその親経路の symlink、インタプリタパス）への書き込み権限を持ち、検証時点と使用時点の間に対象を差し替える**というものである。
+全 5 系統に共通する攻撃者像は、検証済みパス（またはその親経路の symlink、インタプリタパス）への書き込み権限を持ち、検証時点と使用時点の間に対象を差し替えるというものである。
 
 ```mermaid
 flowchart TD
@@ -517,7 +517,7 @@ flowchart LR
 
 ## 7. テスト戦略
 
-各 AC に対し、**正常系（改ざんなし・回帰防止）**と**異常系（TOCTOU 窓を突く・fail-closed 確認）**の双方を用意する（[01_requirements.md](01_requirements.md) Success Criteria）。
+各 AC に対し、正常系（改ざんなし・回帰防止）と異常系（TOCTOU 窓を突く・fail-closed 確認）の双方を用意する（[01_requirements.md](01_requirements.md) Success Criteria）。
 
 ### 7.1 ユニットテスト
 
