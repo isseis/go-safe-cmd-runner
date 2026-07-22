@@ -651,6 +651,16 @@ func openVerifiedIdentity(cmd *runnertypes.RuntimeCommand) (*risktypes.VerifiedI
 // actual mismatch and on an unsupported algorithm prefix, since either way the
 // content cannot be confirmed to match what group verification hashed
 // (fail-closed).
+//
+// After hashing, it re-fstats fd and rejects if the size changed from size
+// (the size captured before hashing). Execution later shares this same fd
+// unbounded by size, so if the file grew between the initial fstat and this
+// hash read, bytes appended after the hashed region would never have been
+// hashed yet could still be executed; shrinking likewise means the hash was
+// computed over bytes no longer backing the inode's current content. Either
+// case means the verified hash no longer describes what the fd will yield,
+// so this fails closed with ErrIdentityHashMismatch rather than trusting a
+// hash of a size window that no longer matches the file.
 func verifyIdentityContentHash(fd int, size int64, expectedHash string) error {
 	var hasher filevalidator.SHA256
 	algo, _, ok := strings.Cut(expectedHash, ":")
@@ -663,6 +673,14 @@ func verifyIdentityContentHash(fd int, size int64, expectedHash string) error {
 		return fmt.Errorf("compute verified identity hash: %w", err)
 	}
 	if fmt.Sprintf("%s:%s", algo, actualSum) != expectedHash {
+		return ErrIdentityHashMismatch
+	}
+
+	var stat syscall.Stat_t
+	if err := syscall.Fstat(fd, &stat); err != nil {
+		return fmt.Errorf("re-fstat verified identity: %w", err)
+	}
+	if stat.Size != size {
 		return ErrIdentityHashMismatch
 	}
 	return nil
