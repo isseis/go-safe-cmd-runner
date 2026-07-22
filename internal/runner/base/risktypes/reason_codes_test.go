@@ -14,7 +14,7 @@ import (
 // to every table-derived test. This count (kept in sync with the const block by
 // hand) detects such an omission. Update it whenever a ReasonCode is added or
 // removed.
-const totalReasonCodes = 36
+const totalReasonCodes = 38
 
 // allReasonCodes returns the canonical set of reason codes, derived from the
 // family table's keys so there is no parallel hardcoded list to drift.

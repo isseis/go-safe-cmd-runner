@@ -71,6 +71,12 @@ const (
 	ReasonSymlinkResolutionFailed ReasonCode = "symlink_resolution_failed"
 	// ReasonIdentityUnbound marks an identity that could not be bound until exec.
 	ReasonIdentityUnbound ReasonCode = "identity_unbound"
+	// ReasonIdentityHashMismatch marks an identity whose open-time content hash
+	// did not match the hash verified at group verification time.
+	ReasonIdentityHashMismatch ReasonCode = "identity_hash_mismatch"
+	// ReasonIdentityNotRegular marks an identity whose resolved path was not a
+	// regular file at open time (e.g. replaced with a FIFO or device node).
+	ReasonIdentityNotRegular ReasonCode = "identity_not_regular_file"
 	// ReasonIndirectExecutionRejected marks a rejected indirect-execution form.
 	ReasonIndirectExecutionRejected ReasonCode = "indirect_execution_rejected"
 	// ReasonIndirectExecutionWrapper marks an allowable wrapper indirection
@@ -167,6 +173,8 @@ var reasonFamilies = map[ReasonCode]ReasonFamily{
 	ReasonDangerousArgPattern:       FamilyRuntimeArgument,
 	ReasonSymlinkResolutionFailed:   FamilyRuntimeArgument,
 	ReasonIdentityUnbound:           FamilyRuntimeArgument,
+	ReasonIdentityHashMismatch:      FamilyRuntimeArgument,
+	ReasonIdentityNotRegular:        FamilyRuntimeArgument,
 	ReasonIndirectExecutionRejected: FamilyRuntimeArgument,
 	ReasonIndirectExecutionWrapper:  FamilyRuntimeArgument,
 	ReasonForbiddenEnvVar:           FamilyRuntimeArgument,

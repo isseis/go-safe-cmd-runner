@@ -3,14 +3,33 @@
 package risk
 
 import (
+	"errors"
+	"fmt"
+	"io"
 	"path/filepath"
+	"strings"
 	"syscall"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 )
+
+// ErrIdentityHashMismatch means the content hash computed from the fd opened
+// for fd-bound execution did not match the hash verified at group verification
+// time (cmd.ExpandedCmdContentHash). allowedPlan maps this to
+// risktypes.ReasonIdentityHashMismatch.
+var ErrIdentityHashMismatch = errors.New("verified identity content hash mismatch")
+
+// ErrIdentityNotRegular means the path opened for fd-bound execution was not a
+// regular file (e.g. it was replaced with a FIFO or device node between group
+// verification and open). allowedPlan maps this to
+// risktypes.ReasonIdentityNotRegular.
+var ErrIdentityNotRegular = errors.New("verified identity is not a regular file")
 
 // Evaluator interface defines methods for evaluating command risk levels.
 // It produces a VerifiedCommandPlan so the evaluated identity and the executed
@@ -542,7 +561,14 @@ func criticalPlan(cmd *runnertypes.RuntimeCommand, a risktypes.RiskAssessment) r
 func (e *StandardEvaluator) allowedPlan(cmd *runnertypes.RuntimeCommand, a risktypes.RiskAssessment) risktypes.VerifiedCommandPlan {
 	identity, err := e.openIdentity(cmd)
 	if err != nil {
-		return blockingPlan(blockingAssessment(risktypes.ReasonIdentityUnbound, risktypes.ErrorClassPathResolution))
+		switch {
+		case errors.Is(err, ErrIdentityHashMismatch):
+			return blockingPlan(blockingAssessment(risktypes.ReasonIdentityHashMismatch, risktypes.ErrorClassPathResolution))
+		case errors.Is(err, ErrIdentityNotRegular):
+			return blockingPlan(blockingAssessment(risktypes.ReasonIdentityNotRegular, risktypes.ErrorClassPathResolution))
+		default:
+			return blockingPlan(blockingAssessment(risktypes.ReasonIdentityUnbound, risktypes.ErrorClassPathResolution))
+		}
 	}
 	return risktypes.VerifiedCommandPlan{
 		ResolvedPath: cmd.ExpandedCmd,
@@ -563,18 +589,101 @@ func identityFor(cmd *runnertypes.RuntimeCommand) *risktypes.VerifiedIdentity {
 }
 
 // openVerifiedIdentity opens the resolved executable read-only for fd-bound
-// execution and returns its identity. The descriptor is opened O_RDONLY|O_CLOEXEC
-// once here so the executor can bind execution to this exact inode without
-// re-resolving the path; ownership transfers to the returned VerifiedIdentity
-// (closed via VerifiedCommandPlan.Close).
+// execution and returns its identity. The descriptor is opened
+// O_RDONLY|O_CLOEXEC|O_NONBLOCK once here so the executor can bind execution to
+// this exact inode without re-resolving the path; ownership transfers to the
+// returned VerifiedIdentity (closed via VerifiedCommandPlan.Close).
+//
+// Invariant: the fd returned is (a) confirmed to be a regular file (fstat) and
+// (b) its content hash, computed from this same fd, matches
+// cmd.ExpandedCmdContentHash (the hash verified at group verification time).
+// Either check failing closes the fd and returns a distinguishable sentinel
+// error rather than an unbound/mismatched identity (fail-closed). This closes
+// the window between "group verification hashed the file" and "this open
+// re-reads it" by re-checking the hash against the exact bytes this fd sees.
 func openVerifiedIdentity(cmd *runnertypes.RuntimeCommand) (*risktypes.VerifiedIdentity, error) {
-	fd, err := syscall.Open(cmd.ExpandedCmd, syscall.O_RDONLY|syscall.O_CLOEXEC, 0)
+	// O_NONBLOCK is a safety net against an unbounded open-time block if the
+	// path was replaced with a FIFO; it is a no-op once the file is confirmed
+	// regular below (the fstat check is the real guarantee, not O_NONBLOCK).
+	fd, err := syscall.Open(cmd.ExpandedCmd, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}
+
+	var stat syscall.Stat_t
+	if err := syscall.Fstat(fd, &stat); err != nil {
+		_ = syscall.Close(fd)
+		return nil, fmt.Errorf("fstat verified identity: %w", err)
+	}
+	if stat.Mode&syscall.S_IFMT != syscall.S_IFREG {
+		_ = syscall.Close(fd)
+		return nil, ErrIdentityNotRegular
+	}
+
+	// Regular file confirmed: clear O_NONBLOCK so the fd behaves normally for
+	// the hash read below and for the executor that shares it afterward.
+	flags, err := unix.FcntlInt(uintptr(fd), syscall.F_GETFL, 0) //nolint:gosec // G115: fd is a small process file descriptor, always non-negative and well within uintptr range
+	if err != nil {
+		_ = syscall.Close(fd)
+		return nil, fmt.Errorf("fcntl F_GETFL verified identity: %w", err)
+	}
+	if _, err := unix.FcntlInt(uintptr(fd), syscall.F_SETFL, flags&^syscall.O_NONBLOCK); err != nil { //nolint:gosec // G115: fd is a small process file descriptor, always non-negative and well within uintptr range
+		_ = syscall.Close(fd)
+		return nil, fmt.Errorf("fcntl F_SETFL verified identity: %w", err)
+	}
+
+	if err := verifyIdentityContentHash(fd, stat.Size, cmd.ExpandedCmdContentHash); err != nil {
+		_ = syscall.Close(fd)
+		return nil, err
+	}
+
 	return &risktypes.VerifiedIdentity{
 		FD:           risktypes.NewVerifiedFD(fd),
 		ResolvedPath: cmd.ExpandedCmd,
 		ContentHash:  cmd.ExpandedCmdContentHash,
 	}, nil
+}
+
+// verifyIdentityContentHash computes the content hash of the first size bytes
+// readable from fd (via pread, so the fd's offset is left untouched for the
+// executor that shares it afterward) and compares it against expectedHash
+// ("algo:hex", e.g. "sha256:..."). It returns ErrIdentityHashMismatch both on an
+// actual mismatch and on an unsupported algorithm prefix, since either way the
+// content cannot be confirmed to match what group verification hashed
+// (fail-closed).
+func verifyIdentityContentHash(fd int, size int64, expectedHash string) error {
+	var hasher filevalidator.SHA256
+	algo, _, ok := strings.Cut(expectedHash, ":")
+	if !ok || algo != hasher.Name() {
+		return ErrIdentityHashMismatch
+	}
+
+	actualSum, err := hasher.Sum(io.NewSectionReader(fdReaderAt{fd: fd}, 0, size))
+	if err != nil {
+		return fmt.Errorf("compute verified identity hash: %w", err)
+	}
+	if fmt.Sprintf("%s:%s", algo, actualSum) != expectedHash {
+		return ErrIdentityHashMismatch
+	}
+	return nil
+}
+
+// fdReaderAt reads from a raw file descriptor via pread, leaving the fd's
+// offset untouched. It exists so the content hash can be computed from the
+// exact fd used for fd-bound execution without wrapping it in an *os.File
+// (which would attach a GC finalizer that could close the fd out from under
+// its owning VerifiedFD).
+type fdReaderAt struct {
+	fd int
+}
+
+func (r fdReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	n, err := unix.Pread(r.fd, p, off)
+	if err != nil {
+		return n, err
+	}
+	if n == 0 && len(p) > 0 {
+		return 0, io.EOF
+	}
+	return n, nil
 }

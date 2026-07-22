@@ -211,11 +211,11 @@
 
 **ファイル**: `internal/verification/path_resolver.go`
 
-- [ ] `validateAndCacheCommand` を EvalSymlinks→Lstat 順へ変更
+- [x] `validateAndCacheCommand` を EvalSymlinks→Lstat 順へ変更
   - `filepath.EvalSymlinks(path)` を最初に実行し canonical パスを得る
   - canonical パスに対して `os.Lstat`（symlink を追従しない）で存在・regular・実行ビットを検証
   - 解決済みパスをキャッシュ（同じ解決結果を参照）
-- [ ] 既存テスト `path_resolver_test.go` が全て通過
+- [x] 既存テスト `path_resolver_test.go` が全て通過
 
 ### Phase 1: F-001 openVerifiedIdentity のハッシュ再検証
 
@@ -223,25 +223,25 @@
 - `internal/runner/base/risk/evaluator.go`
 - `internal/runner/base/risktypes/reason_codes.go`
 
-- [ ] 新規 sentinel error 定義（`risk` パッケージ）:
+- [x] 新規 sentinel error 定義（`risk` パッケージ）:
   - `var ErrIdentityHashMismatch = errors.New("verified identity content hash mismatch")`
   - `var ErrIdentityNotRegular = errors.New("verified identity is not a regular file")`
-- [ ] 新規 reason code 定義（`risktypes`）:
+- [x] 新規 reason code 定義（`risktypes`）:
   - `ReasonIdentityHashMismatch = "identity_hash_mismatch"`
   - `ReasonIdentityNotRegular = "identity_not_regular_file"`
   - 両コードを `reasonFamilies` マップに `FamilyRuntimeArgument` として登録
   - `totalReasonCodes` を +2 する（テストで検査）
-- [ ] `openVerifiedIdentity` 実装:
+- [x] `openVerifiedIdentity` 実装:
   - `syscall.Open(cmd.ExpandedCmd, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)`
   - `fstat` で通常ファイル確認（FC_ISREG）
   - `O_NONBLOCK` を `fcntl` で解除
   - 同じ fd から `io.NewSectionReader` でハッシュ計算（fd offset 進めず）
   - ハッシュ不一致 → `ErrIdentityHashMismatch` return
   - 非通常ファイル → `ErrIdentityNotRegular` return
-- [ ] `allowedPlan` に分岐追加:
+- [x] `allowedPlan` に分岐追加:
   - `errors.Is(err, ErrIdentityHashMismatch)` → `ReasonIdentityHashMismatch`
   - `errors.Is(err, ErrIdentityNotRegular)` → `ReasonIdentityNotRegular`
-- [ ] 既存テスト全て通過（`reason_codes_test.go::TestReasonFamily_AllCodesAssigned` 含む）
+- [x] 既存テスト全て通過（`reason_codes_test.go::TestReasonFamily_AllCodesAssigned` 含む）
 
 ### PR-1 作成ポイント: path resolution and identity verification hardening
 

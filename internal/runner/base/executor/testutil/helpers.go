@@ -3,11 +3,13 @@
 package executortestutil
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -56,6 +58,32 @@ type runtimeCommandConfig struct {
 // store must report this hash for absolute-path commands so binary analysis
 // classifies them as Clean rather than a hash mismatch.
 const DefaultTestContentHash = "sha256:testcommandhash"
+
+// RealOrDefaultContentHash returns the real content hash ("algo:hex") of path
+// when it names an existing regular file, so tests that exercise the real
+// (non-mocked) risk evaluator against a real on-disk binary get a hash that
+// actually matches what fd-content re-verification will compute. For any other
+// path (nonexistent, synthetic, a directory) it falls back to
+// DefaultTestContentHash, preserving the placeholder used by tests that build
+// commands with synthetic paths and a mocked/permissive evaluator.
+func RealOrDefaultContentHash(path string) string {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return DefaultTestContentHash
+	}
+	f, err := os.Open(path) //nolint:gosec // G304: test helper; path is a test-supplied command path, not user input
+	if err != nil {
+		return DefaultTestContentHash
+	}
+	defer func() { _ = f.Close() }()
+
+	var hasher filevalidator.SHA256
+	sum, err := hasher.Sum(f)
+	if err != nil {
+		return DefaultTestContentHash
+	}
+	return fmt.Sprintf("%s:%s", hasher.Name(), sum)
+}
 
 // WithContentHash sets the pre-verified content hash ("algo:hex"). An empty
 // string models an unverified command.
@@ -163,8 +191,12 @@ func CreateRuntimeCommand(cmd string, args []string, opts ...RuntimeCommandOptio
 	}
 
 	// Default to a verified content hash so commands pass the risk evaluator's
-	// identity gate. Tests model an unverified command with WithContentHash("").
-	cfg.contentHash = DefaultTestContentHash
+	// identity gate. When cmd names a real on-disk regular file, use its real
+	// content hash so tests using the real (non-mocked) risk evaluator survive
+	// openVerifiedIdentity's fd-content re-verification; synthetic/nonexistent
+	// paths keep the placeholder. Tests model an unverified command with
+	// WithContentHash("").
+	cfg.contentHash = RealOrDefaultContentHash(cmd)
 
 	// Apply options
 	for _, opt := range opts {

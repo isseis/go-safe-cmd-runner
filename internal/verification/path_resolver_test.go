@@ -160,4 +160,56 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 		assert.ErrorIs(t, err, ErrCommandNotFound)
 		assert.Contains(t, err.Error(), "is a directory")
 	})
+
+	// EvalSymlinks must run before validation, and validation/caching must both
+	// target the same (fully resolved) path. Regression-checked by resolving a
+	// symlink chain and confirming the final real file's path (not any
+	// intermediate symlink) is what gets validated and cached.
+	t.Run("validates_and_caches_fully_resolved_path", func(t *testing.T) {
+		tempDir := tu.SafeTempDir(t)
+		realPath := filepath.Join(tempDir, "real_cmd")
+		err := os.WriteFile(realPath, []byte("#!/bin/sh\necho test"), 0o755)
+		require.NoError(t, err)
+
+		// symlink chain: link2 -> link1 -> real_cmd
+		link1 := filepath.Join(tempDir, "link1")
+		require.NoError(t, os.Symlink(realPath, link1))
+		link2 := filepath.Join(tempDir, "link2")
+		require.NoError(t, os.Symlink(link1, link2))
+
+		resolver := NewPathResolver(tempDir)
+
+		path, err := resolver.validateAndCacheCommand(link2, "chained_cmd")
+
+		require.NoError(t, err)
+		assert.Equal(t, realPath, path)
+
+		resolver.mu.RLock()
+		cached := resolver.cache["chained_cmd"]
+		resolver.mu.RUnlock()
+		assert.Equal(t, realPath, cached)
+	})
+
+	// Validation must be performed against the resolved path so that a symlink
+	// chain resolving to a non-executable file is correctly rejected, not
+	// silently accepted based on the (irrelevant) mode bits of the symlink
+	// itself.
+	t.Run("rejects_symlink_resolving_to_non_executable_file", func(t *testing.T) {
+		tempDir := tu.SafeTempDir(t)
+		nonExecPath := filepath.Join(tempDir, "non_exec_target")
+		err := os.WriteFile(nonExecPath, []byte("not executable"), 0o644)
+		require.NoError(t, err)
+
+		link := filepath.Join(tempDir, "link_to_non_exec")
+		require.NoError(t, os.Symlink(nonExecPath, link))
+
+		resolver := NewPathResolver(tempDir)
+
+		path, err := resolver.validateAndCacheCommand(link, "link_to_non_exec")
+
+		assert.Error(t, err)
+		assert.Empty(t, path)
+		assert.ErrorIs(t, err, ErrCommandNotFound)
+		assert.Contains(t, err.Error(), "is not executable")
+	})
 }

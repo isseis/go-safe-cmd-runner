@@ -25,11 +25,28 @@ func NewPathResolver(pathEnv string) *PathResolver {
 	}
 }
 
-// validateAndCacheCommand validates that a path points to an executable file,
-// resolves symlinks, and caches the result.
+// validateAndCacheCommand resolves symlinks to get the canonical path, validates
+// that the canonical path points to an executable file, and caches the result.
 // Returns the symlink-resolved absolute path.
+//
+// Invariant: the path validated (existence/regular/executable) and the path
+// cached/returned must always refer to the same path-resolution result. Resolving
+// symlinks before validating (rather than after) ensures that inserting a symlink
+// at the leaf between the two steps cannot make the validated file differ from the
+// cached one.
 func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, error) {
-	info, err := os.Stat(path)
+	// Resolve symlinks to get the canonical path first, then validate that
+	// canonical path. This ensures consistency across all subsequent security
+	// checks and execution.
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("%w: %s: failed to resolve symlinks: %w", ErrCommandNotFound, cacheKey, err)
+	}
+
+	// Lstat (rather than Stat) the canonical path so that a symlink swapped in
+	// at the resolved path after EvalSymlinks is detected instead of silently
+	// followed.
+	info, err := os.Lstat(resolvedPath)
 	if err != nil {
 		return "", fmt.Errorf("%w: %s", ErrCommandNotFound, cacheKey)
 	}
@@ -38,13 +55,6 @@ func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, 
 	}
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
 		return "", fmt.Errorf("%w: %s is not executable", ErrCommandNotFound, cacheKey)
-	}
-
-	// Resolve symlinks to get the canonical path.
-	// This ensures consistency across all subsequent security checks and execution.
-	resolvedPath, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve symlinks for %s: %w", cacheKey, err)
 	}
 
 	pr.mu.Lock()
