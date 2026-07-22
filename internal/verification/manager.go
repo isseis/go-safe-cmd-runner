@@ -726,11 +726,12 @@ func (m *Manager) verifyDynLibDeps(cmdPath string, envVars map[string]string) er
 // analyzers (DRY); this function only re-runs and compares.
 func (m *Manager) verifyDynLibDepsResolution(cmdPath string, recorded []fileanalysis.LibEntry) error {
 	if m.elfDynLibAnalyzer == nil || m.machoDynLibAnalyzer == nil {
-		// Analyzers are not wired up (e.g. a hand-built Manager in a unit test
-		// that only exercises hash verification); re-resolution is unavailable,
-		// so skip rather than fail due to incomplete test setup. Production
-		// Managers always initialize both analyzers in newManagerInternal.
-		return nil
+		// Both analyzers are always initialized by the sole constructor
+		// (newManagerInternal); a nil analyzer here means a Manager was
+		// hand-built (e.g. via a struct literal) bypassing that constructor.
+		// Fail explicitly rather than silently skipping the re-resolution
+		// check, which would otherwise fail open on mis-initialization.
+		return fmt.Errorf("%w: cannot re-resolve dependencies for %s", ErrDynLibAnalyzerNotInitialized, cmdPath)
 	}
 	resolved, err := m.elfDynLibAnalyzer.Analyze(cmdPath)
 	if err != nil {

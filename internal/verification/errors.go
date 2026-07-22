@@ -34,6 +34,14 @@ var (
 	// ErrUnsupportedHashAlgorithm is returned when a dep hash uses an algorithm
 	// that the verifier does not support.
 	ErrUnsupportedHashAlgorithm = errors.New("unsupported hash algorithm in dep record")
+	// ErrDynLibAnalyzerNotInitialized is returned when verifyDynLibDepsResolution
+	// is invoked on a Manager whose ELF/Mach-O dependency-resolution analyzers
+	// were not initialized. The sole constructor (newManagerInternal) always sets
+	// both analyzers, so this indicates a Manager was hand-built (e.g. via a
+	// struct literal) instead of going through the constructor; failing loudly
+	// here prevents such mis-initialization from silently producing a fail-open
+	// dependency-resolution check.
+	ErrDynLibAnalyzerNotInitialized = errors.New("dynamic library dependency-resolution analyzer not initialized")
 )
 
 // ErrDynLibDepsResolutionChanged indicates that re-executing dynamic library
@@ -57,11 +65,15 @@ type ErrDynLibDepsResolutionChanged struct {
 
 // Error returns the error message
 func (e *ErrDynLibDepsResolutionChanged) Error() string {
+	soName := e.SOName
+	if soName == "" {
+		soName = "<unknown>"
+	}
 	return fmt.Sprintf("dynamic library dependency resolution changed since record: %s\n"+
 		"  recorded path: %s\n"+
 		"  resolved path: %s\n"+
 		"  please re-run 'record' command if this change is expected",
-		e.SOName, e.RecordedPath, e.ResolvedPath)
+		soName, e.RecordedPath, e.ResolvedPath)
 }
 
 // SecurityViolationError is the base error type for security-related violations
