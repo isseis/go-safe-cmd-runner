@@ -438,10 +438,6 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 			cmd.ExpandedCmdContentHash = hash
 		}
 
-		// Compute the command's runtime environment once, ahead of shebang
-		// interpreter verification, so it can use the resolved environment.
-		finalEnv := executor.EnvVarValues(executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd))
-
 		// Verify dynamic library dependencies.
 		if dlErr := ge.verificationManager.VerifyCommandDynLibDeps(resolvedPath); dlErr != nil {
 			slog.Error("Dynamic library verification failed",
@@ -452,6 +448,7 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 		}
 
 		// Verify shebang interpreter.
+		finalEnv := executor.EnvVarValues(executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd))
 		if siErr := ge.verificationManager.VerifyCommandShebangInterpreter(resolvedPath, finalEnv); siErr != nil {
 			slog.Error("Shebang interpreter verification failed",
 				"group", groupName,
