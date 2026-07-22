@@ -127,7 +127,7 @@ func TestVerify_MachODyldCacheOnly(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(resolved, nil)
+	verifyErr := m.VerifyCommandDynLibDeps(resolved)
 	assert.NoError(t, verifyErr,
 		"Mach-O binary with only dyld-shared-cache deps should not require DynLibDeps record")
 }
@@ -159,7 +159,7 @@ func TestVerify_MachONoDynLibDeps(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(cmdPath, nil)
+	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
 	require.Error(t, verifyErr)
 
 	var errRequired *dynlib.ErrDynLibDepsRequired
@@ -196,7 +196,7 @@ func TestVerify_MachOWithDynLibDeps(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(cmdPath, nil)
+	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
 	assert.NoError(t, verifyErr, "Mach-O binary with matching DynLibDeps should pass verification")
 }
 
@@ -233,7 +233,7 @@ func TestVerify_MachOOldSchema(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(cmdPath, nil)
+	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
 	assert.NoError(t, verifyErr,
 		"old schema_version record should be skipped and not block Mach-O execution")
 }
@@ -273,7 +273,7 @@ func TestVerify_MachOLibraryTampered(t *testing.T) {
 	// Sanity check: initial verification passes.
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
-	require.NoError(t, m.VerifyCommandDynLibDeps(cmdPath, nil),
+	require.NoError(t, m.VerifyCommandDynLibDeps(cmdPath),
 		"initial verification should pass")
 
 	// Tamper with the library by appending bytes.
@@ -287,7 +287,7 @@ func TestVerify_MachOLibraryTampered(t *testing.T) {
 	m2, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m2.VerifyCommandDynLibDeps(cmdPath, nil)
+	verifyErr := m2.VerifyCommandDynLibDeps(cmdPath)
 	require.Error(t, verifyErr, "tampered library should cause verification failure")
 
 	var hashErr *dynlib.ErrLibraryHashMismatch

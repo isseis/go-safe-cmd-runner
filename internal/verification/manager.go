@@ -607,13 +607,13 @@ func validateHashDirectoryWithFS(hashDir string, fs common.FileSystem) error {
 // VerifyCommandDynLibDeps performs dynamic library integrity verification for a command binary.
 // It is called separately from VerifyGroupFiles to avoid the need to track
 // which files in the verification set are command files vs explicit verify_files entries.
-func (m *Manager) VerifyCommandDynLibDeps(cmdPath string, envVars map[string]string) error {
+func (m *Manager) VerifyCommandDynLibDeps(cmdPath string) error {
 	// Reset the per-command dep-hash cache so that shebang verification for
 	// this command never reuses an entry that was cached for a previous command.
 	// Without this reset, a file replaced between two commands in the same group
 	// would pass shebang verification using the stale cached hash.
 	m.verifiedDepHashes = nil
-	return m.verifyDynLibDeps(cmdPath, envVars)
+	return m.verifyDynLibDeps(cmdPath)
 }
 
 // isDeferredHashDirUnavailable reports whether err is a deferred error raised by
@@ -629,13 +629,7 @@ func isDeferredHashDirUnavailable(err error) bool {
 
 // verifyDynLibDeps performs dynamic library integrity verification when a
 // DynLibDeps snapshot is present in the analysis record.
-//
-// envVars is the command's resolved runtime environment. It is accepted here
-// so that a future extension to environment-dependent search-path resolution
-// (e.g. $LIB/$PLATFORM substitution) can consume it without another signature
-// change; the current ELF/Mach-O resolvers are environment-independent (see
-// 02_architecture.md section 3.4), so envVars does not affect resolution today.
-func (m *Manager) verifyDynLibDeps(cmdPath string, envVars map[string]string) error { //nolint:revive,unparam // envVars is intentionally unused today; see doc comment above
+func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 	if m.fileValidator == nil {
 		return nil
 	}

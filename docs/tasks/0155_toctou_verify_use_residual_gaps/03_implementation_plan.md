@@ -95,14 +95,12 @@
 - `allowedPlan` の分岐追加
 - 既存テスト全て通過を確認
 
-### Phase 2（署名変更を伴う）
+### Phase 2（依存解決の再実行）
 
-**範囲**: F-004。インターフェース・モック・呼び出し元・テスト追従。
+**範囲**: F-004。署名は不変（`envVars` は追加しない。02_architecture.md § 3.4 参照）。
 
-**マイルストーン 3**: envVars 受け入れと依存解決再実行
-- ManagerInterface 署名変更
-- VerifyCommandDynLibDeps 実装
-- モック定義・期待値の更新（20+ 箇所）
+**マイルストーン 3**: 依存解決再実行と集合比較
+- VerifyCommandDynLibDeps 内で依存解決を再実行し record 済み集合と比較する実装
 - 既存テスト全て通過を確認
 
 ### Phase 3（入力経路の拡張）
@@ -144,7 +142,7 @@
 | PR | 対象機能 | 主な変更内容 | 実装モデル要件 |
 |---|---|---|---|
 | PR-1 | F-005 / F-001 | `validateAndCacheCommand` の `EvalSymlinks`→`Lstat` 順序変更 / `openVerifiedIdentity` のハッシュ検証・`O_NONBLOCK`・`fstat` 追加 / sentinel error と reason code 定義 | frontier-recommended |
-| PR-2 | F-004 | `VerifyCommandDynLibDeps` 署名変更（`envVars` 追加） / 依存解決再実行ロジック / 20+ テストファイルのモック期待更新 / グループ実行系の統合テスト | frontier-recommended |
+| PR-2 | F-004 | `VerifyCommandDynLibDeps`（署名不変）内での依存解決再実行ロジック / グループ実行系の統合テスト | frontier-recommended |
 | PR-3 | F-003 | `SaveRecord` の共有 fd 束縛 / `saveRecordCore` で各解析器へ fd 伝播 / `analyzeOneLibrary` でハッシュキー照合 / store 境界でのハッシュ検証 / 各解析器の `io.ReaderAt` 入力対応 | frontier-recommended |
 | PR-4 | F-002 | `atomicMoveFileCore` の `linkat` ベース fd アンカー移動 / 一時リンク生成・クリーンアップ / エラー経路の defer 処理 | frontier-recommended |
 | PR-5 | F-006 | 02_architecture.md § 5.3 への F-006 残余リスク文書化（既に実施済み） | standard |
@@ -260,42 +258,22 @@
 - [x] PR がマージされた
 - [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
-### Phase 2: F-004 VerifyCommandDynLibDeps の envVars 追加
+### Phase 2: F-004 VerifyCommandDynLibDeps の依存解決再実行
 
 **ファイル**:
 - `internal/verification/manager.go`
 - `internal/verification/interfaces.go`
-- `internal/verification/testutil/testify_mocks.go`
-- `internal/runner/*_test.go`（モック期待更新）
 
-**AC-10 に関する設計上の注記**: 02_architecture.md § 3.4 で明示されたとおり、本タスクで再利用する ELF/Mach-O 解決器は環境変数を参照しない（環境非依存）。したがって `envVars` は「VerifyCommandDynLibDeps インターフェース境界で受け入れる」ことで AC-10 の「受け入れ」を満たす。現状の解決結果が環境非依存である点は、設計上の坦直な位置づけであり、環境依存の置換（例：将来 `$LIB`/`$PLATFORM` 対応）が必要になった場合は、別タスクで `Analyze`/`Resolve` 署名変更を伴う拡張を行う。本タスク実装時に AC-10 の「使用する」の解釈を明示すること。
+**AC-10 の再検討（envVars を追加しない結論への変更）**: 当初、本フェーズは `VerifyCommandDynLibDeps` に `envVars` を追加し（署名変更）、インターフェース境界で受け入れることで AC-10 の「使用する」を満たす、という設計で実装・レビュー（PR #902）された。しかしレビューで、本タスクの再利用対象である ELF/Mach-O 解決器が環境変数を一切参照しない以上、`envVars` は `Analyze` へ渡されず実質的に未使用の引数になり、これは CLAUDE.md の YAGNI 原則（予定のない将来拡張のために設計しない）に反するとの指摘を受けた。この指摘を受けて AC-10 自体を「`envVars` の受け入れ」を要求しない形に修正し（01_requirements.md 参照）、実装からも `envVars` パラメータを撤去した。将来 `$LIB`/`$PLATFORM` 等の環境依存置換が実際にタスク化された時点で、`Analyze`/`Resolve` および `VerifyCommandDynLibDeps` の署名変更を行う。
 
-- [x] `ManagerInterface.VerifyCommandDynLibDeps` 署名変更:
-  - 変更前: `VerifyCommandDynLibDeps(cmdPath string) error`
-  - 変更後: `VerifyCommandDynLibDeps(cmdPath string, envVars map[string]string) error`
-- [x] `Manager.VerifyCommandDynLibDeps` 実装:
-  - `verifyDynLibDeps(cmdPath, envVars)` 呼び出し（新規引数追加）
-  - `envVars` を呼び出し元から受け取るのみで、`verifyDynLibDeps` の外へは渡さない（設計上の注記どおり、現状の ELF/Mach-O 解決器は環境非依存のため）
-- [x] `verifyDynLibDeps` 実装（実装時の詳細化。設計時の記述から次の点を具体化した）:
-  - 依存解決を再実行: `elfDynLibAnalyzer.Analyze(cmdPath)` を実行し、非 ELF（`nil` 戻り）の場合のみ `machoDynLibAnalyzer.Analyze(cmdPath)` にフォールバックする。`envVars` は両 `Analyze` 呼び出しへは渡さない（両解決器の署名は変更しない。DRY を保つ設計上の判断）
+- [x] ~~`ManagerInterface.VerifyCommandDynLibDeps` に `envVars` を追加~~ → 撤回。署名は `VerifyCommandDynLibDeps(cmdPath string) error` のまま変更なし
+- [x] `Manager.VerifyCommandDynLibDeps` / `verifyDynLibDeps` 実装（`envVars` を持たない）:
+  - 依存解決を再実行: `elfDynLibAnalyzer.Analyze(cmdPath)` を実行し、非 ELF（`nil` 戻り）の場合のみ `machoDynLibAnalyzer.Analyze(cmdPath)` にフォールバックする
   - cmdPath 自身が ELF/Mach-O のいずれでもない場合（例: shebang スクリプト。この場合の `DynLibDeps` はスクリプト自身の解決結果ではなく shebang チェーンのインタプリタ解決結果に由来する）は再解決比較をスキップする
   - 記録済み集合と現在の解決集合を **Path** の集合として比較する（`fileanalysis.LibEntry.SOName` は `json:"-"` でレコードに永続化されないため、`LoadRecord` で読み戻した記録済みエントリは常に `SOName` が空になる。設計時に想定していた soname キーでの比較は成立しないため、実装時に Path キー比較へ変更した）
-  - 不一致時に構造化エラー `ErrDynLibDepsResolutionChanged`（`internal/verification/errors.go`）を返す。フィールドは記録済みパス・解決済みパス・soname（soname は解決済みエントリ側にのみ实際の値が入り、記録済みエントリ側は前述の理由で空になる)。設計時に想定していた「シャドーイングした探索段階」は含めない（`elfdynlib`/`machodylib` の `Analyze` は解決元の段階（RUNPATH/ld.so.cache/デフォルトパス等）を呼び出し元へ公開しておらず、追加の計装なしには取得できないため。将来必要になった場合は別タスクで `Analyze` の返り値拡張を検討する）
-- [x] モック定義更新（`testutil/testify_mocks.go`）:
-  - `On("VerifyCommandDynLibDeps", cmdPath string, envVars map[string]string)` 対応
-- [x] モック期待更新（全 call sites を確認）:
-  - 以下のファイルで `.On("VerifyCommandDynLibDeps", mock.Anything)` → `.On("VerifyCommandDynLibDeps", mock.Anything, mock.Anything)` に変更:
-    - `internal/runner/group_executor_test.go` (5+ 箇所)
-    - `internal/runner/integration_dual_defense_test.go` (4+ 箇所)
-    - `internal/runner/e2e_slack_redaction_test.go` (2+ 箇所)
-    - `internal/runner/command_output_capture_test.go` (2+ 箇所)
-    - `internal/verification/manager_test.go` (1+ 箇所)
-    - `internal/verification/manager_macho_test.go` (1+ 箇所)
-    - `internal/verification/shebang_chain_verifier_test.go` (1+ 箇所)
-    - `internal/verification/testutil/testify_mocks_test.go` (1+ 箇所)
-- [x] `group_executor.go` 呼び出し元の実装変更:
-  - `finalEnv` の算出を `VerifyCommandDynLibDeps` 呼び出し前へ移動
-  - `m.VerifyCommandDynLibDeps(cmdPath, finalEnv)` に変更
+  - 不一致時に構造化エラー `ErrDynLibDepsResolutionChanged`（`internal/verification/errors.go`）を返す。フィールドは記録済みパス・解決済みパス・soname（soname は解決済みエントリ側にのみ実際の値が入り、記録済みエントリ側は前述の理由で空になる)。設計時に想定していた「シャドーイングした探索段階」は含めない（`elfdynlib`/`machodylib` の `Analyze` は解決元の段階（RUNPATH/ld.so.cache/デフォルトパス等）を呼び出し元へ公開しておらず、追加の計装なしには取得できないため。将来必要になった場合は別タスクで `Analyze` の返り値拡張を検討する）
+- [x] `envVars` 追加に伴っていた `testutil/testify_mocks.go`・`internal/runner/*_test.go` のモック期待更新（20+ 箇所）は、署名変更自体を撤回したため不要（当該コミットで元に戻した）
+- [x] `group_executor.go` 呼び出し元は元の `m.VerifyCommandDynLibDeps(resolvedPath)` のまま変更なし。`finalEnv` は `VerifyCommandShebangInterpreter`（PATH 再解決に実際に環境変数を使う）のためだけに算出する
 - [x] 既存テスト全て通過
 
 ### Phase 2b（統合テスト）: F-001・F-004 end-to-end 検証
@@ -316,11 +294,11 @@
 
 **推奨タイトル**: `feat(0155): dependency resolution re-execution with environment awareness`
 
-**レビュー観点**: インターフェース署名変更の影響範囲 / `envVars` パラメータのセマンティクス / 依存解決再実行ロジック / 20+ テストファイルのモック期待更新の整合性確認 / 構造化エラーの内容（soname・path・stage）
+**レビュー観点**: 依存解決再実行ロジック / 集合比較（Path キー）の正しさ / 構造化エラーの内容（soname・path） / AC-10 の「envVars を追加しない」という結論の妥当性（YAGNI 判断の再確認）
 
 **実装モデル要件**: frontier-recommended
 
-**判定理由**: インターフェース署名変更は 20+ テストファイルに波及し、`envVars` のセマンティクス（環境非依存性の明示）が設計上の重要な判断であるため
+**判定理由**: 依存解決の再実行と集合比較は search-order shadowing 検出の中核ロジックであり、record/verify 環境差異（benign drift）との切り分けが設計上重要な判断であるため
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/902）
@@ -643,7 +621,7 @@
 | `ErrLibraryHashKeyMismatch` | 全ファイル | `rg -n "ErrLibraryHashKeyMismatch" internal/` | analyzeOneLibrary と store.LoadOrAnalyzeAndStore での定義・使用（F-003 で追加） |
 | `linkat` 呼び出し | 全ファイル | `rg -n "linkat" internal/ cmd/` | atomicMoveFileCore での使用のみ（F-002 で追加） |
 | `VerifyCommandDynLibDeps` 署名呼び出し | 全ファイル | `rg -n "VerifyCommandDynLibDeps\(" internal/ cmd/ --type go \| grep -v "_test.go"` | group_executor.go のみ（本タスク外の呼び出しなし） |
-| `VerifyCommandDynLibDeps` テストモック期待 | テストファイル | `rg -n "\.On\(\"VerifyCommandDynLibDeps" internal/ --type go` | 全ての `.On` 期待が `mock.Anything, mock.Anything` で envVars を受け取る |
+| `VerifyCommandDynLibDeps` テストモック期待 | テストファイル | `rg -n "\.On\(\"VerifyCommandDynLibDeps" internal/ --type go` | 全ての `.On` 期待が単一引数（`cmdPath` のみ）。`envVars` は受け取らない |
 
 ---
 

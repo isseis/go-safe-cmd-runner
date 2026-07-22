@@ -7,7 +7,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification/testutil"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -78,9 +77,9 @@ func TestMockManager_VerifyCommandDynLibDeps(t *testing.T) {
 	mockManager := new(verificationtestutil.MockManager)
 	expectedErr := errors.New("dynlib verification error")
 
-	mockManager.On("VerifyCommandDynLibDeps", "/usr/bin/test", mock.Anything).Return(expectedErr)
+	mockManager.On("VerifyCommandDynLibDeps", "/usr/bin/test").Return(expectedErr)
 
-	err := mockManager.VerifyCommandDynLibDeps("/usr/bin/test", nil)
+	err := mockManager.VerifyCommandDynLibDeps("/usr/bin/test")
 
 	assert.Equal(t, expectedErr, err)
 	mockManager.AssertExpectations(t)

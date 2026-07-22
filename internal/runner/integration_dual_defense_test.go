@@ -112,7 +112,7 @@ func TestIntegration_DualDefense(t *testing.T) {
 	// Mock verification manager
 	mockVerificationManager.On("VerifyGroupFiles", verificationtestutil.MatchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
-	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything, mock.Anything).Return(nil)
+	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
 
 	ctx := context.Background()
@@ -222,7 +222,7 @@ func TestIntegration_Case1Only(t *testing.T) {
 	// Mock verification manager
 	mockVerificationManager.On("VerifyGroupFiles", verificationtestutil.MatchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
-	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything, mock.Anything).Return(nil)
+	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
 
 	ctx := context.Background()
@@ -323,7 +323,7 @@ func TestIntegration_Case2Only(t *testing.T) {
 	// Mock verification manager
 	mockVerificationManager.On("VerifyGroupFiles", verificationtestutil.MatchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
-	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything, mock.Anything).Return(nil)
+	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
 
 	ctx := context.Background()
@@ -429,7 +429,7 @@ func TestIntegration_Case2Only_DebugLeakage(t *testing.T) {
 	// Mock verification manager
 	mockVerificationManager.On("VerifyGroupFiles", verificationtestutil.MatchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
-	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything, mock.Anything).Return(nil)
+	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
 
 	ctx := context.Background()

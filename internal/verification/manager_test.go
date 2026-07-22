@@ -1628,7 +1628,7 @@ func TestVerify_SchemaVersion(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	err = m.VerifyCommandDynLibDeps(cmdPath, nil)
+	err = m.VerifyCommandDynLibDeps(cmdPath)
 	assert.NoError(t, err, "old schema_version record should be skipped (not block execution)")
 }
 
@@ -1662,7 +1662,7 @@ func TestVerify_ELFNoDynLibDeps(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(cmdPath, nil)
+	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
 	require.Error(t, verifyErr)
 
 	var errRequired *dynlib.ErrDynLibDepsRequired
@@ -1695,7 +1695,7 @@ func TestVerify_NonELFNoDynLibDeps(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	err = m.VerifyCommandDynLibDeps(scriptPath, nil)
+	err = m.VerifyCommandDynLibDeps(scriptPath)
 	assert.NoError(t, err, "non-ELF binary without DynLibDeps should be treated as normal")
 }
 
@@ -1741,7 +1741,7 @@ func TestVerify_FutureSchemaVersion(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(cmdPath, nil)
+	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
 	require.Error(t, verifyErr, "future schema_version record should return an error")
 
 	var schemaErr *fileanalysis.SchemaVersionMismatchError
@@ -1769,7 +1769,7 @@ func TestVerifyCommandDynLibDeps_SucceedsWhenDependenciesUnchanged(t *testing.T)
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	err = m.VerifyCommandDynLibDeps(cmdPath, nil)
+	err = m.VerifyCommandDynLibDeps(cmdPath)
 	assert.NoError(t, err, "verify should succeed when live resolution matches the recorded snapshot")
 }
 
@@ -1813,7 +1813,7 @@ func TestVerifyCommandDynLibDeps_ReExecutesDependencyResolution(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(cmdPath, nil)
+	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
 	require.Error(t, verifyErr, "verify must fail when live resolution finds a dependency absent from the recorded snapshot")
 
 	var changedErr *ErrDynLibDepsResolutionChanged
@@ -2053,7 +2053,7 @@ func TestVerifyCommandDynLibDeps_DynStringError(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(corruptPath, nil)
+	verifyErr := m.VerifyCommandDynLibDeps(corruptPath)
 	require.Error(t, verifyErr)
 	assert.Contains(t, verifyErr.Error(), "DT_NEEDED",
 		"error should include the root cause (DynString failure)")
@@ -2084,7 +2084,7 @@ func TestVerifyCommandDynLibDeps_DynStringError_DryRun(t *testing.T) {
 	m, err := NewManagerForTest(hashDir, WithDryRunMode())
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(corruptPath, nil)
+	verifyErr := m.VerifyCommandDynLibDeps(corruptPath)
 	require.Error(t, verifyErr, "dry-run mode should also propagate the DynString error")
 	assert.Contains(t, verifyErr.Error(), "DT_NEEDED")
 }

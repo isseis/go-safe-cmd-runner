@@ -29,8 +29,8 @@ func (m *MockManager) VerifyGroupFiles(input *verification.GroupVerificationInpu
 }
 
 // VerifyCommandDynLibDeps mocks the VerifyCommandDynLibDeps method
-func (m *MockManager) VerifyCommandDynLibDeps(cmdPath string, envVars map[string]string) error {
-	args := m.Called(cmdPath, envVars)
+func (m *MockManager) VerifyCommandDynLibDeps(cmdPath string) error {
+	args := m.Called(cmdPath)
 	return args.Error(0)
 }
 
