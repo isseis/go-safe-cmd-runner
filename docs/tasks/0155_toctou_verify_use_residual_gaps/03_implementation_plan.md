@@ -444,7 +444,7 @@
 | **AC-11** | test | `internal/verification/manager_test.go` に新規テスト追加。環境不変時に `VerifyCommandDynLibDeps` が成功することを確認 | テスト通過 |
 | **AC-12** | test | `internal/verification/*_test.go` に新規テスト追加。`validateAndCacheCommand` が `EvalSymlinks` を検証より先に実行し、検証対象と キャッシュ対象が同一解決結果を指すことを確認 | テスト通過 |
 | **AC-13** | test | 既存テスト `PathResolver` 系のテストが変更前と同じ解決済みパスをキャッシュすること（回帰防止）を確認 | 既存テスト全て通過 |
-| **AC-14** | static | `rg -n "完全排除が困難" docs/tasks/0155.../02_architecture.md` で 5.3 節に (a)(b)(c) が記載されていることを確認 | マッチして記載が確認される |
+| **AC-14** | static | `rg -n "完全排除が困難" docs/tasks/0155_toctou_verify_use_residual_gaps/02_architecture.md` | マッチして記載が確認される |
 
 ---
 
