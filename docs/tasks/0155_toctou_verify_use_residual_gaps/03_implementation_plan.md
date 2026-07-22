@@ -469,7 +469,7 @@
 
 **検証テスト**:
 - テスト場所: `internal/runner/base/risk/evaluator_test.go` (新規テスト追加)
-- テスト名: `TestOpenVerifiedIdentity_FIFODetection`, `TestOpenVerifiedIdentity_NonblockPreventsHang`
+- テスト名: `TestOpenVerifiedIdentity_FIFODetection`（O_NONBLOCK により無期限ブロックしないことも同テスト内で確認）
 - 検証内容: path を FIFO に差し替えたとき `ErrIdentityNotRegular` を返す
 
 ---
@@ -480,8 +480,8 @@
 - PR-1 での openVerifiedIdentity ハッシュ検証実装
 
 **検証テスト**:
-- テスト場所: `internal/runner/base/executor/stagefromfd_test.go`
-- テスト名: `TestOpenVerifiedIdentity_SuccessReturnsVerifiedIdentity` (既存テスト維持)
+- テスト場所: `internal/runner/base/risk/evaluator_test.go` (新規テスト追加)
+- テスト名: `TestOpenVerifiedIdentity_SuccessReturnsVerifiedIdentity`
 - 検証内容: 改ざんなし時に VerifiedIdentity が返る
 
 ---
@@ -589,7 +589,7 @@
 
 **検証テスト**:
 - テスト場所: `internal/verification/path_resolver_test.go` (新規テスト追加)
-- テスト名: `TestValidateAndCacheCommand_EvalSymlinksBeforeValidation`
+- テスト名: `TestPathResolver_ValidateAndCacheCommand` の `validates_and_caches_fully_resolved_path` / `rejects_symlink_resolving_to_non_executable_file` サブテスト
 - 検証内容: EvalSymlinks 実行後、解決済みパスに対して Lstat 検証が行われる
 
 ---
@@ -601,7 +601,7 @@
 
 **検証テスト**:
 - テスト場所: `internal/verification/path_resolver_test.go` (既存テスト維持)
-- テスト名: `TestValidateAndCacheCommand_ReturnsResolvedPath` 等
+- テスト名: `TestPathResolver_ValidateAndCacheCommand` の `successful_validation_and_caching` サブテスト 等
 - 検証内容: 改ざんなし時に解決済みパスが返りキャッシュされる
 
 ---
