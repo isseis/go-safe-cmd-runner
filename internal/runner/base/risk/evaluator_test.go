@@ -4,18 +4,34 @@ package risk
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// contentHashFor computes the "algo:hex" content hash of content the same way
+// openVerifiedIdentity does, so tests exercising the real (production) identity
+// opener can supply a hash that matches the file they write to disk.
+func contentHashFor(t *testing.T, content string) string {
+	t.Helper()
+	var hasher filevalidator.SHA256
+	sum, err := hasher.Sum(strings.NewReader(content))
+	require.NoError(t, err)
+	return fmt.Sprintf("%s:%s", hasher.Name(), sum)
+}
 
 func TestNewStandardEvaluator(t *testing.T) {
 	evaluator := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{}), nil)
@@ -602,16 +618,22 @@ func TestEvaluateRisk_DynamicLoaderBlocking(t *testing.T) {
 // opener: an allowed command's plan must carry a real verified file descriptor so
 // the executor can bind execution to that inode.
 func TestEvaluateRisk_AllowedPlanCarriesVerifiedFd(t *testing.T) {
-	// Use the real opener (default), so a real on-disk file is required.
-	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{RecordStore: fakeRecordStore{}}), nil)
-
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "tool")
-	require.NoError(t, os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755))
+	const binContent = "#!/bin/sh\n"
+	require.NoError(t, os.WriteFile(bin, []byte(binContent), 0o755))
+	hash := contentHashFor(t, binContent)
+
+	// Use the real opener (default), so a real on-disk file is required. The
+	// record store's hash must match the file's real content hash (rather than
+	// the usual testContentHash placeholder) since the production opener now
+	// re-verifies the fd's content against ExpandedCmdContentHash.
+	store := fakeRecordStore{records: map[string]*fileanalysis.Record{bin: {ContentHash: hash}}}
+	ev := NewStandardEvaluator(security.NewNetworkAnalyzer(runtime.GOOS, security.AnalysisDeps{RecordStore: store}), nil)
 
 	plan, err := ev.EvaluateRisk(&runnertypes.RuntimeCommand{
 		ExpandedCmd:            bin,
-		ExpandedCmdContentHash: testContentHash,
+		ExpandedCmdContentHash: hash,
 	})
 	require.NoError(t, err)
 	defer func() { _ = plan.Close() }()
@@ -714,4 +736,108 @@ func TestEvaluateRisk_OpenFailureBlocks(t *testing.T) {
 
 	assert.True(t, plan.Assessment.Blocking, "an unopenable verified binary must be denied")
 	assert.Equal(t, risktypes.ReasonIdentityUnbound, plan.Assessment.BlockingReason)
+}
+
+// TestOpenVerifiedIdentity_SuccessReturnsVerifiedIdentity is a regression check:
+// with content unchanged, openVerifiedIdentity returns a VerifiedIdentity
+// carrying the same content hash used for group verification (no regression in
+// the success path).
+func TestOpenVerifiedIdentity_SuccessReturnsVerifiedIdentity(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "tool")
+	const binContent = "#!/bin/sh\necho hi\n"
+	require.NoError(t, os.WriteFile(bin, []byte(binContent), 0o755))
+	hash := contentHashFor(t, binContent)
+
+	identity, err := openVerifiedIdentity(&runnertypes.RuntimeCommand{
+		ExpandedCmd:            bin,
+		ExpandedCmdContentHash: hash,
+	})
+	require.NoError(t, err)
+	defer func() { _ = identity.FD.Close() }()
+
+	assert.Equal(t, bin, identity.ResolvedPath)
+	assert.Equal(t, hash, identity.ContentHash)
+	assert.Greater(t, identity.FD.Fd(), 2, "fd should be a real descriptor")
+}
+
+// TestOpenVerifiedIdentity_HashMismatchReturnsError verifies that if the fd's
+// content does not match the hash verified at group-verification time,
+// openVerifiedIdentity returns ErrIdentityHashMismatch (fail-closed) rather than
+// an identity bound to unexpected content.
+func TestOpenVerifiedIdentity_HashMismatchReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "tool")
+	require.NoError(t, os.WriteFile(bin, []byte("#!/bin/sh\necho hi\n"), 0o755))
+
+	// The recorded hash intentionally does not match the file just written,
+	// simulating content having changed since group verification.
+	staleHash := contentHashFor(t, "#!/bin/sh\necho a different script\n")
+
+	identity, err := openVerifiedIdentity(&runnertypes.RuntimeCommand{
+		ExpandedCmd:            bin,
+		ExpandedCmdContentHash: staleHash,
+	})
+	require.Error(t, err)
+	assert.Nil(t, identity)
+	assert.ErrorIs(t, err, ErrIdentityHashMismatch)
+}
+
+// TestOpenVerifiedIdentity_FIFODetection verifies that if the path was replaced
+// with a FIFO between group verification and open, openVerifiedIdentity must
+// detect the non-regular file via fstat (not hang, since O_NONBLOCK is set at
+// open time) and return ErrIdentityNotRegular.
+func TestOpenVerifiedIdentity_FIFODetection(t *testing.T) {
+	dir := t.TempDir()
+	fifoPath := filepath.Join(dir, "fifo")
+	require.NoError(t, syscall.Mkfifo(fifoPath, 0o644))
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		identity, err := openVerifiedIdentity(&runnertypes.RuntimeCommand{
+			ExpandedCmd:            fifoPath,
+			ExpandedCmdContentHash: "sha256:irrelevant",
+		})
+		assert.Nil(t, identity)
+		assert.ErrorIs(t, err, ErrIdentityNotRegular)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("openVerifiedIdentity blocked on FIFO open instead of returning ErrIdentityNotRegular (O_NONBLOCK not effective)")
+	}
+}
+
+// TestAllowedPlan_ReturnsDistinctReasonCodes verifies that hash-mismatch and
+// non-regular-file identity failures must be distinguishable from each other and
+// from the generic ReasonIdentityUnbound (used for e.g. a missing file), so
+// audit logs can tell the failure modes apart.
+func TestAllowedPlan_ReturnsDistinctReasonCodes(t *testing.T) {
+	ev := newVerifiedEvaluator().(*StandardEvaluator)
+
+	tests := []struct {
+		name       string
+		openErr    error
+		wantReason risktypes.ReasonCode
+	}{
+		{"hash mismatch", ErrIdentityHashMismatch, risktypes.ReasonIdentityHashMismatch},
+		{"not regular file", ErrIdentityNotRegular, risktypes.ReasonIdentityNotRegular},
+		{"generic open failure", errors.New("open failed"), risktypes.ReasonIdentityUnbound},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ev.openIdentity = func(_ *runnertypes.RuntimeCommand) (*risktypes.VerifiedIdentity, error) {
+				return nil, tc.openErr
+			}
+
+			plan, err := ev.EvaluateRisk(verifiedCmd("/usr/bin/echo", nil))
+			require.NoError(t, err)
+			defer func() { _ = plan.Close() }()
+
+			assert.True(t, plan.Assessment.Blocking)
+			assert.Equal(t, tc.wantReason, plan.Assessment.BlockingReason)
+		})
+	}
 }

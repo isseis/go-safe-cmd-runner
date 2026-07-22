@@ -278,8 +278,9 @@ func TestNormalResourceManager_ExecuteCommand_RiskLevelControl(t *testing.T) {
 	// "curl" so the name-based risk profile classifies it as Medium (network), but
 	// it is created in a temp dir so the test does not depend on a network tool
 	// (curl/wget) being installed -- neither is part of a default Ubuntu install.
-	// The risk evaluator only needs the file to exist to bind its identity; the
-	// content hash is the faked test hash, not recomputed from the file. The bytes
+	// The risk evaluator binds its identity to this file's real content hash
+	// (CreateRuntimeCommand and cleanRecordStore both compute it from the file,
+	// so openVerifiedIdentity's fd-content re-verification matches). The bytes
 	// are ELF-like (not "#!") so the indirect-execution resolver does not read it as
 	// a shebang script.
 	mediumCmd := filepath.Join(t.TempDir(), "curl")
