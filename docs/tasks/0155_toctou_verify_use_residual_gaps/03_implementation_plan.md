@@ -612,7 +612,7 @@
 - 02_architecture.md § 5.3 への記載（本タスク前で既に実施）
 
 **検証方法**: 静的確認
-- コマンド: `rg -n "完全排除が困難である理由" docs/tasks/0155.../02_architecture.md`
+- コマンド: `rg -n "完全排除が困難である理由" docs/tasks/0155_toctou_verify_use_residual_gaps/02_architecture.md`
 - 期待結果: § 5.3 に (a)(b)(c) が記載されている
 
 ---
