@@ -103,5 +103,12 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	// LookPathInEnv returns separator-containing names unresolved (e.g. "./foo"),
+	// so found is not guaranteed absolute. Reject rather than cache a cwd-dependent
+	// path, which would violate this method's documented "always absolute" contract.
+	if !filepath.IsAbs(found) {
+		return "", fmt.Errorf("%w: relative path %q is not supported", ErrCommandNotFound, found)
+	}
 	return pr.validateAndCacheCommand(found, command)
 }
