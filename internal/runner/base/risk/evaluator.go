@@ -692,17 +692,17 @@ func (r fdReaderAt) ReadAt(p []byte, off int64) (int, error) {
 	var total int
 	for len(p) > 0 {
 		n, err := syscall.Pread(r.fd, p, off)
-		if err != nil {
-			if errors.Is(err, syscall.EINTR) {
-				// A signal may interrupt pread after it has already stored bytes;
-				// consume them before retrying so they aren't re-read and duplicated.
-				if n > 0 {
-					total += n
-					p = p[n:]
-					off += int64(n)
-				}
-				continue
+		if err != nil && errors.Is(err, syscall.EINTR) {
+			// A signal may interrupt pread after it has already stored bytes;
+			// consume them before retrying so they aren't re-read and duplicated.
+			if n > 0 {
+				total += n
+				p = p[n:]
+				off += int64(n)
 			}
+			continue
+		}
+		if err != nil {
 			return total + n, err
 		}
 		if n == 0 {
