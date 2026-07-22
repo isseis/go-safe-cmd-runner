@@ -43,9 +43,16 @@ var (
 // $ORIGIN-relative RUNPATH entry or a Mach-O @rpath candidate) after record
 // time, without modifying any recorded library file.
 type ErrDynLibDepsResolutionChanged struct {
+	// SOName and ResolvedPath are set together when a path was resolved live
+	// but was absent from the recorded snapshot (empty if no such path was found).
 	SOName       string
-	RecordedPath string // empty if the soname was not present in the recorded set
-	ResolvedPath string // empty if the soname no longer resolves
+	ResolvedPath string
+	// RecordedPath is a path that was in the recorded snapshot but no longer
+	// resolves live (empty if every recorded path still resolves). When both
+	// RecordedPath and ResolvedPath are set, they typically describe the same
+	// underlying shadowing event: RecordedPath's soname now resolves to
+	// ResolvedPath instead.
+	RecordedPath string
 }
 
 // Error returns the error message

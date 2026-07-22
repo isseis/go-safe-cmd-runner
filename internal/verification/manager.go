@@ -769,6 +769,14 @@ func (m *Manager) verifyDynLibDepsResolution(cmdPath string, recorded []fileanal
 // comparison key. A recorded path that no longer resolves, or a newly
 // resolved path that was not recorded, indicates the search result changed
 // since record time (e.g. search-order shadowing).
+//
+// Both directions are collected before building the error (rather than
+// returning on the first divergence found) because the archetypal shadowing
+// attack produces exactly one of each: the soname's old, recorded path
+// disappears from the live resolution while a new, higher-priority path for
+// the same soname appears. Returning on the first divergence would report
+// only whichever half was found first, discarding the more actionable half
+// (SOName/ResolvedPath) whenever the missing-recorded-path check runs first.
 func compareDynLibDeps(recorded, resolved []fileanalysis.LibEntry) error {
 	recordedPaths := make(map[string]struct{}, len(recorded))
 	for _, entry := range recorded {
@@ -779,17 +787,32 @@ func compareDynLibDeps(recorded, resolved []fileanalysis.LibEntry) error {
 		resolvedByPath[entry.Path] = entry
 	}
 
+	var missingRecordedPath string
 	for _, entry := range recorded {
 		if _, ok := resolvedByPath[entry.Path]; !ok {
-			return &ErrDynLibDepsResolutionChanged{RecordedPath: entry.Path}
+			missingRecordedPath = entry.Path
+			break
 		}
 	}
-	for path, entry := range resolvedByPath {
-		if _, ok := recordedPaths[path]; !ok {
-			return &ErrDynLibDepsResolutionChanged{SOName: entry.SOName, ResolvedPath: path}
+
+	var newEntry *fileanalysis.LibEntry
+	for _, entry := range resolved {
+		if _, ok := recordedPaths[entry.Path]; !ok {
+			e := entry
+			newEntry = &e
+			break
 		}
 	}
-	return nil
+
+	if missingRecordedPath == "" && newEntry == nil {
+		return nil
+	}
+	changed := &ErrDynLibDepsResolutionChanged{RecordedPath: missingRecordedPath}
+	if newEntry != nil {
+		changed.SOName = newEntry.SOName
+		changed.ResolvedPath = newEntry.Path
+	}
+	return changed
 }
 
 // hasDynamicLibraryDeps checks if the file at the given path is an ELF binary
