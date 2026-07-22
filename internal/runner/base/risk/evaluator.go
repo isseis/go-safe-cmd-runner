@@ -678,12 +678,18 @@ type fdReaderAt struct {
 }
 
 func (r fdReaderAt) ReadAt(p []byte, off int64) (int, error) {
-	n, err := unix.Pread(r.fd, p, off)
-	if err != nil {
-		return n, err
+	var total int
+	for len(p) > 0 {
+		n, err := unix.Pread(r.fd, p, off)
+		if err != nil {
+			return total + n, err
+		}
+		if n == 0 {
+			return total, io.EOF
+		}
+		total += n
+		p = p[n:]
+		off += int64(n)
 	}
-	if n == 0 && len(p) > 0 {
-		return 0, io.EOF
-	}
-	return n, nil
+	return total, nil
 }
