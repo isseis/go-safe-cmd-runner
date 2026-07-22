@@ -1628,7 +1628,7 @@ func TestVerify_SchemaVersion(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	err = m.VerifyCommandDynLibDeps(cmdPath)
+	err = m.VerifyCommandDynLibDeps(cmdPath, nil)
 	assert.NoError(t, err, "old schema_version record should be skipped (not block execution)")
 }
 
@@ -1662,7 +1662,7 @@ func TestVerify_ELFNoDynLibDeps(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
+	verifyErr := m.VerifyCommandDynLibDeps(cmdPath, nil)
 	require.Error(t, verifyErr)
 
 	var errRequired *dynlib.ErrDynLibDepsRequired
@@ -1695,7 +1695,7 @@ func TestVerify_NonELFNoDynLibDeps(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	err = m.VerifyCommandDynLibDeps(scriptPath)
+	err = m.VerifyCommandDynLibDeps(scriptPath, nil)
 	assert.NoError(t, err, "non-ELF binary without DynLibDeps should be treated as normal")
 }
 
@@ -1741,13 +1741,85 @@ func TestVerify_FutureSchemaVersion(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
+	verifyErr := m.VerifyCommandDynLibDeps(cmdPath, nil)
 	require.Error(t, verifyErr, "future schema_version record should return an error")
 
 	var schemaErr *fileanalysis.SchemaVersionMismatchError
 	require.ErrorAs(t, verifyErr, &schemaErr)
 	assert.Greater(t, schemaErr.Actual, schemaErr.Expected,
 		"Actual schema version should be greater than Expected")
+}
+
+// TestVerifyCommandDynLibDeps_SucceedsWhenDependenciesUnchanged verifies that
+// verify succeeds when the live dependency resolution at verify time matches
+// the recorded DynLibDeps snapshot exactly, i.e. the environment has not
+// changed since record.
+func TestVerifyCommandDynLibDeps_SucceedsWhenDependenciesUnchanged(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("ELF test requires Linux")
+	}
+
+	hashDir := tu.SafeTempDir(t)
+	cmdPath := resolveSymlinks(t, "/bin/ls")
+
+	validator := filevalidator.NewTestDynLibValidator(t, hashDir)
+	_, _, err := validator.SaveRecord(cmdPath, false)
+	require.NoError(t, err)
+
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	err = m.VerifyCommandDynLibDeps(cmdPath, nil)
+	assert.NoError(t, err, "verify should succeed when live resolution matches the recorded snapshot")
+}
+
+// TestVerifyCommandDynLibDeps_ReExecutesDependencyResolution verifies that
+// verify re-executes dependency resolution and fails when the live resolution
+// no longer matches the recorded snapshot. Dropping one entry from the
+// recorded DynLibDeps before verify reproduces "a library the live resolver
+// finds that record time did not see", the same shape of mismatch as a new
+// library appearing at a higher-priority search location (search-order
+// shadowing), without depending on real RUNPATH/ld.so.cache manipulation.
+func TestVerifyCommandDynLibDeps_ReExecutesDependencyResolution(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("ELF test requires Linux")
+	}
+
+	hashDir := tu.SafeTempDir(t)
+	cmdPath := resolveSymlinks(t, "/bin/ls")
+
+	validator := filevalidator.NewTestDynLibValidator(t, hashDir)
+	_, _, err := validator.SaveRecord(cmdPath, false)
+	require.NoError(t, err)
+
+	getter := filevalidator.NewHybridHashFilePathGetter()
+	store, err := fileanalysis.NewStore(hashDir, getter)
+	require.NoError(t, err)
+	resolvedPath, err := common.NewResolvedPath(cmdPath)
+	require.NoError(t, err)
+
+	var droppedPath string
+	err = store.Update(resolvedPath, func(record *fileanalysis.Record) error {
+		if len(record.DynLibDeps) == 0 {
+			return errors.New("test binary must have at least one recorded dependency")
+		}
+		droppedPath = record.DynLibDeps[0].Path
+		record.DynLibDeps = record.DynLibDeps[1:]
+		return nil
+	})
+	require.NoError(t, err)
+
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	verifyErr := m.VerifyCommandDynLibDeps(cmdPath, nil)
+	require.Error(t, verifyErr, "verify must fail when live resolution finds a dependency absent from the recorded snapshot")
+
+	var changedErr *ErrDynLibDepsResolutionChanged
+	require.ErrorAs(t, verifyErr, &changedErr)
+	assert.Equal(t, droppedPath, changedErr.ResolvedPath,
+		"the mismatch should identify the dependency path missing from the recorded set")
+	assert.Empty(t, changedErr.RecordedPath)
 }
 
 // TestVerifyGroupFiles_OldSchema_BlocksExecution verifies that VerifyGroupFiles
@@ -1952,7 +2024,7 @@ func TestVerifyCommandDynLibDeps_DynStringError(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(corruptPath)
+	verifyErr := m.VerifyCommandDynLibDeps(corruptPath, nil)
 	require.Error(t, verifyErr)
 	assert.Contains(t, verifyErr.Error(), "DT_NEEDED",
 		"error should include the root cause (DynString failure)")
@@ -1983,7 +2055,7 @@ func TestVerifyCommandDynLibDeps_DynStringError_DryRun(t *testing.T) {
 	m, err := NewManagerForTest(hashDir, WithDryRunMode())
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(corruptPath)
+	verifyErr := m.VerifyCommandDynLibDeps(corruptPath, nil)
 	require.Error(t, verifyErr, "dry-run mode should also propagate the DynString error")
 	assert.Contains(t, verifyErr.Error(), "DT_NEEDED")
 }

@@ -27,7 +27,9 @@ type Manager struct {
 	fs                          common.FileSystem
 	safeFS                      safefileio.FileSystem // used for secure file I/O (e.g. ELF inspection)
 	fileValidator               filevalidator.FileValidator
-	dynlibVerifier              *elfdynlib.DynLibVerifier // initialized once at construction
+	dynlibVerifier              *elfdynlib.DynLibVerifier       // initialized once at construction
+	elfDynLibAnalyzer           *elfdynlib.DynLibAnalyzer       // initialized once at construction; re-resolves ELF deps at verify time
+	machoDynLibAnalyzer         *machodylib.MachODynLibAnalyzer // initialized once at construction; re-resolves Mach-O deps at verify time
 	security                    DirectoryValidator
 	pathResolver                *PathResolver
 	isDryRun                    bool
@@ -482,6 +484,10 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 
 	// Initialize dynamic library verifier (parses /etc/ld.so.cache once at startup).
 	manager.dynlibVerifier = elfdynlib.NewDynLibVerifier(safeFS)
+	// Initialize dependency resolution analyzers used to re-execute search-path
+	// resolution at verify time (see verifyDynLibDepsResolution).
+	manager.elfDynLibAnalyzer = elfdynlib.NewDynLibAnalyzer(safeFS)
+	manager.machoDynLibAnalyzer = machodylib.NewMachODynLibAnalyzer(safeFS)
 
 	// Initialize file validator with hybrid hash path getter
 	var hashDirAvailable bool
@@ -601,13 +607,13 @@ func validateHashDirectoryWithFS(hashDir string, fs common.FileSystem) error {
 // VerifyCommandDynLibDeps performs dynamic library integrity verification for a command binary.
 // It is called separately from VerifyGroupFiles to avoid the need to track
 // which files in the verification set are command files vs explicit verify_files entries.
-func (m *Manager) VerifyCommandDynLibDeps(cmdPath string) error {
+func (m *Manager) VerifyCommandDynLibDeps(cmdPath string, envVars map[string]string) error {
 	// Reset the per-command dep-hash cache so that shebang verification for
 	// this command never reuses an entry that was cached for a previous command.
 	// Without this reset, a file replaced between two commands in the same group
 	// would pass shebang verification using the stale cached hash.
 	m.verifiedDepHashes = nil
-	return m.verifyDynLibDeps(cmdPath)
+	return m.verifyDynLibDeps(cmdPath, envVars)
 }
 
 // isDeferredHashDirUnavailable reports whether err is a deferred error raised by
@@ -623,7 +629,13 @@ func isDeferredHashDirUnavailable(err error) bool {
 
 // verifyDynLibDeps performs dynamic library integrity verification when a
 // DynLibDeps snapshot is present in the analysis record.
-func (m *Manager) verifyDynLibDeps(cmdPath string) error {
+//
+// envVars is the command's resolved runtime environment. It is accepted here
+// so that a future extension to environment-dependent search-path resolution
+// (e.g. $LIB/$PLATFORM substitution) can consume it without another signature
+// change; the current ELF/Mach-O resolvers are environment-independent (see
+// 02_architecture.md section 3.4), so envVars does not affect resolution today.
+func (m *Manager) verifyDynLibDeps(cmdPath string, envVars map[string]string) error { //nolint:revive,unparam // envVars is intentionally unused today; see doc comment above
 	if m.fileValidator == nil {
 		return nil
 	}
@@ -658,6 +670,13 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 		// DynLibDeps is recorded: verify library hashes.
 		// m.dynlibVerifier is initialized once at Manager construction.
 		if err := m.dynlibVerifier.Verify(record.DynLibDeps); err != nil {
+			return err
+		}
+		// Re-execute dependency resolution and confirm the current search-path
+		// set matches the recorded snapshot. Hash verification above only
+		// confirms recorded library files are untampered; it cannot detect a
+		// new library placed at a higher-priority search location.
+		if err := m.verifyDynLibDepsResolution(cmdPath, record.DynLibDeps); err != nil {
 			return err
 		}
 		// Cache verified hashes so verifyInterpreterHash can skip redundant
@@ -695,6 +714,81 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 	}
 
 	// Non-ELF, non-Mach-O binary (or static/no-dependency binary) without DynLibDeps → normal.
+	return nil
+}
+
+// verifyDynLibDepsResolution re-executes dependency resolution for cmdPath and
+// confirms the resulting search-path set matches the recorded snapshot. This
+// detects search-order shadowing: a library placed at a higher-priority
+// search location (e.g. an $ORIGIN-relative RUNPATH entry or a Mach-O @rpath
+// candidate) after record time, without touching any recorded library file.
+// Resolution logic is reused from the existing elfdynlib/machodylib
+// analyzers (DRY); this function only re-runs and compares.
+func (m *Manager) verifyDynLibDepsResolution(cmdPath string, recorded []fileanalysis.LibEntry) error {
+	if m.elfDynLibAnalyzer == nil || m.machoDynLibAnalyzer == nil {
+		// Analyzers are not wired up (e.g. a hand-built Manager in a unit test
+		// that only exercises hash verification); re-resolution is unavailable,
+		// so skip rather than fail due to incomplete test setup. Production
+		// Managers always initialize both analyzers in newManagerInternal.
+		return nil
+	}
+	resolved, err := m.elfDynLibAnalyzer.Analyze(cmdPath)
+	if err != nil {
+		return fmt.Errorf("failed to re-resolve ELF dynamic library dependencies: %w", err)
+	}
+	if resolved == nil {
+		// Not an ELF binary (or a static ELF): try Mach-O.
+		var warnings []machodylib.AnalysisWarning
+		resolved, warnings, err = m.machoDynLibAnalyzer.Analyze(cmdPath)
+		if err != nil {
+			return fmt.Errorf("failed to re-resolve Mach-O dynamic library dependencies: %w", err)
+		}
+		for _, w := range warnings {
+			slog.Warn("Mach-O dependency resolution warning during verify",
+				"cmd_path", cmdPath, "warning", w.String())
+		}
+	}
+	if resolved == nil {
+		// cmdPath itself is neither a dynamic ELF nor a dynamic Mach-O binary
+		// (e.g. it is a shebang script). Its recorded DynLibDeps, if any, was
+		// populated from the shebang interpreter chain rather than from
+		// cmdPath's own DT_NEEDED/LC_LOAD_DYLIB entries, so there is no
+		// resolution of cmdPath itself to re-run and compare. Interpreter
+		// symlink integrity is covered separately by
+		// VerifyCommandShebangInterpreter.
+		return nil
+	}
+	return compareDynLibDeps(recorded, resolved)
+}
+
+// compareDynLibDeps confirms that the resolved search-path set matches the
+// recorded set, keyed by Path. LibEntry.SOName is intentionally not persisted
+// in stored records (fileanalysis.LibEntry.SOName has `json:"-"`), so a record
+// loaded from disk always has an empty SOName on every entry; Path is the
+// only field stable across the record round-trip and is therefore the
+// comparison key. A recorded path that no longer resolves, or a newly
+// resolved path that was not recorded, indicates the search result changed
+// since record time (e.g. search-order shadowing).
+func compareDynLibDeps(recorded, resolved []fileanalysis.LibEntry) error {
+	recordedPaths := make(map[string]struct{}, len(recorded))
+	for _, entry := range recorded {
+		recordedPaths[entry.Path] = struct{}{}
+	}
+	resolvedByPath := make(map[string]fileanalysis.LibEntry, len(resolved))
+	for _, entry := range resolved {
+		resolvedByPath[entry.Path] = entry
+	}
+
+	for _, entry := range recorded {
+		if _, ok := resolvedByPath[entry.Path]; !ok {
+			return &ErrDynLibDepsResolutionChanged{RecordedPath: entry.Path}
+		}
+	}
+	for path, entry := range resolvedByPath {
+		if _, ok := recordedPaths[path]; !ok {
+			return &ErrDynLibDepsResolutionChanged{SOName: entry.SOName, ResolvedPath: path}
+		}
+	}
 	return nil
 }
 

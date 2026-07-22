@@ -270,19 +270,20 @@
 
 **AC-10 に関する設計上の注記**: 02_architecture.md § 3.4 で明示されたとおり、本タスクで再利用する ELF/Mach-O 解決器は環境変数を参照しない（環境非依存）。したがって `envVars` は「VerifyCommandDynLibDeps インターフェース境界で受け入れる」ことで AC-10 の「受け入れ」を満たす。現状の解決結果が環境非依存である点は、設計上の坦直な位置づけであり、環境依存の置換（例：将来 `$LIB`/`$PLATFORM` 対応）が必要になった場合は、別タスクで `Analyze`/`Resolve` 署名変更を伴う拡張を行う。本タスク実装時に AC-10 の「使用する」の解釈を明示すること。
 
-- [ ] `ManagerInterface.VerifyCommandDynLibDeps` 署名変更:
+- [x] `ManagerInterface.VerifyCommandDynLibDeps` 署名変更:
   - 変更前: `VerifyCommandDynLibDeps(cmdPath string) error`
   - 変更後: `VerifyCommandDynLibDeps(cmdPath string, envVars map[string]string) error`
-- [ ] `Manager.VerifyCommandDynLibDeps` 実装:
+- [x] `Manager.VerifyCommandDynLibDeps` 実装:
   - `verifyDynLibDeps(cmdPath, envVars)` 呼び出し（新規引数追加）
-  - `envVars` を呼び出し元から受け取り、解決層へ渡す（現状は ELF/Mach-O 解決器が環境非依存のため、実際の解決結果に影響しない）
-- [ ] `verifyDynLibDeps` 実装:
-  - 依存解決を再実行（`DynLibAnalyzer.Analyze`、`machodylib` 関数に `envVars` を渡す）
-  - 記録済み集合と現在の解決集合を比較
-  - 不一致時に構造化エラーを返す（soname・新旧パス・シャドーイング段階を含む）
-- [ ] モック定義更新（`testutil/testify_mocks.go`）:
+  - `envVars` を呼び出し元から受け取るのみで、`verifyDynLibDeps` の外へは渡さない（設計上の注記どおり、現状の ELF/Mach-O 解決器は環境非依存のため）
+- [x] `verifyDynLibDeps` 実装（実装時の詳細化。設計時の記述から次の点を具体化した）:
+  - 依存解決を再実行: `elfDynLibAnalyzer.Analyze(cmdPath)` を実行し、非 ELF（`nil` 戻り）の場合のみ `machoDynLibAnalyzer.Analyze(cmdPath)` にフォールバックする。`envVars` は両 `Analyze` 呼び出しへは渡さない（両解決器の署名は変更しない。DRY を保つ設計上の判断）
+  - cmdPath 自身が ELF/Mach-O のいずれでもない場合（例: shebang スクリプト。この場合の `DynLibDeps` はスクリプト自身の解決結果ではなく shebang チェーンのインタプリタ解決結果に由来する）は再解決比較をスキップする
+  - 記録済み集合と現在の解決集合を **Path** の集合として比較する（`fileanalysis.LibEntry.SOName` は `json:"-"` でレコードに永続化されないため、`LoadRecord` で読み戻した記録済みエントリは常に `SOName` が空になる。設計時に想定していた soname キーでの比較は成立しないため、実装時に Path キー比較へ変更した）
+  - 不一致時に構造化エラー `ErrDynLibDepsResolutionChanged`（`internal/verification/errors.go`）を返す。フィールドは記録済みパス・解決済みパス・soname（soname は解決済みエントリ側にのみ实際の値が入り、記録済みエントリ側は前述の理由で空になる)。設計時に想定していた「シャドーイングした探索段階」は含めない（`elfdynlib`/`machodylib` の `Analyze` は解決元の段階（RUNPATH/ld.so.cache/デフォルトパス等）を呼び出し元へ公開しておらず、追加の計装なしには取得できないため。将来必要になった場合は別タスクで `Analyze` の返り値拡張を検討する）
+- [x] モック定義更新（`testutil/testify_mocks.go`）:
   - `On("VerifyCommandDynLibDeps", cmdPath string, envVars map[string]string)` 対応
-- [ ] モック期待更新（全 call sites を確認）:
+- [x] モック期待更新（全 call sites を確認）:
   - 以下のファイルで `.On("VerifyCommandDynLibDeps", mock.Anything)` → `.On("VerifyCommandDynLibDeps", mock.Anything, mock.Anything)` に変更:
     - `internal/runner/group_executor_test.go` (5+ 箇所)
     - `internal/runner/integration_dual_defense_test.go` (4+ 箇所)
@@ -292,22 +293,22 @@
     - `internal/verification/manager_macho_test.go` (1+ 箇所)
     - `internal/verification/shebang_chain_verifier_test.go` (1+ 箇所)
     - `internal/verification/testutil/testify_mocks_test.go` (1+ 箇所)
-- [ ] `group_executor.go` 呼び出し元の実装変更:
+- [x] `group_executor.go` 呼び出し元の実装変更:
   - `finalEnv` の算出を `VerifyCommandDynLibDeps` 呼び出し前へ移動
   - `m.VerifyCommandDynLibDeps(cmdPath, finalEnv)` に変更
-- [ ] 既存テスト全て通過
+- [x] 既存テスト全て通過
 
 ### Phase 2b（統合テスト）: F-001・F-004 end-to-end 検証
 
-**ファイル**: `internal/runner/group_executor_test.go`・`internal/runner/integration_dual_defense_test.go` 等
+**ファイル**: `internal/runner/e2e_dynlib_verification_test.go`（新規追加。モックベースの `group_executor_test.go`・`integration_dual_defense_test.go` ではなく、実際の `verification.Manager` と実ファイルを用いた e2e テストとして独立ファイルに配置した）
 
-- [ ] `TestGroupExecutor_F001_HashMismatchBlocksExecution`:
-  - バイナリの `ExpandedCmdContentHash` を変更してから verify・group execute を実行
-  - ハッシュ不一致により exec が拒否される（`ReasonIdentityHashMismatch` で Blocking）
-- [ ] `TestGroupExecutor_F004_LibraryShadowingBlocksExecution`:
-  - record 時点と verify 時点の間に高優先度の依存ライブラリを追加
-  - group execute が依存集合不一致で実行を中止する
-  - reason code が構造化エラー（soname・新旧パス含む）として記録される
+- [x] `TestGroupExecutor_F001_HashMismatchBlocksExecution`:
+  - 設計時の想定（`ExpandedCmdContentHash` を直接改変）ではなく、実行順序を利用した決定的な再現に変更した: グループ内の 1 つめのコマンド（実行時に実ファイルとして実行される）が 2 つめのコマンドのバイナリを実際に上書きし、`ExecuteGroup` の「グループ全体のハッシュ検証（step 7）→ 全コマンド実行（step 8）」という順序により、2 つめのコマンドの fd 再検証時点で内容が record 時と乖離する状況を非同期レースなしに再現する
+  - ハッシュ不一致により exec が拒否される（`ReasonIdentityHashMismatch` で Blocking。エラーメッセージに reason code 文字列が含まれることを確認）
+- [x] `TestGroupExecutor_F004_LibraryShadowingBlocksExecution`:
+  - 設計時の想定（record 時点と verify 時点の間に高優先度の依存ライブラリを実配置）ではなく、記録済み `DynLibDeps` から 1 エントリを `store.Update` で除去する手法に変更した。「live resolver が record 時に存在しなかった依存を発見する」という不一致の形は、高優先探索位置への新規ライブラリ出現と同型であり、システム固有のライブラリ配置や ld.so.cache に依存せず決定的に再現できる
+  - group execute が依存集合不一致で実行を中止する（エラーメッセージに `dynamic library dependency resolution changed since record` が含まれることを確認）
+  - 構造化エラー自体（soname・新旧パス）は `internal/verification/manager_test.go` の `TestVerifyCommandDynLibDeps_ReExecutesDependencyResolution` で個別に検証済み
 
 ### PR-2 作成ポイント: dependency resolution re-execution and interface coordination
 

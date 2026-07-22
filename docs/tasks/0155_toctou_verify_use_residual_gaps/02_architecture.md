@@ -300,7 +300,9 @@ VerifyCommandDynLibDeps(cmdPath string, envVars map[string]string) error
 
 > **前提（record 環境と verify 環境の同一性）と正当な変化（benign drift）**: 本方式は verify 時の**ライブ・ファイルシステム**に対して探索を再実行する。したがって record を行ったホストと verify を行うホストでライブラリ配置（`/etc/ld.so.cache`、アーキ既定ディレクトリ、`$ORIGIN` 相対の内容）が一致していることが前提となる。`apt upgrade` や `ldconfig` による正当な変化、あるいは record ホストと prod ホストの配置差は、集合不一致として verify 失敗になり得る。運用契約として「システムライブラリ構成を変更したら record を再実行する」ことを明記する。攻撃形（record 済み解決パスより高優先の位置に新規ライブラリが出現）と正当な追加を区別できるよう、集合比較は少なくとも「record 済みの各 soname が同一パスへ解決され続けているか」を核とし、判定理由を構造化エラー（下記）に含める。段階的導入（フラグによるオプトイン）が必要かは要件レビューで確認されたい。
 
-**監査可能性（構造化エラー）**: 拒否理由をオンコール担当が説明できるよう、不一致時のエラーには変化した soname・record 済み解決パス・今回解決されたパス・シャドーイングした探索段階を含める。既存の schema 不一致・record 欠損の soft-fail 判定（`isDeferredHashDirUnavailable` 等）は変更しない。
+**監査可能性（構造化エラー）**: 拒否理由をオンコール担当が説明できるよう、不一致時のエラー（`verification.ErrDynLibDepsResolutionChanged`）には変化した soname・record 済み解決パス・今回解決されたパスを含める。既存の schema 不一致・record 欠損の soft-fail 判定（`isDeferredHashDirUnavailable` 等）は変更しない。
+>
+> **実装時の変更点（比較キーと段階情報）**: `fileanalysis.LibEntry.SOName` は `json:"-"` でレコードに永続化されないため、`LoadRecord` で読み戻した記録済みエントリは常に `SOName` が空になる。したがって記録済み集合と解決済み集合の比較は soname キーではなく **Path** キーで行う（`SOName` は解決済みエントリ側にのみ実際の値が入り、エラーの補助情報として保持する）。また「シャドーイングした探索段階」は本タスクでは含めない。`elfdynlib.DynLibAnalyzer.Analyze` / `machodylib.MachODynLibAnalyzer.Analyze` は解決元の段階（RUNPATH／ld.so.cache／デフォルトパス等）を呼び出し元へ公開しておらず、追加の計装なしには取得できないためである。段階情報が必要になった場合は、両 `Analyze` の返り値拡張を伴う別タスクとする。
 
 > **既存テストへの影響**: 署名変更は広範に波及する。(a) `internal/verification` の直接呼び出しテスト（`manager_test.go`、`manager_macho_test.go`、`shebang_chain_verifier_test.go` 等）。(b) `ManagerInterface`（`interfaces.go`）とモック（`testutil/testify_mocks.go` および `testify_mocks_test.go`）。(c) `.On("VerifyCommandDynLibDeps", …)` / `AssertCalled` のモック期待をもつ `internal/runner` 配下のテスト（`group_executor_test.go`、`integration_dual_defense_test.go`、`e2e_slack_redaction_test.go`、`command_output_capture_test.go` 等）は、testify の引数数不一致で実行時に失敗するため、第 2 引数のマッチャ追加が必要。(d) 呼び出し元 [group_executor.go](../../../internal/runner/group_executor.go)。`group_executor.go` では `finalEnv` を dynlib 検証より前に用意する。
 

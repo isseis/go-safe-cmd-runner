@@ -36,6 +36,27 @@ var (
 	ErrUnsupportedHashAlgorithm = errors.New("unsupported hash algorithm in dep record")
 )
 
+// ErrDynLibDepsResolutionChanged indicates that re-executing dynamic library
+// dependency resolution at verify time produced a different search-path set
+// than the one recorded at record time. This detects search-order shadowing:
+// a library placed at a higher-priority search location (e.g. an
+// $ORIGIN-relative RUNPATH entry or a Mach-O @rpath candidate) after record
+// time, without modifying any recorded library file.
+type ErrDynLibDepsResolutionChanged struct {
+	SOName       string
+	RecordedPath string // empty if the soname was not present in the recorded set
+	ResolvedPath string // empty if the soname no longer resolves
+}
+
+// Error returns the error message
+func (e *ErrDynLibDepsResolutionChanged) Error() string {
+	return fmt.Sprintf("dynamic library dependency resolution changed since record: %s\n"+
+		"  recorded path: %s\n"+
+		"  resolved path: %s\n"+
+		"  please re-run 'record' command if this change is expected",
+		e.SOName, e.RecordedPath, e.ResolvedPath)
+}
+
 // SecurityViolationError is the base error type for security-related violations
 type SecurityViolationError struct {
 	Op      string    // operation that was attempted

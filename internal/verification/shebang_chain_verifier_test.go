@@ -159,7 +159,7 @@ func TestVerifyCommandDynLibDeps_ResetsDepHashCacheBetweenCommands(t *testing.T)
 	mockFV.setRecord(script1, makeRecord(script1))
 
 	// Command 1: dynlib verification passes and populates the cache.
-	require.NoError(t, m.VerifyCommandDynLibDeps(script1))
+	require.NoError(t, m.VerifyCommandDynLibDeps(script1, nil))
 	require.NoError(t, m.VerifyCommandShebangInterpreter(script1, map[string]string{}))
 
 	// Replace the interpreter on disk. script2's record still carries the
@@ -170,7 +170,7 @@ func TestVerifyCommandDynLibDeps_ResetsDepHashCacheBetweenCommands(t *testing.T)
 	// Command 2: VerifyCommandDynLibDeps resets the cache before re-verifying,
 	// so verifyInterpreterHash must recompute the hash from disk and detect the
 	// mismatch rather than reusing the stale cache entry from command 1.
-	_ = m.VerifyCommandDynLibDeps(script2) // expected to fail — hash mismatch
+	_ = m.VerifyCommandDynLibDeps(script2, nil) // expected to fail — hash mismatch
 	err = m.VerifyCommandShebangInterpreter(script2, map[string]string{})
 	assert.Error(t, err, "shebang verification must detect replaced interpreter after cache reset")
 }

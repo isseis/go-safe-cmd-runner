@@ -5,7 +5,7 @@ package verification
 type ManagerInterface interface {
 	ResolvePath(path string) (string, error)
 	VerifyGroupFiles(input *GroupVerificationInput) (*Result, error)
-	VerifyCommandDynLibDeps(cmdPath string) error
+	VerifyCommandDynLibDeps(cmdPath string, envVars map[string]string) error
 	VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error
 }
 
