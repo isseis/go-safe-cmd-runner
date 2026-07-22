@@ -10,8 +10,6 @@ import (
 	"strings"
 	"syscall"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
@@ -622,14 +620,9 @@ func openVerifiedIdentity(cmd *runnertypes.RuntimeCommand) (*risktypes.VerifiedI
 
 	// Regular file confirmed: clear O_NONBLOCK so the fd behaves normally for
 	// the hash read below and for the executor that shares it afterward.
-	flags, err := unix.FcntlInt(uintptr(fd), syscall.F_GETFL, 0) //nolint:gosec // G115: fd is a small process file descriptor, always non-negative and well within uintptr range
-	if err != nil {
+	if err := syscall.SetNonblock(fd, false); err != nil {
 		_ = syscall.Close(fd)
-		return nil, fmt.Errorf("fcntl F_GETFL verified identity: %w", err)
-	}
-	if _, err := unix.FcntlInt(uintptr(fd), syscall.F_SETFL, flags&^syscall.O_NONBLOCK); err != nil { //nolint:gosec // G115: fd is a small process file descriptor, always non-negative and well within uintptr range
-		_ = syscall.Close(fd)
-		return nil, fmt.Errorf("fcntl F_SETFL verified identity: %w", err)
+		return nil, fmt.Errorf("clear O_NONBLOCK verified identity: %w", err)
 	}
 
 	if err := verifyIdentityContentHash(fd, stat.Size, cmd.ExpandedCmdContentHash); err != nil {
@@ -698,8 +691,11 @@ type fdReaderAt struct {
 func (r fdReaderAt) ReadAt(p []byte, off int64) (int, error) {
 	var total int
 	for len(p) > 0 {
-		n, err := unix.Pread(r.fd, p, off)
+		n, err := syscall.Pread(r.fd, p, off)
 		if err != nil {
+			if errors.Is(err, syscall.EINTR) {
+				continue
+			}
 			return total + n, err
 		}
 		if n == 0 {
