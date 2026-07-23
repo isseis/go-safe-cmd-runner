@@ -109,6 +109,12 @@ var (
 	errDependencyHashMismatch = errors.New("dependency hash mismatch")
 )
 
+// ErrLibraryHashKeyMismatch is returned by analyzeOneLibrary when a library's
+// actual content hash does not match lib.Hash, the hash key the caller
+// expects the analysis to correspond to. See analyzeOneLibrary for when this
+// check applies.
+var ErrLibraryHashKeyMismatch = errors.New("library analysis hash does not match recorded hash key")
+
 // FileValidator interface defines the basic file validation methods
 type FileValidator interface {
 	SaveRecord(filePath string, force bool) (string, string, error)
@@ -373,26 +379,41 @@ func (v *Validator) SaveRecord(filePath string, force bool) (string, string, err
 		return "", "", err
 	}
 
+	// Open the target file once. Shebang analysis, hash calculation, and every
+	// content analysis (dynlib/symbol/syscall) below read from this same fd
+	// instead of reopening targetPath, so a file replacement mid-record cannot
+	// desynchronize the recorded ContentHash from the recorded analysis
+	// results.
+	file, err := v.fileSystem.SafeOpenFile(targetPath.String(), os.O_RDONLY, 0)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to open file: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
 	// Analyze shebang before persisting this record.
-	shebangInfo, err := v.resolveShebangInfo(targetPath.String())
+	shebangInfo, err := v.resolveShebangInfoFromReader(file, targetPath.String())
 	if err != nil {
 		return "", "", err
 	}
-	return v.saveRecordCore(targetPath.String(), force, shebangInfo)
+	return v.saveRecordCore(targetPath.String(), force, shebangInfo, file)
 }
 
 // saveRecordCore calculates the hash and persists the analysis record for filePath.
 // shebangInfo must be pre-resolved by the caller; nil means non-script file.
 // Unlike SaveRecord, this method does NOT perform shebang analysis itself.
+// file is the fd SaveRecord opened on filePath (see SaveRecord for the
+// shared-fd contract); it is used for hash calculation and threaded through
+// to analyzeRecordTarget for content analysis.
 // Use SaveRecord for files whose shebang status is unknown.
-func (v *Validator) saveRecordCore(filePath string, force bool, shebangInfo *shebang.Info) (string, string, error) {
+func (v *Validator) saveRecordCore(filePath string, force bool, shebangInfo *shebang.Info, file safefileio.File) (string, string, error) {
 	targetPath, err := validatePath(filePath)
 	if err != nil {
 		return "", "", err
 	}
 
-	// Calculate the hash of the file
-	hash, err := v.calculateHash(targetPath)
+	// Calculate the hash of the file from the same fd used for shebang and
+	// content analysis (see SaveRecord).
+	hash, err := v.algorithm.Sum(file)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to calculate hash: %w", err)
 	}
@@ -403,7 +424,7 @@ func (v *Validator) saveRecordCore(filePath string, force bool, shebangInfo *she
 		return "", "", err
 	}
 
-	contentHash, err := v.updateAnalysisRecord(targetPath, hash, force, shebangInfo)
+	contentHash, err := v.updateAnalysisRecord(targetPath, hash, force, shebangInfo, file)
 	if err != nil {
 		return "", "", err
 	}
@@ -417,7 +438,7 @@ func (v *Validator) saveRecordCore(filePath string, force bool, shebangInfo *she
 // which avoids a redundant Load() call and keeps error handling in sync with
 // Store.Update()'s own semantics (e.g., SchemaVersionMismatchError is rejected
 // by Update before the callback runs).
-func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash string, force bool, shebangInfo *shebang.Info) (string, error) {
+func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash string, force bool, shebangInfo *shebang.Info, file safefileio.File) (string, error) {
 	contentHash := fmt.Sprintf("%s:%s", v.algorithm.Name(), hash)
 	err := v.store.Update(filePath, func(record *fileanalysis.Record) error {
 		// record.FilePath is non-empty when a valid existing record was loaded.
@@ -429,7 +450,7 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 		if record.FilePath == filePath.String() && !force {
 			return fmt.Errorf("hash file already exists for %s: %w", filePath, ErrHashFileExists)
 		}
-		return v.populateAnalysisRecord(record, filePath.String(), contentHash, shebangInfo)
+		return v.populateAnalysisRecord(record, filePath.String(), contentHash, shebangInfo, file)
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to update analysis record: %w", err)
@@ -438,7 +459,11 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 	return contentHash, nil
 }
 
-func (v *Validator) populateAnalysisRecord(record *fileanalysis.Record, filePath, contentHash string, shebangInfo *shebang.Info) error {
+// file is the fd SaveRecord opened on filePath via SafeOpenFile; it is
+// shared with analyzeRecordTarget so that the target's hash calculation
+// (already reflected in contentHash) and its content analyses read the exact
+// same bytes. See analyzeRecordTarget for the full shared-fd contract.
+func (v *Validator) populateAnalysisRecord(record *fileanalysis.Record, filePath, contentHash string, shebangInfo *shebang.Info, file safefileio.File) error {
 	existingSymbolAnalysis := record.SymbolAnalysis
 	existingSyscallAnalysis := record.SyscallAnalysis
 	existingWarnings := slices.Clone(record.AnalysisWarnings)
@@ -447,7 +472,7 @@ func (v *Validator) populateAnalysisRecord(record *fileanalysis.Record, filePath
 	aggregate := newAnalysisAggregate(v.includeDebugInfo)
 	depCollector := newDepCollector(v.includeDebugInfo)
 
-	targetAnalysis, err := v.analyzeRecordTarget(filePath, contentHash)
+	targetAnalysis, err := v.analyzeRecordTarget(filePath, contentHash, file)
 	if err != nil {
 		return err
 	}
@@ -529,15 +554,26 @@ func (v *Validator) populateShebangData(record *fileanalysis.Record, shebangInfo
 	return nil
 }
 
-func (v *Validator) analyzeRecordTarget(filePath, contentHash string) (*fileanalysis.Record, error) {
+// file, when non-nil, is a file descriptor already opened on filePath that
+// every content analysis below must read from instead of reopening filePath,
+// binding hash calculation (done by the caller) and all content analyses to
+// the same read. It is nil when analyzing a file other than the SaveRecord
+// target (e.g. a shebang chain interpreter), where no such shared read exists
+// and each analyzer opens filePath independently.
+func (v *Validator) analyzeRecordTarget(filePath, contentHash string, file safefileio.File) (*fileanalysis.Record, error) {
 	record := &fileanalysis.Record{ContentHash: contentHash}
 
-	if err := v.analyzeDynLibDeps(filePath, record); err != nil {
+	if err := v.analyzeDynLibDeps(filePath, record, file); err != nil {
 		return nil, err
 	}
 
 	if v.binaryAnalyzer != nil {
-		output := v.binaryAnalyzer.AnalyzeNetworkSymbols(filePath, contentHash)
+		var output binaryanalyzer.AnalysisOutput
+		if file != nil {
+			output = v.binaryAnalyzer.AnalyzeNetworkSymbolsFromReader(file, filePath, contentHash)
+		} else {
+			output = v.binaryAnalyzer.AnalyzeNetworkSymbols(filePath, contentHash)
+		}
 		switch output.Result {
 		case binaryanalyzer.NetworkDetected, binaryanalyzer.NoNetworkSymbols:
 			record.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
@@ -551,10 +587,10 @@ func (v *Validator) analyzeRecordTarget(filePath, contentHash string) (*fileanal
 		}
 	}
 
-	if err := v.analyzeELFSyscalls(record, filePath); err != nil {
+	if err := v.analyzeELFSyscalls(record, filePath, file); err != nil {
 		return nil, err
 	}
-	if err := v.analyzeMachoSyscalls(record, filePath); err != nil {
+	if err := v.analyzeMachoSyscalls(record, filePath, file); err != nil {
 		return nil, err
 	}
 
@@ -590,12 +626,17 @@ func (v *Validator) LoadRecord(filePath string) (*fileanalysis.Record, error) {
 	return record, nil
 }
 
-// resolveShebangInfo parses the shebang line of the file at filePath and
-// returns the interpreter info. Returns (nil, nil) for non-shebang files.
-// Returns an error wrapping ErrRecursiveShebang if the interpreter is itself
-// a shebang script.
-func (v *Validator) resolveShebangInfo(filePath string) (*shebang.Info, error) {
-	shebangInfo, err := shebang.Parse(filePath, v.fileSystem)
+// resolveShebangInfoFromReader parses the shebang line of file (an fd already
+// opened on filePath) and returns the interpreter info. Returns (nil, nil)
+// for non-shebang files. Returns an error wrapping ErrRecursiveShebang if the
+// interpreter is itself a shebang script. filePath is used only for error
+// messages.
+//
+// Reading from the caller-supplied file (rather than reopening filePath)
+// binds this analysis to the exact same content used for hash calculation
+// and the other content analyses of filePath — see SaveRecord.
+func (v *Validator) resolveShebangInfoFromReader(file safefileio.File, filePath string) (*shebang.Info, error) {
+	shebangInfo, err := shebang.ParseFromReader(file)
 	if err != nil {
 		return nil, fmt.Errorf("shebang analysis failed for %s: %w", filePath, err)
 	}
@@ -633,7 +674,13 @@ func (v *Validator) checkNotShebang(path, role string) error {
 // updates the record. ELF analysis runs first; Mach-O analysis runs only when ELF
 // returns no results. Both fields are cleared before analysis when at least one
 // analyzer is set, to prevent stale data from a previous record.
-func (v *Validator) analyzeDynLibDeps(filePath string, record *fileanalysis.Record) error {
+// file, when non-nil, is a file descriptor already opened on filePath (via
+// SafeOpenFile) that analysis must read from instead of reopening filePath,
+// so that the recorded dependency set is bound to the exact same content used
+// for hash calculation and the other content analyses of this file. It is nil
+// when analyzing a file other than the SaveRecord target (e.g. a shebang
+// chain interpreter), where no such shared read exists.
+func (v *Validator) analyzeDynLibDeps(filePath string, record *fileanalysis.Record, file safefileio.File) error {
 	if v.elfDynlibAnalyzer == nil && v.machoDynlibAnalyzer == nil {
 		return nil
 	}
@@ -643,7 +690,13 @@ func (v *Validator) analyzeDynLibDeps(filePath string, record *fileanalysis.Reco
 	record.AnalysisWarnings = nil
 
 	if v.elfDynlibAnalyzer != nil {
-		dynLibDeps, err := v.elfDynlibAnalyzer.Analyze(filePath)
+		var dynLibDeps []fileanalysis.LibEntry
+		var err error
+		if file != nil {
+			dynLibDeps, err = v.elfDynlibAnalyzer.AnalyzeFromReader(file, filePath)
+		} else {
+			dynLibDeps, err = v.elfDynlibAnalyzer.Analyze(filePath)
+		}
 		if err != nil {
 			return fmt.Errorf("dynamic library analysis failed: %w", err)
 		}
@@ -653,7 +706,14 @@ func (v *Validator) analyzeDynLibDeps(filePath string, record *fileanalysis.Reco
 
 	// Mach-O analysis: only when ELF analysis returned no results.
 	if v.machoDynlibAnalyzer != nil && len(record.DynLibDeps) == 0 {
-		libs, warns, err := v.machoDynlibAnalyzer.Analyze(filePath)
+		var libs []fileanalysis.LibEntry
+		var warns []machodylib.AnalysisWarning
+		var err error
+		if file != nil {
+			libs, warns, err = v.machoDynlibAnalyzer.AnalyzeFromReader(file, filePath)
+		} else {
+			libs, warns, err = v.machoDynlibAnalyzer.Analyze(filePath)
+		}
 		if err != nil {
 			return fmt.Errorf("Mach-O dynamic library analysis failed: %w", err)
 		}
@@ -697,30 +757,55 @@ func (v *Validator) SetDynamicLibAnalysisStore(store dynamicanalysis.Store) {
 	}
 }
 
-// AnalyzeLibrary performs symbol and syscall analysis for the library at libPath.
-// It implements dynamicanalysis.Analyzer so the Validator can serve as the
-// analysis back-end for the dynamicanalysis store.
-func (v *Validator) AnalyzeLibrary(libPath string) (*dynamicanalysis.Result, error) {
+// AnalyzeLibrary performs symbol and syscall analysis for the library already
+// open as file (an fd opened on libPath by dynamicanalysis.Store, which has
+// verified file's actual content hash against its caller's hash key before
+// calling this method). It implements dynamicanalysis.Analyzer so the
+// Validator can serve as the analysis back-end for the dynamicanalysis
+// store. Reading file here rather than reopening libPath is what makes that
+// hash verification meaningful: analysis and verification observe the exact
+// same content.
+func (v *Validator) AnalyzeLibrary(file safefileio.File, libPath string) (*dynamicanalysis.Result, error) {
 	soName := filepath.Base(libPath)
 	lib := fileanalysis.LibEntry{SOName: soName, Path: libPath}
-	return v.analyzeOneLibrary(lib)
+	return v.analyzeOneLibrary(lib, file)
 }
 
 // analyzeOneLibrary runs symbol and syscall analysis for one dynamic library.
 // It returns an error when the file is missing or exceeds the size limit (fail-fast).
 // Non-fatal issues (e.g., non-ELF format, unsupported architecture) are recorded
 // as warnings in the returned result.
-func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (*dynamicanalysis.Result, error) {
+//
+// file, when non-nil, is an fd already opened on lib.Path (see AnalyzeLibrary)
+// that every step below reads from instead of reopening lib.Path, so hash
+// calculation and content analysis cannot observe different content. When
+// file is nil (the direct, store-less call path — see loadOrAnalyzeLibrary),
+// lib.Path is opened once here and shared across the same steps.
+//
+// When lib.Hash is non-empty, the file's actual content hash is computed
+// from that single shared read and compared against lib.Hash before running
+// any analysis; a mismatch returns ErrLibraryHashKeyMismatch (fail-closed)
+// instead of analyzing content that may no longer correspond to the
+// caller's expected hash key. When called through the dynamicanalysis store
+// (lib.Hash empty at this point — SOName and Hash are not passed across
+// that interface boundary), the equivalent check has already been performed
+// by store.LoadOrAnalyzeAndStore against the same file before it called
+// AnalyzeLibrary.
+func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry, file safefileio.File) (*dynamicanalysis.Result, error) {
 	result := &dynamicanalysis.Result{}
 
-	// Open the file first to verify it exists and is within the analysis size limit.
-	// Both conditions must be checked before running any analysis to fail fast.
-	f, openErr := v.fileSystem.SafeOpenFile(lib.Path, os.O_RDONLY, 0)
-	if openErr != nil {
-		return nil, fmt.Errorf("failed to open library file %s: %w", lib.SOName, openErr)
+	if file == nil {
+		f, openErr := v.fileSystem.SafeOpenFile(lib.Path, os.O_RDONLY, 0)
+		if openErr != nil {
+			return nil, fmt.Errorf("failed to open library file %s: %w", lib.SOName, openErr)
+		}
+		defer func() { _ = f.Close() }()
+		file = f
 	}
-	fi, statErr := f.Stat()
-	_ = f.Close()
+
+	// Verify the file exists and is within the analysis size limit before
+	// running any analysis, to fail fast.
+	fi, statErr := file.Stat()
 	if statErr != nil {
 		return nil, fmt.Errorf("failed to stat library file %s: %w", lib.SOName, statErr)
 	}
@@ -728,8 +813,24 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (*dynamicanalys
 		return nil, fmt.Errorf("%w: %s", errLibraryFileTooLarge, lib.SOName)
 	}
 
+	if lib.Hash != "" {
+		// lib.Hash is always produced by elfdynlib/machodylib's computeFileHash,
+		// which hardcodes a "sha256:" prefix regardless of v.algorithm (see
+		// elfdynlib.hashPrefix). Compare against a SHA-256 digest with that same
+		// hardcoded prefix rather than v.algorithm.Name(), so this check remains
+		// correct even when v.algorithm is configured to a non-SHA256 algorithm
+		// (e.g. a mock in tests).
+		actualHash, hashErr := (&SHA256{}).Sum(file)
+		if hashErr != nil {
+			return nil, fmt.Errorf("failed to hash library file %s: %w", lib.SOName, hashErr)
+		}
+		if fmt.Sprintf("sha256:%s", actualHash) != lib.Hash {
+			return nil, fmt.Errorf("%w: %s", ErrLibraryHashKeyMismatch, lib.SOName)
+		}
+	}
+
 	if v.binaryAnalyzer != nil {
-		output := v.binaryAnalyzer.AnalyzeNetworkSymbols(lib.Path, "")
+		output := v.binaryAnalyzer.AnalyzeNetworkSymbolsFromReader(file, lib.Path, "")
 		dynamicLoadSymbols := convertDetectedSymbols(output.DynamicLoadSymbols)
 		switch output.Result {
 		case binaryanalyzer.NetworkDetected, binaryanalyzer.NoNetworkSymbols:
@@ -749,7 +850,7 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (*dynamicanalys
 		return result, nil
 	}
 
-	elfFile, openErr := openELFFile(v.fileSystem, lib.Path)
+	elfFile, openErr := openELFFileFromReader(file)
 	if openErr != nil {
 		if !errors.Is(openErr, errNotELF) {
 			result.Warnings = append(result.Warnings,
@@ -838,7 +939,7 @@ func (v *Validator) loadOrAnalyzeLibrary(lib fileanalysis.LibEntry) (*dynamicana
 	if v.dynamicLibAnalysisStore != nil {
 		result, err = v.dynamicLibAnalysisStore.LoadOrAnalyzeAndStore(lib.Path, lib.Hash)
 	} else {
-		result, err = v.analyzeOneLibrary(lib)
+		result, err = v.analyzeOneLibrary(lib, nil)
 	}
 	if err != nil {
 		return nil, err
@@ -859,7 +960,10 @@ func (v *Validator) loadOrAnalyzeShebangTarget(filePath, contentHash string) (*f
 		return record, nil
 	}
 
-	record, err := v.analyzeRecordTarget(filePath, contentHash)
+	// No shared fd here: unlike the SaveRecord target, a shebang chain entry
+	// (interpreter/resolved command) is a distinct file with no single caller
+	// holding it open across hash calculation and analysis.
+	record, err := v.analyzeRecordTarget(filePath, contentHash, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1444,13 +1548,22 @@ func mergeMachoSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []co
 // It is a no-op (leaves SyscallAnalysis unchanged) when no entries are found.
 // ScanSyscallInfos checks magic bytes and returns nil for non-Mach-O files, so
 // this is safe to call on all platforms and binary formats.
-func (v *Validator) analyzeMachoSyscalls(record *fileanalysis.Record, filePath string) error {
-	svcEntries, wrapperEntries, err := machoanalyzer.ScanSyscallInfos(filePath, v.fileSystem, v.machoSyscallTable)
+// file, when non-nil, is a file descriptor already opened on filePath that
+// this analysis must read from instead of reopening filePath. See
+// analyzeRecordTarget for the shared-fd contract.
+func (v *Validator) analyzeMachoSyscalls(record *fileanalysis.Record, filePath string, file safefileio.File) error {
+	var svcEntries, wrapperEntries []common.SyscallInfo
+	var err error
+	if file != nil {
+		svcEntries, wrapperEntries, err = machoanalyzer.ScanSyscallInfosFromReader(file, v.machoSyscallTable)
+	} else {
+		svcEntries, wrapperEntries, err = machoanalyzer.ScanSyscallInfos(filePath, v.fileSystem, v.machoSyscallTable)
+	}
 	if err != nil {
 		return fmt.Errorf("mach-o syscall scan failed: %w", err)
 	}
 
-	libsysEntries, libsysArch, err := v.analyzeLibSystem(record, filePath)
+	libsysEntries, libsysArch, err := v.analyzeLibSystem(record, filePath, file)
 	if err != nil {
 		return fmt.Errorf("libSystem import analysis failed: %w", err)
 	}
@@ -1480,15 +1593,25 @@ func (v *Validator) analyzeMachoSyscalls(record *fileanalysis.Record, filePath s
 // (including libSystem.B.dylib) live in the dyld shared cache and are not
 // hash-verified by MachODynLibAnalyzer. The adapter's fallback symbol-name
 // matching handles detection in that case.
+// file, when non-nil, is a file descriptor already opened on filePath that
+// this analysis must read from instead of reopening filePath. See
+// analyzeRecordTarget for the shared-fd contract.
 func (v *Validator) analyzeLibSystem(
 	record *fileanalysis.Record,
 	filePath string,
+	file safefileio.File,
 ) ([]common.SyscallInfo, string, error) {
 	if v.libSystemCache == nil {
 		return nil, "", nil
 	}
 
-	info, err := getMachoAnalysisInfo(v.fileSystem, filePath)
+	var info *machoAnalysisInfo
+	var err error
+	if file != nil {
+		info, err = getMachoAnalysisInfoFromReader(file)
+	} else {
+		info, err = getMachoAnalysisInfo(v.fileSystem, filePath)
+	}
 	if err != nil || info == nil {
 		return nil, "", err
 	}
@@ -1615,11 +1738,21 @@ func getMachoAnalysisInfo(fs safefileio.FileSystem, filePath string) (*machoAnal
 	}
 	defer func() { _ = f.Close() }()
 
+	return getMachoAnalysisInfoFromReader(f)
+}
+
+// getMachoAnalysisInfoFromReader behaves like getMachoAnalysisInfo but reads
+// from an already-open f instead of opening filePath itself. Callers that
+// must bind this analysis to the same content used elsewhere (e.g. hash
+// calculation) should use this together with a file shared across all
+// analyses of the same path.
+func getMachoAnalysisInfoFromReader(f safefileio.File) (*machoAnalysisInfo, error) {
 	// Read the first 4 bytes to distinguish Fat binaries from single-arch Mach-O.
 	// macho.NewFile and macho.NewFatFile both use io.ReaderAt (absolute offsets),
-	// so sequential read position does not affect them.
+	// so read via ReadAt (absolute offset) rather than the sequential Reader so
+	// that this does not depend on, or disturb, f's current read offset.
 	var magicBuf [4]byte
-	if _, err := io.ReadFull(f, magicBuf[:]); err != nil {
+	if _, err := io.ReadFull(io.NewSectionReader(f, 0, int64(len(magicBuf))), magicBuf[:]); err != nil {
 		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 			return nil, nil // file shorter than 4 bytes — not Mach-O
 		}
@@ -1661,13 +1794,22 @@ func getMachoAnalysisInfo(fs safefileio.FileSystem, filePath string) (*machoAnal
 // updateAnalysisRecord. Always writes record.SyscallAnalysis (nil for non-ELF
 // files or ELF with no detected syscalls) to clear stale values from prior runs.
 // Fatal errors are returned to prevent the record from being saved.
-func (v *Validator) analyzeELFSyscalls(record *fileanalysis.Record, filePath string) error {
+// file, when non-nil, is a file descriptor already opened on filePath that
+// this analysis must read from instead of reopening filePath. See
+// analyzeRecordTarget for the shared-fd contract.
+func (v *Validator) analyzeELFSyscalls(record *fileanalysis.Record, filePath string, file safefileio.File) error {
 	if v.syscallAnalyzer == nil && v.libcCache == nil {
 		return nil
 	}
 
 	// Open the target binary as an ELF file; skip non-ELF files silently.
-	elfFile, elfErr := openELFFile(v.fileSystem, filePath)
+	var elfFile *elf.File
+	var elfErr error
+	if file != nil {
+		elfFile, elfErr = openELFFileFromReader(file)
+	} else {
+		elfFile, elfErr = openELFFile(v.fileSystem, filePath)
+	}
 	if elfErr != nil {
 		if errors.Is(elfErr, errNotELF) {
 			record.SyscallAnalysis = nil // Non-ELF: clear any stale analysis from a previous record run.
@@ -1747,28 +1889,38 @@ func openELFFile(fs safefileio.FileSystem, filePath string) (*elf.File, error) {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 
+	elfFile, err := openELFFileFromReader(f)
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return elfFile, nil
+}
+
+// openELFFileFromReader parses f as an ELF binary without opening or closing
+// f itself — the caller owns f's lifecycle. Callers that must bind hash
+// calculation and ELF analysis to the same read (avoiding a TOCTOU window
+// between two independent opens) should use this together with a file shared
+// across all analyses of the same path.
+// Returns errNotELF if the file is not an ELF binary (bad magic number or unsupported format).
+func openELFFileFromReader(f safefileio.File) (*elf.File, error) {
 	// Pre-check magic bytes to detect non-ELF files without relying on elf.NewFile
 	// error classification, which may change across Go versions.
+	// Read via ReadAt (absolute offset) rather than the sequential Reader so
+	// that this does not depend on, or disturb, f's current read offset.
 	magic := make([]byte, len(elfMagic))
-	if _, err := io.ReadFull(f, magic); err != nil {
-		_ = f.Close()
+	if _, err := io.ReadFull(io.NewSectionReader(f, 0, int64(len(magic))), magic); err != nil {
 		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 			return nil, errNotELF
 		}
 		return nil, fmt.Errorf("failed to read magic bytes: %w", err)
 	}
 	if !bytes.Equal(magic, elfMagic) {
-		_ = f.Close()
 		return nil, errNotELF
-	}
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		_ = f.Close()
-		return nil, fmt.Errorf("failed to seek file: %w", err)
 	}
 
 	elfFile, err := elf.NewFile(f)
 	if err != nil {
-		_ = f.Close()
 		if _, ok := errors.AsType[*elf.FormatError](err); ok {
 			return nil, errNotELF
 		}

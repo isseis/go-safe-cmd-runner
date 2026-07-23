@@ -171,18 +171,27 @@ func analyzeArm64Slice(f *macho.File, table SyscallNumberTable) (directSVCInfos,
 // are found.  table may be nil, in which case syscall names and network flags
 // are left empty.
 func ScanSyscallInfos(filePath string, fs safefileio.FileSystem, table SyscallNumberTable) (directSVCInfos, wrapperCallInfos []common.SyscallInfo, err error) {
-	if table == nil {
-		table = noopSyscallTable{}
-	}
-
 	f, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 
+	return ScanSyscallInfosFromReader(f, table)
+}
+
+// ScanSyscallInfosFromReader behaves like ScanSyscallInfos but reads from an
+// already-open f instead of opening filePath itself. Callers that must bind
+// this analysis to the same content used elsewhere (e.g. hash calculation)
+// should use this together with a file shared across all analyses of the
+// same path.
+func ScanSyscallInfosFromReader(f safefileio.File, table SyscallNumberTable) (directSVCInfos, wrapperCallInfos []common.SyscallInfo, err error) {
+	if table == nil {
+		table = noopSyscallTable{}
+	}
+
 	magic := make([]byte, magicNumberSize)
-	if _, err := io.ReadFull(f, magic); err != nil {
+	if _, err := io.ReadFull(io.NewSectionReader(f, 0, int64(len(magic))), magic); err != nil {
 		return nil, nil, nil
 	}
 	if !isMachOMagicAll(magic) {

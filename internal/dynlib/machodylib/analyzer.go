@@ -84,6 +84,73 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 	defer func() { _ = closer.Close() }()
 	defer func() { _ = machoFile.Close() }()
 
+	return a.analyzeWithTopMachO(machoFile, binaryPath)
+}
+
+// AnalyzeFromReader behaves like Analyze but reads the top-level binary's
+// content from an already-open file (owned by the caller; not closed here)
+// instead of opening binaryPath itself. Callers that must bind hash
+// calculation and dependency analysis to the same read (avoiding a TOCTOU
+// window between two independent opens) should use this together with a
+// file shared across all analyses of binaryPath.
+func (a *MachODynLibAnalyzer) AnalyzeFromReader(file safefileio.File, binaryPath string) ([]fileanalysis.LibEntry, []AnalysisWarning, error) {
+	machoFile, err := parseTopMachOFromReader(file, binaryPath)
+	if err != nil {
+		if errors.Is(err, ErrNotMachO) {
+			return nil, nil, nil // not a Mach-O file; skip silently
+		}
+		return nil, nil, err
+	}
+	if machoFile == nil {
+		return nil, nil, nil
+	}
+	defer func() { _ = machoFile.Close() }()
+
+	return a.analyzeWithTopMachO(machoFile, binaryPath)
+}
+
+// parseTopMachOFromReader parses file as the top-level Mach-O (or Fat) binary,
+// selecting the native-arch slice for Fat binaries, without opening or closing
+// file itself — the caller owns file's lifecycle.
+// Returns ErrNotMachO (via errors.Is) if the file is not a Mach-O or Fat binary.
+// Returns ErrNoMatchingSlice if the Fat binary has no slice for the native arch.
+func parseTopMachOFromReader(file safefileio.File, binaryPath string) (*macho.File, error) {
+	fatFile, fatErr := macho.NewFatFile(file)
+	if fatErr == nil {
+		defer func() { _ = fatFile.Close() }()
+
+		cpuType := goarchCPU(runtime.GOARCH)
+		if cpuType == 0 {
+			return nil, &ErrNoMatchingSlice{BinaryPath: binaryPath, GOARCH: runtime.GOARCH}
+		}
+
+		for _, arch := range fatFile.Arches {
+			if arch.Cpu == cpuType {
+				// Reuse the already-open file as the SectionReader source.
+				machoFile, err := macho.NewFile(
+					io.NewSectionReader(file, int64(arch.Offset), int64(arch.Size)))
+				if err != nil {
+					return nil, fmt.Errorf("%w: %w", ErrNotMachO, err)
+				}
+				return machoFile, nil
+			}
+		}
+
+		return nil, &ErrNoMatchingSlice{BinaryPath: binaryPath, GOARCH: runtime.GOARCH}
+	}
+
+	machoFile, err := macho.NewFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrNotMachO, err)
+	}
+	return machoFile, nil
+}
+
+// analyzeWithTopMachO resolves all direct and transitive LC_LOAD_DYLIB /
+// LC_LOAD_WEAK_DYLIB dependencies given an already-parsed top-level Mach-O
+// file. Shared by Analyze and AnalyzeFromReader, which differ only in how
+// the top-level file is opened and parsed.
+func (a *MachODynLibAnalyzer) analyzeWithTopMachO(machoFile *macho.File, binaryPath string) ([]fileanalysis.LibEntry, []AnalysisWarning, error) {
 	// Extract load commands: LC_LOAD_DYLIB, LC_LOAD_WEAK_DYLIB, LC_RPATH
 	deps, rpaths := extractLoadCommands(machoFile)
 	if len(deps) == 0 {

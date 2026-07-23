@@ -112,6 +112,41 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntry, er
 	defer closeFile(file, binaryPath)
 	defer closeELF(elfFile, binaryPath)
 
+	return a.analyzeWithTopELF(elfFile, needed, binaryPath)
+}
+
+// AnalyzeFromReader behaves like Analyze but reads the top-level binary's
+// content from an already-open file (owned by the caller; not closed here)
+// instead of opening binaryPath itself. Callers that must bind hash
+// calculation and dependency analysis to the same read (avoiding a TOCTOU
+// window between two independent opens) should use this together with a
+// file shared across all analyses of binaryPath.
+//
+// binaryPath is still required to resolve symlinks (canonicalization for BFS
+// traversal and dependency search context) and is not used to open the file.
+func (a *DynLibAnalyzer) AnalyzeFromReader(file safefileio.File, binaryPath string) ([]fileanalysis.LibEntry, error) {
+	canonPath, err := filepath.EvalSymlinks(binaryPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolving symlinks for %q: %w", binaryPath, err)
+	}
+
+	elfFile, needed, err := parseTopELFFromReader(file, canonPath)
+	if err != nil {
+		return nil, err
+	}
+	if elfFile == nil {
+		return nil, nil // non-ELF or static binary
+	}
+	defer closeELF(elfFile, canonPath)
+
+	return a.analyzeWithTopELF(elfFile, needed, canonPath)
+}
+
+// analyzeWithTopELF resolves all direct and transitive DT_NEEDED dependencies
+// given an already-parsed top-level ELF file and its DT_NEEDED list. Shared by
+// Analyze and AnalyzeFromReader, which differ only in how the top-level file
+// is opened and parsed.
+func (a *DynLibAnalyzer) analyzeWithTopELF(elfFile *elf.File, needed []string, binaryPath string) ([]fileanalysis.LibEntry, error) {
 	// Create resolver for this binary's architecture.
 	// a.cache was parsed once at NewDynLibAnalyzer() time and is reused here.
 	resolver := NewLibraryResolver(a.cache, elfFile.Machine)
@@ -262,44 +297,54 @@ func (a *DynLibAnalyzer) openAndParseTopELF(binaryPath string) (*elf.File, []str
 		return nil, nil, nil, fmt.Errorf("failed to open file: %w", err)
 	}
 
-	var magic [elfmagic.Len]byte
-	if _, err := io.ReadFull(file, magic[:]); err != nil {
+	elfFile, needed, err := parseTopELFFromReader(file, binaryPath)
+	if err != nil {
 		closeFile(file, binaryPath)
+		return nil, nil, nil, err
+	}
+	if elfFile == nil {
+		closeFile(file, binaryPath)
+		return nil, nil, nil, nil
+	}
+
+	return elfFile, needed, file, nil
+}
+
+// parseTopELFFromReader parses file as the top-level ELF binary and extracts
+// its DT_NEEDED list, without opening or closing file itself — the caller
+// owns file's lifecycle. binaryPath is used only for error messages and
+// closeELF's diagnostic logging.
+// Returns (nil, nil, nil) for non-ELF or static ELF (no DT_NEEDED); this is
+// not an error condition.
+func parseTopELFFromReader(file safefileio.File, binaryPath string) (*elf.File, []string, error) {
+	var magic [elfmagic.Len]byte
+	if _, err := io.ReadFull(io.NewSectionReader(file, 0, int64(len(magic))), magic[:]); err != nil {
 		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			return nil, nil, nil, nil // file too short to be ELF
+			return nil, nil, nil // file too short to be ELF
 		}
-		return nil, nil, nil, fmt.Errorf("failed to read ELF magic: %w", err)
+		return nil, nil, fmt.Errorf("failed to read ELF magic: %w", err)
 	}
 
 	if !elfmagic.Is(magic[:]) {
-		closeFile(file, binaryPath)
-		return nil, nil, nil, nil // not an ELF file
-	}
-
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		closeFile(file, binaryPath)
-		return nil, nil, nil, fmt.Errorf("failed to seek to start of file: %w", err)
+		return nil, nil, nil // not an ELF file
 	}
 
 	elfFile, err := elf.NewFile(file)
 	if err != nil {
-		closeFile(file, binaryPath)
-		return nil, nil, nil, fmt.Errorf("failed to parse ELF binary: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse ELF binary: %w", err)
 	}
 
 	needed, err := elfFile.DynString(elf.DT_NEEDED)
 	if err != nil {
-		closeFile(file, binaryPath)
 		closeELF(elfFile, binaryPath)
-		return nil, nil, nil, fmt.Errorf("failed to read DT_NEEDED: %w", err)
+		return nil, nil, fmt.Errorf("failed to read DT_NEEDED: %w", err)
 	}
 	if len(needed) == 0 {
-		closeFile(file, binaryPath)
 		closeELF(elfFile, binaryPath)
-		return nil, nil, nil, nil // static binary or no dependencies
+		return nil, nil, nil // static binary or no dependencies
 	}
 
-	return elfFile, needed, file, nil
+	return elfFile, needed, nil
 }
 
 // parseELFDeps opens the given path as ELF and extracts DT_NEEDED and DT_RUNPATH.

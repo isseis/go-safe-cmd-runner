@@ -1,6 +1,10 @@
 package binaryanalyzer
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+)
 
 // AnalysisResult represents the result type of binary network symbol analysis.
 type AnalysisResult int
@@ -108,4 +112,13 @@ type BinaryAnalyzer interface {
 	//   - StaticBinary: Binary is statically linked (ELF-specific)
 	//   - AnalysisError: An error occurred (check Error field)
 	AnalyzeNetworkSymbols(path string, contentHash string) AnalysisOutput
+
+	// AnalyzeNetworkSymbolsFromReader behaves like AnalyzeNetworkSymbols but reads
+	// binary content from an already-open file instead of opening path itself.
+	// Callers that must bind hash calculation and content analysis to the same
+	// read (avoiding a TOCTOU window between two independent opens) should use
+	// this together with a file shared across all analyses of path. path is
+	// still required for cache lookups keyed by path (e.g. syscall analysis
+	// stores); it is not used to open the file.
+	AnalyzeNetworkSymbolsFromReader(file safefileio.File, path string, contentHash string) AnalysisOutput
 }

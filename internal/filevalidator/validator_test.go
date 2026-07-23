@@ -11,6 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer/testutil"
 	"github.com/stretchr/testify/assert"
@@ -856,6 +857,10 @@ func (s *stubBinaryAnalyzer) AnalyzeNetworkSymbols(_, _ string) binaryanalyzer.A
 	}
 }
 
+func (s *stubBinaryAnalyzer) AnalyzeNetworkSymbolsFromReader(_ safefileio.File, _, _ string) binaryanalyzer.AnalysisOutput {
+	return s.AnalyzeNetworkSymbols("", "")
+}
+
 // recordWithBinaryAnalyzer is a test helper that records a file using the given stub analyzer.
 func recordWithBinaryAnalyzer(t *testing.T, stub *stubBinaryAnalyzer) (*fileanalysis.Record, error) {
 	t.Helper()
@@ -944,7 +949,7 @@ func TestRecord_SyscallOccurrence_SourcePathSetWhenDebugInfo(t *testing.T) {
 				Hash:   "sha256:deadbeef",
 			}},
 		}
-		require.NoError(t, v.analyzeELFSyscalls(record, targetFile))
+		require.NoError(t, v.analyzeELFSyscalls(record, targetFile, nil))
 
 		aggregate := newAnalysisAggregate(true)
 		aggregate.addRecord(record, targetFile, roleMain)
@@ -1432,7 +1437,7 @@ func TestRecord_LibcCache_Error_CausesRecordFailure(t *testing.T) {
 			{SOName: "libc.so.6", Path: "/lib/x86_64-linux-gnu/libc.so.6", Hash: "sha256:aabb"},
 		},
 	}
-	analyzeErr := v.analyzeELFSyscalls(record, elfPath)
+	analyzeErr := v.analyzeELFSyscalls(record, elfPath, nil)
 	require.Error(t, analyzeErr, "fatal libc cache error must propagate")
 	require.Contains(t, analyzeErr.Error(), "libc cache error")
 }
@@ -1716,4 +1721,56 @@ func TestBuildArgEvalResults(t *testing.T) {
 			assert.Equal(t, tc.wantMprotect, got.Status)
 		})
 	}
+}
+
+// countingFileSystem wraps a safefileio.FileSystem and counts SafeOpenFile
+// calls per path, so tests can assert how many times a given file was opened.
+type countingFileSystem struct {
+	safefileio.FileSystem
+	opens map[string]int
+}
+
+func newCountingFileSystem(fs safefileio.FileSystem) *countingFileSystem {
+	return &countingFileSystem{FileSystem: fs, opens: make(map[string]int)}
+}
+
+func (c *countingFileSystem) SafeOpenFile(name string, flag int, perm os.FileMode) (safefileio.File, error) {
+	c.opens[name]++
+	return c.FileSystem.SafeOpenFile(name, flag, perm)
+}
+
+// TestSaveRecord_SharedFDBindsHashAndAnalysis verifies that SaveRecord opens
+// its target file exactly once and reuses that single fd for shebang
+// analysis, hash calculation, and content analysis (dynlib/symbol/syscall).
+// This structurally rules out the TOCTOU window the shared-fd design closes:
+// if the target were reopened between these steps, a file swap in between
+// could make the recorded ContentHash and analysis results correspond to
+// different content. A single open makes that impossible regardless of any
+// concurrent write to the target path.
+func TestSaveRecord_SharedFDBindsHashAndAnalysis(t *testing.T) {
+	hashDir := safeTempDir(t)
+	scriptDir := safeTempDir(t)
+	targetPath := filepath.Join(scriptDir, "target.sh")
+	require.NoError(t, os.WriteFile(targetPath, []byte("#!/bin/sh\necho hi\n"), 0o755))
+
+	v, err := New(&SHA256{}, hashDir, ValidatorConfig{
+		BinaryAnalyzer: &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols},
+	})
+	require.NoError(t, err)
+
+	counting := newCountingFileSystem(v.fileSystem)
+	v.fileSystem = counting
+
+	_, contentHash, err := v.SaveRecord(targetPath, false)
+	require.NoError(t, err)
+	assert.NotEmpty(t, contentHash)
+
+	assert.Equal(t, 1, counting.opens[targetPath],
+		"SaveRecord must open its target exactly once and share that fd across shebang/hash/content analysis")
+
+	record, err := v.LoadRecord(targetPath)
+	require.NoError(t, err)
+	assert.Equal(t, contentHash, record.ContentHash)
+	require.NotEmpty(t, record.ShebangChain)
+	assert.Equal(t, "/bin/sh", record.ShebangChain[0].Ref)
 }

@@ -1,5 +1,7 @@
 package dynamicanalysis
 
+import "github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+
 // Store provides storage and retrieval for dynamic library analysis results,
 // keyed by library path and hash.
 type Store interface {
@@ -19,5 +21,11 @@ type Store interface {
 // Analyzer performs the actual analysis of a dynamic library file.
 // Implementations are provided by callers (e.g., filevalidator.Validator).
 type Analyzer interface {
-	AnalyzeLibrary(libPath string) (*Result, error)
+	// AnalyzeLibrary analyzes the library already open as file (an fd opened
+	// on libPath by the caller). Implementations must read file's content
+	// rather than reopening libPath themselves: the caller (LoadOrAnalyzeAndStore)
+	// verifies file's actual content hash against the caller-supplied hash key
+	// before calling this method, and that guarantee only holds if analysis
+	// reads the exact same fd rather than a fresh, potentially different, open.
+	AnalyzeLibrary(file safefileio.File, libPath string) (*Result, error)
 }

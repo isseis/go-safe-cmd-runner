@@ -590,7 +590,7 @@ func TestUpdateAnalysisRecord_LibSystemImportOnly(t *testing.T) {
 	tempDir := safeTempDir(t)
 	binPath := writeTempBinary(t, tempDir, "target.bin", buildArm64MachOBinary(t, []uint32{nopEncodingU32}))
 
-	libsys, _, err := v.analyzeLibSystem(record, binPath)
+	libsys, _, err := v.analyzeLibSystem(record, binPath, nil)
 	require.NoError(t, err)
 	require.Len(t, libsys, 1)
 
@@ -684,7 +684,7 @@ func TestUpdateAnalysisRecord_LibSystemError(t *testing.T) {
 	tempDir := safeTempDir(t)
 	binPath := writeTempBinary(t, tempDir, "target.bin", buildArm64MachOBinary(t, []uint32{nopEncodingU32}))
 
-	_, _, libsysErr := v.analyzeLibSystem(record, binPath)
+	_, _, libsysErr := v.analyzeLibSystem(record, binPath, nil)
 	// The Mach-O has no imports (no symbol table), so GetSyscallInfos is called with empty list.
 	// The stub returns the injected error.
 	require.Error(t, libsysErr, "analyzeLibSystem must propagate the cache error")

@@ -3,7 +3,10 @@
 package filevalidator
 
 import (
+	"crypto/sha256"
 	"debug/elf"
+	"encoding/hex"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,6 +22,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// realFileHash computes the "sha256:<hex>" content hash of the file at path,
+// in the same format used for LibEntry.Hash. analyzeOneLibrary (and, via the
+// dynamicanalysis store, LoadOrAnalyzeAndStore) now verify a library's actual
+// content hash against LibEntry.Hash before analyzing, so tests that
+// exercise a real file through that path must supply its real hash rather
+// than an arbitrary placeholder string.
+func realFileHash(t *testing.T, path string) string {
+	t.Helper()
+	f, err := os.Open(path) //nolint:gosec // G304: test-controlled path
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+
+	h := sha256.New()
+	_, err = io.Copy(h, f)
+	require.NoError(t, err)
+	return "sha256:" + hex.EncodeToString(h.Sum(nil))
+}
+
 type libraryTestBinaryAnalyzer struct {
 	output binaryanalyzer.AnalysisOutput
 	calls  int
@@ -27,6 +48,10 @@ type libraryTestBinaryAnalyzer struct {
 func (s *libraryTestBinaryAnalyzer) AnalyzeNetworkSymbols(_, _ string) binaryanalyzer.AnalysisOutput {
 	s.calls++
 	return s.output
+}
+
+func (s *libraryTestBinaryAnalyzer) AnalyzeNetworkSymbolsFromReader(_ safefileio.File, _, _ string) binaryanalyzer.AnalysisOutput {
+	return s.AnalyzeNetworkSymbols("", "")
 }
 
 type libraryTestSyscallTable struct {
@@ -121,7 +146,7 @@ func TestAnalyzeOneLibrary_networkSymbolDetected(t *testing.T) {
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libfoo.so.1",
 		Path:   requireWithSocketELF(t),
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.SymbolAnalysis)
@@ -141,7 +166,7 @@ func TestAnalyzeOneLibrary_networkSyscallDetected(t *testing.T) {
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libbar.so.1",
 		Path:   requireWithSocketELF(t),
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.SyscallAnalysis)
@@ -165,7 +190,7 @@ func TestAnalyzeOneLibrary_preservesArgEvalResults(t *testing.T) {
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libjit.so.1",
 		Path:   requireWithSocketELF(t),
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.SyscallAnalysis)
@@ -184,7 +209,7 @@ func TestAnalyzeOneLibrary_nonNetwork(t *testing.T) {
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libbaz.so.1",
 		Path:   requireWithSocketELF(t),
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	// No network symbols detected; SymbolAnalysis may still be populated with empty data.
@@ -203,7 +228,7 @@ func TestAnalyzeOneLibrary_missingFileReturnsError(t *testing.T) {
 	_, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libmissing.so.1",
 		Path:   filepath.Join(safeTempDir(t), "missing.so"),
-	})
+	}, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to open library file")
 }
@@ -214,12 +239,55 @@ func TestAnalyzeOneLibrary_nonELFLibrarySkipsSyscallScan(t *testing.T) {
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libscript.so.1",
 		Path:   elfTestDataPath(t, "script.sh"),
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Nil(t, result.SyscallAnalysis)
 	assert.Nil(t, result.SymbolAnalysis)
 	assert.Empty(t, result.Warnings)
+}
+
+// TestAnalyzeOneLibrary_HashKeyMismatchError verifies that analyzeOneLibrary
+// returns ErrLibraryHashKeyMismatch, without running any analysis, when
+// lib.Hash does not match the library file's actual content hash.
+func TestAnalyzeOneLibrary_HashKeyMismatchError(t *testing.T) {
+	bin := &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NetworkDetected}}
+	v := validatorWithTempHashDir(t, ValidatorConfig{BinaryAnalyzer: bin})
+
+	elfPath := requireWithSocketELF(t)
+	_, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
+		SOName: "libfoo.so.1",
+		Path:   elfPath,
+		Hash:   realFileHash(t, elfPath) + "00", // guaranteed not to match
+	}, nil)
+	require.ErrorIs(t, err, ErrLibraryHashKeyMismatch)
+	assert.Equal(t, 0, bin.calls, "no analysis should run once the hash key mismatch is detected")
+}
+
+// TestAnalyzeOneLibrary_SharesReadForHashAndAnalysis verifies that, on the
+// direct store-less call path (file == nil, lib.Hash set), analyzeOneLibrary
+// opens lib.Path exactly once and reuses that single fd for both the
+// hash-key verification and the subsequent content analysis. This
+// structurally rules out a TOCTOU window between a verification read and a
+// separate, later analysis read.
+func TestAnalyzeOneLibrary_SharesReadForHashAndAnalysis(t *testing.T) {
+	v := validatorWithTempHashDir(t, ValidatorConfig{
+		BinaryAnalyzer:  &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}},
+		SyscallAnalyzer: &libraryTestSyscallAnalyzer{},
+	})
+	counting := newCountingFileSystem(v.fileSystem)
+	v.fileSystem = counting
+
+	elfPath := requireWithSocketELF(t)
+	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
+		SOName: "libfoo.so.1",
+		Path:   elfPath,
+		Hash:   realFileHash(t, elfPath),
+	}, nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 1, counting.opens[elfPath],
+		"analyzeOneLibrary must open lib.Path exactly once and share that fd across hash verification and content analysis")
 }
 
 func TestAnalyzeOneLibrary_unsupportedArchSkipsWarning(t *testing.T) {
@@ -228,7 +296,7 @@ func TestAnalyzeOneLibrary_unsupportedArchSkipsWarning(t *testing.T) {
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libfoo.so.1",
 		Path:   requireWithSocketELF(t),
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Nil(t, result.SyscallAnalysis)
@@ -240,8 +308,9 @@ func TestAnalyzeOneLibrary_unsupportedArchSkipsWarning(t *testing.T) {
 // without an external dynamic library analysis store.
 func TestAnalyzeLibraries_withoutStore(t *testing.T) {
 	v := validatorWithTempHashDir(t, ValidatorConfig{BinaryAnalyzer: &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}}})
+	elfPath := requireWithSocketELF(t)
 	record := &fileanalysis.Record{
-		DynLibDeps: []fileanalysis.LibEntry{{SOName: "libfoo.so.1", Path: requireWithSocketELF(t), Hash: "sha256:foo"}},
+		DynLibDeps: []fileanalysis.LibEntry{{SOName: "libfoo.so.1", Path: elfPath, Hash: realFileHash(t, elfPath)}},
 	}
 
 	require.NoError(t, v.analyzeLibraries(record))
@@ -269,11 +338,12 @@ func TestAnalyzeLibraries_excludesWrapperAndVDSO(t *testing.T) {
 	v.SetDynamicLibAnalysisStore(store)
 
 	elfPath := requireWithSocketELF(t)
+	elfHash := realFileHash(t, elfPath)
 	record := &fileanalysis.Record{
 		DynLibDeps: []fileanalysis.LibEntry{
-			{SOName: "libc.so.6", Path: elfPath, Hash: "sha256:aaa"},
+			{SOName: "libc.so.6", Path: elfPath, Hash: elfHash},
 			{SOName: "linux-vdso.so.1", Path: "", Hash: ""},
-			{SOName: "libssl.so.3", Path: elfPath, Hash: "sha256:bbb"},
+			{SOName: "libssl.so.3", Path: elfPath, Hash: elfHash},
 		},
 	}
 
@@ -310,10 +380,11 @@ func TestAnalyzeLibraries_sessionCache(t *testing.T) {
 	v.SetDynamicLibAnalysisStore(store)
 
 	path := requireWithSocketELF(t)
+	sameHash := realFileHash(t, path)
 	record := &fileanalysis.Record{
 		DynLibDeps: []fileanalysis.LibEntry{
-			{SOName: "libfoo.so.1", Path: path, Hash: "sha256:same"},
-			{SOName: "libfoo-alias.so.1", Path: path, Hash: "sha256:same"},
+			{SOName: "libfoo.so.1", Path: path, Hash: sameHash},
+			{SOName: "libfoo-alias.so.1", Path: path, Hash: sameHash},
 		},
 	}
 
@@ -337,9 +408,10 @@ func TestAnalyzeLibraries_symbolAnalysisCreatedWhenNil(t *testing.T) {
 	require.NoError(t, err)
 	v.SetDynamicLibAnalysisStore(store)
 
+	netPath := requireWithSocketELF(t)
 	record := &fileanalysis.Record{
 		DynLibDeps: []fileanalysis.LibEntry{
-			{SOName: "libnet.so.1", Path: requireWithSocketELF(t), Hash: "sha256:netlib"},
+			{SOName: "libnet.so.1", Path: netPath, Hash: realFileHash(t, netPath)},
 		},
 	}
 
@@ -357,9 +429,10 @@ func TestAnalyzeLibraries_RecordHasNoLibraryAnalysisField(t *testing.T) {
 	require.NoError(t, err)
 	v.SetDynamicLibAnalysisStore(store)
 
+	fooPath := requireWithSocketELF(t)
 	record := &fileanalysis.Record{
 		DynLibDeps: []fileanalysis.LibEntry{
-			{SOName: "libfoo.so.1", Path: requireWithSocketELF(t), Hash: "sha256:foo"},
+			{SOName: "libfoo.so.1", Path: fooPath, Hash: realFileHash(t, fooPath)},
 		},
 	}
 
@@ -380,9 +453,10 @@ func TestAnalyzeLibraries_DynLibDepsPreservedOnReuse(t *testing.T) {
 	v.SetDynamicLibAnalysisStore(store)
 
 	path := requireWithSocketELF(t)
+	pathHash := realFileHash(t, path)
 	record := &fileanalysis.Record{
 		DynLibDeps: []fileanalysis.LibEntry{
-			{SOName: "libfoo.so.1", Path: path, Hash: "sha256:foohash"},
+			{SOName: "libfoo.so.1", Path: path, Hash: pathHash},
 		},
 	}
 
@@ -394,7 +468,7 @@ func TestAnalyzeLibraries_DynLibDepsPreservedOnReuse(t *testing.T) {
 	// Simulate a second run with the same DynLibDeps (store will reuse the result).
 	record2 := &fileanalysis.Record{
 		DynLibDeps: []fileanalysis.LibEntry{
-			{SOName: "libfoo.so.1", Path: path, Hash: "sha256:foohash"},
+			{SOName: "libfoo.so.1", Path: path, Hash: pathHash},
 		},
 	}
 	require.NoError(t, v.analyzeLibraries(record2))
@@ -454,7 +528,7 @@ func TestValidatorLibraryAnalyzer_Analyze_FileTooLargeReturnsError(t *testing.T)
 		SOName: "libbig.so.1",
 		Path:   requireWithSocketELF(t),
 	}
-	_, err := v.analyzeOneLibrary(lib)
+	_, err := v.analyzeOneLibrary(lib, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "library file too large")
 }

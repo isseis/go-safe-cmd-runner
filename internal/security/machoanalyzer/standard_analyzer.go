@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 )
 
@@ -193,7 +194,7 @@ func (a *StandardMachOAnalyzer) analyzeAllFatSlices(fat *macho.FatFile) binaryan
 //   - NoNetworkSymbols: all slices are clean (no network symbols, no svc #0x80)
 //   - NotSupportedBinary: not a Mach-O file, or Fat binary with no analyzable slices
 //   - AnalysisError: parse error, or svc #0x80 detected in any slice (high risk)
-func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, _ string) binaryanalyzer.AnalysisOutput {
+func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, contentHash string) binaryanalyzer.AnalysisOutput {
 	// Step 1: open file safely via safefileio
 	file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
@@ -208,7 +209,12 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, _ string) bin
 		}
 	}()
 
-	// Step 2: verify regular file (reject directories, symlinks, etc.)
+	return a.AnalyzeNetworkSymbolsFromReader(file, path, contentHash)
+}
+
+// AnalyzeNetworkSymbolsFromReader implements binaryanalyzer.BinaryAnalyzer.
+func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbolsFromReader(file safefileio.File, _ string, _ string) binaryanalyzer.AnalysisOutput {
+	// Step 1: verify regular file (reject directories, symlinks, etc.)
 	fileInfo, err := file.Stat()
 	if err != nil {
 		return binaryanalyzer.AnalysisOutput{
@@ -229,9 +235,12 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, _ string) bin
 		}
 	}
 
-	// Step 3: read first 4 bytes and check Mach-O / Fat magic
+	// Step 2: read first 4 bytes and check Mach-O / Fat magic.
+	// Read via ReadAt (absolute offset) rather than the sequential Reader so
+	// that this analysis does not depend on, or disturb, the file's current
+	// read offset — file may be shared with other analyses of the same content.
 	magic := make([]byte, magicNumberSize)
-	if _, err := io.ReadFull(file, magic); err != nil {
+	if _, err := io.ReadFull(io.NewSectionReader(file, 0, int64(len(magic))), magic); err != nil {
 		return binaryanalyzer.AnalysisOutput{
 			Result: binaryanalyzer.AnalysisError,
 			Error:  fmt.Errorf("failed to read magic: %w", err),
@@ -241,15 +250,8 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, _ string) bin
 		return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NotSupportedBinary}
 	}
 
-	// Step 4: seek back to start for macho.NewFile / macho.NewFatFile
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return binaryanalyzer.AnalysisOutput{
-			Result: binaryanalyzer.AnalysisError,
-			Error:  fmt.Errorf("failed to seek: %w", err),
-		}
-	}
-
-	// Step 5: dispatch on binary type
+	// Step 3: dispatch on binary type. macho.NewFile / macho.NewFatFile read via
+	// io.ReaderAt, so no Seek to reset the file's current offset is needed.
 	m := binary.LittleEndian.Uint32(magic)
 	if m == fatMagic || m == fatCigam {
 		fat, err := macho.NewFatFile(file)

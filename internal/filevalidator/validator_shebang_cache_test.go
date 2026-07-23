@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -27,6 +28,10 @@ func (s *shebangCacheSpyBinaryAnalyzer) AnalyzeNetworkSymbols(filePath, _ string
 	}
 	s.callsByPath[filePath]++
 	return s.output
+}
+
+func (s *shebangCacheSpyBinaryAnalyzer) AnalyzeNetworkSymbolsFromReader(_ safefileio.File, filePath, _ string) binaryanalyzer.AnalysisOutput {
+	return s.AnalyzeNetworkSymbols(filePath, "")
 }
 
 func TestSaveRecord_ShebangInterpreterCacheReuse(t *testing.T) {
