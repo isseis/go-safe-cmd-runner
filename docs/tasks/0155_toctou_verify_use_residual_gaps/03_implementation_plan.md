@@ -381,7 +381,7 @@
 **判定理由**: F-002 は file path handling（パス検証）と file operation（ファイル移動）に相当し、Linux 固有の複雑な状態遷移と新規エラーモード（`protected_hardlinks`、`EEXIST` による予測可能性への対抗）を含むため
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/905）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
