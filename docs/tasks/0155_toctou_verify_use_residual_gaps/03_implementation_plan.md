@@ -350,7 +350,7 @@
 **判定理由**: F-003 は file integrity verification（内容一貫性）に相当し AC-07/AC-08 はセキュリティクリティカルであり、TOCTOU 注入テストによる検証が必須であるため
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/903）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
