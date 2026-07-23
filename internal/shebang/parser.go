@@ -50,12 +50,15 @@ type Info struct {
 	ResolvedPath string
 }
 
-// Parse reads the shebang line from the file at filePath and returns the
-// parsed interpreter information. Returns (nil, nil) if the file does not
-// start with "#!" (not a script).
+// ParseFromReader reads the shebang line from r and returns the parsed
+// interpreter information. Returns (nil, nil) if the content does not start
+// with "#!" (not a script).
 //
-// fs is used to open the file safely (symlink protection, permission checks).
-// Pass safefileio.NewFileSystem(safefileio.FileSystemConfig{}) for production use; pass a mock for testing.
+// r is typically a file already opened by the caller (e.g. via
+// safefileio.FileSystem.SafeOpenFile), so that shebang parsing shares the
+// exact same read used for hash calculation and other content analysis of
+// the same file, closing the TOCTOU window that would exist between two
+// independent opens.
 //
 // Errors:
 //   - ErrShebangLineTooLong: no newline within 256 bytes
@@ -66,19 +69,9 @@ type Info struct {
 //   - ErrEnvFlagNotSupported: env argument starts with "-"
 //   - ErrEnvAssignmentNotSupported: env argument contains "="
 //   - ErrCommandNotFound: command not found via exec.LookPath
-func Parse(filePath string, fs safefileio.FileSystem) (*Info, error) {
-	absPath, err := filepath.Abs(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve path: %w", err)
-	}
-	f, err := fs.SafeOpenFile(absPath, os.O_RDONLY, 0)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
-	}
-	defer func() { _ = f.Close() }()
-
+func ParseFromReader(r io.ReaderAt) (*Info, error) {
 	buf := make([]byte, maxShebangBytes)
-	n, err := io.ReadFull(f, buf)
+	n, err := io.ReadFull(io.NewSectionReader(r, 0, int64(len(buf))), buf)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			// Empty file: not a shebang script.
@@ -219,8 +212,14 @@ func IsShebangScript(filePath string, fs safefileio.FileSystem) (bool, error) {
 	}
 	defer func() { _ = f.Close() }()
 
+	return IsShebangScriptFromReader(f)
+}
+
+// IsShebangScriptFromReader behaves like IsShebangScript but reads from an
+// already-open r instead of opening filePath itself.
+func IsShebangScriptFromReader(r io.ReaderAt) (bool, error) {
 	buf := make([]byte, shebangPrefixLen)
-	n, err := f.Read(buf)
+	n, err := r.ReadAt(buf, 0)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			// File is smaller than the shebang prefix; treat as "not a shebang".

@@ -314,6 +314,13 @@ func (f *readErrorFile) Read(_ []byte) (int, error) {
 	return 0, errors.New("simulated read error")
 }
 
+// ReadAt is overridden too: ELF magic detection reads via io.ReaderAt (not
+// the sequential Reader) so that it does not depend on, or disturb, a
+// file's current read offset when the file is shared across analyses.
+func (f *readErrorFile) ReadAt(_ []byte, _ int64) (int, error) {
+	return 0, errors.New("simulated read error")
+}
+
 // TestAnalyze_ReadMagicError verifies that Analyze returns an error when
 // io.ReadFull fails to read the ELF magic bytes with a non-EOF error.
 func TestAnalyze_ReadMagicError(t *testing.T) {

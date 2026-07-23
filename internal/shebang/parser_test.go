@@ -32,11 +32,22 @@ func writeBinaryFile(t *testing.T, data []byte) string {
 	return tu.WriteExecutableFile(t, tu.SafeTempDir(t), "test_binary", data)
 }
 
+// parseFile opens path and parses its shebang line via ParseFromReader,
+// exercising the same shared-fd code path SaveRecord uses in production
+// (shebang.Parse no longer exists as a separate path-based entry point).
+func parseFile(t *testing.T, path string) (*shebang.Info, error) {
+	t.Helper()
+	f, err := realFS().SafeOpenFile(path, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+	return shebang.ParseFromReader(f)
+}
+
 // --- Parse tests ---
 
 func TestParse_DirectForm(t *testing.T) {
 	path := writeScript(t, "#!/bin/sh\necho hello\n")
-	info, err := shebang.Parse(path, realFS())
+	info, err := parseFile(t, path)
 	require.NoError(t, err)
 	require.NotNil(t, info)
 
@@ -51,7 +62,7 @@ func TestParse_DirectForm(t *testing.T) {
 
 func TestParse_DirectFormWithArgs(t *testing.T) {
 	path := writeScript(t, "#!/bin/bash -e\necho hello\n")
-	info, err := shebang.Parse(path, realFS())
+	info, err := parseFile(t, path)
 	require.NoError(t, err)
 	require.NotNil(t, info)
 
@@ -65,7 +76,7 @@ func TestParse_DirectFormWithArgs(t *testing.T) {
 
 func TestParse_SpaceAfterShebang(t *testing.T) {
 	path := writeScript(t, "#! /bin/sh\necho hello\n")
-	info, err := shebang.Parse(path, realFS())
+	info, err := parseFile(t, path)
 	require.NoError(t, err)
 	require.NotNil(t, info)
 
@@ -82,7 +93,7 @@ func TestParse_EnvForm(t *testing.T) {
 	t.Setenv("PATH", binDir)
 
 	path := writeScript(t, "#!/usr/bin/env sh\necho hello\n")
-	info, err := shebang.Parse(path, realFS())
+	info, err := parseFile(t, path)
 	require.NoError(t, err)
 	require.NotNil(t, info)
 
@@ -109,7 +120,7 @@ func TestParse_FakeEnvBinaryTreatedAsDirectForm(t *testing.T) {
 	fakeEnv := tu.WriteExecutableFile(t, binDir, "env", []byte("#!/bin/sh\necho fake\n"))
 
 	path := writeScript(t, "#!"+fakeEnv+" python3\n")
-	info, err := shebang.Parse(path, realFS())
+	info, err := parseFile(t, path)
 	require.NoError(t, err)
 	require.NotNil(t, info)
 
@@ -126,57 +137,57 @@ func TestParse_NotShebang_ELF(t *testing.T) {
 	// ELF magic bytes: \x7fELF
 	elfHeader := []byte{0x7f, 'E', 'L', 'F', 0x02, 0x01, 0x01, 0x00}
 	path := writeBinaryFile(t, elfHeader)
-	info, err := shebang.Parse(path, realFS())
+	info, err := parseFile(t, path)
 	require.NoError(t, err)
 	assert.Nil(t, info)
 }
 
 func TestParse_NotShebang_Text(t *testing.T) {
 	path := writeScript(t, "echo hello\n")
-	info, err := shebang.Parse(path, realFS())
+	info, err := parseFile(t, path)
 	require.NoError(t, err)
 	assert.Nil(t, info)
 }
 
 func TestParse_ErrEmptyInterpreterPath(t *testing.T) {
 	path := writeScript(t, "#!\n")
-	_, err := shebang.Parse(path, realFS())
+	_, err := parseFile(t, path)
 	assert.ErrorIs(t, err, shebang.ErrEmptyInterpreterPath)
 }
 
 func TestParse_ErrEmptyInterpreterPath_Whitespace(t *testing.T) {
 	path := writeScript(t, "#!  \n")
-	_, err := shebang.Parse(path, realFS())
+	_, err := parseFile(t, path)
 	assert.ErrorIs(t, err, shebang.ErrEmptyInterpreterPath)
 }
 
 func TestParse_ErrInterpreterNotAbsolute(t *testing.T) {
 	path := writeScript(t, "#!python3\n")
-	_, err := shebang.Parse(path, realFS())
+	_, err := parseFile(t, path)
 	assert.ErrorIs(t, err, shebang.ErrInterpreterNotAbsolute)
 }
 
 func TestParse_ErrMissingEnvCommand(t *testing.T) {
 	path := writeScript(t, "#!/usr/bin/env\n")
-	_, err := shebang.Parse(path, realFS())
+	_, err := parseFile(t, path)
 	assert.ErrorIs(t, err, shebang.ErrMissingEnvCommand)
 }
 
 func TestParse_ErrEnvFlagNotSupported(t *testing.T) {
 	path := writeScript(t, "#!/usr/bin/env -S python3\n")
-	_, err := shebang.Parse(path, realFS())
+	_, err := parseFile(t, path)
 	assert.ErrorIs(t, err, shebang.ErrEnvFlagNotSupported)
 }
 
 func TestParse_ErrEnvAssignmentNotSupported(t *testing.T) {
 	path := writeScript(t, "#!/usr/bin/env PYTHONPATH=. python3\n")
-	_, err := shebang.Parse(path, realFS())
+	_, err := parseFile(t, path)
 	assert.ErrorIs(t, err, shebang.ErrEnvAssignmentNotSupported)
 }
 
 func TestParse_ErrCommandNotFound(t *testing.T) {
 	path := writeScript(t, "#!/usr/bin/env nonexistent_cmd_xyz_123\n")
-	_, err := shebang.Parse(path, realFS())
+	_, err := parseFile(t, path)
 	assert.ErrorIs(t, err, shebang.ErrCommandNotFound)
 }
 
@@ -185,13 +196,13 @@ func TestParse_ErrShebangLineTooLong(t *testing.T) {
 	// "#!" is 2 bytes, then we need 254+ more bytes without '\n'.
 	longLine := "#!" + strings.Repeat("x", 300) // no newline at all
 	path := writeBinaryFile(t, []byte(longLine))
-	_, err := shebang.Parse(path, realFS())
+	_, err := parseFile(t, path)
 	assert.ErrorIs(t, err, shebang.ErrShebangLineTooLong)
 }
 
 func TestParse_ErrShebangCR(t *testing.T) {
 	path := writeBinaryFile(t, []byte("#!/bin/sh\r\n"))
-	_, err := shebang.Parse(path, realFS())
+	_, err := parseFile(t, path)
 	assert.ErrorIs(t, err, shebang.ErrShebangCR)
 }
 

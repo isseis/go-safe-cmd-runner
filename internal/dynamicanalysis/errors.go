@@ -12,3 +12,10 @@ const StoreSubDir = "dynlib-analysis"
 // ErrAnalysisNotFound is returned when the analysis result is not found or is invalid.
 // This includes: file not found, schema_version mismatch, lib_hash mismatch, and parse errors.
 var ErrAnalysisNotFound = errors.New("dynamicanalysis: analysis not found")
+
+// ErrLibraryHashKeyMismatch is returned by LoadOrAnalyzeAndStore when the
+// actual content hash of the analyzed library does not match libHash, the
+// hash key the caller expects the analysis to correspond to. This indicates
+// the file at libPath changed between when libHash was determined and when
+// it was analyzed; the result is not persisted in this case (fail-closed).
+var ErrLibraryHashKeyMismatch = errors.New("dynamicanalysis: library analysis hash does not match recorded hash key")

@@ -312,28 +312,27 @@
 - `internal/dynamicanalysis/store.go`、`interfaces.go`
 - 各解析器（`shebang`、`binaryanalyzer`、`elfdynlib`、`machodylib`）
 
-- [ ] `SaveRecord` 実装変更:
-  - 対象ファイルを `SaveFile` 起点で 1 回だけ安全に open（`SafeOpenFile`）
-  - fd を `io.ReaderAt` として全下流へ渡す
-- [ ] `saveRecordCore` 実装変更:
+- [x] `SaveRecord` 実装変更:
+  - 対象ファイルを起点で 1 回だけ安全に open（`SafeOpenFile`）
+  - fd（`safefileio.File`、`io.ReaderAt` を満たす）を全下流へ渡す
+- [x] `saveRecordCore` 実装変更:
   - shebang 解析、ハッシュ計算、各解析へ共有 fd を渡す
-- [ ] 各解析器の入力経路拡張（全 6 つの解析関数対応）:
-   - `shebang.Parse`: パス名に加え `io.ReaderAt` 入力対応
-  - `binaryanalyzer.AnalyzeNetworkSymbols`: `io.ReaderAt` 入力対応
-  - `binaryanalyzer.analyzeELFSyscalls`: `io.ReaderAt` 入力対応
-  - `binaryanalyzer.analyzeMachoSyscalls`: `io.ReaderAt` 入力対応
-  - `elfdynlib.Analyzer.Analyze`: `io.ReaderAt` 入力対応
-  - `machodylib` 依存解決関数: `io.ReaderAt` 入力対応
-- [ ] `calculateHash` 実装変更:
-  - `io.ReaderAt` から実測ハッシュを計算
-- [ ] `analyzeOneLibrary` 実装変更:
-  - 解析用 fd から実測ハッシュを計算
+- [x] 各解析器の入力経路拡張（全 6 つの解析関数対応。**実装時の変更点**: 既存のパス名ベース関数の**シグネチャを変更**するのではなく、同名+`FromReader`サフィックスの**新規関数/メソッドを追加**し、パス名ベース版はその薄いラッパーとした。理由: `AnalyzeNetworkSymbols`（`binaryanalyzer.BinaryAnalyzer`インタフェース）等はテスト側に約 45+ 箇所の直接呼び出しがあり、既存シグネチャ変更は無関係な広範囲の書き換えを強制するため、DRY を保ちつつ影響範囲を最小化する設計とした。SaveRecord の対象ファイル（トップレベル）のみ共有 fd を使い、shebang chain のインタプリタや dynlib 依存先ライブラリ等の別ファイルは従来通りパス名ベースで個別 open する（要件の「対象ファイル」の範囲外）):
+   - `shebang.Parse` → `shebang.ParseFromReader` に統合（`Parse` は本フェーズでの唯一の呼び出し元だったため、ラッパーを残さず `ParseFromReader` へ一本化。`IsShebangScript` は他ファイル向けの経路で存置）
+  - `binaryanalyzer.BinaryAnalyzer` インタフェースに `AnalyzeNetworkSymbolsFromReader` を追加（elfanalyzer/machoanalyzer 両実装で対応、既存 `AnalyzeNetworkSymbols` は内部で `SafeOpenFile` 後に委譲）
+  - `machoanalyzer.ScanSyscallInfos` → `ScanSyscallInfosFromReader` を追加（`analyzeELFSyscalls`/`analyzeMachoSyscalls`/`getMachoAnalysisInfo` も同様に `...FromReader` 版を追加し `validator.go` 内で dispatch）
+  - `elfdynlib.DynLibAnalyzer.Analyze` → `AnalyzeFromReader` を追加（トップレベル ELF の open のみ共有 fd 化。再帰的な依存先ライブラリの open は対象外）
+  - `machodylib.MachODynLibAnalyzer.Analyze` → `AnalyzeFromReader` を追加（同上）
+- [x] ハッシュ計算実装変更:
+  - `saveRecordCore` で共有 fd から `v.algorithm.Sum(file)` により実測ハッシュを計算（専用ラッパー関数は導入せず直接呼び出し）
+- [x] `analyzeOneLibrary` 実装変更:
+  - 解析用 fd から実測ハッシュを計算（`lib.Hash` が非空の場合のみ。store 経由の呼び出しでは `lib.Hash` が空になるため、この経路では機能しない — 設計通り）
   - `lib.Hash` との照合を追加
-  - 不一致時に `ErrLibraryHashKeyMismatch` return
-- [ ] `LoadOrAnalyzeAndStore`（store 境界）実装変更:
-  - 期待ハッシュ `libHash` と実測ハッシュを照合
-  - 不一致時に解析結果を記録せず `ErrLibraryHashKeyMismatch` return
-- [ ] 既存テスト全て通過
+  - 不一致時に `ErrLibraryHashKeyMismatch`（`filevalidator` パッケージ内で新規定義）を return
+- [x] `LoadOrAnalyzeAndStore`（store 境界）実装変更:
+  - 期待ハッシュ `libHash` と実測ハッシュ（`computeLibraryContentHash` で独立に算出）を照合
+  - 不一致時に解析結果を記録せず `ErrLibraryHashKeyMismatch`（`dynamicanalysis` パッケージ内で新規定義。`filevalidator` からの import は循環参照になるため、パッケージごとに別個の sentinel error を定義）return
+- [x] 既存テスト全て通過（fake なパス/ハッシュに依存していた `dynamicanalysis`/`filevalidator` のテストは、実ファイルと実ハッシュを使うよう更新）
 
 ### PR-3 作成ポイント: shared fd binding for record content consistency
 
@@ -519,8 +518,8 @@
 - PR-3 での analyzeOneLibrary と store.LoadOrAnalyzeAndStore の実装変更
 
 **検証テスト**:
-- テスト場所: `internal/filevalidator/validator_test.go` (新規テスト追加) と `internal/dynamicanalysis/store_test.go` (新規テスト追加)
-- テスト名: `TestAnalyzeOneLibrary_HashKeyMismatchError`, `TestLoadOrAnalyzeAndStore_HashKeyMismatchError`
+- テスト場所: `internal/filevalidator/validator_library_analysis_test.go` (新規テスト追加) と `internal/dynamicanalysis/store_test.go` (新規テスト追加)
+- テスト名: `TestAnalyzeOneLibrary_HashKeyMismatchError`, `TestStore_LoadOrAnalyzeAndStore_HashKeyMismatchError`
 - 検証内容: ハッシュキー不一致時に `ErrLibraryHashKeyMismatch` を返す
 
 ---

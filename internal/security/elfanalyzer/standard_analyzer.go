@@ -82,7 +82,7 @@ func NewStandardELFAnalyzerWithSyscallStore(
 
 // AnalyzeNetworkSymbols implements binaryanalyzer.BinaryAnalyzer.
 func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash string) binaryanalyzer.AnalysisOutput {
-	// Step 1: Open file safely using safefileio
+	// Open file safely using safefileio.
 	// This prevents symlink attacks and TOCTOU race conditions.
 	file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
@@ -97,7 +97,12 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 		}
 	}()
 
-	// Step 1b: Validate the file is a regular file and check size
+	return a.AnalyzeNetworkSymbolsFromReader(file, path, contentHash)
+}
+
+// AnalyzeNetworkSymbolsFromReader implements binaryanalyzer.BinaryAnalyzer.
+func (a *StandardELFAnalyzer) AnalyzeNetworkSymbolsFromReader(file safefileio.File, path string, contentHash string) binaryanalyzer.AnalysisOutput {
+	// Step 1: Validate the file is a regular file and check size
 	// This prevents resource exhaustion from devices, FIFOs, or extremely large files
 	fileInfo, err := file.Stat()
 	if err != nil {
@@ -123,9 +128,12 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 		}
 	}
 
-	// Step 2: Check ELF magic number
+	// Step 2: Check ELF magic number.
+	// Read via ReadAt (absolute offset) rather than the sequential Reader so
+	// that this analysis does not depend on, or disturb, the file's current
+	// read offset — file may be shared with other analyses of the same content.
 	var magic [elfmagic.Len]byte
-	if _, err := io.ReadFull(file, magic[:]); err != nil {
+	if _, err := io.ReadFull(io.NewSectionReader(file, 0, int64(len(magic))), magic[:]); err != nil {
 		return binaryanalyzer.AnalysisOutput{
 			Result: binaryanalyzer.AnalysisError,
 			Error:  fmt.Errorf("failed to read magic number: %w", err),

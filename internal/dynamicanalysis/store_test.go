@@ -3,6 +3,8 @@
 package dynamicanalysis_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +14,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// writeLibFile writes content to a file under t.TempDir() and returns both
+// its path and its "sha256:<hex>" content hash. LoadOrAnalyzeAndStore now
+// verifies libPath's actual content hash against the caller-supplied libHash
+// before persisting, so tests must use a real file with a hash that
+// actually matches — a placeholder path/hash pair is rejected as a mismatch.
+func writeLibFile(t *testing.T, content string) (path, hash string) {
+	t.Helper()
+	path = filepath.Join(t.TempDir(), "lib.so")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	return path, fileContentHash(t, path)
+}
+
+// fileContentHash returns the "sha256:<hex>" content hash of the file at path.
+func fileContentHash(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path) //nolint:gosec // G304: test-controlled path
+	require.NoError(t, err)
+	sum := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
 
 // mockAnalyzer is a test double for Analyzer.
 type mockAnalyzer struct {
@@ -45,8 +68,7 @@ func TestStore_LoadOrAnalyzeAndStore_Reuse(t *testing.T) {
 	}
 	store := newTestStore(t, analyzer)
 
-	const libPath = "/usr/lib/libfoo.so.1"
-	const libHash = "sha256:abc123"
+	libPath, libHash := writeLibFile(t, "lib-content-reuse")
 
 	// First call: analyzer is invoked.
 	result1, err := store.LoadOrAnalyzeAndStore(libPath, libHash)
@@ -72,16 +94,19 @@ func TestStore_LoadOrAnalyzeAndStore_HashChanged(t *testing.T) {
 	}
 	store := newTestStore(t, analyzer)
 
-	const libPath = "/usr/lib/libbar.so.2"
-	const hash1 = "sha256:aaa111"
-	const hash2 = "sha256:bbb222"
+	libPath, hash1 := writeLibFile(t, "lib-content-v1")
 
 	// First call: analysis stored with hash1.
 	_, err := store.LoadOrAnalyzeAndStore(libPath, hash1)
 	require.NoError(t, err)
 	assert.Len(t, analyzer.callArgs, 1)
 
-	// Second call with different hash: stored result is invalid, re-analysis runs.
+	// Library recompiled: content (and hash) changed.
+	require.NoError(t, os.WriteFile(libPath, []byte("lib-content-v2"), 0o644))
+	hash2 := fileContentHash(t, libPath)
+
+	// Second call with the new hash: stored result under hash1 is invalid,
+	// re-analysis runs against the new content.
 	_, err = store.LoadOrAnalyzeAndStore(libPath, hash2)
 	require.NoError(t, err)
 	assert.Len(t, analyzer.callArgs, 2, "analyzer should be called again when hash changes")
@@ -97,8 +122,7 @@ func TestStore_CorruptFile_Reanalyze(t *testing.T) {
 	store, err := dynamicanalysis.New(storeDir, analyzer)
 	require.NoError(t, err)
 
-	const libPath = "/usr/lib/libbaz.so.3"
-	const libHash = "sha256:deadbeef"
+	libPath, libHash := writeLibFile(t, "lib-content-corrupt")
 
 	// First call: analysis stored successfully.
 	_, err = store.LoadOrAnalyzeAndStore(libPath, libHash)
@@ -119,6 +143,33 @@ func TestStore_CorruptFile_Reanalyze(t *testing.T) {
 	assert.Len(t, analyzer.callArgs, 2, "analyzer should be called again on corrupt file")
 }
 
+// TestStore_LoadOrAnalyzeAndStore_HashKeyMismatchError verifies that
+// LoadOrAnalyzeAndStore returns ErrLibraryHashKeyMismatch, and does not
+// persist a result, when libPath's actual content hash does not match the
+// caller-supplied libHash. This models a TOCTOU-style substitution:
+// the caller determined libHash from one version of the file, but by the
+// time the library is analyzed, libPath resolves to different content.
+func TestStore_LoadOrAnalyzeAndStore_HashKeyMismatchError(t *testing.T) {
+	analyzer := &mockAnalyzer{
+		result: &dynamicanalysis.Result{},
+	}
+	storeDir := filepath.Join(t.TempDir(), "dynlibstore")
+	store, err := dynamicanalysis.New(storeDir, analyzer)
+	require.NoError(t, err)
+
+	libPath, _ := writeLibFile(t, "lib-content-actual")
+	wrongHash := fileContentHash(t, libPath) + "00" // guaranteed not to match
+
+	_, err = store.LoadOrAnalyzeAndStore(libPath, wrongHash)
+	require.ErrorIs(t, err, dynamicanalysis.ErrLibraryHashKeyMismatch)
+
+	// The mismatched result must not be persisted: a later call with the
+	// correct hash must still trigger a fresh analysis, not reuse anything
+	// written by the failed call above.
+	_, err = store.LoadAnalysis(libPath, wrongHash)
+	assert.ErrorIs(t, err, dynamicanalysis.ErrAnalysisNotFound)
+}
+
 // TestStore_LoadAnalysis_NotFound verifies that LoadAnalysis returns
 // ErrAnalysisNotFound when no entry exists for the given library.
 func TestStore_LoadAnalysis_NotFound(t *testing.T) {
@@ -136,8 +187,8 @@ func TestStore_LoadAnalysis_HashMismatch(t *testing.T) {
 	}
 	store := newTestStore(t, analyzer)
 
-	const libPath = "/usr/lib/libhash.so.1"
-	_, err := store.LoadOrAnalyzeAndStore(libPath, "sha256:original")
+	libPath, libHash := writeLibFile(t, "lib-content-hash")
+	_, err := store.LoadOrAnalyzeAndStore(libPath, libHash)
 	require.NoError(t, err)
 
 	_, err = store.LoadAnalysis(libPath, "sha256:different")
