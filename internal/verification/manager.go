@@ -27,7 +27,9 @@ type Manager struct {
 	fs                          common.FileSystem
 	safeFS                      safefileio.FileSystem // used for secure file I/O (e.g. ELF inspection)
 	fileValidator               filevalidator.FileValidator
-	dynlibVerifier              *elfdynlib.DynLibVerifier // initialized once at construction
+	dynlibVerifier              *elfdynlib.DynLibVerifier       // initialized once at construction
+	elfDynLibAnalyzer           *elfdynlib.DynLibAnalyzer       // initialized once at construction; re-resolves ELF deps at verify time
+	machoDynLibAnalyzer         *machodylib.MachODynLibAnalyzer // initialized once at construction; re-resolves Mach-O deps at verify time
 	security                    DirectoryValidator
 	pathResolver                *PathResolver
 	isDryRun                    bool
@@ -482,6 +484,10 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 
 	// Initialize dynamic library verifier (parses /etc/ld.so.cache once at startup).
 	manager.dynlibVerifier = elfdynlib.NewDynLibVerifier(safeFS)
+	// Initialize dependency resolution analyzers used to re-execute search-path
+	// resolution at verify time (see verifyDynLibDepsResolution).
+	manager.elfDynLibAnalyzer = elfdynlib.NewDynLibAnalyzer(safeFS)
+	manager.machoDynLibAnalyzer = machodylib.NewMachODynLibAnalyzer(safeFS)
 
 	// Initialize file validator with hybrid hash path getter
 	var hashDirAvailable bool
@@ -660,6 +666,13 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 		if err := m.dynlibVerifier.Verify(record.DynLibDeps); err != nil {
 			return err
 		}
+		// Re-execute dependency resolution and confirm the current search-path
+		// set matches the recorded snapshot. Hash verification above only
+		// confirms recorded library files are untampered; it cannot detect a
+		// new library placed at a higher-priority search location.
+		if err := m.verifyDynLibDepsResolution(cmdPath, record.ShebangChain, record.DynLibDeps); err != nil {
+			return err
+		}
 		// Cache verified hashes so verifyInterpreterHash can skip redundant
 		// recomputation for interpreter binaries that appear in both DynLibDeps
 		// and shebang_chain.
@@ -696,6 +709,157 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 
 	// Non-ELF, non-Mach-O binary (or static/no-dependency binary) without DynLibDeps → normal.
 	return nil
+}
+
+// verifyDynLibDepsResolution re-executes dependency resolution for cmdPath and
+// confirms the resulting search-path set matches the recorded snapshot. This
+// detects search-order shadowing: a library placed at a higher-priority
+// search location (e.g. an $ORIGIN-relative RUNPATH entry or a Mach-O @rpath
+// candidate) after record time, without touching any recorded library file.
+// Resolution logic is reused from the existing elfdynlib/machodylib
+// analyzers (DRY); this function only re-runs and compares.
+// shebangChain is record.ShebangChain: for a shebang script, cmdPath itself
+// resolves no dependencies (it is neither ELF nor Mach-O), so recorded was
+// actually populated from each interpreter hop's own DT_NEEDED/LC_LOAD_DYLIB
+// closure (see populateShebangData's depCollector.addEntries calls); re-resolve
+// every hop too, or a new higher-priority library for an interpreter's own
+// dependency would never be re-checked.
+func (m *Manager) verifyDynLibDepsResolution(cmdPath string, shebangChain []fileanalysis.ShebangChainEntry, recorded []fileanalysis.LibEntry) error {
+	if m.elfDynLibAnalyzer == nil || m.machoDynLibAnalyzer == nil {
+		// Both analyzers are always initialized by the sole constructor
+		// (newManagerInternal); a nil analyzer here means a Manager was
+		// hand-built (e.g. via a struct literal) bypassing that constructor.
+		// Fail explicitly rather than silently skipping the re-resolution
+		// check, which would otherwise fail open on mis-initialization.
+		return fmt.Errorf("%w: cannot re-resolve dependencies for %s", ErrDynLibAnalyzerNotInitialized, cmdPath)
+	}
+
+	// Build a set of shebang interpreter paths to exclude from comparison.
+	// Interpreter binaries themselves are verified separately via verifyInterpreterHash;
+	// only their actual dynamic library dependencies should be included in the
+	// resolution comparison. However, if ONLY interpreter binaries are recorded
+	// (no other dependencies), skip the resolution check entirely since the record
+	// was created without full dependency analysis.
+	shebangPaths := make(map[string]struct{}, len(shebangChain))
+	for _, entry := range shebangChain {
+		shebangPaths[entry.Path] = struct{}{}
+	}
+
+	// Count non-interpreter dependencies in the recorded list
+	nonInterpreterCount := 0
+	for _, entry := range recorded {
+		if _, isShebangInterpreter := shebangPaths[entry.Path]; !isShebangInterpreter {
+			nonInterpreterCount++
+		}
+	}
+
+	// If only shebang interpreter binaries are recorded (no other dependencies),
+	// the record was created without dynamic library analysis. Skip the resolution
+	// check to avoid false positives when the system or environment changes the
+	// discovered dependencies.
+	if nonInterpreterCount == 0 && len(shebangChain) > 0 {
+		return nil
+	}
+
+	// Filter recorded dependencies to exclude shebang interpreter binaries.
+	// This prevents false positives when an interpreter's resolved dependencies
+	// change but the interpreter binary path itself remains valid.
+	filteredRecorded := make([]fileanalysis.LibEntry, 0, len(recorded))
+	for _, entry := range recorded {
+		if _, isShebangInterpreter := shebangPaths[entry.Path]; !isShebangInterpreter {
+			filteredRecorded = append(filteredRecorded, entry)
+		}
+	}
+
+	resolved, err := m.resolveDynLibDeps(cmdPath)
+	if err != nil {
+		return err
+	}
+	for _, entry := range shebangChain {
+		hopResolved, err := m.resolveDynLibDeps(entry.Path)
+		if err != nil {
+			return err
+		}
+		resolved = append(resolved, hopResolved...)
+	}
+	return compareDynLibDeps(filteredRecorded, resolved)
+}
+
+// resolveDynLibDeps re-executes dependency resolution for path, trying the ELF
+// analyzer first and falling back to Mach-O; returns (nil, nil) if path is
+// neither (e.g. a shebang script itself, as opposed to its interpreter).
+func (m *Manager) resolveDynLibDeps(path string) ([]fileanalysis.LibEntry, error) {
+	resolved, err := m.elfDynLibAnalyzer.Analyze(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to re-resolve ELF dynamic library dependencies for %s: %w", path, err)
+	}
+	if resolved != nil {
+		return resolved, nil
+	}
+	// Not an ELF binary (or a static ELF): try Mach-O.
+	resolved, warnings, err := m.machoDynLibAnalyzer.Analyze(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to re-resolve Mach-O dynamic library dependencies for %s: %w", path, err)
+	}
+	for _, w := range warnings {
+		slog.Warn("Mach-O dependency resolution warning during verify",
+			"cmd_path", path, "warning", w.String())
+	}
+	return resolved, nil
+}
+
+// compareDynLibDeps confirms that the resolved search-path set matches the
+// recorded set, keyed by Path. LibEntry.SOName is intentionally not persisted
+// in stored records (fileanalysis.LibEntry.SOName has `json:"-"`), so a record
+// loaded from disk always has an empty SOName on every entry; Path is the
+// only field stable across the record round-trip and is therefore the
+// comparison key. A recorded path that no longer resolves, or a newly
+// resolved path that was not recorded, indicates the search result changed
+// since record time (e.g. search-order shadowing).
+//
+// Both directions are collected before building the error (rather than
+// returning on the first divergence found) because the archetypal shadowing
+// attack produces exactly one of each: the soname's old, recorded path
+// disappears from the live resolution while a new, higher-priority path for
+// the same soname appears. Returning on the first divergence would report
+// only whichever half was found first, discarding the more actionable half
+// (SOName/ResolvedPath) whenever the missing-recorded-path check runs first.
+func compareDynLibDeps(recorded, resolved []fileanalysis.LibEntry) error {
+	recordedPaths := make(map[string]struct{}, len(recorded))
+	for _, entry := range recorded {
+		recordedPaths[entry.Path] = struct{}{}
+	}
+	resolvedByPath := make(map[string]fileanalysis.LibEntry, len(resolved))
+	for _, entry := range resolved {
+		resolvedByPath[entry.Path] = entry
+	}
+
+	var missingRecordedPath string
+	for _, entry := range recorded {
+		if _, ok := resolvedByPath[entry.Path]; !ok {
+			missingRecordedPath = entry.Path
+			break
+		}
+	}
+
+	var newEntry *fileanalysis.LibEntry
+	for _, entry := range resolved {
+		if _, ok := recordedPaths[entry.Path]; !ok {
+			e := entry
+			newEntry = &e
+			break
+		}
+	}
+
+	if missingRecordedPath == "" && newEntry == nil {
+		return nil
+	}
+	changed := &ErrDynLibDepsResolutionChanged{RecordedPath: missingRecordedPath}
+	if newEntry != nil {
+		changed.SOName = newEntry.SOName
+		changed.ResolvedPath = newEntry.Path
+	}
+	return changed
 }
 
 // hasDynamicLibraryDeps checks if the file at the given path is an ELF binary

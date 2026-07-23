@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
@@ -132,9 +133,13 @@ func TestVerifyCommandDynLibDeps_ResetsDepHashCacheBetweenCommands(t *testing.T)
 
 	mockFV := newMockFVForShebang()
 	m := setupManagerWithMockValidator(t, mockFV)
-	// A real DynLibVerifier and safeFS are required to exercise the cache path.
+	// A real DynLibVerifier, dependency-resolution analyzers, and safeFS are
+	// required to exercise the cache path (VerifyCommandDynLibDeps now fails
+	// closed if the analyzers are nil).
 	safeFS := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	m.dynlibVerifier = elfdynlib.NewDynLibVerifier(safeFS)
+	m.elfDynLibAnalyzer = elfdynlib.NewDynLibAnalyzer(safeFS)
+	m.machoDynLibAnalyzer = machodylib.NewMachODynLibAnalyzer(safeFS)
 	m.safeFS = safeFS
 
 	// Capture the hash of the original interpreter before it is replaced.
@@ -153,8 +158,11 @@ func TestVerifyCommandDynLibDeps_ResetsDepHashCacheBetweenCommands(t *testing.T)
 		}
 	}
 
-	script1 := filepath.Join(dir, "script1.sh")
-	script2 := filepath.Join(dir, "script2.sh")
+	// script1/script2 must exist on disk (as real shebang scripts) so the
+	// elfDynLibAnalyzer can inspect them during re-resolution instead of
+	// failing on a missing file.
+	script1 := tu.WriteExecutableFile(t, dir, "script1.sh", []byte("#!/bin/sh\n"))
+	script2 := tu.WriteExecutableFile(t, dir, "script2.sh", []byte("#!/bin/sh\n"))
 
 	mockFV.setRecord(script1, makeRecord(script1))
 

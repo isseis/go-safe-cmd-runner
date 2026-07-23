@@ -8,7 +8,7 @@
 | Created | 2026-07-21 |
 | Review date | 2026-07-21 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | AC-10 text revised after PR-2 implementation: the resolvers reused here (`elfdynlib`/`machodylib`) never consult environment variables, so `VerifyCommandDynLibDeps` no longer accepts an `envVars` parameter (see AC-10 sub-bullet); pending reviewer confirmation. |
 
 ## 関連 Issue
 
@@ -111,7 +111,8 @@ verify 時の検証は「record 時に解決されたパス群のハッシュ照
 
 #### F-004: verify 時の依存解決再実行
 
-- **AC-10**: `VerifyCommandDynLibDeps` は、verify 時に依存解決（RUNPATH/`$ORIGIN`、`@rpath` 候補ディレクトリの探索）を再実行する際に、コマンドの実行環境（`envVars`）を受け入れ、使用することで、RUNPATH の `$ORIGIN` や環境変数展開など、実行時の動的な置換に基づく正確な依存解決を行う。得られた解決パス集合が record 時の記録済み集合と一致することを確認する。record 時より優先順位の高い探索位置に新たなライブラリが出現した場合、verify は失敗する。
+- **AC-10**: `VerifyCommandDynLibDeps` は、verify 時に依存解決（RUNPATH/`$ORIGIN`、`@rpath` 候補ディレクトリの探索）を再実行する。得られた解決パス集合が record 時の記録済み集合と一致することを確認する。record 時より優先順位の高い探索位置に新たなライブラリが出現した場合、verify は失敗する。
+  - **`envVars` を扱わない理由（02_architecture.md § 3.4 で示された設計判断）**: 本タスクで再利用する ELF/Mach-O 解決器（`elfdynlib`/`machodylib`）は環境変数を参照しない（`$ORIGIN` はバイナリ位置から導出され、`LD_LIBRARY_PATH` は既存ポリシーにより探索経路から除外され続ける）。そのため `VerifyCommandDynLibDeps` は `envVars` を受け取らず、依存解決の再実行と record 済み集合との一致確認のみを行う。将来 `$LIB`/`$PLATFORM` 等の環境依存置換を扱う場合は、`Analyze`/`Resolve` および `VerifyCommandDynLibDeps` の署名変更を伴う別タスクとする（YAGNI: 現時点で予定のない拡張のためにインターフェースへ未使用の引数を持たせない）。
 - **AC-11**: 環境が record 時から変化していない正常系では、verify は従来どおり成功する。
 
 #### F-005: PathResolver の Stat/EvalSymlinks 順序

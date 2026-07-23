@@ -145,7 +145,7 @@ flowchart LR
 | F-001 | `openVerifiedIdentity` | open した fd から実測ハッシュを計算し `ExpandedCmdContentHash` と照合、`fstat` で通常ファイル確認、`O_NONBLOCK` を安全網に付与 | AC-01〜04 |
 | F-002 | `atomicMoveFileCore` | 検証済み fd の inode を `linkat`(`/proc/self/fd`) でアンカーし移動、パス名 rename への差し替えを排除 | AC-05, 06 |
 | F-003 | `SaveRecord` 経路 / `dynamicanalysis.store` | 対象ファイルを 1 回だけ open した共有 fd（`io.ReaderAt`）に、ハッシュ計算と全解析を束縛。ライブラリ解析結果は store 境界で実測ハッシュを `lib.Hash` と照合 | AC-07〜09 |
-| F-004 | `VerifyCommandDynLibDeps` | verify 時に `DynLibAnalyzer`（ELF）/ `machodylib`（Mach-O）で依存解決を再実行し、record 済み集合との一致を確認。`envVars` を受け入れる | AC-10, 11 |
+| F-004 | `VerifyCommandDynLibDeps` | verify 時に `DynLibAnalyzer`（ELF）/ `machodylib`（Mach-O）で依存解決を再実行し、record 済み集合との一致を確認 | AC-10, 11 |
 | F-005 | `validateAndCacheCommand` | `EvalSymlinks` を検証より先に実行し、解決済みパスに対して存在・通常ファイル・実行ビットを検証 | AC-12, 13 |
 | F-006 | `verifyInterpreterSymlinkTarget` | 残余リスクを本文書に明記（コード変更なし） | AC-14 |
 
@@ -287,22 +287,21 @@ var ErrLibraryHashKeyMismatch = errors.New("library analysis hash does not match
 
 **採用方式（依存解決の再実行と集合一致）**: verify 時に既存の `DynLibAnalyzer.Analyze`（ELF。内部で `LibraryResolver.Resolve` を呼ぶ）および `machodylib` の依存解決（Mach-O `@rpath`）を再実行し、現在の探索で解決される依存パス集合を得る。これを record 済み集合と比較し、一致しない場合（特に record 時より優先順位の高い位置に新規ライブラリが出現した場合）は verify を失敗させる。探索ロジックは既存の `dynlib` サブパッケージを再利用し再実装しない（DRY）。
 
-**`envVars` の受け入れと消費先の明示（AC-10）**: `VerifyCommandDynLibDeps` はコマンドの実行環境 `envVars` を受け入れる。これによりインターフェースの署名が変わる。
+**`envVars` を署名に追加しない（AC-10 の再解釈）**: 当初 AC-10 は `VerifyCommandDynLibDeps` に実行環境 `envVars` を受け入れさせることを要求していたが、本タスクで再利用する ELF/Mach-O 解決器（`elfdynlib`/`machodylib`）は環境変数を一切参照しない。`$ORIGIN` はバイナリ位置（`parentPath`）から導出され（[resolver.go](../../../internal/dynlib/elfdynlib/resolver.go)）、`LD_LIBRARY_PATH` は「record が無視し runner が消去する」既存ポリシーにより探索経路から意図的に除外され続ける。`envVars` を受け取っても解決関数（`Analyze`）へ渡す先がなく、実質的に未使用の引数になるため、シグネチャへは追加しない（YAGNI）。
 
 ```go
-// 変更前
 VerifyCommandDynLibDeps(cmdPath string) error
-// 変更後
-VerifyCommandDynLibDeps(cmdPath string, envVars map[string]string) error
 ```
 
-> **`envVars` は現状の解決結果には影響しない（正直な設計上の位置づけ）**: 本タスクで再利用する ELF 解決器は環境を一切参照しない。`$ORIGIN` はバイナリ位置（`parentPath`）から導出され（[resolver.go](../../../internal/dynlib/elfdynlib/resolver.go)）、`LD_LIBRARY_PATH` は「record が無視し runner が消去する」既存ポリシーにより探索経路から意図的に除外され続ける。したがって `envVars` は `VerifyCommandDynLibDeps` の境界で受け取り解決層へ渡す（AC-10「受け入れ」を満たす）が、現状の ELF/Mach-O 解決結果は環境非依存である。この設計により、既存 `elfdynlib`/`machodylib` の署名を変えず DRY を保つ。環境が実際に解決へ影響する形（例: 将来 `$LIB`/`$PLATFORM` 等の環境依存置換を扱う）へ拡張する場合は、`Analyze`/`Resolve` の署名変更を伴う別対応とし、本タスクでは `LD_LIBRARY_PATH` を探索に復活させない（セキュリティポリシーの維持）。要件レビューでは、AC-10 の「使用する」を「解決層へ渡す（現状の解決結果は環境非依存）」と解釈することの可否を確認されたい。
+環境が実際に解決へ影響する形（例: 将来 `$LIB`/`$PLATFORM` 等の環境依存置換を扱う）へ拡張する場合は、`Analyze`/`Resolve` および `VerifyCommandDynLibDeps` の署名変更を伴う別タスクとし、その時点で `envVars` を追加する。本タスクでは `LD_LIBRARY_PATH` を探索に復活させない（セキュリティポリシーの維持）。
 
 > **前提（record 環境と verify 環境の同一性）と正当な変化（benign drift）**: 本方式は verify 時の**ライブ・ファイルシステム**に対して探索を再実行する。したがって record を行ったホストと verify を行うホストでライブラリ配置（`/etc/ld.so.cache`、アーキ既定ディレクトリ、`$ORIGIN` 相対の内容）が一致していることが前提となる。`apt upgrade` や `ldconfig` による正当な変化、あるいは record ホストと prod ホストの配置差は、集合不一致として verify 失敗になり得る。運用契約として「システムライブラリ構成を変更したら record を再実行する」ことを明記する。攻撃形（record 済み解決パスより高優先の位置に新規ライブラリが出現）と正当な追加を区別できるよう、集合比較は少なくとも「record 済みの各 soname が同一パスへ解決され続けているか」を核とし、判定理由を構造化エラー（下記）に含める。段階的導入（フラグによるオプトイン）が必要かは要件レビューで確認されたい。
 
-**監査可能性（構造化エラー）**: 拒否理由をオンコール担当が説明できるよう、不一致時のエラーには変化した soname・record 済み解決パス・今回解決されたパス・シャドーイングした探索段階を含める。既存の schema 不一致・record 欠損の soft-fail 判定（`isDeferredHashDirUnavailable` 等）は変更しない。
+**監査可能性（構造化エラー）**: 拒否理由をオンコール担当が説明できるよう、不一致時のエラー（`verification.ErrDynLibDepsResolutionChanged`）には変化した soname・record 済み解決パス・今回解決されたパスを含める。既存の schema 不一致・record 欠損の soft-fail 判定（`isDeferredHashDirUnavailable` 等）は変更しない。
+>
+> **実装時の変更点（比較キーと段階情報）**: `fileanalysis.LibEntry.SOName` は `json:"-"` でレコードに永続化されないため、`LoadRecord` で読み戻した記録済みエントリは常に `SOName` が空になる。したがって記録済み集合と解決済み集合の比較は soname キーではなく **Path** キーで行う（`SOName` は解決済みエントリ側にのみ実際の値が入り、エラーの補助情報として保持する）。また「シャドーイングした探索段階」は本タスクでは含めない。`elfdynlib.DynLibAnalyzer.Analyze` / `machodylib.MachODynLibAnalyzer.Analyze` は解決元の段階（RUNPATH／ld.so.cache／デフォルトパス等）を呼び出し元へ公開しておらず、追加の計装なしには取得できないためである。段階情報が必要になった場合は、両 `Analyze` の返り値拡張を伴う別タスクとする。
 
-> **既存テストへの影響**: 署名変更は広範に波及する。(a) `internal/verification` の直接呼び出しテスト（`manager_test.go`、`manager_macho_test.go`、`shebang_chain_verifier_test.go` 等）。(b) `ManagerInterface`（`interfaces.go`）とモック（`testutil/testify_mocks.go` および `testify_mocks_test.go`）。(c) `.On("VerifyCommandDynLibDeps", …)` / `AssertCalled` のモック期待をもつ `internal/runner` 配下のテスト（`group_executor_test.go`、`integration_dual_defense_test.go`、`e2e_slack_redaction_test.go`、`command_output_capture_test.go` 等）は、testify の引数数不一致で実行時に失敗するため、第 2 引数のマッチャ追加が必要。(d) 呼び出し元 [group_executor.go](../../../internal/runner/group_executor.go)。`group_executor.go` では `finalEnv` を dynlib 検証より前に用意する。
+> **既存テストへの影響（envVars 未追加のため無し）**: `envVars` をシグネチャに追加しない結論としたため、`ManagerInterface`（[interfaces.go](../../../internal/verification/interfaces.go)）・モック（`testutil/testify_mocks.go`）・呼び出し元 [group_executor.go](../../../internal/runner/group_executor.go) の署名は不変であり、これらに起因するテスト波及（`manager_test.go`、`manager_macho_test.go`、`shebang_chain_verifier_test.go`、`group_executor_test.go`、`integration_dual_defense_test.go`、`e2e_slack_redaction_test.go`、`command_output_capture_test.go` 等の testify モック期待の引数数変更）は発生しない。`group_executor.go` の `finalEnv` は引き続き `VerifyCommandShebangInterpreter`（PATH 再解決に実際に環境変数を使う）のためだけに用意される。
 
 ### 3.5 F-005: `PathResolver` の Stat/EvalSymlinks 順序
 
@@ -333,12 +332,12 @@ func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, 
 | `internal/filevalidator/validator.go` | 変更 | `SaveRecord` 起点で共有 fd を開き、shebang/ハッシュ/各解析へ渡す。`analyzeOneLibrary` に `lib.Hash` 照合を追加 | `internal/filevalidator/*_test.go`（SaveRecord / analyze 系） |
 | `internal/dynamicanalysis/store.go`, `interfaces.go` | 変更 | `LoadOrAnalyzeAndStore` の store 境界で `libHash` と実測ハッシュを照合（AC-08 の通常経路） | `internal/dynamicanalysis/*_test.go` |
 | 各解析器（`shebang` / `binaryanalyzer` / ELF・Mach-O syscall / `elfdynlib`）の入力経路 | 変更 | パス名に加え共有 fd（`io.ReaderAt`）入力を受け取れるよう拡張 | 各解析器の `*_test.go` |
-| `internal/verification/manager.go` | 変更 | `VerifyCommandDynLibDeps` に `envVars` を追加し依存解決を再実行、構造化エラーを返す | `manager_test.go` / `manager_macho_test.go` / `shebang_chain_verifier_test.go` |
-| `internal/verification/interfaces.go` | 変更 | `ManagerInterface.VerifyCommandDynLibDeps` の署名変更 | — |
-| `internal/verification/testutil/testify_mocks.go` | 変更 | モックの署名を追従 | `testify_mocks_test.go` |
-| `internal/runner/*_test.go`（モック期待） | 変更 | `.On("VerifyCommandDynLibDeps", …)` / `AssertCalled` に第 2 引数マッチャを追加 | `group_executor_test.go` / `integration_dual_defense_test.go` / `e2e_slack_redaction_test.go` / `command_output_capture_test.go` 等 |
+| `internal/verification/manager.go` | 変更 | `VerifyCommandDynLibDeps(cmdPath string) error`（署名不変）で依存解決を再実行し、record 済み集合と比較して構造化エラーを返す | `manager_test.go` / `manager_macho_test.go` / `shebang_chain_verifier_test.go` |
+| `internal/verification/interfaces.go` | 変更なし | `ManagerInterface.VerifyCommandDynLibDeps` の署名は `(cmdPath string) error` のまま（§3.4：`envVars` は追加しない） | — |
+| `internal/verification/testutil/testify_mocks.go` | 変更なし | モックの署名も不変のため追従不要 | — |
+| `internal/runner/*_test.go`（モック期待） | 変更なし | 呼び出し引数は変わらないため `.On("VerifyCommandDynLibDeps", …)` / `AssertCalled` の変更は不要 | — |
 | `internal/verification/path_resolver.go` | 変更 | `validateAndCacheCommand` を「解決→canonical パスへ `Lstat` 検証」順へ入れ替え | `path_resolver` 系テスト |
-| `internal/runner/group_executor.go` | 変更 | `VerifyCommandDynLibDeps` 呼び出しに `finalEnv` を渡す（`finalEnv` の算出を dynlib 検証前へ移動） | — |
+| `internal/runner/group_executor.go` | 変更なし | `VerifyCommandDynLibDeps` は `cmdPath` のみで呼ばれ続ける。`finalEnv` の算出は引き続き `VerifyCommandShebangInterpreter`（唯一の消費者）の直前に置かれる | — |
 | `docs/tasks/0155.../02_architecture.md` | 追加 | F-006 残余リスクの文書化（本節） | — |
 
 ---
@@ -484,11 +483,11 @@ flowchart TD
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
     classDef problem fill:#ffe6e6,stroke:#d62728,stroke-width:2px,color:#7b0000;
 
-    Start(["VerifyCommandDynLibDeps(cmdPath, envVars)"]) --> Load["LoadRecord(cmdPath)"]
+    Start(["VerifyCommandDynLibDeps(cmdPath)"]) --> Load["LoadRecord(cmdPath)"]
     Load --> Has{"DynLibDeps 記録あり?"}
     Has -->|"No"| Legacy["既存の hasDynamicLibraryDeps 判定<br>（変更なし）"]
     Has -->|"Yes"| HashV["dynlibVerifier.Verify<br>（記録済みハッシュ照合・既存）"]
-    HashV --> Reresolve["依存解決を再実行<br>（elfdynlib / machodylib・envVars を受け渡し）"]
+    HashV --> Reresolve["依存解決を再実行<br>（elfdynlib / machodylib）"]
     Reresolve --> Compare{"解決集合 == 記録集合?"}
     Compare -->|"Yes"| Ok(["成功"])
     Compare -->|"No（高優先位置に新規等）"| Fail(["fail-closed<br>構造化エラー（soname/新旧パス/段階）"])
@@ -542,7 +541,7 @@ flowchart LR
 独立性の高い順・影響範囲の小さい順に段階分けする。
 
 1. **Phase 1（局所・低リスク）**: F-005（`PathResolver` 順序入れ替え）、F-001（`openVerifiedIdentity`）。単一関数の変更で完結し、reason code 追加を伴う。
-2. **Phase 2（署名変更を伴う）**: F-004（`VerifyCommandDynLibDeps` の `envVars` 追加）。インターフェース・モック・呼び出し元・既存テストの追従が必要。
+2. **Phase 2（依存解決の再実行）**: F-004（`VerifyCommandDynLibDeps` での依存解決再実行と集合比較）。署名は不変（`envVars` は追加しない、3.4 節参照）。
 3. **Phase 3（入力経路の拡張）**: F-003（同一バイト列束縛）。各解析器の入力経路拡張を伴うため範囲が広い。
 4. **Phase 4（fd アンカー移動）**: F-002（`linkat` 方式）。Linux 固有処理の追加。
 5. **Phase 5（文書化）**: F-006 の残余リスク記載（本文書で実施済み、実装計画で完了追跡）。

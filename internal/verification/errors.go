@@ -34,7 +34,47 @@ var (
 	// ErrUnsupportedHashAlgorithm is returned when a dep hash uses an algorithm
 	// that the verifier does not support.
 	ErrUnsupportedHashAlgorithm = errors.New("unsupported hash algorithm in dep record")
+	// ErrDynLibAnalyzerNotInitialized is returned when verifyDynLibDepsResolution
+	// is invoked on a Manager whose ELF/Mach-O dependency-resolution analyzers
+	// were not initialized. The sole constructor (newManagerInternal) always sets
+	// both analyzers, so this indicates a Manager was hand-built (e.g. via a
+	// struct literal) instead of going through the constructor; failing loudly
+	// here prevents such mis-initialization from silently producing a fail-open
+	// dependency-resolution check.
+	ErrDynLibAnalyzerNotInitialized = errors.New("dynamic library dependency-resolution analyzer not initialized")
 )
+
+// ErrDynLibDepsResolutionChanged indicates that re-executing dynamic library
+// dependency resolution at verify time produced a different search-path set
+// than the one recorded at record time. This detects search-order shadowing:
+// a library placed at a higher-priority search location (e.g. an
+// $ORIGIN-relative RUNPATH entry or a Mach-O @rpath candidate) after record
+// time, without modifying any recorded library file.
+type ErrDynLibDepsResolutionChanged struct {
+	// SOName and ResolvedPath are set together when a path was resolved live
+	// but was absent from the recorded snapshot (empty if no such path was found).
+	SOName       string
+	ResolvedPath string
+	// RecordedPath is a path that was in the recorded snapshot but no longer
+	// resolves live (empty if every recorded path still resolves). When both
+	// RecordedPath and ResolvedPath are set, they typically describe the same
+	// underlying shadowing event: RecordedPath's soname now resolves to
+	// ResolvedPath instead.
+	RecordedPath string
+}
+
+// Error returns the error message
+func (e *ErrDynLibDepsResolutionChanged) Error() string {
+	soName := e.SOName
+	if soName == "" {
+		soName = "<unknown>"
+	}
+	return fmt.Sprintf("dynamic library dependency resolution changed since record: %s\n"+
+		"  recorded path: %s\n"+
+		"  resolved path: %s\n"+
+		"  please re-run 'record' command if this change is expected",
+		soName, e.RecordedPath, e.ResolvedPath)
+}
 
 // SecurityViolationError is the base error type for security-related violations
 type SecurityViolationError struct {

@@ -1750,6 +1750,107 @@ func TestVerify_FutureSchemaVersion(t *testing.T) {
 		"Actual schema version should be greater than Expected")
 }
 
+// TestVerifyCommandDynLibDeps_SucceedsWhenDependenciesUnchanged verifies that
+// verify succeeds when the live dependency resolution at verify time matches
+// the recorded DynLibDeps snapshot exactly, i.e. the environment has not
+// changed since record.
+func TestVerifyCommandDynLibDeps_SucceedsWhenDependenciesUnchanged(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("ELF test requires Linux")
+	}
+
+	hashDir := tu.SafeTempDir(t)
+	cmdPath := resolveSymlinks(t, "/bin/ls")
+
+	validator := filevalidator.NewTestDynLibValidator(t, hashDir)
+	_, _, err := validator.SaveRecord(cmdPath, false)
+	require.NoError(t, err)
+
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	err = m.VerifyCommandDynLibDeps(cmdPath)
+	assert.NoError(t, err, "verify should succeed when live resolution matches the recorded snapshot")
+}
+
+// TestVerifyCommandDynLibDeps_ReExecutesDependencyResolution verifies that
+// verify re-executes dependency resolution and fails when the live resolution
+// no longer matches the recorded snapshot. Dropping one entry from the
+// recorded DynLibDeps before verify reproduces the simpler half of a
+// search-order-shadowing mismatch: "a library the live resolver finds that
+// record time did not see". TestCompareDynLibDeps_ShadowingCorrelatesBothSides
+// covers the fuller shadowing shape, where a soname's recorded path
+// disappears and a new path for it appears at the same time.
+func TestVerifyCommandDynLibDeps_ReExecutesDependencyResolution(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("ELF test requires Linux")
+	}
+
+	hashDir := tu.SafeTempDir(t)
+	cmdPath := resolveSymlinks(t, "/bin/ls")
+
+	validator := filevalidator.NewTestDynLibValidator(t, hashDir)
+	_, _, err := validator.SaveRecord(cmdPath, false)
+	require.NoError(t, err)
+
+	getter := filevalidator.NewHybridHashFilePathGetter()
+	store, err := fileanalysis.NewStore(hashDir, getter)
+	require.NoError(t, err)
+	resolvedPath, err := common.NewResolvedPath(cmdPath)
+	require.NoError(t, err)
+
+	var droppedPath string
+	err = store.Update(resolvedPath, func(record *fileanalysis.Record) error {
+		if len(record.DynLibDeps) == 0 {
+			return errors.New("test binary must have at least one recorded dependency")
+		}
+		droppedPath = record.DynLibDeps[0].Path
+		record.DynLibDeps = record.DynLibDeps[1:]
+		return nil
+	})
+	require.NoError(t, err)
+
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
+	require.Error(t, verifyErr, "verify must fail when live resolution finds a dependency absent from the recorded snapshot")
+
+	var changedErr *ErrDynLibDepsResolutionChanged
+	require.ErrorAs(t, verifyErr, &changedErr)
+	assert.Equal(t, droppedPath, changedErr.ResolvedPath,
+		"the mismatch should identify the dependency path missing from the recorded set")
+	assert.Empty(t, changedErr.RecordedPath)
+}
+
+// TestCompareDynLibDeps_ShadowingCorrelatesBothSides pins the exact shape of
+// a real search-order-shadowing mismatch: a soname's recorded path disappears
+// from the live resolution while a different path for the same soname
+// appears. compareDynLibDeps must report both halves in the same error
+// (RecordedPath from the disappeared entry, SOName/ResolvedPath from the new
+// one) rather than returning on the first divergence found and discarding
+// the other half, which would leave the audit trail unable to explain what
+// actually happened.
+func TestCompareDynLibDeps_ShadowingCorrelatesBothSides(t *testing.T) {
+	recorded := []fileanalysis.LibEntry{
+		{Path: "/lib/old/libfoo.so", Hash: "sha256:aaaa"},
+	}
+	resolved := []fileanalysis.LibEntry{
+		{SOName: "libfoo.so", Path: "/lib/shadow/libfoo.so", Hash: "sha256:bbbb"},
+	}
+
+	err := compareDynLibDeps(recorded, resolved)
+	require.Error(t, err)
+
+	var changedErr *ErrDynLibDepsResolutionChanged
+	require.ErrorAs(t, err, &changedErr)
+	assert.Equal(t, "/lib/old/libfoo.so", changedErr.RecordedPath,
+		"the disappeared recorded path must be reported")
+	assert.Equal(t, "/lib/shadow/libfoo.so", changedErr.ResolvedPath,
+		"the newly appearing resolved path must be reported alongside it")
+	assert.Equal(t, "libfoo.so", changedErr.SOName)
+}
+
 // TestVerifyGroupFiles_OldSchema_BlocksExecution verifies that VerifyGroupFiles
 // returns ErrGroupVerificationFailed when the stored record for a group file has
 // schema_version < CurrentSchemaVersion.
