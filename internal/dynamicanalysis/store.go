@@ -25,6 +25,7 @@ type store struct {
 	storeDir string
 	analyzer Analyzer
 	pathEnc  *pathencoding.SubstitutionHashEscape
+	fs       safefileio.FileSystem
 }
 
 // New creates a new Store backed by storeDir.
@@ -38,6 +39,7 @@ func New(storeDir string, analyzer Analyzer) (Store, error) {
 		storeDir: storeDir,
 		analyzer: analyzer,
 		pathEnc:  pathencoding.NewSubstitutionHashEscape(),
+		fs:       safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
 	}, nil
 }
 
@@ -58,24 +60,28 @@ func (s *store) LoadOrAnalyzeAndStore(libPath, libHash string) (*Result, error) 
 		return nil, loadErr
 	}
 
-	// Analysis not found: run fresh analysis.
-	result, err := s.analyzer.AnalyzeLibrary(libPath)
+	// Open libPath once: verify its actual content hash matches the caller's
+	// hash key, then reuse this same fd for analysis, so the verification and
+	// the analysis are guaranteed to observe identical content — closing the
+	// TOCTOU window a check against one open and analysis against a separate,
+	// later open would leave (the file could be swapped in between).
+	file, err := s.fs.SafeOpenFile(libPath, os.O_RDONLY, 0)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open library file %s: %w", libPath, err)
 	}
+	defer func() { _ = file.Close() }()
 
-	// Verify libPath's actual content hash still matches the caller's hash
-	// key before persisting. Analyzer.AnalyzeLibrary reopens libPath on its
-	// own and does not report what it actually hashed, so a mismatch here
-	// means the file changed between whenever libHash was determined and
-	// this analysis; the result must not be recorded under that stale key
-	// (fail-closed).
-	actualHash, err := computeLibraryContentHash(libPath)
+	actualHash, err := computeContentHash(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash library file %s: %w", libPath, err)
 	}
 	if actualHash != libHash {
 		return nil, fmt.Errorf("%w: %s", ErrLibraryHashKeyMismatch, libPath)
+	}
+
+	result, err = s.analyzer.AnalyzeLibrary(file, libPath)
+	if err != nil {
+		return nil, err
 	}
 
 	// Save result to disk; failure is non-fatal but surfaced as a warning.
@@ -87,18 +93,11 @@ func (s *store) LoadOrAnalyzeAndStore(libPath, libHash string) (*Result, error) 
 	return result, nil
 }
 
-// computeLibraryContentHash computes the SHA256 hash of the file at libPath
-// in the same "sha256:<hex>" format used for LibEntry.Hash throughout the
-// codebase (see elfdynlib.computeFileHash and machodylib.computeFileHash,
-// which this duplicates rather than imports to avoid a circular dependency).
-func computeLibraryContentHash(libPath string) (string, error) {
-	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
-	f, err := fs.SafeOpenFile(libPath, os.O_RDONLY, 0)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = f.Close() }()
-
+// computeContentHash computes the SHA256 hash of f's content in the same
+// "sha256:<hex>" format used for LibEntry.Hash throughout the codebase (see
+// elfdynlib.computeFileHash and machodylib.computeFileHash, which this
+// duplicates rather than imports to avoid a circular dependency).
+func computeContentHash(f safefileio.File) (string, error) {
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err

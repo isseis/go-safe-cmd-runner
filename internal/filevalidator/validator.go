@@ -757,13 +757,18 @@ func (v *Validator) SetDynamicLibAnalysisStore(store dynamicanalysis.Store) {
 	}
 }
 
-// AnalyzeLibrary performs symbol and syscall analysis for the library at libPath.
-// It implements dynamicanalysis.Analyzer so the Validator can serve as the
-// analysis back-end for the dynamicanalysis store.
-func (v *Validator) AnalyzeLibrary(libPath string) (*dynamicanalysis.Result, error) {
+// AnalyzeLibrary performs symbol and syscall analysis for the library already
+// open as file (an fd opened on libPath by dynamicanalysis.Store, which has
+// verified file's actual content hash against its caller's hash key before
+// calling this method). It implements dynamicanalysis.Analyzer so the
+// Validator can serve as the analysis back-end for the dynamicanalysis
+// store. Reading file here rather than reopening libPath is what makes that
+// hash verification meaningful: analysis and verification observe the exact
+// same content.
+func (v *Validator) AnalyzeLibrary(file safefileio.File, libPath string) (*dynamicanalysis.Result, error) {
 	soName := filepath.Base(libPath)
 	lib := fileanalysis.LibEntry{SOName: soName, Path: libPath}
-	return v.analyzeOneLibrary(lib)
+	return v.analyzeOneLibrary(lib, file)
 }
 
 // analyzeOneLibrary runs symbol and syscall analysis for one dynamic library.
@@ -771,48 +776,55 @@ func (v *Validator) AnalyzeLibrary(libPath string) (*dynamicanalysis.Result, err
 // Non-fatal issues (e.g., non-ELF format, unsupported architecture) are recorded
 // as warnings in the returned result.
 //
-// When lib.Hash is non-empty (the direct, store-less call path — see
-// loadOrAnalyzeLibrary), the file's actual content hash is computed here and
-// compared against lib.Hash before running any analysis; a mismatch returns
-// ErrLibraryHashKeyMismatch (fail-closed) instead of analyzing content that
-// may no longer correspond to the caller's expected hash key. When called
-// through the dynamicanalysis store (lib.Hash empty at this point — SOName
-// and Hash are not passed across that interface boundary), the equivalent
-// check is performed by store.LoadOrAnalyzeAndStore instead.
-func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (*dynamicanalysis.Result, error) {
+// file, when non-nil, is an fd already opened on lib.Path (see AnalyzeLibrary)
+// that every step below reads from instead of reopening lib.Path, so hash
+// calculation and content analysis cannot observe different content. When
+// file is nil (the direct, store-less call path — see loadOrAnalyzeLibrary),
+// lib.Path is opened once here and shared across the same steps.
+//
+// When lib.Hash is non-empty, the file's actual content hash is computed
+// from that single shared read and compared against lib.Hash before running
+// any analysis; a mismatch returns ErrLibraryHashKeyMismatch (fail-closed)
+// instead of analyzing content that may no longer correspond to the
+// caller's expected hash key. When called through the dynamicanalysis store
+// (lib.Hash empty at this point — SOName and Hash are not passed across
+// that interface boundary), the equivalent check has already been performed
+// by store.LoadOrAnalyzeAndStore against the same file before it called
+// AnalyzeLibrary.
+func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry, file safefileio.File) (*dynamicanalysis.Result, error) {
 	result := &dynamicanalysis.Result{}
 
-	// Open the file first to verify it exists and is within the analysis size limit.
-	// Both conditions must be checked before running any analysis to fail fast.
-	f, openErr := v.fileSystem.SafeOpenFile(lib.Path, os.O_RDONLY, 0)
-	if openErr != nil {
-		return nil, fmt.Errorf("failed to open library file %s: %w", lib.SOName, openErr)
+	if file == nil {
+		f, openErr := v.fileSystem.SafeOpenFile(lib.Path, os.O_RDONLY, 0)
+		if openErr != nil {
+			return nil, fmt.Errorf("failed to open library file %s: %w", lib.SOName, openErr)
+		}
+		defer func() { _ = f.Close() }()
+		file = f
 	}
-	fi, statErr := f.Stat()
+
+	// Verify the file exists and is within the analysis size limit before
+	// running any analysis, to fail fast.
+	fi, statErr := file.Stat()
 	if statErr != nil {
-		_ = f.Close()
 		return nil, fmt.Errorf("failed to stat library file %s: %w", lib.SOName, statErr)
 	}
 	if fi.Size() > maxFileSize {
-		_ = f.Close()
 		return nil, fmt.Errorf("%w: %s", errLibraryFileTooLarge, lib.SOName)
 	}
 
 	if lib.Hash != "" {
-		actualHash, hashErr := v.algorithm.Sum(f)
-		_ = f.Close()
+		actualHash, hashErr := v.algorithm.Sum(file)
 		if hashErr != nil {
 			return nil, fmt.Errorf("failed to hash library file %s: %w", lib.SOName, hashErr)
 		}
 		if fmt.Sprintf("%s:%s", v.algorithm.Name(), actualHash) != lib.Hash {
 			return nil, fmt.Errorf("%w: %s", ErrLibraryHashKeyMismatch, lib.SOName)
 		}
-	} else {
-		_ = f.Close()
 	}
 
 	if v.binaryAnalyzer != nil {
-		output := v.binaryAnalyzer.AnalyzeNetworkSymbols(lib.Path, "")
+		output := v.binaryAnalyzer.AnalyzeNetworkSymbolsFromReader(file, lib.Path, "")
 		dynamicLoadSymbols := convertDetectedSymbols(output.DynamicLoadSymbols)
 		switch output.Result {
 		case binaryanalyzer.NetworkDetected, binaryanalyzer.NoNetworkSymbols:
@@ -832,7 +844,7 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry) (*dynamicanalys
 		return result, nil
 	}
 
-	elfFile, openErr := openELFFile(v.fileSystem, lib.Path)
+	elfFile, openErr := openELFFileFromReader(file)
 	if openErr != nil {
 		if !errors.Is(openErr, errNotELF) {
 			result.Warnings = append(result.Warnings,
@@ -921,7 +933,7 @@ func (v *Validator) loadOrAnalyzeLibrary(lib fileanalysis.LibEntry) (*dynamicana
 	if v.dynamicLibAnalysisStore != nil {
 		result, err = v.dynamicLibAnalysisStore.LoadOrAnalyzeAndStore(lib.Path, lib.Hash)
 	} else {
-		result, err = v.analyzeOneLibrary(lib)
+		result, err = v.analyzeOneLibrary(lib, nil)
 	}
 	if err != nil {
 		return nil, err

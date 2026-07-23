@@ -325,14 +325,17 @@
   - `machodylib.MachODynLibAnalyzer.Analyze` → `AnalyzeFromReader` を追加（同上）
 - [x] ハッシュ計算実装変更:
   - `saveRecordCore` で共有 fd から `v.algorithm.Sum(file)` により実測ハッシュを計算（専用ラッパー関数は導入せず直接呼び出し）
-- [x] `analyzeOneLibrary` 実装変更:
-  - 解析用 fd から実測ハッシュを計算（`lib.Hash` が非空の場合のみ。store 経由の呼び出しでは `lib.Hash` が空になるため、この経路では機能しない — 設計通り）
-  - `lib.Hash` との照合を追加
+- [x] `analyzeOneLibrary` 実装変更(**レビュー後の修正**: 初回実装ではハッシュ計算用の open と `binaryAnalyzer`/ELF syscall 解析用の open が別々のままで、「解析に用いた読み取りから実測ハッシュを計算する」という要求を満たしていなかった。レビューで指摘され、`file safefileio.File` 引数（nil 許容）を追加し、非 nil の場合はハッシュ計算・`binaryAnalyzer.AnalyzeNetworkSymbolsFromReader`・`openELFFileFromReader` の全てが同一 fd を読むよう修正した):
+  - `file == nil`（store 経由なしの直接呼び出し。呼び出し元 `loadOrAnalyzeLibrary`）の場合は `lib.Path` を 1 回だけ open し、以降の全解析で共有
+  - `file != nil`（store 経由。呼び出し元は下記 `LoadOrAnalyzeAndStore`）の場合はその fd を共有
+  - 共有 fd から実測ハッシュを計算（`lib.Hash` が非空の場合のみ照合。store 経由では `AnalyzeLibrary` の `LibEntry` 構築時に `Hash` を設定しないため、この照合はスキップされ、代わりに `LoadOrAnalyzeAndStore` 側の照合に委ねる）
   - 不一致時に `ErrLibraryHashKeyMismatch`（`filevalidator` パッケージ内で新規定義）を return
+- [x] `dynamicanalysis.Analyzer.AnalyzeLibrary` シグネチャ変更(**レビュー後の追加変更**): `AnalyzeLibrary(libPath string)` → `AnalyzeLibrary(file safefileio.File, libPath string)`。実装は `filevalidator.Validator` のみ、呼び出し元は `LoadOrAnalyzeAndStore` のみのため影響範囲は小さい
 - [x] `LoadOrAnalyzeAndStore`（store 境界）実装変更:
-  - 期待ハッシュ `libHash` と実測ハッシュ（`computeLibraryContentHash` で独立に算出）を照合
-  - 不一致時に解析結果を記録せず `ErrLibraryHashKeyMismatch`（`dynamicanalysis` パッケージ内で新規定義。`filevalidator` からの import は循環参照になるため、パッケージごとに別個の sentinel error を定義）return
-- [x] 既存テスト全て通過（fake なパス/ハッシュに依存していた `dynamicanalysis`/`filevalidator` のテストは、実ファイルと実ハッシュを使うよう更新）
+  - `libPath` を 1 回だけ open し、その fd から実測ハッシュを計算して期待ハッシュ `libHash` と照合
+  - 不一致時は `AnalyzeLibrary` を呼ばずに解析結果を記録しない状態で `ErrLibraryHashKeyMismatch`（`dynamicanalysis` パッケージ内で新規定義。`filevalidator` からの import は循環参照になるため、パッケージごとに別個の sentinel error を定義）を return
+  - 一致時は同じ fd を `s.analyzer.AnalyzeLibrary(file, libPath)` に渡して解析を実行(ハッシュ照合と解析が同一の読み取りに対応することを保証)
+- [x] 既存テスト全て通過（fake なパス/ハッシュに依存していた `dynamicanalysis`/`filevalidator` のテストは、実ファイルと実ハッシュを使うよう更新。加えて `TestAnalyzeOneLibrary_SharesReadForHashAndAnalysis`・`TestStore_LoadOrAnalyzeAndStore_AnalysisReadsHashVerifiedContent` を新規追加し、ハッシュ照合と解析が同一 fd/同一内容に対応することを検証）
 
 ### PR-3 作成ポイント: shared fd binding for record content consistency
 
@@ -519,8 +522,8 @@
 
 **検証テスト**:
 - テスト場所: `internal/filevalidator/validator_library_analysis_test.go` (新規テスト追加) と `internal/dynamicanalysis/store_test.go` (新規テスト追加)
-- テスト名: `TestAnalyzeOneLibrary_HashKeyMismatchError`, `TestStore_LoadOrAnalyzeAndStore_HashKeyMismatchError`
-- 検証内容: ハッシュキー不一致時に `ErrLibraryHashKeyMismatch` を返す
+- テスト名: `TestAnalyzeOneLibrary_HashKeyMismatchError`, `TestStore_LoadOrAnalyzeAndStore_HashKeyMismatchError`, `TestAnalyzeOneLibrary_SharesReadForHashAndAnalysis`, `TestStore_LoadOrAnalyzeAndStore_AnalysisReadsHashVerifiedContent`
+- 検証内容: ハッシュキー不一致時に `ErrLibraryHashKeyMismatch` を返す。加えて、ハッシュ照合と解析が同一 fd・同一内容から行われることを検証(前者2つは不一致時のfail-closed、後者2つは一致時に共有read/同一内容を確認)
 
 ---
 

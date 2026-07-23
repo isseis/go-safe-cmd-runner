@@ -146,7 +146,7 @@ func TestAnalyzeOneLibrary_networkSymbolDetected(t *testing.T) {
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libfoo.so.1",
 		Path:   requireWithSocketELF(t),
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.SymbolAnalysis)
@@ -166,7 +166,7 @@ func TestAnalyzeOneLibrary_networkSyscallDetected(t *testing.T) {
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libbar.so.1",
 		Path:   requireWithSocketELF(t),
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.SyscallAnalysis)
@@ -190,7 +190,7 @@ func TestAnalyzeOneLibrary_preservesArgEvalResults(t *testing.T) {
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libjit.so.1",
 		Path:   requireWithSocketELF(t),
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.SyscallAnalysis)
@@ -209,7 +209,7 @@ func TestAnalyzeOneLibrary_nonNetwork(t *testing.T) {
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libbaz.so.1",
 		Path:   requireWithSocketELF(t),
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	// No network symbols detected; SymbolAnalysis may still be populated with empty data.
@@ -228,7 +228,7 @@ func TestAnalyzeOneLibrary_missingFileReturnsError(t *testing.T) {
 	_, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libmissing.so.1",
 		Path:   filepath.Join(safeTempDir(t), "missing.so"),
-	})
+	}, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to open library file")
 }
@@ -239,7 +239,7 @@ func TestAnalyzeOneLibrary_nonELFLibrarySkipsSyscallScan(t *testing.T) {
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libscript.so.1",
 		Path:   elfTestDataPath(t, "script.sh"),
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Nil(t, result.SyscallAnalysis)
@@ -259,9 +259,35 @@ func TestAnalyzeOneLibrary_HashKeyMismatchError(t *testing.T) {
 		SOName: "libfoo.so.1",
 		Path:   elfPath,
 		Hash:   realFileHash(t, elfPath) + "00", // guaranteed not to match
-	})
+	}, nil)
 	require.ErrorIs(t, err, ErrLibraryHashKeyMismatch)
 	assert.Equal(t, 0, bin.calls, "no analysis should run once the hash key mismatch is detected")
+}
+
+// TestAnalyzeOneLibrary_SharesReadForHashAndAnalysis verifies that, on the
+// direct store-less call path (file == nil, lib.Hash set), analyzeOneLibrary
+// opens lib.Path exactly once and reuses that single fd for both the
+// hash-key verification and the subsequent content analysis. This
+// structurally rules out a TOCTOU window between a verification read and a
+// separate, later analysis read.
+func TestAnalyzeOneLibrary_SharesReadForHashAndAnalysis(t *testing.T) {
+	v := validatorWithTempHashDir(t, ValidatorConfig{
+		BinaryAnalyzer:  &libraryTestBinaryAnalyzer{output: binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}},
+		SyscallAnalyzer: &libraryTestSyscallAnalyzer{},
+	})
+	counting := newCountingFileSystem(v.fileSystem)
+	v.fileSystem = counting
+
+	elfPath := requireWithSocketELF(t)
+	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
+		SOName: "libfoo.so.1",
+		Path:   elfPath,
+		Hash:   realFileHash(t, elfPath),
+	}, nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 1, counting.opens[elfPath],
+		"analyzeOneLibrary must open lib.Path exactly once and share that fd across hash verification and content analysis")
 }
 
 func TestAnalyzeOneLibrary_unsupportedArchSkipsWarning(t *testing.T) {
@@ -270,7 +296,7 @@ func TestAnalyzeOneLibrary_unsupportedArchSkipsWarning(t *testing.T) {
 	result, err := v.analyzeOneLibrary(fileanalysis.LibEntry{
 		SOName: "libfoo.so.1",
 		Path:   requireWithSocketELF(t),
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Nil(t, result.SyscallAnalysis)
@@ -502,7 +528,7 @@ func TestValidatorLibraryAnalyzer_Analyze_FileTooLargeReturnsError(t *testing.T)
 		SOName: "libbig.so.1",
 		Path:   requireWithSocketELF(t),
 	}
-	_, err := v.analyzeOneLibrary(lib)
+	_, err := v.analyzeOneLibrary(lib, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "library file too large")
 }

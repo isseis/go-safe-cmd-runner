@@ -11,6 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -43,9 +44,34 @@ type mockAnalyzer struct {
 	callArgs []string
 }
 
-func (m *mockAnalyzer) AnalyzeLibrary(libPath string) (*dynamicanalysis.Result, error) {
+func (m *mockAnalyzer) AnalyzeLibrary(_ safefileio.File, libPath string) (*dynamicanalysis.Result, error) {
 	m.callArgs = append(m.callArgs, libPath)
 	return m.result, m.err
+}
+
+// contentCapturingAnalyzer is a test double for Analyzer that records the
+// exact bytes it reads from the fd LoadOrAnalyzeAndStore passes it. It reads
+// via ReadAt at offset 0 (not the sequential Reader), matching how the real
+// analyzers in this codebase read a shared fd: LoadOrAnalyzeAndStore already
+// consumed the sequential read position computing the verification hash
+// before calling AnalyzeLibrary, so a conforming Analyzer must not depend on
+// that position either.
+type contentCapturingAnalyzer struct {
+	capturedContent []byte
+	result          *dynamicanalysis.Result
+}
+
+func (a *contentCapturingAnalyzer) AnalyzeLibrary(file safefileio.File, _ string) (*dynamicanalysis.Result, error) {
+	fi, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	buf := make([]byte, fi.Size())
+	if _, err := file.ReadAt(buf, 0); err != nil {
+		return nil, err
+	}
+	a.capturedContent = buf
+	return a.result, nil
 }
 
 func newTestStore(t *testing.T, analyzer dynamicanalysis.Analyzer) dynamicanalysis.Store {
@@ -162,12 +188,30 @@ func TestStore_LoadOrAnalyzeAndStore_HashKeyMismatchError(t *testing.T) {
 
 	_, err = store.LoadOrAnalyzeAndStore(libPath, wrongHash)
 	require.ErrorIs(t, err, dynamicanalysis.ErrLibraryHashKeyMismatch)
+	assert.Empty(t, analyzer.callArgs, "the hash check runs before AnalyzeLibrary; analysis must not run on a mismatch")
 
 	// The mismatched result must not be persisted: a later call with the
 	// correct hash must still trigger a fresh analysis, not reuse anything
 	// written by the failed call above.
 	_, err = store.LoadAnalysis(libPath, wrongHash)
 	assert.ErrorIs(t, err, dynamicanalysis.ErrAnalysisNotFound)
+}
+
+// TestStore_LoadOrAnalyzeAndStore_AnalysisReadsHashVerifiedContent verifies
+// that the fd passed to Analyzer.AnalyzeLibrary carries the exact content
+// that was just hash-verified against libHash, i.e. that verification and
+// analysis are bound to a single read rather than two independent opens
+// that a file swap could make disagree.
+func TestStore_LoadOrAnalyzeAndStore_AnalysisReadsHashVerifiedContent(t *testing.T) {
+	const content = "lib-content-verified-flow"
+	analyzer := &contentCapturingAnalyzer{result: &dynamicanalysis.Result{}}
+	store := newTestStore(t, analyzer)
+
+	libPath, libHash := writeLibFile(t, content)
+
+	_, err := store.LoadOrAnalyzeAndStore(libPath, libHash)
+	require.NoError(t, err)
+	assert.Equal(t, content, string(analyzer.capturedContent))
 }
 
 // TestStore_LoadAnalysis_NotFound verifies that LoadAnalysis returns
