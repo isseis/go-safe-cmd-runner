@@ -814,11 +814,17 @@ func (v *Validator) analyzeOneLibrary(lib fileanalysis.LibEntry, file safefileio
 	}
 
 	if lib.Hash != "" {
-		actualHash, hashErr := v.algorithm.Sum(file)
+		// lib.Hash is always produced by elfdynlib/machodylib's computeFileHash,
+		// which hardcodes a "sha256:" prefix regardless of v.algorithm (see
+		// elfdynlib.hashPrefix). Compare against a SHA-256 digest with that same
+		// hardcoded prefix rather than v.algorithm.Name(), so this check remains
+		// correct even when v.algorithm is configured to a non-SHA256 algorithm
+		// (e.g. a mock in tests).
+		actualHash, hashErr := (&SHA256{}).Sum(file)
 		if hashErr != nil {
 			return nil, fmt.Errorf("failed to hash library file %s: %w", lib.SOName, hashErr)
 		}
-		if fmt.Sprintf("%s:%s", v.algorithm.Name(), actualHash) != lib.Hash {
+		if fmt.Sprintf("sha256:%s", actualHash) != lib.Hash {
 			return nil, fmt.Errorf("%w: %s", ErrLibraryHashKeyMismatch, lib.SOName)
 		}
 	}
