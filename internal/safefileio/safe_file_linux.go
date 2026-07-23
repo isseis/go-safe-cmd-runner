@@ -8,11 +8,17 @@
 package safefileio
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // openat2 constants for RESOLVE flags
@@ -87,6 +93,112 @@ func openat2(dirfd int, pathname string, how *openHow) (int, error) {
 	}
 
 	return int(fd), nil //nolint:gosec // G115: fd is a valid file descriptor returned by the kernel, conversion is safe
+}
+
+// maxLinkatAttempts bounds retries when a randomly generated temporary link
+// name collides with an existing entry (EEXIST). With tmpNameRandBytes of
+// entropy, a real collision is astronomically unlikely; this only guards
+// against pathological environments and keeps the loop from running forever.
+const maxLinkatAttempts = 10
+
+// tmpNameRandBytes is the number of random bytes used to build a temporary
+// link name (see randomTempName).
+const tmpNameRandBytes = 12
+
+// generateTempLinkName produces the name used for the temporary hard link in
+// moveFileAnchored. It is a package variable (rather than a direct call to
+// randomTempName) so tests can force deterministic name collisions to
+// exercise the EEXIST retry path.
+var generateTempLinkName = randomTempName
+
+// moveFileAnchored moves the inode referenced by srcFile to absDst without
+// resolving absSrc by path name at move time. Invariant: whenever a file
+// ends up at absDst, it is always the exact inode that srcFile refers to; if
+// that identity cannot be established, the function fails closed instead of
+// moving anything.
+//
+// It hard-links the fd's inode (via /proc/self/fd, which requires
+// AT_SYMLINK_FOLLOW to dereference the magic symlink to the real inode) into
+// absDst's directory under a random temporary name, renames the temporary
+// name to absDst within the same directory (atomic replace), and then
+// unlinks absSrc.
+//
+// Note on what happens if absSrc is replaced between SafeOpenFile and this
+// call: the Linux kernel refuses to give a new name via /proc/self/fd to a
+// regular (non-O_TMPFILE) file once its last directory entry has been
+// removed (nlink reaches 0) -- see may_linkat in the kernel. Replacing
+// absSrc's directory entry (unlink+recreate, or renaming another file over
+// it) drops the originally verified inode's nlink to 0, so the hard-link
+// step below fails with ENOENT before any rename or unlink runs. The
+// practical effect is fail-closed by construction: a replaced source can
+// never reach absDst, but the mechanism does not recover the pre-replacement
+// content either -- it errors out. See the design document's rationale on
+// this kernel constraint for the full explanation.
+//
+// On any failure, no file is left at absDst and any temporary hard link
+// created along the way is removed (fail-closed, no partial move).
+func moveFileAnchored(srcFile File, absSrc, absDst string) error {
+	osFile, ok := srcFile.(*os.File)
+	if !ok {
+		return fmt.Errorf("%w: source file handle does not support fd-anchored move", ErrInvalidFilePath)
+	}
+
+	tmpPath, err := linkFileToTempName(osFile, filepath.Dir(absDst))
+	if err != nil {
+		return fmt.Errorf("failed to hard-link source inode into destination directory: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, absDst); err != nil {
+		if rmErr := os.Remove(tmpPath); rmErr != nil {
+			slog.Warn("failed to remove leaked temporary hard link", slog.Any("error", rmErr), slog.String("path", tmpPath))
+		}
+		return fmt.Errorf("failed to rename temporary hard link to destination: %w", err)
+	}
+
+	if err := os.Remove(absSrc); err != nil {
+		return fmt.Errorf("failed to remove original source path after move: %w", err)
+	}
+
+	return nil
+}
+
+// linkFileToTempName hard-links the inode referenced by srcFile into dstDir
+// under a random, previously-unused name and returns the full path of the new
+// link. Using /proc/self/fd/<n> as the link source (with AT_SYMLINK_FOLLOW)
+// binds the link to the fd's inode rather than to any path name.
+func linkFileToTempName(srcFile *os.File, dstDir string) (string, error) {
+	procPath := fmt.Sprintf("/proc/self/fd/%d", srcFile.Fd())
+
+	for range maxLinkatAttempts {
+		name, err := generateTempLinkName()
+		if err != nil {
+			return "", err
+		}
+		tmpPath := filepath.Join(dstDir, name)
+
+		err = unix.Linkat(unix.AT_FDCWD, procPath, unix.AT_FDCWD, tmpPath, unix.AT_SYMLINK_FOLLOW)
+		switch {
+		case err == nil:
+			return tmpPath, nil
+		case errors.Is(err, unix.EEXIST):
+			continue
+		default:
+			return "", err
+		}
+	}
+
+	return "", fmt.Errorf("%w: after %d attempts", ErrTempLinkNameExhausted, maxLinkatAttempts)
+}
+
+// randomTempName returns a name unlikely to collide with an existing
+// directory entry, prefixed so it is recognizable as safefileio-internal
+// state if ever left behind.
+func randomTempName() (string, error) {
+	var b [tmpNameRandBytes]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("failed to generate random temporary name: %w", err)
+	}
+	return ".safefileio-move-" + hex.EncodeToString(b[:]), nil
 }
 
 // safeOpenFileInternal implements Linux-specific file opening with openat2 support.

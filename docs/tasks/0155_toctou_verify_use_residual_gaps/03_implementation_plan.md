@@ -165,10 +165,10 @@
 
 #### F-002 テスト戦略
 
-- **正常系**（AC-06）: 改ざんなしの移動が成功、内容保持。すべてのテストファイルは `t.TempDir()` で自動的にクリーンアップされる。
-- **異常系（AC-05）fd アンカー検証**:
-  - 検証後にソースパスを別 inode へ差し替えても、移動されるのが検証済み inode であることを確認（fd アンカー効果）。
-  - 注入手法：SafeOpenFile で fd を取得後、ソースパスの内容を別ファイルで置換してから atomicMoveFileCore を呼び出す。移動先に到達したファイルの inode が SafeOpenFile 時点のものと一致することを fstat で確認。
+- **正常系**（AC-05, AC-06）: 改ざんなしの移動が成功、内容保持。移動先の inode が SafeOpenFile 時点で取得した fd の inode と一致すること（fd アンカー機構が正しく動作していること）を確認する。すべてのテストファイルは `t.TempDir()` で自動的にクリーンアップされる。
+- **異常系（AC-06）ソース差し替えによる fail-closed（実装時に AC-05 から再割当て）**:
+  - **実装時判明の帰結**（02_architecture.md 3.2 節・01_requirements.md AC-05 参照）: Linux カーネルは `O_TMPFILE` 以外の方法で nlink が 0 になった（完全に unlink 済みの）ファイルを `/proc/self/fd` 経由で再リンクすることを許可しない。したがって、fd 取得後にソースパスを別 inode へ差し替える（検証済み inode の nlink が 0 になる）と、`linkat` 自体が `ENOENT` で失敗し、rename は行われない。当初の設計意図（差し替え後も検証済み inode への到達に成功する）ではなく、「差し替えられた場合は必ず fail-closed で中断する」ことを検証する試験に改めた。
+  - 注入手法：SafeOpenFile で fd を取得後、ソースパスを削除して別ファイルを同名で作成し（検証済み inode の nlink を 0 にする）、`moveFileAnchored` を呼び出す。エラーが返り、移動先にファイルが作成されないこと、元ソースパス（差し替え後の内容）が変更されず残ることを確認する。
 - **異常系（クリーンアップ検証）**:
   - linkat 後の rename 失敗で defer による一時リンク unlink が実行されること。
   - 一時名の EEXIST エラーが適切に返されること。
@@ -358,13 +358,15 @@
 
 **ファイル**: `internal/safefileio/safe_file.go`
 
-- [ ] `atomicMoveFileCore` 実装変更:
+- [x] `atomicMoveFileCore` 実装変更:
   - 検証済み fd から `linkat(/proc/self/fd/<n>, dstdir/tmpname, AT_SYMLINK_FOLLOW)` を実行
   - 一時名からの `os.Rename(tmpname, finalname)` を同一ディレクトリ内で実行
   - 失敗経路で defer による一時リンク unlink
   - ソースパスの unlink（移動完了後）
-- [ ] 移動先最終検証の実装
-- [ ] 既存テスト全て通過
+  - 実装は `internal/safefileio/safe_file_linux.go`（`moveFileAnchored`/`linkFileToTempName`/`randomTempName`）に配置し、`atomicMoveFileCore`（`safe_file.go`）からプラットフォーム非依存に呼び出す。非 Linux 版は `safe_file_nonlinux.go` で従来の `os.Rename` にフォールバック
+  - **実装時判明（02_architecture.md 3.2 節・01_requirements.md AC-05 参照）**: ソースパスが検証後に差し替えられ検証済み inode の nlink が 0 になった場合、Linux カーネルの制約（`O_TMPFILE` 以外の unlink 済みファイルは `/proc/self/fd` 経由で再リンクできない）により `linkat` は `ENOENT` で失敗する。これは fail-closed（AC-06）として扱い、当初 AC-05 が想定した「差し替え後も検証済み inode への到達に成功する」動作は行わない
+- [x] 移動先最終検証の実装（既存の `dstFile` 検証ロジックを維持。fd アンカー方式への変更後も move 後の `SafeOpenFile`+`canSafelyAccessFile` による最終検証は不変）
+- [x] 既存テスト全て通過
 
 ### PR-4 作成ポイント: fd-anchored atomic file movement
 
@@ -416,8 +418,8 @@
 | **AC-02** | test | `internal/runner/base/risk/*_test.go` に新規テスト追加。path を FIFO に差し替えた場合に `ErrIdentityNotRegular` を返し、`O_NONBLOCK` が open ブロックを防ぎ、`fstat` による検査が有効であることを確認 | テスト通過 |
 | **AC-03** | test | `internal/runner/base/executor/stagefromfd_test.go` の既存テスト `openVerifiedIdentityForTest` 等のテストが変更前と同じ結果を返すことを確認（回帰防止） | 既存テスト全て通過 |
 | **AC-04** | test | `internal/runner/base/risk/*_test.go` に新規テスト追加。`ErrIdentityHashMismatch` / `ErrIdentityNotRegular` が適切に `ReasonIdentityHashMismatch` / `ReasonIdentityNotRegular` に対応付けられ、audit ログに記録されることを確認 | テスト通過 |
-| **AC-05** | test | `internal/safefileio/*_test.go` に新規テスト追加。検証後に source path を別 inode へ差し替えても、移動されるのが検証済み inode であること（fd アンカー）を確認 | テスト通過 |
-| **AC-06** | test | 既存テスト `AtomicMoveFile` 系のテストが成功し、改ざんなし時の移動が fail-closed 後退を持たないことを確認 | 既存テスト全て通過 |
+| **AC-05** | test | `internal/safefileio/*_test.go` に新規テスト追加。改ざんがない場合に移動先の inode が SafeOpenFile 時点の fd の inode と一致すること（fd アンカー機構）を確認。差し替え時の帰結（fail-closed）は AC-06 で検証（01_requirements.md AC-05 のカーネル制約に関する記述を参照） | テスト通過 |
+| **AC-06** | test | `internal/safefileio/*_test.go` に新規テスト追加。検証後に source path を別 inode へ差し替えると `linkat` が `ENOENT` で失敗し、rename が行われずエラーが返る（fail-closed）ことを確認。加えて既存テスト `AtomicMoveFile` 系が成功し、改ざんなし時の移動が後退を持たないことを確認 | テスト通過・既存テスト全て通過 |
 | **AC-07** | test | `internal/filevalidator/*_test.go` に新規テスト追加。`SaveRecord` で共有 fd が各解析へ束縛され、読み取り後の差し替えモデルで `ContentHash` と解析結果が同一 inode の同一読み取りに対応することを確認 | テスト通過 |
 | **AC-08** | test | `internal/filevalidator/*_test.go` と `internal/dynamicanalysis/*_test.go` に新規テスト追加。`analyzeOneLibrary` と `LoadOrAnalyzeAndStore` (store 境界) でハッシュキー不一致時に `ErrLibraryHashKeyMismatch` を返すことを確認 | テスト通過 |
 | **AC-09** | test | 既存テスト `SaveRecord` 系のテストが変更前と同じ record を生成すること（回帰防止）を確認 | 既存テスト全て通過 |
@@ -482,24 +484,25 @@
 ### AC-05: fd アンカー移動による同一性保証
 
 **実装ステップ**:
-- PR-4 での atomicMoveFileCore 実装変更
+- PR-4 での atomicMoveFileCore 実装変更（`moveFileAnchored`、Linux 実装は `safe_file_linux.go`）
 
 **検証テスト**:
-- テスト場所: `internal/safefileio/safe_file_test.go` (新規テスト追加)
-- テスト名: `TestAtomicMoveFileCore_InodeAnchorAfterSourceReplacement`
-- 検証内容: 検証後にソースパスを別 inode へ差し替えても、移動されるのが検証済み inode である
+- テスト場所: `internal/safefileio/safe_file_linux_test.go` (新規テスト追加)
+- テスト名: `TestMoveFileAnchored_RegressionSuccessfulMove`
+- 検証内容: 改ざんがない場合、移動先の inode が SafeOpenFile 時点で取得した fd の inode と一致すること（fd アンカー機構が実際に機能していること）
+- **注（実装時判明）**: 「差し替え後も検証済み inode への到達に成功する」という当初の AC-05 試験意図は、Linux カーネルの制約（`O_TMPFILE` 以外の unlink 済みファイルは `/proc/self/fd` 経由で再リンクできない）により実現できないと判明した。差し替え時の挙動は AC-06 のテストで検証する（01_requirements.md AC-05 参照）。
 
 ---
 
 ### AC-06: 移動失敗時の fail-closed
 
 **実装ステップ**:
-- PR-4 での atomicMoveFileCore 実装変更
+- PR-4 での atomicMoveFileCore 実装変更（`moveFileAnchored`）
 
 **検証テスト**:
-- テスト場所: `internal/safefileio/safe_file_test.go` (既存テスト維持)
-- テスト名: `TestAtomicMoveFileCore_FailureDoesNotMove` (既存パス)
-- 検証内容: 改ざんなし時に移動が成功する
+- テスト場所: `internal/safefileio/safe_file_linux_test.go` (新規テスト追加)
+- テスト名: `TestMoveFileAnchored_SourceReplacementFailsClosed`（fd 取得後にソースパスを別 inode へ差し替えると `linkat` が `ENOENT` で失敗し、rename が行われずエラーが返ることを確認）、`TestMoveFileAnchored_RenameFailureCleansUpTemporaryLink`（rename 失敗時に一時ハードリンクがリークしないことを確認）
+- 検証内容: 同一性が確認できない場合（ソース差し替え、または rename 失敗）に rename を行わずエラーを返す。改ざんなし時の移動成功は `TestMoveFileAnchored_RegressionSuccessfulMove` で確認（既存パスの回帰なし）
 
 ---
 

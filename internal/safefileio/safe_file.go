@@ -173,8 +173,11 @@ func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs File
 		return fmt.Errorf("destination parent directory unsafe: %w", err)
 	}
 
-	// Perform atomic rename
-	if err := os.Rename(absSrc, absDst); err != nil {
+	// Move the verified source inode into place. moveFileAnchored anchors the
+	// move to srcFile's fd (on Linux) rather than re-resolving absSrc by path
+	// name, so a replacement of absSrc between SafeOpenFile above and this
+	// call cannot cause a different inode to be moved (see safe_file_linux.go).
+	if err := moveFileAnchored(srcFile, absSrc, absDst); err != nil {
 		return fmt.Errorf("atomic move failed: %w", err)
 	}
 

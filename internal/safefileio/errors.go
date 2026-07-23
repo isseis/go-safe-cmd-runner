@@ -27,4 +27,8 @@ var (
 	// ErrInvalidFileOperation indicates that an invalid file operation type was specified.
 	// This is an alias to the common error definition to maintain API compatibility.
 	ErrInvalidFileOperation = common.ErrInvalidFileOperation
+
+	// ErrTempLinkNameExhausted indicates that a unique temporary hard-link name
+	// could not be allocated after repeated EEXIST collisions.
+	ErrTempLinkNameExhausted = errors.New("failed to allocate a unique temporary link name")
 )
