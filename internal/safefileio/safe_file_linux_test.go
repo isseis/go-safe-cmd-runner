@@ -136,6 +136,73 @@ func TestMoveFileAnchored_RenameFailureCleansUpTemporaryLink(t *testing.T) {
 	assert.NoError(t, err, "source should still exist after a failed move")
 }
 
+// TestAtomicMoveFileCore_EndToEndUsesFDAnchoredMove exercises the full public
+// entry point (osFS.AtomicMoveFile -> atomicMoveFileCore), not just the lower
+// level moveFileAnchored, so that fchmod/permission validation and the final
+// destination validation that wrap the fd-anchored move are also covered.
+func TestAtomicMoveFileCore_EndToEndUsesFDAnchoredMove(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	srcPath := filepath.Join(dir, "src.txt")
+	dstPath := filepath.Join(dir, "dst.txt")
+	content := []byte("full pipeline content")
+	require.NoError(t, os.WriteFile(srcPath, content, 0o644))
+
+	srcDev, srcIno := inodeOf(t, srcPath)
+
+	fs := NewFileSystem(FileSystemConfig{})
+	require.NoError(t, fs.AtomicMoveFile(srcPath, dstPath, 0o644))
+
+	got, err := os.ReadFile(dstPath)
+	require.NoError(t, err)
+	assert.Equal(t, content, got)
+
+	dstDev, dstIno := inodeOf(t, dstPath)
+	assert.Equal(t, srcDev, dstDev)
+	assert.Equal(t, srcIno, dstIno, "destination must be the same inode fchmod/validation ran against")
+
+	_, err = os.Stat(srcPath)
+	assert.True(t, os.IsNotExist(err), "source path should be removed after a successful move")
+}
+
+// TestMoveFileAnchored_UnlinkSourceFailureReturnsErrorAfterSuccessfulRename
+// covers the documented failure mode where rename to the destination
+// succeeds but the trailing unlink of absSrc fails: per the design
+// document's semantics for a failed source unlink, this is treated as an
+// error (not a warned success) so the caller can investigate, even though
+// the destination now holds the moved content.
+func TestMoveFileAnchored_UnlinkSourceFailureReturnsErrorAfterSuccessfulRename(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("Skipping privilege test when running as root")
+	}
+	dir := tu.SafeTempDir(t)
+	srcParent := filepath.Join(dir, "srcparent")
+	require.NoError(t, os.Mkdir(srcParent, 0o755))
+	srcPath := filepath.Join(srcParent, "src.txt")
+	dstPath := filepath.Join(dir, "dst.txt")
+	content := []byte("content")
+	require.NoError(t, os.WriteFile(srcPath, content, 0o600))
+
+	fs := NewFileSystem(FileSystemConfig{})
+	srcFile, err := fs.SafeOpenFile(srcPath, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	defer func() { _ = srcFile.Close() }()
+
+	// Remove write+execute permission on srcPath's parent directory so the
+	// trailing os.Remove(absSrc) fails with EACCES, after linkat and rename
+	// have already succeeded.
+	require.NoError(t, os.Chmod(srcParent, 0o555))
+	t.Cleanup(func() { _ = os.Chmod(srcParent, 0o755) })
+
+	err = moveFileAnchored(srcFile, srcPath, dstPath)
+	require.Error(t, err, "unlink(absSrc) failure must be surfaced as an error, not a silent success")
+
+	// The destination is already populated with the moved content: rename
+	// completed before the unlink failure occurred.
+	got, err := os.ReadFile(dstPath)
+	require.NoError(t, err)
+	assert.Equal(t, content, got)
+}
+
 // TestLinkFileToTempName_RetriesOnNameCollision forces generateTempLinkName to
 // return a colliding name first, then a free one, and verifies
 // linkFileToTempName retries rather than failing on the first EEXIST.
