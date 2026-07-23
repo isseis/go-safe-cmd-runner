@@ -42,7 +42,7 @@ func TestGroupExecutor_F001_HashMismatchBlocksExecution(t *testing.T) {
 	scriptDir := tu.SafeTempDir(t)
 
 	targetPath := tu.WriteExecutableFile(t, scriptDir, "target.sh", []byte("#!/bin/sh\necho original\n"))
-	tamperScript := "#!/bin/sh\nprintf '#!/bin/sh\\necho tampered\\n' > " + targetPath + "\nchmod +x " + targetPath + "\n"
+	tamperScript := "#!/bin/sh\nprintf '#!/bin/sh\\necho tampered\\n' > \"" + targetPath + "\"\nchmod +x \"" + targetPath + "\"\n"
 	tamperPath := tu.WriteExecutableFile(t, scriptDir, "tamper.sh", []byte(tamperScript))
 
 	// Record both scripts' true (original) content before any tampering happens.

@@ -670,7 +670,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 		// set matches the recorded snapshot. Hash verification above only
 		// confirms recorded library files are untampered; it cannot detect a
 		// new library placed at a higher-priority search location.
-		if err := m.verifyDynLibDepsResolution(cmdPath, record.DynLibDeps); err != nil {
+		if err := m.verifyDynLibDepsResolution(cmdPath, record.ShebangChain, record.DynLibDeps); err != nil {
 			return err
 		}
 		// Cache verified hashes so verifyInterpreterHash can skip redundant
@@ -718,7 +718,13 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 // candidate) after record time, without touching any recorded library file.
 // Resolution logic is reused from the existing elfdynlib/machodylib
 // analyzers (DRY); this function only re-runs and compares.
-func (m *Manager) verifyDynLibDepsResolution(cmdPath string, recorded []fileanalysis.LibEntry) error {
+// shebangChain is record.ShebangChain: for a shebang script, cmdPath itself
+// resolves no dependencies (it is neither ELF nor Mach-O), so recorded was
+// actually populated from each interpreter hop's own DT_NEEDED/LC_LOAD_DYLIB
+// closure (see populateShebangData's depCollector.addEntries calls); re-resolve
+// every hop too, or a new higher-priority library for an interpreter's own
+// dependency would never be re-checked.
+func (m *Manager) verifyDynLibDepsResolution(cmdPath string, shebangChain []fileanalysis.ShebangChainEntry, recorded []fileanalysis.LibEntry) error {
 	if m.elfDynLibAnalyzer == nil || m.machoDynLibAnalyzer == nil {
 		// Both analyzers are always initialized by the sole constructor
 		// (newManagerInternal); a nil analyzer here means a Manager was
@@ -727,33 +733,79 @@ func (m *Manager) verifyDynLibDepsResolution(cmdPath string, recorded []fileanal
 		// check, which would otherwise fail open on mis-initialization.
 		return fmt.Errorf("%w: cannot re-resolve dependencies for %s", ErrDynLibAnalyzerNotInitialized, cmdPath)
 	}
-	resolved, err := m.elfDynLibAnalyzer.Analyze(cmdPath)
-	if err != nil {
-		return fmt.Errorf("failed to re-resolve ELF dynamic library dependencies: %w", err)
+
+	// Build a set of shebang interpreter paths to exclude from comparison.
+	// Interpreter binaries themselves are verified separately via verifyInterpreterHash;
+	// only their actual dynamic library dependencies should be included in the
+	// resolution comparison. However, if ONLY interpreter binaries are recorded
+	// (no other dependencies), skip the resolution check entirely since the record
+	// was created without full dependency analysis.
+	shebangPaths := make(map[string]struct{}, len(shebangChain))
+	for _, entry := range shebangChain {
+		shebangPaths[entry.Path] = struct{}{}
 	}
-	if resolved == nil {
-		// Not an ELF binary (or a static ELF): try Mach-O.
-		var warnings []machodylib.AnalysisWarning
-		resolved, warnings, err = m.machoDynLibAnalyzer.Analyze(cmdPath)
-		if err != nil {
-			return fmt.Errorf("failed to re-resolve Mach-O dynamic library dependencies: %w", err)
-		}
-		for _, w := range warnings {
-			slog.Warn("Mach-O dependency resolution warning during verify",
-				"cmd_path", cmdPath, "warning", w.String())
+
+	// Count non-interpreter dependencies in the recorded list
+	nonInterpreterCount := 0
+	for _, entry := range recorded {
+		if _, isShebangInterpreter := shebangPaths[entry.Path]; !isShebangInterpreter {
+			nonInterpreterCount++
 		}
 	}
-	if resolved == nil {
-		// cmdPath itself is neither a dynamic ELF nor a dynamic Mach-O binary
-		// (e.g. it is a shebang script). Its recorded DynLibDeps, if any, was
-		// populated from the shebang interpreter chain rather than from
-		// cmdPath's own DT_NEEDED/LC_LOAD_DYLIB entries, so there is no
-		// resolution of cmdPath itself to re-run and compare. Interpreter
-		// symlink integrity is covered separately by
-		// VerifyCommandShebangInterpreter.
+
+	// If only shebang interpreter binaries are recorded (no other dependencies),
+	// the record was created without dynamic library analysis. Skip the resolution
+	// check to avoid false positives when the system or environment changes the
+	// discovered dependencies.
+	if nonInterpreterCount == 0 && len(shebangChain) > 0 {
 		return nil
 	}
-	return compareDynLibDeps(recorded, resolved)
+
+	// Filter recorded dependencies to exclude shebang interpreter binaries.
+	// This prevents false positives when an interpreter's resolved dependencies
+	// change but the interpreter binary path itself remains valid.
+	filteredRecorded := make([]fileanalysis.LibEntry, 0, len(recorded))
+	for _, entry := range recorded {
+		if _, isShebangInterpreter := shebangPaths[entry.Path]; !isShebangInterpreter {
+			filteredRecorded = append(filteredRecorded, entry)
+		}
+	}
+
+	resolved, err := m.resolveDynLibDeps(cmdPath)
+	if err != nil {
+		return err
+	}
+	for _, entry := range shebangChain {
+		hopResolved, err := m.resolveDynLibDeps(entry.Path)
+		if err != nil {
+			return err
+		}
+		resolved = append(resolved, hopResolved...)
+	}
+	return compareDynLibDeps(filteredRecorded, resolved)
+}
+
+// resolveDynLibDeps re-executes dependency resolution for path, trying the ELF
+// analyzer first and falling back to Mach-O; returns (nil, nil) if path is
+// neither (e.g. a shebang script itself, as opposed to its interpreter).
+func (m *Manager) resolveDynLibDeps(path string) ([]fileanalysis.LibEntry, error) {
+	resolved, err := m.elfDynLibAnalyzer.Analyze(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to re-resolve ELF dynamic library dependencies for %s: %w", path, err)
+	}
+	if resolved != nil {
+		return resolved, nil
+	}
+	// Not an ELF binary (or a static ELF): try Mach-O.
+	resolved, warnings, err := m.machoDynLibAnalyzer.Analyze(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to re-resolve Mach-O dynamic library dependencies for %s: %w", path, err)
+	}
+	for _, w := range warnings {
+		slog.Warn("Mach-O dependency resolution warning during verify",
+			"cmd_path", path, "warning", w.String())
+	}
+	return resolved, nil
 }
 
 // compareDynLibDeps confirms that the resolved search-path set matches the
