@@ -137,7 +137,7 @@ var generateTempLinkName = randomTempName
 //
 // On any failure, no file is left at absDst and any temporary hard link
 // created along the way is removed (fail-closed, no partial move).
-func moveFileAnchored(srcFile File, absSrc, absDst string) error {
+func moveFileAnchored(srcFile File, absSrc, absDst string) (err error) {
 	osFile, ok := srcFile.(*os.File)
 	if !ok {
 		return fmt.Errorf("%w: source file handle does not support fd-anchored move", ErrInvalidFilePath)
@@ -147,15 +147,19 @@ func moveFileAnchored(srcFile File, absSrc, absDst string) error {
 	if err != nil {
 		return fmt.Errorf("failed to hard-link source inode into destination directory: %w", err)
 	}
-
-	if err := os.Rename(tmpPath, absDst); err != nil {
-		if rmErr := os.Remove(tmpPath); rmErr != nil {
-			slog.Warn("failed to remove leaked temporary hard link", slog.Any("error", rmErr), slog.String("path", tmpPath))
+	defer func() {
+		if err != nil {
+			if rmErr := os.Remove(tmpPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+				slog.Warn("failed to remove leaked temporary hard link", slog.Any("error", rmErr), slog.String("path", tmpPath))
+			}
 		}
+	}()
+
+	if err = os.Rename(tmpPath, absDst); err != nil {
 		return fmt.Errorf("failed to rename temporary hard link to destination: %w", err)
 	}
 
-	if err := os.Remove(absSrc); err != nil {
+	if err = os.Remove(absSrc); err != nil {
 		return fmt.Errorf("failed to remove original source path after move: %w", err)
 	}
 
