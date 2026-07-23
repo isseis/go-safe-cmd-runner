@@ -332,12 +332,12 @@ func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, 
 | `internal/filevalidator/validator.go` | 変更 | `SaveRecord` 起点で共有 fd を開き、shebang/ハッシュ/各解析へ渡す。`analyzeOneLibrary` に `lib.Hash` 照合を追加 | `internal/filevalidator/*_test.go`（SaveRecord / analyze 系） |
 | `internal/dynamicanalysis/store.go`, `interfaces.go` | 変更 | `LoadOrAnalyzeAndStore` の store 境界で `libHash` と実測ハッシュを照合（AC-08 の通常経路） | `internal/dynamicanalysis/*_test.go` |
 | 各解析器（`shebang` / `binaryanalyzer` / ELF・Mach-O syscall / `elfdynlib`）の入力経路 | 変更 | パス名に加え共有 fd（`io.ReaderAt`）入力を受け取れるよう拡張 | 各解析器の `*_test.go` |
-| `internal/verification/manager.go` | 変更 | `VerifyCommandDynLibDeps` で依存解決を再実行し、record 済み集合と比較して構造化エラーを返す | `manager_test.go` / `manager_macho_test.go` / `shebang_chain_verifier_test.go` |
-| `internal/verification/interfaces.go` | 変更 | `ManagerInterface.VerifyCommandDynLibDeps` の署名変更 | — |
-| `internal/verification/testutil/testify_mocks.go` | 変更 | モックの署名を追従 | `testify_mocks_test.go` |
-| `internal/runner/*_test.go`（モック期待） | 変更 | `.On("VerifyCommandDynLibDeps", …)` / `AssertCalled` に第 2 引数マッチャを追加 | `group_executor_test.go` / `integration_dual_defense_test.go` / `e2e_slack_redaction_test.go` / `command_output_capture_test.go` 等 |
+| `internal/verification/manager.go` | 変更 | `VerifyCommandDynLibDeps(cmdPath string) error`（署名不変）で依存解決を再実行し、record 済み集合と比較して構造化エラーを返す | `manager_test.go` / `manager_macho_test.go` / `shebang_chain_verifier_test.go` |
+| `internal/verification/interfaces.go` | 変更なし | `ManagerInterface.VerifyCommandDynLibDeps` の署名は `(cmdPath string) error` のまま（§3.4：`envVars` は追加しない） | — |
+| `internal/verification/testutil/testify_mocks.go` | 変更なし | モックの署名も不変のため追従不要 | — |
+| `internal/runner/*_test.go`（モック期待） | 変更なし | 呼び出し引数は変わらないため `.On("VerifyCommandDynLibDeps", …)` / `AssertCalled` の変更は不要 | — |
 | `internal/verification/path_resolver.go` | 変更 | `validateAndCacheCommand` を「解決→canonical パスへ `Lstat` 検証」順へ入れ替え | `path_resolver` 系テスト |
-| `internal/runner/group_executor.go` | 変更 | `VerifyCommandDynLibDeps` 呼び出しに `finalEnv` を渡す（`finalEnv` の算出を dynlib 検証前へ移動） | — |
+| `internal/runner/group_executor.go` | 変更なし | `VerifyCommandDynLibDeps` は `cmdPath` のみで呼ばれ続ける。`finalEnv` の算出は引き続き `VerifyCommandShebangInterpreter`（唯一の消費者）の直前に置かれる | — |
 | `docs/tasks/0155.../02_architecture.md` | 追加 | F-006 残余リスクの文書化（本節） | — |
 
 ---
