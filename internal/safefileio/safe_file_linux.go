@@ -140,7 +140,7 @@ var generateTempLinkName = randomTempName
 func moveFileAnchored(srcFile File, absSrc, absDst string) (err error) {
 	osFile, ok := srcFile.(*os.File)
 	if !ok {
-		return fmt.Errorf("%w: source file handle does not support fd-anchored move", ErrInvalidFilePath)
+		return fmt.Errorf("%w: source file handle does not support fd-anchored move", ErrUnsupportedFileHandle)
 	}
 
 	tmpPath, err := linkFileToTempName(osFile, filepath.Dir(absDst))
@@ -159,8 +159,41 @@ func moveFileAnchored(srcFile File, absSrc, absDst string) (err error) {
 		return fmt.Errorf("failed to rename temporary hard link to destination: %w", err)
 	}
 
+	if err = verifySameFile(osFile, absSrc); err != nil {
+		return fmt.Errorf("refusing to remove source path after move: %w", err)
+	}
+
 	if err = os.Remove(absSrc); err != nil {
 		return fmt.Errorf("failed to remove original source path after move: %w", err)
+	}
+
+	return nil
+}
+
+// verifySameFile checks that the directory entry currently at path still
+// refers to the same inode as the already-open fd. It uses Lstat (rather
+// than Stat) on path so that a symlink swapped in at path is detected as a
+// mismatch instead of being followed. This guards the trailing unlink in
+// moveFileAnchored against a TOCTOU race where an attacker replaces absSrc's
+// directory entry between the rename above and the unlink below, which would
+// otherwise cause the unlink to delete an unrelated file.
+func verifySameFile(fd *os.File, path string) error {
+	fdInfo, err := fd.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to fstat open file descriptor: %w", err)
+	}
+	fdStat, ok := fdInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("%w: unsupported file info type for fd", ErrUnsupportedFileHandle)
+	}
+
+	var pathStat syscall.Stat_t
+	if err := syscall.Lstat(path, &pathStat); err != nil {
+		return fmt.Errorf("failed to lstat path %q: %w", path, err)
+	}
+
+	if fdStat.Dev != pathStat.Dev || fdStat.Ino != pathStat.Ino {
+		return fmt.Errorf("%w: path %q no longer refers to the expected inode", ErrInvalidFilePath, path)
 	}
 
 	return nil

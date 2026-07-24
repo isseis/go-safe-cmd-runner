@@ -31,4 +31,11 @@ var (
 	// ErrTempLinkNameExhausted indicates that a unique temporary hard-link name
 	// could not be allocated after repeated EEXIST collisions.
 	ErrTempLinkNameExhausted = errors.New("failed to allocate a unique temporary link name")
+
+	// ErrUnsupportedFileHandle indicates that the provided File implementation
+	// does not support the operation being requested (e.g. it is not backed by
+	// an *os.File and therefore cannot be used for fd-anchored operations).
+	// This is distinct from ErrInvalidFilePath, which signals a problem with
+	// the path itself rather than with the type of the file handle.
+	ErrUnsupportedFileHandle = errors.New("unsupported file handle type")
 )
