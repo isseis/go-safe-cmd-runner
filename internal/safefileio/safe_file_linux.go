@@ -111,6 +111,16 @@ const tmpNameRandBytes = 12
 // exercise the EEXIST retry path.
 var generateTempLinkName = randomTempName
 
+// linkatFunc performs the linkat syscall used by linkFileToTempName. It is a
+// package variable (rather than a direct call to unix.Linkat) so tests can
+// force deterministic non-EEXIST failures (e.g. EPERM from
+// fs.protected_hardlinks, or ETXTBSY) without depending on environment-
+// specific privilege setups to trigger them for real.
+//
+// Tests must not call t.Parallel() in this package: this variable (and
+// generateTempLinkName) is mutated by tests and shared package-wide.
+var linkatFunc = unix.Linkat
+
 // moveFileAnchored moves the inode referenced by srcFile to absDst without
 // resolving absSrc by path name at move time. Invariant: whenever a file
 // ends up at absDst, it is always the exact inode that srcFile refers to; if
@@ -203,7 +213,7 @@ func verifySameFile(fd *os.File, path string) error {
 	}
 
 	if fdStat.Dev != pathStat.Dev || fdStat.Ino != pathStat.Ino {
-		return fmt.Errorf("%w: path %q no longer refers to the expected inode", ErrInvalidFilePath, path)
+		return fmt.Errorf("%w: path %q no longer refers to the expected inode", ErrSourceIdentityMismatch, path)
 	}
 
 	return nil
@@ -226,7 +236,7 @@ func linkFileToTempName(srcFile *os.File, dstDir string) (string, error) {
 		}
 		tmpPath := filepath.Join(dstDir, name)
 
-		err = unix.Linkat(unix.AT_FDCWD, procPath, unix.AT_FDCWD, tmpPath, unix.AT_SYMLINK_FOLLOW)
+		err = linkatFunc(unix.AT_FDCWD, procPath, unix.AT_FDCWD, tmpPath, unix.AT_SYMLINK_FOLLOW)
 		switch {
 		case err == nil:
 			return tmpPath, nil

@@ -11,6 +11,7 @@ import (
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 // inodeOf returns the (dev, ino) pair identifying the file at path, following
@@ -264,4 +265,36 @@ func TestLinkFileToTempName_ExhaustsAttempts(t *testing.T) {
 
 	_, err = linkFileToTempName(osFile, dir)
 	require.Error(t, err)
+}
+
+// TestLinkFileToTempName_NonEEXISTErrorIsNotRetried verifies that a linkat
+// failure other than EEXIST (e.g. EPERM from fs.protected_hardlinks, or
+// ETXTBSY) is returned immediately rather than being retried as if it were a
+// name collision. Real EPERM/ETXTBSY conditions depend on privilege/fs state
+// that isn't reliably reproducible in a test sandbox, so linkatFunc is
+// stubbed to force the failure deterministically.
+func TestLinkFileToTempName_NonEEXISTErrorIsNotRetried(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	srcPath := filepath.Join(dir, "src.txt")
+	require.NoError(t, os.WriteFile(srcPath, []byte("content"), 0o600))
+
+	fs := NewFileSystem(FileSystemConfig{})
+	srcFile, err := fs.SafeOpenFile(srcPath, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	defer func() { _ = srcFile.Close() }()
+	osFile, ok := srcFile.(*os.File)
+	require.True(t, ok)
+
+	calls := 0
+	origLinkat := linkatFunc
+	linkatFunc = func(_ int, _ string, _ int, _ string, _ int) error {
+		calls++
+		return unix.EPERM
+	}
+	t.Cleanup(func() { linkatFunc = origLinkat })
+
+	_, err = linkFileToTempName(osFile, dir)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, unix.EPERM)
+	assert.Equal(t, 1, calls, "a non-EEXIST linkat error must not be retried")
 }
