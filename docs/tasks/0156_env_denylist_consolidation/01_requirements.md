@@ -79,14 +79,13 @@
 **インタプリタ起動時コード注入変数（完全一致、新規）**
 - シェル系: `BASH_ENV`, `ENV`, `SHELLOPTS`, `PS4`
 - Python: `PYTHONPATH`, `PYTHONSTARTUP`
-- Perl: `PERL5LIB`, `PERL5OPT`
-- Node.js: `NODE_OPTIONS`
-- Ruby: `RUBYOPT`
+- Perl: `PERL5LIB`, `PERL5OPT`, `PERL5DB`
+- Node.js: `NODE_OPTIONS`, `NODE_PATH`
+- Ruby: `RUBYOPT`, `RUBYLIB`
 - Git（リモートヘルパー経由コード実行）: `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_EXTERNAL_DIFF`
 
 > **実装時に採否を再検討する候補**（同種の既知ベクタ。本リストへの追加可否は実装時に判断する）:
 > - `BASH_FUNC_*`（prefix、Shellshock 型のエクスポート関数注入 / CVE-2014-6271 系）
-> - `RUBYLIB`（Ruby における `PYTHONPATH` 相当）
 > - `PYTHONHOME`（Python 標準ライブラリ位置の乗っ取り）
 > - `LESSOPEN` / `LESSCLOSE`（`less` の input preprocessor 経由のコード実行）
 
