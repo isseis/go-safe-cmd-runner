@@ -382,12 +382,12 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/905）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: F-006 の追跡
 
-- [ ] 02_architecture.md § 5.3 に (a)(b)(c) が記載されていることを確認（本タスク前で既に実施）
+- [x] 02_architecture.md § 5.3 に (a)(b)(c) が記載されていることを確認（本タスク前で既に実施）
 
 ### PR-5 作成ポイント: residual risk documentation
 
@@ -401,8 +401,8 @@
 
 **判定理由**: コード変更なしの文書化のみであり、残余リスクは 02_architecture.md § 5.3 に既に記載済み
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/907）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
