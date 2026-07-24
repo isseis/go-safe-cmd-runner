@@ -387,7 +387,7 @@
 
 ### Phase 5: F-006 の追跡
 
-- [ ] 02_architecture.md § 5.3 に (a)(b)(c) が記載されていることを確認（本タスク前で既に実施）
+- [x] 02_architecture.md § 5.3 に (a)(b)(c) が記載されていることを確認（本タスク前で既に実施）
 
 ### PR-5 作成ポイント: residual risk documentation
 
