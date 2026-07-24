@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `approved` |
+| Status | `draft` |
 | Created | 2026-07-23 |
 | Review date | 2026-07-24 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | Awaiting formal approval; architecture document in this PR is under review |
 
 ## 関連 Issue
 
@@ -103,7 +103,7 @@
 
 - **AC-04**: `DYLD_*` prefix が実行層（`BuildProcessEnvironment`）・config 層（`env_import`/`env_vars`）の両方で拒否される（既存は security 層のみ）。
 - **AC-05**: `GLIBC_TUNABLES` が3層すべてで拒否される。
-- **AC-06**: 「対象変数リスト（暫定）」節に列挙したインタプリタ起動時コード注入変数（同節を単一の典拠とする。ここでは再列挙しない）が3層すべてで拒否される。テストは同節のリストを直接 range して網羅検証し、リストへの追加が自動的にテスト対象へ反映される構成とする。
+- **AC-06**: 「対象変数リスト（暫定）」節に列挙したインタプリタ起動時コード注入変数（同節を単一の典拠とする。ここでは再列挙しない）が3層すべてで拒否される。テストは `environment` パッケージ内で定義された code-defined denylist を直接 range して網羅検証し、リストへの追加が自動的にテスト対象へ反映される構成とする。なお、コード上のリストが「対象変数リスト（暫定）」節の意図する集合と一致していることは、要件リストを唯一の典拠としてコードへ反映し、レビューで突き合わせることで担保する。
 
 #### F-003: config 層における `env_vars` KEY チェックの追加
 

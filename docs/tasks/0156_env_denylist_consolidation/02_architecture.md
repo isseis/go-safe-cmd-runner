@@ -485,5 +485,3 @@ security 層の間接実行解析は、`%{VAR}` 展開を済ませた `RuntimeCo
 
 - 判定ロジックとリストのみを一元化し、検知後の挙動（削除/ロードエラー/Reject）は層ごとに保存する方針は、要件（[01_requirements.md](01_requirements.md) 目的節）に基づく。
 - case セマンティクスを case-sensitive に統一した経緯・根拠は §6.2 に記す。旧 security 層の case-insensitive（`strings.ToUpper`）は本タスクで case-sensitive へ変更する。
-</content>
-</invoke>
