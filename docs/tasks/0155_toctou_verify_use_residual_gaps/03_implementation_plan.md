@@ -402,7 +402,7 @@
 **判定理由**: コード変更なしの文書化のみであり、残余リスクは 02_architecture.md § 5.3 に既に記載済み
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/907）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
