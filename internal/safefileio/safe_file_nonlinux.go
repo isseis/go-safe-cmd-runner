@@ -22,3 +22,11 @@ func isOpenat2Available() bool {
 func (fs *osFS) safeOpenFileInternal(absPath string, flag int, perm os.FileMode) (*os.File, error) {
 	return safeOpenFileFallback(absPath, flag, perm)
 }
+
+// moveFileAnchored moves absSrc to absDst by path name. The fd-anchored
+// hard-link technique (see safe_file_linux.go) relies on /proc/self/fd,
+// which is Linux-specific; non-Linux platforms keep the pre-existing
+// path-based rename.
+func moveFileAnchored(_ File, absSrc, absDst string) error {
+	return os.Rename(absSrc, absDst)
+}
