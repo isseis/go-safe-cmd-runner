@@ -138,7 +138,7 @@
 **対象ファイル**: `internal/runner/base/security/indirect_execution.go`、`internal/runner/base/security/indirect_execution_test.go`、`internal/runner/base/risk/evaluator_test.go`
 
 - [ ] `indirect_execution.go` に `internal/runner/base/environment` を import する。
-- [ ] `isLoaderControlVar`（[:1908-1920](../../../internal/runner/base/security/indirect_execution.go)）を削除する。
+- [ ] `isLoaderControlVar`（[:1917-1920](../../../internal/runner/base/security/indirect_execution.go)）を削除する。
 - [ ] `checkEnvAssignment` 内の呼び出し（[:769](../../../internal/runner/base/security/indirect_execution.go)）を `environment.IsForbiddenEnvVar(name)` に置換する。Reject/Blocking 分類（`rejectClass(risktypes.ReasonForbiddenEnvVar, "")`）は維持する（AC-10）。
 - [ ] `checkEnvAssignment` の doc コメント（[:765-766](../../../internal/runner/base/security/indirect_execution.go)、"rejects loader-control assignments (LD_*/DYLD_*)"）を、拡張後の対象（loader-control と interpreter startup code-injection variables）と case-sensitive 化を反映した英語の文へ更新する。
 - [ ] 不要になった `strings` import が残らないか `make lint` で確認する（`indirect_execution.go` は他所でも `strings` を使うため残存見込みだが、lint 結果で判断する）。
@@ -245,7 +245,7 @@
 | AC-01 | 公開判定関数が存在 | static | `rg -n "func IsForbiddenEnvVar\(name string\) bool" internal/runner/base/environment/denylist.go` → マッチ1件 |
 | AC-01 | 同上（挙動） | test | `internal/runner/base/environment/denylist_test.go::TestIsForbiddenEnvVar_Prefix` |
 | AC-02 | prefix/完全一致/非該当を単体検証 | test | `internal/runner/base/environment/denylist_test.go::TestIsForbiddenEnvVar_Prefix`, `::TestIsForbiddenEnvVar_Exact`, `::TestIsForbiddenEnvVar_NonMatch` |
-| AC-03 | 3層の独自リスト削除・重複なし | static | `rg -n "isForbiddenEnvVar\|forbiddenEnvVarPrefixes\|forbiddenEnvVarExact\|isLoaderControlVar" --glob '*.go'` → マッチなし |
+| AC-03 | 3層の独自リスト削除・重複なし | static | `rg -n -e "isForbiddenEnvVar" -e "forbiddenEnvVarPrefixes" -e "forbiddenEnvVarExact" -e "isLoaderControlVar" --glob '*.go'` → マッチなし |
 | AC-04 | `DYLD_*` を実行層・config 層で拒否 | test | `internal/runner/base/executor/environment_test.go::TestBuildProcessEnvironment_DYLDVarsRemoved`; `internal/runner/config/expansion_unit_test.go::TestProcessEnvImport_ForbiddenVariable`, `::TestProcessEnv_ForbiddenVariable` |
 | AC-05 | `GLIBC_TUNABLES` を3層で拒否 | test | `environment_test.go::TestBuildProcessEnvironment_NonLDDangerousVarsRemoved`; `expansion_unit_test.go::TestProcessEnvImport_ForbiddenVariable`, `::TestProcessEnv_ForbiddenVariable`; `internal/runner/base/security/indirect_execution_test.go::TestIndirect_WrapperLoaderEnvRejected`; `internal/runner/base/risk/evaluator_test.go::TestEvaluateRisk_IndirectExecutionDeny` |
 | AC-06 | インタプリタ変数を3層で拒否 + range 網羅 | test | `environment/denylist_test.go::TestIsForbiddenEnvVar_Exact`（range 網羅）; `executor/environment_test.go`（BASH_ENV/PYTHONPATH 等の削除ケース）; `expansion_unit_test.go::TestProcessEnv_ForbiddenVariable`; `security/indirect_execution_test.go::TestIndirect_WrapperLoaderEnvRejected` |
@@ -253,7 +253,7 @@
 | AC-08 | AC-07 が同一判定関数・同系エラー型 | test | `expansion_unit_test.go::TestProcessEnv_ForbiddenVariable`（`assert.ErrorIs(err, config.ErrForbiddenEnvVar)`） |
 | AC-09 | 実行層 fail-silent スクラブ維持 | test | `executor/environment_test.go::TestBuildProcessEnvironment_DynamicLinkerVarsAlwaysRemoved`, `::TestBuildProcessEnvironment_AllLDVarsRemoved` |
 | AC-10 | security 層 Reject/Blocking 維持 | test | `security/indirect_execution_test.go::TestIndirect_WrapperLoaderEnvRejected`; `risk/evaluator_test.go::TestEvaluateRisk_IndirectExecutionDeny` |
-| AC-11 | セキュリティ文書の整合 | static | (1) `rg -n "LD_PRELOAD" docs/user/security-risk-assessment.md docs/dev/architecture_design/security-architecture.md` → マッチが拡張後の文脈であること。(2) positive: `rg -n "GLIBC_TUNABLES\|DYLD_\|BASH_ENV\|PYTHONPATH" docs/user/security-risk-assessment.md docs/user/security-risk-assessment.ja.md docs/dev/architecture_design/security-architecture.md docs/dev/architecture_design/security-architecture.ja.md` → 各文書で1件以上マッチ（拡張カテゴリが実際に追記されたこと） |
+| AC-11 | セキュリティ文書の整合 | static | (1) `rg -n "LD_PRELOAD" docs/user/security-risk-assessment.md docs/dev/architecture_design/security-architecture.md` → マッチが拡張後の文脈であること。(2) positive: `rg -n -e "GLIBC_TUNABLES" -e "DYLD_" -e "BASH_ENV" -e "PYTHONPATH" docs/user/security-risk-assessment.md docs/user/security-risk-assessment.ja.md docs/dev/architecture_design/security-architecture.md docs/dev/architecture_design/security-architecture.ja.md` → 各文書で1件以上マッチ（拡張カテゴリが実際に追記されたこと） |
 | AC-11 | 文書内容がリストと一致 | manual | 更新文書を [01_requirements.md](01_requirements.md) 対象変数リストと突き合わせて PR レビューで確認 |
 | AC-12 | case セマンティクスを明示選択・根拠記載 | static | `rg -n "case-sensitive" internal/runner/base/environment/denylist.go`（doc コメント）; 根拠は [02_architecture.md](02_architecture.md) §6.2・[01_requirements.md](01_requirements.md) AC-12 に記載済み |
 | AC-13 | case セマンティクスの単体テスト + executor/config 不変 | test | `environment/denylist_test.go::TestIsForbiddenEnvVar_CaseSensitive`（共有関数の case 挙動を固定）; `executor/environment_test.go` の `ld_preload` 保持ケース（実行層の case-sensitive 挙動を実測で固定）。config 層は同じ共有関数へ委譲するため、共有関数テストで担保する（既存 config テストは大文字綴りのみ検証で case 境界を突かないため、これを不変の根拠にはしない） |
