@@ -173,10 +173,16 @@ func moveFileAnchored(srcFile File, absSrc, absDst string) (err error) {
 // verifySameFile checks that the directory entry currently at path still
 // refers to the same inode as the already-open fd. It uses Lstat (rather
 // than Stat) on path so that a symlink swapped in at path is detected as a
-// mismatch instead of being followed. This guards the trailing unlink in
-// moveFileAnchored against a TOCTOU race where an attacker replaces absSrc's
-// directory entry between the rename above and the unlink below, which would
-// otherwise cause the unlink to delete an unrelated file.
+// mismatch instead of being followed. This narrows (but, being a path-based
+// check followed by a separate path-based unlink, cannot fully close) the
+// TOCTOU window in which an attacker could replace absSrc's directory entry
+// between the rename above and the unlink below and cause it to delete an
+// unrelated file. This check is not redundant with directory-level
+// protections elsewhere in the codebase (e.g. the world-writable-directory
+// rejection in internal/security/toctou.go): moveFileAnchored's callers
+// perform such checks, if at all, well before this point (e.g. before the
+// wrapped command runs), so this is the only defense operating at the
+// moment of the unlink itself.
 func verifySameFile(fd *os.File, path string) error {
 	fdInfo, err := fd.Stat()
 	if err != nil {
