@@ -38,4 +38,12 @@ var (
 	// This is distinct from ErrInvalidFilePath, which signals a problem with
 	// the path itself rather than with the type of the file handle.
 	ErrUnsupportedFileHandle = errors.New("unsupported file handle type")
+
+	// ErrSourceIdentityMismatch indicates that the directory entry at a source
+	// path no longer refers to the inode that was previously verified (e.g. an
+	// fd was opened and validated, then the path was replaced before a later
+	// operation). This is distinct from ErrInvalidFilePath, which signals a
+	// problem with the path's syntax or structure rather than a runtime
+	// TOCTOU-detected identity change.
+	ErrSourceIdentityMismatch = errors.New("source path no longer refers to the verified inode")
 )
