@@ -82,7 +82,13 @@
 - Perl: `PERL5LIB`, `PERL5OPT`
 - Node.js: `NODE_OPTIONS`
 - Ruby: `RUBYOPT`
-- Git（リモートヘルパー経由コード実行）: `GIT_SSH`, `GIT_EXTERNAL_DIFF`
+- Git（リモートヘルパー経由コード実行）: `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_EXTERNAL_DIFF`
+
+> **実装時に採否を再検討する候補**（同種の既知ベクタ。本リストへの追加可否は実装時に判断する）:
+> - `BASH_FUNC_*`（prefix、Shellshock 型のエクスポート関数注入 / CVE-2014-6271 系）
+> - `RUBYLIB`（Ruby における `PYTHONPATH` 相当）
+> - `PYTHONHOME`（Python 標準ライブラリ位置の乗っ取り）
+> - `LESSOPEN` / `LESSCLOSE`（`less` の input preprocessor 経由のコード実行）
 
 ## Acceptance Criteria
 
@@ -98,7 +104,7 @@
 
 - **AC-04**: `DYLD_*` prefix が実行層（`BuildProcessEnvironment`）・config 層（`env_import`/`env_vars`）の両方で拒否される（既存は security 層のみ）。
 - **AC-05**: `GLIBC_TUNABLES` が3層すべてで拒否される。
-- **AC-06**: 「対象変数リスト（暫定）」に列挙したインタプリタ起動時コード注入変数（`BASH_ENV`, `ENV`, `SHELLOPTS`, `PS4`, `PYTHONPATH`, `PYTHONSTARTUP`, `PERL5LIB`, `PERL5OPT`, `NODE_OPTIONS`, `RUBYOPT`, `GIT_SSH`, `GIT_EXTERNAL_DIFF`）が3層すべてで拒否される。
+- **AC-06**: 「対象変数リスト（暫定）」節に列挙したインタプリタ起動時コード注入変数（同節を単一の典拠とする。ここでは再列挙しない）が3層すべてで拒否される。テストは同節のリストを直接 range して網羅検証し、リストへの追加が自動的にテスト対象へ反映される構成とする。
 
 #### F-003: config 層における `env_vars` KEY チェックの追加
 
@@ -114,8 +120,15 @@
 
 - **AC-11**: denylist に言及する既存セキュリティドキュメント（`docs/user/security-risk-assessment.md`/`.ja.md`、`docs/dev/architecture_design/security-architecture.md`/`.ja.md` 等、実装時に特定する）が、一元化後の対象変数リストと整合する内容に更新されている。
 
+#### F-006: 変数名マッチングの正規化セマンティクスの明確化
+
+一元化前の3実装は大文字小文字の扱いが非対称である（executor / config は case-sensitive、security 層は `strings.ToUpper` による case-insensitive）。一元化にあたり、共通判定関数の case セマンティクスを1つに定め、各層がそれに従うことを要件とする。
+
+- **AC-12**: 共通判定関数の大文字小文字の扱い（case-sensitive か、正規化して case-insensitive か）が設計として明示的に選択され、その根拠（例: 環境変数名は Unix で case-sensitive でありローダは正確なスペルのみを解釈する／防御的に正規化する 等）が要件・設計文書に記載されている。
+- **AC-13**: 選択したセマンティクスを検証する単体テストが存在する（例: case-sensitive を選んだ場合は `ld_preload` が非該当、case-insensitive を選んだ場合は該当、を明示的にテストする）。一元化により従来 case-sensitive だった executor / config 層の挙動が意図せず変化していないことを確認する。
+
 ## Success Criteria（要件レベル）
 
-- AC-01〜AC-11 のすべてに対し、実装計画（`03_implementation_plan.md`）で具体的なテストまたは静的検証手段が対応付けられている。
+- AC-01〜AC-13 のすべてに対し、実装計画（`03_implementation_plan.md`）で具体的なテストまたは静的検証手段が対応付けられている。
 - 既存の denylist 関連テスト（executor/config/security 各パッケージ）がリファクタ後も引き続き pass する。
 - `make lint` / `make test` がグリーンである。
