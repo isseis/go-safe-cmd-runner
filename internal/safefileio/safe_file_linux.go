@@ -135,11 +135,15 @@ var generateTempLinkName = randomTempName
 // content either -- it errors out. See the design document's rationale on
 // this kernel constraint for the full explanation.
 //
-// On any failure, no file is left at absDst and any temporary hard link
-// created along the way is removed (fail-closed, no partial move).
+// On any failure before the rename below succeeds, no file is left at
+// absDst and any temporary hard link created along the way is removed
+// (fail-closed, no partial move). Once the rename has succeeded, a
+// subsequent failure (verifySameFile mismatch, or absSrc removal failure)
+// intentionally leaves absDst populated with the moved content rather than
+// undoing the rename.
 func moveFileAnchored(srcFile File, absSrc, absDst string) (err error) {
 	osFile, ok := srcFile.(*os.File)
-	if !ok {
+	if !ok || osFile == nil {
 		return fmt.Errorf("%w: source file handle does not support fd-anchored move", ErrUnsupportedFileHandle)
 	}
 
