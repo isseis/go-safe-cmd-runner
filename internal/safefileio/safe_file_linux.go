@@ -221,6 +221,9 @@ func linkFileToTempName(srcFile *os.File, dstDir string) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		if name != filepath.Base(name) || name == "." || name == ".." {
+			return "", fmt.Errorf("%w: temporary link name %q is not a plain basename", ErrInvalidFilePath, name)
+		}
 		tmpPath := filepath.Join(dstDir, name)
 
 		err = unix.Linkat(unix.AT_FDCWD, procPath, unix.AT_FDCWD, tmpPath, unix.AT_SYMLINK_FOLLOW)
