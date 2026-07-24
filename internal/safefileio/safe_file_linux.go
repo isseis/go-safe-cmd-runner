@@ -116,6 +116,9 @@ var generateTempLinkName = randomTempName
 // force deterministic non-EEXIST failures (e.g. EPERM from
 // fs.protected_hardlinks, or ETXTBSY) without depending on environment-
 // specific privilege setups to trigger them for real.
+//
+// Tests must not call t.Parallel() in this package: this variable (and
+// generateTempLinkName) is mutated by tests and shared package-wide.
 var linkatFunc = unix.Linkat
 
 // moveFileAnchored moves the inode referenced by srcFile to absDst without
