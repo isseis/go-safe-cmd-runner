@@ -386,11 +386,23 @@ func TestIndirect_WrapperLoaderEnvRejected(t *testing.T) {
 // a lower-case name has no effect on the target process and rejecting it would be
 // over-blocking without shrinking the real attack surface.
 func TestIndirect_WrapperLoaderEnvCaseSensitive(t *testing.T) {
-	res := analyzeIndirectCmd("env", "ld_preload=/tmp/evil.so", "ls")
-	assert.Equal(t, IndirectFloor, res.Kind, "lower-case ld_preload must not be rejected")
-
-	res = analyzeIndirectCmd("env", "dyld_insert_libraries=/tmp/evil.dylib", "ls")
-	assert.Equal(t, IndirectFloor, res.Kind, "lower-case dyld_insert_libraries must not be rejected")
+	cases := []struct {
+		name string
+		args []string
+	}{
+		// Prefix-match near-misses.
+		{"ld_preload", []string{"ld_preload=/tmp/evil.so", "ls"}},
+		{"dyld_insert_libraries", []string{"dyld_insert_libraries=/tmp/evil.dylib", "ls"}},
+		// Exact-match near-misses.
+		{"glibc_tunables", []string{"glibc_tunables=glibc.malloc.mxfast=1", "ls"}},
+		{"bash_env", []string{"bash_env=/tmp/evil.bash", "ls"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := analyzeIndirectCmd("env", tc.args...)
+			assert.Equal(t, IndirectFloor, res.Kind, "lower-case %s must not be rejected", tc.name)
+		})
+	}
 }
 
 // TestIndirect_EnvChdirRejected verifies env -C/--chdir fails closed: changing the
