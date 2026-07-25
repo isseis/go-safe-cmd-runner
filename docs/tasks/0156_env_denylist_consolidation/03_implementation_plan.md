@@ -121,18 +121,18 @@
 
 **対象ファイル**: `internal/runner/base/executor/environment.go`、`internal/runner/base/executor/environment_test.go`
 
-- [ ] `environment.go` に `internal/runner/base/environment` を import する。
-- [ ] `BuildProcessEnvironment` 末尾の inline スクラブ（`LD_` prefix ループ + 固定5個の削除ループ、[environment.go:86-95](../../../internal/runner/base/executor/environment.go)）を、マージ結果の各 KEY に対する `if environment.IsForbiddenEnvVar(key) { delete(result, key) }` の単一ループに置換する。マージ後に一括削除する順序は維持する（AC-09）。
-- [ ] 不要になった `strings` import が残る場合は削除する（`make lint` で検出）。
-- [ ] コメントの stale 参照を修正する。`// See docs/security/README.md for the threat model.`（[environment.go:85](../../../internal/runner/base/executor/environment.go)）を `// See docs/dev/architecture_design/security-architecture.md for the threat model.` に変更する。
-- [ ] `environment_test.go` の削除ケースを拡張する:
-  - [ ] `TestBuildProcessEnvironment_NonLDDangerousVarsRemoved` の対象リストに `GLIBC_TUNABLES` を追加する（AC-05）。
-  - [ ] `DYLD_*` prefix の削除を検証する専用ケース `TestBuildProcessEnvironment_DYLDVarsRemoved` を新設する（`DYLD_INSERT_LIBRARIES`, `DYLD_LIBRARY_PATH`）。§9 の AC-04 検証もこのテスト名を典拠とする（AC-04）。
-  - [ ] インタプリタ起動時コード注入変数の削除を検証するケースを追加する（代表として `BASH_ENV`, `PYTHONPATH`, `NODE_OPTIONS`, `PERL5LIB`）（AC-06）。
-  - [ ] case-sensitive 化を実行層でも固定する。小文字綴り `ld_preload` を vars 経由で注入した場合に `BuildProcessEnvironment` の結果に保持される（削除されない）ことを検証するケースを追加する（AC-13 の「executor の従来 case-sensitive 挙動が不変」を実測で担保）。
-  - [ ] `TestBuildProcessEnvironment_LegitimateVarsPreserved` は変更不要だが、`ENV` を採用した場合に正当変数リストへ影響しないことを確認する（`ENV` は保持対象リストに含めない）。
-- [ ] 既存の `TestBuildProcessEnvironment_DynamicLinkerVarsAlwaysRemoved`・`TestBuildProcessEnvironment_AllLDVarsRemoved` が引き続き pass することを確認する（AC-09 の回帰）。
-- [ ] `make fmt` → `make test` → `make lint` を実行し green を確認する。
+- [x] `environment.go` に `internal/runner/base/environment` を import する。
+- [x] `BuildProcessEnvironment` 末尾の inline スクラブ（`LD_` prefix ループ + 固定5個の削除ループ、[environment.go:86-95](../../../internal/runner/base/executor/environment.go)）を、マージ結果の各 KEY に対する `if environment.IsForbiddenEnvVar(key) { delete(result, key) }` の単一ループに置換する。マージ後に一括削除する順序は維持する（AC-09）。
+- [x] 不要になった `strings` import が残る場合は削除する（`make lint` で検出）。
+- [x] コメントの stale 参照を修正する。`// See docs/security/README.md for the threat model.`（[environment.go:85](../../../internal/runner/base/executor/environment.go)）を `// See docs/dev/architecture_design/security-architecture.md for the threat model.` に変更する。
+- [x] `environment_test.go` の削除ケースを拡張する:
+  - [x] `TestBuildProcessEnvironment_NonLDDangerousVarsRemoved` の対象リストに `GLIBC_TUNABLES` を追加する（AC-05）。
+  - [x] `DYLD_*` prefix の削除を検証する専用ケース `TestBuildProcessEnvironment_DYLDVarsRemoved` を新設する（`DYLD_INSERT_LIBRARIES`, `DYLD_LIBRARY_PATH`）。§9 の AC-04 検証もこのテスト名を典拠とする（AC-04）。
+  - [x] インタプリタ起動時コード注入変数の削除を検証するケースを追加する（代表として `BASH_ENV`, `PYTHONPATH`, `NODE_OPTIONS`, `PERL5LIB`）（AC-06）。
+  - [x] case-sensitive 化を実行層でも固定する。小文字綴り `ld_preload` を vars 経由で注入した場合に `BuildProcessEnvironment` の結果に保持される（削除されない）ことを検証するケースを追加する（AC-13 の「executor の従来 case-sensitive 挙動が不変」を実測で担保）。
+  - [x] `TestBuildProcessEnvironment_LegitimateVarsPreserved` は変更不要だが、`ENV` を採用した場合に正当変数リストへ影響しないことを確認する（`ENV` は保持対象リストに含めない）。
+- [x] 既存の `TestBuildProcessEnvironment_DynamicLinkerVarsAlwaysRemoved`・`TestBuildProcessEnvironment_AllLDVarsRemoved` が引き続き pass することを確認する（AC-09 の回帰）。
+- [x] `make fmt` → `make test` → `make lint` を実行し green を確認する。
 
 ### PR-2 作成ポイント: executor layer refactor
 
