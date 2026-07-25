@@ -222,13 +222,13 @@
 
 **対象ファイル**: `docs/user/security-risk-assessment.md`/`.ja.md`、`docs/dev/architecture_design/security-architecture.md`/`.ja.md`
 
-- [ ] 各文書内で denylist（危険環境変数）に言及する箇所を、拡張後の対象範囲（`LD_*`/`DYLD_*` prefix、完全一致リスト、インタプリタ起動時コード注入変数）に整合させる。少なくとも次を更新する:
-  - [ ] `docs/user/security-risk-assessment.md` の危険環境変数検出の記述（:123 付近）。`LD_PRELOAD` 単独の例示を、対象カテゴリ（ローダ制御 + インタプリタ注入）を示す記述に拡張する。
-  - [ ] `docs/dev/architecture_design/security-architecture.md` の間接実行 Reject の記述（:441 付近の "loader-control variables"）と脅威記述（:1116 付近）を拡張後の denylist に整合させる。
-  - [ ] [02_architecture.md](02_architecture.md) §6.7 の破壊的変更（`env_vars`/`env_import` の一部設定が改修後ロードエラーになる点）と dry-run による事前検知手順を、利用者向け文書に移行ノートとして追記する。
-- [ ] `.ja.md` を先に編集し、対応する英語版（`.md`）へ `/mktrans` で反映する（バイリンガル文書の編集順序）。対象4文書はいずれも `.ja.md` が日本語原本・`.md` が英訳である（各ファイル冒頭見出しで確認済み）。
-- [ ] `docs/translation_glossary.md` に「denylist」等の新規用語が必要か確認し、必要なら追記する。
-- [ ] 追記・変更した記述が拡張後の実装（対象変数リスト）と一致することを、[01_requirements.md](01_requirements.md) の対象変数リストと突き合わせて確認する。
+- [x] 各文書内で denylist（危険環境変数）に言及する箇所を、拡張後の対象範囲（`LD_*`/`DYLD_*` prefix、完全一致リスト、インタプリタ起動時コード注入変数）に整合させる。少なくとも次を更新する:
+  - [x] `docs/user/security-risk-assessment.md` の危険環境変数検出の記述（:123 付近）。`LD_PRELOAD` 単独の例示を、対象カテゴリ（ローダ制御 + インタプリタ注入）を示す記述に拡張する。
+  - [x] `docs/dev/architecture_design/security-architecture.md` の間接実行 Reject の記述（:441 付近の "loader-control variables"）と脅威記述（:1116 付近）を拡張後の denylist に整合させる。
+  - [x] [02_architecture.md](02_architecture.md) §6.7 の破壊的変更（`env_vars`/`env_import` の一部設定が改修後ロードエラーになる点）と dry-run による事前検知手順を、利用者向け文書に移行ノートとして追記する。
+- [x] `.ja.md` を先に編集し、対応する英語版（`.md`）へ翻訳で反映する（バイリンガル文書の編集順序）。対象4文書はいずれも `.ja.md` が日本語原本・`.md` が英訳である（各ファイル冒頭見出しで確認済み）。
+- [x] `docs/translation_glossary.md` に「denylist」等の新規用語が必要か確認し、必要なら追記する。
+- [x] 追記・変更した記述が拡張後の実装（対象変数リスト）と一致することを、[01_requirements.md](01_requirements.md) の対象変数リストと突き合わせて確認する。
 
 ### フェーズ6: 静的検証と全体の green 化（AC-03）
 

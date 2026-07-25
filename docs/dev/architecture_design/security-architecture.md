@@ -438,7 +438,7 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 }
 ```
 
-**Indirect-execution resolver (wrapper inner commands)**: a wrapper (`env`/`timeout`/`nice`, etc.) has its inner command extracted and risk-assessed (extraction is retained). A privilege-escalation token is Critical, and forbidden forms (loader-control variables, `env -C`, an uninterpretable `env -S`, find/xargs child-process execution, direct dynamic-loader invocation, remote-shell helpers, non-extractable wrappers, exceeding the depth limit, symlink-resolution failure) take priority as a **Blocking deny** (`IndirectReject`); any other extractable ordinary inner command is a flat High regardless of its content (no fine-grained computation). The runner does not re-implement wrapper semantics, and it does not fd-bind or automatically hash-verify the inner command (the inner is recorded in the execution plan for auditing, but that is not identity pinning; Task 0138). Only the shebang interpreter chain of a direct script execution keeps the fine-grained computation as before.
+**Indirect-execution resolver (wrapper inner commands)**: a wrapper (`env`/`timeout`/`nice`, etc.) has its inner command extracted and risk-assessed (extraction is retained). A privilege-escalation token is Critical, and forbidden forms (loader-control variables and interpreter startup code-injection variables, `env -C`, an uninterpretable `env -S`, find/xargs child-process execution, direct dynamic-loader invocation, remote-shell helpers, non-extractable wrappers, exceeding the depth limit, symlink-resolution failure) take priority as a **Blocking deny** (`IndirectReject`); any other extractable ordinary inner command is a flat High regardless of its content (no fine-grained computation). The runner does not re-implement wrapper semantics, and it does not fd-bind or automatically hash-verify the inner command (the inner is recorded in the execution plan for auditing, but that is not identity pinning; Task 0138). Only the shebang interpreter chain of a direct script execution keeps the fine-grained computation as before.
 
 **Command Risk Analysis**:
 - Low risk: Standard system utilities (ls, cat, grep)
@@ -1113,7 +1113,7 @@ The system implements multiple security layers:
 **Threats**:
 - Command injection via environment variables
 - Information leakage via environment
-- Privilege escalation via LD_PRELOAD, etc.
+- Privilege escalation via dynamic-loader control variables (`LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES`, `GLIBC_TUNABLES`, etc.) and interpreter startup code-injection variables (`BASH_ENV`, `PYTHONPATH`, `NODE_OPTIONS`, etc.)
 
 **Countermeasures**:
 - Strict allowlist-based filtering

@@ -120,9 +120,19 @@ func (v *Validator) ValidateConfig(config *runnertypes.Config) (*ValidationResul
 
 #### セキュリティ評価
 - ✅ **コマンドインジェクション対策**: 専用検証関数による包括的防御
-- ✅ **危険環境変数検出**: LD_PRELOAD等のライブラリ注入攻撃防止
+- ✅ **危険環境変数検出**: 動的ローダ制御変数（`LD_PRELOAD`・`DYLD_*` 等）とインタプリタ起動時コード注入変数（`BASH_ENV`・`PYTHONPATH`・`NODE_OPTIONS` 等）を包括的に検出・拒否
 - ✅ **特権コマンド検証**: root権限実行の厳格チェック
 - ✅ **設定整合性**: 重複・矛盾検出による安全性確保
+
+#### 破壊的変更: 環境変数 denylist の拡張
+
+本バージョンより、禁止環境変数名の対象リストが拡張されました。新たに `DYLD_*`（macOS 動的ローダ制御変数）、`GLIBC_TUNABLES`、インタプリタ起動時コード注入変数（`BASH_ENV`、`PYTHONPATH`、`NODE_OPTIONS`、`RUBYOPT`、`PERL5LIB` 等）が3層すべて（実行層・config 層・security 層）で拒否されます。
+
+**影響**: `env_vars` または `env_import` でこれらの変数を指定していた設定は、改修後に config ロードエラー（`ErrForbiddenEnvVar`）となります。たとえば `ENV=production` のような一般的な変数名が denylist に該当する場合は、変数名の変更（例: `APP_ENV=production`）で対処してください。
+
+**事前検知**: アップグレード前に dry-run を実行することで、新たにエラー化する設定を事前に検出できます。エラーメッセージには禁止変数名と対象レベルが含まれます。
+
+なお、実行層の fail-silent スクラブ（最終防衛線としての環境変数除去）は引き続き機能し、`env_allowed` 経由で流入した禁止変数も最終環境から削除されます。
 
 ### 3. ファイル整合性・アクセス制御
 
