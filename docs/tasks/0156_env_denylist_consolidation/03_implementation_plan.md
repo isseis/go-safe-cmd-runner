@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-07-24 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-07-24 |
+| Reviewer | isseis |
 | Comments | - |
 
 ## 関連文書
@@ -88,7 +88,7 @@
 - [ ] 対象変数リストの範囲を確定する。[01_requirements.md](01_requirements.md)「対象変数リスト（暫定）」の確定分（`LD_*`, `DYLD_*` prefix / 完全一致 `GCONV_PATH`, `LOCPATH`, `HOSTALIASES`, `NLSPATH`, `RES_OPTIONS`, `GLIBC_TUNABLES` / インタプリタ変数 `BASH_ENV`, `ENV`, `SHELLOPTS`, `PS4`, `PYTHONPATH`, `PYTHONSTARTUP`, `PERL5LIB`, `PERL5OPT`, `PERL5DB`, `NODE_OPTIONS`, `NODE_PATH`, `RUBYOPT`, `RUBYLIB`, `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_EXTERNAL_DIFF`）を採用する。
 - [ ] 採否候補（`BASH_FUNC_*` prefix, `PYTHONHOME`, `LESSOPEN`, `LESSCLOSE`）および `ENV` の採否を判断し（[02_architecture.md](02_architecture.md) §3.1, §6.7）、確定結果を [01_requirements.md](01_requirements.md) の対象変数リストへ反映する。判断理由をコミットメッセージまたは PR 説明に記録する。判断時の追加考慮点:
   - `BASH_FUNC_*` を採用する場合、実際のエクスポート関数 KEY（`BASH_FUNC_x%%` 等）は `security.ValidateVariableName`（`[A-Za-z_][A-Za-z0-9_]*` のみ許可）を通らないため、config 層（env_import/env_vars）では denylist 検査に達する前に形式エラーになる。一方、実行層のスクラブ（生の `os.Environ` KEY を対象）と security 層の `checkEnvAssignment`（形式検査なし）では prefix 一致する。この層間の非対称を許容できるか判断材料に含める。
-  - `ENV` を採用する場合、`env_vars` に `ENV=production` を書いた既存設定・サンプルがロードエラー化する（[02_architecture.md](02_architecture.md) §6.7）。フェーズ3のテストデータ監査タスクと整合させる。
+  - `ENV` の採否判断により、フェーズ3でのテストデータ監査の範囲が決定される。採用する場合：既存設定・サンプルの `ENV=production` 等がロードエラー化するため、フェーズ3でテストデータの修正が必要（[02_architecture.md](02_architecture.md) §6.7 参照）。採用しない場合：フェーズ3の TOML 監査では `ENV` を対象から除外する。判断結果は本 PR の説明に記録し、次 PR のフェーズ3 実装者が参照できるようにする。
 - [ ] `denylist.go` に非公開の prefix 一致リスト（`[]string`、`LD_`, `DYLD_`, 採用する場合 `BASH_FUNC_`）と完全一致リスト（`map[string]struct{}`）を定義する。各エントリの由来（ローダ制御 / インタプリタ注入）を英語のインラインコメントで簡潔に付す。
 - [ ] `denylist.go` に公開関数 `IsForbiddenEnvVar(name string) bool` を実装する。prefix 一致（case-sensitive な `strings.HasPrefix`）→完全一致（map 参照）の順で判定し、正規化（`ToUpper` 等）は行わない。doc コメントは英語で、case-sensitive である旨と典拠（[01_requirements.md](01_requirements.md)）への参照を含める。
 - [ ] `denylist_test.go`（`package environment`）に単体テストを追加する:
@@ -165,6 +165,107 @@
 - [ ] 削除シンボルの残存参照がないことを確認する（下記「4. 横断検索チェックリスト」）。
 - [ ] `make test && make lint` が green であることを確認する（green ゲート）。
 
+## 2.7 PR 作成ポイント
+
+### PR-1 作成ポイント: environment base package foundations
+
+**対象ステップ**: フェーズ1（全体）
+
+**推奨タイトル**: `feat(0156): consolidate forbidden env var judgment into shared function`
+
+**レビュー観点**: リスト定義の完全性と正確性（ローダ制御変数・インタプリタ変数の網羅） / 単体テスト網羅度（prefix/完全一致/境界ケース） / case-sensitive 判定の根拠と実装 / テスト green 化
+
+**実装モデル要件**: standard
+
+**判定理由**: 基盤機能の実装であり、設計・要件に基づいた直線的な実装。case-sensitive 選択は根拠が明確に文書化されている。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+### PR-2 作成ポイント: executor layer refactor
+
+**対象ステップ**: フェーズ2（全体）
+
+**推奨タイトル**: `feat(0156): refactor executor to use consolidated forbidden env var check`
+
+**レビュー観点**: inline スクラブの置換が正確か（既存削除順序維持） / コメント stale 参照の修正 / 拡張テストの AC カバレッジ（DYLD/GLIBC/インタプリタ変数/case-sensitive） / 既存テスト回帰なし
+
+**実装モデル要件**: standard
+
+**判定理由**: PR-1 の基盤を利用したストレートな層別リファクタ。新規ロジック導入なし、既存挙動（fail-silent スクラブ）を保持。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+### PR-3 作成ポイント: config layer refactor with env_vars check
+
+**対象ステップ**: フェーズ3（全体）
+
+**推奨タイトル**: `feat(0156): refactor config layer and add env_vars denylist check`
+
+**レビュー観点**: 私有関数削除が完全か（重複残存ゼロ） / ProcessEnv の denylist 検査位置が正確（形式検査直後、重複検査前） / 削除テスト invariant の引き継ぎ完全性 / env_vars 新規拒否テストの AC カバレッジ / テストデータ TOML 監査結果
+
+**実装モデル要件**: standard
+
+**判定理由**: PR-1 基盤の活用。新規機能は env_vars への直接チェック追加で、既存 env_import 判定と同一関数・同系統エラー型で慣用的な拡張。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+### PR-4 作成ポイント: security layer refactor with case-sensitive semantics change
+
+**対象ステップ**: フェーズ4（全体）
+
+**推奨タイトル**: `feat(0156): refactor security layer and enforce case-sensitive env var matching`
+
+**レビュー観点**: case-insensitive から case-sensitive への意図的挙動変更が正しいか（アーキテクチャ §6.2 根拠の確認） / security 層テスト拡張が徹底的か（完全一致/インタプリタ変数/case-sensitive near-miss を含む） / Reject/Blocking 分類の不変性（AC-10） / end-to-end evaluator テストの AC-10 カバレッジ
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: security 層は critical infrastructure であり、case-sensitive 化は既存 case-insensitive 挙動からの意図的変更（ローダ・インタプリタの厳密なスペル照合に基づく）。複数 AC（AC-05, AC-06, AC-10）と security 層変更を伴うため、慎重なレビューが必要。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+### PR-5 作成ポイント: documentation and static verification
+
+**対象ステップ**: フェーズ5-6（全体）
+
+**推奨タイトル**: `docs(0156): update security docs and verify denylist consolidation`
+
+**レビュー観点**: セキュリティ文書の denylist 対象範囲が実装と一致か（ローダ/インタプリタ両カテゴリを記述） / バイリンガル編集順序（.ja → .md で mktrans） / `rg` による重複シンボル確認結果（AC-03） / green ゲート最終確認
+
+**実装モデル要件**: standard
+
+**判定理由**: documentation 更新と static 検証に限定。新規コード導入なし。
+
+**依存**: PR-1, PR-2, PR-3, PR-4 のマージが必須（ドキュメント更新と全体検証は実装完了後に実行）
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+---
+
+## 2.8 PR 構成
+
+| PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | フェーズ1 | `internal/runner/base/environment/denylist.go/denylist_test.go` 新設、`IsForbiddenEnvVar` 実装、単体テスト完備 | standard |
+| PR-2 | フェーズ2 | `BuildProcessEnvironment` のリファクタ、コメント修正、executor テスト拡張（DYLD/GLIBC/インタプリタ/case-sensitive） | standard |
+| PR-3 | フェーズ3 | `expansion.go` の私有関数削除、`ProcessEnvImport`/`ProcessEnv` リファクタ、config テスト削除・追加、TOML 監査 | standard |
+| PR-4 | フェーズ4 | `indirect_execution.go` の `isLoaderControlVar` 削除、`checkEnvAssignment` リファクタ、case-sensitive 化、security テスト拡張（完全一致/インタプリタ変数/case-sensitive、evaluator end-to-end） | frontier-recommended |
+| PR-5 | フェーズ5-6 | ドキュメント更新（security-risk-assessment.md/security-architecture.md 両言語）、mktrans 反映、glossary 追記、AC-03 重複検証、green ゲート最終確認 | standard |
+
 ---
 
 ## 3. 削除テストの invariant 引き継ぎ
@@ -225,14 +326,13 @@
 
 ---
 
-## 8. 実装チェックリスト（フェーズ別サマリ）
+## 8. 実装チェックリスト（PR 別サマリ）
 
-- [ ] フェーズ1: `environment` パッケージ新設 + 単体テスト green
-- [ ] フェーズ2: 実行層委譲 + 削除テスト拡張 green
-- [ ] フェーズ3: config 層委譲 + env_vars 検査追加 + 拒否テスト green
-- [ ] フェーズ4: security 層委譲 + case-sensitive 化 + Reject テスト拡張 green
-- [ ] フェーズ5: セキュリティ文書整合（ja→en 反映）
-- [ ] フェーズ6: 重複ゼロの静的確認 + `make test && make lint` を green にする
+- [ ] PR-1 マージ済み（対象ステップ: フェーズ1）
+- [ ] PR-2 マージ済み（対象ステップ: フェーズ2）
+- [ ] PR-3 マージ済み（対象ステップ: フェーズ3）
+- [ ] PR-4 マージ済み（対象ステップ: フェーズ4）
+- [ ] PR-5 マージ済み（対象ステップ: フェーズ5-6）
 
 ---
 
