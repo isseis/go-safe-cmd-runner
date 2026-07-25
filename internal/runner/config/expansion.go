@@ -276,33 +276,6 @@ func processVarRefs(
 	return result.String(), nil
 }
 
-// forbiddenEnvVarPrefixes lists prefixes whose matching environment variables must never
-// be passed to child processes. All LD_* variables are forbidden because they control
-// dynamic linker behavior, and any future LD_* variable carries the same risk.
-var forbiddenEnvVarPrefixes = []string{"LD_"}
-
-// forbiddenEnvVarExact lists exact names of forbidden environment variables that do not
-// carry a forbidden prefix. These variables affect locale/resolver/alias resolution and
-// can be used to redirect library or name lookups.
-var forbiddenEnvVarExact = map[string]struct{}{
-	"GCONV_PATH":  {}, // redirects iconv character-set conversion modules
-	"LOCPATH":     {}, // overrides locale data directory
-	"HOSTALIASES": {}, // overrides hostname aliases for resolver
-	"NLSPATH":     {}, // redirects NLS message catalogue search path
-	"RES_OPTIONS": {}, // overrides DNS resolver options
-}
-
-// isForbiddenEnvVar reports whether name is a forbidden environment variable.
-func isForbiddenEnvVar(name string) bool {
-	for _, prefix := range forbiddenEnvVarPrefixes {
-		if strings.HasPrefix(name, prefix) {
-			return true
-		}
-	}
-	_, ok := forbiddenEnvVarExact[name]
-	return ok
-}
-
 // ProcessEnvImport processes env_import mappings and imports system environment variables
 // as internal variables. It validates that all referenced system variables are in the allowlist.
 func ProcessEnvImport(
@@ -350,7 +323,7 @@ func ProcessEnvImport(
 		}
 
 		// Reject forbidden variables
-		if isForbiddenEnvVar(systemVarName) {
+		if environment.IsForbiddenEnvVar(systemVarName) {
 			return nil, fmt.Errorf("%w: %s cannot be imported via env_import (level: %s)",
 				ErrForbiddenEnvVar, systemVarName, level)
 		}
@@ -828,6 +801,12 @@ func ProcessEnv(
 				Context: mapping,
 				Reason:  err.Error(),
 			}
+		}
+
+		// Reject forbidden variables
+		if environment.IsForbiddenEnvVar(envVarName) {
+			return nil, fmt.Errorf("%w: %s cannot be set via env_vars (level: %s)",
+				ErrForbiddenEnvVar, envVarName, level)
 		}
 
 		// Check for duplicate definition
