@@ -359,7 +359,7 @@ func TestProcessEnvImport_DuplicateDefinition(t *testing.T) {
 	require.ErrorIs(t, err, config.ErrDuplicateVariableDefinition)
 }
 
-// TestProcessEnvImport_ForbiddenVariable tests that dynamic-linker control variables cannot be imported.
+// TestProcessEnvImport_ForbiddenVariable tests that environment variables on the denylist cannot be imported.
 func TestProcessEnvImport_ForbiddenVariable(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -381,6 +381,21 @@ func TestProcessEnvImport_ForbiddenVariable(t *testing.T) {
 			sysVar: "LD_AUDIT",
 			sysVal: "/audit.so",
 		},
+		{
+			name:   "DYLD_INSERT_LIBRARIES",
+			sysVar: "DYLD_INSERT_LIBRARIES",
+			sysVal: "/evil.dylib",
+		},
+		{
+			name:   "GLIBC_TUNABLES",
+			sysVar: "GLIBC_TUNABLES",
+			sysVal: "glibc.malloc.check=1",
+		},
+		{
+			name:   "PYTHONPATH",
+			sysVar: "PYTHONPATH",
+			sysVal: "/attacker/lib/python",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -389,6 +404,38 @@ func TestProcessEnvImport_ForbiddenVariable(t *testing.T) {
 			systemEnv := map[string]string{tt.sysVar: tt.sysVal}
 
 			_, err := config.ProcessEnvImport(fromEnv, allowlist, systemEnv, "global")
+			require.Error(t, err)
+			assert.ErrorIs(t, err, config.ErrForbiddenEnvVar)
+		})
+	}
+}
+
+// TestProcessEnv_ForbiddenVariable tests that denylist variables cannot be set via env_vars.
+func TestProcessEnv_ForbiddenVariable(t *testing.T) {
+	tests := []struct {
+		name string
+		env  []string
+	}{
+		{
+			name: "LD_PRELOAD",
+			env:  []string{"LD_PRELOAD=/evil.so"},
+		},
+		{
+			name: "PYTHONPATH",
+			env:  []string{"PYTHONPATH=/attacker/lib/python"},
+		},
+		{
+			name: "DYLD_LIBRARY_PATH",
+			env:  []string{"DYLD_LIBRARY_PATH=/evil.dylib"},
+		},
+		{
+			name: "GLIBC_TUNABLES",
+			env:  []string{"GLIBC_TUNABLES=glibc.malloc.check=1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := config.ProcessEnv(tt.env, nil, "test")
 			require.Error(t, err)
 			assert.ErrorIs(t, err, config.ErrForbiddenEnvVar)
 		})

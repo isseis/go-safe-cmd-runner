@@ -155,18 +155,18 @@
 
 **対象ファイル**: `internal/runner/config/expansion.go`、`internal/runner/config/expansion_test.go`、`internal/runner/config/expansion_unit_test.go`
 
-- [ ] `expansion.go` から `forbiddenEnvVarPrefixes`・`forbiddenEnvVarExact`・`isForbiddenEnvVar`（[:279-304](../../../internal/runner/config/expansion.go)）を削除する。
-- [ ] `ProcessEnvImport` 内の呼び出し（[:353](../../../internal/runner/config/expansion.go)）を `environment.IsForbiddenEnvVar(systemVarName)` に置換する。エラー返却（`ErrForbiddenEnvVar`、メッセージ `%w: %s cannot be imported via env_import (level: %s)`）は変更しない。
-- [ ] `ProcessEnv`（env_vars、[:806-852](../../../internal/runner/config/expansion.go)）に denylist 検査を追加する。`security.ValidateVariableName` による形式検査（:824-831）の直後、重複検査の前に、`if environment.IsForbiddenEnvVar(envVarName) { return nil, fmt.Errorf("%w: %s cannot be set via env_vars (level: %s)", ErrForbiddenEnvVar, envVarName, level) }` を挿入する（AC-07, AC-08）。既存の形式検査の順序・エラー型は変えない。
+- [x] `expansion.go` から `forbiddenEnvVarPrefixes`・`forbiddenEnvVarExact`・`isForbiddenEnvVar`（[:279-304](../../../internal/runner/config/expansion.go)）を削除する。
+- [x] `ProcessEnvImport` 内の呼び出し（[:353](../../../internal/runner/config/expansion.go)）を `environment.IsForbiddenEnvVar(systemVarName)` に置換する。エラー返却（`ErrForbiddenEnvVar`、メッセージ `%w: %s cannot be imported via env_import (level: %s)`）は変更しない。
+- [x] `ProcessEnv`（env_vars、[:806-852](../../../internal/runner/config/expansion.go)）に denylist 検査を追加する。`security.ValidateVariableName` による形式検査（:824-831）の直後、重複検査の前に、`if environment.IsForbiddenEnvVar(envVarName) { return nil, fmt.Errorf("%w: %s cannot be set via env_vars (level: %s)", ErrForbiddenEnvVar, envVarName, level) }` を挿入する（AC-07, AC-08）。既存の形式検査の順序・エラー型は変えない。
   - エラー生成に構造化 detail 型（`ErrInvalidEnvKeyDetail` 等）ではなく bare `fmt.Errorf` を用いるのは、既存の env_import 禁止変数エラー（`ProcessEnvImport` :354-355 も同じく bare `fmt.Errorf` で `ErrForbiddenEnvVar` をラップ）と様式を揃えるためであり、意図的である（[02_architecture.md](02_architecture.md) §4）。
-- [ ] テストデータ・サンプル TOML の監査を行う。拡張後 denylist（特に `ENV` を採用する場合）に該当する KEY を `env_vars`/`env_import` に持つ既存 TOML を検出し、テストの green ゲートを壊さないか確認する。`rg -n "env_vars|env_import" --glob '*.toml'` の該当行を [01_requirements.md](01_requirements.md) 対象変数リストと突き合わせる。既知例: `sample/includes_example.toml` の `ENV=production`（`ENV` 採用時に該当）。テストで実ロードされる testdata が該当する場合は、当該テストデータを安全な変数名へ修正するか、`ENV` 採否判断（フェーズ1）へ差し戻す。
-- [ ] `expansion_test.go` の private 関数直接参照テストを置き換える。ロジックの検証は `environment` パッケージへ移ったため、以下3件を削除する:
-  - [ ] `TestIsForbiddenEnvVar_Prefix`（[:261](../../../internal/runner/config/expansion_test.go)）を削除。
-  - [ ] `TestIsForbiddenEnvVar_Exact`（[:284](../../../internal/runner/config/expansion_test.go)）を削除。
-  - [ ] `TestIsForbiddenEnvVar_SafeVarsAllowed`（[:294](../../../internal/runner/config/expansion_test.go)）を削除。
+- [x] テストデータ・サンプル TOML の監査を行う。拡張後 denylist（特に `ENV` を採用する場合）に該当する KEY を `env_vars`/`env_import` に持つ既存 TOML を検出し、テストの green ゲートを壊さないか確認する。`rg -n "env_vars|env_import" --glob '*.toml'` の該当行を [01_requirements.md](01_requirements.md) 対象変数リストと突き合わせる。既知例: `sample/includes_example.toml` の `ENV=production`（`ENV` 採用時に該当）。テストで実ロードされる testdata が該当する場合は、当該テストデータを安全な変数名へ修正するか、`ENV` 採否判断（フェーズ1）へ差し戻す。→ TOML 監査完了、テスト対象ファイルに該当なし（`sample/includes_example.toml` の `ENV=production` はテストでロードされない）。
+- [x] `expansion_test.go` の private 関数直接参照テストを置き換える。ロジックの検証は `environment` パッケージへ移ったため、以下3件を削除する:
+  - [x] `TestIsForbiddenEnvVar_Prefix`（[:261](../../../internal/runner/config/expansion_test.go)）を削除。
+  - [x] `TestIsForbiddenEnvVar_Exact`（[:284](../../../internal/runner/config/expansion_test.go)）を削除。
+  - [x] `TestIsForbiddenEnvVar_SafeVarsAllowed`（[:294](../../../internal/runner/config/expansion_test.go)）を削除。
   - （これら3件の invariant は「§削除テストの invariant 引き継ぎ」の通りフェーズ1の環境パッケージテストが継承する。）
-- [ ] `expansion_unit_test.go` の env_import 拒否テストを拡張する。`TestProcessEnvImport_ForbiddenVariable`（[:363](../../../internal/runner/config/expansion_unit_test.go)）に `DYLD_INSERT_LIBRARIES`・`GLIBC_TUNABLES`・`PYTHONPATH`（代表インタプリタ変数）のケースを追加し、いずれも `ErrForbiddenEnvVar` を返すことを `assert.ErrorIs` で検証する（AC-04, AC-05, AC-06）。
-- [ ] `expansion_unit_test.go` に env_vars 拒否テスト `TestProcessEnv_ForbiddenVariable` を新設する。`ProcessEnv` に `LD_PRELOAD`・`PYTHONPATH`・`DYLD_LIBRARY_PATH`・`GLIBC_TUNABLES` を KEY とする env_vars を渡し、いずれも `ErrForbiddenEnvVar` を返すことを `assert.ErrorIs` で検証する（AC-07, AC-08）。
+- [x] `expansion_unit_test.go` の env_import 拒否テストを拡張する。`TestProcessEnvImport_ForbiddenVariable`（[:363](../../../internal/runner/config/expansion_unit_test.go)）に `DYLD_INSERT_LIBRARIES`・`GLIBC_TUNABLES`・`PYTHONPATH`（代表インタプリタ変数）のケースを追加し、いずれも `ErrForbiddenEnvVar` を返すことを `assert.ErrorIs` で検証する（AC-04, AC-05, AC-06）。
+- [x] `expansion_unit_test.go` に env_vars 拒否テスト `TestProcessEnv_ForbiddenVariable` を新設する。`ProcessEnv` に `LD_PRELOAD`・`PYTHONPATH`・`DYLD_LIBRARY_PATH`・`GLIBC_TUNABLES` を KEY とする env_vars を渡し、いずれも `ErrForbiddenEnvVar` を返すことを `assert.ErrorIs` で検証する（AC-07, AC-08）。
 - [ ] `make fmt` → `make test` → `make lint` を実行し green を確認する。
 
 ### PR-3 作成ポイント: config layer refactor with env_vars check
