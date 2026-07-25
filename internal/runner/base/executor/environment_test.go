@@ -493,6 +493,7 @@ func TestBuildProcessEnvironment_AllLDVarsRemoved(t *testing.T) {
 func TestBuildProcessEnvironment_NonLDDangerousVarsRemoved(t *testing.T) {
 	dangerousVars := []string{
 		"GCONV_PATH", "LOCPATH", "HOSTALIASES", "NLSPATH", "RES_OPTIONS",
+		"GLIBC_TUNABLES",
 	}
 
 	for _, name := range dangerousVars {
@@ -534,4 +535,64 @@ func TestBuildProcessEnvironment_LegitimateVarsPreserved(t *testing.T) {
 			assert.Equal(t, want, entry.Value, "value of %q must be unchanged", name)
 		}
 	}
+}
+
+// TestBuildProcessEnvironment_DYLDVarsRemoved verifies that DYLD_* variables are
+// removed from the child process environment.
+func TestBuildProcessEnvironment_DYLDVarsRemoved(t *testing.T) {
+	dyldVars := []string{
+		"DYLD_INSERT_LIBRARIES",
+		"DYLD_LIBRARY_PATH",
+		"DYLD_FOOBAR",
+	}
+
+	for _, name := range dyldVars {
+		t.Run(name, func(t *testing.T) {
+			global := createTestRuntimeGlobal([]string{}, map[string]string{name: "injected"})
+			group := createTestRuntimeGroup(map[string]string{})
+			cmd := createTestRuntimeCommand([]string{}, map[string]string{})
+
+			result := executor.BuildProcessEnvironment(global, group, cmd)
+			assert.NotContains(t, result, name, "DYLD_* variable must be removed")
+		})
+	}
+}
+
+// TestBuildProcessEnvironment_InterpreterVarsRemoved verifies that interpreter
+// startup code-injection variables are removed from the child process
+// environment.
+func TestBuildProcessEnvironment_InterpreterVarsRemoved(t *testing.T) {
+	interpreterVars := []string{
+		"BASH_ENV",
+		"ENV",
+		"PYTHONPATH",
+		"NODE_OPTIONS",
+		"PERL5LIB",
+	}
+
+	for _, name := range interpreterVars {
+		t.Run(name, func(t *testing.T) {
+			global := createTestRuntimeGlobal([]string{}, map[string]string{name: "injected"})
+			group := createTestRuntimeGroup(map[string]string{})
+			cmd := createTestRuntimeCommand([]string{}, map[string]string{})
+
+			result := executor.BuildProcessEnvironment(global, group, cmd)
+			assert.NotContains(t, result, name, "interpreter code-injection variable must be removed")
+		})
+	}
+}
+
+// TestBuildProcessEnvironment_LowercaseVariantNotRemoved verifies that lowercase
+// variants of denylist entries (e.g. ld_preload) are preserved in the child
+// process environment because matching is case-sensitive.
+func TestBuildProcessEnvironment_LowercaseVariantNotRemoved(t *testing.T) {
+	global := createTestRuntimeGlobal([]string{}, map[string]string{
+		"ld_preload": "/tmp/lib.so",
+	})
+	group := createTestRuntimeGroup(map[string]string{})
+	cmd := createTestRuntimeCommand([]string{}, map[string]string{})
+
+	result := executor.BuildProcessEnvironment(global, group, cmd)
+	assert.Contains(t, result, "ld_preload",
+		"lowercase ld_preload must be preserved -- matching is case-sensitive")
 }

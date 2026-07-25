@@ -2,9 +2,9 @@ package executor
 
 import (
 	"os"
-	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -82,16 +82,11 @@ func BuildProcessEnvironment(
 	// variables from the child process environment. The runner enforces deterministic
 	// dynamic library loading by clearing these variables regardless of how they entered
 	// the environment (env_allowlist, vars, etc.).
-	// See docs/security/README.md for the threat model.
+	// See docs/dev/architecture_design/security-architecture.md for the threat model.
 	for key := range result {
-		if strings.HasPrefix(key, "LD_") {
+		if environment.IsForbiddenEnvVar(key) {
 			delete(result, key)
 		}
-	}
-	for _, key := range []string{
-		"GCONV_PATH", "LOCPATH", "HOSTALIASES", "NLSPATH", "RES_OPTIONS",
-	} {
-		delete(result, key)
 	}
 
 	return result
