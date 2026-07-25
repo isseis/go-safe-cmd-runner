@@ -543,6 +543,7 @@ func TestBuildProcessEnvironment_DYLDVarsRemoved(t *testing.T) {
 	dyldVars := []string{
 		"DYLD_INSERT_LIBRARIES",
 		"DYLD_LIBRARY_PATH",
+		"DYLD_FOOBAR",
 	}
 
 	for _, name := range dyldVars {
@@ -563,6 +564,7 @@ func TestBuildProcessEnvironment_DYLDVarsRemoved(t *testing.T) {
 func TestBuildProcessEnvironment_InterpreterVarsRemoved(t *testing.T) {
 	interpreterVars := []string{
 		"BASH_ENV",
+		"ENV",
 		"PYTHONPATH",
 		"NODE_OPTIONS",
 		"PERL5LIB",
