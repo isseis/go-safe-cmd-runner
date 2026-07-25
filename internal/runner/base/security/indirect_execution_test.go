@@ -5,6 +5,7 @@ package security
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -33,12 +34,7 @@ func hasArtifactPath(arts []risktypes.ExecutedArtifact, path string) bool {
 
 // hasReason reports whether the result carries the given reason code.
 func hasReason(res IndirectExecutionResult, code risktypes.ReasonCode) bool {
-	for _, c := range res.ReasonCodes {
-		if c == code {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(res.ReasonCodes, code)
 }
 
 // TestIndirect_WrapperSudoCritical verifies a privilege token reached through a
