@@ -33,6 +33,7 @@ var forbiddenEnvVarExact = map[string]struct{}{
 	// Shell interpreter startup code injection.
 	"BASH_ENV":  {}, // sourced by non-interactive bash before running a script
 	"ENV":       {}, // sourced by POSIX sh-compatible shells at startup
+	"ZDOTDIR":   {}, // overrides zsh startup directory (sources malicious .zshenv)
 	"SHELLOPTS": {}, // pre-sets shell options, can enable dangerous behavior on startup
 	"PS4":       {}, // expanded and can execute command substitution under `set -x`
 
@@ -43,6 +44,7 @@ var forbiddenEnvVarExact = map[string]struct{}{
 
 	// Perl interpreter startup code injection.
 	"PERL5LIB": {}, // prepends attacker-controlled module search path
+	"PERLLIB":  {}, // alternative/fallback perl library search path
 	"PERL5OPT": {}, // injects interpreter command-line options at startup
 	"PERL5DB":  {}, // injects code executed by the perl debugger hook
 
@@ -57,6 +59,8 @@ var forbiddenEnvVarExact = map[string]struct{}{
 	// Git remote-helper / diff code execution.
 	"GIT_SSH":           {}, // replaces the ssh command git invokes
 	"GIT_SSH_COMMAND":   {}, // replaces the ssh command git invokes (takes precedence over GIT_SSH)
+	"GIT_ASKPASS":       {}, // helper command git invokes to prompt for credentials
+	"SSH_ASKPASS":       {}, // helper command ssh invokes to prompt for credentials
 	"GIT_EXTERNAL_DIFF": {}, // replaces the diff command git invokes
 
 	// `less` pager preprocessor code execution.

@@ -23,6 +23,24 @@ func TestIsForbiddenEnvVar_Prefix(t *testing.T) {
 }
 
 func TestIsForbiddenEnvVar_Exact(t *testing.T) {
+	criticalExacts := []string{
+		"GLIBC_TUNABLES",
+		"BASH_ENV",
+		"ENV",
+		"PYTHONPATH",
+		"PYTHONHOME",
+		"PERL5LIB",
+		"NODE_OPTIONS",
+		"RUBYOPT",
+		"GIT_SSH_COMMAND",
+		"LESSOPEN",
+	}
+	for _, name := range criticalExacts {
+		t.Run("Critical_"+name, func(t *testing.T) {
+			assert.True(t, IsForbiddenEnvVar(name))
+		})
+	}
+
 	// Range over the package's own exact-match list so that adding an entry there
 	// automatically extends this test's coverage.
 	for name := range forbiddenEnvVarExact {
