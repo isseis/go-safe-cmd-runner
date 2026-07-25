@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
@@ -762,11 +763,13 @@ func envSplitArg(args []string, i int) (payload string, consumed int, isSplit, v
 	return "", 0, false, false
 }
 
-// checkEnvAssignment rejects loader-control assignments (LD_*/DYLD_*) and records
-// a PATH override. rejected is true when the assignment must be denied.
+// checkEnvAssignment rejects assignments of environment variables on the denylist
+// (loader-control variables, interpreter startup code-injection variables, ...) and
+// records a PATH override. Matching is case-sensitive — only exact spelling matches
+// the denylist entries. rejected is true when the assignment must be denied.
 func checkEnvAssignment(t string, pathOverridden *bool) (IndirectExecutionResult, bool) {
 	name, _, _ := strings.Cut(t, "=")
-	if isLoaderControlVar(name) {
+	if environment.IsForbiddenEnvVar(name) {
 		return rejectClass(risktypes.ReasonForbiddenEnvVar, ""), true
 	}
 	if name == "PATH" {
@@ -1903,20 +1906,6 @@ func isAssignment(t string) bool {
 		return false
 	}
 	return ValidateVariableName(name) == nil
-}
-
-// isLoaderControlVar reports whether name is a dynamic-loader control variable:
-// any LD_* (ELF) or DYLD_* (macOS) variable. Supplying one via a wrapper lets an
-// attacker change which shared objects an otherwise-verified binary loads, so
-// these are rejected. The match is a prefix match, not an allowlist of the
-// well-known names (LD_PRELOAD, LD_LIBRARY_PATH, …), so loader variables beyond
-// those — LD_DEBUG, LD_BIND_NOW, LD_AUDIT, … — are also rejected, keeping the
-// fail-closed posture. The DYLD_ family is rejected on every OS since the deny
-// list is platform independent. Names are upper-cased before matching so a
-// lower-case spelling cannot slip past.
-func isLoaderControlVar(name string) bool {
-	upper := strings.ToUpper(name)
-	return strings.HasPrefix(upper, "LD_") || strings.HasPrefix(upper, "DYLD_")
 }
 
 // isPrivilegeCommand reports whether the command escalates privilege

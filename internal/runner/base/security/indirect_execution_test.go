@@ -344,22 +344,31 @@ func TestIndirect_EnvPathResolutionSwap(t *testing.T) {
 	assert.Equal(t, runnertypes.RiskLevelHigh, ok.Level)
 }
 
-// TestIndirect_WrapperLoaderEnvRejected verifies loader-control environment
-// variables supplied through env are rejected on every OS.
+// TestIndirect_WrapperLoaderEnvRejected verifies that environment variables on the
+// denylist (loader-control, locale/resolver, and interpreter startup code-injection
+// variables) supplied through env are rejected on every OS. Matching is
+// case-sensitive: only the exact spelling the denylist recognises is rejected.
 func TestIndirect_WrapperLoaderEnvRejected(t *testing.T) {
 	cases := []struct {
 		name string
 		args []string
 	}{
+		// LD_* prefix (loader control).
 		{"LD_PRELOAD", []string{"LD_PRELOAD=/tmp/evil.so", "ls"}},
 		{"LD_LIBRARY_PATH", []string{"LD_LIBRARY_PATH=/tmp", "ls"}},
 		{"LD_AUDIT", []string{"LD_AUDIT=/tmp/a.so", "ls"}},
-		{"DYLD_INSERT_LIBRARIES", []string{"DYLD_INSERT_LIBRARIES=/tmp/x.dylib", "ls"}},
-		// Any LD_*/DYLD_* is rejected by prefix, not just the well-known names, so
-		// less common loader variables cannot weaken the fail-closed posture.
+		// LD_* prefix rejects any name under the prefix, not just well-known ones.
 		{"LD_DEBUG", []string{"LD_DEBUG=all", "ls"}},
 		{"LD_BIND_NOW", []string{"LD_BIND_NOW=1", "ls"}},
+		// DYLD_* prefix.
+		{"DYLD_INSERT_LIBRARIES", []string{"DYLD_INSERT_LIBRARIES=/tmp/x.dylib", "ls"}},
 		{"DYLD_LIBRARY_PATH", []string{"DYLD_LIBRARY_PATH=/tmp", "ls"}},
+		// Exact-match locale / resolver / glibc tunables.
+		{"GCONV_PATH", []string{"GCONV_PATH=/tmp/evil", "ls"}},
+		{"GLIBC_TUNABLES", []string{"GLIBC_TUNABLES=glibc.malloc.mxfast=1", "ls"}},
+		// Interpreter startup code-injection variables.
+		{"BASH_ENV", []string{"BASH_ENV=/tmp/evil.bash", "ls"}},
+		{"PYTHONPATH", []string{"PYTHONPATH=/tmp/evil", "ls"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -368,6 +377,16 @@ func TestIndirect_WrapperLoaderEnvRejected(t *testing.T) {
 			assert.True(t, hasReason(res, risktypes.ReasonForbiddenEnvVar))
 		})
 	}
+}
+
+// TestIndirect_WrapperLoaderEnvCaseSensitive verifies that lower-case spellings of
+// denylist variables are NOT rejected. Matching is case-sensitive because the
+// dynamic loader and interpreters only recognize the exact upper-case spelling;
+// a lower-case name has no effect on the target process and rejecting it would be
+// over-blocking without shrinking the real attack surface.
+func TestIndirect_WrapperLoaderEnvCaseSensitive(t *testing.T) {
+	res := analyzeIndirectCmd("env", "ld_preload=/tmp/evil.so", "ls")
+	assert.Equal(t, IndirectFloor, res.Kind, "lower-case ld_preload must not be rejected")
 }
 
 // TestIndirect_EnvChdirRejected verifies env -C/--chdir fails closed: changing the
