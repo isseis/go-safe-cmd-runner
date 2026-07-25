@@ -765,8 +765,10 @@ func envSplitArg(args []string, i int) (payload string, consumed int, isSplit, v
 
 // checkEnvAssignment rejects assignments of environment variables on the denylist
 // (loader-control variables, interpreter startup code-injection variables, ...) and
-// records a PATH override. Matching is case-sensitive — only exact spelling matches
-// the denylist entries. rejected is true when the assignment must be denied.
+// records a PATH override. Matching is case-sensitive — variable names are compared
+// as-is against the denylist (which includes both prefix entries and exact-match
+// entries) without normalisation. rejected is true when the assignment must be
+// denied.
 func checkEnvAssignment(t string, pathOverridden *bool) (IndirectExecutionResult, bool) {
 	name, _, _ := strings.Cut(t, "=")
 	if environment.IsForbiddenEnvVar(name) {

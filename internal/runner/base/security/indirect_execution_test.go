@@ -368,6 +368,7 @@ func TestIndirect_WrapperLoaderEnvRejected(t *testing.T) {
 		{"GLIBC_TUNABLES", []string{"GLIBC_TUNABLES=glibc.malloc.mxfast=1", "ls"}},
 		// Interpreter startup code-injection variables.
 		{"BASH_ENV", []string{"BASH_ENV=/tmp/evil.bash", "ls"}},
+		{"ENV", []string{"ENV=production", "ls"}},
 		{"PYTHONPATH", []string{"PYTHONPATH=/tmp/evil", "ls"}},
 	}
 	for _, tc := range cases {
@@ -387,6 +388,9 @@ func TestIndirect_WrapperLoaderEnvRejected(t *testing.T) {
 func TestIndirect_WrapperLoaderEnvCaseSensitive(t *testing.T) {
 	res := analyzeIndirectCmd("env", "ld_preload=/tmp/evil.so", "ls")
 	assert.Equal(t, IndirectFloor, res.Kind, "lower-case ld_preload must not be rejected")
+
+	res = analyzeIndirectCmd("env", "dyld_insert_libraries=/tmp/evil.dylib", "ls")
+	assert.Equal(t, IndirectFloor, res.Kind, "lower-case dyld_insert_libraries must not be rejected")
 }
 
 // TestIndirect_EnvChdirRejected verifies env -C/--chdir fails closed: changing the

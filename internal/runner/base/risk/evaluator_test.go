@@ -573,6 +573,10 @@ func TestEvaluateRisk_IndirectExecutionDeny(t *testing.T) {
 			wantBlock: true, wantReason: risktypes.ReasonForbiddenEnvVar, checkReason: true,
 		},
 		{
+			name: "env ENV is Blocking", cmd: "env", args: []string{"ENV=production", "ls"},
+			wantBlock: true, wantReason: risktypes.ReasonForbiddenEnvVar, checkReason: true,
+		},
+		{
 			name: "find -exec is Blocking", cmd: "find", args: []string{"/tmp", "-exec", "rm", "{}", ";"},
 			wantBlock: true, wantReason: risktypes.ReasonIndirectExecutionRejected, checkReason: true,
 		},
