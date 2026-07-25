@@ -71,6 +71,7 @@
 **動的ローダ制御変数（prefix 一致）**
 - `LD_*`（既存）
 - `DYLD_*`（macOS dyld、security 層のみ既存 → 全層に拡大）
+- `BASH_FUNC_*`（採用。Shellshock 型のエクスポート関数注入 / CVE-2014-6271 系。理由は下記「採否判断の記録」参照）
 
 **動的ローダ制御変数（完全一致）**
 - `GCONV_PATH`, `LOCPATH`, `HOSTALIASES`, `NLSPATH`, `RES_OPTIONS`（既存）
@@ -78,16 +79,19 @@
 
 **インタプリタ起動時コード注入変数（完全一致、新規）**
 - シェル系: `BASH_ENV`, `ENV`, `SHELLOPTS`, `PS4`
-- Python: `PYTHONPATH`, `PYTHONSTARTUP`
+- Python: `PYTHONPATH`, `PYTHONSTARTUP`, `PYTHONHOME`（採用。理由は下記「採否判断の記録」参照）
 - Perl: `PERL5LIB`, `PERL5OPT`, `PERL5DB`
 - Node.js: `NODE_OPTIONS`, `NODE_PATH`
 - Ruby: `RUBYOPT`, `RUBYLIB`
 - Git（リモートヘルパー経由コード実行）: `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_EXTERNAL_DIFF`
+- `less` ページャ経由のコード実行（採用。理由は下記「採否判断の記録」参照）: `LESSOPEN`, `LESSCLOSE`
 
-> **実装時に採否を再検討する候補**（同種の既知ベクタ。本リストへの追加可否は実装時に判断する）:
-> - `BASH_FUNC_*`（prefix、Shellshock 型のエクスポート関数注入 / CVE-2014-6271 系）
-> - `PYTHONHOME`（Python 標準ライブラリ位置の乗っ取り）
-> - `LESSOPEN` / `LESSCLOSE`（`less` の input preprocessor 経由のコード実行）
+### 採否判断の記録（フェーズ1で確定）
+
+- **`BASH_FUNC_*`（prefix）**: 採用。エクスポートされたシェル関数定義を運ぶ変数で、bash がこれを読み込むと起動時に埋め込まれた関数本体を実行する（`BASH_ENV` と同種のコード注入経路）。config 層では実際のエクスポート KEY（`BASH_FUNC_x%%` 等）が `security.ValidateVariableName` の形式検査（`[A-Za-z_][A-Za-z0-9_]*` のみ許可）を通らないため denylist 検査に到達する前に別のエラーで拒否される一方、実行層のスクラブ（生の `os.Environ` KEY が対象）と security 層の `checkEnvAssignment`（形式検査なし）では prefix 一致が機能する。この層間の非対称（config 層は別経路のエラー、他2層は denylist 経由）は許容する。理由は、いずれの経路でも当該変数が最終的に子プロセスへ渡らない、または Reject される結果は変わらないため。
+- **`PYTHONHOME`（完全一致）**: 採用。`PYTHONPATH` と同種で、Python 標準ライブラリの探索位置を乗っ取り任意モジュールを読み込ませ得る。
+- **`LESSOPEN` / `LESSCLOSE`（完全一致）**: 採用。`less` がパイプ入力を処理する際にこれらの変数が指すコマンドを起動時に実行するため、インタプリタ起動時コード注入と同じ危険性を持つ。
+- **`ENV`**: 採用を維持する（上記「対象変数リスト」に含める）。[02_architecture.md](02_architecture.md) §6.7 が指摘する「`ENV=production` 等の一般的なデプロイ変数との衝突により誤ブロックの頻度が他の変数より高い」というトレードオフは認識した上で、(1) POSIX の `$ENV` は対話シェルで主に解釈され、本ランナーの非対話実行における実際の注入強度は相対的に低いこと、(2) 非対話スクリプト経路の主ベクタは既に採用済みの `BASH_ENV` が塞いでいること、(3) エスケープハッチを設けない方針（YAGNI、本書スコープ外節参照）のもとでは `ENV` を対象外にすると要件が求める「インタプリタ起動時コード注入変数の非対称解消」に穴が残ることを踏まえ、採用を維持する。誤ブロックが実際に問題化した場合は、当該設定の変数名を変更する（例: デプロイ環境名は `APP_ENV` 等の非予約名を使う）ことで回避可能であり、影響は限定的と判断する。
 
 ## Acceptance Criteria
 

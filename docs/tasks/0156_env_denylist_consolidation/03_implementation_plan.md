@@ -85,18 +85,20 @@
 
 **対象ファイル**: `internal/runner/base/environment/denylist.go`（新規）、`internal/runner/base/environment/denylist_test.go`（新規）
 
-- [ ] 対象変数リストの範囲を確定する。[01_requirements.md](01_requirements.md)「対象変数リスト（暫定）」の確定分（`LD_*`, `DYLD_*` prefix / 完全一致 `GCONV_PATH`, `LOCPATH`, `HOSTALIASES`, `NLSPATH`, `RES_OPTIONS`, `GLIBC_TUNABLES` / インタプリタ変数 `BASH_ENV`, `ENV`, `SHELLOPTS`, `PS4`, `PYTHONPATH`, `PYTHONSTARTUP`, `PERL5LIB`, `PERL5OPT`, `PERL5DB`, `NODE_OPTIONS`, `NODE_PATH`, `RUBYOPT`, `RUBYLIB`, `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_EXTERNAL_DIFF`）を採用する。
-- [ ] 採否候補（`BASH_FUNC_*` prefix, `PYTHONHOME`, `LESSOPEN`, `LESSCLOSE`）および `ENV` の採否を判断し（[02_architecture.md](02_architecture.md) §3.1, §6.7）、確定結果を [01_requirements.md](01_requirements.md) の対象変数リストへ反映する。判断理由をコミットメッセージまたは PR 説明に記録する。判断時の追加考慮点:
+- [x] 対象変数リストの範囲を確定する。[01_requirements.md](01_requirements.md)「対象変数リスト（暫定）」の確定分（`LD_*`, `DYLD_*` prefix / 完全一致 `GCONV_PATH`, `LOCPATH`, `HOSTALIASES`, `NLSPATH`, `RES_OPTIONS`, `GLIBC_TUNABLES` / インタプリタ変数 `BASH_ENV`, `ENV`, `SHELLOPTS`, `PS4`, `PYTHONPATH`, `PYTHONSTARTUP`, `PERL5LIB`, `PERL5OPT`, `PERL5DB`, `NODE_OPTIONS`, `NODE_PATH`, `RUBYOPT`, `RUBYLIB`, `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_EXTERNAL_DIFF`）を採用する。
+- [x] 採否候補（`BASH_FUNC_*` prefix, `PYTHONHOME`, `LESSOPEN`, `LESSCLOSE`）および `ENV` の採否を判断し（[02_architecture.md](02_architecture.md) §3.1, §6.7）、確定結果を [01_requirements.md](01_requirements.md) の対象変数リストへ反映する。判断理由をコミットメッセージまたは PR 説明に記録する。判断時の追加考慮点:
+    → 全4件とも採用。判断理由は [01_requirements.md](01_requirements.md)「採否判断の記録」に記載。
   - `BASH_FUNC_*` を採用する場合、実際のエクスポート関数 KEY（`BASH_FUNC_x%%` 等）は `security.ValidateVariableName`（`[A-Za-z_][A-Za-z0-9_]*` のみ許可）を通らないため、config 層（env_import/env_vars）では denylist 検査に達する前に形式エラーになる。一方、実行層のスクラブ（生の `os.Environ` KEY を対象）と security 層の `checkEnvAssignment`（形式検査なし）では prefix 一致する。この層間の非対称を許容できるか判断材料に含める。
   - `ENV` の採否判断により、フェーズ3でのテストデータ監査の範囲が決定される。採用する場合：既存設定・サンプルの `ENV=production` 等がロードエラー化するため、フェーズ3でテストデータの修正が必要（[02_architecture.md](02_architecture.md) §6.7 参照）。採用しない場合：フェーズ3の TOML 監査では `ENV` を対象から除外する。判断結果は本 PR の説明に記録し、次 PR のフェーズ3 実装者が参照できるようにする。
-- [ ] `denylist.go` に非公開の prefix 一致リスト（`[]string`、`LD_`, `DYLD_`, 採用する場合 `BASH_FUNC_`）と完全一致リスト（`map[string]struct{}`）を定義する。各エントリの由来（ローダ制御 / インタプリタ注入）を英語のインラインコメントで簡潔に付す。
-- [ ] `denylist.go` に公開関数 `IsForbiddenEnvVar(name string) bool` を実装する。prefix 一致（case-sensitive な `strings.HasPrefix`）→完全一致（map 参照）の順で判定し、正規化（`ToUpper` 等）は行わない。doc コメントは英語で、case-sensitive である旨と典拠（[01_requirements.md](01_requirements.md)）への参照を含める。
-- [ ] `denylist_test.go`（`package environment`）に単体テストを追加する:
-  - [ ] `TestIsForbiddenEnvVar_Prefix`: 代表的な prefix 一致（`LD_PRELOAD`, `LD_LIBRARY_PATH`, `LD_AUDIT`, `DYLD_INSERT_LIBRARIES`, `DYLD_LIBRARY_PATH`）が該当することを検証（AC-02）。**prefix リストに `BASH_FUNC_` 等を追加採用した場合は、その prefix の代表的該当ケース（例 `BASH_FUNC_foo`）と near-miss 非該当ケース（例 `BASH_FUNCTION`）を本テストへ必ず追加する**（完全一致リストの range 網羅は prefix を対象にしないため、prefix は自動網羅されない）。
-  - [ ] `TestIsForbiddenEnvVar_Exact`: 非公開の完全一致リストを直接 range し、各エントリが `IsForbiddenEnvVar` で該当することを検証（AC-06 の網羅検証。完全一致リストへの追加が自動でテスト対象になる。prefix リストには適用されない点に注意）。
-  - [ ] `TestIsForbiddenEnvVar_NonMatch`: 非該当ケースが非該当であることを検証（AC-02）。正当変数（`PATH`, `HOME`, `USER`, `LANG`, `TZ`, `TERM`, `LANGUAGE`）に加え、prefix 誤判定の境界（`LDFLAGS`〈`LD_` に見えるが非該当〉、bare `LD`〈`HasPrefix(name,"LD")` 誤実装を検出〉、`DYLDFOO`/bare `DYLD`〈`DYLD_` の near-miss〉、空文字列）を含める。
-  - [ ] `TestIsForbiddenEnvVar_CaseSensitive`: `ld_preload` が非該当・`LD_PRELOAD` が該当、`glibc_tunables` が非該当・`GLIBC_TUNABLES` が該当であることを検証（AC-12, AC-13）。
-- [ ] `make fmt` → `make test` → `make lint` を実行し green を確認する。
+    → `ENV` は採用を維持。フェーズ3では `env_vars`/`env_import` の TOML 監査対象に `ENV` を含める。
+- [x] `denylist.go` に非公開の prefix 一致リスト（`[]string`、`LD_`, `DYLD_`, 採用する場合 `BASH_FUNC_`）と完全一致リスト（`map[string]struct{}`）を定義する。各エントリの由来（ローダ制御 / インタプリタ注入）を英語のインラインコメントで簡潔に付す。
+- [x] `denylist.go` に公開関数 `IsForbiddenEnvVar(name string) bool` を実装する。prefix 一致（case-sensitive な `strings.HasPrefix`）→完全一致（map 参照）の順で判定し、正規化（`ToUpper` 等）は行わない。doc コメントは英語で、case-sensitive である旨と典拠（[01_requirements.md](01_requirements.md)）への参照を含める。
+- [x] `denylist_test.go`（`package environment`）に単体テストを追加する:
+  - [x] `TestIsForbiddenEnvVar_Prefix`: 代表的な prefix 一致（`LD_PRELOAD`, `LD_LIBRARY_PATH`, `LD_AUDIT`, `DYLD_INSERT_LIBRARIES`, `DYLD_LIBRARY_PATH`）が該当することを検証（AC-02）。**prefix リストに `BASH_FUNC_` 等を追加採用した場合は、その prefix の代表的該当ケース（例 `BASH_FUNC_foo`）と near-miss 非該当ケース（例 `BASH_FUNCTION`）を本テストへ必ず追加する**（完全一致リストの range 網羅は prefix を対象にしないため、prefix は自動網羅されない）。
+  - [x] `TestIsForbiddenEnvVar_Exact`: 非公開の完全一致リストを直接 range し、各エントリが `IsForbiddenEnvVar` で該当することを検証（AC-06 の網羅検証。完全一致リストへの追加が自動でテスト対象になる。prefix リストには適用されない点に注意）。
+  - [x] `TestIsForbiddenEnvVar_NonMatch`: 非該当ケースが非該当であることを検証（AC-02）。正当変数（`PATH`, `HOME`, `USER`, `LANG`, `TZ`, `TERM`, `LANGUAGE`）に加え、prefix 誤判定の境界（`LDFLAGS`〈`LD_` に見えるが非該当〉、bare `LD`〈`HasPrefix(name,"LD")` 誤実装を検出〉、`DYLDFOO`/bare `DYLD`〈`DYLD_` の near-miss〉、空文字列）を含める。
+  - [x] `TestIsForbiddenEnvVar_CaseSensitive`: `ld_preload` が非該当・`LD_PRELOAD` が該当、`glibc_tunables` が非該当・`GLIBC_TUNABLES` が該当であることを検証（AC-12, AC-13）。
+- [x] `make fmt` → `make test` → `make lint` を実行し green を確認する。
 
 ### PR-1 作成ポイント: environment base package foundations
 
