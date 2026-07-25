@@ -13,7 +13,7 @@ func TestIsForbiddenEnvVar_Prefix(t *testing.T) {
 		"LD_AUDIT",
 		"DYLD_INSERT_LIBRARIES",
 		"DYLD_LIBRARY_PATH",
-		"BASH_FUNC_foo",
+		"BASH_FUNC_foo%%",
 	}
 	for _, name := range cases {
 		t.Run(name, func(t *testing.T) {

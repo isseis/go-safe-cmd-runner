@@ -66,8 +66,9 @@ var forbiddenEnvVarExact = map[string]struct{}{
 
 // IsForbiddenEnvVar reports whether name is on the process-environment denylist: a
 // dynamic-loader control variable (LD_*, DYLD_*, and the exact-match locale/resolver
-// names) or an interpreter startup code-injection variable (BASH_ENV, PYTHONPATH, ...)
-// that must never reach a child process.
+// names), a code-injection variable read by an interpreter or pager at startup
+// (BASH_ENV, PYTHONPATH, BASH_FUNC_*, LESSOPEN, ...), or another entry in the lists
+// below — that must never reach a child process.
 //
 // Matching is case-sensitive: environment variable names are case-sensitive on Unix,
 // and every mechanism this list defends against (the dynamic loader, and each
