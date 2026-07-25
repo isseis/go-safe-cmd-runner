@@ -183,23 +183,23 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### フェーズ4: security 層のリファクタ（AC-05, AC-06, AC-10, case 変更）
 
 **対象ファイル**: `internal/runner/base/security/indirect_execution.go`、`internal/runner/base/security/indirect_execution_test.go`、`internal/runner/base/risk/evaluator_test.go`
 
-- [ ] `indirect_execution.go` に `internal/runner/base/environment` を import する。
-- [ ] `isLoaderControlVar`（[:1917-1920](../../../internal/runner/base/security/indirect_execution.go)）を削除する。
-- [ ] `checkEnvAssignment` 内の呼び出し（[:769](../../../internal/runner/base/security/indirect_execution.go)）を `environment.IsForbiddenEnvVar(name)` に置換する。Reject/Blocking 分類（`rejectClass(risktypes.ReasonForbiddenEnvVar, "")`）は維持する（AC-10）。
-- [ ] `checkEnvAssignment` の doc コメント（[:765-766](../../../internal/runner/base/security/indirect_execution.go)、"rejects loader-control assignments (LD_*/DYLD_*)"）を、拡張後の対象（loader-control と interpreter startup code-injection variables）と case-sensitive 化を反映した英語の文へ更新する。
-- [ ] 不要になった `strings` import が残らないか `make lint` で確認する（`indirect_execution.go` は他所でも `strings` を使うため残存見込みだが、lint 結果で判断する）。
-- [ ] `indirect_execution_test.go` の Reject テストを拡張する:
-  - [ ] `TestIndirect_WrapperLoaderEnvRejected`（[:349](../../../internal/runner/base/security/indirect_execution_test.go)）に完全一致リスト（`GCONV_PATH`, `GLIBC_TUNABLES`）とインタプリタ変数（`BASH_ENV`, `PYTHONPATH`）の `env NAME=VALUE cmd` ケースを追加し、`ReasonForbiddenEnvVar` を伴う Reject を検証する（AC-05, AC-06, AC-10）。
-  - [ ] case-sensitive 化を検証するケースを追加する。`env ld_preload=/tmp/evil.so ls`（小文字綴り）が Reject **されない**ことを明示的に検証する（[02_architecture.md](02_architecture.md) §6.2 の意図的挙動変更）。
-- [ ] `evaluator_test.go` の `TestEvaluateRisk_IndirectExecutionDeny`（[:548](../../../internal/runner/base/risk/evaluator_test.go)）に拡張分の Blocking ケース（`env GLIBC_TUNABLES=... ls`, `env BASH_ENV=... ls`）を追加し、`EvaluateRisk` 経由の end-to-end で `ReasonForbiddenEnvVar` の Blocking になることを検証する（AC-05, AC-06, AC-10）。
-- [ ] `make fmt` → `make test` → `make lint` を実行し green を確認する。
+- [x] `indirect_execution.go` に `internal/runner/base/environment` を import する。
+- [x] `isLoaderControlVar`（[:1917-1920](../../../internal/runner/base/security/indirect_execution.go)）を削除する。
+- [x] `checkEnvAssignment` 内の呼び出し（[:769](../../../internal/runner/base/security/indirect_execution.go)）を `environment.IsForbiddenEnvVar(name)` に置換する。Reject/Blocking 分類（`rejectClass(risktypes.ReasonForbiddenEnvVar, "")`）は維持する（AC-10）。
+- [x] `checkEnvAssignment` の doc コメント（[:765-766](../../../internal/runner/base/security/indirect_execution.go)、"rejects loader-control assignments (LD_*/DYLD_*)"）を、拡張後の対象（loader-control と interpreter startup code-injection variables）と case-sensitive 化を反映した英語の文へ更新する。
+- [x] 不要になった `strings` import が残らないか `make lint` で確認する（`indirect_execution.go` は他所でも `strings` を使うため残存見込みだが、lint 結果で判断する）。
+- [x] `indirect_execution_test.go` の Reject テストを拡張する:
+  - [x] `TestIndirect_WrapperLoaderEnvRejected`（[:349](../../../internal/runner/base/security/indirect_execution_test.go)）に完全一致リスト（`GCONV_PATH`, `GLIBC_TUNABLES`）とインタプリタ変数（`BASH_ENV`, `PYTHONPATH`）の `env NAME=VALUE cmd` ケースを追加し、`ReasonForbiddenEnvVar` を伴う Reject を検証する（AC-05, AC-06, AC-10）。
+  - [x] case-sensitive 化を検証するケースを追加する。`env ld_preload=/tmp/evil.so ls`（小文字綴り）が Reject **されない**ことを明示的に検証する（[02_architecture.md](02_architecture.md) §6.2 の意図的挙動変更）。
+- [x] `evaluator_test.go` の `TestEvaluateRisk_IndirectExecutionDeny`（[:548](../../../internal/runner/base/risk/evaluator_test.go)）に拡張分の Blocking ケース（`env GLIBC_TUNABLES=... ls`, `env BASH_ENV=... ls`）を追加し、`EvaluateRisk` 経由の end-to-end で `ReasonForbiddenEnvVar` の Blocking になることを検証する（AC-05, AC-06, AC-10）。
+- [x] `make fmt` → `make test` → `make lint` を実行し green を確認する。
 
 ### PR-4 作成ポイント: security layer refactor with case-sensitive semantics change
 
@@ -213,8 +213,8 @@
 
 **判定理由**: security 層は critical infrastructure であり、case-sensitive 化は既存 case-insensitive 挙動からの意図的変更（ローダ・インタプリタの厳密なスペル照合に基づく）。複数 AC（AC-05, AC-06, AC-10）と security 層変更を伴うため、慎重なレビューが必要。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
