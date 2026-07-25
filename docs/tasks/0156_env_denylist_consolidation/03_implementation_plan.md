@@ -167,7 +167,7 @@
   - （これら3件の invariant は「§削除テストの invariant 引き継ぎ」の通りフェーズ1の環境パッケージテストが継承する。）
 - [x] `expansion_unit_test.go` の env_import 拒否テストを拡張する。`TestProcessEnvImport_ForbiddenVariable`（[:363](../../../internal/runner/config/expansion_unit_test.go)）に `DYLD_INSERT_LIBRARIES`・`GLIBC_TUNABLES`・`PYTHONPATH`（代表インタプリタ変数）のケースを追加し、いずれも `ErrForbiddenEnvVar` を返すことを `assert.ErrorIs` で検証する（AC-04, AC-05, AC-06）。
 - [x] `expansion_unit_test.go` に env_vars 拒否テスト `TestProcessEnv_ForbiddenVariable` を新設する。`ProcessEnv` に `LD_PRELOAD`・`PYTHONPATH`・`DYLD_LIBRARY_PATH`・`GLIBC_TUNABLES` を KEY とする env_vars を渡し、いずれも `ErrForbiddenEnvVar` を返すことを `assert.ErrorIs` で検証する（AC-07, AC-08）。
-- [ ] `make fmt` → `make test` → `make lint` を実行し green を確認する。
+- [x] `make fmt` → `make test` → `make lint` を実行し green を確認する。
 
 ### PR-3 作成ポイント: config layer refactor with env_vars check
 
