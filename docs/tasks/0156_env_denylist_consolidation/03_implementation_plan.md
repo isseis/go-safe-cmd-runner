@@ -213,7 +213,7 @@
 
 **判定理由**: security 層は critical infrastructure であり、case-sensitive 化は既存 case-insensitive 挙動からの意図的変更（ローダ・インタプリタの厳密なスペル照合に基づく）。複数 AC（AC-05, AC-06, AC-10）と security 層変更を伴うため、慎重なレビューが必要。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
