@@ -98,6 +98,23 @@
   - [ ] `TestIsForbiddenEnvVar_CaseSensitive`: `ld_preload` が非該当・`LD_PRELOAD` が該当、`glibc_tunables` が非該当・`GLIBC_TUNABLES` が該当であることを検証（AC-12, AC-13）。
 - [ ] `make fmt` → `make test` → `make lint` を実行し green を確認する。
 
+### PR-1 作成ポイント: environment base package foundations
+
+**対象ステップ**: フェーズ1（全体）
+
+**推奨タイトル**: `feat(0156): consolidate forbidden env var judgment into shared function`
+
+**レビュー観点**: リスト定義の完全性と正確性（ローダ制御変数・インタプリタ変数の網羅） / 単体テスト網羅度（prefix/完全一致/境界ケース） / case-sensitive 判定の根拠と実装 / テスト green 化
+
+**実装モデル要件**: standard
+
+**判定理由**: 基盤機能の実装であり、設計・要件に基づいた直線的な実装。case-sensitive 選択は根拠が明確に文書化されている。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### フェーズ2: 実行層のリファクタ（AC-04, AC-05, AC-06, AC-09）
 
 **対象ファイル**: `internal/runner/base/executor/environment.go`、`internal/runner/base/executor/environment_test.go`
@@ -114,6 +131,23 @@
   - [ ] `TestBuildProcessEnvironment_LegitimateVarsPreserved` は変更不要だが、`ENV` を採用した場合に正当変数リストへ影響しないことを確認する（`ENV` は保持対象リストに含めない）。
 - [ ] 既存の `TestBuildProcessEnvironment_DynamicLinkerVarsAlwaysRemoved`・`TestBuildProcessEnvironment_AllLDVarsRemoved` が引き続き pass することを確認する（AC-09 の回帰）。
 - [ ] `make fmt` → `make test` → `make lint` を実行し green を確認する。
+
+### PR-2 作成ポイント: executor layer refactor
+
+**対象ステップ**: フェーズ2（全体）
+
+**推奨タイトル**: `feat(0156): refactor executor to use consolidated forbidden env var check`
+
+**レビュー観点**: inline スクラブの置換が正確か（既存削除順序維持） / コメント stale 参照の修正 / 拡張テストの AC カバレッジ（DYLD/GLIBC/インタプリタ変数/case-sensitive） / 既存テスト回帰なし
+
+**実装モデル要件**: standard
+
+**判定理由**: PR-1 の基盤を利用したストレートな層別リファクタ。新規ロジック導入なし、既存挙動（fail-silent スクラブ）を保持。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### フェーズ3: config 層のリファクタ（AC-04, AC-05, AC-06, AC-07, AC-08）
 
@@ -133,74 +167,6 @@
 - [ ] `expansion_unit_test.go` に env_vars 拒否テスト `TestProcessEnv_ForbiddenVariable` を新設する。`ProcessEnv` に `LD_PRELOAD`・`PYTHONPATH`・`DYLD_LIBRARY_PATH`・`GLIBC_TUNABLES` を KEY とする env_vars を渡し、いずれも `ErrForbiddenEnvVar` を返すことを `assert.ErrorIs` で検証する（AC-07, AC-08）。
 - [ ] `make fmt` → `make test` → `make lint` を実行し green を確認する。
 
-### フェーズ4: security 層のリファクタ（AC-05, AC-06, AC-10, case 変更）
-
-**対象ファイル**: `internal/runner/base/security/indirect_execution.go`、`internal/runner/base/security/indirect_execution_test.go`、`internal/runner/base/risk/evaluator_test.go`
-
-- [ ] `indirect_execution.go` に `internal/runner/base/environment` を import する。
-- [ ] `isLoaderControlVar`（[:1917-1920](../../../internal/runner/base/security/indirect_execution.go)）を削除する。
-- [ ] `checkEnvAssignment` 内の呼び出し（[:769](../../../internal/runner/base/security/indirect_execution.go)）を `environment.IsForbiddenEnvVar(name)` に置換する。Reject/Blocking 分類（`rejectClass(risktypes.ReasonForbiddenEnvVar, "")`）は維持する（AC-10）。
-- [ ] `checkEnvAssignment` の doc コメント（[:765-766](../../../internal/runner/base/security/indirect_execution.go)、"rejects loader-control assignments (LD_*/DYLD_*)"）を、拡張後の対象（loader-control と interpreter startup code-injection variables）と case-sensitive 化を反映した英語の文へ更新する。
-- [ ] 不要になった `strings` import が残らないか `make lint` で確認する（`indirect_execution.go` は他所でも `strings` を使うため残存見込みだが、lint 結果で判断する）。
-- [ ] `indirect_execution_test.go` の Reject テストを拡張する:
-  - [ ] `TestIndirect_WrapperLoaderEnvRejected`（[:349](../../../internal/runner/base/security/indirect_execution_test.go)）に完全一致リスト（`GCONV_PATH`, `GLIBC_TUNABLES`）とインタプリタ変数（`BASH_ENV`, `PYTHONPATH`）の `env NAME=VALUE cmd` ケースを追加し、`ReasonForbiddenEnvVar` を伴う Reject を検証する（AC-05, AC-06, AC-10）。
-  - [ ] case-sensitive 化を検証するケースを追加する。`env ld_preload=/tmp/evil.so ls`（小文字綴り）が Reject **されない**ことを明示的に検証する（[02_architecture.md](02_architecture.md) §6.2 の意図的挙動変更）。
-- [ ] `evaluator_test.go` の `TestEvaluateRisk_IndirectExecutionDeny`（[:548](../../../internal/runner/base/risk/evaluator_test.go)）に拡張分の Blocking ケース（`env GLIBC_TUNABLES=... ls`, `env BASH_ENV=... ls`）を追加し、`EvaluateRisk` 経由の end-to-end で `ReasonForbiddenEnvVar` の Blocking になることを検証する（AC-05, AC-06, AC-10）。
-- [ ] `make fmt` → `make test` → `make lint` を実行し green を確認する。
-
-### フェーズ5: ドキュメント整合（AC-11）
-
-**対象ファイル**: `docs/user/security-risk-assessment.md`/`.ja.md`、`docs/dev/architecture_design/security-architecture.md`/`.ja.md`
-
-- [ ] 各文書内で denylist（危険環境変数）に言及する箇所を、拡張後の対象範囲（`LD_*`/`DYLD_*` prefix、完全一致リスト、インタプリタ起動時コード注入変数）に整合させる。少なくとも次を更新する:
-  - [ ] `docs/user/security-risk-assessment.md` の危険環境変数検出の記述（:123 付近）。`LD_PRELOAD` 単独の例示を、対象カテゴリ（ローダ制御 + インタプリタ注入）を示す記述に拡張する。
-  - [ ] `docs/dev/architecture_design/security-architecture.md` の間接実行 Reject の記述（:441 付近の "loader-control variables"）と脅威記述（:1116 付近）を拡張後の denylist に整合させる。
-  - [ ] [02_architecture.md](02_architecture.md) §6.7 の破壊的変更（`env_vars`/`env_import` の一部設定が改修後ロードエラーになる点）と dry-run による事前検知手順を、利用者向け文書に移行ノートとして追記する。
-- [ ] `.ja.md` を先に編集し、対応する英語版（`.md`）へ `/mktrans` で反映する（バイリンガル文書の編集順序）。対象4文書はいずれも `.ja.md` が日本語原本・`.md` が英訳である（各ファイル冒頭見出しで確認済み）。
-- [ ] `docs/translation_glossary.md` に「denylist」等の新規用語が必要か確認し、必要なら追記する。
-- [ ] 追記・変更した記述が拡張後の実装（対象変数リスト）と一致することを、[01_requirements.md](01_requirements.md) の対象変数リストと突き合わせて確認する。
-
-### フェーズ6: 静的検証と全体の green 化（AC-03）
-
-- [ ] 削除シンボルの残存参照がないことを確認する（下記「4. 横断検索チェックリスト」）。
-- [ ] `make test && make lint` が green であることを確認する（green ゲート）。
-
-## 2.7 PR 作成ポイント
-
-### PR-1 作成ポイント: environment base package foundations
-
-**対象ステップ**: フェーズ1（全体）
-
-**推奨タイトル**: `feat(0156): consolidate forbidden env var judgment into shared function`
-
-**レビュー観点**: リスト定義の完全性と正確性（ローダ制御変数・インタプリタ変数の網羅） / 単体テスト網羅度（prefix/完全一致/境界ケース） / case-sensitive 判定の根拠と実装 / テスト green 化
-
-**実装モデル要件**: standard
-
-**判定理由**: 基盤機能の実装であり、設計・要件に基づいた直線的な実装。case-sensitive 選択は根拠が明確に文書化されている。
-
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
-
-### PR-2 作成ポイント: executor layer refactor
-
-**対象ステップ**: フェーズ2（全体）
-
-**推奨タイトル**: `feat(0156): refactor executor to use consolidated forbidden env var check`
-
-**レビュー観点**: inline スクラブの置換が正確か（既存削除順序維持） / コメント stale 参照の修正 / 拡張テストの AC カバレッジ（DYLD/GLIBC/インタプリタ変数/case-sensitive） / 既存テスト回帰なし
-
-**実装モデル要件**: standard
-
-**判定理由**: PR-1 の基盤を利用したストレートな層別リファクタ。新規ロジック導入なし、既存挙動（fail-silent スクラブ）を保持。
-
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
-
 ### PR-3 作成ポイント: config layer refactor with env_vars check
 
 **対象ステップ**: フェーズ3（全体）
@@ -218,6 +184,21 @@
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
+### フェーズ4: security 層のリファクタ（AC-05, AC-06, AC-10, case 変更）
+
+**対象ファイル**: `internal/runner/base/security/indirect_execution.go`、`internal/runner/base/security/indirect_execution_test.go`、`internal/runner/base/risk/evaluator_test.go`
+
+- [ ] `indirect_execution.go` に `internal/runner/base/environment` を import する。
+- [ ] `isLoaderControlVar`（[:1917-1920](../../../internal/runner/base/security/indirect_execution.go)）を削除する。
+- [ ] `checkEnvAssignment` 内の呼び出し（[:769](../../../internal/runner/base/security/indirect_execution.go)）を `environment.IsForbiddenEnvVar(name)` に置換する。Reject/Blocking 分類（`rejectClass(risktypes.ReasonForbiddenEnvVar, "")`）は維持する（AC-10）。
+- [ ] `checkEnvAssignment` の doc コメント（[:765-766](../../../internal/runner/base/security/indirect_execution.go)、"rejects loader-control assignments (LD_*/DYLD_*)"）を、拡張後の対象（loader-control と interpreter startup code-injection variables）と case-sensitive 化を反映した英語の文へ更新する。
+- [ ] 不要になった `strings` import が残らないか `make lint` で確認する（`indirect_execution.go` は他所でも `strings` を使うため残存見込みだが、lint 結果で判断する）。
+- [ ] `indirect_execution_test.go` の Reject テストを拡張する:
+  - [ ] `TestIndirect_WrapperLoaderEnvRejected`（[:349](../../../internal/runner/base/security/indirect_execution_test.go)）に完全一致リスト（`GCONV_PATH`, `GLIBC_TUNABLES`）とインタプリタ変数（`BASH_ENV`, `PYTHONPATH`）の `env NAME=VALUE cmd` ケースを追加し、`ReasonForbiddenEnvVar` を伴う Reject を検証する（AC-05, AC-06, AC-10）。
+  - [ ] case-sensitive 化を検証するケースを追加する。`env ld_preload=/tmp/evil.so ls`（小文字綴り）が Reject **されない**ことを明示的に検証する（[02_architecture.md](02_architecture.md) §6.2 の意図的挙動変更）。
+- [ ] `evaluator_test.go` の `TestEvaluateRisk_IndirectExecutionDeny`（[:548](../../../internal/runner/base/risk/evaluator_test.go)）に拡張分の Blocking ケース（`env GLIBC_TUNABLES=... ls`, `env BASH_ENV=... ls`）を追加し、`EvaluateRisk` 経由の end-to-end で `ReasonForbiddenEnvVar` の Blocking になることを検証する（AC-05, AC-06, AC-10）。
+- [ ] `make fmt` → `make test` → `make lint` を実行し green を確認する。
+
 ### PR-4 作成ポイント: security layer refactor with case-sensitive semantics change
 
 **対象ステップ**: フェーズ4（全体）
@@ -234,6 +215,23 @@
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+### フェーズ5: ドキュメント整合（AC-11）
+
+**対象ファイル**: `docs/user/security-risk-assessment.md`/`.ja.md`、`docs/dev/architecture_design/security-architecture.md`/`.ja.md`
+
+- [ ] 各文書内で denylist（危険環境変数）に言及する箇所を、拡張後の対象範囲（`LD_*`/`DYLD_*` prefix、完全一致リスト、インタプリタ起動時コード注入変数）に整合させる。少なくとも次を更新する:
+  - [ ] `docs/user/security-risk-assessment.md` の危険環境変数検出の記述（:123 付近）。`LD_PRELOAD` 単独の例示を、対象カテゴリ（ローダ制御 + インタプリタ注入）を示す記述に拡張する。
+  - [ ] `docs/dev/architecture_design/security-architecture.md` の間接実行 Reject の記述（:441 付近の "loader-control variables"）と脅威記述（:1116 付近）を拡張後の denylist に整合させる。
+  - [ ] [02_architecture.md](02_architecture.md) §6.7 の破壊的変更（`env_vars`/`env_import` の一部設定が改修後ロードエラーになる点）と dry-run による事前検知手順を、利用者向け文書に移行ノートとして追記する。
+- [ ] `.ja.md` を先に編集し、対応する英語版（`.md`）へ `/mktrans` で反映する（バイリンガル文書の編集順序）。対象4文書はいずれも `.ja.md` が日本語原本・`.md` が英訳である（各ファイル冒頭見出しで確認済み）。
+- [ ] `docs/translation_glossary.md` に「denylist」等の新規用語が必要か確認し、必要なら追記する。
+- [ ] 追記・変更した記述が拡張後の実装（対象変数リスト）と一致することを、[01_requirements.md](01_requirements.md) の対象変数リストと突き合わせて確認する。
+
+### フェーズ6: 静的検証と全体の green 化（AC-03）
+
+- [ ] 削除シンボルの残存参照がないことを確認する（下記「4. 横断検索チェックリスト」）。
+- [ ] `make test && make lint` が green であることを確認する（green ゲート）。
 
 ### PR-5 作成ポイント: documentation and static verification
 
