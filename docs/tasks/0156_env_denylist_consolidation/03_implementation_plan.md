@@ -232,8 +232,8 @@
 
 ### フェーズ6: 静的検証と全体の green 化（AC-03）
 
-- [ ] 削除シンボルの残存参照がないことを確認する（下記「4. 横断検索チェックリスト」）。
-- [ ] `make test && make lint` が green であることを確認する（green ゲート）。
+- [x] 削除シンボルの残存参照がないことを確認する（下記「4. 横断検索チェックリスト」）。
+- [x] `make test && make lint` が green であることを確認する（green ゲート）。
 
 ### PR-5 作成ポイント: documentation and static verification
 
@@ -282,13 +282,13 @@
 
 ## 4. 横断検索チェックリスト（`make lint`/`make test` で検出できない項目）
 
-- [ ] 削除した private シンボルの残存参照がないこと（AC-03）:
+- [x] 削除した private シンボルの残存参照がないこと（AC-03）:
   - `rg -n "isForbiddenEnvVar|forbiddenEnvVarPrefixes|forbiddenEnvVarExact" --glob '*.go'` → 期待: マッチなし。
   - `rg -n "isLoaderControlVar" --glob '*.go'` → 期待: マッチなし。
-- [ ] 拡張後のドキュメントに旧来の狭い記述（`LD_PRELOAD` のみを唯一の危険変数とする表現）が残っていないこと（AC-11）:
+- [x] 拡張後のドキュメントに旧来の狭い記述（`LD_PRELOAD` のみを唯一の危険変数とする表現）が残っていないこと（AC-11）:
   - `rg -n "LD_PRELOAD" docs/user/security-risk-assessment.md docs/user/security-risk-assessment.ja.md docs/dev/architecture_design/security-architecture.md docs/dev/architecture_design/security-architecture.ja.md` → 各マッチが拡張後の文脈（カテゴリの例示）になっていることを目視確認する。
   - 拡張カテゴリが実際に追記されたことを positive 検索で確認する: `rg -n "GLIBC_TUNABLES|DYLD_|BASH_ENV|PYTHONPATH" docs/user/security-risk-assessment.md docs/user/security-risk-assessment.ja.md docs/dev/architecture_design/security-architecture.md docs/dev/architecture_design/security-architecture.ja.md` → 各文書で1件以上マッチすること（旧来の `LD_PRELOAD` 生存確認だけに依存しない）。
-- [ ] 追加した Go コード・テストに日本語のコメント・識別子・文字列リテラルが混入していないこと（目視 + `make lint`）。
+- [x] 追加した Go コード・テストに日本語のコメント・識別子・文字列リテラルが混入していないこと（目視 + `make lint`）。
 
 ---
 
