@@ -150,8 +150,11 @@ func TestWithPrivileges_UserGroupExecutionDoesNotChangeIdentity(t *testing.T) {
 
 	manager := &UnixPrivilegeManager{
 		logger:             logger,
-		privilegeSupported: false,
+		privilegeSupported: true,
+		originalUID:        0,
 		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
+		identityVerifier:   func() error { return nil },
+		readSavedIDs:       func() (int, int, error) { return -1, -1, ErrSavedSetNotSupported },
 	}
 
 	euidBefore := syscall.Geteuid()
