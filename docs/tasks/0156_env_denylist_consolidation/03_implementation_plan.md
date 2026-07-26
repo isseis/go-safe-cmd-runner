@@ -283,8 +283,9 @@
 ## 4. 横断検索チェックリスト（`make lint`/`make test` で検出できない項目）
 
 - [x] 削除した private シンボルの残存参照がないこと（AC-03）:
-  - `rg -n "isForbiddenEnvVar|forbiddenEnvVarPrefixes|forbiddenEnvVarExact" --glob '*.go'` → 期待: マッチなし。
-  - `rg -n "isLoaderControlVar" --glob '*.go'` → 期待: マッチなし。
+  - `rg -n "isForbiddenEnvVar" --glob '*.go'` → 期待: マッチなし（旧定義は削除され、呼び出し元は `environment.IsForbiddenEnvVar` に置き換え済み）。
+  - `rg -n "isLoaderControlVar" --glob '*.go'` → 期待: マッチなし（旧定義は削除され、呼び出し元は `environment.IsForbiddenEnvVar` に統合済み）。
+  - `rg -n "forbiddenEnvVarPrefixes|forbiddenEnvVarExact" --glob '*.go'` → `internal/runner/base/environment/denylist.go` へのマッチは統合先として**期待どおり**。それ以外のファイル（旧散在箇所: `config/expansion.go`, `security/indirect_execution.go` など）にマッチがないことを確認する。
 - [x] 拡張後のドキュメントに旧来の狭い記述（`LD_PRELOAD` のみを唯一の危険変数とする表現）が残っていないこと（AC-11）:
   - `rg -n "LD_PRELOAD" docs/user/security-risk-assessment.md docs/user/security-risk-assessment.ja.md docs/dev/architecture_design/security-architecture.md docs/dev/architecture_design/security-architecture.ja.md` → 各マッチが拡張後の文脈（カテゴリの例示）になっていることを目視確認する。
   - 拡張カテゴリが実際に追記されたことを positive 検索で確認する: `rg -n "GLIBC_TUNABLES|DYLD_|BASH_ENV|PYTHONPATH" docs/user/security-risk-assessment.md docs/user/security-risk-assessment.ja.md docs/dev/architecture_design/security-architecture.md docs/dev/architecture_design/security-architecture.ja.md` → 各文書で1件以上マッチすること（旧来の `LD_PRELOAD` 生存確認だけに依存しない）。
