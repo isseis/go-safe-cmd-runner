@@ -78,7 +78,7 @@
 | `os/user` import（manager.go:8） | `getProcessEUID` 以外に `user.LookupId`（:138, :177）で使用 | import は残す |
 | `effectiveUID` ローカル変数（manager.go:305, 312, 315, 327） | `getPermissionCheckUID` の戻り値を "effective" と呼んでおり、実 UID または `SUDO_UID` である実態と食い違う。`#nosec G115` の根拠コメントもこの名前を参照している | `permissionCheckUID` に改名する。これにより AC-19 の検証を「`manager.go` に `EUID` という語が現れない」という機械的な検査にできる |
 | `getPermissionCheckUID` の sudo 分岐 | 実 UID と `SUDO_UID` を直接読むため、実 UID が 0 のケース（AC-20 の (b)）は root で実行しないとテストできない | 純関数 `resolvePermissionCheckUID(realUID int, sudoUID string)` を切り出す。既存の `parseSudoUID` が「独立してテストするために分離した」と doc に書いている前例に倣う。`getPermissionCheckUID` の外部シグネチャは設計書 §3.3 のとおり変えない |
-| passwd エントリ欠如時の挙動（AC-25）**その 1: 残る passwd 依存** | `user.Current()` を消しても、権限判定から passwd 依存が完全に消えるわけではない。`manager.go:138` の `IsUserInGroup` → `user.LookupId` は読み取り経路から、`manager.go:177` の `isUserOnlyGroupMember` → `user.LookupId` は書き込み経路（`CanUserSafelyWriteFile`:237）から、**ファイルがグループ書き込み可能なとき**に呼ばれる。設計書 §5.4 が「変更後は拒否は起きない」と述べるのは、この分岐に入らない通常のファイル（0644・0600 など、グループ書き込みビットが立っていない）についてである | Phase 3 のスコープは UID の取得経路に限る。グループ書き込み可能なファイルに対する判定は引き続き passwd を必要とすることを、`CHANGELOG.md` の記載と §4.5 に明記する。`LookupId` 側の fail-closed は要件定義書のスコープ外（D1 の他の所見）であり本タスクでは変更しない。**この限界は AC-25 の文言（「権限判定がエラーで中断せずに実行され」）を部分的にしか満たさないため、レビュー時に要件定義書・設計書への注記の要否を確認する** |
+| passwd エントリ欠如時の挙動（AC-25）**その 1: 残る passwd 依存** | `user.Current()` を消しても、権限判定から passwd 依存が完全に消えるわけではない。`manager.go:138` の `IsUserInGroup` → `user.LookupId` は読み取り経路から、`manager.go:177` の `isUserOnlyGroupMember` → `user.LookupId` は書き込み経路（`CanUserSafelyWriteFile`:237）から、**ファイルがグループ書き込み可能なとき**に呼ばれる。設計書 §5.4 が「変更後は拒否は起きない」と述べるのは、この分岐に入らない通常のファイル（0644・0600 など、グループ書き込みビットが立っていない）についてである | Phase 3 のスコープは UID の取得経路に限る。この調査結果を受けて要件定義書を改訂し、AC-25 の対象を「権限判定に用いる UID の取得」に限定した（2026-07-26、要件定義書の「方針判断の記録」の「D1 M-4 の派生」および対象外節）。`LookupId` 側の fail-closed は [0151](../0151_groupmembership_failclosed/) が意図して導入したものであり、本タスクでは変更しない。グループ書き込み可能なファイルに対する判定が引き続き passwd を必要とすることは、`CHANGELOG.md` と §4.6 に明記する |
 | passwd エントリ欠如時の挙動（AC-25）**その 2: テスト手段** | Go の `os/user` は cgo 有無を問わず passwd の探索先を差し替える手段を提供していないため、単体テストの中で「NSS 障害」や「`/etc/passwd` 欠如」を再現することはできない | UID の取得経路から passwd 参照を無くしたことを、実行可能テストと静的検査で確認する（§7） |
 | `TestGetPermissionCheckUID`（manager_test.go:599） | 既に存在する。ただし sudo 分岐（実 UID が 0）のケースは root で実行しないと通らず、`t.Skip` される。AC-20 の 3 ケースを決定的に検証してはいない | 新しい重複テストを足さず、この既存テストを純関数 `resolvePermissionCheckUID` のテストで補い、既存テスト自体には具体値のアサーションを追加する |
 | `CHANGELOG.md` | `## [Unreleased]` 節が存在しない（直近は `## [1.0.0] - 2026-06-27`） | `## [Unreleased]` 節を新設して AC-25 の挙動変化を記載する |
@@ -671,7 +671,7 @@ Phase 間に実装上の依存はない（設計書 §8.1）。以下の順序�
 
 - **AC-16(c)（降格しないこと）を動的テストで担保できない。** 非特権 CI では降格 syscall が呼ばれても `EPERM` で拒否されて識別情報が変わらないため、テスト側では異常を検出できない（設計書 §7.1）。`TestNoUnexpectedIdentityMutationSyscalls` による AST 解析と、§2.4 の特権環境確認で補う。
 - **AC-25 の「passwd エントリを引けない状況」を単体テストで再現できない。** Go の `os/user` は passwd の探索先を差し替える手段を提供していない。UID の取得経路から passwd 参照を無くしたことを、実行可能テスト（`TestCanCurrentUserSafelyWriteFile_UsesRealUID`）と静的検査（`manager.go` に `user.Current()` が現れないこと）で確認する。
-- **AC-25 は Phase 3 では部分的にしか満たされない。** ファイルがグループ書き込み可能な場合、判定は `IsUserInGroup` / `isUserOnlyGroupMember` を経由して `user.LookupId` を呼ぶため、passwd エントリを引けなければ従来どおりエラーで中断する（§1.3）。Phase 3 が取り除くのは UID の取得に伴う passwd 依存だけである。この限界を `CHANGELOG.md` に明記し、要件定義書・設計書への注記の要否をレビュー時に確認する。
+- **グループ書き込み可能なファイルの判定に残る passwd 依存は AC-25 の対象外である。** ファイルがグループ書き込み可能な場合、判定は `IsUserInGroup` / `isUserOnlyGroupMember` を経由して `user.LookupId` を呼ぶため、passwd エントリを引けなければ従来どおり fail-closed で拒否する（§1.3）。Phase 3 が取り除くのは UID の取得に伴う passwd 依存だけであり、要件定義書の改訂により AC-25 の範囲もそこに限定された。この限界は `CHANGELOG.md` にも明記する。
 
 ---
 
@@ -685,7 +685,7 @@ Phase 間に実装上の依存はない（設計書 §8.1）。以下の順序�
 | 真偽値フィールド `needsUserGroupChange` の廃止で dry-run 判定を取りこぼす | dry-run でユーザー・グループ検証が行われなくなり、設定不備が検出されない | `performElevation` と `restorePrivilegesAndMetrics` の両方で同じ `Operation` 判定に置き換える。片方だけの置換を防ぐため、完了条件に `needsUserGroupChange` の一致件数 0 を含める |
 | Phase 4 のテスト削除でカバレッジが失われる | `GroupAndSortSyscalls` と `ArgEvalResults` 往復の回帰が検出できなくなる | §1.3 で調査したとおり、代替テストを新設・移設する。削除と追加を同一 PR で行う |
 | Phase 3 の fail-open 化が運用に影響する | passwd エントリ欠如環境で、これまで停止していた実行が継続する | `CHANGELOG.md` の `[Unreleased]` に記載する。判定に使う UID・規則は変わらないことを併記する（設計書 §5.4） |
-| AC-25 を「passwd 依存が完全に消えた」と読み違える | 実際にはグループ書き込み可能なファイルの判定で `user.LookupId` が残り、記載が事実と食い違う | §1.3 と §4.6 に残る依存を明記し、`CHANGELOG.md` の文言も「UID の取得」に限定する。静的検査は `user.Current(` だけでなく `os/user` の呼び出し全体を列挙する形にする（§7） |
+| AC-25 を「passwd 依存が完全に消えた」と読み違える | 実際にはグループ書き込み可能なファイルの判定で `user.LookupId` が残り、記載が事実と食い違う | 要件定義書の AC-25 を「UID の取得」に限定する改訂を行った。§1.3 と §4.6 に残る依存を明記し、`CHANGELOG.md` の文言も同じ範囲に揃える。静的検査は `user.Current(` だけでなく `os/user` の呼び出し全体を列挙する形にする（§7） |
 | `performElevation` のエラー文言変更が dry-run 出力に現れる | dry-run の `Impact.Description` の文字列が変わる | 対象は dry-run のユーザー・グループ解決失敗時のみ。既存アサーション（`unix_privilege_test.go`）を同一 PR で更新する。運用者が読む出力の意味は変わらない（「変更に失敗」→「解決に失敗」で、実装に即した表現になる） |
 | ドキュメント修正の英語版取りこぼし | セキュリティ設計文書の日英で記述が食い違う | 日本語版を先にコミットし、英語版は `/mktrans` で反映する。Phase 1 の完了条件に `make verify-docs` を含める |
 
@@ -820,7 +820,7 @@ Phase 間に実装上の依存はない（設計書 §8.1）。以下の順序�
 | AC-20 | test | `internal/groupmembership/manager_test.go::TestResolvePermissionCheckUID` | 3 ケース (a)(b)(c) すべてで期待どおりの UID が返り、不正な `SUDO_UID` でエラーが返る |
 | AC-20 | test | `internal/groupmembership/manager_test.go::TestGetPermissionCheckUID`（既存テストへサブテストを追加） | `SUDO_UID` が空なら `os.Getuid()`、`SUDO_UID` が `"9999"` なら非 root で `os.Getuid()`・root で `9999` という具体値が返る |
 | AC-25 | test | `internal/groupmembership/manager_test.go::TestCanCurrentUserSafelyWriteFile_UsesRealUID` | `0o600` → `true`、`0o666` → `ErrFileWorldWritable`、`0o400` → `ErrFileNotWritable`。UID の取得が失敗し得ないため判定が中断しない |
-| AC-25 | static | `rg -n -e 'user\.Current\(' -e 'user\.Lookup\(' -e 'user\.LookupId\(' internal/groupmembership/manager.go` | 一致が `IsUserInGroup`（:138）と `isUserOnlyGroupMember`（:177）の `user.LookupId` の 2 件のみで、`user.Current(` の一致が 0 件（UID の取得経路から passwd 依存が消えたこと）。残る 2 件はグループ書き込み可能なファイルの判定でのみ通る経路であり、本タスクのスコープ外である（§1.3、§4.6） |
+| AC-25 | static | `rg -n -e 'user\.Current\(' -e 'user\.Lookup\(' -e 'user\.LookupId\(' internal/groupmembership/manager.go` | 一致が `IsUserInGroup`（:138）と `isUserOnlyGroupMember`（:177）の `user.LookupId` の 2 件のみで、`user.Current(` の一致が 0 件（UID の取得経路から passwd 依存が消えたこと）。残る 2 件はグループ書き込み可能なファイルの判定でのみ通る経路であり、要件定義書の対象外節により AC-25 の範囲外である（§1.3、§4.6） |
 | AC-25 | static | `rg -n -A10 '^## \[Unreleased\]' CHANGELOG.md` | fail-closed から fail-open への変化、判定に使う UID・規則が変わらないこと、およびグループ書き込み可能なファイルの判定では passwd エントリが引き続き必要であることの 3 点が記載されている |
 | AC-25 | manual | `make test-ci-cgo1` と `make test-ci-cgo0` の両方を実行する | 両構成で成功する |
 
