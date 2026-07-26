@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approve` |
 | Created | 2026-07-25 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 2026-07-26 に isseis が一度承認したが、[02_architecture.md](02_architecture.md) の設計レビューで判明した次の3点を反映するため draft に戻した（再承認が必要）。(1) AC-15 の文言が `OperationUserGroupExecution` について事実と異なるため修正。(2) Phase 3 の fail-closed → fail-open 変化に対する AC-25 を追加。(3) セキュリティ設計文書の整合に対する F-005 / AC-26 を追加。既存 AC の番号は変更していない。 |
+| Review date | 2026-07-27 |
+| Reviewer | isseis |
+| Comments | - |
 
 ## 関連 Issue
 
