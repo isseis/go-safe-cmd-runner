@@ -157,8 +157,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### 2.2 ステップ 3-1 = Phase 3 前半: `getProcessEUID` の改名と権限判定 UID の分離（挙動不変）
 
@@ -173,21 +173,21 @@
 
 **作業内容: 実装**
 
-- [ ] `getProcessEUID` を `getProcessRealUID` に改名する。**本体は変更しない**（`user.Current()` と `strconv.Atoi` による UID 取得はステップ 3-2 まで残る）。改名だけで実態と名前が一致するのは、`user.Current()` が返すのも実 UID だからである（要件定義書が指摘している乖離は名前が `EUID` を名乗っている点であり、返す値そのものではない）。
-- [ ] 純関数 `resolvePermissionCheckUID(realUID int, sudoUID string) (int, error)` を新設し、sudo 分岐（実 UID が 0 かつ `SUDO_UID` が非空なら `parseSudoUID`、それ以外は実 UID）をここへ移す。`getPermissionCheckUID` は `getProcessRealUID()` と `os.Getenv("SUDO_UID")` を渡して委譲する形にする。外部から見たシグネチャは変えない。分離の目的は既存の `parseSudoUID` と同じで、root で実行しなくても全分岐をテストできるようにすることである。
-- [ ] `CanCurrentUserSafelyReadFile` 内のローカル変数 `effectiveUID` / `effectiveUID32` を `permissionCheckUID` / `permissionCheckUID32` に改名する。参照は :305, :312（コメント）, :315, :327 の 4 箇所すべてを更新する。
-- [ ] 下の「作業内容: コメントの書き換え」の 6 項目をすべて適用する。
+- [x] `getProcessEUID` を `getProcessRealUID` に改名する。**本体は変更しない**（`user.Current()` と `strconv.Atoi` による UID 取得はステップ 3-2 まで残る）。改名だけで実態と名前が一致するのは、`user.Current()` が返すのも実 UID だからである（要件定義書が指摘している乖離は名前が `EUID` を名乗っている点であり、返す値そのものではない）。
+- [x] 純関数 `resolvePermissionCheckUID(realUID int, sudoUID string) (int, error)` を新設し、sudo 分岐（実 UID が 0 かつ `SUDO_UID` が非空なら `parseSudoUID`、それ以外は実 UID）をここへ移す。`getPermissionCheckUID` は `getProcessRealUID()` と `os.Getenv("SUDO_UID")` を渡して委譲する形にする。外部から見たシグネチャは変えない。分離の目的は既存の `parseSudoUID` と同じで、root で実行しなくても全分岐をテストできるようにすることである。
+- [x] `CanCurrentUserSafelyReadFile` 内のローカル変数 `effectiveUID` / `effectiveUID32` を `permissionCheckUID` / `permissionCheckUID32` に改名する。参照は :305, :312（コメント）, :315, :327 の 4 箇所すべてを更新する。
+- [x] 下の「作業内容: コメントの書き換え」の 6 項目をすべて適用する。
 
 **作業内容: コメントの書き換え**
 
 `manager.go` から `EUID` / `effective UID` / `effective user` / `effectiveUID` という語をすべて取り除く（変更前は 17 行が一致する。AC-19 は、これらの語が 1 つも現れないことをもって検証する）。以下は完全な前後の文字列である。なお AC-19 の検証式は `EUID` という語を全面的に禁じるため、「実 UID であって実効 UID ではない」という趣旨を書きたい場合も "effective UID" ではなく "real UID (the UID the kernel reports for getuid(2))" のように言い換える。
 
-- [ ] `CanCurrentUserSafelyWriteFile` の doc コメントの `error` 説明。
+- [x] `CanCurrentUserSafelyWriteFile` の doc コメントの `error` 説明。
 
   前: `//   - error: non-nil if there was an error getting current user info or checking permissions`
   後: `//   - error: non-nil if the process UID could not be determined or the permission check failed`
 
-- [ ] `CanCurrentUserSafelyWriteFile` の本体先頭コメント（:276-278）。
+- [x] `CanCurrentUserSafelyWriteFile` の本体先頭コメント（:276-278）。
 
   前:
   ```go
@@ -202,7 +202,7 @@
   	// This is important for hash files that should only be writable by root.
   ```
 
-- [ ] `CanCurrentUserSafelyReadFile` 内のコメント（:310-315）。
+- [x] `CanCurrentUserSafelyReadFile` 内のコメント（:310-315）。
 
   前:
   ```go
@@ -221,7 +221,7 @@
   	// unsigned value on supported platforms. It was already validated in getPermissionCheckUID().
   ```
 
-- [ ] `getPermissionCheckUID` の doc コメント（:432-444）。
+- [x] `getPermissionCheckUID` の doc コメント（:432-444）。
 
   前:
   ```go
@@ -238,12 +238,12 @@
   および、前: `//   - int: The effective UID to use for permission checks`
   後: `//   - int: The UID to use for permission checks`
 
-- [ ] `getPermissionCheckUID`（改名後は `resolvePermissionCheckUID`）内の sudo 判定インラインコメント。
+- [x] `getPermissionCheckUID`（改名後は `resolvePermissionCheckUID`）内の sudo 判定インラインコメント。
 
   前: `	// Check if running under sudo: EUID must be 0 (root) and SUDO_UID must be set`
   後: `	// Check if running under sudo: the real UID must be 0 (root) and SUDO_UID must be set`
 
-- [ ] `getProcessEUID` の doc コメント（:481-489）。本ステップでは本体を変えないため、`EUID` の語を除き実 UID を返すことを述べる内容までを適用する。`os.Getuid()` と範囲検査の根拠に触れる最終形はステップ 3-2 で適用する。
+- [x] `getProcessEUID` の doc コメント（:481-489）。本ステップでは本体を変えないため、`EUID` の語を除き実 UID を返すことを述べる内容までを適用する。`os.Getuid()` と範囲検査の根拠に触れる最終形はステップ 3-2 で適用する。
 
   前:
   ```go
@@ -271,24 +271,24 @@
 
 **作業内容: テスト**
 
-- [ ] `manager_test.go` の `TestGetProcessEUID`（:692）を `TestGetProcessRealUID` に改名し、内容を次のとおり書き換える。
-  - [ ] `os.Getuid()` と同じ値を返し、エラーを返さないことを検証する
-  - [ ] `t.Setenv("SUDO_UID", "9999")` を設定しても返り値が `os.Getuid()` のままであることを検証する
-- [ ] `TestResolvePermissionCheckUID` を新規追加し、AC-20 の 3 ケースを root 権限なしで決定的に検証する。純関数なので実 UID を引数で与えられる。
-  - [ ] (a) `SUDO_UID` が空文字列のとき、渡した実 UID がそのまま返る（実 UID が `0` の場合と `1000` の場合の両方）
-  - [ ] (b) 実 UID が `0` かつ `SUDO_UID` が `"1000"` のとき、`1000` が返る
-  - [ ] (c) 実 UID が `1000` かつ `SUDO_UID` が `"2000"` のとき、`1000` が返る
-  - [ ] 実 UID が `0` かつ `SUDO_UID` が不正値（`"-1"`、`"4294967296"`、`"abc"`）のとき、エラーが返る（エラー経路）
-- [ ] 既存の `TestGetPermissionCheckUID`（:599）に、実装の再計算ではなく具体値で判定するサブテストを追加する。新規のテスト関数は追加しない（既存テストと重複するため）。
-  - [ ] `t.Setenv("SUDO_UID", "")` のとき、返り値が `os.Getuid()` に等しい
-  - [ ] `t.Setenv("SUDO_UID", "9999")` のとき、非 root で実行していれば返り値が `os.Getuid()` に等しく、root で実行していれば `9999` に等しい（実行 UID による分岐を明示し、どちらの環境でも具体値を検証する）
+- [x] `manager_test.go` の `TestGetProcessEUID`（:692）を `TestGetProcessRealUID` に改名し、内容を次のとおり書き換える。
+  - [x] `os.Getuid()` と同じ値を返し、エラーを返さないことを検証する
+  - [x] `t.Setenv("SUDO_UID", "9999")` を設定しても返り値が `os.Getuid()` のままであることを検証する
+- [x] `TestResolvePermissionCheckUID` を新規追加し、AC-20 の 3 ケースを root 権限なしで決定的に検証する。純関数なので実 UID を引数で与えられる。
+  - [x] (a) `SUDO_UID` が空文字列のとき、渡した実 UID がそのまま返る（実 UID が `0` の場合と `1000` の場合の両方）
+  - [x] (b) 実 UID が `0` かつ `SUDO_UID` が `"1000"` のとき、`1000` が返る
+  - [x] (c) 実 UID が `1000` かつ `SUDO_UID` が `"2000"` のとき、`1000` が返る
+  - [x] 実 UID が `0` かつ `SUDO_UID` が不正値（`"-1"`、`"4294967296"`、`"abc"`）のとき、エラーが返る（エラー経路）
+- [x] 既存の `TestGetPermissionCheckUID`（:599）に、実装の再計算ではなく具体値で判定するサブテストを追加する。新規のテスト関数は追加しない（既存テストと重複するため）。
+  - [x] `t.Setenv("SUDO_UID", "")` のとき、返り値が `os.Getuid()` に等しい
+  - [x] `t.Setenv("SUDO_UID", "9999")` のとき、非 root で実行していれば返り値が `os.Getuid()` に等しく、root で実行していれば `9999` に等しい（実行 UID による分岐を明示し、どちらの環境でも具体値を検証する）
 **完了条件**
 
-- [ ] `make fmt` → `make test` → `make lint` がすべて成功する。`make test`（= `unit-test`）は非 Darwin では `CGO_ENABLED=1 -race` と `CGO_ENABLED=0` の 2 回テストを実行するため、設計書 §7.5 が求める cgo 両構成の確認はこの時点で済んでいる
-- [ ] `go vet -tags 'test integration' ./...` が成功する
-- [ ] `rg -n --glob '*.go' 'getProcessEUID'` の一致件数が 0 である（AC-17）
-- [ ] `rg -n -e 'EUID' -e 'effective user' -e 'effective UID' -e 'effectiveUID' internal/groupmembership/manager.go` の一致件数が 0 である（AC-19）
-- [ ] `git diff` に `user.Current()` の削除が含まれない（本ステップが挙動不変であることの確認。passwd 依存の除去はステップ 3-2 で行う）
+- [x] `make fmt` → `make test` → `make lint` がすべて成功する。`make test`（= `unit-test`）は非 Darwin では `CGO_ENABLED=1 -race` と `CGO_ENABLED=0` の 2 回テストを実行するため、設計書 §7.5 が求める cgo 両構成の確認はこの時点で済んでいる
+- [x] `go vet -tags 'test integration' ./...` が成功する
+- [x] `rg -n --glob '*.go' 'getProcessEUID'` の一致件数が 0 である（AC-17）
+- [x] `rg -n -e 'EUID' -e 'effective user' -e 'effective UID' -e 'effectiveUID' internal/groupmembership/manager.go` の一致件数が 0 である（AC-19）
+- [x] `git diff` に `user.Current()` の削除が含まれない（本ステップが挙動不変であることの確認。passwd 依存の除去はステップ 3-2 で行う）
 
 ### PR-2 作成ポイント: groupmembership naming alignment and permission-check UID extraction
 
@@ -302,8 +302,8 @@
 
 **判定理由**: `mkplan2.md` step 4 の 3 トリガーのいずれにも該当しない。挙動不変の改名・コメント整備・純関数の切り出しのみで、`既存コード調査結果` に競合する実装方針の記載はなく、唯一の挙動変化はステップ 3-2 に分離した。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -967,17 +967,17 @@ Phase 間に実装上の依存はない（設計書 §8.1）。以下の順序�
 
 ### 6.3 PR-2（ステップ 3-1 = Phase 3 前半: `groupmembership` の改名）
 
-- [ ] `getProcessEUID` → `getProcessRealUID` の改名（**本体は変更しない**）
-- [ ] `resolvePermissionCheckUID` の切り出しと `getPermissionCheckUID` の委譲
-- [ ] コメントの書き換え 6 項目（§2.2「作業内容: コメントの書き換え」。6 項目目は中間形を適用する）
-- [ ] `effectiveUID` → `permissionCheckUID` の改名（4 箇所）
-- [ ] `TestGetProcessRealUID` への改名と書き換え
-- [ ] `TestResolvePermissionCheckUID` の追加（3 ケース + エラー経路）
-- [ ] 既存 `TestGetPermissionCheckUID` への具体値サブテストの追加
-- [ ] `make fmt` / `make test` / `make lint` / `go vet -tags 'test integration' ./...` の成功
-- [ ] `getProcessEUID` と `EUID` 系の語の残存 0 件（§2.2 の完了条件の `rg` 2 パターン）
-- [ ] `git diff` に `user.Current()` の削除が含まれないこと（挙動不変の確認）
-- [ ] §8 の横断検索のうち PR-2 が担当する 1 項目（`getProcessEUID` の用語集登録確認）の実施
+- [x] `getProcessEUID` → `getProcessRealUID` の改名（**本体は変更しない**）
+- [x] `resolvePermissionCheckUID` の切り出しと `getPermissionCheckUID` の委譲
+- [x] コメントの書き換え 6 項目（§2.2「作業内容: コメントの書き換え」。6 項目目は中間形を適用する）
+- [x] `effectiveUID` → `permissionCheckUID` の改名（4 箇所）
+- [x] `TestGetProcessRealUID` への改名と書き換え
+- [x] `TestResolvePermissionCheckUID` の追加（3 ケース + エラー経路）
+- [x] 既存 `TestGetPermissionCheckUID` への具体値サブテストの追加
+- [x] `make fmt` / `make test` / `make lint` / `go vet -tags 'test integration' ./...` の成功
+- [x] `getProcessEUID` と `EUID` 系の語の残存 0 件（§2.2 の完了条件の `rg` 2 パターン）
+- [x] `git diff` に `user.Current()` の削除が含まれないこと（挙動不変の確認）
+- [x] §8 の横断検索のうち PR-2 が担当する 1 項目（`getProcessEUID` の用語集登録確認）の実施
 
 ### 6.4 PR-3（ステップ 3-2 = Phase 3 後半: passwd 依存の除去）
 
