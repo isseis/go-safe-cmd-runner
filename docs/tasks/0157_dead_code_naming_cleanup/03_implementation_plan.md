@@ -304,8 +304,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### 2.3 ステップ 3-2 = Phase 3 後半: 権限判定 UID の取得から passwd 依存を除去する
 
@@ -321,9 +321,9 @@
 
 **作業内容: 実装**
 
-- [ ] `getProcessRealUID` の本体を `os.Getuid()` に置き換え、`user.Current()` と `strconv.Atoi` による UID 取得を削除する。範囲検査（`< 0` / `> math.MaxUint32` → `ErrUIDOutOfBounds`）は、到達しなくなっても残す。設計書 §2.3.3 のとおり、`CanCurrentUserSafelyReadFile` の `#nosec G115` がこの検査を根拠として挙げているためである。
-- [ ] `strconv` import が `parseSudoUID` でのみ使われる状態になることを確認する（`parseSudoUID` が使い続けるため import は残る）。
-- [ ] `getProcessRealUID` の doc コメントを最終形に書き換える。ステップ 3-1 で適用した中間形との差分は、`os.Getuid()` による取得と passwd 非依存を述べる段落、および範囲検査を残す根拠を述べる段落の追加である。
+- [x] `getProcessRealUID` の本体を `os.Getuid()` に置き換え、`user.Current()` と `strconv.Atoi` による UID 取得を削除する。範囲検査（`< 0` / `> math.MaxUint32` → `ErrUIDOutOfBounds`）は、到達しなくなっても残す。設計書 §2.3.3 のとおり、`CanCurrentUserSafelyReadFile` の `#nosec G115` がこの検査を根拠として挙げているためである。
+- [x] `strconv` import が `parseSudoUID` でのみ使われる状態になることを確認する（`parseSudoUID` が使い続けるため import は残る）。
+- [x] `getProcessRealUID` の doc コメントを最終形に書き換える。ステップ 3-1 で適用した中間形との差分は、`os.Getuid()` による取得と passwd 非依存を述べる段落、および範囲検査を残す根拠を述べる段落の追加である。
 
   前（ステップ 3-1 適用後の状態）:
   ```go
@@ -357,27 +357,27 @@
 
 **作業内容: テスト**
 
-- [ ] ステップ 3-1 で書き換えた `TestGetProcessRealUID` が**無修正**で成功することを確認する。同テストは「`os.Getuid()` と同じ値を返し `SUDO_UID` に影響されない」ことを固定しており、本体の実装手段を変えても成立する。これが挙動不変であることの直接の裏づけになる。
-- [ ] `TestCanCurrentUserSafelyWriteFile_UsesRealUID` を新規追加し、実装の再計算ではなく**判定結果そのもの**を検証する。`t.TempDir()` に所有者と権限が既知のファイルを作り、次を確認する。
-  - [ ] `0o600`（所有者のみ書き込み可、テスト実行ユーザーが所有）→ `true` が返る
-  - [ ] `0o666`（誰でも書き込み可）→ `false` と `ErrFileWorldWritable` が返る（`errors.Is` で判定する）
-  - [ ] `0o400`（誰も書き込めない）→ `false` と `ErrFileNotWritable` が返る（境界値・エラー経路）
-  - [ ] いずれのケースでも `CanUserSafelyWriteFile(os.Getuid(), ...)` と同じ結果になる（UID の出所が `os.Getuid()` のみであることの確認。ただしこれは補助であり、上の 3 つの具体値のアサーションが主である）
+- [x] ステップ 3-1 で書き換えた `TestGetProcessRealUID` が**無修正**で成功することを確認する。同テストは「`os.Getuid()` と同じ値を返し `SUDO_UID` に影響されない」ことを固定しており、本体の実装手段を変えても成立する。これが挙動不変であることの直接の裏づけになる。
+- [x] `TestCanCurrentUserSafelyWriteFile_UsesRealUID` を新規追加し、実装の再計算ではなく**判定結果そのもの**を検証する。`os.CreateTemp` に所有者と権限が既知のファイルを作り、次を確認する。
+  - [x] `0o600`（所有者のみ書き込み可、テスト実行ユーザーが所有）→ `true` が返る
+  - [x] `0o666`（誰でも書き込み可）→ `false` と `ErrFileWorldWritable` が返る（`errors.Is` で判定する）
+  - [x] `0o400`（誰も書き込めない）→ `false` と `ErrFileNotWritable` が返る（境界値・エラー経路）
+  - [x] いずれのケースでも `CanUserSafelyWriteFile(os.Getuid(), ...)` と同じ結果になる（UID の出所が `os.Getuid()` のみであることの確認。ただしこれは補助であり、上の 3 つの具体値のアサーションが主である）
 
 **作業内容: リリースノート**
 
-- [ ] `CHANGELOG.md` の冒頭（`## [1.0.0]` の直前）に `## [Unreleased]` 節と `### Changed` 小節を新設し、次の内容を英語で記載する。
-  - [ ] 実 UID に対応する passwd エントリを引けない環境（cgo 有効時の NSS 障害、cgo 無効時の `/etc/passwd` 欠如やエントリ未登録）で、これまで権限チェックがファイルアクセスを拒否して実行そのものが停止していたが、**権限チェックに用いる UID の取得**が passwd を参照しなくなったため実行が継続するようになったこと
-  - [ ] これは fail-closed から fail-open への変化であること
-  - [ ] 判定に使う UID・GID・パーミッションビットと判定規則は変わらないこと
-  - [ ] **グループ書き込み可能なファイル**に対する判定はグループメンバーシップの照会（`user.LookupId`）を行うため、その場合は引き続き passwd エントリを必要とすること（§1.3 参照）
+- [x] `CHANGELOG.md` の冒頭（`## [1.0.0]` の直前）に `## [Unreleased]` 節と `### Changed` 小節を新設し、次の内容を英語で記載する。
+  - [x] 実 UID に対応する passwd エントリを引けない環境（cgo 有効時の NSS 障害、cgo 無効時の `/etc/passwd` 欠如やエントリ未登録）で、これまで権限チェックがファイルアクセスを拒否して実行そのものが停止していたが、**権限チェックに用いる UID の取得**が passwd を参照しなくなったため実行が継続するようになったこと
+  - [x] これは fail-closed から fail-open への変化であること
+  - [x] 判定に使う UID・GID・パーミッションビットと判定規則は変わらないこと
+  - [x] **グループ書き込み可能なファイル**に対する判定はグループメンバーシップの照会（`user.LookupId`）を行うため、その場合は引き続き passwd エントリを必要とすること（§1.3 参照）
 
 **完了条件**
 
-- [ ] `make fmt` → `make test` → `make lint` がすべて成功する。`make test`（= `unit-test`）は非 Darwin では `CGO_ENABLED=1 -race` と `CGO_ENABLED=0` の 2 回テストを実行するため、設計書 §7.5 が求める cgo 両構成の確認はこの時点で済んでいる
-- [ ] `go vet -tags 'test integration' ./...` が成功する
-- [ ] `rg -n 'user\.Current\(' internal/groupmembership/manager.go` の一致件数が 0 である（AC-18）
-- [ ] マージ前に CI の 2 レグ（`make test-ci-cgo1` / `make test-ci-cgo0`）が成功する
+- [x] `make fmt` → `make test` → `make lint` がすべて成功する。`make test`（= `unit-test`）は非 Darwin では `CGO_ENABLED=1 -race` と `CGO_ENABLED=0` の 2 回テストを実行するため、設計書 §7.5 が求める cgo 両構成の確認はこの時点で済んでいる
+- [x] `go vet -tags 'test integration' ./...` が成功する
+- [x] `rg -n 'user\.Current\(' internal/groupmembership/manager.go` の一致件数が 0 である（AC-18）
+- [x] マージ前に CI の 2 レグ（`make test-ci-cgo1` / `make test-ci-cgo0`）が成功する
 
 ### PR-3 作成ポイント: permission-check UID read from the kernel instead of passwd
 
@@ -391,8 +391,8 @@
 
 **判定理由**: `mkplan2.md` step 4 の panel-mode トリガーのうち security-gate の挙動を下げる変更に該当する（権限チェックが passwd エントリ欠如時に fail-closed から fail-open へ変わる。設計書 §5.4）。本タスク全体で唯一の挙動変化である。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（[#925](https://github.com/isseis/go-safe-cmd-runner/pull/925)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
