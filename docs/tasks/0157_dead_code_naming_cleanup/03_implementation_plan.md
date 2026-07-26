@@ -392,7 +392,7 @@
 **判定理由**: `mkplan2.md` step 4 の panel-mode トリガーのうち security-gate の挙動を下げる変更に該当する（権限チェックが passwd エントリ欠如時に fail-closed から fail-open へ変わる。設計書 §5.4）。本タスク全体で唯一の挙動変化である。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（[#925](https://github.com/isseis/go-safe-cmd-runner/pull/925)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
