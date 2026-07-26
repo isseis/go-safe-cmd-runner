@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `approve` |
+| Status | `draft` |
 | Created | 2026-07-25 |
-| Review date | 2026-07-27 |
-| Reviewer | isseis |
-| Comments | - |
+| Review date | - |
+| Reviewer | - |
+| Comments | 2026-07-27 に isseis が承認したのち、`WithUserGroup` を doc コメント整備ではなく API ごと削除する方針変更（インターフェース変更を許容）を受けて draft に戻した（再承認が必要）。F-006 / AC-27〜AC-29 を追加し、F-002 の表題と AC-15 の対象を `WithPrivileges` のみに変更。本番未使用かつ `IsPrivilegedExecutionSupported` と重複する `IsUserGroupSupported` も併せて削除対象とした。既存 AC の番号は変更していない。 |
 
 ## 関連 Issue
 
@@ -85,7 +85,7 @@ Issue #864 は「『フィルタする』と称して実質フィルタしてい
 - 「フィルタ」「EUID」「ユーザー降格」といった**防御を示唆する名前**が、実装が実際に行っていることと一致する状態にする（名前を実装に合わせる、または実装を名前に合わせるかを所見ごとに決定する）。
 - 本番から到達しないコード（特権 syscall を含む降格パス、死にフィールド、未使用 sentinel、未使用ストア API、空ファイル）を削除し、監査対象を縮退させる。
 - 上記はいずれも**外部から観測可能な挙動を変えないリファクタリング**として行う。挙動変化が避けられない箇所（D1 M-4）は、変化の有無と方向を明示し、テストで固定する。
-- 誤用一歩手前の footgun（allowlist 適用済みに見えて未適用な戻り値、実降格したように見える `WithUserGroup`）を構造的に取り除く。
+- 誤用一歩手前の footgun（allowlist 適用済みに見えて未適用な戻り値、実降格したように見える `WithUserGroup`）を構造的に取り除く。`WithUserGroup` については、doc コメントで実態を説明するのではなく API ごと削除する（F-006）。
 
 ## スコープ
 
@@ -94,7 +94,7 @@ Issue #864 は「『フィルタする』と称して実質フィルタしてい
 ### 対象（本タスクで対応する）
 
 1. **Phase 1（A3 F-1〜F-5）**: `internal/runner/base/environment` パッケージの縮退・改名、および `internal/runner/runner.go` / `cmd/runner/main.go` の死にフィールド・死にメソッドの削除。
-2. **Phase 2（A1 M-2）**: `internal/runner/base/privilege/unix.go` の到達不能な実降格パス（`Setegid`/`Seteuid` 実行部・EGID ロールバック・`performElevation` のロールバックブロック）の削除と、`WithUserGroup` / `WithPrivileges` の doc コメント整備。
+2. **Phase 2（A1 M-2）**: `internal/runner/base/privilege/unix.go` の到達不能な実降格パス（`Setegid`/`Seteuid` 実行部・EGID ロールバック・`performElevation` のロールバックブロック）の削除、本番呼び出し元を持たない `WithUserGroup` / `IsUserGroupSupported` の `runnertypes.PrivilegeManager` インターフェースからの削除（F-006）、および `WithPrivileges` の doc コメント整備。
 3. **Phase 3（D1 M-4）**: `internal/groupmembership/manager.go` の `getProcessEUID` および `getPermissionCheckUID` の命名・コメントの実装との整合。
 4. **Phase 4（C3 F3）**: `internal/fileanalysis/syscall_store.go` の削除（後述「方針判断の記録」参照）。
 5. 上記に伴うテストの追加・更新・削除。
@@ -110,7 +110,7 @@ Phase 間に実装上の依存はなく、独立にレビュー・マージ可�
 - **A3 F-6（`ParseSystemEnvironment` が不正形式エントリを無音スキップ）/ F-7（allowlist 判定ロジックの分散）**: #864 の「該当箇所」に含まれず、前者は挙動変更、後者は設計変更を伴うため別途検討。
 - **C3 の他の所見（F1, F2, F4 以降の shebang / fileanalysis 所見）**: #864 の「推奨対応」に挙げられているのは F3 のみ。
 - **`elfanalyzer.NewStandardELFAnalyzerWithSyscallStore`（`internal/security/elfanalyzer/standard_analyzer.go:70`）の本番未使用**: Phase 4 の調査で判明した隣接デッドコードだが、#864 の該当箇所ではなく、syscall analysis の将来的な有効化方針と併せて判断すべきため本タスクでは削除しない。
-- **機能追加・挙動変更全般**: 本タスクは削除・改名・doc 修正に限定する。`environment` パッケージへの allowlist 適用機能の「復活」（A3 F-1 の対応案2）は、`config` 層の `ProcessEnvImport` と二重適用になるため採用しない。<br>ただし Phase 3 には一点だけ挙動変化がある。`user.Current()` をやめることで、passwd エントリを引けない場合にファイルアクセスを拒否していた失敗経路が消える（fail-closed から fail-open への変化）。これは意図した変更として AC-25 で扱う。詳細と受容理由は [02_architecture.md](02_architecture.md) §5.4。
+- **機能追加・挙動変更全般**: 本タスクは削除・改名・doc 修正に限定する。ただし F-006（`WithUserGroup` / `IsUserGroupSupported` のインターフェースからの削除）は API 変更を伴う。本番呼び出し元が存在しないため外部から観測可能な挙動は変わらないと判断し、本タスクの対象に含める。`environment` パッケージへの allowlist 適用機能の「復活」（A3 F-1 の対応案2）は、`config` 層の `ProcessEnvImport` と二重適用になるため採用しない。<br>ただし Phase 3 には一点だけ挙動変化がある。`user.Current()` をやめることで、passwd エントリを引けない場合にファイルアクセスを拒否していた失敗経路が消える（fail-closed から fail-open への変化）。これは意図した変更として AC-25 で扱う。詳細と受容理由は [02_architecture.md](02_architecture.md) §5.4。
 - **`internal/runner/base/environment/denylist.go`（0156 で追加）**: 本タスクでは変更しない。同一パッケージ内の `Filter` 側のみを整理する。
 
 ## 方針判断の記録
@@ -123,7 +123,7 @@ findings は「到達不能な実降格パスを削除する」か「実フロ�
 
 - 実降格パスは `Setegid`/`Seteuid` という特権 syscall と `emergencyShutdown`（プロセス即時終了）を含む。到達不能なまま残すと、将来 `prepareExecution` の分岐が1行変わっただけで検証されていない特権コードが有効化される。
 - 実際のユーザー切替は executor の `syscall.Credential` に一本化されており（execve 時に原子的に適用されるため、親プロセスの EUID/EGID を書き換える方式より安全）、降格の二重実装を維持する理由がない。YAGNI 原則にも整合する。
-- ただし削除だけでは「`WithUserGroup` が何をするのか」が読み取れないままになるため、doc コメントへの実フロー明記（AC-15）も併せて必須とする。
+- ただし削除だけでは「特権昇格の実フローが何をするのか」が読み取れないままになるため、`WithPrivileges` の doc コメントへの実フロー明記（AC-15）も併せて必須とする。なお `WithUserGroup` 自体は F-006 により削除するため、doc コメントの対象から外れる。
 
 ### D1 M-4: 「実 UID セマンティクスを正とし、名前とコメントを実装に合わせる」を採る
 
@@ -154,13 +154,13 @@ findings は「EUID が必要なら `os.Geteuid()` を使う」「実 UID が正
 - **AC-09**: `Runner.LoadSystemEnvironment` メソッドが存在せず、`cmd/runner/main.go` からの呼び出しも存在しない。削除後も、既存の統合／E2E テスト（`cmd/runner/integration_*_test.go`、`internal/runner/e2e_*_test.go` 等）がコマンド実行時の環境変数解決について従来と同じ結果を得る。
 - **AC-10**: [0156](../0156_env_denylist_consolidation/) で追加された `internal/runner/base/environment/denylist.go` の公開 API とその挙動は変更されない（同ファイルの既存テストが無修正で pass する）。
 
-#### F-002: 到達不能な実降格パスの削除と `WithUserGroup` の doc 整合（A1 M-2、Phase 2）
+#### F-002: 到達不能な実降格パスの削除と `WithPrivileges` の doc 整合（A1 M-2、Phase 2）
 
 - **AC-11**: `internal/runner/base/privilege` に、対象ユーザー／グループへ**実際に降格する**コード（`Setegid`/`Seteuid` の呼び出しと、その失敗時の EGID ロールバック・`emergencyShutdown`）が存在しない。
 - **AC-12**: `performElevation` から、`needsPrivilegeEscalation && needsUserGroupChange` の同時成立を前提とした到達不能なロールバックブロックが削除されている。
 - **AC-13**: AC-11 により未使用となったテスト注入フィールド（`syscallSeteuid` / `syscallSetegid`）と、それに依存していたテストが削除されている。
 - **AC-14**: 旧 `changeUserGroupInternal` に相当する処理は、その実態（ユーザー／グループ名の解決と dry-run ログ出力）を表す名前になっており、「変更する（change）」ことを名乗らない。
-- **AC-15**: `WithUserGroup` および `WithPrivileges` の doc コメントに、`OperationUserGroupExecution` の実フローとして次の3点が明記されている。(a) privilege パッケージは root への昇格のみを行い、`RunAsUser` / `RunAsGroup` を参照しない。(b) 対象ユーザーへの切り替えと、その前提となる識別情報の解決は executor が行い、子プロセス起動時の `syscall.Credential` により execve 時に適用される。(c) privilege パッケージ内で `RunAsUser` / `RunAsGroup` が解決・ログ出力されるのは `OperationUserGroupDryRun` の場合に限られる。<br>（2026-07-26 修正: 当初の文言は `OperationUserGroupExecution` でも `RunAsUser`・`RunAsGroup` が「解決とログのために渡される」としていたが、`prepareExecution` は同 operation で dry-run 解決を呼ばないため privilege パッケージはこれらを読まない。事実と異なる記述を doc コメントに書かせないよう改めた。詳細は [02_architecture.md](02_architecture.md) §5.5。）
+- **AC-15**: `WithPrivileges` の doc コメントに、`OperationUserGroupExecution` の実フローとして次の3点が明記されている。(a) privilege パッケージは root への昇格のみを行い、`RunAsUser` / `RunAsGroup` を参照しない。(b) 対象ユーザーへの切り替えと、その前提となる識別情報の解決は executor が行い、子プロセス起動時の `syscall.Credential` により execve 時に適用される。(c) privilege パッケージ内で `RunAsUser` / `RunAsGroup` が解決・ログ出力されるのは `OperationUserGroupDryRun` の場合に限られる。<br>（2026-07-26 修正: 当初の文言は `OperationUserGroupExecution` でも `RunAsUser`・`RunAsGroup` が「解決とログのために渡される」としていたが、`prepareExecution` は同 operation で dry-run 解決を呼ばないため privilege パッケージはこれらを読まない。事実と異なる記述を doc コメントに書かせないよう改めた。詳細は [02_architecture.md](02_architecture.md) §5.5。）
 - **AC-16**: 変更後も、(a) `OperationUserGroupExecution` では root 昇格と復元が従来どおり行われ、(b) `OperationUserGroupDryRun` ではユーザー／グループ解決とログ出力のみが行われて識別情報が変化せず、(c) いずれの経路でも親プロセスの EUID/EGID を対象ユーザーへ変更しないことが、テストで確認できる。既存の identity 検証（`ErrIdentityLeak` / saved-set 検査）の挙動も変わらない。
 
 #### F-003: `getProcessEUID` の命名・実装の整合（D1 M-4、Phase 3）
@@ -184,9 +184,21 @@ Phase 1 が削除する `Filter` 構造体は、セキュリティ設計文書�
 
 - **AC-26**: `docs/dev/architecture_design/security-architecture.ja.md` および `security-architecture.md` の §3 に、`globalAllowlist` フィールドを持つ `Filter` 構造体の引用が存在せず、同節の記述が Phase 1 適用後の実装（`environment` パッケージはシステム環境の列挙と denylist 判定を提供し、allowlist は扱わない）と整合している。日本語版を先に修正し、英語版はそこから反映する。本 AC は Phase 1 の PR に含める。
 
+#### F-006: 本番未使用の特権 API のインターフェースからの削除（Phase 2）
+
+`runnertypes.PrivilegeManager` の `WithUserGroup` と `IsUserGroupSupported` は、いずれも本番の呼び出し元を持たない。executor は `WithPrivileges` を直接呼んでおり（`executor.go:236`）、両メソッドの呼び出しはテストのみである。インターフェースのメソッドセットに属するため `make deadcode` では検出されず、静的解析では見つからない位置に残っている。
+
+`WithUserGroup` は「対象ユーザーの権限で実行する」と読める名前でありながら、実体は root へ昇格して `WithPrivileges` へ委譲するだけの薄いラッパである。doc コメントで実態を説明する方針（当初の AC-15）では、誤読を招く API がインターフェース上に残り続ける。本タスクの目的（誤用一歩手前の API 形状を構造的に取り除く）に照らし、削除する。
+
+`IsUserGroupSupported` は `IsPrivilegedExecutionSupported` と同一のフィールド（`privilegeSupported`）を返す重複メソッドであり、これも本番呼び出し元を持たないため併せて削除する。`IsPrivilegedExecutionSupported` は本番で使用されている（`executor.go:162`、`dryrun_manager.go:274`）ため残す。
+
+- **AC-27**: `runnertypes.PrivilegeManager` インターフェース、`UnixPrivilegeManager`、および privilege パッケージのモック（`testutil/mocks.go`、`internal/runner/resource/normal_manager_test.go`）から `WithUserGroup` と `IsUserGroupSupported` が削除されている。リポジトリ内に両メソッドの定義・呼び出しが存在しない（executor の非公開メソッド `executeWithUserGroup` は別物であり、残す）。
+- **AC-28**: 削除後も `cmd/runner` / `cmd/record` / `cmd/verify` がビルドでき、既存の特権関連テストが pass する。とくに `OperationUserGroupExecution` を用いた実行経路（executor → `WithPrivileges`）の挙動は変わらない。
+- **AC-29**: `IsPrivilegedExecutionSupported` は削除されず、`executor.go` および `dryrun_manager.go` の既存の呼び出しが従来どおり機能する。
+
 ## Success Criteria（要件レベル）
 
-- AC-01〜AC-23、AC-25、AC-26（AC-24 を採る場合はその代替を含む）のすべてに対し、実装計画（[03_implementation_plan.md](03_implementation_plan.md)）で具体的なテストまたは静的検証手段（`grep` による不存在確認など）が対応付けられている。
+- AC-01〜AC-23、AC-25〜AC-29（AC-24 を採る場合はその代替を含む）のすべてに対し、実装計画（[03_implementation_plan.md](03_implementation_plan.md)）で具体的なテストまたは静的検証手段（`grep` による不存在確認など）が対応付けられている。
 - 本タスクは AC-25 が扱う一点を除き挙動不変のリファクタリングであり、削除対象に直接依存していたテストを除き、既存テストが無修正で pass する。
 - Phase 1〜4 のそれぞれが独立してレビュー可能な単位に分かれており、いずれかを見送っても他 Phase の成果が成立する。
 - `make fmt` / `make lint` / `make test` がグリーンである。

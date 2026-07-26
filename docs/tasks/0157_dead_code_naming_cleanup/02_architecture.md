@@ -8,7 +8,7 @@
 | Created | 2026-07-26 |
 | Review date | - |
 | Reviewer | - |
-| Comments | - |
+| Comments | 2026-07-26 に isseis が承認したのち、`WithUserGroup` を doc コメント整備ではなく API ごと削除する方針変更を受けて draft に戻した（再承認が必要）。§2.2.5 を新設し、§2.2.3・§3.2・§3.5・§5.5・§7.1・§7.2・§9・§10・付録 A-4b を追随させた。本番未使用かつ `IsPrivilegedExecutionSupported` と重複する `IsUserGroupSupported` も削除対象に含めている。 |
 
 ## 関連文書
 
@@ -261,10 +261,7 @@ flowchart TD
 |---|---|---|
 | `changeUserGroupInternal(userName, groupName string, dryRun bool, originalEGID int) error` | `resolveUserGroupForDryRun(userName, groupName string) error` | 変更（change）はもう行わない。dry-run 専用の解決処理であることを名前に表す。`dryRun` は常に真、`originalEGID` はロールバック専用のため引数ごと削除する |
 
-`WithUserGroup` は改名しない。これは `runnertypes.PrivilegeManager` インターフェース（[config.go:198](../../../internal/runner/base/runnertypes/config.go)）の一部であり、改名はインターフェース変更を伴う。要件定義書のスコープ外節が挙動変更・API 変更を対象外としているため、AC-15 に従い doc コメントで実フローを明示するに留める。
-
-> **`WithUserGroup` について確認した事実**
-> `WithUserGroup` を呼び出す本番コードは存在しない。executor は `WithPrivileges` を直接呼んでおり（[executor.go:236](../../../internal/runner/base/executor/executor.go)）、`WithUserGroup` の呼び出しはテストのみである。`IsUserGroupSupported` も同様である。両者はインターフェースのメソッドセットに属するため `make deadcode` では検出されない。本タスクではインターフェースに手を入れないため削除しないが、この事実は §9 で今後の検討事項として扱う。
+`WithUserGroup` は改名せず、**インターフェースごと削除する**（§2.2.5）。改名では「対象ユーザーの権限で実行する」と読める API がインターフェース上に残り続けるためである。
 
 #### 2.2.4 削除で失われる制約の置き換え
 
@@ -280,6 +277,29 @@ flowchart TD
 同じ真偽値は `restorePrivilegesAndMetrics`（[unix.go:232](../../../internal/runner/base/privilege/unix.go)）の metrics 記録条件にも現れる。現在の条件式 `panicValue == nil && (needsPrivilegeEscalation || needsUserGroupChange)` は、この分岐に入る時点で `needsPrivilegeEscalation` が偽であるため実質 `needsUserGroupChange` のみに依存している。ここも同じ operation 判定に置き換える。dry-run で `RecordElevationSuccess` が記録される挙動は維持する（§5.3）。
 
 真偽値の廃止だけでは、降格 syscall が再び privilege パッケージに現れることは防げない。これは §7.2 の静的検査で担保する。
+
+#### 2.2.5 本番未使用の特権 API の削除
+
+`runnertypes.PrivilegeManager`（[config.go:192-200](../../../internal/runner/base/runnertypes/config.go)）が宣言する 4 メソッドのうち、2 つは本番の呼び出し元を持たない。
+
+| メソッド | 本番呼び出し元 | 判断 |
+|---|---|---|
+| `IsPrivilegedExecutionSupported() bool` | [executor.go:162](../../../internal/runner/base/executor/executor.go)、[dryrun_manager.go:274](../../../internal/runner/resource/dryrun_manager.go) | 残す |
+| `WithPrivileges(elevationCtx, fn) error` | [executor.go:236](../../../internal/runner/base/executor/executor.go)、[dryrun_manager.go:282](../../../internal/runner/resource/dryrun_manager.go) | 残す |
+| `WithUserGroup(user, group string, fn func() error) error` | なし（テストのみ） | **削除** |
+| `IsUserGroupSupported() bool` | なし（テストのみ） | **削除** |
+
+`WithUserGroup` の実体（[unix.go:592-599](../../../internal/runner/base/privilege/unix.go)）は、`OperationUserGroupExecution` の `ElevationContext` を組み立てて `WithPrivileges` へ委譲するだけの 6 行のラッパである。名前は「対象ユーザーの権限で実行する」と読めるが、§2.2.1 のとおり実際に行うのは root への昇格のみで、対象ユーザーへの切り替えは executor が `syscall.Credential` で行う。
+
+当初の設計では、要件定義書がインターフェース変更を対象外としていたため、doc コメントで実態を説明する方針（AC-15）を採っていた。しかし doc コメントで補う方式では、誤読を招く名前の API がインターフェース上に残り続ける。本タスクの目的は「誤用一歩手前の API 形状を構造的に取り除く」ことであり、説明を足すのは構造的な解決ではない。要件定義書の改訂によりインターフェース変更が許容されたため、削除する（F-006）。
+
+`IsUserGroupSupported`（[unix.go:602-604](../../../internal/runner/base/privilege/unix.go)）は `m.privilegeSupported` を返すのみで、`IsPrivilegedExecutionSupported`（[unix.go:357-359](../../../internal/runner/base/privilege/unix.go)）と実装が完全に一致する。モック（[testutil/mocks.go:74](../../../internal/runner/base/privilege/testutil/mocks.go)）でも同じ `m.Supported` を返す。本番呼び出し元を持たないうえに重複でもあるため、併せて削除する。削除しても失われる情報はない。
+
+**削除しても実行経路が変わらない根拠。** executor は `WithUserGroup` を経由せず、`ElevationContext` を自前で組み立てて `WithPrivileges` を直接呼ぶ（[executor.go:224-236](../../../internal/runner/base/executor/executor.go)）。したがって `OperationUserGroupExecution` の実行経路は `WithUserGroup` の有無に影響されない。
+
+**モックへの影響。** `MockPrivilegeManager.WithUserGroup`（[testutil/mocks.go:61](../../../internal/runner/base/privilege/testutil/mocks.go)）は `ElevationCalls` に `"user_group_change:"+user+":"+group` を記録するが、これは同モックの `WithPrivileges` が `OperationUserGroupExecution` に対して記録する文字列と同一である。本番経路は `WithPrivileges` を通るため、`ElevationCalls` を検証している既存テストは影響を受けない。
+
+**名前だけが紛らわしい別物。** executor の非公開メソッド `executeWithUserGroup`（[executor.go:152](../../../internal/runner/base/executor/executor.go)）は名前が似ているが別物であり、実行経路の本体として残す。`internal/runner/base/executor/executor_usergroup_test.go` の各テストもこちらを対象としており、本削除の影響を受けない。
 
 ### 2.3 Phase 3: `getProcessEUID` の命名と実装の整合
 
@@ -486,8 +506,6 @@ classDiagram
         <<interface>>
         +IsPrivilegedExecutionSupported() bool
         +WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) error
-        +WithUserGroup(user string, group string, fn func() error) error
-        +IsUserGroupSupported() bool
     }
 
     class UnixPrivilegeManager {
@@ -501,8 +519,6 @@ classDiagram
         -identityVerifier func() error
         -readSavedIDs func() (suid int, sgid int, err error)
         +WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) error
-        +WithUserGroup(user string, group string, fn func() error) error
-        +IsUserGroupSupported() bool
         -resolveUserGroupForDryRun(userName string, groupName string) error
     }
 
@@ -521,7 +537,7 @@ classDiagram
 
 矢印は Mermaid classDiagram の標準記法に従う。`<|..` は「実装関係」、`-->` はラベルどおり「生成・保持の関係」を表す。
 
-削除するのは `syscallSeteuid func(uid int) error`、`syscallSetegid func(gid int) error`、`executionContext.originalEUID`、`executionContext.originalEGID`、`executionContext.needsUserGroupChange` の 5 フィールド、および `changeUserGroupInternal` である。`needsUserGroupChange` を削除する理由は §2.2.4 に記した。
+削除するのは `syscallSeteuid func(uid int) error`、`syscallSetegid func(gid int) error`、`executionContext.originalEUID`、`executionContext.originalEGID`、`executionContext.needsUserGroupChange` の 5 フィールド、メソッド `changeUserGroupInternal`、およびインターフェースと実装の双方から `WithUserGroup` / `IsUserGroupSupported` である。`needsUserGroupChange` を削除する理由は §2.2.4 に、`WithUserGroup` / `IsUserGroupSupported` を削除する理由は §2.2.5 に記した。
 
 `resolveUserGroupForDryRun` の責務は、ユーザー名から UID を、グループ名から GID を解決し（グループ未指定時はユーザーのプライマリグループにフォールバック）、解決結果をログに出力することである。解決に失敗した場合はエラーを返す。プロセスの識別情報（UID・GID・補助グループ）は一切変更しない。
 
@@ -567,7 +583,10 @@ func NewSyscallAnalysisStore(store *Store) SyscallAnalysisStore
 | 1 | `internal/runner/runner.go` | `envVars` / `envFilter` フィールド、`LoadSystemEnvironment` メソッド、`NewRunner` 内の `envFilter` 生成（:323）と `envVars` 初期化（:343）を削除。`environment` の import が他に用途を持たなければ削除 | `runner_test.go`: **`:72` の `assert.NotNil(t, runner.envVars)`（コンパイルエラーになる）**、および `:803, :928, :1117, :1222, :1298, :1457` の `LoadSystemEnvironment()` 呼び出し |
 | 1 | `cmd/runner/main.go` | `LoadSystemEnvironment()` 呼び出しを削除（:421） | `integration_workdir_test.go`（:195, :630）、`integration_auto_vars_test.go`（:103）、`integration_test_helpers.go`（:83） |
 | 1 | `internal/runner/e2e_shebang_test.go` / `e2e_dynlib_verification_test.go` | `LoadSystemEnvironment()` 呼び出しを削除 | 同左（:223 / :90, :161） |
-| 2 | `internal/runner/base/privilege/unix.go` | `changeUserGroupInternal` を `resolveUserGroupForDryRun` に改名し降格処理を削除。`performElevation` のロールバックブロックを削除。`needsUserGroupChange` を廃止し operation 直接判定に置換（§2.2.4）。`restorePrivilegesAndMetrics` の metrics 条件（:232）も同様に置換。`syscallSeteuid` / `syscallSetegid` / `originalEUID` / `originalEGID` を削除。`WithUserGroup` / `WithPrivileges` の doc を整備。**根拠コメント 3 箇所（:118-122 の `current_user -> root -> target_user` フロー説明、:222-225、:236-240）は Phase 2 後に前提が失われるため書き換える** | `unix_privilege_test.go`: `TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackSuccess`（:509）と `..._EgidRollbackFailure`（:541）は削除。`TestChangeUserGroupInternal_NotCalledForUserGroupExecution`（:145）と `..._NotCalledForUserGroupDryRun`（:187）は注入フィールドに依存するため書き換え。**`:616-617` の `executionContext` リテラルが `originalEUID` / `originalEGID` を設定しており、コンパイルエラーになる**。`needsUserGroupChange` を設定する 14 箇所、および `identity_linux_test.go` / `identity_other_test.go` の各 1 箇所は、フィールド廃止に伴い `elevationCtx.Operation` の設定へ置換 |
+| 2 | `internal/runner/base/privilege/unix.go` | `changeUserGroupInternal` を `resolveUserGroupForDryRun` に改名し降格処理を削除。`performElevation` のロールバックブロックを削除。`needsUserGroupChange` を廃止し operation 直接判定に置換（§2.2.4）。`restorePrivilegesAndMetrics` の metrics 条件（:232）も同様に置換。`syscallSeteuid` / `syscallSetegid` / `originalEUID` / `originalEGID` を削除。**`WithUserGroup`（:592-599）と `IsUserGroupSupported`（:602-604）を削除（§2.2.5）**。`WithPrivileges` の doc を整備。**根拠コメント 3 箇所（:118-122 の `current_user -> root -> target_user` フロー説明、:222-225、:236-240）は Phase 2 後に前提が失われるため書き換える** | `unix_privilege_test.go`: `TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackSuccess`（:509）と `..._EgidRollbackFailure`（:541）は削除。`TestChangeUserGroupInternal_NotCalledForUserGroupExecution`（:145）と `..._NotCalledForUserGroupDryRun`（:187）は注入フィールドに依存するため書き換え。**`:616-617` の `executionContext` リテラルが `originalEUID` / `originalEGID` を設定しており、コンパイルエラーになる**。`needsUserGroupChange` を設定する 14 箇所、および `identity_linux_test.go` / `identity_other_test.go` の各 1 箇所は、フィールド廃止に伴い `elevationCtx.Operation` の設定へ置換。**`TestWithUserGroup`（:390）と `TestIsUserGroupSupported`（:420）は対象 API ごと削除**。`:174` の `manager.WithUserGroup(...)` 呼び出しは `WithPrivileges` 直接呼び出しへ置換。`unix_test.go` の `TestUnixPrivilegeManager_WithUserGroupInternal`（:15）は既に `WithPrivileges` を使っており実体は影響を受けないが、名称が削除済み API を指すため改名する |
+| 2 | `internal/runner/base/runnertypes/config.go` | `PrivilegeManager` インターフェースから `WithUserGroup`（:198）と `IsUserGroupSupported`（:199）の宣言を削除（§2.2.5）。`IsPrivilegedExecutionSupported` / `WithPrivileges` は残す | — |
+| 2 | `internal/runner/base/privilege/testutil/mocks.go` | `MockPrivilegeManager` から `WithUserGroup`（:61）と `IsUserGroupSupported`（:74）を削除。`WithPrivileges` が `OperationUserGroupExecution` に対して記録する `ElevationCalls` の文字列は変更しない（§2.2.5） | 本モックを使う既存テストは `ElevationCalls` の内容が変わらないため影響なし |
+| 2 | `internal/runner/resource/normal_manager_test.go` | 同ファイル内の `MockPrivilegeManager` から `WithUserGroup`（:81）と `IsUserGroupSupported`（:86）を削除 | 同左 |
 | 3 | `internal/groupmembership/manager.go` | `getProcessEUID` を `getProcessRealUID` に改名し `os.Getuid()` へ変更。範囲検査を残す根拠を doc に明記。`getPermissionCheckUID`・`CanCurrentUserSafelyWriteFile` のコメントを修正。`os/user` の import が他に用途を持たなければ削除 | `manager_test.go`（該当があれば追随） |
 | 4 | `internal/fileanalysis/syscall_store.go` | ファイル削除 | — |
 | 4 | `internal/fileanalysis/syscall_store_test.go` | ファイル削除 | 同左 |
@@ -623,7 +642,7 @@ flowchart TD
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
     T1["Filter 戻り値の誤用"]
-    T2["WithUserGroup の誤解"]
+    T2["WithUserGroup の名前による誤解"]
     T3["降格パスの意図しない再有効化"]
     T4["未使用ストア API の再利用"]
 
@@ -633,7 +652,7 @@ flowchart TD
     I4["旧内容の解析結果で新しいバイナリを評価してしまう"]
 
     M1["Phase 1: 型と関数の削除"]
-    M2["Phase 2: doc への実フロー明記"]
+    M2["Phase 2: API ごと削除"]
     M3["Phase 2: 降格パス削除と operation 直接判定"]
     M4["Phase 4: ストアの削除"]
 
@@ -717,9 +736,9 @@ Phase 2 は dry-run 経路のコードを変更するため、dry-run が許す�
 
 `OperationUserGroupExecution`（非 dry-run）の契約は次のとおりである。親プロセスは root へ昇格するのみで、識別情報を対象ユーザーへ変更しない。対象ユーザーへの切り替えは子プロセスの `syscall.Credential` により execve 時に行われる。
 
-ここで、要件定義書の AC-15 が doc コメントへの記載を求める文言のうち「`RunAsUser`・`RunAsGroup` は解決とログのために渡される」という部分は、`OperationUserGroupExecution` については事実と異なる。`prepareExecution` は同 operation で dry-run 解決を呼ばないため、privilege パッケージは `elevationCtx.RunAsUser` / `RunAsGroup` を読まない（読むのは dry-run 経路と `WithUserGroup` のコンテキスト構築だけである）。実行時の名前解決とログ出力は executor 側（`risktypes.ResolveRunAsIdent`）が行う。
+ここで、要件定義書の AC-15 が doc コメントへの記載を求める文言のうち「`RunAsUser`・`RunAsGroup` は解決とログのために渡される」という部分は、`OperationUserGroupExecution` については事実と異なる。`prepareExecution` は同 operation で dry-run 解決を呼ばないため、privilege パッケージは `elevationCtx.RunAsUser` / `RunAsGroup` を読まない（読むのは dry-run 経路だけである。`WithUserGroup` もコンテキスト構築でこれらを使っていたが、§2.2.5 により削除する）。実行時の名前解決とログ出力は executor 側（`risktypes.ResolveRunAsIdent`）が行う。
 
-この文言をそのまま doc コメントに書くと、本タスクが除こうとしている「名前・記述と実装のずれ」を新たに作ることになる。したがって doc コメントには次の形で記す。
+この文言をそのまま doc コメントに書くと、本タスクが除こうとしている「名前・記述と実装のずれ」を新たに作ることになる。したがって `WithPrivileges` の doc コメントには次の形で記す（`WithUserGroup` は削除するため対象から外れる）。
 
 - `OperationUserGroupExecution` では、privilege パッケージは root への昇格のみを行い、`RunAsUser` / `RunAsGroup` を参照しない。
 - 対象ユーザーへの切り替えと、その前提となる識別情報の解決は executor が行い、`syscall.Credential` として execve 時に適用される。
@@ -867,6 +886,7 @@ flowchart TD
 | 1 | `BuildProcessEnvironment`（§2.1.3） | `getSystemEnvironment` の置換前後で出力が一致すること。既存の `environment_test.go`（allowlist 取り込み・denylist 除去のケース）が回帰検出として機能する |
 | 2 | `resolveUserGroupForDryRun` | 存在しないユーザー名でエラーを返すこと、グループ未指定時にユーザーのプライマリグループへフォールバックすること、識別情報を変更しないことを検証する |
 | 2 | `WithPrivileges` の 3 operation（AC-16） | `OperationUserGroupExecution` で昇格と復元が行われること、`OperationUserGroupDryRun` で識別情報が変化しないこと、いずれの経路でも親プロセスの EUID/EGID が対象ユーザーへ変わらないこと |
+| 2 | `WithUserGroup` / `IsUserGroupSupported` 削除後の実行経路（AC-28、AC-29） | executor 経由の `OperationUserGroupExecution` が従来どおり動作すること。既存の `executor_usergroup_test.go` と、`MockPrivilegeManager` の `ElevationCalls` を検証するテストが無修正で pass することを回帰の証拠とする（§2.2.5 のモックへの影響を参照）。`IsPrivilegedExecutionSupported` を使う executor / dry-run manager の分岐が従来どおり機能すること |
 | 3 | `getProcessRealUID` | `os.Getuid()` と同じ値を返すこと |
 | 3 | `getPermissionCheckUID`（AC-20） | (a) `SUDO_UID` 未設定、(b) `SUDO_UID` 設定済みかつ実 UID が 0、(c) `SUDO_UID` 設定済みかつ実 UID が 0 以外、の 3 ケースで返る UID が変更前と一致すること |
 | 3 | passwd エントリ欠如時の挙動（§5.4） | エントリを引けない状況で権限判定が実行され、エントリがある場合と同じ判定結果を返すこと |
@@ -885,7 +905,7 @@ flowchart TD
 
 **`make deadcode` の適用範囲。** 同コマンドは `cmd/record` / `cmd/runner` / `cmd/verify` を起点とする到達可能性解析であり、Phase 4 の削除対象 3 関数を現に到達不能として報告している。Phase 4 適用後にこの 3 行が報告から消えることを確認する。
 
-ただし `make deadcode` は Phase 1・Phase 2 の検証には使えない。`LoadSystemEnvironment` は `main.go` から呼ばれており到達可能であり（値が読まれないだけである）、`WithUserGroup` はインターフェースのメソッドセットに属するため到達可能と判定される。「到達するが結果が使われない」「インターフェース経由でのみ到達する」という状態は静的到達可能性解析では検出できない。この 2 つの Phase については `rg` による参照確認とレビューで担保する。
+ただし `make deadcode` は Phase 1・Phase 2 の削除対象を見つける用途には使えない。`LoadSystemEnvironment` は `main.go` から呼ばれており到達可能であり（値が読まれないだけである）、`WithUserGroup` / `IsUserGroupSupported` はインターフェースのメソッドセットに属するため到達可能と判定される。「到達するが結果が使われない」「インターフェース経由でのみ到達する」という状態は静的到達可能性解析では検出できない。この 2 つの Phase については `rg` による参照確認とレビューで担保する（AC-27 の検証も `rg` による不存在確認で行う）。
 
 ### 7.3 ドキュメントの追随
 
@@ -972,8 +992,6 @@ flowchart LR
 
 本タスクは削除が中心であり、拡張点を新設しない。調査の過程で判明した、本タスクのスコープ外にある検討事項を記録する。
 
-- **`WithUserGroup` と `IsUserGroupSupported` の扱い。** どちらも本番の呼び出し元を持たず、`runnertypes.PrivilegeManager` インターフェースに属することでのみ生存している。インターフェースからの削除は API 変更であり本タスクの対象外だが、Phase 2 で `WithUserGroup` の実体が「root へ昇格するだけ」であることが doc として明示された後は、インターフェースに残す意味を改めて検討できる。
-
 - **dry-run と実行時で別実装になっている識別情報の解決。** §2.2.2 のとおり、dry-run 側は補助グループを列挙せず、実行時側の検査の真部分集合になっている。dry-run 側を `risktypes.ResolveRunAsIdent` に委譲すれば乖離は解消し、`user.Lookup` の二重呼び出し（0149 監査 A1 L-1）も同時に解決する。挙動変更を伴うため別タスクとする。
 
 - **dry-run 検証の監査可能性。** §5.6 の 2 つの限界（特権非対応環境での検証スキップ、構造化属性ではない文字列連結）は Phase 2 では改善しない。dry-run の出力形式を扱うタスクで併せて検討する。
@@ -1020,6 +1038,9 @@ flowchart LR
 | AC-24 | §2.4.3（代替条件を採らない理由） |
 | AC-25 | §5.4（fail-closed → fail-open 変化の条件・受容理由・必要な対応）、§7.1 |
 | AC-26 | §7.3（セキュリティ設計文書の追随と、Phase 1 PR に含める理由）、§8.3 |
+| AC-27 | §2.2.5（削除対象の特定と理由）、§3.2（変更後のインターフェース）、§3.5（インターフェース・モック各ファイル）、§7.2（`rg` による不存在確認） |
+| AC-28 | §2.2.5（実行経路が変わらない根拠、モックへの影響）、§7.1、§7.4 |
+| AC-29 | §2.2.5（メソッド別の残す／削除の判断表） |
 
 ---
 
@@ -1034,6 +1055,8 @@ flowchart LR
 **A-3. Phase 2 で到達不能な降格パスを残し、doc コメントの明記のみで済ませる案（A1 M-2 の対応案 2）。** 採らない。要件定義書の「方針判断の記録」が削除を主・doc 明記を従と定めている。本設計はその方針に従い、削除と doc 明記の両方を行い、さらに削除で失われるガードを §2.2.4 と §7.2 で置き換える。
 
 **A-4. Phase 2 で `needsUserGroupChange` を `needsUserGroupValidation` に改名して残す案。** 採らない。改名しても「真偽値の設定を誤ると、名前が前提とする条件を満たさないまま dry-run 用関数が呼ばれる」という失敗の型が残る。operation を直接判定すれば、その失敗の型自体が存在しなくなる（§2.2.4）。
+
+**A-4b. Phase 2 で `WithUserGroup` を残し、doc コメントで実態を説明する案。** 採らない。当初はこの案を採っていた（要件定義書がインターフェース変更を対象外としていたため）。しかし説明を足しても、誤読を招く名前の API はインターフェース上に残り続ける。「誤用一歩手前の API 形状を構造的に取り除く」という目的に対して、doc コメントは構造的な解決にならない。2026-07-27 に要件定義書を改訂してインターフェース変更を許容し、削除に切り替えた（§2.2.5、F-006）。
 
 **A-5. Phase 3 で `os.Geteuid()` へ切り替える案（D1 M-4 の対応案 1）。** 採らない。理由は §2.3.2 に記した。要件定義書の「方針判断の記録」と同じ結論だが、本設計では sudo 運用で既に `SUDO_UID` 分岐が発火している事実を踏まえ、この案が新たな差を生むのは setuid バイナリ運用に限られることを明確にしている。
 
