@@ -885,3 +885,5 @@ rg は Rust の正規表現構文を用いるため、`\|` は選択ではなく
 - [ ] Phase 2 マージ後に、設計書 §9 の検討事項として記録済みの後続タスクへ進捗を反映する
   - dry-run と実行時で別実装になっている識別情報の解決（[#918](https://github.com/isseis/go-safe-cmd-runner/issues/918)）
   - `security-architecture` §5「特権管理」の全面更新（[#919](https://github.com/isseis/go-safe-cmd-runner/issues/919)）
+- [ ] Phase 3 マージ後に、権限チェック主体の明示指定（[#920](https://github.com/isseis/go-safe-cmd-runner/issues/920)）へ着手する。`runner` の経路から `SUDO_UID` の参照を外すもので、0157 が触る `getPermissionCheckUID` の直接の後続にあたる
+- [ ] [#920](https://github.com/isseis/go-safe-cmd-runner/issues/920) の完了後に、`runner` の native root 実行サポートの是非を検討する（[#921](https://github.com/isseis/go-safe-cmd-runner/issues/921)）。着手する場合、Phase 2 で導入する `TestNoUnexpectedIdentityMutationSyscalls` の許可リストの更新が必要になる

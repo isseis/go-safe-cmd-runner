@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-07-25 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-07-26 |
+| Reviewer | isseis |
 | Comments | 2026-07-26 に isseis が承認したのち、[03_implementation_plan.md](03_implementation_plan.md) の作成時の調査で AC-25 が現実には達成できない範囲を含むと判明したため draft に戻した（再承認が必要）。`user.Current()` を除いても、group-writable なファイルの判定は `IsUserInGroup` / `isUserOnlyGroupMember` を経由して `user.LookupId` を呼ぶため、passwd エントリなしでは判定が成立しない。AC-25 の対象を「権限判定に用いる UID の取得」に限定し、対象外節と「方針判断の記録」に根拠を追加した。AC の追加・削除・番号変更はない。 |
 
 ## 関連 Issue
@@ -105,7 +105,7 @@ Phase 間に実装上の依存はなく、独立にレビュー・マージ可�
 ### 対象外（別 Issue・別タスクとする、または本タスクでは対応しない）
 
 - **D1 の他の所見（H-1 / M-1 / L-2 / L-3 等 fail-open 系）**: H-1 / M-1 は [0150](../0150_groupmembership_getgrgid_failclosed/) / [0151](../0151_groupmembership_failclosed/) で対応済み、L-2 / L-3 は [#860](https://github.com/isseis/go-safe-cmd-runner/issues/860) / [0153](../0153_failopen_error_handling_crosscut/) の管理下で未着手。いずれも本タスクの対象外であり、本タスクは D1 M-4（命名と実装の乖離）のみを扱う。
-- **D1 M-2（`SUDO_UID` を検証せず権限チェック主体として採用する問題）**: `getPermissionCheckUID` の sudo 分岐そのものの是非は別系統のセキュリティ判断であり、本タスクはコメント・命名の整合に留める。
+- **D1 M-3（`SUDO_UID` を検証せず権限チェック主体として採用する問題）**: `getPermissionCheckUID` の sudo 分岐そのものの是非は別系統のセキュリティ判断であり、本タスクはコメント・命名の整合に留める（[#920](https://github.com/isseis/go-safe-cmd-runner/issues/920)）。（2026-07-26 修正: 当初 "D1 M-2" と記していたが、`SUDO_UID` の所見は D1 M-3 である。D1 M-2 は `getGroupMembers` の CGO / 非 CGO 間の意味論差であり、[0151](../0151_groupmembership_failclosed/) で対応済みのため本タスクの対象外に挙げる必要はない。）
 - **A1 の他の所見（L-1 二重 `user.Lookup`、L-2 昇格・復元での注入フィールド不使用、L-3 metrics の恒偽項、L-4 再入デッドロック）**: #864 の「該当箇所」に含まれない。なお本タスクの AC-13（未使用となった `syscallSeteuid`/`syscallSetegid` の削除）は A1 L-2 の推奨（昇格・復元でも注入フィールドを使う）と方向が逆であるが、L-2 に着手する時点で必要な注入点を改めて設計する方が、未使用フィールドを温存するより健全と判断する。
 - **A3 F-6（`ParseSystemEnvironment` が不正形式エントリを無音スキップ）/ F-7（allowlist 判定ロジックの分散）**: #864 の「該当箇所」に含まれず、前者は挙動変更、後者は設計変更を伴うため別途検討。
 - **C3 の他の所見（F1, F2, F4 以降の shebang / fileanalysis 所見）**: #864 の「推奨対応」に挙げられているのは F3 のみ。
