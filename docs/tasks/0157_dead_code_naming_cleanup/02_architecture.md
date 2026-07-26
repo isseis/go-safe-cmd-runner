@@ -6,8 +6,8 @@
 |---|---|
 | Status | `approved` |
 | Created | 2026-07-26 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-07-26 |
+| Reviewer | isseis |
 | Comments | - |
 
 ## 関連文書
