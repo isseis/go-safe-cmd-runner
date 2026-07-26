@@ -687,39 +687,89 @@ func TestGetPermissionCheckUID(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("with SUDO_UID empty returns os.Getuid", func(t *testing.T) {
+		t.Setenv("SUDO_UID", "")
+		uid, err := getPermissionCheckUID()
+		assert.NoError(t, err)
+		assert.Equal(t, os.Getuid(), uid)
+	})
+
+	t.Run("with SUDO_UID set returns appropriate UID", func(t *testing.T) {
+		t.Setenv("SUDO_UID", "9999")
+		uid, err := getPermissionCheckUID()
+		assert.NoError(t, err)
+		if os.Getuid() == 0 {
+			assert.Equal(t, 9999, uid)
+		} else {
+			assert.Equal(t, os.Getuid(), uid)
+		}
+	})
 }
 
-// TestGetProcessEUID tests the getProcessEUID function
-func TestGetProcessEUID(t *testing.T) {
-	t.Run("returns current UID regardless of SUDO_UID", func(t *testing.T) {
-		// Set SUDO_UID to a different value
-		t.Setenv("SUDO_UID", "9999")
-
-		currentUID, err := getProcessEUID()
-		assert.NoError(t, err)
-
-		// getProcessEUID should ignore SUDO_UID and return actual UID
-		effectiveUID, err := getPermissionCheckUID()
-		assert.NoError(t, err)
-
-		// If running as root with SUDO_UID set, these should differ
-		// Otherwise they should be the same
-		if currentUID == 0 {
-			// Running as root, effectiveUID should use SUDO_UID
-			assert.Equal(t, 9999, effectiveUID, "getPermissionCheckUID should use SUDO_UID")
-			assert.Equal(t, 0, currentUID, "getProcessEUID should ignore SUDO_UID")
-		} else {
-			// Not running as root, both should return the same UID
-			assert.Equal(t, currentUID, effectiveUID)
+// TestResolvePermissionCheckUID tests the resolvePermissionCheckUID pure function
+// covering all branches without requiring root privileges.
+func TestResolvePermissionCheckUID(t *testing.T) {
+	t.Run("sudoUID empty returns realUID", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			realUID int
+		}{
+			{"root", 0},
+			{"normal user", 1000},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				uid, err := resolvePermissionCheckUID(tt.realUID, "")
+				assert.NoError(t, err)
+				assert.Equal(t, tt.realUID, uid)
+			})
 		}
 	})
 
-	t.Run("clears SUDO_UID and returns actual UID", func(t *testing.T) {
-		t.Setenv("SUDO_UID", "")
-
-		currentUID, err := getProcessEUID()
+	t.Run("realUID 0 and valid SUDO_UID returns SUDO_UID value", func(t *testing.T) {
+		uid, err := resolvePermissionCheckUID(0, "1000")
 		assert.NoError(t, err)
-		assert.Greater(t, currentUID, -1) // Should be non-negative
+		assert.Equal(t, 1000, uid)
+	})
+
+	t.Run("realUID non-zero ignores SUDO_UID", func(t *testing.T) {
+		uid, err := resolvePermissionCheckUID(1000, "2000")
+		assert.NoError(t, err)
+		assert.Equal(t, 1000, uid)
+	})
+
+	t.Run("realUID 0 and invalid SUDO_UID returns error", func(t *testing.T) {
+		invalidValues := []struct {
+			name  string
+			value string
+		}{
+			{"negative", "-1"},
+			{"exceeds uint32", "4294967296"},
+			{"non-numeric", "abc"},
+		}
+		for _, tt := range invalidValues {
+			t.Run(tt.name, func(t *testing.T) {
+				_, err := resolvePermissionCheckUID(0, tt.value)
+				assert.Error(t, err)
+			})
+		}
+	})
+}
+
+// TestGetProcessRealUID tests the getProcessRealUID function
+func TestGetProcessRealUID(t *testing.T) {
+	t.Run("returns os.Getuid and does not error", func(t *testing.T) {
+		uid, err := getProcessRealUID()
+		assert.NoError(t, err)
+		assert.Equal(t, os.Getuid(), uid)
+	})
+
+	t.Run("ignores SUDO_UID", func(t *testing.T) {
+		t.Setenv("SUDO_UID", "9999")
+		uid, err := getProcessRealUID()
+		assert.NoError(t, err)
+		assert.Equal(t, os.Getuid(), uid)
 	})
 }
 

@@ -261,7 +261,7 @@ func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID 
 //
 // Returns:
 //   - bool: true if the current user can safely write to the file, false otherwise
-//   - error: non-nil if there was an error getting current user info or checking permissions
+//   - error: non-nil if the process UID could not be determined or the permission check failed
 //
 // Example usage:
 //
@@ -273,10 +273,10 @@ func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID 
 //	    return fmt.Errorf("current user cannot safely write to file")
 //	}
 func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32, filePerm os.FileMode) (bool, error) {
-	// For write operations, use the actual EUID (not SUDO_UID) to verify
+	// For write operations, use the process's real UID (not SUDO_UID) to verify
 	// that the running process has permission to write to the file.
 	// This is important for hash files that should only be writable by root.
-	currentUID, err := getProcessEUID()
+	currentUID, err := getProcessRealUID()
 	if err != nil {
 		return false, err
 	}
@@ -302,17 +302,17 @@ func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32
 //   - bool: true if the current user can safely read from the file, false otherwise
 //   - error: non-nil if there was an error checking user or group information
 func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm os.FileMode) (bool, error) {
-	effectiveUID, err := getPermissionCheckUID()
+	permissionCheckUID, err := getPermissionCheckUID()
 	if err != nil {
 		return false, err
 	}
 
-	// For reads with group-writable permissions: deny only if effective user is NOT in the group
-	// Convert userUID to uint32 for IsUserInGroup call
-	// #nosec G115 -- safe: `effectiveUID` represents a system user ID (UID), which is
+	// For reads with group-writable permissions: deny only if the permission-check user is NOT in the group
+	// Convert the UID to uint32 for the IsUserInGroup call
+	// #nosec G115 -- safe: `permissionCheckUID` represents a system user ID (UID), which is
 	// non-negative and constrained by the operating system to fit within a 32-bit
 	// unsigned value on supported platforms. It was already validated in getPermissionCheckUID().
-	effectiveUID32 := uint32(effectiveUID) // #nosec G115
+	permissionCheckUID32 := uint32(permissionCheckUID) // #nosec G115
 
 	perm := filePerm.Perm()
 
@@ -324,7 +324,7 @@ func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm
 	// 2. Check group writable permissions - more relaxed than write policy
 	if perm&0o020 != 0 {
 
-		isUserInGroup, err := gm.IsUserInGroup(effectiveUID32, fileGID)
+		isUserInGroup, err := gm.IsUserInGroup(permissionCheckUID32, fileGID)
 		if err != nil {
 			return false, fmt.Errorf("failed to check group membership: %w", err)
 		}
@@ -429,9 +429,9 @@ func (gm *GroupMembership) clearExpiredCache() {
 	}
 }
 
-// getPermissionCheckUID returns the effective user ID for permission checks.
-// When running under sudo (EUID is 0 and SUDO_UID is set), it returns the original user's UID.
-// Otherwise, it returns the current user's UID.
+// getPermissionCheckUID returns the user ID to use for permission checks.
+// When running under sudo (the real UID is 0 and SUDO_UID is set), it returns the
+// original user's UID taken from SUDO_UID. Otherwise it returns the process's real UID.
 //
 // This allows sudo to perform permission checks as if the original user were accessing the file,
 // which is important for validating that the user has legitimate access to the files.
@@ -440,22 +440,39 @@ func (gm *GroupMembership) clearExpiredCache() {
 // user has access to the file being read.
 //
 // Returns:
-//   - int: The effective UID to use for permission checks
+//   - int: The UID to use for permission checks
 //   - error: Error if unable to determine the UID
 func getPermissionCheckUID() (int, error) {
-	currentUID, err := getProcessEUID()
+	realUID, err := getProcessRealUID()
 	if err != nil {
 		return 0, err
 	}
+	sudoUID := os.Getenv("SUDO_UID")
+	return resolvePermissionCheckUID(realUID, sudoUID)
+}
 
-	// Check if running under sudo: EUID must be 0 (root) and SUDO_UID must be set
-	if currentUID == 0 {
-		if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
-			return parseSudoUID(sudoUID)
-		}
+// resolvePermissionCheckUID resolves the UID to use for permission checks from the
+// process's real UID and the SUDO_UID environment variable.
+//
+// When running under sudo (realUID is 0 and sudoUID is set), it returns the
+// original user's UID taken from sudoUID. Otherwise it returns realUID.
+//
+// This pure function is separated from getPermissionCheckUID so that all branches
+// can be tested without requiring root privileges.
+//
+// Parameters:
+//   - realUID: The process's real UID
+//   - sudoUID: The value of the SUDO_UID environment variable
+//
+// Returns:
+//   - int: The UID to use for permission checks
+//   - error: Error if sudoUID is present but invalid
+func resolvePermissionCheckUID(realUID int, sudoUID string) (int, error) {
+	// Check if running under sudo: the real UID must be 0 (root) and SUDO_UID must be set
+	if realUID == 0 && sudoUID != "" {
+		return parseSudoUID(sudoUID)
 	}
-
-	return currentUID, nil
+	return realUID, nil
 }
 
 // parseSudoUID parses and validates a SUDO_UID string value.
@@ -478,16 +495,15 @@ func parseSudoUID(sudoUID string) (int, error) {
 	return parsedUID, nil
 }
 
-// getProcessEUID returns the current user's EUID without considering SUDO_UID.
-// This returns the actual EUID of the running process.
+// getProcessRealUID returns the process's real UID, without considering SUDO_UID.
 //
 // This function is primarily used for write operations where we want to verify
-// the actual running process has the necessary permissions to write files.
+// the running process has the necessary permissions to write files.
 //
 // Returns:
-//   - int: The current user's EUID
-//   - error: Error if unable to determine the EUID
-func getProcessEUID() (int, error) {
+//   - int: The process's real UID
+//   - error: Error if the UID could not be determined or does not fit in uint32
+func getProcessRealUID() (int, error) {
 	currentUser, err := user.Current()
 	if err != nil {
 		return 0, fmt.Errorf("failed to get current user: %w", err)
