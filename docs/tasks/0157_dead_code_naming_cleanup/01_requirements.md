@@ -105,13 +105,14 @@ Phase 間に実装上の依存はなく、独立にレビュー・マージ可�
 ### 対象外（別 Issue・別タスクとする、または本タスクでは対応しない）
 
 - **D1 の他の所見（H-1 / M-1 / L-2 / L-3 等 fail-open 系）**: H-1 / M-1 は [0150](../0150_groupmembership_getgrgid_failclosed/) / [0151](../0151_groupmembership_failclosed/) で対応済み、L-2 / L-3 は [#860](https://github.com/isseis/go-safe-cmd-runner/issues/860) / [0153](../0153_failopen_error_handling_crosscut/) の管理下で未着手。いずれも本タスクの対象外であり、本タスクは D1 M-4（命名と実装の乖離）のみを扱う。
-- **D1 M-2（`SUDO_UID` を検証せず権限チェック主体として採用する問題）**: `getPermissionCheckUID` の sudo 分岐そのものの是非は別系統のセキュリティ判断であり、本タスクはコメント・命名の整合に留める。
+- **D1 M-3（`SUDO_UID` を検証せず権限チェック主体として採用する問題）**: `getPermissionCheckUID` の sudo 分岐そのものの是非は別系統のセキュリティ判断であり、本タスクはコメント・命名の整合に留める（[#920](https://github.com/isseis/go-safe-cmd-runner/issues/920)）。（2026-07-26 修正: 当初 "D1 M-2" と記していたが、`SUDO_UID` の所見は D1 M-3 である。D1 M-2 は `getGroupMembers` の CGO / 非 CGO 間の意味論差であり、[0151](../0151_groupmembership_failclosed/) で対応済みのため本タスクの対象外に挙げる必要はない。）
 - **A1 の他の所見（L-1 二重 `user.Lookup`、L-2 昇格・復元での注入フィールド不使用、L-3 metrics の恒偽項、L-4 再入デッドロック）**: #864 の「該当箇所」に含まれない。なお本タスクの AC-13（未使用となった `syscallSeteuid`/`syscallSetegid` の削除）は A1 L-2 の推奨（昇格・復元でも注入フィールドを使う）と方向が逆であるが、L-2 に着手する時点で必要な注入点を改めて設計する方が、未使用フィールドを温存するより健全と判断する。
 - **A3 F-6（`ParseSystemEnvironment` が不正形式エントリを無音スキップ）/ F-7（allowlist 判定ロジックの分散）**: #864 の「該当箇所」に含まれず、前者は挙動変更、後者は設計変更を伴うため別途検討。
 - **C3 の他の所見（F1, F2, F4 以降の shebang / fileanalysis 所見）**: #864 の「推奨対応」に挙げられているのは F3 のみ。
 - **`elfanalyzer.NewStandardELFAnalyzerWithSyscallStore`（`internal/security/elfanalyzer/standard_analyzer.go:70`）の本番未使用**: Phase 4 の調査で判明した隣接デッドコードだが、#864 の該当箇所ではなく、syscall analysis の将来的な有効化方針と併せて判断すべきため本タスクでは削除しない。
-- **機能追加・挙動変更全般**: 本タスクは削除・改名・doc 修正に限定する。ただし F-006（`WithUserGroup` / `IsUserGroupSupported` のインターフェースからの削除）は API 変更を伴う。本番呼び出し元が存在しないため外部から観測可能な挙動は変わらないと判断し、本タスクの対象に含める。`environment` パッケージへの allowlist 適用機能の「復活」（A3 F-1 の対応案2）は、`config` 層の `ProcessEnvImport` と二重適用になるため採用しない。<br>ただし Phase 3 には一点だけ挙動変化がある。`user.Current()` をやめることで、passwd エントリを引けない場合にファイルアクセスを拒否していた失敗経路が消える（fail-closed から fail-open への変化）。これは意図した変更として AC-25 で扱う。詳細と受容理由は [02_architecture.md](02_architecture.md) §5.4。
+- **機能追加・挙動変更全般**: 本タスクは削除・改名・doc 修正に限定する。ただし F-006（`WithUserGroup` / `IsUserGroupSupported` のインターフェースからの削除）は API 変更を伴う。本番呼び出し元が存在しないため外部から観測可能な挙動は変わらないと判断し、本タスクの対象に含める。`environment` パッケージへの allowlist 適用機能の「復活」（A3 F-1 の対応案2）は、`config` 層の `ProcessEnvImport` と二重適用になるため採用しない。<br>ただし Phase 3 には一点だけ挙動変化がある。`user.Current()` をやめることで、権限判定に用いる UID の取得時に passwd エントリを引けずファイルアクセスを拒否していた失敗経路が消える（fail-closed から fail-open への変化）。これは意図した変更として AC-25 で扱う。詳細と受容理由は [02_architecture.md](02_architecture.md) §5.4。
 - **`internal/runner/base/environment/denylist.go`（0156 で追加）**: 本タスクでは変更しない。同一パッケージ内の `Filter` 側のみを整理する。
+- **group-writable なファイルに対するグループメンバーシップ照会の passwd 依存**: `IsUserInGroup`（`manager.go:138`）と `isUserOnlyGroupMember`（`manager.go:177`）は `user.LookupId` を呼ぶため、passwd エントリを引けない環境では従来どおり fail-closed で拒否する。この拒否は [0151](../0151_groupmembership_failclosed/) が意図して導入したものであり、本タスクでは緩めない。理由は「方針判断の記録」の「D1 M-4 の派生」を参照。AC-25 の対象は UID の取得に限る。
 
 ## 方針判断の記録
 
@@ -132,6 +133,22 @@ findings は「EUID が必要なら `os.Geteuid()` を使う」「実 UID が正
 - 呼び出し元 `CanCurrentUserSafelyReadFile` / `CanCurrentUserSafelyWriteFile` は `internal/safefileio/safe_file.go:445, 454, 492` から呼ばれ、この経路はファイル検証（`OperationFileValidation` により `syscall.Seteuid(0)` 済み）の内側でも実行され得る。ここで EUID セマンティクスへ切り替えると、昇格中は常に EUID=0 と判定され、さらに `getPermissionCheckUID` の sudo 分岐が発火して `SUDO_UID`（環境変数由来）が権限チェック主体として採用される。これは意図しない緩和（fail-open 方向）であり、命名整合という本タスクの目的に対して副作用が大きすぎる。
 - 現状の実 UID 判定は fail-closed 方向（setuid 構成で root 権限の書き込みが不当に拒否され得る）であり、安全側に倒れている。
 - したがって本タスクでは判定主体を変えず、`user.Current()` のキャッシュ（特権昇格前後で値が固定される問題）だけを取り除き、名前・コメントを実 UID セマンティクスに揃える。EUID を使うべきか否かの再設計は、上記 safefileio 経路の権限モデル全体を扱う別タスクに委ねる。
+
+### D1 M-4 の派生: AC-25 の範囲を「UID の取得」に限定する
+
+`user.Current()` をやめても、権限判定から passwd 依存が完全に消えるわけではない。残るのは次の 2 箇所で、いずれも**ファイルが group-writable（`perm & 0o020 != 0`）のときにしか通らない**分岐である。
+
+- 読み取り経路: `IsUserInGroup`（`manager.go:138`）の `user.LookupId` — 対象 UID のプライマリ GID・補助グループ・ユーザー名を得るために必要。
+- 書き込み経路: `isUserOnlyGroupMember`（`manager.go:177`）の `user.LookupId` — 対象 UID のユーザー名をグループのメンバー一覧と照合するために必要。
+
+当初の AC-25 は「権限判定がエラーで中断せずに実行され、エントリを引ける場合と同じ判定結果を返す」ことを求めていたが、この 2 箇所については達成できない。理由を示す。
+
+- **書き込み経路は原理的に答えが出せない。** 「グループ G のメンバーは対象ユーザーただ 1 人か」という問いは、ユーザーデータベースを引かなければ答えが存在しない。メンバーを UID で列挙する案も、`/etc/group` の記載自体が名前であるため passwd 解決を要する。したがって選べるのは「データベースを引けないときに拒否する」か「許可する」かの二択であり、後者は誰がグループに属するか分からないまま group-writable ファイルへの書き込みを許すことになる。
+- **その拒否は意図して作られたものである。** [0151](../0151_groupmembership_failclosed/) は、まさにこの `isUserOnlyGroupMember` 周辺の fail-open を fail-closed 化するタスクだった。AC-25 のためにここを緩めるのは、0151 の判断を巻き戻すことになる。
+- **読み取り経路も「同じ判定結果」は保証できない。** 自プロセスについてであれば `os.Getgid()` と `os.Getgroups()` でデータベースを引かずに所属を判定できるが、(1) sudo 分岐は `SUDO_UID`（自プロセスとは別ユーザー）を渡し得るため適用できず、(2) カーネルが保持するグループ集合はログイン・exec 時点のスナップショットであり、データベースの現在の設定と食い違い得る。
+- **実務上の狙いは限定しても達成される。** ハッシュファイル・設定ファイルが group-writable でない通常の構成（0644・0600 など）では上記の分岐に入らないため、UID 取得の passwd 依存を除くだけで、当初の狙い（passwd エントリを持たない最小構成コンテナでランナーが起動できる）は満たされる。
+
+以上より、AC-25 の対象を「権限判定に用いる UID の取得」に限定し、group-writable なファイルに対するグループメンバーシップの照会は対象外とする。照会が失敗した場合は従来どおり fail-closed で拒否する。
 
 ### C3 F3: 「削除」を採る
 
@@ -169,7 +186,7 @@ findings は「EUID が必要なら `os.Geteuid()` を使う」「実 UID が正
 - **AC-18**: 当該関数は `user.Current()` を使わず、実 UID を直接取得する（`os.Getuid()` / `syscall.Getuid()` 相当）。これによりプロセス生存中のキャッシュに起因する値の固定が発生しない。
 - **AC-19**: `getPermissionCheckUID` の doc コメント・インラインコメント（sudo 判定条件の説明）および `CanCurrentUserSafelyWriteFile` のコメントが、実 UID による判定であるという実装と一致する。
 - **AC-20**: 判定に使われる UID の値は変更前後で同一である。具体的に、(a) sudo なし・`SUDO_UID` 未設定、(b) `SUDO_UID` 設定済みかつ実 UID が 0、(c) `SUDO_UID` 設定済みかつ実 UID が 0 以外、の各ケースで `getPermissionCheckUID` が返す UID が従来と一致することをテストで確認できる。なお、この3ケースはいずれも passwd エントリを引ける前提であり、引けない場合の挙動は AC-25 が扱う。
-- **AC-25**: 実 UID に対応する passwd エントリを引けない状況（cgo 有効時の NSS 障害、cgo 無効時の `/etc/passwd` 欠如・エントリ未登録）でも、権限判定がエラーで中断せずに実行され、エントリを引ける場合と同じ判定結果を返すことをテストで確認できる。あわせて、この変更が fail-closed（エラー時にファイルアクセスを拒否）から fail-open（判定を続行）への変化であることがリリースノートに記載されている。
+- **AC-25**: 権限判定に用いる **UID の取得**が passwd エントリを必要としない。すなわち、実 UID に対応する passwd エントリを引けない状況（cgo 有効時の NSS 障害、cgo 無効時の `/etc/passwd` 欠如・エントリ未登録）でも UID の取得は失敗せず、グループメンバーシップの照会を伴わない権限判定（group-writable でないファイルに対する判定）がエラーで中断せずに実行され、エントリを引ける場合と同じ判定結果を返すことをテストで確認できる。あわせて次の 2 点がリリースノートに記載されている。(a) この変更が fail-closed（エラー時にファイルアクセスを拒否）から fail-open（判定を続行）への変化であること。(b) group-writable なファイルに対する判定はグループメンバーシップの照会を行うため、引き続き passwd エントリを必要とすること。<br>（2026-07-26 修正: 当初の文言は「権限判定が」エラーで中断しないことを求めていたが、group-writable なファイルの判定は `IsUserInGroup` / `isUserOnlyGroupMember` を経由して `user.LookupId` を呼ぶため、passwd エントリなしでは判定そのものが成立しない。範囲を限定した理由は「方針判断の記録」の「D1 M-4 の派生」を参照。）
 
 #### F-004: `fileanalysis` の未使用 syscall analysis ストアの削除（C3 F3、Phase 4）
 
