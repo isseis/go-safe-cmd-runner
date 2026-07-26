@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-07-25 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 2026-07-27 に isseis が承認したのち、`WithUserGroup` を doc コメント整備ではなく API ごと削除する方針変更（インターフェース変更を許容）を受けて draft に戻した（再承認が必要）。F-006 / AC-27〜AC-29 を追加し、F-002 の表題と AC-15 の対象を `WithPrivileges` のみに変更。本番未使用かつ `IsPrivilegedExecutionSupported` と重複する `IsUserGroupSupported` も併せて削除対象とした。既存 AC の番号は変更していない。 |
+| Review date | 2026-07-26 |
+| Reviewer | isseis |
+| Comments | - |
 
 ## 関連 Issue
 
