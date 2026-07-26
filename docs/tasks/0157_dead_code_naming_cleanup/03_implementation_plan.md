@@ -49,6 +49,7 @@
 | `internal/runner/runner_test.go`（6 箇所）/ `cmd/runner/integration_auto_vars_test.go` / `cmd/runner/integration_test_helpers.go` / `internal/runner/e2e_*_test.go` | いずれも `err = ` または `require.NoError(t, r.LoadSystemEnvironment())` の形で、`err` は別の行で宣言済み | 該当行の削除のみで足りる |
 | `cmd/runner/integration_workdir_test.go:189` | ヘルパー `executeRunnerWithTimeout` の doc コメントが "executes a runner with LoadSystemEnvironment and ExecuteFiltered" と述べている | 削除に合わせて書き換える |
 | `docs/dev/developer_guide/package_reference.md`（:29, :87） | `runner/base/environment/` を "Environment variable processing and filtering" と説明している。設計書 §3.6 が「変更不要」としているのはディレクトリ**一覧**の増減であり、説明文の正確さは別問題である | 説明文を実態（列挙と denylist 判定）に合わせる |
+| `make verify-docs` の基準値 | 着手前の時点で内部リンクの破損を **230 件**報告しており、成功では終了しない。うち `config-inheritance-behavior.ja.md` と `.md` が各 15 件を占め、いずれも相対深度が 1 段浅い（`../../` が `docs/` に着地する。正しくは `../../../`）ことによる。Phase 1 が触る他の文書（`security-architecture.{ja.,}md`、`design-implementation-overview.{ja.,}md`、`package_reference.md`）の破損は 0 件である | 完了条件を「成功する」ではなく「破損数が 230 件から増えていない」＋「今回修正する 2 件が消えている」とする。230 件全体の是正は本タスクの範囲を超えるドキュメント棚卸しであり、別途扱う |
 | 存在しないパッケージパス `internal/runner/environment/` を指す文書 | `docs/dev/` に 8 箇所ある（`security-architecture.{ja.,}md` 各 1、`config-inheritance-behavior.{ja.,}md` 各 2、`design-implementation-overview.{ja.,}md` 各 1）。パッケージは `internal/runner/base/environment/` へ移動済みで、Phase 1 後は参照先のファイル名も変わる。設計書 §7.3 と AC-26 が明示しているのは `security-architecture` の 2 件だけである | Phase 1 の PR で 8 箇所すべてを修正する。AC-26 の対象外の 6 箇所を放置すると、AC-26 が防ごうとしている「記述と実装の乖離」が同じ文書群に残ってしまうためである |
 | `IsVariableAccessAllowed` | Go ソースでの参照は `filter.go:41` のコメント 1 箇所のみ。他の一致はすべて `docs/tasks/` 配下の過去タスク文書であり、当時の記録として残す | `filter.go` の削除で解消する |
 | `ErrGroupNotFound` | `environment`（削除対象）・`internal/runner/runner.go:36`・`internal/runner/cli/filter.go:13` の三重定義。後 2 者は現役 | `environment` 側のみ削除する |
@@ -78,7 +79,7 @@
 | `os/user` import（manager.go:8） | `getProcessEUID` 以外に `user.LookupId`（:138, :177）で使用 | import は残す |
 | `effectiveUID` ローカル変数（manager.go:305, 312, 315, 327） | `getPermissionCheckUID` の戻り値を "effective" と呼んでおり、実 UID または `SUDO_UID` である実態と食い違う。`#nosec G115` の根拠コメントもこの名前を参照している | `permissionCheckUID` に改名する。これにより AC-19 の検証を「`manager.go` に `EUID` という語が現れない」という機械的な検査にできる |
 | `getPermissionCheckUID` の sudo 分岐 | 実 UID と `SUDO_UID` を直接読むため、実 UID が 0 のケース（AC-20 の (b)）は root で実行しないとテストできない | 純関数 `resolvePermissionCheckUID(realUID int, sudoUID string)` を切り出す。既存の `parseSudoUID` が「独立してテストするために分離した」と doc に書いている前例に倣う。`getPermissionCheckUID` の外部シグネチャは設計書 §3.3 のとおり変えない |
-| passwd エントリ欠如時の挙動（AC-25）**その 1: 残る passwd 依存** | `user.Current()` を消しても、権限判定から passwd 依存が完全に消えるわけではない。`manager.go:138` の `IsUserInGroup` → `user.LookupId` は読み取り経路から、`manager.go:177` の `isUserOnlyGroupMember` → `user.LookupId` は書き込み経路（`CanUserSafelyWriteFile`:237）から、**ファイルがグループ書き込み可能なとき**に呼ばれる。設計書 §5.4 が「変更後は拒否は起きない」と述べるのは、この分岐に入らない通常のファイル（0644・0600 など、グループ書き込みビットが立っていない）についてである | Phase 3 のスコープは UID の取得経路に限る。この調査結果を受けて要件定義書を改訂し、AC-25 の対象を「権限判定に用いる UID の取得」に限定した（2026-07-26、要件定義書の「方針判断の記録」の「D1 M-4 の派生」および対象外節）。`LookupId` 側の fail-closed は [0151](../0151_groupmembership_failclosed/) が意図して導入したものであり、本タスクでは変更しない。グループ書き込み可能なファイルに対する判定が引き続き passwd を必要とすることは、`CHANGELOG.md` と §4.6 に明記する |
+| passwd エントリ欠如時の挙動（AC-25）**その 1: 残る passwd 依存** | `user.Current()` を消しても、権限判定から passwd 依存が完全に消えるわけではない。`manager.go:138` の `IsUserInGroup` → `user.LookupId` は読み取り経路から、`manager.go:177` の `isUserOnlyGroupMember` → `user.LookupId` は書き込み経路（`CanUserSafelyWriteFile`:237）から、**ファイルがグループ書き込み可能なとき**に呼ばれる。この分岐に入らない通常のファイル（0644・0600 など、グループ書き込みビットが立っていないもの）では passwd を引かない | Phase 3 のスコープは UID の取得経路に限る。この調査結果を受けて設計書 §5.4 に「変化しない範囲（passwd 依存が残る経路）」を追加し、要件定義書の AC-25 の対象を「権限判定に用いる UID の取得」に限定した（2026-07-26、要件定義書の「方針判断の記録」の「D1 M-4 の派生」および対象外節）。`LookupId` 側の fail-closed は [0151](../0151_groupmembership_failclosed/) が意図して導入したものであり、本タスクでは変更しない。グループ書き込み可能なファイルに対する判定が引き続き passwd を必要とすることは、`CHANGELOG.md` と §4.6 に明記する |
 | passwd エントリ欠如時の挙動（AC-25）**その 2: テスト手段** | Go の `os/user` は cgo 有無を問わず passwd の探索先を差し替える手段を提供していないため、単体テストの中で「NSS 障害」や「`/etc/passwd` 欠如」を再現することはできない | UID の取得経路から passwd 参照を無くしたことを、実行可能テストと静的検査で確認する（§7） |
 | `TestGetPermissionCheckUID`（manager_test.go:599） | 既に存在する。ただし sudo 分岐（実 UID が 0）のケースは root で実行しないと通らず、`t.Skip` される。AC-20 の 3 ケースを決定的に検証してはいない | 新しい重複テストを足さず、この既存テストを純関数 `resolvePermissionCheckUID` のテストで補い、既存テスト自体には具体値のアサーションを追加する |
 | `CHANGELOG.md` | `## [Unreleased]` 節が存在しない（直近は `## [1.0.0] - 2026-06-27`） | `## [Unreleased]` 節を新設して AC-25 の挙動変化を記載する |
@@ -409,7 +410,7 @@
   - [ ] allowlist を適用しているのは `config.ProcessEnvImport`（`internal/runner/config/expansion.go`）と `executor.BuildProcessEnvironment`（`internal/runner/base/executor/environment.go`）の 2 箇所であること
   - [ ] `internal/runner/base/environment` はシステム環境の列挙（`system_env.go`）と denylist 判定（`denylist.go`）を提供し、allowlist は扱わないこと
 - [ ] 同節の残りの記述（3 レベル継承モデル、継承モード）が Phase 1 適用後の実装と矛盾しないことを確認する。矛盾があれば同じ PR で修正する。
-- [ ] `docs/dev/architecture_design/config-inheritance-behavior.ja.md` の :41 と :58 が `env_allowlist` 継承の実装として参照する `[filter.go](../../internal/runner/environment/filter.go)` を修正する。このリンクは現時点で既に壊れており（実際のパスは `internal/runner/base/environment/`）、Phase 1 後は参照先のファイル自体が存在しなくなる。継承の実際の実装先（`internal/runner/config/expansion.go` の `ProcessEnvImport` と `internal/runner/base/executor/environment.go` の `BuildProcessEnvironment`）へ差し替える。
+- [ ] `docs/dev/architecture_design/config-inheritance-behavior.ja.md` の :41 と :58 が `env_allowlist` 継承の実装として `filter.go` へ張っている Markdown リンク（リンク先は `../../internal/runner/environment/filter.go`）を修正する。このリンクは現時点で既に壊れている（相対深度が 1 段浅く、かつパッケージは `internal/runner/base/environment/` へ移動済み）うえ、Phase 1 後は参照先のファイル自体が存在しなくなる。継承の実際の実装先（`internal/runner/config/expansion.go` の `ProcessEnvImport` と `internal/runner/base/executor/environment.go` の `BuildProcessEnvironment`）へ差し替える。
 - [ ] `docs/dev/developer_guide/design-implementation-overview.ja.md:117` の見出し `#### 5. 環境セキュリティ (`internal/runner/environment/`)` のパスを、実在する `internal/runner/base/environment/` へ修正する。あわせて同節の本文が Phase 1 適用後の責務（システム環境の列挙と denylist 判定）と矛盾しないことを確認し、矛盾があれば修正する。
 - [ ] 上記 3 つの日本語版の修正を先にコミットしたうえで、`docs/dev/architecture_design/security-architecture.md`、`config-inheritance-behavior.md`、`docs/dev/developer_guide/design-implementation-overview.md` の同じ箇所へ `/mktrans` で反映する。
 - [ ] `docs/dev/developer_guide/package_reference.md` の :29 と :87 の 2 箇所の `environment/` の説明を、`Environment variable processing and filtering` から実態（システム環境の列挙と denylist 判定）を表す英語表現へ書き換える。
@@ -420,7 +421,9 @@
 - [ ] `go vet -tags 'test integration' ./...` が成功する
 - [ ] `make build` が成功する
 - [ ] `cmd/runner` の統合テストと `internal/runner` の E2E テストが成功する（環境変数解決の回帰確認）
-- [ ] `make verify-docs` が成功する（文書内リンクの整合）
+- [ ] `make verify-docs` を実行し、`build/verification-reports/links_report.txt` の内部リンク破損数が**着手前の 230 件から増えていない**こと。同コマンドは本タスク着手時点で既に 230 件の破損内部リンクを報告しており（大半は `docs/dev/architecture_design/` 配下の相対深度の誤り）、成功で終了することはない（§1.3 参照）
+- [ ] 同レポートに `security-architecture.{ja.,}md` / `design-implementation-overview.{ja.,}md` / `package_reference.md` の項目が現れないこと（着手前も 0 件であり、今回の編集で増やさない）
+- [ ] 同レポートの `config-inheritance-behavior.{ja.,}md` の項目から、`internal/runner/environment/filter.go` を指す 2 件（各ファイル :41, :58）が消えていること
 
 ### 2.4 Step 4 = Phase 2: `privilege` の到達不能な降格パスと本番未使用 API の削除
 
@@ -687,7 +690,7 @@ Phase 間に実装上の依存はない（設計書 §8.1）。以下の順序�
 | Phase 3 の fail-open 化が運用に影響する | passwd エントリ欠如環境で、これまで停止していた実行が継続する | `CHANGELOG.md` の `[Unreleased]` に記載する。判定に使う UID・規則は変わらないことを併記する（設計書 §5.4） |
 | AC-25 を「passwd 依存が完全に消えた」と読み違える | 実際にはグループ書き込み可能なファイルの判定で `user.LookupId` が残り、記載が事実と食い違う | 要件定義書の AC-25 を「UID の取得」に限定する改訂を行った。§1.3 と §4.6 に残る依存を明記し、`CHANGELOG.md` の文言も同じ範囲に揃える。静的検査は `user.Current(` だけでなく `os/user` の呼び出し全体を列挙する形にする（§7） |
 | `performElevation` のエラー文言変更が dry-run 出力に現れる | dry-run の `Impact.Description` の文字列が変わる | 対象は dry-run のユーザー・グループ解決失敗時のみ。既存アサーション（`unix_privilege_test.go`）を同一 PR で更新する。運用者が読む出力の意味は変わらない（「変更に失敗」→「解決に失敗」で、実装に即した表現になる） |
-| ドキュメント修正の英語版取りこぼし | セキュリティ設計文書の日英で記述が食い違う | 日本語版を先にコミットし、英語版は `/mktrans` で反映する。Phase 1 の完了条件に `make verify-docs` を含める |
+| ドキュメント修正の英語版取りこぼし | セキュリティ設計文書の日英で記述が食い違う | 日本語版を先にコミットし、英語版は `/mktrans` で反映する。Phase 1 の完了条件に、`make verify-docs` のリンクレポートを基準値と突き合わせる項目を含める |
 
 ---
 
@@ -728,7 +731,7 @@ Phase 間に実装上の依存はない（設計書 §8.1）。以下の順序�
 - [ ] 呼び出し元テスト 12 箇所の更新（`err :=` への変更 2 箇所を含む）
 - [ ] `security-architecture.ja.md`（コードブロック :166-172 全体）・`config-inheritance-behavior.ja.md`（:41, :58）・`design-implementation-overview.ja.md`（:117）の修正 → コミット → `/mktrans` で英語版 3 ファイルへ反映
 - [ ] `package_reference.md` の 2 箇所の説明修正
-- [ ] `make fmt` / `make test` / `make lint` / `make build` / `make verify-docs` / `go vet -tags 'test integration' ./...` の成功
+- [ ] `make fmt` / `make test` / `make lint` / `make build` / `go vet -tags 'test integration' ./...` の成功と、`make verify-docs` のリンクレポートの基準値照合（§2.3 の完了条件）
 
 ### Step 4 = Phase 2: `privilege`
 
