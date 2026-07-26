@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-07-26 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 2026-07-26 に isseis が承認したのち、`WithUserGroup` を doc コメント整備ではなく API ごと削除する方針変更を受けて draft に戻した（再承認が必要）。§2.2.5 を新設し、§2.2.3・§3.2・§3.5・§5.5・§7.1・§7.2・§9・§10・付録 A-4b を追随させた。本番未使用かつ `IsPrivilegedExecutionSupported` と重複する `IsUserGroupSupported` も削除対象に含めている。あわせて §9 に、経路の信頼区分判定が live identity を読まないことの静的強制を将来課題として追記し、既存 2 項目に起票済み Issue（#918 / #919）を参照させた。 |
+| Review date | 2026-07-26 |
+| Reviewer | isseis |
+| Comments | - |
 
 ## 関連文書
 
