@@ -38,7 +38,7 @@ Multi-value items have choices between Union or Override. In the current impleme
 | Configuration Item | Global | Group | Command | Inheritance/Merging Behavior | Notes |
 |-------------------|--------|-------|---------|------------------------------|-------|
 | **env_vars** | - | - | ✓ | **Independent (no cross-level merging)**: Only environment variables defined in Command.Env are used. Independent between multiple Commands | Each Command has its own env_vars<br>Independent behavior, not Union |
-| **env_allowlist** | ✓ | ✓ | - | **Inherit/Override/Prohibit**: <br>• Group.EnvAllowlist is `nil` → Inherit (inherits Global)<br>• Group.EnvAllowlist is `[]` → Prohibit (deny all)<br>• Group.EnvAllowlist is `["VAR1", ...]` → Override (uses only Group value) | 3 inheritance modes<br>**Override adopted, not Union**<br>Implementation: [filter.go](../../internal/runner/environment/filter.go)<br>Type definition: [config.go](../../internal/runner/runnertypes/config.go) |
+| **env_allowlist** | ✓ | ✓ | - | **Inherit/Override/Prohibit**: <br>• Group.EnvAllowlist is `nil` → Inherit (inherits Global)<br>• Group.EnvAllowlist is `[]` → Prohibit (deny all)<br>• Group.EnvAllowlist is `["VAR1", ...]` → Override (uses only Group value) | 3 inheritance modes<br>**Override adopted, not Union**<br>Implementation: [expansion.go](../../internal/runner/config/expansion.go) (ProcessEnvImport) / [environment.go](../../internal/runner/base/executor/environment.go) (BuildProcessEnvironment)<br>Type definition: [config.go](../../internal/runner/runnertypes/config.go) |
 | **verify_files** | ✓ | ✓ | - | **Effective Union**: Managed independently at Global and Group, but at runtime both verifications must succeed. Global failure → program exits, Group failure → group skipped | Effectively Union behavior from user perspective<br>Success of both verifications is prerequisite for Group execution<br>Implementation: [main.go](../../cmd/runner/main.go), [runner.go](../../internal/runner/runner.go) |
 
 #### Design Principles for Multi-Value Items
@@ -54,8 +54,8 @@ Multi-value items have choices between Union or Override. In the current impleme
 ### 1. Handling of Runtime Environment Variables
 
 - OS environment variables at runner invocation time are filtered by `env_allowlist` and made available at Command execution
-- `Filter.ResolveGroupEnvironmentVars()` filters system environment variables based on Group-level `env_allowlist`
-- Implementation: [filter.go](../../internal/runner/environment/filter.go)
+- Allowlist checks are performed in two places: `config.ProcessEnvImport` (`expansion.go`) and `executor.BuildProcessEnvironment` (`environment.go`)
+- Implementation: [expansion.go](../../internal/runner/config/expansion.go) / [environment.go](../../internal/runner/base/executor/environment.go)
 
 ### 2. Auto Variables
 

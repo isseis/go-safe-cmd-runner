@@ -114,13 +114,12 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 }
 ```
 
-#### 5. Environment Security (`internal/runner/environment/`)
-- **Purpose**: Zero-trust environment variable filtering
+#### 5. Environment Security (`internal/runner/base/environment/`)
+- **Purpose**: System environment variable enumeration and centralized forbidden-variable-name checking
 - **Key Features**:
-  - Allowlist-based filtering at global and group levels
-  - Dangerous pattern detection (passwords, tokens, etc.)
-  - Inheritance control (inherit/explicit/deny modes)
-  - Variable name and value validation
+  - System environment variable enumeration (`system_env.go`)
+  - Forbidden environment variable name checking (`denylist.go`)
+  - Allowlist checking is performed by `config.ProcessEnvImport` (`expansion.go`) and `executor.BuildProcessEnvironment` (`environment.go`)
 
 #### 6. Safe File Operations (`internal/safefileio/`)
 - **Purpose**: Symlink-safe file operations using modern Linux security primitives

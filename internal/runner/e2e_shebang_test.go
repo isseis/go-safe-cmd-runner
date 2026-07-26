@@ -220,7 +220,6 @@ func TestIntegration_ShebangChainRunnerExecution(t *testing.T) {
 		WithVerificationManager(verificationManager),
 	)
 	require.NoError(t, err)
-	require.NoError(t, r.LoadSystemEnvironment())
 
 	err = r.Execute(context.Background(), nil)
 	assert.NoError(t, err)

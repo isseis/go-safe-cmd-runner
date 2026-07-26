@@ -417,11 +417,6 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		return fmt.Errorf("failed to initialize runner: %w", err)
 	}
 
-	// Load system environment variables
-	if err := r.LoadSystemEnvironment(); err != nil {
-		return fmt.Errorf("failed to load environment: %w", err)
-	}
-
 	// Ensure cleanup of all resources on exit
 	defer func() {
 		if err := r.CleanupAllResources(); err != nil {

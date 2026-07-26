@@ -80,9 +80,6 @@ func (env *testEnvironment) createRunner(t *testing.T) *runner.Runner {
 	)
 	require.NoError(t, err)
 
-	err = r.LoadSystemEnvironment()
-	require.NoError(t, err)
-
 	return r
 }
 

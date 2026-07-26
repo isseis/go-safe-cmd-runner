@@ -863,7 +863,7 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 
 	// 0. Parse system environment once and cache it
 	// This avoids repeated os.Environ() parsing in ExpandGroup and ExpandCommand
-	runtime.SystemEnv = environment.NewFilter(spec.EnvAllowed).ParseSystemEnvironment()
+	runtime.SystemEnv = environment.ParseSystemEnvironment()
 
 	// 0.5. Generate automatic variables (__runner_datetime and __runner_pid)
 	// These are generated once at configuration load time and shared across all commands

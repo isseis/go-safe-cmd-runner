@@ -15,7 +15,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
@@ -63,10 +62,8 @@ type Runner struct {
 	executor            executor.CommandExecutor
 	config              *runnertypes.ConfigSpec    // TOML configuration
 	runtimeGlobal       *runnertypes.RuntimeGlobal // Expanded global configuration
-	envVars             map[string]string
 	validator           *security.Validator
 	verificationManager *verification.Manager
-	envFilter           *environment.Filter
 	privilegeManager    runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
 	runID               string                       // Unique identifier for this execution run
 	resourceManager     resource.Manager             // Manages all side-effects (commands, filesystem, privileges, etc.)
@@ -319,9 +316,6 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 		return nil, fmt.Errorf("failed to create security validator: %w", err)
 	}
 
-	// Create environment filter
-	envFilter := environment.NewFilter(configSpec.Global.EnvAllowed)
-
 	// Initialize runtime global configuration
 	runtimeGlobal, err := initializeRuntimeGlobal(opts, configSpec)
 	if err != nil {
@@ -340,10 +334,8 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 		executor:            opts.executor,
 		config:              configSpec,
 		runtimeGlobal:       runtimeGlobal,
-		envVars:             make(map[string]string),
 		validator:           validator,
 		verificationManager: opts.verificationManager,
-		envFilter:           envFilter,
 		privilegeManager:    opts.privilegeManager,
 		runID:               opts.runID,
 		resourceManager:     opts.resourceManager,
@@ -383,17 +375,6 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 	)
 
 	return runner, nil
-}
-
-// LoadSystemEnvironment loads and filters system environment variables.
-// This is a convenience method that wraps the filtering and setting operations.
-func (r *Runner) LoadSystemEnvironment() error {
-	sysEnv, err := r.envFilter.FilterSystemEnvironment()
-	if err != nil {
-		return fmt.Errorf("failed to filter system environment variables: %w", err)
-	}
-	r.envVars = sysEnv
-	return nil
 }
 
 // executeGroups executes the specified groups

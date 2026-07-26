@@ -87,7 +87,6 @@ func TestGroupExecutor_F001_HashMismatchBlocksExecution(t *testing.T) {
 		WithVerificationManager(verificationManager),
 	)
 	require.NoError(t, err)
-	require.NoError(t, r.LoadSystemEnvironment())
 
 	err = r.Execute(context.Background(), nil)
 	require.Error(t, err, "execution must fail: the later command's binary was replaced after group verification but before its own execution")
@@ -158,7 +157,6 @@ func TestGroupExecutor_F004_LibraryShadowingBlocksExecution(t *testing.T) {
 		WithVerificationManager(verificationManager),
 	)
 	require.NoError(t, err)
-	require.NoError(t, r.LoadSystemEnvironment())
 
 	err = r.Execute(context.Background(), nil)
 	require.Error(t, err, "execution must fail: live dependency resolution no longer matches the recorded snapshot")

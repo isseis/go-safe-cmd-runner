@@ -5,9 +5,11 @@ package config
 import (
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestApplyTemplateInheritance_WorkDir(t *testing.T) {
@@ -255,4 +257,24 @@ func TestApplyTemplateInheritance_Combined(t *testing.T) {
 		"cmd_key":  "cmd_value", // Command overrides template
 	}
 	assert.Equal(t, expectedVars, expandedSpec.Vars)
+}
+
+func TestExpandGlobal_SystemEnvIncludesAllParsableEntries(t *testing.T) {
+	t.Setenv("TEST_NOT_IN_ALLOWLIST", "test_value")
+
+	spec := &runnertypes.GlobalSpec{
+		Timeout:    tu.Int32Ptr(30),
+		EnvAllowed: []string{},
+		EnvImport:  []string{},
+		Vars:       map[string]any{},
+	}
+
+	runtime, err := ExpandGlobal(spec)
+	require.NoError(t, err)
+
+	assert.Contains(t, runtime.SystemEnv, "TEST_NOT_IN_ALLOWLIST")
+	assert.Equal(t, "test_value", runtime.SystemEnv["TEST_NOT_IN_ALLOWLIST"])
+
+	directEnv := environment.ParseSystemEnvironment()
+	assert.Equal(t, directEnv["TEST_NOT_IN_ALLOWLIST"], runtime.SystemEnv["TEST_NOT_IN_ALLOWLIST"])
 }
