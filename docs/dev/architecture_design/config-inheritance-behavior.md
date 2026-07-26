@@ -23,8 +23,8 @@ Single-value items always exhibit Override behavior when set at multiple levels.
 
 | Configuration Item | Global | Group | Command | Inheritance/Merging Behavior | Notes |
 |-------------------|--------|-------|---------|------------------------------|-------|
-| **timeout** | ✓ | - | ✓ | **Override**: Uses Command.Timeout if > 0, otherwise uses Global.Timeout | Can be overridden at Command level<br>Implementation: [runner.go](../../internal/runner/runner.go) |
-| **workdir** | ✓ | ✓ | ✓ | **Override**: Global.WorkDir is set only when Command.Dir is empty string | Group.WorkDir is for temp_dir purpose<br>Command.Dir is used at execution time<br>Implementation: [runner.go](../../internal/runner/runner.go) |
+| **timeout** | ✓ | - | ✓ | **Override**: Uses Command.Timeout if > 0, otherwise uses Global.Timeout | Can be overridden at Command level<br>Implementation: [runner.go](../../../internal/runner/runner.go) |
+| **workdir** | ✓ | ✓ | ✓ | **Override**: Global.WorkDir is set only when Command.Dir is empty string | Group.WorkDir is for temp_dir purpose<br>Command.Dir is used at execution time<br>Implementation: [runner.go](../../../internal/runner/runner.go) |
 | **max_output_size** | ✓ | - | - | **Global only**: Only Global.MaxOutputSize can be defined | Not supported at Command or Group level |
 | **risk_level** | - | - | ✓ | **Command only**: Only Command.RiskLevel can be defined | Not supported at Global or Group level |
 | **run_as_user** | - | - | ✓ | **Command only**: Only Command.RunAsUser can be defined | Not supported at Global or Group level |
@@ -38,8 +38,8 @@ Multi-value items have choices between Union or Override. In the current impleme
 | Configuration Item | Global | Group | Command | Inheritance/Merging Behavior | Notes |
 |-------------------|--------|-------|---------|------------------------------|-------|
 | **env_vars** | - | - | ✓ | **Independent (no cross-level merging)**: Only environment variables defined in Command.Env are used. Independent between multiple Commands | Each Command has its own env_vars<br>Independent behavior, not Union |
-| **env_allowlist** | ✓ | ✓ | - | **Inherit/Override/Prohibit**: <br>• Group.EnvAllowlist is `nil` → Inherit (inherits Global)<br>• Group.EnvAllowlist is `[]` → Prohibit (deny all)<br>• Group.EnvAllowlist is `["VAR1", ...]` → Override (uses only Group value) | 3 inheritance modes<br>**Override adopted, not Union**<br>Implementation: [expansion.go](../../internal/runner/config/expansion.go) (ProcessEnvImport) / [environment.go](../../internal/runner/base/executor/environment.go) (BuildProcessEnvironment)<br>Type definition: [config.go](../../internal/runner/runnertypes/config.go) |
-| **verify_files** | ✓ | ✓ | - | **Effective Union**: Managed independently at Global and Group, but at runtime both verifications must succeed. Global failure → program exits, Group failure → group skipped | Effectively Union behavior from user perspective<br>Success of both verifications is prerequisite for Group execution<br>Implementation: [main.go](../../cmd/runner/main.go), [runner.go](../../internal/runner/runner.go) |
+| **env_allowlist** | ✓ | ✓ | - | **Inherit/Override/Prohibit**: <br>• Group.EnvAllowlist is `nil` → Inherit (inherits Global)<br>• Group.EnvAllowlist is `[]` → Prohibit (deny all)<br>• Group.EnvAllowlist is `["VAR1", ...]` → Override (uses only Group value) | 3 inheritance modes<br>**Override adopted, not Union**<br>Implementation: [expansion.go](../../../internal/runner/config/expansion.go) (ProcessEnvImport) / [environment.go](../../../internal/runner/base/executor/environment.go) (BuildProcessEnvironment)<br>Type definition: [config.go](../../../internal/runner/base/runnertypes/config.go) |
+| **verify_files** | ✓ | ✓ | - | **Effective Union**: Managed independently at Global and Group, but at runtime both verifications must succeed. Global failure → program exits, Group failure → group skipped | Effectively Union behavior from user perspective<br>Success of both verifications is prerequisite for Group execution<br>Implementation: [main.go](../../../cmd/runner/main.go), [runner.go](../../../internal/runner/runner.go) |
 
 #### Design Principles for Multi-Value Items
 
@@ -55,17 +55,17 @@ Multi-value items have choices between Union or Override. In the current impleme
 
 - OS environment variables at runner invocation time are filtered by `env_allowlist` and made available at Command execution
 - Allowlist checks are performed in two places: `config.ProcessEnvImport` (`expansion.go`) and `executor.BuildProcessEnvironment` (`environment.go`)
-- Implementation: [expansion.go](../../internal/runner/config/expansion.go) / [environment.go](../../internal/runner/base/executor/environment.go)
+- Implementation: [expansion.go](../../../internal/runner/config/expansion.go) / [environment.go](../../../internal/runner/base/executor/environment.go)
 
 ### 2. Auto Variables
 
 - Automatically generated internal variables such as `__runner_datetime`, `__runner_pid`, `__runner_workdir` take priority over user-defined variables
 - These are internal variables, not environment variables (referenced in the format `%{__runner_datetime}`)
-- Implementation: [variable/auto.go](../../internal/runner/variable/auto.go)
+- Implementation: [variable/auto.go](../../../internal/runner/variable/auto.go)
 
 ### 3. env_allowlist Inheritance Mode Details
 
-Three inheritance modes defined in [config.go](../../internal/runner/runnertypes/config.go):
+Three inheritance modes defined in [config.go](../../../internal/runner/base/runnertypes/config.go):
 
 #### InheritanceModeInherit (Inherit Mode)
 
@@ -115,11 +115,11 @@ Three inheritance modes defined in [config.go](../../internal/runner/runnertypes
 
 verify_files verification is executed in the following order:
 
-1. **Global Verification** ([main.go](../../cmd/runner/main.go))
+1. **Global Verification** ([main.go](../../../cmd/runner/main.go))
    - Verifies all files in Global.VerifyFiles at program start
    - **Verification failure → entire program exits**
 
-2. **Group Verification** ([runner.go](../../internal/runner/runner.go))
+2. **Group Verification** ([runner.go](../../../internal/runner/runner.go))
    - Verifies all files in Group.VerifyFiles before each group execution
    - **Verification failure → corresponding group is skipped, other groups continue execution**
 
@@ -140,7 +140,7 @@ When paths in verify_files contain environment variables, the allowlist used for
 #### Global Level
 
 - **Allowlist used**: `Global.EnvAllowlist`
-- **Implementation**: [expansion.go](../../internal/runner/config/expansion.go)
+- **Implementation**: [expansion.go](../../../internal/runner/config/expansion.go)
 - **Example**:
   ```toml
   [global]
@@ -151,7 +151,7 @@ When paths in verify_files contain environment variables, the allowlist used for
 #### Group Level
 
 - **Allowlist used**: Determined according to Group's `env_allowlist` inheritance rules (`InheritanceMode`)
-- **Implementation**: [expansion.go](../../internal/runner/config/expansion.go)
+- **Implementation**: [expansion.go](../../../internal/runner/config/expansion.go)
 - **Example**:
   ```toml
   [global]
@@ -177,7 +177,7 @@ When paths in verify_files contain environment variables, the allowlist used for
 
 - Command.Timeout greater than 0 → Command.Timeout is used
 - Command.Timeout is 0 or less → Global.Timeout is used
-- Implementation: [runner.go](../../internal/runner/runner.go)
+- Implementation: [runner.go](../../../internal/runner/runner.go)
 
 ```go
 timeout := time.Duration(r.config.Global.Timeout) * time.Second
@@ -190,7 +190,7 @@ if cmd.Timeout > 0 {
 
 - Command.Dir is not empty string → Command.Dir is used
 - Command.Dir is empty string → Global.WorkDir is set
-- Implementation: [runner.go](../../internal/runner/runner.go)
+- Implementation: [runner.go](../../../internal/runner/runner.go)
 
 ```go
 if cmd.Dir == "" {
