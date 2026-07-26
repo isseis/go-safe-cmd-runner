@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-07-26 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-07-26 に isseis が承認したのち、[03_implementation_plan.md](03_implementation_plan.md) の作成時の調査で §5.4 の記述が不正確と判明したため draft に戻した（再承認が必要）。`user.Current()` を除いても、group-writable なファイルの判定は `IsUserInGroup` / `isUserOnlyGroupMember` を経由して `user.LookupId` を呼ぶため、passwd 依存は完全には消えない。§5.4 に「変化しない範囲（passwd 依存が残る経路）」を追加し、§7.1 の単体テスト方針と §9 の検討事項を追随させた。あわせて要件定義書の AC-25 を「権限判定に用いる UID の取得」へ限定した（同書も再承認が必要）。設計判断そのものの変更はない。 |
+| Comments | - |
 
 ## 関連文書
 
