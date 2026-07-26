@@ -8,7 +8,7 @@
 | Created | 2026-07-26 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-07-26 に isseis が承認したのち、`WithUserGroup` を doc コメント整備ではなく API ごと削除する方針変更を受けて draft に戻した（再承認が必要）。§2.2.5 を新設し、§2.2.3・§3.2・§3.5・§5.5・§7.1・§7.2・§9・§10・付録 A-4b を追随させた。本番未使用かつ `IsPrivilegedExecutionSupported` と重複する `IsUserGroupSupported` も削除対象に含めている。 |
+| Comments | 2026-07-26 に isseis が承認したのち、`WithUserGroup` を doc コメント整備ではなく API ごと削除する方針変更を受けて draft に戻した（再承認が必要）。§2.2.5 を新設し、§2.2.3・§3.2・§3.5・§5.5・§7.1・§7.2・§9・§10・付録 A-4b を追随させた。本番未使用かつ `IsPrivilegedExecutionSupported` と重複する `IsUserGroupSupported` も削除対象に含めている。あわせて §9 に、経路の信頼区分判定が live identity を読まないことの静的強制を将来課題として追記し、既存 2 項目に起票済み Issue（#918 / #919）を参照させた。 |
 
 ## 関連文書
 
@@ -992,17 +992,19 @@ flowchart LR
 
 本タスクは削除が中心であり、拡張点を新設しない。調査の過程で判明した、本タスクのスコープ外にある検討事項を記録する。
 
-- **dry-run と実行時で別実装になっている識別情報の解決。** §2.2.2 のとおり、dry-run 側は補助グループを列挙せず、実行時側の検査の真部分集合になっている。dry-run 側を `risktypes.ResolveRunAsIdent` に委譲すれば乖離は解消し、`user.Lookup` の二重呼び出し（0149 監査 A1 L-1）も同時に解決する。挙動変更を伴うため別タスクとする。
+- **dry-run と実行時で別実装になっている識別情報の解決。** §2.2.2 のとおり、dry-run 側は補助グループを列挙せず、実行時側の検査の真部分集合になっている。dry-run 側を `risktypes.ResolveRunAsIdent` に委譲すれば乖離は解消し、`user.Lookup` の二重呼び出し（0149 監査 A1 L-1）も同時に解決する。挙動変更を伴うため別タスクとする（[#918](https://github.com/isseis/go-safe-cmd-runner/issues/918)）。
 
-- **dry-run 検証の監査可能性。** §5.6 の 2 つの限界（特権非対応環境での検証スキップ、構造化属性ではない文字列連結）は Phase 2 では改善しない。dry-run の出力形式を扱うタスクで併せて検討する。
+- **dry-run 検証の監査可能性。** §5.6 の 2 つの限界（特権非対応環境での検証スキップ、構造化属性ではない文字列連結）は Phase 2 では改善しない。同じ dry-run 検証経路を触るため、上記の識別情報解決の統合と同一タスクで扱う（[#918](https://github.com/isseis/go-safe-cmd-runner/issues/918)）。
 
 - **allowlist 判定の分散。** §1.5 のとおり allowlist の適用は 2 箇所にある（0149 監査 A3 F-7）。0156 が denylist を一元化したのと同様の整理が可能だが、`env_import` と直接取り込みで意味論が異なるため、統合の可否を含めて別途検討する。
 
 - **syscall 解析結果の永続化。** Phase 4 後、`elfanalyzer` の `SyscallAnalysisStore` 注入点には実装が存在しない状態になる。この機能を有効化する際は、`ContentHash` が変わったときに他の解析フィールドを無効化する stale データ防止を最初から備えた形で設計する。削除する `SaveSyscallAnalysis` はこの防止機構を持っていなかった。
 
-- **`security-architecture` の §5「特権管理」の全面更新。** §7.3 に記したとおり、同節の構造体引用は本タスク以前から実態と乖離している。ドキュメント全体の棚卸しとして別途扱うのが適切である。
+- **`security-architecture` の §5「特権管理」の全面更新。** §7.3 に記したとおり、同節の構造体引用は本タスク以前から実態と乖離している。ドキュメント全体の棚卸しとして別途扱うのが適切である。Phase 2 のマージ後に着手する（[#919](https://github.com/isseis/go-safe-cmd-runner/issues/919)）。
 
 - **`environment` パッケージの責務の再整理。** Phase 1 後、同パッケージはシステム環境の列挙（`system_env.go`）と denylist 判定（`denylist.go`）という 2 つの独立した機能を持つ。現時点では規模が小さく分割の必要はないが、いずれかが成長した場合は分割を検討する余地がある。
+
+- **経路の信頼区分判定が live identity を読まないことの静的強制。** `risktypes.RunAsIdent` の doc コメント（[operand_zone.go:59-62](../../../internal/runner/base/risktypes/operand_zone.go)）は、判定が live identity（プロセスの現在の UID・GID を読む `os.Getuid` / `os.Geteuid` / `user.Current` などの API）を参照しないと述べている。これは dry-run と実行時で判定が一致するための不変条件だが、現在はコメントで表明されているだけで機械的な検査がない。判定側の 4 ファイル（`security/destination_zoning.go`、`security/destination_zoning_spec.go`、`security/operand_path_resolver.go`、`risk/evaluator.go`）に限定して depguard の file glob ルールで `os/user` の import を禁止し、forbidigo で `os` / `syscall` の識別情報取得関数を禁止すれば、`make lint` に載せられる。リポジトリ全体への適用はできない。特権管理（`privilege/unix.go`）、監査ログ（`audit/logger.go`）、判定の外側での識別情報の事前計算（`risktypes.OriginalExecutionIdentity`）が、これらの API を正当に使うためである。なお Phase 3 が `user.Current()` をやめるのは依存の削減が目的であり（§2.3.3）、この不変条件とは別の話である。`groupmembership` は現在のプロセスの権限を判定する層なので、対象に含めない。また直接呼び出ししか検査できないため、他パッケージのヘルパーを経由した間接的な参照は捕捉できない。厳密な保証にはコールグラフ解析を要する。
 
 ---
 
