@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `approved` |
+| Status | `draft` |
 | Created | 2026-07-25 |
-| Review date | 2026-07-26 |
-| Reviewer | isseis |
-| Comments | - |
+| Review date | - |
+| Reviewer | - |
+| Comments | 2026-07-26 に isseis が一度承認したが、[02_architecture.md](02_architecture.md) の設計レビューで判明した次の3点を反映するため draft に戻した（再承認が必要）。(1) AC-15 の文言が `OperationUserGroupExecution` について事実と異なるため修正。(2) Phase 3 の fail-closed → fail-open 変化に対する AC-25 を追加。(3) セキュリティ設計文書の整合に対する F-005 / AC-26 を追加。既存 AC の番号は変更していない。 |
 
 ## 関連 Issue
 
@@ -98,6 +98,7 @@ Issue #864 は「『フィルタする』と称して実質フィルタしてい
 3. **Phase 3（D1 M-4）**: `internal/groupmembership/manager.go` の `getProcessEUID` および `getPermissionCheckUID` の命名・コメントの実装との整合。
 4. **Phase 4（C3 F3）**: `internal/fileanalysis/syscall_store.go` の削除（後述「方針判断の記録」参照）。
 5. 上記に伴うテストの追加・更新・削除。
+6. **セキュリティ設計文書の追随（Phase 1）**: `docs/dev/architecture_design/security-architecture.ja.md` / `.md` の §3 が引用する `Filter` 構造体の記述を、Phase 1 適用後の実装に合わせる（F-005）。
 
 Phase 間に実装上の依存はなく、独立にレビュー・マージ可能とする。
 
@@ -109,7 +110,7 @@ Phase 間に実装上の依存はなく、独立にレビュー・マージ可�
 - **A3 F-6（`ParseSystemEnvironment` が不正形式エントリを無音スキップ）/ F-7（allowlist 判定ロジックの分散）**: #864 の「該当箇所」に含まれず、前者は挙動変更、後者は設計変更を伴うため別途検討。
 - **C3 の他の所見（F1, F2, F4 以降の shebang / fileanalysis 所見）**: #864 の「推奨対応」に挙げられているのは F3 のみ。
 - **`elfanalyzer.NewStandardELFAnalyzerWithSyscallStore`（`internal/security/elfanalyzer/standard_analyzer.go:70`）の本番未使用**: Phase 4 の調査で判明した隣接デッドコードだが、#864 の該当箇所ではなく、syscall analysis の将来的な有効化方針と併せて判断すべきため本タスクでは削除しない。
-- **機能追加・挙動変更全般**: 本タスクは削除・改名・doc 修正に限定する。`environment` パッケージへの allowlist 適用機能の「復活」（A3 F-1 の対応案2）は、`config` 層の `ProcessEnvImport` と二重適用になるため採用しない。
+- **機能追加・挙動変更全般**: 本タスクは削除・改名・doc 修正に限定する。`environment` パッケージへの allowlist 適用機能の「復活」（A3 F-1 の対応案2）は、`config` 層の `ProcessEnvImport` と二重適用になるため採用しない。<br>ただし Phase 3 には一点だけ挙動変化がある。`user.Current()` をやめることで、passwd エントリを引けない場合にファイルアクセスを拒否していた失敗経路が消える（fail-closed から fail-open への変化）。これは意図した変更として AC-25 で扱う。詳細と受容理由は [02_architecture.md](02_architecture.md) §5.4。
 - **`internal/runner/base/environment/denylist.go`（0156 で追加）**: 本タスクでは変更しない。同一パッケージ内の `Filter` 側のみを整理する。
 
 ## 方針判断の記録
@@ -159,7 +160,7 @@ findings は「EUID が必要なら `os.Geteuid()` を使う」「実 UID が正
 - **AC-12**: `performElevation` から、`needsPrivilegeEscalation && needsUserGroupChange` の同時成立を前提とした到達不能なロールバックブロックが削除されている。
 - **AC-13**: AC-11 により未使用となったテスト注入フィールド（`syscallSeteuid` / `syscallSetegid`）と、それに依存していたテストが削除されている。
 - **AC-14**: 旧 `changeUserGroupInternal` に相当する処理は、その実態（ユーザー／グループ名の解決と dry-run ログ出力）を表す名前になっており、「変更する（change）」ことを名乗らない。
-- **AC-15**: `WithUserGroup` および `WithPrivileges` の doc コメントに、`OperationUserGroupExecution` の実フローが「親プロセスは root へ昇格するのみ／対象ユーザーへの降格は子プロセス起動時の `syscall.Credential` により execve 時に適用される／`RunAsUser`・`RunAsGroup` は解決とログのために渡される」ことが明記されている。
+- **AC-15**: `WithUserGroup` および `WithPrivileges` の doc コメントに、`OperationUserGroupExecution` の実フローとして次の3点が明記されている。(a) privilege パッケージは root への昇格のみを行い、`RunAsUser` / `RunAsGroup` を参照しない。(b) 対象ユーザーへの切り替えと、その前提となる識別情報の解決は executor が行い、子プロセス起動時の `syscall.Credential` により execve 時に適用される。(c) privilege パッケージ内で `RunAsUser` / `RunAsGroup` が解決・ログ出力されるのは `OperationUserGroupDryRun` の場合に限られる。<br>（2026-07-26 修正: 当初の文言は `OperationUserGroupExecution` でも `RunAsUser`・`RunAsGroup` が「解決とログのために渡される」としていたが、`prepareExecution` は同 operation で dry-run 解決を呼ばないため privilege パッケージはこれらを読まない。事実と異なる記述を doc コメントに書かせないよう改めた。詳細は [02_architecture.md](02_architecture.md) §5.5。）
 - **AC-16**: 変更後も、(a) `OperationUserGroupExecution` では root 昇格と復元が従来どおり行われ、(b) `OperationUserGroupDryRun` ではユーザー／グループ解決とログ出力のみが行われて識別情報が変化せず、(c) いずれの経路でも親プロセスの EUID/EGID を対象ユーザーへ変更しないことが、テストで確認できる。既存の identity 検証（`ErrIdentityLeak` / saved-set 検査）の挙動も変わらない。
 
 #### F-003: `getProcessEUID` の命名・実装の整合（D1 M-4、Phase 3）
@@ -167,7 +168,8 @@ findings は「EUID が必要なら `os.Geteuid()` を使う」「実 UID が正
 - **AC-17**: `getProcessEUID` という名前の関数が存在しない。同等の機能は「プロセスの実 UID を返す」ことを表す名前で提供され、その doc コメントに EUID を返すという記述が含まれない。
 - **AC-18**: 当該関数は `user.Current()` を使わず、実 UID を直接取得する（`os.Getuid()` / `syscall.Getuid()` 相当）。これによりプロセス生存中のキャッシュに起因する値の固定が発生しない。
 - **AC-19**: `getPermissionCheckUID` の doc コメント・インラインコメント（sudo 判定条件の説明）および `CanCurrentUserSafelyWriteFile` のコメントが、実 UID による判定であるという実装と一致する。
-- **AC-20**: 判定に使われる UID の値は変更前後で同一である。具体的に、(a) sudo なし・`SUDO_UID` 未設定、(b) `SUDO_UID` 設定済みかつ実 UID が 0、(c) `SUDO_UID` 設定済みかつ実 UID が 0 以外、の各ケースで `getPermissionCheckUID` が返す UID が従来と一致することをテストで確認できる。
+- **AC-20**: 判定に使われる UID の値は変更前後で同一である。具体的に、(a) sudo なし・`SUDO_UID` 未設定、(b) `SUDO_UID` 設定済みかつ実 UID が 0、(c) `SUDO_UID` 設定済みかつ実 UID が 0 以外、の各ケースで `getPermissionCheckUID` が返す UID が従来と一致することをテストで確認できる。なお、この3ケースはいずれも passwd エントリを引ける前提であり、引けない場合の挙動は AC-25 が扱う。
+- **AC-25**: 実 UID に対応する passwd エントリを引けない状況（cgo 有効時の NSS 障害、cgo 無効時の `/etc/passwd` 欠如・エントリ未登録）でも、権限判定がエラーで中断せずに実行され、エントリを引ける場合と同じ判定結果を返すことをテストで確認できる。あわせて、この変更が fail-closed（エラー時にファイルアクセスを拒否）から fail-open（判定を続行）への変化であることがリリースノートに記載されている。
 
 #### F-004: `fileanalysis` の未使用 syscall analysis ストアの削除（C3 F3、Phase 4）
 
@@ -176,9 +178,15 @@ findings は「EUID が必要なら `os.Geteuid()` を使う」「実 UID が正
 - **AC-23**: 現役の型・機能は影響を受けない。すなわち `fileanalysis.SyscallAnalysisData`（`internal/dynamicanalysis/schema.go`、`internal/runner/base/security/network_analyzer.go` が使用）と、別型である `elfanalyzer.SyscallAnalysisStore` は削除されず、`cmd/record` / `cmd/runner` のビルドと既存テストが通る。
 - **AC-24**: （代替条件）レビューの結果ストアを維持する判断となった場合は、`SaveSyscallAnalysis` が既存レコードの `ContentHash` と保存対象の `fileHash` が異なるときに `DynLibDeps` / `ShebangChain` / `SymbolAnalysis` / `AnalysisWarnings` をクリアし、その挙動を検証するテストが存在する。あわせて interface の doc コメント（"Used directly by `cmd/record`"）が実態に合うよう修正されている。AC-21〜AC-23 と AC-24 は排他であり、いずれか一方を満たせばよい。
 
+#### F-005: セキュリティ設計文書の整合（Phase 1）
+
+Phase 1 が削除する `Filter` 構造体は、セキュリティ設計文書が allowlist フィルタとして引用している。削除後もその記述を残すと、本タスクが解消しようとしている「記述と実装の乖離」を、より広く読まれる文書で再生産することになる。
+
+- **AC-26**: `docs/dev/architecture_design/security-architecture.ja.md` および `security-architecture.md` の §3 に、`globalAllowlist` フィールドを持つ `Filter` 構造体の引用が存在せず、同節の記述が Phase 1 適用後の実装（`environment` パッケージはシステム環境の列挙と denylist 判定を提供し、allowlist は扱わない）と整合している。日本語版を先に修正し、英語版はそこから反映する。本 AC は Phase 1 の PR に含める。
+
 ## Success Criteria（要件レベル）
 
-- AC-01〜AC-23（AC-24 を採る場合はその代替を含む）のすべてに対し、実装計画（[03_implementation_plan.md](03_implementation_plan.md)）で具体的なテストまたは静的検証手段（`grep` による不存在確認など）が対応付けられている。
-- 本タスクは挙動不変のリファクタリングであり、削除対象に直接依存していたテストを除き、既存テストが無修正で pass する。
+- AC-01〜AC-23、AC-25、AC-26（AC-24 を採る場合はその代替を含む）のすべてに対し、実装計画（[03_implementation_plan.md](03_implementation_plan.md)）で具体的なテストまたは静的検証手段（`grep` による不存在確認など）が対応付けられている。
+- 本タスクは AC-25 が扱う一点を除き挙動不変のリファクタリングであり、削除対象に直接依存していたテストを除き、既存テストが無修正で pass する。
 - Phase 1〜4 のそれぞれが独立してレビュー可能な単位に分かれており、いずれかを見送っても他 Phase の成果が成立する。
 - `make fmt` / `make lint` / `make test` がグリーンである。
