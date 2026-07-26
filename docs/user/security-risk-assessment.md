@@ -2,7 +2,7 @@
 
 ## 📋 Document Information
 - **Created**: September 8, 2025
-- **Last Updated**: July 18, 2026
+- **Last Updated**: July 25, 2026
 - **Target System**: go-safe-cmd-runner
 - **Assessment Scope**: Software security risk analysis and operational considerations
 - **Target Audience**: Software Engineers, Security Specialists, Product Managers, Operations Engineers
@@ -120,9 +120,19 @@ func (v *Validator) ValidateConfig(config *runnertypes.Config) (*ValidationResul
 
 #### Security Assessment
 - ✅ **Command Injection Prevention**: Comprehensive defense with dedicated validation functions
-- ✅ **Dangerous Environment Variable Detection**: Prevents library injection attacks like LD_PRELOAD
+- ✅ **Dangerous Environment Variable Detection**: Comprehensive detection and rejection of dynamic-loader control variables (`LD_*`, `DYLD_*` prefixes; e.g., `LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`, etc.) and interpreter startup code-injection variables (`BASH_ENV`, `PYTHONPATH`, `NODE_OPTIONS`, etc.)
 - ✅ **Privileged Command Validation**: Strict checking of root privilege execution
 - ✅ **Configuration Consistency**: Safety assurance through duplicate/conflict detection
+
+#### Breaking Change: Expanded Environment Variable Denylist
+
+Starting from this version, the target list of forbidden environment variable names has been expanded. Newly added to the denylist across all three layers (executor, config, security) are `DYLD_*` (macOS dynamic loader control variables), `GLIBC_TUNABLES`, and interpreter startup code-injection variables such as `BASH_ENV`, `PYTHONPATH`, `NODE_OPTIONS`, `RUBYOPT`, and `PERL5LIB`. Additionally, a denylist check on `env_vars` keys has been newly introduced; configurations that specified the original denylist variables (such as `LD_*`, `GCONV_PATH`, etc.) in `env_vars` will also now encounter a config load error.
+
+**Impact**: Configurations that specify these variables in `env_vars` or `env_import` will now encounter a config load error (`ErrForbiddenEnvVar`). If a commonly used variable name such as `ENV=production` matches the denylist, renaming the variable (e.g., `APP_ENV=production`) will resolve the issue. The decision to include `ENV` on the denylist accounts for the facts that POSIX `$ENV` is primarily interpreted by interactive shells (injection strength is relatively low in this runner's non-interactive execution), the main non-interactive script vector is already blocked by `BASH_ENV`, and if over-blocking becomes a problem it can be avoided by using a non-reserved name such as `APP_ENV`.
+
+**Pre-Upgrade Detection**: Run a dry-run before upgrading to detect configurations that will become load errors. The error message includes the forbidden variable name and the target level.
+
+Note that the executor layer's fail-silent scrub (environment variable removal as the last line of defense) continues to function, and forbidden variables that flow in via `env_allowed` are still removed from the final environment.
 
 ### 3. File Integrity & Access Control
 

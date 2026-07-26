@@ -215,25 +215,25 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### フェーズ5: ドキュメント整合（AC-11）
 
 **対象ファイル**: `docs/user/security-risk-assessment.md`/`.ja.md`、`docs/dev/architecture_design/security-architecture.md`/`.ja.md`
 
-- [ ] 各文書内で denylist（危険環境変数）に言及する箇所を、拡張後の対象範囲（`LD_*`/`DYLD_*` prefix、完全一致リスト、インタプリタ起動時コード注入変数）に整合させる。少なくとも次を更新する:
-  - [ ] `docs/user/security-risk-assessment.md` の危険環境変数検出の記述（:123 付近）。`LD_PRELOAD` 単独の例示を、対象カテゴリ（ローダ制御 + インタプリタ注入）を示す記述に拡張する。
-  - [ ] `docs/dev/architecture_design/security-architecture.md` の間接実行 Reject の記述（:441 付近の "loader-control variables"）と脅威記述（:1116 付近）を拡張後の denylist に整合させる。
-  - [ ] [02_architecture.md](02_architecture.md) §6.7 の破壊的変更（`env_vars`/`env_import` の一部設定が改修後ロードエラーになる点）と dry-run による事前検知手順を、利用者向け文書に移行ノートとして追記する。
-- [ ] `.ja.md` を先に編集し、対応する英語版（`.md`）へ `/mktrans` で反映する（バイリンガル文書の編集順序）。対象4文書はいずれも `.ja.md` が日本語原本・`.md` が英訳である（各ファイル冒頭見出しで確認済み）。
-- [ ] `docs/translation_glossary.md` に「denylist」等の新規用語が必要か確認し、必要なら追記する。
-- [ ] 追記・変更した記述が拡張後の実装（対象変数リスト）と一致することを、[01_requirements.md](01_requirements.md) の対象変数リストと突き合わせて確認する。
+- [x] 各文書内で denylist（危険環境変数）に言及する箇所を、拡張後の対象範囲（`LD_*`/`DYLD_*` prefix、完全一致リスト、インタプリタ起動時コード注入変数）に整合させる。少なくとも次を更新する:
+  - [x] `docs/user/security-risk-assessment.md` の危険環境変数検出の記述（:123 付近）。`LD_PRELOAD` 単独の例示を、対象カテゴリ（ローダ制御 + インタプリタ注入）を示す記述に拡張する。
+  - [x] `docs/dev/architecture_design/security-architecture.md` の間接実行 Reject の記述（:441 付近の "loader-control variables"）と脅威記述（:1116 付近）を拡張後の denylist に整合させる。
+  - [x] [02_architecture.md](02_architecture.md) §6.7 の破壊的変更（`env_vars`/`env_import` の一部設定が改修後ロードエラーになる点）と dry-run による事前検知手順を、利用者向け文書に移行ノートとして追記する。
+- [x] `.ja.md` を先に編集し、対応する英語版（`.md`）へ翻訳で反映する（バイリンガル文書の編集順序）。対象4文書はいずれも `.ja.md` が日本語原本・`.md` が英訳である（各ファイル冒頭見出しで確認済み）。
+- [x] `docs/translation_glossary.md` に「denylist」等の新規用語が必要か確認し、必要なら追記する。
+- [x] 追記・変更した記述が拡張後の実装（対象変数リスト）と一致することを、[01_requirements.md](01_requirements.md) の対象変数リストと突き合わせて確認する。
 
 ### フェーズ6: 静的検証と全体の green 化（AC-03）
 
-- [ ] 削除シンボルの残存参照がないことを確認する（下記「4. 横断検索チェックリスト」）。
-- [ ] `make test && make lint` が green であることを確認する（green ゲート）。
+- [x] 削除シンボルの残存参照がないことを確認する（下記「4. 横断検索チェックリスト」）。
+- [x] `make test && make lint` が green であることを確認する（green ゲート）。
 
 ### PR-5 作成ポイント: documentation and static verification
 
@@ -249,8 +249,8 @@
 
 **依存**: PR-1, PR-2, PR-3, PR-4 のマージが必須（ドキュメント更新と全体検証は実装完了後に実行）
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -282,13 +282,14 @@
 
 ## 4. 横断検索チェックリスト（`make lint`/`make test` で検出できない項目）
 
-- [ ] 削除した private シンボルの残存参照がないこと（AC-03）:
-  - `rg -n "isForbiddenEnvVar|forbiddenEnvVarPrefixes|forbiddenEnvVarExact" --glob '*.go'` → 期待: マッチなし。
-  - `rg -n "isLoaderControlVar" --glob '*.go'` → 期待: マッチなし。
-- [ ] 拡張後のドキュメントに旧来の狭い記述（`LD_PRELOAD` のみを唯一の危険変数とする表現）が残っていないこと（AC-11）:
+- [x] 削除した private シンボルの残存参照がないこと（AC-03）:
+  - `rg -n "isForbiddenEnvVar" --glob '*.go'` → 期待: マッチなし（旧定義は削除され、呼び出し元は `environment.IsForbiddenEnvVar` に置き換え済み）。
+  - `rg -n "isLoaderControlVar" --glob '*.go'` → 期待: マッチなし（旧定義は削除され、呼び出し元は `environment.IsForbiddenEnvVar` に統合済み）。
+  - `rg -n "forbiddenEnvVarPrefixes|forbiddenEnvVarExact" --glob '*.go'` → `internal/runner/base/environment/denylist.go` へのマッチは統合先として**期待どおり**。それ以外のファイル（旧散在箇所: `config/expansion.go`, `security/indirect_execution.go` など）にマッチがないことを確認する。
+- [x] 拡張後のドキュメントに旧来の狭い記述（`LD_PRELOAD` のみを唯一の危険変数とする表現）が残っていないこと（AC-11）:
   - `rg -n "LD_PRELOAD" docs/user/security-risk-assessment.md docs/user/security-risk-assessment.ja.md docs/dev/architecture_design/security-architecture.md docs/dev/architecture_design/security-architecture.ja.md` → 各マッチが拡張後の文脈（カテゴリの例示）になっていることを目視確認する。
   - 拡張カテゴリが実際に追記されたことを positive 検索で確認する: `rg -n "GLIBC_TUNABLES|DYLD_|BASH_ENV|PYTHONPATH" docs/user/security-risk-assessment.md docs/user/security-risk-assessment.ja.md docs/dev/architecture_design/security-architecture.md docs/dev/architecture_design/security-architecture.ja.md` → 各文書で1件以上マッチすること（旧来の `LD_PRELOAD` 生存確認だけに依存しない）。
-- [ ] 追加した Go コード・テストに日本語のコメント・識別子・文字列リテラルが混入していないこと（目視 + `make lint`）。
+- [x] 追加した Go コード・テストに日本語のコメント・識別子・文字列リテラルが混入していないこと（目視 + `make lint`）。
 
 ---
 

@@ -107,6 +107,7 @@
 | デフォルト設定 | default settings | |
 | 定義 | define / definition | |
 | 拒否 | deny | 許可リストの文脈では "deny" |
+| denylist | denylist | 子プロセスへ渡してはならない環境変数名の集合。「blocklist」と区別し、セキュリティ層の環境変数拒否の文脈で一貫して使用 |
 | デプロイ | deploy / deployment | |
 | 廃止 | deprecated / deprecation | |
 | デメリット | disadvantage | |
@@ -127,6 +128,7 @@
 | 追加 | add / addition | |
 | 動的 | dynamic | |
 | 動的な | dynamic | |
+| 動的ローダ制御変数 | dynamic-loader control variable | 動的リンカ（ld.so/dyld）や glibc の挙動を制御し、検証済みバイナリの読み込むライブラリを変え得る環境変数（LD_PRELOAD、DYLD_INSERT_LIBRARIES、GLIBC_TUNABLES 等） |
 
 ### E
 
@@ -232,6 +234,7 @@
 | 整合性 | integrity | ファイルの整合性検証の文脈 |
 | インターフェース | interface | |
 | 即時展開 | immediate expansion | 変数展開の文脈 |
+| インタプリタ起動時コード注入変数 | interpreter startup code-injection variable | 検証済みインタプリタ（シェル/Python/Perl 等）の起動時に任意コードを実行させ得る環境変数（BASH_ENV、PYTHONPATH、NODE_OPTIONS 等） |
 | 実装 | implementation | |
 | 実装計画書 | implementation plan | |
 | インポート | import | |
@@ -262,6 +265,7 @@
 |--------|---------|------|
 | 遅延評価 | lazy evaluation | 変数展開の文脈 |
 | リンカー | linker | コンパイル・リンク処理の文脈 |
+| ローダ制御変数 | loader-control variable | 「動的ローダ制御変数」の省略形。セキュリティ層・リスク評価の文脈で使用（env LD_PRELOAD=... cmd の Reject 判定等） |
 | 活用 | leverage / leveraging | |
 | 学習 | learn / learning | |
 | ライセンス | license | |
@@ -740,6 +744,7 @@
 | 2026-07-16 | 未検証の設定／テンプレートコンテンツ（Task 0146）関連の用語を追加 (unverified, environment cause) |
 | 2026-07-16 | F-006/F-007 ドキュメント化（Task 0146 Phase 4）関連の用語を追加 (saved-set-uid, saved-set-gid, supplementary group) |
 | 2026-07-17 | dry-run 常時 hard fail 化（Task 0147）関連の用語を追加 (tampering signal, unverified artifact) |
+| 2026-07-25 | 環境変数 denylist 一元化（Task 0156）関連の用語を追加 (denylist, dynamic-loader control variable, interpreter startup code-injection variable, loader-control variable) |
 
 ---
 
