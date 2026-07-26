@@ -85,7 +85,16 @@ func defaultIdentityVerifier() error {
 	return nil
 }
 
-// WithPrivileges executes a function with elevated privileges using safe privilege escalation
+// WithPrivileges executes fn under the privilege state required by elevationCtx.Operation.
+//
+// For OperationUserGroupExecution this package only escalates to root; it does not read
+// elevationCtx.RunAsUser or elevationCtx.RunAsGroup. Switching to the target user, and
+// resolving the identity that switch needs, is done by the executor: it builds a
+// syscall.Credential that the kernel applies at execve time when the child process starts.
+// RunAsUser and RunAsGroup are resolved and logged inside this package only for
+// OperationUserGroupDryRun.
+//
+// For OperationFileValidation this package escalates to root and restores afterwards.
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -586,19 +595,4 @@ func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName strin
 	m.logger.Info("User/group privileges changed successfully", successLogAttrs...)
 
 	return nil
-}
-
-// WithUserGroup executes a function with specified user and group privileges
-func (m *UnixPrivilegeManager) WithUserGroup(user, group string, fn func() error) error {
-	elevationCtx := runnertypes.ElevationContext{
-		Operation:  runnertypes.OperationUserGroupExecution,
-		RunAsUser:  user,
-		RunAsGroup: group,
-	}
-	return m.WithPrivileges(elevationCtx, fn)
-}
-
-// IsUserGroupSupported checks if user/group privilege changes are supported
-func (m *UnixPrivilegeManager) IsUserGroupSupported() bool {
-	return m.privilegeSupported
 }

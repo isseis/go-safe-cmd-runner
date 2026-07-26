@@ -565,17 +565,17 @@
 
 **作業内容: 本番未使用 API の削除**
 
-- [ ] `internal/runner/base/runnertypes/config.go` の `PrivilegeManager` インターフェースから `WithUserGroup(user, group string, fn func() error) error` の宣言、`IsUserGroupSupported() bool` の宣言、および両者を囲む "// Enhanced privilege management for user/group specification" コメントを削除する。`IsPrivilegedExecutionSupported` と `WithPrivileges` は残す。
-- [ ] `internal/runner/base/privilege/unix.go` から `WithUserGroup` メソッド（:591-599）を削除する。
-- [ ] 同ファイルから `IsUserGroupSupported` メソッド（:601-604）を削除する。
-- [ ] `internal/runner/base/privilege/testutil/mocks.go` から `WithUserGroup`（:60-71）を削除する。`WithPrivileges` が `OperationUserGroupExecution` に対して `ElevationCalls` へ記録する文字列は変更しない。
-- [ ] 同ファイルから `IsUserGroupSupported`（:73-76）を削除する。
-- [ ] `internal/runner/resource/normal_manager_test.go` の `MockPrivilegeManager` から `WithUserGroup`（:81-84）を削除する。
-- [ ] 同ファイルから `IsUserGroupSupported`（:86-89）を削除する。
+- [x] `internal/runner/base/runnertypes/config.go` の `PrivilegeManager` インターフェースから `WithUserGroup(user, group string, fn func() error) error` の宣言、`IsUserGroupSupported() bool` の宣言、および両者を囲む "// Enhanced privilege management for user/group specification" コメントを削除する。`IsPrivilegedExecutionSupported` と `WithPrivileges` は残す。
+- [x] `internal/runner/base/privilege/unix.go` から `WithUserGroup` メソッド（:591-599）を削除する。
+- [x] 同ファイルから `IsUserGroupSupported` メソッド（:601-604）を削除する。
+- [x] `internal/runner/base/privilege/testutil/mocks.go` から `WithUserGroup`（:60-71）を削除する。`WithPrivileges` が `OperationUserGroupExecution` に対して `ElevationCalls` へ記録する文字列は変更しない。
+- [x] 同ファイルから `IsUserGroupSupported`（:73-76）を削除する。
+- [x] `internal/runner/resource/normal_manager_test.go` の `MockPrivilegeManager` から `WithUserGroup`（:81-84）を削除する。
+- [x] 同ファイルから `IsUserGroupSupported`（:86-89）を削除する。
 
 **作業内容: `WithPrivileges` の doc コメント整備**
 
-- [ ] `WithPrivileges` の doc コメントを次に置き換える（AC-15 の 3 点を明記する）。記述内容は現時点の実装に対しても既に真である（降格パスは到達不能であり、対象ユーザーへの切り替えは executor が `syscall.Credential` で行っている）ため、ステップ 2-3 を待たずに適用できる。
+- [x] `WithPrivileges` の doc コメントを次に置き換える（AC-15 の 3 点を明記する）。記述内容は現時点の実装に対しても既に真である（降格パスは到達不能であり、対象ユーザーへの切り替えは executor が `syscall.Credential` で行っている）ため、ステップ 2-3 を待たずに適用できる。
 
   前: `// WithPrivileges executes a function with elevated privileges using safe privilege escalation`
   後:
@@ -596,18 +596,18 @@
 
 削除する API を直接呼んでいるテストのみを本ステップで扱う。注入フィールド `syscallSeteuid` / `syscallSetegid` にしか依存しないテストはステップ 2-3 で扱う。
 
-- [ ] `TestWithUserGroup`（`unix_privilege_test.go:390`）を削除する（対象 API ごと削除）。
-- [ ] `TestChangeUserGroupInternal_NotCalledForUserGroupExecution` を `TestWithPrivileges_UserGroupExecutionDoesNotChangeIdentity` に改名し、注入フィールド `syscallSeteuid` / `syscallSetegid` への依存を除いて書き換える。`manager.WithUserGroup("testuser", "testgroup", fn)`（:174）の呼び出しを、`Operation: runnertypes.OperationUserGroupExecution` / `RunAsUser: "testuser"` / `RunAsGroup: "testgroup"` を設定した `ElevationContext` による `manager.WithPrivileges(...)` の直接呼び出しに置き換える。識別情報が変化しないことは、呼び出し前後の `syscall.Geteuid()` / `syscall.Getegid()` の一致で検証する。本ステップで扱うのは、このテストが削除対象の `WithUserGroup` を呼んでおり、放置するとコンパイルできないためである。
-- [ ] `TestIsUserGroupSupported`（`unix_privilege_test.go:419`）を **`TestIsPrivilegedExecutionSupported` に転用する**。関数名を改め、2 つのアサーションの検証対象を `manager.IsUserGroupSupported()` / `managerNoPriv.IsUserGroupSupported()` から `manager.IsPrivilegedExecutionSupported()` / `managerNoPriv.IsPrivilegedExecutionSupported()` に差し替え、コメント（"On Unix systems, user/group should always be supported" / "User/group support depends on privilege support"）を `privilegeSupported` の値がそのまま返ることを述べる内容に書き換える。単純に削除しないのは、`privilegeSupported` が `true` / `false` の両方で正しく返ることを固定しているテストが他に存在しないためである（既存の `IsPrivilegedExecutionSupported` 参照はすべて skip ガードかモックの期待値設定であり、返り値を検証していない。§1.3 参照）。
-- [ ] `unix_test.go` の `TestUnixPrivilegeManager_WithUserGroupInternal` を `TestUnixPrivilegeManager_DryRunResolution` に改名する（実体は既に `WithPrivileges` を使っており内容の変更は不要。名前だけが削除済み API を指している）。
+- [x] `TestWithUserGroup`（`unix_privilege_test.go:390`）を削除する（対象 API ごと削除）。
+- [x] `TestChangeUserGroupInternal_NotCalledForUserGroupExecution` を `TestWithPrivileges_UserGroupExecutionDoesNotChangeIdentity` に改名し、注入フィールド `syscallSeteuid` / `syscallSetegid` への依存を除いて書き換える。`manager.WithUserGroup("testuser", "testgroup", fn)`（:174）の呼び出しを、`Operation: runnertypes.OperationUserGroupExecution` / `RunAsUser: "testuser"` / `RunAsGroup: "testgroup"` を設定した `ElevationContext` による `manager.WithPrivileges(...)` の直接呼び出しに置き換える。識別情報が変化しないことは、呼び出し前後の `syscall.Geteuid()` / `syscall.Getegid()` の一致で検証する。本ステップで扱うのは、このテストが削除対象の `WithUserGroup` を呼んでおり、放置するとコンパイルできないためである。
+- [x] `TestIsUserGroupSupported`（`unix_privilege_test.go:419`）を **`TestIsPrivilegedExecutionSupported` に転用する**。関数名を改め、2 つのアサーションの検証対象を `manager.IsUserGroupSupported()` / `managerNoPriv.IsUserGroupSupported()` から `manager.IsPrivilegedExecutionSupported()` / `managerNoPriv.IsPrivilegedExecutionSupported()` に差し替え、コメント（"On Unix systems, user/group should always be supported" / "User/group support depends on privilege support"）を `privilegeSupported` の値がそのまま返ることを述べる内容に書き換える。単純に削除しないのは、`privilegeSupported` が `true` / `false` の両方で正しく返ることを固定しているテストが他に存在しないためである（既存の `IsPrivilegedExecutionSupported` 参照はすべて skip ガードかモックの期待値設定であり、返り値を検証していない。§1.3 参照）。
+- [x] `unix_test.go` の `TestUnixPrivilegeManager_WithUserGroupInternal` を `TestUnixPrivilegeManager_DryRunResolution` に改名する（実体は既に `WithPrivileges` を使っており内容の変更は不要。名前だけが削除済み API を指している）。
 
 **完了条件**
 
-- [ ] `make fmt` → `make test` → `make lint` がすべて成功する
-- [ ] `go vet -tags 'test integration' ./...` が成功する（`internal/runner/base/executor/executor_usergroup_integration_test.go` は `runnertypes.PrivilegeManager` に依存するが、これをコンパイルする Makefile ターゲットが存在しないため。§1.3 参照）
-- [ ] `make build` が成功する
-- [ ] `rg -n --glob '*.go' -e '\bWithUserGroup\b' -e '\bIsUserGroupSupported\b'` の一致件数が 0 である（AC-27）
-- [ ] `rg -n 'executeWithUserGroup' internal/runner/base/executor/` に一致があり、executor の非公開メソッドが残っている（AC-27）
+- [x] `make fmt` → `make test` → `make lint` がすべて成功する
+- [x] `go vet -tags 'test integration' ./...` が成功する（`internal/runner/base/executor/executor_usergroup_integration_test.go` は `runnertypes.PrivilegeManager` に依存するが、これをコンパイルする Makefile ターゲットが存在しないため。§1.3 参照）
+- [x] `make build` が成功する
+- [x] `rg -n --glob '*.go' -e '\bWithUserGroup\b' -e '\bIsUserGroupSupported\b'` の一致件数が 0 である（AC-27）
+- [x] `rg -n 'executeWithUserGroup' internal/runner/base/executor/` に一致があり、executor の非公開メソッドが残っている（AC-27）
 
 ### PR-5 作成ポイント: unused user/group privilege API removal
 
@@ -1006,15 +1006,15 @@ Phase 間に実装上の依存はない（設計書 §8.1）。以下の順序�
 
 ### 6.6 PR-5（ステップ 2-1 = Phase 2 前半: 本番未使用 API の削除）
 
-- [ ] `WithUserGroup` / `IsUserGroupSupported` の削除（インターフェース・実装・モック 2 つ）
-- [ ] `WithPrivileges` の doc コメント整備（AC-15 の 3 点）
-- [ ] `TestWithUserGroup` の削除
-- [ ] `TestChangeUserGroupInternal_NotCalledForUserGroupExecution` の改名と `WithPrivileges` 直接呼び出しへの書き換え
-- [ ] `TestIsUserGroupSupported` の `TestIsPrivilegedExecutionSupported` への転用（削除ではない）
-- [ ] `TestUnixPrivilegeManager_WithUserGroupInternal` の改名
-- [ ] `make fmt` / `make test` / `make lint` / `make build` / `go vet -tags 'test integration' ./...` の成功
-- [ ] `WithUserGroup` / `IsUserGroupSupported` の残存 0 件と `executeWithUserGroup` の残存確認（§2.5 の完了条件）
-- [ ] §8 の横断検索のうち PR-5 が担当する 1 項目（`WithUserGroup` の用語集登録確認）の実施
+- [x] `WithUserGroup` / `IsUserGroupSupported` の削除（インターフェース・実装・モック 2 つ）
+- [x] `WithPrivileges` の doc コメント整備（AC-15 の 3 点）
+- [x] `TestWithUserGroup` の削除
+- [x] `TestChangeUserGroupInternal_NotCalledForUserGroupExecution` の改名と `WithPrivileges` 直接呼び出しへの書き換え
+- [x] `TestIsUserGroupSupported` の `TestIsPrivilegedExecutionSupported` への転用（削除ではない）
+- [x] `TestUnixPrivilegeManager_WithUserGroupInternal` の改名
+- [x] `make fmt` / `make test` / `make lint` / `make build` / `go vet -tags 'test integration' ./...` の成功
+- [x] `WithUserGroup` / `IsUserGroupSupported` の残存 0 件と `executeWithUserGroup` の残存確認（§2.5 の完了条件）
+- [x] §8 の横断検索のうち PR-5 が担当する 1 項目（`WithUserGroup` の用語集登録確認）の実施
 
 ### 6.7 PR-6（ステップ 2-2 = Phase 2 中盤: ガードテストの新設）
 
@@ -1151,7 +1151,7 @@ rg は Rust の正規表現構文を用いるため、`\|` は選択ではなく
 - [ ] （PR-7）`rg -n 'privilege/unix\.go' docs/dev/architecture_design/security-architecture.ja.md docs/dev/architecture_design/security-architecture.md` — §5「特権管理」の構造体引用は設計書 §7.3 の判断に従い本タスクでは修正しない。Phase 2 で不正確さが増すことを確認し、[#919](https://github.com/isseis/go-safe-cmd-runner/issues/919) に追記すること
 - [x] （PR-1）`rg -n 'SyscallAnalysisStore' docs/translation_glossary.md` — 用語集に削除対象の識別子が登録されていないこと（現状は未登録）
 - [ ] （PR-2）`rg -n 'getProcessEUID' docs/translation_glossary.md` — 同上
-- [ ] （PR-5）`rg -n 'WithUserGroup' docs/translation_glossary.md` — 同上
+- [x] （PR-5）`rg -n 'WithUserGroup' docs/translation_glossary.md` — 用語集に削除対象の識別子が登録されていないこと（現状は未登録）
 - [ ] （PR-7）`rg -n --glob '*_test.go' -e 'AC-M1-4' -e 'AC-M1-5'` — 一致 0 件であること。変更前は `internal/runner/base/privilege/unix_privilege_test.go:508` と `:540` の 2 件が一致し、いずれも削除対象のテストの doc コメントである
 
 ---

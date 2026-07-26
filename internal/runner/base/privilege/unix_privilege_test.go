@@ -138,46 +138,32 @@ func TestPerformElevation_Success(t *testing.T) {
 	})
 }
 
-// TestChangeUserGroupInternal_NotCalledForUserGroupExecution verifies that
-// OperationUserGroupExecution no longer calls changeUserGroupInternal (the
-// parent process no longer switches identity to the target user; that is
-// delegated to SysProcAttr.Credential in the executor).
-func TestChangeUserGroupInternal_NotCalledForUserGroupExecution(t *testing.T) {
+// TestWithPrivileges_UserGroupExecutionDoesNotChangeIdentity verifies that
+// OperationUserGroupExecution does not change the parent process's identity;
+// that is delegated to SysProcAttr.Credential in the executor.
+func TestWithPrivileges_UserGroupExecutionDoesNotChangeIdentity(t *testing.T) {
 	logger := slog.Default()
-
-	seteuidCalled := false
-	setegidCalled := false
 
 	manager := &UnixPrivilegeManager{
 		logger:             logger,
-		privilegeSupported: true,
+		privilegeSupported: false,
 		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
-		syscallSeteuid: func(_ int) error {
-			seteuidCalled = true
-			return nil
-		},
-		syscallSetegid: func(_ int) error {
-			setegidCalled = true
-			return nil
-		},
-		identityVerifier: func() error {
-			return nil
-		},
 	}
 
-	// OperationUserGroupExecution should only escalate privileges (root),
-	// not change the parent's identity via changeUserGroupInternal.
-	fn := func() error {
-		return nil
+	euidBefore := syscall.Geteuid()
+	egidBefore := syscall.Getegid()
+
+	elevationCtx := runnertypes.ElevationContext{
+		Operation:  runnertypes.OperationUserGroupExecution,
+		RunAsUser:  "testuser",
+		RunAsGroup: "testgroup",
 	}
+	fn := func() error { return nil }
 
-	err := manager.WithUserGroup("testuser", "testgroup", fn)
-	assert.NoError(t, err)
+	_ = manager.WithPrivileges(elevationCtx, fn)
 
-	// syscallSeteuid/syscallSetegid should NOT be called because
-	// changeUserGroupInternal is skipped for OperationUserGroupExecution.
-	assert.False(t, seteuidCalled, "syscallSeteuid should not be called for UserGroupExecution")
-	assert.False(t, setegidCalled, "syscallSetegid should not be called for UserGroupExecution")
+	assert.Equal(t, euidBefore, syscall.Geteuid())
+	assert.Equal(t, egidBefore, syscall.Getegid())
 }
 
 // TestChangeUserGroupInternal_NotCalledForUserGroupDryRun verifies that
@@ -386,54 +372,21 @@ func TestRestorePrivilegesAndMetrics_Failure(t *testing.T) {
 	assert.Equal(t, int64(0), snapshot.ElevationSuccesses)
 }
 
-// TestWithUserGroup tests the WithUserGroup functionality
-func TestWithUserGroup(t *testing.T) {
-	logger := slog.Default()
-	manager := &UnixPrivilegeManager{
-		logger:             logger,
-		privilegeSupported: false,
-	}
-
-	t.Run("with_empty_user_group", func(t *testing.T) {
-		fn := func() error {
-			return nil
-		}
-
-		// WithUserGroup doesn't take isDryRun parameter - it always tries to execute
-		// With privilegeSupported=false, it should fail
-		err := manager.WithUserGroup("", "", fn)
-		// Empty user/group with privilege not supported should fail
-		assert.Error(t, err)
-	})
-
-	t.Run("invalid_user", func(t *testing.T) {
-		fn := func() error {
-			return nil
-		}
-
-		err := manager.WithUserGroup("nonexistent_user_xyz123", "", fn)
-		assert.Error(t, err)
-	})
-}
-
-// TestIsUserGroupSupported tests user/group support detection
-func TestIsUserGroupSupported(t *testing.T) {
+// TestIsPrivilegedExecutionSupported tests privileged execution support detection
+func TestIsPrivilegedExecutionSupported(t *testing.T) {
 	logger := slog.Default()
 	manager := &UnixPrivilegeManager{
 		logger:             logger,
 		privilegeSupported: true,
 	}
 
-	// On Unix systems, user/group should always be supported
-	assert.True(t, manager.IsUserGroupSupported())
+	assert.True(t, manager.IsPrivilegedExecutionSupported())
 
-	// Test with privilege not supported
 	managerNoPriv := &UnixPrivilegeManager{
 		logger:             logger,
 		privilegeSupported: false,
 	}
-	// User/group support depends on privilege support
-	assert.False(t, managerNoPriv.IsUserGroupSupported())
+	assert.False(t, managerNoPriv.IsPrivilegedExecutionSupported())
 }
 
 // TestEscalatePrivileges tests privilege escalation
