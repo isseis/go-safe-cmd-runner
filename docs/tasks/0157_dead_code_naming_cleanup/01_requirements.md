@@ -8,7 +8,7 @@
 | Created | 2026-07-25 |
 | Review date | 2026-07-26 |
 | Reviewer | isseis |
-| Comments | 2026-07-26 に isseis が承認したのち、[03_implementation_plan.md](03_implementation_plan.md) の作成時の調査で AC-25 が現実には達成できない範囲を含むと判明したため draft に戻した（再承認が必要）。`user.Current()` を除いても、group-writable なファイルの判定は `IsUserInGroup` / `isUserOnlyGroupMember` を経由して `user.LookupId` を呼ぶため、passwd エントリなしでは判定が成立しない。AC-25 の対象を「権限判定に用いる UID の取得」に限定し、対象外節と「方針判断の記録」に根拠を追加した。AC の追加・削除・番号変更はない。 |
+| Comments | - |
 
 ## 関連 Issue
 
