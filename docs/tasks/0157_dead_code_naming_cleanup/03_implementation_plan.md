@@ -121,27 +121,27 @@
 
 **作業内容**
 
-- [ ] `internal/common/syscall_grouping_test.go` を新規作成し、`TestGroupAndSortSyscalls` を実装する。次のケースを表駆動で網羅する。
-  - [ ] 空スライスを渡すと `nil` が返る（境界値）
-  - [ ] 番号が昇順に並び替えられる（入力 257, 41, 1, 42 → 1, 41, 42, 257）
-  - [ ] 番号 `-1`（番号を特定できなかったエントリ）が末尾に置かれる
-  - [ ] 同一番号の複数エントリが 1 つに統合され、`Occurrences` が Location 昇順に並ぶ
-  - [ ] 先行エントリの `Name` が空で後続が非空のとき、非空の `Name` が採用される
-- [ ] `internal/fileanalysis/file_analysis_store_test.go` に `TestStore_ArgEvalResultsRoundtrip` を追加する。`Store.Update` で `record.SyscallAnalysis` に `ArgEvalResults` を設定し、`Store.Load` で読み戻す。サブテストは 2 つ。
-  - [ ] `ArgEvalResults` に 1 件設定した場合、`SyscallName` / `Status` / `Details` が往復後も一致する
-  - [ ] `ArgEvalResults` が nil の場合、往復後も nil のままである（`omitempty` の確認）
-- [ ] `internal/fileanalysis/syscall_store.go` をファイルごと削除する。
-- [ ] `internal/fileanalysis/syscall_store_test.go` をファイルごと削除する。
-- [ ] `internal/security/elfanalyzer/syscall_analyzer_integration_test.go` から `TestE2E_RecordToRunnerFallbackChain` を、その doc コメント（"TestE2E_RecordToRunnerFallbackChain tests the full pipeline..." で始まるブロック）ごと削除する。
-- [ ] 同ファイルの import から `fileanalysis` / `filevalidator` / `binaryanalyzer` の 3 つを削除する。
+- [x] `internal/common/syscall_grouping_test.go` を新規作成し、`TestGroupAndSortSyscalls` を実装する。次のケースを表駆動で網羅する。
+  - [x] 空スライスを渡すと `nil` が返る（境界値）
+  - [x] 番号が昇順に並び替えられる（入力 257, 41, 1, 42 → 1, 41, 42, 257）
+  - [x] 番号 `-1`（番号を特定できなかったエントリ）が末尾に置かれる
+  - [x] 同一番号の複数エントリが 1 つに統合され、`Occurrences` が Location 昇順に並ぶ
+  - [x] 先行エントリの `Name` が空で後続が非空のとき、非空の `Name` が採用される
+- [x] `internal/fileanalysis/file_analysis_store_test.go` に `TestStore_ArgEvalResultsRoundtrip` を追加する。`Store.Update` で `record.SyscallAnalysis` に `ArgEvalResults` を設定し、`Store.Load` で読み戻す。サブテストは 2 つ。
+  - [x] `ArgEvalResults` に 1 件設定した場合、`SyscallName` / `Status` / `Details` が往復後も一致する
+  - [x] `ArgEvalResults` が nil の場合、往復後も nil のままである（`omitempty` の確認）
+- [x] `internal/fileanalysis/syscall_store.go` をファイルごと削除する。
+- [x] `internal/fileanalysis/syscall_store_test.go` をファイルごと削除する。
+- [x] `internal/security/elfanalyzer/syscall_analyzer_integration_test.go` から `TestE2E_RecordToRunnerFallbackChain` を、その doc コメント（"TestE2E_RecordToRunnerFallbackChain tests the full pipeline..." で始まるブロック）ごと削除する。
+- [x] 同ファイルの import から `fileanalysis` / `filevalidator` / `binaryanalyzer` の 3 つを削除する。
 
 **完了条件**
 
-- [ ] `make fmt` → `make test` → `make lint` がすべて成功する
-- [ ] `go vet -tags 'test integration' ./...` が成功する（ビルドタグ付きファイルの型検査。§1.3 参照）
-- [ ] `make elfanalyzer-integration-test` が成功する（`-tags integration` での実行を含む）
-- [ ] `make deadcode` の出力に `internal/fileanalysis/syscall_store.go` の 3 行が現れない
-- [ ] `make build` が成功する
+- [x] `make fmt` → `make test` → `make lint` がすべて成功する
+- [x] `go vet -tags 'test integration' ./...` が成功する（ビルドタグ付きファイルの型検査。§1.3 参照）
+- [x] `make elfanalyzer-integration-test` が成功する（`-tags integration` での実行を含む）
+- [x] `make deadcode` の出力に `internal/fileanalysis/syscall_store.go` の 3 行が現れない
+- [x] `make build` が成功する
 
 ### PR-1 作成ポイント: dead syscall analysis store removal
 
@@ -956,14 +956,14 @@ Phase 間に実装上の依存はない（設計書 §8.1）。以下の順序�
 
 ### 6.2 PR-1（ステップ 4-1 = Phase 4: `fileanalysis`）
 
-- [ ] `internal/common/syscall_grouping_test.go` の新設（5 ケース）
-- [ ] `TestStore_ArgEvalResultsRoundtrip` の追加（2 サブテスト）
-- [ ] `internal/fileanalysis/syscall_store.go` の削除
-- [ ] `internal/fileanalysis/syscall_store_test.go` の削除
-- [ ] `TestE2E_RecordToRunnerFallbackChain` と 3 import の削除
-- [ ] `make fmt` / `make test` / `make lint` / `make build` / `make elfanalyzer-integration-test` / `go vet -tags 'test integration' ./...` の成功
-- [ ] `make deadcode` から該当 3 行が消えたことの確認
-- [ ] §8 の横断検索のうち PR-1 が担当する 1 項目（`SyscallAnalysisStore` の用語集登録確認）の実施
+- [x] `internal/common/syscall_grouping_test.go` の新設（5 ケース）
+- [x] `TestStore_ArgEvalResultsRoundtrip` の追加（2 サブテスト）
+- [x] `internal/fileanalysis/syscall_store.go` の削除
+- [x] `internal/fileanalysis/syscall_store_test.go` の削除
+- [x] `TestE2E_RecordToRunnerFallbackChain` と 3 import の削除
+- [x] `make fmt` / `make test` / `make lint` / `make build` / `make elfanalyzer-integration-test` / `go vet -tags 'test integration' ./...` の成功
+- [x] `make deadcode` から該当 3 行が消えたことの確認
+- [x] §8 の横断検索のうち PR-1 が担当する 1 項目（`SyscallAnalysisStore` の用語集登録確認）の実施
 
 ### 6.3 PR-2（ステップ 3-1 = Phase 3 前半: `groupmembership` の改名）
 
@@ -1149,7 +1149,7 @@ rg は Rust の正規表現構文を用いるため、`\|` は選択ではなく
 - [ ] （PR-4）`rg -n 'filter_benchmark_test' docs/dev/` — 削除したファイルへの参照が残っていないこと
 - [ ] （PR-4）`rg -n 'environment/.*filtering' docs/dev/developer_guide/package_reference.md` — 一致 0 件であること。変更前は :29 と :87 の 2 件（`environment/`: "Environment variable processing and filtering"）が一致する
 - [ ] （PR-7）`rg -n 'privilege/unix\.go' docs/dev/architecture_design/security-architecture.ja.md docs/dev/architecture_design/security-architecture.md` — §5「特権管理」の構造体引用は設計書 §7.3 の判断に従い本タスクでは修正しない。Phase 2 で不正確さが増すことを確認し、[#919](https://github.com/isseis/go-safe-cmd-runner/issues/919) に追記すること
-- [ ] （PR-1）`rg -n 'SyscallAnalysisStore' docs/translation_glossary.md` — 用語集に削除対象の識別子が登録されていないこと（現状は未登録）
+- [x] （PR-1）`rg -n 'SyscallAnalysisStore' docs/translation_glossary.md` — 用語集に削除対象の識別子が登録されていないこと（現状は未登録）
 - [ ] （PR-2）`rg -n 'getProcessEUID' docs/translation_glossary.md` — 同上
 - [ ] （PR-5）`rg -n 'WithUserGroup' docs/translation_glossary.md` — 同上
 - [ ] （PR-7）`rg -n --glob '*_test.go' -e 'AC-M1-4' -e 'AC-M1-5'` — 一致 0 件であること。変更前は `internal/runner/base/privilege/unix_privilege_test.go:508` と `:540` の 2 件が一致し、いずれも削除対象のテストの doc コメントである

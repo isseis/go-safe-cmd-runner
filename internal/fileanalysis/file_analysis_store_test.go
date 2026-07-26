@@ -503,6 +503,77 @@ func TestStore_Load_V9DynLibDepsObjectFormat(t *testing.T) {
 	assert.Equal(t, 9, schemaErr.Actual)
 }
 
+func TestStore_ArgEvalResultsRoundtrip(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	analysisDir := filepath.Join(tmpDir, "analysis")
+
+	store, err := NewStore(analysisDir, &mockPathGetter{})
+	require.NoError(t, err)
+
+	testFile := filepath.Join(tmpDir, "test.bin")
+	err = os.WriteFile(testFile, []byte("test content"), 0o644)
+	require.NoError(t, err)
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
+
+	t.Run("ArgEvalResults roundtrip via Store.Update and Store.Load", func(t *testing.T) {
+		err = store.Update(rp, func(record *Record) error {
+			record.ContentHash = "sha256:argeval1"
+			record.SyscallAnalysis = &SyscallAnalysisData{
+				SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+					Architecture: "x86_64",
+					ArgEvalResults: []common.SyscallArgEvalResult{
+						{
+							SyscallName: "mprotect",
+							Status:      common.SyscallArgEvalExecConfirmed,
+							Details:     "prot=0x7",
+						},
+					},
+				},
+			}
+			return nil
+		})
+		require.NoError(t, err)
+
+		loaded, err := store.Load(rp)
+		require.NoError(t, err)
+		require.NotNil(t, loaded)
+		require.NotNil(t, loaded.SyscallAnalysis)
+
+		require.Len(t, loaded.SyscallAnalysis.ArgEvalResults, 1)
+		assert.Equal(t, "mprotect", loaded.SyscallAnalysis.ArgEvalResults[0].SyscallName)
+		assert.Equal(t, common.SyscallArgEvalExecConfirmed, loaded.SyscallAnalysis.ArgEvalResults[0].Status)
+		assert.Equal(t, "prot=0x7", loaded.SyscallAnalysis.ArgEvalResults[0].Details)
+	})
+
+	t.Run("nil ArgEvalResults remains nil after roundtrip", func(t *testing.T) {
+		testFile2 := filepath.Join(tmpDir, "test2.bin")
+		err = os.WriteFile(testFile2, []byte("test content 2"), 0o644)
+		require.NoError(t, err)
+		rp2, err := common.NewResolvedPath(testFile2)
+		require.NoError(t, err)
+
+		err = store.Update(rp2, func(record *Record) error {
+			record.ContentHash = "sha256:argevalnil"
+			record.SyscallAnalysis = &SyscallAnalysisData{
+				SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+					Architecture:   "x86_64",
+					ArgEvalResults: nil,
+				},
+			}
+			return nil
+		})
+		require.NoError(t, err)
+
+		loaded, err := store.Load(rp2)
+		require.NoError(t, err)
+		require.NotNil(t, loaded)
+		require.NotNil(t, loaded.SyscallAnalysis)
+
+		assert.Nil(t, loaded.SyscallAnalysis.ArgEvalResults)
+	})
+}
+
 // TestStore_Update_OldSchemaAllowsOverwrite verifies that Store.Update allows
 // overwriting a record with an older schema version (Actual < Expected).
 // This enables `record --force` to migrate records to the current schema version.
