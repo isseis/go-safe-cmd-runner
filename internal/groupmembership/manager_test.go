@@ -6,6 +6,7 @@ import (
 	"os/user"
 	"runtime"
 	"strconv"
+	"syscall"
 	"testing"
 	"time"
 
@@ -770,6 +771,64 @@ func TestGetProcessRealUID(t *testing.T) {
 		uid, err := getProcessRealUID()
 		assert.NoError(t, err)
 		assert.Equal(t, os.Getuid(), uid)
+	})
+}
+
+// TestCanCurrentUserSafelyWriteFile_UsesRealUID verifies that write-safety judgments are
+// driven solely by os.Getuid(), independent of the getProcessRealUID implementation detail
+// (step 3-2 replaced user.Current() with os.Getuid()).
+func TestCanCurrentUserSafelyWriteFile_UsesRealUID(t *testing.T) {
+	gm := New()
+
+	newTempFileWithPerm := func(t *testing.T, perm os.FileMode) (uint32, uint32, os.FileMode) {
+		t.Helper()
+		tempFile, err := os.CreateTemp("", "grouptest")
+		require.NoError(t, err)
+		name := tempFile.Name()
+		tempFile.Close()
+		t.Cleanup(func() { os.Remove(name) })
+
+		require.NoError(t, os.Chmod(name, perm))
+
+		fileInfo, err := os.Stat(name)
+		require.NoError(t, err)
+		stat, ok := fileInfo.Sys().(*syscall.Stat_t)
+		require.True(t, ok)
+
+		return stat.Uid, stat.Gid, fileInfo.Mode()
+	}
+
+	t.Run("owner-only writable file is writable", func(t *testing.T) {
+		uid, gid, mode := newTempFileWithPerm(t, 0o600)
+		canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, gid, mode)
+		assert.NoError(t, err)
+		assert.True(t, canWrite)
+
+		want, wantErr := gm.CanUserSafelyWriteFile(os.Getuid(), uid, gid, mode)
+		assert.Equal(t, wantErr, err)
+		assert.Equal(t, want, canWrite)
+	})
+
+	t.Run("world-writable file is rejected", func(t *testing.T) {
+		uid, gid, mode := newTempFileWithPerm(t, 0o666)
+		canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, gid, mode)
+		assert.False(t, canWrite)
+		assert.ErrorIs(t, err, ErrFileWorldWritable)
+
+		want, wantErr := gm.CanUserSafelyWriteFile(os.Getuid(), uid, gid, mode)
+		assert.Equal(t, want, canWrite)
+		assert.ErrorIs(t, wantErr, ErrFileWorldWritable)
+	})
+
+	t.Run("unwritable file is rejected", func(t *testing.T) {
+		uid, gid, mode := newTempFileWithPerm(t, 0o400)
+		canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, gid, mode)
+		assert.False(t, canWrite)
+		assert.ErrorIs(t, err, ErrFileNotWritable)
+
+		want, wantErr := gm.CanUserSafelyWriteFile(os.Getuid(), uid, gid, mode)
+		assert.Equal(t, want, canWrite)
+		assert.ErrorIs(t, wantErr, ErrFileNotWritable)
 	})
 }
 

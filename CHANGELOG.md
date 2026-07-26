@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+#### Permission checks no longer require a passwd entry for the process's own UID
+
+Previously, if the process's real UID had no resolvable passwd entry (an NSS failure with
+cgo enabled, or a missing/absent `/etc/passwd` entry with cgo disabled), permission checks
+failed to determine the UID and denied file access outright, stopping execution
+(fail-closed). The UID used for permission checks is now read directly from the kernel
+(`os.Getuid()`) instead of through the passwd database, so this failure mode no longer
+occurs and execution continues (fail-open) for this specific failure.
+
+The UID, GID, and permission bits used for the judgment, and the judgment rules
+themselves, are unchanged.
+
+Judgments for **group-writable files** still require a passwd entry, because they look up
+group membership (`user.LookupId`) to determine who else is in the file's group. For those
+files, a missing passwd entry continues to result in access being denied (fail-closed), as
+before.
+
 ## [1.0.0] - 2026-06-27
 
 ### Breaking Changes

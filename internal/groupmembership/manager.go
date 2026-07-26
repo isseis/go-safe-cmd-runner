@@ -496,26 +496,22 @@ func parseSudoUID(sudoUID string) (int, error) {
 }
 
 // getProcessRealUID returns the process's real UID, without considering SUDO_UID.
+// It reads the UID from the kernel via os.Getuid() and does not consult the passwd
+// database, so it does not depend on NSS or /etc/passwd.
 //
 // This function is primarily used for write operations where we want to verify
 // the running process has the necessary permissions to write files.
 //
+// The bounds check below cannot fail in practice because os.Getuid() always
+// succeeds and returns a valid UID. It is kept because CanCurrentUserSafelyReadFile
+// suppresses gosec G115 on the uint32 conversion with the stated justification that
+// the value was already validated here; removing the check would remove that ground.
+//
 // Returns:
 //   - int: The process's real UID
-//   - error: Error if the UID could not be determined or does not fit in uint32
+//   - error: ErrUIDOutOfBounds if the UID does not fit in uint32
 func getProcessRealUID() (int, error) {
-	// TODO(0157/3-2): replace user.Current() with os.Getuid() to remove the
-	// passwd dependency. The body is intentionally unchanged in step 3-1
-	// so that this step is behavior-only refactoring.
-	currentUser, err := user.Current()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get current user: %w", err)
-	}
-
-	currentUID, err := strconv.Atoi(currentUser.Uid)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse current user UID: %w", err)
-	}
+	currentUID := os.Getuid()
 
 	if currentUID < 0 || currentUID > math.MaxUint32 {
 		return 0, fmt.Errorf("%w: %d", ErrUIDOutOfBounds, currentUID)
