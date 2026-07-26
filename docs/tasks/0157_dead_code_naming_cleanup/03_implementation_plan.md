@@ -377,7 +377,7 @@
 - [x] `make fmt` → `make test` → `make lint` がすべて成功する。`make test`（= `unit-test`）は非 Darwin では `CGO_ENABLED=1 -race` と `CGO_ENABLED=0` の 2 回テストを実行するため、設計書 §7.5 が求める cgo 両構成の確認はこの時点で済んでいる
 - [x] `go vet -tags 'test integration' ./...` が成功する
 - [x] `rg -n 'user\.Current\(' internal/groupmembership/manager.go` の一致件数が 0 である（AC-18）
-- [ ] マージ前に CI の 2 レグ（`make test-ci-cgo1` / `make test-ci-cgo0`）が成功する
+- [x] マージ前に CI の 2 レグ（`make test-ci-cgo1` / `make test-ci-cgo0`）が成功する
 
 ### PR-3 作成ポイント: permission-check UID read from the kernel instead of passwd
 

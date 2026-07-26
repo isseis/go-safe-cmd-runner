@@ -502,10 +502,11 @@ func parseSudoUID(sudoUID string) (int, error) {
 // This function is primarily used for write operations where we want to verify
 // the running process has the necessary permissions to write files.
 //
-// The bounds check below cannot fail in practice because os.Getuid() always
-// succeeds and returns a valid UID. It is kept because CanCurrentUserSafelyReadFile
-// suppresses gosec G115 on the uint32 conversion with the stated justification that
-// the value was already validated here; removing the check would remove that ground.
+// The bounds check below is expected to never fail on supported platforms, since
+// os.Getuid() returns -1 only on platforms without Unix-style UIDs (e.g. Windows).
+// It is kept because CanCurrentUserSafelyReadFile suppresses gosec G115 on the
+// uint32 conversion with the stated justification that the value was already
+// validated here; removing the check would remove that ground.
 //
 // Returns:
 //   - int: The process's real UID

@@ -785,7 +785,7 @@ func TestCanCurrentUserSafelyWriteFile_UsesRealUID(t *testing.T) {
 		tempFile, err := os.CreateTemp("", "grouptest")
 		require.NoError(t, err)
 		name := tempFile.Name()
-		tempFile.Close()
+		require.NoError(t, tempFile.Close())
 		t.Cleanup(func() { os.Remove(name) })
 
 		require.NoError(t, os.Chmod(name, perm))
