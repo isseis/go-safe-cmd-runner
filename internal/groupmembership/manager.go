@@ -504,6 +504,9 @@ func parseSudoUID(sudoUID string) (int, error) {
 //   - int: The process's real UID
 //   - error: Error if the UID could not be determined or does not fit in uint32
 func getProcessRealUID() (int, error) {
+	// TODO(0157/3-2): replace user.Current() with os.Getuid() to remove the
+	// passwd dependency. The body is intentionally unchanged in step 3-1
+	// so that this step is behavior-only refactoring.
 	currentUser, err := user.Current()
 	if err != nil {
 		return 0, fmt.Errorf("failed to get current user: %w", err)

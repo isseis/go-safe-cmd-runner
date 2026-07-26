@@ -601,9 +601,9 @@ func TestGetPermissionCheckUID(t *testing.T) {
 		// Clear SUDO_UID if set
 		t.Setenv("SUDO_UID", "")
 
-		effectiveUID, err := getPermissionCheckUID()
+		uid, err := getPermissionCheckUID()
 		assert.NoError(t, err)
-		assert.Greater(t, effectiveUID, -1) // Should be non-negative
+		assert.Greater(t, uid, -1) // Should be non-negative
 	})
 
 	t.Run("simulated sudo environment for non-root user", func(t *testing.T) {
@@ -615,10 +615,10 @@ func TestGetPermissionCheckUID(t *testing.T) {
 			// Set SUDO_UID to simulate sudo environment
 			// When running as non-root, SUDO_UID should be ignored
 			t.Setenv("SUDO_UID", "1234")
-			effectiveUID, err := getPermissionCheckUID()
+			uid, err := getPermissionCheckUID()
 			assert.NoError(t, err)
 			// Should return current UID, not SUDO_UID, because we're not root
-			assert.Equal(t, currentUID, effectiveUID)
+			assert.Equal(t, currentUID, uid)
 		} else {
 			t.Skip("Skipping non-root test when running as root")
 		}
