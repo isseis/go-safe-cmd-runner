@@ -26,7 +26,7 @@ This document provides a detailed reference of the package structure in this cod
   - `runner/`: Command execution engine
     - `base/`: Generic packages (no dependency on flat packages)
       - `audit/`: Security audit logging
-      - `environment/`: Environment variable processing and filtering
+      - `environment/`: System environment enumeration and denylist checking
       - `executor/`: Command execution logic
       - `output/`: Output path validation and security
       - `privilege/`: Privilege management

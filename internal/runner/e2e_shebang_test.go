@@ -2,7 +2,7 @@
 
 // Package runner contains integration tests for shebang interpreter verification.
 //
-// These tests cover the full record → verification pipeline using real files,
+// These tests cover the full record -> verification pipeline using real files,
 // complementing the mock-based unit tests in group_executor_test.go and the
 // mock-based shebang unit tests in internal/verification/manager_shebang_test.go.
 //
@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
 	return binPath
 }
 
-// TestIntegration_ShebangVerification_DirectForm tests the full record → verification
+// TestIntegration_ShebangVerification_DirectForm tests the full record -> verification
 // pipeline for a script with a direct-form shebang (e.g. #!/bin/sh).
 //
 // Prerequisite: /bin/sh must exist (standard on all Linux systems).
@@ -94,7 +94,7 @@ func TestIntegration_ShebangVerification_DirectForm(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestIntegration_ShebangVerification_EnvForm tests the full record → verification
+// TestIntegration_ShebangVerification_EnvForm tests the full record -> verification
 // pipeline for a script with an env-form shebang (e.g. #!/usr/bin/env sh).
 //
 // Prerequisite: /usr/bin/env and sh must exist (standard on all Linux systems).
@@ -220,7 +220,6 @@ func TestIntegration_ShebangChainRunnerExecution(t *testing.T) {
 		WithVerificationManager(verificationManager),
 	)
 	require.NoError(t, err)
-	require.NoError(t, r.LoadSystemEnvironment())
 
 	err = r.Execute(context.Background(), nil)
 	assert.NoError(t, err)

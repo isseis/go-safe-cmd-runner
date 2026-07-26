@@ -69,7 +69,6 @@ func TestNewRunner(t *testing.T) {
 		assert.NotNil(t, runner)
 		assert.Equal(t, config, runner.config)
 		assert.NotNil(t, runner.executor)
-		assert.NotNil(t, runner.envVars)
 		assert.NotNil(t, runner.validator)
 		assert.Equal(t, "test-run-123", runner.runID)
 	})
@@ -799,8 +798,6 @@ func TestCommandGroup_NewFields(t *testing.T) {
 			)
 
 			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
-			require.NoError(t, err) // Load basic environment
-			err = runner.LoadSystemEnvironment()
 			require.NoError(t, err)
 
 			// Execute the group
@@ -923,9 +920,6 @@ func TestRunner_EnvironmentVariablePriority_GroupLevelSupport(t *testing.T) {
 				Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: tt.expectedVar + "\n", Stderr: ""}, nil)
 
 			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
-			require.NoError(t, err)
-
-			err = runner.LoadSystemEnvironment()
 			require.NoError(t, err)
 
 			ctx := context.Background()
@@ -1113,10 +1107,6 @@ func TestRunner_OutputCaptureEndToEnd(t *testing.T) {
 			runner, err := NewRunner(config, WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-end-to-end"))
 			require.NoError(t, err, "NewRunner should not return an error")
 
-			// Load basic environment
-			err = runner.LoadSystemEnvironment()
-			require.NoError(t, err, "LoadSystemEnvironment should not return an error")
-
 			// Verify runner was created properly with output capture configuration
 			runnerConfig := runner.config
 			assert.Equal(t, config, runnerConfig)
@@ -1218,10 +1208,6 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 			runner, err := NewRunner(config, WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-error-scenarios"))
 			require.NoError(t, err, "NewRunner should not return an error")
 
-			// Load basic environment
-			err = runner.LoadSystemEnvironment()
-			require.NoError(t, err, "LoadSystemEnvironment should not return an error")
-
 			// Execute the group - should fail
 			ctx := context.Background()
 			err = runner.ExecuteGroup(ctx, &config.Groups[0])
@@ -1293,10 +1279,6 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 	// Create runner with mock resource manager
 	runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-dry-run"))
 	require.NoError(t, err, "NewRunner should not return an error")
-
-	// Load basic environment
-	err = runner.LoadSystemEnvironment()
-	require.NoError(t, err, "LoadSystemEnvironment should not return an error")
 
 	// Enable dry-run mode through mock resource manager
 	mockResourceManager.SetMode(resource.ExecutionModeDryRun, nil)
@@ -1452,10 +1434,6 @@ args = ["No output capture"]
 		// Create runner to verify basic initialization works
 		runner, err := NewRunner(config, WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-toml-config"))
 		require.NoError(t, err, "NewRunner should not return an error")
-
-		// Load basic environment to verify runner setup
-		err = runner.LoadSystemEnvironment()
-		require.NoError(t, err, "LoadSystemEnvironment should not return an error")
 
 		// Verify runner configuration
 		runnerConfig := runner.config

@@ -162,14 +162,10 @@ DynLibDeps が記録済みのバイナリに対しては、実行時に ELF を�
 
 #### 実装詳細
 
-**許可リストアーキテクチャ**:
-```go
-// 場所: internal/runner/environment/filter.go:31-50
-type Filter struct {
-    config          *runnertypes.Config
-    globalAllowlist map[string]bool // O(1)検索パフォーマンス
-}
-```
+**許可リストの実際の適用箇所**:
+- `config.ProcessEnvImport`（`internal/runner/config/expansion.go`）: `env_import` 宣言に対する許可リスト照合を設定展開時に行う
+- `executor.BuildProcessEnvironment`（`internal/runner/base/executor/environment.go`）: 子プロセス環境の組み立て時に許可リストで絞り込みを行う
+- `internal/runner/base/environment` パッケージはシステム環境の列挙（`system_env.go`）と denylist 判定（`denylist.go`）を提供し、許可リストは扱わない
 
 **3レベル継承モデル**:
 

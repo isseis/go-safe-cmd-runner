@@ -1,9 +1,6 @@
 package executor
 
 import (
-	"os"
-
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
@@ -54,7 +51,7 @@ func BuildProcessEnvironment(
 	result := make(map[string]EnvVar)
 
 	// Step 1: Get system environment variables (filtered by allowlist)
-	systemEnv := getSystemEnvironment()
+	systemEnv := environment.ParseSystemEnvironment()
 	allowlist := runtimeGlobal.EnvAllowlist()
 
 	for _, name := range allowlist {
@@ -98,17 +95,6 @@ func EnvVarValues(m map[string]EnvVar) map[string]string {
 	result := make(map[string]string, len(m))
 	for k, v := range m {
 		result[k] = v.Value
-	}
-	return result
-}
-
-// getSystemEnvironment retrieves all system environment variables as a map.
-func getSystemEnvironment() map[string]string {
-	result := make(map[string]string)
-	for _, env := range os.Environ() {
-		if key, value, ok := common.ParseKeyValue(env); ok {
-			result[key] = value
-		}
 	}
 	return result
 }

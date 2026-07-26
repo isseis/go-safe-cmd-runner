@@ -162,14 +162,10 @@ Implements strict allowlist-based filtering of environment variables to prevent 
 
 #### Implementation Details
 
-**Allowlist Architecture**:
-```go
-// Location: internal/runner/environment/filter.go:31-50
-type Filter struct {
-    config          *runnertypes.Config
-    globalAllowlist map[string]bool // O(1) lookup performance
-}
-```
+**Actual Location of Allowlist Checks**:
+- `config.ProcessEnvImport` (`internal/runner/config/expansion.go`): performs allowlist matching for `env_import` declarations at config expansion time
+- `executor.BuildProcessEnvironment` (`internal/runner/base/executor/environment.go`): filters by allowlist when building the child process environment
+- The `internal/runner/base/environment` package provides system environment enumeration (`system_env.go`) and denylist checking (`denylist.go`); it does not handle allowlists
 
 **3-Level Inheritance Model**:
 

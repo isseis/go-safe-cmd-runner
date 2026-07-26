@@ -391,8 +391,8 @@
 
 **判定理由**: `mkplan2.md` step 4 の panel-mode トリガーのうち security-gate の挙動を下げる変更に該当する（権限チェックが passwd エントリ欠如時に fail-closed から fail-open へ変わる。設計書 §5.4）。本タスク全体で唯一の挙動変化である。
 
-- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [x] PR を作成した（[#925](https://github.com/isseis/go-safe-cmd-runner/pull/925)）
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -418,15 +418,15 @@
 
 **作業内容: `environment` パッケージ**
 
-- [ ] `filter.go` を `system_env.go` に `git mv` する。
-- [ ] `system_env.go` から `Filter` 型と `globalAllowlist` フィールドを削除する。
-- [ ] `NewFilter` を削除する。
-- [ ] `FilterSystemEnvironment` を削除する。
-- [ ] `FilterGlobalVariables` を削除する（空変数名の `slog.Warn` 分岐を含む。`common.ParseKeyValue` が空キーを拒否するため到達不能である。設計書 §4.2）。
-- [ ] `Source` 型と定数 `SourceSystem` / `SourceEnvFile` を削除する。
-- [ ] 未使用 sentinel 6 個（`ErrGroupNotFound` / `ErrVariableNameEmpty` / `ErrInvalidVariableName` / `ErrDangerousVariableValue` / `ErrVariableNotFound` / `ErrVariableNotAllowed`）と、それらを囲む `var` ブロックおよび "Note: ErrMalformedEnvVariable is defined in config package..." コメントを削除する。
-- [ ] `ParseSystemEnvironment` をメソッドからパッケージ関数 `func ParseSystemEnvironment() map[string]string` に変更する。本体（`os.Environ()` の走査と `common.ParseKeyValue` による分解）は変更しない。
-- [ ] パッケージコメントと `ParseSystemEnvironment` の doc コメントを次のとおり書き換える。AC-02 の検証式が `internal/runner/base/environment/` に `Filter` という語が現れないことを要求するため、書き換えた文中に `Filter` / `filter` を使わないこと。
+- [x] `filter.go` を `system_env.go` に `git mv` する。
+- [x] `system_env.go` から `Filter` 型と `globalAllowlist` フィールドを削除する。
+- [x] `NewFilter` を削除する。
+- [x] `FilterSystemEnvironment` を削除する。
+- [x] `FilterGlobalVariables` を削除する（空変数名の `slog.Warn` 分岐を含む。`common.ParseKeyValue` が空キーを拒否するため到達不能である。設計書 §4.2）。
+- [x] `Source` 型と定数 `SourceSystem` / `SourceEnvFile` を削除する。
+- [x] 未使用 sentinel 6 個（`ErrGroupNotFound` / `ErrVariableNameEmpty` / `ErrInvalidVariableName` / `ErrDangerousVariableValue` / `ErrVariableNotFound` / `ErrVariableNotAllowed`）と、それらを囲む `var` ブロックおよび "Note: ErrMalformedEnvVariable is defined in config package..." コメントを削除する。
+- [x] `ParseSystemEnvironment` をメソッドからパッケージ関数 `func ParseSystemEnvironment() map[string]string` に変更する。本体（`os.Environ()` の走査と `common.ParseKeyValue` による分解）は変更しない。
+- [x] パッケージコメントと `ParseSystemEnvironment` の doc コメントを次のとおり書き換える。AC-02 の検証式が `internal/runner/base/environment/` に `Filter` という語が現れないことを要求するため、書き換えた文中に `Filter` / `filter` を使わないこと。
 
   前:
   ```go
@@ -455,82 +455,82 @@
   // and denylist checks live.
   ```
 
-- [ ] 未使用になる `errors` / `log/slog` の import を削除する（`os` と `common` は残る）。
-- [ ] `filter_benchmark_test.go` を削除する。
+- [x] 未使用になる `errors` / `log/slog` の import を削除する（`os` と `common` は残る）。
+- [x] `filter_benchmark_test.go` を削除する。
 
 **作業内容: `environment` パッケージのテスト**
 
-- [ ] `filter_test.go` を `system_env_test.go` に `git mv` し、全面的に書き換える。
-- [ ] `TestNewFilter` を削除する（対象 API が消える）。
-- [ ] `TestNewFilter_WithAllowlist` を削除する（`globalAllowlist` の存在と要素数のみを検証しており、対象 API が消える）。
-- [ ] `TestFilterSystemEnvironment` を削除する。
-- [ ] `TestFilterGlobalVariables_SourceSystem` を削除する（allowlist 外の変数が通過することを期待値として固定しており、対象 API が消える）。
-- [ ] `TestFilterGlobalVariables_SourceEnvFile` を削除する。
-- [ ] `TestFilterGlobalVariables_EmptyVariableName` を削除する（検証対象の分岐が到達不能であり削除される）。
-- [ ] `TestFilterGlobalVariables_EmptyValue` を削除する（後述の `TestParseSystemEnvironment` が空値を引き継ぐ）。
-- [ ] `TestFilterGlobalVariables_SpecialCharactersInValue` を削除し、値に改行・タブ・引用符を含む検証を `TestParseSystemEnvironment_SpecialCharactersInValue` として新 API 向けに引き継ぐ。
-- [ ] `TestFilterGlobalVariables_EmptyMap` を削除する。
-- [ ] `TestParseSystemEnvironment` と `TestParseSystemEnvironment_EmptyEnvironment` をパッケージ関数呼び出しに合わせて書き換える（`NewFilter([]string{})` の生成を除去する）。
-- [ ] `TestParseSystemEnvironment` に、`=` を含まないエントリが除外されることの検証を追加する。`os.Environ()` に `=` を含まない値を注入することはできないため、`t.Setenv` で通常のエントリを設定したうえで、返り値のキーに空文字列が含まれないことを検証する形にする。
-- [ ] 不要になる `runnertypes` import を削除する。
+- [x] `filter_test.go` を `system_env_test.go` に `git mv` し、全面的に書き換える。
+- [x] `TestNewFilter` を削除する（対象 API が消える）。
+- [x] `TestNewFilter_WithAllowlist` を削除する（`globalAllowlist` の存在と要素数のみを検証しており、対象 API が消える）。
+- [x] `TestFilterSystemEnvironment` を削除する。
+- [x] `TestFilterGlobalVariables_SourceSystem` を削除する（allowlist 外の変数が通過することを期待値として固定しており、対象 API が消える）。
+- [x] `TestFilterGlobalVariables_SourceEnvFile` を削除する。
+- [x] `TestFilterGlobalVariables_EmptyVariableName` を削除する（検証対象の分岐が到達不能であり削除される）。
+- [x] `TestFilterGlobalVariables_EmptyValue` を削除する（後述の `TestParseSystemEnvironment` が空値を引き継ぐ）。
+- [x] `TestFilterGlobalVariables_SpecialCharactersInValue` を削除し、値に改行・タブ・引用符を含む検証を `TestParseSystemEnvironment_SpecialCharactersInValue` として新 API 向けに引き継ぐ。
+- [x] `TestFilterGlobalVariables_EmptyMap` を削除する。
+- [x] `TestParseSystemEnvironment` と `TestParseSystemEnvironment_EmptyEnvironment` をパッケージ関数呼び出しに合わせて書き換える（`NewFilter([]string{})` の生成を除去する）。
+- [x] `TestParseSystemEnvironment` に、`=` を含まないエントリが除外されることの検証を追加する。`os.Environ()` に `=` を含まない値を注入することはできないため、`t.Setenv` で通常のエントリを設定したうえで、返り値のキーに空文字列が含まれないことを検証する形にする。
+- [x] 不要になる `runnertypes` import を削除する。
 
 **作業内容: `executor` の重複削除**
 
-- [ ] `internal/runner/base/executor/environment.go` の `getSystemEnvironment` を削除する。
-- [ ] `BuildProcessEnvironment` の "Step 1" ブロック（:57、コード内コメントの区切り）を `systemEnv := environment.ParseSystemEnvironment()` に変更する。
-- [ ] 未使用になる `os` と `common` の import を削除する（`environment` / `runnertypes` は残る）。
+- [x] `internal/runner/base/executor/environment.go` の `getSystemEnvironment` を削除する。
+- [x] `BuildProcessEnvironment` の "Step 1" ブロック（:57、コード内コメントの区切り）を `systemEnv := environment.ParseSystemEnvironment()` に変更する。
+- [x] 未使用になる `os` と `common` の import を削除する（`environment` / `runnertypes` は残る）。
 
 **作業内容: `config` 層**
 
-- [ ] `internal/runner/config/expansion.go:866` を `runtime.SystemEnv = environment.ParseSystemEnvironment()` に変更する。
-- [ ] `internal/runner/config/expansion_test.go` に `TestExpandGlobal_SystemEnvIncludesAllParsableEntries` を追加する。`t.Setenv` で `EnvAllowed` に含まれない変数を設定し、`ExpandGlobal` の結果の `runtime.SystemEnv` にその変数がキー・値ともに含まれること、および `environment.ParseSystemEnvironment()` の返り値と一致することを検証する（AC-03）。
+- [x] `internal/runner/config/expansion.go:866` を `runtime.SystemEnv = environment.ParseSystemEnvironment()` に変更する。
+- [x] `internal/runner/config/expansion_test.go` に `TestExpandGlobal_SystemEnvIncludesAllParsableEntries` を追加する。`t.Setenv` で `EnvAllowed` に含まれない変数を設定し、`ExpandGlobal` の結果の `runtime.SystemEnv` にその変数がキー・値ともに含まれること、および `environment.ParseSystemEnvironment()` の返り値と一致することを検証する（AC-03）。
 
 **作業内容: `Runner` のデッドコード削除**
 
-- [ ] `internal/runner/runner.go` から `envVars` フィールド（:66）を削除する。
-- [ ] `envFilter` フィールド（:69）を削除する。
-- [ ] `LoadSystemEnvironment` メソッド（:388-397）とその doc コメントを削除する。
-- [ ] `NewRunner` 内の `envFilter` 生成（:322-323、"// Create environment filter" コメントを含む）を削除する。
-- [ ] `Runner` リテラルの `envVars: make(map[string]string)`（:343）と `envFilter: envFilter`（:346）を削除する。
-- [ ] `environment` の import を削除する。
-- [ ] `cmd/runner/main.go` の `LoadSystemEnvironment()` 呼び出しブロック（:420-423、"// Load system environment variables" コメントを含む）を削除する。
+- [x] `internal/runner/runner.go` から `envVars` フィールド（:66）を削除する。
+- [x] `envFilter` フィールド（:69）を削除する。
+- [x] `LoadSystemEnvironment` メソッド（:388-397）とその doc コメントを削除する。
+- [x] `NewRunner` 内の `envFilter` 生成（:322-323、"// Create environment filter" コメントを含む）を削除する。
+- [x] `Runner` リテラルの `envVars: make(map[string]string)`（:343）と `envFilter: envFilter`（:346）を削除する。
+- [x] `environment` の import を削除する。
+- [x] `cmd/runner/main.go` の `LoadSystemEnvironment()` 呼び出しブロック（:420-423、"// Load system environment variables" コメントを含む）を削除する。
 
 **作業内容: 呼び出し元テストの更新**
 
 `LoadSystemEnvironment` の呼び出し箇所は `rg -n 'LoadSystemEnvironment' --glob '*.go'` で列挙できる。すべて削除する。行番号ではなくこのパターンで特定する。
 
-- [ ] `internal/runner/runner_test.go:72` の `assert.NotNil(t, runner.envVars)` を削除する（削除しないとコンパイルできない）。
-- [ ] `internal/runner/runner_test.go` の 6 箇所の `err = runner.LoadSystemEnvironment()` と直後の `require.NoError` を削除する。あわせて直前の "// Load basic environment" 系コメントも削除する。いずれも `err` は `NewRunner` の行で宣言済みのため、後続行の修正は不要である。
-- [ ] `cmd/runner/integration_workdir_test.go` の 2 箇所（ヘルパー `executeRunnerWithTimeout` 内と `TestIntegration_ErrorCleanup` 内）で、`err := r.LoadSystemEnvironment()` と `require.NoError(t, err)` を削除し、**後続の `err = r.Execute(ctx, nil)` を `err := r.Execute(ctx, nil)` に変更する**（`err` の宣言が失われるため）。
-- [ ] `cmd/runner/integration_workdir_test.go:189` のヘルパー doc コメントを書き換える。
+- [x] `internal/runner/runner_test.go:72` の `assert.NotNil(t, runner.envVars)` を削除する（削除しないとコンパイルできない）。
+- [x] `internal/runner/runner_test.go` の 6 箇所の `err = runner.LoadSystemEnvironment()` と直後の `require.NoError` を削除する。あわせて直前の "// Load basic environment" 系コメントも削除する。いずれも `err` は `NewRunner` の行で宣言済みのため、後続行の修正は不要である。
+- [x] `cmd/runner/integration_workdir_test.go` の 2 箇所（ヘルパー `executeRunnerWithTimeout` 内と `TestIntegration_ErrorCleanup` 内）で、`err := r.LoadSystemEnvironment()` と `require.NoError(t, err)` を削除し、**後続の `err = r.Execute(ctx, nil)` を `err := r.Execute(ctx, nil)` に変更する**（`err` の宣言が失われるため）。
+- [x] `cmd/runner/integration_workdir_test.go:189` のヘルパー doc コメントを書き換える。
 
   前: `// executeRunnerWithTimeout executes a runner with LoadSystemEnvironment and ExecuteFiltered`
   後: `// executeRunnerWithTimeout runs the given runner under a timeout and requires it to succeed.`
-- [ ] `cmd/runner/integration_auto_vars_test.go` の `err = r.LoadSystemEnvironment()` と `require.NoError` を削除する。
-- [ ] `cmd/runner/integration_test_helpers.go` の `err = r.LoadSystemEnvironment()` と `require.NoError` を削除する。
-- [ ] `internal/runner/e2e_shebang_test.go` の `require.NoError(t, r.LoadSystemEnvironment())` を削除する。
-- [ ] `internal/runner/e2e_dynlib_verification_test.go` の 2 箇所の `require.NoError(t, r.LoadSystemEnvironment())` を削除する。
+- [x] `cmd/runner/integration_auto_vars_test.go` の `err = r.LoadSystemEnvironment()` と `require.NoError` を削除する。
+- [x] `cmd/runner/integration_test_helpers.go` の `err = r.LoadSystemEnvironment()` と `require.NoError` を削除する。
+- [x] `internal/runner/e2e_shebang_test.go` の `require.NoError(t, r.LoadSystemEnvironment())` を削除する。
+- [x] `internal/runner/e2e_dynlib_verification_test.go` の 2 箇所の `require.NoError(t, r.LoadSystemEnvironment())` を削除する。
 
 **作業内容: ドキュメントの追随**
 
-- [ ] `docs/dev/architecture_design/security-architecture.ja.md` §3「環境変数分離」の「許可リストアーキテクチャ」にある `Filter` 構造体の引用を削除する。削除範囲は**開きフェンス ` ```go `（:166）から閉じフェンス（:172）までのブロック全体**とする（設計書 §7.3 が示す ":167-170" は中身の行だけを指しており、そのまま消すと閉じフェンスが孤立して以降のレンダリングが崩れる）。削除したブロックの代わりに、次の 2 点を記述する（設計書 §1.5 の内容を要約する）。
-  - [ ] allowlist を適用しているのは `config.ProcessEnvImport`（`internal/runner/config/expansion.go`）と `executor.BuildProcessEnvironment`（`internal/runner/base/executor/environment.go`）の 2 箇所であること
-  - [ ] `internal/runner/base/environment` はシステム環境の列挙（`system_env.go`）と denylist 判定（`denylist.go`）を提供し、allowlist は扱わないこと
-- [ ] 同節の残りの記述（3 レベル継承モデル、継承モード）が Phase 1 適用後の実装と矛盾しないことを確認する。矛盾が見つかった場合、修正が**同節内の記述の差し替えに収まるなら**同じ PR で修正する。それを超える範囲（節の再構成、他節との整合が必要な場合）に及ぶと判明した時点で本 PR では修正せず、[#919](https://github.com/isseis/go-safe-cmd-runner/issues/919)（`security-architecture` の全面更新）へ具体箇所を追記して委ねる。PR の規模を planning 時に見積もれない状態にしないための境界である。
-- [ ] `docs/dev/architecture_design/config-inheritance-behavior.ja.md` の :41 と :58 が `env_allowlist` 継承の実装として `filter.go` へ張っている Markdown リンク（リンク先は `../../internal/runner/environment/filter.go`）を修正する。このリンクは現時点で既に壊れている（相対深度が 1 段浅く、かつパッケージは `internal/runner/base/environment/` へ移動済み）うえ、Phase 1 後は参照先のファイル自体が存在しなくなる。継承の実際の実装先（`internal/runner/config/expansion.go` の `ProcessEnvImport` と `internal/runner/base/executor/environment.go` の `BuildProcessEnvironment`）へ差し替える。
-- [ ] `docs/dev/developer_guide/design-implementation-overview.ja.md:117` の見出し `#### 5. 環境セキュリティ (`internal/runner/environment/`)` のパスを、実在する `internal/runner/base/environment/` へ修正する。あわせて同節の本文が Phase 1 適用後の責務（システム環境の列挙と denylist 判定）と矛盾しないことを確認する。矛盾があれば、同節（`#### 5. 環境セキュリティ` の見出しから次の `####` 見出しまで）の範囲内で修正する。この範囲を超える修正が必要と判明した場合は前項と同じ扱いとし、[#919](https://github.com/isseis/go-safe-cmd-runner/issues/919) へ委ねる。
-- [ ] 上記 3 つの日本語版の修正を先にコミットしたうえで、`docs/dev/architecture_design/security-architecture.md`、`config-inheritance-behavior.md`、`docs/dev/developer_guide/design-implementation-overview.md` の同じ箇所へ `/mktrans` で反映する。
-- [ ] `docs/dev/developer_guide/package_reference.md` の :29 と :87 の 2 箇所の `environment/` の説明を、`Environment variable processing and filtering` から実態（システム環境の列挙と denylist 判定）を表す英語表現へ書き換える。
+- [x] `docs/dev/architecture_design/security-architecture.ja.md` §3「環境変数分離」の「許可リストアーキテクチャ」にある `Filter` 構造体の引用を削除する。削除範囲は**開きフェンス ` ```go `（:166）から閉じフェンス（:172）までのブロック全体**とする（設計書 §7.3 が示す ":167-170" は中身の行だけを指しており、そのまま消すと閉じフェンスが孤立して以降のレンダリングが崩れる）。削除したブロックの代わりに、次の 2 点を記述する（設計書 §1.5 の内容を要約する）。
+  - [x] allowlist を適用しているのは `config.ProcessEnvImport`（`internal/runner/config/expansion.go`）と `executor.BuildProcessEnvironment`（`internal/runner/base/executor/environment.go`）の 2 箇所であること
+  - [x] `internal/runner/base/environment` はシステム環境の列挙（`system_env.go`）と denylist 判定（`denylist.go`）を提供し、allowlist は扱わないこと
+- [x] 同節の残りの記述（3 レベル継承モデル、継承モード）が Phase 1 適用後の実装と矛盾しないことを確認する。矛盾が見つかった場合、修正が**同節内の記述の差し替えに収まるなら**同じ PR で修正する。それを超える範囲（節の再構成、他節との整合が必要な場合）に及ぶと判明した時点で本 PR では修正せず、[#919](https://github.com/isseis/go-safe-cmd-runner/issues/919)（`security-architecture` の全面更新）へ具体箇所を追記して委ねる。PR の規模を planning 時に見積もれない状態にしないための境界である。
+- [x] `docs/dev/architecture_design/config-inheritance-behavior.ja.md` の :41 と :58 が `env_allowlist` 継承の実装として `filter.go` へ張っている Markdown リンク（リンク先は `../../internal/runner/environment/filter.go`）を修正する。このリンクは現時点で既に壊れている（相対深度が 1 段浅く、かつパッケージは `internal/runner/base/environment/` へ移動済み）うえ、Phase 1 後は参照先のファイル自体が存在しなくなる。継承の実際の実装先（`internal/runner/config/expansion.go` の `ProcessEnvImport` と `internal/runner/base/executor/environment.go` の `BuildProcessEnvironment`）へ差し替える。
+- [x] `docs/dev/developer_guide/design-implementation-overview.ja.md:117` の見出し `#### 5. 環境セキュリティ (`internal/runner/environment/`)` のパスを、実在する `internal/runner/base/environment/` へ修正する。あわせて同節の本文が Phase 1 適用後の責務（システム環境の列挙と denylist 判定）と矛盾しないことを確認する。矛盾があれば、同節（`#### 5. 環境セキュリティ` の見出しから次の `####` 見出しまで）の範囲内で修正する。この範囲を超える修正が必要と判明した場合は前項と同じ扱いとし、[#919](https://github.com/isseis/go-safe-cmd-runner/issues/919) へ委ねる。
+- [x] 上記 3 つの日本語版の修正を先にコミットしたうえで、`docs/dev/architecture_design/security-architecture.md`、`config-inheritance-behavior.md`、`docs/dev/developer_guide/design-implementation-overview.md` の同じ箇所へ `/mktrans` で反映する。
+- [x] `docs/dev/developer_guide/package_reference.md` の :29 と :87 の 2 箇所の `environment/` の説明を、`Environment variable processing and filtering` から実態（システム環境の列挙と denylist 判定）を表す英語表現へ書き換える。
 
 **完了条件**
 
-- [ ] `make fmt` → `make test` → `make lint` がすべて成功する
-- [ ] `go vet -tags 'test integration' ./...` が成功する
-- [ ] `make build` が成功する
-- [ ] `cmd/runner` の統合テストと `internal/runner` の E2E テストが成功する（環境変数解決の回帰確認）
-- [ ] 本ステップのブランチ基点（`main` から分岐した直後）で `make verify-docs` を実行して基準値を実測し、編集後の `build/verification-reports/links_report.txt` の内部リンク破損数がその基準値から**増えていない**こと。同コマンドは成功で終了することはない（本タスク着手時点の実測値は 230 件で、大半は `docs/dev/architecture_design/` 配下の相対深度の誤りである。§1.3 参照）。基準値を「着手前」ではなくブランチ基点で取り直すのは、先行 PR や無関係なドキュメント変更で値が動くためである
-- [ ] 同レポートに `security-architecture.{ja.,}md` / `design-implementation-overview.{ja.,}md` / `package_reference.md` の項目が現れないこと（着手前も 0 件であり、今回の編集で増やさない）
-- [ ] 同レポートの `config-inheritance-behavior.{ja.,}md` の項目から、`internal/runner/environment/filter.go` を指す 2 件（各ファイル :41, :58）が消えていること
+- [x] `make fmt` → `make test` → `make lint` がすべて成功する
+- [x] `go vet -tags 'test integration' ./...` が成功する
+- [x] `make build` が成功する
+- [x] `cmd/runner` の統合テストと `internal/runner` の E2E テストが成功する（環境変数解決の回帰確認）
+- [x] 本ステップのブランチ基点（`main` から分岐した直後）で `make verify-docs` を実行して基準値を実測し、編集後の `build/verification-reports/links_report.txt` の内部リンク破損数がその基準値から**増えていない**こと。同コマンドは成功で終了することはない（本タスク着手時点の実測値は 230 件で、大半は `docs/dev/architecture_design/` 配下の相対深度の誤りである。§1.3 参照）。基準値を「着手前」ではなくブランチ基点で取り直すのは、先行 PR や無関係なドキュメント変更で値が動くためである
+- [x] 同レポートに `security-architecture.{ja.,}md` / `design-implementation-overview.{ja.,}md` / `package_reference.md` の項目が現れないこと（着手前も 0 件であり、今回の編集で増やさない）
+- [x] 同レポートの `config-inheritance-behavior.{ja.,}md` の項目から、`internal/runner/environment/filter.go` を指す 2 件（各ファイル :41, :58）が消えていること
 
 ### PR-4 作成ポイント: environment package reduction, Runner dead code removal, and doc alignment
 
@@ -544,8 +544,8 @@
 
 **判定理由**: `mkplan2.md` step 4 の 3 トリガーのいずれにも該当しない。変更は削除・改名とドキュメント追随に限られ、`既存コード調査結果` に競合する実装方針はなく、`mkplan.md` の Conditional checks で該当するのはビルドタグのコンパイルゲート 1 件のみである（`frontier-recommended` は 2 件以上を要する）。ただし本 PR は 7 本のうち最も変更ファイル数が多いため、レビュー観点にドキュメント修正の範囲上限を明示した。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

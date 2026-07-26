@@ -114,13 +114,12 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 }
 ```
 
-#### 5. 環境セキュリティ (`internal/runner/environment/`)
-- **目的**: ゼロトラスト環境変数フィルタリング
+#### 5. 環境セキュリティ (`internal/runner/base/environment/`)
+- **目的**: システム環境変数の列挙と禁止変数名の一元判定
 - **主要機能**:
-  - グローバルレベルとグループレベルでの許可リストベースフィルタリング
-  - 危険パターン検出（パスワード、トークンなど）
-  - 継承制御（継承/明示的/拒否モード）
-  - 変数名と値の検証
+  - システム環境変数の列挙（`system_env.go`）
+  - 禁止環境変数名の判定（`denylist.go`）
+  - 許可リスト照合は `config.ProcessEnvImport`（`expansion.go`）と `executor.BuildProcessEnvironment`（`environment.go`）が行う
 
 #### 6. 安全なファイル操作 (`internal/safefileio/`)
 - **目的**: 現代的なLinuxセキュリティプリミティブを使用したシンボリックリンクセーフなファイル操作

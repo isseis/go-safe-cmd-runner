@@ -1,7 +1,7 @@
 //go:build test
 
-// Package runner contains integration tests for the F-001 (identity hash
-// re-verification) and F-004 (dependency resolution re-execution) TOCTOU
+// Package runner contains integration tests for the identity hash
+// re-verification and dependency resolution re-execution TOCTOU
 // fixes, exercised end-to-end through a real GroupExecutor/Runner rather than
 // the mocked VerificationManager used by group_executor_test.go.
 //
@@ -28,7 +28,7 @@ import (
 )
 
 // TestGroupExecutor_F001_HashMismatchBlocksExecution reproduces the exact
-// TOCTOU window F-001 closes. ExecuteGroup's step 7 (verifyGroupFiles)
+// TOCTOU window identity hash re-verification closes. ExecuteGroup's step 7 (verifyGroupFiles)
 // computes and caches every command's ExpandedCmdContentHash before step 8
 // (executeAllCommands) runs any command for real. If an earlier command
 // replaces a later command's binary as a side effect of its own real
@@ -87,7 +87,6 @@ func TestGroupExecutor_F001_HashMismatchBlocksExecution(t *testing.T) {
 		WithVerificationManager(verificationManager),
 	)
 	require.NoError(t, err)
-	require.NoError(t, r.LoadSystemEnvironment())
 
 	err = r.Execute(context.Background(), nil)
 	require.Error(t, err, "execution must fail: the later command's binary was replaced after group verification but before its own execution")
@@ -158,7 +157,6 @@ func TestGroupExecutor_F004_LibraryShadowingBlocksExecution(t *testing.T) {
 		WithVerificationManager(verificationManager),
 	)
 	require.NoError(t, err)
-	require.NoError(t, r.LoadSystemEnvironment())
 
 	err = r.Execute(context.Background(), nil)
 	require.Error(t, err, "execution must fail: live dependency resolution no longer matches the recorded snapshot")

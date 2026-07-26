@@ -100,9 +100,6 @@ risk_level = "medium"
 	)
 	require.NoError(t, err)
 
-	err = r.LoadSystemEnvironment()
-	require.NoError(t, err)
-
 	// Execute the commands
 	ctx := context.Background()
 	err = r.Execute(ctx, nil)
