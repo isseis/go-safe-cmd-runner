@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGroupAndSortSyscalls(t *testing.T) {
@@ -22,7 +23,7 @@ func TestGroupAndSortSyscalls(t *testing.T) {
 			{Number: 42, Name: "connect"},
 		}
 		result := GroupAndSortSyscalls(input)
-		assert.Len(t, result, 4)
+		require.Len(t, result, 4)
 		assert.Equal(t, 1, result[0].Number)
 		assert.Equal(t, 41, result[1].Number)
 		assert.Equal(t, 42, result[2].Number)
@@ -35,7 +36,7 @@ func TestGroupAndSortSyscalls(t *testing.T) {
 			{Number: 5, Name: "fstat", Occurrences: []SyscallOccurrence{{Location: 0x401000, DeterminationMethod: "immediate"}}},
 		}
 		result := GroupAndSortSyscalls(input)
-		assert.Len(t, result, 2)
+		require.Len(t, result, 2)
 		assert.Equal(t, 5, result[0].Number)
 		assert.Equal(t, -1, result[1].Number)
 	})
@@ -46,10 +47,10 @@ func TestGroupAndSortSyscalls(t *testing.T) {
 			{Number: 41, Name: "socket", Occurrences: []SyscallOccurrence{{Location: 0x401000, DeterminationMethod: "go_wrapper"}}},
 		}
 		result := GroupAndSortSyscalls(input)
-		assert.Len(t, result, 1)
+		require.Len(t, result, 1)
 		assert.Equal(t, 41, result[0].Number)
 		assert.Equal(t, "socket", result[0].Name)
-		assert.Len(t, result[0].Occurrences, 2)
+		require.Len(t, result[0].Occurrences, 2)
 		assert.Equal(t, uint64(0x401000), result[0].Occurrences[0].Location)
 		assert.Equal(t, uint64(0x401020), result[0].Occurrences[1].Location)
 	})
@@ -60,7 +61,7 @@ func TestGroupAndSortSyscalls(t *testing.T) {
 			{Number: 41, Name: "socket", Occurrences: []SyscallOccurrence{{Location: 0, DeterminationMethod: "immediate", Source: "libc_symbol_import"}}},
 		}
 		result := GroupAndSortSyscalls(input)
-		assert.Len(t, result, 1)
+		require.Len(t, result, 1)
 		assert.Equal(t, "socket", result[0].Name)
 	})
 }
