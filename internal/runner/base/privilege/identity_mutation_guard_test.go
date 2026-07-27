@@ -11,6 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // identityMutationFuncNames lists the syscall/unix functions that change the
@@ -32,12 +35,15 @@ var identityMutationFuncNames = map[string]struct{}{
 	"Setfsgid":  {},
 }
 
-// identityMutationPkgNames lists the package identifiers (as they appear in
-// source, not import paths) whose identity-mutation functions this test
-// tracks.
-var identityMutationPkgNames = map[string]struct{}{
-	"syscall": {},
-	"unix":    {}, // golang.org/x/sys/unix
+// isTrackedIdentityMutationImportPath reports whether importPath is "syscall"
+// or golang.org/x/sys/unix (matched by suffix, like the sibling guard
+// forbiddenLiveIdentityPackage in internal/runner/base/risk, so a vendored or
+// differently rooted path still resolves).
+func isTrackedIdentityMutationImportPath(importPath string) bool {
+	if importPath == "syscall" {
+		return true
+	}
+	return importPath == "unix" || strings.HasSuffix(importPath, "/unix")
 }
 
 // allowedIdentityMutationCall identifies one permitted call site: the
@@ -57,7 +63,7 @@ var allowedIdentityMutationCalls = []allowedIdentityMutationCall{
 }
 
 // identityMutationCallSite records one identity-mutation call found by
-// parsing the package's source files.
+// parsing a source file.
 type identityMutationCallSite struct {
 	funcName string
 	callExpr string // rendered "pkg.Func(args)" for failure messages
@@ -82,17 +88,60 @@ type identityMutationCallSite struct {
 // is safe, and it means the check applies uniformly across platforms rather
 // than only the one running the test.
 //
+// The local package identifier of each call is resolved to its import path
+// via the file's import declarations (the same technique as
+// internal/runner/base/risk/live_identity_guard_test.go's
+// liveIdentityRefsIn), so an aliased import (import sc "syscall") cannot
+// bypass the guard and an unrelated local identifier named "syscall" or
+// "unix" cannot produce a false match.
+//
 // What this test cannot detect: a function value reference to an
 // identity-mutation function (e.g. a struct literal field initialized as
 // `syscallSeteuid: syscall.Seteuid`) or an indirect call through an injected
 // function field (e.g. `m.syscallSetegid(gid)`). It only recognizes
 // qualified call expressions of the form `syscall.Seteuid(...)` or
-// `unix.Seteuid(...)`. Both gaps currently exist in this package
-// (UnixPrivilegeManager.syscallSeteuid / syscallSetegid, and their use in
-// changeUserGroupInternal) and are closed in a later step that removes
-// those injected fields entirely and extends this test to also reject bare
-// function-value references to identity-mutation functions.
+// `unix.Seteuid(...)`, not every selector expression (unlike
+// liveIdentityRefsIn, which inspects all selectors and so already catches
+// value references). Widening this test to selector expressions is deferred
+// rather than done now: UnixPrivilegeManager.syscallSeteuid / syscallSetegid
+// are still legitimately initialized from syscall.Seteuid / syscall.Setegid
+// as of this test's introduction (see newPlatformManager and
+// changeUserGroupInternal in unix.go), so a selector-wide check would fail
+// against still-valid code. A later step removes those injected fields
+// entirely (they become unreachable once the demotion path they support is
+// deleted) and extends this test to also reject bare function-value
+// references to identity-mutation functions, at which point widening to
+// selector expressions closes this gap for good.
 func TestNoUnexpectedIdentityMutationSyscalls(t *testing.T) {
+	// Control 1: an aliased import is still resolved to "syscall" (matching is by
+	// import path, not local name), and the disallowed argument is flagged.
+	aliasSrc := "package p\n" +
+		"import sc \"syscall\"\n" +
+		"func escalatePrivileges() error { return sc.Seteuid(1) }\n"
+	aliasSites := identityMutationCallSitesInSource(t, "alias.go", aliasSrc)
+	require.Len(t, aliasSites, 1, "an aliased syscall import must still be recognized")
+	assert.Equal(t, "escalatePrivileges", aliasSites[0].funcName)
+	assert.Equal(t, "1", aliasSites[0].arg)
+
+	// Control 2: a call via a local identifier that happens to be named "syscall" but
+	// is not an import of the syscall package (here, a local variable) is not
+	// resolved to the real syscall package and so is not flagged. This exercises the
+	// import-path resolution rather than literal identifier matching.
+	shadowSrc := "package p\n" +
+		"type syscall struct{}\n" +
+		"func (syscall) Seteuid(int) error { return nil }\n" +
+		"func f() error { var syscall syscall; return syscall.Seteuid(1) }\n"
+	shadowSites := identityMutationCallSitesInSource(t, "shadow.go", shadowSrc)
+	assert.Empty(t, shadowSites, "a local identifier that merely shares the package's name must not be treated as the syscall package")
+
+	// Control 3: golang.org/x/sys/unix is matched by suffix.
+	unixSrc := "package p\n" +
+		"import \"golang.org/x/sys/unix\"\n" +
+		"func restorePrivileges() error { return unix.Seteuid(0) }\n"
+	unixSites := identityMutationCallSitesInSource(t, "unix.go", unixSrc)
+	require.Len(t, unixSites, 1)
+	assert.Equal(t, "restorePrivileges", unixSites[0].funcName)
+
 	sites := findIdentityMutationCallSites(t, ".")
 
 	seen := make(map[allowedIdentityMutationCall]bool, len(allowedIdentityMutationCalls))
@@ -108,8 +157,8 @@ func TestNoUnexpectedIdentityMutationSyscalls(t *testing.T) {
 
 	for _, allowed := range allowedIdentityMutationCalls {
 		if !seen[allowed] {
-			t.Errorf("expected call %s(%s) not found in function %s; the check may be vacuously passing",
-				"<identity-mutation func>", allowed.arg, allowed.funcName)
+			t.Errorf("expected call with argument %s not found in function %s; the check may be vacuously passing",
+				allowed.arg, allowed.funcName)
 		}
 	}
 }
@@ -130,12 +179,9 @@ func findIdentityMutationCallSites(t *testing.T, dir string) []identityMutationC
 	t.Helper()
 
 	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("failed to read directory %s: %v", dir, err)
-	}
+	require.NoErrorf(t, err, "failed to read directory %s", dir)
 
 	var sites []identityMutationCallSite
-	fset := token.NewFileSet()
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -143,67 +189,93 @@ func findIdentityMutationCallSites(t *testing.T, dir string) []identityMutationC
 		}
 
 		path := filepath.Join(dir, name)
-		file, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
-		if err != nil {
-			t.Fatalf("failed to parse %s: %v", path, err)
-		}
+		data, err := os.ReadFile(path)
+		require.NoErrorf(t, err, "failed to read %s", path)
 
-		for _, decl := range file.Decls {
-			funcDecl, ok := decl.(*ast.FuncDecl)
-			if !ok {
-				continue
-			}
-			sites = append(sites, findIdentityMutationCallsInFunc(funcDecl)...)
-		}
+		sites = append(sites, identityMutationCallSitesInSource(t, path, string(data))...)
 	}
 
 	return sites
 }
 
-// findIdentityMutationCallsInFunc walks funcDecl's body and returns every
-// call expression of the form `pkg.Func(args)` where pkg is a tracked
-// package identifier and Func is a tracked identity-mutation function name.
-func findIdentityMutationCallsInFunc(funcDecl *ast.FuncDecl) []identityMutationCallSite {
-	if funcDecl.Body == nil {
-		return nil
+// identityMutationCallSitesInSource parses src (Go source for a single file
+// named filename) and returns every call to a syscall/unix identity-mutation
+// function, with the local package identifier of each call resolved to its
+// import path via the file's import declarations.
+func identityMutationCallSitesInSource(t *testing.T, filename, src string) []identityMutationCallSite {
+	t.Helper()
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filename, src, 0)
+	require.NoErrorf(t, err, "failed to parse %s", filename)
+
+	// localToImportPath maps the local package identifier (alias if present, else
+	// the path's last element) to the full import path, so an aliased import
+	// cannot bypass the check by literal-name matching.
+	localToImportPath := make(map[string]string)
+	for _, imp := range file.Imports {
+		path := strings.Trim(imp.Path.Value, `"`)
+		local := path
+		if idx := strings.LastIndex(path, "/"); idx >= 0 {
+			local = path[idx+1:]
+		}
+		if imp.Name != nil {
+			local = imp.Name.Name
+		}
+		localToImportPath[local] = path
 	}
 
 	var sites []identityMutationCallSite
-	ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
+	for _, decl := range file.Decls {
+		funcDecl, ok := decl.(*ast.FuncDecl)
+		if !ok || funcDecl.Body == nil {
+			continue
 		}
 
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
+		ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
 
-		pkgIdent, ok := sel.X.(*ast.Ident)
-		if !ok {
-			return true
-		}
-		if _, isTrackedPkg := identityMutationPkgNames[pkgIdent.Name]; !isTrackedPkg {
-			return true
-		}
-		if _, isTrackedFunc := identityMutationFuncNames[sel.Sel.Name]; !isTrackedFunc {
-			return true
-		}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
 
-		args := make([]string, len(call.Args))
-		for i, arg := range call.Args {
-			args[i] = types.ExprString(arg)
-		}
-		arg := strings.Join(args, ", ")
+			pkgIdent, ok := sel.X.(*ast.Ident)
+			if !ok {
+				return true
+			}
 
-		sites = append(sites, identityMutationCallSite{
-			funcName: funcDecl.Name.Name,
-			callExpr: pkgIdent.Name + "." + sel.Sel.Name + "(" + arg + ")",
-			arg:      arg,
+			importPath, isImported := localToImportPath[pkgIdent.Name]
+			if !isImported {
+				// Not a resolved import (e.g. a local variable or type that merely
+				// shares the package's name): never treat this as a match, unlike
+				// falling back to the bare identifier.
+				return true
+			}
+			if !isTrackedIdentityMutationImportPath(importPath) {
+				return true
+			}
+			if _, isTrackedFunc := identityMutationFuncNames[sel.Sel.Name]; !isTrackedFunc {
+				return true
+			}
+
+			args := make([]string, len(call.Args))
+			for i, arg := range call.Args {
+				args[i] = types.ExprString(arg)
+			}
+			arg := strings.Join(args, ", ")
+
+			sites = append(sites, identityMutationCallSite{
+				funcName: funcDecl.Name.Name,
+				callExpr: pkgIdent.Name + "." + sel.Sel.Name + "(" + arg + ")",
+				arg:      arg,
+			})
+			return true
 		})
-		return true
-	})
+	}
 
 	return sites
 }
