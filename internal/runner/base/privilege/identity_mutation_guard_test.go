@@ -295,13 +295,20 @@ func isAllowedIdentityMutationCall(call allowedIdentityMutationCall) bool {
 // identity-mutation function, recording the name of the enclosing top-level
 // function or method.
 //
-// A file is skipped only if it is genuinely excluded from a production build:
-// *_test.go by the toolchain's own rule, and anything whose //go:build
-// constraint is false when the "test" tag is off. Skipping is deliberately NOT
-// based on the test_helpers.go naming convention alone -- a file could carry
-// that name without the tag, or lose the tag in a later edit, and would then be
-// silently exempted from this guard. isTestHelpersFileName remains as a
-// cross-check that fails loudly if the two ever disagree.
+// *_test.go is skipped by the toolchain's own naming rule. Beyond that, a file
+// is skipped only when its //go:build constraint positively requires the "test"
+// tag, because only such a file can never reach a production build. A
+// constraint that merely evaluates false without the tag -- "!linux && !windows",
+// or "!test" -- says nothing about test-only-ness and does not exempt the file.
+// Consequently the platform-constrained production files (identity_linux.go,
+// identity_other.go) are scanned whatever the current GOOS, which is the point:
+// the guard must cover every platform variant, not just the one being built.
+//
+// Skipping is deliberately NOT based on the test_helpers.go naming convention
+// alone -- a file could carry that name without the tag, or lose the tag in a
+// later edit, and would then be silently exempted from this guard.
+// isTestHelpersFileName remains as a one-directional cross-check that fails
+// loudly if the two ever disagree.
 func findIdentityMutationRefs(t *testing.T, dir string) ([]identityMutationCallSite, []identityMutationValueRef) {
 	t.Helper()
 
