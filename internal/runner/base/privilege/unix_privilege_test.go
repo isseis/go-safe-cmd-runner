@@ -142,9 +142,11 @@ func TestPerformElevation_Success(t *testing.T) {
 // OperationUserGroupExecution does not change the parent process's identity;
 // that is delegated to SysProcAttr.Credential in the executor.
 //
-// privilegeSupported: false is used here so that the test does not attempt actual
-// privilege escalation; full behavioral verification of the OperationUserGroup path
-// is delegated to step 2-3 (PR-7) where the needUserGroupChange flag is removed.
+// privilegeSupported: true is used with originalUID: 0 so that the WithPrivileges
+// code path is entered but actual seteuid calls are avoided, while still exercising
+// the full OperationUserGroup path; full behavioral verification of the
+// OperationUserGroup path is delegated to step 2-3 (PR-7) where the
+// needUserGroupChange flag is removed.
 func TestWithPrivileges_UserGroupExecutionDoesNotChangeIdentity(t *testing.T) {
 	logger := slog.Default()
 
@@ -165,9 +167,15 @@ func TestWithPrivileges_UserGroupExecutionDoesNotChangeIdentity(t *testing.T) {
 		RunAsUser:  "testuser",
 		RunAsGroup: "testgroup",
 	}
-	fn := func() error { return nil }
+	fnExecuted := false
+	fn := func() error {
+		fnExecuted = true
+		return nil
+	}
 
-	_ = manager.WithPrivileges(elevationCtx, fn)
+	err := manager.WithPrivileges(elevationCtx, fn)
+	assert.NoError(t, err)
+	assert.True(t, fnExecuted, "fn should have been executed")
 
 	assert.Equal(t, euidBefore, syscall.Geteuid())
 	assert.Equal(t, egidBefore, syscall.Getegid())
