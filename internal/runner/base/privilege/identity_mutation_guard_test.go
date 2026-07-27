@@ -343,15 +343,17 @@ func findIdentityMutationRefs(t *testing.T, dir string) ([]identityMutationCallS
 }
 
 // isTestOnlyBuildConstrained reports whether src's //go:build constraint
-// mentions the "test" tag, which in this repo means the file is not part of a
-// production build.
+// positively requires the "test" tag, which in this repo means the file is not
+// part of a production build.
 //
-// It deliberately tests for the tag's presence rather than evaluating the
+// It deliberately inspects the tag's polarity rather than evaluating the
 // constraint. Evaluation cannot distinguish the two reasons a constraint is
 // false: identity_other.go (`!linux && !windows`) is false on Linux but is
 // still production code, and this scan reads every platform variant on purpose.
-// Presence of the test tag is the property that actually marks a file as
-// non-production, and a production file has no reason to mention it.
+//
+// Only a positive requirement marks a file as non-production: `!test` selects
+// the file precisely when the test tag is absent, so it ships in production
+// builds and must stay under this security guard rather than be exempted.
 func isTestOnlyBuildConstrained(t *testing.T, filename, src string) bool {
 	t.Helper()
 
@@ -370,24 +372,29 @@ func isTestOnlyBuildConstrained(t *testing.T, filename, src string) bool {
 			}
 			expr, err := constraint.Parse(comment.Text)
 			require.NoErrorf(t, err, "failed to parse build constraint %q in %s", comment.Text, filename)
-			return constraintMentionsTag(expr, "test")
+			return constraintRequiresTag(expr, "test", false)
 		}
 	}
 	return false
 }
 
-// constraintMentionsTag reports whether expr references the named build tag
-// anywhere, at any nesting depth and under any negation.
-func constraintMentionsTag(expr constraint.Expr, tag string) bool {
+// constraintRequiresTag reports whether expr references the named build tag in
+// a non-negated position, at any nesting depth. negated carries the polarity of
+// the surrounding context and must be false at the top-level call.
+//
+// A mention under negation is ignored on purpose: `!tag` selects the file when
+// the tag is absent, which is the opposite of requiring it, so counting such a
+// mention would misclassify production code.
+func constraintRequiresTag(expr constraint.Expr, tag string, negated bool) bool {
 	switch e := expr.(type) {
 	case *constraint.TagExpr:
-		return e.Tag == tag
+		return !negated && e.Tag == tag
 	case *constraint.NotExpr:
-		return constraintMentionsTag(e.X, tag)
+		return constraintRequiresTag(e.X, tag, !negated)
 	case *constraint.AndExpr:
-		return constraintMentionsTag(e.X, tag) || constraintMentionsTag(e.Y, tag)
+		return constraintRequiresTag(e.X, tag, negated) || constraintRequiresTag(e.Y, tag, negated)
 	case *constraint.OrExpr:
-		return constraintMentionsTag(e.X, tag) || constraintMentionsTag(e.Y, tag)
+		return constraintRequiresTag(e.X, tag, negated) || constraintRequiresTag(e.Y, tag, negated)
 	default:
 		return false
 	}
@@ -406,14 +413,15 @@ func TestIsTestOnlyBuildConstrained(t *testing.T) {
 		constraint string
 		want       bool
 	}{
-		"test tag alone":                {"//go:build test", true},
-		"test tag with platform":        {"//go:build !windows && test", true},
-		"test tag in a disjunction":     {"//go:build test || performance", true},
-		"negated test tag":              {"//go:build !test", true},
-		"platform only, false on linux": {"//go:build !linux && !windows", false},
-		"platform only, true on linux":  {"//go:build linux", false},
-		"unrelated tag":                 {"//go:build integration", false},
-		"no constraint":                 {"", false},
+		"test tag alone":                       {"//go:build test", true},
+		"test tag with platform":               {"//go:build !windows && test", true},
+		"test tag in a disjunction":            {"//go:build test || performance", true},
+		"negated test tag is still production": {"//go:build !test", false},
+		"test tag with a negation elsewhere":   {"//go:build test && !windows", true},
+		"platform only, false on linux":        {"//go:build !linux && !windows", false},
+		"platform only, true on linux":         {"//go:build linux", false},
+		"unrelated tag":                        {"//go:build integration", false},
+		"no constraint":                        {"", false},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
