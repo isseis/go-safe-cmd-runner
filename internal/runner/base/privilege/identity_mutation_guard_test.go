@@ -162,6 +162,12 @@ func isAllowedIdentityMutationCall(call allowedIdentityMutationCall) bool {
 // findIdentityMutationCallSites parses every non-test .go file in dir and
 // returns every call to a syscall/unix identity-mutation function, recording
 // the name of the enclosing top-level function or method.
+//
+// Besides *_test.go, this also skips test_helpers.go / test_helpers_*.go:
+// per this repo's convention (docs/dev/developer_guide/test_organization.md,
+// "Classification B"), those always carry a `//go:build test` constraint and
+// so are never part of the production build, even though their name doesn't
+// end in "_test.go".
 func findIdentityMutationCallSites(t *testing.T, dir string) []identityMutationCallSite {
 	t.Helper()
 
@@ -171,7 +177,7 @@ func findIdentityMutationCallSites(t *testing.T, dir string) []identityMutationC
 	var sites []identityMutationCallSite
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || isTestHelpersFileName(name) {
 			continue
 		}
 
@@ -183,6 +189,14 @@ func findIdentityMutationCallSites(t *testing.T, dir string) []identityMutationC
 	}
 
 	return sites
+}
+
+// isTestHelpersFileName reports whether name matches this repo's
+// test-helper file naming convention: test_helpers.go or
+// test_helpers_<category>.go.
+func isTestHelpersFileName(name string) bool {
+	base := strings.TrimSuffix(name, ".go")
+	return base == "test_helpers" || strings.HasPrefix(base, "test_helpers_")
 }
 
 // identityMutationCallSitesInSource parses src (Go source for a single file
