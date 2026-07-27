@@ -768,7 +768,7 @@
   および、前: `m.logger.Info("User/group change requested", logAttrs...)`
   後: `m.logger.Info("Dry-run user/group resolution requested", logAttrs...)`
 
-- [x] dry-run の結果ログ文言 `"Dry-run mode: would change user/group privileges"` は**変更しない**。この文言は「もし実行すれば何が起きるか」を述べたものであり、実装と矛盾しないためである。
+- [x] dry-run の結果ログ文言 `"Dry-run mode: would change user/group privileges"` は**変更しない**。この文言は「もし実行すれば何が起きるか」を述べたものであり、実装と矛盾しないためである。ただし PR レビューにて、このレコードが実 ID と実効 ID を混在させている点が指摘された。`current_uid`/`current_gid` は実 ID である一方、user/group 未指定時の `target_*` のフォールバックは実効 ID を用いており、setuid バイナリでは dry-run が権限昇格を行わないため両者は実際に食い違う。そのため、同じレコードに `current_euid`/`current_egid` を追加し、実 ID と実効 ID の双方が見えるようにした。
 
 **作業内容: テストの更新**
 

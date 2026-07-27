@@ -551,11 +551,14 @@ func (m *UnixPrivilegeManager) resolveUserGroupForDryRun(userName, groupName str
 	}
 
 	dryRunLogAttrs := buildUserGroupLogAttrs(userName, groupName, effectiveGroupName, isDefaultGroup)
+	// Log both real and effective IDs: under a setuid binary they differ, and a dry-run never escalates.
 	dryRunLogAttrs = append(dryRunLogAttrs,
 		"target_uid", targetUID,
 		"target_gid", targetGID,
 		"current_uid", syscall.Getuid(),
-		"current_gid", syscall.Getgid())
+		"current_gid", syscall.Getgid(),
+		"current_euid", syscall.Geteuid(),
+		"current_egid", syscall.Getegid())
 	m.logger.Info("Dry-run mode: would change user/group privileges", dryRunLogAttrs...)
 
 	return nil
