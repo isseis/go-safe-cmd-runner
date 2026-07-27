@@ -84,7 +84,7 @@ This document provides a detailed reference of the package structure in this cod
   - **`runner/base/executor/`**: Command execution with output handling
   - **`runner/config/`**: TOML configuration loading and validation
   - **`runner/base/runnertypes/`**: Shared type definitions and interfaces
-  - **`runner/base/environment/`**: Environment variable processing and filtering
+  - **`runner/base/environment/`**: System environment enumeration and denylist checking
   - **`runner/base/variable/`**: Automatic variable generation
 
 #### Security
