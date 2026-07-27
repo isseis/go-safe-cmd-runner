@@ -160,17 +160,24 @@ func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.Elevati
 	return execCtx, nil
 }
 
-// performElevation performs the actual privilege escalation and user/group changes
+// performElevation performs the actual privilege escalation.
+//
+// Escalation is deliberately the last fallible step: WithPrivileges only registers
+// the deferred restore-and-verify once this function has returned successfully, so
+// anything that failed after a successful escalation would return with EUID 0 still
+// held and no restoration. Keeping escalation last makes that unreachable by
+// construction rather than by the current operation mapping, which is what the
+// removed post-escalation rollback block used to compensate for.
 func (m *UnixPrivilegeManager) performElevation(execCtx *executionContext) error {
-	if execCtx.needsPrivilegeEscalation {
-		if err := m.escalatePrivileges(execCtx.elevationCtx); err != nil {
-			return fmt.Errorf("privilege escalation failed: %w", err)
-		}
-	}
-
 	if execCtx.elevationCtx.Operation == runnertypes.OperationUserGroupDryRun {
 		if err := m.resolveUserGroupForDryRun(execCtx.elevationCtx.RunAsUser, execCtx.elevationCtx.RunAsGroup); err != nil {
 			return fmt.Errorf("user/group resolution failed: %w", err)
+		}
+	}
+
+	if execCtx.needsPrivilegeEscalation {
+		if err := m.escalatePrivileges(execCtx.elevationCtx); err != nil {
+			return fmt.Errorf("privilege escalation failed: %w", err)
 		}
 	}
 
@@ -223,8 +230,7 @@ func (m *UnixPrivilegeManager) restorePrivilegesAndMetrics(execCtx *executionCon
 	// logic and catches any leakage regardless of which restore path ran.
 	// Only privilege escalation changes identity; OperationUserGroupDryRun never mutates
 	// identity, so escalation alone gates verification.
-	needsVerification := execCtx.needsPrivilegeEscalation
-	if needsVerification {
+	if execCtx.needsPrivilegeEscalation {
 		if err := m.identityVerifier(); err != nil {
 			m.emergencyShutdown(err, fmt.Sprintf("identity_verification_failure_%s", shutdownContext))
 		}
@@ -461,7 +467,10 @@ func buildUserGroupLogAttrs(userName, groupName, effectiveGroupName string, isDe
 // group of this process is modified. Resolution failures are returned so that dry-run
 // output can report an unusable run_as_user/run_as_group.
 func (m *UnixPrivilegeManager) resolveUserGroupForDryRun(userName, groupName string) error {
-	logAttrs := []any{}
+	// Keep the dry_run attribute even though this function now runs only for
+	// dry-runs: log filters elsewhere key on it, and dropping it would leave this
+	// record findable only by message text.
+	logAttrs := []any{"dry_run", true}
 	if userName != "" {
 		logAttrs = append(logAttrs, "user", userName)
 	}

@@ -3,9 +3,11 @@
 package privilege
 
 import (
+	"bytes"
 	"errors"
 	"log/slog"
 	"os/user"
+	"strconv"
 	"syscall"
 	"testing"
 	"time"
@@ -99,7 +101,10 @@ func TestPerformElevation_Success(t *testing.T) {
 		privilegeSupported: false, // Set to false to skip actual syscalls
 	}
 
-	t.Run("no_privilege_escalation_needed", func(t *testing.T) {
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+
+	t.Run("dryrun_with_no_user_needs_no_escalation", func(t *testing.T) {
 		execCtx := &executionContext{
 			elevationCtx: runnertypes.ElevationContext{
 				Operation:   runnertypes.OperationUserGroupDryRun,
@@ -114,19 +119,25 @@ func TestPerformElevation_Success(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("only_dryrun_validation", func(t *testing.T) {
+	t.Run("dryrun_resolves_a_named_user_and_group", func(t *testing.T) {
+		primaryGroup, err := user.LookupGroupId(currentUser.Gid)
+		if err != nil {
+			t.Skipf("primary group %s of the test user has no name entry: %v", currentUser.Gid, err)
+		}
+
+		// Unlike the case above, this exercises the lookup branches for both a
+		// named user and an explicitly named group.
 		execCtx := &executionContext{
 			elevationCtx: runnertypes.ElevationContext{
 				Operation:   runnertypes.OperationUserGroupDryRun,
 				CommandName: "test-command",
-				RunAsUser:   "",
-				RunAsGroup:  "",
+				RunAsUser:   currentUser.Username,
+				RunAsGroup:  primaryGroup.Name,
 			},
 			needsPrivilegeEscalation: false,
 		}
 
-		err := manager.performElevation(execCtx)
-		assert.NoError(t, err)
+		assert.NoError(t, manager.performElevation(execCtx))
 	})
 }
 
@@ -175,6 +186,13 @@ func TestWithPrivileges_UserGroupExecutionDoesNotChangeIdentity(t *testing.T) {
 // TestWithPrivileges_UserGroupDryRunDoesNotChangeIdentity verifies that a
 // dry-run resolves and logs the would-be user/group change while leaving the
 // process's identity untouched.
+//
+// The identity assertions below are a smoke check, not the real guarantee: the
+// target is the current user, so a reinstated demotion would set the identity
+// to the values it already has, and in unprivileged CI it would fail with EPERM
+// and leave them unchanged anyway. Identity stability is actually enforced
+// statically by TestNoUnexpectedIdentityMutationSyscalls, and dynamically by the
+// privileged-environment run in the task plan.
 func TestWithPrivileges_UserGroupDryRunDoesNotChangeIdentity(t *testing.T) {
 	logger := slog.Default()
 
@@ -257,7 +275,7 @@ func TestPerformElevation_Failure(t *testing.T) {
 }
 
 // TestHandleCleanupAndMetrics_Success tests successful cleanup
-func TestHandleCleanupAndMetrics_Success(_ *testing.T) {
+func TestHandleCleanupAndMetrics_Success(t *testing.T) {
 	logger := slog.Default()
 	manager := &UnixPrivilegeManager{
 		logger:             logger,
@@ -276,7 +294,9 @@ func TestHandleCleanupAndMetrics_Success(_ *testing.T) {
 	// This should not panic
 	manager.handleCleanupAndMetrics(execCtx)
 
-	// No metrics assertion here; this test only verifies that cleanup does not panic.
+	// A dry-run that completed without panicking records an elevation success even
+	// though it never escalated.
+	assert.Equal(t, int64(1), manager.GetMetrics().ElevationSuccesses)
 }
 
 // TestHandleCleanupAndMetrics_WithError tests cleanup with errors
@@ -334,6 +354,32 @@ func TestRestorePrivilegesAndMetrics_Success(t *testing.T) {
 	snapshot := manager.GetMetrics()
 	// For OperationUserGroupDryRun, success should be recorded
 	assert.Equal(t, int64(1), snapshot.ElevationSuccesses)
+}
+
+// TestRestorePrivilegesAndMetrics_NoSuccessWithoutEscalationOrDryRun pins the
+// negative half of the metrics condition: with no escalation, success is
+// recorded only for OperationUserGroupDryRun. Without this, dropping the
+// operation test from that condition would leave the suite green.
+func TestRestorePrivilegesAndMetrics_NoSuccessWithoutEscalationOrDryRun(t *testing.T) {
+	manager := &UnixPrivilegeManager{
+		logger:             slog.Default(),
+		privilegeSupported: false,
+		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
+	}
+
+	execCtx := &executionContext{
+		elevationCtx: runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationFileValidation,
+			CommandName: "test-command",
+		},
+		needsPrivilegeEscalation: false,
+		start:                    time.Now(),
+	}
+
+	manager.restorePrivilegesAndMetrics(execCtx, nil, "normal execution", 10*time.Millisecond)
+
+	assert.Equal(t, int64(0), manager.GetMetrics().ElevationSuccesses,
+		"a non-dry-run operation that did not escalate must not record an elevation success")
 }
 
 // TestRestorePrivilegesAndMetrics_Failure tests privilege restoration failures
@@ -449,8 +495,12 @@ func TestEmergencyShutdown(t *testing.T) {
 }
 
 // TestResolveUserGroupForDryRun verifies that dry-run user/group resolution
-// reports lookup failures, falls back to the user's primary group when no group
-// is given, and never mutates the process's identity on any path.
+// reports lookup failures and resolves to the expected UID/GID, including the
+// fallback to the user's primary group when no group is given.
+//
+// The resolved values are read back from the emitted log record because that
+// log line is the function's only output besides the error -- and it is what a
+// dry-run operator actually sees.
 func TestResolveUserGroupForDryRun(t *testing.T) {
 	currentUser, err := user.Current()
 	require.NoError(t, err)
@@ -459,53 +509,78 @@ func TestResolveUserGroupForDryRun(t *testing.T) {
 		name      string
 		userName  string
 		groupName string
-		wantErr   bool
+		wantErrIs string
+		wantUID   string
+		wantGID   string
 	}{
 		{
-			name:     "nonexistent_user_returns_error",
-			userName: "nonexistent_user_xyz123",
-			wantErr:  true,
+			name:      "nonexistent_user_returns_error",
+			userName:  "nonexistent_user_xyz123",
+			wantErrIs: "failed to lookup user nonexistent_user_xyz123",
 		},
 		{
 			name:      "nonexistent_group_returns_error",
 			userName:  currentUser.Username,
 			groupName: "nonexistent_group_xyz123",
-			wantErr:   true,
+			wantErrIs: "failed to lookup group nonexistent_group_xyz123",
 		},
 		{
-			name:     "group_unspecified_falls_back_to_primary_group",
+			name:     "group_unspecified_falls_back_to_users_primary_group",
 			userName: currentUser.Username,
-			wantErr:  false,
+			wantUID:  currentUser.Uid,
+			wantGID:  currentUser.Gid,
 		},
 		{
-			name:     "empty_user_and_group_succeeds",
-			userName: "",
-			wantErr:  false,
+			// Boundary: with neither name given there is nothing to look up, so
+			// resolution reports the identity the process already has.
+			name:    "empty_user_and_group_resolves_to_current_identity",
+			wantUID: strconv.Itoa(syscall.Geteuid()),
+			wantGID: strconv.Itoa(syscall.Getegid()),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
 			manager := &UnixPrivilegeManager{
-				logger:             slog.Default(),
+				logger:             slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})),
 				privilegeSupported: true,
 				osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
 			}
 
-			euidBefore := syscall.Geteuid()
-			egidBefore := syscall.Getegid()
-
 			err := manager.resolveUserGroupForDryRun(tt.userName, tt.groupName)
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
 
-			assert.Equal(t, euidBefore, syscall.Geteuid(), "resolution must not change the effective UID")
-			assert.Equal(t, egidBefore, syscall.Getegid(), "resolution must not change the effective GID")
+			if tt.wantErrIs != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErrIs)
+				return
+			}
+			require.NoError(t, err)
+
+			logged := buf.String()
+			assert.Contains(t, logged, `"target_uid":`+tt.wantUID,
+				"resolution should report the target UID; log was: %s", logged)
+			assert.Contains(t, logged, `"target_gid":`+tt.wantGID,
+				"resolution should report the target GID; log was: %s", logged)
 		})
 	}
+
+	t.Run("primary_group_fallback_is_labelled_in_the_log", func(t *testing.T) {
+		var buf bytes.Buffer
+		manager := &UnixPrivilegeManager{
+			logger:             slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})),
+			privilegeSupported: true,
+			osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
+		}
+
+		require.NoError(t, manager.resolveUserGroupForDryRun(currentUser.Username, ""))
+
+		logged := buf.String()
+		assert.Contains(t, logged, "Defaulting to user's primary group",
+			"omitting the group should take the primary-group fallback branch; log was: %s", logged)
+		assert.Contains(t, logged, "(user's primary group)",
+			"the reported group should be marked as the user's primary group; log was: %s", logged)
+	})
 }
 
 // TestDefaultIdentityVerifier tests that defaultIdentityVerifier passes in a normal

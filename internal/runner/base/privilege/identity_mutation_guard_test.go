@@ -4,6 +4,7 @@ package privilege
 
 import (
 	"go/ast"
+	"go/build/constraint"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -34,6 +35,17 @@ var identityMutationFuncNames = map[string]struct{}{
 	"Setgroups": {},
 	"Setfsuid":  {},
 	"Setfsgid":  {},
+	// Raw syscall entry points can reach any of the above without naming it,
+	// e.g. syscall.Syscall(syscall.SYS_SETRESUID, ...). This package has no
+	// legitimate use for them, so treat them as identity mutation outright.
+	"Syscall":     {},
+	"Syscall6":    {},
+	"RawSyscall":  {},
+	"RawSyscall6": {},
+	// Capability and process-attribute changes alter the process's privilege
+	// state as materially as a set*id call.
+	"Capset": {},
+	"Prctl":  {},
 }
 
 // isTrackedIdentityMutationImportPath reports whether importPath is "syscall",
@@ -49,6 +61,10 @@ func isTrackedIdentityMutationImportPath(importPath string) bool {
 // enclosing function, the specific syscall/unix function name (e.g.
 // "Seteuid"), and the exact argument expression, rendered by
 // go/types.ExprString, that the call must use.
+//
+// funcName is receiver-qualified for methods ("(*UnixPrivilegeManager).escalatePrivileges")
+// so that a decoy -- a free function or a method on another type, both of which
+// may share a bare name -- cannot satisfy an allowlist entry.
 type allowedIdentityMutationCall struct {
 	funcName    string
 	syscallName string
@@ -59,8 +75,8 @@ type allowedIdentityMutationCall struct {
 // calls this package may make: escalating to root, and restoring the
 // original UID afterwards. No other combination is permitted.
 var allowedIdentityMutationCalls = []allowedIdentityMutationCall{
-	{funcName: "escalatePrivileges", syscallName: "Seteuid", arg: "0"},
-	{funcName: "restorePrivileges", syscallName: "Seteuid", arg: "m.originalUID"},
+	{funcName: "(*UnixPrivilegeManager).escalatePrivileges", syscallName: "Seteuid", arg: "0"},
+	{funcName: "(*UnixPrivilegeManager).restorePrivileges", syscallName: "Seteuid", arg: "m.originalUID"},
 }
 
 // identityMutationCallSite records one identity-mutation call found by
@@ -105,13 +121,14 @@ type identityMutationValueRef struct {
 // value, e.g. a struct field initialized to syscall.Seteuid. Such a reference
 // could be invoked later through that variable or field -- an indirect call
 // this AST scan cannot follow to its target -- so no value reference is
-// permitted anywhere in the package. Together the two checks mean an
+// permitted. Together the two checks mean that within the files scanned, an
 // identity-mutation function can only be reached through the two allowed call
 // sites above.
 //
-// Remaining gap: a call reaching these syscalls without naming them here, e.g.
-// via reflection or a helper in another package, is still invisible to this
-// scan.
+// Remaining gaps: the scan covers only this package's production files (see
+// findIdentityMutationRefs for exactly what is skipped), and a call that reaches
+// these syscalls without naming them -- via reflection, or a helper in another
+// package -- is still invisible to it.
 func TestNoUnexpectedIdentityMutationSyscalls(t *testing.T) {
 	// Control 1: an aliased import is still resolved to "syscall" (matching is by
 	// import path, not local name), and the disallowed argument is flagged.
@@ -192,11 +209,39 @@ func TestNoUnexpectedIdentityMutationSyscalls(t *testing.T) {
 
 	// Control 8: an outright call is not additionally reported as a value reference,
 	// so the two allowed call sites below do not themselves trip the value-ref check.
-	calledNotValueRefs := identityMutationValueRefsInSource(t, "called.go",
-		"package p\n"+
-			"import \"syscall\"\n"+
-			"func escalatePrivileges() error { return syscall.Seteuid(0) }\n")
-	assert.Empty(t, calledNotValueRefs, "a called selector must not also be reported as a function-value reference")
+	// Covers the parenthesized form too, where the unwrapped inner selector is the
+	// node the value-ref pass later visits on its own.
+	for name, src := range map[string]string{
+		"called.go":       "package p\nimport \"syscall\"\nfunc escalatePrivileges() error { return syscall.Seteuid(0) }\n",
+		"called_paren.go": "package p\nimport \"syscall\"\nfunc escalatePrivileges() error { return (syscall.Seteuid)(0) }\n",
+	} {
+		assert.Emptyf(t, identityMutationValueRefsInSource(t, name, src),
+			"%s: a called selector must not also be reported as a function-value reference", name)
+	}
+
+	// Control 9: a method's reported name is receiver-qualified, so a decoy that
+	// merely reuses an allowed call site's bare name does not inherit its permission.
+	decoySrc := "package p\n" +
+		"import \"syscall\"\n" +
+		"type decoy struct{}\n" +
+		"func (d *decoy) escalatePrivileges() error { return syscall.Seteuid(0) }\n"
+	decoySites := identityMutationCallSitesInSource(t, "decoy.go", decoySrc)
+	require.Len(t, decoySites, 1)
+	assert.Equal(t, "(*decoy).escalatePrivileges", decoySites[0].funcName)
+	assert.False(t, isAllowedIdentityMutationCall(allowedIdentityMutationCall{
+		funcName:    decoySites[0].funcName,
+		syscallName: decoySites[0].syscallName,
+		arg:         decoySites[0].arg,
+	}), "a method on another type must not inherit escalatePrivileges' permission by name alone")
+
+	// Control 10: a raw syscall entry point reaches a set*id without naming it, so
+	// it is tracked in its own right.
+	rawSrc := "package p\n" +
+		"import \"syscall\"\n" +
+		"func f() { syscall.RawSyscall(syscall.SYS_SETRESUID, 0, 0, 0) }\n"
+	rawSites := identityMutationCallSitesInSource(t, "raw.go", rawSrc)
+	require.Len(t, rawSites, 1, "a raw syscall entry point must be detected")
+	assert.Equal(t, "RawSyscall", rawSites[0].syscallName)
 
 	sites, valueRefs := findIdentityMutationRefs(t, ".")
 
@@ -224,6 +269,18 @@ func TestNoUnexpectedIdentityMutationSyscalls(t *testing.T) {
 	}
 }
 
+// declaredFuncName renders a function declaration's name, qualified by its
+// receiver type for methods: "(*UnixPrivilegeManager).escalatePrivileges" rather
+// than "escalatePrivileges". Without the qualifier, a free function or a method
+// on an unrelated type could take the name of an allowed call site and inherit
+// its permission.
+func declaredFuncName(funcDecl *ast.FuncDecl) string {
+	if funcDecl.Recv == nil || len(funcDecl.Recv.List) == 0 {
+		return funcDecl.Name.Name
+	}
+	return "(" + types.ExprString(funcDecl.Recv.List[0].Type) + ")." + funcDecl.Name.Name
+}
+
 func isAllowedIdentityMutationCall(call allowedIdentityMutationCall) bool {
 	for _, allowed := range allowedIdentityMutationCalls {
 		if allowed == call {
@@ -233,16 +290,18 @@ func isAllowedIdentityMutationCall(call allowedIdentityMutationCall) bool {
 	return false
 }
 
-// findIdentityMutationRefs parses every non-test .go file in dir and returns
+// findIdentityMutationRefs parses every production .go file in dir and returns
 // every call to, and every function-value reference of, a syscall/unix
 // identity-mutation function, recording the name of the enclosing top-level
 // function or method.
 //
-// Besides *_test.go, this also skips test_helpers.go / test_helpers_*.go:
-// per this repo's convention (docs/dev/developer_guide/test_organization.md,
-// "Classification B"), those always carry a `//go:build test` constraint and
-// so are never part of the production build, even though their name doesn't
-// end in "_test.go".
+// A file is skipped only if it is genuinely excluded from a production build:
+// *_test.go by the toolchain's own rule, and anything whose //go:build
+// constraint is false when the "test" tag is off. Skipping is deliberately NOT
+// based on the test_helpers.go naming convention alone -- a file could carry
+// that name without the tag, or lose the tag in a later edit, and would then be
+// silently exempted from this guard. isTestHelpersFileName remains as a
+// cross-check that fails loudly if the two ever disagree.
 func findIdentityMutationRefs(t *testing.T, dir string) ([]identityMutationCallSite, []identityMutationValueRef) {
 	t.Helper()
 
@@ -253,7 +312,7 @@ func findIdentityMutationRefs(t *testing.T, dir string) ([]identityMutationCallS
 	var valueRefs []identityMutationValueRef
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || isTestHelpersFileName(name) {
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
 
@@ -261,12 +320,77 @@ func findIdentityMutationRefs(t *testing.T, dir string) ([]identityMutationCallS
 		data, err := os.ReadFile(path)
 		require.NoErrorf(t, err, "failed to read %s", path)
 
-		fileSites, fileValueRefs := identityMutationRefsInSource(t, path, string(data))
+		src := string(data)
+		testOnly := isTestOnlyBuildConstrained(t, path, src)
+		if isTestHelpersFileName(name) {
+			// One-directional: the naming convention promises the test tag, so a
+			// file wearing the name without it is a convention violation worth
+			// failing on. The reverse is fine -- a test-only file under any name is
+			// skipped on its constraint, not its name.
+			assert.Truef(t, testOnly,
+				"%s: named as a test helper but its //go:build constraint does not require the test tag", name)
+		}
+		if testOnly {
+			continue
+		}
+
+		fileSites, fileValueRefs := identityMutationRefsInSource(t, path, src)
 		sites = append(sites, fileSites...)
 		valueRefs = append(valueRefs, fileValueRefs...)
 	}
 
 	return sites, valueRefs
+}
+
+// isTestOnlyBuildConstrained reports whether src's //go:build constraint
+// mentions the "test" tag, which in this repo means the file is not part of a
+// production build.
+//
+// It deliberately tests for the tag's presence rather than evaluating the
+// constraint. Evaluation cannot distinguish the two reasons a constraint is
+// false: identity_other.go (`!linux && !windows`) is false on Linux but is
+// still production code, and this scan reads every platform variant on purpose.
+// Presence of the test tag is the property that actually marks a file as
+// non-production, and a production file has no reason to mention it.
+func isTestOnlyBuildConstrained(t *testing.T, filename, src string) bool {
+	t.Helper()
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filename, src, parser.PackageClauseOnly|parser.ParseComments)
+	require.NoErrorf(t, err, "failed to parse build constraints of %s", filename)
+
+	for _, group := range file.Comments {
+		// Build constraints must precede the package clause.
+		if group.Pos() > file.Package {
+			break
+		}
+		for _, comment := range group.List {
+			if !strings.HasPrefix(comment.Text, "//go:build") {
+				continue
+			}
+			expr, err := constraint.Parse(comment.Text)
+			require.NoErrorf(t, err, "failed to parse build constraint %q in %s", comment.Text, filename)
+			return constraintMentionsTag(expr, "test")
+		}
+	}
+	return false
+}
+
+// constraintMentionsTag reports whether expr references the named build tag
+// anywhere, at any nesting depth and under any negation.
+func constraintMentionsTag(expr constraint.Expr, tag string) bool {
+	switch e := expr.(type) {
+	case *constraint.TagExpr:
+		return e.Tag == tag
+	case *constraint.NotExpr:
+		return constraintMentionsTag(e.X, tag)
+	case *constraint.AndExpr:
+		return constraintMentionsTag(e.X, tag) || constraintMentionsTag(e.Y, tag)
+	case *constraint.OrExpr:
+		return constraintMentionsTag(e.X, tag) || constraintMentionsTag(e.Y, tag)
+	default:
+		return false
+	}
 }
 
 // isTestHelpersFileName reports whether name matches this repo's
@@ -275,6 +399,32 @@ func findIdentityMutationRefs(t *testing.T, dir string) ([]identityMutationCallS
 func isTestHelpersFileName(name string) bool {
 	base := strings.TrimSuffix(name, ".go")
 	return base == "test_helpers" || strings.HasPrefix(base, "test_helpers_")
+}
+
+func TestIsTestOnlyBuildConstrained(t *testing.T) {
+	tests := map[string]struct {
+		constraint string
+		want       bool
+	}{
+		"test tag alone":                {"//go:build test", true},
+		"test tag with platform":        {"//go:build !windows && test", true},
+		"test tag in a disjunction":     {"//go:build test || performance", true},
+		"negated test tag":              {"//go:build !test", true},
+		"platform only, false on linux": {"//go:build !linux && !windows", false},
+		"platform only, true on linux":  {"//go:build linux", false},
+		"unrelated tag":                 {"//go:build integration", false},
+		"no constraint":                 {"", false},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			src := tt.constraint
+			if src != "" {
+				src += "\n"
+			}
+			src += "\npackage privilege\n"
+			assert.Equal(t, tt.want, isTestOnlyBuildConstrained(t, "sample.go", src))
+		})
+	}
 }
 
 func TestIsTestHelpersFileName(t *testing.T) {
@@ -387,7 +537,7 @@ func identityMutationRefsInSource(t *testing.T, filename, src string) ([]identit
 			if funcDecl.Body == nil {
 				continue
 			}
-			funcName = funcDecl.Name.Name
+			funcName = declaredFuncName(funcDecl)
 			node = funcDecl.Body
 		} else if _, ok := decl.(*ast.GenDecl); !ok {
 			continue
