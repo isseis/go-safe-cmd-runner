@@ -640,20 +640,20 @@
 
 **作業内容**
 
-- [ ] `internal/runner/base/privilege/identity_mutation_guard_test.go` を新規作成し、`TestNoUnexpectedIdentityMutationSyscalls` を実装する。ビルドタグは `unix.go` と揃えて `//go:build !windows` とする。
-  - [ ] `os.ReadDir(".")` でパッケージディレクトリのファイルを列挙し、`.go` で終わり `_test.go` で終わらないものを `go/parser` の `ParseFile` で解析する。**`parser.ParseDir` は使わない**。`ParseDir` は Go 1.22 で deprecated になっている。本リポジトリの `.golangci.yml` は `staticcheck` を有効にしており、`_test.go` に対する除外に SA1019 を含まないため、使用すると `make lint` が失敗する
-  - [ ] 依存は標準ライブラリのみとする。`golang.org/x/tools/go/packages` は使えない（`.golangci.yml` の depguard が `**/internal/**` に対して `$gostd` と明示された少数のモジュールしか許可しておらず、`golang.org/x/tools` は含まれない）
-  - [ ] ビルドタグを解釈せずディレクトリ内の全ファイルを走査することを doc コメントに明記する。`identity_linux.go` と `identity_other.go` が同時に解析されるが、いずれも識別情報変更関数を呼ばないため問題にならず、むしろプラットフォームを問わず検査できる点で望ましい
-  - [ ] `syscall` または `unix`（`golang.org/x/sys/unix`）パッケージの識別情報変更関数（`Seteuid` / `Setegid` / `Setuid` / `Setgid` / `Setreuid` / `Setregid` / `Setresuid` / `Setresgid` / `Setgroups` / `Setfsuid` / `Setfsgid`）の**呼び出し**を列挙する
-  - [ ] 許可される組み合わせは `escalatePrivileges` 内の `syscall.Seteuid(0)` と `restorePrivileges` 内の `syscall.Seteuid(m.originalUID)` の 2 つのみとし、それ以外を検出したらテストを失敗させる。引数は `go/types` の `ExprString` で文字列化して比較する（この API は deprecated ではない）
-  - [ ] 許可された 2 つの呼び出しが実際に存在することも検証する（検査自体が空振りしていないことの確認）
-  - [ ] 本検査が**検出できない範囲**を doc コメントに明記する。列挙するのは修飾された呼び出し式のみであり、関数値としての参照（`newPlatformManager` の `syscallSeteuid: syscall.Seteuid,` など）や、構造体フィールドに注入された関数を経由する間接呼び出し（`m.syscallSetegid(...)`）は検出できない。この穴はステップ 2-3 で注入フィールドごと削除し、同ステップの完了条件の `rg` 検索（`syscallSeteuid` / `syscallSetegid` の一致 0 件）と、同ステップで本テストへ追加する関数値参照の検査で閉じる
+- [x] `internal/runner/base/privilege/identity_mutation_guard_test.go` を新規作成し、`TestNoUnexpectedIdentityMutationSyscalls` を実装する。ビルドタグは `unix.go` と揃えて `//go:build !windows` とする。
+  - [x] `os.ReadDir(".")` でパッケージディレクトリのファイルを列挙し、`.go` で終わり `_test.go` で終わらないものを `go/parser` の `ParseFile` で解析する。**`parser.ParseDir` は使わない**。`ParseDir` は Go 1.22 で deprecated になっている。本リポジトリの `.golangci.yml` は `staticcheck` を有効にしており、`_test.go` に対する除外に SA1019 を含まないため、使用すると `make lint` が失敗する
+  - [x] 依存は標準ライブラリのみとする。`golang.org/x/tools/go/packages` は使えない（`.golangci.yml` の depguard が `**/internal/**` に対して `$gostd` と明示された少数のモジュールしか許可しておらず、`golang.org/x/tools` は含まれない）
+  - [x] ビルドタグを解釈せずディレクトリ内の全ファイルを走査することを doc コメントに明記する。`identity_linux.go` と `identity_other.go` が同時に解析されるが、いずれも識別情報変更関数を呼ばないため問題にならず、むしろプラットフォームを問わず検査できる点で望ましい
+  - [x] `syscall` または `unix`（`golang.org/x/sys/unix`）パッケージの識別情報変更関数（`Seteuid` / `Setegid` / `Setuid` / `Setgid` / `Setreuid` / `Setregid` / `Setresuid` / `Setresgid` / `Setgroups` / `Setfsuid` / `Setfsgid`）の**呼び出し**を列挙する
+  - [x] 許可される組み合わせは `escalatePrivileges` 内の `syscall.Seteuid(0)` と `restorePrivileges` 内の `syscall.Seteuid(m.originalUID)` の 2 つのみとし、それ以外を検出したらテストを失敗させる。引数は `go/types` の `ExprString` で文字列化して比較する（この API は deprecated ではない）
+  - [x] 許可された 2 つの呼び出しが実際に存在することも検証する（検査自体が空振りしていないことの確認）
+  - [x] 本検査が**検出できない範囲**を doc コメントに明記する。列挙するのは修飾された呼び出し式のみであり、関数値としての参照（`newPlatformManager` の `syscallSeteuid: syscall.Seteuid,` など）や、構造体フィールドに注入された関数を経由する間接呼び出し（`m.syscallSetegid(...)`）は検出できない。この穴はステップ 2-3 で注入フィールドごと削除し、同ステップの完了条件の `rg` 検索（`syscallSeteuid` / `syscallSetegid` の一致 0 件）と、同ステップで本テストへ追加する関数値参照の検査で閉じる
 
 **完了条件**
 
-- [ ] `make fmt` → `make test` → `make lint` がすべて成功する（本テストが現行コードに対して成功することの確認を含む）
-- [ ] `go vet -tags 'test integration' ./...` が成功する
-- [ ] テストを意図的に壊す確認を行う。`escalatePrivileges` の `syscall.Seteuid(0)` を一時的に `syscall.Seteuid(1)` に書き換えると `TestNoUnexpectedIdentityMutationSyscalls` が失敗し、元に戻すと成功する（検査が実際に機能していることの ground truth 確認）
+- [x] `make fmt` → `make test` → `make lint` がすべて成功する（本テストが現行コードに対して成功することの確認を含む）
+- [x] `go vet -tags 'test integration' ./...` が成功する
+- [x] テストを意図的に壊す確認を行う。`escalatePrivileges` の `syscall.Seteuid(0)` を一時的に `syscall.Seteuid(1)` に書き換えると `TestNoUnexpectedIdentityMutationSyscalls` が失敗し、元に戻すと成功する（検査が実際に機能していることの ground truth 確認）
 
 ### PR-6 作成ポイント: identity mutation syscall guard test
 
