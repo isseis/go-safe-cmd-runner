@@ -104,7 +104,6 @@ func TestRestorePrivilegesAndMetrics_IdentityVerificationPassesOnCleanRestore_Wi
 			CommandName: "test-command",
 		},
 		needsPrivilegeEscalation: true,
-		needsUserGroupChange:     false,
 		// Use ground-truth values from /proc/self/status, NOT from readSavedIDs().
 		originalSUID: procSuid,
 		originalSGID: procSgid,

@@ -4,6 +4,7 @@ package privilege
 
 import (
 	"go/ast"
+	"go/build/constraint"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -34,6 +35,17 @@ var identityMutationFuncNames = map[string]struct{}{
 	"Setgroups": {},
 	"Setfsuid":  {},
 	"Setfsgid":  {},
+	// Raw syscall entry points can reach any of the above without naming it,
+	// e.g. syscall.Syscall(syscall.SYS_SETRESUID, ...). This package has no
+	// legitimate use for them, so treat them as identity mutation outright.
+	"Syscall":     {},
+	"Syscall6":    {},
+	"RawSyscall":  {},
+	"RawSyscall6": {},
+	// Capability and process-attribute changes alter the process's privilege
+	// state as materially as a set*id call.
+	"Capset": {},
+	"Prctl":  {},
 }
 
 // isTrackedIdentityMutationImportPath reports whether importPath is "syscall",
@@ -49,6 +61,10 @@ func isTrackedIdentityMutationImportPath(importPath string) bool {
 // enclosing function, the specific syscall/unix function name (e.g.
 // "Seteuid"), and the exact argument expression, rendered by
 // go/types.ExprString, that the call must use.
+//
+// funcName is receiver-qualified for methods ("(*UnixPrivilegeManager).escalatePrivileges")
+// so that a decoy -- a free function or a method on another type, both of which
+// may share a bare name -- cannot satisfy an allowlist entry.
 type allowedIdentityMutationCall struct {
 	funcName    string
 	syscallName string
@@ -59,8 +75,8 @@ type allowedIdentityMutationCall struct {
 // calls this package may make: escalating to root, and restoring the
 // original UID afterwards. No other combination is permitted.
 var allowedIdentityMutationCalls = []allowedIdentityMutationCall{
-	{funcName: "escalatePrivileges", syscallName: "Seteuid", arg: "0"},
-	{funcName: "restorePrivileges", syscallName: "Seteuid", arg: "m.originalUID"},
+	{funcName: "(*UnixPrivilegeManager).escalatePrivileges", syscallName: "Seteuid", arg: "0"},
+	{funcName: "(*UnixPrivilegeManager).restorePrivileges", syscallName: "Seteuid", arg: "m.originalUID"},
 }
 
 // identityMutationCallSite records one identity-mutation call found by
@@ -70,6 +86,15 @@ type identityMutationCallSite struct {
 	syscallName string
 	callExpr    string // rendered "pkg.Func(args)" for failure messages
 	arg         string
+}
+
+// identityMutationValueRef records one identity-mutation function referenced as
+// a value rather than called outright, e.g. a struct field initialized to
+// syscall.Seteuid. Such a reference can be invoked later through that variable
+// or field, which the call-site scan cannot follow, so none are permitted.
+type identityMutationValueRef struct {
+	funcName string
+	expr     string // rendered "pkg.Func" for failure messages
 }
 
 // TestNoUnexpectedIdentityMutationSyscalls statically verifies that
@@ -92,14 +117,18 @@ type identityMutationCallSite struct {
 //     liveIdentityRefsIn), so an aliased import can't bypass the guard and a
 //     same-named local identifier can't produce a false match.
 //
-// Known gap: only recognizes qualified calls (`syscall.Seteuid(...)`), not a
-// function-value reference (`syscallSeteuid: syscall.Seteuid`) or an
-// indirect call through an injected field (`m.syscallSetegid(gid)`).
-// Widening to all selector expressions is deferred because
-// UnixPrivilegeManager.syscallSeteuid/syscallSetegid are still legitimately
-// initialized that way (see newPlatformManager, changeUserGroupInternal in
-// unix.go); a later step removes those fields once their demotion path is
-// deleted and extends this test to reject bare function-value references too.
+// Beyond direct calls, it also rejects referencing any of these functions as a
+// value, e.g. a struct field initialized to syscall.Seteuid. Such a reference
+// could be invoked later through that variable or field -- an indirect call
+// this AST scan cannot follow to its target -- so no value reference is
+// permitted. Together the two checks mean that within the files scanned, an
+// identity-mutation function can only be reached through the two allowed call
+// sites above.
+//
+// Remaining gaps: the scan covers only this package's production files (see
+// findIdentityMutationRefs for exactly what is skipped), and a call that reaches
+// these syscalls without naming them -- via reflection, or a helper in another
+// package -- is still invisible to it.
 func TestNoUnexpectedIdentityMutationSyscalls(t *testing.T) {
 	// Control 1: an aliased import is still resolved to "syscall" (matching is by
 	// import path, not local name), and the disallowed argument is flagged.
@@ -166,7 +195,60 @@ func TestNoUnexpectedIdentityMutationSyscalls(t *testing.T) {
 	assert.Equal(t, "escalatePrivileges", parenSites[0].funcName)
 	assert.Equal(t, "0", parenSites[0].arg)
 
-	sites := findIdentityMutationCallSites(t, ".")
+	// Control 7: a function-value reference is reported as a value ref, not a call.
+	// This is the form that lets an identity-mutation function be invoked later
+	// through a variable or field, which the call-site scan cannot follow.
+	valueRefSrc := "package p\n" +
+		"import \"syscall\"\n" +
+		"func newPlatformManager() func(int) error { return syscall.Seteuid }\n"
+	valueRefCalls, valueRefSites := identityMutationRefsInSource(t, "value_ref.go", valueRefSrc)
+	assert.Empty(t, valueRefCalls, "a bare function-value reference must not be counted as a call")
+	require.Len(t, valueRefSites, 1, "a bare function-value reference must be detected")
+	assert.Equal(t, "newPlatformManager", valueRefSites[0].funcName)
+	assert.Equal(t, "syscall.Seteuid", valueRefSites[0].expr)
+
+	// Control 8: an outright call is not additionally reported as a value reference,
+	// so the two allowed call sites below do not themselves trip the value-ref check.
+	// Covers the parenthesized form too, where the unwrapped inner selector is the
+	// node the value-ref pass later visits on its own.
+	for name, src := range map[string]string{
+		"called.go":       "package p\nimport \"syscall\"\nfunc escalatePrivileges() error { return syscall.Seteuid(0) }\n",
+		"called_paren.go": "package p\nimport \"syscall\"\nfunc escalatePrivileges() error { return (syscall.Seteuid)(0) }\n",
+	} {
+		assert.Emptyf(t, identityMutationValueRefsInSource(t, name, src),
+			"%s: a called selector must not also be reported as a function-value reference", name)
+	}
+
+	// Control 9: a method's reported name is receiver-qualified, so a decoy that
+	// merely reuses an allowed call site's bare name does not inherit its permission.
+	decoySrc := "package p\n" +
+		"import \"syscall\"\n" +
+		"type decoy struct{}\n" +
+		"func (d *decoy) escalatePrivileges() error { return syscall.Seteuid(0) }\n"
+	decoySites := identityMutationCallSitesInSource(t, "decoy.go", decoySrc)
+	require.Len(t, decoySites, 1)
+	assert.Equal(t, "(*decoy).escalatePrivileges", decoySites[0].funcName)
+	assert.False(t, isAllowedIdentityMutationCall(allowedIdentityMutationCall{
+		funcName:    decoySites[0].funcName,
+		syscallName: decoySites[0].syscallName,
+		arg:         decoySites[0].arg,
+	}), "a method on another type must not inherit escalatePrivileges' permission by name alone")
+
+	// Control 10: a raw syscall entry point reaches a set*id without naming it, so
+	// it is tracked in its own right.
+	rawSrc := "package p\n" +
+		"import \"syscall\"\n" +
+		"func f() { syscall.RawSyscall(syscall.SYS_SETRESUID, 0, 0, 0) }\n"
+	rawSites := identityMutationCallSitesInSource(t, "raw.go", rawSrc)
+	require.Len(t, rawSites, 1, "a raw syscall entry point must be detected")
+	assert.Equal(t, "RawSyscall", rawSites[0].syscallName)
+
+	sites, valueRefs := findIdentityMutationRefs(t, ".")
+
+	for _, ref := range valueRefs {
+		t.Errorf("identity-mutation function %s referenced as a value in function %s; it could be invoked indirectly through a variable or field, which this check cannot follow, so no value reference is permitted",
+			ref.expr, ref.funcName)
+	}
 
 	seen := make(map[allowedIdentityMutationCall]bool, len(allowedIdentityMutationCalls))
 	for _, site := range sites {
@@ -187,6 +269,18 @@ func TestNoUnexpectedIdentityMutationSyscalls(t *testing.T) {
 	}
 }
 
+// declaredFuncName renders a function declaration's name, qualified by its
+// receiver type for methods: "(*UnixPrivilegeManager).escalatePrivileges" rather
+// than "escalatePrivileges". Without the qualifier, a free function or a method
+// on an unrelated type could take the name of an allowed call site and inherit
+// its permission.
+func declaredFuncName(funcDecl *ast.FuncDecl) string {
+	if funcDecl.Recv == nil || len(funcDecl.Recv.List) == 0 {
+		return funcDecl.Name.Name
+	}
+	return "(" + types.ExprString(funcDecl.Recv.List[0].Type) + ")." + funcDecl.Name.Name
+}
+
 func isAllowedIdentityMutationCall(call allowedIdentityMutationCall) bool {
 	for _, allowed := range allowedIdentityMutationCalls {
 		if allowed == call {
@@ -196,25 +290,40 @@ func isAllowedIdentityMutationCall(call allowedIdentityMutationCall) bool {
 	return false
 }
 
-// findIdentityMutationCallSites parses every non-test .go file in dir and
-// returns every call to a syscall/unix identity-mutation function, recording
-// the name of the enclosing top-level function or method.
+// findIdentityMutationRefs parses every production .go file in dir and returns
+// every call to, and every function-value reference of, a syscall/unix
+// identity-mutation function, recording the name of the enclosing top-level
+// function or method.
 //
-// Besides *_test.go, this also skips test_helpers.go / test_helpers_*.go:
-// per this repo's convention (docs/dev/developer_guide/test_organization.md,
-// "Classification B"), those always carry a `//go:build test` constraint and
-// so are never part of the production build, even though their name doesn't
-// end in "_test.go".
-func findIdentityMutationCallSites(t *testing.T, dir string) []identityMutationCallSite {
+// *_test.go is skipped by the toolchain's own naming rule. Beyond that, a file
+// is skipped only when its //go:build constraint positively requires the "test"
+// tag, i.e. the constraint cannot be satisfied without it, because only such a
+// file can never reach a production build. Anything else is scanned, which is
+// the safe direction for a security guard: a constraint that merely evaluates
+// false without the tag -- "!linux && !windows", or "!test" -- says nothing
+// about test-only-ness, and one that is merely satisfiable with the tag --
+// "test || performance", which also builds under "performance" alone -- can
+// still reach a build without it. Neither exempts the file.
+// Consequently the platform-constrained production files (identity_linux.go,
+// identity_other.go) are scanned whatever the current GOOS, which is the point:
+// the guard must cover every platform variant, not just the one being built.
+//
+// Skipping is deliberately NOT based on the test_helpers.go naming convention
+// alone -- a file could carry that name without the tag, or lose the tag in a
+// later edit, and would then be silently exempted from this guard.
+// isTestHelpersFileName remains as a one-directional cross-check that fails
+// loudly if the two ever disagree.
+func findIdentityMutationRefs(t *testing.T, dir string) ([]identityMutationCallSite, []identityMutationValueRef) {
 	t.Helper()
 
 	entries, err := os.ReadDir(dir)
 	require.NoErrorf(t, err, "failed to read directory %s", dir)
 
 	var sites []identityMutationCallSite
+	var valueRefs []identityMutationValueRef
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || isTestHelpersFileName(name) {
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
 
@@ -222,10 +331,108 @@ func findIdentityMutationCallSites(t *testing.T, dir string) []identityMutationC
 		data, err := os.ReadFile(path)
 		require.NoErrorf(t, err, "failed to read %s", path)
 
-		sites = append(sites, identityMutationCallSitesInSource(t, path, string(data))...)
+		src := string(data)
+		testOnly := isTestOnlyBuildConstrained(t, path, src)
+		if isTestHelpersFileName(name) {
+			// One-directional: the naming convention promises the test tag, so a
+			// file wearing the name without it is a convention violation worth
+			// failing on. The reverse is fine -- a test-only file under any name is
+			// skipped on its constraint, not its name.
+			assert.Truef(t, testOnly,
+				"%s: named as a test helper but its //go:build constraint does not require the test tag", name)
+		}
+		if testOnly {
+			continue
+		}
+
+		fileSites, fileValueRefs := identityMutationRefsInSource(t, path, src)
+		sites = append(sites, fileSites...)
+		valueRefs = append(valueRefs, fileValueRefs...)
 	}
 
-	return sites
+	return sites, valueRefs
+}
+
+// isTestOnlyBuildConstrained reports whether src's //go:build constraint
+// positively requires the "test" tag -- that is, whether the constraint is
+// unsatisfiable unless the tag is set -- which in this repo means the file is
+// not part of a production build.
+//
+// It deliberately inspects the constraint's structure rather than evaluating
+// it. Evaluation cannot distinguish the two reasons a constraint is false:
+// identity_other.go (`!linux && !windows`) is false on Linux but is still
+// production code, and this scan reads every platform variant on purpose.
+//
+// Only a positive requirement marks a file as non-production, and the test is
+// strict. `!test` selects the file precisely when the test tag is absent, so it
+// ships in production builds. `test || performance` still builds under
+// `performance` alone, so it too can reach a production build. Both stay under
+// this security guard rather than be exempted; erring towards scanning is the
+// safe direction here.
+func isTestOnlyBuildConstrained(t *testing.T, filename, src string) bool {
+	t.Helper()
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filename, src, parser.PackageClauseOnly|parser.ParseComments)
+	require.NoErrorf(t, err, "failed to parse build constraints of %s", filename)
+
+	for _, group := range file.Comments {
+		// Build constraints must precede the package clause.
+		if group.Pos() > file.Package {
+			break
+		}
+		for _, comment := range group.List {
+			if !strings.HasPrefix(comment.Text, "//go:build") {
+				continue
+			}
+			expr, err := constraint.Parse(comment.Text)
+			require.NoErrorf(t, err, "failed to parse build constraint %q in %s", comment.Text, filename)
+			return constraintRequiresTag(expr, "test", false)
+		}
+	}
+	return false
+}
+
+// constraintRequiresTag reports whether expr positively REQUIRES the named
+// build tag, i.e. whether "expr is satisfied" implies "tag is set". It is an
+// implication check, not a "does the tag appear anywhere" check: a constraint
+// that merely mentions the tag, such as `test || performance`, is satisfiable
+// with the tag unset and therefore does not require it.
+//
+// The recursion follows from that definition:
+//   - `A && B` requires the tag if EITHER side does, since both sides hold
+//     whenever the conjunction does.
+//   - `A || B` requires the tag only if BOTH sides do, since either side alone
+//     may be the one that holds.
+//
+// negated carries the polarity of the surrounding context and must be false at
+// the top-level call. Under negation the operators swap, by De Morgan: the
+// satisfying condition of `!(A || B)` is `!A && !B`, so an OrExpr seen under a
+// negation must be treated as a conjunction, and vice versa. Answering with the
+// unnegated rule there would invert the result.
+//
+// A bare tag under negation never requires the tag: `!tag` selects the file
+// when the tag is absent, which is the opposite of requiring it, so counting
+// such a mention would misclassify production code.
+func constraintRequiresTag(expr constraint.Expr, tag string, negated bool) bool {
+	switch e := expr.(type) {
+	case *constraint.TagExpr:
+		return !negated && e.Tag == tag
+	case *constraint.NotExpr:
+		return constraintRequiresTag(e.X, tag, !negated)
+	case *constraint.AndExpr:
+		if negated {
+			return constraintRequiresTag(e.X, tag, true) && constraintRequiresTag(e.Y, tag, true)
+		}
+		return constraintRequiresTag(e.X, tag, false) || constraintRequiresTag(e.Y, tag, false)
+	case *constraint.OrExpr:
+		if negated {
+			return constraintRequiresTag(e.X, tag, true) || constraintRequiresTag(e.Y, tag, true)
+		}
+		return constraintRequiresTag(e.X, tag, false) && constraintRequiresTag(e.Y, tag, false)
+	default:
+		return false
+	}
 }
 
 // isTestHelpersFileName reports whether name matches this repo's
@@ -234,6 +441,36 @@ func findIdentityMutationCallSites(t *testing.T, dir string) []identityMutationC
 func isTestHelpersFileName(name string) bool {
 	base := strings.TrimSuffix(name, ".go")
 	return base == "test_helpers" || strings.HasPrefix(base, "test_helpers_")
+}
+
+func TestIsTestOnlyBuildConstrained(t *testing.T) {
+	tests := map[string]struct {
+		constraint string
+		want       bool
+	}{
+		"test tag alone":         {"//go:build test", true},
+		"test tag with platform": {"//go:build !windows && test", true},
+		"disjunction with another tag builds without test": {"//go:build test || performance", false},
+		"disjunction with a platform builds without test":  {"//go:build !windows || test", false},
+		"negated disjunction requires neither tag":         {"//go:build !(test || performance)", false},
+		"negated conjunction requires neither tag":         {"//go:build !(test && linux)", false},
+		"negated test tag is still production":             {"//go:build !test", false},
+		"test tag with a negation elsewhere":               {"//go:build test && !windows", true},
+		"platform only, false on linux":                    {"//go:build !linux && !windows", false},
+		"platform only, true on linux":                     {"//go:build linux", false},
+		"unrelated tag":                                    {"//go:build integration", false},
+		"no constraint":                                    {"", false},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			src := tt.constraint
+			if src != "" {
+				src += "\n"
+			}
+			src += "\npackage privilege\n"
+			assert.Equal(t, tt.want, isTestOnlyBuildConstrained(t, "sample.go", src))
+		})
+	}
 }
 
 func TestIsTestHelpersFileName(t *testing.T) {
@@ -251,11 +488,30 @@ func TestIsTestHelpersFileName(t *testing.T) {
 	}
 }
 
-// identityMutationCallSitesInSource parses src (Go source for a single file
-// named filename) and returns every call to a syscall/unix identity-mutation
-// function, with the local package identifier of each call resolved to its
-// import path via the file's import declarations.
+// identityMutationCallSitesInSource returns only the calls found by
+// identityMutationRefsInSource, for assertions that concern call sites alone.
 func identityMutationCallSitesInSource(t *testing.T, filename, src string) []identityMutationCallSite {
+	t.Helper()
+
+	calls, _ := identityMutationRefsInSource(t, filename, src)
+	return calls
+}
+
+// identityMutationValueRefsInSource returns only the value references found by
+// identityMutationRefsInSource.
+func identityMutationValueRefsInSource(t *testing.T, filename, src string) []identityMutationValueRef {
+	t.Helper()
+
+	_, valueRefs := identityMutationRefsInSource(t, filename, src)
+	return valueRefs
+}
+
+// identityMutationRefsInSource parses src (Go source for a single file named
+// filename) and returns every syscall/unix identity-mutation function that is
+// called, and every one that is merely referenced as a value. The local package
+// identifier is resolved to its import path via the file's import declarations
+// in both cases.
+func identityMutationRefsInSource(t *testing.T, filename, src string) ([]identityMutationCallSite, []identityMutationValueRef) {
 	t.Helper()
 
 	fset := token.NewFileSet()
@@ -284,7 +540,40 @@ func identityMutationCallSitesInSource(t *testing.T, filename, src string) []ide
 		localToImportPath[local] = path
 	}
 
+	// trackedSelector reports whether expr is a qualified reference to one of the
+	// identity-mutation functions, e.g. syscall.Seteuid, resolving the qualifier
+	// through the file's imports.
+	trackedSelector := func(expr ast.Expr) (*ast.SelectorExpr, bool) {
+		sel, ok := expr.(*ast.SelectorExpr)
+		if !ok {
+			return nil, false
+		}
+		pkgIdent, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return nil, false
+		}
+		importPath, isImported := localToImportPath[pkgIdent.Name]
+		if !isImported {
+			// Not a resolved import (e.g. a local variable or type that merely
+			// shares the package's name): never treat this as a match, unlike
+			// falling back to the bare identifier.
+			return nil, false
+		}
+		if !isTrackedIdentityMutationImportPath(importPath) {
+			return nil, false
+		}
+		if _, isTrackedFunc := identityMutationFuncNames[sel.Sel.Name]; !isTrackedFunc {
+			return nil, false
+		}
+		return sel, true
+	}
+
 	var sites []identityMutationCallSite
+	var valueRefs []identityMutationValueRef
+	// calledSelectors marks the selectors that appear in callee position, so the
+	// value-reference pass can skip them. ast.Inspect visits a CallExpr before its
+	// children, so a selector is always marked before it is reached on its own.
+	calledSelectors := make(map[*ast.SelectorExpr]struct{})
 	for _, decl := range file.Decls {
 		// funcName labels reported sites; package-level var/const initializers have no
 		// enclosing function, so this fallback keeps them from being silently skipped.
@@ -294,67 +583,61 @@ func identityMutationCallSitesInSource(t *testing.T, filename, src string) []ide
 			if funcDecl.Body == nil {
 				continue
 			}
-			funcName = funcDecl.Name.Name
+			funcName = declaredFuncName(funcDecl)
 			node = funcDecl.Body
 		} else if _, ok := decl.(*ast.GenDecl); !ok {
 			continue
 		}
 
 		ast.Inspect(node, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-
-			// Unwrap parens so a parenthesized callee like (syscall.Seteuid)(0) is still recognized.
-			fun := call.Fun
-			for {
-				paren, ok := fun.(*ast.ParenExpr)
-				if !ok {
-					break
+			switch n := n.(type) {
+			case *ast.CallExpr:
+				// Unwrap parens so a parenthesized callee like (syscall.Seteuid)(0) is still recognized.
+				fun := n.Fun
+				for {
+					paren, ok := fun.(*ast.ParenExpr)
+					if !ok {
+						break
+					}
+					fun = paren.X
 				}
-				fun = paren.X
-			}
 
-			sel, ok := fun.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
+				sel, ok := trackedSelector(fun)
+				if !ok {
+					return true
+				}
+				calledSelectors[sel] = struct{}{}
 
-			pkgIdent, ok := sel.X.(*ast.Ident)
-			if !ok {
-				return true
-			}
+				args := make([]string, len(n.Args))
+				for i, arg := range n.Args {
+					args[i] = types.ExprString(arg)
+				}
+				arg := strings.Join(args, ", ")
 
-			importPath, isImported := localToImportPath[pkgIdent.Name]
-			if !isImported {
-				// Not a resolved import (e.g. a local variable or type that merely
-				// shares the package's name): never treat this as a match, unlike
-				// falling back to the bare identifier.
-				return true
-			}
-			if !isTrackedIdentityMutationImportPath(importPath) {
-				return true
-			}
-			if _, isTrackedFunc := identityMutationFuncNames[sel.Sel.Name]; !isTrackedFunc {
-				return true
-			}
+				sites = append(sites, identityMutationCallSite{
+					funcName:    funcName,
+					syscallName: sel.Sel.Name,
+					callExpr:    types.ExprString(sel) + "(" + arg + ")",
+					arg:         arg,
+				})
 
-			args := make([]string, len(call.Args))
-			for i, arg := range call.Args {
-				args[i] = types.ExprString(arg)
+			case *ast.SelectorExpr:
+				// Reached on its own rather than in callee position: a function-value
+				// reference that could be invoked indirectly later.
+				if _, isCallee := calledSelectors[n]; isCallee {
+					return true
+				}
+				if _, ok := trackedSelector(n); !ok {
+					return true
+				}
+				valueRefs = append(valueRefs, identityMutationValueRef{
+					funcName: funcName,
+					expr:     types.ExprString(n),
+				})
 			}
-			arg := strings.Join(args, ", ")
-
-			sites = append(sites, identityMutationCallSite{
-				funcName:    funcName,
-				syscallName: sel.Sel.Name,
-				callExpr:    pkgIdent.Name + "." + sel.Sel.Name + "(" + arg + ")",
-				arg:         arg,
-			})
 			return true
 		})
 	}
 
-	return sites
+	return sites, valueRefs
 }

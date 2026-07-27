@@ -621,6 +621,10 @@ func NewSyscallAnalysisStore(store *Store) SyscallAnalysisStore
 
 現役の `emergencyShutdown` 呼び出し（特権復元失敗、identity 検証失敗、saved-set 読み取り失敗、saved-set 不一致）はいずれも `needsPrivilegeEscalation` 側の経路にあり、影響を受けない。
 
+**ロールバックブロックの削除に伴う構造上の手当て（2026-07-27 追記）**。上記のロールバックブロックは、単に到達不能であるだけでなく、「昇格に成功した後に `performElevation` 内で失敗する処理」に対する唯一の受け皿でもあった。`WithPrivileges` は `defer m.handleCleanupAndMetrics(execCtx)` を `performElevation` が成功して戻った後にしか登録しないため、そのような失敗が生じると EUID 0 を保持したまま復元も検証も行わずに戻ることになる。ブロックを単純に削除すると、この経路が生じないことの根拠は `prepareExecution` の switch が dry-run に `needsPrivilegeEscalation = false` を割り当てているという 1 箇所の対応関係だけになり、§1.2 の「削除で失われる制約は別の形で置き換える」を満たさない。
+
+そこで `performElevation` では **dry-run 解決を昇格より前に置き、昇格を最後の（かつ失敗し得る最後の）処理とする**。`escalatePrivileges` は失敗時に昇格を行わないため、これにより「昇格成功後に失敗して戻る」経路は operation の対応関係ではなく制御フローの構造として存在しなくなる。2 つのブロックの条件は現行の operation 対応では排他であり、順序の入れ替えは挙動を変えない。到達不能なコードを追加せずに不変条件を構造化できるため、ロールバックブロックを残す案は採らない。
+
 ### 4.4 Phase 3 で消える失敗経路
 
 `user.Current()` は passwd エントリを引けないときエラーを返し、そのエラーは呼び出し元を通じて `safefileio` に伝わり、ファイルアクセスは拒否される。`os.Getuid()` はエラーを返さないため、この失敗経路は消える。これは fail-closed（エラー時に安全側へ倒す）から fail-open（エラー時に許可側へ倒す）への変化であり、詳細と対応は §5.4 に記す。
