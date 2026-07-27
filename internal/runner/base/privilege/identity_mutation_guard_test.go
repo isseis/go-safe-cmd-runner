@@ -73,46 +73,32 @@ type identityMutationCallSite struct {
 
 // TestNoUnexpectedIdentityMutationSyscalls statically verifies that
 // syscall/unix identity-mutation functions (Seteuid, Setegid, ...) are only
-// called from escalatePrivileges (elevate to root) and restorePrivileges
-// (revert to the original UID), each with the exact argument expected. This
-// is the static replacement for a dynamic check that non-privileged CI
-// cannot perform, since a demotion syscall that fails with EPERM leaves
-// identity unchanged and so cannot be distinguished from one that was never
-// called.
+// called from escalatePrivileges(0) and restorePrivileges(m.originalUID).
+// It replaces a dynamic check that non-privileged CI cannot perform: a
+// demotion syscall failing with EPERM leaves identity unchanged, so it can't
+// be distinguished from one that was never called.
 //
-// This test parses every .go file in this package directory with
-// go/parser.ParseFile rather than go/parser.ParseDir: ParseDir is deprecated
-// as of Go 1.22, and this repository's staticcheck configuration does not
-// exempt _test.go files from SA1019. It deliberately does not interpret
-// build tags, so identity_linux.go and identity_other.go are both parsed
-// regardless of GOOS. Neither calls an identity-mutation function, so this
-// is safe, and it means the check applies uniformly across platforms rather
-// than only the one running the test.
+// Parsing notes:
+//   - Uses go/parser.ParseFile per file, not the deprecated ParseDir
+//     (SA1019, not exempted for _test.go in this repo's staticcheck config).
+//   - Does not interpret build tags, so identity_linux.go and
+//     identity_other.go are both parsed regardless of GOOS; neither calls an
+//     identity-mutation function, so the check applies uniformly across
+//     platforms.
+//   - Resolves each call's local package identifier to its import path via
+//     the file's imports (same technique as
+//     internal/runner/base/risk/live_identity_guard_test.go's
+//     liveIdentityRefsIn), so an aliased import can't bypass the guard and a
+//     same-named local identifier can't produce a false match.
 //
-// The local package identifier of each call is resolved to its import path
-// via the file's import declarations (the same technique as
-// internal/runner/base/risk/live_identity_guard_test.go's
-// liveIdentityRefsIn), so an aliased import (import sc "syscall") cannot
-// bypass the guard and an unrelated local identifier named "syscall" or
-// "unix" cannot produce a false match.
-//
-// What this test cannot detect: a function value reference to an
-// identity-mutation function (e.g. a struct literal field initialized as
-// `syscallSeteuid: syscall.Seteuid`) or an indirect call through an injected
-// function field (e.g. `m.syscallSetegid(gid)`). It only recognizes
-// qualified call expressions of the form `syscall.Seteuid(...)` or
-// `unix.Seteuid(...)`, not every selector expression (unlike
-// liveIdentityRefsIn, which inspects all selectors and so already catches
-// value references). Widening this test to selector expressions is deferred
-// rather than done now: UnixPrivilegeManager.syscallSeteuid / syscallSetegid
-// are still legitimately initialized from syscall.Seteuid / syscall.Setegid
-// as of this test's introduction (see newPlatformManager and
-// changeUserGroupInternal in unix.go), so a selector-wide check would fail
-// against still-valid code. A later step removes those injected fields
-// entirely (they become unreachable once the demotion path they support is
-// deleted) and extends this test to also reject bare function-value
-// references to identity-mutation functions, at which point widening to
-// selector expressions closes this gap for good.
+// Known gap: only recognizes qualified calls (`syscall.Seteuid(...)`), not a
+// function-value reference (`syscallSeteuid: syscall.Seteuid`) or an
+// indirect call through an injected field (`m.syscallSetegid(gid)`).
+// Widening to all selector expressions is deferred because
+// UnixPrivilegeManager.syscallSeteuid/syscallSetegid are still legitimately
+// initialized that way (see newPlatformManager, changeUserGroupInternal in
+// unix.go); a later step removes those fields once their demotion path is
+// deleted and extends this test to reject bare function-value references too.
 func TestNoUnexpectedIdentityMutationSyscalls(t *testing.T) {
 	// Control 1: an aliased import is still resolved to "syscall" (matching is by
 	// import path, not local name), and the disallowed argument is flagged.
