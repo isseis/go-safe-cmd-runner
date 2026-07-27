@@ -857,8 +857,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（[#929](https://github.com/isseis/go-safe-cmd-runner/pull/929)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -974,7 +974,7 @@ Phase 間に実装上の依存はない（設計書 §8.1）。以下の順序�
 - [x] PR-4 マージ済み（対象ステップ: 1-1、[#926](https://github.com/isseis/go-safe-cmd-runner/pull/926)）
 - [x] PR-5 マージ済み（対象ステップ: 2-1、[#927](https://github.com/isseis/go-safe-cmd-runner/pull/927)）
 - [x] PR-6 マージ済み（対象ステップ: 2-2、[#928](https://github.com/isseis/go-safe-cmd-runner/pull/928)）
-- [ ] PR-7 マージ済み（対象ステップ: 2-3）
+- [x] PR-7 マージ済み（対象ステップ: 2-3、[#929](https://github.com/isseis/go-safe-cmd-runner/pull/929)）
 
 ### 6.2 PR-1（ステップ 4-1 = Phase 4: `fileanalysis`）
 
@@ -1003,28 +1003,28 @@ Phase 間に実装上の依存はない（設計書 §8.1）。以下の順序�
 
 ### 6.4 PR-3（ステップ 3-2 = Phase 3 後半: passwd 依存の除去）
 
-- [ ] `getProcessRealUID` の本体を `os.Getuid()` へ変更（範囲検査を残す理由を doc コメントに明記）
-- [ ] `getProcessRealUID` の doc コメントを最終形へ書き換え
-- [ ] `TestGetProcessRealUID` が無修正で成功することの確認
-- [ ] `TestCanCurrentUserSafelyWriteFile_UsesRealUID` の追加（3 つの権限パターン）
-- [ ] `CHANGELOG.md` の `[Unreleased]` 節の新設（残る passwd 依存の明記を含む）
-- [ ] `user.Current(` の残存 0 件（§2.3 の完了条件）
-- [ ] `make fmt` / `make test` / `make lint` / `go vet -tags 'test integration' ./...` の成功、および CI 2 レグの成功
+- [x] `getProcessRealUID` の本体を `os.Getuid()` へ変更（範囲検査を残す理由を doc コメントに明記）
+- [x] `getProcessRealUID` の doc コメントを最終形へ書き換え
+- [x] `TestGetProcessRealUID` が無修正で成功することの確認
+- [x] `TestCanCurrentUserSafelyWriteFile_UsesRealUID` の追加（3 つの権限パターン）
+- [x] `CHANGELOG.md` の `[Unreleased]` 節の新設（残る passwd 依存の明記を含む）
+- [x] `user.Current(` の残存 0 件（§2.3 の完了条件）
+- [x] `make fmt` / `make test` / `make lint` / `go vet -tags 'test integration' ./...` の成功、および CI 2 レグの成功
 
 ### 6.5 PR-4（ステップ 1-1 = Phase 1: `environment` / `runner` / `executor`）
 
-- [ ] `filter.go` → `system_env.go` の改名と縮退
-- [ ] `filter_test.go` → `system_env_test.go` の改名と書き換え（削除 9 件・書き換え 3 件）
-- [ ] `filter_benchmark_test.go` の削除
-- [ ] `executor.getSystemEnvironment` の削除と置換、import 2 件の削除
-- [ ] `expansion.go:866` の置換と `TestExpandGlobal_SystemEnvIncludesAllParsableEntries` の追加
-- [ ] `Runner` の `envVars` / `envFilter` / `LoadSystemEnvironment` の削除と import の削除
-- [ ] `cmd/runner/main.go` の呼び出し削除
-- [ ] 呼び出し元テスト 12 箇所の更新（`err :=` への変更 2 箇所を含む）
-- [ ] `security-architecture.ja.md`（コードブロック :166-172 全体）・`config-inheritance-behavior.ja.md`（:41, :58）・`design-implementation-overview.ja.md`（:117）の修正 → コミット → `/mktrans` で英語版 3 ファイルへ反映
-- [ ] `package_reference.md` の 2 箇所の説明修正
-- [ ] `make fmt` / `make test` / `make lint` / `make build` / `go vet -tags 'test integration' ./...` の成功と、`make verify-docs` のリンクレポートの基準値照合（§2.4 の完了条件）
-- [ ] §8 の横断検索のうち PR-4 が担当する 5 項目（`Source` 型 / `ErrMalformedEnvVariable` / `filter.go` / `filter_benchmark_test` / `environment/.*filtering`）の実施
+- [x] `filter.go` → `system_env.go` の改名と縮退
+- [x] `filter_test.go` → `system_env_test.go` の改名と書き換え（削除 9 件・書き換え 3 件）
+- [x] `filter_benchmark_test.go` の削除
+- [x] `executor.getSystemEnvironment` の削除と置換、import 2 件の削除
+- [x] `expansion.go:866` の置換と `TestExpandGlobal_SystemEnvIncludesAllParsableEntries` の追加
+- [x] `Runner` の `envVars` / `envFilter` / `LoadSystemEnvironment` の削除と import の削除
+- [x] `cmd/runner/main.go` の呼び出し削除
+- [x] 呼び出し元テスト 12 箇所の更新（`err :=` への変更 2 箇所を含む）
+- [x] `security-architecture.ja.md`（コードブロック :166-172 全体）・`config-inheritance-behavior.ja.md`（:41, :58）・`design-implementation-overview.ja.md`（:117）の修正 → コミット → `/mktrans` で英語版 3 ファイルへ反映
+- [x] `package_reference.md` の 2 箇所の説明修正
+- [x] `make fmt` / `make test` / `make lint` / `make build` / `go vet -tags 'test integration' ./...` の成功と、`make verify-docs` のリンクレポートの基準値照合（§2.4 の完了条件）
+- [x] §8 の横断検索のうち PR-4 が担当する 5 項目（`Source` 型 / `ErrMalformedEnvVariable` / `filter.go` / `filter_benchmark_test` / `environment/.*filtering`）の実施
 
 ### 6.6 PR-5（ステップ 2-1 = Phase 2 前半: 本番未使用 API の削除）
 
@@ -1165,11 +1165,13 @@ Phase 間に実装上の依存はない（設計書 §8.1）。以下の順序�
 
 rg は Rust の正規表現構文を用いるため、`\|` は選択ではなく**リテラルのパイプ文字**として解釈される。複数語を探すときは必ず `-e` を並べる形にすること。
 
-- [ ] （PR-4）`rg -n --glob '*.go' '\bSource\b' internal/runner/base/environment/` — 削除した `Source` 型の残存参照が 0 件であること
-- [ ] （PR-4）`rg -n --glob '*.go' 'ErrMalformedEnvVariable'` — `environment` パッケージのコメントで参照していた `config` 側の sentinel が現役であり、コメント削除により孤立した記述が残っていないこと
-- [ ] （PR-4）`rg -n 'filter\.go' docs/dev/ README.md README.ja.md` — 一致 0 件であること。変更前は 6 件（`security-architecture.{ja.,}md` 各 1、`config-inheritance-behavior.{ja.,}md` 各 2）が一致し、いずれも §2.4 で修正対象としている（`docs/tasks/` の過去タスク記録は当時の状態として残すため検索対象に含めない）
-- [ ] （PR-4）`rg -n 'filter_benchmark_test' docs/dev/` — 削除したファイルへの参照が残っていないこと
-- [ ] （PR-4）`rg -n 'environment/.*filtering' docs/dev/developer_guide/package_reference.md` — 一致 0 件であること。変更前は :29 と :87 の 2 件（`environment/`: "Environment variable processing and filtering"）が一致する
+- [x] （PR-4）`rg -n --glob '*.go' '\bSource\b' internal/runner/base/environment/` — 削除した `Source` 型の残存参照が 0 件であること
+- [x] （PR-4）`rg -n --glob '*.go' 'ErrMalformedEnvVariable'` — `environment` パッケージのコメントで参照していた `config` 側の sentinel が現役であり、コメント削除により孤立した記述が残っていないこと
+- [x] （PR-4）`rg -n 'filter\.go' docs/dev/ README.md README.ja.md` — 一致 0 件であること。変更前は 6 件（`security-architecture.{ja.,}md` 各 1、`config-inheritance-behavior.{ja.,}md` 各 2）が一致し、いずれも §2.4 で修正対象としている（`docs/tasks/` の過去タスク記録は当時の状態として残すため検索対象に含めない）
+- [x] （PR-4）`rg -n 'filter_benchmark_test' docs/dev/` — 削除したファイルへの参照が残っていないこと
+- [x] （PR-4）`rg -n 'environment/.*filtering' docs/dev/developer_guide/package_reference.md` — 一致 0 件であること。変更前は :29 と :87 の 2 件（`environment/`: "Environment variable processing and filtering"）が一致する
+
+  **本項目の実施漏れの訂正（2026-07-27、タスク完了確認時）**: PR-4 マージ後、:87（`runner/base/environment/`: "Environment variable processing and filtering"）の修正が漏れていたことが本タスク完了確認の過程で判明した（:29 のみ修正済みだった）。本コミットで :87 を実態（システム環境の列挙と denylist 判定）に合わせて修正し、上記検索式が実際に一致 0 件であることを確認した。
 - [ ] （PR-7）`rg -n 'privilege/unix\.go' docs/dev/architecture_design/security-architecture.ja.md docs/dev/architecture_design/security-architecture.md` — §5「特権管理」の構造体引用は設計書 §7.3 の判断に従い本タスクでは修正しない。[#919](https://github.com/isseis/go-safe-cmd-runner/issues/919) に追記すること
 
   **本項目の前提の訂正（2026-07-27、PR-7 実施時）**: 本項目は「Phase 2 で不正確さが増すことを確認し」としていたが、実施時に確認したところこの前提は**誤り**である。引用されている `UnixPrivilegeManager` の構造体定義（両ファイル :271-278）は `logger` / `originalUID` / `privilegeSupported` / `metrics` / `mu` の 5 フィールドのみを挙げており、Phase 2 で削除した `syscallSeteuid` / `syscallSetegid` を元々含んでいない。したがって Phase 2 は引用の正確さをむしろ僅かに**高めている**。#919 へ追記すべき実際の不正確さは次の 2 点であり、いずれも本タスクの変更とは独立に以前から存在する。
@@ -1186,26 +1188,26 @@ rg は Rust の正規表現構文を用いるため、`\|` は選択ではなく
 
 ## 9. 成功基準
 
-- [ ] AC-01〜AC-23、AC-25〜AC-29 のすべてに対し、§7 の検証手段が実行され期待結果を満たしている（AC-24 は AC-21〜AC-23 を採るため対象外）
-- [ ] 各 AC に少なくとも 1 つの `test` または `static` の検証が対応している
-- [ ] `make fmt` / `make test` / `make lint` がグリーンである
-- [ ] `make build` が成功する
-- [ ] `go vet -tags 'test integration' ./...` が成功する
-- [ ] `make deadcode` の出力から `internal/fileanalysis/syscall_store.go` の 3 行が消えている
-- [ ] `make test-ci-cgo1` / `make test-ci-cgo0` / `make elfanalyzer-integration-test` が成功する
-- [ ] Phase 2 について §2.7 の特権環境確認 5 項目が完了している
-- [ ] §3.2 の PR-1〜PR-7 がそれぞれ独立してレビュー可能であり、単独でグリーンゲートを通る。見送った PR がある場合、対応する AC は未達として §7 に記録する
-- [ ] 削除対象に直接依存していたテスト（§2 の各 Step で列挙）を除き、既存テストが無修正で pass している
-- [ ] `CHANGELOG.md` の `[Unreleased]` に Phase 3 の挙動変化と、グループ書き込み可能なファイルに残る passwd 依存が記載されている
-- [ ] Phase 1 が触る 3 組のバイリンガル文書（`security-architecture`、`config-inheritance-behavior`、`design-implementation-overview`）について、日本語版と英語版の記述が一致している
+- [x] AC-01〜AC-23、AC-25〜AC-29 のすべてに対し、§7 の検証手段が実行され期待結果を満たしている（AC-24 は AC-21〜AC-23 を採るため対象外）
+- [x] 各 AC に少なくとも 1 つの `test` または `static` の検証が対応している
+- [x] `make fmt` / `make test` / `make lint` がグリーンである
+- [x] `make build` が成功する
+- [x] `go vet -tags 'test integration' ./...` が成功する
+- [x] `make deadcode` の出力から `internal/fileanalysis/syscall_store.go` の 3 行が消えている
+- [x] `make test-ci-cgo1` / `make test-ci-cgo0` / `make elfanalyzer-integration-test` が成功する
+- [x] Phase 2 について §2.7 の特権環境確認 5 項目が完了している
+- [x] §3.2 の PR-1〜PR-7 がそれぞれ独立してレビュー可能であり、単独でグリーンゲートを通る。見送った PR がある場合、対応する AC は未達として §7 に記録する（全 7 PR がマージ済みであり、見送りはない）
+- [x] 削除対象に直接依存していたテスト（§2 の各 Step で列挙）を除き、既存テストが無修正で pass している
+- [x] `CHANGELOG.md` の `[Unreleased]` に Phase 3 の挙動変化と、グループ書き込み可能なファイルに残る passwd 依存が記載されている
+- [x] Phase 1 が触る 3 組のバイリンガル文書（`security-architecture`、`config-inheritance-behavior`、`design-implementation-overview`）について、日本語版と英語版の記述が一致している
 
 ---
 
 ## 10. 残作業
 
-- [ ] 全ステップの実装と、§3.2 の PR-1〜PR-7 の作成・レビュー・マージ
-- [ ] PR-7（Phase 2）マージ後に、設計書 §9 の検討事項として記録済みの後続タスクへ進捗を反映する
-  - dry-run と実行時で別実装になっている識別情報の解決（[#918](https://github.com/isseis/go-safe-cmd-runner/issues/918)）
-  - `security-architecture` §5「特権管理」の全面更新（[#919](https://github.com/isseis/go-safe-cmd-runner/issues/919)）
+- [x] 全ステップの実装と、§3.2 の PR-1〜PR-7 の作成・レビュー・マージ
+- [x] PR-7（Phase 2）マージ後に、設計書 §9 の検討事項として記録済みの後続タスクへ進捗を反映する
+  - dry-run と実行時で別実装になっている識別情報の解決（[#918](https://github.com/isseis/go-safe-cmd-runner/issues/918)）— 0157 の変更範囲外のため追記は行っていない。着手する場合は本タスクの完了後、独立した issue として扱う
+  - `security-architecture` §5「特権管理」の全面更新（[#919](https://github.com/isseis/go-safe-cmd-runner/issues/919)）— PR-7 実施時に判明した起票時の前提の誤りと、実在する不正確さの棚卸しをコメントとして追記済み（[issuecomment-5092735691](https://github.com/isseis/go-safe-cmd-runner/issues/919#issuecomment-5092735691)）。全面更新の着手自体は本タスクのスコープ外
 - [ ] PR-3（Phase 3）マージ後に、権限チェック主体の明示指定（[#920](https://github.com/isseis/go-safe-cmd-runner/issues/920)）へ着手する。`runner` の経路から `SUDO_UID` の参照を外すもので、0157 が触る `getPermissionCheckUID` の直接の後続にあたる
 - [ ] [#920](https://github.com/isseis/go-safe-cmd-runner/issues/920) の完了後に、`runner` の native root 実行サポートの是非を検討する（[#921](https://github.com/isseis/go-safe-cmd-runner/issues/921)）。着手する場合、PR-6 で導入する `TestNoUnexpectedIdentityMutationSyscalls` の許可リストの更新が必要になる
