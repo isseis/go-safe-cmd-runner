@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUnixPrivilegeManager_WithUserGroupInternal(t *testing.T) {
+func TestUnixPrivilegeManager_DryRunResolution(t *testing.T) {
 	logger := slog.Default()
 	manager := &UnixPrivilegeManager{
 		logger:             logger,

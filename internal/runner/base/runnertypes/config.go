@@ -193,8 +193,4 @@ var (
 type PrivilegeManager interface {
 	IsPrivilegedExecutionSupported() bool
 	WithPrivileges(elevationCtx ElevationContext, fn func() error) error
-
-	// Enhanced privilege management for user/group specification
-	WithUserGroup(user, group string, fn func() error) error
-	IsUserGroupSupported() bool
 }
