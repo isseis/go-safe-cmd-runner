@@ -297,9 +297,13 @@ func isAllowedIdentityMutationCall(call allowedIdentityMutationCall) bool {
 //
 // *_test.go is skipped by the toolchain's own naming rule. Beyond that, a file
 // is skipped only when its //go:build constraint positively requires the "test"
-// tag, because only such a file can never reach a production build. A
-// constraint that merely evaluates false without the tag -- "!linux && !windows",
-// or "!test" -- says nothing about test-only-ness and does not exempt the file.
+// tag, i.e. the constraint cannot be satisfied without it, because only such a
+// file can never reach a production build. Anything else is scanned, which is
+// the safe direction for a security guard: a constraint that merely evaluates
+// false without the tag -- "!linux && !windows", or "!test" -- says nothing
+// about test-only-ness, and one that is merely satisfiable with the tag --
+// "test || performance", which also builds under "performance" alone -- can
+// still reach a build without it. Neither exempts the file.
 // Consequently the platform-constrained production files (identity_linux.go,
 // identity_other.go) are scanned whatever the current GOOS, which is the point:
 // the guard must cover every platform variant, not just the one being built.
@@ -350,17 +354,21 @@ func findIdentityMutationRefs(t *testing.T, dir string) ([]identityMutationCallS
 }
 
 // isTestOnlyBuildConstrained reports whether src's //go:build constraint
-// positively requires the "test" tag, which in this repo means the file is not
-// part of a production build.
+// positively requires the "test" tag -- that is, whether the constraint is
+// unsatisfiable unless the tag is set -- which in this repo means the file is
+// not part of a production build.
 //
-// It deliberately inspects the tag's polarity rather than evaluating the
-// constraint. Evaluation cannot distinguish the two reasons a constraint is
-// false: identity_other.go (`!linux && !windows`) is false on Linux but is
-// still production code, and this scan reads every platform variant on purpose.
+// It deliberately inspects the constraint's structure rather than evaluating
+// it. Evaluation cannot distinguish the two reasons a constraint is false:
+// identity_other.go (`!linux && !windows`) is false on Linux but is still
+// production code, and this scan reads every platform variant on purpose.
 //
-// Only a positive requirement marks a file as non-production: `!test` selects
-// the file precisely when the test tag is absent, so it ships in production
-// builds and must stay under this security guard rather than be exempted.
+// Only a positive requirement marks a file as non-production, and the test is
+// strict. `!test` selects the file precisely when the test tag is absent, so it
+// ships in production builds. `test || performance` still builds under
+// `performance` alone, so it too can reach a production build. Both stay under
+// this security guard rather than be exempted; erring towards scanning is the
+// safe direction here.
 func isTestOnlyBuildConstrained(t *testing.T, filename, src string) bool {
 	t.Helper()
 
@@ -385,13 +393,27 @@ func isTestOnlyBuildConstrained(t *testing.T, filename, src string) bool {
 	return false
 }
 
-// constraintRequiresTag reports whether expr references the named build tag in
-// a non-negated position, at any nesting depth. negated carries the polarity of
-// the surrounding context and must be false at the top-level call.
+// constraintRequiresTag reports whether expr positively REQUIRES the named
+// build tag, i.e. whether "expr is satisfied" implies "tag is set". It is an
+// implication check, not a "does the tag appear anywhere" check: a constraint
+// that merely mentions the tag, such as `test || performance`, is satisfiable
+// with the tag unset and therefore does not require it.
 //
-// A mention under negation is ignored on purpose: `!tag` selects the file when
-// the tag is absent, which is the opposite of requiring it, so counting such a
-// mention would misclassify production code.
+// The recursion follows from that definition:
+//   - `A && B` requires the tag if EITHER side does, since both sides hold
+//     whenever the conjunction does.
+//   - `A || B` requires the tag only if BOTH sides do, since either side alone
+//     may be the one that holds.
+//
+// negated carries the polarity of the surrounding context and must be false at
+// the top-level call. Under negation the operators swap, by De Morgan: the
+// satisfying condition of `!(A || B)` is `!A && !B`, so an OrExpr seen under a
+// negation must be treated as a conjunction, and vice versa. Answering with the
+// unnegated rule there would invert the result.
+//
+// A bare tag under negation never requires the tag: `!tag` selects the file
+// when the tag is absent, which is the opposite of requiring it, so counting
+// such a mention would misclassify production code.
 func constraintRequiresTag(expr constraint.Expr, tag string, negated bool) bool {
 	switch e := expr.(type) {
 	case *constraint.TagExpr:
@@ -399,9 +421,15 @@ func constraintRequiresTag(expr constraint.Expr, tag string, negated bool) bool 
 	case *constraint.NotExpr:
 		return constraintRequiresTag(e.X, tag, !negated)
 	case *constraint.AndExpr:
-		return constraintRequiresTag(e.X, tag, negated) || constraintRequiresTag(e.Y, tag, negated)
+		if negated {
+			return constraintRequiresTag(e.X, tag, true) && constraintRequiresTag(e.Y, tag, true)
+		}
+		return constraintRequiresTag(e.X, tag, false) || constraintRequiresTag(e.Y, tag, false)
 	case *constraint.OrExpr:
-		return constraintRequiresTag(e.X, tag, negated) || constraintRequiresTag(e.Y, tag, negated)
+		if negated {
+			return constraintRequiresTag(e.X, tag, true) || constraintRequiresTag(e.Y, tag, true)
+		}
+		return constraintRequiresTag(e.X, tag, false) && constraintRequiresTag(e.Y, tag, false)
 	default:
 		return false
 	}
@@ -420,15 +448,18 @@ func TestIsTestOnlyBuildConstrained(t *testing.T) {
 		constraint string
 		want       bool
 	}{
-		"test tag alone":                       {"//go:build test", true},
-		"test tag with platform":               {"//go:build !windows && test", true},
-		"test tag in a disjunction":            {"//go:build test || performance", true},
-		"negated test tag is still production": {"//go:build !test", false},
-		"test tag with a negation elsewhere":   {"//go:build test && !windows", true},
-		"platform only, false on linux":        {"//go:build !linux && !windows", false},
-		"platform only, true on linux":         {"//go:build linux", false},
-		"unrelated tag":                        {"//go:build integration", false},
-		"no constraint":                        {"", false},
+		"test tag alone":         {"//go:build test", true},
+		"test tag with platform": {"//go:build !windows && test", true},
+		"disjunction with another tag builds without test": {"//go:build test || performance", false},
+		"disjunction with a platform builds without test":  {"//go:build !windows || test", false},
+		"negated disjunction requires neither tag":         {"//go:build !(test || performance)", false},
+		"negated conjunction requires neither tag":         {"//go:build !(test && linux)", false},
+		"negated test tag is still production":             {"//go:build !test", false},
+		"test tag with a negation elsewhere":               {"//go:build test && !windows", true},
+		"platform only, false on linux":                    {"//go:build !linux && !windows", false},
+		"platform only, true on linux":                     {"//go:build linux", false},
+		"unrelated tag":                                    {"//go:build integration", false},
+		"no constraint":                                    {"", false},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
