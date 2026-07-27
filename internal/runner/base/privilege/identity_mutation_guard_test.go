@@ -36,10 +36,11 @@ var identityMutationFuncNames = map[string]struct{}{
 	"Setfsgid":  {},
 }
 
-// isTrackedIdentityMutationImportPath reports whether importPath is "syscall"
-// or golang.org/x/sys/unix (matched by suffix, like the sibling guard
-// forbiddenLiveIdentityPackage in internal/runner/base/risk, so a vendored or
-// differently rooted path still resolves).
+// isTrackedIdentityMutationImportPath reports whether importPath is "syscall",
+// exactly "unix", or ends in "/unix" (e.g. golang.org/x/sys/unix), matching by
+// suffix like the sibling guard forbiddenLiveIdentityPackage in
+// internal/runner/base/risk, so a vendored or differently rooted path still
+// resolves.
 func isTrackedIdentityMutationImportPath(importPath string) bool {
 	return importPath == "syscall" || importPath == "unix" || strings.HasSuffix(importPath, "/unix")
 }
