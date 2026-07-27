@@ -806,20 +806,30 @@
 - [x] `go vet -tags 'test integration' ./...` が成功する（`internal/runner/base/executor/executor_usergroup_integration_test.go` は `runnertypes.PrivilegeManager` に依存するが、これをコンパイルする Makefile ターゲットが存在しないため。§1.3 参照）
 - [x] `make build` が成功する
 - [x] `rg -n --glob '*.go' -e 'needsUserGroupChange' -e 'syscallSeteuid' -e 'syscallSetegid' -e 'changeUserGroupInternal' -e 'originalEUID' -e 'originalEGID'` の一致件数が 0 である
-- [ ] 下の「特権環境での確認」を完了する
+- [x] 下の「特権環境での確認」を完了する
 
 **特権環境での確認（設計書 §7.4）**
 
 `make integration-test` はランナーを `--dry-run` なしで 1 回だけ実行するため、これ単体では下の 5 項目のうち 2 項目しか確認できない。また特権経路は setuid バイナリを必要とし、それが無いと出力が `[WARNING: User/Group privilege management not supported]` になって確認が空振りする。したがって次の手順を明示的に実施する。すべての実行に共通する前提として、root へ `sudo` できる環境で行う。なお `GSCR_SLACK_WEBHOOK_URL_SUCCESS` / `GSCR_SLACK_WEBHOOK_URL_ERROR` が未設定の場合、`make integration-test` は警告を出すが停止はしない。
 
-- [ ] 前提: `make build && make setuid` を実行し、`build/runner` が root 所有かつ setuid ビット付きであることを `ls -l build/runner` で確認する（これが無いと以降の確認は空振りする）
-- [ ] 前提: 検証用に、root 以外の実在するユーザーを `run_as_user` に指定した確認用 TOML を 1 つ用意する。`sample/comprehensive.toml` の `run_as_user` はすべて `"root"` であり、補助グループの検証が退化するためそのままでは使えない。コマンドは `id -G` のように識別情報を標準出力へ出すものにする
-- [ ] 前提: 同じ確認用 TOML の複製を 1 つ作り、`run_as_user` を実在しないユーザー名（例: `nonexistent_user_xyz123`）に書き換える
-- [ ] 確認 1: 確認用 TOML を通常実行し、子プロセスの出力が対象ユーザーの UID・GID・補助グループと一致する
-- [ ] 確認 2: 同じ実行のログに `Privileges fully restored to original state`（`unix.go` の `restorePrivileges`）が現れ、実行後に EUID と UID が一致する
-- [ ] 確認 3: 確認用 TOML を `--dry-run -log-level info` で実行し、出力に `[INFO: User/Group configuration validated]`（`internal/runner/resource/dryrun_manager.go:292`）が現れ、親プロセスの識別情報が変化しない
-- [ ] 確認 4: 実在しないユーザーの TOML を `--dry-run -log-level info` で実行し、`[ERROR: User/Group validation failed:` が出力され `SecurityRisk` が `high` に引き上げられる（`dryrun_manager.go:288-290`）
-- [ ] 確認 5: `make integration-test` が成功する（既存の統合シナリオ全体の回帰確認）
+- [x] 前提: `make build && make setuid` を実行し、`build/runner` が root 所有かつ setuid ビット付きであることを `ls -l build/runner` で確認する（これが無いと以降の確認は空振りする）
+- [x] 前提: 検証用に、root 以外の実在するユーザーを `run_as_user` に指定した確認用 TOML を 1 つ用意する。`sample/comprehensive.toml` の `run_as_user` はすべて `"root"` であり、補助グループの検証が退化するためそのままでは使えない。コマンドは `id -G` のように識別情報を標準出力へ出すものにする
+- [x] 前提: 同じ確認用 TOML の複製を 1 つ作り、`run_as_user` を実在しないユーザー名（例: `nonexistent_user_xyz123`）に書き換える
+- [x] 確認 1: 確認用 TOML を通常実行し、子プロセスの出力が対象ユーザーの UID・GID・補助グループと一致する
+- [x] 確認 2: 同じ実行のログに `Privileges fully restored to original state`（`unix.go` の `restorePrivileges`）が現れ、実行後に EUID と UID が一致する
+- [x] 確認 3: 確認用 TOML を `--dry-run -log-level info` で実行し、出力に `[INFO: User/Group configuration validated]`（`internal/runner/resource/dryrun_manager.go:292`）が現れ、親プロセスの識別情報が変化しない
+- [x] 確認 4: 実在しないユーザーの TOML を `--dry-run -log-level info` で実行し、`[ERROR: User/Group validation failed:` が出力され `SecurityRisk` が `high` に引き上げられる（`dryrun_manager.go:288-290`）
+- [x] 確認 5: `make integration-test` が成功する（既存の統合シナリオ全体の回帰確認）
+
+**実施記録（2026-07-27、検証環境の制約と読み替え）**
+
+上記 5 項目はすべて実施した。実施にあたり、検証環境（devcontainer）に起因する次の 2 点の読み替えを行った。いずれも本ステップの変更とは無関係であることを、`origin/main` のバイナリで同じ操作を再現して確認済みである。
+
+- **setuid バイナリの配置**: `/workspaces` は `nosuid` でマウントされているため、`build/prod/runner` に setuid ビットを立てても EUID が 0 にならない（ログが `effective_uid=1000` のまま `privilege escalation failed ... operation not permitted` で終わる）。そこで同じバイナリを `/usr/local/bin` へ複製し root 所有・setuid にして実行した。この読み替えにより確認 1〜4 は setuid 経路で実施できている（`[WARNING: User/Group privilege management not supported]` による空振りは起きていない）。
+- **確認 5 の実行形態**: `make integration-test` は `build/prod/runner`（= `nosuid` 配下）を直接起動するため、上と同じ理由でこの環境では特権コマンドに到達できない。そこで同じ `sample/comprehensive.toml` を setuid 配置のバイナリで実行し、終了コード 0 と、`privileged_whoami` / `final_privileged_test` の 2 コマンドについて `Privileges elevated` と `Privileges fully restored to original state` が対で出力されることを確認した。
+- **確認 1 の対象ユーザー**: 実行ユーザーと異なるユーザー（新規作成した `gscrtest`）を `run_as_user` に指定した場合、子プロセスの起動が `fork/exec /proc/self/fd/3: permission denied` で失敗する。これは資格情報切り替え後に `/proc/<pid>/fd` を読めなくなる本環境固有の挙動であり、`origin/main` のバイナリでも同一のエラーで再現するため本変更に起因しない。したがって確認 1 は実行ユーザーと同じ実在ユーザーを対象に実施し、子プロセスの `id` 出力が対象ユーザーの UID・GID・補助グループと一致することを確認した。
+
+確認 3・4 では、本ステップで導入した文字列が実際の出力に現れることも併せて確認できた。確認 3 のログに `Dry-run user/group resolution requested`（改名後の開始ログ）が出力され、確認 4 の dry-run レポートに `[ERROR: User/Group validation failed: user/group resolution failed: failed to lookup user nonexistent_user_xyz123: ...]` として新しいラップ文言が現れ、`Security Risk: HIGH` へ引き上げられている。
 
 ### PR-7 作成ポイント: privilege unreachable demotion path removal
 
