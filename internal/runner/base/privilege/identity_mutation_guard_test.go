@@ -45,27 +45,30 @@ func isTrackedIdentityMutationImportPath(importPath string) bool {
 }
 
 // allowedIdentityMutationCall identifies one permitted call site: the
-// enclosing function and the exact argument expression, rendered by
+// enclosing function, the specific syscall/unix function name (e.g.
+// "Seteuid"), and the exact argument expression, rendered by
 // go/types.ExprString, that the call must use.
 type allowedIdentityMutationCall struct {
-	funcName string
-	arg      string
+	funcName    string
+	syscallName string
+	arg         string
 }
 
 // allowedIdentityMutationCalls is the exhaustive list of identity-mutation
 // calls this package may make: escalating to root, and restoring the
 // original UID afterwards. No other combination is permitted.
 var allowedIdentityMutationCalls = []allowedIdentityMutationCall{
-	{funcName: "escalatePrivileges", arg: "0"},
-	{funcName: "restorePrivileges", arg: "m.originalUID"},
+	{funcName: "escalatePrivileges", syscallName: "Seteuid", arg: "0"},
+	{funcName: "restorePrivileges", syscallName: "Seteuid", arg: "m.originalUID"},
 }
 
 // identityMutationCallSite records one identity-mutation call found by
 // parsing a source file.
 type identityMutationCallSite struct {
-	funcName string
-	callExpr string // rendered "pkg.Func(args)" for failure messages
-	arg      string
+	funcName    string
+	syscallName string
+	callExpr    string // rendered "pkg.Func(args)" for failure messages
+	arg         string
 }
 
 // TestNoUnexpectedIdentityMutationSyscalls statically verifies that
@@ -126,11 +129,47 @@ func TestNoUnexpectedIdentityMutationSyscalls(t *testing.T) {
 	require.Len(t, unixSites, 1)
 	assert.Equal(t, "restorePrivileges", unixSites[0].funcName)
 
+	// Control 4: a call sharing the allowed (funcName, arg) pair but using a
+	// different identity-mutation syscall must not be treated as allowed.
+	// This guards against the allowlist matching on funcName/arg alone and
+	// missing a swap like Setuid(0) in place of the required Seteuid(0).
+	wrongSyscallSrc := "package p\n" +
+		"import \"syscall\"\n" +
+		"func escalatePrivileges() error { return syscall.Setuid(0) }\n"
+	wrongSyscallSites := identityMutationCallSitesInSource(t, "wrong_syscall.go", wrongSyscallSrc)
+	require.Len(t, wrongSyscallSites, 1)
+	got := allowedIdentityMutationCall{
+		funcName:    wrongSyscallSites[0].funcName,
+		syscallName: wrongSyscallSites[0].syscallName,
+		arg:         wrongSyscallSites[0].arg,
+	}
+	assert.False(t, isAllowedIdentityMutationCall(got),
+		"Setuid(0) in escalatePrivileges must not be allowed even though escalatePrivileges/Seteuid(0) is; only the specific syscall/arg combination is permitted")
+
+	// Control 5: a call inside a package-level var initializer, outside any function
+	// body, must still be found; the decl loop must not only walk *ast.FuncDecl.
+	packageLevelSrc := "package p\n" +
+		"import \"syscall\"\n" +
+		"var _ = syscall.Seteuid(0)\n"
+	packageLevelSites := identityMutationCallSitesInSource(t, "package_level.go", packageLevelSrc)
+	require.Len(t, packageLevelSites, 1, "a call in a package-level var initializer must be detected")
+	assert.Equal(t, "package-level", packageLevelSites[0].funcName)
+
+	// Control 6: a parenthesized callee must resolve the same as an unparenthesized
+	// one, since ast.CallExpr.Fun can be wrapped in *ast.ParenExpr.
+	parenSrc := "package p\n" +
+		"import \"syscall\"\n" +
+		"func escalatePrivileges() error { return (syscall.Seteuid)(0) }\n"
+	parenSites := identityMutationCallSitesInSource(t, "paren.go", parenSrc)
+	require.Len(t, parenSites, 1, "a parenthesized callee like (syscall.Seteuid)(0) must be detected")
+	assert.Equal(t, "escalatePrivileges", parenSites[0].funcName)
+	assert.Equal(t, "0", parenSites[0].arg)
+
 	sites := findIdentityMutationCallSites(t, ".")
 
 	seen := make(map[allowedIdentityMutationCall]bool, len(allowedIdentityMutationCalls))
 	for _, site := range sites {
-		got := allowedIdentityMutationCall{funcName: site.funcName, arg: site.arg}
+		got := allowedIdentityMutationCall{funcName: site.funcName, syscallName: site.syscallName, arg: site.arg}
 		if !isAllowedIdentityMutationCall(got) {
 			t.Errorf("unexpected identity-mutation call %s in function %s: only escalatePrivileges(0) and restorePrivileges(m.originalUID) are permitted",
 				site.callExpr, site.funcName)
@@ -141,8 +180,8 @@ func TestNoUnexpectedIdentityMutationSyscalls(t *testing.T) {
 
 	for _, allowed := range allowedIdentityMutationCalls {
 		if !seen[allowed] {
-			t.Errorf("expected call with argument %s not found in function %s; the check may be vacuously passing",
-				allowed.arg, allowed.funcName)
+			t.Errorf("expected call %s(%s) not found in function %s; the check may be vacuously passing",
+				allowed.syscallName, allowed.arg, allowed.funcName)
 		}
 	}
 }
@@ -246,18 +285,37 @@ func identityMutationCallSitesInSource(t *testing.T, filename, src string) []ide
 
 	var sites []identityMutationCallSite
 	for _, decl := range file.Decls {
-		funcDecl, ok := decl.(*ast.FuncDecl)
-		if !ok || funcDecl.Body == nil {
+		// funcName labels reported sites; package-level var/const initializers have no
+		// enclosing function, so this fallback keeps them from being silently skipped.
+		funcName := "package-level"
+		node := ast.Node(decl)
+		if funcDecl, ok := decl.(*ast.FuncDecl); ok {
+			if funcDecl.Body == nil {
+				continue
+			}
+			funcName = funcDecl.Name.Name
+			node = funcDecl.Body
+		} else if _, ok := decl.(*ast.GenDecl); !ok {
 			continue
 		}
 
-		ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
+		ast.Inspect(node, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
 
-			sel, ok := call.Fun.(*ast.SelectorExpr)
+			// Unwrap parens so a parenthesized callee like (syscall.Seteuid)(0) is still recognized.
+			fun := call.Fun
+			for {
+				paren, ok := fun.(*ast.ParenExpr)
+				if !ok {
+					break
+				}
+				fun = paren.X
+			}
+
+			sel, ok := fun.(*ast.SelectorExpr)
 			if !ok {
 				return true
 			}
@@ -288,9 +346,10 @@ func identityMutationCallSitesInSource(t *testing.T, filename, src string) []ide
 			arg := strings.Join(args, ", ")
 
 			sites = append(sites, identityMutationCallSite{
-				funcName: funcDecl.Name.Name,
-				callExpr: pkgIdent.Name + "." + sel.Sel.Name + "(" + arg + ")",
-				arg:      arg,
+				funcName:    funcName,
+				syscallName: sel.Sel.Name,
+				callExpr:    pkgIdent.Name + "." + sel.Sel.Name + "(" + arg + ")",
+				arg:         arg,
 			})
 			return true
 		})
