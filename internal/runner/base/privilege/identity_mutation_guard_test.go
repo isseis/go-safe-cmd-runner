@@ -199,6 +199,21 @@ func isTestHelpersFileName(name string) bool {
 	return base == "test_helpers" || strings.HasPrefix(base, "test_helpers_")
 }
 
+func TestIsTestHelpersFileName(t *testing.T) {
+	tests := map[string]bool{
+		"test_helpers.go":       true,
+		"test_helpers_group.go": true,
+		"test_helpersgroup.go":  false, // no separator: not the "_<category>" form
+		"testhelpers.go":        false,
+		"helpers_test.go":       false, // this is a _test.go file, not a test_helpers one
+		"manager.go":            false,
+		"manager_test.go":       false,
+	}
+	for name, want := range tests {
+		assert.Equalf(t, want, isTestHelpersFileName(name), "isTestHelpersFileName(%q)", name)
+	}
+}
+
 // identityMutationCallSitesInSource parses src (Go source for a single file
 // named filename) and returns every call to a syscall/unix identity-mutation
 // function, with the local package identifier of each call resolved to its
