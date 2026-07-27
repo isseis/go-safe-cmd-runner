@@ -72,6 +72,15 @@ type identityMutationCallSite struct {
 	arg         string
 }
 
+// identityMutationValueRef records one identity-mutation function referenced as
+// a value rather than called outright, e.g. a struct field initialized to
+// syscall.Seteuid. Such a reference can be invoked later through that variable
+// or field, which the call-site scan cannot follow, so none are permitted.
+type identityMutationValueRef struct {
+	funcName string
+	expr     string // rendered "pkg.Func" for failure messages
+}
+
 // TestNoUnexpectedIdentityMutationSyscalls statically verifies that
 // syscall/unix identity-mutation functions (Seteuid, Setegid, ...) are only
 // called from escalatePrivileges(0) and restorePrivileges(m.originalUID).
@@ -92,14 +101,17 @@ type identityMutationCallSite struct {
 //     liveIdentityRefsIn), so an aliased import can't bypass the guard and a
 //     same-named local identifier can't produce a false match.
 //
-// Known gap: only recognizes qualified calls (`syscall.Seteuid(...)`), not a
-// function-value reference (`syscallSeteuid: syscall.Seteuid`) or an
-// indirect call through an injected field (`m.syscallSetegid(gid)`).
-// Widening to all selector expressions is deferred because
-// UnixPrivilegeManager.syscallSeteuid/syscallSetegid are still legitimately
-// initialized that way (see newPlatformManager, changeUserGroupInternal in
-// unix.go); a later step removes those fields once their demotion path is
-// deleted and extends this test to reject bare function-value references too.
+// Beyond direct calls, it also rejects referencing any of these functions as a
+// value, e.g. a struct field initialized to syscall.Seteuid. Such a reference
+// could be invoked later through that variable or field -- an indirect call
+// this AST scan cannot follow to its target -- so no value reference is
+// permitted anywhere in the package. Together the two checks mean an
+// identity-mutation function can only be reached through the two allowed call
+// sites above.
+//
+// Remaining gap: a call reaching these syscalls without naming them here, e.g.
+// via reflection or a helper in another package, is still invisible to this
+// scan.
 func TestNoUnexpectedIdentityMutationSyscalls(t *testing.T) {
 	// Control 1: an aliased import is still resolved to "syscall" (matching is by
 	// import path, not local name), and the disallowed argument is flagged.
@@ -166,7 +178,32 @@ func TestNoUnexpectedIdentityMutationSyscalls(t *testing.T) {
 	assert.Equal(t, "escalatePrivileges", parenSites[0].funcName)
 	assert.Equal(t, "0", parenSites[0].arg)
 
-	sites := findIdentityMutationCallSites(t, ".")
+	// Control 7: a function-value reference is reported as a value ref, not a call.
+	// This is the form that lets an identity-mutation function be invoked later
+	// through a variable or field, which the call-site scan cannot follow.
+	valueRefSrc := "package p\n" +
+		"import \"syscall\"\n" +
+		"func newPlatformManager() func(int) error { return syscall.Seteuid }\n"
+	valueRefCalls, valueRefSites := identityMutationRefsInSource(t, "value_ref.go", valueRefSrc)
+	assert.Empty(t, valueRefCalls, "a bare function-value reference must not be counted as a call")
+	require.Len(t, valueRefSites, 1, "a bare function-value reference must be detected")
+	assert.Equal(t, "newPlatformManager", valueRefSites[0].funcName)
+	assert.Equal(t, "syscall.Seteuid", valueRefSites[0].expr)
+
+	// Control 8: an outright call is not additionally reported as a value reference,
+	// so the two allowed call sites below do not themselves trip the value-ref check.
+	calledNotValueRefs := identityMutationValueRefsInSource(t, "called.go",
+		"package p\n"+
+			"import \"syscall\"\n"+
+			"func escalatePrivileges() error { return syscall.Seteuid(0) }\n")
+	assert.Empty(t, calledNotValueRefs, "a called selector must not also be reported as a function-value reference")
+
+	sites, valueRefs := findIdentityMutationRefs(t, ".")
+
+	for _, ref := range valueRefs {
+		t.Errorf("identity-mutation function %s referenced as a value in function %s; it could be invoked indirectly through a variable or field, which this check cannot follow, so no value reference is permitted",
+			ref.expr, ref.funcName)
+	}
 
 	seen := make(map[allowedIdentityMutationCall]bool, len(allowedIdentityMutationCalls))
 	for _, site := range sites {
@@ -196,22 +233,24 @@ func isAllowedIdentityMutationCall(call allowedIdentityMutationCall) bool {
 	return false
 }
 
-// findIdentityMutationCallSites parses every non-test .go file in dir and
-// returns every call to a syscall/unix identity-mutation function, recording
-// the name of the enclosing top-level function or method.
+// findIdentityMutationRefs parses every non-test .go file in dir and returns
+// every call to, and every function-value reference of, a syscall/unix
+// identity-mutation function, recording the name of the enclosing top-level
+// function or method.
 //
 // Besides *_test.go, this also skips test_helpers.go / test_helpers_*.go:
 // per this repo's convention (docs/dev/developer_guide/test_organization.md,
 // "Classification B"), those always carry a `//go:build test` constraint and
 // so are never part of the production build, even though their name doesn't
 // end in "_test.go".
-func findIdentityMutationCallSites(t *testing.T, dir string) []identityMutationCallSite {
+func findIdentityMutationRefs(t *testing.T, dir string) ([]identityMutationCallSite, []identityMutationValueRef) {
 	t.Helper()
 
 	entries, err := os.ReadDir(dir)
 	require.NoErrorf(t, err, "failed to read directory %s", dir)
 
 	var sites []identityMutationCallSite
+	var valueRefs []identityMutationValueRef
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || isTestHelpersFileName(name) {
@@ -222,10 +261,12 @@ func findIdentityMutationCallSites(t *testing.T, dir string) []identityMutationC
 		data, err := os.ReadFile(path)
 		require.NoErrorf(t, err, "failed to read %s", path)
 
-		sites = append(sites, identityMutationCallSitesInSource(t, path, string(data))...)
+		fileSites, fileValueRefs := identityMutationRefsInSource(t, path, string(data))
+		sites = append(sites, fileSites...)
+		valueRefs = append(valueRefs, fileValueRefs...)
 	}
 
-	return sites
+	return sites, valueRefs
 }
 
 // isTestHelpersFileName reports whether name matches this repo's
@@ -251,11 +292,30 @@ func TestIsTestHelpersFileName(t *testing.T) {
 	}
 }
 
-// identityMutationCallSitesInSource parses src (Go source for a single file
-// named filename) and returns every call to a syscall/unix identity-mutation
-// function, with the local package identifier of each call resolved to its
-// import path via the file's import declarations.
+// identityMutationCallSitesInSource returns only the calls found by
+// identityMutationRefsInSource, for assertions that concern call sites alone.
 func identityMutationCallSitesInSource(t *testing.T, filename, src string) []identityMutationCallSite {
+	t.Helper()
+
+	calls, _ := identityMutationRefsInSource(t, filename, src)
+	return calls
+}
+
+// identityMutationValueRefsInSource returns only the value references found by
+// identityMutationRefsInSource.
+func identityMutationValueRefsInSource(t *testing.T, filename, src string) []identityMutationValueRef {
+	t.Helper()
+
+	_, valueRefs := identityMutationRefsInSource(t, filename, src)
+	return valueRefs
+}
+
+// identityMutationRefsInSource parses src (Go source for a single file named
+// filename) and returns every syscall/unix identity-mutation function that is
+// called, and every one that is merely referenced as a value. The local package
+// identifier is resolved to its import path via the file's import declarations
+// in both cases.
+func identityMutationRefsInSource(t *testing.T, filename, src string) ([]identityMutationCallSite, []identityMutationValueRef) {
 	t.Helper()
 
 	fset := token.NewFileSet()
@@ -284,7 +344,40 @@ func identityMutationCallSitesInSource(t *testing.T, filename, src string) []ide
 		localToImportPath[local] = path
 	}
 
+	// trackedSelector reports whether expr is a qualified reference to one of the
+	// identity-mutation functions, e.g. syscall.Seteuid, resolving the qualifier
+	// through the file's imports.
+	trackedSelector := func(expr ast.Expr) (*ast.SelectorExpr, bool) {
+		sel, ok := expr.(*ast.SelectorExpr)
+		if !ok {
+			return nil, false
+		}
+		pkgIdent, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return nil, false
+		}
+		importPath, isImported := localToImportPath[pkgIdent.Name]
+		if !isImported {
+			// Not a resolved import (e.g. a local variable or type that merely
+			// shares the package's name): never treat this as a match, unlike
+			// falling back to the bare identifier.
+			return nil, false
+		}
+		if !isTrackedIdentityMutationImportPath(importPath) {
+			return nil, false
+		}
+		if _, isTrackedFunc := identityMutationFuncNames[sel.Sel.Name]; !isTrackedFunc {
+			return nil, false
+		}
+		return sel, true
+	}
+
 	var sites []identityMutationCallSite
+	var valueRefs []identityMutationValueRef
+	// calledSelectors marks the selectors that appear in callee position, so the
+	// value-reference pass can skip them. ast.Inspect visits a CallExpr before its
+	// children, so a selector is always marked before it is reached on its own.
+	calledSelectors := make(map[*ast.SelectorExpr]struct{})
 	for _, decl := range file.Decls {
 		// funcName labels reported sites; package-level var/const initializers have no
 		// enclosing function, so this fallback keeps them from being silently skipped.
@@ -301,60 +394,54 @@ func identityMutationCallSitesInSource(t *testing.T, filename, src string) []ide
 		}
 
 		ast.Inspect(node, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-
-			// Unwrap parens so a parenthesized callee like (syscall.Seteuid)(0) is still recognized.
-			fun := call.Fun
-			for {
-				paren, ok := fun.(*ast.ParenExpr)
-				if !ok {
-					break
+			switch n := n.(type) {
+			case *ast.CallExpr:
+				// Unwrap parens so a parenthesized callee like (syscall.Seteuid)(0) is still recognized.
+				fun := n.Fun
+				for {
+					paren, ok := fun.(*ast.ParenExpr)
+					if !ok {
+						break
+					}
+					fun = paren.X
 				}
-				fun = paren.X
-			}
 
-			sel, ok := fun.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
+				sel, ok := trackedSelector(fun)
+				if !ok {
+					return true
+				}
+				calledSelectors[sel] = struct{}{}
 
-			pkgIdent, ok := sel.X.(*ast.Ident)
-			if !ok {
-				return true
-			}
+				args := make([]string, len(n.Args))
+				for i, arg := range n.Args {
+					args[i] = types.ExprString(arg)
+				}
+				arg := strings.Join(args, ", ")
 
-			importPath, isImported := localToImportPath[pkgIdent.Name]
-			if !isImported {
-				// Not a resolved import (e.g. a local variable or type that merely
-				// shares the package's name): never treat this as a match, unlike
-				// falling back to the bare identifier.
-				return true
-			}
-			if !isTrackedIdentityMutationImportPath(importPath) {
-				return true
-			}
-			if _, isTrackedFunc := identityMutationFuncNames[sel.Sel.Name]; !isTrackedFunc {
-				return true
-			}
+				sites = append(sites, identityMutationCallSite{
+					funcName:    funcName,
+					syscallName: sel.Sel.Name,
+					callExpr:    types.ExprString(sel) + "(" + arg + ")",
+					arg:         arg,
+				})
 
-			args := make([]string, len(call.Args))
-			for i, arg := range call.Args {
-				args[i] = types.ExprString(arg)
+			case *ast.SelectorExpr:
+				// Reached on its own rather than in callee position: a function-value
+				// reference that could be invoked indirectly later.
+				if _, isCallee := calledSelectors[n]; isCallee {
+					return true
+				}
+				if _, ok := trackedSelector(n); !ok {
+					return true
+				}
+				valueRefs = append(valueRefs, identityMutationValueRef{
+					funcName: funcName,
+					expr:     types.ExprString(n),
+				})
 			}
-			arg := strings.Join(args, ", ")
-
-			sites = append(sites, identityMutationCallSite{
-				funcName:    funcName,
-				syscallName: sel.Sel.Name,
-				callExpr:    pkgIdent.Name + "." + sel.Sel.Name + "(" + arg + ")",
-				arg:         arg,
-			})
 			return true
 		})
 	}
 
-	return sites
+	return sites, valueRefs
 }

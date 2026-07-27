@@ -686,24 +686,24 @@
 
 **作業内容: 降格パスの削除と改名**
 
-- [ ] `changeUserGroupInternal` を `resolveUserGroupForDryRun(userName, groupName string) error` に改名する。引数 `dryRun` と `originalEGID` を削除する。
-- [ ] 同関数から `m.syscallSetegid(targetGID)` の呼び出し、`m.syscallSeteuid(targetUID)` の呼び出し、`Seteuid` 失敗時の EGID ロールバック、`emergencyShutdown(restoreErr, "egid_rollback_failure_after_seteuid_failure")`、および成功ログ（`successLogAttrs` の組み立てと `m.logger.Info("User/group privileges changed successfully", ...)`）を削除する。
-- [ ] `if dryRun { ... return nil }` の条件を外し、ログ出力と `return nil` を無条件の後処理にする。
-- [ ] 同関数の doc コメントを、ユーザー名・グループ名を解決して dry-run のログを出力するだけであり、プロセスの識別情報（UID・GID・補助グループ）を一切変更しないことを述べる内容に書き換える。
-- [ ] `performElevation` から、`needsUserGroupChange` による分岐と `isDryRun` の計算を除き、`execCtx.elevationCtx.Operation == runnertypes.OperationUserGroupDryRun` を直接判定して `resolveUserGroupForDryRun` を呼ぶ形に変更する。
-- [ ] 同じブロック内の到達不能なロールバックブロック（`if execCtx.needsPrivilegeEscalation { if restoreErr := m.restorePrivileges(); ... m.emergencyShutdown(restoreErr, "user_group_change_failure") } }`）を削除する。
-- [ ] `restorePrivilegesAndMetrics` の metrics 記録条件 `} else if panicValue == nil && (execCtx.needsPrivilegeEscalation || execCtx.needsUserGroupChange) {` を `} else if panicValue == nil && execCtx.elevationCtx.Operation == runnertypes.OperationUserGroupDryRun {` に変更する。dry-run で `RecordElevationSuccess` が記録される挙動は維持する。
-- [ ] `executionContext` から `needsUserGroupChange` フィールドとその doc コメント（unix.go:118-123）を削除する。
-- [ ] `executionContext` から `originalEUID` / `originalEGID` フィールドを削除し、`prepareExecution` の初期化（:147-148）も削除する。
-- [ ] `prepareExecution` の `switch` から 3 箇所の `execCtx.needsUserGroupChange = ...` 代入を削除する。`needsPrivilegeEscalation` の代入は残す。
-- [ ] `UnixPrivilegeManager` から `syscallSeteuid` / `syscallSetegid` フィールドとその説明コメントを削除する。
-- [ ] `newPlatformManager` から `syscallSeteuid: syscall.Seteuid,` / `syscallSetegid: syscall.Setegid,` の初期化を削除する。
+- [x] `changeUserGroupInternal` を `resolveUserGroupForDryRun(userName, groupName string) error` に改名する。引数 `dryRun` と `originalEGID` を削除する。
+- [x] 同関数から `m.syscallSetegid(targetGID)` の呼び出し、`m.syscallSeteuid(targetUID)` の呼び出し、`Seteuid` 失敗時の EGID ロールバック、`emergencyShutdown(restoreErr, "egid_rollback_failure_after_seteuid_failure")`、および成功ログ（`successLogAttrs` の組み立てと `m.logger.Info("User/group privileges changed successfully", ...)`）を削除する。
+- [x] `if dryRun { ... return nil }` の条件を外し、ログ出力と `return nil` を無条件の後処理にする。
+- [x] 同関数の doc コメントを、ユーザー名・グループ名を解決して dry-run のログを出力するだけであり、プロセスの識別情報（UID・GID・補助グループ）を一切変更しないことを述べる内容に書き換える。
+- [x] `performElevation` から、`needsUserGroupChange` による分岐と `isDryRun` の計算を除き、`execCtx.elevationCtx.Operation == runnertypes.OperationUserGroupDryRun` を直接判定して `resolveUserGroupForDryRun` を呼ぶ形に変更する。
+- [x] 同じブロック内の到達不能なロールバックブロック（`if execCtx.needsPrivilegeEscalation { if restoreErr := m.restorePrivileges(); ... m.emergencyShutdown(restoreErr, "user_group_change_failure") } }`）を削除する。
+- [x] `restorePrivilegesAndMetrics` の metrics 記録条件 `} else if panicValue == nil && (execCtx.needsPrivilegeEscalation || execCtx.needsUserGroupChange) {` を `} else if panicValue == nil && execCtx.elevationCtx.Operation == runnertypes.OperationUserGroupDryRun {` に変更する。dry-run で `RecordElevationSuccess` が記録される挙動は維持する。
+- [x] `executionContext` から `needsUserGroupChange` フィールドとその doc コメント（unix.go:118-123）を削除する。
+- [x] `executionContext` から `originalEUID` / `originalEGID` フィールドを削除し、`prepareExecution` の初期化（:147-148）も削除する。
+- [x] `prepareExecution` の `switch` から 3 箇所の `execCtx.needsUserGroupChange = ...` 代入を削除する。`needsPrivilegeEscalation` の代入は残す。
+- [x] `UnixPrivilegeManager` から `syscallSeteuid` / `syscallSetegid` フィールドとその説明コメントを削除する。
+- [x] `newPlatformManager` から `syscallSeteuid: syscall.Seteuid,` / `syscallSetegid: syscall.Setegid,` の初期化を削除する。
 
 **作業内容: コメント・文字列リテラルの書き換え**
 
 以下は完全な前後の文字列を示す。前の文字列を後の文字列に置き換える。
 
-- [ ] `unix.go` の `executionContext.needsPrivilegeEscalation` の説明。前提が失われるため最終行を差し替える。
+- [x] `unix.go` の `executionContext.needsPrivilegeEscalation` の説明。前提が失われるため最終行を差し替える。
 
   前:
   ```go
@@ -719,7 +719,7 @@
   	// changes its identity to the target user; the executor applies that via syscall.Credential at execve time.
   ```
 
-- [ ] `restorePrivilegesAndMetrics` 冒頭のコメント。
+- [x] `restorePrivilegesAndMetrics` 冒頭のコメント。
 
   前:
   ```go
@@ -735,7 +735,7 @@
   	// so there is nothing to restore.
   ```
 
-- [ ] identity 検証をゲートするコメントの最終文。
+- [x] identity 検証をゲートするコメントの最終文。
 
   前:
   ```go
@@ -748,12 +748,12 @@
   	// identity, so escalation alone gates verification.
   ```
 
-- [ ] `performElevation` のエラーラップ文言。`resolveUserGroupForDryRun` はもう識別情報を変更しないため、"change" を名乗らない文言に改める。
+- [x] `performElevation` のエラーラップ文言。`resolveUserGroupForDryRun` はもう識別情報を変更しないため、"change" を名乗らない文言に改める。
 
   前: `return fmt.Errorf("user/group change failed: %w", err)`
   後: `return fmt.Errorf("user/group resolution failed: %w", err)`
 
-- [ ] `resolveUserGroupForDryRun` の開始ログ。`dryRun` 引数が消えるため属性も除く。
+- [x] `resolveUserGroupForDryRun` の開始ログ。`dryRun` 引数が消えるため属性も除く。
 
   前:
   ```go
@@ -768,44 +768,44 @@
   および、前: `m.logger.Info("User/group change requested", logAttrs...)`
   後: `m.logger.Info("Dry-run user/group resolution requested", logAttrs...)`
 
-- [ ] dry-run の結果ログ文言 `"Dry-run mode: would change user/group privileges"` は**変更しない**。この文言は「もし実行すれば何が起きるか」を述べたものであり、実装と矛盾しないためである。
+- [x] dry-run の結果ログ文言 `"Dry-run mode: would change user/group privileges"` は**変更しない**。この文言は「もし実行すれば何が起きるか」を述べたものであり、実装と矛盾しないためである。
 
 **作業内容: テストの更新**
 
 `needsUserGroupChange` を設定している `executionContext` リテラルは、いずれも同じリテラル内で `elevationCtx.Operation` を設定済みであることを確認済みである。したがって設計書 §3.5 が言う「`elevationCtx.Operation` の設定へ置換」は、実際には行の削除だけで足りる。
 
-- [ ] `unix_privilege_test.go` の `TestPrepareExecution_Success` から、表構造体の `expectedUserGroupChange` フィールド、3 ケースそれぞれの値、および `execCtx.needsUserGroupChange` に対するアサーションを削除する。
-- [ ] `TestPerformElevation_Success` の 2 つのサブテストから `needsUserGroupChange: true,` の行を削除する（`Operation` は既に `OperationUserGroupDryRun`）。
-- [ ] `TestChangeUserGroupInternal_NotCalledForUserGroupDryRun` を `TestWithPrivileges_UserGroupDryRunDoesNotChangeIdentity` に改名し、同様に注入フィールドへの依存を除く。呼び出し前後の `syscall.Geteuid()` / `syscall.Getegid()` / `syscall.Getgid()` の一致で検証する。テスト対象ホストに存在するユーザー名を使うため `user.Current()` を用いる現在の構成は維持する。
-- [ ] `TestPerformElevation_Failure` の 2 つのサブテストから `needsUserGroupChange` の行を削除し、`invalid_user_in_dryrun` のアサーションを `assert.Contains(t, err.Error(), "user/group resolution failed")` に変更する。
-- [ ] `TestHandleCleanupAndMetrics_Success` から `needsUserGroupChange: false,` の行を削除し、末尾のコメントを次のとおり書き換える。前: `// No metrics assertion needed since needsUserGroupChange is false` / `// (metrics are only recorded when user/group changes are needed)`、後: `// No metrics assertion here; this test only verifies that cleanup does not panic.`
-- [ ] `TestHandleCleanupAndMetrics_WithError` から `needsUserGroupChange: false,` の行を削除する。
-- [ ] `TestRestorePrivilegesAndMetrics_Success` から `needsUserGroupChange: true, // This will trigger success recording` の行を削除し、後続コメント `// When needsUserGroupChange is true, success should be recorded` を `// For OperationUserGroupDryRun, success should be recorded` に書き換える。`Operation` が `OperationUserGroupDryRun` であるため記録される挙動は変わらない。
-- [ ] `TestRestorePrivilegesAndMetrics_Failure` から `needsUserGroupChange: false,` の行を削除する。
-- [ ] `TestRestorePrivilegesAndMetrics_IdentityLeakTriggersShutdown` から `needsUserGroupChange: false,` / `originalEUID: syscall.Geteuid(),` / `originalEGID: syscall.Getegid(),` の 3 行を削除する（削除しないとコンパイルできない）。`syscall` import が他で使われていなければ削除する。
-- [ ] `TestRestorePrivilegesAndMetrics_IdentityVerificationSkippedForDryRun` から `needsUserGroupChange: true,` の行を削除する。
-- [ ] `TestRestorePrivilegesAndMetrics_SavedSetUnchanged_Passes` と同ファイル内の残る `executionContext` リテラルから、`needsUserGroupChange` の行があれば削除する（`rg -n 'needsUserGroupChange' internal/runner/base/privilege/` で残件が 0 になることを確認する）。
-- [ ] `TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackSuccess` を削除する（検証対象の降格 syscall とロールバックが消える）。
-- [ ] `TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackFailure` を削除する（検証対象の `emergencyShutdown` 経路が消える。`emergencyShutdown` 自体の挙動は `TestEmergencyShutdown` が引き続き検証する）。
+- [x] `unix_privilege_test.go` の `TestPrepareExecution_Success` から、表構造体の `expectedUserGroupChange` フィールド、3 ケースそれぞれの値、および `execCtx.needsUserGroupChange` に対するアサーションを削除する。
+- [x] `TestPerformElevation_Success` の 2 つのサブテストから `needsUserGroupChange: true,` の行を削除する（`Operation` は既に `OperationUserGroupDryRun`）。
+- [x] `TestChangeUserGroupInternal_NotCalledForUserGroupDryRun` を `TestWithPrivileges_UserGroupDryRunDoesNotChangeIdentity` に改名し、同様に注入フィールドへの依存を除く。呼び出し前後の `syscall.Geteuid()` / `syscall.Getegid()` / `syscall.Getgid()` の一致で検証する。テスト対象ホストに存在するユーザー名を使うため `user.Current()` を用いる現在の構成は維持する。
+- [x] `TestPerformElevation_Failure` の 2 つのサブテストから `needsUserGroupChange` の行を削除し、`invalid_user_in_dryrun` のアサーションを `assert.Contains(t, err.Error(), "user/group resolution failed")` に変更する。
+- [x] `TestHandleCleanupAndMetrics_Success` から `needsUserGroupChange: false,` の行を削除し、末尾のコメントを次のとおり書き換える。前: `// No metrics assertion needed since needsUserGroupChange is false` / `// (metrics are only recorded when user/group changes are needed)`、後: `// No metrics assertion here; this test only verifies that cleanup does not panic.`
+- [x] `TestHandleCleanupAndMetrics_WithError` から `needsUserGroupChange: false,` の行を削除する。
+- [x] `TestRestorePrivilegesAndMetrics_Success` から `needsUserGroupChange: true, // This will trigger success recording` の行を削除し、後続コメント `// When needsUserGroupChange is true, success should be recorded` を `// For OperationUserGroupDryRun, success should be recorded` に書き換える。`Operation` が `OperationUserGroupDryRun` であるため記録される挙動は変わらない。
+- [x] `TestRestorePrivilegesAndMetrics_Failure` から `needsUserGroupChange: false,` の行を削除する。
+- [x] `TestRestorePrivilegesAndMetrics_IdentityLeakTriggersShutdown` から `needsUserGroupChange: false,` / `originalEUID: syscall.Geteuid(),` / `originalEGID: syscall.Getegid(),` の 3 行を削除する（削除しないとコンパイルできない）。`syscall` import が他で使われていなければ削除する。
+- [x] `TestRestorePrivilegesAndMetrics_IdentityVerificationSkippedForDryRun` から `needsUserGroupChange: true,` の行を削除する。
+- [x] `TestRestorePrivilegesAndMetrics_SavedSetUnchanged_Passes` と同ファイル内の残る `executionContext` リテラルから、`needsUserGroupChange` の行があれば削除する（`rg -n 'needsUserGroupChange' internal/runner/base/privilege/` で残件が 0 になることを確認する）。
+- [x] `TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackSuccess` を削除する（検証対象の降格 syscall とロールバックが消える）。
+- [x] `TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackFailure` を削除する（検証対象の `emergencyShutdown` 経路が消える。`emergencyShutdown` 自体の挙動は `TestEmergencyShutdown` が引き続き検証する）。
 
 **作業内容: テストの追加とガードテストの強化**
 
-- [ ] ステップ 2-2 で新設した `identity_mutation_guard_test.go` の検査を拡張し、識別情報変更関数が**関数値としても**参照されていないことを検証する。すなわち `syscall.Seteuid` / `syscall.Setegid` などの修飾済み識別子が、呼び出し式の関数部以外の位置（構造体リテラルのフィールド値、代入の右辺、引数）に現れたら失敗させる。本ステップで `newPlatformManager` の 2 つの初期化が消えるため、この検査が初めて成立する。これによりステップ 2-2 の doc コメントに記した「注入フィールド経由の間接呼び出しを検出できない」という穴が閉じる。
-  - [ ] 例外は設けない（拡張後の許可リストは呼び出し式 2 つのみで、関数値参照は 0 件が期待値である）
-  - [ ] ステップ 2-2 の doc コメントの「検出できない範囲」の記述を、拡張後の実態に合わせて更新する
-- [ ] `unix_privilege_test.go` に `TestResolveUserGroupForDryRun` を追加し、次を検証する。
-  - [ ] 存在しないユーザー名（`"nonexistent_user_xyz123"`）でエラーを返す（エラー経路）
-  - [ ] 存在しないグループ名でエラーを返す（エラー経路）
-  - [ ] グループ未指定時にユーザーのプライマリグループへフォールバックし、エラーを返さない
-  - [ ] ユーザー名・グループ名がともに空のときエラーを返さない（境界値）
-  - [ ] いずれのケースでも呼び出し前後で `syscall.Geteuid()` / `syscall.Getegid()` が変化しない
+- [x] ステップ 2-2 で新設した `identity_mutation_guard_test.go` の検査を拡張し、識別情報変更関数が**関数値としても**参照されていないことを検証する。すなわち `syscall.Seteuid` / `syscall.Setegid` などの修飾済み識別子が、呼び出し式の関数部以外の位置（構造体リテラルのフィールド値、代入の右辺、引数）に現れたら失敗させる。本ステップで `newPlatformManager` の 2 つの初期化が消えるため、この検査が初めて成立する。これによりステップ 2-2 の doc コメントに記した「注入フィールド経由の間接呼び出しを検出できない」という穴が閉じる。
+  - [x] 例外は設けない（拡張後の許可リストは呼び出し式 2 つのみで、関数値参照は 0 件が期待値である）
+  - [x] ステップ 2-2 の doc コメントの「検出できない範囲」の記述を、拡張後の実態に合わせて更新する
+- [x] `unix_privilege_test.go` に `TestResolveUserGroupForDryRun` を追加し、次を検証する。
+  - [x] 存在しないユーザー名（`"nonexistent_user_xyz123"`）でエラーを返す（エラー経路）
+  - [x] 存在しないグループ名でエラーを返す（エラー経路）
+  - [x] グループ未指定時にユーザーのプライマリグループへフォールバックし、エラーを返さない
+  - [x] ユーザー名・グループ名がともに空のときエラーを返さない（境界値）
+  - [x] いずれのケースでも呼び出し前後で `syscall.Geteuid()` / `syscall.Getegid()` が変化しない
 
 **完了条件**
 
-- [ ] `make fmt` → `make test` → `make lint` がすべて成功する
-- [ ] `go vet -tags 'test integration' ./...` が成功する（`internal/runner/base/executor/executor_usergroup_integration_test.go` は `runnertypes.PrivilegeManager` に依存するが、これをコンパイルする Makefile ターゲットが存在しないため。§1.3 参照）
-- [ ] `make build` が成功する
-- [ ] `rg -n --glob '*.go' -e 'needsUserGroupChange' -e 'syscallSeteuid' -e 'syscallSetegid' -e 'changeUserGroupInternal' -e 'originalEUID' -e 'originalEGID'` の一致件数が 0 である
+- [x] `make fmt` → `make test` → `make lint` がすべて成功する
+- [x] `go vet -tags 'test integration' ./...` が成功する（`internal/runner/base/executor/executor_usergroup_integration_test.go` は `runnertypes.PrivilegeManager` に依存するが、これをコンパイルする Makefile ターゲットが存在しないため。§1.3 参照）
+- [x] `make build` が成功する
+- [x] `rg -n --glob '*.go' -e 'needsUserGroupChange' -e 'syscallSeteuid' -e 'syscallSetegid' -e 'changeUserGroupInternal' -e 'originalEUID' -e 'originalEGID'` の一致件数が 0 である
 - [ ] 下の「特権環境での確認」を完了する
 
 **特権環境での確認（設計書 §7.4）**

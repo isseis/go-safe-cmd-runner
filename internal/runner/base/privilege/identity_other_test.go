@@ -44,7 +44,6 @@ func TestRestorePrivilegesAndMetrics_SkipsSavedSetCheckOnNonLinux(t *testing.T) 
 			CommandName: "test-command",
 		},
 		needsPrivilegeEscalation: true,
-		needsUserGroupChange:     false,
 		// Sentinel values assigned by prepareExecution when readSavedIDs returns
 		// ErrSavedSetNotSupported; the saved-set check must be skipped structurally.
 		originalSUID: -1,

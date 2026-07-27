@@ -24,10 +24,9 @@ func TestPrepareExecution_Success(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                    string
-		elevationCtx            runnertypes.ElevationContext
-		expectedPrivEscalation  bool
-		expectedUserGroupChange bool
+		name                   string
+		elevationCtx           runnertypes.ElevationContext
+		expectedPrivEscalation bool
 	}{
 		{
 			name: "user_group_execution",
@@ -37,8 +36,7 @@ func TestPrepareExecution_Success(t *testing.T) {
 				RunAsUser:   "testuser",
 				RunAsGroup:  "testgroup",
 			},
-			expectedPrivEscalation:  true,
-			expectedUserGroupChange: false,
+			expectedPrivEscalation: true,
 		},
 		{
 			name: "user_group_dryrun",
@@ -48,8 +46,7 @@ func TestPrepareExecution_Success(t *testing.T) {
 				RunAsUser:   "testuser",
 				RunAsGroup:  "testgroup",
 			},
-			expectedPrivEscalation:  false,
-			expectedUserGroupChange: true,
+			expectedPrivEscalation: false,
 		},
 		{
 			name: "file_validation",
@@ -57,8 +54,7 @@ func TestPrepareExecution_Success(t *testing.T) {
 				Operation:   runnertypes.OperationFileValidation,
 				CommandName: "test-command",
 			},
-			expectedPrivEscalation:  true,
-			expectedUserGroupChange: false,
+			expectedPrivEscalation: true,
 		},
 	}
 
@@ -70,8 +66,6 @@ func TestPrepareExecution_Success(t *testing.T) {
 
 			assert.Equal(t, tt.expectedPrivEscalation, execCtx.needsPrivilegeEscalation,
 				"needsPrivilegeEscalation mismatch")
-			assert.Equal(t, tt.expectedUserGroupChange, execCtx.needsUserGroupChange,
-				"needsUserGroupChange mismatch")
 			assert.Equal(t, tt.elevationCtx, execCtx.elevationCtx)
 			assert.NotZero(t, execCtx.start)
 		})
@@ -113,7 +107,6 @@ func TestPerformElevation_Success(t *testing.T) {
 				RunAsUser:   "", // Empty user should succeed in dry-run
 			},
 			needsPrivilegeEscalation: false,
-			needsUserGroupChange:     true,
 		}
 
 		// This should succeed as it only does dry-run validation with empty user
@@ -130,7 +123,6 @@ func TestPerformElevation_Success(t *testing.T) {
 				RunAsGroup:  "",
 			},
 			needsPrivilegeEscalation: false,
-			needsUserGroupChange:     true,
 		}
 
 		err := manager.performElevation(execCtx)
@@ -145,9 +137,7 @@ func TestPerformElevation_Success(t *testing.T) {
 // privilegeSupported: true is set so that WithPrivileges does not short-circuit
 // at the IsPrivilegedExecutionSupported check. actual seteuid calls are avoided
 // because originalUID: 0 triggers an early-return in escalatePrivileges, not via
-// the privilegeSupported flag; full behavioral verification of the
-// OperationUserGroup path is delegated to step 2-3 (PR-7) where the
-// needUserGroupChange flag is removed.
+// the privilegeSupported flag.
 func TestWithPrivileges_UserGroupExecutionDoesNotChangeIdentity(t *testing.T) {
 	logger := slog.Default()
 
@@ -182,38 +172,29 @@ func TestWithPrivileges_UserGroupExecutionDoesNotChangeIdentity(t *testing.T) {
 	assert.Equal(t, egidBefore, syscall.Getegid())
 }
 
-// TestChangeUserGroupInternal_NotCalledForUserGroupDryRun verifies that
-// dry-run mode validates and logs the would-be user/group change without
-// actually calling syscallSeteuid/syscallSetegid, so no supplementary-group
-// or identity mutation happens for a preview-only run.
-func TestChangeUserGroupInternal_NotCalledForUserGroupDryRun(t *testing.T) {
+// TestWithPrivileges_UserGroupDryRunDoesNotChangeIdentity verifies that a
+// dry-run resolves and logs the would-be user/group change while leaving the
+// process's identity untouched.
+func TestWithPrivileges_UserGroupDryRunDoesNotChangeIdentity(t *testing.T) {
 	logger := slog.Default()
-
-	seteuidCalled := false
-	setegidCalled := false
 
 	manager := &UnixPrivilegeManager{
 		logger:             logger,
 		privilegeSupported: true,
 		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
-		syscallSeteuid: func(_ int) error {
-			seteuidCalled = true
-			return nil
-		},
-		syscallSetegid: func(_ int) error {
-			setegidCalled = true
-			return nil
-		},
 		identityVerifier: func() error {
 			return nil
 		},
 	}
 
-	// changeUserGroupInternal resolves the named user/group via the real OS user
-	// database even in dry-run mode (only the actual seteuid/setegid calls are
-	// skipped), so this must name a user that exists on the test host.
+	// resolveUserGroupForDryRun resolves the named user/group via the real OS
+	// user database, so this must name a user that exists on the test host.
 	currentUser, err := user.Current()
 	require.NoError(t, err)
+
+	euidBefore := syscall.Geteuid()
+	egidBefore := syscall.Getegid()
+	gidBefore := syscall.Getgid()
 
 	elevationCtx := runnertypes.ElevationContext{
 		Operation: runnertypes.OperationUserGroupDryRun,
@@ -226,8 +207,9 @@ func TestChangeUserGroupInternal_NotCalledForUserGroupDryRun(t *testing.T) {
 	err = manager.WithPrivileges(elevationCtx, fn)
 	assert.NoError(t, err)
 
-	assert.False(t, seteuidCalled, "syscallSeteuid should not be called for a dry-run")
-	assert.False(t, setegidCalled, "syscallSetegid should not be called for a dry-run")
+	assert.Equal(t, euidBefore, syscall.Geteuid(), "dry-run must not change the effective UID")
+	assert.Equal(t, egidBefore, syscall.Getegid(), "dry-run must not change the effective GID")
+	assert.Equal(t, gidBefore, syscall.Getgid(), "dry-run must not change the real GID")
 }
 
 // TestPerformElevation_Failure tests privilege elevation failures
@@ -251,7 +233,6 @@ func TestPerformElevation_Failure(t *testing.T) {
 				CommandName: "test-command",
 			},
 			needsPrivilegeEscalation: true,
-			needsUserGroupChange:     false,
 		}
 
 		err := managerNoPriv.performElevation(execCtx)
@@ -267,12 +248,11 @@ func TestPerformElevation_Failure(t *testing.T) {
 				RunAsUser:   "nonexistent_user_xyz123",
 			},
 			needsPrivilegeEscalation: false,
-			needsUserGroupChange:     true,
 		}
 
 		err := manager.performElevation(execCtx)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "user/group change failed")
+		assert.Contains(t, err.Error(), "user/group resolution failed")
 	})
 }
 
@@ -290,15 +270,13 @@ func TestHandleCleanupAndMetrics_Success(_ *testing.T) {
 			CommandName: "test-command",
 		},
 		needsPrivilegeEscalation: false,
-		needsUserGroupChange:     false,
 		start:                    time.Now(),
 	}
 
 	// This should not panic
 	manager.handleCleanupAndMetrics(execCtx)
 
-	// No metrics assertion needed since needsUserGroupChange is false
-	// (metrics are only recorded when user/group changes are needed)
+	// No metrics assertion here; this test only verifies that cleanup does not panic.
 }
 
 // TestHandleCleanupAndMetrics_WithError tests cleanup with errors
@@ -315,7 +293,6 @@ func TestHandleCleanupAndMetrics_WithError(t *testing.T) {
 			CommandName: "test-command",
 		},
 		needsPrivilegeEscalation: false,
-		needsUserGroupChange:     false,
 		start:                    time.Now(),
 	}
 
@@ -348,7 +325,6 @@ func TestRestorePrivilegesAndMetrics_Success(t *testing.T) {
 			CommandName: "test-command",
 		},
 		needsPrivilegeEscalation: false,
-		needsUserGroupChange:     true, // This will trigger success recording
 	}
 
 	// Test successful restoration
@@ -356,7 +332,7 @@ func TestRestorePrivilegesAndMetrics_Success(t *testing.T) {
 	manager.restorePrivilegesAndMetrics(execCtx, nil, "normal execution", duration)
 
 	snapshot := manager.GetMetrics()
-	// When needsUserGroupChange is true, success should be recorded
+	// For OperationUserGroupDryRun, success should be recorded
 	assert.Equal(t, int64(1), snapshot.ElevationSuccesses)
 }
 
@@ -374,7 +350,6 @@ func TestRestorePrivilegesAndMetrics_Failure(t *testing.T) {
 			CommandName: "test-command",
 		},
 		needsPrivilegeEscalation: false,
-		needsUserGroupChange:     false,
 	}
 
 	// Test with panic value (simulating error during execution)
@@ -473,77 +448,64 @@ func TestEmergencyShutdown(t *testing.T) {
 	assert.Equal(t, 1, exitCode, "Expected exit code 1")
 }
 
-// TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackSuccess tests that when Seteuid
-// fails, Setegid is called with originalEGID to roll back (AC-M1-4).
-func TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackSuccess(t *testing.T) {
-	logger := slog.Default()
+// TestResolveUserGroupForDryRun verifies that dry-run user/group resolution
+// reports lookup failures, falls back to the user's primary group when no group
+// is given, and never mutates the process's identity on any path.
+func TestResolveUserGroupForDryRun(t *testing.T) {
+	currentUser, err := user.Current()
+	require.NoError(t, err)
 
-	const originalEGID = 1234
-	var setegidCalledWith []int
-	seteuidErr := errors.New("seteuid failed")
-
-	manager := &UnixPrivilegeManager{
-		logger:             logger,
-		privilegeSupported: false,
-		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
-		syscallSeteuid:     func(_ int) error { return seteuidErr },
-		syscallSetegid: func(gid int) error {
-			setegidCalledWith = append(setegidCalledWith, gid)
-			return nil
+	tests := []struct {
+		name      string
+		userName  string
+		groupName string
+		wantErr   bool
+	}{
+		{
+			name:     "nonexistent_user_returns_error",
+			userName: "nonexistent_user_xyz123",
+			wantErr:  true,
+		},
+		{
+			name:      "nonexistent_group_returns_error",
+			userName:  currentUser.Username,
+			groupName: "nonexistent_group_xyz123",
+			wantErr:   true,
+		},
+		{
+			name:     "group_unspecified_falls_back_to_primary_group",
+			userName: currentUser.Username,
+			wantErr:  false,
+		},
+		{
+			name:     "empty_user_and_group_succeeds",
+			userName: "",
+			wantErr:  false,
 		},
 	}
 
-	err := manager.changeUserGroupInternal("", "", false, originalEGID)
-
-	// Seteuid failure should be propagated
-	assert.ErrorContains(t, err, "failed to set effective user ID")
-
-	// Setegid must have been called twice:
-	//   1st call: set targetGID (0 when no user/group specified → Getegid at call time)
-	//   2nd call: rollback to originalEGID
-	require.Len(t, setegidCalledWith, 2, "Setegid should be called twice")
-	assert.Equal(t, originalEGID, setegidCalledWith[1], "second Setegid call should use originalEGID for rollback")
-}
-
-// TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackFailure tests that when both
-// Seteuid and the rollback Setegid fail, emergencyShutdown (osExit) is called (AC-M1-5).
-func TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackFailure(t *testing.T) {
-	logger := slog.Default()
-
-	const originalEGID = 5678
-	seteuidErr := errors.New("seteuid failed")
-	setegidErr := errors.New("setegid rollback failed")
-
-	var exitCode int
-	var exited bool
-	testOsExit := func(code int) {
-		exitCode = code
-		exited = true
-		panic("os.Exit called")
-	}
-
-	// syscallSetegid: succeed on first call (set targetGID), fail on second call (rollback).
-	setegidCallCount := 0
-	manager := &UnixPrivilegeManager{
-		logger:             logger,
-		privilegeSupported: false,
-		osExit:             testOsExit,
-		syscallSeteuid:     func(_ int) error { return seteuidErr },
-		syscallSetegid: func(_ int) error {
-			setegidCallCount++
-			if setegidCallCount == 1 {
-				return nil // first call (targetGID) succeeds
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := &UnixPrivilegeManager{
+				logger:             slog.Default(),
+				privilegeSupported: true,
+				osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
 			}
-			return setegidErr // second call (rollback) fails → triggers emergencyShutdown
-		},
+
+			euidBefore := syscall.Geteuid()
+			egidBefore := syscall.Getegid()
+
+			err := manager.resolveUserGroupForDryRun(tt.userName, tt.groupName)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			assert.Equal(t, euidBefore, syscall.Geteuid(), "resolution must not change the effective UID")
+			assert.Equal(t, egidBefore, syscall.Getegid(), "resolution must not change the effective GID")
+		})
 	}
-
-	assert.PanicsWithValue(t, "os.Exit called", func() {
-		_ = manager.changeUserGroupInternal("", "", false, originalEGID)
-	}, "emergencyShutdown should be called when rollback Setegid also fails")
-
-	assert.True(t, exited, "os.Exit should have been called")
-	assert.Equal(t, 1, exitCode, "Expected exit code 1")
 }
 
 // TestDefaultIdentityVerifier tests that defaultIdentityVerifier passes in a normal
@@ -581,9 +543,6 @@ func TestRestorePrivilegesAndMetrics_IdentityLeakTriggersShutdown(t *testing.T) 
 			CommandName: "test-command",
 		},
 		needsPrivilegeEscalation: true,
-		needsUserGroupChange:     false,
-		originalEUID:             syscall.Geteuid(),
-		originalEGID:             syscall.Getegid(),
 		start:                    time.Now(),
 	}
 
@@ -616,7 +575,6 @@ func TestRestorePrivilegesAndMetrics_IdentityVerificationSkippedForDryRun(t *tes
 			CommandName: "test-command",
 		},
 		needsPrivilegeEscalation: false,
-		needsUserGroupChange:     true,
 		start:                    time.Now(),
 	}
 
