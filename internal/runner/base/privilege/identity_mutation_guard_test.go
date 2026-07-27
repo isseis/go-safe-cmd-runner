@@ -41,10 +41,7 @@ var identityMutationFuncNames = map[string]struct{}{
 // forbiddenLiveIdentityPackage in internal/runner/base/risk, so a vendored or
 // differently rooted path still resolves).
 func isTrackedIdentityMutationImportPath(importPath string) bool {
-	if importPath == "syscall" {
-		return true
-	}
-	return importPath == "unix" || strings.HasSuffix(importPath, "/unix")
+	return importPath == "syscall" || importPath == "unix" || strings.HasSuffix(importPath, "/unix")
 }
 
 // allowedIdentityMutationCall identifies one permitted call site: the
