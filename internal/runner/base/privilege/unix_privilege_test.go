@@ -142,9 +142,10 @@ func TestPerformElevation_Success(t *testing.T) {
 // OperationUserGroupExecution does not change the parent process's identity;
 // that is delegated to SysProcAttr.Credential in the executor.
 //
-// privilegeSupported: true is used with originalUID: 0 so that the WithPrivileges
-// code path is entered but actual seteuid calls are avoided, while still exercising
-// the full OperationUserGroup path; full behavioral verification of the
+// privilegeSupported: true is set so that WithPrivileges does not short-circuit
+// at the IsPrivilegedExecutionSupported check. actual seteuid calls are avoided
+// because originalUID: 0 triggers an early-return in escalatePrivileges, not via
+// the privilegeSupported flag; full behavioral verification of the
 // OperationUserGroup path is delegated to step 2-3 (PR-7) where the
 // needUserGroupChange flag is removed.
 func TestWithPrivileges_UserGroupExecutionDoesNotChangeIdentity(t *testing.T) {
