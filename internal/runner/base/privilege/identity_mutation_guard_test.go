@@ -9,6 +9,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -214,7 +215,13 @@ func identityMutationCallSitesInSource(t *testing.T, filename, src string) []ide
 	// cannot bypass the check by literal-name matching.
 	localToImportPath := make(map[string]string)
 	for _, imp := range file.Imports {
-		path := strings.Trim(imp.Path.Value, `"`)
+		path, err := strconv.Unquote(imp.Path.Value)
+		require.NoErrorf(t, err, "failed to unquote import path %s in %s", imp.Path.Value, filename)
+		if imp.Name != nil && imp.Name.Name == "." {
+			require.Falsef(t, isTrackedIdentityMutationImportPath(path),
+				"dot-import of identity-mutation package is forbidden: %s in %s", path, filename)
+			continue
+		}
 		local := path
 		if idx := strings.LastIndex(path, "/"); idx >= 0 {
 			local = path[idx+1:]
