@@ -139,6 +139,13 @@ func TestManager_WithPrivileges_UserGroup_ValidUser(t *testing.T) {
 // returns the callback's error unchanged. No other test in this package pins this
 // invariant: TestManager_WithPrivileges_UnsupportedPlatform only reaches an error
 // path before fn runs, and the race_test.go callbacks all return nil.
+//
+// Unlike the other rewritten tests in this phase, this one drives WithPrivileges
+// end-to-end instead of constructing executionContext directly, so it cannot set
+// originalSUID: -1 to structurally skip the saved-set re-read; it captures the
+// real saved-set UID/GID via prepareExecution instead. That is safe here because
+// originalUID: 0 makes escalatePrivileges/restorePrivileges no-ops, so the
+// before/after saved-set reads are trivially identical.
 func TestManager_WithPrivileges_UserGroup_FunctionError(t *testing.T) {
 	manager := &UnixPrivilegeManager{
 		logger:             slog.Default(),
