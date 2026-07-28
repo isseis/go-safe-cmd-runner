@@ -221,7 +221,7 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 **判定理由**: 本 PR は実行時の特権実行経路（`executeWithUserGroup`）に触れるが、PR-1 で単体テスト済みの `ResolveRunAsIdentStrict` の 1 回呼び出しへ置き換えるだけで、executor 側に新しい分岐ロジックを持ち込まない。fail-closed 挙動の回帰は既存の `TestExecuteWithUserGroup_ResolverError_FailsClosed` / `..._ResolverNilGroups_FailsClosed` の参照先変更のみで検査できる。既存コード調査結果に競合アプローチの記載はなく、Conditional checks・パネルモードのいずれのトリガーにも該当しない。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
