@@ -28,7 +28,7 @@ type resolverCall struct {
 // execve is exercised end-to-end only in the privileged integration tests);
 // the mock privilege manager's elevation log records only the RunAsUser/
 // RunAsGroup strings, not the resolved uid/gid/groups.
-func capturingResolver(calls *[]resolverCall, ident risktypes.RunAsIdent) func(risktypes.RunAsIdent, string, string) (risktypes.RunAsIdent, error) {
+func capturingResolver(calls *[]resolverCall, ident risktypes.RunAsIdent) risktypes.RunAsResolver {
 	return func(base risktypes.RunAsIdent, userName, groupName string) (risktypes.RunAsIdent, error) {
 		*calls = append(*calls, resolverCall{base: base, userName: userName, groupName: groupName})
 		return ident, nil
@@ -116,7 +116,9 @@ func TestExecuteWithUserGroup_ResolverError_FailsClosed(t *testing.T) {
 	result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
 	require.Error(t, err)
-	assert.ErrorIs(t, err, executor.ErrRunAsIdentityResolution)
+	assert.ErrorIs(t, err, risktypes.ErrRunAsIdentityResolution)
+	assert.ErrorIs(t, err, resolverErr,
+		"the injected resolver error must survive through ResolveRunAsIdentStrict wrapping and executor error propagation")
 	assert.Nil(t, result, "the command must not run, so there is no result to report")
 	assert.Empty(t, mockPriv.ElevationCalls, "privilege escalation must not be attempted when identity resolution fails")
 }
@@ -143,7 +145,9 @@ func TestExecuteWithUserGroup_ResolverNilGroups_FailsClosed(t *testing.T) {
 	result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 
 	require.Error(t, err)
-	assert.ErrorIs(t, err, executor.ErrRunAsIdentityResolution)
+	assert.ErrorIs(t, err, risktypes.ErrRunAsIdentityResolution)
+	assert.ErrorIs(t, err, risktypes.ErrRunAsSupplementaryGroupsUnavailable,
+		"supplementary-groups-unavailable sentinel must survive through ResolveRunAsIdentStrict wrapping and executor error propagation")
 	assert.Nil(t, result)
 	assert.Empty(t, mockPriv.ElevationCalls, "privilege escalation must not be attempted when supplementary groups could not be enumerated")
 }

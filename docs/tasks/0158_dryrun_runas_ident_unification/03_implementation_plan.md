@@ -179,8 +179,8 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: `executor` を共有関数の呼び出しに置き換える
 
@@ -192,15 +192,15 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 
 **作業内容**
 
-- [ ] `executor.go` の `ErrRunAsIdentityResolution` の定義と直前の doc コメント（`:37-42`）を削除する。
-- [ ] `DefaultExecutor.runAsResolver` フィールドの型を `risktypes.RunAsResolver` に変える。末尾のコメント `// injectable for testing; defaults to risktypes.ResolveRunAsIdent` はそのまま残す。
-- [ ] `executeWithUserGroup` の解決部（`resolver := e.runAsResolver` から `Groups == nil` の判定まで、現行 `:185-213`）を次の形に置き換える。
+- [x] `executor.go` の `ErrRunAsIdentityResolution` の定義と直前の doc コメント（`:37-42`）を削除する。
+- [x] `DefaultExecutor.runAsResolver` フィールドの型を `risktypes.RunAsResolver` に変える。末尾のコメント `// injectable for testing; defaults to risktypes.ResolveRunAsIdent` はそのまま残す。
+- [x] `executeWithUserGroup` の解決部（`resolver := e.runAsResolver` から `Groups == nil` の判定まで、現行 `:185-213`）を次の形に置き換える。
   - `ResolveRunAsIdentStrict(e.runAsResolver, risktypes.OriginalExecutionIdentity(), cmd.RunAsUser(), cmd.RunAsGroup())` を 1 回呼ぶ。
   - エラー時は `e.Logger.Error("Failed to resolve run-as identity", "error", err, "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())` を出し、受け取ったエラーをそのまま返す（二重にラップしない）。
   - nil フォールバックと `Groups == nil` の判定は `ResolveRunAsIdentStrict` に移るため executor 側から削除する。それを説明していた既存コメント 2 件（`Fall back to the default resolver ...` と `ResolveRunAsIdent silently returns nil Groups ...`）も削除し、委譲先を指す短いコメントに置き換える。
   - ログメッセージ `"Failed to resolve run-as supplementary groups"` は無くなる（設計書 §8.1）。
-- [ ] `test_helpers.go` の `WithRunAsResolver` の引数型を `risktypes.RunAsResolver` に変える。doc コメントは維持する。
-- [ ] `executor_usergroup_test.go` の `executor.ErrRunAsIdentityResolution` 2 か所（`:119`, `:146`）を `risktypes.ErrRunAsIdentityResolution` に変える。
+- [x] `test_helpers.go` の `WithRunAsResolver` の引数型を `risktypes.RunAsResolver` に変える。doc コメントは維持する。
+- [x] `executor_usergroup_test.go` の `executor.ErrRunAsIdentityResolution` 2 か所（`:119`, `:146`）を `risktypes.ErrRunAsIdentityResolution` に変える。
 
 **完了条件**
 
@@ -220,8 +220,8 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 
 **判定理由**: 本 PR は実行時の特権実行経路（`executeWithUserGroup`）に触れるが、PR-1 で単体テスト済みの `ResolveRunAsIdentStrict` の 1 回呼び出しへ置き換えるだけで、executor 側に新しい分岐ロジックを持ち込まない。fail-closed 挙動の回帰は既存の `TestExecuteWithUserGroup_ResolverError_FailsClosed` / `..._ResolverNilGroups_FailsClosed` の参照先変更のみで検査できる。既存コード調査結果に競合アプローチの記載はなく、Conditional checks・パネルモードのいずれのトリガーにも該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -578,12 +578,12 @@ Phase 2 と Phase 3 は互いに独立で、順序を入れ替えてもよい。
 
 ### PR-2（対象ステップ: Phase 2）
 
-- [ ] `executor.ErrRunAsIdentityResolution` の削除
-- [ ] `runAsResolver` フィールドの型変更
-- [ ] `executeWithUserGroup` の委譲
-- [ ] `WithRunAsResolver` の型変更
-- [ ] 既存テストの参照先変更（2 か所）
-- [ ] `make fmt` / `make test` / `make lint`
+- [x] `executor.ErrRunAsIdentityResolution` の削除
+- [x] `runAsResolver` フィールドの型変更
+- [x] `executeWithUserGroup` の委譲
+- [x] `WithRunAsResolver` の型変更
+- [x] 既存テストの参照先変更（2 か所）
+- [x] `make fmt` / `make test` / `make lint`
 - [ ] PR-2 マージ済み（対象ステップ: Phase 2）
 
 ### PR-3（対象ステップ: Phase 3）
