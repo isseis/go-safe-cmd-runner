@@ -222,8 +222,8 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: dry-run の検証を共有関数に委譲する
 
@@ -237,25 +237,25 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 
 **作業内容（実装）**
 
-- [ ] `DryRunResourceManager` に注入可能なフィールドを 2 つ追加する。
+- [x] `DryRunResourceManager` に注入可能なフィールドを 2 つ追加する。
   - `runAsResolver risktypes.RunAsResolver`
   - `logger *slog.Logger`
-- [ ] `NewDryRunResourceManagerWithOutput` の構造体リテラルで既定値を設定する（`runAsResolver: risktypes.ResolveRunAsIdent`、`logger: slog.Default()`）。コンストラクタの引数は増やさない。`NewDryRunResourceManager` はこの関数に委譲しているため、生成経路はこの 1 か所で足りる。
-- [ ] 表示用のリスクレベル文字列を `runnertypes.RiskLevel` に戻す非公開関数 `parseDisplayRiskLevel(s string) runnertypes.RiskLevel` を追加する。`runnertypes` の文字列定数 5 種を `switch` で受け、該当しない値と空文字は `RiskLevelUnknown` を返す。`ParseRiskLevel` を使わない理由（`"critical"` を拒否するため内部比較に使えない）をコメントで添える。
-- [ ] リスクレベルを単調に引き上げる非公開関数 `raiseSecurityRisk(analysis *Analysis, level runnertypes.RiskLevel)` を追加する。現在値を `parseDisplayRiskLevel` で `RiskLevel` に直し、`max` で比較して高い方の `.String()` を `analysis.Impact.SecurityRisk` に設定する。
-- [ ] 失敗種別を判定する非公開関数 `runAsFailureKind(err error, userName string, base risktypes.RunAsIdent) string` を追加する。判定順序は次のとおりで、根拠をコメントで書く。判定はすべて `errors.Is` / `errors.AsType` で行い、エラー値の直接比較（`==`）は使わない。
+- [x] `NewDryRunResourceManagerWithOutput` の構造体リテラルで既定値を設定する（`runAsResolver: risktypes.ResolveRunAsIdent`、`logger: slog.Default()`）。コンストラクタの引数は増やさない。`NewDryRunResourceManager` はこの関数に委譲しているため、生成経路はこの 1 か所で足りる。
+- [x] 表示用のリスクレベル文字列を `runnertypes.RiskLevel` に戻す非公開関数 `parseDisplayRiskLevel(s string) runnertypes.RiskLevel` を追加する。`runnertypes` の文字列定数 5 種を `switch` で受け、該当しない値と空文字は `RiskLevelUnknown` を返す。`ParseRiskLevel` を使わない理由（`"critical"` を拒否するため内部比較に使えない）をコメントで添える。
+- [x] リスクレベルを単調に引き上げる非公開関数 `raiseSecurityRisk(analysis *Analysis, level runnertypes.RiskLevel)` を追加する。現在値を `parseDisplayRiskLevel` で `RiskLevel` に直し、`max` で比較して高い方の `.String()` を `analysis.Impact.SecurityRisk` に設定する。
+- [x] 失敗種別を判定する非公開関数 `runAsFailureKind(err error, userName string, base risktypes.RunAsIdent) string` を追加する。判定順序は次のとおりで、根拠をコメントで書く。判定はすべて `errors.Is` / `errors.AsType` で行い、エラー値の直接比較（`==`）は使わない。
   1. `errors.AsType[user.UnknownUserError](err)` が真 → `"user_unknown"`
   2. `errors.AsType[user.UnknownGroupError](err)` が真 → `"group_unknown"`
   3. `errors.Is(err, risktypes.ErrRunAsSupplementaryGroupsUnavailable)` が真 → `userName == "" && base.Groups == nil` のとき `"base_identity_groups_unavailable"`、それ以外は `"supplementary_groups_unavailable"`
   4. それ以外 → `"lookup_error"`
-- [ ] `validateRunAsIdentity(cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, analysis *Analysis)` を追加し、`analyzeCommand` の検証部（現行 `:273-296`）をこの呼び出しに置き換える。処理順は設計書 §6.1 に従う。
+- [x] `validateRunAsIdentity(cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, analysis *Analysis)` を追加し、`analyzeCommand` の検証部（現行 `:273-296`）をこの呼び出しに置き換える。処理順は設計書 §6.1 に従う。
   - 基準識別情報として `risktypes.OriginalExecutionIdentity()` を 1 回だけ取得し、`ResolveRunAsIdentStrict` と `runAsFailureKind` の両方に渡す。1 コマンドあたりの解決呼び出しは 1 回とする（AC-17）。
   - 成功時: `analysis.Impact.Description` に ` [INFO: User/Group identity resolution validated]` を追記し、`d.logger.Info("Dry-run run-as identity resolved", ...)` を 1 件出す。属性は `dry_run`(true) / `command` / `group` / `run_as_user` / `run_as_group` / `resolved_uid` / `resolved_gid`。`group` は `group == nil` のとき空文字にする。属性名 `command` は設計書 §4.2 の表に従う（`internal/common/logschema.go` の `command_name` は監査ログを読む側と共有する定数である。一方、ここで出すのは dry-run 専用の記録であるため、属性名は揃えない）。
   - 失敗時: `analysis.Impact.Description` に失敗の記述を追記し、`raiseSecurityRisk(analysis, runnertypes.RiskLevelHigh)` を呼び、`d.logger.Warn("Dry-run run-as identity resolution failed", ...)` を 1 件出す。属性は成功時の前半 5 つに `failure_kind` と `error` を加えたもので、`resolved_uid` / `resolved_gid` は付けない。
   - 検証の後に警告を判定する。`d.privilegeManager == nil` のときは、特権マネージャに問い合わせずに ` [WARNING: User/Group privilege management not supported]` を追記する。`d.privilegeManager != nil` のときは、`!d.privilegeManager.IsPrivilegedExecutionSupported()` が真の場合に同じ文字列を追記する。この文字列は変更前と同一である。
   - 環境変数値やコマンド引数はログ属性に含めない。
-- [ ] `analyzeCommand` から `runnertypes.ElevationContext` の組み立てと `d.privilegeManager.WithPrivileges` の呼び出しを削除する。`analysis.Parameters["run_as_user"]` / `["run_as_group"]` の設定は現在の位置に残す。
-- [ ] import に `os/user` を追加する（`errors` / `fmt` / `log/slog` / `runnertypes` は既にある）。
+- [x] `analyzeCommand` から `runnertypes.ElevationContext` の組み立てと `d.privilegeManager.WithPrivileges` の呼び出しを削除する。`analysis.Parameters["run_as_user"]` / `["run_as_group"]` の設定は現在の位置に残す。
+- [x] import に `os/user` を追加する（`errors` / `fmt` / `log/slog` / `runnertypes` は既にある）。
 
 **文言の変更**
 
@@ -271,27 +271,27 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 
 テストは `package resource` にあるため、生成した `manager` のフィールドへ直接代入してリゾルバとロガーを差し替える。**`run_as` 指定を持つすべてのサブテストでスタブリゾルバを注入する。** 既定のリゾルバは実 OS のユーザーデータベースを引くため、`testuser` / `testgroup` という実在しない名前を使う既存サブテストは、注入しなければ結果がホスト依存になる（要件のリスク表「実際の OS 状態に依存しないテストとする」）。
 
-- [ ] `test_helpers.go` に `riskLevelTestEvaluator{level runnertypes.RiskLevel}` を追加する。`permissiveTestEvaluator` と同じインタフェースを満たし、指定したレベルの許可プランを返す。同ファイルの build tag（`//go:build test || performance`）の下でコンパイルできることを確認する。
-- [ ] `TestDryRunResourceManager_UserGroupValidation` の各サブテストを更新する。
-  - [ ] `valid_user_group_specification`: 成功を返すスタブリゾルバを注入する。`ElevationCalls` への `assert.Contains` を削除し、期待文字列を `[INFO: User/Group identity resolution validated]` に更新する。
-  - [ ] `invalid_user_group_specification`: `NewFailingMockPrivilegeManager` に依存する構成をやめ、`user.UnknownUserError` を返すスタブリゾルバを注入する。期待文字列を `[ERROR: User/Group identity resolution failed:` に更新し、`SecurityRisk == riskLevelHigh` の期待は維持する（AC-01）。
-  - [ ] `user_group_not_supported`: 成功を返すスタブリゾルバを注入し、`[INFO: User/Group identity resolution validated]` と `[WARNING: User/Group privilege management not supported]` の**両方**が `Description` に現れることを期待する（AC-09 / AC-10）。
-  - [ ] `no_privilege_manager`: 同じく成功リゾルバを注入し、両方の文字列が現れることを期待する（AC-08 / AC-10）。
-  - [ ] `only_user_specified`: 成功リゾルバを注入し、`ElevationCalls` への `assert.Contains` を削除する。リゾルバが `groupName == ""` で呼ばれたことと新しい成功文言を検査する。
-  - [ ] `no_user_group_specification`: `assert.Empty(t, mockPriv.ElevationCalls)` を「スタブリゾルバが呼ばれていないこと」の検査に置き換える。`User/Group` を含まないことの検査は維持する（AC-20）。
-- [ ] `TestDryRunResourceManager_GroupNameResolutionFailure` を追加する。`user.UnknownGroupError` を返すリゾルバで、失敗報告と `high` を確認する（AC-02）。
-- [ ] `TestDryRunResourceManager_SupplementaryGroupsUnavailable` を追加する。`Groups == nil` を返すリゾルバで、失敗が報告され `SecurityRisk` が `high` になることを確認する（AC-03 / AC-19）。変更前は成功扱いだった入力であることを doc コメントに書く。
-- [ ] `TestDryRunResourceManager_RiskRaiseIsMonotonic` を追加する。`riskLevelTestEvaluator{runnertypes.RiskLevelCritical}` と失敗リゾルバを組み合わせ、`SecurityRisk` が `critical` のまま下がらないことを確認する（AC-20、設計書 §3.4）。
-- [ ] `TestDryRunResourceManager_ResolverCalledOncePerCommand` を追加する。呼び出し回数を数えるリゾルバを注入し、`run_as` 指定を持つコマンド 1 件の解析でちょうど 1 回だけ呼ばれることを確認する（AC-17）。
-- [ ] `TestDryRunResourceManager_RunAsIdentityLogAttributes` を追加する。`slog.NewJSONHandler` でバッファに書くロガーとスタブリゾルバを注入し、次を確認する（AC-11 / AC-13）。
+- [x] `test_helpers.go` に `riskLevelTestEvaluator{level runnertypes.RiskLevel}` を追加する。`permissiveTestEvaluator` と同じインタフェースを満たし、指定したレベルの許可プランを返す。同ファイルの build tag（`//go:build test || performance`）の下でコンパイルできることを確認する。
+- [x] `TestDryRunResourceManager_UserGroupValidation` の各サブテストを更新する。
+  - [x] `valid_user_group_specification`: 成功を返すスタブリゾルバを注入する。`ElevationCalls` への `assert.Contains` を削除し、期待文字列を `[INFO: User/Group identity resolution validated]` に更新する。
+  - [x] `invalid_user_group_specification`: `NewFailingMockPrivilegeManager` に依存する構成をやめ、`user.UnknownUserError` を返すスタブリゾルバを注入する。期待文字列を `[ERROR: User/Group identity resolution failed:` に更新し、`SecurityRisk == riskLevelHigh` の期待は維持する（AC-01）。
+  - [x] `user_group_not_supported`: 成功を返すスタブリゾルバを注入し、`[INFO: User/Group identity resolution validated]` と `[WARNING: User/Group privilege management not supported]` の**両方**が `Description` に現れることを期待する（AC-09 / AC-10）。
+  - [x] `no_privilege_manager`: 同じく成功リゾルバを注入し、両方の文字列が現れることを期待する（AC-08 / AC-10）。
+  - [x] `only_user_specified`: 成功リゾルバを注入し、`ElevationCalls` への `assert.Contains` を削除する。リゾルバが `groupName == ""` で呼ばれたことと新しい成功文言を検査する。
+  - [x] `no_user_group_specification`: `assert.Empty(t, mockPriv.ElevationCalls)` を「スタブリゾルバが呼ばれていないこと」の検査に置き換える。`User/Group` を含まないことの検査は維持する（AC-20）。
+- [x] `TestDryRunResourceManager_GroupNameResolutionFailure` を追加する。`user.UnknownGroupError` を返すリゾルバで、失敗報告と `high` を確認する（AC-02）。
+- [x] `TestDryRunResourceManager_SupplementaryGroupsUnavailable` を追加する。`Groups == nil` を返すリゾルバで、失敗が報告され `SecurityRisk` が `high` になることを確認する（AC-03 / AC-19）。変更前は成功扱いだった入力であることを doc コメントに書く。
+- [x] `TestDryRunResourceManager_RiskRaiseIsMonotonic` を追加する。`riskLevelTestEvaluator{runnertypes.RiskLevelCritical}` と失敗リゾルバを組み合わせ、`SecurityRisk` が `critical` のまま下がらないことを確認する（AC-20、設計書 §3.4）。
+- [x] `TestDryRunResourceManager_ResolverCalledOncePerCommand` を追加する。呼び出し回数を数えるリゾルバを注入し、`run_as` 指定を持つコマンド 1 件の解析でちょうど 1 回だけ呼ばれることを確認する（AC-17）。
+- [x] `TestDryRunResourceManager_RunAsIdentityLogAttributes` を追加する。`slog.NewJSONHandler` でバッファに書くロガーとスタブリゾルバを注入し、次を確認する（AC-11 / AC-13）。
   - 成功時: レコードが 1 件で、`dry_run` / `command` / `group` / `run_as_user` / `run_as_group` / `resolved_uid` / `resolved_gid` が個別の JSON キーとして存在する。
   - 失敗時: レコードが 1 件で、`failure_kind` と `error` が個別のキーとして存在し、`failure_kind` の値が期待どおりである。
   - コマンドに環境変数 `GSCR_TEST_SECRET=sentinel-env-value-0158`（他の出力と衝突しない一意な値）を与え、この値が JSON 出力全体に現れないことを確認する。
-- [ ] `TestRunAsFailureKind` を追加し、4 種の `failure_kind`（`user_unknown` / `group_unknown` / `supplementary_groups_unavailable` / `lookup_error`）と基準識別情報由来の `base_identity_groups_unavailable` を表駆動で確認する。
-- [ ] `TestParseDisplayRiskLevel` を追加し、5 つの正規の文字列・空文字・未知の文字列を表駆動で確認する。
-- [ ] `TestDryRunPreservesProcessIdentity` を追加する。`run_as` 指定のあるコマンドの dry-run 前後で `os.Getuid()` / `os.Getgid()` / `os.Getgroups()` が一致することを確認する（AC-07 / AC-21）。Phase 4 で削除する `privilege` 側の同等テストより先にこのテストを用意する。
-- [ ] `resource/identity_mutation_guard_test.go` を追加する。`privilege/identity_mutation_guard_test.go` と同じ AST 走査方式とし、**パッケージディレクトリ配下の本番 `.go` ファイル全体**を対象にする（単一ファイルに限定しない）。識別情報を変更する関数（`Seteuid` / `Setegid` / `Setuid` / `Setgid` / `Setreuid` / `Setregid` / `Setresuid` / `Setresgid` / `Setgroups` / `Setfsuid` / `Setfsgid` / 生 `Syscall` 系 / `Capset` / `Prctl`）を検査対象とし、呼び出しの許可リストは空とする。1 件でも見つかったら失敗とする。既存ガードとの関係（別パッケージを守る別のガードであること、許可リストが空である理由）を doc コメントに書く。
-- [ ] `risktypes/identity_mutation_guard_test.go` を追加する。同じ方式で `risktypes` パッケージディレクトリを対象にする。`OriginalExecutionIdentity` が使う `os.Getuid` / `os.Getgid` / `os.Getgroups` は読み取りのみであり、検査対象の変更系関数には含まれない。
+- [x] `TestRunAsFailureKind` を追加し、4 種の `failure_kind`（`user_unknown` / `group_unknown` / `supplementary_groups_unavailable` / `lookup_error`）と基準識別情報由来の `base_identity_groups_unavailable` を表駆動で確認する。
+- [x] `TestParseDisplayRiskLevel` を追加し、5 つの正規の文字列・空文字・未知の文字列を表駆動で確認する。
+- [x] `TestDryRunPreservesProcessIdentity` を追加する。`run_as` 指定のあるコマンドの dry-run 前後で `os.Getuid()` / `os.Getgid()` / `os.Getgroups()` が一致することを確認する（AC-07 / AC-21）。Phase 4 で削除する `privilege` 側の同等テストより先にこのテストを用意する。
+- [x] `resource/identity_mutation_guard_test.go` を追加する。`privilege/identity_mutation_guard_test.go` と同じ AST 走査方式とし、**パッケージディレクトリ配下の本番 `.go` ファイル全体**を対象にする（単一ファイルに限定しない）。識別情報を変更する関数（`Seteuid` / `Setegid` / `Setuid` / `Setgid` / `Setreuid` / `Setregid` / `Setresuid` / `Setresgid` / `Setgroups` / `Setfsuid` / `Setfsgid` / 生 `Syscall` 系 / `Capset` / `Prctl`）を検査対象とし、呼び出しの許可リストは空とする。1 件でも見つかったら失敗とする。既存ガードとの関係（別パッケージを守る別のガードであること、許可リストが空である理由）を doc コメントに書く。
+- [x] `risktypes/identity_mutation_guard_test.go` を追加する。同じ方式で `risktypes` パッケージディレクトリを対象にする。`OriginalExecutionIdentity` が使う `os.Getuid` / `os.Getgid` / `os.Getgroups` は読み取りのみであり、検査対象の変更系関数には含まれない。
 
 **完了条件**
 
@@ -311,8 +311,8 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 
 **判定理由**: `SecurityRisk` を fail-closed 方向に引き上げるリスク評価ロジックの変更であり `mkplan.md` step 8 のパネルモード・トリガーが挙げる「セキュリティゲート」に該当し、加えて既存 6 サブテストの書き換えと新規 10 テスト（`TestDryRunResourceManager_{GroupNameResolutionFailure, SupplementaryGroupsUnavailable, RiskRaiseIsMonotonic, ResolverCalledOncePerCommand, RunAsIdentityLogAttributes}` / `TestRunAsFailureKind` / `TestParseDisplayRiskLevel` / `TestDryRunPreservesProcessIdentity` / 識別情報ガード 2 件）の追加という「many test updates」の水準に達している。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

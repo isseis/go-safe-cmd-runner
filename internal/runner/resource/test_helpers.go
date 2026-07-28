@@ -56,6 +56,26 @@ func (permissiveTestEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (ri
 	}, nil
 }
 
+// riskLevelTestEvaluator always allows commands at the configured risk level, so
+// tests can drive raiseSecurityRisk's monotonic risk-raise logic from an
+// arbitrary starting risk level instead of the fixed Low that
+// permissiveTestEvaluator returns.
+type riskLevelTestEvaluator struct {
+	level runnertypes.RiskLevel
+}
+
+func (e riskLevelTestEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error) {
+	var identity *risktypes.VerifiedIdentity
+	if cmd.ExpandedCmdContentHash != "" {
+		identity = &risktypes.VerifiedIdentity{ResolvedPath: cmd.ExpandedCmd, ContentHash: cmd.ExpandedCmdContentHash}
+	}
+	return risktypes.VerifiedCommandPlan{
+		ResolvedPath: cmd.ExpandedCmd,
+		Identity:     identity,
+		Assessment:   risktypes.RiskAssessment{Level: e.level},
+	}, nil
+}
+
 // keyedRiskEvaluator returns a preset assessment per command name (falling back to
 // Low for unknown names), so dry-run preview tests can drive allow/deny/blocking
 // outcomes deterministically without on-disk binaries or hash records.
