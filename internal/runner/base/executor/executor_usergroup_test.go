@@ -117,6 +117,8 @@ func TestExecuteWithUserGroup_ResolverError_FailsClosed(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, risktypes.ErrRunAsIdentityResolution)
+	assert.ErrorIs(t, err, resolverErr,
+		"the injected resolver error must survive through ResolveRunAsIdentStrict wrapping and executor error propagation")
 	assert.Nil(t, result, "the command must not run, so there is no result to report")
 	assert.Empty(t, mockPriv.ElevationCalls, "privilege escalation must not be attempted when identity resolution fails")
 }
@@ -144,6 +146,8 @@ func TestExecuteWithUserGroup_ResolverNilGroups_FailsClosed(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, risktypes.ErrRunAsIdentityResolution)
+	assert.ErrorIs(t, err, risktypes.ErrRunAsSupplementaryGroupsUnavailable,
+		"supplementary-groups-unavailable sentinel must survive through ResolveRunAsIdentStrict wrapping and executor error propagation")
 	assert.Nil(t, result)
 	assert.Empty(t, mockPriv.ElevationCalls, "privilege escalation must not be attempted when supplementary groups could not be enumerated")
 }
