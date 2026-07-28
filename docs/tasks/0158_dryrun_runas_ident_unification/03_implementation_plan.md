@@ -456,7 +456,7 @@ execCtx: Operation: OperationFileValidation, needsPrivilegeEscalation: true,
 **判定理由**: `risktypes/testutil` の新規 `mocks.go`/`helpers.go` は `//go:build test` の非 `_test.go` ファイルであり Conditional checks の「ビルドタグ配下でのみコンパイルされる新規非テストソース」に該当するが、該当する Conditional checks は 1 件のみで frontier-recommended の閾値（2 件以上）に届かない。既存コード調査結果に競合アプローチの記載もなく、パネルモードのトリガーにも該当しない。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
