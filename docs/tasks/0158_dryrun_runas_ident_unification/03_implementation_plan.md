@@ -313,8 +313,8 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4: `privilege` / `runnertypes` から dry-run 専用経路を削除する
 
@@ -330,22 +330,22 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 
 **作業内容（本体）**
 
-- [ ] `unix.go` から `resolveUserGroupForDryRun` を削除する。
-- [ ] `unix.go` から `buildUserGroupLogAttrs` を削除する（同関数専用のヘルパである）。
-- [ ] `prepareExecution` の `case runnertypes.OperationUserGroupDryRun: execCtx.needsPrivilegeEscalation = false` を削除する。
-- [ ] `performElevation` の先頭にある dry-run 分岐を削除する。
-- [ ] `restorePrivilegesAndMetrics` の `else if panicValue == nil && execCtx.elevationCtx.Operation == runnertypes.OperationUserGroupDryRun { ... }` を、枝ごと削除する（設計書 §3.5）。
-- [ ] `os/user` と `strconv` の import を削除する。`os` と `syscall` は他で使うため残す。
-- [ ] `runnertypes/config.go` から `OperationUserGroupDryRun` の定義行を削除する。
-- [ ] `privilege/testutil/mocks.go` の `case runnertypes.OperationUserGroupDryRun:` とその記録行（`"user_group_dry_run:"` を組み立てる行）を削除する。
+- [x] `unix.go` から `resolveUserGroupForDryRun` を削除する。
+- [x] `unix.go` から `buildUserGroupLogAttrs` を削除する（同関数専用のヘルパである）。
+- [x] `prepareExecution` の `case runnertypes.OperationUserGroupDryRun: execCtx.needsPrivilegeEscalation = false` を削除する。
+- [x] `performElevation` の先頭にある dry-run 分岐を削除する。
+- [x] `restorePrivilegesAndMetrics` の `else if panicValue == nil && execCtx.elevationCtx.Operation == runnertypes.OperationUserGroupDryRun { ... }` を、枝ごと削除する（設計書 §3.5）。
+- [x] `os/user` と `strconv` の import を削除する。`os` と `syscall` は他で使うため残す。
+- [x] `runnertypes/config.go` から `OperationUserGroupDryRun` の定義行を削除する。
+- [x] `privilege/testutil/mocks.go` の `case runnertypes.OperationUserGroupDryRun:` とその記録行（`"user_group_dry_run:"` を組み立てる行）を削除する。
 
 **作業内容（doc コメントの書き換え）**
 
 削除後は存在しない `Operation` を説明する文になるため、語を消すだけでなく変更後の事実を述べる形に書き直す。3 か所とも英語で書く。
 
-- [ ] `WithPrivileges` の doc コメント（`unix.go:89-90`）: 現在の 2 行 `// RunAsUser and RunAsGroup are resolved and logged inside this package only for` / `// OperationUserGroupDryRun.` を削除し、「この package は `RunAsUser` / `RunAsGroup` を一切解決しない。解決は `risktypes.ResolveRunAsIdentStrict` が行い、この package が受け付ける `Operation` はいずれも root への昇格を伴う」という趣旨の 2 行に置き換える。
-- [ ] `restorePrivilegesAndMetrics` 冒頭のコメント（`unix.go:215-217`）: 現在の 3 行（`// Note: no branch restores the effective group ID here.` から `// so there is nothing to restore.` まで）を削除し、「実効グループ ID を復元する枝が無いのは、この package が実効 UID の昇格と復元しか行わないためである」という趣旨に置き換える。
-- [ ] saved-set 検査前のコメント（`unix.go:228-232`）: `OperationUserGroupDryRun` に言及する 2 行（`:231-232`）を削除し、「識別情報を変えるのは昇格だけなので、昇格の有無が検証のゲートになる」という趣旨に置き換える。同じ段落の `after every non-dry-run privilege operation` という表現も、dry-run 経路が無くなったことに合わせて `after every privilege operation that escalated` の趣旨に直す。
+- [x] `WithPrivileges` の doc コメント（`unix.go:89-90`）: 現在の 2 行 `// RunAsUser and RunAsGroup are resolved and logged inside this package only for` / `// OperationUserGroupDryRun.` を削除し、「この package は `RunAsUser` / `RunAsGroup` を一切解決しない。解決は `risktypes.ResolveRunAsIdentStrict` が行い、この package が受け付ける `Operation` はいずれも root への昇格を伴う」という趣旨の 2 行に置き換える。
+- [x] `restorePrivilegesAndMetrics` 冒頭のコメント（`unix.go:215-217`）: 現在の 3 行（`// Note: no branch restores the effective group ID here.` から `// so there is nothing to restore.` まで）を削除し、「実効グループ ID を復元する枝が無いのは、この package が実効 UID の昇格と復元しか行わないためである」という趣旨に置き換える。
+- [x] saved-set 検査前のコメント（`unix.go:228-232`）: `OperationUserGroupDryRun` に言及する 2 行（`:231-232`）を削除し、「識別情報を変えるのは昇格だけなので、昇格の有無が検証のゲートになる」という趣旨に置き換える。同じ段落の `after every non-dry-run privilege operation` という表現も、dry-run 経路が無くなったことに合わせて `after every privilege operation that escalated` の趣旨に直す。
 
 **作業内容（テストの整理）**
 
@@ -361,23 +361,23 @@ execCtx: Operation: OperationFileValidation, needsPrivilegeEscalation: true,
 
 `originalUID: 0` を指定すると root で動作している扱いになり、実際の `seteuid` 呼び出しを回避できる。`originalSUID: -1` は saved-set 検査を構造的にスキップする。
 
-- [ ] `unix_privilege_test.go::TestPrepareExecution_Success` の `user_group_dryrun` ケースを削除する。
-- [ ] `unix_privilege_test.go::TestPerformElevation_Success` を削除する。
-- [ ] `unix_privilege_test.go::TestPerformElevation_Failure` の `invalid_user_in_dryrun` サブテストを削除する。
-- [ ] `unix_privilege_test.go::TestWithPrivileges_UserGroupDryRunDoesNotChangeIdentity` を削除する（代替は Phase 3 の `TestDryRunPreservesProcessIdentity`）。
-- [ ] `unix_privilege_test.go::TestHandleCleanupAndMetrics_Success` を上記の共通構成に書き換える。`ElevationSuccesses == 1` に加え、`handleCleanupAndMetrics` 固有の振る舞い（panic が無いときに duration が計上され、`restorePrivilegesAndMetrics` に非ゼロの duration が渡ること）を検査対象に含め、`TestRestorePrivilegesAndMetrics_Success` との重複をなくす。コメントから dry-run への言及を落とす。
-- [ ] `unix_privilege_test.go::TestHandleCleanupAndMetrics_WithError` の `Operation` を `OperationFileValidation` に差し替える（panic 再送出の検査内容は変えない。`needsPrivilegeEscalation` は `false` のままでよく、共通構成の適用は不要である）。
-- [ ] `unix_privilege_test.go::TestRestorePrivilegesAndMetrics_Success` を上記の共通構成に書き換え、`ElevationSuccesses == 1` を維持する。
-- [ ] `unix_privilege_test.go::TestRestorePrivilegesAndMetrics_NoSuccessWithoutEscalationOrDryRun` を `TestRestorePrivilegesAndMetrics_NoSuccessWithoutEscalation` に改名する。doc コメントとアサーションのメッセージから dry-run への言及を落とし、「昇格を伴わない operation では success を記録しない」という説明に書き換える（英語で書く）。
-- [ ] `unix_privilege_test.go::TestRestorePrivilegesAndMetrics_Failure` を上記の共通構成に書き換え（ただし panic 値を渡す）、panic 時に success が記録されないという期待を維持する。
-- [ ] `unix_privilege_test.go::TestResolveUserGroupForDryRun` を削除する。この関数だけが使っていた import（`bytes` / `strconv` など）が不要になれば削除する。
-- [ ] `unix_privilege_test.go::TestRestorePrivilegesAndMetrics_IdentityVerificationSkippedForDryRun` を `TestRestorePrivilegesAndMetrics_IdentityVerificationSkippedWithoutEscalation` に改名し、`Operation` を `OperationFileValidation`・`needsPrivilegeEscalation` を `false` にして、`identityVerifier` が呼ばれないことの検査を維持する（削除すると「識別情報の検証が昇格の有無でゲートされる」という不変条件を検査するテストが無くなる）。doc コメントを英語で書き換える。
-- [ ] `internal/runner/base/privilege/unix_test.go` をファイルごと削除する。含まれる 2 関数（`TestUnixPrivilegeManager_DryRunResolution` / `TestUnixPrivilegeManager_PrivilegeValidation`）はいずれも dry-run 専用であり、他へ移す検査は無い。
-- [ ] `manager_test.go::TestManager_WithPrivileges_UserGroup_ValidUser` の `dry_run_mode` サブテストを削除する（root 時のみ走る `actual_change` は残す）。
-- [ ] `manager_test.go::TestManager_WithPrivileges_UserGroup_InvalidUser` を削除する。
-- [ ] `manager_test.go::TestManager_WithPrivileges_UserGroup_EmptyUserGroup` を削除する。
-- [ ] `manager_test.go::TestManager_WithPrivileges_UserGroup_FunctionError` を書き換える（削除しない）。上記の共通構成の manager を用い、`Operation` を `OperationFileValidation` にして `WithPrivileges` を呼び、コールバックが返したエラーがそのまま返ること（`assert.Equal(expectedErr, err)`）を検査する。この不変条件を検査するテストは他に無い。
-- [ ] 上記の削除で未使用になったヘルパ（`manager_test.go` の `getCurrentUser` / `getCurrentGroup` など）を確認し、参照が無くなったものは削除する。
+- [x] `unix_privilege_test.go::TestPrepareExecution_Success` の `user_group_dryrun` ケースを削除する。
+- [x] `unix_privilege_test.go::TestPerformElevation_Success` を削除する。
+- [x] `unix_privilege_test.go::TestPerformElevation_Failure` の `invalid_user_in_dryrun` サブテストを削除する。
+- [x] `unix_privilege_test.go::TestWithPrivileges_UserGroupDryRunDoesNotChangeIdentity` を削除する（代替は Phase 3 の `TestDryRunPreservesProcessIdentity`）。
+- [x] `unix_privilege_test.go::TestHandleCleanupAndMetrics_Success` を上記の共通構成に書き換える。`ElevationSuccesses == 1` に加え、`handleCleanupAndMetrics` 固有の振る舞い（panic が無いときに duration が計上され、`restorePrivilegesAndMetrics` に非ゼロの duration が渡ること）を検査対象に含め、`TestRestorePrivilegesAndMetrics_Success` との重複をなくす。コメントから dry-run への言及を落とす。
+- [x] `unix_privilege_test.go::TestHandleCleanupAndMetrics_WithError` の `Operation` を `OperationFileValidation` に差し替える（panic 再送出の検査内容は変えない。`needsPrivilegeEscalation` は `false` のままでよく、共通構成の適用は不要である）。
+- [x] `unix_privilege_test.go::TestRestorePrivilegesAndMetrics_Success` を上記の共通構成に書き換え、`ElevationSuccesses == 1` を維持する。
+- [x] `unix_privilege_test.go::TestRestorePrivilegesAndMetrics_NoSuccessWithoutEscalationOrDryRun` を `TestRestorePrivilegesAndMetrics_NoSuccessWithoutEscalation` に改名する。doc コメントとアサーションのメッセージから dry-run への言及を落とし、「昇格を伴わない operation では success を記録しない」という説明に書き換える（英語で書く）。
+- [x] `unix_privilege_test.go::TestRestorePrivilegesAndMetrics_Failure` を上記の共通構成に書き換え（ただし panic 値を渡す）、panic 時に success が記録されないという期待を維持する。
+- [x] `unix_privilege_test.go::TestResolveUserGroupForDryRun` を削除する。この関数だけが使っていた import（`bytes` / `strconv` など）が不要になれば削除する。
+- [x] `unix_privilege_test.go::TestRestorePrivilegesAndMetrics_IdentityVerificationSkippedForDryRun` を `TestRestorePrivilegesAndMetrics_IdentityVerificationSkippedWithoutEscalation` に改名し、`Operation` を `OperationFileValidation`・`needsPrivilegeEscalation` を `false` にして、`identityVerifier` が呼ばれないことの検査を維持する（削除すると「識別情報の検証が昇格の有無でゲートされる」という不変条件を検査するテストが無くなる）。doc コメントを英語で書き換える。
+- [x] `internal/runner/base/privilege/unix_test.go` をファイルごと削除する。含まれる 2 関数（`TestUnixPrivilegeManager_DryRunResolution` / `TestUnixPrivilegeManager_PrivilegeValidation`）はいずれも dry-run 専用であり、他へ移す検査は無い。
+- [x] `manager_test.go::TestManager_WithPrivileges_UserGroup_ValidUser` の `dry_run_mode` サブテストを削除する（root 時のみ走る `actual_change` は残す）。
+- [x] `manager_test.go::TestManager_WithPrivileges_UserGroup_InvalidUser` を削除する。
+- [x] `manager_test.go::TestManager_WithPrivileges_UserGroup_EmptyUserGroup` を削除する。
+- [x] `manager_test.go::TestManager_WithPrivileges_UserGroup_FunctionError` を書き換える（削除しない）。上記の共通構成の manager を用い、`Operation` を `OperationFileValidation` にして `WithPrivileges` を呼び、コールバックが返したエラーがそのまま返ること（`assert.Equal(expectedErr, err)`）を検査する。この不変条件を検査するテストは他に無い。
+- [x] 上記の削除で未使用になったヘルパ（`manager_test.go` の `getCurrentUser` / `getCurrentGroup` など）を確認し、参照が無くなったものは削除する。
 
 **完了条件**
 
@@ -398,8 +398,8 @@ execCtx: Operation: OperationFileValidation, needsPrivilegeEscalation: true,
 
 **判定理由**: `mkplan.md` step 8 のパネルモード・トリガーが挙げる「セキュリティゲート/マイグレーション」に該当する。`performElevation` / `restorePrivilegesAndMetrics` という特権昇格・復元の中核経路から dry-run 専用分岐を除去する変更であり、加えて 18 項目のテスト整理（既存 4 件の書き換えは構成を誤ると `emergencyShutdown` を誤発火させる）という「many test updates」の水準に達している。本体の削除とテスト整理をさらに 2 PR へ分割することはできない（`resolveUserGroupForDryRun` 等を削除すると、それを参照する `unix_privilege_test.go` の該当テストがコンパイルできなくなるため、同一 PR に含める必要がある）。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
