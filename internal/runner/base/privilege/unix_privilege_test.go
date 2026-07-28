@@ -170,10 +170,8 @@ func TestHandleCleanupAndMetrics_Success(t *testing.T) {
 		needsPrivilegeEscalation: true,
 		originalSUID:             -1,
 		originalSGID:             -1,
-		start:                    time.Now(),
+		start:                    time.Now().Add(-time.Millisecond),
 	}
-
-	time.Sleep(time.Millisecond)
 
 	// This should not panic
 	manager.handleCleanupAndMetrics(execCtx)
