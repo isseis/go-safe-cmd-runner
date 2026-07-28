@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os/user"
 	"sync"
 	"time"
 
@@ -43,6 +44,8 @@ type DryRunResourceManager struct {
 	executor         executor.CommandExecutor
 	privilegeManager runnertypes.PrivilegeManager
 	pathResolver     PathResolver
+	runAsResolver    risktypes.RunAsResolver // injectable for testing; defaults to risktypes.ResolveRunAsIdent
+	logger           *slog.Logger            // injectable for testing; defaults to slog.Default()
 
 	// Risk evaluation and audit. The same evaluator as normal mode is used so the
 	// dry-run preview reproduces the runtime allow/deny decision (read-only).
@@ -113,6 +116,8 @@ func NewDryRunResourceManagerWithOutput(exec executor.CommandExecutor, privMgr r
 		executor:         exec,
 		privilegeManager: privMgr,
 		pathResolver:     pathResolver,
+		runAsResolver:    risktypes.ResolveRunAsIdent,
+		logger:           slog.Default(),
 		riskEvaluator:    evaluator,
 		auditLogger:      auditLogger,
 		outputManager:    outputMgr,
@@ -270,33 +275,127 @@ func (d *DryRunResourceManager) analyzeCommand(ctx context.Context, cmd *runnert
 		analysis.Parameters["run_as_user"] = NewStringValue(cmd.RunAsUser())
 		analysis.Parameters["run_as_group"] = NewStringValue(cmd.RunAsGroup())
 
-		// Validate user/group configuration in dry-run mode
-		if d.privilegeManager != nil && d.privilegeManager.IsPrivilegedExecutionSupported() {
-			// Use unified WithPrivileges API with dry-run operation for validation
-			executionCtx := runnertypes.ElevationContext{
-				Operation:   runnertypes.OperationUserGroupDryRun,
-				CommandName: cmd.Name(),
-				FilePath:    cmd.ExpandedCmd,
-				RunAsUser:   cmd.RunAsUser(),
-				RunAsGroup:  cmd.RunAsGroup(),
-			}
-			err := d.privilegeManager.WithPrivileges(executionCtx, func() error {
-				return nil // No-op function for dry-run validation
-			})
-
-			if err != nil {
-				analysis.Impact.Description += fmt.Sprintf(" [ERROR: User/Group validation failed: %v]", err)
-				// User/group validation failures are high priority - override any lower risk
-				analysis.Impact.SecurityRisk = riskLevelHigh
-			} else {
-				analysis.Impact.Description += " [INFO: User/Group configuration validated]"
-			}
-		} else {
-			analysis.Impact.Description += " [WARNING: User/Group privilege management not supported]"
-		}
+		d.validateRunAsIdentity(cmd, group, &analysis)
 	}
 
 	return analysis, nil
+}
+
+// validateRunAsIdentity validates the run_as_user/run_as_group specification of
+// cmd by delegating to risktypes.ResolveRunAsIdentStrict -- the same
+// resolve-and-fail-closed judgment the executor applies at execution time, so
+// a dry-run "validated" report cannot diverge from what execution would do.
+// It records the outcome on analysis.Impact (human-readable text and, on
+// failure, a monotonic risk raise via raiseSecurityRisk) and emits one
+// structured slog record per call. The privilege-support warning is
+// independent of the resolution outcome and is evaluated last, since it
+// reports a separate fact ("this environment cannot escalate") rather than a
+// resolution failure. Called from analyzeCommand only when
+// cmd.HasUserGroupSpecification() is true.
+func (d *DryRunResourceManager) validateRunAsIdentity(cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, analysis *Analysis) {
+	base := risktypes.OriginalExecutionIdentity()
+	userName := cmd.RunAsUser()
+	groupName := cmd.RunAsGroup()
+	groupDisplayName := ""
+	if group != nil {
+		groupDisplayName = group.Name
+	}
+
+	ident, err := risktypes.ResolveRunAsIdentStrict(d.runAsResolver, base, userName, groupName)
+	if err != nil {
+		analysis.Impact.Description += fmt.Sprintf(" [ERROR: User/Group identity resolution failed: %v]", err)
+		raiseSecurityRisk(analysis, runnertypes.RiskLevelHigh)
+		d.logger.Warn("Dry-run run-as identity resolution failed",
+			"dry_run", true,
+			"command", cmd.Name(),
+			"group", groupDisplayName,
+			"run_as_user", userName,
+			"run_as_group", groupName,
+			"failure_kind", runAsFailureKind(err, userName, base),
+			"error", err,
+		)
+	} else {
+		analysis.Impact.Description += " [INFO: User/Group identity resolution validated]"
+		d.logger.Info("Dry-run run-as identity resolved",
+			"dry_run", true,
+			"command", cmd.Name(),
+			"group", groupDisplayName,
+			"run_as_user", userName,
+			"run_as_group", groupName,
+			"resolved_uid", ident.UID,
+			"resolved_gid", ident.GID,
+		)
+	}
+
+	// privilegeManager == nil is checked first (and short-circuits the method
+	// call) rather than querying a nil interface value.
+	if d.privilegeManager == nil || !d.privilegeManager.IsPrivilegedExecutionSupported() {
+		analysis.Impact.Description += " [WARNING: User/Group privilege management not supported]"
+	}
+}
+
+// parseDisplayRiskLevel converts a displayed risk-level string (the value
+// Impact.SecurityRisk holds, produced by runnertypes.RiskLevel.String()) back to
+// a runnertypes.RiskLevel. ParseRiskLevel is not reused here: it rejects
+// "critical" because that string is reserved from user configuration, but
+// raiseSecurityRisk must be able to compare against an already-computed
+// effective risk that can legitimately be "critical".
+func parseDisplayRiskLevel(s string) runnertypes.RiskLevel {
+	switch s {
+	case runnertypes.LowRiskLevelString:
+		return runnertypes.RiskLevelLow
+	case runnertypes.MediumRiskLevelString:
+		return runnertypes.RiskLevelMedium
+	case runnertypes.HighRiskLevelString:
+		return runnertypes.RiskLevelHigh
+	case runnertypes.CriticalRiskLevelString:
+		return runnertypes.RiskLevelCritical
+	default:
+		// Covers "unknown" and the empty string (SecurityRisk not yet set).
+		return runnertypes.RiskLevelUnknown
+	}
+}
+
+// raiseSecurityRisk raises analysis.Impact.SecurityRisk to level, never
+// lowering it. evaluateCommandRisk sets SecurityRisk from the effective risk
+// before validateRunAsIdentity runs; a plain overwrite here would lower a
+// "critical" verdict to "high" on a validation failure, which was a
+// pre-existing defect this task also fixes.
+func raiseSecurityRisk(analysis *Analysis, level runnertypes.RiskLevel) {
+	current := parseDisplayRiskLevel(analysis.Impact.SecurityRisk)
+	analysis.Impact.SecurityRisk = max(current, level).String()
+}
+
+// runAsFailureKind classifies a ResolveRunAsIdentStrict failure into the
+// machine-readable failure_kind attribute of the structured log record, so a
+// monitor can tell resolution-failure cases apart without parsing the error
+// string. Checks use errors.Is/errors.AsType exclusively; a direct comparison
+// with == would break if ResolveRunAsIdentStrict's wrapping ever changes.
+//
+// Order:
+//  1. user.UnknownUserError -> "user_unknown"
+//  2. user.UnknownGroupError -> "group_unknown"
+//  3. ErrRunAsSupplementaryGroupsUnavailable: split further by whether the
+//     failure originates in the base identity itself (userName == "" and
+//     base.Groups == nil, i.e. the run_as_group-only form combined with
+//     OriginalExecutionIdentity's own group enumeration having failed)
+//     -> "base_identity_groups_unavailable", otherwise
+//     -> "supplementary_groups_unavailable"
+//  4. anything else (e.g. an NSS/directory-service failure) -> "lookup_error"
+func runAsFailureKind(err error, userName string, base risktypes.RunAsIdent) string {
+	if _, ok := errors.AsType[user.UnknownUserError](err); ok {
+		return "user_unknown"
+	}
+	if _, ok := errors.AsType[user.UnknownGroupError](err); ok {
+		return "group_unknown"
+	}
+	if errors.Is(err, risktypes.ErrRunAsSupplementaryGroupsUnavailable) {
+		if userName == "" && base.Groups == nil {
+			return "base_identity_groups_unavailable"
+		}
+		return "supplementary_groups_unavailable"
+	}
+	return "lookup_error"
 }
 
 // evaluateCommandRisk runs the same risk evaluator normal mode uses to produce the
