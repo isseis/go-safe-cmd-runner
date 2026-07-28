@@ -232,6 +232,10 @@ type RunAsResolver func(base RunAsIdent, userName, groupName string) (RunAsIdent
 // established completely (uid/gid/supplementary groups).
 var ErrRunAsIdentityResolution = errors.New("failed to resolve run-as identity (uid/gid/supplementary groups)")
 
+// ErrRunAsSupplementaryGroupsUnavailable reports that supplementary groups could
+// not be enumerated for the target user.
+var ErrRunAsSupplementaryGroupsUnavailable = errors.New("supplementary groups could not be enumerated")
+
 // ResolveRunAsIdentStrict resolves a run-as user/group name pair and fails closed
 // when the resolved identity is incomplete.
 func ResolveRunAsIdentStrict(resolve RunAsResolver, base RunAsIdent, userName, groupName string) (RunAsIdent, error)
@@ -240,7 +244,7 @@ func ResolveRunAsIdentStrict(resolve RunAsResolver, base RunAsIdent, userName, g
 契約は次のとおりである。
 
 - `resolve` がエラーを返した場合は、そのエラーを `ErrRunAsIdentityResolution` で包んで返す。
-- `resolve` が成功しても `Groups == nil` の場合は `ErrRunAsIdentityResolution` を返す。`ResolveRunAsIdent` は補助グループを列挙できないとき `Groups` に `nil` を入れてエラーを返さない契約であり（要件の「対象外」節のとおり本タスクでこの契約は変更しない）、その不完全さを失敗に変換するのがこの関数の役目である。
+- `resolve` が成功しても `Groups == nil` の場合は `ErrRunAsSupplementaryGroupsUnavailable` を `ErrRunAsIdentityResolution` で包んで返す。`errors.Is(err, ErrRunAsIdentityResolution)` が真である点は変わらず、加えて `errors.Is(err, ErrRunAsSupplementaryGroupsUnavailable)` で補助グループ列挙の失敗だけを名指しできる。`ResolveRunAsIdent` は補助グループを列挙できないとき `Groups` に `nil` を入れてエラーを返さない契約であり（要件の「対象外」節のとおり本タスクでこの契約は変更しない）、その不完全さを失敗に変換するのがこの関数の役目である。
 - 成功時は解決された `RunAsIdent` を返す。プロセスの識別情報は読み取りのみで、変更しない。
 - `resolve` が `nil` の場合は `ResolveRunAsIdent` を用いる。注入の既定値は呼び出し側のコンストラクタで与える（§3.3）。したがってこの分岐は、構造体リテラルから直接生成された場合の保険である。panic させずに既定動作へ倒すことを意図している。
 
@@ -355,7 +359,7 @@ doc コメントの 3 か所は、削除後は存在しない `Operation` を説
 |---|---|---|---|
 | `run_as_user` が解決できない | `ErrRunAsIdentityResolution`（`user.Lookup` のエラーを包む） | リスクレベルを `high` 以上に、`Description` に追記、`slog` 1 件 | 実行拒否 |
 | `run_as_group` が解決できない | `ErrRunAsIdentityResolution`（`user.LookupGroup` のエラーを包む） | 同上 | 実行拒否 |
-| 補助グループを列挙できない | `ErrRunAsIdentityResolution`（包む対象のエラーなし） | 同上 | 実行拒否 |
+| 補助グループを列挙できない | `ErrRunAsIdentityResolution`（`ErrRunAsSupplementaryGroupsUnavailable` を包む） | 同上 | 実行拒否 |
 | `PrivMgr` が `nil` | `ErrNoPrivilegeManager` | 検証は行い、別途警告を出力（§3.4） | 実行拒否（解決の前段で判定） |
 | 特権実行が利用できない | `ErrUserGroupPrivilegeUnsupported` | 同上 | 実行拒否（解決の前段で判定） |
 | 未知の `Operation` で `WithPrivileges` を呼ぶ | `ErrUnsupportedOperationType` | 該当なし（dry-run は `WithPrivileges` を呼ばない） | 実行拒否 |
