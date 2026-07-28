@@ -608,18 +608,18 @@ Phase 2 と Phase 3 は互いに独立で、順序を入れ替えてもよい。
 
 ### PR-5（対象ステップ: Phase 5）
 
-- [ ] `risktypes/testutil/mocks.go` と `helpers.go` の追加
-- [ ] 一致テスト 2 件の追加
-- [ ] 文書の注記（日本語版 → 英語版）と用語集の更新
-- [ ] 静的検査コマンドの実行と結果の記録
-- [ ] `make unit-test-cgo1` / `make unit-test-cgo0`
+- [x] `risktypes/testutil/mocks.go` と `helpers.go` の追加
+- [x] 一致テスト 2 件の追加
+- [x] 文書の注記（日本語版 → 英語版）と用語集の更新
+- [x] 静的検査コマンドの実行と結果の記録
+- [x] `make unit-test-cgo1` / `make unit-test-cgo0`
 - [ ] PR-5 マージ済み（対象ステップ: Phase 5）
 
 ### 横断検索（`make lint` / `make test` では検知できない項目）
 
-- [ ] 旧文言の残存確認: `rg -n -e "User/Group configuration validated" -e "User/Group validation failed" --glob '!docs/tasks/**' .` が 0 件
-- [ ] 旧ログ属性名の残存確認: `rg -n -e "target_uid" -e "current_euid" internal/runner/base/privilege/` の結果が `unix.go` の `emergencyShutdown`（`current_euid`）1 件のみ。`target_uid` は残らない（`internal/common/logschema.go` の同名定数は監査ログ用であり本タスクの対象外のため、検索範囲を `privilege` パッケージに限定する）
-- [ ] 用語の一致確認: 本書と設計書で「run-as 識別情報」「基準識別情報」「fail-closed 判定」の語が同じ意味で使われていること（目視）
+- [x] 旧文言の残存確認: `rg -n -e "User/Group configuration validated" -e "User/Group validation failed" --glob '!docs/tasks/**' .` が 0 件
+- [x] 旧ログ属性名の残存確認: `rg -n -e "target_uid" -e "current_euid" internal/runner/base/privilege/` の結果が `unix.go` の `emergencyShutdown`（`current_euid`）1 件のみ。`target_uid` は残らない（`internal/common/logschema.go` の同名定数は監査ログ用であり本タスクの対象外のため、検索範囲を `privilege` パッケージに限定する）
+- [x] 用語の一致確認: 本書と設計書で「run-as 識別情報」「基準識別情報」「fail-closed 判定」の語が同じ意味で使われていること（目視）
 
 ---
 
@@ -627,28 +627,28 @@ Phase 2 と Phase 3 は互いに独立で、順序を入れ替えてもよい。
 
 ### 機能面
 
-- [ ] dry-run と実行時が `risktypes.ResolveRunAsIdentStrict` のみを通じて識別情報を解決する。
-- [ ] 補助グループ列挙の失敗を dry-run が検証失敗として報告する。
-- [ ] 特権サポートの有無に関わらず dry-run の検証が実行される。
-- [ ] 検証の成否が `slog` の構造化レコードとして 1 件出力される。
+- [x] dry-run と実行時が `risktypes.ResolveRunAsIdentStrict` のみを通じて識別情報を解決する。
+- [x] 補助グループ列挙の失敗を dry-run が検証失敗として報告する。
+- [x] 特権サポートの有無に関わらず dry-run の検証が実行される。
+- [x] 検証の成否が `slog` の構造化レコードとして 1 件出力される。
 
 ### 品質面
 
-- [ ] `make test` と `make lint` が成功する。
-- [ ] `make deadcode` の報告がベースラインの 7 件から増えず、削除した 2 関数が出力に現れない。
-- [ ] 「6. 受入基準の検証」の全 AC が満たされる。
-- [ ] `make unit-test-cgo1` と `make unit-test-cgo0` の両方が成功する（結果を PR 説明に記載する）。
+- [x] `make test` と `make lint` が成功する。
+- [x] `make deadcode` の報告がベースラインの 7 件から増えず、削除した 2 関数が出力に現れない。
+- [x] 「6. 受入基準の検証」の全 AC が満たされる。
+- [x] `make unit-test-cgo1` と `make unit-test-cgo0` の両方が成功する（結果を PR 説明に記載する）。
 
 ### セキュリティ面
 
-- [ ] dry-run がプロセスの識別情報を変更しないことを、実行時テストと AST ガードの双方で確認する。
-- [ ] 判定結果の変化が fail-closed 方向のみであることを AC-19 / AC-20 のテストで固定する。
+- [x] dry-run がプロセスの識別情報を変更しないことを、実行時テストと AST ガードの双方で確認する。
+- [x] 判定結果の変化が fail-closed 方向のみであることを AC-19 / AC-20 のテストで固定する。
 
 ### 文書面
 
-- [ ] `command-risk-evaluation.ja.md` と `command-risk-evaluation.md` に設計書 §5.7 の例外が注記される。
-- [ ] `docs/translation_glossary.md` に「run-as 識別情報 / run-as identity」の対訳がある。
-- [ ] 未確認の環境依存（macOS、最小構成コンテナ）が本書に明記されている。
+- [x] `command-risk-evaluation.ja.md` と `command-risk-evaluation.md` に設計書 §5.7 の例外が注記される。
+- [x] `docs/translation_glossary.md` に「run-as 識別情報 / run-as identity」の対訳がある。
+- [x] 未確認の環境依存（macOS、最小構成コンテナ）が本書に明記されている。
 
 ---
 

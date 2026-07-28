@@ -432,6 +432,7 @@
 | 要件定義書 | requirements document | |
 | 予約済み | reserved | |
 | 再導出する | re-derive | カテゴリや属性を再計算する文脈 |
+| run-as 識別情報 | run-as identity | コマンドを実行する主体の UID・GID・補助グループの組（Task 0158） |
 | 解決 | resolution | 問題解決の文脈 |
 | 解決する | resolve / resolving | シンボリックリンク解決の文脈 |
 | 解決策 | solution | |

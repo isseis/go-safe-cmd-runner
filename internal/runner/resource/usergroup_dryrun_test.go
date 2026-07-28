@@ -12,6 +12,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -592,5 +593,52 @@ func TestDryRunPreservesProcessIdentity(t *testing.T) {
 	require.Equal(t, groupsErr == nil, afterErr == nil)
 	if groupsErr == nil {
 		assert.ElementsMatch(t, beforeGroups, afterGroups)
+	}
+}
+
+// TestDryRunResourceManager_SharedResolutionCases reads the standard
+// resolution-case table (risktypestestutil.RunAsResolutionCases) and verifies
+// that, for each case, the dry-run manager's fail-closed judgment agrees with
+// what the table expects (WantFailure). The test checks only resolution
+// consent: the individual sub-tests above cover the exact message text,
+// risk-level values, and log attributes. What this test proves is that the
+// dry-run manager rejects exactly the same inputs the table marks as failing.
+func TestDryRunResourceManager_SharedResolutionCases(t *testing.T) {
+	for _, tc := range risktypestestutil.RunAsResolutionCases() {
+		t.Run(tc.Name, func(t *testing.T) {
+			mockExec := executortestutil.NewMockExecutor()
+			mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
+			mockPathResolver := &MockPathResolver{}
+			setupStandardCommandPaths(mockPathResolver)
+			mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil)
+
+			manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{}, permissiveTestEvaluator{}, nil)
+			require.NoError(t, err)
+			manager.runAsResolver = tc.Resolver
+
+			cmd := executortestutil.CreateRuntimeCommand(
+				"echo",
+				[]string{"test"},
+				executortestutil.WithName("test_shared_"+tc.Name),
+				executortestutil.WithRunAsUser(tc.UserName),
+				executortestutil.WithRunAsGroup(tc.GroupName),
+			)
+			group := &runnertypes.GroupSpec{Name: "test_group"}
+
+			_, result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+
+			analysis := result.Analysis
+			require.NotNil(t, analysis)
+
+			if tc.WantFailure {
+				assert.Contains(t, analysis.Impact.Description, "identity resolution failed")
+				assert.GreaterOrEqual(t, parseDisplayRiskLevel(analysis.Impact.SecurityRisk), runnertypes.RiskLevelHigh,
+					"validation failure must raise SecurityRisk to at least high")
+			} else {
+				assert.Contains(t, analysis.Impact.Description, "identity resolution validated")
+			}
+		})
 	}
 }
