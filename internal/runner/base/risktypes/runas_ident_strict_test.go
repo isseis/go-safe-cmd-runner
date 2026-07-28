@@ -75,6 +75,10 @@ func TestResolveRunAsIdentStrict_NilResolverUsesDefault(t *testing.T) {
 	u, err := user.Current()
 	require.NoError(t, err)
 
+	if _, err := u.GroupIds(); err != nil {
+		t.Skipf("supplementary groups unavailable: %v", err)
+	}
+
 	base := risktypes.OriginalExecutionIdentity()
 	ident, err := risktypes.ResolveRunAsIdentStrict(nil, base, u.Username, "")
 	require.NoError(t, err)
@@ -94,6 +98,9 @@ func TestResolveRunAsIdentStrict_ArgumentForms(t *testing.T) {
 	base := risktypes.OriginalExecutionIdentity()
 
 	t.Run("user_only", func(t *testing.T) {
+		if _, err := u.GroupIds(); err != nil {
+			t.Skipf("supplementary groups unavailable: %v", err)
+		}
 		ident, err := risktypes.ResolveRunAsIdentStrict(nil, base, u.Username, "")
 		require.NoError(t, err)
 		assert.Equal(t, parseID(t, u.Uid), ident.UID)
@@ -102,6 +109,9 @@ func TestResolveRunAsIdentStrict_ArgumentForms(t *testing.T) {
 	})
 
 	t.Run("user_and_group", func(t *testing.T) {
+		if _, err := u.GroupIds(); err != nil {
+			t.Skipf("supplementary groups unavailable: %v", err)
+		}
 		ident, err := risktypes.ResolveRunAsIdentStrict(nil, base, u.Username, g.Name)
 		require.NoError(t, err)
 		assert.Equal(t, parseID(t, u.Uid), ident.UID)
@@ -112,6 +122,9 @@ func TestResolveRunAsIdentStrict_ArgumentForms(t *testing.T) {
 	})
 
 	t.Run("group_only", func(t *testing.T) {
+		if base.Groups == nil {
+			t.Skip("supplementary groups not captured from process")
+		}
 		ident, err := risktypes.ResolveRunAsIdentStrict(nil, base, "", g.Name)
 		require.NoError(t, err)
 		assert.Equal(t, base.UID, ident.UID, "uid stays the base identity (original execution identity)")
