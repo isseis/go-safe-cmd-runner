@@ -399,7 +399,7 @@ execCtx: Operation: OperationFileValidation, needsPrivilegeEscalation: true,
 **判定理由**: `mkplan.md` step 8 のパネルモード・トリガーが挙げる「セキュリティゲート/マイグレーション」に該当する。`performElevation` / `restorePrivilegesAndMetrics` という特権昇格・復元の中核経路から dry-run 専用分岐を除去する変更であり、加えて 18 項目のテスト整理（既存 4 件の書き換えは構成を誤ると `emergencyShutdown` を誤発火させる）という「many test updates」の水準に達している。本体の削除とテスト整理をさらに 2 PR へ分割することはできない（`resolveUserGroupForDryRun` 等を削除すると、それを参照する `unix_privilege_test.go` の該当テストがコンパイルできなくなるため、同一 PR に含める必要がある）。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
