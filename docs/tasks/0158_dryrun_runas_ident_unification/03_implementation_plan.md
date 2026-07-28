@@ -311,7 +311,7 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 
 **判定理由**: `SecurityRisk` を fail-closed 方向に引き上げるリスク評価ロジックの変更であり `mkplan.md` step 8 のパネルモード・トリガーが挙げる「セキュリティゲート」に該当し、加えて既存 6 サブテストの書き換えと新規 10 テスト（`TestDryRunResourceManager_{GroupNameResolutionFailure, SupplementaryGroupsUnavailable, RiskRaiseIsMonotonic, ResolverCalledOncePerCommand, RunAsIdentityLogAttributes}` / `TestRunAsFailureKind` / `TestParseDisplayRiskLevel` / `TestDryRunPreservesProcessIdentity` / 識別情報ガード 2 件）の追加という「many test updates」の水準に達している。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
