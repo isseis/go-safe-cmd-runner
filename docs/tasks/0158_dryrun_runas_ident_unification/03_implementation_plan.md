@@ -126,6 +126,7 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 | `err113` が本番コードにも適用されること | `.golangci.yml` の `linters.enable`（`:28`）と `exclusions`（`:134-141`）を確認 | 有効。除外は `path: _test\.go` のみで、本番コードと `testutil/` 配下の非 `_test.go` ファイルは除外されない（§1.3 の根拠） |
 | `make deadcode` が失敗で終了するか | `make deadcode` を実行 | **失敗しない**。終了コード 0 で、既存の到達不能コードを 7 件報告する（`WithRiskEvaluator` / `FamilyOf` / `CommandRiskProfile.BaseRiskLevel` / `ResolveOperandPath` / `WithFileSystem` / `NewStandardELFAnalyzerWithSyscallStore` / `NewSyscallAnalyzerWithConfig`）。したがって「`make deadcode` が成功する」は完了条件として無意味であり、出力の内容で判定する |
 | `command-risk-evaluation.{ja.,}md` の対象節が存在すること | `rg -n "^### "` で確認 | 日本語版 `:439`「拒否 / エラー / High 許可の区別（dry-run の失敗時挙動）」、英語版 `:439`「Deny vs Error vs High-allowable (dry-run failure handling)」 |
+| Phase 3 で追加する `resource` パッケージ向け識別情報変更禁止ガード（許可リスト空）が、既存コードに未検出の識別情報変更呼び出しを抱えていないこと | `rg -n -e "Seteuid" -e "Setegid" -e "Setuid\(" -e "Setgid\(" -e "Setreuid" -e "Setregid" -e "Setresuid" -e "Setresgid" -e "Setgroups" -e "Setfsuid" -e "Setfsgid" -e "syscall\.Syscall" -e "Capset" -e "Prctl" internal/runner/resource/` を実行 | 0 件。ガード導入時点で `resource` パッケージには対象呼び出しが存在せず、ガードは無関係な理由でグリーンゲートを壊さない |
 
 ---
 
@@ -164,6 +165,23 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 - `go test -tags test ./internal/runner/base/risktypes/...` が成功する。
 - `make test` と `make lint` が成功する（この時点で `executor` 側にも同名の番兵エラーが残っているが、パッケージが異なるため衝突しない）。
 
+### PR-1 作成ポイント: shared run-as identity resolution in risktypes
+
+**対象ステップ**: Phase 1
+
+**推奨タイトル**: `feat(0158): add ResolveRunAsIdentStrict to risktypes`
+
+**レビュー観点**: 番兵エラーのラップ方針（§1.3 の設計差分）が `errors.Is` で意図通り判定できるか / `ResolveRunAsIdentStrict` の 3 分岐が設計書 §3.1 の契約と一致するか / 新規テスト 5 件が成功・各失敗種別・nil リゾルバの既定動作・引数形の 3 パターンを網羅しているか
+
+**実装モデル要件**: standard
+
+**判定理由**: 新規追加のみで既存呼び出し元を変更しないため既存動作への影響がなく、既存コード調査結果に競合する実装アプローチも記載されていない。パネルモードの各トリガー（重い統合テスト・CI・外部リソース面、セキュリティゲート/マイグレーション）にも該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 2: `executor` を共有関数の呼び出しに置き換える
 
 **対象ファイル**
@@ -189,6 +207,23 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 - `rg -n "^var ErrRunAsIdentityResolution" internal/runner/base/executor/` の結果が 0 件（定義が残っていない）。
 - `rg -n "executor\.ErrRunAsIdentityResolution" internal/` の結果が 0 件（参照が残っていない）。
 - `make test` と `make lint` が成功する。
+
+### PR-2 作成ポイント: executor delegates to the shared resolver
+
+**対象ステップ**: Phase 2
+
+**推奨タイトル**: `feat(0158): delegate executor run-as resolution to risktypes`
+
+**レビュー観点**: `executeWithUserGroup` の新しい 1 回呼び出しが旧・自前ロジック（nil フォールバックと `Groups == nil` 判定）と同じ fail-closed 挙動を保っているか / 削除したログメッセージ（`"Failed to resolve run-as supplementary groups"`）の消失が設計書 §8.1 の想定どおりか / `executor.ErrRunAsIdentityResolution` の参照が全て `risktypes.ErrRunAsIdentityResolution` に置き換わっているか
+
+**実装モデル要件**: standard
+
+**判定理由**: 本 PR は実行時の特権実行経路（`executeWithUserGroup`）に触れるが、PR-1 で単体テスト済みの `ResolveRunAsIdentStrict` の 1 回呼び出しへ置き換えるだけで、executor 側に新しい分岐ロジックを持ち込まない。fail-closed 挙動の回帰は既存の `TestExecuteWithUserGroup_ResolverError_FailsClosed` / `..._ResolverNilGroups_FailsClosed` の参照先変更のみで検査できる。既存コード調査結果に競合アプローチの記載はなく、Conditional checks・パネルモードのいずれのトリガーにも該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: dry-run の検証を共有関数に委譲する
 
@@ -264,6 +299,23 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 - `go test -tags test ./internal/runner/resource/...` が成功する。
 - `make test` と `make lint` が成功する。
 
+### PR-3 作成ポイント: dry-run validation delegates to the shared resolver
+
+**対象ステップ**: Phase 3
+
+**推奨タイトル**: `feat(0158): delegate dry-run run-as validation to risktypes`
+
+**レビュー観点**: `raiseSecurityRisk` の単調性（`max` による引き上げのみで下げないこと）が設計書 §3.4 と一致するか / `runAsFailureKind` の判定順序が `errors.Is`/`errors.AsType` のみで直接比較（`==`）を使っていないか / 補助グループ列挙失敗（変更前は成功扱い）が意図どおり失敗扱いに変わる回帰があるか（AC-03/AC-19）/ 構造化ログの属性に環境変数やコマンド引数が含まれていないか（秘密情報漏洩防止、AC-13）/ 6 件の既存サブテスト書き換えと 10 件の新規テストが個別に意図した不変条件を検査しているか
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: `SecurityRisk` を fail-closed 方向に引き上げるリスク評価ロジックの変更であり `mkplan.md` step 8 のパネルモード・トリガーが挙げる「セキュリティゲート」に該当し、加えて既存 6 サブテストの書き換えと新規 10 テスト（`TestDryRunResourceManager_{GroupNameResolutionFailure, SupplementaryGroupsUnavailable, RiskRaiseIsMonotonic, ResolverCalledOncePerCommand, RunAsIdentityLogAttributes}` / `TestRunAsFailureKind` / `TestParseDisplayRiskLevel` / `TestDryRunPreservesProcessIdentity` / 識別情報ガード 2 件）の追加という「many test updates」の水準に達している。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 4: `privilege` / `runnertypes` から dry-run 専用経路を削除する
 
 **前提**: Phase 3 が完了していること。Phase 3 より先に行うと dry-run が `OperationUserGroupDryRun` を使えなくなり、中間状態が壊れる（設計書 §8）。また Phase 3 で `resource` 側の識別情報不変テストが用意済みであることを確認してから、`privilege` 側の同等テストを削除する。
@@ -334,6 +386,23 @@ execCtx: Operation: OperationFileValidation, needsPrivilegeEscalation: true,
 - `make deadcode` の出力に `resolveUserGroupForDryRun` / `buildUserGroupLogAttrs` が現れず、報告件数がベースラインの 7 件から増えていない（このコマンドは終了コードで失敗を伝えないため、出力の内容で判定する。§1.4 の外部前提の表を参照）。
 - `make test` と `make lint` が成功する。
 
+### PR-4 作成ポイント: remove the dry-run-only privilege path
+
+**対象ステップ**: Phase 4
+
+**推奨タイトル**: `refactor(0158): remove dry-run-only privilege paths after delegation`
+
+**レビュー観点**: 書き換えた 4 件の `unix_privilege_test.go` テストが共通構成（`originalUID: 0` / `originalSUID: -1` / `identityVerifier` / `osExit`）を漏れなく適用し `emergencyShutdown` の誤爆を避けているか / `TestManager_WithPrivileges_UserGroup_FunctionError` のようにコールバックエラー伝播やゲート条件を検査する不変条件が削除ではなく書き換えで維持されているか / `OperationUserGroupDryRun` と `user_group_dry_run` の全参照（本体・doc コメント・テスト）が本当に消えたか（AC-14/AC-15）/ `make deadcode` の報告件数がベースラインの 7 件のまま増えていないか
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: `mkplan.md` step 8 のパネルモード・トリガーが挙げる「セキュリティゲート/マイグレーション」に該当する。`performElevation` / `restorePrivilegesAndMetrics` という特権昇格・復元の中核経路から dry-run 専用分岐を除去する変更であり、加えて 18 項目のテスト整理（既存 4 件の書き換えは構成を誤ると `emergencyShutdown` を誤発火させる）という「many test updates」の水準に達している。本体の削除とテスト整理をさらに 2 PR へ分割することはできない（`resolveUserGroupForDryRun` 等を削除すると、それを参照する `unix_privilege_test.go` の該当テストがコンパイルできなくなるため、同一 PR に含める必要がある）。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 5: 一致テスト・静的検査・文書の追随
 
 **前提**: Phase 2 / 3 / 4 が完了していること。
@@ -374,9 +443,28 @@ execCtx: Operation: OperationFileValidation, needsPrivilegeEscalation: true,
 - 「6. 受入基準の検証」の静的検査コマンドがすべて期待どおりの結果になる。
 - `make unit-test-cgo1` と `make unit-test-cgo0` の両方が成功する。
 
+### PR-5 作成ポイント: shared resolution cases and doc follow-up
+
+**対象ステップ**: Phase 5
+
+**推奨タイトル**: `test(0158): add shared run-as resolution cases and doc updates`
+
+**レビュー観点**: `risktypes/testutil` の 4 スタブケースが executor（実行時）と resource（dry-run）の両方から見て等価な入力を表しているか / `TestExecuteWithUserGroup_SharedResolutionCases` と `TestDryRunResourceManager_SharedResolutionCases` が実際に判定結果の一致だけを検査し Phase 3 の個別テストと重複していないか / `command-risk-evaluation.ja.md` への追記が設計書 §5.7 の 3 点（例外の内容・終了コード非反映・別論点である旨）を過不足なく含むか / 英語版への反映が `/mktrans` のワークフロー（日本語版を先にコミット）に従っているか
+
+**実装モデル要件**: standard
+
+**判定理由**: `risktypes/testutil` の新規 `mocks.go`/`helpers.go` は `//go:build test` の非 `_test.go` ファイルであり Conditional checks の「ビルドタグ配下でのみコンパイルされる新規非テストソース」に該当するが、該当する Conditional checks は 1 件のみで frontier-recommended の閾値（2 件以上）に届かない。既存コード調査結果に競合アプローチの記載もなく、パネルモードのトリガーにも該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ---
 
 ## 3. 実装順序とマイルストーン
+
+### 3.1 マイルストーン
 
 | マイルストーン | 含む Phase | 成果物 | 完了判定 |
 |---|---|---|---|
@@ -387,6 +475,18 @@ execCtx: Operation: OperationFileValidation, needsPrivilegeEscalation: true,
 | M5: 一致の固定と文書の追随 | Phase 5 | 共有ケース表・一致テスト・文書の注記 | AC-04 / AC-22 / AC-23 が満たされる |
 
 Phase 2 と Phase 3 は互いに独立で、順序を入れ替えてもよい。Phase 4 は Phase 3 の完了後に行う（設計書 §8）。設計書 §7.3 が求める識別情報ガードとプロセス識別情報の不変テストは、`privilege` 側の同等テストを削除する Phase 4 より前（Phase 3）に置く。これは M4 の PR が「不変条件を誰も検査していない状態」でマージ可能になることを避けるためである。
+
+### 3.2 PR 構成
+
+各マイルストーン（Phase）はそのまま 1 つの PR に対応する。本書のステップは「ステップ X-Y」形式では区切られておらず Phase 単位が実装の最小単位であるため、`対象ステップ` は Phase 番号で表す。
+
+| PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | Phase 1 | `risktypes.ResolveRunAsIdentStrict` と `RunAsResolver` / 番兵エラー 2 件の新規追加 | standard |
+| PR-2 | Phase 2 | `executor` の自前解決ロジックを `ResolveRunAsIdentStrict` の呼び出しへ置き換え | standard |
+| PR-3 | Phase 3 | dry-run の検証を共有関数へ委譲し、構造化ログと単調なリスク引き上げを追加 | frontier-required |
+| PR-4 | Phase 4 | `privilege` / `runnertypes` から dry-run 専用の特権経路を削除 | frontier-required |
+| PR-5 | Phase 5 | 実行時・dry-run 共有の一致テストケース表、および文書の追随 | standard |
 
 ---
 
@@ -464,7 +564,9 @@ Phase 2 と Phase 3 は互いに独立で、順序を入れ替えてもよい。
 
 ## 7. 実装チェックリスト
 
-### Phase 1
+以下は PR 単位で整理している。PR と Phase は 1 対 1 で対応する（§3.2 参照）。
+
+### PR-1（対象ステップ: Phase 1）
 
 - [ ] §1.3 の設計差分の承認確認と設計書 §3.1 / §4.1 の更新
 - [ ] `RunAsResolver` の追加
@@ -472,8 +574,9 @@ Phase 2 と Phase 3 は互いに独立で、順序を入れ替えてもよい。
 - [ ] `ResolveRunAsIdentStrict` の追加
 - [ ] 単体テスト 5 件の追加
 - [ ] `make fmt` / `make test` / `make lint`
+- [ ] PR-1 マージ済み（対象ステップ: Phase 1）
 
-### Phase 2
+### PR-2（対象ステップ: Phase 2）
 
 - [ ] `executor.ErrRunAsIdentityResolution` の削除
 - [ ] `runAsResolver` フィールドの型変更
@@ -481,8 +584,9 @@ Phase 2 と Phase 3 は互いに独立で、順序を入れ替えてもよい。
 - [ ] `WithRunAsResolver` の型変更
 - [ ] 既存テストの参照先変更（2 か所）
 - [ ] `make fmt` / `make test` / `make lint`
+- [ ] PR-2 マージ済み（対象ステップ: Phase 2）
 
-### Phase 3
+### PR-3（対象ステップ: Phase 3）
 
 - [ ] `runAsResolver` / `logger` フィールドの追加と既定値の設定
 - [ ] `parseDisplayRiskLevel` / `raiseSecurityRisk` / `runAsFailureKind` の追加
@@ -490,23 +594,26 @@ Phase 2 と Phase 3 は互いに独立で、順序を入れ替えてもよい。
 - [ ] 出力文言の更新
 - [ ] `riskLevelTestEvaluator` の追加
 - [ ] 既存 6 サブテストの更新（全サブテストへのリゾルバ注入を含む）
-- [ ] 新規テスト 8 件の追加（識別情報ガード 2 件と `TestDryRunPreservesProcessIdentity` を含む）
+- [ ] 新規テスト 10 件の追加（識別情報ガード 2 件と `TestDryRunPreservesProcessIdentity` を含む）
 - [ ] `make fmt` / `make test` / `make lint`
+- [ ] PR-3 マージ済み（対象ステップ: Phase 3）
 
-### Phase 4
+### PR-4（対象ステップ: Phase 4）
 
 - [ ] 本体の削除 8 項目
 - [ ] doc コメント 3 か所の書き換え
 - [ ] テスト整理 18 項目（共通構成の適用漏れがないこと）
 - [ ] `make fmt` / `make test` / `make lint` / `make deadcode`（出力の内容で判定）
+- [ ] PR-4 マージ済み（対象ステップ: Phase 4）
 
-### Phase 5
+### PR-5（対象ステップ: Phase 5）
 
 - [ ] `risktypes/testutil/mocks.go` と `helpers.go` の追加
 - [ ] 一致テスト 2 件の追加
 - [ ] 文書の注記（日本語版 → 英語版）と用語集の更新
 - [ ] 静的検査コマンドの実行と結果の記録
 - [ ] `make unit-test-cgo1` / `make unit-test-cgo0`
+- [ ] PR-5 マージ済み（対象ステップ: Phase 5）
 
 ### 横断検索（`make lint` / `make test` では検知できない項目）
 
