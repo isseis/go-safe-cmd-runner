@@ -142,23 +142,23 @@ dry-run のユーザー・グループ検証と実行時の識別情報解決を
 
 **作業内容**
 
-- [ ] §1.3 の差分（補助グループ列挙失敗時に番兵エラーを包む）についてレビュアーの承認を得る。承認されたら設計書 §3.1 の契約記述と §4.1 の表（「包む対象のエラーなし」の行）を更新する。承認されない場合は Phase 1 の実装内容を再検討する。
-- [ ] `runas_ident.go` に型 `RunAsResolver` を追加する（設計書 §3.1 のシグネチャ）。
-- [ ] `runas_ident.go` に番兵エラーを 2 つ追加する。
+- [x] §1.3 の差分（補助グループ列挙失敗時に番兵エラーを包む）についてレビュアーの承認を得る。承認されたら設計書 §3.1 の契約記述と §4.1 の表（「包む対象のエラーなし」の行）を更新する。承認されない場合は Phase 1 の実装内容を再検討する。
+- [x] `runas_ident.go` に型 `RunAsResolver` を追加する（設計書 §3.1 のシグネチャ）。
+- [x] `runas_ident.go` に番兵エラーを 2 つ追加する。
   - `ErrRunAsIdentityResolution = errors.New("failed to resolve run-as identity (uid/gid/supplementary groups)")` — 文字列は `executor.go:42` の既存値をそのまま引き継ぐ。
   - `ErrRunAsSupplementaryGroupsUnavailable = errors.New("supplementary groups could not be enumerated")`
-- [ ] `runas_ident.go` に `ResolveRunAsIdentStrict` を追加する。契約は設計書 §3.1 のとおりで、分岐は次の 3 つとする。
+- [x] `runas_ident.go` に `ResolveRunAsIdentStrict` を追加する。契約は設計書 §3.1 のとおりで、分岐は次の 3 つとする。
   - `resolve == nil` のとき `ResolveRunAsIdent` を使う。
   - `resolve` がエラーを返したとき `fmt.Errorf("%w: %w", ErrRunAsIdentityResolution, err)` を返す。
   - 成功したが `Groups == nil` のとき `fmt.Errorf("%w: %w", ErrRunAsIdentityResolution, ErrRunAsSupplementaryGroupsUnavailable)` を返す。
   - いずれの失敗でも `errors.Is(err, ErrRunAsIdentityResolution)` が真になること、および補助グループ列挙失敗は `errors.Is(err, ErrRunAsSupplementaryGroupsUnavailable)` で名指しできることを doc コメントに書く。
-- [ ] `errors` を import に追加する。
-- [ ] 単体テストを追加する。既存の `runas_ident_test.go`（同じ `package risktypes_test`）にある `parseID` ヘルパと主グループ名が引けない場合の `t.Skip` パターンを再利用し、同名のヘルパを再定義しない。
-  - [ ] `TestResolveRunAsIdentStrict_ResolverError`: リゾルバがエラーを返すと `errors.Is(err, ErrRunAsIdentityResolution)` が真で、元のエラーも `errors.Is` で取り出せる。
-  - [ ] `TestResolveRunAsIdentStrict_NilGroups`: リゾルバが `Groups == nil` を返すと、`errors.Is(err, ErrRunAsIdentityResolution)` と `errors.Is(err, ErrRunAsSupplementaryGroupsUnavailable)` の双方が真になる。
-  - [ ] `TestResolveRunAsIdentStrict_Success`: リゾルバの返した `RunAsIdent` がそのまま返る。
-  - [ ] `TestResolveRunAsIdentStrict_NilResolverUsesDefault`: `resolve` に `nil` を渡すと既定リゾルバが使われる。現在のユーザー名を渡し、UID が `os.Getuid()` と一致することで確認する。
-  - [ ] `TestResolveRunAsIdentStrict_ArgumentForms`: 設計書 §6.3 の 3 行を表駆動で確認する。既定リゾルバと `OriginalExecutionIdentity()` を使い、(a) ユーザーのみ→ UID・GID がそのユーザーのもの、(b) ユーザーとグループ→ GID が指定グループのもの、(c) グループのみ→ UID は基準識別情報（`OriginalExecutionIdentity()` が返す、プロセス起動時の実 UID / 実 GID / 補助グループ）のまま・GID が指定グループのもの、を検査する。
+- [x] `errors` を import に追加する。
+- [x] 単体テストを追加する。既存の `runas_ident_test.go`（同じ `package risktypes_test`）にある `parseID` ヘルパと主グループ名が引けない場合の `t.Skip` パターンを再利用し、同名のヘルパを再定義しない。
+  - [x] `TestResolveRunAsIdentStrict_ResolverError`: リゾルバがエラーを返すと `errors.Is(err, ErrRunAsIdentityResolution)` が真で、元のエラーも `errors.Is` で取り出せる。
+  - [x] `TestResolveRunAsIdentStrict_NilGroups`: リゾルバが `Groups == nil` を返すと、`errors.Is(err, ErrRunAsIdentityResolution)` と `errors.Is(err, ErrRunAsSupplementaryGroupsUnavailable)` の双方が真になる。
+  - [x] `TestResolveRunAsIdentStrict_Success`: リゾルバの返した `RunAsIdent` がそのまま返る。
+  - [x] `TestResolveRunAsIdentStrict_NilResolverUsesDefault`: `resolve` に `nil` を渡すと既定リゾルバが使われる。現在のユーザー名を渡し、UID が `os.Getuid()` と一致することで確認する。
+  - [x] `TestResolveRunAsIdentStrict_ArgumentForms`: 設計書 §6.3 の 3 行を表駆動で確認する。既定リゾルバと `OriginalExecutionIdentity()` を使い、(a) ユーザーのみ→ UID・GID がそのユーザーのもの、(b) ユーザーとグループ→ GID が指定グループのもの、(c) グループのみ→ UID は基準識別情報（`OriginalExecutionIdentity()` が返す、プロセス起動時の実 UID / 実 GID / 補助グループ）のまま・GID が指定グループのもの、を検査する。
 
 **完了条件**
 
@@ -568,12 +568,12 @@ Phase 2 と Phase 3 は互いに独立で、順序を入れ替えてもよい。
 
 ### PR-1（対象ステップ: Phase 1）
 
-- [ ] §1.3 の設計差分の承認確認と設計書 §3.1 / §4.1 の更新
-- [ ] `RunAsResolver` の追加
-- [ ] 番兵エラー 2 件の追加
-- [ ] `ResolveRunAsIdentStrict` の追加
-- [ ] 単体テスト 5 件の追加
-- [ ] `make fmt` / `make test` / `make lint`
+- [x] §1.3 の設計差分の承認確認と設計書 §3.1 / §4.1 の更新
+- [x] `RunAsResolver` の追加
+- [x] 番兵エラー 2 件の追加
+- [x] `ResolveRunAsIdentStrict` の追加
+- [x] 単体テスト 5 件の追加
+- [x] `make fmt` / `make test` / `make lint`
 - [ ] PR-1 マージ済み（対象ステップ: Phase 1）
 
 ### PR-2（対象ステップ: Phase 2）

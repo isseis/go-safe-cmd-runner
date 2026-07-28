@@ -1,6 +1,7 @@
 package risktypes
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/user"
@@ -40,6 +41,48 @@ var OriginalExecutionIdentity = sync.OnceValue(func() RunAsIdent {
 	}
 	return ident
 })
+
+// RunAsResolver is the injectable form of ResolveRunAsIdent.
+type RunAsResolver func(base RunAsIdent, userName, groupName string) (RunAsIdent, error)
+
+// ErrRunAsIdentityResolution reports that a run-as identity could not be
+// established completely (uid/gid/supplementary groups).
+var ErrRunAsIdentityResolution = errors.New("failed to resolve run-as identity (uid/gid/supplementary groups)")
+
+// ErrRunAsSupplementaryGroupsUnavailable reports that supplementary groups could
+// not be enumerated for the target user.
+var ErrRunAsSupplementaryGroupsUnavailable = errors.New("supplementary groups could not be enumerated")
+
+// ResolveRunAsIdentStrict resolves a run-as user/group name pair and fails closed
+// when the resolved identity is incomplete. It is the single entry point shared by
+// both the executor (execution path) and DryRunResourceManager (preview/dry-run
+// path), so the same fail-closed logic applies in both contexts.
+//
+// Contract:
+//   - If resolve is nil, ResolveRunAsIdent is used as the default resolver
+//     (safe fallback when the caller did not inject a resolver).
+//   - If resolve returns an error, it is wrapped with ErrRunAsIdentityResolution:
+//     errors.Is(result, ErrRunAsIdentityResolution) is true and the underlying
+//     error is still reachable via errors.Is/errors.As.
+//   - If resolve succeeds but Groups == nil (supplementary group enumeration
+//     failed), ErrRunAsSupplementaryGroupsUnavailable is wrapped with
+//     ErrRunAsIdentityResolution: errors.Is(result, ErrRunAsIdentityResolution)
+//     and errors.Is(result, ErrRunAsSupplementaryGroupsUnavailable) are both true.
+//   - On success the resolved RunAsIdent is returned. Process identity is
+//     never changed.
+func ResolveRunAsIdentStrict(resolve RunAsResolver, base RunAsIdent, userName, groupName string) (RunAsIdent, error) {
+	if resolve == nil {
+		resolve = ResolveRunAsIdent
+	}
+	ident, err := resolve(base, userName, groupName)
+	if err != nil {
+		return RunAsIdent{}, fmt.Errorf("%w: %w", ErrRunAsIdentityResolution, err)
+	}
+	if ident.Groups == nil {
+		return RunAsIdent{}, fmt.Errorf("%w: %w", ErrRunAsIdentityResolution, ErrRunAsSupplementaryGroupsUnavailable)
+	}
+	return ident, nil
+}
 
 // ResolveRunAsIdent resolves a run-as user/group name pair to a RunAsIdent via the
 // OS user database (the same lookups the privilege manager uses), starting from the
