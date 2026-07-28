@@ -158,6 +158,8 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		assert.NotNil(t, analysis)
 		assert.Contains(t, analysis.Impact.Description, "[INFO: User/Group identity resolution validated]")
 		assert.Contains(t, analysis.Impact.Description, "[WARNING: User/Group privilege management not supported]")
+		assert.NotContains(t, analysis.Impact.Description, "[ERROR:")
+		assert.Equal(t, runnertypes.RiskLevelLow.String(), analysis.Impact.SecurityRisk)
 	})
 
 	t.Run("no_privilege_manager", func(t *testing.T) {
@@ -196,6 +198,8 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		assert.NotNil(t, analysis)
 		assert.Contains(t, analysis.Impact.Description, "[INFO: User/Group identity resolution validated]")
 		assert.Contains(t, analysis.Impact.Description, "[WARNING: User/Group privilege management not supported]")
+		assert.NotContains(t, analysis.Impact.Description, "[ERROR:")
+		assert.Equal(t, runnertypes.RiskLevelLow.String(), analysis.Impact.SecurityRisk)
 	})
 
 	t.Run("only_user_specified", func(t *testing.T) {
