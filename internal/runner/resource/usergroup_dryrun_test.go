@@ -328,8 +328,8 @@ func TestDryRunResourceManager_GroupNameResolutionFailure(t *testing.T) {
 // TestDryRunResourceManager_SupplementaryGroupsUnavailable covers a
 // configuration where the user/group names resolve but supplementary group
 // enumeration fails (Groups == nil): it is reported as a validation failure.
-// Before this task, resolveUserGroupForDryRun never enumerated supplementary
-// groups, so this exact input was reported as "validated".
+// Before this task, dry-run user/group resolution never enumerated
+// supplementary groups, so this exact input was reported as "validated".
 func TestDryRunResourceManager_SupplementaryGroupsUnavailable(t *testing.T) {
 	mockExec := executortestutil.NewMockExecutor()
 	mockPriv := privilegetestutil.NewMockPrivilegeManager(true)

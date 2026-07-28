@@ -111,26 +111,8 @@ func TestManager_WithPrivileges_UserGroup_ValidUser(t *testing.T) {
 	logger := slog.Default()
 	manager := NewManager(logger)
 
-	// Test with current user (should work in dry-run mode)
 	currentUser := getCurrentUser(t)
 	currentGroup := getCurrentGroup(t)
-
-	t.Run("dry_run_mode", func(t *testing.T) {
-		var executed bool
-		executionCtx := runnertypes.ElevationContext{
-			Operation:   runnertypes.OperationUserGroupDryRun,
-			CommandName: "test_command",
-			RunAsUser:   currentUser,
-			RunAsGroup:  currentGroup,
-		}
-		err := manager.WithPrivileges(executionCtx, func() error {
-			executed = true
-			return nil
-		})
-
-		assert.NoError(t, err)
-		assert.True(t, executed)
-	})
 
 	// Only test actual user/group change if running as root
 	if manager.GetCurrentUID() == 0 {
@@ -153,76 +135,23 @@ func TestManager_WithPrivileges_UserGroup_ValidUser(t *testing.T) {
 	}
 }
 
-func TestManager_WithPrivileges_UserGroup_InvalidUser(t *testing.T) {
-	logger := slog.Default()
-	manager := NewManager(logger)
-
-	t.Run("invalid_user", func(t *testing.T) {
-		executionCtx := runnertypes.ElevationContext{
-			Operation:   runnertypes.OperationUserGroupDryRun,
-			CommandName: "test_command",
-			RunAsUser:   "nonexistent_user_12345",
-			RunAsGroup:  "",
-		}
-		err := manager.WithPrivileges(executionCtx, func() error {
-			return nil
-		})
-
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to lookup user")
-	})
-
-	t.Run("invalid_group", func(t *testing.T) {
-		executionCtx := runnertypes.ElevationContext{
-			Operation:   runnertypes.OperationUserGroupDryRun,
-			CommandName: "test_command",
-			RunAsUser:   "",
-			RunAsGroup:  "nonexistent_group_12345",
-		}
-		err := manager.WithPrivileges(executionCtx, func() error {
-			return nil
-		})
-
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to lookup group")
-	})
-}
-
-func TestManager_WithPrivileges_UserGroup_EmptyUserGroup(t *testing.T) {
-	logger := slog.Default()
-	manager := NewManager(logger)
-
-	t.Run("empty_user_and_group", func(t *testing.T) {
-		var executed bool
-		executionCtx := runnertypes.ElevationContext{
-			Operation:   runnertypes.OperationUserGroupDryRun,
-			CommandName: "test_command",
-			RunAsUser:   "",
-			RunAsGroup:  "",
-		}
-		err := manager.WithPrivileges(executionCtx, func() error {
-			executed = true
-			return nil
-		})
-
-		// Should succeed with empty user/group (uses current user/group)
-		assert.NoError(t, err)
-		assert.True(t, executed)
-	})
-}
-
+// TestManager_WithPrivileges_UserGroup_FunctionError verifies that WithPrivileges
+// returns the callback's error unchanged. No other test in this package pins this
+// invariant: TestManager_WithPrivileges_UnsupportedPlatform only reaches an error
+// path before fn runs, and the race_test.go callbacks all return nil.
 func TestManager_WithPrivileges_UserGroup_FunctionError(t *testing.T) {
-	logger := slog.Default()
-	manager := NewManager(logger)
-
-	currentUser := getCurrentUser(t)
+	manager := &UnixPrivilegeManager{
+		logger:             slog.Default(),
+		privilegeSupported: true,
+		originalUID:        0,
+		identityVerifier:   func() error { return nil },
+		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
+	}
 
 	expectedErr := assert.AnError
 	executionCtx := runnertypes.ElevationContext{
-		Operation:   runnertypes.OperationUserGroupDryRun,
+		Operation:   runnertypes.OperationFileValidation,
 		CommandName: "test_command",
-		RunAsUser:   currentUser,
-		RunAsGroup:  "",
 	}
 	err := manager.WithPrivileges(executionCtx, func() error {
 		return expectedErr

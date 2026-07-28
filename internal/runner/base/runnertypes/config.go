@@ -159,7 +159,6 @@ const (
 	OperationFileHashCalculation Operation = "file_hash_calculation"
 	OperationCommandExecution    Operation = "command_execution"
 	OperationUserGroupExecution  Operation = "user_group_execution"
-	OperationUserGroupDryRun     Operation = "user_group_dry_run"
 	OperationFileAccess          Operation = "file_access"
 	OperationFileValidation      Operation = "file_validation" // For file integrity validation
 	OperationHealthCheck         Operation = "health_check"

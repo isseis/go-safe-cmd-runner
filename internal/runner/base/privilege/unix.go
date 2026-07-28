@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/user"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -86,8 +84,9 @@ func defaultIdentityVerifier() error {
 // elevationCtx.RunAsUser or elevationCtx.RunAsGroup. Switching to the target user, and
 // resolving the identity that switch needs, is done by the executor: it builds a
 // syscall.Credential that the kernel applies at execve time when the child process starts.
-// RunAsUser and RunAsGroup are resolved and logged inside this package only for
-// OperationUserGroupDryRun.
+// This package never resolves RunAsUser or RunAsGroup: resolution is done by
+// risktypes.ResolveRunAsIdentStrict, and every Operation this package accepts
+// involves escalating to root.
 //
 // For OperationFileValidation this package escalates to root and restores afterwards.
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
@@ -147,11 +146,7 @@ func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.Elevati
 	}
 
 	switch elevationCtx.Operation {
-	case runnertypes.OperationUserGroupExecution:
-		execCtx.needsPrivilegeEscalation = true
-	case runnertypes.OperationUserGroupDryRun:
-		execCtx.needsPrivilegeEscalation = false
-	case runnertypes.OperationFileValidation:
+	case runnertypes.OperationUserGroupExecution, runnertypes.OperationFileValidation:
 		execCtx.needsPrivilegeEscalation = true
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedOperationType, elevationCtx.Operation)
@@ -169,12 +164,6 @@ func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.Elevati
 // construction rather than by the current operation mapping, which is what the
 // removed post-escalation rollback block used to compensate for.
 func (m *UnixPrivilegeManager) performElevation(execCtx *executionContext) error {
-	if execCtx.elevationCtx.Operation == runnertypes.OperationUserGroupDryRun {
-		if err := m.resolveUserGroupForDryRun(execCtx.elevationCtx.RunAsUser, execCtx.elevationCtx.RunAsGroup); err != nil {
-			return fmt.Errorf("user/group resolution failed: %w", err)
-		}
-	}
-
 	if execCtx.needsPrivilegeEscalation {
 		if err := m.escalatePrivileges(execCtx.elevationCtx); err != nil {
 			return fmt.Errorf("privilege escalation failed: %w", err)
@@ -212,24 +201,20 @@ func (m *UnixPrivilegeManager) handleCleanupAndMetrics(execCtx *executionContext
 
 // restorePrivilegesAndMetrics handles privilege restoration and metrics recording
 func (m *UnixPrivilegeManager) restorePrivilegesAndMetrics(execCtx *executionContext, panicValue any, shutdownContext string, duration time.Duration) {
-	// Note: no branch restores the effective group ID here. OperationUserGroupDryRun only
-	// resolves user/group names (see resolveUserGroupForDryRun) and never changes identity,
-	// so there is nothing to restore.
+	// Note: no branch restores the effective group ID here. This package only escalates
+	// and restores the effective UID, so there is nothing else to restore.
 	if execCtx.needsPrivilegeEscalation {
 		if err := m.restorePrivileges(); err != nil {
 			m.emergencyShutdown(err, shutdownContext)
 		} else if panicValue == nil {
 			m.metrics.RecordElevationSuccess(duration)
 		}
-	} else if panicValue == nil && execCtx.elevationCtx.Operation == runnertypes.OperationUserGroupDryRun {
-		m.metrics.RecordElevationSuccess(duration)
 	}
 
-	// Defense-in-depth: verify EUID==UID and EGID==GID after every non-dry-run privilege
-	// operation. This is an independent check of the privilege manager's own restoration
+	// Defense-in-depth: verify EUID==UID and EGID==GID after every privilege operation that
+	// escalated. This is an independent check of the privilege manager's own restoration
 	// logic and catches any leakage regardless of which restore path ran.
-	// Only privilege escalation changes identity; OperationUserGroupDryRun never mutates
-	// identity, so escalation alone gates verification.
+	// Only privilege escalation changes identity, so escalation alone gates verification.
 	if execCtx.needsPrivilegeEscalation {
 		if err := m.identityVerifier(); err != nil {
 			m.emergencyShutdown(err, fmt.Sprintf("identity_verification_failure_%s", shutdownContext))
@@ -445,121 +430,4 @@ func (m *UnixPrivilegeManager) GetOriginalUID() int {
 // GetMetrics returns a snapshot of current privilege operation metrics
 func (m *UnixPrivilegeManager) GetMetrics() Metrics {
 	return m.metrics.GetSnapshot()
-}
-
-// buildUserGroupLogAttrs creates log attributes for user/group operations
-func buildUserGroupLogAttrs(userName, groupName, effectiveGroupName string, isDefaultGroup bool) []any {
-	logAttrs := []any{}
-	if userName != "" {
-		logAttrs = append(logAttrs, "user", userName)
-	}
-	if groupName != "" {
-		logAttrs = append(logAttrs, "group", groupName)
-	} else if isDefaultGroup {
-		logAttrs = append(logAttrs, "group", effectiveGroupName+" (user's primary group)")
-	}
-	return logAttrs
-}
-
-// resolveUserGroupForDryRun resolves userName to a UID and groupName to a GID (falling
-// back to the user's primary group when groupName is empty) and logs what an actual run
-// would switch to. It never changes the process's identity: no UID, GID, or supplementary
-// group of this process is modified. Resolution failures are returned so that dry-run
-// output can report an unusable run_as_user/run_as_group.
-func (m *UnixPrivilegeManager) resolveUserGroupForDryRun(userName, groupName string) error {
-	// Keep the dry_run attribute even though this function now runs only for
-	// dry-runs: log filters elsewhere key on it, and dropping it would leave this
-	// record findable only by message text.
-	logAttrs := []any{"dry_run", true}
-	if userName != "" {
-		logAttrs = append(logAttrs, "user", userName)
-	}
-	if groupName != "" {
-		logAttrs = append(logAttrs, "group", groupName)
-	} else if userName != "" {
-		logAttrs = append(logAttrs, "group_unspecified", true)
-	}
-	m.logger.Info("Dry-run user/group resolution requested", logAttrs...)
-
-	// Resolve user name to UID
-	var targetUID int
-	if userName != "" {
-		userInfo, err := user.Lookup(userName)
-		if err != nil {
-			return fmt.Errorf("failed to lookup user %s: %w", userName, err)
-		}
-
-		uid, err := strconv.Atoi(userInfo.Uid)
-		if err != nil {
-			return fmt.Errorf("invalid UID %s for user %s: %w", userInfo.Uid, userName, err)
-		}
-		targetUID = uid
-	} else {
-		// If no user specified, keep current effective user
-		targetUID = syscall.Geteuid()
-	}
-
-	// Resolve group name to GID
-	var targetGID int
-	var effectiveGroupName string
-	var isDefaultGroup bool
-	switch {
-	case groupName != "":
-		groupInfo, err := user.LookupGroup(groupName)
-		if err != nil {
-			return fmt.Errorf("failed to lookup group %s: %w", groupName, err)
-		}
-
-		gid, err := strconv.Atoi(groupInfo.Gid)
-		if err != nil {
-			return fmt.Errorf("invalid GID %s for group %s: %w", groupInfo.Gid, groupName, err)
-		}
-		targetGID = gid
-		effectiveGroupName = groupName
-		isDefaultGroup = false
-	case userName != "":
-		// If user is specified but group is not, default to user's primary group
-		userInfo, err := user.Lookup(userName)
-		if err != nil {
-			return fmt.Errorf("failed to lookup user %s for primary group: %w", userName, err)
-		}
-
-		gid, err := strconv.Atoi(userInfo.Gid)
-		if err != nil {
-			return fmt.Errorf("invalid primary GID %s for user %s: %w", userInfo.Gid, userName, err)
-		}
-		targetGID = gid
-		isDefaultGroup = true
-
-		// Try to resolve GID back to group name for better logging
-		if groupInfo, err := user.LookupGroupId(userInfo.Gid); err == nil {
-			effectiveGroupName = groupInfo.Name
-		} else {
-			// If lookup fails, use GID as string
-			effectiveGroupName = userInfo.Gid
-		}
-
-		m.logger.Info("Defaulting to user's primary group",
-			"user", userName,
-			"primary_group", effectiveGroupName,
-			"primary_gid", targetGID)
-	default:
-		// If neither user nor group specified, keep current effective group
-		targetGID = syscall.Getegid()
-		effectiveGroupName = ""
-		isDefaultGroup = false
-	}
-
-	dryRunLogAttrs := buildUserGroupLogAttrs(userName, groupName, effectiveGroupName, isDefaultGroup)
-	// Log both real and effective IDs: under a setuid binary they differ, and a dry-run never escalates.
-	dryRunLogAttrs = append(dryRunLogAttrs,
-		"target_uid", targetUID,
-		"target_gid", targetGID,
-		"current_uid", syscall.Getuid(),
-		"current_gid", syscall.Getgid(),
-		"current_euid", syscall.Geteuid(),
-		"current_egid", syscall.Getegid())
-	m.logger.Info("Dry-run mode: would change user/group privileges", dryRunLogAttrs...)
-
-	return nil
 }
