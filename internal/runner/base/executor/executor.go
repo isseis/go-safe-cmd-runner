@@ -34,13 +34,6 @@ const stagedExecMode = 0o550
 // ErrPrivilegeLeak is returned when effective UID/GID do not match real UID/GID after execution.
 var ErrPrivilegeLeak = errors.New("privilege leak detected")
 
-// ErrRunAsIdentityResolution is returned when run-as identity resolution fails
-// (unknown user/group, supplementary group enumeration failure). The command is
-// not executed and an error is returned to the caller (fail-closed); this is
-// distinct from the separate privilege-leak invariant check, which does call
-// os.Exit.
-var ErrRunAsIdentityResolution = errors.New("failed to resolve run-as identity (uid/gid/supplementary groups)")
-
 // Error definitions
 var (
 	ErrEmptyCommand                  = errors.New("command cannot be empty")
@@ -57,13 +50,13 @@ var (
 // DefaultExecutor is the default implementation of CommandExecutor
 type DefaultExecutor struct {
 	FS              FileSystem
-	PrivMgr         runnertypes.PrivilegeManager                                                              // Optional privilege manager for privileged commands
-	AuditLogger     *audit.Logger                                                                             // Optional audit logger for privileged operations
-	Logger          *slog.Logger                                                                              // Optional logger for command execution logging
-	osExit          func(code int)                                                                            // injectable for testing; defaults to os.Exit
-	identityChecker func() error                                                                              // injectable for testing; defaults to defaultIdentityChecker
-	runAsResolver   func(base risktypes.RunAsIdent, userName, groupName string) (risktypes.RunAsIdent, error) // injectable for testing; defaults to risktypes.ResolveRunAsIdent
-	fdExecDisabled  bool                                                                                      // injectable for testing; forces the staging fallback even on Linux
+	PrivMgr         runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
+	AuditLogger     *audit.Logger                // Optional audit logger for privileged operations
+	Logger          *slog.Logger                 // Optional logger for command execution logging
+	osExit          func(code int)               // injectable for testing; defaults to os.Exit
+	identityChecker func() error                 // injectable for testing; defaults to defaultIdentityChecker
+	runAsResolver   risktypes.RunAsResolver      // injectable for testing; defaults to risktypes.ResolveRunAsIdent
+	fdExecDisabled  bool                         // injectable for testing; forces the staging fallback even on Linux
 }
 
 // Option is a functional option for configuring DefaultExecutor
@@ -182,34 +175,16 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 		return nil, ErrEmptyCommand
 	}
 
-	// Resolve the run-as identity before privilege escalation. This uses the
-	// shared OriginalExecutionIdentity cache (sync.OnceValue) so the same base
-	// identity is used by both the risk evaluator and the executor (DRY).
-	// The base is captured once at process start, before any privilege change.
-	// Fall back to the default resolver if none was injected (e.g. a bare
-	// &DefaultExecutor{} literal), so this fails closed with an error instead of
-	// panicking on a nil call.
-	resolver := e.runAsResolver
-	if resolver == nil {
-		resolver = risktypes.ResolveRunAsIdent
-	}
-	resolvedIdent, err := resolver(risktypes.OriginalExecutionIdentity(), cmd.RunAsUser(), cmd.RunAsGroup())
+	// Resolve the run-as identity before privilege escalation. Delegates to
+	// ResolveRunAsIdentStrict which handles nil-resolver fallback, error
+	// wrapping, and Groups==nil detection in one call.
+	resolvedIdent, err := risktypes.ResolveRunAsIdentStrict(e.runAsResolver, risktypes.OriginalExecutionIdentity(), cmd.RunAsUser(), cmd.RunAsGroup())
 	if err != nil {
 		e.Logger.Error("Failed to resolve run-as identity",
 			"error", err,
 			"user", cmd.RunAsUser(),
 			"group", cmd.RunAsGroup())
-		return nil, fmt.Errorf("%w: %w", ErrRunAsIdentityResolution, err)
-	}
-	// ResolveRunAsIdent silently returns nil Groups when supplementary group
-	// enumeration fails (it does not surface that as an error); fail closed
-	// here instead of passing nil straight into the process credential.
-	if resolvedIdent.Groups == nil {
-		e.Logger.Error("Failed to resolve run-as supplementary groups",
-			"error", ErrRunAsIdentityResolution,
-			"user", cmd.RunAsUser(),
-			"group", cmd.RunAsGroup())
-		return nil, ErrRunAsIdentityResolution
+		return nil, err
 	}
 
 	// Build the Credential for the child process. NoSetGroups: false ensures

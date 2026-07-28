@@ -49,7 +49,7 @@ func WithFdExecDisabled() Option {
 // WithRunAsResolver replaces the default run-as identity resolver for testing.
 // The resolver is called during executeWithUserGroup to resolve user/group names
 // to a RunAsIdent before building the SysProcAttr.Credential.
-func WithRunAsResolver(resolver func(base risktypes.RunAsIdent, userName, groupName string) (risktypes.RunAsIdent, error)) Option {
+func WithRunAsResolver(resolver risktypes.RunAsResolver) Option {
 	return func(e *DefaultExecutor) {
 		e.runAsResolver = resolver
 	}
