@@ -19,33 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The stub resolvers below let run_as tests avoid the real OS user database:
-// testuser/testgroup do not exist on the host, so every subtest with a
-// run_as specification injects one of these instead of relying on the
-// manager's default resolver.
-
-// stubResolveRunAsIdentSuccess returns a fixed, fully-resolved identity.
-func stubResolveRunAsIdentSuccess(_ risktypes.RunAsIdent, _, _ string) (risktypes.RunAsIdent, error) {
-	return risktypes.RunAsIdent{UID: 1000, GID: 1000, Groups: []uint32{1000, 27}}, nil
-}
-
-// stubResolveRunAsIdentUnknownUser reports the user name as unresolvable.
-func stubResolveRunAsIdentUnknownUser(_ risktypes.RunAsIdent, userName, _ string) (risktypes.RunAsIdent, error) {
-	return risktypes.RunAsIdent{}, user.UnknownUserError(userName)
-}
-
-// stubResolveRunAsIdentUnknownGroup reports the group name as unresolvable.
-func stubResolveRunAsIdentUnknownGroup(_ risktypes.RunAsIdent, _, groupName string) (risktypes.RunAsIdent, error) {
-	return risktypes.RunAsIdent{}, user.UnknownGroupError(groupName)
-}
-
-// stubResolveRunAsIdentNilGroups resolves the name(s) but reports that
-// supplementary groups could not be enumerated (Groups == nil), reproducing a
-// u.GroupIds() failure without depending on real OS state.
-func stubResolveRunAsIdentNilGroups(_ risktypes.RunAsIdent, _, _ string) (risktypes.RunAsIdent, error) {
-	return risktypes.RunAsIdent{UID: 1000, GID: 1000, Groups: nil}, nil
-}
-
 func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	t.Run("valid_user_group_specification", func(t *testing.T) {
 		mockExec := executortestutil.NewMockExecutor()
@@ -55,7 +28,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{}, permissiveTestEvaluator{}, nil)
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
-		manager.runAsResolver = stubResolveRunAsIdentSuccess
+		manager.runAsResolver = risktypestestutil.StubResolveRunAsIdentSuccess
 
 		cmd := executortestutil.CreateRuntimeCommand(
 			"echo",
@@ -93,7 +66,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{}, permissiveTestEvaluator{}, nil)
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
-		manager.runAsResolver = stubResolveRunAsIdentUnknownUser
+		manager.runAsResolver = risktypestestutil.StubResolveRunAsIdentUnknownUser
 
 		cmd := executortestutil.CreateRuntimeCommand(
 			"echo",
@@ -132,7 +105,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{}, permissiveTestEvaluator{}, nil)
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
-		manager.runAsResolver = stubResolveRunAsIdentSuccess
+		manager.runAsResolver = risktypestestutil.StubResolveRunAsIdentSuccess
 
 		cmd := executortestutil.CreateRuntimeCommand(
 			"echo",
@@ -172,7 +145,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 		manager, err := NewDryRunResourceManager(mockExec, nil, mockPathResolver, &DryRunOptions{}, permissiveTestEvaluator{}, nil)
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
-		manager.runAsResolver = stubResolveRunAsIdentSuccess
+		manager.runAsResolver = risktypestestutil.StubResolveRunAsIdentSuccess
 
 		cmd := executortestutil.CreateRuntimeCommand(
 			"echo",
@@ -216,7 +189,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		var gotGroupName string
 		manager.runAsResolver = func(base risktypes.RunAsIdent, userName, groupName string) (risktypes.RunAsIdent, error) {
 			gotGroupName = groupName
-			return stubResolveRunAsIdentSuccess(base, userName, groupName)
+			return risktypestestutil.StubResolveRunAsIdentSuccess(base, userName, groupName)
 		}
 
 		cmd := executortestutil.CreateRuntimeCommand(
@@ -261,7 +234,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		resolverCalled := false
 		manager.runAsResolver = func(base risktypes.RunAsIdent, userName, groupName string) (risktypes.RunAsIdent, error) {
 			resolverCalled = true
-			return stubResolveRunAsIdentSuccess(base, userName, groupName)
+			return risktypestestutil.StubResolveRunAsIdentSuccess(base, userName, groupName)
 		}
 
 		cmd := executortestutil.CreateRuntimeCommand(
@@ -307,7 +280,7 @@ func TestDryRunResourceManager_GroupNameResolutionFailure(t *testing.T) {
 
 	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{}, permissiveTestEvaluator{}, nil)
 	require.NoError(t, err)
-	manager.runAsResolver = stubResolveRunAsIdentUnknownGroup
+	manager.runAsResolver = risktypestestutil.StubResolveRunAsIdentUnknownGroup
 
 	cmd := executortestutil.CreateRuntimeCommand(
 		"echo",
@@ -340,7 +313,7 @@ func TestDryRunResourceManager_SupplementaryGroupsUnavailable(t *testing.T) {
 
 	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{}, permissiveTestEvaluator{}, nil)
 	require.NoError(t, err)
-	manager.runAsResolver = stubResolveRunAsIdentNilGroups
+	manager.runAsResolver = risktypestestutil.StubResolveRunAsIdentNilGroups
 
 	cmd := executortestutil.CreateRuntimeCommand(
 		"echo",
@@ -372,7 +345,7 @@ func TestDryRunResourceManager_RiskRaiseIsMonotonic(t *testing.T) {
 
 	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{}, riskLevelTestEvaluator{level: runnertypes.RiskLevelCritical}, nil)
 	require.NoError(t, err)
-	manager.runAsResolver = stubResolveRunAsIdentUnknownUser
+	manager.runAsResolver = risktypestestutil.StubResolveRunAsIdentUnknownUser
 
 	cmd := executortestutil.CreateRuntimeCommand(
 		"echo",
@@ -404,7 +377,7 @@ func TestDryRunResourceManager_ResolverCalledOncePerCommand(t *testing.T) {
 	calls := 0
 	manager.runAsResolver = func(base risktypes.RunAsIdent, userName, groupName string) (risktypes.RunAsIdent, error) {
 		calls++
-		return stubResolveRunAsIdentSuccess(base, userName, groupName)
+		return risktypestestutil.StubResolveRunAsIdentSuccess(base, userName, groupName)
 	}
 
 	cmd := executortestutil.CreateRuntimeCommand(
@@ -470,7 +443,7 @@ func TestDryRunResourceManager_RunAsIdentityLogAttributes(t *testing.T) {
 	}
 
 	t.Run("success", func(t *testing.T) {
-		record := run(t, stubResolveRunAsIdentSuccess)
+		record := run(t, risktypestestutil.StubResolveRunAsIdentSuccess)
 		for _, key := range []string{"dry_run", "command", "group", "run_as_user", "run_as_group", "resolved_uid", "resolved_gid"} {
 			assert.Contains(t, record, key)
 		}
@@ -482,7 +455,7 @@ func TestDryRunResourceManager_RunAsIdentityLogAttributes(t *testing.T) {
 	})
 
 	t.Run("failure", func(t *testing.T) {
-		record := run(t, stubResolveRunAsIdentUnknownUser)
+		record := run(t, risktypestestutil.StubResolveRunAsIdentUnknownUser)
 		for _, key := range []string{"dry_run", "command", "group", "run_as_user", "run_as_group", "failure_kind", "error"} {
 			assert.Contains(t, record, key)
 		}
@@ -573,7 +546,7 @@ func TestDryRunPreservesProcessIdentity(t *testing.T) {
 
 	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{}, permissiveTestEvaluator{}, nil)
 	require.NoError(t, err)
-	manager.runAsResolver = stubResolveRunAsIdentSuccess
+	manager.runAsResolver = risktypestestutil.StubResolveRunAsIdentSuccess
 
 	cmd := executortestutil.CreateRuntimeCommand(
 		"echo",

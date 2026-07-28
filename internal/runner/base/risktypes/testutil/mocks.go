@@ -24,8 +24,8 @@ var StubResolveRunAsIdentSuccess risktypes.RunAsResolver = func(_ risktypes.RunA
 }
 
 // StubResolveRunAsIdentUnknownUser reports the user name as unresolvable.
-// testName is embedded when producing the error so each test case can use a
-// distinct name without declaring a fresh resolver.
+// The userName parameter is embedded so each test case can use a distinct name
+// without declaring a fresh resolver.
 var StubResolveRunAsIdentUnknownUser risktypes.RunAsResolver = func(_ risktypes.RunAsIdent, userName, _ string) (risktypes.RunAsIdent, error) {
 	return risktypes.RunAsIdent{}, user.UnknownUserError(userName)
 }
