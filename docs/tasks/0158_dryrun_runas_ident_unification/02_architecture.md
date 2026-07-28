@@ -316,7 +316,7 @@ classDiagram
 
 検証結果は特権サポートの有無に関わらず必ず 1 件出力される。警告はそれとは独立に、実行時に特権昇格ができない環境であることを伝える（AC-07 / AC-10）。変更前は両者が排他だったため、警告が出るときは検証結果が得られなかった。変更後は両方が並ぶことがあり、その組み合わせは「識別情報の解決は妥当だが、この環境では実行できない」を意味する（§1.3）。文言を `configuration validated` から `identity resolution validated` に改めるのは、検証したのが設定全体ではなく識別情報の解決だけであることを明示するためである。既存テストの文字列期待値を更新する（§7.5）。
 
-**リスクレベルの引き上げは単調である。** 検証失敗時、`Impact.SecurityRisk` は現在値と `high` を比較して高い方にする。文字列としての上書きは行わない。`analyzeCommand` は先に `evaluateCommandRisk` を呼び、そこで実効リスクを `Impact.SecurityRisk` に設定している（[dryrun_manager.go:361](../../../internal/runner/resource/dryrun_manager.go)）。実効リスクが `critical` のコマンドで検証も失敗した場合、単純な上書きは `critical` を `high` へ**引き下げて**しまう。比較には `runnertypes.RiskLevel` の順序を用いる（文字列から戻す場合は [`ParseRiskLevel`](../../../internal/runner/base/runnertypes/config.go)）。変更前の実装は単純な上書きであり、この引き下げは既存の欠陥である。本タスクで併せて修正する。
+**リスクレベルの引き上げは単調である。** 検証失敗時、`Impact.SecurityRisk` は現在値と `high` を比較して高い方にする。文字列としての上書きは行わない。`analyzeCommand` は先に `evaluateCommandRisk` を呼び、そこで実効リスクを `Impact.SecurityRisk` に設定している（[dryrun_manager.go:361](../../../internal/runner/resource/dryrun_manager.go)）。実効リスクが `critical` のコマンドで検証も失敗した場合、単純な上書きは `critical` を `high` へ**引き下げて**しまう。比較には `runnertypes.RiskLevel` の順序を用いる（`Impact.SecurityRisk` は `evaluateCommandRisk` が `RiskLevel` として算出した結果を `.String()` したものであるため、比較は文字列ではなく `RiskLevel` の値で行う。`ParseRiskLevel` はユーザー設定用であり `"critical"` を拒否するため、内部比較には使えない。）。変更前の実装は単純な上書きであり、この引き下げは既存の欠陥である。本タスクで併せて修正する。
 
 警告のみの場合はリスクレベルを変更しない（変更前と同じ）。
 
@@ -557,7 +557,10 @@ sequenceDiagram
         VAL->>LOG: Warn（上記の属性に failure_kind と error を加えたもの）
         Note over VAL,DRY: Description に "identity resolution failed" を追記し<br>リスクレベルを high 以上へ単調に引き上げ
     end
-    opt privilegeManager が nil、または特権実行が利用できない
+    opt privilegeManager が nil
+        Note over VAL,DRY: Description に "privilege management not supported" を追記
+    end
+    opt privilegeManager != nil かつ特権実行が利用できない
         VAL->>PRV: IsPrivilegedExecutionSupported()
         PRV-->>VAL: false
         Note over VAL,DRY: Description に "privilege management not supported" を追記
