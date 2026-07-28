@@ -4,7 +4,6 @@ package risktypes_test
 
 import (
 	"errors"
-	"os"
 	"os/user"
 	"testing"
 
@@ -19,9 +18,9 @@ var errResolverForced = errors.New("resolver failure injected by test")
 // simulating a supplementary-group enumeration failure.
 func nilGroupsResolver(t *testing.T) risktypes.RunAsResolver {
 	t.Helper()
-	u, err := user.Current()
-	require.NoError(t, err)
 	return func(_ risktypes.RunAsIdent, _, _ string) (risktypes.RunAsIdent, error) {
+		u, err := user.Current()
+		require.NoError(t, err)
 		return risktypes.RunAsIdent{UID: parseID(t, u.Uid), GID: parseID(t, u.Gid), Groups: nil}, nil
 	}
 }
@@ -37,6 +36,7 @@ func TestResolveRunAsIdentStrict_ResolverError(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, risktypes.ErrRunAsIdentityResolution)
 	assert.ErrorIs(t, err, errResolverForced, "the injected error is still reachable")
+	assert.NotErrorIs(t, err, risktypes.ErrRunAsSupplementaryGroupsUnavailable, "supplementary-groups sentinel should not appear in resolver-error path")
 }
 
 // TestResolveRunAsIdentStrict_NilGroups: when the resolver succeeds but returns
@@ -46,11 +46,11 @@ func TestResolveRunAsIdentStrict_NilGroups(t *testing.T) {
 	u, err := user.Current()
 	require.NoError(t, err)
 
-	base := risktypes.OriginalExecutionIdentity()
-	_, err = risktypes.ResolveRunAsIdentStrict(nilGroupsResolver(t), base, u.Username, "")
+	_, err = risktypes.ResolveRunAsIdentStrict(nilGroupsResolver(t), risktypes.RunAsIdent{}, u.Username, "")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, risktypes.ErrRunAsIdentityResolution)
 	assert.ErrorIs(t, err, risktypes.ErrRunAsSupplementaryGroupsUnavailable)
+	assert.NotErrorIs(t, err, errResolverForced, "resolver error path should not contaminate nil-groups path")
 }
 
 // TestResolveRunAsIdentStrict_Success: a successful resolver returns the ident
@@ -114,7 +114,8 @@ func TestResolveRunAsIdentStrict_ArgumentForms(t *testing.T) {
 	t.Run("group_only", func(t *testing.T) {
 		ident, err := risktypes.ResolveRunAsIdentStrict(nil, base, "", g.Name)
 		require.NoError(t, err)
-		assert.Equal(t, uint32(os.Getuid()), ident.UID, "uid stays the base identity (original execution identity)")
+		assert.Equal(t, base.UID, ident.UID, "uid stays the base identity (original execution identity)")
+		assert.Equal(t, base.Groups, ident.Groups, "supplementary groups stay the base identity")
 		assert.Equal(t, parseID(t, g.Gid), ident.GID)
 	})
 }
