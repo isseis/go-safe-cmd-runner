@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-07-29 |
 | Review date | 2026-07-29 |
-| Reviewer | アーキテクト / セキュリティ観点レビュー |
-| Comments | 呼び出し経路の調査結果を実コードに照らして訂正（基準UIDを参照する生成箇所は `safefileio` 系統のみ）。`defaultFS` の見落としを追加。静的検証を前提とした AC を実行時検証へ変更。`sudo runner` の挙動変化と残存リスクを明記。 |
+| Reviewer | isseis |
+| Comments | - |
 
 ## 関連 Issue
 
