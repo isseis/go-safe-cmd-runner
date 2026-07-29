@@ -30,7 +30,7 @@ Go Safe Command Runnerは、特権操作の安全な委譲と自動化された�
 
 **検証プロセス**:
 ```go
-// 場所: internal/filevalidator/validator.go:169-197
+// 場所: internal/filevalidator/validator.go の Verify() メソッド
 func (v *Validator) Verify(filePath string) error {
     // 1. ファイルパスの検証と解決
     targetPath, err := validatePath(filePath)
@@ -38,16 +38,12 @@ func (v *Validator) Verify(filePath string) error {
     // 2. 現在のファイルハッシュを計算
     actualHash, err := v.calculateHash(targetPath.String())
 
-    // 3. マニフェストから保存されたハッシュを読み取り
-    _, expectedHash, err := v.readAndParseHashFile(targetPath)
-
-    // 4. ハッシュを比較
-    if expectedHash != actualHash {
-        return ErrMismatch
-    }
-    return nil
+    // 3. verifyHash() が解析レコードのハッシュと比較
+    return v.verifyHash(targetPath, actualHash)
 }
 ```
+
+`verifyHash()` は `internal/fileanalysis` の解析レコード（ハッシュマニフェスト）を `v.store.Load()` で読み取り、記録済みのファイルパスとの一致を確認（ハッシュ衝突検出）した上で、`アルゴリズム:ハッシュ値` 形式の期待値を記録済みの `ContentHash` と比較し、不一致の場合は `ErrMismatch` を返します。
 
 
 **一元化検証管理**:
@@ -79,25 +75,20 @@ func (v *Validator) Verify(filePath string) error {
 **record コマンドでの解析フロー** (`cmd/record/main.go`):
 
 ```go
-// BinaryAnalyzer: ネットワークシンボル検出（socket, connect, bind など）
-fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer(runtime.GOOS))
+// filevalidator.ValidatorConfig 構造体リテラルで各解析コンポーネントを注入する
+vCfg := filevalidator.ValidatorConfig{
+    BinaryAnalyzer:    security.NewBinaryAnalyzer(runtime.GOOS),      // ネットワークシンボル検出（socket, connect, bind など）
+    SyscallAnalyzer:   libccache.NewSyscallAdapter(syscallAnalyzer),  // syscall パターン解析（x86_64 / arm64 対応）
+    LibcCache:         libccache.NewCacheAdapter(cacheMgr, syscallAnalyzer),        // Linux: libc syscall ラッパーシンボルキャッシュ
+    LibSystemCache:    libccache.NewMachoLibSystemAdapter(machoCacheMgr, fs),       // macOS: libSystem syscall シンボルキャッシュ
+    MachoSyscallTable: libccache.MacOSSyscallTable{},
+    DebugInfo:         debugInfo,
+}
+// 動的ライブラリ依存関係の再帰解析（条件を満たす場合のみ設定）
+vCfg.ELFDynLibAnalyzer = d.elfDynlibAnalyzerFactory()
+vCfg.MachODynLibAnalyzer = d.machoDynlibAnalyzerFactory()
 
-// SyscallAnalyzer: syscall パターン解析（x86_64 / arm64 対応）
-syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
-fv.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))
-
-// LibcCacheManager: libc syscall ラッパーシンボルキャッシュ（Linux）
-cacheMgr, _ := libccache.NewLibcCacheManager(cacheDir, fs, libcAnalyzer)
-fv.SetLibcCache(libccache.NewCacheAdapter(cacheMgr, syscallAnalyzer))
-
-// LibSystemCacheManager: macOS libSystem syscall シンボルキャッシュ（macOS）
-machoCacheMgr, _ := libccache.NewMachoLibSystemCacheManager(machoCacheDir)
-fv.SetLibSystemCache(libccache.NewMachoLibSystemAdapter(machoCacheMgr, fs))
-fv.SetMachoSyscallTable(libccache.MacOSSyscallTable{})
-
-// DynLibAnalyzer: 動的ライブラリ依存関係の再帰解析
-fv.SetELFDynLibAnalyzer(d.elfDynlibAnalyzerFactory())
-fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
+validator, _ := d.validatorFactory(cfg.hashDir, vCfg)
 ```
 
 **解析内容**:
@@ -110,7 +101,7 @@ fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
 **解析結果の永続化** (`internal/fileanalysis/`):
 
 ```
-fileanalysis.Record（SchemaVersion = 19）
+fileanalysis.Record（SchemaVersion = fileanalysis.CurrentSchemaVersion、現在 23）
   ├── ContentHash           // ファイルの SHA-256 ハッシュ
   ├── DynLibDeps            // 依存ライブラリのパスとハッシュ一覧（[]LibEntry）
   ├── SyscallAnalysis       // syscall 解析結果
@@ -119,28 +110,17 @@ fileanalysis.Record（SchemaVersion = 19）
   │     ├── ArgEvalResults     // syscall 引数評価結果（mprotect の PROT_EXEC フラグ判定）
   │     └── DeterminationStats // syscall 番号判定方法の診断統計
   ├── SymbolAnalysis        // ネットワークシンボル解析結果
-  ├── ShebangInterpreter    // インタープリタ情報（スクリプトの場合）
+  ├── ShebangChain          // shebang チェーンのインタープリタ情報（[]ShebangChainEntry、スクリプトの場合）
   └── AnalysisWarnings      // dynlib 解析の非致命的警告
 ```
 
-**runner 実行時の検証** (`internal/verification/manager.go`):
+**runner 実行時の検証** (`internal/verification/manager.go` の `verifyDynLibDeps()` メソッド):
 
-```go
-func (m *Manager) verifyDynLibDeps(cmdPath string) error {
-    record, _ := m.fileValidator.LoadRecord(cmdPath)
-
-    if len(record.DynLibDeps) > 0 {
-        // 記録済み依存ライブラリを DynLibVerifier でハッシュ検証
-        return m.dynlibVerifier.Verify(record.DynLibDeps)
-    }
-
-    // 動的リンクバイナリで DynLibDeps 未記録の場合は再 record を要求
-    if hasDynDeps, _ := m.hasDynamicLibraryDeps(cmdPath); hasDynDeps {
-        return &dynlib.ErrDynLibDepsRequired{BinaryPath: cmdPath}
-    }
-    return nil
-}
-```
+`verifyDynLibDeps()` は概ね次の流れで動作します。
+1. 記録済みレコードを `LoadRecord()` で読み取る。`ErrRecordNotFound` や、`record` 作成時点で dynlib 未対応だったことを示す `SchemaVersionMismatchError` などのエラーを個別にハンドリングする。
+2. `DynLibDeps` が記録済みであれば、ハッシュ検証後にさらに `verifyDynLibDepsResolution()` を呼び出し、検索パスのシャドーイングによる差し替えがないかも確認する（検証済みハッシュはキャッシュされる）。
+3. ELF だけでなく Mach-O バイナリについても `hasMachODynamicLibraryDeps()` で動的ライブラリ依存の有無を確認する。
+4. 動的リンクバイナリで `DynLibDeps` が未記録の場合は、`dynlib.ErrDynLibDepsRequired` を返して再 `record` を要求する。
 
 DynLibDeps が記録済みのバイナリに対しては、実行時に ELF を再解析せず、記録済みのハッシュ一覧を照合することで検証コストを最適化しています。
 
@@ -217,7 +197,7 @@ func (v *Validator) ValidateEnvironmentValue(key, value string) error {
 
 **最新Linuxセキュリティ（openat2）**:
 ```go
-// 場所: internal/safefileio/safe_file.go:99-122
+// 場所: internal/safefileio/safe_file_linux.go（Linux 専用ビルドファイル）の openat2() 関数
 func openat2(dirfd int, pathname string, how *openHow) (int, error) {
     // RESOLVE_NO_SYMLINKSフラグを使用してシンボリックリンクの追跡を原子的に防止
     pathBytes, err := syscall.BytePtrFromString(pathname)
@@ -228,18 +208,26 @@ func openat2(dirfd int, pathname string, how *openHow) (int, error) {
 
 **フォールバックセキュリティ（従来システム）**:
 ```go
-// 場所: internal/safefileio/safe_file.go:409-433
+// 場所: internal/safefileio/safe_file.go の ensureParentDirsNoSymlinks() 関数
 func ensureParentDirsNoSymlinks(absPath string) error {
     // ルートからターゲットまでのステップバイステップパス検証
     for _, component := range components {
         fi, err := os.Lstat(currentPath) // シンボリックリンクを追跡しない
         if fi.Mode()&os.ModeSymlink != 0 {
-            return fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
+            // OS が管理する既知のシンボリックリンク（例: /etc/mtab 等）は例外的に許可し、
+            // EvalSymlinks で解決した上で検証を継続する
+            if !common.IsAllowedOSManagedSymlink(currentPath) {
+                return fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
+            }
+            resolved, err := filepath.EvalSymlinks(currentPath)
+            // 以降、resolved を使って検証を継続
         }
     }
     return nil
 }
 ```
+
+シンボリックリンクは原則として拒否しますが、OS がインストール時から管理する既知のシンボリックリンク（`common.IsAllowedOSManagedSymlink()` で判定）のみ例外的に許可し、解決先を検証対象として扱います。
 
 **ファイルサイズ保護**:
 - 最大ファイルサイズ制限: 128 MB
@@ -320,10 +308,10 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
    - 操作後の自動特権復元
 
 **復元後の防御的検証**:
-`handleCleanupAndMetrics`は特権復元に続けて、2段階の不変条件チェックを行います。いずれかが失敗すると`emergencyShutdown`が呼ばれます。
+`handleCleanupAndMetrics`はパニック回復と時間計測を担い、実際の特権復元と2段階の不変条件チェックは内部で呼び出す`restorePrivilegesAndMetrics`が行います。いずれかのチェックが失敗すると`emergencyShutdown`が呼ばれます。
 
 ```go
-// 場所: internal/runner/base/privilege/unix.go
+// 場所: internal/runner/base/privilege/unix.go の restorePrivilegesAndMetrics() 関数
 // 1. EUID==UID / EGID==GID を検証する（復元処理自体のバグを検出する独立したチェック）
 if err := m.identityVerifier(); err != nil {
     m.emergencyShutdown(err, fmt.Sprintf("identity_verification_failure_%s", shutdownContext))
@@ -389,19 +377,20 @@ func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
 
 **セキュアPATH環境の強制**:
 ```go
-// 場所: internal/verification/manager.go
-// security.SecurePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
+// 場所: internal/common/secure_path.go
+// common.SecurePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin:" + CoreutilsDir
 
 // 環境変数PATHを継承せず、セキュアな固定PATHを使用
-pathResolver := NewPathResolver(security.SecurePathEnv, securityValidator)
+pathResolver := NewPathResolver(common.SecurePathEnv)
 ```
 
 **パス解決**:
 ```go
 // 場所: internal/verification/path_resolver.go
 type PathResolver struct {
-    pathEnv            string    // セキュア固定PATH使用
-    securityValidator  *security.Validator
+    pathEnv string          // セキュア固定PATH使用
+    cache   map[string]string
+    mu      sync.RWMutex
 }
 ```
 
@@ -413,14 +402,13 @@ type PathResolver struct {
 
 **デフォルト許可パターン**:
 ```go
-// 場所: internal/runner/security/types.go:147-154
-AllowedCommands: []string{
-    "^/bin/.*",
-    "^/usr/bin/.*",
-    "^/usr/sbin/.*",
-    "^/usr/local/bin/.*",
-},
+// 場所: internal/runner/base/security/types.go
+// DefaultConfig() が GenerateAllowedCommandsFromPath() を呼び出し、
+// common.SecurePathEnv（セキュア固定PATH）からデフォルトの許可パターンを動的に生成する
+allowedCommands, err := GenerateAllowedCommandsFromPath(common.SecurePathEnv)
 ```
+
+デフォルトの許可コマンドパターンは固定リストではなく、セキュア固定PATHのディレクトリ一覧から実行時に動的生成されます（生成に失敗した場合は panic）。
 
 **危険コマンド検出**:
 - シェル実行ファイル: `/bin/bash`, `/bin/sh`
@@ -447,7 +435,15 @@ AllowedCommands: []string{
 **リスク評価エンジン**:
 ```go
 // 場所: internal/runner/base/risk/evaluator.go
-type StandardEvaluator struct{}
+// StandardEvaluator は networkAnalyzer（ネットワークシンボル解析）、openIdentity
+// （fd束縛実行のための検証済み同一性オープナー）、zoning、resolveRunAs
+// （実行ユーザー解決）などのフィールドを持つ
+type StandardEvaluator struct {
+    networkAnalyzer *security.NetworkAnalyzer
+    openIdentity    identityOpener
+    zoning          *zoningParams
+    resolveRunAs    runAsResolver
+}
 
 // EvaluateRisk は素の RiskLevel ではなく VerifiedCommandPlan を返す。評価した同一性と
 // 実行する同一性を束縛し、executor は plan（検証済みの argv/env/identity）のみを実行し、
@@ -455,7 +451,11 @@ type StandardEvaluator struct{}
 // （プロファイル・破壊・システム変更・危険引数パターン・任意コード実行ランナー・バイナリ
 // 解析）の最大値であり、フェイルクローズのゲートは最大値を取る前に短絡する。
 func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error) {
-    // 最初に identity ゲート: 検証済みハッシュがない、またはバイナリ解析が無効の場合、
+    // まず絶対パスであることを検証する（相対パスは即座に拒否）
+    if !filepath.IsAbs(cmdPath) {
+        return blockingPlan(...), nil
+    }
+    // 次に identity ゲート: 検証済みハッシュがない、またはバイナリ解析が無効の場合、
     // バイナリの同一性を確認できないため、設定された risk_level によらず拒否（Blocking）する。
     // これは全リスク次元より前に実行され、未検証バイナリに対していずれの経路でも
     // Low/High 許容のリスクを確定させないようにする。
@@ -479,10 +479,13 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 
 **リスクレベル設定**:
 ```go
-// 場所: internal/runner/runnertypes/config.go
-type Command struct {
-    RiskLevel string `toml:"risk_level"` // コマンドのリスクレベル
+// 場所: internal/runner/base/runnertypes/spec.go
+type CommandSpec struct {
+    RiskLevel *string `toml:"risk_level"` // コマンドのリスクレベル（未設定時は nil）
 }
+
+// GetRiskLevel() は RiskLevel が nil の場合 RiskLevelLow をデフォルトとして返す
+func (c *CommandSpec) GetRiskLevel() (RiskLevel, error)
 ```
 
 #### セキュリティ保証
@@ -501,10 +504,14 @@ type Command struct {
 **統一リソースインターフェース**:
 ```go
 // 場所: internal/runner/resource/manager.go
-type ResourceManager interface {
-    ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error)
+// インターフェース名は Manager（ResourceManager ではない）
+type Manager interface {
+    ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (CommandToken, *ExecutionResult, error)
     WithPrivileges(ctx context.Context, fn func() error) error
     SendNotification(message string, details map[string]any) error
+    // 他、ValidateOutputPath / CreateTempDir / CleanupTempDir / CleanupAllTempDirs /
+    // GetDryRunResults など、出力パス検証・一時ディレクトリ管理・dry-run結果取得のための
+    // メソッドを追加で持つ
 }
 ```
 
@@ -530,10 +537,10 @@ type ResourceManager interface {
 ```go
 // 場所: internal/redaction/redactor.go
 type Config struct {
-    LogPlaceholder   string
-    TextPlaceholder  string
+    Placeholder      string  // LogPlaceholder / TextPlaceholder は統一され単一フィールドに
     Patterns         *SensitivePatterns
     KeyValuePatterns []string
+    ValueDetector    *ValueDetector // AWSキー・GitHubトークン・PEM形式などの値ベース検出
 }
 
 func (c *Config) RedactText(text string) string {
@@ -551,24 +558,27 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 
 **第1層：CommandResult作成時の編集**（`internal/runner/group_executor.go`）:
 ```go
-// 場所: internal/runner/group_executor.go:260-261
+// 場所: internal/runner/group_executor.go の CommandResult 生成処理
 // コマンド出力を CommandResult に格納する前に機密情報を編集
 sanitizedStdout := ge.validator.SanitizeOutputForLogging(stdout)
 sanitizedStderr := ge.validator.SanitizeOutputForLogging(stderr)
 ```
-- `SanitizeOutputForLogging()` は `internal/runner/security/logging_security.go` に実装
+- `SanitizeOutputForLogging()` は `internal/runner/base/security/logging_security.go` に実装
 - コマンド出力を格納する時点で機密情報を編集し、Slack 通知等への流出を防止
 
 **第2層：RedactingHandlerでの編集**（`internal/redaction/redactor.go`）:
 ```go
-// 場所: internal/redaction/redactor.go:200-259
+// 場所: internal/redaction/redactor.go の RedactingHandler 型
 type RedactingHandler struct {
-    handler slog.Handler
-    config  *Config
+    handler       slog.Handler
+    config        *Config
+    failureLogger *slog.Logger // 編集処理自体がパニックした場合の再帰防止用ロガー
 }
 
-// 場所: internal/runner/bootstrap/logger.go:138
-redactedHandler := redaction.NewRedactingHandler(multiHandler, nil)
+// 場所: internal/runner/bootstrap/logger.go
+// NewRedactingHandler は failureLogger を含む3引数を取り、WithErrorCollector で
+// エラーコレクタをチェインする
+redactedHandler := redaction.NewRedactingHandler(multiHandler, nil, failureLogger).WithErrorCollector(collector)
 logger := slog.New(redactedHandler)
 ```
 - ログ出力時に自動的に機密情報を編集
@@ -578,7 +588,7 @@ logger := slog.New(redactedHandler)
 
 **Slack通知実装**:
 ```go
-// 場所: internal/logging/slack_handler.go:64-73
+// 場所: internal/logging/slack_handler.go の SlackHandler 型
 type SlackHandler struct {
     webhookURL    string
     runID         string
@@ -587,6 +597,8 @@ type SlackHandler struct {
     attrs         []slog.Attr
     groups        []string
     backoffConfig BackoffConfig
+    isDryRun      bool                  // dry-run実行時はSlack通知を送信しない
+    levelMode     SlackHandlerLevelMode // ログレベルによる通知要否の制御モード
 }
 ```
 - RedactingHandlerによってラップされているため、第2層の編集が適用される
@@ -595,7 +607,7 @@ type SlackHandler struct {
 
 **ログセキュリティ設定**:
 ```go
-// 場所: internal/runner/security/types.go:92-107
+// 場所: internal/runner/base/security/types.go の LoggingOptions 型
 type LoggingOptions struct {
     // IncludeErrorDetails は完全なエラーメッセージをログに含めるかを制御
     IncludeErrorDetails bool `json:"include_error_details"`
@@ -616,36 +628,19 @@ type LoggingOptions struct {
 
 **機密パターン検出と編集**:
 ```go
-// 場所: internal/runner/security/logging_security.go:49-52
+// 場所: internal/runner/base/security/logging_security.go の redactSensitivePatterns() メソッド
+// パターン定義とマッチング・置換ロジックは internal/redaction パッケージへ一元化されており、
+// このメソッドは単純に委譲するだけになっている
 func (v *Validator) redactSensitivePatterns(text string) string {
-    sensitivePatterns := []struct {
-        pattern     string
-        replacement string
-    }{
-        // APIキー、トークン、パスワード（一般的なパターン）
-        {"password=", "password=[REDACTED]"},
-        {"token=", "token=[REDACTED]"},
-        {"key=", "key=[REDACTED]"},
-        {"secret=", "secret=[REDACTED]"},
-        {"api_key=", "api_key=[REDACTED]"},
-
-        // 機密を含む可能性のある環境変数代入
-        {"_PASSWORD=", "_PASSWORD=[REDACTED]"},
-        {"_TOKEN=", "_TOKEN=[REDACTED]"},
-        {"_KEY=", "_KEY=[REDACTED]"},
-        {"_SECRET=", "_SECRET=[REDACTED]"},
-
-        // 一般的な認証情報パターン
-        {"Bearer ", "Bearer [REDACTED]"},
-        {"Basic ", "Basic [REDACTED]"},
-    }
-    // パターンマッチングと置換ロジック
+    return v.redactionConfig.RedactText(text)
 }
 ```
 
+実際のパスワード・トークン・APIキー等のパターン定義（`password=`、`token=`、`key=`、`secret=`、`api_key=`、`_PASSWORD=` 等の環境変数代入、`Bearer `/`Basic ` 認証ヘッダーなど）は `internal/redaction/redactor.go` の `SensitivePatterns`／`Config.RedactText()` に集約されています（「9. セキュアログと機密データ保護」の一元化データ編集基盤を参照）。
+
 **エラーメッセージのサニタイズ**:
 ```go
-// 場所: internal/runner/security/logging_security.go:4-26
+// 場所: internal/runner/base/security/logging_security.go の SanitizeErrorForLogging() 関数
 func (v *Validator) SanitizeErrorForLogging(err error) string {
     if err == nil {
         return ""
@@ -663,8 +658,8 @@ func (v *Validator) SanitizeErrorForLogging(err error) string {
         errMsg = v.redactSensitivePatterns(errMsg)
     }
 
-    // 長すぎる場合は切り詰め
-    if len(errMsg) > v.config.LoggingOptions.MaxErrorMessageLength {
+    // 長さ制限が設定されており、かつ長すぎる場合のみ切り詰め
+    if v.config.LoggingOptions.MaxErrorMessageLength > 0 && len(errMsg) > v.config.LoggingOptions.MaxErrorMessageLength {
         errMsg = errMsg[:v.config.LoggingOptions.MaxErrorMessageLength] + "...[truncated]"
     }
 
@@ -787,6 +782,11 @@ type FileSystem interface {
     FileExists(path string) (bool, error)
     Lstat(path string) (fs.FileInfo, error)
     IsDir(path string) (bool, error)
+    TempDir() string
+    RemoveAll(path string) error
+    Remove(path string) error
+    CreateTemp(dir, pattern string) (*os.File, error)
+    MkdirAll(path string, perm fs.FileMode) error
 }
 ```
 
@@ -809,21 +809,24 @@ type FileSystem interface {
 
 **ユーザー・グループ設定**:
 ```go
-// 場所: internal/runner/runnertypes/config.go
-type Command struct {
-    RunAsUser    string `toml:"run_as_user"`    // コマンドを実行するユーザー
-    RunAsGroup   string `toml:"run_as_group"`   // コマンドを実行するグループ
-    RiskLevel    string `toml:"risk_level"`     // コマンドのリスクレベル
+// 場所: internal/runner/base/runnertypes/spec.go
+type CommandSpec struct {
+    RunAsUser    string  `toml:"run_as_user"`    // コマンドを実行するユーザー
+    RunAsGroup   string  `toml:"run_as_group"`   // コマンドを実行するグループ
+    RiskLevel    *string `toml:"risk_level"`     // コマンドのリスクレベル（未設定時は nil）
 }
 ```
 
 **グループメンバーシップ検証**:
 ```go
-// 場所: internal/groupmembership/membership.go
-type GroupMembershipChecker interface {
-    IsUserInGroup(username, groupname string) (bool, error)
-    GetGroupMembers(groupname string) ([]string, error)
-}
+// 場所: internal/groupmembership/manager.go
+// インターフェースではなく具象構造体。ユーザー名/グループ名ではなく uid/gid（数値）を受け取る
+type GroupMembership struct{ /* ... */ }
+
+func New() *GroupMembership
+
+func (gm *GroupMembership) IsUserInGroup(uid, gid uint32) (bool, error)
+func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error)
 ```
 
 **セキュリティ検証フロー**:
@@ -857,6 +860,8 @@ type SlackHandler struct {
     attrs         []slog.Attr
     groups        []string
     backoffConfig BackoffConfig
+    isDryRun      bool                  // dry-run実行時はSlack通知を送信しない
+    levelMode     SlackHandlerLevelMode // ログレベルによる通知要否の制御モード
 }
 ```
 
@@ -882,7 +887,7 @@ type SlackHandler struct {
 
 **標準入力の無効化**:
 ```go
-// 場所: internal/runner/executor/executor.go:210-224
+// 場所: internal/runner/base/executor/executor.go の標準入力セットアップ処理
 // Set up stdin to null device to prevent issues with commands that expect stdin
 // This prevents "exit status 255" errors from docker-compose exec and similar commands
 // that try to allocate a pseudo-TTY when stdin is nil (file descriptor -1)
@@ -932,7 +937,7 @@ func ResolveOutputSizeLimit(commandLimit OutputSizeLimit, globalLimit OutputSize
 
 **デフォルト設定**:
 ```go
-// 場所: internal/common/output_size_limit_type.go:20-21
+// 場所: internal/common/output_size_limit_type.go の DefaultOutputSizeLimit 定数
 // DefaultOutputSizeLimit is the default output size limit when not specified (10MB)
 const DefaultOutputSizeLimit = 10 * 1024 * 1024
 ```
@@ -965,7 +970,8 @@ const DefaultOutputSizeLimit = 10 * 1024 * 1024
 
 **ファイル権限検証**:
 ```go
-// 場所: internal/runner/security/file_validation.go:44-75
+// 場所: internal/runner/base/security/file_validation.go の ValidateFilePermissions() 関数
+// （実際にはこの他、通常ファイルタイプの検証や構造化ログ（slog.Debug/Warn）出力も行う）
 func (v *Validator) ValidateFilePermissions(filePath string) error {
     // ワールド書き込み可能ファイルをチェック
     disallowedBits := perm &^ requiredPerms
@@ -977,41 +983,33 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 ```
 
 **ハッシュディレクトリセキュリティ強化（コマンドライン引数削除）**:
-```go
-// 場所: cmd/runner/main.go (変更後)
-func getHashDir() string {
-    // プロダクション環境では常にデフォルトディレクトリのみ使用
-    // --hash-directoryフラグは完全削除（セキュリティ脆弱性対策）
-    return cmdcommon.DefaultHashDirectory
-}
-```
+- `--hash-directory`フラグは完全削除されており、`getHashDir()`のようなラッパー関数も存在しない
+- `cmd/runner/main.go`は`cmdcommon.DefaultHashDirectory`を各使用箇所で直接参照する（プロダクション環境では常にデフォルトディレクトリのみ使用）
 
 **設定ファイル事前検証**:
 ```go
-// 場所: cmd/runner/main.go (変更後)
+// 場所: cmd/runner/main.go の main() 関数
 // 設定ファイル読み込み前にハッシュ検証を実行
-if err := verificationManager.VerifyConfigFile(configPath); err != nil {
+result, err := verificationManager.VerifyGlobalFiles(&verification.GlobalVerificationInput{
+    ConfigPath: configPath,
+    // ...
+})
+if err != nil {
     // 未検証データによるシステム動作を完全排除
-    return &logging.PreExecutionError{
-        Type:      logging.ErrorTypeConfigValidation,
-        Message:   fmt.Sprintf("Configuration file verification failed: %s", err),
-        Component: "config",
-        RunID:     runID,
-    }
+    logging.HandlePreExecutionError(logging.ErrorTypeConfigValidation,
+        fmt.Sprintf("Configuration file verification failed: %s", err), "config", runID)
+    os.Exit(1)
 }
 ```
 
 **早期パス検証**:
 ```go
-// 場所: cmd/runner/main.go:188-199
-hashDir := getHashDir()
-if !filepath.IsAbs(hashDir) {
-    return &logging.PreExecutionError{
-        Type:      logging.ErrorTypeFileAccess,
-        Message:   fmt.Sprintf("Hash directory must be absolute path, got relative path: %s", hashDir),
-        Component: "file",
-        RunID:     runID,
-    }
+// 場所: cmd/runner/main.go の main() 関数
+if !filepath.IsAbs(cmdcommon.DefaultHashDirectory) {
+    logging.HandlePreExecutionError(logging.ErrorTypeBuildConfig,
+        fmt.Sprintf("Hash directory must be absolute path, got relative path: %s", cmdcommon.DefaultHashDirectory),
+        "file", runID)
+    os.Exit(1)
 }
 ```
 
@@ -1251,75 +1249,23 @@ if !filepath.IsAbs(hashDir) {
 
 ### TOCTOU (Time-of-Check to Time-of-Use) 競合状態
 
-#### 脆弱性の概要
+#### 対策済みの経緯
 
-コマンドパス検証（`ValidateCommandAllowed`）と実際のコマンド実行の間に、理論的なTOCTOU競合状態が存在します。ファイルシステムへの書き込み権限を持つ攻撃者は、これらの操作の間にシンボリックリンクのターゲットを置き換える可能性があります。
+以前は、コマンドパス検証（`ValidateCommandAllowed`）と実際のコマンド実行の間に理論的なTOCTOU競合状態が存在していました。この節はかつてこれを「既知の制限」として記述していましたが、タスク0090（fexecve方式の検討）とタスク0155（残存ギャップの解消）により、主要な実行経路については**構造的に解消済み**です。以下、現在の実装が採用している方式を説明します。
 
-**脆弱性の場所**:
-```go
-// 場所: internal/runner/security/validator.go:255-295
-func (v *Validator) ValidateCommandAllowed(cmdPath string, ...) error {
-    // 1. シンボリックリンクを解決して検証（Check）
-    resolvedCmd, err := filepath.EvalSymlinks(cmdPath)
-    // パターンマッチング検証...
-}
+**fd束縛実行（fexecve相当）による解消**:
 
-// 場所: internal/runner/group_executor.go:396-412
-// 検証後、実際の実行までの間にTOCTOUウィンドウが存在
-if err := ge.validator.ValidateCommandAllowed(...); err != nil {
-    return nil, fmt.Errorf("command not allowed: %w", err)
-}
-// ... (ここで攻撃者がシンボリックリンクを変更可能)
-token, resourceResult, err := ge.resourceManager.ExecuteCommand(...) // Use
-```
+パスの解決は実行フロー全体を通じて一度だけ行われます。`internal/runner/group_executor.go`の`verifyGroupFiles`が`verificationManager.ResolvePath()`でコマンドパスをシンボリックリンク解決した絶対パスに解決し、`cmd.ExpandedCmd`にその解決済みパスを固定します。以降、実行直前の`executeCommandInGroup`では再解決を行いません（かつて存在した2回目の`ResolvePath`呼び出しは、検証と実行の間にTOCTOU再解決の窓を生むため削除されました）。
 
-#### 攻撃の要件
+`internal/runner/base/security/validator.go`の`ValidateCommandAllowed`は、この時点で渡されるパスがすでに`PathResolver.ResolvePath()`により解決済みであることを前提としており、`filepath.EvalSymlinks`は呼び出しません（許可リストの正規表現照合のみを行います）。
 
-この脆弱性を悪用するには、攻撃者は以下を満たす必要があります：
-1. ファイルシステムへの書き込み権限
-2. 検証と実行の間の正確なタイミング
-3. シンボリックリンクを配置・変更する能力
+その後、`internal/runner/base/risk/evaluator.go`の`openVerifiedIdentity`が解決済みパスを`O_RDONLY|O_CLOEXEC`で一度だけオープンし、そのファイルディスクリプタの内容をハッシュ再計算して検証時のハッシュと照合します（ファイルディスクリプタ経由でのTOCTOU安全な同一性検証）。得られたファイルディスクリプタは`internal/runner/base/executor/fdexec_linux.go`の`fdExecExtraFile`で子プロセスのfd 3として複製され、`/proc/self/fd/3`を実行対象として`exec`します。つまりカーネルは検証済みのinodeそのものを実行するため、検証後にパス文字列側でシンボリックリンクやファイルを差し替えても実行対象には影響しません。
 
-#### 緩和策
+#### 残存する既知の制限（shebangインタープリタ）
 
-以下の多層防御メカニズムにより、攻撃の実現可能性と影響を大幅に軽減しています：
+上記のfd束縛実行は、直接実行されるコマンドバイナリの経路を対象としています。一方、スクリプトのshebang行が指す**インタープリタ**については、`verifyInterpreterSymlinkTarget`が検証時点でシンボリックリンクの解決先を確認するものの、実際にスクリプトを実行する際にインタープリタパスを再解決するのはカーネル自身であり、この窓をアプリケーション側のGoコードから閉じることはできません（インタープリタ自体をfd束縛するには`execveat`相当の仕組みが必要で、現時点ではスコープ外としています）。
 
-**1. ファイル整合性検証**:
-- すべての実行ファイルはSHA-256ハッシュ検証により実行前に検証されます
-- ハッシュ検証システムが改ざんされたバイナリの検出と実行防止を提供
-- 場所: `internal/filevalidator/`, `internal/verification/`
-
-**2. セキュリティモデル境界**:
-- システムのセキュリティモデルは、ファイルシステムへの書き込み権限を持つ攻撃者を信頼境界外と定義
-- 適切に設定されたシステムでは、実行ファイルディレクトリへの書き込み権限は制限されるべき
-
-**3. デプロイメント推奨事項**:
-高セキュリティ環境では、以下の追加対策を推奨：
-- 実行ファイルディレクトリを読み取り専用ファイルシステムとしてマウント
-- `nosymfollow`マウントオプションの使用（利用可能な場合）
-- 厳格なファイルシステム権限の実施
-- 定期的なファイル整合性監視
-
-#### 技術的背景
-
-**完全な対策の実現困難性**:
-Goの標準`os/exec`パッケージは、TOCTOU攻撃を完全に防ぐ`fexecve()`システムコールをサポートしていません。完全な対策には以下が必要：
-1. CGOを使用した低レベルシステムコール実装
-2. ファイルディスクリプタベースの実行フロー
-3. プラットフォーム固有のコード（Linux `fexecve()`、Windows代替）
-
-このような実装は、以下の理由から現実的ではありません：
-- 大幅なアーキテクチャ変更が必要
-- プラットフォーム互換性の複雑化
-- 保守性の低下
-- 既存の多層防御で十分な保護を提供
-
-#### 影響評価
-
-**リスクレベル**: 低〜中
-- **実現可能性**: 低（厳格な要件、正確なタイミング必要）
-- **影響**: 中（ファイル整合性検証により制限）
-- **検出可能性**: 高（監査ログ、ファイル整合性監視）
+この残存ギャップを悪用するには、攻撃者が検証と実際のスクリプト実行の間の正確なタイミングでインタープリタのシンボリックリンクを差し替えられる、ファイルシステム書き込み権限が必要です。適切に権限を制限した環境ではこの前提自体が成立しません。
 
 #### 参考資料
 
@@ -1327,6 +1273,7 @@ Goの標準`os/exec`パッケージは、TOCTOU攻撃を完全に防ぐ`fexecve(
 - [CERT C Coding Standard: POS35-C](https://wiki.sei.cmu.edu/confluence/display/c/POS35-C.+Avoid+race+conditions+while+checking+for+the+existence+of+a+symbolic+link)
 - [Wikipedia: Symlink race](https://en.wikipedia.org/wiki/Symlink_race)
 - [Star Lab Software: Linux Symbolic Links Security](https://www.starlab.io/blog/linux-symbolic-links-convenient-useful-and-a-whole-lot-of-trouble)
+- 関連タスク: `docs/tasks/0090_toctou_fexecve/`, `docs/tasks/0155_toctou_verify_use_residual_gaps/`
 
 ## 結論
 
