@@ -333,8 +333,11 @@ if err := m.identityVerifier(); err != nil {
 //    （非対応プラットフォームではoriginalSUID < 0のガードにより構造的にスキップされる）
 if execCtx.originalSUID >= 0 {
     suid, sgid, err := m.getReadSavedIDs()()
-    if suid != execCtx.originalSUID || sgid != execCtx.originalSGID {
+    if err != nil {
         m.emergencyShutdown(err, shutdownContext)
+    }
+    if suid != execCtx.originalSUID || sgid != execCtx.originalSGID {
+        m.emergencyShutdown(fmt.Errorf("saved-set-uid/gid changed after restore: %w", ErrIdentityLeak), shutdownContext)
     }
 }
 ```
