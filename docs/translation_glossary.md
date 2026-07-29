@@ -44,6 +44,7 @@
 | ブートストラップ | bootstrap | システム初期化処理の文脈 |
 | バッチ処理 | batch processing | |
 | ベースライン | baseline | |
+| 基準UID | base UID | 権限チェックの基準となるUID解決結果（Task 0160） |
 | 基本 | basic | |
 | 初心者 | beginner | |
 | ベストプラクティス | best practices | |
@@ -410,6 +411,7 @@
 |--------|---------|------|
 | レジスタ | register | x86_64やarm64のCPUレジスタ |
 | 読み取り | read | |
+| 読み取り安全性チェック | read-safety check | `internal/groupmembership` によるgroup-writableファイルの読み取り可否判定 |
 | README | README | |
 | 理由 | reason | |
 | Redaction | redaction | 機密情報の削除・マスク処理 |
@@ -746,6 +748,7 @@
 | 2026-07-16 | F-006/F-007 ドキュメント化（Task 0146 Phase 4）関連の用語を追加 (saved-set-uid, saved-set-gid, supplementary group) |
 | 2026-07-17 | dry-run 常時 hard fail 化（Task 0147）関連の用語を追加 (tampering signal, unverified artifact) |
 | 2026-07-25 | 環境変数 denylist 一元化（Task 0156）関連の用語を追加 (denylist, dynamic-loader control variable, interpreter startup code-injection variable, loader-control variable) |
+| 2026-07-29 | record 時点の読み取り安全性チェック（Task 0160）関連の用語を追加 (base UID, read-safety check) |
 
 ---
 
