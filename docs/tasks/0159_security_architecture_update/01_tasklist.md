@@ -43,20 +43,20 @@
 
 ### 日本語の推敲
 
-- [ ] `security-architecture.ja.md` の修正をコミット
-- [ ] `/japrose` コマンドで `security-architecture.ja.md` を推敲
-- [ ] `security-architecture.ja.md` の修正をコミット
+- [x] `security-architecture.ja.md` の修正をコミット（5d327c64）
+- [x] `/japrose` コマンドで `security-architecture.ja.md` を推敲（Major 4件: §4「シンボリックリンク安全な」の直訳調、§5 地の文の生英語"operation"×2箇所、§5「多重防御」/「多重の防御的検証」の表記ゆれを修正。検証パスで反映確認済み）
+- [x] `security-architecture.ja.md` の修正をコミット（07527fc2）
 
 ### バイリンガル文書の反映
 
-- [ ] `/mktrans` コマンドで `security-architecture.md` に反映
-- [ ] 英語版の節構成と段落数が日本語版と一致することを目視確認
+- [x] `/mktrans` コマンドで `security-architecture.md` に反映（差分翻訳、レビューサブエージェントで Critical/Major 0件を確認、コミット c946fa68）
+- [x] 英語版の節構成と段落数が日本語版と一致することを目視確認（見出し構成が全節で1:1一致。§5内の空行数も23/23で一致）
 
 ### 完了条件
 
-- [ ] `make test` / `make lint` が成功する
-- [ ] 日本語版と英語版のセクション構成が一致している
-- [ ] issue #919 との対応を PR 説明に記載
+- [x] `make test` / `make lint` が成功する
+- [x] 日本語版と英語版のセクション構成が一致している
+- [ ] issue #919 との対応を PR 説明に記載（PR 作成時に対応）
 
 ---
 
