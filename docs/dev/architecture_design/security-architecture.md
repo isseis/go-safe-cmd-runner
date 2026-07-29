@@ -262,44 +262,52 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 ### 5. Privilege Management
 
 #### Purpose
-Enables controlled privilege escalation for specific operations while maintaining the principle of least privilege and providing comprehensive audit trails.
+Enables controlled privilege escalation for specific operations while maintaining the principle of least privilege. It also provides comprehensive audit trails and two-layer defensive verification after restoration.
 
 #### Implementation Details
 
 **Unix Privilege Architecture**:
 ```go
-// Location: internal/runner/privilege/unix.go:18-25
+// Location: internal/runner/base/privilege/unix.go
 type UnixPrivilegeManager struct {
     logger             *slog.Logger
     originalUID        int
     privilegeSupported bool
     metrics            Metrics
     mu                 sync.Mutex  // Prevents race conditions
+    osExit             func(code int)                      // Injectable os.Exit for testing
+    identityVerifier   func() error                         // Verifies EUID==UID / EGID==GID (injectable for testing)
+    readSavedIDs       func() (suid, sgid int, err error)   // Reads saved-set-uid/gid (injectable for testing)
 }
 ```
 
 **Privilege Escalation Process**:
+`WithPrivileges` is divided into three stages: pre-execution preparation, escalation, and cleanup.
+
 ```go
-// Location: internal/runner/privilege/unix.go:36-87
+// Location: internal/runner/base/privilege/unix.go
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
     m.mu.Lock()  // Global lock for thread safety
     defer m.mu.Unlock()
 
-    // 1. Escalate privileges
-    if err := m.escalatePrivileges(elevationCtx); err != nil {
+    // 1. Record saved-set-uid/gid and decide whether escalation is needed, based on the operation type
+    execCtx, err := m.prepareExecution(elevationCtx)
+    if err != nil {
         return err
     }
 
-    // 2. Execute operation with defer-based cleanup
-    defer func() {
-        if err := m.restorePrivileges(); err != nil {
-            m.emergencyShutdown(err, shutdownContext) // Exit on failure
-        }
-    }()
+    // 2. Call syscall.Seteuid(0) only for operations that require escalation
+    if err := m.performElevation(execCtx); err != nil {
+        return err
+    }
 
+    // 3. Run restoration, verification, and metrics recording together via defer
+    defer m.handleCleanupAndMetrics(execCtx)
     return fn()
 }
 ```
+
+Whether escalation is needed is determined by `elevationCtx.Operation`: only `OperationUserGroupExecution` and `OperationFileValidation` escalate. Other operations (such as the dry-run execution path) skip escalation at `prepareExecution` and run `fn()` without elevated privileges.
 
 **Execution Modes**:
 
@@ -311,9 +319,31 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
    - Uses `syscall.Seteuid(0)` for privilege escalation
    - Automatic privilege restoration after operation
 
+**Defensive Verification After Restoration**:
+Following privilege restoration, `handleCleanupAndMetrics` performs a two-stage invariant check. If either check fails, `emergencyShutdown` is called.
+
+```go
+// Location: internal/runner/base/privilege/unix.go
+// 1. Verify EUID==UID / EGID==GID (an independent check that detects bugs in the restoration logic itself)
+if err := m.identityVerifier(); err != nil {
+    m.emergencyShutdown(err, shutdownContext)
+}
+
+// 2. Verify that saved-set-uid/gid have not changed across the restore
+//    (structurally skipped on unsupported platforms via the originalSUID < 0 guard)
+if execCtx.originalSUID >= 0 {
+    suid, sgid, err := m.getReadSavedIDs()()
+    if suid != execCtx.originalSUID || sgid != execCtx.originalSGID {
+        m.emergencyShutdown(err, shutdownContext)
+    }
+}
+```
+
+The saved-set-uid/gid check is a stronger invariant than the EUID match check: it can detect cases where the EUID was correctly restored but the saved-set was left corrupted at the previous effective UID by a partial `seteuid` call.
+
 **Security Validation**:
 ```go
-// Location: internal/runner/privilege/unix.go:232-294
+// Location: internal/runner/base/privilege/unix.go
 func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
     // Verify setuid bit is set
     hasSetuidBit := fileInfo.Mode()&os.ModeSetuid != 0
@@ -329,17 +359,19 @@ func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
 ```
 
 **Emergency Shutdown Protocol**:
-- Immediate process termination on privilege restoration failure
-- Multi-channel logging (structured logging, syslog, stderr)
+- Immediate process termination on privilege restoration failure, or on failure of either the EUID/EGID match check or the saved-set-uid/gid invariant check
+- Recorded to both structured logging and stderr
 - Security event recording with full context
 - Prevents continued execution in compromised state
 
 #### Security Guarantees
 - Thread-safe privilege operations with global mutex
 - Automatic privilege restoration with panic protection
+- Two-layer defense via post-restoration EUID/EGID match verification and the saved-set-uid/gid invariant check
 - Comprehensive audit logging of all privilege operations
 - Emergency shutdown on security failures
 - Supports both native root and setuid binary execution models
+- Operations that do not require escalation, such as dry-run, never acquire privileges
 
 ### 6. Command Path Verification
 
