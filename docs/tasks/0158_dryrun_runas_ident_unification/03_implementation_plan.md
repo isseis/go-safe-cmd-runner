@@ -418,24 +418,24 @@ execCtx: Operation: OperationFileValidation, needsPrivilegeEscalation: true,
 
 **作業内容（AC-04 の一致テスト）**
 
-- [ ] `risktypes/testutil/` を新規に作る。テスト構成ガイドの Classification A（複数パッケージから使い、公開 API のみを使う）に該当する。ガイドのファイル分類に従い 2 ファイルに分ける。
+- [x] `risktypes/testutil/` を新規に作る。テスト構成ガイドの Classification A（複数パッケージから使い、公開 API のみを使う）に該当する。ガイドのファイル分類に従い 2 ファイルに分ける。
   - `mocks.go`: 4 種のスタブ `risktypes.RunAsResolver`（成功 / `user.UnknownUserError` / `user.UnknownGroupError` / `Groups == nil`）。エラー値はパッケージレベルの `var` として宣言する（このファイルは `_test.go` ではないため `.golangci.yml` の `err113` 除外が効かず、関数本体での `errors.New` は指摘される）。
   - `helpers.go`: 型 `RunAsResolutionCase`（`Name string` / `UserName string` / `GroupName string` / `Resolver risktypes.RunAsResolver` / `WantFailure bool`）と、設計書 §7.2 の 4 ケースを返す `RunAsResolutionCases() []RunAsResolutionCase`。
-- [ ] `executor_usergroup_test.go` に `TestExecuteWithUserGroup_SharedResolutionCases` を追加する。各ケースのリゾルバを `WithRunAsResolver` で注入し、次を検査する。
+- [x] `executor_usergroup_test.go` に `TestExecuteWithUserGroup_SharedResolutionCases` を追加する。各ケースのリゾルバを `WithRunAsResolver` で注入し、次を検査する。
   - `WantFailure` が真: `assert.ErrorIs(err, risktypes.ErrRunAsIdentityResolution)` かつ `mockPriv.ElevationCalls` が空。
   - `WantFailure` が偽: `assert.NotErrorIs(err, risktypes.ErrRunAsIdentityResolution)` かつ `mockPriv.ElevationCalls` に `user_group_change:` で始まる記録がある。実際のプロセス起動は環境によって成功も失敗もするため、終了状態は意図的に検査しない（既存の `executor_usergroup_test.go:78-81` のコメントと同じ扱い）。
-- [ ] `usergroup_dryrun_test.go` に `TestDryRunResourceManager_SharedResolutionCases` を追加する。同じケース表を読み、`WantFailure` が真のケースでは `SecurityRisk` が `high` 以上かつ `Description` に `identity resolution failed` が含まれること、偽のケースでは `identity resolution validated` が含まれることを検査する。
-- [ ] 両テストの doc コメントに、担当範囲を英語で書く。Phase 3 で追加した個別テストが文言・リスクレベル・ログ属性を担当し、この一致テストは dry-run と実行時の判定が一致することだけを担当する。また、固定するのは識別情報の解決に関する一致だけであり、実行時のみの前提条件（設計書 §1.3）は対象外である。
+- [x] `usergroup_dryrun_test.go` に `TestDryRunResourceManager_SharedResolutionCases` を追加する。同じケース表を読み、`WantFailure` が真のケースでは `SecurityRisk` が `high` 以上かつ `Description` に `identity resolution failed` が含まれること、偽のケースでは `identity resolution validated` が含まれることを検査する。
+- [x] 両テストの doc コメントに、担当範囲を英語で書く。Phase 3 で追加した個別テストが文言・リスクレベル・ログ属性を担当し、この一致テストは dry-run と実行時の判定が一致することだけを担当する。また、固定するのは識別情報の解決に関する一致だけであり、実行時のみの前提条件（設計書 §1.3）は対象外である。
 
 **作業内容（文書の追随）**
 
-- [ ] `docs/dev/architecture_design/command-risk-evaluation.ja.md` の「拒否 / エラー / High 許可の区別（dry-run の失敗時挙動）」節（`:439`）の末尾に注記を追加する。記載する内容は次の 3 点とする。
+- [x] `docs/dev/architecture_design/command-risk-evaluation.ja.md` の「拒否 / エラー / High 許可の区別（dry-run の失敗時挙動）」節（`:439`）の末尾に注記を追加する。記載する内容は次の 3 点とする。
   1. run-as 識別情報の検証失敗は、この方針の例外として `Impact.SecurityRisk` を `high` へ引き上げる形で表示される。
   2. deny 予告にも終了コードにも反映されない。
   3. 解消は dry-run の deny 判定全体の設計に属する別論点であり、経緯は本タスクの設計書 §5.7 にある。
-- [ ] 追記した注記を設計書 §5.7 と読み合わせ、上記 3 点がすべて含まれ、かつ §5.7 と矛盾しないことを確認する（存在検索だけでは内容の正しさを確かめられないため）。
-- [ ] `docs/translation_glossary.md` に「run-as 識別情報 / run-as identity」の対訳を追加する（既存の項目を確認し、既にあれば追加しない）。
-- [ ] 日本語版を先にコミットしたうえで、`/mktrans` により `command-risk-evaluation.md` の "Deny vs Error vs High-allowable (dry-run failure handling)" 節（`:439`）へ反映する（CLAUDE.md の翻訳ワークフロー）。反映後、日本語版と英語版で節構成と段落数が一致することを目視で確認する。
+- [x] 追記した注記を設計書 §5.7 と読み合わせ、上記 3 点がすべて含まれ、かつ §5.7 と矛盾しないことを確認する（存在検索だけでは内容の正しさを確かめられないため）。
+- [x] `docs/translation_glossary.md` に「run-as 識別情報 / run-as identity」の対訳を追加する（既存の項目を確認し、既にあれば追加しない）。
+- [x] 日本語版を先にコミットしたうえで、`/mktrans` により `command-risk-evaluation.md` の "Deny vs Error vs High-allowable (dry-run failure handling)" 節（`:439`）へ反映する（CLAUDE.md の翻訳ワークフロー）。反映後、日本語版と英語版で節構成と段落数が一致することを目視で確認する。
 
 **完了条件**
 
@@ -457,7 +457,7 @@ execCtx: Operation: OperationFileValidation, needsPrivilegeEscalation: true,
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
+- [x] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
@@ -574,7 +574,7 @@ Phase 2 と Phase 3 は互いに独立で、順序を入れ替えてもよい。
 - [x] `ResolveRunAsIdentStrict` の追加
 - [x] 単体テスト 5 件の追加
 - [x] `make fmt` / `make test` / `make lint`
-- [ ] PR-1 マージ済み（対象ステップ: Phase 1）
+- [x] PR-1 マージ済み（対象ステップ: Phase 1）
 
 ### PR-2（対象ステップ: Phase 2）
 
@@ -584,27 +584,27 @@ Phase 2 と Phase 3 は互いに独立で、順序を入れ替えてもよい。
 - [x] `WithRunAsResolver` の型変更
 - [x] 既存テストの参照先変更（2 か所）
 - [x] `make fmt` / `make test` / `make lint`
-- [ ] PR-2 マージ済み（対象ステップ: Phase 2）
+- [x] PR-2 マージ済み（対象ステップ: Phase 2）
 
 ### PR-3（対象ステップ: Phase 3）
 
-- [ ] `runAsResolver` / `logger` フィールドの追加と既定値の設定
-- [ ] `parseDisplayRiskLevel` / `raiseSecurityRisk` / `runAsFailureKind` の追加
-- [ ] `validateRunAsIdentity` の追加と `analyzeCommand` の置き換え
-- [ ] 出力文言の更新
-- [ ] `riskLevelTestEvaluator` の追加
-- [ ] 既存 6 サブテストの更新（全サブテストへのリゾルバ注入を含む）
-- [ ] 新規テスト 10 件の追加（識別情報ガード 2 件と `TestDryRunPreservesProcessIdentity` を含む）
-- [ ] `make fmt` / `make test` / `make lint`
-- [ ] PR-3 マージ済み（対象ステップ: Phase 3）
+- [x] `runAsResolver` / `logger` フィールドの追加と既定値の設定
+- [x] `parseDisplayRiskLevel` / `raiseSecurityRisk` / `runAsFailureKind` の追加
+- [x] `validateRunAsIdentity` の追加と `analyzeCommand` の置き換え
+- [x] 出力文言の更新
+- [x] `riskLevelTestEvaluator` の追加
+- [x] 既存 6 サブテストの更新（全サブテストへのリゾルバ注入を含む）
+- [x] 新規テスト 10 件の追加（識別情報ガード 2 件と `TestDryRunPreservesProcessIdentity` を含む）
+- [x] `make fmt` / `make test` / `make lint`
+- [x] PR-3 マージ済み（対象ステップ: Phase 3）
 
 ### PR-4（対象ステップ: Phase 4）
 
-- [ ] 本体の削除 8 項目
-- [ ] doc コメント 3 か所の書き換え
-- [ ] テスト整理 18 項目（共通構成の適用漏れがないこと）
-- [ ] `make fmt` / `make test` / `make lint` / `make deadcode`（出力の内容で判定）
-- [ ] PR-4 マージ済み（対象ステップ: Phase 4）
+- [x] 本体の削除 8 項目
+- [x] doc コメント 3 か所の書き換え
+- [x] テスト整理 18 項目（共通構成の適用漏れがないこと）
+- [x] `make fmt` / `make test` / `make lint` / `make deadcode`（出力の内容で判定）
+- [x] PR-4 マージ済み（対象ステップ: Phase 4）
 
 ### PR-5（対象ステップ: Phase 5）
 
@@ -613,7 +613,7 @@ Phase 2 と Phase 3 は互いに独立で、順序を入れ替えてもよい。
 - [x] 文書の注記（日本語版 → 英語版）と用語集の更新
 - [x] 静的検査コマンドの実行と結果の記録
 - [x] `make unit-test-cgo1` / `make unit-test-cgo0`
-- [ ] PR-5 マージ済み（対象ステップ: Phase 5）
+- [x] PR-5 マージ済み（対象ステップ: Phase 5）
 
 ### 横断検索（`make lint` / `make test` では検知できない項目）
 
