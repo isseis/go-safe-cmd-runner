@@ -250,7 +250,7 @@ func (p PermissionCheckUIDPolicy) String() string
 
 `int` ではなく `int32` を基底型としているのは、保持に用いる `sync/atomic`（§3.3）の `atomic.Int32` や `atomic.LoadInt32` / `atomic.CompareAndSwapInt32` にそのまま渡せる幅だからである。`int` はプラットフォーム依存の幅を持ち、これらの関数にそのまま使えないため、別の `int32` フィールドへの変換を挟む必要が生じてしまう。
 
-`RealUIDOnly` / `SudoUIDAware` という名称は `01_requirements.md` の AC-01 で指定されている。当初の候補名 `SudoAware` は「sudo を認識する」としか読めず、`SUDO_UID` を参照するという意味が名前から伝わらないという指摘があったため、`SudoUIDAware` へ改めた。加えて、検証していない環境変数を信頼するという前提はドキュメントコメントで明示する（「検討事項」の「型の名称」への回答）。ゼロ値だけが `Policy` を前置しているのは、これが方針の選択肢ではなく「選択がないこと」を表す特別な値だからである。
+`RealUIDOnly` / `SudoUIDAware` という名称は `01_requirements.md` の AC-01 で指定されている。`SudoUIDAware` という名称自体が `SUDO_UID` を参照することを示し、加えて検証していない環境変数を信頼するという前提はドキュメントコメントで明示する（「検討事項」の「型の名称」への回答）。ゼロ値だけが `Policy` を前置しているのは、これが方針の選択肢ではなく「選択がないこと」を表す特別な値だからである。
 
 ### 3.2 生成 API
 
