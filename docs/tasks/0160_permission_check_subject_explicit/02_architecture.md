@@ -364,7 +364,7 @@ AC-09 が求める「`RealUIDOnly` の判定中に `SUDO_UID` が読まれない
 ```mermaid
 classDiagram
     class PermissionCheckUIDPolicy {
-        <<type int>>
+        <<type int32>>
         +String() string
     }
 
