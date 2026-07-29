@@ -30,7 +30,7 @@ Verify that executables and critical files have not been tampered with before ex
 
 **Verification Process**:
 ```go
-// Location: internal/filevalidator/validator.go:169-197
+// Location: internal/filevalidator/validator.go, the Verify() method
 func (v *Validator) Verify(filePath string) error {
     // 1. Validate and resolve file path
     targetPath, err := validatePath(filePath)
@@ -38,16 +38,12 @@ func (v *Validator) Verify(filePath string) error {
     // 2. Calculate current file hash
     actualHash, err := v.calculateHash(targetPath.String())
 
-    // 3. Read stored hash from manifest
-    _, expectedHash, err := v.readAndParseHashFile(targetPath)
-
-    // 4. Compare hashes
-    if expectedHash != actualHash {
-        return ErrMismatch
-    }
-    return nil
+    // 3. verifyHash() compares against the hash in the analysis record
+    return v.verifyHash(targetPath, actualHash)
 }
 ```
+
+`verifyHash()` reads the analysis record (hash manifest) from `internal/fileanalysis` via `v.store.Load()`, checks that the recorded file path matches (hash collision detection), and compares an expected value in `algorithm:hash` format against the recorded `ContentHash`, returning `ErrMismatch` on mismatch.
 
 
 **Centralized Verification Management**:
@@ -79,25 +75,20 @@ The responsibility split here is as follows. `record` stores static-analysis res
 **Analysis flow in the record command** (`cmd/record/main.go`):
 
 ```go
-// BinaryAnalyzer: network symbol detection (socket, connect, bind, etc.)
-fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer(runtime.GOOS))
+// Each analysis component is injected via a filevalidator.ValidatorConfig struct literal
+vCfg := filevalidator.ValidatorConfig{
+    BinaryAnalyzer:    security.NewBinaryAnalyzer(runtime.GOOS),      // network symbol detection (socket, connect, bind, etc.)
+    SyscallAnalyzer:   libccache.NewSyscallAdapter(syscallAnalyzer),  // syscall pattern analysis (x86_64 / arm64 support)
+    LibcCache:         libccache.NewCacheAdapter(cacheMgr, syscallAnalyzer),        // Linux: libc syscall wrapper symbol cache
+    LibSystemCache:    libccache.NewMachoLibSystemAdapter(machoCacheMgr, fs),       // macOS: libSystem syscall symbol cache
+    MachoSyscallTable: libccache.MacOSSyscallTable{},
+    DebugInfo:         debugInfo,
+}
+// Recursive analysis of dynamic library dependencies (set only when applicable)
+vCfg.ELFDynLibAnalyzer = d.elfDynlibAnalyzerFactory()
+vCfg.MachODynLibAnalyzer = d.machoDynlibAnalyzerFactory()
 
-// SyscallAnalyzer: syscall pattern analysis (x86_64 / arm64 support)
-syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
-fv.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))
-
-// LibcCacheManager: libc syscall wrapper symbol cache (Linux)
-cacheMgr, _ := libccache.NewLibcCacheManager(cacheDir, fs, libcAnalyzer)
-fv.SetLibcCache(libccache.NewCacheAdapter(cacheMgr, syscallAnalyzer))
-
-// LibSystemCacheManager: macOS libSystem syscall symbol cache (macOS)
-machoCacheMgr, _ := libccache.NewMachoLibSystemCacheManager(machoCacheDir)
-fv.SetLibSystemCache(libccache.NewMachoLibSystemAdapter(machoCacheMgr, fs))
-fv.SetMachoSyscallTable(libccache.MacOSSyscallTable{})
-
-// DynLibAnalyzer: recursive analysis of dynamic library dependencies
-fv.SetELFDynLibAnalyzer(d.elfDynlibAnalyzerFactory())
-fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
+validator, _ := d.validatorFactory(cfg.hashDir, vCfg)
 ```
 
 **Analysis content**:
@@ -110,7 +101,7 @@ fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
 **Analysis result persistence** (`internal/fileanalysis/`):
 
 ```
-fileanalysis.Record (SchemaVersion = 19)
+fileanalysis.Record (SchemaVersion = fileanalysis.CurrentSchemaVersion, currently 23)
   ├── ContentHash           // SHA-256 hash of the file
   ├── DynLibDeps            // List of dependency library paths and hashes ([]LibEntry)
   ├── SyscallAnalysis       // syscall analysis result
@@ -119,28 +110,17 @@ fileanalysis.Record (SchemaVersion = 19)
   │     ├── ArgEvalResults     // syscall argument evaluation results (PROT_EXEC flag determination for mprotect)
   │     └── DeterminationStats // diagnostic statistics for syscall number determination methods
   ├── SymbolAnalysis        // network symbol analysis result
-  ├── ShebangInterpreter    // interpreter information (for scripts)
+  ├── ShebangChain          // interpreter information for the shebang chain ([]ShebangChainEntry, for scripts)
   └── AnalysisWarnings      // non-fatal warnings from dynlib analysis
 ```
 
-**Runner-side verification** (`internal/verification/manager.go`):
+**Runner-side verification** (`internal/verification/manager.go`, the `verifyDynLibDeps()` method):
 
-```go
-func (m *Manager) verifyDynLibDeps(cmdPath string) error {
-    record, _ := m.fileValidator.LoadRecord(cmdPath)
-
-    if len(record.DynLibDeps) > 0 {
-        // Verify recorded dependency library hashes via DynLibVerifier
-        return m.dynlibVerifier.Verify(record.DynLibDeps)
-    }
-
-    // Require re-recording if DynLibDeps are not recorded for a dynamically linked binary
-    if hasDynDeps, _ := m.hasDynamicLibraryDeps(cmdPath); hasDynDeps {
-        return &dynlib.ErrDynLibDepsRequired{BinaryPath: cmdPath}
-    }
-    return nil
-}
-```
+`verifyDynLibDeps()` operates roughly as follows.
+1. It reads the recorded record via `LoadRecord()`, individually handling errors such as `ErrRecordNotFound` and `SchemaVersionMismatchError` (indicating the record predates dynlib support).
+2. If `DynLibDeps` is recorded, after hash verification it also calls `verifyDynLibDepsResolution()` to check for replacement via search-path shadowing (verified hashes are cached).
+3. It checks for dynamic library dependencies in Mach-O binaries as well, via `hasMachODynamicLibraryDeps()`, not just ELF.
+4. For dynamically linked binaries with unrecorded `DynLibDeps`, it returns `dynlib.ErrDynLibDepsRequired` and requires re-recording.
 
 For binaries with recorded DynLibDeps, verification is optimized by matching against the recorded hash list rather than re-analyzing the ELF at runtime.
 
@@ -217,7 +197,7 @@ Provides symlink-safe file I/O operations to prevent symlink attacks, TOCTOU (Ti
 
 **Modern Linux Security (openat2)**:
 ```go
-// Location: internal/safefileio/safe_file.go:99-122
+// Location: internal/safefileio/safe_file_linux.go (Linux-only build file), the openat2() function
 func openat2(dirfd int, pathname string, how *openHow) (int, error) {
     // Atomically prevent symlink following with RESOLVE_NO_SYMLINKS flag
     pathBytes, err := syscall.BytePtrFromString(pathname)
@@ -228,18 +208,26 @@ func openat2(dirfd int, pathname string, how *openHow) (int, error) {
 
 **Fallback Security (Legacy Systems)**:
 ```go
-// Location: internal/safefileio/safe_file.go:409-433
+// Location: internal/safefileio/safe_file.go, the ensureParentDirsNoSymlinks() function
 func ensureParentDirsNoSymlinks(absPath string) error {
     // Step-by-step path validation from root to target
     for _, component := range components {
         fi, err := os.Lstat(currentPath) // Does not follow symlinks
         if fi.Mode()&os.ModeSymlink != 0 {
-            return fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
+            // Known OS-managed symlinks (e.g. /etc/mtab) are allowed as an exception;
+            // resolve them via EvalSymlinks and continue validation
+            if !common.IsAllowedOSManagedSymlink(currentPath) {
+                return fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
+            }
+            resolved, err := filepath.EvalSymlinks(currentPath)
+            // Continue validation using resolved from here on
         }
     }
     return nil
 }
 ```
+
+Symlinks are rejected in principle, but known OS-managed symlinks present since installation (determined via `common.IsAllowedOSManagedSymlink()`) are allowed as an exception, with their resolved target treated as the validation subject.
 
 **File Size Protection**:
 - Maximum file size limit: 128 MB
@@ -262,44 +250,52 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 ### 5. Privilege Management
 
 #### Purpose
-Enables controlled privilege escalation for specific operations while maintaining the principle of least privilege and providing comprehensive audit trails.
+Enables controlled privilege escalation for specific operations while maintaining the principle of least privilege. It also provides comprehensive audit trails and two-layer defensive verification after restoration.
 
 #### Implementation Details
 
 **Unix Privilege Architecture**:
 ```go
-// Location: internal/runner/privilege/unix.go:18-25
+// Location: internal/runner/base/privilege/unix.go
 type UnixPrivilegeManager struct {
     logger             *slog.Logger
     originalUID        int
     privilegeSupported bool
     metrics            Metrics
     mu                 sync.Mutex  // Prevents race conditions
+    osExit             func(code int)                      // Injectable os.Exit for testing
+    identityVerifier   func() error                         // Verifies EUID==UID / EGID==GID (injectable for testing)
+    readSavedIDs       func() (suid, sgid int, err error)   // Reads saved-set-uid/gid (injectable for testing)
 }
 ```
 
 **Privilege Escalation Process**:
+`WithPrivileges` is divided into three stages: pre-execution preparation, escalation, and cleanup.
+
 ```go
-// Location: internal/runner/privilege/unix.go:36-87
+// Location: internal/runner/base/privilege/unix.go
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
     m.mu.Lock()  // Global lock for thread safety
     defer m.mu.Unlock()
 
-    // 1. Escalate privileges
-    if err := m.escalatePrivileges(elevationCtx); err != nil {
+    // 1. Record saved-set-uid/gid and decide whether escalation is needed, based on the operation type
+    execCtx, err := m.prepareExecution(elevationCtx)
+    if err != nil {
         return err
     }
 
-    // 2. Execute operation with defer-based cleanup
-    defer func() {
-        if err := m.restorePrivileges(); err != nil {
-            m.emergencyShutdown(err, shutdownContext) // Exit on failure
-        }
-    }()
+    // 2. Call syscall.Seteuid(0) only for operations that require escalation
+    if err := m.performElevation(execCtx); err != nil {
+        return err
+    }
 
+    // 3. Run restoration, verification, and metrics recording together via defer
+    defer m.handleCleanupAndMetrics(execCtx)
     return fn()
 }
 ```
+
+Whether escalation is needed is determined by `elevationCtx.Operation`: only `OperationUserGroupExecution` and `OperationFileValidation` escalate. For any other operation type, `prepareExecution` returns an `ErrUnsupportedOperationType` error, and `WithPrivileges` returns that error directly to the caller without calling `fn()`.
 
 **Execution Modes**:
 
@@ -311,9 +307,38 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
    - Uses `syscall.Seteuid(0)` for privilege escalation
    - Automatic privilege restoration after operation
 
+**Defensive Verification After Restoration**:
+`handleCleanupAndMetrics` handles panic recovery and timing, while the actual privilege restoration and two-stage invariant check are performed by `restorePrivilegesAndMetrics`, which it calls internally. If either check fails, `emergencyShutdown` is called.
+
+```go
+// Location: internal/runner/base/privilege/unix.go, the restorePrivilegesAndMetrics() function
+// 1. Verify EUID==UID / EGID==GID (an independent check that detects bugs in the restoration logic itself)
+if err := m.identityVerifier(); err != nil {
+    m.emergencyShutdown(err, fmt.Sprintf("identity_verification_failure_%s", shutdownContext))
+}
+
+// 2. Verify that saved-set-uid/gid have not changed across the restore
+//    (structurally skipped on unsupported platforms via the originalSUID < 0 guard)
+if execCtx.originalSUID >= 0 {
+    suid, sgid, err := m.getReadSavedIDs()()
+    if err != nil {
+        m.emergencyShutdown(fmt.Errorf("failed to read saved-set IDs after restore: %w", err),
+            fmt.Sprintf("saved_set_read_failure_%s", shutdownContext))
+    }
+    if suid != execCtx.originalSUID || sgid != execCtx.originalSGID {
+        err := fmt.Errorf("saved-set-uid/gid changed after restore: "+
+            "original suid=%d, sgid=%d; post-restore suid=%d, sgid=%d: %w",
+            execCtx.originalSUID, execCtx.originalSGID, suid, sgid, ErrIdentityLeak)
+        m.emergencyShutdown(err, fmt.Sprintf("saved_set_identity_verification_failure_%s", shutdownContext))
+    }
+}
+```
+
+The saved-set-uid/gid check is a stronger invariant than the EUID match check: it can detect cases where the EUID was correctly restored but the saved-set was left corrupted at the previous effective UID by a partial `seteuid` call.
+
 **Security Validation**:
 ```go
-// Location: internal/runner/privilege/unix.go:232-294
+// Location: internal/runner/base/privilege/unix.go
 func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
     // Verify setuid bit is set
     hasSetuidBit := fileInfo.Mode()&os.ModeSetuid != 0
@@ -329,17 +354,19 @@ func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
 ```
 
 **Emergency Shutdown Protocol**:
-- Immediate process termination on privilege restoration failure
-- Multi-channel logging (structured logging, syslog, stderr)
+- Immediate process termination on privilege restoration failure, or on failure of either the EUID/EGID match check or the saved-set-uid/gid invariant check
+- Recorded to both structured logging and stderr
 - Security event recording with full context
 - Prevents continued execution in compromised state
 
 #### Security Guarantees
 - Thread-safe privilege operations with global mutex
 - Automatic privilege restoration with panic protection
+- Two-layer defense via post-restoration EUID/EGID match verification and the saved-set-uid/gid invariant check
 - Comprehensive audit logging of all privilege operations
 - Emergency shutdown on security failures
 - Supports both native root and setuid binary execution models
+- Operations that do not require escalation, such as dry-run, never acquire privileges
 
 ### 6. Command Path Verification
 
@@ -350,19 +377,20 @@ Validates command paths against a configurable allowlist and prevents execution 
 
 **Secure PATH Environment Enforcement**:
 ```go
-// Location: internal/verification/manager.go
-// security.SecurePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
+// Location: internal/common/secure_path.go
+// common.SecurePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin:" + CoreutilsDir
 
 // Does not inherit environment variable PATH, uses secure fixed PATH
-pathResolver := NewPathResolver(security.SecurePathEnv, securityValidator)
+pathResolver := NewPathResolver(common.SecurePathEnv)
 ```
 
 **Path Resolution**:
 ```go
 // Location: internal/verification/path_resolver.go
 type PathResolver struct {
-    pathEnv            string    // Uses secure fixed PATH
-    securityValidator  *security.Validator
+    pathEnv string          // Uses secure fixed PATH
+    cache   map[string]string
+    mu      sync.RWMutex
 }
 ```
 
@@ -374,14 +402,13 @@ type PathResolver struct {
 
 **Default Allowed Patterns**:
 ```go
-// Location: internal/runner/security/types.go:147-154
-AllowedCommands: []string{
-    "^/bin/.*",
-    "^/usr/bin/.*",
-    "^/usr/sbin/.*",
-    "^/usr/local/bin/.*",
-},
+// Location: internal/runner/base/security/types.go
+// DefaultConfig() calls GenerateAllowedCommandsFromPath() to dynamically
+// generate the default allowed patterns from common.SecurePathEnv (the secure fixed PATH)
+allowedCommands, err := GenerateAllowedCommandsFromPath(common.SecurePathEnv)
 ```
+
+The default allowed command patterns are not a fixed list; they are generated dynamically at runtime from the directory list in the secure fixed PATH (and the process panics if generation fails).
 
 **Dangerous Command Detection**:
 - Shell executables: `/bin/bash`, `/bin/sh`
@@ -408,7 +435,15 @@ Implements intelligent security controls based on command risk assessment, autom
 **Risk Assessment Engine**:
 ```go
 // Location: internal/runner/base/risk/evaluator.go
-type StandardEvaluator struct{}
+// StandardEvaluator holds fields such as networkAnalyzer (network symbol
+// analysis), openIdentity (a verified identity opener for fd-bound execution),
+// zoning, and resolveRunAs (run-as-user resolution)
+type StandardEvaluator struct {
+    networkAnalyzer *security.NetworkAnalyzer
+    openIdentity    identityOpener
+    zoning          *zoningParams
+    resolveRunAs    runAsResolver
+}
 
 // EvaluateRisk returns a VerifiedCommandPlan rather than a bare RiskLevel: the
 // evaluated identity and the executed identity are bound together so the executor
@@ -418,7 +453,11 @@ type StandardEvaluator struct{}
 // runners, binary analysis); fail-closed gates short-circuit before the maximum
 // is taken.
 func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (risktypes.VerifiedCommandPlan, error) {
-    // Identity gate first: without a verified hash, or with binary analysis
+    // First, validate that the path is absolute (relative paths are denied immediately)
+    if !filepath.IsAbs(cmdPath) {
+        return blockingPlan(...), nil
+    }
+    // Then the identity gate: without a verified hash, or with binary analysis
     // disabled, the binary's identity cannot be confirmed, so deny (Blocking)
     // regardless of the configured risk_level. This runs before every risk
     // dimension so no path can confirm a Low/High-allowable risk for an
@@ -444,10 +483,13 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 
 **Risk Level Configuration**:
 ```go
-// Location: internal/runner/runnertypes/config.go
-type Command struct {
-    RiskLevel string `toml:"risk_level"` // Risk level of the command
+// Location: internal/runner/base/runnertypes/spec.go
+type CommandSpec struct {
+    RiskLevel *string `toml:"risk_level"` // Risk level of the command (nil when unset)
 }
+
+// GetRiskLevel() returns RiskLevelLow as the default when RiskLevel is nil
+func (c *CommandSpec) GetRiskLevel() (RiskLevel, error)
 ```
 
 #### Security Guarantees
@@ -466,10 +508,14 @@ Provides secure resource management that maintains security boundaries in both n
 **Unified Resource Interface**:
 ```go
 // Location: internal/runner/resource/manager.go
-type ResourceManager interface {
-    ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error)
+// The interface is named Manager, not ResourceManager
+type Manager interface {
+    ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (CommandToken, *ExecutionResult, error)
     WithPrivileges(ctx context.Context, fn func() error) error
     SendNotification(message string, details map[string]any) error
+    // Plus additional methods such as ValidateOutputPath / CreateTempDir /
+    // CleanupTempDir / CleanupAllTempDirs / GetDryRunResults, for output-path
+    // validation, temp-directory management, and dry-run result retrieval
 }
 ```
 
@@ -495,10 +541,10 @@ Prevents sensitive information such as passwords, API keys, and tokens from bein
 ```go
 // Location: internal/redaction/redactor.go
 type Config struct {
-    LogPlaceholder   string
-    TextPlaceholder  string
+    Placeholder      string  // LogPlaceholder / TextPlaceholder were unified into a single field
     Patterns         *SensitivePatterns
     KeyValuePatterns []string
+    ValueDetector    *ValueDetector // value-based detection of AWS keys, GitHub tokens, PEM format, etc.
 }
 
 func (c *Config) RedactText(text string) string {
@@ -516,24 +562,26 @@ Sensitive data protection is implemented as a dual defense where if one layer ha
 
 **Layer 1: Redaction at CommandResult Creation** (`internal/runner/group_executor.go`):
 ```go
-// Location: internal/runner/group_executor.go:260-261
+// Location: internal/runner/group_executor.go, the CommandResult construction path
 // Redact sensitive information before storing command output into CommandResult
 sanitizedStdout := ge.validator.SanitizeOutputForLogging(stdout)
 sanitizedStderr := ge.validator.SanitizeOutputForLogging(stderr)
 ```
-- `SanitizeOutputForLogging()` is implemented in `internal/runner/security/logging_security.go`
+- `SanitizeOutputForLogging()` is implemented in `internal/runner/base/security/logging_security.go`
 - Redacts sensitive information at the point of storing command output, preventing leakage to Slack notifications and other external services
 
 **Layer 2: Redaction in RedactingHandler** (`internal/redaction/redactor.go`):
 ```go
-// Location: internal/redaction/redactor.go:200-259
+// Location: internal/redaction/redactor.go, the RedactingHandler type
 type RedactingHandler struct {
-    handler slog.Handler
-    config  *Config
+    handler       slog.Handler
+    config        *Config
+    failureLogger *slog.Logger // fallback logger to prevent recursion if redaction itself panics
 }
 
-// Location: internal/runner/bootstrap/logger.go:138
-redactedHandler := redaction.NewRedactingHandler(multiHandler, nil)
+// Location: internal/runner/bootstrap/logger.go
+// NewRedactingHandler takes 3 arguments including failureLogger, and WithErrorCollector chains an error collector
+redactedHandler := redaction.NewRedactingHandler(multiHandler, nil, failureLogger).WithErrorCollector(collector)
 logger := slog.New(redactedHandler)
 ```
 - Automatically redacts sensitive information at log output time
@@ -543,7 +591,7 @@ logger := slog.New(redactedHandler)
 
 **Slack Notification Implementation**:
 ```go
-// Location: internal/logging/slack_handler.go:64-73
+// Location: internal/logging/slack_handler.go, the SlackHandler type
 type SlackHandler struct {
     webhookURL    string
     runID         string
@@ -552,6 +600,8 @@ type SlackHandler struct {
     attrs         []slog.Attr
     groups        []string
     backoffConfig BackoffConfig
+    isDryRun      bool                  // suppresses Slack notifications during dry-run execution
+    levelMode     SlackHandlerLevelMode // controls whether notification is required based on log level
 }
 ```
 - Wrapped by RedactingHandler, so Layer 2 redaction is applied
@@ -560,7 +610,7 @@ type SlackHandler struct {
 
 **Log Security Configuration**:
 ```go
-// Location: internal/runner/security/types.go:92-107
+// Location: internal/runner/base/security/types.go, the LoggingOptions type
 type LoggingOptions struct {
     // IncludeErrorDetails controls whether to include full error messages in logs
     IncludeErrorDetails bool `json:"include_error_details"`
@@ -581,36 +631,19 @@ type LoggingOptions struct {
 
 **Sensitive Pattern Detection and Redaction**:
 ```go
-// Location: internal/runner/security/logging_security.go:49-52
+// Location: internal/runner/base/security/logging_security.go, the redactSensitivePatterns() method
+// Pattern definitions and matching/replacement logic have been centralized into
+// the internal/redaction package; this method now simply delegates
 func (v *Validator) redactSensitivePatterns(text string) string {
-    sensitivePatterns := []struct {
-        pattern     string
-        replacement string
-    }{
-        // API keys, tokens, passwords (common patterns)
-        {"password=", "password=[REDACTED]"},
-        {"token=", "token=[REDACTED]"},
-        {"key=", "key=[REDACTED]"},
-        {"secret=", "secret=[REDACTED]"},
-        {"api_key=", "api_key=[REDACTED]"},
-
-        // Environment variable assignments that may contain sensitive information
-        {"_PASSWORD=", "_PASSWORD=[REDACTED]"},
-        {"_TOKEN=", "_TOKEN=[REDACTED]"},
-        {"_KEY=", "_KEY=[REDACTED]"},
-        {"_SECRET=", "_SECRET=[REDACTED]"},
-
-        // Common authentication patterns
-        {"Bearer ", "Bearer [REDACTED]"},
-        {"Basic ", "Basic [REDACTED]"},
-    }
-    // Pattern matching and replacement logic
+    return v.redactionConfig.RedactText(text)
 }
 ```
 
+The actual pattern definitions for passwords, tokens, API keys, etc. (`password=`, `token=`, `key=`, `secret=`, `api_key=`, environment variable assignments such as `_PASSWORD=`, and authentication headers such as `Bearer `/`Basic `) are now centralized in `SensitivePatterns`/`Config.RedactText()` in `internal/redaction/redactor.go` (see the Centralized Data Redaction Foundation in "9. Secure Logging and Sensitive Data Protection").
+
 **Error Message Sanitization**:
 ```go
-// Location: internal/runner/security/logging_security.go:4-26
+// Location: internal/runner/base/security/logging_security.go, the SanitizeErrorForLogging() function
 func (v *Validator) SanitizeErrorForLogging(err error) string {
     if err == nil {
         return ""
@@ -628,8 +661,8 @@ func (v *Validator) SanitizeErrorForLogging(err error) string {
         errMsg = v.redactSensitivePatterns(errMsg)
     }
 
-    // Truncate if too long
-    if len(errMsg) > v.config.LoggingOptions.MaxErrorMessageLength {
+    // Truncate only if a length limit is configured and the message exceeds it
+    if v.config.LoggingOptions.MaxErrorMessageLength > 0 && len(errMsg) > v.config.LoggingOptions.MaxErrorMessageLength {
         errMsg = errMsg[:v.config.LoggingOptions.MaxErrorMessageLength] + "...[truncated]"
     }
 
@@ -752,6 +785,11 @@ type FileSystem interface {
     FileExists(path string) (bool, error)
     Lstat(path string) (fs.FileInfo, error)
     IsDir(path string) (bool, error)
+    TempDir() string
+    RemoveAll(path string) error
+    Remove(path string) error
+    CreateTemp(dir, pattern string) (*os.File, error)
+    MkdirAll(path string, perm fs.FileMode) error
 }
 ```
 
@@ -774,21 +812,24 @@ Provides secure user and group switching functionality while maintaining strict 
 
 **User and Group Configuration**:
 ```go
-// Location: internal/runner/runnertypes/config.go
-type Command struct {
-    RunAsUser    string `toml:"run_as_user"`    // User to run the command as
-    RunAsGroup   string `toml:"run_as_group"`   // Group to run the command as
-    RiskLevel    string `toml:"risk_level"`     // Risk level of the command
+// Location: internal/runner/base/runnertypes/spec.go
+type CommandSpec struct {
+    RunAsUser    string  `toml:"run_as_user"`    // User to run the command as
+    RunAsGroup   string  `toml:"run_as_group"`   // Group to run the command as
+    RiskLevel    *string `toml:"risk_level"`     // Risk level of the command (nil when unset)
 }
 ```
 
 **Group Membership Verification**:
 ```go
-// Location: internal/groupmembership/membership.go
-type GroupMembershipChecker interface {
-    IsUserInGroup(username, groupname string) (bool, error)
-    GetGroupMembers(groupname string) ([]string, error)
-}
+// Location: internal/groupmembership/manager.go
+// A concrete struct, not an interface. Takes numeric uid/gid rather than username/groupname
+type GroupMembership struct{ /* ... */ }
+
+func New() *GroupMembership
+
+func (gm *GroupMembership) IsUserInGroup(uid, gid uint32) (bool, error)
+func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error)
 ```
 
 **Security Verification Flow**:
@@ -822,6 +863,8 @@ type SlackHandler struct {
     attrs         []slog.Attr
     groups        []string
     backoffConfig BackoffConfig
+    isDryRun      bool                  // suppresses Slack notifications during dry-run execution
+    levelMode     SlackHandlerLevelMode // controls whether notification is required based on log level
 }
 ```
 
@@ -847,7 +890,7 @@ Prevents child processes from reading unexpected input and explicitly controls t
 
 **Standard Input Disabling**:
 ```go
-// Location: internal/runner/executor/executor.go:210-224
+// Location: internal/runner/base/executor/executor.go, the stdin setup logic
 // Set up stdin to null device to prevent issues with commands that expect stdin
 // This prevents "exit status 255" errors from docker-compose exec and similar commands
 // that try to allocate a pseudo-TTY when stdin is nil (file descriptor -1)
@@ -897,7 +940,7 @@ func ResolveOutputSizeLimit(commandLimit OutputSizeLimit, globalLimit OutputSize
 
 **Default Configuration**:
 ```go
-// Location: internal/common/output_size_limit_type.go:20-21
+// Location: internal/common/output_size_limit_type.go, the DefaultOutputSizeLimit constant
 // DefaultOutputSizeLimit is the default output size limit when not specified (10MB)
 const DefaultOutputSizeLimit = 10 * 1024 * 1024
 ```
@@ -930,7 +973,8 @@ Ensures that configuration files and overall system configuration are not tamper
 
 **File Permission Validation**:
 ```go
-// Location: internal/runner/security/file_validation.go:44-75
+// Location: internal/runner/base/security/file_validation.go, the ValidateFilePermissions() function
+// (in practice it also validates regular-file type and emits structured slog.Debug/Warn logging)
 func (v *Validator) ValidateFilePermissions(filePath string) error {
     // Check for world-writable files
     disallowedBits := perm &^ requiredPerms
@@ -942,41 +986,40 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 ```
 
 **Hash Directory Security Enhancement (Command-Line Argument Removal)**:
-```go
-// Location: cmd/runner/main.go (after modification)
-func getHashDir() string {
-    // Always use default directory only in production environment
-    // --hash-directory flag completely removed (security vulnerability countermeasure)
-    return cmdcommon.DefaultHashDirectory
-}
-```
+- The `--hash-directory` flag has been completely removed, and no wrapper function such as `getHashDir()` exists
+- `cmd/runner/main.go` references `cmdcommon.DefaultHashDirectory` directly at each use site (always using only the default directory in production environments)
 
 **Configuration File Pre-Verification**:
+
+Before loading the configuration file, `main()` in `cmd/runner/main.go` calls `bootstrap.LoadAndPrepareConfig(verificationManager, configPath, runID)`. Internally, this function calls `verificationManager.VerifyAndReadConfigFile(configPath)`, which performs hash verification and file reading atomically in a single read to prevent TOCTOU attacks.
+
 ```go
-// Location: cmd/runner/main.go (after modification)
-// Execute hash verification before reading configuration file
-if err := verificationManager.VerifyConfigFile(configPath); err != nil {
-    // Completely eliminate system operation with unverified data
-    return &logging.PreExecutionError{
-        Type:      logging.ErrorTypeConfigValidation,
-        Message:   fmt.Sprintf("Configuration file verification failed: %s", err),
-        Component: "config",
+// Location: internal/runner/bootstrap/config.go, the LoadAndPrepareConfig() function
+// Atomically verify and read the configuration file to prevent TOCTOU attacks
+content, err := verificationManager.VerifyAndReadConfigFile(configPath)
+if err != nil {
+    return nil, &logging.PreExecutionError{
+        Type:      logging.ErrorTypeFileAccess,
+        Message:   err.Error(),
+        Component: string(resource.ComponentVerification),
         RunID:     runID,
     }
 }
+
+// Load the configuration using the verified content
+cfg, err := cfgLoader.LoadConfig(configPath, content)
 ```
+
+Note that `verificationManager.VerifyGlobalFiles()` is called separately from `main()`, not for the configuration file itself, but for the global files (such as `verify_files`) that become known only after the configuration file has been loaded and expanded.
 
 **Early Path Validation**:
 ```go
-// Location: cmd/runner/main.go:188-199
-hashDir := getHashDir()
-if !filepath.IsAbs(hashDir) {
-    return &logging.PreExecutionError{
-        Type:      logging.ErrorTypeFileAccess,
-        Message:   fmt.Sprintf("Hash directory must be absolute path, got relative path: %s", hashDir),
-        Component: "file",
-        RunID:     runID,
-    }
+// Location: cmd/runner/main.go, the main() function
+if !filepath.IsAbs(cmdcommon.DefaultHashDirectory) {
+    logging.HandlePreExecutionError(logging.ErrorTypeBuildConfig,
+        fmt.Sprintf("Hash directory must be absolute path, got relative path: %s", cmdcommon.DefaultHashDirectory),
+        "file", runID)
+    os.Exit(1)
 }
 ```
 
@@ -1216,75 +1259,21 @@ The system implements multiple security layers:
 
 ### TOCTOU (Time-of-Check to Time-of-Use) Race Condition
 
-#### Vulnerability Overview
+#### Resolution via fd-bound execution (fexecve-equivalent)
 
-A theoretical TOCTOU race condition exists between command path validation (`ValidateCommandAllowed`) and actual command execution. An attacker with filesystem write permissions could potentially replace a symlink target between these operations.
+The TOCTOU race condition between command path validation (`ValidateCommandAllowed`) and actual command execution has been **structurally closed** for the primary execution path via fd-bound execution. The following describes the approach the current implementation takes.
 
-**Vulnerability Location**:
-```go
-// Location: internal/runner/security/validator.go:255-295
-func (v *Validator) ValidateCommandAllowed(cmdPath string, ...) error {
-    // 1. Resolve symlinks and validate (Check)
-    resolvedCmd, err := filepath.EvalSymlinks(cmdPath)
-    // Pattern matching validation...
-}
+Path resolution happens exactly once for the entire execution flow. `verifyGroupFiles` in `internal/runner/group_executor.go` resolves the command path to a symlink-resolved absolute path via `verificationManager.ResolvePath()`, and pins that resolved path into `cmd.ExpandedCmd`. From that point on, `executeCommandInGroup`, which runs immediately before execution, does not re-resolve the path. Re-resolving immediately before execution is deliberately avoided because it would reopen a TOCTOU re-resolution window between verification and execution.
 
-// Location: internal/runner/group_executor.go:396-412
-// TOCTOU window exists between validation and actual execution
-if err := ge.validator.ValidateCommandAllowed(...); err != nil {
-    return nil, fmt.Errorf("command not allowed: %w", err)
-}
-// ... (attacker can modify symlink here)
-token, resourceResult, err := ge.resourceManager.ExecuteCommand(...) // Use
-```
+`ValidateCommandAllowed` in `internal/runner/base/security/validator.go` assumes that the path passed to it has already been resolved by `PathResolver.ResolvePath()` at this point, and does not call `filepath.EvalSymlinks` (it performs only allowlist regex matching).
 
-#### Attack Requirements
+After that, `openVerifiedIdentity` in `internal/runner/base/risk/evaluator.go` opens the resolved path exactly once with `O_RDONLY|O_CLOEXEC`, recomputes the hash of that file descriptor's content, and compares it against the hash captured at verification time (a TOCTOU-safe identity check performed via the file descriptor). The resulting file descriptor is duplicated as the child process's fd 3 by `fdExecExtraFile` in `internal/runner/base/executor/fdexec_linux.go`, and `/proc/self/fd/3` is exec'd as the execution target. In other words, the kernel executes the exact inode that was verified, so replacing the symlink or file at the path-string level after verification has no effect on what actually gets executed.
 
-To exploit this vulnerability, an attacker must:
-1. Have filesystem write permissions
-2. Precisely time the attack between validation and execution
-3. Be able to place and modify symlinks
+#### Remaining Known Limitation (Shebang Interpreter)
 
-#### Mitigation Measures
+The fd-bound execution described above covers the path of directly executed command binaries. For the **interpreter** referenced by a script's shebang line, however, `verifyInterpreterSymlinkTarget` checks the symlink's resolved target at verification time, but it is the kernel itself that re-resolves the interpreter path when the script is actually executed, and this window cannot be closed from application-level Go code (fd-binding the interpreter itself would require an `execveat`-equivalent mechanism, which is currently out of scope).
 
-The following defense-in-depth mechanisms significantly reduce the feasibility and impact of this attack:
-
-**1. File Integrity Verification**:
-- All executables are verified against SHA-256 hashes before execution
-- The hash verification system provides detection and prevention of tampered binaries
-- Location: `internal/filevalidator/`, `internal/verification/`
-
-**2. Security Model Boundaries**:
-- The system's security model defines attackers with filesystem write permissions as outside the trust boundary
-- In properly configured systems, write permissions to executable directories should be restricted
-
-**3. Deployment Recommendations**:
-For high-security environments, the following additional measures are recommended:
-- Mount executable directories as read-only filesystems
-- Use the `nosymfollow` mount option (where available)
-- Enforce strict filesystem permissions
-- Implement regular file integrity monitoring
-
-#### Technical Background
-
-**Difficulty of Complete Mitigation**:
-Go's standard `os/exec` package does not support the `fexecve()` system call that would completely prevent TOCTOU attacks. A complete solution would require:
-1. Low-level system call implementation using CGO
-2. File descriptor-based execution flow
-3. Platform-specific code (Linux `fexecve()`, Windows alternatives)
-
-Such an implementation is impractical due to:
-- Significant architectural changes required
-- Increased platform compatibility complexity
-- Reduced maintainability
-- Existing defense-in-depth provides sufficient protection
-
-#### Impact Assessment
-
-**Risk Level**: Low to Medium
-- **Likelihood**: Low (strict requirements, precise timing needed)
-- **Impact**: Medium (limited by file integrity verification)
-- **Detectability**: High (audit logs, file integrity monitoring)
+Exploiting this remaining gap requires an attacker to have filesystem write permissions that let them swap the interpreter's symlink with precise timing between verification and actual script execution. In an environment with properly restricted permissions, this precondition does not hold.
 
 #### References
 
@@ -1292,6 +1281,7 @@ Such an implementation is impractical due to:
 - [CERT C Coding Standard: POS35-C](https://wiki.sei.cmu.edu/confluence/display/c/POS35-C.+Avoid+race_conditions+while+checking+for+the+existence+of+a+symbolic_link)
 - [Wikipedia: Symlink race](https://en.wikipedia.org/wiki/Symlink_race)
 - [Star Lab Software: Linux Symbolic Links Security](https://www.starlab.io/blog/linux-symbolic-links-convenient-useful-and-a-whole-lot-of-trouble)
+- Related tasks: `docs/tasks/0090_toctou_fexecve/`, `docs/tasks/0155_toctou_verify_use_residual_gaps/`
 
 ## Conclusion
 
