@@ -45,6 +45,11 @@ func (v *Validator) Verify(filePath string) error {
 
 `verifyHash()` reads the analysis record (hash manifest) from `internal/fileanalysis` via `v.store.Load()`, checks that the recorded file path matches (hash collision detection), and compares an expected value in `algorithm:hash` format against the recorded `ContentHash`, returning `ErrMismatch` on mismatch.
 
+**Read-Safety Check at `record` Time**:
+
+`calculateHash()` (`internal/filevalidator/validator.go`) opens the file via `v.fileSystem.SafeOpenFile()`. This call internally succeeds only if it passes `internal/groupmembership`'s read-safety check (for group-writable files, this confirms that the permission-check base UID (the resolved UID; see Task 0160's design docs for details) belongs to the file's group) — it fails if the check does not pass.
+
+This read-safety check is necessary because the match check that `verify`/`runner` later perform only looks at whether "the hash at `record` time matches the current hash." Suppose `record` read the file without going through this check. If an untrusted member of the group the file belongs to had already rewritten the content by that point, `record` would hash that tampered content and record it as the "correct baseline." From then on, `verify`/`runner` would keep finding that the tampered content matches the recorded hash, so this tampering could never be detected. In other words, this check is a defense that is effective only at the exact moment `record` fixes the trust baseline (`ContentHash`); it cannot be substituted by re-verification at execution time (the same reasoning applies to the analysis-result cache in §2).
 
 **Centralized Verification Management**:
 - Location: `internal/verification/manager.go`
