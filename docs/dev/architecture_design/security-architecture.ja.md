@@ -211,7 +211,7 @@ func (v *Validator) ValidateEnvironmentValue(key, value string) error {
 ### 4. 安全なファイル操作
 
 #### 目的
-シンボリックリンク攻撃、TOCTOU（Time-of-Check-Time-of-Use）競合状態、パストラバーサル攻撃を防ぐため、シンボリックリンク安全なファイルI/O操作を提供します。
+シンボリックリンク攻撃、TOCTOU（Time-of-Check-Time-of-Use）競合状態、パストラバーサル攻撃を防ぐため、シンボリックリンクに対して安全なファイルI/O操作を提供します。
 
 #### 実装詳細
 
@@ -253,7 +253,7 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 - デバイスファイル、パイプ、特殊ファイルは許可しない
 
 #### セキュリティ保証
-- 最新Linux上での原子的シンボリックリンク安全操作（openat2）
+- 最新Linux上でのシンボリックリンクに対する原子的な安全操作（openat2）
 - 包括的パストラバーサル保護
 - TOCTOU競合状態の排除
 - メモリ枯渇攻撃に対する保護
@@ -262,7 +262,7 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 ### 5. 特権管理
 
 #### 目的
-最小特権の原則を維持しながら特定の操作に対する制御された特権昇格を可能にし、包括的な監査証跡と多重の防御的検証を提供します。
+最小特権の原則を維持しながら、特定の操作に対して制御された特権昇格を可能にします。あわせて、包括的な監査証跡と復元後の二重の防御的検証を提供します。
 
 #### 実装詳細
 
@@ -307,7 +307,7 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 }
 ```
 
-昇格要否は`elevationCtx.Operation`によって決まり、`OperationUserGroupExecution`と`OperationFileValidation`のみ昇格します。それ以外のoperation（dry-run実行経路など）は`prepareExecution`の時点で昇格をスキップし、`fn()`を非特権のまま実行します。
+昇格要否は`elevationCtx.Operation`によって決まり、`OperationUserGroupExecution`と`OperationFileValidation`のみ昇格します。それ以外の操作（dry-run実行経路など）は`prepareExecution`の時点で昇格をスキップし、`fn()`を非特権のまま実行します。
 
 **実行モード**:
 
@@ -367,11 +367,11 @@ func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
 #### セキュリティ保証
 - グローバルmutexによるスレッドセーフな特権操作
 - パニック保護付きの自動特権復元
-- 復元後のEUID/EGID一致検証とsaved-set-uid/gid不変条件チェックによる多重防御
+- 復元後のEUID/EGID一致検証とsaved-set-uid/gid不変条件チェックによる二重防御
 - すべての特権操作の包括的監査ログ
 - セキュリティ障害時の緊急シャットダウン
 - ネイティブルートとsetuidバイナリ実行モデルの両方をサポート
-- dry-run など昇格を要しないoperationでは特権を一切取得しない
+- dry-run など昇格を要しない操作では特権を一切取得しない
 
 ### 6. コマンドパス検証
 
