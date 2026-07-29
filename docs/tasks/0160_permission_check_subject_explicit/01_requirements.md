@@ -30,7 +30,7 @@
 
 | バイナリ | 想定される起動方法 | 実 UID | sudo 分岐 |
 |---|---|---|---|
-| `runner` | root 所有 + setuid ビットのバイナリを一般ユーザーが起動（`docs/user/README.ja.md:590` の `install -m 4755`）。sudo 経由の実行は想定外 | 一般ユーザー | 発火しない |
+| `runner` | root 所有 + setuid ビットのバイナリを一般ユーザーが起動（`docs/user/runner_command.ja.md:1690` の `install -m 4755`）。sudo 経由の実行は想定外 | 一般ユーザー | 発火しない |
 | `record` | `sudo record -d ...`（`docs/user/README.ja.md:307`）。バイナリは非 setuid（`install -m 0755`） | 0 | 発火する |
 | `verify` | `sudo verify -d ...`（`docs/user/verify_command.md:599`）。同上 | 0 | 発火する |
 
