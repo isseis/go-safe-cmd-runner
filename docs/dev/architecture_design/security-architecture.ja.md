@@ -262,44 +262,52 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 ### 5. 特権管理
 
 #### 目的
-最小特権の原則を維持しながら特定の操作に対する制御された特権昇格を可能にし、包括的な監査証跡を提供します。
+最小特権の原則を維持しながら特定の操作に対する制御された特権昇格を可能にし、包括的な監査証跡と多重の防御的検証を提供します。
 
 #### 実装詳細
 
 **Unix特権アーキテクチャ**:
 ```go
-// 場所: internal/runner/privilege/unix.go:18-25
+// 場所: internal/runner/base/privilege/unix.go
 type UnixPrivilegeManager struct {
     logger             *slog.Logger
     originalUID        int
     privilegeSupported bool
     metrics            Metrics
     mu                 sync.Mutex  // 競合状態を防止
+    osExit             func(code int)                      // テスト用に注入可能なos.Exit
+    identityVerifier   func() error                         // EUID==UID / EGID==GID の検証（テスト用に注入可能）
+    readSavedIDs       func() (suid, sgid int, err error)   // saved-set-uid/gidの読み取り（テスト用に注入可能）
 }
 ```
 
 **特権昇格プロセス**:
+`WithPrivileges`は、実行前の準備・昇格・後始末の3段階に分かれています。
+
 ```go
-// 場所: internal/runner/privilege/unix.go:36-87
+// 場所: internal/runner/base/privilege/unix.go
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
     m.mu.Lock()  // スレッドセーフティのためのグローバルロック
     defer m.mu.Unlock()
 
-    // 1. 特権を昇格
-    if err := m.escalatePrivileges(elevationCtx); err != nil {
+    // 1. saved-set-uid/gidを記録し、operationの種別から昇格要否を決定
+    execCtx, err := m.prepareExecution(elevationCtx)
+    if err != nil {
         return err
     }
 
-    // 2. deferベースのクリーンアップで操作を実行
-    defer func() {
-        if err := m.restorePrivileges(); err != nil {
-            m.emergencyShutdown(err, shutdownContext) // 失敗時に終了
-        }
-    }()
+    // 2. 昇格が必要なoperationのみsyscall.Seteuid(0)を実行
+    if err := m.performElevation(execCtx); err != nil {
+        return err
+    }
 
+    // 3. deferで復元・検証・メトリクス記録をまとめて実行
+    defer m.handleCleanupAndMetrics(execCtx)
     return fn()
 }
 ```
+
+昇格要否は`elevationCtx.Operation`によって決まり、`OperationUserGroupExecution`と`OperationFileValidation`のみ昇格します。それ以外のoperation（dry-run実行経路など）は`prepareExecution`の時点で昇格をスキップし、`fn()`を非特権のまま実行します。
 
 **実行モード**:
 
@@ -311,9 +319,31 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
    - 特権昇格に`syscall.Seteuid(0)`を使用
    - 操作後の自動特権復元
 
+**復元後の防御的検証**:
+`handleCleanupAndMetrics`は特権復元に続けて、2段階の不変条件チェックを行います。いずれかが失敗すると`emergencyShutdown`が呼ばれます。
+
+```go
+// 場所: internal/runner/base/privilege/unix.go
+// 1. EUID==UID / EGID==GID を検証する（復元処理自体のバグを検出する独立したチェック）
+if err := m.identityVerifier(); err != nil {
+    m.emergencyShutdown(err, shutdownContext)
+}
+
+// 2. saved-set-uid/gidが復元前後で変化していないことを検証する
+//    （非対応プラットフォームではoriginalSUID < 0のガードにより構造的にスキップされる）
+if execCtx.originalSUID >= 0 {
+    suid, sgid, err := m.getReadSavedIDs()()
+    if suid != execCtx.originalSUID || sgid != execCtx.originalSGID {
+        m.emergencyShutdown(err, shutdownContext)
+    }
+}
+```
+
+saved-set-uid/gidの確認は、EUID一致確認よりも強い不変条件です。EUIDが正しく復元されていても、部分的な`seteuid`呼び出しでsaved-setが以前の実効UIDのまま壊れているケースを検出できます。
+
 **セキュリティ検証**:
 ```go
-// 場所: internal/runner/privilege/unix.go:232-294
+// 場所: internal/runner/base/privilege/unix.go
 func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
     // setuidビットが設定されていることを検証
     hasSetuidBit := fileInfo.Mode()&os.ModeSetuid != 0
@@ -329,17 +359,19 @@ func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
 ```
 
 **緊急シャットダウンプロトコル**:
-- 特権復元失敗時の即座のプロセス終了
-- マルチチャンネルログ（構造化ログ、syslog、stderr）
+- 特権復元失敗、またはEUID/EGID一致確認・saved-set-uid/gid不変条件チェックのいずれかの失敗時に即座のプロセス終了
+- 構造化ログとstderrの両方への記録
 - 完全なコンテキストでのセキュリティイベント記録
 - 侵害された状態での継続実行防止
 
 #### セキュリティ保証
 - グローバルmutexによるスレッドセーフな特権操作
 - パニック保護付きの自動特権復元
+- 復元後のEUID/EGID一致検証とsaved-set-uid/gid不変条件チェックによる多重防御
 - すべての特権操作の包括的監査ログ
 - セキュリティ障害時の緊急シャットダウン
 - ネイティブルートとsetuidバイナリ実行モデルの両方をサポート
+- dry-run など昇格を要しないoperationでは特権を一切取得しない
 
 ### 6. コマンドパス検証
 
