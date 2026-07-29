@@ -4,7 +4,7 @@
 
 **関連**: Issue #919（親 Issue: #864 / Task 0157 フォローアップ）
 
-**依存**: 0157 Phase 2 のマージ完了
+**依存**: 0157 Phase 2 のマージ完了（確認済み: 0157 は完了しクローズ済み）
 
 ---
 
@@ -12,14 +12,20 @@
 
 ### 棚卸しと修正
 
-- [ ] `security-architecture.ja.md` §5 内のすべてのコード引用（パス・行番号・フィールド構成）を棚卸しする
+- [ ] Issue #919 のコメント（[issuecomment-5092735691](https://github.com/isseis/go-safe-cmd-runner/issues/919#issuecomment-5092735691)、0157 PR-7 実施時に記録）を起点として棚卸しする。0157 の設計書 §7.3 が挙げた「Phase 2 でフィールド削除により不正確さが増す」という当初想定は**誤りだったと訂正済み**（削除された `syscallSeteuid`/`syscallSetegid` は元々 §5 の構造体引用に含まれていなかった）なので、その訂正後の内容を出発点にすること
+- [ ] `security-architecture.ja.md` §5 内のすべてのコード引用（パス・行番号・フィールド構成・処理フロー）を棚卸しする
 - [ ] `internal/runner/base/privilege/unix.go` の現行実装を確認し、引用との乖離を洗い出す
-- [ ] 古いパス `internal/runner/privilege/unix.go` を `internal/runner/base/privilege/unix.go` に修正
-- [ ] `UnixPrivilegeManager` のフィールド構成を現行版に更新（`osExit`、`syscallSeteuid`、`syscallSetegid`、`identityVerifier`、`readSavedIDs` など）
+- [ ] 古いパス `internal/runner/privilege/unix.go` を `internal/runner/base/privilege/unix.go` に修正（3箇所: 構造体引用・`WithPrivileges`引用・`isRootOwnedSetuidBinary`引用）
+- [ ] `UnixPrivilegeManager` のフィールド構成を現行版に更新（`logger`/`originalUID`/`privilegeSupported`/`metrics`/`mu` に加え `osExit`、`identityVerifier`、`readSavedIDs` を追記。`syscallSeteuid`/`syscallSetegid` は現行構造体に存在しないため追記しない）
+- [ ] `WithPrivileges` のコード引用・説明文を現行実装に合わせて全面更新する。現行は `prepareExecution` → `performElevation` → `handleCleanupAndMetrics` に分割されており、以下が引用に反映されていない
+  - dry-run 等 `needsPrivilegeEscalation` が偽の operation では昇格自体をスキップする分岐
+  - 復元後の EUID==UID / EGID==GID 防御的検証（`identityVerifier`）
+  - 復元後の saved-set-uid/gid 不変条件チェック（`readSavedIDs`、非対応プラットフォームでは構造的にスキップ）
+- [ ] 上記の新規セキュリティ機構（防御的検証・saved-set 不変条件チェック）を「セキュリティ保証」節にも追記する
 
 ### 削除要素の確認
 
-- [ ] 0157 Phase 2 で削除される要素が記述に残っていないか確認
+- [ ] 0157 Phase 2 で削除される要素が §5 の記述に残っていないか確認（`rg` で 0 件を確認済み: `syscallSeteuid`/`syscallSetegid`/`降格`/`WithUserGroup`/`IsUserGroupSupported` はいずれも §5 に未出現。念のため作業時に再確認する）
   - `syscallSeteuid` / `syscallSetegid`
   - 到達不能な降格パス
   - `WithUserGroup` / `IsUserGroupSupported`
@@ -65,5 +71,5 @@
 
 ## 注意事項
 
-- 0157 Phase 2 のマージ後に着手すること（先行すると同じ箇所を二度書き直す）
+- 0157 Phase 2 は既にマージ済みのため、着手のブロッカーはない
 - CLAUDE.md のバイリンガル文書編集順序に従うこと（日本語版を先にコミット → `/mktrans` で英語版に反映）
