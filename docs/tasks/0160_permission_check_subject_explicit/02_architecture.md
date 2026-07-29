@@ -467,7 +467,7 @@ var ErrPermissionCheckUIDPolicyConflict = errors.New("process-wide permission ch
 
 既存のエラーメッセージの文面は変更しない。`CanCurrentUserSafelyReadFile` が返す `ErrFileWorldWritable` / `ErrGroupWritableNonMember` / `ErrPermissionsExceedMaximum` はいずれも現行のままとする。これらは `internal/safefileio/safe_file.go:445,492` で `ErrInvalidFilePermissions` に包まれて呼び出し元へ渡るが、その構造も変えない。
 
-方針名と基準UIDをエラー本文へ追加する案は検討したが、採らない。`01_requirements.md`「対象外」が「利用した事実と値の監査ログ記録」を明示的に別 issue へ送っており、どの AC もエラー本文の内容を要求していないためである。`String()` は `ErrPermissionCheckUIDPolicyConflict` のメッセージ組み立てとテストの失敗表示に用いる。
+方針名と基準UIDをエラー本文へ追加する案は検討したが、採らない。`01_requirements.md`「対象外」が「利用した事実と値の監査ログ記録」を明示的に [#941](https://github.com/isseis/go-safe-cmd-runner/issues/941) へ送っており、どの AC もエラー本文の内容を要求していないためである。`String()` は `ErrPermissionCheckUIDPolicyConflict` のメッセージ組み立てとテストの失敗表示に用いる。
 
 プロセス既定方針の設定に失敗した場合、各 `main` の `init()` では回復手段がないため panic とする。設定値はビルド時に固定された定数であるため、この経路が実行時の入力によって起きることはない。ただし将来、インポートされたパッケージが先に別の値を設定するようになった場合は、リンク構成だけを原因として起こりうる。その場合も panic はいかなる読み取りよりも前に起きるため、誤った方針で判定が行われることはない。
 
@@ -527,13 +527,13 @@ flowchart LR
 |---|---|---|
 | `runner` の読み取り判定で `SUDO_UID` が効くか | 効く（`sudo runner` 時） | 効かない |
 | `record` / `verify` の読み取り判定で `SUDO_UID` が効くか | 効く | 効く（変更なし） |
-| `SUDO_UID` の値の実在確認 | 行わない | 行わない（対象外。別 issue） |
-| `SUDO_UID` を採用した事実の記録 | 行わない | 行わない（対象外。別 issue） |
+| `SUDO_UID` の値の実在確認 | 行わない | 行わない（対象外。[#941](https://github.com/isseis/go-safe-cmd-runner/issues/941)） |
+| `SUDO_UID` を採用した事実の記録 | 行わない | 行わない（対象外。[#941](https://github.com/isseis/go-safe-cmd-runner/issues/941)） |
 | 宣言漏れによる `SUDO_UID` 参照の復活 | 概念が存在しない | 起こらない（最終既定方針が `RealUIDOnly`） |
 
-`SUDO_UID` の値自体の検証と、その利用を記録することは、`01_requirements.md`「対象外」のとおり本タスクに含まない。D1 M-3 の攻撃対象領域は解消ではなく、3バイナリから2バイナリへの縮小である。
+`SUDO_UID` の値自体の検証と、その利用を記録することは、`01_requirements.md`「対象外」のとおり本タスクに含まない。これらは [#941](https://github.com/isseis/go-safe-cmd-runner/issues/941) で扱う。D1 M-3 の攻撃対象領域は解消ではなく、3バイナリから2バイナリへの縮小である。
 
-この結果、`record` / `verify` が `SUDO_UID` を採用したことは実行時に記録されない。root の cron に `SUDO_UID` が残留する事故シナリオ（`01_requirements.md`「背景」）は、`record` / `verify` については引き続き検出できないままである。検出手段の追加は、値の検証と併せて別 issue で扱う。
+この結果、`record` / `verify` が `SUDO_UID` を採用したことは実行時に記録されない。root の cron に `SUDO_UID` が残留する事故シナリオ（`01_requirements.md`「背景」）は、`record` / `verify` については引き続き検出できないままである。検出手段の追加は、値の検証と併せて [#941](https://github.com/isseis/go-safe-cmd-runner/issues/941) で扱う。
 
 ### 5.3 挙動が厳しくなる方向への変化
 
@@ -656,9 +656,9 @@ AC-08 はソースコードの検索では検証しない。`SudoAware` の実�
 
 ## 9. 将来の拡張性
 
-- **`SUDO_UID` の値の検証と利用記録**: `user.LookupId` による実在確認と `log/slog` への記録は、`SudoAware` の解決処理の内側に閉じて追加できる。方針の型や伝播機構には影響しない。§5.2 で残るとした「採用の事実を検出できない」問題は、この追加で解消される。
+- **`SUDO_UID` の値の検証と利用記録（[#941](https://github.com/isseis/go-safe-cmd-runner/issues/941)）**: `user.LookupId` による実在確認と `log/slog` への記録は、`SudoAware` の解決処理の内側に閉じて追加できる。方針の型や伝播機構には影響しない。§5.2 で残るとした「採用の事実を検出できない」問題は、この追加で解消される。
 - **方針の追加**: `PermissionCheckUIDPolicy` は列挙型であり、別の決定規則（例: 明示した UID を用いる方針）が必要になった場合も、解決処理の分岐と定数の追加で済む。
-- **`runner` を root として直接実行する形態への対応**: 検討する場合、`runner` の宣言を変えるか、起動形態に応じて宣言を切り替えることになる。宣言箇所が `init()` の1行に集約されているため変更範囲は限定される。
+- **`runner` を root として直接実行する形態への対応（[#921](https://github.com/isseis/go-safe-cmd-runner/issues/921)）**: 検討する場合、`runner` の宣言を変えるか、起動形態に応じて宣言を切り替えることになる。宣言箇所が `init()` の1行に集約されているため変更範囲は限定される。
 - **`defaultFS` の廃止**: 将来 `safefileio` のパッケージ関数群を廃して呼び出し側に `FileSystem` を渡す形にした場合、プロセス既定方針は不要になり、インスタンス方針だけで完結する。
 
 ## 付録A: 決定履歴
@@ -671,4 +671,4 @@ AC-08 はソースコードの検索では検証しない。`SudoAware` の実�
 - **`FileSystemConfig` へのフィールド追加**: `defaultFS` に届かないため単独では成立しない。§3.10 を参照。
 - **中間コンストラクタのシグネチャ変更**: 同上に加え、`internal/dynamicanalysis`、`internal/security/elfanalyzer`、`internal/security/machoanalyzer`、`internal/filevalidator` など多数のパッケージに波及するため採らない。
 - **`GroupMembership` に環境変数取得関数のフィールドを持たせる案**: 純粋関数への引数渡しと二重の差し替え口になるため採らない。§3.5 を参照。
-- **エラー本文へ方針名と基準UIDを追加する案**: どの AC も要求しておらず、`01_requirements.md`「対象外」が利用記録を別 issue へ送っているため採らない。§4.2 を参照。
+- **エラー本文へ方針名と基準UIDを追加する案**: どの AC も要求しておらず、`01_requirements.md`「対象外」が利用記録を [#941](https://github.com/isseis/go-safe-cmd-runner/issues/941) へ送っているため採らない。§4.2 を参照。
