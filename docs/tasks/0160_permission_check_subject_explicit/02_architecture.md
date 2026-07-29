@@ -227,7 +227,7 @@ sequenceDiagram
 
 ```go
 // PermissionCheckUIDPolicy は、読み取り安全性チェックの基準UIDをどう決めるかを表す。
-type PermissionCheckUIDPolicy int
+type PermissionCheckUIDPolicy int32
 
 const (
     // PolicyUnset はゼロ値であり、この階層では方針が指定されていないことを表す。
@@ -247,6 +247,8 @@ const (
 // String は方針名を返す。エラーメッセージおよびログ出力で用いる。
 func (p PermissionCheckUIDPolicy) String() string
 ```
+
+`int` ではなく `int32` を基底型としているのは、保持に用いる `sync/atomic`（§3.3）の `atomic.Int32` や `atomic.LoadInt32` / `atomic.CompareAndSwapInt32` にそのまま渡せる幅だからである。`int` はプラットフォーム依存の幅を持ち、これらの関数にそのまま使えないため、別の `int32` フィールドへの変換を挟む必要が生じてしまう。
 
 `RealUIDOnly` / `SudoAware` という名称は `01_requirements.md` の AC-01 で指定されている。`SudoAware` は「sudo を認識する」としか読めないため、上記のとおり信頼前提をドキュメントコメントで明示する（「検討事項」の「型の名称」への回答）。ゼロ値だけが `Policy` を前置しているのは、これが方針の選択肢ではなく「選択がないこと」を表す特別な値だからである。
 
@@ -278,6 +280,8 @@ func New(opts ...Option) *GroupMembership
 // 既に同じ値が設定されている場合は何もせず nil を返す。
 // 異なる値が設定済みの場合、または PolicyUnset を渡した場合はエラーを返し、
 // 設定済みの値は変更しない。
+// p が RealUIDOnly / SudoAware のいずれでもない場合（例えば
+// PermissionCheckUIDPolicy(99) のような不正なキャストの結果）もエラーを返す。
 func SetProcessPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) error
 
 // ProcessPermissionCheckUIDPolicy は、現在のプロセス既定方針を返す。
@@ -306,6 +310,8 @@ func ProcessPermissionCheckUIDPolicy() PermissionCheckUIDPolicy
 | 3 | 最終既定方針 `RealUIDOnly` | 上位2つがいずれも `PolicyUnset` のとき |
 
 最終既定方針は定数であり、ビルドタグや実行環境によって変わらない。したがって「方針が決まらずエラーになる」状態は存在しない。
+
+この解決処理は、各参照先の値が `RealUIDOnly` / `SudoAware` / `PolicyUnset` のいずれかであることを前提としている。この前提は `SetProcessPermissionCheckUIDPolicy`（§3.3）の入力検証によって保証されるため、ここで想定外の値に対する panic やデフォルトケースによる防御的処理は行わない。
 
 #### 3.4.2 基準UIDの決定
 
