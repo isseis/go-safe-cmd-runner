@@ -184,14 +184,16 @@ func TestExecuteWithUserGroup_SharedResolutionCases(t *testing.T) {
 				assert.Nil(t, result)
 				assert.Empty(t, mockPriv.ElevationCalls, "privilege escalation must not be attempted when identity resolution fails")
 			} else {
-				// The command may succeed or fail depending on whether the
-				// process has CAP_SETUID/CAP_SETGID; what matters here is
-				// only that resolution itself did not fail.
+				// The command may succeed (running as root in CI) or fail with
+				// EPERM (unprivileged CAP_SETUID/CAP_SETGID); what matters here
+				// is only that resolution itself did not fail. Asserting on
+				// result would make the test flaky depending on the process's
+				// capabilities, so only the resolution outcome and the fact
+				// that escalation was attempted are checked.
 				assert.NotErrorIs(t, err, risktypes.ErrRunAsIdentityResolution,
 					"the resolver succeeded, so ErrRunAsIdentityResolution must not appear")
 				assert.Contains(t, mockPriv.ElevationCalls, "user_group_change:"+tc.UserName+":"+tc.GroupName,
 					"privilege escalation must be requested for the resolved command")
-				assert.NotNil(t, result)
 			}
 		})
 	}
