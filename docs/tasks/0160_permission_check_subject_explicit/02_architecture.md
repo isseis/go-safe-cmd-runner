@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-07-29 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 要件書「検討事項」が有力視していたフェイルクローズド案を採らず、既定値案を採る。理由は §3.10 に記載する。この判断はレビューでの確認を要する |
+| Review date | 2026-07-30 |
+| Reviewer | isseis |
+| Comments | - |
 
 ## 用語
 
