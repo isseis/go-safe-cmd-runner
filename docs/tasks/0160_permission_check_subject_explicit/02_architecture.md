@@ -17,7 +17,7 @@
 | 用語 | 意味 |
 |---|---|
 | 基準UID | 読み取り安全性チェックが「このユーザーの視点で読めるか」を判定する際に用いる UID。現行実装の `permissionCheckUID` に相当する |
-| 基準UID決定方針 | 基準UIDをどう決めるかの規則。本設計では `RealUIDOnly` と `SudoAware` の2種を定義する |
+| 基準UID決定方針 | 基準UIDをどう決めるかの規則。本設計では `RealUIDOnly` と `SudoUIDAware` の2種を定義する |
 | 実 UID | `os.Getuid()` が返すプロセスの実ユーザー ID |
 | 読み取り安全性チェック | `GroupMembership.CanCurrentUserSafelyReadFile` による、ファイルのパーミッションとグループ構成に基づく読み取り可否判定 |
 | プロセス既定方針 | プロセス全体に対して1度だけ設定される基準UID決定方針。個別に指定のない `GroupMembership` はこれに従う |
@@ -36,7 +36,7 @@
 ### 1.2 設計原則
 
 - **明示指定**: 基準UID決定方針は、実行環境から推測せず、バイナリごとに `main` パッケージが宣言する。
-- **危険な方針だけを明示指定にする**: `SUDO_UID` を信頼する `SudoAware` は宣言しない限り選ばれない。指定漏れは常に厳しい側の `RealUIDOnly` へ倒れる。
+- **危険な方針だけを明示指定にする**: `SUDO_UID` を信頼する `SudoUIDAware` は宣言しない限り選ばれない。指定漏れは常に厳しい側の `RealUIDOnly` へ倒れる。
 - **ビルド構成に依存しない**: 判定結果はビルドタグによって変わらない。テストビルドと本番ビルドで同じ既定方針を用いる（`docs/tasks/0151_groupmembership_failclosed/02_architecture.md` §1.1 の設計原則2に従う）。
 - **単一の解決地点**: 基準UIDを解決する処理は `internal/groupmembership` の1関数に集約し、他パッケージへ判定ロジックを分散させない。
 - **効かない設定を置かない**: 基準UIDを参照しない生成箇所（`NewDirectoryPermChecker()`、`internal/runner/runner.go:301`）には方針指定を追加しない。
@@ -62,7 +62,7 @@ flowchart TD
     POL -->|"格納される"| PROC
     PROC -->|"参照される"| GM
     GM -->|"解決を委譲する"| RES
-    ENV -->|"SudoAware のときのみ参照される"| RES
+    ENV -->|"SudoUIDAware のときのみ参照される"| RES
     RES -->|"決定する"| UID
     UID -->|"入力となる"| CHK
 
@@ -108,10 +108,10 @@ flowchart TD
 
     subgraph After["変更後"]
         A1["cmd/runner"] -->|"RealUIDOnly を宣言"| A6[("プロセス既定方針")]
-        A2["cmd/record, cmd/verify"] -->|"SudoAware を宣言"| A6
+        A2["cmd/record, cmd/verify"] -->|"SudoUIDAware を宣言"| A6
         A6 --> A3["GroupMembership"]
         A3 --> A4["permissionCheckUID"]
-        A5[("環境変数 SUDO_UID")] -.->|"SudoAware のときのみ"| A4
+        A5[("環境変数 SUDO_UID")] -.->|"SudoUIDAware のときのみ"| A4
         class A1,A2,A3,A4,A6 enhanced
     end
 
@@ -209,12 +209,12 @@ sequenceDiagram
     Rt->>FIO: パッケージ変数の初期化
     FIO->>GM: New()（方針は未指定のまま生成）
     Rt->>Main: init()
-    Main->>Pol: SetProcessPermissionCheckUIDPolicy(SudoAware)
+    Main->>Pol: SetProcessPermissionCheckUIDPolicy(SudoUIDAware)
     Pol-->>Main: nil
     Rt->>App: main() 開始
     App->>GM: CanCurrentUserSafelyReadFile(gid, perm)
     GM->>Pol: 有効な方針を問い合わせる
-    Pol-->>GM: SudoAware
+    Pol-->>GM: SudoUIDAware
     GM->>GM: 実 UID と SUDO_UID から基準UIDを決める
     GM-->>App: 判定結果
 ```
@@ -237,11 +237,11 @@ const (
     // RealUIDOnly は常にプロセスの実 UID を基準UIDとする。SUDO_UID は読まない。
     RealUIDOnly
 
-    // SudoAware は、実 UID が 0 のとき環境変数 SUDO_UID の値を基準UIDとして採用する。
+    // SudoUIDAware は、実 UID が 0 のとき環境変数 SUDO_UID の値を基準UIDとして採用する。
     // SUDO_UID の値は数値としての妥当性しか検査しておらず、実在するユーザーかどうかは
     // 確認していない。すなわちこの方針は、当該バイナリを root として起動できる者が
     // 基準UIDを任意に指定できることを受け入れる。宣言した場合にのみ選ばれる。
-    SudoAware
+    SudoUIDAware
 )
 
 // String は方針名を返す。エラーメッセージおよびログ出力で用いる。
@@ -250,7 +250,7 @@ func (p PermissionCheckUIDPolicy) String() string
 
 `int` ではなく `int32` を基底型としているのは、保持に用いる `sync/atomic`（§3.3）の `atomic.Int32` や `atomic.LoadInt32` / `atomic.CompareAndSwapInt32` にそのまま渡せる幅だからである。`int` はプラットフォーム依存の幅を持ち、これらの関数にそのまま使えないため、別の `int32` フィールドへの変換を挟む必要が生じてしまう。
 
-`RealUIDOnly` / `SudoAware` という名称は `01_requirements.md` の AC-01 で指定されている。`SudoAware` は「sudo を認識する」としか読めないため、上記のとおり信頼前提をドキュメントコメントで明示する（「検討事項」の「型の名称」への回答）。ゼロ値だけが `Policy` を前置しているのは、これが方針の選択肢ではなく「選択がないこと」を表す特別な値だからである。
+`RealUIDOnly` / `SudoUIDAware` という名称は `01_requirements.md` の AC-01 で指定されている。当初の候補名 `SudoAware` は「sudo を認識する」としか読めず、`SUDO_UID` を参照するという意味が名前から伝わらないという指摘があったため、`SudoUIDAware` へ改めた。加えて、検証していない環境変数を信頼するという前提はドキュメントコメントで明示する（「検討事項」の「型の名称」への回答）。ゼロ値だけが `Policy` を前置しているのは、これが方針の選択肢ではなく「選択がないこと」を表す特別な値だからである。
 
 ### 3.2 生成 API
 
@@ -280,7 +280,7 @@ func New(opts ...Option) *GroupMembership
 // 既に同じ値が設定されている場合は何もせず nil を返す。
 // 異なる値が設定済みの場合、または PolicyUnset を渡した場合はエラーを返し、
 // 設定済みの値は変更しない。
-// p が RealUIDOnly / SudoAware のいずれでもない場合（例えば
+// p が RealUIDOnly / SudoUIDAware のいずれでもない場合（例えば
 // PermissionCheckUIDPolicy(99) のような不正なキャストの結果）もエラーを返す。
 func SetProcessPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) error
 
@@ -295,7 +295,7 @@ func ProcessPermissionCheckUIDPolicy() PermissionCheckUIDPolicy
 
 方針の設定より前に読み取り安全性チェックが実行されうるのは、インポートされたパッケージの `init()` の中で直接実行される場合と、パッケージ初期化中に起動された goroutine から実行される場合の2通りである。2026-07-29 時点で、本番コードの `init()` は `cmd/runner/main.go:55`（フラグ定義のみ）と `internal/runner/base/security/command_analysis.go:237`（メモリ上のスライス分割のみ）の2つだけであり、どちらもファイル読み取りを行わず goroutine も起動しない。パッケージ変数の初期化子も同様で、`internal/safefileio/safe_file.go:49` の `defaultFS` は生成のみを行う。
 
-仮に将来この不変条件が破られても、最終既定方針 `RealUIDOnly` が適用されるため、判定が緩む方向へは倒れない。起こりうるのは `record` / `verify` で `SudoAware` の宣言が間に合わず読み取りが失敗することであり、厳しい側の失敗である。
+仮に将来この不変条件が破られても、最終既定方針 `RealUIDOnly` が適用されるため、判定が緩む方向へは倒れない。起こりうるのは `record` / `verify` で `SudoUIDAware` の宣言が間に合わず読み取りが失敗することであり、厳しい側の失敗である。
 
 ### 3.4 方針の解決と基準UIDの決定
 
@@ -311,13 +311,13 @@ func ProcessPermissionCheckUIDPolicy() PermissionCheckUIDPolicy
 
 最終既定方針は定数であり、ビルドタグや実行環境によって変わらない。したがって「方針が決まらずエラーになる」状態は存在しない。
 
-この解決処理は、各参照先の値が `RealUIDOnly` / `SudoAware` / `PolicyUnset` のいずれかであることを前提としている。この前提は `SetProcessPermissionCheckUIDPolicy`（§3.3）の入力検証によって保証されるため、ここで想定外の値に対する panic やデフォルトケースによる防御的処理は行わない。
+この解決処理は、各参照先の値が `RealUIDOnly` / `SudoUIDAware` / `PolicyUnset` のいずれかであることを前提としている。この前提は `SetProcessPermissionCheckUIDPolicy`（§3.3）の入力検証によって保証されるため、ここで想定外の値に対する panic やデフォルトケースによる防御的処理は行わない。
 
 #### 3.4.2 基準UIDの決定
 
-有効な方針が決まったあとの基準UIDの決め方は次のとおりで、`SudoAware` の列は現行の `resolvePermissionCheckUID` の挙動と一致する（AC-13 の表と同じ）。
+有効な方針が決まったあとの基準UIDの決め方は次のとおりで、`SudoUIDAware` の列は現行の `resolvePermissionCheckUID` の挙動と一致する（AC-13 の表と同じ）。
 
-| 実 UID | `SUDO_UID` | `RealUIDOnly` | `SudoAware` |
+| 実 UID | `SUDO_UID` | `RealUIDOnly` | `SudoUIDAware` |
 |---|---|---|---|
 | 0 | 未設定 | 0 | 0 |
 | 0 | 有効値 `N` | 0 | `N` |
@@ -332,15 +332,15 @@ func ProcessPermissionCheckUIDPolicy() PermissionCheckUIDPolicy
 
 基準UID解決の中核は、有効な方針・実 UID・環境変数取得関数の3つを引数で受け取る純粋関数として実装する。現行の `resolvePermissionCheckUID` が実 UID を引数で受け取っている構造を引き継ぎ、これに有効な方針を引数として加えた形である。
 
-この1つの差し替え口に集約する理由は、`getProcessRealUID()`（`internal/groupmembership/manager.go:514`）が `os.Getuid()` を直接呼んでおり、本タスクではこれを変更しないためである。したがって、非 root でテストを実行する場合、実 UID が 0 のときの挙動は公開メソッド経由では再現できない。§3.4.2 の表のうち `RealUIDOnly` と `SudoAware` で結果が異なる行はすべて実 UID が 0 の行であるから、AC-04〜AC-06、AC-09、AC-11〜AC-13 の検証はこの純粋関数に対して行う。`GroupMembership` に環境変数取得関数のフィールドを持たせる案は、同じ依存に対する2つ目の差し替え口となるため採らない。
+この1つの差し替え口に集約する理由は、`getProcessRealUID()`（`internal/groupmembership/manager.go:514`）が `os.Getuid()` を直接呼んでおり、本タスクではこれを変更しないためである。したがって、非 root でテストを実行する場合、実 UID が 0 のときの挙動は公開メソッド経由では再現できない。§3.4.2 の表のうち `RealUIDOnly` と `SudoUIDAware` で結果が異なる行はすべて実 UID が 0 の行であるから、AC-04〜AC-06、AC-09、AC-11〜AC-13 の検証はこの純粋関数に対して行う。`GroupMembership` に環境変数取得関数のフィールドを持たせる案は、同じ依存に対する2つ目の差し替え口となるため採らない。
 
-AC-09 が求める「`RealUIDOnly` の判定中に `SUDO_UID` が読まれないこと」は、呼び出し回数を数える環境変数取得関数を渡して検証する。実 UID を 0 として `RealUIDOnly` で解決したときは呼び出し回数が 0 であり、同じ条件で `SudoAware` を用いたときは 1 以上である。この対比を取らないと、実 UID が 0 でないために読まれなかっただけの状態と区別できない。
+AC-09 が求める「`RealUIDOnly` の判定中に `SUDO_UID` が読まれないこと」は、呼び出し回数を数える環境変数取得関数を渡して検証する。実 UID を 0 として `RealUIDOnly` で解決したときは呼び出し回数が 0 であり、同じ条件で `SudoUIDAware` を用いたときは 1 以上である。この対比を取らないと、実 UID が 0 でないために読まれなかっただけの状態と区別できない。
 
 ### 3.6 最終既定方針を `RealUIDOnly` とする理由
 
 最終既定方針は、インスタンスにもプロセスにも指定がないときに適用される。これを `RealUIDOnly` とすることで、次が成り立つ。
 
-- **宣言漏れが脆弱側へ倒れない**: `SUDO_UID` を信頼する `SudoAware` は、明示的に宣言したバイナリでしか選ばれない。`cmd/runner` の宣言を削除しても、方針は `RealUIDOnly` のままであり、本タスクが排除した `SUDO_UID` 参照は復活しない。すなわち、指定漏れによって 0149 監査の D1 M-3（`SUDO_UID` が無検証であること）の攻撃対象領域が再び開くことはない。
+- **宣言漏れが脆弱側へ倒れない**: `SUDO_UID` を信頼する `SudoUIDAware` は、明示的に宣言したバイナリでしか選ばれない。`cmd/runner` の宣言を削除しても、方針は `RealUIDOnly` のままであり、本タスクが排除した `SUDO_UID` 参照は復活しない。すなわち、指定漏れによって 0149 監査の D1 M-3（`SUDO_UID` が無検証であること）の攻撃対象領域が再び開くことはない。
 - **宣言漏れが検出可能な形で現れる**: `cmd/record` / `cmd/verify` の宣言を削除すると、`sudo` 実行時の基準UIDが呼び出し元ユーザーから 0 へ変わり、グループ書き込み可能なファイルの読み取りが失敗する。厳しい側の機能退行であり、権限の抜け穴ではない。
 - **ビルド構成に依存しない**: テストビルドと本番ビルドで同じ既定方針が適用される。`docs/tasks/0151_groupmembership_failclosed/02_architecture.md` §1.1 の設計原則2「セキュリティ判定結果をビルド構成に依存させない」（同文書は `approved`、対象パッケージも同じ `internal/groupmembership`）に適合する。
 - **既存テストが無修正で通る**: 読み取り安全性チェックは `safefileio.SafeReadFile` を通じて多数のパッケージのテストから間接的に実行される。既定方針があるため、これらは影響を受けない。
@@ -352,8 +352,8 @@ AC-09 が求める「`RealUIDOnly` の判定中に `SUDO_UID` が読まれない
 | バイナリ | 宣言する方針 | 宣言箇所 | 根拠 |
 |---|---|---|---|
 | `runner` | `RealUIDOnly` | `cmd/runner/main.go` の `init()` | root 所有 + setuid ビットのバイナリを一般ユーザーが起動する運用であり、sudo 経由は想定外 |
-| `record` | `SudoAware` | `cmd/record/main.go` に `init()` を新設 | `sudo record` が想定運用であり、呼び出し元ユーザー視点の判定を維持する |
-| `verify` | `SudoAware` | `cmd/verify/main.go` に `init()` を新設 | `sudo verify` が想定運用であり、同上 |
+| `record` | `SudoUIDAware` | `cmd/record/main.go` に `init()` を新設 | `sudo record` が想定運用であり、呼び出し元ユーザー視点の判定を維持する |
+| `verify` | `SudoUIDAware` | `cmd/verify/main.go` に `init()` を新設 | `sudo verify` が想定運用であり、同上 |
 
 `runner` の宣言は最終既定方針と同じ値であり、挙動を変えるためではなく意図を明示するために置く。これにより AC-07 / AC-08 が検査対象を持つ。
 
@@ -410,10 +410,10 @@ classDiagram
 | `internal/groupmembership/test_helpers_policy.go` | 新規（`//go:build test`） | プロセス既定方針をテスト内で退避・復元するヘルパー | - |
 | `internal/groupmembership/policy_test.go` | 新規 | 方針の解決順序、最終既定方針、AC-12 / AC-13 の組み合わせ、`SUDO_UID` 不読み取りの検証 | - |
 | `cmd/runner/main.go` | 変更 | `init()` で `RealUIDOnly` を宣言 | - |
-| `cmd/record/main.go` | 変更 | `init()` を新設し `SudoAware` を宣言 | - |
-| `cmd/verify/main.go` | 変更 | `init()` を新設し `SudoAware` を宣言 | - |
+| `cmd/record/main.go` | 変更 | `init()` を新設し `SudoUIDAware` を宣言 | - |
+| `cmd/verify/main.go` | 変更 | `init()` を新設し `SudoUIDAware` を宣言 | - |
 | `cmd/runner/main_test.go` | 変更 | プロセス既定方針が `RealUIDOnly` であることの検証を追加（AC-07, AC-08） | - |
-| `cmd/record/main_test.go` | 変更 | プロセス既定方針が `SudoAware` であること、およびその状態での基準UID解決結果の検証を追加（AC-10, AC-11） | - |
+| `cmd/record/main_test.go` | 変更 | プロセス既定方針が `SudoUIDAware` であること、およびその状態での基準UID解決結果の検証を追加（AC-10, AC-11） | - |
 | `cmd/verify/main_test.go` | 変更 | 同上（AC-10, AC-11） | - |
 | `docs/user/runner_command.ja.md` | 変更 | `sudo runner` 実行時の挙動変化を記載（AC-16） | - |
 | `docs/user/runner_command.md` | 変更 | 上記の英訳を `/mktrans` で反映 | - |
@@ -437,7 +437,7 @@ classDiagram
 4. **本番側のコードが lint されない**: `golangci-lint` は `--build-tags test` 付きで実行される（`Makefile:24`）ため、`!test` 側のファイルは検査対象外になる。
 5. **可変なグローバル状態が増える**: AC-15 の検証にはビルドタグで決まる既定方針を一時的に書き換える必要があり、`go test -race` 下で同期対象がもう1つ増える。
 
-既定値案を採ることで、フェイルクローズド案が守ろうとしていた性質は別の形で確保される。守るべきは「指定漏れが `SUDO_UID` の無検証な信頼へ倒れないこと」であり、既定値を厳しい側の `RealUIDOnly` に置けば、`SudoAware` は宣言なしには決して選ばれない。これは危険な方針だけに明示指定を求める構造であり、「推測をやめて明示指定にする」という目的にも適合する。
+既定値案を採ることで、フェイルクローズド案が守ろうとしていた性質は別の形で確保される。守るべきは「指定漏れが `SUDO_UID` の無検証な信頼へ倒れないこと」であり、既定値を厳しい側の `RealUIDOnly` に置けば、`SudoUIDAware` は宣言なしには決して選ばれない。これは危険な方針だけに明示指定を求める構造であり、「推測をやめて明示指定にする」という目的にも適合する。
 
 AC-15 は「既定値を持つ方針を採る場合は、その既定値が意図した側であることをテストで固定する」と、この選択を明示的に許容している。
 
@@ -496,7 +496,7 @@ flowchart TD
 
     ATK -->|"任意の値を設定する"| ENV
     ENV -.->|"RealUIDOnly のため参照されない"| RUN
-    ENV -->|"SudoAware のため採用される"| REC
+    ENV -->|"SudoUIDAware のため採用される"| REC
     REC --> RES2
 
     class ENV data
@@ -555,7 +555,7 @@ flowchart LR
 
 ### 5.5 インスタンス方針の悪用可能性
 
-`WithPermissionCheckUIDPolicy` はインスタンス方針をプロセス既定方針より優先させるため、`runner` の依存グラフ内のどこかでこの関数が `SudoAware` 付きで呼ばれると、本タスクが閉じた `SUDO_UID` 参照が局所的に復活する。プロセス既定方針を検査する AC-08 のテストはこれを検出しない。
+`WithPermissionCheckUIDPolicy` はインスタンス方針をプロセス既定方針より優先させるため、`runner` の依存グラフ内のどこかでこの関数が `SudoUIDAware` 付きで呼ばれると、本タスクが閉じた `SUDO_UID` 参照が局所的に復活する。プロセス既定方針を検査する AC-08 のテストはこれを検出しない。
 
 現時点で本番コードにそのような呼び出しはなく、§3.2 のドキュメントコメントで本番コードからの呼び出しを禁じる。加えて、`forbidigo` などの lint ルールでテストファイル以外からの呼び出しを機械的に禁止することを推奨する。ただし lint ルールの追加は `01_requirements.md` のスコープ外であり、実装計画時に採否を判断する。
 
@@ -573,7 +573,7 @@ flowchart TD
     P3 --> Use
 
     Use --> R1["実 UID を取得する"]
-    R1 --> R2{"方針は SudoAware か"}
+    R1 --> R2{"方針は SudoUIDAware か"}
     R2 -->|"いいえ"| Ret(["実 UID を基準UIDとする"])
     R2 -->|"はい"| R3{"実 UID は 0 か"}
     R3 -->|"いいえ"| Ret
@@ -595,7 +595,7 @@ flowchart TD
 
 | 呼び出し時の状態 | 引数 | 結果 |
 |---|---|---|
-| 未設定 | `RealUIDOnly` または `SudoAware` | 設定され `nil` を返す |
+| 未設定 | `RealUIDOnly` または `SudoUIDAware` | 設定され `nil` を返す |
 | 設定済み | 設定済みの値と同じ | 何もせず `nil` を返す |
 | 設定済み | 設定済みの値と異なる | 値を変えず `ErrPermissionCheckUIDPolicyConflict` を返す |
 | 任意 | `PolicyUnset` | 値を変えずエラーを返す |
@@ -608,11 +608,11 @@ flowchart TD
 
 | 対象 | 内容 | 対応 AC |
 |---|---|---|
-| 型と生成 API | `RealUIDOnly` / `SudoAware` の定義、`WithPermissionCheckUIDPolicy` による指定 | AC-01, AC-02 |
+| 型と生成 API | `RealUIDOnly` / `SudoUIDAware` の定義、`WithPermissionCheckUIDPolicy` による指定 | AC-01, AC-02 |
 | 基準UID解決の純粋関数 | `RealUIDOnly` について、実 UID が 0 / 非 0 × `SUDO_UID` 未設定 / 有効値 / 不正値の全組み合わせで実 UID が返る | AC-04, AC-12 |
-| 同上 | `SudoAware` について、同じ全組み合わせが §3.4.2 の表と一致する | AC-05, AC-06, AC-13 |
+| 同上 | `SudoUIDAware` について、同じ全組み合わせが §3.4.2 の表と一致する | AC-05, AC-06, AC-13 |
 | 同上 | `SUDO_UID` を採用する条件下（実 UID = 0、有効な `SUDO_UID`）で、変更前の `resolvePermissionCheckUID` と同じ UID を返す | AC-11 |
-| 環境変数取得関数の呼び出し回数 | 実 UID = 0 で `RealUIDOnly` は 0 回、`SudoAware` は 1 回以上（§3.5 の対比） | AC-03, AC-09 |
+| 環境変数取得関数の呼び出し回数 | 実 UID = 0 で `RealUIDOnly` は 0 回、`SudoUIDAware` は 1 回以上（§3.5 の対比） | AC-03, AC-09 |
 | 方針の解決順序 | インスタンス方針 > プロセス既定方針 > 最終既定方針の優先順位 | AC-02 |
 | 最終既定方針 | インスタンスにもプロセスにも指定がないとき `RealUIDOnly` が適用される | AC-14, AC-15 |
 | 設定の一度きり | 同じ値の再設定は `nil`、異なる値は `ErrPermissionCheckUIDPolicyConflict`、`PolicyUnset` はエラー | AC-14 |
@@ -622,18 +622,18 @@ flowchart TD
 | 対象 | 内容 | 対応 AC |
 |---|---|---|
 | `cmd/runner` のテストバイナリ | `ProcessPermissionCheckUIDPolicy()` が `RealUIDOnly` を返す | AC-07, AC-08 |
-| `cmd/record` / `cmd/verify` のテストバイナリ | `ProcessPermissionCheckUIDPolicy()` が `SudoAware` を返す | AC-10 |
+| `cmd/record` / `cmd/verify` のテストバイナリ | `ProcessPermissionCheckUIDPolicy()` が `SudoUIDAware` を返す | AC-10 |
 | `cmd/record` / `cmd/verify` のテストバイナリ | 上記の方針の下で、実 UID = 0 かつ有効な `SUDO_UID` を与えたときの基準UID解決結果が変更前と一致する | AC-10, AC-11 |
 | `safefileio` 経由の判定 | インスタンス方針を指定した `GroupMembership` を持つ `FileSystem` で、解決された基準UIDが指定した方針に従う | AC-07, AC-10 |
 
 いずれも `ProcessPermissionCheckUIDPolicy()` の戻り値を直接検査する。読み取りの成否を見るだけでは不十分である。`cmd/runner` の宣言値は最終既定方針と同じ `RealUIDOnly` であるため、宣言を削除しても読み取りの成否は変わらないからである（§3.6）。
 
-AC-08 はソースコードの検索では検証しない。`SudoAware` の実装コードは共有パッケージ経由で `runner` バイナリにもリンクされるため、方針の違いは実行時設定であって記述の有無では表せない。テストバイナリの `init()` が本番と同じ宣言を実行することを利用し、実行時に確かめる。
+AC-08 はソースコードの検索では検証しない。`SudoUIDAware` の実装コードは共有パッケージ経由で `runner` バイナリにもリンクされるため、方針の違いは実行時設定であって記述の有無では表せない。テストバイナリの `init()` が本番と同じ宣言を実行することを利用し、実行時に確かめる。
 
 ### 7.3 セキュリティテスト
 
 - `RealUIDOnly` において、`SUDO_UID` にどのような値（有効値、不正値、極端に長い文字列）が設定されていても、実 UID が 0 の場合を含めて判定結果が変わらないことを検証する。
-- プロセス既定方針を宣言しない状態で解決を行い、`SudoAware` ではなく `RealUIDOnly` が適用されることを検証する（宣言漏れが脆弱側へ倒れないことの確認）。
+- プロセス既定方針を宣言しない状態で解決を行い、`SudoUIDAware` ではなく `RealUIDOnly` が適用されることを検証する（宣言漏れが脆弱側へ倒れないことの確認）。
 
 ### 7.4 並行性とテストの独立性
 
@@ -662,7 +662,7 @@ AC-08 はソースコードの検索では検証しない。`SudoAware` の実�
 
 ## 9. 将来の拡張性
 
-- **`SUDO_UID` の値の検証と利用記録（[#941](https://github.com/isseis/go-safe-cmd-runner/issues/941)）**: `user.LookupId` による実在確認と `log/slog` への記録は、`SudoAware` の解決処理の内側に閉じて追加できる。方針の型や伝播機構には影響しない。§5.2 で残るとした「採用の事実を検出できない」問題は、この追加で解消される。
+- **`SUDO_UID` の値の検証と利用記録（[#941](https://github.com/isseis/go-safe-cmd-runner/issues/941)）**: `user.LookupId` による実在確認と `log/slog` への記録は、`SudoUIDAware` の解決処理の内側に閉じて追加できる。方針の型や伝播機構には影響しない。§5.2 で残るとした「採用の事実を検出できない」問題は、この追加で解消される。
 - **方針の追加**: `PermissionCheckUIDPolicy` は列挙型であり、別の決定規則（例: 明示した UID を用いる方針）が必要になった場合も、解決処理の分岐と定数の追加で済む。
 - **`runner` を root として直接実行する形態への対応（[#921](https://github.com/isseis/go-safe-cmd-runner/issues/921)）**: 検討する場合、`runner` の宣言を変えるか、起動形態に応じて宣言を切り替えることになる。宣言箇所が `init()` の1行に集約されているため変更範囲は限定される。
 - **`defaultFS` の廃止**: 将来 `safefileio` のパッケージ関数群を廃して呼び出し側に `FileSystem` を渡す形にした場合、プロセス既定方針は不要になり、インスタンス方針だけで完結する。
@@ -673,7 +673,7 @@ AC-08 はソースコードの検索では検証しない。`SudoAware` の実�
 
 - **未指定を不正とするフェイルクローズド案**: `01_requirements.md`「検討事項」が有力視していた案。本番バイナリでは成立するが、テストバイナリに存在する `defaultFS` のために多数のパッケージのテストが失敗する。§3.10 を参照。
 - **ビルドタグで既定方針を切り替える案**: 上記の副作用を避けるために検討したが、0151 の設計原則2 に反すること、`integration` / `performance` タグでのテスト実行を取りこぼすこと、`build/test/*` が本番と異なる挙動になること、`!test` 側が lint されないこと、可変なグローバル状態が増えることから退けた。§3.10 に5点の根拠を記載している。
-- **`SudoAware` を既定値とする案**: `runner` の指定漏れが本タスクで排除したはずの `SUDO_UID` 参照として残るため採らない。
+- **`SudoUIDAware` を既定値とする案**: `runner` の指定漏れが本タスクで排除したはずの `SUDO_UID` 参照として残るため採らない。
 - **`FileSystemConfig` へのフィールド追加**: `defaultFS` に届かないため単独では成立しない。§3.10 を参照。
 - **中間コンストラクタのシグネチャ変更**: 同上に加え、`internal/dynamicanalysis`、`internal/security/elfanalyzer`、`internal/security/machoanalyzer`、`internal/filevalidator` など多数のパッケージに波及するため採らない。
 - **`GroupMembership` に環境変数取得関数のフィールドを持たせる案**: 純粋関数への引数渡しと二重の差し替え口になるため採らない。§3.5 を参照。

@@ -99,11 +99,11 @@
 
 ### 対象
 
-1. 権限チェックの基準UID決定方針を表す型（`RealUIDOnly` / `SudoAware`、および未指定を表す値を設ける場合はそれ）を `internal/groupmembership` に定義する。
+1. 権限チェックの基準UID決定方針を表す型（`RealUIDOnly` / `SudoUIDAware`、および未指定を表す値を設ける場合はそれ）を `internal/groupmembership` に定義する。
 2. `GroupMembership` の生成 API に基準UID決定方針を明示指定する手段を追加する。
 3. `getPermissionCheckUID` から `os.Getenv("SUDO_UID")` の直接参照を外し、指定された決定方針に従って解決する形にする。
 4. `runner` バイナリの読み取り安全性チェック経路（`CanCurrentUserSafelyReadFile` に到達する経路）で `RealUIDOnly` が使われるようにする。「呼び出し経路の調査結果」で述べた `safefileio` 系統、およびパッケージ変数 `defaultFS` を対象に含む。
-5. `record` / `verify` バイナリの同経路で `SudoAware` が使われるようにする。
+5. `record` / `verify` バイナリの同経路で `SudoUIDAware` が使われるようにする。
 6. 基準UID決定方針が明示指定されなかった場合の扱いを決定し、テストで固定する。
 7. `sudo runner` 実行時の挙動変化（「`sudo runner` 実行時の挙動変化」節）を利用者向け文書に記載する。
 8. 上記変更に対応するテストの追加・更新。
@@ -118,10 +118,10 @@
 
 ## 検討事項（設計判断が必要な項目、02_architecture.md で決定する）
 
-- **未指定時の扱い**: 選択肢は「`RealUIDOnly` を既定にする」「`SudoAware` を既定にする」に加えて、**「型のゼロ値を不正値とし、未指定のまま使われたらエラーを返す」**の3つがある。前2者はいずれも、指定漏れが黙って別の判定ポリシーへ倒れる。`RealUIDOnly` 既定なら `record` / `verify` の指定漏れが読み取り失敗（機能退行）として現れ、`SudoAware` 既定なら `runner` の指定漏れが今回排除したはずの `SUDO_UID` 参照として残る。後者は指摘されるまで気付けない。第3案は指定漏れを実行時エラーとして即座に露見させる fail-closed 方針であり、本タスクの目的（推測をやめて明示指定にする）と最も整合する。一方で `defaultFS` のようにパッケージ初期化時に生成される実体があるため、第3案を採る場合は「生成はできるが利用前に設定が必要」というライフサイクルが成立するかを併せて検討する必要がある。
+- **未指定時の扱い**: 選択肢は「`RealUIDOnly` を既定にする」「`SudoUIDAware` を既定にする」に加えて、**「型のゼロ値を不正値とし、未指定のまま使われたらエラーを返す」**の3つがある。前2者はいずれも、指定漏れが黙って別の判定ポリシーへ倒れる。`RealUIDOnly` 既定なら `record` / `verify` の指定漏れが読み取り失敗（機能退行）として現れ、`SudoUIDAware` 既定なら `runner` の指定漏れが今回排除したはずの `SUDO_UID` 参照として残る。後者は指摘されるまで気付けない。第3案は指定漏れを実行時エラーとして即座に露見させる fail-closed 方針であり、本タスクの目的（推測をやめて明示指定にする）と最も整合する。一方で `defaultFS` のようにパッケージ初期化時に生成される実体があるため、第3案を採る場合は「生成はできるが利用前に設定が必要」というライフサイクルが成立するかを併せて検討する必要がある。
 - **基準UID決定方針の伝播機構**: 「呼び出し経路の調査結果」で述べた `safefileio.NewFileSystem` 系統へ基準UID決定方針をどう到達させるか。`FileSystemConfig` へのフィールド追加、各中間コンストラクタのシグネチャ変更、プロセス起動時に一度だけ設定される既定値機構などを比較検討する。**`defaultFS` を扱えることが必須条件**であり、コンストラクタ引数のみの案は単独では成立しない。
 - **プロセス全体の既定値機構を採る場合の安全性**: 設定が `main` の早期に一度だけ行われること、設定前の利用が検出できること、`go test -race` を含む並行実行で競合しないことをどう担保するか。
-- **型の名称**: `SudoAware` は「sudo を認識する」と読めるが、実際には検証されていない環境変数を信頼するという意味である。名称またはドキュメントコメントで信頼前提を明示する。
+- **型の名称**: 「sudo を認識する」というだけでは、実際には検証されていない環境変数 `SUDO_UID` を信頼するという意味が伝わらない。名称またはドキュメントコメントで信頼前提を明示する。
 
 ## Acceptance Criteria
 
@@ -130,7 +130,7 @@
 `internal/groupmembership` パッケージに、権限チェックの基準UID決定方針を表す型と、生成時にそれを明示指定する手段を追加する。
 
 **Acceptance Criteria**:
-- **AC-01**: `internal/groupmembership` パッケージに、権限チェックの基準UID決定方針を表す型が定義されており、`RealUIDOnly` と `SudoAware` の少なくとも2つの値を持つ（未指定を表す第3の値を持つことは妨げない。F-006 を参照）。
+- **AC-01**: `internal/groupmembership` パッケージに、権限チェックの基準UID決定方針を表す型が定義されており、`RealUIDOnly` と `SudoUIDAware` の少なくとも2つの値を持つ（未指定を表す第3の値を持つことは妨げない。F-006 を参照）。
 - **AC-02**: `GroupMembership` の生成 API から、権限チェックの基準UID決定方針を明示的に指定できる。
 
 #### F-002: `SUDO_UID` の参照を基準UID決定方針に基づく解決へ置き換え
@@ -140,8 +140,8 @@
 **Acceptance Criteria**:
 - **AC-03**: 権限チェックの基準UIDの解決処理が `os.Getenv("SUDO_UID")` を直接呼び出さず、`GroupMembership` に指定された決定方針を経由して解決する。
 - **AC-04**: 決定方針が `RealUIDOnly` の場合、実 UID が 0 かつ `SUDO_UID` が設定されていても、常に実 UID を権限チェックの基準UIDとして返す。
-- **AC-05**: 決定方針が `SudoAware` の場合、実 UID が 0 かつ `SUDO_UID` が妥当な値であればその値を、それ以外は実 UID を権限チェックの基準UIDとして返す（現行の `resolvePermissionCheckUID` の挙動を維持する）。
-- **AC-06**: 決定方針が `SudoAware` かつ実 UID が 0 で、`SUDO_UID` が不正な値（数値でない、負数、`math.MaxUint32` 超過）の場合、現行と同様にエラーを返す。実 UID が 0 以外の場合は `SUDO_UID` を解析しないため、不正な値でもエラーにならない（現行挙動の維持。AC-13 の表を参照）。
+- **AC-05**: 決定方針が `SudoUIDAware` の場合、実 UID が 0 かつ `SUDO_UID` が妥当な値であればその値を、それ以外は実 UID を権限チェックの基準UIDとして返す（現行の `resolvePermissionCheckUID` の挙動を維持する）。
+- **AC-06**: 決定方針が `SudoUIDAware` かつ実 UID が 0 で、`SUDO_UID` が不正な値（数値でない、負数、`math.MaxUint32` 超過）の場合、現行と同様にエラーを返す。実 UID が 0 以外の場合は `SUDO_UID` を解析しないため、不正な値でもエラーにならない（現行挙動の維持。AC-13 の表を参照）。
 
 #### F-003: `runner` バイナリの読み取り判定経路を `RealUIDOnly` に統一
 
@@ -149,24 +149,24 @@
 
 **Acceptance Criteria**:
 - **AC-07**: `cmd/runner` から到達し、かつ基準UIDを参照する `GroupMembership` の生成箇所（`safefileio.NewFileSystem` 経由の各箇所およびパッケージ変数 `defaultFS`）が、すべて `RealUIDOnly` で動作する。
-- **AC-08**: `runner` の依存グラフ上で使われる `GroupMembership` の基準UID決定方針が `RealUIDOnly` であることを、テストで実行時に検証できる。静的な `rg` 検索では検証しない（`SudoAware` の実装コードは共有パッケージ経由で `runner` バイナリにもリンクされるため、決定方針の違いは実行時設定であって静的な有無では表せない）。
+- **AC-08**: `runner` の依存グラフ上で使われる `GroupMembership` の基準UID決定方針が `RealUIDOnly` であることを、テストで実行時に検証できる。静的な `rg` 検索では検証しない（`SudoUIDAware` の実装コードは共有パッケージ経由で `runner` バイナリにもリンクされるため、決定方針の違いは実行時設定であって静的な有無では表せない）。
 - **AC-09**: 決定方針が `RealUIDOnly` のとき、`SUDO_UID` の読み取り自体が行われない。環境変数読み取りを差し替え可能にした上で、`RealUIDOnly` の判定中に一度も呼ばれないことをテストで検証する。
 
-#### F-004: `record` / `verify` バイナリの読み取り判定経路を `SudoAware` に統一
+#### F-004: `record` / `verify` バイナリの読み取り判定経路を `SudoUIDAware` に統一
 
-`cmd/record` / `cmd/verify` から到達し基準UIDを参照する `GroupMembership` が `SudoAware` を使用し、現行の sudo 分岐の挙動を維持する。
+`cmd/record` / `cmd/verify` から到達し基準UIDを参照する `GroupMembership` が `SudoUIDAware` を使用し、現行の sudo 分岐の挙動を維持する。
 
 **Acceptance Criteria**:
-- **AC-10**: `cmd/record` / `cmd/verify` から到達し、かつ基準UIDを参照する `GroupMembership`（`defaultFS` を含む）が、すべて `SudoAware` で動作する。
+- **AC-10**: `cmd/record` / `cmd/verify` から到達し、かつ基準UIDを参照する `GroupMembership`（`defaultFS` を含む）が、すべて `SudoUIDAware` で動作する。
 - **AC-11**: 実 UID=0 かつ有効な `SUDO_UID` が設定された環境で `record` / `verify` を実行した場合、変更前と同一の UID を権限チェックの基準UIDとして使用する（回帰がないことをテストで確認する）。
 
 #### F-005: 両方針の組み合わせのテスト網羅
 
-`RealUIDOnly` と `SudoAware` それぞれについて、実 UID が 0 / 0 以外、かつ `SUDO_UID` が未設定 / 有効値 / 不正値の組み合わせを検証する。
+`RealUIDOnly` と `SudoUIDAware` それぞれについて、実 UID が 0 / 0 以外、かつ `SUDO_UID` が未設定 / 有効値 / 不正値の組み合わせを検証する。
 
 **Acceptance Criteria**:
 - **AC-12**: `RealUIDOnly` を指定した場合の、実 UID が 0 / 0 以外 × `SUDO_UID` が未設定 / 設定済み（値の有効性を問わない）の全組み合わせについて、常に実 UID が返ることを検証するテストがある。
-- **AC-13**: `SudoAware` を指定した場合の、実 UID が 0 / 0 以外 × `SUDO_UID` が未設定 / 有効値 / 不正値の全組み合わせについて、下表の期待値を検証するテストがある。期待値は現行 `resolvePermissionCheckUID` の挙動に一致するが、リファクタ後に同関数が残らない可能性があるため、参照ではなく表として固定する。
+- **AC-13**: `SudoUIDAware` を指定した場合の、実 UID が 0 / 0 以外 × `SUDO_UID` が未設定 / 有効値 / 不正値の全組み合わせについて、下表の期待値を検証するテストがある。期待値は現行 `resolvePermissionCheckUID` の挙動に一致するが、リファクタ後に同関数が残らない可能性があるため、参照ではなく表として固定する。
 
   | 実 UID | `SUDO_UID` | 期待結果 |
   |---|---|---|
