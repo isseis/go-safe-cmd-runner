@@ -39,7 +39,7 @@
 - **危険な方針だけを明示指定にする**: `SUDO_UID` を信頼する `SudoUIDAware` は宣言しない限り選ばれない。指定漏れは常に厳しい側の `RealUIDOnly` へ倒れる。
 - **ビルド構成に依存しない**: 判定結果はビルドタグによって変わらない。テストビルドと本番ビルドで同じ既定方針を用いる（`docs/tasks/0151_groupmembership_failclosed/02_architecture.md` §1.1 の設計原則2に従う）。
 - **単一の解決地点**: 基準UIDを解決する処理は `internal/groupmembership` の1関数に集約し、他パッケージへ判定ロジックを分散させない。
-- **効かない設定を置かない**: 基準UIDを参照しない生成箇所（`NewDirectoryPermChecker()`、`internal/runner/runner.go:301`）には方針指定を追加しない。
+- **効かない設定を置かない**: 基準UIDを参照しない生成箇所（`NewDirectoryPermChecker()`、`internal/runner/runner.go` の `NewRunner()`）には方針指定を追加しない。
 - **既存責務の再利用**: `resolvePermissionCheckUID` / `parseSudoUID` が持つ `SUDO_UID` 解析ロジックは、方針分岐を加えた上で維持する。
 
 ### 1.3 コンセプトモデル
@@ -276,7 +276,7 @@ func New(opts ...Option) *GroupMembership
 func WithPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) Option
 ```
 
-`New()` は可変長引数になるため、既存の呼び出し箇所はすべてそのままコンパイルが通る。対象は、本番コードの4箇所（`internal/safefileio/safe_file.go:38`、`internal/security/dir_permissions_unix.go:35`、`internal/runner/runner.go:301`、`internal/safefileio/testutil/mock.go:51`）と、テストコードの9箇所（`internal/safefileio/safe_file_cleanup_test.go:191`、`internal/safefileio/safe_file_test.go:569`、`internal/runner/runner_test.go:93`、`internal/runner/base/security/validator_test.go:115,126,138`、`internal/runner/base/security/file_validation_test.go:241,456,1450`）である。いずれも無修正で最終既定方針 `RealUIDOnly` を継承する。これらのテストは現在 sudo 環境を前提としていないため、挙動も変わらない。前者4箇所は `_test.go` でも `//go:build test` 付きファイルでもないため、`WithPermissionCheckUIDPolicy` を呼べない。これは意図した制約であり、`internal/safefileio/testutil/mock.go` が将来インスタンス方針を指定する必要が生じた場合は、この関数を呼ぶのではなく `SetProcessPermissionCheckUIDPolicy` などの代替手段を検討する。
+`New()` は可変長引数になるため、既存の呼び出し箇所はすべてそのままコンパイルが通る。対象は、本番コードの4箇所（`internal/safefileio/safe_file.go` の `NewFileSystem()`、`internal/security/dir_permissions_unix.go` の `NewDirectoryPermChecker()`、`internal/runner/runner.go` の `NewRunner()`、`internal/safefileio/testutil/mock.go` の `MockFileSystem.GetGroupMembership()`）と、テストコードの9箇所（`internal/safefileio/safe_file_cleanup_test.go` の `newMockFileSystem()`、`internal/safefileio/safe_file_test.go` の `TestCanSafelyReadFromFile()`、`internal/runner/runner_test.go` の `TestNewRunner()`、`internal/runner/base/security/validator_test.go` の `TestNewValidator_WithOptions()`（3箇所）、`internal/runner/base/security/file_validation_test.go` の `TestValidator_checkWritePermission()` / `TestValidator_isUserInGroup()` / `TestValidator_validateCompletePath()`）である。いずれも無修正で最終既定方針 `RealUIDOnly` を継承する。これらのテストは現在 sudo 環境を前提としていないため、挙動も変わらない。前者4箇所は `_test.go` でも `//go:build test` 付きファイルでもないため、`WithPermissionCheckUIDPolicy` を呼べない。これは意図した制約であり、`internal/safefileio/testutil/mock.go` が将来インスタンス方針を指定する必要が生じた場合は、この関数を呼ぶのではなく `SetProcessPermissionCheckUIDPolicy` などの代替手段を検討する。
 
 ### 3.3 プロセス既定方針
 
@@ -299,7 +299,7 @@ func ProcessPermissionCheckUIDPolicy() PermissionCheckUIDPolicy
 
 **設定より前に判定が走る余地**: Go は、インポートされたパッケージの初期化をすべて終えてから `main` パッケージの `init()` を実行し、その後 `main()` を呼ぶ。したがって `defaultFS` を含むパッケージ変数の生成は方針の設定より前に完了しているが、方針は生成時ではなく判定時に解決されるため問題にならない（§3.4）。
 
-方針の設定より前に読み取り安全性チェックが実行されうるのは、インポートされたパッケージの `init()` の中で直接実行される場合と、パッケージ初期化中に起動された goroutine から実行される場合の2通りである。2026-07-29 時点で、本番コードの `init()` は `cmd/runner/main.go:55`（フラグ定義のみ）と `internal/runner/base/security/command_analysis.go:237`（メモリ上のスライス分割のみ）の2つだけであり、どちらもファイル読み取りを行わず goroutine も起動しない。パッケージ変数の初期化子も同様で、`internal/safefileio/safe_file.go:49` の `defaultFS` は生成のみを行う。
+方針の設定より前に読み取り安全性チェックが実行されうるのは、インポートされたパッケージの `init()` の中で直接実行される場合と、パッケージ初期化中に起動された goroutine から実行される場合の2通りである。2026-07-29 時点で、本番コードの `init()` は `cmd/runner/main.go`（フラグ定義のみ）と `internal/runner/base/security/command_analysis.go`（メモリ上のスライス分割のみ）の2つだけであり、どちらもファイル読み取りを行わず goroutine も起動しない。パッケージ変数の初期化子も同様で、`internal/safefileio/safe_file.go` の `defaultFS` は生成のみを行う。
 
 仮に将来この不変条件が破られても、最終既定方針 `RealUIDOnly` が適用されるため、判定が緩む方向へは倒れない。起こりうるのは `record` / `verify` で `SudoUIDAware` の宣言が間に合わず読み取りが失敗することであり、厳しい側の失敗である。
 
@@ -338,7 +338,7 @@ func ProcessPermissionCheckUIDPolicy() PermissionCheckUIDPolicy
 
 基準UID解決の中核は、有効な方針・実 UID・環境変数取得関数の3つを引数で受け取る純粋関数として実装する。現行の `resolvePermissionCheckUID` が実 UID を引数で受け取っている構造を引き継ぎ、これに有効な方針を引数として加えた形である。
 
-この1つの差し替え口に集約する理由は、`getProcessRealUID()`（`internal/groupmembership/manager.go:514`）が `os.Getuid()` を直接呼んでおり、本タスクではこれを変更しないためである。したがって、非 root でテストを実行する場合、実 UID が 0 のときの挙動は公開メソッド経由では再現できない。§3.4.2 の表のうち `RealUIDOnly` と `SudoUIDAware` で結果が異なる行はすべて実 UID が 0 の行であるから、AC-04〜AC-06、AC-09、AC-11〜AC-13 の検証はこの純粋関数に対して行う。`GroupMembership` に環境変数取得関数のフィールドを持たせる案は、同じ依存に対する2つ目の差し替え口となるため採らない。
+この1つの差し替え口に集約する理由は、`internal/groupmembership/manager.go` の `getProcessRealUID()` が `os.Getuid()` を直接呼んでおり、本タスクではこれを変更しないためである。したがって、非 root でテストを実行する場合、実 UID が 0 のときの挙動は公開メソッド経由では再現できない。§3.4.2 の表のうち `RealUIDOnly` と `SudoUIDAware` で結果が異なる行はすべて実 UID が 0 の行であるから、AC-04〜AC-06、AC-09、AC-11〜AC-13 の検証はこの純粋関数に対して行う。`GroupMembership` に環境変数取得関数のフィールドを持たせる案は、同じ依存に対する2つ目の差し替え口となるため採らない。
 
 AC-09 が求める「`RealUIDOnly` の判定中に `SUDO_UID` が読まれないこと」は、呼び出し回数を数える環境変数取得関数を渡して検証する。実 UID を 0 として `RealUIDOnly` で解決したときは呼び出し回数が 0 であり、同じ条件で `SudoUIDAware` を用いたときは 1 以上である。この対比を取らないと、実 UID が 0 でないために読まれなかっただけの状態と区別できない。
 
@@ -451,7 +451,7 @@ AC-15 は「既定値を持つ方針を採る場合は、その既定値が意�
 
 コンストラクタ引数だけで伝播させる案は、`defaultFS` が `main` より前に生成されるため単独では成立しない（`01_requirements.md` が必須条件として挙げている点）。`FileSystemConfig` へのフィールド追加や中間コンストラクタのシグネチャ変更も、`defaultFS` には届かない。
 
-`defaultFS` そのものを廃止して呼び出し側に `FileSystem` を渡させる案も検討したが、`safefileio.SafeReadFile` は `internal/filevalidator/validator.go:1452`、`internal/runner/config/loader.go:127`、`internal/fileanalysis/file_analysis_store.go:109,161` から使われており、本タスクの目的から離れた大規模な変更になる。本タスクでは採らない。
+`defaultFS` そのものを廃止して呼び出し側に `FileSystem` を渡させる案も検討したが、`safefileio.SafeReadFile` は `internal/filevalidator/validator.go` の `VerifyAndRead()`、`internal/runner/config/loader.go` の `loadTemplate()`、`internal/fileanalysis/file_analysis_store.go` の `Load()` / `Save()` から使われており、本タスクの目的から離れた大規模な変更になる。本タスクでは採らない。
 
 したがってプロセス単位の設定機構が必要になる。可変なプロセス全体の状態を導入することの代償は、次の3点で抑える。
 
@@ -461,7 +461,7 @@ AC-15 は「既定値を持つ方針を採る場合は、その既定値が意�
 
 #### 効かない生成箇所には方針を渡さない
 
-`internal/security/dir_permissions_unix.go:35` の `NewDirectoryPermChecker()` と `internal/runner/runner.go:301` は、3バイナリの `main` から方針を渡しやすい位置にあるが、これらが使う `CanUserSafelyWriteFile` は実 UID を直接受け取るため基準UIDを参照しない。ここに方針指定を追加すると、後から読む者に「ここで方針が効いている」と誤解させる。`01_requirements.md`「対象外」の方針どおり追加しない。
+`internal/security/dir_permissions_unix.go` の `NewDirectoryPermChecker()` と `internal/runner/runner.go` の `NewRunner()` は、3バイナリの `main` から方針を渡しやすい位置にあるが、これらが使う `CanUserSafelyWriteFile` は実 UID を直接受け取るため基準UIDを参照しない。ここに方針指定を追加すると、後から読む者に「ここで方針が効いている」と誤解させる。`01_requirements.md`「対象外」の方針どおり追加しない。
 
 ## 4. エラーハンドリング設計
 
@@ -477,7 +477,7 @@ var ErrPermissionCheckUIDPolicyConflict = errors.New("process-wide permission ch
 
 ### 4.2 エラーメッセージの方針
 
-既存のエラーメッセージの文面は変更しない。`CanCurrentUserSafelyReadFile` が返す `ErrFileWorldWritable` / `ErrGroupWritableNonMember` / `ErrPermissionsExceedMaximum` はいずれも現行のままとする。これらは `internal/safefileio/safe_file.go:445,492` で `ErrInvalidFilePermissions` に包まれて呼び出し元へ渡るが、その構造も変えない。
+既存のエラーメッセージの文面は変更しない。`CanCurrentUserSafelyReadFile` が返す `ErrFileWorldWritable` / `ErrGroupWritableNonMember` / `ErrPermissionsExceedMaximum` はいずれも現行のままとする。これらは `internal/safefileio/safe_file.go` の `canSafelyAccessFile` / `canSafelyReadFromFile` で `ErrInvalidFilePermissions` に包まれて呼び出し元へ渡るが、その構造も変えない。
 
 方針名と基準UIDをエラー本文へ追加する案は検討したが、採らない。`01_requirements.md`「対象外」が「利用した事実と値の監査ログ記録」を明示的に [#941](https://github.com/isseis/go-safe-cmd-runner/issues/941) へ送っており、どの AC もエラー本文の内容を要求していないためである。`String()` は `ErrPermissionCheckUIDPolicyConflict` のメッセージ組み立てとテストの失敗表示に用いる。
 
