@@ -258,19 +258,25 @@ func (p PermissionCheckUIDPolicy) String() string
 // Option は GroupMembership の生成オプションを表す。
 type Option func(*GroupMembership)
 
-// WithPermissionCheckUIDPolicy は、この GroupMembership インスタンスに限って
-// 基準UID決定方針を指定する。指定した場合はプロセス既定方針より優先される。
-//
-// 本番コードから呼んではならない。バイナリ全体の方針は
-// SetProcessPermissionCheckUIDPolicy で宣言する（理由は §5.5）。
-func WithPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) Option
-
 // New は GroupMembership を生成する。オプションを渡さない場合、
 // 基準UID決定方針はプロセス既定方針に従う。
 func New(opts ...Option) *GroupMembership
 ```
 
-`New()` は可変長引数になるため、既存の呼び出し箇所はすべてそのままコンパイルが通る。対象は、本番コードの4箇所（`internal/safefileio/safe_file.go:38`、`internal/security/dir_permissions_unix.go:35`、`internal/runner/runner.go:301`、`internal/safefileio/testutil/mock.go:51`）と、テストコードの9箇所（`internal/safefileio/safe_file_cleanup_test.go:191`、`internal/safefileio/safe_file_test.go:569`、`internal/runner/runner_test.go:93`、`internal/runner/base/security/validator_test.go:115,126,138`、`internal/runner/base/security/file_validation_test.go:241,456,1450`）である。いずれも無修正で最終既定方針 `RealUIDOnly` を継承する。これらのテストは現在 sudo 環境を前提としていないため、挙動も変わらない。
+```go
+//go:build test
+
+// WithPermissionCheckUIDPolicy は、この GroupMembership インスタンスに限って
+// 基準UID決定方針を指定する。指定した場合はプロセス既定方針より優先される。
+//
+// バイナリ全体の方針は SetProcessPermissionCheckUIDPolicy で宣言するため
+// (理由は §5.5)、この関数は `test_helpers.go`（`docs/dev/developer_guide/test_organization.md`
+// のクラスB）に置き、`//go:build test` タグを付ける。これにより本番バイナリには
+// この関数自体が存在せず、本番コードから呼び出すことがコンパイル時に不可能になる。
+func WithPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) Option
+```
+
+`New()` は可変長引数になるため、既存の呼び出し箇所はすべてそのままコンパイルが通る。対象は、本番コードの4箇所（`internal/safefileio/safe_file.go:38`、`internal/security/dir_permissions_unix.go:35`、`internal/runner/runner.go:301`、`internal/safefileio/testutil/mock.go:51`）と、テストコードの9箇所（`internal/safefileio/safe_file_cleanup_test.go:191`、`internal/safefileio/safe_file_test.go:569`、`internal/runner/runner_test.go:93`、`internal/runner/base/security/validator_test.go:115,126,138`、`internal/runner/base/security/file_validation_test.go:241,456,1450`）である。いずれも無修正で最終既定方針 `RealUIDOnly` を継承する。これらのテストは現在 sudo 環境を前提としていないため、挙動も変わらない。前者4箇所は `_test.go` でも `//go:build test` 付きファイルでもないため、`WithPermissionCheckUIDPolicy` を呼べない。これは意図した制約であり、`internal/safefileio/testutil/mock.go` が将来インスタンス方針を指定する必要が生じた場合は、この関数を呼ぶのではなく `SetProcessPermissionCheckUIDPolicy` などの代替手段を検討する。
 
 ### 3.3 プロセス既定方針
 
@@ -557,7 +563,7 @@ flowchart LR
 
 `WithPermissionCheckUIDPolicy` はインスタンス方針をプロセス既定方針より優先させるため、`runner` の依存グラフ内のどこかでこの関数が `SudoUIDAware` 付きで呼ばれると、本タスクが閉じた `SUDO_UID` 参照が局所的に復活する。プロセス既定方針を検査する AC-08 のテストはこれを検出しない。
 
-現時点で本番コードにそのような呼び出しはなく、§3.2 のドキュメントコメントで本番コードからの呼び出しを禁じる。加えて、`forbidigo` などの lint ルールでテストファイル以外からの呼び出しを機械的に禁止することを推奨する。ただし lint ルールの追加は `01_requirements.md` のスコープ外であり、実装計画時に採否を判断する。
+§3.2 のとおり `WithPermissionCheckUIDPolicy` は `//go:build test` タグ付きファイルに置くため、本番バイナリにはこの関数自体が存在しない。本番コードからの呼び出しはコンパイルできず、lint ルールや運用上の注意に頼る必要がない。
 
 ## 6. 処理フロー詳細
 
