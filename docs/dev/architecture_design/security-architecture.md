@@ -1252,13 +1252,11 @@ The system implements multiple security layers:
 
 ### TOCTOU (Time-of-Check to Time-of-Use) Race Condition
 
-#### History of the Fix
+#### Resolution via fd-bound execution (fexecve-equivalent)
 
-A theoretical TOCTOU race condition previously existed between command path validation (`ValidateCommandAllowed`) and actual command execution. This section used to describe it as a "known limitation," but as of Task 0090 (evaluation of the fexecve approach) and Task 0155 (closing residual gaps), the race in the primary execution path has been **structurally closed**. The following describes the approach the current implementation takes.
+The TOCTOU race condition between command path validation (`ValidateCommandAllowed`) and actual command execution has been **structurally closed** for the primary execution path via fd-bound execution. The following describes the approach the current implementation takes.
 
-**Resolution via fd-bound execution (fexecve-equivalent)**:
-
-Path resolution happens exactly once for the entire execution flow. `verifyGroupFiles` in `internal/runner/group_executor.go` resolves the command path to a symlink-resolved absolute path via `verificationManager.ResolvePath()`, and pins that resolved path into `cmd.ExpandedCmd`. From that point on, `executeCommandInGroup`, which runs immediately before execution, does not re-resolve the path (a second `ResolvePath` call that used to exist there was removed, because it reopened a TOCTOU re-resolution window between verification and execution).
+Path resolution happens exactly once for the entire execution flow. `verifyGroupFiles` in `internal/runner/group_executor.go` resolves the command path to a symlink-resolved absolute path via `verificationManager.ResolvePath()`, and pins that resolved path into `cmd.ExpandedCmd`. From that point on, `executeCommandInGroup`, which runs immediately before execution, does not re-resolve the path. Re-resolving immediately before execution is deliberately avoided because it would reopen a TOCTOU re-resolution window between verification and execution.
 
 `ValidateCommandAllowed` in `internal/runner/base/security/validator.go` assumes that the path passed to it has already been resolved by `PathResolver.ResolvePath()` at this point, and does not call `filepath.EvalSymlinks` (it performs only allowlist regex matching).
 

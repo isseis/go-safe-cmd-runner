@@ -1249,13 +1249,11 @@ if !filepath.IsAbs(cmdcommon.DefaultHashDirectory) {
 
 ### TOCTOU (Time-of-Check to Time-of-Use) 競合状態
 
-#### 対策済みの経緯
+#### fd束縛実行（fexecve相当）による解消
 
-以前は、コマンドパス検証（`ValidateCommandAllowed`）と実際のコマンド実行の間に理論的なTOCTOU競合状態が存在していました。この節はかつてこれを「既知の制限」として記述していましたが、タスク0090（fexecve方式の検討）とタスク0155（残存ギャップの解消）により、主要な実行経路については**構造的に解消済み**です。以下、現在の実装が採用している方式を説明します。
+コマンドパス検証（`ValidateCommandAllowed`）と実際のコマンド実行の間のTOCTOU競合状態は、主要な実行経路については**fd束縛実行により構造的に解消されています**。以下、現在の実装が採用している方式を説明します。
 
-**fd束縛実行（fexecve相当）による解消**:
-
-パスの解決は実行フロー全体を通じて一度だけ行われます。`internal/runner/group_executor.go`の`verifyGroupFiles`が`verificationManager.ResolvePath()`でコマンドパスをシンボリックリンク解決した絶対パスに解決し、`cmd.ExpandedCmd`にその解決済みパスを固定します。以降、実行直前の`executeCommandInGroup`では再解決を行いません（かつて存在した2回目の`ResolvePath`呼び出しは、検証と実行の間にTOCTOU再解決の窓を生むため削除されました）。
+パスの解決は実行フロー全体を通じて一度だけ行われます。`internal/runner/group_executor.go`の`verifyGroupFiles`が`verificationManager.ResolvePath()`でコマンドパスをシンボリックリンク解決した絶対パスに解決し、`cmd.ExpandedCmd`にその解決済みパスを固定します。以降、実行直前の`executeCommandInGroup`では再解決を行いません。実行直前の再解決は検証と実行の間にTOCTOU再解決の窓を生むため、意図的に避けられています。
 
 `internal/runner/base/security/validator.go`の`ValidateCommandAllowed`は、この時点で渡されるパスがすでに`PathResolver.ResolvePath()`により解決済みであることを前提としており、`filepath.EvalSymlinks`は呼び出しません（許可リストの正規表現照合のみを行います）。
 
