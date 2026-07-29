@@ -45,6 +45,11 @@ func (v *Validator) Verify(filePath string) error {
 
 `verifyHash()` は `internal/fileanalysis` の解析レコード（ハッシュマニフェスト）を `v.store.Load()` で読み取り、記録済みのファイルパスとの一致を確認（ハッシュ衝突検出）した上で、`アルゴリズム:ハッシュ値` 形式の期待値を記録済みの `ContentHash` と比較し、不一致の場合は `ErrMismatch` を返します。
 
+**record 時点の読み取り安全性チェック**:
+
+`calculateHash()`（`internal/filevalidator/validator.go`）はファイルを `v.fileSystem.SafeOpenFile()` 経由で開きます。この呼び出しは内部で `internal/groupmembership` の読み取り安全性チェック（グループ書き込み可能なファイルについて、権限チェックの基準UID（`getPermissionCheckUID`/`resolvePermissionCheckUID` が解決するUID。実UIDが0かつ`SUDO_UID`が有効な値であればその値を、それ以外は実UIDを採用）がそのグループに属しているかを確認するもの）を通過して初めて成功し、通過できなければ失敗します。
+
+この読み取り安全性チェックが必要なのは、`verify`/`runner` が後で行う一致確認が「`record` 時点のハッシュと現在のハッシュが一致するか」しか見ないためです。仮に `record` がこのチェックを経ずにファイルを読み取ったとします。そのファイルが属するグループの信頼できないメンバーが、その時点ですでに内容を書き換えていた場合、`record` はその改ざん済みの内容をハッシュ化して「正しい基準」として記録してしまいます。以後 `verify`/`runner` は改ざん済みの内容と記録済みハッシュが一致し続けるため、この改ざんを検出できません。すなわちこのチェックは、`record` が信頼の基準点（`ContentHash`）を確定させる、まさにその瞬間にのみ有効な防御であり、実行時の再検証では代替できません（§2 の解析結果キャッシュについても同様の理由が当てはまります）。
 
 **一元化検証管理**:
 - 場所: `internal/verification/manager.go`
