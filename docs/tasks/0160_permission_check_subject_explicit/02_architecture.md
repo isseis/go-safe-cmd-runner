@@ -62,7 +62,7 @@ flowchart TD
     POL -->|"格納される"| PROC
     PROC -->|"参照される"| GM
     GM -->|"解決を委譲する"| RES
-    RES -->|"SudoAware のときのみ読む"| ENV
+    ENV -->|"SudoAware のときのみ参照される"| RES
     RES -->|"決定する"| UID
     UID -->|"入力となる"| CHK
 
