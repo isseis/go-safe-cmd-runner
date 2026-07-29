@@ -56,7 +56,7 @@
 
 - [x] `make test` / `make lint` が成功する
 - [x] 日本語版と英語版のセクション構成が一致している
-- [ ] issue #919 との対応を PR 説明に記載（PR 作成時に対応）
+- [x] issue #919 との対応を PR 説明に記載（[PR #939](https://github.com/isseis/go-safe-cmd-runner/pull/939)）
 
 ---
 
