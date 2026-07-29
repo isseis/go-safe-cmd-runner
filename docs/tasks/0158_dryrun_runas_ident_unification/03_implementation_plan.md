@@ -574,7 +574,7 @@ Phase 2 と Phase 3 は互いに独立で、順序を入れ替えてもよい。
 - [x] `ResolveRunAsIdentStrict` の追加
 - [x] 単体テスト 5 件の追加
 - [x] `make fmt` / `make test` / `make lint`
-- [ ] PR-1 マージ済み（対象ステップ: Phase 1）
+- [x] PR-1 マージ済み（対象ステップ: Phase 1）
 
 ### PR-2（対象ステップ: Phase 2）
 
@@ -584,27 +584,27 @@ Phase 2 と Phase 3 は互いに独立で、順序を入れ替えてもよい。
 - [x] `WithRunAsResolver` の型変更
 - [x] 既存テストの参照先変更（2 か所）
 - [x] `make fmt` / `make test` / `make lint`
-- [ ] PR-2 マージ済み（対象ステップ: Phase 2）
+- [x] PR-2 マージ済み（対象ステップ: Phase 2）
 
 ### PR-3（対象ステップ: Phase 3）
 
-- [ ] `runAsResolver` / `logger` フィールドの追加と既定値の設定
-- [ ] `parseDisplayRiskLevel` / `raiseSecurityRisk` / `runAsFailureKind` の追加
-- [ ] `validateRunAsIdentity` の追加と `analyzeCommand` の置き換え
-- [ ] 出力文言の更新
-- [ ] `riskLevelTestEvaluator` の追加
-- [ ] 既存 6 サブテストの更新（全サブテストへのリゾルバ注入を含む）
-- [ ] 新規テスト 10 件の追加（識別情報ガード 2 件と `TestDryRunPreservesProcessIdentity` を含む）
-- [ ] `make fmt` / `make test` / `make lint`
-- [ ] PR-3 マージ済み（対象ステップ: Phase 3）
+- [x] `runAsResolver` / `logger` フィールドの追加と既定値の設定
+- [x] `parseDisplayRiskLevel` / `raiseSecurityRisk` / `runAsFailureKind` の追加
+- [x] `validateRunAsIdentity` の追加と `analyzeCommand` の置き換え
+- [x] 出力文言の更新
+- [x] `riskLevelTestEvaluator` の追加
+- [x] 既存 6 サブテストの更新（全サブテストへのリゾルバ注入を含む）
+- [x] 新規テスト 10 件の追加（識別情報ガード 2 件と `TestDryRunPreservesProcessIdentity` を含む）
+- [x] `make fmt` / `make test` / `make lint`
+- [x] PR-3 マージ済み（対象ステップ: Phase 3）
 
 ### PR-4（対象ステップ: Phase 4）
 
-- [ ] 本体の削除 8 項目
-- [ ] doc コメント 3 か所の書き換え
-- [ ] テスト整理 18 項目（共通構成の適用漏れがないこと）
-- [ ] `make fmt` / `make test` / `make lint` / `make deadcode`（出力の内容で判定）
-- [ ] PR-4 マージ済み（対象ステップ: Phase 4）
+- [x] 本体の削除 8 項目
+- [x] doc コメント 3 か所の書き換え
+- [x] テスト整理 18 項目（共通構成の適用漏れがないこと）
+- [x] `make fmt` / `make test` / `make lint` / `make deadcode`（出力の内容で判定）
+- [x] PR-4 マージ済み（対象ステップ: Phase 4）
 
 ### PR-5（対象ステップ: Phase 5）
 
@@ -613,7 +613,7 @@ Phase 2 と Phase 3 は互いに独立で、順序を入れ替えてもよい。
 - [x] 文書の注記（日本語版 → 英語版）と用語集の更新
 - [x] 静的検査コマンドの実行と結果の記録
 - [x] `make unit-test-cgo1` / `make unit-test-cgo0`
-- [ ] PR-5 マージ済み（対象ステップ: Phase 5）
+- [x] PR-5 マージ済み（対象ステップ: Phase 5）
 
 ### 横断検索（`make lint` / `make test` では検知できない項目）
 
