@@ -987,20 +987,27 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 - `cmd/runner/main.go`は`cmdcommon.DefaultHashDirectory`を各使用箇所で直接参照する（プロダクション環境では常にデフォルトディレクトリのみ使用）
 
 **設定ファイル事前検証**:
+
+`cmd/runner/main.go` の `main()` は、設定ファイルの読み込みに先立って `bootstrap.LoadAndPrepareConfig(verificationManager, configPath, runID)` を呼び出す。この関数は内部で `verificationManager.VerifyAndReadConfigFile(configPath)` を呼び、ハッシュ検証とファイル読み込みを一度の読み取りでアトミックに行うことで TOCTOU 攻撃を防止する。
+
 ```go
-// 場所: cmd/runner/main.go の main() 関数
-// 設定ファイル読み込み前にハッシュ検証を実行
-result, err := verificationManager.VerifyGlobalFiles(&verification.GlobalVerificationInput{
-    ConfigPath: configPath,
-    // ...
-})
+// 場所: internal/runner/bootstrap/config.go の LoadAndPrepareConfig() 関数
+// 設定ファイルの検証と読み込みをアトミックに実行し、TOCTOU 攻撃を防止する
+content, err := verificationManager.VerifyAndReadConfigFile(configPath)
 if err != nil {
-    // 未検証データによるシステム動作を完全排除
-    logging.HandlePreExecutionError(logging.ErrorTypeConfigValidation,
-        fmt.Sprintf("Configuration file verification failed: %s", err), "config", runID)
-    os.Exit(1)
+    return nil, &logging.PreExecutionError{
+        Type:      logging.ErrorTypeFileAccess,
+        Message:   err.Error(),
+        Component: string(resource.ComponentVerification),
+        RunID:     runID,
+    }
 }
+
+// 検証済みの content を用いて設定を読み込む
+cfg, err := cfgLoader.LoadConfig(configPath, content)
 ```
+
+なお、`verificationManager.VerifyGlobalFiles()` は設定ファイル自体ではなく、設定ファイルの読み込み・展開後に判明する `verify_files` などのグローバルファイル群を対象として、`main()` から別途呼び出される。
 
 **早期パス検証**:
 ```go

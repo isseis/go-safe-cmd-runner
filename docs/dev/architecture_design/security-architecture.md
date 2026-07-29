@@ -990,20 +990,27 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 - `cmd/runner/main.go` references `cmdcommon.DefaultHashDirectory` directly at each use site (always using only the default directory in production environments)
 
 **Configuration File Pre-Verification**:
+
+Before loading the configuration file, `main()` in `cmd/runner/main.go` calls `bootstrap.LoadAndPrepareConfig(verificationManager, configPath, runID)`. Internally, this function calls `verificationManager.VerifyAndReadConfigFile(configPath)`, which performs hash verification and file reading atomically in a single read to prevent TOCTOU attacks.
+
 ```go
-// Location: cmd/runner/main.go, the main() function
-// Execute hash verification before reading configuration file
-result, err := verificationManager.VerifyGlobalFiles(&verification.GlobalVerificationInput{
-    ConfigPath: configPath,
-    // ...
-})
+// Location: internal/runner/bootstrap/config.go, the LoadAndPrepareConfig() function
+// Atomically verify and read the configuration file to prevent TOCTOU attacks
+content, err := verificationManager.VerifyAndReadConfigFile(configPath)
 if err != nil {
-    // Completely eliminate system operation with unverified data
-    logging.HandlePreExecutionError(logging.ErrorTypeConfigValidation,
-        fmt.Sprintf("Configuration file verification failed: %s", err), "config", runID)
-    os.Exit(1)
+    return nil, &logging.PreExecutionError{
+        Type:      logging.ErrorTypeFileAccess,
+        Message:   err.Error(),
+        Component: string(resource.ComponentVerification),
+        RunID:     runID,
+    }
 }
+
+// Load the configuration using the verified content
+cfg, err := cfgLoader.LoadConfig(configPath, content)
 ```
+
+Note that `verificationManager.VerifyGlobalFiles()` is called separately from `main()`, not for the configuration file itself, but for the global files (such as `verify_files`) that become known only after the configuration file has been loaded and expanded.
 
 **Early Path Validation**:
 ```go
