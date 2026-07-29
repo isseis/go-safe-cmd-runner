@@ -18,7 +18,7 @@
 - [x] 古いパス `internal/runner/privilege/unix.go` を `internal/runner/base/privilege/unix.go` に修正（3箇所: 構造体引用・`WithPrivileges`引用・`isRootOwnedSetuidBinary`引用）
 - [x] `UnixPrivilegeManager` のフィールド構成を現行版に更新（`logger`/`originalUID`/`privilegeSupported`/`metrics`/`mu` に加え `osExit`、`identityVerifier`、`readSavedIDs` を追記。`syscallSeteuid`/`syscallSetegid` は現行構造体に存在しないため追記しない）
 - [x] `WithPrivileges` のコード引用・説明文を現行実装に合わせて全面更新する。現行は `prepareExecution` → `performElevation` → `handleCleanupAndMetrics` に分割されており、以下を引用に反映した
-  - dry-run 等 `needsPrivilegeEscalation` が偽の operation では昇格自体をスキップする分岐
+  - `OperationUserGroupExecution`/`OperationFileValidation`以外の operation では`prepareExecution`が`ErrUnsupportedOperationType`エラーを返し、`WithPrivileges`が`fn()`を呼び出さずにエラーを返す分岐
   - 復元後の EUID==UID / EGID==GID 防御的検証（`identityVerifier`）
   - 復元後の saved-set-uid/gid 不変条件チェック（`readSavedIDs`、非対応プラットフォームでは構造的にスキップ）
 - [x] 上記の新規セキュリティ機構（防御的検証・saved-set 不変条件チェック）を「セキュリティ保証」節にも追記する

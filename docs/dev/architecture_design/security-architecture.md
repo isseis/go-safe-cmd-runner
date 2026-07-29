@@ -307,7 +307,7 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 }
 ```
 
-Whether escalation is needed is determined by `elevationCtx.Operation`: only `OperationUserGroupExecution` and `OperationFileValidation` escalate. Other operations (such as the dry-run execution path) skip escalation at `prepareExecution` and run `fn()` without elevated privileges.
+Whether escalation is needed is determined by `elevationCtx.Operation`: only `OperationUserGroupExecution` and `OperationFileValidation` escalate. For any other operation type, `prepareExecution` returns an `ErrUnsupportedOperationType` error, and `WithPrivileges` returns that error directly to the caller without calling `fn()`.
 
 **Execution Modes**:
 
@@ -326,7 +326,7 @@ Following privilege restoration, `handleCleanupAndMetrics` performs a two-stage 
 // Location: internal/runner/base/privilege/unix.go
 // 1. Verify EUID==UID / EGID==GID (an independent check that detects bugs in the restoration logic itself)
 if err := m.identityVerifier(); err != nil {
-    m.emergencyShutdown(err, shutdownContext)
+    m.emergencyShutdown(err, fmt.Sprintf("identity_verification_failure_%s", shutdownContext))
 }
 
 // 2. Verify that saved-set-uid/gid have not changed across the restore
@@ -334,10 +334,14 @@ if err := m.identityVerifier(); err != nil {
 if execCtx.originalSUID >= 0 {
     suid, sgid, err := m.getReadSavedIDs()()
     if err != nil {
-        m.emergencyShutdown(err, shutdownContext)
+        m.emergencyShutdown(fmt.Errorf("failed to read saved-set IDs after restore: %w", err),
+            fmt.Sprintf("saved_set_read_failure_%s", shutdownContext))
     }
     if suid != execCtx.originalSUID || sgid != execCtx.originalSGID {
-        m.emergencyShutdown(fmt.Errorf("saved-set-uid/gid changed after restore: %w", ErrIdentityLeak), shutdownContext)
+        err := fmt.Errorf("saved-set-uid/gid changed after restore: "+
+            "original suid=%d, sgid=%d; post-restore suid=%d, sgid=%d: %w",
+            execCtx.originalSUID, execCtx.originalSGID, suid, sgid, ErrIdentityLeak)
+        m.emergencyShutdown(err, fmt.Sprintf("saved_set_identity_verification_failure_%s", shutdownContext))
     }
 }
 ```

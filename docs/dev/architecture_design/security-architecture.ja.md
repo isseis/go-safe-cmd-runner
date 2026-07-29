@@ -307,7 +307,7 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 }
 ```
 
-昇格要否は`elevationCtx.Operation`によって決まり、`OperationUserGroupExecution`と`OperationFileValidation`のみ昇格します。それ以外の操作（dry-run実行経路など）は`prepareExecution`の時点で昇格をスキップし、`fn()`を非特権のまま実行します。
+昇格要否は`elevationCtx.Operation`によって決まり、`OperationUserGroupExecution`と`OperationFileValidation`のみ昇格します。それ以外の操作種別が渡された場合、`prepareExecution`は`ErrUnsupportedOperationType`エラーを返し、`WithPrivileges`はそのエラーをそのまま呼び出し元に返します（`fn()`は呼び出されません）。
 
 **実行モード**:
 
@@ -326,7 +326,7 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 // 場所: internal/runner/base/privilege/unix.go
 // 1. EUID==UID / EGID==GID を検証する（復元処理自体のバグを検出する独立したチェック）
 if err := m.identityVerifier(); err != nil {
-    m.emergencyShutdown(err, shutdownContext)
+    m.emergencyShutdown(err, fmt.Sprintf("identity_verification_failure_%s", shutdownContext))
 }
 
 // 2. saved-set-uid/gidが復元前後で変化していないことを検証する
@@ -334,10 +334,14 @@ if err := m.identityVerifier(); err != nil {
 if execCtx.originalSUID >= 0 {
     suid, sgid, err := m.getReadSavedIDs()()
     if err != nil {
-        m.emergencyShutdown(err, shutdownContext)
+        m.emergencyShutdown(fmt.Errorf("failed to read saved-set IDs after restore: %w", err),
+            fmt.Sprintf("saved_set_read_failure_%s", shutdownContext))
     }
     if suid != execCtx.originalSUID || sgid != execCtx.originalSGID {
-        m.emergencyShutdown(fmt.Errorf("saved-set-uid/gid changed after restore: %w", ErrIdentityLeak), shutdownContext)
+        err := fmt.Errorf("saved-set-uid/gid changed after restore: "+
+            "original suid=%d, sgid=%d; post-restore suid=%d, sgid=%d: %w",
+            execCtx.originalSUID, execCtx.originalSGID, suid, sgid, ErrIdentityLeak)
+        m.emergencyShutdown(err, fmt.Sprintf("saved_set_identity_verification_failure_%s", shutdownContext))
     }
 }
 ```
