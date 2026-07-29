@@ -9,6 +9,7 @@ import (
 	executortestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	privilegetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -150,6 +151,52 @@ func TestExecuteWithUserGroup_ResolverNilGroups_FailsClosed(t *testing.T) {
 		"supplementary-groups-unavailable sentinel must survive through ResolveRunAsIdentStrict wrapping and executor error propagation")
 	assert.Nil(t, result)
 	assert.Empty(t, mockPriv.ElevationCalls, "privilege escalation must not be attempted when supplementary groups could not be enumerated")
+}
+
+// TestExecuteWithUserGroup_SharedResolutionCases reads the standard
+// resolution-case table (risktypestestutil.RunAsResolutionCases) and verifies
+// that, for each case, the executor's fail-closed judgment agrees with what
+// the table expects (WantFailure). The test checks only resolution consent:
+// the individual sub-tests in risktypes and usergroup_dryrun_test.go cover
+// the exact message text, risk-level values, and log attributes. What this
+// test proves is that the executor rejects exactly the same inputs the table
+// marks as failing -- not one more, not one less.
+func TestExecuteWithUserGroup_SharedResolutionCases(t *testing.T) {
+	for _, tc := range risktypestestutil.RunAsResolutionCases() {
+		t.Run(tc.Name, func(t *testing.T) {
+			mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
+			exec := executor.NewDefaultExecutor(
+				executor.WithPrivilegeManager(mockPriv),
+				executor.WithFileSystem(&executortestutil.MockFileSystem{}),
+				executor.WithRunAsResolver(tc.Resolver),
+			)
+
+			cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"},
+				executortestutil.WithWorkDir(""),
+				executortestutil.WithRunAsUser(tc.UserName),
+				executortestutil.WithRunAsGroup(tc.GroupName))
+
+			result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
+
+			if tc.WantFailure {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, risktypes.ErrRunAsIdentityResolution)
+				assert.Nil(t, result)
+				assert.Empty(t, mockPriv.ElevationCalls, "privilege escalation must not be attempted when identity resolution fails")
+			} else {
+				// The command may succeed (running as root in CI) or fail with
+				// EPERM (unprivileged CAP_SETUID/CAP_SETGID); what matters here
+				// is only that resolution itself did not fail. Asserting on
+				// result would make the test flaky depending on the process's
+				// capabilities, so only the resolution outcome and the fact
+				// that escalation was attempted are checked.
+				assert.NotErrorIs(t, err, risktypes.ErrRunAsIdentityResolution,
+					"the resolver succeeded, so ErrRunAsIdentityResolution must not appear")
+				assert.Contains(t, mockPriv.ElevationCalls, "user_group_change:"+tc.UserName+":"+tc.GroupName,
+					"privilege escalation must be requested for the resolved command")
+			}
+		})
+	}
 }
 
 // TestExecuteWithUserGroup_NoRunAs_ResolverNotInvoked verifies that a command

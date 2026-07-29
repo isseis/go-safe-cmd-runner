@@ -444,6 +444,9 @@ The dry-run preview distinguishes three outcomes, and a failure is **never shown
 - **Error** — failures that prevent the analysis from running at all (path-resolution failure, command not found) and any unclassifiable internal I/O failure (e.g. an unexpected record-load error) are returned as an **error** (a hard error that aborts), per the two-track split shared with the runtime path.
 - **High-allowable** — a command whose effective risk genuinely computes to High (for example dangerous binary-analysis signals) is displayed as High and, under a configuration that allows High, would execute. Conversion to High/Critical happens only through the specific checks inside the detailed analysis — it is never used as a fallback for an unverifiable command. An unverifiable command is a deny preview, not a High display.
 
+> **Exception (run-as identity validation failure):**
+> Failures during run-as identity validation (resolution of `run_as_user` / `run_as_group`) are an exception to the policy above: they are displayed by raising `Impact.SecurityRisk` to `high`. This display does not constitute a deny preview and is not reflected in the dry-run exit code. This is a provisional treatment as of the identity-resolution unification (Task 0158); resolving it belongs to the broader design of the deny-judgment mechanism. (See the architecture design of 0158 §5.7 for the background.)
+
 ## Audit Logging
 
 The result of risk evaluation is recorded in the audit log (`Logger.LogRiskProfile` in `internal/runner/base/audit/logger.go`). For either decision—allow or deny—and even on the path that aborts due to an internal error, exactly one entry is always output. The input is `risktypes.RiskAuditEntry` (a DTO).
