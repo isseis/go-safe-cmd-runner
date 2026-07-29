@@ -41,9 +41,14 @@
 - [ ] 行番号付き引用を今後も維持するか、行番号を落として構造説明に寄せるかを判定
 - [ ] 判定根拠を作業ログまたは PR 説明に記載
 
-### バイリンガル文書の反映
+### 日本語の推敲
 
 - [ ] `security-architecture.ja.md` の修正をコミット
+- [ ] `/japrose` コマンドで `security-architecture.ja.md` を推敲
+- [ ] `security-architecture.ja.md` の修正をコミット
+
+### バイリンガル文書の反映
+
 - [ ] `/mktrans` コマンドで `security-architecture.md` に反映
 - [ ] 英語版の節構成と段落数が日本語版と一致することを目視確認
 
