@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-07-30 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-07-30 |
+| Reviewer | Issei Suzuki |
 | Comments | - |
 
 ## 1. 実装概要
@@ -97,7 +97,7 @@
 
 #### ステップ1-1: ユーザーデータベース種別の定数
 
-**変更ファイル**: `internal/groupmembership/membership_cgo.go`、`internal/groupmembership/membership_nocgo.go`
+**変更ファイル**: `internal/groupmembership/membership_cgo.go`、`internal/groupmembership/membership_nocgo.go`、`internal/groupmembership/membership_cgo_test.go`、`internal/groupmembership/membership_nocgo_test.go`
 
 - [ ] `membership_cgo.go` に `const userDatabaseSource = "nss"` を、参照先が NSS であることを述べる英語のコメント付きで追加する
 - [ ] `membership_nocgo.go` に `const userDatabaseSource = "passwd-file"` を、参照先が `/etc/passwd` のみであることを述べる英語のコメント付きで追加する
@@ -524,7 +524,7 @@
 | AC-08 | `test` | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_Report`（`permission_check_uid` / `real_uid` / `source_env_var` / `permission_check_uid_policy` / `user_database_source` の5属性を検証し、`real_uid` と `permission_check_uid` に異なる値を与える） |
 | AC-09 | `test` | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnce`、`internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently` |
 | AC-09 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_ReportsAdoptionOnlyOncePerReporter`（同一レポータ実体で解決を3回実行して記録は1件） |
-| AC-09 | `static` | `rg -n "^var processSudoUIDAdoptionReporter sudoUIDAdoptionReporter$" internal/groupmembership/manager.go` が1件一致すること（パッケージレベルの実体が1つだけ宣言されていること） |
+| AC-09 | `static` | `rg -n "^var processSudoUIDAdoptionReporter\s+sudoUIDAdoptionReporter$" internal/groupmembership/manager.go` が1件一致すること（パッケージレベルの実体が1つだけ宣言されていること） |
 | AC-09 | `static` | `rg -n "sudoUIDAdoptionReporter" internal/groupmembership/manager.go internal/groupmembership/test_helpers_policy.go` の結果に、上記の `var` 宣言・型宣言・`report` のレシーバ・`test_helpers_policy.go` のラッパー内の生成以外の実体の生成が現れないこと（本番コードが呼び出しごとに新しい実体を作っていないこと） |
 | AC-09 | `manual` | 上記2つの `static` チェックを踏まえ、`getPermissionCheckUID` がパッケージレベルの実体を渡していることをコードレビューで確認（02 §7.6） |
 | AC-10 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_AdoptionRecordConditions`（`SUDO_UID` 未設定と `SUDO_UID` が `0` の場合に記録が出ない） |
@@ -538,7 +538,7 @@
 | AC-16 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_SudoUIDAware`（実在確認の差し替え口を使って全行を到達する） |
 | AC-16 | `test` | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionRecordReachesDefaultLogger`（記録の出力先の差し替え口を使う） |
 | AC-16 | `static` | 非 root（`id -u` が 0 以外）で `go test -tags test -run 'TestResolvePermissionCheckUID|TestSudoUIDAdoptionReporter|TestSudoUIDAdoptionRecordReachesDefaultLogger|TestSudoUIDExistenceMemo' ./internal/groupmembership/` が終了コード 0 で終わること。実在確認とログ出力先の両方の差し替え口を使うテストが、root 権限なしに実行できることの確認 |
-| AC-16 | `static` | `rg -n "func ResolvePermissionCheckUID\(policy PermissionCheckUIDPolicy, realUID int, deps PermissionCheckUIDDeps\)" internal/groupmembership/test_helpers_policy.go` が1件一致すること（パッケージ外のテストからも差し替えられること） |
+| AC-16 | `static` | `rg -n "func ResolvePermissionCheckUID\(.*PermissionCheckUIDDeps" internal/groupmembership/test_helpers_policy.go` が1件一致すること（パッケージ外のテストからも差し替えられること） |
 | AC-17 | `static` | `rg -n "実在" docs/dev/architecture_design/security-architecture.ja.md` が50行目に一致すること、かつ `rg -n "範囲の数値UIDであればその値を" docs/dev/architecture_design/security-architecture.ja.md` が一致しないこと |
 | AC-17 | `static` | `rg -n "existence check|exists in the user database" docs/dev/architecture_design/security-architecture.md` が50行目に一致すること、かつ `rg -n "that value is used; otherwise the real UID is used" docs/dev/architecture_design/security-architecture.md` が一致しないこと。前者の語は `docs/translation_glossary.md` に登録した `実在確認` → `existence check` に対応する（ステップ4-2 は 4-4 の完了後に実行する） |
 | AC-17 | `manual` | 書き換えた記述が実装（ステップ3-1、3-2）と一致することをコードと対照して確認する（新規記述の典拠確認） |
@@ -547,7 +547,7 @@
 | AC-18 | `static` | `rg -n "user_database_source" docs/user/record_command.ja.md docs/user/verify_command.ja.md` が両ファイルで一致すること（ユーザーデータベース種別による判別方法が記載されていること） |
 | AC-18 | `manual` | 記載した `sudo env -u SUDO_UID record <file>` を実行し、`SUDO_UID` が渡らないことと文書の説明どおりの挙動になることを確認する（新規コマンド例の典拠確認） |
 | AC-18 | `manual` | CGO 有効ビルドと `CGO_ENABLED=0` ビルドの `record` に、実在しない `SUDO_UID` を与えて実行し、エラーメッセージの `user_database_source` がそれぞれ `nss` / `passwd-file` になることを確認する（新規記述の典拠確認）。残る2つの対処（ユーザーデータベースの一時障害、`/etc/passwd` の欠落）は再現に環境構築を要するため、02 §5.3 の表を典拠として引用するに留める |
-| AC-19 | `static` | 追加した5語のそれぞれについて行が存在すること。`rg -n "^\| 実在確認 \| existence check \|" docs/translation_glossary.md`、`rg -n "^\| 採用 \| adoption \|" docs/translation_glossary.md`、`rg -n "^\| 採用事実の記録 \| adoption record \|" docs/translation_glossary.md`、`rg -n "^\| センチネルエラー \| sentinel error \|" docs/translation_glossary.md`、`rg -n "^\| ユーザーデータベース種別 \| user database source \|" docs/translation_glossary.md` がそれぞれ1件一致すること（計5件） |
+| AC-19 | `static` | 追加した5語のそれぞれについて行が存在すること。`rg -n "^\|\s*実在確認\s*\|\s*existence check\s*\|" docs/translation_glossary.md`、`rg -n "^\|\s*採用\s*\|\s*adoption\s*\|" docs/translation_glossary.md`、`rg -n "^\|\s*採用事実の記録\s*\|\s*adoption record\s*\|" docs/translation_glossary.md`、`rg -n "^\|\s*センチネルエラー\s*\|\s*sentinel error\s*\|" docs/translation_glossary.md`、`rg -n "^\|\s*ユーザーデータベース種別\s*\|\s*user database source\s*\|" docs/translation_glossary.md` がそれぞれ1件一致すること（計5件） |
 
 ### 8.1 全体の成功条件
 
