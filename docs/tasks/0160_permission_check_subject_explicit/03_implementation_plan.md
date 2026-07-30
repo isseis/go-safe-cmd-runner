@@ -319,14 +319,14 @@
 
 **作業内容**
 
-- [ ] `### 6.2 実行時エラー` の `#### 権限エラー`（見出しは :1833、本文は次の `####` 見出しの直前まで）の**節末**、すなわち次の `#### ファイル検証エラー` 見出しの直前に、`#### sudo 経由で起動した場合のファイル読み取り拒否` を新設する。記載内容は次の 3 点とする。(1) `sudo runner` で起動した場合、ファイル読み取り可否の判定に用いる UID が呼び出し元ユーザーから 0（root）へ変わる、(2) その結果、グループ書き込み可能なファイルについて、root がそのグループの構成員でなければ読み取りが拒否されうる、(3) 想定される運用（`install -m 4755` した `runner` を一般ユーザーが起動する形態）および root の cron から直接起動する形態では、この変化の影響を受けない
-- [ ] 対処法として、`sudo runner` ではなく setuid ビット付き `runner` を一般ユーザーとして起動する形態を用いる旨を記す
-- [ ] `## 目次` は `##` 見出しのみを列挙しているため更新しない
+- [x] `### 6.2 実行時エラー` の `#### 権限エラー`（見出しは :1833、本文は次の `####` 見出しの直前まで）の**節末**、すなわち次の `#### ファイル検証エラー` 見出しの直前に、`#### sudo 経由で起動した場合のファイル読み取り拒否` を新設する。記載内容は次の 3 点とする。(1) `sudo runner` で起動した場合、ファイル読み取り可否の判定に用いる UID が呼び出し元ユーザーから 0（root）へ変わる、(2) その結果、グループ書き込み可能なファイルについて、root がそのグループの構成員でなければ読み取りが拒否されうる、(3) 想定される運用（`install -m 4755` した `runner` を一般ユーザーが起動する形態）および root の cron から直接起動する形態では、この変化の影響を受けない
+- [x] 対処法として、`sudo runner` ではなく setuid ビット付き `runner` を一般ユーザーとして起動する形態を用いる旨を記す
+- [x] `## 目次` は `##` 見出しのみを列挙しているため更新しない
 
 **完了条件**
 
-- [ ] `rg -n 'sudo runner' docs/user/runner_command.ja.md` が新設節に一致する
-- [ ] 記載内容が設計書 §5.3 の記述と矛盾しない（§7 の AC-16 の検証手順で確認する）
+- [x] `rg -n 'sudo runner' docs/user/runner_command.ja.md` が新設節に一致する
+- [x] 記載内容が設計書 §5.3 の記述と矛盾しない（§7 の AC-16 の検証手順で確認する）
 
 ### 2.9 ステップ 4-2 = フェーズ4: 利用者向け文書（英語版）と `CHANGELOG.md`
 
@@ -337,16 +337,16 @@
 
 **作業内容**
 
-- [ ] ステップ 4-1 のコミット後に `/mktrans` を `docs/user/runner_command.md` に対して実行し、新設節を英語版へ反映する。日本語版を直接英訳して両方を同時に編集することはしない
-- [ ] `CHANGELOG.md` の `## [Unreleased]` の `### Changed` に、`sudo runner` 利用者向けの破壊的挙動変更として英語で記載する。内容は (1) `runner` の読み取り判定が `SUDO_UID` を参照しなくなったこと、(2) `sudo runner` では基準UIDが呼び出し元ユーザーから 0 へ変わり、グループ書き込み可能なファイルの読み取りが拒否されうること、(3) `install -m 4755` した `runner` を一般ユーザーが起動する想定運用は影響を受けないこと、(4) `record` / `verify` の挙動は変わらないこと
-- [ ] 記載した 4 点を、`cmd/runner/main.go` の `init()` の宣言値、`cmd/record/main.go` / `cmd/verify/main.go` の `init()` の宣言値、`internal/groupmembership/manager.go` の `resolvePermissionCheckUID` の実装と読み合わせ、いずれも実装の挙動と一致することを確認する
+- [x] ステップ 4-1 のコミット後に `/mktrans` を `docs/user/runner_command.md` に対して実行し、新設節を英語版へ反映する。日本語版を直接英訳して両方を同時に編集することはしない
+- [x] `CHANGELOG.md` の `## [Unreleased]` の `### Changed` に、`sudo runner` 利用者向けの破壊的挙動変更として英語で記載する。内容は (1) `runner` の読み取り判定が `SUDO_UID` を参照しなくなったこと、(2) `sudo runner` では基準UIDが呼び出し元ユーザーから 0 へ変わり、グループ書き込み可能なファイルの読み取りが拒否されうること、(3) `install -m 4755` した `runner` を一般ユーザーが起動する想定運用は影響を受けないこと、(4) `record` / `verify` の挙動は変わらないこと
+- [x] 記載した 4 点を、`cmd/runner/main.go` の `init()` の宣言値、`cmd/record/main.go` / `cmd/verify/main.go` の `init()` の宣言値、`internal/groupmembership/manager.go` の `resolvePermissionCheckUID` の実装と読み合わせ、いずれも実装の挙動と一致することを確認する
 
 **完了条件**
 
-- [ ] `rg -c '^#### ' docs/user/runner_command.ja.md docs/user/runner_command.md` が両ファイルで 29 である（変更前はいずれも 28。§1.3 の 9.）
-- [ ] 日本語版と英語版の新設節を並べて読み、記載する 3 点と対処法が対応していることを確認済みである
-- [ ] `CHANGELOG.md` の 4 点が上記の読み合わせで実装と一致していることを確認済みである
-- [ ] `make fmt` / `make test` / `make lint` が成功する
+- [x] `rg -c '^#### ' docs/user/runner_command.ja.md docs/user/runner_command.md` が両ファイルで 29 である（変更前はいずれも 28。§1.3 の 9.）
+- [x] 日本語版と英語版の新設節を並べて読み、記載する 3 点と対処法が対応していることを確認済みである
+- [x] `CHANGELOG.md` の 4 点が上記の読み合わせで実装と一致していることを確認済みである
+- [x] `make fmt` / `make test` / `make lint` が成功する
 
 ### 2.10 ステップ 4-3 = フェーズ4: セキュリティ設計文書の追随
 
@@ -357,17 +357,17 @@
 
 **作業内容**
 
-- [ ] `.ja.md:50` の括弧内の記述を、`record` が `SudoUIDAware` を宣言していることに基づく挙動として書き換える。現行の「権限チェックの基準UID（`getPermissionCheckUID`/`resolvePermissionCheckUID` が解決するUID。実UIDが0かつ`SUDO_UID`が有効な値であればその値を、それ以外は実UIDを採用）」を、「権限チェックの基準UID（`record` は基準UID決定方針として `SudoUIDAware` を宣言しているため、実UIDが0かつ`SUDO_UID`が有効な値であればその値を、それ以外は実UIDを採用する）」へ改める。関数名の列挙は、シグネチャが変わるため記述から外す
-- [ ] `.ja.md:831` の `func New() *GroupMembership` を `func New(opts ...Option) *GroupMembership` へ変更する
-- [ ] 上記 2 点を `/mktrans` で `security-architecture.md`（対応行は :50 と :834）へ反映する
-- [ ] 書き換えた :50 の記述を、`cmd/record/main.go` の `init()` が宣言する方針（`SudoUIDAware`）と `internal/groupmembership/manager.go` の `resolvePermissionCheckUID` の実装と読み合わせ、記述が実装の挙動と一致することを確認する
+- [x] `.ja.md:50` の括弧内の記述を、`record` が `SudoUIDAware` を宣言していることに基づく挙動として書き換える。現行の「権限チェックの基準UID（`getPermissionCheckUID`/`resolvePermissionCheckUID` が解決するUID。実UIDが0かつ`SUDO_UID`が有効な値であればその値を、それ以外は実UIDを採用）」を、「権限チェックの基準UID（`record` は基準UID決定方針として `SudoUIDAware` を宣言しているため、実UIDが0かつ`SUDO_UID`が有効な値であればその値を、それ以外は実UIDを採用する）」へ改める。関数名の列挙は、シグネチャが変わるため記述から外す
+- [x] `.ja.md:831` の `func New() *GroupMembership` を `func New(opts ...Option) *GroupMembership` へ変更する
+- [x] 上記 2 点を `/mktrans` で `security-architecture.md`（対応行は :50 と :834）へ反映する
+- [x] 書き換えた :50 の記述を、`cmd/record/main.go` の `init()` が宣言する方針（`SudoUIDAware`）と `internal/groupmembership/manager.go` の `resolvePermissionCheckUID` の実装と読み合わせ、記述が実装の挙動と一致することを確認する
 
 **完了条件**
 
-- [ ] `rg -n 'func New\(\) \*GroupMembership' docs/` の一致が 0 件である
-- [ ] `rg -n 'getPermissionCheckUID' docs/dev/` の一致が 0 件である
-- [ ] `rg -n 'func New\(opts \.\.\.Option\) \*GroupMembership' docs/dev/architecture_design/` が 2 件（日英各 1 件）一致する
-- [ ] 書き換えた記述が上記の読み合わせで実装と一致していることを確認済みである
+- [x] `rg -n 'func New\(\) \*GroupMembership' docs/` の一致が 0 件である
+- [x] `rg -n 'getPermissionCheckUID' docs/dev/` の一致が 0 件である
+- [x] `rg -n 'func New\(opts \.\.\.Option\) \*GroupMembership' docs/dev/architecture_design/` が 2 件（日英各 1 件）一致する
+- [x] 書き換えた記述が上記の読み合わせで実装と一致していることを確認済みである
 
 ### 2.11 ステップ 4-4 = フェーズ4: 用語集の更新
 
@@ -377,14 +377,14 @@
 
 **作業内容**
 
-- [ ] 「基準UID | base UID」の行（:47）の直後に「基準UID決定方針 | base UID policy | 基準UIDの決定規則。`RealUIDOnly` と `SudoUIDAware` の2種（Task 0160）」の行を追加する
-- [ ] 文書末尾の更新履歴表に「2026-07-30 | 基準UID決定方針の明示指定（Task 0160）関連の用語を追加 (base UID policy)」の行を追加する
-- [ ] 追加した行の英語欄が、ステップ 4-2 / 4-3 で英語版文書に実際に書いた表現と一致していることを確認する
+- [x] 「基準UID | base UID」の行（:47）の直後に「基準UID決定方針 | base UID policy | 基準UIDの決定規則。`RealUIDOnly` と `SudoUIDAware` の2種（Task 0160）」の行を追加する
+- [x] 文書末尾の更新履歴表に「2026-07-30 | 基準UID決定方針の明示指定（Task 0160）関連の用語を追加 (base UID policy)」の行を追加する
+- [x] 追加した行の英語欄が、ステップ 4-2 / 4-3 で英語版文書に実際に書いた表現と一致していることを確認する
 
 **完了条件**
 
-- [ ] `rg -n '基準UID決定方針' docs/translation_glossary.md` が 1 件以上一致する
-- [ ] 英語欄の表現が英語版文書の表現と一致していることを確認済みである
+- [x] `rg -n '基準UID決定方針' docs/translation_glossary.md` が 1 件以上一致する
+- [x] 英語欄の表現が英語版文書の表現と一致していることを確認済みである
 
 ### PR-3 作成ポイント: user and security documentation updates
 
