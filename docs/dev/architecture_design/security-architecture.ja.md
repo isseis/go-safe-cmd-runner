@@ -47,7 +47,7 @@ func (v *Validator) Verify(filePath string) error {
 
 **record 時点の読み取り安全性チェック**:
 
-`calculateHash()`（`internal/filevalidator/validator.go`）はファイルを `v.fileSystem.SafeOpenFile()` 経由で開きます。この呼び出しは内部で `internal/groupmembership` の読み取り安全性チェック（グループ書き込み可能なファイルについて、権限チェックの基準UID（`getPermissionCheckUID`/`resolvePermissionCheckUID` が解決するUID。実UIDが0かつ`SUDO_UID`が有効な値であればその値を、それ以外は実UIDを採用）がそのグループに属しているかを確認するもの）を通過して初めて成功し、通過できなければ失敗します。
+`calculateHash()`（`internal/filevalidator/validator.go`）はファイルを `v.fileSystem.SafeOpenFile()` 経由で開きます。この呼び出しは内部で `internal/groupmembership` の読み取り安全性チェック（グループ書き込み可能なファイルについて、権限チェックの基準UID（`record` は基準UID決定方針として `SudoUIDAware` を宣言しているため、実UIDが0かつ`SUDO_UID`が0..MaxUint32の範囲の数値UIDであればその値を、それ以外は実UIDを採用）がそのグループに属しているかを確認するもの）を通過して初めて成功し、通過できなければ失敗します。
 
 この読み取り安全性チェックが必要なのは、`verify`/`runner` が後で行う一致確認が「`record` 時点のハッシュと現在のハッシュが一致するか」しか見ないためです。仮に `record` がこのチェックを経ずにファイルを読み取ったとします。そのファイルが属するグループの信頼できないメンバーが、その時点ですでに内容を書き換えていた場合、`record` はその改ざん済みの内容をハッシュ化して「正しい基準」として記録してしまいます。以後 `verify`/`runner` は改ざん済みの内容と記録済みハッシュが一致し続けるため、この改ざんを検出できません。すなわちこのチェックは、`record` が信頼の基準点（`ContentHash`）を確定させる、まさにその瞬間にのみ有効な防御であり、実行時の再検証では代替できません（§2 の解析結果キャッシュについても同様の理由が当てはまります）。
 
@@ -828,7 +828,7 @@ type CommandSpec struct {
 // インターフェースではなく具象構造体。ユーザー名/グループ名ではなく uid/gid（数値）を受け取る
 type GroupMembership struct{ /* ... */ }
 
-func New() *GroupMembership
+func New(opts ...Option) *GroupMembership
 
 func (gm *GroupMembership) IsUserInGroup(uid, gid uint32) (bool, error)
 func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error)

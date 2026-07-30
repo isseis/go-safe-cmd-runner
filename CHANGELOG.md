@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### `sudo runner`: base UID for file-read permission checks no longer reads `SUDO_UID`
+
+`runner` no longer reads the `SUDO_UID` environment variable when determining the
+base UID for file-read permission checks. Under `sudo runner`, the base UID
+changes from the calling user to `0` (root), which may cause read denials on
+group-writable files when root is not a member of the file's group.
+
+The intended operation — regular users launching a setuid `runner` installed
+with `install -m 4755` — is unaffected. Direct execution from root's cron is
+also unaffected.
+
+The behavior of `record` and `verify` is unchanged: they continue to use the
+calling user's UID from `SUDO_UID` when run via sudo, preserving the existing
+read-safety check semantics.
+
 #### Permission checks no longer require a passwd entry for the process's own UID
 
 Previously, if the process's real UID had no resolvable passwd entry (an NSS failure with

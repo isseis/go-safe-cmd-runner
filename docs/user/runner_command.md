@@ -1886,6 +1886,16 @@ ls -l /usr/local/bin/runner
 # Confirm -rwsr-xr-x (4755)
 ```
 
+#### File Read Denied When Started via sudo
+
+When started via `sudo runner`, the UID used for file-read permission checks (the base UID) changes from the calling user's UID to `0` (root). This is because `runner` is designed to be started by regular users via the setuid bit, and sudo-based execution no longer determines the base UID from the `SUDO_UID` environment variable.
+
+As a result, for group-writable files, reads may be denied if root is not a member of the file's group. This is a change toward stricter permission checks — not a permission gap.
+
+The intended operation (regular users launching a setuid `runner` installed with `install -m 4755`) and direct execution from root's cron are unaffected by this change.
+
+**Workaround**: Instead of `sudo runner`, launch `runner` with the setuid bit set via `install -m 4755` as a regular user.
+
 #### File Verification Error
 
 **Error Message**
