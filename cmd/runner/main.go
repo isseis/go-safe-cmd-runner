@@ -16,6 +16,7 @@ import (
 	"syscall"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
@@ -78,6 +79,15 @@ func init() {
 	flag.StringVar(&runID, "run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
 	flag.BoolVar(&forceInteractive, "interactive", false, "force interactive mode with colored output (overrides environment detection)")
 	flag.BoolVar(&keepTempDirs, "keep-temp-dirs", false, "keep temporary directories after execution")
+
+	// runner runs as a setuid-root binary started by an unprivileged user; sudo
+	// invocation is not a supported deployment, so SUDO_UID is never consulted.
+	// This declares the same value as the final default policy: it exists to
+	// make the intent explicit, not to change behavior.
+	if err := groupmembership.SetProcessPermissionCheckUIDPolicy(groupmembership.RealUIDOnly); err != nil {
+		panic(fmt.Sprintf("failed to declare permission check UID policy %s (current=%s): %v",
+			groupmembership.RealUIDOnly, groupmembership.ProcessPermissionCheckUIDPolicy(), err))
+	}
 }
 
 func main() {

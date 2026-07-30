@@ -106,6 +106,7 @@ linters:
             - github.com/isseis/go-safe-cmd-runner/internal/elfmagic
             - github.com/isseis/go-safe-cmd-runner/internal/fileanalysis
             - github.com/isseis/go-safe-cmd-runner/internal/filevalidator
+            - github.com/isseis/go-safe-cmd-runner/internal/groupmembership
             - github.com/isseis/go-safe-cmd-runner/internal/libccache
             - github.com/isseis/go-safe-cmd-runner/internal/logging
             - github.com/isseis/go-safe-cmd-runner/internal/machodylib

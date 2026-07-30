@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -178,4 +179,19 @@ func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
 	// verify does NOT abort on TOCTOU violations — it only logs a warning
 	assert.Equal(t, 0, exitCode, "verify should continue (exit 0) despite world-writable directory")
 	require.Len(t, validator.calls, 1, "file should have been processed")
+}
+
+// TestVerifyDeclaresSudoUIDAwarePolicy verifies that this binary's init()
+// declared SudoUIDAware as the process-wide permission check UID policy, and
+// that under that policy a valid SUDO_UID is adopted when the real UID is 0,
+// matching the pre-refactor resolvePermissionCheckUID(0, "1000") behavior.
+// This test only reads the process-wide default policy; it does not modify
+// it, so it must not run in parallel with tests that do.
+func TestVerifyDeclaresSudoUIDAwarePolicy(t *testing.T) {
+	require.Equal(t, groupmembership.SudoUIDAware, groupmembership.ProcessPermissionCheckUIDPolicy())
+
+	uid, err := groupmembership.ResolvePermissionCheckUID(
+		groupmembership.ProcessPermissionCheckUIDPolicy(), 0, func(string) string { return "1000" })
+	require.NoError(t, err)
+	assert.Equal(t, 1000, uid)
 }

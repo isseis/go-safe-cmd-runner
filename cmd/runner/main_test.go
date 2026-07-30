@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -338,4 +339,18 @@ func TestShortFlagsEquivalence(t *testing.T) {
 			assert.Equal(t, longForceQuiet, shortForceQuiet, "forceQuiet should be the same")
 		})
 	}
+}
+
+// TestRunnerDeclaresRealUIDOnlyPolicy verifies that this binary's init()
+// declared RealUIDOnly as the process-wide permission check UID policy, and
+// that under that policy SUDO_UID is not adopted even when the real UID is 0.
+// This test only reads the process-wide default policy; it does not modify
+// it, so it must not run in parallel with tests that do.
+func TestRunnerDeclaresRealUIDOnlyPolicy(t *testing.T) {
+	require.Equal(t, groupmembership.RealUIDOnly, groupmembership.ProcessPermissionCheckUIDPolicy())
+
+	uid, err := groupmembership.ResolvePermissionCheckUID(
+		groupmembership.ProcessPermissionCheckUIDPolicy(), 0, func(string) string { return "1000" })
+	require.NoError(t, err)
+	assert.Equal(t, 0, uid)
 }

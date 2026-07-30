@@ -312,7 +312,7 @@ func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32
 //   - bool: true if the current user can safely read from the file, false otherwise
 //   - error: non-nil if there was an error checking user or group information
 func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm os.FileMode) (bool, error) {
-	permissionCheckUID, err := getPermissionCheckUID()
+	permissionCheckUID, err := gm.getPermissionCheckUID()
 	if err != nil {
 		return false, err
 	}
@@ -439,12 +439,14 @@ func (gm *GroupMembership) clearExpiredCache() {
 	}
 }
 
+// sudoUIDEnvVar is the name of the environment variable consulted by the
+// SudoUIDAware policy.
+const sudoUIDEnvVar = "SUDO_UID"
+
 // getPermissionCheckUID returns the user ID to use for permission checks.
-// When running under sudo (the real UID is 0 and SUDO_UID is set), it returns the
-// original user's UID taken from SUDO_UID. Otherwise it returns the process's real UID.
-//
-// This allows sudo to perform permission checks as if the original user were accessing the file,
-// which is important for validating that the user has legitimate access to the files.
+// The base UID is resolved according to gm's effective permission check UID
+// policy (see effectivePermissionCheckUIDPolicy); SUDO_UID is only consulted
+// when that policy is SudoUIDAware.
 //
 // This function is primarily used for read operations where we want to verify the original
 // user has access to the file being read.
@@ -452,41 +454,47 @@ func (gm *GroupMembership) clearExpiredCache() {
 // Returns:
 //   - int: The UID to use for permission checks
 //   - error: Error if unable to determine the UID
-func getPermissionCheckUID() (int, error) {
+func (gm *GroupMembership) getPermissionCheckUID() (int, error) {
 	realUID, err := getProcessRealUID()
 	if err != nil {
 		return 0, err
 	}
-	sudoUID := os.Getenv("SUDO_UID")
-	return resolvePermissionCheckUID(realUID, sudoUID)
+	return resolvePermissionCheckUID(gm.effectivePermissionCheckUIDPolicy(), realUID, os.Getenv)
 }
 
-// resolvePermissionCheckUID resolves the UID to use for permission checks from the
-// process's real UID and the SUDO_UID environment variable.
+// resolvePermissionCheckUID resolves the UID to use for permission checks from
+// the effective permission check UID policy, the process's real UID, and the
+// SUDO_UID environment variable.
 //
-// When running under sudo (realUID is 0 and sudoUID is set), it returns the
-// original user's UID taken from sudoUID. Otherwise it returns realUID.
+// Under RealUIDOnly, it always returns realUID and never calls getenv. Under
+// SudoUIDAware, when realUID is 0 and SUDO_UID (read via getenv) is set, it
+// returns the original user's UID taken from SUDO_UID; otherwise it returns
+// realUID.
 //
 // This pure function is separated from getPermissionCheckUID so that all branches
 // can be tested without requiring root privileges.
 //
 // Parameters:
+//   - policy: The effective permission check UID policy
 //   - realUID: The process's real UID
-//   - sudoUID: The value of the SUDO_UID environment variable
+//   - getenv: The function used to read environment variables (os.Getenv in production)
 //
 // Returns:
 //   - int: The UID to use for permission checks
-//   - error: Error if sudoUID is present but invalid
-func resolvePermissionCheckUID(realUID int, sudoUID string) (int, error) {
-	// Check if running under sudo: the real UID must be 0 (root) and SUDO_UID must be set
-	if realUID == 0 && sudoUID != "" {
-		return parseSudoUID(sudoUID)
+//   - error: Error if SUDO_UID is present but invalid
+func resolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, getenv func(string) string) (int, error) {
+	if policy != SudoUIDAware || realUID != 0 {
+		return realUID, nil
 	}
-	return realUID, nil
+	sudoUID := getenv(sudoUIDEnvVar)
+	if sudoUID == "" {
+		return realUID, nil
+	}
+	return parseSudoUID(sudoUID)
 }
 
 // parseSudoUID parses and validates a SUDO_UID string value.
-// This is separated from getPermissionCheckUID to allow independent testing.
+// This is separated from resolvePermissionCheckUID to allow independent testing.
 //
 // Parameters:
 //   - sudoUID: The string value of SUDO_UID environment variable

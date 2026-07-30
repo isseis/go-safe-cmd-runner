@@ -708,3 +708,32 @@ func TestSafeReadFile_AcceptsBothModes(t *testing.T) {
 		assert.Equal(t, content, got)
 	})
 }
+
+// TestGroupMembershipFollowsProcessPermissionCheckUIDPolicy verifies that the
+// GroupMembership instances created by NewFileSystem and held by the
+// defaultFS package variable carry no instance-level permission check UID
+// policy and therefore follow the process-wide default policy. This
+// mutates the process-wide default policy, so it must not call t.Parallel()
+// (see the package-level restriction documented in safe_file_linux.go).
+func TestGroupMembershipFollowsProcessPermissionCheckUIDPolicy(t *testing.T) {
+	groupMemberships := map[string]*groupmembership.GroupMembership{
+		"NewFileSystem": NewFileSystem(FileSystemConfig{}).GetGroupMembership(),
+		"defaultFS":     defaultFS.GetGroupMembership(),
+	}
+
+	for name, gm := range groupMemberships {
+		t.Run(name, func(t *testing.T) {
+			t.Run("follows process default RealUIDOnly when unset", func(t *testing.T) {
+				t.Cleanup(groupmembership.SwapProcessPermissionCheckUIDPolicy(groupmembership.PolicyUnset))
+
+				assert.Equal(t, groupmembership.RealUIDOnly, gm.EffectivePermissionCheckUIDPolicy())
+			})
+
+			t.Run("follows process default SudoUIDAware", func(t *testing.T) {
+				t.Cleanup(groupmembership.SwapProcessPermissionCheckUIDPolicy(groupmembership.SudoUIDAware))
+
+				assert.Equal(t, groupmembership.SudoUIDAware, gm.EffectivePermissionCheckUIDPolicy())
+			})
+		})
+	}
+}

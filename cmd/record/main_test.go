@@ -15,6 +15,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -408,4 +409,19 @@ func TestRunTOCTOU_ViolationLogsRemediationWithActualPath(t *testing.T) {
 	assert.Contains(t, logOutput, "remediation=", "log must include a remediation hint")
 	assert.Contains(t, logOutput, hashDir, "remediation hint must contain the actual violating path")
 	assert.NotContains(t, logOutput, "'+v.Path+'", "remediation hint must not contain unresolved template syntax")
+}
+
+// TestRecordDeclaresSudoUIDAwarePolicy verifies that this binary's init()
+// declared SudoUIDAware as the process-wide permission check UID policy, and
+// that under that policy a valid SUDO_UID is adopted when the real UID is 0,
+// matching the pre-refactor resolvePermissionCheckUID(0, "1000") behavior.
+// This test only reads the process-wide default policy; it does not modify
+// it, so it must not run in parallel with tests that do.
+func TestRecordDeclaresSudoUIDAwarePolicy(t *testing.T) {
+	require.Equal(t, groupmembership.SudoUIDAware, groupmembership.ProcessPermissionCheckUIDPolicy())
+
+	uid, err := groupmembership.ResolvePermissionCheckUID(
+		groupmembership.ProcessPermissionCheckUIDPolicy(), 0, func(string) string { return "1000" })
+	require.NoError(t, err)
+	assert.Equal(t, 1000, uid)
 }
