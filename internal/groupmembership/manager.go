@@ -74,6 +74,11 @@ type GroupMembership struct {
 	// New() sets it to getGroupMembers (the build-specific implementation).
 	// Tests may replace it to inject deterministic failures.
 	enumerateGroupMembers func(gid uint32) ([]string, error)
+
+	// policy is the instance-level permission check UID policy. Its zero
+	// value is PolicyUnset, meaning the instance defers to the process-wide
+	// default policy (see effectivePermissionCheckUIDPolicy).
+	policy PermissionCheckUIDPolicy
 }
 
 // groupMemberCache holds cached group membership data with expiration
@@ -82,12 +87,17 @@ type groupMemberCache struct {
 	expiry  time.Time
 }
 
-// New creates a new GroupMembership instance
-func New() *GroupMembership {
-	return &GroupMembership{
+// New creates a new GroupMembership instance. If no options are given, the
+// permission check UID policy follows the process-wide default policy.
+func New(opts ...Option) *GroupMembership {
+	gm := &GroupMembership{
 		membershipCache:       make(map[uint32]groupMemberCache),
 		enumerateGroupMembers: getGroupMembers,
 	}
+	for _, opt := range opts {
+		opt(gm)
+	}
+	return gm
 }
 
 // GetGroupMembers returns all members of a group given its GID

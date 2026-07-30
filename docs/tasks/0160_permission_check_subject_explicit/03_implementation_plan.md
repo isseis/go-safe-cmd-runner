@@ -111,26 +111,26 @@
 
 **作業内容**
 
-- [ ] `policy.go` に `PermissionCheckUIDPolicy`（基底型 `int32`）と定数 `PolicyUnset` / `RealUIDOnly` / `SudoUIDAware` を `iota` で定義する。各定数の doc コメントは、設計書 §3.1 の日本語コメントの内容を英語に訳して記す。とくに `SudoUIDAware` については「`SUDO_UID` は数値としての妥当性しか検査しておらず、この方針は当該バイナリを root として起動できる者が基準UIDを任意に指定できることを受け入れる」という前提を必ず含める
-- [ ] `policy.go` に非公開定数 `finalDefaultPermissionCheckUIDPolicy = RealUIDOnly` を定義する
-- [ ] `policy.go` に `String() string` を実装する。戻り値は `PolicyUnset` → `"unset"`、`RealUIDOnly` → `"real-uid-only"`、`SudoUIDAware` → `"sudo-uid-aware"`、それ以外 → `fmt.Sprintf("unknown(%d)", int32(p))`
-- [ ] `policy.go` に `ErrPermissionCheckUIDPolicyConflict = errors.New("process-wide permission check UID policy is already set to a different value")` を定義する
-- [ ] `policy.go` に `ErrInvalidPermissionCheckUIDPolicy = errors.New("invalid permission check UID policy")` を定義する（設計書 §4.1）
-- [ ] `policy.go` に `type Option func(*GroupMembership)` を定義する
-- [ ] `policy.go` にプロセス既定方針の保持変数を `atomic.Int32` として定義する。ゼロ値が `PolicyUnset` と一致することを doc コメントで明記する
-- [ ] `policy.go` に `SetProcessPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) error` を実装する。処理順は (1) `p` が `RealUIDOnly` / `SudoUIDAware` のいずれでもなければ `fmt.Errorf("%w: %s", ErrInvalidPermissionCheckUIDPolicy, p)` を返す（`PolicyUnset` もこの検査で弾かれる）、(2) 現在値が `p` と同じなら `nil` を返す、(3) 現在値が `PolicyUnset` 以外なら `fmt.Errorf("%w: current=%s, requested=%s", ErrPermissionCheckUIDPolicyConflict, current, p)` を返す、(4) `CompareAndSwap` で `PolicyUnset` から `p` へ設定する。(4) が失敗した場合は現在値の再読み取り、すなわち (2) から再試行する
-- [ ] `policy.go` に `ProcessPermissionCheckUIDPolicy() PermissionCheckUIDPolicy` を実装する（atomic ロードのみ）
-- [ ] `policy.go` に非公開メソッド `(gm *GroupMembership) effectivePermissionCheckUIDPolicy() PermissionCheckUIDPolicy` を実装する。設計書 §3.4.1 の順位表どおりに解決する。プロセス既定方針の読み取りは atomic 変数を直接触らず `ProcessPermissionCheckUIDPolicy()` を経由する（§1.3 の 6.(a)）。想定外の値に対する panic やデフォルトケースは設けない（設計書 §3.4.1 末尾）
-- [ ] `manager.go` の `GroupMembership` 構造体に `policy PermissionCheckUIDPolicy` フィールドを追加する
-- [ ] `manager.go` の `New()` を `New(opts ...Option) *GroupMembership` へ変更し、既存フィールドの初期化後に各オプションを適用する
-- [ ] `test_helpers_policy.go` に `WithPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) Option` を実装する。doc コメント（英語）には、インスタンス方針がプロセス既定方針より優先されること、およびテスト専用であること（本番の宣言は `SetProcessPermissionCheckUIDPolicy` を使う）を記す
-- [ ] `test_helpers_policy.go` に `SwapProcessPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) (restore func())` を実装する。検証を経ずにプロセス既定方針を `p` へ書き換え、呼び出し前の値へ戻す関数を返す。呼び出し側は `t.Cleanup(SwapProcessPermissionCheckUIDPolicy(...))` の形で使う（このヘルパー自身は `testing` を import しないため、`*testing.T` を受け取らない設計にする）。doc コメント（英語）に「この関数を使うテストは `t.Parallel()` を呼んではならない。プロセス全体で共有される状態を書き換えるためである」旨を明記する（§1.3 の 7.）
-- [ ] `test_helpers_policy.go` に `(gm *GroupMembership) EffectivePermissionCheckUIDPolicy() PermissionCheckUIDPolicy` を実装する（非公開メソッドへの委譲のみ）。他パッケージのテストから有効な方針を検査するための入口である
+- [x] `policy.go` に `PermissionCheckUIDPolicy`（基底型 `int32`）と定数 `PolicyUnset` / `RealUIDOnly` / `SudoUIDAware` を `iota` で定義する。各定数の doc コメントは、設計書 §3.1 の日本語コメントの内容を英語に訳して記す。とくに `SudoUIDAware` については「`SUDO_UID` は数値としての妥当性しか検査しておらず、この方針は当該バイナリを root として起動できる者が基準UIDを任意に指定できることを受け入れる」という前提を必ず含める
+- [x] `policy.go` に非公開定数 `finalDefaultPermissionCheckUIDPolicy = RealUIDOnly` を定義する
+- [x] `policy.go` に `String() string` を実装する。戻り値は `PolicyUnset` → `"unset"`、`RealUIDOnly` → `"real-uid-only"`、`SudoUIDAware` → `"sudo-uid-aware"`、それ以外 → `fmt.Sprintf("unknown(%d)", int32(p))`
+- [x] `policy.go` に `ErrPermissionCheckUIDPolicyConflict = errors.New("process-wide permission check UID policy is already set to a different value")` を定義する
+- [x] `policy.go` に `ErrInvalidPermissionCheckUIDPolicy = errors.New("invalid permission check UID policy")` を定義する（設計書 §4.1）
+- [x] `policy.go` に `type Option func(*GroupMembership)` を定義する
+- [x] `policy.go` にプロセス既定方針の保持変数を `atomic.Int32` として定義する。ゼロ値が `PolicyUnset` と一致することを doc コメントで明記する
+- [x] `policy.go` に `SetProcessPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) error` を実装する。処理順は (1) `p` が `RealUIDOnly` / `SudoUIDAware` のいずれでもなければ `fmt.Errorf("%w: %s", ErrInvalidPermissionCheckUIDPolicy, p)` を返す（`PolicyUnset` もこの検査で弾かれる）、(2) 現在値が `p` と同じなら `nil` を返す、(3) 現在値が `PolicyUnset` 以外なら `fmt.Errorf("%w: current=%s, requested=%s", ErrPermissionCheckUIDPolicyConflict, current, p)` を返す、(4) `CompareAndSwap` で `PolicyUnset` から `p` へ設定する。(4) が失敗した場合は現在値の再読み取り、すなわち (2) から再試行する
+- [x] `policy.go` に `ProcessPermissionCheckUIDPolicy() PermissionCheckUIDPolicy` を実装する（atomic ロードのみ）
+- [x] `policy.go` に非公開メソッド `(gm *GroupMembership) effectivePermissionCheckUIDPolicy() PermissionCheckUIDPolicy` を実装する。設計書 §3.4.1 の順位表どおりに解決する。プロセス既定方針の読み取りは atomic 変数を直接触らず `ProcessPermissionCheckUIDPolicy()` を経由する（§1.3 の 6.(a)）。想定外の値に対する panic やデフォルトケースは設けない（設計書 §3.4.1 末尾）
+- [x] `manager.go` の `GroupMembership` 構造体に `policy PermissionCheckUIDPolicy` フィールドを追加する
+- [x] `manager.go` の `New()` を `New(opts ...Option) *GroupMembership` へ変更し、既存フィールドの初期化後に各オプションを適用する
+- [x] `test_helpers_policy.go` に `WithPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) Option` を実装する。doc コメント（英語）には、インスタンス方針がプロセス既定方針より優先されること、およびテスト専用であること（本番の宣言は `SetProcessPermissionCheckUIDPolicy` を使う）を記す
+- [x] `test_helpers_policy.go` に `SwapProcessPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) (restore func())` を実装する。検証を経ずにプロセス既定方針を `p` へ書き換え、呼び出し前の値へ戻す関数を返す。呼び出し側は `t.Cleanup(SwapProcessPermissionCheckUIDPolicy(...))` の形で使う（このヘルパー自身は `testing` を import しないため、`*testing.T` を受け取らない設計にする）。doc コメント（英語）に「この関数を使うテストは `t.Parallel()` を呼んではならない。プロセス全体で共有される状態を書き換えるためである」旨を明記する（§1.3 の 7.）
+- [x] `test_helpers_policy.go` に `(gm *GroupMembership) EffectivePermissionCheckUIDPolicy() PermissionCheckUIDPolicy` を実装する（非公開メソッドへの委譲のみ）。他パッケージのテストから有効な方針を検査するための入口である
 
 **完了条件**
 
-- [ ] `make fmt` / `make test` / `make lint` が成功する
-- [ ] `go vet -tags 'test integration performance' ./...` が成功する（`//go:build test` を含む新規ファイルの型・シグネチャ不整合をこの PR で検出するため。3 タグを並べるのは、§1.3 の 8. で確認した3種のテスト実行構成すべてを検査対象に含めるためである）
+- [x] `make fmt` / `make test` / `make lint` が成功する
+- [x] `go vet -tags 'test integration performance' ./...` が成功する（`//go:build test` を含む新規ファイルの型・シグネチャ不整合をこの PR で検出するため。3 タグを並べるのは、§1.3 の 8. で確認した3種のテスト実行構成すべてを検査対象に含めるためである）
 
 ### 2.2 ステップ 1-2 = フェーズ1: 方針の型とプロセス既定方針の単体テスト
 
@@ -142,19 +142,19 @@
 
 **作業内容**
 
-- [ ] `TestPermissionCheckUIDPolicy_String` を追加する。`PolicyUnset` / `RealUIDOnly` / `SudoUIDAware` の `String()` がそれぞれ `"unset"` / `"real-uid-only"` / `"sudo-uid-aware"` を返し、3 値が相互に異なることを検証する。範囲外の値 `PermissionCheckUIDPolicy(99)` が `"unknown(99)"` を返すことも検証する（AC-01）
-- [ ] `TestSetProcessPermissionCheckUIDPolicy` を追加する。設計書 §6.2 の4行を、それぞれ独立に実行できるサブテストとして検証する。**各サブテストが自身の開始状態を自ら確立する**（`go test -run` で単独実行しても成立させるため）。(a) `t.Cleanup(SwapProcessPermissionCheckUIDPolicy(PolicyUnset))` の下で `RealUIDOnly` を設定 → `nil` かつ `ProcessPermissionCheckUIDPolicy()` が `RealUIDOnly`、(b) `t.Cleanup(SwapProcessPermissionCheckUIDPolicy(RealUIDOnly))` の下で `RealUIDOnly` を再設定 → `nil` かつ値が変わらない、(c) `t.Cleanup(SwapProcessPermissionCheckUIDPolicy(RealUIDOnly))` の下で `SudoUIDAware` を設定 → `errors.Is(err, ErrPermissionCheckUIDPolicyConflict)` かつ値が `RealUIDOnly` のまま、(d) `t.Cleanup(SwapProcessPermissionCheckUIDPolicy(PolicyUnset))` の下で `PolicyUnset` と `PermissionCheckUIDPolicy(99)` を設定 → `errors.Is(err, ErrInvalidPermissionCheckUIDPolicy)` かつ値が `PolicyUnset` のまま（AC-14）
-- [ ] `TestSetProcessPermissionCheckUIDPolicy_Concurrent` を追加する。`t.Cleanup(SwapProcessPermissionCheckUIDPolicy(PolicyUnset))` の下で、複数の goroutine が `RealUIDOnly` と `SudoUIDAware` を混在させて `SetProcessPermissionCheckUIDPolicy` を呼び、別の goroutine が `ProcessPermissionCheckUIDPolicy()` を読む構成にする。検証項目は (1) 返るエラーはすべて `errors.Is(err, ErrPermissionCheckUIDPolicyConflict)` である、(2) 最終値が要求された2値のいずれかである、(3) `PolicyUnset` 以外の値が一度観測されたあと、その値が変わらない。`SetProcessPermissionCheckUIDPolicy` の CAS 再試行経路と `-race` 下での競合の不在を、この1件で検証する（AC-14、要件書 Success Criteria の `go test -race`）
-- [ ] `TestEffectivePermissionCheckUIDPolicy_Precedence` を追加する。`policy_test.go` は `internal/groupmembership` パッケージ内（`manager_test.go` と同じ white-box）に置くため、`gm.effectivePermissionCheckUIDPolicy()` を直接呼ぶ（`test_helpers_policy.go` の公開ラッパー `EffectivePermissionCheckUIDPolicy` は他パッケージのテスト専用であり、本テストからは使わない）。`t.Cleanup(SwapProcessPermissionCheckUIDPolicy(SudoUIDAware))` の下で、(a) `New(WithPermissionCheckUIDPolicy(RealUIDOnly))` の有効な方針が `RealUIDOnly`（インスタンス方針がプロセス既定方針に優先する）、(b) `New()` の有効な方針が `SudoUIDAware`（プロセス既定方針に従う）ことを検証する（AC-02）
-- [ ] `TestEffectivePermissionCheckUIDPolicy_FinalDefault` を追加する。同じく `gm.effectivePermissionCheckUIDPolicy()` を直接呼ぶ。`t.Cleanup(SwapProcessPermissionCheckUIDPolicy(PolicyUnset))` の下で `New()` の有効な方針が `RealUIDOnly` であることを検証する。プロセス既定方針が未設定でも `SudoUIDAware` が選ばれないことの確認である（AC-14、AC-15、設計書 §7.3 の2点目）
-- [ ] 上記 5 テストのいずれにも `t.Parallel()` を書かない（設計書 §7.4）
+- [x] `TestPermissionCheckUIDPolicy_String` を追加する。`PolicyUnset` / `RealUIDOnly` / `SudoUIDAware` の `String()` がそれぞれ `"unset"` / `"real-uid-only"` / `"sudo-uid-aware"` を返し、3 値が相互に異なることを検証する。範囲外の値 `PermissionCheckUIDPolicy(99)` が `"unknown(99)"` を返すことも検証する（AC-01）
+- [x] `TestSetProcessPermissionCheckUIDPolicy` を追加する。設計書 §6.2 の4行を、それぞれ独立に実行できるサブテストとして検証する。**各サブテストが自身の開始状態を自ら確立する**（`go test -run` で単独実行しても成立させるため）。(a) `t.Cleanup(SwapProcessPermissionCheckUIDPolicy(PolicyUnset))` の下で `RealUIDOnly` を設定 → `nil` かつ `ProcessPermissionCheckUIDPolicy()` が `RealUIDOnly`、(b) `t.Cleanup(SwapProcessPermissionCheckUIDPolicy(RealUIDOnly))` の下で `RealUIDOnly` を再設定 → `nil` かつ値が変わらない、(c) `t.Cleanup(SwapProcessPermissionCheckUIDPolicy(RealUIDOnly))` の下で `SudoUIDAware` を設定 → `errors.Is(err, ErrPermissionCheckUIDPolicyConflict)` かつ値が `RealUIDOnly` のまま、(d) `t.Cleanup(SwapProcessPermissionCheckUIDPolicy(PolicyUnset))` の下で `PolicyUnset` と `PermissionCheckUIDPolicy(99)` を設定 → `errors.Is(err, ErrInvalidPermissionCheckUIDPolicy)` かつ値が `PolicyUnset` のまま（AC-14）
+- [x] `TestSetProcessPermissionCheckUIDPolicy_Concurrent` を追加する。`t.Cleanup(SwapProcessPermissionCheckUIDPolicy(PolicyUnset))` の下で、複数の goroutine が `RealUIDOnly` と `SudoUIDAware` を混在させて `SetProcessPermissionCheckUIDPolicy` を呼び、別の goroutine が `ProcessPermissionCheckUIDPolicy()` を読む構成にする。検証項目は (1) 返るエラーはすべて `errors.Is(err, ErrPermissionCheckUIDPolicyConflict)` である、(2) 最終値が要求された2値のいずれかである、(3) `PolicyUnset` 以外の値が一度観測されたあと、その値が変わらない。`SetProcessPermissionCheckUIDPolicy` の CAS 再試行経路と `-race` 下での競合の不在を、この1件で検証する（AC-14、要件書 Success Criteria の `go test -race`）
+- [x] `TestEffectivePermissionCheckUIDPolicy_Precedence` を追加する。`policy_test.go` は `internal/groupmembership` パッケージ内（`manager_test.go` と同じ white-box）に置くため、`gm.effectivePermissionCheckUIDPolicy()` を直接呼ぶ（`test_helpers_policy.go` の公開ラッパー `EffectivePermissionCheckUIDPolicy` は他パッケージのテスト専用であり、本テストからは使わない）。`t.Cleanup(SwapProcessPermissionCheckUIDPolicy(SudoUIDAware))` の下で、(a) `New(WithPermissionCheckUIDPolicy(RealUIDOnly))` の有効な方針が `RealUIDOnly`（インスタンス方針がプロセス既定方針に優先する）、(b) `New()` の有効な方針が `SudoUIDAware`（プロセス既定方針に従う）ことを検証する（AC-02）
+- [x] `TestEffectivePermissionCheckUIDPolicy_FinalDefault` を追加する。同じく `gm.effectivePermissionCheckUIDPolicy()` を直接呼ぶ。`t.Cleanup(SwapProcessPermissionCheckUIDPolicy(PolicyUnset))` の下で `New()` の有効な方針が `RealUIDOnly` であることを検証する。プロセス既定方針が未設定でも `SudoUIDAware` が選ばれないことの確認である（AC-14、AC-15、設計書 §7.3 の2点目）
+- [x] 上記 5 テストのいずれにも `t.Parallel()` を書かない（設計書 §7.4）
 
 **完了条件**
 
-- [ ] `make test` が成功し、上記 5 テストがすべて pass する
-- [ ] `go test -tags test -race -run 'TestSetProcessPermissionCheckUIDPolicy' ./internal/groupmembership/` が成功する
-- [ ] 各サブテストが `go test -tags test -run '<テスト名>/<サブテスト名>' ./internal/groupmembership/` で単独実行しても pass する
-- [ ] `make lint` が成功する
+- [x] `make test` が成功し、上記 5 テストがすべて pass する
+- [x] `go test -tags test -race -run 'TestSetProcessPermissionCheckUIDPolicy' ./internal/groupmembership/` が成功する
+- [x] 各サブテストが `go test -tags test -run '<テスト名>/<サブテスト名>' ./internal/groupmembership/` で単独実行しても pass する
+- [x] `make lint` が成功する
 
 ### PR-1 作成ポイント: internal groupmembership policy type & process-wide default
 
