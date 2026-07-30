@@ -39,7 +39,7 @@
 
 ### 1.3 既存コード調査結果
 
-実装前にリポジトリ全体を調査した。設計書に記載のない事項、および設計書の記載を補正すべき点を以下に挙げる。手当てが不要な箇所は省略した。設計書そのものの修正を要する4点は §1.4 に分けて記載する。
+実装前にリポジトリ全体を調査した。設計書に記載のない事項、および設計書の記載を補正すべき点を以下に挙げる。手当てが不要な箇所は省略した。設計書そのものの修正を要した4点は §1.4 に分けて記載する。
 
 #### 対象コードの現状
 
@@ -61,31 +61,39 @@
 | テスト | 現状 | 対応 |
 |---|---|---|
 | `internal/groupmembership/manager_test.go::TestGetPermissionCheckUID`（:599-709） | `getPermissionCheckUID()` をパッケージ関数として呼ぶサブテスト 4 件（`normal user without sudo`、`simulated sudo environment for non-root user`、`with SUDO_UID empty returns os.Getuid`、`with SUDO_UID set returns appropriate UID`）を含む。最後の 1 件は `os.Getuid() == 0` の分岐で `SUDO_UID=9999` が採用されることを検証しており、実環境の環境変数が読まれることを確かめる唯一の箇所である。残る 3 件（`SUDO_UID with invalid value`、`malicious SUDO_UID values - out of bounds`、`valid SUDO_UID values`）は `parseSudoUID` を直接呼ぶため影響を受けない | メソッド呼び出しへ書き換えたうえで、既定方針下の重複サブテストを 1 件へ統合し、実環境の `SUDO_UID` を読むことの検証は `SudoUIDAware` を指定したサブテストへ移す（ステップ 2-1） |
-| 同 `::TestResolvePermissionCheckUID`（:713-759） | 方針引数を取らない現行シグネチャに依存。実 UID 0/非 0 × `SUDO_UID` 空/有効値/不正値 を検証している | 削除する。検証していた不変条件は §4.4 のとおり新規テストが引き継ぐ |
+| 同 `::TestResolvePermissionCheckUID`（:713-759） | 方針引数を取らない現行シグネチャに依存。実 UID 0/非 0 × `SUDO_UID` 空/有効値/不正値 を検証している | 削除する。検証していた不変条件は §4.5 のとおり新規テストが引き継ぐ |
 
 #### 設計書に記載のない、または補正が必要な点
 
 1. **`.golangci.yml` の `depguard` 設定変更が必要。** `depguard` の `main` ルール（`files: [$all, "!$test", "!**/internal/**", "!**/*test_helpers.go"]`）の `allow` リストに `internal/groupmembership` が含まれていない。`cmd/runner/main.go` / `cmd/record/main.go` / `cmd/verify/main.go` はこのルールの対象であるため、方針宣言のために `groupmembership` を import すると `make lint` が失敗する。ステップ 3-1 で `allow` リストへ追加する。`cmd/*/main_test.go` は `!$test` により対象外なので追加不要である。
 2. **新規のテスト用ヘルパーファイルは lint の除外対象にならない。** `.golangci.yml` の `exclusions` はすべて `path: _test\.go` を条件としており、`make lint` は `--build-tags test`（`Makefile:24`）で実行される。したがって `internal/groupmembership/test_helpers_policy.go` は `gosec` / `err113` / `dupl` / `mnd` / `goconst` を含む全ルールの対象になる。`depguard` の `main` ルールについては、除外パターン `"!**/*test_helpers.go"` は `test_helpers_policy.go` に一致しないが、`"!**/internal/**"` によって除外されるため対象外である。`.golangci.yml` の変更は上記 1. の `allow` 追加だけで足りる。
-3. **`cmd/*` のテストから基準UID解決を検証する手段がない。** 設計書 §7.2 は `cmd/record` / `cmd/verify` のテストバイナリで「実 UID = 0 かつ有効な `SUDO_UID`」の解決結果を検証するとしているが、`resolvePermissionCheckUID` は非公開である。テスト専用の公開ラッパー `ResolvePermissionCheckUID` を `test_helpers_policy.go` に置いて解決する（ステップ 2-1）。
-4. **`safefileio` 経由の検証には有効な方針の公開手段が必要。** 設計書 §7.2 の4行目が求めるテストは、そのままでは実施できない。非 root 環境では、基準UIDの値から方針を区別できないからである（設計書 §3.5）。そこで検証対象を方針の委譲そのものへ具体化し、テスト専用の公開メソッド `EffectivePermissionCheckUIDPolicy()` と、プロセス既定方針の退避・復元ヘルパー `SwapProcessPermissionCheckUIDPolicy` を用いる（ステップ 1-1、ステップ 3-3）。
-5. **セキュリティ設計文書の記述が不正確になる。** `docs/dev/architecture_design/security-architecture.ja.md:50` と同 `.md:50` は、`record` 時点の読み取り安全性チェックの説明として「`getPermissionCheckUID`/`resolvePermissionCheckUID` が解決するUID。実UIDが0かつ`SUDO_UID`が有効な値であればその値を、それ以外は実UIDを採用」と、方針に依らない挙動として述べている。`record` は `SudoUIDAware` を宣言するため結論は変わらないが、この挙動が `record` の宣言によるものであることを明示する必要がある。加えて同 `.ja.md:831` と `.md:834` の `func New() *GroupMembership` が実際のシグネチャと乖離する。両方をステップ 4-3 で更新する。
-6. **用語集に「基準UID決定方針」が未登録。** `docs/translation_glossary.md:47` に「基準UID / base UID」はあるが、方針の語がない。ステップ 4-4 で追加する。
-7. **`make deadcode` は本番ビルドのみを解析する。** `Makefile:679-680` は `deadcode ./cmd/record ./cmd/runner ./cmd/verify` をビルドタグなしで実行するため、テストからのみ呼ばれる公開関数は到達不能として報告される。現状でも 7 件（`internal/runner/runner.go:140` の `WithRiskEvaluator` など）が報告されている。本タスクで追加する識別子のうち `String()`・`ProcessPermissionCheckUIDPolicy()`・`effectivePermissionCheckUIDPolicy()` は、次の 2 点によって本番経路から到達させる。(a) `effectivePermissionCheckUIDPolicy()` はプロセス既定方針を `ProcessPermissionCheckUIDPolicy()` 経由で読む（直接 atomic 変数を触らない）。これにより `CanCurrentUserSafelyReadFile` から両方へ到達する。(b) 2 つのエラー本文と各 `main` の panic メッセージを `%s` で組み立て、`String()` を参照させる。`test_helpers_policy.go` の 4 関数はタグなしビルドに存在しないため、そもそも解析対象外である。
-8. **並行実行の前提を確認した。** `internal/safefileio` と `internal/groupmembership` のテストに `t.Parallel()` の呼び出しは存在しない（`rg -n 't\.Parallel\(\)' internal/safefileio/*_test.go internal/groupmembership/*_test.go` の一致は `safe_file_cleanup_test.go:23` のコメント1件のみ）。`internal/safefileio` は `safe_file_linux.go:120` の doc コメントで「Tests must not call t.Parallel() in this package」と明記しているが、`internal/groupmembership` には同様の記載がない。プロセス既定方針を書き換えるヘルパーの doc コメントにこの制約を書き、制約が利用側パッケージへ伝わるようにする（ステップ 1-1）。
-9. **ビルドタグ付きテスト実行の影響はない。** `-tags integration` で走るのは `internal/security/elfanalyzer` と `internal/libccache`、`-tags performance` で走るのは `test/performance` のみ（`Makefile:487,493,599`）であり、いずれも `-tags test` 限定のヘルパーを参照しない。`make unit-test`（`Makefile:454-461`）は非 Darwin で `CGO_ENABLED=1 -race` と `CGO_ENABLED=0` の2構成を実行するため、`go test -race` の要求（要件書 Success Criteria）は `make test` で満たされる。
-10. **既存の日英対応検証ツールは合否判定に使えない。** `make verify-docs`（`Makefile:683-684`）は `scripts/verification/compare_doc_structure.go` を実行して `docs/user` 配下の `.ja.md` / `.md` 対を比較するが、実行して確認したところ (a) 見出し文字列をそのまま比較するため翻訳済みの見出しがすべて「Missing in Japanese」として報告され、`docs/user` の全 10 対が現状で警告付きであり、(b) 警告があっても終了コードは 0 である。したがって完了条件の合否ゲートには使えない。代わりに、見出し数の増分を数える機械的な確認を用いる。現状 `rg -c '^#### ' docs/user/runner_command.ja.md docs/user/runner_command.md` はいずれも 28 であり、ステップ 4-1 / 4-2 で節を 1 つ追加したあとはいずれも 29 になる。日英で記述内容が対応していることは読み合わせで確認する。
+3. **テスト専用ラッパーの名前と配置ステップを決めた。** 設計書 §3.9 と §7.2 が求める2つのラッパー（他パッケージのテストから有効な方針を取得する／基準UIDを解決する）と、プロセス既定方針の退避・復元ヘルパーの具体名を次のとおりとする。いずれも `internal/groupmembership/test_helpers_policy.go`（`//go:build test`）に置く。
 
-### 1.4 設計文書への修正提案（レビュー時に判断が必要）
+   | 名前 | 用途 | 追加するステップ |
+   |---|---|---|
+   | `WithPermissionCheckUIDPolicy` | インスタンス方針の指定 | 1-1 |
+   | `SwapProcessPermissionCheckUIDPolicy` | プロセス既定方針の退避・復元 | 1-1 |
+   | `EffectivePermissionCheckUIDPolicy` | 有効な方針の取得（`internal/safefileio` のテストから使う） | 1-1 |
+   | `ResolvePermissionCheckUID` | 基準UID解決（`cmd/record` / `cmd/verify` のテストから使う） | 2-1 |
 
-以下の4点は `approved` 済みの [02_architecture.md](02_architecture.md) の記述と本計画が食い違う箇所である。[requirements_process.md](../../dev/developer_guide/requirements_process.md) §0 に従えば設計文書を改訂して再承認するのが正しい手順であり、本計画の側で設計文書を読み替えて済ませることはしない。**本計画のレビュー時に、設計文書の改訂とあわせて判断する。** 改訂が承認されなかった場合、該当ステップの内容は設計文書の記述に合わせて書き換える。
+   `ResolvePermissionCheckUID` だけをステップ 2-1 に置くのは、委譲先の `resolvePermissionCheckUID` のシグネチャがフェーズ2で変わるためである（設計書 §8）。
+4. **セキュリティ設計文書の記述が不正確になる。** `docs/dev/architecture_design/security-architecture.ja.md:50` と同 `.md:50` は、`record` 時点の読み取り安全性チェックの説明として「`getPermissionCheckUID`/`resolvePermissionCheckUID` が解決するUID。実UIDが0かつ`SUDO_UID`が有効な値であればその値を、それ以外は実UIDを採用」と、方針に依らない挙動として述べている。`record` は `SudoUIDAware` を宣言するため結論は変わらないが、この挙動が `record` の宣言によるものであることを明示する必要がある。加えて同 `.ja.md:831` と `.md:834` の `func New() *GroupMembership` が実際のシグネチャと乖離する。両方をステップ 4-3 で更新する。
+5. **用語集に「基準UID決定方針」が未登録。** `docs/translation_glossary.md:47` に「基準UID / base UID」はあるが、方針の語がない。ステップ 4-4 で追加する。
+6. **`make deadcode` は本番ビルドのみを解析する。** `Makefile:679-680` は `deadcode ./cmd/record ./cmd/runner ./cmd/verify` をビルドタグなしで実行するため、テストからのみ呼ばれる公開関数は到達不能として報告される。現状でも 7 件（`internal/runner/runner.go:140` の `WithRiskEvaluator` など）が報告されている。本タスクで追加する識別子のうち `String()`・`ProcessPermissionCheckUIDPolicy()`・`effectivePermissionCheckUIDPolicy()` は、次の 2 点によって本番経路から到達させる。(a) `effectivePermissionCheckUIDPolicy()` はプロセス既定方針を `ProcessPermissionCheckUIDPolicy()` 経由で読む（直接 atomic 変数を触らない）。これにより `CanCurrentUserSafelyReadFile` から両方へ到達する。(b) 2 つのエラー本文と各 `main` の panic メッセージを `%s` で組み立て、`String()` を参照させる。`test_helpers_policy.go` の 4 関数はタグなしビルドに存在しないため、そもそも解析対象外である。
+7. **並行実行の前提を確認した。** `internal/safefileio` と `internal/groupmembership` のテストに `t.Parallel()` の呼び出しは存在しない（`rg -n 't\.Parallel\(\)' internal/safefileio/*_test.go internal/groupmembership/*_test.go` の一致は `safe_file_cleanup_test.go:23` のコメント1件のみ）。`internal/safefileio` は `safe_file_linux.go:120` の doc コメントで「Tests must not call t.Parallel() in this package」と明記しているが、`internal/groupmembership` には同様の記載がない。プロセス既定方針を書き換えるヘルパーの doc コメントにこの制約を書き、制約が利用側パッケージへ伝わるようにする（ステップ 1-1）。
+8. **ビルドタグ付きテスト実行の影響はない。** `-tags integration` で走るのは `internal/security/elfanalyzer` と `internal/libccache`、`-tags performance` で走るのは `test/performance` のみ（`Makefile:487,493,599`）であり、いずれも `-tags test` 限定のヘルパーを参照しない。`make unit-test`（`Makefile:454-461`）は非 Darwin で `CGO_ENABLED=1 -race` と `CGO_ENABLED=0` の2構成を実行するため、`go test -race` の要求（要件書 Success Criteria）は `make test` で満たされる。
+9. **既存の日英対応検証ツールは合否判定に使えない。** `make verify-docs`（`Makefile:683-684`）は `scripts/verification/compare_doc_structure.go` を実行して `docs/user` 配下の `.ja.md` / `.md` 対を比較するが、実行して確認したところ (a) 見出し文字列をそのまま比較するため翻訳済みの見出しがすべて「Missing in Japanese」として報告され、`docs/user` の全 10 対が現状で警告付きであり、(b) 警告があっても終了コードは 0 である。したがって完了条件の合否ゲートには使えない。代わりに、見出し数の増分を数える機械的な確認を用いる。現状 `rg -c '^#### ' docs/user/runner_command.ja.md docs/user/runner_command.md` はいずれも 28 であり、ステップ 4-1 / 4-2 で節を 1 つ追加したあとはいずれも 29 になる。日英で記述内容が対応していることは読み合わせで確認する。
 
-| # | 設計書の該当箇所 | 食い違いの内容 | 提案する改訂 |
-|---|---|---|---|
-| 1 | §3.2 と §3.9 | §3.2 は `WithPermissionCheckUIDPolicy` を `//go:build test` タグ付きファイルへ置くとし、§3.9 の責務表は `policy.go`（タグなし）に含めている。§5.5 の「本番バイナリにこの関数自体が存在しないことでコンパイル時に呼び出しを不可能にする」という論拠は §3.2 を前提とする | §3.9 の責務表から `WithPermissionCheckUIDPolicy` を `policy.go` の行から外し、`test_helpers_policy.go` の行へ移す |
-| 2 | §4.1 | 「追加するエラーはこれだけである」としているが、§3.3 が求める `PolicyUnset` および範囲外の値に対するエラーを `errors.Is` で判別する手段がない。既存の `ErrPermissionCheckUIDPolicyConflict` は「設定済みの値と異なる値を設定しようとした」条件専用であり、入力値そのものが不正な条件とは意味が異なる | `ErrInvalidPermissionCheckUIDPolicy` を §4.1 のエラー型に追加する |
-| 3 | §7.2（4行目） | 「インスタンス方針を指定した `GroupMembership` を持つ `FileSystem`」でのテストを求めているが、§2.2 が `internal/safefileio` を変更しないと決めているため、`osFS` へインスタンス方針付きの `GroupMembership` を注入する手段がない。また非 root 環境では基準UIDの値から方針を区別できない（§3.5） | 当該行を「`safefileio` が生成する `GroupMembership` がインスタンス方針を持たず、プロセス既定方針へ委譲することを検証する」に改める |
-| 4 | §3.9 と §8 | §3.9 は `test_helpers_policy.go` の責務を「退避・復元ヘルパー」のみとしているが、本計画は §1.3 の 3. / 4. のとおり `ResolvePermissionCheckUID` と `EffectivePermissionCheckUIDPolicy` も必要とする。また §8 はフェーズ2に AC-14 / AC-15 を割り当てているが、未指定時に `RealUIDOnly` が適用されることは型とプロセス既定方針が存在した時点で検証できるため、本計画はフェーズ1で検証する | §3.9 の `test_helpers_policy.go` の責務に上記 2 つを加える。§8 のフェーズ1の対応 AC に AC-14 / AC-15 を加える（フェーズ2からは外す） |
+### 1.4 反映済みの設計文書の修正
+
+本計画の作成時に、`approved` 済みの [02_architecture.md](02_architecture.md) の記述と食い違う4点が判明した。いずれも 2026-07-30 にレビュアーの承認を得て設計文書へ反映済みであり、本計画は反映後の記述に従う。本節は追跡のための記録であり、実装時に参照すべき内容は設計文書の該当節にある。
+
+| # | 修正した箇所 | 修正の内容 |
+|---|---|---|
+| 1 | §3.2、§3.9 | `WithPermissionCheckUIDPolicy` の配置を `test_helpers_policy.go`（`//go:build test`）に統一した。§3.9 の責務表では `policy.go` の行に含まれていたが、§5.5 の「本番バイナリにこの関数自体が存在しないことでコンパイル時に呼び出しを不可能にする」という論拠は `//go:build test` 側を前提とする |
+| 2 | §4.1、§3.3、§4.2、§6.2 | `ErrInvalidPermissionCheckUIDPolicy` を追加した。§3.3 が求める `PolicyUnset` および範囲外の値に対するエラーを `errors.Is` で判別できるようにするためである。既存の `ErrPermissionCheckUIDPolicyConflict` は「設定済みの値と異なる値を設定しようとした」条件専用であり、入力値そのものが不正な条件とは意味が異なる |
+| 3 | §7.2（4行目） | `safefileio` 経由の検証内容を、実施可能な形へ具体化した。`internal/safefileio` を変更しない方針（§2.2）のため `osFS` へインスタンス方針付きの `GroupMembership` を注入できず、また非 root 環境では基準UIDの値から方針を区別できない（§3.5）。検証対象を「インスタンス方針を持たずプロセス既定方針へ委譲すること」に改めた |
+| 4 | §3.9、§8 | §3.9 の `test_helpers_policy.go` の責務に、他パッケージのテストから非公開処理を呼ぶための2つのラッパー（有効な方針の取得、基準UID解決）を加えた。また AC-14 / AC-15 をフェーズ2からフェーズ1へ移した。未指定時に `RealUIDOnly` が適用されることは、型とプロセス既定方針が存在した時点で検証できるためである |
 
 ---
 
@@ -107,22 +115,22 @@
 - [ ] `policy.go` に非公開定数 `finalDefaultPermissionCheckUIDPolicy = RealUIDOnly` を定義する
 - [ ] `policy.go` に `String() string` を実装する。戻り値は `PolicyUnset` → `"unset"`、`RealUIDOnly` → `"real-uid-only"`、`SudoUIDAware` → `"sudo-uid-aware"`、それ以外 → `fmt.Sprintf("unknown(%d)", int32(p))`
 - [ ] `policy.go` に `ErrPermissionCheckUIDPolicyConflict = errors.New("process-wide permission check UID policy is already set to a different value")` を定義する
-- [ ] `policy.go` に `ErrInvalidPermissionCheckUIDPolicy = errors.New("invalid permission check UID policy")` を定義する（§1.4 の 2. の承認が前提）
+- [ ] `policy.go` に `ErrInvalidPermissionCheckUIDPolicy = errors.New("invalid permission check UID policy")` を定義する（設計書 §4.1）
 - [ ] `policy.go` に `type Option func(*GroupMembership)` を定義する
 - [ ] `policy.go` にプロセス既定方針の保持変数を `atomic.Int32` として定義する。ゼロ値が `PolicyUnset` と一致することを doc コメントで明記する
 - [ ] `policy.go` に `SetProcessPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) error` を実装する。処理順は (1) `p` が `RealUIDOnly` / `SudoUIDAware` のいずれでもなければ `fmt.Errorf("%w: %s", ErrInvalidPermissionCheckUIDPolicy, p)` を返す（`PolicyUnset` もこの検査で弾かれる）、(2) 現在値が `p` と同じなら `nil` を返す、(3) 現在値が `PolicyUnset` 以外なら `fmt.Errorf("%w: current=%s, requested=%s", ErrPermissionCheckUIDPolicyConflict, current, p)` を返す、(4) `CompareAndSwap` で `PolicyUnset` から `p` へ設定する。(4) が失敗した場合は現在値の再読み取り、すなわち (2) から再試行する
 - [ ] `policy.go` に `ProcessPermissionCheckUIDPolicy() PermissionCheckUIDPolicy` を実装する（atomic ロードのみ）
-- [ ] `policy.go` に非公開メソッド `(gm *GroupMembership) effectivePermissionCheckUIDPolicy() PermissionCheckUIDPolicy` を実装する。設計書 §3.4.1 の順位表どおりに解決する。プロセス既定方針の読み取りは atomic 変数を直接触らず `ProcessPermissionCheckUIDPolicy()` を経由する（§1.3 の 7.(a)）。想定外の値に対する panic やデフォルトケースは設けない（設計書 §3.4.1 末尾）
+- [ ] `policy.go` に非公開メソッド `(gm *GroupMembership) effectivePermissionCheckUIDPolicy() PermissionCheckUIDPolicy` を実装する。設計書 §3.4.1 の順位表どおりに解決する。プロセス既定方針の読み取りは atomic 変数を直接触らず `ProcessPermissionCheckUIDPolicy()` を経由する（§1.3 の 6.(a)）。想定外の値に対する panic やデフォルトケースは設けない（設計書 §3.4.1 末尾）
 - [ ] `manager.go` の `GroupMembership` 構造体に `policy PermissionCheckUIDPolicy` フィールドを追加する
 - [ ] `manager.go` の `New()` を `New(opts ...Option) *GroupMembership` へ変更し、既存フィールドの初期化後に各オプションを適用する
 - [ ] `test_helpers_policy.go` に `WithPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) Option` を実装する。doc コメント（英語）には、インスタンス方針がプロセス既定方針より優先されること、およびテスト専用であること（本番の宣言は `SetProcessPermissionCheckUIDPolicy` を使う）を記す
-- [ ] `test_helpers_policy.go` に `SwapProcessPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) (restore func())` を実装する。検証を経ずにプロセス既定方針を `p` へ書き換え、呼び出し前の値へ戻す関数を返す。呼び出し側は `t.Cleanup(SwapProcessPermissionCheckUIDPolicy(...))` の形で使う（このヘルパー自身は `testing` を import しないため、`*testing.T` を受け取らない設計にする）。doc コメント（英語）に「この関数を使うテストは `t.Parallel()` を呼んではならない。プロセス全体で共有される状態を書き換えるためである」旨を明記する（§1.3 の 8.）
+- [ ] `test_helpers_policy.go` に `SwapProcessPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) (restore func())` を実装する。検証を経ずにプロセス既定方針を `p` へ書き換え、呼び出し前の値へ戻す関数を返す。呼び出し側は `t.Cleanup(SwapProcessPermissionCheckUIDPolicy(...))` の形で使う（このヘルパー自身は `testing` を import しないため、`*testing.T` を受け取らない設計にする）。doc コメント（英語）に「この関数を使うテストは `t.Parallel()` を呼んではならない。プロセス全体で共有される状態を書き換えるためである」旨を明記する（§1.3 の 7.）
 - [ ] `test_helpers_policy.go` に `(gm *GroupMembership) EffectivePermissionCheckUIDPolicy() PermissionCheckUIDPolicy` を実装する（非公開メソッドへの委譲のみ）。他パッケージのテストから有効な方針を検査するための入口である
 
 **完了条件**
 
 - [ ] `make fmt` / `make test` / `make lint` が成功する
-- [ ] `go vet -tags 'test integration performance' ./...` が成功する（`//go:build test` を含む新規ファイルの型・シグネチャ不整合をこの PR で検出するため。3 タグを並べるのは、§1.3 の 9. で確認した3種のテスト実行構成すべてを検査対象に含めるためである）
+- [ ] `go vet -tags 'test integration performance' ./...` が成功する（`//go:build test` を含む新規ファイルの型・シグネチャ不整合をこの PR で検出するため。3 タグを並べるのは、§1.3 の 8. で確認した3種のテスト実行構成すべてを検査対象に含めるためである）
 
 ### 2.2 ステップ 1-2 = フェーズ1: 方針の型とプロセス既定方針の単体テスト
 
@@ -171,14 +179,14 @@
 - [ ] `manager_test.go::TestGetPermissionCheckUID` の重複するサブテスト 3 件（`normal user without sudo`、`with SUDO_UID empty returns os.Getuid`、`with SUDO_UID set returns appropriate UID`）を、`returns real UID under the final default policy` の 1 件へ統合する。内容は `t.Setenv("SUDO_UID", "9999")` の下で `New().getPermissionCheckUID()` が `os.Getuid()` を返すことの検証とする。最終既定方針が `RealUIDOnly` であるため、これら3件は統合後は同一の主張になる
 - [ ] `manager_test.go::TestGetPermissionCheckUID` のサブテスト `simulated sudo environment for non-root user` を削除する。最終既定方針の下では実 UID によらず結果が実 UID になるため、非 root 限定の分岐に意味がなくなる
 - [ ] `manager_test.go::TestGetPermissionCheckUID` に `reads SUDO_UID from the real environment under SudoUIDAware` を追加する。`gm := New(WithPermissionCheckUIDPolicy(SudoUIDAware))` と `t.Setenv("SUDO_UID", "9999")` の下で、`os.Getuid() == 0` なら `gm.getPermissionCheckUID()` が `9999`、それ以外なら `os.Getuid()` を返すことを検証する。これは `getPermissionCheckUID` が `os.Getenv` を実際に渡していること、および `sudoUIDEnvVar` の値が正しいことを実環境に対して確かめる唯一のテストであり、削除する既存サブテストの不変条件（§1.3 の「更新が必要な既存テスト」）を引き継ぐ
-- [ ] `manager_test.go::TestResolvePermissionCheckUID`（:713-759）を削除する。検証していた不変条件は `policy_test.go` の新規テストが引き継ぐ（§4.4）
+- [ ] `manager_test.go::TestResolvePermissionCheckUID`（:713-759）を削除する。検証していた不変条件は `policy_test.go` の新規テストが引き継ぐ（§4.5）
 - [ ] `manager_test.go::TestGetPermissionCheckUID` の `parseSudoUID` を直接呼ぶサブテスト 3 件は変更しない
 
 **完了条件**
 
 - [ ] `make fmt` / `make test` / `make lint` が成功する
 - [ ] `rg -n 'os\.Getenv\("SUDO_UID"\)' -g '*.go'` の一致が 0 件である
-- [ ] `make deadcode` の出力に `internal/groupmembership/policy.go` を含む行が現れない（§1.3 の 7.）
+- [ ] `make deadcode` の出力に `internal/groupmembership/policy.go` を含む行が現れない（§1.3 の 6.）
 
 ### 2.4 ステップ 2-2 = フェーズ2: 基準UID解決の単体テスト
 
@@ -215,7 +223,7 @@
 **作業内容**
 
 - [ ] `.golangci.yml` の `depguard` の `main` ルールの `allow` リストへ `github.com/isseis/go-safe-cmd-runner/internal/groupmembership` を追加する（§1.3 の 1.）。追加位置は同リスト内の `internal/filevalidator` の直後とし、既存の並びに合わせる。この変更は同ステップの `cmd/*` の import 追加と同一コミットに含める
-- [ ] `cmd/runner/main.go` の既存の `init()`（:55）の末尾に、`SetProcessPermissionCheckUIDPolicy(groupmembership.RealUIDOnly)` の呼び出しを追加する。エラーが返った場合は panic する（設計書 §4.2）。panic メッセージは `fmt.Sprintf` で組み立て、宣言しようとした方針と `ProcessPermissionCheckUIDPolicy()` の現在値を `%s` で含める（§1.3 の 7.(b)）。この宣言は最終既定方針と同じ値であり、挙動を変えるためではなく意図を明示するために置く。その趣旨を英文コメント 1 行で添える
+- [ ] `cmd/runner/main.go` の既存の `init()`（:55）の末尾に、`SetProcessPermissionCheckUIDPolicy(groupmembership.RealUIDOnly)` の呼び出しを追加する。エラーが返った場合は panic する（設計書 §4.2）。panic メッセージは `fmt.Sprintf` で組み立て、宣言しようとした方針と `ProcessPermissionCheckUIDPolicy()` の現在値を `%s` で含める（§1.3 の 6.(b)）。この宣言は最終既定方針と同じ値であり、挙動を変えるためではなく意図を明示するために置く。その趣旨を英文コメント 1 行で添える
 - [ ] `cmd/record/main.go` に `init()` を新設し、`SetProcessPermissionCheckUIDPolicy(groupmembership.SudoUIDAware)` を呼ぶ。エラー時は `runner` と同じ形式の panic とする
 - [ ] `cmd/verify/main.go` に `init()` を新設し、`SetProcessPermissionCheckUIDPolicy(groupmembership.SudoUIDAware)` を呼ぶ。エラー時は `runner` と同じ形式の panic とする
 - [ ] 3 ファイルの `init()` に、宣言の根拠（`runner` は setuid バイナリを一般ユーザーが起動する運用のため sudo 経由を想定しない／`record` と `verify` は `sudo` 実行が想定運用のため呼び出し元ユーザー視点の判定を維持する）を英文コメントで記す
@@ -250,7 +258,7 @@
 
 ### 2.7 ステップ 3-3 = フェーズ3: `safefileio` 経由の方針委譲の検証
 
-設計: [02_architecture.md](02_architecture.md) §7.2（4行目。§1.4 の 3. の改訂が前提）、§2.2
+設計: [02_architecture.md](02_architecture.md) §7.2（4行目とそれに続く説明）、§2.2
 
 **変更ファイル**
 
@@ -301,7 +309,7 @@
 
 **完了条件**
 
-- [ ] `rg -c '^#### ' docs/user/runner_command.ja.md docs/user/runner_command.md` が両ファイルで 29 である（変更前はいずれも 28。§1.3 の 10.）
+- [ ] `rg -c '^#### ' docs/user/runner_command.ja.md docs/user/runner_command.md` が両ファイルで 29 である（変更前はいずれも 28。§1.3 の 9.）
 - [ ] 日本語版と英語版の新設節を並べて読み、記載する 3 点と対処法が対応していることを確認済みである
 - [ ] `CHANGELOG.md` の 4 点が上記の読み合わせで実装と一致していることを確認済みである
 - [ ] `make fmt` / `make test` / `make lint` が成功する
@@ -348,7 +356,7 @@
 
 ## 3. 実装順序とマイルストーン
 
-フェーズの名前と順序は設計書 §8 の実装優先順位表に一致させている。AC の割り当てについては §1.4 の 4. の改訂提案（AC-14 / AC-15 をフェーズ1で検証する）を前提とする。
+フェーズの名前と順序、および各フェーズの対応 AC は設計書 §8 の実装優先順位表に一致させている。
 
 ### 3.1 マイルストーン
 
@@ -358,7 +366,7 @@
 | M2 | 2-1、2-2、3-1、3-2、3-3 | 方針分岐を入れた `resolvePermissionCheckUID` とその単体テスト、3バイナリの宣言、`depguard` 設定、実行時検証テスト | 中。`sudo runner` の挙動が変わる唯一のマイルストーン |
 | M3 | 4-1、4-2、4-3、4-4 | 利用者向け文書（日英）、`CHANGELOG.md`、セキュリティ設計文書（日英）、用語集 | 小。コードを変更しない |
 
-M1 は単独でマージできる。M1 の成果物は既存の判定経路から呼ばれないが、既定方針の解決だけは `CanCurrentUserSafelyReadFile` から到達するため、`make deadcode` の報告は増えない（§1.3 の 7.）。M2 は設計書 §8 の指示によりフェーズ2とフェーズ3を分割せず 1 つの PR にまとめる（フェーズ2のみをマージすると、最終既定方針が適用されて `record` / `verify` が sudo 実行時に機能退行する）。M3 は M2 の後に実施する。文書に書く挙動が M2 のマージによって初めて事実になるためである。
+M1 は単独でマージできる。M1 の成果物は既存の判定経路から呼ばれないが、既定方針の解決だけは `CanCurrentUserSafelyReadFile` から到達するため、`make deadcode` の報告は増えない（§1.3 の 6.）。M2 は設計書 §8 の指示によりフェーズ2とフェーズ3を分割せず 1 つの PR にまとめる（フェーズ2のみをマージすると、最終既定方針が適用されて `record` / `verify` が sudo 実行時に機能退行する）。M3 は M2 の後に実施する。文書に書く挙動が M2 のマージによって初めて事実になるためである。
 
 ### 3.2 前提関係
 
@@ -433,7 +441,7 @@ M1 は単独でマージできる。M1 の成果物は既存の判定経路か�
 
 - 設計書 §3.2 のとおり `New()` の呼び出し 14 箇所は無修正でコンパイルが通り、最終既定方針 `RealUIDOnly` を継承する。これらを含む既存テストが無修正で pass することを回帰の裏づけとする。とくに `internal/safefileio/safe_file_test.go::TestCanSafelyReadFromFile`、`::TestSafeReadFileWithRelaxedPermissions`、`internal/groupmembership/manager_test.go::TestCanCurrentUserSafelyReadFile`（グループ書き込み可能ファイルの判定経路）を無修正での成功として確認する。
 - `make unit-test` が `CGO_ENABLED=1 -race` と `CGO_ENABLED=0` の2構成で実行される（`Makefile:454-461`）ため、`go test -race` の要求は `make test` で満たされる。マージ前に CI の 2 レグ（`make test-ci-cgo1` / `make test-ci-cgo0`）の成功も確認する。
-- `//go:build test` を含むファイルを追加するため、`go vet -tags 'test integration performance' ./...` を、ファイルを新設・変更するステップ（ステップ 1-1）の完了条件と、各マイルストーンのチェックリスト（§6.1、§6.2）に置く。3 タグを並べるのは、§1.3 の 9. で確認した3種のテスト実行構成すべてを検査対象に含めるためである。
+- `//go:build test` を含むファイルを追加するため、`go vet -tags 'test integration performance' ./...` を、ファイルを新設・変更するステップ（ステップ 1-1）の完了条件と、各マイルストーンのチェックリスト（§6.1、§6.2）に置く。3 タグを並べるのは、§1.3 の 8. で確認した3種のテスト実行構成すべてを検査対象に含めるためである。
 
 ### 4.7 テストで担保できない範囲
 
@@ -450,11 +458,11 @@ M1 は単独でマージできる。M1 の成果物は既存の判定経路か�
 | `depguard` の設定変更を忘れる | `cmd/*` の import 追加で `make lint` が失敗し、原因が分かりにくい | ステップ 3-1 の最初の作業項目に置き、`.golangci.yml` の変更と import 追加を同一コミットに含める（§3.2） |
 | フェーズ2のみをマージする | `record` / `verify` が sudo 実行時に最終既定方針へ倒れ、グループ書き込み可能なファイルの読み取りが失敗する | 設計書 §8 の指示どおりフェーズ2とフェーズ3を同一 PR（M2）にまとめる |
 | 本番コードが `os.Getenv` の代わりに空文字列を返す関数を渡す実装ミス | 純粋関数のテストはすべて偽の環境変数取得関数を注入するため全件 pass し、`sudo record` / `sudo verify` が基準UID 0 へ静かに退行する | `TestGetPermissionCheckUID/reads SUDO_UID from the real environment under SudoUIDAware` で実環境の値を経由した結果を検証し、`TestResolvePermissionCheckUID_EnvAccess` で要求された環境変数名が `"SUDO_UID"` であることを検証する（§4.3、§4.5） |
-| プロセス既定方針の退避・復元がテスト間で漏れる | 後続テストが意図しない方針で走り、失敗が別のテストに現れる | `SwapProcessPermissionCheckUIDPolicy` は復元関数を返す形にし、呼び出し側は必ず `t.Cleanup` へ渡す。各サブテストが自身の開始状態を自ら確立する。該当テストに `t.Parallel()` を書かず、その制約をヘルパーの doc コメントにも書く（§1.3 の 8.） |
+| プロセス既定方針の退避・復元がテスト間で漏れる | 後続テストが意図しない方針で走り、失敗が別のテストに現れる | `SwapProcessPermissionCheckUIDPolicy` は復元関数を返す形にし、呼び出し側は必ず `t.Cleanup` へ渡す。各サブテストが自身の開始状態を自ら確立する。該当テストに `t.Parallel()` を書かず、その制約をヘルパーの doc コメントにも書く（§1.3 の 7.） |
 | `sudo runner` 利用者への周知が漏れる | 読み取り拒否が原因不明の機能退行として現れる | ステップ 4-1（利用者向け文書）とステップ 4-2（`CHANGELOG.md`）を M3 の必須成果物とする |
-| テスト専用の公開関数が `make deadcode` に現れる | 到達不能コードとして誤って削除される | `effectivePermissionCheckUIDPolicy` が `ProcessPermissionCheckUIDPolicy()` を経由し、エラー本文と panic メッセージが `String()` を参照する構成にする（§1.3 の 7.）。ステップ 2-1 の完了条件で `policy.go` 由来の報告が 0 件であることを確認する |
+| テスト専用の公開関数が `make deadcode` に現れる | 到達不能コードとして誤って削除される | `effectivePermissionCheckUIDPolicy` が `ProcessPermissionCheckUIDPolicy()` を経由し、エラー本文と panic メッセージが `String()` を参照する構成にする（§1.3 の 6.）。ステップ 2-1 の完了条件で `policy.go` 由来の報告が 0 件であることを確認する |
 | セキュリティ設計文書の記述が実装と乖離したまま残る | `record` の読み取り安全性チェックの説明が、方針に依らない挙動として読まれ続ける | ステップ 4-3 を M3 の成果物に含め、完了条件に `rg` による不在確認と実装との読み合わせを置く |
-| §1.4 の設計文書改訂が承認されない | 該当ステップの内容が承認済み設計と矛盾したまま実装される | §1.4 を本計画のレビュー対象として明示し、改訂が承認されない場合は該当ステップを設計書の記述に合わせて書き換える |
+| 実装中に設計書との新たな食い違いが判明する | 承認済み設計と矛盾した実装が、指摘されるまで気付かれない | §1.4 と同じ扱いにする。本計画の側で読み替えて済ませず、設計書の改訂をレビュアーに諮り、承認後に設計書と本計画の双方へ反映する |
 
 ---
 
@@ -552,7 +560,6 @@ M1 は単独でマージできる。M1 の成果物は既存の判定経路か�
 
 - [ ] AC-01〜AC-16 のすべてに対し、§7 の検証手段が実行され期待結果を満たしている
 - [ ] 各 AC に少なくとも 1 つの `test` または `static` の検証が対応している
-- [ ] §1.4 の設計文書改訂 4 点について、承認されて `02_architecture.md` へ反映されている（または改訂が却下され、該当ステップが設計書の記述に合わせて書き換えられている）
 - [ ] `make fmt` / `make test` / `make lint` がグリーンである
 - [ ] `make build` が成功する（本番タグで `WithPermissionCheckUIDPolicy` が存在しないことの確認を含む）
 - [ ] `go vet -tags 'test integration performance' ./...` が成功する
@@ -568,7 +575,6 @@ M1 は単独でマージできる。M1 の成果物は既存の判定経路か�
 
 ## 10. 残作業
 
-- [ ] §1.4 の設計文書改訂 4 点の判断と、承認された場合の `02_architecture.md` への反映
 - [ ] §2 の全ステップの実装と、§3.1 の M1〜M3 の PR 作成・レビュー・マージ
 - [ ] M2 のマージ後に、`SUDO_UID` の値の検証（`user.LookupId` による実在確認）と利用の監査ログ記録（[#941](https://github.com/isseis/go-safe-cmd-runner/issues/941)）へ進む。設計書 §9 のとおり `SudoUIDAware` の解決処理の内側に閉じて追加でき、方針の型や伝播機構には影響しない
 - [ ] [#941](https://github.com/isseis/go-safe-cmd-runner/issues/941) の完了後に、`runner` の native root 実行サポートの是非（[#921](https://github.com/isseis/go-safe-cmd-runner/issues/921)）を検討する。着手する場合、`cmd/runner/main.go` の宣言を変えるか起動形態に応じて切り替えることになる（設計書 §9）

@@ -8,7 +8,7 @@
 | Created | 2026-07-29 |
 | Review date | 2026-07-30 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | 2026-07-30: [03_implementation_plan.md](03_implementation_plan.md) の作成時に判明した4点を修正した。(1) §3.2 と §3.9 で食い違っていた `WithPermissionCheckUIDPolicy` の配置を `test_helpers_policy.go` に統一、(2) §4.1 に `ErrInvalidPermissionCheckUIDPolicy` を追加、(3) §7.2 の `safefileio` 経由の検証内容を実施可能な形へ具体化、(4) §3.9 の `test_helpers_policy.go` の責務と §8 の AC-14 / AC-15 のフェーズ割り当てを補正。あわせて、これらに伴う文書内の整合（§6.2 の件数表記、§3.9 のエラー変数と `safe_file_test.go` の行、§7.2 の `cmd/runner` 行の対応 AC）も反映した |
 
 ## 用語
 
@@ -270,7 +270,7 @@ func New(opts ...Option) *GroupMembership
 // 基準UID決定方針を指定する。指定した場合はプロセス既定方針より優先される。
 //
 // バイナリ全体の方針は SetProcessPermissionCheckUIDPolicy で宣言するため
-// (理由は §5.5)、この関数は `test_helpers.go`（`docs/dev/developer_guide/test_organization.md`
+// (理由は §5.5)、この関数は `test_helpers_policy.go`（`docs/dev/developer_guide/test_organization.md`
 // のクラスB）に置き、`//go:build test` タグを付ける。これにより本番バイナリには
 // この関数自体が存在せず、本番コードから呼び出すことがコンパイル時に不可能になる。
 func WithPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) Option
@@ -284,10 +284,11 @@ func WithPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) Option
 // SetProcessPermissionCheckUIDPolicy は、プロセス全体の基準UID決定方針を設定する。
 // 各バイナリの main パッケージの init から1度だけ呼ぶ。
 // 既に同じ値が設定されている場合は何もせず nil を返す。
-// 異なる値が設定済みの場合、または PolicyUnset を渡した場合はエラーを返し、
+// 異なる値が設定済みの場合は ErrPermissionCheckUIDPolicyConflict を返し、
 // 設定済みの値は変更しない。
-// p が RealUIDOnly / SudoUIDAware のいずれでもない場合（例えば
-// PermissionCheckUIDPolicy(99) のような不正なキャストの結果）もエラーを返す。
+// PolicyUnset を渡した場合、および p が RealUIDOnly / SudoUIDAware のいずれでも
+// ない場合（例えば PermissionCheckUIDPolicy(99) のような不正なキャストの結果）は
+// ErrInvalidPermissionCheckUIDPolicy を返す。
 func SetProcessPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) error
 
 // ProcessPermissionCheckUIDPolicy は、現在のプロセス既定方針を返す。
@@ -411,9 +412,9 @@ classDiagram
 
 | ファイル | 区分 | 責務 | 更新が必要な既存テスト |
 |---|---|---|---|
-| `internal/groupmembership/policy.go` | 新規 | `PermissionCheckUIDPolicy` 型、`String()`、`Option`、`WithPermissionCheckUIDPolicy`、プロセス既定方針の設定・取得、最終既定方針の定数 | - |
+| `internal/groupmembership/policy.go` | 新規 | `PermissionCheckUIDPolicy` 型、`String()`、`Option` 型、プロセス既定方針の設定・取得、有効な方針の解決、最終既定方針の定数、§4.1 の2つのエラー変数 | - |
 | `internal/groupmembership/manager.go` | 変更 | `New` の可変長オプション化、`policy` フィールド追加、`getPermissionCheckUID`（現在は445行目のパッケージ関数）を `GroupMembership` のメソッドへ変更し、方針分岐を導入 | `manager_test.go` の `TestGetPermissionCheckUID`（パッケージ関数を直接呼ぶ）、`TestResolvePermissionCheckUID`（方針引数を取らない現行シグネチャに依存） |
-| `internal/groupmembership/test_helpers_policy.go` | 新規（`//go:build test`） | プロセス既定方針をテスト内で退避・復元するヘルパー | - |
+| `internal/groupmembership/test_helpers_policy.go` | 新規（`//go:build test`） | `WithPermissionCheckUIDPolicy`（インスタンス方針の指定）、プロセス既定方針をテスト内で退避・復元するヘルパー、および他パッケージのテストから非公開処理を呼ぶための2つのラッパー（有効な方針の取得、基準UID解決）。後者2つが必要な理由は §7.2 に述べる | - |
 | `internal/groupmembership/policy_test.go` | 新規 | 方針の解決順序、最終既定方針、AC-12 / AC-13 の組み合わせ、`SUDO_UID` 不読み取りの検証 | - |
 | `cmd/runner/main.go` | 変更 | `init()` で `RealUIDOnly` を宣言 | - |
 | `cmd/record/main.go` | 変更 | `init()` を新設し `SudoUIDAware` を宣言 | - |
@@ -421,11 +422,12 @@ classDiagram
 | `cmd/runner/main_test.go` | 変更 | プロセス既定方針が `RealUIDOnly` であることの検証を追加（AC-07, AC-08） | - |
 | `cmd/record/main_test.go` | 変更 | プロセス既定方針が `SudoUIDAware` であること、およびその状態での基準UID解決結果の検証を追加（AC-10, AC-11） | - |
 | `cmd/verify/main_test.go` | 変更 | 同上（AC-10, AC-11） | - |
+| `internal/safefileio/safe_file_test.go` | 変更 | `NewFileSystem` 経由および `defaultFS` の `GroupMembership` がプロセス既定方針へ委譲することの検証を追加（AC-07, AC-10。§7.2） | - |
 | `docs/user/runner_command.ja.md` | 変更 | `sudo runner` 実行時の挙動変化を記載（AC-16） | - |
 | `docs/user/runner_command.md` | 変更 | 上記の英訳を `/mktrans` で反映 | - |
 | `CHANGELOG.md` | 変更 | `sudo runner` 利用者向けの破壊的挙動変更として記載 | - |
 
-`internal/safefileio` および読み取り経路の利用側パッケージは変更しない。
+`internal/safefileio` の本番コードと、読み取り経路の利用側パッケージは変更しない。`internal/safefileio` はテストの追加のみである。
 
 ### 3.10 設計判断
 
@@ -471,15 +473,22 @@ AC-15 は「既定値を持つ方針を採る場合は、その既定値が意�
 // ErrPermissionCheckUIDPolicyConflict は、プロセス既定方針に対して
 // 設定済みの値と異なる値を設定しようとしたときに返される。
 var ErrPermissionCheckUIDPolicyConflict = errors.New("process-wide permission check UID policy is already set to a different value")
+
+// ErrInvalidPermissionCheckUIDPolicy は、プロセス既定方針として設定できない値
+// （PolicyUnset、または RealUIDOnly / SudoUIDAware のいずれでもない値）を
+// 渡したときに返される。
+var ErrInvalidPermissionCheckUIDPolicy = errors.New("invalid permission check UID policy")
 ```
 
-追加するエラーはこれだけである。最終既定方針があるため「方針が決まらない」エラーは存在しない。既存の `ErrSudoUIDOutOfRange`（`SUDO_UID` が uint32 の範囲外）はそのまま維持し、`SUDO_UID` が数値として解釈できない場合に `strconv` のエラーを包む現行の扱いも変えない。
+追加するエラーはこの2つである。2つに分ける理由は、条件が異なり呼び出し元での意味づけも異なるためである。前者は「宣言そのものは妥当だが、別の宣言と衝突している」（リンク構成の問題）を表し、後者は「渡された値が方針として成立していない」（引数の問題）を表す。`errors.Is` でこの2つを判別できるようにする。
+
+最終既定方針があるため「方針が決まらない」エラーは存在しない。既存の `ErrSudoUIDOutOfRange`（`SUDO_UID` が uint32 の範囲外）はそのまま維持し、`SUDO_UID` が数値として解釈できない場合に `strconv` のエラーを包む現行の扱いも変えない。
 
 ### 4.2 エラーメッセージの方針
 
 既存のエラーメッセージの文面は変更しない。`CanCurrentUserSafelyReadFile` が返す `ErrFileWorldWritable` / `ErrGroupWritableNonMember` / `ErrPermissionsExceedMaximum` はいずれも現行のままとする。これらは `internal/safefileio/safe_file.go` の `canSafelyAccessFile` / `canSafelyReadFromFile` で `ErrInvalidFilePermissions` に包まれて呼び出し元へ渡るが、その構造も変えない。
 
-方針名と基準UIDをエラー本文へ追加する案は検討したが、採らない。`01_requirements.md`「対象外」が「利用した事実と値の監査ログ記録」を明示的に [#941](https://github.com/isseis/go-safe-cmd-runner/issues/941) へ送っており、どの AC もエラー本文の内容を要求していないためである。`String()` は `ErrPermissionCheckUIDPolicyConflict` のメッセージ組み立てとテストの失敗表示に用いる。
+方針名と基準UIDをエラー本文へ追加する案は検討したが、採らない。`01_requirements.md`「対象外」が「利用した事実と値の監査ログ記録」を明示的に [#941](https://github.com/isseis/go-safe-cmd-runner/issues/941) へ送っており、どの AC もエラー本文の内容を要求していないためである。`String()` は §4.1 の2つのエラーのメッセージ組み立て、各 `main` の panic メッセージ、およびテストの失敗表示に用いる。
 
 プロセス既定方針の設定に失敗した場合、各 `main` の `init()` では回復手段がないため panic とする。設定値はビルド時に固定された定数であるため、この経路が実行時の入力によって起きることはない。ただし将来、インポートされたパッケージが先に別の値を設定するようになった場合は、リンク構成だけを原因として起こりうる。その場合も panic はいかなる読み取りよりも前に起きるため、誤った方針で判定が行われることはない。
 
@@ -597,14 +606,14 @@ flowchart TD
 
 ### 6.2 プロセス既定方針の設定
 
-`SetProcessPermissionCheckUIDPolicy` の観測可能な結果は3通りである。
+`SetProcessPermissionCheckUIDPolicy` の呼び出し条件と結果は次の4通りである（戻り値の種類は `nil` と2種のエラーの3通り）。
 
 | 呼び出し時の状態 | 引数 | 結果 |
 |---|---|---|
 | 未設定 | `RealUIDOnly` または `SudoUIDAware` | 設定され `nil` を返す |
 | 設定済み | 設定済みの値と同じ | 何もせず `nil` を返す |
 | 設定済み | 設定済みの値と異なる | 値を変えず `ErrPermissionCheckUIDPolicyConflict` を返す |
-| 任意 | `PolicyUnset` | 値を変えずエラーを返す |
+| 任意 | `PolicyUnset`、または `RealUIDOnly` / `SudoUIDAware` のいずれでもない値 | 値を変えず `ErrInvalidPermissionCheckUIDPolicy` を返す |
 
 ## 7. テスト戦略
 
@@ -621,18 +630,20 @@ flowchart TD
 | 環境変数取得関数の呼び出し回数 | 実 UID = 0 で `RealUIDOnly` は 0 回、`SudoUIDAware` は 1 回以上（§3.5 の対比） | AC-03, AC-09 |
 | 方針の解決順序 | インスタンス方針 > プロセス既定方針 > 最終既定方針の優先順位 | AC-02 |
 | 最終既定方針 | インスタンスにもプロセスにも指定がないとき `RealUIDOnly` が適用される | AC-14, AC-15 |
-| 設定の一度きり | 同じ値の再設定は `nil`、異なる値は `ErrPermissionCheckUIDPolicyConflict`、`PolicyUnset` はエラー | AC-14 |
+| 設定の一度きり | 同じ値の再設定は `nil`、異なる値は `ErrPermissionCheckUIDPolicyConflict`、`PolicyUnset` および範囲外の値は `ErrInvalidPermissionCheckUIDPolicy` | AC-14 |
 
 ### 7.2 結合テスト
 
 | 対象 | 内容 | 対応 AC |
 |---|---|---|
-| `cmd/runner` のテストバイナリ | `ProcessPermissionCheckUIDPolicy()` が `RealUIDOnly` を返す | AC-07, AC-08 |
+| `cmd/runner` のテストバイナリ | `ProcessPermissionCheckUIDPolicy()` が `RealUIDOnly` を返す。加えて、その方針の下では実 UID = 0 かつ有効な `SUDO_UID` を与えても `SUDO_UID` が採用されない | AC-07, AC-08, AC-09 |
 | `cmd/record` / `cmd/verify` のテストバイナリ | `ProcessPermissionCheckUIDPolicy()` が `SudoUIDAware` を返す | AC-10 |
 | `cmd/record` / `cmd/verify` のテストバイナリ | 上記の方針の下で、実 UID = 0 かつ有効な `SUDO_UID` を与えたときの基準UID解決結果が変更前と一致する | AC-10, AC-11 |
-| `safefileio` 経由の判定 | インスタンス方針を指定した `GroupMembership` を持つ `FileSystem` で、解決された基準UIDが指定した方針に従う | AC-07, AC-10 |
+| `safefileio` 経由の判定 | `NewFileSystem` 経由およびパッケージ変数 `defaultFS` の `GroupMembership` が、インスタンス方針を持たずプロセス既定方針へ委譲する。プロセス既定方針を切り替えて、有効な方針が追随することを確認する | AC-07, AC-10 |
 
-いずれも `ProcessPermissionCheckUIDPolicy()` の戻り値を直接検査する。読み取りの成否を見るだけでは不十分である。`cmd/runner` の宣言値は最終既定方針と同じ `RealUIDOnly` であるため、宣言を削除しても読み取りの成否は変わらないからである（§3.6）。
+`safefileio` 経由の検証で基準UIDの値ではなく有効な方針を見るのは、非 root 環境では両方針が同じ基準UIDを返すため（§3.5）、値からは方針を区別できないからである。この検証と `cmd/*` 側の宣言検証を組み合わせることで、「`safefileio` が生成する `GroupMembership` はプロセス既定方針に従う」かつ「各バイナリのプロセス既定方針は宣言どおりである」の2点から AC-07 / AC-10 が成立する。有効な方針とプロセス既定方針の退避・復元を `internal/safefileio` のテストから扱うため、`test_helpers_policy.go`（§3.9）にそのためのラッパーを置く。上表3行目も同様に、基準UIDを解決する非公開の純粋関数（§3.5）を `cmd/*` のテストから呼ぶ必要があるため、そのラッパーも同じファイルに置く。いずれも `//go:build test` タグの下にあるため、本番バイナリには存在しない。
+
+`cmd/*` のテストは `ProcessPermissionCheckUIDPolicy()` の戻り値を直接検査する。読み取りの成否を見るだけでは不十分である。`cmd/runner` の宣言値は最終既定方針と同じ `RealUIDOnly` であるため、宣言を削除しても読み取りの成否は変わらないからである（§3.6）。
 
 AC-08 はソースコードの検索では検証しない。`SudoUIDAware` の実装コードは共有パッケージ経由で `runner` バイナリにもリンクされるため、方針の違いは実行時設定であって記述の有無では表せない。テストバイナリの `init()` が本番と同じ宣言を実行することを利用し、実行時に確かめる。
 
@@ -659,12 +670,14 @@ AC-08 はソースコードの検索では検証しない。`SudoUIDAware` の�
 
 | フェーズ | 内容 | 対応 AC |
 |---|---|---|
-| 1 | `PermissionCheckUIDPolicy` 型、`Option`、プロセス既定方針、最終既定方針の追加 | AC-01, AC-02 |
-| 2 | `getPermissionCheckUID` のメソッド化と方針分岐、純粋関数への差し替え口導入、既存テストの更新 | AC-03〜AC-06, AC-09, AC-11〜AC-15 |
+| 1 | `PermissionCheckUIDPolicy` 型、`Option`、プロセス既定方針、最終既定方針の追加 | AC-01, AC-02, AC-14, AC-15 |
+| 2 | `getPermissionCheckUID` のメソッド化と方針分岐、純粋関数への差し替え口導入、既存テストの更新 | AC-03〜AC-06, AC-09, AC-11〜AC-13 |
 | 3 | 3バイナリの `main` での方針宣言と、実行時検証テストの追加 | AC-07, AC-08, AC-10 |
 | 4 | 利用者向け文書と `CHANGELOG.md` の更新（日本語版のあと `/mktrans` で英語版） | AC-16 |
 
-各フェーズは単独で `make test` が通る状態を保てる。最終既定方針があるため、フェーズ3が未了でも本番バイナリは `RealUIDOnly` で正常に動作する。ただしその状態では `record` / `verify` が sudo 実行時に機能退行するため、フェーズ2と3は同一 PR にまとめる。
+AC-14 / AC-15（未指定時に最終既定方針 `RealUIDOnly` が適用されること）をフェーズ1に置くのは、型とプロセス既定方針が存在した時点で有効な方針の解決結果として検証できるためである。基準UIDの解決には依存しないため、フェーズ2を待つ必要がない。
+
+各フェーズは単独で `make test` が通る状態を保てる。ただしフェーズ2で `resolvePermissionCheckUID` のシグネチャが変わるため、これを呼ぶテスト用ラッパー（§3.9）はフェーズ2で追加する。最終既定方針があるため、フェーズ3が未了でも本番バイナリは `RealUIDOnly` で正常に動作する。ただしその状態では `record` / `verify` が sudo 実行時に機能退行するため、フェーズ2と3は同一 PR にまとめる。
 
 ## 9. 将来の拡張性
 
