@@ -2,6 +2,8 @@
 
 package groupmembership
 
+import "fmt"
+
 // WithPermissionCheckUIDPolicy sets the permission check UID policy for this
 // GroupMembership instance only. When specified, it takes precedence over
 // the process-wide default policy.
@@ -9,7 +11,15 @@ package groupmembership
 // Production code declares the binary-wide policy via
 // SetProcessPermissionCheckUIDPolicy instead (see §5.5 of the architecture
 // document); this option exists for tests only.
+//
+// p must be PolicyUnset, RealUIDOnly, or SudoUIDAware; any other value
+// (e.g. an invalid cast such as PermissionCheckUIDPolicy(99)) panics, since
+// effectivePermissionCheckUIDPolicy trusts gm.policy to hold only one of
+// these values.
 func WithPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) Option {
+	if p != PolicyUnset && p != RealUIDOnly && p != SudoUIDAware {
+		panic(fmt.Sprintf("groupmembership: invalid permission check UID policy: %s", p))
+	}
 	return func(gm *GroupMembership) {
 		gm.policy = p
 	}
