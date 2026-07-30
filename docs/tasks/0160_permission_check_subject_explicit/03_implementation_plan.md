@@ -168,7 +168,7 @@
 
 **判定理由**: ステップ 1-1 の `SetProcessPermissionCheckUIDPolicy` は CAS 再試行を伴う並行実装であり、ステップ 1-2 で `-race` 下の並行テスト（`TestSetProcessPermissionCheckUIDPolicy_Concurrent`）を追加する、孤立した並行処理ステップである
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
