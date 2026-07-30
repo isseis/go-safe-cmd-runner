@@ -169,7 +169,7 @@
 **判定理由**: ステップ 1-1 の `SetProcessPermissionCheckUIDPolicy` は CAS 再試行を伴う並行実装であり、ステップ 1-2 で `-race` 下の並行テスト（`TestSetProcessPermissionCheckUIDPolicy_Concurrent`）を追加する、孤立した並行処理ステップである
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（[#945](https://github.com/isseis/go-safe-cmd-runner/pull/945)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
