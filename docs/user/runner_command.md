@@ -1888,7 +1888,7 @@ ls -l /usr/local/bin/runner
 
 #### File Read Denied When Started via sudo
 
-When started via `sudo runner`, the UID used for file-read permission checks (the base UID) changes from the calling user to `0` (root). This is because `runner` is designed to be started by regular users via the setuid bit, and sudo-based execution no longer infers the base UID from the `SUDO_UID` environment variable.
+When started via `sudo runner`, the UID used for file-read permission checks (the base UID) changes from the calling user's UID to `0` (root). This is because `runner` is designed to be started by regular users via the setuid bit, and sudo-based execution no longer determines the base UID from the `SUDO_UID` environment variable.
 
 As a result, for group-writable files, reads may be denied if root is not a member of the file's group. This is a change toward stricter permission checks — not a permission gap.
 
