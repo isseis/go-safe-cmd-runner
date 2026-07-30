@@ -16,7 +16,7 @@ func TestPermissionCheckUIDPolicy_String(t *testing.T) {
 	assert.Equal(t, "sudo-uid-aware", SudoUIDAware.String())
 
 	names := []string{PolicyUnset.String(), RealUIDOnly.String(), SudoUIDAware.String()}
-	assert.Len(t, names, 3)
+	require.Len(t, names, 3)
 	assert.Equal(t, 3, len(map[string]struct{}{names[0]: {}, names[1]: {}, names[2]: {}}))
 
 	assert.Equal(t, "unknown(99)", PermissionCheckUIDPolicy(99).String())
