@@ -416,6 +416,7 @@ func (m *sudoUIDExistenceMemo) verify(uid int, lookup func(uid int) error) error
 - **成功のみを記録する**: 実在確認が失敗した結果は記録しない。一時的な障害を根拠に、以降のすべての判定を確定的に失敗させないためである。
 - **有効期間を設けない**: 記録はインスタンスの生存期間にわたって有効である。有効期間を設けないのは、`record` / `verify` が短命なバッチプロセスであり、かつ古くなった「実在する」という記録が判定を緩める方向へ働かないためである（根拠は §5.5 の時間差の項）。既存のグループメンバーシップキャッシュ（30 秒 TTL）と有効期間を揃えないのはこの理由による。
 - **並行安全である**: 複数の goroutine から同時に呼ばれても記録が壊れないよう、ミューテックスで保護する。ロック順序は既存の `cacheMutex` とは独立しており、両者を同時に保持する経路は存在しない。
+- **`confirmed` はゼロ値のまま書き込まない**: `map` フィールドのゼロ値は `nil` であり、`nil` マップへの書き込みは実行時パニックを起こす。`New()` は既に `membershipCache` を `make(map[uint32]groupMemberCache)` で初期化している（`manager.go:94`）。`sudoUIDExistenceMemo.confirmed` もこれに倣い、`New()` の中で `make(map[int]struct{})` により初期化する。
 
 失敗を記録しないため、ユーザーデータベースが停止している環境では照会がファイルごとに繰り返される。この場合の所要時間は §5.5 に残存リスクとして記載する。
 
@@ -491,7 +492,7 @@ classDiagram
     sudoUIDAdoptionReporter --> PermissionCheckUIDPolicy : 記録の属性に用いる
 ```
 
-矢印 A → B は「A が B を保持、生成、または参照する」ことを表す。`permissionCheckUIDDeps`・`sudoUIDAdoptionReporter`・`sudoUIDExistenceMemo` が本タスクで追加する型であり、`GroupMembership` の `sudoUIDExistence` フィールドが本タスクで追加するフィールドである。それ以外は現行の `internal/groupmembership/manager.go` および `policy.go` の定義そのままである。図には本タスクの経路に関わる要素のみを抜粋しており、`GroupMembership` の `New` / `GetGroupMembers` / `IsUserInGroup` / `isUserOnlyGroupMember` / `CanUserSafelyWriteFile` / `CanCurrentUserSafelyWriteFile` / `ValidateRequestedPermissions` / `ClearCache` / `GetCacheStats`、および `Option` 型は変更しないため省略した。クラス図は色分けを用いないため凡例はない。
+矢印 A → B は「A が B を保持、生成、または参照する」ことを表す。`permissionCheckUIDDeps`・`sudoUIDAdoptionReporter`・`sudoUIDExistenceMemo` が本タスクで追加する型であり、`GroupMembership` の `sudoUIDExistence` フィールドが本タスクで追加するフィールドである。それ以外は現行の `internal/groupmembership/manager.go` および `policy.go` の定義そのままである。図には本タスクの経路に関わる要素のみを抜粋しており、`GroupMembership` の `GetGroupMembers` / `IsUserInGroup` / `isUserOnlyGroupMember` / `CanUserSafelyWriteFile` / `CanCurrentUserSafelyWriteFile` / `ValidateRequestedPermissions` / `ClearCache` / `GetCacheStats`、および `Option` 型はシグネチャを変更しないため省略した。`New` もシグネチャは変わらないため図には含めないが、内部実装は `sudoUIDExistence.confirmed` の初期化を1行加える（§3.4）。クラス図は色分けを用いないため凡例はない。
 
 ### 3.7 設計判断
 
@@ -557,7 +558,7 @@ AC-07 は、採用によって基準UIDが実 UID と異なる値になった場
 
 | ファイル | 区分 | 責務 | 更新が必要な既存テスト・既存記述 |
 |---|---|---|---|
-| `internal/groupmembership/manager.go` | 変更 | `permissionCheckUIDDeps` / `sudoUIDAdoptionReporter` / `sudoUIDExistenceMemo` の3型、パッケージレベルのレポータ実体、`lookupUserByUID`、`resolvePermissionCheckUID` への実在確認と記録の追加、`getPermissionCheckUID` での本番依存の組み立て、§4.1 の2つのエラー変数、`GroupMembership` への `sudoUIDExistence` フィールド追加 | `resolvePermissionCheckUID`（465-484行目）のドキュメントコメント: 引数の記述と、返しうるエラーの記述が変わる。`getPermissionCheckUID`（446-456行目）のドキュメントコメント: 返しうるエラーの記述が変わる |
+| `internal/groupmembership/manager.go` | 変更 | `permissionCheckUIDDeps` / `sudoUIDAdoptionReporter` / `sudoUIDExistenceMemo` の3型、パッケージレベルのレポータ実体、`lookupUserByUID`、`resolvePermissionCheckUID` への実在確認と記録の追加、`getPermissionCheckUID` での本番依存の組み立て、§4.1 の2つのエラー変数、`GroupMembership` への `sudoUIDExistence` フィールド追加、`New` での `sudoUIDExistence.confirmed` の初期化（§3.4） | `resolvePermissionCheckUID`（465-484行目）のドキュメントコメント: 引数の記述と、返しうるエラーの記述が変わる。`getPermissionCheckUID`（446-456行目）のドキュメントコメント: 返しうるエラーの記述が変わる |
 | `internal/groupmembership/policy.go` | 変更 | 変更はドキュメントコメントのみ | `SudoUIDAware` 定数のコメント（24-31行目）: 「`SUDO_UID` の値は数値としての妥当性しか検査しておらず、実在するユーザーかどうかは確認していない」が偽になる。「root として起動できる者が基準UIDを任意に指定できる」も「任意の**実在する**ユーザーの UID を指定できる」へ狭める |
 | `internal/groupmembership/membership_cgo.go` | 変更 | ユーザーデータベース種別の定数（`nss`） | - |
 | `internal/groupmembership/membership_nocgo.go` | 変更 | ユーザーデータベース種別の定数（`passwd-file`） | - |
