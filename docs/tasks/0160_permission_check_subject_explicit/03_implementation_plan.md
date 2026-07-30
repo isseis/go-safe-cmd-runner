@@ -400,8 +400,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（[#948](https://github.com/isseis/go-safe-cmd-runner/pull/948)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -561,14 +561,14 @@ M1（PR-1）は単独でマージできる。M1 の成果物は既存の判定�
 
 ### 6.3 PR-3（M3、ステップ 4-1〜4-4: 文書）
 
-- [ ] `docs/user/runner_command.ja.md` の `#### 権限エラー` 節末に `#### sudo 経由で起動した場合のファイル読み取り拒否` を新設した
-- [ ] `/mktrans` で `docs/user/runner_command.md` に反映した
-- [ ] `CHANGELOG.md` の `[Unreleased]` / `### Changed` に記載し、4 点を実装と読み合わせた
-- [ ] `security-architecture.ja.md` の :50 と :831 を更新し、:50 の記述を実装と読み合わせた
-- [ ] `/mktrans` で `security-architecture.md` に反映した
-- [ ] `docs/translation_glossary.md` に「基準UID決定方針」と更新履歴の行を追加し、英語欄を英語版文書と照合した
-- [ ] `rg -c '^#### ' docs/user/runner_command.ja.md docs/user/runner_command.md` が両ファイルで 29 である
-- [ ] PR-3 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3 / 4-4）
+- [x] `docs/user/runner_command.ja.md` の `#### 権限エラー` 節末に `#### sudo 経由で起動した場合のファイル読み取り拒否` を新設した
+- [x] `/mktrans` で `docs/user/runner_command.md` に反映した
+- [x] `CHANGELOG.md` の `[Unreleased]` / `### Changed` に記載し、4 点を実装と読み合わせた
+- [x] `security-architecture.ja.md` の :50 と :831 を更新し、:50 の記述を実装と読み合わせた
+- [x] `/mktrans` で `security-architecture.md` に反映した
+- [x] `docs/translation_glossary.md` に「基準UID決定方針」と更新履歴の行を追加し、英語欄を英語版文書と照合した
+- [x] `rg -c '^#### ' docs/user/runner_command.ja.md docs/user/runner_command.md` が両ファイルで 29 である
+- [x] PR-3 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3 / 4-4）
 
 ---
 
@@ -611,34 +611,34 @@ M1（PR-1）は単独でマージできる。M1 の成果物は既存の判定�
 
 `make lint` と `make test` では検出できない項目のみを挙げる。§7 に記載した `rg` は重複させない。
 
-- [ ] `rg -n 'getPermissionCheckUID|resolvePermissionCheckUID' docs/ --glob '!docs/tasks/**'` — 一致 0 件であること。変更前は `docs/dev/architecture_design/security-architecture.ja.md:50` と同 `.md:50` の 2 件が一致し、いずれもシグネチャが変わる関数を挙動の説明に用いている（ステップ 4-3 で削除する）。`docs/tasks/**` は過去タスクの記録であり変更しない
-- [ ] `rg -n 'func New\(\) \*GroupMembership' docs/` — 一致 0 件であること。変更前は `security-architecture.ja.md:831` と `security-architecture.md:834` の 2 件が一致する
-- [ ] `rg -n '基準UID決定方針' docs/translation_glossary.md` — 1 件以上一致すること（用語集への登録漏れの検出）
-- [ ] `rg -n 'RealUIDOnly|SudoUIDAware|PermissionCheckUIDPolicy' internal/ cmd/ -g '*.go' -g '!*_test.go' -g '!*test_helpers*.go'` — 一致するのは `internal/groupmembership/policy.go`、`internal/groupmembership/manager.go`、`cmd/runner/main.go`、`cmd/record/main.go`、`cmd/verify/main.go` の 5 ファイルのみであること。他の本番ファイルに方針の指定が漏れ出していないこと（とくに設計書 §3.10 が方針を渡さないと決めた `internal/security/dir_permissions_unix.go` と `internal/runner/runner.go`）を確認する
-- [ ] `rg -n 'WithPermissionCheckUIDPolicy' -g '*.go' --files-with-matches` — 一致するファイルが `internal/groupmembership/test_helpers_policy.go` と `_test.go` のみであること。本番ファイルからの呼び出しはコンパイルできないが、`//go:build test` 付きの他ファイルからの呼び出しはコンパイルエラーとして現れないため、明示的に確認する
-- [ ] `rg -n '\bAC-[0-9]+[a-z]?\b|\bF-[0-9]+[a-z]?\b' -g '*.go'` — 一致 0 件であること。受入基準の識別子を Go ソースへ持ち込まない（§1.2）
+- [x] `rg -n 'getPermissionCheckUID|resolvePermissionCheckUID' docs/ --glob '!docs/tasks/**'` — 一致 0 件であること。変更前は `docs/dev/architecture_design/security-architecture.ja.md:50` と同 `.md:50` の 2 件が一致し、いずれもシグネチャが変わる関数を挙動の説明に用いている（ステップ 4-3 で削除する）。`docs/tasks/**` は過去タスクの記録であり変更しない
+- [x] `rg -n 'func New\(\) \*GroupMembership' docs/` — 一致 0 件であること。変更前は `security-architecture.ja.md:831` と `security-architecture.md:834` の 2 件が一致する
+- [x] `rg -n '基準UID決定方針' docs/translation_glossary.md` — 1 件以上一致すること（用語集への登録漏れの検出）
+- [x] `rg -n 'RealUIDOnly|SudoUIDAware|PermissionCheckUIDPolicy' internal/ cmd/ -g '*.go' -g '!*_test.go' -g '!*test_helpers*.go'` — 一致するのは `internal/groupmembership/policy.go`、`internal/groupmembership/manager.go`、`cmd/runner/main.go`、`cmd/record/main.go`、`cmd/verify/main.go` の 5 ファイルのみであること。他の本番ファイルに方針の指定が漏れ出していないこと（とくに設計書 §3.10 が方針を渡さないと決めた `internal/security/dir_permissions_unix.go` と `internal/runner/runner.go`）を確認する
+- [x] `rg -n 'WithPermissionCheckUIDPolicy' -g '*.go' --files-with-matches` — 一致するファイルが `internal/groupmembership/test_helpers_policy.go` と `_test.go` のみであること。本番ファイルからの呼び出しはコンパイルできないが、`//go:build test` 付きの他ファイルからの呼び出しはコンパイルエラーとして現れないため、明示的に確認する
+- [x] `rg -n '\bAC-[0-9]+[a-z]?\b|\bF-[0-9]+[a-z]?\b' -g '*.go'` — 一致 0 件であること。受入基準の識別子を Go ソースへ持ち込まない（§1.2）
 
 ---
 
 ## 9. 成功基準
 
-- [ ] AC-01〜AC-16 のすべてに対し、§7 の検証手段が実行され期待結果を満たしている
-- [ ] 各 AC に少なくとも 1 つの `test` または `static` の検証が対応している
-- [ ] `make fmt` / `make test` / `make lint` がグリーンである
-- [ ] `make build` が成功する（本番タグで `WithPermissionCheckUIDPolicy` が存在しないことの確認を含む）
-- [ ] `go vet -tags 'test integration performance' ./...` が成功する
-- [ ] `make test-ci-cgo1` / `make test-ci-cgo0` が成功する（`go test -race` の要求を含む）
-- [ ] `make deadcode` の出力に `internal/groupmembership/policy.go` を含む行が現れない
-- [ ] `docs/user/runner_command` 対、`security-architecture` 対のそれぞれについて、日本語版と英語版の該当箇所を読み合わせ、記述が対応していることを確認済みである
-- [ ] §4.1 のカバレッジ目標（3 項目の分岐網羅）を満たしている
-- [ ] §4.6 に挙げた既存テストが無修正で pass している
-- [ ] §8 の横断検索チェックリストの全項目が期待結果を満たしている
-- [ ] `CHANGELOG.md` の `[Unreleased]` に `sudo runner` の挙動変化が記載され、記載内容が実装と読み合わせ済みである
+- [x] AC-01〜AC-16 のすべてに対し、§7 の検証手段が実行され期待結果を満たしている
+- [x] 各 AC に少なくとも 1 つの `test` または `static` の検証が対応している
+- [x] `make fmt` / `make test` / `make lint` がグリーンである
+- [x] `make build` が成功する（本番タグで `WithPermissionCheckUIDPolicy` が存在しないことの確認を含む）
+- [x] `go vet -tags 'test integration performance' ./...` が成功する
+- [x] `make test-ci-cgo1` / `make test-ci-cgo0` が成功する（`go test -race` の要求を含む）
+- [x] `make deadcode` の出力に `internal/groupmembership/policy.go` を含む行が現れない
+- [x] `docs/user/runner_command` 対、`security-architecture` 対のそれぞれについて、日本語版と英語版の該当箇所を読み合わせ、記述が対応していることを確認済みである
+- [x] §4.1 のカバレッジ目標（3 項目の分岐網羅）を満たしている
+- [x] §4.6 に挙げた既存テストが無修正で pass している
+- [x] §8 の横断検索チェックリストの全項目が期待結果を満たしている
+- [x] `CHANGELOG.md` の `[Unreleased]` に `sudo runner` の挙動変化が記載され、記載内容が実装と読み合わせ済みである
 
 ---
 
 ## 10. 残作業
 
-- [ ] §2 の全ステップの実装と、§3.1 / §3.2 の PR-1〜PR-3 の PR 作成・レビュー・マージ
-- [ ] PR-2（M2）のマージ後に、`SUDO_UID` の値の検証（`user.LookupId` による実在確認）と利用の監査ログ記録（[#941](https://github.com/isseis/go-safe-cmd-runner/issues/941)）へ進む。設計書 §9 のとおり `SudoUIDAware` の解決処理の内側に閉じて追加でき、方針の型や伝播機構には影響しない
+- [x] §2 の全ステップの実装と、§3.1 / §3.2 の PR-1〜PR-3 の PR 作成・レビュー・マージ
+- [ ] PR-3（M3）のマージ後に、`SUDO_UID` の値の検証（`user.LookupId` による実在確認）と利用の監査ログ記録（[#941](https://github.com/isseis/go-safe-cmd-runner/issues/941)）へ進む。設計書 §9 のとおり `SudoUIDAware` の解決処理の内側に閉じて追加でき、方針の型や伝播機構には影響しない
 - [ ] [#941](https://github.com/isseis/go-safe-cmd-runner/issues/941) の完了後に、`runner` の native root 実行サポートの是非（[#921](https://github.com/isseis/go-safe-cmd-runner/issues/921)）を検討する。着手する場合、`cmd/runner/main.go` の宣言を変えるか起動形態に応じて切り替えることになる（設計書 §9）
