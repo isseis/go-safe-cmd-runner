@@ -105,8 +105,11 @@ func ProcessPermissionCheckUIDPolicy() PermissionCheckUIDPolicy {
 // then process-wide default policy, then the final default policy.
 //
 // This assumes that every level holds only RealUIDOnly, SudoUIDAware, or
-// PolicyUnset; that invariant is enforced by SetProcessPermissionCheckUIDPolicy,
-// so no panic or default case for unexpected values is added here.
+// PolicyUnset, so no panic or default case for unexpected values is added
+// here. For the process-wide value this is enforced by
+// SetProcessPermissionCheckUIDPolicy; the instance value is only ever set by
+// the test-only WithPermissionCheckUIDPolicy option, which is trusted not to
+// pass an invalid value.
 func (gm *GroupMembership) effectivePermissionCheckUIDPolicy() PermissionCheckUIDPolicy {
 	if gm.policy != PolicyUnset {
 		return gm.policy
