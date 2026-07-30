@@ -45,6 +45,7 @@
 | バッチ処理 | batch processing | |
 | ベースライン | baseline | |
 | 基準UID | base UID | 権限チェックの基準となるUID解決結果（Task 0160） |
+| 基準UID決定方針 | base UID policy | 基準UIDの決定規則。`RealUIDOnly` と `SudoUIDAware` の2種（Task 0160） |
 | 基本 | basic | |
 | 初心者 | beginner | |
 | ベストプラクティス | best practices | |
@@ -749,6 +750,7 @@
 | 2026-07-17 | dry-run 常時 hard fail 化（Task 0147）関連の用語を追加 (tampering signal, unverified artifact) |
 | 2026-07-25 | 環境変数 denylist 一元化（Task 0156）関連の用語を追加 (denylist, dynamic-loader control variable, interpreter startup code-injection variable, loader-control variable) |
 | 2026-07-29 | record 時点の読み取り安全性チェック（Task 0160）関連の用語を追加 (base UID, read-safety check) |
+| 2026-07-30 | 基準UID決定方針の明示指定（Task 0160）関連の用語を追加 (base UID policy) |
 
 ---
 
