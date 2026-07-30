@@ -1,6 +1,9 @@
 package groupmembership
 
 import (
+	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -141,4 +144,113 @@ func TestEffectivePermissionCheckUIDPolicy_FinalDefault(t *testing.T) {
 	gm := New()
 
 	assert.Equal(t, RealUIDOnly, gm.effectivePermissionCheckUIDPolicy())
+}
+
+// TestResolvePermissionCheckUID_RealUIDOnly verifies that under RealUIDOnly,
+// the real UID is always returned unchanged, regardless of the value of
+// SUDO_UID.
+func TestResolvePermissionCheckUID_RealUIDOnly(t *testing.T) {
+	sudoUIDValues := []string{
+		"", "0", "1000", "4294967295", "abc", "-1", "4294967296", strings.Repeat("9", 300),
+	}
+
+	for _, realUID := range []int{0, 1000} {
+		for _, sudoUID := range sudoUIDValues {
+			t.Run(fmt.Sprintf("realUID=%d/sudoUID=%q", realUID, sudoUID), func(t *testing.T) {
+				uid, err := resolvePermissionCheckUID(RealUIDOnly, realUID, func(string) string { return sudoUID })
+
+				require.NoError(t, err)
+				assert.Equal(t, realUID, uid)
+			})
+		}
+	}
+}
+
+// TestResolvePermissionCheckUID_SudoUIDAware verifies every row of the
+// SudoUIDAware decision table (architecture document §3.4.2). The expected
+// values are fixed here as a table rather than referencing
+// resolvePermissionCheckUID's prior behavior, since that function may not
+// survive future refactors.
+func TestResolvePermissionCheckUID_SudoUIDAware(t *testing.T) {
+	t.Run("realUID 0", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			sudoUID    string
+			wantUID    int
+			wantErrIs  error
+			wantErrNil bool
+		}{
+			{name: "unset", sudoUID: "", wantUID: 0, wantErrNil: true},
+			{name: "zero", sudoUID: "0", wantUID: 0, wantErrNil: true},
+			{name: "valid", sudoUID: "1000", wantUID: 1000, wantErrNil: true},
+			{name: "max uint32", sudoUID: "4294967295", wantUID: 4294967295, wantErrNil: true},
+			{name: "negative", sudoUID: "-1", wantErrIs: ErrSudoUIDOutOfRange},
+			{name: "exceeds uint32", sudoUID: "4294967296", wantErrIs: ErrSudoUIDOutOfRange},
+			{name: "non-numeric", sudoUID: "abc", wantErrIs: strconv.ErrSyntax},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				uid, err := resolvePermissionCheckUID(SudoUIDAware, 0, func(string) string { return tt.sudoUID })
+
+				if tt.wantErrNil {
+					require.NoError(t, err)
+					assert.Equal(t, tt.wantUID, uid)
+					return
+				}
+				require.Error(t, err)
+				assert.ErrorIs(t, err, tt.wantErrIs)
+			})
+		}
+	})
+
+	t.Run("realUID non-zero always returns realUID without error", func(t *testing.T) {
+		for _, sudoUID := range []string{"", "2000", "abc", "-1"} {
+			t.Run(fmt.Sprintf("sudoUID=%q", sudoUID), func(t *testing.T) {
+				uid, err := resolvePermissionCheckUID(SudoUIDAware, 1000, func(string) string { return sudoUID })
+
+				require.NoError(t, err)
+				assert.Equal(t, 1000, uid)
+			})
+		}
+	})
+}
+
+// TestResolvePermissionCheckUID_EnvAccess verifies that SUDO_UID is read only
+// under SudoUIDAware, contrasted against RealUIDOnly under the same
+// conditions (realUID 0, valid SUDO_UID) to rule out that the absence of a
+// read is merely because realUID was non-zero (architecture document §3.5).
+func TestResolvePermissionCheckUID_EnvAccess(t *testing.T) {
+	t.Run("RealUIDOnly never reads SUDO_UID", func(t *testing.T) {
+		var calls int
+		var names []string
+		getenv := func(name string) string {
+			calls++
+			names = append(names, name)
+			return "1000"
+		}
+
+		_, err := resolvePermissionCheckUID(RealUIDOnly, 0, getenv)
+
+		require.NoError(t, err)
+		assert.Zero(t, calls)
+		assert.Empty(t, names)
+	})
+
+	t.Run("SudoUIDAware reads SUDO_UID", func(t *testing.T) {
+		var calls int
+		var names []string
+		getenv := func(name string) string {
+			calls++
+			names = append(names, name)
+			return "1000"
+		}
+
+		_, err := resolvePermissionCheckUID(SudoUIDAware, 0, getenv)
+
+		require.NoError(t, err)
+		assert.GreaterOrEqual(t, calls, 1)
+		for _, name := range names {
+			assert.Equal(t, "SUDO_UID", name)
+		}
+	})
 }

@@ -46,3 +46,11 @@ func SwapProcessPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) (restore fu
 func (gm *GroupMembership) EffectivePermissionCheckUIDPolicy() PermissionCheckUIDPolicy {
 	return gm.effectivePermissionCheckUIDPolicy()
 }
+
+// ResolvePermissionCheckUID resolves the permission check UID for the given
+// policy, real UID, and environment variable getter. It is an entry point
+// for tests in other packages (e.g. cmd/record, cmd/verify) to exercise the
+// unexported resolvePermissionCheckUID.
+func ResolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, getenv func(string) string) (int, error) {
+	return resolvePermissionCheckUID(policy, realUID, getenv)
+}

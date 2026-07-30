@@ -596,32 +596,27 @@ func TestCanCurrentUserSafelyReadFile_EdgeCases(t *testing.T) {
 	})
 }
 
-// TestGetPermissionCheckUID tests the getPermissionCheckUID function
+// TestGetPermissionCheckUID tests the getPermissionCheckUID method
 func TestGetPermissionCheckUID(t *testing.T) {
-	t.Run("normal user without sudo", func(t *testing.T) {
-		// Clear SUDO_UID if set
-		t.Setenv("SUDO_UID", "")
+	t.Run("returns real UID under the final default policy", func(t *testing.T) {
+		t.Setenv("SUDO_UID", "9999")
 
-		uid, err := getPermissionCheckUID()
+		gm := New()
+		uid, err := gm.getPermissionCheckUID()
 		assert.NoError(t, err)
-		assert.Greater(t, uid, -1) // Should be non-negative
+		assert.Equal(t, os.Getuid(), uid)
 	})
 
-	t.Run("simulated sudo environment for non-root user", func(t *testing.T) {
-		// Only test if running as non-root
-		currentUID, err := getPermissionCheckUID()
-		assert.NoError(t, err)
+	t.Run("reads SUDO_UID from the real environment under SudoUIDAware", func(t *testing.T) {
+		t.Setenv("SUDO_UID", "9999")
 
-		if currentUID != 0 {
-			// Set SUDO_UID to simulate sudo environment
-			// When running as non-root, SUDO_UID should be ignored
-			t.Setenv("SUDO_UID", "1234")
-			uid, err := getPermissionCheckUID()
-			assert.NoError(t, err)
-			// Should return current UID, not SUDO_UID, because we're not root
-			assert.Equal(t, currentUID, uid)
+		gm := New(WithPermissionCheckUIDPolicy(SudoUIDAware))
+		uid, err := gm.getPermissionCheckUID()
+		assert.NoError(t, err)
+		if os.Getuid() == 0 {
+			assert.Equal(t, 9999, uid)
 		} else {
-			t.Skip("Skipping non-root test when running as root")
+			assert.Equal(t, os.Getuid(), uid)
 		}
 	})
 
@@ -685,74 +680,6 @@ func TestGetPermissionCheckUID(t *testing.T) {
 				uid, err := parseSudoUID(test.value)
 				assert.NoError(t, err, "parseSudoUID(%s) should not return an error", test.value)
 				assert.Equal(t, test.expected, uid)
-			})
-		}
-	})
-
-	t.Run("with SUDO_UID empty returns os.Getuid", func(t *testing.T) {
-		t.Setenv("SUDO_UID", "")
-		uid, err := getPermissionCheckUID()
-		assert.NoError(t, err)
-		assert.Equal(t, os.Getuid(), uid)
-	})
-
-	t.Run("with SUDO_UID set returns appropriate UID", func(t *testing.T) {
-		t.Setenv("SUDO_UID", "9999")
-		uid, err := getPermissionCheckUID()
-		assert.NoError(t, err)
-		if os.Getuid() == 0 {
-			assert.Equal(t, 9999, uid)
-		} else {
-			assert.Equal(t, os.Getuid(), uid)
-		}
-	})
-}
-
-// TestResolvePermissionCheckUID tests the resolvePermissionCheckUID pure function
-// covering all branches without requiring root privileges.
-func TestResolvePermissionCheckUID(t *testing.T) {
-	t.Run("sudoUID empty returns realUID", func(t *testing.T) {
-		tests := []struct {
-			name    string
-			realUID int
-		}{
-			{"root", 0},
-			{"normal user", 1000},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				uid, err := resolvePermissionCheckUID(tt.realUID, "")
-				assert.NoError(t, err)
-				assert.Equal(t, tt.realUID, uid)
-			})
-		}
-	})
-
-	t.Run("realUID 0 and valid SUDO_UID returns SUDO_UID value", func(t *testing.T) {
-		uid, err := resolvePermissionCheckUID(0, "1000")
-		assert.NoError(t, err)
-		assert.Equal(t, 1000, uid)
-	})
-
-	t.Run("realUID non-zero ignores SUDO_UID", func(t *testing.T) {
-		uid, err := resolvePermissionCheckUID(1000, "2000")
-		assert.NoError(t, err)
-		assert.Equal(t, 1000, uid)
-	})
-
-	t.Run("realUID 0 and invalid SUDO_UID returns error", func(t *testing.T) {
-		invalidValues := []struct {
-			name  string
-			value string
-		}{
-			{"negative", "-1"},
-			{"exceeds uint32", "4294967296"},
-			{"non-numeric", "abc"},
-		}
-		for _, tt := range invalidValues {
-			t.Run(tt.name, func(t *testing.T) {
-				_, err := resolvePermissionCheckUID(0, tt.value)
-				assert.Error(t, err)
 			})
 		}
 	})
