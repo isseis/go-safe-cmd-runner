@@ -185,25 +185,25 @@
 
 **作業内容**
 
-- [ ] `manager.go` に非公開定数 `sudoUIDEnvVar = "SUDO_UID"` を `parseSudoUID` の近くに追加する
-- [ ] `getPermissionCheckUID()` をパッケージ関数から `(gm *GroupMembership) getPermissionCheckUID() (int, error)` へ変更する。本体は `getProcessRealUID()` で実 UID を得たのち `resolvePermissionCheckUID(gm.effectivePermissionCheckUIDPolicy(), realUID, os.Getenv)` を返す形にする
-- [ ] `getPermissionCheckUID` の doc コメントを書き換える。現行の「When running under sudo (the real UID is 0 and SUDO_UID is set), it returns the original user's UID taken from SUDO_UID.」という無条件の記述を改め、基準UIDは有効な方針に従って解決すること、および `SUDO_UID` を読むのは `SudoUIDAware` のときだけであることを記す
-- [ ] `resolvePermissionCheckUID` のシグネチャを `resolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, getenv func(string) string) (int, error)` へ変更し、本体を設計書 §6.1 のフローどおりに実装する。環境変数の取得は `getenv(sudoUIDEnvVar)` で行う
-- [ ] `resolvePermissionCheckUID` の doc コメントを、新しい引数（方針・環境変数取得関数）と、`RealUIDOnly` では環境変数取得関数を呼ばないことを含む内容へ書き換える
-- [ ] `parseSudoUID` の doc コメント 1 行「This is separated from getPermissionCheckUID to allow independent testing.」を「This is separated from resolvePermissionCheckUID to allow independent testing.」へ変更する。関数本体とエラー文面は変更しない
-- [ ] `CanCurrentUserSafelyReadFile` 内の `getPermissionCheckUID()` の呼び出しを `gm.getPermissionCheckUID()` へ変更する
-- [ ] `test_helpers_policy.go` に `ResolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, getenv func(string) string) (int, error)` を追加する（非公開の `resolvePermissionCheckUID` への委譲のみ）。`cmd/*` のテストから基準UID解決を検証するための入口である。**この追加はステップ 2-1 に置く。**`resolvePermissionCheckUID` の新シグネチャに依存するため、フェーズ1に置くとフェーズ1の時点でコンパイルできない
-- [ ] `manager_test.go::TestGetPermissionCheckUID` の重複するサブテスト 3 件（`normal user without sudo`、`with SUDO_UID empty returns os.Getuid`、`with SUDO_UID set returns appropriate UID`）を、`returns real UID under the final default policy` の 1 件へ統合する。内容は `t.Setenv("SUDO_UID", "9999")` の下で `New().getPermissionCheckUID()` が `os.Getuid()` を返すことの検証とする。最終既定方針が `RealUIDOnly` であるため、これら3件は統合後は同一の主張になる
-- [ ] `manager_test.go::TestGetPermissionCheckUID` のサブテスト `simulated sudo environment for non-root user` を削除する。最終既定方針の下では実 UID によらず結果が実 UID になるため、非 root 限定の分岐に意味がなくなる
-- [ ] `manager_test.go::TestGetPermissionCheckUID` に `reads SUDO_UID from the real environment under SudoUIDAware` を追加する。`gm := New(WithPermissionCheckUIDPolicy(SudoUIDAware))` と `t.Setenv("SUDO_UID", "9999")` の下で、`os.Getuid() == 0` なら `gm.getPermissionCheckUID()` が `9999`、それ以外なら `os.Getuid()` を返すことを検証する。これは `getPermissionCheckUID` が `os.Getenv` を実際に渡していること、および `sudoUIDEnvVar` の値が正しいことを実環境に対して確かめる唯一のテストであり、削除する既存サブテストの不変条件（§1.3 の「更新が必要な既存テスト」）を引き継ぐ
-- [ ] `manager_test.go::TestResolvePermissionCheckUID`（:713-759）を削除する。検証していた不変条件は `policy_test.go` の新規テストが引き継ぐ（§4.5）
-- [ ] `manager_test.go::TestGetPermissionCheckUID` の `parseSudoUID` を直接呼ぶサブテスト 3 件は変更しない
+- [x] `manager.go` に非公開定数 `sudoUIDEnvVar = "SUDO_UID"` を `parseSudoUID` の近くに追加する
+- [x] `getPermissionCheckUID()` をパッケージ関数から `(gm *GroupMembership) getPermissionCheckUID() (int, error)` へ変更する。本体は `getProcessRealUID()` で実 UID を得たのち `resolvePermissionCheckUID(gm.effectivePermissionCheckUIDPolicy(), realUID, os.Getenv)` を返す形にする
+- [x] `getPermissionCheckUID` の doc コメントを書き換える。現行の「When running under sudo (the real UID is 0 and SUDO_UID is set), it returns the original user's UID taken from SUDO_UID.」という無条件の記述を改め、基準UIDは有効な方針に従って解決すること、および `SUDO_UID` を読むのは `SudoUIDAware` のときだけであることを記す
+- [x] `resolvePermissionCheckUID` のシグネチャを `resolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, getenv func(string) string) (int, error)` へ変更し、本体を設計書 §6.1 のフローどおりに実装する。環境変数の取得は `getenv(sudoUIDEnvVar)` で行う
+- [x] `resolvePermissionCheckUID` の doc コメントを、新しい引数（方針・環境変数取得関数）と、`RealUIDOnly` では環境変数取得関数を呼ばないことを含む内容へ書き換える
+- [x] `parseSudoUID` の doc コメント 1 行「This is separated from getPermissionCheckUID to allow independent testing.」を「This is separated from resolvePermissionCheckUID to allow independent testing.」へ変更する。関数本体とエラー文面は変更しない
+- [x] `CanCurrentUserSafelyReadFile` 内の `getPermissionCheckUID()` の呼び出しを `gm.getPermissionCheckUID()` へ変更する
+- [x] `test_helpers_policy.go` に `ResolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, getenv func(string) string) (int, error)` を追加する（非公開の `resolvePermissionCheckUID` への委譲のみ）。`cmd/*` のテストから基準UID解決を検証するための入口である。**この追加はステップ 2-1 に置く。**`resolvePermissionCheckUID` の新シグネチャに依存するため、フェーズ1に置くとフェーズ1の時点でコンパイルできない
+- [x] `manager_test.go::TestGetPermissionCheckUID` の重複するサブテスト 3 件（`normal user without sudo`、`with SUDO_UID empty returns os.Getuid`、`with SUDO_UID set returns appropriate UID`）を、`returns real UID under the final default policy` の 1 件へ統合する。内容は `t.Setenv("SUDO_UID", "9999")` の下で `New().getPermissionCheckUID()` が `os.Getuid()` を返すことの検証とする。最終既定方針が `RealUIDOnly` であるため、これら3件は統合後は同一の主張になる
+- [x] `manager_test.go::TestGetPermissionCheckUID` のサブテスト `simulated sudo environment for non-root user` を削除する。最終既定方針の下では実 UID によらず結果が実 UID になるため、非 root 限定の分岐に意味がなくなる
+- [x] `manager_test.go::TestGetPermissionCheckUID` に `reads SUDO_UID from the real environment under SudoUIDAware` を追加する。`gm := New(WithPermissionCheckUIDPolicy(SudoUIDAware))` と `t.Setenv("SUDO_UID", "9999")` の下で、`os.Getuid() == 0` なら `gm.getPermissionCheckUID()` が `9999`、それ以外なら `os.Getuid()` を返すことを検証する。これは `getPermissionCheckUID` が `os.Getenv` を実際に渡していること、および `sudoUIDEnvVar` の値が正しいことを実環境に対して確かめる唯一のテストであり、削除する既存サブテストの不変条件（§1.3 の「更新が必要な既存テスト」）を引き継ぐ
+- [x] `manager_test.go::TestResolvePermissionCheckUID`（:713-759）を削除する。検証していた不変条件は `policy_test.go` の新規テストが引き継ぐ（§4.5）
+- [x] `manager_test.go::TestGetPermissionCheckUID` の `parseSudoUID` を直接呼ぶサブテスト 3 件は変更しない
 
 **完了条件**
 
-- [ ] `make fmt` / `make test` / `make lint` が成功する
-- [ ] `rg -n 'os\.Getenv\("SUDO_UID"\)' -g '*.go'` の一致が 0 件である
-- [ ] `make deadcode` の出力に `internal/groupmembership/policy.go` を含む行が現れない（§1.3 の 6.）
+- [x] `make fmt` / `make test` / `make lint` が成功する
+- [x] `rg -n 'os\.Getenv\("SUDO_UID"\)' -g '*.go'` の一致が 0 件である
+- [x] `make deadcode` の出力に `internal/groupmembership/policy.go` を含む行が現れない（§1.3 の 6.）
 
 ### 2.4 ステップ 2-2 = フェーズ2: 基準UID解決の単体テスト
 
@@ -215,16 +215,16 @@
 
 **作業内容**
 
-- [ ] `TestResolvePermissionCheckUID_RealUIDOnly` を追加する。表駆動で実 UID `0` / `1000` × `SUDO_UID` 値 `""` / `"0"` / `"1000"`（有効値）/ `"4294967295"`（`math.MaxUint32`）/ `"abc"`（数値でない）/ `"-1"`（負数）/ `"4294967296"`（`math.MaxUint32` 超過）/ 数字 300 桁の文字列 の全 16 組み合わせについて、常にエラーなく実 UID が返ることを検証する（AC-04、AC-12、設計書 §7.3 の1点目）
-- [ ] `TestResolvePermissionCheckUID_SudoUIDAware` を追加する。表駆動で設計書 §3.4.2 / AC-13 の表の全行を検証する。期待値は行ごとに指定する。実 UID `0`: `""` → `0`、`"0"` → `0`、`"1000"` → `1000`、`"4294967295"` → `4294967295`、`"-1"` → `errors.Is(err, ErrSudoUIDOutOfRange)`、`"4294967296"` → `errors.Is(err, ErrSudoUIDOutOfRange)`、`"abc"` → `errors.Is(err, strconv.ErrSyntax)`。実 UID `1000`: `""` / `"2000"` / `"abc"` / `"-1"` のいずれでもエラーなく `1000`。エラーは文字列一致ではなく `errors.Is` で判定する（AC-05、AC-06、AC-13）
-- [ ] `TestResolvePermissionCheckUID_EnvAccess` を追加する。呼び出された環境変数名を記録し呼び出し回数を数える環境変数取得関数を渡す。実 UID `0` かつ有効値を返す条件で、(a) `RealUIDOnly` では呼び出し回数が 0、(b) `SudoUIDAware` では 1 以上でありかつ記録された環境変数名が `"SUDO_UID"` であることを検証する。両者を同一テストで対比させ、実 UID が 0 でないために読まれなかった状態と区別する（AC-03、AC-09、設計書 §3.5）
-- [ ] 上記 3 テストはプロセス既定方針を参照しないため、`SwapProcessPermissionCheckUIDPolicy` を使わない
+- [x] `TestResolvePermissionCheckUID_RealUIDOnly` を追加する。表駆動で実 UID `0` / `1000` × `SUDO_UID` 値 `""` / `"0"` / `"1000"`（有効値）/ `"4294967295"`（`math.MaxUint32`）/ `"abc"`（数値でない）/ `"-1"`（負数）/ `"4294967296"`（`math.MaxUint32` 超過）/ 数字 300 桁の文字列 の全 16 組み合わせについて、常にエラーなく実 UID が返ることを検証する（AC-04、AC-12、設計書 §7.3 の1点目）
+- [x] `TestResolvePermissionCheckUID_SudoUIDAware` を追加する。表駆動で設計書 §3.4.2 / AC-13 の表の全行を検証する。期待値は行ごとに指定する。実 UID `0`: `""` → `0`、`"0"` → `0`、`"1000"` → `1000`、`"4294967295"` → `4294967295`、`"-1"` → `errors.Is(err, ErrSudoUIDOutOfRange)`、`"4294967296"` → `errors.Is(err, ErrSudoUIDOutOfRange)`、`"abc"` → `errors.Is(err, strconv.ErrSyntax)`。実 UID `1000`: `""` / `"2000"` / `"abc"` / `"-1"` のいずれでもエラーなく `1000`。エラーは文字列一致ではなく `errors.Is` で判定する（AC-05、AC-06、AC-13）
+- [x] `TestResolvePermissionCheckUID_EnvAccess` を追加する。呼び出された環境変数名を記録し呼び出し回数を数える環境変数取得関数を渡す。実 UID `0` かつ有効値を返す条件で、(a) `RealUIDOnly` では呼び出し回数が 0、(b) `SudoUIDAware` では 1 以上でありかつ記録された環境変数名が `"SUDO_UID"` であることを検証する。両者を同一テストで対比させ、実 UID が 0 でないために読まれなかった状態と区別する（AC-03、AC-09、設計書 §3.5）
+- [x] 上記 3 テストはプロセス既定方針を参照しないため、`SwapProcessPermissionCheckUIDPolicy` を使わない
 
 **完了条件**
 
-- [ ] `make test` が成功し、上記 3 テストが pass する
-- [ ] `resolvePermissionCheckUID` の設計書 §6.1 のフロー上の全分岐（方針が `SudoUIDAware` でない／実 UID が 0 でない／`SUDO_UID` が空／解析成功／解析失敗）が、上記 3 テストのいずれかで通過している
-- [ ] `make lint` が成功する
+- [x] `make test` が成功し、上記 3 テストが pass する
+- [x] `resolvePermissionCheckUID` の設計書 §6.1 のフロー上の全分岐（方針が `SudoUIDAware` でない／実 UID が 0 でない／`SUDO_UID` が空／解析成功／解析失敗）が、上記 3 テストのいずれかで通過している
+- [x] `make lint` が成功する
 
 ### 2.5 ステップ 3-1 = フェーズ3: 3バイナリでの方針宣言
 
@@ -239,17 +239,17 @@
 
 **作業内容**
 
-- [ ] `.golangci.yml` の `depguard` の `main` ルールの `allow` リストへ `github.com/isseis/go-safe-cmd-runner/internal/groupmembership` を追加する（§1.3 の 1.）。追加位置は同リスト内の `internal/filevalidator` の直後とし、既存の並びに合わせる。この変更は同ステップの `cmd/*` の import 追加と同一コミットに含める
-- [ ] `cmd/runner/main.go` の既存の `init()`（:55）の末尾に、`SetProcessPermissionCheckUIDPolicy(groupmembership.RealUIDOnly)` の呼び出しを追加する。エラーが返った場合は panic する（設計書 §4.2）。panic メッセージは `fmt.Sprintf` で組み立て、宣言しようとした方針と `ProcessPermissionCheckUIDPolicy()` の現在値を `%s` で含める（§1.3 の 6.(b)）。この宣言は最終既定方針と同じ値であり、挙動を変えるためではなく意図を明示するために置く。その趣旨を英文コメント 1 行で添える
-- [ ] `cmd/record/main.go` に `init()` を新設し、`SetProcessPermissionCheckUIDPolicy(groupmembership.SudoUIDAware)` を呼ぶ。エラー時は `runner` と同じ形式の panic とする
-- [ ] `cmd/verify/main.go` に `init()` を新設し、`SetProcessPermissionCheckUIDPolicy(groupmembership.SudoUIDAware)` を呼ぶ。エラー時は `runner` と同じ形式の panic とする
-- [ ] 3 ファイルの `init()` に、宣言の根拠（`runner` は setuid バイナリを一般ユーザーが起動する運用のため sudo 経由を想定しない／`record` と `verify` は `sudo` 実行が想定運用のため呼び出し元ユーザー視点の判定を維持する）を英文コメントで記す
+- [x] `.golangci.yml` の `depguard` の `main` ルールの `allow` リストへ `github.com/isseis/go-safe-cmd-runner/internal/groupmembership` を追加する（§1.3 の 1.）。追加位置は同リスト内の `internal/filevalidator` の直後とし、既存の並びに合わせる。この変更は同ステップの `cmd/*` の import 追加と同一コミットに含める
+- [x] `cmd/runner/main.go` の既存の `init()`（:55）の末尾に、`SetProcessPermissionCheckUIDPolicy(groupmembership.RealUIDOnly)` の呼び出しを追加する。エラーが返った場合は panic する（設計書 §4.2）。panic メッセージは `fmt.Sprintf` で組み立て、宣言しようとした方針と `ProcessPermissionCheckUIDPolicy()` の現在値を `%s` で含める（§1.3 の 6.(b)）。この宣言は最終既定方針と同じ値であり、挙動を変えるためではなく意図を明示するために置く。その趣旨を英文コメント 1 行で添える
+- [x] `cmd/record/main.go` に `init()` を新設し、`SetProcessPermissionCheckUIDPolicy(groupmembership.SudoUIDAware)` を呼ぶ。エラー時は `runner` と同じ形式の panic とする
+- [x] `cmd/verify/main.go` に `init()` を新設し、`SetProcessPermissionCheckUIDPolicy(groupmembership.SudoUIDAware)` を呼ぶ。エラー時は `runner` と同じ形式の panic とする
+- [x] 3 ファイルの `init()` に、宣言の根拠（`runner` は setuid バイナリを一般ユーザーが起動する運用のため sudo 経由を想定しない／`record` と `verify` は `sudo` 実行が想定運用のため呼び出し元ユーザー視点の判定を維持する）を英文コメントで記す
 
 **完了条件**
 
-- [ ] `make build` が成功する
-- [ ] `make lint` が成功する（`depguard` の追加が効いていることの確認になる）
-- [ ] `make fmt` / `make test` が成功する
+- [x] `make build` が成功する
+- [x] `make lint` が成功する（`depguard` の追加が効いていることの確認になる）
+- [x] `make fmt` / `make test` が成功する
 
 ### 2.6 ステップ 3-2 = フェーズ3: バイナリごとの宣言の実行時検証テスト
 
@@ -263,15 +263,15 @@
 
 **作業内容**
 
-- [ ] `cmd/runner/main_test.go` に `TestRunnerDeclaresRealUIDOnlyPolicy` を追加する。(a) `groupmembership.ProcessPermissionCheckUIDPolicy()` が `groupmembership.RealUIDOnly` を返すこと、(b) その方針の下で `groupmembership.ResolvePermissionCheckUID(groupmembership.ProcessPermissionCheckUIDPolicy(), 0, func(string) string { return "1000" })` が `0` をエラーなく返すことを検証する。(b) は、テストバイナリの `init()` が実際に宣言した方針の下で、実 UID 0 の状況でも `SUDO_UID` が採用されないことを確認するものである（AC-07、AC-08、AC-09）
-- [ ] `cmd/record/main_test.go` に `TestRecordDeclaresSudoUIDAwarePolicy` を追加する。(a) `groupmembership.ProcessPermissionCheckUIDPolicy()` が `groupmembership.SudoUIDAware` を返すこと、(b) `groupmembership.ResolvePermissionCheckUID(groupmembership.ProcessPermissionCheckUIDPolicy(), 0, func(string) string { return "1000" })` が `1000` をエラーなく返すことを検証する。(b) の期待値は変更前の `resolvePermissionCheckUID(0, "1000")` の結果と同一であり、この検証が AC-11 の回帰確認にあたる（AC-10、AC-11）
-- [ ] `cmd/verify/main_test.go` に `TestVerifyDeclaresSudoUIDAwarePolicy` を追加する。内容は `cmd/record` と同じ（AC-10、AC-11）
-- [ ] 3 テストはいずれもプロセス既定方針を読み取るだけで書き換えない（設計書 §7.4 の3点目）。`t.Parallel()` は書かない
+- [x] `cmd/runner/main_test.go` に `TestRunnerDeclaresRealUIDOnlyPolicy` を追加する。(a) `groupmembership.ProcessPermissionCheckUIDPolicy()` が `groupmembership.RealUIDOnly` を返すこと、(b) その方針の下で `groupmembership.ResolvePermissionCheckUID(groupmembership.ProcessPermissionCheckUIDPolicy(), 0, func(string) string { return "1000" })` が `0` をエラーなく返すことを検証する。(b) は、テストバイナリの `init()` が実際に宣言した方針の下で、実 UID 0 の状況でも `SUDO_UID` が採用されないことを確認するものである（AC-07、AC-08、AC-09）
+- [x] `cmd/record/main_test.go` に `TestRecordDeclaresSudoUIDAwarePolicy` を追加する。(a) `groupmembership.ProcessPermissionCheckUIDPolicy()` が `groupmembership.SudoUIDAware` を返すこと、(b) `groupmembership.ResolvePermissionCheckUID(groupmembership.ProcessPermissionCheckUIDPolicy(), 0, func(string) string { return "1000" })` が `1000` をエラーなく返すことを検証する。(b) の期待値は変更前の `resolvePermissionCheckUID(0, "1000")` の結果と同一であり、この検証が AC-11 の回帰確認にあたる（AC-10、AC-11）
+- [x] `cmd/verify/main_test.go` に `TestVerifyDeclaresSudoUIDAwarePolicy` を追加する。内容は `cmd/record` と同じ（AC-10、AC-11）
+- [x] 3 テストはいずれもプロセス既定方針を読み取るだけで書き換えない（設計書 §7.4 の3点目）。`t.Parallel()` は書かない
 
 **完了条件**
 
-- [ ] `make test` が成功し、上記 3 テストが pass する
-- [ ] `make lint` が成功する
+- [x] `make test` が成功し、上記 3 テストが pass する
+- [x] `make lint` が成功する
 
 ### 2.7 ステップ 3-3 = フェーズ3: `safefileio` 経由の方針委譲の検証
 
@@ -283,14 +283,14 @@
 
 **作業内容**
 
-- [ ] `TestGroupMembershipFollowsProcessPermissionCheckUIDPolicy` を追加する。`NewFileSystem(FileSystemConfig{}).GetGroupMembership()` とパッケージ変数 `defaultFS.GetGroupMembership()` の両方について、2 つのサブテストで検証する。(a) `t.Cleanup(groupmembership.SwapProcessPermissionCheckUIDPolicy(groupmembership.PolicyUnset))` で未設定状態を明示的に確立した下で `EffectivePermissionCheckUIDPolicy()` が `groupmembership.RealUIDOnly` を返すこと、(b) `t.Cleanup(groupmembership.SwapProcessPermissionCheckUIDPolicy(groupmembership.SudoUIDAware))` の下で `groupmembership.SudoUIDAware` を返すこと。各サブテストが自身の開始状態を自ら確立するため、単独実行でも成立する。`safefileio` が生成する `GroupMembership` がインスタンス方針を持たずプロセス既定方針へ委譲することの確認であり、`cmd/*` 側の宣言検証（ステップ 3-2）と組み合わせて AC-07 / AC-10 を成立させる
-- [ ] 本テストに `t.Parallel()` は書かない（プロセス既定方針を書き換えるため。`internal/safefileio` はパッケージ全体で `t.Parallel()` を禁じている。`safe_file_linux.go:120`）
+- [x] `TestGroupMembershipFollowsProcessPermissionCheckUIDPolicy` を追加する。`NewFileSystem(FileSystemConfig{}).GetGroupMembership()` とパッケージ変数 `defaultFS.GetGroupMembership()` の両方について、2 つのサブテストで検証する。(a) `t.Cleanup(groupmembership.SwapProcessPermissionCheckUIDPolicy(groupmembership.PolicyUnset))` で未設定状態を明示的に確立した下で `EffectivePermissionCheckUIDPolicy()` が `groupmembership.RealUIDOnly` を返すこと、(b) `t.Cleanup(groupmembership.SwapProcessPermissionCheckUIDPolicy(groupmembership.SudoUIDAware))` の下で `groupmembership.SudoUIDAware` を返すこと。各サブテストが自身の開始状態を自ら確立するため、単独実行でも成立する。`safefileio` が生成する `GroupMembership` がインスタンス方針を持たずプロセス既定方針へ委譲することの確認であり、`cmd/*` 側の宣言検証（ステップ 3-2）と組み合わせて AC-07 / AC-10 を成立させる
+- [x] 本テストに `t.Parallel()` は書かない（プロセス既定方針を書き換えるため。`internal/safefileio` はパッケージ全体で `t.Parallel()` を禁じている。`safe_file_linux.go:120`）
 
 **完了条件**
 
-- [ ] `make test` が成功する
-- [ ] `go test -tags test -race ./internal/safefileio/` が成功する
-- [ ] `make lint` が成功する
+- [x] `make test` が成功する
+- [x] `go test -tags test -race ./internal/safefileio/` が成功する
+- [x] `make lint` が成功する
 
 ### PR-2 作成ポイント: policy-based UID resolution and per-binary declaration
 

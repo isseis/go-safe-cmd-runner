@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/security"
 )
 
@@ -25,6 +26,15 @@ var (
 	}
 	mkdirAll = os.MkdirAll
 )
+
+func init() {
+	// verify is invoked as `sudo verify ...`; the read-safety check must judge
+	// access from the invoking user's point of view, so SUDO_UID is consulted.
+	if err := groupmembership.SetProcessPermissionCheckUIDPolicy(groupmembership.SudoUIDAware); err != nil {
+		panic(fmt.Sprintf("failed to declare permission check UID policy %s (current=%s): %v",
+			groupmembership.SudoUIDAware, groupmembership.ProcessPermissionCheckUIDPolicy(), err))
+	}
+}
 
 type hashValidator interface {
 	Verify(filePath string) error

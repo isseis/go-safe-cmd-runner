@@ -17,11 +17,21 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 )
+
+func init() {
+	// record is invoked as `sudo record ...`; the read-safety check must judge
+	// access from the invoking user's point of view, so SUDO_UID is consulted.
+	if err := groupmembership.SetProcessPermissionCheckUIDPolicy(groupmembership.SudoUIDAware); err != nil {
+		panic(fmt.Sprintf("failed to declare permission check UID policy %s (current=%s): %v",
+			groupmembership.SudoUIDAware, groupmembership.ProcessPermissionCheckUIDPolicy(), err))
+	}
+}
 
 const (
 	hashDirPermissions = 0o700
