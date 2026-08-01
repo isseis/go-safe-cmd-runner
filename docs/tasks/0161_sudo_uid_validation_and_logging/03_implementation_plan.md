@@ -258,7 +258,7 @@
 - [x] `rg -n "getenv func\(string\) string" internal/groupmembership/` の結果が空であること（10 章。旧シグネチャの残存確認）
 - [x] `rg -n "pre-refactor resolvePermissionCheckUID" cmd/` の結果が空であること（10 章。ステップ2-5 のコメント書き換え漏れの確認）
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
