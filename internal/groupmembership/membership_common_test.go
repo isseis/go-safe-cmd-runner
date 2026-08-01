@@ -43,19 +43,27 @@ func (h *logCaptureHandler) Handle(_ context.Context, record slog.Record) error 
 		return true
 	})
 
-	// Handle may run on several goroutines at once, so the captured records
-	// are guarded by a mutex and only ever handed out as a copy.
+	// Handle may run on several goroutines at once, so the captured slice is
+	// guarded by a mutex and only ever handed out as a copy.
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.records = append(h.records, capturedRecord{level: record.Level, msg: record.Message, attrs: attrs})
 	return h.handleErr
 }
 
-func (h *logCaptureHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+// WithAttrs and WithGroup are not supported: this handler captures only the
+// attributes carried by the record itself. Panicking rather than silently
+// dropping them keeps a wrapped logger from making a test under-verify.
+func (h *logCaptureHandler) WithAttrs([]slog.Attr) slog.Handler {
+	panic("logCaptureHandler does not support WithAttrs")
+}
 
-func (h *logCaptureHandler) WithGroup(string) slog.Handler { return h }
+func (h *logCaptureHandler) WithGroup(string) slog.Handler {
+	panic("logCaptureHandler does not support WithGroup")
+}
 
-// captured returns a copy of the records captured so far.
+// captured returns a copy of the captured slice. The per-record attribute maps
+// are shared with the handler and must not be mutated by the caller.
 func (h *logCaptureHandler) captured() []capturedRecord {
 	h.mu.Lock()
 	defer h.mu.Unlock()

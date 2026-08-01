@@ -978,17 +978,21 @@ func TestSudoUIDAdoptionReporter_Report(t *testing.T) {
 	assert.Equal(t, slog.LevelWarn, records[0].level)
 	assert.Equal(t, sudoUIDAdoptionMessage, records[0].msg)
 
-	wantAttrs := map[string]string{
-		"permission_check_uid":        "1000",
-		"real_uid":                    "0",
-		"source_env_var":              sudoUIDEnvVar,
-		"permission_check_uid_policy": SudoUIDAware.String(),
-		"user_database_source":        userDatabaseSource,
+	// The values are compared as slog.Value so that the attribute kinds are
+	// pinned too: a UID emitted as a string would render identically but reach
+	// a JSON consumer quoted.
+	wantAttrs := map[string]slog.Value{
+		"permission_check_uid":        slog.IntValue(1000),
+		"real_uid":                    slog.IntValue(0),
+		"source_env_var":              slog.StringValue(sudoUIDEnvVar),
+		"permission_check_uid_policy": slog.StringValue(SudoUIDAware.String()),
+		"user_database_source":        slog.StringValue(userDatabaseSource),
 	}
 	for key, want := range wantAttrs {
 		value, ok := records[0].attrs[key]
 		if assert.True(t, ok, "attribute %s should be present", key) {
-			assert.Equal(t, want, value.String(), "attribute %s", key)
+			assert.Equal(t, want.Kind(), value.Kind(), "attribute %s kind", key)
+			assert.Equal(t, want.String(), value.String(), "attribute %s", key)
 		}
 	}
 	assert.Len(t, records[0].attrs, len(wantAttrs), "no unexpected attributes")
@@ -1011,29 +1015,40 @@ func TestSudoUIDAdoptionReporter_ReportsOnlyOnce(t *testing.T) {
 
 // TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently checks that the
 // once-per-instance limit holds when report is called from many goroutines.
+//
+// The race window a non-atomic guard would open (a load, then a separate
+// store) is only a few nanoseconds wide, so a single barrier-and-join round
+// detects such a regression far less than half the time. Each round therefore
+// uses a fresh reporter, and enough rounds are run that a lost update is
+// caught reliably.
 func TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently(t *testing.T) {
 	t.Parallel()
 
-	const goroutines = 50
+	const (
+		goroutines = 50
+		rounds     = 200
+	)
 
-	handler := &logCaptureHandler{}
-	logger := slog.New(handler)
-	var reporter sudoUIDAdoptionReporter
+	for range rounds {
+		handler := &logCaptureHandler{}
+		logger := slog.New(handler)
+		var reporter sudoUIDAdoptionReporter
 
-	var wg sync.WaitGroup
-	start := make(chan struct{})
-	for range goroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-start
-			reporter.report(logger, SudoUIDAware, 0, 1000)
-		}()
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for range goroutines {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				reporter.report(logger, SudoUIDAware, 0, 1000)
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		require.Len(t, handler.captured(), 1)
 	}
-	close(start)
-	wg.Wait()
-
-	assert.Len(t, handler.captured(), 1)
 }
 
 // countingLookup returns an existence-check function that counts its calls in
@@ -1103,12 +1118,18 @@ func TestSudoUIDExistenceMemo_Concurrent(t *testing.T) {
 
 	lookupErr := errors.New("lookup failed")
 	memo := sudoUIDExistenceMemo{confirmed: make(map[int]struct{})}
-	var calls atomic.Int64
+	var existingCalls, missingCalls atomic.Int64
 	lookup := func(uid int) error {
-		calls.Add(1)
 		if uid == missingUID {
+			missingCalls.Add(1)
 			return lookupErr
 		}
+		existingCalls.Add(1)
+		// A real user database query is slow — that is why verify holds the
+		// mutex across it. Standing in for that latency here is what makes a
+		// second goroutine's entry observable if the lock were ever released
+		// around the lookup.
+		time.Sleep(20 * time.Millisecond)
 		return nil
 	}
 
@@ -1134,13 +1155,18 @@ func TestSudoUIDExistenceMemo_Concurrent(t *testing.T) {
 	close(start)
 	wg.Wait()
 
+	// verify holds the mutex across lookup, so the concurrent checks for the
+	// UID that exists collapse into exactly one query however they interleave.
+	// Every check of the missing UID queries, since failures are not memoized.
+	assert.Equal(t, int64(1), existingCalls.Load(), "concurrent checks for one UID should share a single lookup")
+	assert.Equal(t, int64(goroutines/2), missingCalls.Load(), "failed lookups should not be memoized")
+
 	// The existing UID is confirmed, so it is never looked up again; the
 	// missing one is looked up on every call.
-	callsAfterJoin := calls.Load()
 	require.NoError(t, memo.verify(existingUID, lookup))
-	assert.Equal(t, callsAfterJoin, calls.Load(), "confirmed UID should not be looked up again")
+	assert.Equal(t, int64(1), existingCalls.Load(), "confirmed UID should not be looked up again")
 	assert.ErrorIs(t, memo.verify(missingUID, lookup), lookupErr)
-	assert.Equal(t, callsAfterJoin+1, calls.Load(), "failed lookups should not be remembered")
+	assert.Equal(t, int64(goroutines/2+1), missingCalls.Load(), "failed lookups should not be remembered")
 }
 
 // TestNewInitializesSudoUIDExistenceMemo checks that New allocates the memo's

@@ -124,7 +124,7 @@
 - [x] 出力内容を 02 §4.3「採用事実の記録」の表どおりに実装する。レベルは `slog.LevelWarn` とし、メッセージは同表の1文をそのまま用いる。属性は次の5つとする。`permission_check_uid`、`real_uid`、`source_env_var`（値は定数 `sudoUIDEnvVar`）、`permission_check_uid_policy`（値は `policy.String()`）、`user_database_source`（値は定数 `userDatabaseSource`）
 - [x] `import` に `log/slog` と `sync/atomic` を追加する
 
-> **本ステップからの移動**: パッケージレベルの実体 `processSudoUIDAdoptionReporter sudoUIDAdoptionReporter` の追加はステップ2-2 へ移した。この実体を参照するのはステップ2-2 の `getPermissionCheckUID` だけであり、宣言だけを先に置くと `golangci-lint` の `unused` が「未使用の非公開変数」として指摘し、PR-1 のグリーンゲートが通らないためである（ステップ1-2 のセンチネル2つは公開識別子であるため同じ問題は生じない）。9.2 節のとおり `//nolint` は追加しない。フェーズの順序と目的は変わらない。
+> **本ステップからの移動（02 §8 との差異でもある）**: パッケージレベルの実体 `processSudoUIDAdoptionReporter sudoUIDAdoptionReporter` の追加はステップ2-2 へ移した。この実体を参照するのはステップ2-2 の `getPermissionCheckUID` だけであり、宣言だけを先に置くと `golangci-lint` の `unused` が「未使用の非公開変数」として指摘し、PR-1 のグリーンゲートが通らないためである（ステップ1-2 のセンチネル2つは公開識別子であるため同じ問題は生じない）。9.2 節のとおり `//nolint` は追加しない。02 §8 はこの実体をフェーズ1 に置いているため、本移動は 02 §8 との差異にも当たる。8 章の AC-09 の `static` チェック2件は PR-2 で満たす。AC-09 の `test` 検証2件はフェーズ1 のままであり、フェーズの順序と目的も変わらない。
 
 **完了条件**: ステップ1-5 のテストが通る。
 
@@ -513,7 +513,7 @@
 
 | PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
 |---|---|---|---|
-| PR-1 | 1-1 / 1-2 / 1-3 / 1-4 / 1-5 | ユーザーデータベース種別の定数、センチネルエラー2つ、採用事実レポータ（1回制限）、実在確認のメモ、およびそれらの単体テスト | frontier-recommended |
+| PR-1 | 1-1 / 1-2 / 1-3 / 1-4 / 1-5 | ユーザーデータベース種別の定数、センチネルエラー2つ、採用事実レポータの型と1回制限（パッケージレベル実体は PR-2）、実在確認のメモ、およびそれらの単体テスト | frontier-recommended |
 | PR-2 | 2-1 / 2-2 / 2-3 / 2-4 / 2-5 | `permissionCheckUIDDeps` と `lookupUserByUID` の追加、パッケージレベルのレポータ実体の追加、`resolvePermissionCheckUID` のシグネチャ変更、公開ラッパーの更新、`internal/groupmembership` と `cmd/*` の既存テストの移行 | standard |
 | PR-3 | 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7 | 実在確認とエラー分類、採用事実の記録の組み込み、`manager.go` のドキュメントコメント更新、決定表の拡張・セキュリティ・既定ロガーのテスト、`TestGetPermissionCheckUID` の期待値更新。挙動を変える唯一の PR | frontier-required |
 | PR-4 | 4-1 / 4-2 / 4-3 / 4-4 | 用語集、`policy.go` の `SudoUIDAware` コメント、`security-architecture`（日英）、`CHANGELOG.md` | standard |
@@ -521,7 +521,7 @@
 
 **PR-1〜PR-3 の分割と 02 §8 との差異**: 02 §8 はフェーズ1〜3 を1つの PR とする構成を想定している。本計画ではこれをフェーズ単位の3つの PR（PR-1〜PR-3）に分けた。フェーズ1は既存の挙動を変えない追加のみ、フェーズ2は挙動を変えないシグネチャ移行であり、いずれも単独でグリーンゲートを通せるうえ、フェーズ3のセキュリティ挙動変更を機械的な変更から切り離して詳細にレビューできるためである。フェーズの順序と各フェーズの目的は 02 §8 のままである。
 
-**マージ順序**: PR-1 → PR-2 → PR-3 → PR-4 → PR-5 の順にマージする。この順序は入れ替えられない。PR-2 のステップ2-2 は PR-1 が導入する `sudoUIDExistenceMemo.verify` と `processSudoUIDAdoptionReporter` を参照するためコンパイルできず、PR-3 のテストは PR-2 の差し替え口を前提とし、PR-5 の `/mktrans` は PR-4 の用語集を前提とする。各 PR が単独でグリーンゲートを通せるというのは、直前までの PR がマージ済みであることを前提とした話であり、依存関係がないという意味ではない。
+**マージ順序**: PR-1 → PR-2 → PR-3 → PR-4 → PR-5 の順にマージする。この順序は入れ替えられない。PR-2 のステップ2-2 は PR-1 が導入する `sudoUIDExistenceMemo.verify` と `sudoUIDAdoptionReporter.report` を参照するためコンパイルできず、PR-3 のテストは PR-2 の差し替え口を前提とし、PR-5 の `/mktrans` は PR-4 の用語集を前提とする。各 PR が単独でグリーンゲートを通せるというのは、直前までの PR がマージ済みであることを前提とした話であり、依存関係がないという意味ではない。
 
 02 §8 が述べる「M2 単独では出荷しない」という制約は維持する。これはマージ単位ではなくリリース単位の制約であり、PR-2 のマージ時点では実在確認が行われないため、PR-3 のマージより前にリリースを切ってはならない。
 

@@ -223,6 +223,10 @@ import (
 // enabled, user lookups go through NSS, so every configured backend
 // (/etc/passwd, LDAP, SSSD, ...) is visible. It is diagnostic information
 // only and never influences any security decision.
+//
+// This constant is selected by the cgo build tag, whereas os/user picks its
+// backend on (cgo || darwin) && !osusergo. The two agree on the supported
+// platforms; building with -tags osusergo makes this value wrong.
 const userDatabaseSource = "nss"
 
 // maxGroupMembers is the maximum number of group members allowed.

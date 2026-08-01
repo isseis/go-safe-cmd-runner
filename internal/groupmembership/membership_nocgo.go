@@ -14,6 +14,11 @@ import (
 // CGO, user lookups only read /etc/passwd, so users managed by any other NSS
 // backend (LDAP, SSSD, ...) are invisible to this build. It is diagnostic
 // information only and never influences any security decision.
+//
+// This constant is selected by the cgo build tag, whereas os/user picks its
+// backend on (cgo || darwin) && !osusergo. The two agree on Linux, the
+// supported platform; a CGO-less darwin build still reaches Directory
+// Services, which makes this value wrong there.
 const userDatabaseSource = "passwd-file"
 
 // getGroupMembers returns all members of a group given its GID by parsing /etc/group
