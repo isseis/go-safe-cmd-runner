@@ -3,9 +3,9 @@ package groupmembership
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"os"
 	"os/user"
-	"slices"
 	"strconv"
 	"sync"
 	"syscall"
@@ -58,8 +58,8 @@ func (h *logCaptureHandler) Handle(_ context.Context, r slog.Record) error {
 	record := logCaptureRecord{level: r.Level, message: r.Message, attributes: attrs}
 
 	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.records = append(h.records, record)
-	h.mu.Unlock()
 	return nil
 }
 
@@ -78,11 +78,19 @@ func (h *logCaptureHandler) WithGroup(string) slog.Handler {
 	panic("logCaptureHandler does not capture WithGroup groups")
 }
 
-// Records returns a copy of the records captured so far.
+// Records returns a deep copy of the records captured so far.
 func (h *logCaptureHandler) Records() []logCaptureRecord {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return slices.Clone(h.records)
+	result := make([]logCaptureRecord, len(h.records))
+	for i, rec := range h.records {
+		result[i] = logCaptureRecord{
+			level:      rec.level,
+			message:    rec.message,
+			attributes: maps.Clone(rec.attributes),
+		}
+	}
+	return result
 }
 
 // getCurrentUserGID returns the current user's primary group ID
