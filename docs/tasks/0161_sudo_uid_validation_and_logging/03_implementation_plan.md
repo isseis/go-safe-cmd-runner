@@ -42,7 +42,7 @@
 | 同 `New`（92行目） | `membershipCache` を `make` で初期化する | `sudoUIDExistence.confirmed` の `make` を1行追加する（02 §3.4） |
 | 同 `GroupMembership` 構造体（66-82行目） | `membershipCache` / `cacheMutex` / `cleanupCounter` / `enumerateGroupMembers` / `policy` を持つ | `sudoUIDExistence sudoUIDExistenceMemo` フィールドを追加する |
 | 同 `ErrSudoUIDOutOfRange`（49行目） | 定義済み | 変更しない。新エラー2つを同じファイルに隣接して追加する（02 §2.2） |
-| `internal/groupmembership/policy.go` の `SudoUIDAware`（24-31行目） | 「`SUDO_UID` は数値としての妥当性しか検査していない」と述べるコメントを持つ | コメントを実在確認込みの内容へ書き換える（本書 2 章のステップ4-1） |
+| `internal/groupmembership/policy.go` の `SudoUIDAware`（24-31行目） | 「`SUDO_UID` は数値としての妥当性しか検査していない」と述べるコメントを持つ | コメントを実在確認込みの内容へ書き換える（本書 2 章のステップ4-2） |
 | `internal/groupmembership/membership_cgo.go` / `membership_nocgo.go` | ビルドタグ `cgo` / `!cgo` で切り替わる対のファイル。`membership_cgo.go` 側に `maxGroupMembers` 等のパッケージ定数がある | ユーザーデータベース種別の定数を両方に追加する（02 §3.7.5） |
 | `internal/groupmembership/test_helpers_policy.go` の `ResolvePermissionCheckUID`（54行目） | `getenv` を位置引数に取る | 公開の依存構造体を取る形へ変更する（02 §7.3） |
 
@@ -68,13 +68,13 @@
 
 | 箇所 | 状態 | 扱い |
 |---|---|---|
-| `internal/groupmembership/policy.go:27` | 「`SUDO_UID` は数値としての妥当性しか検査していない」旨。本タスクで偽になる | 書き換える（本書 2 章のステップ4-1） |
-| `docs/dev/architecture_design/security-architecture.ja.md:50` / `security-architecture.md:50` | 基準UID解決規則を「範囲内の数値 UID であればその値を採用」と述べる。本タスクで不正確になる | 書き換える（本書 2 章のステップ4-2、AC-17） |
+| `internal/groupmembership/policy.go:27` | 「`SUDO_UID` は数値としての妥当性しか検査していない」旨。本タスクで偽になる | 書き換える（本書 2 章のステップ4-2） |
+| `docs/dev/architecture_design/security-architecture.ja.md:50` / `security-architecture.md:50` | 基準UID解決規則を「範囲内の数値 UID であればその値を採用」と述べる。本タスクで不正確になる | 書き換える（本書 2 章のステップ4-3、AC-17） |
 | `cmd/record/main.go:29`、`cmd/verify/main.go:32`、`cmd/runner/main.go:84` の `init()` コメント | 方針の宣言理由のみを述べる | 変更不要 |
 | `docs/user/runner_command.ja.md:1856` / `runner_command.md` の該当箇所 | `runner` が `SUDO_UID` を見ないことのみを述べる | 変更不要 |
 | `cmd/record/main_test.go:417`、`cmd/verify/main_test.go:187` の「`matching the pre-refactor resolvePermissionCheckUID(0, "1000")` behavior」というコメント | 変更後のシグネチャと食い違う | 本書 2 章のステップ2-5 でコメントも書き換える |
-| `CHANGELOG.md` の `[Unreleased]` | 0160 の変更を記載済み。本タスクの挙動変更は未記載 | 追記する（本書 2 章のステップ4-5） |
-| `docs/translation_glossary.md` の `### B` 節（`base UID` として基準UID / 基準UID決定方針を収録。47-48行目） | 本タスクの新用語は未収録 | 追記する（本書 2 章のステップ4-4、AC-19） |
+| `CHANGELOG.md` の `[Unreleased]` | 0160 の変更を記載済み。本タスクの挙動変更は未記載 | 追記する（本書 2 章のステップ4-4） |
+| `docs/translation_glossary.md` の `### B` 節（`base UID` として基準UID / 基準UID決定方針を収録。47-48行目） | 本タスクの新用語は未収録 | 追記する（本書 2 章のステップ4-1、AC-19） |
 
 #### 外部前提の確認結果
 
@@ -157,6 +157,24 @@
 
 **完了条件**: `make test` が通る（`Makefile:454-460` の `unit-test` は CGO 有効の回で `-race` 付きで実行する）。Linux 以外では CGO 無効の回が実行されないため（`Makefile:456-460`）、CGO 無効側の検証は Linux で行う。
 
+### PR-1 作成ポイント: standalone building blocks
+
+**対象ステップ**: 1-1 / 1-2 / 1-3 / 1-4 / 1-5
+
+**推奨タイトル**: `feat(0161): add sentinel errors, adoption reporter and existence memo`
+
+**レビュー観点**: `sudoUIDAdoptionReporter` の1回制限と `sudoUIDExistenceMemo` の排他制御が `-race` 付きで検証されているか / `New` が `confirmed` マップを初期化し、`TestNewInitializesSudoUIDExistenceMemo` が nil マップ書き込みを実際に踏む経路を通るか / `userDatabaseSource` が `membership_cgo.go` と `membership_nocgo.go` の双方に追加され、CGO 有効・無効の両ビルドで `make test` が通るか / 失敗した実在確認がメモに登録されないこと（`TestSudoUIDExistenceMemo_DoesNotRememberFailures`）
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: ステップ1-3・1-4 が `atomic.Bool` による1回制限と `sync.Mutex` で保護した共有メモという並行処理を新規に導入する、独立した高リスク・複雑ステップに当たる（誤りは `-race` なしでは表面化せず、02 §3.4 の nil マップ初期化漏れも型では検出できない）。同居するステップ1-1・1-2 は定数2つとセンチネル2つの追加に留まるが、行数が小さく（合計10行未満）独立した PR に切り出す利得がレビュー1回分の手間を下回るため、この PR に含めたままとする。レビューの重心はステップ1-3〜1-5 に置く。
+
+- [ ] `rg -n "userDatabaseSource" --glob '*.go'` の結果が `internal/groupmembership/` 内に限られること（10 章。他パッケージの同名識別子との衝突確認）
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### フェーズ2: 依存の束への移行（挙動は変えない）
 
 外部依存を1つの構造体（以下「依存の束」。実体は `permissionCheckUIDDeps`）にまとめる変更と、それに追随する既存テストの移行を同一フェーズで行う。02 §8 のとおり、両者を別フェーズに分けると、途中の状態でパッケージがコンパイルできなくなるためである。
@@ -221,6 +239,25 @@
 - `make fmt` → `make test` → `make lint` がすべて通る。`make test` は `//go:build test` 付きの `test_helpers_policy.go` を含めて CGO 有効・無効の両方でコンパイルする
 - 挙動は 0160 完了時点と同一である（実在確認も記録もまだ呼ばれない）
 
+### PR-2 作成ポイント: dependency bundle refactoring
+
+**対象ステップ**: 2-1 / 2-2 / 2-3 / 2-4 / 2-5
+
+**推奨タイトル**: `refactor(0161): pass permission check UID dependencies as a struct`
+
+**レビュー観点**: 挙動が 0160 完了時点と同一で、`verifyUserExists` と `reportAdoption` がまだ一度も呼ばれないか / 移行した既存3テスト（`policy_test.go`）と `cmd/*` の3テストの検証内容が移行前より弱まっていないか（表の行数と網羅の組み合わせ数） / `getPermissionCheckUID` が `slog.Default()` をクロージャの内側で解決しているか（束ねる時点ではない） / `//go:build test` の `test_helpers_policy.go` を含めて CGO 有効・無効の両方でコンパイルされるか
+
+**実装モデル要件**: standard
+
+**判定理由**: 差し替え口の導入に伴う機械的なシグネチャ移行で挙動を変えず、`既存コード調査結果` にも競合する実装案は挙がっていない。該当する Conditional check はビルドタグ下のコンパイル1件のみで、パネルモードの契機にも当たらない。5.1 節が挙げる「ステップ2-1〜2-5 を同一コミット群に置かないとコンパイルできない」という制約は、フェーズの順序が 02 §8 と食い違っているという意味ではなく、PR 内部の作業順の話であるため、Conditional check の「フェーズ名・順序が承認済みアーキテクチャの実装優先順位と一致するか」には当たらない。またこの制約に反した場合の帰結はコンパイルエラーであり、グリーンゲートが確実に検出する。
+
+- [ ] `rg -n "getenv func\(string\) string" internal/groupmembership/` の結果が空であること（10 章。旧シグネチャの残存確認）
+- [ ] `rg -n "pre-refactor resolvePermissionCheckUID" cmd/` の結果が空であること（10 章。ステップ2-5 のコメント書き換え漏れの確認）
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### フェーズ3: 実在確認と記録の組み込み
 
 #### ステップ3-1: 実在確認とエラー分類
@@ -252,6 +289,8 @@
 
 - [ ] `resolvePermissionCheckUID` のドキュメントコメントに、`SudoUIDAware` では採用前に実在確認を行い、失敗時は `ErrSudoUIDUserNotFound` または `ErrSudoUIDUserLookupFailed` を返すことを英語で追記する
 - [ ] `getPermissionCheckUID` のドキュメントコメント（446-456行目）の `Returns` 節に、同じ2つのエラーを返しうることを英語で追記する
+
+> **02 §8 との差異**: 02 §8 は `manager.go` の2つの関数のドキュメントコメント更新をフェーズ4に置いている。本計画ではこれをフェーズ3のステップ3-3 へ前倒しした。両コメントはステップ3-1 が追加するエラーそのものを述べるものであり、フェーズ4へ残すと PR-3 と PR-4 の間、コメントが実装と食い違う期間が生じるためである。`policy.go` の `SudoUIDAware` コメント（ステップ4-2）は方針の説明であり、他の文書更新とまとめてレビューする利得の方が大きいためフェーズ4に残す。
 
 **完了条件**: 両関数のコメントが、ステップ3-1 で追加したエラー2つを列挙していること。
 
@@ -326,9 +365,46 @@
 - `make fmt` → `make test` → `make lint` がすべて通る
 - 本書 8 章の受け入れ基準検証表のうち AC-01〜AC-16 の `test` 項目がすべて成功する
 
+### PR-3 作成ポイント: existence check and adoption record
+
+**対象ステップ**: 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7
+
+**推奨タイトル**: `feat(0161)!: verify SUDO_UID exists before adopting it`（本文に `BREAKING CHANGE:` フッタを置き、02 §5.3 の4環境を挙げる）
+
+**レビュー観点**: 実在確認の失敗時に基準UIDを返さず `0` と非 nil エラーを返すフェイルクローズドが両経路（実在しない／確認処理が失敗）で固定されているか / 2つのセンチネルが `errors.Is` で相互に区別でき、元のエラーを `%w` で保持しているか / 記録が「実 UID 0・`SUDO_UID` が実 UID と異なる有効値・実在確認成功」の場合に限られ、記録の失敗が読み取り判定を変えないか / ステップ3-7 のスキップ判定が `getPermissionCheckUID()` の呼び出し **前** に置かれ、root 環境で無条件アサーションが残っていないか / ステップ3-6 が複製した `reportAdoption` の式が、マージ済みの `getPermissionCheckUID`（PR-2）の式と字句どおり一致しているか（レポータ実体だけが異なる）
+
+**レビュー順序**: この PR は本番コードの差分が `manager.go` の約30行である一方、テストの追加が2ファイルにまたがり12本に及ぶ。セキュリティ上の差分を見失わないよう、(1) ステップ3-1・3-2 の `manager.go` の変更、(2) ステップ3-7 の既存テストの書き換え、(3) 残りのテスト追加、の順に読む。ステップ3-5 と 3-6 のテストだけを後続 PR へ切り出す案は採らない。ステップ3-5 はフェイルクローズドの保証そのものを固定するテストであり、遅らせると PR-3 のマージからその PR までの間、保証が検証されない期間が生じるためである。
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: これまで成功していた `sudo record` / `sudo verify` を失敗させるセキュリティゲートの変更であり（02 §5.3 の4環境）、`mkplan.md` ステップ8 のパネルモード契機「セキュリティゲート／移行（挙動の引き上げと引き下げが同時に起きる、テスト更新が多い）」に該当する。決定表の4行追加と11本のテスト追加に加え、ステップ3-7 は既存テストが root で失敗する破壊的更新を含む。
+
+- [ ] root で `go test -tags test -run TestGetPermissionCheckUID ./internal/groupmembership/` を1回実行し、ステップ3-7 の `t.Skip` または `ErrSudoUIDUserNotFound` の分岐が通ることを確認した。グリーンゲート（非 root）ではこの分岐に入らないため、この確認だけが 5.1 節の最上位リスクの検証手段である。root 実行ができない場合は、その旨と未検証であることを PR 本文に記す
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### フェーズ4: 文書の更新
 
-#### ステップ4-1: 既存ドキュメントコメントの更新
+フェーズ4のステップは、用語集への追加を先頭に置いた順序で並べている。`/mktrans` による英語版の生成が用語集の訳語を参照するため、用語の確定を先に済ませる必要があるからである（本書 10 章）。
+
+#### ステップ4-1: 用語集（AC-19）
+
+**変更ファイル**: `docs/translation_glossary.md`
+
+- [ ] 「A-Z (アルファベット順)」の各節へ次の5語を追加する。この用語集は英語見出し語のアルファベット順で節が分かれているため、追加先の節は英訳の頭文字で決まる。訳語は 02 の「用語」節に対応させる。
+  - `### A` 節: 採用（`SUDO_UID` を基準UIDとして用いること）→ adoption
+  - `### A` 節: 採用事実の記録 → adoption record
+  - `### E` 節: 実在確認 → existence check
+  - `### S` 節: センチネルエラー → sentinel error
+  - `### U` 節: ユーザーデータベース種別 → user database source
+- [ ] 既存の `基準UID` / `基準UID決定方針`（47-48行目、`### B` 節）と同じ3列構成（`| 日本語 | English | 備考 |`）に揃え、`備考` セルの末尾に `（Task 0161）` を付す。表のヘッダ行（`| 日本語 | English | 備考 |`）は変更しない
+- [ ] 「更新履歴」表の末尾に `| YYYY-MM-DD | SUDO_UID 実在確認関連の用語を追加 (existence check, adoption, adoption record, sentinel error, user database source) |` を追加する（`YYYY-MM-DD` は実際に追加した日付に置き換える）
+
+**完了条件**: 8 章の AC-19 の `static` チェックが期待どおりの結果になること。ステップ4-3 と 4-5 の `/mktrans` 実行より前に完了させる。
+
+#### ステップ4-2: 既存ドキュメントコメントの更新
 
 **変更ファイル**: `internal/groupmembership/policy.go`
 
@@ -339,20 +415,50 @@
 
 **完了条件**: `rg -n "it is not verified to" internal/ cmd/` の結果が空であること。
 
-#### ステップ4-2: 開発者向け文書（AC-17）
+#### ステップ4-3: 開発者向け文書（AC-17）
 
 **変更ファイル**: `docs/dev/architecture_design/security-architecture.ja.md`、`docs/dev/architecture_design/security-architecture.md`
 
 - [ ] `security-architecture.ja.md:50` の括弧内の基準UID解決規則の記述を、実在確認込みの規則へ書き換える。
   - 変更前: `record` は基準UID決定方針として `SudoUIDAware` を宣言しているため、実UIDが0かつ`SUDO_UID`が0..MaxUint32の範囲の数値UIDであればその値を、それ以外は実UIDを採用）
   - 変更後: `record` は基準UID決定方針として `SudoUIDAware` を宣言しているため、実UIDが0かつ`SUDO_UID`が0..MaxUint32の範囲の数値UIDであり、かつその UID がユーザーデータベース上に実在する場合にその値を採用し、実在を確認できない場合は読み取り安全性チェックを失敗させる。それ以外は実UIDを採用）
-- [ ] ステップ4-4 の用語集への追加（`実在確認` → `existence check` ほか）を **先に** 完了させる。`/mktrans` は用語集を参照するため、英訳の語が確定していないと、8 章の AC-17 の英語版チェックが期待どおりに一致しない
+- [ ] ステップ4-1 の用語集への追加（`実在確認` → `existence check` ほか）が完了していることを確認する。`/mktrans` は用語集を参照するため、英訳の語が確定していないと、8 章の AC-17 の英語版チェックが期待どおりに一致しない
 - [ ] 日本語版をコミットしたのち、`/mktrans` を実行して `security-architecture.md:50` の対応箇所へ反映する（CLAUDE.md「Translation Workflow」の順序に従う）
 - [ ] 書き換えた記述が実装（ステップ3-1、3-2）と一致していることを、`resolvePermissionCheckUID` のコードと対照して確認する
 
 **完了条件**: 8 章の AC-17 の2つの `static` チェックが期待どおりの結果になること。
 
-#### ステップ4-3: 利用者向け文書（AC-18）
+#### ステップ4-4: CHANGELOG
+
+**変更ファイル**: `CHANGELOG.md`
+
+- [ ] `## [Unreleased]` の `### Changed` に `#### record / verify: SUDO_UID must refer to an existing user` を追加する。内容は 02 §5.3 の影響環境の表と対処、および採用時に警告が1回記録されるようになる点とする
+- [ ] 既存の2項目（`sudo runner`: base UID …、`Permission checks no longer require a passwd entry …`）は変更しない
+
+**完了条件**: `rg -n "SUDO_UID must refer to an existing user" CHANGELOG.md` が1件一致すること。
+
+**PR-4 の完了条件**: 本書 8 章の AC-17 と AC-19 の検証コマンドが期待どおりの結果になる。AC-18 はステップ4-5（PR-5）が担うため、この時点では未達でよい。
+
+### PR-4 作成ポイント: glossary, code comment, developer doc and changelog
+
+**対象ステップ**: 4-1 / 4-2 / 4-3 / 4-4
+
+**推奨タイトル**: `docs(0161): update SUDO_UID docs and SudoUIDAware comment`
+
+**レビュー観点**: 用語集の5語が 02 の用語節と一致し英訳の頭文字の節へ入っているか / `policy.go` の書き換え後コメントが実装（ステップ3-1、3-2）の挙動と一致するか / `security-architecture` の日英が同じ規則を述べ、英語版が用語集の訳語を使っているか / CHANGELOG が 02 §5.3 の影響環境と対処を落とさず記載しているか
+
+**実装モデル要件**: standard
+
+**判定理由**: 用語集・コメント・開発者向け文書・CHANGELOG の記述更新のみで、未確定の設計判断もパネルモードの契機（重い統合テスト／CI／外部資源、セキュリティゲート、移行）も該当しない。ステップ4-2 は `policy.go` を変更するが、変更対象はコメント3行であり挙動を持たない。
+
+- [ ] `rg -n "it is not verified to" internal/ cmd/` の結果が空であること（10 章。ステップ4-2 の書き換え漏れの確認）
+- [ ] ステップ4-1 の用語集への追加が、ステップ4-3 の `/mktrans` 実行より前に完了していること（10 章）
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+#### ステップ4-5: 利用者向け文書（AC-18）
 
 **変更ファイル**: `docs/user/record_command.ja.md`、`docs/user/verify_command.ja.md`、`docs/user/record_command.md`、`docs/user/verify_command.md`
 
@@ -370,42 +476,54 @@
 
 **完了条件**: 8 章の AC-18 の `static` チェックが期待どおりの結果になり、上記 (a) と (b) の実行結果が文書の記述と一致すること。
 
-#### ステップ4-4: 用語集（AC-19）
+**PR-5 の完了条件**: 本書 8 章の AC-18 の検証コマンドが期待どおりの結果になる。PR-4 の完了条件と併せて、これでフェーズ4の AC-17〜AC-19 がすべて満たされる。
 
-**変更ファイル**: `docs/translation_glossary.md`
+### PR-5 作成ポイント: user-facing troubleshooting documentation
 
-- [ ] 「A-Z (アルファベット順)」の各節へ次の5語を追加する。この用語集は英語見出し語のアルファベット順で節が分かれているため、追加先の節は英訳の頭文字で決まる。訳語は 02 の「用語」節に対応させる。
-  - `### A` 節: 採用（`SUDO_UID` を基準UIDとして用いること）→ adoption
-  - `### A` 節: 採用事実の記録 → adoption record
-  - `### E` 節: 実在確認 → existence check
-  - `### S` 節: センチネルエラー → sentinel error
-  - `### U` 節: ユーザーデータベース種別 → user database source
-- [ ] 既存の `基準UID` / `基準UID決定方針`（47-48行目、`### B` 節）と同じ3列構成（`| 日本語 | English | 備考 |`）に揃え、`備考` セルの末尾に `（Task 0161）` を付す。表のヘッダ行（17行目）は変更しない
-- [ ] 「更新履歴」表の末尾に `| 2026-07-30 | SUDO_UID 実在確認関連の用語を追加 (existence check, adoption, adoption record, sentinel error, user database source) |` を追加する
+**対象ステップ**: 4-5
 
-**完了条件**: 8 章の AC-19 の `static` チェックが期待どおりの結果になること。ステップ4-2 と 4-3 の `/mktrans` 実行より前に完了させる。
+**推奨タイトル**: `docs(0161): add SUDO_UID troubleshooting to user guides`
 
-#### ステップ4-5: CHANGELOG
+**レビュー観点**: 掲載したセンチネル文言が実装（ステップ1-2）の文字列リテラルと一字一句一致するか / 02 §5.3 の4つの対処が漏れなく記載され、実行確認できない2つが典拠付きで区別されているか / 通常運用でも警告が毎回出ることと標準エラー出力の保存の必要性が書かれているか / `/mktrans` 生成の英語版が用語集（ステップ4-1）の訳語を使っているか
 
-**変更ファイル**: `CHANGELOG.md`
+**実装モデル要件**: standard
 
-- [ ] `## [Unreleased]` の `### Changed` に `#### record / verify: SUDO_UID must refer to an existing user` を追加する。内容は 02 §5.3 の影響環境の表と対処、および採用時に警告が1回記録されるようになる点とする
-- [ ] 既存の2項目（`sudo runner`: base UID …、`Permission checks no longer require a passwd entry …`）は変更しない
+**判定理由**: 未確定の設計判断はなく、記述内容は PR-3 で確定済みの挙動をなぞるものである。ステップ4-5 の確認手順 (a)(b) は、CGO 有効・無効の2種のビルドを作り、実在しない `SUDO_UID` を与えて `sudo` 経由で実行するという特権実行を伴うが、これは固定の2コマンドを1回ずつ実行してエラーメッセージの語を目視する確認であり、パネルモードの契機が指す「重い統合テスト／CI／外部資源のサーフェス」（継続的に維持される自動テスト基盤）には当たらない。失敗した場合の影響も文書の記述の誤りに限られ、製品の挙動には及ばない。
 
-**完了条件**: `rg -n "SUDO_UID must refer to an existing user" CHANGELOG.md` が1件一致すること。
-
-**フェーズ4の完了条件**: 本書 8 章の AC-17〜AC-19 の検証コマンドがすべて期待どおりの結果になる。
+- [ ] `/mktrans` で生成した英語版が、ステップ4-1 で用語集に登録した訳語をそのまま使っていること（10 章）
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ## 3. 実装順序とマイルストーン
 
+### 3.1 マイルストーン
+
 | マイルストーン | 含むフェーズ | 成果物 | 検証 |
 |---|---|---|---|
-| M1: 部品が揃う | フェーズ1 | ユーザーデータベース種別の定数、センチネルエラー2つ、レポータ型と1回制限、メモ型、およびそれらの単体テスト | Linux で `make test`（CGO 有効の回は `-race` 付き、CGO 無効の回も実行される）。既存の挙動に変化がないこと |
-| M2: 差し替え口が整う | フェーズ2 + ステップ2-5 | `permissionCheckUIDDeps`、`lookupUserByUID`、新シグネチャの `resolvePermissionCheckUID`、公開ラッパー、移行済みの既存テスト | `make fmt` → `make test` → `make lint`。挙動が 0160 完了時点と同一であること |
-| M3: 機能が完成する | フェーズ3 + ステップ3-7 | 実在確認とエラー分類、採用事実の記録、決定表・セキュリティ・既定ロガーのテスト | 8 章の AC-01〜AC-16 の `test` 項目がすべて成功 |
-| M4: 文書が揃う | フェーズ4 | ドキュメントコメント、開発者向け・利用者向け文書、用語集、CHANGELOG | 8 章の AC-17〜AC-19 の検証コマンドが期待どおり |
+| M1: 部品が揃う | フェーズ1（PR-1） | ユーザーデータベース種別の定数、センチネルエラー2つ、レポータ型と1回制限、メモ型、およびそれらの単体テスト | Linux で `make test`（CGO 有効の回は `-race` 付き、CGO 無効の回も実行される）。既存の挙動に変化がないこと |
+| M2: 差し替え口が整う | フェーズ2（PR-2） | `permissionCheckUIDDeps`、`lookupUserByUID`、新シグネチャの `resolvePermissionCheckUID`、公開ラッパー、移行済みの既存テスト | `make fmt` → `make test` → `make lint`。挙動が 0160 完了時点と同一であること |
+| M3: 機能が完成する | フェーズ3（PR-3） | 実在確認とエラー分類、採用事実の記録、決定表・セキュリティ・既定ロガーのテスト | 8 章の AC-01〜AC-16 の `test` 項目がすべて成功 |
+| M4: 文書が揃う | フェーズ4（PR-4 + PR-5） | ドキュメントコメント、開発者向け・利用者向け文書、用語集、CHANGELOG | 8 章の AC-17〜AC-19 の検証コマンドが期待どおり |
 
-**PR の分割**: 02 §8 のとおり、M1〜M3（フェーズ1〜3）を1つの PR とし、M4（フェーズ4）を続く PR とする。M2 の時点では実在確認が行われないため、M2 単独では出荷しない。
+### 3.2 PR 構成
+
+| PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | 1-1 / 1-2 / 1-3 / 1-4 / 1-5 | ユーザーデータベース種別の定数、センチネルエラー2つ、採用事実レポータ（1回制限）、実在確認のメモ、およびそれらの単体テスト | frontier-recommended |
+| PR-2 | 2-1 / 2-2 / 2-3 / 2-4 / 2-5 | `permissionCheckUIDDeps` と `lookupUserByUID` の追加、`resolvePermissionCheckUID` のシグネチャ変更、公開ラッパーの更新、`internal/groupmembership` と `cmd/*` の既存テストの移行 | standard |
+| PR-3 | 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7 | 実在確認とエラー分類、採用事実の記録の組み込み、`manager.go` のドキュメントコメント更新、決定表の拡張・セキュリティ・既定ロガーのテスト、`TestGetPermissionCheckUID` の期待値更新。挙動を変える唯一の PR | frontier-required |
+| PR-4 | 4-1 / 4-2 / 4-3 / 4-4 | 用語集、`policy.go` の `SudoUIDAware` コメント、`security-architecture`（日英）、`CHANGELOG.md` | standard |
+| PR-5 | 4-5 | `record` / `verify` の利用者向けトラブルシューティング項目（日英） | standard |
+
+**PR-1〜PR-3 の分割と 02 §8 との差異**: 02 §8 はフェーズ1〜3 を1つの PR とする構成を想定している。本計画ではこれをフェーズ単位の3つの PR（PR-1〜PR-3）に分けた。フェーズ1は既存の挙動を変えない追加のみ、フェーズ2は挙動を変えないシグネチャ移行であり、いずれも単独でグリーンゲートを通せるうえ、フェーズ3のセキュリティ挙動変更を機械的な変更から切り離して詳細にレビューできるためである。フェーズの順序と各フェーズの目的は 02 §8 のままである。
+
+**マージ順序**: PR-1 → PR-2 → PR-3 → PR-4 → PR-5 の順にマージする。この順序は入れ替えられない。PR-2 のステップ2-2 は PR-1 が導入する `sudoUIDExistenceMemo.verify` と `processSudoUIDAdoptionReporter` を参照するためコンパイルできず、PR-3 のテストは PR-2 の差し替え口を前提とし、PR-5 の `/mktrans` は PR-4 の用語集を前提とする。各 PR が単独でグリーンゲートを通せるというのは、直前までの PR がマージ済みであることを前提とした話であり、依存関係がないという意味ではない。
+
+02 §8 が述べる「M2 単独では出荷しない」という制約は維持する。これはマージ単位ではなくリリース単位の制約であり、PR-2 のマージ時点では実在確認が行われないため、PR-3 のマージより前にリリースを切ってはならない。
+
+**PR-4 と PR-5 の分割**: フェーズ4のうち利用者向け文書（ステップ4-5）は新規のトラブルシューティング項目2件を4ファイルへ追加し、実バイナリでの実行確認を伴うため、他の文書更新とは分けて独立にレビューする。ステップ4-1 の用語集は `/mktrans` の前提であるため、PR-4 が PR-5 より先にマージされる必要がある。
 
 ## 4. テスト戦略
 
@@ -451,32 +569,34 @@
 
 | リスク | 影響 | 緩和策 |
 |---|---|---|
-| これまで成功していた `sudo record` / `sudo verify` が失敗するようになる | 02 §5.3 の4環境で実行が止まる | エラーメッセージに `SUDO_UID` の値・UID・ユーザーデータベース種別・対処を含める（ステップ3-1）。`CHANGELOG.md` と利用者向け文書に対処を記載する（ステップ4-3、4-5） |
-| 通常運用でも警告が毎回出るため、運用者が事故と混同する | 記録の意味を誤解する | 利用者向け文書に、「この警告は `sudo` 経由の通常運用でも毎回出る」ことと、事故かどうかは実行文脈と照らし合わせて判断することを明記する（ステップ4-3、02 §3.7.4） |
+| これまで成功していた `sudo record` / `sudo verify` が失敗するようになる | 02 §5.3 の4環境で実行が止まる | エラーメッセージに `SUDO_UID` の値・UID・ユーザーデータベース種別・対処を含める（ステップ3-1）。`CHANGELOG.md` と利用者向け文書に対処を記載する（ステップ4-4、4-5） |
+| 通常運用でも警告が毎回出るため、運用者が事故と混同する | 記録の意味を誤解する | 利用者向け文書に、「この警告は `sudo` 経由の通常運用でも毎回出る」ことと、事故かどうかは実行文脈と照らし合わせて判断することを明記する（ステップ4-5、02 §3.7.4） |
 
 ### 5.3 スケジュールリスク
 
-フェーズ4の `/mktrans` による英語版の反映は、日本語版のコミット後に別ステップとして実行する。翻訳が滞った場合でもフェーズ1〜3の PR は独立して完了できるため、機能実装がブロックされることはない。
+フェーズ4の `/mktrans` による英語版の反映は、日本語版のコミット後に別ステップとして実行する。翻訳が滞った場合でも PR-1〜PR-3 は独立して完了できるため、機能実装がブロックされることはない。
 
 ## 6. 実装チェックリスト
 
-### フェーズ1: 独立した部品の追加
+### PR-1: 独立した部品の追加
 - [ ] ステップ1-1: ユーザーデータベース種別の定数（`membership_cgo.go` / `membership_nocgo.go` + 各ビルドタグのテスト）
 - [ ] ステップ1-2: `ErrSudoUIDUserNotFound` / `ErrSudoUIDUserLookupFailed`
 - [ ] ステップ1-3: `sudoUIDAdoptionReporter` 型・`report`・パッケージレベル実体
 - [ ] ステップ1-4: `sudoUIDExistenceMemo` 型・`verify`・`GroupMembership` フィールド・`New` の初期化
 - [ ] ステップ1-5: フェーズ1の単体テスト（捕捉ハンドラ + 7テスト）
 - [ ] `make fmt` → `make test` → `make lint`（Linux で実行し、CGO 有効・無効の両方を通す）
+- [ ] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3 / 1-4 / 1-5）
 
-### フェーズ2: 依存の束への移行
+### PR-2: 依存の束への移行
 - [ ] ステップ2-1: `permissionCheckUIDDeps`・`lookupUserByUID`・シグネチャ変更
 - [ ] ステップ2-2: `getPermissionCheckUID` での本番依存の組み立て
 - [ ] ステップ2-3: `test_helpers_policy.go` の公開ラッパー更新
 - [ ] ステップ2-4: `policy_test.go` の既存3テストの移行
 - [ ] ステップ2-5: `cmd/record` / `cmd/verify` / `cmd/runner` の既存テストの移行とコメント修正
 - [ ] `make fmt` → `make test` → `make lint`（Linux で実行し、CGO 有効・無効の両方でコンパイルされることを確認）
+- [ ] PR-2 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3 / 2-4 / 2-5）
 
-### フェーズ3: 実在確認と記録の組み込み
+### PR-3: 実在確認と記録の組み込み
 - [ ] ステップ3-1: 実在確認の呼び出しとエラー分類・エラーメッセージ
 - [ ] ステップ3-2: 採用事実の記録の組み込み
 - [ ] ステップ3-3: `resolvePermissionCheckUID` / `getPermissionCheckUID` のドキュメントコメント更新
@@ -485,14 +605,20 @@
 - [ ] ステップ3-6: 既定ロガーへの出力の検証（AC-11）
 - [ ] ステップ3-7: `TestGetPermissionCheckUID` の期待値とサブテスト名の更新
 - [ ] `make fmt` → `make test` → `make lint`（Linux で実行）
+- [ ] PR-3 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7）
 
-### フェーズ4: 文書の更新
-- [ ] ステップ4-1: `policy.go` の `SudoUIDAware` コメント
-- [ ] ステップ4-2: `security-architecture.ja.md` → `/mktrans` で `security-architecture.md`
-- [ ] ステップ4-3: `record_command.ja.md` / `verify_command.ja.md` → `/mktrans` で英語版
-- [ ] ステップ4-4: `translation_glossary.md`（用語5語 + 更新履歴）— ステップ4-2 / 4-3 の `/mktrans` 実行より先に行う
-- [ ] ステップ4-5: `CHANGELOG.md`
-- [ ] 8 章の AC-17〜AC-19 の検証コマンドを実行
+### PR-4: 用語集・コメント・開発者向け文書・CHANGELOG
+- [ ] ステップ4-1: `translation_glossary.md`（用語5語 + 更新履歴）— ステップ4-3 / 4-5 の `/mktrans` 実行より先に行う
+- [ ] ステップ4-2: `policy.go` の `SudoUIDAware` コメント
+- [ ] ステップ4-3: `security-architecture.ja.md` → `/mktrans` で `security-architecture.md`
+- [ ] ステップ4-4: `CHANGELOG.md`
+- [ ] 8 章の AC-17 と AC-19 の検証コマンドを実行
+- [ ] PR-4 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3 / 4-4）
+
+### PR-5: 利用者向け文書
+- [ ] ステップ4-5: `record_command.ja.md` / `verify_command.ja.md` → `/mktrans` で英語版
+- [ ] 8 章の AC-18 の検証コマンドを実行
+- [ ] PR-5 マージ済み（対象ステップ: 4-5）
 
 ## 7. テストヘルパーの配置
 
@@ -540,7 +666,7 @@
 | AC-16 | `static` | 非 root（`id -u` が 0 以外）で `go test -tags test -run 'TestResolvePermissionCheckUID|TestSudoUIDAdoptionReporter|TestSudoUIDAdoptionRecordReachesDefaultLogger|TestSudoUIDExistenceMemo' ./internal/groupmembership/` が終了コード 0 で終わること。実在確認とログ出力先の両方の差し替え口を使うテストが、root 権限なしに実行できることの確認 |
 | AC-16 | `static` | `rg -n "func ResolvePermissionCheckUID\(.*PermissionCheckUIDDeps" internal/groupmembership/test_helpers_policy.go` が1件一致すること（パッケージ外のテストからも差し替えられること） |
 | AC-17 | `static` | `rg -n "実在" docs/dev/architecture_design/security-architecture.ja.md` が50行目に一致すること、かつ `rg -n "範囲の数値UIDであればその値を" docs/dev/architecture_design/security-architecture.ja.md` が一致しないこと |
-| AC-17 | `static` | `rg -n "existence check|exists in the user database" docs/dev/architecture_design/security-architecture.md` が50行目に一致すること、かつ `rg -n "that value is used; otherwise the real UID is used" docs/dev/architecture_design/security-architecture.md` が一致しないこと。前者の語は `docs/translation_glossary.md` に登録した `実在確認` → `existence check` に対応する（ステップ4-2 は 4-4 の完了後に実行する） |
+| AC-17 | `static` | `rg -n "existence check|exists in the user database" docs/dev/architecture_design/security-architecture.md` が50行目に一致すること、かつ `rg -n "that value is used; otherwise the real UID is used" docs/dev/architecture_design/security-architecture.md` が一致しないこと。前者の語は `docs/translation_glossary.md` に登録した `実在確認` → `existence check` に対応する（ステップ4-3 は 4-1 の完了後に実行する） |
 | AC-17 | `manual` | 書き換えた記述が実装（ステップ3-1、3-2）と一致することをコードと対照して確認する（新規記述の典拠確認） |
 | AC-18 | `static` | `rg -n "SUDO_UID" docs/user/record_command.ja.md docs/user/verify_command.ja.md docs/user/record_command.md docs/user/verify_command.md` が4ファイルすべてで1件以上一致すること |
 | AC-18 | `static` | 2種のセンチネル文言のそれぞれについて、実装と文書で同一のリテラルが使われていることを確認する。`rg -n "SUDO_UID does not refer to an existing user" internal/groupmembership/manager.go docs/user/record_command.ja.md docs/user/verify_command.ja.md docs/user/record_command.md docs/user/verify_command.md` と `rg -n "failed to verify that SUDO_UID refers to an existing user" internal/groupmembership/manager.go docs/user/record_command.ja.md docs/user/verify_command.ja.md docs/user/record_command.md docs/user/verify_command.md` が、いずれも5ファイルすべてで1件以上一致すること |
@@ -587,18 +713,21 @@
 
 ## 10. 残存確認事項（`make lint` / `make test` で検出できないもの）
 
-8 章の検証表に含めていない確認のみを挙げる。
+8 章の検証表に含めていない確認のみを挙げる。いずれも該当する PR の作成ポイントのチェックリストに再掲してあり、その PR のレビュー時点で実行する。本節はその索引である。
 
-- [ ] `rg -n "it is not verified to" internal/ cmd/` の結果が空であること（ステップ4-1 の書き換え漏れの確認。`policy.go:27` が唯一の該当箇所であることを実装前に確認済み。書き換え後の文にも `numeric validity` は残るため、消える語句だけを対象とする）
-- [ ] `rg -n "pre-refactor resolvePermissionCheckUID" cmd/` の結果が空であること（ステップ2-5 のコメント書き換え漏れの確認）
-- [ ] `rg -n "getenv func\(string\) string" internal/groupmembership/` の結果が空であること（旧シグネチャの残存の確認）
-- [ ] `docs/translation_glossary.md` への追加（ステップ4-4）を `/mktrans`（ステップ4-2・4-3）より先に完了させ、生成された英語版文書が用語集の訳語をそのまま使っていることを確認する
-- [ ] `userDatabaseSource` という識別子が他パッケージの同名識別子と衝突しないこと。`rg -n "userDatabaseSource" --glob '*.go'` の結果が `internal/groupmembership/` 内に限られることを確認する
+| 確認 | 対象ステップ | 実行する PR |
+|---|---|---|
+| `rg -n "userDatabaseSource" --glob '*.go'` の結果が `internal/groupmembership/` 内に限られること（他パッケージの同名識別子との衝突の確認） | 1-1 | PR-1 |
+| `rg -n "getenv func\(string\) string" internal/groupmembership/` の結果が空であること（旧シグネチャの残存の確認） | 2-1 | PR-2 |
+| `rg -n "pre-refactor resolvePermissionCheckUID" cmd/` の結果が空であること（コメント書き換え漏れの確認） | 2-5 | PR-2 |
+| `rg -n "it is not verified to" internal/ cmd/` の結果が空であること（書き換え漏れの確認。`policy.go:27` が唯一の該当箇所であることを実装前に確認済み。書き換え後の文にも `numeric validity` は残るため、消える語句だけを対象とする） | 4-2 | PR-4 |
+| `docs/translation_glossary.md` への追加を `/mktrans` より先に完了させること | 4-1 → 4-3 | PR-4 |
+| `/mktrans` が生成した英語版文書が用語集の訳語をそのまま使っていること | 4-5 | PR-5 |
 
 ## 11. 次のステップ
 
 - [ ] 本書のレビューと `approved` への更新
-- [ ] フェーズ1〜3 を実装し、`feat(0161): validate SUDO_UID against the user database and record its adoption` を表題とする PR を作成する
-- [ ] フェーズ4 を実装し、文書更新の PR を作成する
+- [ ] 3.2 節の PR 構成に従い、PR-1 から PR-5 までを順に実装・マージする（各 PR の表題と観点は本書 2 章の `### PR-N 作成ポイント` に記載）
+- [ ] PR-3 のマージ前にリリースを切らない（3.2 節「M2 単独では出荷しない」の維持）
 - [ ] 実装完了後、[#941](https://github.com/isseis/go-safe-cmd-runner/issues/941) の対応状況を更新し、D1 M-3 の残課題のうち解消した2点を記録する
 - [ ] 02 §9 の将来の課題（拒否の構造化ログへの記録、`user.LookupId` 呼び出しの共通化、1回制限の前提の見直し）を必要に応じて別 issue として登録する
