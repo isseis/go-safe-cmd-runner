@@ -228,6 +228,12 @@
 
 **完了条件**: `go test -tags test ./internal/groupmembership/` が通り、上記3テストの検証内容が移行前より弱まっていないこと（表の行数と網羅の組み合わせ数が減っていないこと）。
 
+> **計画外の変更（ステップ2-4 で追加した3点）**: PR-2 のレビュー指摘への対応として、上の項目に挙げていない次の3点を同じステップで行った。
+>
+> 1. `TestResolvePermissionCheckUID_PanicsOnNilDeps` を新規追加した。ステップ2-3 で `ResolvePermissionCheckUID` に `Getenv` / `VerifyUserExists` の nil パニックを入れたが、その契約を固定するテストがどのステップにも無かったためである（8 章の AC-16 に行を追加した）。
+> 2. `TestResolvePermissionCheckUID_EnvAccess` の `SudoUIDAware` 側の読み取り回数の検証を `assert.GreaterOrEqual(t, calls, 1)` から `assert.Equal(t, 1, calls)` へ強めた。移行前の緩い表明では、フェーズ3 で `getenv` の呼び出しが増えても検出できないためである。完了条件が禁じているのは検証内容が弱まることであり、強める方向のため完了条件には抵触しない。
+> 3. テストヘルパー `newPermissionCheckUIDDeps` の `getenv` にも既定値（常に空文字列＝`SUDO_UID` 未設定）を与えた。当初は「呼び出し側が必ず上書きする」前提で nil のままにしていたが、上書きを忘れた場合に `RealUIDOnly` では素通りし `SudoUIDAware` でだけ nil 関数のパニックになるため、既定値を置いて未設定として解決されるようにした。
+
 #### ステップ2-5: `cmd/*` の既存テストの移行
 
 **変更ファイル**: `cmd/record/main_test.go`、`cmd/verify/main_test.go`、`cmd/runner/main_test.go`
@@ -664,11 +670,14 @@
 | AC-11 | `manual` | `getPermissionCheckUID` が `slog.Default()` を記録の時点で解決してレポータへ渡すことをコードレビューで確認（02 §7.6） |
 | AC-12 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_ExistenceCheckSkippedUnderRealUIDOnly`（`RealUIDOnly` で呼び出し回数 0、同条件の `SudoUIDAware` で 1 という対比を取る） |
 | AC-12 | `test` | `cmd/runner/main_test.go::TestRunnerDeclaresRealUIDOnlyPolicy`（`VerifyUserExists` が呼ばれたら `t.Error`） |
+| AC-12 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_RealUIDOnly`（`realUID` 2種 × `SUDO_UID` 8種の全組み合わせで `verifyUserExists` の呼び出し回数 0。同条件の `SudoUIDAware` との対比は上記 `TestResolvePermissionCheckUID_ExistenceCheckSkippedUnderRealUIDOnly` が担う） |
 | AC-13 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_ExistenceCheckSkippedUnderRealUIDOnly`（`RealUIDOnly` で `reportAdoption` の呼び出し回数 0）、`internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_AdoptionRecordConditions` |
+| AC-13 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_RealUIDOnly`（`realUID` 2種 × `SUDO_UID` 8種の全組み合わせで `reportAdoption` の呼び出し回数 0） |
 | AC-14 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_RealUIDOnly`（`realUID` 2種 × `SUDO_UID` 8種で常に実 UID）、`internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_EnvAccess`（`RealUIDOnly` では `getenv` が呼ばれない） |
 | AC-15 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_SudoUIDAware`（02 §3.5 の決定表の1〜7行目を `realUID 0` サブテストの表が、8行目を `realUID non-zero` サブテストが担う。各行で基準UID・エラー・記録の有無を検証。行と 02 §3.5 の対応はステップ3-4 に明記） |
 | AC-16 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_SudoUIDAware`（実在確認の差し替え口を使って全行を到達する） |
 | AC-16 | `test` | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionRecordReachesDefaultLogger`（記録の出力先の差し替え口を使う） |
+| AC-16 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_PanicsOnNilDeps`（パッケージ外向けの差し替え口 `ResolvePermissionCheckUID` が、必須の2口が nil のときに解決へ進まずパニックすること） |
 | AC-16 | `static` | 非 root（`id -u` が 0 以外）で `go test -tags test -run 'TestResolvePermissionCheckUID|TestSudoUIDAdoptionReporter|TestSudoUIDAdoptionRecordReachesDefaultLogger|TestSudoUIDExistenceMemo' ./internal/groupmembership/` が終了コード 0 で終わること。実在確認とログ出力先の両方の差し替え口を使うテストが、root 権限なしに実行できることの確認 |
 | AC-16 | `static` | `rg -n "func ResolvePermissionCheckUID\(.*PermissionCheckUIDDeps" internal/groupmembership/test_helpers_policy.go` が1件一致すること（パッケージ外のテストからも差し替えられること） |
 | AC-17 | `static` | `rg -n "実在" docs/dev/architecture_design/security-architecture.ja.md` が50行目に一致すること、かつ `rg -n "範囲の数値UIDであればその値を" docs/dev/architecture_design/security-architecture.ja.md` が一致しないこと |

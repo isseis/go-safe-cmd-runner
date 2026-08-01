@@ -155,12 +155,16 @@ type permissionCheckUIDDepsRecorder struct {
 }
 
 // newPermissionCheckUIDDeps returns a permissionCheckUIDDeps with safe
-// defaults for the seams a test is not exercising: verifyUserExists always
-// reports the user exists, and reportAdoption only counts its calls. Callers
-// replace the getenv field with the value they want to resolve. The recorder
-// is shared with the returned deps and must be inspected after the call.
+// defaults for every seam a test is not exercising: getenv reports SUDO_UID
+// as unset, verifyUserExists always reports the user exists, and
+// reportAdoption only counts its calls. Callers replace the getenv field with
+// the value they want to resolve; the default is present so that a caller
+// that forgets to gets an unset SUDO_UID rather than a nil-function panic.
+// The recorder is shared with the returned deps and must be inspected after
+// the call.
 func newPermissionCheckUIDDeps(rec *permissionCheckUIDDepsRecorder) permissionCheckUIDDeps {
 	return permissionCheckUIDDeps{
+		getenv: func(string) string { return "" },
 		verifyUserExists: func(int) error {
 			rec.verifyUserExistsCalls++
 			return nil
