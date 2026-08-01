@@ -14,6 +14,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestUserDatabaseSource pins the userDatabaseSource value for this build.
+// It guards against an accidental rewrite of the constant and documents the
+// relationship between the non-CGO build and the user database. It does not
+// prove which user database the build actually consults at runtime; the
+// latter is established by reading the source of the build-tagged files.
+func TestUserDatabaseSource(t *testing.T) {
+	assert.Equal(t, "passwd-file", userDatabaseSource)
+}
+
 // TestParseGroupLine is specific to the no-CGO implementation
 func TestParseGroupLine(t *testing.T) {
 	tests := []struct {

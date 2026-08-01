@@ -17,6 +17,15 @@ import (
 // CGO-specific tests can be added here if needed in the future
 // Currently, all tests are shared through membership_common_test.go
 
+// TestUserDatabaseSource pins the userDatabaseSource value for this build.
+// It guards against an accidental rewrite of the constant and documents the
+// relationship between the CGO-enabled build and the user database. It does
+// not prove which user database the build actually consults at runtime; the
+// latter is established by reading the source of the build-tagged files.
+func TestUserDatabaseSource(t *testing.T) {
+	assert.Equal(t, "nss", userDatabaseSource)
+}
+
 // TestValidateGroupMemberCount tests the boundary check helper for C group member counts.
 func TestValidateGroupMemberCount(t *testing.T) {
 	tests := []struct {

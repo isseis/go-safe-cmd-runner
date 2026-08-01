@@ -2,10 +2,12 @@ package groupmembership
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"os/user"
 	"runtime"
 	"strconv"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -953,4 +955,269 @@ func TestCanCurrentUserSafelyReadFile_EnumerationError(t *testing.T) {
 	assert.False(t, canRead)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)
+}
+
+// TestSudoUIDAdoptionReporter_Report verifies that report emits exactly one
+// record with the level, message, and attributes required by the architecture
+// document §4.3. Different values are used for realUID and permissionCheckUID
+// to detect any accidental argument swap.
+func TestSudoUIDAdoptionReporter_Report(t *testing.T) {
+	t.Parallel()
+
+	handler := newCaptureHandler()
+	logger := slog.New(handler)
+	r := &sudoUIDAdoptionReporter{}
+
+	r.report(logger, 0, 1000)
+
+	records := handler.snapshot()
+	require.Len(t, records, 1)
+	rec := records[0]
+	assert.Equal(t, slog.LevelWarn, rec.level)
+	assert.Equal(t,
+		"Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment",
+		rec.message)
+	assert.Equal(t, int64(1000), rec.attrs["permission_check_uid"])
+	assert.Equal(t, int64(0), rec.attrs["real_uid"])
+	assert.Equal(t, sudoUIDEnvVar, rec.attrs["source_env_var"])
+	assert.Equal(t, SudoUIDAware.String(), rec.attrs["permission_check_uid_policy"])
+	assert.Equal(t, userDatabaseSource, rec.attrs["user_database_source"])
+}
+
+// TestSudoUIDAdoptionReporter_RealUIDArgumentIsPropagated exercises the
+// reporter with a non-zero realUID to assert that the parameter is actually
+// forwarded to the log record and not silently dropped. It also covers the
+// boundary case of a realUID matching the permission check UID, which
+// happens in the SUDO_UID="0" path; that case is not supposed to call
+// report, but the reporter itself must forward the value it is given.
+func TestSudoUIDAdoptionReporter_RealUIDArgumentIsPropagated(t *testing.T) {
+	t.Parallel()
+
+	handler := newCaptureHandler()
+	logger := slog.New(handler)
+	r := &sudoUIDAdoptionReporter{}
+
+	r.report(logger, 1234, 5678)
+
+	records := handler.snapshot()
+	require.Len(t, records, 1)
+	rec := records[0]
+	assert.Equal(t, int64(5678), rec.attrs["permission_check_uid"])
+	assert.Equal(t, int64(1234), rec.attrs["real_uid"])
+}
+
+// TestSudoUIDAdoptionReporter_ReportsOnlyOnce verifies that calling report
+// repeatedly on a single instance emits a single record.
+func TestSudoUIDAdoptionReporter_ReportsOnlyOnce(t *testing.T) {
+	t.Parallel()
+
+	handler := newCaptureHandler()
+	logger := slog.New(handler)
+	r := &sudoUIDAdoptionReporter{}
+
+	r.report(logger, 0, 1000)
+	r.report(logger, 0, 1000)
+	r.report(logger, 0, 1000)
+
+	records := handler.snapshot()
+	assert.Len(t, records, 1)
+}
+
+// TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently verifies the
+// once-per-instance guarantee under concurrency, so that -race does not report
+// a data race and only one record is emitted.
+func TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently(t *testing.T) {
+	t.Parallel()
+
+	handler := newCaptureHandler()
+	logger := slog.New(handler)
+	r := &sudoUIDAdoptionReporter{}
+
+	const goroutines = 50
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := range goroutines {
+		go func(i int) {
+			defer wg.Done()
+			r.report(logger, i, 1000+i)
+		}(i)
+	}
+	wg.Wait()
+
+	records := handler.snapshot()
+	assert.Len(t, records, 1)
+}
+
+// TestSudoUIDAdoptionReporter_NilLoggerIsNoop verifies that a nil logger
+// does not panic and does not flip the reported flag, so the next call
+// still records.
+func TestSudoUIDAdoptionReporter_NilLoggerIsNoop(t *testing.T) {
+	t.Parallel()
+
+	r := &sudoUIDAdoptionReporter{}
+	r.report(nil, 0, 1000)
+	assert.False(t, r.reported.Load(), "nil logger must not flip the reported flag")
+
+	handler := newCaptureHandler()
+	logger := slog.New(handler)
+	r.report(logger, 0, 1000)
+	assert.Len(t, handler.snapshot(), 1)
+}
+
+// TestSudoUIDAdoptionReporter_HandlerErrorDoesNotChangeReported verifies
+// that a handler returning an error does not rewind the reported flag, so
+// the next call still does not record (the failure is dropped silently).
+func TestSudoUIDAdoptionReporter_HandlerErrorDoesNotChangeReported(t *testing.T) {
+	t.Parallel()
+
+	handler := &captureHandler{handleErr: errors.New("simulated handler failure")}
+	logger := slog.New(handler)
+	r := &sudoUIDAdoptionReporter{}
+
+	r.report(logger, 0, 1000)
+	assert.True(t, r.reported.Load(), "the reported flag must be set even when the handler errors")
+	assert.Len(t, handler.snapshot(), 1, "the record is still captured by the handler before it returns the error")
+
+	// A subsequent call must remain a no-op because the flag is already set.
+	r.report(logger, 0, 1000)
+	assert.Len(t, handler.snapshot(), 1)
+}
+
+// TestSudoUIDExistenceMemo_ReusesConfirmation verifies that a single UID
+// is queried at most once.
+func TestSudoUIDExistenceMemo_ReusesConfirmation(t *testing.T) {
+	t.Parallel()
+
+	m := sudoUIDExistenceMemo{confirmed: make(map[int]struct{})}
+	calls := 0
+	lookup := func(int) error {
+		calls++
+		return nil
+	}
+
+	for range 3 {
+		require.NoError(t, m.verify(1000, lookup))
+	}
+	assert.Equal(t, 1, calls)
+}
+
+// TestSudoUIDExistenceMemo_DoesNotRememberFailures verifies that a failed
+// check is re-queried on the next call, and that a successful check is
+// then remembered.
+func TestSudoUIDExistenceMemo_DoesNotRememberFailures(t *testing.T) {
+	t.Parallel()
+
+	m := sudoUIDExistenceMemo{confirmed: make(map[int]struct{})}
+	transient := errors.New("transient lookup failure")
+	var calls int
+	lookup := func(int) error {
+		calls++
+		if calls < 3 {
+			return transient
+		}
+		return nil
+	}
+
+	require.ErrorIs(t, m.verify(1000, lookup), transient)
+	require.ErrorIs(t, m.verify(1000, lookup), transient)
+	require.NoError(t, m.verify(1000, lookup))
+	require.NoError(t, m.verify(1000, lookup))
+	assert.Equal(t, 3, calls, "lookup must be called on every failure and once on success; the next success reuses the memo")
+}
+
+// TestSudoUIDExistenceMemo_Concurrent exercises the memo from many
+// goroutines to surface -race issues and confirm the success memoization
+// and the failure re-query both hold.
+func TestSudoUIDExistenceMemo_Concurrent(t *testing.T) {
+	t.Parallel()
+
+	m := sudoUIDExistenceMemo{confirmed: make(map[int]struct{})}
+	transient := errors.New("transient lookup failure")
+
+	// Per-UID call counters so we can assert both the success memoization
+	// and the failure re-query.
+	var (
+		mu        sync.Mutex
+		callCount = map[int]int{}
+	)
+	lookup := func(uid int) error {
+		mu.Lock()
+		callCount[uid]++
+		mu.Unlock()
+		if uid == 9999 {
+			return transient
+		}
+		return nil
+	}
+
+	const goroutines = 50
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := range goroutines {
+		uid := i % 2
+		if uid == 0 {
+			uid = 1000
+		} else {
+			uid = 9999
+		}
+		go func(uid int) {
+			defer wg.Done()
+			_ = m.verify(uid, lookup)
+		}(uid)
+	}
+	wg.Wait()
+
+	// Snapshot the counters under the lock and assert; the test mu must
+	// be released before the post-wait verifies below, because those
+	// invokes the lookup which itself takes the same mu.
+	mu.Lock()
+	successCalls := callCount[1000]
+	failureCalls := callCount[9999]
+	mu.Unlock()
+	assert.Equal(t, 1, successCalls, "successful UID must be queried exactly once across all goroutines")
+	assert.Greater(t, failureCalls, 1, "failing UID must be re-queried because failed lookups are not memoized")
+
+	// After the goroutines settle, a successful verify must not re-query
+	// and a failing verify must re-query at least once more.
+	require.NoError(t, m.verify(1000, lookup))
+	mu.Lock()
+	assert.Equal(t, successCalls, callCount[1000], "success must be remembered after the goroutines finish")
+	mu.Unlock()
+
+	beforeFailure := failureCalls
+	require.ErrorIs(t, m.verify(9999, lookup), transient)
+	mu.Lock()
+	assert.Greater(t, callCount[9999], beforeFailure, "failure must be re-queried after the goroutines finish")
+	mu.Unlock()
+}
+
+// TestNewInitializesSudoUIDExistenceMemo exercises the memo through New so
+// that any nil-map initialization regression is caught: writing to a nil
+// map panics in Go, so verify is enough to trip it.
+func TestNewInitializesSudoUIDExistenceMemo(t *testing.T) {
+	t.Parallel()
+
+	gm := New()
+	lookup := func(int) error { return nil }
+
+	require.NotPanics(t, func() {
+		require.NoError(t, gm.sudoUIDExistence.verify(1000, lookup))
+	})
+	require.NotPanics(t, func() {
+		require.NoError(t, gm.sudoUIDExistence.verify(1000, lookup))
+	})
+}
+
+// TestProcessSudoUIDAdoptionReporter_Exists pins the package-level reporter
+// instance so that an accidental rename or removal is caught at the test
+// level. The instance is intentionally not exercised here: its once-per-process
+// flag would interact with other tests' use of slog.Default(). Phase 2 wires
+// the reporter into the production code path; this test exists solely so the
+// "unused" linter does not silently drop the declaration in phase 1.
+func TestProcessSudoUIDAdoptionReporter_Exists(t *testing.T) {
+	t.Parallel()
+
+	r := &processSudoUIDAdoptionReporter
+	assert.NotNil(t, r)
+	assert.False(t, r.reported.Load(), "the package-level reporter must start in the not-reported state")
 }

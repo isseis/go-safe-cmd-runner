@@ -3,12 +3,14 @@ package groupmembership
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"os/user"
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -48,6 +50,15 @@ var ErrPermissionsExceedMaximum = errors.New("file permissions exceed maximum al
 // ErrSudoUIDOutOfRange is returned when SUDO_UID value is out of range for uint32
 var ErrSudoUIDOutOfRange = errors.New("SUDO_UID value out of range")
 
+// ErrSudoUIDUserNotFound is returned when SUDO_UID is a valid number but no
+// user with that UID exists in the user database.
+var ErrSudoUIDUserNotFound = errors.New("SUDO_UID does not refer to an existing user")
+
+// ErrSudoUIDUserLookupFailed is returned when the existence check for the
+// SUDO_UID value could not be completed, so the user can neither be confirmed
+// to exist nor confirmed to be absent (for example a transient NSS failure).
+var ErrSudoUIDUserLookupFailed = errors.New("failed to verify that SUDO_UID refers to an existing user")
+
 // ErrGroupMemberEnumeration is returned when group member enumeration fails
 // due to NSS errors, buffer limit exhaustion, or memory allocation failure.
 var ErrGroupMemberEnumeration = errors.New("group member enumeration failed")
@@ -79,6 +90,12 @@ type GroupMembership struct {
 	// value is PolicyUnset, meaning the instance defers to the process-wide
 	// default policy (see effectivePermissionCheckUIDPolicy).
 	policy PermissionCheckUIDPolicy
+
+	// sudoUIDExistence memoizes which UIDs have already been confirmed to
+	// exist in the user database, so that repeated read-safety checks do
+	// not re-query the database. The map is initialized in New() because
+	// writing to a nil map panics.
+	sudoUIDExistence sudoUIDExistenceMemo
 }
 
 // groupMemberCache holds cached group membership data with expiration
@@ -93,6 +110,7 @@ func New(opts ...Option) *GroupMembership {
 	gm := &GroupMembership{
 		membershipCache:       make(map[uint32]groupMemberCache),
 		enumerateGroupMembers: getGroupMembers,
+		sudoUIDExistence:      sudoUIDExistenceMemo{confirmed: make(map[int]struct{})},
 	}
 	for _, opt := range opts {
 		opt(gm)
@@ -512,6 +530,87 @@ func parseSudoUID(sudoUID string) (int, error) {
 	}
 	return parsedUID, nil
 }
+
+// sudoUIDExistenceMemo remembers the UIDs whose existence has already been
+// confirmed, so that repeated read-safety checks do not re-query the user
+// database. Only confirmations are remembered; a failed check is always
+// re-queried. In practice it holds at most one entry, because SUDO_UID does
+// not change during the lifetime of a record or verify process.
+//
+// The mutex is held only while reading or updating the confirmed set; the
+// lookup is invoked without the lock so that a slow or blocking user
+// database backend does not serialize all callers.
+type sudoUIDExistenceMemo struct {
+	mu        sync.Mutex
+	confirmed map[int]struct{}
+}
+
+// verify returns nil if uid has already been confirmed; otherwise it calls
+// lookup and, on success, records uid as confirmed. A nil lookup is
+// treated as a successful confirmation, which is convenient for tests
+// that do not exercise the user database.
+func (m *sudoUIDExistenceMemo) verify(uid int, lookup func(uid int) error) error {
+	m.mu.Lock()
+	_, ok := m.confirmed[uid]
+	m.mu.Unlock()
+	if ok {
+		return nil
+	}
+	if lookup == nil {
+		// Nothing to query, so the caller has implicitly confirmed
+		// the UID. Record the confirmation to match the
+		// "succeed-once" contract.
+		m.mu.Lock()
+		if _, already := m.confirmed[uid]; !already {
+			m.confirmed[uid] = struct{}{}
+		}
+		m.mu.Unlock()
+		return nil
+	}
+	if err := lookup(uid); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	if _, already := m.confirmed[uid]; !already {
+		m.confirmed[uid] = struct{}{}
+	}
+	m.mu.Unlock()
+	return nil
+}
+
+// sudoUIDAdoptionReporter emits the record that SUDO_UID was adopted as the
+// permission check UID. It emits at most one record for its lifetime, so a
+// single instance shared by the whole process satisfies "once per process".
+// It is the only place that builds the record's message and attributes.
+type sudoUIDAdoptionReporter struct {
+	reported atomic.Bool
+}
+
+// report emits the adoption record to logger unless one has already been
+// emitted. It has no return value: a failure to record must not change the
+// read-safety verdict. A nil logger is treated as a no-op so that tests and
+// callers that do not care about the record do not have to construct one.
+func (r *sudoUIDAdoptionReporter) report(logger *slog.Logger, realUID, permissionCheckUID int) {
+	if logger == nil {
+		return
+	}
+	if !r.reported.CompareAndSwap(false, true) {
+		return
+	}
+	logger.Warn("Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment",
+		slog.Int("permission_check_uid", permissionCheckUID),
+		slog.Int("real_uid", realUID),
+		slog.String("source_env_var", sudoUIDEnvVar),
+		slog.String("permission_check_uid_policy", SudoUIDAware.String()),
+		slog.String("user_database_source", userDatabaseSource),
+	)
+}
+
+// processSudoUIDAdoptionReporter is the single process-wide adoption
+// reporter. It is read and updated only via its report method, which uses
+// atomic operations, satisfying the "no data race" requirement for the
+// single mutable process-wide state in this package.
+var processSudoUIDAdoptionReporter sudoUIDAdoptionReporter
 
 // getProcessRealUID returns the process's real UID, without considering SUDO_UID.
 // It reads the UID from the kernel via os.Getuid() and does not consult the passwd

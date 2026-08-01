@@ -10,6 +10,11 @@ import (
 	"strings"
 )
 
+// userDatabaseSource identifies the user database consulted by this build.
+// The non-CGO build resolves users by parsing /etc/passwd directly and
+// therefore does not see users managed by NSS backends such as LDAP or SSSD.
+const userDatabaseSource = "passwd-file"
+
 // getGroupMembers returns all members of a group given its GID by parsing /etc/group
 // and /etc/passwd to find users with this GID as their primary group
 // This is a stateless function - caching is handled by the GroupMembership struct
