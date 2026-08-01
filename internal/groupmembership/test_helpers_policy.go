@@ -93,3 +93,16 @@ func ResolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, dep
 		reportAdoption:   reportAdoption,
 	})
 }
+
+// NewPermissionCheckUIDDepsForTesting returns a PermissionCheckUIDDeps with
+// safe defaults for every seam a test is not exercising: Getenv reports
+// SUDO_UID as unset, VerifyUserExists reports the user exists, and
+// ReportAdoption is a no-op so the adoption path never writes warning logs to
+// slog.Default(). Callers replace the seams they want to exercise.
+func NewPermissionCheckUIDDepsForTesting() PermissionCheckUIDDeps {
+	return PermissionCheckUIDDeps{
+		Getenv:           func(string) string { return "" },
+		VerifyUserExists: func(int) error { return nil },
+		ReportAdoption:   func(PermissionCheckUIDPolicy, int, int) {},
+	}
+}

@@ -191,12 +191,11 @@ func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
 func TestVerifyDeclaresSudoUIDAwarePolicy(t *testing.T) {
 	require.Equal(t, groupmembership.SudoUIDAware, groupmembership.ProcessPermissionCheckUIDPolicy())
 
+	deps := groupmembership.NewPermissionCheckUIDDepsForTesting()
+	deps.Getenv = func(string) string { return "1000" }
+
 	uid, err := groupmembership.ResolvePermissionCheckUID(
-		groupmembership.ProcessPermissionCheckUIDPolicy(), 0,
-		groupmembership.PermissionCheckUIDDeps{
-			Getenv:           func(string) string { return "1000" },
-			VerifyUserExists: func(int) error { return nil },
-		})
+		groupmembership.ProcessPermissionCheckUIDPolicy(), 0, deps)
 	require.NoError(t, err)
 	assert.Equal(t, 1000, uid)
 }

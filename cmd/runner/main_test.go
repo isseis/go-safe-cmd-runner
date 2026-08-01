@@ -350,15 +350,18 @@ func TestShortFlagsEquivalence(t *testing.T) {
 func TestRunnerDeclaresRealUIDOnlyPolicy(t *testing.T) {
 	require.Equal(t, groupmembership.RealUIDOnly, groupmembership.ProcessPermissionCheckUIDPolicy())
 
+	deps := groupmembership.NewPermissionCheckUIDDepsForTesting()
+	deps.Getenv = func(string) string { return "1000" }
+	deps.VerifyUserExists = func(int) error {
+		t.Error("VerifyUserExists must not be called under RealUIDOnly")
+		return nil
+	}
+	deps.ReportAdoption = func(groupmembership.PermissionCheckUIDPolicy, int, int) {
+		t.Error("ReportAdoption must not be called under RealUIDOnly")
+	}
+
 	uid, err := groupmembership.ResolvePermissionCheckUID(
-		groupmembership.ProcessPermissionCheckUIDPolicy(), 0,
-		groupmembership.PermissionCheckUIDDeps{
-			Getenv: func(string) string { return "1000" },
-			VerifyUserExists: func(int) error {
-				t.Error("VerifyUserExists must not be called under RealUIDOnly")
-				return nil
-			},
-		})
+		groupmembership.ProcessPermissionCheckUIDPolicy(), 0, deps)
 	require.NoError(t, err)
 	assert.Equal(t, 0, uid)
 }
