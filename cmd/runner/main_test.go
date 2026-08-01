@@ -343,14 +343,25 @@ func TestShortFlagsEquivalence(t *testing.T) {
 
 // TestRunnerDeclaresRealUIDOnlyPolicy verifies that this binary's init()
 // declared RealUIDOnly as the process-wide permission check UID policy, and
-// that under that policy SUDO_UID is not adopted even when the real UID is 0.
-// This test only reads the process-wide default policy; it does not modify
-// it, so it must not run in parallel with tests that do.
+// that under that policy SUDO_UID is not adopted even when the real UID is 0,
+// and the existence check is never invoked. This test only reads the
+// process-wide default policy; it does not modify it, so it must not run in
+// parallel with tests that do.
 func TestRunnerDeclaresRealUIDOnlyPolicy(t *testing.T) {
 	require.Equal(t, groupmembership.RealUIDOnly, groupmembership.ProcessPermissionCheckUIDPolicy())
 
+	deps := groupmembership.NewPermissionCheckUIDDepsForTesting()
+	deps.Getenv = func(string) string { return "1000" }
+	deps.VerifyUserExists = func(int) error {
+		t.Error("VerifyUserExists must not be called under RealUIDOnly")
+		return nil
+	}
+	deps.ReportAdoption = func(groupmembership.PermissionCheckUIDPolicy, int, int) {
+		t.Error("ReportAdoption must not be called under RealUIDOnly")
+	}
+
 	uid, err := groupmembership.ResolvePermissionCheckUID(
-		groupmembership.ProcessPermissionCheckUIDPolicy(), 0, func(string) string { return "1000" })
+		groupmembership.ProcessPermissionCheckUIDPolicy(), 0, deps)
 	require.NoError(t, err)
 	assert.Equal(t, 0, uid)
 }

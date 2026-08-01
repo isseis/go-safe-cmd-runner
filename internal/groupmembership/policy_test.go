@@ -146,9 +146,39 @@ func TestEffectivePermissionCheckUIDPolicy_FinalDefault(t *testing.T) {
 	assert.Equal(t, RealUIDOnly, gm.effectivePermissionCheckUIDPolicy())
 }
 
+// permissionCheckUIDDepsRecorder counts invocations of the two dependency
+// seams that the SudoUIDAware branch may exercise, so tests can assert on
+// how often each is called.
+type permissionCheckUIDDepsRecorder struct {
+	verifyUserExistsCalls int
+	reportAdoptionCalls   int
+}
+
+// newPermissionCheckUIDDeps returns a permissionCheckUIDDeps with safe
+// defaults for every seam a test is not exercising: getenv reports SUDO_UID
+// as unset, verifyUserExists always reports the user exists, and
+// reportAdoption only counts its calls. Callers replace the getenv field with
+// the value they want to resolve; the default is present so that a caller
+// that forgets to get an unset SUDO_UID rather than a nil-function panic.
+// The recorder is shared with the returned deps and must be inspected after
+// the call.
+func newPermissionCheckUIDDeps(rec *permissionCheckUIDDepsRecorder) permissionCheckUIDDeps {
+	return permissionCheckUIDDeps{
+		getenv: func(string) string { return "" },
+		verifyUserExists: func(int) error {
+			rec.verifyUserExistsCalls++
+			return nil
+		},
+		reportAdoption: func(PermissionCheckUIDPolicy, int, int) {
+			rec.reportAdoptionCalls++
+		},
+	}
+}
+
 // TestResolvePermissionCheckUID_RealUIDOnly verifies that under RealUIDOnly,
 // the real UID is always returned unchanged, regardless of the value of
-// SUDO_UID.
+// SUDO_UID, and that neither the existence check nor the adoption record is
+// invoked for any combination.
 func TestResolvePermissionCheckUID_RealUIDOnly(t *testing.T) {
 	sudoUIDValues := []string{
 		"", "0", "1000", "4294967295", "abc", "-1", "4294967296", strings.Repeat("9", 300),
@@ -157,17 +187,23 @@ func TestResolvePermissionCheckUID_RealUIDOnly(t *testing.T) {
 	for _, realUID := range []int{0, 1000} {
 		for _, sudoUID := range sudoUIDValues {
 			t.Run(fmt.Sprintf("realUID=%d/sudoUID=%q", realUID, sudoUID), func(t *testing.T) {
-				uid, err := resolvePermissionCheckUID(RealUIDOnly, realUID, func(string) string { return sudoUID })
+				rec := &permissionCheckUIDDepsRecorder{}
+				deps := newPermissionCheckUIDDeps(rec)
+				deps.getenv = func(string) string { return sudoUID }
+
+				uid, err := resolvePermissionCheckUID(RealUIDOnly, realUID, deps)
 
 				require.NoError(t, err)
 				assert.Equal(t, realUID, uid)
+				assert.Zero(t, rec.verifyUserExistsCalls)
+				assert.Zero(t, rec.reportAdoptionCalls)
 			})
 		}
 	}
 }
 
 // TestResolvePermissionCheckUID_SudoUIDAware verifies every row of the
-// SudoUIDAware decision table (architecture document §3.4.2). The expected
+// SudoUIDAware decision table (0161 architecture document §3.5). The expected
 // values are fixed here as a table rather than referencing
 // resolvePermissionCheckUID's prior behavior, since that function may not
 // survive future refactors.
@@ -190,7 +226,13 @@ func TestResolvePermissionCheckUID_SudoUIDAware(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				uid, err := resolvePermissionCheckUID(SudoUIDAware, 0, func(string) string { return tt.sudoUID })
+				// The recorder's counters are not asserted here yet: the
+				// SudoUIDAware existence-check and adoption-record rows are
+				// added in phase 3, where the per-row expectations appear.
+				deps := newPermissionCheckUIDDeps(&permissionCheckUIDDepsRecorder{})
+				deps.getenv = func(string) string { return tt.sudoUID }
+
+				uid, err := resolvePermissionCheckUID(SudoUIDAware, 0, deps)
 
 				if tt.wantErrNil {
 					require.NoError(t, err)
@@ -206,7 +248,12 @@ func TestResolvePermissionCheckUID_SudoUIDAware(t *testing.T) {
 	t.Run("realUID non-zero always returns realUID without error", func(t *testing.T) {
 		for _, sudoUID := range []string{"", "2000", "abc", "-1"} {
 			t.Run(fmt.Sprintf("sudoUID=%q", sudoUID), func(t *testing.T) {
-				uid, err := resolvePermissionCheckUID(SudoUIDAware, 1000, func(string) string { return sudoUID })
+				// The recorder is not asserted here either; phase 3 adds the
+				// no-invocation expectations for the non-zero real UID row.
+				deps := newPermissionCheckUIDDeps(&permissionCheckUIDDepsRecorder{})
+				deps.getenv = func(string) string { return sudoUID }
+
+				uid, err := resolvePermissionCheckUID(SudoUIDAware, 1000, deps)
 
 				require.NoError(t, err)
 				assert.Equal(t, 1000, uid)
@@ -215,10 +262,33 @@ func TestResolvePermissionCheckUID_SudoUIDAware(t *testing.T) {
 	})
 }
 
+// TestResolvePermissionCheckUID_PanicsOnNilDeps verifies that the exported
+// test wrapper fails fast with a panic when either of the two mandatory
+// dependency seams is nil, so that callers cannot silently fall back to a
+// nil-getenv or nil-verification resolution.
+func TestResolvePermissionCheckUID_PanicsOnNilDeps(t *testing.T) {
+	t.Run("nil Getenv", func(t *testing.T) {
+		assert.PanicsWithValue(t, "groupmembership: Getenv must not be nil", func() {
+			_, _ = ResolvePermissionCheckUID(SudoUIDAware, 0, PermissionCheckUIDDeps{
+				VerifyUserExists: func(int) error { return nil },
+			})
+		})
+	})
+
+	t.Run("nil VerifyUserExists", func(t *testing.T) {
+		assert.PanicsWithValue(t, "groupmembership: VerifyUserExists must not be nil", func() {
+			_, _ = ResolvePermissionCheckUID(SudoUIDAware, 0, PermissionCheckUIDDeps{
+				Getenv: func(string) string { return "1000" },
+			})
+		})
+	})
+}
+
 // TestResolvePermissionCheckUID_EnvAccess verifies that SUDO_UID is read only
 // under SudoUIDAware, contrasted against RealUIDOnly under the same
 // conditions (realUID 0, valid SUDO_UID) to rule out that the absence of a
-// read is merely because realUID was non-zero (architecture document §3.5).
+// read is merely because realUID was non-zero (0161 architecture document
+// §7.1).
 func TestResolvePermissionCheckUID_EnvAccess(t *testing.T) {
 	t.Run("RealUIDOnly never reads SUDO_UID", func(t *testing.T) {
 		var calls int
@@ -229,7 +299,10 @@ func TestResolvePermissionCheckUID_EnvAccess(t *testing.T) {
 			return "1000"
 		}
 
-		_, err := resolvePermissionCheckUID(RealUIDOnly, 0, getenv)
+		deps := newPermissionCheckUIDDeps(&permissionCheckUIDDepsRecorder{})
+		deps.getenv = getenv
+
+		_, err := resolvePermissionCheckUID(RealUIDOnly, 0, deps)
 
 		require.NoError(t, err)
 		assert.Zero(t, calls)
@@ -245,10 +318,13 @@ func TestResolvePermissionCheckUID_EnvAccess(t *testing.T) {
 			return "1000"
 		}
 
-		_, err := resolvePermissionCheckUID(SudoUIDAware, 0, getenv)
+		deps := newPermissionCheckUIDDeps(&permissionCheckUIDDepsRecorder{})
+		deps.getenv = getenv
+
+		_, err := resolvePermissionCheckUID(SudoUIDAware, 0, deps)
 
 		require.NoError(t, err)
-		assert.GreaterOrEqual(t, calls, 1)
+		assert.Equal(t, 1, calls)
 		for _, name := range names {
 			assert.Equal(t, "SUDO_UID", name)
 		}
