@@ -125,12 +125,17 @@ func (h *logCaptureHandler) Handle(_ context.Context, r slog.Record) error {
 }
 
 // WithAttrs returns a new handler with the given attrs. The capture
-// handler does not support pre-resolved attrs and returns itself.
-func (h *logCaptureHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+// handler does not support pre-resolved attrs and panics to fail loudly
+// on misuse rather than silently dropping attributes.
+func (h *logCaptureHandler) WithAttrs(_ []slog.Attr) slog.Handler {
+	panic("logCaptureHandler does not support WithAttrs; use slog.New(handler) and add attrs at the call site")
+}
 
 // WithGroup returns a new handler with the given group. The capture
-// handler does not support groups and returns itself.
-func (h *logCaptureHandler) WithGroup(_ string) slog.Handler { return h }
+// handler does not support groups and panics to fail loudly on misuse.
+func (h *logCaptureHandler) WithGroup(_ string) slog.Handler {
+	panic("logCaptureHandler does not support WithGroup")
+}
 
 // recordsCopy returns a copy of the captured records under the mutex.
 func (h *logCaptureHandler) recordsCopy() []logRecord {

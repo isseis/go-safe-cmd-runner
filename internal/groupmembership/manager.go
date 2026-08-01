@@ -547,6 +547,9 @@ type sudoUIDAdoptionReporter struct {
 // emitted for this reporter. It has no return value: a failure to record
 // must not change the read-safety verdict.
 func (r *sudoUIDAdoptionReporter) report(logger *slog.Logger, policy PermissionCheckUIDPolicy, realUID, permissionCheckUID int) { //nolint:unparam
+	if logger == nil {
+		return
+	}
 	if !r.reported.CompareAndSwap(false, true) {
 		return
 	}
@@ -575,17 +578,24 @@ type sudoUIDExistenceMemo struct {
 }
 
 // verify returns nil if uid has already been confirmed; otherwise it calls
-// lookup and, on success, records uid as confirmed.
+// lookup and, on success, records uid as confirmed. The mutex is released
+// before calling lookup so that concurrent verification of different UIDs
+// — or re-verification of a currently-failing UID — is not serialised.
 func (m *sudoUIDExistenceMemo) verify(uid int, lookup func(uid int) error) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if _, ok := m.confirmed[uid]; ok {
+		m.mu.Unlock()
 		return nil
 	}
+	m.mu.Unlock()
+
 	if err := lookup(uid); err != nil {
 		return err
 	}
+
+	m.mu.Lock()
 	m.confirmed[uid] = struct{}{}
+	m.mu.Unlock()
 	return nil
 }
 
