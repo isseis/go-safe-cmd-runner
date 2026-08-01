@@ -494,15 +494,20 @@ var processSudoUIDAdoptionReporter sudoUIDAdoptionReporter
 // sudoUIDExistenceMemo remembers the UIDs whose existence has already been
 // confirmed, so that repeated read-safety checks do not re-query the user
 // database. Only confirmations are remembered; a failed check is always
-// re-queried. In practice it holds at most one entry, because SUDO_UID does
-// not change during the lifetime of a record or verify process.
+// re-queried. Callers pass a single UID per process (the value of SUDO_UID,
+// which does not change during the lifetime of a record or verify process),
+// so in practice it holds one entry; the memo itself imposes no bound.
 type sudoUIDExistenceMemo struct {
 	mu        sync.Mutex
 	confirmed map[int]struct{}
 }
 
 // verify returns nil if uid has already been confirmed; otherwise it calls
-// lookup and, on success, records uid as confirmed.
+// lookup and, on success, records uid as confirmed. The lock is held across
+// lookup so that concurrent callers single-flight the query rather than each
+// hitting the user database. Because lookup may block (a user database query
+// is not cancellable), this makes the memo a serialization point if the
+// read-safety path is ever run concurrently.
 func (m *sudoUIDExistenceMemo) verify(uid int, lookup func(uid int) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

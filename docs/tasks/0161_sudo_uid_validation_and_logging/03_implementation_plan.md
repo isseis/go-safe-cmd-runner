@@ -159,6 +159,8 @@
 
 **完了条件**: `make test` が通る（`Makefile:454-460` の `unit-test` は CGO 有効の回で `-race` 付きで実行する）。Linux 以外では CGO 無効の回が実行されないため（`Makefile:456-460`）、CGO 無効側の検証は Linux で行う。
 
+> **計画外の変更（`Makefile` の `lint` ターゲット）**: 本計画は各フェーズの完了条件で `make lint` が CGO 有効・無効の両方を通ることを求めているが、`lint` ターゲットは `--build-tags test` のみを渡し `CGO_ENABLED` は既定（=1）のままだったため、`//go:build !cgo` のファイル（`membership_nocgo.go` / `membership_nocgo_test.go`）は実際には一度も検査されていなかった。ステップ1-1 が両ファイルへコードを追加する以上、この完了条件が空手形になるため、`lint` を `unit-test` と同じ形（CGO 有効の回に続けて、Linux でのみ CGO 無効の回）に揃えた。これにより顕在化した既存の `revive` 指摘2件（`membership_nocgo_test.go` の未使用引数 `gid`）も併せて修正した。
+
 ### PR-1 作成ポイント: standalone building blocks
 
 **対象ステップ**: 1-1 / 1-2 / 1-3 / 1-4 / 1-5
@@ -581,12 +583,12 @@
 ## 6. 実装チェックリスト
 
 ### PR-1: 独立した部品の追加
-- [ ] ステップ1-1: ユーザーデータベース種別の定数（`membership_cgo.go` / `membership_nocgo.go` + 各ビルドタグのテスト）
-- [ ] ステップ1-2: `ErrSudoUIDUserNotFound` / `ErrSudoUIDUserLookupFailed`
-- [ ] ステップ1-3: `sudoUIDAdoptionReporter` 型・`report`・パッケージレベル実体
-- [ ] ステップ1-4: `sudoUIDExistenceMemo` 型・`verify`・`GroupMembership` フィールド・`New` の初期化
-- [ ] ステップ1-5: フェーズ1の単体テスト（捕捉ハンドラ + 9テスト）
-- [ ] `make fmt` → `make test` → `make lint`（Linux で実行し、CGO 有効・無効の両方を通す）
+- [x] ステップ1-1: ユーザーデータベース種別の定数（`membership_cgo.go` / `membership_nocgo.go` + 各ビルドタグのテスト）
+- [x] ステップ1-2: `ErrSudoUIDUserNotFound` / `ErrSudoUIDUserLookupFailed`
+- [x] ステップ1-3: `sudoUIDAdoptionReporter` 型・`report`・パッケージレベル実体
+- [x] ステップ1-4: `sudoUIDExistenceMemo` 型・`verify`・`GroupMembership` フィールド・`New` の初期化
+- [x] ステップ1-5: フェーズ1の単体テスト（捕捉ハンドラ + 9テスト）
+- [x] `make fmt` → `make test` → `make lint`（Linux で実行し、CGO 有効・無効の両方を通す）
 - [ ] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3 / 1-4 / 1-5）
 
 ### PR-2: 依存の束への移行
@@ -645,6 +647,7 @@
 | AC-01 | `manual` | `lookupUserByUID` の既定実装が `user.LookupId` を呼ぶ1行であることをコードレビューで確認（02 §7.6） |
 | AC-02 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_UserNotFound`、`internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_FailsClosedOnExistenceFailure` |
 | AC-03 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_SentinelErrorsAreDistinct` |
+| AC-03 | `test` | `internal/groupmembership/manager_test.go::TestSudoUIDExistenceErrorMessages`（センチネル2種の定義部分。`.Error()` 文言をリテラルで固定し、相互に `errors.Is` で一致しないことを検証する） |
 | AC-04 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_UserLookupFailed`（`ErrSudoUIDUserLookupFailed` と渡したエラー値の双方に `errors.Is` で一致する） |
 | AC-05 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_ExistenceCheckNotInvoked`（数値として不正な3値で `verifyUserExists` の呼び出し回数が 0、かつ 0160 と同じエラー） |
 | AC-06 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_ExistenceCheckNotInvoked`（実 UID が 0 以外で呼び出し回数 0、実 UID が返る） |
@@ -654,6 +657,7 @@
 | AC-09 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_ReportsAdoptionOnlyOncePerReporter`（同一レポータ実体で解決を3回実行して記録は1件） |
 | AC-09 | `static` | `rg -n "^var processSudoUIDAdoptionReporter\s+sudoUIDAdoptionReporter$" internal/groupmembership/manager.go` が1件一致すること（パッケージレベルの実体が1つだけ宣言されていること） |
 | AC-09 | `static` | `rg -n "sudoUIDAdoptionReporter" internal/groupmembership/manager.go internal/groupmembership/test_helpers_policy.go` の結果に、上記の `var` 宣言・型宣言・`report` のレシーバ・`test_helpers_policy.go` のラッパー内の生成以外の実体の生成が現れないこと（本番コードが呼び出しごとに新しい実体を作っていないこと） |
+| AC-09 | `test` | `internal/groupmembership/manager_test.go::TestProcessSudoUIDAdoptionReporterIsProcessWide`（パッケージレベルの実体が未報告のまま保たれていること。テストがこの実体を経由して報告しないことの担保でもある） |
 | AC-09 | `manual` | 上記2つの `static` チェックを踏まえ、`getPermissionCheckUID` がパッケージレベルの実体を渡していることをコードレビューで確認（02 §7.6） |
 | AC-10 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_AdoptionRecordConditions`（`SUDO_UID` 未設定と `SUDO_UID` が `0` の場合に記録が出ない） |
 | AC-11 | `test` | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionRecordReachesDefaultLogger`（`slog.SetDefault` で差し替えた既定ロガーへ記録が届くこと。`-count=2` でも結果が変わらないこと） |
@@ -670,6 +674,7 @@
 | AC-17 | `static` | `rg -n "実在" docs/dev/architecture_design/security-architecture.ja.md` が50行目に一致すること、かつ `rg -n "範囲の数値UIDであればその値を" docs/dev/architecture_design/security-architecture.ja.md` が一致しないこと |
 | AC-17 | `static` | `rg -n "existence check|exists in the user database" docs/dev/architecture_design/security-architecture.md` が50行目に一致すること、かつ `rg -n "that value is used; otherwise the real UID is used" docs/dev/architecture_design/security-architecture.md` が一致しないこと。前者の語は `docs/translation_glossary.md` に登録した `実在確認` → `existence check` に対応する（ステップ4-3 は 4-1 の完了後に実行する） |
 | AC-17 | `manual` | 書き換えた記述が実装（ステップ3-1、3-2）と一致することをコードと対照して確認する（新規記述の典拠確認） |
+| AC-18 | `test` | `internal/groupmembership/manager_test.go::TestSudoUIDExistenceErrorMessages`（文書が逐語引用する2種のセンチネル文言を実装側で固定する。文書側との一致は下の `static` チェックが担う） |
 | AC-18 | `static` | `rg -n "SUDO_UID" docs/user/record_command.ja.md docs/user/verify_command.ja.md docs/user/record_command.md docs/user/verify_command.md` が4ファイルすべてで1件以上一致すること |
 | AC-18 | `static` | 2種のセンチネル文言のそれぞれについて、実装と文書で同一のリテラルが使われていることを確認する。`rg -n "SUDO_UID does not refer to an existing user" internal/groupmembership/manager.go docs/user/record_command.ja.md docs/user/verify_command.ja.md docs/user/record_command.md docs/user/verify_command.md` と `rg -n "failed to verify that SUDO_UID refers to an existing user" internal/groupmembership/manager.go docs/user/record_command.ja.md docs/user/verify_command.ja.md docs/user/record_command.md docs/user/verify_command.md` が、いずれも5ファイルすべてで1件以上一致すること |
 | AC-18 | `static` | `rg -n "user_database_source" docs/user/record_command.ja.md docs/user/verify_command.ja.md` が両ファイルで一致すること（ユーザーデータベース種別による判別方法が記載されていること） |

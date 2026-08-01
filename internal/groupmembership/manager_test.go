@@ -1119,7 +1119,10 @@ func TestSudoUIDExistenceMemo_Concurrent(t *testing.T) {
 	missingCalls := lookupCounts[missingUID]
 	lookupMutex.Unlock()
 
-	// Only the first confirming verify touches the user database.
+	// Only the first confirming verify touches the user database. This is
+	// exactly 1 because verify holds the memo's lock across lookup, which
+	// single-flights the first query; relaxing that would make this 1 or
+	// more without breaking the memo's documented contract.
 	assert.Equal(t, 1, existingCalls)
 	// Failed lookups are never remembered, so every verify re-queries.
 	assert.Equal(t, 25, missingCalls)
@@ -1142,13 +1145,18 @@ func TestSudoUIDExistenceMemo_Concurrent(t *testing.T) {
 // not report through it: its once-per-process flag would make test results
 // depend on execution order and -count, so tests exercise the once-only
 // guarantee with freshly created instances instead (see
-// TestSudoUIDAdoptionReporter_Report). The declaration's uniqueness is
-// verified by a static check at PR time. This test pins that the package
-// variable holds the reporter type.
+// TestSudoUIDAdoptionReporter_Report).
+//
+// The instance has no production consumer until step 2-2 binds it, so this
+// test exists to keep the linter's unused check from flagging the
+// declaration in the meantime. It asserts that the fresh package instance
+// has not yet reported, which is the state every consumer depends on; it
+// deliberately does not call report, for the reason above.
 func TestProcessSudoUIDAdoptionReporterIsProcessWide(t *testing.T) {
 	t.Parallel()
 
-	assert.IsType(t, &sudoUIDAdoptionReporter{}, &processSudoUIDAdoptionReporter)
+	assert.False(t, processSudoUIDAdoptionReporter.reported.Load(),
+		"the process-wide reporter must not be reported through by tests")
 }
 
 // TestSudoUIDExistenceErrorMessages pins the exact messages and mutual

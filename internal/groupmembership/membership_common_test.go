@@ -63,11 +63,20 @@ func (h *logCaptureHandler) Handle(_ context.Context, r slog.Record) error {
 	return nil
 }
 
-// WithAttrs implements slog.Handler.
-func (h *logCaptureHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+// WithAttrs implements slog.Handler. Handle captures only the attributes
+// carried by the record itself, so attributes attached here would be dropped
+// silently and an assertion on them would pass vacuously. Panic instead, so
+// that a test reaching for slog.Logger.With fails loudly and the capture
+// support is extended deliberately.
+func (h *logCaptureHandler) WithAttrs([]slog.Attr) slog.Handler {
+	panic("logCaptureHandler does not capture WithAttrs attributes")
+}
 
-// WithGroup implements slog.Handler.
-func (h *logCaptureHandler) WithGroup(string) slog.Handler { return h }
+// WithGroup implements slog.Handler. Groups are not captured, for the same
+// reason as WithAttrs.
+func (h *logCaptureHandler) WithGroup(string) slog.Handler {
+	panic("logCaptureHandler does not capture WithGroup groups")
+}
 
 // Records returns a copy of the records captured so far.
 func (h *logCaptureHandler) Records() []logCaptureRecord {
