@@ -325,7 +325,7 @@ func TestCanCurrentUserSafelyReadFile(t *testing.T) {
 	t.Run("current user can read group writable file if in group", func(t *testing.T) {
 		// On macOS, the default group (GID 20 "staff") has multiple members,
 		// so isUserOnlyGroupMember returns false and access is denied.
-		// This is correct security behavior — skip on macOS.
+		// This is correct security behavior - skip on macOS.
 		if runtime.GOOS == "darwin" {
 			t.Skip("Skipping: macOS primary group (staff) has multiple members, access correctly denied")
 		}
@@ -353,7 +353,7 @@ func TestCanCurrentUserSafelyReadFile(t *testing.T) {
 	t.Run("consistency with write function - read should be more permissive", func(t *testing.T) {
 		// On macOS, the default group (GID 20 "staff") has multiple members,
 		// so isUserOnlyGroupMember returns false and access is denied.
-		// This is correct security behavior — skip on macOS.
+		// This is correct security behavior - skip on macOS.
 		if runtime.GOOS == "darwin" {
 			t.Skip("Skipping: macOS primary group (staff) has multiple members, access correctly denied")
 		}
@@ -389,7 +389,7 @@ func TestCanCurrentUserSafelyWriteFile_AllPermissions(t *testing.T) {
 	t.Run("group_writable_member", func(t *testing.T) {
 		// On macOS, the default group (GID 20 "staff") has multiple members,
 		// so isUserOnlyGroupMember returns false and write is denied.
-		// This is correct security behavior — skip on macOS.
+		// This is correct security behavior - skip on macOS.
 		if runtime.GOOS == "darwin" {
 			t.Skip("Skipping: macOS primary group (staff) has multiple members, write correctly denied")
 		}

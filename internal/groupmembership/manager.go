@@ -580,7 +580,7 @@ type sudoUIDExistenceMemo struct {
 // verify returns nil if uid has already been confirmed; otherwise it calls
 // lookup and, on success, records uid as confirmed. The mutex is released
 // before calling lookup so that concurrent verification of different UIDs
-// — or re-verification of a currently-failing UID — is not serialised.
+// or re-verification of a currently-failing UID is not serialised.
 func (m *sudoUIDExistenceMemo) verify(uid int, lookup func(uid int) error) error {
 	m.mu.Lock()
 	if _, ok := m.confirmed[uid]; ok {
