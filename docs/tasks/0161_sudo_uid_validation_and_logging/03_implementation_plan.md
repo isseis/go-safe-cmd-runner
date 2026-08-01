@@ -391,7 +391,7 @@
 
 - [x] root で `go test -tags test -run TestGetPermissionCheckUID ./internal/groupmembership/` を1回実行し、ステップ3-7 の `t.Skip` または `ErrSudoUIDUserNotFound` の分岐が通ることを確認した。グリーンゲート（非 root）ではこの分岐に入らないため、この確認だけが 5.1 節の最上位リスクの検証手段である。root 実行ができない場合は、その旨と未検証であることを PR 本文に記す
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
