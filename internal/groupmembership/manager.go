@@ -3,12 +3,14 @@ package groupmembership
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"os/user"
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -48,6 +50,15 @@ var ErrPermissionsExceedMaximum = errors.New("file permissions exceed maximum al
 // ErrSudoUIDOutOfRange is returned when SUDO_UID value is out of range for uint32
 var ErrSudoUIDOutOfRange = errors.New("SUDO_UID value out of range")
 
+// ErrSudoUIDUserNotFound is returned when the SUDO_UID value is a valid
+// number but no user with that UID exists in the user database.
+var ErrSudoUIDUserNotFound = errors.New("SUDO_UID does not refer to an existing user")
+
+// ErrSudoUIDUserLookupFailed is returned when the existence check for the
+// SUDO_UID value could not be completed, so the user can neither be confirmed
+// to exist nor confirmed to be absent (for example a transient NSS failure).
+var ErrSudoUIDUserLookupFailed = errors.New("failed to verify that SUDO_UID refers to an existing user")
+
 // ErrGroupMemberEnumeration is returned when group member enumeration fails
 // due to NSS errors, buffer limit exhaustion, or memory allocation failure.
 var ErrGroupMemberEnumeration = errors.New("group member enumeration failed")
@@ -79,6 +90,10 @@ type GroupMembership struct {
 	// value is PolicyUnset, meaning the instance defers to the process-wide
 	// default policy (see effectivePermissionCheckUIDPolicy).
 	policy PermissionCheckUIDPolicy
+
+	// sudoUIDExistence remembers the UIDs whose existence has already been
+	// confirmed for this instance. New() initializes its map.
+	sudoUIDExistence sudoUIDExistenceMemo
 }
 
 // groupMemberCache holds cached group membership data with expiration
@@ -93,6 +108,7 @@ func New(opts ...Option) *GroupMembership {
 	gm := &GroupMembership{
 		membershipCache:       make(map[uint32]groupMemberCache),
 		enumerateGroupMembers: getGroupMembers,
+		sudoUIDExistence:      sudoUIDExistenceMemo{confirmed: make(map[int]struct{})},
 	}
 	for _, opt := range opts {
 		opt(gm)
@@ -442,6 +458,64 @@ func (gm *GroupMembership) clearExpiredCache() {
 // sudoUIDEnvVar is the name of the environment variable consulted by the
 // SudoUIDAware policy.
 const sudoUIDEnvVar = "SUDO_UID"
+
+// sudoUIDAdoptionReporter emits the record that SUDO_UID was adopted as the
+// permission check UID. It emits at most one record for its lifetime, so a
+// single instance shared by the whole process satisfies "once per process".
+// It is the only place that builds the record's message and attributes.
+type sudoUIDAdoptionReporter struct {
+	reported atomic.Bool
+}
+
+// report emits the adoption record to logger unless one has already been
+// emitted. It has no return value: a failure to record must not change the
+// read-safety verdict.
+//
+// The transition from "not reported" to "reported" happens exactly once even
+// when several goroutines call report concurrently, and there is no path back.
+func (r *sudoUIDAdoptionReporter) report(logger *slog.Logger, policy PermissionCheckUIDPolicy, realUID, permissionCheckUID int) {
+	if !r.reported.CompareAndSwap(false, true) {
+		return
+	}
+	logger.Warn(
+		"Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment",
+		slog.Int("permission_check_uid", permissionCheckUID),
+		slog.Int("real_uid", realUID),
+		slog.String("source_env_var", sudoUIDEnvVar),
+		slog.String("permission_check_uid_policy", policy.String()),
+		slog.String("user_database_source", userDatabaseSource),
+	)
+}
+
+// sudoUIDExistenceMemo remembers the UIDs whose existence has already been
+// confirmed, so that repeated read-safety checks do not re-query the user
+// database. Only confirmations are remembered; a failed check is always
+// re-queried. In practice it holds at most one entry, because SUDO_UID does
+// not change during the lifetime of a record or verify process.
+type sudoUIDExistenceMemo struct {
+	mu        sync.Mutex
+	confirmed map[int]struct{}
+}
+
+// verify returns nil if uid has already been confirmed; otherwise it calls
+// lookup and, on success, records uid as confirmed.
+//
+// The mutex is deliberately held across lookup so that concurrent checks for
+// the same UID issue a single query rather than one per goroutine. lookup must
+// therefore not call back into the memo.
+func (m *sudoUIDExistenceMemo) verify(uid int, lookup func(uid int) error) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, ok := m.confirmed[uid]; ok {
+		return nil
+	}
+	if err := lookup(uid); err != nil {
+		return err
+	}
+	m.confirmed[uid] = struct{}{}
+	return nil
+}
 
 // getPermissionCheckUID returns the user ID to use for permission checks.
 // The base UID is resolved according to gm's effective permission check UID

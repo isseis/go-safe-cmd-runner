@@ -219,6 +219,12 @@ import (
 	"unsafe"
 )
 
+// userDatabaseSource names the user database this build consults. With CGO
+// enabled, user lookups go through NSS, so every configured backend
+// (/etc/passwd, LDAP, SSSD, ...) is visible. It is diagnostic information
+// only and never influences any security decision.
+const userDatabaseSource = "nss"
+
 // maxGroupMembers is the maximum number of group members allowed.
 // This limit prevents unsafe memory access from malformed C return values.
 const maxGroupMembers = 65536

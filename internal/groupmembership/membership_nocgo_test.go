@@ -371,3 +371,12 @@ func TestFileReadingErrors(t *testing.T) {
 		assert.Contains(t, err.Error(), "no such file or directory")
 	})
 }
+
+// TestUserDatabaseSource pins the diagnostic constant reported by the no-CGO
+// build so that it is not changed by accident. It only fixes the constant's
+// value; it does not prove which user database this build actually consults.
+func TestUserDatabaseSource(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "passwd-file", userDatabaseSource)
+}

@@ -183,3 +183,12 @@ func TestGetGroupMembers_MergedCountExceedsMaximum(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrGroupMemberCountExceedsMax))
 }
+
+// TestUserDatabaseSource pins the diagnostic constant reported by the CGO
+// build so that it is not changed by accident. It only fixes the constant's
+// value; it does not prove which user database this build actually consults.
+func TestUserDatabaseSource(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "nss", userDatabaseSource)
+}

@@ -2,10 +2,13 @@ package groupmembership
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"os/user"
 	"runtime"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -953,4 +956,205 @@ func TestCanCurrentUserSafelyReadFile_EnumerationError(t *testing.T) {
 	assert.False(t, canRead)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)
+}
+
+// sudoUIDAdoptionMessage is the exact message the adoption record must carry.
+// It is spelled out here rather than referenced from the production code so
+// that the wording itself is fixed by this test file.
+const sudoUIDAdoptionMessage = "Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment"
+
+// TestSudoUIDAdoptionReporter_Report checks the level, message and attributes
+// of the adoption record. realUID and permissionCheckUID are given different
+// values so that swapping the two arguments would fail the test.
+func TestSudoUIDAdoptionReporter_Report(t *testing.T) {
+	t.Parallel()
+
+	handler := &logCaptureHandler{}
+	var reporter sudoUIDAdoptionReporter
+	reporter.report(slog.New(handler), SudoUIDAware, 0, 1000)
+
+	records := handler.captured()
+	require.Len(t, records, 1)
+	assert.Equal(t, slog.LevelWarn, records[0].level)
+	assert.Equal(t, sudoUIDAdoptionMessage, records[0].msg)
+
+	wantAttrs := map[string]string{
+		"permission_check_uid":        "1000",
+		"real_uid":                    "0",
+		"source_env_var":              sudoUIDEnvVar,
+		"permission_check_uid_policy": SudoUIDAware.String(),
+		"user_database_source":        userDatabaseSource,
+	}
+	for key, want := range wantAttrs {
+		value, ok := records[0].attrs[key]
+		if assert.True(t, ok, "attribute %s should be present", key) {
+			assert.Equal(t, want, value.String(), "attribute %s", key)
+		}
+	}
+	assert.Len(t, records[0].attrs, len(wantAttrs), "no unexpected attributes")
+}
+
+// TestSudoUIDAdoptionReporter_ReportsOnlyOnce checks that a reporter instance
+// emits at most one record no matter how often it is asked to.
+func TestSudoUIDAdoptionReporter_ReportsOnlyOnce(t *testing.T) {
+	t.Parallel()
+
+	handler := &logCaptureHandler{}
+	logger := slog.New(handler)
+	var reporter sudoUIDAdoptionReporter
+	for range 3 {
+		reporter.report(logger, SudoUIDAware, 0, 1000)
+	}
+
+	assert.Len(t, handler.captured(), 1)
+}
+
+// TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently checks that the
+// once-per-instance limit holds when report is called from many goroutines.
+func TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently(t *testing.T) {
+	t.Parallel()
+
+	const goroutines = 50
+
+	handler := &logCaptureHandler{}
+	logger := slog.New(handler)
+	var reporter sudoUIDAdoptionReporter
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for range goroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			reporter.report(logger, SudoUIDAware, 0, 1000)
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	assert.Len(t, handler.captured(), 1)
+}
+
+// countingLookup returns an existence-check function that counts its calls in
+// calls and reports err on every call.
+func countingLookup(calls *int, err error) func(int) error {
+	return func(int) error {
+		*calls++
+		return err
+	}
+}
+
+// TestSudoUIDExistenceMemo_ReusesConfirmation checks that a confirmed UID is
+// not looked up again.
+func TestSudoUIDExistenceMemo_ReusesConfirmation(t *testing.T) {
+	t.Parallel()
+
+	memo := sudoUIDExistenceMemo{confirmed: make(map[int]struct{})}
+	calls := 0
+	lookup := countingLookup(&calls, nil)
+
+	for range 3 {
+		require.NoError(t, memo.verify(1000, lookup))
+	}
+	assert.Equal(t, 1, calls)
+}
+
+// TestSudoUIDExistenceMemo_DoesNotRememberFailures checks that a failed
+// existence check is retried on the next call, and that only a success is
+// remembered.
+func TestSudoUIDExistenceMemo_DoesNotRememberFailures(t *testing.T) {
+	t.Parallel()
+
+	lookupErr := errors.New("lookup failed")
+	memo := sudoUIDExistenceMemo{confirmed: make(map[int]struct{})}
+	calls := 0
+	lookup := func(int) error {
+		calls++
+		if calls <= 2 {
+			return lookupErr
+		}
+		return nil
+	}
+
+	assert.ErrorIs(t, memo.verify(1000, lookup), lookupErr)
+	assert.Equal(t, 1, calls)
+	assert.ErrorIs(t, memo.verify(1000, lookup), lookupErr)
+	assert.Equal(t, 2, calls)
+	require.NoError(t, memo.verify(1000, lookup))
+	assert.Equal(t, 3, calls)
+
+	// The success is remembered, so the fourth call performs no lookup.
+	require.NoError(t, memo.verify(1000, lookup))
+	assert.Equal(t, 3, calls)
+}
+
+// TestSudoUIDExistenceMemo_Concurrent exercises the memo from many goroutines
+// with one UID that exists and one that does not, and then checks that only
+// the confirmed UID is remembered.
+func TestSudoUIDExistenceMemo_Concurrent(t *testing.T) {
+	t.Parallel()
+
+	const (
+		goroutines  = 50
+		existingUID = 1000
+		missingUID  = 2000
+	)
+
+	lookupErr := errors.New("lookup failed")
+	memo := sudoUIDExistenceMemo{confirmed: make(map[int]struct{})}
+	var calls atomic.Int64
+	lookup := func(uid int) error {
+		calls.Add(1)
+		if uid == missingUID {
+			return lookupErr
+		}
+		return nil
+	}
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := range goroutines {
+		uid := existingUID
+		if i%2 == 1 {
+			uid = missingUID
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			err := memo.verify(uid, lookup)
+			if uid == missingUID {
+				assert.ErrorIs(t, err, lookupErr)
+			} else {
+				assert.NoError(t, err)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	// The existing UID is confirmed, so it is never looked up again; the
+	// missing one is looked up on every call.
+	callsAfterJoin := calls.Load()
+	require.NoError(t, memo.verify(existingUID, lookup))
+	assert.Equal(t, callsAfterJoin, calls.Load(), "confirmed UID should not be looked up again")
+	assert.ErrorIs(t, memo.verify(missingUID, lookup), lookupErr)
+	assert.Equal(t, callsAfterJoin+1, calls.Load(), "failed lookups should not be remembered")
+}
+
+// TestNewInitializesSudoUIDExistenceMemo checks that New allocates the memo's
+// map. Without it the first confirmation would panic on a write to a nil map.
+func TestNewInitializesSudoUIDExistenceMemo(t *testing.T) {
+	t.Parallel()
+
+	gm := New()
+	calls := 0
+	lookup := countingLookup(&calls, nil)
+
+	require.NotPanics(t, func() {
+		require.NoError(t, gm.sudoUIDExistence.verify(1000, lookup))
+	})
+	require.NoError(t, gm.sudoUIDExistence.verify(1000, lookup))
+	assert.Equal(t, 1, calls)
 }

@@ -1,9 +1,13 @@
 package groupmembership
 
 import (
+	"context"
+	"log/slog"
 	"os"
 	"os/user"
+	"slices"
 	"strconv"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -12,6 +16,51 @@ import (
 )
 
 // Common test helper functions
+
+// capturedRecord holds the parts of a slog.Record that tests assert on.
+type capturedRecord struct {
+	level slog.Level
+	msg   string
+	attrs map[string]slog.Value
+}
+
+// logCaptureHandler is a slog.Handler that keeps the records passed to it so
+// that tests can assert on their level, message and attributes. When handleErr
+// is non-nil, every Handle call also reports that error, which lets tests
+// confirm that a failing log destination does not change the caller's result.
+type logCaptureHandler struct {
+	mu        sync.Mutex
+	records   []capturedRecord
+	handleErr error
+}
+
+func (h *logCaptureHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *logCaptureHandler) Handle(_ context.Context, record slog.Record) error {
+	attrs := make(map[string]slog.Value, record.NumAttrs())
+	record.Attrs(func(a slog.Attr) bool {
+		attrs[a.Key] = a.Value
+		return true
+	})
+
+	// Handle may run on several goroutines at once, so the captured records
+	// are guarded by a mutex and only ever handed out as a copy.
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, capturedRecord{level: record.Level, msg: record.Message, attrs: attrs})
+	return h.handleErr
+}
+
+func (h *logCaptureHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+
+func (h *logCaptureHandler) WithGroup(string) slog.Handler { return h }
+
+// captured returns a copy of the records captured so far.
+func (h *logCaptureHandler) captured() []capturedRecord {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return slices.Clone(h.records)
+}
 
 // getCurrentUserGID returns the current user's primary group ID
 func getCurrentUserGID(t *testing.T) uint32 {
