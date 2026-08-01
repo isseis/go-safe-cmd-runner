@@ -172,7 +172,7 @@
 
 - [x] `rg -n "userDatabaseSource" --glob '*.go'` の結果が `internal/groupmembership/` 内に限られること（10 章。他パッケージの同名識別子との衝突確認）
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した (#954)
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
