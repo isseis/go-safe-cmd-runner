@@ -274,13 +274,13 @@
 
 **変更ファイル**: `internal/groupmembership/manager.go`
 
-- [ ] `resolvePermissionCheckUID` の `parseSudoUID` 成功後に `deps.verifyUserExists(parsedUID)` を呼ぶ処理を追加する（02 §6.1 の順序: 数値妥当性の検査 → 実在確認 → 記録）
-- [ ] `errors.AsType[user.UnknownUserIdError](err)` が真のとき、次の書式でエラーを返す。既存の `parseSudoUID`（`manager.go:511`）が採る「本文のあとにセンチネルを `%w` で置く」書式に揃え、センチネルは本文の後ろ、元のエラーの直前に置く。
+- [x] `resolvePermissionCheckUID` の `parseSudoUID` 成功後に `deps.verifyUserExists(parsedUID)` を呼ぶ処理を追加する（02 §6.1 の順序: 数値妥当性の検査 → 実在確認 → 記録）
+- [x] `errors.AsType[user.UnknownUserIdError](err)` が真のとき、次の書式でエラーを返す。既存の `parseSudoUID`（`manager.go:511`）が採る「本文のあとにセンチネルを `%w` で置く」書式に揃え、センチネルは本文の後ろ、元のエラーの直前に置く。
   `fmt.Errorf("SUDO_UID %s does not exist in the user database (user_database_source=%s); check whether SUDO_UID is a stale value inherited from the environment, then re-run from an interactive sudo session: %w: %w", sudoUID, userDatabaseSource, ErrSudoUIDUserNotFound, err)`
-- [ ] それ以外のエラーのとき、次の書式でエラーを返す。
+- [x] それ以外のエラーのとき、次の書式でエラーを返す。
   `fmt.Errorf("could not verify SUDO_UID %s against the user database (user_database_source=%s); check the state of the user database, then re-run: %w: %w", sudoUID, userDatabaseSource, ErrSudoUIDUserLookupFailed, err)`
-- [ ] `sudoUID`（環境変数の生の文字列）だけを出力し、`parsedUID` は出力しない。両者は同じ値を表すため重複になる
-- [ ] いずれのエラーでも基準UIDは返さず `0` と非 nil エラーを返す
+- [x] `sudoUID`（環境変数の生の文字列）だけを出力し、`parsedUID` は出力しない。両者は同じ値を表すため重複になる
+- [x] いずれのエラーでも基準UIDは返さず `0` と非 nil エラーを返す
 
 **完了条件**: `go build ./...` が通り、`make lint` が新たな指摘を出さないこと。挙動の検証はステップ3-4 で行う。
 
@@ -288,8 +288,8 @@
 
 **変更ファイル**: `internal/groupmembership/manager.go`
 
-- [ ] 実在確認が成功し、かつ `parsedUID != realUID` のときにのみ `deps.reportAdoption(policy, realUID, parsedUID)` を呼ぶ処理を追加する
-- [ ] `reportAdoption` は戻り値を持たない。呼び出し結果を受け取る変数も分岐も書かず、記録の成否が基準UIDやエラーに影響しないことをコードの形で示す（02 §1.2）
+- [x] 実在確認が成功し、かつ `parsedUID != realUID` のときにのみ `deps.reportAdoption(policy, realUID, parsedUID)` を呼ぶ処理を追加する
+- [x] `reportAdoption` は戻り値を持たない。呼び出し結果を受け取る変数も分岐も書かず、記録の成否が基準UIDやエラーに影響しないことをコードの形で示す（02 §1.2）
 
 **完了条件**: `go build ./...` が通ること。挙動の検証はステップ3-4 で行う。
 
@@ -297,8 +297,8 @@
 
 **変更ファイル**: `internal/groupmembership/manager.go`
 
-- [ ] `resolvePermissionCheckUID` のドキュメントコメントに、`SudoUIDAware` では採用前に実在確認を行い、失敗時は `ErrSudoUIDUserNotFound` または `ErrSudoUIDUserLookupFailed` を返すことを英語で追記する
-- [ ] `getPermissionCheckUID` のドキュメントコメント（446-456行目）の `Returns` 節に、同じ2つのエラーを返しうることを英語で追記する
+- [x] `resolvePermissionCheckUID` のドキュメントコメントに、`SudoUIDAware` では採用前に実在確認を行い、失敗時は `ErrSudoUIDUserNotFound` または `ErrSudoUIDUserLookupFailed` を返すことを英語で追記する
+- [x] `getPermissionCheckUID` のドキュメントコメント（446-456行目）の `Returns` 節に、同じ2つのエラーを返しうることを英語で追記する
 
 > **02 §8 との差異**: 02 §8 は `manager.go` の2つの関数のドキュメントコメント更新をフェーズ4に置いている。本計画ではこれをフェーズ3のステップ3-3 へ前倒しした。両コメントはステップ3-1 が追加するエラーそのものを述べるものであり、フェーズ4へ残すと PR-3 と PR-4 の間、コメントが実装と食い違う期間が生じるためである。`policy.go` の `SudoUIDAware` コメント（ステップ4-2）は方針の説明であり、他の文書更新とまとめてレビューする利得の方が大きいためフェーズ4に残す。
 
@@ -308,23 +308,23 @@
 
 **変更ファイル**: `internal/groupmembership/policy_test.go`
 
-- [ ] `TestResolvePermissionCheckUID_SudoUIDAware` の既存の表に、実在確認の入力を表す列（実在する／実在しない／確認処理が失敗）と「記録の有無」の期待列を追加する。既存7行（`unset` / `zero` / `valid` / `max uint32` / `negative` / `exceeds uint32` / `non-numeric`。`policy_test.go:183-189`）はそのまま残し、次の4行を新設する。
+- [x] `TestResolvePermissionCheckUID_SudoUIDAware` の既存の表に、実在確認の入力を表す列（実在する／実在しない／確認処理が失敗）と「記録の有無」の期待列を追加する。既存7行（`unset` / `zero` / `valid` / `max uint32` / `negative` / `exceeds uint32` / `non-numeric`。`policy_test.go:183-189`）はそのまま残し、次の4行を新設する。
   - `SUDO_UID` が `"0"` で実在しない → エラー（`ErrSudoUIDUserNotFound`）、記録なし
   - `SUDO_UID` が `"1000"` で実在しない → エラー（`ErrSudoUIDUserNotFound`）、記録なし
   - `SUDO_UID` が `"1000"` で確認処理が失敗 → エラー（`ErrSudoUIDUserLookupFailed`）、記録なし
   - `SUDO_UID` が `"0"` で確認処理が失敗 → エラー（`ErrSudoUIDUserLookupFailed`）、記録なし
-- [ ] 既存の `max uint32`（`"4294967295"`）の行と、`TestResolvePermissionCheckUID_RealUIDOnly` が持つ 300 桁の値（`strings.Repeat("9", 300)`）の境界値は削らない
-- [ ] 02 §3.5 の決定表の8行と、テストの各行との対応を確認する。1〜7行目（実 UID が 0 の全ケース）は `realUID 0` サブテストの表が担い、8行目（実 UID 非 0）は既存の別サブテスト `"realUID non-zero always returns realUID without error"`（`policy_test.go:206`）が担う。8行目のサブテストには `verifyUserExists` と `reportAdoption` の呼び出し回数がいずれも 0 であることの検証を追加する
-- [ ] 追加・変更するサブテスト名および表の `name` フィールドはすべて英語で書く（例: `zero and user exists`、`valid and user missing`、`valid and lookup failed`）
-- [ ] `TestResolvePermissionCheckUID_UserNotFound` を追加する。`verifyUserExists` が `user.UnknownUserIdError(1000)` を返す場合に、基準UIDが返らず、返るエラーが `ErrSudoUIDUserNotFound` と `user.UnknownUserIdError(1000)` の両方に `errors.Is` で一致することを検証する（後者は元の失敗原因を `%w` で保持していることの確認）
-- [ ] `TestResolvePermissionCheckUID_UserLookupFailed` を追加する。`verifyUserExists` が独自のエラー値を返す場合に、`ErrSudoUIDUserLookupFailed` と、渡したエラー値そのものの両方に `errors.Is` で一致することを検証する
-- [ ] `TestResolvePermissionCheckUID_ErrorMessageContent` を追加する。実在しない場合と確認処理が失敗した場合の両方について、`err.Error()` が (a) `SUDO_UID` の生の文字列、(b) `user_database_source=` と定数 `userDatabaseSource` の値、(c) 対処を示す語句（それぞれ `re-run from an interactive sudo session` と `check the state of the user database`）の3つを含むことを検証する。02 §4.3 が求めるエラーメッセージの構成要素を固定する
-- [ ] `TestResolvePermissionCheckUID_SentinelErrorsAreDistinct` を追加する。`ErrSudoUIDUserNotFound` を含むエラーが `ErrSudoUIDOutOfRange` / `strconv.ErrSyntax` / `ErrSudoUIDUserLookupFailed` のいずれにも `errors.Is` で一致しないこと、および逆方向（`ErrSudoUIDUserLookupFailed` を含むエラーが `ErrSudoUIDUserNotFound` に一致しないこと）を検証する
-- [ ] `TestResolvePermissionCheckUID_ExistenceCheckNotInvoked` を追加する。次の2条件で `verifyUserExists` の呼び出し回数が 0 であることを検証する。(a) `SUDO_UID` が数値として不正（`"abc"` / `"-1"` / `"4294967296"`）、(b) 実 UID が 0 以外。いずれも 0160 と同じ結果（(a) は同じエラー、(b) は実 UID）が返ることを併せて検証する
-- [ ] `TestResolvePermissionCheckUID_ExistenceCheckSkippedUnderRealUIDOnly` を追加する。実 UID 0 かつ `SUDO_UID` が有効値のとき、`RealUIDOnly` では `verifyUserExists` と `reportAdoption` の呼び出し回数がいずれも 0 であり、同条件の `SudoUIDAware` では `verifyUserExists` が 1 回、`reportAdoption` が 1 回呼ばれることを対比して検証する（02 §7.1 の対比要件）
-- [ ] `TestResolvePermissionCheckUID_AdoptionRecordConditions` を追加する。記録が出るのは「実 UID 0、`SUDO_UID` 有効値かつ実 UID と異なる、実在確認成功」の場合のみであり、`SUDO_UID` 未設定・`SUDO_UID` が `0`・実在確認失敗・`RealUIDOnly` のいずれでも出ないことを検証する
-- [ ] `TestResolvePermissionCheckUID_ReportsAdoptionOnlyOncePerReporter` を追加する。1つの `sudoUIDAdoptionReporter` 実体に束ねた `reportAdoption` を用いて `resolvePermissionCheckUID` を3回実行し、3回すべてで基準UIDが正しく返ること、かつ捕捉されたレコードが1件であることを検証する。02 §7.1 が AC-09 について求める「同一のレポータ実体で解決を複数回実行する」形である
-- [ ] `policy_test.go` の `import` に `os/user` を追加する（`user.UnknownUserIdError` を使うため）
+- [x] 既存の `max uint32`（`"4294967295"`）の行と、`TestResolvePermissionCheckUID_RealUIDOnly` が持つ 300 桁の値（`strings.Repeat("9", 300)`）の境界値は削らない
+- [x] 02 §3.5 の決定表の8行と、テストの各行との対応を確認する。1〜7行目（実 UID が 0 の全ケース）は `realUID 0` サブテストの表が担い、8行目（実 UID 非 0）は既存の別サブテスト `"realUID non-zero always returns realUID without error"`（`policy_test.go:206`）が担う。8行目のサブテストには `verifyUserExists` と `reportAdoption` の呼び出し回数がいずれも 0 であることの検証を追加する
+- [x] 追加・変更するサブテスト名および表の `name` フィールドはすべて英語で書く（例: `zero and user exists`、`valid and user missing`、`valid and lookup failed`）
+- [x] `TestResolvePermissionCheckUID_UserNotFound` を追加する。`verifyUserExists` が `user.UnknownUserIdError(1000)` を返す場合に、基準UIDが返らず、返るエラーが `ErrSudoUIDUserNotFound` と `user.UnknownUserIdError(1000)` の両方に `errors.Is` で一致することを検証する（後者は元の失敗原因を `%w` で保持していることの確認）
+- [x] `TestResolvePermissionCheckUID_UserLookupFailed` を追加する。`verifyUserExists` が独自のエラー値を返す場合に、`ErrSudoUIDUserLookupFailed` と、渡したエラー値そのものの両方に `errors.Is` で一致することを検証する
+- [x] `TestResolvePermissionCheckUID_ErrorMessageContent` を追加する。実在しない場合と確認処理が失敗した場合の両方について、`err.Error()` が (a) `SUDO_UID` の生の文字列、(b) `user_database_source=` と定数 `userDatabaseSource` の値、(c) 対処を示す語句（それぞれ `re-run from an interactive sudo session` と `check the state of the user database`）の3つを含むことを検証する。02 §4.3 が求めるエラーメッセージの構成要素を固定する
+- [x] `TestResolvePermissionCheckUID_SentinelErrorsAreDistinct` を追加する。`ErrSudoUIDUserNotFound` を含むエラーが `ErrSudoUIDOutOfRange` / `strconv.ErrSyntax` / `ErrSudoUIDUserLookupFailed` のいずれにも `errors.Is` で一致しないこと、および逆方向（`ErrSudoUIDUserLookupFailed` を含むエラーが `ErrSudoUIDUserNotFound` に一致しないこと）を検証する
+- [x] `TestResolvePermissionCheckUID_ExistenceCheckNotInvoked` を追加する。次の2条件で `verifyUserExists` の呼び出し回数が 0 であることを検証する。(a) `SUDO_UID` が数値として不正（`"abc"` / `"-1"` / `"4294967296"`）、(b) 実 UID が 0 以外。いずれも 0160 と同じ結果（(a) は同じエラー、(b) は実 UID）が返ることを併せて検証する
+- [x] `TestResolvePermissionCheckUID_ExistenceCheckSkippedUnderRealUIDOnly` を追加する。実 UID 0 かつ `SUDO_UID` が有効値のとき、`RealUIDOnly` では `verifyUserExists` と `reportAdoption` の呼び出し回数がいずれも 0 であり、同条件の `SudoUIDAware` では `verifyUserExists` が 1 回、`reportAdoption` が 1 回呼ばれることを対比して検証する（02 §7.1 の対比要件）
+- [x] `TestResolvePermissionCheckUID_AdoptionRecordConditions` を追加する。記録が出るのは「実 UID 0、`SUDO_UID` 有効値かつ実 UID と異なる、実在確認成功」の場合のみであり、`SUDO_UID` 未設定・`SUDO_UID` が `0`・実在確認失敗・`RealUIDOnly` のいずれでも出ないことを検証する
+- [x] `TestResolvePermissionCheckUID_ReportsAdoptionOnlyOncePerReporter` を追加する。1つの `sudoUIDAdoptionReporter` 実体に束ねた `reportAdoption` を用いて `resolvePermissionCheckUID` を3回実行し、3回すべてで基準UIDが正しく返ること、かつ捕捉されたレコードが1件であることを検証する。02 §7.1 が AC-09 について求める「同一のレポータ実体で解決を複数回実行する」形である
+- [x] `policy_test.go` の `import` に `os/user` を追加する（`user.UnknownUserIdError` を使うため）
 
 **完了条件**: `go test -tags test -run TestResolvePermissionCheckUID ./internal/groupmembership/` が非 root で通る。
 
@@ -332,10 +332,10 @@
 
 **変更ファイル**: `internal/groupmembership/policy_test.go`
 
-- [ ] `TestResolvePermissionCheckUID_FailsClosedOnExistenceFailure` を追加する。実在しない場合と確認処理が失敗する場合の両方について、返る UID が **`0` そのものである**こと（`SUDO_UID` の値でも実 UID でもない）とエラーが非 nil であることを検証する。決定表の行が検証するのは「エラーであること」であり、本テストは「基準UIDとして使える値が返らないこと」を別途固定する。この重複は意図的である
-- [ ] `TestResolvePermissionCheckUID_VerifiesEvenWhenSudoUIDIsZero` を追加する。`SUDO_UID` が `"0"` のときにも `verifyUserExists` が **呼ばれること（呼び出し回数 1）** を検証する。決定表の対応行が検証するのは結果（エラーになること）であり、本テストは「実 UID と同じ値でも確認を省かない」という処理の実行そのものを固定する。この重複は意図的である
-- [ ] `TestResolvePermissionCheckUID_RecordFailureDoesNotChangeVerdict` を追加する。`Handle` が常にエラーを返す捕捉ハンドラを使うロガーへ記録する場合でも、基準UIDが正しく返りエラーが nil であることを検証する
-- [ ] 02 §7.2 の4項目のうち「実在確認が失敗した結果がメモに登録されないこと」は、ステップ1-5 の `TestSudoUIDExistenceMemo_DoesNotRememberFailures` が既に検証している。重複するテストは追加しない
+- [x] `TestResolvePermissionCheckUID_FailsClosedOnExistenceFailure` を追加する。実在しない場合と確認処理が失敗する場合の両方について、返る UID が **`0` そのものである**こと（`SUDO_UID` の値でも実 UID でもない）とエラーが非 nil であることを検証する。決定表の行が検証するのは「エラーであること」であり、本テストは「基準UIDとして使える値が返らないこと」を別途固定する。この重複は意図的である
+- [x] `TestResolvePermissionCheckUID_VerifiesEvenWhenSudoUIDIsZero` を追加する。`SUDO_UID` が `"0"` のときにも `verifyUserExists` が **呼ばれること（呼び出し回数 1）** を検証する。決定表の対応行が検証するのは結果（エラーになること）であり、本テストは「実 UID と同じ値でも確認を省かない」という処理の実行そのものを固定する。この重複は意図的である
+- [x] `TestResolvePermissionCheckUID_RecordFailureDoesNotChangeVerdict` を追加する。`Handle` が常にエラーを返す捕捉ハンドラを使うロガーへ記録する場合でも、基準UIDが正しく返りエラーが nil であることを検証する
+- [x] 02 §7.2 の4項目のうち「実在確認が失敗した結果がメモに登録されないこと」は、ステップ1-5 の `TestSudoUIDExistenceMemo_DoesNotRememberFailures` が既に検証している。重複するテストは追加しない
 
 **完了条件**: 上記3テストが非 root で通る。
 
@@ -343,14 +343,14 @@
 
 **変更ファイル**: `internal/groupmembership/manager_test.go`
 
-- [ ] `TestSudoUIDAdoptionRecordReachesDefaultLogger` を追加する。手順は次のとおり。
+- [x] `TestSudoUIDAdoptionRecordReachesDefaultLogger` を追加する。手順は次のとおり。
   1. `previous := slog.Default()` を保存し、`t.Cleanup(func() { slog.SetDefault(previous) })` を登録する
   2. 捕捉ハンドラを持つロガーを `slog.SetDefault` で既定ロガーとして設定する
   3. `t.Setenv(sudoUIDEnvVar, "1000")` を置く
   4. `permissionCheckUIDDeps` を組み立てる。`getenv` は `os.Getenv` とする。`reportAdoption` は **ステップ2-2 で `getPermissionCheckUID` に書いた式をそのまま複製する**。ただし、パッケージレベルの `processSudoUIDAdoptionReporter` ではなく、このテスト内で生成した新しい `sudoUIDAdoptionReporter` の実体を使う（理由は次の項目に述べる）。`verifyUserExists` は常に `nil` を返す関数へ差し替える
   5. `resolvePermissionCheckUID(SudoUIDAware, 0, deps)` を実行し、基準UIDが `1000` であること、および捕捉ハンドラが警告1件を受け取ったことを検証する
-- [ ] レポータ実体をテスト内で新規に生成する理由を、テストのドキュメントコメントに英語で書く。パッケージレベルの実体は1回制限のフラグをプロセス単位で持つため、それを使うと `go test -count=2` や他テストの実行順によって結果が変わる。本テストが確認するのは「`slog.Default()` を記録の出力先として解決する組み立てが機能すること」であり、パッケージレベル実体を渡していること自体は 02 §7.6 のとおりコードレビューで確認する
-- [ ] このテストはプロセス全体の状態（`slog` の既定ロガー、環境変数）を変更するため `t.Parallel()` を付けない。02 §7.4 のとおり
+- [x] レポータ実体をテスト内で新規に生成する理由を、テストのドキュメントコメントに英語で書く。パッケージレベルの実体は1回制限のフラグをプロセス単位で持つため、それを使うと `go test -count=2` や他テストの実行順によって結果が変わる。本テストが確認するのは「`slog.Default()` を記録の出力先として解決する組み立てが機能すること」であり、パッケージレベル実体を渡していること自体は 02 §7.6 のとおりコードレビューで確認する
+- [x] このテストはプロセス全体の状態（`slog` の既定ロガー、環境変数）を変更するため `t.Parallel()` を付けない。02 §7.4 のとおり
 
 **完了条件**: `go test -tags test -count=2 -run TestSudoUIDAdoptionRecordReachesDefaultLogger ./internal/groupmembership/` が通る（再実行でも結果が変わらないこと）。
 
@@ -360,20 +360,20 @@
 
 **変更ファイル**: `internal/groupmembership/manager_test.go`
 
-- [ ] サブテスト `"reads SUDO_UID from the real environment under SudoUIDAware"`（610-621行目）を書き換える。実在確認の追加により、UID `9999` が実在しない環境では `ErrSudoUIDUserNotFound` が返るため、現在の実装のままでは root で失敗する
-- [ ] **失敗するアサーションは分岐の内側ではなく、`gm.getPermissionCheckUID()` の直後にある無条件の `assert.NoError(t, err)`（615行目）である。** この無条件のアサーションを削除し、エラーと UID の検証を `os.Getuid() == 0` の各分岐へ移す
-- [ ] `gm.getPermissionCheckUID()` を呼ぶ **前** に、`if os.Getuid() == 0 { if _, err := user.LookupId("9999"); err == nil { t.Skip("UID 9999 exists in this environment; the not-found path cannot be exercised") } }` を置く。呼び出しの後にスキップを置くと、スキップより先にアサーションが評価されてしまうため、順序が重要である
-- [ ] `os.Getuid() == 0` の分岐に `require.Error(t, err)` と `assert.ErrorIs(t, err, ErrSudoUIDUserNotFound)` を置く
-- [ ] `else` 分岐に `require.NoError(t, err)` と `assert.Equal(t, os.Getuid(), uid)` を置く
-- [ ] サブテスト名を `"consults SUDO_UID from the real environment under SudoUIDAware and requires the user to exist"` へ変更する
-- [ ] `TestGetPermissionCheckUID` の期待値の根拠を述べるコメントを、実在確認込みの規則へ更新する（02 §7.5）
-- [ ] `os/user` は `manager_test.go:6` で既に import 済みであることを確認する（追加は不要）
+- [x] サブテスト `"reads SUDO_UID from the real environment under SudoUIDAware"`（610-621行目）を書き換える。実在確認の追加により、UID `9999` が実在しない環境では `ErrSudoUIDUserNotFound` が返るため、現在の実装のままでは root で失敗する
+- [x] **失敗するアサーションは分岐の内側ではなく、`gm.getPermissionCheckUID()` の直後にある無条件の `assert.NoError(t, err)`（615行目）である。** この無条件のアサーションを削除し、エラーと UID の検証を `os.Getuid() == 0` の各分岐へ移す
+- [x] `gm.getPermissionCheckUID()` を呼ぶ **前** に、`if os.Getuid() == 0 { if _, err := user.LookupId("9999"); err == nil { t.Skip("UID 9999 exists in this environment; the not-found path cannot be exercised") } }` を置く。呼び出しの後にスキップを置くと、スキップより先にアサーションが評価されてしまうため、順序が重要である
+- [x] `os.Getuid() == 0` の分岐に `require.Error(t, err)` と `assert.ErrorIs(t, err, ErrSudoUIDUserNotFound)` を置く
+- [x] `else` 分岐に `require.NoError(t, err)` と `assert.Equal(t, os.Getuid(), uid)` を置く
+- [x] サブテスト名を `"consults SUDO_UID from the real environment under SudoUIDAware and requires the user to exist"` へ変更する
+- [x] `TestGetPermissionCheckUID` の期待値の根拠を述べるコメントを、実在確認込みの規則へ更新する（02 §7.5）
+- [x] `os/user` は `manager_test.go:6` で既に import 済みであることを確認する（追加は不要）
 
 **完了条件**: 非 root（`id -u` が 0 以外）で `make test` が通る。root 環境での挙動は本書 5 章のリスクとして扱う。
 
 **フェーズ3の完了条件**:
-- `make fmt` → `make test` → `make lint` がすべて通る
-- 本書 8 章の受け入れ基準検証表のうち AC-01〜AC-16 の `test` 項目がすべて成功する
+- [x] `make fmt` → `make test` → `make lint` がすべて通る
+- [x] 本書 8 章の受け入れ基準検証表のうち AC-01〜AC-16 の `test` 項目がすべて成功する
 
 ### PR-3 作成ポイント: existence check and adoption record
 
@@ -607,14 +607,14 @@
 - [ ] PR-2 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3 / 2-4 / 2-5）
 
 ### PR-3: 実在確認と記録の組み込み
-- [ ] ステップ3-1: 実在確認の呼び出しとエラー分類・エラーメッセージ
-- [ ] ステップ3-2: 採用事実の記録の組み込み
-- [ ] ステップ3-3: `resolvePermissionCheckUID` / `getPermissionCheckUID` のドキュメントコメント更新
-- [ ] ステップ3-4: 決定表の拡張と実在確認・エラーメッセージ・記録のテスト（表の拡張 + 8テスト）
-- [ ] ステップ3-5: セキュリティテスト（3テスト）
-- [ ] ステップ3-6: 既定ロガーへの出力の検証（AC-11）
-- [ ] ステップ3-7: `TestGetPermissionCheckUID` の期待値とサブテスト名の更新
-- [ ] `make fmt` → `make test` → `make lint`（Linux で実行）
+- [x] ステップ3-1: 実在確認の呼び出しとエラー分類・エラーメッセージ
+- [x] ステップ3-2: 採用事実の記録の組み込み
+- [x] ステップ3-3: `resolvePermissionCheckUID` / `getPermissionCheckUID` のドキュメントコメント更新
+- [x] ステップ3-4: 決定表の拡張と実在確認・エラーメッセージ・記録のテスト（表の拡張 + 8テスト）
+- [x] ステップ3-5: セキュリティテスト（3テスト）
+- [x] ステップ3-6: 既定ロガーへの出力の検証（AC-11）
+- [x] ステップ3-7: `TestGetPermissionCheckUID` の期待値とサブテスト名の更新
+- [x] `make fmt` → `make test` → `make lint`（Linux で実行）
 - [ ] PR-3 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7）
 
 ### PR-4: 用語集・コメント・開発者向け文書・CHANGELOG

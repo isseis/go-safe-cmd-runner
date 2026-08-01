@@ -598,7 +598,14 @@ func TestCanCurrentUserSafelyReadFile_EdgeCases(t *testing.T) {
 	})
 }
 
-// TestGetPermissionCheckUID tests the getPermissionCheckUID method
+// TestGetPermissionCheckUID tests the getPermissionCheckUID method. The
+// expected values follow the resolution rule: under SudoUIDAware with real
+// UID 0, SUDO_UID is adopted only after the user is verified to exist in the
+// real user database, and the resolution fails with ErrSudoUIDUserNotFound
+// otherwise; in all other cases the real UID is returned (0161 architecture
+// document §7.5). Because getPermissionCheckUID reads the real environment,
+// the SudoUIDAware branch is only exercised when running as root; the
+// existence-dependent expectations branch on os.Getuid() accordingly.
 func TestGetPermissionCheckUID(t *testing.T) {
 	t.Run("returns real UID under the final default policy", func(t *testing.T) {
 		t.Setenv("SUDO_UID", "9999")
@@ -609,15 +616,24 @@ func TestGetPermissionCheckUID(t *testing.T) {
 		assert.Equal(t, os.Getuid(), uid)
 	})
 
-	t.Run("reads SUDO_UID from the real environment under SudoUIDAware", func(t *testing.T) {
+	t.Run("consults SUDO_UID from the real environment under SudoUIDAware and requires the user to exist", func(t *testing.T) {
 		t.Setenv("SUDO_UID", "9999")
+
+		// The skip must precede getPermissionCheckUID(): skipping after the
+		// call would leave the assertions below to be evaluated first.
+		if os.Getuid() == 0 {
+			if _, err := user.LookupId("9999"); err == nil {
+				t.Skip("UID 9999 exists in this environment; the not-found path cannot be exercised")
+			}
+		}
 
 		gm := New(WithPermissionCheckUIDPolicy(SudoUIDAware))
 		uid, err := gm.getPermissionCheckUID()
-		assert.NoError(t, err)
 		if os.Getuid() == 0 {
-			assert.Equal(t, 9999, uid)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, ErrSudoUIDUserNotFound)
 		} else {
+			require.NoError(t, err)
 			assert.Equal(t, os.Getuid(), uid)
 		}
 	})
@@ -1170,6 +1186,50 @@ func TestSudoUIDExistenceErrorMessages(t *testing.T) {
 	assert.Equal(t, "failed to verify that SUDO_UID refers to an existing user", ErrSudoUIDUserLookupFailed.Error())
 	assert.False(t, errors.Is(ErrSudoUIDUserNotFound, ErrSudoUIDUserLookupFailed))
 	assert.False(t, errors.Is(ErrSudoUIDUserLookupFailed, ErrSudoUIDUserNotFound))
+}
+
+// TestSudoUIDAdoptionRecordReachesDefaultLogger verifies the production
+// assembly for the record destination: reportAdoption resolves slog.Default()
+// at record time and emits through it (AC-11). The reportAdoption expression
+// is copied verbatim from getPermissionCheckUID, with the reporter instance
+// being the only difference.
+//
+// A freshly created reporter is used instead of the package-level
+// processSudoUIDAdoptionReporter because the latter carries a once-per-process
+// flag: reporting through it would make this test's result depend on -count
+// and on which other tests ran first. What is verified here is the assembly
+// resolving slog.Default(); that getPermissionCheckUID binds the package-level
+// instance is a code-review matter (architecture document §7.6).
+//
+// This test mutates process-wide state (the default slog logger and the
+// environment) and therefore must not call t.Parallel (architecture document
+// §7.4).
+func TestSudoUIDAdoptionRecordReachesDefaultLogger(t *testing.T) {
+	previous := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	handler := newLogCaptureHandler(nil)
+	slog.SetDefault(slog.New(handler))
+
+	t.Setenv(sudoUIDEnvVar, "1000")
+
+	reporter := &sudoUIDAdoptionReporter{}
+	deps := permissionCheckUIDDeps{
+		getenv:           os.Getenv,
+		verifyUserExists: func(int) error { return nil },
+		reportAdoption: func(policy PermissionCheckUIDPolicy, realUID, permissionCheckUID int) {
+			reporter.report(slog.Default(), policy, realUID, permissionCheckUID)
+		},
+	}
+
+	uid, err := resolvePermissionCheckUID(SudoUIDAware, 0, deps)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1000, uid)
+
+	records := handler.Records()
+	require.Len(t, records, 1)
+	assert.Equal(t, slog.LevelWarn, records[0].level)
 }
 
 // TestNewInitializesSudoUIDExistenceMemo verifies that New initializes the

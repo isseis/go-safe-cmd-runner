@@ -562,7 +562,10 @@ func lookupUserByUID(uid int) error {
 //
 // Returns:
 //   - int: The UID to use for permission checks
-//   - error: Error if unable to determine the UID
+//   - error: Error if unable to determine the UID. Under the SudoUIDAware
+//     policy this includes ErrSudoUIDUserNotFound when SUDO_UID does not
+//     refer to an existing user and ErrSudoUIDUserLookupFailed when the
+//     existence check could not be completed.
 func (gm *GroupMembership) getPermissionCheckUID() (int, error) {
 	realUID, err := getProcessRealUID()
 	if err != nil {
@@ -585,8 +588,15 @@ func (gm *GroupMembership) getPermissionCheckUID() (int, error) {
 //
 // Under RealUIDOnly, it always returns realUID and never calls deps.getenv.
 // Under SudoUIDAware, when realUID is 0 and SUDO_UID (read via deps.getenv)
-// is set, it returns the original user's UID taken from SUDO_UID; otherwise it
-// returns realUID.
+// is set, the value must pass the numeric validity check (parseSudoUID) and
+// the existence check (deps.verifyUserExists) before it is adopted: a user
+// that does not exist yields ErrSudoUIDUserNotFound, and a failed existence
+// check yields ErrSudoUIDUserLookupFailed; in both cases no base UID is
+// returned (the resolution fails closed). Otherwise it returns realUID.
+//
+// When SUDO_UID is adopted and differs from realUID, the adoption is recorded
+// through deps.reportAdoption. The record has no return value and its
+// outcome never changes the resolved UID or error.
 //
 // This pure function is separated from getPermissionCheckUID so that all branches
 // can be tested without requiring root privileges.
@@ -599,7 +609,8 @@ func (gm *GroupMembership) getPermissionCheckUID() (int, error) {
 //
 // Returns:
 //   - int: The UID to use for permission checks
-//   - error: Error if SUDO_UID is present but invalid
+//   - error: Error if SUDO_UID is present but invalid, or if the user it
+//     refers to cannot be verified to exist
 func resolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, deps permissionCheckUIDDeps) (int, error) {
 	if policy != SudoUIDAware || realUID != 0 {
 		return realUID, nil
@@ -608,7 +619,26 @@ func resolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, dep
 	if sudoUID == "" {
 		return realUID, nil
 	}
-	return parseSudoUID(sudoUID)
+	parsedUID, err := parseSudoUID(sudoUID)
+	if err != nil {
+		return 0, err
+	}
+	// verifyUserExists passes through whatever os/user returns so that the
+	// classification below can distinguish "no such user" from a failed
+	// lookup. Both fail closed; the distinction is diagnostic only.
+	if err := deps.verifyUserExists(parsedUID); err != nil {
+		if _, ok := errors.AsType[user.UnknownUserIdError](err); ok {
+			return 0, fmt.Errorf("SUDO_UID %s does not exist in the user database (user_database_source=%s); check whether SUDO_UID is a stale value inherited from the environment, then re-run from an interactive sudo session: %w: %w", sudoUID, userDatabaseSource, ErrSudoUIDUserNotFound, err)
+		}
+		return 0, fmt.Errorf("could not verify SUDO_UID %s against the user database (user_database_source=%s); check the state of the user database, then re-run: %w: %w", sudoUID, userDatabaseSource, ErrSudoUIDUserLookupFailed, err)
+	}
+	if parsedUID != realUID {
+		// The adoption record is observational only; it is a bare statement
+		// with no captured result so that a failure to record can never
+		// change the resolved UID or the error returned.
+		deps.reportAdoption(policy, realUID, parsedUID)
+	}
+	return parsedUID, nil
 }
 
 // parseSudoUID parses and validates a SUDO_UID string value.
