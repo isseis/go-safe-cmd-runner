@@ -1229,7 +1229,14 @@ func TestSudoUIDAdoptionRecordReachesDefaultLogger(t *testing.T) {
 
 	records := handler.Records()
 	require.Len(t, records, 1)
-	assert.Equal(t, slog.LevelWarn, records[0].level)
+	rec := records[0]
+	assert.Equal(t, slog.LevelWarn, rec.level)
+	// The distinct real and permission check UIDs (0 vs 1000) also pin the
+	// argument order of the production call site
+	// deps.reportAdoption(policy, realUID, parsedUID): a swapped call would
+	// surface here as real_uid=1000 / permission_check_uid=0.
+	assert.Equal(t, int64(0), rec.attributes["real_uid"])
+	assert.Equal(t, int64(1000), rec.attributes["permission_check_uid"])
 }
 
 // TestNewInitializesSudoUIDExistenceMemo verifies that New initializes the

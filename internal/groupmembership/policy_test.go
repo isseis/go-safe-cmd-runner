@@ -324,32 +324,35 @@ func TestResolvePermissionCheckUID_UserLookupFailed(t *testing.T) {
 // TestResolvePermissionCheckUID_ErrorMessageContent pins the building blocks
 // of the two error messages (architecture document §4.3): the raw SUDO_UID
 // string, the user_database_source= attribute with the constant's value, and
-// the remediation phrase specific to each error.
+// the remediation phrase specific to each error. The SUDO_UID input "01000"
+// is used because its string form differs from the parsed value (1000), so
+// the assertion on "01000" also pins the rule that the raw environment
+// string, not the parsed UID, appears in the message.
 func TestResolvePermissionCheckUID_ErrorMessageContent(t *testing.T) {
 	t.Run("user not found", func(t *testing.T) {
 		deps := newPermissionCheckUIDDeps(&permissionCheckUIDDepsRecorder{})
-		deps.getenv = func(string) string { return "1000" }
+		deps.getenv = func(string) string { return "01000" }
 		deps.verifyUserExists = func(int) error { return user.UnknownUserIdError(1000) }
 
 		_, err := resolvePermissionCheckUID(SudoUIDAware, 0, deps)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "SUDO_UID")
-		assert.Contains(t, err.Error(), "1000")
+		assert.Contains(t, err.Error(), "01000")
 		assert.Contains(t, err.Error(), "user_database_source="+userDatabaseSource)
 		assert.Contains(t, err.Error(), "re-run from an interactive sudo session")
 	})
 
 	t.Run("lookup failed", func(t *testing.T) {
 		deps := newPermissionCheckUIDDeps(&permissionCheckUIDDepsRecorder{})
-		deps.getenv = func(string) string { return "1000" }
+		deps.getenv = func(string) string { return "01000" }
 		deps.verifyUserExists = func(int) error { return errors.New("injected lookup failure") }
 
 		_, err := resolvePermissionCheckUID(SudoUIDAware, 0, deps)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "SUDO_UID")
-		assert.Contains(t, err.Error(), "1000")
+		assert.Contains(t, err.Error(), "01000")
 		assert.Contains(t, err.Error(), "user_database_source="+userDatabaseSource)
 		assert.Contains(t, err.Error(), "check the state of the user database")
 	})
