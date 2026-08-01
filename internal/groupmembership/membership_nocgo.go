@@ -10,6 +10,11 @@ import (
 	"strings"
 )
 
+// userDatabaseSource names the user database this build consults for user
+// lookups. Without cgo, os/user parses /etc/passwd only; directory-backed
+// sources such as LDAP or SSSD are not consulted.
+const userDatabaseSource = "passwd-file"
+
 // getGroupMembers returns all members of a group given its GID by parsing /etc/group
 // and /etc/passwd to find users with this GID as their primary group
 // This is a stateless function - caching is handled by the GroupMembership struct

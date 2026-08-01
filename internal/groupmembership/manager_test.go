@@ -2,10 +2,12 @@ package groupmembership
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"os/user"
 	"runtime"
 	"strconv"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -953,4 +955,237 @@ func TestCanCurrentUserSafelyReadFile_EnumerationError(t *testing.T) {
 	assert.False(t, canRead)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)
+}
+
+// adoptionRecordMessage is the exact warning message emitted by
+// sudoUIDAdoptionReporter.report (architecture document §4.3).
+const adoptionRecordMessage = "Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment"
+
+// TestSudoUIDAdoptionReporter_Report verifies that report emits exactly one
+// warning with the message and the five attributes defined in the
+// architecture document (§4.3), using distinct real and permission check
+// UIDs so an argument swap is detected.
+func TestSudoUIDAdoptionReporter_Report(t *testing.T) {
+	t.Parallel()
+
+	handler := newLogCaptureHandler(nil)
+	logger := slog.New(handler)
+
+	var reporter sudoUIDAdoptionReporter
+	reporter.report(logger, SudoUIDAware, 0, 1000)
+
+	records := handler.Records()
+	require.Len(t, records, 1)
+	rec := records[0]
+
+	assert.Equal(t, slog.LevelWarn, rec.level)
+	assert.Equal(t, adoptionRecordMessage, rec.message)
+	assert.Equal(t, map[string]any{
+		"permission_check_uid":        int64(1000),
+		"real_uid":                    int64(0),
+		"source_env_var":              sudoUIDEnvVar,
+		"permission_check_uid_policy": SudoUIDAware.String(),
+		"user_database_source":        userDatabaseSource,
+	}, rec.attributes)
+}
+
+// TestSudoUIDAdoptionReporter_ReportsOnlyOnce verifies that a single
+// reporter instance emits at most one record across repeated calls.
+func TestSudoUIDAdoptionReporter_ReportsOnlyOnce(t *testing.T) {
+	t.Parallel()
+
+	handler := newLogCaptureHandler(nil)
+	logger := slog.New(handler)
+
+	var reporter sudoUIDAdoptionReporter
+	for range 3 {
+		reporter.report(logger, SudoUIDAware, 0, 1000)
+	}
+
+	assert.Len(t, handler.Records(), 1)
+}
+
+// TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently verifies that the
+// once-per-lifetime guarantee holds when report is called from many
+// goroutines at once.
+func TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently(t *testing.T) {
+	t.Parallel()
+
+	handler := newLogCaptureHandler(nil)
+	logger := slog.New(handler)
+
+	var reporter sudoUIDAdoptionReporter
+	var wg sync.WaitGroup
+	wg.Add(50)
+	for range 50 {
+		go func() {
+			defer wg.Done()
+			reporter.report(logger, SudoUIDAware, 0, 1000)
+		}()
+	}
+	wg.Wait()
+
+	assert.Len(t, handler.Records(), 1)
+}
+
+// TestSudoUIDExistenceMemo_ReusesConfirmation verifies that a confirmed UID
+// is not re-queried.
+func TestSudoUIDExistenceMemo_ReusesConfirmation(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	memo := sudoUIDExistenceMemo{confirmed: make(map[int]struct{})}
+	lookup := func(int) error {
+		calls++
+		return nil
+	}
+
+	for range 3 {
+		require.NoError(t, memo.verify(1000, lookup))
+	}
+
+	assert.Equal(t, 1, calls)
+}
+
+// TestSudoUIDExistenceMemo_DoesNotRememberFailures verifies that failed
+// lookups are not remembered: each failure re-queries, and only a success
+// stops the memo from querying again.
+func TestSudoUIDExistenceMemo_DoesNotRememberFailures(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	sentinelErr := errors.New("lookup failed")
+	memo := sudoUIDExistenceMemo{confirmed: make(map[int]struct{})}
+	lookup := func(int) error {
+		calls++
+		if calls <= 2 {
+			return sentinelErr
+		}
+		return nil
+	}
+
+	// First and second verifies fail; failures are not remembered.
+	require.ErrorIs(t, memo.verify(1000, lookup), sentinelErr)
+	require.ErrorIs(t, memo.verify(1000, lookup), sentinelErr)
+	// Third verify succeeds and records the confirmation.
+	require.NoError(t, memo.verify(1000, lookup))
+	// Fourth verify hits the memo and does not call lookup again.
+	require.NoError(t, memo.verify(1000, lookup))
+
+	assert.Equal(t, 3, calls)
+}
+
+// TestSudoUIDExistenceMemo_Concurrent verifies that the memo is safe for
+// concurrent use and that results settle to the documented behavior:
+// confirmed UIDs are not re-queried, while failed UIDs are re-queried on
+// every verify.
+func TestSudoUIDExistenceMemo_Concurrent(t *testing.T) {
+	t.Parallel()
+
+	const (
+		existingUID = 1000
+		missingUID  = 2000
+	)
+
+	var lookupMutex sync.Mutex
+	lookupCounts := make(map[int]int)
+	lookup := func(uid int) error {
+		lookupMutex.Lock()
+		lookupCounts[uid]++
+		lookupMutex.Unlock()
+		if uid == missingUID {
+			return errors.New("no such user")
+		}
+		return nil
+	}
+
+	memo := sudoUIDExistenceMemo{confirmed: make(map[int]struct{})}
+	var wg sync.WaitGroup
+	wg.Add(50)
+	for i := range 50 {
+		go func(i int) {
+			defer wg.Done()
+			uid := existingUID
+			if i%2 == 1 {
+				uid = missingUID
+			}
+			_ = memo.verify(uid, lookup)
+		}(i)
+	}
+	wg.Wait()
+
+	lookupMutex.Lock()
+	existingCalls := lookupCounts[existingUID]
+	missingCalls := lookupCounts[missingUID]
+	lookupMutex.Unlock()
+
+	// Only the first confirming verify touches the user database. This is
+	// exactly 1 because verify holds the memo's lock across lookup, which
+	// single-flights the first query; relaxing that would make this 1 or
+	// more without breaking the memo's documented contract.
+	assert.Equal(t, 1, existingCalls)
+	// Failed lookups are never remembered, so every verify re-queries.
+	assert.Equal(t, 25, missingCalls)
+
+	// After the goroutines join, a confirmed UID returns nil without a
+	// re-query, while a missing UID re-queries and still fails.
+	assert.NoError(t, memo.verify(existingUID, lookup))
+	assert.Error(t, memo.verify(missingUID, lookup))
+
+	lookupMutex.Lock()
+	assert.Equal(t, 1, lookupCounts[existingUID])
+	assert.Equal(t, 26, lookupCounts[missingUID])
+	lookupMutex.Unlock()
+}
+
+// TestProcessSudoUIDAdoptionReporterIsProcessWide documents the
+// once-per-process contract of the package-level reporter instance. It is
+// the single instance production binds into the reportAdoption dependency so
+// that the adoption record is emitted at most once per process. Tests must
+// not report through it: its once-per-process flag would make test results
+// depend on execution order and -count, so tests exercise the once-only
+// guarantee with freshly created instances instead (see
+// TestSudoUIDAdoptionReporter_Report).
+//
+// The instance has no production consumer until step 2-2 binds it, so this
+// test exists to keep the linter's unused check from flagging the
+// declaration in the meantime. It asserts that the fresh package instance
+// has not yet reported, which is the state every consumer depends on; it
+// deliberately does not call report, for the reason above.
+func TestProcessSudoUIDAdoptionReporterIsProcessWide(t *testing.T) {
+	t.Parallel()
+
+	assert.False(t, processSudoUIDAdoptionReporter.reported.Load(),
+		"the process-wide reporter must not be reported through by tests")
+}
+
+// TestSudoUIDExistenceErrorMessages pins the exact messages and mutual
+// distinctness of the two sentinel errors introduced for the existence
+// check. The user-facing documentation quotes these strings verbatim, so an
+// accidental change must be caught at the point the errors are defined.
+func TestSudoUIDExistenceErrorMessages(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "SUDO_UID does not refer to an existing user", ErrSudoUIDUserNotFound.Error())
+	assert.Equal(t, "failed to verify that SUDO_UID refers to an existing user", ErrSudoUIDUserLookupFailed.Error())
+	assert.False(t, errors.Is(ErrSudoUIDUserNotFound, ErrSudoUIDUserLookupFailed))
+	assert.False(t, errors.Is(ErrSudoUIDUserLookupFailed, ErrSudoUIDUserNotFound))
+}
+
+// TestNewInitializesSudoUIDExistenceMemo verifies that New initializes the
+// memo's confirmed map, so that using the memo on a freshly constructed
+// instance does not panic on a nil map write.
+func TestNewInitializesSudoUIDExistenceMemo(t *testing.T) {
+	t.Parallel()
+
+	gm := New()
+	var calls int
+	for range 2 {
+		require.NoError(t, gm.sudoUIDExistence.verify(1000, func(int) error {
+			calls++
+			return nil
+		}))
+	}
+
+	assert.Equal(t, 1, calls)
 }

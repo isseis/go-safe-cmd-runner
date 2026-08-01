@@ -223,6 +223,11 @@ import (
 // This limit prevents unsafe memory access from malformed C return values.
 const maxGroupMembers = 65536
 
+// userDatabaseSource names the user database this build consults for user
+// lookups. Under cgo, os/user resolves users through NSS, which may back
+// onto /etc/passwd, LDAP, SSSD, and similar backends.
+const userDatabaseSource = "nss"
+
 // ErrInvalidGroupMemberCount is returned when a negative group member count is
 // received from C, which indicates a malformed or corrupted return value.
 var ErrInvalidGroupMemberCount = errors.New("invalid group member count from C")

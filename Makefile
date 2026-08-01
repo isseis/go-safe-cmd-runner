@@ -137,8 +137,17 @@ setuid: all
 	$(SUDOCMD) $(CHOWN) root:$(ROOT_GROUP) $(BINARY_RUNNER)
 	$(SUDOCMD) $(CHMOD) u+s $(BINARY_RUNNER)
 
+# Runs twice: the default CGO_ENABLED=1 file set, then CGO_ENABLED=0, so that
+# `//go:build !cgo` files are linted too. On macOS, only CGO_ENABLED=1 is
+# supported (group membership requires CGO/Directory Services), matching
+# unit-test.
 lint:
 	$(GOLINT)
+	@if [ "$$(uname -s)" != "Darwin" ]; then \
+		CGO_ENABLED=0 $(GOLINT); \
+	else \
+		echo "macOS: skipping CGO_ENABLED=0 lint run (not supported on macOS)"; \
+	fi
 
 # Build production binaries only
 build: $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)

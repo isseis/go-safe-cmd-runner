@@ -14,6 +14,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestUserDatabaseSource fixes the value of userDatabaseSource so that an
+// accidental rewrite is caught. It does not prove which user database this
+// build actually consults; that is determined by the build toolchain.
+func TestUserDatabaseSource(t *testing.T) {
+	assert.Equal(t, "passwd-file", userDatabaseSource)
+}
+
 // TestParseGroupLine is specific to the no-CGO implementation
 func TestParseGroupLine(t *testing.T) {
 	tests := []struct {
@@ -342,7 +349,7 @@ nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
 // TestFileReadingErrors tests error handling for file operations
 func TestFileReadingErrors(t *testing.T) {
 	t.Run("group file not found", func(t *testing.T) {
-		testFindGroupByGID := func(filepath string, gid uint32) (*groupEntry, error) {
+		testFindGroupByGID := func(filepath string, _ uint32) (*groupEntry, error) {
 			file, err := os.Open(filepath)
 			if err != nil {
 				return nil, err
@@ -357,7 +364,7 @@ func TestFileReadingErrors(t *testing.T) {
 	})
 
 	t.Run("passwd file not found", func(t *testing.T) {
-		testFindUsersWithPrimaryGID := func(filepath string, gid uint32) ([]string, error) {
+		testFindUsersWithPrimaryGID := func(filepath string, _ uint32) ([]string, error) {
 			file, err := os.Open(filepath)
 			if err != nil {
 				return nil, err
