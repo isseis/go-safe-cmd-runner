@@ -399,8 +399,8 @@
   - `### E` 節: 実在確認 → existence check
   - `### S` 節: センチネルエラー → sentinel error
   - `### U` 節: ユーザーデータベース種別 → user database source
-- [ ] 既存の `基準UID` / `基準UID決定方針`（47-48行目、`### B` 節）と同じ3列構成（`| 日本語 | English | 備考 |`）に揃え、`備考` セルの末尾に `（Task 0161）` を付す。表のヘッダ行（17行目）は変更しない
-- [ ] 「更新履歴」表の末尾に `| 2026-07-30 | SUDO_UID 実在確認関連の用語を追加 (existence check, adoption, adoption record, sentinel error, user database source) |` を追加する
+- [ ] 既存の `基準UID` / `基準UID決定方針`（47-48行目、`### B` 節）と同じ3列構成（`| 日本語 | English | 備考 |`）に揃え、`備考` セルの末尾に `（Task 0161）` を付す。表のヘッダ行（`| 日本語 | English | 備考 |`）は変更しない
+- [ ] 「更新履歴」表の末尾に `| YYYY-MM-DD | SUDO_UID 実在確認関連の用語を追加 (existence check, adoption, adoption record, sentinel error, user database source) |` を追加する（`YYYY-MM-DD` は実際に追加した日付に置き換える）
 
 **完了条件**: 8 章の AC-19 の `static` チェックが期待どおりの結果になること。ステップ4-3 と 4-5 の `/mktrans` 実行より前に完了させる。
 
