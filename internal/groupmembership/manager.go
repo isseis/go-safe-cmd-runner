@@ -472,6 +472,13 @@ type sudoUIDAdoptionReporter struct {
 // report emits the adoption record to logger unless one has already been
 // emitted. It has no return value: a failure to record must not change the
 // read-safety verdict.
+//
+// The state transition happens before the record is emitted, so a caller that
+// loses the compare-and-swap never reaches logger.Warn and the once-per-process
+// limit holds without a lock around the emission. The consequence is that a
+// handler failure consumes the single record for the lifetime of the process.
+// Emitting first would not avoid that: slog.Logger.Warn discards the handler's
+// error, so a failure cannot be detected and retried in any ordering.
 func (r *sudoUIDAdoptionReporter) report(logger *slog.Logger, policy PermissionCheckUIDPolicy, realUID, permissionCheckUID int) {
 	if !r.reported.CompareAndSwap(false, true) {
 		return

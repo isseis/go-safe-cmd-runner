@@ -279,7 +279,9 @@
   `fmt.Errorf("SUDO_UID %s does not exist in the user database (user_database_source=%s); check whether SUDO_UID is a stale value inherited from the environment, then re-run from an interactive sudo session: %w: %w", sudoUID, userDatabaseSource, ErrSudoUIDUserNotFound, err)`
 - [x] それ以外のエラーのとき、次の書式でエラーを返す。
   `fmt.Errorf("could not verify SUDO_UID %s against the user database (user_database_source=%s); check the state of the user database, then re-run: %w: %w", sudoUID, userDatabaseSource, ErrSudoUIDUserLookupFailed, err)`
-- [x] `sudoUID`（環境変数の生の文字列）だけを出力し、`parsedUID` は出力しない。両者は同じ値を表すため重複になる
+- [x] `sudoUID`（環境変数の生の文字列）だけを出力し、`parsedUID` は出力しない
+
+> **02 §4.3 との差異**: 02 §4.3 は当初、メッセージの構成要素として「`SUDO_UID` の値、対象 UID、ユーザーデータベース種別」の3つを挙げていた。本計画は対象 UID を外し、生の文字列のみとする。運用者が突き合わせる対象は環境変数に設定されている文字列そのものであり、変換後の値を併記しても突き合わせの助けにならないためである。02 §4.3 は同じ内容へ改訂済みである（02 の Document Status の Comments を参照）。なお両者は同じ値を指すが表記は一致しないことがあり（`SUDO_UID="01000"`）、生の文字列が現れる点はステップ3-4 の `TestResolvePermissionCheckUID_ErrorMessageContent` がこの入力で固定する。
 - [x] いずれのエラーでも基準UIDは返さず `0` と非 nil エラーを返す
 
 **完了条件**: `go build ./...` が通り、`make lint` が新たな指摘を出さないこと。挙動の検証はステップ3-4 で行う。
@@ -377,11 +379,11 @@
 
 ### PR-3 作成ポイント: existence check and adoption record
 
-**対象ステップ**: 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7 / 4-2（フェーズ4から前倒し。ステップ4-2 の差異注記を参照）
+**対象ステップ**: 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7 / 4-2 / 4-4（4-2 と 4-4 はフェーズ4から前倒し。各ステップの差異注記を参照）
 
 **推奨タイトル**: `feat(0161)!: verify SUDO_UID exists before adopting it`（本文に `BREAKING CHANGE:` フッタを置き、02 §5.3 の4環境を挙げる）
 
-**レビュー観点**: 実在確認の失敗時に基準UIDを返さず `0` と非 nil エラーを返すフェイルクローズドが両経路（実在しない／確認処理が失敗）で固定されているか / 2つのセンチネルが `errors.Is` で相互に区別でき、元のエラーを `%w` で保持しているか / 記録が「実 UID 0・`SUDO_UID` が実 UID と異なる有効値・実在確認成功」の場合に限られ、記録の失敗が読み取り判定を変えないか / ステップ3-7 のスキップ判定が `getPermissionCheckUID()` の呼び出し **前** に置かれ、root 環境で無条件アサーションが残っていないか / ステップ3-6 が複製した `reportAdoption` の式が、マージ済みの `getPermissionCheckUID`（PR-2）の式と字句どおり一致しているか（レポータ実体だけが異なる）
+**レビュー観点**: 実在確認の失敗時に基準UIDを返さず `0` と非 nil エラーを返すフェイルクローズドが両経路（実在しない／確認処理が失敗）で固定されているか / 2つのセンチネルが `errors.Is` で相互に区別でき、元のエラーを `%w` で保持しているか / 記録が「実 UID 0・`SUDO_UID` が実 UID と異なる有効値・実在確認成功」の場合に限られ、記録の失敗が読み取り判定を変えないか / ステップ3-7 のスキップ判定が `getPermissionCheckUID()` の呼び出し **前** に置かれ、root 環境で無条件アサーションが残っていないか / ステップ3-6 が複製した `reportAdoption` の式が、マージ済みの `getPermissionCheckUID`（PR-2）の式と字句どおり一致しているか（レポータ実体だけが異なる）/ 前倒しした2ステップについて、`policy.go` の書き換え後コメントが実装（ステップ3-1、3-2）の挙動と一致するか、CHANGELOG が 02 §5.3 の影響環境と対処を落とさず記載しているか
 
 **レビュー順序**: この PR は本番コードの差分が `manager.go` の約30行である一方、テストの追加が2ファイルにまたがり12本に及ぶ。セキュリティ上の差分を見失わないよう、(1) ステップ3-1・3-2 の `manager.go` の変更、(2) ステップ3-7 の既存テストの書き換え、(3) 残りのテスト追加、の順に読む。ステップ3-5 と 3-6 のテストだけを後続 PR へ切り出す案は採らない。ステップ3-5 はフェイルクローズドの保証そのものを固定するテストであり、遅らせると PR-3 のマージからその PR までの間、保証が検証されない期間が生じるためである。
 
@@ -444,8 +446,10 @@
 
 **変更ファイル**: `CHANGELOG.md`
 
-- [ ] `## [Unreleased]` の `### Changed` に `#### record / verify: SUDO_UID must refer to an existing user` を追加する。内容は 02 §5.3 の影響環境の表と対処、および採用時に警告が1回記録されるようになる点とする
-- [ ] 既存の2項目（`sudo runner`: base UID …、`Permission checks no longer require a passwd entry …`）は変更しない
+> **本計画内での差異**: 本ステップはフェーズ4に置いていたが、PR-3 で実施する。PR-3 は、これまで成功していた `sudo record` / `sudo verify` を4つの環境で失敗させる（02 §5.3）。CHANGELOG をフェーズ4に残すと、PR-3 のマージから PR-4 のマージまでの間、挙動変更が記載のないまま `main` に載る期間が生じる。CHANGELOG は挙動変更そのものを述べる記述であり、用語集・コメント・開発者向け文書のように他の文書更新とまとめてレビューする利得もない。
+
+- [x] `## [Unreleased]` の `### Changed` に `#### record / verify: SUDO_UID must refer to an existing user` を追加する。内容は 02 §5.3 の影響環境の表と対処、および採用時に警告が1回記録されるようになる点とする
+- [x] 既存の2項目（`sudo runner`: base UID …、`Permission checks no longer require a passwd entry …`）は変更しない
 
 **完了条件**: `rg -n "SUDO_UID must refer to an existing user" CHANGELOG.md` が1件一致すること。
 
@@ -453,11 +457,11 @@
 
 ### PR-4 作成ポイント: glossary, code comment, developer doc and changelog
 
-**対象ステップ**: 4-1 / 4-2 / 4-3 / 4-4
+**対象ステップ**: 4-1 / 4-3（4-2 と 4-4 は PR-3 へ前倒し済み）
 
 **推奨タイトル**: `docs(0161): update SUDO_UID docs and SudoUIDAware comment`
 
-**レビュー観点**: 用語集の5語が 02 の用語節と一致し英訳の頭文字の節へ入っているか / `policy.go` の書き換え後コメントが実装（ステップ3-1、3-2）の挙動と一致するか / `security-architecture` の日英が同じ規則を述べ、英語版が用語集の訳語を使っているか / CHANGELOG が 02 §5.3 の影響環境と対処を落とさず記載しているか
+**レビュー観点**: 用語集の5語が 02 の用語節と一致し英訳の頭文字の節へ入っているか / `security-architecture` の日英が同じ規則を述べ、英語版が用語集の訳語を使っているか（`policy.go` のコメントと CHANGELOG は PR-3 のレビュー対象へ移った）
 
 **実装モデル要件**: standard
 
