@@ -94,8 +94,11 @@ func (h *captureHandler) Handle(_ context.Context, r slog.Record) error {
 	return h.handleErr
 }
 
-// WithAttrs and WithGroup return the same handler so that chained calls
-// behave like a no-op; tests do not exercise either path.
+// WithAttrs and WithGroup return the same handler without recording the
+// chained attrs or group. The tests in this package do not use chained
+// loggers, so the simplification is safe here; if a future test starts
+// using With(...), the captured records will silently drop the chained
+// attributes, and the test author must replace the handler accordingly.
 func (h *captureHandler) WithAttrs(_ []slog.Attr) slog.Handler {
 	return h
 }

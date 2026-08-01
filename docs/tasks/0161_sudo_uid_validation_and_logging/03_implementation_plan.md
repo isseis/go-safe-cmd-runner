@@ -127,7 +127,7 @@
 
 **完了条件**: ステップ1-5 のテストが通る。
 
-> **02 §3.3 との差異**: 02 §3.3 は `report` のシグネチャを `(logger *slog.Logger, policy PermissionCheckUIDPolicy, realUID, permissionCheckUID int)` と定める。本実装では `policy` 引数を省き、レコーダが出力する `permission_check_uid_policy` 属性は `SudoUIDAware.String()` を直接用いる。理由は2つ。(1) `sudoUIDAdoptionReporter` の責務は SudoUIDAware 経路の採用事実だけであり、他のポリシーがこの型から呼ばれる設計ではない（呼び出し側 `getPermissionCheckUID` が SudoUIDAware 分岐内に閉じる）ため、引数は技術的に冗長である。(2) `unparam` リンタが「policy always receives SudoUIDAware」を検出して本タスクの導入する構文ではないが、リント警告を増やす。本差分は §1.2「YAGNI」の原則と整合する。
+> **02 §3.3 との差異**: 02 §3.3 は `report` のシグネチャを `(logger *slog.Logger, policy PermissionCheckUIDPolicy, realUID, permissionCheckUID int)` と定める。本実装では `policy` 引数を省き、レコーダが出力する `permission_check_uid_policy` 属性は `SudoUIDAware.String()` を直接用いる。理由は1点。`sudoUIDAdoptionReporter` の責務は SudoUIDAware 経路の採用事実だけであり、他のポリシーがこの型から呼ばれる設計ではない（呼び出し側 `getPermissionCheckUID` が SudoUIDAware 分岐内に閉じる）ため、引数は技術的に冗長であり、`unparam` リンタが `policy always receives SudoUIDAware` を報告する。本差分は §1.2「YAGNI」の原則と整合する。
 
 #### ステップ1-4: 実在確認のメモ
 

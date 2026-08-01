@@ -546,25 +546,14 @@ type sudoUIDExistenceMemo struct {
 }
 
 // verify returns nil if uid has already been confirmed; otherwise it calls
-// lookup and, on success, records uid as confirmed. A nil lookup is
-// treated as a successful confirmation, which is convenient for tests
-// that do not exercise the user database.
+// lookup and, on success, records uid as confirmed. Failed lookups are not
+// memoized so that a transient failure does not lock the memo into
+// re-reporting the same error.
 func (m *sudoUIDExistenceMemo) verify(uid int, lookup func(uid int) error) error {
 	m.mu.Lock()
 	_, ok := m.confirmed[uid]
 	m.mu.Unlock()
 	if ok {
-		return nil
-	}
-	if lookup == nil {
-		// Nothing to query, so the caller has implicitly confirmed
-		// the UID. Record the confirmation to match the
-		// "succeed-once" contract.
-		m.mu.Lock()
-		if _, already := m.confirmed[uid]; !already {
-			m.confirmed[uid] = struct{}{}
-		}
-		m.mu.Unlock()
 		return nil
 	}
 	if err := lookup(uid); err != nil {
@@ -588,12 +577,10 @@ type sudoUIDAdoptionReporter struct {
 
 // report emits the adoption record to logger unless one has already been
 // emitted. It has no return value: a failure to record must not change the
-// read-safety verdict. A nil logger is treated as a no-op so that tests and
-// callers that do not care about the record do not have to construct one.
+// read-safety verdict. The logger must be non-nil; callers that may not
+// have a logger to write to should pass slog.Default() (the production
+// path binds slog.Default() at the call site, not in this method).
 func (r *sudoUIDAdoptionReporter) report(logger *slog.Logger, realUID, permissionCheckUID int) {
-	if logger == nil {
-		return
-	}
 	if !r.reported.CompareAndSwap(false, true) {
 		return
 	}
