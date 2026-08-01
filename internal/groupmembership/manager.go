@@ -553,6 +553,8 @@ func (r *sudoUIDAdoptionReporter) report(logger *slog.Logger, policy PermissionC
 	if !r.reported.CompareAndSwap(false, true) {
 		return
 	}
+	// TODO(Phase 3): Consider whether to propagate context from caller
+	// (e.g., from CanCurrentUserSafelyReadFile) rather than using context.TODO().
 	logger.LogAttrs(context.TODO(), slog.LevelWarn,
 		"Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment",
 		slog.Int("permission_check_uid", permissionCheckUID),
