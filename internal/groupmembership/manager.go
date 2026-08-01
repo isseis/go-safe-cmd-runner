@@ -635,9 +635,9 @@ func resolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, dep
 	// lookup. Both fail closed; the distinction is diagnostic only.
 	if err := deps.verifyUserExists(parsedUID); err != nil {
 		if _, ok := errors.AsType[user.UnknownUserIdError](err); ok {
-			return 0, fmt.Errorf("SUDO_UID %s does not exist in the user database (user_database_source=%s); check whether SUDO_UID is a stale value inherited from the environment, then re-run from an interactive sudo session: %w: %w", sudoUID, userDatabaseSource, ErrSudoUIDUserNotFound, err)
+			return 0, fmt.Errorf("SUDO_UID %s does not exist in the user database (user_database_source=%s); check whether SUDO_UID is a stale value inherited from the environment, then re-run from an interactive sudo session: %w: %w", echoSudoUID(sudoUID), userDatabaseSource, ErrSudoUIDUserNotFound, err)
 		}
-		return 0, fmt.Errorf("could not verify SUDO_UID %s against the user database (user_database_source=%s); check the state of the user database, then re-run: %w: %w", sudoUID, userDatabaseSource, ErrSudoUIDUserLookupFailed, err)
+		return 0, fmt.Errorf("could not verify SUDO_UID %s against the user database (user_database_source=%s); check the state of the user database, then re-run: %w: %w", echoSudoUID(sudoUID), userDatabaseSource, ErrSudoUIDUserLookupFailed, err)
 	}
 	if parsedUID != realUID {
 		// The adoption record is observational only; it is a bare statement
@@ -646,6 +646,24 @@ func resolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, dep
 		deps.reportAdoption(policy, realUID, parsedUID)
 	}
 	return parsedUID, nil
+}
+
+// maxEchoedSudoUIDLen bounds the length of the raw SUDO_UID string echoed
+// into an error message. A value that passes parseSudoUID is at most 10
+// digits, so anything longer is padding (leading zeros, which strconv.Atoi
+// accepts without limit) that carries no diagnostic value. The bound matters
+// because the existence-check errors are produced once per file processed,
+// and the value they echo comes from the environment.
+const maxEchoedSudoUIDLen = 16
+
+// echoSudoUID returns raw for display in an error message, truncated if it is
+// longer than maxEchoedSudoUIDLen. Truncation is marked so that the displayed
+// value is never mistaken for the value that was actually set.
+func echoSudoUID(raw string) string {
+	if len(raw) <= maxEchoedSudoUIDLen {
+		return raw
+	}
+	return raw[:maxEchoedSudoUIDLen] + "...(truncated)"
 }
 
 // parseSudoUID parses and validates a SUDO_UID string value.

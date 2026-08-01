@@ -356,6 +356,35 @@ func TestResolvePermissionCheckUID_ErrorMessageContent(t *testing.T) {
 		assert.Contains(t, err.Error(), "user_database_source="+userDatabaseSource)
 		assert.Contains(t, err.Error(), "check the state of the user database")
 	})
+
+	// A SUDO_UID padded with leading zeros parses to a valid UID at any
+	// length, so without truncation the environment would decide the size of
+	// an error message that is produced once per file processed. Both error
+	// paths are exercised, since each has its own call site to miss.
+	t.Run("over-long value is truncated on both paths", func(t *testing.T) {
+		padded := strings.Repeat("0", 1000) + "1000"
+
+		for name, verifyErr := range map[string]error{
+			"user not found": user.UnknownUserIdError(1000),
+			"lookup failed":  errors.New("injected lookup failure"),
+		} {
+			t.Run(name, func(t *testing.T) {
+				deps := newPermissionCheckUIDDeps(&permissionCheckUIDDepsRecorder{})
+				deps.getenv = func(string) string { return padded }
+				deps.verifyUserExists = func(int) error { return verifyErr }
+
+				_, err := resolvePermissionCheckUID(SudoUIDAware, 0, deps)
+
+				require.Error(t, err)
+				assert.NotContains(t, err.Error(), padded)
+				assert.Contains(t, err.Error(), padded[:maxEchoedSudoUIDLen]+"...(truncated)")
+				// The message stays a diagnostic line rather than growing
+				// with the environment. The bound is generous so that it
+				// tracks the truncation rule, not the exact wording.
+				assert.Less(t, len(err.Error()), 512)
+			})
+		}
+	})
 }
 
 // TestResolvePermissionCheckUID_SentinelErrorsAreDistinct verifies that the

@@ -280,6 +280,7 @@
 - [x] それ以外のエラーのとき、次の書式でエラーを返す。
   `fmt.Errorf("could not verify SUDO_UID %s against the user database (user_database_source=%s); check the state of the user database, then re-run: %w: %w", sudoUID, userDatabaseSource, ErrSudoUIDUserLookupFailed, err)`
 - [x] `sudoUID`（環境変数の生の文字列）だけを出力し、`parsedUID` は出力しない
+- [x] 生の文字列は `echoSudoUID` を通して出力し、`maxEchoedSudoUIDLen`（16 文字）を超える場合は切り詰める（02 §4.3）。両エラーの2箇所とも通す
 
 > **02 §4.3 との差異**: 02 §4.3 は当初、メッセージの構成要素として「`SUDO_UID` の値、対象 UID、ユーザーデータベース種別」の3つを挙げていた。本計画は対象 UID を外し、生の文字列のみとする。運用者が突き合わせる対象は環境変数に設定されている文字列そのものであり、変換後の値を併記しても突き合わせの助けにならないためである。02 §4.3 は同じ内容へ改訂済みである（02 の Document Status の Comments を参照）。なお両者は同じ値を指すが表記は一致しないことがあり（`SUDO_UID="01000"`）、生の文字列が現れる点はステップ3-4 の `TestResolvePermissionCheckUID_ErrorMessageContent` がこの入力で固定する。
 - [x] いずれのエラーでも基準UIDは返さず `0` と非 nil エラーを返す
@@ -321,6 +322,7 @@
 - [x] `TestResolvePermissionCheckUID_UserNotFound` を追加する。`verifyUserExists` が `user.UnknownUserIdError(1000)` を返す場合に、基準UIDが返らず、返るエラーが `ErrSudoUIDUserNotFound` と `user.UnknownUserIdError(1000)` の両方に `errors.Is` で一致することを検証する（後者は元の失敗原因を `%w` で保持していることの確認）
 - [x] `TestResolvePermissionCheckUID_UserLookupFailed` を追加する。`verifyUserExists` が独自のエラー値を返す場合に、`ErrSudoUIDUserLookupFailed` と、渡したエラー値そのものの両方に `errors.Is` で一致することを検証する
 - [x] `TestResolvePermissionCheckUID_ErrorMessageContent` を追加する。実在しない場合と確認処理が失敗した場合の両方について、`err.Error()` が (a) `SUDO_UID` の生の文字列、(b) `user_database_source=` と定数 `userDatabaseSource` の値、(c) 対処を示す語句（それぞれ `re-run from an interactive sudo session` と `check the state of the user database`）の3つを含むことを検証する。02 §4.3 が求めるエラーメッセージの構成要素を固定する
+- [x] 同テストに、先頭を `0` で埋めた長い `SUDO_UID`（例: `strings.Repeat("0", 1000) + "1000"`）を入力とするサブテストを追加する。両エラー経路について、生の文字列がそのままは現れず切り詰めた形で現れること、およびメッセージ全体が一定長に収まることを検証する（02 §4.3 の切り詰め規則。経路ごとに書式指定が別なので両方を通す）
 - [x] `TestResolvePermissionCheckUID_SentinelErrorsAreDistinct` を追加する。`ErrSudoUIDUserNotFound` を含むエラーが `ErrSudoUIDOutOfRange` / `strconv.ErrSyntax` / `ErrSudoUIDUserLookupFailed` のいずれにも `errors.Is` で一致しないこと、および逆方向（`ErrSudoUIDUserLookupFailed` を含むエラーが `ErrSudoUIDUserNotFound` に一致しないこと）を検証する
 - [x] `TestResolvePermissionCheckUID_ExistenceCheckNotInvoked` を追加する。次の2条件で `verifyUserExists` の呼び出し回数が 0 であることを検証する。(a) `SUDO_UID` が数値として不正（`"abc"` / `"-1"` / `"4294967296"`）、(b) 実 UID が 0 以外。いずれも 0160 と同じ結果（(a) は同じエラー、(b) は実 UID）が返ることを併せて検証する
 - [x] `TestResolvePermissionCheckUID_ExistenceCheckSkippedUnderRealUIDOnly` を追加する。実 UID 0 かつ `SUDO_UID` が有効値のとき、`RealUIDOnly` では `verifyUserExists` と `reportAdoption` の呼び出し回数がいずれも 0 であり、同条件の `SudoUIDAware` では `verifyUserExists` が 1 回、`reportAdoption` が 1 回呼ばれることを対比して検証する（02 §7.1 の対比要件）
