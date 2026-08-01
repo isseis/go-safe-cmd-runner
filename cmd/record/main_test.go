@@ -414,9 +414,10 @@ func TestRunTOCTOU_ViolationLogsRemediationWithActualPath(t *testing.T) {
 // TestRecordDeclaresSudoUIDAwarePolicy verifies that this binary's init()
 // declared SudoUIDAware as the process-wide permission check UID policy, and
 // that under that policy a valid SUDO_UID is adopted when the real UID is 0,
-// matching the resolvePermissionCheckUID behavior for a valid, existing user.
-// This test only reads the process-wide default policy; it does not modify
-// it, so it must not run in parallel with tests that do.
+// matching the resolvePermissionCheckUID behavior for a valid SUDO_UID; the
+// existence-check seam is wired in a later phase of this task. This test only
+// reads the process-wide default policy; it does not modify it, so it must
+// not run in parallel with tests that do.
 func TestRecordDeclaresSudoUIDAwarePolicy(t *testing.T) {
 	require.Equal(t, groupmembership.SudoUIDAware, groupmembership.ProcessPermissionCheckUIDPolicy())
 

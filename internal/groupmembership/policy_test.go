@@ -222,6 +222,9 @@ func TestResolvePermissionCheckUID_SudoUIDAware(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
+				// The recorder's counters are not asserted here yet: the
+				// SudoUIDAware existence-check and adoption-record rows are
+				// added in phase 3, where the per-row expectations appear.
 				deps := newPermissionCheckUIDDeps(&permissionCheckUIDDepsRecorder{})
 				deps.getenv = func(string) string { return tt.sudoUID }
 
@@ -241,6 +244,8 @@ func TestResolvePermissionCheckUID_SudoUIDAware(t *testing.T) {
 	t.Run("realUID non-zero always returns realUID without error", func(t *testing.T) {
 		for _, sudoUID := range []string{"", "2000", "abc", "-1"} {
 			t.Run(fmt.Sprintf("sudoUID=%q", sudoUID), func(t *testing.T) {
+				// The recorder is not asserted here either; phase 3 adds the
+				// no-invocation expectations for the non-zero real UID row.
 				deps := newPermissionCheckUIDDeps(&permissionCheckUIDDepsRecorder{})
 				deps.getenv = func(string) string { return sudoUID }
 
@@ -250,6 +255,28 @@ func TestResolvePermissionCheckUID_SudoUIDAware(t *testing.T) {
 				assert.Equal(t, 1000, uid)
 			})
 		}
+	})
+}
+
+// TestResolvePermissionCheckUID_PanicsOnNilDeps verifies that the exported
+// test wrapper fails fast with a panic when either of the two mandatory
+// dependency seams is nil, so that callers cannot silently fall back to a
+// nil-getenv or nil-verification resolution.
+func TestResolvePermissionCheckUID_PanicsOnNilDeps(t *testing.T) {
+	t.Run("nil Getenv", func(t *testing.T) {
+		assert.Panics(t, func() {
+			_, _ = ResolvePermissionCheckUID(SudoUIDAware, 0, PermissionCheckUIDDeps{
+				VerifyUserExists: func(int) error { return nil },
+			})
+		})
+	})
+
+	t.Run("nil VerifyUserExists", func(t *testing.T) {
+		assert.Panics(t, func() {
+			_, _ = ResolvePermissionCheckUID(SudoUIDAware, 0, PermissionCheckUIDDeps{
+				Getenv: func(string) string { return "1000" },
+			})
+		})
 	})
 }
 
@@ -293,7 +320,7 @@ func TestResolvePermissionCheckUID_EnvAccess(t *testing.T) {
 		_, err := resolvePermissionCheckUID(SudoUIDAware, 0, deps)
 
 		require.NoError(t, err)
-		assert.GreaterOrEqual(t, calls, 1)
+		assert.Equal(t, 1, calls)
 		for _, name := range names {
 			assert.Equal(t, "SUDO_UID", name)
 		}
