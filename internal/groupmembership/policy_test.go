@@ -159,7 +159,7 @@ type permissionCheckUIDDepsRecorder struct {
 // as unset, verifyUserExists always reports the user exists, and
 // reportAdoption only counts its calls. Callers replace the getenv field with
 // the value they want to resolve; the default is present so that a caller
-// that forgets to gets an unset SUDO_UID rather than a nil-function panic.
+// that forgets to get an unset SUDO_UID rather than a nil-function panic.
 // The recorder is shared with the returned deps and must be inspected after
 // the call.
 func newPermissionCheckUIDDeps(rec *permissionCheckUIDDepsRecorder) permissionCheckUIDDeps {
@@ -268,7 +268,7 @@ func TestResolvePermissionCheckUID_SudoUIDAware(t *testing.T) {
 // nil-getenv or nil-verification resolution.
 func TestResolvePermissionCheckUID_PanicsOnNilDeps(t *testing.T) {
 	t.Run("nil Getenv", func(t *testing.T) {
-		assert.Panics(t, func() {
+		assert.PanicsWithValue(t, "groupmembership: Getenv must not be nil", func() {
 			_, _ = ResolvePermissionCheckUID(SudoUIDAware, 0, PermissionCheckUIDDeps{
 				VerifyUserExists: func(int) error { return nil },
 			})
@@ -276,7 +276,7 @@ func TestResolvePermissionCheckUID_PanicsOnNilDeps(t *testing.T) {
 	})
 
 	t.Run("nil VerifyUserExists", func(t *testing.T) {
-		assert.Panics(t, func() {
+		assert.PanicsWithValue(t, "groupmembership: VerifyUserExists must not be nil", func() {
 			_, _ = ResolvePermissionCheckUID(SudoUIDAware, 0, PermissionCheckUIDDeps{
 				Getenv: func(string) string { return "1000" },
 			})
