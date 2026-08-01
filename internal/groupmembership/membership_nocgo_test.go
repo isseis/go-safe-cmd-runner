@@ -14,6 +14,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestUserDatabaseSource fixes the value of userDatabaseSource so that an
+// accidental rewrite is caught. It does not prove which user database this
+// build actually consults; that is determined by the build toolchain.
+func TestUserDatabaseSource(t *testing.T) {
+	assert.Equal(t, "passwd-file", userDatabaseSource)
+}
+
 // TestParseGroupLine is specific to the no-CGO implementation
 func TestParseGroupLine(t *testing.T) {
 	tests := []struct {

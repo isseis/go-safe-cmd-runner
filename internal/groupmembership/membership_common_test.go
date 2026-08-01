@@ -1,9 +1,13 @@
 package groupmembership
 
 import (
+	"context"
+	"log/slog"
 	"os"
 	"os/user"
+	"slices"
 	"strconv"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -12,6 +16,65 @@ import (
 )
 
 // Common test helper functions
+
+// logCaptureRecord holds one captured slog record: its level, its message,
+// and a map of attribute name to value.
+type logCaptureRecord struct {
+	level      slog.Level
+	message    string
+	attributes map[string]any
+}
+
+// logCaptureHandler is a slog.Handler that captures records for tests that
+// need to assert on log output. It records the level, message, and
+// attribute name-to-value map of each record, and is safe for concurrent
+// use. When failErr is non-nil, Handle returns it for every record instead
+// of capturing, allowing tests to exercise handler failure paths.
+type logCaptureHandler struct {
+	mu      sync.Mutex
+	records []logCaptureRecord
+	failErr error
+}
+
+// newLogCaptureHandler returns a handler that captures records. A non-nil
+// failErr makes Handle return it for every record.
+func newLogCaptureHandler(failErr error) *logCaptureHandler {
+	return &logCaptureHandler{failErr: failErr}
+}
+
+// Enabled implements slog.Handler.
+func (h *logCaptureHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+// Handle implements slog.Handler.
+func (h *logCaptureHandler) Handle(_ context.Context, r slog.Record) error {
+	if h.failErr != nil {
+		return h.failErr
+	}
+	attrs := make(map[string]any)
+	r.Attrs(func(a slog.Attr) bool {
+		attrs[a.Key] = a.Value.Any()
+		return true
+	})
+	record := logCaptureRecord{level: r.Level, message: r.Message, attributes: attrs}
+
+	h.mu.Lock()
+	h.records = append(h.records, record)
+	h.mu.Unlock()
+	return nil
+}
+
+// WithAttrs implements slog.Handler.
+func (h *logCaptureHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+
+// WithGroup implements slog.Handler.
+func (h *logCaptureHandler) WithGroup(string) slog.Handler { return h }
+
+// Records returns a copy of the records captured so far.
+func (h *logCaptureHandler) Records() []logCaptureRecord {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return slices.Clone(h.records)
+}
 
 // getCurrentUserGID returns the current user's primary group ID
 func getCurrentUserGID(t *testing.T) uint32 {
