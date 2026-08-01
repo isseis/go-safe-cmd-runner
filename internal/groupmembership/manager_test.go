@@ -1151,6 +1151,19 @@ func TestProcessSudoUIDAdoptionReporterIsProcessWide(t *testing.T) {
 	assert.IsType(t, &sudoUIDAdoptionReporter{}, &processSudoUIDAdoptionReporter)
 }
 
+// TestSudoUIDExistenceErrorMessages pins the exact messages and mutual
+// distinctness of the two sentinel errors introduced for the existence
+// check. The user-facing documentation quotes these strings verbatim, so an
+// accidental change must be caught at the point the errors are defined.
+func TestSudoUIDExistenceErrorMessages(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "SUDO_UID does not refer to an existing user", ErrSudoUIDUserNotFound.Error())
+	assert.Equal(t, "failed to verify that SUDO_UID refers to an existing user", ErrSudoUIDUserLookupFailed.Error())
+	assert.False(t, errors.Is(ErrSudoUIDUserNotFound, ErrSudoUIDUserLookupFailed))
+	assert.False(t, errors.Is(ErrSudoUIDUserLookupFailed, ErrSudoUIDUserNotFound))
+}
+
 // TestNewInitializesSudoUIDExistenceMemo verifies that New initializes the
 // memo's confirmed map, so that using the memo on a freshly constructed
 // instance does not panic on a nil map write.

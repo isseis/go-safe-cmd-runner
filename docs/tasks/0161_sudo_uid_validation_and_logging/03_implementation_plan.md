@@ -154,7 +154,8 @@
 - [x] `TestSudoUIDExistenceMemo_Concurrent` を追加する。50 goroutine から同時に、成功する UID と失敗する UID を混ぜて `verify` する。`-race` で競合が検出されないこと、および goroutine の合流後に、成功した UID への `verify` が `lookup` を呼ばずに `nil` を返し、失敗した UID への `verify` が `lookup` を再度呼ぶことを検証する
 - [x] `TestNewInitializesSudoUIDExistenceMemo` を追加する。`New()` で生成したインスタンスに対して `gm.sudoUIDExistence.verify(1000, func(int) error { return nil })` を2回呼び、パニックせず、2回目で `lookup` が呼ばれないことを検証する（`confirmed` マップの初期化漏れによる nil マップへの書き込みを検出する）
 - [x] `TestProcessSudoUIDAdoptionReporterIsProcessWide` を追加する。パッケージレベルの実体 `processSudoUIDAdoptionReporter` が `sudoUIDAdoptionReporter` 型であることを検証し、その1回制限の契約（テストは報告に使わないこと、実体の一意性は PR 時の static チェックが担うこと）をドキュメントコメントで述べる。このテストは `make lint` の `unused` がパッケージレベルの実体を未使用と判定するのを防ぐために置く（実体はフェーズ2のステップ2-2 で初めて参照される）
-- [x] 上記8テストはプロセス全体の状態に触れないため、すべてに `t.Parallel()` を付ける
+- [x] `TestSudoUIDExistenceErrorMessages` を追加する。ステップ1-2 で定義した2つのセンチネルエラーの `.Error()` 文字列をリテラルで固定し（AC-18 が利用者向け文書でこの文言を逐語引用するため）、相互に `errors.Is` で一致しないことを検証する（AC-03 の型の定義部分をこのフェーズで検証する）
+- [x] 上記9テストはプロセス全体の状態に触れないため、すべてに `t.Parallel()` を付ける
 
 **完了条件**: `make test` が通る（`Makefile:454-460` の `unit-test` は CGO 有効の回で `-race` 付きで実行する）。Linux 以外では CGO 無効の回が実行されないため（`Makefile:456-460`）、CGO 無効側の検証は Linux で行う。
 
@@ -584,7 +585,7 @@
 - [ ] ステップ1-2: `ErrSudoUIDUserNotFound` / `ErrSudoUIDUserLookupFailed`
 - [ ] ステップ1-3: `sudoUIDAdoptionReporter` 型・`report`・パッケージレベル実体
 - [ ] ステップ1-4: `sudoUIDExistenceMemo` 型・`verify`・`GroupMembership` フィールド・`New` の初期化
-- [ ] ステップ1-5: フェーズ1の単体テスト（捕捉ハンドラ + 7テスト）
+- [ ] ステップ1-5: フェーズ1の単体テスト（捕捉ハンドラ + 9テスト）
 - [ ] `make fmt` → `make test` → `make lint`（Linux で実行し、CGO 有効・無効の両方を通す）
 - [ ] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3 / 1-4 / 1-5）
 
