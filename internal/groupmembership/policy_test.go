@@ -502,7 +502,7 @@ func TestResolvePermissionCheckUID_AdoptionRecordConditions(t *testing.T) {
 // TestResolvePermissionCheckUID_ReportsAdoptionOnlyOncePerReporter verifies
 // that binding one reporter instance into reportAdoption and resolving three
 // times still yields the correct base UID every time and exactly one record
-// (architecture document §7.1, AC-09).
+// (architecture document §7.1).
 func TestResolvePermissionCheckUID_ReportsAdoptionOnlyOncePerReporter(t *testing.T) {
 	handler := newLogCaptureHandler(nil)
 	logger := slog.New(handler)

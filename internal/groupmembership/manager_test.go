@@ -1190,7 +1190,7 @@ func TestSudoUIDExistenceErrorMessages(t *testing.T) {
 
 // TestSudoUIDAdoptionRecordReachesDefaultLogger verifies the production
 // assembly for the record destination: reportAdoption resolves slog.Default()
-// at record time and emits through it (AC-11). The reportAdoption expression
+// at record time and emits through it. The reportAdoption expression
 // is copied verbatim from getPermissionCheckUID, with the reporter instance
 // being the only difference.
 //
