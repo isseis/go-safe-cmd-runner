@@ -345,7 +345,7 @@ func lookupUserByUID(uid int) error
 
 差し替え口のフィールド名は `lookup`（引く）ではなく `verifyUserExists` とした。「用語」節の「実在確認」に対応させることで、戻り値を `error` のみに絞ったのが意図的な設計であることを名前から読み取れるようにするためである。既定実装の名前だけは、実際に `user.LookupId` を呼ぶ処理であるため `lookupUserByUID` とする。
 
-既存の `IsUserInGroup`（`manager.go:148`）と `isUserOnlyGroupMember`（`manager.go:187`）も `user.LookupId` を呼ぶが、これらは戻り値の `Username` と `Gid` を使うため、同じ差し替え口を共有できない。既定実装は `user.LookupId` を1行呼ぶだけであり共有すべき処理を持たないため、重複は生じない。3箇所を共通の差し替え口へ寄せる整理は本タスクの対象外とし、§9 に将来の課題として記録する。
+既存の `IsUserInGroup`（`manager.go`）と `isUserOnlyGroupMember`（同）も `user.LookupId` を呼ぶが、これらは戻り値の `Username` と `Gid` を使うため、同じ差し替え口を共有できない。既定実装は `user.LookupId` を1行呼ぶだけであり共有すべき処理を持たないため、重複は生じない。3箇所を共通の差し替え口へ寄せる整理は本タスクの対象外とし、§9 に将来の課題として記録する。
 
 ### 3.3 採用事実の記録と1回制限
 
@@ -415,8 +415,8 @@ func (m *sudoUIDExistenceMemo) verify(uid int, lookup func(uid int) error) error
 
 - **成功のみを記録する**: 実在確認が失敗した結果は記録しない。一時的な障害を根拠に、以降のすべての判定を確定的に失敗させないためである。
 - **有効期間を設けない**: 記録はインスタンスの生存期間にわたって有効である。有効期間を設けないのは、`record` / `verify` が短命なバッチプロセスであり、かつ古くなった「実在する」という記録が判定を緩める方向へ働かないためである（根拠は §5.5 の時間差の項）。既存のグループメンバーシップキャッシュ（30 秒 TTL）と有効期間を揃えないのはこの理由による。
-- **並行安全である**: 複数の goroutine から同時に呼ばれても記録が壊れないよう、ミューテックスで保護する。ロック順序は既存の `cacheMutex` とは独立しており、両者を同時に保持する経路は存在しない。ミューテックスは照会の実行中も保持する。同じ UID に対する同時の確認を1回の照会にまとめるためであり、その代償として、応答の遅いユーザーデータベースへの照会は同じインスタンスを共有する他の goroutine も待たせる（§5.5）。この帰結から、照会関数がメモや `cacheMutex` を取ることは許さない。
-- **`confirmed` はゼロ値のまま書き込まない**: `map` フィールドのゼロ値は `nil` であり、`nil` マップへの書き込みは実行時パニックを起こす。`New()` は既に `membershipCache` を `make(map[uint32]groupMemberCache)` で初期化している（`manager.go:94`）。`sudoUIDExistenceMemo.confirmed` もこれに倣い、`New()` の中で `make(map[int]struct{})` により初期化する。
+- **並行安全である**: 複数の goroutine から同時に呼ばれても記録が壊れないよう、ミューテックスで保護する。本パッケージの既存のロックは `cacheMutex` と `membership_cgo.go` の `pwentMutex`（`getpwent` 列挙を保護する）の2つであり、両者の間には 0151 が定めた `cacheMutex` → `pwentMutex` という順序がある。メモのミューテックスはこの順序の外にあり、メモと既存の2つのいずれかを同時に保持する経路は存在しない。`getPermissionCheckUID` が `cacheMutex` の取得前に呼ばれるためである。ミューテックスは照会の実行中も保持する。同じ UID に対する同時の確認を1回の照会にまとめるためであり、その代償として、応答の遅いユーザーデータベースへの照会は同じインスタンスを共有する他の goroutine も待たせる（§5.5）。この帰結から、照会関数がメモ自身・`cacheMutex`・`pwentMutex` のいずれかを取ることは許さない。`pwentMutex` を挙げるのは、それが `os/user` の照会と同じ NSS バックエンドに触れる唯一のロックであり、照会関数から到達する可能性が最も高いためである。
+- **`confirmed` はゼロ値のまま書き込まない**: `map` フィールドのゼロ値は `nil` であり、`nil` マップへの書き込みは実行時パニックを起こす。`New()` は既に `membershipCache` を `make(map[uint32]groupMemberCache)` で初期化している（`manager.go` の `New`）。`sudoUIDExistenceMemo.confirmed` もこれに倣い、`New()` の中で `make(map[int]struct{})` により初期化する。
 
 失敗を記録しないため、ユーザーデータベースが停止している環境では照会がファイルごとに繰り返される。この場合の所要時間は §5.5 に残存リスクとして記載する。
 
@@ -558,7 +558,7 @@ AC-07 は、採用によって基準UIDが実 UID と異なる値になった場
 
 | ファイル | 区分 | 責務 | 更新が必要な既存テスト・既存記述 |
 |---|---|---|---|
-| `internal/groupmembership/manager.go` | 変更 | `permissionCheckUIDDeps` / `sudoUIDAdoptionReporter` / `sudoUIDExistenceMemo` の3型、パッケージレベルのレポータ実体、`lookupUserByUID`、`resolvePermissionCheckUID` への実在確認と記録の追加、`getPermissionCheckUID` での本番依存の組み立て、§4.1 の2つのエラー変数、`GroupMembership` への `sudoUIDExistence` フィールド追加、`New` での `sudoUIDExistence.confirmed` の初期化（§3.4） | `resolvePermissionCheckUID`（465-484行目）のドキュメントコメント: 引数の記述と、返しうるエラーの記述が変わる。`getPermissionCheckUID`（446-456行目）のドキュメントコメント: 返しうるエラーの記述が変わる |
+| `internal/groupmembership/manager.go` | 変更 | `permissionCheckUIDDeps` / `sudoUIDAdoptionReporter` / `sudoUIDExistenceMemo` の3型、パッケージレベルのレポータ実体、`lookupUserByUID`、`resolvePermissionCheckUID` への実在確認と記録の追加、`getPermissionCheckUID` での本番依存の組み立て、§4.1 の2つのエラー変数、`GroupMembership` への `sudoUIDExistence` フィールド追加、`New` での `sudoUIDExistence.confirmed` の初期化（§3.4） | `resolvePermissionCheckUID` のドキュメントコメント: 引数の記述と、返しうるエラーの記述が変わる。`getPermissionCheckUID` のドキュメントコメント: 返しうるエラーの記述が変わる |
 | `internal/groupmembership/policy.go` | 変更 | 変更はドキュメントコメントのみ | `SudoUIDAware` 定数のコメント（24-31行目）: 「`SUDO_UID` の値は数値としての妥当性しか検査しておらず、実在するユーザーかどうかは確認していない」が偽になる。「root として起動できる者が基準UIDを任意に指定できる」も「任意の**実在する**ユーザーの UID を指定できる」へ狭める |
 | `internal/groupmembership/membership_cgo.go` | 変更 | ユーザーデータベース種別の定数（`nss`） | - |
 | `internal/groupmembership/membership_nocgo.go` | 変更 | ユーザーデータベース種別の定数（`passwd-file`） | - |
@@ -791,11 +791,11 @@ flowchart LR
 - **一時障害の「見つからない」への縮退**: §4.2 のとおり、NSS バックエンドによっては接続失敗が `ErrSudoUIDUserNotFound` として現れる。判定は拒否のままであり、影響は診断の精度に限られる。
 - **照会のタイムアウトを制御できない**: `os/user` の `LookupId` は文脈もタイムアウトも受け取らないため、応答の遅いユーザーデータベースに対する照会を打ち切る手段がない。照会が成功する環境ではインスタンスごとに1回で済むが（§3.4）、失敗し続ける環境では失敗をメモしないため、読み取り安全性チェックの回数だけタイムアウトが積み上がる。この状況ではそもそも全ファイルの処理が失敗するため、実行が長引くこと自体の影響は限定的だが、応答が返らない照会に対して `record` が長時間停止して見える点は避けられない。加えて §3.4 のとおりメモは照会の実行中もミューテックスを保持するため、同じ `GroupMembership` を共有する他の goroutine も待たされる。`record` / `verify` は読み取り安全性チェックを逐次実行するため現状の影響はないが、将来 `record` を並行化する場合はこの点も再評価の対象となる。
 - **実在確認から実際の利用までの時間差**: 実在確認の成功後、その UID が判定に使われるまでの間にユーザーが削除される余地がある。この窓が判定を緩める方向へ働くことはない。分岐ごとの理由は次のとおりである。
-    - ファイルがグループ書き込み可能な場合（`manager.go:335`）: `IsUserInGroup` が同じ UID を改めて `user.LookupId` で引く（`manager.go:148`）。削除されていればそこで失敗するため、判定は厳しい側へ動く。
-    - グループ書き込み可能でない場合: 残る検査（world-writable の判定と許可ビットの上限検査。`manager.go:330`、`manager.go:351`）はパーミッションのみに依存し、基準UIDは判定に入らない。
+    - ファイルがグループ書き込み可能な場合（`CanCurrentUserSafelyReadFile` のグループ書き込み判定）: `IsUserInGroup` が同じ UID を改めて `user.LookupId` で引く。削除されていればそこで失敗するため、判定は厳しい側へ動く。
+    - グループ書き込み可能でない場合: 残る検査（同関数の world-writable の判定と許可ビットの上限検査）はパーミッションのみに依存し、基準UIDは判定に入らない。
 
     分岐によらない理由もある。実在確認は 0160 の挙動に対して拒否条件を1つ加えるだけであり、判定を緩める条件は追加しない。
-- **`os/user` の照会と `getpwent` 列挙の並行実行**: 0151 §5.4 が記録している残存リスクである。一部の NSS バックエンドは列挙系 API とキー検索系 API で内部状態を共有することがあり、`internal/groupmembership` の列挙ミューテックス（`membership_cgo.go:302`）の保持中に別の goroutine が `os/user` 経由でキー検索を行うと状態が破損しうる。本タスクは `os/user` の呼び出し地点を1つ増やす。
+- **`os/user` の照会と `getpwent` 列挙の並行実行**: 0151 §5.4 が記録している残存リスクである。一部の NSS バックエンドは列挙系 API とキー検索系 API で内部状態を共有することがあり、`internal/groupmembership` の列挙ミューテックス（`membership_cgo.go` の `pwentMutex`）の保持中に別の goroutine が `os/user` 経由でキー検索を行うと状態が破損しうる。本タスクは `os/user` の呼び出し地点を1つ増やす。
 
     この破損経路が現状で成立しないのは、`record` / `verify` が読み取り安全性チェックを逐次実行し、これらを並行に駆動する仕組みが存在しないためである（`internal/filevalidator`、`internal/verification`、`internal/safefileio`、`cmd/record`、`cmd/verify` に並行実行の仕組みは無い）。この不変条件は本設計が依拠する前提であり、将来 `record` を並行化する場合は 0151 §5.4 の残存リスクと併せて再評価する必要がある。なおメモ（§3.4）によって照会回数がインスタンスあたり1回に抑えられるため、増える機会は本設計以前に見積もられる量より小さい。
 - **記録の欠落**: 本タスクの記録は `log/slog` の既定ロガー、すなわち標準エラー出力へ書かれる。記録は本設計が持つ唯一の構造化された信号であり、失われると §3.7.4 の検出手段が成立しない。
@@ -927,8 +927,8 @@ flowchart TD
 
 | フェーズ | 内容 | 対応 AC |
 |---|---|---|
-| 1 | エラー変数2つ、ユーザーデータベース種別の定数、`sudoUIDAdoptionReporter` 型と `report`、パッケージレベルのレポータ実体、`sudoUIDExistenceMemo` 型の追加とその単体テスト | AC-03（型の定義部分）、AC-09 |
-| 2 | `permissionCheckUIDDeps` 型の追加、`resolvePermissionCheckUID` のシグネチャ変更、`lookupUserByUID` の追加、`GroupMembership` への `sudoUIDExistence` フィールド追加、`getPermissionCheckUID` での本番依存の組み立て、`test_helpers_policy.go` のラッパー更新、`internal/groupmembership` と `cmd/*` の既存テストの移行 | AC-12〜AC-14 |
+| 1 | エラー変数2つ、ユーザーデータベース種別の定数、`sudoUIDAdoptionReporter` 型と `report`、`sudoUIDExistenceMemo` 型、`GroupMembership` への `sudoUIDExistence` フィールド追加と `New` での初期化、およびそれらの単体テスト | AC-03（型の定義部分）、AC-09（型と1回制限の部分） |
+| 2 | `permissionCheckUIDDeps` 型の追加、`resolvePermissionCheckUID` のシグネチャ変更、`lookupUserByUID` の追加、パッケージレベルのレポータ実体の追加、`getPermissionCheckUID` での本番依存の組み立て、`test_helpers_policy.go` のラッパー更新、`internal/groupmembership` と `cmd/*` の既存テストの移行 | AC-09（パッケージレベル実体の部分）、AC-12〜AC-14 |
 | 3 | 実在確認とエラー分類、採用事実の記録の組み込み、§3.5 の決定表と記録に関するテストの追加 | AC-01〜AC-11, AC-15, AC-16 |
 | 4 | 既存のドキュメントコメントの更新（`policy.go` の `SudoUIDAware`、`manager.go` の2つの関数）、開発者向け文書・利用者向け文書・用語集の更新（日本語版のあと `/mktrans` で英語版）、`CHANGELOG.md` への記載 | AC-17〜AC-19 |
 

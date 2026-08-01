@@ -35,20 +35,20 @@
 
 | 対象 | 現状 | 本タスクでの扱い |
 |---|---|---|
-| `internal/groupmembership/manager.go` の `resolvePermissionCheckUID`（485行目） | `getenv func(string) string` を第3引数に取り、`parseSudoUID` の結果をそのまま返す | 第3引数を `permissionCheckUIDDeps` へ置き換え、実在確認と記録を追加する（02 §3.1、§6.1） |
-| 同 `getPermissionCheckUID`（457行目） | `resolvePermissionCheckUID(..., os.Getenv)` を呼ぶ | 本番依存3つを束ねて渡す形へ変更する（02 §3.1、§3.3、§3.4） |
-| 同 `parseSudoUID`（505行目） | 数値妥当性のみを検査 | 変更しない。実在確認はこの関数の後段に置く |
-| 同 `getProcessRealUID`（532行目） | `os.Getuid()` を直接呼ぶ | 変更しない（02 §3.1、§7.6） |
-| 同 `New`（92行目） | `membershipCache` を `make` で初期化する | `sudoUIDExistence.confirmed` の `make` を1行追加する（02 §3.4） |
-| 同 `GroupMembership` 構造体（66-82行目） | `membershipCache` / `cacheMutex` / `cleanupCounter` / `enumerateGroupMembers` / `policy` を持つ | `sudoUIDExistence sudoUIDExistenceMemo` フィールドを追加する |
-| 同 `ErrSudoUIDOutOfRange`（49行目） | 定義済み | 変更しない。新エラー2つを同じファイルに隣接して追加する（02 §2.2） |
+| `internal/groupmembership/manager.go` の `resolvePermissionCheckUID` | `getenv func(string) string` を第3引数に取り、`parseSudoUID` の結果をそのまま返す | 第3引数を `permissionCheckUIDDeps` へ置き換え、実在確認と記録を追加する（02 §3.1、§6.1） |
+| 同 `getPermissionCheckUID` | `resolvePermissionCheckUID(..., os.Getenv)` を呼ぶ | 本番依存3つを束ねて渡す形へ変更する（02 §3.1、§3.3、§3.4） |
+| 同 `parseSudoUID` | 数値妥当性のみを検査 | 変更しない。実在確認はこの関数の後段に置く |
+| 同 `getProcessRealUID` | `os.Getuid()` を直接呼ぶ | 変更しない（02 §3.1、§7.6） |
+| 同 `New` | `membershipCache` を `make` で初期化する | `sudoUIDExistence.confirmed` の `make` を1行追加する（02 §3.4） |
+| 同 `GroupMembership` 構造体 | `membershipCache` / `cacheMutex` / `cleanupCounter` / `enumerateGroupMembers` / `policy` を持つ | `sudoUIDExistence sudoUIDExistenceMemo` フィールドを追加する |
+| 同 `ErrSudoUIDOutOfRange` | 定義済み | 変更しない。新エラー2つを同じファイルに隣接して追加する（02 §2.2） |
 | `internal/groupmembership/policy.go` の `SudoUIDAware`（24-31行目） | 「`SUDO_UID` は数値としての妥当性しか検査していない」と述べるコメントを持つ | コメントを実在確認込みの内容へ書き換える（本書 2 章のステップ4-2） |
 | `internal/groupmembership/membership_cgo.go` / `membership_nocgo.go` | ビルドタグ `cgo` / `!cgo` で切り替わる対のファイル。`membership_cgo.go` 側に `maxGroupMembers` 等のパッケージ定数がある | ユーザーデータベース種別の定数を両方に追加する（02 §3.7.5） |
 | `internal/groupmembership/test_helpers_policy.go` の `ResolvePermissionCheckUID`（54行目） | `getenv` を位置引数に取る | 公開の依存構造体を取る形へ変更する（02 §7.3） |
 
 #### 再利用する既存資産
 
-- `user.LookupId` の呼び出し方法は同一パッケージ内の `IsUserInGroup`（`manager.go:148`）と `isUserOnlyGroupMember`（`manager.go:187`）に前例がある。ただし両者は戻り値の `Username` / `Gid` を使うため、差し替え口（テストから実装を差し替えられるようにするための引数）は共有できない（02 §3.2）。共通化は行わない。
+- `user.LookupId` の呼び出し方法は同一パッケージ内の `IsUserInGroup` と `isUserOnlyGroupMember`（いずれも `manager.go`）に前例がある。ただし両者は戻り値の `Username` / `Gid` を使うため、差し替え口（テストから実装を差し替えられるようにするための引数）は共有できない（02 §3.2）。共通化は行わない。
 - `errors.AsType` を値型のエラーに適用する用法は `internal/runner/resource/dryrun_manager.go:386` に前例がある（`user.UnknownUserError` に適用）。同じ形で `user.UnknownUserIdError` に適用する。
 - プロセス全体の状態を `atomic` で持つ形は `policy.go:67` の `processPermissionCheckUIDPolicy` に前例がある。パッケージレベルのレポータ実体はこれに倣った命名とする。
 - テストから `t.Cleanup` で復元するスワップ関数の形は `test_helpers_policy.go:36` の `SwapProcessPermissionCheckUIDPolicy` に前例がある。ただし本タスクではレポータ実体を書き換えないため、同種の関数は追加しない（02 §3.3）。
@@ -110,7 +110,7 @@
 
 **変更ファイル**: `internal/groupmembership/manager.go`
 
-- [x] `ErrSudoUIDOutOfRange`（49行目）の直後に `ErrSudoUIDUserNotFound` を 02 §4.1 のメッセージ `"SUDO_UID does not refer to an existing user"` で追加する
+- [x] `ErrSudoUIDOutOfRange` の直後に `ErrSudoUIDUserNotFound` を 02 §4.1 のメッセージ `"SUDO_UID does not refer to an existing user"` で追加する
 - [x] 同じ位置に `ErrSudoUIDUserLookupFailed` を 02 §4.1 のメッセージ `"failed to verify that SUDO_UID refers to an existing user"` で追加する
 
 **完了条件**: `go build ./...` と `make lint` が通る（この時点では未使用の公開変数だが、公開識別子なので未使用検出の対象外）。
@@ -124,7 +124,7 @@
 - [x] 出力内容を 02 §4.3「採用事実の記録」の表どおりに実装する。レベルは `slog.LevelWarn` とし、メッセージは同表の1文をそのまま用いる。属性は次の5つとする。`permission_check_uid`、`real_uid`、`source_env_var`（値は定数 `sudoUIDEnvVar`）、`permission_check_uid_policy`（値は `policy.String()`）、`user_database_source`（値は定数 `userDatabaseSource`）
 - [x] `import` に `log/slog` と `sync/atomic` を追加する
 
-> **本ステップからの移動（02 §8 との差異でもある）**: パッケージレベルの実体 `processSudoUIDAdoptionReporter sudoUIDAdoptionReporter` の追加はステップ2-2 へ移した。この実体を参照するのはステップ2-2 の `getPermissionCheckUID` だけであり、宣言だけを先に置くと `golangci-lint` の `unused` が「未使用の非公開変数」として指摘し、PR-1 のグリーンゲートが通らないためである（ステップ1-2 のセンチネル2つは公開識別子であるため同じ問題は生じない）。9.2 節のとおり `//nolint` は追加しない。02 §8 はこの実体をフェーズ1 に置いているため、本移動は 02 §8 との差異にも当たる。8 章の AC-09 の `static` チェック2件は PR-2 で満たす。AC-09 の `test` 検証2件はフェーズ1 のままであり、フェーズの順序と目的も変わらない。
+> **本ステップからの移動**: パッケージレベルの実体 `processSudoUIDAdoptionReporter sudoUIDAdoptionReporter` の追加はステップ2-2 へ移した。この実体を参照するのはステップ2-2 の `getPermissionCheckUID` だけであり、宣言だけを先に置くと `golangci-lint` の `unused` が「未使用の非公開変数」として指摘し、PR-1 のグリーンゲートが通らないためである（ステップ1-2 のセンチネル2つは公開識別子であるため同じ問題は生じない）。9.2 節のとおり `//nolint` は追加しない。8 章の AC-09 の `static` チェック2件は PR-2 で満たす。AC-09 の `test` 検証2件はフェーズ1 のままであり、フェーズの順序と目的も変わらない。02 §8 の表は本移動を反映済みである（実体はフェーズ2の行にある）。
 
 **完了条件**: ステップ1-5 のテストが通る。
 
@@ -135,9 +135,9 @@
 - [x] `sudoUIDExistenceMemo` 構造体（`mu sync.Mutex`、`confirmed map[int]struct{}`）を 02 §3.4 のドキュメントコメント付きで追加する
 - [x] `verify(uid int, lookup func(uid int) error) error` メソッドを追加する。`confirmed` に `uid` があれば `nil` を返す。なければ `lookup(uid)` を呼び、`lookup` が `nil` を返したときだけ `uid` を `confirmed` へ登録する。失敗は登録しない
 - [x] `GroupMembership` 構造体に `sudoUIDExistence sudoUIDExistenceMemo` フィールドを追加する
-- [x] `New`（92行目）の構造体リテラルに `sudoUIDExistence: sudoUIDExistenceMemo{confirmed: make(map[int]struct{})}` を追加する
+- [x] `New` の構造体リテラルに `sudoUIDExistence: sudoUIDExistenceMemo{confirmed: make(map[int]struct{})}` を追加する
 
-> **02 §8 との差異**: 02 §8 は `GroupMembership` へのフィールド追加と `New` の初期化をフェーズ2に置いている。本計画では上の2項目をフェーズ1へ前倒しした。ステップ1-5 の `TestNewInitializesSudoUIDExistenceMemo` が `New()` 経由の初期化を検証対象とするためである。フェーズの順序と各フェーズの目的は 02 §8 のままであり、前後関係は変わらない。
+> **フェーズ1への前倒し**: `GroupMembership` へのフィールド追加と `New` の初期化はフェーズ1で行う。ステップ1-5 の `TestNewInitializesSudoUIDExistenceMemo` が `New()` 経由の初期化を検証対象とするためである。フェーズの順序と各フェーズの目的は変わらない。02 §8 の表は本前倒しを反映済みである（両項目はフェーズ1の行にある）。
 
 **完了条件**: ステップ1-5 のテストが通る。
 
@@ -170,6 +170,8 @@
 
 **判定理由**: ステップ1-3・1-4 が `atomic.Bool` による1回制限と `sync.Mutex` で保護した共有メモという並行処理を新規に導入する、独立した高リスク・複雑ステップに当たる（誤りは `-race` なしでは表面化せず、02 §3.4 の nil マップ初期化漏れも型では検出できない）。同居するステップ1-1・1-2 は定数2つとセンチネル2つの追加に留まるが、行数が小さく（合計10行未満）独立した PR に切り出す利得がレビュー1回分の手間を下回るため、この PR に含めたままとする。レビューの重心はステップ1-3〜1-5 に置く。
 
+> **`make deadcode` について**: PR-1 の時点では `make deadcode` が `sudoUIDAdoptionReporter.report` と `sudoUIDExistenceMemo.verify` の2件を `unreachable func` として報告する。本番の呼び出し元となる `getPermissionCheckUID` の変更がステップ2-2（PR-2）にあるためであり、意図した状態である。PR-1 のグリーンゲートは `_context.md` の定義どおり `make test && make lint` であって `make deadcode` を含まないため、この2件はゲートの違反に当たらない。8.1 節が求める「新たな指摘を出さない」状態は PR-2 のマージ時点で満たす。
+
 - [x] `rg -n "userDatabaseSource" --glob '*.go'` の結果が `internal/groupmembership/` 内に限られること（10 章。他パッケージの同名識別子との衝突確認）
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した (#954)
@@ -187,7 +189,7 @@
 - [ ] `permissionCheckUIDDeps` 構造体（`getenv` / `verifyUserExists` / `reportAdoption` の3フィールド）を 02 §3.1 のドキュメントコメント付きで追加する
 - [ ] `lookupUserByUID(uid int) error` を追加する。`user.LookupId(strconv.Itoa(uid))` を呼び、エラーを加工せずそのまま返す。エラー分類を行わない理由を英語のコメントで述べる（02 §3.2）
 - [ ] `resolvePermissionCheckUID` の第3引数を `getenv func(string) string` から `deps permissionCheckUIDDeps` へ変更し、内部の `getenv(sudoUIDEnvVar)` を `deps.getenv(sudoUIDEnvVar)` へ置き換える。この時点では `verifyUserExists` と `reportAdoption` は呼ばない
-- [ ] `resolvePermissionCheckUID` のドキュメントコメント（465-484行目）の `Parameters` 節を `deps` の説明へ差し替える。返しうるエラーの記述はフェーズ3で更新する
+- [ ] `resolvePermissionCheckUID` のドキュメントコメントの `Parameters` 節を `deps` の説明へ差し替える。返しうるエラーの記述はフェーズ3で更新する
 
 **完了条件**: `go build ./...` が通る（テストの移行前なのでテストはまだコンパイルできない）。
 
@@ -196,7 +198,7 @@
 **変更ファイル**: `internal/groupmembership/manager.go`
 
 - [ ] パッケージレベルの実体 `processSudoUIDAdoptionReporter sudoUIDAdoptionReporter` を `manager.go` に追加し、プロセス全体で共有される唯一の実体であることをコメントで述べる（ステップ1-3 から移動。理由は同ステップの注記）
-- [ ] `getPermissionCheckUID`（457行目）で `permissionCheckUIDDeps` を組み立てて渡す形へ変更する。`getenv` は `os.Getenv`、`verifyUserExists` は `gm.sudoUIDExistence.verify(uid, lookupUserByUID)` を呼ぶクロージャ、`reportAdoption` は `processSudoUIDAdoptionReporter.report(slog.Default(), ...)` を呼ぶクロージャとする
+- [ ] `getPermissionCheckUID` で `permissionCheckUIDDeps` を組み立てて渡す形へ変更する。`getenv` は `os.Getenv`、`verifyUserExists` は `gm.sudoUIDExistence.verify(uid, lookupUserByUID)` を呼ぶクロージャ、`reportAdoption` は `processSudoUIDAdoptionReporter.report(slog.Default(), ...)` を呼ぶクロージャとする
 - [ ] `slog.Default()` をクロージャの内側で呼ぶ（束ねる時点ではなく記録の時点で解決する。02 §3.3、AC-11）
 - [ ] ステップ3-6 のテストがそのまま複製できるよう、`reportAdoption` は途中に中間変数を挟まず、ひとつづきの式として書く
 
@@ -267,7 +269,7 @@
 **変更ファイル**: `internal/groupmembership/manager.go`
 
 - [ ] `resolvePermissionCheckUID` の `parseSudoUID` 成功後に `deps.verifyUserExists(parsedUID)` を呼ぶ処理を追加する（02 §6.1 の順序: 数値妥当性の検査 → 実在確認 → 記録）
-- [ ] `errors.AsType[user.UnknownUserIdError](err)` が真のとき、次の書式でエラーを返す。既存の `parseSudoUID`（`manager.go:511`）が採る「本文のあとにセンチネルを `%w` で置く」書式に揃え、センチネルは本文の後ろ、元のエラーの直前に置く。
+- [ ] `errors.AsType[user.UnknownUserIdError](err)` が真のとき、次の書式でエラーを返す。既存の `parseSudoUID`（`manager.go`）が採る「本文のあとにセンチネルを `%w` で置く」書式に揃え、センチネルは本文の後ろ、元のエラーの直前に置く。
   `fmt.Errorf("SUDO_UID %s does not exist in the user database (user_database_source=%s); check whether SUDO_UID is a stale value inherited from the environment, then re-run from an interactive sudo session: %w: %w", sudoUID, userDatabaseSource, ErrSudoUIDUserNotFound, err)`
 - [ ] それ以外のエラーのとき、次の書式でエラーを返す。
   `fmt.Errorf("could not verify SUDO_UID %s against the user database (user_database_source=%s); check the state of the user database, then re-run: %w: %w", sudoUID, userDatabaseSource, ErrSudoUIDUserLookupFailed, err)`
@@ -290,7 +292,7 @@
 **変更ファイル**: `internal/groupmembership/manager.go`
 
 - [ ] `resolvePermissionCheckUID` のドキュメントコメントに、`SudoUIDAware` では採用前に実在確認を行い、失敗時は `ErrSudoUIDUserNotFound` または `ErrSudoUIDUserLookupFailed` を返すことを英語で追記する
-- [ ] `getPermissionCheckUID` のドキュメントコメント（446-456行目）の `Returns` 節に、同じ2つのエラーを返しうることを英語で追記する
+- [ ] `getPermissionCheckUID` のドキュメントコメントの `Returns` 節に、同じ2つのエラーを返しうることを英語で追記する
 
 > **02 §8 との差異**: 02 §8 は `manager.go` の2つの関数のドキュメントコメント更新をフェーズ4に置いている。本計画ではこれをフェーズ3のステップ3-3 へ前倒しした。両コメントはステップ3-1 が追加するエラーそのものを述べるものであり、フェーズ4へ残すと PR-3 と PR-4 の間、コメントが実装と食い違う期間が生じるためである。`policy.go` の `SudoUIDAware` コメント（ステップ4-2）は方針の説明であり、他の文書更新とまとめてレビューする利得の方が大きいためフェーズ4に残す。
 
@@ -566,6 +568,7 @@
 | `sudoUIDExistenceMemo.confirmed` の初期化漏れ | `nil` マップへの書き込みでパニック | ステップ1-4 で `New` の構造体リテラルへ `make` を含める。`TestSudoUIDExistenceMemo_*` はメモを直接生成するため `New()` 経由の初期化を検証せず、既存の `CanCurrentUserSafelyReadFile` 系テストも既定方針が `RealUIDOnly` で非 root 実行のためメモに到達しない。いずれもこの初期化漏れを検出できないため、ステップ1-5 に `TestNewInitializesSudoUIDExistenceMemo` を専用に置き、`New()` 経由のインスタンスでメモを実際に使う経路を検証する |
 | `reportAdoption` の `realUID` と `permissionCheckUID` の引数を入れ替える | 記録が誤った UID を示す。型では検出できない | `TestSudoUIDAdoptionReporter_Report` で両者に異なる値を与え、属性ごとに検証する（02 §3.1） |
 | 実在確認の追加でユーザーデータベースへの照会が増える | ディレクトリ NSS 環境で `record` が大幅に遅くなる | メモによりインスタンスあたり1回に抑える（02 §3.4）。`TestSudoUIDExistenceMemo_ReusesConfirmation` で呼び出し回数を固定する |
+| `make lint` が `//go:build !cgo` のファイルを検査しない | `membership_nocgo.go` と `membership_nocgo_test.go` へ追加したコードの lint 違反が検出されない | 本タスク固有ではなく、`make lint` が `golangci-lint` を既定の `CGO_ENABLED=1` で1回だけ実行することによる既存の死角である（`Makefile:24`。`make test` は CGO 無効の回も実行するため、型エラーとテスト失敗は検出できる）。本タスクの範囲では対処せず、`CGO_ENABLED=0 golangci-lint run --build-tags test ./internal/groupmembership/...` を手動で実行して追加分に指摘が出ないことを確認する。死角自体の解消（lint の2回実行と、既存の指摘2件の修正）は本タスクとは別に扱う |
 
 ### 5.2 運用リスク
 
@@ -638,6 +641,11 @@
 
 各 AC の検証手段を `test`（実行可能・誤った挙動で失敗する）／`static`（`rg` またはコンパイル）／`manual`（レビュー・観察）で分類する。すべての AC に `test` または `static` を1つ以上置く。
 
+本表は AC を起点とした対応であり、本タスクが追加するテストの一覧ではない。特定の AC に対応せず、実装の内部的な不変条件を将来の変更から守るために置くテスト（回帰固定テスト）は本表に現れない。該当するのは次の2種であり、いずれも 5 章のリスク表または各ステップの記述を典拠とする。
+
+- `internal/groupmembership/manager_test.go::TestNewInitializesSudoUIDExistenceMemo`（`New` による `confirmed` マップの初期化。nil マップ書き込みのパニックを防ぐ。ステップ1-4）
+- `internal/groupmembership/manager_test.go::TestSudoUIDExistenceMemo_ReusesConfirmation` / `_DoesNotRememberFailures` / `_Concurrent`（メモが成功のみを記録し、照会をまとめ、排他制御が壊れないこと。02 §3.4）
+
 | AC | 種別 | 検証内容 |
 |---|---|---|
 | AC-01 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_SudoUIDAware`（`SUDO_UID` 有効値かつ実在確認成功の行で基準UIDが `SUDO_UID` の値になる） |
@@ -650,6 +658,7 @@
 | AC-06 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_ExistenceCheckNotInvoked`（実 UID が 0 以外で呼び出し回数 0、実 UID が返る） |
 | AC-07 | `test` | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_Report`（レベルが `slog.LevelWarn`）、`internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_AdoptionRecordConditions`（採用時に記録が出る） |
 | AC-08 | `test` | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_Report`（`permission_check_uid` / `real_uid` / `source_env_var` / `permission_check_uid_policy` / `user_database_source` の5属性を検証し、`real_uid` と `permission_check_uid` に異なる値を与える） |
+| AC-08 | `test` | `internal/groupmembership/membership_cgo_test.go::TestUserDatabaseSource`、`internal/groupmembership/membership_nocgo_test.go::TestUserDatabaseSource`（`user_database_source` 属性の値となる定数を、CGO 有効・無効の各ビルドで `nss` / `passwd-file` に固定する。両者はビルドタグが排他であるため同名でよい） |
 | AC-09 | `test` | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnce`、`internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently` |
 | AC-09 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_ReportsAdoptionOnlyOncePerReporter`（同一レポータ実体で解決を3回実行して記録は1件） |
 | AC-09 | `static` | `rg -n "^var processSudoUIDAdoptionReporter\s+sudoUIDAdoptionReporter$" internal/groupmembership/manager.go` が1件一致すること（パッケージレベルの実体が1つだけ宣言されていること） |
