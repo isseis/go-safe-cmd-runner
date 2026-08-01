@@ -2,7 +2,10 @@
 
 package groupmembership
 
-import "fmt"
+import (
+	"fmt"
+	"log/slog"
+)
 
 // WithPermissionCheckUIDPolicy sets the permission check UID policy for this
 // GroupMembership instance only. When specified, it takes precedence over
@@ -47,10 +50,46 @@ func (gm *GroupMembership) EffectivePermissionCheckUIDPolicy() PermissionCheckUI
 	return gm.effectivePermissionCheckUIDPolicy()
 }
 
+// PermissionCheckUIDDeps is the public counterpart of permissionCheckUIDDeps,
+// exposing the three dependency seams of resolvePermissionCheckUID to tests in
+// other packages (e.g. cmd/record, cmd/verify, cmd/runner).
+type PermissionCheckUIDDeps struct {
+	// Getenv reads an environment variable.
+	Getenv func(name string) string
+
+	// VerifyUserExists reports whether a user with the given UID exists.
+	// A nil error means the user exists.
+	VerifyUserExists func(uid int) error
+
+	// ReportAdoption records that the permission check UID was taken from
+	// SUDO_UID. When nil, a default is used that emits to slog.Default().
+	// The default uses a fresh reporter instance for every call, so it must
+	// not be used to verify the once-per-process limit; that verification
+	// belongs to the in-package tests.
+	ReportAdoption func(policy PermissionCheckUIDPolicy, realUID, permissionCheckUID int)
+}
+
 // ResolvePermissionCheckUID resolves the permission check UID for the given
-// policy, real UID, and environment variable getter. It is an entry point
-// for tests in other packages (e.g. cmd/record, cmd/verify) to exercise the
-// unexported resolvePermissionCheckUID.
-func ResolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, getenv func(string) string) (int, error) {
-	return resolvePermissionCheckUID(policy, realUID, getenv)
+// policy, real UID, and dependency seams. It is an entry point for tests in
+// other packages (e.g. cmd/record, cmd/verify) to exercise the unexported
+// resolvePermissionCheckUID. Getenv and VerifyUserExists must be non-nil.
+func ResolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, deps PermissionCheckUIDDeps) (int, error) {
+	if deps.Getenv == nil {
+		panic("groupmembership: Getenv must not be nil")
+	}
+	if deps.VerifyUserExists == nil {
+		panic("groupmembership: VerifyUserExists must not be nil")
+	}
+	reportAdoption := deps.ReportAdoption
+	if reportAdoption == nil {
+		reportAdoption = func(policy PermissionCheckUIDPolicy, realUID, permissionCheckUID int) {
+			reporter := &sudoUIDAdoptionReporter{}
+			reporter.report(slog.Default(), policy, realUID, permissionCheckUID)
+		}
+	}
+	return resolvePermissionCheckUID(policy, realUID, permissionCheckUIDDeps{
+		getenv:           deps.Getenv,
+		verifyUserExists: deps.VerifyUserExists,
+		reportAdoption:   reportAdoption,
+	})
 }

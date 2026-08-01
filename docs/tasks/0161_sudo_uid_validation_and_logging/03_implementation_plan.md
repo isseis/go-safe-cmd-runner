@@ -187,10 +187,10 @@
 
 **変更ファイル**: `internal/groupmembership/manager.go`
 
-- [ ] `permissionCheckUIDDeps` 構造体（`getenv` / `verifyUserExists` / `reportAdoption` の3フィールド）を 02 §3.1 のドキュメントコメント付きで追加する
-- [ ] `lookupUserByUID(uid int) error` を追加する。`user.LookupId(strconv.Itoa(uid))` を呼び、エラーを加工せずそのまま返す。エラー分類を行わない理由を英語のコメントで述べる（02 §3.2）
-- [ ] `resolvePermissionCheckUID` の第3引数を `getenv func(string) string` から `deps permissionCheckUIDDeps` へ変更し、内部の `getenv(sudoUIDEnvVar)` を `deps.getenv(sudoUIDEnvVar)` へ置き換える。この時点では `verifyUserExists` と `reportAdoption` は呼ばない
-- [ ] `resolvePermissionCheckUID` のドキュメントコメント（465-484行目）の `Parameters` 節を `deps` の説明へ差し替える。返しうるエラーの記述はフェーズ3で更新する
+- [x] `permissionCheckUIDDeps` 構造体（`getenv` / `verifyUserExists` / `reportAdoption` の3フィールド）を 02 §3.1 のドキュメントコメント付きで追加する
+- [x] `lookupUserByUID(uid int) error` を追加する。`user.LookupId(strconv.Itoa(uid))` を呼び、エラーを加工せずそのまま返す。エラー分類を行わない理由を英語のコメントで述べる（02 §3.2）
+- [x] `resolvePermissionCheckUID` の第3引数を `getenv func(string) string` から `deps permissionCheckUIDDeps` へ変更し、内部の `getenv(sudoUIDEnvVar)` を `deps.getenv(sudoUIDEnvVar)` へ置き換える。この時点では `verifyUserExists` と `reportAdoption` は呼ばない
+- [x] `resolvePermissionCheckUID` のドキュメントコメント（465-484行目）の `Parameters` 節を `deps` の説明へ差し替える。返しうるエラーの記述はフェーズ3で更新する
 
 **完了条件**: `go build ./...` が通る（テストの移行前なのでテストはまだコンパイルできない）。
 
@@ -198,9 +198,9 @@
 
 **変更ファイル**: `internal/groupmembership/manager.go`
 
-- [ ] `getPermissionCheckUID`（457行目）で `permissionCheckUIDDeps` を組み立てて渡す形へ変更する。`getenv` は `os.Getenv`、`verifyUserExists` は `gm.sudoUIDExistence.verify(uid, lookupUserByUID)` を呼ぶクロージャ、`reportAdoption` は `processSudoUIDAdoptionReporter.report(slog.Default(), ...)` を呼ぶクロージャとする
-- [ ] `slog.Default()` をクロージャの内側で呼ぶ（束ねる時点ではなく記録の時点で解決する。02 §3.3、AC-11）
-- [ ] ステップ3-6 のテストがそのまま複製できるよう、`reportAdoption` は途中に中間変数を挟まず、ひとつづきの式として書く
+- [x] `getPermissionCheckUID`（457行目）で `permissionCheckUIDDeps` を組み立てて渡す形へ変更する。`getenv` は `os.Getenv`、`verifyUserExists` は `gm.sudoUIDExistence.verify(uid, lookupUserByUID)` を呼ぶクロージャ、`reportAdoption` は `processSudoUIDAdoptionReporter.report(slog.Default(), ...)` を呼ぶクロージャとする
+- [x] `slog.Default()` をクロージャの内側で呼ぶ（束ねる時点ではなく記録の時点で解決する。02 §3.3、AC-11）
+- [x] ステップ3-6 のテストがそのまま複製できるよう、`reportAdoption` は途中に中間変数を挟まず、ひとつづきの式として書く
 
 **完了条件**: `go build ./...` が通る。
 
@@ -208,11 +208,11 @@
 
 **変更ファイル**: `internal/groupmembership/test_helpers_policy.go`
 
-- [ ] 公開構造体 `PermissionCheckUIDDeps`（`Getenv` / `VerifyUserExists` / `ReportAdoption` の3フィールド）を追加する
-- [ ] `ResolvePermissionCheckUID` のシグネチャを `(policy PermissionCheckUIDPolicy, realUID int, deps PermissionCheckUIDDeps) (int, error)` へ変更する
-- [ ] `Getenv` または `VerifyUserExists` が `nil` の場合は `panic` する。文言は既存の `WithPermissionCheckUIDPolicy`（20-22行目）の `panic` に倣い `groupmembership: ` 接頭辞を付ける
-- [ ] `ReportAdoption` が `nil` の場合は、呼び出しごとに新しい `sudoUIDAdoptionReporter` を生成して `slog.Default()` へ出力する実装を、既定値として補う
-- [ ] ドキュメントコメントに、呼び出しごとに新しいレポータ実体を使うため1回制限の検証には使えないこと（02 §7.3）を英語で明記する
+- [x] 公開構造体 `PermissionCheckUIDDeps`（`Getenv` / `VerifyUserExists` / `ReportAdoption` の3フィールド）を追加する
+- [x] `ResolvePermissionCheckUID` のシグネチャを `(policy PermissionCheckUIDPolicy, realUID int, deps PermissionCheckUIDDeps) (int, error)` へ変更する
+- [x] `Getenv` または `VerifyUserExists` が `nil` の場合は `panic` する。文言は既存の `WithPermissionCheckUIDPolicy`（20-22行目）の `panic` に倣い `groupmembership: ` 接頭辞を付ける
+- [x] `ReportAdoption` が `nil` の場合は、呼び出しごとに新しい `sudoUIDAdoptionReporter` を生成して `slog.Default()` へ出力する実装を、既定値として補う
+- [x] ドキュメントコメントに、呼び出しごとに新しいレポータ実体を使うため1回制限の検証には使えないこと（02 §7.3）を英語で明記する
 
 **完了条件**: `go vet -tags test ./internal/groupmembership/` が通る。
 
@@ -220,11 +220,11 @@
 
 **変更ファイル**: `internal/groupmembership/policy_test.go`
 
-- [ ] `TestResolvePermissionCheckUID_RealUIDOnly`（152行目）を `permissionCheckUIDDeps` を渡す形へ移行する。既存の `sudoUIDValues` 8種 × `realUID` 2種の網羅は維持する。02 §7.5 が求める「実在確認の呼び出し回数の検証」もこのテストへ追加し、全組み合わせで `verifyUserExists` と `reportAdoption` の呼び出し回数がいずれも 0 であることを検証する
-- [ ] `TestResolvePermissionCheckUID_SudoUIDAware`（174行目）を同様に移行する。行の追加はフェーズ3で行う
-- [ ] `TestResolvePermissionCheckUID_EnvAccess`（222行目）を同様に移行する
-- [ ] 3テストで使う `permissionCheckUIDDeps` を組み立てるテストヘルパー関数を `policy_test.go` 内に1つ用意し、`verifyUserExists` の既定を「常に `nil`（実在する）」、`reportAdoption` の既定を「呼び出しを数えるだけの関数」とする。各テストは必要なフィールドのみ上書きする。ヘルパー名・引数名・コメントはすべて英語で書く
-- [ ] `TestResolvePermissionCheckUID_SudoUIDAware` のドキュメントコメント（`policy_test.go:169-173`）と `TestResolvePermissionCheckUID_EnvAccess` のドキュメントコメント（`policy_test.go:218-221`）が参照している節番号は 0160 のもの（それぞれ `§3.4.2`、`§3.5`）である。本タスクの決定表と対比要件を指すよう、`0161 §3.5`（決定表）と `0161 §7.1`（対比要件）へ書き換える
+- [x] `TestResolvePermissionCheckUID_RealUIDOnly`（152行目）を `permissionCheckUIDDeps` を渡す形へ移行する。既存の `sudoUIDValues` 8種 × `realUID` 2種の網羅は維持する。02 §7.5 が求める「実在確認の呼び出し回数の検証」もこのテストへ追加し、全組み合わせで `verifyUserExists` と `reportAdoption` の呼び出し回数がいずれも 0 であることを検証する
+- [x] `TestResolvePermissionCheckUID_SudoUIDAware`（174行目）を同様に移行する。行の追加はフェーズ3で行う
+- [x] `TestResolvePermissionCheckUID_EnvAccess`（222行目）を同様に移行する
+- [x] 3テストで使う `permissionCheckUIDDeps` を組み立てるテストヘルパー関数を `policy_test.go` 内に1つ用意し、`verifyUserExists` の既定を「常に `nil`（実在する）」、`reportAdoption` の既定を「呼び出しを数えるだけの関数」とする。各テストは必要なフィールドのみ上書きする。ヘルパー名・引数名・コメントはすべて英語で書く
+- [x] `TestResolvePermissionCheckUID_SudoUIDAware` のドキュメントコメント（`policy_test.go:169-173`）と `TestResolvePermissionCheckUID_EnvAccess` のドキュメントコメント（`policy_test.go:218-221`）が参照している節番号は 0160 のもの（それぞれ `§3.4.2`、`§3.5`）である。本タスクの決定表と対比要件を指すよう、`0161 §3.5`（決定表）と `0161 §7.1`（対比要件）へ書き換える
 
 **完了条件**: `go test -tags test ./internal/groupmembership/` が通り、上記3テストの検証内容が移行前より弱まっていないこと（表の行数と網羅の組み合わせ数が減っていないこと）。
 
@@ -232,10 +232,10 @@
 
 **変更ファイル**: `cmd/record/main_test.go`、`cmd/verify/main_test.go`、`cmd/runner/main_test.go`
 
-- [ ] `TestRecordDeclaresSudoUIDAwarePolicy`（`cmd/record/main_test.go:420`）の `ResolvePermissionCheckUID` 呼び出しを `groupmembership.PermissionCheckUIDDeps{Getenv: func(string) string { return "1000" }, VerifyUserExists: func(int) error { return nil }}` を渡す形へ変更する
-- [ ] `TestVerifyDeclaresSudoUIDAwarePolicy`（`cmd/verify/main_test.go:190`）を同様に変更する
-- [ ] `TestRunnerDeclaresRealUIDOnlyPolicy`（`cmd/runner/main_test.go:349`）を同様に変更する。`RealUIDOnly` では `VerifyUserExists` が呼ばれないことを、呼ばれたら `t.Error` を出すクロージャで検証する（AC-12）
-- [ ] `cmd/record/main_test.go:417` と `cmd/verify/main_test.go:187` の `matching the pre-refactor resolvePermissionCheckUID(0, "1000") behavior` というコメント文を、新シグネチャに合わせた表現へ書き換える
+- [x] `TestRecordDeclaresSudoUIDAwarePolicy`（`cmd/record/main_test.go:420`）の `ResolvePermissionCheckUID` 呼び出しを `groupmembership.PermissionCheckUIDDeps{Getenv: func(string) string { return "1000" }, VerifyUserExists: func(int) error { return nil }}` を渡す形へ変更する
+- [x] `TestVerifyDeclaresSudoUIDAwarePolicy`（`cmd/verify/main_test.go:190`）を同様に変更する
+- [x] `TestRunnerDeclaresRealUIDOnlyPolicy`（`cmd/runner/main_test.go:349`）を同様に変更する。`RealUIDOnly` では `VerifyUserExists` が呼ばれないことを、呼ばれたら `t.Error` を出すクロージャで検証する（AC-12）
+- [x] `cmd/record/main_test.go:417` と `cmd/verify/main_test.go:187` の `matching the pre-refactor resolvePermissionCheckUID(0, "1000") behavior` というコメント文を、新シグネチャに合わせた表現へ書き換える
 
 **完了条件**: `go test -tags test ./cmd/...` が通り、3テストの検証内容（宣言された方針の確認と採用の可否）が移行前と同じであること。
 
@@ -592,12 +592,12 @@
 - [ ] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3 / 1-4 / 1-5）
 
 ### PR-2: 依存の束への移行
-- [ ] ステップ2-1: `permissionCheckUIDDeps`・`lookupUserByUID`・シグネチャ変更
-- [ ] ステップ2-2: `getPermissionCheckUID` での本番依存の組み立て
-- [ ] ステップ2-3: `test_helpers_policy.go` の公開ラッパー更新
-- [ ] ステップ2-4: `policy_test.go` の既存3テストの移行
-- [ ] ステップ2-5: `cmd/record` / `cmd/verify` / `cmd/runner` の既存テストの移行とコメント修正
-- [ ] `make fmt` → `make test` → `make lint`（Linux で実行し、CGO 有効・無効の両方でコンパイルされることを確認）
+- [x] ステップ2-1: `permissionCheckUIDDeps`・`lookupUserByUID`・シグネチャ変更
+- [x] ステップ2-2: `getPermissionCheckUID` での本番依存の組み立て
+- [x] ステップ2-3: `test_helpers_policy.go` の公開ラッパー更新
+- [x] ステップ2-4: `policy_test.go` の既存3テストの移行
+- [x] ステップ2-5: `cmd/record` / `cmd/verify` / `cmd/runner` の既存テストの移行とコメント修正
+- [x] `make fmt` → `make test` → `make lint`（Linux で実行し、CGO 有効・無効の両方でコンパイルされることを確認）
 - [ ] PR-2 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3 / 2-4 / 2-5）
 
 ### PR-3: 実在確認と記録の組み込み

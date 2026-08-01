@@ -521,6 +521,37 @@ func (m *sudoUIDExistenceMemo) verify(uid int, lookup func(uid int) error) error
 	return nil
 }
 
+// permissionCheckUIDDeps bundles the external dependencies that the
+// SudoUIDAware branch consults while resolving the permission check UID.
+// getPermissionCheckUID supplies the production values; in-package tests
+// replace each field. All fields must be non-nil; the RealUIDOnly branch
+// reads none of them.
+type permissionCheckUIDDeps struct {
+	// getenv reads an environment variable (os.Getenv in production).
+	getenv func(name string) string
+
+	// verifyUserExists reports whether a user with the given UID exists. A
+	// nil error means the user exists. It passes through whatever os/user
+	// returns so that the caller can classify the failure.
+	verifyUserExists func(uid int) error
+
+	// reportAdoption records that the permission check UID was taken from
+	// SUDO_UID. It is the single seam for the record: production binds both
+	// the destination logger and the once-per-process guard into it.
+	reportAdoption func(policy PermissionCheckUIDPolicy, realUID, permissionCheckUID int)
+}
+
+// lookupUserByUID reports whether a user with the given UID exists in the
+// user database. It returns the error from os/user unchanged so that the
+// caller can distinguish "no such user" from a lookup failure. The error is
+// deliberately not classified here: the classification rule is part of the
+// security verdict, so it lives in the resolution logic where tests can
+// exercise it directly.
+func lookupUserByUID(uid int) error {
+	_, err := user.LookupId(strconv.Itoa(uid))
+	return err
+}
+
 // getPermissionCheckUID returns the user ID to use for permission checks.
 // The base UID is resolved according to gm's effective permission check UID
 // policy (see effectivePermissionCheckUIDPolicy); SUDO_UID is only consulted
@@ -537,17 +568,25 @@ func (gm *GroupMembership) getPermissionCheckUID() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return resolvePermissionCheckUID(gm.effectivePermissionCheckUIDPolicy(), realUID, os.Getenv)
+	return resolvePermissionCheckUID(gm.effectivePermissionCheckUIDPolicy(), realUID, permissionCheckUIDDeps{
+		getenv: os.Getenv,
+		verifyUserExists: func(uid int) error {
+			return gm.sudoUIDExistence.verify(uid, lookupUserByUID)
+		},
+		reportAdoption: func(policy PermissionCheckUIDPolicy, realUID, permissionCheckUID int) {
+			processSudoUIDAdoptionReporter.report(slog.Default(), policy, realUID, permissionCheckUID)
+		},
+	})
 }
 
 // resolvePermissionCheckUID resolves the UID to use for permission checks from
 // the effective permission check UID policy, the process's real UID, and the
-// SUDO_UID environment variable.
+// dependencies bundled in deps.
 //
-// Under RealUIDOnly, it always returns realUID and never calls getenv. Under
-// SudoUIDAware, when realUID is 0 and SUDO_UID (read via getenv) is set, it
-// returns the original user's UID taken from SUDO_UID; otherwise it returns
-// realUID.
+// Under RealUIDOnly, it always returns realUID and never calls deps.getenv.
+// Under SudoUIDAware, when realUID is 0 and SUDO_UID (read via deps.getenv)
+// is set, it returns the original user's UID taken from SUDO_UID; otherwise it
+// returns realUID.
 //
 // This pure function is separated from getPermissionCheckUID so that all branches
 // can be tested without requiring root privileges.
@@ -555,16 +594,17 @@ func (gm *GroupMembership) getPermissionCheckUID() (int, error) {
 // Parameters:
 //   - policy: The effective permission check UID policy
 //   - realUID: The process's real UID
-//   - getenv: The function used to read environment variables (os.Getenv in production)
+//   - deps: The external dependencies the SudoUIDAware branch consults
+//     (environment variable access, user existence check, adoption record)
 //
 // Returns:
 //   - int: The UID to use for permission checks
 //   - error: Error if SUDO_UID is present but invalid
-func resolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, getenv func(string) string) (int, error) {
+func resolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, deps permissionCheckUIDDeps) (int, error) {
 	if policy != SudoUIDAware || realUID != 0 {
 		return realUID, nil
 	}
-	sudoUID := getenv(sudoUIDEnvVar)
+	sudoUID := deps.getenv(sudoUIDEnvVar)
 	if sudoUID == "" {
 		return realUID, nil
 	}
