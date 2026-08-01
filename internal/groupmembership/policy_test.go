@@ -461,7 +461,9 @@ func TestResolvePermissionCheckUID_ExistenceCheckSkippedUnderRealUIDOnly(t *test
 
 // TestResolvePermissionCheckUID_AdoptionRecordConditions verifies that the
 // adoption record is emitted only when SUDO_UID is a valid value different
-// from the real UID and the existence check succeeds.
+// from the real UID and the existence check succeeds. Each row also asserts
+// the resolved base UID, so that a row cannot pass on the record count alone
+// while the resolution itself is wrong.
 func TestResolvePermissionCheckUID_AdoptionRecordConditions(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -469,13 +471,14 @@ func TestResolvePermissionCheckUID_AdoptionRecordConditions(t *testing.T) {
 		realUID    int
 		sudoUID    string
 		verifyErr  error
+		wantUID    int
 		wantRecord bool
 	}{
-		{name: "adopted when SUDO_UID differs from real UID", policy: SudoUIDAware, realUID: 0, sudoUID: "1000", wantRecord: true},
-		{name: "not recorded when SUDO_UID is unset", policy: SudoUIDAware, realUID: 0, sudoUID: "", wantRecord: false},
-		{name: "not recorded when SUDO_UID equals real UID", policy: SudoUIDAware, realUID: 0, sudoUID: "0", wantRecord: false},
-		{name: "not recorded when existence check fails", policy: SudoUIDAware, realUID: 0, sudoUID: "1000", verifyErr: user.UnknownUserIdError(1000), wantRecord: false},
-		{name: "not recorded under RealUIDOnly", policy: RealUIDOnly, realUID: 0, sudoUID: "1000", wantRecord: false},
+		{name: "adopted when SUDO_UID differs from real UID", policy: SudoUIDAware, realUID: 0, sudoUID: "1000", wantUID: 1000, wantRecord: true},
+		{name: "not recorded when SUDO_UID is unset", policy: SudoUIDAware, realUID: 0, sudoUID: "", wantUID: 0, wantRecord: false},
+		{name: "not recorded when SUDO_UID equals real UID", policy: SudoUIDAware, realUID: 0, sudoUID: "0", wantUID: 0, wantRecord: false},
+		{name: "not recorded when existence check fails", policy: SudoUIDAware, realUID: 0, sudoUID: "1000", verifyErr: user.UnknownUserIdError(1000), wantUID: 0, wantRecord: false},
+		{name: "not recorded under RealUIDOnly", policy: RealUIDOnly, realUID: 0, sudoUID: "1000", wantUID: 0, wantRecord: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -483,16 +486,23 @@ func TestResolvePermissionCheckUID_AdoptionRecordConditions(t *testing.T) {
 			deps := newPermissionCheckUIDDeps(rec)
 			deps.getenv = func(string) string { return tt.sudoUID }
 			if tt.verifyErr != nil {
-				deps.verifyUserExists = func(int) error { return tt.verifyErr }
+				// The counter is incremented here as well, so that the
+				// override counts the same way as the default seam from
+				// newPermissionCheckUIDDeps.
+				deps.verifyUserExists = func(int) error {
+					rec.verifyUserExistsCalls++
+					return tt.verifyErr
+				}
 			}
 
-			_, err := resolvePermissionCheckUID(tt.policy, tt.realUID, deps)
+			uid, err := resolvePermissionCheckUID(tt.policy, tt.realUID, deps)
 
 			if tt.verifyErr != nil {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 			}
+			assert.Equal(t, tt.wantUID, uid)
 			if tt.wantRecord {
 				assert.Equal(t, 1, rec.reportAdoptionCalls)
 			} else {

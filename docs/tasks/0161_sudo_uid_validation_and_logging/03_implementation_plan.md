@@ -300,7 +300,7 @@
 - [x] `resolvePermissionCheckUID` のドキュメントコメントに、`SudoUIDAware` では採用前に実在確認を行い、失敗時は `ErrSudoUIDUserNotFound` または `ErrSudoUIDUserLookupFailed` を返すことを英語で追記する
 - [x] `getPermissionCheckUID` のドキュメントコメント（446-456行目）の `Returns` 節に、同じ2つのエラーを返しうることを英語で追記する
 
-> **02 §8 との差異**: 02 §8 は `manager.go` の2つの関数のドキュメントコメント更新をフェーズ4に置いている。本計画ではこれをフェーズ3のステップ3-3 へ前倒しした。両コメントはステップ3-1 が追加するエラーそのものを述べるものであり、フェーズ4へ残すと PR-3 と PR-4 の間、コメントが実装と食い違う期間が生じるためである。`policy.go` の `SudoUIDAware` コメント（ステップ4-2）は方針の説明であり、他の文書更新とまとめてレビューする利得の方が大きいためフェーズ4に残す。
+> **02 §8 との差異**: 02 §8 は `manager.go` の2つの関数のドキュメントコメント更新をフェーズ4に置いている。本計画ではこれをフェーズ3のステップ3-3 へ前倒しした。両コメントはステップ3-1 が追加するエラーそのものを述べるものであり、フェーズ4へ残すと PR-3 と PR-4 の間、コメントが実装と食い違う期間が生じるためである。`policy.go` の `SudoUIDAware` コメント（ステップ4-2）も、同じ理由により PR-3 で実施する（下記ステップ4-2 の差異注記を参照）。
 
 **完了条件**: 両関数のコメントが、ステップ3-1 で追加したエラー2つを列挙していること。
 
@@ -377,7 +377,7 @@
 
 ### PR-3 作成ポイント: existence check and adoption record
 
-**対象ステップ**: 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7
+**対象ステップ**: 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7 / 4-2（フェーズ4から前倒し。ステップ4-2 の差異注記を参照）
 
 **推奨タイトル**: `feat(0161)!: verify SUDO_UID exists before adopting it`（本文に `BREAKING CHANGE:` フッタを置き、02 §5.3 の4環境を挙げる）
 
@@ -418,10 +418,12 @@
 
 **変更ファイル**: `internal/groupmembership/policy.go`
 
-- [ ] `SudoUIDAware` 定数のコメント（24-31行目）のうち、次の2文を書き換える。
+> **本計画内での差異**: 本ステップはフェーズ4に置いていたが、PR-3 で実施する。当初はコメントが方針の説明であることを理由にフェーズ4へ残したが、変更前の文面は「実在確認を行わない」という、PR-3 のマージ後には偽になる記述であり、`SudoUIDAware` の安全性上の性質を読者が最初に参照するコメントでもある。ステップ3-3 と同じ理由（実装とコメントが食い違う期間を作らない）が、より強く当てはまるためである。
+
+- [x] `SudoUIDAware` 定数のコメント（24-31行目）のうち、次の2文を書き換える。
   - 変更前: `// SUDO_UID is only checked for numeric validity; it is not verified to`／`// correspond to a real user. This policy therefore accepts that anyone`／`// able to start the binary as root can specify the base UID at will.`
   - 変更後: `// SUDO_UID is checked for numeric validity and verified to correspond to`／`// a user that exists in the user database; the resolution fails closed when`／`// it does not. This policy therefore accepts that anyone able to start the`／`// binary as root can specify any existing user's UID as the base UID.`
-- [ ] 直後の `// It is only selected when explicitly declared.` は変更しない
+- [x] 直後の `// It is only selected when explicitly declared.` は変更しない
 
 **完了条件**: `rg -n "it is not verified to" internal/ cmd/` の結果が空であること。
 
@@ -651,13 +653,17 @@
 | AC-01 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_SudoUIDAware`（`SUDO_UID` 有効値かつ実在確認成功の行で基準UIDが `SUDO_UID` の値になる） |
 | AC-01 | `test` | `cmd/record/main_test.go::TestRecordDeclaresSudoUIDAwarePolicy`、`cmd/verify/main_test.go::TestVerifyDeclaresSudoUIDAwarePolicy`（宣言下での採用が維持される） |
 | AC-01 | `manual` | `lookupUserByUID` の既定実装が `user.LookupId` を呼ぶ1行であることをコードレビューで確認（02 §7.6） |
+| AC-01 | `static` | `rg -n "gm\.sudoUIDExistence\.verify\(uid, lookupUserByUID\)" internal/groupmembership/manager.go` が1件一致すること（本番の `verifyUserExists` がメモを経由してユーザーデータベースを引くこと。02 §5.4 が述べる「照会はインスタンスごとに1回」という性質はこの結線のみに依存する） |
 | AC-02 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_UserNotFound`、`internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_FailsClosedOnExistenceFailure` |
+| AC-02 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_ErrorMessageContent`（`user not found` サブテスト。02 §4.3 が求めるメッセージの構成要素を固定する） |
 | AC-03 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_SentinelErrorsAreDistinct` |
 | AC-03 | `test` | `internal/groupmembership/manager_test.go::TestSudoUIDExistenceErrorMessages`（センチネル2種の定義部分。`.Error()` 文言をリテラルで固定し、相互に `errors.Is` で一致しないことを検証する） |
 | AC-04 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_UserLookupFailed`（`ErrSudoUIDUserLookupFailed` と渡したエラー値の双方に `errors.Is` で一致する） |
+| AC-04 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_ErrorMessageContent`（`lookup failed` サブテスト。02 §4.3 が求めるメッセージの構成要素を固定する） |
 | AC-05 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_ExistenceCheckNotInvoked`（数値として不正な3値で `verifyUserExists` の呼び出し回数が 0、かつ 0160 と同じエラー） |
 | AC-06 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_ExistenceCheckNotInvoked`（実 UID が 0 以外で呼び出し回数 0、実 UID が返る） |
 | AC-07 | `test` | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_Report`（レベルが `slog.LevelWarn`）、`internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_AdoptionRecordConditions`（採用時に記録が出る） |
+| AC-07 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_RecordFailureDoesNotChangeVerdict`（記録が失敗しても基準UIDとエラーが変わらないこと。02 §1.2） |
 | AC-08 | `test` | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_Report`（`permission_check_uid` / `real_uid` / `source_env_var` / `permission_check_uid_policy` / `user_database_source` の5属性を検証し、`real_uid` と `permission_check_uid` に異なる値を与える） |
 | AC-09 | `test` | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnce`、`internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently` |
 | AC-09 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_ReportsAdoptionOnlyOncePerReporter`（同一レポータ実体で解決を3回実行して記録は1件） |
@@ -675,6 +681,7 @@
 | AC-13 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_RealUIDOnly`（`realUID` 2種 × `SUDO_UID` 8種の全組み合わせで `reportAdoption` の呼び出し回数 0） |
 | AC-14 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_RealUIDOnly`（`realUID` 2種 × `SUDO_UID` 8種で常に実 UID）、`internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_EnvAccess`（`RealUIDOnly` では `getenv` が呼ばれない） |
 | AC-15 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_SudoUIDAware`（02 §3.5 の決定表の1〜7行目を `realUID 0` サブテストの表が、8行目を `realUID non-zero` サブテストが担う。各行で基準UID・エラー・記録の有無を検証。行と 02 §3.5 の対応はステップ3-4 に明記） |
+| AC-15 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_VerifiesEvenWhenSudoUIDIsZero`（`SUDO_UID` が実 UID と同じ値でも実在確認を省かないこと。02 §3.5 の該当行の処理面を固定する） |
 | AC-16 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_SudoUIDAware`（実在確認の差し替え口を使って全行を到達する） |
 | AC-16 | `test` | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionRecordReachesDefaultLogger`（記録の出力先の差し替え口を使う） |
 | AC-16 | `test` | `internal/groupmembership/policy_test.go::TestResolvePermissionCheckUID_PanicsOnNilDeps`（パッケージ外向けの差し替え口 `ResolvePermissionCheckUID` が、必須の2口が nil のときに解決へ進まずパニックすること） |
