@@ -14,6 +14,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestUserDatabaseSource verifies that the constant identifying the user
+// database source for this build configuration has the expected value.
+// This test guards against unintentional changes to the constant, not
+// against the build actually using a different database at runtime.
+func TestUserDatabaseSource(t *testing.T) {
+	if userDatabaseSource != "passwd-file" {
+		t.Errorf("userDatabaseSource = %q, want %q", userDatabaseSource, "passwd-file")
+	}
+}
+
 // TestParseGroupLine is specific to the no-CGO implementation
 func TestParseGroupLine(t *testing.T) {
 	tests := []struct {

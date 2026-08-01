@@ -579,12 +579,12 @@
 ## 6. 実装チェックリスト
 
 ### PR-1: 独立した部品の追加
-- [ ] ステップ1-1: ユーザーデータベース種別の定数（`membership_cgo.go` / `membership_nocgo.go` + 各ビルドタグのテスト）
-- [ ] ステップ1-2: `ErrSudoUIDUserNotFound` / `ErrSudoUIDUserLookupFailed`
-- [ ] ステップ1-3: `sudoUIDAdoptionReporter` 型・`report`・パッケージレベル実体
-- [ ] ステップ1-4: `sudoUIDExistenceMemo` 型・`verify`・`GroupMembership` フィールド・`New` の初期化
-- [ ] ステップ1-5: フェーズ1の単体テスト（捕捉ハンドラ + 7テスト）
-- [ ] `make fmt` → `make test` → `make lint`（Linux で実行し、CGO 有効・無効の両方を通す）
+- [x] ステップ1-1: ユーザーデータベース種別の定数（`membership_cgo.go` / `membership_nocgo.go` + 各ビルドタグのテスト）
+- [x] ステップ1-2: `ErrSudoUIDUserNotFound` / `ErrSudoUIDUserLookupFailed`
+- [x] ステップ1-3: `sudoUIDAdoptionReporter` 型・`report`・パッケージレベル実体
+- [x] ステップ1-4: `sudoUIDExistenceMemo` 型・`verify`・`GroupMembership` フィールド・`New` の初期化
+- [x] ステップ1-5: フェーズ1の単体テスト（捕捉ハンドラ + 7テスト）
+- [x] `make fmt` → `make test` → `make lint`（Linux で実行し、CGO 有効・無効の両方を通す）
 - [ ] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3 / 1-4 / 1-5）
 
 ### PR-2: 依存の束への移行

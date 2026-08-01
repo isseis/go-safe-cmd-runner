@@ -2,10 +2,12 @@ package groupmembership
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"os/user"
 	"runtime"
 	"strconv"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -953,4 +955,184 @@ func TestCanCurrentUserSafelyReadFile_EnumerationError(t *testing.T) {
 	assert.False(t, canRead)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)
+}
+
+func TestSudoUIDAdoptionReporter_Report(t *testing.T) {
+	t.Parallel()
+
+	capture := newLogCaptureHandler()
+	logger := slog.New(capture)
+
+	var r sudoUIDAdoptionReporter
+	r.report(logger, SudoUIDAware, 0, 1000)
+
+	records := capture.recordsCopy()
+	require.Len(t, records, 1)
+	rec := records[0]
+	assert.Equal(t, slog.LevelWarn, rec.Level)
+	assert.Equal(t, "Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment", rec.Message)
+	assert.Equal(t, int64(1000), rec.Attrs["permission_check_uid"])
+	assert.Equal(t, int64(0), rec.Attrs["real_uid"])
+	assert.Equal(t, sudoUIDEnvVar, rec.Attrs["source_env_var"])
+	assert.Equal(t, SudoUIDAware.String(), rec.Attrs["permission_check_uid_policy"])
+	assert.Equal(t, userDatabaseSource, rec.Attrs["user_database_source"])
+}
+
+func TestSudoUIDAdoptionReporter_ReportsOnlyOnce(t *testing.T) {
+	t.Parallel()
+
+	capture := newLogCaptureHandler()
+	logger := slog.New(capture)
+
+	var r sudoUIDAdoptionReporter
+	r.report(logger, SudoUIDAware, 0, 1000)
+	r.report(logger, SudoUIDAware, 0, 2000)
+	r.report(logger, SudoUIDAware, 0, 3000)
+
+	assert.Len(t, capture.recordsCopy(), 1)
+}
+
+func TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently(t *testing.T) {
+	t.Parallel()
+
+	capture := newLogCaptureHandler()
+	logger := slog.New(capture)
+
+	var r sudoUIDAdoptionReporter
+	var wg sync.WaitGroup
+	for range 50 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r.report(logger, SudoUIDAware, 0, 1000)
+		}()
+	}
+	wg.Wait()
+
+	assert.Len(t, capture.recordsCopy(), 1)
+}
+
+func TestSudoUIDExistenceMemo_ReusesConfirmation(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	lookup := func(_ int) error {
+		callCount++
+		return nil
+	}
+
+	var m sudoUIDExistenceMemo
+	m.confirmed = make(map[int]struct{})
+
+	require.NoError(t, m.verify(1000, lookup))
+	require.NoError(t, m.verify(1000, lookup))
+	require.NoError(t, m.verify(1000, lookup))
+
+	assert.Equal(t, 1, callCount)
+}
+
+func TestSudoUIDExistenceMemo_DoesNotRememberFailures(t *testing.T) {
+	t.Parallel()
+
+	sentinel := errors.New("not found")
+	callCount := 0
+	lookup := func(_ int) error {
+		callCount++
+		if callCount <= 2 {
+			return sentinel
+		}
+		return nil
+	}
+
+	var m sudoUIDExistenceMemo
+	m.confirmed = make(map[int]struct{})
+
+	// First call: lookup fails
+	require.ErrorIs(t, m.verify(1000, lookup), sentinel)
+	// Second call: lookup fails again (failure not memoized)
+	require.ErrorIs(t, m.verify(1000, lookup), sentinel)
+	assert.Equal(t, 2, callCount)
+
+	// Third call: lookup succeeds
+	require.NoError(t, m.verify(1000, lookup))
+	assert.Equal(t, 3, callCount)
+
+	// Fourth call: confirmed, lookup not called
+	require.NoError(t, m.verify(1000, lookup))
+	assert.Equal(t, 3, callCount)
+}
+
+func TestSudoUIDExistenceMemo_Concurrent(t *testing.T) {
+	t.Parallel()
+
+	successUID := 1000
+	failUID := 9999
+	sentinel := errors.New("not found")
+
+	var mu sync.Mutex
+	callCounts := map[int]int{}
+	lookup := func(uid int) error {
+		mu.Lock()
+		callCounts[uid]++
+		mu.Unlock()
+		if uid == failUID {
+			return sentinel
+		}
+		return nil
+	}
+
+	var m sudoUIDExistenceMemo
+	m.confirmed = make(map[int]struct{})
+
+	var wg sync.WaitGroup
+	for range 50 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			m.verify(successUID, lookup)
+			m.verify(failUID, lookup)
+		}()
+	}
+	wg.Wait()
+
+	mu.Lock()
+	successCalls := callCounts[successUID]
+	failCallsBefore := callCounts[failUID]
+	mu.Unlock()
+
+	// successUID was resolved at least once and then confirmed for the rest
+	assert.GreaterOrEqual(t, successCalls, 1)
+
+	// After all goroutines converge, successUID is confirmed
+	require.NoError(t, m.verify(successUID, func(int) error {
+		t.Error("lookup called for confirmed UID after concurrent verification")
+		return nil
+	}))
+
+	// failUID was never confirmed, so a subsequent verify calls lookup again
+	require.ErrorIs(t, m.verify(failUID, lookup), sentinel)
+	mu.Lock()
+	assert.Equal(t, failCallsBefore+1, callCounts[failUID])
+	mu.Unlock()
+}
+
+func TestNewInitializesSudoUIDExistenceMemo(t *testing.T) {
+	t.Parallel()
+
+	gm := New()
+
+	// Verify that the confirmed map is initialized (not nil) by writing to it.
+	lookupCalls := 0
+	require.NoError(t, gm.sudoUIDExistence.verify(1000, func(int) error {
+		lookupCalls++
+		return nil
+	}))
+	assert.Equal(t, 1, lookupCalls)
+
+	// Second call should reuse the confirmed entry.
+	require.NoError(t, gm.sudoUIDExistence.verify(1000, func(int) error {
+		lookupCalls++
+		return nil
+	}))
+	assert.Equal(t, 1, lookupCalls)
 }

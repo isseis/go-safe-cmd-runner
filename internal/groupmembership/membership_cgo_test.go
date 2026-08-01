@@ -17,6 +17,16 @@ import (
 // CGO-specific tests can be added here if needed in the future
 // Currently, all tests are shared through membership_common_test.go
 
+// TestUserDatabaseSource verifies that the constant identifying the user
+// database source for this build configuration has the expected value.
+// This test guards against unintentional changes to the constant, not
+// against the build actually using a different database at runtime.
+func TestUserDatabaseSource(t *testing.T) {
+	if userDatabaseSource != "nss" {
+		t.Errorf("userDatabaseSource = %q, want %q", userDatabaseSource, "nss")
+	}
+}
+
 // TestValidateGroupMemberCount tests the boundary check helper for C group member counts.
 func TestValidateGroupMemberCount(t *testing.T) {
 	tests := []struct {
