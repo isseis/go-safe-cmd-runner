@@ -411,6 +411,37 @@ func TestRunTOCTOU_ViolationLogsRemediationWithActualPath(t *testing.T) {
 	assert.NotContains(t, logOutput, "'+v.Path+'", "remediation hint must not contain unresolved template syntax")
 }
 
+// TestRunFailsClosedWhenPermissionCheckUIDUnresolvable verifies that record
+// resolves the permission check UID before it touches any file. record reads
+// its target files through safefileio.SafeOpenFile, which runs no read-safety
+// check, so a run creating new records would otherwise never resolve the UID
+// and an unverifiable SUDO_UID would go undetected.
+func TestRunFailsClosedWhenPermissionCheckUIDUnresolvable(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	targetFile := filepath.Join(hashDir, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("target content"), 0o644))
+
+	d := testRunDeps(hashDir)
+	d.ensurePermissionCheckUID = func() error { return groupmembership.ErrSudoUIDUserNotFound }
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"-d", hashDir, targetFile}, d, stdout, stderr)
+
+	require.Equal(t, 1, exitCode)
+	assert.Contains(t, stderr.String(), groupmembership.ErrSudoUIDUserNotFound.Error())
+	assert.Empty(t, stdout.String(), "no file must be processed once the UID cannot be resolved")
+
+	entries, err := os.ReadDir(hashDir)
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	assert.Equal(t, []string{"target.txt"}, names, "no hash record must be written")
+}
+
 // TestRecordDeclaresSudoUIDAwarePolicy verifies that this binary's init()
 // declared SudoUIDAware as the process-wide permission check UID policy, and
 // that under that policy a valid SUDO_UID is adopted when the real UID is 0,

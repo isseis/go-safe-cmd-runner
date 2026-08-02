@@ -646,6 +646,19 @@ func TestGetPermissionCheckUID(t *testing.T) {
 		}
 	})
 
+	t.Run("EnsurePermissionCheckUID reports what getPermissionCheckUID reports", func(t *testing.T) {
+		t.Setenv("SUDO_UID", "9999")
+
+		// EnsurePermissionCheckUID is the entry point record and verify call
+		// at startup; it must agree with the resolution the read-safety check
+		// performs. The individual failing branches need a real UID of 0 and
+		// are covered by the TestResolvePermissionCheckUID_* tests in
+		// policy_test.go.
+		gm := New(WithPermissionCheckUIDPolicy(SudoUIDAware))
+		_, want := gm.getPermissionCheckUID()
+		assert.Equal(t, want, gm.EnsurePermissionCheckUID())
+	})
+
 	t.Run("SUDO_UID with invalid value", func(t *testing.T) {
 		// Test parseSudoUID directly - this doesn't require root privileges
 		invalidValues := []struct {

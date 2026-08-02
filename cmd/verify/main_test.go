@@ -181,6 +181,31 @@ func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
 	require.Len(t, validator.calls, 1, "file should have been processed")
 }
 
+// TestRunFailsClosedWhenPermissionCheckUIDUnresolvable verifies that verify
+// resolves the permission check UID before it touches any file, so that an
+// unverifiable SUDO_UID stops the run once at startup rather than producing a
+// failure per file.
+func TestRunFailsClosedWhenPermissionCheckUIDUnresolvable(t *testing.T) {
+	tempDir := t.TempDir()
+	validator := &fakeValidator{responses: map[string]error{}}
+	cleanup := overrideValidatorFactory(t, validator)
+	defer cleanup()
+
+	original := ensurePermissionCheckUID
+	ensurePermissionCheckUID = func() error { return groupmembership.ErrSudoUIDUserLookupFailed }
+	t.Cleanup(func() { ensurePermissionCheckUID = original })
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"-d", tempDir, "file1.txt", "file2.txt"}, stdout, stderr)
+
+	require.Equal(t, 1, exitCode)
+	assert.Contains(t, stderr.String(), groupmembership.ErrSudoUIDUserLookupFailed.Error())
+	assert.Empty(t, validator.calls, "no file must be verified once the UID cannot be resolved")
+	assert.Empty(t, stdout.String())
+}
+
 // TestVerifyDeclaresSudoUIDAwarePolicy verifies that this binary's init()
 // declared SudoUIDAware as the process-wide permission check UID policy, and
 // that under that policy a valid SUDO_UID is adopted when the real UID is 0,

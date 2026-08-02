@@ -589,6 +589,29 @@ func (gm *GroupMembership) getPermissionCheckUID() (int, error) {
 	})
 }
 
+// EnsurePermissionCheckUID resolves the permission check UID and reports only
+// whether the resolution succeeded, without checking any file. It exists so
+// that a binary declaring SudoUIDAware can resolve the UID once at startup:
+// under that policy the resolution can fail (see getPermissionCheckUID), and
+// the failure must surface before the first file is processed rather than
+// depending on whether a read-safety check happens to run at all.
+//
+// That dependency is real, because not every read reaches a read-safety
+// check. safefileio.SafeOpenFile only guards against symlink attacks; the
+// check that consults this UID lives in readFileContent, i.e. the SafeReadFile
+// family. record reads its target files through SafeOpenFile directly, so
+// without this entry point a record run creating new records would complete
+// having never resolved the UID — neither failing closed on an unverifiable
+// SUDO_UID nor emitting the adoption record.
+//
+// Calling it is not required for the read-safety check itself, which resolves
+// the UID on its own. The adoption record stays limited to one per process
+// (see sudoUIDAdoptionReporter), so resolving here does not duplicate it.
+func (gm *GroupMembership) EnsurePermissionCheckUID() error {
+	_, err := gm.getPermissionCheckUID()
+	return err
+}
+
 // resolvePermissionCheckUID resolves the UID to use for permission checks from
 // the effective permission check UID policy, the process's real UID, and the
 // dependencies bundled in deps.
@@ -652,8 +675,8 @@ func resolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, dep
 // into an error message. A value that passes parseSudoUID is at most 10
 // digits, so anything longer is padding (leading zeros, which strconv.Atoi
 // accepts without limit) that carries no diagnostic value. The bound matters
-// because the existence-check errors are produced once per file processed,
-// and the value they echo comes from the environment.
+// because the value the existence-check errors echo comes from the
+// environment, so without it the message length would be caller-controlled.
 const maxEchoedSudoUIDLen = 16
 
 // echoSudoUID returns raw for display in an error message, truncated if it is

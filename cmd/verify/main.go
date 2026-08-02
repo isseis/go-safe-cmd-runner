@@ -25,6 +25,11 @@ var (
 		return cmdcommon.CreateValidator(hashDir)
 	}
 	mkdirAll = os.MkdirAll
+	// ensurePermissionCheckUID resolves the UID used by read-safety checks.
+	// run() calls it once at startup so that an unverifiable SUDO_UID fails
+	// before any file is processed; see the call site for why the per-file
+	// reads are not relied upon for this.
+	ensurePermissionCheckUID = groupmembership.New().EnsurePermissionCheckUID
 )
 
 func init() {
@@ -63,6 +68,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	if cfg.usedDeprecated {
 		fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.") //nolint:errcheck
+	}
+
+	// Resolve the UID for read-safety checks once, before any file is touched.
+	// verify declares SudoUIDAware (see init), so this is where an unverifiable
+	// SUDO_UID fails the run and where the adoption record is emitted. verify's
+	// per-file reads do reach a read-safety check, but resolving here keeps the
+	// failure and the record independent of that: they arrive once, before the
+	// first file, rather than once per file.
+	if err := ensurePermissionCheckUID(); err != nil {
+		fmt.Fprintf(stderr, "Error: %v\n", err) //nolint:errcheck
+		return 1
 	}
 
 	// Run TOCTOU permission check on directories referenced by this operation.
