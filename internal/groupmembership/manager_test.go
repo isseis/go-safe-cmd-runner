@@ -620,10 +620,18 @@ func TestGetPermissionCheckUID(t *testing.T) {
 		t.Setenv("SUDO_UID", "9999")
 
 		// The skip must precede getPermissionCheckUID(): skipping after the
-		// call would leave the assertions below to be evaluated first.
+		// call would leave the assertions below to be evaluated first. The
+		// ErrSudoUIDUserNotFound assertion is only guaranteed when the lookup
+		// fails with user.UnknownUserIdError; production classifies any other
+		// lookup failure as ErrSudoUIDUserLookupFailed (manager.go), so those
+		// cases are skipped as well.
 		if os.Getuid() == 0 {
-			if _, err := user.LookupId("9999"); err == nil {
+			_, err := user.LookupId("9999")
+			if err == nil {
 				t.Skip("UID 9999 exists in this environment; the not-found path cannot be exercised")
+			}
+			if _, ok := errors.AsType[user.UnknownUserIdError](err); !ok {
+				t.Skipf("UID 9999 lookup failed for a reason other than not found (%v); the not-found path cannot be exercised", err)
 			}
 		}
 
