@@ -550,17 +550,17 @@
 
 **変更ファイル**: `docs/user/record_command.ja.md`、`docs/user/verify_command.ja.md`、`docs/user/record_command.md`、`docs/user/verify_command.md`
 
-- [ ] `record_command.ja.md` の「5. トラブルシューティング」に `### 5.6 SUDO_UID の実在確認に失敗する` を追加する（既存の最後の項は `### 5.5 ディレクトリを指定した場合`）。内容は次を含める。
+- [x] `record_command.ja.md` の「5. トラブルシューティング」に `### 5.6 SUDO_UID の実在確認に失敗する` を追加する（既存の最後の項は `### 5.5 ディレクトリを指定した場合`）。内容は次を含める。
   - `sudo record` の実行時に `SUDO_UID` が指す UID が実在するユーザーでなければ、対象ファイルを1件も処理せずに起動時に失敗すること（02 §3.7.7、§5.3「失敗の現れ方」）。ファイルの一部だけが記録されることはない
   - エラーメッセージの見分け方。2種のセンチネル文言 `SUDO_UID does not refer to an existing user` と `failed to verify that SUDO_UID refers to an existing user` を、実装（ステップ1-2）の文字列リテラルからそのまま引用して載せる。加えて、メッセージ中の `user_database_source=nss` / `user_database_source=passwd-file` で参照先ユーザーデータベースを判別できることを説明する（`user_database_source` は採用事実の記録の属性名でもあり、エラーメッセージ内でも同じ綴りで現れる）
   - 02 §5.3 の影響環境の表に対応する4つの対処（CGO 有効での再ビルド、ユーザーデータベース復旧後の再実行、環境から `SUDO_UID` を除く、`/etc/passwd` を用意する）
   - `sudo env -u SUDO_UID record ...` が回避策になるが、基準UIDが 0 になるため読み取り判定が厳しくなり、記録そのものが失敗しうること（02 §5.3「対処手段」）
   - `SUDO_UID` の採用によって基準UIDが実 UID と異なる値になった場合、警告が標準エラー出力へ1回記録されること。この警告は起動時に出るため、`sudo record` の通常運用では実行1回につき必ず1件出ること（02 §3.7.4、§3.7.7）
   - cron や systemd unit から実行する場合は、この警告を捉えるため標準エラー出力を保存する必要があること（02 §5.5「記録の欠落」）
-- [ ] `verify_command.ja.md` の「5. トラブルシューティング」に `### 5.7 SUDO_UID の実在確認に失敗する` を追加する（既存の最後の項は `### 5.6 スクリプトでのエラーハンドリング`）。内容は上と同じ観点を `verify` に合わせて記載する
-- [ ] 両文書の「目次」は `## ` 見出しのみを列挙しているため、追加した `### ` 見出しに伴う更新は不要であることを確認する
-- [ ] 記載した4つの対処のうち、実行して確認できるものは実際に確認する。(a) `sudo env -u SUDO_UID record <file>` を実行し、`SUDO_UID` が渡らないこと（および基準UIDが 0 になる結果として記録が失敗しうること）を確かめる。(b) `CGO_ENABLED=0 make build` した `record` のエラーメッセージに `user_database_source=passwd-file` が出ること、CGO 有効のビルドでは `nss` が出ることを、実在しない `SUDO_UID` を与えて確かめる。(c) ユーザーデータベースの一時障害と `/etc/passwd` の欠落は再現に環境構築を要するため、02 §5.3 の表を典拠として引用し、実行による確認は行わないことを明記する
-- [ ] 日本語版をコミットしたのち、`/mktrans` を実行して `record_command.md` と `verify_command.md` へ反映する
+- [x] `verify_command.ja.md` の「5. トラブルシューティング」に `### 5.7 SUDO_UID の実在確認に失敗する` を追加する（既存の最後の項は `### 5.6 スクリプトでのエラーハンドリング`）。内容は上と同じ観点を `verify` に合わせて記載する
+- [x] 両文書の「目次」は `## ` 見出しのみを列挙しているため、追加した `### ` 見出しに伴う更新は不要であることを確認する
+- [x] 記載した4つの対処のうち、実行して確認できるものは実際に確認する。(a) `sudo env -u SUDO_UID record <file>` を実行し、`SUDO_UID` が渡らないこと（および基準UIDが 0 になる結果として記録が失敗しうること）を確かめる。(b) `CGO_ENABLED=0 make build` した `record` のエラーメッセージに `user_database_source=passwd-file` が出ること、CGO 有効のビルドでは `nss` が出ることを、実在しない `SUDO_UID` を与えて確かめる。(c) ユーザーデータベースの一時障害と `/etc/passwd` の欠落は再現に環境構築を要するため、02 §5.3 の表を典拠として引用し、実行による確認は行わないことを明記する
+- [x] 日本語版をコミットしたのち、`/mktrans` を実行して `record_command.md` と `verify_command.md` へ反映する
 
 **完了条件**: 8 章の AC-18 の `static` チェックが期待どおりの結果になり、上記 (a) と (b) の実行結果が文書の記述と一致すること。
 
@@ -716,8 +716,8 @@
 - [ ] PR-5 マージ済み（対象ステップ: 5-1 / 5-2 / 5-3 / 5-4）
 
 ### PR-6: 利用者向け文書
-- [ ] ステップ4-5: `record_command.ja.md` / `verify_command.ja.md` → `/mktrans` で英語版
-- [ ] 8 章の AC-18 の検証コマンドを実行
+- [x] ステップ4-5: `record_command.ja.md` / `verify_command.ja.md` → `/mktrans` で英語版
+- [x] 8 章の AC-18 の検証コマンドを実行
 - [ ] PR-6 マージ済み（対象ステップ: 4-5）
 
 ## 7. テストヘルパーの配置
