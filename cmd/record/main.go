@@ -51,9 +51,6 @@ type deps struct {
 	machoDynlibAnalyzerFactory func() *machodylib.MachODynLibAnalyzer // nil means Mach-O dynlib analysis is disabled
 	mkdirAll                   func(path string, perm os.FileMode) error
 	toctouChecker              security.DirectoryPermChecker // nil means use NewDirectoryPermChecker
-	// ensurePermissionCheckUID resolves the UID used by read-safety checks.
-	// It is called once at startup so that an unverifiable SUDO_UID fails
-	// before any file is processed; see the call site in run().
 	// nil means use groupmembership.New().EnsurePermissionCheckUID.
 	ensurePermissionCheckUID func() error
 }
@@ -173,13 +170,10 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.") //nolint:errcheck
 	}
 
-	// Resolve the UID for read-safety checks once, before any file is touched.
 	// record declares SudoUIDAware (see init), so this is where an unverifiable
-	// SUDO_UID fails the run and where the adoption record is emitted.
-	// Resolving here rather than relying on the per-file reads is required:
-	// those go through safefileio.SafeOpenFile, which runs no read-safety
-	// check, so a run that only creates new records would otherwise never
-	// resolve the UID at all.
+	// SUDO_UID fails the run and where the adoption record is emitted. It must
+	// happen here rather than in the per-file reads; see
+	// GroupMembership.EnsurePermissionCheckUID.
 	ensureUID := d.ensurePermissionCheckUID
 	if ensureUID == nil {
 		ensureUID = groupmembership.New().EnsurePermissionCheckUID

@@ -590,23 +590,15 @@ func (gm *GroupMembership) getPermissionCheckUID() (int, error) {
 }
 
 // EnsurePermissionCheckUID resolves the permission check UID and reports only
-// whether the resolution succeeded, without checking any file. It exists so
-// that a binary declaring SudoUIDAware can resolve the UID once at startup:
-// under that policy the resolution can fail (see getPermissionCheckUID), and
-// the failure must surface before the first file is processed rather than
-// depending on whether a read-safety check happens to run at all.
+// whether the resolution succeeded, without checking any file. Binaries
+// declaring SudoUIDAware call it once at startup so that an unverifiable
+// SUDO_UID fails before the first file is processed.
 //
-// That dependency is real, because not every read reaches a read-safety
-// check. safefileio.SafeOpenFile only guards against symlink attacks; the
-// check that consults this UID lives in readFileContent, i.e. the SafeReadFile
-// family. record reads its target files through SafeOpenFile directly, so
-// without this entry point a record run creating new records would complete
-// having never resolved the UID — neither failing closed on an unverifiable
-// SUDO_UID nor emitting the adoption record.
-//
-// Calling it is not required for the read-safety check itself, which resolves
-// the UID on its own. The adoption record stays limited to one per process
-// (see sudoUIDAdoptionReporter), so resolving here does not duplicate it.
+// Startup is the only reliable point: record reads its target files through
+// safefileio.SafeOpenFile, which runs no read-safety check, so a run creating
+// only new records never resolves the UID on its own (§3.7.7 of the 0161
+// architecture document). Resolving here does not duplicate the adoption
+// record, which sudoUIDAdoptionReporter limits to one per process.
 func (gm *GroupMembership) EnsurePermissionCheckUID() error {
 	_, err := gm.getPermissionCheckUID()
 	return err
@@ -663,9 +655,7 @@ func resolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, dep
 		return 0, fmt.Errorf("could not verify SUDO_UID %s against the user database (user_database_source=%s); check the state of the user database, then re-run: %w: %w", echoSudoUID(sudoUID), userDatabaseSource, ErrSudoUIDUserLookupFailed, err)
 	}
 	if parsedUID != realUID {
-		// The adoption record is observational only; it is a bare statement
-		// with no captured result so that a failure to record can never
-		// change the resolved UID or the error returned.
+		// Bare statement: a failure to record must not change the verdict.
 		deps.reportAdoption(policy, realUID, parsedUID)
 	}
 	return parsedUID, nil
