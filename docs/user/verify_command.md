@@ -708,6 +708,8 @@ However, this is not a workaround that keeps the judgment criteria equivalent. R
 
 When `SUDO_UID` is adopted and the base UID differs from the real UID, a warning is recorded once to standard error. This warning is emitted at startup, so in normal `sudo verify` operation exactly one is emitted per run. When running from cron or a systemd unit, save the standard error output so that this warning can be captured.
 
+An example of the output is shown below (the timestamp that the default log handler prepends to the line is omitted).
+
 ```text
 WARN Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment permission_check_uid=1000 real_uid=0 source_env_var=SUDO_UID permission_check_uid_policy=sudo-uid-aware user_database_source=nss
 ```
@@ -733,4 +735,4 @@ WARN Permission check UID taken from SUDO_UID instead of the real UID; if this p
 
 ---
 
-**Last Updated**: 2025-10-02
+**Last Updated**: 2026-08-02

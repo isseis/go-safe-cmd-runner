@@ -696,6 +696,8 @@ sudo env -u SUDO_UID record ...
 
 `SUDO_UID` の採用によって基準UIDが実 UID と異なる値になった場合、警告が標準エラー出力へ1回記録されます。この警告は起動時に出力されるため、`sudo record` の通常運用では実行1回につき必ず1件出力されます。cron や systemd unit から実行する場合は、この警告を捉えるため標準エラー出力を保存してください。
 
+出力例を次に示します（既定のログハンドラが行頭に付与する時刻は省略しています）。
+
 ```text
 WARN Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment permission_check_uid=1000 real_uid=0 source_env_var=SUDO_UID permission_check_uid_policy=sudo-uid-aware user_database_source=nss
 ```
@@ -720,4 +722,4 @@ WARN Permission check UID taken from SUDO_UID instead of the real UID; if this p
 
 ---
 
-**最終更新**: 2025-10-02
+**最終更新**: 2026-08-02
