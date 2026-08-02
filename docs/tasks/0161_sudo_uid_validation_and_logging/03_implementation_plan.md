@@ -437,7 +437,7 @@
 
 - [x] `security-architecture.ja.md:50` の括弧内の基準UID解決規則の記述を、実在確認込みの規則へ書き換える。
   - 変更前: `record` は基準UID決定方針として `SudoUIDAware` を宣言しているため、実UIDが0かつ`SUDO_UID`が0..MaxUint32の範囲の数値UIDであればその値を、それ以外は実UIDを採用）
-  - 変更後: `record` は基準UID決定方針として `SudoUIDAware` を宣言しているため、実UIDが0かつ`SUDO_UID`が0..MaxUint32の範囲の数値UIDであり、かつその UID がユーザーデータベース上に実在する場合にその値を採用し、実在を確認できない場合は読み取り安全性チェックを失敗させる。それ以外は実UIDを採用）
+  - 変更後: `record` は基準UID決定方針として `SudoUIDAware` を宣言しているため、実UIDが0かつ`SUDO_UID`が0..MaxUint32の範囲の数値UIDであり、かつその UID がユーザーデータベース上に実在する場合にその値を採用し、実在を確認できない場合や`SUDO_UID`が数値として不正な場合は読み取り安全性チェックを失敗させる。実UIDが0以外または`SUDO_UID`が未設定の場合のみ実UIDを採用）
 - [x] ステップ4-1 の用語集への追加（`実在確認` → `existence check` ほか）が完了していることを確認する。`/mktrans` は用語集を参照するため、英訳の語が確定していないと、8 章の AC-17 の英語版チェックが期待どおりに一致しない
 - [x] 日本語版をコミットしたのち、`/mktrans` を実行して `security-architecture.md:50` の対応箇所へ反映する（CLAUDE.md「Translation Workflow」の順序に従う）
 - [x] 書き換えた記述が実装（ステップ3-1、3-2）と一致していることを、`resolvePermissionCheckUID` のコードと対照して確認する

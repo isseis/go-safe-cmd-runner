@@ -31,8 +31,8 @@
 | アンカーされた | anchored | 正規表現パターンの文脈 |
 | 攻撃対象領域 | attack surface | セキュリティの文脈 |
 | 任意コード実行 | arbitrary code execution | シェル/インタプリタ等が任意のコードを実行できること |
-| 採用 | adoption | `SUDO_UID` を基準UIDとして用いること（Task 0161） |
-| 採用事実の記録 | adoption record | 採用によって基準UIDが実 UID と異なる値になったことを `log/slog` へ記録すること（Task 0161） |
+| 採用 | adoption | 基準UID決定方針が `SudoUIDAware` のときに、`SUDO_UID` の値を基準UIDとして用いること（Task 0161） |
+| 採用事実の記録 | adoption record | 採用によって基準UIDが実 UID と異なる値になったことを `log/slog` へ警告として出力すること（Task 0161） |
 
 ### B
 
