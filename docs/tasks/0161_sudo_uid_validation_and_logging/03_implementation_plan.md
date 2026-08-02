@@ -396,8 +396,8 @@
 - [x] root で `go test -tags test -run TestGetPermissionCheckUID ./internal/groupmembership/` を1回実行し、ステップ3-7 の `t.Skip` または `ErrSudoUIDUserNotFound` の分岐が通ることを確認した。グリーンゲート（非 root）ではこの分岐に入らないため、この確認だけが 5.1 節の最上位リスクの検証手段である。root 実行ができない場合は、その旨と未検証であることを PR 本文に記す
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### フェーズ4: 文書の更新
 
@@ -407,14 +407,14 @@
 
 **変更ファイル**: `docs/translation_glossary.md`
 
-- [ ] 「A-Z (アルファベット順)」の各節へ次の5語を追加する。この用語集は英語見出し語のアルファベット順で節が分かれているため、追加先の節は英訳の頭文字で決まる。訳語は 02 の「用語」節に対応させる。
+- [x] 「A-Z (アルファベット順)」の各節へ次の5語を追加する。この用語集は英語見出し語のアルファベット順で節が分かれているため、追加先の節は英訳の頭文字で決まる。訳語は 02 の「用語」節に対応させる。
   - `### A` 節: 採用（`SUDO_UID` を基準UIDとして用いること）→ adoption
   - `### A` 節: 採用事実の記録 → adoption record
   - `### E` 節: 実在確認 → existence check
   - `### S` 節: センチネルエラー → sentinel error
   - `### U` 節: ユーザーデータベース種別 → user database source
-- [ ] 既存の `基準UID` / `基準UID決定方針`（47-48行目、`### B` 節）と同じ3列構成（`| 日本語 | English | 備考 |`）に揃え、`備考` セルの末尾に `（Task 0161）` を付す。表のヘッダ行（`| 日本語 | English | 備考 |`）は変更しない
-- [ ] 「更新履歴」表の末尾に `| YYYY-MM-DD | SUDO_UID 実在確認関連の用語を追加 (existence check, adoption, adoption record, sentinel error, user database source) |` を追加する（`YYYY-MM-DD` は実際に追加した日付に置き換える）
+- [x] 既存の `基準UID` / `基準UID決定方針`（47-48行目、`### B` 節）と同じ3列構成（`| 日本語 | English | 備考 |`）に揃え、`備考` セルの末尾に `（Task 0161）` を付す。表のヘッダ行（`| 日本語 | English | 備考 |`）は変更しない
+- [x] 「更新履歴」表の末尾に `| YYYY-MM-DD | SUDO_UID 実在確認関連の用語を追加 (existence check, adoption, adoption record, sentinel error, user database source) |` を追加する（`YYYY-MM-DD` は実際に追加した日付に置き換える）
 
 **完了条件**: 8 章の AC-19 の `static` チェックが期待どおりの結果になること。ステップ4-3 と 4-5 の `/mktrans` 実行より前に完了させる。
 
@@ -435,12 +435,12 @@
 
 **変更ファイル**: `docs/dev/architecture_design/security-architecture.ja.md`、`docs/dev/architecture_design/security-architecture.md`
 
-- [ ] `security-architecture.ja.md:50` の括弧内の基準UID解決規則の記述を、実在確認込みの規則へ書き換える。
+- [x] `security-architecture.ja.md:50` の括弧内の基準UID解決規則の記述を、実在確認込みの規則へ書き換える。
   - 変更前: `record` は基準UID決定方針として `SudoUIDAware` を宣言しているため、実UIDが0かつ`SUDO_UID`が0..MaxUint32の範囲の数値UIDであればその値を、それ以外は実UIDを採用）
-  - 変更後: `record` は基準UID決定方針として `SudoUIDAware` を宣言しているため、実UIDが0かつ`SUDO_UID`が0..MaxUint32の範囲の数値UIDであり、かつその UID がユーザーデータベース上に実在する場合にその値を採用し、実在を確認できない場合は読み取り安全性チェックを失敗させる。それ以外は実UIDを採用）
-- [ ] ステップ4-1 の用語集への追加（`実在確認` → `existence check` ほか）が完了していることを確認する。`/mktrans` は用語集を参照するため、英訳の語が確定していないと、8 章の AC-17 の英語版チェックが期待どおりに一致しない
-- [ ] 日本語版をコミットしたのち、`/mktrans` を実行して `security-architecture.md:50` の対応箇所へ反映する（CLAUDE.md「Translation Workflow」の順序に従う）
-- [ ] 書き換えた記述が実装（ステップ3-1、3-2）と一致していることを、`resolvePermissionCheckUID` のコードと対照して確認する
+  - 変更後: `record` は基準UID決定方針として `SudoUIDAware` を宣言しているため、実UIDが0かつ`SUDO_UID`が0..MaxUint32の範囲の数値UIDであり、かつその UID がユーザーデータベース上に実在する場合にその値を採用し、実在を確認できない場合や`SUDO_UID`が数値として不正な場合は読み取り安全性チェックを失敗させる。実UIDが0以外または`SUDO_UID`が未設定の場合のみ実UIDを採用）
+- [x] ステップ4-1 の用語集への追加（`実在確認` → `existence check` ほか）が完了していることを確認する。`/mktrans` は用語集を参照するため、英訳の語が確定していないと、8 章の AC-17 の英語版チェックが期待どおりに一致しない
+- [x] 日本語版をコミットしたのち、`/mktrans` を実行して `security-architecture.md:50` の対応箇所へ反映する（CLAUDE.md「Translation Workflow」の順序に従う）
+- [x] 書き換えた記述が実装（ステップ3-1、3-2）と一致していることを、`resolvePermissionCheckUID` のコードと対照して確認する
 
 **完了条件**: 8 章の AC-17 の2つの `static` チェックが期待どおりの結果になること。
 
@@ -469,10 +469,10 @@
 
 **判定理由**: 用語集・コメント・開発者向け文書・CHANGELOG の記述更新のみで、未確定の設計判断もパネルモードの契機（重い統合テスト／CI／外部資源、セキュリティゲート、移行）も該当しない。ステップ4-2 は `policy.go` を変更するが、変更対象はコメント3行であり挙動を持たない。
 
-- [ ] `rg -n "it is not verified to" internal/ cmd/` の結果が空であること（10 章。ステップ4-2 の書き換え漏れの確認）
-- [ ] ステップ4-1 の用語集への追加が、ステップ4-3 の `/mktrans` 実行より前に完了していること（10 章）
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] `rg -n "it is not verified to" internal/ cmd/` の結果が空であること（10 章。ステップ4-2 の書き換え漏れの確認）
+- [x] ステップ4-1 の用語集への追加が、ステップ4-3 の `/mktrans` 実行より前に完了していること（10 章）
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -626,11 +626,11 @@
 - [ ] PR-3 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7）
 
 ### PR-4: 用語集・コメント・開発者向け文書・CHANGELOG
-- [ ] ステップ4-1: `translation_glossary.md`（用語5語 + 更新履歴）— ステップ4-3 / 4-5 の `/mktrans` 実行より先に行う
-- [ ] ステップ4-2: `policy.go` の `SudoUIDAware` コメント
-- [ ] ステップ4-3: `security-architecture.ja.md` → `/mktrans` で `security-architecture.md`
-- [ ] ステップ4-4: `CHANGELOG.md`
-- [ ] 8 章の AC-17 と AC-19 の検証コマンドを実行
+- [x] ステップ4-1: `translation_glossary.md`（用語5語 + 更新履歴）— ステップ4-3 / 4-5 の `/mktrans` 実行より先に行う
+- [x] ステップ4-2: `policy.go` の `SudoUIDAware` コメント
+- [x] ステップ4-3: `security-architecture.ja.md` → `/mktrans` で `security-architecture.md`
+- [x] ステップ4-4: `CHANGELOG.md`
+- [x] 8 章の AC-17 と AC-19 の検証コマンドを実行
 - [ ] PR-4 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3 / 4-4）
 
 ### PR-5: 利用者向け文書

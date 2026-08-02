@@ -31,6 +31,8 @@
 | アンカーされた | anchored | 正規表現パターンの文脈 |
 | 攻撃対象領域 | attack surface | セキュリティの文脈 |
 | 任意コード実行 | arbitrary code execution | シェル/インタプリタ等が任意のコードを実行できること |
+| 採用 | adoption | 基準UID決定方針が `SudoUIDAware` のときに、`SUDO_UID` の値を基準UIDとして用いること（Task 0161） |
+| 採用事実の記録 | adoption record | 採用によって基準UIDが実UIDと異なる値になったことを `log/slog` へ警告として出力すること（Task 0161） |
 
 ### B
 
@@ -138,6 +140,7 @@
 |--------|---------|------|
 | 実効アドレス | effective address | メモリアクセスの最終的なアドレス |
 | 実効リスク | effective risk | 全因子の最大値として算出される最終的なリスク |
+| 実在確認 | existence check | ある UID がユーザーデータベース上に存在するユーザーを指すことの確認（Task 0161） |
 | エコー | echo | |
 | E2E | E2E | End-to-End の略 |
 | エッジケース | edge case | |
@@ -483,6 +486,7 @@
 | セクション | section | |
 | セキュリティ | security | |
 | セキュアデフォルト | secure default | |
+| センチネルエラー | sentinel error | `errors.Is` による判別のためにパッケージが公開する固定のエラー値（Task 0161） |
 | 分離 | separation | |
 | シリアライズ | serialize / serialization | |
 | セットアップ | setup | |
@@ -585,6 +589,7 @@
 | ユースケース | use case | |
 | ユーザー | user | |
 | ユーザーガイド | user guide | |
+| ユーザーデータベース種別 | user database source | 当該ビルドが参照するユーザーデータベースの種別（CGO 有効時は `nss`、無効時は `passwd-file`）（Task 0161） |
 | ユーティリティ | utility | |
 
 ### V
@@ -751,6 +756,7 @@
 | 2026-07-25 | 環境変数 denylist 一元化（Task 0156）関連の用語を追加 (denylist, dynamic-loader control variable, interpreter startup code-injection variable, loader-control variable) |
 | 2026-07-29 | record 時点の読み取り安全性チェック（Task 0160）関連の用語を追加 (base UID, read-safety check) |
 | 2026-07-30 | 基準UID決定方針の明示指定（Task 0160）関連の用語を追加 (base UID policy) |
+| 2026-08-02 | SUDO_UID 実在確認関連の用語を追加 (existence check, adoption, adoption record, sentinel error, user database source) |
 
 ---
 
