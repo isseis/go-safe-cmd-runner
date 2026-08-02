@@ -41,6 +41,34 @@ group membership (`user.LookupId`) to determine who else is in the file's group.
 files, a missing passwd entry continues to result in access being denied (fail-closed), as
 before.
 
+#### `record` / `verify`: SUDO_UID must refer to an existing user
+
+When `record` or `verify` runs as root and takes the base UID for file-read permission
+checks from `SUDO_UID`, that UID is now verified to exist in the user database before it
+is adopted. If the user does not exist, or if the lookup itself fails, the permission
+check fails and the file is not processed — the previous value is no longer used. This
+closes a gap where a `SUDO_UID` value inherited from the environment was adopted without
+any check.
+
+Invocations that previously succeeded now fail in these environments:
+
+| Environment | Why | What to do |
+|---|---|---|
+| A non-cgo build of `record` / `verify` with users managed by LDAP/SSSD | `sudo` resolves users through NSS, but a non-cgo build reads only `/etc/passwd` | Rebuild with cgo enabled. The `user_database_source=passwd-file` field in the error message identifies this case |
+| A temporary user-database outage (LDAP/SSSD down, network partition) | The lookup itself fails | Re-run after recovery. This case reports `failed to verify that SUDO_UID refers to an existing user` |
+| A stale `SUDO_UID` left in root's cron or systemd unit environment, pointing at a UID that has since been deleted | The stale value names a user that no longer exists | Remove `SUDO_UID` from the environment. This is the accident the check exists to catch, so the failure is intended |
+| A container image with no `/etc/passwd`, or a nearly empty one (`scratch`, some distroless), running a non-cgo build as root with `SUDO_UID` inherited | The user database contains no users at all; this applies to `SUDO_UID=0` as well | Remove `SUDO_UID` from the environment, or provide an `/etc/passwd` |
+
+Running with the variable removed — `sudo env -u SUDO_UID record ...`, or an interactive
+`sudo -i` — works in every case, but it is **not** an equivalent workaround: without
+`SUDO_UID` the base UID becomes `0`, so group-writable files are judged by whether root
+belongs to the file's group. The judgment moves to the stricter side, and reads that
+previously succeeded may now be denied.
+
+In addition, when `SUDO_UID` is adopted and differs from the real UID, a warning is now
+written to the structured log (`log/slog`, i.e. standard error) once per process, naming
+the adopted UID, the real UID, and the user database consulted.
+
 ## [1.0.0] - 2026-06-27
 
 ### Breaking Changes

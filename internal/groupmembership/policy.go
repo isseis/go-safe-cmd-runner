@@ -24,9 +24,10 @@ const (
 	// SudoUIDAware uses the value of the SUDO_UID environment variable as
 	// the base UID when the real UID is 0.
 	//
-	// SUDO_UID is only checked for numeric validity; it is not verified to
-	// correspond to a real user. This policy therefore accepts that anyone
-	// able to start the binary as root can specify the base UID at will.
+	// SUDO_UID is checked for numeric validity and verified to correspond to
+	// a user that exists in the user database; the resolution fails closed when
+	// it does not. This policy therefore accepts that anyone able to start the
+	// binary as root can specify any existing user's UID as the base UID.
 	// It is only selected when explicitly declared.
 	SudoUIDAware
 )
