@@ -589,6 +589,21 @@ func (gm *GroupMembership) getPermissionCheckUID() (int, error) {
 	})
 }
 
+// EnsurePermissionCheckUID resolves the permission check UID and reports only
+// whether the resolution succeeded, without checking any file. Binaries
+// declaring SudoUIDAware call it once at startup so that an unverifiable
+// SUDO_UID fails before the first file is processed.
+//
+// Startup is the only reliable point: record reads its target files through
+// safefileio.SafeOpenFile, which runs no read-safety check, so a run creating
+// only new records never resolves the UID on its own (§3.7.7 of the 0161
+// architecture document). Resolving here does not duplicate the adoption
+// record, which sudoUIDAdoptionReporter limits to one per process.
+func (gm *GroupMembership) EnsurePermissionCheckUID() error {
+	_, err := gm.getPermissionCheckUID()
+	return err
+}
+
 // resolvePermissionCheckUID resolves the UID to use for permission checks from
 // the effective permission check UID policy, the process's real UID, and the
 // dependencies bundled in deps.
@@ -640,9 +655,7 @@ func resolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, dep
 		return 0, fmt.Errorf("could not verify SUDO_UID %s against the user database (user_database_source=%s); check the state of the user database, then re-run: %w: %w", echoSudoUID(sudoUID), userDatabaseSource, ErrSudoUIDUserLookupFailed, err)
 	}
 	if parsedUID != realUID {
-		// The adoption record is observational only; it is a bare statement
-		// with no captured result so that a failure to record can never
-		// change the resolved UID or the error returned.
+		// Bare statement: a failure to record must not change the verdict.
 		deps.reportAdoption(policy, realUID, parsedUID)
 	}
 	return parsedUID, nil
@@ -652,8 +665,8 @@ func resolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, dep
 // into an error message. A value that passes parseSudoUID is at most 10
 // digits, so anything longer is padding (leading zeros, which strconv.Atoi
 // accepts without limit) that carries no diagnostic value. The bound matters
-// because the existence-check errors are produced once per file processed,
-// and the value they echo comes from the environment.
+// because the value the existence-check errors echo comes from the
+// environment, so without it the message length would be caller-controlled.
 const maxEchoedSudoUIDLen = 16
 
 // echoSudoUID returns raw for display in an error message, truncated if it is

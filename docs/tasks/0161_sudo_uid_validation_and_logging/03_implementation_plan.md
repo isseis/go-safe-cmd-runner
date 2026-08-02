@@ -473,19 +473,89 @@
 - [x] ステップ4-1 の用語集への追加が、ステップ4-3 の `/mktrans` 実行より前に完了していること（10 章）
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+### フェーズ5: 起動時の基準UID解決（AC-20〜AC-23）
+
+> **節の配置**: 本節はフェーズ4の途中（ステップ4-4 のあと、ステップ4-5 の前）に置いてある。本書の節の順序がマージ順序を表すためであり、フェーズ番号の順序とは一致しない。ステップ4-5 はフェーズ4に属したまま、PR-6 として本フェーズのあとにマージする。
+
+**発見の経緯**: ステップ4-5 の執筆にあたり記述の裏取りを行ったところ、フェーズ1〜3 が前提としていた「`record` の実行中に読み取り安全性チェックが走る」が成立していないことが判明した。`internal/safefileio` の `SafeOpenFile` は読み取り安全性チェックを含まず、`record` は対象ファイルをそれで直接読むためである。結果として、新規記録だけの実行では実在確認も採用事実の記録も行われていなかった。詳細と設計判断は 01 の F-006 と 02 §3.7.7 に記す。
+
+#### ステップ5-1: 設計文書の更新（F-006、02 §3.7.7）
+
+**変更ファイル**: `01_requirements.md`、`02_architecture.md`、`03_implementation_plan.md`
+
+- [x] 01 に F-006（AC-20〜AC-23）を追加し、スコープ「対象」へ起動時解決を加える。AC-18 の文言を「対象ファイルを1件も処理せずに失敗する」へ改める
+- [x] 01 の「検討事項」の実在確認結果の再利用の項に、前提とした照会回数の見積もりが誤りであった旨を追記する
+- [x] 02 に §3.7.7 を追加する。`SafeOpenFile` が読み取り安全性チェックを含まないこと、`record` の各読み出しがそこを通らないことを典拠付きで示し、判定規則を変えない理由（対象ファイルの読み出しに読み取り安全性チェックを足す案を採らない理由）を述べる
+- [x] 02 §3.4 の再利用の根拠から、成立しない見積もり（1ファイルあたり数十回）を除き、`verify` を根拠とする記述へ改める
+- [x] 02 §3.7.4 / §3.8 / §4.3 / §5.3 / §5.4 / §5.5 の「対象ファイルごとに失敗する」を前提とした記述を、起動時に1回失敗する挙動へ改める
+
+**完了条件**: 01 と 02 に「対象ファイルごとに実在確認が失敗する」旨の記述が残っていないこと。
+
+#### ステップ5-2: 起動時解決の実装（AC-20、AC-21、AC-23）
+
+**変更ファイル**: `internal/groupmembership/manager.go`、`cmd/record/main.go`、`cmd/verify/main.go`
+
+- [x] `manager.go` に `EnsurePermissionCheckUID`（`getPermissionCheckUID` への委譲のみ）を追加する。ドキュメントコメントに、なぜ読み取り経路に任せられないのかを書く
+- [x] `manager.go` の `maxEchoedSudoUIDLen` のコメントから「エラーは処理対象ファイルごとに生成される」旨を除く
+- [x] `cmd/record/main.go`: `deps` に `ensurePermissionCheckUID func() error` を追加し（`toctouChecker` と同じく `nil` は本番実装を意味する）、`run` の引数解析直後・TOCTOU チェック前で呼ぶ。失敗時は標準エラー出力へ表示して `1` を返す
+- [x] `cmd/verify/main.go`: 同様に、パッケージレベル変数 `ensurePermissionCheckUID` を追加して同じ位置で呼ぶ
+- [x] `cmd/runner` は変更しない（`RealUIDOnly` では解決が失敗しえないため。02 §3.7.7）
+- [x] `cmd/record/main.go` の `run` は変更前の時点で `gocyclo` の上限（20）ちょうどであり、分岐を1つ足すと `make lint` が落ちる。TOCTOU チェックの一連の処理を `checkDirPermissions` として切り出して解消する。切り出しは処理の移動のみで、標準エラー出力の文言もログの内容も変えない
+
+**完了条件**: `go build ./...` が通り、`record` / `verify` が対象ファイルの処理より前に解決を1回行うこと。
+
+#### ステップ5-3: 起動時解決のテスト（AC-20、AC-21、AC-22）
+
+**変更ファイル**: `internal/groupmembership/manager_test.go`、`cmd/record/main_test.go`、`cmd/verify/main_test.go`
+
+- [x] `manager_test.go`: `EnsurePermissionCheckUID` が `getPermissionCheckUID` と同じ結果を報告することを検証する。失敗分岐は実 UID 0 を要するため `policy_test.go` の既存テストが担う
+- [x] `cmd/record/main_test.go`: 解決が失敗する `deps` を注入し、終了コードが `1`、センチネル文言が標準エラー出力に出ること、およびハッシュ記録が1件も書かれないことを検証する
+- [x] `cmd/verify/main_test.go`: 同様に、`hashValidator` が一度も呼ばれないことを検証する
+
+**完了条件**: 8 章の AC-20〜AC-22 の `test` 項目が成功すること。
+
+#### ステップ5-4: CHANGELOG（AC-21）
+
+**変更ファイル**: `CHANGELOG.md`
+
+- [x] `#### record / verify: SUDO_UID must refer to an existing user` の本文のうち、失敗がファイル単位で起きると読める記述を、起動時に1回失敗して1件も処理されない旨へ改める。影響環境の表と対処は変更しない
+
+**完了条件**: `rg -n "resolve the base UID once at startup" CHANGELOG.md` が1件一致すること。
+
+**PR-5 の完了条件**: 本書 8 章の AC-20〜AC-23 の検証が期待どおりの結果になる。
+
+### PR-5 作成ポイント: resolve the permission check UID at startup
+
+**対象ステップ**: 5-1 / 5-2 / 5-3 / 5-4
+
+**推奨タイトル**: `fix(0161): resolve permission check UID at record/verify startup`
+
+**レビュー観点**: 02 §3.7.7 が挙げる典拠（`safe_file.go:86`、`safe_file.go:369`、`validator.go:387`、`file_analysis_store.go:109`）が実コードと一致するか / 起動時解決の呼び出し位置が対象ファイルの処理より前かつ `--help` を壊さないか / ファイルのパーミッション判定規則が変わっていないこと（AC-23）/ 採用事実の記録が1回のままであること（AC-09、AC-22）/ 01・02 に「対象ファイルごとに失敗する」旨の記述が残っていないか
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: セキュリティ挙動の変更であり、これまで成功していた `sudo record` を 02 §5.3 の4環境で失敗させる。フェイルクローズドの成立範囲そのものを変えるため、PR-3 と同じ扱いとする。
+
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 #### ステップ4-5: 利用者向け文書（AC-18）
 
+> **本計画内での差異**: 本ステップはフェーズ4に属するが、PR-6 として実施し、フェーズ5（PR-5）のあとにマージする。フェーズ5 が `record` / `verify` の失敗の現れ方を変えるため、先に本ステップを出すと、`main` に実装と食い違う利用者向け文書が載る期間が生じる。
+
 **変更ファイル**: `docs/user/record_command.ja.md`、`docs/user/verify_command.ja.md`、`docs/user/record_command.md`、`docs/user/verify_command.md`
 
 - [ ] `record_command.ja.md` の「5. トラブルシューティング」に `### 5.6 SUDO_UID の実在確認に失敗する` を追加する（既存の最後の項は `### 5.5 ディレクトリを指定した場合`）。内容は次を含める。
-  - `sudo record` の実行時に `SUDO_UID` が指す UID が実在するユーザーでなければ、対象ファイルごとに読み取りが失敗すること
+  - `sudo record` の実行時に `SUDO_UID` が指す UID が実在するユーザーでなければ、対象ファイルを1件も処理せずに起動時に失敗すること（02 §3.7.7、§5.3「失敗の現れ方」）。ファイルの一部だけが記録されることはない
   - エラーメッセージの見分け方。2種のセンチネル文言 `SUDO_UID does not refer to an existing user` と `failed to verify that SUDO_UID refers to an existing user` を、実装（ステップ1-2）の文字列リテラルからそのまま引用して載せる。加えて、メッセージ中の `user_database_source=nss` / `user_database_source=passwd-file` で参照先ユーザーデータベースを判別できることを説明する（`user_database_source` は採用事実の記録の属性名でもあり、エラーメッセージ内でも同じ綴りで現れる）
   - 02 §5.3 の影響環境の表に対応する4つの対処（CGO 有効での再ビルド、ユーザーデータベース復旧後の再実行、環境から `SUDO_UID` を除く、`/etc/passwd` を用意する）
   - `sudo env -u SUDO_UID record ...` が回避策になるが、基準UIDが 0 になるため読み取り判定が厳しくなり、記録そのものが失敗しうること（02 §5.3「対処手段」）
-  - `SUDO_UID` の採用によって基準UIDが実 UID と異なる値になった場合、警告が標準エラー出力へ1回記録されること。この警告は `sudo record` の通常運用でも毎回出ること（02 §3.7.4）
+  - `SUDO_UID` の採用によって基準UIDが実 UID と異なる値になった場合、警告が標準エラー出力へ1回記録されること。この警告は起動時に出るため、`sudo record` の通常運用では実行1回につき必ず1件出ること（02 §3.7.4、§3.7.7）
   - cron や systemd unit から実行する場合は、この警告を捉えるため標準エラー出力を保存する必要があること（02 §5.5「記録の欠落」）
 - [ ] `verify_command.ja.md` の「5. トラブルシューティング」に `### 5.7 SUDO_UID の実在確認に失敗する` を追加する（既存の最後の項は `### 5.6 スクリプトでのエラーハンドリング`）。内容は上と同じ観点を `verify` に合わせて記載する
 - [ ] 両文書の「目次」は `## ` 見出しのみを列挙しているため、追加した `### ` 見出しに伴う更新は不要であることを確認する
@@ -494,9 +564,9 @@
 
 **完了条件**: 8 章の AC-18 の `static` チェックが期待どおりの結果になり、上記 (a) と (b) の実行結果が文書の記述と一致すること。
 
-**PR-5 の完了条件**: 本書 8 章の AC-18 の検証コマンドが期待どおりの結果になる。PR-4 の完了条件と併せて、これでフェーズ4の AC-17〜AC-19 がすべて満たされる。
+**PR-6 の完了条件**: 本書 8 章の AC-18 の検証コマンドが期待どおりの結果になる。PR-4 の完了条件と併せて、これでフェーズ4の AC-17〜AC-19 がすべて満たされる。
 
-### PR-5 作成ポイント: user-facing troubleshooting documentation
+### PR-6 作成ポイント: user-facing troubleshooting documentation
 
 **対象ステップ**: 4-5
 
@@ -506,7 +576,7 @@
 
 **実装モデル要件**: standard
 
-**判定理由**: 未確定の設計判断はなく、記述内容は PR-3 で確定済みの挙動をなぞるものである。ステップ4-5 の確認手順 (a)(b) は、CGO 有効・無効の2種のビルドを作り、実在しない `SUDO_UID` を与えて `sudo` 経由で実行するという特権実行を伴うが、これは固定の2コマンドを1回ずつ実行してエラーメッセージの語を目視する確認であり、パネルモードの契機が指す「重い統合テスト／CI／外部資源のサーフェス」（継続的に維持される自動テスト基盤）には当たらない。失敗した場合の影響も文書の記述の誤りに限られ、製品の挙動には及ばない。
+**判定理由**: 未確定の設計判断はなく、記述内容は PR-3 と PR-5 で確定済みの挙動をなぞるものである。ステップ4-5 の確認手順 (a)(b) は、CGO 有効・無効の2種のビルドを作り、実在しない `SUDO_UID` を与えて `sudo` 経由で実行するという特権実行を伴うが、これは固定の2コマンドを1回ずつ実行してエラーメッセージの語を目視する確認であり、パネルモードの契機が指す「重い統合テスト／CI／外部資源のサーフェス」（継続的に維持される自動テスト基盤）には当たらない。失敗した場合の影響も文書の記述の誤りに限られ、製品の挙動には及ばない。
 
 - [ ] `/mktrans` で生成した英語版が、ステップ4-1 で用語集に登録した訳語をそのまま使っていること（10 章）
 - [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
@@ -523,7 +593,8 @@
 | M1: 部品が揃う | フェーズ1（PR-1） | ユーザーデータベース種別の定数、センチネルエラー2つ、レポータ型と1回制限、メモ型、およびそれらの単体テスト | Linux で `make test`（CGO 有効の回は `-race` 付き、CGO 無効の回も実行される）。既存の挙動に変化がないこと |
 | M2: 差し替え口が整う | フェーズ2（PR-2） | `permissionCheckUIDDeps`、`lookupUserByUID`、新シグネチャの `resolvePermissionCheckUID`、公開ラッパー、移行済みの既存テスト | `make fmt` → `make test` → `make lint`。挙動が 0160 完了時点と同一であること |
 | M3: 機能が完成する | フェーズ3（PR-3） | 実在確認とエラー分類、採用事実の記録、決定表・セキュリティ・既定ロガーのテスト | 8 章の AC-01〜AC-16 の `test` 項目がすべて成功 |
-| M4: 文書が揃う | フェーズ4（PR-4 + PR-5） | ドキュメントコメント、開発者向け・利用者向け文書、用語集、CHANGELOG | 8 章の AC-17〜AC-19 の検証コマンドが期待どおり |
+| M4: 文書が揃う | フェーズ4（PR-4 + PR-6） | ドキュメントコメント、開発者向け・利用者向け文書、用語集、CHANGELOG | 8 章の AC-17〜AC-19 の検証コマンドが期待どおり |
+| M5: 検出が実際に働く | フェーズ5（PR-5） | 起動時の基準UID解決、01・02 の前提の訂正、`record` / `verify` のテスト | 8 章の AC-20〜AC-23 の検証が期待どおり |
 
 ### 3.2 PR 構成
 
@@ -533,15 +604,18 @@
 | PR-2 | 2-1 / 2-2 / 2-3 / 2-4 / 2-5 | `permissionCheckUIDDeps` と `lookupUserByUID` の追加、`resolvePermissionCheckUID` のシグネチャ変更、公開ラッパーの更新、`internal/groupmembership` と `cmd/*` の既存テストの移行 | standard |
 | PR-3 | 3-1 / 3-2 / 3-3 / 3-4 / 3-5 / 3-6 / 3-7 | 実在確認とエラー分類、採用事実の記録の組み込み、`manager.go` のドキュメントコメント更新、決定表の拡張・セキュリティ・既定ロガーのテスト、`TestGetPermissionCheckUID` の期待値更新。挙動を変える唯一の PR | frontier-required |
 | PR-4 | 4-1 / 4-2 / 4-3 / 4-4 | 用語集、`policy.go` の `SudoUIDAware` コメント、`security-architecture`（日英）、`CHANGELOG.md` | standard |
-| PR-5 | 4-5 | `record` / `verify` の利用者向けトラブルシューティング項目（日英） | standard |
+| PR-5 | 5-1 / 5-2 / 5-3 / 5-4 | 起動時の基準UID解決（`EnsurePermissionCheckUID` と `cmd/record` / `cmd/verify` からの呼び出し）、01・02 の前提の訂正、テスト、CHANGELOG の調整 | frontier-required |
+| PR-6 | 4-5 | `record` / `verify` の利用者向けトラブルシューティング項目（日英） | standard |
 
 **PR-1〜PR-3 の分割と 02 §8 との差異**: 02 §8 はフェーズ1〜3 を1つの PR とする構成を想定している。本計画ではこれをフェーズ単位の3つの PR（PR-1〜PR-3）に分けた。フェーズ1は既存の挙動を変えない追加のみ、フェーズ2は挙動を変えないシグネチャ移行であり、いずれも単独でグリーンゲートを通せるうえ、フェーズ3のセキュリティ挙動変更を機械的な変更から切り離して詳細にレビューできるためである。フェーズの順序と各フェーズの目的は 02 §8 のままである。
 
-**マージ順序**: PR-1 → PR-2 → PR-3 → PR-4 → PR-5 の順にマージする。この順序は入れ替えられない。PR-2 のステップ2-2 は PR-1 が導入する `sudoUIDExistenceMemo.verify` と `processSudoUIDAdoptionReporter` を参照するためコンパイルできず、PR-3 のテストは PR-2 の差し替え口を前提とし、PR-5 の `/mktrans` は PR-4 の用語集を前提とする。各 PR が単独でグリーンゲートを通せるというのは、直前までの PR がマージ済みであることを前提とした話であり、依存関係がないという意味ではない。
+**マージ順序**: PR-1 → PR-2 → PR-3 → PR-4 → PR-5 → PR-6 の順にマージする。この順序は入れ替えられない。PR-2 のステップ2-2 は PR-1 が導入する `sudoUIDExistenceMemo.verify` と `processSudoUIDAdoptionReporter` を参照するためコンパイルできず、PR-3 のテストは PR-2 の差し替え口を前提とし、PR-6 の `/mktrans` は PR-4 の用語集を前提とし、PR-6 が記述する失敗の現れ方は PR-5 が確定させる。各 PR が単独でグリーンゲートを通せるというのは、直前までの PR がマージ済みであることを前提とした話であり、依存関係がないという意味ではない。
 
 02 §8 が述べる「M2 単独では出荷しない」という制約は維持する。これはマージ単位ではなくリリース単位の制約であり、PR-2 のマージ時点では実在確認が行われないため、PR-3 のマージより前にリリースを切ってはならない。
 
-**PR-4 と PR-5 の分割**: フェーズ4のうち利用者向け文書（ステップ4-5）は新規のトラブルシューティング項目2件を4ファイルへ追加し、実バイナリでの実行確認を伴うため、他の文書更新とは分けて独立にレビューする。ステップ4-1 の用語集は `/mktrans` の前提であるため、PR-4 が PR-5 より先にマージされる必要がある。
+**PR-4 と PR-6 の分割**: フェーズ4のうち利用者向け文書（ステップ4-5）は新規のトラブルシューティング項目2件を4ファイルへ追加し、実バイナリでの実行確認を伴うため、他の文書更新とは分けて独立にレビューする。ステップ4-1 の用語集は `/mktrans` の前提であるため、PR-4 が PR-6 より先にマージされる必要がある。
+
+**PR-5 が PR-4 のあとになる理由**: フェーズ5 が対処する不備は、ステップ4-5 の裏取りの過程で判明した。PR-1〜PR-4 はいずれもこの不備によって誤りになるわけではなく（`internal/groupmembership` 層の実装・テスト・用語集・開発者向け文書はそのまま正しい）、やり直しは不要である。訂正が必要なのは 01・02 の一部の記述と CHANGELOG であり、PR-5 に含める。
 
 ## 4. テスト戦略
 
@@ -633,10 +707,18 @@
 - [x] 8 章の AC-17 と AC-19 の検証コマンドを実行
 - [ ] PR-4 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3 / 4-4）
 
-### PR-5: 利用者向け文書
+### PR-5: 起動時の基準UID解決
+- [x] ステップ5-1: 01 の F-006 追加、02 §3.7.7 追加と関連節の訂正
+- [x] ステップ5-2: `EnsurePermissionCheckUID` と `cmd/record` / `cmd/verify` からの呼び出し
+- [x] ステップ5-3: `internal/groupmembership` と `cmd/*` のテスト
+- [x] ステップ5-4: `CHANGELOG.md` の調整
+- [ ] 8 章の AC-20〜AC-23 の検証を実行
+- [ ] PR-5 マージ済み（対象ステップ: 5-1 / 5-2 / 5-3 / 5-4）
+
+### PR-6: 利用者向け文書
 - [ ] ステップ4-5: `record_command.ja.md` / `verify_command.ja.md` → `/mktrans` で英語版
 - [ ] 8 章の AC-18 の検証コマンドを実行
-- [ ] PR-5 マージ済み（対象ステップ: 4-5）
+- [ ] PR-6 マージ済み（対象ステップ: 4-5）
 
 ## 7. テストヘルパーの配置
 
@@ -703,6 +785,15 @@
 | AC-18 | `manual` | 記載した `sudo env -u SUDO_UID record <file>` を実行し、`SUDO_UID` が渡らないことと文書の説明どおりの挙動になることを確認する（新規コマンド例の典拠確認） |
 | AC-18 | `manual` | CGO 有効ビルドと `CGO_ENABLED=0` ビルドの `record` に、実在しない `SUDO_UID` を与えて実行し、エラーメッセージの `user_database_source` がそれぞれ `nss` / `passwd-file` になることを確認する（新規記述の典拠確認）。残る2つの対処（ユーザーデータベースの一時障害、`/etc/passwd` の欠落）は再現に環境構築を要するため、02 §5.3 の表を典拠として引用するに留める |
 | AC-19 | `static` | 追加した5語のそれぞれについて行が存在すること。`rg -n "^\|\s*実在確認\s*\|\s*existence check\s*\|" docs/translation_glossary.md`、`rg -n "^\|\s*採用\s*\|\s*adoption\s*\|" docs/translation_glossary.md`、`rg -n "^\|\s*採用事実の記録\s*\|\s*adoption record\s*\|" docs/translation_glossary.md`、`rg -n "^\|\s*センチネルエラー\s*\|\s*sentinel error\s*\|" docs/translation_glossary.md`、`rg -n "^\|\s*ユーザーデータベース種別\s*\|\s*user database source\s*\|" docs/translation_glossary.md` がそれぞれ1件一致すること（計5件） |
+
+| AC-20 | `test` | `cmd/record/main_test.go::TestRunFailsClosedWhenPermissionCheckUIDUnresolvable`、`cmd/verify/main_test.go::TestRunFailsClosedWhenPermissionCheckUIDUnresolvable`（差し替えた解決処理が呼ばれた時点で処理が止まることをもって、対象ファイルの処理より前に解決が行われることを示す） |
+| AC-20 | `static` | `rg -n "ensurePermissionCheckUID" cmd/record/main.go cmd/verify/main.go` が両ファイルで一致すること |
+| AC-21 | `test` | `cmd/record/main_test.go::TestRunFailsClosedWhenPermissionCheckUIDUnresolvable`（終了コード 1、標準エラー出力へのセンチネル文言、ハッシュ記録が書かれないこと） |
+| AC-21 | `test` | `cmd/verify/main_test.go::TestRunFailsClosedWhenPermissionCheckUIDUnresolvable`（終了コード 1、標準エラー出力へのセンチネル文言、`hashValidator` が呼ばれないこと） |
+| AC-22 | `test` | `internal/groupmembership/manager_test.go::TestGetPermissionCheckUID`（`EnsurePermissionCheckUID` が `getPermissionCheckUID` と同じ結果を報告するサブテスト。記録の経路が同一であることを示す） |
+| AC-22 | `manual` | 記録の1回制限がパッケージレベルのレポータ実体にあり、起動時解決と読み取り安全性チェックの双方が同じ実体を使うことをコードレビューで確認（02 §3.3、§3.7.7） |
+| AC-23 | `manual` | `cmd/record` / `cmd/verify` の変更が起動時解決の呼び出しのみであり、`internal/safefileio` および `internal/filevalidator` の読み出し経路に読み取り安全性チェックが追加されていないことをコードレビューで確認 |
+| AC-23 | `static` | `git diff main -- internal/safefileio internal/filevalidator` が空であること |
 
 ### 8.1 全体の成功条件
 

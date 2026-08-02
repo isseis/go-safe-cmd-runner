@@ -24,7 +24,8 @@ var (
 	validatorFactory   = func(hashDir string) (hashValidator, error) {
 		return cmdcommon.CreateValidator(hashDir)
 	}
-	mkdirAll = os.MkdirAll
+	mkdirAll                 = os.MkdirAll
+	ensurePermissionCheckUID = groupmembership.New().EnsurePermissionCheckUID
 )
 
 func init() {
@@ -63,6 +64,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	if cfg.usedDeprecated {
 		fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.") //nolint:errcheck
+	}
+
+	// verify declares SudoUIDAware (see init), so this is where an unverifiable
+	// SUDO_UID fails the run and where the adoption record is emitted. verify's
+	// per-file reads would also reach it, but resolving here makes the failure
+	// arrive once, before the first file, rather than once per file.
+	if err := ensurePermissionCheckUID(); err != nil {
+		fmt.Fprintf(stderr, "Error: %v\n", err) //nolint:errcheck
+		return 1
 	}
 
 	// Run TOCTOU permission check on directories referenced by this operation.

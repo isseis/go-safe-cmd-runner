@@ -45,10 +45,11 @@ before.
 
 When `record` or `verify` runs as root and takes the base UID for file-read permission
 checks from `SUDO_UID`, that UID is now verified to exist in the user database before it
-is adopted. If the user does not exist, or if the lookup itself fails, the permission
-check fails and the file is not processed — the previous value is no longer used. This
-closes a gap where a `SUDO_UID` value inherited from the environment was adopted without
-any check.
+is adopted. Both commands resolve the base UID once at startup, before any file is
+processed. If the user does not exist, or if the lookup itself fails, the command prints
+the reason and exits non-zero without touching any of the files given to it — no partial
+run, and the unverified value is never used. This closes a gap where a `SUDO_UID` value
+inherited from the environment was adopted without any check.
 
 Invocations that previously succeeded now fail in these environments:
 
@@ -66,8 +67,10 @@ belongs to the file's group. The judgment moves to the stricter side, and reads 
 previously succeeded may now be denied.
 
 In addition, when `SUDO_UID` is adopted and differs from the real UID, a warning is now
-written to the structured log (`log/slog`, i.e. standard error) once per process, naming
-the adopted UID, the real UID, and the user database consulted.
+written to the structured log (`log/slog`, i.e. standard error) once per process at
+startup, naming the adopted UID, the real UID, and the user database consulted. Under
+`sudo` this is the normal case, so expect one such warning per `sudo record` or
+`sudo verify` run; it records which UID the permission check used, not a fault.
 
 ## [1.0.0] - 2026-06-27
 

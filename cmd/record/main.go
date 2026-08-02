@@ -51,6 +51,8 @@ type deps struct {
 	machoDynlibAnalyzerFactory func() *machodylib.MachODynLibAnalyzer // nil means Mach-O dynlib analysis is disabled
 	mkdirAll                   func(path string, perm os.FileMode) error
 	toctouChecker              security.DirectoryPermChecker // nil means use NewDirectoryPermChecker
+	// nil means use groupmembership.New().EnsurePermissionCheckUID.
+	ensurePermissionCheckUID func() error
 }
 
 func defaultDeps() deps {
@@ -88,26 +90,16 @@ func main() {
 	os.Exit(run(os.Args[1:], defaultDeps(), os.Stdout, os.Stderr))
 }
 
-func run(args []string, d deps, stdout, stderr io.Writer) int {
-	cfg, fs, err := parseArgs(args, d, stderr)
-	if err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return 0
-		}
-		printUsage(fs, stderr)
-		fmt.Fprintf(stderr, "Error: %v\n", err) //nolint:errcheck
-		return 1
-	}
-
-	if cfg.usedDeprecated {
-		fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.") //nolint:errcheck
-	}
-
-	// Run TOCTOU permission check on directories referenced by this operation.
-	// The hash DB is the root of trust — any permission violation in its ancestor
-	// directories means an attacker could replace hash records. Fail closed: refuse
-	// to generate hash records when violations are detected. No bypass flag is
-	// provided; fix the directory permissions with chmod and re-run.
+// checkDirPermissions runs the TOCTOU permission check on the directories this
+// operation touches, and reports whether recording may proceed. The hash DB is
+// the root of trust — any permission violation in its ancestor directories
+// means an attacker could replace hash records. It fails closed: a violation
+// means no hash record is generated. No bypass flag is provided; fix the
+// directory permissions with chmod and re-run.
+//
+// On a violation it logs the details of each one and writes the reason to
+// stderr before returning false.
+func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) bool {
 	secValidator := d.toctouChecker
 	var secErr error
 	if secValidator == nil {
@@ -144,20 +136,54 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	// below is intentionally in addition to it, since record (unlike other callers
 	// of this shared check) escalates violations to a fail-closed, non-zero exit.
 	violations := security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, logger)
-	if len(violations) > 0 {
-		for _, v := range violations {
-			remediation := fmt.Sprintf("fix directory permissions/ownership and re-run record (reported violation: %v)", v.Err)
-			if errors.Is(v.Err, security.ErrInvalidDirPermissions) {
-				remediation = fmt.Sprintf("fix directory permissions with chmod (e.g. chmod go-w %s) and re-run record", v.Path)
-			}
-			logger.Error(
-				"hash directory permission violation detected — refusing to record",
-				slog.String("path", v.Path),
-				slog.String("violation", v.Err.Error()),
-				slog.String("remediation", remediation),
-			)
+	if len(violations) == 0 {
+		return true
+	}
+	for _, v := range violations {
+		remediation := fmt.Sprintf("fix directory permissions/ownership and re-run record (reported violation: %v)", v.Err)
+		if errors.Is(v.Err, security.ErrInvalidDirPermissions) {
+			remediation = fmt.Sprintf("fix directory permissions with chmod (e.g. chmod go-w %s) and re-run record", v.Path)
 		}
-		fmt.Fprintln(stderr, "Error: permission violation in hash directory or its ancestor directories — refusing to generate hash records. Fix directory permissions and re-run.") //nolint:errcheck
+		logger.Error(
+			"hash directory permission violation detected — refusing to record",
+			slog.String("path", v.Path),
+			slog.String("violation", v.Err.Error()),
+			slog.String("remediation", remediation),
+		)
+	}
+	fmt.Fprintln(stderr, "Error: permission violation in hash directory or its ancestor directories — refusing to generate hash records. Fix directory permissions and re-run.") //nolint:errcheck
+	return false
+}
+
+func run(args []string, d deps, stdout, stderr io.Writer) int {
+	cfg, fs, err := parseArgs(args, d, stderr)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		printUsage(fs, stderr)
+		fmt.Fprintf(stderr, "Error: %v\n", err) //nolint:errcheck
+		return 1
+	}
+
+	if cfg.usedDeprecated {
+		fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.") //nolint:errcheck
+	}
+
+	// record declares SudoUIDAware (see init), so this is where an unverifiable
+	// SUDO_UID fails the run and where the adoption record is emitted. It must
+	// happen here rather than in the per-file reads; see
+	// GroupMembership.EnsurePermissionCheckUID.
+	ensureUID := d.ensurePermissionCheckUID
+	if ensureUID == nil {
+		ensureUID = groupmembership.New().EnsurePermissionCheckUID
+	}
+	if err := ensureUID(); err != nil {
+		fmt.Fprintf(stderr, "Error: %v\n", err) //nolint:errcheck
+		return 1
+	}
+
+	if !checkDirPermissions(cfg, d, stderr) {
 		return 1
 	}
 
