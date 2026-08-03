@@ -677,7 +677,7 @@ There are two kinds of existence check failures.
 Error: SUDO_UID 9999 does not exist in the user database (user_database_source=nss); check whether SUDO_UID is a stale value inherited from the environment, then re-run from an interactive sudo session: SUDO_UID does not refer to an existing user: user: unknown userid 9999
 ```
 
-The above is the case where "`SUDO_UID` refers to a user that does not exist". The message contains the sentinel text `SUDO_UID does not refer to an existing user`. It indicates a configuration error or a stale value and is not resolved by re-running.
+The above is the case where "`SUDO_UID` refers to a user that does not exist". The message contains the sentinel text `SUDO_UID does not refer to an existing user`. It indicates a configuration error or a stale value, and re-running under the same environment will not resolve it. Remove the stale or incorrect `SUDO_UID` first, then re-run from an interactive sudo session.
 
 ```text
 Error: could not verify SUDO_UID 9999 against the user database (user_database_source=nss); check the state of the user database, then re-run: failed to verify that SUDO_UID refers to an existing user: user: lookup userid 9999: ...

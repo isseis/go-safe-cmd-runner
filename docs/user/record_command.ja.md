@@ -665,7 +665,7 @@ record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 Error: SUDO_UID 9999 does not exist in the user database (user_database_source=nss); check whether SUDO_UID is a stale value inherited from the environment, then re-run from an interactive sudo session: SUDO_UID does not refer to an existing user: user: unknown userid 9999
 ```
 
-上記は「`SUDO_UID` が実在しないユーザーを指している」場合です。メッセージにセンチネル文言 `SUDO_UID does not refer to an existing user` が含まれます。設定の誤りまたは残留であり、再実行しても解消しません。
+上記は「`SUDO_UID` が実在しないユーザーを指している」場合です。メッセージにセンチネル文言 `SUDO_UID does not refer to an existing user` が含まれます。設定の誤りまたは残留であり、同じ環境のまま再実行しても解消しません。残留または誤った `SUDO_UID` を取り除いたうえで、対話的な sudo セッションから再実行してください。
 
 ```text
 Error: could not verify SUDO_UID 9999 against the user database (user_database_source=nss); check the state of the user database, then re-run: failed to verify that SUDO_UID refers to an existing user: user: lookup userid 9999: ...
