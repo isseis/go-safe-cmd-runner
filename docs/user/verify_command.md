@@ -663,6 +663,57 @@ else
 fi
 ```
 
+### 5.7 SUDO_UID Existence Check Fails
+
+**Symptoms**
+
+When `sudo verify` is run and the UID referenced by the `SUDO_UID` environment variable does not correspond to an existing user, the command fails at startup without processing any of the target files. No partial result such as only some of the specified files being verified occurs.
+
+**Error Message**
+
+There are two kinds of existence check failures.
+
+```text
+Error: SUDO_UID 9999 does not exist in the user database (user_database_source=nss); check whether SUDO_UID is a stale value inherited from the environment, then re-run from an interactive sudo session: SUDO_UID does not refer to an existing user: user: unknown userid 9999
+```
+
+The above is the case where "`SUDO_UID` refers to a user that does not exist". The message contains the sentinel text `SUDO_UID does not refer to an existing user`. It indicates a configuration error or a stale value, and re-running under the same environment will not resolve it. Remove the stale or incorrect `SUDO_UID` first, then re-run from an interactive sudo session.
+
+```text
+Error: could not verify SUDO_UID 9999 against the user database (user_database_source=nss); check the state of the user database, then re-run: failed to verify that SUDO_UID refers to an existing user: user: lookup userid 9999: ...
+```
+
+The above is the case where "the lookup against the user database itself failed". The message contains the sentinel text `failed to verify that SUDO_UID refers to an existing user`. It may be a temporary failure of the user database, and re-running can be effective.
+
+Both messages contain `user_database_source=`, which identifies the consulted user database as either `nss` (cgo-enabled build) or `passwd-file` (non-cgo build). `user_database_source` is also an attribute name of the adoption record, and appears with the same spelling in the error message.
+
+**Solution**
+
+| Environment | Solution |
+|---|---|
+| A non-cgo build of `verify` targeting users managed by LDAP/SSSD | `sudo` resolves users through NSS, but a non-cgo build consults only `/etc/passwd`. Rebuild with cgo enabled. The `user_database_source=passwd-file` field in the error message identifies this case |
+| A temporary user-database outage (LDAP/SSSD down, network partition) | Re-run after recovery. This case is identified by `failed to verify that SUDO_UID refers to an existing user` |
+| A stale `SUDO_UID` left in root's cron or systemd unit environment, pointing at a UID that has since been deleted | The stale value names a user that no longer exists. Remove `SUDO_UID` from the environment. This failure is intended behavior: it exists to detect a stale `SUDO_UID` |
+| A container image with no `/etc/passwd`, or a nearly empty one (`scratch`, some distroless), running a non-cgo build as root with `SUDO_UID` inherited | The consulted user database contains no users at all; this applies to `SUDO_UID=0` as well. Remove `SUDO_UID` from the environment, or provide an `/etc/passwd` |
+
+In every case, there is also the option of running with the environment variable removed.
+
+```bash
+sudo env -u SUDO_UID verify ...
+```
+
+However, this is not a workaround that keeps the judgment criteria equivalent. Removing `SUDO_UID` makes the base UID `0`, so group-writable files are judged by whether root belongs to the file's group, and reads that previously succeeded often no longer pass. The judgment moves to the stricter side rather than the more permissive side, so the verification itself may fail.
+
+**Warning Emitted Even in Normal Operation**
+
+When `SUDO_UID` is adopted and the base UID differs from the real UID, a warning is recorded once to standard error. This warning is emitted at startup, so in normal `sudo verify` operation exactly one is emitted per run. When running from cron or a systemd unit, save the standard error output so that this warning can be captured.
+
+An example of the output is shown below (the timestamp that the default log handler prepends to the line is omitted).
+
+```text
+WARN Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment permission_check_uid=1000 real_uid=0 source_env_var=SUDO_UID permission_check_uid_policy=sudo-uid-aware user_database_source=nss
+```
+
 ## 6. Related Documentation
 
 ### Command-Line Tools
@@ -684,4 +735,4 @@ fi
 
 ---
 
-**Last Updated**: 2025-10-02
+**Last Updated**: 2026-08-02

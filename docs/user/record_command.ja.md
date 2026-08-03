@@ -651,6 +651,57 @@ record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*
 record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 ```
 
+### 5.6 SUDO_UID の実在確認に失敗する
+
+**症状**
+
+`sudo record` を実行した際、`SUDO_UID` 環境変数が指す UID が実在するユーザーでない場合、対象ファイルを1件も処理せずに起動時に失敗します。指定したファイルの一部だけが記録される、といった中途半端な結果は生じません。
+
+**エラーメッセージ**
+
+実在確認の失敗には次の2種類があります。
+
+```text
+Error: SUDO_UID 9999 does not exist in the user database (user_database_source=nss); check whether SUDO_UID is a stale value inherited from the environment, then re-run from an interactive sudo session: SUDO_UID does not refer to an existing user: user: unknown userid 9999
+```
+
+上記は「`SUDO_UID` が実在しないユーザーを指している」場合です。メッセージにセンチネル文言 `SUDO_UID does not refer to an existing user` が含まれます。設定の誤りまたは残留であり、同じ環境のまま再実行しても解消しません。残留または誤った `SUDO_UID` を取り除いたうえで、対話的な sudo セッションから再実行してください。
+
+```text
+Error: could not verify SUDO_UID 9999 against the user database (user_database_source=nss); check the state of the user database, then re-run: failed to verify that SUDO_UID refers to an existing user: user: lookup userid 9999: ...
+```
+
+上記は「ユーザーデータベースへの照会そのものが失敗した」場合です。メッセージにセンチネル文言 `failed to verify that SUDO_UID refers to an existing user` が含まれます。ユーザーデータベースの一時的な障害である可能性があり、再実行が有効な場合があります。
+
+どちらのメッセージにも `user_database_source=` が含まれ、`nss`（CGO 有効ビルド）または `passwd-file`（CGO 無効ビルド）で参照先のユーザーデータベースを判別できます。`user_database_source` は採用事実の記録の属性名でもあり、エラーメッセージ内でも同じ綴りで現れます。
+
+**対処法**
+
+| 環境 | 対処 |
+|---|---|
+| 非 CGO ビルドの `record` で LDAP/SSSD 管理のユーザーを対象としている | `sudo` は NSS 経由でユーザーを解決しますが、非 CGO ビルドは `/etc/passwd` しか参照しません。CGO 有効でビルドし直してください。エラーメッセージの `user_database_source=passwd-file` が手がかりになります |
+| ユーザーデータベースの一時障害（LDAP/SSSD の停止、ネットワーク断） | 復旧後に再実行してください。`failed to verify that SUDO_UID refers to an existing user` で判別できます |
+| root の cron・systemd unit に `SUDO_UID` が残留し、その UID が既に削除されている | 残留値が実在しない UID を指しています。`SUDO_UID` を環境から除いてください。この失敗は意図した挙動であり、`SUDO_UID` の残留を検出するためのものです |
+| `/etc/passwd` が無いか、ほぼ空のコンテナイメージ（`scratch` 系、一部の distroless）を非 CGO ビルドの root で実行し、`SUDO_UID` が引き継がれている | 参照先にユーザーが1件もありません。`SUDO_UID` が `0` の場合も失敗します。`SUDO_UID` を環境から除くか、`/etc/passwd` を用意してください |
+
+いずれの環境でも、環境変数を除いて実行する方法があります。
+
+```bash
+sudo env -u SUDO_UID record ...
+```
+
+ただしこれは判定条件を等価に保つ回避策ではありません。`SUDO_UID` を除くと基準UIDが `0` になるため、グループ書き込み可能なファイルについては「root がそのグループに属するか」で判定され、多くの場合それまで通っていた読み取りが通らなくなります。判定は緩む側ではなく厳しい側へ動くため、記録の生成自体が失敗する可能性があります。
+
+**正常運用でも出力される警告**
+
+`SUDO_UID` の採用によって基準UIDが実 UID と異なる値になった場合、警告が標準エラー出力へ1回記録されます。この警告は起動時に出力されるため、`sudo record` の通常運用では実行1回につき必ず1件出力されます。cron や systemd unit から実行する場合は、この警告を捉えるため標準エラー出力を保存してください。
+
+出力例を次に示します（既定のログハンドラが行頭に付与する時刻は省略しています）。
+
+```text
+WARN Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment permission_check_uid=1000 real_uid=0 source_env_var=SUDO_UID permission_check_uid_policy=sudo-uid-aware user_database_source=nss
+```
+
 ## 6. 関連ドキュメント
 
 ### コマンドラインツール
@@ -671,4 +722,4 @@ record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 
 ---
 
-**最終更新**: 2025-10-02
+**最終更新**: 2026-08-02
