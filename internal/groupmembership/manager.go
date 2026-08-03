@@ -413,16 +413,8 @@ type sudoUIDAdoptionReporter struct {
 	reported atomic.Bool
 }
 
-// report emits the adoption record to logger unless one has already been
-// emitted. It has no return value: a failure to record must not change the
-// read-safety verdict.
-//
-// The state transition happens before the record is emitted, so a caller that
-// loses the compare-and-swap never reaches logger.Warn and the once-per-process
-// limit holds without a lock around the emission. The consequence is that a
-// handler failure consumes the single record for the lifetime of the process.
-// Emitting first would not avoid that: slog.Logger.Warn discards the handler's
-// error, so a failure cannot be detected and retried in any ordering.
+// report emits the adoption record once unless already emitted.
+// A failure to record must not change the read-safety verdict.
 func (r *sudoUIDAdoptionReporter) report(logger *slog.Logger, policy PermissionCheckUIDPolicy, realUID, permissionCheckUID int) {
 	if !r.reported.CompareAndSwap(false, true) {
 		return
@@ -454,11 +446,8 @@ type sudoUIDExistenceMemo struct {
 }
 
 // verify returns nil if uid has already been confirmed; otherwise it calls
-// lookup and, on success, records uid as confirmed. The lock is held across
-// lookup so that concurrent callers single-flight the query rather than each
-// hitting the user database. Because lookup may block (a user database query
-// is not cancellable), this makes the memo a serialization point if the
-// read-safety path is ever run concurrently.
+// lookup and records uid as confirmed. The lock is held across lookup to
+// single-flight concurrent queries.
 func (m *sudoUIDExistenceMemo) verify(uid int, lookup func(uid int) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -494,10 +483,7 @@ type permissionCheckUIDDeps struct {
 
 // lookupUserByUID reports whether a user with the given UID exists in the
 // user database. It returns the error from os/user unchanged so that the
-// caller can distinguish "no such user" from a lookup failure. The error is
-// deliberately not classified here: the classification rule is part of the
-// security verdict, so it lives in the resolution logic where tests can
-// exercise it directly.
+// caller can distinguish "no such user" from a lookup failure.
 func lookupUserByUID(uid int) error {
 	_, err := user.LookupId(strconv.Itoa(uid))
 	return err
@@ -532,13 +518,10 @@ func (gm *GroupMembership) EnsurePermissionCheckUID() error {
 }
 
 // resolvePermissionCheckUID resolves the UID to use for permission checks from
-// the effective permission check UID policy, the process's real UID, and the dependencies bundled in deps.
+// the effective policy, the real UID, and dependencies bundled in deps.
 // Under RealUIDOnly, it always returns realUID.
-// Under SudoUIDAware, when realUID is 0 and SUDO_UID is set, the value must pass parseSudoUID and deps.verifyUserExists:
-// a user that does not exist yields ErrSudoUIDUserNotFound, and a failed existence check yields ErrSudoUIDUserLookupFailed;
-// in both cases no base UID is returned (the resolution fails closed).
-// When SUDO_UID is adopted and differs from realUID, the adoption is recorded through deps.reportAdoption.
-// This pure function is separated from getPermissionCheckUID so that all branches can be tested without requiring root privileges.
+// Under SudoUIDAware, when realUID is 0 and SUDO_UID is set, it validates and adopts the value,
+// returning ErrSudoUIDUserNotFound or ErrSudoUIDUserLookupFailed on failure (fails closed).
 func resolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, deps permissionCheckUIDDeps) (int, error) {
 	if policy != SudoUIDAware || realUID != 0 {
 		return realUID, nil
@@ -599,13 +582,9 @@ func parseSudoUID(sudoUID string) (int, error) {
 	return parsedUID, nil
 }
 
-// getProcessRealUID returns the process's real UID, without considering SUDO_UID.
-// It reads the UID from the kernel via os.Getuid() and does not consult the passwd database,
-// so it does not depend on NSS or /etc/passwd.
-// It is primarily used for write operations to verify the running process has permission to write files.
-// The bounds check is expected to never fail on supported platforms (os.Getuid returns -1 only on platforms without Unix-style UIDs, e.g. Windows),
-// but is kept because CanCurrentUserSafelyReadFile suppresses gosec G115 on the uint32 conversion with the stated justification that the value was already validated here.
-// Returns ErrUIDOutOfBounds if the UID does not fit in uint32.
+// getProcessRealUID returns the process's real UID without considering SUDO_UID.
+// It reads from the kernel (os.Getuid) without consulting /etc/passwd or NSS.
+// The bounds check is kept for CanCurrentUserSafelyReadFile's gosec G115 suppression.
 func getProcessRealUID() (int, error) {
 	currentUID := os.Getuid()
 
