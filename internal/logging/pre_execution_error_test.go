@@ -1,7 +1,6 @@
 package logging
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -644,11 +644,9 @@ func TestExecutionError_ErrorsIs(t *testing.T) {
 func TestHandlePreExecutionError_SlackNotification(t *testing.T) {
 	// Capture slog.Error() calls using a custom handler
 	var capturedRecords []slog.Record
-	captureHandler := &mockLogHandler{
-		onHandle: func(r slog.Record) {
-			capturedRecords = append(capturedRecords, r)
-		},
-	}
+	captureHandler := tu.NewCallbackHandler(func(r slog.Record) {
+		capturedRecords = append(capturedRecords, r)
+	})
 
 	// Replace default logger with capture handler
 	originalLogger := slog.Default()
@@ -726,28 +724,4 @@ func TestHandlePreExecutionError_SlackNotification(t *testing.T) {
 			assert.Equal(t, tt.message, errorMessageAttr)
 		})
 	}
-}
-
-// mockLogHandler is a test helper that captures slog records
-type mockLogHandler struct {
-	onHandle func(slog.Record)
-}
-
-func (h *mockLogHandler) Enabled(_ context.Context, _ slog.Level) bool {
-	return true
-}
-
-func (h *mockLogHandler) Handle(_ context.Context, r slog.Record) error {
-	if h.onHandle != nil {
-		h.onHandle(r)
-	}
-	return nil
-}
-
-func (h *mockLogHandler) WithAttrs(_ []slog.Attr) slog.Handler {
-	return h
-}
-
-func (h *mockLogHandler) WithGroup(_ string) slog.Handler {
-	return h
 }
