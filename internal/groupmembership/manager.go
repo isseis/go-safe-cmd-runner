@@ -219,7 +219,7 @@ func (gm *GroupMembership) isUserOnlyGroupMember(userUID int, groupGID uint32) (
 // It implements the core security policy: deny if file has other writable permissions (world writable);
 // if group writable, allow only if user owns file and is the only group member;
 // if owner writable, allow only if user owns the file.
-// Returns ErrUIDOutOfBounds, ErrFileWorldWritable, ErrFileNotOwner, or ErrFileNotWritable on check failure.
+// Returns wrapped ErrUIDOutOfBounds, ErrFileWorldWritable, ErrFileNotOwner, ErrFileNotWritable, or errors from user/group lookups on failure.
 func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID uint32, filePerm os.FileMode) (bool, error) {
 	// Validate userUID is within bounds for uint32 before conversion.
 	// Reject negative UIDs to avoid underflow when converting to uint32.
@@ -264,6 +264,7 @@ func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID 
 
 // CanCurrentUserSafelyWriteFile is a convenience wrapper for the current user,
 // using the same security policy as CanUserSafelyWriteFile.
+// Returns wrapped ErrUIDOutOfBounds from getProcessRealUID, or errors from CanUserSafelyWriteFile.
 func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32, filePerm os.FileMode) (bool, error) {
 	// For write operations, use the process's real UID (not SUDO_UID) to verify
 	// that the running process has permission to write to the file.
@@ -280,7 +281,8 @@ func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32
 // with more relaxed permissions than write operations. It denies world writable files,
 // denies group writable files if the current user is not in the group,
 // and allows reading with permissions up to 0o6775.
-// Returns ErrFileWorldWritable, ErrGroupWritableNonMember, or ErrPermissionsExceedMaximum on check failure.
+// Returns wrapped ErrFileWorldWritable, ErrGroupWritableNonMember, ErrPermissionsExceedMaximum,
+// or errors from getPermissionCheckUID and IsUserInGroup on check failure.
 func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm os.FileMode) (bool, error) {
 	permissionCheckUID, err := gm.getPermissionCheckUID()
 	if err != nil {
