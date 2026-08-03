@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1005,7 +1006,7 @@ const adoptionRecordMessage = "Permission check UID taken from SUDO_UID instead 
 func TestSudoUIDAdoptionReporter_Report(t *testing.T) {
 	t.Parallel()
 
-	handler := newLogCaptureHandler(nil)
+	handler := tu.NewLogRecorder(nil)
 	logger := slog.New(handler)
 
 	var reporter sudoUIDAdoptionReporter
@@ -1015,15 +1016,15 @@ func TestSudoUIDAdoptionReporter_Report(t *testing.T) {
 	require.Len(t, records, 1)
 	rec := records[0]
 
-	assert.Equal(t, slog.LevelWarn, rec.level)
-	assert.Equal(t, adoptionRecordMessage, rec.message)
+	assert.Equal(t, slog.LevelWarn, rec.Level)
+	assert.Equal(t, adoptionRecordMessage, rec.Message)
 	assert.Equal(t, map[string]any{
 		"permission_check_uid":        int64(1000),
 		"real_uid":                    int64(0),
 		"source_env_var":              sudoUIDEnvVar,
 		"permission_check_uid_policy": SudoUIDAware.String(),
 		"user_database_source":        userDatabaseSource,
-	}, rec.attributes)
+	}, rec.Attrs)
 }
 
 // TestSudoUIDAdoptionReporter_ReportsOnlyOnce verifies that a single
@@ -1031,7 +1032,7 @@ func TestSudoUIDAdoptionReporter_Report(t *testing.T) {
 func TestSudoUIDAdoptionReporter_ReportsOnlyOnce(t *testing.T) {
 	t.Parallel()
 
-	handler := newLogCaptureHandler(nil)
+	handler := tu.NewLogRecorder(nil)
 	logger := slog.New(handler)
 
 	var reporter sudoUIDAdoptionReporter
@@ -1048,7 +1049,7 @@ func TestSudoUIDAdoptionReporter_ReportsOnlyOnce(t *testing.T) {
 func TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently(t *testing.T) {
 	t.Parallel()
 
-	handler := newLogCaptureHandler(nil)
+	handler := tu.NewLogRecorder(nil)
 	logger := slog.New(handler)
 
 	var reporter sudoUIDAdoptionReporter
@@ -1229,7 +1230,7 @@ func TestSudoUIDAdoptionRecordReachesDefaultLogger(t *testing.T) {
 	previous := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
-	handler := newLogCaptureHandler(nil)
+	handler := tu.NewLogRecorder(nil)
 	slog.SetDefault(slog.New(handler))
 
 	t.Setenv(sudoUIDEnvVar, "1000")
@@ -1251,13 +1252,13 @@ func TestSudoUIDAdoptionRecordReachesDefaultLogger(t *testing.T) {
 	records := handler.Records()
 	require.Len(t, records, 1)
 	rec := records[0]
-	assert.Equal(t, slog.LevelWarn, rec.level)
+	assert.Equal(t, slog.LevelWarn, rec.Level)
 	// The distinct real and permission check UIDs (0 vs 1000) also pin the
 	// argument order of the production call site
 	// deps.reportAdoption(policy, realUID, parsedUID): a swapped call would
 	// surface here as real_uid=1000 / permission_check_uid=0.
-	assert.Equal(t, int64(0), rec.attributes["real_uid"])
-	assert.Equal(t, int64(1000), rec.attributes["permission_check_uid"])
+	assert.Equal(t, int64(0), rec.Attrs["real_uid"])
+	assert.Equal(t, int64(1000), rec.Attrs["permission_check_uid"])
 }
 
 // TestNewInitializesSudoUIDExistenceMemo verifies that New initializes the

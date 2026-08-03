@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -546,7 +547,7 @@ func TestResolvePermissionCheckUID_AdoptionRecordConditions(t *testing.T) {
 // times still yields the correct base UID every time and exactly one record
 // (architecture document §7.1).
 func TestResolvePermissionCheckUID_ReportsAdoptionOnlyOncePerReporter(t *testing.T) {
-	handler := newLogCaptureHandler(nil)
+	handler := tu.NewLogRecorder(nil)
 	logger := slog.New(handler)
 	reporter := &sudoUIDAdoptionReporter{}
 	deps := permissionCheckUIDDeps{
@@ -616,7 +617,7 @@ func TestResolvePermissionCheckUID_VerifiesEvenWhenSudoUIDIsZero(t *testing.T) {
 // handler fails on every record, the base UID is still resolved correctly and
 // no error is returned (architecture document §1.2).
 func TestResolvePermissionCheckUID_RecordFailureDoesNotChangeVerdict(t *testing.T) {
-	handler := newLogCaptureHandler(errors.New("injected handler failure"))
+	handler := tu.NewLogRecorder(errors.New("injected handler failure"))
 	logger := slog.New(handler)
 	reporter := &sudoUIDAdoptionReporter{}
 	deps := permissionCheckUIDDeps{

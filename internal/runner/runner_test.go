@@ -2325,14 +2325,12 @@ func TestLogGroupExecutionSummary_LogLevel(t *testing.T) {
 		message string
 	}
 	var capturedLogs []logRecord
-	captureHandler := &logCaptureHandler{
-		onHandle: func(r slog.Record) {
-			capturedLogs = append(capturedLogs, logRecord{
-				level:   r.Level,
-				message: r.Message,
-			})
-		},
-	}
+	captureHandler := tu.NewCallbackHandler(func(r slog.Record) {
+		capturedLogs = append(capturedLogs, logRecord{
+			level:   r.Level,
+			message: r.Message,
+		})
+	})
 
 	// Save original logger and restore after test
 	originalLogger := slog.Default()
@@ -2401,30 +2399,6 @@ func TestLogGroupExecutionSummary_LogLevel(t *testing.T) {
 		}
 		assert.True(t, found, "Should have logged execution summary")
 	})
-}
-
-// logCaptureHandler is a simple slog.Handler that captures log records for testing
-type logCaptureHandler struct {
-	onHandle func(slog.Record)
-}
-
-func (h *logCaptureHandler) Enabled(_ context.Context, _ slog.Level) bool {
-	return true
-}
-
-func (h *logCaptureHandler) Handle(_ context.Context, r slog.Record) error {
-	if h.onHandle != nil {
-		h.onHandle(r)
-	}
-	return nil
-}
-
-func (h *logCaptureHandler) WithAttrs(_ []slog.Attr) slog.Handler {
-	return h
-}
-
-func (h *logCaptureHandler) WithGroup(_ string) slog.Handler {
-	return h
 }
 
 // TestCreateNormalResourceManager_Succeeds verifies that createNormalResourceManager
