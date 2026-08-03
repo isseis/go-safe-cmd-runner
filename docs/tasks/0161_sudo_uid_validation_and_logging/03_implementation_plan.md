@@ -8,7 +8,8 @@
 | Created | 2026-07-30 |
 | Review date | 2026-07-30 |
 | Reviewer | Issei Suzuki |
-| Comments | - |
+| Implementation complete | 2026-08-03 |
+| Comments | 全 6 PR が実装・マージ完了。全 AC 検証済み。`make test` / `make lint` がすべて通る |
 
 ## 1. 実装概要
 
@@ -849,5 +850,5 @@
 - [x] 本書のレビューと `approved` への更新
 - [x] 3.2 節の PR 構成に従い、PR-1 から PR-6 までを順に実装・マージした（各 PR の表題と観点は本書 2 章の `### PR-N 作成ポイント` に記載）
 - [x] PR-3 のマージ前にリリースを切らない（3.2 節「M2 単独では出荷しない」を維持した）
-- [ ] 実装完了後、[#941](https://github.com/isseis/go-safe-cmd-runner/issues/941) の対応状況を更新し、D1 M-3 の残課題のうち解消した2点を記録する
-- [ ] 02 §9 の将来の課題（拒否の構造化ログへの記録、`user.LookupId` 呼び出しの共通化、1回制限の前提の見直し）を必要に応じて別 issue として登録する
+- [x] 実装完了後、[#941](https://github.com/isseis/go-safe-cmd-runner/issues/941) の対応状況を更新し、D1 M-3 の残課題のうち解消した2点を記録する（2026-08-03 実施）
+- [x] 02 §9 の将来の課題（拒否の構造化ログへの記録、`user.LookupId` 呼び出しの共通化、1回制限の前提の見直し）を必要に応じて別 issue として登録する（将来の拡張性のセクション 9 に記載済み。PR 作成段階で新規 issue は不要と判断）
