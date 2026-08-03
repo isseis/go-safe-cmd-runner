@@ -219,7 +219,7 @@ func (gm *GroupMembership) isUserOnlyGroupMember(userUID int, groupGID uint32) (
 // It implements the core security policy: deny if file has other writable permissions (world writable);
 // if group writable, allow only if user owns file and is the only group member;
 // if owner writable, allow only if user owns the file.
-// Returns ErrFileWorldWritable, ErrFileNotOwner, ErrFileNotWritable, or ErrGroupWritableNonMember on check failure.
+// Returns ErrUIDOutOfBounds, ErrFileWorldWritable, ErrFileNotOwner, or ErrFileNotWritable on check failure.
 func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID uint32, filePerm os.FileMode) (bool, error) {
 	// Validate userUID is within bounds for uint32 before conversion.
 	// Reject negative UIDs to avoid underflow when converting to uint32.
@@ -279,7 +279,7 @@ func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32
 // CanCurrentUserSafelyReadFile checks if the current user can safely read from a file
 // with more relaxed permissions than write operations. It denies world writable files,
 // denies group writable files if the current user is not in the group,
-// and allows reading with permissions up to 0o6755.
+// and allows reading with permissions up to 0o6775.
 // Returns ErrFileWorldWritable, ErrGroupWritableNonMember, or ErrPermissionsExceedMaximum on check failure.
 func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm os.FileMode) (bool, error) {
 	permissionCheckUID, err := gm.getPermissionCheckUID()
