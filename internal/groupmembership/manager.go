@@ -264,15 +264,6 @@ func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID 
 
 // CanCurrentUserSafelyWriteFile is a convenience wrapper for the current user,
 // using the same security policy as CanUserSafelyWriteFile.
-// Example usage:
-//
-//	canWrite, err := gm.CanCurrentUserSafelyWriteFile(stat.Uid, stat.Gid, fileInfo.Mode())
-//	if err != nil {
-//	    return fmt.Errorf("failed to check write safety: %w", err)
-//	}
-//	if !canWrite {
-//	    return fmt.Errorf("current user cannot safely write to file")
-//	}
 func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32, filePerm os.FileMode) (bool, error) {
 	// For write operations, use the process's real UID (not SUDO_UID) to verify
 	// that the running process has permission to write to the file.
@@ -516,8 +507,6 @@ func lookupUserByUID(uid int) error {
 // resolved according to gm's effective policy (see effectivePermissionCheckUIDPolicy);
 // SUDO_UID is only consulted when that policy is SudoUIDAware.
 // It is primarily used for read operations to verify the original user has access to the file being read.
-// Under the SudoUIDAware policy, may return ErrSudoUIDUserNotFound when SUDO_UID does not refer to an existing user,
-// or ErrSudoUIDUserLookupFailed when the existence check could not be completed.
 func (gm *GroupMembership) getPermissionCheckUID() (int, error) {
 	realUID, err := getProcessRealUID()
 	if err != nil {
@@ -534,16 +523,9 @@ func (gm *GroupMembership) getPermissionCheckUID() (int, error) {
 	})
 }
 
-// EnsurePermissionCheckUID resolves the permission check UID and reports only
-// whether the resolution succeeded, without checking any file. Binaries
-// declaring SudoUIDAware call it once at startup so that an unverifiable
-// SUDO_UID fails before the first file is processed.
-//
-// Startup is the only reliable point: record reads its target files through
-// safefileio.SafeOpenFile, which runs no read-safety check, so a run creating
-// only new records never resolves the UID on its own (§3.7.7 of the 0161
-// architecture document). Resolving here does not duplicate the adoption
-// record, which sudoUIDAdoptionReporter limits to one per process.
+// EnsurePermissionCheckUID resolves the permission check UID at startup,
+// failing closed if SUDO_UID is unverifiable. This must be called once before processing files,
+// since record reads through safefileio.SafeOpenFile without read-safety checks.
 func (gm *GroupMembership) EnsurePermissionCheckUID() error {
 	_, err := gm.getPermissionCheckUID()
 	return err
