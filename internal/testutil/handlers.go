@@ -54,8 +54,20 @@ func (lr *LogRecorder) Handle(_ context.Context, r slog.Record) error {
 	attrs := make(map[string]any)
 
 	// First capture accumulated attributes from WithAttrs
-	for _, a := range lr.pendAttrs {
-		attrs[a.Key] = a.Value.Any()
+	if len(lr.pendAttrs) > 0 {
+		if lr.pendGroup != "" {
+			// Namespace accumulated attributes under the group name
+			groupAttrs := make(map[string]any)
+			for _, a := range lr.pendAttrs {
+				groupAttrs[a.Key] = a.Value.Any()
+			}
+			attrs[lr.pendGroup] = groupAttrs
+		} else {
+			// Add accumulated attributes directly
+			for _, a := range lr.pendAttrs {
+				attrs[a.Key] = a.Value.Any()
+			}
+		}
 	}
 
 	// Then capture attributes from the record itself
@@ -110,7 +122,18 @@ func (lr *LogRecorder) Records() []RecordSnapshot {
 	defer lr.mu.Unlock()
 
 	result := make([]RecordSnapshot, len(*lr.records))
-	copy(result, *lr.records)
+	for i, record := range *lr.records {
+		// Deep-copy the Attrs map to ensure independence from internal state
+		attrsCopy := make(map[string]any)
+		for key, value := range record.Attrs {
+			attrsCopy[key] = value
+		}
+		result[i] = RecordSnapshot{
+			Level:   record.Level,
+			Message: record.Message,
+			Attrs:   attrsCopy,
+		}
+	}
 	return result
 }
 
