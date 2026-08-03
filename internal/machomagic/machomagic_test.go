@@ -9,10 +9,10 @@ import (
 )
 
 // TestIs verifies that Is recognizes every supported Mach-O / Fat binary
-// magic value in both byte orders and rejects other formats. (AC: スコープ(案)
-// の整理結果 — isMachOMagic / isMachOMagicAll の差分(32bit除外)は実装上の揺れで
-// あり、両者を統合した全マジック集合 {32/64-bit, Fat} × {native, swapped} を
-// 判定すること)
+// magic value in both byte orders and rejects other formats. (AC: per the
+// scope analysis in issue #876, the 32-bit exclusion in isMachOMagic was an
+// implementation slip, so the unified set {32/64-bit, Fat} × {native,
+// swapped} must be recognized)
 func TestIs(t *testing.T) {
 	tests := []struct {
 		name string
@@ -79,9 +79,10 @@ func TestIs(t *testing.T) {
 }
 
 // TestIsFat verifies that IsFat recognizes only Fat binary magic values
-// (both byte orders) and rejects single-arch Mach-O magic. (AC: machodylib の
-// looksLikeMachO が Fat を除外するのはコメント明記の意図的差分であるため、
-// IsFat として分離し「Is && !IsFat」で単一アーキテクチャ判定を維持できること)
+// (both byte orders) and rejects single-arch Mach-O magic. (AC: per the
+// scope analysis in issue #876, the Fat exclusion in machodylib's
+// looksLikeMachO was intentional, so IsFat must be separable so that
+// "Is && !IsFat" preserves single-arch-only detection)
 func TestIsFat(t *testing.T) {
 	tests := []struct {
 		name string
