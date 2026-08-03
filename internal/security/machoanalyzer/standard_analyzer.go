@@ -2,7 +2,6 @@ package machoanalyzer
 
 import (
 	"debug/macho"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/machomagic"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 )
@@ -30,38 +30,12 @@ var ErrFileTooLarge = errors.New("file too large")
 // maxFileSize is the maximum file size for Mach-O analysis (1 GB).
 const maxFileSize = 1 << 30
 
-// magicNumberSize is the number of bytes in a Mach-O magic number.
-const magicNumberSize = 4
-
-// Mach-O magic numbers (see <mach-o/loader.h>)
-const (
-	machoMagic64 = 0xFEEDFACF // 64-bit Mach-O (native endian)
-	machoCigam64 = 0xCFFAEDFE // 64-bit Mach-O (byte-swapped)
-	machoMagic32 = 0xFEEDFACE // 32-bit Mach-O (native endian)
-	machoCigam32 = 0xCEFAEDFE // 32-bit Mach-O (byte-swapped)
-	fatMagic     = 0xCAFEBABE // Fat binary
-	fatCigam     = 0xBEBAFECA // Fat binary (byte-swapped)
-)
-
 // libOrdinalMask and libOrdinalShift extract the library ordinal from a symbol's Desc field.
 // The ordinal occupies bits 15:8 of Desc (see <mach-o/nlist.h> GET_LIBRARY_ORDINAL).
 const (
 	libOrdinalMask  = 0xFF
 	libOrdinalShift = 8
 )
-
-// isMachOMagic returns true if the first 4 bytes match any Mach-O or Fat binary magic.
-func isMachOMagic(b []byte) bool {
-	if len(b) < magicNumberSize {
-		return false
-	}
-	magic := binary.LittleEndian.Uint32(b[:magicNumberSize])
-	switch magic {
-	case machoMagic64, machoCigam64, fatMagic, fatCigam:
-		return true
-	}
-	return false
-}
 
 // analyzeSlice performs symbol analysis on a single *macho.File with libSystem filtering.
 // Records all libSystem-derived symbols (both network and non-network categories).
@@ -239,21 +213,20 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbolsFromReader(file safefileio.
 	// Read via ReadAt (absolute offset) rather than the sequential Reader so
 	// that this analysis does not depend on, or disturb, the file's current
 	// read offset — file may be shared with other analyses of the same content.
-	magic := make([]byte, magicNumberSize)
+	magic := make([]byte, machomagic.Len)
 	if _, err := io.ReadFull(io.NewSectionReader(file, 0, int64(len(magic))), magic); err != nil {
 		return binaryanalyzer.AnalysisOutput{
 			Result: binaryanalyzer.AnalysisError,
 			Error:  fmt.Errorf("failed to read magic: %w", err),
 		}
 	}
-	if !isMachOMagic(magic) {
+	if !machomagic.Is(magic) {
 		return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NotSupportedBinary}
 	}
 
 	// Step 3: dispatch on binary type. macho.NewFile / macho.NewFatFile read via
 	// io.ReaderAt, so no Seek to reset the file's current offset is needed.
-	m := binary.LittleEndian.Uint32(magic)
-	if m == fatMagic || m == fatCigam {
+	if machomagic.IsFat(magic) {
 		fat, err := macho.NewFatFile(file)
 		if err != nil {
 			return binaryanalyzer.AnalysisOutput{

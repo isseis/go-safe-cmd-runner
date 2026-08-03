@@ -18,6 +18,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/machomagic"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
@@ -596,23 +597,6 @@ func computeFileHash(fs safefileio.FileSystem, path string) (string, error) {
 	return fmt.Sprintf("sha256:%s", hex.EncodeToString(h.Sum(nil))), nil
 }
 
-// looksLikeMachO returns true if buf starts with a recognised Mach-O magic
-// value (32/64-bit, either endianness). Fat-binary magic is excluded because
-// callers handle it via macho.NewFatFile before reaching the single-arch path.
-func looksLikeMachO(buf []byte) bool {
-	const machOMagicSize = 4
-
-	if len(buf) < machOMagicSize {
-		return false
-	}
-
-	le := binary.LittleEndian.Uint32(buf[:machOMagicSize])
-	be := binary.BigEndian.Uint32(buf[:machOMagicSize])
-
-	return le == macho.Magic32 || le == macho.Magic64 ||
-		be == macho.Magic32 || be == macho.Magic64
-}
-
 // HasDynamicLibDeps checks if the file at the given path is a Mach-O binary
 // that has at least one LC_LOAD_DYLIB or LC_LOAD_WEAK_DYLIB entry pointing to
 // a non-dyld-shared-cache library.
@@ -699,7 +683,9 @@ func checkSingleArchMachO(file safefileio.File) (bool, error) {
 
 	machoFile, err := macho.NewFile(file)
 	if err != nil {
-		if looksLikeMachO(magic[:]) {
+		// Fat-binary magic is excluded because the caller handles it via
+		// macho.NewFatFile before reaching this single-arch path.
+		if machomagic.Is(magic[:]) && !machomagic.IsFat(magic[:]) {
 			return false, fmt.Errorf("failed to parse Mach-O binary: %w", err)
 		}
 

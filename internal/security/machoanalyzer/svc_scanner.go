@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/machomagic"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
@@ -59,22 +60,6 @@ func collectSVCAddresses(f *macho.File) ([]uint64, error) {
 		return nil, nil
 	}
 	return addrs, nil
-}
-
-// isMachOMagicAll reports whether the first 4 bytes match any recognized
-// Mach-O or Fat binary magic number, covering 32-bit, 64-bit, and Fat
-// binaries in both native and byte-swapped byte orders.
-func isMachOMagicAll(b []byte) bool {
-	if len(b) < magicNumberSize {
-		return false
-	}
-	m := binary.LittleEndian.Uint32(b[:magicNumberSize])
-	switch m {
-	case machoMagic64, machoCigam64, fatMagic, fatCigam,
-		machoMagic32, machoCigam32:
-		return true
-	}
-	return false
 }
 
 // noopSyscallTable is a SyscallNumberTable that returns empty results.
@@ -190,16 +175,15 @@ func ScanSyscallInfosFromReader(f safefileio.File, table SyscallNumberTable) (di
 		table = noopSyscallTable{}
 	}
 
-	magic := make([]byte, magicNumberSize)
+	magic := make([]byte, machomagic.Len)
 	if _, err := io.ReadFull(io.NewSectionReader(f, 0, int64(len(magic))), magic); err != nil {
 		return nil, nil, nil
 	}
-	if !isMachOMagicAll(magic) {
+	if !machomagic.Is(magic) {
 		return nil, nil, nil
 	}
 
-	m := binary.LittleEndian.Uint32(magic)
-	if m == fatMagic || m == fatCigam {
+	if machomagic.IsFat(magic) {
 		fat, err := macho.NewFatFile(f)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to parse Fat binary: %w", err)
