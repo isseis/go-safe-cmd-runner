@@ -19,8 +19,8 @@ type RecordSnapshot struct {
 // If FailErr is non-nil, Handle returns it for every record instead of capturing,
 // allowing tests to exercise handler failure paths.
 type LogRecorder struct {
-	mu        sync.Mutex
-	records   []RecordSnapshot
+	mu        *sync.Mutex
+	records   *[]RecordSnapshot
 	pendAttrs []slog.Attr
 	pendGroup string
 	FailErr   error
@@ -30,7 +30,8 @@ type LogRecorder struct {
 // Handle returns it for every record instead of capturing.
 func NewLogRecorder(failErr error) *LogRecorder {
 	return &LogRecorder{
-		records:   make([]RecordSnapshot, 0),
+		mu:        &sync.Mutex{},
+		records:   &[]RecordSnapshot{},
 		pendAttrs: make([]slog.Attr, 0),
 		FailErr:   failErr,
 	}
@@ -69,7 +70,7 @@ func (lr *LogRecorder) Handle(_ context.Context, r slog.Record) error {
 		Attrs:   attrs,
 	}
 
-	lr.records = append(lr.records, snapshot)
+	*lr.records = append(*lr.records, snapshot)
 	return nil
 }
 
@@ -79,9 +80,11 @@ func (lr *LogRecorder) WithAttrs(attrs []slog.Attr) slog.Handler {
 	defer lr.mu.Unlock()
 
 	newRecorder := &LogRecorder{
+		mu:        lr.mu,
 		records:   lr.records,
 		pendAttrs: append(lr.pendAttrs[:len(lr.pendAttrs):len(lr.pendAttrs)], attrs...),
 		pendGroup: lr.pendGroup,
+		FailErr:   lr.FailErr,
 	}
 	return newRecorder
 }
@@ -92,9 +95,11 @@ func (lr *LogRecorder) WithGroup(name string) slog.Handler {
 	defer lr.mu.Unlock()
 
 	newRecorder := &LogRecorder{
+		mu:        lr.mu,
 		records:   lr.records,
 		pendAttrs: lr.pendAttrs,
 		pendGroup: name,
+		FailErr:   lr.FailErr,
 	}
 	return newRecorder
 }
@@ -104,8 +109,8 @@ func (lr *LogRecorder) Records() []RecordSnapshot {
 	lr.mu.Lock()
 	defer lr.mu.Unlock()
 
-	result := make([]RecordSnapshot, len(lr.records))
-	copy(result, lr.records)
+	result := make([]RecordSnapshot, len(*lr.records))
+	copy(result, *lr.records)
 	return result
 }
 
