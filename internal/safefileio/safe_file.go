@@ -389,16 +389,7 @@ func readFileContent(file File, filePath string, fs FileSystem) ([]byte, error) 
 }
 
 // getFileStatInfo retrieves file statistics and validates that the file is a regular file.
-// This helper function performs common validation steps used by multiple functions.
-//
-// Parameters:
-//   - file: The file to examine
-//   - filePath: The file path for error reporting
-//
-// Returns:
-//   - os.FileInfo: File information if validation passes
-//   - *syscall.Stat_t: System-specific file statistics
-//   - error: Validation error if the file is invalid
+// This helper performs common validation steps used by multiple functions.
 func getFileStatInfo(file File, filePath string) (os.FileInfo, *syscall.Stat_t, error) {
 	fileInfo, err := file.Stat()
 	if err != nil {
@@ -420,19 +411,7 @@ func getFileStatInfo(file File, filePath string) (os.FileInfo, *syscall.Stat_t, 
 
 // canSafelyAccessFile checks if the current user can safely access a file by validating
 // file permissions, ownership, and group membership in a unified security check.
-//
-// This function performs comprehensive security validation:
-//   - Verifies the file is a regular file
-//   - Uses groupmembership to validate write permissions
-//
-// Parameters:
-//   - file: The opened file to validate
-//   - filePath: The file path (for error messages)
-//   - operation: The intended file operation (read/write)
-//   - groupMembership: Group membership checker for security validation
-//
-// Returns:
-//   - error: Validation error if the file cannot be safely accessed
+// It verifies the file is a regular file and uses groupmembership to validate permissions for the operation.
 func canSafelyAccessFile(file File, filePath string, operation groupmembership.FileOperation, groupMembership *groupmembership.GroupMembership) error {
 	fileInfo, stat, err := getFileStatInfo(file, filePath)
 	if err != nil {
@@ -467,20 +446,8 @@ func canSafelyAccessFile(file File, filePath string, operation groupmembership.F
 }
 
 // canSafelyReadFromFile checks if the current user can safely read from a file with
-// more relaxed permissions compared to write operations.
-//
-// This function performs read-specific security validation:
-//   - Verifies the file is a regular file
-//   - Uses groupmembership to validate read permissions
-//
-// Parameters:
-//   - file: The opened file to validate
-//   - filePath: The file path (for error messages)
-//   - groupMembership: Group membership checker for security validation
-//
-// Returns:
-//   - os.FileInfo: File information if validation passes
-//   - error: Validation error if the file cannot be safely read from
+// more relaxed permissions than write operations.
+// It verifies the file is a regular file and uses groupmembership to validate read permissions.
 func canSafelyReadFromFile(file File, filePath string, groupMembership *groupmembership.GroupMembership) (os.FileInfo, error) {
 	fileInfo, stat, err := getFileStatInfo(file, filePath)
 	if err != nil {

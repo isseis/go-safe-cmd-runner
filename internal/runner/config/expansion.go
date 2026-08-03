@@ -35,17 +35,7 @@ const (
 
 // variableResolver is a function type that resolves a variable name to its expanded value.
 // It is called during variable expansion to look up and expand variable references.
-//
-// Parameters:
-//   - varName: the variable name to resolve (without %{} syntax)
-//   - field: field name for error messages
-//   - visited: map tracking currently-being-expanded variables (for circular detection)
-//   - expansionChain: ordered list of variable names in current expansion path
-//   - depth: current recursion depth
-//
-// Returns:
-//   - string: the expanded value of the variable
-//   - error: resolution error (e.g., undefined variable, type mismatch)
+// Returns resolution error (e.g., undefined variable, type mismatch).
 type variableResolver func(
 	varName string,
 	field string,
@@ -55,16 +45,8 @@ type variableResolver func(
 ) (string, error)
 
 // ExpandWorkDir expands %{VAR} references in a workdir string and validates
-// that the result is an absolute path. Empty string is allowed and returned as-is.
-//
-// Parameters:
-//   - workdir: The workdir string to expand (may contain %{VAR} references)
-//   - expandedVars: Map of variable names to their expanded values
-//   - level: Context for error messages (e.g., "group[deploy]", "command[build]")
-//
-// Returns:
-//   - string: The expanded workdir path
-//   - error: Expansion error or ErrInvalidWorkDir if result is not absolute
+// that the result is an absolute path (empty string is allowed and returned as-is).
+// Returns ErrInvalidWorkDir if the result is not absolute.
 func ExpandWorkDir(
 	workdir string,
 	expandedVars map[string]string,
@@ -162,18 +144,7 @@ func resolveAndExpand(
 //   - For collection: resolver collects the variable name and returns empty string
 //   - For validation: resolver can perform custom checks
 //
-// Parameters:
-//   - input: the string to process (may contain %{VAR} references and escape sequences)
-//   - resolver: function to process variable names
-//   - level: context for error messages (e.g., "global", "group[deploy]")
-//   - field: field name for error messages (e.g., "vars", "env.PATH")
-//   - visited: tracks variables currently being expanded (for circular reference detection)
-//   - expansionChain: ordered list of variable names in the current expansion path
-//   - depth: current recursion depth
-//
-// Returns:
-//   - string: the processed string (expanded or empty, depending on resolver)
-//   - error: processing error (syntax error, undefined variable, circular reference, etc.)
+// Returns processing errors for syntax errors, undefined variables, circular references, etc.
 func processVarRefs(
 	input string,
 	resolver variableResolver,
@@ -383,12 +354,6 @@ func newVarExpander(
 
 // expandString expands variable references in the input string.
 // It resolves references to both already-expanded and raw variables.
-//
-// Parameters:
-//   - input: the string containing %{VAR} references to expand
-//   - field: field name for error messages (e.g., "vars.config_path")
-//
-// Returns the expanded string or an error.
 func (e *varExpander) expandString(input string, field string) (string, error) {
 	visited := make(map[string]struct{})
 	expansionChain := make([]string, 0)
@@ -502,19 +467,7 @@ func (e *varExpander) resolveVariable(
 }
 
 // ProcessVars processes vars definitions from a TOML table and expands them
-// using baseExpandedVars and baseExpandedArrays.
-//
-// Parameters:
-//   - vars: Variable definitions from TOML (map[string]any)
-//   - baseExpandedVars: Previously expanded string variables (inherited)
-//   - baseExpandedArrays: Previously expanded array variables (inherited)
-//   - envImportVars: Variables defined via env_import at any level (for conflict detection)
-//   - level: Context for error messages (e.g., "global", "group[deploy]")
-//
-// Returns:
-//   - map[string]string: Expanded string variables (includes base + new)
-//   - map[string][]string: Expanded array variables (includes base + new)
-//   - error: Validation or expansion error
+// using baseExpandedVars and baseExpandedArrays. envImportVars is used for conflict detection.
 //
 // Processing steps:
 //  1. Check total variable count against MaxVarsPerLevel
@@ -848,12 +801,7 @@ func determineEffectiveEnvAllowlist(groupAllowlist []string, globalAllowlist []s
 // 3. Env: Expands environment variables using internal variables
 // 4. VerifyFiles: Expands file paths using internal variables
 //
-// Parameters:
-//   - spec: The global configuration spec to expand
-//
-// Returns:
-//   - *RuntimeGlobal: The expanded runtime global configuration
-//   - error: An error if expansion fails (e.g., undefined variable reference)
+// Returns an error if expansion fails (e.g., undefined variable reference).
 func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, error) {
 	// Create RuntimeGlobal using NewRuntimeGlobal to properly initialize timeout field
 	runtime, err := runnertypes.NewRuntimeGlobal(spec)
@@ -921,14 +869,7 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 //  6. Symbolic link resolution: filepath.EvalSymlinks
 //  7. Duplicate detection (resolved path level): detect paths pointing to same file
 //
-// Parameters:
-//   - rawPaths: List of paths to expand (may contain variable references)
-//   - vars: Variable map for expansion (%{key} -> value)
-//   - groupName: Group name for error messages
-//
-// Returns:
-//   - map[string]struct{}: Expanded and normalized path set for O(1) lookup
-//   - error: Expansion or validation error
+// Returns an expanded and normalized path set for O(1) lookup, or expansion/validation errors.
 func expandCmdAllowed(
 	rawPaths []string,
 	vars map[string]string,
@@ -1012,17 +953,8 @@ func expandCmdAllowed(
 // 5. VerifyFiles: Expands file paths using internal variables
 // 6. CmdAllowed: Expands and validates allowed command paths
 //
-// Parameters:
-//   - spec: The group configuration spec to expand
-//   - globalRuntime: The global runtime configuration
-//
-// Returns:
-//   - *RuntimeGroup: The expanded runtime group configuration
-//   - error: An error if expansion fails
-//
-// Note:
-//   - Commands are NOT expanded by this function. They are expanded separately
-//     by GroupExecutor using ExpandCommand() for each command.
+// Commands are NOT expanded by this function. They are expanded separately
+// by GroupExecutor using ExpandCommand() for each command.
 func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.RuntimeGlobal) (*runnertypes.RuntimeGroup, error) {
 	runtime, err := runnertypes.NewRuntimeGroup(spec)
 	if err != nil {
@@ -1256,22 +1188,9 @@ func expandCommandFields(
 // 6. Args: Expands command arguments using internal variables
 // 7. Env: Expands environment variables using internal variables
 //
-// Parameters:
-//   - spec: The command configuration spec to expand
-//   - templates: Map of available command templates
-//   - runtimeGroup: The runtime group configuration
-//   - globalRuntime: The global runtime configuration
-//   - globalTimeout: Global timeout setting for timeout resolution hierarchy
-//   - globalOutputSizeLimit: Global output size limit setting for output size limit resolution
-//
-// Returns:
-//   - *RuntimeCommand: The expanded runtime command configuration with resolved EffectiveTimeout and EffectiveOutputSizeLimit
-//   - error: An error if expansion fails
-//
-// Note:
-//   - EffectiveTimeout is set by NewRuntimeCommand using timeout resolution hierarchy.
-//   - EffectiveOutputSizeLimit is set by NewRuntimeCommand using output size limit resolution.
-//   - EffectiveWorkDir is NOT set by this function; it is set by GroupExecutor after expansion.
+// EffectiveTimeout and EffectiveOutputSizeLimit are resolved by NewRuntimeCommand using
+// timeout and output size limit resolution hierarchies respectively.
+// EffectiveWorkDir is NOT set by this function; it is set by GroupExecutor after expansion.
 func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertypes.CommandTemplate, runtimeGroup *runnertypes.RuntimeGroup, globalRuntime *runnertypes.RuntimeGlobal, globalTimeout common.Timeout, globalOutputSizeLimit common.OutputSizeLimit) (*runnertypes.RuntimeCommand, error) {
 	// 0. Resolve template if present
 	workingSpec, err := resolveAndPrepareCommandSpec(spec, templates)
@@ -1318,14 +1237,6 @@ func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertyp
 //   - OutputFile: Override model (command overrides template, nil = inherit)
 //   - EnvImport: Merge model (template entries added first, command entries appended, duplicates removed)
 //   - Vars: Merge model (template vars as baseline, command vars overlay with precedence on conflicts)
-//
-// Parameters:
-//   - expandedSpec: The spec being constructed (output)
-//   - cmdSpec: The original command spec (contains command-level overrides)
-//   - expandedWorkDir: WorkDir from template after parameter expansion (nil if not set in template)
-//   - expandedOutputFile: OutputFile from template after parameter expansion (nil if not set in template)
-//   - expandedEnvImport: EnvImport from template after parameter expansion
-//   - expandedVars: Vars from template after parameter expansion
 func ApplyTemplateInheritance(
 	expandedSpec *runnertypes.CommandSpec,
 	cmdSpec *runnertypes.CommandSpec,

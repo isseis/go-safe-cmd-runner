@@ -234,8 +234,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	return nil
 }
 
-// executeAllCommands executes all commands in a group sequentially
-// Returns: (commandResults, executionResult, error)
+// executeAllCommands executes all commands in a group sequentially.
 // executionResult is non-nil only when an error occurs, representing the error state.
 func (ge *DefaultGroupExecutor) executeAllCommands(
 	ctx context.Context,
@@ -299,13 +298,7 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 //  2. Resolve effective working directory via resolveCommandWorkDir
 //  3. Store the fully-expanded RuntimeCommand in runtimeGroup.Commands
 //
-// Parameters:
-//   - groupSpec: The group specification containing command definitions
-//   - runtimeGroup: The runtime group to store expanded commands
-//   - runtimeGlobal: The global runtime configuration
-//
-// Returns:
-//   - error: An error if any command expansion or workdir resolution fails
+// Returns an error if any command expansion or workdir resolution fails.
 func (ge *DefaultGroupExecutor) preExpandCommands(
 	groupSpec *runnertypes.GroupSpec,
 	runtimeGroup *runnertypes.RuntimeGroup,
@@ -718,9 +711,7 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 }
 
 // resolveGroupWorkDir determines the working directory for a group.
-// Returns: (workdir, tempDirManager, error)
-//   - For fixed directories: tempDirManager is nil
-//   - For temporary directories: tempDirManager is non-nil (used for cleanup)
+// For fixed directories, tempDirManager is nil; for temporary directories, it is non-nil (used for cleanup).
 func (ge *DefaultGroupExecutor) resolveGroupWorkDir(
 	runtimeGroup *runnertypes.RuntimeGroup,
 ) (string, executor.TempDirManager, error) {

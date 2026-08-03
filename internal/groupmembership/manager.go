@@ -216,25 +216,10 @@ func (gm *GroupMembership) isUserOnlyGroupMember(userUID int, groupGID uint32) (
 }
 
 // CanUserSafelyWriteFile checks if a user can safely write to a file based on file permissions, ownership and group membership.
-//
-// This function implements the comprehensive security policy:
-// 1. Deny if file has other writable permissions (world writable)
-// 2. If file has group writable permissions: allow only if user owns file AND user is the only member of file's group
-// 3. If file has owner writable permissions: allow only if user owns the file
-//
-// This prevents potential security issues where files could be modified by unintended users.
-//
-// Parameters:
-//   - userUID: The user ID to check (as int)
-//   - fileUID: The file owner's user ID (as uint32)
-//   - fileGID: The file's group ID (as uint32)
-//   - filePerm: The file permissions (as os.FileMode)
-//
-// Returns:
-//   - bool: true if the user can safely write to the file, false otherwise
-//   - error: non-nil if there was an error checking user or group information, or if write is not safe
-//
-// This is the core security policy for determining write permissions in a multi-user environment.
+// It implements the core security policy: deny if file has other writable permissions (world writable);
+// if group writable, allow only if user owns file and is the only group member;
+// if owner writable, allow only if user owns the file.
+// Returns ErrFileWorldWritable, ErrFileNotOwner, ErrFileNotWritable, or ErrGroupWritableNonMember on check failure.
 func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID uint32, filePerm os.FileMode) (bool, error) {
 	// Validate userUID is within bounds for uint32 before conversion.
 	// Reject negative UIDs to avoid underflow when converting to uint32.
@@ -277,20 +262,8 @@ func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID 
 	return false, fmt.Errorf("%w UID %d", ErrFileNotWritable, userUID)
 }
 
-// CanCurrentUserSafelyWriteFile is a convenience wrapper for the current user.
-//
-// This function checks if the current user can safely write to a file, using the same
-// security policy as CanUserSafelyWriteFile.
-//
-// Parameters:
-//   - fileUID: The file owner's user ID (as uint32)
-//   - fileGID: The file's group ID (as uint32)
-//   - filePerm: The file permissions (as os.FileMode)
-//
-// Returns:
-//   - bool: true if the current user can safely write to the file, false otherwise
-//   - error: non-nil if the process UID could not be determined or the permission check failed
-//
+// CanCurrentUserSafelyWriteFile is a convenience wrapper for the current user,
+// using the same security policy as CanUserSafelyWriteFile.
 // Example usage:
 //
 //	canWrite, err := gm.CanCurrentUserSafelyWriteFile(stat.Uid, stat.Gid, fileInfo.Mode())
@@ -313,22 +286,10 @@ func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32
 }
 
 // CanCurrentUserSafelyReadFile checks if the current user can safely read from a file
-// with more relaxed permissions compared to write operations.
-//
-// This function implements the read-specific security policy:
-//  1. Deny if file has world writable permissions (security risk)
-//  2. If file has group writable permissions: deny only if current user is NOT in the file's group
-//  3. Allow reading for files with standard read permissions (up to 0o6755)
-//
-// This is more permissive than write operations, as reading generally poses lower security risks.
-//
-// Parameters:
-//   - fileGID: The file's group ID (as uint32)
-//   - filePerm: The file permissions (as os.FileMode)
-//
-// Returns:
-//   - bool: true if the current user can safely read from the file, false otherwise
-//   - error: non-nil if there was an error checking user or group information
+// with more relaxed permissions than write operations. It denies world writable files,
+// denies group writable files if the current user is not in the group,
+// and allows reading with permissions up to 0o6755.
+// Returns ErrFileWorldWritable, ErrGroupWritableNonMember, or ErrPermissionsExceedMaximum on check failure.
 func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm os.FileMode) (bool, error) {
 	permissionCheckUID, err := gm.getPermissionCheckUID()
 	if err != nil {
@@ -376,16 +337,8 @@ func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm
 	return true, nil
 }
 
-// ValidateRequestedPermissions validates the requested permissions before file creation/modification
-// This performs permission validation to ensure requested permissions don't exceed security limits
-// for the specified operation type.
-//
-// Parameters:
-//   - perm: The requested file permissions
-//   - operation: The intended file operation (read/write)
-//
-// Returns:
-//   - error: Validation error if permissions exceed maximum allowed for the operation
+// ValidateRequestedPermissions validates that requested permissions don't exceed security limits
+// for the specified operation type. Returns ErrPermissionsExceedMaximum if they do.
 func (gm *GroupMembership) ValidateRequestedPermissions(perm os.FileMode, operation FileOperation) error {
 	// Select maximum allowed permissions based on operation type
 	var maxAllowedPerms os.FileMode
@@ -559,20 +512,12 @@ func lookupUserByUID(uid int) error {
 	return err
 }
 
-// getPermissionCheckUID returns the user ID to use for permission checks.
-// The base UID is resolved according to gm's effective permission check UID
-// policy (see effectivePermissionCheckUIDPolicy); SUDO_UID is only consulted
-// when that policy is SudoUIDAware.
-//
-// This function is primarily used for read operations where we want to verify the original
-// user has access to the file being read.
-//
-// Returns:
-//   - int: The UID to use for permission checks
-//   - error: Error if unable to determine the UID. Under the SudoUIDAware
-//     policy this includes ErrSudoUIDUserNotFound when SUDO_UID does not
-//     refer to an existing user and ErrSudoUIDUserLookupFailed when the
-//     existence check could not be completed.
+// getPermissionCheckUID returns the user ID to use for permission checks,
+// resolved according to gm's effective policy (see effectivePermissionCheckUIDPolicy);
+// SUDO_UID is only consulted when that policy is SudoUIDAware.
+// It is primarily used for read operations to verify the original user has access to the file being read.
+// Under the SudoUIDAware policy, may return ErrSudoUIDUserNotFound when SUDO_UID does not refer to an existing user,
+// or ErrSudoUIDUserLookupFailed when the existence check could not be completed.
 func (gm *GroupMembership) getPermissionCheckUID() (int, error) {
 	realUID, err := getProcessRealUID()
 	if err != nil {
@@ -605,34 +550,13 @@ func (gm *GroupMembership) EnsurePermissionCheckUID() error {
 }
 
 // resolvePermissionCheckUID resolves the UID to use for permission checks from
-// the effective permission check UID policy, the process's real UID, and the
-// dependencies bundled in deps.
-//
-// Under RealUIDOnly, it always returns realUID and never calls deps.getenv.
-// Under SudoUIDAware, when realUID is 0 and SUDO_UID (read via deps.getenv)
-// is set, the value must pass the numeric validity check (parseSudoUID) and
-// the existence check (deps.verifyUserExists) before it is adopted: a user
-// that does not exist yields ErrSudoUIDUserNotFound, and a failed existence
-// check yields ErrSudoUIDUserLookupFailed; in both cases no base UID is
-// returned (the resolution fails closed). Otherwise it returns realUID.
-//
-// When SUDO_UID is adopted and differs from realUID, the adoption is recorded
-// through deps.reportAdoption. The record has no return value and its
-// outcome never changes the resolved UID or error.
-//
-// This pure function is separated from getPermissionCheckUID so that all branches
-// can be tested without requiring root privileges.
-//
-// Parameters:
-//   - policy: The effective permission check UID policy
-//   - realUID: The process's real UID
-//   - deps: The external dependencies the SudoUIDAware branch consults
-//     (environment variable access, user existence check, adoption record)
-//
-// Returns:
-//   - int: The UID to use for permission checks
-//   - error: Error if SUDO_UID is present but invalid, or if the user it
-//     refers to cannot be verified to exist
+// the effective permission check UID policy, the process's real UID, and the dependencies bundled in deps.
+// Under RealUIDOnly, it always returns realUID.
+// Under SudoUIDAware, when realUID is 0 and SUDO_UID is set, the value must pass parseSudoUID and deps.verifyUserExists:
+// a user that does not exist yields ErrSudoUIDUserNotFound, and a failed existence check yields ErrSudoUIDUserLookupFailed;
+// in both cases no base UID is returned (the resolution fails closed).
+// When SUDO_UID is adopted and differs from realUID, the adoption is recorded through deps.reportAdoption.
+// This pure function is separated from getPermissionCheckUID so that all branches can be tested without requiring root privileges.
 func resolvePermissionCheckUID(policy PermissionCheckUIDPolicy, realUID int, deps permissionCheckUIDDeps) (int, error) {
 	if policy != SudoUIDAware || realUID != 0 {
 		return realUID, nil
@@ -680,14 +604,8 @@ func echoSudoUID(raw string) string {
 }
 
 // parseSudoUID parses and validates a SUDO_UID string value.
-// This is separated from resolvePermissionCheckUID to allow independent testing.
-//
-// Parameters:
-//   - sudoUID: The string value of SUDO_UID environment variable
-//
-// Returns:
-//   - int: The parsed UID value
-//   - error: Error if the value is invalid (not a number, negative, or exceeds uint32)
+// It is separated from resolvePermissionCheckUID to allow independent testing.
+// Returns an error if the value is not a number, is negative, or exceeds uint32.
 func parseSudoUID(sudoUID string) (int, error) {
 	parsedUID, err := strconv.Atoi(sudoUID)
 	if err != nil {
@@ -700,21 +618,12 @@ func parseSudoUID(sudoUID string) (int, error) {
 }
 
 // getProcessRealUID returns the process's real UID, without considering SUDO_UID.
-// It reads the UID from the kernel via os.Getuid() and does not consult the passwd
-// database, so it does not depend on NSS or /etc/passwd.
-//
-// This function is primarily used for write operations where we want to verify
-// the running process has the necessary permissions to write files.
-//
-// The bounds check below is expected to never fail on supported platforms, since
-// os.Getuid() returns -1 only on platforms without Unix-style UIDs (e.g. Windows).
-// It is kept because CanCurrentUserSafelyReadFile suppresses gosec G115 on the
-// uint32 conversion with the stated justification that the value was already
-// validated here; removing the check would remove that ground.
-//
-// Returns:
-//   - int: The process's real UID
-//   - error: ErrUIDOutOfBounds if the UID does not fit in uint32
+// It reads the UID from the kernel via os.Getuid() and does not consult the passwd database,
+// so it does not depend on NSS or /etc/passwd.
+// It is primarily used for write operations to verify the running process has permission to write files.
+// The bounds check is expected to never fail on supported platforms (os.Getuid returns -1 only on platforms without Unix-style UIDs, e.g. Windows),
+// but is kept because CanCurrentUserSafelyReadFile suppresses gosec G115 on the uint32 conversion with the stated justification that the value was already validated here.
+// Returns ErrUIDOutOfBounds if the UID does not fit in uint32.
 func getProcessRealUID() (int, error) {
 	currentUID := os.Getuid()
 
