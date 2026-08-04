@@ -643,7 +643,7 @@ type seekErrorFile struct {
 	safefileio.File
 }
 
-func (f *seekErrorFile) Seek(offset int64, whence int) (int64, error) {
+func (f *seekErrorFile) Seek(_ int64, _ int) (int64, error) {
 	return 0, errSimulatedSeek
 }
 
@@ -651,7 +651,7 @@ type readErrorFile struct {
 	safefileio.File
 }
 
-func (f *readErrorFile) Read(p []byte) (int, error) {
+func (f *readErrorFile) Read(_ []byte) (int, error) {
 	return 0, errSimulatedRead
 }
 

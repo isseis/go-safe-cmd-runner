@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -17,6 +18,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// trueCmdPath returns the absolute path to the "true" coreutil, avoiding a
+// PATH-based exec.LookPath resolution (which on some Linux environments can
+// land on a Rust-based coreutils install outside /bin — see the comment on
+// TestDryRunE2E_VerifyFilesHashMismatch). /bin/true does not exist on macOS
+// (only /usr/bin/true does, since macOS keeps /bin and /usr/bin as distinct
+// real directories), so the path is selected per-GOOS instead.
+func trueCmdPath() string {
+	if runtime.GOOS == "darwin" {
+		return "/usr/bin/true"
+	}
+	return "/bin/true"
+}
 
 // setupTempConfig creates a temporary directory with a config file containing the given content.
 // Returns configFile path.
@@ -339,7 +353,7 @@ func TestDryRunE2E_VerifyFilesHashMismatch(t *testing.T) {
 	// runner. /bin/true stays low-risk like echo but, where such a
 	// transitional coreutils setup exists, resolves to a local sibling
 	// (e.g. /bin/gnutrue) instead of reaching outside /bin.
-	const cmdPath = "/bin/true"
+	cmdPath := trueCmdPath()
 
 	configContent := `
 version = "1.0"
@@ -404,7 +418,7 @@ name = "test_group"
 
 [[groups.commands]]
 name = "test-cmd"
-cmd = "/bin/true"
+cmd = "` + trueCmdPath() + `"
 args = ["hello"]
 `
 

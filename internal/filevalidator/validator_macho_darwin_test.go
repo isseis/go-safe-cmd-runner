@@ -22,9 +22,13 @@ func TestRecord_Force_MachO_UpdatesDynLibDeps(t *testing.T) {
 	hashDir := filepath.Join(tempDir, "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
 
-	// Create a minimal dylib file on disk (content is the binary's hash source).
+	// Create a minimal, real Mach-O dylib on disk (content is the binary's hash
+	// source). It must be a valid Mach-O, not arbitrary bytes: SaveRecord's BFS
+	// dependency walk parses every strong LC_LOAD_DYLIB target and fails closed
+	// on a parse error, mirroring the ELF analyzer's warn-then-abort behavior.
 	libPath := filepath.Join(tempDir, "libfoo.dylib")
-	require.NoError(t, os.WriteFile(libPath, []byte("initial dylib content"), 0o600))
+	require.NoError(t, os.WriteFile(libPath,
+		machodylibtestutil.BuildMachOWithDeps(machodylibtestutil.NativeCPU(), nil, nil, nil), 0o600))
 
 	// Create a synthetic Mach-O binary referencing libfoo.dylib.
 	binPath := filepath.Join(tempDir, "testbin")
@@ -47,8 +51,11 @@ func TestRecord_Force_MachO_UpdatesDynLibDeps(t *testing.T) {
 	require.NotEmpty(t, rec1.DynLibDeps, "DynLibDeps must be populated after first record")
 	hash1 := rec1.DynLibDeps[0].Hash
 
-	// Modify the dylib to change its content hash.
-	require.NoError(t, os.WriteFile(libPath, []byte("modified dylib content"), 0o600))
+	// Modify the dylib to change its content hash, while staying a valid,
+	// dependency-free Mach-O (an added rpath entry changes the bytes without
+	// introducing another LC_LOAD_DYLIB target for the walk to follow).
+	require.NoError(t, os.WriteFile(libPath,
+		machodylibtestutil.BuildMachOWithDeps(machodylibtestutil.NativeCPU(), nil, nil, []string{"/unused/rpath"}), 0o600))
 
 	// Force re-record: DynLibDeps must be updated with the new hash.
 	_, _, err = v.SaveRecord(binPath, true)
