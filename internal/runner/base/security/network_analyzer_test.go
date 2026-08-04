@@ -542,10 +542,12 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAndNetworkSyscall(t *testing
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 				DetectedSyscalls: []common.SyscallInfo{
 					{Number: -1, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
-					// write (number 1) is not a network syscall on either the Linux or
-					// macOS syscall table selected by runtime.GOOS, so this stays a
-					// non-network signal on every host this test runs on.
-					{Number: 1, Name: "write", Occurrences: []common.SyscallOccurrence{{Source: "libsystem_symbol_import"}}},
+					// Syscall number 1 is an arbitrary non-network syscall number: it
+					// stays non-network on both the Linux and macOS syscall tables
+					// selected by runtime.GOOS (classification uses Number, not Name,
+					// so the Name field below is cosmetic and not meant to imply a
+					// specific syscall on either platform).
+					{Number: 1, Name: "arbitrary_non_network_syscall", Occurrences: []common.SyscallOccurrence{{Source: "libsystem_symbol_import"}}},
 				},
 			},
 		},
