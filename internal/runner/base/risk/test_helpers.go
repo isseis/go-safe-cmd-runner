@@ -4,14 +4,36 @@ package risk
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"runtime"
+	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
+	"github.com/stretchr/testify/require"
 )
+
+// zoningTestRoot returns a fresh, symlink-resolved directory under /tmp for use
+// as a destination-zoning safe-zone origin in tests. It deliberately does not
+// use t.TempDir(): on macOS, t.TempDir() lands under $TMPDIR
+// (/var/folders/...), which resolves to /private/var -- itself inside the
+// "/var" entry of security.DefaultConfig().SystemCriticalPaths. That makes any
+// t.TempDir()-based workdir spuriously trust-critical on macOS even though the
+// same test's workdir is an ordinary path on Linux (TMPDIR=/tmp, outside every
+// default critical root). Building under /tmp instead keeps the "ordinary
+// safe-zone workdir" assumption true on every platform.
+func zoningTestRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "risk-zoning-*")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	resolved, err := filepath.EvalSymlinks(dir)
+	require.NoError(t, err)
+	return resolved
+}
 
 // errUnexpectedIO is an unclassifiable record-load failure used to exercise the
 // error-return (not deny) path.

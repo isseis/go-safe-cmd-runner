@@ -41,7 +41,7 @@ func evalLevelInDir(t *testing.T, ev Evaluator, cmd string, args []string, workd
 // its destination zone, replacing the legacy fixed-High destructive dimensions;
 // an unrecognized form keeps the legacy High (fail-open avoidance).
 func TestAxis2ReplacesLegacyHigh(t *testing.T) {
-	wd := filepath.Join(t.TempDir(), "work")
+	wd := filepath.Join(zoningTestRoot(t), "work")
 	require.NoError(t, os.MkdirAll(filepath.Join(wd, "build"), 0o700))
 	ev := newZoningEvaluator(wd, zoningForeignIdent())
 
@@ -61,7 +61,7 @@ func TestAxis2ReplacesLegacyHigh(t *testing.T) {
 // TestAxis1Axis2MaxComposition: the final risk is the max of axis 1 and axis 2; a
 // copy into a trust-critical path is High.
 func TestAxis1Axis2MaxComposition(t *testing.T) {
-	wd := filepath.Join(t.TempDir(), "work")
+	wd := filepath.Join(zoningTestRoot(t), "work")
 	require.NoError(t, os.MkdirAll(wd, 0o700))
 	src := filepath.Join(wd, "payload")
 	require.NoError(t, os.WriteFile(src, nil, 0o644))
@@ -76,7 +76,7 @@ func TestAxis1Axis2MaxComposition(t *testing.T) {
 // recognition are re-established by axis 2's zone and operation-specific floors,
 // so no dangerous form is downgraded (no fail-open gap).
 func TestAxis2RecuperatesSuppressedHigh(t *testing.T) {
-	wd := filepath.Join(t.TempDir(), "work")
+	wd := filepath.Join(zoningTestRoot(t), "work")
 	require.NoError(t, os.MkdirAll(wd, 0o700))
 	ev := newZoningEvaluator(wd, zoningForeignIdent())
 
@@ -98,7 +98,7 @@ func TestAxis2RecuperatesSuppressedHigh(t *testing.T) {
 // TestAxis2NonFileOpUnaffected: a command that is not a file operation classifies
 // identically whether or not axis-2 zoning is enabled (suppressLegacy is false).
 func TestAxis2NonFileOpUnaffected(t *testing.T) {
-	wd := t.TempDir()
+	wd := zoningTestRoot(t)
 	legacy := newVerifiedEvaluator()
 	zoned := newZoningEvaluator(wd, zoningForeignIdent())
 
@@ -121,7 +121,7 @@ func TestAxis2NonFileOpUnaffected(t *testing.T) {
 // TestDataTransferWriteComposition: the final risk of a data-transfer command is
 // the max of its name-based egress Medium and its write destination's zone.
 func TestDataTransferWriteComposition(t *testing.T) {
-	wd := filepath.Join(t.TempDir(), "work")
+	wd := filepath.Join(zoningTestRoot(t), "work")
 	require.NoError(t, os.MkdirAll(wd, 0o700))
 	ev := newZoningEvaluator(wd, zoningForeignIdent())
 
@@ -160,7 +160,7 @@ func TestDataTransferWriteComposition(t *testing.T) {
 // TestOperandZonesStored: the per-operand audit records are carried on the
 // assessment for a file operation, and absent for a non-file-operation command.
 func TestOperandZonesStored(t *testing.T) {
-	wd := filepath.Join(t.TempDir(), "work")
+	wd := filepath.Join(zoningTestRoot(t), "work")
 	require.NoError(t, os.MkdirAll(wd, 0o700))
 	ev := newZoningEvaluator(wd, zoningForeignIdent())
 
@@ -190,7 +190,7 @@ func TestOperandZonesStored(t *testing.T) {
 // tests). With no run_as set, the default identity is the original execution
 // identity, so a trust-critical write is High regardless of the live euid.
 func TestConfigWiredEndToEnd(t *testing.T) {
-	wd := filepath.Join(t.TempDir(), "work")
+	wd := filepath.Join(zoningTestRoot(t), "work")
 	require.NoError(t, os.MkdirAll(wd, 0o700))
 	cfg := security.DefaultConfig()
 	cfg.TrustedDirectories = []string{wd}
@@ -221,7 +221,7 @@ func evalLevelRunAs(t *testing.T, ev Evaluator, cmd string, args []string, workd
 // yields non-Trusted/Medium. This also proves TrustedDirectories from config
 // reaches the judgment (Low requires the destination be within a trusted dir).
 func TestRunAsIdentDifferential(t *testing.T) {
-	wd := filepath.Join(t.TempDir(), "work")
+	wd := filepath.Join(zoningTestRoot(t), "work")
 	require.NoError(t, os.MkdirAll(wd, 0o700))
 	cfg := security.DefaultConfig()
 	cfg.TrustedDirectories = []string{wd}
@@ -245,7 +245,7 @@ func TestRunAsIdentDifferential(t *testing.T) {
 // the judgment fails closed -- every operand is treated as unresolved, so a write
 // is High rather than trusting an unknown identity.
 func TestRunAsResolutionFailsClosed(t *testing.T) {
-	wd := filepath.Join(t.TempDir(), "work")
+	wd := filepath.Join(zoningTestRoot(t), "work")
 	require.NoError(t, os.MkdirAll(wd, 0o700))
 	cfg := security.DefaultConfig()
 	cfg.TrustedDirectories = []string{wd}
@@ -270,7 +270,7 @@ func TestRunAsResolutionFailsClosed(t *testing.T) {
 // is enforced statically by TestNoLiveIdentityInZoning (the zoning code reads no env
 // getter). This test pins the remaining property: determinism across constructions.
 func TestDeterminismRuntimeEqualsDryRun(t *testing.T) {
-	wd := filepath.Join(t.TempDir(), "work")
+	wd := filepath.Join(zoningTestRoot(t), "work")
 	require.NoError(t, os.MkdirAll(filepath.Join(wd, "build"), 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(wd, "src"), nil, 0o644))
 	cfg := security.DefaultConfig()

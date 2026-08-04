@@ -286,14 +286,14 @@ func TestNormalResourceManager_ExecuteCommand_RiskLevelControl(t *testing.T) {
 	}{
 		{
 			name:          "low risk command with no risk_level (default low)",
-			cmd:           "/usr/bin/echo",
+			cmd:           "/bin/echo",
 			args:          []string{"hello"},
 			riskLevel:     "", // Default to low
 			shouldExecute: true,
 		},
 		{
 			name:          "low risk command with low risk_level",
-			cmd:           "/usr/bin/echo",
+			cmd:           "/bin/echo",
 			args:          []string{"hello"},
 			riskLevel:     "low",
 			shouldExecute: true,
@@ -307,14 +307,14 @@ func TestNormalResourceManager_ExecuteCommand_RiskLevelControl(t *testing.T) {
 		},
 		{
 			name:          "high risk command with high risk_level",
-			cmd:           "/usr/bin/rm",
+			cmd:           "/bin/rm",
 			args:          []string{"-rf", "/tmp/test"},
 			riskLevel:     "high",
 			shouldExecute: true,
 		},
 		{
 			name:          "high risk command with low risk_level should be blocked",
-			cmd:           "/usr/bin/rm",
+			cmd:           "/bin/rm",
 			args:          []string{"-rf", "/tmp/test"},
 			riskLevel:     "low",
 			shouldExecute: false,
@@ -330,7 +330,7 @@ func TestNormalResourceManager_ExecuteCommand_RiskLevelControl(t *testing.T) {
 		},
 		{
 			name:          "invalid risk_level should return error",
-			cmd:           "/usr/bin/echo",
+			cmd:           "/bin/echo",
 			args:          []string{"hello"},
 			riskLevel:     "invalid",
 			shouldExecute: false,

@@ -731,8 +731,12 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 	// Test edge case: null bytes in environment variables
 	// This tests both normal and dry-run modes for proper handling
 	t.Run("null_bytes_in_environment", func(t *testing.T) {
+		// /bin/echo (rather than /usr/bin/echo) is used because it exists on
+		// both Linux and macOS; the real risk evaluator opens and hashes the
+		// actual file, so the path must resolve on every platform this test
+		// runs on.
 		nullCmd := executortestutil.CreateRuntimeCommand(
-			"/usr/bin/echo",
+			"/bin/echo",
 			[]string{"$NULL_VAR"},
 			executortestutil.WithName("null-test"),
 		)
@@ -748,8 +752,8 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 		dryRunManager, err := NewDefaultResourceManagerForTest(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts, nil, 0)
 		require.NoError(t, err)
 		_, result, err := dryRunManager.ExecuteCommand(ctx, nullCmd, group, nullEnvVars)
-		assert.NoError(t, err, "dry-run mode should handle null bytes in environment")
-		assert.NotNil(t, result, "dry-run mode should return result")
+		require.NoError(t, err, "dry-run mode should handle null bytes in environment")
+		require.NotNil(t, result, "dry-run mode should return result")
 		assert.True(t, result.DryRun, "result should indicate dry-run mode")
 
 		// Test with normal mode
@@ -758,8 +762,8 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 		normalManager, err := NewDefaultResourceManagerForTest(&mockCommandExecutor{}, &mockFileSystem{}, nil, mockPathResolver2, slog.Default(), ExecutionModeNormal, nil, nil, 0)
 		require.NoError(t, err)
 		_, result, err = normalManager.ExecuteCommand(ctx, nullCmd, group, nullEnvVars)
-		assert.NoError(t, err, "normal mode should handle null bytes in environment")
-		assert.NotNil(t, result, "normal mode should return result")
+		require.NoError(t, err, "normal mode should handle null bytes in environment")
+		require.NotNil(t, result, "normal mode should return result")
 		assert.False(t, result.DryRun, "result should indicate normal mode")
 	})
 }

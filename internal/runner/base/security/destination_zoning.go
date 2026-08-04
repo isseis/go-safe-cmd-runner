@@ -218,6 +218,13 @@ func (r *operandResolver) classifyOperand(idx int, op rawOperand, _ CommandFlagS
 // classifyZone maps a resolved absolute path to its trust zone. trust-critical
 // takes precedence over safe-zone when a configured critical path overlaps an
 // origin. "/" matches only by exact equality, never as a containing prefix.
+//
+// Both the configured critical paths and the safe-zone origins are themselves
+// symlink-resolved (via r.resolveRoot) before comparison, the same way resolved
+// already is: on a host where a configured root sits behind a symlink (e.g.
+// macOS's /etc -> /private/etc, /tmp -> /private/tmp, /var -> /private/var),
+// comparing resolved's fully-followed path against a raw configured path would
+// silently miss the match.
 func (r *operandResolver) classifyZone(resolved string, input ZoningInput) (zone risktypes.PathTrustZone, matchedCritical string, trusted bool) {
 	clean := filepath.Clean(resolved)
 
@@ -225,9 +232,7 @@ func (r *operandResolver) classifyZone(resolved string, input ZoningInput) (zone
 		if c == "" {
 			continue
 		}
-		// Clean the configured path so a trailing slash or "." segment does not
-		// defeat the exact-"/" check or the containment comparison.
-		cleanC := filepath.Clean(c)
+		cleanC := r.resolveRoot(c, input.MaxSymlinkHops)
 		if cleanC == string(filepath.Separator) {
 			if clean == string(filepath.Separator) {
 				return risktypes.ZoneTrustCritical, c, false
@@ -249,7 +254,7 @@ func (r *operandResolver) classifyZone(resolved string, input ZoningInput) (zone
 		if !filepath.IsAbs(origin) {
 			continue
 		}
-		cleanOrigin := filepath.Clean(origin)
+		cleanOrigin := r.resolveRoot(origin, input.MaxSymlinkHops)
 		if clean == cleanOrigin || common.IsPathWithinDirectory(clean, cleanOrigin) {
 			t := r.isTrustedOperand(clean, cleanOrigin, input.TrustedDirectories, input.RunAsIdent)
 			return risktypes.ZoneSafeZone, "", t
@@ -257,6 +262,30 @@ func (r *operandResolver) classifyZone(resolved string, input ZoningInput) (zone
 	}
 
 	return risktypes.ZoneOrdinary, "", false
+}
+
+// resolveRoot canonicalizes a configured root (a critical path or a safe-zone
+// origin) through the same symlink-following logic as an operand, so both
+// sides of a zone comparison are in the same canonical form. It falls back to
+// a plain filepath.Clean when resolution fails (e.g. the root does not exist
+// on this host): a configured root not found on disk still classifies by its
+// literal form rather than dropping out of the comparison entirely.
+//
+// classifyZone runs once per operand, so a multi-operand command re-derives
+// the same small set of configured roots repeatedly; the result is cached in
+// r.rootMemo (keyed by the raw path, since maxHops is fixed per command) so
+// each root's symlink chain is only walked once per command rather than once
+// per operand.
+func (r *operandResolver) resolveRoot(path string, maxHops int) string {
+	if cached, ok := r.rootMemo[path]; ok {
+		return cached
+	}
+	resolved, err := r.resolve(path, "", maxHops)
+	if err != nil {
+		resolved = filepath.Clean(path)
+	}
+	r.rootMemo[path] = resolved
+	return resolved
 }
 
 // zoneLevel maps a classified zone (with role and Trusted) to a risk level.

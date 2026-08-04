@@ -671,7 +671,13 @@ func TestOperandZones_EmptyVsUnresolved(t *testing.T) {
 	assert.Equal(t, filepath.Join(wd, "x"), dst.Resolved)
 	assert.Equal(t, risktypes.ZoneSafeZone, dst.Zone)
 	assert.True(t, dst.Trusted)
-	assert.Equal(t, "/etc/shadow", src.Resolved)
+	// Compare against the same symlink-following resolution production uses,
+	// rather than the literal "/etc/shadow": on a host where /etc is itself a
+	// symlink (e.g. macOS's /etc -> /private/etc), the resolved path legitimately
+	// differs from the input.
+	wantResolved, err := ResolveOperandPath("/etc/shadow", "", MaxSymlinkDepth)
+	require.NoError(t, err)
+	assert.Equal(t, wantResolved, src.Resolved)
 	assert.Equal(t, risktypes.ZoneTrustCritical, src.Zone)
 }
 
