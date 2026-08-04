@@ -43,13 +43,22 @@ type operandResolver struct {
 	// single lstat per node is what keeps resolution cost linear. Identity
 	// dependent results (the Trusted predicate) are never cached here.
 	memo map[string]string
+	// rootMemo caches resolveRoot's result keyed by the raw configured root string
+	// (a critical path, EffectiveWorkDir, or DedicatedTempDir). classifyZone calls
+	// resolveRoot on the same small set of configured roots once per operand, and a
+	// symlink hop within a root (e.g. macOS's /etc -> /private/etc) is not memoized
+	// by r.memo (only non-symlink nodes are), so without this cache a multi-operand
+	// command would re-run the same lstat/readlink chain per operand. The key set is
+	// bounded by the command's configured roots, not by operand count, so this
+	// cannot grow unboundedly within a resolver's per-command lifetime.
+	rootMemo map[string]string
 }
 
 // newOperandResolver builds a resolver over the given read-only primitives. The
 // production path passes os.Lstat/os.Readlink; tests pass counting or scripted
 // stubs.
 func newOperandResolver(lstat lstatFunc, readlink readlinkFunc) *operandResolver {
-	return &operandResolver{lstat: lstat, readlink: readlink, memo: make(map[string]string)}
+	return &operandResolver{lstat: lstat, readlink: readlink, memo: make(map[string]string), rootMemo: make(map[string]string)}
 }
 
 // ResolveOperandPath resolves an operand to a normalized absolute path with the
