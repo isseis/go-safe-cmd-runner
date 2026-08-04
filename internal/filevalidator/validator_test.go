@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -1090,6 +1091,16 @@ func TestRecord_ShebangChainAggregatesDepsAndTopLevelAnalysis(t *testing.T) {
 	require.NotNil(t, record.SymbolAnalysis)
 	assert.Equal(t, []fileanalysis.DetectedSymbol{{Name: "socket"}}, record.SymbolAnalysis.DetectedSymbols,
 		"top-level symbol analysis should be deduped across analyzed binaries")
+
+	if runtime.GOOS != "linux" {
+		// stubSyscallAnalyzerReturnsOne is only wired into the ELF analysis path
+		// (Validator.analyzeELFSyscalls). On darwin the shebang interpreter
+		// resolves to a Mach-O /bin/sh, so syscall detection instead goes
+		// through the real, unstubbed Mach-O syscall scanner, which finds
+		// nothing in the real system /bin/sh. The stub-syscall assertion below
+		// is therefore ELF-specific.
+		return
+	}
 
 	require.NotNil(t, record.SyscallAnalysis)
 	require.Len(t, record.SyscallAnalysis.DetectedSyscalls, 1)

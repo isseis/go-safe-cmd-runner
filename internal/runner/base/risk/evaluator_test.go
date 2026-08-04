@@ -209,7 +209,7 @@ func TestEvaluateRisk_ProfileStepNoChangeWithoutProfile(t *testing.T) {
 // no longer unconditionally High): trust-critical destination -> High, a
 // recursive delete confined to a Trusted safe-zone -> Low.
 func TestEvaluateRisk_RmRfDestinationDependent(t *testing.T) {
-	wd := filepath.Join(t.TempDir(), "work")
+	wd := filepath.Join(zoningTestRoot(t), "work")
 	require.NoError(t, os.MkdirAll(filepath.Join(wd, "build"), 0o700))
 	ev := newZoningEvaluator(wd, zoningForeignIdent())
 

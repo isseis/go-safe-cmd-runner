@@ -158,7 +158,7 @@ func TestCoreutilsRiskConsistency_Setuid(t *testing.T) {
 		t.Skip("Skipping: OS silently ignored setuid bit (non-root on macOS)")
 	}
 
-	wd := filepath.Join(t.TempDir(), "work")
+	wd := filepath.Join(zoningTestRoot(t), "work")
 	require.NoError(t, os.MkdirAll(wd, 0o700))
 	evaluator := newZoningEvaluator(wd, zoningForeignIdent())
 	// mkdir into a Trusted safe-zone would be Low on its destination alone; the
@@ -179,7 +179,7 @@ func TestConsistency_DestructiveAbsolutePath(t *testing.T) {
 	security.SetCoreutilsDirForTest(t, tmp)
 	rm := makeConsistencyBinary(t, tmp, "rm")
 
-	wd := filepath.Join(t.TempDir(), "work")
+	wd := filepath.Join(zoningTestRoot(t), "work")
 	require.NoError(t, os.MkdirAll(filepath.Join(wd, "build"), 0o700))
 	ev := newZoningEvaluator(wd, zoningForeignIdent())
 
@@ -207,7 +207,7 @@ func TestConsistency_RmAllForms(t *testing.T) {
 	rm := makeConsistencyBinary(t, tmp, "rm")
 	coreutils := makeConsistencyBinary(t, tmp, "coreutils")
 
-	wd := filepath.Join(t.TempDir(), "work")
+	wd := filepath.Join(zoningTestRoot(t), "work")
 	require.NoError(t, os.MkdirAll(filepath.Join(wd, "build"), 0o700))
 	ev := newZoningEvaluator(wd, zoningForeignIdent())
 

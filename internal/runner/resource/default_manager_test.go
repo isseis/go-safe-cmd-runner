@@ -53,7 +53,12 @@ func TestNewDefaultResourceManager_NilRiskEvaluator(t *testing.T) {
 func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 	mocks := setupTestMocks()
 
-	cmd := executortestutil.CreateRuntimeCommand("/usr/bin/echo", []string{})
+	// /bin/echo (rather than /usr/bin/echo) is used because it exists on both
+	// Linux (FHS layout) and macOS (which keeps /bin and /usr/bin as distinct
+	// real directories, with no /usr/bin/echo). The real risk evaluator here
+	// opens and hashes the actual file, so the path must resolve on every
+	// platform this test runs on.
+	cmd := executortestutil.CreateRuntimeCommand("/bin/echo", []string{})
 	env := map[string]string{"FOO": "BAR"}
 	ctx := context.Background()
 
@@ -66,8 +71,8 @@ func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 		mocks.exec.On("Execute", ctx, mock.Anything, cmd, env, mock.Anything).Return(expected, nil)
 
 		_, res, err := mgr.ExecuteCommand(ctx, cmd, createTestCommandGroup(), env)
-		assert.NoError(t, err)
-		assert.NotNil(t, res)
+		require.NoError(t, err)
+		require.NotNil(t, res)
 		assert.False(t, res.DryRun)
 	})
 
@@ -255,8 +260,12 @@ func TestDefaultResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 		mgr, err := NewDefaultResourceManagerForTest(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
 		require.NoError(t, err)
 
-		// Execute a command to get a valid token
-		cmd := executortestutil.CreateRuntimeCommand("/usr/bin/echo", []string{})
+		// Execute a command to get a valid token. /bin/echo (rather than
+		// /usr/bin/echo) is used because it exists on both Linux (FHS layout)
+		// and macOS (which has no /usr/bin/echo); the real risk evaluator here
+		// opens and hashes the actual file, so the path must resolve on every
+		// platform this test runs on.
+		cmd := executortestutil.CreateRuntimeCommand("/bin/echo", []string{})
 		env := map[string]string{}
 		ctx := context.Background()
 

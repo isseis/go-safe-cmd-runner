@@ -542,7 +542,10 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAndNetworkSyscall(t *testing
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 				DetectedSyscalls: []common.SyscallInfo{
 					{Number: -1, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
-					{Number: 97, Name: "socket", Occurrences: []common.SyscallOccurrence{{Source: "libsystem_symbol_import"}}},
+					// write (number 1) is not a network syscall on either the Linux or
+					// macOS syscall table selected by runtime.GOOS, so this stays a
+					// non-network signal on every host this test runs on.
+					{Number: 1, Name: "write", Occurrences: []common.SyscallOccurrence{{Source: "libsystem_symbol_import"}}},
 				},
 			},
 		},
@@ -552,8 +555,8 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAndNetworkSyscall(t *testing
 	isNet, isHigh, err := analyzer.analyzeBinarySignals(testCmdPath, testContentHash)
 	require.NoError(t, err)
 
-	// The svc #0x80 escalates to high risk; the socket entry (Number 97) is not a
-	// Linux network syscall, so the only signal is the high-risk svc.
+	// The svc #0x80 escalates to high risk; the write entry is not a network
+	// syscall, so the only signal is the high-risk svc.
 	assert.False(t, isNet, "svc signal is high-risk, not a network signal")
 	assert.True(t, isHigh, "svc #0x80 should escalate to high risk")
 }

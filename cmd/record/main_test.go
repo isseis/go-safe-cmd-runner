@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -238,6 +239,16 @@ func TestRun_DebugInfoFlag_ControlsDebugFieldOmitEmpty(t *testing.T) {
 	})
 
 	t.Run("debug field is emitted with debug-info", func(t *testing.T) {
+		if runtime.GOOS == "darwin" {
+			// On modern macOS, system libraries like libSystem.B.dylib exist only
+			// inside the dyld shared cache; the Mach-O dependency walker excludes
+			// shared-cache libs from DynLibDeps by design (see
+			// internal/dynlib/machodylib/doc.go), so a PATH-resolved "ls" has no
+			// recordable dependency and the debug record stays empty regardless of
+			// -debug-info. This assertion is inherently ELF/glibc-shaped.
+			t.Skip("skipping: -debug-info's debug record needs a recorded dylib dependency, which macOS's shared-cache-only libSystem linkage does not provide for ls")
+		}
+
 		hashDir := tu.SafeTempDir(t)
 		stdout := &bytes.Buffer{}
 		stderr := &bytes.Buffer{}
