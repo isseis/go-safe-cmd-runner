@@ -270,11 +270,22 @@ func (r *operandResolver) classifyZone(resolved string, input ZoningInput) (zone
 // a plain filepath.Clean when resolution fails (e.g. the root does not exist
 // on this host): a configured root not found on disk still classifies by its
 // literal form rather than dropping out of the comparison entirely.
+//
+// classifyZone runs once per operand, so a multi-operand command re-derives
+// the same small set of configured roots repeatedly; the result is cached in
+// r.rootMemo (keyed by the raw path, since maxHops is fixed per command) so
+// each root's symlink chain is only walked once per command rather than once
+// per operand.
 func (r *operandResolver) resolveRoot(path string, maxHops int) string {
-	if resolved, err := r.resolve(path, "", maxHops); err == nil {
-		return resolved
+	if cached, ok := r.rootMemo[path]; ok {
+		return cached
 	}
-	return filepath.Clean(path)
+	resolved, err := r.resolve(path, "", maxHops)
+	if err != nil {
+		resolved = filepath.Clean(path)
+	}
+	r.rootMemo[path] = resolved
+	return resolved
 }
 
 // zoneLevel maps a classified zone (with role and Trusted) to a risk level.
