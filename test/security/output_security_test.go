@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -173,6 +173,42 @@ func TestSymlinkAttack(t *testing.T) {
 	require.NotContains(t, string(originalContent), "malicious content")
 }
 
+// buildEchoHelper compiles a small, unsigned helper binary that prints its
+// arguments, one per line, mimicking `echo` closely enough for tests that
+// only care about exit code and captured stdout content. Using a freshly
+// built binary (instead of the platform-signed system `echo`) avoids AMFI
+// killing the staged-copy exec fallback used on non-Linux platforms (see
+// prepareExecCommand/stageFromFD in internal/runner/base/executor/executor.go).
+func buildEchoHelper(t *testing.T) string {
+	t.Helper()
+
+	const src = `package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	for _, arg := range os.Args[1:] {
+		fmt.Println(arg)
+	}
+}
+`
+	tmpDir := t.TempDir()
+	srcFile := filepath.Join(tmpDir, "main.go")
+	binFile := filepath.Join(tmpDir, "echo_helper")
+
+	require.NoError(t, os.WriteFile(srcFile, []byte(src), 0o644))
+
+	cmd := exec.Command("go", "build", "-o", binFile, srcFile)
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "go build failed: %s", string(out))
+
+	return binFile
+}
+
 // TestPrivilegeEscalationAttack tests protection against privilege escalation
 func TestPrivilegeEscalationAttack(t *testing.T) {
 	if os.Getuid() == 0 {
@@ -211,27 +247,28 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 		},
 	}
 
+	// The "should succeed" case below performs a real exec. On non-Linux,
+	// fdExecSupported() is false (fdexec_other.go), so the executor's
+	// TOCTOU-hardening fallback (prepareExecCommand/stageFromFD in
+	// internal/runner/base/executor/executor.go) copies the verified binary
+	// to a temp file and execs the copy instead of the original. Execing a
+	// byte-identical copy of an Apple platform-signed system binary (echo
+	// lives under the Sealed System Volume) is killed by AMFI/code-signing
+	// enforcement on macOS, even though the copy's content is unchanged. To
+	// keep the success path exercised on every platform, build a small
+	// unsigned helper binary that mimics `echo` well enough for this test
+	// (it just prints its arguments) instead of using the system echo.
+	helperCmd := buildEchoHelper(t)
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if !tc.shouldFail && runtime.GOOS != "linux" {
-				// This subtest exercises a real successful exec of echoCmd, not just
-				// the output-path block. On non-Linux, fdExecSupported() is false
-				// (fdexec_other.go), so the executor's TOCTOU-hardening fallback
-				// (prepareExecCommand/stageFromFD in
-				// internal/runner/base/executor/executor.go) copies the verified
-				// binary to a temp file and execs the copy instead of the original.
-				// On macOS, execing a byte-identical copy of an Apple
-				// platform-signed system binary (echo lives under the Sealed
-				// System Volume) is killed by AMFI/code-signing enforcement
-				// (signal: killed), even though the copy's content is unchanged.
-				// This is a real fd-bound-exec gap on non-Linux, not a timeout or
-				// flake, and is orthogonal to what this test verifies (the
-				// output-path security block).
-				t.Skip("skipping: staged-copy exec of a platform-signed system binary is killed on non-Linux (fd-bound exec is Linux-only)")
+			cmdPath := echoCmd
+			if !tc.shouldFail {
+				cmdPath = helperCmd
 			}
 
 			runtimeCmd := executortestutil.CreateRuntimeCommand(
-				echoCmd,
+				cmdPath,
 				[]string{"test output"},
 				executortestutil.WithName("privilege_escalation_test"),
 				executortestutil.WithOutputFile(tc.outputPath),
