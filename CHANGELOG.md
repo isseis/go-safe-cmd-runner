@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+N/A
+
+## [1.1.1] - 2026-08-03
+
+### Breaking Changes
+
+#### `record` / `verify`: SUDO_UID must refer to an existing user
+
+When `record` or `verify` runs as root and uses the base UID from `SUDO_UID` for file-read permission checks, that UID is now verified to exist in the user database before use. Invocations with non-existent or unresolvable `SUDO_UID` values now fail immediately instead of silently adopting the unverified value.
+
+**Affected scenarios:**
+- Non-cgo builds with LDAP/SSSD-managed users
+- Temporary user-database outages
+- Stale `SUDO_UID` values from root's cron/systemd environment
+- Container images with no `/etc/passwd`
+
+**Workaround:** Remove `SUDO_UID` from the environment (`sudo env -u SUDO_UID record ...`), but note that this changes permission check behavior for group-writable files.
+
 ### Changed
 
 #### `sudo runner`: base UID for file-read permission checks no longer reads `SUDO_UID`
@@ -41,36 +59,11 @@ group membership (`user.LookupId`) to determine who else is in the file's group.
 files, a missing passwd entry continues to result in access being denied (fail-closed), as
 before.
 
-#### `record` / `verify`: SUDO_UID must refer to an existing user
+#### `record` / `verify`: startup UID verification and logging
 
-When `record` or `verify` runs as root and takes the base UID for file-read permission
-checks from `SUDO_UID`, that UID is now verified to exist in the user database before it
-is adopted. Both commands resolve the base UID once at startup, before any file is
-processed. If the user does not exist, or if the lookup itself fails, the command prints
-the reason and exits non-zero without touching any of the files given to it — no partial
-run, and the unverified value is never used. This closes a gap where a `SUDO_UID` value
-inherited from the environment was adopted without any check.
+Both commands now resolve the permission-check base UID once at startup. When `SUDO_UID` is adopted and differs from the real UID, a warning is emitted to the structured log (`log/slog`, i.e. standard error) once per process, naming the adopted UID, the real UID, and the user database consulted. Under `sudo` this is the normal case, so expect one such warning per `sudo record` or `sudo verify` run; it records which UID the permission check used, not a fault.
 
-Invocations that previously succeeded now fail in these environments:
-
-| Environment | Why | What to do |
-|---|---|---|
-| A non-cgo build of `record` / `verify` with users managed by LDAP/SSSD | `sudo` resolves users through NSS, but a non-cgo build reads only `/etc/passwd` | Rebuild with cgo enabled. The `user_database_source=passwd-file` field in the error message identifies this case |
-| A temporary user-database outage (LDAP/SSSD down, network partition) | The lookup itself fails | Re-run after recovery. This case reports `failed to verify that SUDO_UID refers to an existing user` |
-| A stale `SUDO_UID` left in root's cron or systemd unit environment, pointing at a UID that has since been deleted | The stale value names a user that no longer exists | Remove `SUDO_UID` from the environment. This is the accident the check exists to catch, so the failure is intended |
-| A container image with no `/etc/passwd`, or a nearly empty one (`scratch`, some distroless), running a non-cgo build as root with `SUDO_UID` inherited | The user database contains no users at all; this applies to `SUDO_UID=0` as well | Remove `SUDO_UID` from the environment, or provide an `/etc/passwd` |
-
-Running with the variable removed — `sudo env -u SUDO_UID record ...`, or an interactive
-`sudo -i` — works in every case, but it is **not** an equivalent workaround: without
-`SUDO_UID` the base UID becomes `0`, so group-writable files are judged by whether root
-belongs to the file's group. The judgment moves to the stricter side, and reads that
-previously succeeded may now be denied.
-
-In addition, when `SUDO_UID` is adopted and differs from the real UID, a warning is now
-written to the structured log (`log/slog`, i.e. standard error) once per process at
-startup, naming the adopted UID, the real UID, and the user database consulted. Under
-`sudo` this is the normal case, so expect one such warning per `sudo record` or
-`sudo verify` run; it records which UID the permission check used, not a fault.
+**Troubleshooting:** For detailed migration guidance for environments affected by the `SUDO_UID` existence requirement, see the Breaking Changes section.
 
 ## [1.0.0] - 2026-06-27
 
