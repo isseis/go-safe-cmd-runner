@@ -552,7 +552,7 @@ fail-closed 側は、ハッシュディレクトリを world-writable にした�
 | `internal/runner/bootstrap/environment_test.go` | 回帰確認のみ | `SetupLoggerWithConfig` を直接2箇所、`SetupLogging` 経由で3箇所呼ぶ。`RunID` 値はすべて新形式を満たすため修正不要 | AC-13 |
 | `cmd/runner/integration_logger_test.go` | 回帰確認のみ | `SetupLoggerWithConfig` を直接3箇所呼ぶ。`RunID` 値はすべて新形式を満たすため修正不要 | AC-13 |
 | `cmd/verify/main.go` | 変更 | `checkDirPermissions` の追加、ハッシュディレクトリ側違反の fail-closed 化、`toctouChecker` 差し替え口、終了コード定数の導入 | AC-19〜AC-23, AC-28 |
-| `cmd/verify/main_test.go` | 変更 | ハッシュディレクトリ側違反の fail-closed テストを新設（既定ディレクトリと `-hash-dir` 明示の両ケース）。`TestRunTOCTOU_ContinuesOnWorldWritableDir` はアサーションを変えず、コメントと名前を AC-28 向けに更新（§3.6） | AC-19〜AC-23, AC-28 |
+| `cmd/verify/main_test.go` | 変更 | ハッシュディレクトリ側違反の fail-closed テストを新設（既定ディレクトリと `-hash-dir` 明示の両ケース）。`TestRunTOCTOU_ContinuesOnWorldWritableDir` はアサーションを変えず、コメントと名前を AC-28 向けに更新（§3.6）。`TestRunUsesDefaultHashDirectoryWhenNotSpecified` に `toctouChecker` のスタブ注入を追加し、ホストの `/usr/local` の権限に依存しないようにする（§7.1） | AC-19〜AC-23, AC-28 |
 | `docs/user/runner_command.ja.md` / `.md` | 変更 | `-run-id` の受理形式と拒否挙動。あわせて849行目のログファイル名記述（現行コードと不一致）を修正 | AC-24 |
 | `docs/user/verify_command.ja.md` / `.md` | 変更 | fail-closed 挙動（ハッシュディレクトリ側の違反に限ること、対象ファイル側は警告のまま継続すること）と終了コード表（0 / 1 / 3、および 2 の予約） | AC-25 |
 | `CHANGELOG.ja.md` / `CHANGELOG.md` | 変更 | 破壊的変更2件と、影響有無を事前に判定する手順（§8.2） | AC-26 |
@@ -802,6 +802,16 @@ flowchart LR
 - **`internal/runner/bootstrap/logger_test.go`**: 不正な `RunID` を渡すとエラーが返り、ログディレクトリにファイルが1件も作られないこと（AC-11・AC-12）。
 - **`cmd/verify/main_test.go`**: ハッシュディレクトリ側の違反ありで exit 3 かつ `Verify` が1件も呼ばれないこと、違反なしで従来どおりであること。既定ディレクトリのケースは `toctouChecker` に違反を返すスタブを注入して駆動し、CI ホストの実ディレクトリ権限に依存させない。`-hash-dir` 明示のケースは実際の world-writable ディレクトリでも駆動する（AC-19〜AC-23）。
 - **`cmd/verify/main_test.go`（適用範囲の限定）**: 対象ファイルの親ディレクトリのみが world-writable で、ハッシュディレクトリは健全という構成で、exit 3 にならず全ファイルが検証されること（AC-28）。既存の `TestRunTOCTOU_ContinuesOnWorldWritableDir` がまさにこの構成であり、アサーションは変更せずコメントと名前のみ更新して AC-28 の検証テストとする（§3.6）。fail-closed 側はハッシュディレクトリを world-writable にした構成で新設する。
+
+**既定ハッシュディレクトリを使う既存テストへの影響**
+
+`checkDirPermissions` が fail-closed になることで、既定ハッシュディレクトリを使うテストは実際のファイルシステムに依存するようになる。該当するのは [`TestRunUsesDefaultHashDirectoryWhenNotSpecified`](../../../cmd/verify/main_test.go#L129) である。同テストは `mkdirAll` のみスタブして `run()` を呼ぶため、変更後は `cmdcommon.DefaultHashDirectory`（既定値 `/usr/local/etc/go-safe-cmd-runner/hashes`）とその祖先に対して本物の権限チェックが走る。
+
+多くの環境では、ハッシュディレクトリ自体が存在せず（`RunTOCTOUPermissionCheck` は存在しないディレクトリを読み飛ばす）、`/usr/local`・`/usr`・`/` は root 所有 `0755` のため違反にならない。しかしこの結果は**テストを実行するホストの `/usr/local` の所有者と権限に依存する**。ホスト構成が変われば同じテストが落ちる。
+
+したがって、既定ハッシュディレクトリを経由するテストには `toctouChecker` に「違反を返さないスタブ」を注入し、ホスト非依存にする。`record` は既に fail-closed であり、違反なしのケースでも同じくスタブを注入している（[cmd/record/main_test.go:316](../../../cmd/record/main_test.go#L316)）。この先例に揃える。
+
+**方針**: `cmd/verify` において `checkDirPermissions` に到達するテストは、検査結果を主張したいテストであるか否かを問わず、必ず `toctouChecker` を注入する。実ファイルシステムの権限に依存してよいのは、`-hash-dir` に自分で作成した一時ディレクトリを渡し、その権限を意図的に操作するテストだけとする。
 
 ### 7.2 特権降格の検証方法（AC-14〜AC-16）
 
