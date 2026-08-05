@@ -30,6 +30,13 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
 
 未対応。`cmd/verify/main.go` の TOCTOU チェックのコメント「Violations are logged as warnings only — verify continues even if the check fails.」は現行のまま存置されており、戻り値で `run` を打ち切る分岐はない。record（fail-closed）との非対称も残る。
 
+### D2（logging/redaction）
+
+- **M-2**: key=value redaction の空白・引用符・JSON 形式カバレッジ不足。
+- **M-4**: `ValueDetector` パターン網羅性（GitHub fine-grained PAT、JWT 等）。
+- **M-5**: Slack 送信の同期ブロッキング。
+- 0154（P2 redaction 境界統一）はいずれも「根本原因（`slog.Any` 未再帰）とは独立した所見」として対象外とした。詳細は `findings/D2_logging_redaction.md` を参照。
+
 ---
 
 ## 2. 🟠Low の未対応残件
@@ -41,7 +48,6 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
 
 ### A1（privilege）
 
-- **L-1**: `user.Lookup` の二重呼び出し。→ **0158 で解消済み**（本ドキュメントには含めない）。
 - **L-2**: 昇格・復元処理でテスト注入フィールド（`syscallSeteuid`/`syscallSetegid` 相当）を使わない構造。0157 はむしろ当該フィールドを削除する方向で対応しており、L-2 の推奨（注入フィールドを実経路でも使う）とは方向が逆。0157 に着手する時点で「必要な注入点を改めて設計する方が健全」と判断し見送られた。
 - **L-3**: metrics の恒偽項（常に真になる記録項目）。いずれのタスクの対象にもなっていない。
 - **L-4**: 再入デッドロックの可能性。いずれのタスクの対象にもなっていない。
@@ -85,13 +91,6 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
 
 - **F-6**: `ParseSystemEnvironment` が不正形式エントリを無音スキップする（挙動変更を伴うため 0157 は対象外とした）。
 - **F-7**: allowlist 判定ロジックの分散（設計変更を伴うため 0157 は対象外とした）。
-
-### D2（logging/redaction）
-
-- **M-2**: key=value redaction の空白・引用符・JSON 形式カバレッジ不足。
-- **M-4**: `ValueDetector` パターン網羅性（GitHub fine-grained PAT、JWT 等）。
-- **M-5**: Slack 送信の同期ブロッキング。
-- 0154（P2 redaction 境界統一）はいずれも「根本原因（`slog.Any` 未再帰）とは独立した所見」として対象外とした。詳細は `findings/D2_logging_redaction.md` を参照。
 
 ### A7（audit）
 
