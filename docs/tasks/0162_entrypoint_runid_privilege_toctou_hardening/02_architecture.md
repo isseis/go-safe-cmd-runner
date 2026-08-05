@@ -318,10 +318,14 @@ run ID の受理形式を1箇所で定義し、入口検証（`cmd/runner`）と
 // values are ASCII by construction, so for them bytes and characters coincide.
 const MaxRunIDLength = 64
 
-// RunIDFormatDescription describes the accepted run ID format. It is safe to
+// runIDFormatDescription describes the accepted run ID format. It is safe to
 // print: it is derived from MaxRunIDLength and never contains any part of a
-// rejected value.
-var RunIDFormatDescription = fmt.Sprintf("1-%d characters, each of A-Z a-z 0-9 '_' '-'", MaxRunIDLength)
+// rejected value. It is exposed through RunIDFormatDescription rather than as
+// an exported variable, so callers cannot reassign it.
+var runIDFormatDescription = fmt.Sprintf("1-%d characters, each of A-Z a-z 0-9 '_' '-'", MaxRunIDLength)
+
+// RunIDFormatDescription returns a description of the accepted run ID format.
+func RunIDFormatDescription() string
 
 // ErrInvalidRunID is returned when a run ID does not match the accepted format.
 var ErrInvalidRunID = errors.New("invalid run ID")

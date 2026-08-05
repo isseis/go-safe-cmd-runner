@@ -64,11 +64,34 @@ func isTrackedImportPath(importPath string) bool {
 	return importPath == "syscall" || importPath == "unix" || strings.HasSuffix(importPath, "/unix")
 }
 
-// CallSite records one identity-mutation call found while scanning source.
+// CallSite records one tracked call found while scanning source.
 type CallSite struct {
 	FuncName    string // enclosing top-level function or method, receiver-qualified
 	SyscallName string // e.g. "Seteuid"
 	CallExpr    string // rendered "Func(...)" for failure messages
+	File        string // path of the file the call was found in
+	// Pos is the position of the call expression. Positions are only
+	// comparable between call sites found in the same File: every file is
+	// parsed with its own token.FileSet, so offsets restart per file and a
+	// cross-file comparison is meaningless. Check File equality before
+	// ordering two Pos values.
+	Pos token.Pos
+}
+
+// ExtraTrackedFunc names one additional function to track beyond FuncNames.
+// A non-empty ImportPath matches a qualified call such as flag.Parse(),
+// resolved through the file's imports. An empty ImportPath matches an
+// unqualified call to a function of the package being scanned, e.g.
+// dropStartupPrivileges(...).
+type ExtraTrackedFunc struct {
+	ImportPath string
+	FuncName   string
+}
+
+// Options customizes a scan. The zero value scans for FuncNames alone, which
+// is what FindRefs and RefsInSource use.
+type Options struct {
+	Extra []ExtraTrackedFunc
 }
 
 // ValueRef records one identity-mutation function referenced as a value
@@ -92,12 +115,38 @@ type ValueRef struct {
 // scanned, which is the safe direction for a security guard.
 func FindRefs(t *testing.T, dir string) ([]CallSite, []ValueRef) {
 	t.Helper()
+	return FindRefsWithOptions(t, dir, Options{})
+}
+
+// FindRefsWithOptions is FindRefs with the tracked function set extended by
+// opts.
+func FindRefsWithOptions(t *testing.T, dir string, opts Options) ([]CallSite, []ValueRef) {
+	t.Helper()
+
+	var sites []CallSite
+	var valueRefs []ValueRef
+	for _, path := range ProductionGoFiles(t, dir) {
+		fileSites, fileValueRefs := RefsInSourceWithOptions(t, path, readGoFile(t, path), opts)
+		sites = append(sites, fileSites...)
+		valueRefs = append(valueRefs, fileValueRefs...)
+	}
+
+	return sites, valueRefs
+}
+
+// ProductionGoFiles returns the path of every production .go file in dir,
+// applying the same exclusions as FindRefs: *_test.go, and any file whose
+// //go:build constraint positively requires the "test" tag. Callers that need
+// to run their own analysis over exactly the files a guard scans (e.g.
+// counting init functions) use this so the definition of "production file"
+// stays in one place.
+func ProductionGoFiles(t *testing.T, dir string) []string {
+	t.Helper()
 
 	entries, err := os.ReadDir(dir)
 	require.NoErrorf(t, err, "failed to read directory %s", dir)
 
-	var sites []CallSite
-	var valueRefs []ValueRef
+	var paths []string
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -105,22 +154,24 @@ func FindRefs(t *testing.T, dir string) ([]CallSite, []ValueRef) {
 		}
 
 		path := filepath.Join(dir, name)
-		// #nosec G304 -- path is built from entry.Name(), an os.ReadDir result
-		// filtered to *.go, not from external/attacker-controlled input.
-		data, err := os.ReadFile(path)
-		require.NoErrorf(t, err, "failed to read %s", path)
-
-		src := string(data)
-		if isTestOnlyBuildConstrained(t, path, src) {
+		if isTestOnlyBuildConstrained(t, path, readGoFile(t, path)) {
 			continue
 		}
-
-		fileSites, fileValueRefs := RefsInSource(t, path, src)
-		sites = append(sites, fileSites...)
-		valueRefs = append(valueRefs, fileValueRefs...)
+		paths = append(paths, path)
 	}
 
-	return sites, valueRefs
+	return paths
+}
+
+// readGoFile reads a .go file found by directory traversal.
+func readGoFile(t *testing.T, path string) string {
+	t.Helper()
+
+	// #nosec G304 -- path is built from an os.ReadDir result filtered to *.go,
+	// not from external/attacker-controlled input.
+	data, err := os.ReadFile(path)
+	require.NoErrorf(t, err, "failed to read %s", path)
+	return string(data)
 }
 
 // isTestOnlyBuildConstrained reports whether src's //go:build constraint
@@ -194,12 +245,24 @@ func CallSitesInSource(t *testing.T, filename, src string) []CallSite {
 // and a same-named local identifier cannot produce a false match.
 func RefsInSource(t *testing.T, filename, src string) ([]CallSite, []ValueRef) {
 	t.Helper()
+	return RefsInSourceWithOptions(t, filename, src, Options{})
+}
+
+// RefsInSourceWithOptions is RefsInSource with the tracked function set
+// extended by opts. Unqualified entries of opts.Extra (empty ImportPath) are
+// matched at call sites only: within a single package a bare identifier is
+// read as a value in too many benign ways for a value-reference report to
+// carry the meaning it has for a syscall.
+func RefsInSourceWithOptions(t *testing.T, filename, src string, opts Options) ([]CallSite, []ValueRef) {
+	t.Helper()
 
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, filename, src, 0)
 	require.NoErrorf(t, err, "failed to parse %s", filename)
 
 	sc := &scanner{
+		filename:          filename,
+		opts:              opts,
 		localToImportPath: resolveLocalImports(t, filename, file),
 		calledSelectors:   make(map[*ast.SelectorExpr]struct{}),
 	}
@@ -242,6 +305,8 @@ func resolveLocalImports(t *testing.T, filename string, file *ast.File) map[stri
 // scanner accumulates identity-mutation call sites and value references
 // while walking a single file's declarations.
 type scanner struct {
+	filename          string
+	opts              Options
 	localToImportPath map[string]string
 	// calledSelectors marks the selectors that appear in callee position, so
 	// the value-reference pass can skip them. ast.Inspect visits a CallExpr
@@ -252,9 +317,11 @@ type scanner struct {
 	valueRefs       []ValueRef
 }
 
-// trackedSelector reports whether expr is a qualified reference to one of
-// the tracked identity-mutation functions, e.g. syscall.Seteuid, resolving
-// the qualifier through the file's imports.
+// trackedSelector reports whether expr is a qualified reference to a tracked
+// function: one of the identity-mutation functions of a syscall/unix package
+// (e.g. syscall.Seteuid), or an Options.Extra entry naming an import path and
+// a function (e.g. flag.Parse). The qualifier is resolved through the file's
+// imports in both cases.
 func (sc *scanner) trackedSelector(expr ast.Expr) (*ast.SelectorExpr, bool) {
 	sel, ok := expr.(*ast.SelectorExpr)
 	if !ok {
@@ -270,13 +337,29 @@ func (sc *scanner) trackedSelector(expr ast.Expr) (*ast.SelectorExpr, bool) {
 		// shares the package's name): never treat this as a match.
 		return nil, false
 	}
-	if !isTrackedImportPath(importPath) {
-		return nil, false
+	if isTrackedImportPath(importPath) {
+		if _, isTrackedFunc := FuncNames[sel.Sel.Name]; isTrackedFunc {
+			return sel, true
+		}
 	}
-	if _, isTrackedFunc := FuncNames[sel.Sel.Name]; !isTrackedFunc {
-		return nil, false
+	for _, extra := range sc.opts.Extra {
+		if extra.ImportPath != "" && extra.ImportPath == importPath && extra.FuncName == sel.Sel.Name {
+			return sel, true
+		}
 	}
-	return sel, true
+	return nil, false
+}
+
+// trackedUnqualified reports whether name is an Options.Extra entry with an
+// empty ImportPath, i.e. a function of the package being scanned that is
+// called without a qualifier.
+func (sc *scanner) trackedUnqualified(name string) bool {
+	for _, extra := range sc.opts.Extra {
+		if extra.ImportPath == "" && extra.FuncName == name {
+			return true
+		}
+	}
+	return false
 }
 
 // scanDecl walks one top-level declaration, labeling any sites found within
@@ -319,6 +402,15 @@ func (sc *scanner) visit(n ast.Node, funcName string) {
 
 		sel, ok := sc.trackedSelector(fun)
 		if !ok {
+			if ident, isIdent := fun.(*ast.Ident); isIdent && sc.trackedUnqualified(ident.Name) {
+				sc.sites = append(sc.sites, CallSite{
+					FuncName:    funcName,
+					SyscallName: ident.Name,
+					CallExpr:    ident.Name + "(...)",
+					File:        sc.filename,
+					Pos:         n.Pos(),
+				})
+			}
 			return
 		}
 		sc.calledSelectors[sel] = struct{}{}
@@ -327,6 +419,8 @@ func (sc *scanner) visit(n ast.Node, funcName string) {
 			FuncName:    funcName,
 			SyscallName: sel.Sel.Name,
 			CallExpr:    pkgIdentName(sel) + "." + sel.Sel.Name + "(...)",
+			File:        sc.filename,
+			Pos:         n.Pos(),
 		})
 
 	case *ast.SelectorExpr:
