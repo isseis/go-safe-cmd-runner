@@ -120,7 +120,7 @@
 - [x] `ValidateRunID` を許可リスト方式で実装する。長さ 0 と `MaxRunIDLength` 超過を拒否し、`A-Z` `a-z` `0-9` `_` `-` 以外のバイトを1つでも含む値を拒否する。
 - [x] `ValidateRunID` が返すエラーに、最初に違反したバイトの位置（0 始まりのインデックス）とそのバイトの `%q` 表現のみを含め、入力値全体は含めない。エラーは `ErrInvalidRunID` をラップする。
 - [x] `GenerateRunID` を `internal/logging/safeopen.go`（56〜60行目）から `internal/logging/runid.go` へ移設する。実装は変更せず、ドキュメントコメントに「出力は常に `ValidateRunID` を満たす」旨を追記する。
-- [x] `internal/logging/pre_execution_error.go` の `ErrorType` 定数群に `ErrorTypeInvalidRunID ErrorType = "invalid_run_id"` を追加する（`02_architecture.md` §4.1）。
+- [x] `internal/logging/pre_execution_error.go` の `ErrorType` 定数群に `ErrorTypeInvalidRunID ErrorType = "invalid_run_id"` を追加する（`02_architecture.md` §4.1）。加えて `TestErrorTypeInvalidRunID_Token` でトークン文字列を固定する。
 
 **テスト**
 
@@ -128,6 +128,7 @@
 - [x] `TestValidateRunID_LengthBoundaries` を追加し、長さ 1（受理）・`MaxRunIDLength`（受理）・`MaxRunIDLength+1`（拒否）・0（拒否）を検証する。境界値はリテラルではなく `MaxRunIDLength` から算出し、上限値の変更にテストが追随するようにする。
 - [x] `TestValidateRunID_RejectsNonAllowlistedValues` を追加し、`../../etc/cron.d/evil`、`/tmp/evil`、`..`、`a.b`、`a b`、実際の改行を含む値、NUL（`"a\x00b"`）、ESC（`"a\x1bb"`）、マルチバイト文字（`"ラン"`）、`%` を含む値をすべて拒否し、返るエラーが `errors.Is(err, ErrInvalidRunID)` を満たすことを検証する。
 - [x] `TestValidateRunID_ErrorOmitsRejectedValue` を追加し、上記の各拒否ケースについて、返るエラーの文字列が入力値全体を部分文字列として含まないことを検証する。入力値は 2 文字以上とし、違反バイト1個の `%q` 表現がそのまま入力値全体と一致しないようにする。
+- [x] `TestValidateRunID_ErrorIdentifiesFirstViolatingByte` を追加し、エラー文字列が最初に違反したバイトの位置（`index N`）とそのバイトの `%q` 表現（例: `"/"`・`"\x00"`）を含むことを検証する。これは §3.1 の診断契約（違反バイトの位置と `%q` 表現のみ、入力値全体は含めない）のうち「含む」側を直接検証する唯一のテストである。
 - [x] `TestRunIDFormatDescription_ReflectsMaxRunIDLength` を追加し、`strings.Contains(RunIDFormatDescription, strconv.Itoa(MaxRunIDLength))` が真であることを検証する。`RunIDFormatDescription` は `MaxRunIDLength` から導出されるため、上限値だけを変えて説明文が古いまま残る状態をこのテストが検出する。
 - [x] `TestGenerateRunID_Uniqueness`（`internal/logging/safeopen_test.go:122`）を `internal/logging/runid_test.go` へ移設する。アサーションは変更しない。
 - [x] `TestGenerateRunID_Format`（`internal/logging/safeopen_test.go:139`）を `internal/logging/runid_test.go` へ移設する。アサーションは変更しない。

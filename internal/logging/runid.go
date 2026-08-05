@@ -42,7 +42,7 @@ func ValidateRunID(runID string) error {
 	}
 	for i := 0; i < len(runID); i++ {
 		if !isAllowedRunIDByte(runID[i]) {
-			return fmt.Errorf("%w: byte at index %d has value %q", ErrInvalidRunID, i, runID[i])
+			return fmt.Errorf("%w: byte at index %d has value %q", ErrInvalidRunID, i, runID[i:i+1])
 		}
 	}
 	return nil

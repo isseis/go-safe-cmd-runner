@@ -111,8 +111,51 @@ func TestValidateRunID_ErrorOmitsRejectedValue(t *testing.T) {
 	}
 }
 
+func TestValidateRunID_ErrorIdentifiesFirstViolatingByte(t *testing.T) {
+	tests := []struct {
+		name      string
+		value     string
+		wantIndex string
+		wantByte  string
+	}{
+		{
+			name:      "path separator",
+			value:     "a/b",
+			wantIndex: "index 1",
+			wantByte:  `"/"`,
+		},
+		{
+			name:      "dot",
+			value:     "a.b",
+			wantIndex: "index 1",
+			wantByte:  `"."`,
+		},
+		{
+			name:      "NUL byte",
+			value:     "a\x00b",
+			wantIndex: "index 1",
+			wantByte:  `"\x00"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateRunID(tt.value)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantIndex)
+			assert.Contains(t, err.Error(), tt.wantByte)
+		})
+	}
+}
+
 func TestRunIDFormatDescription_ReflectsMaxRunIDLength(t *testing.T) {
 	assert.True(t, strings.Contains(RunIDFormatDescription, strconv.Itoa(MaxRunIDLength)))
+}
+
+func TestErrorTypeInvalidRunID_Token(t *testing.T) {
+	// The token is the programmatically-discriminable marker for run ID
+	// rejection (architecture §4.1); pin it so a typo fails here.
+	assert.Equal(t, ErrorType("invalid_run_id"), ErrorTypeInvalidRunID)
 }
 
 func TestGenerateRunID_Uniqueness(t *testing.T) {
