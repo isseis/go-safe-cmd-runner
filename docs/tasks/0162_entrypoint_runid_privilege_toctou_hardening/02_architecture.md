@@ -17,7 +17,7 @@
 - セキュリティアーキテクチャ: [docs/dev/architecture_design/security-architecture.md](../../dev/architecture_design/security-architecture.md)
 - Mermaid 記法: [docs/dev/developer_guide/mermaid_reference.md](../../dev/developer_guide/mermaid_reference.md)
 
-> **レビュー時の重点事項**: §9「要件への影響」に、承認済み要件 AC-19 の修正を要する設計上の発見を1件記載している。設計全体の可否判断より先にこの節を確認されたい。
+> **設計中に要件を1件改訂している**: `verify` の fail-closed 判定対象を、TOCTOU チェックの全違反からハッシュディレクトリとその祖先ディレクトリの違反へ限定した。理由と経緯は §9 に記載する。要件側は AC-19 の改訂と AC-28 の追加として反映済み。
 
 ---
 
@@ -53,7 +53,8 @@ flowchart TD
     TRUSTED[("検証済み run ID")]
     LOGNAME["ログファイル名構築<br>bootstrap.SetupLoggerWithConfig"]
     SUMMARY["起動前エラー報告<br>logging.HandlePreExecutionError"]
-    HASHDIR[("ハッシュディレクトリ")]
+    HASHDIR[("ハッシュディレクトリと<br>その祖先ディレクトリ")]
+    TARGETDIR[("対象ファイルの<br>祖先ディレクトリ")]
     VGATE["TOCTOU 権限チェック<br>cmd/verify: checkDirPermissions"]
     VREPORT["違反報告<br>cmd/verify: 標準エラー出力と ERROR ログ"]
     VERIFY["ファイル検証<br>filevalidator"]
@@ -66,15 +67,16 @@ flowchart TD
     TRUSTED --> SUMMARY
     LOGNAME -->|"再検証（多層防御）"| LOGNAME
     HASHDIR --> VGATE
-    VGATE -->|"違反なし"| VERIFY
-    VGATE -->|"違反あり"| VREPORT
+    TARGETDIR --> VGATE
+    VGATE -->|"ハッシュディレクトリ側に違反あり"| VREPORT
+    VGATE -->|"それ以外<br>（対象ファイル側の違反は警告のみ）"| VERIFY
 
-    class USER,TRUSTED,HASHDIR data
+    class USER,TRUSTED,HASHDIR,TARGETDIR data
     class VERIFY process
     class BOOT,GATE,LOGNAME,SUMMARY,VGATE,VREPORT enhanced
 ```
 
-矢印 A → B は「A の出力または制御が B へ渡ること」を表す。`LOGNAME` から自身への矢印は、同一コンポーネント内で独立した再検証を行うことを表す。`runner` 系（上段）と `verify` 系（下段）は別プロセスであり、報告先も別である。`cmd/verify` は `internal/logging` に依存しないため、`VGATE` から `SUMMARY` への経路は存在しない。
+矢印 A → B は「A の出力または制御が B へ渡ること」を表す。`LOGNAME` から自身への矢印は、同一コンポーネント内で独立した再検証を行うことを表す。`runner` 系と `verify` 系は別プロセスであり、報告先も別である。`cmd/verify` は `internal/logging` に依存しないため、`VGATE` から `SUMMARY` への経路は存在しない。`VGATE` は2種類のディレクトリ集合を検査するが、fail-closed の引き金になるのはハッシュディレクトリ側の違反だけである（§3.4・§9）。
 
 **Legend**
 
@@ -173,7 +175,7 @@ flowchart TD
 
     subgraph AfterV["After: cmd/verify"]
         D1["checkDirPermissions"]
-        D2{"違反あり?"}
+        D2{"ハッシュディレクトリ側に<br>違反あり?"}
         D3["違反報告と exit 3"]
         D4["ファイル検証"]
         D1 --> D2
@@ -458,17 +460,33 @@ const (
 var toctouChecker security.DirectoryPermChecker
 
 // checkDirPermissions runs the TOCTOU permission check on the directories this
-// operation touches and reports whether verification may proceed. On a violation
-// it logs each one at ERROR level and writes the reason to stderr.
+// operation touches and reports whether verification may proceed. Only a
+// violation on the hash directory or one of its ancestors is fail-closed; each
+// such violation is logged at ERROR level and the reason is written to stderr.
+// Violations confined to a target file's ancestors keep the shared check's
+// warning behaviour and do not stop the run.
 func checkDirPermissions(cfg *verifyConfig, stderr io.Writer) bool
 ```
+
+**判定対象を2つに分ける（AC-19・AC-28）**
+
+fail-closed の引き金になるのはハッシュディレクトリ側の違反だけである。この区別は、既存の `security.CollectTOCTOUCheckDirs` を引数を変えて2回呼ぶことで得られる。同関数の変更は不要である。
+
+| 集合 | 収集方法 | 違反時の扱い |
+|---|---|---|
+| ハッシュディレクトリ集合 | `CollectTOCTOUCheckDirs(nil, nil, absHashDir)` | fail-closed（ERROR ログ・標準エラー出力・exit 3） |
+| 対象ファイル集合 | `CollectTOCTOUCheckDirs(absFiles, nil, "")` からハッシュディレクトリ集合を除いた差分 | 従来どおり警告のみ。検証は継続する |
+
+対象ファイル集合からハッシュディレクトリ集合を差し引くのは、重複する祖先ディレクトリに対して警告が二重に出るのを避けるためである。対象ファイルがハッシュディレクトリ配下に置かれている場合、その祖先はハッシュディレクトリ集合に含まれるため fail-closed の対象になる。これは安全側への倒し方として正しい。
+
+判定順序はハッシュディレクトリ集合を先とする。fail-closed が確定した時点で、対象ファイル集合のチェックは行わない。
 
 **設計上の要点**
 
 - 判定関数の形（違反時に各違反を ERROR で記録し、標準エラー出力に理由を書いて `false` を返す）は `cmd/record/main.go` の `checkDirPermissions`（[main.go:102](../../../cmd/record/main.go#L102)）に揃える。`record` が既に fail-closed であり（Task 0146、コミット `be92e759`）、両コマンドが同じ信頼の起点を守る以上、挙動と診断メッセージの形が揃っているほうが運用者にとって予測可能である。
 - **チェッカーの差し替え口**: `record` は `deps` 構造体の `toctouChecker` フィールド（[main.go:53](../../../cmd/record/main.go#L53)）で違反を注入できるようにしている。`verify` にも同等の差し替え口が必要である。これがないと、既定のハッシュディレクトリを使う経路（AC-23）のテストが CI ホストの実際のディレクトリ権限に依存し、環境によって結果が変わる。`verify` は既に `validatorFactory`・`mkdirAll`・`ensurePermissionCheckUID` をパッケージ変数で差し替える方式を採っている（[main.go:24-29](../../../cmd/verify/main.go#L24-L29)）ため、`toctouChecker` も同じ方式に揃える（`record` の `deps` 構造体を `verify` に持ち込むと、`verify` 側の既存3変数と二重の注入方式が並立する）。
 - 共有部品 `security.CollectTOCTOUCheckDirs` と `security.RunTOCTOUPermissionCheck` はそのまま再利用し、変更しない（要件定義書のスコープ外項目）。
-- 違反の ERROR 記録は、`RunTOCTOUPermissionCheck` が内部で出力する WARN ログに**加えて**行う（AC-20）。共有関数の WARN を ERROR に変更しないのは、同関数が §3.5 の4つの呼び出し元で共有されており、`verify` の都合で共有部品のログレベルを変えると他の呼び出し元の運用に影響するためである。
+- 違反の ERROR 記録は、`RunTOCTOUPermissionCheck` が内部で出力する WARN ログに**加えて**行う（AC-20）。共有関数の WARN を ERROR に変更しないのは、同関数が §3.5 の4つの呼び出し元で共有されており、`verify` の都合で共有部品のログレベルを変えると他の呼び出し元の運用に影響するためである。ERROR を付けるのは fail-closed の判定対象となったハッシュディレクトリ側の違反だけであり、対象ファイル側の違反は WARN のまま残す。ログレベルが「実行を止めたかどうか」に対応するため、オンコール担当者はログだけで両者を区別できる。
 
 **既知の重複と、fail-closed 化によって顕在化するリスク**: `cfg.files` と `cfg.hashDir` を絶対パス化しシンボリックリンクを解決する前処理は、`record` の同名関数とほぼ同一である（監査所見 L-2、[#986](https://github.com/isseis/go-safe-cmd-runner/issues/986)）。この重複は要件定義書でスコープ外と定められているため本タスクでは共通化しない。ただし L-2 は単なる重複ではなく、`filepath.Abs` と `filepath.EvalSymlinks` の失敗を握り潰して未解決パスにフォールバックする欠陥を含む（[main.go:88-107](../../../cmd/verify/main.go#L88-L107)）。この欠陥が生むのは、現在は誤った警告にすぎない。しかし fail-closed 化後は、誤った exit 3 と「検証0件」を生む。誤検知が起きた場合、利用者から見た出力は真の違反と区別できない。本タスクはこのリスクを受容するが、L-2 の優先度を上げる根拠として記録する。
 
@@ -481,9 +499,9 @@ AC-20 は「共有の TOCTOU チェック処理が出力する警告レベルの
 | 1 | [cmd/runner/main.go:366](../../../cmd/runner/main.go#L366) `runTOCTOUCheck` | fail-closed。`PreExecutionError`（`ErrorTypeFileAccess`）を返して起動中断。違反ごとの ERROR ログはなく、件数のみをメッセージに含む | 変更しない |
 | 2 | [internal/runner/group_executor.go:372](../../../internal/runner/group_executor.go#L372) | fail-closed。`ErrTOCTOUViolation` を返してグループ実行を中断 | 変更しない |
 | 3 | [cmd/record/main.go:138](../../../cmd/record/main.go#L138) `checkDirPermissions` | fail-closed。違反ごとに ERROR ログと是正方法、標準エラー出力にメッセージ、exit 1 | 変更しない |
-| 4 | [cmd/verify/main.go:109](../../../cmd/verify/main.go#L109) | **fail-open**。WARN のみで続行 | **本タスクで fail-closed 化** |
+| 4 | [cmd/verify/main.go:109](../../../cmd/verify/main.go#L109) | **fail-open**。WARN のみで続行 | **本タスクで fail-closed 化**（ハッシュディレクトリ側の違反に限る。§9） |
 
-fail-open は4箇所のうち `verify` のみであり、本タスクの変更後は全呼び出し元が fail-closed になる。
+fail-open は4箇所のうち `verify` のみである。本タスクの変更後、ハッシュディレクトリに関する違反については全呼び出し元が fail-closed になる。`verify` だけは対象ファイルの祖先ディレクトリの違反を警告に留める点で他と異なるが、これは `verify` の役割（対象ファイルが改ざんされていないかを判定すること）から導かれる意図的な差である（§9.2）。
 
 ### 3.6 既存ポリシーへの例外: Task 0089 の AC-M2S-5
 
@@ -503,9 +521,17 @@ fail-open は4箇所のうち `verify` のみであり、本タスクの変更�
 
 | テスト | 場所 | 現在の主張 | 必要な更新 |
 |---|---|---|---|
-| `TestRunTOCTOU_ContinuesOnWorldWritableDir` | [cmd/verify/main_test.go:155](../../../cmd/verify/main_test.go#L155) | world-writable ディレクトリでも exit 0 で継続し、ファイルが処理される | fail-closed を主張するテストへ書き換える（exit 3、`validator.calls` が空）。コメント中の AC-M2S-7 への参照も本タスクの AC-19 へ更新する |
+| `TestRunTOCTOU_ContinuesOnWorldWritableDir` | [cmd/verify/main_test.go:155](../../../cmd/verify/main_test.go#L155) | world-writable ディレクトリでも exit 0 で継続し、ファイルが処理される | **アサーションの変更は不要**。下記参照 |
 
-`verify` の fail-open 挙動を主張する他のテストは存在しない（`test/security/` 配下を含め全数確認済み）。
+このテストは**対象ファイル**の親ディレクトリを world-writable にし、ハッシュディレクトリには健全な一時ディレクトリを渡す構成である。§9.2 の限定により、この構成は fail-closed の対象外であり、exit 0 と「1件処理された」という主張はそのまま成立する。
+
+ただし**テストが通る理由が変わる**。現在は「`verify` は違反があっても中断しないから」通っているが、変更後は「この違反はハッシュディレクトリ側ではないから」通る。したがって次を更新する。
+
+- 関数コメントの「verify does NOT abort on TOCTOU violations — it only logs a warning」は、変更後は誤りになるため書き換える。
+- AC-M2S-7 への参照を本タスクの AC-28 へ更新する。
+- テスト名を、対象ファイル側の違反であることが分かる名前へ改める（例: `TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates`）。
+
+fail-closed 側は、ハッシュディレクトリを world-writable にした構成の新規テストで検証する（§7.1）。`verify` の fail-open 挙動を主張する他のテストは存在しない（`test/security/` 配下を含め全数確認済み）。
 
 ### 3.7 コンポーネント責務表
 
@@ -525,10 +551,10 @@ fail-open は4箇所のうち `verify` のみであり、本タスクの変更�
 | `internal/runner/bootstrap/logger_test.go` | 変更 | 不正な `RunID` でログファイルが作られないことの検証を追加。既存の `RunID` 値15箇所（7呼び出し）はすべて新形式を満たすため修正不要 | AC-11〜AC-13 |
 | `internal/runner/bootstrap/environment_test.go` | 回帰確認のみ | `SetupLoggerWithConfig` を直接2箇所、`SetupLogging` 経由で3箇所呼ぶ。`RunID` 値はすべて新形式を満たすため修正不要 | AC-13 |
 | `cmd/runner/integration_logger_test.go` | 回帰確認のみ | `SetupLoggerWithConfig` を直接3箇所呼ぶ。`RunID` 値はすべて新形式を満たすため修正不要 | AC-13 |
-| `cmd/verify/main.go` | 変更 | `checkDirPermissions` の追加と fail-closed 化、`toctouChecker` 差し替え口、終了コード定数の導入 | AC-19〜AC-23 |
-| `cmd/verify/main_test.go` | 変更 | `TestRunTOCTOU_ContinuesOnWorldWritableDir` を fail-closed 版へ書き換え（§3.6）。既定ディレクトリと `-hash-dir` 明示の両ケースを追加 | AC-19〜AC-23 |
+| `cmd/verify/main.go` | 変更 | `checkDirPermissions` の追加、ハッシュディレクトリ側違反の fail-closed 化、`toctouChecker` 差し替え口、終了コード定数の導入 | AC-19〜AC-23, AC-28 |
+| `cmd/verify/main_test.go` | 変更 | ハッシュディレクトリ側違反の fail-closed テストを新設（既定ディレクトリと `-hash-dir` 明示の両ケース）。`TestRunTOCTOU_ContinuesOnWorldWritableDir` はアサーションを変えず、コメントと名前を AC-28 向けに更新（§3.6） | AC-19〜AC-23, AC-28 |
 | `docs/user/runner_command.ja.md` / `.md` | 変更 | `-run-id` の受理形式と拒否挙動。あわせて849行目のログファイル名記述（現行コードと不一致）を修正 | AC-24 |
-| `docs/user/verify_command.ja.md` / `.md` | 変更 | fail-closed 挙動と終了コード表（0 / 1 / 3、および 2 の予約） | AC-25 |
+| `docs/user/verify_command.ja.md` / `.md` | 変更 | fail-closed 挙動（ハッシュディレクトリ側の違反に限ること、対象ファイル側は警告のまま継続すること）と終了コード表（0 / 1 / 3、および 2 の予約） | AC-25 |
 | `CHANGELOG.ja.md` / `CHANGELOG.md` | 変更 | 破壊的変更2件と、影響有無を事前に判定する手順（§8.2） | AC-26 |
 | `docs/translation_glossary.md` | 変更 | 新規用語があれば追加 | AC-27 |
 
@@ -574,17 +600,18 @@ const ErrorTypeInvalidRunID ErrorType = "invalid_run_id"
 | 0 | 全ファイルの検証が成功 | 変更なし |
 | 1 | 引数エラー、バリデータ生成失敗、または1件以上のファイルで検証が失敗 | 変更なし |
 | 2 | 予期しない異常終了（Go ランタイムが未捕捉 panic に対して使用）。本コマンドが明示的に返すことはない | 明文化 |
-| 3 | TOCTOU 権限チェックで違反を検出。検証結果が信頼できないため、ファイルを1件も検証していない | 新規（D-2） |
+| 3 | **ハッシュディレクトリまたはその祖先ディレクトリ**の TOCTOU 権限チェックで違反を検出。検証結果が信頼できないため、ファイルを1件も検証していない。対象ファイル側のみの違反はこのコードを返さない（§9） | 新規（D-2） |
 
 ### 4.3 副作用契約
 
-権限チェックで違反を検出した場合に `verify` が行う／行わない副作用を明示する。契約が曖昧だと、実装によって「どこまで進んでから止まるか」が変わる。
+ハッシュディレクトリ側の権限チェックで違反を検出した場合に `verify` が行う／行わない副作用を明示する。契約が曖昧だと、実装によって「どこまで進んでから止まるか」が変わる。対象ファイル側のみの違反では fail-closed とならないため、この表は適用されない（従来どおり検証が進む）。
 
 | 副作用 | fail-closed 時 | 備考 |
 |---|---|---|
 | ハッシュディレクトリの作成（`mkdirAll`） | **発生しうる** | 引数解析時に実行されるため、権限チェックより前に完了している。AC-19 の但し書きのとおり本タスクのスコープ外（L-3） |
 | ハッシュ記録ファイルの読み取り | 発生しない | バリデータの生成自体を行わない |
 | 対象ファイルの読み取り・ハッシュ計算 | 発生しない | `Verify` を1件も呼ばない |
+| 対象ファイル集合の権限チェック | 発生しない | ハッシュディレクトリ側で fail-closed が確定した時点で打ち切る（§3.4） |
 | 標準出力への `Verifying N files...` 等の進捗出力 | 発生しない | 検証を開始しないため |
 | 違反ごとの ERROR ログと標準エラー出力への理由メッセージ | 発生する | AC-20・AC-21 |
 | ファイルの書き込み・削除・ネットワーク送信 | 発生しない | `verify` はいずれの経路でも行わない |
@@ -617,13 +644,13 @@ flowchart TD
     T2["脅威2: RUN_SUMMARY 行の偽装"]
     T3["脅威3: 拒否経路経由の<br>ログ行注入"]
     T4["脅威4: 特権グループのまま<br>起動処理を実行"]
-    T5["脅威5: 信頼できない検証結果を<br>OK として受け取る"]
+    T5["脅威5: ハッシュ記録の差し替えにより<br>検証結果が無意味になる"]
 
     M1["入口検証<br>logging.ValidateRunID"]
     M2["多層防御<br>SetupLoggerWithConfig での再検証"]
     M3["ブートストラップ run ID による報告"]
     M4["起動直後の実効グループID・<br>実効ユーザーIDの降格"]
-    M5["fail-closed（exit 3）"]
+    M5["ハッシュディレクトリ側違反の<br>fail-closed（exit 3）"]
 
     T1 --> M1
     T1 --> M2
@@ -734,19 +761,20 @@ flowchart TD
 
     S(["run 開始"]) --> P1["parseArgs"]
     P1 --> P2["EnsurePermissionCheckUID"]
-    P2 --> P3["checkDirPermissions"]
+    P2 --> P3["ハッシュディレクトリ集合の<br>権限チェック"]
     P3 --> Q1{"違反あり?"}
     Q1 -->|"あり"| F1["違反報告"]
-    Q1 -->|"なし"| P4["バリデータ生成"]
+    Q1 -->|"なし"| P6["対象ファイル集合の<br>権限チェック（警告のみ）"]
+    P6 --> P4["バリデータ生成"]
     P4 --> P5["processFiles"]
     F1 --> X(["exit 3"])
     P5 --> E(["exit 0 または 1"])
 
-    class P3,F1 enhanced
+    class P3,P6,F1 enhanced
     class P1,P2,P4,P5 process
 ```
 
-矢印 A → B は「A の次に B を実行すること」を表す。`parseArgs` はハッシュディレクトリの作成を含み、これは権限チェックより前に完了する（§4.3）。
+矢印 A → B は「A の次に B を実行すること」を表す。判定ノードから出る矢印のラベルは判定結果を表す。2つの権限チェックはいずれも `checkDirPermissions` の内部で行われる（§3.4）。`parseArgs` はハッシュディレクトリの作成を含み、これは権限チェックより前に完了する（§4.3）。
 
 **Legend**
 
@@ -772,7 +800,8 @@ flowchart LR
 - **`cmd/runner/main_test.go`**: `resolveRunID` の全分岐（未指定・空文字列・受理・拒否）。
 - **`cmd/runner/startup_privilege_test.go`**: §7.2 の振る舞いテスト。
 - **`internal/runner/bootstrap/logger_test.go`**: 不正な `RunID` を渡すとエラーが返り、ログディレクトリにファイルが1件も作られないこと（AC-11・AC-12）。
-- **`cmd/verify/main_test.go`**: 違反ありで exit 3 かつ `Verify` が1件も呼ばれないこと、違反なしで従来どおりであること。既定ディレクトリのケースは `toctouChecker` に違反を返すスタブを注入して駆動し、CI ホストの実ディレクトリ権限に依存させない。`-hash-dir` 明示のケースは実際の world-writable ディレクトリでも駆動する（AC-19〜AC-23）。
+- **`cmd/verify/main_test.go`**: ハッシュディレクトリ側の違反ありで exit 3 かつ `Verify` が1件も呼ばれないこと、違反なしで従来どおりであること。既定ディレクトリのケースは `toctouChecker` に違反を返すスタブを注入して駆動し、CI ホストの実ディレクトリ権限に依存させない。`-hash-dir` 明示のケースは実際の world-writable ディレクトリでも駆動する（AC-19〜AC-23）。
+- **`cmd/verify/main_test.go`（適用範囲の限定）**: 対象ファイルの親ディレクトリのみが world-writable で、ハッシュディレクトリは健全という構成で、exit 3 にならず全ファイルが検証されること（AC-28）。既存の `TestRunTOCTOU_ContinuesOnWorldWritableDir` がまさにこの構成であり、アサーションは変更せずコメントと名前のみ更新して AC-28 の検証テストとする（§3.6）。fail-closed 側はハッシュディレクトリを world-writable にした構成で新設する。
 
 ### 7.2 特権降格の検証方法（AC-14〜AC-16）
 
@@ -837,8 +866,9 @@ flowchart LR
 | AC-15, AC-16 | test | `cmd/runner/startup_privilege_test.go`（実 syscall の `EPERM`） |
 | AC-17 | test | 既存 `cmd/runner/main_test.go` が無変更で通過 |
 | AC-18 | test | `cmd/runner/startup_privilege_test.go` |
-| AC-19, AC-20, AC-21, AC-23 | test | `cmd/verify/main_test.go` |
+| AC-19, AC-20, AC-21, AC-23 | test | `cmd/verify/main_test.go`（ハッシュディレクトリを world-writable にした新設テスト） |
 | AC-22 | test | 既存 `cmd/verify/main_test.go` が無変更で通過 |
+| AC-28 | test | `cmd/verify/main_test.go`（対象ファイル側のみ違反の構成。既存 `TestRunTOCTOU_ContinuesOnWorldWritableDir` を転用） |
 | AC-24, AC-25, AC-26, AC-27 | static | 文書の記載確認 |
 
 ---
@@ -855,7 +885,7 @@ flowchart LR
 | 2 | `identitymutationguard` の拡張（位置情報と追跡対象の指定） | F-003 の基盤 | なし |
 | 3 | `cmd/runner` の起動順序変更・`resolveRunID`・ガードテスト・振る舞いテスト | F-001, F-003 | Phase 1, 2 |
 | 4 | `bootstrap.SetupLoggerWithConfig` の多層防御 | F-002 | Phase 1 |
-| 5 | `cmd/verify` の fail-closed 化と既存テストの書き換え | F-004 | なし |
+| 5 | `cmd/verify` の fail-closed 化（判定対象の2分割を含む）とテストの追加・更新 | F-004 | なし |
 | 6 | 利用者向け文書・CHANGELOG・用語集の更新 | F-005 | Phase 3〜5 |
 
 Phase 5 は他と依存関係がないため、Phase 1 と並行して着手できる。
@@ -867,36 +897,41 @@ Phase 5 は他と依存関係がないため、Phase 1 と並行して着手で�
 - `verify` は `slog.SetDefault` を呼ばないため、現行の WARN は既定ハンドラ経由で標準エラー出力に出る。利用者向け文書が示す運用パターン（`if verify ...; then`、GitHub Actions での実行）では標準エラー出力は成功時に読まれないため、実質的に「今日すでに違反が出ている」ことに気づけない。
 - したがってアップグレードで初めて exit 3 に遭遇することになる。
 
-対策として、CHANGELOG（AC-26）に**アップグレード前に影響有無を判定する手順**を記載する。具体的には、現行版の `verify` を対象ファイルとハッシュディレクトリに対して実行し、標準エラー出力に `TOCTOU permission check violation` が現れるかを確認する手順を示す。これにより利用者はアップグレード前に是正できる。
+対策として、CHANGELOG（AC-26）に**アップグレード前に影響有無を判定する手順**を記載する。具体的には、現行版の `verify` を実行し、標準エラー出力の `TOCTOU permission check violation` 警告のうち**ハッシュディレクトリまたはその祖先を指すもの**があるかを確認する手順を示す。判定対象がハッシュディレクトリ側に限定されている（§9）ため、確認すべきパスは通常1本の祖先チェーンだけであり、利用者の負担は小さい。
+
+この限定により、影響を受ける利用者の範囲そのものも大きく狭まる。`sudo verify` で利用者のホームディレクトリ配下のファイルを検証する運用（利用者向け文書が示す使い方）は、ハッシュディレクトリが健全であれば従来どおり動作する。
 
 **バイパス手段は設けない**。`record` が「No bypass flag is provided; fix the directory permissions with chmod and re-run」という方針を採っており（[cmd/record/main.go:97-98](../../../cmd/record/main.go#L97-L98)）、同じ信頼の起点を守る `verify` で方針を変える理由がない。違反が正当で修正できない場合の唯一の対処は、ハッシュディレクトリを権限の適切なパスへ移すことである。この点も CHANGELOG と利用者向け文書に明記する。
 
 ---
 
-## 9. 要件への影響（レビュー判断が必要）
+## 9. fail-closed の適用範囲をハッシュディレクトリに限定する理由
 
-設計中に、承認済み要件 **AC-19** の適用範囲を見直すべき事実が判明した。本節は要件の修正提案であり、本書の他の部分は現行の AC-19 の文言（「TOCTOU チェックで1件以上の違反が検出された場合」）どおりに設計してある。
+`verify` の fail-closed が「TOCTOU チェックの全違反」ではなく「ハッシュディレクトリとその祖先ディレクトリの違反」に限定されているのは、次の制約と信頼モデルによる。この節は §3.4 の設計判断の根拠であり、実装時に範囲を広げてはならない理由を示す。
 
-### 9.1 事実
+> この限定は設計中に判明した §9.1 の事実を受けたものであり、要件側は AC-19 の改訂と AC-28 の追加として反映済みである（`01_requirements.md` の Document Status を参照）。
+
+### 9.1 制約: 権限チェックは `sudo` 実行時に実 UID を root と見なす
 
 `security.RunTOCTOUPermissionCheck` が呼ぶ `ValidateDirectoryPermissions` は、比較対象の UID として `os.Getuid()` を直接読む（[dir_permissions_unix.go:41](../../../internal/security/dir_permissions_unix.go#L41)）。一方 `cmd/verify` は「`sudo verify ...` として起動される」ことを前提に `SudoUIDAware` ポリシーを宣言している（[cmd/verify/main.go:32-34](../../../cmd/verify/main.go#L32-L34)）。
 
 `sudo` 経由では `os.Getuid()` が 0 になるため、所有者書き込み可の判定（[dir_permissions_unix.go:165-169](../../../internal/security/dir_permissions_unix.go#L165-L169)）は「root 以外が所有する書き込み可能ディレクトリ」をすべて違反と見なす。つまり `sudo verify ~/bin/script.sh` は、`/home/alice`（uid 1000 所有）で違反を出す。これは利用者向け文書が示す使い方であり（[verify_command.ja.md:133](../../user/verify_command.ja.md)）、攻撃でも設定ミスでもない。同文書 :599 は、権限エラーの対処として `sudo` の付与をむしろ推奨している。
 
-現状この違反は破棄される WARN なので実害がない。AC-19 をそのまま実装すると、この正当な利用が exit 3 と「検証結果は信頼できない」というメッセージで停止する。同じファイルシステム状態に対して `verify foo` と `sudo verify foo` が別の終了コードを返すことにもなる。
+現状この違反は破棄される WARN なので実害がない。しかし全違反を fail-closed の対象にすると、この正当な利用が exit 3 と「検証結果は信頼できない」というメッセージで停止する。同じファイルシステム状態に対して `verify foo` と `sudo verify foo` が別の終了コードを返すことにもなり、結果が実行方法に依存する。
 
-### 9.2 提案
+### 9.2 信頼モデル: 信頼が崩れるのはハッシュディレクトリ側だけである
 
-AC-19 の fail-closed 判定対象を、**ハッシュディレクトリとその祖先ディレクトリの違反に限定**する。対象ファイルの祖先ディレクトリの違反は現行どおり WARN のままとする。
+そもそも「対象ファイルの祖先ディレクトリが書き込み可能である」ことは fail-closed の理由にならない。要件定義書 M-3 の信頼モデルがその根拠である。
 
-根拠は、要件定義書 M-3 の信頼モデルそのものである。ハッシュディレクトリは信頼の起点であり、ここが書き換え可能なら検証結果に意味がない。これに対し「対象ファイルの置かれたディレクトリが書き込み可能である」ことは、`verify` がまさに改ざんの有無を確かめるべき状況そのものであって、検証を拒否する理由にはならない。ハッシュ記録が保護されている限り、書き換えられたファイルは検証失敗（exit 1）として正しく報告される。
+ハッシュディレクトリは信頼の起点であり、ここが書き換え可能ならハッシュ記録を差し替えられるため、検証結果に意味がなくなる。これに対し対象ファイルが書き込み可能なディレクトリに置かれていることは、`verify` がまさに改ざんの有無を確かめるべき状況そのものである。ハッシュ記録が保護されている限り、書き換えられたファイルは検証失敗（exit 1）として正しく報告される。検証を拒否したのでは、`verify` は自分の仕事を放棄することになる。
 
-この変更により §9.1 の誤検知は解消し、fail-closed が守る資産は要件の意図と一致する。
+したがって適用範囲の限定は、§9.1 の誤検知を避けるための妥協ではなく、fail-closed が守るべき資産を正しく捉えた結果である。
 
-### 9.3 決定が必要な事項
+### 9.3 この限定によって残るもの
 
-- 提案どおり AC-19 を修正する場合: `01_requirements.md` の AC-19 を改訂し、本書 §3.4・§4.3・§7.1 を対象範囲の限定に合わせて更新する。
-- 現行の AC-19 を維持する場合: §9.1 の影響を受容することになる。その場合は利用者向け文書（AC-25）に「`sudo` 実行時はホームディレクトリ配下のファイルを検証できない」旨と回避策（ハッシュディレクトリと対象ファイルを root 所有のパスに置く、または `sudo` を使わない）を明記する必要があり、AC-25 の記述内容もあわせて改訂する。
+対象ファイル側の違反は従来どおり警告として記録され、検証は継続する（AC-28）。オンコール担当者から見ると、ログレベルが「実行を止めたかどうか」に対応する（§3.4）。
+
+なお §9.1 の制約そのもの（`sudo` 実行時に実 UID を root と見なすこと）は解消していない。ハッシュディレクトリを利用者のホームディレクトリ配下に置いて `sudo verify` を実行すると、依然として fail-closed になる。これは「root 以外が書き込めるハッシュディレクトリ」であり、限定後の判定基準では正しい fail-closed である。基準 UID の解決結果を `DirectoryPermCheckOptions.RealUID` へ渡す改修は、共有部品 `internal/security` の挙動変更にあたり要件のスコープ外であるため、本タスクでは扱わない。
 
 ---
 
@@ -905,7 +940,7 @@ AC-19 の fail-closed 判定対象を、**ハッシュディレクトリとそ�
 - **受理形式の変更**: 形式の定義が `internal/logging/runid.go` の1箇所に集約されるため、将来より厳しく（または緩く）する場合の変更点は1ファイルに閉じる。入口検証と多層防御が同じ関数を使うため、両者が食い違うことはない。
 - **GID の不可逆な降格**: `dropStartupPrivileges` は「起動時に手放す識別子」を1箇所に集めた関数であるため、§5.3 に挙げた saved-set-gid の不可逆化や補助グループの降格を追加する場合の変更点が明確である。その際は §7.2 のガードテストの許可リストに1エントリを加えることになり、変更が意図的であることがレビューで可視化される。
 - **他コマンドへの `--run-id` 展開**: `record`・`verify` に将来 `--run-id` を追加する場合、`logging.ValidateRunID` をそのまま呼べばよい。
-- **TOCTOU チェックの共通化**: 全4呼び出し元が fail-closed に揃うため、L-2 の解決時に「絶対パス化・収集・チェック・違反報告」をまとめた共通ヘルパーへ集約しやすくなる。本タスクはその前提条件を整える位置づけになる。
+- **TOCTOU チェックの共通化**: ハッシュディレクトリに関する違反の扱いが全4呼び出し元で揃うため、L-2 の解決時に「絶対パス化・収集・チェック・違反報告」をまとめた共通ヘルパーへ集約しやすくなる。その際は、`verify` が必要とする「ハッシュディレクトリ集合と対象ファイル集合を分けて扱う」という区別を共通ヘルパーの引数として表現することになる。本タスクはその前提条件を整える位置づけになる。
 
 ---
 
@@ -922,5 +957,7 @@ AC-19 の fail-closed 判定対象を、**ハッシュディレクトリとそ�
 | AC-15・AC-16 を静的検証のみで担保する | 要件プロセスガイドは振る舞いに関する基準に静的検証のみを認めていない。降格先 ID の引数化により実 syscall での検証が可能（§7.2） |
 | `bootstrap` 側の多層防御を `filepath.Base(runID) == runID` で独自実装する | 「安全な run ID」の定義が2箇所に分かれ、片方だけが更新されて防御に穴が開く（§3.3） |
 | `verify` の TOCTOU 前処理を `record` と共通化する | 重複部分は監査所見 L-2 の対象であり、要件定義書でスコープ外と定められている（§3.4） |
+| TOCTOU チェックの全違反を fail-closed の対象とする（改訂前の AC-19） | `sudo verify ~/bin/script.sh` のような文書化された正当な利用が停止する。fail-closed が守るべき資産はハッシュディレクトリであり、対象ファイル側の書き込み可能性は `verify` が検出すべき状況そのものである（§9） |
+| `DirectoryPermCheckOptions.RealUID` に基準UIDの解決結果を渡す改修で §9.1 の制約を解消する | 共有部品 `internal/security` の挙動変更にあたり、要件定義書でスコープ外と定められている（§9.3） |
 | `verify` に `record` の `deps` 構造体を持ち込む | `verify` は既にパッケージ変数による差し替え方式を採っており、二重の注入方式が並立する（§3.4） |
 | 拒否メッセージに不正値を全体としてエスケープして含める | 値全体を出力すると、エスケープ処理の欠陥がそのまま注入経路になる。違反バイト1個の `%q` 表現に限定すれば、診断可能性を得つつ P-2 を保てる（§3.1） |
