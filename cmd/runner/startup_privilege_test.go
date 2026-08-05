@@ -13,10 +13,12 @@ package main
 // without any test failing to announce it.
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -61,6 +63,17 @@ func TestDropStartupPrivileges_FailsClosedOnSeteuidFailure(t *testing.T) {
 	assert.Equal(t, euidBefore, syscall.Geteuid(), "effective UID must be unchanged when seteuid fails")
 }
 
+// TestDropStartupPrivileges_SucceedsForCurrentIdentity pins the production
+// call: dropping to the identity the process already has returns nil and
+// leaves both effective IDs equal to the real ones.
+//
+// A test binary is never started setuid or setgid, so the effective IDs
+// already equal the real ones before the call; these assertions therefore
+// cannot distinguish a real drop from a no-op, and no assertion available to
+// an unprivileged process can. What rules out a stub implementation is the
+// pair of failure tests above: an unconditional `return nil` fails both. An
+// unprivileged process also cannot setegid to a supplementary group, so there
+// is no reachable target whose effect could be observed instead.
 func TestDropStartupPrivileges_SucceedsForCurrentIdentity(t *testing.T) {
 	require.NoError(t, dropStartupPrivileges(syscall.Getuid(), syscall.Getgid()))
 
@@ -124,17 +137,28 @@ func captureStdoutStderr(t *testing.T, fn func()) (stdout, stderr string) {
 		_ = errReader.Close()
 	})
 
+	// Drain both pipes while fn runs: a pipe holds only a fixed kernel buffer,
+	// and a writer that fills it would block forever with nobody reading.
+	var wg sync.WaitGroup
+	var outBuf, errBuf bytes.Buffer
+	for _, drain := range []struct {
+		dst *bytes.Buffer
+		src *os.File
+	}{{&outBuf, outReader}, {&errBuf, errReader}} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = io.Copy(drain.dst, drain.src)
+		}()
+	}
+
 	fn()
 
-	// Close the write ends before reading so io.ReadAll sees EOF.
+	// Close the write ends so the drain goroutines see EOF and finish.
 	require.NoError(t, outWriter.Close())
 	require.NoError(t, errWriter.Close())
 	os.Stdout, os.Stderr = origStdout, origStderr
+	wg.Wait()
 
-	outBytes, err := io.ReadAll(outReader)
-	require.NoError(t, err)
-	errBytes, err := io.ReadAll(errReader)
-	require.NoError(t, err)
-
-	return string(outBytes), string(errBytes)
+	return outBuf.String(), errBuf.String()
 }

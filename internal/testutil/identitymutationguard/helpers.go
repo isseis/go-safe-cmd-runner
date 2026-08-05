@@ -83,6 +83,12 @@ type CallSite struct {
 // resolved through the file's imports. An empty ImportPath matches an
 // unqualified call to a function of the package being scanned, e.g.
 // dropStartupPrivileges(...).
+//
+// Unqualified matching is by name alone and does not resolve scope: a local
+// variable or closure shadowing the named function is reported as a call site
+// too. That over-reports rather than under-reports, which is the safe
+// direction for a guard, but a caller asserting on a specific call site should
+// require the expected number of matches rather than take the first.
 type ExtraTrackedFunc struct {
 	ImportPath string
 	FuncName   string
@@ -94,10 +100,12 @@ type Options struct {
 	Extra []ExtraTrackedFunc
 }
 
-// ValueRef records one identity-mutation function referenced as a value
-// rather than called outright, e.g. a struct field initialized to
-// syscall.Seteuid. Such a reference can be invoked later through that
-// variable or field, which a call-site scan alone cannot follow.
+// ValueRef records one tracked function referenced as a value rather than
+// called outright, e.g. a struct field initialized to syscall.Seteuid. Such a
+// reference can be invoked later through that variable or field, which a
+// call-site scan alone cannot follow. Only qualified references are reported,
+// so with the default (empty) Options every ValueRef is an identity-mutation
+// function.
 type ValueRef struct {
 	FuncName string
 	Expr     string // rendered "pkg.Func" for failure messages
@@ -242,7 +250,9 @@ func CallSitesInSource(t *testing.T, filename, src string) []CallSite {
 // every one that is merely referenced as a value. The local package
 // identifier is resolved to its import path via the file's import
 // declarations in both cases, so an aliased import cannot bypass the check
-// and a same-named local identifier cannot produce a false match.
+// and a same-named local identifier cannot produce a false match. That
+// guarantee covers qualified references; the unqualified matching that
+// RefsInSourceWithOptions can enable is name-based (see ExtraTrackedFunc).
 func RefsInSource(t *testing.T, filename, src string) ([]CallSite, []ValueRef) {
 	t.Helper()
 	return RefsInSourceWithOptions(t, filename, src, Options{})

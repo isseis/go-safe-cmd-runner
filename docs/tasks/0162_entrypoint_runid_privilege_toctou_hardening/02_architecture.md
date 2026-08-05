@@ -833,7 +833,7 @@ flowchart LR
 **静的検証（AC-14）**: `cmd/runner` にガードテストを置き、次を主張する。
 
 1. `dropStartupPrivileges` の本体で `syscall.Setegid` の呼び出しが `syscall.Seteuid` の呼び出しより前に出現する。
-2. `main` の本体で `dropStartupPrivileges` の呼び出しが `flag.Parse` の呼び出しより前に出現する。
+2. `main` の本体の**最初の文**が `dropStartupPrivileges` の呼び出しであり、したがって `flag.Parse` の呼び出しよりも前に出現する。`flag.Parse` との前後関係だけを見ると、降格より上に入力を読む文が差し込まれても検出できないため、先頭文であることを併せて主張する（§3.2.2 が保証すると述べている内容そのもの）。
 3. `cmd/runner` の製品コードに現れる識別子変更系 syscall は、`dropStartupPrivileges` 内の2つだけである（許可リスト方式）。
 4. `cmd/runner` の `init()` 関数が現在の1個から増えていない（§3.2.2 の残存面が黙って広がらないようにする）。
 

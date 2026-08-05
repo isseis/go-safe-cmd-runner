@@ -22,8 +22,10 @@ import (
 //
 //  1. dropStartupPrivileges calls setegid before seteuid, so the effective UID
 //     is never surrendered while a privileged group is still held.
-//  2. main calls dropStartupPrivileges before flag.Parse, so no user input is
-//     processed with the privileges the process was started with.
+//  2. dropStartupPrivileges is the first statement of main's body, and in
+//     particular precedes flag.Parse, so no input is processed with the
+//     privileges the process was started with. Ordering against flag.Parse
+//     alone would not catch a statement inserted above the drop.
 //  3. The only identity-mutation calls in this package's production code are
 //     those two, and none of those functions is referenced as a value.
 //  4. This package still declares exactly one init function, since every init
@@ -51,6 +53,14 @@ func TestStartupPrivilegeDropOrder(t *testing.T) {
 			"positions are only comparable within one file")
 		assert.Less(t, drop.Pos, parse.Pos,
 			"main must drop privileges before parsing flags")
+	})
+
+	t.Run("privilege drop is main's first statement", func(t *testing.T) {
+		body := mainFuncBody(t, "main.go")
+		require.NotEmpty(t, body.List, "main must have a body")
+
+		assert.True(t, callsDropStartupPrivileges(body.List[0]),
+			"the privilege drop must be main's very first statement: anything placed above it runs with the privileges the process was started with, and ordering it against flag.Parse alone would not detect that")
 	})
 
 	t.Run("identity mutation is confined to dropStartupPrivileges", func(t *testing.T) {
@@ -86,7 +96,7 @@ func TestStartupPrivilegeDropOrder(t *testing.T) {
 			}
 		}
 		assert.Equal(t, 1, count,
-			"every init function runs before main, and so before the privilege drop; adding one widens what executes while privileged")
+			"every init function runs before main, and so before the privilege drop; adding one widens what executes while privileged. Package-level variable initializers run just as early: they are not counted here, but the previous subtest does reject an identity-mutation call in one")
 	})
 
 	t.Run("control: the order assertions fail on reversed source", func(t *testing.T) {
@@ -113,6 +123,41 @@ func TestStartupPrivilegeDropOrder(t *testing.T) {
 		assert.Greater(t, drop.Pos, parse.Pos,
 			"the scan must see the reversed order inside main's body")
 	})
+}
+
+// mainFuncBody returns the body of the main function declared in path.
+func mainFuncBody(t *testing.T, path string) *ast.BlockStmt {
+	t.Helper()
+
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	require.NoErrorf(t, err, "failed to parse %s", path)
+	for _, decl := range file.Decls {
+		if funcDecl, ok := decl.(*ast.FuncDecl); ok && funcDecl.Recv == nil && funcDecl.Name.Name == "main" {
+			return funcDecl.Body
+		}
+	}
+	t.Fatalf("no main function declared in %s", path)
+	return nil
+}
+
+// callsDropStartupPrivileges reports whether stmt contains a call to
+// dropStartupPrivileges anywhere within it, so the guard accepts the call
+// wrapped in an if-statement initializer as main writes it today, but not a
+// call moved below some other statement.
+func callsDropStartupPrivileges(stmt ast.Stmt) bool {
+	found := false
+	ast.Inspect(stmt, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "dropStartupPrivileges" {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
 }
 
 // startupOrderOptions tracks the two calls whose order within main matters and
