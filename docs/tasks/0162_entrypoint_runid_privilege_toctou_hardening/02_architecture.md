@@ -59,7 +59,7 @@ flowchart TD
     VREPORT["違反報告<br>cmd/verify: 標準エラー出力と ERROR ログ"]
     VERIFY["ファイル検証<br>filevalidator"]
 
-    BOOT --> GATE
+    BOOT -.->|"実行順序のみ<br>（データ受け渡しなし）"| GATE
     USER --> GATE
     GATE -->|"受理"| TRUSTED
     GATE -->|"拒否"| SUMMARY
@@ -76,7 +76,7 @@ flowchart TD
     class BOOT,GATE,LOGNAME,SUMMARY,VGATE,VREPORT enhanced
 ```
 
-矢印 A → B は「A の出力または制御が B へ渡ること」を表す。`LOGNAME` から自身への矢印は、同一コンポーネント内で独立した再検証を行うことを表す。`runner` 系と `verify` 系は別プロセスであり、報告先も別である。`cmd/verify` は `internal/logging` に依存しないため、`VGATE` から `SUMMARY` への経路は存在しない。`VGATE` は2種類のディレクトリ集合を検査するが、fail-closed の引き金になるのはハッシュディレクトリ側の違反だけである（§3.4・§9）。
+矢印 A → B は「A の出力または制御が B へ渡ること」を表す。`BOOT` から `GATE` への破線矢印のみ例外で、両者の間にデータの受け渡しはなく、`BOOT`（起動時特権降格）が `GATE`（run ID 検証）より先に実行される、という起動順序のみを表す（§3.2.2）。`LOGNAME` から自身への矢印は、同一コンポーネント内で独立した再検証を行うことを表す。`runner` 系と `verify` 系は別プロセスであり、報告先も別である。`cmd/verify` は `internal/logging` に依存しないため、`VGATE` から `SUMMARY` への経路は存在しない。`VGATE` は2種類のディレクトリ集合を検査するが、fail-closed の引き金になるのはハッシュディレクトリ側の違反だけである（§3.4・§9）。
 
 **Legend**
 
