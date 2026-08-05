@@ -367,8 +367,8 @@ type startupPrivilegeError struct {
 
 // dropStartupPrivileges drops the effective GID to targetGID and then the
 // effective UID to targetUID, returning a *startupPrivilegeError identifying the
-// failed stage. Production passes syscall.Getgid() and syscall.Getuid(); tests
-// pass a target the process cannot reach in order to exercise the failure path.
+// failed stage. Production calls dropStartupPrivileges(syscall.Getuid(), syscall.Getgid());
+// tests pass a target the process cannot reach in order to exercise the failure path.
 func dropStartupPrivileges(targetUID, targetGID int) error
 
 // reportStartupPrivilegeFailure reports err through HandlePreExecutionError using
