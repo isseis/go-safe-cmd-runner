@@ -298,6 +298,47 @@ func TestVerifyCommandShebangInterpreter_OldSchema(t *testing.T) {
 	assert.True(t, errors.As(err, &schemaErr), "expected SchemaVersionMismatchError, got: %v", err)
 }
 
+// TestVerifyCommandShebangInterpreter_HashDirUnavailable_Production verifies that
+// outside dry-run, a deferred hash-directory-unavailable error from LoadRecord
+// (ErrHashDirNotExist or a raw os.ErrPermission) is propagated as an error rather
+// than silently skipped. See issue #972: skipping unconditionally would fail-open
+// for a future caller that invokes shebang verification standalone.
+func TestVerifyCommandShebangInterpreter_HashDirUnavailable_Production(t *testing.T) {
+	for name, deferredErr := range map[string]error{
+		"HashDirNotExist": filevalidator.ErrHashDirNotExist,
+		"Permission":      os.ErrPermission,
+	} {
+		t.Run(name, func(t *testing.T) {
+			mockFV := newMockFVForShebang()
+			mockFV.schemaErr["/usr/local/bin/script.sh"] = deferredErr
+
+			m := setupManagerWithMockValidator(t, mockFV)
+			err := m.VerifyCommandShebangInterpreter("/usr/local/bin/script.sh", map[string]string{})
+			require.Error(t, err, "production mode must fail closed, not skip")
+		})
+	}
+}
+
+// TestVerifyCommandShebangInterpreter_HashDirUnavailable_DryRun verifies that in
+// dry-run mode, the same deferred hash-directory-unavailable errors are still
+// soft-failed (skip, no error) so the dry-run preview is not aborted.
+func TestVerifyCommandShebangInterpreter_HashDirUnavailable_DryRun(t *testing.T) {
+	for name, deferredErr := range map[string]error{
+		"HashDirNotExist": filevalidator.ErrHashDirNotExist,
+		"Permission":      os.ErrPermission,
+	} {
+		t.Run(name, func(t *testing.T) {
+			mockFV := newMockFVForShebang()
+			mockFV.schemaErr["/usr/local/bin/script.sh"] = deferredErr
+
+			m := setupManagerWithMockValidator(t, mockFV)
+			m.isDryRun = true
+			err := m.VerifyCommandShebangInterpreter("/usr/local/bin/script.sh", map[string]string{})
+			assert.NoError(t, err, "dry-run mode must soft-fail, not abort the preview")
+		})
+	}
+}
+
 // TestVerifyCommandShebangInterpreter_EnvForm_HashMismatch verifies that a hash
 // mismatch on the env-form resolved_path binary (i.e. the interpreter found via
 // PATH has been tampered with) is propagated as ErrMismatch.

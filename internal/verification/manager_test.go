@@ -2110,3 +2110,32 @@ func TestHasMachODynamicLibraryDeps_ErrorPropagation(t *testing.T) {
 	assert.False(t, hasDeps)
 	assert.Contains(t, err.Error(), "injected I/O error")
 }
+
+// TestIsDeferredHashDirUnavailable_GatedByDryRun verifies that
+// isDeferredHashDirUnavailable only reports true (skip) when the manager is in
+// dry-run mode. Outside dry-run, dependent checks (dynlib, shebang) must fail
+// closed on a missing/unreadable hash directory rather than silently skip, since
+// a future caller invoking those checks standalone (not preceded by
+// VerifyGroupFiles) would otherwise fail-open. See issue #972.
+func TestIsDeferredHashDirUnavailable_GatedByDryRun(t *testing.T) {
+	deferredErrs := map[string]error{
+		"HashDirNotExist": filevalidator.ErrHashDirNotExist,
+		"Permission":      os.ErrPermission,
+	}
+
+	for name, err := range deferredErrs {
+		t.Run(name+"/DryRun", func(t *testing.T) {
+			m := &Manager{isDryRun: true}
+			assert.True(t, m.isDeferredHashDirUnavailable(err))
+		})
+		t.Run(name+"/Production", func(t *testing.T) {
+			m := &Manager{isDryRun: false}
+			assert.False(t, m.isDeferredHashDirUnavailable(err))
+		})
+	}
+
+	// An unrelated error is never treated as deferred, in either mode.
+	other := errors.New("some other error")
+	assert.False(t, (&Manager{isDryRun: true}).isDeferredHashDirUnavailable(other))
+	assert.False(t, (&Manager{isDryRun: false}).isDeferredHashDirUnavailable(other))
+}
