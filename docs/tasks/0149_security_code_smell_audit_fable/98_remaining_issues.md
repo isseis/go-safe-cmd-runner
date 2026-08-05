@@ -134,7 +134,7 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
   - **I-5**: verify のパッケージレベル変数注入と record の `deps` 構造体注入の様式乖離。未対応。`cmd/verify/main.go` は依然 `validatorFactory`/`mkdirAll` をパッケージレベル変数で注入し、`cmd/record/main.go` の `deps` 構造体方式と乖離したまま。付随する `cacheDir`/`machoCacheDir` の重複計算（`cmd/record/main.go`）も解消されていない。
   - **I-6**: bootstrap/logger のグローバル可変状態。未対応。`redactionErrorCollector`/`phase1BaseHandlers` 等のパッケージグローバル変数によるフェーズ間受け渡しは変わらず、`LoggerBootstrap` 相当の構造体化は行われていない。
   - → [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) を作成済み。
-- 上記以外の各コンポーネントの Info 所見全般（A5, A7, D2 の Info 群など）は個別 issue 化していない。詳細は各 `findings/*.md` を参照。
+- 上記以外の各コンポーネントの Info 所見全般（A5, D2 の Info 群など。※A7 の Info 群は #985 に含む）は個別 issue 化していない。詳細は各 `findings/*.md` を参照。
 
 ---
 
