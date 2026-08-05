@@ -77,11 +77,15 @@ model:
   here misses findings, which is the expensive failure mode.
 - **Verification re-review** — confirms that a bounded, already-located set of
   Critical/Major fixes was applied correctly and introduced no regression. This is
-  a narrower check and **may run on a cheaper model**. When spawning the
-  verification subagent, pass the explicit list of fixes to confirm and request a
-  cheaper model (the Agent tool's `model` parameter, e.g. a faster/cheaper tier);
-  if the cheaper pass reports anything ambiguous or a new Critical/Major issue,
-  re-run that pass once on the default model before trusting it.
+  a narrower check and **may run on a cheaper model than the discovery pass**. When
+  spawning the verification subagent, pass the explicit list of fixes to confirm and
+  request a cheaper model (the Agent tool's `model` parameter, e.g. a faster/cheaper
+  tier); if the cheaper pass reports anything ambiguous or a new Critical/Major
+  issue, re-run that pass once on the default model before trusting it. If the
+  calling command supplied MODEL for the discovery pass, that MODEL is already the
+  minimum competence the task requires — use the same MODEL for verification too,
+  rather than downgrading further (e.g. to haiku); a task pinned to Sonnet because it
+  needs Sonnet-level judgment needs that same judgment to verify a fix, not less.
 
 This keeps recall where it matters (discovery) while cutting cost on the repeated
 confirmation passes. It composes with panel mode below: the discovery panel runs
