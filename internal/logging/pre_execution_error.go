@@ -40,6 +40,9 @@ const (
 	ErrorTypeSystemError ErrorType = "system_error"
 	// ErrorTypeGroupFileVerification represents group file verification failures
 	ErrorTypeGroupFileVerification ErrorType = "group_file_verification_failed"
+	// ErrorTypeInvalidRunID represents a --run-id value that does not match the
+	// accepted format.
+	ErrorTypeInvalidRunID ErrorType = "invalid_run_id"
 )
 
 // PreExecutionError represents an error that occurs before command execution

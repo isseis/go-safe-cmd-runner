@@ -314,12 +314,14 @@ run ID の受理形式を1箇所で定義し、入口検証（`cmd/runner`）と
 ```go
 // internal/logging/runid.go
 
-// MaxRunIDLength is the maximum number of characters a run ID may contain.
+// MaxRunIDLength is the maximum number of bytes a run ID may contain. Accepted
+// values are ASCII by construction, so for them bytes and characters coincide.
 const MaxRunIDLength = 64
 
 // RunIDFormatDescription describes the accepted run ID format. It is safe to
-// print: it is a constant and never contains any part of a rejected value.
-const RunIDFormatDescription = "1-64 characters, each of A-Z a-z 0-9 '_' '-'"
+// print: it is derived from MaxRunIDLength and never contains any part of a
+// rejected value.
+var RunIDFormatDescription = fmt.Sprintf("1-%d characters, each of A-Z a-z 0-9 '_' '-'", MaxRunIDLength)
 
 // ErrInvalidRunID is returned when a run ID does not match the accepted format.
 var ErrInvalidRunID = errors.New("invalid run ID")
@@ -331,15 +333,18 @@ func GenerateRunID() string
 // ValidateRunID reports whether runID matches the accepted format, returning an
 // error wrapping ErrInvalidRunID when it does not.
 //
-// The returned error never contains the rejected value verbatim. When the value
-// contains a disallowed byte, the error identifies that byte's index and its
-// Go-quoted form (%q), which escapes newline, NUL, ESC and quote characters.
+// The returned error never contains more than a single byte of the rejected
+// value: when the value contains a disallowed byte, the error identifies that
+// byte's index and its Go-quoted form (%q), which escapes newline, NUL, ESC and
+// quote characters. A one-byte rejected value is therefore reproduced in full
+// (in %q form) — that is the whole of the exposure, and it cannot break log
+// line structure.
 func ValidateRunID(runID string) error
 ```
 
 **設計上の要点**
 
-- `ValidateRunID` が返すエラーは、拒否された値を原文のまま含まない。これは P-2 を関数の契約として担保するものであり、この契約があるおかげで呼び出し側は「エラーメッセージをそのまま出力してよいか」を都度考えなくて済む。
+- `ValidateRunID` が返すエラーは、拒否された値のうち**高々1バイト**しか含まない（そのバイトも `%q` 形式）。これは P-2 を関数の契約として担保するものであり、この契約があるおかげで呼び出し側は「エラーメッセージをそのまま出力してよいか」を都度考えなくて済む。長さ1の不正値の場合はその1バイトが `%q` 形式で全体として再現されるが、`%q` が行構造を壊す文字をすべてエスケープするため P-2 は破られない。
 - ただし「理由の分類と長さだけ」では診断に不十分である。CI が `--run-id "$SOME_VAR"` を渡して拒否された場合、原因が末尾の改行なのか、Windows ランナー由来の CR なのか、区切り文字の `:` なのかを、利用者が判別できない。そこで**最初に違反したバイトの位置と `%q` 形式**をエラーに含める。`%q` は改行・NUL・ESC・引用符をすべてエスケープするため、1バイトの `%q` 表現は行構造を壊せず、P-2 を破らない。値全体は依然として出力しない。
 - 許可リストによる判定であり、拒否すべき文字を列挙する方式は採らない（AC-04）。
 - 空文字列は `ValidateRunID` としては拒否する（長さ1以上を要求）。「未指定と同一に扱う」という AC-02 の判断は `resolveRunID`（§3.2.2）の責務であり、空文字列を検証関数に渡す前に分岐する。この分離により、`bootstrap` 側の多層防御（§3.3）では空文字列も正しく拒否される。
@@ -796,7 +801,7 @@ flowchart LR
 
 ### 7.1 単体テスト
 
-- **`internal/logging/runid_test.go`**: 受理形式の境界（長さ1、長さ64、長さ65）、許可文字の全種別、拒否ケース（`/`・`..`・空白・実際の改行文字・NUL・ESC・マルチバイト文字・空文字列）、`RunIDFormatDescription` が受理形式を正しく説明していること、および「返されたエラーに入力値が原文の部分文字列として現れないこと」。最後の観点は P-2 を守る要であるため拒否ケースごとに検査する。§3.1 の方針により違反バイト1個の `%q` 表現はエラーに含まれるため、この主張は「原文のまま（未エスケープで）現れないこと」として検査する。
+- **`internal/logging/runid_test.go`**: 受理形式の境界（長さ1、長さ64、長さ65）、許可文字の全種別、拒否ケース（`/`・`..`・空白・実際の改行文字・NUL・ESC・マルチバイト文字・空文字列）、`RunIDFormatDescription` が受理形式を正しく説明していること、および「返されたエラーに入力値が原文の部分文字列として現れないこと」。最後の観点は P-2 を守る要であるため拒否ケースごとに検査する。§3.1 の方針により違反バイト1個の `%q` 表現はエラーに含まれるため、この主張は「入力値のうち2バイト以上の並びが原文のまま（未エスケープで）現れないこと」として検査する。
 - **`cmd/runner/main_test.go`**: `resolveRunID` の全分岐（未指定・空文字列・受理・拒否）。
 - **`cmd/runner/startup_privilege_test.go`**: §7.2 の振る舞いテスト。
 - **`internal/runner/bootstrap/logger_test.go`**: 不正な `RunID` を渡すとエラーが返り、ログディレクトリにファイルが1件も作られないこと（AC-11・AC-12）。
