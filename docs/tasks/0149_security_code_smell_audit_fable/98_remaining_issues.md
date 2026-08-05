@@ -20,15 +20,15 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
 
 ### E1（entrypoints）M-1: `--run-id` が未検証のままログファイル名・ログ行に埋め込まれる
 
-未対応。`cmd/runner/main.go` の `run-id` フラグはユーザー指定値をそのまま `logger.go:138` の `filepath.Join` に渡しており、ULID 形式検証・`filepath.Base` チェックのいずれも追加されていない。パストラバーサル（`--log-dir` 外へのファイル作成）およびログ行注入（RUN_SUMMARY の偽装）が引き続き可能。
+未対応。`cmd/runner/main.go` の `run-id` フラグはユーザー指定値をそのまま `logger.go:138` の `filepath.Join` に渡しており、ULID 形式検証・`filepath.Base` チェックのいずれも追加されていない。パストラバーサル（`--log-dir` 外へのファイル作成）およびログ行注入（RUN_SUMMARY の偽装）が引き続き可能。→ [#974](https://github.com/isseis/go-safe-cmd-runner/issues/974)（E1 M-1/M-2/M-3 まとめタスク）を作成済み。
 
 ### E1（entrypoints）M-2: 起動時特権降格が euid のみ（egid・補助グループ未降格）
 
-未対応。`cmd/runner/main.go:109` は依然 `syscall.Seteuid(syscall.Getuid())` のみで `Setegid` 呼び出しはなく、`flag.Parse()`（:95）より後で実行される順序も変わっていない。**0157/0160 で整理された「特権実行を exec 時の `syscall.Credential` 指定に一本化する」仕組みは、実行するコマンドへの per-command 特権付与を扱うものであり、`runner` バイナリ自身が setuid-root として起動した直後の自己降格（本所見の対象）とは別レイヤーである。したがって本所見は 0157/0160/0161 のいずれによっても解消されていない。**
+未対応。`cmd/runner/main.go:109` は依然 `syscall.Seteuid(syscall.Getuid())` のみで `Setegid` 呼び出しはなく、`flag.Parse()`（:95）より後で実行される順序も変わっていない。**0157/0160 で整理された「特権実行を exec 時の `syscall.Credential` 指定に一本化する」仕組みは、実行するコマンドへの per-command 特権付与を扱うものであり、`runner` バイナリ自身が setuid-root として起動した直後の自己降格（本所見の対象）とは別レイヤーである。したがって本所見は 0157/0160/0161 のいずれによっても解消されていない。** → [#974](https://github.com/isseis/go-safe-cmd-runner/issues/974)（E1 M-1/M-2/M-3 まとめタスク）を作成済み。
 
 ### E1（entrypoints）M-3: verify の TOCTOU チェックが fail-open（警告のみで続行）
 
-未対応。`cmd/verify/main.go` の TOCTOU チェックのコメント「Violations are logged as warnings only — verify continues even if the check fails.」は現行のまま存置されており、戻り値で `run` を打ち切る分岐はない。record（fail-closed）との非対称も残る。
+未対応。`cmd/verify/main.go` の TOCTOU チェックのコメント「Violations are logged as warnings only — verify continues even if the check fails.」は現行のまま存置されており、戻り値で `run` を打ち切る分岐はない。record（fail-closed）との非対称も残る。→ [#974](https://github.com/isseis/go-safe-cmd-runner/issues/974)（E1 M-1/M-2/M-3 まとめタスク）を作成済み。
 
 ### D2（logging/redaction）
 
@@ -36,6 +36,7 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
 - **M-4**: `ValueDetector` パターン網羅性（GitHub fine-grained PAT、JWT 等）。
 - **M-5**: Slack 送信の同期ブロッキング。
 - 0154（P2 redaction 境界統一）はいずれも「根本原因（`slog.Any` 未再帰）とは独立した所見」として対象外とした。詳細は `findings/D2_logging_redaction.md` を参照。
+- → [#975](https://github.com/isseis/go-safe-cmd-runner/issues/975)（D2 M-2/M-4/M-5 まとめタスク）を作成済み。
 
 ---
 
@@ -45,12 +46,14 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
 
 - **L-2**: 非 CGO 版実装がローカルファイル（`/etc/group`・`/etc/passwd`）のみを参照するため、LDAP/SSSD 等の NSS ディレクトリ管理メンバーが列挙結果に現れない。0151 は「列挙 API がエラーを返した場合」の fail-closed 化のみを対象とし、本件（NSS を経由しないため件数が過少に見える）は明示的に対象外としている。
 - **L-3**: L-2 と同系統の残存リスクとして 0151/0153 で言及されているが、個別タスクの対象にはなっていない。
+- → [#976](https://github.com/isseis/go-safe-cmd-runner/issues/976) を作成済み。
 
 ### A1（privilege）
 
 - **L-2**: 昇格・復元処理でテスト注入フィールド（`syscallSeteuid`/`syscallSetegid` 相当）を使わない構造。0157 はむしろ当該フィールドを削除する方向で対応しており、L-2 の推奨（注入フィールドを実経路でも使う）とは方向が逆。0157 に着手する時点で「必要な注入点を改めて設計する方が健全」と判断し見送られた。
 - **L-3**: metrics の恒偽項（常に真になる記録項目）。いずれのタスクの対象にもなっていない。
 - **L-4**: 再入デッドロックの可能性。いずれのタスクの対象にもなっていない。
+- → [#977](https://github.com/isseis/go-safe-cmd-runner/issues/977) を作成済み。
 
 ### B1（safefileio）
 
@@ -60,6 +63,7 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
   - F-4: ロールバック欠如
   - F-5: `Remove` の安全性契約
   - F-6〜F-9: 詳細は `findings/B1_safefileio.md` を参照
+- → [#978](https://github.com/isseis/go-safe-cmd-runner/issues/978) を作成済み。
 
 ### B2（filevalidator）
 
@@ -68,34 +72,41 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
   - B2-4, B2-5: エラーハンドリング
   - B2-6: Mach-O 解析の縮退
   - B2-7〜B2-13: 詳細は `findings/B2_filevalidator.md` を参照
+- → [#979](https://github.com/isseis/go-safe-cmd-runner/issues/979) を作成済み。
 
 ### B3（verification）
 
 - **L2**: 詳細は `findings/B3_verification.md` を参照。いずれのタスクの対象にもなっていない。
+- → [#980](https://github.com/isseis/go-safe-cmd-runner/issues/980) を作成済み。
 
 ### C1（binary analysis）
 
 - **F-2〜F-8**: 0153 は F-1（syscall analysis store の想定外エラー）のみを対象とし、残りの頑健性・保守性所見（F-2〜F-8）は「fail-open の実害が限定的、または既に fail-closed 方向」として対象外。詳細は `findings/C1_binary_analysis.md` を参照。
+- → [#981](https://github.com/isseis/go-safe-cmd-runner/issues/981) を作成済み。
 
 ### C2（dynlib）
 
 - **F-2**: ld.so.cache の `Flags`/`HWCap` 無視。
 - **F-4**: `ResolveRealPath` のエラー種別非区別。
 - **F-6〜F-11**: libccache キャッシュ検証強化など。0153・0155 いずれの対象にも含まれない。詳細は `findings/C2_dynlib.md` を参照。
+- → [#982](https://github.com/isseis/go-safe-cmd-runner/issues/982) を作成済み。
 
 ### C3（shebang/fileanalysis）
 
 - **F1, F2, F4 以降**: 0157 は F3（`SaveSyscallAnalysis` の不整合レコード生成・未使用ストアの削除）のみを対象とした。残りの shebang/fileanalysis 所見は未着手。詳細は `findings/C3_shebang_fileanalysis.md` を参照。
+- → [#983](https://github.com/isseis/go-safe-cmd-runner/issues/983) を作成済み。
 
 ### A3（environment）
 
 - **F-6**: `ParseSystemEnvironment` が不正形式エントリを無音スキップする（挙動変更を伴うため 0157 は対象外とした）。
 - **F-7**: allowlist 判定ロジックの分散（設計変更を伴うため 0157 は対象外とした）。
+- → [#984](https://github.com/isseis/go-safe-cmd-runner/issues/984) を作成済み。
 
 ### A7（audit）
 
 - **L-1**: severity 判定の二重実装・fail-open。
 - **L-2**: `chain[].path` の redaction 非適用。0154 の根本原因修正（`slog.Any` の map 要素への再帰的 redaction）により副次的に緩和され得るが、明示的な対応は行っていない。
+- → [#985](https://github.com/isseis/go-safe-cmd-runner/issues/985) を作成済み（Info I-1〜I-5 含む）。
 
 ### E1（entrypoints）
 
@@ -106,6 +117,7 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
 - **L-5**: ログファイル名のタイムスタンプが実際はローカル時刻なのに `Z`（UTC）表記。未対応。`internal/runner/bootstrap/logger.go:77` は `time.Now().Format("20060102T150405Z")` のままで `.UTC()` 変換はない。
 - **L-6**: Phase 1/Phase 2 間のエラー（設定改ざん検出含む）が Slack 未通知。未対応。`cmd/runner/main.go` の `SetupLogging` → `LoadAndPrepareConfig` → `SetupSlackLogging` の順序は変わらず、設定ロード失敗時点では Slack ハンドラが未登録のまま。
 - **L-7**: `DirectoryPermChecker` 初期化失敗時に3箇所とも panic。未対応。`cmd/runner/main.go`・`cmd/record/main.go`・`cmd/verify/main.go` のいずれも `NewDirectoryPermChecker` 失敗時に同一の `panic(fmt.Sprintf(...))` を実行する実装のまま。
+- → [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) を作成済み（Info I-1〜I-6 含む）。
 
 ---
 
@@ -121,7 +133,8 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
   - **I-4**: `normalizeSlackAllowedHost` の IPv6 分岐で大文字小文字未統一。未対応。`internal/runner/bootstrap/config.go` の IPv6 分岐は引き続き `u.Hostname()` を無変換で返し、ホスト名分岐のみ `strings.ToLower`（:54）を適用する非対称が残る。
   - **I-5**: verify のパッケージレベル変数注入と record の `deps` 構造体注入の様式乖離。未対応。`cmd/verify/main.go` は依然 `validatorFactory`/`mkdirAll` をパッケージレベル変数で注入し、`cmd/record/main.go` の `deps` 構造体方式と乖離したまま。付随する `cacheDir`/`machoCacheDir` の重複計算（`cmd/record/main.go`）も解消されていない。
   - **I-6**: bootstrap/logger のグローバル可変状態。未対応。`redactionErrorCollector`/`phase1BaseHandlers` 等のパッケージグローバル変数によるフェーズ間受け渡しは変わらず、`LoggerBootstrap` 相当の構造体化は行われていない。
-- 上記以外の各コンポーネントの Info 所見全般。詳細は各 `findings/*.md` を参照。
+  - → [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) を作成済み。
+- 上記以外の各コンポーネントの Info 所見全般（A5, A7, D2 の Info 群など）は個別 issue 化していない。詳細は各 `findings/*.md` を参照。
 
 ---
 
