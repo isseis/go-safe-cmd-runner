@@ -115,28 +115,28 @@
 
 **作業内容**
 
-- [ ] `internal/logging/runid.go` を新規作成し、`MaxRunIDLength`・`RunIDFormatDescription`・`ErrInvalidRunID`・`ValidateRunID` を定義する。シグネチャとドキュメントコメントの要件は `02_architecture.md` §3.1 に従う。
-- [ ] `RunIDFormatDescription` を `MaxRunIDLength` から導出する（`fmt.Sprintf("1-%d characters, each of A-Z a-z 0-9 '_' '-'", MaxRunIDLength)` を `var` で定義する）。定数どうしに数値を二重に書かないことで、上限値を変えたときに説明文だけが古いまま残るのを防ぐ。
-- [ ] `ValidateRunID` を許可リスト方式で実装する。長さ 0 と `MaxRunIDLength` 超過を拒否し、`A-Z` `a-z` `0-9` `_` `-` 以外のバイトを1つでも含む値を拒否する。
-- [ ] `ValidateRunID` が返すエラーに、最初に違反したバイトの位置（0 始まりのインデックス）とそのバイトの `%q` 表現のみを含め、入力値全体は含めない。エラーは `ErrInvalidRunID` をラップする。
-- [ ] `GenerateRunID` を `internal/logging/safeopen.go`（56〜60行目）から `internal/logging/runid.go` へ移設する。実装は変更せず、ドキュメントコメントに「出力は常に `ValidateRunID` を満たす」旨を追記する。
-- [ ] `internal/logging/pre_execution_error.go` の `ErrorType` 定数群に `ErrorTypeInvalidRunID ErrorType = "invalid_run_id"` を追加する（`02_architecture.md` §4.1）。
+- [x] `internal/logging/runid.go` を新規作成し、`MaxRunIDLength`・`RunIDFormatDescription`・`ErrInvalidRunID`・`ValidateRunID` を定義する。シグネチャとドキュメントコメントの要件は `02_architecture.md` §3.1 に従う。
+- [x] `RunIDFormatDescription` を `MaxRunIDLength` から導出する（`fmt.Sprintf("1-%d characters, each of A-Z a-z 0-9 '_' '-'", MaxRunIDLength)` を `var` で定義する）。定数どうしに数値を二重に書かないことで、上限値を変えたときに説明文だけが古いまま残るのを防ぐ。
+- [x] `ValidateRunID` を許可リスト方式で実装する。長さ 0 と `MaxRunIDLength` 超過を拒否し、`A-Z` `a-z` `0-9` `_` `-` 以外のバイトを1つでも含む値を拒否する。
+- [x] `ValidateRunID` が返すエラーに、最初に違反したバイトの位置（0 始まりのインデックス）とそのバイトの `%q` 表現のみを含め、入力値全体は含めない。エラーは `ErrInvalidRunID` をラップする。
+- [x] `GenerateRunID` を `internal/logging/safeopen.go`（56〜60行目）から `internal/logging/runid.go` へ移設する。実装は変更せず、ドキュメントコメントに「出力は常に `ValidateRunID` を満たす」旨を追記する。
+- [x] `internal/logging/pre_execution_error.go` の `ErrorType` 定数群に `ErrorTypeInvalidRunID ErrorType = "invalid_run_id"` を追加する（`02_architecture.md` §4.1）。
 
 **テスト**
 
-- [ ] `internal/logging/runid_test.go` に `TestValidateRunID_AcceptsAllowedCharacters` を追加し、大文字・小文字・数字・`_`・`-` のみからなる値（`my-custom-run-001`、`gh-12345678`、`A_b-9` など）が受理されることを検証する。ULID の受理は `TestGenerateRunID_SatisfiesValidateRunID` が担当するため、ここには含めない。
-- [ ] `TestValidateRunID_LengthBoundaries` を追加し、長さ 1（受理）・`MaxRunIDLength`（受理）・`MaxRunIDLength+1`（拒否）・0（拒否）を検証する。境界値はリテラルではなく `MaxRunIDLength` から算出し、上限値の変更にテストが追随するようにする。
-- [ ] `TestValidateRunID_RejectsNonAllowlistedValues` を追加し、`../../etc/cron.d/evil`、`/tmp/evil`、`..`、`a.b`、`a b`、実際の改行を含む値、NUL（`"a\x00b"`）、ESC（`"a\x1bb"`）、マルチバイト文字（`"ラン"`）、`%` を含む値をすべて拒否し、返るエラーが `errors.Is(err, ErrInvalidRunID)` を満たすことを検証する。
-- [ ] `TestValidateRunID_ErrorOmitsRejectedValue` を追加し、上記の各拒否ケースについて、返るエラーの文字列が入力値全体を部分文字列として含まないことを検証する。入力値は 2 文字以上とし、違反バイト1個の `%q` 表現がそのまま入力値全体と一致しないようにする。
-- [ ] `TestRunIDFormatDescription_ReflectsMaxRunIDLength` を追加し、`strings.Contains(RunIDFormatDescription, strconv.Itoa(MaxRunIDLength))` が真であることを検証する。`RunIDFormatDescription` は `MaxRunIDLength` から導出されるため、上限値だけを変えて説明文が古いまま残る状態をこのテストが検出する。
-- [ ] `TestGenerateRunID_Uniqueness`（`internal/logging/safeopen_test.go:122`）を `internal/logging/runid_test.go` へ移設する。アサーションは変更しない。
-- [ ] `TestGenerateRunID_Format`（`internal/logging/safeopen_test.go:139`）を `internal/logging/runid_test.go` へ移設する。アサーションは変更しない。
-- [ ] `TestGenerateRunID_SatisfiesValidateRunID` を追加し、`GenerateRunID()` の出力が `ValidateRunID` を通過することを検証する。
+- [x] `internal/logging/runid_test.go` に `TestValidateRunID_AcceptsAllowedCharacters` を追加し、大文字・小文字・数字・`_`・`-` のみからなる値（`my-custom-run-001`、`gh-12345678`、`A_b-9` など）が受理されることを検証する。ULID の受理は `TestGenerateRunID_SatisfiesValidateRunID` が担当するため、ここには含めない。
+- [x] `TestValidateRunID_LengthBoundaries` を追加し、長さ 1（受理）・`MaxRunIDLength`（受理）・`MaxRunIDLength+1`（拒否）・0（拒否）を検証する。境界値はリテラルではなく `MaxRunIDLength` から算出し、上限値の変更にテストが追随するようにする。
+- [x] `TestValidateRunID_RejectsNonAllowlistedValues` を追加し、`../../etc/cron.d/evil`、`/tmp/evil`、`..`、`a.b`、`a b`、実際の改行を含む値、NUL（`"a\x00b"`）、ESC（`"a\x1bb"`）、マルチバイト文字（`"ラン"`）、`%` を含む値をすべて拒否し、返るエラーが `errors.Is(err, ErrInvalidRunID)` を満たすことを検証する。
+- [x] `TestValidateRunID_ErrorOmitsRejectedValue` を追加し、上記の各拒否ケースについて、返るエラーの文字列が入力値全体を部分文字列として含まないことを検証する。入力値は 2 文字以上とし、違反バイト1個の `%q` 表現がそのまま入力値全体と一致しないようにする。
+- [x] `TestRunIDFormatDescription_ReflectsMaxRunIDLength` を追加し、`strings.Contains(RunIDFormatDescription, strconv.Itoa(MaxRunIDLength))` が真であることを検証する。`RunIDFormatDescription` は `MaxRunIDLength` から導出されるため、上限値だけを変えて説明文が古いまま残る状態をこのテストが検出する。
+- [x] `TestGenerateRunID_Uniqueness`（`internal/logging/safeopen_test.go:122`）を `internal/logging/runid_test.go` へ移設する。アサーションは変更しない。
+- [x] `TestGenerateRunID_Format`（`internal/logging/safeopen_test.go:139`）を `internal/logging/runid_test.go` へ移設する。アサーションは変更しない。
+- [x] `TestGenerateRunID_SatisfiesValidateRunID` を追加し、`GenerateRunID()` の出力が `ValidateRunID` を通過することを検証する。
 
 **完了条件**
 
-- [ ] `go test -tags test ./internal/logging/...` が成功する。
-- [ ] `rg -n "func GenerateRunID" internal/logging/safeopen.go` が 0 件、`rg -n "func GenerateRunID" internal/logging/runid.go` が 1 件である。
+- [x] `go test -tags test ./internal/logging/...` が成功する。
+- [x] `rg -n "func GenerateRunID" internal/logging/safeopen.go` が 0 件、`rg -n "func GenerateRunID" internal/logging/runid.go` が 1 件である。
 
 ### PR-1 作成ポイント: run ID format primitives
 

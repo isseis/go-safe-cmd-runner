@@ -3,7 +3,6 @@ package logging
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -116,36 +115,6 @@ func TestOpenFile_SymlinkAttack(t *testing.T) {
 			file.Close()
 		}
 		assert.Error(t, err, "OpenFile() should reject symlinks")
-	}
-}
-
-func TestGenerateRunID_Uniqueness(t *testing.T) {
-	// Generate multiple IDs and verify they are unique
-	ids := make(map[string]bool)
-	iterations := 100
-
-	for range iterations {
-		id := GenerateRunID()
-
-		assert.NotEmpty(t, id, "GenerateRunID() returned empty string")
-		assert.False(t, ids[id], "GenerateRunID() generated duplicate ID: %s", id)
-
-		ids[id] = true
-	}
-
-	assert.Equal(t, iterations, len(ids))
-}
-
-func TestGenerateRunID_Format(t *testing.T) {
-	id := GenerateRunID()
-
-	// ULID should be 26 characters
-	assert.Equal(t, 26, len(id))
-
-	// ULID should only contain specific characters (Crockford's Base32)
-	validChars := "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-	for _, c := range id {
-		assert.True(t, strings.ContainsRune(validChars, c), "GenerateRunID() returned ID with invalid character: %c", c)
 	}
 }
 
