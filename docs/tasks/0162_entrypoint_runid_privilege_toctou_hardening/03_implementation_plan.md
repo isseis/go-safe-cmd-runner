@@ -564,11 +564,11 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 
 ### PR-1: run ID の形式定義（Phase 1）
 
-- [ ] `internal/logging/runid.go` の新規作成（`MaxRunIDLength`・`MaxRunIDLength` から導出する `RunIDFormatDescription`・`ErrInvalidRunID`・`ValidateRunID`）
-- [ ] `GenerateRunID` の `safeopen.go` からの移設
-- [ ] `ErrorTypeInvalidRunID` の追加
-- [ ] `internal/logging/runid_test.go` の新規作成（既存2テストの移設を含む8テスト）
-- [ ] `go test -tags test ./internal/logging/...` の成功
+- [x] `internal/logging/runid.go` の新規作成（`MaxRunIDLength`・`MaxRunIDLength` から導出する `RunIDFormatDescription`・`ErrInvalidRunID`・`ValidateRunID`）
+- [x] `GenerateRunID` の `safeopen.go` からの移設
+- [x] `ErrorTypeInvalidRunID` の追加
+- [x] `internal/logging/runid_test.go` の新規作成（既存2テストの移設を含む10テスト）
+- [x] `go test -tags test ./internal/logging/...` の成功
 - [ ] PR-1 マージ済み（対象ステップ: Phase 1）
 
 ### PR-2: ガード拡張と起動時特権降格（Phase 2 / Phase 3-A）
@@ -646,6 +646,8 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 
 各 AC の検証手段を `test`（実行可能。挙動が誤っていれば失敗する）／`static`（`rg`・コンパイル）／`manual`（PR 上での確認）で分類する。
 
+なお `internal/logging/runid_test.go::TestGenerateRunID_Uniqueness`・`::TestGenerateRunID_Format`・`::TestGenerateRunID_SatisfiesValidateRunID` は、特定の AC ではなく `GenerateRunID` の不変条件（一意性・ULID 形式・出力が常に `ValidateRunID` を満たすこと）を固定するテストであり、下表には行を持たない。
+
 | AC | 種別 | 検証場所またはコマンド | 期待結果 |
 |---|---|---|---|
 | AC-01 | test | `cmd/runner/main_test.go::TestResolveRunID`（サブテスト「flag unset」） | `flagValue == ""` のとき `bootstrapID` が返り、エラーが `nil` |
@@ -655,9 +657,9 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 | AC-05 | test | `internal/logging/runid_test.go::TestValidateRunID_RejectsNonAllowlistedValues`（`../../etc/cron.d/evil`・`/tmp/evil`・`..`）、`cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDPathTraversal` | 拒否される。E2E では終了コードが 1 |
 | AC-06 | test | `internal/logging/runid_test.go::TestValidateRunID_RejectsNonAllowlistedValues`（空白・改行・NUL・ESC）、`cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDNewlineInjection` | 拒否される。E2E では終了コードが 1 かつ `RUN_SUMMARY` を含む行が1行だけ |
 | AC-07 | test | `internal/logging/runid_test.go::TestValidateRunID_LengthBoundaries`、`cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDTooLong` | 長さ `MaxRunIDLength` は受理、`MaxRunIDLength+1` は拒否。E2E では終了コードが 1 |
-| AC-08 | test | `cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDPathTraversal` | 標準エラー出力に `invalid_run_id` が含まれる。`-log-dir` に渡した一時ディレクトリの `os.ReadDir` が 0 件、かつその直下に `etc` エントリが存在しない |
-| AC-09 | test | `internal/logging/runid_test.go::TestValidateRunID_ErrorOmitsRejectedValue`、`cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDPathTraversal` | エラー文字列と標準出力・標準エラー出力の全文のいずれにも入力値 `../../etc/cron.d/evil` が部分文字列として現れない。`RUN_SUMMARY` 行の `run_id` が `logging.ValidateRunID` を通過する |
-| AC-10 | test | `cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDPathTraversal` | 標準エラー出力が `logging.RunIDFormatDescription` の文字列を含む |
+| AC-08 | test | `internal/logging/runid_test.go::TestErrorTypeInvalidRunID_Token`、`cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDPathTraversal` | `ErrorTypeInvalidRunID` のトークン文字列が `invalid_run_id` に固定されている。標準エラー出力に `invalid_run_id` が含まれる。`-log-dir` に渡した一時ディレクトリの `os.ReadDir` が 0 件、かつその直下に `etc` エントリが存在しない |
+| AC-09 | test | `internal/logging/runid_test.go::TestValidateRunID_ErrorOmitsRejectedValue`、`::TestValidateRunID_ErrorIdentifiesFirstViolatingByte`、`cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDPathTraversal` | エラー文字列と標準出力・標準エラー出力の全文のいずれにも入力値 `../../etc/cron.d/evil` が部分文字列として現れない（`ErrorOmitsRejectedValue` は §3.1 の診断契約の「含まない」側、`ErrorIdentifiesFirstViolatingByte` は「違反バイトの位置と `%q` 表現を含む」側を検証する）。`RUN_SUMMARY` 行の `run_id` が `logging.ValidateRunID` を通過する |
+| AC-10 | test | `internal/logging/runid_test.go::TestRunIDFormatDescription_ReflectsMaxRunIDLength`、`cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDPathTraversal` | `RunIDFormatDescription` が `MaxRunIDLength` を反映している。標準エラー出力が `logging.RunIDFormatDescription` の文字列を含む |
 | AC-11 | test | `internal/runner/bootstrap/logger_test.go::TestSetupLoggerWithConfig_RejectsInvalidRunID` | `RunID` が `../evil`・`/tmp/evil` のときエラーが返り、`LogDir` の `os.ReadDir` が 0 件 |
 | AC-12 | test | `internal/runner/bootstrap/logger_test.go::TestSetupLoggerWithConfig_RejectsInvalidRunID` | 同テストは `SetupLoggerWithConfig` を直接呼ぶため、入口検証を経ない呼び出しでも防御が働くことを示す |
 | AC-13 | test | 既存テストの通過: `internal/runner/bootstrap/logger_test.go` 全体、`internal/runner/bootstrap/environment_test.go` 全体、`cmd/runner/integration_logger_test.go` 全体 | `go test -tags test ./internal/runner/bootstrap/... ./cmd/runner/...` が成功し、これらのファイルの `RunID` 値に差分がない |
