@@ -13,10 +13,15 @@ import (
 // values are ASCII by construction, so for them bytes and characters coincide.
 const MaxRunIDLength = 64
 
-// RunIDFormatDescription describes the accepted run ID format. It is safe to
+// runIDFormatDescription describes the accepted run ID format. It is safe to
 // print: it is derived from MaxRunIDLength and never contains any part of a
 // rejected value.
-var RunIDFormatDescription = fmt.Sprintf("1-%d characters, each of A-Z a-z 0-9 '_' '-'", MaxRunIDLength)
+var runIDFormatDescription = fmt.Sprintf("1-%d characters, each of A-Z a-z 0-9 '_' '-'", MaxRunIDLength)
+
+// RunIDFormatDescription returns a description of the accepted run ID format.
+func RunIDFormatDescription() string {
+	return runIDFormatDescription
+}
 
 // ErrInvalidRunID is returned when a run ID does not match the accepted format.
 var ErrInvalidRunID = errors.New("invalid run ID")
@@ -42,7 +47,7 @@ func ValidateRunID(runID string) error {
 		return fmt.Errorf("%w: run ID is empty", ErrInvalidRunID)
 	}
 	if len(runID) > MaxRunIDLength {
-		return fmt.Errorf("%w: length %d exceeds maximum %d", ErrInvalidRunID, len(runID), MaxRunIDLength)
+		return fmt.Errorf("%w: length %d bytes exceeds maximum %d bytes", ErrInvalidRunID, len(runID), MaxRunIDLength)
 	}
 	for i := range len(runID) {
 		if !isAllowedRunIDByte(runID[i]) {

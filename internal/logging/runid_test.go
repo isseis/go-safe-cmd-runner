@@ -159,7 +159,8 @@ func TestValidateRunID_ErrorIdentifiesFirstViolatingByte(t *testing.T) {
 }
 
 func TestRunIDFormatDescription_ReflectsMaxRunIDLength(t *testing.T) {
-	assert.True(t, strings.Contains(RunIDFormatDescription, strconv.Itoa(MaxRunIDLength)))
+	expected := "1-" + strconv.Itoa(MaxRunIDLength) + " characters, each of A-Z a-z 0-9 '_' '-'"
+	assert.Equal(t, expected, RunIDFormatDescription())
 }
 
 func TestErrorTypeInvalidRunID_Token(t *testing.T) {
