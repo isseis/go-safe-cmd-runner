@@ -14,9 +14,7 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
 
 > **D1 M-3 について**: 0160（基準UID決定方針の明示化）・0161（`SUDO_UID` の実在確認・記録）で解消済み。0161 は「呼び出し元の実 UID との突き合わせ」を対象外としたが、これは信頼できる突き合わせ手段が存在しないという技術的な結論であり（0161 要件定義書「突き合わせを対象外とする根拠」参照）、[#921](https://github.com/isseis/go-safe-cmd-runner/issues/921)（`runner` の native root 実行サポート）を実施しないと決定したことで、この残余リスクは今後再検討すべき残件ではなく恒久的に受容する既決事項として確定した。したがって D1 M-3 は本ドキュメントの一覧から除外する（D1 の他所見 L-2/L-3 は §2 に残る）。
 
-### B3（verification）M2: `isDeferredHashDirUnavailable` のゲート漏れ
-
-0153（P1 fail-open 横断修正）・0155（P3 TOCTOU 修正）のいずれの対象にも含まれず未着手。dry-run 限定でない箇所でのゲート漏れが残る。→ [#972](https://github.com/isseis/go-safe-cmd-runner/issues/972) を作成済み。
+> **B3 M2 について**: [#972](https://github.com/isseis/go-safe-cmd-runner/issues/972) で対応済み。`isDeferredHashDirUnavailable` を `Manager.isDeferredHashDirUnavailable` メソッド化し、`m.isDryRun` が true の場合にのみ skip（fail-open）を許可するようゲートした。dry-run 以外で `VerifyCommandDynLibDeps` / `VerifyCommandShebangInterpreter` が単独で呼ばれるコードパスでも、hash directory 不在・権限エラーはエラーとして伝播し fail-closed になる。したがって B3 M2 は本ドキュメントの一覧から除外する。
 
 ### E1（entrypoints）M-1: `--run-id` が未検証のままログファイル名・ログ行に埋め込まれる
 
