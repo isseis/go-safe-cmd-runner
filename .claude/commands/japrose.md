@@ -77,6 +77,10 @@ these inputs:
   target document is edited.
 - **CRITERIA**: every item from the Prose-quality checklist and the Hard constraints
   below, copied verbatim.
+- **MODEL**: `sonnet`. This review is a fixed-checklist Japanese prose/terminology
+  check, not open-ended architectural judgment, so it does not need the calling
+  command's model tier (e.g. Opus when invoked from `mkarch` / `mkplan`) — pin it to
+  Sonnet regardless of what model is driving the caller.
 
 **Prose-quality checklist (use verbatim as evaluation criteria in the subagent prompt above):**
 - [ ] 直訳調・英語語順の直訳（無生物主語の直訳、過剰な受動態、英語イディオムの逐語訳）が、意味を変えずに自然な日本語へ書き換えられている。

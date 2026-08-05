@@ -23,6 +23,12 @@ This is project-independent. It depends on nothing in `_context.md`.
   absolute path strings so the subagent does not rely on the caller's context.
 - **CRITERIA** — the checklist(s) the caller defines, to be copied verbatim into
   the subagent prompt.
+- **MODEL** (optional) — pins the discovery-pass model (the Agent tool's `model`
+  parameter) instead of inheriting the session's default model. Use this when the
+  reviewed task is known to be within a lighter model's competence regardless of
+  which model is driving the calling command (e.g. a fixed checklist-style prose or
+  style review, as opposed to open-ended architectural judgment). Omit MODEL to keep
+  the default behavior in "Model tiering" below.
 
 ## Procedure
 
@@ -65,8 +71,10 @@ model:
 
 - **Initial (discovery) review** — searches the whole ARTIFACT for unknown
   problems across every CRITERIA item. This is the hard, high-recall task; run it
-  on the session's default model. Do **not** downgrade it — a cheaper model here
-  misses findings, which is the expensive failure mode.
+  on the session's default model, unless the calling command supplies MODEL (see
+  "Inputs" above) to pin a specific model for a task it has judged suitable for a
+  lighter tier. Absent an explicit MODEL, do **not** downgrade it — a cheaper model
+  here misses findings, which is the expensive failure mode.
 - **Verification re-review** — confirms that a bounded, already-located set of
   Critical/Major fixes was applied correctly and introduced no regression. This is
   a narrower check and **may run on a cheaper model**. When spawning the
