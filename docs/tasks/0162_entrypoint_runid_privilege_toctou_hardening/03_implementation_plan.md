@@ -34,7 +34,7 @@
 
 - 設計判断は `02_architecture.md` を唯一の出典とし、本書では再掲しない。判断が必要な箇所では該当節を参照する。
 - Go のコメント・識別子・文字列リテラルはすべて英語で書く。本書の日本語の説明文をそのままコードへ持ち込まない。
-- 各フェーズの完了時に `make fmt` → `make test` → `make lint` を実行し、すべて成功した状態でフェーズを閉じる。
+- 各 PR の作成前に `make fmt` → `make test` → `make lint` を実行し、すべて成功した状態で PR を作成する（§3.2 の PR 構成、および各 `### PR-N 作成ポイント` を参照）。
 
 ### 1.3 既存コード調査結果
 
@@ -138,13 +138,30 @@
 - [ ] `go test -tags test ./internal/logging/...` が成功する。
 - [ ] `rg -n "func GenerateRunID" internal/logging/safeopen.go` が 0 件、`rg -n "func GenerateRunID" internal/logging/runid.go` が 1 件である。
 
+### PR-1 作成ポイント: run ID format primitives
+
+**対象ステップ**: Phase 1
+
+**推奨タイトル**: `feat(0162): add run ID format validation to internal/logging`
+
+**レビュー観点**: `ValidateRunID` が許可リスト方式であり、返すエラーに違反バイトの位置と `%q` 表現だけを含めて入力値全体を漏らさないか / `RunIDFormatDescription` が `MaxRunIDLength` から導出され、`TestRunIDFormatDescription_ReflectsMaxRunIDLength` が両者の乖離を検出できるか / `GenerateRunID` の移設で実装が変わっておらず、`safeopen.go` と `safeopen_test.go` に残存参照がないか / 長さ境界テストがリテラルではなく `MaxRunIDLength` から算出されているか
+
+**実装モデル要件**: standard
+
+**判定理由**: 該当するトリガーなし。定数・センチネルエラー・検証関数の追加と既存関数の同一パッケージ内移設に留まり、§1.3 に競合する実装案の記載はなく、統合テスト・CI・外部資源の面もセキュリティゲートの引き上げも含まない（この時点では検証はどの経路からも呼ばれない）。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ---
 
 ### Phase 2: `identitymutationguard` の拡張
 
 **対象ファイル**: `internal/testutil/identitymutationguard/helpers.go`
 
-`02_architecture.md` §7.2 が要求する2つの拡張（位置情報、追跡対象の呼び出し側指定）に、Phase 3 のガードテストが必要とする3点（呼び出し元ファイルの識別、同一パッケージの非修飾呼び出しの追跡、製品ファイルの列挙）を加えた計5点を実装する。追加の3点は `02_architecture.md` §7.2 には明記されていないが、同節の主張1〜4を成立させるために不可欠であるため、本計画の判断として Phase 2 の作業に含める。既存の2つのガードテスト（`internal/runner/resource/identity_mutation_guard_test.go`、`internal/runner/base/risktypes/identity_mutation_guard_test.go`）は無変更で通過させる。
+`02_architecture.md` §7.2 が要求する2つの拡張（位置情報、追跡対象の呼び出し側指定）に、Phase 3-A のガードテストが必要とする3点（呼び出し元ファイルの識別、同一パッケージの非修飾呼び出しの追跡、製品ファイルの列挙）を加えた計5点を実装する。追加の3点は `02_architecture.md` §7.2 には明記されていないが、同節の主張1〜4を成立させるために不可欠であるため、本計画の判断として Phase 2 の作業に含める。既存の2つのガードテスト（`internal/runner/resource/identity_mutation_guard_test.go`、`internal/runner/base/risktypes/identity_mutation_guard_test.go`）は無変更で通過させる。
 
 **作業内容**
 
@@ -153,13 +170,13 @@
 - [ ] 追跡対象を呼び出し側から追加指定するための型 `ExtraTrackedFunc{ImportPath, FuncName string}` と、`Options{Extra []ExtraTrackedFunc}` を追加する。
 - [ ] `RefsInSourceWithOptions(t *testing.T, filename, src string, opts Options) ([]CallSite, []ValueRef)` と `FindRefsWithOptions(t *testing.T, dir string, opts Options) ([]CallSite, []ValueRef)` を追加する。`RefsInSource` と `FindRefs` は空の `Options` を渡す薄いラッパーとして残す。
 - [ ] `scanner.trackedSelector` を、既存の `isTrackedImportPath` × `FuncNames` の判定に加えて `Options.Extra` の (import パス, 関数名) の完全一致でも真になるよう拡張する。追加指定した関数は `CallSite.SyscallName` にその関数名を入れる。
-- [ ] `ExtraTrackedFunc.ImportPath` が空文字列の場合は、`*ast.SelectorExpr` ではなく**非修飾の `*ast.Ident`** の呼び出し（同一パッケージの関数呼び出し）に一致させる分岐を `scanner.visit` に追加する。Phase 3 の主張2 が追跡する `dropStartupPrivileges` は `cmd/runner` 内の関数であり、現行の `trackedSelector` は `*ast.SelectorExpr` でない式に対して即座に false を返すため（[helpers.go:258-261](../../../internal/testutil/identitymutationguard/helpers.go#L258-L261)）、この分岐がないと主張2 が成立しない。非修飾識別子については `ValueRef` の検出は行わない（同一パッケージ内では値参照の検出が過剰検知になるため）。
+- [ ] `ExtraTrackedFunc.ImportPath` が空文字列の場合は、`*ast.SelectorExpr` ではなく**非修飾の `*ast.Ident`** の呼び出し（同一パッケージの関数呼び出し）に一致させる分岐を `scanner.visit` に追加する。Phase 3-A の主張2 が追跡する `dropStartupPrivileges` は `cmd/runner` 内の関数であり、現行の `trackedSelector` は `*ast.SelectorExpr` でない式に対して即座に false を返すため（[helpers.go:258-261](../../../internal/testutil/identitymutationguard/helpers.go#L258-L261)）、この分岐がないと主張2 が成立しない。非修飾識別子については `ValueRef` の検出は行わない（同一パッケージ内では値参照の検出が過剰検知になるため）。
 - [ ] 製品 `.go` ファイルのパスを列挙する `ProductionGoFiles(t *testing.T, dir string) []string` を追加する。除外条件は `FindRefs` と同一（ディレクトリ、非 `.go`、`_test.go`、`//go:build` が `test` タグを積極的に要求するファイル）とし、`FindRefs` 側もこの関数を使うよう書き換えて判定ロジックを1箇所に保つ。
 
 **テスト**
 
 - [ ] `internal/runner/resource/identity_mutation_guard_test.go` と `internal/runner/base/risktypes/identity_mutation_guard_test.go` が無変更で通過することを確認する（後方互換の確認。新規テストは追加しない）。
-- [ ] 拡張そのものの検証は Phase 3 のガードテストが利用者として行う。`identitymutationguard` 自身には専用のテストファイルを追加しない（既存パッケージにもテストファイルはなく、利用者側のコントロールケースで検証する方式を踏襲する）。
+- [ ] 拡張そのものの検証は Phase 3-A のガードテストが利用者として行う。`identitymutationguard` 自身には専用のテストファイルを追加しない（既存パッケージにもテストファイルはなく、利用者側のコントロールケースで検証する方式を踏襲する）。
 
 **完了条件**
 
@@ -174,22 +191,20 @@
 
 **対象ファイル**: `cmd/runner/main.go`、`cmd/runner/main_test.go`、`cmd/runner/startup_privilege_test.go`（新規）、`cmd/runner/startup_order_guard_test.go`（新規）、`cmd/runner/integration_pre_execution_error_test.go`、`cmd/runner/integration_logger_test.go`
 
+本フェーズは要件上の関心事が2つ（F-003 の特権降格と F-001 の run ID 検証）あり、両者は `main()` の同一の書き換え箇所を触る以外に共有部分を持たない。そこで Phase 3-A（特権降格）と Phase 3-B（run ID 検証）に分け、別々の PR としてレビューする。Phase 3-A は Phase 2 と同じ PR-2 に、Phase 3-B は PR-3 に入る（§3.2）。3-A だけを適用した状態でもグリーンゲートを通せるよう、3-A では `main()` の run ID 既定値設定を現行のまま残し、3-B でこれを `resolveRunID` へ置き換える。
+
+#### Phase 3-A: 起動時特権降格の完全化と実行順序の是正
+
 **作業内容（製品コード）**
 
 - [ ] `cmd/runner/main.go` に `startupPrivilegeStage` 型と定数 `stageSetegid` / `stageSeteuid`、`startupPrivilegeError` 型を追加する（`02_architecture.md` §3.2.1）。
 - [ ] `dropStartupPrivileges(targetUID, targetGID int) error` を追加する。`syscall.Setegid(targetGID)` を先に、成功した場合のみ `syscall.Seteuid(targetUID)` を呼ぶ。いずれかが失敗したら該当 `Stage` を持つ `*startupPrivilegeError` を返し、後続の処理は行わない。
 - [ ] `reportStartupPrivilegeFailure(err error) int` を追加する。`logging.GenerateRunID()` で run ID を生成し、`logging.HandlePreExecutionError(logging.ErrorTypePrivilegeDrop, <失敗段階を含むメッセージ>, "main", <生成した run ID>)` を呼び、終了コード 1 を返す。
-- [ ] `resolveRunID(flagValue, bootstrapID string) (string, error)` を追加する。`flagValue` が空文字列なら `bootstrapID` を返し、それ以外は `logging.ValidateRunID(flagValue)` に合格した場合のみ `flagValue` を返す。不合格時は `logging.ErrInvalidRunID` をラップしたエラーを返す（`02_architecture.md` §3.2.3）。
-- [ ] `main()` を `02_architecture.md` §3.2.2 の順序へ書き換える。(1) `dropStartupPrivileges(syscall.Getuid(), syscall.Getgid())`、失敗時は `os.Exit(reportStartupPrivilegeFailure(err))`。(2) `bootstrapID := logging.GenerateRunID()`。(3) `flag.Parse()`。(4) `resolveRunID(runID, bootstrapID)`。(5) ハッシュディレクトリの絶対パス検査。
-- [ ] `resolveRunID` が返した run ID を、パッケージ変数 `runID`（`cmd/runner/main.go:49`）へ代入する。`mainWithExitCode(runID)` 以降はこの変数を読むため、ローカル変数に留めるとフラグの生値が下流へ流れる。
-- [ ] `resolveRunID` が失敗した場合、`logging.HandlePreExecutionError` に渡す run ID を **`bootstrapID`** とし、メッセージには `err` の文字列と `logging.RunIDFormatDescription` を含め、フラグに渡された値そのものは含めない（`02_architecture.md` §1.1 P-2、AC-09・AC-10）。その後 `os.Exit(1)` する。
-- [ ] `main()` から既存の `if runID == "" { runID = logging.GenerateRunID() }`（98〜100行目）と `syscall.Seteuid` の直接呼び出し（109〜112行目）を削除する。ハッシュディレクトリ検査と `mainWithExitCode` 以降は現行のまま残す。
-- [ ] `-run-id` フラグの説明文字列を、受理形式が読み取れる内容へ更新する。`cmd/runner/main.go` の `init()` 内の登録を、`"unique identifier for this execution run (auto-generates ULID if not provided)"` から `"unique identifier for this execution run (" + logging.RunIDFormatDescription + "; auto-generates ULID if not provided)"` へ変更する。
-- [ ] `cmd/runner/main_test.go` の `setupTestFlags`（22行目〜）にある `-run-id` の登録文字列を、上記と同一の値へ揃える（同関数は `init()` のフラグ定義を写しているため）。
+- [ ] `main()` の先頭を `02_architecture.md` §3.2.2 の順序へ書き換える。(1) `dropStartupPrivileges(syscall.Getuid(), syscall.Getgid())`、失敗時は `os.Exit(reportStartupPrivilegeFailure(err))`。(2) `flag.Parse()`。(3) run ID の既定値設定（本フェーズでは現行の `if runID == "" { runID = logging.GenerateRunID() }` のまま残す。Phase 3-B で置き換える）。(4) ハッシュディレクトリの絶対パス検査。
+- [ ] `main()` から `syscall.Seteuid` の直接呼び出し（109〜112行目）を削除する。ハッシュディレクトリ検査と `mainWithExitCode` 以降は現行のまま残す。
 
 **テスト**
 
-- [ ] `cmd/runner/main_test.go` に `TestResolveRunID` を追加する。テーブルで次の4分岐を検証する。(a) `flagValue` 未指定（空文字列）→ `bootstrapID` が返る、(b) `--run-id=""` 相当の明示的な空文字列 → `bootstrapID` が返る、(c) 受理形式の値 `my-custom-run-001` → その値が返る、(d) 拒否形式の値 `../evil` → エラーが返り `errors.Is(err, logging.ErrInvalidRunID)` が真、返る run ID は空文字列。
 - [ ] `cmd/runner/startup_privilege_test.go`（新規）に `TestDropStartupPrivileges_FailsClosedOnSetegidFailure` を追加する。`syscall.Geteuid() == 0` のとき `t.Skip` する。`dropStartupPrivileges(os.Getuid(), 0)` を呼び、返るエラーが `*startupPrivilegeError` で `Stage == stageSetegid` であること、呼び出し前後で `syscall.Geteuid()` と `syscall.Getegid()` の**両方**が変化していないこと（`Setegid` が失敗し、`Seteuid` へ進んでいないこと）を検証する。
 - [ ] 同ファイルに `TestDropStartupPrivileges_FailsClosedOnSeteuidFailure` を追加する。`syscall.Geteuid() == 0` のとき `t.Skip` する。`dropStartupPrivileges(0, os.Getgid())` を呼び、`Setegid` は成功したうえで `Seteuid(0)` が `EPERM` で失敗し、`Stage == stageSeteuid` のエラーが返ること、`syscall.Geteuid()` が変化していないことを検証する。
 - [ ] 同ファイルに `TestDropStartupPrivileges_SucceedsForCurrentIdentity` を追加し、`dropStartupPrivileges(syscall.Getuid(), syscall.Getgid())` が `nil` を返し、**かつ** 呼び出し後の `syscall.Getegid()` が `syscall.Getgid()` と、`syscall.Geteuid()` が `syscall.Getuid()` と一致することを検証する。戻り値だけを見る主張では、常に `nil` を返す空実装が通過してしまう。実効グループIDを観測するのは本テストだけであるため、この主張は省略できない。
@@ -202,16 +217,72 @@
   - 主張3: `identitymutationguard.FindRefs(t, ".")` の結果に含まれる `CallSite` が `dropStartupPrivileges` 内の `Setegid` と `Seteuid` の2件だけであり、`ValueRef` が0件であることを検証する。
   - 主張4: `identitymutationguard.ProductionGoFiles(t, ".")` の各ファイルを `go/parser` で解析し、`init` という名前の `*ast.FuncDecl` の総数が 1 であることを検証する。
   - コントロールケース: 主張1・2の走査が関数本体を対象にしていることを、`RefsInSourceWithOptions` に合成ソース（`main` 本体に `flag.Parse()` と `dropStartupPrivileges(...)` を意図した順序と逆順で並べたもの）を渡して、順序判定が実際に失敗側へ倒れることで確認する。
+  - 主張1〜4 とコントロールケースは、いずれも Phase 3-A を適用した時点で成立する（主張2 が見る `flag.Parse` との前後関係は 3-A の `main()` で確定し、3-B の変更では動かない）。したがって AC-14 の検証は PR-2 の中で完結させ、後続の PR へ持ち越さない。
+
+**完了条件（Phase 3-A）**
+
+- [ ] `go test -tags test ./cmd/runner/...` が成功する。
+- [ ] 既存の `TestShortFlags`・`TestShortFlagsEquivalence`（`cmd/runner/main_test.go`）がアサーション無変更で通過する。
+
+### PR-2 作成ポイント: startup privilege drop ordering
+
+**対象ステップ**: Phase 2 / Phase 3-A
+
+**推奨タイトル**: `feat(0162): drop startup privileges before flag parsing`
+
+**レビュー観点**: `dropStartupPrivileges` が `Setegid` 成功時にのみ `Seteuid` へ進み、失敗時に実効ユーザーID・実効グループIDのいずれも変化しないことがテストで観測されているか / ガードテストの主張1・2が `File` の一致を `require` してから `Pos` を比較しており、コントロールケースが実際に失敗側へ倒れて空振り成功でないこと（AC-14 の検証を後続 PR へ持ち越していないこと） / `identitymutationguard` の追加が既存2つのガードテストの差分を空に保ち、追加した API が本 PR のガードテストからすべて使われていること / `main()` の run ID 既定値設定が現行のまま残され、本 PR が特権降格以外の挙動を変えていないこと
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: Phase 3-A は起動時特権降格というセキュリティゲート段階の変更（`mkplan.md` step 8 のパネル発動条件）に当たり、順序を誤っても正常系には痕跡が残らないため実行時テストで担保できず、AST 静的検証に依存する（`02_architecture.md` §7.2）。加えて Phase 2 の「`ImportPath` が空のとき非修飾 `*ast.Ident` に一致させる」拡張は前例のない設計判断であり、S-3 が AST 走査の試行錯誤リスクを挙げている。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+#### Phase 3-B: `--run-id` の入口検証
+
+**作業内容（製品コード）**
+
+- [ ] `resolveRunID(flagValue, bootstrapID string) (string, error)` を追加する。`flagValue` が空文字列なら `bootstrapID` を返し、それ以外は `logging.ValidateRunID(flagValue)` に合格した場合のみ `flagValue` を返す。不合格時は `logging.ErrInvalidRunID` をラップしたエラーを返す（`02_architecture.md` §3.2.3）。
+- [ ] `main()` を `02_architecture.md` §3.2.2 の最終形へ書き換える。Phase 3-A で確定した (1) `dropStartupPrivileges` と (2) `flag.Parse()` の間に `bootstrapID := logging.GenerateRunID()` を挿入し、`flag.Parse()` の直後に `resolveRunID(runID, bootstrapID)` を置く。ハッシュディレクトリの絶対パス検査はその後に残す。
+- [ ] `resolveRunID` が返した run ID を、パッケージ変数 `runID`（`cmd/runner/main.go:49`）へ代入する。`mainWithExitCode(runID)` 以降はこの変数を読むため、ローカル変数に留めるとフラグの生値が下流へ流れる。
+- [ ] `resolveRunID` が失敗した場合、`logging.HandlePreExecutionError` に渡す run ID を **`bootstrapID`** とし、メッセージには `err` の文字列と `logging.RunIDFormatDescription` を含め、フラグに渡された値そのものは含めない（`02_architecture.md` §1.1 P-2、AC-09・AC-10）。その後 `os.Exit(1)` する。
+- [ ] `main()` から既存の `if runID == "" { runID = logging.GenerateRunID() }`（98〜100行目。Phase 3-A では残したもの）を削除する。
+- [ ] `-run-id` フラグの説明文字列を、受理形式が読み取れる内容へ更新する。`cmd/runner/main.go` の `init()` 内の登録を、`"unique identifier for this execution run (auto-generates ULID if not provided)"` から `"unique identifier for this execution run (" + logging.RunIDFormatDescription + "; auto-generates ULID if not provided)"` へ変更する。
+- [ ] `cmd/runner/main_test.go` の `setupTestFlags`（22行目〜）にある `-run-id` の登録文字列を、上記と同一の値へ揃える（同関数は `init()` のフラグ定義を写しているため）。
+
+**テスト**
+
+- [ ] `cmd/runner/main_test.go` に `TestResolveRunID` を追加する。テーブルで次の4分岐を検証する。(a) `flagValue` 未指定（空文字列）→ `bootstrapID` が返る、(b) `--run-id=""` 相当の明示的な空文字列 → `bootstrapID` が返る、(c) 受理形式の値 `my-custom-run-001` → その値が返る、(d) 拒否形式の値 `../evil` → エラーが返り `errors.Is(err, logging.ErrInvalidRunID)` が真、返る run ID は空文字列。
 - [ ] `cmd/runner/integration_pre_execution_error_test.go` に `TestE2E_PreExecutionError_InvalidRunIDPathTraversal` を追加する。`go run . -config <有効な設定> -dry-run -log-dir <一時ディレクトリ> -run-id ../../etc/cron.d/evil` を実行し、次を検証する。(a) 終了コードが 1、(b) 標準エラー出力に `invalid_run_id` が含まれる、(c) 標準エラー出力に `logging.RunIDFormatDescription` の文字列が含まれる、(d) 標準出力・標準エラー出力のいずれにも `../../etc/cron.d/evil` が部分文字列として現れない、(e) 標準出力の `RUN_SUMMARY` 行の `run_id` フィールドの値が `logging.ValidateRunID` を通過する、(f) `-log-dir` に指定した一時ディレクトリの中身が 0 件、(g) 一時ディレクトリの直下に `etc` という名前のエントリが作られていない。
   - (g) の対象を一時ディレクトリ**直下**とする根拠: 入口検証がなければ構築されるパスは `filepath.Join(logDir, "<hostname>_<timestamp>_../../etc/cron.d/evil.json")` であり、`filepath.Join` の正規化で `<hostname>_<timestamp>_..` が1つの通常要素として直後の `..` に打ち消されるため、脱出先は `<logDir>/etc/cron.d/evil.json`、すなわちログディレクトリの内側になる。一時ディレクトリの親ディレクトリを検査対象にしても、実際に書き込みが発生する位置（一時ディレクトリの直下）を検査したことにはならない。
 - [ ] 同ファイルに `TestE2E_PreExecutionError_InvalidRunIDNewlineInjection` を追加する。`-run-id` に Go の文字列リテラル `"x\nRUN_SUMMARY run_id=fake exit_code=0"`（実際の改行を含む値）を argv 要素として与え、(a) 終了コードが 1、(b) 標準出力に `RUN_SUMMARY` を含む行がちょうど1行しか現れない、(c) 標準出力に `run_id=fake` が現れないことを検証する（`02_architecture.md` §7.4）。
 - [ ] 同ファイルに `TestE2E_PreExecutionError_InvalidRunIDTooLong` を追加する。`-run-id` に `strings.Repeat("a", logging.MaxRunIDLength+1)` を与え、終了コードが 1 で標準エラー出力に `invalid_run_id` が現れることを検証する。
 - [ ] `cmd/runner/integration_logger_test.go` に `TestE2E_ValidRunIDIsAdopted` を追加する（成功経路のテストであり、`integration_pre_execution_error_test.go` の担当範囲ではない）。`go run . -config <有効な設定> -dry-run -log-dir <一時ディレクトリ> -run-id backup-20260805-143000` を実行し、(a) 終了コードが 0、(b) 一時ディレクトリに `*_backup-20260805-143000.json` に一致するファイルがちょうど1件生成されていることを検証する。`RUN_SUMMARY` は誤り経路でしか出力されないため（§1.3）、採用された run ID の観測にはログファイル名（`{hostname}_{timestamp}_{runID}.json`、[logger.go:138](../../../internal/runner/bootstrap/logger.go#L138)）を用いる。
 
-**完了条件**
+**完了条件（Phase 3-B）**
 
 - [ ] `go test -tags test ./cmd/runner/...` が成功する。
 - [ ] 既存の `TestShortFlags`・`TestShortFlagsEquivalence`（`cmd/runner/main_test.go`）がアサーション無変更で通過する。
+
+### PR-3 作成ポイント: --run-id entry validation
+
+**対象ステップ**: Phase 3-B
+
+**推奨タイトル**: `feat(0162): validate --run-id before it reaches any output path`
+
+**レビュー観点**: 拒否経路が `bootstrapID` を使い、フラグの生値が標準出力・標準エラー出力・ログファイル名のいずれにも現れないこと（`resolveRunID` の失敗時にパッケージ変数 `runID` へ生値を代入していないこと） / `resolveRunID` の結果がローカル変数ではなくパッケージ変数 `runID` へ代入され、`mainWithExitCode` 以降が検証済みの値だけを読むこと / パストラバーサルの E2E が `-log-dir` の**直下**に `etc` エントリが作られていないことを検査しており、検査位置の根拠（`filepath.Join` の正規化）が実装と合っていること / `-run-id` の登録文字列が `main.go` と `main_test.go` でトークン単位に一致していること
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: `go run .` で実プロセスを起動する E2E 統合テスト4件（拒否系3件・受理系1件）という重い統合テスト面を持ち、`mkplan.md` step 8 のパネル発動条件に該当する。加えて `--run-id` の受理形式を絞る破壊的変更であり、拒否経路自体が M-1 の被害（ログ行注入）を再現しうるという、経路の向きを取り違えやすい判断を含む。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -237,6 +308,23 @@
 
 - [ ] `go test -tags test ./internal/runner/bootstrap/... ./cmd/runner/...` が成功する。
 - [ ] `internal/runner/bootstrap/logger_test.go`・`internal/runner/bootstrap/environment_test.go`・`cmd/runner/integration_logger_test.go` の既存テストが `RunID` 値の修正なしで通過する。
+
+### PR-4 作成ポイント: bootstrap defense in depth
+
+**対象ステップ**: Phase 4
+
+**推奨タイトル**: `feat(0162): validate run ID in SetupLoggerWithConfig as defense in depth`
+
+**レビュー観点**: 検証が `config.LogDir` の有無で分岐していないこと（`LogDir: ""` かつ不正 `RunID` のケースがテーブルにあり、それが `if config.LogDir != ""` で囲った誤実装を落とすこと） / 検証が `common.GetHostname()`・ハンドラ生成・ファイルオープン・グローバル変数への代入のいずれよりも前に置かれていること / テストが `SetupLogging` を経由せず `SetupLoggerWithConfig` を直接呼び、拒否時に `LogDir` が 0 件のままであることを確認していること / `SetupLoggerWithConfig` のシグネチャが変わっておらず、既存テストの `RunID` 値に差分がないこと
+
+**実装モデル要件**: standard
+
+**判定理由**: 該当するトリガーなし。追加は関数先頭の 1 分岐とテーブル駆動テスト1件で、実装方針は `02_architecture.md` §3.3 で確定しており §1.3 に競合案の記載はない。統合テスト・CI・外部資源の面もなく、`cmd/runner` 側は既に PR-3 で入口検証を持つため利用者から見える挙動の引き上げも伴わない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -282,6 +370,23 @@ Phase 1〜4 とは依存関係がないため、Phase 1 と並行して着手で
 - [ ] `go test -tags test ./cmd/verify/...` が成功する。
 - [ ] `rg -n "return 0|return 1|return 3" cmd/verify/main.go` の結果が 0 件である（すべて定数経由になっている）。
 
+### PR-5 作成ポイント: verify fail-closed on hash directory violations
+
+**対象ステップ**: Phase 5
+
+**推奨タイトル**: `feat(0162): fail closed on hash directory violations in verify`
+
+**レビュー観点**: `CollectTOCTOUCheckDirs` の2回呼び出しによるハッシュディレクトリ集合と対象ファイル集合の分割が正しく、ハッシュ側に違反があるときに対象ファイル側のチェックへ進まないこと（`TestRunSkipsTargetSetCheckWhenHashDirViolates` が唯一の検証である） / `exitUntrustedEnvironment` が `validatorFactory` を呼ぶ前に返り、`Verify` が1件も実行されず標準出力が空であること / 終了コード 2 を欠番とした理由がコメントに残り、`NewDirectoryPermChecker` 失敗時の panic 経路が `checkDirPermissions` 内へ移設されて存続していること / 既存4テストへのスタブ注入がアサーションを変えておらず、`TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates` の経路依存スタブがホストのファイルシステム構成から切り離されていること
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: `verify` の信頼判断そのものを変えるセキュリティゲート段階の変更（fail-open → fail-closed、`mkplan.md` step 8 のパネル発動条件）に該当する。加えて、引き上げ範囲をハッシュディレクトリ側に限定し対象ファイル側を警告のまま据え置くという判定範囲の切り分けを含み、2集合の分割を誤ると exit 0 の信頼性が静かに失われたままテストが通り続ける。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ---
 
 ### Phase 6: 文書と CHANGELOG の更新
@@ -309,7 +414,7 @@ Phase 1〜4 とは依存関係がないため、Phase 1 と並行して着手で
 **検証**
 
 - [ ] `docs/user/verify_command.ja.md` に新設した終了コード表の内容が実装と一致することを、`rg -n "exitUntrustedEnvironment|exitVerificationFailed|exitOK" cmd/verify/main.go` の定義値と突き合わせて確認する。
-- [ ] CHANGELOG に書いた影響判定手順のコマンドを実際に実行し、記載どおりの出力（`TOCTOU permission check violation` を含む WARN 行、または違反なしの場合は該当行が出ないこと）になることを確認する。確認には Phase 5 適用前の `verify` を用いる。`git worktree add <一時ディレクトリ> <Phase 5 着手前のコミット SHA>` で作業ツリーを作り、そこで `go build -o <一時ディレクトリ>/verify ./cmd/verify` してから実行する（`git stash` は未コミットの変更しか退避しないため、フェーズごとにコミットする本計画の進め方では旧版のビルドを得られない）。
+- [ ] CHANGELOG に書いた影響判定手順のコマンドを実際に実行し、記載どおりの出力（`TOCTOU permission check violation` を含む WARN 行、または違反なしの場合は該当行が出ないこと）になることを確認する。確認には Phase 5 適用前の `verify` を用いる。`git worktree add <一時ディレクトリ> <Phase 5 着手前のコミット SHA>` で作業ツリーを作り、そこで `go build -o <一時ディレクトリ>/verify ./cmd/verify` してから実行する（`git stash` は未コミットの変更しか退避しないため、PR ごとにコミット・マージする本計画の進め方では旧版のビルドを得られない）。
 - [ ] `docs/user/runner_command.ja.md` に書いた受理形式の説明が `logging.RunIDFormatDescription` および `logging.MaxRunIDLength` と一致することを、両者を並べて確認する。
 - [ ] 修正したログファイル命名規則の記述が実装と一致することを、`-log-dir` を指定して `runner` を1回実行し、生成されたファイル名と突き合わせて確認する。
 
@@ -318,20 +423,68 @@ Phase 1〜4 とは依存関係がないため、Phase 1 と並行して着手で
 - [ ] `make test` と `make lint` が成功する。
 - [ ] 文書の日本語版と英語版の章立てが一致している。
 
+### PR-6 作成ポイント: user documentation and changelog
+
+**対象ステップ**: Phase 6
+
+**推奨タイトル**: `docs(0162): document run ID format and verify exit code 3`
+
+**レビュー観点**: 新設した終了コード表の値が `cmd/verify/main.go` の `exitOK` / `exitVerificationFailed` / `exitUntrustedEnvironment` と一致し、2 を欠番として説明していること / 受理形式の記述が `logging.RunIDFormatDescription` と `logging.MaxRunIDLength` と一致していること / 誤ったログファイル命名規則が日本語版3箇所・英語版3箇所のすべてで `<hostname>_<timestamp>_<run-id>.json` へ修正され、`rg` 検査が 0 件になること / CHANGELOG の影響判定手順が Phase 5 適用前のビルドで実際に再現され、記載どおりの出力になること
+
+**実装モデル要件**: standard
+
+**判定理由**: 該当するトリガーなし。既に確定した挙動を文書へ反映する作業のみで、製品コードの変更を含まない。`git worktree` による旧版ビルドは記述の裏取り手順であって、CI・外部資源への依存を新たに持ち込むものではない。破壊的変更の記述そのものは PR 本文にも要約する。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ---
 
 ## 3. 実装順序とマイルストーン
 
-| マイルストーン | 含むフェーズ | 成果物 | 完了判定 |
-|---|---|---|---|
-| M1: run ID 形式の基盤 | Phase 1 | `internal/logging/runid.go`、`runid_test.go`、`ErrorTypeInvalidRunID` | `go test -tags test ./internal/logging/...` が成功 |
-| M2: ガード共通部品の拡張 | Phase 2 | `identitymutationguard` の位置情報・追跡対象指定・製品ファイル列挙 | 既存2つのガードテストが無変更で通過 |
-| M3: `runner` の入口強化 | Phase 3 | 起動順序の是正、`resolveRunID`、ガードテスト、振る舞いテスト、E2E テスト | `go test -tags test ./cmd/runner/...` が成功 |
-| M4: 多層防御 | Phase 4 | `SetupLoggerWithConfig` の再検証 | `go test -tags test ./internal/runner/bootstrap/... ./cmd/runner/...` が成功 |
-| M5: `verify` の fail-closed 化 | Phase 5 | `checkDirPermissions`、終了コード定数、`toctouChecker` | `go test -tags test ./cmd/verify/...` が成功 |
-| M6: 文書反映 | Phase 6 | 利用者向け文書、CHANGELOG、用語集 | `make test` と `make lint` が成功 |
+### 3.1 マイルストーン
 
-Phase 5（M5）は他フェーズに依存しないため、Phase 1 と並行して着手できる。Phase 3 は Phase 1 と Phase 2 の両方を前提とし、Phase 4 は Phase 1 を前提とする。Phase 6 は Phase 3〜5 の完了を前提とする。
+マイルストーンは進捗把握のための内部的な区切りであり、マージの単位は §3.2 の PR である。両者の対応を「対応 PR」列に示す。
+
+| マイルストーン | 含むフェーズ | 対応 PR | 成果物 | 完了判定 |
+|---|---|---|---|---|
+| M1: run ID 形式の基盤 | Phase 1 | PR-1 | `internal/logging/runid.go`、`runid_test.go`、`ErrorTypeInvalidRunID` | `go test -tags test ./internal/logging/...` が成功 |
+| M2: ガード共通部品の拡張 | Phase 2 | PR-2（M3 と同一 PR） | `identitymutationguard` の位置情報・追跡対象指定・製品ファイル列挙 | 既存2つのガードテストが無変更で通過 |
+| M3: 起動時特権降格の完全化 | Phase 3-A | PR-2 | 起動順序の是正、`dropStartupPrivileges`、振る舞いテスト、起動順序ガードテスト | `go test -tags test ./cmd/runner/...` が成功 |
+| M4: `--run-id` の入口検証 | Phase 3-B | PR-3 | `resolveRunID`、フラグ説明文字列、E2E テスト4件 | `go test -tags test ./cmd/runner/...` が成功 |
+| M5: 多層防御 | Phase 4 | PR-4 | `SetupLoggerWithConfig` の再検証 | `go test -tags test ./internal/runner/bootstrap/... ./cmd/runner/...` が成功 |
+| M6: `verify` の fail-closed 化 | Phase 5 | PR-5 | `checkDirPermissions`、終了コード定数、`toctouChecker` | `go test -tags test ./cmd/verify/...` が成功 |
+| M7: 文書反映 | Phase 6 | PR-6 | 利用者向け文書、CHANGELOG、用語集 | `make test` と `make lint` が成功 |
+
+M2 は単独ではマージの単位にならない（`identitymutationguard` の拡張はその唯一の利用者である M3 のガードテストと同じ PR で入る）。
+
+Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行して着手できる。Phase 3-A は Phase 2 を前提とし、Phase 3-B は Phase 1 と Phase 3-A の両方を前提とする。Phase 4 は Phase 1 を前提とする。Phase 6 は Phase 3〜5 の完了を前提とする。
+
+### 3.2 PR 構成
+
+| PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | Phase 1 | `internal/logging/runid.go` の新設（`MaxRunIDLength`・`RunIDFormatDescription`・`ErrInvalidRunID`・`ValidateRunID`）、`GenerateRunID` の移設、`ErrorTypeInvalidRunID` の追加、`runid_test.go`（新規6テスト + 移設2テスト） | standard |
+| PR-2 | Phase 2 / Phase 3-A | `identitymutationguard` の位置情報・呼び出し側指定・製品ファイル列挙の追加と、`cmd/runner` の起動時特権降格の完全化（`dropStartupPrivileges` / `reportStartupPrivilegeFailure` / `main()` 先頭の順序是正）、`startup_privilege_test.go` の4テスト、`startup_order_guard_test.go` の主張1〜4とコントロールケース | frontier-required |
+| PR-3 | Phase 3-B | `resolveRunID` とパッケージ変数 `runID` への代入、拒否時の報告経路、`-run-id` フラグ説明文字列の更新（`main.go` / `main_test.go`）、`TestResolveRunID`、E2E 統合テスト4件 | frontier-required |
+| PR-4 | Phase 4 | `SetupLoggerWithConfig` 先頭での `ValidateRunID` 呼び出しと `TestSetupLoggerWithConfig_RejectsInvalidRunID` | standard |
+| PR-5 | Phase 5 | `cmd/verify` の終了コード定数、`toctouChecker` パッケージ変数、`checkDirPermissions` の切り出しと2集合の分割判定、fail-closed テスト4件、既存5テストのスタブ注入・改名 | frontier-required |
+| PR-6 | Phase 6 | 利用者向け文書（日英）、`CHANGELOG.ja.md` / `CHANGELOG.md` の破壊的変更2項目、用語集 | standard |
+
+**PR 分割の根拠**
+
+- **PR-1 を独立させる理由**: Phase 1 は既存の挙動を一切変えない追加（と同一パッケージ内の関数移設）であり、単独でグリーンゲートを通せる。受理形式という本タスクの中核判断（`02_architecture.md` §1.3 D-1）を、それを利用する2つの経路（PR-3 の入口検証、PR-4 の多層防御）から切り離して集中的にレビューできる。
+- **Phase 2 と Phase 3-A を1つの PR にまとめる理由**: Phase 2 は `identitymutationguard` の API を追加するのみで、自前のテストを持たない（Phase 2 の「テスト」節のとおり、拡張の検証は Phase 3 のガードテストが利用者として行う）。両者を分けると、利用者もテストも無い API だけが先にマージされる PR ができ、「インターフェース + 実装 + テスト」という密結合の単位を PR 境界で割ることになる。Phase 3-A のガードテストは追加した API をすべて使うため、この組み合わせで密結合の単位が閉じる。
+- **Phase 3 を 3-A と 3-B に分ける理由**: Phase 3 は F-003（特権降格、AST 静的検証で担保）と F-001（run ID 検証、E2E 統合テストで担保）という関心事もリスクの担保手段も異なる2つの塊を含み、まとめると `cmd/runner` の起動処理全体が1つの差分になる。両者が共有するのは `main()` の同一箇所の書き換えのみで、3-A が run ID の既定値設定を現行のまま残すことで、3-A 単独でもグリーンゲートを通せる。分割により AST 走査のレビューと E2E のレビューが互いのノイズにならない。
+- **PR-4 が PR-3 より後になる理由**: Phase 4 は `internal/runner/bootstrap` の変更だが、`SetupLoggerWithConfig` のシグネチャを変えず、`cmd/runner` 側はこの変更に依存しない（PR-3 は入口検証を自前で持つ）。したがって「`internal/` を `cmd/` より先に」の原則には抵触しない。文書順どおりに PR 番号を振り、多層防御という独立した関心事を単独でレビューできるようにした。
+- **PR-5 を独立させる理由**: Phase 5 は他のどのフェーズにも依存せず、`cmd/verify` のみを触る。`runner` 側の変更とは共有するコードがないため、fail-closed の判定範囲というリスクの高い判断を無関係な差分なしでレビューできる。
+- **PR-6 を分割しない理由**: Phase 6 の英語版反映は `/mktrans` による日本語版からの機械的な反映であり、日本語版と同じ PR に入れることで日英の乖離（R-7）をレビュー時点で検出できる。日本語版の確定が滞って直列化した場合に限り、S-2 のバッファ計画に従って分割する（下記）。
+
+**条件付き PR-7（S-2 が発動した場合のみ）**: 日本語版の確定待ちで直列化した場合、PR-6 を日本語版（`docs/user/*.ja.md`・`CHANGELOG.ja.md`・用語集）のみで切り、英語版3ファイルの反映を PR-7 として追加する。その場合の `推奨タイトル` は `docs(0162): sync English user documentation and changelog`、`レビュー観点` は「日本語版との章立ての一致 / 誤ったログファイル命名規則3箇所の修正の反映 / 終了コード表の値の一致」、`実装モデル要件` は `standard`（該当するトリガーなし。`/mktrans` による反映のみ）とする。分割の判断基準は「日本語版が確定してから2営業日以内に英語版を反映できないこと」とする。
+
+**マージ順序**: PR-1 → PR-2 → PR-3 → PR-4 → PR-5 → PR-6 の順にマージする。PR-3 は PR-1 が導入する `logging.ValidateRunID`・`RunIDFormatDescription`・`ErrInvalidRunID` を参照するためコンパイルできず、PR-4 も同じ理由で PR-1 に依存する。PR-3 は PR-2 が確定させた `main()` の順序の上に `bootstrapID` と `resolveRunID` を挿入するため、PR-2 の後でなければならない。PR-6 は PR-2〜PR-5 が確定させた利用者から見える挙動を記述する。並行して進めてよいのは次の2つである。PR-5 は他のどの PR にも依存しないため PR-1 と並行して着手・レビューでき、この順序の中で前倒ししてもよい（`02_architecture.md` §8.1）。PR-4 も PR-1 のマージ後であれば PR-2・PR-3 と並行して着手・レビューできる。各 PR が単独でグリーンゲートを通せるというのは、先行する PR がマージ済みであることを前提とした話である。
 
 ---
 
@@ -400,23 +553,24 @@ Phase 5（M5）は他フェーズに依存しないため、Phase 1 と並行し
 
 | # | リスク | 影響 | バッファ計画 |
 |---|---|---|---|
-| S-1 | Phase 2 の `identitymutationguard` 拡張が、既存2つのガードテストの後方互換を壊し、想定より広い修正を要する | Phase 3 の着手が遅れる | Phase 2 はフィールドと関数の追加のみで既存シグネチャを変えない設計であるため影響範囲は小さい。仮に後方互換を保てないと判明した場合は、既存2つのガードテストの修正を Phase 2 のスコープへ追加し、Phase 3 の開始を1営業日遅らせる |
-| S-2 | Phase 6 の英語版反映（`/mktrans`）と用語集更新が、日本語版の確定待ちで直列化する | 全体の完了が遅れる | Phase 6 を「日本語版の更新」と「英語版の反映」の2つの PR に分割できるようにしておく。日本語版が確定した時点で先行してレビューへ回す |
-| S-3 | Phase 3 の起動順序ガードテストが、AST 走査の細部で想定以上に試行錯誤を要する | Phase 3 が長引く | 主張1・2（順序判定）と主張3・4（許可リスト・`init()` 個数）は独立しているため、先に主張3・4 を完成させて Phase 3 を部分的に閉じ、順序判定は後追いで足す |
+| S-1 | Phase 2 の `identitymutationguard` 拡張が、既存2つのガードテストの後方互換を壊し、想定より広い修正を要する | PR-2 の完了が遅れる | Phase 2 はフィールドと関数の追加のみで既存シグネチャを変えない設計であるため影響範囲は小さい。仮に後方互換を保てないと判明した場合は、既存2つのガードテストの修正を Phase 2 のスコープ（＝PR-2 の差分）へ追加し、PR-2 の完了を1営業日遅らせる |
+| S-2 | Phase 6 の英語版反映（`/mktrans`）と用語集更新が、日本語版の確定待ちで直列化する | 全体の完了が遅れる | §3.2 の「条件付き PR-7」に従い、PR-6 を「日本語版の更新」と「英語版の反映」の2つの PR に分割する。日本語版が確定した時点で先行してレビューへ回す |
+| S-3 | Phase 3-A の起動順序ガードテストが、AST 走査の細部で想定以上に試行錯誤を要する | PR-2 の作成が遅れる | 主張1・2（順序判定）と主張3・4（許可リスト・`init()` 個数）は独立しているため、先に主張3・4 を完成させて実装を進め、順序判定は後追いで足す。ただし主張1〜4 とコントロールケースがすべて揃うまで PR-2 を作成しない。主張1・2 は AC-14 の唯一の検証手段であり（§4.2）、これを欠いたまま特権降格の順序変更をマージすると、順序が守られていることを誰も確認できない状態で PR-3 以降が積み上がる。難航した場合は PR-2 の作成を1営業日遅らせ、フェーズを部分的に閉じることはしない |
 
 ---
 
 ## 6. 実装チェックリスト
 
-### Phase 1: run ID の形式定義
+### PR-1: run ID の形式定義（Phase 1）
 
 - [ ] `internal/logging/runid.go` の新規作成（`MaxRunIDLength`・`MaxRunIDLength` から導出する `RunIDFormatDescription`・`ErrInvalidRunID`・`ValidateRunID`）
 - [ ] `GenerateRunID` の `safeopen.go` からの移設
 - [ ] `ErrorTypeInvalidRunID` の追加
 - [ ] `internal/logging/runid_test.go` の新規作成（既存2テストの移設を含む8テスト）
 - [ ] `go test -tags test ./internal/logging/...` の成功
+- [ ] PR-1 マージ済み（対象ステップ: Phase 1）
 
-### Phase 2: `identitymutationguard` の拡張
+### PR-2: ガード拡張と起動時特権降格（Phase 2 / Phase 3-A）
 
 - [ ] `CallSite.Pos` の追加
 - [ ] `CallSite.File` の追加と、`Pos` のファイル間比較不可をドキュメントコメントへ明記
@@ -424,26 +578,34 @@ Phase 5（M5）は他フェーズに依存しないため、Phase 1 と並行し
 - [ ] `ExtraTrackedFunc.ImportPath` が空のときに非修飾 `*ast.Ident` 呼び出しへ一致させる分岐の追加
 - [ ] `ProductionGoFiles` の追加と `FindRefs` からの利用
 - [ ] 既存2つのガードテストの無変更通過
+- [ ] `dropStartupPrivileges` / `reportStartupPrivilegeFailure` と `startupPrivilegeStage` / `startupPrivilegeError` の追加
+- [ ] `main()` 先頭の順序変更（降格 → `flag.Parse`）と `syscall.Seteuid` 直接呼び出しの削除。run ID の既定値設定は現行のまま残す
+- [ ] `cmd/runner/startup_privilege_test.go` の新規作成（4テストと、逐次実行・root スキップに関するコメント）
+- [ ] `cmd/runner/startup_order_guard_test.go` の新規作成（`//go:build test`、主張1〜4とコントロールケース。主張1・2 を後続 PR へ持ち越さない）
+- [ ] `go test -tags test ./cmd/runner/...` の成功
+- [ ] PR-2 マージ済み（対象ステップ: Phase 2 / Phase 3-A）
 
-### Phase 3: `cmd/runner`
+### PR-3: `--run-id` の入口検証（Phase 3-B）
 
-- [ ] `dropStartupPrivileges` / `reportStartupPrivilegeFailure` / `resolveRunID` の追加
-- [ ] `main()` の順序変更、`resolveRunID` の結果のパッケージ変数 `runID` への代入、旧コードの削除
+- [ ] `resolveRunID` の追加
+- [ ] `main()` への `bootstrapID` と `resolveRunID` の挿入、パッケージ変数 `runID` への代入、旧 run ID 既定値設定の削除
+- [ ] 拒否時の `logging.HandlePreExecutionError` 呼び出し（run ID は `bootstrapID`、メッセージに生値を含めない）
 - [ ] `-run-id` フラグ説明文字列の更新（`main.go` と `main_test.go` の両方）
 - [ ] `TestResolveRunID` の追加
-- [ ] `cmd/runner/startup_privilege_test.go` の新規作成（4テストと、逐次実行・root スキップに関するコメント）
-- [ ] `cmd/runner/startup_order_guard_test.go` の新規作成（`//go:build test`、主張1〜4とコントロールケース）
 - [ ] `cmd/runner/integration_pre_execution_error_test.go` への拒否系統合テスト3件の追加
 - [ ] `cmd/runner/integration_logger_test.go` への `TestE2E_ValidRunIDIsAdopted` の追加
+- [ ] `make deadcode` の確認（PR-1 が導入し本 PR で到達可能になる `internal/logging` の新規シンボルを含め、未到達の報告がないこと）
 - [ ] `go test -tags test ./cmd/runner/...` の成功
+- [ ] PR-3 マージ済み（対象ステップ: Phase 3-B）
 
-### Phase 4: `bootstrap`
+### PR-4: `bootstrap` の多層防御（Phase 4）
 
 - [ ] `SetupLoggerWithConfig` 先頭での `ValidateRunID` 呼び出し
 - [ ] `TestSetupLoggerWithConfig_RejectsInvalidRunID` の追加
 - [ ] 既存の `bootstrap` テストと `cmd/runner/integration_logger_test.go` の通過
+- [ ] PR-4 マージ済み（対象ステップ: Phase 4）
 
-### Phase 5: `cmd/verify`
+### PR-5: `cmd/verify` の fail-closed 化（Phase 5）
 
 - [ ] 終了コード定数の導入と既存 `return` の置き換え
 - [ ] `toctouChecker` パッケージ変数の追加
@@ -456,8 +618,9 @@ Phase 5（M5）は他フェーズに依存しないため、Phase 1 と並行し
 - [ ] `TestRunTOCTOU_ContinuesOnWorldWritableDir` の改名・コメント更新・経路依存スタブ注入・アサーション追加
 - [ ] 既存4テストへの `toctouChecker` 注入
 - [ ] `go test -tags test ./cmd/verify/...` の成功
+- [ ] PR-5 マージ済み（対象ステップ: Phase 5）
 
-### Phase 6: 文書
+### PR-6: 文書と CHANGELOG（Phase 6）
 
 - [ ] `docs/user/runner_command.ja.md` の `-run-id` 節更新
 - [ ] `docs/user/runner_command.ja.md` の誤ったログファイル命名規則3箇所の修正
@@ -466,13 +629,15 @@ Phase 5（M5）は他フェーズに依存しないため、Phase 1 と並行し
 - [ ] `docs/translation_glossary.md` への新規用語の追加
 - [ ] 英語版3ファイルの反映
 - [ ] 文書の記載内容と実装の突き合わせ検証（Phase 6 の「検証」項目）
+- [ ] PR-6 マージ済み（対象ステップ: Phase 6）
 
-### 全体
+### 全体（各 PR の作成前に実施）
 
 - [ ] `make fmt` の実行
 - [ ] `make test` の成功
 - [ ] `make lint` の成功
-- [ ] `make deadcode` の成功（`cmd/runner` の新規関数がすべて到達可能であること）
+
+`make deadcode` は `cmd/record` / `cmd/runner` / `cmd/verify` からの到達可能性を見るため、PR-1 の時点では `internal/logging` の新規シンボルが未到達として報告される（グリーンゲートは `make test && make lint` であり、これは PR-1 のマージを妨げない）。全シンボルが到達可能になるのは PR-3 のマージ後であるため、確認は PR-3 のチェックリストに置いてある。
 
 ---
 
@@ -563,6 +728,6 @@ Phase 5（M5）は他フェーズに依存しないため、Phase 1 と並行し
 ## 10. 次のステップ
 
 1. 本実装計画書のレビューを受け、Status を `approved` に更新する。
-2. `approved` 後、Phase 1 と Phase 5 から実装に着手する（両者は依存関係を持たないため並行可能）。
-3. 各フェーズの完了時にチェックボックスを更新し、`make fmt` → `make test` → `make lint` を実行する。
+2. `approved` 後、§3.2 の PR 構成に従い PR-1（Phase 1）から着手する。PR-5（Phase 5）は他のどの PR にも依存しないため PR-1 と並行して着手してよく、PR-4（Phase 4）も PR-1 のマージ後であれば PR-2・PR-3 と並行して着手してよい。
+3. 各 PR の完了時に §6 の該当 PR のチェックボックスを更新し、`make fmt` → `make test` → `make lint` を実行する。各 `### PR-N 作成ポイント` でグリーンゲートを確認してから PR を作成し、マージ後に次のブランチへ切り替える。
 4. Phase 6 の完了後、`02_architecture.md` §3.4 に記録した L-2 のリスク（誤検知が exit 3 を生む）を [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) へ追記し、優先度の見直しを依頼する。
