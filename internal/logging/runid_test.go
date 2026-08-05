@@ -107,6 +107,16 @@ func TestValidateRunID_ErrorOmitsRejectedValue(t *testing.T) {
 			err := ValidateRunID(value)
 			require.Error(t, err)
 			assert.NotContains(t, err.Error(), value)
+
+			// The whole-value assertion above would still pass if the error
+			// echoed a prefix such as "../..", so pin the contract itself:
+			// everything the error reproduces from the rejected value is the
+			// single %q-rendered byte after the constant template.
+			_, rendered, found := strings.Cut(err.Error(), " has value ")
+			require.True(t, found, "unexpected error shape: %q", err.Error())
+			unquoted, unquoteErr := strconv.Unquote(rendered)
+			require.NoError(t, unquoteErr, "rendered byte is not %%q-quoted: %q", rendered)
+			assert.Len(t, unquoted, 1, "error reproduces more than one byte of the rejected value")
 		})
 	}
 }

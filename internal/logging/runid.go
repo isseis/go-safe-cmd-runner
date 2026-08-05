@@ -9,7 +9,8 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-// MaxRunIDLength is the maximum number of characters a run ID may contain.
+// MaxRunIDLength is the maximum number of bytes a run ID may contain. Accepted
+// values are ASCII by construction, so for them bytes and characters coincide.
 const MaxRunIDLength = 64
 
 // RunIDFormatDescription describes the accepted run ID format. It is safe to
@@ -30,9 +31,12 @@ func GenerateRunID() string {
 // ValidateRunID reports whether runID matches the accepted format, returning an
 // error wrapping ErrInvalidRunID when it does not.
 //
-// The returned error never contains the rejected value verbatim. When the value
-// contains a disallowed byte, the error identifies that byte's index and its
-// Go-quoted form (%q), which escapes newline, NUL, ESC and quote characters.
+// The returned error never contains more than a single byte of the rejected
+// value: when the value contains a disallowed byte, the error identifies that
+// byte's index and its Go-quoted form (%q), which escapes newline, NUL, ESC and
+// quote characters. A one-byte rejected value is therefore reproduced in full
+// (in %q form) — that is the whole of the exposure, and it cannot break log
+// line structure.
 func ValidateRunID(runID string) error {
 	if len(runID) == 0 {
 		return fmt.Errorf("%w: run ID is empty", ErrInvalidRunID)
@@ -40,7 +44,7 @@ func ValidateRunID(runID string) error {
 	if len(runID) > MaxRunIDLength {
 		return fmt.Errorf("%w: length %d exceeds maximum %d", ErrInvalidRunID, len(runID), MaxRunIDLength)
 	}
-	for i := 0; i < len(runID); i++ {
+	for i := range len(runID) {
 		if !isAllowedRunIDByte(runID[i]) {
 			return fmt.Errorf("%w: byte at index %d has value %q", ErrInvalidRunID, i, runID[i:i+1])
 		}
