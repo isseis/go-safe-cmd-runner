@@ -143,3 +143,56 @@
 - 静的読解のみ（動的テスト・ファジングは対象外）。
 - 各コンポーネントは独立監査のため、コンポーネント間の相互作用（例: config 層の TOCTOU が verification 層でどこまで緩和されるか）は個別ファイル内で言及されているものの、本監査全体を通じた統合的な動的検証は範囲外。
 - 外部ライブラリ（`pelletier/go-toml/v2`, `oklog/ulid/v2` 等）の内部実装は対象外。
+
+---
+
+## 7. 対応状況（Task 0150〜0161）
+
+本監査（Task 0149）で検出された所見のうち、🔴High 2 件・横断パターン P1〜P5 の主要部分は Task 0150〜0161 で対応済みである。個別の残件は [98_remaining_issues.md](98_remaining_issues.md) に集約した。
+
+| Task | 対応内容 | 主な対応所見 | 状態 |
+|---|---|---|---|
+| [0150](../0150_groupmembership_getgrgid_failclosed/) | 0151 に統合（設計検討のみ、実装は 0151 に集約） | D1 H-1 の初期検討 | 統合済み |
+| [0151](../0151_groupmembership_failclosed/) | groupmembership のグループメンバー列挙 fail-closed 化、CGO/非CGO 意味論統一、`isUserOnlyGroupMember` 特例分岐削除 | **H-1**、D1 M-1、M-2 | ✅完了 |
+| [0152](../0152_redact_log_message_body/) | `RedactingHandler.Handle` がログメッセージ本文を redact するよう修正 | **H-2** | ✅完了 |
+| [0153](../0153_failopen_error_handling_crosscut/) | P1（fail-open の縮退）の残り 6 箇所を fail-closed 化 | C1 F-1、C2 F-3/F-5、B3 M1/L1、A5 Low-3 | ✅完了 |
+| [0154](../0154_redaction_boundary_unification/) | RedactingHandler の map/struct/slice 再帰 redaction、Slack エラーログの URL 除去、audit ログ 4 メソッドの境界 redaction 統一、環境変数値ベース redaction | P2（D2 M-1/M-3、A7 M-1/M-2/M-3、A4 M-2） | ✅完了 |
+| [0155](../0155_toctou_verify_use_residual_gaps/) | risk 評価のハッシュ再検証、`AtomicMoveFile` の fd アンカー化、record 時のハッシュ計算と解析の一貫性、verify 時の依存解決再実行、PathResolver の解決順序修正、shebang symlink 残余リスクの文書化 | P3（A5 Medium-1、B1 F-1、B2 B2-1/B2-3、C2 F-1、B3 L3/L4） | ✅完了 |
+| [0156](../0156_env_denylist_consolidation/) | 禁止環境変数名判定の一元化、`DYLD_*`/`GLIBC_TUNABLES`/インタプリタ起動時コード注入変数の追加、`env_vars` への denylist 適用 | P4（A2 M-1、A4 M-1、B4 L-1） | ✅完了 |
+| [0157](../0157_dead_code_naming_cleanup/) | `environment.Filter` の縮退・改名、到達不能な実降格パスの削除、`getProcessEUID` の命名整合、未使用 syscall analysis ストアの削除 | P5（A3 F-1〜F-5、A1 M-2、D1 M-4、C3 F3） | ✅完了（軽微なドキュメント横断検索項目 2 件は 0159/0160 で解消済み） |
+| [0158](../0158_dryrun_runas_ident_unification/) | dry-run のユーザー・グループ検証を実行時の識別情報解決（`ResolveRunAsIdent`）に統合し、`user.Lookup` の二重呼び出しを解消 | A1 L-1（0157 フォローアップ） | ✅完了 |
+| [0159](../0159_security_architecture_update/) | セキュリティ設計文書 §5「特権管理」を実装に合わせて全面更新 | ドキュメント整合（0157 フォローアップ） | ✅完了 |
+| [0160](../0160_permission_check_subject_explicit/) | 権限チェックの基準UIDをバイナリごとの明示方針（`RealUIDOnly`/`SudoUIDAware`）で決定するよう変更、`runner` の読み取り判定経路から `SUDO_UID` 参照を除去 | D1 M-3 の一部（0157 フォローアップ） | ✅完了 |
+| [0161](../0161_sudo_uid_validation_and_logging/) | `record`/`verify` が採用する `SUDO_UID` の実在検証、監査ログへの記録 | D1 M-3 の残り | ✅完了 |
+
+**要点**:
+
+- 🔴High 2 件（H-1, H-2）はいずれも解消済み。
+- 横断パターン P1〜P5（§3）は対応範囲に挙げた所見について解消済み。ただし各パターンの「該当箇所」リストに含まれなかった同系統の所見（同じ P1〜P5 のカテゴリに属するが個別タスクの対象外とされたもの）は残っている。詳細は [98_remaining_issues.md](98_remaining_issues.md) を参照。
+- D1 M-3（`SUDO_UID` の無検証信頼）は 0160（権限チェック主体の明示指定）と 0161（`SUDO_UID` 実在検証・監査ログ）の 2 段階で解消済み。
+- 未着手のまま残る所見（D1 L-2/L-3、A1 L-2〜L-4、B1 F-2〜F-9、B2 B2-2/B2-4〜13、B3 M2/L2/Info、C1 F-2〜F-8、C2 F-2/F-4/F-6〜11、C3 F1/F2/F4 以降、D2 M-2/M-4/M-5、A7 L-1/L-2/I-1〜5、E1 全件、および各コンポーネントの 🟠Low/🔵Info 全般）は [98_remaining_issues.md](98_remaining_issues.md) にまとめた。
+
+### 7.1 E1（エントリポイント）所見の現行コードとの照合（2026-08-05 実施）
+
+Task 0150〜0161 はいずれも `cmd/runner`・`cmd/record`・`cmd/verify`・`bootstrap`・`cli` を直接の対象にしていない。E1 の16件（🟡Medium 3・🟠Low 7・🔵Info 6）について、後続タスク（とくに 0157/0158/0160 が特権・識別情報解決の実装を変更している）による副次的解消がないかを現行コードで個別に確認した。結論として **16件全件が現行コードにそのまま該当し、解消されたものはない**。
+
+| ID | 所見 | 現行コードでの確認結果 |
+|---|---|---|
+| M-1 | `--run-id` 未検証（パストラバーサル/ログ注入） | 未対応。`cmd/runner/main.go` の `run-id` フラグはユーザー指定値をそのまま `logger.go:138` の `filepath.Join` に渡しており、ULID 形式検証・`filepath.Base` チェックのいずれも追加されていない。 |
+| M-2 | 起動時特権降格が euid のみ（egid・補助グループ未降格） | 未対応。`cmd/runner/main.go:109` は依然 `syscall.Seteuid(syscall.Getuid())` のみで `Setegid` 呼び出しはなく、`flag.Parse()`（:95）より後で実行される順序も変わっていない。**0157/0160 で整理された「特権実行を exec 時の `syscall.Credential` 指定に一本化する」仕組みは、実行するコマンドへの per-command 特権付与を扱うものであり、`runner` バイナリ自身が setuid-root として起動した直後の自己降格（本所見の対象）とは別レイヤーである。したがって本所見は 0157/0160/0161 のいずれによっても解消されていない。** |
+| M-3 | verify の TOCTOU チェックが fail-open（警告のみ） | 未対応。`cmd/verify/main.go` の `run TOCTOU permission check` ブロックのコメント「Violations are logged as warnings only — verify continues even if the check fails.」は現行のまま存置されており、`RunTOCTOUPermissionCheck` の戻り値で `run` を打ち切る分岐はない。 |
+| L-1 | record が TOCTOU チェック前にハッシュディレクトリを `mkdirAll` | 未対応。`cmd/record/main.go` の `parseArgs`（:274）が `mkdirAll` を実行し、`run`（:159）がその後で `checkDirPermissions`（:185）を呼ぶ順序は変わっていない。 |
+| L-2 | `filepath.Abs`/`EvalSymlinks` 失敗時の無警告フォールバック | 未対応。`cmd/record/main.go`・`cmd/verify/main.go` とも失敗時に元のパスへ黙ってフォールバックする同一パターンのコードが残る（ログ出力なし、共通化もされていない）。 |
+| L-3 | verify のハッシュディレクトリ作成副作用 + パーミッション不一致 | 未対応。`cmd/verify/main.go` は `hashDirPermissions = 0o750` のまま無条件に `mkdirAll` を実行し、`cmd/record/main.go` の `0o700` との不一致も残る。 |
+| L-4 | `runTOCTOUCheck` の変数参照・相対パスのサイレントスキップ | 未対応。`resolveStaticAbsPath`（`cmd/runner/main.go:320`）は `%{` を含むパス・相対パスを無音でスキップする実装のままで、スキップ件数のログ出力は追加されていない。 |
+| L-5 | ログファイル名のタイムスタンプが実際はローカル時刻なのに `Z`（UTC）表記 | 未対応。`internal/runner/bootstrap/logger.go:77` は `time.Now().Format("20060102T150405Z")` のままで `.UTC()` 変換はない。 |
+| L-6 | Phase 1/Phase 2 間のエラー（設定改ざん検出含む）が Slack 未通知 | 未対応。`cmd/runner/main.go` の `SetupLogging` → `LoadAndPrepareConfig` → `SetupSlackLogging` の順序は変わらず、設定ロード失敗時点では Slack ハンドラが未登録のまま。 |
+| L-7 | `DirectoryPermChecker` 初期化失敗時に3箇所とも panic | 未対応。`cmd/runner/main.go`・`cmd/record/main.go`・`cmd/verify/main.go` のいずれも `NewDirectoryPermChecker` 失敗時に同一の `panic(fmt.Sprintf(...))` を実行する実装のまま。 |
+| I-1 | 起動時降格後も saved-uid が root のままである設計意図が未記載 | 未対応。`cmd/runner/main.go:109` 付近に privilege manager との関係を説明するコメントは追加されていない。 |
+| I-2 | dry-run formatter の switch に `default` 節がない | 未対応。`cmd/runner/main.go:478` の `switch outputFormat` は `OutputFormatText`/`OutputFormatJSON` の2ケースのみで `default` 節はない。 |
+| I-3 | Slack env 検証エラーの stderr 二重出力 | 未対応。`cmd/runner/main.go:191` の `fmt.Fprintln(os.Stderr, err.Error())` は残っており、`HandlePreExecutionError` 経由の出力と重複する構造は変わっていない。 |
+| I-4 | `normalizeSlackAllowedHost` の IPv6 分岐で大文字小文字未統一 | 未対応。`internal/runner/bootstrap/config.go` の IPv6 分岐は引き続き `u.Hostname()` を無変換で返し、ホスト名分岐のみ `strings.ToLower`（:54）を適用する非対称が残る。 |
+| I-5 | verify のパッケージレベル変数注入と record の `deps` 構造体注入の様式乖離 | 未対応。`cmd/verify/main.go` は依然 `validatorFactory`/`mkdirAll` をパッケージレベル変数で注入し、`cmd/record/main.go` の `deps` 構造体方式と乖離したまま。付随する `cacheDir`/`machoCacheDir` の重複計算（`cmd/record/main.go`）も解消されていない。 |
+| I-6 | bootstrap/logger のグローバル可変状態 | 未対応。`redactionErrorCollector`/`phase1BaseHandlers` 等のパッケージグローバル変数によるフェーズ間受け渡しは変わらず、`LoggerBootstrap` 相当の構造体化は行われていない。 |
+
+**結論**: E1 は 0149 監査以降、一度も個別タスク化されていない。他コンポーネントの横断パターン対応（0153〜0157）が特権管理・環境変数・redaction・fail-open 判定のロジックを広く修正した一方で、エントリポイント（`cmd/*`・`bootstrap`）自体のコードは変更されておらず、16件は当時の所見のまま現存する。次にタスク化する際の優先候補として扱う（[98_remaining_issues.md](98_remaining_issues.md) §4 参照）。
