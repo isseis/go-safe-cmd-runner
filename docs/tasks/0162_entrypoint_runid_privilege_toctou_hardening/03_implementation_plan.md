@@ -298,20 +298,20 @@
 
 **作業内容**
 
-- [ ] `SetupLoggerWithConfig`（[logger.go:75](../../../internal/runner/bootstrap/logger.go#L75)）の先頭、`hostname := common.GetHostname()` より前に `if err := logging.ValidateRunID(config.RunID); err != nil { return fmt.Errorf("invalid run ID: %w", err) }` を追加する。`config.LogDir` が空かどうかで分岐させない（`02_architecture.md` §3.3）。
-- [ ] シグネチャは変更しない。ハンドラ生成・ファイルオープン・グローバル変数への代入は、この検証を通過した後にのみ実行されることを確認する。
+- [x] `SetupLoggerWithConfig`（[logger.go:75](../../../internal/runner/bootstrap/logger.go#L75)）の先頭、`hostname := common.GetHostname()` より前に `if err := logging.ValidateRunID(config.RunID); err != nil { return fmt.Errorf("invalid run ID: %w", err) }` を追加する。`config.LogDir` が空かどうかで分岐させない（`02_architecture.md` §3.3）。
+- [x] シグネチャは変更しない。ハンドラ生成・ファイルオープン・グローバル変数への代入は、この検証を通過した後にのみ実行されることを確認する。
 
 **テスト**
 
-- [ ] `internal/runner/bootstrap/logger_test.go` に `TestSetupLoggerWithConfig_RejectsInvalidRunID` を追加する。`LogDir` に `tu.SafeTempDir(t)` を指定し、`RunID` に `../evil`・`/tmp/evil`・`""`・実際の改行を含む値・`logging.MaxRunIDLength+1` 文字の値をそれぞれ与えたテーブルで、(a) エラーが返ること、(b) `errors.Is(err, logging.ErrInvalidRunID)` が真であること、(c) `os.ReadDir(LogDir)` の結果が 0 件であること（ログファイルが作られていないこと）を検証する。
-- [ ] 同テーブルに `LogDir: ""` かつ `RunID: "../evil"` のケースを追加し、エラーが返り `errors.Is(err, logging.ErrInvalidRunID)` が真であることを検証する。この1件がないと、検証を `if config.LogDir != ""` で囲った誤実装がテストを全件通過してしまい、`02_architecture.md` §3.3 が求める「`LogDir` の有無で防御の有無を変えない」という設計が守られたことを確認できない。
-- [ ] 同テストは `bootstrap.SetupLogging` を経由せず `SetupLoggerWithConfig` を直接呼ぶ構成とし、入口検証を経ない呼び出しでも防御が働くことを示す（AC-12）。
-- [ ] 既存テストが使う `saveAndRestoreGlobals(t)` 相当のグローバル退避・復元を、新規テストでも同じ形で呼ぶ（`SetupLoggerWithConfig` は `slog.SetDefault` とパッケージグローバルを書き換えるため）。
+- [x] `internal/runner/bootstrap/logger_test.go` に `TestSetupLoggerWithConfig_RejectsInvalidRunID` を追加する。`LogDir` に `tu.SafeTempDir(t)` を指定し、`RunID` に `../evil`・`/tmp/evil`・`""`・実際の改行を含む値・`logging.MaxRunIDLength+1` 文字の値をそれぞれ与えたテーブルで、(a) エラーが返ること、(b) `errors.Is(err, logging.ErrInvalidRunID)` が真であること、(c) `os.ReadDir(LogDir)` の結果が 0 件であること（ログファイルが作られていないこと）を検証する。
+- [x] 同テーブルに `LogDir: ""` かつ `RunID: "../evil"` のケースを追加し、エラーが返り `errors.Is(err, logging.ErrInvalidRunID)` が真であることを検証する。この1件がないと、検証を `if config.LogDir != ""` で囲った誤実装がテストを全件通過してしまい、`02_architecture.md` §3.3 が求める「`LogDir` の有無で防御の有無を変えない」という設計が守られたことを確認できない。
+- [x] 同テストは `bootstrap.SetupLogging` を経由せず `SetupLoggerWithConfig` を直接呼ぶ構成とし、入口検証を経ない呼び出しでも防御が働くことを示す（AC-12）。
+- [x] 既存テストが使う `saveAndRestoreGlobals(t)` 相当のグローバル退避・復元を、新規テストでも同じ形で呼ぶ（`SetupLoggerWithConfig` は `slog.SetDefault` とパッケージグローバルを書き換えるため）。
 
 **完了条件**
 
-- [ ] `go test -tags test ./internal/runner/bootstrap/... ./cmd/runner/...` が成功する。
-- [ ] `internal/runner/bootstrap/logger_test.go`・`internal/runner/bootstrap/environment_test.go`・`cmd/runner/integration_logger_test.go` の既存テストが `RunID` 値の修正なしで通過する。
+- [x] `go test -tags test ./internal/runner/bootstrap/... ./cmd/runner/...` が成功する。
+- [x] `internal/runner/bootstrap/logger_test.go`・`internal/runner/bootstrap/environment_test.go`・`cmd/runner/integration_logger_test.go` の既存テストが `RunID` 値の修正なしで通過する。
 
 ### PR-4 作成ポイント: bootstrap defense in depth
 
@@ -604,9 +604,9 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 
 ### PR-4: `bootstrap` の多層防御（Phase 4）
 
-- [ ] `SetupLoggerWithConfig` 先頭での `ValidateRunID` 呼び出し
-- [ ] `TestSetupLoggerWithConfig_RejectsInvalidRunID` の追加
-- [ ] 既存の `bootstrap` テストと `cmd/runner/integration_logger_test.go` の通過
+- [x] `SetupLoggerWithConfig` 先頭での `ValidateRunID` 呼び出し
+- [x] `TestSetupLoggerWithConfig_RejectsInvalidRunID` の追加
+- [x] 既存の `bootstrap` テストと `cmd/runner/integration_logger_test.go` の通過
 - [ ] PR-4 マージ済み（対象ステップ: Phase 4）
 
 ### PR-5: `cmd/verify` の fail-closed 化（Phase 5）
