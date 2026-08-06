@@ -154,10 +154,14 @@ func captureStdoutStderr(t *testing.T, fn func()) (stdout, stderr string) {
 
 	fn()
 
+	// Restore before closing, so os.Stdout and os.Stderr never name a closed
+	// pipe -- not even for the two statements below, and not if a Close error
+	// aborts this function early.
+	os.Stdout, os.Stderr = origStdout, origStderr
+
 	// Close the write ends so the drain goroutines see EOF and finish.
 	require.NoError(t, outWriter.Close())
 	require.NoError(t, errWriter.Close())
-	os.Stdout, os.Stderr = origStdout, origStderr
 	wg.Wait()
 
 	return outBuf.String(), errBuf.String()
