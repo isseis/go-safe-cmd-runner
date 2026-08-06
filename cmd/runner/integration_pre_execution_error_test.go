@@ -289,9 +289,10 @@ func TestE2E_PreExecutionError_InvalidRunIDNewlineInjection(t *testing.T) {
 	}
 	assert.Equal(t, 1, summaryLines, "exactly one RUN_SUMMARY line may appear in stdout: %q", stdoutOutput)
 	assert.NotContains(t, stdoutOutput, "run_id=fake", "the injected run ID must not appear in stdout")
-	// The report also goes to stderr, whose line structure the newline must not
-	// break either.
-	assert.NotContains(t, stderr.String(), "\nRUN_SUMMARY", "the injected value must not start a line on stderr")
+	// The report also goes to stderr, where the unfixed code would echo the
+	// rejected value into the "Run ID:" line and so split the payload across
+	// lines of its own.
+	assert.NotContains(t, stderr.String(), injectingRunID, "the injected value must not reach stderr")
 }
 
 // TestE2E_PreExecutionError_InvalidRunIDTooLong verifies that a -run-id longer
