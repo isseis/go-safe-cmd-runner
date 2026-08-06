@@ -264,7 +264,7 @@
 - [x] 同ファイルに `TestE2E_PreExecutionError_InvalidRunIDNewlineInjection` を追加する。`-run-id` に Go の文字列リテラル `"x\nRUN_SUMMARY run_id=fake exit_code=0"`（実際の改行を含む値）を argv 要素として与え、(a) 終了コードが 1、(b) 標準出力に `RUN_SUMMARY` を含む行がちょうど1行しか現れない、(c) 標準出力に `run_id=fake` が現れないことを検証する（`02_architecture.md` §7.4）。
 - [x] 同ファイルに `TestE2E_PreExecutionError_InvalidRunIDTooLong` を追加する。`-run-id` に `strings.Repeat("a", logging.MaxRunIDLength+1)` を与え、終了コードが 1 で標準エラー出力に `invalid_run_id` が現れることを検証する。
 - [x] `TestE2E_ValidRunIDIsAdopted` を追加する（成功経路のテストであり、`integration_pre_execution_error_test.go` の担当範囲ではない）。`go run . -config <有効な設定> -dry-run -log-dir <一時ディレクトリ> -run-id backup-20260805-143000` を実行し、(a) 終了コードが 0、(b) 一時ディレクトリに `*_backup-20260805-143000.json` に一致するファイルがちょうど1件生成されていることを検証する。`RUN_SUMMARY` は誤り経路でしか出力されないため（§1.3）、採用された run ID の観測にはログファイル名（`{hostname}_{timestamp}_{runID}.json`、[logger.go:138](../../../internal/runner/bootstrap/logger.go#L138)）を用いる。
-  - 実装時の訂正: 配置先を当初計画の `cmd/runner/integration_logger_test.go` から新規ファイル `cmd/runner/integration_run_id_test.go`（`//go:build test`）へ変更した。dry-run で終了コード 0 を得るには設定ファイルと `/bin/echo` のハッシュ記録が必要であり、そのための既存ヘルパー `newGoRunCmdWithHashDir`（`testutil_ldflags_test.go`）・`recordHash`／`setupTempConfig`（`integration_dryrun_verification_test.go`）はいずれも `//go:build test` 付きのファイルにある。`integration_logger_test.go` はビルドタグを持たないため、そこから参照するとタグなしビルド（`go test ./cmd/runner`）が壊れる。`integration_logger_test.go` にタグを付ける案は、同ファイルの既存テストをタグなしビルドから除外してしまうため採らなかった。
+  - 実装時の訂正: 配置先を当初計画の `cmd/runner/integration_logger_test.go` から新規ファイル `cmd/runner/integration_run_id_test.go`（`//go:build test`）へ変更した。dry-run で終了コード 0 を得るには設定ファイルと `/bin/echo` のハッシュ記録が必要であり、そのための既存ヘルパー `newGoRunCmdWithHashDir`（`testutil_ldflags_test.go`）・`recordHash`／`setupTempConfig`（`integration_dryrun_verification_test.go`）はいずれも `//go:build test` 付きのファイルにある。`integration_logger_test.go` はビルドタグを持たないため、そこから参照するとタグなしビルドで未定義参照になる（`cmd/runner` のタグなしビルドは別の既存事情ですでに失敗しているが、それに新たな破綻を積み増さない）。`integration_logger_test.go` にタグを付ける案は、同ファイルの既存テストをタグなしビルドから除外してしまうため採らなかった。
 
 **完了条件（Phase 3-B）**
 
@@ -591,15 +591,15 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 
 ### PR-3: `--run-id` の入口検証（Phase 3-B）
 
-- [ ] `resolveRunID` の追加
-- [ ] `main()` への `bootstrapID` と `resolveRunID` の挿入、パッケージ変数 `runID` への代入、旧 run ID 既定値設定の削除
-- [ ] 拒否時の `logging.HandlePreExecutionError` 呼び出し（run ID は `bootstrapID`、メッセージに生値を含めない）
-- [ ] `-run-id` フラグ説明文字列の更新（`main.go` と `main_test.go` の両方）
-- [ ] `TestResolveRunID` の追加
-- [ ] `cmd/runner/integration_pre_execution_error_test.go` への拒否系統合テスト3件の追加
-- [ ] `cmd/runner/integration_logger_test.go` への `TestE2E_ValidRunIDIsAdopted` の追加
-- [ ] `make deadcode` の確認（PR-1 が導入し本 PR で到達可能になる `internal/logging` の新規シンボルを含め、未到達の報告がないこと）
-- [ ] `go test -tags test ./cmd/runner/...` の成功
+- [x] `resolveRunID` の追加
+- [x] `main()` への `bootstrapID` と `resolveRunID` の挿入、パッケージ変数 `runID` への代入、旧 run ID 既定値設定の削除
+- [x] 拒否時の `logging.HandlePreExecutionError` 呼び出し（run ID は `bootstrapID`、メッセージに生値を含めない）
+- [x] `-run-id` フラグ説明文字列の更新（`main.go` と `main_test.go` の両方）
+- [x] `TestResolveRunID` の追加
+- [x] `cmd/runner/integration_pre_execution_error_test.go` への拒否系統合テスト3件の追加
+- [x] `cmd/runner/integration_run_id_test.go` への `TestE2E_ValidRunIDIsAdopted` の追加（配置先変更の理由は §2 Phase 3-B の「実装時の訂正」を参照）
+- [x] `make deadcode` の確認（PR-1 が導入し本 PR で到達可能になる `internal/logging` の新規シンボルを含め、未到達の報告がないこと）
+- [x] `go test -tags test ./cmd/runner/...` の成功
 - [ ] PR-3 マージ済み（対象ステップ: Phase 3-B）
 
 ### PR-4: `bootstrap` の多層防御（Phase 4）

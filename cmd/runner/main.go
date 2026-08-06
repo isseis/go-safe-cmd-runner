@@ -141,8 +141,9 @@ func reportStartupPrivilegeFailure(err error) int {
 
 // resolveRunID returns the run ID to use for this execution.
 //
-// Invariant: the returned run ID always satisfies logging.ValidateRunID, so no
-// caller downstream has to re-check the value the user supplied. An empty
+// Invariant: given a bootstrapID that satisfies logging.ValidateRunID (which
+// logging.GenerateRunID always produces), the returned run ID satisfies it too,
+// so no caller downstream has to re-check the value the user supplied. An empty
 // flagValue yields bootstrapID; Go's flag package cannot distinguish an unset
 // --run-id from an explicitly empty one, so both are treated as "not supplied".
 // Any other value must satisfy logging.ValidateRunID; otherwise the returned

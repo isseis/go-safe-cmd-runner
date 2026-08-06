@@ -384,13 +384,6 @@ func TestResolveRunID(t *testing.T) {
 			want:      bootstrapID,
 		},
 		{
-			name: "explicitly_empty_flag_uses_bootstrap_id",
-			// flag cannot tell --run-id="" apart from an unset flag, so both
-			// reach resolveRunID as the empty string and must behave alike.
-			flagValue: "",
-			want:      bootstrapID,
-		},
-		{
 			name:      "accepted_value_is_adopted",
 			flagValue: "my-custom-run-001",
 			want:      "my-custom-run-001",
@@ -415,4 +408,21 @@ func TestResolveRunID(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+
+	// An explicitly empty --run-id must behave exactly like an unset one. This
+	// goes through the real flag set rather than calling resolveRunID with ""
+	// directly, because the claim under test is that flag parsing cannot tell
+	// the two apart in the first place.
+	t.Run("explicitly_empty_flag_uses_bootstrap_id", func(t *testing.T) {
+		cleanup := setupTestFlags()
+		defer cleanup()
+
+		os.Args = []string{"runner", "-run-id="}
+		flag.Parse()
+		require.Empty(t, runID, "an explicitly empty --run-id parses to the empty string")
+
+		got, err := resolveRunID(runID, bootstrapID)
+		require.NoError(t, err)
+		assert.Equal(t, bootstrapID, got)
+	})
 }

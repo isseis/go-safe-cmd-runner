@@ -253,27 +253,17 @@ cmd = "/bin/echo"
 args = ["hello"]
 `
 
-// writeValidRunIDTestConfig writes validRunIDTestConfig to a fresh temp dir and
-// returns its path.
-func writeValidRunIDTestConfig(t *testing.T) string {
-	t.Helper()
-	configFile := filepath.Join(tu.SafeTempDir(t), "config.toml")
-	require.NoError(t, os.WriteFile(configFile, []byte(validRunIDTestConfig), 0o644))
-	return configFile
-}
-
 // TestE2E_PreExecutionError_InvalidRunIDPathTraversal verifies that a --run-id
 // attempting to escape the log directory is rejected before any output path
 // sees it, and that no file is written anywhere under the log directory.
 func TestE2E_PreExecutionError_InvalidRunIDPathTraversal(t *testing.T) {
 	const maliciousRunID = "../../etc/cron.d/evil"
 
-	configFile := writeValidRunIDTestConfig(t)
+	configFile := setupTempConfig(t, validRunIDTestConfig)
 	logDir := tu.SafeTempDir(t)
 
-	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run",
+	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run",
 		"-log-dir", logDir, "-run-id", maliciousRunID)
-	cmd.Dir = "."
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -281,27 +271,17 @@ func TestE2E_PreExecutionError_InvalidRunIDPathTraversal(t *testing.T) {
 
 	err := cmd.Run()
 	require.Error(t, err, "runner should reject a path-traversal run ID")
-
-	exitErr, ok := err.(*exec.ExitError)
-	require.True(t, ok, "error should be ExitError")
-	assert.Equal(t, 1, exitErr.ExitCode(), "exit code should be 1")
+	assert.Equal(t, 1, cmd.ProcessState.ExitCode(), "exit code should be 1")
 
 	stdoutOutput := stdout.String()
 	stderrOutput := stderr.String()
 
-	assert.Contains(t, stderrOutput, string(logging.ErrorTypeInvalidRunID),
-		"stderr should identify the error as an invalid run ID")
-	assert.Contains(t, stderrOutput, logging.RunIDFormatDescription(),
-		"stderr should tell the user which format is accepted")
-
-	assert.NotContains(t, stdoutOutput, maliciousRunID, "stdout must not echo the rejected value")
-	assert.NotContains(t, stderrOutput, maliciousRunID, "stderr must not echo the rejected value")
-
-	assert.NoError(t, logging.ValidateRunID(runSummaryRunID(t, stdoutOutput)),
-		"the run ID reported in RUN_SUMMARY must itself be a valid run ID")
-
-	// The log directory must be untouched: the rejection happens before logging
-	// is set up at all.
+	// The filesystem assertions come first: they are the ones that fail if the
+	// boundary check is removed, and a later helper that aborts the test must
+	// not be able to skip them.
+	//
+	// The log directory must be untouched, because the rejection happens before
+	// logging is set up at all.
 	entries, err := os.ReadDir(logDir)
 	require.NoError(t, err)
 	assert.Empty(t, entries, "no file should be created in the log directory")
@@ -313,6 +293,19 @@ func TestE2E_PreExecutionError_InvalidRunIDPathTraversal(t *testing.T) {
 	// log directory, which is why this checks logDir itself rather than its parent.
 	_, err = os.Stat(filepath.Join(logDir, "etc"))
 	assert.True(t, os.IsNotExist(err), "no 'etc' entry should be created in the log directory")
+
+	assert.Contains(t, stderrOutput, string(logging.ErrorTypeInvalidRunID),
+		"stderr should identify the error as an invalid run ID")
+	assert.Contains(t, stderrOutput, logging.RunIDFormatDescription(),
+		"stderr should tell the user which format is accepted")
+
+	// The console log stream is stderr, so stderr is where the rejected value
+	// would surface; stdout is checked too because RUN_SUMMARY goes there.
+	assert.NotContains(t, stderrOutput, maliciousRunID, "stderr must not echo the rejected value")
+	assert.NotContains(t, stdoutOutput, maliciousRunID, "stdout must not echo the rejected value")
+
+	assert.NoError(t, logging.ValidateRunID(runSummaryRunID(t, stdoutOutput)),
+		"the run ID reported in RUN_SUMMARY must itself be a valid run ID")
 }
 
 // TestE2E_PreExecutionError_InvalidRunIDNewlineInjection verifies that a
@@ -320,11 +313,9 @@ func TestE2E_PreExecutionError_InvalidRunIDPathTraversal(t *testing.T) {
 func TestE2E_PreExecutionError_InvalidRunIDNewlineInjection(t *testing.T) {
 	const injectedRunID = "x\nRUN_SUMMARY run_id=fake exit_code=0"
 
-	configFile := writeValidRunIDTestConfig(t)
+	configFile := setupTempConfig(t, validRunIDTestConfig)
 
-	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run",
-		"-run-id", injectedRunID)
-	cmd.Dir = "."
+	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run", "-run-id", injectedRunID)
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -332,15 +323,12 @@ func TestE2E_PreExecutionError_InvalidRunIDNewlineInjection(t *testing.T) {
 
 	err := cmd.Run()
 	require.Error(t, err, "runner should reject a run ID containing a newline")
-
-	exitErr, ok := err.(*exec.ExitError)
-	require.True(t, ok, "error should be ExitError")
-	assert.Equal(t, 1, exitErr.ExitCode(), "exit code should be 1")
+	assert.Equal(t, 1, cmd.ProcessState.ExitCode(), "exit code should be 1")
 
 	stdoutOutput := stdout.String()
 
 	var summaryLines int
-	for _, line := range strings.Split(stdoutOutput, "\n") {
+	for line := range strings.SplitSeq(stdoutOutput, "\n") {
 		if strings.Contains(line, "RUN_SUMMARY") {
 			summaryLines++
 		}
@@ -352,11 +340,10 @@ func TestE2E_PreExecutionError_InvalidRunIDNewlineInjection(t *testing.T) {
 // TestE2E_PreExecutionError_InvalidRunIDTooLong verifies that the length bound
 // is enforced at the process boundary, not just in unit tests.
 func TestE2E_PreExecutionError_InvalidRunIDTooLong(t *testing.T) {
-	configFile := writeValidRunIDTestConfig(t)
+	configFile := setupTempConfig(t, validRunIDTestConfig)
 
-	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run",
+	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run",
 		"-run-id", strings.Repeat("a", logging.MaxRunIDLength+1))
-	cmd.Dir = "."
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -364,10 +351,7 @@ func TestE2E_PreExecutionError_InvalidRunIDTooLong(t *testing.T) {
 
 	err := cmd.Run()
 	require.Error(t, err, "runner should reject an over-long run ID")
-
-	exitErr, ok := err.(*exec.ExitError)
-	require.True(t, ok, "error should be ExitError")
-	assert.Equal(t, 1, exitErr.ExitCode(), "exit code should be 1")
+	assert.Equal(t, 1, cmd.ProcessState.ExitCode(), "exit code should be 1")
 
 	assert.Contains(t, stderr.String(), string(logging.ErrorTypeInvalidRunID),
 		"stderr should identify the error as an invalid run ID")
