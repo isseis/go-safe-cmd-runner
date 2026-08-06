@@ -116,7 +116,7 @@
 **作業内容**
 
 - [x] `internal/logging/runid.go` を新規作成し、`MaxRunIDLength`・`RunIDFormatDescription`・`ErrInvalidRunID`・`ValidateRunID` を定義する。シグネチャとドキュメントコメントの要件は `02_architecture.md` §3.1 に従う。
-- [x] `RunIDFormatDescription` を `MaxRunIDLength` から導出する（`fmt.Sprintf("1-%d characters, each of A-Z a-z 0-9 '_' '-'", MaxRunIDLength)` を `var` で定義する）。定数どうしに数値を二重に書かないことで、上限値を変えたときに説明文だけが古いまま残るのを防ぐ。
+- [x] `RunIDFormatDescription` を `MaxRunIDLength` から導出する（`fmt.Sprintf("1-%d characters, each of A-Z a-z 0-9 '_' '-'", MaxRunIDLength)` を非公開の `var runIDFormatDescription` で保持し、公開 API は値を返す関数 `RunIDFormatDescription() string` とする。可変なパッケージ変数を公開しないための実装上の判断であり、PR-1 で確定した）。定数どうしに数値を二重に書かないことで、上限値を変えたときに説明文だけが古いまま残るのを防ぐ。
 - [x] `ValidateRunID` を許可リスト方式で実装する。長さ 0 と `MaxRunIDLength` 超過を拒否し、`A-Z` `a-z` `0-9` `_` `-` 以外のバイトを1つでも含む値を拒否する。
 - [x] `ValidateRunID` が返すエラーに、最初に違反したバイトの位置（0 始まりのインデックス）とそのバイトの `%q` 表現のみを含め、入力値全体は含めない。エラーは `ErrInvalidRunID` をラップする。
 - [x] `GenerateRunID` を `internal/logging/safeopen.go`（56〜60行目）から `internal/logging/runid.go` へ移設する。実装は変更せず、ドキュメントコメントに「出力は常に `ValidateRunID` を満たす」旨を追記する。
@@ -153,8 +153,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -166,23 +166,23 @@
 
 **作業内容**
 
-- [ ] `CallSite` に呼び出し位置を表すフィールド `Pos token.Pos` を追加し、`scanner.visit` の `*ast.CallExpr` 分岐で呼び出し式の位置を格納する。既存の3フィールドは変更しない。
-- [ ] `CallSite` に呼び出し元ファイルを表すフィールド `File string` を追加し、解析中のファイル名を格納する。`RefsInSource` は1ファイルごとに `token.NewFileSet()` を作る実装であるため（[helpers.go:198](../../../internal/testutil/identitymutationguard/helpers.go#L198)）、`FindRefs` が複数ファイルを走査した結果の `Pos` はファイルをまたぐと基準が異なり、比較しても意味を持たない。`File` を持たせることで、利用者側が「同一ファイル内の比較であること」を確認してから `Pos` を比較できるようにする。この制約を `CallSite.Pos` のドキュメントコメントに英語で明記する。
-- [ ] 追跡対象を呼び出し側から追加指定するための型 `ExtraTrackedFunc{ImportPath, FuncName string}` と、`Options{Extra []ExtraTrackedFunc}` を追加する。
-- [ ] `RefsInSourceWithOptions(t *testing.T, filename, src string, opts Options) ([]CallSite, []ValueRef)` と `FindRefsWithOptions(t *testing.T, dir string, opts Options) ([]CallSite, []ValueRef)` を追加する。`RefsInSource` と `FindRefs` は空の `Options` を渡す薄いラッパーとして残す。
-- [ ] `scanner.trackedSelector` を、既存の `isTrackedImportPath` × `FuncNames` の判定に加えて `Options.Extra` の (import パス, 関数名) の完全一致でも真になるよう拡張する。追加指定した関数は `CallSite.SyscallName` にその関数名を入れる。
-- [ ] `ExtraTrackedFunc.ImportPath` が空文字列の場合は、`*ast.SelectorExpr` ではなく**非修飾の `*ast.Ident`** の呼び出し（同一パッケージの関数呼び出し）に一致させる分岐を `scanner.visit` に追加する。Phase 3-A の主張2 が追跡する `dropStartupPrivileges` は `cmd/runner` 内の関数であり、現行の `trackedSelector` は `*ast.SelectorExpr` でない式に対して即座に false を返すため（[helpers.go:258-261](../../../internal/testutil/identitymutationguard/helpers.go#L258-L261)）、この分岐がないと主張2 が成立しない。非修飾識別子については `ValueRef` の検出は行わない（同一パッケージ内では値参照の検出が過剰検知になるため）。
-- [ ] 製品 `.go` ファイルのパスを列挙する `ProductionGoFiles(t *testing.T, dir string) []string` を追加する。除外条件は `FindRefs` と同一（ディレクトリ、非 `.go`、`_test.go`、`//go:build` が `test` タグを積極的に要求するファイル）とし、`FindRefs` 側もこの関数を使うよう書き換えて判定ロジックを1箇所に保つ。
+- [x] `CallSite` に呼び出し位置を表すフィールド `Pos token.Pos` を追加し、`scanner.visit` の `*ast.CallExpr` 分岐で呼び出し式の位置を格納する。既存の3フィールドは変更しない。
+- [x] `CallSite` に呼び出し元ファイルを表すフィールド `File string` を追加し、解析中のファイル名を格納する。`RefsInSource` は1ファイルごとに `token.NewFileSet()` を作る実装であるため（[helpers.go:198](../../../internal/testutil/identitymutationguard/helpers.go#L198)）、`FindRefs` が複数ファイルを走査した結果の `Pos` はファイルをまたぐと基準が異なり、比較しても意味を持たない。`File` を持たせることで、利用者側が「同一ファイル内の比較であること」を確認してから `Pos` を比較できるようにする。この制約を `CallSite.Pos` のドキュメントコメントに英語で明記する。
+- [x] 追跡対象を呼び出し側から追加指定するための型 `ExtraTrackedFunc{ImportPath, FuncName string}` と、`Options{Extra []ExtraTrackedFunc}` を追加する。
+- [x] `RefsInSourceWithOptions(t *testing.T, filename, src string, opts Options) ([]CallSite, []ValueRef)` と `FindRefsWithOptions(t *testing.T, dir string, opts Options) ([]CallSite, []ValueRef)` を追加する。`RefsInSource` と `FindRefs` は空の `Options` を渡す薄いラッパーとして残す。
+- [x] `scanner.trackedSelector` を、既存の `isTrackedImportPath` × `FuncNames` の判定に加えて `Options.Extra` の (import パス, 関数名) の完全一致でも真になるよう拡張する。追加指定した関数は `CallSite.SyscallName` にその関数名を入れる。
+- [x] `ExtraTrackedFunc.ImportPath` が空文字列の場合は、`*ast.SelectorExpr` ではなく**非修飾の `*ast.Ident`** の呼び出し（同一パッケージの関数呼び出し）に一致させる分岐を `scanner.visit` に追加する。Phase 3-A の主張2 が追跡する `dropStartupPrivileges` は `cmd/runner` 内の関数であり、現行の `trackedSelector` は `*ast.SelectorExpr` でない式に対して即座に false を返すため（[helpers.go:258-261](../../../internal/testutil/identitymutationguard/helpers.go#L258-L261)）、この分岐がないと主張2 が成立しない。非修飾識別子については `ValueRef` の検出は行わない（同一パッケージ内では値参照の検出が過剰検知になるため）。
+- [x] 製品 `.go` ファイルのパスを列挙する `ProductionGoFiles(t *testing.T, dir string) []string` を追加する。除外条件は `FindRefs` と同一（ディレクトリ、非 `.go`、`_test.go`、`//go:build` が `test` タグを積極的に要求するファイル）とし、`FindRefs` 側もこの関数を使うよう書き換えて判定ロジックを1箇所に保つ。
 
 **テスト**
 
-- [ ] `internal/runner/resource/identity_mutation_guard_test.go` と `internal/runner/base/risktypes/identity_mutation_guard_test.go` が無変更で通過することを確認する（後方互換の確認。新規テストは追加しない）。
-- [ ] 拡張そのものの検証は Phase 3-A のガードテストが利用者として行う。`identitymutationguard` 自身には専用のテストファイルを追加しない（既存パッケージにもテストファイルはなく、利用者側のコントロールケースで検証する方式を踏襲する）。
+- [x] `internal/runner/resource/identity_mutation_guard_test.go` と `internal/runner/base/risktypes/identity_mutation_guard_test.go` が無変更で通過することを確認する（後方互換の確認。新規テストは追加しない）。
+- [x] 拡張そのものの検証は Phase 3-A のガードテストが利用者として行う。`identitymutationguard` 自身には専用のテストファイルを追加しない（既存パッケージにもテストファイルはなく、利用者側のコントロールケースで検証する方式を踏襲する）。
 
 **完了条件**
 
-- [ ] `go test -tags test ./internal/testutil/... ./internal/runner/resource/... ./internal/runner/base/risktypes/...` が成功する。
-- [ ] `internal/runner/resource/identity_mutation_guard_test.go` と `internal/runner/base/risktypes/identity_mutation_guard_test.go` の差分が空である（`git diff --stat` で確認）。
+- [x] `go test -tags test ./internal/testutil/... ./internal/runner/resource/... ./internal/runner/base/risktypes/...` が成功する。
+- [x] `internal/runner/resource/identity_mutation_guard_test.go` と `internal/runner/base/risktypes/identity_mutation_guard_test.go` の差分が空である（`git diff --stat` で確認）。
 
 ---
 
@@ -198,23 +198,25 @@
 
 **作業内容（製品コード）**
 
-- [ ] `cmd/runner/main.go` に `startupPrivilegeStage` 型と定数 `stageSetegid` / `stageSeteuid`、`startupPrivilegeError` 型を追加する（`02_architecture.md` §3.2.1）。
-- [ ] `dropStartupPrivileges(targetUID, targetGID int) error` を追加する。`syscall.Setegid(targetGID)` を先に、成功した場合のみ `syscall.Seteuid(targetUID)` を呼ぶ。いずれかが失敗したら該当 `Stage` を持つ `*startupPrivilegeError` を返し、後続の処理は行わない。
-- [ ] `reportStartupPrivilegeFailure(err error) int` を追加する。`logging.GenerateRunID()` で run ID を生成し、`logging.HandlePreExecutionError(logging.ErrorTypePrivilegeDrop, <失敗段階を含むメッセージ>, "main", <生成した run ID>)` を呼び、終了コード 1 を返す。
-- [ ] `main()` の先頭を `02_architecture.md` §3.2.2 の順序へ書き換える。(1) `dropStartupPrivileges(syscall.Getuid(), syscall.Getgid())`、失敗時は `os.Exit(reportStartupPrivilegeFailure(err))`。(2) `flag.Parse()`。(3) run ID の既定値設定（本フェーズでは現行の `if runID == "" { runID = logging.GenerateRunID() }` のまま残す。Phase 3-B で置き換える）。(4) ハッシュディレクトリの絶対パス検査。
-- [ ] `main()` から `syscall.Seteuid` の直接呼び出し（109〜112行目）を削除する。ハッシュディレクトリ検査と `mainWithExitCode` 以降は現行のまま残す。
+- [x] `cmd/runner/main.go` に `startupPrivilegeStage` 型と定数 `stageSetegid` / `stageSeteuid`、`startupPrivilegeError` 型を追加する（`02_architecture.md` §3.2.1）。
+- [x] `dropStartupPrivileges(targetUID, targetGID int) error` を追加する。`syscall.Setegid(targetGID)` を先に、成功した場合のみ `syscall.Seteuid(targetUID)` を呼ぶ。いずれかが失敗したら該当 `Stage` を持つ `*startupPrivilegeError` を返し、後続の処理は行わない。
+- [x] `reportStartupPrivilegeFailure(err error) int` を追加する。`logging.GenerateRunID()` で run ID を生成し、`logging.HandlePreExecutionError(logging.ErrorTypePrivilegeDrop, <失敗段階を含むメッセージ>, "main", <生成した run ID>)` を呼び、終了コード 1 を返す。
+- [x] `main()` の先頭を `02_architecture.md` §3.2.2 の順序へ書き換える。(1) `dropStartupPrivileges(syscall.Getuid(), syscall.Getgid())`、失敗時は `os.Exit(reportStartupPrivilegeFailure(err))`。(2) `flag.Parse()`。(3) run ID の既定値設定（本フェーズでは現行の `if runID == "" { runID = logging.GenerateRunID() }` のまま残す。Phase 3-B で置き換える）。(4) ハッシュディレクトリの絶対パス検査。
+- [x] `main()` から `syscall.Seteuid` の直接呼び出し（109〜112行目）を削除する。ハッシュディレクトリ検査と `mainWithExitCode` 以降は現行のまま残す。
 
 **テスト**
 
-- [ ] `cmd/runner/startup_privilege_test.go`（新規）に `TestDropStartupPrivileges_FailsClosedOnSetegidFailure` を追加する。`syscall.Geteuid() == 0` のとき `t.Skip` する。`dropStartupPrivileges(os.Getuid(), 0)` を呼び、返るエラーが `*startupPrivilegeError` で `Stage == stageSetegid` であること、呼び出し前後で `syscall.Geteuid()` と `syscall.Getegid()` の**両方**が変化していないこと（`Setegid` が失敗し、`Seteuid` へ進んでいないこと）を検証する。
-- [ ] 同ファイルに `TestDropStartupPrivileges_FailsClosedOnSeteuidFailure` を追加する。`syscall.Geteuid() == 0` のとき `t.Skip` する。`dropStartupPrivileges(0, os.Getgid())` を呼び、`Setegid` は成功したうえで `Seteuid(0)` が `EPERM` で失敗し、`Stage == stageSeteuid` のエラーが返ること、`syscall.Geteuid()` が変化していないことを検証する。
-- [ ] 同ファイルに `TestDropStartupPrivileges_SucceedsForCurrentIdentity` を追加し、`dropStartupPrivileges(syscall.Getuid(), syscall.Getgid())` が `nil` を返し、**かつ** 呼び出し後の `syscall.Getegid()` が `syscall.Getgid()` と、`syscall.Geteuid()` が `syscall.Getuid()` と一致することを検証する。戻り値だけを見る主張では、常に `nil` を返す空実装が通過してしまう。実効グループIDを観測するのは本テストだけであるため、この主張は省略できない。
-- [ ] 同ファイルに `TestReportStartupPrivilegeFailure_UsesValidRunID` を追加する。合成した `*startupPrivilegeError` を渡し、戻り値が非0であること、標準出力に出る `RUN_SUMMARY` 行の `run_id` フィールドの値が空でなく `logging.ValidateRunID` を通過すること、標準エラー出力に `privilege_drop_failed` と失敗段階（`setegid`）が現れることを検証する。標準出力・標準エラー出力は `os.Pipe` で差し替え、`t.Cleanup` で元の `*os.File` へ戻したうえでパイプの読み書き両端を `Close` する。
-- [ ] `cmd/runner/startup_privilege_test.go` の全テストに `t.Parallel()` を付けない。プロセスの実効ID・`os.Stdout`・`os.Stderr` というプロセス全体の状態を書き換えるため、同パッケージのフラグ操作系テスト（`setupTestFlags` を使うもの）と並行実行してはならない。この理由をファイル冒頭のコメントに英語で記す。
-- [ ] `TestDropStartupPrivileges_FailsClosedOn*` の2件は実効ユーザーIDが 0 のとき `t.Skip` するため、root で `make test` を実行すると AC-15・AC-16 の検証が消える。GitHub Actions の `ubuntu-latest` ランナーは非 root であり CI では実行されることを、同ファイルのコメントに英語で記録する（CI 構成が変わったときに検証が黙って失われないようにするため）。
-- [ ] `cmd/runner/startup_order_guard_test.go`（新規、`//go:build test` を付ける。`identitymutationguard` 自身が `//go:build test` であり、既存の2つのガードテストも同じタグを持つため）に `TestStartupPrivilegeDropOrder` を追加し、`02_architecture.md` §7.2 の主張1〜4を検証する。
+- [x] `cmd/runner/startup_privilege_test.go`（新規）に `TestDropStartupPrivileges_FailsClosedOnSetegidFailure` を追加する。`syscall.Geteuid() == 0` のとき `t.Skip` する。`dropStartupPrivileges(os.Getuid(), 0)` を呼び、返るエラーが `*startupPrivilegeError` で `Stage == stageSetegid` であること、呼び出し前後で `syscall.Geteuid()` と `syscall.Getegid()` の**両方**が変化していないこと（`Setegid` が失敗し、`Seteuid` へ進んでいないこと）を検証する。
+- [x] 同ファイルに `TestDropStartupPrivileges_FailsClosedOnSeteuidFailure` を追加する。`syscall.Geteuid() == 0` のとき `t.Skip` する。`dropStartupPrivileges(0, os.Getgid())` を呼び、`Setegid` は成功したうえで `Seteuid(0)` が `EPERM` で失敗し、`Stage == stageSeteuid` のエラーが返ること、`syscall.Geteuid()` が変化していないことを検証する。
+- [x] 同ファイルに `TestDropStartupPrivileges_SucceedsForCurrentIdentity` を追加し、`dropStartupPrivileges(syscall.Getuid(), syscall.Getgid())` が `nil` を返し、**かつ** 呼び出し後の `syscall.Getegid()` が `syscall.Getgid()` と、`syscall.Geteuid()` が `syscall.Getuid()` と一致することを検証する。
+  - 実装時の訂正: 本テストは「常に `nil` を返す空実装」を落とせない。テストバイナリは setuid/setgid で起動されないため、呼び出し前から実効IDと実ID は一致しており、実効グループIDが実際に動いたことを非特権プロセスから観測する手段がない（非特権プロセスは補助グループへ `setegid` できないため、観測可能な降格先も存在しない）。空実装を落とすのは同ファイルの失敗経路テスト2件であり、`return nil` の実装は両方で失敗する。本テストは製品コードの呼び出し形（戻り値 `nil` と呼び出し後の識別子の整合）を固定する位置づけとし、この限界をテストのコメントに英語で明記する。
+- [x] 同ファイルに `TestReportStartupPrivilegeFailure_UsesValidRunID` を追加する。合成した `*startupPrivilegeError` を渡し、戻り値が非0であること、標準出力に出る `RUN_SUMMARY` 行の `run_id` フィールドの値が空でなく `logging.ValidateRunID` を通過すること、標準エラー出力に `privilege_drop_failed` と失敗段階（`setegid`）が現れることを検証する。標準出力・標準エラー出力は `os.Pipe` で差し替え、`t.Cleanup` で元の `*os.File` へ戻したうえでパイプの読み書き両端を `Close` する。
+- [x] `cmd/runner/startup_privilege_test.go` の全テストに `t.Parallel()` を付けない。プロセスの実効ID・`os.Stdout`・`os.Stderr` というプロセス全体の状態を書き換えるため、同パッケージのフラグ操作系テスト（`setupTestFlags` を使うもの）と並行実行してはならない。この理由をファイル冒頭のコメントに英語で記す。
+- [x] `TestDropStartupPrivileges_FailsClosedOn*` の2件は実効ユーザーIDが 0 のとき `t.Skip` するため、root で `make test` を実行すると AC-15・AC-16 の検証が消える。GitHub Actions の `ubuntu-latest` ランナーは非 root であり CI では実行されることを、同ファイルのコメントに英語で記録する（CI 構成が変わったときに検証が黙って失われないようにするため）。
+- [x] `cmd/runner/startup_order_guard_test.go`（新規、`//go:build test` を付ける。`identitymutationguard` 自身が `//go:build test` であり、既存の2つのガードテストも同じタグを持つため）に `TestStartupPrivilegeDropOrder` を追加し、`02_architecture.md` §7.2 の主張1〜4を検証する。
   - 主張1: `identitymutationguard.FindRefsWithOptions` の結果から `FuncName == "dropStartupPrivileges"` の `CallSite` を抽出し、`SyscallName == "Setegid"` の `Pos` が `SyscallName == "Seteuid"` の `Pos` より小さいことを検証する。両方が1件ずつ存在することを `require` で確認し、走査対象の取り違えによる空振り成功を防ぐ。`Pos` を比較する前に、両者の `File` が一致することを `require` で確認する（Phase 2 の `File` フィールドの制約）。
   - 主張2: `Options.Extra` に `{ImportPath: "flag", FuncName: "Parse"}` と `{ImportPath: "", FuncName: "dropStartupPrivileges"}` を指定して再走査し、`FuncName == "main"` の `CallSite` のうち `dropStartupPrivileges` の呼び出し位置が `flag.Parse` の呼び出し位置より小さいことを検証する。両方の呼び出しが1件ずつ存在すること、および両者の `File` が一致することを `require` で確認してから `Pos` を比較する。
+  - 主張2b（実装時に追加）: `main.go` を `go/parser` で解析し、`main` の本体の最初の文が `dropStartupPrivileges` の呼び出しを含むことを検証する。主張2 だけでは、降格より上に入力を読む文が差し込まれても検出できず、`02_architecture.md` §3.2.2 が保証すると述べる内容に届かない。
   - 主張3: `identitymutationguard.FindRefs(t, ".")` の結果に含まれる `CallSite` が `dropStartupPrivileges` 内の `Setegid` と `Seteuid` の2件だけであり、`ValueRef` が0件であることを検証する。
   - 主張4: `identitymutationguard.ProductionGoFiles(t, ".")` の各ファイルを `go/parser` で解析し、`init` という名前の `*ast.FuncDecl` の総数が 1 であることを検証する。
   - コントロールケース: 主張1・2の走査が関数本体を対象にしていることを、`RefsInSourceWithOptions` に合成ソース（`main` 本体に `flag.Parse()` と `dropStartupPrivileges(...)` を意図した順序と逆順で並べたもの）を渡して、順序判定が実際に失敗側へ倒れることで確認する。
@@ -222,8 +224,8 @@
 
 **完了条件（Phase 3-A）**
 
-- [ ] `go test -tags test ./cmd/runner/...` が成功する。
-- [ ] 既存の `TestShortFlags`・`TestShortFlagsEquivalence`（`cmd/runner/main_test.go`）がアサーション無変更で通過する。
+- [x] `go test -tags test ./cmd/runner/...` が成功する。
+- [x] 既存の `TestShortFlags`・`TestShortFlagsEquivalence`（`cmd/runner/main_test.go`）がアサーション無変更で通過する。
 
 ### PR-2 作成ポイント: startup privilege drop ordering
 
@@ -237,8 +239,8 @@
 
 **判定理由**: Phase 3-A は起動時特権降格というセキュリティゲート段階の変更（`mkplan.md` step 8 のパネル発動条件）に当たり、順序を誤っても正常系には痕跡が残らないため実行時テストで担保できず、AST 静的検証に依存する（`02_architecture.md` §7.2）。加えて Phase 2 の「`ImportPath` が空のとき非修飾 `*ast.Ident` に一致させる」拡張は前例のない設計判断であり、S-3 が AST 走査の試行錯誤リスクを挙げている。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（[#993](https://github.com/isseis/go-safe-cmd-runner/pull/993)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -249,15 +251,15 @@
 - [ ] `resolveRunID(flagValue, bootstrapID string) (string, error)` を追加する。`flagValue` が空文字列なら `bootstrapID` を返し、それ以外は `logging.ValidateRunID(flagValue)` に合格した場合のみ `flagValue` を返す。不合格時は `logging.ErrInvalidRunID` をラップしたエラーを返す（`02_architecture.md` §3.2.3）。
 - [ ] `main()` を `02_architecture.md` §3.2.2 の最終形へ書き換える。Phase 3-A で確定した (1) `dropStartupPrivileges` と (2) `flag.Parse()` の間に `bootstrapID := logging.GenerateRunID()` を挿入し、`flag.Parse()` の直後に `resolveRunID(runID, bootstrapID)` を置く。ハッシュディレクトリの絶対パス検査はその後に残す。
 - [ ] `resolveRunID` が返した run ID を、パッケージ変数 `runID`（`cmd/runner/main.go:49`）へ代入する。`mainWithExitCode(runID)` 以降はこの変数を読むため、ローカル変数に留めるとフラグの生値が下流へ流れる。
-- [ ] `resolveRunID` が失敗した場合、`logging.HandlePreExecutionError` に渡す run ID を **`bootstrapID`** とし、メッセージには `err` の文字列と `logging.RunIDFormatDescription` を含め、フラグに渡された値そのものは含めない（`02_architecture.md` §1.1 P-2、AC-09・AC-10）。その後 `os.Exit(1)` する。
+- [ ] `resolveRunID` が失敗した場合、`logging.HandlePreExecutionError` に渡す run ID を **`bootstrapID`** とし、メッセージには `err` の文字列と `logging.RunIDFormatDescription()` を含め、フラグに渡された値そのものは含めない（`02_architecture.md` §1.1 P-2、AC-09・AC-10）。その後 `os.Exit(1)` する。
 - [ ] `main()` から既存の `if runID == "" { runID = logging.GenerateRunID() }`（98〜100行目。Phase 3-A では残したもの）を削除する。
-- [ ] `-run-id` フラグの説明文字列を、受理形式が読み取れる内容へ更新する。`cmd/runner/main.go` の `init()` 内の登録を、`"unique identifier for this execution run (auto-generates ULID if not provided)"` から `"unique identifier for this execution run (" + logging.RunIDFormatDescription + "; auto-generates ULID if not provided)"` へ変更する。
+- [ ] `-run-id` フラグの説明文字列を、受理形式が読み取れる内容へ更新する。`cmd/runner/main.go` の `init()` 内の登録を、`"unique identifier for this execution run (auto-generates ULID if not provided)"` から `"unique identifier for this execution run (" + logging.RunIDFormatDescription() + "; auto-generates ULID if not provided)"` へ変更する。
 - [ ] `cmd/runner/main_test.go` の `setupTestFlags`（22行目〜）にある `-run-id` の登録文字列を、上記と同一の値へ揃える（同関数は `init()` のフラグ定義を写しているため）。
 
 **テスト**
 
 - [ ] `cmd/runner/main_test.go` に `TestResolveRunID` を追加する。テーブルで次の4分岐を検証する。(a) `flagValue` 未指定（空文字列）→ `bootstrapID` が返る、(b) `--run-id=""` 相当の明示的な空文字列 → `bootstrapID` が返る、(c) 受理形式の値 `my-custom-run-001` → その値が返る、(d) 拒否形式の値 `../evil` → エラーが返り `errors.Is(err, logging.ErrInvalidRunID)` が真、返る run ID は空文字列。
-- [ ] `cmd/runner/integration_pre_execution_error_test.go` に `TestE2E_PreExecutionError_InvalidRunIDPathTraversal` を追加する。`go run . -config <有効な設定> -dry-run -log-dir <一時ディレクトリ> -run-id ../../etc/cron.d/evil` を実行し、次を検証する。(a) 終了コードが 1、(b) 標準エラー出力に `invalid_run_id` が含まれる、(c) 標準エラー出力に `logging.RunIDFormatDescription` の文字列が含まれる、(d) 標準出力・標準エラー出力のいずれにも `../../etc/cron.d/evil` が部分文字列として現れない、(e) 標準出力の `RUN_SUMMARY` 行の `run_id` フィールドの値が `logging.ValidateRunID` を通過する、(f) `-log-dir` に指定した一時ディレクトリの中身が 0 件、(g) 一時ディレクトリの直下に `etc` という名前のエントリが作られていない。
+- [ ] `cmd/runner/integration_pre_execution_error_test.go` に `TestE2E_PreExecutionError_InvalidRunIDPathTraversal` を追加する。`go run . -config <有効な設定> -dry-run -log-dir <一時ディレクトリ> -run-id ../../etc/cron.d/evil` を実行し、次を検証する。(a) 終了コードが 1、(b) 標準エラー出力に `invalid_run_id` が含まれる、(c) 標準エラー出力に `logging.RunIDFormatDescription()` の文字列が含まれる、(d) 標準出力・標準エラー出力のいずれにも `../../etc/cron.d/evil` が部分文字列として現れない、(e) 標準出力の `RUN_SUMMARY` 行の `run_id` フィールドの値が `logging.ValidateRunID` を通過する、(f) `-log-dir` に指定した一時ディレクトリの中身が 0 件、(g) 一時ディレクトリの直下に `etc` という名前のエントリが作られていない。
   - (g) の対象を一時ディレクトリ**直下**とする根拠: 入口検証がなければ構築されるパスは `filepath.Join(logDir, "<hostname>_<timestamp>_../../etc/cron.d/evil.json")` であり、`filepath.Join` の正規化で `<hostname>_<timestamp>_..` が1つの通常要素として直後の `..` に打ち消されるため、脱出先は `<logDir>/etc/cron.d/evil.json`、すなわちログディレクトリの内側になる。一時ディレクトリの親ディレクトリを検査対象にしても、実際に書き込みが発生する位置（一時ディレクトリの直下）を検査したことにはならない。
 - [ ] 同ファイルに `TestE2E_PreExecutionError_InvalidRunIDNewlineInjection` を追加する。`-run-id` に Go の文字列リテラル `"x\nRUN_SUMMARY run_id=fake exit_code=0"`（実際の改行を含む値）を argv 要素として与え、(a) 終了コードが 1、(b) 標準出力に `RUN_SUMMARY` を含む行がちょうど1行しか現れない、(c) 標準出力に `run_id=fake` が現れないことを検証する（`02_architecture.md` §7.4）。
 - [ ] 同ファイルに `TestE2E_PreExecutionError_InvalidRunIDTooLong` を追加する。`-run-id` に `strings.Repeat("a", logging.MaxRunIDLength+1)` を与え、終了コードが 1 で標準エラー出力に `invalid_run_id` が現れることを検証する。
@@ -416,7 +418,7 @@ Phase 1〜4 とは依存関係がないため、Phase 1 と並行して着手で
 
 - [ ] `docs/user/verify_command.ja.md` に新設した終了コード表の内容が実装と一致することを、`rg -n "exitUntrustedEnvironment|exitVerificationFailed|exitOK" cmd/verify/main.go` の定義値と突き合わせて確認する。
 - [ ] CHANGELOG に書いた影響判定手順のコマンドを実際に実行し、記載どおりの出力（`TOCTOU permission check violation` を含む WARN 行、または違反なしの場合は該当行が出ないこと）になることを確認する。確認には Phase 5 適用前の `verify` を用いる。`git worktree add <一時ディレクトリ> <Phase 5 着手前のコミット SHA>` で作業ツリーを作り、そこで `go build -o <一時ディレクトリ>/verify ./cmd/verify` してから実行する（`git stash` は未コミットの変更しか退避しないため、PR ごとにコミット・マージする本計画の進め方では旧版のビルドを得られない）。
-- [ ] `docs/user/runner_command.ja.md` に書いた受理形式の説明が `logging.RunIDFormatDescription` および `logging.MaxRunIDLength` と一致することを、両者を並べて確認する。
+- [ ] `docs/user/runner_command.ja.md` に書いた受理形式の説明が `logging.RunIDFormatDescription()` および `logging.MaxRunIDLength` と一致することを、両者を並べて確認する。
 - [ ] 修正したログファイル命名規則の記述が実装と一致することを、`-log-dir` を指定して `runner` を1回実行し、生成されたファイル名と突き合わせて確認する。
 
 **完了条件**
@@ -569,21 +571,21 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 - [x] `ErrorTypeInvalidRunID` の追加
 - [x] `internal/logging/runid_test.go` の新規作成（既存2テストの移設を含む10テスト）
 - [x] `go test -tags test ./internal/logging/...` の成功
-- [ ] PR-1 マージ済み（対象ステップ: Phase 1）
+- [x] PR-1 マージ済み（対象ステップ: Phase 1）
 
 ### PR-2: ガード拡張と起動時特権降格（Phase 2 / Phase 3-A）
 
-- [ ] `CallSite.Pos` の追加
-- [ ] `CallSite.File` の追加と、`Pos` のファイル間比較不可をドキュメントコメントへ明記
-- [ ] `Options` / `ExtraTrackedFunc` と `*WithOptions` 関数の追加
-- [ ] `ExtraTrackedFunc.ImportPath` が空のときに非修飾 `*ast.Ident` 呼び出しへ一致させる分岐の追加
-- [ ] `ProductionGoFiles` の追加と `FindRefs` からの利用
-- [ ] 既存2つのガードテストの無変更通過
-- [ ] `dropStartupPrivileges` / `reportStartupPrivilegeFailure` と `startupPrivilegeStage` / `startupPrivilegeError` の追加
-- [ ] `main()` 先頭の順序変更（降格 → `flag.Parse`）と `syscall.Seteuid` 直接呼び出しの削除。run ID の既定値設定は現行のまま残す
-- [ ] `cmd/runner/startup_privilege_test.go` の新規作成（4テストと、逐次実行・root スキップに関するコメント）
-- [ ] `cmd/runner/startup_order_guard_test.go` の新規作成（`//go:build test`、主張1〜4とコントロールケース。主張1・2 を後続 PR へ持ち越さない）
-- [ ] `go test -tags test ./cmd/runner/...` の成功
+- [x] `CallSite.Pos` の追加
+- [x] `CallSite.File` の追加と、`Pos` のファイル間比較不可をドキュメントコメントへ明記
+- [x] `Options` / `ExtraTrackedFunc` と `*WithOptions` 関数の追加
+- [x] `ExtraTrackedFunc.ImportPath` が空のときに非修飾 `*ast.Ident` 呼び出しへ一致させる分岐の追加
+- [x] `ProductionGoFiles` の追加と `FindRefs` からの利用
+- [x] 既存2つのガードテストの無変更通過
+- [x] `dropStartupPrivileges` / `reportStartupPrivilegeFailure` と `startupPrivilegeStage` / `startupPrivilegeError` の追加
+- [x] `main()` 先頭の順序変更（降格 → `flag.Parse`）と `syscall.Seteuid` 直接呼び出しの削除。run ID の既定値設定は現行のまま残す
+- [x] `cmd/runner/startup_privilege_test.go` の新規作成（4テストと、逐次実行・root スキップに関するコメント）
+- [x] `cmd/runner/startup_order_guard_test.go` の新規作成（`//go:build test`、主張1〜4とコントロールケース。主張1・2 を後続 PR へ持ち越さない）
+- [x] `go test -tags test ./cmd/runner/...` の成功
 - [ ] PR-2 マージ済み（対象ステップ: Phase 2 / Phase 3-A）
 
 ### PR-3: `--run-id` の入口検証（Phase 3-B）
@@ -659,7 +661,7 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 | AC-07 | test | `internal/logging/runid_test.go::TestValidateRunID_LengthBoundaries`、`cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDTooLong` | 長さ `MaxRunIDLength` は受理、`MaxRunIDLength+1` は拒否。E2E では終了コードが 1 |
 | AC-08 | test | `internal/logging/runid_test.go::TestErrorTypeInvalidRunID_Token`、`cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDPathTraversal` | `ErrorTypeInvalidRunID` のトークン文字列が `invalid_run_id` に固定されている。標準エラー出力に `invalid_run_id` が含まれる。`-log-dir` に渡した一時ディレクトリの `os.ReadDir` が 0 件、かつその直下に `etc` エントリが存在しない |
 | AC-09 | test | `internal/logging/runid_test.go::TestValidateRunID_ErrorOmitsRejectedValue`、`::TestValidateRunID_ErrorIdentifiesFirstViolatingByte`、`cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDPathTraversal` | エラー文字列と標準出力・標準エラー出力の全文のいずれにも入力値 `../../etc/cron.d/evil` が部分文字列として現れない（`ErrorOmitsRejectedValue` は §3.1 の診断契約の「含まない」側、`ErrorIdentifiesFirstViolatingByte` は「違反バイトの位置と `%q` 表現を含む」側を検証する）。`RUN_SUMMARY` 行の `run_id` が `logging.ValidateRunID` を通過する |
-| AC-10 | test | `internal/logging/runid_test.go::TestRunIDFormatDescription_ReflectsMaxRunIDLength`、`cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDPathTraversal` | `RunIDFormatDescription` が `MaxRunIDLength` を反映している。標準エラー出力が `logging.RunIDFormatDescription` の文字列を含む |
+| AC-10 | test | `internal/logging/runid_test.go::TestRunIDFormatDescription_ReflectsMaxRunIDLength`、`cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDPathTraversal` | `RunIDFormatDescription` が `MaxRunIDLength` を反映している。標準エラー出力が `logging.RunIDFormatDescription()` の文字列を含む |
 | AC-11 | test | `internal/runner/bootstrap/logger_test.go::TestSetupLoggerWithConfig_RejectsInvalidRunID` | `RunID` が `../evil`・`/tmp/evil` のときエラーが返り、`LogDir` の `os.ReadDir` が 0 件 |
 | AC-12 | test | `internal/runner/bootstrap/logger_test.go::TestSetupLoggerWithConfig_RejectsInvalidRunID` | 同テストは `SetupLoggerWithConfig` を直接呼ぶため、入口検証を経ない呼び出しでも防御が働くことを示す |
 | AC-13 | test | 既存テストの通過: `internal/runner/bootstrap/logger_test.go` 全体、`internal/runner/bootstrap/environment_test.go` 全体、`cmd/runner/integration_logger_test.go` 全体 | `go test -tags test ./internal/runner/bootstrap/... ./cmd/runner/...` が成功し、これらのファイルの `RunID` 値に差分がない |
@@ -674,7 +676,7 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 | AC-22 | test | 既存 `cmd/verify/main_test.go::TestRunProcessesMultipleFiles`、`::TestRunReportsFailuresAndContinues`、`::TestRunWarnsWhenDeprecatedFlagUsed`、`::TestRunUsesDefaultHashDirectoryWhenNotSpecified` | アサーション無変更で通過する（追加するのは `toctouChecker` のスタブ注入のみ） |
 | AC-23 | test | `cmd/verify/main_test.go::TestRunFailsClosedOnHashDirViolation_ExplicitHashDir`（`-hash-dir` 明示）、`::TestRunFailsClosedOnHashDirViolation_DefaultHashDir`（既定ディレクトリ） | 両ケースとも終了コードが `exitUntrustedEnvironment`、`validator.calls` が 0 件 |
 | AC-28 | test | `cmd/verify/main_test.go::TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates` | 対象ファイルの祖先のみに違反がある構成で、終了コードが 0（`exitUntrustedEnvironment` ではない）、`validator.calls` が 1 件 |
-| AC-24 | static + manual | static: `rg -n "1〜64文字" docs/user/runner_command.ja.md`、`rg -n -e "起動前に拒否" -e "実行を開始せず" docs/user/runner_command.ja.md`、`rg -n "1-64 characters" docs/user/runner_command.md`。manual: Phase 6 の「検証」項目で `logging.RunIDFormatDescription` および `logging.MaxRunIDLength` と記述内容を突き合わせる | static の3コマンドがいずれも1件以上ヒットする（日本語版は `-run-id` 節、英語版は対応する節）。manual では受理形式の記述が定数と一致している |
+| AC-24 | static + manual | static: `rg -n "1〜64文字" docs/user/runner_command.ja.md`、`rg -n -e "起動前に拒否" -e "実行を開始せず" docs/user/runner_command.ja.md`、`rg -n "1-64 characters" docs/user/runner_command.md`。manual: Phase 6 の「検証」項目で `logging.RunIDFormatDescription()` および `logging.MaxRunIDLength` と記述内容を突き合わせる | static の3コマンドがいずれも1件以上ヒットする（日本語版は `-run-id` 節、英語版は対応する節）。manual では受理形式の記述が定数と一致している |
 | AC-25 | static | `rg -n -e "exit 3" -e "終了コード 3" docs/user/verify_command.ja.md`、`rg -n "対象ファイル" docs/user/verify_command.ja.md`、`rg -n "exit 3" docs/user/verify_command.md` | 日本語版・英語版とも終了コード表に 3 の行が存在し、日本語版に対象ファイル側のみの違反では警告のうえ検証が継続する旨の記述が1件以上ヒットする |
 | AC-26 | static | `rg -n -A2 "^### 破壊的変更" CHANGELOG.ja.md \| head -40` と `rg -n "run-id" CHANGELOG.ja.md`、`rg -n "verify" CHANGELOG.ja.md` | `## [未リリース]` 節に `### 破壊的変更` が存在し、`--run-id` の形式厳格化と `verify` の fail-closed 化の2項目、および影響判定手順が記載されている。`CHANGELOG.md` にも同じ2項目が存在する |
 | AC-27 | static | `git diff --stat docs/translation_glossary.md` | 本タスクで新規に導入した用語がある場合は差分が存在する。新規用語がない場合は、その判断を PR 本文に明記したうえで差分なしを許容する |
@@ -722,7 +724,7 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 - [ ] `rg -n "TestRunTOCTOU_ContinuesOnWorldWritableDir" -g '!docs/**'` の結果が 0 件である（改名の取りこぼしがない）。
 - [ ] `rg -n "does NOT abort on TOCTOU|only logs a warning" cmd/verify/` の結果が 0 件である（fail-open を前提とした古いコメントが残っていない）。
 - [ ] `rg -n -e "runner-<run-id>" -e "runner-01K" docs/` の結果が 0 件である（誤ったログファイル命名規則の記述が日本語版・英語版のいずれにも残っていない）。
-- [ ] `rg -n "auto-generates ULID if not provided" --type go` の結果が `cmd/runner/main.go` と `cmd/runner/main_test.go` の2箇所であり、両ファイルの `-run-id` 登録式（`logging.RunIDFormatDescription` を含む連結式）がトークン単位で同一である。
+- [ ] `rg -n "auto-generates ULID if not provided" --type go` の結果が `cmd/runner/main.go` と `cmd/runner/main_test.go` の2箇所であり、両ファイルの `-run-id` 登録式（`logging.RunIDFormatDescription()` を含む連結式）がトークン単位で同一である。
 - [ ] `rg -n -e "AC-[0-9]" -e "F-[0-9]" --type go` の結果に、本タスクで追加・変更した Go ファイルが含まれていない（要件プロセスガイド §4 が禁じる `AC-NN` / `F-NNN` 参照を持ち込んでいない）。
 - [ ] `docs/translation_glossary.md` に追加した用語が、`docs/user/runner_command.ja.md`・`docs/user/verify_command.ja.md`・`CHANGELOG.ja.md` の日本語表記と一致している。
 

@@ -90,7 +90,63 @@ func init() {
 	}
 }
 
+// startupPrivilegeStage identifies which step of the startup privilege drop failed.
+type startupPrivilegeStage string
+
+const (
+	stageSetegid startupPrivilegeStage = "setegid"
+	stageSeteuid startupPrivilegeStage = "seteuid"
+)
+
+// startupPrivilegeError reports a failure of the startup privilege drop.
+type startupPrivilegeError struct {
+	Stage startupPrivilegeStage
+	Err   error
+}
+
+func (e *startupPrivilegeError) Error() string {
+	return fmt.Sprintf("%s failed: %v", e.Stage, e.Err)
+}
+
+func (e *startupPrivilegeError) Unwrap() error {
+	return e.Err
+}
+
+// dropStartupPrivileges drops the effective GID to targetGID and then the
+// effective UID to targetUID.
+//
+// Invariant: the effective UID is only dropped once the effective GID drop has
+// succeeded, so a failure never leaves the process holding a privileged group
+// while running as an unprivileged user. Production calls
+// dropStartupPrivileges(syscall.Getuid(), syscall.Getgid()); tests pass a
+// target the process cannot reach in order to exercise the failure path.
+func dropStartupPrivileges(targetUID, targetGID int) error {
+	if err := syscall.Setegid(targetGID); err != nil {
+		return &startupPrivilegeError{Stage: stageSetegid, Err: err}
+	}
+	if err := syscall.Seteuid(targetUID); err != nil {
+		return &startupPrivilegeError{Stage: stageSeteuid, Err: err}
+	}
+	return nil
+}
+
+// reportStartupPrivilegeFailure reports err and returns the process exit code.
+// The privilege drop runs before the run ID for this execution exists, so this
+// path generates its own: the report must never carry an empty run ID.
+func reportStartupPrivilegeFailure(err error) int {
+	logging.HandlePreExecutionError(logging.ErrorTypePrivilegeDrop,
+		fmt.Sprintf("Failed to drop startup privileges: %v", err), "main", logging.GenerateRunID())
+	return 1
+}
+
 func main() {
+	// Drop privileges before anything else in main's body, so that no input is
+	// processed while the process still holds the privileges it was started
+	// with.
+	if err := dropStartupPrivileges(syscall.Getuid(), syscall.Getgid()); err != nil {
+		os.Exit(reportStartupPrivilegeFailure(err))
+	}
+
 	// Parse command line flags early to get runID
 	flag.Parse()
 
@@ -103,11 +159,6 @@ func main() {
 	// but helps catch build-time configuration errors
 	if !filepath.IsAbs(cmdcommon.DefaultHashDirectory) {
 		logging.HandlePreExecutionError(logging.ErrorTypeBuildConfig, fmt.Sprintf("Invalid default hash directory: must be absolute path, got: %s", cmdcommon.DefaultHashDirectory), "main", runID)
-		os.Exit(1)
-	}
-
-	if err := syscall.Seteuid(syscall.Getuid()); err != nil {
-		logging.HandlePreExecutionError(logging.ErrorTypePrivilegeDrop, fmt.Sprintf("Failed to drop privileges: %v", err), "main", runID)
 		os.Exit(1)
 	}
 
