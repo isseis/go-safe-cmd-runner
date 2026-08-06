@@ -340,39 +340,40 @@ Phase 1〜4 とは依存関係がないため、Phase 1 と並行して着手で
 
 **作業内容（製品コード）**
 
-- [ ] `cmd/verify/main.go` に終了コード定数 `exitOK = 0`・`exitVerificationFailed = 1`・`exitUntrustedEnvironment = 3` を追加する。`2` を欠番にした理由（Go ランタイムが未捕捉 panic に使用する）をコメントで書く（`02_architecture.md` §3.4）。
-- [ ] `run()` と `processFiles` にある裸の `return 0` / `return 1` をすべて上記定数へ置き換える（`rg -n "return [01]$" cmd/verify/main.go` で全数を洗い出す）。
-- [ ] パッケージ変数 `toctouChecker security.DirectoryPermChecker` を既存の差し替え口（[main.go:24-29](../../../cmd/verify/main.go#L24-L29)）と同じ `var` ブロックへ追加する。`nil` は「`security.NewDirectoryPermChecker` で生成する」を意味する旨をコメントに書く。
-- [ ] `checkDirPermissions(cfg *verifyConfig, stderr io.Writer) bool` を追加し、`run()` にインライン展開されている TOCTOU 処理（[main.go:78-109](../../../cmd/verify/main.go#L78-L109)）をここへ移す。絶対パス化とシンボリックリンク解決の前処理は現行の実装をそのまま移設する（共通化しない。`02_architecture.md` §3.4 の「既知の重複」）。
-- [ ] `security.NewDirectoryPermChecker` 失敗時の `panic`（[main.go:82-87](../../../cmd/verify/main.go#L82-L87)）を、削除せず `checkDirPermissions` 内へ移設する。`toctouChecker` が `nil` のときのみチェッカーを生成し、失敗したら panic する形とし、`cmd/record/main.go` の同処理（[main.go:105-111](../../../cmd/record/main.go#L105-L111)）に揃える。この panic は `02_architecture.md` §1.3 D-2 が exit 2 を予約した根拠となる2箇所の panic の一方であるため、経路として存続させる必要がある。
-- [ ] `checkDirPermissions` の中で `security.CollectTOCTOUCheckDirs(nil, nil, absHashDir)` を呼んでハッシュディレクトリ集合を得て、先に `security.RunTOCTOUPermissionCheck` にかける。違反が1件以上あれば、各違反について `cmd/record/main.go` の `checkDirPermissions`（[main.go:142-153](../../../cmd/record/main.go#L142-L153)）と同じ形で ERROR ログ（`path`・`violation`・`remediation` 属性）を出し、標準エラー出力へ理由と是正方法を示す1行を書いて `false` を返す。この時点で対象ファイル集合のチェックは行わない。
-- [ ] 標準エラー出力へ書く1行を、`record` の文言（`"Error: permission violation in hash directory or its ancestor directories — refusing to generate hash records. Fix directory permissions and re-run."`、[main.go:154](../../../cmd/record/main.go#L154)）に倣った英語の文字列リテラルとし、`verify` の文脈へ合わせて `"Error: permission violation in hash directory or its ancestor directories — verification results cannot be trusted; no file was verified. Fix directory permissions and re-run."` とする。`remediation` の組み立ても `record` に倣い、`security.ErrInvalidDirPermissions` の場合は `chmod go-w <path>` を含む文言、それ以外は一般的な文言とする。
-- [ ] 新設する `fmt.Fprintln` / `fmt.Fprintf` の標準エラー出力への書き込みに `//nolint:errcheck` を付ける。`cmd/verify/main.go` と `cmd/record/main.go` の既存の同種の書き込みはすべてこの抑制を持っており、付けないと Phase 6 の `make lint` が失敗する。抑制は個々の文に限定し、ファイル単位・パッケージ単位では行わない。
-- [ ] ハッシュディレクトリ集合に違反がない場合のみ、`security.CollectTOCTOUCheckDirs(absFiles, nil, "")` の結果からハッシュディレクトリ集合を差し引いた差分に対して `security.RunTOCTOUPermissionCheck` を呼び、戻り値は破棄して（WARN のみ）`true` を返す。
-- [ ] `run()` から `checkDirPermissions(cfg, stderr)` を呼び、`false` なら `validatorFactory` を呼ばずに `exitUntrustedEnvironment` を返す。呼び出し位置は `ensurePermissionCheckUID` の直後、`validatorFactory` より前とする（`02_architecture.md` §6.2）。
-- [ ] `run()` の TOCTOU 処理に付いている現行コメント「Violations are logged as warnings only — verify continues even if the check fails.」（[main.go:80-81](../../../cmd/verify/main.go#L80-L81)）を削除する。
+- [x] `cmd/verify/main.go` に終了コード定数 `exitOK = 0`・`exitVerificationFailed = 1`・`exitUntrustedEnvironment = 3` を追加する。`2` を欠番にした理由（Go ランタイムが未捕捉 panic に使用する）をコメントで書く（`02_architecture.md` §3.4）。
+- [x] `run()` と `processFiles` にある裸の `return 0` / `return 1` をすべて上記定数へ置き換える（`rg -n "return [01]$" cmd/verify/main.go` で全数を洗い出す）。
+- [x] パッケージ変数 `toctouChecker security.DirectoryPermChecker` を既存の差し替え口（[main.go:24-29](../../../cmd/verify/main.go#L24-L29)）と同じ `var` ブロックへ追加する。`nil` は「`security.NewDirectoryPermChecker` で生成する」を意味する旨をコメントに書く。
+- [x] `checkDirPermissions(cfg *verifyConfig, stderr io.Writer) bool` を追加し、`run()` にインライン展開されている TOCTOU 処理（[main.go:78-109](../../../cmd/verify/main.go#L78-L109)）をここへ移す。絶対パス化とシンボリックリンク解決の前処理は現行の実装をそのまま移設する（共通化しない。`02_architecture.md` §3.4 の「既知の重複」）。
+- [x] `security.NewDirectoryPermChecker` 失敗時の `panic`（[main.go:82-87](../../../cmd/verify/main.go#L82-L87)）を、削除せず `checkDirPermissions` 内へ移設する。`toctouChecker` が `nil` のときのみチェッカーを生成し、失敗したら panic する形とし、`cmd/record/main.go` の同処理（[main.go:105-111](../../../cmd/record/main.go#L105-L111)）に揃える。この panic は `02_architecture.md` §1.3 D-2 が exit 2 を予約した根拠となる2箇所の panic の一方であるため、経路として存続させる必要がある。
+- [x] `checkDirPermissions` の中で `security.CollectTOCTOUCheckDirs(nil, nil, absHashDir)` を呼んでハッシュディレクトリ集合を得て、先に `security.RunTOCTOUPermissionCheck` にかける。違反が1件以上あれば、各違反について `cmd/record/main.go` の `checkDirPermissions`（[main.go:142-153](../../../cmd/record/main.go#L142-L153)）と同じ形で ERROR ログ（`path`・`violation`・`remediation` 属性）を出し、標準エラー出力へ理由と是正方法を示す1行を書いて `false` を返す。この時点で対象ファイル集合のチェックは行わない。
+- [x] 標準エラー出力へ書く1行を、`record` の文言（`"Error: permission violation in hash directory or its ancestor directories — refusing to generate hash records. Fix directory permissions and re-run."`、[main.go:154](../../../cmd/record/main.go#L154)）に倣った英語の文字列リテラルとし、`verify` の文脈へ合わせて `"Error: permission violation in hash directory or its ancestor directories — verification results cannot be trusted; no file was verified. Fix directory permissions and re-run."` とする。`remediation` の組み立ても `record` に倣い、`security.ErrInvalidDirPermissions` の場合は `chmod go-w <path>` を含む文言、それ以外は一般的な文言とする。
+- [x] 新設する `fmt.Fprintln` / `fmt.Fprintf` の標準エラー出力への書き込みに `//nolint:errcheck` を付ける。`cmd/verify/main.go` と `cmd/record/main.go` の既存の同種の書き込みはすべてこの抑制を持っており、付けないと Phase 6 の `make lint` が失敗する。抑制は個々の文に限定し、ファイル単位・パッケージ単位では行わない。
+- [x] ハッシュディレクトリ集合に違反がない場合のみ、`security.CollectTOCTOUCheckDirs(absFiles, nil, "")` の結果からハッシュディレクトリ集合を差し引いた差分に対して `security.RunTOCTOUPermissionCheck` を呼び、戻り値は破棄して（WARN のみ）`true` を返す。
+- [x] `run()` から `checkDirPermissions(cfg, stderr)` を呼び、`false` なら `validatorFactory` を呼ばずに `exitUntrustedEnvironment` を返す。呼び出し位置は `ensurePermissionCheckUID` の直後、`validatorFactory` より前とする（`02_architecture.md` §6.2）。
+- [x] `run()` の TOCTOU 処理に付いている現行コメント「Violations are logged as warnings only — verify continues even if the check fails.」（[main.go:80-81](../../../cmd/verify/main.go#L80-L81)）を削除する。
 
 **テスト**
 
-- [ ] `cmd/verify/main_test.go` にスタブ型 `fakeDirPermChecker`（`ValidateDirectoryPermissions(path string) error` を `validateDirFn func(path string) error` へ委譲する）と、注入ヘルパー `overrideTOCTOUChecker(t *testing.T, checker security.DirectoryPermChecker)` を追加する。ヘルパーは元の値を `t.Cleanup` で復元する。`cmd/verify` 内でのみ使うため、専用のヘルパーファイルは作らず `main_test.go` に置く。`cmd/record/main_test.go` にも同名・同形のスタブがあるが、別パッケージの非公開型であり import できないため、この重複は意図的なものである旨をスタブ定義の直上に英語コメントで記す。
-- [ ] `TestRunFailsClosedOnHashDirViolation_ExplicitHashDir` を追加する。`-hash-dir` に `tu.SafeTempDir(t)` で作った一時ディレクトリを渡し、そのディレクトリを `os.Chmod(dir, 0o777)` で world-writable にする（`t.Cleanup` で 0o755 へ戻す）。実チェッカーのまま `run()` を呼び、(a) 終了コードが `exitUntrustedEnvironment`、(b) `validator.calls` が 0 件、(c) 標準出力が空（`Verifying N files...` が出ていない）、(d) 標準エラー出力が `"verification results cannot be trusted"` と `"Fix directory permissions"` を含むことを検証する（AC-19・AC-21・AC-23 の明示指定側）。
-- [ ] `TestRunFailsClosedOnHashDirViolation_DefaultHashDir` を追加する。`mkdirAll` をスタブし、`toctouChecker` に「常に `security.ErrInvalidDirPermissions` をラップしたエラーを返す」スタブを注入したうえで `-hash-dir` を指定せずに `run()` を呼び、終了コードが `exitUntrustedEnvironment` かつ `validator.calls` が 0 件であることを検証する（AC-23 の既定ディレクトリ側）。
-- [ ] `TestRunFailsClosedOnHashDirViolation_LogsErrorLevel` を追加する。`slog.SetDefault` を捕捉用ハンドラへ差し替え（`t.Cleanup` で復元）、`toctouChecker` に違反を返すスタブを注入して `run()` を呼び、捕捉したログに `level=ERROR` の行が違反ごとに1件以上出ており、`path` と `remediation` の属性を含むことを検証する。共有チェックが出す WARN 行も残っていること（ERROR が WARN の置き換えではなく追加であること）を併せて検証する（AC-20）。
-- [ ] `TestRunSkipsTargetSetCheckWhenHashDirViolates` を追加する。`toctouChecker` に「ハッシュディレクトリのパスと対象ファイルの祖先パスの**両方**に違反を返す」経路依存スタブを注入して `run()` を呼び、終了コードが `exitUntrustedEnvironment` であること、および捕捉したログに対象ファイル側のパスに対する WARN 行が1件も出ていないことを検証する。これは `02_architecture.md` §4.3 の副作用契約「対象ファイル集合の権限チェックは発生しない」を検証する唯一のテストである。
-- [ ] `cmd/verify/main_test.go` の `toctouChecker`・`slog` の既定ロガー・その他パッケージ変数を差し替えるテストに `t.Parallel()` を付けない。`validatorFactory`・`mkdirAll`・`ensurePermissionCheckUID`・`toctouChecker` はいずれもパッケージ変数であり、既存テストも逐次実行を前提としている。この前提をファイル冒頭のコメントに英語で記す。
-- [ ] `TestRunTOCTOU_ContinuesOnWorldWritableDir`（`cmd/verify/main_test.go:155`）を `TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates` へ改名する。既存のアサーション（exit 0 と `validator.calls` が1件）は変更しない。
-- [ ] 同テストに経路依存の `toctouChecker` スタブを注入する。world-writable にした対象ファイルの親ディレクトリに対しては `security.ErrInvalidDirPermissions` をラップしたエラーを返し、それ以外のパス（ハッシュディレクトリとその祖先を含む）には `nil` を返す。現行はハッシュディレクトリ側も実ファイルシステムの権限に依存しており、fail-closed 化後はホスト構成次第で誤った exit 3 になりうる。`02_architecture.md` §7.1 の方針（実ファイルシステムに依存してよいのは自分で権限を操作したディレクトリのみ）を、このテストにも他の4件と同じく適用する。
-- [ ] 同テストの関数コメントを書き換える。現行の「TestRunTOCTOU_ContinuesOnWorldWritableDir verifies that the verify command continues processing even when the file's parent directory is world-writable. This validates AC-M2S-7: verify warns but does not abort on TOCTOU violations.」を、「a violation confined to a target file's ancestor directories is not fail-closed: only the hash directory is the root of trust, so verification continues and the violation stays a warning」の趣旨を述べる英語コメントへ置き換える。`AC-M2S-7` への参照は削除し、代わりの `AC-NN` 形式の識別子も**書かない**（Go ソースへの `AC-NN` / `F-NNN` 参照は要件プロセスガイド §4 が禁じており、`runplan` のコミット前チェックが拒否する）。挙動そのものを説明する文にとどめる。
-- [ ] 同テストに、終了コードが `exitUntrustedEnvironment` ではないことの明示的なアサーションを追加する（AC-28 が「fail-closed にならない」ことを主張していると読めるようにする）。
-- [ ] `TestRunUsesDefaultHashDirectoryWhenNotSpecified`（:129）に `overrideTOCTOUChecker` で「違反を返さないスタブ」を注入し、ホストの `/usr/local` の権限に依存しないようにする（`02_architecture.md` §7.1）。
-- [ ] `TestRunProcessesMultipleFiles`（:57）に同じ「違反を返さないスタブ」を注入する。
-- [ ] `TestRunReportsFailuresAndContinues`（:77）に同じ「違反を返さないスタブ」を注入する。
-- [ ] `TestRunWarnsWhenDeprecatedFlagUsed`（:97）に同じ「違反を返さないスタブ」を注入する。
+- [x] `cmd/verify/main_test.go` にスタブ型 `fakeDirPermChecker`（`ValidateDirectoryPermissions(path string) error` を `validateDirFn func(path string) error` へ委譲する）と、注入ヘルパー `overrideTOCTOUChecker(t *testing.T, checker security.DirectoryPermChecker)` を追加する。実装時に、同ファイル内で繰り返し使う小さなヘルパー2件を併せて追加した（`allowAllDirs()`: 違反を返さないスタブを返す。既存4テストへの注入で4回使う。`captureLogs(t)`: `slog` の既定ロガーをバッファへ差し替え `t.Cleanup` で復元する。ログを検査する3テストで使う）。ヘルパーは元の値を `t.Cleanup` で復元する。`cmd/verify` 内でのみ使うため、専用のヘルパーファイルは作らず `main_test.go` に置く。`cmd/record/main_test.go` にも同名・同形のスタブがあるが、別パッケージの非公開型であり import できないため、この重複は意図的なものである旨をスタブ定義の直上に英語コメントで記す。
+- [x] `TestRunFailsClosedOnHashDirViolation_ExplicitHashDir` を追加する。`-hash-dir` に `tu.SafeTempDir(t)` で作った一時ディレクトリを渡し、そのディレクトリを `os.Chmod(dir, 0o777)` で world-writable にする（`t.Cleanup` で 0o755 へ戻す）。実チェッカーのまま `run()` を呼び、(a) 終了コードが `exitUntrustedEnvironment`、(b) `validator.calls` が 0 件、(c) 標準出力が空（`Verifying N files...` が出ていない）、(d) 標準エラー出力が `"verification results cannot be trusted"` と `"Fix directory permissions"` を含むことを検証する（AC-19・AC-21・AC-23 の明示指定側）。
+- [x] `TestRunFailsClosedOnHashDirViolation_DefaultHashDir` を追加する。`mkdirAll` をスタブし、`toctouChecker` に「常に `security.ErrInvalidDirPermissions` をラップしたエラーを返す」スタブを注入したうえで `-hash-dir` を指定せずに `run()` を呼び、終了コードが `exitUntrustedEnvironment` かつ `validator.calls` が 0 件であることを検証する（AC-23 の既定ディレクトリ側）。
+- [x] `TestRunFailsClosedOnHashDirViolation_LogsErrorLevel` を追加する。`slog.SetDefault` を捕捉用ハンドラへ差し替え（`t.Cleanup` で復元）、`toctouChecker` に違反を返すスタブを注入して `run()` を呼び、捕捉したログに `level=ERROR` の行が違反ごとに1件以上出ており、`path` と `remediation` の属性を含むことを検証する。共有チェックが出す WARN 行も残っていること（ERROR が WARN の置き換えではなく追加であること）を併せて検証する（AC-20）。
+- [x] `TestRunSkipsTargetSetCheckWhenHashDirViolates` を追加する。`toctouChecker` に「ハッシュディレクトリのパスと対象ファイルの祖先パスの**両方**に違反を返す」経路依存スタブを注入して `run()` を呼び、終了コードが `exitUntrustedEnvironment` であること、および捕捉したログに対象ファイル側のパスに対する WARN 行が1件も出ていないことを検証する。これは `02_architecture.md` §4.3 の副作用契約「対象ファイル集合の権限チェックは発生しない」を検証する唯一のテストである。
+- [x] `cmd/verify/main_test.go` の `toctouChecker`・`slog` の既定ロガー・その他パッケージ変数を差し替えるテストに `t.Parallel()` を付けない。`validatorFactory`・`mkdirAll`・`ensurePermissionCheckUID`・`toctouChecker` はいずれもパッケージ変数であり、既存テストも逐次実行を前提としている。この前提をファイル冒頭のコメントに英語で記す。
+- [x] `TestRunTOCTOU_ContinuesOnWorldWritableDir`（`cmd/verify/main_test.go:155`）を `TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates` へ改名する。既存のアサーション（exit 0 と `validator.calls` が1件）は変更しない。
+- [x] 同テストに経路依存の `toctouChecker` スタブを注入する。world-writable にした対象ファイルの親ディレクトリに対しては `security.ErrInvalidDirPermissions` をラップしたエラーを返し、それ以外のパス（ハッシュディレクトリとその祖先を含む）には `nil` を返す。現行はハッシュディレクトリ側も実ファイルシステムの権限に依存しており、fail-closed 化後はホスト構成次第で誤った exit 3 になりうる。`02_architecture.md` §7.1 の方針（実ファイルシステムに依存してよいのは自分で権限を操作したディレクトリのみ）を、このテストにも他の4件と同じく適用する。
+- [x] 同テストの関数コメントを書き換える。現行の「TestRunTOCTOU_ContinuesOnWorldWritableDir verifies that the verify command continues processing even when the file's parent directory is world-writable. This validates AC-M2S-7: verify warns but does not abort on TOCTOU violations.」を、「a violation confined to a target file's ancestor directories is not fail-closed: only the hash directory is the root of trust, so verification continues and the violation stays a warning」の趣旨を述べる英語コメントへ置き換える。`AC-M2S-7` への参照は削除し、代わりの `AC-NN` 形式の識別子も**書かない**（Go ソースへの `AC-NN` / `F-NNN` 参照は要件プロセスガイド §4 が禁じており、`runplan` のコミット前チェックが拒否する）。挙動そのものを説明する文にとどめる。
+- [x] 同テストに、終了コードが `exitUntrustedEnvironment` ではないことの明示的なアサーションを追加する（AC-28 が「fail-closed にならない」ことを主張していると読めるようにする）。
+  - 実装時の追加: 同テストに `captureLogs` によるログ検査を加え、対象ファイル側の違反が WARN として記録されること（`level=WARN` と当該ディレクトリのパスを含む）と `level=ERROR` が出ないことを検証する。これがないと `TestRunSkipsTargetSetCheckWhenHashDirViolates` の `assert.NotContains`（対象ファイル側のパスがログに出ないこと）が、「打ち切られたから出ない」のか「そもそも対象ファイル側の違反はログに出ない実装だから出ない」のかを区別できず、空振り成功しうる。両テストの対比で初めて §4.3 の副作用契約が検証される。
+- [x] `TestRunUsesDefaultHashDirectoryWhenNotSpecified`（:129）に `overrideTOCTOUChecker` で「違反を返さないスタブ」を注入し、ホストの `/usr/local` の権限に依存しないようにする（`02_architecture.md` §7.1）。
+- [x] `TestRunProcessesMultipleFiles`（:57）に同じ「違反を返さないスタブ」を注入する。
+- [x] `TestRunReportsFailuresAndContinues`（:77）に同じ「違反を返さないスタブ」を注入する。
+- [x] `TestRunWarnsWhenDeprecatedFlagUsed`（:97）に同じ「違反を返さないスタブ」を注入する。
 
 **完了条件**
 
-- [ ] `go test -tags test ./cmd/verify/...` が成功する。
-- [ ] `rg -n "return 0|return 1|return 3" cmd/verify/main.go` の結果が 0 件である（すべて定数経由になっている）。
+- [x] `go test -tags test ./cmd/verify/...` が成功する。
+- [x] `rg -n "return 0|return 1|return 3" cmd/verify/main.go` の結果が 0 件である（すべて定数経由になっている）。
 
 ### PR-5 作成ポイント: verify fail-closed on hash directory violations
 
@@ -611,17 +612,17 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 
 ### PR-5: `cmd/verify` の fail-closed 化（Phase 5）
 
-- [ ] 終了コード定数の導入と既存 `return` の置き換え
-- [ ] `toctouChecker` パッケージ変数の追加
-- [ ] `checkDirPermissions` の切り出しと2集合の分割判定
-- [ ] `NewDirectoryPermChecker` 失敗時の `panic` の `checkDirPermissions` への移設
-- [ ] 標準エラー出力メッセージ（英語リテラル）と `//nolint:errcheck` の付与
-- [ ] `run()` からの呼び出しと fail-closed 分岐
-- [ ] `fakeDirPermChecker` / `overrideTOCTOUChecker` の追加
-- [ ] fail-closed テスト4件の追加（明示ハッシュディレクトリ・既定ディレクトリ・ERROR ログ・対象ファイル集合の打ち切り）
-- [ ] `TestRunTOCTOU_ContinuesOnWorldWritableDir` の改名・コメント更新・経路依存スタブ注入・アサーション追加
-- [ ] 既存4テストへの `toctouChecker` 注入
-- [ ] `go test -tags test ./cmd/verify/...` の成功
+- [x] 終了コード定数の導入と既存 `return` の置き換え
+- [x] `toctouChecker` パッケージ変数の追加
+- [x] `checkDirPermissions` の切り出しと2集合の分割判定
+- [x] `NewDirectoryPermChecker` 失敗時の `panic` の `checkDirPermissions` への移設
+- [x] 標準エラー出力メッセージ（英語リテラル）と `//nolint:errcheck` の付与
+- [x] `run()` からの呼び出しと fail-closed 分岐
+- [x] `fakeDirPermChecker` / `overrideTOCTOUChecker` の追加
+- [x] fail-closed テスト4件の追加（明示ハッシュディレクトリ・既定ディレクトリ・ERROR ログ・対象ファイル集合の打ち切り）
+- [x] `TestRunTOCTOU_ContinuesOnWorldWritableDir` の改名・コメント更新・経路依存スタブ注入・アサーション追加
+- [x] 既存4テストへの `toctouChecker` 注入
+- [x] `go test -tags test ./cmd/verify/...` の成功
 - [ ] PR-5 マージ済み（対象ステップ: Phase 5）
 
 ### PR-6: 文書と CHANGELOG（Phase 6）

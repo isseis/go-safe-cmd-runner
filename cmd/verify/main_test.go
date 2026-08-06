@@ -1,14 +1,22 @@
+// Tests in this file replace package-level variables (validatorFactory,
+// mkdirAll, ensurePermissionCheckUID, toctouChecker) and the slog default
+// logger, all of which are process-wide state. None of them may call
+// t.Parallel().
 package main
 
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
+	"github.com/isseis/go-safe-cmd-runner/internal/security"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -44,6 +52,45 @@ func overrideValidatorFactory(t *testing.T, validator *fakeValidator) func() {
 	}
 }
 
+// fakeDirPermChecker implements security.DirectoryPermChecker for testing.
+// cmd/record/main_test.go defines an identical stub; it cannot be shared because
+// it is an unexported type in a different main package, so this duplication is
+// deliberate.
+type fakeDirPermChecker struct {
+	validateDirFn func(path string) error
+}
+
+func (f *fakeDirPermChecker) ValidateDirectoryPermissions(path string) error {
+	return f.validateDirFn(path)
+}
+
+// overrideTOCTOUChecker installs checker as the directory permission checker for
+// the duration of the test, restoring the previous value afterwards.
+func overrideTOCTOUChecker(t *testing.T, checker security.DirectoryPermChecker) {
+	t.Helper()
+	original := toctouChecker
+	toctouChecker = checker
+	t.Cleanup(func() { toctouChecker = original })
+}
+
+// allowAllDirs returns a checker that reports no violation for any directory, so
+// that a test exercising other behaviour does not depend on the permissions of
+// the host's real directories.
+func allowAllDirs() security.DirectoryPermChecker {
+	return &fakeDirPermChecker{validateDirFn: func(string) error { return nil }}
+}
+
+// captureLogs redirects the default slog logger into a buffer for the duration
+// of the test and returns the buffer.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	buf := &bytes.Buffer{}
+	original := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(original) })
+	return buf
+}
+
 func TestRunRequiresAtLeastOneFile(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -55,6 +102,7 @@ func TestRunRequiresAtLeastOneFile(t *testing.T) {
 }
 
 func TestRunProcessesMultipleFiles(t *testing.T) {
+	overrideTOCTOUChecker(t, allowAllDirs())
 	tempDir := t.TempDir()
 	validator := &fakeValidator{responses: map[string]error{}}
 	cleanup := overrideValidatorFactory(t, validator)
@@ -75,6 +123,7 @@ func TestRunProcessesMultipleFiles(t *testing.T) {
 }
 
 func TestRunReportsFailuresAndContinues(t *testing.T) {
+	overrideTOCTOUChecker(t, allowAllDirs())
 	tempDir := t.TempDir()
 	validator := &fakeValidator{responses: map[string]error{
 		"bad.txt": errors.New("hash mismatch"),
@@ -95,6 +144,7 @@ func TestRunReportsFailuresAndContinues(t *testing.T) {
 }
 
 func TestRunWarnsWhenDeprecatedFlagUsed(t *testing.T) {
+	overrideTOCTOUChecker(t, allowAllDirs())
 	tempDir := t.TempDir()
 	validator := &fakeValidator{responses: map[string]error{}}
 	cleanup := overrideValidatorFactory(t, validator)
@@ -127,6 +177,7 @@ func TestParseArgsInvalidHashDir(t *testing.T) {
 }
 
 func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
+	overrideTOCTOUChecker(t, allowAllDirs())
 	validator := &fakeValidator{responses: map[string]error{}}
 	cleanup := overrideValidatorFactory(t, validator)
 	defer cleanup()
@@ -149,10 +200,12 @@ func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
 	assert.Equal(t, "file1.txt", validator.calls[0].file)
 }
 
-// TestRunTOCTOU_ContinuesOnWorldWritableDir verifies that the verify command
-// continues processing even when the file's parent directory is world-writable.
-// This validates AC-M2S-7: verify warns but does not abort on TOCTOU violations.
-func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
+// TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates verifies that a violation
+// confined to a target file's ancestor directories is not fail-closed. Only the
+// hash directory is the root of trust; a target file sitting in a writable
+// directory is precisely what verify exists to inspect, so verification
+// continues and the violation stays a warning.
+func TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates(t *testing.T) {
 	// Create a world-writable directory with a target file
 	worldWritableDir := tu.SafeTempDir(t)
 	err := os.Chmod(worldWritableDir, 0o777)
@@ -166,6 +219,45 @@ func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
 	require.NoError(t, err)
 
 	hashDir := tu.SafeTempDir(t)
+	// Report a violation only for the target file's own parent directory. The
+	// hash directory and every ancestor stay clean regardless of how the host's
+	// filesystem is configured.
+	overrideTOCTOUChecker(t, &fakeDirPermChecker{validateDirFn: func(path string) error {
+		if path == worldWritableDir {
+			return fmt.Errorf("%w: directory %s is writable by others", security.ErrInvalidDirPermissions, path)
+		}
+		return nil
+	}})
+
+	validator := &fakeValidator{responses: map[string]error{}}
+	cleanup := overrideValidatorFactory(t, validator)
+	defer cleanup()
+
+	logs := captureLogs(t)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, stdout, stderr)
+
+	assert.Equal(t, exitOK, exitCode, "verify should continue (exit 0) despite world-writable target directory")
+	assert.NotEqual(t, exitUntrustedEnvironment, exitCode, "a target-side violation must not be fail-closed")
+	require.Len(t, validator.calls, 1, "file should have been processed")
+	assert.Contains(t, logs.String(), "level=WARN", "the target-side violation stays a warning")
+	assert.Contains(t, logs.String(), worldWritableDir)
+	assert.NotContains(t, logs.String(), "level=ERROR")
+}
+
+// TestRunFailsClosedOnHashDirViolation_ExplicitHashDir verifies the fail-closed
+// path with the real permission checker and a hash directory this test made
+// world-writable itself, so the assertion does not depend on the permissions of
+// any pre-existing host directory.
+func TestRunFailsClosedOnHashDirViolation_ExplicitHashDir(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	require.NoError(t, os.Chmod(hashDir, 0o777))
+	t.Cleanup(func() {
+		_ = os.Chmod(hashDir, 0o755)
+	})
+
 	validator := &fakeValidator{responses: map[string]error{}}
 	cleanup := overrideValidatorFactory(t, validator)
 	defer cleanup()
@@ -173,12 +265,112 @@ func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	// verify should continue (exit 0) despite the TOCTOU violation
+	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, stdout, stderr)
+
+	require.Equal(t, exitUntrustedEnvironment, exitCode)
+	assert.Empty(t, validator.calls, "no file must be verified once the hash directory cannot be trusted")
+	assert.Empty(t, stdout.String(), "verification must not start, so no progress output")
+	assert.Contains(t, stderr.String(), "verification results cannot be trusted")
+	assert.Contains(t, stderr.String(), "Fix directory permissions")
+}
+
+// TestRunFailsClosedOnHashDirViolation_DefaultHashDir verifies that the same
+// fail-closed decision is reached when the hash directory comes from the default
+// rather than from -hash-dir.
+func TestRunFailsClosedOnHashDirViolation_DefaultHashDir(t *testing.T) {
+	overrideTOCTOUChecker(t, &fakeDirPermChecker{validateDirFn: func(path string) error {
+		return fmt.Errorf("%w: directory %s is writable by others", security.ErrInvalidDirPermissions, path)
+	}})
+
+	validator := &fakeValidator{responses: map[string]error{}}
+	cleanup := overrideValidatorFactory(t, validator)
+	defer cleanup()
+
+	originalMkdirAll := mkdirAll
+	mkdirAll = func(string, os.FileMode) error { return nil }
+	t.Cleanup(func() { mkdirAll = originalMkdirAll })
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"file1.txt"}, stdout, stderr)
+
+	require.Equal(t, exitUntrustedEnvironment, exitCode)
+	assert.Empty(t, validator.calls, "no file must be verified once the hash directory cannot be trusted")
+}
+
+// TestRunFailsClosedOnHashDirViolation_LogsErrorLevel verifies that each
+// fail-closed violation is logged at ERROR level with the path and the
+// remediation, in addition to (not instead of) the WARN line the shared check
+// emits.
+func TestRunFailsClosedOnHashDirViolation_LogsErrorLevel(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	overrideTOCTOUChecker(t, &fakeDirPermChecker{validateDirFn: func(path string) error {
+		if path == hashDir {
+			return fmt.Errorf("%w: directory %s is writable by others", security.ErrInvalidDirPermissions, path)
+		}
+		return nil
+	}})
+
+	validator := &fakeValidator{responses: map[string]error{}}
+	cleanup := overrideValidatorFactory(t, validator)
+	defer cleanup()
+
+	logs := captureLogs(t)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, stdout, stderr)
+	require.Equal(t, exitUntrustedEnvironment, exitCode)
+
+	var errorLines, warnLines []string
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		switch {
+		case strings.Contains(line, "level=ERROR"):
+			errorLines = append(errorLines, line)
+		case strings.Contains(line, "level=WARN"):
+			warnLines = append(warnLines, line)
+		}
+	}
+
+	require.Len(t, errorLines, 1, "one ERROR line per fail-closed violation")
+	assert.Contains(t, errorLines[0], "path="+hashDir)
+	assert.Contains(t, errorLines[0], "remediation=")
+	require.Len(t, warnLines, 1, "the shared check's WARN line must remain alongside the ERROR line")
+	assert.Contains(t, warnLines[0], "TOCTOU permission check violation")
+}
+
+// TestRunSkipsTargetSetCheckWhenHashDirViolates verifies the side-effect
+// contract: once the hash directory side is fail-closed, the target file set is
+// never checked, so no violation is reported for it even though the injected
+// checker would report one.
+func TestRunSkipsTargetSetCheckWhenHashDirViolates(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	targetDir := tu.SafeTempDir(t)
+	targetFile := filepath.Join(targetDir, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	// Violations on both sides: only the hash directory side may be reported.
+	overrideTOCTOUChecker(t, &fakeDirPermChecker{validateDirFn: func(path string) error {
+		if path == hashDir || path == targetDir {
+			return fmt.Errorf("%w: directory %s is writable by others", security.ErrInvalidDirPermissions, path)
+		}
+		return nil
+	}})
+
+	validator := &fakeValidator{responses: map[string]error{}}
+	cleanup := overrideValidatorFactory(t, validator)
+	defer cleanup()
+
+	logs := captureLogs(t)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
 	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, stdout, stderr)
 
-	// verify does NOT abort on TOCTOU violations — it only logs a warning
-	assert.Equal(t, 0, exitCode, "verify should continue (exit 0) despite world-writable directory")
-	require.Len(t, validator.calls, 1, "file should have been processed")
+	require.Equal(t, exitUntrustedEnvironment, exitCode)
+	assert.NotContains(t, logs.String(), targetDir, "the target file set must not be checked once the hash directory side fails closed")
+	assert.Contains(t, logs.String(), hashDir)
 }
 
 // TestRunFailsClosedWhenPermissionCheckUIDUnresolvable verifies that verify
