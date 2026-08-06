@@ -14,7 +14,6 @@ import (
 	resourcetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -105,5 +104,5 @@ func echoPath(t *testing.T) string {
 func requireExitCode(t *testing.T, cmd *exec.Cmd, want int) {
 	t.Helper()
 	require.NotNil(t, cmd.ProcessState, "cmd.ProcessState is nil; process did not finish")
-	assert.Equal(t, want, cmd.ProcessState.ExitCode(), "exit code mismatch")
+	require.Equal(t, want, cmd.ProcessState.ExitCode(), "exit code mismatch")
 }
