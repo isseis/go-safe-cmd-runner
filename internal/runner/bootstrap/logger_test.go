@@ -3,7 +3,6 @@ package bootstrap
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -459,12 +458,25 @@ func TestSetupLoggerWithConfig_RejectsInvalidRunID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			origLogger := slog.Default()
+			origHandlers := phase1BaseHandlers
+			origFailureLogger := phase1FailureLogger
+			origRedactionErrorCollector := redactionErrorCollector
+			origRedactionReporter := redactionReporter
+
 			saveAndRestoreGlobals(t)
 			err := SetupLoggerWithConfig(tt.config, false, false)
 
 			require.Error(t, err)
-			assert.True(t, errors.Is(err, logging.ErrInvalidRunID),
-				"expected error wrapping ErrInvalidRunID, got: %v", err)
+			assert.ErrorIs(t, err, logging.ErrInvalidRunID)
+
+			// Rejection must leave the default logger and package globals
+			// untouched: validation runs before any of them is committed.
+			assert.Same(t, origLogger, slog.Default())
+			assert.Equal(t, origHandlers, phase1BaseHandlers)
+			assert.Same(t, origFailureLogger, phase1FailureLogger)
+			assert.Same(t, origRedactionErrorCollector, redactionErrorCollector)
+			assert.Same(t, origRedactionReporter, redactionReporter)
 
 			if tt.config.LogDir != "" {
 				entries, err := os.ReadDir(tt.config.LogDir)
