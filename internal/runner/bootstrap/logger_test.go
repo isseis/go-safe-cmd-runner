@@ -3,7 +3,6 @@ package bootstrap
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -230,8 +229,7 @@ func TestSetupLoggerWithConfig_RejectsInvalidRunID(t *testing.T) {
 			}, false, false)
 
 			require.Error(t, err, "SetupLoggerWithConfig() expected error for invalid run ID")
-			assert.True(t, errors.Is(err, logging.ErrInvalidRunID),
-				"errors.Is(err, logging.ErrInvalidRunID) = false, got: %v", err)
+			assert.ErrorIs(t, err, logging.ErrInvalidRunID)
 
 			if tt.checkDir {
 				entries, readErr := os.ReadDir(tt.logDir)
