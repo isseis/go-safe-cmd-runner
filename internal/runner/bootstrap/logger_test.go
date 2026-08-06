@@ -401,63 +401,55 @@ func TestSetupLoggerWithConfig_FailureLoggerExcludesSlack(t *testing.T) {
 }
 
 func TestSetupLoggerWithConfig_RejectsInvalidRunID(t *testing.T) {
-	tempDir := tu.SafeTempDir(t)
-
 	tests := []struct {
-		name   string
-		config LoggerConfig
+		name      string
+		useLogDir bool
+		runID     string
 	}{
 		{
-			name: "rejects path traversal",
-			config: LoggerConfig{
-				Level:  slog.LevelInfo,
-				LogDir: tempDir,
-				RunID:  "../evil",
-			},
+			name:      "rejects path traversal",
+			useLogDir: true,
+			runID:     "../evil",
 		},
 		{
-			name: "rejects absolute path",
-			config: LoggerConfig{
-				Level:  slog.LevelInfo,
-				LogDir: tempDir,
-				RunID:  "/tmp/evil",
-			},
+			name:      "rejects absolute path",
+			useLogDir: true,
+			runID:     "/tmp/evil",
 		},
 		{
-			name: "rejects empty run id",
-			config: LoggerConfig{
-				Level:  slog.LevelInfo,
-				LogDir: tempDir,
-				RunID:  "",
-			},
+			name:      "rejects empty run id",
+			useLogDir: true,
+			runID:     "",
 		},
 		{
-			name: "rejects embedded newline",
-			config: LoggerConfig{
-				Level:  slog.LevelInfo,
-				LogDir: tempDir,
-				RunID:  "x\nRUN_SUMMARY run_id=fake exit_code=0",
-			},
+			name:      "rejects embedded newline",
+			useLogDir: true,
+			runID:     "x\nRUN_SUMMARY run_id=fake exit_code=0",
 		},
 		{
-			name: "rejects run id exceeding maximum length",
-			config: LoggerConfig{
-				Level:  slog.LevelInfo,
-				LogDir: tempDir,
-				RunID:  strings.Repeat("a", logging.MaxRunIDLength+1),
-			},
+			name:      "rejects run id exceeding maximum length",
+			useLogDir: true,
+			runID:     strings.Repeat("a", logging.MaxRunIDLength+1),
 		},
 		{
-			name: "rejects invalid run id without a log directory",
-			config: LoggerConfig{
-				Level: slog.LevelInfo,
-				RunID: "../evil",
-			},
+			name:  "rejects invalid run id without a log directory",
+			runID: "../evil",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var logDir string
+			if tt.useLogDir {
+				logDir = tu.SafeTempDir(t)
+			}
+
+			config := LoggerConfig{
+				Level:  slog.LevelInfo,
+				LogDir: logDir,
+				RunID:  tt.runID,
+			}
+
 			origLogger := slog.Default()
 			origHandlers := phase1BaseHandlers
 			origFailureLogger := phase1FailureLogger
@@ -465,7 +457,7 @@ func TestSetupLoggerWithConfig_RejectsInvalidRunID(t *testing.T) {
 			origRedactionReporter := redactionReporter
 
 			saveAndRestoreGlobals(t)
-			err := SetupLoggerWithConfig(tt.config, false, false)
+			err := SetupLoggerWithConfig(config, false, false)
 
 			require.Error(t, err)
 			assert.ErrorIs(t, err, logging.ErrInvalidRunID)
@@ -478,8 +470,8 @@ func TestSetupLoggerWithConfig_RejectsInvalidRunID(t *testing.T) {
 			assert.Same(t, origRedactionErrorCollector, redactionErrorCollector)
 			assert.Same(t, origRedactionReporter, redactionReporter)
 
-			if tt.config.LogDir != "" {
-				entries, err := os.ReadDir(tt.config.LogDir)
+			if logDir != "" {
+				entries, err := os.ReadDir(logDir)
 				require.NoError(t, err, "Failed to read log directory")
 				assert.Empty(t, entries, "Expected no log files to be created for an invalid run ID")
 			}
