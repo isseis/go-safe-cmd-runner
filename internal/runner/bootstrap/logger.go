@@ -73,6 +73,14 @@ var newSlackHandlerFunc = logging.NewSlackHandler
 // The global redactionErrorCollector and redactionReporter are initialized during
 // this call and must not be accessed before initialization completes.
 func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet bool) error {
+	// Reject malformed run IDs before any handler, file, or global state is
+	// touched. This is a defense-in-depth layer independent of the entrypoint
+	// validation in cmd/runner, so it must apply regardless of whether a log
+	// directory is configured.
+	if err := logging.ValidateRunID(config.RunID); err != nil {
+		return fmt.Errorf("invalid run ID: %w", err)
+	}
+
 	hostname := common.GetHostname()
 	timestamp := time.Now().Format("20060102T150405Z")
 

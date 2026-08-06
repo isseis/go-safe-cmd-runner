@@ -3,12 +3,14 @@ package bootstrap
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -397,4 +399,78 @@ func TestSetupLoggerWithConfig_FailureLoggerExcludesSlack(t *testing.T) {
 	// Note: We cannot directly verify Slack exclusion without mocking SlackHandler
 	// The actual verification is done in redaction tests where we can control
 	// the LogValuer panic and check that detailed logs don't go to Slack
+}
+
+func TestSetupLoggerWithConfig_RejectsInvalidRunID(t *testing.T) {
+	tempDir := tu.SafeTempDir(t)
+
+	tests := []struct {
+		name   string
+		config LoggerConfig
+	}{
+		{
+			name: "rejects path traversal",
+			config: LoggerConfig{
+				Level:  slog.LevelInfo,
+				LogDir: tempDir,
+				RunID:  "../evil",
+			},
+		},
+		{
+			name: "rejects absolute path",
+			config: LoggerConfig{
+				Level:  slog.LevelInfo,
+				LogDir: tempDir,
+				RunID:  "/tmp/evil",
+			},
+		},
+		{
+			name: "rejects empty run id",
+			config: LoggerConfig{
+				Level:  slog.LevelInfo,
+				LogDir: tempDir,
+				RunID:  "",
+			},
+		},
+		{
+			name: "rejects embedded newline",
+			config: LoggerConfig{
+				Level:  slog.LevelInfo,
+				LogDir: tempDir,
+				RunID:  "x\nRUN_SUMMARY run_id=fake exit_code=0",
+			},
+		},
+		{
+			name: "rejects run id exceeding maximum length",
+			config: LoggerConfig{
+				Level:  slog.LevelInfo,
+				LogDir: tempDir,
+				RunID:  strings.Repeat("a", logging.MaxRunIDLength+1),
+			},
+		},
+		{
+			name: "rejects invalid run id without a log directory",
+			config: LoggerConfig{
+				Level: slog.LevelInfo,
+				RunID: "../evil",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			saveAndRestoreGlobals(t)
+			err := SetupLoggerWithConfig(tt.config, false, false)
+
+			require.Error(t, err)
+			assert.True(t, errors.Is(err, logging.ErrInvalidRunID),
+				"expected error wrapping ErrInvalidRunID, got: %v", err)
+
+			if tt.config.LogDir != "" {
+				entries, err := os.ReadDir(tt.config.LogDir)
+				require.NoError(t, err, "Failed to read log directory")
+				assert.Empty(t, entries, "Expected no log files to be created for an invalid run ID")
+			}
+		})
+	}
 }
