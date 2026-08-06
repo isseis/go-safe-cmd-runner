@@ -194,9 +194,11 @@ func TestE2E_PreExecutionError_NonExistentConfigFile(t *testing.T) {
 }
 
 // writeValidConfig writes a minimal, syntactically valid configuration and
-// returns its path. The -run-id rejection tests below need a config that would
-// let the run proceed, so that a passing test proves the run ID was rejected
-// rather than the configuration.
+// returns its path. The -run-id rejection tests below need a config that gets
+// past config parsing, so that a rejection is attributable to the run ID and
+// not to the configuration. It does not make the run succeed: with no recorded
+// hashes the dry-run preview denies and the process exits 3, which is what
+// makes the exit-code-1 assertions in those tests discriminating.
 func writeValidConfig(t *testing.T) string {
 	t.Helper()
 
@@ -210,7 +212,7 @@ name = "test-cmd"
 cmd = "/bin/echo"
 args = ["hello"]
 `
-	require.NoError(t, os.WriteFile(configFile, []byte(validTOML), 0o644))
+	require.NoError(t, os.WriteFile(configFile, []byte(validTOML), 0o600))
 	return configFile
 }
 
@@ -221,20 +223,18 @@ func TestE2E_PreExecutionError_InvalidRunIDPathTraversal(t *testing.T) {
 	const maliciousRunID = "../../etc/cron.d/evil"
 
 	logDir := tu.SafeTempDir(t)
-	cmd := exec.Command("go", "run", ".",
+	// newGoRunCmd rather than `go run .`: `go run` reports 1 for any non-zero
+	// child exit, which would make the exit code assertion below unfalsifiable
+	// (an accepted run ID exits 3 here, through the dry-run deny path).
+	cmd := newGoRunCmd(t,
 		"-config", writeValidConfig(t), "-dry-run", "-log-dir", logDir, "-run-id", maliciousRunID)
-	cmd.Dir = "."
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
-
-	require.Error(t, err, "runner should reject a path-traversal run ID")
-	exitErr, ok := err.(*exec.ExitError)
-	require.True(t, ok, "error should be ExitError")
-	assert.Equal(t, 1, exitErr.ExitCode(), "exit code should be 1")
+	require.Error(t, cmd.Run(), "runner should reject a path-traversal run ID")
+	assert.Equal(t, 1, cmd.ProcessState.ExitCode(), "exit code should be 1")
 
 	stdoutOutput, stderrOutput := stdout.String(), stderr.String()
 	assert.Contains(t, stderrOutput, string(logging.ErrorTypeInvalidRunID))
@@ -251,7 +251,12 @@ func TestE2E_PreExecutionError_InvalidRunIDPathTraversal(t *testing.T) {
 	// filepath.Join(logDir, "<hostname>_<timestamp>_../../etc/cron.d/evil.json").
 	// filepath.Join collapses "<hostname>_<timestamp>_.." with the following
 	// "..", so the escape lands at <logDir>/etc/cron.d/evil.json -- inside the
-	// log directory, which is why this checks logDir itself.
+	// log directory, which is why this checks logDir itself rather than its
+	// parent. For this particular payload the log opener would fail with ENOENT
+	// anyway (it creates no intermediate directories), so this assertion is a
+	// guard against a future opener that does create them; the assertions that
+	// discriminate the unfixed code are the two NotContains checks above, which
+	// the pre-fix "failed to open log file" message would violate.
 	entries, readErr := os.ReadDir(logDir)
 	require.NoError(t, readErr)
 	assert.Empty(t, entries, "no file or directory may be created under the log directory")
@@ -265,20 +270,15 @@ func TestE2E_PreExecutionError_InvalidRunIDNewlineInjection(t *testing.T) {
 	// newlines are handled.
 	const injectingRunID = "x\nRUN_SUMMARY run_id=fake exit_code=0"
 
-	cmd := exec.Command("go", "run", ".",
+	cmd := newGoRunCmd(t,
 		"-config", writeValidConfig(t), "-dry-run", "-log-dir", tu.SafeTempDir(t), "-run-id", injectingRunID)
-	cmd.Dir = "."
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
-
-	require.Error(t, err, "runner should reject a run ID containing a newline")
-	exitErr, ok := err.(*exec.ExitError)
-	require.True(t, ok, "error should be ExitError")
-	assert.Equal(t, 1, exitErr.ExitCode(), "exit code should be 1")
+	require.Error(t, cmd.Run(), "runner should reject a run ID containing a newline")
+	assert.Equal(t, 1, cmd.ProcessState.ExitCode(), "exit code should be 1")
 
 	stdoutOutput := stdout.String()
 	summaryLines := 0
@@ -289,26 +289,24 @@ func TestE2E_PreExecutionError_InvalidRunIDNewlineInjection(t *testing.T) {
 	}
 	assert.Equal(t, 1, summaryLines, "exactly one RUN_SUMMARY line may appear in stdout: %q", stdoutOutput)
 	assert.NotContains(t, stdoutOutput, "run_id=fake", "the injected run ID must not appear in stdout")
+	// The report also goes to stderr, whose line structure the newline must not
+	// break either.
+	assert.NotContains(t, stderr.String(), "\nRUN_SUMMARY", "the injected value must not start a line on stderr")
 }
 
 // TestE2E_PreExecutionError_InvalidRunIDTooLong verifies that a -run-id longer
 // than the accepted maximum is rejected.
 func TestE2E_PreExecutionError_InvalidRunIDTooLong(t *testing.T) {
-	cmd := exec.Command("go", "run", ".",
+	cmd := newGoRunCmd(t,
 		"-config", writeValidConfig(t), "-dry-run", "-log-dir", tu.SafeTempDir(t),
 		"-run-id", strings.Repeat("a", logging.MaxRunIDLength+1))
-	cmd.Dir = "."
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
-
-	require.Error(t, err, "runner should reject an over-long run ID")
-	exitErr, ok := err.(*exec.ExitError)
-	require.True(t, ok, "error should be ExitError")
-	assert.Equal(t, 1, exitErr.ExitCode(), "exit code should be 1")
+	require.Error(t, cmd.Run(), "runner should reject an over-long run ID")
+	assert.Equal(t, 1, cmd.ProcessState.ExitCode(), "exit code should be 1")
 
 	assert.Contains(t, stderr.String(), string(logging.ErrorTypeInvalidRunID))
 }

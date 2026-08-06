@@ -50,7 +50,7 @@ func setupTestFlags() func() {
 	flag.StringVar(&dryRunFormat, "dry-run-format", "text", "dry-run output format (text, json)")
 	flag.StringVar(&dryRunDetail, "dry-run-detail", "detailed", "dry-run detail level (summary, detailed, full)")
 	flag.BoolVar(&showSensitive, "show-sensitive", false, "show sensitive information in dry-run output (use with caution)")
-	flag.StringVar(&runID, "run-id", "", "unique identifier for this execution run ("+logging.RunIDFormatDescription()+"; auto-generates ULID if not provided)")
+	flag.StringVar(&runIDFlag, "run-id", "", "unique identifier for this execution run ("+logging.RunIDFormatDescription()+"; auto-generates ULID if not provided)")
 	flag.BoolVar(&forceInteractive, "interactive", false, "force interactive mode with colored output (overrides environment detection)")
 	flag.BoolVar(&keepTempDirs, "keep-temp-dirs", false, "keep temporary directories after execution")
 
@@ -356,13 +356,6 @@ func TestResolveRunID(t *testing.T) {
 			want:      bootstrapID,
 		},
 		{
-			// The flag package cannot distinguish -run-id="" from an unset flag,
-			// so an explicitly empty value must behave like an unset one.
-			name:      "explicit empty string",
-			flagValue: "",
-			want:      bootstrapID,
-		},
-		{
 			name:      "accepted value",
 			flagValue: "my-custom-run-001",
 			want:      "my-custom-run-001",
@@ -388,6 +381,22 @@ func TestResolveRunID(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+
+	// An explicitly empty -run-id must behave like an unset flag. Passing "" to
+	// resolveRunID directly would only restate the "flag unset" case, so this
+	// goes through flag parsing to pin what the flag package actually yields for
+	// an explicitly empty value.
+	t.Run("explicit empty string", func(t *testing.T) {
+		cleanup := setupTestFlags()
+		defer cleanup()
+
+		os.Args = []string{"runner", "-run-id="}
+		flag.Parse()
+
+		got, err := resolveRunID(runIDFlag, bootstrapID)
+		require.NoError(t, err)
+		assert.Equal(t, bootstrapID, got)
+	})
 }
 
 // TestRunnerDeclaresRealUIDOnlyPolicy verifies that this binary's init()

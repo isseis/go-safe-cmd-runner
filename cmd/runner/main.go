@@ -39,13 +39,16 @@ func (e SilentExitError) Error() string {
 }
 
 var (
-	configPath       string
-	logLevel         string
-	logDir           string
-	dryRun           bool
-	dryRunFormat     string
-	dryRunDetail     string
-	showSensitive    bool
+	configPath    string
+	logLevel      string
+	logDir        string
+	dryRun        bool
+	dryRunFormat  string
+	dryRunDetail  string
+	showSensitive bool
+	// runIDFlag holds the raw -run-id value; only resolveRunID's result reaches
+	// runID, so every downstream reader of runID sees a validated value.
+	runIDFlag        string
 	runID            string
 	forceInteractive bool
 	forceQuiet       bool
@@ -76,7 +79,7 @@ func init() {
 	flag.StringVar(&dryRunFormat, "dry-run-format", "text", "dry-run output format (text, json)")
 	flag.StringVar(&dryRunDetail, "dry-run-detail", "detailed", "dry-run detail level (summary, detailed, full)")
 	flag.BoolVar(&showSensitive, "show-sensitive", false, "show sensitive information in dry-run output (use with caution)")
-	flag.StringVar(&runID, "run-id", "", "unique identifier for this execution run ("+logging.RunIDFormatDescription()+"; auto-generates ULID if not provided)")
+	flag.StringVar(&runIDFlag, "run-id", "", "unique identifier for this execution run ("+logging.RunIDFormatDescription()+"; auto-generates ULID if not provided)")
 	flag.BoolVar(&forceInteractive, "interactive", false, "force interactive mode with colored output (overrides environment detection)")
 	flag.BoolVar(&keepTempDirs, "keep-temp-dirs", false, "keep temporary directories after execution")
 
@@ -152,7 +155,7 @@ func resolveRunID(flagValue, bootstrapID string) (string, error) {
 		return bootstrapID, nil
 	}
 	if err := logging.ValidateRunID(flagValue); err != nil {
-		return "", fmt.Errorf("invalid run ID given to -run-id: %w", err)
+		return "", fmt.Errorf("-run-id: %w", err)
 	}
 	return flagValue, nil
 }
@@ -175,7 +178,7 @@ func main() {
 	// Assign to the package-level runID: everything downstream reads that
 	// variable, so leaving the resolved value in a local would let the raw flag
 	// value reach the log file name and the structured log attributes.
-	resolvedRunID, err := resolveRunID(runID, bootstrapID)
+	resolvedRunID, err := resolveRunID(runIDFlag, bootstrapID)
 	if err != nil {
 		// Report under bootstrapID, never under the rejected value. The error
 		// text carries at most one Go-quoted byte of that value, so it is safe

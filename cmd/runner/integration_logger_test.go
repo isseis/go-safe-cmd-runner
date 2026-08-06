@@ -266,19 +266,11 @@ func TestHandlerChainIntegration(t *testing.T) {
 func TestE2E_ValidRunIDIsAdopted(t *testing.T) {
 	const runID = "backup-20260805-143000"
 
-	configFile := filepath.Join(tu.SafeTempDir(t), "config.toml")
-	validTOML := `
-[[groups]]
-name = "test_group"
-
-[[groups.commands]]
-name = "test-cmd"
-cmd = "/bin/echo"
-args = ["hello"]
-`
-	require.NoError(t, os.WriteFile(configFile, []byte(validTOML), 0o600))
+	configFile := writeValidConfig(t)
 
 	logDir := tu.SafeTempDir(t)
+	// Unlike the rejection tests, this one must reach exit 0, so the hashes the
+	// dry-run preview consults are recorded up front.
 	hashDir := recordDryRunJSONHashes(t, configFile)
 	cmd := newGoRunCmdWithHashDir(t, hashDir,
 		"-config", configFile, "-dry-run", "-log-dir", logDir, "-run-id", runID)
@@ -288,7 +280,6 @@ args = ["hello"]
 	cmd.Stderr = &stderr
 
 	require.NoError(t, cmd.Run(), "runner should succeed with an accepted run ID\nstdout: %s\nstderr: %s", stdout.String(), stderr.String())
-	assert.Equal(t, 0, cmd.ProcessState.ExitCode())
 
 	matches, err := filepath.Glob(filepath.Join(logDir, "*_"+runID+".json"))
 	require.NoError(t, err)
