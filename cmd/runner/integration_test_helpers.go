@@ -14,6 +14,7 @@ import (
 	resourcetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -95,4 +96,14 @@ func echoPath(t *testing.T) string {
 	path, err := exec.LookPath("echo")
 	require.NoError(t, err, "echo command not found in PATH")
 	return path
+}
+
+// requireExitCode asserts that cmd finished (so cmd.ProcessState is populated)
+// and that its exit code matches want. Asserting ProcessState is non-nil first
+// gives a clear failure message if the process never started/finished, instead
+// of a silently misleading -1 from ExitCode()'s nil-safe behavior.
+func requireExitCode(t *testing.T, cmd *exec.Cmd, want int) {
+	t.Helper()
+	require.NotNil(t, cmd.ProcessState, "cmd.ProcessState is nil; process did not finish")
+	assert.Equal(t, want, cmd.ProcessState.ExitCode(), "exit code mismatch")
 }

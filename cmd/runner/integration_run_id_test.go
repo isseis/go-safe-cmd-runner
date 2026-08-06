@@ -41,7 +41,7 @@ func TestE2E_ValidRunIDIsAdopted(t *testing.T) {
 		t.Logf("Command output:\n%s", string(output))
 	}
 	require.NoError(t, err, "runner should accept a run ID in the accepted format")
-	require.Equal(t, 0, cmd.ProcessState.ExitCode())
+	requireExitCode(t, cmd, 0)
 
 	matches, err := filepath.Glob(filepath.Join(logDir, "*_"+wantRunID+".json"))
 	require.NoError(t, err)

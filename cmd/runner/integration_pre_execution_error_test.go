@@ -271,7 +271,7 @@ func TestE2E_PreExecutionError_InvalidRunIDPathTraversal(t *testing.T) {
 
 	err := cmd.Run()
 	require.Error(t, err, "runner should reject a path-traversal run ID")
-	assert.Equal(t, 1, cmd.ProcessState.ExitCode(), "exit code should be 1")
+	requireExitCode(t, cmd, 1)
 
 	stdoutOutput := stdout.String()
 	stderrOutput := stderr.String()
@@ -323,7 +323,7 @@ func TestE2E_PreExecutionError_InvalidRunIDNewlineInjection(t *testing.T) {
 
 	err := cmd.Run()
 	require.Error(t, err, "runner should reject a run ID containing a newline")
-	assert.Equal(t, 1, cmd.ProcessState.ExitCode(), "exit code should be 1")
+	requireExitCode(t, cmd, 1)
 
 	stdoutOutput := stdout.String()
 
@@ -351,7 +351,7 @@ func TestE2E_PreExecutionError_InvalidRunIDTooLong(t *testing.T) {
 
 	err := cmd.Run()
 	require.Error(t, err, "runner should reject an over-long run ID")
-	assert.Equal(t, 1, cmd.ProcessState.ExitCode(), "exit code should be 1")
+	requireExitCode(t, cmd, 1)
 
 	assert.Contains(t, stderr.String(), string(logging.ErrorTypeInvalidRunID),
 		"stderr should identify the error as an invalid run ID")
