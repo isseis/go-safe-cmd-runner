@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -397,4 +398,83 @@ func TestSetupLoggerWithConfig_FailureLoggerExcludesSlack(t *testing.T) {
 	// Note: We cannot directly verify Slack exclusion without mocking SlackHandler
 	// The actual verification is done in redaction tests where we can control
 	// the LogValuer panic and check that detailed logs don't go to Slack
+}
+
+func TestSetupLoggerWithConfig_RejectsInvalidRunID(t *testing.T) {
+	tests := []struct {
+		name      string
+		useLogDir bool
+		runID     string
+	}{
+		{
+			name:      "rejects path traversal",
+			useLogDir: true,
+			runID:     "../evil",
+		},
+		{
+			name:      "rejects absolute path",
+			useLogDir: true,
+			runID:     "/tmp/evil",
+		},
+		{
+			name:      "rejects empty run id",
+			useLogDir: true,
+			runID:     "",
+		},
+		{
+			name:      "rejects embedded newline",
+			useLogDir: true,
+			runID:     "x\nRUN_SUMMARY run_id=fake exit_code=0",
+		},
+		{
+			name:      "rejects run id exceeding maximum length",
+			useLogDir: true,
+			runID:     strings.Repeat("a", logging.MaxRunIDLength+1),
+		},
+		{
+			name:  "rejects invalid run id without a log directory",
+			runID: "../evil",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logDir string
+			if tt.useLogDir {
+				logDir = tu.SafeTempDir(t)
+			}
+
+			config := LoggerConfig{
+				Level:  slog.LevelInfo,
+				LogDir: logDir,
+				RunID:  tt.runID,
+			}
+
+			origLogger := slog.Default()
+			origHandlers := phase1BaseHandlers
+			origFailureLogger := phase1FailureLogger
+			origRedactionErrorCollector := redactionErrorCollector
+			origRedactionReporter := redactionReporter
+
+			saveAndRestoreGlobals(t)
+			err := SetupLoggerWithConfig(config, false, false)
+
+			require.Error(t, err)
+			assert.ErrorIs(t, err, logging.ErrInvalidRunID)
+
+			// Rejection must leave the default logger and package globals
+			// untouched: validation runs before any of them is committed.
+			assert.Same(t, origLogger, slog.Default())
+			assert.Equal(t, origHandlers, phase1BaseHandlers)
+			assert.Same(t, origFailureLogger, phase1FailureLogger)
+			assert.Same(t, origRedactionErrorCollector, redactionErrorCollector)
+			assert.Same(t, origRedactionReporter, redactionReporter)
+
+			if logDir != "" {
+				entries, err := os.ReadDir(logDir)
+				require.NoError(t, err, "Failed to read log directory")
+				assert.Empty(t, entries, "Expected no log files to be created for an invalid run ID")
+			}
+		})
+	}
 }
