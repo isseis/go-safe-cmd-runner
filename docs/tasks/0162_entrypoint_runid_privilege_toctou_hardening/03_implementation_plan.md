@@ -248,27 +248,28 @@
 
 **作業内容（製品コード）**
 
-- [ ] `resolveRunID(flagValue, bootstrapID string) (string, error)` を追加する。`flagValue` が空文字列なら `bootstrapID` を返し、それ以外は `logging.ValidateRunID(flagValue)` に合格した場合のみ `flagValue` を返す。不合格時は `logging.ErrInvalidRunID` をラップしたエラーを返す（`02_architecture.md` §3.2.3）。
-- [ ] `main()` を `02_architecture.md` §3.2.2 の最終形へ書き換える。Phase 3-A で確定した (1) `dropStartupPrivileges` と (2) `flag.Parse()` の間に `bootstrapID := logging.GenerateRunID()` を挿入し、`flag.Parse()` の直後に `resolveRunID(runID, bootstrapID)` を置く。ハッシュディレクトリの絶対パス検査はその後に残す。
-- [ ] `resolveRunID` が返した run ID を、パッケージ変数 `runID`（`cmd/runner/main.go:49`）へ代入する。`mainWithExitCode(runID)` 以降はこの変数を読むため、ローカル変数に留めるとフラグの生値が下流へ流れる。
-- [ ] `resolveRunID` が失敗した場合、`logging.HandlePreExecutionError` に渡す run ID を **`bootstrapID`** とし、メッセージには `err` の文字列と `logging.RunIDFormatDescription()` を含め、フラグに渡された値そのものは含めない（`02_architecture.md` §1.1 P-2、AC-09・AC-10）。その後 `os.Exit(1)` する。
-- [ ] `main()` から既存の `if runID == "" { runID = logging.GenerateRunID() }`（98〜100行目。Phase 3-A では残したもの）を削除する。
-- [ ] `-run-id` フラグの説明文字列を、受理形式が読み取れる内容へ更新する。`cmd/runner/main.go` の `init()` 内の登録を、`"unique identifier for this execution run (auto-generates ULID if not provided)"` から `"unique identifier for this execution run (" + logging.RunIDFormatDescription() + "; auto-generates ULID if not provided)"` へ変更する。
-- [ ] `cmd/runner/main_test.go` の `setupTestFlags`（22行目〜）にある `-run-id` の登録文字列を、上記と同一の値へ揃える（同関数は `init()` のフラグ定義を写しているため）。
+- [x] `resolveRunID(flagValue, bootstrapID string) (string, error)` を追加する。`flagValue` が空文字列なら `bootstrapID` を返し、それ以外は `logging.ValidateRunID(flagValue)` に合格した場合のみ `flagValue` を返す。不合格時は `logging.ErrInvalidRunID` をラップしたエラーを返す（`02_architecture.md` §3.2.3）。実装では `ValidateRunID` が返すエラー自体が既に `ErrInvalidRunID` をラップしているため、追加のラップは行わずそのまま返す（`errors.Is(err, logging.ErrInvalidRunID)` は成立する）。
+- [x] `main()` を `02_architecture.md` §3.2.2 の最終形へ書き換える。Phase 3-A で確定した (1) `dropStartupPrivileges` と (2) `flag.Parse()` の間に `bootstrapID := logging.GenerateRunID()` を挿入し、`flag.Parse()` の直後に `resolveRunID(runID, bootstrapID)` を置く。ハッシュディレクトリの絶対パス検査はその後に残す。
+- [x] `resolveRunID` が返した run ID を、パッケージ変数 `runID`（`cmd/runner/main.go:49`）へ代入する。`mainWithExitCode(runID)` 以降はこの変数を読むため、ローカル変数に留めるとフラグの生値が下流へ流れる。
+- [x] `resolveRunID` が失敗した場合、`logging.HandlePreExecutionError` に渡す run ID を **`bootstrapID`** とし、メッセージには `err` の文字列と `logging.RunIDFormatDescription()` を含め、フラグに渡された値そのものは含めない（`02_architecture.md` §1.1 P-2、AC-09・AC-10）。その後 `os.Exit(1)` する。
+- [x] `main()` から既存の `if runID == "" { runID = logging.GenerateRunID() }`（98〜100行目。Phase 3-A では残したもの）を削除する。
+- [x] `-run-id` フラグの説明文字列を、受理形式が読み取れる内容へ更新する。`cmd/runner/main.go` の `init()` 内の登録を、`"unique identifier for this execution run (auto-generates ULID if not provided)"` から `"unique identifier for this execution run (" + logging.RunIDFormatDescription() + "; auto-generates ULID if not provided)"` へ変更する。
+- [x] `cmd/runner/main_test.go` の `setupTestFlags`（22行目〜）にある `-run-id` の登録文字列を、上記と同一の値へ揃える（同関数は `init()` のフラグ定義を写しているため）。
 
 **テスト**
 
-- [ ] `cmd/runner/main_test.go` に `TestResolveRunID` を追加する。テーブルで次の4分岐を検証する。(a) `flagValue` 未指定（空文字列）→ `bootstrapID` が返る、(b) `--run-id=""` 相当の明示的な空文字列 → `bootstrapID` が返る、(c) 受理形式の値 `my-custom-run-001` → その値が返る、(d) 拒否形式の値 `../evil` → エラーが返り `errors.Is(err, logging.ErrInvalidRunID)` が真、返る run ID は空文字列。
-- [ ] `cmd/runner/integration_pre_execution_error_test.go` に `TestE2E_PreExecutionError_InvalidRunIDPathTraversal` を追加する。`go run . -config <有効な設定> -dry-run -log-dir <一時ディレクトリ> -run-id ../../etc/cron.d/evil` を実行し、次を検証する。(a) 終了コードが 1、(b) 標準エラー出力に `invalid_run_id` が含まれる、(c) 標準エラー出力に `logging.RunIDFormatDescription()` の文字列が含まれる、(d) 標準出力・標準エラー出力のいずれにも `../../etc/cron.d/evil` が部分文字列として現れない、(e) 標準出力の `RUN_SUMMARY` 行の `run_id` フィールドの値が `logging.ValidateRunID` を通過する、(f) `-log-dir` に指定した一時ディレクトリの中身が 0 件、(g) 一時ディレクトリの直下に `etc` という名前のエントリが作られていない。
+- [x] `cmd/runner/main_test.go` に `TestResolveRunID` を追加する。テーブルで次の4分岐を検証する。(a) `flagValue` 未指定（空文字列）→ `bootstrapID` が返る、(b) `--run-id=""` 相当の明示的な空文字列 → `bootstrapID` が返る、(c) 受理形式の値 `my-custom-run-001` → その値が返る、(d) 拒否形式の値 `../evil` → エラーが返り `errors.Is(err, logging.ErrInvalidRunID)` が真、返る run ID は空文字列。
+- [x] `cmd/runner/integration_pre_execution_error_test.go` に `TestE2E_PreExecutionError_InvalidRunIDPathTraversal` を追加する。`go run . -config <有効な設定> -dry-run -log-dir <一時ディレクトリ> -run-id ../../etc/cron.d/evil` を実行し、次を検証する。(a) 終了コードが 1、(b) 標準エラー出力に `invalid_run_id` が含まれる、(c) 標準エラー出力に `logging.RunIDFormatDescription()` の文字列が含まれる、(d) 標準出力・標準エラー出力のいずれにも `../../etc/cron.d/evil` が部分文字列として現れない、(e) 標準出力の `RUN_SUMMARY` 行の `run_id` フィールドの値が `logging.ValidateRunID` を通過する、(f) `-log-dir` に指定した一時ディレクトリの中身が 0 件、(g) 一時ディレクトリの直下に `etc` という名前のエントリが作られていない。
   - (g) の対象を一時ディレクトリ**直下**とする根拠: 入口検証がなければ構築されるパスは `filepath.Join(logDir, "<hostname>_<timestamp>_../../etc/cron.d/evil.json")` であり、`filepath.Join` の正規化で `<hostname>_<timestamp>_..` が1つの通常要素として直後の `..` に打ち消されるため、脱出先は `<logDir>/etc/cron.d/evil.json`、すなわちログディレクトリの内側になる。一時ディレクトリの親ディレクトリを検査対象にしても、実際に書き込みが発生する位置（一時ディレクトリの直下）を検査したことにはならない。
-- [ ] 同ファイルに `TestE2E_PreExecutionError_InvalidRunIDNewlineInjection` を追加する。`-run-id` に Go の文字列リテラル `"x\nRUN_SUMMARY run_id=fake exit_code=0"`（実際の改行を含む値）を argv 要素として与え、(a) 終了コードが 1、(b) 標準出力に `RUN_SUMMARY` を含む行がちょうど1行しか現れない、(c) 標準出力に `run_id=fake` が現れないことを検証する（`02_architecture.md` §7.4）。
-- [ ] 同ファイルに `TestE2E_PreExecutionError_InvalidRunIDTooLong` を追加する。`-run-id` に `strings.Repeat("a", logging.MaxRunIDLength+1)` を与え、終了コードが 1 で標準エラー出力に `invalid_run_id` が現れることを検証する。
-- [ ] `cmd/runner/integration_logger_test.go` に `TestE2E_ValidRunIDIsAdopted` を追加する（成功経路のテストであり、`integration_pre_execution_error_test.go` の担当範囲ではない）。`go run . -config <有効な設定> -dry-run -log-dir <一時ディレクトリ> -run-id backup-20260805-143000` を実行し、(a) 終了コードが 0、(b) 一時ディレクトリに `*_backup-20260805-143000.json` に一致するファイルがちょうど1件生成されていることを検証する。`RUN_SUMMARY` は誤り経路でしか出力されないため（§1.3）、採用された run ID の観測にはログファイル名（`{hostname}_{timestamp}_{runID}.json`、[logger.go:138](../../../internal/runner/bootstrap/logger.go#L138)）を用いる。
+- [x] 同ファイルに `TestE2E_PreExecutionError_InvalidRunIDNewlineInjection` を追加する。`-run-id` に Go の文字列リテラル `"x\nRUN_SUMMARY run_id=fake exit_code=0"`（実際の改行を含む値）を argv 要素として与え、(a) 終了コードが 1、(b) 標準出力に `RUN_SUMMARY` を含む行がちょうど1行しか現れない、(c) 標準出力に `run_id=fake` が現れないことを検証する（`02_architecture.md` §7.4）。
+- [x] 同ファイルに `TestE2E_PreExecutionError_InvalidRunIDTooLong` を追加する。`-run-id` に `strings.Repeat("a", logging.MaxRunIDLength+1)` を与え、終了コードが 1 で標準エラー出力に `invalid_run_id` が現れることを検証する。
+- [x] `TestE2E_ValidRunIDIsAdopted` を追加する（成功経路のテストであり、`integration_pre_execution_error_test.go` の担当範囲ではない）。`go run . -config <有効な設定> -dry-run -log-dir <一時ディレクトリ> -run-id backup-20260805-143000` を実行し、(a) 終了コードが 0、(b) 一時ディレクトリに `*_backup-20260805-143000.json` に一致するファイルがちょうど1件生成されていることを検証する。`RUN_SUMMARY` は誤り経路でしか出力されないため（§1.3）、採用された run ID の観測にはログファイル名（`{hostname}_{timestamp}_{runID}.json`、[logger.go:138](../../../internal/runner/bootstrap/logger.go#L138)）を用いる。
+  - 実装時の訂正: 配置先を当初計画の `cmd/runner/integration_logger_test.go` から新規ファイル `cmd/runner/integration_run_id_test.go`（`//go:build test`）へ変更した。dry-run で終了コード 0 を得るには設定ファイルと `/bin/echo` のハッシュ記録が必要であり、そのための既存ヘルパー `newGoRunCmdWithHashDir`（`testutil_ldflags_test.go`）・`recordHash`／`setupTempConfig`（`integration_dryrun_verification_test.go`）はいずれも `//go:build test` 付きのファイルにある。`integration_logger_test.go` はビルドタグを持たないため、そこから参照するとタグなしビルド（`go test ./cmd/runner`）が壊れる。`integration_logger_test.go` にタグを付ける案は、同ファイルの既存テストをタグなしビルドから除外してしまうため採らなかった。
 
 **完了条件（Phase 3-B）**
 
-- [ ] `go test -tags test ./cmd/runner/...` が成功する。
-- [ ] 既存の `TestShortFlags`・`TestShortFlagsEquivalence`（`cmd/runner/main_test.go`）がアサーション無変更で通過する。
+- [x] `go test -tags test ./cmd/runner/...` が成功する。
+- [x] 既存の `TestShortFlags`・`TestShortFlagsEquivalence`（`cmd/runner/main_test.go`）がアサーション無変更で通過する。
 
 ### PR-3 作成ポイント: --run-id entry validation
 
@@ -652,9 +653,9 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 
 | AC | 種別 | 検証場所またはコマンド | 期待結果 |
 |---|---|---|---|
-| AC-01 | test | `cmd/runner/main_test.go::TestResolveRunID`（サブテスト「flag unset」） | `flagValue == ""` のとき `bootstrapID` が返り、エラーが `nil` |
-| AC-02 | test | `cmd/runner/main_test.go::TestResolveRunID`（サブテスト「explicit empty string」） | 明示的な空文字列でも `bootstrapID` が返り、エラーが `nil` |
-| AC-03 | test | `cmd/runner/main_test.go::TestResolveRunID`（サブテスト「accepted value」）、`cmd/runner/integration_logger_test.go::TestE2E_ValidRunIDIsAdopted` | 指定値がそのまま返る。E2E では終了コードが 0 で、`-log-dir` に `*_backup-20260805-143000.json` に一致するファイルがちょうど1件生成される |
+| AC-01 | test | `cmd/runner/main_test.go::TestResolveRunID`（サブテスト `flag_not_supplied_uses_bootstrap_id`） | `flagValue == ""` のとき `bootstrapID` が返り、エラーが `nil` |
+| AC-02 | test | `cmd/runner/main_test.go::TestResolveRunID`（サブテスト `explicitly_empty_flag_uses_bootstrap_id`） | 明示的な空文字列でも `bootstrapID` が返り、エラーが `nil` |
+| AC-03 | test | `cmd/runner/main_test.go::TestResolveRunID`（サブテスト `accepted_value_is_adopted`）、`cmd/runner/integration_run_id_test.go::TestE2E_ValidRunIDIsAdopted` | 指定値がそのまま返る。E2E では終了コードが 0 で、`-log-dir` に `*_backup-20260805-143000.json` に一致するファイルがちょうど1件生成される |
 | AC-04 | test | `internal/logging/runid_test.go::TestValidateRunID_AcceptsAllowedCharacters`、`::TestValidateRunID_RejectsNonAllowlistedValues` | 許可文字のみの値が受理され、それ以外を含む全ケースが `ErrInvalidRunID` で拒否される |
 | AC-05 | test | `internal/logging/runid_test.go::TestValidateRunID_RejectsNonAllowlistedValues`（`../../etc/cron.d/evil`・`/tmp/evil`・`..`）、`cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDPathTraversal` | 拒否される。E2E では終了コードが 1 |
 | AC-06 | test | `internal/logging/runid_test.go::TestValidateRunID_RejectsNonAllowlistedValues`（空白・改行・NUL・ESC）、`cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_InvalidRunIDNewlineInjection` | 拒否される。E2E では終了コードが 1 かつ `RUN_SUMMARY` を含む行が1行だけ |

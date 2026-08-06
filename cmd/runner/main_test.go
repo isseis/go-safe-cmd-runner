@@ -50,7 +50,7 @@ func setupTestFlags() func() {
 	flag.StringVar(&dryRunFormat, "dry-run-format", "text", "dry-run output format (text, json)")
 	flag.StringVar(&dryRunDetail, "dry-run-detail", "detailed", "dry-run detail level (summary, detailed, full)")
 	flag.BoolVar(&showSensitive, "show-sensitive", false, "show sensitive information in dry-run output (use with caution)")
-	flag.StringVar(&runID, "run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
+	flag.StringVar(&runID, "run-id", "", "unique identifier for this execution run ("+logging.RunIDFormatDescription()+"; auto-generates ULID if not provided)")
 	flag.BoolVar(&forceInteractive, "interactive", false, "force interactive mode with colored output (overrides environment detection)")
 	flag.BoolVar(&keepTempDirs, "keep-temp-dirs", false, "keep temporary directories after execution")
 
@@ -364,4 +364,55 @@ func TestRunnerDeclaresRealUIDOnlyPolicy(t *testing.T) {
 		groupmembership.ProcessPermissionCheckUIDPolicy(), 0, deps)
 	require.NoError(t, err)
 	assert.Equal(t, 0, uid)
+}
+
+// TestResolveRunID covers every branch of the boundary validation applied to
+// --run-id: both spellings of "not supplied", an accepted value, and a rejected
+// one.
+func TestResolveRunID(t *testing.T) {
+	const bootstrapID = "01K2YK812JA735M4TWZ6BK0JH9"
+
+	tests := []struct {
+		name      string
+		flagValue string
+		want      string
+		wantErr   bool
+	}{
+		{
+			name:      "flag_not_supplied_uses_bootstrap_id",
+			flagValue: "",
+			want:      bootstrapID,
+		},
+		{
+			name: "explicitly_empty_flag_uses_bootstrap_id",
+			// flag cannot tell --run-id="" apart from an unset flag, so both
+			// reach resolveRunID as the empty string and must behave alike.
+			flagValue: "",
+			want:      bootstrapID,
+		},
+		{
+			name:      "accepted_value_is_adopted",
+			flagValue: "my-custom-run-001",
+			want:      "my-custom-run-001",
+		},
+		{
+			name:      "rejected_value_yields_error_and_empty_run_id",
+			flagValue: "../evil",
+			want:      "",
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveRunID(tt.flagValue, bootstrapID)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, logging.ErrInvalidRunID)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
