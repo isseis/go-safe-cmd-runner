@@ -3,12 +3,14 @@ package bootstrap
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -166,6 +168,75 @@ func TestSetupLoggerWithConfig_FullConfig(t *testing.T) {
 				}
 
 				assert.True(t, found, "Expected log file to be created, but none found")
+			}
+		})
+	}
+}
+
+func TestSetupLoggerWithConfig_RejectsInvalidRunID(t *testing.T) {
+	tests := []struct {
+		name     string
+		logDir   string
+		runID    string
+		checkDir bool
+	}{
+		{
+			name:     "path_traversal_dotdot",
+			logDir:   tu.SafeTempDir(t),
+			runID:    "../evil",
+			checkDir: true,
+		},
+		{
+			name:     "path_traversal_absolute",
+			logDir:   tu.SafeTempDir(t),
+			runID:    "/tmp/evil",
+			checkDir: true,
+		},
+		{
+			name:     "empty",
+			logDir:   tu.SafeTempDir(t),
+			runID:    "",
+			checkDir: true,
+		},
+		{
+			name:     "newline_injection",
+			logDir:   tu.SafeTempDir(t),
+			runID:    "line1\nline2",
+			checkDir: true,
+		},
+		{
+			name:     "too_long",
+			logDir:   tu.SafeTempDir(t),
+			runID:    strings.Repeat("a", logging.MaxRunIDLength+1),
+			checkDir: true,
+		},
+		{
+			// This case distinguishes a guard gated on `if config.LogDir != ""`
+			// from the required unconditional one: with no log directory, a gated
+			// implementation would skip validation entirely and return no error.
+			name:   "no_log_dir_configured",
+			logDir: "",
+			runID:  "../evil",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			saveAndRestoreGlobals(t)
+			err := SetupLoggerWithConfig(LoggerConfig{
+				Level:  slog.LevelInfo,
+				LogDir: tt.logDir,
+				RunID:  tt.runID,
+			}, false, false)
+
+			require.Error(t, err, "SetupLoggerWithConfig() expected error for invalid run ID")
+			assert.True(t, errors.Is(err, logging.ErrInvalidRunID),
+				"errors.Is(err, logging.ErrInvalidRunID) = false, got: %v", err)
+
+			if tt.checkDir {
+				entries, readErr := os.ReadDir(tt.logDir)
+				require.NoError(t, readErr, "failed to read log directory")
+				assert.Len(t, entries, 0, "expected no log files to be created for invalid run ID")
 			}
 		})
 	}
