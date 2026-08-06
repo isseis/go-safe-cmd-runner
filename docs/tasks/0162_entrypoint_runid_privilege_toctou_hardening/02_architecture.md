@@ -555,6 +555,7 @@ fail-closed 側は、ハッシュディレクトリを world-writable にした�
 | `cmd/runner/startup_privilege_test.go` | 新規 | `dropStartupPrivileges` の失敗経路（実 syscall による `EPERM`）と `reportStartupPrivilegeFailure` の単体テスト | AC-15, AC-16, AC-18 |
 | `cmd/runner/startup_order_guard_test.go` | 新規 | `dropStartupPrivileges` 内の呼び出し順序、`main` 内での降格と `flag.Parse` の前後関係、識別子変更系 syscall の許可リスト、`init()` の増加検知を静的に検証（§7.2） | AC-14 |
 | `cmd/runner/integration_pre_execution_error_test.go` | 変更 | run ID 拒否時に不正値が標準出力・標準エラー出力に出ないこと、ログファイルが作られないことの検証を追加 | AC-08, AC-09, AC-10 |
+| `cmd/runner/integration_run_id_test.go` | 新規 | 受理形式の run ID が実際に採用されることを、生成されるログファイル名で検証する成功経路の統合テスト。dry-run で終了コード 0 を得るためのハッシュ記録ヘルパーが `//go:build test` 付きのファイルにあるため、`integration_logger_test.go`（タグなし）ではなく本ファイルに置く | AC-03 |
 | `internal/testutil/identitymutationguard/helpers.go` | 変更 | `CallSite` に位置情報を追加し、追跡対象を呼び出し側から指定できるようにする（§7.2 が必要とする拡張） | AC-14 |
 | `internal/runner/bootstrap/logger.go` | 変更 | `SetupLoggerWithConfig` 先頭での `RunID` 再検証 | AC-11, AC-12 |
 | `internal/runner/bootstrap/logger_test.go` | 変更 | 不正な `RunID` でログファイルが作られないことの検証を追加。既存の `RunID` 値15箇所（7呼び出し）はすべて新形式を満たすため修正不要 | AC-11〜AC-13 |

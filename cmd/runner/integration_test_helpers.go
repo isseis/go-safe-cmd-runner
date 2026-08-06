@@ -96,3 +96,13 @@ func echoPath(t *testing.T) string {
 	require.NoError(t, err, "echo command not found in PATH")
 	return path
 }
+
+// requireExitCode asserts that cmd finished (so cmd.ProcessState is populated)
+// and that its exit code matches want. Asserting ProcessState is non-nil first
+// gives a clear failure message if the process never started/finished, instead
+// of a silently misleading -1 from ExitCode()'s nil-safe behavior.
+func requireExitCode(t *testing.T, cmd *exec.Cmd, want int) {
+	t.Helper()
+	require.NotNil(t, cmd.ProcessState, "cmd.ProcessState is nil; process did not finish")
+	require.Equal(t, want, cmd.ProcessState.ExitCode(), "exit code mismatch")
+}
