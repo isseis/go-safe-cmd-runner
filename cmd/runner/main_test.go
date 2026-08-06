@@ -50,7 +50,7 @@ func setupTestFlags() func() {
 	flag.StringVar(&dryRunFormat, "dry-run-format", "text", "dry-run output format (text, json)")
 	flag.StringVar(&dryRunDetail, "dry-run-detail", "detailed", "dry-run detail level (summary, detailed, full)")
 	flag.BoolVar(&showSensitive, "show-sensitive", false, "show sensitive information in dry-run output (use with caution)")
-	flag.StringVar(&runID, "run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
+	flag.StringVar(&runID, "run-id", "", "unique identifier for this execution run ("+logging.RunIDFormatDescription()+"; auto-generates ULID if not provided)")
 	flag.BoolVar(&forceInteractive, "interactive", false, "force interactive mode with colored output (overrides environment detection)")
 	flag.BoolVar(&keepTempDirs, "keep-temp-dirs", false, "keep temporary directories after execution")
 
@@ -337,6 +337,55 @@ func TestShortFlagsEquivalence(t *testing.T) {
 			assert.Equal(t, longGroups, shortGroups, "groups should be the same")
 			assert.Equal(t, longLogLevel, shortLogLevel, "logLevel should be the same")
 			assert.Equal(t, longForceQuiet, shortForceQuiet, "forceQuiet should be the same")
+		})
+	}
+}
+
+func TestResolveRunID(t *testing.T) {
+	const bootstrapID = "01JZZZZZZZZZZZZZZZZZZZZZZZ"
+
+	tests := []struct {
+		name      string
+		flagValue string
+		want      string
+		wantErr   bool
+	}{
+		{
+			name:      "flag unset",
+			flagValue: "",
+			want:      bootstrapID,
+		},
+		{
+			// The flag package cannot distinguish -run-id="" from an unset flag,
+			// so an explicitly empty value must behave like an unset one.
+			name:      "explicit empty string",
+			flagValue: "",
+			want:      bootstrapID,
+		},
+		{
+			name:      "accepted value",
+			flagValue: "my-custom-run-001",
+			want:      "my-custom-run-001",
+		},
+		{
+			name:      "rejected value",
+			flagValue: "../evil",
+			want:      "",
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveRunID(tt.flagValue, bootstrapID)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, logging.ErrInvalidRunID)
+				assert.Empty(t, got, "a rejected value must not yield a run ID")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

@@ -1,8 +1,15 @@
+// This file carries the test build tag because TestE2E_ValidRunIDIsAdopted
+// builds the runner binary through newGoRunCmdWithHashDir, a helper that is
+// itself only compiled under that tag. Every test and lint invocation in this
+// repository passes -tags test, so no coverage is lost.
+//go:build test
+
 package main
 
 import (
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -250,6 +257,42 @@ func TestHandlerChainIntegration(t *testing.T) {
 		}
 		assert.Fail(t, "Expected to find log file with run ID, but none found")
 	}
+}
+
+// TestE2E_ValidRunIDIsAdopted verifies that a -run-id in the accepted format is
+// adopted as-is by a successful run. The run ID is observed through the log file
+// name ({hostname}_{timestamp}_{runID}.json) because RUN_SUMMARY is only emitted
+// on error paths.
+func TestE2E_ValidRunIDIsAdopted(t *testing.T) {
+	const runID = "backup-20260805-143000"
+
+	configFile := filepath.Join(tu.SafeTempDir(t), "config.toml")
+	validTOML := `
+[[groups]]
+name = "test_group"
+
+[[groups.commands]]
+name = "test-cmd"
+cmd = "/bin/echo"
+args = ["hello"]
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(validTOML), 0o600))
+
+	logDir := tu.SafeTempDir(t)
+	hashDir := recordDryRunJSONHashes(t, configFile)
+	cmd := newGoRunCmdWithHashDir(t, hashDir,
+		"-config", configFile, "-dry-run", "-log-dir", logDir, "-run-id", runID)
+
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	require.NoError(t, cmd.Run(), "runner should succeed with an accepted run ID\nstdout: %s\nstderr: %s", stdout.String(), stderr.String())
+	assert.Equal(t, 0, cmd.ProcessState.ExitCode())
+
+	matches, err := filepath.Glob(filepath.Join(logDir, "*_"+runID+".json"))
+	require.NoError(t, err)
+	assert.Len(t, matches, 1, "exactly one log file named after the given run ID should exist")
 }
 
 // TestErrorHandling tests error handling in the integrated system

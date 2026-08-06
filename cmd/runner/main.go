@@ -76,7 +76,7 @@ func init() {
 	flag.StringVar(&dryRunFormat, "dry-run-format", "text", "dry-run output format (text, json)")
 	flag.StringVar(&dryRunDetail, "dry-run-detail", "detailed", "dry-run detail level (summary, detailed, full)")
 	flag.BoolVar(&showSensitive, "show-sensitive", false, "show sensitive information in dry-run output (use with caution)")
-	flag.StringVar(&runID, "run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
+	flag.StringVar(&runID, "run-id", "", "unique identifier for this execution run ("+logging.RunIDFormatDescription()+"; auto-generates ULID if not provided)")
 	flag.BoolVar(&forceInteractive, "interactive", false, "force interactive mode with colored output (overrides environment detection)")
 	flag.BoolVar(&keepTempDirs, "keep-temp-dirs", false, "keep temporary directories after execution")
 
@@ -139,6 +139,24 @@ func reportStartupPrivilegeFailure(err error) int {
 	return 1
 }
 
+// resolveRunID returns the run ID to use for this execution. An empty flagValue
+// (unset, or explicitly empty -- the flag package cannot tell the two apart)
+// yields bootstrapID. Any other value must satisfy logging.ValidateRunID;
+// otherwise the returned run ID is empty and the returned error wraps
+// logging.ErrInvalidRunID.
+//
+// Invariant: the returned run ID is either bootstrapID or a value that passed
+// validation, so no caller can forward an unvalidated flag value downstream.
+func resolveRunID(flagValue, bootstrapID string) (string, error) {
+	if flagValue == "" {
+		return bootstrapID, nil
+	}
+	if err := logging.ValidateRunID(flagValue); err != nil {
+		return "", fmt.Errorf("invalid run ID given to -run-id: %w", err)
+	}
+	return flagValue, nil
+}
+
 func main() {
 	// Drop privileges before anything else in main's body, so that no input is
 	// processed while the process still holds the privileges it was started
@@ -147,13 +165,26 @@ func main() {
 		os.Exit(reportStartupPrivilegeFailure(err))
 	}
 
+	// Generate the bootstrap run ID before any flag is read, so that a rejected
+	// -run-id can still be reported under a run ID that is known to be valid.
+	bootstrapID := logging.GenerateRunID()
+
 	// Parse command line flags early to get runID
 	flag.Parse()
 
-	// Use provided run ID or generate one for error handling
-	if runID == "" {
-		runID = logging.GenerateRunID()
+	// Assign to the package-level runID: everything downstream reads that
+	// variable, so leaving the resolved value in a local would let the raw flag
+	// value reach the log file name and the structured log attributes.
+	resolvedRunID, err := resolveRunID(runID, bootstrapID)
+	if err != nil {
+		// Report under bootstrapID, never under the rejected value. The error
+		// text carries at most one Go-quoted byte of that value, so it is safe
+		// to print.
+		logging.HandlePreExecutionError(logging.ErrorTypeInvalidRunID,
+			fmt.Sprintf("%v (accepted format: %s)", err, logging.RunIDFormatDescription()), "main", bootstrapID)
+		os.Exit(1)
 	}
+	runID = resolvedRunID
 
 	// Validate DefaultHashDirectory early - this should never fail in production
 	// but helps catch build-time configuration errors
