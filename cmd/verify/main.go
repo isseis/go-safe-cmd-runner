@@ -70,20 +70,13 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-// checkDirPermissions runs the TOCTOU permission check on the directories this
-// operation touches, and reports whether verification may proceed.
+// checkDirPermissions reports whether verification may proceed.
 //
-// The hash directory is the root of trust: if it or one of its ancestors can be
-// written by someone else, hash records can be replaced and any verdict this
-// command produces is meaningless. Such a violation is therefore fail-closed —
-// each one is logged at ERROR level, the reason is written to stderr, and no
-// file is verified. No bypass flag is provided; fix the directory permissions
-// with chmod, or move the hash directory to a properly permissioned path, and
-// re-run.
-//
-// A violation confined to a target file's ancestor directories is a different
-// matter: that is precisely the situation verify exists to inspect, so it keeps
-// the shared check's warning behaviour and verification continues.
+// Only the hash directory side is fail-closed. It is the root of trust: if it
+// or an ancestor is writable by someone else, hash records can be replaced and
+// any verdict this command produces is meaningless. A violation confined to a
+// target file's ancestors is the opposite case — that is what verify exists to
+// inspect — so it stays a warning and verification continues.
 func checkDirPermissions(cfg *verifyConfig, stderr io.Writer) bool {
 	secValidator := toctouChecker
 	if secValidator == nil {
@@ -106,25 +99,15 @@ func checkDirPermissions(cfg *verifyConfig, stderr io.Writer) bool {
 
 	logger := slog.Default()
 	hashDirs := security.CollectTOCTOUCheckDirs(nil, nil, absHashDir)
-	// RunTOCTOUPermissionCheck already logs each violation at WARN; the ERROR log
-	// below is intentionally in addition to it, since only the hash directory side
-	// escalates to a fail-closed, non-zero exit. The log level therefore tells an
-	// on-call reader whether the run was stopped.
+	// The ERROR below is in addition to the WARN RunTOCTOUPermissionCheck already
+	// logs, so the level distinguishes a violation that stopped the run from one
+	// that did not.
 	if violations := security.RunTOCTOUPermissionCheck(secValidator, hashDirs, logger); len(violations) > 0 {
-		// The remediation deliberately names neither a directory nor a single
-		// command, because neither can be derived from what a violation carries.
-		//
-		// Not a directory: the checker validates every component from the root
-		// down to v.Path, so the directory that actually violates the policy is
-		// often an ancestor of v.Path rather than v.Path itself — v.Path is merely
-		// what was checked. The violation text names the real one.
-		//
-		// Not a command: security.ErrInvalidDirPermissions covers six distinct
-		// causes (world-writable, wrong owner, group-writable with unverifiable
-		// group membership, not a directory, and two general validation failures),
-		// which call for different fixes. Naming one of them would be wrong for
-		// the rest, and the causes are not distinguishable without matching on the
-		// error text. The violation text states which one applies.
+		// The remediation names neither a directory nor a command: v.Path is the
+		// directory that was checked, not necessarily the one at fault (the checker
+		// walks from the root down), and ErrInvalidDirPermissions covers causes
+		// needing chmod go-w, chown or chmod g-w, which cannot be told apart without
+		// matching on the error text. The violation attribute carries both.
 		const remediation = "fix the permissions and ownership of the directory named in the violation, or move the hash directory to a properly permissioned path, then re-run verify"
 		for _, v := range violations {
 			logger.Error(
@@ -138,9 +121,7 @@ func checkDirPermissions(cfg *verifyConfig, stderr io.Writer) bool {
 		return false
 	}
 
-	// The hash directory set is trusted, so check the remaining directories the
-	// target files live under. This is reached only when the run may proceed, so
-	// the target paths are resolved here rather than above: a run that fails
+	// Resolved here rather than alongside the hash directory: a run that fails
 	// closed does not touch the target files at all.
 	absFiles := make([]string, 0, len(cfg.files))
 	for _, f := range cfg.files {
