@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-08-07 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-08-07 |
+| Reviewer | isseis |
 | Comments | - |
 
 ## 関連 Issue
