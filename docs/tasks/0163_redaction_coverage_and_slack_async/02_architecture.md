@@ -471,6 +471,11 @@ type slackSender struct {
 //
 //	Submitted == Enqueued + Dropped
 //	Enqueued  == Sent + Failed + Pending
+//
+// Substituting the second into the first gives the flat breakdown of every
+// notification that ever reached the enqueue decision point:
+//
+//	Submitted == Sent + Failed + Dropped + Pending
 type FlushStats struct {
     // Submitted is the total number of notifications that reached the enqueue
     // decision point, i.e. those that passed the slack_notify, dry-run and
@@ -662,7 +667,11 @@ flush では高優先度キューを先に処理する。期限内に送り切�
 - `Submitted == Enqueued + Dropped`
 - `Enqueued == Sent + Failed + Pending`
 
-期限切れ時に送信中だった 1 件と、`Flush` が中断した送信中の 1 件（下記）は、キューからは取り出し済みで完了もしていないため `Pending` に数える。この 2 式は 7.3 のテストで固定する。
+第 2 式を第 1 式へ代入すると、投入の可否判定に到達した全通知の内訳が 1 段の式として得られる。
+
+- `Submitted == Sent + Failed + Dropped + Pending`
+
+期限切れ時に送信中だった 1 件と、`Flush` が中断した送信中の 1 件（下記）は、キューからは取り出し済みで完了もしていないため `Pending` に数える。これらの式は 7.3 のテストで固定する。
 
 **送信中の 1 件の中断**: `Flush` と `Close` は、書き込みロックを取って受付停止フラグを立てた後、同じロックの下で保持しているキャンセル関数（非 nil のとき）を呼ぶ。これにより、実行時デッドライン（40 秒）で作られた送信中のコンテキストが即座にキャンセルされ、残りの処理は flush 期限（15 秒）の内側で進む。ワーカーは 1 件を取り出すたびにキャンセル関数をこの共有状態へ格納し、その送信が終わったら nil に戻す。
 
@@ -1086,7 +1095,7 @@ stateDiagram-v2
 ### 7.3 セキュリティテスト
 
 - `go test -race ./internal/logging/... ./internal/redaction/...` を通す。複数 goroutine から同時にログを出力し、その最中に `Flush` を呼ぶ経路を含める（AC-32）。
-- カウンタの不変条件 `Submitted == Enqueued + Dropped` および `Enqueued == Sent + Failed + Pending` が、並行投入と flush を組み合わせた条件下で成立することを検証する。とくにキュー溢れによる破棄を含む条件で、破棄が `Enqueued` に混入しないことを確かめる。これは競合検出器では捕まらない論理的な取りこぼしを検出する（3.4.6）。
+- カウンタの不変条件 `Submitted == Enqueued + Dropped`、`Enqueued == Sent + Failed + Pending`、およびこの 2 つから導かれる `Submitted == Sent + Failed + Dropped + Pending` が、並行投入と flush を組み合わせた条件下で成立することを検証する。とくにキュー溢れによる破棄を含む条件で、破棄が `Enqueued` に混入しないことを確かめる。これは競合検出器では捕まらない論理的な取りこぼしを検出する（3.4.6）。
 - 秘密を含むテキストに対する置換後の文字列に、元の値の断片が一切含まれないことを検証する（AC-04）。
 
 ## 8. 実装優先順位
