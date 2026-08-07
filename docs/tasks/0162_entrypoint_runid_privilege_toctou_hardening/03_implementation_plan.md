@@ -447,8 +447,8 @@ Phase 1〜4 とは依存関係がないため、Phase 1 と並行して着手で
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（[#999](https://github.com/isseis/go-safe-cmd-runner/pull/999)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -593,7 +593,7 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 - [x] `cmd/runner/startup_privilege_test.go` の新規作成（4テストと、逐次実行・root スキップに関するコメント）
 - [x] `cmd/runner/startup_order_guard_test.go` の新規作成（`//go:build test`、主張1〜4とコントロールケース。主張1・2 を後続 PR へ持ち越さない）
 - [x] `go test -tags test ./cmd/runner/...` の成功
-- [ ] PR-2 マージ済み（対象ステップ: Phase 2 / Phase 3-A）
+- [x] PR-2 マージ済み（対象ステップ: Phase 2 / Phase 3-A）
 
 ### PR-3: `--run-id` の入口検証（Phase 3-B）
 
@@ -606,14 +606,14 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 - [x] `cmd/runner/integration_run_id_test.go` への `TestE2E_ValidRunIDIsAdopted` の追加（配置先変更の理由は §2 Phase 3-B の「実装時の訂正」を参照）
 - [x] `make deadcode` の確認（PR-1 が導入し本 PR で到達可能になる `internal/logging` の新規シンボルを含め、未到達の報告がないこと）
 - [x] `go test -tags test ./cmd/runner/...` の成功
-- [ ] PR-3 マージ済み（対象ステップ: Phase 3-B）
+- [x] PR-3 マージ済み（対象ステップ: Phase 3-B）
 
 ### PR-4: `bootstrap` の多層防御（Phase 4）
 
 - [x] `SetupLoggerWithConfig` 先頭での `ValidateRunID` 呼び出し
 - [x] `TestSetupLoggerWithConfig_RejectsInvalidRunID` の追加
 - [x] 既存の `bootstrap` テストと `cmd/runner/integration_logger_test.go` の通過
-- [ ] PR-4 マージ済み（対象ステップ: Phase 4）
+- [x] PR-4 マージ済み（対象ステップ: Phase 4）
 
 ### PR-5: `cmd/verify` の fail-closed 化（Phase 5）
 
@@ -628,7 +628,7 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 - [x] `TestRunTOCTOU_ContinuesOnWorldWritableDir` の改名・コメント更新・経路依存スタブ注入・アサーション追加
 - [x] 既存4テストへの `toctouChecker` 注入
 - [x] `go test -tags test ./cmd/verify/...` の成功
-- [ ] PR-5 マージ済み（対象ステップ: Phase 5）
+- [x] PR-5 マージ済み（対象ステップ: Phase 5）
 
 ### PR-6: 文書と CHANGELOG（Phase 6）
 
@@ -639,7 +639,7 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 - [x] `docs/translation_glossary.md` への新規用語の追加
 - [x] 英語版3ファイルの反映
 - [x] 文書の記載内容と実装の突き合わせ検証（Phase 6 の「検証」項目）
-- [ ] PR-6 マージ済み（対象ステップ: Phase 6）
+- [x] PR-6 マージ済み（対象ステップ: Phase 6）
 
 ### 全体（各 PR の作成前に実施）
 
@@ -683,7 +683,7 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 | AC-22 | test | 既存 `cmd/verify/main_test.go::TestRunProcessesMultipleFiles`、`::TestRunReportsFailuresAndContinues`、`::TestRunWarnsWhenDeprecatedFlagUsed`、`::TestRunUsesDefaultHashDirectoryWhenNotSpecified` | アサーション無変更で通過する（追加するのは `toctouChecker` のスタブ注入のみ） |
 | AC-23 | test | `cmd/verify/main_test.go::TestRunFailsClosedOnHashDirViolation_ExplicitHashDir`（`-hash-dir` 明示）、`::TestRunFailsClosedOnHashDirViolation_DefaultHashDir`（既定ディレクトリ） | 両ケースとも終了コードが `exitUntrustedEnvironment`、`validator.calls` が 0 件 |
 | AC-28 | test | `cmd/verify/main_test.go::TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates` | 対象ファイルの祖先のみに違反がある構成で、終了コードが 0（`exitUntrustedEnvironment` ではない）、`validator.calls` が 1 件 |
-| AC-24 | static + manual | static: `rg -n "1〜64文字" docs/user/runner_command.ja.md`、`rg -n -e "起動前に拒否" -e "実行を開始せず" docs/user/runner_command.ja.md`、`rg -n "1-64 characters" docs/user/runner_command.md`。manual: Phase 6 の「検証」項目で `logging.RunIDFormatDescription()` および `logging.MaxRunIDLength` と記述内容を突き合わせる | static の3コマンドがいずれも1件以上ヒットする（日本語版は `-run-id` 節、英語版は対応する節）。manual では受理形式の記述が定数と一致している |
+| AC-24 | static + manual | static: `rg -n "1〜64文字" docs/user/runner_command.ja.md`、`rg -n "実行は開始されずにエラー終了します" docs/user/runner_command.ja.md`、`rg -n "1 to 64 characters" docs/user/runner_command.md`。manual: Phase 6 の「検証」項目で `logging.RunIDFormatDescription()` および `logging.MaxRunIDLength` と記述内容を突き合わせる | static の3コマンドがいずれも1件以上ヒットする（日本語版は `-run-id` 節、英語版は対応する節）。manual では受理形式の記述が定数と一致している |<br>実装時の訂正: 当初の検索文字列（日本語版 `起動前に拒否` / `実行を開始せず`、英語版 `1-64 characters`）は、Phase 6 で確定した実際の文面（`実行は開始されずにエラー終了します` / `a length of 1 to 64 characters`）と一致しないため、上記へ差し替えた。記述内容の要件（受理形式と、不正値が起動前に拒否されること）は変わっていない |
 | AC-25 | static | `rg -n -e "exit 3" -e "終了コード 3" docs/user/verify_command.ja.md`、`rg -n "対象ファイル" docs/user/verify_command.ja.md`、`rg -n "exit 3" docs/user/verify_command.md` | 日本語版・英語版とも終了コード表に 3 の行が存在し、日本語版に対象ファイル側のみの違反では警告のうえ検証が継続する旨の記述が1件以上ヒットする |
 | AC-26 | static | `rg -n -A2 "^### 破壊的変更" CHANGELOG.ja.md \| head -40` と `rg -n "run-id" CHANGELOG.ja.md`、`rg -n "verify" CHANGELOG.ja.md` | `## [未リリース]` 節に `### 破壊的変更` が存在し、`--run-id` の形式厳格化と `verify` の fail-closed 化の2項目、および影響判定手順が記載されている。`CHANGELOG.md` にも同じ2項目が存在する |
 | AC-27 | static | `git diff --stat docs/translation_glossary.md` | 本タスクで新規に導入した用語がある場合は差分が存在する。新規用語がない場合は、その判断を PR 本文に明記したうえで差分なしを許容する |
@@ -699,26 +699,26 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 
 ### 8.2 品質
 
-- [ ] `make test` が成功する。
-- [ ] `make lint` が警告なく通過する。
-- [ ] `make deadcode` が成功する。
-- [ ] 新規追加した関数のうち、エラー経路を持つものはすべてエラー経路のテストを持つ。
+- [x] `make test` が成功する。
+- [x] `make lint` が警告なく通過する（`0 issues.`）。
+- [x] `make deadcode` が成功する。報告される未到達関数8件はいずれも本タスク以前から存在するものであり、本タスクで追加したシンボル（`internal/logging` の run ID 関連、`identitymutationguard` の拡張、`cmd/runner` / `cmd/verify` の新規関数）は1件も含まれない。
+- [x] 新規追加した関数のうち、エラー経路を持つものはすべてエラー経路のテストを持つ（`ValidateRunID`・`resolveRunID`・`dropStartupPrivileges`・`SetupLoggerWithConfig` の再検証・`checkDirPermissions`）。
 
 ### 8.3 セキュリティ
 
-- [ ] `cmd/runner` の製品コードに、識別子変更系 syscall への値参照（`ValueRef`）が0件である（`cmd/runner/startup_order_guard_test.go` の主張3）。
-- [ ] `--run-id` に与えた不正値が、標準出力・標準エラー出力・ログのいずれにも原文のまま現れない。
-- [ ] `verify` がハッシュディレクトリ側の違反を検出した場合、`Verify` を1件も呼ばない。
+- [x] `cmd/runner` の製品コードに、識別子変更系 syscall への値参照（`ValueRef`）が0件である（`cmd/runner/startup_order_guard_test.go` の主張3）。
+- [x] `--run-id` に与えた不正値が、標準出力・標準エラー出力・ログのいずれにも原文のまま現れない（`TestE2E_PreExecutionError_InvalidRunIDPathTraversal`・`::InvalidRunIDNewlineInjection`）。
+- [x] `verify` がハッシュディレクトリ側の違反を検出した場合、`Verify` を1件も呼ばない（`TestRunFailsClosedOnHashDirViolation_*`・`TestRunSkipsTargetSetCheckWhenHashDirViolates`）。
 
 ### 8.4 後方互換性
 
-- [ ] 受理形式に合致する `--run-id` を指定する運用、および `--run-id` を指定しない運用で、外部から観測可能な挙動が変わらない。
-- [ ] ハッシュディレクトリ側に違反が検出されない `verify` の運用で、外部から観測可能な挙動が変わらない（`sudo verify` で利用者のホームディレクトリ配下のファイルを検証する運用を含む）。
+- [x] 受理形式に合致する `--run-id` を指定する運用、および `--run-id` を指定しない運用で、外部から観測可能な挙動が変わらない（`TestE2E_ValidRunIDIsAdopted`、既存の `TestShortFlags`・`TestShortFlagsEquivalence`・`integration_logger_test.go` 全体がアサーション無変更で通過）。
+- [x] ハッシュディレクトリ側に違反が検出されない `verify` の運用で、外部から観測可能な挙動が変わらない（既存4テストがアサーション無変更で通過、`TestRunProceedsWithRealCheckerOnCleanDirs`、`TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates`）。
 
 ### 8.5 文書
 
-- [ ] AC-24〜AC-27 の検証がすべて通過する。
-- [ ] 日本語版と英語版の章立てが一致している。
+- [x] AC-24〜AC-27 の検証がすべて通過する（AC-24 の static 検索文字列は §7 の「実装時の訂正」のとおり実文面へ差し替えたうえで確認）。
+- [x] 日本語版と英語版の章立てが一致している（`runner_command` / `verify_command` の両方について、コードブロック内の `#` を除外した見出しレベル列の差分が空であることを確認）。
 
 ---
 
@@ -727,7 +727,7 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 `make lint` と `make test` では検出できない残存参照と整合性を、実装完了後に確認する。
 
 - [x] `rg -n "GenerateRunID" --type go` の結果が、`internal/logging/runid.go` の定義、`internal/logging/runid_test.go` のテスト、`cmd/runner/main.go` の呼び出しのみであり、`internal/logging/safeopen.go` と `internal/logging/safeopen_test.go` に残っていない。
-- [x] `rg -n "AC-M2S-7" --type go` の結果が 0 件である（`cmd/verify/main_test.go` のコメントから除去済み）。
+- [x] `rg -n "AC-M2S-7" cmd/verify/` の結果が 0 件である（`cmd/verify/main_test.go` のコメントから除去済み）。実装時の訂正: 当初は `--type go` で全リポジトリを対象にしていたが、`cmd/runner/integration_toctou_test.go:19` に本タスク以前から同じ参照が1件あり（最終変更は 2026-05-10、本タスクのスコープ外）、全体検索では 0 件にならない。検査対象を本タスクが触る `cmd/verify/` へ限定した。
 - [x] `rg -n "TestRunTOCTOU_ContinuesOnWorldWritableDir" -g '!docs/**'` の結果が 0 件である（改名の取りこぼしがない）。
 - [x] `rg -n "does NOT abort on TOCTOU|only logs a warning" cmd/verify/` の結果が 0 件である（fail-open を前提とした古いコメントが残っていない）。
 - [x] `rg -n -e "runner-<run-id>" -e "runner-01K" docs/` の結果が 0 件である（誤ったログファイル命名規則の記述が日本語版・英語版のいずれにも残っていない）。
