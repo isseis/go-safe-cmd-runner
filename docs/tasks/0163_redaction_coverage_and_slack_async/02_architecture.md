@@ -128,7 +128,7 @@ flowchart TB
 | 1 回のログ呼び出しが Slack の応答時間に依存しない | 未保証（D2 M-5） | 保証（F-004） |
 | プロセス終了が有限時間で完了する | 保証（同期送信の最大 34 秒を含む） | 保証（flush 期限 15 秒） |
 | 送信失敗・破棄が Slack を含まない出力先に記録される | 未保証（`slog.Default()` 経由） | 保証（F-006） |
-| 投入した通知の総数が、送信・失敗・破棄・残件の合計と一致する | 該当なし | 保証（3.4.6） |
+| 投入要求の総数が、キュー投入分と破棄分の和に一致し、キュー投入分が送信・失敗・残件の合計と一致する | 該当なし | 保証（3.4.6） |
 | 通知の内容が、Slack への投入前にログファイルへ書き終わっている | 保証（ハンドラの登録順による） | 維持（2.4。強制終了時に配送は失われても内容は残る） |
 
 ## 2. システム構成
@@ -465,9 +465,17 @@ type slackSender struct {
 }
 
 // FlushStats reports a sender's delivery accounting. Every counter except
-// Pending is cumulative since the sender was created, so the invariant
-// Enqueued == Sent + Failed + Dropped + Pending holds when Flush returns.
+// Pending is cumulative since the sender was created. Dropped notifications
+// never enter a queue, so they are not part of Enqueued; the accounting is a
+// two-level partition and both equations hold when Flush returns:
+//
+//	Submitted == Enqueued + Dropped
+//	Enqueued  == Sent + Failed + Pending
 type FlushStats struct {
+    // Submitted is the total number of notifications that reached the enqueue
+    // decision point, i.e. those that passed the slack_notify, dry-run and
+    // nil-sender checks. Each one is either enqueued or dropped.
+    Submitted int64
     // Enqueued is the number of notifications accepted into a send queue.
     Enqueued int64
     // Sent is the number of notifications delivered successfully.
@@ -478,8 +486,9 @@ type FlushStats struct {
     // attempt, either because the queue was full or because the sender had
     // stopped accepting.
     Dropped int64
-    // Pending is the number of notifications still undelivered when Flush
-    // returned, including one that was in flight when the deadline expired.
+    // Pending is the number of enqueued notifications still undelivered when
+    // Flush returned, including one that was in flight when the deadline
+    // expired or when Flush cancelled the in-flight runtime attempt.
     Pending int64
 }
 
@@ -505,13 +514,15 @@ type SlackHandlerOptions struct {
     Synchronous bool
 }
 
-// Flush stops accepting new notifications, drains the queues until ctx is done,
-// and terminates the worker. It is safe to call concurrently and repeatedly;
+// Flush stops accepting new notifications, cancels the send that is in flight
+// so it cannot outlive ctx under the longer runtime deadline, drains the queues
+// until ctx is done, and terminates the worker. The cancelled notification is
+// reported as Pending. It is safe to call concurrently and repeatedly;
 // calls after the first return the same accounting without re-draining.
 func (s *SlackHandler) Flush(ctx context.Context) FlushStats
 
-// Close stops accepting notifications and terminates the worker without
-// draining. It exists for teardown paths that have no notifications worth
+// Close stops accepting notifications, cancels the send that is in flight, and
+// terminates the worker without draining. It exists for teardown paths that have no notifications worth
 // delivering, such as AddSlackHandlers unwinding after a partial failure.
 func (s *SlackHandler) Close() FlushStats
 
@@ -556,7 +567,7 @@ func FlushSlackNotifications()
 
 両方の容量を `SlackHandlerOptions` から個別に上書きできるようにする（3.4.1）。溢れの挙動（破棄と記録、AC-29）は両キューで検証すべきであり、上書き手段が通常キューにしかないと、高優先度キューの溢れを試すために既定容量の 32 件を投入する必要が生じる。テストが本番の容量という定数に結び付くと、容量を見直すたびにテストの前提が崩れる。容量ごとに独立した上書きを用意すれば、いずれのキューも容量 1 で溢れを再現できる。
 
-**ワーカーを 1 本にする理由**: 通知の順序が保たれる。実行サマリ・特権操作の失敗通知・セキュリティアラートは時系列で読まれるため、順序の逆転は運用者の判断を誤らせる。また同時接続が 1 本に制限されるため、Slack 側のレート制限に抵触しにくい。送信ごとに goroutine を起こす案は、順序が保たれず、Slack が応答しないときに goroutine 数が通知数に比例して増えるため採らない。
+**ワーカーを 1 本にする理由**: 各キューの内部で通知の順序が保たれる。実行サマリ・特権操作の失敗通知・セキュリティアラートは時系列で読まれるため、同じ優先度の通知どうしで順序が逆転すると運用者の判断を誤らせる。ワーカーが複数あると、同一キューから取り出した通知どうしでも送信の完了順が入れ替わるため、この保証が失われる。なお優先度をまたぐ追い越しは起こる。後から発生したセキュリティアラートが、先に積まれた通常の通知を追い越して先に届く。これは優先度設計から意図した帰結であり、アラートが先に届くことこそ望ましい挙動である。また同時接続が 1 本に制限されるため、Slack 側のレート制限に抵触しにくい。送信ごとに goroutine を起こす案は、同一キュー内の順序が保たれず、同時接続数も制御できないうえ、Slack が応答しないときに goroutine 数が通知数に比例して増えるため採らない。
 
 **満杯時は同一優先度の新しい通知を即時破棄する**。短時間の待機を挟む案は、待機時間だけログ呼び出し元をブロックし、非同期化の目的そのものを損なう。最古を破棄する案は、リングバッファの排他制御を要するうえ、優先度分離を入れた本設計では利得が小さい。即時破棄なら投入は常に有界時間で完了する（AC-17）。
 
@@ -580,6 +591,8 @@ func FlushSlackNotifications()
 
 実行中のリトライ回数とバックオフ間隔は変更しない。非同期化によってリトライの所要時間はログ呼び出し元に波及しなくなるため、リトライ方針を弱める動機がない。一方 flush 中にリトライを行わないのは、flush 期限（15 秒）が 1 件分のリトライ列（34 秒）より短く、リトライを許すと最初の 1 件で期限を使い切ってしまうためである。この 2 つのモードの切り替えにより、「実行中は粘り強く、終了時は数をさばく」という挙動になる。
 
+**flush 開始時に送信中だった 1 件の扱い**: `Flush` が呼ばれた時点で送信中の通知は、実行中の 40 秒デッドラインで作られたコンテキストの下にあり、そのままでは flush 期限（15 秒）を超えて居座りうる。これを防ぐため、ワーカーは送信中の 1 件の `context.CancelFunc` を共有状態に保持し、`Flush` と `Close` は受付停止フラグを立てた直後に同じロックの下でそれを呼ぶ（3.4.6）。実行中の試行はそこで打ち切られ、以降の処理はすべて flush 期限の内側で進む。中断された通知はキューから取り出し済みで送信も完了していないため、`Pending` に数える（期限切れ時に送信中だった 1 件と同じ扱いである）。この仕組みにより、`Flush` が flush 期限内に戻ることと、戻った時点でワーカー goroutine が終了していることの両方が成り立つ。
+
 flush では高優先度キューを先に処理する。期限内に送り切れない場合、失われるのは通常キューの通知である。
 
 送信に用いるコンテキストは、`slog` のログ呼び出し由来のコンテキストから切り離し、ワーカー側で新たに生成する。理由は、ログ呼び出し元のコンテキストをそのまま持ち越すと、`cmd/runner` が `signal.NotifyContext` で作るコンテキストのキャンセルによって、終了時にこそ送りたい通知が送信直前で打ち切られてしまうためである。
@@ -592,7 +605,8 @@ flush では高優先度キューを先に処理する。期限内に送り切�
 |---|---|---|---|
 | 高優先度キュー / 通常キュー | バッファ付きチャネル | `Handle` を呼んだ各 goroutine、ワーカー | チャネル自身 |
 | 受付停止フラグ | `bool` | `Handle`、`Flush`、`Close` | 3.4.6 の `sync.RWMutex` |
-| `Enqueued` / `Sent` / `Failed` / `Dropped` | `atomic.Int64` | `Handle` を呼んだ各 goroutine、ワーカー | 型自身 |
+| 送信中の 1 件のキャンセル関数 | `context.CancelFunc`（未送信時は nil） | ワーカー（設定・解除）、`Flush`、`Close`（呼び出し） | 受付停止フラグと同じ `sync.RWMutex` |
+| `Submitted` / `Enqueued` / `Sent` / `Failed` / `Dropped` | `atomic.Int64` | `Handle` を呼んだ各 goroutine、ワーカー | 型自身 |
 | ワーカー終了通知 | チャネル | ワーカー、`Flush`、`Close` | チャネル自身 |
 | flush 結果 | `FlushStats` | `Flush` | 受付停止フラグと同じ `sync.RWMutex` |
 
@@ -600,7 +614,14 @@ flush では高優先度キューを先に処理する。期限内に送り切�
 
 これを防ぐため、受付停止フラグを `sync.RWMutex` で保護する。`Handle` は読み取りロックを取った状態で「フラグの確認」と「キューへの非ブロッキング投入」を行い、`Flush` と `Close` は書き込みロックを取ってフラグを立てる。書き込みロックが取れた時点で投入中の `Handle` は存在しないため、その後の排出はキューの全内容を観測できる。読み取りロックは複数の `Handle` が同時に保持できるため、ログ呼び出しの並行性は損なわれない。
 
-**カウンタの整合**: `Flush` が戻る時点で `Enqueued == Sent + Failed + Dropped + Pending` が成り立つ。期限切れ時に送信中だった 1 件は `Pending` に数える。この不変条件は 7.3 のテストで固定する。
+**カウンタの整合**: 破棄はキューへ入る前に決まるため、`Dropped` は `Enqueued` に含まれない。したがって整合は 2 段の分割として定める。`Submitted` は投入要求の総数、すなわち `slack_notify`・ドライラン・nil 送信器の各判定を通過して投入の可否判定に到達した通知の件数である。`Flush` が戻る時点で次の 2 式が成り立つ。
+
+- `Submitted == Enqueued + Dropped`
+- `Enqueued == Sent + Failed + Pending`
+
+期限切れ時に送信中だった 1 件と、`Flush` が中断した送信中の 1 件（下記）は、キューからは取り出し済みで完了もしていないため `Pending` に数える。この 2 式は 7.3 のテストで固定する。
+
+**送信中の 1 件の中断**: `Flush` と `Close` は、書き込みロックを取って受付停止フラグを立てた後、同じロックの下で保持しているキャンセル関数（非 nil のとき）を呼ぶ。これにより、実行時デッドライン（40 秒）で作られた送信中のコンテキストが即座にキャンセルされ、残りの処理は flush 期限（15 秒）の内側で進む。ワーカーは 1 件を取り出すたびにキャンセル関数をこの共有状態へ格納し、その送信が終わったら nil に戻す。
 
 **送信キューは閉じない**: チャネルを閉じないため、クローズ済みチャネルへの送信は構造的に発生しない。受付停止後の投入はロックによって排除され、仮に通ってもバッファに入るだけでブロックも panic もしない（AC-27）。
 
@@ -683,11 +704,13 @@ classDiagram
         -normal chan slackRequest
         -mu sync.RWMutex
         -closed bool
+        -inFlightCancel context.CancelFunc
         -counters slackCounters
     }
 
     class FlushStats {
         <<struct>>
+        +Submitted int64
         +Enqueued int64
         +Sent int64
         +Failed int64
@@ -800,7 +823,7 @@ flowchart TD
 | 通知の到達が大きく遅延する | 中。ワーカー 1 本の直列処理のため、最悪でキュー長 × 送信デッドライン | 遅延の上限は設けない。ログファイルと stderr への出力は同期のままであり、一次記録は遅延しない。目安を利用者向け文書に記載する |
 | 強制終了（SIGKILL、OOM kill、電源断、リブート時の停止猶予切れ）でキューの残りが失われる | 中。同期送信では失われるのは送信中の 1 件だけだった。正味の悪化は「Slack は正常だが通知の生成が送信より速い」状態に限られる | 通常のリブート（SIGTERM）は flush される。通知の内容は投入前にログファイルへ同期的に書かれているため、配送のみが失われる。損失範囲を 2.4 に整理し、利用者向け文書に記載する。同期送信へ戻す退避手段を用意する（3.4.10） |
 | 送信失敗が `Handle` の戻り値から見えなくなる | 低。`slog.Logger` は元々ハンドラのエラーを破棄している | 送信失敗ロガーへの逐次記録と `FlushStats.Failed` |
-| ワーカー goroutine が終了せずプロセスが残る | 低 | ワーカーは `Flush` または `Close` で必ず終了する。所有者を失う経路（`AddSlackHandlers` のエラー経路、再呼び出し）は 3.4.8 で塞ぐ |
+| ワーカー goroutine が終了せずプロセスが残る | 低 | ワーカーは `Flush` または `Close` で必ず終了する。送信中の 1 件は保持したキャンセル関数で打ち切られるため、実行時デッドライン（40 秒）が flush 期限（15 秒）を超えて残ることはない（3.4.5、3.4.6）。所有者を失う経路（`AddSlackHandlers` のエラー経路、再呼び出し）は 3.4.8 で塞ぐ |
 | 送信失敗ロガーの出力が背景 goroutine から発生し、対話的なコンソール出力と交錯する | 低 | `DefaultLogLineTracker` は原子的であり競合しないが、コンソール出力の順序は非決定的になる。コンソール出力の順序に依存するテストを書かない |
 
 ### 5.3 redaction の拡張に伴うリスク評価
@@ -877,7 +900,7 @@ flowchart TD
     C1 -->|"はい"| C2{"送信器がある?"}
     C2 -->|"ない（ドライラン等）"| RET
     C2 -->|"ある"| BUILD["message_type に応じて<br>SlackMessage を構築"]
-    BUILD --> LOCK["読み取りロックを取得"]
+    BUILD --> LOCK["読み取りロックを取得し<br>Submitted を増やす"]
     LOCK --> C3{"受付停止済み?"}
     C3 -->|"はい"| DROP["Dropped を増やし<br>送信失敗ロガーへ 1 件記録"]
     C3 -->|"いいえ"| SEL["message_type から<br>投入先キューを選ぶ"]
@@ -889,19 +912,20 @@ flowchart TD
     UNLOCK --> RET
 
     W(["ワーカー goroutine"]) --> WT["高優先度キューを優先して<br>1 件取り出す"]
-    WT --> WCTX["送信用コンテキストを生成<br>（実行中は送信デッドライン、<br>flush 中は残り期限と 5 秒の小さいほう）"]
+    WT --> WCTX["送信用コンテキストを生成し<br>キャンセル関数を共有状態へ格納<br>（実行中は送信デッドライン、<br>flush 中は残り期限と 5 秒の小さいほう）"]
     WCTX --> WSEND["HTTP 送信<br>（flush 中はリトライしない）"]
-    WSEND --> WRES{"成功?"}
+    WSEND --> WCLR["キャンセル関数を共有状態から外す"]
+    WCLR --> WRES{"成功?"}
     WRES -->|"はい"| WOK["Sent を増やす"]
     WRES -->|"いいえ"| WNG["Failed を増やし<br>送信失敗ロガーへ 1 件記録"]
     WOK --> WT
     WNG --> WT
 
-    class BUILD,LOCK,SEL,ENQ,PUT,DROP,UNLOCK,WCTX,WSEND,WOK,WNG enhanced
+    class BUILD,LOCK,SEL,ENQ,PUT,DROP,UNLOCK,WCTX,WSEND,WCLR,WOK,WNG enhanced
     class A1,WT process
 ```
 
-**矢印の意味**: A → B は「A の次に B を実行する」ことを表す。上段は `Handle` を呼んだ goroutine、下段はワーカー goroutine の流れであり、両者は送信キューを介してのみつながる。
+**矢印の意味**: A → B は「A の次に B を実行する」ことを表す。上段は `Handle` を呼んだ goroutine、下段はワーカー goroutine の流れであり、両者は送信キューを介してのみつながる。ワーカーが送信の直前にキャンセル関数を共有状態へ格納するのは、`Flush` / `Close` が送信中の 1 件を打ち切れるようにするためである（3.4.5、3.4.6）。この打ち切りによって終わった 1 件は送信失敗としては扱わず、`Failed` ではなく `Pending` に数える。
 
 ### 6.3 送信器の状態遷移
 
@@ -913,14 +937,16 @@ stateDiagram-v2
     state "排出中" as Draining
     state "送信終了" as Drained
 
-    Accepting --> Draining : Flush 呼び出し（受付停止フラグを立てる）
-    Accepting --> Drained : Close 呼び出し（排出せずワーカーを終了）
+    Accepting --> Draining : Flush 呼び出し（受付停止フラグを立て、送信中の 1 件をキャンセル）
+    Accepting --> Drained : Close 呼び出し（受付停止フラグを立て、送信中の 1 件をキャンセルし、排出せずワーカーを終了）
     Draining --> Drained : キューが空になった（ワーカー終了）
     Draining --> Drained : flush 期限に到達（残件数を Pending に計上、ワーカー終了）
     Drained --> Drained : 以降の投入は Dropped を増やして記録するのみ
 ```
 
 矢印 A → B は「イベントによる A から B への遷移」を表す。「送信終了」状態ではワーカー goroutine は既に終了している。送信キューのチャネル自体は閉じないため、クローズ済みチャネルへの送信は構造的に発生しない。
+
+「受付中」から出る 2 本の遷移では、受付停止フラグを立てた直後に、保持しているキャンセル関数（3.4.6）を同じロックの下で呼ぶ。これにより実行時デッドライン（40 秒）で始まっていた送信が即座に打ち切られ、「排出中」の処理は flush 期限（15 秒）の内側で完結する。打ち切られた 1 件は `Pending` に数える。
 
 ## 7. テスト戦略
 
@@ -959,6 +985,7 @@ stateDiagram-v2
 | 優先度 | 通常キューを満杯にした状態でも高優先度の通知が受け入れられ、先に送信されること | AC-24, AC-29 |
 | 両キューの溢れ | 容量を 1 に上書きし、通常キューと高優先度キューのそれぞれで溢れが破棄・記録されること。本番の容量（128 / 32）に依存せずに検証する | AC-29 |
 | flush | 期限内の送信完了、期限切れ時の残件数、受付停止後の到着の破棄、複数回呼び出しの冪等性 | AC-23, AC-25, AC-26, AC-27 |
+| 送信中の 1 件の中断 | 応答しないモックサーバへの送信が実行時デッドライン（40 秒）で進行中に `Flush` を呼び、flush 期限内に戻ること、その 1 件が `Pending` に計上されること、ワーカーが終了していることを検証する | AC-21, AC-25 |
 | ライフサイクル | `Close` でワーカーが終了すること。`Flush` 後に goroutine が残らないこと | AC-21 |
 | nil 送信器 | 構造体リテラルで構築したハンドラの `Handle` が panic せず nil を返すこと | AC-27 |
 | 破棄の記録 | 破棄ごとに `message_type` と理由が記録され、本文が含まれないこと | AC-29 |
@@ -984,7 +1011,7 @@ stateDiagram-v2
 ### 7.3 セキュリティテスト
 
 - `go test -race ./internal/logging/... ./internal/redaction/...` を通す。複数 goroutine から同時にログを出力し、その最中に `Flush` を呼ぶ経路を含める（AC-32）。
-- カウンタの不変条件 `Enqueued == Sent + Failed + Dropped + Pending` が、並行投入と flush を組み合わせた条件下で成立することを検証する。これは競合検出器では捕まらない論理的な取りこぼしを検出する（3.4.6）。
+- カウンタの不変条件 `Submitted == Enqueued + Dropped` および `Enqueued == Sent + Failed + Pending` が、並行投入と flush を組み合わせた条件下で成立することを検証する。とくにキュー溢れによる破棄を含む条件で、破棄が `Enqueued` に混入しないことを確かめる。これは競合検出器では捕まらない論理的な取りこぼしを検出する（3.4.6）。
 - 秘密を含むテキストに対する置換後の文字列に、元の値の断片が一切含まれないことを検証する（AC-04）。
 
 ## 8. 実装優先順位
@@ -1055,7 +1082,7 @@ Phase 1 は Phase 2 の前提である（拡張後のパターンを毎回コン
 - **3 つの redaction 経路を 1 つの生成規則に統合する案**: `Authorization: ` 経路と第 3 経路で終端規則が異なり、統合の利得より既存挙動を壊すリスクが上回るため不採用（3.2.1）。
 - **`Config` のコンストラクタで正規表現を事前コンパイルする案**: `Config` が構造体リテラルでも構築されうるため、コンストラクタを通ったことを型として保証できない。上限付きキャッシュを採用（3.2.7）。
 - **AWS Secret Access Key の値形式パターン追加**: 自己識別可能な形式を持たず誤検出が広範になるため不採用。キー名ベースの層で既に捕捉されている（3.3.4）。
-- **送信ごとに goroutine を起こす案**: 順序が保たれず、Slack 到達不能時に goroutine が通知数に比例して増えるため不採用（3.4.2）。
+- **送信ごとに goroutine を起こす案**: 同一キュー内の順序が保たれず、同時接続数も制御できないため Slack のレート制限に抵触しやすい。加えて Slack 到達不能時に goroutine が通知数に比例して増えるため不採用（3.4.2）。なお優先度をまたぐ追い越しはワーカー 1 本の設計でも意図して起こる（3.4.2）。
 - **優先度を持たない単一キューの案**: 失敗コマンドが大量に発生したとき、日常的な通知がセキュリティアラートを押し出す。優先度 2 段に分離（3.4.2）。
 - **キュー満杯時に最古を破棄する案／短時間待機する案**: 前者は排他制御を要し優先度分離を入れた後は利得が小さく、後者は投入時間が有界でなくなるため不採用（3.4.2）。
 - **flush 中も実行中と同じリトライ方針を用いる案**: 1 件分のリトライ列（34 秒）が flush 期限（15 秒）を超えるため、最初の 1 件で期限を使い切る。flush 中は 1 回試行に切り替える（3.4.5）。
