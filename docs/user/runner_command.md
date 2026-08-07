@@ -851,12 +851,12 @@ runner -config config.toml -log-dir ./logs
 **Log File Naming Convention**
 
 ```
-<log-dir>/runner-<run-id>.json
+<log-dir>/<hostname>_<timestamp>_<run-id>.json
 ```
 
 Example:
 ```
-/var/log/go-safe-cmd-runner/runner-01K2YK812JA735M4TWZ6BK0JH9.json
+/var/log/go-safe-cmd-runner/myhost_20260805140000_01K2YK812JA735M4TWZ6BK0JH9.json
 ```
 
 **Log File Content (JSON Format)**
@@ -887,7 +887,7 @@ Log files are not automatically rotated. Regular cleanup is required.
 
 ```bash
 # Delete logs older than 30 days
-find /var/log/go-safe-cmd-runner -name "runner-*.json" -mtime +30 -delete
+find /var/log/go-safe-cmd-runner -name "*_*.json" -mtime +30 -delete
 ```
 
 **Notes**
@@ -900,7 +900,7 @@ find /var/log/go-safe-cmd-runner -name "runner-*.json" -mtime +30 -delete
 
 **Overview**
 
-Explicitly specifies a unique ID to identify the execution. If not specified, a ULID is automatically generated.
+Explicitly specifies an ID to identify the execution. If not specified, a ULID is automatically generated. The value must consist of uppercase letters (`A-Z`), lowercase letters (`a-z`), digits (`0-9`), underscores (`_`), and hyphens (`-`) only, with a length of 1 to 64 characters. If a value that does not match this format is specified, execution is not started and an error exit occurs.
 
 **Syntax**
 
@@ -910,7 +910,7 @@ runner -config <path> -run-id <id>
 
 **Parameters**
 
-- `<id>`: Unique string to identify execution (recommended: ULID format)
+- `<id>`: String identifying the execution. Uppercase letters, lowercase letters, digits, underscores (`_`), and hyphens (`-`) only, 1 to 64 characters. If not specified, a ULID is automatically generated
 
 **Usage Examples**
 
@@ -954,11 +954,21 @@ runner -config config.toml -run-id "jenkins-${BUILD_NUMBER}"
 runner -config config.toml -run-id "backup-$(date +%Y%m%d-%H%M%S)"
 ```
 
+**Examples of Rejected Values**
+
+The following values do not match the accepted format and are rejected before execution begins.
+
+- Values containing path separators (`/`) (e.g. `my/run`)
+- Values containing `..` (e.g. `../../etc/cron.d/evil`)
+- Values containing spaces or newlines
+- Values longer than 64 characters
+- Values containing characters outside the allowed set (`.` `%` `:` etc.)
+
 **Notes**
 
 - Run ID is included in log file names and log entries
 - Using the same Run ID multiple times may overwrite log files
-- Formats other than ULID can be used, but chronological sorting may not be possible
+- If a value that does not match the accepted format is specified, execution is not started and an error exit occurs. The accepted format is displayed on standard error
 
 ### 3.4 Output Control
 
@@ -1676,23 +1686,23 @@ runner -config config.toml -log-dir /var/log/runner -log-level debug
 
 ```bash
 # Delete old logs (older than 30 days)
-find /var/log/runner -name "runner-*.json" -mtime +30 -delete
+find /var/log/runner -name "*_*.json" -mtime +30 -delete
 
 # Archive logs (older than 7 days)
-find /var/log/runner -name "runner-*.json" -mtime +7 -exec gzip {} \;
+find /var/log/runner -name "*_*.json" -mtime +7 -exec gzip {} \;
 ```
 
 **Log Analysis**
 
 ```bash
 # Display latest log
-ls -t /var/log/runner/runner-*.json | head -1 | xargs cat | jq '.'
+ls -t /var/log/runner/*_*.json | head -1 | xargs cat | jq '.'
 
 # Extract error logs only
-cat /var/log/runner/runner-*.json | jq 'select(.level == "ERROR")'
+cat /var/log/runner/*_*.json | jq 'select(.level == "ERROR")'
 
 # Display log of specific Run ID
-cat /var/log/runner/runner-01K2YK812JA735M4TWZ6BK0JH9.json | jq '.'
+cat /var/log/runner/*_01K2YK812JA735M4TWZ6BK0JH9.json | jq '.'
 ```
 
 ### 5.4 Usage in CI/CD Environment

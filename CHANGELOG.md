@@ -7,7 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-N/A
+### Breaking Changes
+
+#### `runner`: `--run-id` accepted format limited to `^[A-Za-z0-9_-]{1,64}$`
+
+The `--run-id` flag now only accepts values consisting of uppercase letters (`A-Z`), lowercase letters (`a-z`), digits (`0-9`), underscores (`_`), and hyphens (`-`) only, with a length of 1 to 64 characters. Values that do not match this format cause the process to exit with an error before execution begins.
+
+**Affected scenarios:** CI and operational scripts that pass non-auto-generated values to `--run-id`. Check whether the value you pass fits the above format. Auto-generated ULIDs (26-character Crockford Base32) and the values recommended in the user documentation (`my-custom-run-001`, `gh-<GitHub Actions Run ID>`, `jenkins-<build number>`, `backup-<timestamp>`) all match the accepted format.
+
+#### `verify`: fail-closed on hash directory TOCTOU permission violations
+
+When a TOCTOU permission violation is detected on the hash directory or its ancestor directories, `verify` now exits with code 3 without verifying any target files. Violations confined to a target file's ancestor directories are still recorded as warnings and verification continues as before (exit code unchanged). No bypass flag is provided.
+
+**Assessing impact before upgrading:**
+
+Run the current version of `verify` against your target files and check standard error output for `TOCTOU permission check violation` warnings.
+
+```bash
+# Run verify with explicit hash directory and check for TOCTOU warnings
+verify -d <hash-directory> <target-files> 2>&1 | grep "TOCTOU permission check violation"
+```
+
+(If you do not explicitly pass `-hash-dir`, specify the default `/usr/local/etc/go-safe-cmd-runner/hashes`.)
+
+If this output is empty, the upgrade will have no impact. If there is output, check whether the `path` in the warning points to the hash directory or one of its ancestors. If a hash-directory-side violation exists, fix the hash directory permissions or move the hash directory to a path with appropriate permissions before upgrading. If the violation is on the target file side only, verification continues after upgrade.
 
 ## [1.1.1] - 2026-08-03
 

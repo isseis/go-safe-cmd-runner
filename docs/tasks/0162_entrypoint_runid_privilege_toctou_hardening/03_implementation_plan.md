@@ -407,31 +407,31 @@ Phase 1〜4 とは依存関係がないため、Phase 1 と並行して着手で
 
 **作業内容**
 
-- [ ] `docs/user/runner_command.ja.md` の `-run-id` 節（894行目〜）の「**パラメータ**」に受理形式を明記する。現行の `- `<id>`: 実行を識別する一意な文字列（推奨：ULID形式）` を、受理形式が「英大文字・英小文字・数字・アンダースコア（`_`）・ハイフン（`-`）のみ、1〜64文字」であること、およびこれに合致しない値を指定した場合は実行を開始せずエラー終了することを述べる記述へ書き換える。
-- [ ] 同節に、拒否される値の代表例（パス区切り文字 `/` を含む値、`..`、空白や改行を含む値、65文字以上の値）を挙げる。
-- [ ] 同節の「**注意事項**」にある「同じRun IDを複数回使用すると、ログファイルが上書きされる可能性があります」（955行目）を維持する（`02_architecture.md` §5.3 の残存リスクに対応する注意書き）。
-- [ ] `docs/user/runner_command.ja.md` にある誤ったログファイル命名規則を全件修正する。`rg -n -e "runner-<run-id>" -e "runner-01K" docs/user/runner_command.ja.md` のヒット全件（849行目の規則、854行目付近の例、1660行目付近の `cat` コマンド例）を、実装（[logger.go:138](../../../internal/runner/bootstrap/logger.go#L138)）に合わせて `<hostname>_<timestamp>_<run-id>.json` の形式へ書き換える。
-- [ ] `docs/user/verify_command.ja.md` の「2.4 終了コードによる判定」（93行目）に終了コードの一覧表を新設する。0（全ファイルの検証成功）、1（引数エラー・バリデータ生成失敗・1件以上の検証失敗）、2（Go ランタイムが未捕捉 panic に使用する予約値。`verify` が明示的に返すことはない）、3（ハッシュディレクトリまたはその祖先ディレクトリの権限違反により検証を1件も行わずに終了）を記載する（`02_architecture.md` §4.2）。
-- [ ] 同文書の「終了コードを使用した適切なエラーハンドリング」（630行目付近）のスクリプト例に exit 3 の分岐を追加する。同節は出力の `grep` でエラー種別を分けているため、exit 3 を「検証結果が信頼できない」ケースとして明示的に扱う分岐を加える。
-- [ ] 同文書に、exit 3 となる条件（ハッシュディレクトリ側の違反に限ること）、対象ファイル側のみの違反では警告のうえ検証が継続すること、バイパス手段は用意しないこと、是正方法はハッシュディレクトリの権限修正または権限の適切なパスへの移動であることを記載する（`02_architecture.md` §8.2）。
-- [ ] `CHANGELOG.ja.md` の `## [未リリース]` 節に `### 破壊的変更` を新設し、「なし」を置き換える。項目1は `runner`: `--run-id` の受理形式を `^[A-Za-z0-9_-]{1,64}$` に限定し、合致しない値は起動前に拒否すること。影響を受けるのは自動生成以外の値を渡している CI・運用スクリプトであり、渡している値がこの形式に収まるかを確認すれば影響の有無を判定できる旨を書く。
-- [ ] `CHANGELOG.ja.md` の同節に項目2として、`verify`: ハッシュディレクトリまたはその祖先ディレクトリの TOCTOU 権限違反を検出した場合、対象ファイルを1件も検証せず exit 3 で終了するようになったことを書く。対象ファイル側のみの違反は従来どおり警告で継続すること、バイパス手段がないことを併記する。
-- [ ] 同項目に、アップグレード前に影響有無を判定する手順を書く（`02_architecture.md` §8.2）。現行版の `verify` を対象ファイルに対して実行し、標準エラー出力の `TOCTOU permission check violation` 警告のうち、`path` がハッシュディレクトリまたはその祖先を指すものがあるかを確認する、という手順を具体的なコマンド例つきで示す。
-- [ ] `docs/translation_glossary.md` を確認し、本タスクで導入した用語のうち未収録のもの（「受理形式」「多層防御」「信頼の起点」「起動時特権降格」など、実際に文書へ書いた語）を追加する。既に収録されている語は追加しない。
-- [ ] `docs/user/runner_command.md` と `docs/user/verify_command.md`（英語版）を `/mktrans` で日本語版から反映する（AC-24・AC-25 が指定する手順）。英語版の `runner_command.md` にも誤ったログファイル命名規則が3箇所（854・859・1695行目付近）あるため、日本語版と同じ修正が反映されていることを確認する。
-- [ ] `CHANGELOG.md`（英語版）に `CHANGELOG.ja.md` と同じ2項目を反映する。
+- [x] `docs/user/runner_command.ja.md` の `-run-id` 節（894行目〜）の「**パラメータ**」に受理形式を明記する。現行の `- `<id>`: 実行を識別する一意な文字列（推奨：ULID形式）` を、受理形式が「英大文字・英小文字・数字・アンダースコア（`_`）・ハイフン（`-`）のみ、1〜64文字」であること、およびこれに合致しない値を指定した場合は実行を開始せずエラー終了することを述べる記述へ書き換える。
+- [x] 同節に、拒否される値の代表例（パス区切り文字 `/` を含む値、`..`、空白や改行を含む値、65文字以上の値）を挙げる。
+- [x] 同節の「**注意事項**」にある「同じRun IDを複数回使用すると、ログファイルが上書きされる可能性があります」（955行目）を維持する（`02_architecture.md` §5.3 の残存リスクに対応する注意書き）。
+- [x] `docs/user/runner_command.ja.md` にある誤ったログファイル命名規則を全件修正する。`rg -n -e "runner-<run-id>" -e "runner-01K" docs/user/runner_command.ja.md` のヒット全件（849行目の規則、854行目付近の例、1660行目付近の `cat` コマンド例）を、実装（[logger.go:138](../../../internal/runner/bootstrap/logger.go#L138)）に合わせて `<hostname>_<timestamp>_<run-id>.json` の形式へ書き換える。
+- [x] `docs/user/verify_command.ja.md` の「2.4 終了コードによる判定」（93行目）に終了コードの一覧表を新設する。0（全ファイルの検証成功）、1（引数エラー・バリデータ生成失敗・1件以上の検証失敗）、2（Go ランタイムが未捕捉 panic に使用する予約値。`verify` が明示的に返すことはない）、3（ハッシュディレクトリまたはその祖先ディレクトリの権限違反により検証を1件も行わずに終了）を記載する（`02_architecture.md` §4.2）。
+- [x] 同文書の「終了コードを使用した適切なエラーハンドリング」（630行目付近）のスクリプト例に exit 3 の分岐を追加する。同節は出力の `grep` でエラー種別を分けているため、exit 3 を「検証結果が信頼できない」ケースとして明示的に扱う分岐を加える。
+- [x] 同文書に、exit 3 となる条件（ハッシュディレクトリ側の違反に限ること）、対象ファイル側のみの違反では警告のうえ検証が継続すること、バイパス手段は用意しないこと、是正方法はハッシュディレクトリの権限修正または権限の適切なパスへの移動であることを記載する（`02_architecture.md` §8.2）。
+- [x] `CHANGELOG.ja.md` の `## [未リリース]` 節に `### 破壊的変更` を新設し、「なし」を置き換える。項目1は `runner`: `--run-id` の受理形式を `^[A-Za-z0-9_-]{1,64}$` に限定し、合致しない値は起動前に拒否すること。影響を受けるのは自動生成以外の値を渡している CI・運用スクリプトであり、渡している値がこの形式に収まるかを確認すれば影響の有無を判定できる旨を書く。
+- [x] `CHANGELOG.ja.md` の同節に項目2として、`verify`: ハッシュディレクトリまたはその祖先ディレクトリの TOCTOU 権限違反を検出した場合、対象ファイルを1件も検証せず exit 3 で終了するようになったことを書く。対象ファイル側のみの違反は従来どおり警告で継続すること、バイパス手段がないことを併記する。
+- [x] 同項目に、アップグレード前に影響有無を判定する手順を書く（`02_architecture.md` §8.2）。現行版の `verify` を対象ファイルに対して実行し、標準エラー出力の `TOCTOU permission check violation` 警告のうち、`path` がハッシュディレクトリまたはその祖先を指すものがあるかを確認する、という手順を具体的なコマンド例つきで示す。
+- [x] `docs/translation_glossary.md` を確認し、本タスクで導入した用語のうち未収録のもの（「受理形式」「多層防御」「信頼の起点」「起動時特権降格」など、実際に文書へ書いた語）を追加する。既に収録されている語は追加しない。
+- [x] `docs/user/runner_command.md` と `docs/user/verify_command.md`（英語版）を `/mktrans` で日本語版から反映する（AC-24・AC-25 が指定する手順）。英語版の `runner_command.md` にも誤ったログファイル命名規則が3箇所（854・859・1695行目付近）あるため、日本語版と同じ修正が反映されていることを確認する。（注: `/mktrans` が利用不可のため手動で反映）
+- [x] `CHANGELOG.md`（英語版）に `CHANGELOG.ja.md` と同じ2項目を反映する。
 
 **検証**
 
-- [ ] `docs/user/verify_command.ja.md` に新設した終了コード表の内容が実装と一致することを、`rg -n "exitUntrustedEnvironment|exitVerificationFailed|exitOK" cmd/verify/main.go` の定義値と突き合わせて確認する。
-- [ ] CHANGELOG に書いた影響判定手順のコマンドを実際に実行し、記載どおりの出力（`TOCTOU permission check violation` を含む WARN 行、または違反なしの場合は該当行が出ないこと）になることを確認する。確認には Phase 5 適用前の `verify` を用いる。`git worktree add <一時ディレクトリ> <Phase 5 着手前のコミット SHA>` で作業ツリーを作り、そこで `go build -o <一時ディレクトリ>/verify ./cmd/verify` してから実行する（`git stash` は未コミットの変更しか退避しないため、PR ごとにコミット・マージする本計画の進め方では旧版のビルドを得られない）。
-- [ ] `docs/user/runner_command.ja.md` に書いた受理形式の説明が `logging.RunIDFormatDescription()` および `logging.MaxRunIDLength` と一致することを、両者を並べて確認する。
-- [ ] 修正したログファイル命名規則の記述が実装と一致することを、`-log-dir` を指定して `runner` を1回実行し、生成されたファイル名と突き合わせて確認する。
+- [x] `docs/user/verify_command.ja.md` に新設した終了コード表の内容が実装と一致することを、`rg -n "exitUntrustedEnvironment|exitVerificationFailed|exitOK" cmd/verify/main.go` の定義値と突き合わせて確認する。
+- [x] CHANGELOG に書いた影響判定手順のコマンドを実際に実行し、記載どおりの出力（`TOCTOU permission check violation` を含む WARN 行、または違反なしの場合は該当行が出ないこと）になることを確認する。確認には Phase 5 適用前の `verify` を用いる。`git worktree add <一時ディレクトリ> <Phase 5 着手前のコミット SHA>` で作業ツリーを作り、そこで `go build -o <一時ディレクトリ>/verify ./cmd/verify` してから実行する（`git stash` は未コミットの変更しか退避しないため、PR ごとにコミット・マージする本計画の進め方では旧版のビルドを得られない）。
+- [x] `docs/user/runner_command.ja.md` に書いた受理形式の説明が `logging.RunIDFormatDescription()` および `logging.MaxRunIDLength` と一致することを、両者を並べて確認する。
+- [x] 修正したログファイル命名規則の記述が実装と一致することを、`-log-dir` を指定して `runner` を1回実行し、生成されたファイル名と突き合わせて確認する。
 
 **完了条件**
 
-- [ ] `make test` と `make lint` が成功する。
-- [ ] 文書の日本語版と英語版の章立てが一致している。
+- [x] `make test` と `make lint` が成功する。
+- [x] 文書の日本語版と英語版の章立てが一致している。
 
 ### PR-6 作成ポイント: user documentation and changelog
 
@@ -632,20 +632,20 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 
 ### PR-6: 文書と CHANGELOG（Phase 6）
 
-- [ ] `docs/user/runner_command.ja.md` の `-run-id` 節更新
-- [ ] `docs/user/runner_command.ja.md` の誤ったログファイル命名規則3箇所の修正
-- [ ] `docs/user/verify_command.ja.md` の終了コード表の新設、既存の終了コード関連2節（§2.4・エラーハンドリング節）への exit 3 の反映、fail-closed 挙動の記載
-- [ ] `CHANGELOG.ja.md` の破壊的変更2項目と影響判定手順の追加
-- [ ] `docs/translation_glossary.md` への新規用語の追加
-- [ ] 英語版3ファイルの反映
-- [ ] 文書の記載内容と実装の突き合わせ検証（Phase 6 の「検証」項目）
+- [x] `docs/user/runner_command.ja.md` の `-run-id` 節更新
+- [x] `docs/user/runner_command.ja.md` の誤ったログファイル命名規則3箇所の修正
+- [x] `docs/user/verify_command.ja.md` の終了コード表の新設、既存の終了コード関連2節（§2.4・エラーハンドリング節）への exit 3 の反映、fail-closed 挙動の記載
+- [x] `CHANGELOG.ja.md` の破壊的変更2項目と影響判定手順の追加
+- [x] `docs/translation_glossary.md` への新規用語の追加
+- [x] 英語版3ファイルの反映
+- [x] 文書の記載内容と実装の突き合わせ検証（Phase 6 の「検証」項目）
 - [ ] PR-6 マージ済み（対象ステップ: Phase 6）
 
 ### 全体（各 PR の作成前に実施）
 
-- [ ] `make fmt` の実行
-- [ ] `make test` の成功
-- [ ] `make lint` の成功
+- [x] `make fmt` の実行
+- [x] `make test` の成功
+- [x] `make lint` の成功
 
 `make deadcode` は `cmd/record` / `cmd/runner` / `cmd/verify` からの到達可能性を見るため、PR-1 の時点では `internal/logging` の新規シンボルが未到達として報告される（グリーンゲートは `make test && make lint` であり、これは PR-1 のマージを妨げない）。全シンボルが到達可能になるのは PR-3 のマージ後であるため、確認は PR-3 のチェックリストに置いてある。
 
@@ -694,8 +694,8 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 
 ### 8.1 機能の完全性
 
-- [ ] `01_requirements.md` の AC-01〜AC-28（欠番なし）がすべて §7 の表のとおり検証されている。
-- [ ] `02_architecture.md` §3.7 のコンポーネント責務表に挙げられたファイルがすべて、記載された区分（新規・変更・回帰確認のみ）どおりに扱われている。
+- [x] `01_requirements.md` の AC-01〜AC-28（欠番なし）がすべて §7 の表のとおり検証されている。
+- [x] `02_architecture.md` §3.7 のコンポーネント責務表に挙げられたファイルがすべて、記載された区分（新規・変更・回帰確認のみ）どおりに扱われている。
 
 ### 8.2 品質
 
@@ -726,14 +726,14 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 
 `make lint` と `make test` では検出できない残存参照と整合性を、実装完了後に確認する。
 
-- [ ] `rg -n "GenerateRunID" --type go` の結果が、`internal/logging/runid.go` の定義、`internal/logging/runid_test.go` のテスト、`cmd/runner/main.go` の呼び出しのみであり、`internal/logging/safeopen.go` と `internal/logging/safeopen_test.go` に残っていない。
-- [ ] `rg -n "AC-M2S-7" --type go` の結果が 0 件である（`cmd/verify/main_test.go` のコメントから除去済み）。
-- [ ] `rg -n "TestRunTOCTOU_ContinuesOnWorldWritableDir" -g '!docs/**'` の結果が 0 件である（改名の取りこぼしがない）。
-- [ ] `rg -n "does NOT abort on TOCTOU|only logs a warning" cmd/verify/` の結果が 0 件である（fail-open を前提とした古いコメントが残っていない）。
-- [ ] `rg -n -e "runner-<run-id>" -e "runner-01K" docs/` の結果が 0 件である（誤ったログファイル命名規則の記述が日本語版・英語版のいずれにも残っていない）。
-- [ ] `rg -n "auto-generates ULID if not provided" --type go` の結果が `cmd/runner/main.go` と `cmd/runner/main_test.go` の2箇所であり、両ファイルの `-run-id` 登録式（`logging.RunIDFormatDescription()` を含む連結式）がトークン単位で同一である。
-- [ ] `rg -n -e "AC-[0-9]" -e "F-[0-9]" --type go` の結果に、本タスクで追加・変更した Go ファイルが含まれていない（要件プロセスガイド §4 が禁じる `AC-NN` / `F-NNN` 参照を持ち込んでいない）。
-- [ ] `docs/translation_glossary.md` に追加した用語が、`docs/user/runner_command.ja.md`・`docs/user/verify_command.ja.md`・`CHANGELOG.ja.md` の日本語表記と一致している。
+- [x] `rg -n "GenerateRunID" --type go` の結果が、`internal/logging/runid.go` の定義、`internal/logging/runid_test.go` のテスト、`cmd/runner/main.go` の呼び出しのみであり、`internal/logging/safeopen.go` と `internal/logging/safeopen_test.go` に残っていない。
+- [x] `rg -n "AC-M2S-7" --type go` の結果が 0 件である（`cmd/verify/main_test.go` のコメントから除去済み）。
+- [x] `rg -n "TestRunTOCTOU_ContinuesOnWorldWritableDir" -g '!docs/**'` の結果が 0 件である（改名の取りこぼしがない）。
+- [x] `rg -n "does NOT abort on TOCTOU|only logs a warning" cmd/verify/` の結果が 0 件である（fail-open を前提とした古いコメントが残っていない）。
+- [x] `rg -n -e "runner-<run-id>" -e "runner-01K" docs/` の結果が 0 件である（誤ったログファイル命名規則の記述が日本語版・英語版のいずれにも残っていない）。
+- [x] `rg -n "auto-generates ULID if not provided" --type go` の結果が `cmd/runner/main.go` と `cmd/runner/main_test.go` の2箇所であり、両ファイルの `-run-id` 登録式（`logging.RunIDFormatDescription()` を含む連結式）がトークン単位で同一である。
+- [x] `rg -n -e "AC-[0-9]" -e "F-[0-9]" --type go` の結果に、本タスクで追加・変更した Go ファイルが含まれていない（要件プロセスガイド §4 が禁じる `AC-NN` / `F-NNN` 参照を持ち込んでいない）。
+- [x] `docs/translation_glossary.md` に追加した用語が、`docs/user/runner_command.ja.md`・`docs/user/verify_command.ja.md`・`CHANGELOG.ja.md` の日本語表記と一致している。
 
 ---
 
