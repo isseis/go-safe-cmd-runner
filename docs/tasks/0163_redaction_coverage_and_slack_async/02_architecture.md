@@ -494,10 +494,12 @@ type SlackHandlerOptions struct {
     // SendTimeout bounds one notification's delivery including retries
     // (optional, defaults to defaultSendTimeout).
     SendTimeout time.Duration
-    // QueueSize overrides the normal-priority queue capacity. It exists as a
-    // test seam for exercising overflow behaviour; production code leaves it
-    // zero and gets defaultQueueSize.
-    QueueSize int
+    // HighPriorityQueueSize and NormalQueueSize override the two send queues'
+    // capacities. They exist as test seams for exercising overflow behaviour
+    // without enqueueing the full production capacity; production code leaves
+    // both zero and gets defaultHighPriorityQueueSize / defaultNormalQueueSize.
+    HighPriorityQueueSize int
+    NormalQueueSize       int
     // Synchronous disables the worker and sends inline. It is a debugging
     // escape hatch selected by GSCR_SLACK_SYNC, not a supported mode.
     Synchronous bool
@@ -551,6 +553,8 @@ func FlushSlackNotifications()
 | 通常 | `command_group_summary`、`user_group_command_failure`、その他 | 128 |
 
 容量はコマンド数を基準に定めた。通常キューの 128 は、一般的な設定のコマンド総数を上回る値である。高優先度キューの 32 は、セキュリティアラートと特権昇格失敗が 1 回の実行で 32 件を超える状況が既に異常事態であり、その場合は件数の報告で足りるという判断による。メッセージ 1 件あたりの保持サイズ（出力は 1000 文字、stderr は 500 文字で切り詰め済み）を掛けても、両キュー合わせて数百 KB に収まる。
+
+両方の容量を `SlackHandlerOptions` から個別に上書きできるようにする（3.4.1）。溢れの挙動（破棄と記録、AC-29）は両キューで検証すべきであり、上書き手段が通常キューにしかないと、高優先度キューの溢れを試すために既定容量の 32 件を投入する必要が生じる。テストが本番の容量という定数に結び付くと、容量を見直すたびにテストの前提が崩れる。容量ごとに独立した上書きを用意すれば、いずれのキューも容量 1 で溢れを再現できる。
 
 **ワーカーを 1 本にする理由**: 通知の順序が保たれる。実行サマリ・特権操作の失敗通知・セキュリティアラートは時系列で読まれるため、順序の逆転は運用者の判断を誤らせる。また同時接続が 1 本に制限されるため、Slack 側のレート制限に抵触しにくい。送信ごとに goroutine を起こす案は、順序が保たれず、Slack が応答しないときに goroutine 数が通知数に比例して増えるため採らない。
 
@@ -953,6 +957,7 @@ stateDiagram-v2
 | ワーカー数の有界性 | `WithAttrs` / `WithGroup` を多数回適用しても goroutine 数が増えないこと | AC-21 |
 | ドライラン | 送信器が生成されず、HTTP 送信が一切発生しないこと | AC-22 |
 | 優先度 | 通常キューを満杯にした状態でも高優先度の通知が受け入れられ、先に送信されること | AC-24, AC-29 |
+| 両キューの溢れ | 容量を 1 に上書きし、通常キューと高優先度キューのそれぞれで溢れが破棄・記録されること。本番の容量（128 / 32）に依存せずに検証する | AC-29 |
 | flush | 期限内の送信完了、期限切れ時の残件数、受付停止後の到着の破棄、複数回呼び出しの冪等性 | AC-23, AC-25, AC-26, AC-27 |
 | ライフサイクル | `Close` でワーカーが終了すること。`Flush` 後に goroutine が残らないこと | AC-21 |
 | nil 送信器 | 構造体リテラルで構築したハンドラの `Handle` が panic せず nil を返すこと | AC-27 |
