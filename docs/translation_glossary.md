@@ -258,11 +258,18 @@
 | 中間状態 | intermediate state | テンプレート展開と変数展開の間の状態 |
 | インナーコマンド | inner command | ラッパー (env/timeout 等) が内部で実行するコマンド |
 
+### J
+
+| 日本語 | English | 備考 |
+|--------|---------|------|
+| 受理形式 | accepted format | ユーザー入力として受け付ける値の形式。Task 0162 では run ID の受理形式を `^[A-Za-z0-9_-]{1,64}$` と定めた |
+
 ### K
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | キー | key | |
+| 起動時特権降格 | startup privilege drop | プロセス起動直後に実効ユーザーID・実効グループID を実ID へ降格すること（Task 0162） |
 
 ### L
 
@@ -465,6 +472,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 安全 | safe | |
+| 信頼の起点 | root of trust | 改ざん検出の信頼が依存する基点。go-safe-cmd-runner ではハッシュディレクトリが信頼の起点であり、ここが侵害されると検証結果は信頼できなくなる（Task 0162） |
 | safe-zone | safe-zone | run 専用の作業/出力ディレクトリ・専用 temp（run が所有する安全領域）。判断軸2 で Low（信頼要件 AC-04 充足時。`$HOME`・共有 `/tmp` は含めない）。パス信頼区分の値の一つ |
 | 正規化済み解析結果 | normalized analysis result | 保存前に整形・選別された解析結果 |
 | 正規化済み特徴量 | normalized feature | runner 向けに整形された特徴量 |
@@ -535,6 +543,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | テンプレート | template | コマンドテンプレート機能の文脈 |
+| 多層防御 | defense in depth | 入口検証（第一層）に加えて、下流の構築側にも独立した検証を置き、一層が破られても防御が残るようにする設計（Task 0162） |
 | トランポリン | trampoline | 1命令で別アドレスに分岐するスタブ |
 | trust-critical | trust-critical | システム重要パス（`/usr`・`/etc`・`/boot` 等、書込でシステム/信頼境界を侵すパス。`Config.SystemCriticalPaths`）。判断軸2 で High。パス信頼区分の値の一つ |
 | Trusted | trusted (operand) | オペランドが安全要件 AC-04 を満たす状態＝「信頼ディレクトリ許可リスト配下」かつ「経路要素が run-as から書込不可（TOCTOU 安全）」。Trusted のみ safe-zone を Low に降格、非 Trusted は Medium（fail-closed）。DTO フィールド `OperandZone.Trusted`（bool） |
@@ -757,6 +766,7 @@
 | 2026-07-29 | record 時点の読み取り安全性チェック（Task 0160）関連の用語を追加 (base UID, read-safety check) |
 | 2026-07-30 | 基準UID決定方針の明示指定（Task 0160）関連の用語を追加 (base UID policy) |
 | 2026-08-02 | SUDO_UID 実在確認関連の用語を追加 (existence check, adoption, adoption record, sentinel error, user database source) |
+| 2026-08-07 | run ID 検証・特権降格・TOCTOU fail-closed 化（Task 0162）関連の用語を追加 (startup privilege drop, accepted format, root of trust, defense in depth) |
 
 ---
 

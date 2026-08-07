@@ -846,12 +846,12 @@ runner -config config.toml -log-dir ./logs
 **ログファイルの命名規則**
 
 ```
-<log-dir>/runner-<run-id>.json
+<log-dir>/<hostname>_<timestamp>_<run-id>.json
 ```
 
 例：
 ```
-/var/log/go-safe-cmd-runner/runner-01K2YK812JA735M4TWZ6BK0JH9.json
+/var/log/go-safe-cmd-runner/myhost_20260805140000_01K2YK812JA735M4TWZ6BK0JH9.json
 ```
 
 **ログファイルの内容（JSON形式）**
@@ -882,7 +882,7 @@ runner -config config.toml -log-dir ./logs
 
 ```bash
 # 30日以上前のログを削除
-find /var/log/go-safe-cmd-runner -name "runner-*.json" -mtime +30 -delete
+find /var/log/go-safe-cmd-runner -name "*_*.json" -mtime +30 -delete
 ```
 
 **注意事項**
@@ -895,7 +895,7 @@ find /var/log/go-safe-cmd-runner -name "runner-*.json" -mtime +30 -delete
 
 **概要**
 
-実行を識別するための一意なIDを明示的に指定します。指定しない場合はULIDが自動生成されます。
+実行を識別するためのIDを明示的に指定します。指定しない場合はULIDが自動生成されます。指定する値は、英大文字（`A-Z`）・英小文字（`a-z`）・数字（`0-9`）・アンダースコア（`_`）・ハイフン（`-`）のみで構成された1〜64文字の文字列である必要があります。この形式に合致しない値を指定した場合、実行は開始されずにエラー終了します。
 
 **文法**
 
@@ -905,7 +905,7 @@ runner -config <path> -run-id <id>
 
 **パラメータ**
 
-- `<id>`: 実行を識別する一意な文字列（推奨：ULID形式）
+- `<id>`: 実行を識別する文字列。英大文字・英小文字・数字・アンダースコア（`_`）・ハイフン（`-`）のみ、1〜64文字。指定しない場合はULIDが自動生成される
 
 **使用例**
 
@@ -949,11 +949,21 @@ runner -config config.toml -run-id "jenkins-${BUILD_NUMBER}"
 runner -config config.toml -run-id "backup-$(date +%Y%m%d-%H%M%S)"
 ```
 
+**拒否される値の例**
+
+次のような値は受理形式に合致しないため、実行前に拒否されます。
+
+- パス区切り文字（`/`）を含む値（例: `my/run`）
+- `..` を含む値（例: `../../etc/cron.d/evil`）
+- 空白や改行を含む値
+- 65文字以上の値
+- 許可文字以外（`.` `%` `:` など）を含む値
+
 **注意事項**
 
 - Run IDはログファイル名やログエントリに含まれます
 - 同じRun IDを複数回使用すると、ログファイルが上書きされる可能性があります
-- ULID以外の形式も使用可能ですが、時系列順ソートができない場合があります
+- 受理形式に合致しない値を指定した場合、実行は開始されずエラー終了します。標準エラー出力に受理形式が表示されます
 
 ### 3.4 出力制御
 
@@ -1641,23 +1651,23 @@ runner -config config.toml -log-dir /var/log/runner -log-level debug
 
 ```bash
 # 古いログを削除（30日以上前）
-find /var/log/runner -name "runner-*.json" -mtime +30 -delete
+find /var/log/runner -name "*_*.json" -mtime +30 -delete
 
 # ログをアーカイブ（7日以上前）
-find /var/log/runner -name "runner-*.json" -mtime +7 -exec gzip {} \;
+find /var/log/runner -name "*_*.json" -mtime +7 -exec gzip {} \;
 ```
 
 **ログ解析**
 
 ```bash
 # 最新のログを表示
-ls -t /var/log/runner/runner-*.json | head -1 | xargs cat | jq '.'
+ls -t /var/log/runner/*_*.json | head -1 | xargs cat | jq '.'
 
 # エラーログのみ抽出
-cat /var/log/runner/runner-*.json | jq 'select(.level == "ERROR")'
+cat /var/log/runner/*_*.json | jq 'select(.level == "ERROR")'
 
 # 特定のRun IDのログを表示
-cat /var/log/runner/runner-01K2YK812JA735M4TWZ6BK0JH9.json | jq '.'
+cat /var/log/runner/*_01K2YK812JA735M4TWZ6BK0JH9.json | jq '.'
 ```
 
 ### 5.4 CI/CD環境での使用

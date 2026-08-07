@@ -92,6 +92,17 @@ verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 
 ### 2.4 Determining Results by Exit Code
 
+`verify` returns the following exit codes.
+
+| Exit Code | Meaning |
+|---|---|
+| 0 | All files verified successfully |
+| 1 | Argument error, validator creation failure, or verification failure for one or more files |
+| 2 | Unexpected abnormal termination (used by the Go runtime for uncaught panics). `verify` never explicitly returns this code |
+| 3 | TOCTOU permission check violation detected on the hash directory or its ancestor directories. Verification results cannot be trusted; no target files are verified |
+
+If a violation is detected only on a target file's ancestor directories and not on the hash directory side, `verify` does not return exit code 3. The violation is recorded as a warning and verification continues (the exit code depends on each file's verification result). No bypass flag is provided. If a hash-directory-side violation is detected, fix the hash directory permissions or move the hash directory to a path with appropriate permissions.
+
 ```bash
 # Determine verification results by exit code
 if verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh; then
@@ -641,6 +652,13 @@ verify -d "$HASH_DIR" "$FILE" 2>&1 | tee /tmp/verify-output.txt
 EXIT_CODE=${PIPESTATUS[0]}
 if [[ $EXIT_CODE -eq 0 ]]; then
     echo "Verification passed: $FILE"
+elif [[ $EXIT_CODE -eq 3 ]]; then
+    echo "Verification result is untrusted: $FILE"
+    echo "The hash directory or its ancestor directories have permission violations."
+    echo "Fix directory permissions and re-run."
+    echo "Output:"
+    cat /tmp/verify-output.txt
+    exit 3
 else
     echo "Verification failed: $FILE"
     echo "Exit code: $EXIT_CODE"

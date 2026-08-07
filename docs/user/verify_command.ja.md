@@ -92,6 +92,17 @@ verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 
 ### 2.4 終了コードによる判定
 
+`verify` は以下の終了コードを返します。
+
+| 終了コード | 意味 |
+|---|---|
+| 0 | 全ファイルの検証が成功 |
+| 1 | 引数エラー、バリデータ生成失敗、または1件以上のファイルで検証が失敗 |
+| 2 | 予期しない異常終了（Goランタイムが未捕捉panicに対して使用）。`verify` が明示的に返すことはない |
+| 3 | ハッシュディレクトリまたはその祖先ディレクトリのTOCTOU権限チェックで違反を検出。検証結果が信頼できないため、全対象ファイルを1件も検証せずに終了 |
+
+対象ファイルの祖先ディレクトリのみに違反が検出され、ハッシュディレクトリ側に違反がない場合、`verify` は終了コード 3 を返しません。この違反は警告として記録され、検証は継続します（終了コードは各ファイルの検証結果に依存します）。バイパス手段は用意されていません。ハッシュディレクトリ側の違反が検出された場合は、ハッシュディレクトリの権限を修正するか、権限の適切なパスへハッシュディレクトリを移動してください。
+
 ```bash
 # 終了コードで検証結果を判定
 if verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh; then
@@ -641,6 +652,13 @@ verify -d "$HASH_DIR" "$FILE" 2>&1 | tee /tmp/verify-output.txt
 EXIT_CODE=${PIPESTATUS[0]}
 if [[ $EXIT_CODE -eq 0 ]]; then
     echo "Verification passed: $FILE"
+elif [[ $EXIT_CODE -eq 3 ]]; then
+    echo "Verification result is untrusted: $FILE"
+    echo "The hash directory or its ancestor directories have permission violations."
+    echo "Fix directory permissions and re-run."
+    echo "Output:"
+    cat /tmp/verify-output.txt
+    exit 3
 else
     echo "Verification failed: $FILE"
     echo "Exit code: $EXIT_CODE"
