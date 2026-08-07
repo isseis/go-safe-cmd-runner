@@ -24,7 +24,7 @@
 | ワーカー | 送信キューから要求を取り出し、HTTP 送信とリトライを行う goroutine |
 | flush | プロセス終了時に、送信キューに残った通知を送り切る処理 |
 | 破棄 | 送信キューが満杯、または受付停止後の到着により、通知を送信せずに捨てること |
-| 送信失敗ロガー | Slack 送信の失敗・破棄を記録するためのロガー。`SlackHandler` を含まない出力先だけで構成される。実体は `bootstrap` が Phase 1 で構築済みの `phase1FailureLogger` であり、新規に作るロガーではない |
+| 送信失敗ロガー | Slack 送信の失敗・破棄を記録するためのロガー。`SlackHandler` を含まない出力先だけで構成される。`NewSlackHandler` が `bootstrap` から渡された Phase 1 の葉ハンドラ（`phase1BaseHandlers`。`phase1FailureLogger` と同じ材料）から構築する |
 
 ## 凡例（本ドキュメント共通）
 
@@ -112,10 +112,10 @@ flowchart TB
 | Slack webhook URL パターンの採否 | 採用する。ホスト名は固定パターンとする | 3.3.3 |
 | 非同期化の方式 | 優先度 2 段のバッファ付きキュー ＋ ワーカー 1 本。満杯時は同一優先度の新しい通知を即時破棄する | 3.4.2 |
 | デッドラインの設計 | 実行中は 1 件あたり 40 秒（既存のリトライ方針を維持）、flush 中は 1 件 1 回試行、flush 全体で 15 秒 | 3.4.5 |
-| 破棄・失敗の記録経路 | `bootstrap` が送信失敗ロガーを注入し、構成を `NewSlackHandler` が起動時に検証する | 3.4.7 |
+| 破棄・失敗の記録経路 | `bootstrap` が Slack を含まない葉ハンドラの並びを注入し、`NewSlackHandler` が起動時に検証してロガーを構築する | 3.4.7 |
 | flush の公開インターフェース | `SlackHandler.Flush` を公開し、`bootstrap` が生成済みハンドラを保持して呼ぶ | 3.4.8 |
-| `WithAttrs` / `WithGroup` とワーカーの共有 | 派生インスタンスは送信器（キューとワーカー）をポインタで共有する | 3.4.4 |
-| ドライラン時の扱い | `Handle` 内の投入前で分岐し、送信器自体を生成しない | 3.4.9 |
+| `WithAttrs` / `WithGroup` とワーカーの共有 | 派生インスタンスは送信機構（キューとワーカー）をポインタで共有する | 3.4.4 |
+| ドライラン時の扱い | `Handle` 内の投入前で分岐し、送信機構自体を生成しない | 3.4.9 |
 
 ### 1.4 不変条件マップ
 
@@ -214,7 +214,7 @@ flowchart TD
 
 ### 2.3 プロセス終了時のデータフロー
 
-`bootstrap.AddSlackHandlers` は成功通知用とエラー通知用の 2 つの `SlackHandler` を生成しうる。両者はそれぞれ独立した送信器（キューとワーカー）を持つため、flush も集計も webhook ごとに行う。
+`bootstrap.AddSlackHandlers` は成功通知用とエラー通知用の 2 つの `SlackHandler` を生成しうる。両者はそれぞれ独立した送信機構（キューとワーカー）を持つため、flush も集計も webhook ごとに行う。
 
 ```mermaid
 sequenceDiagram
@@ -254,7 +254,7 @@ flush を `ReportRedactionFailures` より前に置く理由は、`run` の実�
 
 **通常のリブートは flush される**。`cmd/runner` は `signal.NotifyContext` で SIGINT と SIGTERM を捕捉しており、`systemctl stop` や `reboot` が最初に送るのは SIGTERM である。したがってシグナル受信 → `run` の復帰 → flush という経路をたどる。systemd の既定の停止猶予（`TimeoutStopSec`、通常 90 秒）は flush 期限（15 秒）より十分に長いため、猶予内に flush が完了する。ただし `run` の後始末（一時ディレクトリの削除等）に時間がかかり猶予を使い切ると、SIGKILL が flush の前に届く。
 
-**残る損失経路と、その大きさ**。上表の下 3 行では、キューに滞留していた通知がすべて失われる。滞留する件数は、通知の発生速度と Slack の応答速度の差で決まる。Slack が正常なら排出は毎秒 1 件程度で進み、滞留はほぼ発生しない（損失は実質 0〜1 件）。滞留が積み上がるのは、Slack が劣化しているか、失敗コマンドが大量に発生して通知が毎秒 1 件を超えて生成される場合である。前者では同期送信でも通知は届かないため、非同期化による正味の悪化は**後者、すなわち「Slack は正常だが通知の生成が送信より速い」状態で強制終了された場合**に限られる。
+**残る損失経路と、その大きさ**。上表の下 3 行では、キューに滞留していた通知がすべて失われる。滞留する件数は、通知の発生速度と Slack の応答速度の差で決まる。Slack が正常なら送信は毎秒 1 件程度で進み、滞留はほぼ発生しない（損失は実質 0〜1 件）。滞留が積み上がるのは、Slack が劣化しているか、失敗コマンドが大量に発生して通知が毎秒 1 件を超えて生成される場合である。前者では同期送信でも通知は届かないため、非同期化による正味の悪化は**後者、すなわち「Slack は正常だが通知の生成が送信より速い」状態で強制終了された場合**に限られる。
 
 **通知内容そのものは失われない**: `MultiHandler` はハンドラを登録順に呼び、`AddSlackHandlers` は Phase 1 のハンドラ（コンソール・ログファイル）の**後ろ**に Slack ハンドラを追加する。したがって 1 件のレコードは、Slack のキューへ投入される前に JSON ログファイル（0600）へ同期的に書き終わっている。Slack への配送が失われても、`run_id` で特定できる完全な記録がログファイルに残る。この順序は本設計が依存する不変条件であり、Slack ハンドラを Phase 1 のハンドラより前に置く変更を禁じる。
 
@@ -271,7 +271,7 @@ flush を `ReportRedactionFailures` より前に置く理由は、`run` の実�
 | `internal/redaction/redactor.go` | 変更 | `performKeyValuePatternRedaction` の区切り・引用符カバレッジ拡張（F-001, F-002） |
 | `internal/redaction/regex_cache.go` | 新規 | 生成した正規表現のコンパイル結果を上限付きでキャッシュする（3.2.7） |
 | `internal/redaction/value_detector.go` | 変更 | 値形式パターンの追加（F-003） |
-| `internal/logging/handler_chain.go` | 新規 | ハンドラ連鎖の走査（送信失敗ロガーの構成検証。3.4.7） |
+| `internal/logging/handler_chain.go` | 新規 | 送信失敗ロガーに渡されたハンドラの Slack 非依存性の検証（3.4.7） |
 | `internal/logging/slack_sender.go` | 新規 | 送信キュー、ワーカー、flush、カウンタ（F-004, F-005, F-006） |
 | `internal/logging/slack_handler.go` | 変更 | `Handle` を投入のみに変更、`Flush` / `Close` の公開、送信失敗ロガーの構成検証（F-004, F-006） |
 | `internal/runner/bootstrap/logger.go` | 変更 | 生成した `SlackHandler` の保持、送信失敗ロガーと環境変数由来設定の注入、`FlushSlackNotifications` の提供（F-005, F-006） |
@@ -287,11 +287,11 @@ flush を `ReportRedactionFailures` より前に置く理由は、`run` の実�
 
 | テスト | 変更内容 |
 |---|---|
-| `internal/logging/slack_handler_test.go` の `&SlackHandler{...}` 構造体リテラル構築（17 箇所） | 送信器はコンストラクタでのみ生成されるため、`Handle` から送信経路へ到達するテストは `NewSlackHandler` による構築へ移行する。`WithAttrs` / `WithGroup` / `Enabled` のみを検証し送信経路へ到達しないテストは、3.4.3 の nil 送信器契約によりそのまま通る |
+| `internal/logging/slack_handler_test.go` の `&SlackHandler{...}` 構造体リテラル構築（17 箇所） | 送信機構はコンストラクタでのみ生成されるため、`Handle` から送信経路へ到達するテストは `NewSlackHandler` による構築へ移行する。`WithAttrs` / `WithGroup` / `Enabled` のみを検証し送信経路へ到達しないテストは、3.4.3 の nil 送信機構の契約によりそのまま通る |
 | `TestSlackHandler_Handle_WithMockServer` | サーバ障害時に `Handle` がエラーを返すことを検証している。非同期化後は投入に成功すれば `nil` を返すため、`Flush` を呼んでから `FlushStats.Failed` を検証する形に変更する |
 | `TestSlackHandler_SendToSlack_Retry` | モックサーバがリクエストを受けたことを `Handle` 復帰直後に検証している。`Flush` を同期点として挟む形に変更する |
 | `TestSlackHandler_WithRedactingHandler` | 構造体リテラルで構築したハンドラを `RedactingHandler` 越しに呼び、送信を同期的に検証している。`NewSlackHandler` による構築と `Flush` による同期点の両方が必要である |
-| `TestNewSlackHandlerWithOptions` | 送信失敗ロガーの構成検証が加わるため、正常系のオプションに送信失敗ロガーを与えるケースと、`SlackHandler` を含むロガーを与えて構成エラーになるケースを追加する |
+| `TestNewSlackHandlerWithOptions` | 送信失敗ロガーの構成検証が加わるため、正常系のオプションに `FailureHandlers` を与えるケースと、`SlackHandler` を含む場合・検証できない型を含む場合にそれぞれ構成エラーになるケースを追加する |
 | `internal/logging/slack_handler_benchmark_test.go` | 同上の構築方法の変更に追随する |
 
 `internal/redaction/redactor_test.go` の既存ケースは、3.2 の設計により期待値が変化しない（AC-08）。`performKeyValuePatternRedaction` のシグネチャも変更しないため、これを直接呼び出している `TestPerformKeyValuePatternRedaction` はそのまま通る。`internal/redaction` と `internal/logging` の外で `RedactText` の結果を完全一致で検証しているテストは `internal/runner/base/security/logging_security_test.go`（`api_key=abc123def`、`Authorization: Bearer ...`）であり、いずれも隣接 `=` 形とコロン経路のみを使うため影響を受けない。
@@ -496,10 +496,15 @@ type FlushStats struct {
 type SlackHandlerOptions struct {
     // ... existing fields unchanged ...
 
-    // FailureLogger receives send failures and drops. It MUST NOT contain a
-    // SlackHandler in its handler chain; NewSlackHandler rejects such a
-    // configuration. When nil, a stderr-only logger is used.
-    FailureLogger *slog.Logger
+    // FailureHandlers are the leaf handlers that receive send failures and
+    // drops. NewSlackHandler builds the failure logger over them itself, so the
+    // failure path cannot be an arbitrary *slog.Logger whose chain would have to
+    // be inferred by a scan. Every element must be verifiably Slack-free:
+    // a stdlib leaf handler, one of this package's leaf handlers, a MultiHandler
+    // over such handlers, or a handler that opts in via SlackFreeHandler.
+    // NewSlackHandler rejects anything else. When empty, a stderr-only logger is
+    // used.
+    FailureHandlers []slog.Handler
     // SendTimeout bounds one notification's delivery including retries
     // (optional, defaults to defaultSendTimeout).
     SendTimeout time.Duration
@@ -514,21 +519,45 @@ type SlackHandlerOptions struct {
     Synchronous bool
 }
 
-// Flush stops accepting new notifications, cancels the send that is in flight
-// so it cannot outlive ctx under the longer runtime deadline, drains the queues
-// until ctx is done, and terminates the worker. The cancelled notification is
-// reported as Pending. It is safe to call concurrently and repeatedly;
-// calls after the first return the same accounting without re-draining.
+// Flush stops accepting new notifications, sends the worker a drain request
+// carrying ctx, cancels the send that is in flight so it cannot outlive ctx
+// under the longer runtime deadline, and waits for the worker to terminate. The
+// drain request is what wakes a worker parked on empty queues, so Flush returns
+// even when nothing was ever enqueued. The cancelled notification is reported as
+// Pending. It is safe to call concurrently and repeatedly; calls after the first
+// send no request and return the same accounting without re-draining.
 func (s *SlackHandler) Flush(ctx context.Context) FlushStats
 
-// Close stops accepting notifications, cancels the send that is in flight, and
-// terminates the worker without draining. It exists for teardown paths that have no notifications worth
-// delivering, such as AddSlackHandlers unwinding after a partial failure.
+// Close stops accepting notifications, sends the worker an abandon request,
+// cancels the send that is in flight, and waits for the worker to terminate
+// without draining. It exists for teardown paths that have no notifications worth
+// delivering, such as AddSlackHandlers unwinding after a partial failure. When
+// Flush already requested a drain, Close does not override it; it waits for the
+// worker and returns the same accounting.
 func (s *SlackHandler) Close() FlushStats
 
-// ErrFailureLoggerContainsSlackHandler is returned by NewSlackHandler when the
-// supplied FailureLogger would route send failures back into Slack.
-var ErrFailureLoggerContainsSlackHandler = errors.New("failure logger contains a SlackHandler")
+// SlackFreeHandler is implemented by handlers that assert they never route
+// records into Slack, directly or through anything they wrap. It is the opt-in
+// that lets a handler this package cannot recognise -- a test double, say -- be
+// used as a FailureHandlers element. Implementing it is an assertion by the
+// handler's author, not something NewSlackHandler can verify.
+type SlackFreeHandler interface {
+    slog.Handler
+    // SlackFree is a marker method; it does nothing.
+    SlackFree()
+}
+
+// ErrFailureLoggerContainsSlackHandler is returned by NewSlackHandler when a
+// FailureHandlers element is, or wraps, a SlackHandler and would route send
+// failures back into Slack.
+var ErrFailureLoggerContainsSlackHandler = errors.New("failure handler contains a SlackHandler")
+
+// ErrFailureLoggerUnverifiableHandler is returned by NewSlackHandler when a
+// FailureHandlers element is of a type it cannot verify as Slack-free. The
+// check fails closed: an unrecognised handler is rejected rather than assumed
+// safe, because a wrapper that hides what it wraps is exactly the case a scan
+// would silently pass.
+var ErrFailureLoggerUnverifiableHandler = errors.New("failure handler cannot be verified as Slack-free")
 ```
 
 `bootstrap` 側の追加インターフェースは次のとおり。
@@ -573,13 +602,13 @@ func FlushSlackNotifications()
 
 **通知の遅延**: ワーカーが 1 本であるため、キューに積まれた通知の到達は直列である。Slack が応答しない状態では、通常キューの末尾に積まれた通知が送信されるまで最悪で「キュー長 × 送信デッドライン」の時間がかかる。この遅延は上限を設けず、代わりに flush 期限（3.4.5）でプロセス終了時の影響を断ち切る。最悪遅延の目安は利用者向け文書に記載する（AC-34）。
 
-#### 3.4.3 送信器の構築と nil 送信器の契約
+#### 3.4.3 送信機構の構築と nil 送信機構の契約
 
-送信器は `NewSlackHandler` の中でのみ生成される。`SlackHandler` を構造体リテラルで構築した場合、送信器は nil になる。この場合 `Handle` は**メッセージを構築せず、送信もせず、nil を返す**。ログ出力の途中で panic を起こすことは、ログ経路の障害としては最も悪い形であるため、nil 送信器は「Slack へ送らないハンドラ」として安全側に定義する。`Flush` と `Close` も nil 送信器ではゼロ値の `FlushStats` を返す。
+送信機構は `NewSlackHandler` の中でのみ生成される。`SlackHandler` を構造体リテラルで構築した場合、送信機構は nil になる。この場合 `Handle` は**メッセージを構築せず、送信もせず、nil を返す**。ログ出力の途中で panic を起こすことは、ログ経路の障害としては最も悪い形であるため、nil 送信機構は「Slack へ送らないハンドラ」として安全側に定義する。`Flush` と `Close` も nil 送信機構ではゼロ値の `FlushStats` を返す。
 
 #### 3.4.4 派生インスタンスとの共有
 
-`WithAttrs` / `WithGroup` は新しい `SlackHandler` を返すが、送信器はポインタでコピーされ、キューとワーカーは共有される。したがって 1 つの webhook 設定に対するワーカー数は、派生インスタンスをいくつ生成しても 1 本のままである（AC-21）。`Flush` と `Close` はどの派生インスタンスから呼んでも同じ送信器に作用する。
+`WithAttrs` / `WithGroup` は新しい `SlackHandler` を返すが、送信機構はポインタでコピーされ、キューとワーカーは共有される。したがって 1 つの webhook 設定に対するワーカー数は、派生インスタンスをいくつ生成しても 1 本のままである（AC-21）。`Flush` と `Close` はどの派生インスタンスから呼んでも同じ送信機構に作用する。
 
 #### 3.4.5 デッドライン
 
@@ -591,7 +620,7 @@ func FlushSlackNotifications()
 
 実行中のリトライ回数とバックオフ間隔は変更しない。非同期化によってリトライの所要時間はログ呼び出し元に波及しなくなるため、リトライ方針を弱める動機がない。一方 flush 中にリトライを行わないのは、flush 期限（15 秒）が 1 件分のリトライ列（34 秒）より短く、リトライを許すと最初の 1 件で期限を使い切ってしまうためである。この 2 つのモードの切り替えにより、「実行中は粘り強く、終了時は数をさばく」という挙動になる。
 
-**flush 開始時に送信中だった 1 件の扱い**: `Flush` が呼ばれた時点で送信中の通知は、実行中の 40 秒デッドラインで作られたコンテキストの下にあり、そのままでは flush 期限（15 秒）を超えて居座りうる。これを防ぐため、ワーカーは送信中の 1 件の `context.CancelFunc` を共有状態に保持し、`Flush` と `Close` は受付停止フラグを立てた直後に同じロックの下でそれを呼ぶ（3.4.6）。実行中の試行はそこで打ち切られ、以降の処理はすべて flush 期限の内側で進む。中断された通知はキューから取り出し済みで送信も完了していないため、`Pending` に数える（期限切れ時に送信中だった 1 件と同じ扱いである）。この仕組みにより、`Flush` が flush 期限内に戻ることと、戻った時点でワーカー goroutine が終了していることの両方が成り立つ。
+**flush 開始時に送信中だった 1 件の扱い**: `Flush` が呼ばれた時点で送信中の通知は、実行中の 40 秒デッドラインで作られたコンテキストの下にあり、そのままでは flush 期限（15 秒）を超えて居座りうる。これを防ぐため、ワーカーは送信中の 1 件の `context.CancelFunc` を共有状態に保持し、`Flush` と `Close` は受付停止フラグを立てた直後に同じロックの下でそれを呼ぶ（3.4.6）。実行中の試行はそこで打ち切られ、以降の処理はすべて flush 期限の内側で進む。ワーカーが送信中ではなく待機中である場合は、同時に送られる終了要求（3.4.6）が終了モードと flush 期限付きコンテキストを運び、ワーカーはこれを受け取って flush 中の送信規則へ切り替える。中断された通知はキューから取り出し済みで送信も完了していないため、`Pending` に数える（期限切れ時に送信中だった 1 件と同じ扱いである）。この仕組みにより、`Flush` が flush 期限内に戻ることと、戻った時点でワーカー goroutine が終了していることの両方が成り立つ。
 
 flush では高優先度キューを先に処理する。期限内に送り切れない場合、失われるのは通常キューの通知である。
 
@@ -605,16 +634,30 @@ flush では高優先度キューを先に処理する。期限内に送り切�
 |---|---|---|---|
 | 高優先度キュー / 通常キュー | バッファ付きチャネル | `Handle` を呼んだ各 goroutine、ワーカー | チャネル自身 |
 | 受付停止フラグ | `bool` | `Handle`、`Flush`、`Close` | 3.4.6 の `sync.RWMutex` |
+| 終了要求チャネル | 容量 1 のバッファ付きチャネル（要素は終了要求） | `Flush`、`Close`（送信）、ワーカー（受信） | チャネル自身。送信が 1 回だけであることは受付停止フラグが保証する |
 | 送信中の 1 件のキャンセル関数 | `context.CancelFunc`（未送信時は nil） | ワーカー（設定・解除）、`Flush`、`Close`（呼び出し） | 受付停止フラグと同じ `sync.RWMutex` |
 | `Submitted` / `Enqueued` / `Sent` / `Failed` / `Dropped` | `atomic.Int64` | `Handle` を呼んだ各 goroutine、ワーカー | 型自身 |
 | ワーカー終了通知 | チャネル | ワーカー、`Flush`、`Close` | チャネル自身 |
 | flush 結果 | `FlushStats` | `Flush` | 受付停止フラグと同じ `sync.RWMutex` |
 
-**受付停止と投入の同期**: 受付停止フラグを原子変数にするだけでは足りない。`Handle` がフラグを読んだ直後に `Flush` がフラグを立て、最終の排出でキューが空だと判断したとする。この直後に投入が成立すると、その通知は送信されず、`Dropped` にも `Pending` にも計上されない。すなわち、失われたのに失われた記録が残らない。この経路は `go test -race` では検出できない。
+**受付停止と投入の同期**: 受付停止フラグを原子変数にするだけでは足りない。`Handle` がフラグを読んだ直後に `Flush` がフラグを立て、flush の最後にキューが空だと判断したとする。この直後に投入が成立すると、その通知は送信されず、`Dropped` にも `Pending` にも計上されない。すなわち、失われたのに失われた記録が残らない。この経路は `go test -race` では検出できない。
 
-これを防ぐため、受付停止フラグを `sync.RWMutex` で保護する。`Handle` は読み取りロックを取った状態で「フラグの確認」と「キューへの非ブロッキング投入」を行い、`Flush` と `Close` は書き込みロックを取ってフラグを立てる。書き込みロックが取れた時点で投入中の `Handle` は存在しないため、その後の排出はキューの全内容を観測できる。読み取りロックは複数の `Handle` が同時に保持できるため、ログ呼び出しの並行性は損なわれない。
+これを防ぐため、受付停止フラグを `sync.RWMutex` で保護する。`Handle` は読み取りロックを取った状態で「フラグの確認」と「キューへの非ブロッキング投入」を行い、`Flush` と `Close` は書き込みロックを取ってフラグを立てる。書き込みロックが取れた時点で投入中の `Handle` は存在しないため、その後の flush はキューの全内容を観測できる。読み取りロックは複数の `Handle` が同時に保持できるため、ログ呼び出しの並行性は損なわれない。
 
-**カウンタの整合**: 破棄はキューへ入る前に決まるため、`Dropped` は `Enqueued` に含まれない。したがって整合は 2 段の分割として定める。`Submitted` は投入要求の総数、すなわち `slack_notify`・ドライラン・nil 送信器の各判定を通過して投入の可否判定に到達した通知の件数である。`Flush` が戻る時点で次の 2 式が成り立つ。
+**終了要求チャネルがなぜ必要か**: 受付停止フラグは `Handle` の投入を止めるためのものであり、ワーカーを起こす手段にはならない。ワーカーは 2 本の送信キューからの受信で待つが、両キューは意図して閉じない（後述）ため、キューが空のあいだワーカーは受信でブロックしたままになる。この状態のワーカーはフラグを観測する機会を持たず、`Flush` や `Close` はワーカーの終了を待ち続けることになる。すなわち、通知が 1 件も積まれていない送信機構（実行中に Slack 通知が発生しなかった場合や、直前の通知をすべて送り終えた場合）に対する `Flush` が戻らない。これは例外的な状況ではなく、通常終了の大半で起こる経路である。フラグを定期的に観測させるためにワーカーを短い周期でポーリングさせる案は、待機中の goroutine が無用に起き続けるうえ、終了の応答性が周期に縛られるため採らない。
+
+そこで、ワーカーへの制御経路として容量 1 の**終了要求チャネル**を設ける。ワーカーの待機は、2 本の送信キューとこのチャネルに対する `select` とする（キューの優先度は、高優先度キューだけを見る非ブロッキングな `select` を先に置くことで保つ）。終了要求は次の 2 つを運ぶ。
+
+| 要素 | 内容 |
+|---|---|
+| 終了モード | `drain`（`Flush` から。残件を送信してから終了する）または `abandon`（`Close` から。送信せず直ちに終了する） |
+| flush 期限付きコンテキスト | flush 全体の期限。ワーカーはこれを基準に 1 件あたりの期限（残り期限と 5 秒の小さいほう、3.4.5）を決める |
+
+`Flush` と `Close` は、書き込みロックの中で受付停止フラグを立て、**フラグを立てたのが自分だった場合に限り**終了要求を送る。送信は 1 回だけであるため、容量 1 のチャネルへの送信がブロックすることはない。フラグが既に立っていた呼び出し（`Flush` の 2 回目以降、および `Flush` 後の `Close`）は要求を送らず、ワーカー終了通知チャネルを待って記録済みの `FlushStats` を返す。したがって、先に `Flush` が発行した `drain` を後続の `Close` が `abandon` へ上書きすることもない。要求を受け取ったワーカーは、`abandon` なら即座に、`drain` なら高優先度キュー・通常キューの順に、空になるか flush 期限に達するまで送信を続けてから、ワーカー終了通知チャネルを閉じて終了する。
+
+送信中の 1 件のキャンセル関数は、これとは別に依然として必要である。ワーカーが HTTP 送信の最中にいるときは `select` に戻っていないため、終了要求だけでは実行時デッドライン（40 秒）を短縮できないためである。両者は補い合う関係にあり、終了要求チャネルは「待機中のワーカー」を、キャンセル関数は「送信中のワーカー」を flush 期限の内側へ引き戻す。
+
+**カウンタの整合**: 破棄はキューへ入る前に決まるため、`Dropped` は `Enqueued` に含まれない。したがって整合は 2 段の分割として定める。`Submitted` は投入要求の総数、すなわち `slack_notify`・ドライラン・nil 送信機構の各判定を通過して投入の可否判定に到達した通知の件数である。`Flush` が戻る時点で次の 2 式が成り立つ。
 
 - `Submitted == Enqueued + Dropped`
 - `Enqueued == Sent + Failed + Pending`
@@ -627,23 +670,38 @@ flush では高優先度キューを先に処理する。期限内に送り切�
 
 #### 3.4.7 破棄・失敗の記録経路と再入防止
 
-送信失敗と破棄は、`SlackHandlerOptions.FailureLogger` に注入されたロガーへ記録する。`bootstrap` は Phase 1 で構築済みの `phase1FailureLogger`（コンソールとファイルのハンドラのみで構成され、Slack を含まない）をそのまま渡す。既存の `RedactingHandler` の `failureLogger` と同じロガーを共用するため、新たな構成を作らない（DRY）。
+送信失敗と破棄は、`NewSlackHandler` が `SlackHandlerOptions.FailureHandlers` から構築する送信失敗ロガーへ記録する。`bootstrap` が渡すのは `phase1BaseHandlers`、すなわち Phase 1 で構築したコンソールとファイルのハンドラの並びである。これは `phase1FailureLogger` の材料と同一であり（`bootstrap` は同じ並びから `MultiHandler` を作ってロガーにしている）、新たなハンドラ構成を作るわけではない（DRY）。ロガーではなくハンドラの並びを受け取る理由は次項で述べる。
 
 **記録の粒度**: 破棄と送信失敗は、発生した時点で 1 件ずつ記録する。集計だけでは「どの通知が失われたか」が運用者に分からず、AC-26 の意図を満たさないためである。記録に含めるのは `message_type`、`run_id`、レコードのログレベル、および理由（`queue_full` / `sender_closed` / `send_failed`）であり、**通知の本文は含めない**（AC-29）。本文は同じ実行の JSON ログファイルに完全な形で残っているため、`run_id` と `message_type` で突き合わせられる。flush 時にはこれに加えて、webhook ごとに `message_type` 別の内訳を付けた集計を出力する。
 
 **現行の `slog` 呼び出しの置き換え**: `sendToSlack` が使っている `slog.Debug` / `slog.Warn` / `slog.Error` / `slog.Info` は、すべてこの送信失敗ロガーへの呼び出しに置き換える。これにより、送信に関する記録が起点となって新たな Slack 送信が発生しない（AC-30）。なお `slack_handler.go` にはこれ以外に、`NewSlackHandler`・ドライラン分岐・`extractCommandResultsFromGroup` からの `slog.Debug` 呼び出しがある。これらは送信失敗の記録ではないため AC-30 の対象外だが、`SlackHandler.Enabled` が `slog.LevelInfo` 未満を除外するため Slack へは届かない。この理由づけを保つため、これらは Debug レベルのまま維持する。
 
-**構成の検証**: `NewSlackHandler` は `FailureLogger` のハンドラ連鎖を走査し、`*SlackHandler` が含まれていれば `ErrFailureLoggerContainsSlackHandler` を返す。走査は `Handler() slog.Handler` を持つハンドラと `Handlers() []slog.Handler` を持つハンドラを再帰的にたどる。`MultiHandler` と `RedactingHandler` は既にこれらのメソッドを備えているため、追加の公開 API は不要である。
+**任意のロガーの走査では AC-31 を保証できない**: 送信失敗の記録経路を `*slog.Logger` として受け取り、その連鎖を `Handler()` / `Handlers()` で走査して `*SlackHandler` を探す方法は、`slog.Handler` が連鎖を公開する手段を定めていないため、原理的に不完全である。どちらのメソッドも持たないハンドラが `*SlackHandler` を包んでいると、走査は連鎖の先を観測できないまま「Slack を含まない」と判定する。この誤判定は、記録が Slack へ戻る構成をそのまま通してしまう。走査が救えるのは連鎖を公開するハンドラだけであり、「入れ子の `SlackHandler` をすべて検出する」とは主張できない。
 
-この走査は `redaction.containsRedactingHandler` と同じ構造を持つ。共通化しない理由は、`internal/logging` が `internal/redaction` を import できないためである。`internal/redaction` のテストが `logging.NewMultiHandler` を使っており、逆向きの import は循環を作る。この制約は `slack_handler.go` の `TODO(0154-import-cycle)` コメントに既に記録されている。走査ロジックだけを第 3 のパッケージへ切り出す案は、20 行程度の関数のためにパッケージを 1 つ増やす対価が見合わないため採らない（YAGNI）。この重複は `internal/logging/handler_chain.go` に集約し、共通化しない理由をコメントとして残す。
+**検証可能なハンドラだけを受け付ける**: そこで、記録経路をロガーではなく**葉ハンドラの並び**（`FailureHandlers`）として受け取り、ロガーの構築を `NewSlackHandler` 自身が行う。`NewSlackHandler` は並びの各要素を次の規則で分類し、**認識できない型は拒否する**（fail closed）。
+
+| 要素の型 | 判定 |
+|---|---|
+| `*SlackHandler` | `ErrFailureLoggerContainsSlackHandler` |
+| `*slog.JSONHandler`、`*slog.TextHandler`、`slog.DiscardHandler` | 受理（標準ライブラリの葉ハンドラであり、他のハンドラを包まない） |
+| `*ConditionalTextHandler`、`*InteractiveHandler` | 受理（本パッケージの葉ハンドラ） |
+| `*MultiHandler` | `Handlers()` の各要素へ再帰し、同じ規則を適用する |
+| `SlackFreeHandler` を実装する型 | 受理（実装者による明示的な表明。テストダブル用の逃げ道） |
+| 上記以外 | `ErrFailureLoggerUnverifiableHandler` |
+
+この形では、受理される構成の Slack 非依存性は走査による推論ではなく型による構造的な性質になる。`*MultiHandler` は本パッケージの型であり `Handlers()` が全要素を返すことが分かっているため、再帰は完全である。認識できない包み込みは安全側に倒して拒否されるため、「連鎖を隠すハンドラが素通りする」経路が消える。`bootstrap` が渡す `phase1BaseHandlers` はこの規則をすべて満たす。加えてこの並びには `AddSlackHandlers` が要素を追加しない（Slack ハンドラは新しい `MultiHandler` の材料として別に連結される）ため、記録経路が Slack を含まないことは起動処理の構造からも従う。
+
+`RedactingHandler` を受理対象に含めないのは、記録経路として必要がないためである（`bootstrap` の失敗ロガーも `MultiHandler` と葉ハンドラだけで構成されている）。仮に必要になっても、`internal/logging` は import 循環のため `*redaction.RedactingHandler` を型として名指しできない。`internal/redaction` のテストが `logging.NewMultiHandler` を使っており、逆向きの import は循環を作るためである。この制約は `slack_handler.go` の `TODO(0154-import-cycle)` コメントに既に記録されている。`RedactingHandler` 側が `SlackFreeHandler` を実装すれば受理できるが、必要になるまで行わない（YAGNI）。
+
+判定は `internal/logging/handler_chain.go` に置く。`redaction.containsRedactingHandler` とは異なり、任意のハンドラを走査するのではなく既知の型を許可する形であるため、両者は構造が異なる。共通化しない理由（import 循環）をコメントとして残す点は変わらない。
 
 `NewRedactingHandler` は同種の違反を panic で扱うが、本設計はエラー返却とする。`NewSlackHandler` は既にエラーを返すシグネチャを持っており、`AddSlackHandlers` がそのエラーを起動処理の失敗として扱えるためである。いずれにせよ違反は起動時に検出され、実行時の無限ループには至らない（AC-31）。この差異の位置づけは 5.5 で述べる。
 
-`FailureLogger` が nil の場合は、stderr のみに書くロガーを内部で構築する。`slog.Default()` へフォールバックしない理由は、既定ロガーが `AddSlackHandlers` 以降は `SlackHandler` を含むためである。
+`FailureHandlers` が空の場合は、stderr のみに書くロガーを内部で構築する。`slog.Default()` へフォールバックしない理由は、既定ロガーが `AddSlackHandlers` 以降は `SlackHandler` を含むためである。
 
 #### 3.4.8 ライフサイクルと flush の呼び出し経路
 
-`bootstrap` は `AddSlackHandlers` で生成した `*logging.SlackHandler` をパッケージレベルの変数に保持し、`FlushSlackNotifications` から各ハンドラの `Flush` を呼ぶ。ワーカーは送信器の生成時（`NewSlackHandler` の中）に起動し、`Flush` または `Close` で終了する。
+`bootstrap` は `AddSlackHandlers` で生成した `*logging.SlackHandler` をパッケージレベルの変数に保持し、`FlushSlackNotifications` から各ハンドラの `Flush` を呼ぶ。ワーカーは送信機構の生成時（`NewSlackHandler` の中）に起動し、`Flush` または `Close` で終了する。
 
 ワーカーが所有者を失う経路を塞ぐため、`AddSlackHandlers` に次の 2 つの規則を課す。
 
@@ -658,19 +716,19 @@ flush では高優先度キューを先に処理する。期限内に送り切�
 
 #### 3.4.9 ドライランと副作用の境界
 
-`isDryRun` の分岐は `Handle` の中、キューへの投入より前に置く。加えて、ドライランでは送信器そのものを生成しない。外部副作用を持たないと定義されたモードで、キューとワーカーという状態を持つ必要がないためである。
+`isDryRun` の分岐は `Handle` の中、キューへの投入より前に置く。加えて、ドライランでは送信機構そのものを生成しない。外部副作用を持たないと定義されたモードで、キューとワーカーという状態を持つ必要がないためである。
 
 | 動作 | ドライラン時 |
 |---|---|
 | Slack への HTTP 送信 | 行わない（AC-22） |
-| 送信器（キューとワーカー）の生成 | 行わない |
+| 送信機構（キューとワーカー）の生成 | 行わない |
 | メッセージの構築 | 行わない |
-| `Flush` の呼び出し | 行う。送信器が nil のためゼロ値を返して即座に完了する |
+| `Flush` の呼び出し | 行う。送信機構が nil のためゼロ値を返して即座に完了する |
 | ログファイル・stderr への書き込み | 通常どおり行う |
 
 #### 3.4.10 同期モードという退避手段
 
-`GSCR_SLACK_SYNC=1` が設定されている場合、送信器を生成せず、`Handle` の中で同期的に送信する（本タスク以前の挙動）。Slack 通知が届かない事象を調査するとき、送信結果をログ呼び出しと同じ順序で観測できる手段があることは切り分けの時間を大きく縮める。これはデバッグ用の退避手段であり、通常運用で使う設定ではないことを利用者向け文書に明記する。同期モードでも `Flush` は呼び出せ、ゼロ値を返す。
+`GSCR_SLACK_SYNC=1` が設定されている場合、送信機構を生成せず、`Handle` の中で同期的に送信する（本タスク以前の挙動）。Slack 通知が届かない事象を調査するとき、送信結果をログ呼び出しと同じ順序で観測できる手段があることは切り分けの時間を大きく縮める。これはデバッグ用の退避手段であり、通常運用で使う設定ではないことを利用者向け文書に明記する。同期モードでも `Flush` は呼び出せ、ゼロ値を返す。
 
 ### 3.5 クラス図
 
@@ -757,14 +815,18 @@ var (
 )
 
 // Added.
-var ErrFailureLoggerContainsSlackHandler = errors.New("failure logger contains a SlackHandler")
+var (
+    ErrFailureLoggerContainsSlackHandler = errors.New("failure handler contains a SlackHandler")
+    ErrFailureLoggerUnverifiableHandler  = errors.New("failure handler cannot be verified as Slack-free")
+)
 ```
 
 ### 4.2 エラーの扱い
 
 | 状況 | 扱い | 検出時期 |
 |---|---|---|
-| 送信失敗ロガーに `SlackHandler` が含まれる | `NewSlackHandler` がエラーを返し、`AddSlackHandlers` 経由で起動が失敗する | 起動時 |
+| `FailureHandlers` に `SlackHandler` が含まれる | `NewSlackHandler` が `ErrFailureLoggerContainsSlackHandler` を返し、`AddSlackHandlers` 経由で起動が失敗する | 起動時 |
+| `FailureHandlers` に Slack 非依存性を検証できない型が含まれる | `NewSlackHandler` が `ErrFailureLoggerUnverifiableHandler` を返し、`AddSlackHandlers` 経由で起動が失敗する（fail closed。3.4.7） | 起動時 |
 | `AddSlackHandlers` が 2 つ目のハンドラ生成に失敗 | 生成済みハンドラを `Close` してからエラーを返す | 起動時 |
 | 正規表現のコンパイル失敗 | 現行どおり `RedactionFailurePlaceholder` を返す（フェイルセキュア） | 実行時 |
 | Slack への送信失敗（全リトライ後） | 送信失敗ロガーへ 1 件ずつ記録し、`Failed` を増やす。`Handle` の戻り値には現れない | 実行時 |
@@ -843,7 +905,7 @@ flowchart TD
 
 ### 5.5 他の設計文書のポリシーとの関係
 
-本設計は既存のポリシーに対する例外を 1 件持つ。
+本設計は既存のポリシーに対する例外を 1 件持つ。加えて、再入防止の検証手段そのものを 0154 の走査方式から変更する（下記）。
 
 | 項目 | 内容 |
 |---|---|
@@ -851,6 +913,8 @@ flowchart TD
 | 本設計での扱い | `NewSlackHandler` は同種の違反を `panic` ではなくエラー返却で扱う |
 | 理由 | `NewSlackHandler` は既に `(*SlackHandler, error)` を返すシグネチャを持ち、呼び出し元の `AddSlackHandlers` がエラーを起動処理の失敗として扱える。`panic` を足す必要がない。検出時期（起動時）と結果（実行に進ませない）は原ポリシーと同一である |
 | 影響を受ける既存テスト | なし。`NewRedactingHandler` の `panic` を検証しているテスト（`internal/redaction/redactor_test.go`）は変更しない。新設の検証に対応するテストは `TestNewSlackHandlerWithOptions` に追加する（3.1） |
+
+**検証手段の差異**: `NewRedactingHandler` は任意の `*slog.Logger` の連鎖を走査して `RedactingHandler` を探すが、`NewSlackHandler` は葉ハンドラの並びを受け取り、既知の型だけを受理する（3.4.7）。走査方式は連鎖を公開しないハンドラを見落とすため、AC-31 が求める「起動時に必ず拒否する」保証を満たさないためである。`internal/redaction` 側の走査を同じ方式へ改めることは本タスクの範囲外とし、変更しない。
 
 これ以外の点では、0154 が確立した「redaction は既存の `Config.RedactText` / `ValueDetector` を再利用し、同等の処理を別実装しない」方針を踏襲している。
 
@@ -897,7 +961,7 @@ flowchart TD
     S(["SlackHandler.Handle"]) --> A1["蓄積した属性とグループを適用"]
     A1 --> C1{"slack_notify が真?"}
     C1 -->|"いいえ"| RET(["nil を返す"])
-    C1 -->|"はい"| C2{"送信器がある?"}
+    C1 -->|"はい"| C2{"送信機構がある?"}
     C2 -->|"ない（ドライラン等）"| RET
     C2 -->|"ある"| BUILD["message_type に応じて<br>SlackMessage を構築"]
     BUILD --> LOCK["読み取りロックを取得し<br>Submitted を増やす"]
@@ -911,34 +975,43 @@ flowchart TD
     PUT --> UNLOCK
     UNLOCK --> RET
 
-    W(["ワーカー goroutine"]) --> WT["高優先度キューを優先して<br>1 件取り出す"]
-    WT --> WCTX["送信用コンテキストを生成し<br>キャンセル関数を共有状態へ格納<br>（実行中は送信デッドライン、<br>flush 中は残り期限と 5 秒の小さいほう）"]
+    W(["ワーカー goroutine"]) --> WT["2 本の送信キューと<br>終了要求チャネルを select<br>（高優先度キューを優先）"]
+    WT --> WQ{"受け取ったのは?"}
+    WQ -->|"終了要求（abandon）"| WEND(["ワーカー終了通知を閉じて終了"])
+    WQ -->|"終了要求（drain）"| WDR["flush 期限と 1 回試行へ切り替え"]
+    WDR --> WDQ{"残件があり<br>flush 期限内?"}
+    WDQ -->|"いいえ"| WEND
+    WDQ -->|"はい"| WPOP["高優先度・通常の順に<br>1 件取り出す"]
+    WPOP --> WCTX
+    WQ -->|"通知 1 件"| WCTX["送信用コンテキストを生成し<br>キャンセル関数を共有状態へ格納<br>（実行中は送信デッドライン、<br>flush 中は残り期限と 5 秒の小さいほう）"]
     WCTX --> WSEND["HTTP 送信<br>（flush 中はリトライしない）"]
     WSEND --> WCLR["キャンセル関数を共有状態から外す"]
     WCLR --> WRES{"成功?"}
     WRES -->|"はい"| WOK["Sent を増やす"]
     WRES -->|"いいえ"| WNG["Failed を増やし<br>送信失敗ロガーへ 1 件記録"]
-    WOK --> WT
-    WNG --> WT
+    WOK --> WNEXT{"flush 中?"}
+    WNG --> WNEXT
+    WNEXT -->|"いいえ"| WT
+    WNEXT -->|"はい"| WDQ
 
-    class BUILD,LOCK,SEL,ENQ,PUT,DROP,UNLOCK,WCTX,WSEND,WCLR,WOK,WNG enhanced
+    class BUILD,LOCK,SEL,ENQ,PUT,DROP,UNLOCK,WCTX,WSEND,WCLR,WOK,WNG,WDR,WPOP,WEND enhanced
     class A1,WT process
 ```
 
-**矢印の意味**: A → B は「A の次に B を実行する」ことを表す。上段は `Handle` を呼んだ goroutine、下段はワーカー goroutine の流れであり、両者は送信キューを介してのみつながる。ワーカーが送信の直前にキャンセル関数を共有状態へ格納するのは、`Flush` / `Close` が送信中の 1 件を打ち切れるようにするためである（3.4.5、3.4.6）。この打ち切りによって終わった 1 件は送信失敗としては扱わず、`Failed` ではなく `Pending` に数える。
+**矢印の意味**: A → B は「A の次に B を実行する」ことを表す。上段は `Handle` を呼んだ goroutine、下段はワーカー goroutine の流れであり、両者は送信キューと終了要求チャネルを介してのみつながる。ワーカーが送信キューだけでなく終了要求チャネルも `select` に含めるのは、キューが空で待機しているワーカーを `Flush` / `Close` が起こせるようにするためである（3.4.6）。ワーカーが送信の直前にキャンセル関数を共有状態へ格納するのは、待機中ではなく送信中のワーカーに対して、`Flush` / `Close` が送信中の 1 件を打ち切れるようにするためである（3.4.5、3.4.6）。この打ち切りによって終わった 1 件は送信失敗としては扱わず、`Failed` ではなく `Pending` に数える。
 
-### 6.3 送信器の状態遷移
+### 6.3 送信機構の状態遷移
 
 ```mermaid
 stateDiagram-v2
     [*] --> Accepting
 
     state "受付中" as Accepting
-    state "排出中" as Draining
+    state "flush 中" as Draining
     state "送信終了" as Drained
 
-    Accepting --> Draining : Flush 呼び出し（受付停止フラグを立て、送信中の 1 件をキャンセル）
-    Accepting --> Drained : Close 呼び出し（受付停止フラグを立て、送信中の 1 件をキャンセルし、排出せずワーカーを終了）
+    Accepting --> Draining : Flush 呼び出し（受付停止フラグを立て、drain の終了要求を送り、送信中の 1 件をキャンセル）
+    Accepting --> Drained : Close 呼び出し（受付停止フラグを立て、abandon の終了要求を送り、送信中の 1 件をキャンセル。flush せずワーカーを終了）
     Draining --> Drained : キューが空になった（ワーカー終了）
     Draining --> Drained : flush 期限に到達（残件数を Pending に計上、ワーカー終了）
     Drained --> Drained : 以降の投入は Dropped を増やして記録するのみ
@@ -946,7 +1019,7 @@ stateDiagram-v2
 
 矢印 A → B は「イベントによる A から B への遷移」を表す。「送信終了」状態ではワーカー goroutine は既に終了している。送信キューのチャネル自体は閉じないため、クローズ済みチャネルへの送信は構造的に発生しない。
 
-「受付中」から出る 2 本の遷移では、受付停止フラグを立てた直後に、保持しているキャンセル関数（3.4.6）を同じロックの下で呼ぶ。これにより実行時デッドライン（40 秒）で始まっていた送信が即座に打ち切られ、「排出中」の処理は flush 期限（15 秒）の内側で完結する。打ち切られた 1 件は `Pending` に数える。
+「受付中」から出る 2 本の遷移では、受付停止フラグを立てた直後に、同じロックの下で終了要求を送り、保持しているキャンセル関数（3.4.6）を呼ぶ。終了要求は待機中のワーカーを起こし、キャンセル関数は送信中のワーカーの実行時デッドライン（40 秒）を即座に打ち切る。この 2 つにより、ワーカーがどちらの状態にあっても「flush 中」の処理は flush 期限（15 秒）の内側で完結する。打ち切られた 1 件は `Pending` に数える。キューが一度も使われなかった送信機構では、ワーカーは終了要求を受け取ってそのまま「送信終了」へ移る。
 
 ## 7. テスト戦略
 
@@ -981,17 +1054,19 @@ stateDiagram-v2
 | 送信デッドライン | `SendTimeout` に短い値を注入し、期限で送信が打ち切られること | AC-19 |
 | メッセージ内容の同一性 | 同期実装と同じ `SlackMessage` が構築されること、構築が投入前に完了すること | AC-20 |
 | ワーカー数の有界性 | `WithAttrs` / `WithGroup` を多数回適用しても goroutine 数が増えないこと | AC-21 |
-| ドライラン | 送信器が生成されず、HTTP 送信が一切発生しないこと | AC-22 |
+| ドライラン | 送信機構が生成されず、HTTP 送信が一切発生しないこと | AC-22 |
 | 優先度 | 通常キューを満杯にした状態でも高優先度の通知が受け入れられ、先に送信されること | AC-24, AC-29 |
 | 両キューの溢れ | 容量を 1 に上書きし、通常キューと高優先度キューのそれぞれで溢れが破棄・記録されること。本番の容量（128 / 32）に依存せずに検証する | AC-29 |
 | flush | 期限内の送信完了、期限切れ時の残件数、受付停止後の到着の破棄、複数回呼び出しの冪等性 | AC-23, AC-25, AC-26, AC-27 |
 | 送信中の 1 件の中断 | 応答しないモックサーバへの送信が実行時デッドライン（40 秒）で進行中に `Flush` を呼び、flush 期限内に戻ること、その 1 件が `Pending` に計上されること、ワーカーが終了していることを検証する | AC-21, AC-25 |
+| 待機中のワーカーの flush | 通知を 1 件も投入していない送信機構と、投入済みの通知をすべて送り終えた送信機構の双方に対し、`Flush` および `Close` が flush 期限よりも十分短い時間で戻り、ワーカーが終了すること。終了要求チャネルがないとこの経路はデッドロックするため、テストは短い制限時間を設けて失敗を検出可能にする | AC-23, AC-25 |
 | ライフサイクル | `Close` でワーカーが終了すること。`Flush` 後に goroutine が残らないこと | AC-21 |
-| nil 送信器 | 構造体リテラルで構築したハンドラの `Handle` が panic せず nil を返すこと | AC-27 |
+| nil 送信機構 | 構造体リテラルで構築したハンドラの `Handle` が panic せず nil を返すこと | AC-27 |
 | 破棄の記録 | 破棄ごとに `message_type` と理由が記録され、本文が含まれないこと | AC-29 |
 | 記録経路 | 送信失敗の記録が Slack を含まない出力先へ書かれること | AC-30 |
-| 構成検証 | 送信失敗ロガーに `SlackHandler` を含む構成が起動時に拒否されること | AC-31 |
-| 同期モード | `Synchronous` が真のとき、送信器を持たず同期送信すること | - |
+| 構成検証 | `FailureHandlers` に `SlackHandler` を直接含む構成、`MultiHandler` 越しに含む構成、および Slack 非依存性を検証できない型（`Handler()` / `Handlers()` を持たない独自ハンドラ）を含む構成が、いずれも起動時に拒否されること。とくに最後のケースは、走査に頼る設計なら素通りしていた構成であることをコメントで示す | AC-31 |
+| 検証の逃げ道 | `SlackFreeHandler` を実装したテストダブルが `FailureHandlers` として受理されること | AC-31 |
+| 同期モード | `Synchronous` が真のとき、送信機構を持たず同期送信すること | - |
 
 **`internal/runner/bootstrap`**
 
@@ -1061,11 +1136,11 @@ Phase 1 は Phase 2 の前提である（拡張後のパターンを毎回コン
 | AC-20 | 3.4.9、6.2（メッセージ構築は投入前に完了する） |
 | AC-21 | 3.4.4 派生インスタンスとの共有、3.4.8 ライフサイクル |
 | AC-22 | 3.4.9 ドライランと副作用の境界 |
-| AC-23 | 2.3 プロセス終了時のデータフロー、2.4 終了種別ごとの損失範囲、3.4.8 |
+| AC-23 | 2.3 プロセス終了時のデータフロー、2.4 終了種別ごとの損失範囲、3.4.6 終了要求チャネル、3.4.8 |
 | AC-24 | 3.4.2 優先度付きキュー、3.4.5 flush 中の送信規則、2.4 ハンドラ登録順の不変条件 |
-| AC-25 | 3.4.5 flush 全体の期限 |
+| AC-25 | 3.4.5 flush 全体の期限、3.4.6 終了要求チャネル |
 | AC-26 | 3.4.7 記録の粒度、3.4.8 報告 |
-| AC-27 | 3.4.6 受付停止と投入の同期、3.4.3 nil 送信器の契約、6.3 |
+| AC-27 | 3.4.6 受付停止と投入の同期、3.4.3 nil 送信機構の契約、6.3 |
 | AC-28 | 3.4.8（`record` / `verify` への影響） |
 | AC-29 | 3.4.2、3.4.7、4.3 |
 | AC-30, AC-31 | 3.4.7 破棄・失敗の記録経路と再入防止、5.5 |
@@ -1086,6 +1161,9 @@ Phase 1 は Phase 2 の前提である（拡張後のパターンを毎回コン
 - **優先度を持たない単一キューの案**: 失敗コマンドが大量に発生したとき、日常的な通知がセキュリティアラートを押し出す。優先度 2 段に分離（3.4.2）。
 - **キュー満杯時に最古を破棄する案／短時間待機する案**: 前者は排他制御を要し優先度分離を入れた後は利得が小さく、後者は投入時間が有界でなくなるため不採用（3.4.2）。
 - **flush 中も実行中と同じリトライ方針を用いる案**: 1 件分のリトライ列（34 秒）が flush 期限（15 秒）を超えるため、最初の 1 件で期限を使い切る。flush 中は 1 回試行に切り替える（3.4.5）。
+- **受付停止フラグだけでワーカーを終了させる案**: 送信キューを閉じない設計では、キューが空のあいだワーカーは受信でブロックしたままフラグを観測できず、`Flush` が戻らない。送信キューを閉じてワーカーに終了を伝える案も、受付停止と投入の競合（3.4.6）を完全には排除できない以上、クローズ済みチャネルへの送信による panic の可能性を残す。別経路の終了要求チャネルを設ける（3.4.6）。
+- **ワーカーにフラグを周期的にポーリングさせる案**: 待機中の goroutine が無用に起き続け、終了の応答性も周期に縛られるため不採用（3.4.6）。
 - **`MultiHandler` に flush 走査の責務を持たせる案**: レコード分配に限られていた関心にライフサイクル管理が混ざり、グローバル状態である既定ロガーへの依存も生じるため不採用（3.4.8）。
 - **送信失敗ロガーを `slog.Default()` へフォールバックさせる案**: `AddSlackHandlers` 以降の既定ロガーは `SlackHandler` を含むため、AC-30 を構造的に破る。stderr のみのロガーを内部で構築する（3.4.7）。
-- **ハンドラ連鎖の走査を `internal/redaction` と共通化する案**: `internal/redaction` のテストが `internal/logging` を import しており、逆向きの import は循環になる。第 3 のパッケージへの切り出しは対価が見合わないため、重複を受け入れる（3.4.7）。
+- **任意の `*slog.Logger` を受け取り連鎖の走査で検証する案**: `slog.Handler` は連鎖を公開する手段を定めていないため、`Handler()` / `Handlers()` を持たないハンドラが `SlackHandler` を包む構成を「Slack を含まない」と誤判定する。検証済みの葉ハンドラの並びを受け取り、認識できない型を拒否する形に改める（3.4.7）。
+- **ハンドラの検証を `internal/redaction` と共通化する案**: `internal/redaction` のテストが `internal/logging` を import しており、逆向きの import は循環になる。加えて `NewSlackHandler` の検証は走査ではなく既知の型の許可であり、`redaction.containsRedactingHandler` とは構造が異なる。第 3 のパッケージへの切り出しは対価が見合わないため、別実装を受け入れる（3.4.7）。
