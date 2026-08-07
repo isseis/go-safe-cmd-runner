@@ -447,8 +447,8 @@ Phase 1〜4 とは依存関係がないため、Phase 1 と並行して着手で
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（[#999](https://github.com/isseis/go-safe-cmd-runner/pull/999)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -593,7 +593,7 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 - [x] `cmd/runner/startup_privilege_test.go` の新規作成（4テストと、逐次実行・root スキップに関するコメント）
 - [x] `cmd/runner/startup_order_guard_test.go` の新規作成（`//go:build test`、主張1〜4とコントロールケース。主張1・2 を後続 PR へ持ち越さない）
 - [x] `go test -tags test ./cmd/runner/...` の成功
-- [ ] PR-2 マージ済み（対象ステップ: Phase 2 / Phase 3-A）
+- [x] PR-2 マージ済み（対象ステップ: Phase 2 / Phase 3-A）
 
 ### PR-3: `--run-id` の入口検証（Phase 3-B）
 
@@ -606,14 +606,14 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 - [x] `cmd/runner/integration_run_id_test.go` への `TestE2E_ValidRunIDIsAdopted` の追加（配置先変更の理由は §2 Phase 3-B の「実装時の訂正」を参照）
 - [x] `make deadcode` の確認（PR-1 が導入し本 PR で到達可能になる `internal/logging` の新規シンボルを含め、未到達の報告がないこと）
 - [x] `go test -tags test ./cmd/runner/...` の成功
-- [ ] PR-3 マージ済み（対象ステップ: Phase 3-B）
+- [x] PR-3 マージ済み（対象ステップ: Phase 3-B）
 
 ### PR-4: `bootstrap` の多層防御（Phase 4）
 
 - [x] `SetupLoggerWithConfig` 先頭での `ValidateRunID` 呼び出し
 - [x] `TestSetupLoggerWithConfig_RejectsInvalidRunID` の追加
 - [x] 既存の `bootstrap` テストと `cmd/runner/integration_logger_test.go` の通過
-- [ ] PR-4 マージ済み（対象ステップ: Phase 4）
+- [x] PR-4 マージ済み（対象ステップ: Phase 4）
 
 ### PR-5: `cmd/verify` の fail-closed 化（Phase 5）
 
@@ -628,7 +628,7 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 - [x] `TestRunTOCTOU_ContinuesOnWorldWritableDir` の改名・コメント更新・経路依存スタブ注入・アサーション追加
 - [x] 既存4テストへの `toctouChecker` 注入
 - [x] `go test -tags test ./cmd/verify/...` の成功
-- [ ] PR-5 マージ済み（対象ステップ: Phase 5）
+- [x] PR-5 マージ済み（対象ステップ: Phase 5）
 
 ### PR-6: 文書と CHANGELOG（Phase 6）
 
@@ -639,7 +639,7 @@ Phase 5（M6）は他フェーズに依存しないため、Phase 1 と並行し
 - [x] `docs/translation_glossary.md` への新規用語の追加
 - [x] 英語版3ファイルの反映
 - [x] 文書の記載内容と実装の突き合わせ検証（Phase 6 の「検証」項目）
-- [ ] PR-6 マージ済み（対象ステップ: Phase 6）
+- [x] PR-6 マージ済み（対象ステップ: Phase 6）
 
 ### 全体（各 PR の作成前に実施）
 
