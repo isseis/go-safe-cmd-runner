@@ -24,7 +24,11 @@ const hashDirPermissions = 0o750
 // checkDirPermissions). Reusing 2 would make "violation detected" and "verify
 // crashed" indistinguishable.
 const (
-	exitOK                   = 0
+	exitOK = 0
+	// exitVerificationFailed covers every ordinary failure, not only a failed
+	// hash comparison: an argument error, an unresolvable permission-check UID,
+	// a validator that could not be built, or one or more files failing
+	// verification.
 	exitVerificationFailed   = 1
 	exitUntrustedEnvironment = 3
 )
@@ -91,18 +95,6 @@ func checkDirPermissions(cfg *verifyConfig, stderr io.Writer) bool {
 			panic(fmt.Sprintf("security validator initialisation failed: %v", secErr))
 		}
 	}
-	absFiles := make([]string, 0, len(cfg.files))
-	for _, f := range cfg.files {
-		abs, err := filepath.Abs(f)
-		if err != nil {
-			abs = f
-		}
-		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-			absFiles = append(absFiles, resolved)
-		} else {
-			absFiles = append(absFiles, abs)
-		}
-	}
 	absHashDir := cfg.hashDir
 	if abs, err := filepath.Abs(cfg.hashDir); err == nil {
 		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
@@ -120,9 +112,15 @@ func checkDirPermissions(cfg *verifyConfig, stderr io.Writer) bool {
 	// on-call reader whether the run was stopped.
 	if violations := security.RunTOCTOUPermissionCheck(secValidator, hashDirs, logger); len(violations) > 0 {
 		for _, v := range violations {
-			remediation := fmt.Sprintf("fix directory permissions/ownership and re-run verify (reported violation: %v)", v.Err)
+			// The checker validates every component from the root down to v.Path, so
+			// the directory that actually violates the policy is often an ancestor of
+			// v.Path rather than v.Path itself — v.Path is merely what was checked.
+			// The violation text names the offending directory, so the remediation
+			// points there; naming v.Path would send the operator to chmod a
+			// directory that is frequently already correct.
+			remediation := "fix the permissions/ownership of the directory named in the violation, or move the hash directory to a properly permissioned path, then re-run verify"
 			if errors.Is(v.Err, security.ErrInvalidDirPermissions) {
-				remediation = fmt.Sprintf("fix directory permissions with chmod (e.g. chmod go-w %s) and re-run verify", v.Path)
+				remediation = "remove write access for other users from the directory named in the violation (chmod go-w) and re-run verify"
 			}
 			logger.Error(
 				"hash directory permission violation detected — refusing to verify",
@@ -136,8 +134,23 @@ func checkDirPermissions(cfg *verifyConfig, stderr io.Writer) bool {
 	}
 
 	// The hash directory set is trusted, so check the remaining directories the
-	// target files live under. Directories already covered above are skipped so a
-	// shared ancestor is not warned about twice.
+	// target files live under. This is reached only when the run may proceed, so
+	// the target paths are resolved here rather than above: a run that fails
+	// closed does not touch the target files at all.
+	absFiles := make([]string, 0, len(cfg.files))
+	for _, f := range cfg.files {
+		abs, err := filepath.Abs(f)
+		if err != nil {
+			abs = f
+		}
+		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+			absFiles = append(absFiles, resolved)
+		} else {
+			absFiles = append(absFiles, abs)
+		}
+	}
+	// Directories already covered above are skipped so a shared ancestor is not
+	// warned about twice.
 	checked := make(map[string]struct{}, len(hashDirs))
 	for _, dir := range hashDirs {
 		checked[dir] = struct{}{}

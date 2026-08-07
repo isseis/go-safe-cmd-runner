@@ -493,6 +493,7 @@ fail-closed の引き金になるのはハッシュディレクトリ側の違�
 **設計上の要点**
 
 - 判定関数の形（違反時に各違反を ERROR で記録し、標準エラー出力に理由を書いて `false` を返す）は `cmd/record/main.go` の `checkDirPermissions`（[main.go:102](../../../cmd/record/main.go#L102)）に揃える。`record` が既に fail-closed であり（Task 0146、コミット `be92e759`）、両コマンドが同じ信頼の起点を守る以上、挙動と診断メッセージの形が揃っているほうが運用者にとって予測可能である。
+  - **例外（実装時に判明）**: `remediation` 属性に `chmod go-w <v.Path>` の形でパスを埋め込む点だけは `record` に倣わない。`ValidateDirectoryPermissions` は root から対象ディレクトリまでの全構成要素を検証するため、`v.Path` は「検証を要求したディレクトリ」であって「違反しているディレクトリ」ではない。ハッシュディレクトリ集合は祖先を展開した列であるから、祖先1つが world-writable なら列の全要素が違反として報告され、`chmod go-w <v.Path>` は最後の1件を除きすべて権限の正しいディレクトリを指す。fail-open だった頃は捨てられる WARN だったため実害がなかったが、fail-closed 化後はこれが停止時の唯一の是正指示になる（AC-21）。違反しているディレクトリを名指ししているのは `v.Err`（`violation` 属性）であるため、`remediation` はそこを参照させる文言とする。祖先展開そのものは維持する（ハッシュディレクトリが存在しない場合、`RunTOCTOUPermissionCheck` はそのパスを読み飛ばすため、祖先を個別に渡さないと祖先側の違反を取りこぼす）。同じ誤りが `cmd/record/main.go:145` にも存在するが、`record` の修正は要件のスコープ外であるため別途起票する。
 - **チェッカーの差し替え口**: `record` は `deps` 構造体の `toctouChecker` フィールド（[main.go:53](../../../cmd/record/main.go#L53)）で違反を注入できるようにしている。`verify` にも同等の差し替え口が必要である。これがないと、既定のハッシュディレクトリを使う経路（AC-23）のテストが CI ホストの実際のディレクトリ権限に依存し、環境によって結果が変わる。`verify` は既に `validatorFactory`・`mkdirAll`・`ensurePermissionCheckUID` をパッケージ変数で差し替える方式を採っている（[main.go:24-29](../../../cmd/verify/main.go#L24-L29)）ため、`toctouChecker` も同じ方式に揃える（`record` の `deps` 構造体を `verify` に持ち込むと、`verify` 側の既存3変数と二重の注入方式が並立する）。
 - 共有部品 `security.CollectTOCTOUCheckDirs` と `security.RunTOCTOUPermissionCheck` はそのまま再利用し、変更しない（要件定義書のスコープ外項目）。
 - 違反の ERROR 記録は、`RunTOCTOUPermissionCheck` が内部で出力する WARN ログに**加えて**行う（AC-20）。共有関数の WARN を ERROR に変更しないのは、同関数が §3.5 の4つの呼び出し元で共有されており、`verify` の都合で共有部品のログレベルを変えると他の呼び出し元の運用に影響するためである。ERROR を付けるのは fail-closed の判定対象となったハッシュディレクトリ側の違反だけであり、対象ファイル側の違反は WARN のまま残す。ログレベルが「実行を止めたかどうか」に対応するため、オンコール担当者はログだけで両者を区別できる。
@@ -821,7 +822,9 @@ flowchart LR
 
 したがって、既定ハッシュディレクトリを経由するテストには `toctouChecker` に「違反を返さないスタブ」を注入し、ホスト非依存にする。`record` は既に fail-closed であり、違反なしのケースでも同じくスタブを注入している（[cmd/record/main_test.go:316](../../../cmd/record/main_test.go#L316)）。この先例に揃える。
 
-**方針**: `cmd/verify` において `checkDirPermissions` に到達するテストは、検査結果を主張したいテストであるか否かを問わず、必ず `toctouChecker` を注入する。実ファイルシステムの権限に依存してよいのは、`-hash-dir` に自分で作成した一時ディレクトリを渡し、その権限を意図的に操作するテストだけとする。
+**方針**: `cmd/verify` において `checkDirPermissions` に到達するテストは、検査結果を主張したいテストであるか否かを問わず、原則として `toctouChecker` を注入する。実ファイルシステムの権限に依存してよいのは、`-hash-dir` と対象ファイルの置き場に**自分で作成した**一時ディレクトリを渡すテストだけとする。
+
+> 実装時の補足（Phase 5）: 上記の原則を「必ず注入する」と読むと、実チェッカーが違反なしと判定する経路をどのテストも通らなくなる。その状態では、実チェッカーが誤検知するようになる回帰（§3.4 の L-2 が挙げる失敗フォールバックなど）が、`verify` の全実行を exit 3・検証0件にしたままテストスイートを緑に保ってしまう。そこで、自分で作成した健全な一時ディレクトリのみを使い実チェッカーを通す成功経路テストを1件だけ置く（`TestRunProceedsWithRealCheckerOnCleanDirs`）。「実ファイルシステムの権限に依存してよいのは自分で作ったディレクトリだけ」という本節の趣旨は保たれている。
 
 ### 7.2 特権降格の検証方法（AC-14〜AC-16）
 

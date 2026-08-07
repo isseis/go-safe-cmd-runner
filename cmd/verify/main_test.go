@@ -252,6 +252,10 @@ func TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates(t *testing.T) {
 // world-writable itself, so the assertion does not depend on the permissions of
 // any pre-existing host directory.
 func TestRunFailsClosedOnHashDirViolation_ExplicitHashDir(t *testing.T) {
+	// Stated explicitly rather than relying on no other test having leaked a
+	// stub: this test is only meaningful against the real checker.
+	overrideTOCTOUChecker(t, nil)
+
 	hashDir := tu.SafeTempDir(t)
 	require.NoError(t, os.Chmod(hashDir, 0o777))
 	t.Cleanup(func() {
@@ -272,6 +276,71 @@ func TestRunFailsClosedOnHashDirViolation_ExplicitHashDir(t *testing.T) {
 	assert.Empty(t, stdout.String(), "verification must not start, so no progress output")
 	assert.Contains(t, stderr.String(), "verification results cannot be trusted")
 	assert.Contains(t, stderr.String(), "Fix directory permissions")
+}
+
+// TestRunProceedsWithRealCheckerOnCleanDirs is the canary for the real checker's
+// happy path. Every other test that reaches checkDirPermissions either injects a
+// stub or asserts the fail-closed outcome, so without this one a regression that
+// made the real check report spurious violations — an unresolvable path falling
+// back to a relative one, say — would turn every real invocation of verify into
+// exit 3 with nothing verified, and the suite would stay green. Both directories
+// are created by this test, so it does not depend on the host's layout.
+func TestRunProceedsWithRealCheckerOnCleanDirs(t *testing.T) {
+	overrideTOCTOUChecker(t, nil)
+
+	hashDir := tu.SafeTempDir(t)
+	targetDir := tu.SafeTempDir(t)
+	targetFile := filepath.Join(targetDir, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	validator := &fakeValidator{responses: map[string]error{}}
+	cleanup := overrideValidatorFactory(t, validator)
+	defer cleanup()
+
+	logs := captureLogs(t)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, stdout, stderr)
+
+	require.Equal(t, exitOK, exitCode, "logs: %s", logs.String())
+	require.Len(t, validator.calls, 1)
+	assert.NotContains(t, logs.String(), "level=ERROR")
+	assert.NotContains(t, stderr.String(), "cannot be trusted")
+}
+
+// TestRunFailsClosedOnHashDirViolation_AncestorViolation drives the real checker
+// with a clean hash directory nested under a world-writable ancestor. The
+// checker validates every component from the root down, so the violation is
+// attributed to a path whose own permissions are fine; this pins that the
+// remediation points at the directory named in the violation rather than at the
+// checked path, which would send the operator to chmod a correct directory.
+func TestRunFailsClosedOnHashDirViolation_AncestorViolation(t *testing.T) {
+	overrideTOCTOUChecker(t, nil)
+
+	badAncestor := tu.SafeTempDir(t)
+	hashDir := filepath.Join(badAncestor, "a", "b", "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o755))
+	require.NoError(t, os.Chmod(badAncestor, 0o777))
+	t.Cleanup(func() {
+		_ = os.Chmod(badAncestor, 0o755)
+	})
+
+	validator := &fakeValidator{responses: map[string]error{}}
+	cleanup := overrideValidatorFactory(t, validator)
+	defer cleanup()
+
+	logs := captureLogs(t)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, stdout, stderr)
+
+	require.Equal(t, exitUntrustedEnvironment, exitCode)
+	assert.Empty(t, validator.calls)
+	assert.Contains(t, logs.String(), badAncestor, "the violation must name the directory that is actually world-writable")
+	assert.NotContains(t, logs.String(), "chmod go-w "+hashDir,
+		"the remediation must not tell the operator to chmod the hash directory, whose own permissions are correct")
 }
 
 // TestRunFailsClosedOnHashDirViolation_DefaultHashDir verifies that the same
