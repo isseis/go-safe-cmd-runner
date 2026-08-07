@@ -111,17 +111,22 @@ func checkDirPermissions(cfg *verifyConfig, stderr io.Writer) bool {
 	// escalates to a fail-closed, non-zero exit. The log level therefore tells an
 	// on-call reader whether the run was stopped.
 	if violations := security.RunTOCTOUPermissionCheck(secValidator, hashDirs, logger); len(violations) > 0 {
+		// The remediation deliberately names neither a directory nor a single
+		// command, because neither can be derived from what a violation carries.
+		//
+		// Not a directory: the checker validates every component from the root
+		// down to v.Path, so the directory that actually violates the policy is
+		// often an ancestor of v.Path rather than v.Path itself — v.Path is merely
+		// what was checked. The violation text names the real one.
+		//
+		// Not a command: security.ErrInvalidDirPermissions covers six distinct
+		// causes (world-writable, wrong owner, group-writable with unverifiable
+		// group membership, not a directory, and two general validation failures),
+		// which call for different fixes. Naming one of them would be wrong for
+		// the rest, and the causes are not distinguishable without matching on the
+		// error text. The violation text states which one applies.
+		const remediation = "fix the permissions and ownership of the directory named in the violation, or move the hash directory to a properly permissioned path, then re-run verify"
 		for _, v := range violations {
-			// The checker validates every component from the root down to v.Path, so
-			// the directory that actually violates the policy is often an ancestor of
-			// v.Path rather than v.Path itself — v.Path is merely what was checked.
-			// The violation text names the offending directory, so the remediation
-			// points there; naming v.Path would send the operator to chmod a
-			// directory that is frequently already correct.
-			remediation := "fix the permissions/ownership of the directory named in the violation, or move the hash directory to a properly permissioned path, then re-run verify"
-			if errors.Is(v.Err, security.ErrInvalidDirPermissions) {
-				remediation = "remove write access for other users from the directory named in the violation (chmod go-w) and re-run verify"
-			}
 			logger.Error(
 				"hash directory permission violation detected — refusing to verify",
 				slog.String("path", v.Path),

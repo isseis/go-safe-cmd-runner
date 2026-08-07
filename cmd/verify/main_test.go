@@ -339,8 +339,22 @@ func TestRunFailsClosedOnHashDirViolation_AncestorViolation(t *testing.T) {
 	require.Equal(t, exitUntrustedEnvironment, exitCode)
 	assert.Empty(t, validator.calls)
 	assert.Contains(t, logs.String(), badAncestor, "the violation must name the directory that is actually world-writable")
-	assert.NotContains(t, logs.String(), "chmod go-w "+hashDir,
-		"the remediation must not tell the operator to chmod the hash directory, whose own permissions are correct")
+
+	// The remediation must not name the checked path: hashDir's own permissions
+	// are correct, so any instruction naming it sends the operator to fix a
+	// directory that is already fine.
+	var remediations int
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		if !strings.Contains(line, "level=ERROR") {
+			continue
+		}
+		_, remediation, found := strings.Cut(line, "remediation=")
+		require.True(t, found, "every fail-closed ERROR line carries a remediation: %s", line)
+		assert.NotContains(t, remediation, hashDir,
+			"the remediation must point at the directory named in the violation, not at the checked path")
+		remediations++
+	}
+	require.NotZero(t, remediations, "at least one fail-closed ERROR line must have been logged")
 }
 
 // TestRunFailsClosedOnHashDirViolation_DefaultHashDir verifies that the same
