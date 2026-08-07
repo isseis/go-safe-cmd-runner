@@ -18,6 +18,21 @@ import (
 
 const hashDirPermissions = 0o750
 
+// Exit codes returned by run(). 2 is deliberately unused: the Go runtime exits
+// with status 2 on an uncaught panic, and this command has reachable panics
+// (the policy declaration in init and the checker initialisation in
+// checkDirPermissions). Reusing 2 would make "violation detected" and "verify
+// crashed" indistinguishable.
+const (
+	exitOK = 0
+	// exitVerificationFailed covers every ordinary failure, not only a failed
+	// hash comparison: an argument error, an unresolvable permission-check UID,
+	// a validator that could not be built, or one or more files failing
+	// verification.
+	exitVerificationFailed   = 1
+	exitUntrustedEnvironment = 3
+)
+
 var (
 	errNoFilesProvided = errors.New("at least one file path must be provided as a positional argument or via -file (deprecated)")
 	errEnsureHashDir   = errors.New("error creating/accessing hash directory")
@@ -26,6 +41,10 @@ var (
 	}
 	mkdirAll                 = os.MkdirAll
 	ensurePermissionCheckUID = groupmembership.New().EnsurePermissionCheckUID
+	// toctouChecker is the directory permission checker used by
+	// checkDirPermissions. nil means construct one via
+	// security.NewDirectoryPermChecker; tests replace it.
+	toctouChecker security.DirectoryPermChecker
 )
 
 func init() {
@@ -51,40 +70,59 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func run(args []string, stdout, stderr io.Writer) int {
-	cfg, fs, err := parseArgs(args, stderr)
-	if err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return 0
+// checkDirPermissions reports whether verification may proceed.
+//
+// Only the hash directory side is fail-closed. It is the root of trust: if it
+// or an ancestor is writable by someone else, hash records can be replaced and
+// any verdict this command produces is meaningless. A violation confined to a
+// target file's ancestors is the opposite case — that is what verify exists to
+// inspect — so it stays a warning and verification continues.
+func checkDirPermissions(cfg *verifyConfig, stderr io.Writer) bool {
+	secValidator := toctouChecker
+	if secValidator == nil {
+		var secErr error
+		secValidator, secErr = security.NewDirectoryPermChecker()
+		if secErr != nil {
+			// NewDirectoryPermChecker only fails when standalone checker setup fails,
+			// which is not recoverable in this startup path.
+			panic(fmt.Sprintf("security validator initialisation failed: %v", secErr))
 		}
-		printUsage(fs, stderr)
-		fmt.Fprintf(stderr, "Error: %v\n", err) //nolint:errcheck
-		return 1
+	}
+	absHashDir := cfg.hashDir
+	if abs, err := filepath.Abs(cfg.hashDir); err == nil {
+		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+			absHashDir = resolved
+		} else {
+			absHashDir = abs
+		}
 	}
 
-	if cfg.usedDeprecated {
-		fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.") //nolint:errcheck
+	logger := slog.Default()
+	hashDirs := security.CollectTOCTOUCheckDirs(nil, nil, absHashDir)
+	// The ERROR below is in addition to the WARN RunTOCTOUPermissionCheck already
+	// logs, so the level distinguishes a violation that stopped the run from one
+	// that did not.
+	if violations := security.RunTOCTOUPermissionCheck(secValidator, hashDirs, logger); len(violations) > 0 {
+		// The remediation names neither a directory nor a command: v.Path is the
+		// directory that was checked, not necessarily the one at fault (the checker
+		// walks from the root down), and ErrInvalidDirPermissions covers causes
+		// needing chmod go-w, chown or chmod g-w, which cannot be told apart without
+		// matching on the error text. The violation attribute carries both.
+		const remediation = "fix the permissions and ownership of the directory named in the violation, or move the hash directory to a properly permissioned path, then re-run verify"
+		for _, v := range violations {
+			logger.Error(
+				"hash directory permission violation detected — refusing to verify",
+				slog.String("path", v.Path),
+				slog.String("violation", v.Err.Error()),
+				slog.String("remediation", remediation),
+			)
+		}
+		fmt.Fprintln(stderr, "Error: permission violation in hash directory or its ancestor directories — verification results cannot be trusted; no file was verified. Fix directory permissions and re-run.") //nolint:errcheck
+		return false
 	}
 
-	// verify declares SudoUIDAware (see init), so this is where an unverifiable
-	// SUDO_UID fails the run and where the adoption record is emitted. verify's
-	// per-file reads would also reach it, but resolving here makes the failure
-	// arrive once, before the first file, rather than once per file.
-	if err := ensurePermissionCheckUID(); err != nil {
-		fmt.Fprintf(stderr, "Error: %v\n", err) //nolint:errcheck
-		return 1
-	}
-
-	// Run TOCTOU permission check on directories referenced by this operation.
-	// verify does not have a config with verify_files or commands; check the files being
-	// verified and the hash directory. Violations are logged as warnings only — verify
-	// continues even if the check fails.
-	secValidator, secErr := security.NewDirectoryPermChecker()
-	if secErr != nil {
-		// NewDirectoryPermChecker only fails when standalone checker setup fails,
-		// which is not recoverable in this startup path.
-		panic(fmt.Sprintf("security validator initialisation failed: %v", secErr))
-	}
+	// Resolved here rather than alongside the hash directory: a run that fails
+	// closed does not touch the target files at all.
 	absFiles := make([]string, 0, len(cfg.files))
 	for _, f := range cfg.files {
 		abs, err := filepath.Abs(f)
@@ -97,21 +135,54 @@ func run(args []string, stdout, stderr io.Writer) int {
 			absFiles = append(absFiles, abs)
 		}
 	}
-	absHashDir := cfg.hashDir
-	if abs, err := filepath.Abs(cfg.hashDir); err == nil {
-		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-			absHashDir = resolved
-		} else {
-			absHashDir = abs
+	// Directories already covered above are skipped so a shared ancestor is not
+	// warned about twice.
+	checked := make(map[string]struct{}, len(hashDirs))
+	for _, dir := range hashDirs {
+		checked[dir] = struct{}{}
+	}
+	var targetDirs []string
+	for _, dir := range security.CollectTOCTOUCheckDirs(absFiles, nil, "") {
+		if _, ok := checked[dir]; !ok {
+			targetDirs = append(targetDirs, dir)
 		}
 	}
-	toctouDirs := security.CollectTOCTOUCheckDirs(absFiles, nil, absHashDir)
-	security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
+	security.RunTOCTOUPermissionCheck(secValidator, targetDirs, logger)
+	return true
+}
+
+func run(args []string, stdout, stderr io.Writer) int {
+	cfg, fs, err := parseArgs(args, stderr)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return exitOK
+		}
+		printUsage(fs, stderr)
+		fmt.Fprintf(stderr, "Error: %v\n", err) //nolint:errcheck
+		return exitVerificationFailed
+	}
+
+	if cfg.usedDeprecated {
+		fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.") //nolint:errcheck
+	}
+
+	// verify declares SudoUIDAware (see init), so this is where an unverifiable
+	// SUDO_UID fails the run and where the adoption record is emitted. verify's
+	// per-file reads would also reach it, but resolving here makes the failure
+	// arrive once, before the first file, rather than once per file.
+	if err := ensurePermissionCheckUID(); err != nil {
+		fmt.Fprintf(stderr, "Error: %v\n", err) //nolint:errcheck
+		return exitVerificationFailed
+	}
+
+	if !checkDirPermissions(cfg, stderr) {
+		return exitUntrustedEnvironment
+	}
 
 	validator, err := validatorFactory(cfg.hashDir)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error creating validator: %v\n", err) //nolint:errcheck
-		return 1
+		return exitVerificationFailed
 	}
 
 	return processFiles(validator, cfg.files, stdout, stderr)
@@ -192,7 +263,7 @@ func processFiles(validator hashValidator, files []string, stdout, stderr io.Wri
 
 	fmt.Fprintf(stdout, "\nSummary: %d succeeded, %d failed\n", successes, failures) //nolint:errcheck
 	if failures > 0 {
-		return 1
+		return exitVerificationFailed
 	}
-	return 0
+	return exitOK
 }
