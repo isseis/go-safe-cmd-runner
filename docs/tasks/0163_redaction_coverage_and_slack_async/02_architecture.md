@@ -22,7 +22,12 @@
 | キー名の先頭境界 | キー名の直前に許される文字の条件。`monkey` の中の `key` のような部分一致を防ぐために課す。0154 が定義した「境界 redaction」（呼び出し境界で `RedactText` を適用すること）とは別の概念である |
 | 送信キュー | Slack 送信要求を貯めるバッファ付きチャネル。`SlackHandler.Handle` が投入し、ワーカー goroutine が取り出す |
 | ワーカー | 送信キューから要求を取り出し、HTTP 送信とリトライを行う goroutine |
+| 送信機構 | 1 つの webhook 設定に対する送信キュー・ワーカー・カウンタをまとめて所有する内部構造（`slackSender`）。`WithAttrs` / `WithGroup` で派生した `SlackHandler` はこれをポインタで共有する（3.4.4） |
 | flush | プロセス終了時に、送信キューに残った通知を送り切る処理 |
+| flush 期限 | flush 全体に許す時間の上限。既定は 15 秒で、`GSCR_SLACK_FLUSH_TIMEOUT` で変更できる（3.4.6） |
+| 受付停止 | `Flush` または `Close` の呼び出しにより、送信機構が新しい通知の受け入れをやめた状態。以降に到着した通知は破棄される（3.4.7） |
+| 終了要求 | 待機中のワーカーを起こして終了させるために送る制御メッセージ。終了モード（`drain` / `abandon`）と flush 期限を運ぶ（3.4.7） |
+| `drain` / `abandon` | 終了モードの 2 値。`drain` は `Flush` から送られ、残件を送信してから終了する。`abandon` は `Close` から送られ、送信せず直ちに終了する |
 | 破棄 | 送信キューが満杯、または受付停止後の到着により、通知を送信せずに捨てること |
 | 送信失敗ロガー | Slack 送信の失敗・破棄を記録するためのロガー。`SlackHandler` を含まない出力先だけで構成される。`NewSlackHandler` が `bootstrap` から渡された Phase 1 の葉ハンドラ（`phase1BaseHandlers`。`phase1FailureLogger` と同じ材料）から構築する |
 
@@ -104,7 +109,7 @@ flowchart TB
 | 検討事項 | 決定 | 根拠を述べる節 |
 |---|---|---|
 | 引用符なしで空白を含む値の扱い | 現行どおり最初の空白で止める | 3.2.2 |
-| 区切り文字拡張の適用範囲 | キーを 2 群に分け、一般的な英単語であるキーには厳しい先頭境界を課す | 3.2.4 |
+| 区切り文字拡張の適用範囲 | 2 種類の先頭境界を用意し、キーを 3 群に分けて使い分ける。一般的な英単語であるキーには厳しい先頭境界を課す | 3.2.4 |
 | 引用符の対応範囲 | `"..."` と `'...'` の 2 種。エスケープされた引用符は非対応。閉じ引用符がない場合は行末まで置換する | 3.2.5 |
 | 既存 3 経路の統合可否 | 統合しない。第 3 経路のみ拡張する | 3.2.1 |
 | 正規表現の事前コンパイル | 上限付きのコンパイル済み正規表現キャッシュを導入する | 3.2.7 |
@@ -456,12 +461,74 @@ webhook URL のパス部分そのものが credential であるため、値形�
 
 #### 3.4.1 型定義
 
+本節が用いる「受付停止」「終了要求」「`drain` / `abandon`」「flush 期限」は冒頭の用語表で定義した語である。それぞれが解決する並行性の問題は 3.4.5〜3.4.7 で述べる。
+
 ```go
 // slackSender owns the send queues and the worker goroutine for one webhook
 // configuration. It is shared by pointer across handlers derived via
-// WithAttrs / WithGroup so that the worker count stays bounded.
+// WithAttrs / WithGroup so that the worker count stays bounded. The concurrency
+// rules for each field are in the shared-state table in 3.4.7.
 type slackSender struct {
-    // fields omitted; see the shared-state table in 3.4.7
+    webhookURL    string
+    httpClient    *http.Client
+    backoffConfig BackoffConfig
+    failureLogger *slog.Logger
+    sendTimeout   time.Duration
+
+    // highPriority and normal are the two send queues. They are never closed;
+    // see 3.4.7.
+    highPriority chan slackRequest
+    normal       chan slackRequest
+
+    // shutdown carries the one and only termination request to a worker parked
+    // on empty queues. Capacity 1, so the send never blocks.
+    shutdown chan shutdownRequest
+    // done is closed by the worker just before it returns.
+    done chan struct{}
+
+    mu sync.RWMutex
+    // The following are guarded by mu.
+    closed         bool
+    shutdownState  shutdownRequest    // zero value until Flush or Close sets it
+    inFlightCancel context.CancelFunc // nil unless a send is in flight
+    flushStats     FlushStats
+
+    counters slackCounters
+}
+
+// slackRequest is one queued notification. It carries only what the worker
+// needs: the payload to POST, and the fields the failure logger records when
+// the send fails or the notification is dropped (3.4.8). The record body is
+// deliberately absent from the failure path, so nothing beyond these fields is
+// retained for logging.
+type slackRequest struct {
+    message     *SlackMessage
+    messageType string
+    runID       string
+    level       slog.Level
+}
+
+// shutdownRequest tells the worker how to terminate. It is both the element of
+// the shutdown channel and the value stored in slackSender.shutdownState, so a
+// worker that has just dequeued a request observes the same instruction as one
+// parked in select (3.4.6).
+type shutdownRequest struct {
+    // abandon is false for a drain (Flush) and true for an abandon (Close).
+    abandon bool
+    // ctx carries the flush deadline. The worker derives each send's timeout
+    // from it while draining.
+    ctx context.Context
+}
+
+// slackCounters holds the cumulative counters behind FlushStats. They are
+// atomic rather than mu-guarded because Handle increments Submitted and
+// Dropped while holding only the read lock.
+type slackCounters struct {
+    submitted atomic.Int64
+    enqueued  atomic.Int64
+    sent      atomic.Int64
+    failed    atomic.Int64
+    dropped   atomic.Int64
 }
 
 // FlushStats reports a sender's delivery accounting. Every counter except
@@ -695,7 +762,7 @@ flush では高優先度キューを先に処理する。期限内に送り切�
 | 状態 | 型 | 触れる主体 | 保護 |
 |---|---|---|---|
 | 高優先度キュー / 通常キュー | バッファ付きチャネル | `Handle` を呼んだ各 goroutine、ワーカー | チャネル自身 |
-| 受付停止フラグ | `bool` | `Handle`、`Flush`、`Close` | 3.4.7 の `sync.RWMutex` |
+| 受付停止フラグ | `bool` | `Handle`、`Flush`、`Close` | 本節で述べる `sync.RWMutex` |
 | 終了要求チャネル | 容量 1 のバッファ付きチャネル（要素は終了要求） | `Flush`、`Close`（送信）、ワーカー（受信） | チャネル自身。送信が 1 回だけであることは受付停止フラグが保証する |
 | 終了状態（終了モードと flush 期限） | 終了要求と同じ要素（未要求時はゼロ値） | `Flush`、`Close`（設定）、ワーカー（読み取り） | 受付停止フラグと同じ `sync.RWMutex` |
 | 送信中の 1 件のキャンセル関数 | `context.CancelFunc`（未送信時は nil） | ワーカー（設定・解除）、`Flush`、`Close`（呼び出し） | 受付停止フラグと同じ `sync.RWMutex` |
@@ -839,10 +906,28 @@ classDiagram
         -sendTimeout time.Duration
         -highPriority chan slackRequest
         -normal chan slackRequest
+        -shutdown chan shutdownRequest
+        -done chan struct
         -mu sync.RWMutex
         -closed bool
+        -shutdownState shutdownRequest
         -inFlightCancel context.CancelFunc
+        -flushStats FlushStats
         -counters slackCounters
+    }
+
+    class slackRequest {
+        <<struct>>
+        -message *SlackMessage
+        -messageType string
+        -runID string
+        -level slog.Level
+    }
+
+    class shutdownRequest {
+        <<struct>>
+        -abandon bool
+        -ctx context.Context
     }
 
     class FlushStats {
@@ -865,6 +950,8 @@ classDiagram
 
     SlackHandler --> slackSender : shares by pointer
     SlackHandler --> FlushStats : returns
+    slackSender --> slackRequest : queues
+    slackSender --> shutdownRequest : receives
     MultiHandler --> SlackHandler : dispatches to
 ```
 
@@ -967,7 +1054,7 @@ flowchart TD
 | 強制終了（SIGKILL、OOM kill、電源断、リブート時の停止猶予切れ）でキューの残りが失われる | 中。同期送信では失われるのは送信中の 1 件だけだった。正味の悪化は「Slack は正常だが通知の生成が送信より速い」状態に限られる | 通常のリブート（SIGTERM）は flush される。通知の内容は投入前にログファイルへ同期的に書かれているため、配送のみが失われる。損失範囲を 2.4 に整理し、利用者向け文書に記載する。同期送信へ戻す退避手段を用意する（3.4.11） |
 | 送信失敗が `Handle` の戻り値から見えなくなる | 低。`slog.Logger` は元々ハンドラのエラーを破棄している | 送信失敗ロガーへの逐次記録と `FlushStats.Failed` |
 | ワーカー goroutine が終了せずプロセスが残る | 低 | ワーカーは `Flush` または `Close` で必ず終了する。送信中の 1 件は保持したキャンセル関数で打ち切られるため、実行時デッドライン（40 秒）が flush 期限（15 秒）を超えて残ることはない（3.4.6、3.4.7）。所有者を失う経路（`AddSlackHandlers` のエラー経路、再呼び出し）は 3.4.9 で塞ぐ |
-| 送信失敗ロガーの出力が背景 goroutine から発生し、対話的なコンソール出力と交錯する | 低 | `DefaultLogLineTracker` はアトミックであり競合しないが、コンソール出力の順序は非決定的になる。コンソール出力の順序に依存するテストを書かない |
+| 送信失敗ロガーの出力が背景 goroutine から発生し、対話的なコンソール出力と交錯する | 低 | ログ行番号を数える既存の `DefaultLogLineTracker` はアトミック操作を用いており競合しないが、コンソール出力の順序は非決定的になる。コンソール出力の順序に依存するテストを書かない |
 
 ### 5.3 redaction の拡張に伴うリスク評価
 
