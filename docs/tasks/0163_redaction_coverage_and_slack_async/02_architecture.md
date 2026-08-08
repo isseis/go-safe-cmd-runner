@@ -962,11 +962,14 @@ flowchart TD
 
 ```mermaid
 flowchart TD
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    S(["RedactText 開始"]) --> NEXT{"未処理のキーがある?"}
-    NEXT -->|"はい"| BR{"キーの形は?"}
+    S(["RedactText 開始"]) --> INIT["result ← 入力テキスト<br>走査位置 ← KeyValuePatterns の先頭"]
+    KVP[("KeyValuePatterns<br>（設定が持つキーの並び）")] -.->|"走査対象"| INIT
+    INIT --> NEXT{"未処理のキーがある?"}
+    NEXT -->|"はい: 次のキーを 1 件取り出す"| BR{"キーの形は?"}
     BR -->|"コロンを含む"| COLON["performColonPatternRedaction<br>（変更なし）"]
     BR -->|"空白を含む"| SPACE["performSpacePatternRedaction<br>（変更なし）"]
     BR -->|"それ以外"| KV["performKeyValuePatternRedaction"]
@@ -975,19 +978,32 @@ flowchart TD
     EQ -->|"はい"| KEEP["既存規則で置換<br>（変更なし）"]
     EQ -->|"いいえ"| FORM["選択肢 V3 → V2 → V1 を<br>この優先順位で適用"]
 
-    COLON --> NEXT
-    SPACE --> NEXT
-    KEEP --> NEXT
-    FORM --> NEXT
+    COLON --> UPD["result ← 置換結果<br>走査位置を 1 つ進める"]
+    SPACE --> UPD
+    KEEP --> UPD
+    FORM --> UPD
+    UPD --> NEXT
 
-    NEXT -->|"いいえ"| VD["ValueDetector.Mask"]
+    NEXT -->|"いいえ"| VD["ValueDetector.Mask<br>（result 全体に 1 回）"]
     VD --> E(["置換後のテキスト"])
 
+    class KVP data
     class KV,FORM,VD enhanced
-    class COLON,SPACE,KEEP process
+    class COLON,SPACE,KEEP,INIT,UPD process
 ```
 
-**矢印の意味**: A → B は「A の次に B を実行する」ことを表す。菱形は分岐条件である。図中の 2 つの菱形（キーの形、キー自身が等号を含むか）は、3.2.4 の判定規則の 1〜3 に対応する。規則の 4〜6（群 A・群 B・群 C の判定）は「選択肢 V3 → V2 → V1 を適用」の内部で、キーごとに先頭境界を決めるために行われる。`ValueDetector.Mask` はキーごとではなく、全キーの処理が終わった後に 1 回だけ適用される。この順序は、構造化された key=value の組を先に精密に隠し、その後で残りのテキストに含まれる裸の秘密を拾うという既存の設計意図によるものであり、変更しない。
+**矢印の意味**: 実線の A → B は「A の次に B を実行する」ことを表す。破線はデータの参照を表す。円柱はデータ、菱形は分岐条件である。
+
+**ループの状態**: 「未処理のキーがある?」は単なる分岐ではなく、`for _, key := range c.KeyValuePatterns` のループ頭である。このループは 2 つの状態を持ち、図ではそれぞれ次のように表している。
+
+| 状態 | 意味 | 図中の表現 |
+|------|------|-----------|
+| 走査位置 | `KeyValuePatterns` のどこまで処理したか | 「走査位置」の初期化と前進 |
+| `result` | 各反復の出力が次の反復の入力になる、累積されるテキスト | 「result ← 置換結果」を経由してループ頭へ戻る |
+
+4 つの置換処理が「result ← 置換結果」の 1 点に合流するのは、どの経路を通っても更新されるのは同じ 1 本の `result` だからである。すなわち各キーの処理は互いに独立ではなく、直前のキーによる置換後のテキストを入力として受け取る（3.2.4 の判定規則はこの前提の下で適用される）。
+
+図中の 2 つの菱形（キーの形、キー自身が等号を含むか）は、3.2.4 の判定規則の 1〜3 に対応する。規則の 4〜6（群 A・群 B・群 C の判定）は「選択肢 V3 → V2 → V1 を適用」の内部で、キーごとに先頭境界を決めるために行われる。`ValueDetector.Mask` はキーごとではなく、ループを抜けた後の `result` に対して 1 回だけ適用される。この順序は、構造化された key=value の組を先に精密に隠し、その後で残りのテキストに含まれる裸の秘密を拾うという既存の設計意図によるものであり、変更しない。
 
 ### 6.2 Slack 送信の処理フロー
 
