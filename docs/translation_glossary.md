@@ -33,6 +33,7 @@
 | 任意コード実行 | arbitrary code execution | シェル/インタプリタ等が任意のコードを実行できること |
 | 採用 | adoption | 基準UID決定方針が `SudoUIDAware` のときに、`SUDO_UID` の値を基準UIDとして用いること（Task 0161） |
 | 採用事実の記録 | adoption record | 採用によって基準UIDが実UIDと異なる値になったことを `log/slog` へ警告として出力すること（Task 0161） |
+| アトミック | atomic | 不可分に実行され、途中状態が観測されないこと。「原子」「原子的」という訳語は使わない（例: アトミック変数、アトミックに適用する） |
 
 ### B
 
