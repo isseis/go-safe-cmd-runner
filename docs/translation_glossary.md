@@ -181,8 +181,8 @@
 | フェイルオープン | fail-open | 不明・エラー時に許可側（実行継続）へ倒す設計。fail-closed の対義。要件文書では「避けるべき挙動」を指す文脈で使う |
 | フェイルセーフ | fail-safe | 不明時に安全側のリスクへ倒す設計 |
 | 送信失敗ロガー | failure logger | Slack 送信の失敗・破棄を記録するロガー。`SlackHandler` を含まない出力先だけで構成される（Task 0163） |
-| flush | flush | 終了時に未送信の通知を送り切る処理。日本語文中でもそのまま「flush」と書く。「排出」「吐き出し」などの訳語は使わない（Task 0163） |
 | 下限 | floor | リスクの最低保証。最終リスクはこの値以上になる（max をとるため、より高い判定があればそちらが勝つ）。例「Medium 下限」＝最低でも Medium。動作は「X 以上に引き上げる／X を下限とする」。英語 floor を本文で使わない |
+| flush | flush | 終了時に未送信の通知を送り切る処理。日本語文中でもそのまま「flush」と書く。「排出」「吐き出し」などの訳語は使わない（Task 0163） |
 | fd 束縛 | fd binding / fd-bind | 検証済みファイルディスクリプタへ実行実体を束縛すること |
 | 誤検出 | false positive | 誤ってSYSCALL命令として検出すること |
 | 第一線の防御 | first line of defense | セキュリティの文脈。許可リスト＋ハッシュ固定を指す主防御 |
@@ -478,8 +478,8 @@
 | safe-zone | safe-zone | run 専用の作業/出力ディレクトリ・専用 temp（run が所有する安全領域）。判断軸2 で Low（信頼要件 AC-04 充足時。`$HOME`・共有 `/tmp` は含めない）。パス信頼区分の値の一つ |
 | 正規化済み解析結果 | normalized analysis result | 保存前に整形・選別された解析結果 |
 | 正規化済み特徴量 | normalized feature | runner 向けに整形された特徴量 |
-| 関心の分離 | separation of concerns | 設計パターンの文脈 |
 | 送信機構 | sender | Slack 通知の送信キューとワーカー goroutine を所有する内部構造（`slackSender`）。直訳の「送信器」は使わない（Task 0163） |
+| 関心の分離 | separation of concerns | 設計パターンの文脈 |
 | 終了要求チャネル | shutdown request channel | 待機中のワーカーに終了モード（drain / abandon）と flush 期限を伝える制御チャネル（Task 0163） |
 | 唯一の判定基準 | single authority | ファイル操作コマンドのリスクを判断軸2 の結果だけで決め、既存の High 判定群を置き換える方式（0142 F-005）。直訳「単一権威」は使わない |
 | 符号拡張 | sign extension | 上位ビットを符号ビットで埋める操作 |
