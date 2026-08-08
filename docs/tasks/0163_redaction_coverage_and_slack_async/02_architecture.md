@@ -968,24 +968,25 @@ flowchart TD
 
     S(["RedactText 開始"]) --> INIT["result ← 入力テキスト"]
     KVP[("KeyValuePatterns<br>（設定が持つキーの並び）")] -.->|"走査対象"| LOOP
-    INIT --> BR
+    INIT --> C1
 
     subgraph LOOP["繰り返し: KeyValuePatterns の各キーについて、並び順に 1 件ずつ"]
         direction TB
-        BR{"キーの形は?"}
-        BR -->|"コロンを含む"| COLON["performColonPatternRedaction<br>（変更なし）"]
-        BR -->|"空白を含む"| SPACE["performSpacePatternRedaction<br>（変更なし）"]
-        BR -->|"それ以外"| KV["performKeyValuePatternRedaction"]
+        C1{"規則 1: キーが<br>コロンを含む?"}
+        C1 -->|"はい"| COLON["performColonPatternRedaction<br>（変更なし）"]
+        C1 -->|"いいえ"| C2{"規則 2: キーが<br>空白を含む?"}
+        C2 -->|"はい"| SPACE["performSpacePatternRedaction<br>（変更なし）"]
+        C2 -->|"いいえ"| KV["performKeyValuePatternRedaction"]
 
-        KV --> EQ{"キー自身が等号を含む?"}
-        EQ -->|"はい"| KEEP["既存規則で置換<br>（変更なし）"]
-        EQ -->|"いいえ"| FORM["選択肢 V3 → V2 → V1 を<br>この優先順位で適用"]
+        KV --> C3{"規則 3: キーが<br>等号を含む?"}
+        C3 -->|"はい"| KEEP["既存規則で置換<br>（変更なし）"]
+        C3 -->|"いいえ"| FORM["選択肢 V3 → V2 → V1 を<br>この優先順位で適用"]
 
         COLON --> UPD["result ← 置換結果"]
         SPACE --> UPD
         KEEP --> UPD
         FORM --> UPD
-        UPD ==>|"次のキーへ<br>（result を引き継ぐ）"| BR
+        UPD ==>|"次のキーへ<br>（result を引き継ぐ）"| C1
     end
 
     UPD --> VD["ValueDetector.Mask<br>（ループ後の result 全体に 1 回）"]
@@ -1002,7 +1003,7 @@ flowchart TD
 
 **反復間で引き継がれる状態**: 各反復が更新するのは `result` ただ 1 本である。4 つの置換処理が「result ← 置換結果」の 1 点に合流するのは、どの経路を通っても更新先が同じ `result` だからである。すなわち各キーの処理は互いに独立ではなく、直前のキーによる置換後のテキストを入力として受け取る（3.2.4 の判定規則はこの前提の下で適用される）。ループを抜けた後の `result` が `ValueDetector.Mask` の入力となる。
 
-図中の 2 つの菱形（キーの形、キー自身が等号を含むか）は、3.2.4 の判定規則の 1〜3 に対応する。規則の 4〜6（群 A・群 B・群 C の判定）は「選択肢 V3 → V2 → V1 を適用」の内部で、キーごとに先頭境界を決めるために行われる。`ValueDetector.Mask` をループの外に置く順序は、構造化された key=value の組を先に精密に隠し、その後で残りのテキストに含まれる裸の秘密を拾うという既存の設計意図によるものであり、変更しない。
+**分岐が逐次である理由**: 図中の 3 つの菱形は 3.2.4 の判定規則 1〜3 に一対一で対応し、上から順に評価される。これらの条件は排他的ではない。たとえば `"Authorization: "` はコロンと空白の両方を含むが、規則 1 が先に一致するためコロン経路へ確定し、規則 2 は評価されない。したがって 3 分岐を 1 つの菱形にまとめることはできず、優先順位を保つために「はい／いいえ」の菱形を段に分けて書く。規則 4〜6（群 A・群 B・群 C の判定）は「選択肢 V3 → V2 → V1 を適用」の内部で、キーごとに先頭境界を決めるために行われる。`ValueDetector.Mask` をループの外に置く順序は、構造化された key=value の組を先に精密に隠し、その後で残りのテキストに含まれる裸の秘密を拾うという既存の設計意図によるものであり、変更しない。
 
 ### 6.2 Slack 送信の処理フロー
 
