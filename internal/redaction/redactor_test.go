@@ -732,6 +732,14 @@ func TestRedactText_IntentionalOverRedaction(t *testing.T) {
 			input:    "could not parse api_key: unexpected EOF",
 			expected: "could not parse api_key: [REDACTED] EOF",
 		},
+		{
+			// The loose boundary of the double-quoted alternative applies to the
+			// key name, so a common-word key takes it mid-sentence too, not only
+			// at the start of a line.
+			name:     "common word key quoted mid-sentence",
+			input:    `Please set token="my note" before continuing`,
+			expected: `Please set token="[REDACTED]" before continuing`,
+		},
 	}
 
 	for _, tt := range tests {
