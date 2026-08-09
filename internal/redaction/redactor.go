@@ -168,9 +168,11 @@ func compileRedactionRegex(regexPattern string, contextInfo map[string]string) *
 	// that actually inserts a new entry (loaded == false), so concurrent
 	// callers of the same pattern do not double-count it.
 	if regexCacheCount.Load() < maxRegexCacheEntries {
-		if _, loaded := regexCache.LoadOrStore(regexPattern, re); !loaded {
+		actual, loaded := regexCache.LoadOrStore(regexPattern, re)
+		if !loaded {
 			regexCacheCount.Add(1)
 		}
+		return actual.(*regexp.Regexp)
 	}
 	return re
 }
