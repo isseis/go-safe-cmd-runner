@@ -802,7 +802,19 @@ func (r *RedactingHandler) processKindAny(key string, value slog.Value, ctx reda
 		return r.processLogValuer(key, logValuer, ctx)
 	}
 
-	// 2. Determine type and dispatch to appropriate handler
+	// 2. Check for the error interface, after LogValuer so a type that
+	// implements both is still logged the way it asks to be. An error carries
+	// its message behind Error(), not in its fields: errors.New returns
+	// *errorString and fmt.Errorf returns *fmt.wrapError, and neither has a
+	// single exported field, so the struct walk below would find nothing to
+	// redact and fail secure - replacing every such message with
+	// RedactionFailurePlaceholder. Redacting the Error() string instead keeps
+	// the diagnostic and gives it exactly the redaction a string attribute gets.
+	if errValue, ok := anyValue.(error); ok {
+		return r.processError(key, errValue, ctx)
+	}
+
+	// 3. Determine type and dispatch to appropriate handler
 	rv := reflect.ValueOf(anyValue)
 	switch rv.Kind() {
 	case reflect.Slice:
@@ -914,6 +926,59 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 	resolvedAttr := slog.Attr{Key: key, Value: resolvedValue}
 	nextCtx := redactionContext{depth: ctx.depth + 1}
 	return r.redactLogAttributeWithContext(resolvedAttr, nextCtx), nil
+}
+
+// processError resolves an error to its Error() string and redacts that string,
+// so an error attribute is redacted the same way the equivalent string attribute
+// is. Without this the struct walk finds no exported field on the standard error
+// types and suppresses the whole message (see processKindAny).
+func (r *RedactingHandler) processError(key string, errValue error, ctx redactionContext) (attr slog.Attr, err error) {
+	// 1. Check recursion depth
+	if ctx.depth >= maxRedactionDepth {
+		r.failureLogger.Debug(
+			"Recursion depth limit reached for error - returning placeholder for security",
+			"attribute_key", key,
+			"depth", maxRedactionDepth,
+		)
+		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
+	}
+
+	// 2. A nil pointer stored in a non-nil error interface is left alone rather
+	// than called, matching how processKindAny passes a nil pointer through.
+	if rv := reflect.ValueOf(errValue); rv.Kind() == reflect.Ptr && rv.IsNil() {
+		return slog.Attr{Key: key, Value: slog.AnyValue(errValue)}, nil
+	}
+
+	// 3. Error() is caller-supplied code, so it is called under recovery for the
+	// same reason LogValue() is.
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.failureLogger.Warn(
+				"Redaction failed for error - detailed log",
+				"attribute_key", key,
+				"panic_value", rec,
+				"panic_type", fmt.Sprintf("%T", rec),
+				"stack_trace", string(debug.Stack()),
+				"log_category", "redaction_failure_detail",
+			)
+			// Log safe summary to all destinations
+			slog.Warn(
+				"Redaction failed for error - see logs for details",
+				"attribute_key", key,
+				"panic_type", fmt.Sprintf("%T", rec),
+				"log_category", "redaction_failure_summary",
+				"details_in_log", true,
+			)
+			// Fail secure: return the placeholder instead of a partial message
+			attr = slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
+			err = nil
+		}
+	}()
+
+	// 4. Redact the message through the string path
+	message := slog.Attr{Key: key, Value: slog.StringValue(errValue.Error())}
+	nextCtx := redactionContext{depth: ctx.depth + 1}
+	return r.redactLogAttributeWithContext(message, nextCtx), nil
 }
 
 // processMap processes a map value: keys are stringified (via fmt.Sprint, not redacted)

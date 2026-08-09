@@ -121,6 +121,7 @@ flowchart TB
 | flush の公開インターフェース | `SlackHandler.Flush` を公開し、`bootstrap` が生成済みハンドラを保持して呼ぶ | 3.4.9 |
 | `WithAttrs` / `WithGroup` とワーカーの共有 | 派生インスタンスは送信機構（キューとワーカー）をポインタで共有する | 3.4.4 |
 | ドライラン時の扱い | `Handle` 内の投入前で分岐し、送信機構自体を生成しない | 3.4.10 |
+| `error` 値のログ属性（実装時に発見した欠陥） | `Error()` の結果を文字列として redaction する。構造体として歩かない | 3.7 |
 
 ### 1.4 不変条件マップ
 
@@ -1022,6 +1023,23 @@ func (c *Config) RedactText(text string) string
 // Unchanged. The extension is confined to valueDetectorPatterns.
 func (d *ValueDetector) Mask(text string) string
 ```
+
+### 3.7 `error` 値のログ属性の扱い（実装時に発見した欠陥の修正）
+
+**症状**: `slog.Any("error", err)` の形でログに渡した `error` の本文が、`RedactingHandler` によって `[REDACTION FAILED - OUTPUT SUPPRESSED]` に置き換わり、診断情報が失われていた。
+
+**原因**: `processKindAny` は `slog.LogValuer` だけを特別扱いし、`error` インタフェースを見ていなかった。そのため `error` 値は構造体としてリフレクションで歩かれ、`processStruct` に到達する。`errors.New` が返す `*errorString` も `fmt.Errorf` が返す `*fmt.wrapError` も、本文を非公開フィールドに持ちエクスポートされたフィールドを 1 つも持たないため、「エクスポートされたフィールドが 0 個ならプレースホルダーを返す」というフェイルセキュア分岐に必ず落ちていた。エクスポートされたフィールドを持つ独自のエラー型も、`Error()` が組み立てる本文ではなくフィールドのマップとして出力されていた（`map[Op:open Path:/etc/passwd]`）。
+
+**規則**: `processKindAny` の `LogValuer` 判定の直後に `error` 判定を置き、`Error()` の結果を文字列属性として `redactLogAttributeWithContext` に戻す。これにより error 属性は、同じ本文を文字列で渡した場合とまったく同じ redaction を受ける。redaction の強度は変わらず、失われていた診断情報だけが戻る。
+
+- **`LogValuer` を優先する**: 両方を実装する型は `LogValue()` の指定に従う。
+- **`Error()` は recover の下で呼ぶ**: 呼び出し側のコードであり、`LogValue()` と同じ理由でパニックがハンドラの外へ出てはならない。パニック時はプレースホルダーを返す。
+- **非 nil のインタフェースに入った nil ポインタは呼ばない**: `processKindAny` のポインタ分岐が nil をそのまま通すのに合わせ、`Error()` を呼ばずに値を通す。
+- **再帰深度**: 他の `process*` と同様に上限に達した場合はプレースホルダーを返す。
+
+**波及**: `bootstrap` が `slog.SetDefault` にこのハンドラを設定しているため、本欠陥は本番の全ログ経路に及んでいた。`slog.Any("error", err)` ないし `"error", err` の形で error 値を渡している非テスト箇所は 57 件ある（`err.Error()` と文字列化している箇所は影響を受けていなかった）。
+
+**`*url.Error` との関係**: 修正前は `Op` / `URL` / `Err` のフィールドマップとなり、`URL` の値が `IsSensitiveValue` によって個別に `[REDACTED]` へ置換されていた。修正後は `Error()` の本文全体が `IsSensitiveValue` に一致し、属性全体が `[REDACTED]` になる。いずれも webhook URL は露出せず、`sanitizeErrorForLog`（3.3.3）による既存の防御も変わらない。
 
 ## 4. エラーハンドリング設計
 

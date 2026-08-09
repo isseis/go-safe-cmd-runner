@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -2019,6 +2020,89 @@ func TestRedactingHandler_NonLogValuer(t *testing.T) {
 	assert.Contains(t, output, "123")
 	assert.Contains(t, output, "true")
 	assert.Contains(t, output, "3.14")
+}
+
+// exportedFieldError is an error whose fields are exported, so the struct walk
+// would produce a field map for it rather than suppressing it. Its Error() is
+// still the message that belongs in the log.
+type exportedFieldError struct {
+	Op   string
+	Path string
+}
+
+func (e *exportedFieldError) Error() string { return e.Op + " " + e.Path }
+
+// logValuerError implements both error and slog.LogValuer to fix which of the
+// two the handler honours.
+type logValuerError struct{}
+
+func (logValuerError) Error() string { return "error message" }
+
+func (logValuerError) LogValue() slog.Value { return slog.StringValue("logvalue message") }
+
+// panickingError panics from Error(), the way panickingLogValuer panics from
+// LogValue().
+type panickingError struct{}
+
+func (panickingError) Error() string { panic("test error panic") }
+
+// TestRedactingHandler_ErrorValue covers error values logged as attributes. The
+// standard error types hold their message behind Error() and expose no field, so
+// walking them as structs suppressed every message; these cases fix that the
+// message survives and is redacted like a string.
+func TestRedactingHandler_ErrorValue(t *testing.T) {
+	logWithError := func(t *testing.T, errValue error) string {
+		t.Helper()
+		var buf bytes.Buffer
+		handler := NewRedactingHandler(slog.NewTextHandler(&buf, nil), DefaultConfig(), nil)
+		slog.New(handler).LogAttrs(context.Background(), slog.LevelError, "msg", slog.Any("error", errValue))
+		return buf.String()
+	}
+
+	tests := []struct {
+		name     string
+		err      error
+		contains string
+	}{
+		{name: "errors.New", err: errors.New("ld.so.cache not found"), contains: "ld.so.cache not found"},
+		{
+			name:     "wrapped with fmt.Errorf",
+			err:      fmt.Errorf("verification failed: %w", errors.New("hash mismatch")),
+			contains: "verification failed: hash mismatch",
+		},
+		{
+			name:     "Error() wins over exported fields",
+			err:      &exportedFieldError{Op: "open", Path: "/etc/config.toml"},
+			contains: "open /etc/config.toml",
+		},
+		{name: "LogValuer wins over Error()", err: logValuerError{}, contains: "logvalue message"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := logWithError(t, tt.err)
+			assert.Contains(t, output, tt.contains)
+			assert.NotContains(t, output, RedactionFailurePlaceholder)
+		})
+	}
+
+	t.Run("secrets in the message are redacted", func(t *testing.T) {
+		output := logWithError(t, fmt.Errorf("login failed: password=s3cr3t"))
+		assert.Contains(t, output, "login failed: password=[REDACTED]")
+		assert.NotContains(t, output, "s3cr3t")
+	})
+
+	t.Run("panicking Error fails secure", func(t *testing.T) {
+		output := logWithError(t, panickingError{})
+		assert.Contains(t, output, RedactionFailurePlaceholder)
+		assert.NotContains(t, output, "test error panic")
+	})
+
+	t.Run("nil pointer error is not called", func(t *testing.T) {
+		var typedNil *exportedFieldError
+		output := logWithError(t, typedNil)
+		assert.NotContains(t, output, RedactionFailurePlaceholder)
+	})
 }
 
 // TestRedactionContext_DepthTracking tests depth tracking

@@ -220,13 +220,23 @@
 
 **完了条件**: `make fmt && make test && make lint` が通り、`internal/redaction` と `internal/runner/base/security` の既存テストを 1 行も変更せずに合格すること。
 
+#### ステップ 2-3: `error` 値のログ属性の修正（実装時に発見した欠陥）
+
+本ブランチの作業中に、`slog.Any("error", err)` で渡した `error` の本文が `[REDACTION FAILED - OUTPUT SUPPRESSED]` に置き換わり、診断情報が失われていることを発見した。原因と規則は 02_architecture.md 3.7 に記録した。本計画に当初なかった作業であり、`bootstrap` が `slog.SetDefault` に `RedactingHandler` を入れているため本番の全ログ経路に及ぶ欠陥であることから、redaction 層を扱う本フェーズで併せて修正する。
+
+- [x] `processKindAny` の `LogValuer` 判定の直後に `error` 判定を追加し、`processError` へ振り分ける。
+- [x] `processError` を追加する。`Error()` を recover の下で呼び、その結果を文字列属性として `redactLogAttributeWithContext` に戻す。再帰深度の上限、非 nil インタフェース中の nil ポインタ、パニック時のプレースホルダーの扱いは 02_architecture.md 3.7 に従う。
+- [x] `TestRedactingHandler_ErrorValue` を追加する。`errors.New` と `fmt.Errorf`（`%w` でラップ）の本文が残ること、エクスポートされたフィールドを持つエラーでもフィールドのマップではなく `Error()` の本文が使われること、`error` と `slog.LogValuer` の両方を実装する型では `LogValue()` が優先されること、本文中の秘密（`password=s3cr3t`）が文字列属性と同じく置換されること、`Error()` がパニックする型ではプレースホルダーになること、非 nil インタフェース中の nil ポインタで `Error()` を呼ばないこと。
+
+**完了条件**: `make fmt && make test && make lint` が通り、既存テストの期待値を変更していないこと。
+
 ### PR-2 作成ポイント: key-name redaction coverage
 
-**対象ステップ**: 2-1 / 2-2
+**対象ステップ**: 2-1 / 2-2 / 2-3
 
 **推奨タイトル**: `feat(0163): extend key-name redaction to separators and quoted values`
 
-**レビュー観点**: 群 A / 群 B / 群 C の先頭境界が 02_architecture.md 3.2.4 の表と一致すること / V3 → V2 → V1 の選択肢順が保たれ引用符付きの値が V1 へ落ちないこと / 既存テストの期待値が 1 行も変わっていないこと（AC-08） / 新たな過剰 redaction が `"key": "us-east-1"` の 1 ケースに限られること（AC-09）
+**レビュー観点**: 群 A / 群 B / 群 C の先頭境界が 02_architecture.md 3.2.4 の表と一致すること / V3 → V2 → V1 の選択肢順が保たれ引用符付きの値が V1 へ落ちないこと / 既存テストの期待値が 1 行も変わっていないこと（AC-08） / 新たな過剰 redaction が `"key": "us-east-1"` の 1 ケースに限られること（AC-09） / ステップ 2-3 の `error` 判定が `LogValuer` 判定より後にあり、`Error()` が recover の下で呼ばれていること
 
 **実装モデル要件**: frontier-required
 
