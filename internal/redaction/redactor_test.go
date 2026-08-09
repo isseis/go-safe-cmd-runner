@@ -267,6 +267,391 @@ func TestRedactText_SpecialCharacters(t *testing.T) {
 	}
 }
 
+// TestRedactText_QuotedValue tests that a quoted value is redacted up to its
+// closing quote, including values that contain whitespace.
+func TestRedactText_QuotedValue(t *testing.T) {
+	config := DefaultConfig()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "double quoted value with space",
+			input:    `password="abc def"`,
+			expected: `password="[REDACTED]"`,
+		},
+		{
+			name:     "single quoted value with space",
+			input:    `password='abc def'`,
+			expected: `password='[REDACTED]'`,
+		},
+		{
+			name:     "unterminated double quote redacts to end of line",
+			input:    `password="abc def`,
+			expected: `password="[REDACTED]`,
+		},
+		{
+			name:     "unterminated single quote redacts to end of line",
+			input:    `password='abc def`,
+			expected: `password='[REDACTED]`,
+		},
+		{
+			name:     "quoted value keeps following text",
+			input:    `password="abc def" user=john`,
+			expected: `password="[REDACTED]" user=john`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := config.RedactText(tt.input)
+			assert.Equal(t, tt.expected, result)
+			assert.NotContains(t, result, "abc", "no fragment of the value may survive")
+			assert.NotContains(t, result, "def", "no fragment of the value may survive")
+		})
+	}
+}
+
+// TestRedactText_JSONForm tests the JSON shape, where the key name is quoted and
+// the separator is a colon.
+func TestRedactText_JSONForm(t *testing.T) {
+	config := DefaultConfig()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "json object field",
+			input:    `{"password": "secret"}`,
+			expected: `{"password": "[REDACTED]"}`,
+		},
+		{
+			name:     "json field without space after colon",
+			input:    `{"password":"secret"}`,
+			expected: `{"password":"[REDACTED]"}`,
+		},
+		{
+			name:     "json field among other fields",
+			input:    `{"user": "john", "password": "secret", "port": 8080}`,
+			expected: `{"user": "john", "password": "[REDACTED]", "port": 8080}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := config.RedactText(tt.input)
+			assert.Equal(t, tt.expected, result)
+			assert.NotContains(t, result, "secret")
+		})
+	}
+}
+
+// TestRedactText_SeparatorVariants tests separators other than a bare "=".
+func TestRedactText_SeparatorVariants(t *testing.T) {
+	config := DefaultConfig()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "colon and space",
+			input:    "password: secret",
+			expected: "password: [REDACTED]",
+		},
+		{
+			name:     "equals surrounded by spaces",
+			input:    "password = secret",
+			expected: "password = [REDACTED]",
+		},
+		{
+			name:     "space before colon only",
+			input:    "password :secret",
+			expected: "password :[REDACTED]",
+		},
+		{
+			name:     "equals followed by tab",
+			input:    "password=\tsecret",
+			expected: "password=\t[REDACTED]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := config.RedactText(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// TestRedactText_AlternativePriority tests that the quoted alternative wins over
+// the adjacent "=" alternative when both match at the same position, and that a
+// key that fails its boundary still falls through to the adjacent alternative.
+func TestRedactText_AlternativePriority(t *testing.T) {
+	config := DefaultConfig()
+
+	t.Run("quoted alternative wins for a key with a loose boundary", func(t *testing.T) {
+		result := config.RedactText(`password="abc def"`)
+		assert.Equal(t, `password="[REDACTED]"`, result)
+		assert.NotContains(t, result, ` def"`, "the adjacent alternative must not truncate at the space")
+	})
+
+	t.Run("common-word key without a boundary falls through to the adjacent form", func(t *testing.T) {
+		// "key" is preceded by "n", which is not an identifier-internal character
+		// or a quote, so the quoted alternative does not apply and the result is
+		// the same as before this coverage was added.
+		result := config.RedactText(`monkey="a b"`)
+		assert.Equal(t, `monkey=[REDACTED] b"`, result)
+	})
+}
+
+// TestRedactText_KeyGroupBehavior fixes the redaction outcome of every key of
+// DefaultKeyValuePatterns that is routed to the key/value path, for each of the
+// five value shapes, according to the key's boundary group.
+func TestRedactText_KeyGroupBehavior(t *testing.T) {
+	config := DefaultConfig()
+
+	// forms builds the five shapes under test for a given key.
+	type form struct {
+		name  string
+		input string
+	}
+	forms := func(key string) []form {
+		return []form{
+			{name: "adjacent_equals", input: key + "=xyz"},
+			{name: "colon_separator", input: key + ": xyz"},
+			{name: "spaced_equals", input: key + " = xyz"},
+			{name: "quoted_value", input: key + `="a b"`},
+			{name: "json_field", input: `"` + key + `": "xyz"`},
+		}
+	}
+
+	// redactedForms returns the expectation for keys whose boundary permits every
+	// shape (the specific and prefixed groups).
+	redactedForms := func(key string) []string {
+		return []string{
+			key + "=[REDACTED]",
+			key + ": [REDACTED]",
+			key + " = [REDACTED]",
+			key + `="[REDACTED]"`,
+			`"` + key + `": "[REDACTED]"`,
+		}
+	}
+
+	// commonWordForms returns the expectation for common-word keys. Only the
+	// adjacent form and the quoted key name provide the required boundary; the
+	// bare colon and spaced-equals shapes stay untouched so ordinary prose is not
+	// redacted, and the quoted-value shape falls through to the adjacent form.
+	commonWordForms := func(key string) []string {
+		return []string{
+			key + "=[REDACTED]",
+			key + ": xyz",
+			key + " = xyz",
+			key + `=[REDACTED] b"`,
+			`"` + key + `": "[REDACTED]"`,
+		}
+	}
+
+	tests := []struct {
+		key      string
+		expected []string
+	}{
+		// Specific keys: every shape is redacted.
+		{key: "password", expected: redactedForms("password")},
+		{key: "api_key", expected: redactedForms("api_key")},
+		// Common-word keys: limited to identifier-internal and quoted boundaries.
+		{key: "token", expected: commonWordForms("token")},
+		{key: "key", expected: commonWordForms("key")},
+		{key: "secret", expected: commonWordForms("secret")},
+		// Prefixed keys: the leading "_" is the boundary, so every shape is
+		// redacted without any additional boundary requirement.
+		{key: "_PASSWORD", expected: redactedForms("_PASSWORD")},
+		{key: "_TOKEN", expected: redactedForms("_TOKEN")},
+		{key: "_KEY", expected: redactedForms("_KEY")},
+		{key: "_SECRET", expected: redactedForms("_SECRET")},
+	}
+
+	for _, tt := range tests {
+		for i, f := range forms(tt.key) {
+			t.Run(tt.key+"/"+f.name, func(t *testing.T) {
+				assert.Equal(t, tt.expected[i], config.RedactText(f.input))
+			})
+		}
+	}
+}
+
+// TestKeyBoundaryGroup_Classification tests that every default key lands in the
+// intended boundary group, and that a user-added key gets the loose boundary.
+func TestKeyBoundaryGroup_Classification(t *testing.T) {
+	tests := []struct {
+		key      string
+		expected boundaryGroup
+	}{
+		{key: "password", expected: boundaryGroupSpecific},
+		{key: "api_key", expected: boundaryGroupSpecific},
+		{key: "token", expected: boundaryGroupCommonWord},
+		{key: "key", expected: boundaryGroupCommonWord},
+		{key: "secret", expected: boundaryGroupCommonWord},
+		{key: "_PASSWORD", expected: boundaryGroupPrefixed},
+		{key: "_TOKEN", expected: boundaryGroupPrefixed},
+		{key: "_KEY", expected: boundaryGroupPrefixed},
+		{key: "_SECRET", expected: boundaryGroupPrefixed},
+		// A key the user adds is treated as a declaration that the key marks a
+		// secret, so it gets the loose boundary rather than the strict one.
+		{key: "passphrase", expected: boundaryGroupSpecific},
+		// Case does not affect the common-word lookup.
+		{key: "Token", expected: boundaryGroupCommonWord},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			assert.Equal(t, tt.expected, keyBoundaryGroup(tt.key))
+		})
+	}
+
+	t.Run("remaining default keys never reach keyBoundaryGroup", func(t *testing.T) {
+		// The colon and space paths claim these keys before the key/value path,
+		// so their boundary group is never consulted.
+		classified := map[string]struct{}{}
+		for _, tt := range tests {
+			classified[tt.key] = struct{}{}
+		}
+		for _, key := range DefaultKeyValuePatterns() {
+			if _, ok := classified[key]; ok {
+				continue
+			}
+			assert.True(t, strings.Contains(key, ":") || strings.Contains(key, " "),
+				"unclassified default key %q must be routed to the colon or space path", key)
+		}
+	})
+
+	t.Run("user-added key is redacted with the loose boundary", func(t *testing.T) {
+		config := DefaultConfig()
+		config.KeyValuePatterns = append(config.KeyValuePatterns, "passphrase")
+		assert.Equal(t, "passphrase: [REDACTED]", config.RedactText("passphrase: xyz"))
+	})
+}
+
+// TestRedactText_ExistingBehaviorPreserved tests that the shapes handled by the
+// colon path, the space path and the "key contains =" rule are unchanged.
+func TestRedactText_ExistingBehaviorPreserved(t *testing.T) {
+	config := DefaultConfig()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "authorization header keeps scheme",
+			input:    "Authorization: Bearer xxx",
+			expected: "Authorization: Bearer [REDACTED]",
+		},
+		{
+			name:     "bearer prefix is preserved",
+			input:    "Bearer xxx",
+			expected: "Bearer [REDACTED]",
+		},
+		{
+			name:     "basic prefix is preserved",
+			input:    "Basic xxx",
+			expected: "Basic [REDACTED]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, config.RedactText(tt.input))
+		})
+	}
+
+	t.Run("key containing equals redacts only the adjacent token", func(t *testing.T) {
+		result := config.performKeyValuePatternRedaction("Authorization=Bearer token", "Authorization=", "[REDACTED]")
+		assert.Equal(t, "Authorization=[REDACTED] token", result)
+	})
+}
+
+// TestRedactText_NoNewOverRedaction fixes the texts that must stay untouched, so
+// that widening the separator and quote coverage does not start redacting
+// ordinary diagnostic output.
+func TestRedactText_NoNewOverRedaction(t *testing.T) {
+	config := DefaultConfig()
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "common word key preceded by a space",
+			input: "Primary key: id",
+		},
+		{
+			name:  "common word key in prose preceded by a space",
+			input: "unexpected token: '}'",
+		},
+		{
+			name:  "common word key preceded by an opening bracket",
+			input: "map[key:value]",
+		},
+		{
+			name:  "common word key preceded by an opening brace",
+			input: "configMapKeyRef: {key: LOG_LEVEL}",
+		},
+		{
+			name:  "key name continues into another word",
+			input: "keyboard: qwerty",
+		},
+		{
+			name:  "key name is a path segment",
+			input: "/usr/local/key/path",
+		},
+		{
+			name:  "flag that matches no key",
+			input: "--timeout=30",
+		},
+		{
+			name:  "separator is not allowed to span a newline",
+			input: "password:\nsecret",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.input, config.RedactText(tt.input))
+		})
+	}
+}
+
+// TestRedactText_IntentionalOverRedaction fixes the one shape that is newly
+// redacted even though it holds no secret. A common-word key quoted as a
+// structured-data field name cannot be told apart from a real secret by the key
+// name alone, and excluding it would also stop the JSON shape from being
+// redacted at all.
+func TestRedactText_IntentionalOverRedaction(t *testing.T) {
+	config := DefaultConfig()
+	assert.Equal(t, `"key": "[REDACTED]"`, config.RedactText(`"key": "us-east-1"`))
+}
+
+// TestRedactText_LongTextUnchanged tests that a long text holding nothing to
+// redact is returned unchanged.
+func TestRedactText_LongTextUnchanged(t *testing.T) {
+	config := DefaultConfig()
+
+	const line = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod\n"
+	var sb strings.Builder
+	for sb.Len() < 10*1024 {
+		sb.WriteString(line)
+	}
+	input := sb.String()
+
+	assert.Equal(t, input, config.RedactText(input))
+}
+
 // TestRedactLogAttribute_SensitiveKeys tests redaction of sensitive key names
 func TestRedactLogAttribute_SensitiveKeys(t *testing.T) {
 	config := DefaultConfig()

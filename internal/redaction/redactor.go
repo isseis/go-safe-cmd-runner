@@ -238,21 +238,276 @@ func (c *Config) performColonPatternRedaction(text, pattern, placeholder string)
 	})
 }
 
+// boundaryGroup classifies a key by how strict a boundary must precede the key
+// name before a separator-based or quoted-value match is allowed. It applies
+// only to keys routed to performKeyValuePatternRedaction that do not contain
+// "=" themselves.
+type boundaryGroup int
+
+const (
+	// boundaryGroupSpecific covers keys specific enough that a match at any
+	// non-alphanumeric position is more likely to mark a secret than to be prose
+	// (e.g. "password", "api_key").
+	boundaryGroupSpecific boundaryGroup = iota
+	// boundaryGroupCommonWord covers keys that are ordinary English words and so
+	// occur in diagnostic prose ("Primary key: id", "unexpected token: '}'").
+	// Only identifier-internal characters and quotes count as a boundary, which
+	// leaves prose intact while still matching structured data such as
+	// "aws_secret_access_key: ...".
+	boundaryGroupCommonWord
+	// boundaryGroupPrefixed covers keys that already begin with a
+	// non-alphanumeric character (e.g. "_TOKEN"). The key carries its own
+	// boundary, so no additional one is required.
+	boundaryGroupPrefixed
+)
+
+// commonWordKeys holds the lower-cased keys classified as
+// boundaryGroupCommonWord. It is deliberately not a configuration item:
+// whether a word is frequent in English prose is a property of the language,
+// not of a deployment, so a user cannot meaningfully decide it per install.
+// Adding a key to KeyValuePatterns is instead read as a declaration that the
+// key marks a secret, which is why user-added keys default to the loose
+// boundary. Extending this set is a code change. Read-only after init.
+var commonWordKeys = map[string]struct{}{
+	"key":    {},
+	"token":  {},
+	"secret": {},
+}
+
+const (
+	// keyValueSeparator matches "=" or ":" with optional surrounding spaces and
+	// tabs. Newlines are excluded so that a key at the end of one line never
+	// consumes the content of the next line.
+	keyValueSeparator = `[ \t]*[:=][ \t]*`
+	// keyNameClosingQuote matches the optional quote that closes a quoted key
+	// name, as in JSON's "password": "x". It is preserved in the output so the
+	// surrounding structure stays intact.
+	keyNameClosingQuote = `["']?`
+	// looseKeyBoundary matches the start of the text or any non-alphanumeric
+	// character.
+	looseKeyBoundary = `^|[^A-Za-z0-9]`
+	// strictKeyBoundary matches only characters that appear inside an identifier
+	// or that quote a key name. A space deliberately does not qualify: allowing
+	// it would redact ordinary diagnostics such as "Primary key: id".
+	strictKeyBoundary = `["'_.\-]`
+)
+
+// isASCIIAlphanumeric reports whether c is one of the characters that
+// looseKeyBoundary negates.
+func isASCIIAlphanumeric(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+}
+
+// keyBoundaryGroup derives the boundary group from the key string. Callers must
+// already have routed keys containing ":" or " " to the colon and space paths,
+// and keys containing "=" keep their own unchanged rule.
+func keyBoundaryGroup(key string) boundaryGroup {
+	if key == "" {
+		return boundaryGroupSpecific
+	}
+	// Classify on the first byte against the same ASCII alphanumeric set that
+	// looseKeyBoundary negates, so the classification and the boundary character
+	// class cannot disagree. A leading multi-byte rune starts with a byte outside
+	// that set and is therefore treated as already carrying a boundary.
+	if !isASCIIAlphanumeric(key[0]) {
+		return boundaryGroupPrefixed
+	}
+	if _, ok := commonWordKeys[strings.ToLower(key)]; ok {
+		return boundaryGroupCommonWord
+	}
+	return boundaryGroupSpecific
+}
+
+// keyBoundaryPattern returns the regex fragment matching the single character
+// that must precede the key name. The fragment may contain a top-level
+// alternation and an empty branch, so callers must wrap it in a group.
+func keyBoundaryPattern(group boundaryGroup) string {
+	switch group {
+	case boundaryGroupCommonWord:
+		return strictKeyBoundary
+	case boundaryGroupPrefixed:
+		return ""
+	case boundaryGroupSpecific:
+		return looseKeyBoundary
+	default:
+		return looseKeyBoundary
+	}
+}
+
+// buildKeyValueRegex builds the alternation used for keys that do not contain
+// "=" themselves. The alternatives are ordered quoted value -> separated value
+// -> adjacent "=" value. Go's regexp prefers the earliest alternative that
+// matches at a given position, so a quoted value is always consumed up to its
+// closing quote instead of being truncated at the first space by the adjacent
+// alternative. Only the first two alternatives carry a boundary; the adjacent
+// form keeps its existing unrestricted behavior.
+func buildKeyValueRegex(escapedKey string, group boundaryGroup) string {
+	boundary := keyBoundaryPattern(group)
+
+	// quoted builds one quoted-value alternative. The opening quote is matched
+	// literally rather than captured because RE2 has no backreference to require
+	// the closing quote to be of the same kind, so each quote character needs its
+	// own alternative. When the closing quote is missing (a truncated log line)
+	// the value group runs to the end of the line and everything after the
+	// opening quote is redacted.
+	quoted := func(prefix, quote string) string {
+		return `(?P<` + prefix + `Boundary>` + boundary + `)` +
+			`(?P<` + prefix + `Key>` + escapedKey + `)` +
+			`(?P<` + prefix + `KeyQuote>` + keyNameClosingQuote + `)` +
+			`(?P<` + prefix + `Separator>` + keyValueSeparator + `)` +
+			quote +
+			`(?P<` + prefix + `Value>[^` + quote + `\r\n]*)` +
+			`(?P<` + prefix + `CloseQuote>` + quote + `?)`
+	}
+
+	separated := `(?P<sepBoundary>` + boundary + `)` +
+		`(?P<sepKey>` + escapedKey + `)` +
+		`(?P<sepKeyQuote>` + keyNameClosingQuote + `)` +
+		`(?P<sepSeparator>` + keyValueSeparator + `)` +
+		`(?P<sepValue>\S+)`
+
+	adjacent := `(?P<adjKey>` + escapedKey + `)(?P<adjSeparator>=)(?P<adjValue>\S+)`
+
+	return `(?i)(?:` + quoted("dq", `"`) + `|` + quoted("sq", `'`) + `|` + separated + `|` + adjacent + `)`
+}
+
+// keyValueAlternative locates the submatches of one alternative of the regex
+// built by buildKeyValueRegex. An index is -1 when the alternative has no such
+// group. openQuote is the value's opening quote, which is matched literally and
+// therefore has no submatch to read it back from.
+type keyValueAlternative struct {
+	boundary   int
+	key        int
+	keyQuote   int
+	separator  int
+	closeQuote int
+	openQuote  string
+}
+
+// keyValueAlternatives returns the alternatives in the same priority order as
+// buildKeyValueRegex wrote them.
+func keyValueAlternatives(re *regexp.Regexp) []keyValueAlternative {
+	quoted := func(prefix, quote string) keyValueAlternative {
+		return keyValueAlternative{
+			boundary:   re.SubexpIndex(prefix + "Boundary"),
+			key:        re.SubexpIndex(prefix + "Key"),
+			keyQuote:   re.SubexpIndex(prefix + "KeyQuote"),
+			separator:  re.SubexpIndex(prefix + "Separator"),
+			closeQuote: re.SubexpIndex(prefix + "CloseQuote"),
+			openQuote:  quote,
+		}
+	}
+	return []keyValueAlternative{
+		quoted("dq", `"`),
+		quoted("sq", `'`),
+		{
+			boundary:   re.SubexpIndex("sepBoundary"),
+			key:        re.SubexpIndex("sepKey"),
+			keyQuote:   re.SubexpIndex("sepKeyQuote"),
+			separator:  re.SubexpIndex("sepSeparator"),
+			closeQuote: -1,
+		},
+		{
+			boundary:   -1,
+			key:        re.SubexpIndex("adjKey"),
+			keyQuote:   -1,
+			separator:  re.SubexpIndex("adjSeparator"),
+			closeQuote: -1,
+		},
+	}
+}
+
+// submatch returns the text of submatch index i within match m, or "" when the
+// group does not exist or did not participate in the match.
+func submatch(text string, m []int, i int) string {
+	if i < 0 || 2*i+1 >= len(m) || m[2*i] < 0 {
+		return ""
+	}
+	return text[m[2*i]:m[2*i+1]]
+}
+
+// matchedAlternative returns the first alternative that participated in the
+// match. Exactly one alternative participates per match, and every alternative
+// has a key group, so the key group's participation identifies it.
+func matchedAlternative(alternatives []keyValueAlternative, m []int) (keyValueAlternative, bool) {
+	for _, alt := range alternatives {
+		if alt.key >= 0 && 2*alt.key+1 < len(m) && m[2*alt.key] >= 0 {
+			return alt, true
+		}
+	}
+	return keyValueAlternative{}, false
+}
+
+// replaceKeyValueMatches rebuilds every match, preserving the boundary
+// character, the original spelling of the key, the key's closing quote, the
+// separator and the value's quotes, and replacing only the value itself.
+//
+// Matches are rebuilt from FindAllStringSubmatchIndex rather than from
+// ReplaceAllStringFunc because that callback receives only the matched text:
+// re-running the regex on that text alone can select a different alternative
+// than the one that matched in context. A match that fell through to the
+// adjacent alternative because the preceding character failed the boundary
+// would match a quoted or separated alternative once that context is gone.
+func replaceKeyValueMatches(re *regexp.Regexp, text, placeholder string) string {
+	matches := re.FindAllStringSubmatchIndex(text, -1)
+	if len(matches) == 0 {
+		return text
+	}
+
+	alternatives := keyValueAlternatives(re)
+	var b strings.Builder
+	b.Grow(len(text))
+	last := 0
+	for _, m := range matches {
+		alt, ok := matchedAlternative(alternatives, m)
+		if !ok {
+			// Defensive: no alternative claimed the match, so leave it untouched.
+			continue
+		}
+		b.WriteString(text[last:m[0]])
+		b.WriteString(submatch(text, m, alt.boundary))
+		b.WriteString(submatch(text, m, alt.key))
+		b.WriteString(submatch(text, m, alt.keyQuote))
+		b.WriteString(submatch(text, m, alt.separator))
+		b.WriteString(alt.openQuote)
+		b.WriteString(placeholder)
+		b.WriteString(submatch(text, m, alt.closeQuote))
+		last = m[1]
+	}
+	b.WriteString(text[last:])
+	return b.String()
+}
+
 // performKeyValuePatternRedaction handles patterns like "key=value"
 func (c *Config) performKeyValuePatternRedaction(text, key, placeholder string) string {
 	// Escape key for regex and create case-insensitive pattern
-	// Match: key + optional equals sign + value (non-whitespace characters)
 	escapedKey := regexp.QuoteMeta(key)
-	var regexPattern string
 
 	if strings.Contains(key, "=") {
-		// Key already contains "=", match it exactly + value
-		regexPattern = `(?i)(` + escapedKey + `)(\S+)`
-	} else {
-		// Key without "=", add it and match value
-		regexPattern = `(?i)(` + escapedKey + `)(=)(\S+)`
+		// Key already contains "=", match it exactly + value. This form is left
+		// unchanged: the caller specified the separator as part of the key, so
+		// there is no separator or quoting left for this function to interpret.
+		regexPattern := `(?i)(` + escapedKey + `)(\S+)`
+		re := compileRedactionRegex(regexPattern, map[string]string{
+			"function": "performKeyValuePatternRedaction",
+			"key":      key,
+		})
+		if re == nil {
+			return RedactionFailurePlaceholder
+		}
+		return re.ReplaceAllStringFunc(text, func(match string) string {
+			submatches := re.FindStringSubmatch(match)
+			const minSubmatchCount = 3
+			if len(submatches) < minSubmatchCount {
+				return match
+			}
+			originalKey := submatches[1] // Original key preserving case
+			return originalKey + placeholder
+		})
 	}
 
+	// Key without "=": match a quoted, separated or adjacent value.
+	regexPattern := buildKeyValueRegex(escapedKey, keyBoundaryGroup(key))
 	re := compileRedactionRegex(regexPattern, map[string]string{
 		"function": "performKeyValuePatternRedaction",
 		"key":      key,
@@ -261,24 +516,7 @@ func (c *Config) performKeyValuePatternRedaction(text, key, placeholder string) 
 		return RedactionFailurePlaceholder
 	}
 
-	// Replace matching key=value pairs with key=placeholder
-	return re.ReplaceAllStringFunc(text, func(match string) string {
-		submatches := re.FindStringSubmatch(match)
-		const minSubmatchCount = 3
-		if len(submatches) < minSubmatchCount {
-			return match
-		}
-
-		if strings.Contains(key, "=") {
-			// Key already contains "=" (e.g., "Authorization=")
-			originalKey := submatches[1] // Original key preserving case
-			return originalKey + placeholder
-		}
-		// Key without "=" (e.g., "password")
-		originalKey := submatches[1] // Original key preserving case
-		equals := submatches[2]      // The "=" character
-		return originalKey + equals + placeholder
-	})
+	return replaceKeyValueMatches(re, text, placeholder)
 }
 
 // RedactingHandler is a decorator that redacts sensitive information before forwarding to the underlying handler
