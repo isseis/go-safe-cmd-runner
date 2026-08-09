@@ -302,6 +302,26 @@ func TestRedactText_QuotedValue(t *testing.T) {
 			input:    `password="abc def" user=john`,
 			expected: `password="[REDACTED]" user=john`,
 		},
+		{
+			name:     "common word key at start of text is redacted in full",
+			input:    `TOKEN="abc def"`,
+			expected: `TOKEN="[REDACTED]"`,
+		},
+		{
+			name:     "two quoted values in one text",
+			input:    `password="abc def" api_key="abc def"`,
+			expected: `password="[REDACTED]" api_key="[REDACTED]"`,
+		},
+		{
+			name:     "quoted value on a later line",
+			input:    "line one\npassword=\"abc def\"\nline three",
+			expected: "line one\npassword=\"[REDACTED]\"\nline three",
+		},
+		{
+			name:     "unterminated quote stops at the newline",
+			input:    "password=\"abc def\nline two",
+			expected: "password=\"[REDACTED]\nline two",
+		},
 	}
 
 	for _, tt := range tests {
@@ -312,6 +332,28 @@ func TestRedactText_QuotedValue(t *testing.T) {
 			assert.NotContains(t, result, "def", "no fragment of the value may survive")
 		})
 	}
+}
+
+// TestRedactText_QuotedValueKnownLimits fixes the two quoted-value shapes whose
+// handling is deliberately incomplete, so that a later reader can tell the
+// behavior is known rather than accidental.
+func TestRedactText_QuotedValueKnownLimits(t *testing.T) {
+	config := DefaultConfig()
+
+	t.Run("escaped quote ends the value early", func(t *testing.T) {
+		// Escaped quotes are out of scope: the pattern complexity and the
+		// false-positive surface are not worth the rarity of the shape in command
+		// output. The tail after the escaped quote therefore survives.
+		assert.Equal(t, `{"password":"[REDACTED]"b","next":"c"}`,
+			config.RedactText(`{"password":"a\"b","next":"c"}`))
+	})
+
+	t.Run("empty quoted value is still marked as redacted", func(t *testing.T) {
+		// An empty value carries no secret, but distinguishing it would require a
+		// separate alternative and would report the absence of a value to anyone
+		// reading the log, so the placeholder is emitted unconditionally.
+		assert.Equal(t, `password="[REDACTED]"`, config.RedactText(`password=""`))
+	})
 }
 
 // TestRedactText_JSONForm tests the JSON shape, where the key name is quoted and
@@ -379,12 +421,23 @@ func TestRedactText_SeparatorVariants(t *testing.T) {
 			input:    "password=\tsecret",
 			expected: "password=\t[REDACTED]",
 		},
+		{
+			name:     "match on a later line",
+			input:    "line one\npassword: secret\nline three",
+			expected: "line one\npassword: [REDACTED]\nline three",
+		},
+		{
+			name:     "two separated values in one text",
+			input:    "password: secret api_key: secret",
+			expected: "password: [REDACTED] api_key: [REDACTED]",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := config.RedactText(tt.input)
 			assert.Equal(t, tt.expected, result)
+			assert.NotContains(t, result, "secret", "no fragment of the value may survive")
 		})
 	}
 }
@@ -443,16 +496,17 @@ func TestRedactText_KeyGroupBehavior(t *testing.T) {
 		}
 	}
 
-	// commonWordForms returns the expectation for common-word keys. Only the
-	// adjacent form and the quoted key name provide the required boundary; the
-	// bare colon and spaced-equals shapes stay untouched so ordinary prose is not
-	// redacted, and the quoted-value shape falls through to the adjacent form.
+	// commonWordForms returns the expectation for common-word keys. The bare
+	// colon and spaced-equals shapes stay untouched so that ordinary prose such
+	// as "Primary key: id" is not redacted. The adjacent form carries no boundary
+	// requirement at all, and the double-quoted value is a structural signal
+	// strong enough to take the loose boundary, so both are redacted in full.
 	commonWordForms := func(key string) []string {
 		return []string{
 			key + "=[REDACTED]",
 			key + ": xyz",
 			key + " = xyz",
-			key + `=[REDACTED] b"`,
+			key + `="[REDACTED]"`,
 			`"` + key + `": "[REDACTED]"`,
 		}
 	}
@@ -539,6 +593,11 @@ func TestKeyBoundaryGroup_Classification(t *testing.T) {
 
 // TestRedactText_ExistingBehaviorPreserved tests that the shapes handled by the
 // colon path, the space path and the "key contains =" rule are unchanged.
+//
+// The first three rows overlap with TestRedactText_ColonPatterns and
+// TestRedactText_SpacePatterns on purpose: those tests describe what the colon
+// and space paths do, while this one is the regression guard that the key/value
+// path's new alternatives did not reach into them.
 func TestRedactText_ExistingBehaviorPreserved(t *testing.T) {
 	config := DefaultConfig()
 
@@ -618,6 +677,20 @@ func TestRedactText_NoNewOverRedaction(t *testing.T) {
 			name:  "separator is not allowed to span a newline",
 			input: "password:\nsecret",
 		},
+		{
+			// An object value has no whitespace to stop at, so redacting it would
+			// delete every sibling field and leave the line unparseable.
+			name:  "compact json object value",
+			input: `{"password":{"a":1},"port":80}`,
+		},
+		{
+			name:  "compact json array value",
+			input: `{"api_key":["a","b"],"port":80}`,
+		},
+		{
+			name:  "brace value after a colon separator",
+			input: "password: {json: here} trailing",
+		},
 	}
 
 	for _, tt := range tests {
@@ -627,14 +700,45 @@ func TestRedactText_NoNewOverRedaction(t *testing.T) {
 	}
 }
 
-// TestRedactText_IntentionalOverRedaction fixes the one shape that is newly
-// redacted even though it holds no secret. A common-word key quoted as a
-// structured-data field name cannot be told apart from a real secret by the key
-// name alone, and excluding it would also stop the JSON shape from being
-// redacted at all.
+// TestRedactText_IntentionalOverRedaction fixes the shapes that are newly
+// redacted even though they hold no secret. Neither can be told apart from a
+// real secret by the key name and the shape alone, and excluding either would
+// also stop a required shape from being redacted.
 func TestRedactText_IntentionalOverRedaction(t *testing.T) {
 	config := DefaultConfig()
-	assert.Equal(t, `"key": "[REDACTED]"`, config.RedactText(`"key": "us-east-1"`))
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			// A common-word key quoted as a structured-data field name. Excluding
+			// this would also stop the JSON shape from being redacted at all.
+			name:     "common word key as a json field name",
+			input:    `"key": "us-east-1"`,
+			expected: `"key": "[REDACTED]"`,
+		},
+		{
+			// A specific key followed by a colon in prose. This is the same shape
+			// as "password: secret", which must be redacted, so the two cannot be
+			// told apart; the first word of the message is lost.
+			name:     "specific key followed by prose",
+			input:    "failed to read password: permission denied",
+			expected: "failed to read password: [REDACTED] denied",
+		},
+		{
+			name:     "specific key followed by prose mid-sentence",
+			input:    "could not parse api_key: unexpected EOF",
+			expected: "could not parse api_key: [REDACTED] EOF",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, config.RedactText(tt.input))
+		})
+	}
 }
 
 // TestRedactText_LongTextUnchanged tests that a long text holding nothing to

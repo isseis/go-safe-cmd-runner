@@ -187,21 +187,23 @@
 - [x] `performKeyValuePatternRedaction` の「キーが `=` を含まない」分岐で、V3 → V2 → V1 の順に並べた選択肢を生成する（02_architecture.md 3.2.3）。区切りの空白は `[ \t]*` のみとし改行を含めない。
 - [x] V2・V3 のキー名側の閉じ引用符の扱い、値側の引用符の保持、閉じ引用符がない場合の行末までの置換を、02_architecture.md 3.2.5 のとおりに実装する。`"` 用と `'` 用の選択肢は別々に書く（RE2 に後方参照がないため）。
 - [x] キーが `=` を含む分岐は変更しない。
+- [x] **レビューで判明した 2 点を 02_architecture.md へ反映のうえ実装した**（設計文書本体を修正済み）。(1) V2 の値の先頭が `{` / `[` の場合は一致させない（3.2.2 に追記）。空白のない構造化データで行の残り全体を飲み込み、兄弟フィールドを消す過剰 redaction を防ぐため。(2) 群 B の二重引用符版 V3 にだけ緩い先頭境界を適用する（3.2.4 に追記）。厳しい境界のままでは `TOKEN="abc def"` が V1 へ落ち秘密の後半が平文で残るため。単一引用符版は `unexpected token: '}'` を守るため緩めない。
+- [x] 各選択肢が捕捉するのは値のみとする。境界・キー・キー側引用符・区切り・値側引用符は一致範囲の内側にあるため、入力からそのまま複写でき、捕捉グループを必要としない。捕捉グループ数を選択肢あたり 1 個に抑えることで、キー 1 個あたり約 20 個の捕捉グループを追跡する場合に比べ `RedactText` の実測が 3.1 倍の劣化から 1.11 倍に収まる（`BenchmarkRedactText`。10 KB 入力、拡張前 45.1 µs → 50.2 µs）。
 - [x] 再構築を `FindAllStringSubmatchIndex` の結果から行い、`ReplaceAllStringFunc` は使わない（**本計画からの変更**。当初は「`ReplaceAllStringFunc` 内の再構築ロジックを拡張する」としていた）。`ReplaceAllStringFunc` のコールバックが受け取るのは一致した部分文字列だけであり、その文字列に正規表現を再適用すると、文脈では先頭境界を満たさず V1 へ落ちた一致が、先頭の文脈を失ったことで V2・V3 として再解釈されうる（群 A の先頭境界がテキスト先頭を許すため。例: `xpassword="a b"` の V1 一致 `password="a` を単体で再一致させると V3 になる）。どの選択肢が一致したかは、選択肢ごとのキー部分マッチが一致に参加したかで判別する。
 
 #### ステップ 2-2: テスト
 
 `internal/redaction/redactor_test.go` に以下を追加する。既存テスト関数の期待値は変更しない。
 
-- [x] `TestRedactText_QuotedValue`: `password="abc def"` → `password="[REDACTED]"`、`password='abc def'` → `password='[REDACTED]'`、閉じ引用符なし `password="abc def` → 行末まで置換。置換後に元の値の断片が残らないことを `assert.NotContains` で確かめる。
+- [x] `TestRedactText_QuotedValue`: `password="abc def"` → `password="[REDACTED]"`、`password='abc def'` → `password='[REDACTED]'`、閉じ引用符なし `password="abc def` → 行末まで置換。置換後に元の値の断片が残らないことを `assert.NotContains` で確かめる。**追加**: 群 B のキーがテキスト先頭に現れる `TOKEN="abc def"` → `TOKEN="[REDACTED]"`、複数一致、行をまたぐ入力、および閉じ引用符がない場合に改行で止まること。さらに `TestRedactText_QuotedValueKnownLimits` で、対象外と定めたエスケープ引用符（3.2.5）と空の引用符付き値の結果を固定する。
 - [x] `TestRedactText_JSONForm`: `"password": "secret"` → `"password": "[REDACTED]"`。
-- [x] `TestRedactText_SeparatorVariants`: `password: secret`、`password = secret`、`password :secret`、`password=\tsecret` の置換。
+- [x] `TestRedactText_SeparatorVariants`: `password: secret`、`password = secret`、`password :secret`、`password=\tsecret` の置換。複数一致と行をまたぐ入力も含め、各ケースで `assert.NotContains` により値の断片が残らないことを確かめる。
 - [x] `TestRedactText_AlternativePriority`: `password="abc def"` が V1 ではなく V3 として処理されること（結果に ` def"` が残らないこと）と、`monkey="a b"` が V1 へ落ちて `monkey=[REDACTED] b"` になること。
-- [x] `TestRedactText_KeyGroupBehavior`: `DefaultKeyValuePatterns()` の全キーを表駆動で回し、群ごとの期待値を固定する。群 C は先頭境界を課さないため V2 / V3 も無条件に適用される点に注意し、`_KEY=secret` / `_KEY: secret` / `_KEY = secret` / `_KEY="a b"` / `"_KEY": "secret"` の 5 形すべてが置換されることを明示的に固定する（「現行どおり」という曖昧な期待値にしない）。群 A は 3 形式すべて置換、群 B は引用符付きと識別子内境界（`_` / `-` / `.`）のみ置換。
+- [x] `TestRedactText_KeyGroupBehavior`: `DefaultKeyValuePatterns()` の全キーを表駆動で回し、群ごとの期待値を固定する。群 C は先頭境界を課さないため V2 / V3 も無条件に適用される点に注意し、`_KEY=secret` / `_KEY: secret` / `_KEY = secret` / `_KEY="a b"` / `"_KEY": "secret"` の 5 形すべてが置換されることを明示的に固定する（「現行どおり」という曖昧な期待値にしない）。群 A は 3 形式すべて置換、群 B は二重引用符付きの値（緩い先頭境界。3.2.4 の例外）と識別子内境界（`_` / `-` / `.`）および引用符付きキー名のみ置換。
 - [x] `TestKeyBoundaryGroup_Classification`: 既定 12 キーが意図した群に落ちること、および `KeyValuePatterns` に `passphrase` を追加すると群 A として扱われること。
 - [x] `TestRedactText_ExistingBehaviorPreserved`: `Authorization: Bearer xxx`、`Bearer xxx`、`Basic xxx`、キー自身が `=` を含む場合の結果が現行と同一であること。
-- [x] `TestRedactText_NoNewOverRedaction`: 02_architecture.md 3.2.6 の「置換されない」行をすべて固定する（`Primary key: id`、`unexpected token: '}'`、`map[key:value]`、`configMapKeyRef: {key: LOG_LEVEL}`、`keyboard: qwerty`、`/usr/local/key/path`、`--timeout=30`、`password:\nsecret`）。群 B の先頭境界が半角スペース・`[`・`{` の 3 ケースを、それぞれ独立したテーブル行として明示する。
-- [x] `TestRedactText_IntentionalOverRedaction`: `"key": "us-east-1"` が `"key": "[REDACTED]"` になること。AC-09 の除外規定に該当する意図した変更である旨を英語コメントで残す。
+- [x] `TestRedactText_NoNewOverRedaction`: 02_architecture.md 3.2.6 の「置換されない」行をすべて固定する（`Primary key: id`、`unexpected token: '}'`、`map[key:value]`、`configMapKeyRef: {key: LOG_LEVEL}`、`keyboard: qwerty`、`/usr/local/key/path`、`--timeout=30`、`password:\nsecret`）。群 B の先頭境界が半角スペース・`[`・`{` の 3 ケースを、それぞれ独立したテーブル行として明示する。**追加**: 値の先頭が `{` / `[` のため V2 を適用しない 3 ケース（`{"password":{"a":1},"port":80}`、`{"api_key":["a","b"],"port":80}`、`password: {json: here} trailing`）も固定する。
+- [x] `TestRedactText_IntentionalOverRedaction`: `"key": "us-east-1"` が `"key": "[REDACTED]"` になること（第 1 類）。**追加**: 群 A のキーが散文中でコロンを伴う第 2 類（`failed to read password: permission denied` → `... password: [REDACTED] denied`）も固定する。いずれも AC-09 の除外規定に該当する意図した変更である旨を英語コメントで残す。
 - [x] `TestRedactText_LongTextUnchanged`: 置換対象を含まない 10 KB 程度のテキストに対し `RedactText` の戻り値が入力と一致すること。
 
 **完了条件**: `make fmt && make test && make lint` が通り、`internal/redaction` と `internal/runner/base/security` の既存テストを 1 行も変更せずに合格すること。

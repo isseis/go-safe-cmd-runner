@@ -285,11 +285,19 @@ const (
 	keyNameClosingQuote = `["']?`
 	// looseKeyBoundary matches the start of the text or any non-alphanumeric
 	// character.
-	looseKeyBoundary = `^|[^A-Za-z0-9]`
+	looseKeyBoundary = `(?:^|[^A-Za-z0-9])`
 	// strictKeyBoundary matches only characters that appear inside an identifier
 	// or that quote a key name. A space deliberately does not qualify: allowing
 	// it would redact ordinary diagnostics such as "Primary key: id".
 	strictKeyBoundary = `["'_.\-]`
+	// unquotedValue matches a value that is not wrapped in quotes. It ends at the
+	// first whitespace, as it always has. It additionally refuses to start on a
+	// "{" or "[" so that a key whose value is a nested object or array does not
+	// swallow the remainder of a compact JSON line; such a value has no
+	// whitespace to stop at, so matching it would delete every sibling field and
+	// leave unbalanced brackets behind. Refusing the match leaves those lines
+	// exactly as they were before the separator coverage was widened.
+	unquotedValue = `[^\s{\[]\S*`
 )
 
 // isASCIIAlphanumeric reports whether c is one of the characters that
@@ -318,9 +326,9 @@ func keyBoundaryGroup(key string) boundaryGroup {
 	return boundaryGroupSpecific
 }
 
-// keyBoundaryPattern returns the regex fragment matching the single character
-// that must precede the key name. The fragment may contain a top-level
-// alternation and an empty branch, so callers must wrap it in a group.
+// keyBoundaryPattern returns the ready-to-embed regex fragment matching the
+// single character that must precede the key name, or "" when the group needs
+// no boundary.
 func keyBoundaryPattern(group boundaryGroup) string {
 	switch group {
 	case boundaryGroupCommonWord:
@@ -335,12 +343,22 @@ func keyBoundaryPattern(group boundaryGroup) string {
 }
 
 // buildKeyValueRegex builds the alternation used for keys that do not contain
-// "=" themselves. The alternatives are ordered quoted value -> separated value
-// -> adjacent "=" value. Go's regexp prefers the earliest alternative that
-// matches at a given position, so a quoted value is always consumed up to its
-// closing quote instead of being truncated at the first space by the adjacent
-// alternative. Only the first two alternatives carry a boundary; the adjacent
-// form keeps its existing unrestricted behavior.
+// "=" themselves. The alternatives are ordered double-quoted value ->
+// single-quoted value -> separated value -> adjacent "=" value. Go's regexp
+// prefers the earliest alternative that matches at a given position, so a
+// quoted value is always consumed up to its closing quote instead of being
+// truncated at the first space by the adjacent alternative. Only the first
+// three alternatives carry a boundary; the adjacent form keeps its existing
+// unrestricted behavior.
+//
+// Each alternative captures its value and nothing else. Everything the rebuild
+// has to preserve - the boundary character, the original spelling of the key,
+// the key's closing quote, the separator and both value quotes - lies before or
+// after the value inside the same match, so it can be copied verbatim from the
+// input without a capture group of its own. Keeping the group count at one per
+// alternative also keeps the submatch bookkeeping out of the regex engine's
+// per-byte work, which matters because RedactText runs over whole command
+// outputs.
 func buildKeyValueRegex(escapedKey string, group boundaryGroup) string {
 	boundary := keyBoundaryPattern(group)
 
@@ -350,97 +368,66 @@ func buildKeyValueRegex(escapedKey string, group boundaryGroup) string {
 	// own alternative. When the closing quote is missing (a truncated log line)
 	// the value group runs to the end of the line and everything after the
 	// opening quote is redacted.
-	quoted := func(prefix, quote string) string {
-		return `(?P<` + prefix + `Boundary>` + boundary + `)` +
-			`(?P<` + prefix + `Key>` + escapedKey + `)` +
-			`(?P<` + prefix + `KeyQuote>` + keyNameClosingQuote + `)` +
-			`(?P<` + prefix + `Separator>` + keyValueSeparator + `)` +
-			quote +
-			`(?P<` + prefix + `Value>[^` + quote + `\r\n]*)` +
-			`(?P<` + prefix + `CloseQuote>` + quote + `?)`
+	//
+	// quotedBoundary is passed separately because the double-quoted alternative
+	// takes the loose boundary even for common-word keys: a quote immediately
+	// after the separator is a structural signal that prose does not produce, and
+	// requiring the strict boundary there would leave half of TOKEN="abc def" -
+	// the shape an environment dump takes - in the clear.
+	quoted := func(name, quotedBoundary, quote string) string {
+		return quotedBoundary + escapedKey + keyNameClosingQuote + keyValueSeparator +
+			quote + `(?P<` + name + `>[^` + quote + `\r\n]*)` + quote + `?`
 	}
 
-	separated := `(?P<sepBoundary>` + boundary + `)` +
-		`(?P<sepKey>` + escapedKey + `)` +
-		`(?P<sepKeyQuote>` + keyNameClosingQuote + `)` +
-		`(?P<sepSeparator>` + keyValueSeparator + `)` +
-		`(?P<sepValue>\S+)`
+	doubleQuoted := quoted("dqValue", loosenedQuotedBoundary(group), `"`)
+	singleQuoted := quoted("sqValue", boundary, `'`)
+	separated := boundary + escapedKey + keyNameClosingQuote + keyValueSeparator + `(?P<sepValue>` + unquotedValue + `)`
+	adjacent := escapedKey + `=(?P<adjValue>\S+)`
 
-	adjacent := `(?P<adjKey>` + escapedKey + `)(?P<adjSeparator>=)(?P<adjValue>\S+)`
-
-	return `(?i)(?:` + quoted("dq", `"`) + `|` + quoted("sq", `'`) + `|` + separated + `|` + adjacent + `)`
+	return `(?i)(?:` + doubleQuoted + `|` + singleQuoted + `|` + separated + `|` + adjacent + `)`
 }
 
-// keyValueAlternative locates the submatches of one alternative of the regex
-// built by buildKeyValueRegex. An index is -1 when the alternative has no such
-// group. openQuote is the value's opening quote, which is matched literally and
-// therefore has no submatch to read it back from.
-type keyValueAlternative struct {
-	boundary   int
-	key        int
-	keyQuote   int
-	separator  int
-	closeQuote int
-	openQuote  string
+// loosenedQuotedBoundary returns the boundary used by the double-quoted
+// alternative. Common-word keys get the loose boundary there rather than the
+// strict one; every other group keeps its own boundary. The single-quoted
+// alternative is deliberately not loosened, because a single-quoted value after
+// a common-word key is exactly the shape of the diagnostic
+// "unexpected token: '}'".
+func loosenedQuotedBoundary(group boundaryGroup) string {
+	if group == boundaryGroupCommonWord {
+		return looseKeyBoundary
+	}
+	return keyBoundaryPattern(group)
 }
 
-// keyValueAlternatives returns the alternatives in the same priority order as
-// buildKeyValueRegex wrote them.
-func keyValueAlternatives(re *regexp.Regexp) []keyValueAlternative {
-	quoted := func(prefix, quote string) keyValueAlternative {
-		return keyValueAlternative{
-			boundary:   re.SubexpIndex(prefix + "Boundary"),
-			key:        re.SubexpIndex(prefix + "Key"),
-			keyQuote:   re.SubexpIndex(prefix + "KeyQuote"),
-			separator:  re.SubexpIndex(prefix + "Separator"),
-			closeQuote: re.SubexpIndex(prefix + "CloseQuote"),
-			openQuote:  quote,
+// keyValueValueGroups returns the value submatch indices of the alternatives of
+// the regex built by buildKeyValueRegex, in the same order.
+func keyValueValueGroups(re *regexp.Regexp) []int {
+	return []int{
+		re.SubexpIndex("dqValue"),
+		re.SubexpIndex("sqValue"),
+		re.SubexpIndex("sepValue"),
+		re.SubexpIndex("adjValue"),
+	}
+}
+
+// matchedValueSpan returns the byte range of the value of whichever alternative
+// participated in the match. Exactly one alternative participates per match, so
+// the first value group with a non-negative start identifies it.
+func matchedValueSpan(valueGroups []int, m []int) (start, end int, ok bool) {
+	for _, g := range valueGroups {
+		if g >= 0 && 2*g+1 < len(m) && m[2*g] >= 0 {
+			return m[2*g], m[2*g+1], true
 		}
 	}
-	return []keyValueAlternative{
-		quoted("dq", `"`),
-		quoted("sq", `'`),
-		{
-			boundary:   re.SubexpIndex("sepBoundary"),
-			key:        re.SubexpIndex("sepKey"),
-			keyQuote:   re.SubexpIndex("sepKeyQuote"),
-			separator:  re.SubexpIndex("sepSeparator"),
-			closeQuote: -1,
-		},
-		{
-			boundary:   -1,
-			key:        re.SubexpIndex("adjKey"),
-			keyQuote:   -1,
-			separator:  re.SubexpIndex("adjSeparator"),
-			closeQuote: -1,
-		},
-	}
+	return 0, 0, false
 }
 
-// submatch returns the text of submatch index i within match m, or "" when the
-// group does not exist or did not participate in the match.
-func submatch(text string, m []int, i int) string {
-	if i < 0 || 2*i+1 >= len(m) || m[2*i] < 0 {
-		return ""
-	}
-	return text[m[2*i]:m[2*i+1]]
-}
-
-// matchedAlternative returns the first alternative that participated in the
-// match. Exactly one alternative participates per match, and every alternative
-// has a key group, so the key group's participation identifies it.
-func matchedAlternative(alternatives []keyValueAlternative, m []int) (keyValueAlternative, bool) {
-	for _, alt := range alternatives {
-		if alt.key >= 0 && 2*alt.key+1 < len(m) && m[2*alt.key] >= 0 {
-			return alt, true
-		}
-	}
-	return keyValueAlternative{}, false
-}
-
-// replaceKeyValueMatches rebuilds every match, preserving the boundary
-// character, the original spelling of the key, the key's closing quote, the
-// separator and the value's quotes, and replacing only the value itself.
+// replaceKeyValueMatches rebuilds every match, replacing only the value and
+// copying the rest of the match verbatim. Everything from the start of the
+// match up to the value (boundary, key, key quote, separator, opening value
+// quote) and everything from the end of the value to the end of the match
+// (closing value quote) is preserved exactly as it appeared in the input.
 //
 // Matches are rebuilt from FindAllStringSubmatchIndex rather than from
 // ReplaceAllStringFunc because that callback receives only the matched text:
@@ -454,24 +441,21 @@ func replaceKeyValueMatches(re *regexp.Regexp, text, placeholder string) string 
 		return text
 	}
 
-	alternatives := keyValueAlternatives(re)
+	valueGroups := keyValueValueGroups(re)
 	var b strings.Builder
 	b.Grow(len(text))
 	last := 0
 	for _, m := range matches {
-		alt, ok := matchedAlternative(alternatives, m)
+		valueStart, valueEnd, ok := matchedValueSpan(valueGroups, m)
 		if !ok {
-			// Defensive: no alternative claimed the match, so leave it untouched.
+			// Defensive: no alternative claimed the match. Leaving last untouched
+			// makes the next copy (or the final one after the loop) emit this match
+			// verbatim, so skipping it cannot drop or duplicate any input.
 			continue
 		}
-		b.WriteString(text[last:m[0]])
-		b.WriteString(submatch(text, m, alt.boundary))
-		b.WriteString(submatch(text, m, alt.key))
-		b.WriteString(submatch(text, m, alt.keyQuote))
-		b.WriteString(submatch(text, m, alt.separator))
-		b.WriteString(alt.openQuote)
+		b.WriteString(text[last:valueStart])
 		b.WriteString(placeholder)
-		b.WriteString(submatch(text, m, alt.closeQuote))
+		b.WriteString(text[valueEnd:m[1]])
 		last = m[1]
 	}
 	b.WriteString(text[last:])
