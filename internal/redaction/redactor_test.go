@@ -740,6 +740,19 @@ func TestRedactText_IntentionalOverRedaction(t *testing.T) {
 			input:    `Please set token="my note" before continuing`,
 			expected: `Please set token="[REDACTED]" before continuing`,
 		},
+		{
+			// A common-word key is not exempt from the prose case either: the
+			// strict boundary only rules out a preceding space, so an identifier
+			// character in front of the key admits the separated alternative.
+			name:     "common word key after a hyphen followed by prose",
+			input:    "Public-key: not supported",
+			expected: "Public-key: [REDACTED] supported",
+		},
+		{
+			name:     "common word key after a dot followed by prose",
+			input:    "unable to open id_rsa.key: permission denied",
+			expected: "unable to open id_rsa.key: [REDACTED] denied",
+		},
 	}
 
 	for _, tt := range tests {
@@ -762,6 +775,41 @@ func TestRedactText_LongTextUnchanged(t *testing.T) {
 	input := sb.String()
 
 	assert.Equal(t, input, config.RedactText(input))
+}
+
+// TestRedactText_PreFilterDoesNotWeakenRedaction covers the substring pre-filter
+// that lets RedactText skip the regex for keys the text cannot contain. The
+// pre-filter must never turn a match into a miss, so the cases below fix the
+// shapes where a naive lower-case comparison would do exactly that.
+func TestRedactText_PreFilterDoesNotWeakenRedaction(t *testing.T) {
+	config := DefaultConfig()
+
+	t.Run("key match stays case-insensitive", func(t *testing.T) {
+		for _, input := range []string{"password=s3cr3t", "PASSWORD=s3cr3t", "PaSsWoRd=s3cr3t"} {
+			assert.Equal(t, "[REDACTED]", strings.SplitN(config.RedactText(input), "=", 2)[1],
+				"input %q", input)
+		}
+	})
+
+	t.Run("non-ascii text bypasses the pre-filter", func(t *testing.T) {
+		// Go's regexp folds case under Unicode rules, so (?i)s matches U+017F
+		// LATIN SMALL LETTER LONG S and the key pattern matches "paſſword".
+		// asciiLowered leaves that rune alone, so a pre-filter that ran on
+		// non-ASCII text would report "cannot occur" and leak the value. The
+		// ASCII guard is what prevents that, and this test fails without it.
+		assert.Equal(t, "paſſword=[REDACTED]", config.RedactText("paſſword=s3cr3t"))
+
+		// Ordinary non-ASCII text around an ASCII key must still be redacted.
+		assert.Equal(t, "日本語 password=[REDACTED]", config.RedactText("日本語 password=s3cr3t"))
+	})
+
+	t.Run("redaction of one key does not hide a later key", func(t *testing.T) {
+		// The pre-filter caches the lower-cased text and must refresh it after a
+		// key rewrites the text, or a key later in the list would be tested
+		// against a stale copy.
+		assert.Equal(t, "password=[REDACTED] api_key=[REDACTED]",
+			config.RedactText("password=s3cr3t api_key=a1b2c3"))
+	})
 }
 
 // TestRedactLogAttribute_SensitiveKeys tests redaction of sensitive key names

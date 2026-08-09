@@ -188,7 +188,18 @@
 - [x] V2・V3 のキー名側の閉じ引用符の扱い、値側の引用符の保持、閉じ引用符がない場合の行末までの置換を、02_architecture.md 3.2.5 のとおりに実装する。`"` 用と `'` 用の選択肢は別々に書く（RE2 に後方参照がないため）。
 - [x] キーが `=` を含む分岐は変更しない。
 - [x] **レビューで判明した 2 点を 02_architecture.md へ反映のうえ実装した**（設計文書本体を修正済み）。(1) V2 の値の先頭が `{` / `[` の場合は一致させない（3.2.2 に追記）。空白のない構造化データで行の残り全体を飲み込み、兄弟フィールドを消す過剰 redaction を防ぐため。(2) 群 B の二重引用符版 V3 にだけ緩い先頭境界を適用する（3.2.4 に追記）。厳しい境界のままでは `TOKEN="abc def"` が V1 へ落ち秘密の後半が平文で残るため。単一引用符版は `unexpected token: '}'` を守るため緩めない。
-- [x] 各選択肢が捕捉するのは値のみとする。境界・キー・キー側引用符・区切り・値側引用符は一致範囲の内側にあるため、入力からそのまま複写でき、捕捉グループを必要としない。捕捉グループ数を選択肢あたり 1 個に抑えることで、キー 1 個あたり約 20 個の捕捉グループを追跡する場合に比べ `RedactText` の実測が 3.1 倍の劣化から 1.11 倍に収まる（`BenchmarkRedactText`。10 KB 入力、拡張前 45.1 µs → 50.2 µs）。
+- [x] 各選択肢が捕捉するのは値のみとする。境界・キー・キー側引用符・区切り・値側引用符は一致範囲の内側にあるため、入力からそのまま複写でき、捕捉グループを必要としない。捕捉グループ数を選択肢あたり 1 個に抑えることで、キー 1 個あたり約 20 個の捕捉グループを追跡する場合に比べ大幅に速くなる。
+- [x] **`RedactText` にキーの部分文字列による事前判定を入れる**（レビューで判明した劣化への対応）。選択肢を 4 本に増やした結果、正規表現プログラムが大きくなり、キー 1 個あたりの走査コストが上がる。どの選択肢もキーをリテラルとして必要とするため、テキストがキーを大文字小文字を無視して含まないならば一致は起こりえない。そこでテキストを 1 度だけ ASCII 小文字化し、各キーについて `strings.Contains` で存在を確かめてから正規表現を走らせる。あるキーが実際に置換を行ったときだけ小文字化をやり直す。
+- [x] **事前判定は ASCII のテキストにのみ適用する**。Go の正規表現は Unicode の規則で大文字小文字を畳み込むため、U+212A KELVIN SIGN が `(?i)k` に、U+017F LATIN SMALL LETTER LONG S が `(?i)s` に一致する。ASCII 小文字化はこれらを変換しないので、非 ASCII を含むテキストに事前判定をかけると `paſſword=s3cr3t`（正規表現は一致する）を「一致しえない」と誤判定して redaction を弱めてしまう。非 ASCII を 1 バイトでも含むテキストでは事前判定を行わず、従来どおり全キーの正規表現を走らせる。`TestRedactText_PreFilterDoesNotWeakenRedaction` がこのケースを固定しており、ASCII 判定を外すと失敗する。
+
+**実測値**（`go test -bench 'BenchmarkRedactText' -benchtime 3s -benchmem -count 3`、Apple M3 Pro、コミット済みの `BenchmarkRedactText` をそのまま使用。3 回の中央値）:
+
+| ベンチマーク | 拡張前（main） | 事前判定なし | 事前判定あり（現状） |
+|---|---|---|---|
+| `BenchmarkRedactText` | 17.0 µs / 3562 B | 32.5 µs / 6279 B | **15.6 µs / 3259 B** |
+| `BenchmarkRedactText_NoSensitiveData` | 13.6 µs / 3078 B | 29.1 µs / 5447 B | **5.85 µs / 1204 B** |
+
+事前判定を入れる前は拡張前比で 1.91 倍・2.14 倍の劣化であった。`RedactLogAttribute` が文字列属性ごとに `RedactText` を呼ぶため、置換対象を含まない行の経路（下段）が実運用では支配的であり、そこが最も悪化していた。事前判定によりいずれも拡張前を下回る（0.92 倍・0.43 倍）。
 - [x] 再構築を `FindAllStringSubmatchIndex` の結果から行い、`ReplaceAllStringFunc` は使わない（**本計画からの変更**。当初は「`ReplaceAllStringFunc` 内の再構築ロジックを拡張する」としていた）。`ReplaceAllStringFunc` のコールバックが受け取るのは一致した部分文字列だけであり、その文字列に正規表現を再適用すると、文脈では先頭境界を満たさず V1 へ落ちた一致が、先頭の文脈を失ったことで V2・V3 として再解釈されうる（群 A の先頭境界がテキスト先頭を許すため。例: `xpassword="a b"` の V1 一致 `password="a` を単体で再一致させると V3 になる）。どの選択肢が一致したかは、選択肢ごとのキー部分マッチが一致に参加したかで判別する。
 
 #### ステップ 2-2: テスト
@@ -205,6 +216,7 @@
 - [x] `TestRedactText_NoNewOverRedaction`: 02_architecture.md 3.2.6 の「置換されない」行をすべて固定する（`Primary key: id`、`unexpected token: '}'`、`map[key:value]`、`configMapKeyRef: {key: LOG_LEVEL}`、`keyboard: qwerty`、`/usr/local/key/path`、`--timeout=30`、`password:\nsecret`）。群 B の先頭境界が半角スペース・`[`・`{` の 3 ケースを、それぞれ独立したテーブル行として明示する。**追加**: 値の先頭が `{` / `[` のため V2 を適用しない 3 ケース（`{"password":{"a":1},"port":80}`、`{"api_key":["a","b"],"port":80}`、`password: {json: here} trailing`）も固定する。
 - [x] `TestRedactText_IntentionalOverRedaction`: `"key": "us-east-1"` が `"key": "[REDACTED]"` になること（第 1 類）。**追加**: 群 A のキーが散文中でコロンを伴う第 2 類（`failed to read password: permission denied` → `... password: [REDACTED] denied`）も固定する。いずれも AC-09 の除外規定に該当する意図した変更である旨を英語コメントで残す。
 - [x] `TestRedactText_LongTextUnchanged`: 置換対象を含まない 10 KB 程度のテキストに対し `RedactText` の戻り値が入力と一致すること。
+- [x] **追加** `TestRedactText_PreFilterDoesNotWeakenRedaction`: 事前判定が一致を取りこぼさないことを固定する。キー一致が大文字小文字を無視すること、非 ASCII のテキスト（`paſſword=s3cr3t`、`日本語 password=...`）でも置換されること、先行するキーの置換後に後続のキーが取りこぼされないこと。
 
 **完了条件**: `make fmt && make test && make lint` が通り、`internal/redaction` と `internal/runner/base/security` の既存テストを 1 行も変更せずに合格すること。
 
@@ -498,6 +510,7 @@
 - [ ] `docs/user/security-risk-assessment.ja.md` の「値ベース検出」の一覧（241〜249 行目付近）に 4 項目を追加する: GitHub fine-grained PAT（`github_pat_` プレフィックス）、Slack の追加プレフィックストークン（`xapp-`/`xoxe-`/`xoxs-`）、JWT（`eyJ` で始まる 3 セグメントの Base64URL 文字列）、Slack webhook URL（`https://hooks.slack.com/services/` 以降）。
 - [ ] 同ファイルの「限界」の段落に、引用符で囲まれていない値に空白が含まれる場合は 2 語目以降が平文で残ること（02_architecture.md 3.2.2）、および `AllowedHost` に `hooks.slack.com` 以外を設定した構成では webhook URL の値形式検出が働かないこと（02_architecture.md 3.3.3）を追記する。
 - [ ] 同ファイルに、一般的な英単語を `KeyValuePatterns` へ追加すると散文が置換されうること、および群 B のキーが引用符付きの構造化データのフィールド名として現れる場合は非機密でも置換されること（`"key": "us-east-1"`）を追記する。
+- [ ] 同ファイルの「限界」の段落に、**群 B のキー（`key` / `token` / `secret`）は引用符のない YAML では捕捉されない**ことを追記する（02_architecture.md 3.2.6 の残存リスク）。`token: ghp_xxx` のように行頭・インデント直後・空白の直後に現れる形は、厳しい先頭境界を満たさないため置換されない。JSON のように引用符が付く形（`"token": "..."`）、および `_` / `-` / `.` に続く形（`api_key:`、`Public-key:`）は捕捉される。群 A のキー（`password`、`api_key` など）にはこの制限はない。回避策として、当該キーを含むより特定的なキー名（`auth_token` など）を `KeyValuePatterns` に追加できることを併記する。
 - [ ] 同ファイルに Slack 通知の配送方式の節を追加する: 非同期に送信されること、プロセス終了時に既定 15 秒の期限で flush されること、到達不能時や強制終了時には通知が失われうること（02_architecture.md 2.4 の表の要約）、通知内容自体はログファイルに残ること、ワーカー 1 本の直列処理による最悪遅延の目安、`GSCR_SLACK_SYNC=1` が通常運用向けではないデバッグ用の退避手段であること。
 - [ ] 追加した記述の裏付けを取る: 既定値（flush 期限 15 秒、送信デッドライン 40 秒、キュー容量 32 / 128）を `internal/logging/slack_sender.go` の定数と 1 件ずつ照合し、`GSCR_SLACK_SYNC` の判定条件を `bootstrap.parseSlackEnvSettings` の実装と照合する。
 - [ ] `/mktrans` で `docs/user/security-risk-assessment.md` に反映する。

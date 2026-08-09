@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"strings"
+	"unicode/utf8"
 )
 
 // Config controls how sensitive information is redacted
@@ -66,9 +67,21 @@ func (c *Config) RedactText(text string) string {
 
 	result := text
 
-	// Apply key=value pattern redaction
+	// Apply key=value pattern redaction. Every alternative of every pattern
+	// built below requires the key as a literal, so a text that does not contain
+	// the key case-insensitively cannot produce a match. Testing that with a
+	// substring search first skips the regex entirely for the keys that are
+	// absent, which is nearly all of them on an ordinary log line.
+	lowerText, textIsASCII := asciiLowered(result)
 	for _, key := range c.KeyValuePatterns {
-		result = c.performKeyValueRedaction(result, key, c.Placeholder)
+		if textIsASCII && !keyCanOccur(lowerText, key) {
+			continue
+		}
+		redacted := c.performKeyValueRedaction(result, key, c.Placeholder)
+		if redacted != result {
+			result = redacted
+			lowerText, textIsASCII = asciiLowered(result)
+		}
 	}
 
 	// Apply value-format-based detection (e.g., AWS keys, GitHub tokens, PEM blocks).
@@ -80,6 +93,51 @@ func (c *Config) RedactText(text string) string {
 	}
 
 	return result
+}
+
+// asciiLowered returns s with A-Z folded to a-z, and reports whether s consists
+// only of ASCII bytes.
+//
+// The caller must skip the pre-filter when the report is false. Go's regexp
+// folds case under Unicode rules, which map a few non-ASCII runes onto ASCII
+// letters - U+212A KELVIN SIGN matches (?i)k, and U+017F LATIN SMALL LETTER
+// LONG S matches (?i)s - while this function leaves them untouched. Comparing a
+// text holding such a rune against a lower-cased key would report "cannot
+// occur" for a key the regex would in fact match, and the pre-filter would
+// weaken redaction. Restricting it to ASCII text removes that possibility
+// entirely, because those runes cannot appear in ASCII text.
+func asciiLowered(s string) (lowered string, isASCII bool) {
+	hasUpper := false
+	for i := range len(s) {
+		c := s[i]
+		if c >= utf8.RuneSelf {
+			return "", false
+		}
+		hasUpper = hasUpper || c >= 'A' && c <= 'Z'
+	}
+	if !hasUpper {
+		return s, true
+	}
+	b := make([]byte, len(s))
+	for i := range len(s) {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		b[i] = c
+	}
+	return string(b), true
+}
+
+// keyCanOccur reports whether key may match somewhere in lowerText, which must
+// be the ASCII-lower-cased form of the text. A non-ASCII key is always reported
+// as able to occur, because lowerText cannot be compared against it safely.
+func keyCanOccur(lowerText, key string) bool {
+	lowerKey, keyIsASCII := asciiLowered(key)
+	if !keyIsASCII {
+		return true
+	}
+	return strings.Contains(lowerText, lowerKey)
 }
 
 // RedactLogAttribute redacts sensitive information from a log attribute
@@ -443,7 +501,9 @@ func replaceKeyValueMatches(re *regexp.Regexp, text, placeholder string) string 
 
 	valueGroups := keyValueValueGroups(re)
 	var b strings.Builder
-	b.Grow(len(text))
+	// The placeholder is normally longer than the value it replaces, so reserving
+	// only len(text) would force a reallocation on almost every call.
+	b.Grow(len(text) + len(matches)*len(placeholder))
 	last := 0
 	for _, m := range matches {
 		valueStart, valueEnd, ok := matchedValueSpan(valueGroups, m)
