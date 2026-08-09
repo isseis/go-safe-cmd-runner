@@ -474,6 +474,11 @@ type slackSender struct {
     backoffConfig BackoffConfig
     failureLogger *slog.Logger
     sendTimeout   time.Duration
+    // runID is copied from SlackHandlerOptions.RunID at construction. Per-request
+    // records take the run ID from slackRequest, but the aggregate record that
+    // Flush emits (the per-message_type breakdown of 3.4.8) belongs to no single
+    // request, so it reads run_id from here.
+    runID string
 
     // highPriority and normal are the two send queues. They are never closed;
     // see 3.4.7.
@@ -806,7 +811,7 @@ flush では高優先度キューを先に処理する。期限内に送り切�
 
 送信失敗と破棄は、`NewSlackHandler` が `SlackHandlerOptions.FailureHandlers` から構築する送信失敗ロガーへ記録する。`bootstrap` が渡すのは `phase1BaseHandlers`、すなわち Phase 1 で構築したコンソールとファイルのハンドラの並びである。これは `phase1FailureLogger` の材料と同一であり（`bootstrap` は同じ並びから `MultiHandler` を作ってロガーにしている）、新たなハンドラ構成を作るわけではない（DRY）。ロガーではなくハンドラの並びを受け取る理由は次項で述べる。
 
-**記録の粒度**: 破棄と送信失敗は、発生した時点で 1 件ずつ記録する。集計だけでは「どの通知が失われたか」が運用者に分からず、AC-26 の意図を満たさないためである。記録に含めるのは `message_type`、`run_id`、レコードのログレベル、および理由（`queue_full` / `sender_closed` / `send_failed`）であり、**通知の本文は含めない**（AC-29）。本文は同じ実行の JSON ログファイルに完全な形で残っているため、`run_id` と `message_type` で突き合わせられる。flush 時にはこれに加えて、webhook ごとに `message_type` 別の内訳を付けた集計を出力する。
+**記録の粒度**: 破棄と送信失敗は、発生した時点で 1 件ずつ記録する。集計だけでは「どの通知が失われたか」が運用者に分からず、AC-26 の意図を満たさないためである。記録に含めるのは `message_type`、`run_id`、レコードのログレベル、および理由（`queue_full` / `sender_closed` / `send_failed`）であり、**通知の本文は含めない**（AC-29）。本文は同じ実行の JSON ログファイルに完全な形で残っているため、`run_id` と `message_type` で突き合わせられる。flush 時にはこれに加えて、webhook ごとに `message_type` 別の内訳を付けた集計を出力する。この集計レコードは特定の `slackRequest` に紐づかないため、`run_id` は要求ごとの値ではなく `slackSender.runID`（構築時に `SlackHandlerOptions.RunID` から取る。3.4.1）から取る。これにより、1 件ごとの記録と flush 時の集計を同じ `run_id` で突き合わせられる。
 
 **現行の `slog` 呼び出しの置き換え**: `sendToSlack` が使っている `slog.Debug` / `slog.Warn` / `slog.Error` / `slog.Info` は、すべてこの送信失敗ロガーへの呼び出しに置き換える。これにより、送信に関する記録が起点となって新たな Slack 送信が発生しない（AC-30）。なお `slack_handler.go` にはこれ以外に、`NewSlackHandler`・ドライラン分岐・`extractCommandResultsFromGroup` からの `slog.Debug` 呼び出しがある。これらは送信失敗の記録ではないため AC-30 の対象外だが、`SlackHandler.Enabled` が `slog.LevelInfo` 未満を除外するため Slack へは届かない。この理由づけを保つため、これらは Debug レベルのまま維持する。
 
@@ -904,6 +909,7 @@ classDiagram
         -backoffConfig BackoffConfig
         -failureLogger *slog.Logger
         -sendTimeout time.Duration
+        -runID string
         -highPriority chan slackRequest
         -normal chan slackRequest
         -shutdown chan shutdownRequest
@@ -956,6 +962,8 @@ classDiagram
 ```
 
 `webhookURL`、`httpClient`、`backoffConfig` は現行では `SlackHandler` のフィールドだが、送信の実行主体が `slackSender` へ移るため、これら 3 つも `slackSender` へ移す。`SlackHandler` 側には残さない。
+
+`runID` は `SlackHandler` と `slackSender` の双方が持つ。`SlackHandler` 側は通知の本文とキュー投入する `slackRequest` の組み立てに用い、`slackSender` 側は flush 時の集計レコードに `run_id` を付けるために用いる（3.4.8）。両者は `NewSlackHandler` が同じ `SlackHandlerOptions.RunID` から設定するため、値は常に一致する。
 
 この配置の帰結として、`SlackHandler` は `slackSender` を経由せずに送信することができない。同期モード（3.4.11）で `slackSender` を生成する（キューとワーカーだけを持たない）のはこのためである。`highPriority` / `normal` の 2 本のチャネルと、ワーカーに関わる状態（終了要求チャネル、ワーカー終了通知、`inFlightCancel`）は、同期モードでは未使用のゼロ値のままとなる。
 

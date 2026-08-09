@@ -337,6 +337,7 @@
 - [ ] 既定値の定数 `DefaultSendTimeout = 40 * time.Second`、`DefaultFlushTimeout = 15 * time.Second`、`flushPerSendTimeout = 5 * time.Second`、`defaultHighPriorityQueueSize = 32`、`defaultNormalQueueSize = 128` を定義する。前 2 者は `bootstrap` が参照するため公開する（1.4）。
 - [ ] `slackSender`、`slackRequest`、`shutdownRequest`、`slackCounters`、`FlushStats` を 02_architecture.md 3.4.1 の定義どおりに実装する。ドキュメンテーションコメントは同節の英語コメントをそのまま用いる。
 - [ ] `slackSender` に `mu` で保護した `map[string]int` の `message_type` 別内訳（送信・失敗・破棄）を追加する（1.4 参照。02_architecture.md 3.4.1 の定義への本計画からの追加）。
+- [ ] `slackSender` の `runID` フィールドを `NewSlackHandler` が `SlackHandlerOptions.RunID` から設定する（02_architecture.md 3.4.1、3.5）。flush 時の集計レコードは特定の `slackRequest` に紐づかないため、この値から `run_id` を付ける。
 - [ ] `slackSender` に非公開フィールド `afterDequeue func()` を追加する。ワーカーが 1 件を取り出した直後・送信開始前に、非 nil のときだけ呼ぶ。本番では常に nil で、同一パッケージのテストのみが代入する。テスト専用の同期点であることを英語コメントで明記する（1.4 参照）。
 - [ ] `sendToSlack` を `slack_handler.go` から移設し、`(*slackSender).send(ctx context.Context, req slackRequest, singleAttempt bool) error` にする。`singleAttempt` が真のとき（flush 中）はリトライを行わない。
 - [ ] 移設に伴い、`sendToSlack` 内の `slog.Debug` / `slog.Info` / `slog.Warn` / `slog.Error` の **10 箇所すべて**を `failureLogger` 経由の呼び出しへ置き換える。`sanitizeErrorForLog` と既存の 6 件の `//nolint:gosec`（G704 が 1 件、G706 が 5 件）は、行単位の注釈と G コードの理由づけをそのまま維持する。ファイル単位・パッケージ単位の抑止は導入しない。
@@ -346,7 +347,7 @@
 - [ ] ワーカーループを実装する。待機は「高優先度キューのみを見る非ブロッキング `select`」→「2 本のキューと終了要求チャネルの `select`」の 2 段構成とする（02_architecture.md 3.4.7）。
 - [ ] 1 件を取り出した後、**書き込みロックの 1 回の臨界区間**で終了状態の観測・送信用コンテキストの生成・キャンセル関数の格納を行う（02_architecture.md 3.4.6 の表）。送信完了後は同じロックの下でキャンセル関数を nil に戻す。
 - [ ] `Flush(ctx)` / `Close()` を実装する。書き込みロック下で受付停止フラグと終了状態を設定し、フラグを立てたのが自分だった場合に限り終了要求を送り、保持しているキャンセル関数を呼ぶ。2 回目以降の呼び出しはワーカー終了通知を待って記録済みの `FlushStats` を返す。
-- [ ] `Flush` は戻る前に、`message_type` 別内訳を 1 件の集計レコードとして送信失敗ロガーへ出力する。
+- [ ] `Flush` は戻る前に、`message_type` 別内訳を 1 件の集計レコードとして送信失敗ロガーへ出力する。このレコードには `slackSender.runID` を `run_id` として含める（02_architecture.md 3.4.8）。
 - [ ] 同期モードでは送信キューを確保せずワーカーも起動しない。`Handle` から `send` を直接呼ぶ（02_architecture.md 3.4.11）。
 
 #### ステップ 4-5: `SlackHandler` の改修
@@ -386,7 +387,7 @@
 - [ ] `TestSlackSender_QueueOverflowDropsAndRecords`: `NormalQueueSize: 1` と `HighPriorityQueueSize: 1` のそれぞれで溢れを再現し、`Dropped` が増え、送信失敗ロガーに `queue_full` の記録が 1 件ずつ残ることを確かめる。本番容量（128 / 32）には依存しない。
 - [ ] `TestSlackSender_DropRecordOmitsMessageBody`: 破棄の記録に `message_type` と理由が含まれ、通知本文の文字列が含まれないこと。
 - [ ] `TestSlackSender_FailureLogGoesToNonSlackDestination`: 送信失敗の記録が `FailureHandlers` に与えたバッファへ書かれ、モックの Slack サーバへは記録由来のリクエストが届かないこと。
-- [ ] `TestSlackSender_FlushLogsMessageTypeBreakdown`: 複数の `message_type` を投入して `Flush` を呼び、送信失敗ロガーの出力に `message_type` 別の内訳が現れること。
+- [ ] `TestSlackSender_FlushLogsMessageTypeBreakdown`: 複数の `message_type` を投入して `Flush` を呼び、送信失敗ロガーの出力に `message_type` 別の内訳が現れること。集計レコードに `SlackHandlerOptions.RunID` と同じ `run_id` が含まれることも確かめる。
 - [ ] `TestSlackHandler_FlushDeliversPendingAndReturnsStats`: 期限内に残件が送信され、`Sent` が投入数と一致すること。
 - [ ] `TestSlackHandler_FlushDeadlineReportsPending`: 応答しないサーバに対し、`Flush` が flush 期限内に戻り、送り切れなかった件数が `Pending` に計上されること。
 - [ ] `TestSlackHandler_FlushIsIdempotent`: `Flush` を複数回、および `Flush` 後に `Close` を呼んでも、同じ `FlushStats` が返り、ブロックも panic も起きないこと。
@@ -451,7 +452,9 @@
 - [ ] `TestAddSlackHandlers_SlackHandlersComeAfterPhase1Handlers`: `AddSlackHandlers` が構築する `MultiHandler` の `Handlers()` で、Slack ハンドラが `phase1BaseHandlers` の全要素より後ろに並ぶこと（02_architecture.md 2.4 の不変条件）。
 - [ ] `TestAddSlackHandlers_ClosesFirstHandlerOnSecondFailure`: `newSlackHandlerFunc` を「1 回目は実物を返し、2 回目はエラーを返す」スタブに差し替える。`AddSlackHandlers` がエラーを返し、1 回目のハンドラが `Close` されていること（規則 R3 のとおり、そのハンドラへの新たな投入が `Dropped` に計上されること）を検証する。
 - [ ] `TestAddSlackHandlers_ClosesPreviousHandlersOnReinvocation`: 2 回続けて呼んだとき、1 回目のハンドラが `Close` されていること（同上の観測方法）。
-- [ ] `cmd/runner/integration_slack_flush_test.go::TestIntegration_RunnerFlushesSlackOnNormalExit`（02_architecture.md 7.2 の 1 番目の統合テスト、AC-24）: `cmd/runner` の正常終了経路で、実行の最後に発行される通知がモックサーバへ到達することを検証する。`cmd/runner` の本番経路は自己署名証明書を検証するため、既存の `integration_pre_execution_error_test.go` と同じく `go run .` で別プロセスを起動する方式は使えない。代わりに同一プロセス内で `bootstrap.SetupLoggerWithConfig` → `bootstrap.AddSlackHandlers`（規則 R1 のモックサーバ）→ 通知を発行 → `bootstrap.FlushSlackNotifications()` の順に呼び、モックサーバの受信を確認する。`go run .` 方式を採らない理由を英語コメントで残す。
+- [ ] `cmd/runner/integration_slack_flush_test.go::TestIntegration_RunnerFlushesSlackOnNormalExit`（02_architecture.md 7.2 の 1 番目の統合テスト、AC-24）: `cmd/runner` の正常終了経路で、実行の最後に発行される通知がモックサーバへ到達することを検証する。`cmd/runner` の本番経路は自己署名証明書を検証するため、既存の `integration_pre_execution_error_test.go` と同じく `go run .` で別プロセスを起動する方式は使えない。代わりに同一プロセス内で `bootstrap.SetupLoggerWithConfig` → `bootstrap.AddSlackHandlers`（規則 R1 のモックサーバ）→ 通知を発行 → `bootstrap.FlushSlackNotifications()` の順に呼び、モックサーバの受信を確認する。
+    - `AddSlackHandlers` は `SlackHandlerOptions` を内部で組み立てており（`internal/runner/bootstrap/logger.go` の 226・240 行目）、`HTTPClient` を設定しない。したがって規則 R1 の `httptest.NewTLSServer` をそのまま使うと本番の HTTP クライアントが自己署名証明書を拒否し、本テストは `x509: certificate signed by unknown authority` で失敗する。そこで本テストは `newSlackHandlerFunc` をテスト用スタブへ差し替え（`TestAddSlackHandlers_PropagatesEnvSettings` と同じ手法）、受け取った `SlackHandlerOptions` に `server.Client()`（またはその `Transport`）を `HTTPClient` として注入したうえで `logging.NewSlackHandler` を呼ぶ。差し替えは `t.Cleanup` で元へ戻す。
+    - `go run .` 方式を採らない理由と、`newSlackHandlerFunc` を差し替える理由を英語コメントで残す。
 
 **完了条件**: `make fmt && make test && make lint` と、Linux 環境での `make slack-e2e-test` が通ること（`AddSlackHandlers` の変更は e2e テストが実行する経路に含まれるため、Phase 4 と同じゲートを再度課す）。
 
