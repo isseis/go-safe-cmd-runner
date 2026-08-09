@@ -283,7 +283,8 @@ flush を `ReportRedactionFailures` より前に置く理由は、`run` の実�
 | `cmd/runner/main.go` | 変更 | 正常終了経路での `FlushSlackNotifications` 呼び出し（F-005） |
 | `docs/user/security-risk-assessment.ja.md` | 変更 | 値形式検出の対象一覧と限界、Slack 通知の配送方式（F-007, AC-33, AC-34） |
 | `docs/user/security-risk-assessment.md` | 変更 | 上記の英語版。`/mktrans` で反映（AC-33, AC-34） |
-| `docs/dev/architecture_design/security-architecture.md` | 変更 | `SlackHandler` の構造体定義を 2 箇所（§9 と §14）で再掲しており、`httpClient` と `backoffConfig` が `slackSender` へ移ることを反映する |
+| `docs/dev/architecture_design/security-architecture.md` | 変更 | `SlackHandler` の構造体定義を 2 箇所（§9 と §14）で再掲しており、`webhookURL` / `httpClient` / `backoffConfig` が `slackSender` へ移ることを反映する |
+| `docs/dev/architecture_design/security-architecture.ja.md` | 変更 | 上記の日本語版。英語版と同じ 2 箇所を更新する |
 | `docs/translation_glossary.md` | 変更 | 本タスクで導入した用語の追加（AC-35） |
 
 #### 更新が必要な既存テスト
@@ -292,12 +293,14 @@ flush を `ReportRedactionFailures` より前に置く理由は、`run` の実�
 
 | テスト | 変更内容 |
 |---|---|
-| `internal/logging/slack_handler_test.go` の `&SlackHandler{...}` 構造体リテラル構築（17 箇所） | 送信機構はコンストラクタでのみ生成されるため、`Handle` から送信経路へ到達するテストは `NewSlackHandler` による構築へ移行する。`WithAttrs` / `WithGroup` / `Enabled` のみを検証し送信経路へ到達しないテストは、3.4.3 の nil 送信機構の契約によりそのまま通る |
+| `internal/logging/slack_handler_test.go` の `&SlackHandler{...}` 構造体リテラル構築（16 箇所） | 送信機構はコンストラクタでのみ生成されるため、`Handle` から送信経路へ到達するテストは `NewSlackHandler` による構築へ移行する。`WithAttrs` / `WithGroup` / `Enabled` のみを検証し送信経路へ到達しないテストは、3.4.3 の nil 送信機構の契約によりそのまま通る |
 | `TestSlackHandler_Handle_WithMockServer` | サーバ障害時に `Handle` がエラーを返すことを検証している。非同期化後は投入に成功すれば `nil` を返すため、`Flush` を呼んでから `FlushStats.Failed` を検証する形に変更する |
 | `TestSlackHandler_SendToSlack_Retry` | モックサーバがリクエストを受けたことを `Handle` 復帰直後に検証している。`Flush` を同期点として挟む形に変更する |
 | `TestSlackHandler_WithRedactingHandler` | 構造体リテラルで構築したハンドラを `RedactingHandler` 越しに呼び、送信を同期的に検証している。`NewSlackHandler` による構築と `Flush` による同期点の両方が必要である |
 | `TestNewSlackHandlerWithOptions` | 送信失敗ロガーの構成検証が加わるため、正常系のオプションに `FailureHandlers` を与えるケースと、`SlackHandler` を含む場合・検証できない型を含む場合にそれぞれ構成エラーになるケースを追加する |
-| `internal/logging/slack_handler_benchmark_test.go` | 同上の構築方法の変更に追随する |
+| `TestNewSlackHandlerWithOptions` の削除フィールドへの直接参照（6 箇所） | `webhookURL` / `httpClient` / `backoffConfig` を 3.5 のとおり `slackSender` へ移すため、`handler.sender` 越しの参照へ書き換える。書き換えないとコンパイルできない |
+
+`internal/logging/slack_handler_benchmark_test.go` は `SlackHandler` を構築せず、`slackSender` へ移す 3 フィールドも参照していないため（`createBenchmarkCommandResults` と `BenchmarkExtractCommandResults*` のみを含む）、変更を要しない。
 
 `internal/redaction/redactor_test.go` の既存ケースは、3.2 の設計により期待値が変化しない（AC-08）。`performKeyValuePatternRedaction` のシグネチャも変更しないため、これを直接呼び出している `TestPerformKeyValuePatternRedaction` はそのまま通る。`internal/redaction` と `internal/logging` の外で `RedactText` の結果を完全一致で検証しているテストは `internal/runner/base/security/logging_security_test.go`（`api_key=abc123def`、`Authorization: Bearer ...`）であり、いずれも隣接 `=` 形とコロン経路のみを使うため影響を受けない。
 
@@ -868,6 +871,8 @@ flush では高優先度キューを先に処理する。期限内に送り切�
 #### 3.4.11 同期モードという退避手段
 
 `GSCR_SLACK_SYNC=1` が設定されている場合、`NewSlackHandler` は `slackSender` を生成するが、送信キューを確保せず、ワーカー goroutine も起動しない。`Handle` は `SlackMessage` を構築したあと、キューへ投入する代わりに `slackSender` の送信経路をその場で呼び出す（本タスク以前の挙動）。
+
+**環境変数を解釈する場所**: `internal/logging` は環境変数を読まない。2.1 の構成図のとおり、`GSCR_SLACK_SYNC` を含む 3 つの環境変数を読んで値を解釈するのは `bootstrap/logger.go` であり、`internal/logging` が持つのは環境変数名の定数だけである。同期モードの選択は `SlackHandlerOptions.Synchronous` として `NewSlackHandler` へ渡る。`internal/logging` が環境を直接読むと、テストと `bootstrap` 以外の呼び出し元で挙動が暗黙に変わり、3 つの環境変数の解釈場所も分散する。
 
 **`slackSender` 自体は生成する**: 送信に必要な状態（`webhookURL`、`httpClient`、`backoffConfig`、`failureLogger`、`sendTimeout`）は 3.5 のとおりすべて `slackSender` が持ち、`SlackHandler` 側には残さない。加えて 3.4.3 は、送信機構が nil のハンドラを「メッセージを構築せず、送信もせず、nil を返す」ものと定めている。したがって同期モードで `slackSender` の生成まで省くと、`GSCR_SLACK_SYNC=1` が「同期送信する」どころか「何も送らない」設定になってしまう。同期モードで省くのはキューとワーカーだけである。ドライラン（3.4.10）が送信機構そのものを生成しないのとは、この点で異なる。ドライランは送信自体を行わないモードであるため、送信の手段を持つ必要がない。
 

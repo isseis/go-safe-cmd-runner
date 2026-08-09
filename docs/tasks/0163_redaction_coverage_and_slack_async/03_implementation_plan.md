@@ -67,7 +67,7 @@
 
 #### 1.3.3 更新が必要な既存テスト（実測）
 
-**構造体リテラルによる構築**: `internal/logging/slack_handler_test.go` の `&SlackHandler{...}` は **16 箇所**である（02_architecture.md 3.1 は 17 箇所と記しているが、実測値は 16）。
+**構造体リテラルによる構築**: `internal/logging/slack_handler_test.go` の `&SlackHandler{...}` は **16 箇所**である（02_architecture.md 3.1 の記述と一致する）。
 
 | 行 | 所属テスト | 送信経路への到達 | 対応 |
 |---|---|---|---|
@@ -78,7 +78,7 @@
 | 864, 888 | `TestSlackHandler_SendToSlack_Retry` | する（`handler.sendToSlack` を直接呼ぶ） | `slackSender` を直接構築して `send` を呼ぶ形へ移行 |
 | 959 | `TestSlackHandler_WithRedactingHandler` | する | `NewSlackHandler` 構築＋`Flush` へ移行 |
 
-**削除するフィールドへの参照（設計文書に未記載）**: 上記の構築サイトとは別に、`TestNewSlackHandlerWithOptions`（`slack_handler_test.go:370` 開始）が削除対象の 3 フィールドを **6 箇所**で直接検証している。移設後は `handler.sender` 越しの参照へ書き換える必要があり、放置すると Phase 4 がコンパイルできない。
+**削除するフィールドへの参照**: 上記の構築サイトとは別に、`TestNewSlackHandlerWithOptions`（`slack_handler_test.go:370` 開始）が削除対象の 3 フィールドを **6 箇所**で直接検証している。移設後は `handler.sender` 越しの参照へ書き換える必要があり、放置すると Phase 4 がコンパイルできない（02_architecture.md 3.1 の表に反映済み。以下は行単位の内訳）。
 
 | 行 | 現在の参照 | 移行先 |
 |---|---|---|
@@ -89,9 +89,9 @@
 | 409 | `handler.backoffConfig.RetryCount` | `handler.sender.backoffConfig.RetryCount` |
 | 467 | `handler.webhookURL` | `handler.sender.webhookURL` |
 
-**ベンチマークファイル（設計文書の記述の訂正）**: 02_architecture.md 3.1 は `internal/logging/slack_handler_benchmark_test.go` が構築方法の変更に追随する必要があると記すが、実測ではこのファイルは `SlackHandler` を構築せず、削除対象の 3 フィールドも参照していない（含むのは `createBenchmarkCommandResults` と 3 つの `BenchmarkExtractCommandResults*` のみ）。**変更不要**であり、本計画の対象ファイルに含めない。
+**ベンチマークファイル**: `internal/logging/slack_handler_benchmark_test.go` は `SlackHandler` を構築せず、削除対象の 3 フィールドも参照していない（含むのは `createBenchmarkCommandResults` と 3 つの `BenchmarkExtractCommandResults*` のみ）。**変更不要**であり、本計画の対象ファイルに含めない（02_architecture.md 3.1 に反映済み）。
 
-**`internal/runner` の e2e テスト（設計文書に未記載）**: `//go:build e2e && test` の 2 ファイル（計 7 テスト）は実在の `logging.NewSlackHandler` を使い、送信の同期性に依存している。3 行目の `e2e_slack_redaction_test.go` は `//go:build test` であり既に `make test` で実行されているが、比較のために併記する。
+**`internal/runner` の e2e テスト**: `//go:build e2e && test` の 2 ファイル（計 7 テスト）は実在の `logging.NewSlackHandler` を使い、送信の同期性に依存している。3 行目の `e2e_slack_redaction_test.go` は `//go:build test` であり既に `make test` で実行されているが、比較のために併記する。
 
 | ファイル::テスト | 依存の形 | 対応 |
 |---|---|---|
@@ -99,7 +99,7 @@
 | `internal/runner/e2e_slack_webhook_separation_test.go` の 6 テスト | `time.Sleep(500ms)` 後にスライスを読む（**6 箇所**: 126・227・294・343・414・491 行目、1 テストにつき 1 箇所） | `Sleep` を `Flush` へ置き換え、スライスを `sync.Mutex` で保護する |
 | `internal/runner/e2e_slack_redaction_test.go` の 2 テスト（`//go:build test`。既に `make test` で実行される） | 独自の `MockSlackHandler` を使い、実 `SlackHandler` を経由しない | 変更不要 |
 
-**実行経路（設計文書に未記載）**: `make test`（= `unit-test`）は `CGO_ENABLED=1 go test -tags test -race -p 4 ./...` を実行し（macOS 以外ではさらに `CGO_ENABLED=0` の 2 回目を実行する）、`e2e` タグを付けない。`make e2e-test` はビルド済みバイナリの dry-run と Python スクリプトを実行するだけで、`go test -tags e2e` を呼ばない。`.github/workflows/ci.yml` も `-tags test` のみである。したがって上記 7 つの e2e テストは**リポジトリのどのターゲットからも実行されない**。さらに `e2e` タグ付きのファイルは `make test` でも `make lint` でもコンパイルされないため、書き換えても型エラーが既定のゲートに現れない。移行した検証が退行しないよう、Phase 4 で Makefile ターゲットを新設して CI に組み込む（ステップ 4-3）。なお実行してみると、これらのテストは macOS では 0163 以前から 7 件中 3 件が失敗する（設定が `/usr/bin/echo` を指すが macOS では `/bin/echo` にある）。CI は `ubuntu-latest` のため CI では 7 件とも成立する。この失敗は本タスクの原因でも対象でもないため修正せず、ターゲットの適用範囲で切り分ける（ステップ 4-3）。
+**実行経路**: `make test`（= `unit-test`）は `CGO_ENABLED=1 go test -tags test -race -p 4 ./...` を実行し（macOS 以外ではさらに `CGO_ENABLED=0` の 2 回目を実行する）、`e2e` タグを付けない。`make e2e-test` はビルド済みバイナリの dry-run と Python スクリプトを実行するだけで、`go test -tags e2e` を呼ばない。`.github/workflows/ci.yml` も `-tags test` のみである。したがって上記 7 つの e2e テストは**リポジトリのどのターゲットからも実行されない**。さらに `e2e` タグ付きのファイルは `make test` でも `make lint` でもコンパイルされないため、書き換えても型エラーが既定のゲートに現れない。移行した検証が退行しないよう、Phase 4 で Makefile ターゲットを新設して CI に組み込む（ステップ 4-3）。なお実行してみると、これらのテストは macOS では 0163 以前から 7 件中 3 件が失敗する（設定が `/usr/bin/echo` を指すが macOS では `/bin/echo` にある）。CI は `ubuntu-latest` のため CI では 7 件とも成立する。この失敗は本タスクの原因でも対象でもないため修正せず、ターゲットの適用範囲で切り分ける（ステップ 4-3）。
 
 #### 1.3.4 `internal/runner/bootstrap` と `cmd/runner`
 
@@ -121,7 +121,7 @@
 | `docs/user/security-risk-assessment.ja.md` 240〜253 行目 | 「値ベース検出」の一覧が 7 項目、「限界」に空白入り値と非同期配送の記述なし | 4 項目の追加と、限界・配送方式の追記（AC-33, AC-34） |
 | `docs/user/security-risk-assessment.md` | 上記の英語版 | `/mktrans` で反映 |
 | `docs/dev/architecture_design/security-architecture.md` 600 行目・863 行目 | `SlackHandler` の構造体定義を 2 箇所で再掲 | `webhookURL` / `httpClient` / `backoffConfig` の移動を反映 |
-| `docs/dev/architecture_design/security-architecture.ja.md` 597 行目・860 行目 | 同上の日本語版。**02_architecture.md 3.1 の一覧に記載がない** | 英語版と同じ 2 箇所を更新する |
+| `docs/dev/architecture_design/security-architecture.ja.md` 597 行目・860 行目 | 同上の日本語版（02_architecture.md 3.1 の一覧に追加済み） | 英語版と同じ 2 箇所を更新する |
 | `docs/translation_glossary.md` | 本タスク由来の用語は 4 語のみ登録済み（`送信失敗ロガー` 184、`flush` 186、`送信機構` 482、`終了要求チャネル` 484） | 未登録の用語を追加（AC-35） |
 | `make verify-docs` (`Makefile:692`) | `scripts/verification/run_all.sh` が `docs/user` 配下の `*.ja.md` と `*.md` の構造一致を検査する | Phase 6 の完了条件に含める |
 
@@ -129,9 +129,10 @@
 
 02_architecture.md と本計画で扱いが分かれる点を明示する。いずれも設計の意図を変えるものではなく、記述の粒度または場所の調整である。
 
+なお本計画の作成時に発見した 02_architecture.md の誤り 3 件（3.1 の構造体リテラル数、3.1 のベンチマークファイルの追随要否、3.4.11 と 2.1 の間の `GSCR_SLACK_SYNC` の解釈場所の矛盾）は、差異として残さず設計文書本体を修正した。以下の表に挙げるのは、修正ではなく粒度の調整に留まるものだけである。
+
 | 項目 | 02_architecture.md の記述 | 本計画の扱い | 理由 |
 |---|---|---|---|
-| `GSCR_SLACK_SYNC` の解釈場所 | 3.4.11 は、環境変数が設定されていれば `NewSlackHandler` 自身が同期モードに切り替えると読める。一方 2.1 の構成図は、3 つの環境変数を `bootstrap/logger.go` が読むと示す | 2.1 の構成図に従い、`internal/logging` は環境変数名の定数のみを持ち、値の解釈は `bootstrap` が行って `SlackHandlerOptions.Synchronous` として渡す | `internal/logging` が環境を直接読むと、テストと `bootstrap` 以外の呼び出し元で挙動が暗黙に変わる。3 つの環境変数の解釈場所を 1 箇所に揃える |
 | `defaultSendTimeout` の可視性 | 3.4.1 は既定値の名前を定めていない | `DefaultSendTimeout` として公開する（`DefaultFlushTimeout` と対称） | `bootstrap.parseSlackEnvSettings` が未設定・不正値時のフォールバックとして参照する。非公開にすると 40 秒という値が 2 箇所に重複し、AC-19 の検証と乖離しうる |
 | `afterDequeue` フック | 7.3 が「取り出しの直後に同期点を設けるテスト用フック」を要求するが、3.4.1 の `slackSender` の定義には含まれない | `slackSender` の非公開フィールドとして追加する | 7.3 のテストを実現する最小の形。3.4.1 の構造体定義に対する本計画からの追加である |
 | `message_type` 別の内訳 | 3.4.8 は flush 時に webhook ごとの `message_type` 別内訳を出力すると定めるが、3.4.1 の `FlushStats` にその欄がない | `slackSender` が `mu` で保護した `map[string]int` の内訳を持ち、`Flush` の中で送信失敗ロガーへ自ら出力する。`FlushStats` は合計のみを運び、`bootstrap` はそれを webhook ごとに報告する | `FlushStats` に可変長のマップを持たせずに 3.4.8 の要求を満たす |
@@ -145,7 +146,7 @@
 #### ステップ 1-1: キャッシュの実装
 
 - [ ] `regex_cache.go` に `sync.Map` ベースのキャッシュと上限定数 `maxRegexCacheEntries = 256` を定義する。キーはコンパイル対象の正規表現文字列、値は `*regexp.Regexp`。
-- [ ] エントリ数を `atomic.Int64` で数え、上限到達後はキャッシュへ格納せず毎回コンパイルする（02_architecture.md 3.2.7）。
+- [ ] エントリ数を `atomic.Int64` で数え、上限到達後はキャッシュへ格納せず毎回コンパイルする（02_architecture.md 3.2.7）。エビクションは行わないため、上限に達した場合は**後から現れたパターンだけ**が恒久的に毎回コンパイルへ落ちる。上限値の妥当性を判断できるよう、定常状態のエントリ数の見積りを英語コメントで残す: 既定 12 キー × 3 経路（コロン・空白・パターン）で最大 36 エントリであり、`KeyValuePatterns` を設定で拡張しても 1 キーにつき 3 エントリしか増えないため、256 は既定の 7 倍を超える余裕がある。
 - [ ] `compileRedactionRegex` の先頭でキャッシュを引き、末尾で成功結果のみ格納する。コンパイル失敗時は格納せず、現行どおり nil を返す。
 
 #### ステップ 1-2: キャッシュのテスト
@@ -264,7 +265,7 @@
 
 ### Phase 4: `slackSender` の導入と `SlackHandler` の非同期化
 
-**対象ファイル**: `internal/logging/slack_sender.go`（新規）、`internal/logging/handler_chain.go`（新規）、`internal/logging/slack_handler.go`、`internal/logging/slack_sender_test.go`（新規）、`internal/logging/handler_chain_test.go`（新規）、`internal/logging/slack_handler_test.go`、`internal/runner/e2e_slack_webhook_test.go`、`internal/runner/e2e_slack_webhook_separation_test.go`、`Makefile`、`.github/workflows/ci.yml`
+**対象ファイル**: `internal/logging/slack_sender.go`（新規）、`internal/logging/handler_chain.go`（新規）、`internal/logging/slack_handler.go`、`internal/logging/slack_sender_test.go`（新規）、`internal/logging/handler_chain_test.go`（新規）、`internal/logging/slack_handler_test.go`、`internal/runner/bootstrap/logger.go`、`internal/runner/bootstrap/logger_test.go`、`internal/runner/e2e_slack_webhook_test.go`、`internal/runner/e2e_slack_webhook_separation_test.go`、`Makefile`、`.github/workflows/ci.yml`
 
 #### ステップ 4-1: テスト共通規則の確立（本フェーズと Phase 5 の全テストに適用する）
 
@@ -292,7 +293,7 @@
 
 **実装モデル要件**: standard
 
-**判定理由**: 新規ファイルの追加のみで既存の挙動を変えず、未確立の設計判断・panel-mode トリガ・Conditional checks のいずれにも該当しない。なお `verifySlackFreeHandlers` は本 PR では本番の呼び出し元を持たないが、`handler_chain_test.go` から参照されるため `unused` リンタには掛からない（golangci-lint v2.11.4、`--build-tags test` で実測確認済み）。一方 `make deadcode` は `-test` を付けずに実行されるため、本 PR の時点では未到達関数として報告される（現在の baseline は 8 件、本 PR で 9 件になる）。ステップ 4-5 で `NewSlackHandler` が呼び出すと baseline に戻るため、本 PR に限り 9 件を許容する。
+**判定理由**: 新規ファイルの追加のみで既存の挙動を変えず、未確立の設計判断・panel-mode トリガ・Conditional checks のいずれにも該当しない。なお `verifySlackFreeHandlers` は本 PR では本番の呼び出し元を持たないが、`handler_chain_test.go` から参照されるため `unused` リンタには掛からない（golangci-lint v2.11.4、`--build-tags test` で実測確認済み）。一方 `make deadcode` は `-test` を付けずに実行されるため、本 PR の時点では未到達関数として報告される（現在の baseline は 8 件、本 PR で 9 件になる）。ステップ 4-5 で `NewSlackHandler` が呼び出すと baseline に戻るため、本 PR に限り 9 件を許容する。なお `make deadcode` は `.github/workflows/ci.yml` のどのジョブにも含まれていない（CI が実行するのは `lint` / `fmt` / `test-ci-cgo1` / `test-ci-cgo0`）ため、この一時的な 9 件で CI が赤くなることはない。判定を後から再現できるよう、PR-4 の着手時に `make deadcode` の出力を取得して baseline の 8 件を PR 本文へ貼る。
 
 - [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] `make deadcode` の報告が baseline 8 件 ＋ `verifySlackFreeHandlers` の 9 件に留まることを確認した
@@ -348,6 +349,7 @@
 - [ ] 1 件を取り出した後、**書き込みロックの 1 回の臨界区間**で終了状態の観測・送信用コンテキストの生成・キャンセル関数の格納を行う（02_architecture.md 3.4.6 の表）。送信完了後は同じロックの下でキャンセル関数を nil に戻す。
 - [ ] `Flush(ctx)` / `Close()` を実装する。書き込みロック下で受付停止フラグと終了状態を設定し、フラグを立てたのが自分だった場合に限り終了要求を送り、保持しているキャンセル関数を呼ぶ。2 回目以降の呼び出しはワーカー終了通知を待って記録済みの `FlushStats` を返す。
 - [ ] `Flush` は戻る前に、`message_type` 別内訳を 1 件の集計レコードとして送信失敗ロガーへ出力する。このレコードには `slackSender.runID` を `run_id` として含める（02_architecture.md 3.4.8）。
+- [ ] 集計レコードは**送信機構 1 つにつき 1 度だけ**出力する。`Flush` → `Flush` や `Flush` → `Close` のように終了処理が複数回呼ばれても、2 回目以降は記録済みの `FlushStats` を返すだけで集計レコードを出力しない。`sync.Once` で出力を包み、理由（運用側で内訳を集計するときに二重計上させないため）を英語コメントで残す。
 - [ ] 同期モードでは送信キューを確保せずワーカーも起動しない。`Handle` から `send` を直接呼ぶ（02_architecture.md 3.4.11）。
 
 #### ステップ 4-5: `SlackHandler` の改修
@@ -360,6 +362,13 @@
 - [ ] `WithAttrs` / `WithGroup` の構造体リテラルから 3 フィールドを外し、`sender: s.sender` を追加する。
 - [ ] `Flush(ctx context.Context) FlushStats` と `Close() FlushStats` を公開する。`sender` が nil のときはゼロ値の `FlushStats` を返す。
 - [ ] `NewSlackHandler` 冒頭の `slog.Debug`、ドライラン分岐の `slog.Debug`、`extractCommandResultsFromGroup` の 5 箇所の `slog.Debug` は Debug レベルのまま変更しない（02_architecture.md 3.4.8）。
+
+**本番の既定を本 PR では同期に固定する（3.2 の PR-6 / PR-7 の中間状態対策）**: 本 PR には flush 経路（Phase 5）が含まれないため、非同期を本番の既定にしたまま本 PR だけがマージされると、プロセス終了時にキューの残件が失われる。これを構造的に防ぐため、本 PR では本番の唯一の生成経路である `AddSlackHandlers` に `Synchronous: true` を明示的に渡し、本番の挙動を現行（同期送信）のまま据え置く。PR-7 でこのリテラルを `parseSlackEnvSettings(os.Getenv)` の結果へ差し替え、flush 経路と同時に非同期を既定にする。
+
+- [ ] `internal/runner/bootstrap/logger.go` の `AddSlackHandlers` の 2 つの `SlackHandlerOptions` リテラル（`logger.go:226` の成功用、`logger.go:240` のエラー用）に `Synchronous: true` を加える。PR-7 で差し替える暫定値であることを英語コメントで明記する。
+- [ ] `logger_test.go` に `TestAddSlackHandlers_UsesSynchronousModeUntilFlushPathExists` を追加し、`newSlackHandlerFunc` を差し替えて捕捉した `SlackHandlerOptions.Synchronous` が両方の呼び出しで真であることを固定する。PR-7 でこのテストは `TestAddSlackHandlers_PropagatesEnvSettings` に置き換えて削除する旨を英語コメントで残す。
+
+この措置は `internal/logging` のテストと `internal/runner` の e2e テストには影響しない。いずれも `logging.NewSlackHandler` を直接呼んでおり、`Synchronous` を指定しないためゼロ値（＝非同期）で動く。したがって本 PR でも非同期経路は 4-6 / 4-7 の全テストによって完全に検証される。
 
 #### ステップ 4-6: 既存テストの移行
 
@@ -390,7 +399,7 @@
 - [ ] `TestSlackSender_FlushLogsMessageTypeBreakdown`: 複数の `message_type` を投入して `Flush` を呼び、送信失敗ロガーの出力に `message_type` 別の内訳が現れること。集計レコードに `SlackHandlerOptions.RunID` と同じ `run_id` が含まれることも確かめる。
 - [ ] `TestSlackHandler_FlushDeliversPendingAndReturnsStats`: 期限内に残件が送信され、`Sent` が投入数と一致すること。
 - [ ] `TestSlackHandler_FlushDeadlineReportsPending`: 応答しないサーバに対し、`Flush` が flush 期限内に戻り、送り切れなかった件数が `Pending` に計上されること。
-- [ ] `TestSlackHandler_FlushIsIdempotent`: `Flush` を複数回、および `Flush` 後に `Close` を呼んでも、同じ `FlushStats` が返り、ブロックも panic も起きないこと。
+- [ ] `TestSlackHandler_FlushIsIdempotent`: `Flush` を複数回、および `Flush` 後に `Close` を呼んでも、同じ `FlushStats` が返り、ブロックも panic も起きないこと。加えて、これら複数回の呼び出しを通じて送信失敗ロガーへ出力される集計レコードが **1 件のまま**であることを確かめる（ステップ 4-4）。
 - [ ] `TestSlackHandler_EnqueueAfterFlushIsDropped`: `Flush` 完了後の `Handle` が `Dropped` を増やして nil を返し、クローズ済みチャネルへの送信による panic が起きないこと。
 - [ ] `TestSlackHandler_FlushReturnsWhenWorkerIsIdle`: 通知を 1 件も投入していない送信機構と、投入済みを送り終えた送信機構の双方に対し、`Flush` と `Close` が短い制限時間（例: 1 秒）内に戻り、`done` チャネルが閉じていること。制限時間を超えたらテストを失敗させる。
 - [ ] `TestSlackHandler_FlushCancelsInFlightSend`: 応答しないサーバへの送信が進行中に `Flush` を呼び、flush 期限内に戻ること、その 1 件が `Pending` であること、`done` チャネルが閉じていること。
@@ -416,10 +425,10 @@
 
 **レビュー順序の目安**: 本 PR は 4 ステップ分の差分が 1 本にまとまるため大きい。02_architecture.md 3.4.1 の型定義 → ワーカーループ（3.4.6 の臨界区間） → `Flush` / `Close`（3.4.7） → `Handle` の投入経路（6.2 上段） → 既存テストの移行 → 新規テスト、の順に読むと設計文書と対応が取れる。
 
-**必ず PR-7 と続けてマージする**: 本 PR だけがマージされた状態では、`Handle` が投入のみを行う一方で `cmd/runner` にはまだ flush 呼び出しがない（ステップ 5-1 は PR-7）。この間、プロセス終了時に送信キューへ残っていた通知は送られずに失われる。これは AC-23 / AC-24 が防ごうとしている事象そのものである。本 PR と PR-7 はスタックしたブランチとして用意し、続けてマージする。詳細は 3.2 を参照。
+**中間状態は同期モードの固定で塞ぐ**: 本 PR だけがマージされた状態では、`Handle` が投入のみを行う一方で `cmd/runner` にはまだ flush 呼び出しがない（ステップ 5-1 は PR-7）。非同期を本番の既定にしたままこの状態を作ると、プロセス終了時に送信キューの残件が失われる。これは AC-23 / AC-24 が防ごうとしている事象そのものである。そこでステップ 4-5 のとおり、本 PR では `AddSlackHandlers` に `Synchronous: true` を明示的に渡して本番の挙動を現行のまま据え置き、PR-7 で flush 経路と同時に非同期へ倒す。これによりマージ順序が崩れても通知の欠落は起こらず、順序はレビューの都合だけで決められる。
 
 - [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR-7 のブランチが用意され、続けてマージできる状態であることを確認した
+- [ ] `AddSlackHandlers` の 2 箇所が `Synchronous: true` を渡しており、本番の挙動が現行と変わらないことを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
@@ -432,7 +441,7 @@
 
 - [ ] `logger.go` にパッケージ変数 `slackHandlers []*logging.SlackHandler` を追加する。
 - [ ] 環境変数を解釈する純粋関数 `parseSlackEnvSettings(getenv func(string) string) slackEnvSettings` を追加する。`GSCR_SLACK_SEND_TIMEOUT` と `GSCR_SLACK_FLUSH_TIMEOUT` は `time.ParseDuration` で解釈し、未設定または不正値なら `logging.DefaultSendTimeout` / `logging.DefaultFlushTimeout` を採る。`GSCR_SLACK_SYNC` は `"1"` のときのみ真とする。不正値のときは送信失敗ロガーへ警告を残す。
-- [ ] `AddSlackHandlers` で、`FailureHandlers: phase1BaseHandlers` と `parseSlackEnvSettings(os.Getenv)` の結果（`SendTimeout`、`Synchronous`）を `SlackHandlerOptions` へ渡す。
+- [ ] `AddSlackHandlers` で、`FailureHandlers: phase1BaseHandlers` と `parseSlackEnvSettings(os.Getenv)` の結果（`SendTimeout`、`Synchronous`）を `SlackHandlerOptions` へ渡す。ここで PR-6 が置いた暫定の `Synchronous: true`（ステップ 4-5）を差し替える。**この差し替えが非同期を本番の既定にする変更であり、同じ PR に入る `FlushSlackNotifications` の組み込みと不可分である**。片方だけを入れてはならない。
 - [ ] `AddSlackHandlers` の冒頭で、既に登録済みのハンドラがあればすべて `Close` してから `slackHandlers` を空にする（再呼び出し規則）。
 - [ ] エラー通知用ハンドラの生成に失敗した場合、それまでに生成したハンドラを `Close` してからエラーを返す（部分失敗規則）。
 - [ ] 生成に成功したハンドラを `slackHandlers` へ保持する。
@@ -445,6 +454,7 @@
 
 - [ ] `logger_test.go` の `saveAndRestoreGlobals` に `slackHandlers` の退避・復元を追加し、`t.Cleanup` の中で復元前に登録済みハンドラを `Close` してワーカーを残さないようにする。
 - [ ] `TestParseSlackEnvSettings`: 未設定・正常値・不正な duration・`GSCR_SLACK_SYNC` の各値について、`getenv` を注入した表駆動テストで既定値へのフォールバックと伝播を検証する。
+- [ ] PR-6 が追加した `TestAddSlackHandlers_UsesSynchronousModeUntilFlushPathExists`（ステップ 4-5）を削除する。次の `TestAddSlackHandlers_PropagatesEnvSettings` が同じ経路をより広く覆うため、残すと `Synchronous` が常に真であることを誤って固定してしまう。
 - [ ] `TestAddSlackHandlers_PropagatesEnvSettings`: `newSlackHandlerFunc` を差し替えて `SlackHandlerOptions` を捕捉し、`GSCR_SLACK_SEND_TIMEOUT` / `GSCR_SLACK_SYNC` に与えた値が `SendTimeout` / `Synchronous` として届くこと、および `FailureHandlers` が `phase1BaseHandlers` と一致することを検証する（既存の `environment_test.go` と同じ差し替え手法を再利用する）。
 - [ ] `TestAddSlackHandlers_AcceptsInteractivePhase1Handlers`: `SetupLoggerWithConfig(config, forceInteractive=true, false)` を `LogDir` 付きで呼び、続く `AddSlackHandlers` が `ErrFailureLoggerUnverifiableHandler` にならないこと。`go test` の既定環境では `IsInteractive()` が偽になり `*InteractiveHandler` が構成に入らないため、この経路は明示的に強制しないと本番でのみ fail closed に落ちる危険がある。
 - [ ] `TestFlushSlackNotifications_FlushesAllHandlers`: 成功用・エラー用の 2 つのモックサーバを立てて `AddSlackHandlers` を呼び、両方に通知を投入したうえで `FlushSlackNotifications` を呼ぶ。両サーバが通知を受け取っていること、webhook ごとの集計が `phase1FailureLogger` の出力先に現れることを検証する。
@@ -470,7 +480,7 @@
 
 **判定理由**: `FlushSlackNotifications` が複数ハンドラの `Flush` を共有の期限の下で並行に呼び、さらに部分失敗時と再呼び出し時のワーカーの寿命を管理する。取り違えるとワーカー漏れやデッドロックに直結する、並行処理とライフサイクルの孤立した高リスクステップである。副次的に Conditional checks の「資源取得地点での後始末」にも該当する。
 
-**PR-6 に続けてマージする**: PR-6 の 判定理由に記したとおり、本 PR がマージされるまでプロセス終了時の通知欠落が残る。
+**本 PR が非同期を本番の既定にする**: PR-6 が置いた `Synchronous: true` を `parseSlackEnvSettings` の結果へ差し替える変更と、`FlushSlackNotifications` の組み込みは不可分である（ステップ 5-1）。片方だけを入れると、flush 経路のない非同期送信という 3.2 が排除した状態が生じる。レビューではこの 2 つが同じ PR に揃っていることを最初に確認する。
 
 - [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
@@ -539,13 +549,17 @@
 | PR-3 | 3-1 / 3-2 | 値形式検出パターン 4 種の追加 | standard |
 | PR-4 | 4-1 / 4-2 | テスト共通規則の確立と、送信失敗ロガーの構成検証 | standard |
 | PR-5 | 4-3 | Slack e2e テストの CI 組み込み（Makefile と CI の変更のみ） | frontier-recommended |
-| PR-6 | 4-4 / 4-5 / 4-6 / 4-7 | `slackSender` の導入、`SlackHandler` の非同期化、既存テスト移行、新規テスト | frontier-required |
-| PR-7 | 5-1 / 5-2 | `bootstrap` の flush 経路と `cmd/runner` への組み込み | frontier-recommended |
+| PR-6 | 4-4 / 4-5 / 4-6 / 4-7 | `slackSender` の導入、`SlackHandler` の非同期化、既存テスト移行、新規テスト。本番の既定は `Synchronous: true` で据え置く | frontier-required |
+| PR-7 | 5-1 / 5-2 | `bootstrap` の flush 経路と `cmd/runner` への組み込み。**本番の既定を非同期へ倒す** | frontier-recommended |
 | PR-8 | 6-1 / 6-2 | 利用者向け・開発者向け文書と用語集 | standard |
 
 **PR の順序と依存**: PR-1 → PR-2 の順に積む。PR-3 は PR-1 / PR-2 と独立であり、いつ入れてもよい。Slack 側は PR-4 → PR-5 → PR-6 → PR-7 の順に積む。PR-4 と PR-5 は `internal/redaction` 側の 3 本と独立に進められる。PR-8 は PR-2 / PR-3 / PR-6 / PR-7 がすべてマージされた後に行う。
 
-**PR-6 と PR-7 はスタックさせて続けてマージする**: PR-6 のマージ後 PR-7 のマージ前という中間状態では、`Handle` が投入のみを行う一方で `cmd/runner` に flush の呼び出しがないため、プロセス終了時にキューへ残っていた通知が失われる。これは同期送信だった従来より悪化した状態であり、`main` に長く置いてはならない。2 本をスタックしたブランチとして用意し、PR-6 のレビュー完了時点で PR-7 も出せている状態にする。中間状態のリスクは 5 章にも記載する。
+**PR-6 の中間状態は同期モードの固定で塞ぐ**: PR-6 のマージ後 PR-7 のマージ前という中間状態では、`Handle` が投入のみを行う一方で `cmd/runner` に flush の呼び出しがない。非同期を本番の既定にしたままこの状態を作ると、プロセス終了時にキューへ残っていた通知が失われ、同期送信だった従来より悪化する。
+
+これを手続き（「2 本をスタックして続けてマージする」）ではなく構造で防ぐ。PR-6 では本番の唯一の生成経路である `AddSlackHandlers` に `Synchronous: true` を明示的に渡し、本番の挙動を現行のまま据え置く（ステップ 4-5）。PR-7 がこのリテラルを `parseSlackEnvSettings` の結果へ差し替えると同時に `FlushSlackNotifications` を組み込むため、**非同期になる瞬間には必ず flush 経路が存在する**。中間状態でも通知の欠落は起こらないので、PR-6 と PR-7 の間隔はレビューの都合だけで決められる。
+
+この措置は非同期経路の検証を弱めない。`internal/logging` のテストと `internal/runner` の e2e テストはいずれも `logging.NewSlackHandler` を直接呼び、`Synchronous` を指定しない（＝ゼロ値の非同期）ため、PR-6 の時点で非同期経路は全テストによって検証される。同期に固定されるのは本番の `AddSlackHandlers` 経路だけである。
 
 **PR-6 を分割しない理由**: `slackSender` の追加（4-4）は `sendToSlack` の HTTP・リトライ処理を `slack_handler.go` から**移設**するため、`SlackHandler` の改修（4-5）と既存テストの移行（4-6）を伴わないとコンパイルが通らない。移設ではなく複製すれば 4-4 だけを先行させられるが、Slack 送信という秘密情報が通る経路のリトライ処理を 2 つの PR にまたがって二重に持つことになり、CLAUDE.md の DRY 原則にも反するため採らない。新規テスト（4-7）だけを切り出すことも可能だが、並行処理の中核を検証するテストであり、実装と同じ PR で突き合わせられるほうが安全である。差分が大きくなる代償は、PR-6 の「レビュー順序の目安」で補う。
 
@@ -592,7 +606,7 @@
 | `runtime.NumGoroutine()` の完全一致検証が CI で不安定になる | AC-21 / AC-32 のテストが偽陽性で落ちる | 規則 R3（ステップ 4-1）で決定的な観測手段（`done` チャネル、`Dropped` の増加）へ置き換える |
 | e2e テストがどのターゲットからも実行されず退行を見落とす | 非同期化後に e2e が壊れたまま気付かない | Phase 4 で `slack-e2e-test` を新設し CI へ組み込む（ステップ 4-3）。Phase 4 と Phase 5 の完了条件に含める |
 | `e2e` タグのファイルが macOS でコンパイルされず、ステップ 4-6 の書き換えの型エラーが CI まで露見しない | 手戻りが遅れる | ステップ 4-3 で、Darwin では実行を読み飛ばしつつ `go vet -tags e2e,test ./internal/runner` によるコンパイル検査は必ず行う形にする |
-| PR-6 のみがマージされた中間状態で、プロセス終了時にキューの残件が失われる | 同期送信だった従来より通知の欠落が増える。AC-23 / AC-24 が防ごうとしている事象そのもの | PR-6 と PR-7 をスタックしたブランチとして用意し、続けてマージする（3.2）。PR-6 のチェックリストに PR-7 の準備完了を確認する項目を置く |
+| PR-6 のみがマージされた中間状態で、プロセス終了時にキューの残件が失われる | 同期送信だった従来より通知の欠落が増える。AC-23 / AC-24 が防ごうとしている事象そのもの | PR-6 では `AddSlackHandlers` に `Synchronous: true` を渡して本番の既定を同期のまま据え置き、非同期化を flush 経路と同じ PR-7 で不可分に行う（3.2、ステップ 4-5・5-1）。マージ順序に依存しない構造的な対策である |
 | 構成検証が本番の対話的構成のみで fail closed に落ちる | 起動できない環境が生じる | `TestAddSlackHandlers_AcceptsInteractivePhase1Handlers` で `forceInteractive=true` の構成を明示的に検証する |
 | テスト用フック `afterDequeue` が本番経路で有効になる | 予期しない同期点の混入 | 本番コードでは代入せず nil のままとし、`slack_sender_test.go`（同一パッケージ）からのみ代入する。用途を英語コメントで明記する |
 | 文書の記述と実装の既定値が食い違う | 利用者を誤らせる | Phase 6 に、既定値を実装の定数と照合する明示的なタスクを置く。`make verify-docs` で日英の構造一致も検査する |
@@ -609,7 +623,7 @@
 - [ ] PR-4 マージ済み（対象ステップ: 4-1 / 4-2）
 - [ ] PR-5 マージ済み（対象ステップ: 4-3）
 - [ ] PR-6 マージ済み（対象ステップ: 4-4 / 4-5 / 4-6 / 4-7）
-- [ ] PR-7 マージ済み（対象ステップ: 5-1 / 5-2）— PR-6 に続けてマージする
+- [ ] PR-7 マージ済み（対象ステップ: 5-1 / 5-2）— 非同期を本番の既定にする PR
 - [ ] PR-8 マージ済み（対象ステップ: 6-1 / 6-2）
 
 ### 6.2 テストヘルパー
@@ -664,10 +678,11 @@ rg -n -e "^. 値形式検出 " -e "^. キー名ベース redaction " -e "^. 区�
 
 **コマンド G2**（6.3 の X5。02_architecture.md の用語表との網羅的な突き合わせ）:
 
-02_architecture.md 冒頭の用語表は 14 行である。次のコマンドでその 14 語を抜き出す。
+02_architecture.md 冒頭の用語表は 14 行である。次のコマンドでその 14 語を抜き出す。行番号ではなく見出しでアンカーするのは、02_architecture.md の冒頭に 1 行加わるだけで壊れる形を避けるためである。
 
 ```sh
-sed -n '17,33p' docs/tasks/0163_redaction_coverage_and_slack_async/02_architecture.md \
+awk '/^## 用語/{f=1;next} f&&/^## /{exit} f' \
+      docs/tasks/0163_redaction_coverage_and_slack_async/02_architecture.md \
   | awk -F'|' 'NF>2 {gsub(/^ +| +$/,"",$2); print $2}' | tail -n +3
 ```
 
@@ -685,7 +700,7 @@ sed -n '17,33p' docs/tasks/0163_redaction_coverage_and_slack_async/02_architectu
 | AC-06 | test | `internal/redaction/redactor_test.go::TestRedactText_ExistingBehaviorPreserved` |
 | AC-07 | test | `internal/redaction/redactor_test.go::TestRedactText_ExistingBehaviorPreserved` |
 | AC-08 | test | `go test -tags test ./internal/redaction/... ./internal/runner/base/security/...` が、既存テスト関数を変更しないまま合格すること |
-| AC-08 | static | `git diff internal/redaction/redactor_test.go internal/redaction/value_detector_test.go internal/runner/base/security/logging_security_test.go` の差分が追加行のみであること（既存行の変更・削除が 0 であること） |
+| AC-08 | static | `git diff $BASE...HEAD -- internal/redaction/redactor_test.go internal/redaction/value_detector_test.go internal/runner/base/security/logging_security_test.go` の差分が追加行のみであること（既存行の変更・削除が 0 であること）。`$BASE` は 0163 着手前の `main` の SHA を指す。**素の `git diff` を使ってはならない**: 作業ツリーとインデックスの比較になるため、コミット後は常に空になり検証として機能しない。8 本の PR がスタックしたブランチで進むため、比較対象は必ずこの固定の SHA とする |
 | AC-09 | test | `internal/redaction/redactor_test.go::TestRedactText_NoNewOverRedaction`（除外規定に該当しないケース）、`internal/redaction/redactor_test.go::TestRedactText_IntentionalOverRedaction`（除外規定に該当するケース） |
 | AC-10 | test | `internal/redaction/redactor_test.go::TestRedactText_LongTextUnchanged` |
 | AC-11 | test | `internal/redaction/value_detector_test.go::TestValueDetector_GitHubFineGrainedPAT` |
