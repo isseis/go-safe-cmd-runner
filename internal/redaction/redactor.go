@@ -106,38 +106,105 @@ func (c *Config) RedactText(text string) string {
 // occur" for a key the regex would in fact match, and the pre-filter would
 // weaken redaction. Restricting it to ASCII text removes that possibility
 // entirely, because those runes cannot appear in ASCII text.
+//
+// The scan stops at the first upper-case byte and only then starts a copy, so a
+// text that is already lower-case is returned as is and every other text is
+// still read exactly once.
 func asciiLowered(s string) (lowered string, isASCII bool) {
-	hasUpper := false
-	for i := range len(s) {
+	i := 0
+	for ; i < len(s); i++ {
 		c := s[i]
 		if c >= utf8.RuneSelf {
 			return "", false
 		}
-		hasUpper = hasUpper || c >= 'A' && c <= 'Z'
+		if c >= 'A' && c <= 'Z' {
+			break
+		}
 	}
-	if !hasUpper {
+	if i == len(s) {
 		return s, true
 	}
+
+	// s[:i] is already lower-case ASCII, so only the remainder needs folding.
 	b := make([]byte, len(s))
-	for i := range len(s) {
+	copy(b, s[:i])
+	for ; i < len(s); i++ {
 		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 'a' - 'A'
+		if c >= utf8.RuneSelf {
+			return "", false
 		}
-		b[i] = c
+		b[i] = asciiLower(c)
 	}
 	return string(b), true
+}
+
+// asciiLower folds a single ASCII byte to lower case and leaves every other
+// byte alone.
+func asciiLower(c byte) byte {
+	if c >= 'A' && c <= 'Z' {
+		return c + 'a' - 'A'
+	}
+	return c
 }
 
 // keyCanOccur reports whether key may match somewhere in lowerText, which must
 // be the ASCII-lower-cased form of the text. A non-ASCII key is always reported
 // as able to occur, because lowerText cannot be compared against it safely.
 func keyCanOccur(lowerText, key string) bool {
-	lowerKey, keyIsASCII := asciiLowered(key)
-	if !keyIsASCII {
+	for i := range len(key) {
+		if key[i] >= utf8.RuneSelf {
+			return true
+		}
+	}
+	return containsASCIIFold(lowerText, key)
+}
+
+// containsASCIIFold reports whether lowerText contains key, comparing the ASCII
+// letters of key case-insensitively. lowerText must already be ASCII
+// lower-cased and key must be ASCII.
+//
+// Key folding happens one byte at a time during the comparison rather than by
+// lower-casing key up front, because RedactText tests every configured key on
+// every call: seven of the twelve default keys hold an upper-case letter, so a
+// lower-cased copy would mean seven short-lived allocations per call on a path
+// that RedactLogAttribute reaches once per string attribute. Candidate
+// positions are still found with strings.IndexByte, so the scan keeps the
+// optimized byte search and only the few positions that start with the right
+// byte are compared in Go.
+func containsASCIIFold(lowerText, key string) bool {
+	if len(key) == 0 {
 		return true
 	}
-	return strings.Contains(lowerText, lowerKey)
+	if len(key) > len(lowerText) {
+		return false
+	}
+
+	first := asciiLower(key[0])
+	// The last offset at which key still fits in lowerText.
+	limit := len(lowerText) - len(key)
+	for i := 0; i <= limit; i++ {
+		off := strings.IndexByte(lowerText[i:limit+1], first)
+		if off < 0 {
+			return false
+		}
+		i += off
+		if hasASCIIFoldPrefix(lowerText[i:], key) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasASCIIFoldPrefix reports whether s starts with key, comparing the ASCII
+// letters of key case-insensitively. s must be at least as long as key and must
+// already be ASCII lower-cased.
+func hasASCIIFoldPrefix(s, key string) bool {
+	for i := range len(key) {
+		if s[i] != asciiLower(key[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // RedactLogAttribute redacts sensitive information from a log attribute
@@ -459,7 +526,9 @@ func loosenedQuotedBoundary(group boundaryGroup) string {
 }
 
 // keyValueValueGroups returns the value submatch indices of the alternatives of
-// the regex built by buildKeyValueRegex, in the same order.
+// the regex built by buildKeyValueRegex. They are listed in the order the
+// alternatives appear for readability only; matchedValueSpan does not depend on
+// the order, because exactly one alternative participates in any given match.
 func keyValueValueGroups(re *regexp.Regexp) []int {
 	return []int{
 		re.SubexpIndex("dqValue"),
