@@ -145,16 +145,16 @@
 
 #### ステップ 1-1: キャッシュの実装
 
-- [ ] `regex_cache.go` に `sync.Map` ベースのキャッシュと上限定数 `maxRegexCacheEntries = 256` を定義する。キーはコンパイル対象の正規表現文字列、値は `*regexp.Regexp`。
-- [ ] エントリ数を `atomic.Int64` で数え、上限到達後はキャッシュへ格納せず毎回コンパイルする（02_architecture.md 3.2.7）。エビクションは行わないため、上限に達した場合は**後から現れたパターンだけ**が恒久的に毎回コンパイルへ落ちる。上限値の妥当性を判断できるよう、定常状態のエントリ数の見積りを英語コメントで残す: 既定 12 キー × 3 経路（コロン・空白・パターン）で最大 36 エントリであり、`KeyValuePatterns` を設定で拡張しても 1 キーにつき 3 エントリしか増えないため、256 は既定の 7 倍を超える余裕がある。
-- [ ] `compileRedactionRegex` の先頭でキャッシュを引き、末尾で成功結果のみ格納する。コンパイル失敗時は格納せず、現行どおり nil を返す。
+- [x] `regex_cache.go` に `sync.Map` ベースのキャッシュと上限定数 `maxRegexCacheEntries = 256` を定義する。キーはコンパイル対象の正規表現文字列、値は `*regexp.Regexp`。
+- [x] エントリ数を `atomic.Int64` で数え、上限到達後はキャッシュへ格納せず毎回コンパイルする（02_architecture.md 3.2.7）。エビクションは行わないため、上限に達した場合は**後から現れたパターンだけ**が恒久的に毎回コンパイルへ落ちる。上限値の妥当性を判断できるよう、定常状態のエントリ数の見積りを英語コメントで残す: 各キーは 3 経路（コロン・空白・パターン）のちょうど 1 つにルーティングされるため、既定 12 キーは 12 エントリであり、`KeyValuePatterns` を設定で拡張しても 1 キーにつき 1 エントリしか増えない。したがって 256 は既定の 20 倍を超える余裕がある。なお上限判定と格納は別操作であるため、並行実行の境界ではエントリ数が上限をわずかに超えうる（近似の上限。実害はなく、コードコメントにその旨を残す）。
+- [x] `compileRedactionRegex` の先頭でキャッシュを引き、末尾で成功結果のみ格納する。コンパイル失敗時は格納せず、現行どおり nil を返す。
 
 #### ステップ 1-2: キャッシュのテスト
 
-- [ ] `TestRegexCache_ReturnsSameCompiledRegex`: 同じパターン文字列に対して同一の `*regexp.Regexp` ポインタが返ること。
-- [ ] `TestRegexCache_LimitStopsCaching`: 上限を超えたパターンがキャッシュされず、それでも正しい置換結果を返すこと。
-- [ ] `TestRegexCache_CompileFailureIsNotCached`: 不正な正規表現を生む `KeyValuePatterns` を与えたとき、`RedactText` が `RedactionFailurePlaceholder` を返すこと（フェイルセキュア）、失敗結果がキャッシュされず 2 回目も同じ経路を通ること、同じ `Config` の他の正常なキーのキャッシュが汚れないこと。
-- [ ] `TestRegexCache_ConcurrentAccess`: 複数 goroutine から同時に `RedactText` を呼び、結果が単一 goroutine の場合と一致すること。
+- [x] `TestRegexCache_ReturnsSameCompiledRegex`: 同じパターン文字列に対して同一の `*regexp.Regexp` ポインタが返ること。
+- [x] `TestRegexCache_LimitStopsCaching`: 上限を超えたパターンがキャッシュされず、それでも正しい置換結果を返すこと。
+- [x] `TestRegexCache_CompileFailureIsNotCached`: コンパイル失敗経路を、`compileRedactionRegex` に不正なパターン文字列を直接渡して検証する。`RedactText` の 3 経路はすべて `regexp.QuoteMeta` でエスケープした断片から正規表現を組み立てるため、`KeyValuePatterns` からコンパイル失敗を生む入力は存在しない（着手時に実測済み）。検証内容: nil を返すこと（フェイルセキュア。呼び出し側が `RedactionFailurePlaceholder` を返すのは既存挙動）、失敗結果がキャッシュされず 2 回目も nil を返してエントリ数が増えないこと、同一 `Config` の他の正常なキーの置換が影響を受けないこと。
+- [x] `TestRegexCache_ConcurrentAccess`: 複数 goroutine から同時に `RedactText` を呼び、結果が単一 goroutine の場合と一致すること。加えて、各 goroutine が異なるキー（異なるパターン）を同時にコンパイル・格納する局面でも、それぞれの置換結果が正しいことを確かめる。
 
 **完了条件**: `make fmt && make test && make lint` が通り、`internal/redaction` の既存テストの期待値を 1 文字も変更していないこと。
 
@@ -170,8 +170,8 @@
 
 **判定理由**: 挙動を変えないリファクタリングであり、未確立の設計判断・panel-mode トリガ・Conditional checks のいずれにも該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

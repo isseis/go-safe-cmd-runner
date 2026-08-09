@@ -138,6 +138,15 @@ func (c *Config) performKeyValueRedaction(text, key, placeholder string) string 
 // Returns the compiled regex or nil if compilation fails.
 // On failure, logs a warning and returns nil to signal the caller to use RedactionFailurePlaceholder.
 func compileRedactionRegex(regexPattern string, contextInfo map[string]string) *regexp.Regexp {
+	// Serve hits from the cache so patterns that repeat across RedactText calls
+	// are not recompiled each time. Only successful compilations are stored;
+	// a failed pattern must not be cached so later calls still go through the
+	// fail-secure path below, and a failure never pollutes the cache for other
+	// patterns.
+	if re, ok := regexCache.Load(regexPattern); ok {
+		return re.(*regexp.Regexp)
+	}
+
 	re, err := regexp.Compile(regexPattern)
 	if err != nil {
 		// Fail-secure: log warning and signal caller to use safe placeholder
@@ -151,6 +160,19 @@ func compileRedactionRegex(regexPattern string, contextInfo map[string]string) *
 		}
 		slog.Warn("Regex compilation failed - using safe placeholder", logAttrs...)
 		return nil
+	}
+
+	// The limit check and the store are separate operations, so the cache may
+	// overshoot slightly under concurrency; this is an approximate bound, not a
+	// precise capacity. The entry count is incremented only by the goroutine
+	// that actually inserts a new entry (loaded == false), so concurrent
+	// callers of the same pattern do not double-count it.
+	if regexCacheCount.Load() < maxRegexCacheEntries {
+		actual, loaded := regexCache.LoadOrStore(regexPattern, re)
+		if !loaded {
+			regexCacheCount.Add(1)
+		}
+		return actual.(*regexp.Regexp)
 	}
 	return re
 }
