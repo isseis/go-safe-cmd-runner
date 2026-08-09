@@ -66,7 +66,7 @@ func (c *Config) RedactText(text string) string {
 
 	result := text
 
-	// Apply key=value pattern redaction.
+	// Apply key=value pattern redaction
 	for _, key := range c.KeyValuePatterns {
 		result = c.performKeyValueRedaction(result, key, c.Placeholder)
 	}
@@ -264,10 +264,9 @@ const (
 // commonWordKeys holds the lower-cased keys classified as
 // boundaryGroupCommonWord. It is deliberately not a configuration item:
 // whether a word is frequent in English prose is a property of the language,
-// not of a deployment, so a user cannot meaningfully decide it per install.
-// Adding a key to KeyValuePatterns is instead read as a declaration that the
-// key marks a secret, which is why user-added keys default to the loose
-// boundary. Extending this set is a code change. Read-only after init.
+// not of a deployment. Adding a key to KeyValuePatterns is instead read as a
+// declaration that the key marks a secret, which is why user-added keys default
+// to the loose boundary. Read-only after init.
 var commonWordKeys = map[string]struct{}{
 	"key":    {},
 	"token":  {},
@@ -280,8 +279,7 @@ const (
 	// consumes the content of the next line.
 	keyValueSeparator = `[ \t]*[:=][ \t]*`
 	// keyNameClosingQuote matches the optional quote that closes a quoted key
-	// name, as in JSON's "password": "x". It is preserved in the output so the
-	// surrounding structure stays intact.
+	// name, as in JSON's "password": "x".
 	keyNameClosingQuote = `["']?`
 	// looseKeyBoundary matches the start of the text or any non-alphanumeric
 	// character.
@@ -290,13 +288,10 @@ const (
 	// or that quote a key name. A space deliberately does not qualify: allowing
 	// it would redact ordinary diagnostics such as "Primary key: id".
 	strictKeyBoundary = `["'_.\-]`
-	// unquotedValue matches a value that is not wrapped in quotes. It ends at the
-	// first whitespace, as it always has. It additionally refuses to start on a
-	// "{" or "[" so that a key whose value is a nested object or array does not
-	// swallow the remainder of a compact JSON line; such a value has no
-	// whitespace to stop at, so matching it would delete every sibling field and
-	// leave unbalanced brackets behind. Refusing the match leaves those lines
-	// exactly as they were before the separator coverage was widened.
+	// unquotedValue matches an unquoted value, ending at the first whitespace. It
+	// refuses to start on a "{" or "[" so that a nested object or array value -
+	// which has no whitespace to stop at on a compact JSON line - does not
+	// swallow every sibling field and leave unbalanced brackets behind.
 	unquotedValue = `[^\s{\[]\S*`
 )
 
@@ -313,10 +308,10 @@ func keyBoundaryGroup(key string) boundaryGroup {
 	if key == "" {
 		return boundaryGroupSpecific
 	}
-	// Classify on the first byte against the same ASCII alphanumeric set that
-	// looseKeyBoundary negates, so the classification and the boundary character
-	// class cannot disagree. A leading multi-byte rune starts with a byte outside
-	// that set and is therefore treated as already carrying a boundary.
+	// Classify on the first byte against the same set looseKeyBoundary negates,
+	// so the classification and the boundary character class cannot disagree. A
+	// leading multi-byte rune starts outside that set and is therefore treated as
+	// already carrying a boundary.
 	if !isASCIIAlphanumeric(key[0]) {
 		return boundaryGroupPrefixed
 	}
@@ -351,29 +346,21 @@ func keyBoundaryPattern(group boundaryGroup) string {
 // three alternatives carry a boundary; the adjacent form keeps its existing
 // unrestricted behavior.
 //
-// Each alternative captures its value and nothing else. Everything the rebuild
-// has to preserve - the boundary character, the original spelling of the key,
-// the key's closing quote, the separator and both value quotes - lies before or
-// after the value inside the same match, so it can be copied verbatim from the
-// input without a capture group of its own. Keeping the group count at one per
-// alternative also keeps the submatch bookkeeping out of the regex engine's
-// per-byte work, which matters because RedactText runs over whole command
-// outputs.
+// Each alternative captures its value and nothing else: everything else in the
+// match lies before or after the value, so replaceKeyValueMatches can copy it
+// verbatim. One group per alternative also keeps the submatch bookkeeping out of
+// the regex engine's per-byte work, which matters because RedactText runs over
+// whole command outputs.
 func buildKeyValueRegex(escapedKey string, group boundaryGroup) string {
 	boundary := keyBoundaryPattern(group)
 
-	// quoted builds one quoted-value alternative. The opening quote is matched
-	// literally rather than captured because RE2 has no backreference to require
-	// the closing quote to be of the same kind, so each quote character needs its
-	// own alternative. When the closing quote is missing (a truncated log line)
-	// the value group runs to the end of the line and everything after the
-	// opening quote is redacted.
-	//
-	// quotedBoundary is passed separately because the double-quoted alternative
-	// takes the loose boundary even for common-word keys: a quote immediately
-	// after the separator is a structural signal that prose does not produce, and
-	// requiring the strict boundary there would leave half of TOKEN="abc def" -
-	// the shape an environment dump takes - in the clear.
+	// quoted builds one quoted-value alternative, taking its boundary as an
+	// argument because the two quote kinds differ (see loosenedQuotedBoundary).
+	// The opening quote is matched literally rather than captured because RE2 has
+	// no backreference to require the closing quote to be of the same kind, so
+	// each quote character needs its own alternative. When the closing quote is
+	// missing (a truncated log line) the value group runs to the end of the line,
+	// redacting everything after the opening quote.
 	quoted := func(name, quotedBoundary, quote string) string {
 		return quotedBoundary + escapedKey + keyNameClosingQuote + keyValueSeparator +
 			quote + `(?P<` + name + `>[^` + quote + `\r\n]*)` + quote + `?`
@@ -388,11 +375,13 @@ func buildKeyValueRegex(escapedKey string, group boundaryGroup) string {
 }
 
 // loosenedQuotedBoundary returns the boundary used by the double-quoted
-// alternative. Common-word keys get the loose boundary there rather than the
-// strict one; every other group keeps its own boundary. The single-quoted
-// alternative is deliberately not loosened, because a single-quoted value after
-// a common-word key is exactly the shape of the diagnostic
-// "unexpected token: '}'".
+// alternative: common-word keys get the loose boundary there, every other group
+// keeps its own. A double quote right after the separator is a structural signal
+// prose does not produce, and the strict boundary would leave half of
+// TOKEN="abc def" - the shape an environment dump takes - in the clear. The
+// single-quoted alternative is deliberately not loosened, because a
+// single-quoted value after a common-word key is exactly the shape of the
+// diagnostic "unexpected token: '}'".
 func loosenedQuotedBoundary(group boundaryGroup) string {
 	if group == boundaryGroupCommonWord {
 		return looseKeyBoundary
@@ -401,9 +390,8 @@ func loosenedQuotedBoundary(group boundaryGroup) string {
 }
 
 // keyValueValueGroups returns the value submatch indices of the alternatives of
-// the regex built by buildKeyValueRegex. They are listed in the order the
-// alternatives appear for readability only; matchedValueSpan does not depend on
-// the order, because exactly one alternative participates in any given match.
+// the regex built by buildKeyValueRegex. The listing order is for readability
+// only; matchedValueSpan does not depend on it.
 func keyValueValueGroups(re *regexp.Regexp) []int {
 	return []int{
 		re.SubexpIndex("dqValue"),
@@ -426,10 +414,8 @@ func matchedValueSpan(valueGroups []int, m []int) (start, end int, ok bool) {
 }
 
 // replaceKeyValueMatches rebuilds every match, replacing only the value and
-// copying the rest of the match verbatim. Everything from the start of the
-// match up to the value (boundary, key, key quote, separator, opening value
-// quote) and everything from the end of the value to the end of the match
-// (closing value quote) is preserved exactly as it appeared in the input.
+// copying the rest of the match - boundary, key, key quote, separator and value
+// quotes - verbatim from the input.
 //
 // Matches are rebuilt from FindAllStringSubmatchIndex rather than from
 // ReplaceAllStringFunc because that callback receives only the matched text:
@@ -468,13 +454,11 @@ func replaceKeyValueMatches(re *regexp.Regexp, text, placeholder string) string 
 
 // performKeyValuePatternRedaction handles patterns like "key=value"
 func (c *Config) performKeyValuePatternRedaction(text, key, placeholder string) string {
-	// Escape key for regex and create case-insensitive pattern
 	escapedKey := regexp.QuoteMeta(key)
 
 	if strings.Contains(key, "=") {
-		// Key already contains "=", match it exactly + value. This form is left
-		// unchanged: the caller specified the separator as part of the key, so
-		// there is no separator or quoting left for this function to interpret.
+		// The caller specified the separator as part of the key, so there is no
+		// separator or quoting left to interpret: match the key exactly + value.
 		regexPattern := `(?i)(` + escapedKey + `)(\S+)`
 		re := compileRedactionRegex(regexPattern, map[string]string{
 			"function": "performKeyValuePatternRedaction",
@@ -802,14 +786,9 @@ func (r *RedactingHandler) processKindAny(key string, value slog.Value, ctx reda
 		return r.processLogValuer(key, logValuer, ctx)
 	}
 
-	// 2. Check for the error interface, after LogValuer so a type that
-	// implements both is still logged the way it asks to be. An error carries
-	// its message behind Error(), not in its fields: errors.New returns
-	// *errorString and fmt.Errorf returns *fmt.wrapError, and neither has a
-	// single exported field, so the struct walk below would find nothing to
-	// redact and fail secure - replacing every such message with
-	// RedactionFailurePlaceholder. Redacting the Error() string instead keeps
-	// the diagnostic and gives it exactly the redaction a string attribute gets.
+	// 2. Check for the error interface, after LogValuer so a type that implements
+	// both is still logged the way it asks to be (see processError for why errors
+	// cannot go through the struct walk below).
 	if errValue, ok := anyValue.(error); ok {
 		return r.processError(key, errValue, ctx)
 	}
@@ -930,8 +909,10 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 
 // processError resolves an error to its Error() string and redacts that string,
 // so an error attribute is redacted the same way the equivalent string attribute
-// is. Without this the struct walk finds no exported field on the standard error
-// types and suppresses the whole message (see processKindAny).
+// is. An error carries its message behind Error(), not in its fields: neither
+// *errorString (errors.New) nor *fmt.wrapError (fmt.Errorf) has an exported
+// field, so the struct walk would find nothing to redact and fail secure,
+// replacing every such message with RedactionFailurePlaceholder.
 func (r *RedactingHandler) processError(key string, errValue error, ctx redactionContext) (attr slog.Attr, err error) {
 	// 1. Check recursion depth
 	if ctx.depth >= maxRedactionDepth {
