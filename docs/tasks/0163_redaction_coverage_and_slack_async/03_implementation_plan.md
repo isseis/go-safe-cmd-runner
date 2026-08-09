@@ -189,20 +189,17 @@
 - [x] キーが `=` を含む分岐は変更しない。
 - [x] **レビューで判明した 2 点を 02_architecture.md へ反映のうえ実装した**（設計文書本体を修正済み）。(1) V2 の値の先頭が `{` / `[` の場合は一致させない（3.2.2 に追記）。空白のない構造化データで行の残り全体を飲み込み、兄弟フィールドを消す過剰 redaction を防ぐため。(2) 群 B の二重引用符版 V3 にだけ緩い先頭境界を適用する（3.2.4 に追記）。厳しい境界のままでは `TOKEN="abc def"` が V1 へ落ち秘密の後半が平文で残るため。単一引用符版は `unexpected token: '}'` を守るため緩めない。
 - [x] 各選択肢が捕捉するのは値のみとする。境界・キー・キー側引用符・区切り・値側引用符は一致範囲の内側にあるため、入力からそのまま複写でき、捕捉グループを必要としない。捕捉グループ数を選択肢あたり 1 個に抑えることで、キー 1 個あたり約 20 個の捕捉グループを追跡する場合に比べ大幅に速くなる。
-- [x] **`RedactText` にキーの部分文字列による事前判定を入れる**（レビューで判明した劣化への対応）。選択肢を 4 本に増やした結果、正規表現プログラムが大きくなり、キー 1 個あたりの走査コストが上がる。どの選択肢もキーをリテラルとして必要とするため、テキストがキーを大文字小文字を無視して含まないならば一致は起こりえない。そこでテキストを 1 度だけ ASCII 小文字化し、各キーについて存在を確かめてから正規表現を走らせる。あるキーが実際に置換を行ったときだけ小文字化をやり直す。
-- [x] **事前判定は ASCII のテキストにのみ適用する**。Go の正規表現は Unicode の規則で大文字小文字を畳み込むため、U+212A KELVIN SIGN が `(?i)k` に、U+017F LATIN SMALL LETTER LONG S が `(?i)s` に一致する。ASCII 小文字化はこれらを変換しないので、非 ASCII を含むテキストに事前判定をかけると `paſſword=s3cr3t`（正規表現は一致する）を「一致しえない」と誤判定して redaction を弱めてしまう。非 ASCII を 1 バイトでも含むテキストでは事前判定を行わず、従来どおり全キーの正規表現を走らせる。`TestRedactText_PreFilterDoesNotWeakenRedaction` がこのケースを固定しており、ASCII 判定を外すと失敗する。
+- [x] **`RedactText` にキーの部分文字列による事前判定を入れたのち、撤回した**。選択肢を 4 本に増やした結果、正規表現プログラムが大きくなり、キー 1 個あたりの走査コストが上がった（下表）。レビューで判明したこの劣化への対応として、テキストを 1 度だけ ASCII 小文字化して各キーの存在を確かめる事前判定を実装したが、その後の実測で効果が実行時間に現れないことを確認し、メンテナンスコストに見合わないと判断して撤回した。撤回の根拠と、再導入する場合の注意点は 02_architecture.md 3.2.8 に記録した。関連するヘルパ（`asciiLowered` / `keyCanOccur` / `containsASCIIFold` / `hasASCIIFoldPrefix`）と `TestKeyCanOccur` / `TestAsciiLowered` も削除した。
 
 **実測値**（`go test -bench 'BenchmarkRedactText' -benchtime 3s -benchmem -count 3`、Apple M3 Pro、コミット済みの `BenchmarkRedactText` をそのまま使用。3 回の中央値）:
 
-| ベンチマーク | 拡張前（main） | 事前判定なし | 事前判定あり | 事前判定あり・キー小文字化なし（現状） |
+| ベンチマーク | 拡張前（main） | 事前判定なし（＝現状） | 事前判定あり | 事前判定あり・キー小文字化なし |
 |---|---|---|---|---|
-| `BenchmarkRedactText` | 17.0 µs / 3562 B / 69 allocs | 32.5 µs / 6279 B | 15.6 µs / 3259 B / 50 allocs | **15.8 µs / 3196 B / 43 allocs** |
-| `BenchmarkRedactText_NoSensitiveData` | 13.6 µs / 3078 B / 69 allocs | 29.1 µs / 5447 B | 5.85 µs / 1204 B / 30 allocs | **5.71 µs / 1140 B / 23 allocs** |
+| `BenchmarkRedactText` | 17.0 µs / 3562 B / 69 allocs | **32.5 µs / 6279 B** | 15.6 µs / 3259 B / 50 allocs | 15.8 µs / 3196 B / 43 allocs |
+| `BenchmarkRedactText_NoSensitiveData` | 13.6 µs / 3078 B / 69 allocs | **29.1 µs / 5447 B** | 5.85 µs / 1204 B / 30 allocs | 5.71 µs / 1140 B / 23 allocs |
 
-事前判定を入れる前は拡張前比で 1.91 倍・2.14 倍の劣化であった。`RedactLogAttribute` が文字列属性ごとに `RedactText` を呼ぶため、置換対象を含まない行の経路（下段）が実運用では支配的であり、そこが最も悪化していた。事前判定によりいずれも拡張前を下回る（0.93 倍・0.42 倍）。
+現状は拡張前比で 1.91 倍・2.14 倍である。差の絶対値はログ 1 行あたり約 23 µs であり、1 回の実行で 1,000 行を出しても合計 23 ms（子プロセス起動 1 回分と同程度）にとどまるため、runner の実行時間としては観測できない。この判断の詳細は 02_architecture.md 3.2.8 を参照。
 
-- [x] **事前判定でキーの小文字化コピーを作らない**（レビュー指摘への対応）。`strings.Contains(lowerText, 小文字化したキー)` の形では、既定 12 キーのうち大文字を含む 7 キー（`_PASSWORD` / `_TOKEN` / `_KEY` / `_SECRET` / `Bearer ` / `Basic ` / `Authorization: `）について `RedactText` 1 回あたり 7 個の短命な割り当てが生じる。`KeyValuePatterns` は公開フィールドで実行中に差し替えられるため、`Config` 側に小文字化結果を持たせると陳腐化して取りこぼしの原因になりうる。代わりに `containsASCIIFold` を追加し、キーの小文字化を比較時に 1 バイトずつ行う。候補位置の探索には `strings.IndexByte` を使い続けるため、最適化されたバイト探索はそのまま活かせる。上表のとおり `RedactText` 1 回あたり 7 allocs が消える。`TestKeyCanOccur` が割り当てゼロを `testing.AllocsPerRun` で固定している。
-- [x] **`asciiLowered` を 1 パスにする**（同上）。当初は「大文字の有無を調べる走査」と「コピーを作る走査」で全体を 2 回読んでいた。最初の大文字で走査を打ち切り、そこから先だけをコピーに回す形に変え、小文字のみのテキストは従来どおりコピーなしで返す。
 - [x] 再構築を `FindAllStringSubmatchIndex` の結果から行い、`ReplaceAllStringFunc` は使わない（**本計画からの変更**。当初は「`ReplaceAllStringFunc` 内の再構築ロジックを拡張する」としていた）。`ReplaceAllStringFunc` のコールバックが受け取るのは一致した部分文字列だけであり、その文字列に正規表現を再適用すると、文脈では先頭境界を満たさず V1 へ落ちた一致が、先頭の文脈を失ったことで V2・V3 として再解釈されうる（群 A の先頭境界がテキスト先頭を許すため。例: `xpassword="a b"` の V1 一致 `password="a` を単体で再一致させると V3 になる）。どの選択肢が一致したかは、選択肢ごとのキー部分マッチが一致に参加したかで判別する。
 
 #### ステップ 2-2: テスト
@@ -219,9 +216,7 @@
 - [x] `TestRedactText_NoNewOverRedaction`: 02_architecture.md 3.2.6 の「置換されない」行をすべて固定する（`Primary key: id`、`unexpected token: '}'`、`map[key:value]`、`configMapKeyRef: {key: LOG_LEVEL}`、`keyboard: qwerty`、`/usr/local/key/path`、`--timeout=30`、`password:\nsecret`）。群 B の先頭境界が半角スペース・`[`・`{` の 3 ケースを、それぞれ独立したテーブル行として明示する。**追加**: 値の先頭が `{` / `[` のため V2 を適用しない 3 ケース（`{"password":{"a":1},"port":80}`、`{"api_key":["a","b"],"port":80}`、`password: {json: here} trailing`）も固定する。
 - [x] `TestRedactText_IntentionalOverRedaction`: `"key": "us-east-1"` が `"key": "[REDACTED]"` になること（第 1 類）。**追加**: 群 A のキーが散文中でコロンを伴う第 2 類（`failed to read password: permission denied` → `... password: [REDACTED] denied`）も固定する。いずれも AC-09 の除外規定に該当する意図した変更である旨を英語コメントで残す。
 - [x] `TestRedactText_LongTextUnchanged`: 置換対象を含まない 10 KB 程度のテキストに対し `RedactText` の戻り値が入力と一致すること。
-- [x] **追加** `TestRedactText_PreFilterDoesNotWeakenRedaction`: 事前判定が一致を取りこぼさないことを固定する。キー一致が大文字小文字を無視すること、非 ASCII のテキスト（`paſſword=s3cr3t`、`日本語 password=...`）でも置換されること、先行するキーの置換後に後続のキーが取りこぼされないこと。
-- [x] **追加** `TestKeyCanOccur`: 事前判定そのものの契約を固定する。大文字小文字を無視して部分一致すること、比較できない非 ASCII のキーには必ず「一致しうる」と答えること、および既定キーのすべてについて割り当てが 0 であることを `testing.AllocsPerRun` で確かめる。割り当ての固定は高速経路が高速なままであることの担保であり、キーの小文字化コピーを復活させると失敗する。
-- [x] **追加** `TestAsciiLowered`: 小文字化ヘルパーの境界を固定する。大文字が先頭・末尾・混在する場合、非 ASCII を拒否する場合（先頭の大文字より後ろに非 ASCII がある `A日本語` を含む）、および小文字のみのテキストがコピーなしで返ること。
+- [x] **追加** `TestRedactText_CaseAndNonASCII`: キー一致が大文字小文字を無視すること、非 ASCII のテキスト（`paſſword=s3cr3t`、`日本語 password=...`）でも置換されること、先行するキーの置換後に後続のキーが取りこぼされないこと。事前判定の撤回後も残す（素朴なバイト比較による最適化を将来足したときに落ちる網である）。
 
 **完了条件**: `make fmt && make test && make lint` が通り、`internal/redaction` と `internal/runner/base/security` の既存テストを 1 行も変更せずに合格すること。
 

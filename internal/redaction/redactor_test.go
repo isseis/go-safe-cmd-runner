@@ -777,11 +777,11 @@ func TestRedactText_LongTextUnchanged(t *testing.T) {
 	assert.Equal(t, input, config.RedactText(input))
 }
 
-// TestRedactText_PreFilterDoesNotWeakenRedaction covers the substring pre-filter
-// that lets RedactText skip the regex for keys the text cannot contain. The
-// pre-filter must never turn a match into a miss, so the cases below fix the
-// shapes where a naive lower-case comparison would do exactly that.
-func TestRedactText_PreFilterDoesNotWeakenRedaction(t *testing.T) {
+// TestRedactText_CaseAndNonASCII fixes the shapes an ASCII-only shortcut around
+// the key patterns would get wrong: keys are matched case-insensitively under
+// Unicode rules, and a key stays matchable when the surrounding text is not
+// ASCII.
+func TestRedactText_CaseAndNonASCII(t *testing.T) {
 	config := DefaultConfig()
 
 	t.Run("key match stays case-insensitive", func(t *testing.T) {
@@ -791,12 +791,11 @@ func TestRedactText_PreFilterDoesNotWeakenRedaction(t *testing.T) {
 		}
 	})
 
-	t.Run("non-ascii text bypasses the pre-filter", func(t *testing.T) {
+	t.Run("non-ascii text is still redacted", func(t *testing.T) {
 		// Go's regexp folds case under Unicode rules, so (?i)s matches U+017F
-		// LATIN SMALL LETTER LONG S and the key pattern matches "paſſword".
-		// asciiLowered leaves that rune alone, so a pre-filter that ran on
-		// non-ASCII text would report "cannot occur" and leak the value. The
-		// ASCII guard is what prevents that, and this test fails without it.
+		// LATIN SMALL LETTER LONG S and the key pattern matches "paſſword". An
+		// ASCII lower-casing leaves that rune alone, so any byte-wise shortcut
+		// added in front of the regex would call this a miss and leak the value.
 		assert.Equal(t, "paſſword=[REDACTED]", config.RedactText("paſſword=s3cr3t"))
 
 		// Ordinary non-ASCII text around an ASCII key must still be redacted.
@@ -804,96 +803,11 @@ func TestRedactText_PreFilterDoesNotWeakenRedaction(t *testing.T) {
 	})
 
 	t.Run("redaction of one key does not hide a later key", func(t *testing.T) {
-		// The pre-filter caches the lower-cased text and must refresh it after a
-		// key rewrites the text, or a key later in the list would be tested
-		// against a stale copy.
+		// Each key rewrites the text for the keys that follow it, so a rewrite
+		// must not consume or mask a later key's match.
 		assert.Equal(t, "password=[REDACTED] api_key=[REDACTED]",
 			config.RedactText("password=s3cr3t api_key=a1b2c3"))
 	})
-}
-
-// TestKeyCanOccur covers the pre-filter's own contract: it must answer the
-// substring question case-insensitively, must never answer "cannot occur" for a
-// key it is unable to compare, and must not allocate. The allocation assertion
-// is what keeps the fast path fast: RedactText calls keyCanOccur once per
-// configured key per call, so a lower-cased copy of the key reintroduces one
-// allocation per upper-case key on the hottest path in the package.
-func TestKeyCanOccur(t *testing.T) {
-	tests := []struct {
-		name      string
-		lowerText string
-		key       string
-		expected  bool
-	}{
-		{name: "present", lowerText: "user=john password=x", key: "password", expected: true},
-		{name: "absent", lowerText: "user=john", key: "password", expected: false},
-		{name: "upper case key folds", lowerText: "my_token=x", key: "_TOKEN", expected: true},
-		{name: "mixed case key folds", lowerText: "authorization: x", key: "Authorization: ", expected: true},
-		{name: "key at start", lowerText: "password=x", key: "password", expected: true},
-		{name: "key at end", lowerText: "the password", key: "password", expected: true},
-		{name: "key longer than text", lowerText: "pass", key: "password", expected: false},
-		{name: "partial repeated prefix", lowerText: "passpassword", key: "password", expected: true},
-		{name: "near miss on last byte", lowerText: "passworx", key: "password", expected: false},
-		{name: "empty key", lowerText: "anything", key: "", expected: true},
-		// A non-ASCII key cannot be compared against ASCII-lower-cased text, so
-		// the pre-filter must fall back to running the regex.
-		{name: "non-ascii key always runs", lowerText: "anything", key: "paſſword", expected: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, keyCanOccur(tt.lowerText, tt.key))
-		})
-	}
-
-	t.Run("does not allocate", func(t *testing.T) {
-		const text = "2026-08-09t10:00:00z info starting command with no secrets here"
-		for _, key := range DefaultKeyValuePatterns() {
-			allocs := testing.AllocsPerRun(100, func() {
-				keyCanOccur(text, key)
-			})
-			assert.Zero(t, allocs, "keyCanOccur allocated for key %q", key)
-		}
-	})
-}
-
-// TestAsciiLowered covers the folding helper the pre-filter builds its
-// lower-cased text with, including the ASCII guard that the folding relies on.
-func TestAsciiLowered(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		lowered  string
-		isASCII  bool
-		sameData bool // the input is returned as is, without a copy
-	}{
-		{name: "empty", input: "", lowered: "", isASCII: true, sameData: true},
-		{name: "already lower case", input: "password=x", lowered: "password=x", isASCII: true, sameData: true},
-		{name: "upper case at start", input: "Password=x", lowered: "password=x", isASCII: true},
-		{name: "upper case at end", input: "password=X", lowered: "password=x", isASCII: true},
-		{name: "mixed case", input: "PaSsWoRd=X", lowered: "password=x", isASCII: true},
-		{name: "digits and punctuation are untouched", input: "A_1-B.2", lowered: "a_1-b.2", isASCII: true},
-		{name: "non-ascii is rejected", input: "日本語", isASCII: false},
-		// The non-ASCII byte follows the first upper-case byte, so it is only
-		// reached after the copy has started.
-		{name: "non-ascii after upper case is rejected", input: "A日本語", isASCII: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			lowered, isASCII := asciiLowered(tt.input)
-			assert.Equal(t, tt.isASCII, isASCII)
-			if !tt.isASCII {
-				return
-			}
-			assert.Equal(t, tt.lowered, lowered)
-			if tt.sameData {
-				assert.Zero(t, testing.AllocsPerRun(100, func() {
-					asciiLowered(tt.input)
-				}), "an already lower-case text must be returned without a copy")
-			}
-		})
-	}
 }
 
 // TestRedactLogAttribute_SensitiveKeys tests redaction of sensitive key names

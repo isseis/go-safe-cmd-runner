@@ -10,7 +10,6 @@ import (
 	"runtime/debug"
 	"slices"
 	"strings"
-	"unicode/utf8"
 )
 
 // Config controls how sensitive information is redacted
@@ -67,21 +66,9 @@ func (c *Config) RedactText(text string) string {
 
 	result := text
 
-	// Apply key=value pattern redaction. Every alternative of every pattern
-	// built below requires the key as a literal, so a text that does not contain
-	// the key case-insensitively cannot produce a match. Testing that with a
-	// substring search first skips the regex entirely for the keys that are
-	// absent, which is nearly all of them on an ordinary log line.
-	lowerText, textIsASCII := asciiLowered(result)
+	// Apply key=value pattern redaction.
 	for _, key := range c.KeyValuePatterns {
-		if textIsASCII && !keyCanOccur(lowerText, key) {
-			continue
-		}
-		redacted := c.performKeyValueRedaction(result, key, c.Placeholder)
-		if redacted != result {
-			result = redacted
-			lowerText, textIsASCII = asciiLowered(result)
-		}
+		result = c.performKeyValueRedaction(result, key, c.Placeholder)
 	}
 
 	// Apply value-format-based detection (e.g., AWS keys, GitHub tokens, PEM blocks).
@@ -93,118 +80,6 @@ func (c *Config) RedactText(text string) string {
 	}
 
 	return result
-}
-
-// asciiLowered returns s with A-Z folded to a-z, and reports whether s consists
-// only of ASCII bytes.
-//
-// The caller must skip the pre-filter when the report is false. Go's regexp
-// folds case under Unicode rules, which map a few non-ASCII runes onto ASCII
-// letters - U+212A KELVIN SIGN matches (?i)k, and U+017F LATIN SMALL LETTER
-// LONG S matches (?i)s - while this function leaves them untouched. Comparing a
-// text holding such a rune against a lower-cased key would report "cannot
-// occur" for a key the regex would in fact match, and the pre-filter would
-// weaken redaction. Restricting it to ASCII text removes that possibility
-// entirely, because those runes cannot appear in ASCII text.
-//
-// The scan stops at the first upper-case byte and only then starts a copy, so a
-// text that is already lower-case is returned as is and every other text is
-// still read exactly once.
-func asciiLowered(s string) (lowered string, isASCII bool) {
-	i := 0
-	for ; i < len(s); i++ {
-		c := s[i]
-		if c >= utf8.RuneSelf {
-			return "", false
-		}
-		if c >= 'A' && c <= 'Z' {
-			break
-		}
-	}
-	if i == len(s) {
-		return s, true
-	}
-
-	// s[:i] is already lower-case ASCII, so only the remainder needs folding.
-	b := make([]byte, len(s))
-	copy(b, s[:i])
-	for ; i < len(s); i++ {
-		c := s[i]
-		if c >= utf8.RuneSelf {
-			return "", false
-		}
-		b[i] = asciiLower(c)
-	}
-	return string(b), true
-}
-
-// asciiLower folds a single ASCII byte to lower case and leaves every other
-// byte alone.
-func asciiLower(c byte) byte {
-	if c >= 'A' && c <= 'Z' {
-		return c + 'a' - 'A'
-	}
-	return c
-}
-
-// keyCanOccur reports whether key may match somewhere in lowerText, which must
-// be the ASCII-lower-cased form of the text. A non-ASCII key is always reported
-// as able to occur, because lowerText cannot be compared against it safely.
-func keyCanOccur(lowerText, key string) bool {
-	for i := range len(key) {
-		if key[i] >= utf8.RuneSelf {
-			return true
-		}
-	}
-	return containsASCIIFold(lowerText, key)
-}
-
-// containsASCIIFold reports whether lowerText contains key, comparing the ASCII
-// letters of key case-insensitively. lowerText must already be ASCII
-// lower-cased and key must be ASCII.
-//
-// Key folding happens one byte at a time during the comparison rather than by
-// lower-casing key up front, because RedactText tests every configured key on
-// every call: seven of the twelve default keys hold an upper-case letter, so a
-// lower-cased copy would mean seven short-lived allocations per call on a path
-// that RedactLogAttribute reaches once per string attribute. Candidate
-// positions are still found with strings.IndexByte, so the scan keeps the
-// optimized byte search and only the few positions that start with the right
-// byte are compared in Go.
-func containsASCIIFold(lowerText, key string) bool {
-	if len(key) == 0 {
-		return true
-	}
-	if len(key) > len(lowerText) {
-		return false
-	}
-
-	first := asciiLower(key[0])
-	// The last offset at which key still fits in lowerText.
-	limit := len(lowerText) - len(key)
-	for i := 0; i <= limit; i++ {
-		off := strings.IndexByte(lowerText[i:limit+1], first)
-		if off < 0 {
-			return false
-		}
-		i += off
-		if hasASCIIFoldPrefix(lowerText[i:], key) {
-			return true
-		}
-	}
-	return false
-}
-
-// hasASCIIFoldPrefix reports whether s starts with key, comparing the ASCII
-// letters of key case-insensitively. s must be at least as long as key and must
-// already be ASCII lower-cased.
-func hasASCIIFoldPrefix(s, key string) bool {
-	for i := range len(key) {
-		if s[i] != asciiLower(key[i]) {
-			return false
-		}
-	}
-	return true
 }
 
 // RedactLogAttribute redacts sensitive information from a log attribute
