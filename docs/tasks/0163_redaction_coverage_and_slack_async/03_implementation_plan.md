@@ -249,12 +249,14 @@
 - [x] **`Value` が規則の供給する区切りを重ねて持つ場合を正規化する** `trimSuppliedSeparator` を追加した。`"Authorization: "` をヘッダーとして、`"password="` をキーとして宣言すると、区切りを 2 回要求する正規表現になり何にも一致しない（取りこぼす方向の失敗）。末尾の空白・`:`・`=` を除去する。`PatternKindPrefix` には適用しない。
 - [x] **接頭辞規則とヘッダー規則の二重走査を解消した**。`ReplaceAllStringFunc` のコールバック内で `FindStringSubmatch` を再実行していたため、一致 1 件につき走査が 2 回になっていた。`ReplaceAllString` と `"${1}"` 参照に置き換える。プレースホルダー中の `$` は `escapeReplacementDollars` で `$$` にエスケープする（AC-16。`value_detector.go` と同じ規則）。なお `BenchmarkRedactText` の実測差はノイズの範囲であった（キー規則が既定 12 パターン中 9 件を占め支配的なため）。
 - [x] `PatternKindKey` / `PatternKindHeader` のドキュメンテーションコメントに `Value` の契約（区切りを含めない。含めても除去される）を明記した。
+- [x] **`Kind` の選び方をドキュメント化した**（レビュー指摘: `password=` はキー・接頭辞のどちらの定義にも当てはまる）。`Kind` は literal の分類ではなく指示であり、集合を分割しない。キー形の literal ではキー規則が接頭辞規則を厳密に包含する（実測: 接頭辞規則が置換する 3 入力はキー規則もすべて置換し、キー規則はさらに `:` 区切り・空白入り区切り・JSON 形の 3 形を捕捉する。引用符付きの値では接頭辞規則が秘密の後半を平文で残す）。したがって `"password="` を `PatternKindPrefix` と宣言する理由はなく、接頭辞規則は `Bearer ` / `Basic ` のように literal がキー名でない場合のためにある。この非対称性を `PatternKind` の doc コメントと 02_architecture.md 3.2.1 に記載し、回帰テストで固定する。
 
 ##### テスト（レビュー対応分）
 
 - [x] `TestPerformKeyValueRedaction` に「未知の `Kind` が `slog.Default()` 経由で再帰しないこと」を追加する。`slog.Default()` を当の `Config` を使う `RedactingHandler` に差し替えたうえで `RedactText` を呼び、プレースホルダーが返ること（＝スタックオーバーフローしないこと）を固定する。
 - [x] `TestKeyValuePattern_SeparatorSuppliedByRule`: `"Authorization: "` / `"Authorization:"` をヘッダーとして、`"password="` / `"password:"` をキーとして宣言した場合に取りこぼさないこと。`PatternKindPrefix` の `"password="` では区切りが保たれること。
 - [x] `TestKeyValueRules_PlaceholderWithDollar`: 接頭辞規則とヘッダー規則で `$1` を含むプレースホルダーが展開されず、元の秘密が残らないこと。
+- [x] `TestKeyKindDominatesPrefixKindForKeyShapedValues`: `"password="` について、接頭辞規則が置換する入力はキー規則もすべて同じ結果で置換すること、キー規則のみが 3 形の区切りを捕捉すること、引用符付きの値で接頭辞規則が後半を残しキー規則が閉じ引用符まで置換すること。2 つの `Kind` が実質的なトレードオフへ変質した場合にこのテストが落ち、doc コメントの指針が黙って偽になるのを防ぐ。
 
 ##### テスト
 

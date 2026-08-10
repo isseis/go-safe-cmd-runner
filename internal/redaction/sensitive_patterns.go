@@ -147,6 +147,13 @@ func (sp *SensitivePatterns) IsSensitiveEnvVar(name string) bool {
 // kind is stated by whoever writes the pattern rather than derived from the
 // shape of Value, so adding a pattern that happens to contain a space or a colon
 // cannot silently change which redaction rule applies to it.
+//
+// Choosing between them: if Value names a key, use PatternKindKey. If it names a
+// header, use PatternKindHeader. PatternKindPrefix is for the remaining case,
+// where the literal is not a name at all but a token the secret follows directly
+// - an auth scheme. The kinds are instructions rather than a classification of
+// literals, so more than one can be made to fire on the same text; the guidance
+// above picks the one that reads the text correctly.
 type PatternKind int
 
 const (
@@ -159,10 +166,16 @@ const (
 	// This is the zero value, so a KeyValuePattern written without an explicit
 	// Kind gets the most conservative interpretation.
 	PatternKindKey PatternKind = iota
-	// PatternKindPrefix marks Value as a literal prefix that is immediately
-	// followed by the secret, e.g. "Bearer ", "Basic " or "password=". Value
-	// carries its own separator, so everything up to the first whitespace after
-	// it is redacted.
+	// PatternKindPrefix marks Value as a literal that the secret follows
+	// directly, e.g. the auth schemes "Bearer " and "Basic ". Value carries its
+	// own separator, so it is taken verbatim - nothing is stripped from it - and
+	// everything from its end to the first whitespace is redacted.
+	//
+	// Do not use this for a key name that carries its own separator ("password=").
+	// PatternKindKey reads the same text and more: it recognizes ":" and spaced
+	// separators, and it redacts a quoted value to its closing quote, where this
+	// rule stops at the first space and leaves the rest of "password=\"a b\"" in
+	// the clear.
 	PatternKindPrefix
 	// PatternKindHeader marks Value as a header name, e.g. "Authorization". The
 	// colon and the surrounding whitespace are supplied by the redactor, and

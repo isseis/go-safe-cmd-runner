@@ -1564,6 +1564,53 @@ func TestKeyValuePattern_SeparatorSuppliedByRule(t *testing.T) {
 	}
 }
 
+// TestKeyKindDominatesPrefixKindForKeyShapedValues fixes the asymmetry that
+// makes the choice between the two kinds unambiguous for a key-shaped Value such
+// as "password=", which both kinds will happily accept. Whatever the prefix rule
+// redacts, the key rule redacts too, and the key rule reaches shapes the prefix
+// rule cannot - so there is never a reason to declare a key name as a prefix.
+// Without this test the two kinds could drift into a genuine trade-off, and the
+// guidance on PatternKind would quietly stop being true.
+func TestKeyKindDominatesPrefixKindForKeyShapedValues(t *testing.T) {
+	config := DefaultConfig()
+	asKey := KeyValuePattern{Value: "password=", Kind: PatternKindKey}
+	asPrefix := KeyValuePattern{Value: "password=", Kind: PatternKindPrefix}
+
+	t.Run("key redacts everything prefix does", func(t *testing.T) {
+		for _, input := range []string{
+			"password=secret",
+			"xpassword=secret",
+			"PaSsWoRd=secret",
+		} {
+			assert.Equal(t,
+				config.performKeyValueRedaction(input, asPrefix, "[REDACTED]"),
+				config.performKeyValueRedaction(input, asKey, "[REDACTED]"),
+				"input %q", input)
+		}
+	})
+
+	t.Run("key reaches separators prefix cannot", func(t *testing.T) {
+		for _, input := range []string{
+			"password: secret",
+			"password = secret",
+			`"password": "secret"`,
+		} {
+			assert.Equal(t, input, config.performKeyValueRedaction(input, asPrefix, "[REDACTED]"),
+				"prefix rule is expected to miss %q", input)
+			assert.NotContains(t, config.performKeyValueRedaction(input, asKey, "[REDACTED]"), "secret",
+				"key rule must redact %q", input)
+		}
+	})
+
+	t.Run("prefix leaks the tail of a quoted value that key redacts whole", func(t *testing.T) {
+		const input = `password="a b"`
+		assert.Equal(t, `password=[REDACTED] b"`,
+			config.performKeyValueRedaction(input, asPrefix, "[REDACTED]"))
+		assert.Equal(t, `password="[REDACTED]"`,
+			config.performKeyValueRedaction(input, asKey, "[REDACTED]"))
+	})
+}
+
 // TestKeyValueRules_PlaceholderWithDollar guards the replacement-string
 // expansion used by the prefix and header rules: a placeholder containing "$1"
 // must be emitted literally, never expanded back into the secret it replaced.
