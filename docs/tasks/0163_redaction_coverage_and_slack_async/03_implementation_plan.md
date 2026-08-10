@@ -32,20 +32,21 @@
 
 | 対象 | 現状 | 必要な対応 |
 |---|---|---|
-| `Config.RedactText` (`redactor.go:62`) | `KeyValuePatterns` を順に `performKeyValueRedaction` へ渡し、最後に `ValueDetector.Mask` を 1 回適用する | 変更なし。シグネチャも保つ |
-| `performKeyValueRedaction` (`redactor.go:124`) | `:` 含む→コロン経路、空白含む→空白経路、それ以外→`performKeyValuePatternRedaction` | 変更なし |
-| `performKeyValuePatternRedaction` (`redactor.go:220`) | キーが `=` を含むかで 2 つの正規表現を生成。`=` を含まない場合は `(?i)(key)(=)(\S+)` | 02_architecture.md 3.2.3〜3.2.5 のとおり選択肢と先頭境界を追加する。シグネチャは維持 |
-| `compileRedactionRegex` (`redactor.go:140`) | 呼び出しのたびに `regexp.Compile`。失敗時は `slog.Warn` して nil を返す | 内部に上限付きキャッシュを差し込む。3 経路すべてが恩恵を受ける（02_architecture.md 3.2.7） |
-| `DefaultKeyValuePatterns()` (`sensitive_patterns.go:147`) | 12 キー（`password`,`token`,`key`,`secret`,`api_key`,`_PASSWORD`,`_TOKEN`,`_KEY`,`_SECRET`,`Bearer `,`Basic `,`Authorization: `） | 変更なし。群 A=`password`/`api_key`、群 B=`token`/`key`/`secret`、群 C=`_` 始まりの 4 キー、残り 3 キーは第 1・第 2 経路 |
+| `Config.RedactText` (`redactor.go:62`) | `KeyValuePatterns` を順に `performKeyValueRedaction` へ渡し、最後に `ValueDetector.Mask` を 1 回適用する | ループ構造とシグネチャは保つ。要素型が `string` から `KeyValuePattern` に変わる |
+| `performKeyValueRedaction` (`redactor.go:124`) | `:` 含む→コロン経路、空白含む→空白経路、それ以外→`performKeyValuePatternRedaction` | パターンが宣言する `Kind` による `switch` に置き換える。未知の `Kind` は `RedactionFailurePlaceholder`（02_architecture.md 3.2.1） |
+| `performKeyValuePatternRedaction` (`redactor.go:220`) | キーが `=` を含むかで 2 つの正規表現を生成。`=` を含まない場合は `(?i)(key)(=)(\S+)` | 02_architecture.md 3.2.3〜3.2.5 のとおり選択肢と先頭境界を追加する。シグネチャは維持。`=` を含む場合の分岐は `performPrefixRedaction` へ移す（正規表現が同一のため。02_architecture.md 3.2.1） |
+| `compileRedactionRegex` (`redactor.go:140`) | 呼び出しのたびに `regexp.Compile`。失敗時は `slog.Warn` して nil を返す | 内部に上限付きキャッシュを差し込む。3 規則すべてが恩恵を受ける（02_architecture.md 3.2.7） |
+| `performSpacePatternRedaction` / `performColonPatternRedaction` (`redactor.go:181`, `:210`) | 空白経路とコロン経路。パターン文字列に区切り（`" "` / `": "`）を含める前提 | `performPrefixRedaction` / `performHeaderRedaction` に改名する。ヘッダー規則はコロンと前後の空白を正規表現側で供給する形へ変え、`Authorization:x` の取りこぼしを是正する（02_architecture.md 3.2.1） |
+| `DefaultKeyValuePatterns()` (`sensitive_patterns.go:147`) | 12 キー（`password`,`token`,`key`,`secret`,`api_key`,`_PASSWORD`,`_TOKEN`,`_KEY`,`_SECRET`,`Bearer `,`Basic `,`Authorization: `） | 戻り値を `[]KeyValuePattern` に変える。9 キーが `PatternKindKey`（群 A=`password`/`api_key`、群 B=`token`/`key`/`secret`、群 C=`_` 始まりの 4 キー）、`Bearer `/`Basic ` が `PatternKindPrefix`、`Authorization: ` は `Authorization` へ正規化して `PatternKindHeader` |
 | `valueDetectorPatterns` (`value_detector.go:12`) | 7 パターンを構造体リテラルで保持し、`Mask` が固定順に適用 | 4 パターンを追加し、既存 7 種の後で適用する（02_architecture.md 3.3.1） |
 | `Mask` の `$` エスケープ (`value_detector.go:64`) | `strings.ReplaceAll(placeholder, "$", "$$")` を全パターンで共用 | 変更なし。追加パターンも同じ `escapedPlaceholder` を使う |
 | `regex_cache.go` | 存在しない | 新規作成 |
 
 **既存テストへの影響（実測）**:
 
-- `internal/redaction/redactor_test.go` に 3 セグメントの JWT を含む入力は 1 件（2455 行目 `Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc`）。コロン経路が先に行末まで置換するため、JWT パターン追加後も結果は変わらない。
+- `internal/redaction/redactor_test.go` に 3 セグメントの JWT を含む入力は 1 件（2455 行目 `Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc`）。ヘッダー規則が先に行末まで置換するため、JWT パターン追加後も結果は変わらない。
 - `internal/redaction/value_detector_test.go` の JWT を含む 4 箇所（68・157・182・184 行目）はいずれも `Bearer ` プレフィックス付きであり、既存の `bearerToken` パターンが先に消費する。JWT パターンは既存 7 種の**後**に適用するため結果は変わらない。
-- `internal/runner/base/security/logging_security_test.go` の完全一致検証（85 行目 `api_key=abc123def`、102 行目 `Authorization: Bearer eyJ...`）は V1 とコロン経路のみを使うため影響を受けない。
+- `internal/runner/base/security/logging_security_test.go` の完全一致検証（85 行目 `api_key=abc123def`、102 行目 `Authorization: Bearer eyJ...`）は V1 とヘッダー規則のみを使うため影響を受けない。ヘッダー規則の正規化後も、コロンの直後に空白がある形の結果は変わらない（実測済み）。
 - 群 B の厳しい先頭境界により、`token=abc Bearer xyz Authorization: Basic dGVzdA==`（`redactor_test.go:223`）はテキスト先頭が群 B の先頭境界を満たさず V1 へ落ちる。既存の期待値がそのまま成立する。
 
 #### 1.3.2 `internal/logging`
@@ -146,14 +147,14 @@
 #### ステップ 1-1: キャッシュの実装
 
 - [x] `regex_cache.go` に `sync.Map` ベースのキャッシュと上限定数 `maxRegexCacheEntries = 256` を定義する。キーはコンパイル対象の正規表現文字列、値は `*regexp.Regexp`。
-- [x] エントリ数を `atomic.Int64` で数え、上限到達後はキャッシュへ格納せず毎回コンパイルする（02_architecture.md 3.2.7）。エビクションは行わないため、上限に達した場合は**後から現れたパターンだけ**が恒久的に毎回コンパイルへ落ちる。上限値の妥当性を判断できるよう、定常状態のエントリ数の見積りを英語コメントで残す: 各キーは 3 経路（コロン・空白・パターン）のちょうど 1 つにルーティングされるため、既定 12 キーは 12 エントリであり、`KeyValuePatterns` を設定で拡張しても 1 キーにつき 1 エントリしか増えない。したがって 256 は既定の 20 倍を超える余裕がある。なお上限判定と格納は別操作であるため、並行実行の境界ではエントリ数が上限をわずかに超えうる（近似の上限。実害はなく、コードコメントにその旨を残す）。
+- [x] エントリ数を `atomic.Int64` で数え、上限到達後はキャッシュへ格納せず毎回コンパイルする（02_architecture.md 3.2.7）。エビクションは行わないため、上限に達した場合は**後から現れたパターンだけ**が恒久的に毎回コンパイルへ落ちる。上限値の妥当性を判断できるよう、定常状態のエントリ数の見積りを英語コメントで残す: 各パターンは `Kind` により 3 規則（ヘッダー・接頭辞・キー）のちょうど 1 つにルーティングされるため、既定 12 パターンは 12 エントリであり、`KeyValuePatterns` を設定で拡張しても 1 パターンにつき 1 エントリしか増えない。したがって 256 は既定の 20 倍を超える余裕がある。なお上限判定と格納は別操作であるため、並行実行の境界ではエントリ数が上限をわずかに超えうる（近似の上限。実害はなく、コードコメントにその旨を残す）。
 - [x] `compileRedactionRegex` の先頭でキャッシュを引き、末尾で成功結果のみ格納する。コンパイル失敗時は格納せず、現行どおり nil を返す。
 
 #### ステップ 1-2: キャッシュのテスト
 
 - [x] `TestRegexCache_ReturnsSameCompiledRegex`: 同じパターン文字列に対して同一の `*regexp.Regexp` ポインタが返ること。
 - [x] `TestRegexCache_LimitStopsCaching`: 上限を超えたパターンがキャッシュされず、それでも正しい置換結果を返すこと。
-- [x] `TestRegexCache_CompileFailureIsNotCached`: コンパイル失敗経路を、`compileRedactionRegex` に不正なパターン文字列を直接渡して検証する。`RedactText` の 3 経路はすべて `regexp.QuoteMeta` でエスケープした断片から正規表現を組み立てるため、`KeyValuePatterns` からコンパイル失敗を生む入力は存在しない（着手時に実測済み）。検証内容: nil を返すこと（フェイルセキュア。呼び出し側が `RedactionFailurePlaceholder` を返すのは既存挙動）、失敗結果がキャッシュされず 2 回目も nil を返してエントリ数が増えないこと、同一 `Config` の他の正常なキーの置換が影響を受けないこと。
+- [x] `TestRegexCache_CompileFailureIsNotCached`: コンパイル失敗経路を、`compileRedactionRegex` に不正なパターン文字列を直接渡して検証する。`RedactText` の 3 規則はすべて `regexp.QuoteMeta` でエスケープした断片から正規表現を組み立てるため、`KeyValuePatterns` からコンパイル失敗を生む入力は存在しない（着手時に実測済み）。検証内容: nil を返すこと（フェイルセキュア。呼び出し側が `RedactionFailurePlaceholder` を返すのは既存挙動）、失敗結果がキャッシュされず 2 回目も nil を返してエントリ数が増えないこと、同一 `Config` の他の正常なキーの置換が影響を受けないこと。
 - [x] `TestRegexCache_ConcurrentAccess`: 複数 goroutine から同時に `RedactText` を呼び、結果が単一 goroutine の場合と一致すること。加えて、各 goroutine が異なるキー（異なるパターン）を同時にコンパイル・格納する局面でも、それぞれの置換結果が正しいことを確かめる。
 
 **完了条件**: `make fmt && make test && make lint` が通り、`internal/redaction` の既存テストの期待値を 1 文字も変更していないこと。
@@ -186,7 +187,7 @@
 - [x] 群ごとの先頭境界の正規表現断片を返す非公開関数を追加する。3 つの群の境界の定義は 02_architecture.md 3.2.4 の表に従い、本計画では再掲しない。
 - [x] `performKeyValuePatternRedaction` の「キーが `=` を含まない」分岐で、V3 → V2 → V1 の順に並べた選択肢を生成する（02_architecture.md 3.2.3）。区切りの空白は `[ \t]*` のみとし改行を含めない。
 - [x] V2・V3 のキー名側の閉じ引用符の扱い、値側の引用符の保持、閉じ引用符がない場合の行末までの置換を、02_architecture.md 3.2.5 のとおりに実装する。`"` 用と `'` 用の選択肢は別々に書く（RE2 に後方参照がないため）。
-- [x] キーが `=` を含む分岐は変更しない。
+- [x] キーが `=` を含む分岐は変更しない（**後にステップ 2-4 で `performPrefixRedaction` へ統合した**）。
 - [x] **レビューで判明した 2 点を 02_architecture.md へ反映のうえ実装した**（設計文書本体を修正済み）。(1) V2 の値の先頭が `{` / `[` の場合は一致させない（3.2.2 に追記）。空白のない構造化データで行の残り全体を飲み込み、兄弟フィールドを消す過剰 redaction を防ぐため。(2) 群 B の二重引用符版 V3 にだけ緩い先頭境界を適用する（3.2.4 に追記）。厳しい境界のままでは `TOKEN="abc def"` が V1 へ落ち秘密の後半が平文で残るため。単一引用符版は `unexpected token: '}'` を守るため緩めない。
 - [x] 各選択肢が捕捉するのは値のみとする。境界・キー・キー側引用符・区切り・値側引用符は一致範囲の内側にあるため、入力からそのまま複写でき、捕捉グループを必要としない。捕捉グループ数を選択肢あたり 1 個に抑えることで、キー 1 個あたり約 20 個の捕捉グループを追跡する場合に比べ大幅に速くなる。
 - [x] **`RedactText` にキーの部分文字列による事前判定を入れたのち、撤回した**。選択肢を 4 本に増やした結果、正規表現プログラムが大きくなり、キー 1 個あたりの走査コストが上がった（下表）。レビューで判明したこの劣化への対応として、テキストを 1 度だけ ASCII 小文字化して各キーの存在を確かめる事前判定を実装したが、その後の実測で効果が実行時間に現れないことを確認し、メンテナンスコストに見合わないと判断して撤回した。撤回の根拠と、再導入する場合の注意点は 02_architecture.md 3.2.8 に記録した。関連するヘルパ（`asciiLowered` / `keyCanOccur` / `containsASCIIFold` / `hasASCIIFoldPrefix`）と `TestKeyCanOccur` / `TestAsciiLowered` も削除した。
@@ -210,9 +211,9 @@
 - [x] `TestRedactText_JSONForm`: `"password": "secret"` → `"password": "[REDACTED]"`。
 - [x] `TestRedactText_SeparatorVariants`: `password: secret`、`password = secret`、`password :secret`、`password=\tsecret` の置換。複数一致と行をまたぐ入力も含め、各ケースで `assert.NotContains` により値の断片が残らないことを確かめる。
 - [x] `TestRedactText_AlternativePriority`: `password="abc def"` が V1 ではなく V3 として処理されること（結果に ` def"` が残らないこと）と、`monkey="a b"` が V1 へ落ちて `monkey=[REDACTED] b"` になること。
-- [x] `TestRedactText_KeyGroupBehavior`: `DefaultKeyValuePatterns()` の全キーを表駆動で回し、群ごとの期待値を固定する。群 C は先頭境界を課さないため V2 / V3 も無条件に適用される点に注意し、`_KEY=secret` / `_KEY: secret` / `_KEY = secret` / `_KEY="a b"` / `"_KEY": "secret"` の 5 形すべてが置換されることを明示的に固定する（「現行どおり」という曖昧な期待値にしない）。群 A は 3 形式すべて置換、群 B は二重引用符付きの値（緩い先頭境界。3.2.4 の例外）と識別子内境界（`_` / `-` / `.`）および引用符付きキー名のみ置換。
-- [x] `TestKeyBoundaryGroup_Classification`: 既定 12 キーが意図した群に落ちること、および `KeyValuePatterns` に `passphrase` を追加すると群 A として扱われること。
-- [x] `TestRedactText_ExistingBehaviorPreserved`: `Authorization: Bearer xxx`、`Bearer xxx`、`Basic xxx`、キー自身が `=` を含む場合の結果が現行と同一であること。
+- [x] `TestRedactText_KeyGroupBehavior`: `DefaultKeyValuePatterns()` の `PatternKindKey` の全キーを表駆動で回し、群ごとの期待値を固定する。群 C は先頭境界を課さないため V2 / V3 も無条件に適用される点に注意し、`_KEY=secret` / `_KEY: secret` / `_KEY = secret` / `_KEY="a b"` / `"_KEY": "secret"` の 5 形すべてが置換されることを明示的に固定する（「現行どおり」という曖昧な期待値にしない）。群 A は 3 形式すべて置換、群 B は二重引用符付きの値（緩い先頭境界。3.2.4 の例外）と識別子内境界（`_` / `-` / `.`）および引用符付きキー名のみ置換。
+- [x] `TestKeyBoundaryGroup_Classification`: 既定パターンのうち `PatternKindKey` のものが意図した群に落ちること、`PatternKindKey` 以外は群を参照しないこと、および `KeyValuePatterns` に `passphrase` を追加すると群 A として扱われること。`Kind` を省略した `KeyValuePattern` もキー規則に落ちること（ゼロ値の契約）。
+- [x] `TestRedactText_ExistingBehaviorPreserved`: `Authorization: Bearer xxx`、`Bearer xxx`、`Basic xxx`、パターンが自前の `=` を含む場合の結果が現行と同一であること。
 - [x] `TestRedactText_NoNewOverRedaction`: 02_architecture.md 3.2.6 の「置換されない」行をすべて固定する（`Primary key: id`、`unexpected token: '}'`、`map[key:value]`、`configMapKeyRef: {key: LOG_LEVEL}`、`keyboard: qwerty`、`/usr/local/key/path`、`--timeout=30`、`password:\nsecret`）。群 B の先頭境界が半角スペース・`[`・`{` の 3 ケースを、それぞれ独立したテーブル行として明示する。**追加**: 値の先頭が `{` / `[` のため V2 を適用しない 3 ケース（`{"password":{"a":1},"port":80}`、`{"api_key":["a","b"],"port":80}`、`password: {json: here} trailing`）も固定する。
 - [x] `TestRedactText_IntentionalOverRedaction`: `"key": "us-east-1"` が `"key": "[REDACTED]"` になること（第 1 類）。**追加**: 群 A のキーが散文中でコロンを伴う第 2 類（`failed to read password: permission denied` → `... password: [REDACTED] denied`）も固定する。いずれも AC-09 の除外規定に該当する意図した変更である旨を英語コメントで残す。
 - [x] `TestRedactText_LongTextUnchanged`: 置換対象を含まない 10 KB 程度のテキストに対し `RedactText` の戻り値が入力と一致すること。
@@ -230,13 +231,50 @@
 
 **完了条件**: `make fmt && make test && make lint` が通り、既存テストの期待値を変更していないこと。
 
+#### ステップ 2-4: 適用規則の宣言化（レビューで判明した設計上の弱点）
+
+`performKeyValueRedaction` が、パターン文字列に `:` / 空白 / `=` が含まれるかを `strings.Contains` で調べて規則を選んでいた。パターンの意図（`DefaultKeyValuePatterns` のコメント）と実際の振り分け（別ファイルの条件式）が離れており、コロンや空白を含むキー名を追加すると意図しない規則へ黙って流れる。02_architecture.md 3.2.1 を「導出」から「宣言」へ改訂したうえで実装する。
+
+- [x] `sensitive_patterns.go` に `PatternKind`（`PatternKindKey` / `PatternKindPrefix` / `PatternKindHeader`）と `KeyValuePattern{Value, Kind}` を追加する。`PatternKindKey` をゼロ値に置き、`Kind` を書き忘れたパターンが最も仮定の少ない規則に落ちるようにする。
+- [x] `Config.KeyValuePatterns` の要素型と `DefaultKeyValuePatterns()` の戻り値を `[]KeyValuePattern` に変える。`Config` は `internal/` の型であり、生成点は `DefaultConfig` のみ、消費点は `RedactText` のみであるため、互換のための `[]string` 版は残さない（YAGNI）。
+- [x] `performKeyValueRedaction` を `Kind` の `switch` に置き換える。`default` は `RedactionFailurePlaceholder` を返し、`slog.Warn` を残す（02_architecture.md 3.2.1）。
+- [x] `performSpacePatternRedaction` を `performPrefixRedaction` に改名し、`performKeyValuePatternRedaction` の「キーが `=` を含む」分岐をここへ統合する（生成する正規表現 `(?i)(<エスケープ済み>)(\S+)` と置換処理が完全に同一であったため）。置換時に元の接頭辞を取り出す方法は、`match[:len(prefix)]` によるバイト長スライスではなく捕捉グループを使う（非 ASCII の接頭辞ではケース折り畳みでバイト長が変わりうるため）。
+- [x] `performColonPatternRedaction` を `performHeaderRedaction` に改名し、コロンとその前後の空白を正規表現側で供給する形（`([ \t]*:[ \t]*)`）へ変える。既定パターンを `Authorization: ` から `Authorization` に正規化する。これにより `authorization:abc123` の取りこぼしを是正する（02_architecture.md 3.2.1。**振る舞いの変更**であり、AC-09 の除外規定に該当する）。
+- [x] `keyBoundaryGroup` の前提条件コメントを更新する。「呼び出し側が `:` / 空白 を先に振り分け済み」という約束は `Kind == PatternKindKey` という型の事実に置き換わる。群を `Kind` と違って導出のままにする理由も併記する。
+- [x] `regex_cache.go` の「3 経路」の記述を「`Kind` により 3 規則のいずれかへ」に更新する（エントリ数の見積り自体は変わらない）。
+
+##### レビューで判明した 4 点（同ステップ内で修正）
+
+- [x] **未知の `Kind` の分岐から `slog.Warn` を削除した**。本番では `slog.Default()` が当の `Config` を使う `RedactingHandler` であるため、警告が同じ `Config` を通って redact され、同じ分岐へ再入して無限再帰する（実測でスタックオーバーフローを確認）。`Config` は `failureLogger` を持たないため迂回できない。理由をコード内コメントと 02_architecture.md 3.2.1 に残す。
+- [x] **`Value` が規則の供給する区切りを重ねて持つ場合を正規化する** `trimSuppliedSeparator` を追加した。`"Authorization: "` をヘッダーとして、`"password="` をキーとして宣言すると、区切りを 2 回要求する正規表現になり何にも一致しない（取りこぼす方向の失敗）。末尾の空白・`:`・`=` を除去する。`PatternKindPrefix` には適用しない。
+- [x] **接頭辞規則とヘッダー規則の二重走査を解消した**。`ReplaceAllStringFunc` のコールバック内で `FindStringSubmatch` を再実行していたため、一致 1 件につき走査が 2 回になっていた。`ReplaceAllString` と `"${1}"` 参照に置き換える。プレースホルダー中の `$` は `escapeReplacementDollars` で `$$` にエスケープする（AC-16。`value_detector.go` と同じ規則）。なお `BenchmarkRedactText` の実測差はノイズの範囲であった（キー規則が既定 12 パターン中 9 件を占め支配的なため）。
+- [x] `PatternKindKey` / `PatternKindHeader` のドキュメンテーションコメントに `Value` の契約（区切りを含めない。含めても除去される）を明記した。
+
+##### テスト（レビュー対応分）
+
+- [x] `TestPerformKeyValueRedaction` に「未知の `Kind` が `slog.Default()` 経由で再帰しないこと」を追加する。`slog.Default()` を当の `Config` を使う `RedactingHandler` に差し替えたうえで `RedactText` を呼び、プレースホルダーが返ること（＝スタックオーバーフローしないこと）を固定する。
+- [x] `TestKeyValuePattern_SeparatorSuppliedByRule`: `"Authorization: "` / `"Authorization:"` をヘッダーとして、`"password="` / `"password:"` をキーとして宣言した場合に取りこぼさないこと。`PatternKindPrefix` の `"password="` では区切りが保たれること。
+- [x] `TestKeyValueRules_PlaceholderWithDollar`: 接頭辞規則とヘッダー規則で `$1` を含むプレースホルダーが展開されず、元の秘密が残らないこと。
+
+##### テスト
+
+既存テストの期待値を変更する。変更するのはいずれも「規則の選び方」か「ヘッダーの空白の扱い」に由来するものに限る。
+
+- [x] `TestPerformKeyValueRedaction`: 3 つの `Kind` がそれぞれの規則へ届くこと。同じ文字列 `"Authorization: "` を `PatternKindPrefix` として宣言すると接頭辞規則で処理され、コロンから規則が導出されないこと。未知の `Kind` が `RedactionFailurePlaceholder` になること。
+- [x] `TestPerformSpacePatternRedaction` → `TestPerformPrefixRedaction`、`TestPerformColonPatternRedaction` → `TestPerformHeaderRedaction` に改名。後者はパターンをヘッダー名のみに変え、`Authorization : token` と、コロンを伴わない `Authorization failed for user bob`（置換されない）を追加する。
+- [x] `TestRedactText_ColonPatterns` → `TestRedactText_HeaderPatterns` に改名。`Authorization:token456` の期待値を「置換されない」から `Authorization:[REDACTED]` へ変更する（**この 1 件が今回の振る舞いの変更**）。「既定パターンは空白付きの `Authorization: ` のみなので一致しない」と記していた既存コメントを、是正後の説明に差し替える。
+- [x] `TestKeyBoundaryGroup_Classification`: 「残りの既定キーは `:` か空白を含む」というアサーションを `Kind` の直接比較に置き換える。`Kind` を省略した `KeyValuePattern` がキー規則に落ちることも固定する。
+- [x] `TestRedactText_ExistingBehaviorPreserved` / `TestPerformKeyValuePatternRedaction`: 「キーが `=` を含む」ケースを `performPrefixRedaction` の呼び出しへ移す。
+
+**完了条件**: `make fmt && make test && make lint` が通ること。既存テストの変更が上記に列挙したものに限られ、`internal/runner/base/security` の期待値が変わっていないこと。
+
 ### PR-2 作成ポイント: key-name redaction coverage
 
-**対象ステップ**: 2-1 / 2-2 / 2-3
+**対象ステップ**: 2-1 / 2-2 / 2-3 / 2-4
 
 **推奨タイトル**: `feat(0163): extend key-name redaction to separators and quoted values`
 
-**レビュー観点**: 群 A / 群 B / 群 C の先頭境界が 02_architecture.md 3.2.4 の表と一致すること / V3 → V2 → V1 の選択肢順が保たれ引用符付きの値が V1 へ落ちないこと / 既存テストの期待値が 1 行も変わっていないこと（AC-08） / 新たな過剰 redaction が `"key": "us-east-1"` の 1 ケースに限られること（AC-09） / ステップ 2-3 の `error` 判定が `LogValuer` 判定より後にあり、`Error()` が recover の下で呼ばれていること
+**レビュー観点**: 群 A / 群 B / 群 C の先頭境界が 02_architecture.md 3.2.4 の表と一致すること / V3 → V2 → V1 の選択肢順が保たれ引用符付きの値が V1 へ落ちないこと / 既存テストの期待値の変更がステップ 2-4 に列挙したものに限られること（AC-08） / 新たな過剰 redaction が `"key": "us-east-1"` の 1 ケースに限られること（AC-09） / ステップ 2-3 の `error` 判定が `LogValuer` 判定より後にあり、`Error()` が recover の下で呼ばれていること / ステップ 2-4 で規則の選択がキー文字列の形から導出される箇所が残っていないこと（`performKeyValueRedaction` 以下に `strings.Contains(key, ...)` が残っていないこと）
 
 **実装モデル要件**: frontier-required
 
@@ -520,6 +558,7 @@
 - [ ] `docs/user/security-risk-assessment.ja.md` の「値ベース検出」の一覧（241〜249 行目付近）に 4 項目を追加する: GitHub fine-grained PAT（`github_pat_` プレフィックス）、Slack の追加プレフィックストークン（`xapp-`/`xoxe-`/`xoxs-`）、JWT（`eyJ` で始まる 3 セグメントの Base64URL 文字列）、Slack webhook URL（`https://hooks.slack.com/services/` 以降）。
 - [ ] 同ファイルの「限界」の段落に、引用符で囲まれていない値に空白が含まれる場合は 2 語目以降が平文で残ること（02_architecture.md 3.2.2）、および `AllowedHost` に `hooks.slack.com` 以外を設定した構成では webhook URL の値形式検出が働かないこと（02_architecture.md 3.3.3）を追記する。
 - [ ] 同ファイルに、一般的な英単語を `KeyValuePatterns` へ追加すると散文が置換されうること、および群 B のキーが引用符付きの構造化データのフィールド名として現れる場合は非機密でも置換されること（`"key": "us-east-1"`）を追記する。
+- [ ] `docs/user/security-risk-assessment.ja.md` の `RedactText` の抜粋（233 行目付近）を現行の実装に合わせる。ループ変数が `KeyValuePattern` になったこと、および `c.TextPlaceholder` が `c.Placeholder` に統一済みであること（抜粋が古いまま残っている）を直す。
 - [ ] 同ファイルの「限界」の段落に、**群 B のキー（`key` / `token` / `secret`）は引用符のない YAML では捕捉されない**ことを追記する（02_architecture.md 3.2.6 の残存リスク）。`token: ghp_xxx` のように行頭・インデント直後・空白の直後に現れる形は、厳しい先頭境界を満たさないため置換されない。JSON のように引用符が付く形（`"token": "..."`）、および `_` / `-` / `.` に続く形（`api_key:`、`Public-key:`）は捕捉される。群 A のキー（`password`、`api_key` など）にはこの制限はない。回避策として、当該キーを含むより特定的なキー名（`auth_token` など）を `KeyValuePatterns` に追加できることを併記する。
 - [ ] 同ファイルに Slack 通知の配送方式の節を追加する: 非同期に送信されること、プロセス終了時に既定 15 秒の期限で flush されること、到達不能時や強制終了時には通知が失われうること（02_architecture.md 2.4 の表の要約）、通知内容自体はログファイルに残ること、ワーカー 1 本の直列処理による最悪遅延の目安、`GSCR_SLACK_SYNC=1` が通常運用向けではないデバッグ用の退避手段であること。
 - [ ] 追加した記述の裏付けを取る: 既定値（flush 期限 15 秒、送信デッドライン 40 秒、キュー容量 32 / 128）を `internal/logging/slack_sender.go` の定数と 1 件ずつ照合し、`GSCR_SLACK_SYNC` の判定条件を `bootstrap.parseSlackEnvSettings` の実装と照合する。
@@ -529,6 +568,7 @@
 
 - [ ] `docs/dev/architecture_design/security-architecture.md` の 600 行目と 863 行目の `SlackHandler` 構造体定義を、`webhookURL` / `httpClient` / `backoffConfig` を除き `sender *slackSender` を加えた形へ更新する。周辺の説明文にも非同期配送になった旨を追記する。
 - [ ] `docs/dev/architecture_design/security-architecture.ja.md` の 597 行目と 860 行目に同じ更新を行う。
+- [ ] 同 2 ファイルの `redaction.Config` 構造体の抜粋（`security-architecture.md` 551 行目、`security-architecture.ja.md` 547 行目）の `KeyValuePatterns []string` を `KeyValuePatterns []KeyValuePattern` へ更新し、各要素が `Value` と `Kind` を持つこと、`Kind` が適用規則（キー／接頭辞／ヘッダー）を宣言することを 1 文で添える（02_architecture.md 3.2.1）。
 - [ ] `docs/translation_glossary.md` に未登録の用語を追加する: 値形式検出（value-format detection）、キー名ベース redaction（key-name-based redaction）、区切り（separator）、キー名の先頭境界（leading boundary）、送信キュー（send queue）、ワーカー（worker）、受付停止（stop accepting）、破棄（drop）、flush 期限（flush deadline）、終了要求（shutdown request）、drain / abandon。用語の表記は 02_architecture.md 冒頭の用語表と一字一句一致させる。既登録の 4 語（送信失敗ロガー・flush・送信機構・終了要求チャネル）は重複させない。
 
 **完了条件**: `make verify-docs` が通り、8 章の受け入れ基準検証がすべて期待どおりの結果を返すこと。

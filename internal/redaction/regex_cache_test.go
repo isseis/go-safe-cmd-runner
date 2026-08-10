@@ -58,7 +58,10 @@ func TestRegexCache_LimitStopsCaching(t *testing.T) {
 
 	assert.NotSame(t, first, second, "patterns beyond the limit must be compiled on every call")
 
-	config := &Config{Placeholder: "[REDACTED]", KeyValuePatterns: []string{marker}}
+	config := &Config{
+		Placeholder:      "[REDACTED]",
+		KeyValuePatterns: []KeyValuePattern{{Value: marker, Kind: PatternKindKey}},
+	}
 	assert.Equal(t, marker+"=[REDACTED]", config.RedactText(marker+"=secret123"),
 		"an uncached pattern must still redact correctly through the production path")
 }
@@ -66,11 +69,11 @@ func TestRegexCache_LimitStopsCaching(t *testing.T) {
 // TestRegexCache_CompileFailureIsNotCached verifies the fail-secure path: an
 // uncompilable pattern returns nil, the failure is not cached (a later call
 // still runs through the same compile path and the entry count does not grow),
-// and the failure does not pollute the cache for other keys of the same Config.
-// The failure path is exercised by calling compileRedactionRegex directly with
-// an invalid pattern, because all three RedactText routes build their regex
-// from regexp.QuoteMeta-escaped fragments, so no KeyValuePatterns entry can
-// produce an uncompilable pattern.
+// and the failure does not pollute the cache for other patterns of the same
+// Config. The failure path is exercised by calling compileRedactionRegex
+// directly with an invalid pattern, because all three RedactText routes build
+// their regex from regexp.QuoteMeta-escaped fragments, so no KeyValuePatterns
+// entry can produce an uncompilable pattern.
 func TestRegexCache_CompileFailureIsNotCached(t *testing.T) {
 	const badPattern = `(?i)(` // unterminated group, always a compile error
 
@@ -121,7 +124,10 @@ func TestRegexCache_ConcurrentAccess(t *testing.T) {
 	var distinctWG sync.WaitGroup
 	for i := range distinctGoroutines {
 		key := fmt.Sprintf("__regex_cache_test_distinct_%d__", i)
-		cfg := &Config{Placeholder: "[REDACTED]", KeyValuePatterns: []string{key}}
+		cfg := &Config{
+			Placeholder:      "[REDACTED]",
+			KeyValuePatterns: []KeyValuePattern{{Value: key, Kind: PatternKindKey}},
+		}
 		distinctWG.Add(1)
 		go func() {
 			defer distinctWG.Done()

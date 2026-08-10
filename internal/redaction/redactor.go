@@ -19,9 +19,10 @@ type Config struct {
 	Placeholder string
 	// Patterns contains the sensitive patterns to detect
 	Patterns *SensitivePatterns
-	// KeyValuePatterns contains keys for key=value or header redaction
-	// e.g. ["password", "token", "Authorization: "]
-	KeyValuePatterns []string
+	// KeyValuePatterns contains the patterns for key-name-based redaction, each
+	// declaring how it is to be interpreted
+	// e.g. [{"password", PatternKindKey}, {"Authorization", PatternKindHeader}]
+	KeyValuePatterns []KeyValuePattern
 	// ValueDetector detects sensitive values based on value format (e.g., AWS keys,
 	// GitHub tokens, PEM blocks) independent of key-name context. When nil, value-based
 	// detection is skipped. DefaultConfig sets this to a detector with the same placeholder.
@@ -66,9 +67,9 @@ func (c *Config) RedactText(text string) string {
 
 	result := text
 
-	// Apply key=value pattern redaction
-	for _, key := range c.KeyValuePatterns {
-		result = c.performKeyValueRedaction(result, key, c.Placeholder)
+	// Apply key-name-based redaction
+	for _, pattern := range c.KeyValuePatterns {
+		result = c.performKeyValueRedaction(result, pattern, c.Placeholder)
 	}
 
 	// Apply value-format-based detection (e.g., AWS keys, GitHub tokens, PEM blocks).
@@ -120,18 +121,29 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 	return attr
 }
 
-// performKeyValueRedaction performs redaction on key=value patterns
-func (c *Config) performKeyValueRedaction(text, key, placeholder string) string {
-	if strings.Contains(key, ":") {
-		// For header-like patterns such as "Authorization:" or "Authorization: "
-		return c.performColonPatternRedaction(text, key, placeholder)
+// performKeyValueRedaction applies one pattern to the text, dispatching on the
+// kind the pattern declares.
+func (c *Config) performKeyValueRedaction(text string, pattern KeyValuePattern, placeholder string) string {
+	switch pattern.Kind {
+	case PatternKindHeader:
+		return c.performHeaderRedaction(text, pattern.Value, placeholder)
+	case PatternKindPrefix:
+		return c.performPrefixRedaction(text, pattern.Value, placeholder)
+	case PatternKindKey:
+		return c.performKeyValuePatternRedaction(text, pattern.Value, placeholder)
+	default:
+		// A Kind outside the declared set is a programming error, not input: fail
+		// secure rather than guess at an interpretation.
+		//
+		// This branch deliberately does not log. RedactText runs inside
+		// RedactingHandler.Handle, and in production slog.Default() is that same
+		// RedactingHandler (see bootstrap.setupLogger), so logging here would
+		// redact the warning through the very Config that produced it, hit this
+		// branch again, and recurse until the stack overflows. Config holds no
+		// failureLogger to route around that - only RedactingHandler does - and the
+		// placeholder is itself the visible signal that redaction was suppressed.
+		return RedactionFailurePlaceholder
 	}
-	if strings.Contains(key, " ") {
-		// For patterns like "Bearer ", "Basic " - replace the token after the space
-		return c.performSpacePatternRedaction(text, key, placeholder)
-	}
-	// For regular key=value patterns
-	return c.performKeyValuePatternRedaction(text, key, placeholder)
 }
 
 // compileRedactionRegex compiles a regex pattern with fail-secure error handling.
@@ -177,71 +189,92 @@ func compileRedactionRegex(regexPattern string, contextInfo map[string]string) *
 	return re
 }
 
-// performSpacePatternRedaction handles patterns like "Bearer ", "Basic "
-func (c *Config) performSpacePatternRedaction(text, pattern, placeholder string) string {
-	// Escape pattern for regex and create case-insensitive pattern
-	// Match: pattern followed by one or more non-whitespace characters
-	escapedPattern := regexp.QuoteMeta(pattern)
-	regexPattern := `(?i)(` + escapedPattern + `)(\S+)`
+// performPrefixRedaction handles PatternKindPrefix patterns such as "Bearer ",
+// "Basic " or "password=". The pattern carries its own separator, so there is no
+// separator or quoting left to interpret: everything from the end of the prefix
+// to the first whitespace is the value.
+func (c *Config) performPrefixRedaction(text, prefix, placeholder string) string {
+	// Escape prefix for regex and create case-insensitive pattern
+	// Match: prefix followed by one or more non-whitespace characters
+	regexPattern := `(?i)(` + regexp.QuoteMeta(prefix) + `)(\S+)`
 
 	re := compileRedactionRegex(regexPattern, map[string]string{
-		"function": "performSpacePatternRedaction",
-		"pattern":  pattern,
+		"function": "performPrefixRedaction",
+		"pattern":  prefix,
 	})
 	if re == nil {
 		return RedactionFailurePlaceholder
 	}
 
-	// Replace matching tokens with pattern + placeholder
-	return re.ReplaceAllStringFunc(text, func(match string) string {
-		// Find the original pattern in the match (preserving case)
-		patternLen := len(pattern)
-		if len(match) < patternLen {
-			return match
-		}
-
-		originalPattern := match[:patternLen]
-		return originalPattern + placeholder
-	})
+	// Replace matching tokens with prefix + placeholder. "${1}" copies the prefix
+	// as it appeared in the input, preserving its case. Referring to the group
+	// rather than slicing the match by len(prefix) also keeps this correct for a
+	// non-ASCII prefix, whose case-insensitive match can differ in byte length
+	// from the prefix the regex was built from.
+	return re.ReplaceAllString(text, "${1}"+escapeReplacementDollars(placeholder))
 }
 
-// performColonPatternRedaction handles patterns like "Authorization:" or "Authorization: "
-// It will redact everything after the pattern up to the end of line (or end of string).
-func (c *Config) performColonPatternRedaction(text, pattern, placeholder string) string {
-	// Escape pattern for regex and create case-insensitive pattern
-	// Match: pattern + optional whitespace + optional auth scheme (Bearer/Basic) + value + line ending
-	escapedPattern := regexp.QuoteMeta(pattern)
-	regexPattern := `(?i)(` + escapedPattern + `)([ \t]*)((?:bearer |basic )?)[^\r\n]*`
+// trimSuppliedSeparator removes a trailing separator that a Value spells out
+// even though its own rule supplies one. The key rule and the header rule both
+// build the separator themselves, so a Value written the way these patterns were
+// written before PatternKind existed - "Authorization: ", "password=" - would
+// otherwise compile to a regex demanding the separator twice and silently match
+// nothing at all. That is the most likely way to mis-write a pattern, and its
+// failure mode is fail-open, so it is normalized rather than left to a comment.
+// PatternKindPrefix deliberately does not use this: carrying its own separator
+// is exactly what that kind means.
+//
+// This normalizes how a Value is spelled within an already-chosen rule. It is not
+// the shape inference that PatternKind replaced, which chose the rule itself.
+func trimSuppliedSeparator(value string) string {
+	trimmed := strings.TrimRight(value, " \t")
+	trimmed = strings.TrimRight(trimmed, ":=")
+	return strings.TrimRight(trimmed, " \t")
+}
+
+// escapeReplacementDollars makes a placeholder safe to embed in a
+// Regexp.ReplaceAllString replacement, where "$0"/"$1"/etc. expand to the match
+// and its capture groups. Without this, a placeholder configured with "$1"-like
+// text would re-inject the matched (secret) text it was meant to hide.
+func escapeReplacementDollars(placeholder string) string {
+	return strings.ReplaceAll(placeholder, "$", "$$")
+}
+
+// performHeaderRedaction handles PatternKindHeader patterns such as
+// "Authorization". The colon and the whitespace around it are supplied here
+// rather than being spelled out in the pattern, so "Authorization: x" and
+// "Authorization:x" are both matched. It redacts everything after the separator
+// up to the end of line (or end of string), keeping an auth scheme name.
+func (c *Config) performHeaderRedaction(text, header, placeholder string) string {
+	// Escape header name for regex and create case-insensitive pattern
+	// Match: header + separator (colon with optional surrounding whitespace)
+	// + optional auth scheme (Bearer/Basic) + value + line ending
+	escapedHeader := regexp.QuoteMeta(trimSuppliedSeparator(header))
+	regexPattern := `(?i)(` + escapedHeader + `)([ \t]*:[ \t]*)((?:bearer |basic )?)[^\r\n]*`
 
 	re := compileRedactionRegex(regexPattern, map[string]string{
-		"function": "performColonPatternRedaction",
-		"pattern":  pattern,
+		"function": "performHeaderRedaction",
+		"pattern":  header,
 	})
 	if re == nil {
 		return RedactionFailurePlaceholder
 	}
 
-	// Replace matching headers with pattern + whitespace + scheme + placeholder
-	return re.ReplaceAllStringFunc(text, func(match string) string {
-		// Extract the original case-preserving parts using submatch
-		submatches := re.FindStringSubmatch(match)
-		const minSubmatchCount = 4
-		if len(submatches) < minSubmatchCount {
-			return match
-		}
-
-		originalPattern := submatches[1] // Original pattern preserving case
-		whitespace := submatches[2]      // Whitespace after pattern
-		scheme := submatches[3]          // Auth scheme (Bearer/Basic) if present
-
-		return originalPattern + whitespace + scheme + placeholder
-	})
+	// Replace matching headers with header + separator + scheme + placeholder,
+	// copying the first three groups from the input so their case and whitespace
+	// survive: ${1} the header name, ${2} the colon and the whitespace around it,
+	// ${3} the auth scheme (Bearer/Basic) when present.
+	return re.ReplaceAllString(text, "${1}${2}${3}"+escapeReplacementDollars(placeholder))
 }
 
 // boundaryGroup classifies a key by how strict a boundary must precede the key
 // name before a separator-based or quoted-value match is allowed. It applies
-// only to keys routed to performKeyValuePatternRedaction that do not contain
-// "=" themselves.
+// only to PatternKindKey patterns.
+//
+// Unlike PatternKind, the group is derived from the key rather than declared.
+// Which words are frequent in English prose is a property of the language, not
+// of the pattern's author, so there is nothing for an author to declare: see
+// commonWordKeys.
 type boundaryGroup int
 
 const (
@@ -264,7 +297,7 @@ const (
 // commonWordKeys holds the lower-cased keys classified as
 // boundaryGroupCommonWord. It is deliberately not a configuration item:
 // whether a word is frequent in English prose is a property of the language,
-// not of a deployment. Adding a key to KeyValuePatterns is instead read as a
+// not of a deployment. Adding a pattern to KeyValuePatterns is instead read as a
 // declaration that the key marks a secret, which is why user-added keys default
 // to the loose boundary. Read-only after init.
 var commonWordKeys = map[string]struct{}{
@@ -301,9 +334,7 @@ func isASCIIAlphanumeric(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }
 
-// keyBoundaryGroup derives the boundary group from the key string. Callers must
-// already have routed keys containing ":" or " " to the colon and space paths,
-// and keys containing "=" keep their own unchanged rule.
+// keyBoundaryGroup derives the boundary group from the key string.
 func keyBoundaryGroup(key string) boundaryGroup {
 	if key == "" {
 		return boundaryGroupSpecific
@@ -452,33 +483,15 @@ func replaceKeyValueMatches(re *regexp.Regexp, text, placeholder string) string 
 	return b.String()
 }
 
-// performKeyValuePatternRedaction handles patterns like "key=value"
+// performKeyValuePatternRedaction handles PatternKindKey patterns: a key name
+// whose separator, quoting and value extent are interpreted here rather than
+// spelled out in the pattern. A caller that wants to supply the separator itself
+// declares PatternKindPrefix instead.
 func (c *Config) performKeyValuePatternRedaction(text, key, placeholder string) string {
+	key = trimSuppliedSeparator(key)
 	escapedKey := regexp.QuoteMeta(key)
 
-	if strings.Contains(key, "=") {
-		// The caller specified the separator as part of the key, so there is no
-		// separator or quoting left to interpret: match the key exactly + value.
-		regexPattern := `(?i)(` + escapedKey + `)(\S+)`
-		re := compileRedactionRegex(regexPattern, map[string]string{
-			"function": "performKeyValuePatternRedaction",
-			"key":      key,
-		})
-		if re == nil {
-			return RedactionFailurePlaceholder
-		}
-		return re.ReplaceAllStringFunc(text, func(match string) string {
-			submatches := re.FindStringSubmatch(match)
-			const minSubmatchCount = 3
-			if len(submatches) < minSubmatchCount {
-				return match
-			}
-			originalKey := submatches[1] // Original key preserving case
-			return originalKey + placeholder
-		})
-	}
-
-	// Key without "=": match a quoted, separated or adjacent value.
+	// Match a quoted, separated or adjacent value.
 	regexPattern := buildKeyValueRegex(escapedKey, keyBoundaryGroup(key))
 	re := compileRedactionRegex(regexPattern, map[string]string{
 		"function": "performKeyValuePatternRedaction",
