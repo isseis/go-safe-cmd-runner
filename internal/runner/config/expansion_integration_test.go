@@ -119,13 +119,13 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:     "make",
-				WorkDir: runnertypes.StringPtr("/projects/${project}"),
+				WorkDir: new("/projects/${project}"),
 			},
 			templateName: "workdir_tmpl",
 			expectSpec: &runnertypes.CommandSpec{
 				Name:    "workdir_cmd",
 				Cmd:     "make",
-				WorkDir: runnertypes.StringPtr("/projects/myapp"),
+				WorkDir: new("/projects/myapp"),
 			},
 			expectWarns: []string{},
 		},
@@ -134,20 +134,20 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "custom_workdir_cmd",
 				Template: "workdir_tmpl",
-				WorkDir:  runnertypes.StringPtr("/custom/dir"),
+				WorkDir:  new("/custom/dir"),
 				Params: map[string]any{
 					"project": "myapp",
 				},
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:     "make",
-				WorkDir: runnertypes.StringPtr("/projects/${project}"),
+				WorkDir: new("/projects/${project}"),
 			},
 			templateName: "workdir_tmpl",
 			expectSpec: &runnertypes.CommandSpec{
 				Name:    "custom_workdir_cmd",
 				Cmd:     "make",
-				WorkDir: runnertypes.StringPtr("/custom/dir"),
+				WorkDir: new("/custom/dir"),
 			},
 			expectWarns: []string{},
 		},
@@ -156,7 +156,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "cmd_only_workdir",
 				Template: "no_workdir_tmpl",
-				WorkDir:  runnertypes.StringPtr("/my/workdir"),
+				WorkDir:  new("/my/workdir"),
 				Params:   map[string]any{},
 			},
 			template: &runnertypes.CommandTemplate{
@@ -166,7 +166,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			expectSpec: &runnertypes.CommandSpec{
 				Name:    "cmd_only_workdir",
 				Cmd:     "echo",
-				WorkDir: runnertypes.StringPtr("/my/workdir"),
+				WorkDir: new("/my/workdir"),
 			},
 			expectWarns: []string{},
 		},
@@ -397,7 +397,7 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:     "echo",
-				WorkDir: runnertypes.StringPtr("${@dirs}"),
+				WorkDir: new("${@dirs}"),
 			},
 			templateName: "workdir_tmpl",
 			expectErr:    true,
@@ -431,7 +431,7 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:     "echo",
-				WorkDir: runnertypes.StringPtr("${@dir}"),
+				WorkDir: new("${@dir}"),
 			},
 			templateName: "workdir_tmpl",
 			expectErr:    true,
@@ -464,7 +464,7 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:     "echo",
-				WorkDir: runnertypes.StringPtr("${path}"),
+				WorkDir: new("${path}"),
 			},
 			templateName: "workdir_tmpl",
 			expectErr:    false,

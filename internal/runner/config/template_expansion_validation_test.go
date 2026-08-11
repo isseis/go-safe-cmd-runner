@@ -26,7 +26,7 @@ func TestValidateTemplateVars(t *testing.T) {
 			template: runnertypes.CommandTemplate{
 				Cmd:     "echo",
 				Args:    []string{"hello", "world"},
-				WorkDir: runnertypes.StringPtr("/tmp"),
+				WorkDir: new("/tmp"),
 				EnvVars: []string{"KEY=value"},
 			},
 			templateName: "test",
@@ -38,7 +38,7 @@ func TestValidateTemplateVars(t *testing.T) {
 			template: runnertypes.CommandTemplate{
 				Cmd:     "echo %{GREETING}",
 				Args:    []string{"%{NAME}", "%{MESSAGE}"},
-				WorkDir: runnertypes.StringPtr("%{WORK_DIR}"),
+				WorkDir: new("%{WORK_DIR}"),
 				EnvVars: []string{"KEY=%{VALUE}"},
 			},
 			templateName: "test",
@@ -56,7 +56,7 @@ func TestValidateTemplateVars(t *testing.T) {
 			template: runnertypes.CommandTemplate{
 				Cmd:     "echo %{MSG}",
 				Args:    []string{"%{ARG1}", "%{ARG2}"},
-				WorkDir: runnertypes.StringPtr("%{DIR}"),
+				WorkDir: new("%{DIR}"),
 				EnvVars: []string{"KEY1=%{VAL1}", "KEY2=%{VAL2}"},
 			},
 			templateName: "test",
@@ -95,7 +95,7 @@ func TestValidateTemplateVars(t *testing.T) {
 			name: "error: local variable in workdir",
 			template: runnertypes.CommandTemplate{
 				Cmd:     "echo",
-				WorkDir: runnertypes.StringPtr("%{local_dir}"),
+				WorkDir: new("%{local_dir}"),
 			},
 			templateName: "test",
 			globalVars:   map[string]string{},
@@ -138,7 +138,7 @@ func TestValidateTemplateVars(t *testing.T) {
 			name: "error: undefined global variable in workdir",
 			template: runnertypes.CommandTemplate{
 				Cmd:     "echo",
-				WorkDir: runnertypes.StringPtr("%{UNDEFINED_DIR}"),
+				WorkDir: new("%{UNDEFINED_DIR}"),
 			},
 			templateName: "test",
 			globalVars:   map[string]string{},
@@ -340,7 +340,7 @@ func TestValidateAllTemplates(t *testing.T) {
 				},
 				"template2": {
 					Cmd:     "ls %{DIR}",
-					WorkDir: runnertypes.StringPtr("%{WORK_DIR}"),
+					WorkDir: new("%{WORK_DIR}"),
 				},
 			},
 			globalVars: map[string]string{

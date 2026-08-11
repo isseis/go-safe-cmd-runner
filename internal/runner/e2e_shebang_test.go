@@ -197,7 +197,7 @@ func TestIntegration_ShebangChainRunnerExecution(t *testing.T) {
 	configSpec := &runnertypes.ConfigSpec{
 		Version: "1.0",
 		Global: runnertypes.GlobalSpec{
-			Timeout: tu.Int32Ptr(30),
+			Timeout: new(int32(30)),
 		},
 		Groups: []runnertypes.GroupSpec{
 			{

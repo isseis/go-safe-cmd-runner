@@ -4,7 +4,6 @@ import (
 	"reflect"
 	"testing"
 
-	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,7 +28,7 @@ output_size_limit = 2097152
 				EnvVars:         []string{"DEBUG=1"},
 				EnvAllowed:      []string{"DEBUG"},
 				EnvImport:       []string{},
-				OutputSizeLimit: tu.Int64Ptr(2097152),
+				OutputSizeLimit: new(int64(2097152)),
 			},
 		},
 	}
@@ -107,7 +106,7 @@ output_file = "/tmp/output.log"
 				EnvVars:    []string{"CMD_VAR=test"},
 				EnvImport:  []string{"cmd_user=USER"},
 				RiskLevel:  RiskLevelLowPtr,
-				OutputFile: StringPtr("/tmp/output.log"),
+				OutputFile: new("/tmp/output.log"),
 			},
 		},
 	}
@@ -151,7 +150,7 @@ args = ["hello"]
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: tu.Int32Ptr(300),
+					Timeout: new(int32(300)),
 				},
 				Groups: []GroupSpec{
 					{
@@ -189,7 +188,7 @@ cmd = "/bin/echo"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: tu.Int32Ptr(300),
+					Timeout: new(int32(300)),
 				},
 				Security: SecuritySpec{
 					TrustedGIDs: []uint32{10, 20},
@@ -229,7 +228,7 @@ cmd = "/bin/echo"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: tu.Int32Ptr(300),
+					Timeout: new(int32(300)),
 				},
 				Security: SecuritySpec{
 					TrustedDirectories: []string{"/srv/run/work", "/opt/run/tmp"},
@@ -266,7 +265,7 @@ cmd = "/bin/echo"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: tu.Int32Ptr(120),
+					Timeout: new(int32(120)),
 				},
 				Security: SecuritySpec{},
 				Groups: []GroupSpec{
@@ -310,8 +309,8 @@ cmd = "/bin/echo"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout:         tu.Int32Ptr(300),
-					OutputSizeLimit: tu.Int64Ptr(1048576),
+					Timeout:         new(int32(300)),
+					OutputSizeLimit: new(int64(1048576)),
 					VerifyFiles:     []string{"/usr/bin/python3", "/usr/bin/gcc"},
 					EnvAllowed:      []string{"PATH", "HOME"},
 					EnvVars:         []string{"PATH=/usr/bin:/bin", "HOME=/root"},
@@ -359,7 +358,7 @@ cmd = "/usr/bin/make"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: tu.Int32Ptr(300),
+					Timeout: new(int32(300)),
 				},
 				Groups: []GroupSpec{
 					{
@@ -413,7 +412,7 @@ TEST_VAR = "value"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: tu.Int32Ptr(300),
+					Timeout: new(int32(300)),
 				},
 				Groups: []GroupSpec{
 					{
@@ -424,12 +423,12 @@ TEST_VAR = "value"
 								Description: "Test command",
 								Cmd:         "/usr/bin/python3",
 								Args:        []string{"-m", "pytest"},
-								WorkDir:     StringPtr("/tmp/test"),
-								Timeout:     tu.Int32Ptr(60),
+								WorkDir:     new("/tmp/test"),
+								Timeout:     new(int32(60)),
 								RunAsUser:   "testuser",
 								RunAsGroup:  "testgroup",
 								RiskLevel:   RiskLevelMediumPtr,
-								OutputFile:  StringPtr("/tmp/output.log"),
+								OutputFile:  new("/tmp/output.log"),
 								EnvVars:     []string{"PYTHONPATH=/opt/lib"},
 								EnvImport:   []string{"path=PATH"},
 								Vars:        map[string]any{"TEST_VAR": "value"},
@@ -502,7 +501,7 @@ cmd = "/bin/date"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: tu.Int32Ptr(300),
+					Timeout: new(int32(300)),
 				},
 				Groups: []GroupSpec{
 					{
@@ -608,7 +607,7 @@ func TestCommandSpec_GetRiskLevel(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var riskLevelPtr *string
 			if tt.riskLevel != "" {
-				riskLevelPtr = StringPtr(tt.riskLevel)
+				riskLevelPtr = new(tt.riskLevel)
 			}
 			spec := &CommandSpec{
 				RiskLevel: riskLevelPtr,

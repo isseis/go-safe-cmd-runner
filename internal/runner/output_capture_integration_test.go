@@ -60,8 +60,8 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:         tu.Int32Ptr(30),
-					OutputSizeLimit: tu.Int64Ptr(1024),
+					Timeout:         new(int32(30)),
+					OutputSizeLimit: new(int64(1024)),
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -71,7 +71,7 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 								Name:       "test-cmd",
 								Cmd:        "echo",
 								Args:       []string{"test"},
-								OutputFile: tu.StringPtr("output.txt"),
+								OutputFile: new("output.txt"),
 							},
 						},
 					},
@@ -159,8 +159,8 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:         tu.Int32Ptr(30),
-					OutputSizeLimit: tu.Int64Ptr(1024),
+					Timeout:         new(int32(30)),
+					OutputSizeLimit: new(int64(1024)),
 				},
 				Groups: []runnertypes.GroupSpec{
 					{

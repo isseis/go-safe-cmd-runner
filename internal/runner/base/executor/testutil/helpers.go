@@ -144,7 +144,7 @@ func WithOutputFile(outputFile string) RuntimeCommandOption {
 // WithRiskLevel sets the risk level for the command.
 func WithRiskLevel(riskLevel string) RuntimeCommandOption {
 	return func(c *runtimeCommandConfig) {
-		c.riskLevel = runnertypes.StringPtr(riskLevel)
+		c.riskLevel = new(riskLevel)
 	}
 }
 

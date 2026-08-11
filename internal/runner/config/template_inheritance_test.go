@@ -3,7 +3,6 @@ package config
 import (
 	"testing"
 
-	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,29 +24,29 @@ func TestOverrideStringPointer(t *testing.T) {
 		{
 			name:          "command nil, template non-nil",
 			cmdValue:      nil,
-			templateValue: tu.StringPtr("/template/dir"),
-			want:          tu.StringPtr("/template/dir"),
+			templateValue: new("/template/dir"),
+			want:          new("/template/dir"),
 			description:   "When command is nil, should inherit from template",
 		},
 		{
 			name:          "command non-nil, template non-nil",
-			cmdValue:      tu.StringPtr("/command/dir"),
-			templateValue: tu.StringPtr("/template/dir"),
-			want:          tu.StringPtr("/command/dir"),
+			cmdValue:      new("/command/dir"),
+			templateValue: new("/template/dir"),
+			want:          new("/command/dir"),
 			description:   "When command is non-nil, should use command value",
 		},
 		{
 			name:          "command empty string, template non-nil",
-			cmdValue:      tu.StringPtr(""),
-			templateValue: tu.StringPtr("/template/dir"),
-			want:          tu.StringPtr(""),
+			cmdValue:      new(""),
+			templateValue: new("/template/dir"),
+			want:          new(""),
 			description:   "When command is empty string (non-nil), should use empty string",
 		},
 		{
 			name:          "command non-nil, template nil",
-			cmdValue:      tu.StringPtr("/command/dir"),
+			cmdValue:      new("/command/dir"),
 			templateValue: nil,
-			want:          tu.StringPtr("/command/dir"),
+			want:          new("/command/dir"),
 			description:   "When command is non-nil and template is nil, should use command value",
 		},
 	}

@@ -18,10 +18,6 @@ func unlimitedOutputSizeLimit() OutputSizeLimit {
 	return OutputSizeLimit{NewOptionalValue[int64](0)}
 }
 
-func int64Ptr(v int64) *int64 {
-	return &v
-}
-
 func TestErrInvalidOutputSizeLimit_Error(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -253,21 +249,21 @@ func TestNewOutputSizeLimitFromPtr(t *testing.T) {
 		},
 		{
 			name:      "zero pointer creates unlimited limit",
-			ptr:       int64Ptr(0),
+			ptr:       new(int64(0)),
 			wantSet:   true,
 			wantUnlim: true,
 			wantValue: 0,
 		},
 		{
 			name:      "positive pointer creates limit",
-			ptr:       int64Ptr(1024),
+			ptr:       new(int64(1024)),
 			wantSet:   true,
 			wantUnlim: false,
 			wantValue: 1024,
 		},
 		{
 			name:      "large limit pointer (100MB)",
-			ptr:       int64Ptr(100 * 1024 * 1024),
+			ptr:       new(int64(100 * 1024 * 1024)),
 			wantSet:   true,
 			wantUnlim: false,
 			wantValue: 100 * 1024 * 1024,

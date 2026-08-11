@@ -5,7 +5,6 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
-	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -118,14 +117,14 @@ func TestRuntimeCommand_Output(t *testing.T) {
 		{
 			name: "output path specified",
 			spec: &CommandSpec{
-				OutputFile: StringPtr("/tmp/output.log"),
+				OutputFile: new("/tmp/output.log"),
 			},
 			want: "/tmp/output.log",
 		},
 		{
 			name: "no output specified",
 			spec: &CommandSpec{
-				OutputFile: StringPtr(""),
+				OutputFile: new(""),
 			},
 			want: "",
 		},
@@ -184,7 +183,7 @@ func TestRuntimeCommand_GetRiskLevel(t *testing.T) {
 		{
 			name: "invalid risk level",
 			spec: &CommandSpec{
-				RiskLevel: StringPtr("invalid"),
+				RiskLevel: new("invalid"),
 			},
 			want:    RiskLevelUnknown,
 			wantErr: true,
@@ -261,7 +260,7 @@ func TestRuntimeCommand_HasUserGroupSpecification(t *testing.T) {
 func TestRuntimeGlobal_Structure(t *testing.T) {
 	// Test that RuntimeGlobal can be created with proper structure
 	spec := &GlobalSpec{
-		Timeout: tu.Int32Ptr(300),
+		Timeout: new(int32(300)),
 		EnvVars: []string{"PATH=/usr/bin"},
 		Vars:    map[string]any{"VAR1": "value1"},
 	}
@@ -320,8 +319,8 @@ func TestRuntimeCommand_Structure(t *testing.T) {
 		Name:    "test-cmd",
 		Cmd:     "/usr/bin/echo",
 		Args:    []string{"hello", "world"},
-		WorkDir: StringPtr("/tmp"),
-		Timeout: tu.Int32Ptr(60),
+		WorkDir: new("/tmp"),
+		Timeout: new(int32(60)),
 		EnvVars: []string{"TEST=value"},
 	}
 
@@ -353,7 +352,7 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 		Name:    "test-cmd",
 		Cmd:     "/usr/bin/echo",
 		Args:    []string{"hello", "world"},
-		Timeout: tu.Int32Ptr(60),
+		Timeout: new(int32(60)),
 	}
 
 	runtime, err := NewRuntimeCommand(spec, common.NewUnsetTimeout(), commontestutil.NewUnsetOutputSizeLimit(), "test-group")
@@ -376,7 +375,7 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 // TestRuntimeGlobal_HelperMethods tests the helper methods for RuntimeGlobal
 func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	spec := &GlobalSpec{
-		Timeout:    tu.Int32Ptr(300),
+		Timeout:    new(int32(300)),
 		EnvAllowed: []string{"PATH", "HOME"},
 	}
 

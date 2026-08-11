@@ -463,8 +463,6 @@ func logRiskProfileEntry(t *testing.T, entry risktypes.RiskAuditEntry) map[strin
 	return logEntry
 }
 
-func strptr(s string) *string { return &s }
-
 // TestLogRiskProfile_LogLevelByRisk verifies the log level corresponds to
 // the effective risk level for allow decisions (no deny floor applies).
 func TestLogRiskProfile_LogLevelByRisk(t *testing.T) {
@@ -595,9 +593,9 @@ func TestLogRiskProfile_CorrelationFieldsAndAbsence(t *testing.T) {
 		entry := logRiskProfileEntry(t, risktypes.RiskAuditEntry{
 			CommandName:    "rm",
 			Mode:           risktypes.ModeNormal,
-			ResolvedPath:   strptr("/usr/bin/rm"),
-			ContentHash:    strptr("sha256:abc"),
-			RecordID:       strptr("schema-v1"),
+			ResolvedPath:   new("/usr/bin/rm"),
+			ContentHash:    new("sha256:abc"),
+			RecordID:       new("schema-v1"),
 			MaxAllowedRisk: runnertypes.RiskLevelLow,
 			Decision:       risktypes.DecisionDeny,
 			Assessment: risktypes.RiskAssessment{
@@ -808,8 +806,8 @@ func TestLogRiskProfile_Chain(t *testing.T) {
 		Decision:    risktypes.DecisionAllow,
 		Assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelMedium},
 		Chain: []risktypes.ExecutedArtifact{
-			{Path: "/usr/bin/env", Role: risktypes.RoleWrapper, Disposition: risktypes.DispVerified, ContentHash: strptr("sha256:env")},
-			{Path: "/usr/bin/curl", Role: risktypes.RoleInner, Disposition: risktypes.DispVerified, ContentHash: strptr("sha256:curl")},
+			{Path: "/usr/bin/env", Role: risktypes.RoleWrapper, Disposition: risktypes.DispVerified, ContentHash: new("sha256:env")},
+			{Path: "/usr/bin/curl", Role: risktypes.RoleInner, Disposition: risktypes.DispVerified, ContentHash: new("sha256:curl")},
 		},
 	})
 

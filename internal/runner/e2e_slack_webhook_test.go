@@ -22,13 +22,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
-	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
+
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -113,7 +114,7 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Version: "1.0",
 		Global: runnertypes.GlobalSpec{
-			Timeout: tu.Int32Ptr(30),
+			Timeout: new(int32(30)),
 		},
 		Groups: []runnertypes.GroupSpec{
 			{
@@ -149,15 +150,15 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 	// Verify: Check payloads received by mock HTTP server
 	require.NotEmpty(t, receivedPayloads, "should have sent HTTP requests to mock Slack endpoint")
 
-	allPayloads := ""
+	var allPayloads strings.Builder
 	for i, payload := range receivedPayloads {
 		t.Logf("Payload %d: %s", i+1, payload)
-		allPayloads += payload + "\n"
+		allPayloads.WriteString(payload + "\n")
 	}
 
 	// Verify the HTTP flow worked
-	assert.Contains(t, allPayloads, "e2e-mock-test-group", "payload should contain group name")
-	assert.Contains(t, allPayloads, "SUCCESS", "payload should indicate success")
+	assert.Contains(t, allPayloads.String(), "e2e-mock-test-group", "payload should contain group name")
+	assert.Contains(t, allPayloads.String(), "SUCCESS", "payload should indicate success")
 
 	// Note: This test verifies the HTTP webhook flow works correctly.
 	// It does NOT verify command execution or redaction because the Runner

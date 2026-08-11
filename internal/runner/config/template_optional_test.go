@@ -228,7 +228,7 @@ func TestOptionalParameter_InWorkDir(t *testing.T) {
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:     "echo",
-				WorkDir: runnertypes.StringPtr("${?dir}"),
+				WorkDir: new("${?dir}"),
 			},
 			expectDir:   "/my/dir",
 			description: "Pure optional should return the value when provided",
@@ -242,7 +242,7 @@ func TestOptionalParameter_InWorkDir(t *testing.T) {
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:     "echo",
-				WorkDir: runnertypes.StringPtr("${?dir}"),
+				WorkDir: new("${?dir}"),
 			},
 			expectDir:   "",
 			description: "Pure optional workdir should be empty when parameter missing",
@@ -258,7 +258,7 @@ func TestOptionalParameter_InWorkDir(t *testing.T) {
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:     "echo",
-				WorkDir: runnertypes.StringPtr("/home/${?subdir}"),
+				WorkDir: new("/home/${?subdir}"),
 			},
 			expectDir:   "/home/myproject",
 			description: "Mixed context optional should substitute value",
@@ -272,7 +272,7 @@ func TestOptionalParameter_InWorkDir(t *testing.T) {
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:     "echo",
-				WorkDir: runnertypes.StringPtr("/home/${?subdir}"),
+				WorkDir: new("/home/${?subdir}"),
 			},
 			expectDir:   "/home/",
 			description: "Mixed context optional should substitute empty string when missing",

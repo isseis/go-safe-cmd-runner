@@ -244,7 +244,7 @@ func TestLongRunningStability(t *testing.T) {
 		[]string{"-c", "for i in $(seq 1 10); do echo \"Line $i\"; sleep 0.1; done"},
 		executortestutil.WithName("long_running_test"),
 		executortestutil.WithOutputFile(outputPath),
-		executortestutil.WithTimeout(tu.Int32Ptr(30)),
+		executortestutil.WithTimeout(new(int32(30))),
 		executortestutil.WithRiskLevel("medium"),
 	)
 

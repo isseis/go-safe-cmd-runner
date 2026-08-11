@@ -245,7 +245,7 @@ func TestTemplateFieldConstraints(t *testing.T) {
 			case "workdir":
 				template = &runnertypes.CommandTemplate{
 					Cmd:     "test",
-					WorkDir: runnertypes.StringPtr(tt.placeholder),
+					WorkDir: new(tt.placeholder),
 				}
 				setupParams(params, tt.placeholder)
 			}
