@@ -210,7 +210,7 @@
 
 `internal/redaction/redactor_test.go` に以下を追加する。既存テスト関数の期待値は変更しない。
 
-- [x] `TestRedactText_QuotedValue`: `password="abc def"` → `password="[REDACTED]"`、`password='abc def'` → `password='[REDACTED]'`、閉じ引用符なし `password="abc def` → 行末まで置換。置換後に元の値の断片が残らないことを `assert.NotContains` で確かめる。**追加**: 群 B のキーがテキスト先頭に現れる `TOKEN="abc def"` → `TOKEN="[REDACTED]"`、複数一致、行をまたぐ入力、および閉じ引用符がない場合に改行で止まること。さらに `TestRedactText_QuotedValueKnownLimits` で、対象外と定めたエスケープ引用符（3.2.5）と空の引用符付き値の結果を固定する。
+- [x] `TestRedactText_QuotedValue`: `password="abc def"` → `password="[REDACTED]"`、`password='abc def'` → `password='[REDACTED]'`、閉じ引用符なし `password="abc def` → 行末まで置換。置換後に元の値の断片が残らないことを `assert.NotContains` で確かめる。**追加**: 群 B のキーがテキスト先頭に現れる `TOKEN="abc def"` → `TOKEN="[REDACTED]"`、複数一致、行をまたぐ入力、および閉じ引用符がない場合に改行で止まること。**追加（レビュー指摘）**: エスケープされた引用符（`password="abc\"def"`、および JSON 形）で値が終わらないことを固定する。当初は対象外としていたが、V1（`password=\S+`）が行末まで飲み込んでいたのに対し秘密の後半が平文で残るという退行になるため、対象に含めた（3.2.5 を修正済み）。`TestRedactText_QuotedValueKnownLimits` では、その代償である末尾バックスラッシュの過剰 redaction と、空の引用符付き値の結果を固定する。
 - [x] `TestRedactText_JSONForm`: `"password": "secret"` → `"password": "[REDACTED]"`。
 - [x] `TestRedactText_SeparatorVariants`: `password: secret`、`password = secret`、`password :secret`、`password=\tsecret` の置換。複数一致と行をまたぐ入力も含め、各ケースで `assert.NotContains` により値の断片が残らないことを確かめる。
 - [x] `TestRedactText_AlternativePriority`: `password="abc def"` が V1 ではなく V3 として処理されること（結果に ` def"` が残らないこと）と、`monkey="a b"` が V1 へ落ちて `monkey=[REDACTED] b"` になること。

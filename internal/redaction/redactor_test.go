@@ -347,6 +347,16 @@ func TestRedactText_QuotedValue(t *testing.T) {
 			expected: `password="[REDACTED]" api_key="[REDACTED]"`,
 		},
 		{
+			name:     "escaped quote does not end the value",
+			input:    `password="abc\"def"`,
+			expected: `password="[REDACTED]"`,
+		},
+		{
+			name:     "escaped quote in a json field",
+			input:    `{"password":"abc\"def","next":"x"}`,
+			expected: `{"password":"[REDACTED]","next":"x"}`,
+		},
+		{
 			name:     "quoted value on a later line",
 			input:    "line one\npassword=\"abc def\"\nline three",
 			expected: "line one\npassword=\"[REDACTED]\"\nline three",
@@ -368,18 +378,20 @@ func TestRedactText_QuotedValue(t *testing.T) {
 	}
 }
 
-// TestRedactText_QuotedValueKnownLimits fixes the two quoted-value shapes whose
+// TestRedactText_QuotedValueKnownLimits fixes the quoted-value shapes whose
 // handling is deliberately incomplete, so that a later reader can tell the
 // behavior is known rather than accidental.
 func TestRedactText_QuotedValueKnownLimits(t *testing.T) {
 	config := DefaultConfig()
 
-	t.Run("escaped quote ends the value early", func(t *testing.T) {
-		// Escaped quotes are out of scope: the pattern complexity and the
-		// false-positive surface are not worth the rarity of the shape in command
-		// output. The tail after the escaped quote therefore survives.
-		assert.Equal(t, `{"password":"[REDACTED]"b","next":"c"}`,
-			config.RedactText(`{"password":"a\"b","next":"c"}`))
+	t.Run("trailing backslash extends the value past its closing quote", func(t *testing.T) {
+		// The value treats a backslash as escaping the next character, so a value
+		// that genuinely ends in one - a Windows path in a syntax that does not
+		// escape - runs on to the next quote. It swallows the text between, which
+		// over-redacts; that is the safe direction, and is why the escape rule is
+		// not conditioned on the syntax of the surrounding line.
+		assert.Equal(t, `password="[REDACTED]"bob" port=8080`,
+			config.RedactText(`password="C:\" user="bob" port=8080`))
 	})
 
 	t.Run("empty quoted value is still marked as redacted", func(t *testing.T) {

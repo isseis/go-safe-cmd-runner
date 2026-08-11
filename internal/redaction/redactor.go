@@ -438,9 +438,15 @@ func buildKeyValueRegex(escapedKey string, group boundaryGroup) string {
 	// each quote character needs its own alternative. When the closing quote is
 	// missing (a truncated log line) the value group runs to the end of the line,
 	// redacting everything after the opening quote.
+	//
+	// The value consumes backslash escapes as single units, so an escaped quote
+	// does not end the value and leave its tail in the clear. A backslash that is
+	// not an escape in the source syntax (a Windows path ending in one) makes the
+	// value run to the closing quote of the next pair or to the end of the line,
+	// which over-redacts rather than under-redacts.
 	quoted := func(name, quotedBoundary, quote string) string {
 		return quotedBoundary + escapedKey + keyNameClosingQuote + keyValueSeparator +
-			quote + `(?P<` + name + `>[^` + quote + `\r\n]*)` + quote + `?`
+			quote + `(?P<` + name + `>(?:\\[^\r\n]|[^` + quote + `\\\r\n])*)` + quote + `?`
 	}
 
 	doubleQuoted := quoted("dqValue", loosenedQuotedBoundary(group), `"`)
