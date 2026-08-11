@@ -172,7 +172,7 @@ and the thing it builds is rarely load-bearing)
 **Inference where declaration belongs**
 - [ ] No code path is selected by inspecting the content of caller-supplied
       data (`strings.Contains(x, ":")`, `HasPrefix`, length checks) where
-      the intent could be carried in the type. Tell: the intent is
+      the intent could be carried in the type. The tell: the intent is
       documented in a comment next to the data's definition while the
       routing lives in a condition in a different file, so nothing ties the
       two together and a value that happens to contain the sniffed
