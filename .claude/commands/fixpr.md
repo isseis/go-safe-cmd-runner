@@ -81,13 +81,10 @@ Agent prompt (inline the fetched `threads` JSON from Phase 1):
 
 > Triage these unresolved PR review threads for `OWNER/REPO#NUMBER`.
 >
-> Project conventions:
-> - Go 1.26 codebase (per go.mod), security-focused, interface-driven design
-> - YAGNI/DRY: no premature abstractions
-> - Modern Go idioms: slices/maps packages, errors.Is/AsType, `any` instead of
->   `interface{}`, etc.
-> - Comments: English only; one-line max; explain WHY, not WHAT
-> - Build checks: `make fmt && make test && make lint`
+> Project conventions: read `CLAUDE.md` for the design principles, Go idioms, and
+> testing rules this codebase holds itself to, and judge each comment against
+> those. Beyond it: source comments are English only, one line where possible, and
+> explain WHY rather than WHAT. Build checks are `make fmt && make test && make lint`.
 >
 > For EACH thread: read the source file at `path:line` for context, then
 > classify two independent dimensions.

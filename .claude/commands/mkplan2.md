@@ -1,13 +1,9 @@
-> **Project context (read first)**: Read `.claude/commands/_context.md`. It is the
-> single source of truth for every project-specific value below — the task root,
-> document names, status values, the green gate (see `_context.md`), source
-> layout (`internal/`/`cmd/`), and the PR marker label/format conventions. Where
-> this command names such a value, treat the entry in `_context.md` as canonical.
-> When porting, follow the porting steps in `_context.md`. Note that this command
-> body also contains Go-specific design principles (`internal/`→`cmd/` ordering
-> rule, build-independence gate) that must be updated when porting to a non-Go or
-> non-`cmd/`/`internal/` layout. The review step uses the shared procedure in
-> `.claude/commands/_lib/review-subagent-pattern.md`.
+> **Project context (read first)**: Read `.claude/commands/_context.md` — it is
+> canonical for every project-specific value this command names, including the
+> green gate and the PR marker label/format conventions. Porting instructions live
+> there too; this body's parts that need editing are the Go-specific design
+> principles (the `internal/`→`cmd/` ordering rule, the build-independence gate).
+> The review step follows `.claude/commands/_lib/review-subagent-pattern.md`.
 
 Your goal is to design PR boundaries for an existing `03_implementation_plan.md` and embed them directly into the document.
 

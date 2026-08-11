@@ -14,30 +14,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Documents should be placed under docs
 - Default language is Japanese (exceptions: README.md, CLAUDE.md)
 - Default format is markdown
- - Use Mermaid syntax for diagrams.
-  - Follow the style and legend used in `docs/tasks/0030_verify_files_variable_expansion/02_architecture.md`.
-  - Use a cylinder shape for "data" nodes instead of the default rectangle (in Mermaid flowcharts a cylinder node can be written as `[(data)]`).
-  - **Node label quoting**: Always wrap node labels in double quotes if they contain special characters (parentheses, brackets, colons, slashes, etc.). Example: `A["label (with parens)"]`
-  - **Line breaks in labels**: Use `<br>` for line breaks inside node labels, not `\n`. Example: `A["line1<br>line2"]`
+- Use Mermaid for diagrams, following the conventions in
+  [mermaid_reference.md](docs/dev/developer_guide/mermaid_reference.md) (node-label
+  quoting, `<br>` line breaks, cylinder `[(...)]` data nodes, the standard classDef
+  palette, and Legend blocks). `docs/tasks/0030_verify_files_variable_expansion/02_architecture.md`
+  is a worked example.
 
 ### Translation Guidelines (Japanese to English)
 
-When translating Japanese documentation to English:
-
-1. **Translation Workflow**:
-   - First create and commit the Japanese version
-   - Then create the English version based on the Japanese original
-
-2. **Translation Principles**:
-   - **Accuracy over fluency**: Prioritize precise translation over natural-sounding English
-   - **Faithful translation**: Do not delete content from the Japanese version or add content not present in the original
-   - **Structural consistency**: Match chapter headings and sentence structure between Japanese and English versions
-
-3. **Terminology Management**:
-   - Create and maintain a glossary file under `docs/` directory
-   - Use consistent terminology from the glossary
-   - Add new terms to the glossary as needed
-   - Glossary location: `docs/translation_glossary.md`
+Create and commit the Japanese version first, then write the English version from
+it. The translation principles (accuracy over fluency, faithful translation,
+structural consistency) and the glossary workflow live in
+[mktrans.md](.claude/commands/mktrans.md), which automates this; the glossary is
+[docs/translation_glossary.md](docs/translation_glossary.md).
 
 ## Commands
 
@@ -56,20 +45,13 @@ When translating Japanese documentation to English:
 - `golangci-lint run` - Run linter directly
 - `make fmt` - Run formatter with gofumpt
 
-### Individual Binary Builds
-- Build record binary: `go build -o build/record -v cmd/record/main.go`
-- Build verify binary: `go build -o build/verify -v cmd/verify/main.go`
-
 ## Architecture Overview
 
-This is a Go-based secure command runner with the following core components:
-
-### Core Architecture
-- **Command Runner**: Safe execution wrapper for batch processing with security controls
-- **File Validator**: Integrity verification using hash validation (`internal/filevalidator`)
-- **Safe File I/O**: Secure file operations with symlink protection (`internal/safefileio`)
-- **Command Executor**: Core execution engine with output handling (`internal/runner/executor`)
-- **Config Management**: TOML-based configuration loading (`internal/runner/config`)
+A Go-based secure command runner: it executes batches of configured commands under
+integrity, path, and privilege controls. Entry points are `internal/filevalidator`
+(hash-based integrity verification), `internal/safefileio` (file operations with
+symlink-attack prevention), `internal/runner/executor` (execution and output
+handling), and `internal/runner/config` (TOML configuration loading).
 
 See [Package Reference](docs/dev/developer_guide/package_reference.md) for detailed package structure.
 
@@ -124,25 +106,14 @@ See [Package Reference](docs/dev/developer_guide/package_reference.md) for detai
   is verified.** Measure whether the reported cost is real harm in absolute terms
   first; a self-inflicted regression is not an obligation to build something.
 
-### Security Features
-- Command path validation and sanitization
-- Environment variable isolation
-- Working directory validation
-- File integrity verification with hash validation
-- Safe file operations with symlink attack prevention
-
-### Configuration
-- Uses TOML format for configuration files
-- Supports environment variable management
-- Template-based command definitions
-- Group-based command execution with dependency management
-
 ### Testing Strategy
-- Unit tests for all core components
-- Mock implementations for external dependencies
-- File system abstraction for testing
-- Output capture and verification
-- **Error Testing**: Use `errors.Is()` to validate error types, not string matching on error messages
+
+Interfaces (`CommandExecutor`, `FileSystem`, `OutputWriter`) exist so external
+dependencies can be mocked and the file system abstracted; tests capture and verify
+command output.
+
+- **Error Testing**: Use `errors.Is` / `errors.AsType[T]` to validate error types,
+  never string matching on error messages.
 - **Every test must be able to fail for its stated reason.** Before committing a
   test, disable the thing it claims to cover — nil the collaborator, revert the
   branch, break the default — and confirm it fails. Say in the commit message that
@@ -167,49 +138,22 @@ See [Test Organization Guide](docs/dev/developer_guide/test_organization.md) for
 
 ## Development Notes
 
-- Uses Go modules with Go 1.23.10
-- Dependencies: go-toml/v2, stretchr/testify
-- Security-focused codebase with extensive validation
-- Comprehensive error handling with custom error types
-- Interface-driven design for testability and modularity
+- Go 1.26.2 (see `go.mod`); dependencies: go-toml/v2, stretchr/testify, oklog/ulid.
 - After editing go files, make sure to run `make fmt` to format the files.
 - After editing files, make sure to run `make test` and `make lint` and fix errors.
 
-## Modern Go Idioms (Go 1.21+)
+## Go Idioms
 
-When writing or modifying Go code in this repository, prefer the following modern idioms over older equivalents. These improve readability, reduce boilerplate, and leverage standard library improvements.
+Modern-idiom drift (`any` over `interface{}`, `for range n`, `min`/`max`, the
+`slices`/`maps` packages, `strings.Cut`, `slices.SortFunc` over `sort.Slice`, …) is
+enforced mechanically by the `modernize`, `intrange`, `copyloopvar`, and
+`usestdlibvars` linters in `.golangci.yml`, most of them auto-fixable with
+`golangci-lint run --fix`. Run `make lint` rather than working from a list here.
 
-### Language Features
-- Use `any` instead of `interface{}`.
-- Use `for range n` (Go 1.22+) instead of `for i := 0; i < n; i++` when the index is unused or only counts iterations.
-- Rely on per-iteration loop variable scope (Go 1.22+); do not write `i := i` shadowing inside loop bodies.
-- Use range-over-function iterators (Go 1.23+) for custom traversal where appropriate.
+Only the conventions a linter does not check are worth stating:
 
-### Built-in Functions
-- Use `min(a, b)` / `max(a, b)` instead of hand-written comparisons or `math.Max`/`math.Min`.
-- Use `clear(m)` to clear maps and slices instead of manual `for k := range m { delete(m, k) }`.
-
-### Standard Library
-- Use the `slices` package: `slices.Contains`, `slices.Index`, `slices.Sort`, `slices.SortFunc`, `slices.Equal`, `slices.Clone`, `slices.Concat`, `slices.Delete`, `slices.Insert`, etc., instead of explicit loops.
-- Use the `maps` package: `maps.Keys`, `maps.Values`, `maps.Clone`, `maps.Equal`, `maps.Copy`.
-- Use `cmp.Or(a, b, c)` to return the first non-zero value instead of chained `if x == zero { x = y }`.
-- Use `cmp.Compare` for three-way comparisons, especially in `slices.SortFunc`.
-- Use `errors.Join(err1, err2)` for combining multiple errors.
-- Use `fmt.Errorf("...: %w", err)` for error wrapping.
-- Use `strings.Cut` / `bytes.Cut` instead of `SplitN(s, sep, 2)`.
-- Use `strings.CutPrefix` / `strings.CutSuffix` instead of `HasPrefix` + `TrimPrefix` combinations.
-- Use `sync.OnceFunc` / `sync.OnceValue` / `sync.OnceValues` instead of `sync.Once` + closure boilerplate.
-- Use `log/slog` for structured logging.
-- Use `context.WithoutCancel` to detach cancellation propagation.
-- Use `reflect.TypeFor[T]()` instead of `reflect.TypeOf((*T)(nil)).Elem()`.
-
-### Generics
-- Use type parameters (Go 1.18+) to consolidate duplicated `int`/`int64`/`float64` helpers.
-- Prefer `slices.SortFunc` over `sort.Slice` for type-safe, faster sorting without reflection.
-
-### Other Patterns
-- Use `map[T]struct{}` instead of `map[T]bool` for set semantics (saves memory).
-- Use `errors.Is` / `errors.AsType[T]` instead of string matching on error messages. Prefer `errors.AsType[T]` over `errors.As` — it eliminates the `var target T` declaration:
+- Prefer `errors.AsType[T]` over `errors.As` — it eliminates the `var target T`
+  declaration. This is a Go 1.26 API, so it is not what habit produces:
   ```go
   // Before
   var pathErr *fs.PathError
@@ -218,7 +162,9 @@ When writing or modifying Go code in this repository, prefer the following moder
   // After
   if pathErr, ok := errors.AsType[*fs.PathError](err); ok { ... }
   ```
-- In tests, use `t.Cleanup` instead of manual `defer` chains, and `t.TempDir` instead of `os.MkdirTemp` + `defer os.RemoveAll`.
+- Use `map[T]struct{}` rather than `map[T]bool` for set semantics.
+- In tests, prefer `t.Cleanup` over manual `defer` chains and `t.TempDir` over
+  `os.MkdirTemp` + `defer os.RemoveAll`.
 
 ## Requirements and Acceptance Criteria
 
