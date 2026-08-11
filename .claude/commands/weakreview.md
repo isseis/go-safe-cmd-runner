@@ -148,6 +148,62 @@ superficially.)
       only the success path. Read the actual `defer`/`recover` placement,
       don't infer it from a comment saying it does.
 
+**Unearned mechanism** (a weak model closes a finding by building something,
+and the thing it builds is rarely load-bearing)
+- [ ] Every optimization in this range (cache, pre-filter, fast path, pooled
+      buffer) is justified against an absolute budget stated in the commit
+      message, not against a relative delta versus the previous commit
+      ("1.9x slower" with no conversion to real wall time is a finding).
+      Check whether the stage optimized is even a significant fraction of
+      its path's cost, and whether the cached step leaves the expensive
+      setup still running per call.
+- [ ] For each mechanism added in this range, ask what deleting it would
+      change. If the answer is only a benchmark number, it is a finding —
+      especially where the regression it offsets was introduced by an
+      earlier commit in this same range (the model creating and then
+      solving its own problem).
+- [ ] No optimization added here carries an unstated correctness
+      obligation: byte-wise case folding where the real path folds under
+      Unicode rules, an ASCII assumption over arbitrary input, a fast path
+      that must agree with the slow path, a cache whose key omits an input.
+      Read the fast path against the slow one; do not trust a comment.
+- [ ] No behavior change and its motivating optimization share a commit.
+
+**Inference where declaration belongs**
+- [ ] No code path is selected by inspecting the content of caller-supplied
+      data (`strings.Contains(x, ":")`, `HasPrefix`, length checks) where
+      the intent could be carried in the type. Tell: the intent is
+      documented in a comment next to the data's definition while the
+      routing lives in a condition in a different file, so nothing ties the
+      two together and a value that happens to contain the sniffed
+      character silently takes the wrong path.
+- [ ] Any `switch` added over a kind/mode enum has a `default` branch, and
+      that branch fails secure rather than falling through to the most
+      permissive case.
+- [ ] Any invariant this range claims ("patterns are always validated",
+      "this is only ever built by X") is enforced by the type — unexported
+      fields plus a constructor — not by convention. If an exported field
+      was kept as an extension point, the range shows the count of its
+      actual uses.
+- [ ] No helper added here silently repairs a malformed caller input
+      (trimming, defaulting, coercing) where rejecting it would surface a
+      programming mistake.
+
+**Tests that cannot fail**
+- [ ] Every test added in this range can fail for the reason it names.
+      Spot-check by nil-ing the collaborator or reverting the branch it
+      covers; a test that still passes is a finding. Highest-yield targets:
+      tests over a layered path (two mechanisms that produce the same
+      output) whose assertions are only "output differs from input" or
+      "output contains the placeholder" — those cannot say which layer ran.
+- [ ] No test asserts that a constant equals its own literal, that a field
+      holds what was just assigned to it, or that two literals are equal.
+- [ ] No table test added for a helper duplicates rows the caller's table
+      already covers with the same literals, where the helper differs from
+      the caller only by a loop.
+- [ ] Any test deleted in this range is accompanied by evidence that
+      coverage is unchanged function by function, not just in total.
+
 **Cross-document synchronization**
 - [ ] If this diff's implementation diverges from `02_architecture.md` or
       the corresponding step description in `03_implementation_plan.md`
