@@ -595,19 +595,23 @@ func TestKeyBoundaryGroup_Classification(t *testing.T) {
 		}
 	})
 
+	// Both cases go through WithAdditionalKeyValuePatterns rather than touching
+	// the field: that option is the extension point 3.2.4 leans on when it argues
+	// user-added keys must default to the loose boundary, so it is the thing worth
+	// pinning here.
 	t.Run("user-added key is redacted with the loose boundary", func(t *testing.T) {
-		config := DefaultConfig()
-		config.KeyValuePatterns = append(config.KeyValuePatterns,
-			KeyValuePattern{Literal: "passphrase", Kind: PatternKindKeyedValue})
+		config, err := NewConfig(WithAdditionalKeyValuePatterns(
+			KeyValuePattern{Literal: "passphrase", Kind: PatternKindKeyedValue}))
+		require.NoError(t, err)
 		assert.Equal(t, "passphrase: [REDACTED]", config.RedactText("passphrase: xyz"))
 	})
 
 	t.Run("zero value of PatternKind is the key kind", func(t *testing.T) {
 		// A pattern written without an explicit Kind must fall into the keyed-value rule,
 		// which is the interpretation that assumes the least about the input.
-		config := DefaultConfig()
-		config.KeyValuePatterns = append(config.KeyValuePatterns,
-			KeyValuePattern{Literal: "passphrase"})
+		config, err := NewConfig(WithAdditionalKeyValuePatterns(
+			KeyValuePattern{Literal: "passphrase"}))
+		require.NoError(t, err)
 		assert.Equal(t, "passphrase: [REDACTED]", config.RedactText("passphrase: xyz"))
 	})
 }
@@ -1111,7 +1115,7 @@ func TestNewRedactingHandler(t *testing.T) {
 
 		assert.NotNil(t, handler)
 		assert.NotNil(t, handler.config)
-		assert.Equal(t, "[REDACTED]", handler.config.Placeholder)
+		assert.Equal(t, "[REDACTED]", handler.config.placeholder)
 	})
 }
 
@@ -1498,7 +1502,7 @@ func TestPerformKeyValueRedaction(t *testing.T) {
 		// back in the same branch. The fail-secure path must therefore stay silent;
 		// without that, this overflows the stack instead of returning.
 		recursive := DefaultConfig()
-		recursive.KeyValuePatterns = append(recursive.KeyValuePatterns,
+		recursive.keyValuePatterns = append(recursive.keyValuePatterns,
 			KeyValuePattern{Literal: "x", Kind: PatternKind(99)})
 		base := slog.NewTextHandler(io.Discard, nil)
 		restore := slog.Default()
@@ -1610,6 +1614,67 @@ func TestKeyValuePattern_RedundantSeparatorWouldFailOpen(t *testing.T) {
 				"a rejected pattern silently redacts nothing - this is the failure validate prevents")
 		})
 	}
+}
+
+// TestNewConfig_RejectsInvalidPatterns checks the constructor boundary: patterns
+// added through the supported extension point are validated exactly like the
+// defaults, so the extension point cannot be used to smuggle in a pattern that
+// redacts nothing.
+func TestNewConfig_RejectsInvalidPatterns(t *testing.T) {
+	t.Run("valid addition is accepted and applied", func(t *testing.T) {
+		cfg, err := NewConfig(WithAdditionalKeyValuePatterns(
+			KeyValuePattern{Literal: "passphrase", Kind: PatternKindKeyedValue}))
+		require.NoError(t, err)
+		assert.Equal(t, "passphrase: [REDACTED]", cfg.RedactText("passphrase: xyz"))
+		// The defaults are still in place alongside the addition.
+		assert.Equal(t, "password=[REDACTED]", cfg.RedactText("password=xyz"))
+	})
+
+	t.Run("invalid addition is rejected", func(t *testing.T) {
+		cfg, err := NewConfig(WithAdditionalKeyValuePatterns(
+			KeyValuePattern{Literal: "passphrase=", Kind: PatternKindKeyedValue}))
+		assert.Nil(t, cfg, "no Config may escape the constructor when a pattern is invalid")
+		assert.ErrorIs(t, err, ErrPatternSeparatorRedundant)
+	})
+
+	t.Run("placeholder reaches both redaction layers", func(t *testing.T) {
+		cfg, err := NewConfig(WithPlaceholder("<gone>"))
+		require.NoError(t, err)
+		assert.Equal(t, "<gone>", cfg.Placeholder())
+		// Key-name layer.
+		assert.Equal(t, "password=<gone>", cfg.RedactText("password=xyz"))
+		// Value-format layer, which is built from the same placeholder.
+		assert.Equal(t, "<gone>", cfg.RedactText("AKIAIOSFODNN7EXAMPLE"))
+	})
+}
+
+// TestConfig_ZeroValueFailsSecure covers the one construction the type system
+// still allows from outside the package. A zero Config holds no patterns, so
+// every redaction step would be skipped and the input returned untouched;
+// the entry points suppress the output instead of passing the secret through.
+func TestConfig_ZeroValueFailsSecure(t *testing.T) {
+	var zero Config
+
+	t.Run("RedactText suppresses instead of passing through", func(t *testing.T) {
+		assert.Equal(t, RedactionFailurePlaceholder, zero.RedactText("password=s3cr3t"))
+	})
+
+	t.Run("empty input is still empty", func(t *testing.T) {
+		// Nothing to leak, so the empty-string fast path stays ahead of the guard.
+		assert.Equal(t, "", zero.RedactText(""))
+	})
+
+	t.Run("RedactLogAttribute suppresses instead of nil-panicking", func(t *testing.T) {
+		got := zero.RedactLogAttribute(slog.String("msg", "password=s3cr3t"))
+		assert.Equal(t, RedactionFailurePlaceholder, got.Value.String())
+	})
+
+	t.Run("NewRedactingHandler refuses it at wiring time", func(t *testing.T) {
+		base := slog.NewTextHandler(io.Discard, nil)
+		assert.Panics(t, func() {
+			NewRedactingHandler(base, &Config{}, slog.New(base))
+		}, "an unbuilt Config must be rejected where the message can still be acted on")
+	})
 }
 
 // TestDefaultKeyValuePatterns_AreValid is the guard that makes validate useful:
@@ -3347,15 +3412,18 @@ func TestRedactText_ValueBasedDetection(t *testing.T) {
 	}
 }
 
-// TestRedactText_ValueBasedDetection_BypassWhenNil verifies that when ValueDetector
-// is nil, RedactText still works with key=value patterns but skips value-based detection.
-// This ensures backward compatibility for callers that construct Config directly.
+// TestRedactText_ValueBasedDetection_BypassWhenNil verifies that when the value
+// detector is nil, RedactText still applies the key-name patterns and skips
+// value-based detection rather than panicking. NewConfig always wires a
+// detector, so this pins the nil guard for the in-package construction that can
+// still leave it unset.
 func TestRedactText_ValueBasedDetection_BypassWhenNil(t *testing.T) {
 	config := Config{
-		Placeholder:      "[HIDDEN]",
-		Patterns:         DefaultSensitivePatterns(),
-		KeyValuePatterns: []KeyValuePattern{{Literal: "password", Kind: PatternKindKeyedValue}},
-		ValueDetector:    nil, // explicitly nil
+		placeholder:      "[HIDDEN]",
+		patterns:         DefaultSensitivePatterns(),
+		keyValuePatterns: []KeyValuePattern{{Literal: "password", Kind: PatternKindKeyedValue}},
+		valueDetector:    nil, // explicitly nil
+		validated:        true,
 	}
 
 	// Key=value pattern should still work
@@ -3378,7 +3446,7 @@ func TestRedactText_ValueBasedDetection_DefaultConfigMasksByDefault(t *testing.T
 
 	assert.NotContains(t, result, "AKIAIOSFODNN7EXAMPLE",
 		"DefaultConfig must mask known secret value formats by default (AC-11)")
-	assert.Contains(t, result, config.Placeholder)
+	assert.Contains(t, result, config.placeholder)
 }
 
 // TestRedactingHandler_ValueBasedDetection_Layer2 verifies that the RedactingHandler

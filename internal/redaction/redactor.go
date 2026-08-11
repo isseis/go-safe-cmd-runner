@@ -12,45 +12,105 @@ import (
 	"strings"
 )
 
-// Config controls how sensitive information is redacted
+// DefaultPlaceholder is the text substituted for a redacted secret unless
+// WithPlaceholder overrides it.
+const DefaultPlaceholder = "[REDACTED]"
+
+// Config controls how sensitive information is redacted.
+//
+// Every field is unexported and there is no way to populate one from outside
+// this package except through NewConfig or DefaultConfig, so a Config that
+// reaches RedactText has necessarily had its patterns validated. A malformed
+// pattern fails open - it compiles to a regex matching nothing and leaves the
+// secret in the clear - which is not a mistake worth leaving to convention.
 type Config struct {
-	// Placeholder is the placeholder used for redaction (e.g., "[REDACTED]")
-	// Unified from LogPlaceholder and TextPlaceholder
-	Placeholder string
-	// Patterns contains the sensitive patterns to detect
-	Patterns *SensitivePatterns
-	// KeyValuePatterns contains the patterns for key-name-based redaction, each
-	// declaring how it is to be interpreted
+	// placeholder is the text substituted for a redacted secret.
+	placeholder string
+	// patterns contains the sensitive patterns to detect.
+	patterns *SensitivePatterns
+	// keyValuePatterns contains the patterns for key-name-based redaction, each
+	// declaring what it redacts
 	// e.g. [{"password", PatternKindKeyedValue}, {"Authorization", PatternKindHeaderValue}]
-	KeyValuePatterns []KeyValuePattern
-	// ValueDetector detects sensitive values based on value format (e.g., AWS keys,
+	keyValuePatterns []KeyValuePattern
+	// valueDetector detects sensitive values based on value format (e.g., AWS keys,
 	// GitHub tokens, PEM blocks) independent of key-name context. When nil, value-based
-	// detection is skipped. DefaultConfig sets this to a detector with the same placeholder.
-	ValueDetector *ValueDetector
+	// detection is skipped.
+	valueDetector *ValueDetector
+	// validated records that this Config came from NewConfig. The zero Config is
+	// the one construction the type system still permits from outside, and it
+	// would otherwise redact nothing at all, so the redaction entry points check
+	// this and fail secure rather than pass secrets through. Callers inside this
+	// package that build a Config literal - the tests - must set it themselves.
+	validated bool
 }
 
-// DefaultConfig returns default redaction configuration
-func DefaultConfig() *Config {
-	placeholder := "[REDACTED]"
-	keyValuePatterns := DefaultKeyValuePatterns()
+// Placeholder returns the text this Config substitutes for a redacted secret.
+func (c *Config) Placeholder() string {
+	return c.placeholder
+}
 
-	// A malformed pattern fails open - it compiles to a regex that matches
-	// nothing, leaving secrets in the clear - so refuse to build a Config around
-	// one rather than redact with a hole in it. This can only fire if the defaults
-	// above are edited into an invalid state, which the tests also catch, so
-	// panicking mirrors how DefaultSensitivePatterns treats the same situation.
-	for _, p := range keyValuePatterns {
+// Option customizes the Config built by NewConfig.
+type Option func(*Config)
+
+// WithPlaceholder replaces the text substituted for a redacted secret. The
+// value-format detector is built from the same placeholder, so this applies to
+// both redaction layers.
+func WithPlaceholder(placeholder string) Option {
+	return func(c *Config) {
+		c.placeholder = placeholder
+	}
+}
+
+// WithAdditionalKeyValuePatterns appends patterns to the default key-name set.
+// This is the supported way to declare that a key name marks a secret in a
+// particular deployment; the added patterns are validated along with the
+// defaults, and they are classified into boundary groups by the same rules (a
+// key added here gets the loose boundary - see commonWordKeys).
+func WithAdditionalKeyValuePatterns(patterns ...KeyValuePattern) Option {
+	return func(c *Config) {
+		c.keyValuePatterns = append(c.keyValuePatterns, patterns...)
+	}
+}
+
+// NewConfig returns the default redaction configuration as modified by opts,
+// with every key-name pattern validated. It is the only way to obtain a usable
+// Config from outside this package.
+func NewConfig(opts ...Option) (*Config, error) {
+	c := &Config{
+		placeholder:      DefaultPlaceholder,
+		patterns:         DefaultSensitivePatterns(),
+		keyValuePatterns: DefaultKeyValuePatterns(),
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	// Built after the options so that WithPlaceholder reaches the value-format
+	// layer too.
+	c.valueDetector = NewValueDetector(c.placeholder)
+
+	for _, p := range c.keyValuePatterns {
 		if err := p.validate(); err != nil {
-			panic(fmt.Sprintf("invalid default redaction pattern: %v", err))
+			return nil, fmt.Errorf("invalid redaction pattern: %w", err)
 		}
 	}
 
-	return &Config{
-		Placeholder:      placeholder,
-		Patterns:         DefaultSensitivePatterns(),
-		KeyValuePatterns: keyValuePatterns,
-		ValueDetector:    NewValueDetector(placeholder),
+	c.validated = true
+	return c, nil
+}
+
+// DefaultConfig returns the default redaction configuration.
+//
+// It panics rather than returning an error: with no options in play the only
+// way to fail is for the defaults themselves to be malformed, which the tests
+// catch (TestDefaultKeyValuePatterns_AreValid) and which no caller could
+// meaningfully recover from. This mirrors DefaultSensitivePatterns.
+func DefaultConfig() *Config {
+	c, err := NewConfig()
+	if err != nil {
+		panic(fmt.Sprintf("failed to create default redaction config: %v", err))
 	}
+	return c
 }
 
 // redactionContext holds context information for recursive redaction
@@ -77,20 +137,27 @@ func (c *Config) RedactText(text string) string {
 	if text == "" {
 		return text
 	}
+	if !c.validated {
+		// A zero Config holds no patterns, so every branch below would be skipped
+		// and the text returned untouched - failing open. Suppress the output
+		// instead. This is one boolean per call, not a re-validation of the
+		// patterns, which cannot change once NewConfig has returned.
+		return RedactionFailurePlaceholder
+	}
 
 	result := text
 
 	// Apply key-name-based redaction
-	for _, pattern := range c.KeyValuePatterns {
-		result = c.performKeyValueRedaction(result, pattern, c.Placeholder)
+	for _, pattern := range c.keyValuePatterns {
+		result = c.performKeyValueRedaction(result, pattern, c.placeholder)
 	}
 
 	// Apply value-format-based detection (e.g., AWS keys, GitHub tokens, PEM blocks).
 	// This runs after key=value redaction so that structured key=value pairs get
 	// precise masking first, then bare secrets in the remaining text are caught.
 	// When ValueDetector is nil, this step is skipped (backward compatible).
-	if c.ValueDetector != nil {
-		result = c.ValueDetector.Mask(result)
+	if c.valueDetector != nil {
+		result = c.valueDetector.Mask(result)
 	}
 
 	return result
@@ -101,9 +168,15 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 	key := attr.Key
 	value := attr.Value
 
+	if !c.validated {
+		// As in RedactText, except that a zero Config would nil-panic on patterns
+		// below rather than pass the text through. Fail secure either way.
+		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
+	}
+
 	// Check for sensitive patterns in the key
-	if c.Patterns.IsSensitiveKey(key) {
-		return slog.Attr{Key: key, Value: slog.StringValue(c.Placeholder)}
+	if c.patterns.IsSensitiveKey(key) {
+		return slog.Attr{Key: key, Value: slog.StringValue(c.placeholder)}
 	}
 
 	// Redact string values that match sensitive patterns
@@ -116,8 +189,8 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 		}
 		// Then check if the entire value is sensitive (only if no key=value patterns were found)
 		// This prevents strings like "password=secret" from being completely replaced with "[REDACTED]"
-		if c.Patterns.IsSensitiveValue(strValue) {
-			return slog.Attr{Key: key, Value: slog.StringValue(c.Placeholder)}
+		if c.patterns.IsSensitiveValue(strValue) {
+			return slog.Attr{Key: key, Value: slog.StringValue(c.placeholder)}
 		}
 	}
 
@@ -593,6 +666,14 @@ func NewRedactingHandler(handler slog.Handler, config *Config, failureLogger *sl
 	if config == nil {
 		config = DefaultConfig()
 	}
+	if !config.validated {
+		// The handler reaches into config.patterns directly, so an unbuilt Config
+		// would nil-panic mid-log rather than at wiring time. Refuse it here, where
+		// the message can say what to do about it.
+		panic("FATAL: redaction Config was not built by NewConfig or DefaultConfig.\n" +
+			"A Config assembled any other way holds no patterns and redacts nothing.\n" +
+			"Use redaction.NewConfig(...) or redaction.DefaultConfig().")
+	}
 	if failureLogger == nil {
 		// Default to slog.Default() if not provided
 		failureLogger = slog.Default()
@@ -687,8 +768,8 @@ func (r *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx red
 	value := attr.Value
 
 	// Check for sensitive patterns in the key
-	if r.config.Patterns.IsSensitiveKey(key) {
-		return slog.Attr{Key: key, Value: slog.StringValue(r.config.Placeholder)}
+	if r.config.patterns.IsSensitiveKey(key) {
+		return slog.Attr{Key: key, Value: slog.StringValue(r.config.placeholder)}
 	}
 
 	// Process based on value kind
@@ -703,8 +784,8 @@ func (r *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx red
 		}
 		// Then check if the entire value is sensitive (only if no key=value patterns were found)
 		// This prevents strings like "password=secret" from being completely replaced with "[REDACTED]"
-		if r.config.Patterns.IsSensitiveValue(strValue) {
-			return slog.Attr{Key: key, Value: slog.StringValue(r.config.Placeholder)}
+		if r.config.patterns.IsSensitiveValue(strValue) {
+			return slog.Attr{Key: key, Value: slog.StringValue(r.config.placeholder)}
 		}
 		return attr
 
@@ -1041,8 +1122,8 @@ func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionCon
 		mapEntryValue := rv.MapIndex(entry.keyVal).Interface()
 
 		// Check if key is sensitive - if so, mask the value
-		if r.config.Patterns.IsSensitiveKey(keyStr) {
-			result[keyStr] = r.config.Placeholder
+		if r.config.patterns.IsSensitiveKey(keyStr) {
+			result[keyStr] = r.config.placeholder
 		} else {
 			// Recursively redact the value
 			redactedAttr := r.redactLogAttributeWithContext(

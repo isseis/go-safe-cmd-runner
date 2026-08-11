@@ -18,7 +18,7 @@ func (v *Validator) SanitizeEnvironmentVariables(envVars map[string]string) map[
 	for key, value := range envVars {
 		if v.isSensitiveEnvVar(key) || v.isSensitiveEnvValue(value) {
 			// Replace sensitive values with a placeholder
-			sanitized[key] = v.redactionConfig.Placeholder
+			sanitized[key] = v.redactionConfig.Placeholder()
 		} else {
 			sanitized[key] = value
 		}

@@ -274,7 +274,7 @@ flush を `ReportRedactionFailures` より前に置く理由は、`run` の実�
 
 | ファイル | 区分 | 責務 |
 |---|---|---|
-| `internal/redaction/redactor.go` | 変更 | `performKeyedValueRedaction` の区切り・引用符カバレッジ拡張（F-001, F-002） |
+| `internal/redaction/redactor.go` | 変更 | `performKeyedValueRedaction` の区切り・引用符カバレッジ拡張（F-001, F-002）。`Config` のフィールド非公開化と `NewConfig` の追加（3.2.9） |
 | `internal/redaction/regex_cache.go` | 新規 | 生成した正規表現のコンパイル結果を上限付きでキャッシュする（3.2.7） |
 | `internal/redaction/value_detector.go` | 変更 | 値形式パターンの追加（F-003） |
 | `internal/logging/handler_chain.go` | 新規 | 送信失敗ロガーに渡されたハンドラの Slack 非依存性の検証（3.4.8） |
@@ -366,7 +366,7 @@ type KeyValuePattern struct {
 
 **検証をどこで走らせるか**: `Config` はコンストラクタを持たない（3.2.7 の理由により、構造体リテラルでも構築されうる）ため、型として通過を保証できない。したがって次の 2 点で担保する。第 1 に `TestDefaultKeyValuePatterns_AreValid` が既定パターン全件を検証し、既定を壊す編集を CI で落とす。第 2 に `DefaultConfig()` が構築時に検証し、違反があれば panic する（`DefaultSensitivePatterns` が同じ状況で採っている扱いに揃える。プロセス開始時に 1 回だけ走るためコストはない）。`TestKeyValuePattern_RedundantSeparatorWouldFailOpen` は、検証が拒否するパターンが実際に何も置換しないことを固定し、この検証が様式の問題ではなく取りこぼしの防止であることを示す。
 
-**残る隙間**: `DefaultConfig()` を通さず構造体リテラルで `Config` を組み、かつ不正なパターンを入れた場合は、実行時には従来どおり黙って何も一致しない。本番の構築点は `DefaultConfig()` のみであり、それ以外は現状テストだけである。実行時に毎回検証する案は、`RedactText` の呼び出しごとに全パターンを走査することになり、しかも違反時に採れる手段が（再帰の危険からログを出せず）`RedactionFailurePlaceholder` を返すことに限られるため採らない。
+この検証をどう強制するかは 3.2.9 で扱う。
 
 **ヘッダー値規則のパターンの正規化**: 既定パターンを `"Authorization: "` から `"Authorization"` へ変え、**コロンとその前後の空白を規則側の正規表現が供給する**（`(?i)(<ヘッダー名>)([ \t]*:[ \t]*)((?:bearer |basic )?)[^\r\n]*`）。従来はパターン文字列に含まれる `": "` がそのまま正規表現へ入るため、コロンの直後に空白がないヘッダーに一致しなかった。`Authorization:Bearer abc` が置換されていたのは次トークン規則の `"Bearer "` が拾っていたためであり、`authorization:abc123` のようにスキーム名を持たない形は**平文のまま残っていた**（`DefaultKeyValuePatterns` のコメントは「コロン規則が空白の有無を両方扱う」と記していたが、これは誤りであった）。宣言化と同時にこれを是正する。
 
@@ -414,7 +414,7 @@ type KeyValuePattern struct {
 
 一方 **単一引用符の版（V3 の `'` 版）は緩めない**。`unexpected token: '}'` が同じ形を取り、3.2.6 が「置換されない」と定めた例そのものだからである。また `monkey="a b"` は `key` の直前が英数字の `n` であり緩い先頭境界も満たさないため、この例外を入れても V1 へ落ちる現行の結果は変わらない。
 
-**群の判定規則**: `Config.KeyValuePatterns` は公開フィールドであり、利用者が任意のキーを追加しうる。群は列挙ではなくキー文字列からの導出で決まる。`RedactText` が 1 つのパターンを処理する際、次の順に判定する。最初に一致した分岐で確定し、どのようなパターンも必ずいずれかに落ちる。
+**群の判定規則**: 利用者は `NewConfig(WithAdditionalKeyValuePatterns(...))` で任意のキーを追加しうる（3.2.9。当初は `Config.KeyValuePatterns` が公開フィールドであることを前提にしていたが、コンストラクタ必須化にともないオプション経由に変わった。追加できるという前提そのものは変わらない）。群は列挙ではなくキー文字列からの導出で決まる。`RedactText` が 1 つのパターンを処理する際、次の順に判定する。最初に一致した分岐で確定し、どのようなパターンも必ずいずれかに落ちる。
 
 1. パターンの `Kind` が `PatternKindHeaderValue` → ヘッダー値規則（3.2.1、本節の群分けは適用されない）
 2. パターンの `Kind` が `PatternKindNextToken` → 次トークン規則（3.2.1、同上）
@@ -427,7 +427,7 @@ type KeyValuePattern struct {
 
 「一般語キー一覧」は `internal/redaction` のパッケージレベルの定数であり、初期値は `key`、`token`、`secret` の 3 語である。この一覧は設定項目にしない。ある語が散文に頻出するかどうかは英語の語彙の性質であってキー文字列の形からは導けず、利用者が個別に判断できる種類の設定ではないためである。一覧の拡張はコード変更として行う（9 章）。
 
-**既定キー以外を追加した場合の挙動**: 判定規則の 6 により、利用者が追加した通常のキー（`passphrase`、`credential` 等）は群 A として扱われ、緩い先頭境界が適用される。これを既定にする理由は 2 つある。第 1 に、`KeyValuePatterns` にキーを追加する行為は「このキー名は機密を示す」という利用者の明示的な宣言であり、その宣言を広く尊重するほうが意図に沿う。第 2 に、群 B を既定にすると、追加したキーが利用者の予想より狭くしか一致しなくなり、しかも群 A へ移す手段がない。取りこぼしよりも過剰 redaction のほうがフェイルセキュアである。
+**既定キー以外を追加した場合の挙動**: 判定規則の 6 により、利用者が追加した通常のキー（`passphrase`、`credential` 等）は群 A として扱われ、緩い先頭境界が適用される。これを既定にする理由は 2 つある。第 1 に、`WithAdditionalKeyValuePatterns` でキーを追加する行為は「このキー名は機密を示す」という利用者の明示的な宣言であり、その宣言を広く尊重するほうが意図に沿う。第 2 に、群 B を既定にすると、追加したキーが利用者の予想より狭くしか一致しなくなり、しかも群 A へ移す手段がない。取りこぼしよりも過剰 redaction のほうがフェイルセキュアである。
 
 その代償として、利用者が `name` や `value` のような一般的な英単語をキーに追加した場合、散文中の `name: foo` のような箇所まで置換される。この挙動は判定規則から予測できるため、利用者向け文書に「一般的な英単語をキーに追加すると散文が置換されうる」旨を記載する。
 
@@ -503,7 +503,7 @@ type KeyValuePattern struct {
 
 **上限**: エントリ数に上限（256）を設ける。上限に達した後は、キャッシュに載っていないパターンを毎回コンパイルする（現行と同じ挙動）。`Config` は公開フィールドを持つ構造体であり、`KeyValuePatterns` を実行時に差し替える呼び出し方を禁じていないため、パターンの空間を有限と仮定しない。現状の本番構成では `KeyValuePatterns` は `DefaultKeyValuePatterns()` の 12 パターンのみであり、生成されるパターン数は上限に遠く及ばない。なお上限判定と格納は別操作のため、並行実行の境界ではエントリ数が上限をわずかに超えうる。これは近似の上限であり、実害はない（既定構成では 12 エントリしか使わない）。
 
-**コンストラクタでの事前コンパイルを採らない理由**: `Config` は公開フィールドを持ち、構造体リテラルでも構築されうるため、コンストラクタを通ったことを型として保証できない。事前コンパイルにするとリテラル構築の `Config` でパターンが空になる経路が生まれる。キャッシュ方式なら公開 API を一切変えずに済み、`performKeyedValueRedaction` のシグネチャも維持できる。
+**コンストラクタでの事前コンパイルを採らない理由**: キャッシュ方式なら公開 API を一切変えずに済み、`performKeyedValueRedaction` のシグネチャも維持できる。なお 3.2.9 でコンストラクタが必須になったため「コンストラクタを通ったことを型として保証できない」という当初の理由は成立しなくなったが、キャッシュが既に同じ効果を出しているため事前コンパイルへは移行しない（YAGNI）。
 
 **フェイルセキュア挙動**: 変更しない。コンパイルに失敗した結果はキャッシュせず（他のキーのキャッシュも汚さず）、現行どおり `RedactionFailurePlaceholder` を返す。
 
@@ -522,6 +522,31 @@ type KeyValuePattern struct {
 撤回により、拡張前（main）比 1.91 倍・2.14 倍の劣化を受け入れる。上記のとおり実行時間としては現れないため、許容する。将来 `ValueDetector.Mask` を含めた大きな出力の redaction 費用が問題になった場合は、ここではなくその段から着手する。
 
 なお、事前判定を再び入れる場合は非 ASCII のテキストと非 ASCII のキーの双方を安全側に倒す必要がある。`TestRedactText_CaseAndNonASCII` が `paſſword=s3cr3t` を含む形でこの落とし穴を固定してあり、素朴なバイト比較の事前判定を足すと失敗する。
+
+#### 3.2.9 `Config` の構築をコンストラクタに限定する
+
+3.2.1 の検証は、`Config` が検証を通ったことを保証できて初めて意味を持つ。当初は「本番の構築点は `DefaultConfig()` のみ」という規約に依存していたが、これは型ではなく慣習による担保であり、`Config` が公開フィールドを持つ限り破れる。実測すると、`internal/redaction` の外での構築は `DefaultConfig()` の 2 箇所のみ、構造体リテラル構築は 0 箇所、フィールドに触るのは `Placeholder` の読み取り 3 箇所のみであった。すなわち公開フィールドは、**使われていない拡張点のために型の保証を捨てている**状態だった。
+
+**フィールドを非公開にし、コンストラクタを必須にする**。`placeholder` / `patterns` / `keyValuePatterns` / `valueDetector` を非公開にし、読み取り用に `Placeholder()` を設ける。これにより、パッケージ外から**動作する `Config` を構造体リテラルで組む手段がなくなる**。検証はコンストラクタ 1 箇所に置けば必ず走る。
+
+**拡張点は残す**。3.2.4 が「利用者が任意のキーを追加しうる」ことを群 A 既定の根拠にしているため、この能力を失うと当該の設計判断が宙に浮く。関数オプション方式のコンストラクタで、検証を必ず通る形の拡張点として提供する。
+
+```go
+func NewConfig(opts ...Option) (*Config, error)
+func WithPlaceholder(placeholder string) Option
+func WithAdditionalKeyValuePatterns(patterns ...KeyValuePattern) Option
+```
+
+`WithPlaceholder` はオプション適用後に `ValueDetector` を構築することで、キー名ベース層と値形式検出層の両方に効かせる。`DefaultConfig()` は `NewConfig()` を呼び、エラー時は panic する（オプションなしで失敗しうるのは既定パターン自体が壊れている場合だけであり、呼び出し側に回復手段がない。`DefaultSensitivePatterns` と同じ扱い）。
+
+**ゼロ値への対処**: 非公開化後も、パッケージ外から `redaction.Config{}` のゼロ値を作ることだけは型として禁じられない。ゼロ値の `RedactText` はパターンを 1 つも持たないため全ステップが空回りし、**入力をそのまま返す**（実測で確認）。すなわち fail-open である。そこで非公開の `validated` フィールドを設け、`RedactText` と `RedactLogAttribute` の冒頭で検査し、未検証なら `RedactionFailurePlaceholder` を返す。パターン全走査ではなく真偽値 1 個の検査であり、パターンは `NewConfig` の復帰後に変化しないため、毎回検証し直す必要はない。
+
+さらに `NewRedactingHandler` は未検証の `Config` を受け取った時点で panic する。このハンドラは `config.patterns` を直接参照するため、ゼロ値ではログ出力の途中で nil パニックになる。構成時に落としたほうが、メッセージが対処可能な場所で出る。
+
+**採らなかった案**:
+
+- **消費側での検証**: `NewRedactingHandler` にのみ検証を置く案。Layer 1（`security.Validator`、`audit.logger`）は `RedactingHandler` を通らず `RedactText` を直接呼ぶため、カバー範囲が部分的になる。消費点は今後増える側であり、構築点 1 箇所で済む本案のほうが安定する。
+- **`RedactText` で毎回パターンを検証する案**: 呼び出しごとに全パターンを走査することになり、しかも違反時に採れる手段が（3.2.1 の再帰の危険からログを出せず）`RedactionFailurePlaceholder` を返すことに限られる。`validated` の真偽値検査で同じ結果が O(1) で得られる。
 
 ### 3.3 値形式検出パターンの追加（F-003）
 
@@ -1336,6 +1361,7 @@ flowchart TD
 | 群の判定規則 | 既定の 12 パターンのうち `PatternKindKeyedValue` のものが 3.2.4 の判定規則で意図した群に落ちること。および、一覧にないキー（`passphrase`）を `KeyValuePatterns` へ追加すると群 A として扱われること | AC-05 |
 | `Kind` による振り分け | 3 つの `Kind` がそれぞれの規則へ届くこと。同じ文字列（`"Authorization: "`）でも宣言した `Kind` によって結果が変わり、コロンや空白から規則が導出されないこと。未知の `Kind` が `RedactionFailurePlaceholder` になること。`Kind` を省略した `KeyValuePattern` がキー値規則に落ちること（ゼロ値の契約） | AC-05, AC-06 |
 | 未知の `Kind` の非再帰 | `slog.Default()` が当の `Config` を使う `RedactingHandler` である状態で未知の `Kind` を処理しても、再帰せずプレースホルダーを返すこと（3.2.1） | AC-05 |
+| `Config` の構築経路 | `NewConfig` が追加パターンも既定と同じく検証すること（不正なら `Config` を返さない）。`WithPlaceholder` がキー名ベース層と値形式検出層の両方に効くこと。ゼロ値 `Config` が `RedactText` / `RedactLogAttribute` で `RedactionFailurePlaceholder` を返し、`NewRedactingHandler` が panic すること（3.2.9） | AC-05 |
 | 区切りの重複 | `Literal` が規則の供給する区切りを重ねて持つ場合（`"Authorization: "` をヘッダーとして、`"password="` をキーとして宣言）を `validate()` が `ErrPatternSeparatorRedundant` で拒否すること。`PatternKindNextToken` の `"Bearer "` は拒否されないこと。空の `Literal` と未知の `Kind` もそれぞれの番兵エラーになること。既定パターン全件が検証を通ること。拒否されるパターンが実際に何も置換しない（＝取りこぼす）ことも併せて固定する（3.2.1） | AC-05 |
 | プレースホルダーの `$`（接頭辞・ヘッダー値規則） | `$1` を含むプレースホルダーが展開されず、秘密が再注入されないこと | AC-16 |
 | ヘッダー値規則の空白 | `Authorization: x` / `Authorization:x` / `Authorization : x` / `Authorization:\t\tBearer x` がいずれも置換され、コロンを伴わない `Authorization failed for user bob` が置換されないこと | AC-06 |

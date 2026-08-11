@@ -273,9 +273,28 @@
 
 **完了条件**: `make fmt && make test && make lint` が通ること。既存テストの変更が上記に列挙したものに限られ、`internal/runner/base/security` の期待値が変わっていないこと。
 
+#### ステップ 2-5: `Config` の構築をコンストラクタに限定する（レビュー指摘）
+
+ステップ 2-4 のパターン検証は「本番の構築点は `DefaultConfig()` のみ」という規約に依存しており、型では保証されていなかった。実測すると `internal/redaction` の外での構築は `DefaultConfig()` の 2 箇所のみ、構造体リテラル構築は 0 箇所、フィールド参照は `Placeholder` の読み取り 3 箇所のみであり、公開フィールドを維持する理由がない（02_architecture.md 3.2.9）。
+
+- [x] `Config` の 4 フィールドを非公開化し、`Placeholder()` アクセサを追加する。外部の参照 3 箇所（`environment_validation.go` 2、同テスト 1）をメソッド呼び出しへ書き換える。
+- [x] `NewConfig(opts ...Option) (*Config, error)` と `WithPlaceholder` / `WithAdditionalKeyValuePatterns` を追加し、全パターンをここで検証する。`WithPlaceholder` を反映してから `ValueDetector` を構築し、両層に効かせる。
+- [x] `DefaultConfig()` を `NewConfig()` の薄いラッパにし、エラー時は panic する（ステップ 2-4 で入れた検証ループはここへ移動）。
+- [x] 非公開の `validated` フィールドを追加し、`RedactText` と `RedactLogAttribute` の冒頭で検査する。未検証なら `RedactionFailurePlaceholder` を返す。ゼロ値 `Config` の `RedactText` が入力を素通しすること（fail-open）を実測で確認したうえでの対処である。
+- [x] `NewRedactingHandler` が未検証の `Config` で panic するようにする（`config.patterns` を直接参照するため、ゼロ値ではログ出力の途中で nil パニックになる）。
+- [x] パッケージ内でリテラル構築しているテスト 3 箇所に `validated: true` を明示する。
+
+##### テスト
+
+- [x] `TestNewConfig_RejectsInvalidPatterns`: 追加パターンが既定と同じく検証されること（不正なら `Config` を返さず `ErrPatternSeparatorRedundant`）、正当な追加が既定と併存すること、`WithPlaceholder` が両層に効くこと。
+- [x] `TestConfig_ZeroValueFailsSecure`: ゼロ値の `RedactText` / `RedactLogAttribute` が `RedactionFailurePlaceholder` を返し、空文字列の高速パスは維持され、`NewRedactingHandler` が panic すること。
+- [x] `TestKeyBoundaryGroup_Classification` の利用者追加キーの 2 ケースを、フィールド直接操作から `WithAdditionalKeyValuePatterns` 経由へ変更する。02_architecture.md 3.2.4 が根拠にしている拡張点そのものを検証するため。
+
+**完了条件**: `make fmt && make test && make lint` が通ること。`internal/redaction` の外の変更が `Placeholder` の 3 箇所に限られること。
+
 ### PR-2 作成ポイント: key-name redaction coverage
 
-**対象ステップ**: 2-1 / 2-2 / 2-3 / 2-4
+**対象ステップ**: 2-1 / 2-2 / 2-3 / 2-4 / 2-5
 
 **推奨タイトル**: `feat(0163): extend key-name redaction to separators and quoted values`
 
