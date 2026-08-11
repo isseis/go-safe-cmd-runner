@@ -2,6 +2,7 @@
 package redaction
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -161,8 +162,8 @@ const (
 	// PatternKindKeyedValue redacts the value that Literal is the key of, e.g.
 	// "password" against password=x, password: x and "password": "x". The
 	// separator, the quoting and the extent of the value are interpreted by the
-	// redactor, so Literal should be the bare key name; a trailing "=" or ":" is
-	// stripped rather than matched twice.
+	// redactor, so Literal must be the bare key name: writing the separator too
+	// ("password=") is rejected by validate.
 	//
 	// This is the zero value, so a KeyValuePattern written without an explicit
 	// Kind gets the most conservative interpretation.
@@ -181,10 +182,55 @@ const (
 	// PatternKindHeaderValue redacts the value of the header named by Literal,
 	// e.g. "Authorization" - everything from the colon to the end of the line, an
 	// auth scheme name such as "Bearer" excepted. The colon and the whitespace
-	// around it are supplied by the redactor, so Literal should be the bare header
-	// name; a trailing ":" is stripped rather than matched twice.
+	// around it are supplied by the redactor, so Literal must be the bare header
+	// name: writing the colon too ("Authorization: ") is rejected by validate.
 	PatternKindHeaderValue
 )
+
+// Errors reported by KeyValuePattern.validate.
+var (
+	// ErrPatternLiteralEmpty is returned for a pattern with no text to match.
+	ErrPatternLiteralEmpty = errors.New("redaction pattern has an empty literal")
+	// ErrPatternSeparatorRedundant is returned when a Literal spells out a
+	// separator that its own Kind already supplies.
+	ErrPatternSeparatorRedundant = errors.New("redaction pattern literal repeats a separator its kind supplies")
+	// ErrPatternKindUnknown is returned for a Kind outside the declared set.
+	ErrPatternKindUnknown = errors.New("redaction pattern declares an unknown kind")
+)
+
+// validate reports whether the pattern is well formed.
+//
+// The check exists because a malformed pattern fails open rather than closed:
+// PatternKindKeyedValue and PatternKindHeaderValue build their own separator, so
+// a Literal that spells one out too - "password=", "Authorization: ", the way
+// these patterns were written before PatternKind existed - compiles to a regex
+// demanding the separator twice and then matches nothing at all, silently
+// leaving the secret in the clear.
+//
+// Normalizing the Literal instead would make such a pattern work, but it would
+// also make a mistaken pattern indistinguishable from a correct one, so the
+// mistake would survive into the next pattern someone copies. Reporting it lets
+// the tests fail on it (TestDefaultKeyValuePatterns_AreValid) and lets
+// DefaultConfig refuse to build a Config around it.
+func (p KeyValuePattern) validate() error {
+	if p.Literal == "" {
+		return fmt.Errorf("%w", ErrPatternLiteralEmpty)
+	}
+
+	switch p.Kind {
+	case PatternKindNextToken:
+		// This kind is defined by carrying its own separator, so there is nothing
+		// that can be redundant here.
+		return nil
+	case PatternKindKeyedValue, PatternKindHeaderValue:
+		if trimmed := strings.TrimRight(p.Literal, " \t:="); trimmed != p.Literal {
+			return fmt.Errorf("%w: %q (kind %d); drop the trailing separator", ErrPatternSeparatorRedundant, p.Literal, p.Kind)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: %d", ErrPatternKindUnknown, p.Kind)
+	}
+}
 
 // KeyValuePattern is one entry of Config.KeyValuePatterns: the text to look for,
 // plus the declaration of what to redact once it is found.

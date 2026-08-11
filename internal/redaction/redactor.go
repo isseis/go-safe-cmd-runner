@@ -32,10 +32,23 @@ type Config struct {
 // DefaultConfig returns default redaction configuration
 func DefaultConfig() *Config {
 	placeholder := "[REDACTED]"
+	keyValuePatterns := DefaultKeyValuePatterns()
+
+	// A malformed pattern fails open - it compiles to a regex that matches
+	// nothing, leaving secrets in the clear - so refuse to build a Config around
+	// one rather than redact with a hole in it. This can only fire if the defaults
+	// above are edited into an invalid state, which the tests also catch, so
+	// panicking mirrors how DefaultSensitivePatterns treats the same situation.
+	for _, p := range keyValuePatterns {
+		if err := p.validate(); err != nil {
+			panic(fmt.Sprintf("invalid default redaction pattern: %v", err))
+		}
+	}
+
 	return &Config{
 		Placeholder:      placeholder,
 		Patterns:         DefaultSensitivePatterns(),
-		KeyValuePatterns: DefaultKeyValuePatterns(),
+		KeyValuePatterns: keyValuePatterns,
 		ValueDetector:    NewValueDetector(placeholder),
 	}
 }
@@ -214,24 +227,6 @@ func (c *Config) performNextTokenRedaction(text, literal, placeholder string) st
 	return re.ReplaceAllString(text, "${1}"+escapeReplacementDollars(placeholder))
 }
 
-// trimSuppliedSeparator removes a trailing separator that a Literal spells out
-// even though its own rule supplies one. The keyed-value and header-value rules
-// build the separator themselves, so a Literal written the way these patterns
-// were written before PatternKind existed - "Authorization: ", "password=" -
-// would otherwise compile to a regex demanding the separator twice and silently
-// match nothing at all. That is the most likely way to mis-write a pattern, and
-// its failure mode is fail-open, so it is normalized rather than left to a
-// comment. PatternKindNextToken deliberately does not use this: carrying its own
-// separator is exactly what that kind means.
-//
-// This normalizes how a Literal is spelled within an already-chosen rule. It is
-// not the shape inference that PatternKind replaced, which chose the rule itself.
-func trimSuppliedSeparator(literal string) string {
-	trimmed := strings.TrimRight(literal, " \t")
-	trimmed = strings.TrimRight(trimmed, ":=")
-	return strings.TrimRight(trimmed, " \t")
-}
-
 // escapeReplacementDollars makes a placeholder safe to embed in a
 // Regexp.ReplaceAllString replacement, where "$0"/"$1"/etc. expand to the match
 // and its capture groups. Without this, a placeholder configured with "$1"-like
@@ -249,7 +244,7 @@ func (c *Config) performHeaderValueRedaction(text, header, placeholder string) s
 	// Escape header name for regex and create case-insensitive pattern
 	// Match: header + separator (colon with optional surrounding whitespace)
 	// + optional auth scheme (Bearer/Basic) + value + line ending
-	escapedHeader := regexp.QuoteMeta(trimSuppliedSeparator(header))
+	escapedHeader := regexp.QuoteMeta(header)
 	regexPattern := `(?i)(` + escapedHeader + `)([ \t]*:[ \t]*)((?:bearer |basic )?)[^\r\n]*`
 
 	re := compileRedactionRegex(regexPattern, map[string]string{
@@ -486,11 +481,9 @@ func replaceKeyValueMatches(re *regexp.Regexp, text, placeholder string) string 
 // performKeyedValueRedaction handles PatternKindKeyedValue patterns: a key name
 // whose separator, quoting and value extent are interpreted here rather than
 // spelled out in the pattern. This is the rule to reach for whenever the literal
-// names a key, including when it was written with its own trailing separator -
-// see trimSuppliedSeparator, and the note on PatternKindNextToken for why
-// declaring a key name there loses coverage instead of gaining control.
+// names a key; see the note on PatternKindNextToken for why declaring a key name
+// there loses coverage instead of gaining control.
 func (c *Config) performKeyedValueRedaction(text, key, placeholder string) string {
-	key = trimSuppliedSeparator(key)
 	escapedKey := regexp.QuoteMeta(key)
 
 	// Match a quoted, separated or adjacent value.

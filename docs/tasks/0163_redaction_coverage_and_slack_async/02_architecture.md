@@ -352,7 +352,21 @@ type KeyValuePattern struct {
 
 **群分けは導出のまま**: 3.2.4 の群 A・群 B・群 C は `Kind` と違い、キー文字列から導出したままとする。ある語が英語の散文に頻出するかどうかはパターンの作者が宣言できる種類の事柄ではなく、言語の性質だからである（3.2.4、9 章）。
 
-**規則が供給する区切りを `Literal` が重複して持つ場合**（レビューで判明）: キー値規則とヘッダー値規則はどちらも区切りを自分で生成するため、`"Authorization: "` や `"password="` のように区切りまで書かれた `Literal`（`PatternKind` 導入前の書き方）をそのまま使うと、区切りを 2 回要求する正規表現になり**何にも一致しない**。取りこぼす方向の失敗であるため、コメントで注意を促すにとどめず、`Literal` 末尾の空白・`:`・`=` を除去して正規化する。`PatternKindNextToken` だけはこの正規化を適用しない。区切りを自分で持つことがその `Kind` の意味だからである。これは「既に選ばれた規則の中で `Literal` の綴りを揃える」正規化であって、3.2.1 冒頭で廃した「どの規則を使うかを文字列の形から推測する」導出とは別物である。
+**規則が供給する区切りを `Literal` が重複して持つ場合**（レビューで判明）: キー値規則とヘッダー値規則はどちらも区切りを自分で生成するため、`"Authorization: "` や `"password="` のように区切りまで書かれた `Literal`（`PatternKind` 導入前の書き方）をそのまま使うと、区切りを 2 回要求する正規表現になり**何にも一致しない**。すなわち取りこぼす方向の失敗であり、秘密が平文のまま出る。
+
+**正規化ではなく検証で落とす**（再レビューで方針変更。当初は `Literal` 末尾の空白・`:`・`=` を除去して正規化していた）。正規化は誤ったパターンを動くようにする一方で、**誤りと正しい定義を区別できなくする**。区別がつかなければ誤りは表面化せず、次に誰かがそのパターンを複製した時点で伝播する。代わりに `KeyValuePattern.validate()` を設け、次の 3 つを誤りとして報告する。
+
+| 条件 | 返す番兵エラー |
+|---|---|
+| `Literal` が空 | `ErrPatternLiteralEmpty` |
+| `PatternKindKeyedValue` / `PatternKindHeaderValue` の `Literal` 末尾が空白・`:`・`=` | `ErrPatternSeparatorRedundant` |
+| `Kind` が宣言された集合の外 | `ErrPatternKindUnknown` |
+
+`PatternKindNextToken` は 2 行目の対象外である。区切りを自分で持つことがその `Kind` の定義であり、重複しようがない。
+
+**検証をどこで走らせるか**: `Config` はコンストラクタを持たない（3.2.7 の理由により、構造体リテラルでも構築されうる）ため、型として通過を保証できない。したがって次の 2 点で担保する。第 1 に `TestDefaultKeyValuePatterns_AreValid` が既定パターン全件を検証し、既定を壊す編集を CI で落とす。第 2 に `DefaultConfig()` が構築時に検証し、違反があれば panic する（`DefaultSensitivePatterns` が同じ状況で採っている扱いに揃える。プロセス開始時に 1 回だけ走るためコストはない）。`TestKeyValuePattern_RedundantSeparatorWouldFailOpen` は、検証が拒否するパターンが実際に何も置換しないことを固定し、この検証が様式の問題ではなく取りこぼしの防止であることを示す。
+
+**残る隙間**: `DefaultConfig()` を通さず構造体リテラルで `Config` を組み、かつ不正なパターンを入れた場合は、実行時には従来どおり黙って何も一致しない。本番の構築点は `DefaultConfig()` のみであり、それ以外は現状テストだけである。実行時に毎回検証する案は、`RedactText` の呼び出しごとに全パターンを走査することになり、しかも違反時に採れる手段が（再帰の危険からログを出せず）`RedactionFailurePlaceholder` を返すことに限られるため採らない。
 
 **ヘッダー値規則のパターンの正規化**: 既定パターンを `"Authorization: "` から `"Authorization"` へ変え、**コロンとその前後の空白を規則側の正規表現が供給する**（`(?i)(<ヘッダー名>)([ \t]*:[ \t]*)((?:bearer |basic )?)[^\r\n]*`）。従来はパターン文字列に含まれる `": "` がそのまま正規表現へ入るため、コロンの直後に空白がないヘッダーに一致しなかった。`Authorization:Bearer abc` が置換されていたのは次トークン規則の `"Bearer "` が拾っていたためであり、`authorization:abc123` のようにスキーム名を持たない形は**平文のまま残っていた**（`DefaultKeyValuePatterns` のコメントは「コロン規則が空白の有無を両方扱う」と記していたが、これは誤りであった）。宣言化と同時にこれを是正する。
 
@@ -1322,7 +1336,7 @@ flowchart TD
 | 群の判定規則 | 既定の 12 パターンのうち `PatternKindKeyedValue` のものが 3.2.4 の判定規則で意図した群に落ちること。および、一覧にないキー（`passphrase`）を `KeyValuePatterns` へ追加すると群 A として扱われること | AC-05 |
 | `Kind` による振り分け | 3 つの `Kind` がそれぞれの規則へ届くこと。同じ文字列（`"Authorization: "`）でも宣言した `Kind` によって結果が変わり、コロンや空白から規則が導出されないこと。未知の `Kind` が `RedactionFailurePlaceholder` になること。`Kind` を省略した `KeyValuePattern` がキー値規則に落ちること（ゼロ値の契約） | AC-05, AC-06 |
 | 未知の `Kind` の非再帰 | `slog.Default()` が当の `Config` を使う `RedactingHandler` である状態で未知の `Kind` を処理しても、再帰せずプレースホルダーを返すこと（3.2.1） | AC-05 |
-| 区切りの重複 | `Literal` が規則の供給する区切りを重ねて持つ場合（`"Authorization: "` をヘッダーとして、`"password="` をキーとして宣言）でも取りこぼさないこと。`PatternKindNextToken` では区切りが保たれること（3.2.1） | AC-05 |
+| 区切りの重複 | `Literal` が規則の供給する区切りを重ねて持つ場合（`"Authorization: "` をヘッダーとして、`"password="` をキーとして宣言）を `validate()` が `ErrPatternSeparatorRedundant` で拒否すること。`PatternKindNextToken` の `"Bearer "` は拒否されないこと。空の `Literal` と未知の `Kind` もそれぞれの番兵エラーになること。既定パターン全件が検証を通ること。拒否されるパターンが実際に何も置換しない（＝取りこぼす）ことも併せて固定する（3.2.1） | AC-05 |
 | プレースホルダーの `$`（接頭辞・ヘッダー値規則） | `$1` を含むプレースホルダーが展開されず、秘密が再注入されないこと | AC-16 |
 | ヘッダー値規則の空白 | `Authorization: x` / `Authorization:x` / `Authorization : x` / `Authorization:\t\tBearer x` がいずれも置換され、コロンを伴わない `Authorization failed for user bob` が置換されないこと | AC-06 |
 | 既存挙動の非退行 | `Authorization: Bearer xxx`、`Bearer xxx`、`Basic xxx`、`PatternKindNextToken` が自前の等号を持つ場合 | AC-06, AC-07, AC-08 |

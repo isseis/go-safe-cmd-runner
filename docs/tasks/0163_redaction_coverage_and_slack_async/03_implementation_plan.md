@@ -246,7 +246,7 @@
 ##### レビューで判明した 4 点（同ステップ内で修正）
 
 - [x] **未知の `Kind` の分岐から `slog.Warn` を削除した**。本番では `slog.Default()` が当の `Config` を使う `RedactingHandler` であるため、警告が同じ `Config` を通って redact され、同じ分岐へ再入して無限再帰する（実測でスタックオーバーフローを確認）。`Config` は `failureLogger` を持たないため迂回できない。理由をコード内コメントと 02_architecture.md 3.2.1 に残す。
-- [x] **`Literal` が規則の供給する区切りを重ねて持つ場合を正規化する** `trimSuppliedSeparator` を追加した。`"Authorization: "` をヘッダーとして、`"password="` をキーとして宣言すると、区切りを 2 回要求する正規表現になり何にも一致しない（取りこぼす方向の失敗）。末尾の空白・`:`・`=` を除去する。`PatternKindNextToken` には適用しない。
+- [x] **`Literal` が規則の供給する区切りを重ねて持つ場合を検証で拒否する** `KeyValuePattern.validate()` を追加した。`"Authorization: "` をヘッダーとして、`"password="` をキーとして宣言すると、区切りを 2 回要求する正規表現になり何にも一致しない（取りこぼす方向の失敗）。**当初は `trimSuppliedSeparator` で正規化していたが、再レビューを受けて検証に変更した**。正規化は誤ったパターンを動かしてしまい、誤りと正しい定義を区別できなくするためである（02_architecture.md 3.2.1）。番兵エラーは `ErrPatternLiteralEmpty` / `ErrPatternSeparatorRedundant` / `ErrPatternKindUnknown` の 3 種。`PatternKindNextToken` は区切り重複の対象外。
 - [x] **次トークン規則とヘッダー値規則の二重走査を解消した**。`ReplaceAllStringFunc` のコールバック内で `FindStringSubmatch` を再実行していたため、一致 1 件につき走査が 2 回になっていた。`ReplaceAllString` と `"${1}"` 参照に置き換える。プレースホルダー中の `$` は `escapeReplacementDollars` で `$$` にエスケープする（AC-16。`value_detector.go` と同じ規則）。なお `BenchmarkRedactText` の実測差はノイズの範囲であった（キー値規則が既定 12 パターン中 9 件を占め支配的なため）。
 - [x] `PatternKindKeyedValue` / `PatternKindHeaderValue` のドキュメンテーションコメントに `Literal` の契約（区切りを含めない。含めても除去される）を明記した。
 - [x] **`Kind` の選び方をドキュメント化した**（レビュー指摘: `password=` はキー・接頭辞のどちらの定義にも当てはまる）。`Kind` は literal の分類ではなく指示であり、集合を分割しない。キー形の literal ではキー値規則が次トークン規則を厳密に包含する（実測: 次トークン規則が置換する 3 入力はキー値規則もすべて置換し、キー値規則はさらに `:` 区切り・空白入り区切り・JSON 形の 3 形を捕捉する。引用符付きの値では次トークン規則が秘密の後半を平文で残す）。したがって `"password="` を `PatternKindNextToken` と宣言する理由はなく、次トークン規則は `Bearer ` / `Basic ` のように literal がキー名でない場合のためにある。この非対称性を `PatternKind` の doc コメントと 02_architecture.md 3.2.1 に記載し、回帰テストで固定する。
@@ -254,7 +254,10 @@
 ##### テスト（レビュー対応分）
 
 - [x] `TestPerformKeyValueRedaction` に「未知の `Kind` が `slog.Default()` 経由で再帰しないこと」を追加する。`slog.Default()` を当の `Config` を使う `RedactingHandler` に差し替えたうえで `RedactText` を呼び、プレースホルダーが返ること（＝スタックオーバーフローしないこと）を固定する。
-- [x] `TestKeyValuePattern_SeparatorSuppliedByRule`: `"Authorization: "` / `"Authorization:"` をヘッダーとして、`"password="` / `"password:"` をキーとして宣言した場合に取りこぼさないこと。`PatternKindNextToken` の `"password="` では区切りが保たれること。
+- [x] `TestKeyValuePattern_Validate`: 正しい 3 形（素のキー名・素のヘッダー名・末尾に空白を持つ認証スキーム）が通り、区切りを重ねた 4 形・空の `Literal`・未知の `Kind` がそれぞれの番兵エラーになること（`errors.Is` で判定）。
+- [x] `TestKeyValuePattern_RedundantSeparatorWouldFailOpen`: 検証が拒否するパターンが、実際には入力を素通しする（何も置換しない）ことを固定する。検証が様式の問題ではなく取りこぼしの防止であることを示すため。
+- [x] `TestDefaultKeyValuePatterns_AreValid`: 既定パターン全件が検証を通ること。既定を壊す編集を CI で落とす網。
+- [x] `DefaultConfig()` が構築時に全パターンを検証し、違反時は panic すること（`DefaultSensitivePatterns` と同じ扱い）。
 - [x] `TestKeyValueRules_PlaceholderWithDollar`: 次トークン規則とヘッダー値規則で `$1` を含むプレースホルダーが展開されず、元の秘密が残らないこと。
 - [x] `TestKeyKindDominatesPrefixKindForKeyShapedValues`: `"password="` について、次トークン規則が置換する入力はキー値規則もすべて同じ結果で置換すること、キー値規則のみが 3 形の区切りを捕捉すること、引用符付きの値で次トークン規則が後半を残しキー値規則が閉じ引用符まで置換すること。2 つの `Kind` が実質的なトレードオフへ変質した場合にこのテストが落ち、doc コメントの指針が黙って偽になるのを防ぐ。
 

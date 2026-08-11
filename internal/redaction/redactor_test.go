@@ -1513,69 +1513,133 @@ func TestPerformKeyValueRedaction(t *testing.T) {
 // spells out a separator that its own rule already supplies. This is the shape
 // these patterns had before PatternKind existed, and matching the separator
 // twice would silently redact nothing, so it is normalized away instead.
-func TestKeyValuePattern_SeparatorSuppliedByRule(t *testing.T) {
-	config := DefaultConfig()
-
+func TestKeyValuePattern_Validate(t *testing.T) {
 	tests := []struct {
-		name     string
-		pattern  KeyValuePattern
-		input    string
-		expected string
+		name    string
+		pattern KeyValuePattern
+		wantErr error
 	}{
 		{
-			name:     "header value still carrying the colon and space",
-			pattern:  KeyValuePattern{Literal: "Authorization: ", Kind: PatternKindHeaderValue},
-			input:    "Authorization: Bearer abc",
-			expected: "Authorization: Bearer [REDACTED]",
+			name:    "bare key name",
+			pattern: KeyValuePattern{Literal: "password", Kind: PatternKindKeyedValue},
 		},
 		{
-			name:     "header value still carrying a bare colon",
-			pattern:  KeyValuePattern{Literal: "Authorization:", Kind: PatternKindHeaderValue},
-			input:    "Authorization:abc",
-			expected: "Authorization:[REDACTED]",
+			name:    "bare header name",
+			pattern: KeyValuePattern{Literal: "Authorization", Kind: PatternKindHeaderValue},
 		},
 		{
-			name:     "key value still carrying the equals sign",
-			pattern:  KeyValuePattern{Literal: "password=", Kind: PatternKindKeyedValue},
-			input:    "password=secret",
-			expected: "password=[REDACTED]",
+			// The one kind defined by carrying its own separator, so a trailing
+			// space is required rather than rejected.
+			name:    "auth scheme keeps its trailing space",
+			pattern: KeyValuePattern{Literal: "Bearer ", Kind: PatternKindNextToken},
 		},
 		{
-			name:     "key value still carrying a colon",
-			pattern:  KeyValuePattern{Literal: "password:", Kind: PatternKindKeyedValue},
-			input:    "password: secret",
-			expected: "password: [REDACTED]",
+			name:    "key name repeating the equals sign",
+			pattern: KeyValuePattern{Literal: "password=", Kind: PatternKindKeyedValue},
+			wantErr: ErrPatternSeparatorRedundant,
 		},
 		{
-			// The next-token rule is the one kind whose Literal is meant to carry its own
-			// separator, so nothing is stripped there.
-			name:     "prefix value keeps its separator",
-			pattern:  KeyValuePattern{Literal: "password=", Kind: PatternKindNextToken},
-			input:    "password=secret",
-			expected: "password=[REDACTED]",
+			name:    "key name repeating a colon",
+			pattern: KeyValuePattern{Literal: "password:", Kind: PatternKindKeyedValue},
+			wantErr: ErrPatternSeparatorRedundant,
+		},
+		{
+			name:    "header name repeating the colon and space",
+			pattern: KeyValuePattern{Literal: "Authorization: ", Kind: PatternKindHeaderValue},
+			wantErr: ErrPatternSeparatorRedundant,
+		},
+		{
+			name:    "header name repeating a bare colon",
+			pattern: KeyValuePattern{Literal: "Authorization:", Kind: PatternKindHeaderValue},
+			wantErr: ErrPatternSeparatorRedundant,
+		},
+		{
+			name:    "empty literal",
+			pattern: KeyValuePattern{Literal: "", Kind: PatternKindKeyedValue},
+			wantErr: ErrPatternLiteralEmpty,
+		},
+		{
+			name:    "unknown kind",
+			pattern: KeyValuePattern{Literal: "password", Kind: PatternKind(99)},
+			wantErr: ErrPatternKindUnknown,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected,
-				config.performKeyValueRedaction(tt.input, tt.pattern, "[REDACTED]"))
+			err := tt.pattern.validate()
+			if tt.wantErr == nil {
+				assert.NoError(t, err)
+				return
+			}
+			assert.ErrorIs(t, err, tt.wantErr)
 		})
 	}
 }
 
-// TestKeyedValueKindDominatesNextTokenKind fixes the asymmetry that
-// makes the choice between the two kinds unambiguous for a key-shaped Value such
-// as "password=", which both kinds will happily accept. Whatever the next-token
-// rule redacts, the keyed-value rule redacts too, and it reaches shapes the
-// next-token rule cannot - so there is never a reason to declare a key name as a
-// next-token pattern.
+// TestKeyValuePattern_RedundantSeparatorWouldFailOpen shows why validate exists
+// rather than a comment: a rejected pattern is not merely unconventional, it
+// redacts nothing at all. Left unchecked the secret would go out in the clear,
+// which is why the mistake has to surface as a failure instead of being
+// normalized away into something that looks like it works.
+func TestKeyValuePattern_RedundantSeparatorWouldFailOpen(t *testing.T) {
+	config := DefaultConfig()
+
+	tests := []struct {
+		name    string
+		pattern KeyValuePattern
+		input   string
+	}{
+		{
+			name:    "key name repeating the equals sign",
+			pattern: KeyValuePattern{Literal: "password=", Kind: PatternKindKeyedValue},
+			input:   "password=s3cr3t",
+		},
+		{
+			name:    "header name repeating the colon and space",
+			pattern: KeyValuePattern{Literal: "Authorization: ", Kind: PatternKindHeaderValue},
+			input:   "Authorization: s3cr3t",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Error(t, tt.pattern.validate(), "precondition: validate must reject this pattern")
+			assert.Equal(t, tt.input,
+				config.performKeyValueRedaction(tt.input, tt.pattern, "[REDACTED]"),
+				"a rejected pattern silently redacts nothing - this is the failure validate prevents")
+		})
+	}
+}
+
+// TestDefaultKeyValuePatterns_AreValid is the guard that makes validate useful:
+// it fails the build when a default pattern is edited into a shape that would
+// redact nothing.
+func TestDefaultKeyValuePatterns_AreValid(t *testing.T) {
+	for _, p := range DefaultKeyValuePatterns() {
+		t.Run(p.Literal, func(t *testing.T) {
+			assert.NoError(t, p.validate())
+		})
+	}
+}
+
+// TestKeyedValueKindDominatesNextTokenKind fixes the asymmetry that makes the
+// choice between the two kinds unambiguous when the text is a key/value pair.
+// Both declarations below are valid ways to write "redact what follows
+// password", so an author has to choose; whatever the next-token rule redacts
+// the keyed-value rule redacts too, and it reaches shapes the next-token rule
+// cannot, so the choice is never a trade-off.
+//
 // Without this test the two kinds could drift into a genuine trade-off, and the
 // guidance on PatternKind would quietly stop being true.
 func TestKeyedValueKindDominatesNextTokenKind(t *testing.T) {
 	config := DefaultConfig()
-	asKey := KeyValuePattern{Literal: "password=", Kind: PatternKindKeyedValue}
+	// The key rule builds the separator, the next-token rule carries it. Both
+	// spellings are valid per validate; only the literals differ.
+	asKey := KeyValuePattern{Literal: "password", Kind: PatternKindKeyedValue}
 	asPrefix := KeyValuePattern{Literal: "password=", Kind: PatternKindNextToken}
+	require.NoError(t, asKey.validate())
+	require.NoError(t, asPrefix.validate())
 
 	t.Run("key redacts everything prefix does", func(t *testing.T) {
 		for _, input := range []string{
