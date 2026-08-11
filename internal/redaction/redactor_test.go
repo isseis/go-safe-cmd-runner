@@ -1689,11 +1689,9 @@ func TestRedactText_ConcurrentUse(t *testing.T) {
 	results := make([]string, goroutines)
 	var wg sync.WaitGroup
 	for i := range goroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			results[i] = config.RedactText(input)
-		}()
+		})
 	}
 	wg.Wait()
 

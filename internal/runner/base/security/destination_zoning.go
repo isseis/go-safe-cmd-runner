@@ -3,6 +3,7 @@ package security
 import (
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
@@ -340,10 +341,8 @@ func appendReason(codes []risktypes.ReasonCode, code risktypes.ReasonCode) []ris
 	if code == "" {
 		return codes
 	}
-	for _, c := range codes {
-		if c == code {
-			return codes
-		}
+	if slices.Contains(codes, code) {
+		return codes
 	}
 	return append(codes, code)
 }

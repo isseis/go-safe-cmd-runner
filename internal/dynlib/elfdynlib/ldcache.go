@@ -142,7 +142,7 @@ func parseLDCacheData(data []byte) (*LDCache, error) {
 		entries: make(map[string]string, header.NLibs),
 	}
 
-	for i := uint32(0); i < header.NLibs; i++ {
+	for i := range header.NLibs {
 		offset := entryStart + int(i)*newEntrySize
 		entryReader := bytes.NewReader(data[offset:])
 

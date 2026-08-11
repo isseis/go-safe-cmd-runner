@@ -103,7 +103,6 @@ func TestExtractionRegressionCases(t *testing.T) {
 			{"mv", "-s", "src"},
 		}
 		for _, tc := range cases {
-			tc := tc
 			t.Run(tc.cmd+"/"+tc.flag, func(t *testing.T) {
 				e := runExtraction(t, tc.cmd, tc.flag, tc.operand)
 				assert.False(t, e.recognized,
@@ -171,7 +170,6 @@ func TestRemovedOverRecognizedFlagsFailClosed(t *testing.T) {
 
 	for cmd, flags := range removedOverRecognizedFlags {
 		for _, flag := range flags {
-			cmd, flag := cmd, flag
 			t.Run(cmd+"/"+flag, func(t *testing.T) {
 				e := runExtraction(t, cmd, flag, "target1", "target2")
 				assert.False(t, e.recognized,

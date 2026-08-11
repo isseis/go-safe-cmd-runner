@@ -23,6 +23,13 @@ linters:
     - "unconvert" # Detect unnecessary type conversions
     - "unparam"   # Detect unused function parameters
 
+    # Modern-idiom enforcement. These replace the prose "Modern Go Idioms" list
+    # that CLAUDE.md used to carry, which the codebase violated 51 times.
+    - "modernize"     # Suggest modern language/library features
+    - "intrange"      # for i := 0; i < n; i++  ->  for range n
+    - "copyloopvar"   # Drop the pre-Go-1.22 `i := i` loop-variable copy
+    - "usestdlibvars" # Use stdlib constants (http.MethodPost) over string literals
+
     # Optional
     - "bodyclose"  # Check whether HTTP response bodies are closed
     - "err113"     # Enforce standard error handling practices
@@ -33,6 +40,13 @@ linters:
     - "nakedret"   # Detect naked returns
 
   settings:
+    modernize:
+      # newexpr rewrites the testutil StringPtr/Int32Ptr/Int64Ptr helpers into
+      # new(x) at every call site, which is a real API change across packages
+      # rather than an idiom fix. Tracked separately; see the GitHub issue.
+      disable:
+        - "newexpr"
+
     gocyclo:
       min-complexity: 20
 

@@ -400,8 +400,8 @@ func containsSSHStyleAddress(args []string) bool {
 		case sshHostPathRe.MatchString(arg):
 			// host:path (no @) — require / or ~ in the path to avoid false positives
 			// with port numbers (e.g., "localhost:8080") and time formats.
-			colonIndex := strings.Index(arg, ":")
-			pathPart := arg[colonIndex+1:]
+			_, after, _ := strings.Cut(arg, ":")
+			pathPart := after
 			if strings.Contains(pathPart, "/") || strings.HasPrefix(pathPart, "~") {
 				return true
 			}

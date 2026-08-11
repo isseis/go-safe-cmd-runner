@@ -2,6 +2,7 @@ package security
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -273,13 +274,7 @@ func TestConfig_GetSuspiciousFilePatterns_Invariants(t *testing.T) {
 	// Verify expected core patterns are present
 	expectedPatterns := []string{"passwd", "shadow", "authorized_keys", "id_rsa"}
 	for _, expected := range expectedPatterns {
-		found := false
-		for _, pattern := range patterns {
-			if pattern == expected {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(patterns, expected)
 		if !found {
 			assert.Fail(t, "Expected pattern not found in suspicious patterns", "expected: %q, patterns: %v", expected, patterns)
 		}

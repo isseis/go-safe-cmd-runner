@@ -826,9 +826,7 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 	// Store env_import variables for conflict detection
 	runtime.EnvImportVars = envImportVars
 	// Merge envImportVars into runtime.ExpandedVars (which already contains autoVars)
-	for k, v := range envImportVars {
-		runtime.ExpandedVars[k] = v
-	}
+	maps.Copy(runtime.ExpandedVars, envImportVars)
 
 	// 2. Process Vars (pass envImportVars for conflict detection)
 	expandedVars, expandedArrays, err := ProcessVars(spec.Vars, runtime.ExpandedVars, runtime.ExpandedArrayVars, runtime.EnvImportVars, "global")

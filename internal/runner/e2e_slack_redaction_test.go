@@ -16,6 +16,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -174,10 +175,11 @@ func TestIntegration_SlackRedaction(t *testing.T) {
 	// Verify: Check messages received by mock Slack handler
 	require.NotEmpty(t, mockSlackHandler.messages, "should have sent messages to Slack handler")
 
-	allMessages := ""
+	var msgBuilder strings.Builder
 	for _, msg := range mockSlackHandler.messages {
-		allMessages += msg + "\n"
+		msgBuilder.WriteString(msg + "\n")
 	}
+	allMessages := msgBuilder.String()
 
 	// Verify sensitive data is redacted
 	assert.NotContains(t, allMessages, "secret123", "API key should be redacted in Slack messages")
@@ -296,10 +298,11 @@ func TestE2E_MultiHandlerLogging(t *testing.T) {
 	stderrOutput := stderrBuffer.String()
 	fileOutput := fileBuffer.String()
 
-	allSlackMessages := ""
+	var slackBuilder strings.Builder
 	for _, msg := range mockSlackHandler.messages {
-		allSlackMessages += msg + "\n"
+		slackBuilder.WriteString(msg + "\n")
 	}
+	allSlackMessages := slackBuilder.String()
 
 	// Check stderr output
 	assert.NotContains(t, stderrOutput, "xyz789", "token should be redacted in stderr")

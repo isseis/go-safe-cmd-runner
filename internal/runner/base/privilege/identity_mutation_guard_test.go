@@ -10,6 +10,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -282,12 +283,7 @@ func declaredFuncName(funcDecl *ast.FuncDecl) string {
 }
 
 func isAllowedIdentityMutationCall(call allowedIdentityMutationCall) bool {
-	for _, allowed := range allowedIdentityMutationCalls {
-		if allowed == call {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(allowedIdentityMutationCalls, call)
 }
 
 // findIdentityMutationRefs parses every production .go file in dir and returns

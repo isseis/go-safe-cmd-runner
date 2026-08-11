@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -336,10 +337,8 @@ func (v *Validator) isUserInGroup(uid int, gid uint32) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("failed to get group members for GID %d: %w", gid, err)
 	}
-	for _, member := range members {
-		if member == user.Username {
-			return true, nil
-		}
+	if slices.Contains(members, user.Username) {
+		return true, nil
 	}
 
 	return false, nil

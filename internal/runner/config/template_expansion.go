@@ -497,14 +497,14 @@ func validateEnvPre(entry, templateName, _ string) error {
 	}
 
 	// Parse KEY=VALUE to check KEY part
-	idx := strings.IndexByte(entry, '=')
-	if idx == -1 {
+	before, _, ok := strings.Cut(entry, "=")
+	if !ok {
 		// No '=' found - could be invalid format or pure placeholder
 		// Will be caught in post-validation
 		return nil
 	}
 
-	key := entry[:idx]
+	key := before
 
 	// Check that KEY part does not contain placeholders (security requirement)
 	keyPlaceholders, err := parsePlaceholders(key)
@@ -527,8 +527,8 @@ func validateEnvPre(entry, templateName, _ string) error {
 // Returns (shouldInclude=false, nil) if the entry should be skipped (empty VALUE).
 func validateEnvPost(entry, templateName, field string, expandedIndex int) (bool, error) {
 	// Check KEY=VALUE format
-	idx := strings.IndexByte(entry, '=')
-	if idx == -1 {
+	_, after, ok := strings.Cut(entry, "=")
+	if !ok {
 		return false, &ErrTemplateInvalidEnvFormat{
 			TemplateName:  templateName,
 			Field:         field,
@@ -539,7 +539,7 @@ func validateEnvPost(entry, templateName, field string, expandedIndex int) (bool
 
 	// Check if VALUE part is empty (e.g., "PATH=" from "PATH=${?path}" with empty/missing param)
 	// In this case, skip the entire entry
-	value := entry[idx+1:]
+	value := after
 	if value == "" {
 		return false, nil
 	}
@@ -557,13 +557,13 @@ func validateEnvUnique(env []string, templateName string) error {
 
 	for _, entry := range env {
 		// Extract KEY from "KEY=VALUE"
-		idx := strings.IndexByte(entry, '=')
-		if idx == -1 {
+		before, _, ok := strings.Cut(entry, "=")
+		if !ok {
 			// Format error should have been caught by validateEnvPost
 			continue
 		}
 
-		key := entry[:idx]
+		key := before
 
 		// Check for duplicate
 		if _, exists := seen[key]; exists {
@@ -942,9 +942,9 @@ func collectFromBasicFields(template *runnertypes.CommandTemplate, used map[stri
 // collectFromEnvVars collects params from env_vars array.
 func collectFromEnvVars(envVars []string, used map[string]struct{}) error {
 	for _, env := range envVars {
-		if idx := strings.IndexByte(env, '='); idx != -1 {
+		if _, after, ok := strings.Cut(env, "="); ok {
 			// KEY=VALUE format - collect from value part only
-			if err := collectFromString(env[idx+1:], used); err != nil {
+			if err := collectFromString(after, used); err != nil {
 				return err
 			}
 		} else {

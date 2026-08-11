@@ -19,7 +19,7 @@ type LogLineTracker interface {
 // DefaultLogLineTracker provides a thread-safe implementation of LogLineTracker
 // using atomic operations for concurrent access.
 type DefaultLogLineTracker struct {
-	lineCounter int64
+	lineCounter atomic.Int64
 }
 
 // NewDefaultLogLineTracker creates a new DefaultLogLineTracker.
@@ -29,15 +29,15 @@ func NewDefaultLogLineTracker() *DefaultLogLineTracker {
 
 // GetCurrentLine returns the current estimated log line number.
 func (t *DefaultLogLineTracker) GetCurrentLine() int {
-	return int(atomic.LoadInt64(&t.lineCounter))
+	return int(t.lineCounter.Load())
 }
 
 // IncrementLine increments the line counter and returns the new line number.
 func (t *DefaultLogLineTracker) IncrementLine() int {
-	return int(atomic.AddInt64(&t.lineCounter, 1))
+	return int(t.lineCounter.Add(1))
 }
 
 // Reset resets the line counter to zero.
 func (t *DefaultLogLineTracker) Reset() {
-	atomic.StoreInt64(&t.lineCounter, 0)
+	t.lineCounter.Store(0)
 }

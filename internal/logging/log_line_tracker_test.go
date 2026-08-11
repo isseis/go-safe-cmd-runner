@@ -102,33 +102,27 @@ func TestDefaultLogLineTracker_ConcurrentReadWrite(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Start a goroutine that continuously increments
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for range numOperations {
 			tracker.IncrementLine()
 		}
-	}()
+	})
 
 	// Start a goroutine that continuously reads
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for range numOperations {
 			line := tracker.GetCurrentLine()
 			// Line should never be negative
 			assert.GreaterOrEqual(t, line, 0, "GetCurrentLine() returned negative value")
 		}
-	}()
+	})
 
 	// Start a goroutine that resets periodically
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for range 10 {
 			tracker.Reset()
 		}
-	}()
+	})
 
 	wg.Wait()
 

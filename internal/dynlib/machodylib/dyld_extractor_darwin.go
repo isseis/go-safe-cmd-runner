@@ -260,7 +260,7 @@ func findLibSystemKernelImage(f *os.File) (*dyldImgTextInfo, error) {
 	}
 
 	const entrySize = 32 // sizeof(dyld_cache_image_text_info)
-	for i := uint64(0); i < imgTextCount; i++ {
+	for i := range imgTextCount {
 		off := int64(imgTextOff) + int64(i)*entrySize
 		var raw [32]byte
 		if _, err := f.ReadAt(raw[:], off); err != nil {
@@ -315,7 +315,7 @@ func buildSubCacheList(f *os.File, mainPath string, cacheBase uint64) ([]subCach
 
 	const entrySize = 56 // sizeof(dyld_subcache_entry)
 	result := make([]subCacheFile, 0, subCacheCount)
-	for i := uint32(0); i < subCacheCount; i++ {
+	for i := range subCacheCount {
 		off := int64(subCacheOff) + int64(i)*entrySize
 		var raw [56]byte
 		if _, err := f.ReadAt(raw[:], off); err != nil {
@@ -418,7 +418,7 @@ func readSubCacheMapping(path string, vmAddr uint64) (*dyldMappingInfo, error) {
 	}
 
 	const mappingEntrySize = 32
-	for i := uint32(0); i < mapCount; i++ {
+	for i := range mapCount {
 		off := int64(mapOff) + int64(i)*mappingEntrySize
 		var raw [32]byte
 		if _, err := f.ReadAt(raw[:], off); err != nil {
@@ -622,7 +622,7 @@ func buildCompactSymtab(linkeditPath string, symFileOff uint64, nsyms uint32, st
 	copy(compactSyms, symData)
 
 	var nameBuf [512]byte
-	for i := uint32(0); i < nsyms; i++ {
+	for i := range nsyms {
 		entOff := i * nlist64Size
 		origStrx := binary.LittleEndian.Uint32(compactSyms[entOff:])
 
@@ -745,7 +745,7 @@ func patchLoadCommands(
 				binary.LittleEndian.PutUint64(lcData[offset+40:], newTextFileOff)
 				// Update section offsets (each section_64 is section64Size bytes, starting at offset+seg64SectionsOffset).
 				nsects := binary.LittleEndian.Uint32(lcData[offset+64:])
-				for s := uint32(0); s < nsects; s++ {
+				for s := range nsects {
 					sBase := offset + seg64SectionsOffset + int(s)*section64Size //nolint:gosec // G115: s is bounded by nsects < 256
 					if sBase+section64FileOffset+4 > len(lcData) {
 						break

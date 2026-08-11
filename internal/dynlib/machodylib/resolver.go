@@ -164,10 +164,10 @@ func (r *LibraryResolver) expandRpathEntry(rpathEntry, loaderPath string) string
 // splitAtToken splits an install name like "@rpath/libFoo.dylib" into
 // ("@rpath", "libFoo.dylib"). The suffix does not include the leading separator.
 func splitAtToken(installName string) (token, suffix string) {
-	idx := strings.Index(installName, "/")
-	if idx < 0 {
+	before, after, ok := strings.Cut(installName, "/")
+	if !ok {
 		return installName, ""
 	}
 
-	return installName[:idx], installName[idx+1:]
+	return before, after
 }

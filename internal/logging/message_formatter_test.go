@@ -2,6 +2,7 @@ package logging
 
 import (
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -78,13 +79,7 @@ func TestDefaultMessageFormatter_FormatRecordWithColor(t *testing.T) {
 			result := formatter.FormatRecordWithColor(tt.record, tt.useColor)
 
 			// Check if result matches any of the expected formats
-			found := false
-			for _, expected := range tt.expecteds {
-				if result == expected {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(tt.expecteds, result)
 
 			assert.True(t, found, "FormatRecordWithColor() = %q, expected one of %v", result, tt.expecteds)
 		})
@@ -253,13 +248,7 @@ func TestDefaultMessageFormatter_FormatRecordInteractive(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := formatter.FormatRecordInteractive(tt.record, tt.useColor)
-			found := false
-			for _, expected := range tt.expecteds {
-				if result == expected {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(tt.expecteds, result)
 			assert.True(t, found, "FormatRecordInteractive() = %q, expected one of %v", result, tt.expecteds)
 		})
 	}
@@ -489,7 +478,7 @@ func TestAppendInteractiveAttrs_EdgeCases(t *testing.T) {
 			name: "many attributes",
 			record: func() slog.Record {
 				r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
-				for i := 0; i < 20; i++ {
+				for i := range 20 {
 					r.AddAttrs(slog.String("key"+string(rune('A'+i)), "value"))
 				}
 				return r

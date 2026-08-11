@@ -27,7 +27,7 @@ func BenchmarkDryRunPerformance(b *testing.B) {
 		b.Run(bm.name, func(b *testing.B) {
 			// Create test commands
 			commands := make([]*runnertypes.RuntimeCommand, bm.numCommands)
-			for i := 0; i < bm.numCommands; i++ {
+			for i := range bm.numCommands {
 				commands[i] = executortestutil.CreateRuntimeCommand(
 					"echo",
 					[]string{"test"},
@@ -92,7 +92,7 @@ func BenchmarkFormatterPerformance(b *testing.B) {
 	}
 
 	// Fill with test data
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		result.ResourceAnalyses[i] = Analysis{
 			Type:      TypeCommand,
 			Operation: OperationExecute,
@@ -190,7 +190,7 @@ func BenchmarkResourceManagerModeSwitch(b *testing.B) {
 // BenchmarkMemoryUsage benchmarks memory usage during dry-run execution
 func BenchmarkMemoryUsage(b *testing.B) {
 	commands := make([]*runnertypes.RuntimeCommand, 1000)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		commands[i] = executortestutil.CreateRuntimeCommand(
 			"echo",
 			[]string{"memory test"},

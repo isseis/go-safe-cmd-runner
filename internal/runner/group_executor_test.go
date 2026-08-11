@@ -2845,7 +2845,7 @@ func TestCommandFailureLogging_StderrInErrorLog(t *testing.T) {
 
 			// Extract ERROR level logs
 			errorLogs := []string{}
-			for _, line := range strings.Split(logOutput, "\n") {
+			for line := range strings.SplitSeq(logOutput, "\n") {
 				if strings.Contains(line, `"level":"ERROR"`) {
 					errorLogs = append(errorLogs, line)
 				}

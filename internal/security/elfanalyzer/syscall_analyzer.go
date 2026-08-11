@@ -721,10 +721,7 @@ func (a *SyscallAnalyzer) backwardScanForRegister(
 	isImmediateToReg func(DecodedInstruction) (bool, int64),
 ) (value int64, method string) {
 	// Window calculation identical to backwardScanForSyscallNumber
-	windowStart := syscallOffset - (a.maxBackwardScan * maxWindowBytesPerInstruction(decoder))
-	if windowStart < 0 {
-		windowStart = 0
-	}
+	windowStart := max(syscallOffset-(a.maxBackwardScan*maxWindowBytesPerInstruction(decoder)), 0)
 
 	instructions, _ := a.decodeWindow(
 		code, baseAddr, windowStart, syscallOffset, decoder,
@@ -803,10 +800,7 @@ func (a *SyscallAnalyzer) backwardScanX86WithRegCopy(
 	x86Decoder *X86Decoder,
 ) (int, string, string) {
 	syscallAddr := baseAddr + uint64(syscallOffset) //nolint:gosec // G115: syscallOffset is validated by caller
-	windowStart := syscallOffset - (a.maxBackwardScan * maxWindowBytesPerInstruction(x86Decoder))
-	if windowStart < 0 {
-		windowStart = 0
-	}
+	windowStart := max(syscallOffset-(a.maxBackwardScan*maxWindowBytesPerInstruction(x86Decoder)), 0)
 
 	number, method, detail, decodeFailures := a.backwardScanX86WithWindow(
 		code,
@@ -863,10 +857,7 @@ func (a *SyscallAnalyzer) resolveX86CopyChainTailConsensus(
 ) (int, string, bool) {
 	const tailProbeBytes = 128
 
-	probeStart := syscallOffset - tailProbeBytes
-	if probeStart < windowStart {
-		probeStart = windowStart
-	}
+	probeStart := max(syscallOffset-tailProbeBytes, windowStart)
 
 	resolvedValue := 0
 	resolvedDetail := ""

@@ -883,7 +883,7 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 			}
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "POST", s.webhookURL, bytes.NewBuffer(payload))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.webhookURL, bytes.NewBuffer(payload))
 		if err != nil {
 			lastErr = fmt.Errorf("failed to create request: %w", err)
 			slog.Warn("Failed to create Slack request", slog.String("error", sanitizeErrorForLog(err)), slog.Int("attempt", attempt+1), slog.String("run_id", s.runID))

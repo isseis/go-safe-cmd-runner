@@ -24,15 +24,15 @@ func TestTempDirectory_ConcurrentAccess(t *testing.T) {
 	errorChan := make(chan error, numGoroutines*numOperations)
 
 	// Launch multiple goroutines to perform concurrent file operations
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
 
-			for j := 0; j < numOperations; j++ {
+			for j := range numOperations {
 				// Create a unique file for this goroutine
 				filePath := filepath.Join(tempDir, fmt.Sprintf("file_%d_%d.txt", id, j))
-				content := []byte(fmt.Sprintf("test content from goroutine %d operation %d", id, j))
+				content := fmt.Appendf(nil, "test content from goroutine %d operation %d", id, j)
 
 				// Write file
 				err := os.WriteFile(filePath, content, 0o644)
@@ -77,14 +77,14 @@ func TestTempDirectory_ConcurrentCleanup(t *testing.T) {
 	// Create multiple subdirectories
 	numDirs := 20
 	dirs := make([]string, numDirs)
-	for i := 0; i < numDirs; i++ {
+	for i := range numDirs {
 		dirPath := filepath.Join(tempDir, fmt.Sprintf("dir_%d", i))
 		err := os.MkdirAll(dirPath, 0o750)
 		require.NoError(t, err)
 		dirs[i] = dirPath
 
 		// Create some files in each directory
-		for j := 0; j < 5; j++ {
+		for j := range 5 {
 			filePath := filepath.Join(dirPath, fmt.Sprintf("file_%d.txt", j))
 			err = os.WriteFile(filePath, []byte("test content"), 0o644)
 			require.NoError(t, err)
@@ -144,7 +144,7 @@ func TestTempDirectory_RaceDetection(t *testing.T) {
 	numGoroutines := 5
 	errorChan := make(chan error, numGoroutines*2) // Buffer for potential errors
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(_ int) {
 			defer wg.Done()
