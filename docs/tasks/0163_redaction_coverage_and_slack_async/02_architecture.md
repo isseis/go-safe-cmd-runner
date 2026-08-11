@@ -303,7 +303,7 @@ flush を `ReportRedactionFailures` より前に置く理由は、`run` の実�
 
 `internal/logging/slack_handler_benchmark_test.go` は `SlackHandler` を構築せず、`slackSender` へ移す 3 フィールドも参照していないため（`createBenchmarkCommandResults` と `BenchmarkExtractCommandResults*` のみを含む）、変更を要しない。
 
-`internal/redaction/redactor_test.go` の既存ケースは、3.2 の設計により期待値が変化しない（AC-08）。`performKeyedValueRedaction` のシグネチャも変更しないため、これを直接呼び出している `TestPerformKeyedValueRedaction`（当時の名は `TestPerformKeyValuePatternRedaction`）はそのまま通る。`internal/redaction` と `internal/logging` の外で `RedactText` の結果を完全一致で検証しているテストは `internal/runner/base/security/logging_security_test.go`（`api_key=abc123def`、`Authorization: Bearer ...`）であり、いずれも隣接 `=` 形とヘッダー値規則のみを使うため影響を受けない。
+`internal/redaction/redactor_test.go` の既存ケースは、3.2 の設計により期待値が変化しない（AC-08）。`performKeyedValueRedaction` のシグネチャも変更しないため、これを直接呼び出していた `TestPerformKeyValuePatternRedaction` はそのまま通った（同テストはステップ 2-7 で上位テストとの重複により削除）。`internal/redaction` と `internal/logging` の外で `RedactText` の結果を完全一致で検証しているテストは `internal/runner/base/security/logging_security_test.go`（`api_key=abc123def`、`Authorization: Bearer ...`）であり、いずれも隣接 `=` 形とヘッダー値規則のみを使うため影響を受けない。
 
 ### 3.2 キー名ベース redaction の拡張（F-001, F-002）
 
@@ -607,6 +607,16 @@ webhook URL のパス部分そのものが credential であるため、値形�
 #### 3.3.4 AWS Secret Access Key を追加しない理由
 
 01_requirements.md 調査結果1 のとおり、AWS Secret Access Key（40 文字の Base64 風文字列）は自己識別可能な形式を持たず、同じ文字種・長さの非機密文字列と値だけでは区別できない。値形式検出に加えると誤検出が広範に発生する。キー名ベースの層では `aws_secret_access_key=...` が `key` によって既に捕捉されており、3.2 の拡張により JSON/YAML 形式にも同じ捕捉が及ぶ（`key` の直前が `_` であり群 B の先頭境界を満たす）。したがって新規パターンは追加しない。
+
+#### 3.3.5 値形式検出のテストは層を分離する
+
+値形式検出（3.3）のテストは、**入力にキー名を含めてはならない**。`RedactText` はキー名ベース層を先に適用するため、`GITHUB_TOKEN=ghp_...` のような入力は値形式検出が働かなくても置換され、「置換された」というアサーションが両層のどちらで満たされたか区別できない。
+
+実際にこの誤りが混入していた（棚卸しで発見）。`TestRedactText_ValueBasedDetection` の 7 行のうち 4 行（`export KEY=AKIA...`、`GITHUB_TOKEN=ghp_...`、`SLACK_TOKEN=xoxb-...`、`Authorization: Bearer eyJ...`）は `valueDetector` を nil にしても通っており、AC-11〜AC-13 の裏付けとして機能していなかった。
+
+**対策**: 各ケースについて、`valueDetector` を外した `Config` が入力を素通しすることをテスト内で先に検証する。これによりキー名を含む入力を書いた時点でテストが落ち、同じ誤りが再発しない。
+
+**例外**: `Bearer` 形式は分離できない。値形式検出の `bearerToken` パターンが `PatternKindNextToken` の `"Bearer "` と同じリテラルに固定されているためである。この形式の値形式検出としての検証は `value_detector_test.go` の単体テストが担い、`RedactText` 層では両層を合わせた結果のみを固定する。
 
 ### 3.4 Slack 送信の非同期化（F-004, F-005, F-006）
 
@@ -1393,7 +1403,7 @@ flowchart TD
 | 意図した過剰 redaction | `"key": "us-east-1"` が置換されること、およびそれが意図した変更である旨のコメント | AC-09 |
 | 長文の非退行 | 置換対象を含まない長いテキストの結果一致 | AC-10 |
 | 値形式パターン | fine-grained PAT、`xapp-`/`xoxe-`/`xoxs-`、JWT、webhook URL、既存 `xoxb-` 等の維持 | AC-11, AC-12, AC-13 |
-| 自由テキスト中の検出 | コマンド標準出力に相当する文字列への埋め込み | AC-14 |
+| 自由テキスト中の検出 | コマンド標準出力に相当する文字列への埋め込み。**入力にキー名を含めない**こと自体をテスト内で検証する（キー名ベース層が先に置換してしまうと、値形式検出を通らずにテストが通ってしまうため。3.3.5） | AC-14 |
 | 誤検出の固定 | `github_pattern`、`xapple`、`eyJ` で始まる非 JWT 文字列 | AC-15 |
 | プレースホルダーの `$` | `$1` を含むプレースホルダーで秘密が再注入されないこと | AC-16 |
 | 並行利用 | 1 つの `Config` を複数 goroutine で共有して `RedactText` を呼んでも結果が同じで競合しないこと（`-race` 下で実行） | AC-32 |

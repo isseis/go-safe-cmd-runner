@@ -157,6 +157,13 @@ func TestRedactText_NextTokenPatterns(t *testing.T) {
 			input:    "Bearer abc123 and Bearer xyz789",
 			expected: "Bearer [REDACTED] and Bearer [REDACTED]",
 		},
+		{
+			// The rule needs a token after the literal; the literal alone is not a
+			// match, so an ordinary mention of the scheme name survives.
+			name:     "scheme name with nothing after it",
+			input:    "the scheme is Bearer",
+			expected: "the scheme is Bearer",
+		},
 	}
 
 	for _, tt := range tests {
@@ -213,6 +220,13 @@ func TestRedactText_HeaderValuePatterns(t *testing.T) {
 			name:     "Authorization with tabs",
 			input:    "Authorization:\t\tBearer secret123",
 			expected: "Authorization:\t\tBearer [REDACTED]",
+		},
+		{
+			// The rule supplies the colon, so it also requires one: the header name
+			// on its own is prose, not a header.
+			name:     "header name without a colon is not a header",
+			input:    "Authorization failed for user bob",
+			expected: "Authorization failed for user bob",
 		},
 	}
 
@@ -1782,184 +1796,6 @@ func TestKeyValueRules_PlaceholderWithDollar(t *testing.T) {
 	})
 }
 
-// TestPerformNextTokenRedaction tests prefix pattern handling details
-func TestPerformNextTokenRedaction(t *testing.T) {
-	tests := []struct {
-		name        string
-		text        string
-		pattern     string
-		placeholder string
-		expected    string
-	}{
-		{
-			name:        "simple Bearer",
-			text:        "Bearer abc123",
-			pattern:     "Bearer ",
-			placeholder: "***",
-			expected:    "Bearer ***",
-		},
-		{
-			name:        "case insensitive",
-			text:        "bearer token",
-			pattern:     "Bearer ",
-			placeholder: "***",
-			expected:    "bearer ***",
-		},
-		{
-			name:        "preserves original case",
-			text:        "BeArEr secret",
-			pattern:     "Bearer ",
-			placeholder: "***",
-			expected:    "BeArEr ***",
-		},
-		{
-			name:        "multiple occurrences",
-			text:        "Bearer abc Bearer xyz",
-			pattern:     "Bearer ",
-			placeholder: "***",
-			expected:    "Bearer *** Bearer ***",
-		},
-		{
-			name:        "no match returns original",
-			text:        "no match here",
-			pattern:     "Bearer ",
-			placeholder: "***",
-			expected:    "no match here",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := applyPattern(t, KeyValuePattern{Literal: tt.pattern, Kind: PatternKindNextToken}, tt.placeholder, tt.text)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-// TestPerformHeaderValueRedaction tests header pattern handling details. The pattern
-// is the header name alone: the colon and the whitespace around it belong to the
-// rule, so both spaced and unspaced headers are matched by the same pattern.
-func TestPerformHeaderValueRedaction(t *testing.T) {
-	tests := []struct {
-		name        string
-		text        string
-		pattern     string
-		placeholder string
-		expected    string
-	}{
-		{
-			name:        "with Bearer scheme",
-			text:        "Authorization: Bearer token123",
-			pattern:     "Authorization",
-			placeholder: "***",
-			expected:    "Authorization: Bearer ***",
-		},
-		{
-			name:        "with Basic scheme",
-			text:        "Authorization: Basic dGVzdA==",
-			pattern:     "Authorization",
-			placeholder: "***",
-			expected:    "Authorization: Basic ***",
-		},
-		{
-			name:        "no scheme",
-			text:        "Authorization: token123",
-			pattern:     "Authorization",
-			placeholder: "***",
-			expected:    "Authorization: ***",
-		},
-		{
-			name:        "no space after colon",
-			text:        "Authorization:token",
-			pattern:     "Authorization",
-			placeholder: "***",
-			expected:    "Authorization:***",
-		},
-		{
-			name:        "space before and after colon",
-			text:        "Authorization : token",
-			pattern:     "Authorization",
-			placeholder: "***",
-			expected:    "Authorization : ***",
-		},
-		{
-			name:        "case insensitive pattern",
-			text:        "authorization: bearer secret",
-			pattern:     "Authorization",
-			placeholder: "***",
-			expected:    "authorization: bearer ***",
-		},
-		{
-			name:        "preserves whitespace",
-			text:        "Authorization:\t\tBearer token",
-			pattern:     "Authorization",
-			placeholder: "***",
-			expected:    "Authorization:\t\tBearer ***",
-		},
-		{
-			name:        "header name without a colon is not a header",
-			text:        "Authorization failed for user bob",
-			pattern:     "Authorization",
-			placeholder: "***",
-			expected:    "Authorization failed for user bob",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := applyPattern(t, KeyValuePattern{Literal: tt.pattern, Kind: PatternKindHeaderValue}, tt.placeholder, tt.text)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-// TestPerformKeyedValueRedaction tests key=value pattern handling details
-func TestPerformKeyedValueRedaction(t *testing.T) {
-	tests := []struct {
-		name        string
-		text        string
-		key         string
-		placeholder string
-		expected    string
-	}{
-		{
-			name:        "simple key=value",
-			text:        "password=secret",
-			key:         "password",
-			placeholder: "***",
-			expected:    "password=***",
-		},
-		{
-			name:        "case insensitive",
-			text:        "PASSWORD=secret",
-			key:         "password",
-			placeholder: "***",
-			expected:    "PASSWORD=***",
-		},
-		{
-			name:        "preserves case",
-			text:        "PaSsWoRd=test",
-			key:         "password",
-			placeholder: "***",
-			expected:    "PaSsWoRd=***",
-		},
-		{
-			name:        "multiple matches",
-			text:        "password=abc token=xyz password=def",
-			key:         "password",
-			placeholder: "***",
-			expected:    "password=*** token=xyz password=***",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := applyPattern(t, KeyValuePattern{Literal: tt.key, Kind: PatternKindKeyedValue}, tt.placeholder, tt.text)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 // TestRedactLogAttribute_StringWithKeyValuePatterns tests that log attributes containing
 // key=value patterns in their string values are properly redacted
 func TestRedactLogAttribute_StringWithKeyValuePatterns(t *testing.T) {
@@ -2429,33 +2265,6 @@ func TestRedactingHandler_ErrorValue(t *testing.T) {
 		output := logWithError(t, typedNil)
 		assert.NotContains(t, output, RedactionFailurePlaceholder)
 	})
-}
-
-// TestRedactionContext_DepthTracking tests depth tracking
-func TestRedactionContext_DepthTracking(t *testing.T) {
-	ctx1 := redactionContext{depth: 0}
-	assert.Equal(t, 0, ctx1.depth)
-
-	ctx2 := redactionContext{depth: 5}
-	assert.Equal(t, 5, ctx2.depth)
-
-	// Test depth limit
-	assert.True(t, ctx2.depth < maxRedactionDepth)
-
-	ctxLimit := redactionContext{depth: maxRedactionDepth}
-	assert.Equal(t, maxRedactionDepth, ctxLimit.depth)
-}
-
-// TestRedactionFailurePlaceholder tests the failure placeholder constant
-func TestRedactionFailurePlaceholder(t *testing.T) {
-	assert.Equal(t, "[REDACTION FAILED - OUTPUT SUPPRESSED]", RedactionFailurePlaceholder)
-	assert.NotEqual(t, "[REDACTED]", RedactionFailurePlaceholder)
-}
-
-// TestMaxRedactionDepth tests the depth limit constant
-func TestMaxRedactionDepth(t *testing.T) {
-	assert.Equal(t, 10, maxRedactionDepth)
-	assert.True(t, maxRedactionDepth > 0)
 }
 
 // TestRedactingHandler_SliceTypeConversion tests and documents the type conversion behavior
@@ -3383,29 +3192,29 @@ func TestProductionLoggerSetup(t *testing.T) {
 func TestRedactText_ValueBasedDetection(t *testing.T) {
 	config := DefaultConfig()
 
+	// Every input below is deliberately free of a recognizable key name. Writing
+	// them as "GITHUB_TOKEN=ghp_..." - which is how this table started out - lets
+	// the key-name layer redact them, so the assertions pass whether or not the
+	// value detector ran at all. The subtest guards against that directly.
 	tests := []struct {
 		name  string
 		input string
 	}{
 		{
 			name:  "AWS access key ID is masked",
-			input: "export KEY=AKIAIOSFODNN7EXAMPLE",
+			input: "restoring snapshot AKIAIOSFODNN7EXAMPLE from archive",
 		},
 		{
 			name:  "GitHub token ghp_ is masked",
-			input: "GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789ab",
+			input: "cloning as ghp_abcdefghijklmnopqrstuvwxyz0123456789ab over https",
 		},
 		{
 			name:  "Slack bot token is masked",
-			input: "SLACK_TOKEN=" + "xoxb-" + "999999999999-888888888888-zzzzzzzzzzzzzzzzzzzz",
+			input: "posting with " + "xoxb-" + "999999999999-888888888888-zzzzzzzzzzzzzzzzzzzz to #alerts",
 		},
 		{
 			name:  "PEM private key block is masked",
-			input: "key data:\n-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----",
-		},
-		{
-			name:  "Bearer token is masked",
-			input: "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc",
+			input: "captured output:\n-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----",
 		},
 		{
 			name:  "URL credentials are masked",
@@ -3417,8 +3226,17 @@ func TestRedactText_ValueBasedDetection(t *testing.T) {
 		},
 	}
 
+	// A Config with the value detector removed, used to prove that the key-name
+	// layer leaves each input alone and so cannot be the thing that redacts it.
+	keyNameOnly, err := NewConfig()
+	require.NoError(t, err)
+	keyNameOnly.valueDetector = nil
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.input, keyNameOnly.RedactText(tt.input),
+				"input must carry no key name, or this case proves nothing about value-format detection")
+
 			result := config.RedactText(tt.input)
 			assert.NotEqual(t, tt.input, result,
 				"RedactText should modify input by masking sensitive values")
@@ -3426,6 +3244,21 @@ func TestRedactText_ValueBasedDetection(t *testing.T) {
 				"Masked output must contain the redaction placeholder")
 		})
 	}
+}
+
+// TestRedactText_BearerTokenIsCoveredByBothLayers records why the Bearer case is
+// not in the table above. The detector's bearerToken pattern anchors on the same
+// "Bearer " literal that PatternKindNextToken matches, so no input can isolate
+// one layer from the other. The detector's own coverage of the format lives in
+// value_detector_test.go; what matters here is only that the combined result
+// masks the token.
+func TestRedactText_BearerTokenIsCoveredByBothLayers(t *testing.T) {
+	config := DefaultConfig()
+	const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc"
+
+	result := config.RedactText("Authorization: Bearer " + jwt)
+	assert.NotContains(t, result, jwt)
+	assert.Contains(t, result, "[REDACTED]")
 }
 
 // TestRedactText_ValueBasedDetection_BypassWhenNil verifies that when the value

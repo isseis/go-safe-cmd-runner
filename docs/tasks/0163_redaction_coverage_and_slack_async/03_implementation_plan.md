@@ -314,9 +314,22 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 **完了条件**: `make fmt && make test && make lint` が通り、ベンチマークが 3.2.7 の表と一致すること。
 
+#### ステップ 2-7: テストの棚卸し（自明なテスト・重複の除去）
+
+`redactor_test.go` が 3821 行に達したため、自明なテストと他テストでカバー済みの内容を洗い出した。
+
+- [x] **値形式検出テストの誤りを修正した（最優先）**。`TestRedactText_ValueBasedDetection` の 7 行中 4 行が、`valueDetector` を nil にしても通ることを実測で確認した。キー名ベース層が先に置換しており、AC-11〜AC-13 の裏付けになっていなかった。入力からキー名を除き、さらに**各ケースで「検出器を外した `Config` が入力を素通しすること」をテスト内で検証する**ようにして、同じ誤りが再発しない形にした（02_architecture.md 3.3.5）。分離できない `Bearer` 形式は `TestRedactText_BearerTokenIsCoveredByBothLayers` として理由付きで切り出した。
+- [x] 同語反復のテスト 3 件を削除した: `TestRedactionContext_DepthTracking`（構造体に代入した値が読み出せることの確認）、`TestRedactionFailurePlaceholder` と `TestMaxRedactionDepth`（定数が自身のリテラルと等しいことの確認）。深さ制限の振る舞いは `TestRedactingHandler_DeepRecursion` が、プレースホルダーは多数の振る舞いテストが実際の出力で確認している。
+- [x] 規則単位テスト 3 件を削除し、固有のケース 2 件を上位テストへ移した: `TestPerformKeyedValueRedaction`（4/4 行が `TestRedactText_KeyValuePatterns` と重複）、`TestPerformNextTokenRedaction`（4/5 行が重複。「リテラルの後にトークンがない」を移設）、`TestPerformHeaderValueRedaction`（7/8 行が重複。「コロンを伴わないヘッダー名」を移設）。3 件とも既定のリテラルしか使っておらず `applyPattern` である必然性がなかった。カスタムプレースホルダーは `TestKeyValueRules_PlaceholderWithDollar` と `TestNewConfig_RejectsInvalidPatterns` が担う。
+- [x] 削除の安全性を coverage で確認した。`internal/redaction` の statement coverage は 86.0% のまま変わらず、`go tool cover -func` の**関数単位の出力が完全に一致**した（削除したテストが固有に到達させていた行はなかった）。
+
+なお `applyPattern` ヘルパは残す。非既定のリテラルを使う `TestKeyValuePattern_RedundantSeparatorWouldFailOpen` / `TestKeyedValueKindDominatesNextTokenKind` / `TestPerformKeyValueRedaction` が依存している。
+
+**完了条件**: `make fmt && make test && make lint` が通り、coverage が棚卸し前と一致すること。
+
 ### PR-2 作成ポイント: key-name redaction coverage
 
-**対象ステップ**: 2-1 / 2-2 / 2-3 / 2-4 / 2-5 / 2-6
+**対象ステップ**: 2-1 / 2-2 / 2-3 / 2-4 / 2-5 / 2-6 / 2-7
 
 **推奨タイトル**: `feat(0163): extend key-name redaction to separators and quoted values`
 
