@@ -32,6 +32,9 @@ type Config struct {
 	// declaring what it redacts
 	// e.g. [{"password", PatternKindKeyedValue}, {"Authorization", PatternKindHeaderValue}]
 	keyValuePatterns []KeyValuePattern
+	// compiled holds one ready-to-run rule per keyValuePatterns entry, built once
+	// by NewConfig.
+	compiled []compiledPattern
 	// valueDetector detects sensitive values based on value format (e.g., AWS keys,
 	// GitHub tokens, PEM blocks) independent of key-name context. When nil, value-based
 	// detection is skipped.
@@ -47,6 +50,87 @@ type Config struct {
 // Placeholder returns the text this Config substitutes for a redacted secret.
 func (c *Config) Placeholder() string {
 	return c.placeholder
+}
+
+// compiledPattern is one key-name rule with everything that does not depend on
+// the input text already worked out. Only the regex match itself is left for
+// RedactText, which runs over every log line and every captured command output.
+type compiledPattern struct {
+	// keyedValue selects the rebuild-by-hand path over regex replacement. The
+	// keyed-value rule copies the boundary, key, separator and quotes verbatim
+	// around the value, which a replacement template cannot express.
+	keyedValue bool
+	re         *regexp.Regexp
+	// replacement is the template handed to Regexp.ReplaceAllString, with the
+	// placeholder's "$" already escaped. Empty for the keyed-value rule.
+	replacement string
+	// placeholder is the raw text, used by the keyed-value rule, which writes it
+	// into a strings.Builder rather than through replacement expansion and so
+	// must not have its "$" escaped.
+	placeholder string
+	// valueGroups holds the submatch indices of the keyed-value alternatives, so
+	// the name lookups happen once here rather than per call.
+	valueGroups []int
+}
+
+// compilePattern turns a validated pattern into the rule that runs against text.
+//
+// Compiling here rather than per call is what lets a bad pattern be an error at
+// wiring time. That matters beyond tidiness: RedactText runs inside
+// RedactingHandler.Handle, where slog.Default() is that same handler, so a
+// failure reported from there would be redacted by the Config that produced it
+// and recurse. There is nowhere useful to report a compile failure at run time,
+// so it must not happen at run time.
+func compilePattern(p KeyValuePattern, placeholder string) (compiledPattern, error) {
+	escaped := regexp.QuoteMeta(p.Literal)
+	escapedPlaceholder := escapeReplacementDollars(placeholder)
+
+	var expr, replacement string
+	keyedValue := false
+	switch p.Kind {
+	case PatternKindHeaderValue:
+		// header + separator + optional auth scheme, then the value to end of line
+		expr = `(?i)(` + escaped + `)([ \t]*:[ \t]*)((?:bearer |basic )?)[^\r\n]*`
+		replacement = "${1}${2}${3}" + escapedPlaceholder
+	case PatternKindNextToken:
+		// literal followed by one or more non-whitespace characters
+		expr = `(?i)(` + escaped + `)(\S+)`
+		replacement = "${1}" + escapedPlaceholder
+	case PatternKindKeyedValue:
+		expr = buildKeyValueRegex(escaped, keyBoundaryGroup(p.Literal))
+		keyedValue = true
+	default:
+		// Unreachable: NewConfig validates before compiling, and validate rejects
+		// an unknown kind. Kept so this switch stays total.
+		return compiledPattern{}, fmt.Errorf("%w: %d", ErrPatternKindUnknown, p.Kind)
+	}
+
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		// Also unreachable today: every branch above builds its expression from
+		// regexp.QuoteMeta-escaped input. Reported rather than assumed away, since
+		// that is the whole point of compiling at construction.
+		return compiledPattern{}, fmt.Errorf("compiling pattern %q: %w", p.Literal, err)
+	}
+
+	cp := compiledPattern{
+		keyedValue:  keyedValue,
+		re:          re,
+		replacement: replacement,
+		placeholder: placeholder,
+	}
+	if keyedValue {
+		cp.valueGroups = keyValueValueGroups(re)
+	}
+	return cp, nil
+}
+
+// apply runs this rule over the text.
+func (cp *compiledPattern) apply(text string) string {
+	if cp.keyedValue {
+		return replaceKeyValueMatches(cp.re, cp.valueGroups, text, cp.placeholder)
+	}
+	return cp.re.ReplaceAllString(text, cp.replacement)
 }
 
 // Option customizes the Config built by NewConfig.
@@ -89,10 +173,16 @@ func NewConfig(opts ...Option) (*Config, error) {
 	// layer too.
 	c.valueDetector = NewValueDetector(c.placeholder)
 
+	c.compiled = make([]compiledPattern, 0, len(c.keyValuePatterns))
 	for _, p := range c.keyValuePatterns {
 		if err := p.validate(); err != nil {
 			return nil, fmt.Errorf("invalid redaction pattern: %w", err)
 		}
+		cp, err := compilePattern(p, c.placeholder)
+		if err != nil {
+			return nil, err
+		}
+		c.compiled = append(c.compiled, cp)
 	}
 
 	c.validated = true
@@ -148,8 +238,8 @@ func (c *Config) RedactText(text string) string {
 	result := text
 
 	// Apply key-name-based redaction
-	for _, pattern := range c.keyValuePatterns {
-		result = c.performKeyValueRedaction(result, pattern, c.placeholder)
+	for i := range c.compiled {
+		result = c.compiled[i].apply(result)
 	}
 
 	// Apply value-format-based detection (e.g., AWS keys, GitHub tokens, PEM blocks).
@@ -207,132 +297,12 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 	return attr
 }
 
-// performKeyValueRedaction applies one pattern to the text, dispatching on the
-// kind the pattern declares.
-func (c *Config) performKeyValueRedaction(text string, pattern KeyValuePattern, placeholder string) string {
-	switch pattern.Kind {
-	case PatternKindHeaderValue:
-		return c.performHeaderValueRedaction(text, pattern.Literal, placeholder)
-	case PatternKindNextToken:
-		return c.performNextTokenRedaction(text, pattern.Literal, placeholder)
-	case PatternKindKeyedValue:
-		return c.performKeyedValueRedaction(text, pattern.Literal, placeholder)
-	default:
-		// A Kind outside the declared set is a programming error, not input: fail
-		// secure rather than guess at an interpretation.
-		//
-		// This branch deliberately does not log. RedactText runs inside
-		// RedactingHandler.Handle, and in production slog.Default() is that same
-		// RedactingHandler (see bootstrap.setupLogger), so logging here would
-		// redact the warning through the very Config that produced it, hit this
-		// branch again, and recurse until the stack overflows. Config holds no
-		// failureLogger to route around that - only RedactingHandler does - and the
-		// placeholder is itself the visible signal that redaction was suppressed.
-		return RedactionFailurePlaceholder
-	}
-}
-
-// compileRedactionRegex compiles a regex pattern with fail-secure error handling.
-// Returns the compiled regex or nil if compilation fails.
-// On failure, logs a warning and returns nil to signal the caller to use RedactionFailurePlaceholder.
-func compileRedactionRegex(regexPattern string, contextInfo map[string]string) *regexp.Regexp {
-	// Serve hits from the cache so patterns that repeat across RedactText calls
-	// are not recompiled each time. Only successful compilations are stored;
-	// a failed pattern must not be cached so later calls still go through the
-	// fail-secure path below, and a failure never pollutes the cache for other
-	// patterns.
-	if re, ok := regexCache.Load(regexPattern); ok {
-		return re.(*regexp.Regexp)
-	}
-
-	re, err := regexp.Compile(regexPattern)
-	if err != nil {
-		// Fail-secure: log warning and signal caller to use safe placeholder
-		// This prevents potential sensitive information leakage
-		logAttrs := []any{
-			"error", err.Error(),
-			"output_destination", "stderr, file, audit",
-		}
-		for k, v := range contextInfo {
-			logAttrs = append(logAttrs, k, v)
-		}
-		slog.Warn("Regex compilation failed - using safe placeholder", logAttrs...)
-		return nil
-	}
-
-	// The limit check and the store are separate operations, so the cache may
-	// overshoot slightly under concurrency; this is an approximate bound, not a
-	// precise capacity. The entry count is incremented only by the goroutine
-	// that actually inserts a new entry (loaded == false), so concurrent
-	// callers of the same pattern do not double-count it.
-	if regexCacheCount.Load() < maxRegexCacheEntries {
-		actual, loaded := regexCache.LoadOrStore(regexPattern, re)
-		if !loaded {
-			regexCacheCount.Add(1)
-		}
-		return actual.(*regexp.Regexp)
-	}
-	return re
-}
-
-// performNextTokenRedaction handles PatternKindNextToken patterns, the auth
-// schemes "Bearer " and "Basic ". The literal carries its own separator, so
-// there is no separator or quoting left to interpret: everything from the end of
-// the literal to the first whitespace is the secret.
-func (c *Config) performNextTokenRedaction(text, literal, placeholder string) string {
-	// Escape literal for regex and create case-insensitive pattern
-	// Match: literal followed by one or more non-whitespace characters
-	regexPattern := `(?i)(` + regexp.QuoteMeta(literal) + `)(\S+)`
-
-	re := compileRedactionRegex(regexPattern, map[string]string{
-		"function": "performNextTokenRedaction",
-		"pattern":  literal,
-	})
-	if re == nil {
-		return RedactionFailurePlaceholder
-	}
-
-	// Replace matching tokens with literal + placeholder. "${1}" copies the
-	// literal as it appeared in the input, preserving its case. Referring to the
-	// group rather than slicing the match by len(literal) also keeps this correct
-	// for a non-ASCII literal, whose case-insensitive match can differ in byte
-	// length from the literal the regex was built from.
-	return re.ReplaceAllString(text, "${1}"+escapeReplacementDollars(placeholder))
-}
-
 // escapeReplacementDollars makes a placeholder safe to embed in a
 // Regexp.ReplaceAllString replacement, where "$0"/"$1"/etc. expand to the match
 // and its capture groups. Without this, a placeholder configured with "$1"-like
 // text would re-inject the matched (secret) text it was meant to hide.
 func escapeReplacementDollars(placeholder string) string {
 	return strings.ReplaceAll(placeholder, "$", "$$")
-}
-
-// performHeaderValueRedaction handles PatternKindHeaderValue patterns such as
-// "Authorization". The colon and the whitespace around it are supplied here
-// rather than being spelled out in the pattern, so "Authorization: x" and
-// "Authorization:x" are both matched. It redacts everything after the separator
-// up to the end of line (or end of string), keeping an auth scheme name.
-func (c *Config) performHeaderValueRedaction(text, header, placeholder string) string {
-	// Escape header name for regex and create case-insensitive pattern
-	// Match: header + separator (colon with optional surrounding whitespace)
-	// + optional auth scheme (Bearer/Basic) + value + line ending
-	escapedHeader := regexp.QuoteMeta(header)
-	regexPattern := `(?i)(` + escapedHeader + `)([ \t]*:[ \t]*)((?:bearer |basic )?)[^\r\n]*`
-
-	re := compileRedactionRegex(regexPattern, map[string]string{
-		"function": "performHeaderValueRedaction",
-		"pattern":  header,
-	})
-	if re == nil {
-		return RedactionFailurePlaceholder
-	}
-
-	// Replace matching headers with header + separator + scheme + placeholder,
-	// copying the first three groups from the input so their case and whitespace
-	// survive: ${1} the header name, ${2} the colon and the whitespace around it,
-	// ${3} the auth scheme (Bearer/Basic) when present.
-	return re.ReplaceAllString(text, "${1}${2}${3}"+escapeReplacementDollars(placeholder))
 }
 
 // boundaryGroup classifies a key by how strict a boundary must precede the key
@@ -522,13 +492,12 @@ func matchedValueSpan(valueGroups []int, m []int) (start, end int, ok bool) {
 // than the one that matched in context. A match that fell through to the
 // adjacent alternative because the preceding character failed the boundary
 // would match a quoted or separated alternative once that context is gone.
-func replaceKeyValueMatches(re *regexp.Regexp, text, placeholder string) string {
+func replaceKeyValueMatches(re *regexp.Regexp, valueGroups []int, text, placeholder string) string {
 	matches := re.FindAllStringSubmatchIndex(text, -1)
 	if len(matches) == 0 {
 		return text
 	}
 
-	valueGroups := keyValueValueGroups(re)
 	var b strings.Builder
 	// The placeholder is normally longer than the value it replaces, so reserving
 	// only len(text) would force a reallocation on almost every call.
@@ -549,27 +518,6 @@ func replaceKeyValueMatches(re *regexp.Regexp, text, placeholder string) string 
 	}
 	b.WriteString(text[last:])
 	return b.String()
-}
-
-// performKeyedValueRedaction handles PatternKindKeyedValue patterns: a key name
-// whose separator, quoting and value extent are interpreted here rather than
-// spelled out in the pattern. This is the rule to reach for whenever the literal
-// names a key; see the note on PatternKindNextToken for why declaring a key name
-// there loses coverage instead of gaining control.
-func (c *Config) performKeyedValueRedaction(text, key, placeholder string) string {
-	escapedKey := regexp.QuoteMeta(key)
-
-	// Match a quoted, separated or adjacent value.
-	regexPattern := buildKeyValueRegex(escapedKey, keyBoundaryGroup(key))
-	re := compileRedactionRegex(regexPattern, map[string]string{
-		"function": "performKeyedValueRedaction",
-		"key":      key,
-	})
-	if re == nil {
-		return RedactionFailurePlaceholder
-	}
-
-	return replaceKeyValueMatches(re, text, placeholder)
 }
 
 // RedactingHandler is a decorator that redacts sensitive information before forwarding to the underlying handler

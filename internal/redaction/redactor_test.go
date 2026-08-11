@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,6 +37,16 @@ type sensitiveLogValuer struct {
 // LogValue implements the slog.LogValuer interface.
 func (v sensitiveLogValuer) LogValue() slog.Value {
 	return slog.StringValue(v.data)
+}
+
+// applyPattern compiles one pattern and runs it, which is the path RedactText
+// takes. Rule-level tests go through this rather than a Config so they can vary
+// the placeholder and exercise a single rule in isolation.
+func applyPattern(t *testing.T, p KeyValuePattern, placeholder, text string) string {
+	t.Helper()
+	cp, err := compilePattern(p, placeholder)
+	require.NoError(t, err)
+	return cp.apply(text)
 }
 
 // TestRedactText_EmptyString tests that empty strings are handled correctly
@@ -657,7 +668,7 @@ func TestRedactText_ExistingBehaviorPreserved(t *testing.T) {
 	t.Run("prefix carrying its own equals redacts only the adjacent token", func(t *testing.T) {
 		// Before PatternKind existed, a key whose string contained "=" was routed to
 		// this rule by inspecting the string. That shape is now declared instead.
-		result := config.performNextTokenRedaction("Authorization=Bearer token", "Authorization=", "[REDACTED]")
+		result := applyPattern(t, KeyValuePattern{Literal: "Authorization=", Kind: PatternKindNextToken}, "[REDACTED]", "Authorization=Bearer token")
 		assert.Equal(t, "Authorization=[REDACTED] token", result)
 	})
 }
@@ -1438,8 +1449,6 @@ func TestRedactingHandler_WithGroup(t *testing.T) {
 
 // TestPerformKeyValueRedaction tests that each kind is dispatched to its rule.
 func TestPerformKeyValueRedaction(t *testing.T) {
-	config := DefaultConfig()
-
 	tests := []struct {
 		name        string
 		text        string
@@ -1482,34 +1491,25 @@ func TestPerformKeyValueRedaction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := config.performKeyValueRedaction(tt.text, tt.pattern, tt.placeholder)
+			result := applyPattern(t, tt.pattern, tt.placeholder, tt.text)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 
-	t.Run("unknown kind fails secure", func(t *testing.T) {
-		// A kind outside the declared set can only come from a programming error,
-		// so the whole text is suppressed rather than passed through unredacted.
+	t.Run("unknown kind never reaches the redaction path", func(t *testing.T) {
+		// Compiling at construction turns this from a run-time branch into a
+		// wiring-time error. That is what makes it safe: RedactText runs inside
+		// RedactingHandler.Handle, where slog.Default() is that same handler, so a
+		// failure reported from there would be redacted by the Config that produced
+		// it and recurse. NewConfig can report it; RedactText could not.
 		unknown := KeyValuePattern{Literal: "password", Kind: PatternKind(99)}
-		result := config.performKeyValueRedaction("password=secret", unknown, "[REDACTED]")
-		assert.Equal(t, RedactionFailurePlaceholder, result)
-	})
 
-	t.Run("unknown kind does not recurse through the default logger", func(t *testing.T) {
-		// Production wires slog.Default() to a RedactingHandler built on the very
-		// Config being used here (see bootstrap.setupLogger), so anything this
-		// branch logs would be redacted by the Config that produced it and land
-		// back in the same branch. The fail-secure path must therefore stay silent;
-		// without that, this overflows the stack instead of returning.
-		recursive := DefaultConfig()
-		recursive.keyValuePatterns = append(recursive.keyValuePatterns,
-			KeyValuePattern{Literal: "x", Kind: PatternKind(99)})
-		base := slog.NewTextHandler(io.Discard, nil)
-		restore := slog.Default()
-		slog.SetDefault(slog.New(NewRedactingHandler(base, recursive, slog.New(base))))
-		t.Cleanup(func() { slog.SetDefault(restore) })
+		_, err := compilePattern(unknown, "[REDACTED]")
+		assert.ErrorIs(t, err, ErrPatternKindUnknown)
 
-		assert.Equal(t, RedactionFailurePlaceholder, recursive.RedactText("password=secret"))
+		cfg, err := NewConfig(WithAdditionalKeyValuePatterns(unknown))
+		assert.Nil(t, cfg)
+		assert.ErrorIs(t, err, ErrPatternKindUnknown)
 	})
 }
 
@@ -1587,8 +1587,6 @@ func TestKeyValuePattern_Validate(t *testing.T) {
 // which is why the mistake has to surface as a failure instead of being
 // normalized away into something that looks like it works.
 func TestKeyValuePattern_RedundantSeparatorWouldFailOpen(t *testing.T) {
-	config := DefaultConfig()
-
 	tests := []struct {
 		name    string
 		pattern KeyValuePattern
@@ -1610,9 +1608,36 @@ func TestKeyValuePattern_RedundantSeparatorWouldFailOpen(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Error(t, tt.pattern.validate(), "precondition: validate must reject this pattern")
 			assert.Equal(t, tt.input,
-				config.performKeyValueRedaction(tt.input, tt.pattern, "[REDACTED]"),
+				applyPattern(t, tt.pattern, "[REDACTED]", tt.input),
 				"a rejected pattern silently redacts nothing - this is the failure validate prevents")
 		})
+	}
+}
+
+// TestRedactText_ConcurrentUse verifies that one Config shared across goroutines
+// produces the single-threaded result (AC-32). Precompiling moved the regexes
+// into the Config, so what this now guards is that they are only ever read after
+// NewConfig returns - a compiled *regexp.Regexp is safe for concurrent use, but
+// building one during a call would not have been. Runs under -race in CI.
+func TestRedactText_ConcurrentUse(t *testing.T) {
+	config := DefaultConfig()
+	const input = "password=secret123 token=abc123 Authorization: Bearer xyz"
+	want := config.RedactText(input)
+
+	const goroutines = 32
+	results := make([]string, goroutines)
+	var wg sync.WaitGroup
+	for i := range goroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i] = config.RedactText(input)
+		}()
+	}
+	wg.Wait()
+
+	for i, got := range results {
+		assert.Equal(t, want, got, "goroutine %d must produce the single-threaded result", i)
 	}
 }
 
@@ -1698,7 +1723,6 @@ func TestDefaultKeyValuePatterns_AreValid(t *testing.T) {
 // Without this test the two kinds could drift into a genuine trade-off, and the
 // guidance on PatternKind would quietly stop being true.
 func TestKeyedValueKindDominatesNextTokenKind(t *testing.T) {
-	config := DefaultConfig()
 	// The key rule builds the separator, the next-token rule carries it. Both
 	// spellings are valid per validate; only the literals differ.
 	asKey := KeyValuePattern{Literal: "password", Kind: PatternKindKeyedValue}
@@ -1713,8 +1737,8 @@ func TestKeyedValueKindDominatesNextTokenKind(t *testing.T) {
 			"PaSsWoRd=secret",
 		} {
 			assert.Equal(t,
-				config.performKeyValueRedaction(input, asPrefix, "[REDACTED]"),
-				config.performKeyValueRedaction(input, asKey, "[REDACTED]"),
+				applyPattern(t, asPrefix, "[REDACTED]", input),
+				applyPattern(t, asKey, "[REDACTED]", input),
 				"input %q", input)
 		}
 	})
@@ -1725,9 +1749,9 @@ func TestKeyedValueKindDominatesNextTokenKind(t *testing.T) {
 			"password = secret",
 			`"password": "secret"`,
 		} {
-			assert.Equal(t, input, config.performKeyValueRedaction(input, asPrefix, "[REDACTED]"),
+			assert.Equal(t, input, applyPattern(t, asPrefix, "[REDACTED]", input),
 				"next-token rule is expected to miss %q", input)
-			assert.NotContains(t, config.performKeyValueRedaction(input, asKey, "[REDACTED]"), "secret",
+			assert.NotContains(t, applyPattern(t, asKey, "[REDACTED]", input), "secret",
 				"keyed-value rule must redact %q", input)
 		}
 	})
@@ -1735,9 +1759,9 @@ func TestKeyedValueKindDominatesNextTokenKind(t *testing.T) {
 	t.Run("prefix leaks the tail of a quoted value that key redacts whole", func(t *testing.T) {
 		const input = `password="a b"`
 		assert.Equal(t, `password=[REDACTED] b"`,
-			config.performKeyValueRedaction(input, asPrefix, "[REDACTED]"))
+			applyPattern(t, asPrefix, "[REDACTED]", input))
 		assert.Equal(t, `password="[REDACTED]"`,
-			config.performKeyValueRedaction(input, asKey, "[REDACTED]"))
+			applyPattern(t, asKey, "[REDACTED]", input))
 	})
 }
 
@@ -1745,16 +1769,14 @@ func TestKeyedValueKindDominatesNextTokenKind(t *testing.T) {
 // expansion used by the next-token and header-value rules: a placeholder with "$1"
 // must be emitted literally, never expanded back into the secret it replaced.
 func TestKeyValueRules_PlaceholderWithDollar(t *testing.T) {
-	config := DefaultConfig()
-
 	t.Run("next-token rule", func(t *testing.T) {
-		result := config.performNextTokenRedaction("Bearer s3cr3t", "Bearer ", "$1")
+		result := applyPattern(t, KeyValuePattern{Literal: "Bearer ", Kind: PatternKindNextToken}, "$1", "Bearer s3cr3t")
 		assert.Equal(t, "Bearer $1", result)
 		assert.NotContains(t, result, "s3cr3t")
 	})
 
 	t.Run("header-value rule", func(t *testing.T) {
-		result := config.performHeaderValueRedaction("Authorization: s3cr3t", "Authorization", "$1")
+		result := applyPattern(t, KeyValuePattern{Literal: "Authorization", Kind: PatternKindHeaderValue}, "$1", "Authorization: s3cr3t")
 		assert.Equal(t, "Authorization: $1", result)
 		assert.NotContains(t, result, "s3cr3t")
 	})
@@ -1762,8 +1784,6 @@ func TestKeyValueRules_PlaceholderWithDollar(t *testing.T) {
 
 // TestPerformNextTokenRedaction tests prefix pattern handling details
 func TestPerformNextTokenRedaction(t *testing.T) {
-	config := DefaultConfig()
-
 	tests := []struct {
 		name        string
 		text        string
@@ -1810,7 +1830,7 @@ func TestPerformNextTokenRedaction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := config.performNextTokenRedaction(tt.text, tt.pattern, tt.placeholder)
+			result := applyPattern(t, KeyValuePattern{Literal: tt.pattern, Kind: PatternKindNextToken}, tt.placeholder, tt.text)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -1820,8 +1840,6 @@ func TestPerformNextTokenRedaction(t *testing.T) {
 // is the header name alone: the colon and the whitespace around it belong to the
 // rule, so both spaced and unspaced headers are matched by the same pattern.
 func TestPerformHeaderValueRedaction(t *testing.T) {
-	config := DefaultConfig()
-
 	tests := []struct {
 		name        string
 		text        string
@@ -1889,7 +1907,7 @@ func TestPerformHeaderValueRedaction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := config.performHeaderValueRedaction(tt.text, tt.pattern, tt.placeholder)
+			result := applyPattern(t, KeyValuePattern{Literal: tt.pattern, Kind: PatternKindHeaderValue}, tt.placeholder, tt.text)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -1897,8 +1915,6 @@ func TestPerformHeaderValueRedaction(t *testing.T) {
 
 // TestPerformKeyedValueRedaction tests key=value pattern handling details
 func TestPerformKeyedValueRedaction(t *testing.T) {
-	config := DefaultConfig()
-
 	tests := []struct {
 		name        string
 		text        string
@@ -1938,7 +1954,7 @@ func TestPerformKeyedValueRedaction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := config.performKeyedValueRedaction(tt.text, tt.key, tt.placeholder)
+			result := applyPattern(t, KeyValuePattern{Literal: tt.key, Kind: PatternKindKeyedValue}, tt.placeholder, tt.text)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -3418,13 +3434,9 @@ func TestRedactText_ValueBasedDetection(t *testing.T) {
 // detector, so this pins the nil guard for the in-package construction that can
 // still leave it unset.
 func TestRedactText_ValueBasedDetection_BypassWhenNil(t *testing.T) {
-	config := Config{
-		placeholder:      "[HIDDEN]",
-		patterns:         DefaultSensitivePatterns(),
-		keyValuePatterns: []KeyValuePattern{{Literal: "password", Kind: PatternKindKeyedValue}},
-		valueDetector:    nil, // explicitly nil
-		validated:        true,
-	}
+	config, err := NewConfig(WithPlaceholder("[HIDDEN]"))
+	require.NoError(t, err)
+	config.valueDetector = nil // the state under test
 
 	// Key=value pattern should still work
 	result := config.RedactText("password=secret value AKIAIOSFODNN7EXAMPLE")
