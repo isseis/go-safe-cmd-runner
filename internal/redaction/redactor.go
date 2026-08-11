@@ -156,8 +156,11 @@ func WithPlaceholder(placeholder string) Option {
 // WithAdditionalKeyValuePatterns appends patterns to the default key-name set.
 // This is the supported way to declare that a key name marks a secret in a
 // particular deployment; the added patterns are validated along with the
-// defaults, and they are classified into boundary groups by the same rules (a
-// key added here gets the loose boundary - see commonWordKeys).
+// defaults, and they are classified into boundary groups by the same rules the
+// defaults are - so a key that happens to be an ordinary English word gets the
+// strict boundary here too, and matches less than the loose one would. Which
+// words those are is a property of the language, not of what a caller declares:
+// see commonWordKeys.
 func WithAdditionalKeyValuePatterns(patterns ...KeyValuePattern) Option {
 	return func(c *Config) {
 		c.keyValuePatterns = append(c.keyValuePatterns, patterns...)

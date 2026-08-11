@@ -602,7 +602,9 @@ func TestKeyBoundaryGroup_Classification(t *testing.T) {
 		{key: "_KEY", expected: boundaryGroupPrefixed},
 		{key: "_SECRET", expected: boundaryGroupPrefixed},
 		// A key the user adds is treated as a declaration that the key marks a
-		// secret, so it gets the loose boundary rather than the strict one.
+		// secret, so it gets the loose boundary rather than the strict one - unless
+		// it is one of the common words below, which is decided by the key string
+		// and not by who added it.
 		{key: "passphrase", expected: boundaryGroupSpecific},
 		// Case does not affect the common-word lookup.
 		{key: "Token", expected: boundaryGroupCommonWord},
