@@ -218,7 +218,6 @@ func TestInheritanceModeTracking_CompleteFlow(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc // Capture loop variable
 		t.Run(tc.groupName, func(t *testing.T) {
 			groupSpec := &configSpec.Groups[tc.groupIndex]
 

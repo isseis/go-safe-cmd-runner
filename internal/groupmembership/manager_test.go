@@ -158,7 +158,7 @@ func TestGroupMembership(t *testing.T) {
 
 		// Trigger cleanup by making CleanupInterval cache misses
 		// clearExpiredCache is called internally after CleanupInterval misses
-		for i := 0; i < CleanupInterval; i++ {
+		for i := range CleanupInterval {
 			// Try to get a non-existent group to trigger cache misses
 			_, _ = gm.GetGroupMembers(uint32(10000 + i))
 		}
@@ -185,7 +185,7 @@ func TestGroupMembership(t *testing.T) {
 		assert.Equal(t, 0, stats.ExpiredEntries) // Entries should not be expired
 
 		// Trigger cleanup - valid entries should be preserved
-		for i := 0; i < CleanupInterval; i++ {
+		for i := range CleanupInterval {
 			_, _ = gm.GetGroupMembers(uint32(10000 + i))
 		}
 
@@ -202,7 +202,7 @@ func TestGroupMembership(t *testing.T) {
 		assert.Equal(t, 0, stats.TotalEntries)
 
 		// Trigger cleanup on empty cache - should not cause errors
-		for i := 0; i < CleanupInterval; i++ {
+		for i := range CleanupInterval {
 			_, _ = gm.GetGroupMembers(uint32(10000 + i))
 		}
 

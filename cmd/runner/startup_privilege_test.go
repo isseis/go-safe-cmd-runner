@@ -105,7 +105,7 @@ func runSummaryRunID(t *testing.T, stdout string) string {
 		if !strings.HasPrefix(line, "RUN_SUMMARY ") {
 			continue
 		}
-		for _, field := range strings.Fields(line) {
+		for field := range strings.FieldsSeq(line) {
 			if value, found := strings.CutPrefix(field, "run_id="); found {
 				return value
 			}
@@ -145,11 +145,9 @@ func captureStdoutStderr(t *testing.T, fn func()) (stdout, stderr string) {
 		dst *bytes.Buffer
 		src *os.File
 	}{{&outBuf, outReader}, {&errBuf, errReader}} {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, _ = io.Copy(drain.dst, drain.src)
-		}()
+		})
 	}
 
 	fn()

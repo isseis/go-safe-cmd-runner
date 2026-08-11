@@ -266,8 +266,8 @@ args = ["hello"]
 	// The output should not contain the command's actual output (which would be "hello" on its own line)
 	// However, "hello" will appear in the args field as `args: ["hello"]`, which is expected
 	// We verify that the command wasn't executed by checking it's not printed as actual output
-	lines := strings.Split(outputStr, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(outputStr, "\n")
+	for line := range lines {
 		trimmed := strings.TrimSpace(line)
 		// Check for standalone "hello" output (actual command execution)
 		// But exclude lines that are part of the parameter display

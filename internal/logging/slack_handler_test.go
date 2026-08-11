@@ -931,7 +931,7 @@ func TestSlackHandler_GenerateBackoffIntervals(t *testing.T) {
 				"Should generate correct number of intervals for %s", tt.name)
 
 			// Check exponential backoff formula: base * 2^i
-			for i := range len(intervals) {
+			for i := range intervals {
 				expected := tt.base * time.Duration(1<<i)
 				assert.Equal(t, expected, intervals[i],
 					"Interval[%d] should follow exponential backoff formula (base * 2^%d)", i, i)

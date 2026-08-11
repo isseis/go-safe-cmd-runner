@@ -34,10 +34,7 @@ func TestUnixPrivilegeManager_ConcurrentAccess(t *testing.T) {
 
 	// Launch multiple goroutines that try to use WithPrivileges concurrently
 	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			for range numOperationsPerGoroutine {
 				elevationCtx := runnertypes.ElevationContext{
 					Operation:   runnertypes.OperationFileAccess,
@@ -61,7 +58,7 @@ func TestUnixPrivilegeManager_ConcurrentAccess(t *testing.T) {
 				results = append(results, err)
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 
 	// Wait for all goroutines to complete
@@ -133,10 +130,7 @@ func TestUnixPrivilegeManager_RaceConditionProtection(t *testing.T) {
 
 	// Launch many goroutines simultaneously to try to trigger race conditions
 	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			elevationCtx := runnertypes.ElevationContext{
 				Operation:   runnertypes.OperationFileAccess,
 				CommandName: "race_test",
@@ -162,7 +156,7 @@ func TestUnixPrivilegeManager_RaceConditionProtection(t *testing.T) {
 				errors = append(errors, err)
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -186,7 +180,7 @@ func TestUnixPrivilegeManager_LockSerialization(t *testing.T) {
 	var mu sync.Mutex
 
 	// Launch multiple goroutines to test serialization
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
@@ -233,16 +227,13 @@ func TestUnixPrivilegeManager_ThreadSafety(t *testing.T) {
 
 	// Test concurrent access to read-only methods
 	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			// These methods should be safe to call concurrently
 			_ = manager.GetCurrentUID()
 			_ = manager.GetOriginalUID()
 			_ = manager.IsPrivilegedExecutionSupported()
 			_ = manager.GetMetrics()
-		}()
+		})
 	}
 
 	wg.Wait()

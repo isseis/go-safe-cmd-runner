@@ -106,7 +106,7 @@ func TestSaveRecord_ShebangInterpreterCacheHashChangeReanalyzes(t *testing.T) {
 	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{BinaryAnalyzer: spy})
 	require.NoError(t, err)
 
-	scriptA := tu.WriteExecutableFile(t, dir, "a.sh", []byte(fmt.Sprintf("#!%s\necho A\n", interpreterPath)))
+	scriptA := tu.WriteExecutableFile(t, dir, "a.sh", fmt.Appendf(nil, "#!%s\necho A\n", interpreterPath))
 	_, _, err = validator.SaveRecord(scriptA, false)
 	require.NoError(t, err)
 
@@ -118,7 +118,7 @@ func TestSaveRecord_ShebangInterpreterCacheHashChangeReanalyzes(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, hashA, hashB)
 
-	scriptB := tu.WriteExecutableFile(t, dir, "b.sh", []byte(fmt.Sprintf("#!%s\necho B\n", interpreterPath)))
+	scriptB := tu.WriteExecutableFile(t, dir, "b.sh", fmt.Appendf(nil, "#!%s\necho B\n", interpreterPath))
 	_, _, err = validator.SaveRecord(scriptB, false)
 	require.NoError(t, err)
 

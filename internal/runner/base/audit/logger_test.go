@@ -648,10 +648,11 @@ func TestLogRiskProfile_ArgMasking(t *testing.T) {
 
 	args, ok := entry["command_args"].([]any)
 	require.True(t, ok, "command_args should be an array")
-	joined := ""
+	var sb strings.Builder
 	for _, a := range args {
-		joined += a.(string) + " "
+		sb.WriteString(a.(string) + " ")
 	}
+	joined := sb.String()
 	assert.NotContains(t, joined, "supersecretvalue", "secret must be masked")
 	assert.Contains(t, joined, "[REDACTED]")
 	assert.Contains(t, joined, "admin", "non-sensitive arg preserved")

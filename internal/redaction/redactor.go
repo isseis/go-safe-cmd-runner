@@ -1151,7 +1151,7 @@ func (r *RedactingHandler) processStruct(key string, structValue any, ctx redact
 	nextCtx := redactionContext{depth: ctx.depth + 1}
 	exportedFieldCount := 0
 
-	for i := 0; i < rv.NumField(); i++ {
+	for i := range rv.NumField() {
 		field := rv.Type().Field(i)
 		// Skip unexported fields
 		if !field.IsExported() {
@@ -1290,7 +1290,7 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 	elemKind := rv.Type().Elem().Kind()
 	skipPerElementReflectCheck := elemKind != reflect.Interface && !isRecursivelyRedactableKind(elemKind)
 
-	for i := 0; i < rv.Len(); i++ {
+	for i := range rv.Len() {
 		element := rv.Index(i).Interface()
 
 		// Check if element is LogValuer

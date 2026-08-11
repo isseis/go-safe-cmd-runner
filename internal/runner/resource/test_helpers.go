@@ -1,5 +1,4 @@
 //go:build test || performance
-// +build test performance
 
 package resource
 

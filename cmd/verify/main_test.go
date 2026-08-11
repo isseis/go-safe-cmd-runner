@@ -344,7 +344,7 @@ func TestRunFailsClosedOnHashDirViolation_AncestorViolation(t *testing.T) {
 	// are correct, so any instruction naming it sends the operator to fix a
 	// directory that is already fine.
 	var remediations int
-	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
 		if !strings.Contains(line, "level=ERROR") {
 			continue
 		}
@@ -407,7 +407,7 @@ func TestRunFailsClosedOnHashDirViolation_LogsErrorLevel(t *testing.T) {
 	require.Equal(t, exitUntrustedEnvironment, exitCode)
 
 	var errorLines, warnLines []string
-	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
 		switch {
 		case strings.Contains(line, "level=ERROR"):
 			errorLines = append(errorLines, line)

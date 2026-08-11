@@ -1,16 +1,11 @@
-> **Project context (read first)**: Read `.claude/commands/_context.md`. It is the
-> single source of truth for every project-specific value below — the task root,
-> guide paths, document/status conventions, build checks (`make fmt`/`make test`/
-> `make lint`/`make deadcode`), the green gate, source layout, and test-helper
-> placement (`testutil/`, `test_helpers.go`, `//go:build test`). Where this command
-> names such a path or command, treat the entry in `_context.md` as canonical. The
-> domain-specific invariant examples in step 5 (ULID test IDs, `--dry-run`
-> side-effects, privilege-restoration teardown) are illustrative for this project; see
-> `_context.md` (Domain-specific) before reusing them elsewhere. When porting,
-> follow the porting steps in `_context.md`: that includes editing this command body
-> for domain-specific examples (step 5) and for Go-specific rules (`testutil/`,
-> `test_helpers.go`, `//go:build test`) when changing tech stacks. The review step
-> uses the shared procedure in `.claude/commands/_lib/review-subagent-pattern.md`.
+> **Project context (read first)**: Read `.claude/commands/_context.md` — it is
+> canonical for every project-specific path, build check, green gate, and
+> test-helper placement this command names. Porting instructions live there too;
+> this body's parts that need editing are the domain-specific invariant examples
+> in step 5 (ULID test IDs, `--dry-run` side effects, privilege-restoration
+> teardown) and the Go test-helper rules. The review step follows
+> `.claude/commands/_lib/review-subagent-pattern.md`.
+>
 > Before starting an implementation session, check the `**実装モデル要件**` field of
 > the `### PR-N 作成ポイント` marker covering the work you are about to pick up (see
 > `_context.md`, "PR marker conventions"): `frontier-required` means run this session

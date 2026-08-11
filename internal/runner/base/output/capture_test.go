@@ -332,7 +332,7 @@ func TestCapture_CloseIdempotency(t *testing.T) {
 	assert.Nil(t, capture.FileHandle, "FileHandle should be nil after Close")
 
 	// Subsequent closes should also succeed (idempotent)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		err = capture.Close()
 		assert.NoError(t, err, "Subsequent Close() call #%d should not produce an error", i+1)
 		assert.Nil(t, capture.FileHandle, "FileHandle should remain nil after subsequent Close() call #%d", i+1)
@@ -366,12 +366,12 @@ func TestCapture_ConcurrentAccess(t *testing.T) {
 	var mu sync.Mutex
 
 	// Start concurrent writes
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(goroutineID int) {
 			defer wg.Done()
-			for j := 0; j < writesPerGoroutine; j++ {
-				data := []byte(fmt.Sprintf("g%02d-w%02d  ", goroutineID, j)) // 9 bytes
+			for j := range writesPerGoroutine {
+				data := fmt.Appendf(nil, "g%02d-w%02d  ", goroutineID, j) // 9 bytes
 				err := capture.WriteOutput(data)
 				if err == nil {
 					mu.Lock()

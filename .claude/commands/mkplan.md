@@ -1,16 +1,11 @@
-> **Project context (read first)**: Read `.claude/commands/_context.md`. It is the
-> single source of truth for every project-specific value below — the task root,
-> guide paths, document names, status values (`draft`/`approved`), build checks,
-> source layout (`cmd/`/`internal/`, `testutil/`), and document language. Where
-> this command names such a path or value, treat the entry in `_context.md` as
-> canonical. The domain-specific examples in steps 5–6 (the symbol-verification
-> `rg` example and the `FormatLogFileHint` before/after string-literal example)
-> are illustrative for this project; see `_context.md` (Domain-specific) before
-> reusing them elsewhere. When porting, follow the porting steps in `_context.md`:
-> that includes editing this command body for domain-specific examples (steps 5–6)
-> and for Go-specific test-helper rules (`testutil/`, `test_helpers.go`,
-> `//go:build test`) when changing tech stacks. The review step uses the shared
-> procedure in `.claude/commands/_lib/review-subagent-pattern.md`.
+> **Project context (read first)**: Read `.claude/commands/_context.md` — it is
+> canonical for every project-specific path, document name, status value, build
+> check, and layout this command names. Porting instructions live there too; this
+> body's parts that need editing are the domain-specific examples in steps 5–6
+> (the symbol-verification `rg` example, the `FormatLogFileHint` before/after
+> example) and the Go test-helper rules (`testutil/`, `test_helpers.go`,
+> `//go:build test`). The review step follows
+> `.claude/commands/_lib/review-subagent-pattern.md`.
 
 Your goal is to create `03_implementation_plan.md` for one task under `docs/tasks/`.
 

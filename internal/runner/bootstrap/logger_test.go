@@ -329,7 +329,7 @@ func TestSetupLoggerWithConfig_FailureLoggerCircularDependencyPrevention(t *test
 	require.NoError(t, err)
 
 	// Log multiple messages to ensure no circular dependency issues
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		slog.Info("test message", "iteration", i)
 	}
 

@@ -98,7 +98,7 @@ func TestCommandResults_LogValue(t *testing.T) {
 				assert.Equal(t, int64(100), attrs[0].Value.Int64())
 				assert.False(t, attrs[1].Value.Bool())
 
-				for i := 0; i < 100; i++ {
+				for i := range 100 {
 					assert.Equal(t, fmt.Sprintf("cmd_%d", i), attrs[i+2].Key)
 				}
 			},
@@ -135,7 +135,7 @@ func TestCommandResults_LogValue(t *testing.T) {
 
 func createTestCommandResults(count int) CommandResults {
 	results := make(CommandResults, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		results[i] = CommandResult{
 			CommandResultFields: CommandResultFields{
 				Name:     fmt.Sprintf("cmd%d", i),

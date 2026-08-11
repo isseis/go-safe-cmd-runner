@@ -1,14 +1,8 @@
-> **Project context (read first)**: Read `.claude/commands/_context.md`. It is the
-> single source of truth for every project-specific value below — the task root,
-> guide paths, document names (`01_requirements.md`, `02_architecture.md`, …),
-> status values (`draft`/`approved`), source layout (`cmd/`/`internal/`), and
-> document language. Where this command names such a path or value, treat the
-> entry in `_context.md` as canonical. When porting, follow the porting steps in
-> `_context.md`. Note that this command body also contains Go/project-specific
-> references (`cmd/`/`internal/` layout inspection in step 6) that may need
-> updating when porting to a different tech stack or project structure. The review
-> step uses the shared procedure in
-> `.claude/commands/_lib/review-subagent-pattern.md`.
+> **Project context (read first)**: Read `.claude/commands/_context.md` — it is
+> canonical for every project-specific path, document name, status value, and
+> layout this command names. Porting instructions live there too; this body's
+> `cmd/`/`internal/` inspection (step 6) is one of the parts that needs editing.
+> The review step follows `.claude/commands/_lib/review-subagent-pattern.md`.
 
 Your goal is to create `02_architecture.md` for one task under `docs/tasks/`.
 

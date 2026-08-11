@@ -55,7 +55,7 @@ func nssSources(content, database string) []string {
 		}
 		sourceList := strings.TrimSpace(parts[1])
 		var sources []string
-		for _, src := range strings.Fields(sourceList) {
+		for src := range strings.FieldsSeq(sourceList) {
 			if strings.HasPrefix(src, "[") {
 				continue
 			}
@@ -182,7 +182,7 @@ func fileExpectedMembers(t *testing.T, gid uint32) []string {
 
 	set := make(map[string]struct{})
 	if entry.members != "" {
-		for _, m := range strings.Split(entry.members, ",") {
+		for m := range strings.SplitSeq(entry.members, ",") {
 			m = strings.TrimSpace(m)
 			if m != "" {
 				set[m] = struct{}{}

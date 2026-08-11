@@ -47,7 +47,6 @@ func TestBackwardCompatibility_AllSampleFiles(t *testing.T) {
 	}
 
 	for _, filename := range sampleFiles {
-		filename := filename // capture range variable
 		t.Run(filename, func(t *testing.T) {
 			configPath := filepath.Join("..", "..", "..", "sample", filename)
 			content, err := os.ReadFile(configPath)

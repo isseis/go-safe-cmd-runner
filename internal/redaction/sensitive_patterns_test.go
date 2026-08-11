@@ -187,7 +187,7 @@ func BenchmarkIsSensitiveKey_Mixed_IndividualPatterns(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		key := testKeys[i%len(testKeys)]
 		// Simulate original loop-based approach
 		found := false
@@ -213,7 +213,7 @@ func BenchmarkIsSensitiveKey_Mixed_Combined(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		key := testKeys[i%len(testKeys)]
 		patterns.IsSensitiveKey(key)
 	}

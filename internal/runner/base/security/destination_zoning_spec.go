@@ -956,7 +956,7 @@ func chmodGrantsHigh(mode string) bool {
 	// Symbolic: a clause that ADDS or ASSIGNS (+/=) an s bit grants setuid/setgid,
 	// or grants world-write when its "who" includes other or all. The perm letters
 	// must be parsed per clause (a substring match like "+s" misses "u+xs").
-	for _, clause := range strings.Split(mode, ",") {
+	for clause := range strings.SplitSeq(mode, ",") {
 		idx := strings.IndexAny(clause, "+=-")
 		if idx < 0 {
 			continue
@@ -988,7 +988,7 @@ func isOctal(s string) bool {
 
 // aclGrantsWrite reports whether a setfacl entry grants write to group or other.
 func aclGrantsWrite(entry string) bool {
-	for _, e := range strings.Split(entry, ",") {
+	for e := range strings.SplitSeq(entry, ",") {
 		fields := strings.Split(e, ":")
 		if len(fields) < minACLFields {
 			continue

@@ -71,7 +71,7 @@ func findFuncPLTAddr(elfFile *elf.File, funcName string) (uint64, bool, error) {
 
 	bo := elfFile.ByteOrder
 	relaIdx := -1
-	for i := 0; i < len(relaData)/elf64RelASize; i++ {
+	for i := range len(relaData) / elf64RelASize {
 		entry := relaData[i*elf64RelASize : (i+1)*elf64RelASize]
 		rInfo := bo.Uint64(entry[8:16])
 		symIdx := int(rInfo >> elf64RelASymShift) //nolint:gosec // G115: rInfo>>32 fits int on all supported platforms

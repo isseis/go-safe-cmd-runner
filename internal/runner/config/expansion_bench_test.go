@@ -207,7 +207,7 @@ func BenchmarkExpandMultipleCommandsWithEnvImport(b *testing.B) {
 
 	// Prepare 10 command specs, each with env_import
 	cmdSpecs := make([]*runnertypes.CommandSpec, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cmdSpecs[i] = &runnertypes.CommandSpec{
 			Name:      "test_command",
 			Cmd:       "/usr/bin/test",

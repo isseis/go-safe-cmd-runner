@@ -150,7 +150,7 @@ func TestSaveRecord_ShebangRecursive(t *testing.T) {
 
 	// Create a script pointing to the fake interpreter.
 	script := tu.WriteExecutableFile(t, dir, "script.sh",
-		[]byte(fmt.Sprintf("#!%s\necho hello\n", fakeInterp)))
+		fmt.Appendf(nil, "#!%s\necho hello\n", fakeInterp))
 
 	validator, err := New(&SHA256{}, hashDir, ValidatorConfig{})
 	require.NoError(t, err)

@@ -569,7 +569,7 @@ func TestAnalyze_RecursionDepthExceeded(t *testing.T) {
 
 	// Write chain[0]..chain[MaxRecursionDepth-1]; each references the next.
 	// chain[MaxRecursionDepth-1] references chain[MaxRecursionDepth] (does not need to exist).
-	for i := 0; i < MaxRecursionDepth; i++ {
+	for i := range MaxRecursionDepth {
 		require.NoError(t, os.WriteFile(chain[i],
 			machodylibtestutil.BuildMachOWithDeps(nativeCPU, []string{chain[i+1]}, nil, nil), 0o600))
 	}

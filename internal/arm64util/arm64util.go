@@ -66,19 +66,13 @@ func BackwardScanX16(code []byte, svcOffset int) (int, bool) {
 
 		if word&^imm16Mask == movzX16Base {
 			lo := int((word & imm16Mask) >> imm16Shift)
-			hi := 0
-			if x16Hi >= 0 {
-				hi = x16Hi
-			}
+			hi := max(x16Hi, 0)
 			return stripBSDPrefix(hi | lo), true
 		}
 
 		if word&^imm16Mask == movzX16Lsl16 {
 			hi := int((word&imm16Mask)>>imm16Shift) << imm16HighShift
-			lo := 0
-			if x16Lo >= 0 {
-				lo = x16Lo
-			}
+			lo := max(x16Lo, 0)
 			return stripBSDPrefix(hi | lo), true
 		}
 
@@ -194,19 +188,13 @@ func backwardScanRegImm(code []byte, fromOffset int, regN uint32) (int, bool) {
 		// MOVZ xN/wN, #imm, LSL#0 — terminal: assemble hi|lo and return
 		if word&^imm16Mask == movzX0Base|regN || word&^imm16Mask == movzW0Base|regN {
 			lo := int((word & imm16Mask) >> imm16Shift)
-			hi := 0
-			if immHi >= 0 {
-				hi = immHi
-			}
+			hi := max(immHi, 0)
 			return hi | lo, true
 		}
 		// MOVZ xN, #imm, LSL#16 — terminal
 		if word&^imm16Mask == movzX0Lsl16|regN {
 			hi := int((word&imm16Mask)>>imm16Shift) << imm16HighShift
-			lo := 0
-			if immLo >= 0 {
-				lo = immLo
-			}
+			lo := max(immLo, 0)
 			return hi | lo, true
 		}
 		// MOVK xN/wN, #imm, LSL#0 — accumulate low half
@@ -318,7 +306,7 @@ func decodeORRX16XZR(word uint32) (int, bool) {
 	if esize == arm64BitsPerWord {
 		result = welem
 	} else {
-		for i := uint32(0); i < arm64BitsPerWord/esize; i++ {
+		for i := range arm64BitsPerWord / esize {
 			result |= welem << (i * esize)
 		}
 	}
