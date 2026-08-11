@@ -828,6 +828,39 @@ func TestRedactText_IntentionalOverRedaction(t *testing.T) {
 	}
 }
 
+// TestRedactText_CommonWordKeyGapKnownLimits fixes the shapes a common-word key
+// does not catch, so that the gap reads as decided rather than overlooked. Its
+// cause is the strict boundary, which counts neither a space nor the start of
+// the text: see 02_architecture.md 3.2.6, which argues the gap costs less than
+// redacting "Primary key: id" and every diagnostic shaped like it.
+func TestRedactText_CommonWordKeyGapKnownLimits(t *testing.T) {
+	config := DefaultConfig()
+
+	// The colon form is the YAML shape named in 3.2.6. The "=" form has the same
+	// cause but is not saved by the adjacent alternative, which needs the "="
+	// to sit against the key.
+	for _, input := range []string{
+		"token: ghp_short",
+		"secret = abc",
+		"token = abc",
+		"key = abc",
+	} {
+		t.Run(input, func(t *testing.T) {
+			assert.Equal(t, input, config.RedactText(input))
+		})
+	}
+
+	// The shapes that do catch, kept alongside so the gap's edges are visible:
+	// a quoted value takes the loose boundary, and "=" against the key falls to
+	// the adjacent alternative.
+	t.Run("quoted value is caught", func(t *testing.T) {
+		assert.Equal(t, `secret = "[REDACTED]"`, config.RedactText(`secret = "abc"`))
+	})
+	t.Run("separator against the key is caught", func(t *testing.T) {
+		assert.Equal(t, "secret=[REDACTED]", config.RedactText("secret=abc"))
+	})
+}
+
 // TestRedactText_LongTextUnchanged tests that a long text holding nothing to
 // redact is returned unchanged.
 func TestRedactText_LongTextUnchanged(t *testing.T) {
