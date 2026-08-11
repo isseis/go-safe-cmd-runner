@@ -39,11 +39,19 @@ type Config struct {
 	// GitHub tokens, PEM blocks) independent of key-name context. When nil, value-based
 	// detection is skipped.
 	valueDetector *ValueDetector
-	// validated records that this Config came from NewConfig. The zero Config is
-	// the one construction the type system still permits from outside, and it
-	// would otherwise redact nothing at all, so the redaction entry points check
-	// this and fail secure rather than pass secrets through. Callers inside this
-	// package that build a Config literal - the tests - must set it themselves.
+	// validated records that this Config came from NewConfig.
+	//
+	// NewConfig never hands back an unvalidated Config - it returns nil and an
+	// error instead - so the only way to hold one is to have skipped NewConfig
+	// altogether. Unexported fields stop a caller populating a literal, but not
+	// from leaving a Config at its zero value, and Config is usable by value:
+	//
+	//	var c redaction.Config                     // c.RedactText redacts nothing
+	//	type svc struct{ redactor redaction.Config } // same, if never assigned
+	//
+	// A *Config left nil would panic and be noticed; these fail open silently,
+	// which is why the redaction entry points check this flag and suppress their
+	// output rather than pass the secret through.
 	validated bool
 }
 
@@ -228,10 +236,10 @@ func (c *Config) RedactText(text string) string {
 		return text
 	}
 	if !c.validated {
-		// A zero Config holds no patterns, so every branch below would be skipped
-		// and the text returned untouched - failing open. Suppress the output
-		// instead. This is one boolean per call, not a re-validation of the
-		// patterns, which cannot change once NewConfig has returned.
+		// Suppress rather than return the input unchanged, which is what a Config
+		// that skipped NewConfig would otherwise do (see the field). One boolean
+		// per call, not a re-validation: the patterns cannot change after
+		// NewConfig has returned.
 		return RedactionFailurePlaceholder
 	}
 
@@ -259,8 +267,8 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 	value := attr.Value
 
 	if !c.validated {
-		// As in RedactText, except that a zero Config would nil-panic on patterns
-		// below rather than pass the text through. Fail secure either way.
+		// As in RedactText, though here an unbuilt Config would nil-panic on
+		// patterns below rather than pass the text through. Fail secure either way.
 		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
 	}
 
