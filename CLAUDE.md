@@ -80,6 +80,49 @@ See [Package Reference](docs/dev/developer_guide/package_reference.md) for detai
 - **Error Handling**: Comprehensive error types and validation
 - **YAGNI**: Use simple and clear approach to satisfy the requirement. Don't take complex approach for not-yet-planned features.
  - **DRY**: Don't repeat yourself. Before adding new code, check the codebase and prefer reusing existing implementations.
+- **Declare, don't infer**: Do not choose behavior by inspecting the content of a
+  string supplied by a caller (`strings.Contains`/`HasPrefix` over caller data to
+  pick a code path). Put the choice in the type: an enum field whose zero value is
+  the interpretation that assumes least about its input, dispatched by a `switch`
+  whose `default` fails secure. Changing a struct's shape is cheap here — the
+  project has no consumers outside the repository, so "it would change the exported
+  API" is not on its own a reason to keep inferring.
+- **Enforce invariants with the type, not with convention**: if a value must pass
+  validation before use, make the compiler the thing that guarantees it —
+  unexported fields plus a mandatory constructor — rather than relying on "every
+  production path happens to call `DefaultConfig`". Before preserving an exported
+  field as an extension point, count its real uses; an extension point nobody uses
+  costs the guarantee and buys nothing.
+- **Reject, don't normalize**: when code can either quietly repair a caller's
+  malformed input or reject it, reject it. Silent repair makes a wrong definition
+  indistinguishable from a right one, so the mistake never surfaces and propagates
+  into whatever someone copies next. Prefer a `validate` method returning a
+  sentinel error, rejection at the construction boundary, and a test over the real
+  defaults that fails the build when they are edited into an invalid shape.
+
+### Performance
+
+- **A benchmark regression is not by itself a defect.** Justify an optimization
+  against an *absolute* budget — wall time of a real run, allocations per log line
+  — never against a relative delta versus the previous commit. "1.9x slower" means
+  nothing until it is converted to an absolute number and compared with what the
+  runner already spends (a `fork`/`exec` is tens of microseconds; a 1,000-line run's
+  whole logging budget is milliseconds). If the honest conclusion is "the regression
+  does not show up in wall time", record that and close it — do not add a mechanism.
+- **Profile before optimizing** to confirm the cost is where you assume. If the
+  stage you are about to optimize is a small fraction of its path's total cost,
+  stop; also check that the work you are caching is actually all of the work (a
+  cache in front of one step that leaves the expensive setup running per call buys
+  nothing).
+- **An optimization that adds a correctness obligation** — case folding, encoding
+  assumptions, cache invalidation, a fast path that must agree with the slow path —
+  must clear a much higher bar. State the obligation in the commit message and pin
+  it with a test that fails if the optimization is later changed unsafely.
+- **Optimizations go in their own commit**, separable by revert, and never in the
+  same commit as the behavior change that motivated them.
+- **Do not close a review finding by adding a mechanism until the finding's premise
+  is verified.** Measure whether the reported cost is real harm in absolute terms
+  first; a self-inflicted regression is not an obligation to build something.
 
 ### Security Features
 - Command path validation and sanitization
@@ -100,6 +143,25 @@ See [Package Reference](docs/dev/developer_guide/package_reference.md) for detai
 - File system abstraction for testing
 - Output capture and verification
 - **Error Testing**: Use `errors.Is()` to validate error types, not string matching on error messages
+- **Every test must be able to fail for its stated reason.** Before committing a
+  test, disable the thing it claims to cover — nil the collaborator, revert the
+  branch, break the default — and confirm it fails. Say in the commit message that
+  you did.
+- **A layered path needs inputs only one layer can handle.** Where two mechanisms
+  can produce the same output (e.g. key-name redaction and value-format detection),
+  an input both layers match proves nothing about either: assertions like "output
+  differs from input" or "output contains the placeholder" cannot say which layer
+  ran. Construct the input so only the layer under test can act, and assert first
+  that the other layer alone leaves it untouched — that makes the test
+  self-policing.
+- **Do not assert that a constant equals its own literal**, or that a struct field
+  holds what was just assigned to it. These pass unconditionally and reach nothing.
+- **Check for duplication before adding a table test for a helper.** If the helper
+  differs from its caller only by a loop, and the caller's table already covers the
+  same rows with the same literals, one table is enough. Keep the helper-level test
+  only for cases the caller's table cannot reach.
+- **Deleting a test is a claim that must be checked**: confirm `go tool cover -func`
+  is unchanged function by function afterwards, and say so.
 
 See [Test Organization Guide](docs/dev/developer_guide/test_organization.md) for test helper file structure.
 
