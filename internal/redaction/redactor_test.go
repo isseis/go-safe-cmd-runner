@@ -112,8 +112,8 @@ func TestRedactText_KeyValuePatterns(t *testing.T) {
 	}
 }
 
-// TestRedactText_SpacePatterns tests Bearer/Basic authentication pattern redaction
-func TestRedactText_SpacePatterns(t *testing.T) {
+// TestRedactText_NextTokenPatterns tests Bearer/Basic authentication pattern redaction
+func TestRedactText_NextTokenPatterns(t *testing.T) {
 	config := DefaultConfig()
 
 	tests := []struct {
@@ -156,8 +156,8 @@ func TestRedactText_SpacePatterns(t *testing.T) {
 	}
 }
 
-// TestRedactText_HeaderPatterns tests Authorization header pattern redaction
-func TestRedactText_HeaderPatterns(t *testing.T) {
+// TestRedactText_HeaderValuePatterns tests Authorization header pattern redaction
+func TestRedactText_HeaderValuePatterns(t *testing.T) {
 	config := DefaultConfig()
 
 	tests := []struct {
@@ -171,7 +171,7 @@ func TestRedactText_HeaderPatterns(t *testing.T) {
 			expected: "Authorization: Bearer [REDACTED]",
 		},
 		{
-			// The header rule supplies the colon and its surrounding whitespace, so
+			// The header-value rule supplies the colon and its surrounding whitespace, so
 			// a header written without a space after the colon is matched too. This
 			// was not the case while the pattern was the literal "Authorization: ".
 			name:     "Authorization header no space after colon",
@@ -473,7 +473,7 @@ func TestRedactText_AlternativePriority(t *testing.T) {
 }
 
 // TestRedactText_KeyGroupBehavior fixes the redaction outcome of every key of
-// DefaultKeyValuePatterns that is routed to the key/value path, for each of the
+// DefaultKeyValuePatterns that is routed to the keyed-value rule, for each of the
 // five value shapes, according to the key's boundary group.
 func TestRedactText_KeyGroupBehavior(t *testing.T) {
 	config := DefaultConfig()
@@ -578,47 +578,47 @@ func TestKeyBoundaryGroup_Classification(t *testing.T) {
 	}
 
 	t.Run("remaining default patterns never reach keyBoundaryGroup", func(t *testing.T) {
-		// Boundary groups apply only to PatternKindKey. Every default pattern is
+		// Boundary groups apply only to PatternKindKeyedValue. Every default pattern is
 		// either classified above or declares a kind that never consults a group.
 		classified := map[string]struct{}{}
 		for _, tt := range tests {
 			classified[tt.key] = struct{}{}
 		}
 		for _, p := range DefaultKeyValuePatterns() {
-			if _, ok := classified[p.Value]; ok {
-				assert.Equal(t, PatternKindKey, p.Kind,
-					"classified default pattern %q must declare PatternKindKey", p.Value)
+			if _, ok := classified[p.Literal]; ok {
+				assert.Equal(t, PatternKindKeyedValue, p.Kind,
+					"classified default pattern %q must declare PatternKindKeyedValue", p.Literal)
 				continue
 			}
-			assert.NotEqual(t, PatternKindKey, p.Kind,
-				"unclassified default pattern %q must declare a non-key kind", p.Value)
+			assert.NotEqual(t, PatternKindKeyedValue, p.Kind,
+				"unclassified default pattern %q must declare a non-key kind", p.Literal)
 		}
 	})
 
 	t.Run("user-added key is redacted with the loose boundary", func(t *testing.T) {
 		config := DefaultConfig()
 		config.KeyValuePatterns = append(config.KeyValuePatterns,
-			KeyValuePattern{Value: "passphrase", Kind: PatternKindKey})
+			KeyValuePattern{Literal: "passphrase", Kind: PatternKindKeyedValue})
 		assert.Equal(t, "passphrase: [REDACTED]", config.RedactText("passphrase: xyz"))
 	})
 
 	t.Run("zero value of PatternKind is the key kind", func(t *testing.T) {
-		// A pattern written without an explicit Kind must fall into the key rule,
+		// A pattern written without an explicit Kind must fall into the keyed-value rule,
 		// which is the interpretation that assumes the least about the input.
 		config := DefaultConfig()
 		config.KeyValuePatterns = append(config.KeyValuePatterns,
-			KeyValuePattern{Value: "passphrase"})
+			KeyValuePattern{Literal: "passphrase"})
 		assert.Equal(t, "passphrase: [REDACTED]", config.RedactText("passphrase: xyz"))
 	})
 }
 
 // TestRedactText_ExistingBehaviorPreserved tests that the shapes handled by the
-// header and prefix rules are unchanged.
+// header-value and next-token rules are unchanged.
 //
-// The first three rows overlap with TestRedactText_HeaderPatterns and
+// The first three rows overlap with TestRedactText_HeaderValuePatterns and
 // TestRedactText_PrefixPatterns on purpose: those tests describe what the header
-// and prefix rules do, while this one is the regression guard that the key
-// rule's new alternatives did not reach into them.
+// and next-token rules do, while this one is the regression guard that the
+// keyed-value rule's new alternatives did not reach into them.
 func TestRedactText_ExistingBehaviorPreserved(t *testing.T) {
 	config := DefaultConfig()
 
@@ -653,7 +653,7 @@ func TestRedactText_ExistingBehaviorPreserved(t *testing.T) {
 	t.Run("prefix carrying its own equals redacts only the adjacent token", func(t *testing.T) {
 		// Before PatternKind existed, a key whose string contained "=" was routed to
 		// this rule by inspecting the string. That shape is now declared instead.
-		result := config.performPrefixRedaction("Authorization=Bearer token", "Authorization=", "[REDACTED]")
+		result := config.performNextTokenRedaction("Authorization=Bearer token", "Authorization=", "[REDACTED]")
 		assert.Equal(t, "Authorization=[REDACTED] token", result)
 	})
 }
@@ -1446,21 +1446,21 @@ func TestPerformKeyValueRedaction(t *testing.T) {
 		{
 			name:        "header kind",
 			text:        "Authorization: Bearer token",
-			pattern:     KeyValuePattern{Value: "Authorization", Kind: PatternKindHeader},
+			pattern:     KeyValuePattern{Literal: "Authorization", Kind: PatternKindHeaderValue},
 			placeholder: "[REDACTED]",
 			expected:    "Authorization: Bearer [REDACTED]",
 		},
 		{
 			name:        "prefix kind",
 			text:        "Bearer token123",
-			pattern:     KeyValuePattern{Value: "Bearer ", Kind: PatternKindPrefix},
+			pattern:     KeyValuePattern{Literal: "Bearer ", Kind: PatternKindNextToken},
 			placeholder: "[REDACTED]",
 			expected:    "Bearer [REDACTED]",
 		},
 		{
 			name:        "key kind",
 			text:        "password=secret",
-			pattern:     KeyValuePattern{Value: "password", Kind: PatternKindKey},
+			pattern:     KeyValuePattern{Literal: "password", Kind: PatternKindKeyedValue},
 			placeholder: "[REDACTED]",
 			expected:    "password=[REDACTED]",
 		},
@@ -1468,9 +1468,9 @@ func TestPerformKeyValueRedaction(t *testing.T) {
 			// The same literal now means different things depending on the kind it
 			// declares, which is the point of making the kind explicit: nothing is
 			// inferred from the colon or the space in the string.
-			name:        "a value containing a colon is not forced onto the header rule",
+			name:        "a value containing a colon is not forced onto the header-value rule",
 			text:        "Authorization: Bearer token",
-			pattern:     KeyValuePattern{Value: "Authorization: ", Kind: PatternKindPrefix},
+			pattern:     KeyValuePattern{Literal: "Authorization: ", Kind: PatternKindNextToken},
 			placeholder: "[REDACTED]",
 			expected:    "Authorization: [REDACTED] token",
 		},
@@ -1486,7 +1486,7 @@ func TestPerformKeyValueRedaction(t *testing.T) {
 	t.Run("unknown kind fails secure", func(t *testing.T) {
 		// A kind outside the declared set can only come from a programming error,
 		// so the whole text is suppressed rather than passed through unredacted.
-		unknown := KeyValuePattern{Value: "password", Kind: PatternKind(99)}
+		unknown := KeyValuePattern{Literal: "password", Kind: PatternKind(99)}
 		result := config.performKeyValueRedaction("password=secret", unknown, "[REDACTED]")
 		assert.Equal(t, RedactionFailurePlaceholder, result)
 	})
@@ -1499,7 +1499,7 @@ func TestPerformKeyValueRedaction(t *testing.T) {
 		// without that, this overflows the stack instead of returning.
 		recursive := DefaultConfig()
 		recursive.KeyValuePatterns = append(recursive.KeyValuePatterns,
-			KeyValuePattern{Value: "x", Kind: PatternKind(99)})
+			KeyValuePattern{Literal: "x", Kind: PatternKind(99)})
 		base := slog.NewTextHandler(io.Discard, nil)
 		restore := slog.Default()
 		slog.SetDefault(slog.New(NewRedactingHandler(base, recursive, slog.New(base))))
@@ -1524,33 +1524,33 @@ func TestKeyValuePattern_SeparatorSuppliedByRule(t *testing.T) {
 	}{
 		{
 			name:     "header value still carrying the colon and space",
-			pattern:  KeyValuePattern{Value: "Authorization: ", Kind: PatternKindHeader},
+			pattern:  KeyValuePattern{Literal: "Authorization: ", Kind: PatternKindHeaderValue},
 			input:    "Authorization: Bearer abc",
 			expected: "Authorization: Bearer [REDACTED]",
 		},
 		{
 			name:     "header value still carrying a bare colon",
-			pattern:  KeyValuePattern{Value: "Authorization:", Kind: PatternKindHeader},
+			pattern:  KeyValuePattern{Literal: "Authorization:", Kind: PatternKindHeaderValue},
 			input:    "Authorization:abc",
 			expected: "Authorization:[REDACTED]",
 		},
 		{
 			name:     "key value still carrying the equals sign",
-			pattern:  KeyValuePattern{Value: "password=", Kind: PatternKindKey},
+			pattern:  KeyValuePattern{Literal: "password=", Kind: PatternKindKeyedValue},
 			input:    "password=secret",
 			expected: "password=[REDACTED]",
 		},
 		{
 			name:     "key value still carrying a colon",
-			pattern:  KeyValuePattern{Value: "password:", Kind: PatternKindKey},
+			pattern:  KeyValuePattern{Literal: "password:", Kind: PatternKindKeyedValue},
 			input:    "password: secret",
 			expected: "password: [REDACTED]",
 		},
 		{
-			// The prefix rule is the one kind whose Value is meant to carry its own
+			// The next-token rule is the one kind whose Literal is meant to carry its own
 			// separator, so nothing is stripped there.
 			name:     "prefix value keeps its separator",
-			pattern:  KeyValuePattern{Value: "password=", Kind: PatternKindPrefix},
+			pattern:  KeyValuePattern{Literal: "password=", Kind: PatternKindNextToken},
 			input:    "password=secret",
 			expected: "password=[REDACTED]",
 		},
@@ -1564,17 +1564,18 @@ func TestKeyValuePattern_SeparatorSuppliedByRule(t *testing.T) {
 	}
 }
 
-// TestKeyKindDominatesPrefixKindForKeyShapedValues fixes the asymmetry that
+// TestKeyedValueKindDominatesNextTokenKind fixes the asymmetry that
 // makes the choice between the two kinds unambiguous for a key-shaped Value such
-// as "password=", which both kinds will happily accept. Whatever the prefix rule
-// redacts, the key rule redacts too, and the key rule reaches shapes the prefix
-// rule cannot - so there is never a reason to declare a key name as a prefix.
+// as "password=", which both kinds will happily accept. Whatever the next-token
+// rule redacts, the keyed-value rule redacts too, and it reaches shapes the
+// next-token rule cannot - so there is never a reason to declare a key name as a
+// next-token pattern.
 // Without this test the two kinds could drift into a genuine trade-off, and the
 // guidance on PatternKind would quietly stop being true.
-func TestKeyKindDominatesPrefixKindForKeyShapedValues(t *testing.T) {
+func TestKeyedValueKindDominatesNextTokenKind(t *testing.T) {
 	config := DefaultConfig()
-	asKey := KeyValuePattern{Value: "password=", Kind: PatternKindKey}
-	asPrefix := KeyValuePattern{Value: "password=", Kind: PatternKindPrefix}
+	asKey := KeyValuePattern{Literal: "password=", Kind: PatternKindKeyedValue}
+	asPrefix := KeyValuePattern{Literal: "password=", Kind: PatternKindNextToken}
 
 	t.Run("key redacts everything prefix does", func(t *testing.T) {
 		for _, input := range []string{
@@ -1596,9 +1597,9 @@ func TestKeyKindDominatesPrefixKindForKeyShapedValues(t *testing.T) {
 			`"password": "secret"`,
 		} {
 			assert.Equal(t, input, config.performKeyValueRedaction(input, asPrefix, "[REDACTED]"),
-				"prefix rule is expected to miss %q", input)
+				"next-token rule is expected to miss %q", input)
 			assert.NotContains(t, config.performKeyValueRedaction(input, asKey, "[REDACTED]"), "secret",
-				"key rule must redact %q", input)
+				"keyed-value rule must redact %q", input)
 		}
 	})
 
@@ -1612,26 +1613,26 @@ func TestKeyKindDominatesPrefixKindForKeyShapedValues(t *testing.T) {
 }
 
 // TestKeyValueRules_PlaceholderWithDollar guards the replacement-string
-// expansion used by the prefix and header rules: a placeholder containing "$1"
+// expansion used by the next-token and header-value rules: a placeholder with "$1"
 // must be emitted literally, never expanded back into the secret it replaced.
 func TestKeyValueRules_PlaceholderWithDollar(t *testing.T) {
 	config := DefaultConfig()
 
-	t.Run("prefix rule", func(t *testing.T) {
-		result := config.performPrefixRedaction("Bearer s3cr3t", "Bearer ", "$1")
+	t.Run("next-token rule", func(t *testing.T) {
+		result := config.performNextTokenRedaction("Bearer s3cr3t", "Bearer ", "$1")
 		assert.Equal(t, "Bearer $1", result)
 		assert.NotContains(t, result, "s3cr3t")
 	})
 
-	t.Run("header rule", func(t *testing.T) {
-		result := config.performHeaderRedaction("Authorization: s3cr3t", "Authorization", "$1")
+	t.Run("header-value rule", func(t *testing.T) {
+		result := config.performHeaderValueRedaction("Authorization: s3cr3t", "Authorization", "$1")
 		assert.Equal(t, "Authorization: $1", result)
 		assert.NotContains(t, result, "s3cr3t")
 	})
 }
 
-// TestPerformPrefixRedaction tests prefix pattern handling details
-func TestPerformPrefixRedaction(t *testing.T) {
+// TestPerformNextTokenRedaction tests prefix pattern handling details
+func TestPerformNextTokenRedaction(t *testing.T) {
 	config := DefaultConfig()
 
 	tests := []struct {
@@ -1680,16 +1681,16 @@ func TestPerformPrefixRedaction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := config.performPrefixRedaction(tt.text, tt.pattern, tt.placeholder)
+			result := config.performNextTokenRedaction(tt.text, tt.pattern, tt.placeholder)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-// TestPerformHeaderRedaction tests header pattern handling details. The pattern
+// TestPerformHeaderValueRedaction tests header pattern handling details. The pattern
 // is the header name alone: the colon and the whitespace around it belong to the
 // rule, so both spaced and unspaced headers are matched by the same pattern.
-func TestPerformHeaderRedaction(t *testing.T) {
+func TestPerformHeaderValueRedaction(t *testing.T) {
 	config := DefaultConfig()
 
 	tests := []struct {
@@ -1759,14 +1760,14 @@ func TestPerformHeaderRedaction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := config.performHeaderRedaction(tt.text, tt.pattern, tt.placeholder)
+			result := config.performHeaderValueRedaction(tt.text, tt.pattern, tt.placeholder)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-// TestPerformKeyValuePatternRedaction tests key=value pattern handling details
-func TestPerformKeyValuePatternRedaction(t *testing.T) {
+// TestPerformKeyedValueRedaction tests key=value pattern handling details
+func TestPerformKeyedValueRedaction(t *testing.T) {
 	config := DefaultConfig()
 
 	tests := []struct {
@@ -1808,7 +1809,7 @@ func TestPerformKeyValuePatternRedaction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := config.performKeyValuePatternRedaction(tt.text, tt.key, tt.placeholder)
+			result := config.performKeyedValueRedaction(tt.text, tt.key, tt.placeholder)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -3289,7 +3290,7 @@ func TestRedactText_ValueBasedDetection_BypassWhenNil(t *testing.T) {
 	config := Config{
 		Placeholder:      "[HIDDEN]",
 		Patterns:         DefaultSensitivePatterns(),
-		KeyValuePatterns: []KeyValuePattern{{Value: "password", Kind: PatternKindKey}},
+		KeyValuePatterns: []KeyValuePattern{{Literal: "password", Kind: PatternKindKeyedValue}},
 		ValueDetector:    nil, // explicitly nil
 	}
 

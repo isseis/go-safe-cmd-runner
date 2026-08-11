@@ -111,7 +111,7 @@ flowchart TB
 | 引用符なしで空白を含む値の扱い | 現行どおり最初の空白で止める | 3.2.2 |
 | 区切り文字拡張の適用範囲 | 2 種類の先頭境界を用意し、キーを 3 群に分けて使い分ける。一般的な英単語であるキーには厳しい先頭境界を課す | 3.2.4 |
 | 引用符の対応範囲 | `"..."` と `'...'` の 2 種。エスケープされた引用符は非対応。閉じ引用符がない場合は行末まで置換する | 3.2.5 |
-| 既存 3 規則の統合可否 | 統合しない。キー規則のみ拡張する。ただしどの規則を使うかはパターンが `Kind` として宣言し、キー文字列の形から導出しない | 3.2.1 |
+| 既存 3 規則の統合可否 | 統合しない。キー値規則のみ拡張する。ただしどの規則を使うかはパターンが `Kind` として宣言し、キー文字列の形から導出しない | 3.2.1 |
 | 正規表現の事前コンパイル | 上限付きのコンパイル済み正規表現キャッシュを導入する | 3.2.7 |
 | JWT パターンの誤検出 | ドット 2 個固定、先頭 2 セグメントに最小長を課し、署名部は空を許す | 3.3.2 |
 | Slack webhook URL パターンの採否 | 採用する。ホスト名は固定パターンとする | 3.3.3 |
@@ -274,7 +274,7 @@ flush を `ReportRedactionFailures` より前に置く理由は、`run` の実�
 
 | ファイル | 区分 | 責務 |
 |---|---|---|
-| `internal/redaction/redactor.go` | 変更 | `performKeyValuePatternRedaction` の区切り・引用符カバレッジ拡張（F-001, F-002） |
+| `internal/redaction/redactor.go` | 変更 | `performKeyedValueRedaction` の区切り・引用符カバレッジ拡張（F-001, F-002） |
 | `internal/redaction/regex_cache.go` | 新規 | 生成した正規表現のコンパイル結果を上限付きでキャッシュする（3.2.7） |
 | `internal/redaction/value_detector.go` | 変更 | 値形式パターンの追加（F-003） |
 | `internal/logging/handler_chain.go` | 新規 | 送信失敗ロガーに渡されたハンドラの Slack 非依存性の検証（3.4.8） |
@@ -303,15 +303,15 @@ flush を `ReportRedactionFailures` より前に置く理由は、`run` の実�
 
 `internal/logging/slack_handler_benchmark_test.go` は `SlackHandler` を構築せず、`slackSender` へ移す 3 フィールドも参照していないため（`createBenchmarkCommandResults` と `BenchmarkExtractCommandResults*` のみを含む）、変更を要しない。
 
-`internal/redaction/redactor_test.go` の既存ケースは、3.2 の設計により期待値が変化しない（AC-08）。`performKeyValuePatternRedaction` のシグネチャも変更しないため、これを直接呼び出している `TestPerformKeyValuePatternRedaction` はそのまま通る。`internal/redaction` と `internal/logging` の外で `RedactText` の結果を完全一致で検証しているテストは `internal/runner/base/security/logging_security_test.go`（`api_key=abc123def`、`Authorization: Bearer ...`）であり、いずれも隣接 `=` 形とヘッダー規則のみを使うため影響を受けない。
+`internal/redaction/redactor_test.go` の既存ケースは、3.2 の設計により期待値が変化しない（AC-08）。`performKeyedValueRedaction` のシグネチャも変更しないため、これを直接呼び出している `TestPerformKeyedValueRedaction`（当時の名は `TestPerformKeyValuePatternRedaction`）はそのまま通る。`internal/redaction` と `internal/logging` の外で `RedactText` の結果を完全一致で検証しているテストは `internal/runner/base/security/logging_security_test.go`（`api_key=abc123def`、`Authorization: Bearer ...`）であり、いずれも隣接 `=` 形とヘッダー値規則のみを使うため影響を受けない。
 
 ### 3.2 キー名ベース redaction の拡張（F-001, F-002）
 
 #### 3.2.1 3 規則の維持と、経路の宣言化
 
-`performKeyValueRedaction` は 3 つの規則に分岐する。本設計はこの 3 分岐を維持し、キー規則（`performKeyValuePatternRedaction`）のみを拡張する。
+`performKeyValueRedaction` は 3 つの規則に分岐する。本設計はこの 3 分岐を維持し、キー値規則（`performKeyedValueRedaction`）のみを拡張する。
 
-3 規則を統合しない理由は次の 2 点である。第 1 に、ヘッダー規則は「行末まで置換し、`Bearer`/`Basic` のスキーム名を保持する」というキー規則とは異なる終端規則を持ち、統合すると 1 つの生成規則に 2 種類の終端規則を同居させることになる。第 2 に、統合は AC-06・AC-07 が守るべき既存挙動を書き換えるリスクを持ち込むだけで、本タスクが解消すべき取りこぼしはキー規則にしか存在しない（YAGNI）。
+3 規則を統合しない理由は次の 2 点である。第 1 に、ヘッダー値規則は「行末まで置換し、`Bearer`/`Basic` のスキーム名を保持する」というキー値規則とは異なる終端規則を持ち、統合すると 1 つの生成規則に 2 種類の終端規則を同居させることになる。第 2 に、統合は AC-06・AC-07 が守るべき既存挙動を書き換えるリスクを持ち込むだけで、本タスクが解消すべき取りこぼしはキー値規則にしか存在しない（YAGNI）。
 
 **どの規則を適用するかは、パターン文字列の形から導出せず、パターン自身が宣言する**（レビューで方針変更。当初はキー文字列に `:` / 空白 / `=` が含まれるかを `strings.Contains` で調べて振り分けていた）。`Config.KeyValuePatterns` の要素型を `string` から次の構造体へ変える。
 
@@ -319,42 +319,44 @@ flush を `ReportRedactionFailures` より前に置く理由は、`run` の実�
 type PatternKind int
 
 const (
-    PatternKindKey PatternKind = iota // キー名。区切り・引用符・値の範囲は redaction 側が解釈する
-    PatternKindPrefix                 // リテラル接頭辞。直後の非空白列を置換する
-    PatternKindHeader                 // ヘッダー名。コロン以降を行末まで置換する
+    PatternKindKeyedValue  PatternKind = iota // キー名。区切り・引用符・値の範囲は redaction 側が解釈する
+    PatternKindNextToken                      // 認証スキーム。直後の 1 トークンを置換する
+    PatternKindHeaderValue                    // ヘッダー名。コロン以降を行末まで置換する
 )
 
 type KeyValuePattern struct {
-    Value string
-    Kind  PatternKind
+    Literal string // 入力中で一致させるテキスト
+    Kind    PatternKind
 }
 ```
 
-導出をやめる理由は 3 点である。第 1 に、パターンの意図（`DefaultKeyValuePatterns` のコメントが「キー」「特別扱いする資格情報」と書き分けていたもの）と、実際の振り分け（別ファイルの `strings.Contains`）が離れた場所にあり、両者が一致している保証がなかった。第 2 に、`Config.KeyValuePatterns` は公開フィールドであり、利用者がコロンや空白を含むキー名（`Primary key` など）を追加すると、意図しない規則へ黙って流れる。第 3 に、キー規則の内部にあった「キーが `=` を含む場合」の分岐（下記）が、接頭辞規則と同一の正規表現を生成しており、宣言化によってそのまま統合できる。
+導出をやめる理由は 3 点である。第 1 に、パターンの意図（`DefaultKeyValuePatterns` のコメントが「キー」「特別扱いする資格情報」と書き分けていたもの）と、実際の振り分け（別ファイルの `strings.Contains`）が離れた場所にあり、両者が一致している保証がなかった。第 2 に、`Config.KeyValuePatterns` は公開フィールドであり、利用者がコロンや空白を含むキー名（`Primary key` など）を追加すると、意図しない規則へ黙って流れる。第 3 に、キー値規則の内部にあった「キーが `=` を含む場合」の分岐（下記）が、次トークン規則と同一の正規表現を生成しており、宣言化によってそのまま統合できる。
 
-**`=` を含むキーの規則の帰属**: `Authorization=` のようにキーが `=` を含む場合の規則（キーの直後の非空白列を置換する）は、生成する正規表現 `(?i)(<エスケープ済み>)(\S+)` と置換処理が接頭辞規則と完全に一致する。したがって**独立した規則としては持たず、`PatternKindPrefix` に統合する**。以降の 3.2.2〜3.2.6 は、キー規則（`PatternKindKey`）についての設計である。
+**`=` を含むキーの規則の帰属**: `Authorization=` のようにキーが `=` を含む場合の規則（キーの直後の非空白列を置換する）は、生成する正規表現 `(?i)(<エスケープ済み>)(\S+)` と置換処理が次トークン規則と完全に一致する。したがって**独立した規則としては持たず、`PatternKindNextToken` に統合する**。以降の 3.2.2〜3.2.6 は、キー値規則（`PatternKindKeyedValue`）についての設計である。
 
-**`Kind` は literal の分類ではなく指示である**（レビューで判明）: 3 つの `Kind` は Value の集合を分割しない。`"password="` のように、キー規則でも接頭辞規則でも一致しうる literal が存在する。したがって「どの `Kind` に当てはまるか」ではなく「どの `Kind` がそのテキストを正しく読むか」で選ぶ。判断基準は次のとおりである。
+**フィールド名を `Value` にしない理由**: パターン文字列を保持するフィールドは `Literal` と名付ける。`internal/redaction` では「value」は一貫して**置換される秘密**を指しており（`unquotedValue`、`sepValue` / `adjValue`、`matchedValueSpan`、`IsSensitiveValue`）、パターン文字列を `Value` と呼ぶと意味が逆転する。`Kind` の定数名が `PatternKindKeyedValue` のように「何が置換されるか」を名乗るため、この衝突は文章にも現れる（「Value をキーとする値」）。`Literal` にすることで両者が両立する。
 
-| Value が指すもの | 選ぶ `Kind` |
+**`Kind` は literal の分類ではなく指示である**（レビューで判明）: 3 つの `Kind` は `Literal` の集合を分割しない。`"password="` のように、キー値規則でも次トークン規則でも一致しうる literal が存在する。したがって「どの `Kind` に当てはまるか」ではなく「どの `Kind` がそのテキストを正しく読むか」で選ぶ。判断基準は次のとおりである。
+
+| `Literal` が指すもの | 選ぶ `Kind` |
 |---|---|
-| キー名（末尾に区切りを書いたかどうかを問わない） | `PatternKindKey` |
-| ヘッダー名 | `PatternKindHeader` |
-| 名前ではなく、秘密が直後に続くトークン（認証スキーム） | `PatternKindPrefix` |
+| キー名（末尾に区切りを書いたかどうかを問わない） | `PatternKindKeyedValue` |
+| ヘッダー名 | `PatternKindHeaderValue` |
+| 名前ではなく、秘密が直後に続くトークン（認証スキーム） | `PatternKindNextToken` |
 
-**キー形の literal では、キー規則が接頭辞規則を厳密に包含する**（実測で確認）。`"password="` を両方の `Kind` で比較すると、接頭辞規則が置換する入力（`password=secret`、`xpassword=secret`、`PaSsWoRd=secret`）はキー規則もすべて置換し、加えてキー規則は `password: secret` / `password = secret` / `"password": "secret"` の 3 形を捕捉する。さらに引用符付きの値では、接頭辞規則が最初の空白で止まって `password=[REDACTED] b"` と秘密の後半を平文で残すのに対し、キー規則は閉じ引用符まで置換する。すなわちキー形の literal に接頭辞規則を選ぶ理由は存在せず、選ぶと取りこぼす。接頭辞規則が必要なのは `Bearer ` / `Basic ` のように **literal がそもそもキー名ではない**場合に限られる。この非対称性は `PatternKind` のドキュメンテーションコメントに記載する。
+**キー形の literal では、キー値規則が次トークン規則を厳密に包含する**（実測で確認）。`"password="` を両方の `Kind` で比較すると、次トークン規則が置換する入力（`password=secret`、`xpassword=secret`、`PaSsWoRd=secret`）はキー値規則もすべて置換し、加えてキー値規則は `password: secret` / `password = secret` / `"password": "secret"` の 3 形を捕捉する。さらに引用符付きの値では、次トークン規則が最初の空白で止まって `password=[REDACTED] b"` と秘密の後半を平文で残すのに対し、キー値規則は閉じ引用符まで置換する。すなわちキー形の literal に次トークン規則を選ぶ理由は存在せず、選ぶと取りこぼす。次トークン規則が必要なのは `Bearer ` / `Basic ` のように **literal がそもそもキー名ではない**場合に限られる。この非対称性は `PatternKind` のドキュメンテーションコメントに記載する。
 
-**未知の `Kind` の扱い**: `switch` の `default` は `RedactionFailurePlaceholder` を返す（フェイルセキュア）。宣言された集合の外の `Kind` は入力ではなくプログラミングエラーであり、解釈を推測するより出力を抑止するほうが安全である。これは正規表現のコンパイルに失敗した場合の既存の扱いと同じである。なお `PatternKindKey` をゼロ値に置くことで、`KeyValuePattern{Value: "password"}` のように `Kind` を書き忘れた場合は、最も仮定の少ないキー規則に落ちる。
+**未知の `Kind` の扱い**: `switch` の `default` は `RedactionFailurePlaceholder` を返す（フェイルセキュア）。宣言された集合の外の `Kind` は入力ではなくプログラミングエラーであり、解釈を推測するより出力を抑止するほうが安全である。これは正規表現のコンパイルに失敗した場合の既存の扱いと同じである。なお `PatternKindKeyedValue` をゼロ値に置くことで、`KeyValuePattern{Value: "password"}` のように `Kind` を書き忘れた場合は、最も仮定の少ないキー値規則に落ちる。
 
 **この分岐はログを出さない**（レビューで判明）。`RedactText` は `RedactingHandler.Handle` の内側で動き、本番では `slog.Default()` がその `RedactingHandler` そのものである（`bootstrap.setupLogger`）。したがってここで `slog.Warn` を呼ぶと、警告自体が同じ `Config` を通って redact され、同じ `default` 分岐に再入して無限再帰する（実測でスタックオーバーフローを確認した）。`compileRedactionRegex` が持つような `failureLogger` への迂回路は `Config` にはなく（`failureLogger` は `RedactingHandler` 側の資産である）、プレースホルダー自体が「redaction が抑止された」ことの可視の信号であるため、沈黙させる。この性質は回帰テストで固定する（7.1）。
 
 **群分けは導出のまま**: 3.2.4 の群 A・群 B・群 C は `Kind` と違い、キー文字列から導出したままとする。ある語が英語の散文に頻出するかどうかはパターンの作者が宣言できる種類の事柄ではなく、言語の性質だからである（3.2.4、9 章）。
 
-**規則が供給する区切りを `Value` が重複して持つ場合**（レビューで判明）: キー規則とヘッダー規則はどちらも区切りを自分で生成するため、`"Authorization: "` や `"password="` のように区切りまで書かれた `Value`（`PatternKind` 導入前の書き方）をそのまま使うと、区切りを 2 回要求する正規表現になり**何にも一致しない**。取りこぼす方向の失敗であるため、コメントで注意を促すにとどめず、`Value` 末尾の空白・`:`・`=` を除去して正規化する。`PatternKindPrefix` だけはこの正規化を適用しない。区切りを自分で持つことがその `Kind` の意味だからである。これは「既に選ばれた規則の中で `Value` の綴りを揃える」正規化であって、3.2.1 冒頭で廃した「どの規則を使うかを文字列の形から推測する」導出とは別物である。
+**規則が供給する区切りを `Literal` が重複して持つ場合**（レビューで判明）: キー値規則とヘッダー値規則はどちらも区切りを自分で生成するため、`"Authorization: "` や `"password="` のように区切りまで書かれた `Literal`（`PatternKind` 導入前の書き方）をそのまま使うと、区切りを 2 回要求する正規表現になり**何にも一致しない**。取りこぼす方向の失敗であるため、コメントで注意を促すにとどめず、`Literal` 末尾の空白・`:`・`=` を除去して正規化する。`PatternKindNextToken` だけはこの正規化を適用しない。区切りを自分で持つことがその `Kind` の意味だからである。これは「既に選ばれた規則の中で `Literal` の綴りを揃える」正規化であって、3.2.1 冒頭で廃した「どの規則を使うかを文字列の形から推測する」導出とは別物である。
 
-**ヘッダー規則のパターンの正規化**: 既定パターンを `"Authorization: "` から `"Authorization"` へ変え、**コロンとその前後の空白を規則側の正規表現が供給する**（`(?i)(<ヘッダー名>)([ \t]*:[ \t]*)((?:bearer |basic )?)[^\r\n]*`）。従来はパターン文字列に含まれる `": "` がそのまま正規表現へ入るため、コロンの直後に空白がないヘッダーに一致しなかった。`Authorization:Bearer abc` が置換されていたのは接頭辞規則の `"Bearer "` が拾っていたためであり、`authorization:abc123` のようにスキーム名を持たない形は**平文のまま残っていた**（`DefaultKeyValuePatterns` のコメントは「コロン規則が空白の有無を両方扱う」と記していたが、これは誤りであった）。宣言化と同時にこれを是正する。
+**ヘッダー値規則のパターンの正規化**: 既定パターンを `"Authorization: "` から `"Authorization"` へ変え、**コロンとその前後の空白を規則側の正規表現が供給する**（`(?i)(<ヘッダー名>)([ \t]*:[ \t]*)((?:bearer |basic )?)[^\r\n]*`）。従来はパターン文字列に含まれる `": "` がそのまま正規表現へ入るため、コロンの直後に空白がないヘッダーに一致しなかった。`Authorization:Bearer abc` が置換されていたのは次トークン規則の `"Bearer "` が拾っていたためであり、`authorization:abc123` のようにスキーム名を持たない形は**平文のまま残っていた**（`DefaultKeyValuePatterns` のコメントは「コロン規則が空白の有無を両方扱う」と記していたが、これは誤りであった）。宣言化と同時にこれを是正する。
 
-これは振る舞いの変更であり、AC-09 の除外規定に該当する。新たに置換されるのは「ヘッダー名 + コロン」の形であって、ヘッダー名だけが散文に現れる形（`Authorization failed for user bob`）は正規表現がコロンを要求するため置換されない。取りこぼしの是正としてこの拡大を受け入れる。パターンの `Value` はヘッダー名のみとする（末尾にコロンが書かれていた場合は上記の正規化が取り除く）。この契約は `PatternKindHeader` のドキュメンテーションコメントに記載する。
+これは振る舞いの変更であり、AC-09 の除外規定に該当する。新たに置換されるのは「ヘッダー名 + コロン」の形であって、ヘッダー名だけが散文に現れる形（`Authorization failed for user bob`）は正規表現がコロンを要求するため置換されない。取りこぼしの是正としてこの拡大を受け入れる。パターンの `Literal` はヘッダー名のみとする（末尾にコロンが書かれていた場合は上記の正規化が取り除く）。この契約は `PatternKindHeaderValue` のドキュメンテーションコメントに記載する。
 
 #### 3.2.2 値の終端規則
 
@@ -368,7 +370,7 @@ type KeyValuePattern struct {
 
 #### 3.2.3 値の形と選択肢の優先順位
 
-キー規則が扱う値の形を、次の 3 つに拡張する。
+キー値規則が扱う値の形を、次の 3 つに拡張する。
 
 | 番号 | 形 | 例 | 現行 | 本タスク後 |
 |---|---|---|---|---|
@@ -400,11 +402,11 @@ type KeyValuePattern struct {
 
 **群の判定規則**: `Config.KeyValuePatterns` は公開フィールドであり、利用者が任意のキーを追加しうる。群は列挙ではなくキー文字列からの導出で決まる。`RedactText` が 1 つのパターンを処理する際、次の順に判定する。最初に一致した分岐で確定し、どのようなパターンも必ずいずれかに落ちる。
 
-1. パターンの `Kind` が `PatternKindHeader` → ヘッダー規則（3.2.1、本節の群分けは適用されない）
-2. パターンの `Kind` が `PatternKindPrefix` → 接頭辞規則（3.2.1、同上）
+1. パターンの `Kind` が `PatternKindHeaderValue` → ヘッダー値規則（3.2.1、本節の群分けは適用されない）
+2. パターンの `Kind` が `PatternKindNextToken` → 次トークン規則（3.2.1、同上）
 3. パターンの `Kind` が上記以外の未知の値 → `RedactionFailurePlaceholder`（3.2.1、同上）
-4. `Kind` が `PatternKindKey` で、キーの先頭が英数字以外 → **群 C**
-5. `Kind` が `PatternKindKey` で、キーが「一般語キー一覧」に完全一致（大文字小文字は区別しない） → **群 B**
+4. `Kind` が `PatternKindKeyedValue` で、キーの先頭が英数字以外 → **群 C**
+5. `Kind` が `PatternKindKeyedValue` で、キーが「一般語キー一覧」に完全一致（大文字小文字は区別しない） → **群 B**
 6. 上記以外 → **群 A**
 
 判定 1〜3 はパターンが宣言した `Kind` を読むだけであり、キー文字列の形を調べない。判定 4〜6 のみがキー文字列からの導出である（その理由は 3.2.1 末尾および 9 章）。
@@ -481,13 +483,13 @@ type KeyValuePattern struct {
 
 `RedactText` は呼び出しのたびに `KeyValuePatterns` の全パターンについて正規表現をコンパイルしている（D2 L-1）。本タスクでパターンが複雑化し、かつ `RedactText` は長いコマンド出力に対して呼ばれるため、コンパイル結果をキャッシュする。
 
-**格納場所**: キャッシュは既存の `compileRedactionRegex` の内側に置く。この関数は 3 規則すべての共通のコンパイル地点であり、ここに置けばヘッダー規則と接頭辞規則も同じ恩恵を受ける。キーは生成された正規表現の文字列とする。
+**格納場所**: キャッシュは既存の `compileRedactionRegex` の内側に置く。この関数は 3 規則すべての共通のコンパイル地点であり、ここに置けばヘッダー値規則と次トークン規則も同じ恩恵を受ける。キーは生成された正規表現の文字列とする。
 
 **並行性**: `RedactText` は複数の goroutine から同時に呼ばれる。キャッシュは `sync.Map` を用い、書き込みの競合が実行時パニックにならないようにする。コンパイル済みの `*regexp.Regexp` は並行利用可能であるため、同じ値を複数の goroutine が共有しても問題ない。
 
 **上限**: エントリ数に上限（256）を設ける。上限に達した後は、キャッシュに載っていないパターンを毎回コンパイルする（現行と同じ挙動）。`Config` は公開フィールドを持つ構造体であり、`KeyValuePatterns` を実行時に差し替える呼び出し方を禁じていないため、パターンの空間を有限と仮定しない。現状の本番構成では `KeyValuePatterns` は `DefaultKeyValuePatterns()` の 12 パターンのみであり、生成されるパターン数は上限に遠く及ばない。なお上限判定と格納は別操作のため、並行実行の境界ではエントリ数が上限をわずかに超えうる。これは近似の上限であり、実害はない（既定構成では 12 エントリしか使わない）。
 
-**コンストラクタでの事前コンパイルを採らない理由**: `Config` は公開フィールドを持ち、構造体リテラルでも構築されうるため、コンストラクタを通ったことを型として保証できない。事前コンパイルにするとリテラル構築の `Config` でパターンが空になる経路が生まれる。キャッシュ方式なら公開 API を一切変えずに済み、`performKeyValuePatternRedaction` のシグネチャも維持できる。
+**コンストラクタでの事前コンパイルを採らない理由**: `Config` は公開フィールドを持ち、構造体リテラルでも構築されうるため、コンストラクタを通ったことを型として保証できない。事前コンパイルにするとリテラル構築の `Config` でパターンが空になる経路が生まれる。キャッシュ方式なら公開 API を一切変えずに済み、`performKeyedValueRedaction` のシグネチャも維持できる。
 
 **フェイルセキュア挙動**: 変更しない。コンパイルに失敗した結果はキャッシュせず（他のキーのキャッシュも汚さず）、現行どおり `RedactionFailurePlaceholder` を返す。
 
@@ -1060,7 +1062,7 @@ classDiagram
 
 ```go
 // Unchanged. The extension is confined to the regex generated inside
-// performKeyValuePatternRedaction and to the cache inside compileRedactionRegex.
+// performKeyedValueRedaction and to the cache inside compileRedactionRegex.
 func (c *Config) RedactText(text string) string
 
 // Unchanged. The extension is confined to valueDetectorPatterns.
@@ -1217,9 +1219,9 @@ flowchart TD
     subgraph LOOP["繰り返し: KeyValuePatterns の各パターンについて、並び順に 1 件ずつ"]
         direction TB
         C1{"パターンが宣言した<br>Kind は?"}
-        C1 -->|"PatternKindHeader"| HEADER["performHeaderRedaction"]
-        C1 -->|"PatternKindPrefix"| PREFIX["performPrefixRedaction<br>（旧・空白経路と<br>旧・等号キー規則の統合）"]
-        C1 -->|"PatternKindKey"| KV["performKeyValuePatternRedaction"]
+        C1 -->|"PatternKindHeaderValue"| HEADER["performHeaderValueRedaction"]
+        C1 -->|"PatternKindNextToken"| PREFIX["performNextTokenRedaction<br>（旧・空白経路と<br>旧・等号キー値規則の統合）"]
+        C1 -->|"PatternKindKeyedValue"| KV["performKeyedValueRedaction"]
         C1 -->|"未知の値"| FAIL["RedactionFailurePlaceholder<br>（フェイルセキュア）"]
 
         KV --> FORM["選択肢 V3 → V2 → V1 を<br>この優先順位で適用"]
@@ -1317,13 +1319,13 @@ flowchart TD
 | YAML 形式・空白入り区切り | `password: secret`、`password = secret` | AC-03, AC-04 |
 | 選択肢の優先順位 | `password="abc def"` が V1 ではなく V3 として処理されること。`monkey="a b"` が V1 へ落ちること | AC-01 |
 | キーの群分け | `KeyValuePatterns` の全キーについて表駆動で検証する。群 A は 3 形式すべて、群 B は引用符付きと識別子内境界のみ、群 C は現行どおり | AC-05 |
-| 群の判定規則 | 既定の 12 パターンのうち `PatternKindKey` のものが 3.2.4 の判定規則で意図した群に落ちること。および、一覧にないキー（`passphrase`）を `KeyValuePatterns` へ追加すると群 A として扱われること | AC-05 |
-| `Kind` による振り分け | 3 つの `Kind` がそれぞれの規則へ届くこと。同じ文字列（`"Authorization: "`）でも宣言した `Kind` によって結果が変わり、コロンや空白から規則が導出されないこと。未知の `Kind` が `RedactionFailurePlaceholder` になること。`Kind` を省略した `KeyValuePattern` がキー規則に落ちること（ゼロ値の契約） | AC-05, AC-06 |
+| 群の判定規則 | 既定の 12 パターンのうち `PatternKindKeyedValue` のものが 3.2.4 の判定規則で意図した群に落ちること。および、一覧にないキー（`passphrase`）を `KeyValuePatterns` へ追加すると群 A として扱われること | AC-05 |
+| `Kind` による振り分け | 3 つの `Kind` がそれぞれの規則へ届くこと。同じ文字列（`"Authorization: "`）でも宣言した `Kind` によって結果が変わり、コロンや空白から規則が導出されないこと。未知の `Kind` が `RedactionFailurePlaceholder` になること。`Kind` を省略した `KeyValuePattern` がキー値規則に落ちること（ゼロ値の契約） | AC-05, AC-06 |
 | 未知の `Kind` の非再帰 | `slog.Default()` が当の `Config` を使う `RedactingHandler` である状態で未知の `Kind` を処理しても、再帰せずプレースホルダーを返すこと（3.2.1） | AC-05 |
-| 区切りの重複 | `Value` が規則の供給する区切りを重ねて持つ場合（`"Authorization: "` をヘッダーとして、`"password="` をキーとして宣言）でも取りこぼさないこと。`PatternKindPrefix` では区切りが保たれること（3.2.1） | AC-05 |
-| プレースホルダーの `$`（接頭辞・ヘッダー規則） | `$1` を含むプレースホルダーが展開されず、秘密が再注入されないこと | AC-16 |
-| ヘッダー規則の空白 | `Authorization: x` / `Authorization:x` / `Authorization : x` / `Authorization:\t\tBearer x` がいずれも置換され、コロンを伴わない `Authorization failed for user bob` が置換されないこと | AC-06 |
-| 既存挙動の非退行 | `Authorization: Bearer xxx`、`Bearer xxx`、`Basic xxx`、`PatternKindPrefix` が自前の等号を持つ場合 | AC-06, AC-07, AC-08 |
+| 区切りの重複 | `Literal` が規則の供給する区切りを重ねて持つ場合（`"Authorization: "` をヘッダーとして、`"password="` をキーとして宣言）でも取りこぼさないこと。`PatternKindNextToken` では区切りが保たれること（3.2.1） | AC-05 |
+| プレースホルダーの `$`（接頭辞・ヘッダー値規則） | `$1` を含むプレースホルダーが展開されず、秘密が再注入されないこと | AC-16 |
+| ヘッダー値規則の空白 | `Authorization: x` / `Authorization:x` / `Authorization : x` / `Authorization:\t\tBearer x` がいずれも置換され、コロンを伴わない `Authorization failed for user bob` が置換されないこと | AC-06 |
+| 既存挙動の非退行 | `Authorization: Bearer xxx`、`Bearer xxx`、`Basic xxx`、`PatternKindNextToken` が自前の等号を持つ場合 | AC-06, AC-07, AC-08 |
 | 過剰 redaction の非悪化 | 3.2.6 の判定例をすべて固定する。特に `Primary key: id`、`unexpected token: '}'`、`map[key:value]`、`password:\nsecret` | AC-09 |
 | 意図した過剰 redaction | `"key": "us-east-1"` が置換されること、およびそれが意図した変更である旨のコメント | AC-09 |
 | 長文の非退行 | 置換対象を含まない長いテキストの結果一致 | AC-10 |
@@ -1444,7 +1446,7 @@ Phase 1 は Phase 2 の前提である（拡張後のパターンを毎回コン
 - **値を行末まで置換する案**（01_requirements.md 検討事項 (b)）: 既存テストが固定している `user=john password=secret token=abc123` の結果を壊し、後続キーの捕捉も失わせるため不採用（3.2.2）。
 - **全キーに一律の緩い先頭境界（英数字以外）を課す案**: 半角スペースが先頭境界の条件を満たすため、`Primary key: id` や `unexpected token: '}'` のような通常の診断出力が軒並み置換される。キーを群に分ける方式を採用（3.2.4）。
 - **`\b`（単語境界）を用いる案**: アンダースコアを単語構成文字として扱うため、`aws_secret_access_key` の捕捉経路を壊す（3.2.4）。
-- **3 つの redaction 規則を 1 つの生成規則に統合する案**: ヘッダー規則とキー規則で終端規則が異なり、統合の利得より既存挙動を壊すリスクが上回るため不採用（3.2.1）。ただし接頭辞規則と「キーが `=` を含む場合」の規則は生成する正規表現が同一であったため、この 2 つのみ統合した（3.2.1）。
+- **3 つの redaction 規則を 1 つの生成規則に統合する案**: ヘッダー値規則とキー値規則で終端規則が異なり、統合の利得より既存挙動を壊すリスクが上回るため不採用（3.2.1）。ただし次トークン規則と「キーが `=` を含む場合」の規則は生成する正規表現が同一であったため、この 2 つのみ統合した（3.2.1）。
 - **どの規則を使うかをキー文字列の形（`:` / 空白 / `=` の有無）から導出し続ける案**: パターンの意図と実際の振り分けが別の場所に置かれ、コロンや空白を含むキー名を追加すると意図しない規則へ黙って流れる。`PatternKind` による宣言方式を採用（3.2.1）。
 - **`Config` のコンストラクタで正規表現を事前コンパイルする案**: `Config` が構造体リテラルでも構築されうるため、コンストラクタを通ったことを型として保証できない。上限付きキャッシュを採用（3.2.7）。
 - **AWS Secret Access Key の値形式パターン追加**: 自己識別可能な形式を持たず誤検出が広範になるため不採用。キー名ベースの層で既に捕捉されている（3.3.4）。

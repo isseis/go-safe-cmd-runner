@@ -60,7 +60,7 @@ func TestRegexCache_LimitStopsCaching(t *testing.T) {
 
 	config := &Config{
 		Placeholder:      "[REDACTED]",
-		KeyValuePatterns: []KeyValuePattern{{Value: marker, Kind: PatternKindKey}},
+		KeyValuePatterns: []KeyValuePattern{{Literal: marker, Kind: PatternKindKeyedValue}},
 	}
 	assert.Equal(t, marker+"=[REDACTED]", config.RedactText(marker+"=secret123"),
 		"an uncached pattern must still redact correctly through the production path")
@@ -126,7 +126,7 @@ func TestRegexCache_ConcurrentAccess(t *testing.T) {
 		key := fmt.Sprintf("__regex_cache_test_distinct_%d__", i)
 		cfg := &Config{
 			Placeholder:      "[REDACTED]",
-			KeyValuePatterns: []KeyValuePattern{{Value: key, Kind: PatternKindKey}},
+			KeyValuePatterns: []KeyValuePattern{{Literal: key, Kind: PatternKindKeyedValue}},
 		}
 		distinctWG.Add(1)
 		go func() {

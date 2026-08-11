@@ -143,77 +143,82 @@ func (sp *SensitivePatterns) IsSensitiveEnvVar(name string) bool {
 	return sp.combinedEnvVarPattern.MatchString(upperName)
 }
 
-// PatternKind declares how a KeyValuePattern's Value is to be interpreted. The
-// kind is stated by whoever writes the pattern rather than derived from the
-// shape of Value, so adding a pattern that happens to contain a space or a colon
-// cannot silently change which redaction rule applies to it.
+// PatternKind names what a rule redacts, and so declares which rule a
+// KeyValuePattern's Literal selects. The kind is stated by whoever writes the
+// pattern rather than derived from the shape of Literal, so adding a pattern
+// that happens to contain a space or a colon cannot silently change which rule
+// applies to it.
 //
-// Choosing between them: if Value names a key, use PatternKindKey. If it names a
-// header, use PatternKindHeader. PatternKindPrefix is for the remaining case,
-// where the literal is not a name at all but a token the secret follows directly
-// - an auth scheme. The kinds are instructions rather than a classification of
-// literals, so more than one can be made to fire on the same text; the guidance
-// above picks the one that reads the text correctly.
+// Choosing between them: if Literal names a key, use PatternKindKeyedValue; if
+// it names a header, PatternKindHeaderValue. PatternKindNextToken is for the
+// remaining case, where Literal is not a name at all but a token the secret
+// follows directly - an auth scheme. The kinds are instructions rather than a
+// classification of literals, so more than one can be made to fire on the same
+// text; the guidance above picks the one that reads the text correctly.
 type PatternKind int
 
 const (
-	// PatternKindKey marks Value as a key name whose value follows after a
-	// separator, e.g. "password" against password=x, "password": "x" and
-	// password: x. The separator, the quoting and the extent of the value are
-	// interpreted by the redactor, so Value should be the bare key name; a
-	// trailing "=" or ":" is stripped rather than matched twice.
+	// PatternKindKeyedValue redacts the value that Literal is the key of, e.g.
+	// "password" against password=x, password: x and "password": "x". The
+	// separator, the quoting and the extent of the value are interpreted by the
+	// redactor, so Literal should be the bare key name; a trailing "=" or ":" is
+	// stripped rather than matched twice.
 	//
 	// This is the zero value, so a KeyValuePattern written without an explicit
 	// Kind gets the most conservative interpretation.
-	PatternKindKey PatternKind = iota
-	// PatternKindPrefix marks Value as a literal that the secret follows
-	// directly, e.g. the auth schemes "Bearer " and "Basic ". Value carries its
-	// own separator, so it is taken verbatim - nothing is stripped from it - and
-	// everything from its end to the first whitespace is redacted.
+	PatternKindKeyedValue PatternKind = iota
+	// PatternKindNextToken redacts the one token that follows Literal, e.g. the
+	// auth schemes "Bearer " and "Basic ". Literal carries its own separator, so
+	// it is taken verbatim - nothing is stripped from it - and everything from
+	// its end to the first whitespace is redacted.
 	//
-	// Do not use this for a key name that carries its own separator ("password=").
-	// PatternKindKey reads the same text and more: it recognizes ":" and spaced
-	// separators, and it redacts a quoted value to its closing quote, where this
-	// rule stops at the first space and leaves the rest of "password=\"a b\"" in
-	// the clear.
-	PatternKindPrefix
-	// PatternKindHeader marks Value as a header name, e.g. "Authorization". The
-	// colon and the surrounding whitespace are supplied by the redactor, and
-	// everything from there to the end of the line is redacted (an auth scheme
-	// name such as "Bearer" is kept). Value should be the bare header name; a
-	// trailing ":" is stripped rather than matched twice.
-	PatternKindHeader
+	// Do not use this for a key name that carries its own separator
+	// ("password="). PatternKindKeyedValue reads the same text and more: it
+	// recognizes ":" and spaced separators, and it redacts a quoted value to its
+	// closing quote, where this rule stops at the first space and leaves the rest
+	// of "password=\"a b\"" in the clear.
+	PatternKindNextToken
+	// PatternKindHeaderValue redacts the value of the header named by Literal,
+	// e.g. "Authorization" - everything from the colon to the end of the line, an
+	// auth scheme name such as "Bearer" excepted. The colon and the whitespace
+	// around it are supplied by the redactor, so Literal should be the bare header
+	// name; a trailing ":" is stripped rather than matched twice.
+	PatternKindHeaderValue
 )
 
-// KeyValuePattern is one entry of Config.KeyValuePatterns: the literal to look
-// for, plus the declaration of how to interpret it.
+// KeyValuePattern is one entry of Config.KeyValuePatterns: the text to look for,
+// plus the declaration of what to redact once it is found.
 type KeyValuePattern struct {
-	Value string
-	Kind  PatternKind
+	// Literal is the text matched in the input - a key name, an auth scheme or a
+	// header name, according to Kind. It is deliberately not called "Value":
+	// everywhere else in this package a value is the secret being redacted, which
+	// is the opposite of what this field holds.
+	Literal string
+	Kind    PatternKind
 }
 
 // DefaultKeyValuePatterns returns the default patterns for key-name-based redaction
 func DefaultKeyValuePatterns() []KeyValuePattern {
 	return []KeyValuePattern{
 		// API keys, tokens, passwords (common patterns)
-		{Value: "password", Kind: PatternKindKey},
-		{Value: "token", Kind: PatternKindKey},
-		{Value: "key", Kind: PatternKindKey},
-		{Value: "secret", Kind: PatternKindKey},
-		{Value: "api_key", Kind: PatternKindKey},
+		{Literal: "password", Kind: PatternKindKeyedValue},
+		{Literal: "token", Kind: PatternKindKeyedValue},
+		{Literal: "key", Kind: PatternKindKeyedValue},
+		{Literal: "secret", Kind: PatternKindKeyedValue},
+		{Literal: "api_key", Kind: PatternKindKeyedValue},
 
 		// Environment variable assignments that might contain secrets
-		{Value: "_PASSWORD", Kind: PatternKindKey},
-		{Value: "_TOKEN", Kind: PatternKindKey},
-		{Value: "_KEY", Kind: PatternKindKey},
-		{Value: "_SECRET", Kind: PatternKindKey},
+		{Literal: "_PASSWORD", Kind: PatternKindKeyedValue},
+		{Literal: "_TOKEN", Kind: PatternKindKeyedValue},
+		{Literal: "_KEY", Kind: PatternKindKeyedValue},
+		{Literal: "_SECRET", Kind: PatternKindKeyedValue},
 
 		// Auth scheme prefixes, where the secret follows the scheme name directly
-		{Value: "Bearer ", Kind: PatternKindPrefix},
-		{Value: "Basic ", Kind: PatternKindPrefix},
+		{Literal: "Bearer ", Kind: PatternKindNextToken},
+		{Literal: "Basic ", Kind: PatternKindNextToken},
 
 		// Header name; the colon and its surrounding whitespace are supplied by
-		// the header rule, so both "Authorization: x" and "Authorization:x" match
-		{Value: "Authorization", Kind: PatternKindHeader},
+		// the header-value rule, so both "Authorization: x" and "Authorization:x" match
+		{Literal: "Authorization", Kind: PatternKindHeaderValue},
 	}
 }
