@@ -12,31 +12,206 @@ import (
 	"strings"
 )
 
-// Config controls how sensitive information is redacted
+// DefaultPlaceholder is the text substituted for a redacted secret unless
+// WithPlaceholder overrides it.
+const DefaultPlaceholder = "[REDACTED]"
+
+// Config controls how sensitive information is redacted.
+//
+// Every field is unexported and there is no way to populate one from outside
+// this package except through NewConfig or DefaultConfig, so a Config that
+// reaches RedactText has necessarily had its patterns validated. A malformed
+// pattern fails open - it compiles to a regex matching nothing and leaves the
+// secret in the clear - which is not a mistake worth leaving to convention.
 type Config struct {
-	// Placeholder is the placeholder used for redaction (e.g., "[REDACTED]")
-	// Unified from LogPlaceholder and TextPlaceholder
-	Placeholder string
-	// Patterns contains the sensitive patterns to detect
-	Patterns *SensitivePatterns
-	// KeyValuePatterns contains keys for key=value or header redaction
-	// e.g. ["password", "token", "Authorization: "]
-	KeyValuePatterns []string
-	// ValueDetector detects sensitive values based on value format (e.g., AWS keys,
+	// placeholder is the text substituted for a redacted secret.
+	placeholder string
+	// patterns contains the sensitive patterns to detect.
+	patterns *SensitivePatterns
+	// keyValuePatterns contains the patterns for key-name-based redaction, each
+	// declaring what it redacts
+	// e.g. [{"password", PatternKindKeyedValue}, {"Authorization", PatternKindHeaderValue}]
+	keyValuePatterns []KeyValuePattern
+	// compiled holds one ready-to-run rule per keyValuePatterns entry, built once
+	// by NewConfig.
+	compiled []compiledPattern
+	// valueDetector detects sensitive values based on value format (e.g., AWS keys,
 	// GitHub tokens, PEM blocks) independent of key-name context. When nil, value-based
-	// detection is skipped. DefaultConfig sets this to a detector with the same placeholder.
-	ValueDetector *ValueDetector
+	// detection is skipped.
+	valueDetector *ValueDetector
+	// validated records that this Config came from NewConfig.
+	//
+	// NewConfig never hands back an unvalidated Config - it returns nil and an
+	// error instead - so the only way to hold one is to have skipped NewConfig
+	// altogether. Unexported fields stop a caller populating a literal, but not
+	// from leaving a Config at its zero value, and Config is usable by value:
+	//
+	//	var c redaction.Config                     // c.RedactText redacts nothing
+	//	type svc struct{ redactor redaction.Config } // same, if never assigned
+	//
+	// A *Config left nil would panic and be noticed; these fail open silently,
+	// which is why the redaction entry points check this flag and suppress their
+	// output rather than pass the secret through.
+	validated bool
 }
 
-// DefaultConfig returns default redaction configuration
-func DefaultConfig() *Config {
-	placeholder := "[REDACTED]"
-	return &Config{
-		Placeholder:      placeholder,
-		Patterns:         DefaultSensitivePatterns(),
-		KeyValuePatterns: DefaultKeyValuePatterns(),
-		ValueDetector:    NewValueDetector(placeholder),
+// Placeholder returns the text this Config substitutes for a redacted secret.
+func (c *Config) Placeholder() string {
+	return c.placeholder
+}
+
+// compiledPattern is one key-name rule with everything that does not depend on
+// the input text already worked out. Only the regex match itself is left for
+// RedactText, which runs over every log line and every captured command output.
+type compiledPattern struct {
+	// keyedValue selects the rebuild-by-hand path over regex replacement. The
+	// keyed-value rule copies the boundary, key, separator and quotes verbatim
+	// around the value, which a replacement template cannot express.
+	keyedValue bool
+	re         *regexp.Regexp
+	// replacement is the template handed to Regexp.ReplaceAllString, with the
+	// placeholder's "$" already escaped. Empty for the keyed-value rule.
+	replacement string
+	// placeholder is the raw text, used by the keyed-value rule, which writes it
+	// into a strings.Builder rather than through replacement expansion and so
+	// must not have its "$" escaped.
+	placeholder string
+	// valueGroups holds the submatch indices of the keyed-value alternatives, so
+	// the name lookups happen once here rather than per call.
+	valueGroups []int
+}
+
+// compilePattern turns a validated pattern into the rule that runs against text.
+//
+// Compiling here rather than per call is what lets a bad pattern be an error at
+// wiring time. That matters beyond tidiness: RedactText runs inside
+// RedactingHandler.Handle, where slog.Default() is that same handler, so a
+// failure reported from there would be redacted by the Config that produced it
+// and recurse. There is nowhere useful to report a compile failure at run time,
+// so it must not happen at run time.
+func compilePattern(p KeyValuePattern, placeholder string) (compiledPattern, error) {
+	escaped := regexp.QuoteMeta(p.Literal)
+	escapedPlaceholder := escapeReplacementDollars(placeholder)
+
+	var expr, replacement string
+	keyedValue := false
+	switch p.Kind {
+	case PatternKindHeaderValue:
+		// header + separator + optional auth scheme, then the value to end of line
+		expr = `(?i)(` + escaped + `)([ \t]*:[ \t]*)((?:bearer |basic )?)[^\r\n]*`
+		replacement = "${1}${2}${3}" + escapedPlaceholder
+	case PatternKindNextToken:
+		// literal followed by one or more non-whitespace characters
+		expr = `(?i)(` + escaped + `)(\S+)`
+		replacement = "${1}" + escapedPlaceholder
+	case PatternKindKeyedValue:
+		expr = buildKeyValueRegex(escaped, keyBoundaryGroup(p.Literal))
+		keyedValue = true
+	default:
+		// Unreachable: NewConfig validates before compiling, and validate rejects
+		// an unknown kind. Kept so this switch stays total.
+		return compiledPattern{}, fmt.Errorf("%w: %d", ErrPatternKindUnknown, p.Kind)
 	}
+
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		// Also unreachable today: every branch above builds its expression from
+		// regexp.QuoteMeta-escaped input. Reported rather than assumed away, since
+		// that is the whole point of compiling at construction.
+		return compiledPattern{}, fmt.Errorf("compiling pattern %q: %w", p.Literal, err)
+	}
+
+	cp := compiledPattern{
+		keyedValue:  keyedValue,
+		re:          re,
+		replacement: replacement,
+		placeholder: placeholder,
+	}
+	if keyedValue {
+		cp.valueGroups = keyValueValueGroups(re)
+	}
+	return cp, nil
+}
+
+// apply runs this rule over the text.
+func (cp *compiledPattern) apply(text string) string {
+	if cp.keyedValue {
+		return replaceKeyValueMatches(cp.re, cp.valueGroups, text, cp.placeholder)
+	}
+	return cp.re.ReplaceAllString(text, cp.replacement)
+}
+
+// Option customizes the Config built by NewConfig.
+type Option func(*Config)
+
+// WithPlaceholder replaces the text substituted for a redacted secret. The
+// value-format detector is built from the same placeholder, so this applies to
+// both redaction layers.
+func WithPlaceholder(placeholder string) Option {
+	return func(c *Config) {
+		c.placeholder = placeholder
+	}
+}
+
+// WithAdditionalKeyValuePatterns appends patterns to the default key-name set.
+// This is the supported way to declare that a key name marks a secret in a
+// particular deployment; the added patterns are validated along with the
+// defaults, and they are classified into boundary groups by the same rules the
+// defaults are - so a key that happens to be an ordinary English word gets the
+// strict boundary here too, and matches less than the loose one would. Which
+// words those are is a property of the language, not of what a caller declares:
+// see commonWordKeys.
+func WithAdditionalKeyValuePatterns(patterns ...KeyValuePattern) Option {
+	return func(c *Config) {
+		c.keyValuePatterns = append(c.keyValuePatterns, patterns...)
+	}
+}
+
+// NewConfig returns the default redaction configuration as modified by opts,
+// with every key-name pattern validated. It is the only way to obtain a usable
+// Config from outside this package.
+func NewConfig(opts ...Option) (*Config, error) {
+	c := &Config{
+		placeholder:      DefaultPlaceholder,
+		patterns:         DefaultSensitivePatterns(),
+		keyValuePatterns: DefaultKeyValuePatterns(),
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	// Built after the options so that WithPlaceholder reaches the value-format
+	// layer too.
+	c.valueDetector = NewValueDetector(c.placeholder)
+
+	c.compiled = make([]compiledPattern, 0, len(c.keyValuePatterns))
+	for _, p := range c.keyValuePatterns {
+		if err := p.validate(); err != nil {
+			return nil, fmt.Errorf("invalid redaction pattern: %w", err)
+		}
+		cp, err := compilePattern(p, c.placeholder)
+		if err != nil {
+			return nil, err
+		}
+		c.compiled = append(c.compiled, cp)
+	}
+
+	c.validated = true
+	return c, nil
+}
+
+// DefaultConfig returns the default redaction configuration.
+//
+// It panics rather than returning an error: with no options in play the only
+// way to fail is for the defaults themselves to be malformed, which the tests
+// catch (TestDefaultKeyValuePatterns_AreValid) and which no caller could
+// meaningfully recover from. This mirrors DefaultSensitivePatterns.
+func DefaultConfig() *Config {
+	c, err := NewConfig()
+	if err != nil {
+		panic(fmt.Sprintf("failed to create default redaction config: %v", err))
+	}
+	return c
 }
 
 // redactionContext holds context information for recursive redaction
@@ -63,20 +238,27 @@ func (c *Config) RedactText(text string) string {
 	if text == "" {
 		return text
 	}
+	if !c.validated {
+		// Suppress rather than return the input unchanged, which is what a Config
+		// that skipped NewConfig would otherwise do (see the field). One boolean
+		// per call, not a re-validation: the patterns cannot change after
+		// NewConfig has returned.
+		return RedactionFailurePlaceholder
+	}
 
 	result := text
 
-	// Apply key=value pattern redaction
-	for _, key := range c.KeyValuePatterns {
-		result = c.performKeyValueRedaction(result, key, c.Placeholder)
+	// Apply key-name-based redaction
+	for i := range c.compiled {
+		result = c.compiled[i].apply(result)
 	}
 
 	// Apply value-format-based detection (e.g., AWS keys, GitHub tokens, PEM blocks).
 	// This runs after key=value redaction so that structured key=value pairs get
 	// precise masking first, then bare secrets in the remaining text are caught.
 	// When ValueDetector is nil, this step is skipped (backward compatible).
-	if c.ValueDetector != nil {
-		result = c.ValueDetector.Mask(result)
+	if c.valueDetector != nil {
+		result = c.valueDetector.Mask(result)
 	}
 
 	return result
@@ -87,9 +269,15 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 	key := attr.Key
 	value := attr.Value
 
+	if !c.validated {
+		// As in RedactText, though here an unbuilt Config would nil-panic on
+		// patterns below rather than pass the text through. Fail secure either way.
+		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
+	}
+
 	// Check for sensitive patterns in the key
-	if c.Patterns.IsSensitiveKey(key) {
-		return slog.Attr{Key: key, Value: slog.StringValue(c.Placeholder)}
+	if c.patterns.IsSensitiveKey(key) {
+		return slog.Attr{Key: key, Value: slog.StringValue(c.placeholder)}
 	}
 
 	// Redact string values that match sensitive patterns
@@ -102,8 +290,8 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 		}
 		// Then check if the entire value is sensitive (only if no key=value patterns were found)
 		// This prevents strings like "password=secret" from being completely replaced with "[REDACTED]"
-		if c.Patterns.IsSensitiveValue(strValue) {
-			return slog.Attr{Key: key, Value: slog.StringValue(c.Placeholder)}
+		if c.patterns.IsSensitiveValue(strValue) {
+			return slog.Attr{Key: key, Value: slog.StringValue(c.placeholder)}
 		}
 	}
 
@@ -120,165 +308,233 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 	return attr
 }
 
-// performKeyValueRedaction performs redaction on key=value patterns
-func (c *Config) performKeyValueRedaction(text, key, placeholder string) string {
-	if strings.Contains(key, ":") {
-		// For header-like patterns such as "Authorization:" or "Authorization: "
-		return c.performColonPatternRedaction(text, key, placeholder)
-	}
-	if strings.Contains(key, " ") {
-		// For patterns like "Bearer ", "Basic " - replace the token after the space
-		return c.performSpacePatternRedaction(text, key, placeholder)
-	}
-	// For regular key=value patterns
-	return c.performKeyValuePatternRedaction(text, key, placeholder)
+// escapeReplacementDollars makes a placeholder safe to embed in a
+// Regexp.ReplaceAllString replacement, where "$0"/"$1"/etc. expand to the match
+// and its capture groups. Without this, a placeholder configured with "$1"-like
+// text would re-inject the matched (secret) text it was meant to hide.
+func escapeReplacementDollars(placeholder string) string {
+	return strings.ReplaceAll(placeholder, "$", "$$")
 }
 
-// compileRedactionRegex compiles a regex pattern with fail-secure error handling.
-// Returns the compiled regex or nil if compilation fails.
-// On failure, logs a warning and returns nil to signal the caller to use RedactionFailurePlaceholder.
-func compileRedactionRegex(regexPattern string, contextInfo map[string]string) *regexp.Regexp {
-	// Serve hits from the cache so patterns that repeat across RedactText calls
-	// are not recompiled each time. Only successful compilations are stored;
-	// a failed pattern must not be cached so later calls still go through the
-	// fail-secure path below, and a failure never pollutes the cache for other
-	// patterns.
-	if re, ok := regexCache.Load(regexPattern); ok {
-		return re.(*regexp.Regexp)
-	}
+// boundaryGroup classifies a key by how strict a boundary must precede the key
+// name before a separator-based or quoted-value match is allowed. It applies
+// only to PatternKindKeyedValue patterns.
+//
+// Unlike PatternKind, the group is derived from the key rather than declared.
+// Which words are frequent in English prose is a property of the language, not
+// of the pattern's author, so there is nothing for an author to declare: see
+// commonWordKeys.
+type boundaryGroup int
 
-	re, err := regexp.Compile(regexPattern)
-	if err != nil {
-		// Fail-secure: log warning and signal caller to use safe placeholder
-		// This prevents potential sensitive information leakage
-		logAttrs := []any{
-			"error", err.Error(),
-			"output_destination", "stderr, file, audit",
-		}
-		for k, v := range contextInfo {
-			logAttrs = append(logAttrs, k, v)
-		}
-		slog.Warn("Regex compilation failed - using safe placeholder", logAttrs...)
-		return nil
-	}
+const (
+	// boundaryGroupSpecific covers keys specific enough that a match at any
+	// non-alphanumeric position is more likely to mark a secret than to be prose
+	// (e.g. "password", "api_key").
+	boundaryGroupSpecific boundaryGroup = iota
+	// boundaryGroupCommonWord covers keys that are ordinary English words and so
+	// occur in diagnostic prose ("Primary key: id", "unexpected token: '}'").
+	// Only identifier-internal characters and quotes count as a boundary, which
+	// leaves prose intact while still matching structured data such as
+	// "aws_secret_access_key: ...".
+	boundaryGroupCommonWord
+	// boundaryGroupPrefixed covers keys that already begin with a
+	// non-alphanumeric character (e.g. "_TOKEN"). The key carries its own
+	// boundary, so no additional one is required.
+	boundaryGroupPrefixed
+)
 
-	// The limit check and the store are separate operations, so the cache may
-	// overshoot slightly under concurrency; this is an approximate bound, not a
-	// precise capacity. The entry count is incremented only by the goroutine
-	// that actually inserts a new entry (loaded == false), so concurrent
-	// callers of the same pattern do not double-count it.
-	if regexCacheCount.Load() < maxRegexCacheEntries {
-		actual, loaded := regexCache.LoadOrStore(regexPattern, re)
-		if !loaded {
-			regexCacheCount.Add(1)
-		}
-		return actual.(*regexp.Regexp)
-	}
-	return re
+// commonWordKeys holds the lower-cased keys classified as
+// boundaryGroupCommonWord. It is deliberately not a configuration item:
+// whether a word is frequent in English prose is a property of the language,
+// not of a deployment. Adding a pattern to KeyValuePatterns is instead read as a
+// declaration that the key marks a secret, which is why user-added keys default
+// to the loose boundary. Read-only after init.
+var commonWordKeys = map[string]struct{}{
+	"key":    {},
+	"token":  {},
+	"secret": {},
 }
 
-// performSpacePatternRedaction handles patterns like "Bearer ", "Basic "
-func (c *Config) performSpacePatternRedaction(text, pattern, placeholder string) string {
-	// Escape pattern for regex and create case-insensitive pattern
-	// Match: pattern followed by one or more non-whitespace characters
-	escapedPattern := regexp.QuoteMeta(pattern)
-	regexPattern := `(?i)(` + escapedPattern + `)(\S+)`
+const (
+	// keyValueSeparator matches "=" or ":" with optional surrounding spaces and
+	// tabs. Newlines are excluded so that a key at the end of one line never
+	// consumes the content of the next line.
+	keyValueSeparator = `[ \t]*[:=][ \t]*`
+	// keyNameClosingQuote matches the optional quote that closes a quoted key
+	// name, as in JSON's "password": "x".
+	keyNameClosingQuote = `["']?`
+	// looseKeyBoundary matches the start of the text or any non-alphanumeric
+	// character.
+	looseKeyBoundary = `(?:^|[^A-Za-z0-9])`
+	// strictKeyBoundary matches only characters that appear inside an identifier
+	// or that quote a key name. A space deliberately does not qualify: allowing
+	// it would redact ordinary diagnostics such as "Primary key: id".
+	strictKeyBoundary = `["'_.\-]`
+	// unquotedValue matches an unquoted value, ending at the first whitespace. It
+	// refuses to start on a "{" or "[" so that a nested object or array value -
+	// which has no whitespace to stop at on a compact JSON line - does not
+	// swallow every sibling field and leave unbalanced brackets behind.
+	unquotedValue = `[^\s{\[]\S*`
+)
 
-	re := compileRedactionRegex(regexPattern, map[string]string{
-		"function": "performSpacePatternRedaction",
-		"pattern":  pattern,
-	})
-	if re == nil {
-		return RedactionFailurePlaceholder
-	}
-
-	// Replace matching tokens with pattern + placeholder
-	return re.ReplaceAllStringFunc(text, func(match string) string {
-		// Find the original pattern in the match (preserving case)
-		patternLen := len(pattern)
-		if len(match) < patternLen {
-			return match
-		}
-
-		originalPattern := match[:patternLen]
-		return originalPattern + placeholder
-	})
+// isASCIIAlphanumeric reports whether c is one of the characters that
+// looseKeyBoundary negates.
+func isASCIIAlphanumeric(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }
 
-// performColonPatternRedaction handles patterns like "Authorization:" or "Authorization: "
-// It will redact everything after the pattern up to the end of line (or end of string).
-func (c *Config) performColonPatternRedaction(text, pattern, placeholder string) string {
-	// Escape pattern for regex and create case-insensitive pattern
-	// Match: pattern + optional whitespace + optional auth scheme (Bearer/Basic) + value + line ending
-	escapedPattern := regexp.QuoteMeta(pattern)
-	regexPattern := `(?i)(` + escapedPattern + `)([ \t]*)((?:bearer |basic )?)[^\r\n]*`
-
-	re := compileRedactionRegex(regexPattern, map[string]string{
-		"function": "performColonPatternRedaction",
-		"pattern":  pattern,
-	})
-	if re == nil {
-		return RedactionFailurePlaceholder
+// keyBoundaryGroup derives the boundary group from the key string.
+func keyBoundaryGroup(key string) boundaryGroup {
+	if key == "" {
+		return boundaryGroupSpecific
 	}
-
-	// Replace matching headers with pattern + whitespace + scheme + placeholder
-	return re.ReplaceAllStringFunc(text, func(match string) string {
-		// Extract the original case-preserving parts using submatch
-		submatches := re.FindStringSubmatch(match)
-		const minSubmatchCount = 4
-		if len(submatches) < minSubmatchCount {
-			return match
-		}
-
-		originalPattern := submatches[1] // Original pattern preserving case
-		whitespace := submatches[2]      // Whitespace after pattern
-		scheme := submatches[3]          // Auth scheme (Bearer/Basic) if present
-
-		return originalPattern + whitespace + scheme + placeholder
-	})
+	// Classify on the first byte against the same set looseKeyBoundary negates,
+	// so the classification and the boundary character class cannot disagree. A
+	// leading multi-byte rune starts outside that set and is therefore treated as
+	// already carrying a boundary.
+	if !isASCIIAlphanumeric(key[0]) {
+		return boundaryGroupPrefixed
+	}
+	if _, ok := commonWordKeys[strings.ToLower(key)]; ok {
+		return boundaryGroupCommonWord
+	}
+	return boundaryGroupSpecific
 }
 
-// performKeyValuePatternRedaction handles patterns like "key=value"
-func (c *Config) performKeyValuePatternRedaction(text, key, placeholder string) string {
-	// Escape key for regex and create case-insensitive pattern
-	// Match: key + optional equals sign + value (non-whitespace characters)
-	escapedKey := regexp.QuoteMeta(key)
-	var regexPattern string
+// keyBoundaryPattern returns the ready-to-embed regex fragment matching the
+// single character that must precede the key name, or "" when the group needs
+// no boundary.
+func keyBoundaryPattern(group boundaryGroup) string {
+	switch group {
+	case boundaryGroupCommonWord:
+		return strictKeyBoundary
+	case boundaryGroupPrefixed:
+		return ""
+	case boundaryGroupSpecific:
+		return looseKeyBoundary
+	default:
+		return looseKeyBoundary
+	}
+}
 
-	if strings.Contains(key, "=") {
-		// Key already contains "=", match it exactly + value
-		regexPattern = `(?i)(` + escapedKey + `)(\S+)`
-	} else {
-		// Key without "=", add it and match value
-		regexPattern = `(?i)(` + escapedKey + `)(=)(\S+)`
+// buildKeyValueRegex builds the alternation used for keys that do not contain
+// "=" themselves. The alternatives are ordered double-quoted value ->
+// single-quoted value -> separated value -> adjacent "=" value. Go's regexp
+// prefers the earliest alternative that matches at a given position, so a
+// quoted value is always consumed up to its closing quote instead of being
+// truncated at the first space by the adjacent alternative. Only the first
+// three alternatives carry a boundary; the adjacent form keeps its existing
+// unrestricted behavior.
+//
+// Each alternative captures its value and nothing else: everything else in the
+// match lies before or after the value, so replaceKeyValueMatches can copy it
+// verbatim. One group per alternative also keeps the submatch bookkeeping out of
+// the regex engine's per-byte work, which matters because RedactText runs over
+// whole command outputs.
+func buildKeyValueRegex(escapedKey string, group boundaryGroup) string {
+	boundary := keyBoundaryPattern(group)
+
+	// quoted builds one quoted-value alternative, taking its boundary as an
+	// argument because the two quote kinds differ (see loosenedQuotedBoundary).
+	// The opening quote is matched literally rather than captured because RE2 has
+	// no backreference to require the closing quote to be of the same kind, so
+	// each quote character needs its own alternative. When the closing quote is
+	// missing (a truncated log line) the value group runs to the end of the line,
+	// redacting everything after the opening quote.
+	//
+	// The value consumes backslash escapes as single units, so an escaped quote
+	// does not end the value and leave its tail in the clear. A backslash that is
+	// not an escape in the source syntax (a Windows path ending in one) makes the
+	// value run to the closing quote of the next pair or to the end of the line,
+	// which over-redacts rather than under-redacts.
+	quoted := func(name, quotedBoundary, quote string) string {
+		return quotedBoundary + escapedKey + keyNameClosingQuote + keyValueSeparator +
+			quote + `(?P<` + name + `>(?:\\[^\r\n]|[^` + quote + `\\\r\n])*)` + quote + `?`
 	}
 
-	re := compileRedactionRegex(regexPattern, map[string]string{
-		"function": "performKeyValuePatternRedaction",
-		"key":      key,
-	})
-	if re == nil {
-		return RedactionFailurePlaceholder
+	doubleQuoted := quoted("dqValue", loosenedQuotedBoundary(group), `"`)
+	singleQuoted := quoted("sqValue", boundary, `'`)
+	separated := boundary + escapedKey + keyNameClosingQuote + keyValueSeparator + `(?P<sepValue>` + unquotedValue + `)`
+	adjacent := escapedKey + `=(?P<adjValue>\S+)`
+
+	return `(?i)(?:` + doubleQuoted + `|` + singleQuoted + `|` + separated + `|` + adjacent + `)`
+}
+
+// loosenedQuotedBoundary returns the boundary used by the double-quoted
+// alternative: common-word keys get the loose boundary there, every other group
+// keeps its own. A double quote right after the separator is a structural signal
+// prose does not produce, and the strict boundary would leave half of
+// TOKEN="abc def" - the shape an environment dump takes - in the clear. The
+// single-quoted alternative is deliberately not loosened, because a
+// single-quoted value after a common-word key is exactly the shape of the
+// diagnostic "unexpected token: '}'".
+func loosenedQuotedBoundary(group boundaryGroup) string {
+	if group == boundaryGroupCommonWord {
+		return looseKeyBoundary
+	}
+	return keyBoundaryPattern(group)
+}
+
+// keyValueValueGroups returns the value submatch indices of the alternatives of
+// the regex built by buildKeyValueRegex. The listing order is for readability
+// only; matchedValueSpan does not depend on it.
+func keyValueValueGroups(re *regexp.Regexp) []int {
+	return []int{
+		re.SubexpIndex("dqValue"),
+		re.SubexpIndex("sqValue"),
+		re.SubexpIndex("sepValue"),
+		re.SubexpIndex("adjValue"),
+	}
+}
+
+// matchedValueSpan returns the byte range of the value of whichever alternative
+// participated in the match. Exactly one alternative participates per match, so
+// the first value group with a non-negative start identifies it.
+func matchedValueSpan(valueGroups []int, m []int) (start, end int, ok bool) {
+	for _, g := range valueGroups {
+		if g >= 0 && 2*g+1 < len(m) && m[2*g] >= 0 {
+			return m[2*g], m[2*g+1], true
+		}
+	}
+	return 0, 0, false
+}
+
+// replaceKeyValueMatches rebuilds every match, replacing only the value and
+// copying the rest of the match - boundary, key, key quote, separator and value
+// quotes - verbatim from the input.
+//
+// Matches are rebuilt from FindAllStringSubmatchIndex rather than from
+// ReplaceAllStringFunc because that callback receives only the matched text:
+// re-running the regex on that text alone can select a different alternative
+// than the one that matched in context. A match that fell through to the
+// adjacent alternative because the preceding character failed the boundary
+// would match a quoted or separated alternative once that context is gone.
+func replaceKeyValueMatches(re *regexp.Regexp, valueGroups []int, text, placeholder string) string {
+	matches := re.FindAllStringSubmatchIndex(text, -1)
+	if len(matches) == 0 {
+		return text
 	}
 
-	// Replace matching key=value pairs with key=placeholder
-	return re.ReplaceAllStringFunc(text, func(match string) string {
-		submatches := re.FindStringSubmatch(match)
-		const minSubmatchCount = 3
-		if len(submatches) < minSubmatchCount {
-			return match
+	var b strings.Builder
+	// The placeholder is normally longer than the value it replaces, so reserving
+	// only len(text) would force a reallocation on almost every call.
+	b.Grow(len(text) + len(matches)*len(placeholder))
+	last := 0
+	for _, m := range matches {
+		valueStart, valueEnd, ok := matchedValueSpan(valueGroups, m)
+		if !ok {
+			// Defensive: no alternative claimed the match. Leaving last untouched
+			// makes the next copy (or the final one after the loop) emit this match
+			// verbatim, so skipping it cannot drop or duplicate any input.
+			continue
 		}
-
-		if strings.Contains(key, "=") {
-			// Key already contains "=" (e.g., "Authorization=")
-			originalKey := submatches[1] // Original key preserving case
-			return originalKey + placeholder
-		}
-		// Key without "=" (e.g., "password")
-		originalKey := submatches[1] // Original key preserving case
-		equals := submatches[2]      // The "=" character
-		return originalKey + equals + placeholder
-	})
+		b.WriteString(text[last:valueStart])
+		b.WriteString(placeholder)
+		b.WriteString(text[valueEnd:m[1]])
+		last = m[1]
+	}
+	b.WriteString(text[last:])
+	return b.String()
 }
 
 // RedactingHandler is a decorator that redacts sensitive information before forwarding to the underlying handler
@@ -375,6 +631,14 @@ func NewRedactingHandler(handler slog.Handler, config *Config, failureLogger *sl
 	if config == nil {
 		config = DefaultConfig()
 	}
+	if !config.validated {
+		// The handler reaches into config.patterns directly, so an unbuilt Config
+		// would nil-panic mid-log rather than at wiring time. Refuse it here, where
+		// the message can say what to do about it.
+		panic("FATAL: redaction Config was not built by NewConfig or DefaultConfig.\n" +
+			"A Config assembled any other way holds no patterns and redacts nothing.\n" +
+			"Use redaction.NewConfig(...) or redaction.DefaultConfig().")
+	}
 	if failureLogger == nil {
 		// Default to slog.Default() if not provided
 		failureLogger = slog.Default()
@@ -469,8 +733,8 @@ func (r *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx red
 	value := attr.Value
 
 	// Check for sensitive patterns in the key
-	if r.config.Patterns.IsSensitiveKey(key) {
-		return slog.Attr{Key: key, Value: slog.StringValue(r.config.Placeholder)}
+	if r.config.patterns.IsSensitiveKey(key) {
+		return slog.Attr{Key: key, Value: slog.StringValue(r.config.placeholder)}
 	}
 
 	// Process based on value kind
@@ -485,8 +749,8 @@ func (r *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx red
 		}
 		// Then check if the entire value is sensitive (only if no key=value patterns were found)
 		// This prevents strings like "password=secret" from being completely replaced with "[REDACTED]"
-		if r.config.Patterns.IsSensitiveValue(strValue) {
-			return slog.Attr{Key: key, Value: slog.StringValue(r.config.Placeholder)}
+		if r.config.patterns.IsSensitiveValue(strValue) {
+			return slog.Attr{Key: key, Value: slog.StringValue(r.config.placeholder)}
 		}
 		return attr
 
@@ -576,7 +840,14 @@ func (r *RedactingHandler) processKindAny(key string, value slog.Value, ctx reda
 		return r.processLogValuer(key, logValuer, ctx)
 	}
 
-	// 2. Determine type and dispatch to appropriate handler
+	// 2. Check for the error interface, after LogValuer so a type that implements
+	// both is still logged the way it asks to be (see processError for why errors
+	// cannot go through the struct walk below).
+	if errValue, ok := anyValue.(error); ok {
+		return r.processError(key, errValue, ctx)
+	}
+
+	// 3. Determine type and dispatch to appropriate handler
 	rv := reflect.ValueOf(anyValue)
 	switch rv.Kind() {
 	case reflect.Slice:
@@ -690,6 +961,61 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 	return r.redactLogAttributeWithContext(resolvedAttr, nextCtx), nil
 }
 
+// processError resolves an error to its Error() string and redacts that string,
+// so an error attribute is redacted the same way the equivalent string attribute
+// is. An error carries its message behind Error(), not in its fields: neither
+// *errorString (errors.New) nor *fmt.wrapError (fmt.Errorf) has an exported
+// field, so the struct walk would find nothing to redact and fail secure,
+// replacing every such message with RedactionFailurePlaceholder.
+func (r *RedactingHandler) processError(key string, errValue error, ctx redactionContext) (attr slog.Attr, err error) {
+	// 1. Check recursion depth
+	if ctx.depth >= maxRedactionDepth {
+		r.failureLogger.Debug(
+			"Recursion depth limit reached for error - returning placeholder for security",
+			"attribute_key", key,
+			"depth", maxRedactionDepth,
+		)
+		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
+	}
+
+	// 2. A nil pointer stored in a non-nil error interface is left alone rather
+	// than called, matching how processKindAny passes a nil pointer through.
+	if rv := reflect.ValueOf(errValue); rv.Kind() == reflect.Ptr && rv.IsNil() {
+		return slog.Attr{Key: key, Value: slog.AnyValue(errValue)}, nil
+	}
+
+	// 3. Error() is caller-supplied code, so it is called under recovery for the
+	// same reason LogValue() is.
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.failureLogger.Warn(
+				"Redaction failed for error - detailed log",
+				"attribute_key", key,
+				"panic_value", rec,
+				"panic_type", fmt.Sprintf("%T", rec),
+				"stack_trace", string(debug.Stack()),
+				"log_category", "redaction_failure_detail",
+			)
+			// Log safe summary to all destinations
+			slog.Warn(
+				"Redaction failed for error - see logs for details",
+				"attribute_key", key,
+				"panic_type", fmt.Sprintf("%T", rec),
+				"log_category", "redaction_failure_summary",
+				"details_in_log", true,
+			)
+			// Fail secure: return the placeholder instead of a partial message
+			attr = slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
+			err = nil
+		}
+	}()
+
+	// 4. Redact the message through the string path
+	message := slog.Attr{Key: key, Value: slog.StringValue(errValue.Error())}
+	nextCtx := redactionContext{depth: ctx.depth + 1}
+	return r.redactLogAttributeWithContext(message, nextCtx), nil
+}
+
 // processMap processes a map value: keys are stringified (via fmt.Sprint, not redacted)
 // and used only to check IsSensitiveKey, while values are recursively redacted.
 func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionContext) (attr slog.Attr, err error) {
@@ -761,8 +1087,8 @@ func (r *RedactingHandler) processMap(key string, mapValue any, ctx redactionCon
 		mapEntryValue := rv.MapIndex(entry.keyVal).Interface()
 
 		// Check if key is sensitive - if so, mask the value
-		if r.config.Patterns.IsSensitiveKey(keyStr) {
-			result[keyStr] = r.config.Placeholder
+		if r.config.patterns.IsSensitiveKey(keyStr) {
+			result[keyStr] = r.config.placeholder
 		} else {
 			// Recursively redact the value
 			redactedAttr := r.redactLogAttributeWithContext(

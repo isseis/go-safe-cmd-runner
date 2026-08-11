@@ -229,7 +229,7 @@ func TestSanitizeEnvironmentVariables_PlaceholderConsistency(t *testing.T) {
 	}
 	result := validator.SanitizeEnvironmentVariables(env)
 	assert.Equal(t, "[REDACTED]", result["API_PASSWORD"])
-	assert.Equal(t, redaction.DefaultConfig().Placeholder, result["API_PASSWORD"])
+	assert.Equal(t, redaction.DefaultConfig().Placeholder(), result["API_PASSWORD"])
 }
 
 func TestValidator_isSensitiveEnvVar(t *testing.T) {

@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,6 +37,16 @@ type sensitiveLogValuer struct {
 // LogValue implements the slog.LogValuer interface.
 func (v sensitiveLogValuer) LogValue() slog.Value {
 	return slog.StringValue(v.data)
+}
+
+// applyPattern compiles one pattern and runs it, which is the path RedactText
+// takes. Rule-level tests go through this rather than a Config so they can vary
+// the placeholder and exercise a single rule in isolation.
+func applyPattern(t *testing.T, p KeyValuePattern, placeholder, text string) string {
+	t.Helper()
+	cp, err := compilePattern(p, placeholder)
+	require.NoError(t, err)
+	return cp.apply(text)
 }
 
 // TestRedactText_EmptyString tests that empty strings are handled correctly
@@ -111,8 +123,8 @@ func TestRedactText_KeyValuePatterns(t *testing.T) {
 	}
 }
 
-// TestRedactText_SpacePatterns tests Bearer/Basic authentication pattern redaction
-func TestRedactText_SpacePatterns(t *testing.T) {
+// TestRedactText_NextTokenPatterns tests Bearer/Basic authentication pattern redaction
+func TestRedactText_NextTokenPatterns(t *testing.T) {
 	config := DefaultConfig()
 
 	tests := []struct {
@@ -145,6 +157,13 @@ func TestRedactText_SpacePatterns(t *testing.T) {
 			input:    "Bearer abc123 and Bearer xyz789",
 			expected: "Bearer [REDACTED] and Bearer [REDACTED]",
 		},
+		{
+			// The rule needs a token after the literal; the literal alone is not a
+			// match, so an ordinary mention of the scheme name survives.
+			name:     "scheme name with nothing after it",
+			input:    "the scheme is Bearer",
+			expected: "the scheme is Bearer",
+		},
 	}
 
 	for _, tt := range tests {
@@ -155,8 +174,8 @@ func TestRedactText_SpacePatterns(t *testing.T) {
 	}
 }
 
-// TestRedactText_ColonPatterns tests Authorization header pattern redaction
-func TestRedactText_ColonPatterns(t *testing.T) {
+// TestRedactText_HeaderValuePatterns tests Authorization header pattern redaction
+func TestRedactText_HeaderValuePatterns(t *testing.T) {
 	config := DefaultConfig()
 
 	tests := []struct {
@@ -170,9 +189,17 @@ func TestRedactText_ColonPatterns(t *testing.T) {
 			expected: "Authorization: Bearer [REDACTED]",
 		},
 		{
-			name:     "Authorization header no space (not in default patterns)",
+			// The header-value rule supplies the colon and its surrounding whitespace, so
+			// a header written without a space after the colon is matched too. This
+			// was not the case while the pattern was the literal "Authorization: ".
+			name:     "Authorization header no space after colon",
 			input:    "Authorization:token456",
-			expected: "Authorization:token456", // Not matched by default patterns which only include "Authorization: " with space
+			expected: "Authorization:[REDACTED]",
+		},
+		{
+			name:     "Authorization header with space before colon",
+			input:    "Authorization : token456",
+			expected: "Authorization : [REDACTED]",
 		},
 		{
 			name:     "lowercase authorization with Basic",
@@ -193,6 +220,13 @@ func TestRedactText_ColonPatterns(t *testing.T) {
 			name:     "Authorization with tabs",
 			input:    "Authorization:\t\tBearer secret123",
 			expected: "Authorization:\t\tBearer [REDACTED]",
+		},
+		{
+			// The rule supplies the colon, so it also requires one: the header name
+			// on its own is prose, not a header.
+			name:     "header name without a colon is not a header",
+			input:    "Authorization failed for user bob",
+			expected: "Authorization failed for user bob",
 		},
 	}
 
@@ -265,6 +299,614 @@ func TestRedactText_SpecialCharacters(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+// TestRedactText_QuotedValue tests that a quoted value is redacted up to its
+// closing quote, including values that contain whitespace.
+func TestRedactText_QuotedValue(t *testing.T) {
+	config := DefaultConfig()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "double quoted value with space",
+			input:    `password="abc def"`,
+			expected: `password="[REDACTED]"`,
+		},
+		{
+			name:     "single quoted value with space",
+			input:    `password='abc def'`,
+			expected: `password='[REDACTED]'`,
+		},
+		{
+			name:     "unterminated double quote redacts to end of line",
+			input:    `password="abc def`,
+			expected: `password="[REDACTED]`,
+		},
+		{
+			name:     "unterminated single quote redacts to end of line",
+			input:    `password='abc def`,
+			expected: `password='[REDACTED]`,
+		},
+		{
+			name:     "quoted value keeps following text",
+			input:    `password="abc def" user=john`,
+			expected: `password="[REDACTED]" user=john`,
+		},
+		{
+			name:     "common word key at start of text is redacted in full",
+			input:    `TOKEN="abc def"`,
+			expected: `TOKEN="[REDACTED]"`,
+		},
+		{
+			name:     "two quoted values in one text",
+			input:    `password="abc def" api_key="abc def"`,
+			expected: `password="[REDACTED]" api_key="[REDACTED]"`,
+		},
+		{
+			name:     "escaped quote does not end the value",
+			input:    `password="abc\"def"`,
+			expected: `password="[REDACTED]"`,
+		},
+		{
+			name:     "escaped quote in a json field",
+			input:    `{"password":"abc\"def","next":"x"}`,
+			expected: `{"password":"[REDACTED]","next":"x"}`,
+		},
+		{
+			name:     "quoted value on a later line",
+			input:    "line one\npassword=\"abc def\"\nline three",
+			expected: "line one\npassword=\"[REDACTED]\"\nline three",
+		},
+		{
+			name:     "unterminated quote stops at the newline",
+			input:    "password=\"abc def\nline two",
+			expected: "password=\"[REDACTED]\nline two",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := config.RedactText(tt.input)
+			assert.Equal(t, tt.expected, result)
+			assert.NotContains(t, result, "abc", "no fragment of the value may survive")
+			assert.NotContains(t, result, "def", "no fragment of the value may survive")
+		})
+	}
+}
+
+// TestRedactText_QuotedValueKnownLimits fixes the quoted-value shapes whose
+// handling is deliberately incomplete, so that a later reader can tell the
+// behavior is known rather than accidental.
+func TestRedactText_QuotedValueKnownLimits(t *testing.T) {
+	config := DefaultConfig()
+
+	t.Run("trailing backslash extends the value past its closing quote", func(t *testing.T) {
+		// The value treats a backslash as escaping the next character, so a value
+		// that genuinely ends in one - a Windows path in a syntax that does not
+		// escape - runs on to the next quote. It swallows the text between, which
+		// over-redacts; that is the safe direction, and is why the escape rule is
+		// not conditioned on the syntax of the surrounding line.
+		assert.Equal(t, `password="[REDACTED]"bob" port=8080`,
+			config.RedactText(`password="C:\" user="bob" port=8080`))
+	})
+
+	t.Run("empty quoted value is still marked as redacted", func(t *testing.T) {
+		// An empty value carries no secret, but distinguishing it would require a
+		// separate alternative and would report the absence of a value to anyone
+		// reading the log, so the placeholder is emitted unconditionally.
+		assert.Equal(t, `password="[REDACTED]"`, config.RedactText(`password=""`))
+	})
+}
+
+// TestRedactText_JSONForm tests the JSON shape, where the key name is quoted and
+// the separator is a colon.
+func TestRedactText_JSONForm(t *testing.T) {
+	config := DefaultConfig()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "json object field",
+			input:    `{"password": "secret"}`,
+			expected: `{"password": "[REDACTED]"}`,
+		},
+		{
+			name:     "json field without space after colon",
+			input:    `{"password":"secret"}`,
+			expected: `{"password":"[REDACTED]"}`,
+		},
+		{
+			name:     "json field among other fields",
+			input:    `{"user": "john", "password": "secret", "port": 8080}`,
+			expected: `{"user": "john", "password": "[REDACTED]", "port": 8080}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := config.RedactText(tt.input)
+			assert.Equal(t, tt.expected, result)
+			assert.NotContains(t, result, "secret")
+		})
+	}
+}
+
+// TestRedactText_SeparatorVariants tests separators other than a bare "=".
+func TestRedactText_SeparatorVariants(t *testing.T) {
+	config := DefaultConfig()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "colon and space",
+			input:    "password: secret",
+			expected: "password: [REDACTED]",
+		},
+		{
+			name:     "equals surrounded by spaces",
+			input:    "password = secret",
+			expected: "password = [REDACTED]",
+		},
+		{
+			name:     "space before colon only",
+			input:    "password :secret",
+			expected: "password :[REDACTED]",
+		},
+		{
+			name:     "equals followed by tab",
+			input:    "password=\tsecret",
+			expected: "password=\t[REDACTED]",
+		},
+		{
+			name:     "match on a later line",
+			input:    "line one\npassword: secret\nline three",
+			expected: "line one\npassword: [REDACTED]\nline three",
+		},
+		{
+			name:     "two separated values in one text",
+			input:    "password: secret api_key: secret",
+			expected: "password: [REDACTED] api_key: [REDACTED]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := config.RedactText(tt.input)
+			assert.Equal(t, tt.expected, result)
+			assert.NotContains(t, result, "secret", "no fragment of the value may survive")
+		})
+	}
+}
+
+// TestRedactText_AlternativePriority tests that the quoted alternative wins over
+// the adjacent "=" alternative when both match at the same position, and that a
+// key that fails its boundary still falls through to the adjacent alternative.
+func TestRedactText_AlternativePriority(t *testing.T) {
+	config := DefaultConfig()
+
+	t.Run("quoted alternative wins for a key with a loose boundary", func(t *testing.T) {
+		result := config.RedactText(`password="abc def"`)
+		assert.Equal(t, `password="[REDACTED]"`, result)
+		assert.NotContains(t, result, ` def"`, "the adjacent alternative must not truncate at the space")
+	})
+
+	t.Run("common-word key without a boundary falls through to the adjacent form", func(t *testing.T) {
+		// "key" is preceded by "n", which is not an identifier-internal character
+		// or a quote, so the quoted alternative does not apply and the result is
+		// the same as before this coverage was added.
+		result := config.RedactText(`monkey="a b"`)
+		assert.Equal(t, `monkey=[REDACTED] b"`, result)
+	})
+}
+
+// TestRedactText_KeyGroupBehavior fixes the redaction outcome of every key of
+// DefaultKeyValuePatterns that is routed to the keyed-value rule, for each of the
+// five value shapes, according to the key's boundary group.
+func TestRedactText_KeyGroupBehavior(t *testing.T) {
+	config := DefaultConfig()
+
+	// forms builds the five shapes under test for a given key.
+	type form struct {
+		name  string
+		input string
+	}
+	forms := func(key string) []form {
+		return []form{
+			{name: "adjacent_equals", input: key + "=xyz"},
+			{name: "colon_separator", input: key + ": xyz"},
+			{name: "spaced_equals", input: key + " = xyz"},
+			{name: "quoted_value", input: key + `="a b"`},
+			{name: "json_field", input: `"` + key + `": "xyz"`},
+		}
+	}
+
+	// redactedForms returns the expectation for keys whose boundary permits every
+	// shape (the specific and prefixed groups).
+	redactedForms := func(key string) []string {
+		return []string{
+			key + "=[REDACTED]",
+			key + ": [REDACTED]",
+			key + " = [REDACTED]",
+			key + `="[REDACTED]"`,
+			`"` + key + `": "[REDACTED]"`,
+		}
+	}
+
+	// commonWordForms returns the expectation for common-word keys. The bare
+	// colon and spaced-equals shapes stay untouched so that ordinary prose such
+	// as "Primary key: id" is not redacted. The adjacent form carries no boundary
+	// requirement at all, and the double-quoted value is a structural signal
+	// strong enough to take the loose boundary, so both are redacted in full.
+	commonWordForms := func(key string) []string {
+		return []string{
+			key + "=[REDACTED]",
+			key + ": xyz",
+			key + " = xyz",
+			key + `="[REDACTED]"`,
+			`"` + key + `": "[REDACTED]"`,
+		}
+	}
+
+	tests := []struct {
+		key      string
+		expected []string
+	}{
+		// Specific keys: every shape is redacted.
+		{key: "password", expected: redactedForms("password")},
+		{key: "api_key", expected: redactedForms("api_key")},
+		// Common-word keys: limited to identifier-internal and quoted boundaries.
+		{key: "token", expected: commonWordForms("token")},
+		{key: "key", expected: commonWordForms("key")},
+		{key: "secret", expected: commonWordForms("secret")},
+		// Prefixed keys: the leading "_" is the boundary, so every shape is
+		// redacted without any additional boundary requirement.
+		{key: "_PASSWORD", expected: redactedForms("_PASSWORD")},
+		{key: "_TOKEN", expected: redactedForms("_TOKEN")},
+		{key: "_KEY", expected: redactedForms("_KEY")},
+		{key: "_SECRET", expected: redactedForms("_SECRET")},
+	}
+
+	for _, tt := range tests {
+		for i, f := range forms(tt.key) {
+			t.Run(tt.key+"/"+f.name, func(t *testing.T) {
+				assert.Equal(t, tt.expected[i], config.RedactText(f.input))
+			})
+		}
+	}
+}
+
+// TestKeyBoundaryGroup_Classification tests that every default key lands in the
+// intended boundary group, and that a user-added key gets the loose boundary.
+func TestKeyBoundaryGroup_Classification(t *testing.T) {
+	tests := []struct {
+		key      string
+		expected boundaryGroup
+	}{
+		{key: "password", expected: boundaryGroupSpecific},
+		{key: "api_key", expected: boundaryGroupSpecific},
+		{key: "token", expected: boundaryGroupCommonWord},
+		{key: "key", expected: boundaryGroupCommonWord},
+		{key: "secret", expected: boundaryGroupCommonWord},
+		{key: "_PASSWORD", expected: boundaryGroupPrefixed},
+		{key: "_TOKEN", expected: boundaryGroupPrefixed},
+		{key: "_KEY", expected: boundaryGroupPrefixed},
+		{key: "_SECRET", expected: boundaryGroupPrefixed},
+		// A key the user adds is treated as a declaration that the key marks a
+		// secret, so it gets the loose boundary rather than the strict one - unless
+		// it is one of the common words below, which is decided by the key string
+		// and not by who added it.
+		{key: "passphrase", expected: boundaryGroupSpecific},
+		// Case does not affect the common-word lookup.
+		{key: "Token", expected: boundaryGroupCommonWord},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			assert.Equal(t, tt.expected, keyBoundaryGroup(tt.key))
+		})
+	}
+
+	t.Run("remaining default patterns never reach keyBoundaryGroup", func(t *testing.T) {
+		// Boundary groups apply only to PatternKindKeyedValue. Every default pattern is
+		// either classified above or declares a kind that never consults a group.
+		classified := map[string]struct{}{}
+		for _, tt := range tests {
+			classified[tt.key] = struct{}{}
+		}
+		for _, p := range DefaultKeyValuePatterns() {
+			if _, ok := classified[p.Literal]; ok {
+				assert.Equal(t, PatternKindKeyedValue, p.Kind,
+					"classified default pattern %q must declare PatternKindKeyedValue", p.Literal)
+				continue
+			}
+			assert.NotEqual(t, PatternKindKeyedValue, p.Kind,
+				"unclassified default pattern %q must declare a non-key kind", p.Literal)
+		}
+	})
+
+	// Both cases go through WithAdditionalKeyValuePatterns rather than touching
+	// the field: that option is the extension point 3.2.4 leans on when it argues
+	// user-added keys must default to the loose boundary, so it is the thing worth
+	// pinning here.
+	t.Run("user-added key is redacted with the loose boundary", func(t *testing.T) {
+		config, err := NewConfig(WithAdditionalKeyValuePatterns(
+			KeyValuePattern{Literal: "passphrase", Kind: PatternKindKeyedValue}))
+		require.NoError(t, err)
+		assert.Equal(t, "passphrase: [REDACTED]", config.RedactText("passphrase: xyz"))
+	})
+
+	t.Run("zero value of PatternKind is the key kind", func(t *testing.T) {
+		// A pattern written without an explicit Kind must fall into the keyed-value rule,
+		// which is the interpretation that assumes the least about the input.
+		config, err := NewConfig(WithAdditionalKeyValuePatterns(
+			KeyValuePattern{Literal: "passphrase"}))
+		require.NoError(t, err)
+		assert.Equal(t, "passphrase: [REDACTED]", config.RedactText("passphrase: xyz"))
+	})
+}
+
+// TestRedactText_ExistingBehaviorPreserved tests that the shapes handled by the
+// header-value and next-token rules are unchanged.
+//
+// The first three rows overlap with TestRedactText_HeaderValuePatterns and
+// TestRedactText_PrefixPatterns on purpose: those tests describe what the header
+// and next-token rules do, while this one is the regression guard that the
+// keyed-value rule's new alternatives did not reach into them.
+func TestRedactText_ExistingBehaviorPreserved(t *testing.T) {
+	config := DefaultConfig()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "authorization header keeps scheme",
+			input:    "Authorization: Bearer xxx",
+			expected: "Authorization: Bearer [REDACTED]",
+		},
+		{
+			name:     "bearer prefix is preserved",
+			input:    "Bearer xxx",
+			expected: "Bearer [REDACTED]",
+		},
+		{
+			name:     "basic prefix is preserved",
+			input:    "Basic xxx",
+			expected: "Basic [REDACTED]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, config.RedactText(tt.input))
+		})
+	}
+
+	t.Run("prefix carrying its own equals redacts only the adjacent token", func(t *testing.T) {
+		// Before PatternKind existed, a key whose string contained "=" was routed to
+		// this rule by inspecting the string. That shape is now declared instead.
+		result := applyPattern(t, KeyValuePattern{Literal: "Authorization=", Kind: PatternKindNextToken}, "[REDACTED]", "Authorization=Bearer token")
+		assert.Equal(t, "Authorization=[REDACTED] token", result)
+	})
+}
+
+// TestRedactText_NoNewOverRedaction fixes the texts that must stay untouched, so
+// that widening the separator and quote coverage does not start redacting
+// ordinary diagnostic output.
+func TestRedactText_NoNewOverRedaction(t *testing.T) {
+	config := DefaultConfig()
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "common word key preceded by a space",
+			input: "Primary key: id",
+		},
+		{
+			name:  "common word key in prose preceded by a space",
+			input: "unexpected token: '}'",
+		},
+		{
+			name:  "common word key preceded by an opening bracket",
+			input: "map[key:value]",
+		},
+		{
+			name:  "common word key preceded by an opening brace",
+			input: "configMapKeyRef: {key: LOG_LEVEL}",
+		},
+		{
+			name:  "key name continues into another word",
+			input: "keyboard: qwerty",
+		},
+		{
+			name:  "key name is a path segment",
+			input: "/usr/local/key/path",
+		},
+		{
+			name:  "flag that matches no key",
+			input: "--timeout=30",
+		},
+		{
+			name:  "separator is not allowed to span a newline",
+			input: "password:\nsecret",
+		},
+		{
+			// An object value has no whitespace to stop at, so redacting it would
+			// delete every sibling field and leave the line unparseable.
+			name:  "compact json object value",
+			input: `{"password":{"a":1},"port":80}`,
+		},
+		{
+			name:  "compact json array value",
+			input: `{"api_key":["a","b"],"port":80}`,
+		},
+		{
+			name:  "brace value after a colon separator",
+			input: "password: {json: here} trailing",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.input, config.RedactText(tt.input))
+		})
+	}
+}
+
+// TestRedactText_IntentionalOverRedaction fixes the shapes that are newly
+// redacted even though they hold no secret. Neither can be told apart from a
+// real secret by the key name and the shape alone, and excluding either would
+// also stop a required shape from being redacted.
+func TestRedactText_IntentionalOverRedaction(t *testing.T) {
+	config := DefaultConfig()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			// A common-word key quoted as a structured-data field name. Excluding
+			// this would also stop the JSON shape from being redacted at all.
+			name:     "common word key as a json field name",
+			input:    `"key": "us-east-1"`,
+			expected: `"key": "[REDACTED]"`,
+		},
+		{
+			// A specific key followed by a colon in prose. This is the same shape
+			// as "password: secret", which must be redacted, so the two cannot be
+			// told apart; the first word of the message is lost.
+			name:     "specific key followed by prose",
+			input:    "failed to read password: permission denied",
+			expected: "failed to read password: [REDACTED] denied",
+		},
+		{
+			name:     "specific key followed by prose mid-sentence",
+			input:    "could not parse api_key: unexpected EOF",
+			expected: "could not parse api_key: [REDACTED] EOF",
+		},
+		{
+			// The loose boundary of the double-quoted alternative applies to the
+			// key name, so a common-word key takes it mid-sentence too, not only
+			// at the start of a line.
+			name:     "common word key quoted mid-sentence",
+			input:    `Please set token="my note" before continuing`,
+			expected: `Please set token="[REDACTED]" before continuing`,
+		},
+		{
+			// A common-word key is not exempt from the prose case either: the
+			// strict boundary only rules out a preceding space, so an identifier
+			// character in front of the key admits the separated alternative.
+			name:     "common word key after a hyphen followed by prose",
+			input:    "Public-key: not supported",
+			expected: "Public-key: [REDACTED] supported",
+		},
+		{
+			name:     "common word key after a dot followed by prose",
+			input:    "unable to open id_rsa.key: permission denied",
+			expected: "unable to open id_rsa.key: [REDACTED] denied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, config.RedactText(tt.input))
+		})
+	}
+}
+
+// TestRedactText_CommonWordKeyGapKnownLimits fixes the shapes a common-word key
+// does not catch, so that the gap reads as decided rather than overlooked. Its
+// cause is the strict boundary, which counts neither a space nor the start of
+// the text: see 02_architecture.md 3.2.6, which argues the gap costs less than
+// redacting "Primary key: id" and every diagnostic shaped like it.
+func TestRedactText_CommonWordKeyGapKnownLimits(t *testing.T) {
+	config := DefaultConfig()
+
+	// The colon form is the YAML shape named in 3.2.6. The "=" form has the same
+	// cause but is not saved by the adjacent alternative, which needs the "="
+	// to sit against the key.
+	for _, input := range []string{
+		"token: ghp_short",
+		"secret = abc",
+		"token = abc",
+		"key = abc",
+	} {
+		t.Run(input, func(t *testing.T) {
+			assert.Equal(t, input, config.RedactText(input))
+		})
+	}
+
+	// The shapes that do catch, kept alongside so the gap's edges are visible:
+	// a quoted value takes the loose boundary, and "=" against the key falls to
+	// the adjacent alternative.
+	t.Run("quoted value is caught", func(t *testing.T) {
+		assert.Equal(t, `secret = "[REDACTED]"`, config.RedactText(`secret = "abc"`))
+	})
+	t.Run("separator against the key is caught", func(t *testing.T) {
+		assert.Equal(t, "secret=[REDACTED]", config.RedactText("secret=abc"))
+	})
+}
+
+// TestRedactText_LongTextUnchanged tests that a long text holding nothing to
+// redact is returned unchanged.
+func TestRedactText_LongTextUnchanged(t *testing.T) {
+	config := DefaultConfig()
+
+	const line = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod\n"
+	var sb strings.Builder
+	for sb.Len() < 10*1024 {
+		sb.WriteString(line)
+	}
+	input := sb.String()
+
+	assert.Equal(t, input, config.RedactText(input))
+}
+
+// TestRedactText_CaseAndNonASCII fixes the shapes an ASCII-only shortcut around
+// the key patterns would get wrong: keys are matched case-insensitively under
+// Unicode rules, and a key stays matchable when the surrounding text is not
+// ASCII.
+func TestRedactText_CaseAndNonASCII(t *testing.T) {
+	config := DefaultConfig()
+
+	t.Run("key match stays case-insensitive", func(t *testing.T) {
+		for _, input := range []string{"password=s3cr3t", "PASSWORD=s3cr3t", "PaSsWoRd=s3cr3t"} {
+			assert.Equal(t, "[REDACTED]", strings.SplitN(config.RedactText(input), "=", 2)[1],
+				"input %q", input)
+		}
+	})
+
+	t.Run("non-ascii text is still redacted", func(t *testing.T) {
+		// Go's regexp folds case under Unicode rules, so (?i)s matches U+017F
+		// LATIN SMALL LETTER LONG S and the key pattern matches "paſſword". An
+		// ASCII lower-casing leaves that rune alone, so any byte-wise shortcut
+		// added in front of the regex would call this a miss and leak the value.
+		assert.Equal(t, "paſſword=[REDACTED]", config.RedactText("paſſword=s3cr3t"))
+
+		// Ordinary non-ASCII text around an ASCII key must still be redacted.
+		assert.Equal(t, "日本語 password=[REDACTED]", config.RedactText("日本語 password=s3cr3t"))
+	})
+
+	t.Run("redaction of one key does not hide a later key", func(t *testing.T) {
+		// Each key rewrites the text for the keys that follow it, so a rewrite
+		// must not consume or mask a later key's match.
+		assert.Equal(t, "password=[REDACTED] api_key=[REDACTED]",
+			config.RedactText("password=s3cr3t api_key=a1b2c3"))
+	})
 }
 
 // TestRedactLogAttribute_SensitiveKeys tests redaction of sensitive key names
@@ -545,7 +1187,7 @@ func TestNewRedactingHandler(t *testing.T) {
 
 		assert.NotNil(t, handler)
 		assert.NotNil(t, handler.config)
-		assert.Equal(t, "[REDACTED]", handler.config.Placeholder)
+		assert.Equal(t, "[REDACTED]", handler.config.placeholder)
 	})
 }
 
@@ -866,228 +1508,339 @@ func TestRedactingHandler_WithGroup(t *testing.T) {
 	assert.Len(t, originalMock.groups, 0)
 }
 
-// TestPerformKeyValueRedaction tests the routing logic
+// TestPerformKeyValueRedaction tests that each kind is dispatched to its rule.
 func TestPerformKeyValueRedaction(t *testing.T) {
-	config := DefaultConfig()
-
 	tests := []struct {
 		name        string
 		text        string
-		key         string
+		pattern     KeyValuePattern
 		placeholder string
 		expected    string
 	}{
 		{
-			name:        "colon pattern",
+			name:        "header kind",
 			text:        "Authorization: Bearer token",
-			key:         "Authorization: ",
+			pattern:     KeyValuePattern{Literal: "Authorization", Kind: PatternKindHeaderValue},
 			placeholder: "[REDACTED]",
 			expected:    "Authorization: Bearer [REDACTED]",
 		},
 		{
-			name:        "space pattern",
+			name:        "prefix kind",
 			text:        "Bearer token123",
-			key:         "Bearer ",
+			pattern:     KeyValuePattern{Literal: "Bearer ", Kind: PatternKindNextToken},
 			placeholder: "[REDACTED]",
 			expected:    "Bearer [REDACTED]",
 		},
 		{
-			name:        "key=value pattern",
+			name:        "key kind",
 			text:        "password=secret",
-			key:         "password",
+			pattern:     KeyValuePattern{Literal: "password", Kind: PatternKindKeyedValue},
 			placeholder: "[REDACTED]",
 			expected:    "password=[REDACTED]",
 		},
+		{
+			// The same literal now means different things depending on the kind it
+			// declares, which is the point of making the kind explicit: nothing is
+			// inferred from the colon or the space in the string.
+			name:        "a value containing a colon is not forced onto the header-value rule",
+			text:        "Authorization: Bearer token",
+			pattern:     KeyValuePattern{Literal: "Authorization: ", Kind: PatternKindNextToken},
+			placeholder: "[REDACTED]",
+			expected:    "Authorization: [REDACTED] token",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := config.performKeyValueRedaction(tt.text, tt.key, tt.placeholder)
+			result := applyPattern(t, tt.pattern, tt.placeholder, tt.text)
 			assert.Equal(t, tt.expected, result)
+		})
+	}
+
+	t.Run("unknown kind never reaches the redaction path", func(t *testing.T) {
+		// Compiling at construction turns this from a run-time branch into a
+		// wiring-time error. That is what makes it safe: RedactText runs inside
+		// RedactingHandler.Handle, where slog.Default() is that same handler, so a
+		// failure reported from there would be redacted by the Config that produced
+		// it and recurse. NewConfig can report it; RedactText could not.
+		unknown := KeyValuePattern{Literal: "password", Kind: PatternKind(99)}
+
+		_, err := compilePattern(unknown, "[REDACTED]")
+		assert.ErrorIs(t, err, ErrPatternKindUnknown)
+
+		cfg, err := NewConfig(WithAdditionalKeyValuePatterns(unknown))
+		assert.Nil(t, cfg)
+		assert.ErrorIs(t, err, ErrPatternKindUnknown)
+	})
+}
+
+// TestKeyValuePattern_SeparatorSuppliedByRule fixes what happens when a Value
+// spells out a separator that its own rule already supplies. This is the shape
+// these patterns had before PatternKind existed, and matching the separator
+// twice would silently redact nothing, so it is normalized away instead.
+func TestKeyValuePattern_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern KeyValuePattern
+		wantErr error
+	}{
+		{
+			name:    "bare key name",
+			pattern: KeyValuePattern{Literal: "password", Kind: PatternKindKeyedValue},
+		},
+		{
+			name:    "bare header name",
+			pattern: KeyValuePattern{Literal: "Authorization", Kind: PatternKindHeaderValue},
+		},
+		{
+			// The one kind defined by carrying its own separator, so a trailing
+			// space is required rather than rejected.
+			name:    "auth scheme keeps its trailing space",
+			pattern: KeyValuePattern{Literal: "Bearer ", Kind: PatternKindNextToken},
+		},
+		{
+			name:    "key name repeating the equals sign",
+			pattern: KeyValuePattern{Literal: "password=", Kind: PatternKindKeyedValue},
+			wantErr: ErrPatternSeparatorRedundant,
+		},
+		{
+			name:    "key name repeating a colon",
+			pattern: KeyValuePattern{Literal: "password:", Kind: PatternKindKeyedValue},
+			wantErr: ErrPatternSeparatorRedundant,
+		},
+		{
+			name:    "header name repeating the colon and space",
+			pattern: KeyValuePattern{Literal: "Authorization: ", Kind: PatternKindHeaderValue},
+			wantErr: ErrPatternSeparatorRedundant,
+		},
+		{
+			name:    "header name repeating a bare colon",
+			pattern: KeyValuePattern{Literal: "Authorization:", Kind: PatternKindHeaderValue},
+			wantErr: ErrPatternSeparatorRedundant,
+		},
+		{
+			name:    "empty literal",
+			pattern: KeyValuePattern{Literal: "", Kind: PatternKindKeyedValue},
+			wantErr: ErrPatternLiteralEmpty,
+		},
+		{
+			name:    "unknown kind",
+			pattern: KeyValuePattern{Literal: "password", Kind: PatternKind(99)},
+			wantErr: ErrPatternKindUnknown,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.pattern.validate()
+			if tt.wantErr == nil {
+				assert.NoError(t, err)
+				return
+			}
+			assert.ErrorIs(t, err, tt.wantErr)
 		})
 	}
 }
 
-// TestPerformSpacePatternRedaction tests space pattern handling details
-func TestPerformSpacePatternRedaction(t *testing.T) {
-	config := DefaultConfig()
-
+// TestKeyValuePattern_RedundantSeparatorWouldFailOpen shows why validate exists
+// rather than a comment: a rejected pattern is not merely unconventional, it
+// redacts nothing at all. Left unchecked the secret would go out in the clear,
+// which is why the mistake has to surface as a failure instead of being
+// normalized away into something that looks like it works.
+func TestKeyValuePattern_RedundantSeparatorWouldFailOpen(t *testing.T) {
 	tests := []struct {
-		name        string
-		text        string
-		pattern     string
-		placeholder string
-		expected    string
+		name    string
+		pattern KeyValuePattern
+		input   string
 	}{
 		{
-			name:        "simple Bearer",
-			text:        "Bearer abc123",
-			pattern:     "Bearer ",
-			placeholder: "***",
-			expected:    "Bearer ***",
+			name:    "key name repeating the equals sign",
+			pattern: KeyValuePattern{Literal: "password=", Kind: PatternKindKeyedValue},
+			input:   "password=s3cr3t",
 		},
 		{
-			name:        "case insensitive",
-			text:        "bearer token",
-			pattern:     "Bearer ",
-			placeholder: "***",
-			expected:    "bearer ***",
-		},
-		{
-			name:        "preserves original case",
-			text:        "BeArEr secret",
-			pattern:     "Bearer ",
-			placeholder: "***",
-			expected:    "BeArEr ***",
-		},
-		{
-			name:        "multiple occurrences",
-			text:        "Bearer abc Bearer xyz",
-			pattern:     "Bearer ",
-			placeholder: "***",
-			expected:    "Bearer *** Bearer ***",
-		},
-		{
-			name:        "no match returns original",
-			text:        "no match here",
-			pattern:     "Bearer ",
-			placeholder: "***",
-			expected:    "no match here",
+			name:    "header name repeating the colon and space",
+			pattern: KeyValuePattern{Literal: "Authorization: ", Kind: PatternKindHeaderValue},
+			input:   "Authorization: s3cr3t",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := config.performSpacePatternRedaction(tt.text, tt.pattern, tt.placeholder)
-			assert.Equal(t, tt.expected, result)
+			require.Error(t, tt.pattern.validate(), "precondition: validate must reject this pattern")
+			assert.Equal(t, tt.input,
+				applyPattern(t, tt.pattern, "[REDACTED]", tt.input),
+				"a rejected pattern silently redacts nothing - this is the failure validate prevents")
 		})
 	}
 }
 
-// TestPerformColonPatternRedaction tests colon pattern handling details
-func TestPerformColonPatternRedaction(t *testing.T) {
+// TestRedactText_ConcurrentUse verifies that one Config shared across goroutines
+// produces the single-threaded result (AC-32). Precompiling moved the regexes
+// into the Config, so what this now guards is that they are only ever read after
+// NewConfig returns - a compiled *regexp.Regexp is safe for concurrent use, but
+// building one during a call would not have been. Runs under -race in CI.
+func TestRedactText_ConcurrentUse(t *testing.T) {
 	config := DefaultConfig()
+	const input = "password=secret123 token=abc123 Authorization: Bearer xyz"
+	want := config.RedactText(input)
 
-	tests := []struct {
-		name        string
-		text        string
-		pattern     string
-		placeholder string
-		expected    string
-	}{
-		{
-			name:        "with Bearer scheme",
-			text:        "Authorization: Bearer token123",
-			pattern:     "Authorization: ",
-			placeholder: "***",
-			expected:    "Authorization: Bearer ***",
-		},
-		{
-			name:        "with Basic scheme",
-			text:        "Authorization: Basic dGVzdA==",
-			pattern:     "Authorization: ",
-			placeholder: "***",
-			expected:    "Authorization: Basic ***",
-		},
-		{
-			name:        "no scheme",
-			text:        "Authorization: token123",
-			pattern:     "Authorization: ",
-			placeholder: "***",
-			expected:    "Authorization: ***",
-		},
-		{
-			name:        "no space after colon",
-			text:        "Authorization:token",
-			pattern:     "Authorization:",
-			placeholder: "***",
-			expected:    "Authorization:***",
-		},
-		{
-			name:        "with space after colon",
-			text:        "Authorization: token",
-			pattern:     "Authorization:",
-			placeholder: "***",
-			expected:    "Authorization: ***",
-		},
-		{
-			name:        "case insensitive pattern",
-			text:        "authorization: bearer secret",
-			pattern:     "Authorization: ",
-			placeholder: "***",
-			expected:    "authorization: bearer ***",
-		},
-		{
-			name:        "preserves whitespace",
-			text:        "Authorization:\t\tBearer token",
-			pattern:     "Authorization:",
-			placeholder: "***",
-			expected:    "Authorization:\t\tBearer ***",
-		},
+	const goroutines = 32
+	results := make([]string, goroutines)
+	var wg sync.WaitGroup
+	for i := range goroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i] = config.RedactText(input)
+		}()
 	}
+	wg.Wait()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := config.performColonPatternRedaction(tt.text, tt.pattern, tt.placeholder)
-			assert.Equal(t, tt.expected, result)
+	for i, got := range results {
+		assert.Equal(t, want, got, "goroutine %d must produce the single-threaded result", i)
+	}
+}
+
+// TestNewConfig_RejectsInvalidPatterns checks the constructor boundary: patterns
+// added through the supported extension point are validated exactly like the
+// defaults, so the extension point cannot be used to smuggle in a pattern that
+// redacts nothing.
+func TestNewConfig_RejectsInvalidPatterns(t *testing.T) {
+	t.Run("valid addition is accepted and applied", func(t *testing.T) {
+		cfg, err := NewConfig(WithAdditionalKeyValuePatterns(
+			KeyValuePattern{Literal: "passphrase", Kind: PatternKindKeyedValue}))
+		require.NoError(t, err)
+		assert.Equal(t, "passphrase: [REDACTED]", cfg.RedactText("passphrase: xyz"))
+		// The defaults are still in place alongside the addition.
+		assert.Equal(t, "password=[REDACTED]", cfg.RedactText("password=xyz"))
+	})
+
+	t.Run("invalid addition is rejected", func(t *testing.T) {
+		cfg, err := NewConfig(WithAdditionalKeyValuePatterns(
+			KeyValuePattern{Literal: "passphrase=", Kind: PatternKindKeyedValue}))
+		assert.Nil(t, cfg, "no Config may escape the constructor when a pattern is invalid")
+		assert.ErrorIs(t, err, ErrPatternSeparatorRedundant)
+	})
+
+	t.Run("placeholder reaches both redaction layers", func(t *testing.T) {
+		cfg, err := NewConfig(WithPlaceholder("<gone>"))
+		require.NoError(t, err)
+		assert.Equal(t, "<gone>", cfg.Placeholder())
+		// Key-name layer.
+		assert.Equal(t, "password=<gone>", cfg.RedactText("password=xyz"))
+		// Value-format layer, which is built from the same placeholder.
+		assert.Equal(t, "<gone>", cfg.RedactText("AKIAIOSFODNN7EXAMPLE"))
+	})
+}
+
+// TestConfig_ZeroValueFailsSecure covers the one construction the type system
+// still allows from outside the package. A zero Config holds no patterns, so
+// every redaction step would be skipped and the input returned untouched;
+// the entry points suppress the output instead of passing the secret through.
+func TestConfig_ZeroValueFailsSecure(t *testing.T) {
+	var zero Config
+
+	t.Run("RedactText suppresses instead of passing through", func(t *testing.T) {
+		assert.Equal(t, RedactionFailurePlaceholder, zero.RedactText("password=s3cr3t"))
+	})
+
+	t.Run("empty input is still empty", func(t *testing.T) {
+		// Nothing to leak, so the empty-string fast path stays ahead of the guard.
+		assert.Equal(t, "", zero.RedactText(""))
+	})
+
+	t.Run("RedactLogAttribute suppresses instead of nil-panicking", func(t *testing.T) {
+		got := zero.RedactLogAttribute(slog.String("msg", "password=s3cr3t"))
+		assert.Equal(t, RedactionFailurePlaceholder, got.Value.String())
+	})
+
+	t.Run("NewRedactingHandler refuses it at wiring time", func(t *testing.T) {
+		base := slog.NewTextHandler(io.Discard, nil)
+		assert.Panics(t, func() {
+			NewRedactingHandler(base, &Config{}, slog.New(base))
+		}, "an unbuilt Config must be rejected where the message can still be acted on")
+	})
+}
+
+// TestDefaultKeyValuePatterns_AreValid is the guard that makes validate useful:
+// it fails the build when a default pattern is edited into a shape that would
+// redact nothing.
+func TestDefaultKeyValuePatterns_AreValid(t *testing.T) {
+	for _, p := range DefaultKeyValuePatterns() {
+		t.Run(p.Literal, func(t *testing.T) {
+			assert.NoError(t, p.validate())
 		})
 	}
 }
 
-// TestPerformKeyValuePatternRedaction tests key=value pattern handling details
-func TestPerformKeyValuePatternRedaction(t *testing.T) {
-	config := DefaultConfig()
+// TestKeyedValueKindDominatesNextTokenKind fixes the asymmetry that makes the
+// choice between the two kinds unambiguous when the text is a key/value pair.
+// Both declarations below are valid ways to write "redact what follows
+// password", so an author has to choose; whatever the next-token rule redacts
+// the keyed-value rule redacts too, and it reaches shapes the next-token rule
+// cannot, so the choice is never a trade-off.
+//
+// Without this test the two kinds could drift into a genuine trade-off, and the
+// guidance on PatternKind would quietly stop being true.
+func TestKeyedValueKindDominatesNextTokenKind(t *testing.T) {
+	// The key rule builds the separator, the next-token rule carries it. Both
+	// spellings are valid per validate; only the literals differ.
+	asKey := KeyValuePattern{Literal: "password", Kind: PatternKindKeyedValue}
+	asPrefix := KeyValuePattern{Literal: "password=", Kind: PatternKindNextToken}
+	require.NoError(t, asKey.validate())
+	require.NoError(t, asPrefix.validate())
 
-	tests := []struct {
-		name        string
-		text        string
-		key         string
-		placeholder string
-		expected    string
-	}{
-		{
-			name:        "simple key=value",
-			text:        "password=secret",
-			key:         "password",
-			placeholder: "***",
-			expected:    "password=***",
-		},
-		{
-			name:        "key with equals",
-			text:        "Authorization=Bearer token",
-			key:         "Authorization=",
-			placeholder: "***",
-			expected:    "Authorization=*** token", // Only "Bearer" is redacted, " token" remains
-		},
-		{
-			name:        "case insensitive",
-			text:        "PASSWORD=secret",
-			key:         "password",
-			placeholder: "***",
-			expected:    "PASSWORD=***",
-		},
-		{
-			name:        "preserves case",
-			text:        "PaSsWoRd=test",
-			key:         "password",
-			placeholder: "***",
-			expected:    "PaSsWoRd=***",
-		},
-		{
-			name:        "multiple matches",
-			text:        "password=abc token=xyz password=def",
-			key:         "password",
-			placeholder: "***",
-			expected:    "password=*** token=xyz password=***",
-		},
-	}
+	t.Run("key redacts everything prefix does", func(t *testing.T) {
+		for _, input := range []string{
+			"password=secret",
+			"xpassword=secret",
+			"PaSsWoRd=secret",
+		} {
+			assert.Equal(t,
+				applyPattern(t, asPrefix, "[REDACTED]", input),
+				applyPattern(t, asKey, "[REDACTED]", input),
+				"input %q", input)
+		}
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := config.performKeyValuePatternRedaction(tt.text, tt.key, tt.placeholder)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
+	t.Run("key reaches separators prefix cannot", func(t *testing.T) {
+		for _, input := range []string{
+			"password: secret",
+			"password = secret",
+			`"password": "secret"`,
+		} {
+			assert.Equal(t, input, applyPattern(t, asPrefix, "[REDACTED]", input),
+				"next-token rule is expected to miss %q", input)
+			assert.NotContains(t, applyPattern(t, asKey, "[REDACTED]", input), "secret",
+				"keyed-value rule must redact %q", input)
+		}
+	})
+
+	t.Run("prefix leaks the tail of a quoted value that key redacts whole", func(t *testing.T) {
+		const input = `password="a b"`
+		assert.Equal(t, `password=[REDACTED] b"`,
+			applyPattern(t, asPrefix, "[REDACTED]", input))
+		assert.Equal(t, `password="[REDACTED]"`,
+			applyPattern(t, asKey, "[REDACTED]", input))
+	})
+}
+
+// TestKeyValueRules_PlaceholderWithDollar guards the replacement-string
+// expansion used by the next-token and header-value rules: a placeholder with "$1"
+// must be emitted literally, never expanded back into the secret it replaced.
+func TestKeyValueRules_PlaceholderWithDollar(t *testing.T) {
+	t.Run("next-token rule", func(t *testing.T) {
+		result := applyPattern(t, KeyValuePattern{Literal: "Bearer ", Kind: PatternKindNextToken}, "$1", "Bearer s3cr3t")
+		assert.Equal(t, "Bearer $1", result)
+		assert.NotContains(t, result, "s3cr3t")
+	})
+
+	t.Run("header-value rule", func(t *testing.T) {
+		result := applyPattern(t, KeyValuePattern{Literal: "Authorization", Kind: PatternKindHeaderValue}, "$1", "Authorization: s3cr3t")
+		assert.Equal(t, "Authorization: $1", result)
+		assert.NotContains(t, result, "s3cr3t")
+	})
 }
 
 // TestRedactLogAttribute_StringWithKeyValuePatterns tests that log attributes containing
@@ -1478,31 +2231,87 @@ func TestRedactingHandler_NonLogValuer(t *testing.T) {
 	assert.Contains(t, output, "3.14")
 }
 
-// TestRedactionContext_DepthTracking tests depth tracking
-func TestRedactionContext_DepthTracking(t *testing.T) {
-	ctx1 := redactionContext{depth: 0}
-	assert.Equal(t, 0, ctx1.depth)
-
-	ctx2 := redactionContext{depth: 5}
-	assert.Equal(t, 5, ctx2.depth)
-
-	// Test depth limit
-	assert.True(t, ctx2.depth < maxRedactionDepth)
-
-	ctxLimit := redactionContext{depth: maxRedactionDepth}
-	assert.Equal(t, maxRedactionDepth, ctxLimit.depth)
+// exportedFieldError is an error whose fields are exported, so the struct walk
+// would produce a field map for it rather than suppressing it. Its Error() is
+// still the message that belongs in the log.
+type exportedFieldError struct {
+	Op   string
+	Path string
 }
 
-// TestRedactionFailurePlaceholder tests the failure placeholder constant
-func TestRedactionFailurePlaceholder(t *testing.T) {
-	assert.Equal(t, "[REDACTION FAILED - OUTPUT SUPPRESSED]", RedactionFailurePlaceholder)
-	assert.NotEqual(t, "[REDACTED]", RedactionFailurePlaceholder)
-}
+func (e *exportedFieldError) Error() string { return e.Op + " " + e.Path }
 
-// TestMaxRedactionDepth tests the depth limit constant
-func TestMaxRedactionDepth(t *testing.T) {
-	assert.Equal(t, 10, maxRedactionDepth)
-	assert.True(t, maxRedactionDepth > 0)
+// logValuerError implements both error and slog.LogValuer to fix which of the
+// two the handler honours.
+type logValuerError struct{}
+
+func (logValuerError) Error() string { return "error message" }
+
+func (logValuerError) LogValue() slog.Value { return slog.StringValue("logvalue message") }
+
+// panickingError panics from Error(), the way panickingLogValuer panics from
+// LogValue().
+type panickingError struct{}
+
+func (panickingError) Error() string { panic("test error panic") }
+
+// TestRedactingHandler_ErrorValue covers error values logged as attributes. The
+// standard error types hold their message behind Error() and expose no field, so
+// walking them as structs suppressed every message; these cases fix that the
+// message survives and is redacted like a string.
+func TestRedactingHandler_ErrorValue(t *testing.T) {
+	logWithError := func(t *testing.T, errValue error) string {
+		t.Helper()
+		var buf bytes.Buffer
+		handler := NewRedactingHandler(slog.NewTextHandler(&buf, nil), DefaultConfig(), nil)
+		slog.New(handler).LogAttrs(context.Background(), slog.LevelError, "msg", slog.Any("error", errValue))
+		return buf.String()
+	}
+
+	tests := []struct {
+		name     string
+		err      error
+		contains string
+	}{
+		{name: "errors.New", err: errors.New("ld.so.cache not found"), contains: "ld.so.cache not found"},
+		{
+			name:     "wrapped with fmt.Errorf",
+			err:      fmt.Errorf("verification failed: %w", errors.New("hash mismatch")),
+			contains: "verification failed: hash mismatch",
+		},
+		{
+			name:     "Error() wins over exported fields",
+			err:      &exportedFieldError{Op: "open", Path: "/etc/config.toml"},
+			contains: "open /etc/config.toml",
+		},
+		{name: "LogValuer wins over Error()", err: logValuerError{}, contains: "logvalue message"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := logWithError(t, tt.err)
+			assert.Contains(t, output, tt.contains)
+			assert.NotContains(t, output, RedactionFailurePlaceholder)
+		})
+	}
+
+	t.Run("secrets in the message are redacted", func(t *testing.T) {
+		output := logWithError(t, fmt.Errorf("login failed: password=s3cr3t"))
+		assert.Contains(t, output, "login failed: password=[REDACTED]")
+		assert.NotContains(t, output, "s3cr3t")
+	})
+
+	t.Run("panicking Error fails secure", func(t *testing.T) {
+		output := logWithError(t, panickingError{})
+		assert.Contains(t, output, RedactionFailurePlaceholder)
+		assert.NotContains(t, output, "test error panic")
+	})
+
+	t.Run("nil pointer error is not called", func(t *testing.T) {
+		var typedNil *exportedFieldError
+		output := logWithError(t, typedNil)
+		assert.NotContains(t, output, RedactionFailurePlaceholder)
+	})
 }
 
 // TestRedactingHandler_SliceTypeConversion tests and documents the type conversion behavior
@@ -2430,29 +3239,29 @@ func TestProductionLoggerSetup(t *testing.T) {
 func TestRedactText_ValueBasedDetection(t *testing.T) {
 	config := DefaultConfig()
 
+	// Every input below is deliberately free of a recognizable key name. Writing
+	// them as "GITHUB_TOKEN=ghp_..." - which is how this table started out - lets
+	// the key-name layer redact them, so the assertions pass whether or not the
+	// value detector ran at all. The subtest guards against that directly.
 	tests := []struct {
 		name  string
 		input string
 	}{
 		{
 			name:  "AWS access key ID is masked",
-			input: "export KEY=AKIAIOSFODNN7EXAMPLE",
+			input: "restoring snapshot AKIAIOSFODNN7EXAMPLE from archive",
 		},
 		{
 			name:  "GitHub token ghp_ is masked",
-			input: "GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789ab",
+			input: "cloning as ghp_abcdefghijklmnopqrstuvwxyz0123456789ab over https",
 		},
 		{
 			name:  "Slack bot token is masked",
-			input: "SLACK_TOKEN=" + "xoxb-" + "999999999999-888888888888-zzzzzzzzzzzzzzzzzzzz",
+			input: "posting with " + "xoxb-" + "999999999999-888888888888-zzzzzzzzzzzzzzzzzzzz to #alerts",
 		},
 		{
 			name:  "PEM private key block is masked",
-			input: "key data:\n-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----",
-		},
-		{
-			name:  "Bearer token is masked",
-			input: "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc",
+			input: "captured output:\n-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----",
 		},
 		{
 			name:  "URL credentials are masked",
@@ -2464,8 +3273,17 @@ func TestRedactText_ValueBasedDetection(t *testing.T) {
 		},
 	}
 
+	// A Config with the value detector removed, used to prove that the key-name
+	// layer leaves each input alone and so cannot be the thing that redacts it.
+	keyNameOnly, err := NewConfig()
+	require.NoError(t, err)
+	keyNameOnly.valueDetector = nil
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.input, keyNameOnly.RedactText(tt.input),
+				"input must carry no key name, or this case proves nothing about value-format detection")
+
 			result := config.RedactText(tt.input)
 			assert.NotEqual(t, tt.input, result,
 				"RedactText should modify input by masking sensitive values")
@@ -2475,16 +3293,30 @@ func TestRedactText_ValueBasedDetection(t *testing.T) {
 	}
 }
 
-// TestRedactText_ValueBasedDetection_BypassWhenNil verifies that when ValueDetector
-// is nil, RedactText still works with key=value patterns but skips value-based detection.
-// This ensures backward compatibility for callers that construct Config directly.
+// TestRedactText_BearerTokenIsCoveredByBothLayers records why the Bearer case is
+// not in the table above. The detector's bearerToken pattern anchors on the same
+// "Bearer " literal that PatternKindNextToken matches, so no input can isolate
+// one layer from the other. The detector's own coverage of the format lives in
+// value_detector_test.go; what matters here is only that the combined result
+// masks the token.
+func TestRedactText_BearerTokenIsCoveredByBothLayers(t *testing.T) {
+	config := DefaultConfig()
+	const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc"
+
+	result := config.RedactText("Authorization: Bearer " + jwt)
+	assert.NotContains(t, result, jwt)
+	assert.Contains(t, result, "[REDACTED]")
+}
+
+// TestRedactText_ValueBasedDetection_BypassWhenNil verifies that when the value
+// detector is nil, RedactText still applies the key-name patterns and skips
+// value-based detection rather than panicking. NewConfig always wires a
+// detector, so this pins the nil guard for the in-package construction that can
+// still leave it unset.
 func TestRedactText_ValueBasedDetection_BypassWhenNil(t *testing.T) {
-	config := Config{
-		Placeholder:      "[HIDDEN]",
-		Patterns:         DefaultSensitivePatterns(),
-		KeyValuePatterns: []string{"password"},
-		ValueDetector:    nil, // explicitly nil
-	}
+	config, err := NewConfig(WithPlaceholder("[HIDDEN]"))
+	require.NoError(t, err)
+	config.valueDetector = nil // the state under test
 
 	// Key=value pattern should still work
 	result := config.RedactText("password=secret value AKIAIOSFODNN7EXAMPLE")
@@ -2506,7 +3338,7 @@ func TestRedactText_ValueBasedDetection_DefaultConfigMasksByDefault(t *testing.T
 
 	assert.NotContains(t, result, "AKIAIOSFODNN7EXAMPLE",
 		"DefaultConfig must mask known secret value formats by default (AC-11)")
-	assert.Contains(t, result, config.Placeholder)
+	assert.Contains(t, result, config.placeholder)
 }
 
 // TestRedactingHandler_ValueBasedDetection_Layer2 verifies that the RedactingHandler
