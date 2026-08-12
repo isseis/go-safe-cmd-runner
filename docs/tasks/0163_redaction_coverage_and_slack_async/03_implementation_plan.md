@@ -215,10 +215,10 @@
 - [x] `TestRedactText_SeparatorVariants`: `password: secret`、`password = secret`、`password :secret`、`password=\tsecret` の置換。複数一致と行をまたぐ入力も含め、各ケースで `assert.NotContains` により値の断片が残らないことを確かめる。
 - [x] `TestRedactText_AlternativePriority`: `password="abc def"` が V1 ではなく V3 として処理されること（結果に ` def"` が残らないこと）と、`monkey="a b"` が V1 へ落ちて `monkey=[REDACTED] b"` になること。
 - [x] `TestRedactText_KeyGroupBehavior`: `DefaultKeyValuePatterns()` の `PatternKindKeyedValue` の全キーを表駆動で回し、群ごとの期待値を固定する。群 C は先頭境界を課さないため V2 / V3 も無条件に適用される点に注意し、`_KEY=secret` / `_KEY: secret` / `_KEY = secret` / `_KEY="a b"` / `"_KEY": "secret"` の 5 形すべてが置換されることを明示的に固定する（「現行どおり」という曖昧な期待値にしない）。群 A は 3 形式すべて置換、群 B は二重引用符付きの値（緩い先頭境界。3.2.4 の例外）と識別子内境界（`_` / `-` / `.`）および引用符付きキー名のみ置換。
-- [x] `TestKeyBoundaryGroup_Classification`: 既定パターンのうち `PatternKindKeyedValue` のものが意図した群に落ちること、`PatternKindKeyedValue` 以外は群を参照しないこと、および `KeyValuePatterns` に `passphrase` を追加すると群 A として扱われること。`Kind` を省略した `KeyValuePattern` もキー値規則に落ちること（ゼロ値の契約）。
+- [x] `TestKeyBoundaryGroup_Classification`: 既定パターンのうち `PatternKindKeyedValue` のものが意図した群に落ちること、`PatternKindKeyedValue` 以外は群を参照しないこと、および `KeyValuePatterns` に `passphrase` を追加すると群 A として扱われること。**追加**: 追加したキーが一般語キー一覧に一致する場合（`Token`）は、誰が追加したかによらず群 B になること（大文字小文字は一覧の照合に影響しない）。群の判定はキー文字列から導かれ、`WithAdditionalKeyValuePatterns` 経由かどうかでは変わらない（02_architecture.md 3.2.4 の判定規則 5 が 6 に先行する）。`Kind` を省略した `KeyValuePattern` もキー値規則に落ちること（ゼロ値の契約）。
 - [x] `TestRedactText_ExistingBehaviorPreserved`: `Authorization: Bearer xxx`、`Bearer xxx`、`Basic xxx`、パターンが自前の `=` を含む場合の結果が現行と同一であること。
 - [x] `TestRedactText_NoNewOverRedaction`: 02_architecture.md 3.2.6 の「置換されない」行をすべて固定する（`Primary key: id`、`unexpected token: '}'`、`map[key:value]`、`configMapKeyRef: {key: LOG_LEVEL}`、`keyboard: qwerty`、`/usr/local/key/path`、`--timeout=30`、`password:\nsecret`）。群 B の先頭境界が半角スペース・`[`・`{` の 3 ケースを、それぞれ独立したテーブル行として明示する。**追加**: 値の先頭が `{` / `[` のため V2 を適用しない 3 ケース（`{"password":{"a":1},"port":80}`、`{"api_key":["a","b"],"port":80}`、`password: {json: here} trailing`）も固定する。
-- [x] `TestRedactText_IntentionalOverRedaction`: `"key": "us-east-1"` が `"key": "[REDACTED]"` になること（第 1 類）。**追加**: 群 A のキーが散文中でコロンを伴う第 2 類（`failed to read password: permission denied` → `... password: [REDACTED] denied`）も固定する。いずれも AC-09 の除外規定に該当する意図した変更である旨を英語コメントで残す。
+- [x] `TestRedactText_IntentionalOverRedaction`: `"key": "us-east-1"` が `"key": "[REDACTED]"` になること（第 1 類）。**追加**: 群 A のキーが散文中でコロンを伴う第 2 類（`failed to read password: permission denied` → `... password: [REDACTED] denied`）も固定する。**追加**: 群 B の二重引用符例外が緩めるのはキー名の先頭境界であって区切りと引用符の隣接ではないため、行頭に限らず散文の途中でも成立すること（`Please set token="my note" before continuing` → `Please set token="[REDACTED]" before continuing`）を固定する（02_architecture.md 3.2.4）。**追加**: 群 B のキーが識別子内境界（`-` / `.`）に続いて散文の前に現れる第 4 類（`Public-key: not supported`、`unable to open id_rsa.key: permission denied`）も固定する。いずれも AC-09 の除外規定に該当する意図した変更である旨を英語コメントで残す。
 - [x] `TestRedactText_LongTextUnchanged`: 置換対象を含まない 10 KB 程度のテキストに対し `RedactText` の戻り値が入力と一致すること。
 - [x] **追加** `TestRedactText_CaseAndNonASCII`: キー一致が大文字小文字を無視すること、非 ASCII のテキスト（`paſſword=s3cr3t`、`日本語 password=...`）でも置換されること、先行するキーの置換後に後続のキーが取りこぼされないこと。事前判定の撤回後も残す（素朴なバイト比較による最適化を将来足したときに落ちる網である）。
 
@@ -333,11 +333,11 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 **推奨タイトル**: `feat(0163): extend key-name redaction to separators and quoted values`
 
-**レビュー観点**: 群 A / 群 B / 群 C の先頭境界が 02_architecture.md 3.2.4 の表と一致すること / V3 → V2 → V1 の選択肢順が保たれ引用符付きの値が V1 へ落ちないこと / 既存テストの期待値の変更がステップ 2-4 に列挙したものに限られること（AC-08） / 新たな過剰 redaction が `"key": "us-east-1"` の 1 ケースに限られること（AC-09） / ステップ 2-3 の `error` 判定が `LogValuer` 判定より後にあり、`Error()` が recover の下で呼ばれていること / ステップ 2-4 で規則の選択がキー文字列の形から導出される箇所が残っていないこと（`performKeyValueRedaction` 以下に `strings.Contains(key, ...)` が残っていないこと）
+**レビュー観点**: 群 A / 群 B / 群 C の先頭境界が 02_architecture.md 3.2.4 の表と一致すること / V3 → V2 → V1 の選択肢順が保たれ引用符付きの値が V1 へ落ちないこと / 既存テストの期待値の変更がステップ 2-4 に列挙したものに限られること（AC-08） / 新たな過剰 redaction が `TestRedactText_IntentionalOverRedaction` に列挙したケースに限られること（AC-09。`"key": "us-east-1"` の第 1 類、群 A のコロンを伴う第 2 類、群 B の二重引用符例外が散文の途中で成立する第 3 類、群 B が識別子内境界に続く第 4 類） / ステップ 2-3 の `error` 判定が `LogValuer` 判定より後にあり、`Error()` が recover の下で呼ばれていること / ステップ 2-4 で規則の選択がキー文字列の形から導出される箇所が残っていないこと（`performKeyValueRedaction` 以下に `strings.Contains(key, ...)` が残っていないこと）
 
 **実装モデル要件**: frontier-required
 
-**判定理由**: redaction 層というセキュリティゲートそのものを書き換えるステップである（`mkplan.md` step 8 の panel-mode トリガ「security-gate」）。検出範囲を広げながら（AC-01〜AC-03）、既存の置換結果がバイト単位で変わらないこと（AC-08）と、新たな過剰 redaction が列挙した 1 ケースに限られること（AC-09）を同時に証明する必要があり、正規表現の選択肢順と先頭境界の設計を一度で正しく組む判断が要る。
+**判定理由**: redaction 層というセキュリティゲートそのものを書き換えるステップである（`mkplan.md` step 8 の panel-mode トリガ「security-gate」）。検出範囲を広げながら（AC-01〜AC-03）、既存の置換結果がバイト単位で変わらないこと（AC-08）と、新たな過剰 redaction が列挙したケースに限られること（AC-09）を同時に証明する必要があり、正規表現の選択肢順と先頭境界の設計を一度で正しく組む判断が要る。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
@@ -616,7 +616,7 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 - [ ] `docs/user/security-risk-assessment.ja.md` の「値ベース検出」の一覧（241〜249 行目付近）に 4 項目を追加する: GitHub fine-grained PAT（`github_pat_` プレフィックス）、Slack の追加プレフィックストークン（`xapp-`/`xoxe-`/`xoxs-`）、JWT（`eyJ` で始まる 3 セグメントの Base64URL 文字列）、Slack webhook URL（`https://hooks.slack.com/services/` 以降）。
 - [ ] 同ファイルの「限界」の段落に、引用符で囲まれていない値に空白が含まれる場合は 2 語目以降が平文で残ること（02_architecture.md 3.2.2）、および `AllowedHost` に `hooks.slack.com` 以外を設定した構成では webhook URL の値形式検出が働かないこと（02_architecture.md 3.3.3）を追記する。
-- [ ] 同ファイルに、一般的な英単語を `KeyValuePatterns` へ追加すると散文が置換されうること、および群 B のキーが引用符付きの構造化データのフィールド名として現れる場合は非機密でも置換されること（`"key": "us-east-1"`）を追記する。
+- [ ] 同ファイルに、一般的な英単語を `KeyValuePatterns` へ追加すると散文が置換されうること、および群 B のキーが引用符付きの構造化データのフィールド名として現れる場合、または識別子内境界（`-` / `.`）に続いて現れる場合は、非機密でも置換されること（`"key": "us-east-1"`、`Public-key: not supported`）を追記する。あわせて、追加したキーが一般語キー一覧（`key` / `token` / `secret`）に一致する場合は、利用者が明示的に追加しても群 B（厳しい先頭境界）になり、緩い境界にはならないことを記す（02_architecture.md 3.2.4）。
 - [ ] `docs/user/security-risk-assessment.ja.md` の `RedactText` の抜粋（233 行目付近）を現行の実装に合わせる。ループ変数が `KeyValuePattern` になったこと、および `c.TextPlaceholder` が `c.Placeholder` に統一済みであること（抜粋が古いまま残っている）を直す。
 - [ ] 同ファイルの「限界」の段落に、**群 B のキー（`key` / `token` / `secret`）は引用符のない YAML では捕捉されない**ことを追記する（02_architecture.md 3.2.6 の残存リスク）。`token: ghp_xxx` のように行頭・インデント直後・空白の直後に現れる形は、厳しい先頭境界を満たさないため置換されない。JSON のように引用符が付く形（`"token": "..."`）、および `_` / `-` / `.` に続く形（`api_key:`、`Public-key:`）は捕捉される。**同じ原因により `secret = abc` のように `=` の前後に空白がある形も置換されない**ことを併記する（`secret=abc` と `secret = "abc"` は捕捉される）。群 A のキー（`password`、`api_key` など）にはこの制限はない。回避策として、当該キーを含むより特定的なキー名（`auth_token` など）を `KeyValuePatterns` に追加できることを併記する。
 - [ ] 同ファイルに Slack 通知の配送方式の節を追加する: 非同期に送信されること、プロセス終了時に既定 15 秒の期限で flush されること、到達不能時や強制終了時には通知が失われうること（02_architecture.md 2.4 の表の要約）、通知内容自体はログファイルに残ること、ワーカー 1 本の直列処理による最悪遅延の目安、`GSCR_SLACK_SYNC=1` が通常運用向けではないデバッグ用の退避手段であること。
