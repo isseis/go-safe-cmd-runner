@@ -119,6 +119,12 @@ BUILD_FLAGS=-ldflags "-s -w -X github.com/isseis/go-safe-cmd-runner/internal/cmd
 # into a self-owned directory avoids that violation entirely.
 TEST_HASH_DIRECTORY=$(CURDIR)/build/test/hashes
 BUILD_FLAGS_TEST_HASH=-ldflags "-s -w -X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=$(TEST_HASH_DIRECTORY)"
+# Same override for `go test` binaries. Tests that build a real runner resolve
+# hashes through the compile-time DefaultHashDirectory, which points at the
+# machine-global /usr/local/etc path that only `sudo make hash` populates. A test
+# target that depends on that directory passes on a developer box and fails on a
+# clean CI runner, so point those binaries at TEST_HASH_DIRECTORY instead.
+GOTEST_FLAGS_TEST_HASH=-ldflags "-X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=$(TEST_HASH_DIRECTORY)"
 
 # Find all Go source files to use as dependencies for the build
 GO_SOURCES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
@@ -129,7 +135,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test test-ci test-ci-cgo1 test-ci-cgo0 test-all benchmark hash hash-integration-test hash-e2e-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test unit-test-cgo1 unit-test-cgo0 e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
+.PHONY: all lint build run clean test test-ci test-ci-cgo1 test-ci-cgo0 test-all benchmark hash hash-integration-test hash-e2e-test integration-test slack-notify-test slack-group-notification-test slack-e2e-test fmt fmt-all security-check build-security-check performance-test unit-test unit-test-cgo1 unit-test-cgo0 e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
 
 all: security-check
 
@@ -409,16 +415,23 @@ hash-integration-test: $(BINARY_RECORD)
 	$(foreach file, $(HASH_INTEGRATION_TEST_TARGETS), \
 		$(SUDOCMD) $(BINARY_RECORD) -force -hash-dir $(DEFAULT_HASH_DIRECTORY) $(file);)
 
-# Update hash for e2e-test target
+# Update hash for e2e-test and slack-e2e-test targets
 # Includes: config file, all files referenced in verify_files, and every
 # command referenced in sample/comprehensive.toml. Under the dry-run
 # hard-fail-unverified default, any command without a recorded hash is denied
 # as uncertain_unverified_identity, so this list must track comprehensive.toml.
+# It must also cover the commands the Slack webhook e2e tests configure:
+# /usr/bin/echo and /usr/bin/false. /usr/bin/echo is added through $(wildcard)
+# because it does not exist on macOS, where only /bin/echo does; on a
+# non-merged-/usr Linux the two are distinct files, so recording /bin/echo alone
+# would leave the Slack tests failing with uncertain_unverified_identity.
 HASH_E2E_TEST_TARGETS := \
 	./sample/comprehensive.toml \
 	/etc/passwd \
 	/bin/sh \
 	/bin/echo \
+	$(wildcard /usr/bin/echo) \
+	/usr/bin/false \
 	/usr/bin/whoami \
 	/usr/bin/env \
 	/usr/bin/id \
@@ -448,6 +461,7 @@ build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 #   performance-test       - Performance and benchmark tests
 #   slack-notify-test      - Slack notification tests
 #   slack-group-notification-test - Slack group notification tests
+#   slack-e2e-test         - Slack webhook e2e tests against a TLS mock server
 #
 # Composite test targets:
 #   test                   - Tests for pre-commit (unit-test only)
@@ -485,6 +499,47 @@ e2e-test: build-test hash-e2e-test
 	$(ENVSET) $(BINARY_TEST_RUNNER) -dry-run -config ./sample/comprehensive.toml
 	$(PYTHON) scripts/test_additional_security_checks.py
 
+# Slack webhook e2e tests - drives the Slack notification path end to end
+# against a TLS mock server, with race detection.
+#
+# The -run filter keeps this to the Slack webhook e2e tests. The `e2e,test`
+# build of ./internal/runner also contains every untagged test in that package,
+# which unit-test already runs; without the filter CI would run them twice. A
+# -run pattern that matches nothing exits 0, which would silently turn this
+# target back into the no-op it was created to fix, so the pattern is asserted
+# to match exactly SLACK_E2E_COUNT tests before the run. Asserting the exact
+# count, not just "at least one", also catches partial drift: renaming some of
+# the tests would otherwise leave the target green while running fewer of them.
+# Update SLACK_E2E_COUNT when a Slack webhook e2e test is added or removed.
+#
+# On macOS 3 of these tests fail because they configure commands as
+# /usr/bin/echo, which exists on Linux but not on macOS. The run is skipped
+# there; compiling and vetting instead keeps type errors in the e2e-tagged files
+# visible locally, since neither `make test` nor `make lint` builds with the e2e
+# tag.
+SLACK_E2E_RUN := ^TestE2E_SlackWebhook
+SLACK_E2E_COUNT := 7
+
+slack-e2e-test: hash-e2e-test
+	@if ! LIST=$$($(GOCMD) test -tags e2e,test -list '$(SLACK_E2E_RUN)' ./internal/runner); then \
+		echo "Error: could not list tests in ./internal/runner with tags e2e,test (build or vet failure above)"; \
+		exit 1; \
+	fi; \
+	MATCHED=$$(printf '%s\n' "$$LIST" | grep -c '^Test' || true); \
+	if [ "$$MATCHED" -ne $(SLACK_E2E_COUNT) ]; then \
+		echo "Error: $(SLACK_E2E_RUN) matched $$MATCHED tests in ./internal/runner, expected $(SLACK_E2E_COUNT)"; \
+		echo "The filter or the test names have drifted; this target would run the wrong set of tests and still pass."; \
+		echo "Fix SLACK_E2E_RUN, or update SLACK_E2E_COUNT if a test was intentionally added or removed."; \
+		exit 1; \
+	fi; \
+	echo "Slack webhook e2e tests matched by $(SLACK_E2E_RUN): $$MATCHED"
+	@if [ "$$(uname -s)" != "Darwin" ]; then \
+		$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags e2e,test $(GOTEST_FLAGS_TEST_HASH) -race -count=1 -v -run '$(SLACK_E2E_RUN)' ./internal/runner; \
+	else \
+		echo "macOS: skipping Slack e2e test run (3 of these tests require /usr/bin/echo, which macOS does not have); compiling and vetting them instead"; \
+		$(ENVSET) $(GOCMD) vet -tags e2e,test ./internal/runner; \
+	fi
+
 # Pre-commit test target - runs unit tests only
 # This is the default test target for daily development
 test: unit-test
@@ -503,7 +558,7 @@ libccache-integration-test:
 
 # CI matrix leg: CGO=1 — full test suite with race detection and coverage
 # Runs alongside test-ci-cgo0 in parallel via GitHub Actions matrix
-test-ci-cgo1: unit-test-cgo1 e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test
+test-ci-cgo1: unit-test-cgo1 e2e-test slack-e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 	@$(GOCMD) tool cover -func=coverage.out | tail -1
@@ -514,11 +569,11 @@ test-ci-cgo0: unit-test-cgo0
 # CI test target - tests that can run without sudo or external services
 # Suitable for GitHub Actions and other CI environments
 # Note: in CI use test-ci-cgo1 and test-ci-cgo0 matrix targets for parallel execution
-test-ci: unit-test e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test
+test-ci: unit-test e2e-test slack-e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test
 
 # All tests - comprehensive test suite (requires sudo for integration-test)
 # Excludes Slack notification tests (require external webhook configuration)
-test-all: unit-test integration-test e2e-test security-test performance-test
+test-all: unit-test integration-test e2e-test slack-e2e-test security-test performance-test
 
 fmt:
 	$(call check_gofumpt)

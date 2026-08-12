@@ -30,8 +30,7 @@ func getGroupMembers(gid uint32) ([]string, error) {
 	// Start with explicit members from /etc/group
 	memberSet := make(map[string]struct{})
 	if groupEntry.members != "" {
-		members := strings.Split(groupEntry.members, ",")
-		for _, member := range members {
+		for member := range strings.SplitSeq(groupEntry.members, ",") {
 			member = strings.TrimSpace(member)
 			if member != "" {
 				memberSet[member] = struct{}{}
