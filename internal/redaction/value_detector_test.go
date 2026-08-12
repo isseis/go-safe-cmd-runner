@@ -694,6 +694,8 @@ func TestCompileWebhookHostPattern_RejectsMalformedHost(t *testing.T) {
 		"hooks slack com",
 		"hooks.slack.com?x=1",
 		".*",
+		"hooks.slack.com:443",
+		"127.0.0.1:8080",
 	}
 
 	for _, host := range hosts {

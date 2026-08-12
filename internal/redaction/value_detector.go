@@ -89,7 +89,10 @@ var webhookHostCharsRE = regexp.MustCompile(`^[A-Za-z0-9.:-]+$`)
 // Anchoring would stop the common case (a URL quoted in an error message) from
 // being masked at all.
 func compileWebhookHostPattern(host string) (*regexp.Regexp, error) {
-	if !webhookHostCharsRE.MatchString(host) {
+	// Exactly one colon means host:port (rejected: WithWebhookHost's doc comment
+	// requires NewConfig to fail on a port), while a real IPv6 literal has two or
+	// more colons and is accepted below.
+	if !webhookHostCharsRE.MatchString(host) || strings.Count(host, ":") == 1 {
 		return nil, fmt.Errorf("%w (got %q)", ErrInvalidWebhookHost, host)
 	}
 
