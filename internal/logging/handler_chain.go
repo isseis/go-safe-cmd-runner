@@ -38,20 +38,27 @@ type SlackFreeHandler interface {
 // wraps is itself accepted, so the recursion is complete.
 //
 // This is deliberately not shared with internal/redaction.containsRedactingHandler.
-// That function cannot import us back (internal/redaction would create an
-// import cycle through its own tests), and it structurally differs anyway: it
-// walks arbitrary handler chains looking for one type, while this check
-// accepts a closed set of known types and rejects everything else.
+// This package cannot import internal/redaction: redactor_test.go imports this
+// package, so a logging → redaction import would create a cycle in redaction's
+// test build. It also differs structurally: that function walks arbitrary
+// handler chains looking for one type, while this check accepts a closed set of
+// known types and rejects everything else.
 func verifySlackFreeHandlers(handlers []slog.Handler) error {
 	for _, handler := range handlers {
 		switch h := handler.(type) {
 		case *SlackHandler:
+			// *SlackHandler must stay ahead of SlackFreeHandler below: if
+			// SlackHandler ever gains the marker method, the specific
+			// "contains a SlackHandler" rejection must still win over the
+			// blanket SlackFreeHandler acceptance.
 			return ErrFailureLoggerContainsSlackHandler
 		case *slog.JSONHandler, *slog.TextHandler:
 			// Stdlib leaf handlers: they wrap no other handler.
 			continue
 		case *ConditionalTextHandler, *InteractiveHandler:
-			// This package's leaf handlers: they wrap no other handler.
+			// This package's leaf handlers: each wraps only a *slog.TextHandler
+			// this package constructs internally, never a caller-supplied
+			// handler, so they cannot route records into Slack.
 			continue
 		case *MultiHandler:
 			if err := verifySlackFreeHandlers(h.Handlers()); err != nil {

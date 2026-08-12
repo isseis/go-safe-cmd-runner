@@ -104,6 +104,43 @@ func TestVerifySlackFreeHandlers(t *testing.T) {
 			wantError: ErrFailureLoggerContainsSlackHandler,
 		},
 		{
+			// The rejected element is not first, so this fails for any
+			// implementation that inspects only Handlers()[0].
+			name: "slack handler not first in multi handler",
+			handlers: []slog.Handler{
+				func() slog.Handler {
+					m, err := NewMultiHandler(textHandler, &SlackHandler{})
+					require.NoError(t, err)
+					return m
+				}(),
+			},
+			wantError: ErrFailureLoggerContainsSlackHandler,
+		},
+		{
+			name: "slack handler nested two multi handler levels deep",
+			handlers: []slog.Handler{
+				func() slog.Handler {
+					inner, err := NewMultiHandler(textHandler, &SlackHandler{})
+					require.NoError(t, err)
+					outer, err := NewMultiHandler(inner, condHandler)
+					require.NoError(t, err)
+					return outer
+				}(),
+			},
+			wantError: ErrFailureLoggerContainsSlackHandler,
+		},
+		{
+			name: "opaque handler not first in multi handler",
+			handlers: []slog.Handler{
+				func() slog.Handler {
+					m, err := NewMultiHandler(condHandler, opaqueTestHandler{})
+					require.NoError(t, err)
+					return m
+				}(),
+			},
+			wantError: ErrFailureLoggerUnverifiableHandler,
+		},
+		{
 			name:      "opaque handler",
 			handlers:  []slog.Handler{opaqueTestHandler{}},
 			wantError: ErrFailureLoggerUnverifiableHandler,
