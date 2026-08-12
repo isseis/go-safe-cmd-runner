@@ -2,6 +2,8 @@
 package redaction
 
 import (
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -68,17 +70,66 @@ var valueDetectorPatterns = struct {
 	slackWebhookURL: regexp.MustCompile(`(?i)(\bhttps://hooks\.slack\.com/services/)[A-Za-z0-9/_-]+`),
 }
 
+// ErrInvalidWebhookHost is returned when WithWebhookHost is given something that
+// is not a bare hostname or address literal.
+var ErrInvalidWebhookHost = errors.New("webhook host must be a bare hostname or address literal without scheme, port, path or whitespace")
+
+// webhookHostCharsRE is the character set a webhook host may use: the characters
+// of a DNS hostname, an IPv4 literal, or an IPv6 literal (which brings the colon).
+// It is a rejection filter, not a hostname grammar - the caller's host has
+// already been validated as a hostname where it was read from configuration.
+// What this stops is a value carrying regex-relevant or URL-structural
+// characters (a scheme, a path, a space) into the pattern below.
+var webhookHostCharsRE = regexp.MustCompile(`^[A-Za-z0-9.:-]+$`)
+
+// compileWebhookHostPattern builds the URL pattern for a deployment's configured
+// webhook host. Every path under that host is treated as secret, because a
+// webhook URL's path is the credential and a Slack-compatible endpoint
+// (Mattermost and others) puts it under a path this package cannot know in
+// advance - unlike hooks.slack.com, whose /services/ prefix is fixed.
+//
+// Group 1 is the scheme, host and the slash that ends the authority, kept out of
+// the replacement so masked output still names the host that was contacted. The
+// path class matches valueDetectorPatterns.slackWebhookURL so a trailing period
+// or comma from the surrounding prose is not swallowed.
+func compileWebhookHostPattern(host string) (*regexp.Regexp, error) {
+	if !webhookHostCharsRE.MatchString(host) {
+		return nil, fmt.Errorf("%w (got %q)", ErrInvalidWebhookHost, host)
+	}
+
+	authority := regexp.QuoteMeta(host)
+	if strings.Contains(host, ":") {
+		// A colon can only be an IPv6 literal here: the character filter above has
+		// already rejected a scheme or a port. Configuration carries such a host in
+		// its bare form ("::1"), while a URL always brackets it, so put the
+		// brackets back.
+		authority = `\[` + authority + `\]`
+	}
+
+	// The port is optional because validateWebhookURL compares only the hostname,
+	// so a configured webhook URL may carry one.
+	return regexp.Compile(`(?i)(\bhttps://` + authority + `(?::\d+)?/)[A-Za-z0-9/_-]+`)
+}
+
 // ValueDetector detects and masks sensitive values in text based on value format,
 // independent of key names. It complements the existing key-name-based detection
 // in SensitivePatterns by catching secrets that appear without a recognizable key.
 type ValueDetector struct {
 	placeholder string
+	// webhookHostURL masks URLs on the deployment's configured webhook host. It
+	// is nil when no host is configured, which is the only interpretation that
+	// assumes nothing about the caller: a Config built without WithWebhookHost
+	// falls back to the fixed hooks.slack.com pattern alone.
+	webhookHostURL *regexp.Regexp
 }
 
-// NewValueDetector creates a ValueDetector that masks detected values with
-// the given placeholder string (e.g., "[REDACTED]").
-func NewValueDetector(placeholder string) *ValueDetector {
-	return &ValueDetector{placeholder: placeholder}
+// newValueDetector creates a ValueDetector that masks detected values with the
+// given placeholder string (e.g., "[REDACTED]"). webhookHostURL comes from
+// compileWebhookHostPattern, or is nil when the deployment configured no webhook
+// host; taking the compiled pattern rather than the host name keeps validation
+// in NewConfig, which is the only place that can report the error.
+func newValueDetector(placeholder string, webhookHostURL *regexp.Regexp) *ValueDetector {
+	return &ValueDetector{placeholder: placeholder, webhookHostURL: webhookHostURL}
 }
 
 // Mask scans text for known sensitive value formats and replaces matched
@@ -114,6 +165,15 @@ func (d *ValueDetector) Mask(text string) string {
 	result = valueDetectorPatterns.githubPAT.ReplaceAllString(result, escapedPlaceholder)
 	result = valueDetectorPatterns.slackPrefixToken.ReplaceAllString(result, escapedPlaceholder)
 	result = valueDetectorPatterns.jwt.ReplaceAllString(result, escapedPlaceholder+"${1}")
+
+	// The configured host runs before the fixed hooks.slack.com pattern, and not
+	// after, for the case where the two name the same host - the default
+	// deployment. Masking hooks.slack.com first would leave "/services/" as the
+	// only path characters in front of the placeholder, which this pattern would
+	// then match and mask a second time.
+	if d.webhookHostURL != nil {
+		result = d.webhookHostURL.ReplaceAllString(result, "${1}"+escapedPlaceholder)
+	}
 	result = valueDetectorPatterns.slackWebhookURL.ReplaceAllString(result, "${1}"+escapedPlaceholder)
 
 	return result
