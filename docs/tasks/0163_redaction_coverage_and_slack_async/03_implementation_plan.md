@@ -414,9 +414,9 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 以下は個別のテストごとに書かず、1 度だけ定めて全箇所に適用する。実装時はこの 3 規則を、`slackSender` を伴うハンドラやモックサーバを生成するすべてのテストに漏れなく適用する。
 
-- [x] **規則 R1（モックサーバの構成）**: `NewSlackHandler` は `https` 以外の webhook URL を拒否するため、モックサーバは `httptest.NewTLSServer` で立て、`SlackHandlerOptions.HTTPClient` に `server.Client()` を渡し、`AllowedHost` に `url.Parse(server.URL)` の `Hostname()`（ポートを含まない）を渡す。`InsecureSkipVerify` は使わない（`server.Client()` が正規の手段であり、新たな `gosec` 抑止を導入しない）。既存の `mustWebhookAllowedHost` は `internal/runner` の `//go:build e2e && test` ファイルにあり他パッケージから使えないため、`internal/logging` と `internal/runner/bootstrap` はそれぞれ自パッケージの `_test.go` 内に同等の小さなヘルパーを置く。
-- [x] **規則 R2（資源の後始末）**: `NewSlackHandler` / `AddSlackHandlers` / `httptest.New*Server` で資源を得た**直後**に、`t.Cleanup` または `defer` で `Close` を登録する。テスト末尾ではなく取得地点に置き、後続のアサーションが失敗しても実行されるようにする。これによりワーカーが後続テストへ漏れない。
-- [x] **規則 R3（ワーカー終了の観測）**: 「ワーカーが終了していること」は `runtime.NumGoroutine()` の完全一致では検証しない（プロセス全体で共有される値であり、`httptest` の接続や `-p 4` の並列実行で揺れる）。`internal/logging` のテストは同一パッケージから `slackSender.done` チャネルが閉じたことを観測する。`internal/runner/bootstrap` のテストは、`Close` 済みハンドラへの新たな投入が `Dropped` に計上されることで受付停止を確認する。`NumGoroutine` を使う場合は `require.Eventually` による上限の確認に留める。
+- [ ] **規則 R1（モックサーバの構成）**: `NewSlackHandler` は `https` 以外の webhook URL を拒否するため、モックサーバは `httptest.NewTLSServer` で立て、`SlackHandlerOptions.HTTPClient` に `server.Client()` を渡し、`AllowedHost` に `url.Parse(server.URL)` の `Hostname()`（ポートを含まない）を渡す。`InsecureSkipVerify` は使わない（`server.Client()` が正規の手段であり、新たな `gosec` 抑止を導入しない）。既存の `mustWebhookAllowedHost` は `internal/runner` の `//go:build e2e && test` ファイルにあり他パッケージから使えないため、`internal/logging` と `internal/runner/bootstrap` はそれぞれ自パッケージの `_test.go` 内に同等の小さなヘルパーを置く。
+- [ ] **規則 R2（資源の後始末）**: `NewSlackHandler` / `AddSlackHandlers` / `httptest.New*Server` で資源を得た**直後**に、`t.Cleanup` または `defer` で `Close` を登録する。テスト末尾ではなく取得地点に置き、後続のアサーションが失敗しても実行されるようにする。これによりワーカーが後続テストへ漏れない。
+- [ ] **規則 R3（ワーカー終了の観測）**: 「ワーカーが終了していること」は `runtime.NumGoroutine()` の完全一致では検証しない（プロセス全体で共有される値であり、`httptest` の接続や `-p 4` の並列実行で揺れる）。`internal/logging` のテストは同一パッケージから `slackSender.done` チャネルが閉じたことを観測する。`internal/runner/bootstrap` のテストは、`Close` 済みハンドラへの新たな投入が `Dropped` に計上されることで受付停止を確認する。`NumGoroutine` を使う場合は `require.Eventually` による上限の確認に留める。
 
 #### ステップ 4-2: 構成検証（`handler_chain.go`）
 

@@ -72,6 +72,19 @@ func TestVerifySlackFreeHandlers(t *testing.T) {
 			handlers: []slog.Handler{slog.DiscardHandler},
 		},
 		{
+			// Pins the assumption the default branch's equality check rests
+			// on: a derived DiscardHandler still compares equal to the
+			// original, so it is still accepted.
+			name:     "discard handler with attrs",
+			handlers: []slog.Handler{slog.DiscardHandler.WithAttrs([]slog.Attr{slog.String("k", "v")})},
+		},
+		{
+			// Accepting the empty slice is what will let NewSlackHandler fall
+			// back to a stderr-only failure logger in step 4-5.
+			name:     "no handlers",
+			handlers: nil,
+		},
+		{
 			name:     "conditional text handler",
 			handlers: []slog.Handler{condHandler},
 		},
@@ -165,10 +178,4 @@ func TestVerifySlackFreeHandlers(t *testing.T) {
 			assert.ErrorIs(t, err, tt.wantError)
 		})
 	}
-}
-
-// TestVerifySlackFreeHandlers_EmptySlice verifies the empty case is accepted,
-// which is what lets NewSlackHandler fall back to a stderr-only logger.
-func TestVerifySlackFreeHandlers_EmptySlice(t *testing.T) {
-	assert.NoError(t, verifySlackFreeHandlers(nil))
 }
