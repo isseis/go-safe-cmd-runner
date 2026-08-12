@@ -350,8 +350,8 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 #### ステップ 3-1: 実装
 
-- [ ] `valueDetectorPatterns` に `githubPAT` / `slackPrefixToken` / `jwt` / `slackWebhookURL` の 4 フィールドを追加する。各パターンの検出対象・形の仕様・置換後の形は 02_architecture.md 3.3.1 の表と 3.3.2（JWT の 3 条件）に従い、本計画では再掲しない。既存 7 パターンの正規表現は変更しない。
-- [ ] `Mask` の末尾に、既存 7 種の後で `githubPAT` → `slackPrefixToken` → `jwt` → `slackWebhookURL` の順に適用する処理を追加する（02_architecture.md 3.3.1「適用順序」）。すべて既存の `escapedPlaceholder` を使い、`slackWebhookURL` のみホスト部の捕捉グループを保持する形で置換する。
+- [x] `valueDetectorPatterns` に `githubPAT` / `slackPrefixToken` / `jwt` / `slackWebhookURL` の 4 フィールドを追加する。各パターンの検出対象・形の仕様・置換後の形は 02_architecture.md 3.3.1 の表と 3.3.2（JWT の 3 条件）に従い、本計画では再掲しない。既存 7 パターンの正規表現は変更しない。
+- [x] `Mask` の末尾に、既存 7 種の後で `githubPAT` → `slackPrefixToken` → `jwt` → `slackWebhookURL` の順に適用する処理を追加する（02_architecture.md 3.3.1「適用順序」）。すべて既存の `escapedPlaceholder` を使い、`slackWebhookURL` のみホスト部の捕捉グループを保持する形で置換する。**実装上の補足**（レビュー対応で 02_architecture.md には未記載）: `jwt` は RE2 に先読みがないため「ドット 2 個ちょうど」を末尾の 1 文字消費グループで強制する。トークン直後の 1 文字を `[^A-Za-z0-9_.-]|$` で消費し `"${1}"` で再出力する。3 ドット目（4 セグメント目）があると一致しない。
 
 #### ステップ 3-2: テスト
 
