@@ -357,13 +357,13 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 `internal/redaction/value_detector_test.go` に以下を追加する。
 
-- [ ] `TestValueDetector_GitHubFineGrainedPAT`: `github_pat_` に続く列が単体で現れた場合に置換されること。最小長のちょうど境界（下回る場合は非置換、満たす場合は置換）を対にして固定する。
-- [ ] `TestValueDetector_SlackPrefixTokens`: `xapp-` / `xoxe-` / `xoxs-` が置換され、既存の `xoxb-` / `xoxp-` / `xoxa-` / `xoxr-` の検出結果が変わらないこと。最小長の境界を対にして固定する。
-- [ ] `TestValueDetector_JWT`: 3 セグメントの JWT が置換されること、署名部が空（`alg=none`）の形も置換されること、ヘッダ部・ペイロード部の最小長 10 文字のちょうど境界（9 文字は非置換、10 文字は置換）を対にして固定すること。
-- [ ] `TestValueDetector_SlackWebhookURL`: `https://hooks.slack.com/services/T000/B000/XXXX` がホスト部を保持したまま置換されること。誤検出の対として、`/services/` を含まない `https://hooks.slack.com/` と、`hooks.slack.com` 以外のホストの URL が置換されないことを固定する。
-- [ ] `TestValueDetector_FreeTextEmbedding`: 上記 3 形式が、コマンド標準出力に相当する自由テキスト（前後に散文がある文字列）へ埋め込まれた場合でも置換されること。
-- [ ] `TestValueDetector_FalsePositives`: `github_pattern`、`xapple`、ドットを含まない `eyJhbGciOiJIUzI1NiJ9`、ドットが 1 個だけの文字列、ドットが 3 個の文字列が置換されないこと。
-- [ ] `TestValueDetector_PlaceholderWithDollarNoReinjection`: プレースホルダーを `[$1]` にした `ValueDetector` で、追加 4 パターンに一致する入力を `Mask` した結果に元の秘密の断片が含まれないこと。
+- [x] `TestValueDetector_GitHubFineGrainedPAT`: `github_pat_` に続く列が単体で現れた場合に置換されること。最小長のちょうど境界（下回る場合は非置換、満たす場合は置換）を対にして固定する。
+- [x] `TestValueDetector_SlackPrefixTokens`: `xapp-` / `xoxe-` / `xoxs-` が置換され、既存の `xoxb-` / `xoxp-` / `xoxa-` / `xoxr-` の検出結果が変わらないこと。最小長の境界を対にして固定する。
+- [x] `TestValueDetector_JWT`: 3 セグメントの JWT が置換されること、署名部が空（`alg=none`）の形も置換されること、ヘッダ部・ペイロード部の最小長 10 文字のちょうど境界（9 文字は非置換、10 文字は置換）を対にして固定すること。
+- [x] `TestValueDetector_SlackWebhookURL`: `https://hooks.slack.com/services/T000/B000/XXXX` がホスト部を保持したまま置換されること。誤検出の対として、`/services/` を含まない `https://hooks.slack.com/` と、`hooks.slack.com` 以外のホストの URL が置換されないことを固定する。
+- [x] `TestValueDetector_FreeTextEmbedding`: 上記 3 形式が、コマンド標準出力に相当する自由テキスト（前後に散文がある文字列）へ埋め込まれた場合でも置換されること。
+- [x] `TestValueDetector_FalsePositives`: `github_pattern`、`xapple`、ドットを含まない `eyJhbGciOiJIUzI1NiJ9`、ドットが 1 個だけの文字列、ドットが 3 個の文字列が置換されないこと。
+- [x] `TestValueDetector_PlaceholderWithDollarNoReinjection`: プレースホルダーを `[$1]` にした `ValueDetector` で、追加 4 パターンに一致する入力を `Mask` した結果に元の秘密の断片が含まれないこと。
 
 **完了条件**: `make fmt && make test && make lint` が通り、`internal/redaction/value_detector_test.go` と `internal/redaction/redactor_test.go` の既存期待値が変わらないこと。
 

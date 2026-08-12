@@ -315,6 +315,16 @@ func TestValueDetector_SlackPrefixTokens(t *testing.T) {
 			input:    "xoxp-" + strings.Repeat("1", 12) + "-" + strings.Repeat("2", 12) + "-abc",
 			wantMask: true,
 		},
+		{
+			name:     "xoxa- keeps the existing 3-segment detection",
+			input:    "xoxa-" + strings.Repeat("1", 12) + "-" + strings.Repeat("2", 12) + "-abc",
+			wantMask: true,
+		},
+		{
+			name:     "xoxr- keeps the existing 3-segment detection",
+			input:    "xoxr-" + strings.Repeat("1", 12) + "-" + strings.Repeat("2", 12) + "-abc",
+			wantMask: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -331,6 +341,21 @@ func TestValueDetector_SlackPrefixTokens(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestValueDetector_SlackPrefixToken_HyphenatedBody documents the accepted
+// over-redaction of the slackPrefixToken pattern: the body class allows internal
+// hyphens, so a trailing "-word" is absorbed into the masked span rather than
+// left in the clear. This mirrors how the 3-segment slackToken pattern treats
+// its full structure; the alternative (a body that stops at every hyphen) would
+// fail to mask real tokens, which carry hyphen-separated segments.
+func TestValueDetector_SlackPrefixToken_HyphenatedBody(t *testing.T) {
+	d := NewValueDetector("[MASKED]")
+
+	input := "xapp-" + strings.Repeat("a", 10) + "-token"
+	result := d.Mask(input)
+	assert.Equal(t, "[MASKED]", result,
+		"the hyphenated body is part of the token and is masked wholesale")
 }
 
 // TestValueDetector_JWT verifies that a three-segment JWT is replaced, that an
@@ -376,6 +401,11 @@ func TestValueDetector_JWT(t *testing.T) {
 			input:    "eyJaaaaaaa.bbbbbbbbbb.ccc",
 			wantMask: true,
 		},
+		{
+			name:     "sentence-final period is left alone (known limitation)",
+			input:    "eyJaaaaaaa.bbbbbbbbbb.ccc.",
+			wantMask: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -390,6 +420,43 @@ func TestValueDetector_JWT(t *testing.T) {
 				assert.Equal(t, tt.input, result,
 					"a JWT below the length bounds must be left unchanged")
 			}
+		})
+	}
+}
+
+// TestValueDetector_JWT_TrailingCharacterIsReEmitted pins the "${1}" mechanism
+// in Mask: the JWT regex consumes the single character after the token to
+// enforce the exactly-two-dots rule (RE2 has no lookahead), and Mask must
+// re-emit that character so surrounding text is not mangled. Dropping the
+// "${1}" reference would turn "expired" into "xpired", which this test fails on.
+func TestValueDetector_JWT_TrailingCharacterIsReEmitted(t *testing.T) {
+	d := NewValueDetector("[MASKED]")
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "space after token is preserved",
+			input: "token eyJaaaaaaa.bbbbbbbbbb.ccc expired",
+			want:  "token [MASKED] expired",
+		},
+		{
+			name:  "punctuation after token is preserved",
+			input: "eyJaaaaaaa.bbbbbbbbbb.ccc!",
+			want:  "[MASKED]!",
+		},
+		{
+			name:  "token at end of string needs no trailing character",
+			input: "eyJaaaaaaa.bbbbbbbbbb.ccc",
+			want:  "[MASKED]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, d.Mask(tt.input))
 		})
 	}
 }
@@ -440,6 +507,37 @@ func TestValueDetector_SlackWebhookURL(t *testing.T) {
 				assert.Equal(t, tt.input, result,
 					"a URL that is not a hooks.slack.com webhook must be left unchanged")
 			}
+		})
+	}
+}
+
+// TestValueDetector_SlackWebhookURL_TrailingPunctuation pins the path class's
+// stopping behavior: the matched path is restricted to URL path characters, so
+// a trailing period or comma that belongs to the surrounding text is left in
+// place rather than swallowed into the masked span.
+func TestValueDetector_SlackWebhookURL_TrailingPunctuation(t *testing.T) {
+	d := NewValueDetector("[MASKED]")
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "trailing period survives",
+			input: "https://hooks.slack.com/services/T000/B000/XXXX.",
+			want:  "https://hooks.slack.com/services/[MASKED].",
+		},
+		{
+			name:  "trailing comma survives",
+			input: "https://hooks.slack.com/services/T000/B000/XXXX,",
+			want:  "https://hooks.slack.com/services/[MASKED],",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, d.Mask(tt.input))
 		})
 	}
 }

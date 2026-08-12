@@ -56,7 +56,10 @@ var valueDetectorPatterns = struct {
 	// lookahead: it consumes the single character after the token and requires it
 	// to be neither base64url nor a dot, so a third dot (a fourth segment) stops
 	// the match instead of letting it silently truncate the token. Mask re-emits
-	// that character through "${1}".
+	// that character through "${1}". A deliberate consequence is that a JWT
+	// directly followed by a sentence-final period (e.g. "...abc.") is not
+	// matched: that is a three-dot string, which 3.3.2 condition 1 excludes.
+	// TestValueDetector_JWT pins this as a known limitation.
 	jwt: regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{7,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*([^A-Za-z0-9_.-]|$)`),
 	// slackWebhookURL treats the /services/ path as the secret. The host is fixed
 	// to hooks.slack.com rather than taken from AllowedHost because redaction
