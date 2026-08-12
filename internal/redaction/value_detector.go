@@ -63,10 +63,21 @@ var valueDetectorPatterns = struct {
 	// matched: that is a three-dot string, which 3.3.2 condition 1 excludes.
 	// TestValueDetector_JWT pins this as a known limitation.
 	jwt: regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{7,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*([^A-Za-z0-9_.-]|$)`),
-	// slackWebhookURL treats the /services/ path as the secret. The host is fixed
-	// to hooks.slack.com rather than taken from AllowedHost because redaction
-	// cannot depend on logging (see 3.3.3). The path class is restricted to URL
-	// path characters so a trailing period or comma is not swallowed.
+	// slackWebhookURL treats the /services/ path as the secret. This is the fixed
+	// half of the two-tier design in 3.3.3: it applies with no configuration at
+	// all, which is what the log paths that run before the TOML is read have.
+	// The deployment's own host arrives separately through WithWebhookHost. The
+	// path class is restricted to URL path characters so a trailing period or
+	// comma is not swallowed.
+	//
+	// The pattern is deliberately not anchored (CodeQL flags this as
+	// go/regex/missing-regexp-anchor). That query is about deciding whether a URL
+	// is trusted, where an unanchored host lets an attacker prefix their own. The
+	// direction here is the opposite: the pattern searches free text - a log
+	// line, captured command output - for a secret to erase, so it must match
+	// mid-string, and matching more than intended costs a redacted placeholder
+	// rather than a leaked one. Anchoring would stop the common case, a webhook
+	// URL quoted inside an error message, from being masked at all.
 	slackWebhookURL: regexp.MustCompile(`(?i)(\bhttps://hooks\.slack\.com/services/)[A-Za-z0-9/_-]+`),
 }
 
