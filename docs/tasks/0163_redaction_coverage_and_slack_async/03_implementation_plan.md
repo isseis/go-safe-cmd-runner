@@ -797,7 +797,7 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 | # | コマンド | 期待結果 |
 |---|---|---|
 | X1 | `rg -n "\.sendToSlack\(" --glob '*.go'` | 一致なし（旧メソッド名への参照が残っていない） |
-| X2 | `rg -n -e "\.webhookURL\b" -e "\.httpClient\b" -e "\.backoffConfig\b" internal/logging/slack_handler.go internal/logging/slack_handler_test.go` | 一致なし。3 フィールドが `slack_sender.go` とそのテストにのみ存在することを意味する（現状は 16 件が一致する） |
+| X2 | `rg -n -e "\.webhookURL\b" -e "\.httpClient\b" -e "\.backoffConfig\b" internal/logging/slack_handler.go internal/logging/slack_handler_test.go` | 一致するのは `handler.sender.` を前置した参照だけであること（3 フィールドが `SlackHandler` から消え `slackSender` にのみ存在することを意味する）。実測: `slack_handler.go` は 0 件、`slack_handler_test.go` は `handler.sender.` 経由の 6 件（着手前は 16 件が `SlackHandler` 直下を指していた） |
 | X3 | `rg -n "^//nolint" internal/logging/slack_sender.go internal/logging/slack_handler.go` | 一致なし（ファイル単位の抑止を導入していない） |
 | X4 | `rg -n -A 10 "type SlackHandler struct" docs/dev/architecture_design/security-architecture.md docs/dev/architecture_design/security-architecture.ja.md` | 4 箇所すべてに `sender` が含まれ、`httpClient` / `backoffConfig` / `webhookURL` が含まれないこと |
 | X5 | 8.1 のコマンド G2 | 02_architecture.md 冒頭の用語表の全語が用語集に存在すること |
