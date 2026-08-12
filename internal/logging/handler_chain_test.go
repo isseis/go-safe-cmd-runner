@@ -165,6 +165,14 @@ func TestVerifySlackFreeHandlers(t *testing.T) {
 			},
 			wantError: ErrFailureLoggerUnverifiableHandler,
 		},
+		{
+			// A typed nil satisfies the *MultiHandler case, so the check has to
+			// reject it before calling Handlers() on a nil receiver -- without
+			// the guard this panics instead of failing closed.
+			name:      "typed nil multi handler",
+			handlers:  []slog.Handler{(*MultiHandler)(nil)},
+			wantError: ErrFailureLoggerUnverifiableHandler,
+		},
 	}
 
 	for _, tt := range tests {
@@ -178,4 +186,24 @@ func TestVerifySlackFreeHandlers(t *testing.T) {
 			assert.ErrorIs(t, err, tt.wantError)
 		})
 	}
+}
+
+// TestVerifySlackFreeHandlersErrorLocatesOffender pins that a rejection names
+// where the offending handler sits: the intended use is a startup failure, and
+// an operator bisecting a nested chain has only the error text to go on.
+func TestVerifySlackFreeHandlersErrorLocatesOffender(t *testing.T) {
+	textHandler := slog.NewTextHandler(io.Discard, nil)
+
+	inner, err := NewMultiHandler(textHandler, &SlackHandler{})
+	require.NoError(t, err)
+	outer, err := NewMultiHandler(textHandler, inner)
+	require.NoError(t, err)
+
+	err = verifySlackFreeHandlers([]slog.Handler{textHandler, outer})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrFailureLoggerContainsSlackHandler)
+
+	// One prefix per level down to the offender: outer[1] -> inner[1].
+	msg := err.Error()
+	assert.Contains(t, msg, "handler[1] (*logging.MultiHandler): handler[1] (*logging.MultiHandler): handler[1] (*logging.SlackHandler)")
 }

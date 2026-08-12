@@ -2,6 +2,7 @@ package logging
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 )
 
@@ -44,45 +45,60 @@ type SlackFreeHandler interface {
 // test build. It also differs structurally: that function walks arbitrary
 // handler chains looking for one type, while this check accepts a closed set of
 // known types and rejects everything else.
+// Rejections name the offending element's position and concrete type, and
+// nesting wraps one prefix per level, so a rejection from deep inside a chain
+// can be bisected from the error text alone.
 func verifySlackFreeHandlers(handlers []slog.Handler) error {
-	for _, handler := range handlers {
-		switch h := handler.(type) {
-		case *SlackHandler:
-			// *SlackHandler must stay ahead of SlackFreeHandler below: if
-			// SlackHandler ever gains the marker method, the specific
-			// "contains a SlackHandler" rejection must still win over the
-			// blanket SlackFreeHandler acceptance.
-			return ErrFailureLoggerContainsSlackHandler
-		case *slog.JSONHandler, *slog.TextHandler:
-			// Stdlib leaf handlers: they wrap no other handler.
-			continue
-		case *ConditionalTextHandler:
-			// Leaf handler of this package: its textHandler field is typed
-			// *slog.TextHandler, so it cannot hold a caller-supplied handler
-			// and cannot route records into Slack.
-			continue
-		case *InteractiveHandler:
-			// Leaf handler of this package: it wraps no slog.Handler at all
-			// (it formats records onto an io.Writer itself), so it cannot
-			// route records into Slack.
-			continue
-		case *MultiHandler:
-			if err := verifySlackFreeHandlers(h.Handlers()); err != nil {
-				return err
-			}
-		case SlackFreeHandler:
-			// The author asserted Slack-freedom explicitly.
-			continue
-		default:
-			if handler == slog.DiscardHandler {
-				// slog.DiscardHandler's concrete type is unexported, so it
-				// cannot be named in a case above and has to be compared by
-				// value here. Its WithAttrs/WithGroup are documented to return
-				// the receiver, so derived handlers compare equal too.
-				continue
-			}
-			return ErrFailureLoggerUnverifiableHandler
+	for i, handler := range handlers {
+		if err := verifySlackFreeHandler(handler); err != nil {
+			return fmt.Errorf("handler[%d] (%T): %w", i, handler, err)
 		}
 	}
 	return nil
+}
+
+// verifySlackFreeHandler applies the accept/reject decision to a single
+// handler. See verifySlackFreeHandlers for the accepted set.
+func verifySlackFreeHandler(handler slog.Handler) error {
+	switch h := handler.(type) {
+	case *SlackHandler:
+		// *SlackHandler must stay ahead of SlackFreeHandler below: if
+		// SlackHandler ever gains the marker method, the specific
+		// "contains a SlackHandler" rejection must still win over the
+		// blanket SlackFreeHandler acceptance.
+		return ErrFailureLoggerContainsSlackHandler
+	case *slog.JSONHandler, *slog.TextHandler:
+		// Stdlib leaf handlers: they wrap no other handler.
+		return nil
+	case *ConditionalTextHandler:
+		// Leaf handler of this package: its textHandler field is typed
+		// *slog.TextHandler, so it cannot hold a caller-supplied handler
+		// and cannot route records into Slack.
+		return nil
+	case *InteractiveHandler:
+		// Leaf handler of this package: it wraps no slog.Handler at all
+		// (it formats records onto an io.Writer itself), so it cannot
+		// route records into Slack.
+		return nil
+	case *MultiHandler:
+		if h == nil {
+			// A typed-nil *MultiHandler would panic in Handlers(). It cannot
+			// be verified, so it is rejected like any other unknown shape
+			// rather than crashing the check.
+			return ErrFailureLoggerUnverifiableHandler
+		}
+		return verifySlackFreeHandlers(h.Handlers())
+	case SlackFreeHandler:
+		// The author asserted Slack-freedom explicitly.
+		return nil
+	default:
+		if handler == slog.DiscardHandler {
+			// slog.DiscardHandler's concrete type is unexported, so it
+			// cannot be named in a case above and has to be compared by
+			// value here. Its WithAttrs/WithGroup are documented to return
+			// the receiver, so derived handlers compare equal too.
+			return nil
+		}
+		return ErrFailureLoggerUnverifiableHandler
+	}
 }
