@@ -72,6 +72,7 @@ type Option func(*validatorOptions)
 type validatorOptions struct {
 	fs              common.FileSystem
 	groupMembership *groupmembership.GroupMembership
+	redactionConfig *redaction.Config
 }
 
 // WithFileSystem sets a custom file system for the validator.
@@ -90,6 +91,17 @@ func WithGroupMembership(gm *groupmembership.GroupMembership) Option {
 	}
 }
 
+// WithRedactionConfig supplies the process-wide redaction Config (including
+// the deployment's configured webhook host, if any) used to sanitize output
+// and error messages before they reach a logger. When unset, NewValidator
+// falls back to redaction.DefaultConfig(), which has no webhook host
+// configured.
+func WithRedactionConfig(cfg *redaction.Config) Option {
+	return func(opts *validatorOptions) {
+		opts.redactionConfig = cfg
+	}
+}
+
 // NewValidator creates a new security validator with the given configuration and options.
 // If config is nil, DefaultConfig() will be used.
 // Returns an error if any regex patterns in the config are invalid.
@@ -105,13 +117,17 @@ func NewValidator(config *Config, opts ...Option) (*Validator, error) {
 	if config == nil {
 		config = DefaultConfig()
 	}
+	redactionConfig := options.redactionConfig
+	if redactionConfig == nil {
+		redactionConfig = redaction.DefaultConfig()
+	}
 
 	v := &Validator{
 		config:            config,
 		fs:                options.fs,
 		groupMembership:   options.groupMembership,
 		sensitivePatterns: redaction.DefaultSensitivePatterns(),
-		redactionConfig:   redaction.DefaultConfig(),
+		redactionConfig:   redactionConfig,
 		trustedGIDs:       make(map[uint32]struct{}, len(config.TrustedGIDs)),
 	}
 

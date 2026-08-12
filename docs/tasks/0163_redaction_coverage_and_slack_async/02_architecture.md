@@ -625,7 +625,11 @@ webhook URL のパス部分そのものが credential であるため、値形�
 
 **Phase 1 との関係**: `SetupLoggerWithConfig`（Phase 1）は TOML 読み込み前に走るため、ホストが未確定の `Config`（`webhookHostURL` が nil）を使う。この間は webhook URL の value-based 検出が働かない。webhook URL は TOML と環境変数から得られるため、Phase 1 のログに設定由来の webhook URL が現れることはなく、この間隙が扱わずに済ませているのはそれ以外の経路（コマンド出力への混入等）に限られる。この間隙を埋めるだけの固定パターンを持ち込むことは上記の理由により正当化しにくいため、そのまま残す。Phase 2（`AddSlackHandlers`）でホストが確定し次第、検出は直ちに有効になる。
 
-**残る限界**: `audit` パッケージの `argRedactor` と `security.Validator` の redaction 設定は、プロセス全体で共有される既定の `Config`（`webhookHostURL` なし）のままである。これらの出力は `slog.Default()`（`webhookHostURL` を含む `RedactingHandler`）を経由するため実害はないが、`RedactingHandler` を持たないロガーへ直接書く経路では webhook URL の検出が働かない。この 2 箇所へ設定を配線するには監査ロガーの構築時期を変更する必要があり、本タスクでは行わない（issue #1010）。
+**`audit`/`security.Validator` への配線**: どちらも `RedactText`/`SanitizeOutputForLogging` で文字列をログ出力前に直接マスクしており、以前はここだけ package 単位の `redaction.DefaultConfig()`（`webhookHostURL` なし）を固定で使っていた。実害は `slog.Default()` の `RedactingHandler` 側でも同じ webhook URL がもう一度マスクされることで防げていたが、`RedactingHandler` を持たないロガーへ直接書く経路ができた場合には保険が効かない latent な gap だった。
+
+呼び出し順を確認すると、`audit.NewAuditLogger` と `runner.go` 側の `security.NewValidator` はどちらも `runner.NewRunner` の中で、TOML 読み込み・`AddSlackHandlers`(Phase 2)より後に構築されており、host は既知である。そこで `audit.NewAuditLogger(*redaction.Config)` と `security.WithRedactionConfig(*redaction.Config)` を追加し、`bootstrap.AddSlackHandlers`/`SetupSlackLogging` が構築した `*redaction.Config` を `runner.WithRedactionConfig` 経由でそのまま両方に配線した(値を使い回すことで、`WithWebhookHost` の二重構築による食い違いも避けている)。nil のときは従来どおり `DefaultConfig()` にフォールバックする。`resource.NewDefaultResourceManager` 内の `security.NewValidator(nil)`(`cfg.OutputManager` が nil のときのみ通るフォールバック)は、本番の呼び出し経路(`runner.go`)では常に `OutputManager` を渡すため到達しない。テストのみが通る経路であり配線しなかった。
+
+唯一配線できないのは `bootstrap.NewVerificationManager()` が構築する `security.Validator` で、これは TOML 読み込み**前**に構築されるため構造的に host を知り得ない(3.3.3 冒頭の Phase 1 と同じ制約)。ここだけは `DefaultConfig()` のままで残る限界であり、解消するには検証マネージャの構築時期そのものを変更する必要があるため本タスクでは行わない(issue #1010)。
 
 #### 3.3.4 AWS Secret Access Key を追加しない理由
 

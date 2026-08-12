@@ -214,9 +214,12 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 // AddSlackHandlers rebuilds the default logger by appending Slack handlers to the existing logger.
 // Returns an error if validateWebhookURL fails for either successURL or errorURL.
 // Returns an error if SetupLoggerWithConfig has not been called (phase1BaseHandlers is nil).
-func AddSlackHandlers(config SlackLoggerConfig) error {
+// On success, it also returns the redaction Config it built, so callers that
+// construct their own redaction-aware components (e.g. runner.WithRedactionConfig)
+// can share the exact same webhook-host masking instead of each rebuilding it.
+func AddSlackHandlers(config SlackLoggerConfig) (*redaction.Config, error) {
 	if phase1BaseHandlers == nil || phase1FailureLogger == nil || redactionErrorCollector == nil {
-		return errPhase1NotInitialized
+		return nil, errPhase1NotInitialized
 	}
 
 	allHandlers := make([]slog.Handler, len(phase1BaseHandlers))
@@ -231,7 +234,7 @@ func AddSlackHandlers(config SlackLoggerConfig) error {
 			AllowedHost: config.AllowedHost,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to create success Slack handler: %w", err)
+			return nil, fmt.Errorf("failed to create success Slack handler: %w", err)
 		}
 		allHandlers = append(allHandlers, sh)
 	}
@@ -245,14 +248,14 @@ func AddSlackHandlers(config SlackLoggerConfig) error {
 			AllowedHost: config.AllowedHost,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to create error Slack handler: %w", err)
+			return nil, fmt.Errorf("failed to create error Slack handler: %w", err)
 		}
 		allHandlers = append(allHandlers, sh)
 	}
 
 	multiHandler, err := logging.NewMultiHandler(allHandlers...)
 	if err != nil {
-		return fmt.Errorf("failed to create multi handler: %w", err)
+		return nil, fmt.Errorf("failed to create multi handler: %w", err)
 	}
 
 	// Phase 1 built its RedactingHandler before the TOML was read, so webhook
@@ -264,13 +267,13 @@ func AddSlackHandlers(config SlackLoggerConfig) error {
 	// nothing.
 	redactionConfig, err := redaction.NewConfig(redaction.WithWebhookHost(config.AllowedHost))
 	if err != nil {
-		return fmt.Errorf("failed to create redaction config: %w", err)
+		return nil, fmt.Errorf("failed to create redaction config: %w", err)
 	}
 	redactedHandler := redaction.NewRedactingHandler(multiHandler, redactionConfig, phase1FailureLogger).
 		WithErrorCollector(redactionErrorCollector)
 
 	slog.SetDefault(slog.New(redactedHandler))
-	return nil
+	return redactionConfig, nil
 }
 
 // ReportRedactionFailures reports any collected redaction failures

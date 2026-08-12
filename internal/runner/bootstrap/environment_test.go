@@ -36,7 +36,7 @@ func TestSetupSlackLogging_AllowedHostPropagation(t *testing.T) {
 	}
 
 	const wantHost = "hooks.slack.com"
-	_ = SetupSlackLogging(&SlackWebhookConfig{
+	_, _ = SetupSlackLogging(&SlackWebhookConfig{
 		ErrorURL: "https://hooks.slack.com/services/test",
 	}, SetupLoggingOptions{
 		SlackAllowedHost: wantHost,
@@ -59,7 +59,7 @@ func TestSetupSlackLogging_MissingAllowedHostReturnsConfigParsingError(t *testin
 	}, false, false)
 	require.NoError(t, err)
 
-	slackErr := SetupSlackLogging(&SlackWebhookConfig{
+	_, slackErr := SetupSlackLogging(&SlackWebhookConfig{
 		ErrorURL: "https://hooks.slack.com/services/test",
 	}, SetupLoggingOptions{
 		SlackAllowedHost: "", // intentionally empty

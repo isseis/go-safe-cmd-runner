@@ -368,7 +368,7 @@ func TestSetupLoggerWithConfig_FailureLoggerExcludesSlack(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add Slack handlers via AddSlackHandlers (Slack is now excluded from failureLogger by design)
-	err = AddSlackHandlers(SlackLoggerConfig{
+	_, err = AddSlackHandlers(SlackLoggerConfig{
 		WebhookURLSuccess: "https://hooks.slack.com/services/test-success",
 		WebhookURLError:   "https://hooks.slack.com/services/test-error",
 		AllowedHost:       "hooks.slack.com",
@@ -507,11 +507,12 @@ func TestAddSlackHandlers_RedactsConfiguredWebhookHost(t *testing.T) {
 		"Phase 1 cannot know the configured host, so this URL must still be in the clear")
 
 	consoleBuffer.Reset()
-	require.NoError(t, AddSlackHandlers(SlackLoggerConfig{
+	_, err := AddSlackHandlers(SlackLoggerConfig{
 		WebhookURLError: webhookURL,
 		AllowedHost:     allowedHost,
 		RunID:           runID,
-	}))
+	})
+	require.NoError(t, err)
 
 	slog.Info("phase 2", "url", webhookURL)
 	output := consoleBuffer.String()

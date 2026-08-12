@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -122,6 +123,27 @@ func TestValidator_SanitizeOutputForLogging(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+// TestValidator_SanitizeOutputForLogging_UsesInjectedRedactionConfig verifies
+// that NewValidator applies the *redaction.Config passed via
+// WithRedactionConfig (e.g. one built with WithWebhookHost) rather than
+// always falling back to DefaultConfig(), which has no webhook host and so
+// cannot mask a Slack-compatible webhook URL.
+func TestValidator_SanitizeOutputForLogging_UsesInjectedRedactionConfig(t *testing.T) {
+	redactionConfig, err := redaction.NewConfig(redaction.WithWebhookHost("mattermost.example.com"))
+	require.NoError(t, err)
+
+	config := DefaultConfig()
+	config.LoggingOptions.RedactSensitiveInfo = true
+	validator, err := NewValidator(config, WithRedactionConfig(redactionConfig))
+	require.NoError(t, err)
+
+	const webhookURL = "https://mattermost.example.com/hooks/abcdefghijklmnopqrstuvwxyz"
+	result := validator.SanitizeOutputForLogging(webhookURL)
+
+	assert.NotContains(t, result, "abcdefghijklmnopqrstuvwxyz", "webhook path must not reach the log output")
+	assert.Contains(t, result, "https://mattermost.example.com/[REDACTED]")
 }
 
 func TestValidator_CreateSafeLogFields(t *testing.T) {
