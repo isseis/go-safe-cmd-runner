@@ -588,7 +588,7 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test` 98 パッケージ緑、`make lint` 0 issues、`make slack-e2e-test` 7 件緑）
 - [x] `AddSlackHandlers` の 2 箇所が `Synchronous: true` を渡しており、本番の送信挙動が現行と変わらないことを確認した（`logger.go:246` / `logger.go:263`）
-- [ ] PR を作成した
+- [x] PR を作成した: https://github.com/isseis/go-safe-cmd-runner/pull/1014
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
