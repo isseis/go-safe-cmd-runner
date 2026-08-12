@@ -403,8 +403,8 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（ステップ 3-3 は PR 作成後・レビュー開始前に同じ PR へ追加した）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4: `slackSender` の導入と `SlackHandler` の非同期化
 
@@ -420,11 +420,11 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 #### ステップ 4-2: 構成検証（`handler_chain.go`）
 
-- [ ] `SlackFreeHandler` インターフェース、`ErrFailureLoggerContainsSlackHandler`、`ErrFailureLoggerUnverifiableHandler` を定義する（02_architecture.md 3.4.1）。
-- [ ] `verifySlackFreeHandlers(handlers []slog.Handler) error` を実装する。受理・拒否の規則は 02_architecture.md 3.4.8 の表に従い、`*MultiHandler` は `Handlers()` で再帰する。認識できない型は `ErrFailureLoggerUnverifiableHandler` で拒否する（fail closed）。
-- [ ] `internal/redaction` と共通化しない理由（import 循環と、走査ではなく既知型の許可という構造の違い）を英語コメントで残す。
-- [ ] `handler_chain_test.go` に `TestVerifySlackFreeHandlers` を追加する。受理ケース（`*slog.JSONHandler`、`(*slog.JSONHandler).WithAttrs` の戻り値、`*slog.TextHandler`、`slog.DiscardHandler`、`*ConditionalTextHandler`、`*InteractiveHandler`、それらを包む `*MultiHandler`）、`ErrFailureLoggerContainsSlackHandler`（直接／`*MultiHandler` 越し）、`ErrFailureLoggerUnverifiableHandler`（`Handler()` も `Handlers()` も持たない独自ハンドラ）を `errors.Is` で判定する。最後のケースには「走査に頼る設計なら素通りしていた構成である」旨を英語コメントで残す。
-- [ ] `SlackFreeHandler` を実装したテストダブルが受理されることを同テストに含める。
+- [x] `SlackFreeHandler` インターフェース、`ErrFailureLoggerContainsSlackHandler`、`ErrFailureLoggerUnverifiableHandler` を定義する（02_architecture.md 3.4.1）。
+- [x] `verifySlackFreeHandlers(handlers []slog.Handler) error` を実装する。受理・拒否の規則は 02_architecture.md 3.4.8 の表に従い、`*MultiHandler` は `Handlers()` で再帰する。認識できない型は `ErrFailureLoggerUnverifiableHandler` で拒否する（fail closed）。
+- [x] `internal/redaction` と共通化しない理由（import 循環と、走査ではなく既知型の許可という構造の違い）を英語コメントで残す。
+- [x] `handler_chain_test.go` に `TestVerifySlackFreeHandlers` を追加する。受理ケース（`*slog.JSONHandler`、`(*slog.JSONHandler).WithAttrs` の戻り値、`*slog.TextHandler`、`slog.DiscardHandler`、`*ConditionalTextHandler`、`*InteractiveHandler`、それらを包む `*MultiHandler`）、`ErrFailureLoggerContainsSlackHandler`（直接／`*MultiHandler` 越し）、`ErrFailureLoggerUnverifiableHandler`（`Handler()` も `Handlers()` も持たない独自ハンドラ）を `errors.Is` で判定する。最後のケースには「走査に頼る設計なら素通りしていた構成である」旨を英語コメントで残す。
+- [x] `SlackFreeHandler` を実装したテストダブルが受理されることを同テストに含める。
 
 ### PR-4 作成ポイント: Slack-free failure logger verification
 
@@ -436,11 +436,11 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 **実装モデル要件**: standard
 
-**判定理由**: 新規ファイルの追加のみで既存の挙動を変えず、未確立の設計判断・panel-mode トリガ・Conditional checks のいずれにも該当しない。なお `verifySlackFreeHandlers` は本 PR では本番の呼び出し元を持たないが、`handler_chain_test.go` から参照されるため `unused` リンタには掛からない（golangci-lint v2.11.4、`--build-tags test` で実測確認済み）。一方 `make deadcode` は `-test` を付けずに実行されるため、本 PR の時点では未到達関数として報告される（現在の baseline は 8 件、本 PR で 9 件になる）。ステップ 4-5 で `NewSlackHandler` が呼び出すと baseline に戻るため、本 PR に限り 9 件を許容する。なお `make deadcode` は `.github/workflows/ci.yml` のどのジョブにも含まれていない（CI が実行するのは `lint` / `fmt` / `test-ci-cgo1` / `test-ci-cgo0`）ため、この一時的な 9 件で CI が赤くなることはない。判定を後から再現できるよう、PR-4 の着手時に `make deadcode` の出力を取得して baseline の 8 件を PR 本文へ貼る。
+**判定理由**: 新規ファイルの追加のみで既存の挙動を変えず、未確立の設計判断・panel-mode トリガ・Conditional checks のいずれにも該当しない。なお `verifySlackFreeHandlers` は本 PR では本番の呼び出し元を持たないが、`handler_chain_test.go` から参照されるため `unused` リンタには掛からない（golangci-lint v2.11.4、`--build-tags test` で実測確認済み）。一方 `make deadcode` は `-test` を付けずに実行されるため、本 PR の時点では未到達関数として報告される。**着手時の実測で baseline は 10 件であり（計画作成時点の 8 件から、他タスクのマージで `NewStandardELFAnalyzerWithSyscallStore` と `NewSyscallAnalyzerWithConfig` の 2 件が増えていた）、本 PR で 11 件になる**。ステップ 4-5 で `NewSlackHandler` が呼び出すと baseline に戻るため、本 PR に限り 11 件を許容する。なお `make deadcode` は `.github/workflows/ci.yml` のどのジョブにも含まれていない（CI が実行するのは `lint` / `fmt` / `test-ci-cgo1` / `test-ci-cgo0`）ため、この一時的な 11 件で CI が赤くなることはない。判定を後から再現できるよう、PR-4 の着手時に `make deadcode` の出力を取得して baseline の 10 件を PR 本文へ貼る。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] `make deadcode` の報告が baseline 8 件 ＋ `verifySlackFreeHandlers` の 9 件に留まることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] `make deadcode` の報告が baseline 10 件 ＋ `verifySlackFreeHandlers` の 11 件に留まることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

@@ -20,7 +20,11 @@ var (
 // clean separation between interactive and non-interactive output.
 type ConditionalTextHandler struct {
 	capabilities terminal.Capabilities
-	textHandler  slog.Handler
+	// textHandler is deliberately typed *slog.TextHandler rather than
+	// slog.Handler: handler_chain.go's Slack-free verification accepts
+	// *ConditionalTextHandler on the grounds that it cannot hold a
+	// caller-supplied handler, and this field's type is what guarantees that.
+	textHandler *slog.TextHandler
 }
 
 // ConditionalTextHandlerOptions configures the ConditionalTextHandler.
@@ -80,17 +84,22 @@ func (h *ConditionalTextHandler) Handle(ctx context.Context, r slog.Record) erro
 }
 
 // WithAttrs returns a new handler with additional attributes.
+// (*slog.TextHandler).WithAttrs is documented to return a new TextHandler, so
+// the assertion below cannot fail; if a future stdlib change broke that, the
+// panic is the desired outcome, because silently widening textHandler back to
+// slog.Handler would erase the guarantee handler_chain.go depends on.
 func (h *ConditionalTextHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &ConditionalTextHandler{
 		capabilities: h.capabilities,
-		textHandler:  h.textHandler.WithAttrs(attrs),
+		textHandler:  h.textHandler.WithAttrs(attrs).(*slog.TextHandler),
 	}
 }
 
 // WithGroup returns a new handler with an additional group.
+// The assertion holds for the same reason as in WithAttrs.
 func (h *ConditionalTextHandler) WithGroup(name string) slog.Handler {
 	return &ConditionalTextHandler{
 		capabilities: h.capabilities,
-		textHandler:  h.textHandler.WithGroup(name),
+		textHandler:  h.textHandler.WithGroup(name).(*slog.TextHandler),
 	}
 }
