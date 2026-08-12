@@ -39,6 +39,9 @@ type Config struct {
 	// GitHub tokens, PEM blocks) independent of key-name context. When nil, value-based
 	// detection is skipped.
 	valueDetector *ValueDetector
+	// webhookHost is the deployment's configured webhook host, empty when none is
+	// configured. See WithWebhookHost.
+	webhookHost string
 	// validated records that this Config came from NewConfig.
 	//
 	// NewConfig never hands back an unvalidated Config - it returns nil and an
@@ -167,6 +170,28 @@ func WithAdditionalKeyValuePatterns(patterns ...KeyValuePattern) Option {
 	}
 }
 
+// WithWebhookHost declares the hostname this deployment posts its webhook
+// notifications to, so that every URL path under that host is masked.
+//
+// A webhook URL's path is the credential, and a Slack-compatible endpoint
+// (hooks.slack.com, Mattermost, a proxy, a self-hosted relay) serves it from a
+// host and a path prefix this package cannot know in advance, so masking relies
+// entirely on the host declared here.
+//
+// An empty host means none is configured and is not an error - that is how the
+// value arrives when Slack notifications are switched off, or before the TOML
+// declaring it has been read. In both cases value-based webhook masking is
+// simply not active yet. Anything that is not
+// a bare hostname or address literal (a scheme, a port, a path, whitespace)
+// makes NewConfig fail with ErrInvalidWebhookHost rather than be trimmed into
+// shape, because a host that is silently repaired is indistinguishable from one
+// that was written correctly.
+func WithWebhookHost(host string) Option {
+	return func(c *Config) {
+		c.webhookHost = host
+	}
+}
+
 // NewConfig returns the default redaction configuration as modified by opts,
 // with every key-name pattern validated. It is the only way to obtain a usable
 // Config from outside this package.
@@ -180,9 +205,17 @@ func NewConfig(opts ...Option) (*Config, error) {
 		opt(c)
 	}
 
-	// Built after the options so that WithPlaceholder reaches the value-format
-	// layer too.
-	c.valueDetector = NewValueDetector(c.placeholder)
+	// Built after the options so that WithPlaceholder and WithWebhookHost reach
+	// the value-format layer too.
+	var webhookHostPattern *regexp.Regexp
+	if c.webhookHost != "" {
+		var err error
+		webhookHostPattern, err = compileWebhookHostPattern(c.webhookHost)
+		if err != nil {
+			return nil, err
+		}
+	}
+	c.valueDetector = newValueDetector(c.placeholder, webhookHostPattern)
 
 	c.compiled = make([]compiledPattern, 0, len(c.keyValuePatterns))
 	for _, p := range c.keyValuePatterns {

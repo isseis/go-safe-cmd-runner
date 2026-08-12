@@ -18,6 +18,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -330,11 +331,12 @@ func run(runID string) error {
 	}
 
 	// Phase 2: Add Slack handlers (AllowedHost is read from TOML)
-	if err := bootstrap.SetupSlackLogging(slackConfig, bootstrap.SetupLoggingOptions{
+	redactionConfig, err := bootstrap.SetupSlackLogging(slackConfig, bootstrap.SetupLoggingOptions{
 		SlackAllowedHost: cfg.Global.SlackAllowedHost,
 		RunID:            runID,
 		DryRun:           dryRun,
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
@@ -396,7 +398,7 @@ func run(runID string) error {
 	}
 
 	// Initialize and execute runner with all verified data
-	return executeRunner(ctx, cfg, runtimeGlobal, verificationManager, runID, secValidator)
+	return executeRunner(ctx, cfg, runtimeGlobal, verificationManager, runID, secValidator, redactionConfig)
 }
 
 // resolveStaticAbsPath returns the real path for p when p is an absolute path
@@ -462,7 +464,7 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 }
 
 // executeRunner initializes and executes the runner with proper cleanup
-func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, verificationManager *verification.Manager, runID string, secValidator isec.DirectoryPermChecker) error {
+func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, verificationManager *verification.Manager, runID string, secValidator isec.DirectoryPermChecker, redactionConfig *redaction.Config) error {
 	// Initialize privilege manager
 	logger := slog.Default()
 	privMgr := privilege.NewManager(logger)
@@ -474,6 +476,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		runner.WithRunID(runID),
 		runner.WithRuntimeGlobal(runtimeGlobal),
 		runner.WithKeepTempDirs(keepTempDirs),
+		runner.WithRedactionConfig(redactionConfig),
 	}
 	if secValidator != nil {
 		runnerOptions = append(runnerOptions, runner.WithTOCTOUValidator(secValidator))

@@ -215,10 +215,10 @@
 - [x] `TestRedactText_SeparatorVariants`: `password: secret`、`password = secret`、`password :secret`、`password=\tsecret` の置換。複数一致と行をまたぐ入力も含め、各ケースで `assert.NotContains` により値の断片が残らないことを確かめる。
 - [x] `TestRedactText_AlternativePriority`: `password="abc def"` が V1 ではなく V3 として処理されること（結果に ` def"` が残らないこと）と、`monkey="a b"` が V1 へ落ちて `monkey=[REDACTED] b"` になること。
 - [x] `TestRedactText_KeyGroupBehavior`: `DefaultKeyValuePatterns()` の `PatternKindKeyedValue` の全キーを表駆動で回し、群ごとの期待値を固定する。群 C は先頭境界を課さないため V2 / V3 も無条件に適用される点に注意し、`_KEY=secret` / `_KEY: secret` / `_KEY = secret` / `_KEY="a b"` / `"_KEY": "secret"` の 5 形すべてが置換されることを明示的に固定する（「現行どおり」という曖昧な期待値にしない）。群 A は 3 形式すべて置換、群 B は二重引用符付きの値（緩い先頭境界。3.2.4 の例外）と識別子内境界（`_` / `-` / `.`）および引用符付きキー名のみ置換。
-- [x] `TestKeyBoundaryGroup_Classification`: 既定パターンのうち `PatternKindKeyedValue` のものが意図した群に落ちること、`PatternKindKeyedValue` 以外は群を参照しないこと、および `KeyValuePatterns` に `passphrase` を追加すると群 A として扱われること。`Kind` を省略した `KeyValuePattern` もキー値規則に落ちること（ゼロ値の契約）。
+- [x] `TestKeyBoundaryGroup_Classification`: 既定パターンのうち `PatternKindKeyedValue` のものが意図した群に落ちること、`PatternKindKeyedValue` 以外は群を参照しないこと、および `KeyValuePatterns` に `passphrase` を追加すると群 A として扱われること。**追加**: 追加したキーが一般語キー一覧に一致する場合（`Token`）は、誰が追加したかによらず群 B になること（大文字小文字は一覧の照合に影響しない）。群の判定はキー文字列から導かれ、`WithAdditionalKeyValuePatterns` 経由かどうかでは変わらない（02_architecture.md 3.2.4 の判定規則 5 が 6 に先行する）。`Kind` を省略した `KeyValuePattern` もキー値規則に落ちること（ゼロ値の契約）。
 - [x] `TestRedactText_ExistingBehaviorPreserved`: `Authorization: Bearer xxx`、`Bearer xxx`、`Basic xxx`、パターンが自前の `=` を含む場合の結果が現行と同一であること。
 - [x] `TestRedactText_NoNewOverRedaction`: 02_architecture.md 3.2.6 の「置換されない」行をすべて固定する（`Primary key: id`、`unexpected token: '}'`、`map[key:value]`、`configMapKeyRef: {key: LOG_LEVEL}`、`keyboard: qwerty`、`/usr/local/key/path`、`--timeout=30`、`password:\nsecret`）。群 B の先頭境界が半角スペース・`[`・`{` の 3 ケースを、それぞれ独立したテーブル行として明示する。**追加**: 値の先頭が `{` / `[` のため V2 を適用しない 3 ケース（`{"password":{"a":1},"port":80}`、`{"api_key":["a","b"],"port":80}`、`password: {json: here} trailing`）も固定する。
-- [x] `TestRedactText_IntentionalOverRedaction`: `"key": "us-east-1"` が `"key": "[REDACTED]"` になること（第 1 類）。**追加**: 群 A のキーが散文中でコロンを伴う第 2 類（`failed to read password: permission denied` → `... password: [REDACTED] denied`）も固定する。いずれも AC-09 の除外規定に該当する意図した変更である旨を英語コメントで残す。
+- [x] `TestRedactText_IntentionalOverRedaction`: `"key": "us-east-1"` が `"key": "[REDACTED]"` になること（第 1 類）。**追加**: 群 A のキーが散文中でコロンを伴う第 2 類（`failed to read password: permission denied` → `... password: [REDACTED] denied`）も固定する。**追加**: 群 B の二重引用符例外が緩めるのはキー名の先頭境界であって区切りと引用符の隣接ではないため、行頭に限らず散文の途中でも成立すること（`Please set token="my note" before continuing` → `Please set token="[REDACTED]" before continuing`）を固定する（02_architecture.md 3.2.4）。**追加**: 群 B のキーが識別子内境界（`-` / `.`）に続いて散文の前に現れる第 4 類（`Public-key: not supported`、`unable to open id_rsa.key: permission denied`）も固定する。いずれも AC-09 の除外規定に該当する意図した変更である旨を英語コメントで残す。
 - [x] `TestRedactText_LongTextUnchanged`: 置換対象を含まない 10 KB 程度のテキストに対し `RedactText` の戻り値が入力と一致すること。
 - [x] **追加** `TestRedactText_CaseAndNonASCII`: キー一致が大文字小文字を無視すること、非 ASCII のテキスト（`paſſword=s3cr3t`、`日本語 password=...`）でも置換されること、先行するキーの置換後に後続のキーが取りこぼされないこと。事前判定の撤回後も残す（素朴なバイト比較による最適化を将来足したときに落ちる網である）。
 
@@ -333,54 +333,76 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 **推奨タイトル**: `feat(0163): extend key-name redaction to separators and quoted values`
 
-**レビュー観点**: 群 A / 群 B / 群 C の先頭境界が 02_architecture.md 3.2.4 の表と一致すること / V3 → V2 → V1 の選択肢順が保たれ引用符付きの値が V1 へ落ちないこと / 既存テストの期待値の変更がステップ 2-4 に列挙したものに限られること（AC-08） / 新たな過剰 redaction が `"key": "us-east-1"` の 1 ケースに限られること（AC-09） / ステップ 2-3 の `error` 判定が `LogValuer` 判定より後にあり、`Error()` が recover の下で呼ばれていること / ステップ 2-4 で規則の選択がキー文字列の形から導出される箇所が残っていないこと（`performKeyValueRedaction` 以下に `strings.Contains(key, ...)` が残っていないこと）
+**レビュー観点**: 群 A / 群 B / 群 C の先頭境界が 02_architecture.md 3.2.4 の表と一致すること / V3 → V2 → V1 の選択肢順が保たれ引用符付きの値が V1 へ落ちないこと / 既存テストの期待値の変更がステップ 2-4 に列挙したものに限られること（AC-08） / 新たな過剰 redaction が `TestRedactText_IntentionalOverRedaction` に列挙したケースに限られること（AC-09。`"key": "us-east-1"` の第 1 類、群 A のコロンを伴う第 2 類、群 B の二重引用符例外が散文の途中で成立する第 3 類、群 B が識別子内境界に続く第 4 類） / ステップ 2-3 の `error` 判定が `LogValuer` 判定より後にあり、`Error()` が recover の下で呼ばれていること / ステップ 2-4 で規則の選択がキー文字列の形から導出される箇所が残っていないこと（`performKeyValueRedaction` 以下に `strings.Contains(key, ...)` が残っていないこと）
 
 **実装モデル要件**: frontier-required
 
-**判定理由**: redaction 層というセキュリティゲートそのものを書き換えるステップである（`mkplan.md` step 8 の panel-mode トリガ「security-gate」）。検出範囲を広げながら（AC-01〜AC-03）、既存の置換結果がバイト単位で変わらないこと（AC-08）と、新たな過剰 redaction が列挙した 1 ケースに限られること（AC-09）を同時に証明する必要があり、正規表現の選択肢順と先頭境界の設計を一度で正しく組む判断が要る。
+**判定理由**: redaction 層というセキュリティゲートそのものを書き換えるステップである（`mkplan.md` step 8 の panel-mode トリガ「security-gate」）。検出範囲を広げながら（AC-01〜AC-03）、既存の置換結果がバイト単位で変わらないこと（AC-08）と、新たな過剰 redaction が列挙したケースに限られること（AC-09）を同時に証明する必要があり、正規表現の選択肢順と先頭境界の設計を一度で正しく組む判断が要る。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: 値形式検出パターンの追加
 
-**対象ファイル**: `internal/redaction/value_detector.go`、`internal/redaction/value_detector_test.go`
+**対象ファイル**: `internal/redaction/value_detector.go`、`internal/redaction/value_detector_test.go`、`internal/redaction/redactor.go`、`internal/redaction/redactor_test.go`、`internal/runner/bootstrap/logger.go`、`internal/runner/bootstrap/logger_test.go`
 
 #### ステップ 3-1: 実装
 
-- [ ] `valueDetectorPatterns` に `githubPAT` / `slackPrefixToken` / `jwt` / `slackWebhookURL` の 4 フィールドを追加する。各パターンの検出対象・形の仕様・置換後の形は 02_architecture.md 3.3.1 の表と 3.3.2（JWT の 3 条件）に従い、本計画では再掲しない。既存 7 パターンの正規表現は変更しない。
-- [ ] `Mask` の末尾に、既存 7 種の後で `githubPAT` → `slackPrefixToken` → `jwt` → `slackWebhookURL` の順に適用する処理を追加する（02_architecture.md 3.3.1「適用順序」）。すべて既存の `escapedPlaceholder` を使い、`slackWebhookURL` のみホスト部の捕捉グループを保持する形で置換する。
+- [x] `valueDetectorPatterns` に `githubPAT` / `slackPrefixToken` / `jwt` / `slackWebhookURL` の 4 フィールドを追加する。各パターンの検出対象・形の仕様・置換後の形は 02_architecture.md 3.3.1 の表と 3.3.2（JWT の 3 条件）に従い、本計画では再掲しない。既存 7 パターンの正規表現は変更しない。
+- [x] `Mask` の末尾に、既存 7 種の後で `githubPAT` → `slackPrefixToken` → `jwt` → `slackWebhookURL` の順に適用する処理を追加する（02_architecture.md 3.3.1「適用順序」）。すべて既存の `escapedPlaceholder` を使い、`slackWebhookURL` のみホスト部の捕捉グループを保持する形で置換する。**実装上の補足**（レビュー対応で 02_architecture.md には未記載）: `jwt` は RE2 に先読みがないため「ドット 2 個ちょうど」を末尾の 1 文字消費グループで強制する。トークン直後の 1 文字を `[^A-Za-z0-9_.-]|$` で消費し `"${1}"` で再出力する。3 ドット目（4 セグメント目）があると一致しない。
 
 #### ステップ 3-2: テスト
 
 `internal/redaction/value_detector_test.go` に以下を追加する。
 
-- [ ] `TestValueDetector_GitHubFineGrainedPAT`: `github_pat_` に続く列が単体で現れた場合に置換されること。最小長のちょうど境界（下回る場合は非置換、満たす場合は置換）を対にして固定する。
-- [ ] `TestValueDetector_SlackPrefixTokens`: `xapp-` / `xoxe-` / `xoxs-` が置換され、既存の `xoxb-` / `xoxp-` / `xoxa-` / `xoxr-` の検出結果が変わらないこと。最小長の境界を対にして固定する。
-- [ ] `TestValueDetector_JWT`: 3 セグメントの JWT が置換されること、署名部が空（`alg=none`）の形も置換されること、ヘッダ部・ペイロード部の最小長 10 文字のちょうど境界（9 文字は非置換、10 文字は置換）を対にして固定すること。
-- [ ] `TestValueDetector_SlackWebhookURL`: `https://hooks.slack.com/services/T000/B000/XXXX` がホスト部を保持したまま置換されること。誤検出の対として、`/services/` を含まない `https://hooks.slack.com/` と、`hooks.slack.com` 以外のホストの URL が置換されないことを固定する。
-- [ ] `TestValueDetector_FreeTextEmbedding`: 上記 3 形式が、コマンド標準出力に相当する自由テキスト（前後に散文がある文字列）へ埋め込まれた場合でも置換されること。
-- [ ] `TestValueDetector_FalsePositives`: `github_pattern`、`xapple`、ドットを含まない `eyJhbGciOiJIUzI1NiJ9`、ドットが 1 個だけの文字列、ドットが 3 個の文字列が置換されないこと。
-- [ ] `TestValueDetector_PlaceholderWithDollarNoReinjection`: プレースホルダーを `[$1]` にした `ValueDetector` で、追加 4 パターンに一致する入力を `Mask` した結果に元の秘密の断片が含まれないこと。
+- [x] `TestValueDetector_GitHubFineGrainedPAT`: `github_pat_` に続く列が単体で現れた場合に置換されること。最小長のちょうど境界（下回る場合は非置換、満たす場合は置換）を対にして固定する。
+- [x] `TestValueDetector_SlackPrefixTokens`: `xapp-` / `xoxe-` / `xoxs-` が置換され、既存の `xoxb-` / `xoxp-` / `xoxa-` / `xoxr-` の検出結果が変わらないこと。最小長の境界を対にして固定する。
+- [x] `TestValueDetector_JWT`: 3 セグメントの JWT が置換されること、署名部が空（`alg=none`）の形も置換されること、ヘッダ部・ペイロード部の最小長 10 文字のちょうど境界（9 文字は非置換、10 文字は置換）を対にして固定すること。
+- [x] `TestValueDetector_SlackWebhookURL`: `https://hooks.slack.com/services/T000/B000/XXXX` がホスト部を保持したまま置換されること。誤検出の対として、`/services/` を含まない `https://hooks.slack.com/` と、`hooks.slack.com` 以外のホストの URL が置換されないことを固定する。
+- [x] `TestValueDetector_FreeTextEmbedding`: 上記 3 形式が、コマンド標準出力に相当する自由テキスト（前後に散文がある文字列）へ埋め込まれた場合でも置換されること。
+- [x] `TestValueDetector_FalsePositives`: `github_pattern`、`xapple`、ドットを含まない `eyJhbGciOiJIUzI1NiJ9`、ドットが 1 個だけの文字列、ドットが 3 個の文字列が置換されないこと。
+- [x] `TestValueDetector_PlaceholderWithDollarNoReinjection`: プレースホルダーを `[$1]` にした `ValueDetector` で、追加 4 パターンに一致する入力を `Mask` した結果に元の秘密の断片が含まれないこと。
 
 **完了条件**: `make fmt && make test && make lint` が通り、`internal/redaction/value_detector_test.go` と `internal/redaction/redactor_test.go` の既存期待値が変わらないこと。
 
+#### ステップ 3-3: 設定された webhook ホストの注入（PR 作成後のレビューで判明した不足）
+
+ステップ 3-1 の `slackWebhookURL` は `hooks.slack.com` に固定されており、Slack 互換サービス（Mattermost 等）を `slack_allowed_host` に設定した構成では webhook URL が平文で残る。02_architecture.md 3.3.3 の (b) を実装する。
+
+- [x] `value_detector.go` に `ErrInvalidWebhookHost` と `compileWebhookHostPattern(host string) (*regexp.Regexp, error)` を追加する。ホスト名の文字集合（DNS ホスト名・IPv4・IPv6 リテラルの文字）以外を拒否し、`regexp.QuoteMeta` を通してからパターンへ埋め込む。設定は IPv6 を角括弧なしで保持する（`normalizeSlackAllowedHost`）一方 URL は角括弧を伴うため、コロンを含むホストは `\[...\]` で囲む。ポートは任意（`validateWebhookURL` はホスト名のみを比較するため、設定された webhook URL がポートを伴い得る）。
+- [x] `ValueDetector` にインスタンス単位の `webhookHostURL *regexp.Regexp` を持たせる。`NewValueDetector` は本パッケージ外から使われていないため、コンパイル済みパターンを引数に取る非公開の `newValueDetector` に置き換える（検証は `NewConfig` に集約し、半端に構築された `ValueDetector` を作らない）。
+- [x] `Mask` は `jwt` の後、`slackWebhookURL` の**前**に `webhookHostURL` を適用する。順序の理由は 02_architecture.md 3.3.1「適用順序」。
+- [x] `redactor.go` に `WithWebhookHost(host string) Option` と `Config.webhookHost` を追加し、`NewConfig` がコンパイルして `newValueDetector` へ渡す。空文字は no-op、不正な値は `ErrInvalidWebhookHost` で構築失敗。
+- [x] `bootstrap.AddSlackHandlers` が `redaction.NewConfig(redaction.WithWebhookHost(config.AllowedHost))` の結果を `NewRedactingHandler` へ渡す（従来は `nil` を渡して既定 `Config` に委ねていた）。`SetupLoggerWithConfig`（Phase 1）は TOML 読み込み前のため変更しない。
+
+##### テスト
+
+- [x] `TestValueDetector_ConfiguredWebhookHost`: 設定ホスト配下の URL がホスト部を保持して置換されること。大文字小文字混在のホスト、ポート付き、散文への埋め込み、末尾句読点を含む。非置換の対として、パスなしの URL、別ホスト（設定ホストを接頭辞に持つ `...evil.test` を含む）、`http://` を固定する。**層の分離**: 各ケースで、ホストを設定しない `ValueDetector` が同じ入力を素通しすることを先に検証する（固定パターン側では一致し得ない入力であることの証明）。
+- [x] `TestValueDetector_ConfiguredWebhookHost_IPv6`: `https://[2001:db8::1]/hooks/...` が置換されること（設定側の角括弧なし表記との橋渡し）。
+- [x] `TestValueDetector_ConfiguredWebhookHost_IsHooksSlack`: 設定ホストが `hooks.slack.com` の場合に二重置換が起きず、結果が `https://hooks.slack.com/[MASKED]` になること（適用順序の固定）。
+- [x] `TestCompileWebhookHostPattern_RejectsMalformedHost`: スキーム付き・パス付き・空白入り・空文字・`.*` が `ErrInvalidWebhookHost` で拒否されること。
+- [x] `TestNewConfig_WithWebhookHost`: `Option` が値形式検出層まで届くこと、空文字が no-op であること、不正な値で `NewConfig` が失敗し `Config` を返さないこと、`WithPlaceholder` との併用が効くこと。対として既定 `Config` が同じ入力を素通しすることを先に検証する。
+- [x] `TestAddSlackHandlers_RedactsConfiguredWebhookHost`（`bootstrap`）: 配線のテスト。Phase 1 のロガーでは同じ URL が平文で出ることを先に固定し、`AddSlackHandlers` 後は置換されることを検証する。
+- [x] 上記 6 件について、(1) `Mask` の適用箇所の削除、(2) 適用順序の反転、(3) IPv6 の角括弧付与の削除、(4) ホスト文字集合の検証の無効化、(5) `NewConfig` での注入の無効化、(6) `AddSlackHandlers` の `nil` への差し戻し、の各改変で該当テストが赤になることを確認した。
+
+**完了条件**: `make fmt && make test && make lint` が通り、`slack_allowed_host` を設定しない構成での値形式検出の結果が変わらないこと（AC-37）。
+
 ### PR-3 作成ポイント: value-format detection patterns
 
-**対象ステップ**: 3-1 / 3-2
+**対象ステップ**: 3-1 / 3-2 / 3-3
 
 **推奨タイトル**: `feat(0163): detect fine-grained PATs, Slack prefixes, JWTs and webhook URLs`
 
-**レビュー観点**: 4 パターンが既存 7 種の後に適用され既存の検出結果を変えないこと / JWT のドット 2 個固定と最小長により誤検出が抑えられていること / `slackWebhookURL` がホスト部を保持すること / 追加パターンが `escapedPlaceholder` を共用し `$` の再注入が起きないこと（AC-16）
+**レビュー観点**: 4 パターンが既存 7 種の後に適用され既存の検出結果を変えないこと / JWT のドット 2 個固定と最小長により誤検出が抑えられていること / `slackWebhookURL` がホスト部を保持すること / 追加パターンが `escapedPlaceholder` を共用し `$` の再注入が起きないこと（AC-16） / 設定ホストのパターンが `QuoteMeta` を通り、ホスト名の文字集合以外を拒否すること / `webhookHostURL` が `slackWebhookURL` の前に適用され二重置換が起きないこと / `slack_allowed_host` 未設定の構成で挙動が変わらないこと（AC-37）
 
 **実装モデル要件**: standard
 
-**判定理由**: 既存パターンを変更しない純粋な追加であり、未確立の設計判断・panel-mode トリガ・Conditional checks のいずれにも該当しない。誤検出リスクは境界値テストで閉じる。
+**判定理由**: 既存パターンを変更しない純粋な追加であり、未確立の設計判断・panel-mode トリガ・Conditional checks のいずれにも該当しない。誤検出リスクは境界値テストで閉じる。ステップ 3-3 は設定値の注入経路を 1 本追加するが、公開 API の追加（`WithWebhookHost`）と配線 1 箇所に閉じており、判定は変わらない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（ステップ 3-3 は PR 作成後・レビュー開始前に同じ PR へ追加した）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -614,9 +636,9 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 #### ステップ 6-1: 利用者向け文書
 
-- [ ] `docs/user/security-risk-assessment.ja.md` の「値ベース検出」の一覧（241〜249 行目付近）に 4 項目を追加する: GitHub fine-grained PAT（`github_pat_` プレフィックス）、Slack の追加プレフィックストークン（`xapp-`/`xoxe-`/`xoxs-`）、JWT（`eyJ` で始まる 3 セグメントの Base64URL 文字列）、Slack webhook URL（`https://hooks.slack.com/services/` 以降）。
-- [ ] 同ファイルの「限界」の段落に、引用符で囲まれていない値に空白が含まれる場合は 2 語目以降が平文で残ること（02_architecture.md 3.2.2）、および `AllowedHost` に `hooks.slack.com` 以外を設定した構成では webhook URL の値形式検出が働かないこと（02_architecture.md 3.3.3）を追記する。
-- [ ] 同ファイルに、一般的な英単語を `KeyValuePatterns` へ追加すると散文が置換されうること、および群 B のキーが引用符付きの構造化データのフィールド名として現れる場合は非機密でも置換されること（`"key": "us-east-1"`）を追記する。
+- [ ] `docs/user/security-risk-assessment.ja.md` の「値ベース検出」の一覧（241〜249 行目付近）に 4 項目を追加する: GitHub fine-grained PAT（`github_pat_` プレフィックス）、Slack の追加プレフィックストークン（`xapp-`/`xoxe-`/`xoxs-`）、JWT（`eyJ` で始まる 3 セグメントの Base64URL 文字列）、Slack webhook URL（`https://hooks.slack.com/services/` 以降、および `slack_allowed_host` に設定したホスト配下の全パス）。
+- [ ] 同ファイルの「限界」の段落に、引用符で囲まれていない値に空白が含まれる場合は 2 語目以降が平文で残ること（02_architecture.md 3.2.2）を追記する。あわせて webhook URL の検出について、`slack_allowed_host` に設定したホスト配下の URL はパス全体が置換されること（Slack 互換サービスを含む）、その一方で `audit` パッケージと `security.Validator` が持つ既定の redaction 設定にはこのホストが配線されておらず、`RedactingHandler` を経由しないロガーへ直接書く経路では固定パターンのみが働くことを記す（02_architecture.md 3.3.3「残る限界」）。
+- [ ] 同ファイルに、一般的な英単語を `KeyValuePatterns` へ追加すると散文が置換されうること、および群 B のキーが引用符付きの構造化データのフィールド名として現れる場合、または識別子内境界（`-` / `.`）に続いて現れる場合は、非機密でも置換されること（`"key": "us-east-1"`、`Public-key: not supported`）を追記する。あわせて、追加したキーが一般語キー一覧（`key` / `token` / `secret`）に一致する場合は、利用者が明示的に追加しても群 B（厳しい先頭境界）になり、緩い境界にはならないことを記す（02_architecture.md 3.2.4）。
 - [ ] `docs/user/security-risk-assessment.ja.md` の `RedactText` の抜粋（233 行目付近）を現行の実装に合わせる。ループ変数が `KeyValuePattern` になったこと、および `c.TextPlaceholder` が `c.Placeholder` に統一済みであること（抜粋が古いまま残っている）を直す。
 - [ ] 同ファイルの「限界」の段落に、**群 B のキー（`key` / `token` / `secret`）は引用符のない YAML では捕捉されない**ことを追記する（02_architecture.md 3.2.6 の残存リスク）。`token: ghp_xxx` のように行頭・インデント直後・空白の直後に現れる形は、厳しい先頭境界を満たさないため置換されない。JSON のように引用符が付く形（`"token": "..."`）、および `_` / `-` / `.` に続く形（`api_key:`、`Public-key:`）は捕捉される。**同じ原因により `secret = abc` のように `=` の前後に空白がある形も置換されない**ことを併記する（`secret=abc` と `secret = "abc"` は捕捉される）。群 A のキー（`password`、`api_key` など）にはこの制限はない。回避策として、当該キーを含むより特定的なキー名（`auth_token` など）を `KeyValuePatterns` に追加できることを併記する。
 - [ ] 同ファイルに Slack 通知の配送方式の節を追加する: 非同期に送信されること、プロセス終了時に既定 15 秒の期限で flush されること、到達不能時や強制終了時には通知が失われうること（02_architecture.md 2.4 の表の要約）、通知内容自体はログファイルに残ること、ワーカー 1 本の直列処理による最悪遅延の目安、`GSCR_SLACK_SYNC=1` が通常運用向けではないデバッグ用の退避手段であること。
@@ -833,6 +855,9 @@ awk '/^## 用語/{f=1;next} f&&/^## /{exit} f' \
 | AC-14 | test | `internal/redaction/value_detector_test.go::TestValueDetector_FreeTextEmbedding` |
 | AC-15 | test | `internal/redaction/value_detector_test.go::TestValueDetector_FalsePositives`、`internal/redaction/value_detector_test.go::TestValueDetector_SlackWebhookURL`（非該当ホスト・非該当パス） |
 | AC-16 | test | `internal/redaction/value_detector_test.go::TestValueDetector_PlaceholderWithDollarNoReinjection` |
+| AC-36 | test | `internal/redaction/value_detector_test.go::TestValueDetector_ConfiguredWebhookHost`、`internal/redaction/value_detector_test.go::TestValueDetector_ConfiguredWebhookHost_IPv6`、`internal/redaction/redactor_test.go::TestNewConfig_WithWebhookHost`、`internal/runner/bootstrap/logger_test.go::TestAddSlackHandlers_RedactsConfiguredWebhookHost`（TOML の値が redaction まで届く配線） |
+| AC-37 | test | `internal/redaction/redactor_test.go::TestNewConfig_WithWebhookHost`（空文字が no-op であること）、および `internal/redaction/value_detector_test.go` の各ケースが `newValueDetector(placeholder, nil)` で入力を素通しすることの事前検証 |
+| AC-37 | static | `git diff $BASE...HEAD -- internal/redaction/value_detector_test.go` の既存ケースの期待値に変更がないこと（`$BASE` は AC-08 と同じ SHA） |
 | AC-17 | test | `internal/logging/slack_sender_test.go::TestSlackHandler_HandleDoesNotBlockOnUnresponsiveServer` |
 | AC-18 | test | `internal/logging/slack_sender_test.go::TestSlackHandler_UnreachableSlackDoesNotDelayOtherHandlers` |
 | AC-19 | test | `internal/logging/slack_sender_test.go::TestSlackSender_SendTimeout`（期限で打ち切られること）、`internal/runner/bootstrap/logger_test.go::TestParseSlackEnvSettings`（環境変数の解釈）、`internal/runner/bootstrap/logger_test.go::TestAddSlackHandlers_PropagatesEnvSettings`（解釈した値が `SendTimeout` として届くこと） |

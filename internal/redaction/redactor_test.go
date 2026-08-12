@@ -3697,3 +3697,38 @@ func BenchmarkRedactingHandler_WithWideStruct(b *testing.B) {
 		logger.Info("test message", "wide_struct", slog.AnyValue(ws))
 	}
 }
+
+// TestNewConfig_WithWebhookHost verifies that the configured webhook host
+// reaches the value-format layer through NewConfig, and that a malformed host
+// fails construction instead of producing a Config that redacts less than the
+// caller asked for.
+func TestNewConfig_WithWebhookHost(t *testing.T) {
+	const webhookURL = "https://mattermost.example.com/hooks/abcdefghijklmnopqrstuvwxyz"
+
+	t.Run("configured host masks the URL path", func(t *testing.T) {
+		require.Equal(t, webhookURL, DefaultConfig().RedactText(webhookURL),
+			"no default pattern may match this URL, or the case proves nothing")
+
+		c, err := NewConfig(WithWebhookHost("mattermost.example.com"))
+		require.NoError(t, err)
+		assert.Equal(t, "https://mattermost.example.com/"+DefaultPlaceholder, c.RedactText(webhookURL))
+	})
+
+	t.Run("an empty host is not an error and changes nothing", func(t *testing.T) {
+		c, err := NewConfig(WithWebhookHost(""))
+		require.NoError(t, err)
+		assert.Equal(t, webhookURL, c.RedactText(webhookURL))
+	})
+
+	t.Run("a malformed host fails construction", func(t *testing.T) {
+		c, err := NewConfig(WithWebhookHost("https://mattermost.example.com/hooks"))
+		require.ErrorIs(t, err, ErrInvalidWebhookHost)
+		assert.Nil(t, c)
+	})
+
+	t.Run("the placeholder option reaches the configured-host pattern", func(t *testing.T) {
+		c, err := NewConfig(WithWebhookHost("mattermost.example.com"), WithPlaceholder("[GONE]"))
+		require.NoError(t, err)
+		assert.Equal(t, "https://mattermost.example.com/[GONE]", c.RedactText(webhookURL))
+	})
+}

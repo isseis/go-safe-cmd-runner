@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
@@ -29,7 +30,7 @@ func (v sensitiveLogValuer) LogValue() slog.Value {
 }
 
 func TestNewAuditLogger(t *testing.T) {
-	auditLogger := audit.NewAuditLogger()
+	auditLogger := audit.NewAuditLogger(nil)
 	assert.NotNil(t, auditLogger)
 }
 
@@ -285,6 +286,33 @@ func TestLogUserGroupExecution_ArgMasking(t *testing.T) {
 		entry := logUserGroupExecutionEntry(t, cmd, result)
 		assert.Equal(t, "--verbose value", entry["command_args"])
 	})
+}
+
+// TestNewAuditLogger_UsesInjectedRedactionConfig verifies that NewAuditLogger
+// applies the *redaction.Config it is given (e.g. one built with
+// WithWebhookHost) rather than always falling back to DefaultConfig(), which
+// has no webhook host and so cannot mask a Slack-compatible webhook URL.
+func TestNewAuditLogger_UsesInjectedRedactionConfig(t *testing.T) {
+	const webhookURL = "https://mattermost.example.com/hooks/abcdefghijklmnopqrstuvwxyz"
+
+	redactionConfig, err := redaction.NewConfig(redaction.WithWebhookHost("mattermost.example.com"))
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	cmd := executortestutil.CreateRuntimeCommand("/bin/false", []string{})
+	result := &audit.ExecutionResult{Stderr: webhookURL, ExitCode: 1}
+
+	audit.NewAuditLoggerWithCustomRedaction(logger, redactionConfig).LogUserGroupExecution(
+		context.Background(), cmd, result, 0, audit.PrivilegeMetrics{},
+	)
+
+	var entry map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &entry))
+	stderr, ok := entry["stderr"].(string)
+	require.True(t, ok)
+	assert.NotContains(t, stderr, "abcdefghijklmnopqrstuvwxyz", "webhook path must not reach the log output")
+	assert.Contains(t, stderr, "https://mattermost.example.com/[REDACTED]")
 }
 
 // TestLogPrivilegeEscalation_Masking verifies operation/commandName are

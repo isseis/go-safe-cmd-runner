@@ -14,6 +14,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
@@ -88,6 +89,7 @@ type runnerOptions struct {
 	groupMembershipProvider *groupmembership.GroupMembership
 	toctouValidator         isec.DirectoryPermChecker
 	riskEvaluator           risk.Evaluator
+	redactionConfig         *redaction.Config
 }
 
 // WithVerificationManager sets a custom verification manager
@@ -153,6 +155,17 @@ func WithTOCTOUValidator(v isec.DirectoryPermChecker) Option {
 	}
 }
 
+// WithRedactionConfig supplies the process-wide redaction Config, built from
+// the TOML-configured webhook host (see bootstrap.AddSlackHandlers), to the
+// audit logger and security validator this runner constructs. When unset,
+// NewRunner falls back to redaction.DefaultConfig(), which has no webhook
+// host configured.
+func WithRedactionConfig(cfg *redaction.Config) Option {
+	return func(opts *runnerOptions) {
+		opts.redactionConfig = cfg
+	}
+}
+
 // initializeRuntimeGlobal initializes the runtime global configuration
 func initializeRuntimeGlobal(opts *runnerOptions, configSpec *runnertypes.ConfigSpec) (*runnertypes.RuntimeGlobal, error) {
 	if opts.runtimeGlobal != nil {
@@ -173,7 +186,7 @@ func initializeDefaultComponents(opts *runnerOptions, configSpec *runnertypes.Co
 	// for privileged commands. NewAuditLogger wraps the default structured logger,
 	// so this is cheap and has no effect for commands that never log.
 	if opts.auditLogger == nil {
-		opts.auditLogger = audit.NewAuditLogger()
+		opts.auditLogger = audit.NewAuditLogger(opts.redactionConfig)
 	}
 
 	// Use provided components or create defaults
@@ -295,6 +308,13 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 		return nil, ErrRunIDRequired
 	}
 
+	// Resolve once so every component built below (audit logger, security
+	// validator) shares the same redaction Config instead of each falling back
+	// to DefaultConfig() independently.
+	if opts.redactionConfig == nil {
+		opts.redactionConfig = redaction.DefaultConfig()
+	}
+
 	// Initialize group membership provider if not provided
 	gmProvider := opts.groupMembershipProvider
 	if gmProvider == nil {
@@ -311,7 +331,9 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 	securityConfig.TrustedDirectories = append([]string(nil), configSpec.Security.TrustedDirectories...)
 
 	// Create validator with merged security config
-	validator, err := security.NewValidator(securityConfig, security.WithGroupMembership(gmProvider))
+	validator, err := security.NewValidator(securityConfig,
+		security.WithGroupMembership(gmProvider),
+		security.WithRedactionConfig(opts.redactionConfig))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create security validator: %w", err)
 	}

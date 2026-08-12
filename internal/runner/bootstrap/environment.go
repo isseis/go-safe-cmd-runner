@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 )
 
@@ -104,12 +105,16 @@ func SetupLogging(opts SetupLoggingOptions) error {
 
 // SetupSlackLogging is called after TOML config is loaded and adds Slack handlers.
 // Returns an ErrorTypeConfigParsing error if host validation fails (AC-L2-10).
-func SetupSlackLogging(slackConfig *SlackWebhookConfig, opts SetupLoggingOptions) error {
+// On success, it also returns the redaction Config AddSlackHandlers built (nil
+// if Slack notifications are not configured), so callers can share the same
+// webhook-host masking with other redaction-aware components instead of each
+// rebuilding it from opts.SlackAllowedHost independently.
+func SetupSlackLogging(slackConfig *SlackWebhookConfig, opts SetupLoggingOptions) (*redaction.Config, error) {
 	if slackConfig == nil {
-		return nil
+		return nil, nil
 	}
 	if slackConfig.SuccessURL == "" && slackConfig.ErrorURL == "" {
-		return nil
+		return nil, nil
 	}
 
 	slackLoggerConfig := SlackLoggerConfig{
@@ -120,11 +125,12 @@ func SetupSlackLogging(slackConfig *SlackWebhookConfig, opts SetupLoggingOptions
 		DryRun:            opts.DryRun,
 	}
 
-	if err := AddSlackHandlers(slackLoggerConfig); err != nil {
+	redactionConfig, err := AddSlackHandlers(slackLoggerConfig)
+	if err != nil {
 		// Use a constant Message and store the raw error in Err rather than formatting it
 		// into Message, because url.Parse errors embed the webhook URL verbatim and Message
 		// is written to stderr/slog by HandlePreExecutionError.
-		return &logging.PreExecutionError{
+		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
 			Message:   "Slack webhook URL validation failed",
 			Component: string(resource.ComponentLogging),
@@ -133,5 +139,5 @@ func SetupSlackLogging(slackConfig *SlackWebhookConfig, opts SetupLoggingOptions
 		}
 	}
 
-	return nil
+	return redactionConfig, nil
 }

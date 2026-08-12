@@ -14,6 +14,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
@@ -86,6 +87,26 @@ func TestNewRunner(t *testing.T) {
 			WithRunID("test-run-123"))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
+	})
+
+	t.Run("with redaction config propagated to validator", func(t *testing.T) {
+		// Verifies WithRedactionConfig reaches the security.Validator NewRunner
+		// builds internally: a webhook URL under the configured host is masked
+		// by SanitizeOutputForLogging, which DefaultConfig() (no webhook host)
+		// cannot do.
+		redactionConfig, err := redaction.NewConfig(redaction.WithWebhookHost("mattermost.example.com"))
+		require.NoError(t, err)
+
+		runner, err := NewRunner(config,
+			WithVerificationManager(setupDryRunVerification(t)),
+			WithRunID("test-run-123"),
+			WithRedactionConfig(redactionConfig))
+		require.NoError(t, err)
+
+		const webhookURL = "https://mattermost.example.com/hooks/abcdefghijklmnopqrstuvwxyz"
+		result := runner.validator.SanitizeOutputForLogging(webhookURL)
+		assert.NotContains(t, result, "abcdefghijklmnopqrstuvwxyz", "webhook path must not reach the log output")
+		assert.Contains(t, result, "https://mattermost.example.com/[REDACTED]")
 	})
 
 	t.Run("with custom group membership provider", func(t *testing.T) {

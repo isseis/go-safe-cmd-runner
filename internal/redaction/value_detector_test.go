@@ -1,6 +1,8 @@
 package redaction
 
 import (
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,7 +11,7 @@ import (
 
 func TestValueDetector_Mask_PositiveCases(t *testing.T) {
 	const placeholder = "[MASKED]"
-	d := NewValueDetector(placeholder)
+	d := newValueDetector(placeholder, nil)
 
 	tests := []struct {
 		name  string
@@ -90,7 +92,7 @@ MHQCAQEEI...
 
 func TestValueDetector_Mask_NegativeCases(t *testing.T) {
 	const placeholder = "[MASKED]"
-	d := NewValueDetector(placeholder)
+	d := newValueDetector(placeholder, nil)
 
 	tests := []struct {
 		name  string
@@ -147,7 +149,7 @@ MIIBIjANBgkqhki...
 
 func TestValueDetector_Mask_AllPatternsReturnSamePlaceholder(t *testing.T) {
 	const placeholder = "[SECRET]"
-	d := NewValueDetector(placeholder)
+	d := newValueDetector(placeholder, nil)
 
 	// Each secret type should be replaced with the placeholder, not left partially masked
 	inputs := []string{
@@ -176,7 +178,7 @@ func TestValueDetector_Mask_AllPatternsReturnSamePlaceholder(t *testing.T) {
 // host) intact for log readability.
 func TestValueDetector_Mask_PreservesNonSecretContext(t *testing.T) {
 	const placeholder = "[MASKED]"
-	d := NewValueDetector(placeholder)
+	d := newValueDetector(placeholder, nil)
 
 	t.Run("Bearer prefix is preserved", func(t *testing.T) {
 		result := d.Mask("Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc")
@@ -201,7 +203,7 @@ func TestValueDetector_Mask_PreservesNonSecretContext(t *testing.T) {
 // explicit port and a path segment containing "@" (but no embedded
 // credentials) is not falsely matched as having a password containing "/".
 func TestValueDetector_Mask_URLWithPortAndAtInPath(t *testing.T) {
-	d := NewValueDetector("[MASKED]")
+	d := newValueDetector("[MASKED]", nil)
 	input := "https://api.example.com:8080/path@something"
 	result := d.Mask(input)
 	assert.Equal(t, input, result,
@@ -209,13 +211,497 @@ func TestValueDetector_Mask_URLWithPortAndAtInPath(t *testing.T) {
 }
 
 func TestValueDetector_Mask_EmptyInput(t *testing.T) {
-	d := NewValueDetector("[REDACTED]")
+	d := newValueDetector("[REDACTED]", nil)
 	result := d.Mask("")
 	assert.Equal(t, "", result)
 }
 
 func TestNewValueDetector(t *testing.T) {
-	d := NewValueDetector("[CUSTOM]")
+	d := newValueDetector("[CUSTOM]", nil)
 	assert.NotNil(t, d)
 	assert.Equal(t, "[CUSTOM]", d.placeholder)
+}
+
+// TestValueDetector_GitHubFineGrainedPAT verifies that a fine-grained PAT
+// (github_pat_ prefix) is masked when it appears without a key name. The
+// min-length boundary is fixed in a pair: 29 body characters stay untouched, 30
+// are replaced.
+func TestValueDetector_GitHubFineGrainedPAT(t *testing.T) {
+	const placeholder = "[MASKED]"
+	d := newValueDetector(placeholder, nil)
+
+	tests := []struct {
+		name     string
+		input    string
+		wantMask bool
+	}{
+		{
+			name:     "30 characters is replaced",
+			input:    "github_pat_" + strings.Repeat("a", 30),
+			wantMask: true,
+		},
+		{
+			name:     "29 characters is left alone",
+			input:    "github_pat_" + strings.Repeat("a", 29),
+			wantMask: false,
+		},
+		{
+			name:     "underscores count toward the length",
+			input:    "github_pat_" + strings.Repeat("a", 15) + strings.Repeat("_", 15),
+			wantMask: true,
+		},
+		{
+			name:     "embedded between prose",
+			input:    "cloning as github_pat_" + strings.Repeat("a", 30) + " over https",
+			wantMask: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := d.Mask(tt.input)
+			if tt.wantMask {
+				assert.Contains(t, result, placeholder,
+					"fine-grained PAT must be replaced with the placeholder")
+				assert.NotContains(t, result, "github_pat_",
+					"the PAT body must not remain in the clear")
+			} else {
+				assert.Equal(t, tt.input, result,
+					"a PAT below the min length must be left unchanged")
+			}
+		})
+	}
+}
+
+// TestValueDetector_SlackPrefixTokens verifies that tokens with the xapp- /
+// xoxe- / xoxs- prefixes are masked, while the existing xoxb- / xoxp- / xoxa- /
+// xoxr- prefixes keep their prior detection (the 3-segment slackToken pattern
+// still owns them). The min-length boundary is fixed in a pair.
+func TestValueDetector_SlackPrefixTokens(t *testing.T) {
+	const placeholder = "[MASKED]"
+	d := newValueDetector(placeholder, nil)
+
+	tests := []struct {
+		name     string
+		input    string
+		wantMask bool
+	}{
+		{
+			name:     "xapp- 10 characters is replaced",
+			input:    "xapp-" + strings.Repeat("a", 10),
+			wantMask: true,
+		},
+		{
+			name:     "xapp- 9 characters is left alone",
+			input:    "xapp-" + strings.Repeat("a", 9),
+			wantMask: false,
+		},
+		{
+			name:     "xoxe- is replaced",
+			input:    "xoxe-" + strings.Repeat("a", 10),
+			wantMask: true,
+		},
+		{
+			name:     "xoxs- is replaced",
+			input:    "xoxs-" + strings.Repeat("a", 10),
+			wantMask: true,
+		},
+		{
+			name:     "xoxb- keeps the existing 3-segment detection",
+			input:    "xoxb-" + strings.Repeat("1", 12) + "-" + strings.Repeat("2", 12) + "-abc",
+			wantMask: true,
+		},
+		{
+			name:     "xoxp- keeps the existing 3-segment detection",
+			input:    "xoxp-" + strings.Repeat("1", 12) + "-" + strings.Repeat("2", 12) + "-abc",
+			wantMask: true,
+		},
+		{
+			name:     "xoxa- keeps the existing 3-segment detection",
+			input:    "xoxa-" + strings.Repeat("1", 12) + "-" + strings.Repeat("2", 12) + "-abc",
+			wantMask: true,
+		},
+		{
+			name:     "xoxr- keeps the existing 3-segment detection",
+			input:    "xoxr-" + strings.Repeat("1", 12) + "-" + strings.Repeat("2", 12) + "-abc",
+			wantMask: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := d.Mask(tt.input)
+			if tt.wantMask {
+				assert.Contains(t, result, placeholder,
+					"Slack prefix token must be replaced with the placeholder")
+				assert.NotContains(t, result, tt.input,
+					"the token must not remain in the clear")
+			} else {
+				assert.Equal(t, tt.input, result,
+					"a token below the min length must be left unchanged")
+			}
+		})
+	}
+}
+
+// TestValueDetector_SlackPrefixToken_HyphenatedBody documents the accepted
+// over-redaction of the slackPrefixToken pattern: the body class allows internal
+// hyphens, so a trailing "-word" is absorbed into the masked span rather than
+// left in the clear. This mirrors how the 3-segment slackToken pattern treats
+// its full structure; the alternative (a body that stops at every hyphen) would
+// fail to mask real tokens, which carry hyphen-separated segments.
+func TestValueDetector_SlackPrefixToken_HyphenatedBody(t *testing.T) {
+	d := newValueDetector("[MASKED]", nil)
+
+	input := "xapp-" + strings.Repeat("a", 10) + "-token"
+	result := d.Mask(input)
+	assert.Equal(t, "[MASKED]", result,
+		"the hyphenated body is part of the token and is masked wholesale")
+}
+
+// TestValueDetector_JWT verifies that a three-segment JWT is replaced, that an
+// alg=none JWT (empty signature) is replaced too, and that the false-positive
+// guards in 3.3.2 hold: the header/payload min-length 10 boundary is fixed in
+// pairs.
+func TestValueDetector_JWT(t *testing.T) {
+	const placeholder = "[MASKED]"
+	d := newValueDetector(placeholder, nil)
+
+	tests := []struct {
+		name     string
+		input    string
+		wantMask bool
+	}{
+		{
+			name:     "three-segment JWT is replaced",
+			input:    "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc",
+			wantMask: true,
+		},
+		{
+			name:     "empty signature (alg=none) is replaced",
+			input:    "eyJhbGciOiJub25lIn0.eyJzdWIiOiJhZG1pbiJ9.",
+			wantMask: true,
+		},
+		{
+			name:     "header of 9 characters is left alone",
+			input:    "eyJaaaaaa.bbbbbbbbbb.ccc",
+			wantMask: false,
+		},
+		{
+			name:     "header of 10 characters is replaced",
+			input:    "eyJaaaaaaa.bbbbbbbbbb.ccc",
+			wantMask: true,
+		},
+		{
+			name:     "payload of 9 characters is left alone",
+			input:    "eyJaaaaaaa.bbbbbbbbb.ccc",
+			wantMask: false,
+		},
+		{
+			name:     "payload of 10 characters is replaced",
+			input:    "eyJaaaaaaa.bbbbbbbbbb.ccc",
+			wantMask: true,
+		},
+		{
+			name:     "sentence-final period is left alone (known limitation)",
+			input:    "eyJaaaaaaa.bbbbbbbbbb.ccc.",
+			wantMask: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := d.Mask(tt.input)
+			if tt.wantMask {
+				assert.Contains(t, result, placeholder,
+					"JWT must be replaced with the placeholder")
+				assert.NotContains(t, result, "eyJ",
+					"the JWT must not remain in the clear")
+			} else {
+				assert.Equal(t, tt.input, result,
+					"a JWT below the length bounds must be left unchanged")
+			}
+		})
+	}
+}
+
+// TestValueDetector_JWT_TrailingCharacterIsReEmitted pins the "${1}" mechanism
+// in Mask: the JWT regex consumes the single character after the token to
+// enforce the exactly-two-dots rule (RE2 has no lookahead), and Mask must
+// re-emit that character so surrounding text is not mangled. Dropping the
+// "${1}" reference would turn "expired" into "xpired", which this test fails on.
+func TestValueDetector_JWT_TrailingCharacterIsReEmitted(t *testing.T) {
+	d := newValueDetector("[MASKED]", nil)
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "space after token is preserved",
+			input: "token eyJaaaaaaa.bbbbbbbbbb.ccc expired",
+			want:  "token [MASKED] expired",
+		},
+		{
+			name:  "punctuation after token is preserved",
+			input: "eyJaaaaaaa.bbbbbbbbbb.ccc!",
+			want:  "[MASKED]!",
+		},
+		{
+			name:  "token at end of string needs no trailing character",
+			input: "eyJaaaaaaa.bbbbbbbbbb.ccc",
+			want:  "[MASKED]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, d.Mask(tt.input))
+		})
+	}
+}
+
+// TestValueDetector_NoWebhookMaskingWithoutConfiguredHost pins that webhook
+// masking is off entirely until a host is configured (see the webhookHostURL
+// field comment): there is no fixed hooks.slack.com fallback to catch a
+// webhook URL when the deployment's host is not yet known.
+func TestValueDetector_NoWebhookMaskingWithoutConfiguredHost(t *testing.T) {
+	d := newValueDetector("[MASKED]", nil)
+
+	tests := []string{
+		"https://hooks.slack.com/services/T000/B000/XXXX",
+		"https://mattermost.example.com/hooks/abcdefghijklmnopqrstuvwxyz",
+	}
+
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			assert.Equal(t, input, d.Mask(input))
+		})
+	}
+}
+
+// TestValueDetector_FreeTextEmbedding verifies that the three value formats
+// covered above (fine-grained PAT, Slack prefix token, JWT) are masked even
+// when embedded in free text (surrounding prose) rather than appearing
+// standalone.
+func TestValueDetector_FreeTextEmbedding(t *testing.T) {
+	const placeholder = "[MASKED]"
+	d := newValueDetector(placeholder, nil)
+
+	tests := []struct {
+		name     string
+		input    string
+		fragment string
+	}{
+		{
+			name:     "fine-grained PAT in command output",
+			input:    "cloning repo with github_pat_" + strings.Repeat("a", 30) + " over https",
+			fragment: "github_pat_",
+		},
+		{
+			name:     "Slack prefix token in command output",
+			input:    "posting to channel with xapp-" + strings.Repeat("a", 10) + " as the app token",
+			fragment: "xapp-",
+		},
+		{
+			name:     "JWT in command output",
+			input:    "auth token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc expired",
+			fragment: "eyJ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := d.Mask(tt.input)
+			assert.Contains(t, result, placeholder,
+				"the embedded secret must be replaced with the placeholder")
+			assert.NotContains(t, result, tt.fragment,
+				"the embedded secret must not remain in the clear")
+		})
+	}
+}
+
+// TestValueDetector_FalsePositives verifies that none of the new patterns
+// matches a string that merely resembles one of the secret formats.
+func TestValueDetector_FalsePositives(t *testing.T) {
+	d := newValueDetector("[MASKED]", nil)
+
+	tests := []string{
+		"github_pattern",
+		"xapple",
+		"eyJhbGciOiJIUzI1NiJ9",
+		"eyJaaaaaaa.bbbbbbbbbb",
+		"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc.def",
+	}
+
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			result := d.Mask(input)
+			assert.Equal(t, input, result,
+				"a non-secret string resembling a secret format must be left unchanged")
+		})
+	}
+}
+
+// TestValueDetector_PlaceholderWithDollarNoReinjection verifies that when the
+// placeholder contains "$1", none of the four added patterns re-injects the
+// original secret via capture-group expansion. The detector is given a
+// configured webhook host so the webhook URL case actually exercises that
+// pattern's capture-group replacement instead of passing through unmasked.
+func TestValueDetector_PlaceholderWithDollarNoReinjection(t *testing.T) {
+	const placeholder = "[$1]"
+	d := newValueDetector(placeholder, mustCompileWebhookHostPattern(t, "hooks.slack.com"))
+
+	tests := []struct {
+		name     string
+		input    string
+		fragment string
+	}{
+		{
+			name:     "fine-grained PAT",
+			input:    "github_pat_" + strings.Repeat("a", 30),
+			fragment: "github_pat_",
+		},
+		{
+			name:     "Slack prefix token",
+			input:    "xapp-" + strings.Repeat("a", 10),
+			fragment: "xapp-",
+		},
+		{
+			name:     "JWT",
+			input:    "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc",
+			fragment: "eyJ",
+		},
+		{
+			name:     "webhook URL",
+			input:    "https://hooks.slack.com/services/T000/B000/XXXX",
+			fragment: "/T000/",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := d.Mask(tt.input)
+			assert.Contains(t, result, placeholder,
+				"the masked output must contain the literal [$1] placeholder")
+			assert.NotContains(t, result, tt.fragment,
+				"the secret must not be re-injected by capture-group expansion")
+		})
+	}
+}
+
+// mustCompileWebhookHostPattern builds the configured-host pattern for a test.
+func mustCompileWebhookHostPattern(t *testing.T, host string) *regexp.Regexp {
+	t.Helper()
+	re, err := compileWebhookHostPattern(host)
+	require.NoError(t, err)
+	return re
+}
+
+// TestValueDetector_ConfiguredWebhookHost verifies the pattern built from the
+// deployment's configured webhook host: every path under that host is masked,
+// with the scheme and host kept.
+//
+// Each case asserts first that a detector without the configured host leaves
+// the input untouched. That is what makes the test specific: no pattern in
+// this package can match a Slack-compatible endpoint's URL on its own, so a
+// masked result can only have come from the layer under test.
+func TestValueDetector_ConfiguredWebhookHost(t *testing.T) {
+	const placeholder = "[MASKED]"
+	const host = "mattermost.example.com"
+	d := newValueDetector(placeholder, mustCompileWebhookHostPattern(t, host))
+	withoutHost := newValueDetector(placeholder, nil)
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "webhook path under the configured host is masked",
+			input: "https://mattermost.example.com/hooks/abcdefghijklmnopqrstuvwxyz",
+			want:  "https://mattermost.example.com/" + placeholder,
+		},
+		{
+			name:  "host is matched case-insensitively",
+			input: "https://Mattermost.Example.COM/hooks/abcdefghijklmnopqrstuvwxyz",
+			want:  "https://Mattermost.Example.COM/" + placeholder,
+		},
+		{
+			name:  "a port on the URL does not defeat the match",
+			input: "https://mattermost.example.com:8443/hooks/abcdefghijklmnopqrstuvwxyz",
+			want:  "https://mattermost.example.com:8443/" + placeholder,
+		},
+		{
+			name:  "the URL is masked inside surrounding prose",
+			input: `Post "https://mattermost.example.com/hooks/abcdef": dial tcp: timeout`,
+			want:  `Post "https://mattermost.example.com/` + placeholder + `": dial tcp: timeout`,
+		},
+		{
+			name:  "trailing punctuation is not swallowed",
+			input: "posted to https://mattermost.example.com/hooks/abcdef.",
+			want:  "posted to https://mattermost.example.com/" + placeholder + ".",
+		},
+		{
+			name:  "the bare host without a path is left alone",
+			input: "https://mattermost.example.com/",
+			want:  "https://mattermost.example.com/",
+		},
+		{
+			name:  "a different host is left alone",
+			input: "https://mattermost.example.com.evil.test/hooks/abcdef",
+			want:  "https://mattermost.example.com.evil.test/hooks/abcdef",
+		},
+		{
+			name:  "a plaintext scheme is left alone, as validateWebhookURL requires HTTPS",
+			input: "http://mattermost.example.com/hooks/abcdef",
+			want:  "http://mattermost.example.com/hooks/abcdef",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.input, withoutHost.Mask(tt.input),
+				"without the configured host no pattern may match this input, or the case proves nothing")
+			assert.Equal(t, tt.want, d.Mask(tt.input))
+		})
+	}
+}
+
+// TestValueDetector_ConfiguredWebhookHost_IPv6 covers the address-literal form:
+// configuration carries an IPv6 host bare ("::1"), a URL brackets it, and the
+// pattern has to bridge the two.
+func TestValueDetector_ConfiguredWebhookHost_IPv6(t *testing.T) {
+	const placeholder = "[MASKED]"
+	d := newValueDetector(placeholder, mustCompileWebhookHostPattern(t, "2001:db8::1"))
+
+	const input = "https://[2001:db8::1]/hooks/abcdef"
+	require.Equal(t, input, newValueDetector(placeholder, nil).Mask(input),
+		"no pattern may match this input, or the case proves nothing")
+	assert.Equal(t, "https://[2001:db8::1]/"+placeholder, d.Mask(input))
+}
+
+// TestCompileWebhookHostPattern_RejectsMalformedHost verifies that a host which
+// is not a bare hostname or address literal is rejected rather than trimmed or
+// escaped into a pattern that would then match something unintended.
+func TestCompileWebhookHostPattern_RejectsMalformedHost(t *testing.T) {
+	hosts := []string{
+		"",
+		"https://hooks.slack.com",
+		"hooks.slack.com/services",
+		"hooks.slack.com ",
+		"hooks slack com",
+		"hooks.slack.com?x=1",
+		".*",
+		"hooks.slack.com:443",
+		"127.0.0.1:8080",
+	}
+
+	for _, host := range hosts {
+		t.Run(host, func(t *testing.T) {
+			_, err := compileWebhookHostPattern(host)
+			require.ErrorIs(t, err, ErrInvalidWebhookHost)
+		})
+	}
 }

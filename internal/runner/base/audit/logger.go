@@ -23,22 +23,27 @@ import (
 // uniformly instead of distinguishing "absent" from "omitted".
 const auditValueAbsent = "n/a"
 
-// argRedactor masks secrets in command arguments before they reach the log,
-// staying consistent with the global redaction mechanism. The production
-// logger also runs behind a RedactingHandler; applying redaction here keeps the
-// masking guarantee even when LogRiskProfile writes to a logger without that
-// handler.
-var argRedactor = redaction.DefaultConfig()
-
 // Logger provides structured audit logging functionality
 type Logger struct {
 	logger *slog.Logger
+	// redactor masks secrets in command arguments before they reach the log,
+	// staying consistent with the global redaction mechanism. The production
+	// logger also runs behind a RedactingHandler; applying redaction here keeps
+	// the masking guarantee even when LogRiskProfile writes to a logger without
+	// that handler.
+	redactor *redaction.Config
 }
 
-// NewAuditLogger creates a new audit logger instance using the global logger
-// This integrates with the new logging framework for unified logging
-func NewAuditLogger() *Logger {
-	return &Logger{logger: slog.Default()}
+// NewAuditLogger creates a new audit logger instance using the global logger.
+// This integrates with the new logging framework for unified logging.
+// redactionConfig should be the process-wide redaction Config (carrying the
+// deployment's configured webhook host, if any); nil falls back to
+// redaction.DefaultConfig(), same convention as redaction.NewRedactingHandler.
+func NewAuditLogger(redactionConfig *redaction.Config) *Logger {
+	if redactionConfig == nil {
+		redactionConfig = redaction.DefaultConfig()
+	}
+	return &Logger{logger: slog.Default(), redactor: redactionConfig}
 }
 
 // PrivilegeMetrics contains metrics about privilege usage during execution
@@ -68,9 +73,9 @@ func (l *Logger) LogUserGroupExecution(
 		slog.Int64("timestamp", time.Now().Unix()),
 		slog.String("command_name", cmd.Name()),
 		slog.String("command_path", cmd.Cmd()),
-		slog.String("command_args", argRedactor.RedactText(strings.Join(cmd.Args(), " "))),
+		slog.String("command_args", l.redactor.RedactText(strings.Join(cmd.Args(), " "))),
 		slog.String("expanded_command_path", cmd.ExpandedCmd),
-		slog.String("expanded_command_args", argRedactor.RedactText(strings.Join(cmd.ExpandedArgs, " "))),
+		slog.String("expanded_command_args", l.redactor.RedactText(strings.Join(cmd.ExpandedArgs, " "))),
 		slog.Int("exit_code", result.ExitCode),
 		slog.Int64("execution_duration_ms", duration.Milliseconds()),
 		slog.Int("user_id", os.Getuid()),
@@ -98,8 +103,8 @@ func (l *Logger) LogUserGroupExecution(
 	} else {
 		// Create new slice to avoid modifying baseAttrs
 		additionalAttrs := []slog.Attr{
-			slog.String("stdout", argRedactor.RedactText(result.Stdout)),
-			slog.String("stderr", argRedactor.RedactText(result.Stderr)),
+			slog.String("stdout", l.redactor.RedactText(result.Stdout)),
+			slog.String("stderr", l.redactor.RedactText(result.Stderr)),
 			slog.Bool("slack_notify", true), // Notify Slack for failed user/group commands
 			slog.String("message_type", "user_group_command_failure"),
 		}
@@ -124,8 +129,8 @@ func (l *Logger) LogPrivilegeEscalation(
 		slog.String("audit_type", "privilege_escalation"),
 		slog.Bool("audit", true), // Mark as audit event
 		slog.Int64("timestamp", time.Now().Unix()),
-		slog.String(common.PrivilegeEscalationFailureAttrs.Operation, argRedactor.RedactText(operation)),
-		slog.String(common.PrivilegeEscalationFailureAttrs.CommandName, argRedactor.RedactText(commandName)),
+		slog.String(common.PrivilegeEscalationFailureAttrs.Operation, l.redactor.RedactText(operation)),
+		slog.String(common.PrivilegeEscalationFailureAttrs.CommandName, l.redactor.RedactText(commandName)),
 		slog.Int(common.PrivilegeEscalationFailureAttrs.OriginalUID, originalUID),
 		slog.Int(common.PrivilegeEscalationFailureAttrs.TargetUID, targetUID),
 		slog.Bool("success", success),
@@ -162,7 +167,7 @@ func (l *Logger) LogSecurityEvent(
 		slog.Int64("timestamp", time.Now().Unix()),
 		slog.String(common.SecurityAlertAttrs.EventType, eventType),
 		slog.String(common.SecurityAlertAttrs.Severity, severity),
-		slog.String(common.SecurityAlertAttrs.Message, argRedactor.RedactText(message)),
+		slog.String(common.SecurityAlertAttrs.Message, l.redactor.RedactText(message)),
 		slog.Int("user_id", os.Getuid()),
 		slog.Int("effective_user_id", os.Geteuid()),
 		slog.Int("process_id", os.Getpid()),
@@ -179,7 +184,7 @@ func (l *Logger) LogSecurityEvent(
 		prefixedKey := "detail_" + key
 		switch v := value.(type) {
 		case string:
-			attrs = append(attrs, slog.String(prefixedKey, argRedactor.RedactText(v)))
+			attrs = append(attrs, slog.String(prefixedKey, l.redactor.RedactText(v)))
 		case int:
 			attrs = append(attrs, slog.Int64(prefixedKey, int64(v)))
 		case int64:
@@ -275,7 +280,7 @@ func (l *Logger) LogRiskProfile(ctx context.Context, entry risktypes.RiskAuditEn
 	if len(entry.Args) > 0 {
 		masked := make([]string, len(entry.Args))
 		for i, a := range entry.Args {
-			masked[i] = argRedactor.RedactText(a)
+			masked[i] = l.redactor.RedactText(a)
 		}
 		attrs = append(attrs, slog.Any("command_args", masked))
 	}
@@ -313,13 +318,13 @@ func (l *Logger) LogRiskProfile(ctx context.Context, entry risktypes.RiskAuditEn
 			oz := &assessment.OperandZones[i]
 			zones[i] = map[string]any{
 				"index":            oz.Index,
-				"raw":              argRedactor.RedactText(oz.Raw),
-				"resolved":         argRedactor.RedactText(oz.Resolved),
+				"raw":              l.redactor.RedactText(oz.Raw),
+				"resolved":         l.redactor.RedactText(oz.Resolved),
 				"zone":             string(oz.Zone),
 				"role":             string(oz.Role),
 				"matched_critical": oz.MatchedCritical,
 				"trusted":          oz.Trusted,
-				"unresolved_err":   argRedactor.RedactText(oz.UnresolvedErr),
+				"unresolved_err":   l.redactor.RedactText(oz.UnresolvedErr),
 			}
 		}
 		attrs = append(attrs, slog.Any("operand_zones", zones))

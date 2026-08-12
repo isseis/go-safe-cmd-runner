@@ -368,7 +368,7 @@ func TestSetupLoggerWithConfig_FailureLoggerExcludesSlack(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add Slack handlers via AddSlackHandlers (Slack is now excluded from failureLogger by design)
-	err = AddSlackHandlers(SlackLoggerConfig{
+	_, err = AddSlackHandlers(SlackLoggerConfig{
 		WebhookURLSuccess: "https://hooks.slack.com/services/test-success",
 		WebhookURLError:   "https://hooks.slack.com/services/test-error",
 		AllowedHost:       "hooks.slack.com",
@@ -477,4 +477,46 @@ func TestSetupLoggerWithConfig_RejectsInvalidRunID(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAddSlackHandlers_RedactsConfiguredWebhookHost verifies the wiring that
+// carries slack_allowed_host from the TOML into the redaction Config: after
+// AddSlackHandlers, a URL under the configured host is masked in the log
+// output.
+//
+// The Phase 1 assertion before it is what makes this a test of the wiring
+// rather than of the pattern: the same message logged through the Phase 1
+// logger, built before the TOML was read, still carries the URL in the clear.
+func TestAddSlackHandlers_RedactsConfiguredWebhookHost(t *testing.T) {
+	const (
+		allowedHost = "mattermost.example.com"
+		webhookURL  = "https://mattermost.example.com/hooks/abcdefghijklmnopqrstuvwxyz"
+		runID       = "test-webhook-host-001"
+	)
+
+	var consoleBuffer bytes.Buffer
+	saveAndRestoreGlobals(t)
+	require.NoError(t, SetupLoggerWithConfig(LoggerConfig{
+		Level:         slog.LevelDebug,
+		RunID:         runID,
+		ConsoleWriter: &consoleBuffer,
+	}, false, true))
+
+	slog.Info("phase 1", "url", webhookURL)
+	require.Contains(t, consoleBuffer.String(), webhookURL,
+		"Phase 1 cannot know the configured host, so this URL must still be in the clear")
+
+	consoleBuffer.Reset()
+	_, err := AddSlackHandlers(SlackLoggerConfig{
+		WebhookURLError: webhookURL,
+		AllowedHost:     allowedHost,
+		RunID:           runID,
+	})
+	require.NoError(t, err)
+
+	slog.Info("phase 2", "url", webhookURL)
+	output := consoleBuffer.String()
+	assert.NotContains(t, output, "abcdefghijklmnopqrstuvwxyz",
+		"the webhook path must not reach the log output")
+	assert.Contains(t, output, "https://mattermost.example.com/[REDACTED]")
 }
