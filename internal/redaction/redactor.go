@@ -174,12 +174,14 @@ func WithAdditionalKeyValuePatterns(patterns ...KeyValuePattern) Option {
 // notifications to, so that every URL path under that host is masked.
 //
 // A webhook URL's path is the credential, and a Slack-compatible endpoint
-// (Mattermost, a proxy, a self-hosted relay) serves it from a host and a path
-// prefix this package cannot know in advance. The fixed hooks.slack.com pattern
-// applies either way; this adds the deployment's own host on top of it.
+// (hooks.slack.com, Mattermost, a proxy, a self-hosted relay) serves it from a
+// host and a path prefix this package cannot know in advance, so masking relies
+// entirely on the host declared here.
 //
 // An empty host means none is configured and is not an error - that is how the
-// value arrives when Slack notifications are switched off. Anything that is not
+// value arrives when Slack notifications are switched off, or before the TOML
+// declaring it has been read. In both cases value-based webhook masking is
+// simply not active yet. Anything that is not
 // a bare hostname or address literal (a scheme, a port, a path, whitespace)
 // makes NewConfig fail with ErrInvalidWebhookHost rather than be trimmed into
 // shape, because a host that is silently repaired is indistinguishable from one

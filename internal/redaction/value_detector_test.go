@@ -462,83 +462,21 @@ func TestValueDetector_JWT_TrailingCharacterIsReEmitted(t *testing.T) {
 	}
 }
 
-// TestValueDetector_SlackWebhookURL verifies the hooks.slack.com/services/
-// pattern: the URL is replaced while the /services/ prefix is kept, and both
-// false-positive pairs (no /services/ path, non-hooks host) are left alone.
-func TestValueDetector_SlackWebhookURL(t *testing.T) {
-	const placeholder = "[MASKED]"
-	d := newValueDetector(placeholder, nil)
-
-	tests := []struct {
-		name     string
-		input    string
-		wantMask bool
-	}{
-		{
-			name:     "webhook URL keeps the /services/ prefix",
-			input:    "https://hooks.slack.com/services/T000/B000/XXXX",
-			wantMask: true,
-		},
-		{
-			name:     "hooks host without /services/ path is left alone",
-			input:    "https://hooks.slack.com/",
-			wantMask: false,
-		},
-		{
-			name:     "different host is left alone",
-			input:    "https://hooks.slack.com.evil/services/T000/B000/XXXX",
-			wantMask: false,
-		},
-		{
-			name:     "unrelated host is left alone",
-			input:    "https://example.com/services/T000/B000/XXXX",
-			wantMask: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := d.Mask(tt.input)
-			if tt.wantMask {
-				assert.Contains(t, result, "https://hooks.slack.com/services/"+placeholder,
-					"the /services/ prefix must be preserved around the placeholder")
-				assert.NotContains(t, result, "/T000/",
-					"the webhook path must not remain in the clear")
-			} else {
-				assert.Equal(t, tt.input, result,
-					"a URL that is not a hooks.slack.com webhook must be left unchanged")
-			}
-		})
-	}
-}
-
-// TestValueDetector_SlackWebhookURL_TrailingPunctuation pins the path class's
-// stopping behavior: the matched path is restricted to URL path characters, so
-// a trailing period or comma that belongs to the surrounding text is left in
-// place rather than swallowed into the masked span.
-func TestValueDetector_SlackWebhookURL_TrailingPunctuation(t *testing.T) {
+// TestValueDetector_NoWebhookMaskingWithoutConfiguredHost pins that webhook
+// masking is off entirely until a host is configured (see the webhookHostURL
+// field comment): there is no fixed hooks.slack.com fallback to catch a
+// webhook URL when the deployment's host is not yet known.
+func TestValueDetector_NoWebhookMaskingWithoutConfiguredHost(t *testing.T) {
 	d := newValueDetector("[MASKED]", nil)
 
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{
-			name:  "trailing period survives",
-			input: "https://hooks.slack.com/services/T000/B000/XXXX.",
-			want:  "https://hooks.slack.com/services/[MASKED].",
-		},
-		{
-			name:  "trailing comma survives",
-			input: "https://hooks.slack.com/services/T000/B000/XXXX,",
-			want:  "https://hooks.slack.com/services/[MASKED],",
-		},
+	tests := []string{
+		"https://hooks.slack.com/services/T000/B000/XXXX",
+		"https://mattermost.example.com/hooks/abcdefghijklmnopqrstuvwxyz",
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, d.Mask(tt.input))
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			assert.Equal(t, input, d.Mask(input))
 		})
 	}
 }
@@ -608,10 +546,12 @@ func TestValueDetector_FalsePositives(t *testing.T) {
 
 // TestValueDetector_PlaceholderWithDollarNoReinjection verifies that when the
 // placeholder contains "$1", none of the four added patterns re-injects the
-// original secret via capture-group expansion.
+// original secret via capture-group expansion. The detector is given a
+// configured webhook host so the webhook URL case actually exercises that
+// pattern's capture-group replacement instead of passing through unmasked.
 func TestValueDetector_PlaceholderWithDollarNoReinjection(t *testing.T) {
 	const placeholder = "[$1]"
-	d := newValueDetector(placeholder, nil)
+	d := newValueDetector(placeholder, mustCompileWebhookHostPattern(t, "hooks.slack.com"))
 
 	tests := []struct {
 		name     string
@@ -664,14 +604,14 @@ func mustCompileWebhookHostPattern(t *testing.T, host string) *regexp.Regexp {
 // with the scheme and host kept.
 //
 // Each case asserts first that a detector without the configured host leaves
-// the input untouched. That is what makes the test specific: none of the fixed
-// patterns can match a Slack-compatible endpoint's URL, so a masked result can
-// only have come from the layer under test.
+// the input untouched. That is what makes the test specific: no pattern in
+// this package can match a Slack-compatible endpoint's URL on its own, so a
+// masked result can only have come from the layer under test.
 func TestValueDetector_ConfiguredWebhookHost(t *testing.T) {
 	const placeholder = "[MASKED]"
 	const host = "mattermost.example.com"
 	d := newValueDetector(placeholder, mustCompileWebhookHostPattern(t, host))
-	fixedOnly := newValueDetector(placeholder, nil)
+	withoutHost := newValueDetector(placeholder, nil)
 
 	tests := []struct {
 		name  string
@@ -722,8 +662,8 @@ func TestValueDetector_ConfiguredWebhookHost(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.input, fixedOnly.Mask(tt.input),
-				"without the configured host no fixed pattern may match this input, or the case proves nothing")
+			require.Equal(t, tt.input, withoutHost.Mask(tt.input),
+				"without the configured host no pattern may match this input, or the case proves nothing")
 			assert.Equal(t, tt.want, d.Mask(tt.input))
 		})
 	}
@@ -738,24 +678,8 @@ func TestValueDetector_ConfiguredWebhookHost_IPv6(t *testing.T) {
 
 	const input = "https://[2001:db8::1]/hooks/abcdef"
 	require.Equal(t, input, newValueDetector(placeholder, nil).Mask(input),
-		"no fixed pattern may match this input, or the case proves nothing")
+		"no pattern may match this input, or the case proves nothing")
 	assert.Equal(t, "https://[2001:db8::1]/"+placeholder, d.Mask(input))
-}
-
-// TestValueDetector_ConfiguredWebhookHost_IsHooksSlack pins the application
-// order for the default deployment, where the configured host and the fixed
-// pattern name the same host. The configured host runs first and consumes the
-// whole path; were the order reversed, the fixed pattern would leave
-// "/services/" as the only path characters in front of the placeholder and the
-// configured pattern would mask that a second time.
-func TestValueDetector_ConfiguredWebhookHost_IsHooksSlack(t *testing.T) {
-	const placeholder = "[MASKED]"
-	d := newValueDetector(placeholder, mustCompileWebhookHostPattern(t, "hooks.slack.com"))
-
-	result := d.Mask("https://hooks.slack.com/services/T000/B000/XXXX")
-	assert.Equal(t, "https://hooks.slack.com/"+placeholder, result)
-	assert.NotContains(t, result, placeholder+placeholder,
-		"the two webhook patterns must not both mask the same URL")
 }
 
 // TestCompileWebhookHostPattern_RejectsMalformedHost verifies that a host which

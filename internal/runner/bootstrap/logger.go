@@ -255,13 +255,13 @@ func AddSlackHandlers(config SlackLoggerConfig) error {
 		return fmt.Errorf("failed to create multi handler: %w", err)
 	}
 
-	// Phase 1 built its RedactingHandler before the TOML was read, so it masks
-	// webhook URLs by the fixed hooks.slack.com pattern alone. Here the
-	// configured host is known, so rebuild the redaction Config with it: a
-	// deployment pointing at a Slack-compatible endpoint gets its own webhook
-	// URLs masked from this point on, which is where they can first appear in a
-	// log line. AllowedHost is empty when Slack is switched off, and
-	// WithWebhookHost then changes nothing.
+	// Phase 1 built its RedactingHandler before the TOML was read, so webhook
+	// masking was not active yet (see WithWebhookHost). The configured host is
+	// known now, so rebuild the redaction Config with it: a deployment pointing
+	// at a Slack-compatible endpoint gets its own webhook URLs masked from this
+	// point on, which is where they can first appear in a log line. AllowedHost
+	// is empty when Slack is switched off, and WithWebhookHost then changes
+	// nothing.
 	redactionConfig, err := redaction.NewConfig(redaction.WithWebhookHost(config.AllowedHost))
 	if err != nil {
 		return fmt.Errorf("failed to create redaction config: %w", err)

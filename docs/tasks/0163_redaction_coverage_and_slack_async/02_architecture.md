@@ -114,7 +114,7 @@ flowchart TB
 | 既存 3 規則の統合可否 | 統合しない。キー値規則のみ拡張する。ただしどの規則を使うかはパターンが `Kind` として宣言し、キー文字列の形から導出しない | 3.2.1 |
 | 正規表現の事前コンパイル | `NewConfig` が各パターンをコンパイルし `Config` が保持する（当初は上限付きキャッシュ。3.2.9 を受けて変更） | 3.2.7 |
 | JWT パターンの誤検出 | ドット 2 個固定、先頭 2 セグメントに最小長を課し、署名部は空を許す | 3.3.2 |
-| Slack webhook URL パターンの採否 | 採用する。`hooks.slack.com` の固定パターンに加え、TOML の `slack_allowed_host` を注入して同ホスト配下の全パスを対象とする | 3.3.3 |
+| Slack webhook URL パターンの採否 | 採用する。TOML の `slack_allowed_host` を注入し、同ホスト配下の全パスを対象とする。固定パターンは持たない | 3.3.3 |
 | 非同期化の方式 | 優先度 2 段のバッファ付きキュー ＋ ワーカー 1 本。満杯時は同一優先度の新しい通知を即時破棄する | 3.4.2 |
 | デッドラインの設計 | 実行中は 1 件あたり 40 秒（既存のリトライ方針を維持）、flush 中は 1 件 1 回試行、flush 全体で 15 秒 | 3.4.6 |
 | 破棄・失敗の記録経路 | `bootstrap` が Slack を含まない葉ハンドラの並びを注入し、`NewSlackHandler` が起動時に検証してロガーを構築する | 3.4.8 |
@@ -593,14 +593,11 @@ func WithAdditionalKeyValuePatterns(patterns ...KeyValuePattern) Option
 | `githubPAT` | GitHub fine-grained PAT | `github_pat_` に続く英数字とアンダースコアが 30 文字以上、両端は単語境界 | 全体をプレースホルダーに置換 |
 | `slackPrefixToken` | Slack の `xapp-` / `xoxe-` / `xoxs-` トークン | 3 つのプレフィックスのいずれかに続くハイフン区切りの英数字が 10 文字以上 | 全体をプレースホルダーに置換 |
 | `jwt` | JWT | 3.3.2 参照 | 全体をプレースホルダーに置換 |
-| `slackWebhookURL` | Slack webhook URL | `https://hooks.slack.com/services/` に続くパス文字列 | `https://hooks.slack.com/services/` を保持し、以降をプレースホルダーに置換 |
 | `webhookHostURL`（`ValueDetector` のインスタンス単位、3.3.3） | 設定された webhook ホスト配下の URL | `https://<slack_allowed_host>[:port]/` に続くパス文字列 | スキーム・ホスト・権限部を終える `/` までを保持し、以降をプレースホルダーに置換 |
 
 既存の `slackToken`（`xox[bpar]-` の 3 セグメント構造）は変更せずに残す。`xapp-`/`xoxe-`/`xoxs-` は同じ 3 セグメント構造を取らないため、既存パターンに文字クラスを足すのではなく別パターンとして追加する（AC-12）。
 
-**適用順序**: `Mask` は各パターンを直前の結果に対して順に適用する。追加パターンは既存 7 種の**後**に、`githubPAT` → `slackPrefixToken` → `jwt` → `webhookHostURL` → `slackWebhookURL` の順で適用する。既存パターンを先に走らせることで、既存の検出結果と置換後の見た目が変わらないことを保証する。webhook URL の 2 パターンを最後に置くのは、URL 中のパス文字列が他のパターンに部分一致した場合でも、ホスト名を保持した読みやすい形が最終結果になるようにするためである。
-
-`webhookHostURL` を `slackWebhookURL` の**前**に置くのは、両者が同じホストを指す構成（`slack_allowed_host = "hooks.slack.com"` という既定の構成）のためである。`slackWebhookURL` を先に適用すると、その結果はプレースホルダーの前に `/services/` だけがパス文字として残る形になり、`webhookHostURL` がこれに一致して二重に置換してしまう。順序を逆にすれば `webhookHostURL` がパス全体を消費し、`slackWebhookURL` は一致しない。この構成での置換後の見た目は `https://hooks.slack.com/[REDACTED]` となり、`slack_allowed_host` を注入しない経路（3.3.3）の `https://hooks.slack.com/services/[REDACTED]` とは異なる。いずれも秘密であるパス部分は残らない。
+**適用順序**: `Mask` は各パターンを直前の結果に対して順に適用する。追加パターンは既存 7 種の**後**に、`githubPAT` → `slackPrefixToken` → `jwt` → `webhookHostURL` の順で適用する。既存パターンを先に走らせることで、既存の検出結果と置換後の見た目が変わらないことを保証する。`webhookHostURL` を最後に置くのは、URL 中のパス文字列が他のパターンに部分一致した場合でも、ホスト名を保持した読みやすい形が最終結果になるようにするためである。
 
 #### 3.3.2 JWT パターンの誤検出対策
 
@@ -616,11 +613,9 @@ JWT は `eyJ` で始まる Base64URL 文字列であるが、同じ文字種の�
 
 webhook URL のパス部分そのものが credential であるため、値形式検出に追加する（01_requirements.md 調査結果2）。既存の `sanitizeErrorForLog` は `*url.Error` からのみ URL を除去するため、設定値のログ出力やコマンド出力への混入といった他の経路は覆えていない。値形式検出への追加は、この隙間を埋める多層防御として意味を持つ。
 
-検出は 2 段構えとする。
+検出は TOML の `slack_allowed_host` を注入した単一のパターン（`webhookHostURL`）のみで行い、そのホスト配下の**全パス**を置換する（AC-36）。Slack 互換サービス（Mattermost 等）やプロキシを使う構成では webhook URL のホストが `hooks.slack.com` ではなく、パス接頭辞も `/services/` とは限らない（Mattermost は `/hooks/<token>`）。ホストごとのパス形式を本パッケージが事前に知ることはできないため、「設定された webhook ホストの URL のパスは credential である」という設定由来の宣言をそのまま規則にする。ホスト名は置換後も残るため、どのエンドポイントに送信したかは診断できる。
 
-**(a) `hooks.slack.com` の固定パターン（`slackWebhookURL`）**: 設定に依存せず常に有効で、`/services/` に続くパスを置換する。設定読み込み前のログ経路と、当該プロセスの設定とは無関係な webhook URL がコマンド出力等に混入した場合を覆う。
-
-**(b) 設定されたホストのパターン（`webhookHostURL`）**: TOML の `slack_allowed_host` を注入し、そのホスト配下の**全パス**を置換する（AC-36）。Slack 互換サービス（Mattermost 等）やプロキシを使う構成では webhook URL のホストが `hooks.slack.com` ではなく、パス接頭辞も `/services/` とは限らない（Mattermost は `/hooks/<token>`）。ホストごとのパス形式を本パッケージが事前に知ることはできないため、「設定された webhook ホストの URL のパスは credential である」という設定由来の宣言をそのまま規則にする。ホスト名は置換後も残るため、どのエンドポイントに送信したかは診断できる。
+`hooks.slack.com` を無条件に対象とする固定パターンは持たない。value-based 検出がここで守るべきは「このプロセス自身が送信する webhook」であり、設定されていないホスト宛の webhook URL がたまたまコマンド出力等に混入する場合まで守る必要性は薄い（YAGNI）。それを別枠の固定パターンで守ろうとすると、Slack 互換サービスの URL 形式を検出漏れにする一方向けの保護にしかならず、かつ設定ホストが `hooks.slack.com` と一致する既定構成では二重置換の回避という余分な懸念も抱え込む。
 
 注入の経路は次のとおりで、`internal/redaction` から `internal/logging` への依存は発生しない。渡るのはホスト名という文字列 1 個であり、`SlackHandlerOptions` を読むわけではないためである（当初案はこれを層構造の逆転として退けていたが、注入であれば逆転しない）。
 
@@ -628,9 +623,9 @@ webhook URL のパス部分そのものが credential であるため、値形�
 - `NewConfig` がホスト名を検証してパターンをコンパイルし、`ValueDetector` に渡す。検証に失敗した場合は `ErrInvalidWebhookHost` を返して `Config` を構築しない。ホスト名を整形して受け入れることはしない（「Reject, don't normalize」）。空文字は「webhook ホストの設定なし」を表す正当な値であり、エラーとしない。
 - `bootstrap.AddSlackHandlers` が `SlackLoggerConfig.AllowedHost` を渡して `Config` を構築し、`NewRedactingHandler` に与える。
 
-**Phase 1 との関係**: `SetupLoggerWithConfig`（Phase 1）は TOML 読み込み前に走るため、既定の `Config`（(a) のみ）を使い続ける。webhook URL は TOML と環境変数から得られるため、Phase 1 のログに設定由来の webhook URL が現れることはない。
+**Phase 1 との関係**: `SetupLoggerWithConfig`（Phase 1）は TOML 読み込み前に走るため、ホストが未確定の `Config`（`webhookHostURL` が nil）を使う。この間は webhook URL の value-based 検出が働かない。webhook URL は TOML と環境変数から得られるため、Phase 1 のログに設定由来の webhook URL が現れることはなく、この間隙が扱わずに済ませているのはそれ以外の経路（コマンド出力への混入等）に限られる。この間隙を埋めるだけの固定パターンを持ち込むことは上記の理由により正当化しにくいため、そのまま残す。Phase 2（`AddSlackHandlers`）でホストが確定し次第、検出は直ちに有効になる。
 
-**残る限界**: `audit` パッケージの `argRedactor` と `security.Validator` の redaction 設定は、プロセス全体で共有される既定の `Config`（(a) のみ）のままである。これらの出力は `slog.Default()`（(b) を含む `RedactingHandler`）を経由するため実害はないが、`RedactingHandler` を持たないロガーへ直接書く経路では (b) が働かない。この 2 箇所へ設定を配線するには監査ロガーの構築時期を変更する必要があり、本タスクでは行わない（issue #1010）。
+**残る限界**: `audit` パッケージの `argRedactor` と `security.Validator` の redaction 設定は、プロセス全体で共有される既定の `Config`（`webhookHostURL` なし）のままである。これらの出力は `slog.Default()`（`webhookHostURL` を含む `RedactingHandler`）を経由するため実害はないが、`RedactingHandler` を持たないロガーへ直接書く経路では webhook URL の検出が働かない。この 2 箇所へ設定を配線するには監査ロガーの構築時期を変更する必要があり、本タスクでは行わない（issue #1010）。
 
 #### 3.3.4 AWS Secret Access Key を追加しない理由
 
