@@ -129,7 +129,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test test-ci test-ci-cgo1 test-ci-cgo0 test-all benchmark hash hash-integration-test hash-e2e-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test unit-test-cgo1 unit-test-cgo0 e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
+.PHONY: all lint build run clean test test-ci test-ci-cgo1 test-ci-cgo0 test-all benchmark hash hash-integration-test hash-e2e-test integration-test slack-notify-test slack-group-notification-test slack-e2e-test fmt fmt-all security-check build-security-check performance-test unit-test unit-test-cgo1 unit-test-cgo0 e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
 
 all: security-check
 
@@ -448,6 +448,7 @@ build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 #   performance-test       - Performance and benchmark tests
 #   slack-notify-test      - Slack notification tests
 #   slack-group-notification-test - Slack group notification tests
+#   slack-e2e-test         - Slack webhook e2e tests against a TLS mock server
 #
 # Composite test targets:
 #   test                   - Tests for pre-commit (unit-test only)
@@ -485,6 +486,25 @@ e2e-test: build-test hash-e2e-test
 	$(ENVSET) $(BINARY_TEST_RUNNER) -dry-run -config ./sample/comprehensive.toml
 	$(PYTHON) scripts/test_additional_security_checks.py
 
+# Slack webhook e2e tests - drives the Slack notification path end to end
+# against a TLS mock server, with race detection.
+#
+# The -run filter keeps this to the Slack webhook e2e tests. The `e2e,test`
+# build of ./internal/runner also contains every untagged test in that package,
+# which unit-test already runs; without the filter CI would run them twice.
+#
+# On macOS the run is skipped: these tests configure commands as /usr/bin/echo,
+# which exists on Linux but not on macOS. Compiling and vetting them there
+# instead keeps type errors in the e2e-tagged files visible locally, since
+# neither `make test` nor `make lint` builds with the e2e tag.
+slack-e2e-test:
+	@if [ "$$(uname -s)" != "Darwin" ]; then \
+		$(ENVSET) $(GOTEST) -tags e2e,test -race -run '^TestE2E_SlackWebhook' ./internal/runner; \
+	else \
+		echo "macOS: skipping Slack e2e test run (tests require /usr/bin/echo, which macOS does not have); compiling and vetting them instead"; \
+		$(ENVSET) $(GOCMD) vet -tags e2e,test ./internal/runner; \
+	fi
+
 # Pre-commit test target - runs unit tests only
 # This is the default test target for daily development
 test: unit-test
@@ -503,7 +523,7 @@ libccache-integration-test:
 
 # CI matrix leg: CGO=1 — full test suite with race detection and coverage
 # Runs alongside test-ci-cgo0 in parallel via GitHub Actions matrix
-test-ci-cgo1: unit-test-cgo1 e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test
+test-ci-cgo1: unit-test-cgo1 e2e-test slack-e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 	@$(GOCMD) tool cover -func=coverage.out | tail -1
@@ -514,7 +534,7 @@ test-ci-cgo0: unit-test-cgo0
 # CI test target - tests that can run without sudo or external services
 # Suitable for GitHub Actions and other CI environments
 # Note: in CI use test-ci-cgo1 and test-ci-cgo0 matrix targets for parallel execution
-test-ci: unit-test e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test
+test-ci: unit-test e2e-test slack-e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test
 
 # All tests - comprehensive test suite (requires sudo for integration-test)
 # Excludes Slack notification tests (require external webhook configuration)

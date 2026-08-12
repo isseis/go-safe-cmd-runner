@@ -452,11 +452,13 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 **コンパイル可能性を macOS でも保つ**: 実行を読み飛ばすだけにすると、ステップ 4-6 で 7 本の e2e テストを書き換えても macOS ではコンパイルすらされず、型エラーが CI まで露見しない。`make test` も `make lint` も `-tags test` のみで走り `e2e` タグのファイルを対象にしないため、この穴は既定のゲートでは塞がらない。したがって Darwin では**実行のみを読み飛ばし、コンパイル検査は必ず行う**。
 
-- [ ] `Makefile` に `slack-e2e-test` ターゲットを追加する。Darwin 以外では `$(ENVSET) $(GOTEST) -tags e2e,test -race -run '^TestE2E_SlackWebhook' ./internal/runner` を実行する。`-run` で絞るのは、タグ付きビルドが `internal/runner` の全 113 テストを 1 つのバイナリに含み、`unit-test` が既に実行している約 106 件を CI で二重に走らせてしまうためである。
-- [ ] Darwin では上記の代わりに `$(ENVSET) go vet -tags e2e,test ./internal/runner` を実行し、コンパイルと vet だけを行って理由（`/usr/bin/echo` を前提とする既存 e2e テストが macOS では実行できないこと）を表示する。既存の `unit-test` が `CGO_ENABLED=0` の実行を Darwin で読み飛ばしているのと同じ `uname -s` による分岐を用いる。
-- [ ] `.PHONY` の一覧と、Makefile 冒頭のターゲット説明コメントにも追加する。
-- [ ] `test-ci` と `test-ci-cgo1` の依存に `slack-e2e-test` を加える。`-race` を使うため CGO=1 側の系に置く。
-- [ ] Linux 環境で `make slack-e2e-test` が 7 件を実行して成功することを確認する。macOS では vet が通り、読み飛ばしのメッセージが出て成功終了することを確認する。
+- [x] `Makefile` に `slack-e2e-test` ターゲットを追加する。Darwin 以外では `$(ENVSET) $(GOTEST) -tags e2e,test -race -run '^TestE2E_SlackWebhook' ./internal/runner` を実行する。`-run` で絞るのは、タグ付きビルドが `internal/runner` の全 113 テストを 1 つのバイナリに含み、`unit-test` が既に実行している約 106 件を CI で二重に走らせてしまうためである。
+- [x] Darwin では上記の代わりに `$(ENVSET) $(GOCMD) vet -tags e2e,test ./internal/runner` を実行し、コンパイルと vet だけを行って理由（`/usr/bin/echo` を前提とする既存 e2e テストが macOS では実行できないこと）を表示する。既存の `unit-test` が `CGO_ENABLED=0` の実行を Darwin で読み飛ばしているのと同じ `uname -s` による分岐を用いる。`go` を直に書かず `$(GOCMD)` を使うのは Makefile 内の既存の呼び出しに合わせるためで、値は同じである。
+- [x] `.PHONY` の一覧と、Makefile 冒頭のターゲット説明コメントにも追加する。
+- [x] `test-ci` と `test-ci-cgo1` の依存に `slack-e2e-test` を加える。`-race` を使うため CGO=1 側の系に置く。
+- [x] Linux 環境で `make slack-e2e-test` が 7 件を実行して成功することを確認する。macOS では vet が通り、読み飛ばしのメッセージが出て成功終了することを確認する。Darwin 側は `uname` のスタブを `PATH` の先頭に置いて分岐そのものを実行し、読み飛ばしメッセージと `go vet` の成功を確かめた。
+
+`.github/workflows/ci.yml` の変更は不要だった（Phase 4 の対象ファイル一覧には挙げているが、本ステップでは触れない）。CI の `test-ci` ジョブは `make test-ci-cgo1` を呼ぶだけであり、ターゲットの依存に加えた時点で CI 経路に入る。
 
 ### PR-5 作成ポイント: run Slack e2e tests in CI
 
