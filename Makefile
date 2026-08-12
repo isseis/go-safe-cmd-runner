@@ -421,14 +421,16 @@ hash-integration-test: $(BINARY_RECORD)
 # hard-fail-unverified default, any command without a recorded hash is denied
 # as uncertain_unverified_identity, so this list must track comprehensive.toml.
 # It must also cover the commands the Slack webhook e2e tests configure:
-# /usr/bin/echo (covered by /bin/echo below, which resolves to the same file)
-# and /usr/bin/false. /usr/bin/echo is not listed directly because it does not
-# exist on macOS, where /bin/echo does.
+# /usr/bin/echo and /usr/bin/false. /usr/bin/echo is added through $(wildcard)
+# because it does not exist on macOS, where only /bin/echo does; on a
+# non-merged-/usr Linux the two are distinct files, so recording /bin/echo alone
+# would leave the Slack tests failing with uncertain_unverified_identity.
 HASH_E2E_TEST_TARGETS := \
 	./sample/comprehensive.toml \
 	/etc/passwd \
 	/bin/sh \
 	/bin/echo \
+	$(wildcard /usr/bin/echo) \
 	/usr/bin/false \
 	/usr/bin/whoami \
 	/usr/bin/env \
@@ -505,7 +507,10 @@ e2e-test: build-test hash-e2e-test
 # which unit-test already runs; without the filter CI would run them twice. A
 # -run pattern that matches nothing exits 0, which would silently turn this
 # target back into the no-op it was created to fix, so the pattern is asserted
-# to match at least one test before the run.
+# to match exactly SLACK_E2E_COUNT tests before the run. Asserting the exact
+# count, not just "at least one", also catches partial drift: renaming some of
+# the tests would otherwise leave the target green while running fewer of them.
+# Update SLACK_E2E_COUNT when a Slack webhook e2e test is added or removed.
 #
 # On macOS 3 of these tests fail because they configure commands as
 # /usr/bin/echo, which exists on Linux but not on macOS. The run is skipped
@@ -513,12 +518,18 @@ e2e-test: build-test hash-e2e-test
 # visible locally, since neither `make test` nor `make lint` builds with the e2e
 # tag.
 SLACK_E2E_RUN := ^TestE2E_SlackWebhook
+SLACK_E2E_COUNT := 7
 
 slack-e2e-test: hash-e2e-test
-	@MATCHED=$$($(GOCMD) test -tags e2e,test -list '$(SLACK_E2E_RUN)' ./internal/runner | grep -c '$(SLACK_E2E_RUN)' || true); \
-	if [ "$$MATCHED" -eq 0 ]; then \
-		echo "Error: no test matches $(SLACK_E2E_RUN) in ./internal/runner"; \
-		echo "The filter or the test names have drifted; this target would run nothing and still pass."; \
+	@if ! LIST=$$($(GOCMD) test -tags e2e,test -list '$(SLACK_E2E_RUN)' ./internal/runner); then \
+		echo "Error: could not list tests in ./internal/runner with tags e2e,test (build or vet failure above)"; \
+		exit 1; \
+	fi; \
+	MATCHED=$$(printf '%s\n' "$$LIST" | grep -c '^Test' || true); \
+	if [ "$$MATCHED" -ne $(SLACK_E2E_COUNT) ]; then \
+		echo "Error: $(SLACK_E2E_RUN) matched $$MATCHED tests in ./internal/runner, expected $(SLACK_E2E_COUNT)"; \
+		echo "The filter or the test names have drifted; this target would run the wrong set of tests and still pass."; \
+		echo "Fix SLACK_E2E_RUN, or update SLACK_E2E_COUNT if a test was intentionally added or removed."; \
 		exit 1; \
 	fi; \
 	echo "Slack webhook e2e tests matched by $(SLACK_E2E_RUN): $$MATCHED"
