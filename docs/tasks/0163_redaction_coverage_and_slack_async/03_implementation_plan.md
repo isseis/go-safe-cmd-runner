@@ -440,7 +440,7 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] `make deadcode` の報告が baseline 10 件 ＋ `verifySlackFreeHandlers` の 11 件に留まることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
