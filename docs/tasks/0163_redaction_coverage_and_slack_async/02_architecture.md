@@ -630,7 +630,7 @@ webhook URL のパス部分そのものが credential であるため、値形�
 
 **Phase 1 との関係**: `SetupLoggerWithConfig`（Phase 1）は TOML 読み込み前に走るため、既定の `Config`（(a) のみ）を使い続ける。webhook URL は TOML と環境変数から得られるため、Phase 1 のログに設定由来の webhook URL が現れることはない。
 
-**残る限界**: `audit` パッケージの `argRedactor` と `security.Validator` の redaction 設定は、プロセス全体で共有される既定の `Config`（(a) のみ）のままである。これらの出力は `slog.Default()`（(b) を含む `RedactingHandler`）を経由するため実害はないが、`RedactingHandler` を持たないロガーへ直接書く経路では (b) が働かない。この 2 箇所へ設定を配線するには監査ロガーの構築時期を変更する必要があり、本タスクでは行わない。
+**残る限界**: `audit` パッケージの `argRedactor` と `security.Validator` の redaction 設定は、プロセス全体で共有される既定の `Config`（(a) のみ）のままである。これらの出力は `slog.Default()`（(b) を含む `RedactingHandler`）を経由するため実害はないが、`RedactingHandler` を持たないロガーへ直接書く経路では (b) が働かない。この 2 箇所へ設定を配線するには監査ロガーの構築時期を変更する必要があり、本タスクでは行わない（issue #1010）。
 
 #### 3.3.4 AWS Secret Access Key を追加しない理由
 
