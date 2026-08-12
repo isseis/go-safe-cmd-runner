@@ -119,6 +119,12 @@ BUILD_FLAGS=-ldflags "-s -w -X github.com/isseis/go-safe-cmd-runner/internal/cmd
 # into a self-owned directory avoids that violation entirely.
 TEST_HASH_DIRECTORY=$(CURDIR)/build/test/hashes
 BUILD_FLAGS_TEST_HASH=-ldflags "-s -w -X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=$(TEST_HASH_DIRECTORY)"
+# Same override for `go test` binaries. Tests that build a real runner resolve
+# hashes through the compile-time DefaultHashDirectory, which points at the
+# machine-global /usr/local/etc path that only `sudo make hash` populates. A test
+# target that depends on that directory passes on a developer box and fails on a
+# clean CI runner, so point those binaries at TEST_HASH_DIRECTORY instead.
+GOTEST_FLAGS_TEST_HASH=-ldflags "-X github.com/isseis/go-safe-cmd-runner/internal/cmdcommon.DefaultHashDirectory=$(TEST_HASH_DIRECTORY)"
 
 # Find all Go source files to use as dependencies for the build
 GO_SOURCES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
@@ -409,16 +415,21 @@ hash-integration-test: $(BINARY_RECORD)
 	$(foreach file, $(HASH_INTEGRATION_TEST_TARGETS), \
 		$(SUDOCMD) $(BINARY_RECORD) -force -hash-dir $(DEFAULT_HASH_DIRECTORY) $(file);)
 
-# Update hash for e2e-test target
+# Update hash for e2e-test and slack-e2e-test targets
 # Includes: config file, all files referenced in verify_files, and every
 # command referenced in sample/comprehensive.toml. Under the dry-run
 # hard-fail-unverified default, any command without a recorded hash is denied
 # as uncertain_unverified_identity, so this list must track comprehensive.toml.
+# It must also cover the commands the Slack webhook e2e tests configure:
+# /usr/bin/echo (covered by /bin/echo below, which resolves to the same file)
+# and /usr/bin/false. /usr/bin/echo is not listed directly because it does not
+# exist on macOS, where /bin/echo does.
 HASH_E2E_TEST_TARGETS := \
 	./sample/comprehensive.toml \
 	/etc/passwd \
 	/bin/sh \
 	/bin/echo \
+	/usr/bin/false \
 	/usr/bin/whoami \
 	/usr/bin/env \
 	/usr/bin/id \
@@ -491,17 +502,30 @@ e2e-test: build-test hash-e2e-test
 #
 # The -run filter keeps this to the Slack webhook e2e tests. The `e2e,test`
 # build of ./internal/runner also contains every untagged test in that package,
-# which unit-test already runs; without the filter CI would run them twice.
+# which unit-test already runs; without the filter CI would run them twice. A
+# -run pattern that matches nothing exits 0, which would silently turn this
+# target back into the no-op it was created to fix, so the pattern is asserted
+# to match at least one test before the run.
 #
-# On macOS the run is skipped: these tests configure commands as /usr/bin/echo,
-# which exists on Linux but not on macOS. Compiling and vetting them there
-# instead keeps type errors in the e2e-tagged files visible locally, since
-# neither `make test` nor `make lint` builds with the e2e tag.
-slack-e2e-test:
+# On macOS 3 of these tests fail because they configure commands as
+# /usr/bin/echo, which exists on Linux but not on macOS. The run is skipped
+# there; compiling and vetting instead keeps type errors in the e2e-tagged files
+# visible locally, since neither `make test` nor `make lint` builds with the e2e
+# tag.
+SLACK_E2E_RUN := ^TestE2E_SlackWebhook
+
+slack-e2e-test: hash-e2e-test
+	@MATCHED=$$($(GOCMD) test -tags e2e,test -list '$(SLACK_E2E_RUN)' ./internal/runner | grep -c '$(SLACK_E2E_RUN)' || true); \
+	if [ "$$MATCHED" -eq 0 ]; then \
+		echo "Error: no test matches $(SLACK_E2E_RUN) in ./internal/runner"; \
+		echo "The filter or the test names have drifted; this target would run nothing and still pass."; \
+		exit 1; \
+	fi; \
+	echo "Slack webhook e2e tests matched by $(SLACK_E2E_RUN): $$MATCHED"
 	@if [ "$$(uname -s)" != "Darwin" ]; then \
-		$(ENVSET) $(GOTEST) -tags e2e,test -race -run '^TestE2E_SlackWebhook' ./internal/runner; \
+		$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags e2e,test $(GOTEST_FLAGS_TEST_HASH) -race -count=1 -v -run '$(SLACK_E2E_RUN)' ./internal/runner; \
 	else \
-		echo "macOS: skipping Slack e2e test run (tests require /usr/bin/echo, which macOS does not have); compiling and vetting them instead"; \
+		echo "macOS: skipping Slack e2e test run (3 of these tests require /usr/bin/echo, which macOS does not have); compiling and vetting them instead"; \
 		$(ENVSET) $(GOCMD) vet -tags e2e,test ./internal/runner; \
 	fi
 
@@ -538,7 +562,7 @@ test-ci: unit-test e2e-test slack-e2e-test security-test performance-test elfana
 
 # All tests - comprehensive test suite (requires sudo for integration-test)
 # Excludes Slack notification tests (require external webhook configuration)
-test-all: unit-test integration-test e2e-test security-test performance-test
+test-all: unit-test integration-test e2e-test slack-e2e-test security-test performance-test
 
 fmt:
 	$(call check_gofumpt)

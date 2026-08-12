@@ -448,17 +448,24 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 1.3.3 のとおり、`e2e && test` タグのテストは現在どのターゲットからも実行されない。ステップ 4-6 で e2e テストを `Flush` 同期点へ移行する前にこの経路を用意し、移行が退行を検出できる状態にしておく。この時点では対象のテストは同期送信のまま変更されていないため、本ステップ単体でもゲートは成立する。
 
-**macOS での既知の失敗（設計文書に未記載）**: 現行の `e2e_slack_webhook_test.go` と `e2e_slack_webhook_separation_test.go` は設定に `/usr/bin/echo` を用いているが、macOS では `echo` は `/bin/echo` にあり `/usr/bin/echo` は存在しない。このため macOS では 0163 以前から 7 件中 3 件（`TestE2E_SlackWebhookWithMockServer`、`TestE2E_SlackWebhookSeparation_SuccessOnly`、`TestE2E_SlackWebhookSeparation_MessageFormat`）が失敗する。残る 4 件は検証失敗そのものを検証しているため通る。CI は `ubuntu-latest` であり `/usr/bin/echo` が存在するため CI では 7 件すべてが成立する。この失敗は本タスクの原因でも対象でもないため修正せず、ターゲットの適用範囲で切り分ける。
+**macOS での既知の失敗（設計文書に未記載）**: 現行の `e2e_slack_webhook_test.go` と `e2e_slack_webhook_separation_test.go` は設定に `/usr/bin/echo` を用いているが、macOS では `echo` は `/bin/echo` にあり `/usr/bin/echo` は存在しない。このため macOS では 0163 以前から 7 件中 3 件（`TestE2E_SlackWebhookWithMockServer`、`TestE2E_SlackWebhookSeparation_SuccessOnly`、`TestE2E_SlackWebhookSeparation_MessageFormat`）が失敗する。残る 4 件は検証失敗そのものを検証しているため通る。CI は `ubuntu-latest` であり `/usr/bin/echo` が存在するため、上記のハッシュディレクトリの手当てと合わせて CI では 7 件すべてが成立する。この失敗は本タスクの原因でも対象でもないため修正せず、ターゲットの適用範囲で切り分ける。なお macOS で落ちる 3 件は、ハッシュ未記録時に Linux で落ちる 3 件と同一である（いずれも `/usr/bin/echo` の実行成功を要求する 3 件であり、他の 4 件はコマンドの実行成功を検査しない）。
 
 **コンパイル可能性を macOS でも保つ**: 実行を読み飛ばすだけにすると、ステップ 4-6 で 7 本の e2e テストを書き換えても macOS ではコンパイルすらされず、型エラーが CI まで露見しない。`make test` も `make lint` も `-tags test` のみで走り `e2e` タグのファイルを対象にしないため、この穴は既定のゲートでは塞がらない。したがって Darwin では**実行のみを読み飛ばし、コンパイル検査は必ず行う**。
 
-- [x] `Makefile` に `slack-e2e-test` ターゲットを追加する。Darwin 以外では `$(ENVSET) $(GOTEST) -tags e2e,test -race -run '^TestE2E_SlackWebhook' ./internal/runner` を実行する。`-run` で絞るのは、タグ付きビルドが `internal/runner` の全 113 テストを 1 つのバイナリに含み、`unit-test` が既に実行している約 106 件を CI で二重に走らせてしまうためである。
+- [x] `Makefile` に `slack-e2e-test` ターゲットを追加する。Darwin 以外では `$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags e2e,test $(GOTEST_FLAGS_TEST_HASH) -race -count=1 -v -run '$(SLACK_E2E_RUN)' ./internal/runner` を実行する。`-run` で絞るのは、タグ付きビルドが `internal/runner` の全 113 テストを 1 つのバイナリに含み、`unit-test` が既に実行している約 106 件を CI で二重に走らせてしまうためである。計画時点の指定からの追加は次の 4 点で、いずれも着手時の実測に基づく（**設計文書に未記載**）:
+    - `$(GOTEST_FLAGS_TEST_HASH)`（新規定義）でテストバイナリのハッシュディレクトリを `TEST_HASH_DIRECTORY` へ向け、`hash-e2e-test` を依存に加える。7 件のうち 3 件は `runner.Execute` の成功を `require.NoError` で検査し、ハッシュ未記録のコマンドは `uncertain_unverified_identity` として拒否されるため、既定のコンパイル時 `DefaultHashDirectory`（`/usr/local/etc/go-safe-cmd-runner/hashes`。`sudo make hash` でしか作られない）に依存したままでは、開発機で通り clean な CI ランナーで落ちる。空のハッシュディレクトリを指して同 3 件が落ちることを実測して確認した。
+    - `HASH_E2E_TEST_TARGETS` に `/usr/bin/false` を加える（`TestE2E_SlackWebhookSeparation_ErrorOnly` が使う）。`/usr/bin/echo` は macOS に存在せず `hash-e2e-test` を壊すため直接は加えず、既存の `/bin/echo` が同じ実体へ解決されることで賄う。
+    - `-count=1` と `-v`。他のテストターゲットと揃え、キャッシュ済み結果でゲートが素通りしないようにする。
+    - `CGO_ENABLED=1` を明示する。`ENVSET` は `env -i` のため既定値に頼ることになり、`-race` は CGO なしでは動かない。
+- [x] `-run` のパターンが 1 件も一致しないと `go test` は「no tests to run」で終了コード 0 になり、ターゲットが本 PR の解消対象そのもの（何も実行しないのに緑）へ戻ってしまう。実行前に `go test -list` で一致件数を数え、0 件なら失敗させる。パターンは `SLACK_E2E_RUN` 変数に 1 箇所だけ置く（**設計文書に未記載**）。
 - [x] Darwin では上記の代わりに `$(ENVSET) $(GOCMD) vet -tags e2e,test ./internal/runner` を実行し、コンパイルと vet だけを行って理由（`/usr/bin/echo` を前提とする既存 e2e テストが macOS では実行できないこと）を表示する。既存の `unit-test` が `CGO_ENABLED=0` の実行を Darwin で読み飛ばしているのと同じ `uname -s` による分岐を用いる。`go` を直に書かず `$(GOCMD)` を使うのは Makefile 内の既存の呼び出しに合わせるためで、値は同じである。
 - [x] `.PHONY` の一覧と、Makefile 冒頭のターゲット説明コメントにも追加する。
-- [x] `test-ci` と `test-ci-cgo1` の依存に `slack-e2e-test` を加える。`-race` を使うため CGO=1 側の系に置く。
-- [x] Linux 環境で `make slack-e2e-test` が 7 件を実行して成功することを確認する。macOS では vet が通り、読み飛ばしのメッセージが出て成功終了することを確認する。Darwin 側は `uname` のスタブを `PATH` の先頭に置いて分岐そのものを実行し、読み飛ばしメッセージと `go vet` の成功を確かめた。
+- [x] `test-ci` と `test-ci-cgo1` の依存に `slack-e2e-test` を加える。`-race` を使うため CGO=1 側の系に置く。あわせて `test-all`（「全テスト」を謳うターゲット）にも加えた。計画には挙げていないが、加えないと同ターゲットの説明が事実でなくなる。
+- [x] Linux 環境で `make slack-e2e-test` が 7 件を実行して成功することを確認する。macOS では vet が通り、読み飛ばしのメッセージが出て成功終了することを確認する。Darwin 側は `PATH` の先頭に `Darwin` を返す `uname` のスタブを置いて（`printf '#!/bin/sh\necho Darwin\n' > /tmp/fakebin/uname` を作り `PATH=/tmp/fakebin:$PATH make slack-e2e-test`）分岐そのものを実行し、読み飛ばしメッセージと `go vet` の成功、終了コード 0 を確かめた。一致件数ガードは `make slack-e2e-test SLACK_E2E_RUN='^TestE2E_SlackWebhookZZZ'` が失敗することで確かめた。
 
 `.github/workflows/ci.yml` の変更は不要だった（Phase 4 の対象ファイル一覧には挙げているが、本ステップでは触れない）。CI の `test-ci` ジョブは `make test-ci-cgo1` を呼ぶだけであり、ターゲットの依存に加えた時点で CI 経路に入る。
+
+**PR-5 の範囲外の変更 1 件**: 3.2 は PR-5 を「Makefile と CI の変更のみ」としているが、`internal/groupmembership/membership_nocgo.go` の 1 行（`strings.Split` + range → `strings.SplitSeq`）を別コミットで含めた。`make lint` は 2 回目を `CGO_ENABLED=0` で走らせて `//go:build !cgo` のファイルも対象にするが、この行が `modernize` に引っかかり main の時点でグリーンゲートが赤い。CI の `lint` ジョブは既定（CGO=1）のファイル集合しか見ないため CI では見えていなかった。0163 とは無関係だが、ゲートを通すためにここで直した。
 
 ### PR-5 作成ポイント: run Slack e2e tests in CI
 
@@ -880,7 +887,7 @@ awk '/^## 用語/{f=1;next} f&&/^## /{exit} f' \
 | AC-30 | test | `internal/logging/slack_sender_test.go::TestSlackSender_FailureLogGoesToNonSlackDestination` |
 | AC-30 | static | `rg -n -e "slog\.Debug\(" -e "slog\.Info\(" -e "slog\.Warn\(" -e "slog\.Error\(" internal/logging/slack_sender.go` → 一致なし。送信経路の記録がすべて `failureLogger` 経由であることを意味する |
 | AC-31 | test | `internal/logging/handler_chain_test.go::TestVerifySlackFreeHandlers`、`internal/logging/slack_handler_test.go::TestNewSlackHandlerWithOptions`、`internal/runner/bootstrap/logger_test.go::TestAddSlackHandlers_AcceptsInteractivePhase1Handlers` |
-| AC-32 | test | `internal/logging/slack_sender_test.go::TestSlackHandler_ConcurrentHandleAndFlush`、`internal/logging/slack_sender_test.go::TestSlackSender_CounterInvariants`、`internal/redaction/regex_cache_test.go::TestRegexCache_ConcurrentAccess`。いずれも `make test`（`-race` を含む）で実行する |
+| AC-32 | test | `internal/logging/slack_sender_test.go::TestSlackHandler_ConcurrentHandleAndFlush`、`internal/logging/slack_sender_test.go::TestSlackSender_CounterInvariants`、`internal/redaction/redactor_test.go::TestRedactText_ConcurrentUse`（ステップ 2-6 で `regex_cache_test.go` ごと削除した `TestRegexCache_ConcurrentAccess` の後継）。いずれも `make test`（`-race` を含む）で実行する |
 | AC-33 | static | `rg -n -e "github_pat_" -e "xapp-" -e "JWT" -e "hooks\.slack\.com/services/" docs/user/security-risk-assessment.ja.md` → 4 つのパターンそれぞれが 1 件以上一致すること（現状は `JWT` の 1 パターンのみ一致する）。かつ `rg -n "引用符で囲まれていない" docs/user/security-risk-assessment.ja.md` → 1 件以上一致すること |
 | AC-33 | static | 英語版: `rg -n -e "github_pat_" -e "xapp-" -e "JWT" -e "hooks\.slack\.com/services/" docs/user/security-risk-assessment.md` → 4 つのパターンそれぞれが 1 件以上一致すること |
 | AC-33 | manual | 上記の一致行が「値ベース検出」の一覧内（日本語版は 241 行目付近の箇条書き）にあり、限界の記述が「限界」の段落にあることを目視で確認する。`rg` は出現位置までは保証しない |
