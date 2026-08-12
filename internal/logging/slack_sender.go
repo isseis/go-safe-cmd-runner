@@ -133,6 +133,13 @@ type slackSender struct {
 	// sender whose Flush and Close were both called.
 	aggregateOnce sync.Once
 
+	// syncInFlight counts sendSync calls that have been accepted (past the
+	// closed check) but have not yet recorded their outcome. terminate waits
+	// on it for synchronous senders before snapshotting FlushStats, so a
+	// concurrent Flush/Close cannot observe Pending before the in-flight send
+	// has updated the sent/failed counters.
+	syncInFlight sync.WaitGroup
+
 	counters slackCounters
 }
 
@@ -255,6 +262,16 @@ func (sd *slackSender) hasWorker() bool {
 	return sd.done != nil
 }
 
+// isClosed reports whether Flush or Close has already been called. Handle
+// uses it to skip building a message it knows enqueue/sendSync would only
+// drop; it is an optimization, not a correctness gate, since enqueue and
+// sendSync each recheck under lock before accepting a request.
+func (sd *slackSender) isClosed() bool {
+	sd.mu.RLock()
+	defer sd.mu.RUnlock()
+	return sd.closed
+}
+
 // isHighPriority reports whether a message type goes to the high-priority
 // queue. Security alerts, privilege-escalation failures and pre-execution
 // errors must not be pushed out by a flood of ordinary command notifications.
@@ -330,8 +347,12 @@ func (sd *slackSender) sendSync(ctx context.Context, req slackRequest) error {
 	} else {
 		// Accepted for delivery. A synchronous sender has no queue, but the
 		// counter means "accepted rather than dropped", which keeps both
-		// accounting equations true in this mode too.
+		// accounting equations true in this mode too. syncInFlight.Add is
+		// inside this critical section, so it happens-before any concurrent
+		// terminate's mu.Lock that sets closed -- and therefore before that
+		// terminate's syncInFlight.Wait, which is what makes the Wait safe.
 		sd.counters.enqueued.Add(1)
+		sd.syncInFlight.Add(1)
 	}
 	sd.mu.RUnlock()
 
@@ -339,6 +360,7 @@ func (sd *slackSender) sendSync(ctx context.Context, req slackRequest) error {
 		sd.recordDrop(req, dropReasonSenderClosed)
 		return nil
 	}
+	defer sd.syncInFlight.Done()
 
 	sendCtx, cancel := context.WithTimeout(ctx, sd.sendTimeout)
 	defer cancel()
@@ -456,7 +478,13 @@ func (sd *slackSender) serve(req slackRequest) (context.Context, bool) {
 	// Pending remainder. The cause has to come from the error itself: a 4xx
 	// that happens to return while the context is cancelled is a real failure
 	// and must still be recorded as one.
+	//
+	// The abandon flag is read from sd.shutdownState now, not from the local
+	// `state` captured before the send: a Close() that ran concurrently with
+	// this send set it after `state` was read, so `state.abandon` would still
+	// be false even though this send was in fact cancelled by an abandon.
 	interrupted := sd.closed && isContextError(err)
+	abandoned := interrupted && sd.shutdownState.abandon
 	sd.mu.Unlock()
 
 	cancel()
@@ -464,6 +492,11 @@ func (sd *slackSender) serve(req slackRequest) (context.Context, bool) {
 	switch {
 	case err == nil:
 		sd.recordSent(req)
+	case abandoned:
+		// This send was cancelled by Close(), not by a Flush drain running out
+		// of budget -- record it as abandoned so an operator debugging a
+		// forced teardown doesn't see a misleading flush_interrupted entry.
+		sd.recordUndelivered(req, reasonAbandoned)
 	case interrupted:
 		// Counted as Pending rather than Failed, but still recorded one by one:
 		// these are the notifications lost at process exit, which is the
@@ -579,6 +612,12 @@ func (sd *slackSender) terminate(req shutdownRequest) FlushStats {
 			sd.shutdown <- req
 		}
 		<-sd.done
+	} else {
+		// No worker to wait on, but a sendSync call that passed the closed
+		// check just above may still be running. Without this wait, terminate
+		// would snapshot FlushStats before that send records its outcome, and
+		// the cached snapshot would never be recomputed.
+		sd.syncInFlight.Wait()
 	}
 
 	sd.mu.Lock()
@@ -660,6 +699,22 @@ func (sd *slackSender) recordSent(req slackRequest) {
 	sd.mu.Unlock()
 }
 
+// warnNotDelivered emits the four-attribute record shared by recordFailure,
+// recordDrop and recordUndelivered -- message_type, run_id and level identify
+// which notification, reason says what happened to it -- plus whatever extra
+// attributes the caller has (recordFailure's sanitized error). Sourcing all
+// three from one place means a future change to what identifies a
+// notification only has to be made once.
+func (sd *slackSender) warnNotDelivered(msg string, req slackRequest, reason string, extra ...slog.Attr) {
+	attrs := append([]slog.Attr{
+		slog.String("reason", reason),
+		slog.String("message_type", req.messageType),
+		slog.String("run_id", req.runID), //nolint:gosec // G706: run_id is an internal identifier, not user input
+		slog.String("level", req.level.String()),
+	}, extra...)
+	sd.failureLogger.LogAttrs(context.Background(), slog.LevelWarn, msg, attrs...)
+}
+
 // recordFailure accounts for a notification whose send attempts all failed and
 // records it individually, so an operator can tell which notification was lost
 // rather than only how many. The notification body is deliberately absent: it
@@ -670,13 +725,8 @@ func (sd *slackSender) recordFailure(req slackRequest, err error) {
 	sd.failedByType[req.messageType]++
 	sd.mu.Unlock()
 
-	sd.failureLogger.Warn("Slack notification not delivered",
-		slog.String("reason", failureReasonSendFailed),
-		slog.String("message_type", req.messageType),
-		slog.String("run_id", req.runID),
-		slog.String("level", req.level.String()),
-		slog.String("error", sanitizeErrorForLog(err)), //nolint:gosec // G706: error is sanitized via sanitizeErrorForLog, run_id is an internal identifier
-	)
+	sd.warnNotDelivered("Slack notification not delivered", req, failureReasonSendFailed,
+		slog.String("error", sanitizeErrorForLog(err))) //nolint:gosec // G706: error is sanitized via sanitizeErrorForLog, run_id is an internal identifier
 }
 
 // recordDrop accounts for a notification discarded without any send attempt.
@@ -686,12 +736,7 @@ func (sd *slackSender) recordDrop(req slackRequest, reason string) {
 	sd.droppedByType[req.messageType]++
 	sd.mu.Unlock()
 
-	sd.failureLogger.Warn("Slack notification dropped",
-		slog.String("reason", reason),
-		slog.String("message_type", req.messageType),
-		slog.String("run_id", req.runID), //nolint:gosec // G706: run_id is an internal identifier, not user input
-		slog.String("level", req.level.String()),
-	)
+	sd.warnNotDelivered("Slack notification dropped", req, reason)
 }
 
 // recordUndelivered names a notification that entered a queue but was never
@@ -701,12 +746,7 @@ func (sd *slackSender) recordDrop(req slackRequest, reason string) {
 // FlushStats documents. The body is omitted for the same reason as in
 // recordDrop.
 func (sd *slackSender) recordUndelivered(req slackRequest, reason string) {
-	sd.failureLogger.Warn("Slack notification not delivered before shutdown",
-		slog.String("reason", reason),
-		slog.String("message_type", req.messageType),
-		slog.String("run_id", req.runID), //nolint:gosec // G706: run_id is an internal identifier, not user input
-		slog.String("level", req.level.String()),
-	)
+	sd.warnNotDelivered("Slack notification not delivered before shutdown", req, reason)
 }
 
 // logAggregate emits the one per-sender summary of the flush, with the

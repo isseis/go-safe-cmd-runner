@@ -321,6 +321,19 @@ func (s *SlackHandler) Handle(ctx context.Context, r slog.Record) error {
 		return nil
 	}
 
+	// A closed sender drops every request it receives (see enqueue/sendSync),
+	// so building the message here -- e.g. buildCommandGroupSummary iterating
+	// every command result -- would only be discarded work on the shutdown
+	// path where the process wants to exit quickly.
+	if s.sender.isClosed() {
+		req := slackRequest{messageType: messageType, runID: s.runID, level: r.Level}
+		if s.sender.synchronous {
+			return s.sender.sendSync(ctx, req)
+		}
+		s.sender.enqueue(req)
+		return nil
+	}
+
 	var message SlackMessage
 	switch messageType {
 	case messageTypeCommandGroupSummary:
