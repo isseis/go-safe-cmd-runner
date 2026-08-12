@@ -479,7 +479,7 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 **判定理由**: 本リポジトリで一度も実行されたことのない 7 テストを、実 TLS モックサーバと `-race` 付きで CI の必須経路に組み込む。`mkplan.md` step 8 の panel-mode トリガ「heavy integration-test / CI surface」に触れ、失敗すれば無関係な PR まで CI が赤くなる。加えて Darwin 分岐という条件分岐を持つ。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
