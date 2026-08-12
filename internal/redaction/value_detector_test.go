@@ -644,6 +644,11 @@ func TestValueDetector_ConfiguredWebhookHost(t *testing.T) {
 			want:  "posted to https://mattermost.example.com/" + placeholder + ".",
 		},
 		{
+			name:  "a dot within the path does not truncate the mask",
+			input: "https://mattermost.example.com/hooks/team.name/abcdefghijklmnop",
+			want:  "https://mattermost.example.com/" + placeholder,
+		},
+		{
 			name:  "the bare host without a path is left alone",
 			input: "https://mattermost.example.com/",
 			want:  "https://mattermost.example.com/",
@@ -696,6 +701,7 @@ func TestCompileWebhookHostPattern_RejectsMalformedHost(t *testing.T) {
 		".*",
 		"hooks.slack.com:443",
 		"127.0.0.1:8080",
+		"a:b:c", // two colons but not a valid IPv6 literal
 	}
 
 	for _, host := range hosts {

@@ -4,6 +4,7 @@ package redaction
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"regexp"
 	"strings"
 )
@@ -64,13 +65,34 @@ var valueDetectorPatterns = struct {
 // is not a bare hostname or address literal.
 var ErrInvalidWebhookHost = errors.New("webhook host must be a bare hostname or address literal without scheme, port, path or whitespace")
 
-// webhookHostCharsRE is the character set a webhook host may use: the characters
-// of a DNS hostname, an IPv4 literal, or an IPv6 literal (which brings the colon).
-// It is a rejection filter, not a hostname grammar - the caller's host has
-// already been validated as a hostname where it was read from configuration.
-// What this stops is a value carrying regex-relevant or URL-structural
-// characters (a scheme, a path, a space) into the pattern below.
-var webhookHostCharsRE = regexp.MustCompile(`^[A-Za-z0-9.:-]+$`)
+// webhookHostLabelRE matches the RFC 1123 §2.1 character pattern for a single
+// DNS label or IPv4 octet: starts and ends with a letter or digit; interior
+// may contain hyphens.
+var webhookHostLabelRE = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$`)
+
+// ValidateWebhookHost reports whether host is a bare hostname, IPv4 literal, or
+// bare IPv6 literal - no scheme, port, path, brackets, or whitespace. It is the
+// single definition of "valid webhook host" shared by compileWebhookHostPattern
+// and normalizeSlackAllowedHost (internal/runner/bootstrap), so the two callers
+// cannot drift into disagreeing about what a valid host looks like.
+func ValidateWebhookHost(host string) error {
+	if strings.Contains(host, ":") {
+		// The only way a bare (unbracketed) host carries a colon is an IPv6
+		// literal; anything else with a colon (host:port, a scheme) is rejected
+		// by ParseAddr failing.
+		addr, err := netip.ParseAddr(host)
+		if err != nil || !addr.Is6() {
+			return fmt.Errorf("%w (got %q)", ErrInvalidWebhookHost, host)
+		}
+		return nil
+	}
+	for label := range strings.SplitSeq(host, ".") {
+		if !webhookHostLabelRE.MatchString(label) {
+			return fmt.Errorf("%w (got %q)", ErrInvalidWebhookHost, host)
+		}
+	}
+	return nil
+}
 
 // compileWebhookHostPattern builds the URL pattern for a deployment's configured
 // webhook host. Every path under that host is treated as secret, because a
@@ -80,7 +102,8 @@ var webhookHostCharsRE = regexp.MustCompile(`^[A-Za-z0-9.:-]+$`)
 //
 // Group 1 is the scheme, host and the slash that ends the authority, kept out of
 // the replacement so masked output still names the host that was contacted. The
-// path class excludes trailing punctuation so surrounding prose isn't swallowed.
+// path class excludes trailing punctuation so surrounding prose isn't swallowed,
+// while still allowing dots within the path itself.
 //
 // Deliberately unanchored (CodeQL go/regex/missing-regexp-anchor): that check is
 // about trust decisions, where an unanchored host lets an attacker forge a
@@ -89,25 +112,24 @@ var webhookHostCharsRE = regexp.MustCompile(`^[A-Za-z0-9.:-]+$`)
 // Anchoring would stop the common case (a URL quoted in an error message) from
 // being masked at all.
 func compileWebhookHostPattern(host string) (*regexp.Regexp, error) {
-	// Exactly one colon means host:port (rejected: WithWebhookHost's doc comment
-	// requires NewConfig to fail on a port), while a real IPv6 literal has two or
-	// more colons and is accepted below.
-	if !webhookHostCharsRE.MatchString(host) || strings.Count(host, ":") == 1 {
-		return nil, fmt.Errorf("%w (got %q)", ErrInvalidWebhookHost, host)
+	if err := ValidateWebhookHost(host); err != nil {
+		return nil, err
 	}
 
 	authority := regexp.QuoteMeta(host)
 	if strings.Contains(host, ":") {
-		// A colon can only be an IPv6 literal here: the character filter above has
-		// already rejected a scheme or a port. Configuration carries such a host in
-		// its bare form ("::1"), while a URL always brackets it, so put the
+		// A colon can only be an IPv6 literal here: ValidateWebhookHost has
+		// already rejected a scheme or a port. Configuration carries such a host
+		// in its bare form ("::1"), while a URL always brackets it, so put the
 		// brackets back.
 		authority = `\[` + authority + `\]`
 	}
 
 	// The port is optional because validateWebhookURL compares only the hostname,
-	// so a configured webhook URL may carry one.
-	return regexp.Compile(`(?i)(\bhttps://` + authority + `(?::\d+)?/)[A-Za-z0-9/_-]+`)
+	// so a configured webhook URL may carry one. The path class allows embedded
+	// dots but must end on a non-dot character, so trailing prose punctuation
+	// (a sentence-final period) is not swallowed into the match.
+	return regexp.Compile(`(?i)(\bhttps://` + authority + `(?::\d+)?/)(?:[A-Za-z0-9/_.-]*[A-Za-z0-9/_-])`)
 }
 
 // ValueDetector detects and masks sensitive values in text based on value format,
