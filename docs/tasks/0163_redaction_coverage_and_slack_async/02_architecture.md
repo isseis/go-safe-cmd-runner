@@ -1002,6 +1002,10 @@ flush では高優先度キューを先に処理する。期限内に送り切�
 
 **記録の粒度**: 破棄と送信失敗は、発生した時点で 1 件ずつ記録する。集計だけでは「どの通知が失われたか」が運用者に分からず、AC-26 の意図を満たさないためである。記録に含めるのは `message_type`、`run_id`、レコードのログレベル、および理由（`queue_full` / `sender_closed` / `send_failed`）であり、**通知の本文は含めない**（AC-29）。本文は同じ実行の JSON ログファイルに完全な形で残っているため、`run_id` と `message_type` で突き合わせられる。flush 時にはこれに加えて、webhook ごとに `message_type` 別の内訳を付けた集計を出力する。この集計レコードは特定の `slackRequest` に紐づかないため、`run_id` は要求ごとの値ではなく `slackSender.runID`（構築時に `SlackHandlerOptions.RunID` から取る。3.4.1）から取る。これにより、1 件ごとの記録と flush 時の集計を同じ `run_id` で突き合わせられる。
 
+**送信失敗ロガーは redaction 層を通らない**: 置き換え前の 10 箇所は `slog.Default()`、すなわち `RedactingHandler` を経由していた。送信失敗ロガーは `FailureHandlers` の葉ハンドラから直接構築するため、この層を通らない。これは `bootstrap` の `phase1FailureLogger` と同じ構造であり（同ロガーも `MultiHandler` と葉ハンドラだけで作る）、import 循環のため `internal/logging` から `RedactText` を呼べないという既存の制約（`sanitizeErrorForLog` の `TODO(0154-import-cycle)`）に従う。したがって送信経路の記録に載せてよいのは、**識別子と定型の理由だけ**である。通知本文はもちろん、送信前のデバッグ記録にも本文を載せない（`message_text` ではなく `message_type` を記録する）。エラー文字列は `sanitizeErrorForLog` を通す。
+
+**未送信のまま終わった通知も 1 件ずつ記録する**: flush 予算で打ち切られた 1 件、flush 期限に達したときキューに残っていた通知、`abandon` が送らなかった通知は、いずれも `Pending` に数えるだけでなく理由（`flush_interrupted` / `flush_deadline` / `abandoned`）を付けて 1 件ずつ記録する。プロセス終了時に失われるのはまさにこれらであり、「どの通知が失われたか」を運用者が知る必要が最も高い。記録はカウンタに触れないため、2 つの整合式は変わらない。
+
 **現行の `slog` 呼び出しの置き換え**: `sendToSlack` が使っている `slog.Debug` / `slog.Warn` / `slog.Error` / `slog.Info` は、すべてこの送信失敗ロガーへの呼び出しに置き換える。これにより、送信に関する記録が起点となって新たな Slack 送信が発生しない（AC-30）。なお `slack_handler.go` にはこれ以外に、`NewSlackHandler`・ドライラン分岐・`extractCommandResultsFromGroup` からの `slog.Debug` 呼び出しがある。これらは送信失敗の記録ではないため AC-30 の対象外だが、`SlackHandler.Enabled` が `slog.LevelInfo` 未満を除外するため Slack へは届かない。この理由づけを保つため、これらは Debug レベルのまま維持する。
 
 **任意のロガーの走査では AC-31 を保証できない**: 送信失敗の記録経路を `*slog.Logger` として受け取り、その連鎖を `Handler()` / `Handlers()` で走査して `*SlackHandler` を探す方法は、`slog.Handler` が連鎖を公開する手段を定めていないため、原理的に不完全である。どちらのメソッドも持たないハンドラが `*SlackHandler` を包んでいると、走査は連鎖の先を観測できないまま「Slack を含まない」と判定する。この誤判定は、記録が Slack へ戻る構成をそのまま通してしまう。走査が救えるのは連鎖を公開するハンドラだけであり、「入れ子の `SlackHandler` をすべて検出する」とは主張できない。
@@ -1068,7 +1072,7 @@ flush では高優先度キューを先に処理する。期限内に送り切�
 | 送信キューの確保・ワーカー goroutine の起動 | 行わない |
 | メッセージの構築 | 行う（`Handle` の中、送信の直前） |
 | Slack への HTTP 送信 | `Handle` の中でインラインに行う。既存のリトライとバックオフの方針はそのまま適用する |
-| `Flush` / `Close` の呼び出し | 行う。待つべきワーカーも残件も存在しないため、ゼロ値の `FlushStats` を返す |
+| `Flush` / `Close` の呼び出し | 行う。待つべきワーカーも残件も存在しないため受付停止のみを行うが、**それまでの集計は返す**（`Enqueued` はインライン送信を受け付けた件数、`Pending` は常に 0）。ゼロ値を返すと、調査のために同期モードへ切り替えた運用者が配送サマリを失う |
 
 Slack 通知が届かない事象を調査するとき、送信結果をログ呼び出しと同じ順序で観測できる手段があることは切り分けの時間を大きく縮める。これはデバッグ用の退避手段であり、通常運用で使う設定ではないことを利用者向け文書に明記する。
 

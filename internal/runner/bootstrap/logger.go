@@ -232,6 +232,12 @@ func AddSlackHandlers(config SlackLoggerConfig) (*redaction.Config, error) {
 			IsDryRun:    config.DryRun,
 			LevelMode:   logging.LevelModeExactInfo,
 			AllowedHost: config.AllowedHost,
+			// The send path's own diagnostics go to the Phase 1 handlers -- the
+			// same console and log-file handlers phase1FailureLogger is built
+			// from -- so they land where every other record does. Left empty
+			// they would go to a bare stderr logger instead, dropping them from
+			// the run's JSON log and ignoring the configured level.
+			FailureHandlers: phase1BaseHandlers,
 			// Interim: production keeps sending synchronously until the
 			// process-exit flush path exists, because an asynchronous sender
 			// with nothing to flush would lose whatever is still queued when
@@ -247,11 +253,12 @@ func AddSlackHandlers(config SlackLoggerConfig) (*redaction.Config, error) {
 
 	if config.WebhookURLError != "" {
 		sh, err := newSlackHandlerFunc(logging.SlackHandlerOptions{
-			WebhookURL:  config.WebhookURLError,
-			RunID:       config.RunID,
-			IsDryRun:    config.DryRun,
-			LevelMode:   logging.LevelModeWarnAndAbove,
-			AllowedHost: config.AllowedHost,
+			WebhookURL:      config.WebhookURLError,
+			RunID:           config.RunID,
+			IsDryRun:        config.DryRun,
+			LevelMode:       logging.LevelModeWarnAndAbove,
+			AllowedHost:     config.AllowedHost,
+			FailureHandlers: phase1BaseHandlers,
 			// Interim, as above.
 			Synchronous: true,
 		})

@@ -445,6 +445,7 @@ func TestE2E_SlackWebhookSeparation_DryRunMode(t *testing.T) {
 		IsDryRun:    true, // Dry-run mode
 	})
 	require.NoError(t, err)
+	defer successHandler.Close()
 
 	errorHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
 		WebhookURL:  errorServer.URL,
@@ -455,6 +456,7 @@ func TestE2E_SlackWebhookSeparation_DryRunMode(t *testing.T) {
 		IsDryRun:    true, // Dry-run mode
 	})
 	require.NoError(t, err)
+	defer errorHandler.Close()
 
 	multiHandler, err := logging.NewMultiHandler(successHandler, errorHandler)
 	require.NoError(t, err)

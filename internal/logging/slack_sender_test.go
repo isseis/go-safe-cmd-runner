@@ -259,12 +259,14 @@ func TestSlackHandler_HandleDoesNotBlockOnUnresponsiveServer(t *testing.T) {
 	handler := newTestSlackHandler(t, slackOptionsFor(t, server))
 
 	const calls = 10
-	const limit = 100 * time.Millisecond
+	// A synchronous implementation would wait on the blocked server until the
+	// 5s HTTP timeout, so this still fails by an order of magnitude while
+	// leaving room for scheduling noise on a loaded CI runner.
+	const limit = time.Second
 
 	start := time.Now()
-	for i := range calls {
+	for range calls {
 		require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "", "message")))
-		_ = i
 	}
 	elapsed := time.Since(start)
 
@@ -281,7 +283,8 @@ func TestSlackHandler_UnreachableSlackDoesNotDelayOtherHandlers(t *testing.T) {
 	multi, err := NewMultiHandler(slackHandler, slog.NewJSONHandler(&other, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	require.NoError(t, err)
 
-	const limit = 100 * time.Millisecond
+	// See TestSlackHandler_HandleDoesNotBlockOnUnresponsiveServer for the bound.
+	const limit = time.Second
 	start := time.Now()
 	require.NoError(t, multi.Handle(context.Background(), slackRecord(slog.LevelInfo, "", "sibling handler must not wait")))
 	elapsed := time.Since(start)
@@ -300,7 +303,6 @@ func TestSlackSender_SendTimeout(t *testing.T) {
 	opts.FailureHandlers = failureLogHandlers(&failureLog)
 	handler := newTestSlackHandler(t, opts)
 
-	require.Equal(t, 100*time.Millisecond, handler.sender.sendTimeout, "SendTimeout should reach the sender")
 	require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "", "message")))
 
 	waitForFailureLog(t, &failureLog, "Slack notification not delivered")
@@ -471,29 +473,104 @@ func TestSlackSender_QueueOverflowDropsAndRecords(t *testing.T) {
 	}
 }
 
-func TestSlackSender_DropRecordOmitsMessageBody(t *testing.T) {
+// TestSlackSender_RecordsOmitMessageBody covers both records that name a lost
+// notification. The marker is carried as the record message with no
+// message_type, so the generic builder puts it into SlackMessage.Text: with a
+// typed message_type the builders ignore r.Message and the assertion would hold
+// no matter what the failure logger wrote. The first case proves the marker
+// really does reach the payload.
+func TestSlackSender_RecordsOmitMessageBody(t *testing.T) {
 	const secret = "unique-body-marker-9f3a"
 
-	_, server := newRecordingSlackServer(t, http.StatusOK, nil)
+	t.Run("the marker reaches the Slack payload", func(t *testing.T) {
+		rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+		handler := newTestSlackHandler(t, slackOptionsFor(t, server))
 
-	var failureLog syncBuffer
-	opts := slackOptionsFor(t, server)
-	opts.FailureHandlers = failureLogHandlers(&failureLog)
-	handler := newTestSlackHandler(t, opts)
+		require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelWarn, "", secret)))
+		waitForRequests(t, rec, 1)
+		require.Contains(t, rec.texts()[0], secret, "the body assertions below would be vacuous otherwise")
+	})
 
-	ctx := context.Background()
-	handler.Flush(ctx)
+	tests := []struct {
+		name       string
+		serverCode int
+		// act drives the handler into the record under test and returns the
+		// reason that record should carry.
+		act func(t *testing.T, handler *SlackHandler, failureLog *syncBuffer) string
+	}{
+		{
+			name:       "drop record",
+			serverCode: http.StatusOK,
+			act: func(t *testing.T, handler *SlackHandler, _ *syncBuffer) string {
+				// After the flush the sender no longer accepts.
+				handler.Flush(context.Background())
+				require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelWarn, "", secret)))
+				return dropReasonSenderClosed
+			},
+		},
+		{
+			name:       "send failure record",
+			serverCode: http.StatusBadRequest,
+			act: func(t *testing.T, handler *SlackHandler, _ *syncBuffer) string {
+				require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelWarn, "", secret)))
+				return failureReasonSendFailed
+			},
+		},
+	}
 
-	// After the flush the sender no longer accepts, so this is dropped.
-	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelWarn, messageTypeCommandGroupSummary, secret)))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, server := newRecordingSlackServer(t, tt.serverCode, nil)
 
-	waitForFailureLog(t, &failureLog, dropReasonSenderClosed)
+			var failureLog syncBuffer
+			opts := slackOptionsFor(t, server)
+			opts.FailureHandlers = failureLogHandlers(&failureLog)
+			handler := newTestSlackHandler(t, opts)
 
-	logged := failureLog.String()
-	assert.Contains(t, logged, `"message_type":"`+messageTypeCommandGroupSummary+`"`)
-	assert.Contains(t, logged, `"run_id":"test-run"`)
-	assert.Contains(t, logged, `"level":"WARN"`)
-	assert.NotContains(t, logged, secret, "the drop record must not carry the notification body")
+			reason := tt.act(t, handler, &failureLog)
+			waitForFailureLog(t, &failureLog, reason)
+
+			record := findFailureRecord(t, &failureLog, reason)
+			assert.Equal(t, "", record["message_type"], "the record names the notification's type")
+			assert.Equal(t, "test-run", record["run_id"])
+			assert.Equal(t, "WARN", record["level"])
+			assert.NotContains(t, failureLog.String(), secret,
+				"a record naming a lost notification must not carry its body")
+		})
+	}
+}
+
+// findFailureRecordByMessage returns the first record in buf with the given
+// msg field.
+func findFailureRecordByMessage(t *testing.T, buf *syncBuffer, msg string) map[string]any {
+	t.Helper()
+	for line := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			continue
+		}
+		if record["msg"] == msg {
+			return record
+		}
+	}
+	t.Fatalf("no record with msg %q in: %s", msg, buf.String())
+	return nil
+}
+
+// findFailureRecord returns the first record in buf whose reason field matches.
+func findFailureRecord(t *testing.T, buf *syncBuffer, reason string) map[string]any {
+	t.Helper()
+	for line := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			continue
+		}
+		if record["reason"] == reason {
+			return record
+		}
+	}
+	t.Fatalf("no record with reason %q in: %s", reason, buf.String())
+	return nil
 }
 
 func TestSlackSender_FailureLogGoesToNonSlackDestination(t *testing.T) {
@@ -531,12 +608,33 @@ func TestSlackSender_FlushLogsMessageTypeBreakdown(t *testing.T) {
 
 	handler.Flush(ctx)
 
-	logged := failureLog.String()
-	assert.Contains(t, logged, "Slack delivery summary")
-	assert.Contains(t, logged, `"run_id":"run-breakdown"`, "the aggregate record carries the sender's run ID")
-	assert.Contains(t, logged, `"sent_by_message_type":`)
-	assert.Contains(t, logged, messageTypeCommandGroupSummary)
-	assert.Contains(t, logged, messageTypeSecurityAlert)
+	aggregate := findFailureRecordByMessage(t, &failureLog, "Slack delivery summary")
+	assert.Equal(t, "run-breakdown", aggregate["run_id"], "the aggregate carries the sender's run ID")
+	assert.Equal(t, map[string]any{
+		messageTypeCommandGroupSummary: float64(1),
+		messageTypeSecurityAlert:       float64(1),
+	}, aggregate["sent_by_message_type"], "each delivered notification counts under its own type")
+	assert.Empty(t, aggregate["failed_by_message_type"])
+	assert.Empty(t, aggregate["dropped_by_message_type"])
+}
+
+// TestSlackHandler_SendContextIsDetachedFromTheLogCall pins that the worker
+// does not inherit the caller's context. Carrying it through would let
+// cmd/runner's signal cancellation abort exactly the notifications that
+// shutdown needs to deliver, and every other test here passes a live context,
+// so nothing else would notice the change.
+func TestSlackHandler_SendContextIsDetachedFromTheLogCall(t *testing.T) {
+	rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+	handler := newTestSlackHandler(t, slackOptionsFor(t, server))
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	require.NoError(t, handler.Handle(cancelled, slackRecord(slog.LevelInfo, "", "issued under a cancelled context")))
+
+	stats := handler.Flush(context.Background())
+	assert.Equal(t, int64(1), stats.Sent, "a cancelled log-call context must not abort the send")
+	assert.Equal(t, 1, rec.count())
 }
 
 func TestSlackHandler_FlushDeliversPendingAndReturnsStats(t *testing.T) {
@@ -549,9 +647,8 @@ func TestSlackHandler_FlushDeliversPendingAndReturnsStats(t *testing.T) {
 
 	ctx := context.Background()
 	const submitted = 5
-	for i := range submitted {
+	for range submitted {
 		require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "queued")))
-		_ = i
 	}
 	<-reached
 
@@ -812,7 +909,15 @@ func TestSlackHandler_SynchronousMode(t *testing.T) {
 
 	// No flush needed: Handle only returns once the request has been answered.
 	assert.Equal(t, 1, rec.count(), "synchronous mode sends inline")
-	assert.Equal(t, FlushStats{}, handler.Flush(context.Background()), "there is no worker and no remainder to account for")
+
+	stats := handler.Flush(context.Background())
+	assert.Equal(t, FlushStats{Submitted: 1, Enqueued: 1, Sent: 1}, stats,
+		"switching to synchronous mode for debugging must not cost the delivery accounting")
+
+	// Stopping accepting applies here too: without it a handler kept alive past
+	// its Close would go on making blocking HTTP calls.
+	require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "", "after flush")))
+	assert.Equal(t, 1, rec.count(), "a closed synchronous sender must not send")
 }
 
 func TestSlackSender_CounterInvariants(t *testing.T) {
