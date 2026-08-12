@@ -4,7 +4,6 @@ package common
 import (
 	"testing"
 
-	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -32,9 +31,9 @@ func TestResolveTimeout(t *testing.T) {
 		},
 		{
 			name:            "command timeout takes precedence",
-			cmdTimeout:      NewFromIntPtr(tu.Int32Ptr(120)),
-			groupTimeout:    NewFromIntPtr(tu.Int32Ptr(90)),
-			globalTimeout:   NewFromIntPtr(tu.Int32Ptr(60)),
+			cmdTimeout:      NewFromIntPtr(new(int32(120))),
+			groupTimeout:    NewFromIntPtr(new(int32(90))),
+			globalTimeout:   NewFromIntPtr(new(int32(60))),
 			commandName:     "test-cmd",
 			groupName:       "test-group",
 			expectedTimeout: 120,
@@ -43,8 +42,8 @@ func TestResolveTimeout(t *testing.T) {
 		{
 			name:            "group timeout when command is unset",
 			cmdTimeout:      NewUnsetTimeout(),
-			groupTimeout:    NewFromIntPtr(tu.Int32Ptr(90)),
-			globalTimeout:   NewFromIntPtr(tu.Int32Ptr(60)),
+			groupTimeout:    NewFromIntPtr(new(int32(90))),
+			globalTimeout:   NewFromIntPtr(new(int32(60))),
 			commandName:     "test-cmd",
 			groupName:       "test-group",
 			expectedTimeout: 90,
@@ -54,7 +53,7 @@ func TestResolveTimeout(t *testing.T) {
 			name:            "global timeout when cmd and group are unset",
 			cmdTimeout:      NewUnsetTimeout(),
 			groupTimeout:    NewUnsetTimeout(),
-			globalTimeout:   NewFromIntPtr(tu.Int32Ptr(45)),
+			globalTimeout:   NewFromIntPtr(new(int32(45))),
 			commandName:     "test-cmd",
 			groupName:       "test-group",
 			expectedTimeout: 45,
@@ -62,9 +61,9 @@ func TestResolveTimeout(t *testing.T) {
 		},
 		{
 			name:            "command timeout 0 (unlimited)",
-			cmdTimeout:      NewFromIntPtr(tu.Int32Ptr(0)),
-			groupTimeout:    NewFromIntPtr(tu.Int32Ptr(90)),
-			globalTimeout:   NewFromIntPtr(tu.Int32Ptr(60)),
+			cmdTimeout:      NewFromIntPtr(new(int32(0))),
+			groupTimeout:    NewFromIntPtr(new(int32(90))),
+			globalTimeout:   NewFromIntPtr(new(int32(60))),
 			commandName:     "unlimited-cmd",
 			groupName:       "test-group",
 			expectedTimeout: 0,
@@ -73,8 +72,8 @@ func TestResolveTimeout(t *testing.T) {
 		{
 			name:            "group timeout 0 (unlimited)",
 			cmdTimeout:      NewUnsetTimeout(),
-			groupTimeout:    NewFromIntPtr(tu.Int32Ptr(0)),
-			globalTimeout:   NewFromIntPtr(tu.Int32Ptr(60)),
+			groupTimeout:    NewFromIntPtr(new(int32(0))),
+			globalTimeout:   NewFromIntPtr(new(int32(60))),
 			commandName:     "test-cmd",
 			groupName:       "test-group",
 			expectedTimeout: 0,
@@ -84,7 +83,7 @@ func TestResolveTimeout(t *testing.T) {
 			name:            "global timeout 0 (unlimited)",
 			cmdTimeout:      NewUnsetTimeout(),
 			groupTimeout:    NewUnsetTimeout(),
-			globalTimeout:   NewFromIntPtr(tu.Int32Ptr(0)),
+			globalTimeout:   NewFromIntPtr(new(int32(0))),
 			commandName:     "test-cmd",
 			groupName:       "test-group",
 			expectedTimeout: 0,
@@ -93,9 +92,9 @@ func TestResolveTimeout(t *testing.T) {
 		// Original TestResolveTimeoutWithContext test cases
 		{
 			name:            "command level resolution with context",
-			cmdTimeout:      NewFromIntPtr(tu.Int32Ptr(30)),
+			cmdTimeout:      NewFromIntPtr(new(int32(30))),
 			groupTimeout:    NewUnsetTimeout(),
-			globalTimeout:   NewFromIntPtr(tu.Int32Ptr(60)),
+			globalTimeout:   NewFromIntPtr(new(int32(60))),
 			commandName:     "test-command",
 			groupName:       "test-group",
 			expectedTimeout: 30,
@@ -105,7 +104,7 @@ func TestResolveTimeout(t *testing.T) {
 			name:            "global level resolution with context",
 			cmdTimeout:      NewUnsetTimeout(),
 			groupTimeout:    NewUnsetTimeout(),
-			globalTimeout:   NewFromIntPtr(tu.Int32Ptr(60)),
+			globalTimeout:   NewFromIntPtr(new(int32(60))),
 			commandName:     "test-command",
 			groupName:       "test-group",
 			expectedTimeout: 60,

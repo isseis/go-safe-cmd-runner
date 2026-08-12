@@ -297,12 +297,6 @@ func (s *CommandSpec) GetRiskLevel() (RiskLevel, error) {
 	return ParseRiskLevel(*s.RiskLevel)
 }
 
-// StringPtr is a helper function to create *string from string literal.
-// This is useful for test code when setting RiskLevel field.
-func StringPtr(s string) *string {
-	return &s
-}
-
 // HasUserGroupSpecification returns true if either run_as_user or run_as_group is specified.
 func (s *CommandSpec) HasUserGroupSpecification() bool {
 	return s.RunAsUser != "" || s.RunAsGroup != ""

@@ -4,8 +4,6 @@ package common
 import (
 	"testing"
 
-	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
-
 	"github.com/stretchr/testify/assert"
 )
 
@@ -148,21 +146,21 @@ func TestNewFromIntPtr(t *testing.T) {
 		},
 		{
 			name:      "zero pointer creates unlimited timeout",
-			ptr:       tu.Int32Ptr(0),
+			ptr:       new(int32(0)),
 			wantSet:   true,
 			wantUnlim: true,
 			wantValue: 0,
 		},
 		{
 			name:      "positive pointer creates timeout",
-			ptr:       tu.Int32Ptr(120),
+			ptr:       new(int32(120)),
 			wantSet:   true,
 			wantUnlim: false,
 			wantValue: 120,
 		},
 		{
 			name:      "max timeout pointer",
-			ptr:       tu.Int32Ptr(MaxTimeout),
+			ptr:       new(int32(MaxTimeout)),
 			wantSet:   true,
 			wantUnlim: false,
 			wantValue: MaxTimeout,

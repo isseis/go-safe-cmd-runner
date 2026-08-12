@@ -40,13 +40,6 @@ linters:
     - "nakedret"   # Detect naked returns
 
   settings:
-    modernize:
-      # newexpr rewrites the testutil StringPtr/Int32Ptr/Int64Ptr helpers into
-      # new(x) at every call site, which is a real API change across packages
-      # rather than an idiom fix. Tracked separately; see the GitHub issue.
-      disable:
-        - "newexpr"
-
     gocyclo:
       min-complexity: 20
 

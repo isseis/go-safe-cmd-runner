@@ -235,7 +235,7 @@ func TestEndToEndExpansion_TemplateValidationErrors(t *testing.T) {
 		templates := map[string]runnertypes.CommandTemplate{
 			"bad_template": {
 				Cmd:     "echo",
-				WorkDir: runnertypes.StringPtr("%{local_dir}"), // Local variable not allowed
+				WorkDir: new("%{local_dir}"), // Local variable not allowed
 			},
 		}
 

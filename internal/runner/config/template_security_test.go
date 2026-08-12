@@ -10,11 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// int32Ptr is a helper function to create a pointer to an int32 value.
-func int32Ptr(v int32) *int32 {
-	return &v
-}
-
 // TestValidateTemplateName tests template name validation
 func TestValidateTemplateName(t *testing.T) {
 	tests := []struct {
@@ -77,7 +72,7 @@ func TestValidateTemplateDefinition(t *testing.T) {
 		{
 			name:     "valid template with workdir",
 			tmplName: "with_workdir",
-			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("/tmp/${path}")},
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: new("/tmp/${path}")},
 			wantErr:  false,
 		},
 		{
@@ -101,37 +96,37 @@ func TestValidateTemplateDefinition(t *testing.T) {
 		{
 			name:     "allowed global variable in workdir",
 			tmplName: "good_template",
-			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("%{BaseDir}/work")},
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: new("%{BaseDir}/work")},
 			wantErr:  false,
 		},
 		{
 			name:     "absolute path workdir without variables",
 			tmplName: "absolute_workdir",
-			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("/opt/app")},
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: new("/opt/app")},
 			wantErr:  false,
 		},
 		{
 			name:     "relative path workdir - validated at expansion time",
 			tmplName: "relative_workdir",
-			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("relative/path")},
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: new("relative/path")},
 			wantErr:  false, // Validation deferred to expansion time in group_executor.go
 		},
 		{
 			name:     "relative path workdir with dot - validated at expansion time",
 			tmplName: "relative_workdir_dot",
-			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("./relative/path")},
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: new("./relative/path")},
 			wantErr:  false, // Validation deferred to expansion time in group_executor.go
 		},
 		{
 			name:     "empty workdir string is allowed",
 			tmplName: "empty_workdir",
-			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("")},
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: new("")},
 			wantErr:  false, // Empty string means current directory
 		},
 		{
 			name:     "workdir with variable reference is allowed (validation deferred to expansion)",
 			tmplName: "variable_workdir",
-			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("${base_dir}/relative")},
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: new("${base_dir}/relative")},
 			wantErr:  false, // Variable references are allowed - validation happens after expansion
 		},
 		{
@@ -158,7 +153,7 @@ func TestValidateTemplateDefinition(t *testing.T) {
 		{
 			name:     "forbidden local variable in workdir",
 			tmplName: "bad_template",
-			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("%{base_dir}/work")},
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: new("%{base_dir}/work")},
 			wantErr:  true,
 			errType:  &ErrLocalVariableInTemplate{},
 		},
@@ -240,17 +235,17 @@ func TestValidateCmdSpec(t *testing.T) {
 		},
 		{
 			name:    "template + workdir (valid - override allowed)",
-			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", WorkDir: runnertypes.StringPtr("/tmp")},
+			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", WorkDir: new("/tmp")},
 			wantErr: false,
 		},
 		{
 			name:    "template + output_file (valid - override allowed)",
-			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", OutputFile: runnertypes.StringPtr("/tmp/output.txt")},
+			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", OutputFile: new("/tmp/output.txt")},
 			wantErr: false,
 		},
 		{
 			name:    "template + timeout (valid - override allowed)",
-			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", Timeout: int32Ptr(120)},
+			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", Timeout: new(int32(120))},
 			wantErr: false,
 		},
 		{
@@ -326,7 +321,7 @@ func TestCollectUsedParams(t *testing.T) {
 			name: "param in workdir",
 			template: runnertypes.CommandTemplate{
 				Cmd:     "cmd",
-				WorkDir: runnertypes.StringPtr("${base_dir}/work"),
+				WorkDir: new("${base_dir}/work"),
 			},
 			expected: map[string]struct{}{
 				"base_dir": {},

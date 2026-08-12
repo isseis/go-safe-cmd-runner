@@ -84,7 +84,7 @@ func TestParseRiskLevel_UnknownError(t *testing.T) {
 // TestParseRiskLevel_UnknownConfigRejected verifies that a command configured
 // with risk_level="unknown" surfaces the error through GetRiskLevel.
 func TestParseRiskLevel_UnknownConfigRejected(t *testing.T) {
-	cmd := &CommandSpec{RiskLevel: StringPtr("unknown")}
+	cmd := &CommandSpec{RiskLevel: new("unknown")}
 	level, err := cmd.GetRiskLevel()
 	assert.ErrorIs(t, err, ErrInvalidRiskLevel)
 	assert.Equal(t, RiskLevelUnknown, level)
@@ -179,7 +179,7 @@ func TestCommandGetRiskLevel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := &CommandSpec{
-				RiskLevel: StringPtr(tt.riskStr),
+				RiskLevel: new(tt.riskStr),
 			}
 
 			result, err := cmd.GetRiskLevel()

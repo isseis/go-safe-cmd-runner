@@ -7,7 +7,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
-	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,17 +22,17 @@ func TestApplyTemplateInheritance_WorkDir(t *testing.T) {
 	}{
 		{
 			name:            "command overrides template",
-			cmdWorkDir:      tu.StringPtr("/cmd/dir"),
-			templateWorkDir: tu.StringPtr("/tmpl/dir"),
-			expandedWorkDir: tu.StringPtr("/tmpl/dir"),
-			expectedWorkDir: tu.StringPtr("/cmd/dir"),
+			cmdWorkDir:      new("/cmd/dir"),
+			templateWorkDir: new("/tmpl/dir"),
+			expandedWorkDir: new("/tmpl/dir"),
+			expectedWorkDir: new("/cmd/dir"),
 		},
 		{
 			name:            "command inherits from template",
 			cmdWorkDir:      nil,
-			templateWorkDir: tu.StringPtr("/tmpl/dir"),
-			expandedWorkDir: tu.StringPtr("/tmpl/dir"),
-			expectedWorkDir: tu.StringPtr("/tmpl/dir"),
+			templateWorkDir: new("/tmpl/dir"),
+			expandedWorkDir: new("/tmpl/dir"),
+			expectedWorkDir: new("/tmpl/dir"),
 		},
 		{
 			name:            "both nil",
@@ -43,10 +43,10 @@ func TestApplyTemplateInheritance_WorkDir(t *testing.T) {
 		},
 		{
 			name:            "command empty string overrides template",
-			cmdWorkDir:      tu.StringPtr(""),
-			templateWorkDir: tu.StringPtr("/tmpl/dir"),
-			expandedWorkDir: tu.StringPtr("/tmpl/dir"),
-			expectedWorkDir: tu.StringPtr(""),
+			cmdWorkDir:      new(""),
+			templateWorkDir: new("/tmpl/dir"),
+			expandedWorkDir: new("/tmpl/dir"),
+			expectedWorkDir: new(""),
 		},
 	}
 
@@ -77,17 +77,17 @@ func TestApplyTemplateInheritance_OutputFile(t *testing.T) {
 	}{
 		{
 			name:               "command overrides template",
-			cmdOutputFile:      tu.StringPtr("/cmd/output.txt"),
-			templateOutputFile: tu.StringPtr("/tmpl/output.txt"),
-			expandedOutputFile: tu.StringPtr("/tmpl/output.txt"),
-			expectedOutputFile: tu.StringPtr("/cmd/output.txt"),
+			cmdOutputFile:      new("/cmd/output.txt"),
+			templateOutputFile: new("/tmpl/output.txt"),
+			expandedOutputFile: new("/tmpl/output.txt"),
+			expectedOutputFile: new("/cmd/output.txt"),
 		},
 		{
 			name:               "command inherits from template",
 			cmdOutputFile:      nil,
-			templateOutputFile: tu.StringPtr("/tmpl/output.txt"),
-			expandedOutputFile: tu.StringPtr("/tmpl/output.txt"),
-			expectedOutputFile: tu.StringPtr("/tmpl/output.txt"),
+			templateOutputFile: new("/tmpl/output.txt"),
+			expandedOutputFile: new("/tmpl/output.txt"),
+			expectedOutputFile: new("/tmpl/output.txt"),
 		},
 		{
 			name:               "both nil",
@@ -98,10 +98,10 @@ func TestApplyTemplateInheritance_OutputFile(t *testing.T) {
 		},
 		{
 			name:               "command empty string overrides template",
-			cmdOutputFile:      tu.StringPtr(""),
-			templateOutputFile: tu.StringPtr("/tmpl/output.txt"),
-			expandedOutputFile: tu.StringPtr("/tmpl/output.txt"),
-			expectedOutputFile: tu.StringPtr(""),
+			cmdOutputFile:      new(""),
+			templateOutputFile: new("/tmpl/output.txt"),
+			expandedOutputFile: new("/tmpl/output.txt"),
+			expectedOutputFile: new(""),
 		},
 	}
 
@@ -229,12 +229,12 @@ func TestApplyTemplateInheritance_Combined(t *testing.T) {
 	expandedSpec := &runnertypes.CommandSpec{}
 	cmdSpec := &runnertypes.CommandSpec{
 		WorkDir:    nil,                                    // Inherit from template
-		OutputFile: tu.StringPtr("/cmd/output.txt"),        // Override template
+		OutputFile: new("/cmd/output.txt"),                 // Override template
 		EnvImport:  []string{"CMD_VAR", "SHARED"},          // Merge with template
 		Vars:       map[string]any{"cmd_key": "cmd_value"}, // Merge with template
 	}
-	expandedWorkDir := tu.StringPtr("/tmpl/dir")
-	expandedOutputFile := tu.StringPtr("/tmpl/output.txt")
+	expandedWorkDir := new("/tmpl/dir")
+	expandedOutputFile := new("/tmpl/output.txt")
 	expandedEnvImport := []string{"TMPL_VAR", "SHARED"}
 	expandedVars := map[string]any{"tmpl_key": "tmpl_value", "cmd_key": "tmpl_override"}
 
@@ -263,7 +263,7 @@ func TestExpandGlobal_SystemEnvIncludesAllParsableEntries(t *testing.T) {
 	t.Setenv("TEST_NOT_IN_ALLOWLIST", "test_value")
 
 	spec := &runnertypes.GlobalSpec{
-		Timeout:    tu.Int32Ptr(30),
+		Timeout:    new(int32(30)),
 		EnvAllowed: []string{},
 		EnvImport:  []string{},
 		Vars:       map[string]any{},

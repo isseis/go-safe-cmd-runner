@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
-	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -401,41 +400,41 @@ func TestValidateTimeouts(t *testing.T) {
 		},
 		{
 			name:        "valid - positive global timeout",
-			config:      makeConfig(tu.Int32Ptr(30), makeGroup("test_group", makeCommand("test_cmd", nil))),
+			config:      makeConfig(new(int32(30)), makeGroup("test_group", makeCommand("test_cmd", nil))),
 			expectError: false,
 		},
 		{
 			name:        "valid - zero global timeout",
-			config:      makeConfig(tu.Int32Ptr(0), makeGroup("test_group", makeCommand("test_cmd", nil))),
+			config:      makeConfig(new(int32(0)), makeGroup("test_group", makeCommand("test_cmd", nil))),
 			expectError: false,
 		},
 		{
 			name:        "invalid - negative global timeout",
-			config:      makeConfig(tu.Int32Ptr(-10), makeGroup("test_group", makeCommand("test_cmd", nil))),
+			config:      makeConfig(new(int32(-10)), makeGroup("test_group", makeCommand("test_cmd", nil))),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
 		},
 		{
 			name:        "valid - positive command timeout",
-			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", tu.Int32Ptr(60)))),
+			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", new(int32(60))))),
 			expectError: false,
 		},
 		{
 			name:        "valid - zero command timeout",
-			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", tu.Int32Ptr(0)))),
+			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", new(int32(0))))),
 			expectError: false,
 		},
 		{
 			name:        "invalid - negative command timeout",
-			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", tu.Int32Ptr(-5)))),
+			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", new(int32(-5))))),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
 		},
 		{
 			name: "invalid - multiple negative command timeouts",
 			config: makeConfig(nil, makeGroup("test_group",
-				makeCommand("cmd1", tu.Int32Ptr(-1)),
-				makeCommand("cmd2", tu.Int32Ptr(-2)),
+				makeCommand("cmd1", new(int32(-1))),
+				makeCommand("cmd2", new(int32(-2))),
 			)),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
@@ -443,17 +442,17 @@ func TestValidateTimeouts(t *testing.T) {
 		{
 			name: "invalid - negative timeout in second group",
 			config: makeConfig(nil,
-				makeGroup("group1", makeCommand("cmd1", tu.Int32Ptr(30))),
-				makeGroup("group2", makeCommand("cmd2", tu.Int32Ptr(-15))),
+				makeGroup("group1", makeCommand("cmd1", new(int32(30)))),
+				makeGroup("group2", makeCommand("cmd2", new(int32(-15)))),
 			),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
 		},
 		{
 			name: "invalid - multiple errors reported together",
-			config: makeConfig(tu.Int32Ptr(-5),
-				makeGroup("group1", makeCommand("cmd1", tu.Int32Ptr(-10))),
-				makeGroup("group2", makeCommand("cmd2", tu.Int32Ptr(-20))),
+			config: makeConfig(new(int32(-5)),
+				makeGroup("group1", makeCommand("cmd1", new(int32(-10)))),
+				makeGroup("group2", makeCommand("cmd2", new(int32(-20)))),
 			),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
@@ -471,7 +470,7 @@ func TestValidateTimeouts(t *testing.T) {
 				CommandTemplates: map[string]runnertypes.CommandTemplate{
 					"test_template": {
 						Cmd:     "echo",
-						Timeout: tu.Int32Ptr(-1),
+						Timeout: new(int32(-1)),
 					},
 				},
 				Groups: []runnertypes.GroupSpec{
@@ -491,7 +490,7 @@ func TestValidateTimeouts(t *testing.T) {
 				CommandTemplates: map[string]runnertypes.CommandTemplate{
 					"test_template": {
 						Cmd:     "echo",
-						Timeout: tu.Int32Ptr(30),
+						Timeout: new(int32(30)),
 					},
 				},
 				Groups: []runnertypes.GroupSpec{
@@ -506,7 +505,7 @@ func TestValidateTimeouts(t *testing.T) {
 				CommandTemplates: map[string]runnertypes.CommandTemplate{
 					"test_template": {
 						Cmd:     "echo",
-						Timeout: tu.Int32Ptr(0),
+						Timeout: new(int32(0)),
 					},
 				},
 				Groups: []runnertypes.GroupSpec{
@@ -521,11 +520,11 @@ func TestValidateTimeouts(t *testing.T) {
 				CommandTemplates: map[string]runnertypes.CommandTemplate{
 					"template1": {
 						Cmd:     "echo",
-						Timeout: tu.Int32Ptr(-10),
+						Timeout: new(int32(-10)),
 					},
 					"template2": {
 						Cmd:     "cat",
-						Timeout: tu.Int32Ptr(-20),
+						Timeout: new(int32(-20)),
 					},
 				},
 				Groups: []runnertypes.GroupSpec{
@@ -543,16 +542,16 @@ func TestValidateTimeouts(t *testing.T) {
 			name: "invalid - negative timeouts in global, template, and command",
 			config: &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
-					Timeout: tu.Int32Ptr(-5),
+					Timeout: new(int32(-5)),
 				},
 				CommandTemplates: map[string]runnertypes.CommandTemplate{
 					"bad_template": {
 						Cmd:     "echo",
-						Timeout: tu.Int32Ptr(-15),
+						Timeout: new(int32(-15)),
 					},
 				},
 				Groups: []runnertypes.GroupSpec{
-					makeGroup("test_group", makeCommand("bad_cmd", tu.Int32Ptr(-25))),
+					makeGroup("test_group", makeCommand("bad_cmd", new(int32(-25)))),
 				},
 			},
 			expectError: true,

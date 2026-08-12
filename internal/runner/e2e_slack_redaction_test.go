@@ -28,7 +28,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
-	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification/testutil"
 	"github.com/stretchr/testify/assert"
@@ -124,7 +123,7 @@ func TestIntegration_SlackRedaction(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: tu.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: new(int32(30))},
 	}
 
 	// Create real executor and resource manager
@@ -249,7 +248,7 @@ func TestE2E_MultiHandlerLogging(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: tu.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: new(int32(30))},
 	}
 
 	// Create executor and resource manager

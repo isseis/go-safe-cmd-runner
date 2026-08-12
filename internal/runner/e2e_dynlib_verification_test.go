@@ -59,7 +59,7 @@ func TestGroupExecutor_F001_HashMismatchBlocksExecution(t *testing.T) {
 	configSpec := &runnertypes.ConfigSpec{
 		Version: "1.0",
 		Global: runnertypes.GlobalSpec{
-			Timeout: tu.Int32Ptr(30),
+			Timeout: new(int32(30)),
 		},
 		Groups: []runnertypes.GroupSpec{
 			{
@@ -134,7 +134,7 @@ func TestGroupExecutor_F004_LibraryShadowingBlocksExecution(t *testing.T) {
 	configSpec := &runnertypes.ConfigSpec{
 		Version: "1.0",
 		Global: runnertypes.GlobalSpec{
-			Timeout: tu.Int32Ptr(30),
+			Timeout: new(int32(30)),
 		},
 		Groups: []runnertypes.GroupSpec{
 			{
