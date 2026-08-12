@@ -27,15 +27,13 @@ var valueDetectorPatterns = struct {
 	awsKeyID:    regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b|\bASIA[0-9A-Z]{16}\b`),
 	githubToken: regexp.MustCompile(`\bgh[pors]_\s*[A-Za-z0-9_]{36,}\b`),
 	slackToken:  regexp.MustCompile(`\bxox[bpar]-[0-9]{10,}-[0-9]{10,}-[a-zA-Z0-9]+\b`),
-	// NOTE: unlike the other patterns in this set, this one is NOT independent of key
-	// context - it anchors on the literal JSON field name "private_key_id" because a
-	// GCP service-account key ID has no self-identifying value format (it is an opaque
-	// hex fingerprint, indistinguishable from any other hex string by value alone). It
-	// is also not itself secret material: the actual credential in a GCP service-account
-	// JSON key file is the "private_key" PEM block, which is already caught independent
-	// of key name by pemPrivate below. This pattern is kept as defense-in-depth (it masks
-	// the fingerprint too) but does not by itself satisfy "detection independent of key
-	// name" for the GCP category; see docs/user/security-risk-assessment.md Limitations.
+	// NOTE: unlike the rest of this set, this pattern is NOT key-independent - it
+	// anchors on the literal field name "private_key_id" because a GCP key ID is an
+	// opaque hex fingerprint with no self-identifying format. It's also not itself
+	// secret: the real credential is the "private_key" PEM block, already caught
+	// key-independently by pemPrivate below. Kept as defense-in-depth (masks the
+	// fingerprint too), but doesn't alone satisfy "key-independent detection" for
+	// the GCP category; see docs/user/security-risk-assessment.md Limitations.
 	gcpSAKey:    regexp.MustCompile(`("private_key_id"\s*:\s*")[a-fA-F0-9]{32,}(")`),
 	pemPrivate:  regexp.MustCompile(`(?s)-----BEGIN\s[A-Z\s]*PRIVATE\sKEY-----.*?-----END\s[A-Z\s]*PRIVATE\sKEY-----`),
 	bearerToken: regexp.MustCompile(`(?i)(Bearer\s+)[A-Za-z0-9\-._~+/]+=*`),
@@ -52,32 +50,26 @@ var valueDetectorPatterns = struct {
 	// do not take the three-segment shape that slackToken requires.
 	slackPrefixToken: regexp.MustCompile(`\bx(?:app|oxe|oxs)-[A-Za-z0-9-]{9,}[A-Za-z0-9]`),
 	// jwt matches a compact JWT: three base64url segments joined by exactly two
-	// dots. The header (eyJ + 7+) and payload (10+) length bounds separate a real
-	// JWT from short base64url fragments; the signature is allowed to be empty
-	// (an alg=none JWT). The trailing group is required because RE2 has no
-	// lookahead: it consumes the single character after the token and requires it
-	// to be neither base64url nor a dot, so a third dot (a fourth segment) stops
-	// the match instead of letting it silently truncate the token. Mask re-emits
-	// that character through "${1}". A deliberate consequence is that a JWT
-	// directly followed by a sentence-final period (e.g. "...abc.") is not
-	// matched: that is a three-dot string, which 3.3.2 condition 1 excludes.
+	// dots, with header/payload length bounds (7+/10+) to exclude short base64url
+	// fragments; the signature may be empty (alg=none). RE2 has no lookahead, so
+	// the trailing group consumes the character after the token and requires it
+	// to be neither base64url nor a dot - a fourth segment stops the match rather
+	// than silently truncating it. Mask re-emits that character via "${1}". One
+	// consequence: a JWT followed by a sentence-final period ("...abc.") is not
+	// matched, since that's a three-dot string per 3.3.2 condition 1 -
 	// TestValueDetector_JWT pins this as a known limitation.
 	jwt: regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{7,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*([^A-Za-z0-9_.-]|$)`),
-	// slackWebhookURL treats the /services/ path as the secret. This is the fixed
-	// half of the two-tier design in 3.3.3: it applies with no configuration at
-	// all, which is what the log paths that run before the TOML is read have.
-	// The deployment's own host arrives separately through WithWebhookHost. The
-	// path class is restricted to URL path characters so a trailing period or
-	// comma is not swallowed.
+	// slackWebhookURL is the fixed half of the two-tier design in 3.3.3: it needs
+	// no config, so it covers log paths that run before the TOML is read. The
+	// deployment's own host arrives separately via WithWebhookHost. The path
+	// class excludes trailing punctuation so surrounding prose isn't swallowed.
 	//
-	// The pattern is deliberately not anchored (CodeQL flags this as
-	// go/regex/missing-regexp-anchor). That query is about deciding whether a URL
-	// is trusted, where an unanchored host lets an attacker prefix their own. The
-	// direction here is the opposite: the pattern searches free text - a log
-	// line, captured command output - for a secret to erase, so it must match
-	// mid-string, and matching more than intended costs a redacted placeholder
-	// rather than a leaked one. Anchoring would stop the common case, a webhook
-	// URL quoted inside an error message, from being masked at all.
+	// Deliberately unanchored (CodeQL go/regex/missing-regexp-anchor): that check
+	// is about trust decisions, where an unanchored host lets an attacker forge a
+	// prefix. Here the pattern searches free text for a secret to erase, so it
+	// must match mid-string - over-matching just costs an extra placeholder, not
+	// a leak. Anchoring would stop the common case (a URL quoted in an error
+	// message) from being masked at all.
 	slackWebhookURL: regexp.MustCompile(`(?i)(\bhttps://hooks\.slack\.com/services/)[A-Za-z0-9/_-]+`),
 }
 
@@ -162,26 +154,23 @@ func (d *ValueDetector) Mask(text string) string {
 	result = valueDetectorPatterns.githubToken.ReplaceAllString(result, escapedPlaceholder)
 	result = valueDetectorPatterns.slackToken.ReplaceAllString(result, escapedPlaceholder)
 	result = valueDetectorPatterns.pemPrivate.ReplaceAllString(result, escapedPlaceholder)
-	// Preserve the "Bearer " prefix, the URL scheme, and the surrounding
-	// "private_key_id":"..." JSON structure so masked output stays readable
-	// (e.g. "Bearer [REDACTED]" instead of a bare placeholder).
+	// From here on, patterns with a capture group re-emit it (via "${1}" etc.) so
+	// masked output keeps its surrounding structure - "Bearer [REDACTED]" rather
+	// than a bare placeholder.
 	result = valueDetectorPatterns.gcpSAKey.ReplaceAllString(result, "${1}"+escapedPlaceholder+"${2}")
 	result = valueDetectorPatterns.bearerToken.ReplaceAllString(result, "${1}"+escapedPlaceholder)
 	result = valueDetectorPatterns.urlCred.ReplaceAllString(result, "${1}"+escapedPlaceholder+"@")
 
-	// The four patterns added in 3.3.1 run after the original seven so existing
-	// detection results and their masked appearance are unchanged. The JWT's
-	// trailing character is re-emitted, and the webhook URL keeps its
-	// /services/ prefix, for the same readability reason as above.
+	// Added in 3.3.1; run after the original seven so their masked output is
+	// unchanged.
 	result = valueDetectorPatterns.githubPAT.ReplaceAllString(result, escapedPlaceholder)
 	result = valueDetectorPatterns.slackPrefixToken.ReplaceAllString(result, escapedPlaceholder)
 	result = valueDetectorPatterns.jwt.ReplaceAllString(result, escapedPlaceholder+"${1}")
 
-	// The configured host runs before the fixed hooks.slack.com pattern, and not
-	// after, for the case where the two name the same host - the default
-	// deployment. Masking hooks.slack.com first would leave "/services/" as the
-	// only path characters in front of the placeholder, which this pattern would
-	// then match and mask a second time.
+	// The configured host runs first: if it names the same host as
+	// hooks.slack.com (the default deployment), masking that pattern first would
+	// leave "/services/" as the only path in front of the placeholder, which
+	// slackWebhookURL would then match and mask a second time.
 	if d.webhookHostURL != nil {
 		result = d.webhookHostURL.ReplaceAllString(result, "${1}"+escapedPlaceholder)
 	}
