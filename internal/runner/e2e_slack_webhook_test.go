@@ -153,7 +153,8 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 	var allPayloads strings.Builder
 	for i, payload := range receivedPayloads {
 		t.Logf("Payload %d: %s", i+1, payload)
-		allPayloads.WriteString(payload + "\n")
+		allPayloads.WriteString(payload)
+		allPayloads.WriteByte('\n')
 	}
 
 	// Verify the HTTP flow worked
