@@ -438,8 +438,8 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 **判定理由**: 新規ファイルの追加のみで既存の挙動を変えず、未確立の設計判断・panel-mode トリガ・Conditional checks のいずれにも該当しない。なお `verifySlackFreeHandlers` は本 PR では本番の呼び出し元を持たないが、`handler_chain_test.go` から参照されるため `unused` リンタには掛からない（golangci-lint v2.11.4、`--build-tags test` で実測確認済み）。一方 `make deadcode` は `-test` を付けずに実行されるため、本 PR の時点では未到達関数として報告される。**着手時の実測で baseline は 10 件であり（計画作成時点の 8 件から、他タスクのマージで `NewStandardELFAnalyzerWithSyscallStore` と `NewSyscallAnalyzerWithConfig` の 2 件が増えていた）、本 PR で 11 件になる**。ステップ 4-5 で `NewSlackHandler` が呼び出すと baseline に戻るため、本 PR に限り 11 件を許容する。なお `make deadcode` は `.github/workflows/ci.yml` のどのジョブにも含まれていない（CI が実行するのは `lint` / `fmt` / `test-ci-cgo1` / `test-ci-cgo0`）ため、この一時的な 11 件で CI が赤くなることはない。判定を後から再現できるよう、PR-4 の着手時に `make deadcode` の出力を取得して baseline の 10 件を PR 本文へ貼る。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] `make deadcode` の報告が baseline 10 件 ＋ `verifySlackFreeHandlers` の 11 件に留まることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] `make deadcode` の報告が baseline 10 件 ＋ `verifySlackFreeHandlers` の 11 件に留まることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
