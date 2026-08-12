@@ -414,9 +414,9 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 以下は個別のテストごとに書かず、1 度だけ定めて全箇所に適用する。実装時はこの 3 規則を、`slackSender` を伴うハンドラやモックサーバを生成するすべてのテストに漏れなく適用する。
 
-- [ ] **規則 R1（モックサーバの構成）**: `NewSlackHandler` は `https` 以外の webhook URL を拒否するため、モックサーバは `httptest.NewTLSServer` で立て、`SlackHandlerOptions.HTTPClient` に `server.Client()` を渡し、`AllowedHost` に `url.Parse(server.URL)` の `Hostname()`（ポートを含まない）を渡す。`InsecureSkipVerify` は使わない（`server.Client()` が正規の手段であり、新たな `gosec` 抑止を導入しない）。既存の `mustWebhookAllowedHost` は `internal/runner` の `//go:build e2e && test` ファイルにあり他パッケージから使えないため、`internal/logging` と `internal/runner/bootstrap` はそれぞれ自パッケージの `_test.go` 内に同等の小さなヘルパーを置く。
-- [ ] **規則 R2（資源の後始末）**: `NewSlackHandler` / `AddSlackHandlers` / `httptest.New*Server` で資源を得た**直後**に、`t.Cleanup` または `defer` で `Close` を登録する。テスト末尾ではなく取得地点に置き、後続のアサーションが失敗しても実行されるようにする。これによりワーカーが後続テストへ漏れない。
-- [ ] **規則 R3（ワーカー終了の観測）**: 「ワーカーが終了していること」は `runtime.NumGoroutine()` の完全一致では検証しない（プロセス全体で共有される値であり、`httptest` の接続や `-p 4` の並列実行で揺れる）。`internal/logging` のテストは同一パッケージから `slackSender.done` チャネルが閉じたことを観測する。`internal/runner/bootstrap` のテストは、`Close` 済みハンドラへの新たな投入が `Dropped` に計上されることで受付停止を確認する。`NumGoroutine` を使う場合は `require.Eventually` による上限の確認に留める。
+- [x] **規則 R1（モックサーバの構成）**: `NewSlackHandler` は `https` 以外の webhook URL を拒否するため、モックサーバは `httptest.NewTLSServer` で立て、`SlackHandlerOptions.HTTPClient` に `server.Client()` を渡し、`AllowedHost` に `url.Parse(server.URL)` の `Hostname()`（ポートを含まない）を渡す。`InsecureSkipVerify` は使わない（`server.Client()` が正規の手段であり、新たな `gosec` 抑止を導入しない）。既存の `mustWebhookAllowedHost` は `internal/runner` の `//go:build e2e && test` ファイルにあり他パッケージから使えないため、`internal/logging` と `internal/runner/bootstrap` はそれぞれ自パッケージの `_test.go` 内に同等の小さなヘルパーを置く。
+- [x] **規則 R2（資源の後始末）**: `NewSlackHandler` / `AddSlackHandlers` / `httptest.New*Server` で資源を得た**直後**に、`t.Cleanup` または `defer` で `Close` を登録する。テスト末尾ではなく取得地点に置き、後続のアサーションが失敗しても実行されるようにする。これによりワーカーが後続テストへ漏れない。
+- [x] **規則 R3（ワーカー終了の観測）**: 「ワーカーが終了していること」は `runtime.NumGoroutine()` の完全一致では検証しない（プロセス全体で共有される値であり、`httptest` の接続や `-p 4` の並列実行で揺れる）。`internal/logging` のテストは同一パッケージから `slackSender.done` チャネルが閉じたことを観測する。`internal/runner/bootstrap` のテストは、`Close` 済みハンドラへの新たな投入が `Dropped` に計上されることで受付停止を確認する。`NumGoroutine` を使う場合は `require.Eventually` による上限の確認に留める。
 
 #### ステップ 4-2: 構成検証（`handler_chain.go`）
 
@@ -486,39 +486,40 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 #### ステップ 4-4: 送信機構（`slack_sender.go`）
 
-- [ ] 環境変数名の定数 `SlackSendTimeoutEnvVar = "GSCR_SLACK_SEND_TIMEOUT"`、`SlackFlushTimeoutEnvVar = "GSCR_SLACK_FLUSH_TIMEOUT"`、`SlackSyncEnvVar = "GSCR_SLACK_SYNC"` を定義する。値の解釈は行わない（1.4 参照）。
-- [ ] 既定値の定数 `DefaultSendTimeout = 40 * time.Second`、`DefaultFlushTimeout = 15 * time.Second`、`flushPerSendTimeout = 5 * time.Second`、`defaultHighPriorityQueueSize = 32`、`defaultNormalQueueSize = 128` を定義する。前 2 者は `bootstrap` が参照するため公開する（1.4）。
-- [ ] `slackSender`、`slackRequest`、`shutdownRequest`、`slackCounters`、`FlushStats` を 02_architecture.md 3.4.1 の定義どおりに実装する。ドキュメンテーションコメントは同節の英語コメントをそのまま用いる。
-- [ ] `slackSender` に `mu` で保護した `map[string]int` の `message_type` 別内訳（送信・失敗・破棄）を追加する（1.4 参照。02_architecture.md 3.4.1 の定義への本計画からの追加）。
-- [ ] `slackSender` の `runID` フィールドを `NewSlackHandler` が `SlackHandlerOptions.RunID` から設定する（02_architecture.md 3.4.1、3.5）。flush 時の集計レコードは特定の `slackRequest` に紐づかないため、この値から `run_id` を付ける。
-- [ ] `slackSender` に非公開フィールド `afterDequeue func()` を追加する。ワーカーが 1 件を取り出した直後・送信開始前に、非 nil のときだけ呼ぶ。本番では常に nil で、同一パッケージのテストのみが代入する。テスト専用の同期点であることを英語コメントで明記する（1.4 参照）。
-- [ ] `sendToSlack` を `slack_handler.go` から移設し、`(*slackSender).send(ctx context.Context, req slackRequest, singleAttempt bool) error` にする。`singleAttempt` が真のとき（flush 中）はリトライを行わない。
-- [ ] 移設に伴い、`sendToSlack` 内の `slog.Debug` / `slog.Info` / `slog.Warn` / `slog.Error` の **10 箇所すべて**を `failureLogger` 経由の呼び出しへ置き換える。`sanitizeErrorForLog` と既存の 6 件の `//nolint:gosec`（G704 が 1 件、G706 が 5 件）は、行単位の注釈と G コードの理由づけをそのまま維持する。ファイル単位・パッケージ単位の抑止は導入しない。
-- [ ] `slackSender` のメソッドのレシーバ名を `s` 以外（例: `sd`）にする。`SlackHandler` からフィールドが消えたことを 6.3 の検索で機械的に確かめられるようにするためである。
-- [ ] `message_type` から投入先キューを選ぶ関数を実装する（高優先度＝`security_alert` / `privilege_escalation_failure` / `pre_execution_error`、それ以外は通常キュー。02_architecture.md 3.4.2）。
-- [ ] `enqueue`（読み取りロック下で受付停止フラグ確認＋非ブロッキング投入＋カウンタ更新＋破棄時の 1 件記録）を実装する。記録に含めるのは `message_type`・`run_id`・ログレベル・理由（`queue_full` / `sender_closed` / `send_failed`）のみとし、通知本文は含めない。
-- [ ] ワーカーループを実装する。待機は「高優先度キューのみを見る非ブロッキング `select`」→「2 本のキューと終了要求チャネルの `select`」の 2 段構成とする（02_architecture.md 3.4.7）。
-- [ ] 1 件を取り出した後、**書き込みロックの 1 回の臨界区間**で終了状態の観測・送信用コンテキストの生成・キャンセル関数の格納を行う（02_architecture.md 3.4.6 の表）。送信完了後は同じロックの下でキャンセル関数を nil に戻す。
-- [ ] `Flush(ctx)` / `Close()` を実装する。書き込みロック下で受付停止フラグと終了状態を設定し、フラグを立てたのが自分だった場合に限り終了要求を送り、保持しているキャンセル関数を呼ぶ。2 回目以降の呼び出しはワーカー終了通知を待って記録済みの `FlushStats` を返す。
-- [ ] `Flush` は戻る前に、`message_type` 別内訳を 1 件の集計レコードとして送信失敗ロガーへ出力する。このレコードには `slackSender.runID` を `run_id` として含める（02_architecture.md 3.4.8）。
-- [ ] 集計レコードは**送信機構 1 つにつき 1 度だけ**出力する。`Flush` → `Flush` や `Flush` → `Close` のように終了処理が複数回呼ばれても、2 回目以降は記録済みの `FlushStats` を返すだけで集計レコードを出力しない。`sync.Once` で出力を包み、理由（運用側で内訳を集計するときに二重計上させないため）を英語コメントで残す。
-- [ ] 同期モードでは送信キューを確保せずワーカーも起動しない。`Handle` から `send` を直接呼ぶ（02_architecture.md 3.4.11）。
+- [x] 環境変数名の定数 `SlackSendTimeoutEnvVar = "GSCR_SLACK_SEND_TIMEOUT"`、`SlackFlushTimeoutEnvVar = "GSCR_SLACK_FLUSH_TIMEOUT"`、`SlackSyncEnvVar = "GSCR_SLACK_SYNC"` を定義する。値の解釈は行わない（1.4 参照）。
+- [x] 既定値の定数 `DefaultSendTimeout = 40 * time.Second`、`DefaultFlushTimeout = 15 * time.Second`、`flushPerSendTimeout = 5 * time.Second`、`defaultHighPriorityQueueSize = 32`、`defaultNormalQueueSize = 128` を定義する。前 2 者は `bootstrap` が参照するため公開する（1.4）。
+- [x] `slackSender`、`slackRequest`、`shutdownRequest`、`slackCounters`、`FlushStats` を 02_architecture.md 3.4.1 の定義どおりに実装する。ドキュメンテーションコメントは同節の英語コメントをそのまま用いる。`Pending` だけは専用のカウンタを持たず `Enqueued - Sent - Failed` の残余として求める（キューに入って送信も失敗もしていない件数という定義そのものであり、flush 予算で打ち切られた 1 件と abandon が送らなかった 1 件を数え漏らさない）。
+- [x] `slackSender` に `mu` で保護した `map[string]int` の `message_type` 別内訳（送信・失敗・破棄）を追加する（1.4 参照。02_architecture.md 3.4.1 の定義への本計画からの追加）。
+- [x] `slackSender` の `runID` フィールドを `NewSlackHandler` が `SlackHandlerOptions.RunID` から設定する（02_architecture.md 3.4.1、3.5）。flush 時の集計レコードは特定の `slackRequest` に紐づかないため、この値から `run_id` を付ける。
+- [x] `slackSender` に非公開フィールド `afterDequeue func()` を追加する。ワーカーが 1 件を取り出した直後・送信開始前に、非 nil のときだけ呼ぶ。本番では常に nil で、同一パッケージのテストのみが代入する。テスト専用の同期点であることを英語コメントで明記する（1.4 参照）。
+- [x] `sendToSlack` を `slack_handler.go` から移設し、`(*slackSender).send(ctx context.Context, req slackRequest, singleAttempt bool) error` にする。`singleAttempt` が真のとき（flush 中）はリトライを行わない。
+- [x] 移設に伴い、`sendToSlack` 内の `slog.Debug` / `slog.Info` / `slog.Warn` / `slog.Error` の **10 箇所すべて**を `failureLogger` 経由の呼び出しへ置き換える。`sanitizeErrorForLog` と既存の 6 件の `//nolint:gosec`（G704 が 1 件、G706 が 5 件）は、行単位の注釈と G コードの理由づけをそのまま維持する。ファイル単位・パッケージ単位の抑止は導入しない。
+- [x] `slackSender` のメソッドのレシーバ名を `s` 以外（例: `sd`）にする。`SlackHandler` からフィールドが消えたことを 6.3 の検索で機械的に確かめられるようにするためである。
+- [x] `message_type` から投入先キューを選ぶ関数を実装する（高優先度＝`security_alert` / `privilege_escalation_failure` / `pre_execution_error`、それ以外は通常キュー。02_architecture.md 3.4.2）。
+- [x] `enqueue`（読み取りロック下で受付停止フラグ確認＋非ブロッキング投入＋カウンタ更新＋破棄時の 1 件記録）を実装する。記録に含めるのは `message_type`・`run_id`・ログレベル・理由（`queue_full` / `sender_closed` / `send_failed`）のみとし、通知本文は含めない。
+- [x] ワーカーループを実装する。待機は「高優先度キューのみを見る非ブロッキング `select`」→「2 本のキューと終了要求チャネルの `select`」の 2 段構成とする（02_architecture.md 3.4.7）。
+- [x] 1 件を取り出した後、**書き込みロックの 1 回の臨界区間**で終了状態の観測・送信用コンテキストの生成・キャンセル関数の格納を行う（02_architecture.md 3.4.6 の表）。送信完了後は同じロックの下でキャンセル関数を nil に戻す。
+- [x] `Flush(ctx)` / `Close()` を実装する。書き込みロック下で受付停止フラグと終了状態を設定し、フラグを立てたのが自分だった場合に限り終了要求を送り、保持しているキャンセル関数を仕掛ける。2 回目以降の呼び出しはワーカー終了通知を待って記録済みの `FlushStats` を返す。
+- [x] **設計からの変更（実装時に e2e テストが検出）**: 送信中の 1 件を `Flush` が**即座にキャンセルしない**。当初の 3.4.6 のとおり即座に打ち切ると、終了直前に発行された通知――flush がまさに送り届けるためにある 1 件――が、あと数ミリ秒で完了するところで捨てられる。ステップ 4-6 で `time.Sleep` を `Flush` に置き換えた e2e テスト（`TestE2E_SlackWebhookSeparation_WarnToError` ほか）が、この取りこぼしにより赤くなって発覚した。`Flush` は代わりに drain 中の 1 件と同じ予算（残り flush 期限と 5 秒の小さいほう）のタイマーにキャンセルを載せる。flush 期限を超えないという 3.4.6 の目的は変わらない。`Close`（abandon）は送り届けるべきものがないため即座に打ち切る。02_architecture.md 3.4.1・3.4.5・3.4.6・3.4.7・5.2・6.2 を修正済み。
+- [x] `Flush` は戻る前に、`message_type` 別内訳を 1 件の集計レコードとして送信失敗ロガーへ出力する。このレコードには `slackSender.runID` を `run_id` として含める（02_architecture.md 3.4.8）。
+- [x] 集計レコードは**送信機構 1 つにつき 1 度だけ**出力する。`Flush` → `Flush` や `Flush` → `Close` のように終了処理が複数回呼ばれても、2 回目以降は記録済みの `FlushStats` を返すだけで集計レコードを出力しない。`sync.Once` で出力を包み、理由（運用側で内訳を集計するときに二重計上させないため）を英語コメントで残す。
+- [x] 同期モードでは送信キューを確保せずワーカーも起動しない。`Handle` から `send` を直接呼ぶ（02_architecture.md 3.4.11）。
 
 #### ステップ 4-5: `SlackHandler` の改修
 
-- [ ] `SlackHandler` から `webhookURL` / `httpClient` / `backoffConfig` を削除し、`sender *slackSender` を追加する。
-- [ ] `SlackHandlerOptions` に `FailureHandlers` / `SendTimeout` / `HighPriorityQueueSize` / `NormalQueueSize` / `Synchronous` を追加する（02_architecture.md 3.4.1 のコメントをそのまま用いる）。
-- [ ] `NewSlackHandler` で `verifySlackFreeHandlers` を呼び、エラーならそのまま返す。`FailureHandlers` が空のときは stderr のみのロガーを内部で構築する（`slog.Default()` へフォールバックしない）。
-- [ ] `NewSlackHandler` はドライラン時に `slackSender` を生成しない。同期モードでは生成するがキューとワーカーを持たせない（02_architecture.md 3.4.10、3.4.11）。
-- [ ] `Handle` を 02_architecture.md 6.2 上段のとおりに書き換える。分岐順は「`slack_notify` 判定」→「送信機構の有無」→「メッセージ構築」→「同期モード判定」→「投入」。
-- [ ] `WithAttrs` / `WithGroup` の構造体リテラルから 3 フィールドを外し、`sender: s.sender` を追加する。
-- [ ] `Flush(ctx context.Context) FlushStats` と `Close() FlushStats` を公開する。`sender` が nil のときはゼロ値の `FlushStats` を返す。
-- [ ] `NewSlackHandler` 冒頭の `slog.Debug`、ドライラン分岐の `slog.Debug`、`extractCommandResultsFromGroup` の 5 箇所の `slog.Debug` は Debug レベルのまま変更しない（02_architecture.md 3.4.8）。
+- [x] `SlackHandler` から `webhookURL` / `httpClient` / `backoffConfig` を削除し、`sender *slackSender` を追加する。
+- [x] `SlackHandlerOptions` に `FailureHandlers` / `SendTimeout` / `HighPriorityQueueSize` / `NormalQueueSize` / `Synchronous` を追加する（02_architecture.md 3.4.1 のコメントをそのまま用いる）。
+- [x] `NewSlackHandler` で `verifySlackFreeHandlers` を呼び、エラーならそのまま返す。`FailureHandlers` が空のときは stderr のみのロガーを内部で構築する（`slog.Default()` へフォールバックしない）。
+- [x] `NewSlackHandler` はドライラン時に `slackSender` を生成しない。同期モードでは生成するがキューとワーカーを持たせない（02_architecture.md 3.4.10、3.4.11）。
+- [x] `Handle` を 02_architecture.md 6.2 上段のとおりに書き換える。分岐順は「`slack_notify` 判定」→「送信機構の有無」→「メッセージ構築」→「同期モード判定」→「投入」。
+- [x] `WithAttrs` / `WithGroup` の構造体リテラルから 3 フィールドを外し、`sender: s.sender` を追加する。
+- [x] `Flush(ctx context.Context) FlushStats` と `Close() FlushStats` を公開する。`sender` が nil のときはゼロ値の `FlushStats` を返す。
+- [x] `NewSlackHandler` 冒頭の `slog.Debug`、ドライラン分岐の `slog.Debug`、`extractCommandResultsFromGroup` の 5 箇所の `slog.Debug` は Debug レベルのまま変更しない（02_architecture.md 3.4.8）。
 
 **本番の既定を本 PR では同期に固定する（3.2 の PR-6 / PR-7 の中間状態対策）**: 本 PR には flush 経路（Phase 5）が含まれないため、非同期を本番の既定にしたまま本 PR だけがマージされると、プロセス終了時にキューの残件が失われる。これを構造的に防ぐため、本 PR では本番の唯一の生成経路である `AddSlackHandlers` に `Synchronous: true` を明示的に渡し、本番の挙動を現行（同期送信）のまま据え置く。PR-7 でこのリテラルを `parseSlackEnvSettings(os.Getenv)` の結果へ差し替え、flush 経路と同時に非同期を既定にする。
 
-- [ ] `internal/runner/bootstrap/logger.go` の `AddSlackHandlers` の 2 つの `SlackHandlerOptions` リテラル（`logger.go:226` の成功用、`logger.go:240` のエラー用）に `Synchronous: true` を加える。PR-7 で差し替える暫定値であることを英語コメントで明記する。
-- [ ] `logger_test.go` に `TestAddSlackHandlers_UsesSynchronousModeUntilFlushPathExists` を追加し、`newSlackHandlerFunc` を差し替えて捕捉した `SlackHandlerOptions.Synchronous` が両方の呼び出しで真であることを固定する。PR-7 でこのテストは `TestAddSlackHandlers_PropagatesEnvSettings` に置き換えて削除する旨を英語コメントで残す。
+- [x] `internal/runner/bootstrap/logger.go` の `AddSlackHandlers` の 2 つの `SlackHandlerOptions` リテラル（`logger.go:226` の成功用、`logger.go:240` のエラー用）に `Synchronous: true` を加える。PR-7 で差し替える暫定値であることを英語コメントで明記する。
+- [x] `logger_test.go` に `TestAddSlackHandlers_UsesSynchronousModeUntilFlushPathExists` を追加し、`newSlackHandlerFunc` を差し替えて捕捉した `SlackHandlerOptions.Synchronous` が両方の呼び出しで真であることを固定する。PR-7 でこのテストは `TestAddSlackHandlers_PropagatesEnvSettings` に置き換えて削除する旨を英語コメントで残す。
 
 この措置は `internal/logging` のテストと `internal/runner` の e2e テストには影響しない。いずれも `logging.NewSlackHandler` を直接呼んでおり、`Synchronous` を指定しないためゼロ値（＝非同期）で動く。したがって本 PR でも非同期経路は 4-6 / 4-7 の全テストによって完全に検証される。
 
@@ -526,40 +527,41 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 規則 R1〜R3（ステップ 4-1）を、以下のすべてに適用する。
 
-- [ ] `TestNewSlackHandlerWithOptions` の削除フィールド参照 6 箇所（386・387・407・408・409・467 行目、1.3.3 の表）を `handler.sender` 越しの参照へ書き換える。
-- [ ] `TestNewSlackHandlerWithOptions` に、`FailureHandlers` を与える正常系ケース、`SlackHandler` を含む構成が `ErrFailureLoggerContainsSlackHandler` になるケース、検証できない型を含む構成が `ErrFailureLoggerUnverifiableHandler` になるケースを追加する。判定は `errors.Is` で行う。
-- [ ] `TestSlackHandler_Handle_WithMockServer`（`slack_handler_test.go:823`）を `NewSlackHandler` 構築へ移行し、`Handle` の後に `Flush` を呼んでから検証する。サーバ障害ケースの検証は `Handle` の戻り値ではなく `FlushStats.Failed` で行う。`receivedMessage` への書き込みを `sync.Mutex` で保護する。
-- [ ] `TestSlackHandler_SendToSlack_Retry`（864・888 行目の 2 サブテスト）を `slackSender` の直接構築へ移行し、`send` を呼ぶ形に書き換える。呼び出し対象の変更に合わせてテスト名を `TestSlackSender_Send_Retry` へ改める。
-- [ ] `TestSlackHandler_WithRedactingHandler`（959 行目）を `NewSlackHandler` 構築へ移行し、`redactingHandler.Handle` の後に `Flush` を挟んでから `receivedMessage` を検証する。`receivedMessage` を `sync.Mutex` で保護する。
-- [ ] `internal/runner/e2e_slack_webhook_test.go::TestE2E_SlackWebhookWithMockServer` に `Flush` の同期点を挿入し、`receivedPayloads` を `sync.Mutex` で保護する。
-- [ ] `internal/runner/e2e_slack_webhook_separation_test.go` の `time.Sleep(500 * time.Millisecond)` **6 箇所**（126・227・294・343・414・491 行目）を、当該テストが生成したハンドラの `Flush` 呼び出しへ置き換え、`successPayloads` / `errorPayloads` を `sync.Mutex` で保護する。
+- [x] `TestNewSlackHandlerWithOptions` の削除フィールド参照 6 箇所（386・387・407・408・409・467 行目、1.3.3 の表）を `handler.sender` 越しの参照へ書き換える。**追加**: 「all options specified」のケースが `IsDryRun: true` を含んでいたが、ドライランでは送信機構を生成しない（3.4.10）ため `handler.sender` 越しの検証ができない。ドライランを独立したケース（`sender` が nil であること）へ分け、元のケースは非ドライランにした。
+- [x] `TestNewSlackHandlerWithOptions` に、`FailureHandlers` を与える正常系ケース、`SlackHandler` を含む構成が `ErrFailureLoggerContainsSlackHandler` になるケース、検証できない型を含む構成が `ErrFailureLoggerUnverifiableHandler` になるケースを追加する。判定は `errors.Is` で行う。
+- [x] `TestSlackHandler_Handle_WithMockServer`（`slack_handler_test.go:823`）を `NewSlackHandler` 構築へ移行し、`Handle` の後に `Flush` を呼んでから検証する。サーバ障害ケースの検証は `Handle` の戻り値ではなく `FlushStats.Failed` で行う。`receivedMessage` への書き込みを `sync.Mutex` で保護する。**追加**: `Flush` の前に送信失敗ロガーの出力を待つ（`waitForFailureLog`）。送信の最中に `Flush` を呼ぶと、その 1 件は drain 予算の下で扱われ、結果が `Sent` / `Failed` ではなく `Pending` になりうるためである。
+- [x] `TestSlackHandler_SendToSlack_Retry`（864・888 行目の 2 サブテスト）を `slackSender` の直接構築へ移行し、`send` を呼ぶ形に書き換える。呼び出し対象の変更に合わせてテスト名を `TestSlackSender_Send_Retry` へ改める。
+- [x] `TestSlackHandler_WithRedactingHandler`（959 行目）を `NewSlackHandler` 構築へ移行し、`redactingHandler.Handle` の後に `Flush` を挟んでから `receivedMessage` を検証する。`receivedMessage` を `sync.Mutex` で保護する。
+- [x] `internal/runner/e2e_slack_webhook_test.go::TestE2E_SlackWebhookWithMockServer` に `Flush` の同期点を挿入し、`receivedPayloads` を `sync.Mutex` で保護する。
+- [x] `internal/runner/e2e_slack_webhook_separation_test.go` の `time.Sleep(500 * time.Millisecond)` **6 箇所**（126・227・294・343・414・491 行目）を、当該テストが生成したハンドラの `Flush` 呼び出しへ置き換え、`successPayloads` / `errorPayloads` を `sync.Mutex` で保護する。
 
 #### ステップ 4-7: 新規テスト（`slack_sender_test.go`）
 
 テスト名は検証対象で決める。`slackSender` の内部挙動を直接見るものは `TestSlackSender_`、`SlackHandler` の公開 API 越しの挙動を見るものは `TestSlackHandler_` を前置する。
 
-- [ ] `TestSlackHandler_HandleDoesNotBlockOnUnresponsiveServer`: 応答しないモックサーバに対し `Handle` の所要時間が短い上限（例: 100 ms）内であることを、複数回のログ呼び出しで確かめる。
-- [ ] `TestSlackHandler_UnreachableSlackDoesNotDelayOtherHandlers`: `MultiHandler` に Slack ハンドラとバッファ書き込みハンドラを登録し、Slack 到達不能時もバッファへの書き込みが遅延しないこと。
-- [ ] `TestSlackSender_SendTimeout`: `SendTimeout` に短い値を注入し、期限で送信が打ち切られ `FlushStats.Failed` が増えること。
-- [ ] `TestSlackHandler_MessageIdenticalToSynchronousMode`: 同一レコードを同期モードと非同期モードの双方で処理し、モックサーバが受け取る `SlackMessage` が一致すること。
-- [ ] `TestSlackHandler_DerivedHandlersShareOneSender`: `WithAttrs` / `WithGroup` を 100 回適用し、全派生インスタンスの `sender` が同一ポインタであること（決定的な検証）。加えて `require.Eventually` で `runtime.NumGoroutine()` が上限を超えないことを確かめる。
-- [ ] `TestSlackHandler_DryRunCreatesNoSenderAndSendsNothing`: `IsDryRun: true` で `sender` が nil であること、モックサーバが 1 度もリクエストを受けないこと、`Flush` がゼロ値を返すこと。
-- [ ] `TestSlackSender_HighPriorityBypassesFullNormalQueue`: `NormalQueueSize: 1` で通常キューを満杯にした状態でも高優先度の通知が受け入れられ、先に送信されること。
-- [ ] `TestSlackSender_QueueOverflowDropsAndRecords`: `NormalQueueSize: 1` と `HighPriorityQueueSize: 1` のそれぞれで溢れを再現し、`Dropped` が増え、送信失敗ロガーに `queue_full` の記録が 1 件ずつ残ることを確かめる。本番容量（128 / 32）には依存しない。
-- [ ] `TestSlackSender_DropRecordOmitsMessageBody`: 破棄の記録に `message_type` と理由が含まれ、通知本文の文字列が含まれないこと。
-- [ ] `TestSlackSender_FailureLogGoesToNonSlackDestination`: 送信失敗の記録が `FailureHandlers` に与えたバッファへ書かれ、モックの Slack サーバへは記録由来のリクエストが届かないこと。
-- [ ] `TestSlackSender_FlushLogsMessageTypeBreakdown`: 複数の `message_type` を投入して `Flush` を呼び、送信失敗ロガーの出力に `message_type` 別の内訳が現れること。集計レコードに `SlackHandlerOptions.RunID` と同じ `run_id` が含まれることも確かめる。
-- [ ] `TestSlackHandler_FlushDeliversPendingAndReturnsStats`: 期限内に残件が送信され、`Sent` が投入数と一致すること。
-- [ ] `TestSlackHandler_FlushDeadlineReportsPending`: 応答しないサーバに対し、`Flush` が flush 期限内に戻り、送り切れなかった件数が `Pending` に計上されること。
-- [ ] `TestSlackHandler_FlushIsIdempotent`: `Flush` を複数回、および `Flush` 後に `Close` を呼んでも、同じ `FlushStats` が返り、ブロックも panic も起きないこと。加えて、これら複数回の呼び出しを通じて送信失敗ロガーへ出力される集計レコードが **1 件のまま**であることを確かめる（ステップ 4-4）。
-- [ ] `TestSlackHandler_EnqueueAfterFlushIsDropped`: `Flush` 完了後の `Handle` が `Dropped` を増やして nil を返し、クローズ済みチャネルへの送信による panic が起きないこと。
-- [ ] `TestSlackHandler_FlushReturnsWhenWorkerIsIdle`: 通知を 1 件も投入していない送信機構と、投入済みを送り終えた送信機構の双方に対し、`Flush` と `Close` が短い制限時間（例: 1 秒）内に戻り、`done` チャネルが閉じていること。制限時間を超えたらテストを失敗させる。
-- [ ] `TestSlackHandler_FlushCancelsInFlightSend`: 応答しないサーバへの送信が進行中に `Flush` を呼び、flush 期限内に戻ること、その 1 件が `Pending` であること、`done` チャネルが閉じていること。
-- [ ] `TestSlackSender_DequeueRegisterBoundary`: `afterDequeue` フックで「取り出し済み・送信前」のワーカーを待たせ、その間に `Flush` を呼ぶ。flush 期限内に戻ること、`done` チャネルが閉じていること、その 1 件が `Pending` であることを確かめる。`Close`（`abandon`）でも同じ境界を検証し、送信が 1 度も発生しないことを確かめる。
-- [ ] `TestSlackHandler_NilSenderHandleReturnsNil`: 構造体リテラルで構築した `SlackHandler` の `Handle` が panic せず nil を返し、`Flush` / `Close` がゼロ値を返すこと。
-- [ ] `TestSlackHandler_SynchronousMode`: `Synchronous: true` のとき送信キューとワーカーが存在せず、`Handle` が返った時点でモックサーバがリクエストを受け取り済みであること、`Flush` がゼロ値を返すこと。
-- [ ] `TestSlackSender_CounterInvariants`: 並行投入・キュー溢れ・`Flush` を組み合わせた条件で `Submitted == Enqueued + Dropped` と `Enqueued == Sent + Failed + Pending` が成立すること。破棄が `Enqueued` に混入しないことを、溢れを含む条件で明示的に確かめる。
-- [ ] `TestSlackHandler_ConcurrentHandleAndFlush`: 複数 goroutine から同時に `Handle` を呼び、その最中に `Flush` を呼ぶ。`go test -race` で競合が報告されないこと。
+- [x] `TestSlackHandler_HandleDoesNotBlockOnUnresponsiveServer`: 応答しないモックサーバに対し `Handle` の所要時間が短い上限（例: 100 ms）内であることを、複数回のログ呼び出しで確かめる。
+- [x] `TestSlackHandler_UnreachableSlackDoesNotDelayOtherHandlers`: `MultiHandler` に Slack ハンドラとバッファ書き込みハンドラを登録し、Slack 到達不能時もバッファへの書き込みが遅延しないこと。
+- [x] `TestSlackSender_SendTimeout`: `SendTimeout` に短い値を注入し、期限で送信が打ち切られ `FlushStats.Failed` が増えること。
+- [x] **追加** `TestSlackSender_Send_Retry` に「`singleAttempt` がリトライしないこと」のサブテストを加えた。flush 中に 1 件で期限を使い切らないという規則（3.4.6）は `send` の引数 1 つに載っており、他のどのテストも直接は固定していなかった。
+- [x] `TestSlackHandler_MessageIdenticalToSynchronousMode`: 同一レコードを同期モードと非同期モードの双方で処理し、モックサーバが受け取る `SlackMessage` が一致すること。
+- [x] `TestSlackHandler_DerivedHandlersShareOneSender`: `WithAttrs` / `WithGroup` を 100 回適用し、全派生インスタンスの `sender` が同一ポインタであること（決定的な検証）。加えて `require.Eventually` で `runtime.NumGoroutine()` が上限を超えないことを確かめる。
+- [x] `TestSlackHandler_DryRunCreatesNoSenderAndSendsNothing`: `IsDryRun: true` で `sender` が nil であること、モックサーバが 1 度もリクエストを受けないこと、`Flush` がゼロ値を返すこと。
+- [x] `TestSlackSender_HighPriorityBypassesFullNormalQueue`: `NormalQueueSize: 1` で通常キューを満杯にした状態でも高優先度の通知が受け入れられ、先に送信されること。
+- [x] `TestSlackSender_QueueOverflowDropsAndRecords`: `NormalQueueSize: 1` と `HighPriorityQueueSize: 1` のそれぞれで溢れを再現し、`Dropped` が増え、送信失敗ロガーに `queue_full` の記録が 1 件ずつ残ることを確かめる。本番容量（128 / 32）には依存しない。
+- [x] `TestSlackSender_DropRecordOmitsMessageBody`: 破棄の記録に `message_type` と理由が含まれ、通知本文の文字列が含まれないこと。
+- [x] `TestSlackSender_FailureLogGoesToNonSlackDestination`: 送信失敗の記録が `FailureHandlers` に与えたバッファへ書かれ、モックの Slack サーバへは記録由来のリクエストが届かないこと。
+- [x] `TestSlackSender_FlushLogsMessageTypeBreakdown`: 複数の `message_type` を投入して `Flush` を呼び、送信失敗ロガーの出力に `message_type` 別の内訳が現れること。集計レコードに `SlackHandlerOptions.RunID` と同じ `run_id` が含まれることも確かめる。
+- [x] `TestSlackHandler_FlushDeliversPendingAndReturnsStats`: 期限内に残件が送信され、`Sent` が投入数と一致すること。
+- [x] `TestSlackHandler_FlushDeadlineReportsPending`: 応答しないサーバに対し、`Flush` が flush 期限内に戻り、送り切れなかった件数が `Pending` に計上されること。
+- [x] `TestSlackHandler_FlushIsIdempotent`: `Flush` を複数回、および `Flush` 後に `Close` を呼んでも、同じ `FlushStats` が返り、ブロックも panic も起きないこと。加えて、これら複数回の呼び出しを通じて送信失敗ロガーへ出力される集計レコードが **1 件のまま**であることを確かめる（ステップ 4-4）。
+- [x] `TestSlackHandler_EnqueueAfterFlushIsDropped`: `Flush` 完了後の `Handle` が `Dropped` を増やして nil を返し、クローズ済みチャネルへの送信による panic が起きないこと。
+- [x] `TestSlackHandler_FlushReturnsWhenWorkerIsIdle`: 通知を 1 件も投入していない送信機構と、投入済みを送り終えた送信機構の双方に対し、`Flush` と `Close` が短い制限時間（例: 1 秒）内に戻り、`done` チャネルが閉じていること。制限時間を超えたらテストを失敗させる。
+- [x] `TestSlackHandler_FlushCancelsInFlightSend`: 応答しないサーバへの送信が進行中に `Flush` を呼び、flush 期限内に戻ること、その 1 件が `Pending` であること、`done` チャネルが閉じていること。**追加**: 応答するサーバでは同じ状況の 1 件が `Sent` になること（上記の設計変更の検証。即時キャンセルへ戻すとこのサブテストが赤くなる）。
+- [x] `TestSlackSender_DequeueRegisterBoundary`: `afterDequeue` フックで「取り出し済み・送信前」のワーカーを待たせ、その間に `Flush` を呼ぶ。flush 期限内に戻ること、`done` チャネルが閉じていること、その 1 件が `Pending` であることを確かめる。`Close`（`abandon`）でも同じ境界を検証し、送信が 1 度も発生しないことを確かめる。
+- [x] `TestSlackHandler_NilSenderHandleReturnsNil`: 構造体リテラルで構築した `SlackHandler` の `Handle` が panic せず nil を返し、`Flush` / `Close` がゼロ値を返すこと。
+- [x] `TestSlackHandler_SynchronousMode`: `Synchronous: true` のとき送信キューとワーカーが存在せず、`Handle` が返った時点でモックサーバがリクエストを受け取り済みであること、`Flush` がゼロ値を返すこと。
+- [x] `TestSlackSender_CounterInvariants`: 並行投入・キュー溢れ・`Flush` を組み合わせた条件で `Submitted == Enqueued + Dropped` と `Enqueued == Sent + Failed + Pending` が成立すること。破棄が `Enqueued` に混入しないことを、溢れを含む条件で明示的に確かめる。
+- [x] `TestSlackHandler_ConcurrentHandleAndFlush`: 複数 goroutine から同時に `Handle` を呼び、その最中に `Flush` を呼ぶ。`go test -race` で競合が報告されないこと。
 
 **完了条件**: `make fmt && make test && make lint` と、Linux 環境での `make slack-e2e-test` が通ること（macOS での扱いはステップ 4-3 を参照）。加えて `go test -race -tags test ./internal/logging/... ./internal/redaction/...` を実装中の高速な確認ループとして用いる（`make test` が同等の検証を含むため、独立したゲートではない）。
 

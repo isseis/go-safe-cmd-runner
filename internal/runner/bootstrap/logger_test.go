@@ -520,3 +520,36 @@ func TestAddSlackHandlers_RedactsConfiguredWebhookHost(t *testing.T) {
 		"the webhook path must not reach the log output")
 	assert.Contains(t, output, "https://mattermost.example.com/[REDACTED]")
 }
+
+// TestAddSlackHandlers_UsesSynchronousModeUntilFlushPathExists pins the interim
+// production default. An asynchronous sender is only safe once the process-exit
+// flush exists; until then a queue left behind at exit would lose notifications
+// that synchronous sending delivered. Replaced by
+// TestAddSlackHandlers_PropagatesEnvSettings in the change that adds
+// FlushSlackNotifications.
+func TestAddSlackHandlers_UsesSynchronousModeUntilFlushPathExists(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	require.NoError(t, SetupLoggerWithConfig(LoggerConfig{
+		Level: slog.LevelInfo,
+		RunID: "test-sync-default-001",
+	}, false, true))
+
+	var capturedOpts []logging.SlackHandlerOptions
+	newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
+		capturedOpts = append(capturedOpts, opts)
+		return &logging.SlackHandler{}, nil
+	}
+
+	_, err := AddSlackHandlers(SlackLoggerConfig{
+		WebhookURLSuccess: "https://hooks.slack.com/services/success",
+		WebhookURLError:   "https://hooks.slack.com/services/error",
+		AllowedHost:       "hooks.slack.com",
+		RunID:             "test-sync-default-001",
+	})
+	require.NoError(t, err)
+
+	require.Len(t, capturedOpts, 2, "both the success and the error webhook should be configured")
+	for i, opts := range capturedOpts {
+		assert.True(t, opts.Synchronous, "handler %d should be built in synchronous mode", i)
+	}
+}

@@ -785,16 +785,17 @@ type SlackHandlerOptions struct {
 }
 
 // Flush stops accepting new notifications, sends the worker a drain request
-// carrying ctx, cancels the send that is in flight so it cannot outlive ctx
-// under the longer runtime deadline, and waits for the worker to terminate. The
-// drain request is what wakes a worker parked on empty queues, so Flush returns
-// even when nothing was ever enqueued. The cancelled notification is reported as
-// Pending. It is safe to call concurrently and repeatedly; calls after the first
+// carrying ctx, re-bounds the send that is in flight to the drain budget so it
+// cannot outlive ctx under the longer runtime deadline, and waits for the
+// worker to terminate. The drain request is what wakes a worker parked on empty
+// queues, so Flush returns even when nothing was ever enqueued. An in-flight
+// send that finishes within that budget is delivered; one that does not is
+// reported as Pending. It is safe to call concurrently and repeatedly; calls after the first
 // send no request and return the same accounting without re-draining.
 func (s *SlackHandler) Flush(ctx context.Context) FlushStats
 
 // Close stops accepting notifications, sends the worker an abandon request,
-// cancels the send that is in flight, and waits for the worker to terminate
+// cancels the send that is in flight outright, and waits for the worker to terminate
 // without draining. It exists for teardown paths that have no notifications worth
 // delivering, such as AddSlackHandlers unwinding after a partial failure. When
 // Flush already requested a drain, Close does not override it; it waits for the
@@ -897,7 +898,7 @@ stateDiagram-v2
     state "flush 中" as Draining
     state "送信終了" as Drained
 
-    Accepting --> Draining : Flush 呼び出し（受付停止フラグを立て、drain の終了要求を送り、送信中の 1 件をキャンセル）
+    Accepting --> Draining : Flush 呼び出し（受付停止フラグを立て、drain の終了要求を送り、送信中の 1 件を drain 予算へ切り詰め）
     Accepting --> Drained : Close 呼び出し（受付停止フラグを立て、abandon の終了要求を送り、送信中の 1 件をキャンセル。flush せずワーカーを終了）
     Draining --> Drained : キューが空になった（ワーカー終了）
     Draining --> Drained : flush 期限に到達（残件数を Pending に計上、ワーカー終了）
@@ -912,11 +913,11 @@ stateDiagram-v2
 |---|---|---|
 | 待機中（キューが空で `select` にいる） | 終了要求チャネル | 3.4.7 |
 | 取り出した直後（`select` を抜けたが送信前） | 終了状態（終了モードと flush 期限） | 3.4.6、3.4.7 |
-| 送信中（HTTP 送信の内側にいる） | 送信中の 1 件のキャンセル関数 | 3.4.6、3.4.7 |
+| 送信中（HTTP 送信の内側にいる） | 送信中の 1 件のキャンセル関数（`Flush` は drain 予算のタイマー経由、`Close` は即時） | 3.4.6、3.4.7 |
 
 3 者は補い合う関係にあり、どれか 1 つでも欠けると、その位置にいるワーカーが flush 期限を超えて居座る。「取り出した直後」が独立した位置として必要になる理由は 3.4.6 の「取り出しと登録のあいだの窓」で述べる。
 
-「受付中」から出る 2 本の遷移では、受付停止フラグを立てた直後に、同じロックの下で終了要求を送り、保持しているキャンセル関数を呼ぶ。終了要求は待機中のワーカーを起こし、キャンセル関数は送信中のワーカーの実行時デッドライン（40 秒）を即座に打ち切る。これによりワーカーがどの位置にいても「flush 中」の処理は flush 期限（15 秒）の内側で完結する。打ち切られた 1 件は `Pending` に数える。キューが一度も使われなかった送信機構では、ワーカーは終了要求を受け取ってそのまま「送信終了」へ移る。
+「受付中」から出る 2 本の遷移では、受付停止フラグを立てた直後に、同じロックの下で終了要求を送り、保持しているキャンセル関数を仕掛ける。終了要求は待機中のワーカーを起こす。キャンセル関数は、`Flush`（drain）では drain 中の 1 件と同じ予算（残り flush 期限と 5 秒の小さいほう）のタイマーで、`Close`（abandon）では即座に呼ばれ、いずれも送信中のワーカーの実行時デッドライン（40 秒）を打ち切る。これによりワーカーがどの位置にいても「flush 中」の処理は flush 期限（15 秒）の内側で完結する。予算内に完了した 1 件は `Sent` に、打ち切られた 1 件は `Pending` に数える。キューが一度も使われなかった送信機構では、ワーカーは終了要求を受け取ってそのまま「送信終了」へ移る。
 
 **同期モードの扱い**: 同期モード（3.4.11）の送信機構はキューもワーカーも持たず、送信は `Handle` の中で完結する。したがって上表の 3 つの位置はいずれも存在せず、`Flush` / `Close` は受付停止フラグを立てるだけで「受付中」から「送信終了」へ直接移る。
 
@@ -930,7 +931,7 @@ stateDiagram-v2
 
 実行中のリトライ回数とバックオフ間隔は変更しない。非同期化によってリトライの所要時間はログ呼び出し元に波及しなくなるため、リトライ方針を弱める動機がない。一方 flush 中にリトライを行わないのは、flush 期限（15 秒）が 1 件分のリトライ列（34 秒）より短く、リトライを許すと最初の 1 件で期限を使い切ってしまうためである。この 2 つのモードの切り替えにより、「実行中は粘り強く、終了時は数をさばく」という挙動になる。
 
-**flush 開始時に送信中だった 1 件の扱い**: `Flush` が呼ばれた時点で送信中の通知は、実行中の 40 秒デッドラインで作られたコンテキストの下にあり、そのままでは flush 期限（15 秒）を超えて居座りうる。これを防ぐため、ワーカーは送信中の 1 件の `context.CancelFunc` を共有状態に保持し、`Flush` と `Close` は受付停止フラグを立てた直後に同じロックの下でそれを呼ぶ（3.4.7）。実行中の試行はそこで打ち切られ、以降の処理はすべて flush 期限の内側で進む。ワーカーが送信中ではなく待機中である場合は、同時に送られる終了要求（3.4.7）が終了モードと flush 期限付きコンテキストを運び、ワーカーはこれを受け取って flush 中の送信規則へ切り替える。中断された通知はキューから取り出し済みで送信も完了していないため、`Pending` に数える（期限切れ時に送信中だった 1 件と同じ扱いである）。この仕組みにより、`Flush` が flush 期限内に戻ることと、戻った時点でワーカー goroutine が終了していることの両方が成り立つ。
+**flush 開始時に送信中だった 1 件の扱い**: `Flush` が呼ばれた時点で送信中の通知は、実行中の 40 秒デッドラインで作られたコンテキストの下にあり、そのままでは flush 期限（15 秒）を超えて居座りうる。これを防ぐため、ワーカーは送信中の 1 件の `context.CancelFunc` を共有状態に保持し、`Flush` と `Close` は受付停止フラグを立てた直後に同じロックの下でそれを仕掛ける（3.4.7）。ただし `Flush` はそれを即座に呼ばず、drain 中の 1 件と同じ予算（残り flush 期限と 5 秒の小さいほう）のタイマーに載せる。**即座に打ち切ると、終了直前に発行された通知――flush がまさに送り届けるためにある 1 件――が、あと数ミリ秒で完了するところで捨てられる**ためである（実装時に e2e テストがこの取りこぼしを検出した）。予算を与えても flush 期限を超えないことは変わらない。`Close`（abandon）は送り届けるべきものがないため即座に打ち切る。実行中の試行は遅くとも予算の満了で終わり、以降の処理はすべて flush 期限の内側で進む。ワーカーが送信中ではなく待機中である場合は、同時に送られる終了要求（3.4.7）が終了モードと flush 期限付きコンテキストを運び、ワーカーはこれを受け取って flush 中の送信規則へ切り替える。中断された通知はキューから取り出し済みで送信も完了していないため、`Pending` に数える（期限切れ時に送信中だった 1 件と同じ扱いである）。この仕組みにより、`Flush` が flush 期限内に戻ることと、戻った時点でワーカー goroutine が終了していることの両方が成り立つ。
 
 **取り出しと登録のあいだの窓**: ただし、ワーカーが「キューから 1 件取り出す」と「キャンセル関数を共有状態へ登録する」を別々に行うと、その 2 つの操作のあいだに `Flush` が割り込む窓が残る。この窓では、`Flush` は書き込みロックの下でキャンセル関数が nil であることしか観測できず、打ち切る対象がないものとして終了要求を送って待機に入る。一方ワーカーは、取り出した 1 件に対して通常どおり 40 秒の実行時コンテキストを張り、HTTP 送信の中でブロックする。ワーカーは `select` へ戻らないため終了要求を受け取れず、`Flush` は 15 秒の期限を超えて待たされたうえ、戻った時点でもワーカーは生きている。すなわち flush 期限とワーカー終了保証の両方が同時に破れる。
 
@@ -991,7 +992,7 @@ flush では高優先度キューを先に処理する。期限内に送り切�
 
 期限切れ時に送信中だった 1 件と、`Flush` が中断した送信中の 1 件（下記）は、キューからは取り出し済みで完了もしていないため `Pending` に数える。これらの式は 7.3 のテストで固定する。
 
-**送信中の 1 件の中断**: `Flush` と `Close` は、書き込みロックを取って受付停止フラグと終了状態を設定した後、同じロックの下で保持しているキャンセル関数（非 nil のとき）を呼ぶ。これにより、実行時デッドライン（40 秒）で作られた送信中のコンテキストが即座にキャンセルされ、残りの処理は flush 期限（15 秒）の内側で進む。ワーカー側は 1 件を取り出すたびに、書き込みロックを取って「終了状態の観測」と「キャンセル関数の格納」を 1 つの臨界区間で行い（3.4.6）、その送信が終わったら同じロックの下で nil に戻す。取り出しと登録を別々の臨界区間に分けないことが、`Flush` からも終了要求からも届かない 1 件が生じる窓を消す。
+**送信中の 1 件の中断**: `Flush` と `Close` は、書き込みロックを取って受付停止フラグと終了状態を設定した後、同じロックの下で保持しているキャンセル関数（非 nil のとき）を仕掛ける。`Close` は即座に呼び、`Flush` は drain 予算のタイマーに載せる（3.4.6）。これにより、実行時デッドライン（40 秒）で作られた送信中のコンテキストは遅くとも drain 予算の満了でキャンセルされ、残りの処理は flush 期限（15 秒）の内側で進む。ワーカー側は 1 件を取り出すたびに、書き込みロックを取って「終了状態の観測」と「キャンセル関数の格納」を 1 つの臨界区間で行い（3.4.6）、その送信が終わったら同じロックの下で nil に戻す。取り出しと登録を別々の臨界区間に分けないことが、`Flush` からも終了要求からも届かない 1 件が生じる窓を消す。
 
 **送信キューは閉じない**: チャネルを閉じないため、クローズ済みチャネルへの送信は構造的に発生しない。受付停止後の投入はロックによって排除され、仮に通ってもバッファに入るだけでブロックも panic もしない（AC-27）。
 
@@ -1268,7 +1269,7 @@ flowchart TD
 | 通知の到達が大きく遅延する | 中。ワーカー 1 本の直列処理のため、最悪でキュー長 × 送信デッドライン | 遅延の上限は設けない。ログファイルと stderr への出力は同期のままであり、一次記録は遅延しない。目安を利用者向け文書に記載する |
 | 強制終了（SIGKILL、OOM kill、電源断、リブート時の停止猶予切れ）でキューの残りが失われる | 中。同期送信では失われるのは送信中の 1 件だけだった。正味の悪化は「Slack は正常だが通知の生成が送信より速い」状態に限られる | 通常のリブート（SIGTERM）は flush される。通知の内容は投入前にログファイルへ同期的に書かれているため、配送のみが失われる。損失範囲を 2.4 に整理し、利用者向け文書に記載する。同期送信へ戻す退避手段を用意する（3.4.11） |
 | 送信失敗が `Handle` の戻り値から見えなくなる | 低。`slog.Logger` は元々ハンドラのエラーを破棄している | 送信失敗ロガーへの逐次記録と `FlushStats.Failed` |
-| ワーカー goroutine が終了せずプロセスが残る | 低 | ワーカーは `Flush` または `Close` で必ず終了する。送信中の 1 件は保持したキャンセル関数で打ち切られるため、実行時デッドライン（40 秒）が flush 期限（15 秒）を超えて残ることはない（3.4.6、3.4.7）。所有者を失う経路（`AddSlackHandlers` のエラー経路、再呼び出し）は 3.4.9 で塞ぐ |
+| ワーカー goroutine が終了せずプロセスが残る | 低 | ワーカーは `Flush` または `Close` で必ず終了する。送信中の 1 件は保持したキャンセル関数が drain 予算（`Close` では即座）で打ち切るため、実行時デッドライン（40 秒）が flush 期限（15 秒）を超えて残ることはない（3.4.6、3.4.7）。所有者を失う経路（`AddSlackHandlers` のエラー経路、再呼び出し）は 3.4.9 で塞ぐ |
 | 送信失敗ロガーの出力が背景 goroutine から発生し、対話的なコンソール出力と交錯する | 低 | ログ行番号を数える既存の `DefaultLogLineTracker` はアトミック操作を用いており競合しないが、コンソール出力の順序は非決定的になる。コンソール出力の順序に依存するテストを書かない |
 
 ### 5.3 redaction の拡張に伴うリスク評価
@@ -1403,7 +1404,7 @@ flowchart TD
     class A1,WT process
 ```
 
-**矢印の意味**: A → B は「A の次に B を実行する」ことを表す。上段は `Handle` を呼んだ goroutine、下段はワーカー goroutine の流れであり、両者は送信キューと終了要求チャネルを介してのみつながる。ワーカーが送信キューだけでなく終了要求チャネルも `select` に含めるのは、キューが空で待機しているワーカーを `Flush` / `Close` が起こせるようにするためである（3.4.7）。ワーカーが送信の直前にキャンセル関数を共有状態へ格納するのは、待機中ではなく送信中のワーカーに対して、`Flush` / `Close` が送信中の 1 件を打ち切れるようにするためである（3.4.6、3.4.7）。この打ち切りによって終わった 1 件は送信失敗としては扱わず、`Failed` ではなく `Pending` に数える。図で「終了状態の観測」と「キャンセル関数の格納」が 1 つのロック区間に収まっているのは、取り出した直後に `Flush` が割り込んで、どちらの経路からも届かない 1 件が生じるのを防ぐためである（3.4.6）。`abandon` を観測した 1 件は送信せずに `Pending` へ数える。同期モード（3.4.11）はメッセージ構築の直後に分岐し、キューを経ずに `Handle` の中で送信を完了させる。この経路には下段のワーカーが関与しないため、`Pending` は生じない。
+**矢印の意味**: A → B は「A の次に B を実行する」ことを表す。上段は `Handle` を呼んだ goroutine、下段はワーカー goroutine の流れであり、両者は送信キューと終了要求チャネルを介してのみつながる。ワーカーが送信キューだけでなく終了要求チャネルも `select` に含めるのは、キューが空で待機しているワーカーを `Flush` / `Close` が起こせるようにするためである（3.4.7）。ワーカーが送信の直前にキャンセル関数を共有状態へ格納するのは、待機中ではなく送信中のワーカーに対して、`Flush` / `Close` が送信中の 1 件を打ち切れるようにするためである（3.4.6、3.4.7）。`Flush` はこれを drain 予算のタイマーに載せるため、予算内に完了した 1 件はそのまま `Sent` になる。打ち切られて終わった 1 件は送信失敗としては扱わず、`Failed` ではなく `Pending` に数える。図で「終了状態の観測」と「キャンセル関数の格納」が 1 つのロック区間に収まっているのは、取り出した直後に `Flush` が割り込んで、どちらの経路からも届かない 1 件が生じるのを防ぐためである（3.4.6）。`abandon` を観測した 1 件は送信せずに `Pending` へ数える。同期モード（3.4.11）はメッセージ構築の直後に分岐し、キューを経ずに `Handle` の中で送信を完了させる。この経路には下段のワーカーが関与しないため、`Pending` は生じない。
 
 ## 7. テスト戦略
 

@@ -232,6 +232,12 @@ func AddSlackHandlers(config SlackLoggerConfig) (*redaction.Config, error) {
 			IsDryRun:    config.DryRun,
 			LevelMode:   logging.LevelModeExactInfo,
 			AllowedHost: config.AllowedHost,
+			// Interim: production keeps sending synchronously until the
+			// process-exit flush path exists, because an asynchronous sender
+			// with nothing to flush would lose whatever is still queued when
+			// the process ends. Replaced by the parsed environment settings in
+			// the same change that adds FlushSlackNotifications.
+			Synchronous: true,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create success Slack handler: %w", err)
@@ -246,6 +252,8 @@ func AddSlackHandlers(config SlackLoggerConfig) (*redaction.Config, error) {
 			IsDryRun:    config.DryRun,
 			LevelMode:   logging.LevelModeWarnAndAbove,
 			AllowedHost: config.AllowedHost,
+			// Interim, as above.
+			Synchronous: true,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create error Slack handler: %w", err)
