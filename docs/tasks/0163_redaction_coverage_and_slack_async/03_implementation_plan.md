@@ -589,8 +589,8 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test` 98 パッケージ緑、`make lint` 0 issues、`make slack-e2e-test` 7 件緑）
 - [x] `AddSlackHandlers` の 2 箇所が `Synchronous: true` を渡しており、本番の送信挙動が現行と変わらないことを確認した（`logger.go:246` / `logger.go:263`）
 - [x] PR を作成した: https://github.com/isseis/go-safe-cmd-runner/pull/1014
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: `bootstrap` と `cmd/runner` の flush・ライフサイクル経路
 
@@ -598,32 +598,39 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 #### ステップ 5-1: 実装
 
-- [ ] `logger.go` にパッケージ変数 `slackHandlers []*logging.SlackHandler` を追加する。
-- [ ] 環境変数を解釈する純粋関数 `parseSlackEnvSettings(getenv func(string) string) slackEnvSettings` を追加する。`GSCR_SLACK_SEND_TIMEOUT` と `GSCR_SLACK_FLUSH_TIMEOUT` は `time.ParseDuration` で解釈し、未設定または不正値なら `logging.DefaultSendTimeout` / `logging.DefaultFlushTimeout` を採る。`GSCR_SLACK_SYNC` は `"1"` のときのみ真とする。不正値のときは送信失敗ロガーへ警告を残す。
-- [ ] `AddSlackHandlers` で `parseSlackEnvSettings(os.Getenv)` の結果（`SendTimeout`、`Synchronous`）を `SlackHandlerOptions` へ渡す（`FailureHandlers: phase1BaseHandlers` は PR-6 で配線済み）。ここで PR-6 が置いた暫定の `Synchronous: true`（ステップ 4-5）を差し替える。**この差し替えが非同期を本番の既定にする変更であり、同じ PR に入る `FlushSlackNotifications` の組み込みと不可分である**。片方だけを入れてはならない。
-- [ ] `AddSlackHandlers` の冒頭で、既に登録済みのハンドラがあればすべて `Close` してから `slackHandlers` を空にする（再呼び出し規則）。
-- [ ] エラー通知用ハンドラの生成に失敗した場合、それまでに生成したハンドラを `Close` してからエラーを返す（部分失敗規則）。
-- [ ] 生成に成功したハンドラを `slackHandlers` へ保持する。
-- [ ] `FlushSlackNotifications()` を追加する。`slackHandlers` が空なら何もしない。`parseSlackEnvSettings` の flush 期限で期限付きコンテキストを構築し、各ハンドラの `Flush` を並行に呼び、webhook ごとの `FlushStats` を `phase1FailureLogger` と stderr へ報告する。戻り値は持たず、終了コードに影響を与えない。
-- [ ] `cmd/runner/main.go` の `main` で、201 行目 `exitCode := mainWithExitCode(runID)` の直後かつ 204 行目 `bootstrap.ReportRedactionFailures()` の直前に `bootstrap.FlushSlackNotifications()` を挿入する。挿入理由（実行中に発行された Slack 宛レコードを先に送り切る）を英語コメントで残す。
+- [x] `logger.go` にパッケージ変数 `slackHandlers []slackHandlerEntry` を追加する（**本計画からの変更**。当初は `[]*logging.SlackHandler` としていた）。要素はハンドラと webhook の役割（`success` / `error`）の組である。webhook URL はハンドラから読めず 2 つのハンドラは同じ `run_id` を持つため、役割を持たない要素では集計がどちらの webhook のものか言えない（02_architecture.md 3.4.9 に反映済み）。
+- [x] 環境変数を解釈する純粋関数 `parseSlackEnvSettings(getenv func(string) string) slackEnvSettings` を追加する。`GSCR_SLACK_SEND_TIMEOUT` と `GSCR_SLACK_FLUSH_TIMEOUT` は `time.ParseDuration` で解釈し、未設定または不正値なら `logging.DefaultSendTimeout` / `logging.DefaultFlushTimeout` を採る。`GSCR_SLACK_SYNC` は `"1"` のときのみ真とする。**本計画からの変更が 3 点ある**。(1) 警告を関数内で出さず、既定値へ落ちた変数の**名前**を戻り値に含め、`AddSlackHandlers` から `reportInvalidEnvSettings` が 1 度だけ報告する。PR-7 のレビュー観点が求める純粋性（グローバルの送信失敗ロガーに触れない）を保つため。(2) 報告に載せるのは変数名だけで、解釈できなかった値は載せない。送信失敗ロガーは redaction 層を通らないため（02_architecture.md 3.4.8）、打ち間違いの内容を運べない。(3) 0 以下の duration も不正として既定値へ落とす。期限が最初の送信前に切れ、打ち間違いが「通知が黙って届かない」に化けるため。
+- [x] `AddSlackHandlers` で `parseSlackEnvSettings(os.Getenv)` の結果（`SendTimeout`、`Synchronous`）を `SlackHandlerOptions` へ渡す（`FailureHandlers: phase1BaseHandlers` は PR-6 で配線済み）。ここで PR-6 が置いた暫定の `Synchronous: true`（ステップ 4-5）を差し替える。**この差し替えが非同期を本番の既定にする変更であり、同じ PR に入る `FlushSlackNotifications` の組み込みと不可分である**。片方だけを入れてはならない。
+- [x] 既に登録済みのハンドラがあればすべて `Close` して置き換える（再呼び出し規則）。**本計画からの変更（レビュー指摘）**: `Close` は冒頭ではなく、既定ロガーの差し替えが済んだ後に行う。冒頭で閉じると、再構築が途中で失敗したときに既定ロガーが閉じたハンドラを指したまま残り、以後の通知が誰にも flush されずに破棄される。
+- [x] エラー通知用ハンドラの生成に失敗した場合、それまでに生成したハンドラを `Close` してからエラーを返す（部分失敗規則）。後続の `MultiHandler` と redaction `Config` の生成失敗も同じ後始末を要するため、生成地点に `defer` を置き、登録が完了するまでのすべての早期復帰を 1 箇所で覆う。
+- [x] 生成に成功したハンドラを `slackHandlers` へ保持する。保持するのは既定ロガーの差し替えが済んだ後であり、それまでは本呼び出しがワーカーの唯一の所有者である。
+- [x] `FlushSlackNotifications()` を追加する。stderr へは未送信（`Failed` + `Dropped` + `Pending`）が 1 件以上あるときだけ書く（正常な実行を静かに保つため）。**本計画からの変更（レビュー指摘）**: 構造化された集計を `bootstrap` からは出さない。`slackSender.logAggregate` が同じ文言の集計をすでに webhook ごとに 1 件出しており、両方を出すと同名のレコードが webhook ごとに 2 件並び、しかも一方は `run_id` と `message_type` 別内訳を、他方は webhook の別を欠くことになる。代わりに `SlackHandlerOptions.WebhookLabel` を追加して送信機構側の集計に webhook の別を持たせ、完全なレコードを 1 件だけ出す。また flush 済みのハンドラは登録から外し、2 回目の呼び出しを no-op にする（同じ損失を二重に報告しないため）。`slackHandlers` が空なら何もしない。`parseSlackEnvSettings` の flush 期限で期限付きコンテキストを構築し、各ハンドラの `Flush` を並行に呼び、webhook ごとの `FlushStats` を `phase1FailureLogger` と stderr へ報告する。戻り値は持たず、終了コードに影響を与えない。
+- [x] `cmd/runner/main.go` の `main` で、201 行目 `exitCode := mainWithExitCode(runID)` の直後かつ 204 行目 `bootstrap.ReportRedactionFailures()` の直前に `bootstrap.FlushSlackNotifications()` を挿入する。挿入理由（実行中に発行された Slack 宛レコードを先に送り切る）を英語コメントで残す。
 
 #### ステップ 5-2: テスト
 
 規則 R1〜R3（ステップ 4-1）を、モックサーバとハンドラを生成するすべてのテストに適用する。
 
-- [ ] `logger_test.go` の `saveAndRestoreGlobals` に `slackHandlers` の退避・復元を追加し、`t.Cleanup` の中で復元前に登録済みハンドラを `Close` してワーカーを残さないようにする。
-- [ ] `TestParseSlackEnvSettings`: 未設定・正常値・不正な duration・`GSCR_SLACK_SYNC` の各値について、`getenv` を注入した表駆動テストで既定値へのフォールバックと伝播を検証する。
-- [ ] PR-6 が追加した `TestAddSlackHandlers_UsesSynchronousModeUntilFlushPathExists`（ステップ 4-5）を削除する。次の `TestAddSlackHandlers_PropagatesEnvSettings` が同じ経路をより広く覆うため、残すと `Synchronous` が常に真であることを誤って固定してしまう。
-- [ ] `TestAddSlackHandlers_PropagatesEnvSettings`: `newSlackHandlerFunc` を差し替えて `SlackHandlerOptions` を捕捉し、`GSCR_SLACK_SEND_TIMEOUT` / `GSCR_SLACK_SYNC` に与えた値が `SendTimeout` / `Synchronous` として届くこと、および `FailureHandlers` が `phase1BaseHandlers` と一致することを検証する（既存の `environment_test.go` と同じ差し替え手法を再利用する）。
+- [x] `logger_test.go` の `saveAndRestoreGlobals` に `slackHandlers` の退避・復元を追加し、`t.Cleanup` の中で復元前に登録済みハンドラを `Close` してワーカーを残さないようにする。
+- [x] `TestParseSlackEnvSettings`: 未設定・正常値・不正な duration・0 以下の duration・`GSCR_SLACK_SYNC` の各値（`1` / `true` / `0`）について、`getenv` を注入した表駆動テストで既定値へのフォールバックと伝播、および既定値へ落ちた変数名の報告を検証する。
+- [x] **追加** `TestParseSlackEnvSettings_ReportedNameCarriesNoValue`: 解釈できなかった値が報告に載らず、変数名だけが載ること。送信失敗ロガーが redaction 層を通らないことに由来する制約であり、他のどのテストも固定していなかった。
+- [x] PR-6 が追加した `TestAddSlackHandlers_UsesSynchronousModeUntilFlushPathExists`（ステップ 4-5）を削除する。次の `TestAddSlackHandlers_PropagatesEnvSettings` が同じ経路をより広く覆うため、残すと `Synchronous` が常に真であることを誤って固定してしまう。
+- [x] `TestAddSlackHandlers_PropagatesEnvSettings`（既定と上書きの 2 ケースの表駆動）: `newSlackHandlerFunc` を差し替えて `SlackHandlerOptions` を捕捉し、`GSCR_SLACK_SEND_TIMEOUT` / `GSCR_SLACK_SYNC` に与えた値が `SendTimeout` / `Synchronous` として届くこと、および `FailureHandlers` が `phase1BaseHandlers` と一致することを検証する（既存の `environment_test.go` と同じ差し替え手法を再利用する）。
 - [-] `TestAddSlackHandlers_AcceptsInteractivePhase1Handlers`: PR-6 で追加済み（`FailureHandlers` の配線を前倒ししたため）。`go test` の既定環境では `IsInteractive()` が偽になり `*InteractiveHandler` が構成に入らないため、この経路は明示的に強制しないと本番でのみ fail closed に落ちる危険がある。
-- [ ] `TestFlushSlackNotifications_FlushesAllHandlers`: 成功用・エラー用の 2 つのモックサーバを立てて `AddSlackHandlers` を呼び、両方に通知を投入したうえで `FlushSlackNotifications` を呼ぶ。両サーバが通知を受け取っていること、webhook ごとの集計が `phase1FailureLogger` の出力先に現れることを検証する。
-- [ ] `TestFlushSlackNotifications_NoSlackConfigured`: Slack ハンドラを登録せずに呼んでも panic せず、即座に戻ること。
-- [ ] `TestAddSlackHandlers_SlackHandlersComeAfterPhase1Handlers`: `AddSlackHandlers` が構築する `MultiHandler` の `Handlers()` で、Slack ハンドラが `phase1BaseHandlers` の全要素より後ろに並ぶこと（02_architecture.md 2.4 の不変条件）。
-- [ ] `TestAddSlackHandlers_ClosesFirstHandlerOnSecondFailure`: `newSlackHandlerFunc` を「1 回目は実物を返し、2 回目はエラーを返す」スタブに差し替える。`AddSlackHandlers` がエラーを返し、1 回目のハンドラが `Close` されていること（規則 R3 のとおり、そのハンドラへの新たな投入が `Dropped` に計上されること）を検証する。
-- [ ] `TestAddSlackHandlers_ClosesPreviousHandlersOnReinvocation`: 2 回続けて呼んだとき、1 回目のハンドラが `Close` されていること（同上の観測方法）。
-- [ ] `cmd/runner/integration_slack_flush_test.go::TestIntegration_RunnerFlushesSlackOnNormalExit`（02_architecture.md 7.2 の 1 番目の統合テスト、AC-24）: `cmd/runner` の正常終了経路で、実行の最後に発行される通知がモックサーバへ到達することを検証する。`cmd/runner` の本番経路は自己署名証明書を検証するため、既存の `integration_pre_execution_error_test.go` と同じく `go run .` で別プロセスを起動する方式は使えない。代わりに同一プロセス内で `bootstrap.SetupLoggerWithConfig` → `bootstrap.AddSlackHandlers`（規則 R1 のモックサーバ）→ 通知を発行 → `bootstrap.FlushSlackNotifications()` の順に呼び、モックサーバの受信を確認する。
+- [x] `TestFlushSlackNotifications_FlushesAllHandlers`: 成功用・エラー用の 2 つのモックサーバを立てて `AddSlackHandlers` を呼び、両方に通知を投入したうえで `FlushSlackNotifications` を呼ぶ。両サーバが通知を受け取っていること、webhook ごとの集計が `phase1FailureLogger` の出力先に現れることを検証する。**集計は件数まで突き合わせる**: flush されなかったハンドラにもゼロ値の集計行は出るため、webhook 名の出現だけでは「両方を flush した」ことを言えない（実測: 片方だけ flush する変更でも名前の検査は通った）。
+- [x] **追加（レビュー指摘）** `TestFlushSlackNotifications_HonorsFlushDeadline`: `GSCR_SLACK_FLUSH_TIMEOUT` に短い値を与え、応答しないモックサーバに対して `FlushSlackNotifications` がその期限で戻り、1 件が `Pending` として報告されること。AC-25 の bootstrap 側の配線は他のどのテストも通っていなかった（期限を外しても全テストが緑のままだった）。
+- [x] **追加（レビュー指摘）** `TestAddSlackHandlers_KeepsPreviousHandlersWhenRebuildFails`: 再構築が失敗したとき、既定ロガーが指し続ける前回のハンドラが受付を続け、その後の通知が flush で届くこと。
+- [x] `TestFlushSlackNotifications_NoSlackConfigured`: Slack ハンドラを登録せずに呼んでも panic せず、即座に戻り、存在しない webhook の集計を出力しないこと。
+- [x] `TestAddSlackHandlers_SlackHandlersComeAfterPhase1Handlers`: `AddSlackHandlers` が構築する `MultiHandler` の `Handlers()` で、Slack ハンドラが `phase1BaseHandlers` の全要素より後ろに並ぶこと（02_architecture.md 2.4 の不変条件）。
+- [x] `TestAddSlackHandlers_ClosesFirstHandlerOnSecondFailure`: `newSlackHandlerFunc` を「1 回目は実物を返し、2 回目はエラーを返す」スタブに差し替える。`AddSlackHandlers` がエラーを返し、1 回目のハンドラが `Close` されていること（規則 R3 のとおり、そのハンドラへの新たな投入が `Dropped` に計上されること）を検証する。
+- [x] `TestAddSlackHandlers_ClosesPreviousHandlersOnReinvocation`: 2 回続けて呼んだとき、1 回目のハンドラが `Close` されていること（同上の観測方法）。
+- [x] `cmd/runner/integration_slack_flush_test.go::TestIntegration_RunnerFlushesSlackOnNormalExit`（02_architecture.md 7.2 の 1 番目の統合テスト、AC-24）: `cmd/runner` の正常終了経路で、実行の最後に発行される通知がモックサーバへ到達することを検証する。`cmd/runner` の本番経路は自己署名証明書を検証するため、既存の `integration_pre_execution_error_test.go` と同じく `go run .` で別プロセスを起動する方式は使えない。代わりに同一プロセス内で `bootstrap.SetupLoggerWithConfig` → `bootstrap.AddSlackHandlers`（規則 R1 のモックサーバ）→ 通知を発行 → `bootstrap.FlushSlackNotifications()` の順に呼び、モックサーバの受信を確認する。
     - `AddSlackHandlers` は `SlackHandlerOptions` を内部で組み立てており（`internal/runner/bootstrap/logger.go` の 226・240 行目）、`HTTPClient` を設定しない。したがって規則 R1 の `httptest.NewTLSServer` をそのまま使うと本番の HTTP クライアントが自己署名証明書を拒否し、本テストは `x509: certificate signed by unknown authority` で失敗する。そこで本テストは `newSlackHandlerFunc` をテスト用スタブへ差し替え（`TestAddSlackHandlers_PropagatesEnvSettings` と同じ手法）、受け取った `SlackHandlerOptions` に `server.Client()`（またはその `Transport`）を `HTTPClient` として注入したうえで `logging.NewSlackHandler` を呼ぶ。差し替えは `t.Cleanup` で元へ戻す。
-    - `go run .` 方式を採らない理由と、`newSlackHandlerFunc` を差し替える理由を英語コメントで残す。
+    - `go run .` 方式を採らない理由と、ファクトリを差し替える理由を英語コメントで残す。
+    - **本計画からの変更**: `newSlackHandlerFunc` は非公開であり `package main` から差し替えられない。`internal/runner/bootstrap/test_helpers.go`（`//go:build test`）に `SetSlackHandlerFactory` を置き、これを唯一の差し替え点とする（テスト用ヘルパの配置は test_organization.md の Classification B に従う）。
+    - **本計画からの変更**: モックのエンドポイントに 300 ms の遅延を入れる。ワーカーは flush を待たずに送るため、遅延がないと「flush が届けた」のか「たまたま先に届いた」のかを区別できない（実測: 遅延なしでは flush 呼び出しを消してもテストが通った）。
+
+**実行中の `os.Exit(1)` による損失（レビューで判明）**: `run` の内側からプロセスを終わらせる経路が 2 箇所（`privilege.UnixPrivilegeManager.emergencyShutdown` と `executor.DefaultExecutor.Execute` の同一性検査）あり、いずれも flush を経由しない。非同期を既定にする本ステップで初めて通知が失われうる経路になるため、02_architecture.md 2.4 の表に行を足し、flush を呼ばない理由（特権が残っている可能性のある状態で最大 15 秒のネットワーク入出力を足さない）を記録した。実装は変更しない。
 
 **完了条件**: `make fmt && make test && make lint` と、Linux 環境での `make slack-e2e-test` が通ること（`AddSlackHandlers` の変更は e2e テストが実行する経路に含まれるため、Phase 4 と同じゲートを再度課す）。
 
@@ -641,8 +648,8 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 **本 PR が非同期を本番の既定にする**: PR-6 が置いた `Synchronous: true` を `parseSlackEnvSettings` の結果へ差し替える変更と、`FlushSlackNotifications` の組み込みは不可分である（ステップ 5-1）。片方だけを入れると、flush 経路のない非同期送信という 3.2 が排除した状態が生じる。レビューではこの 2 つが同じ PR に揃っていることを最初に確認する。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test` 全パッケージ緑、`make lint` 0 issues、`make slack-e2e-test` 7 件緑、`make deadcode` 9 件で着手時と同数）
+- [x] PR を作成した: https://github.com/isseis/go-safe-cmd-runner/pull/1015
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -884,7 +891,7 @@ awk '/^## 用語/{f=1;next} f&&/^## /{exit} f' \
 | AC-23 | test | `cmd/runner/integration_slack_flush_test.go::TestIntegration_RunnerFlushesSlackOnNormalExit`、`internal/runner/bootstrap/logger_test.go::TestFlushSlackNotifications_FlushesAllHandlers`、`internal/logging/slack_sender_test.go::TestSlackHandler_FlushDeliversPendingAndReturnsStats` |
 | AC-23 | static | `rg -n -e "bootstrap\.FlushSlackNotifications\(\)" -e "bootstrap\.ReportRedactionFailures\(\)" -e "os\.Exit\(exitCode\)" cmd/runner/main.go` → 3 件が一致し、行番号がこの順に昇順であること |
 | AC-24 | test | `cmd/runner/integration_slack_flush_test.go::TestIntegration_RunnerFlushesSlackOnNormalExit`、`internal/runner/bootstrap/logger_test.go::TestAddSlackHandlers_SlackHandlersComeAfterPhase1Handlers`、`internal/logging/slack_sender_test.go::TestSlackSender_HighPriorityBypassesFullNormalQueue`、`internal/runner/e2e_slack_webhook_test.go::TestE2E_SlackWebhookWithMockServer`（`make slack-e2e-test`） |
-| AC-25 | test | `internal/logging/slack_sender_test.go::TestSlackHandler_FlushDeadlineReportsPending`、`internal/logging/slack_sender_test.go::TestSlackHandler_FlushReturnsWhenWorkerIsIdle`、`internal/runner/bootstrap/logger_test.go::TestAddSlackHandlers_PropagatesEnvSettings`（flush 期限の環境変数が届くこと） |
+| AC-25 | test | `internal/logging/slack_sender_test.go::TestSlackHandler_FlushDeadlineReportsPending`、`internal/logging/slack_sender_test.go::TestSlackHandler_FlushReturnsWhenWorkerIsIdle`、`internal/runner/bootstrap/logger_test.go::TestFlushSlackNotifications_HonorsFlushDeadline`（`GSCR_SLACK_FLUSH_TIMEOUT` が `FlushSlackNotifications` の期限になること）。**当初は `TestAddSlackHandlers_PropagatesEnvSettings` を挙げていたが、flush 期限は `SlackHandlerOptions` に載らないため同テストでは到達できない**（レビュー指摘） |
 | AC-25 | static | `rg -n -e DefaultFlushTimeout -e SlackFlushTimeoutEnvVar internal/logging/slack_sender.go` → 既定値 `15 * time.Second` と環境変数名 `GSCR_SLACK_FLUSH_TIMEOUT` の定義がそれぞれ 1 件見つかること |
 | AC-26 | test | `internal/runner/bootstrap/logger_test.go::TestFlushSlackNotifications_FlushesAllHandlers`（webhook ごとの集計が送信失敗ロガーの出力先に現れること）、`internal/logging/slack_sender_test.go::TestSlackHandler_FlushDeadlineReportsPending`（`Pending` の件数）、`internal/logging/slack_sender_test.go::TestSlackSender_FlushLogsMessageTypeBreakdown` |
 | AC-27 | test | `internal/logging/slack_sender_test.go::TestSlackHandler_EnqueueAfterFlushIsDropped`、`internal/logging/slack_sender_test.go::TestSlackHandler_NilSenderHandleReturnsNil`、`internal/logging/slack_sender_test.go::TestSlackHandler_FlushIsIdempotent` |
