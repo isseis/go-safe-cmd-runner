@@ -230,6 +230,7 @@ type RedactingHandler struct {
 
 func (c *Config) RedactText(text string) string {
     // key=value パターンのリダクションを適用
+    result := text
     for i := range c.compiled {
         result = c.compiled[i].apply(result)
     }

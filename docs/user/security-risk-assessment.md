@@ -236,6 +236,7 @@ type RedactingHandler struct {
 
 func (c *Config) RedactText(text string) string {
     // Apply redaction for key=value patterns
+    result := text
     for i := range c.compiled {
         result = c.compiled[i].apply(result)
     }
