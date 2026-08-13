@@ -650,8 +650,8 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test` 全パッケージ緑、`make lint` 0 issues、`make slack-e2e-test` 7 件緑、`make deadcode` 9 件で着手時と同数）
 - [x] PR を作成した: https://github.com/isseis/go-safe-cmd-runner/pull/1015
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 6: 文書の更新
 
