@@ -380,27 +380,12 @@ func (sd *slackSender) sendSync(ctx context.Context, req slackRequest) error {
 func (sd *slackSender) run() {
 	defer close(sd.done)
 
-	// One dispatch shared by all three receive sites, so a change to what
-	// happens after a send cannot apply to only one of the queues. It reports
-	// whether the worker is finished.
-	dispatch := func(req slackRequest) bool {
-		drainCtx, stop := sd.serve(req)
-		if stop {
-			return true
-		}
-		if drainCtx != nil {
-			sd.drain(drainCtx)
-			return true
-		}
-		return false
-	}
-
 	for {
 		// Priority pass: take from the high-priority queue whenever it has
 		// anything, without giving the normal queue a chance to win the select.
 		select {
 		case req := <-sd.highPriority:
-			if dispatch(req) {
+			if sd.dispatch(req) {
 				return
 			}
 			continue
@@ -409,11 +394,11 @@ func (sd *slackSender) run() {
 
 		select {
 		case req := <-sd.highPriority:
-			if dispatch(req) {
+			if sd.dispatch(req) {
 				return
 			}
 		case req := <-sd.normal:
-			if dispatch(req) {
+			if sd.dispatch(req) {
 				return
 			}
 		case sr := <-sd.shutdown:
@@ -425,6 +410,22 @@ func (sd *slackSender) run() {
 			return
 		}
 	}
+}
+
+// dispatch serves one dequeued request. It is shared by all three receive
+// sites in run's select, so a change to what happens after a send cannot
+// apply to only one of the queues. It reports whether the worker is
+// finished.
+func (sd *slackSender) dispatch(req slackRequest) bool {
+	drainCtx, stop := sd.serve(req)
+	if stop {
+		return true
+	}
+	if drainCtx != nil {
+		sd.drain(drainCtx)
+		return true
+	}
+	return false
 }
 
 // serve sends one dequeued request. It returns the flush context when a drain
