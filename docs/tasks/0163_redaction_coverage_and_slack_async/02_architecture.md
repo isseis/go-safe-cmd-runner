@@ -256,7 +256,10 @@ flush を `ReportRedactionFailures` より前に置く理由は、`run` の実�
 | SIGTERM / SIGINT（`systemctl stop`、通常の `reboot`、Ctrl-C） | 行う | 同上 |
 | flush 実行中の 2 回目の SIGINT | 行わない | キューの残り全部 |
 | 回復されない panic | 行わない | キューの残り全部 |
+| 実行中の `os.Exit(1)`（下記 2 箇所） | 行わない | キューの残り全部 |
 | SIGKILL、OOM kill、電源断、ハードウェア障害 | 行わない | キューの残り全部 |
+
+**実行中の `os.Exit(1)` を flush しない理由**。`run` の内側からプロセスを即座に終わらせる経路が 2 箇所ある。`UnixPrivilegeManager.emergencyShutdown`（権限の復元に失敗した場合）と `DefaultExecutor.Execute` の実行後の同一性検査（EUID/EGID が元に戻っていない場合）である。どちらも `main` へ戻らないため flush を経由しない。同期送信では投入済みの 1 件が送り終わっていたのに対し、非同期では失われうる。とくに後者は、直前に `audit.Logger` が `user_group_command_failure` の通知を投入しているため、失われる通知が高優先度のものになりうる。それでもここで flush を呼ばない: どちらの経路も「特権が意図せず残っている可能性がある」ことを検出して即座に死ぬためのものであり、`emergencyShutdown` は `defer` の実行すら意図的に飛ばす。最大 15 秒のネットワーク入出力をその状態で追加することは、この即時終了が終わらせようとしている状態そのものを引き延ばす。したがって配送より終了を優先する。通知の内容自体は 2.4 の「通知内容そのものは失われない」のとおり、Slack のキューへ入る前にログファイルへ書き終わっている。
 
 **通常のリブートは flush される**。`cmd/runner` は `signal.NotifyContext` で SIGINT と SIGTERM を捕捉しており、`systemctl stop` や `reboot` が最初に送るのは SIGTERM である。したがってシグナル受信 → `run` の復帰 → flush という経路をたどる。systemd の既定の停止猶予（`TimeoutStopSec`、通常 90 秒）は flush 期限（15 秒）より十分に長いため、猶予内に flush が完了する。ただし `run` の後始末（一時ディレクトリの削除等）に時間がかかり猶予を使い切ると、SIGKILL が flush の前に届く。
 

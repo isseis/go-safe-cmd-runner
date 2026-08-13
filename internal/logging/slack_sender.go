@@ -84,6 +84,9 @@ type slackSender struct {
 	backoffConfig BackoffConfig
 	failureLogger *slog.Logger
 	sendTimeout   time.Duration
+	// webhookLabel names this webhook's role in the aggregate record. Empty
+	// when the caller did not name it.
+	webhookLabel string
 	// runID is copied from SlackHandlerOptions.RunID at construction.
 	// Per-request records take the run ID from slackRequest, but the aggregate
 	// record that flush emits belongs to no single request, so it reads run_id
@@ -226,6 +229,7 @@ func newSlackSender(opts SlackHandlerOptions, httpClient *http.Client, backoffCo
 		failureLogger: failureLogger,
 		sendTimeout:   sendTimeout,
 		runID:         opts.RunID,
+		webhookLabel:  opts.WebhookLabel,
 		synchronous:   opts.Synchronous,
 		sentByType:    make(map[string]int),
 		failedByType:  make(map[string]int),
@@ -752,7 +756,10 @@ func (sd *slackSender) recordUndelivered(req slackRequest, reason string) {
 
 // logAggregate emits the one per-sender summary of the flush, with the
 // per-message_type breakdown. Its run_id comes from the sender rather than any
-// single request, so it lines up with the individual records above.
+// single request, so it lines up with the individual records above. This is the
+// only place a delivery summary is written: a caller that flushes several
+// senders reports nothing of its own, or the run would carry two summaries per
+// webhook and neither would be complete.
 func (sd *slackSender) logAggregate(stats FlushStats) {
 	sd.mu.RLock()
 	sent := maps.Clone(sd.sentByType)
@@ -760,8 +767,13 @@ func (sd *slackSender) logAggregate(stats FlushStats) {
 	dropped := maps.Clone(sd.droppedByType)
 	sd.mu.RUnlock()
 
-	sd.failureLogger.Info("Slack delivery summary",
+	attrs := []slog.Attr{
 		slog.String("run_id", sd.runID), //nolint:gosec // G706: run_id is an internal identifier, not user input
+	}
+	if sd.webhookLabel != "" {
+		attrs = append(attrs, slog.String("webhook", sd.webhookLabel))
+	}
+	attrs = append(attrs,
 		slog.Int64("submitted", stats.Submitted),
 		slog.Int64("sent", stats.Sent),
 		slog.Int64("failed", stats.Failed),
@@ -771,6 +783,8 @@ func (sd *slackSender) logAggregate(stats FlushStats) {
 		slog.Any("failed_by_message_type", failed),
 		slog.Any("dropped_by_message_type", dropped),
 	)
+
+	sd.failureLogger.LogAttrs(context.Background(), slog.LevelInfo, "Slack delivery summary", attrs...)
 }
 
 // send posts one message to Slack. With singleAttempt set (flushing) it tries

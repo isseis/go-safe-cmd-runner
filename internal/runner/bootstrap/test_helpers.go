@@ -11,6 +11,10 @@ import "github.com/isseis/go-safe-cmd-runner/internal/logging"
 // SlackHandlerOptions itself and deliberately sets no HTTP client, so a test
 // that wants the real handler to talk to an httptest server has no other place
 // to inject that server's client.
+//
+// It writes package state without synchronisation, like the bootstrap path it
+// belongs to, so it must be called before any logging that could run
+// concurrently with it.
 func SetSlackHandlerFactory(factory func(logging.SlackHandlerOptions) (*logging.SlackHandler, error)) func() {
 	previous := newSlackHandlerFunc
 	newSlackHandlerFunc = factory

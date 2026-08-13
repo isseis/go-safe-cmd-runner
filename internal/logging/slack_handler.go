@@ -157,6 +157,11 @@ type SlackHandlerOptions struct {
 	// Synchronous disables the worker and sends inline. It is a debugging
 	// escape hatch selected by GSCR_SLACK_SYNC, not a supported mode.
 	Synchronous bool
+	// WebhookLabel names this webhook's role in the delivery summary. A run
+	// configures more than one webhook and they share a run ID, so without it
+	// the summaries cannot be told apart. It is a label for humans, never the
+	// URL: the URL is a credential.
+	WebhookLabel string
 }
 
 // validateWebhookURL validates that the webhook URL is a valid HTTPS URL with allowed host.

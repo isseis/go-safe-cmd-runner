@@ -850,6 +850,60 @@ func TestAddSlackHandlers_ClosesPreviousHandlersOnReinvocation(t *testing.T) {
 		"exactly the notification submitted to the live handler should have been delivered")
 }
 
+// TestAddSlackHandlers_KeepsPreviousHandlersWhenRebuildFails pins the other
+// half of the re-invocation rule: a failed rebuild leaves the default logger
+// pointing at the previous call's handlers, so those handlers must still be
+// accepting. Closing them up front would drop every later notification with
+// nobody able to flush it.
+func TestAddSlackHandlers_KeepsPreviousHandlersWhenRebuildFails(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	consoleBuffer := &syncBuffer{}
+	require.NoError(t, SetupLoggerWithConfig(LoggerConfig{
+		Level:         slog.LevelInfo,
+		RunID:         "test-failed-rebuild-001",
+		ConsoleWriter: consoleBuffer,
+	}, false, true))
+
+	server, requests := newRecordingSlackServer(t)
+	errRebuild := errors.New("webhook unavailable")
+
+	var first *logging.SlackHandler
+	newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
+		if first != nil {
+			return nil, errRebuild
+		}
+		handler, err := logging.NewSlackHandler(withMockServer(t, opts, server))
+		if err != nil {
+			return nil, err
+		}
+		t.Cleanup(func() { handler.Close() })
+		first = handler
+		return handler, nil
+	}
+
+	config := SlackLoggerConfig{
+		WebhookURLError: "https://hooks.slack.com/services/error",
+		AllowedHost:     "hooks.slack.com",
+		RunID:           "test-failed-rebuild-001",
+	}
+	_, err := AddSlackHandlers(config)
+	require.NoError(t, err)
+	_, err = AddSlackHandlers(config)
+	require.ErrorIs(t, err, errRebuild)
+
+	require.Len(t, slackHandlers, 1, "the failed rebuild should leave the previous registration in place")
+	assert.Same(t, first, slackHandlers[0].handler)
+
+	consoleBuffer.Reset()
+	submitSlackNotification(t, first)
+	assert.NotContains(t, consoleBuffer.String(), "sender_closed",
+		"the handler the default logger still routes to must keep accepting")
+
+	FlushSlackNotifications()
+	assert.Len(t, requests.paths(), 1,
+		"the notification submitted after the failed rebuild should still be delivered")
+}
+
 // TestFlushSlackNotifications_FlushesAllHandlers verifies that every registered
 // webhook is drained at exit and that each one gets its own summary.
 func TestFlushSlackNotifications_FlushesAllHandlers(t *testing.T) {
@@ -898,16 +952,85 @@ func TestFlushSlackNotifications_FlushesAllHandlers(t *testing.T) {
 	assert.Len(t, errorRequests.paths(), 1, "the error webhook should have received its notification")
 
 	// The counts are part of the assertion, not just the webhook names: a
-	// handler that was never flushed still gets a summary line, but it carries
-	// the zero accounting, so only the counts show that each webhook was
-	// actually drained.
+	// handler that was never flushed writes no summary at all, but a summary
+	// naming the webhook proves only that a sender terminated, not that this
+	// flush is what drained it.
 	output := consoleBuffer.String()
 	assert.Contains(t, output, "Slack delivery summary")
-	for _, role := range []string{slackRoleSuccess, slackRoleError} {
+	for role, messageType := range map[string]string{
+		slackRoleSuccess: "command_group_summary",
+		slackRoleError:   "pre_execution_error",
+	} {
 		assert.Contains(t, output,
-			fmt.Sprintf("webhook=%s submitted=1 sent=1 failed=0 dropped=0 pending=0", role),
+			fmt.Sprintf("webhook=%s submitted=1 sent=1 failed=0 dropped=0 pending=0 sent_by_message_type=map[%s:1]",
+				role, messageType),
 			"the %s webhook should report its own notification as delivered", role)
 	}
+}
+
+// TestFlushSlackNotifications_HonorsFlushDeadline pins that the exit flush is
+// bounded by GSCR_SLACK_FLUSH_TIMEOUT: an unresponsive Slack must not hold the
+// process open. Without the deadline this test would sit on the endpoint until
+// the send timeout, well past the bound asserted below.
+func TestFlushSlackNotifications_HonorsFlushDeadline(t *testing.T) {
+	const flushTimeout = 200 * time.Millisecond
+
+	saveAndRestoreGlobals(t)
+	t.Setenv(logging.SlackFlushTimeoutEnvVar, flushTimeout.String())
+
+	consoleBuffer := &syncBuffer{}
+	require.NoError(t, SetupLoggerWithConfig(LoggerConfig{
+		Level:         slog.LevelInfo,
+		RunID:         "test-flush-deadline-001",
+		ConsoleWriter: consoleBuffer,
+	}, false, true))
+
+	// The endpoint never answers until the test releases it, so the flush can
+	// only return by hitting its deadline.
+	release := make(chan struct{})
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+	// Registered after server.Close so that it runs before it: Close waits for
+	// the handler above to return, which it cannot do while still parked.
+	t.Cleanup(func() { close(release) })
+
+	newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
+		handler, err := logging.NewSlackHandler(withMockServer(t, opts, server))
+		if err != nil {
+			return nil, err
+		}
+		t.Cleanup(func() { handler.Close() })
+		return handler, nil
+	}
+
+	_, err := AddSlackHandlers(SlackLoggerConfig{
+		WebhookURLError: "https://hooks.slack.com/services/error",
+		AllowedHost:     "hooks.slack.com",
+		RunID:           "test-flush-deadline-001",
+	})
+	require.NoError(t, err)
+	require.Len(t, slackHandlers, 1)
+
+	submitSlackNotification(t, slackHandlers[0].handler)
+
+	start := time.Now()
+	FlushSlackNotifications()
+	elapsed := time.Since(start)
+
+	// Generous against a loaded CI machine relative to the 200ms deadline, and
+	// still well below what an ignored deadline costs: without it the flush
+	// waits out the 5s per-send budget (measured), and a wholly unbounded flush
+	// waits out the 15s default.
+	assert.Less(t, elapsed, 2*time.Second,
+		"the flush should return on its own deadline rather than waiting for the send")
+	assert.Contains(t, consoleBuffer.String(), "pending=1",
+		"the notification the deadline cut short should be reported as pending")
 }
 
 // TestFlushSlackNotifications_NoSlackConfigured pins that a run without Slack
