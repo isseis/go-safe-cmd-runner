@@ -648,7 +648,7 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 **本 PR が非同期を本番の既定にする**: PR-6 が置いた `Synchronous: true` を `parseSlackEnvSettings` の結果へ差し替える変更と、`FlushSlackNotifications` の組み込みは不可分である（ステップ 5-1）。片方だけを入れると、flush 経路のない非同期送信という 3.2 が排除した状態が生じる。レビューではこの 2 つが同じ PR に揃っていることを最初に確認する。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test` 全パッケージ緑、`make lint` 0 issues、`make slack-e2e-test` 7 件緑、`make deadcode` 9 件で着手時と同数）
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
