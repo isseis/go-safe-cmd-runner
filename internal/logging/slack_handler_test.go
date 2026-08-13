@@ -9,8 +9,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,11 +35,10 @@ var testBackoffConfig = BackoffConfig{
 func TestSlackHandler_WithAttrs(t *testing.T) {
 	// Create a SlackHandler (we don't need a real webhook URL for this test)
 	handler := &SlackHandler{
-		webhookURL: "https://hooks.slack.com/test",
-		runID:      "test-run",
-		level:      slog.LevelInfo,
-		attrs:      nil,
-		groups:     nil,
+		runID:  "test-run",
+		level:  slog.LevelInfo,
+		attrs:  nil,
+		groups: nil,
 	}
 
 	// Test WithAttrs
@@ -69,11 +68,10 @@ func TestSlackHandler_WithAttrs(t *testing.T) {
 func TestSlackHandler_WithGroup(t *testing.T) {
 	// Create a SlackHandler
 	handler := &SlackHandler{
-		webhookURL: "https://hooks.slack.com/test",
-		runID:      "test-run",
-		level:      slog.LevelInfo,
-		attrs:      nil,
-		groups:     nil,
+		runID:  "test-run",
+		level:  slog.LevelInfo,
+		attrs:  nil,
+		groups: nil,
 	}
 
 	// Test WithGroup
@@ -96,11 +94,10 @@ func TestSlackHandler_WithGroup(t *testing.T) {
 func TestSlackHandler_WithAttrsAndGroups(t *testing.T) {
 	// Create a SlackHandler
 	handler := &SlackHandler{
-		webhookURL: "https://hooks.slack.com/test",
-		runID:      "test-run",
-		level:      slog.LevelInfo,
-		attrs:      nil,
-		groups:     nil,
+		runID:  "test-run",
+		level:  slog.LevelInfo,
+		attrs:  nil,
+		groups: nil,
 	}
 
 	// Test combining WithAttrs and WithGroup
@@ -117,10 +114,9 @@ func TestSlackHandler_WithAttrsAndGroups(t *testing.T) {
 
 func TestSlackHandler_WithAttrs_PreservesLevelMode(t *testing.T) {
 	handler := &SlackHandler{
-		webhookURL: "https://hooks.slack.com/test",
-		runID:      "test-run",
-		level:      slog.LevelInfo,
-		levelMode:  LevelModeExactInfo,
+		runID:     "test-run",
+		level:     slog.LevelInfo,
+		levelMode: LevelModeExactInfo,
 	}
 
 	attrs := []slog.Attr{slog.String("key", "value")}
@@ -131,10 +127,9 @@ func TestSlackHandler_WithAttrs_PreservesLevelMode(t *testing.T) {
 
 func TestSlackHandler_WithGroup_PreservesLevelMode(t *testing.T) {
 	handler := &SlackHandler{
-		webhookURL: "https://hooks.slack.com/test",
-		runID:      "test-run",
-		level:      slog.LevelInfo,
-		levelMode:  LevelModeWarnAndAbove,
+		runID:     "test-run",
+		level:     slog.LevelInfo,
+		levelMode: LevelModeWarnAndAbove,
 	}
 
 	newHandler := handler.WithGroup("testgroup").(*SlackHandler)
@@ -145,9 +140,8 @@ func TestSlackHandler_WithGroup_PreservesLevelMode(t *testing.T) {
 func TestSlackHandler_ApplyAccumulatedContext(t *testing.T) {
 	// Create a SlackHandler with some accumulated context
 	handler := &SlackHandler{
-		webhookURL: "https://hooks.slack.com/test",
-		runID:      "test-run",
-		level:      slog.LevelInfo,
+		runID: "test-run",
+		level: slog.LevelInfo,
 		attrs: []slog.Attr{
 			slog.String("accumulated_key", "accumulated_value"),
 		},
@@ -190,9 +184,8 @@ func TestSlackHandler_ApplyAccumulatedContext(t *testing.T) {
 
 func TestSlackHandler_WithAttrsEmptySlice(t *testing.T) {
 	handler := &SlackHandler{
-		webhookURL: "https://hooks.slack.com/test",
-		runID:      "test-run",
-		level:      slog.LevelInfo,
+		runID: "test-run",
+		level: slog.LevelInfo,
 	}
 
 	// WithAttrs with empty slice should return the same handler
@@ -203,9 +196,8 @@ func TestSlackHandler_WithAttrsEmptySlice(t *testing.T) {
 
 func TestSlackHandler_WithGroupEmptyString(t *testing.T) {
 	handler := &SlackHandler{
-		webhookURL: "https://hooks.slack.com/test",
-		runID:      "test-run",
-		level:      slog.LevelInfo,
+		runID: "test-run",
+		level: slog.LevelInfo,
 	}
 
 	// WithGroup with empty string should return the same handler
@@ -371,7 +363,7 @@ func TestNewSlackHandlerWithOptions(t *testing.T) {
 	tests := []struct {
 		name        string
 		opts        SlackHandlerOptions
-		expectError bool
+		expectError error
 		validate    func(t *testing.T, handler *SlackHandler)
 	}{
 		{
@@ -381,10 +373,10 @@ func TestNewSlackHandlerWithOptions(t *testing.T) {
 				RunID:       "test-run-123",
 				AllowedHost: "hooks.slack.com",
 			},
-			expectError: false,
 			validate: func(t *testing.T, handler *SlackHandler) {
-				assert.NotNil(t, handler.httpClient, "HTTP client should be set to default")
-				assert.Equal(t, DefaultBackoffConfig, handler.backoffConfig, "Backoff config should be default")
+				assert.NotNil(t, handler.sender.httpClient, "HTTP client should be set to default")
+				assert.Equal(t, DefaultBackoffConfig, handler.sender.backoffConfig, "Backoff config should be default")
+				assert.Equal(t, DefaultSendTimeout, handler.sender.sendTimeout, "Send timeout should be default")
 				assert.False(t, handler.isDryRun, "IsDryRun should be false by default")
 				assert.Equal(t, LevelModeDefault, handler.levelMode, "LevelMode should be default")
 			},
@@ -400,15 +392,63 @@ func TestNewSlackHandlerWithOptions(t *testing.T) {
 					Base:       3 * time.Second,
 					RetryCount: 5,
 				},
-				IsDryRun: true,
+				SendTimeout: 7 * time.Second,
 			},
-			expectError: false,
 			validate: func(t *testing.T, handler *SlackHandler) {
-				assert.Equal(t, 10*time.Second, handler.httpClient.Timeout, "Custom HTTP client should be used")
-				assert.Equal(t, 3*time.Second, handler.backoffConfig.Base, "Custom backoff base should be used")
-				assert.Equal(t, 5, handler.backoffConfig.RetryCount, "Custom retry count should be used")
-				assert.True(t, handler.isDryRun, "IsDryRun should be true")
+				assert.Equal(t, 10*time.Second, handler.sender.httpClient.Timeout, "Custom HTTP client should be used")
+				assert.Equal(t, 3*time.Second, handler.sender.backoffConfig.Base, "Custom backoff base should be used")
+				assert.Equal(t, 5, handler.sender.backoffConfig.RetryCount, "Custom retry count should be used")
+				assert.Equal(t, 7*time.Second, handler.sender.sendTimeout, "Custom send timeout should be used")
 			},
+		},
+		{
+			// Dry-run is defined as having no external side effects, so the
+			// handler gets no sender at all.
+			name: "dry run creates no sender",
+			opts: SlackHandlerOptions{
+				WebhookURL:  "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+				RunID:       "test-run-dry",
+				AllowedHost: "hooks.slack.com",
+				IsDryRun:    true,
+			},
+			validate: func(t *testing.T, handler *SlackHandler) {
+				assert.True(t, handler.isDryRun, "IsDryRun should be true")
+				assert.Nil(t, handler.sender, "Dry-run handler should have no sender")
+			},
+		},
+		{
+			name: "failure handlers accepted",
+			opts: SlackHandlerOptions{
+				WebhookURL:      "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+				RunID:           "test-run-failure-handlers",
+				AllowedHost:     "hooks.slack.com",
+				FailureHandlers: []slog.Handler{slog.NewJSONHandler(io.Discard, nil)},
+			},
+			validate: func(t *testing.T, handler *SlackHandler) {
+				assert.NotNil(t, handler.sender.failureLogger, "Failure logger should be built from FailureHandlers")
+			},
+		},
+		{
+			// A failure logger that routes back into Slack would turn every
+			// send failure into another send.
+			name: "failure handlers containing a SlackHandler are rejected",
+			opts: SlackHandlerOptions{
+				WebhookURL:      "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+				RunID:           "test-run-slack-failure-handler",
+				AllowedHost:     "hooks.slack.com",
+				FailureHandlers: []slog.Handler{&SlackHandler{}},
+			},
+			expectError: ErrFailureLoggerContainsSlackHandler,
+		},
+		{
+			name: "unverifiable failure handlers are rejected",
+			opts: SlackHandlerOptions{
+				WebhookURL:      "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+				RunID:           "test-run-opaque-failure-handler",
+				AllowedHost:     "hooks.slack.com",
+				FailureHandlers: []slog.Handler{opaqueTestHandler{}},
+			},
+			expectError: ErrFailureLoggerUnverifiableHandler,
 		},
 		{
 			name: "with LevelModeExactInfo",
@@ -418,7 +458,6 @@ func TestNewSlackHandlerWithOptions(t *testing.T) {
 				AllowedHost: "hooks.slack.com",
 				LevelMode:   LevelModeExactInfo,
 			},
-			expectError: false,
 			validate: func(t *testing.T, handler *SlackHandler) {
 				assert.Equal(t, LevelModeExactInfo, handler.levelMode, "LevelMode should be ExactInfo")
 			},
@@ -431,7 +470,6 @@ func TestNewSlackHandlerWithOptions(t *testing.T) {
 				AllowedHost: "hooks.slack.com",
 				LevelMode:   LevelModeWarnAndAbove,
 			},
-			expectError: false,
 			validate: func(t *testing.T, handler *SlackHandler) {
 				assert.Equal(t, LevelModeWarnAndAbove, handler.levelMode, "LevelMode should be WarnAndAbove")
 			},
@@ -442,7 +480,7 @@ func TestNewSlackHandlerWithOptions(t *testing.T) {
 				WebhookURL: "http://invalid-url",
 				RunID:      "test-run-789",
 			},
-			expectError: true,
+			expectError: ErrInvalidWebhookURL,
 		},
 		{
 			name: "empty webhook URL",
@@ -450,7 +488,7 @@ func TestNewSlackHandlerWithOptions(t *testing.T) {
 				WebhookURL: "",
 				RunID:      "test-run-789",
 			},
-			expectError: true,
+			expectError: ErrInvalidWebhookURL,
 		},
 	}
 
@@ -458,17 +496,25 @@ func TestNewSlackHandlerWithOptions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			handler, err := NewSlackHandler(tt.opts)
 
-			if tt.expectError {
+			if tt.expectError != nil {
 				require.Error(t, err, "Expected error for invalid options")
+				assert.ErrorIs(t, err, tt.expectError)
 				assert.Nil(t, handler, "Expected nil handler when error occurs")
-			} else {
-				require.NoError(t, err, "Unexpected error for valid options")
-				require.NotNil(t, handler, "Expected non-nil handler for valid options")
-				assert.Equal(t, tt.opts.WebhookURL, handler.webhookURL, "Webhook URL should match")
-				assert.Equal(t, tt.opts.RunID, handler.runID, "Run ID should match")
-				if tt.validate != nil {
-					tt.validate(t, handler)
-				}
+				return
+			}
+
+			require.NoError(t, err, "Unexpected error for valid options")
+			require.NotNil(t, handler, "Expected non-nil handler for valid options")
+			// Registered at the point the worker is created, so it is stopped
+			// even if an assertion below fails.
+			t.Cleanup(func() { handler.Close() })
+
+			assert.Equal(t, tt.opts.RunID, handler.runID, "Run ID should match")
+			if handler.sender != nil {
+				assert.Equal(t, tt.opts.WebhookURL, handler.sender.webhookURL, "Webhook URL should match")
+			}
+			if tt.validate != nil {
+				tt.validate(t, handler)
 			}
 		})
 	}
@@ -516,9 +562,8 @@ func TestSlackHandler_Enabled(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := &SlackHandler{
-				webhookURL: "https://hooks.slack.com/test",
-				runID:      "test-run",
-				level:      tt.handlerLevel,
+				runID: "test-run",
+				level: tt.handlerLevel,
 			}
 
 			ctx := context.Background()
@@ -613,10 +658,9 @@ func TestSlackHandler_Enabled_LevelMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := &SlackHandler{
-				webhookURL: "https://hooks.slack.com/test",
-				runID:      "test-run",
-				level:      slog.LevelInfo, // Default level (used by LevelModeDefault)
-				levelMode:  tt.levelMode,
+				runID:     "test-run",
+				level:     slog.LevelInfo, // Default level (used by LevelModeDefault)
+				levelMode: tt.levelMode,
 			}
 
 			ctx := context.Background()
@@ -629,9 +673,8 @@ func TestSlackHandler_Enabled_LevelMode(t *testing.T) {
 
 func TestSlackHandler_Handle_NoSlackNotify(t *testing.T) {
 	handler := &SlackHandler{
-		webhookURL: "https://hooks.slack.com/test",
-		runID:      "test-run",
-		level:      slog.LevelInfo,
+		runID: "test-run",
+		level: slog.LevelInfo,
 	}
 
 	ctx := context.Background()
@@ -644,9 +687,8 @@ func TestSlackHandler_Handle_NoSlackNotify(t *testing.T) {
 
 func TestSlackHandler_Handle_SlackNotifyFalse(t *testing.T) {
 	handler := &SlackHandler{
-		webhookURL: "https://hooks.slack.com/test",
-		runID:      "test-run",
-		level:      slog.LevelInfo,
+		runID: "test-run",
+		level: slog.LevelInfo,
 	}
 
 	ctx := context.Background()
@@ -806,27 +848,26 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var mu sync.Mutex
 			var receivedMessage SlackMessage
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := newMockSlackServer(t, func(w http.ResponseWriter, r *http.Request) {
 				assert.Equal(t, http.MethodPost, r.Method, "Request method should be POST")
 
 				body, err := io.ReadAll(r.Body)
 				require.NoError(t, err, "Failed to read request body")
 
+				mu.Lock()
 				err = json.Unmarshal(body, &receivedMessage)
+				mu.Unlock()
 				require.NoError(t, err, "Failed to unmarshal JSON")
 
 				w.WriteHeader(tt.serverStatus)
-			}))
-			defer server.Close()
+			})
 
-			handler := &SlackHandler{
-				webhookURL:    server.URL,
-				runID:         "test-run",
-				httpClient:    &http.Client{Timeout: 5 * time.Second},
-				level:         slog.LevelInfo,
-				backoffConfig: testBackoffConfig,
-			}
+			failureLog := &syncBuffer{}
+			opts := slackOptionsFor(t, server)
+			opts.FailureHandlers = []slog.Handler{slog.NewJSONHandler(failureLog, &slog.HandlerOptions{Level: slog.LevelDebug})}
+			handler := newTestSlackHandler(t, opts)
 
 			ctx := context.Background()
 			record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
@@ -834,71 +875,109 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 				record.AddAttrs(attr)
 			}
 
-			err := handler.Handle(ctx, record)
+			// Handle only enqueues now, so it reports no delivery outcome.
+			require.NoError(t, handler.Handle(ctx, record))
+
+			// Wait until the send is over before flushing: Flush cancels a send
+			// that is still in flight, which would count as Pending instead of
+			// the outcome under test.
+			if tt.expectSuccess {
+				waitForFailureLog(t, failureLog, "Slack notification sent successfully")
+			} else {
+				waitForFailureLog(t, failureLog, "Slack notification not delivered")
+			}
+
+			stats := handler.Flush(ctx)
 
 			if tt.expectSuccess {
-				assert.NoError(t, err, "Expected success, got error")
+				assert.Equal(t, int64(1), stats.Sent, "Expected the notification to be delivered")
+				assert.Equal(t, int64(0), stats.Failed, "Expected no failure")
 				if tt.validateMessage != nil {
+					mu.Lock()
+					defer mu.Unlock()
 					tt.validateMessage(t, receivedMessage)
 				}
 			} else {
-				assert.Error(t, err, "Expected error for server failure")
+				assert.Equal(t, int64(1), stats.Failed, "Expected the send to be recorded as failed")
+				assert.Equal(t, int64(0), stats.Sent, "Expected no delivery")
 			}
+			assert.Equal(t, int64(0), stats.Pending, "Nothing should remain pending")
 		})
 	}
 }
 
-func TestSlackHandler_SendToSlack_Retry(t *testing.T) {
+// TestSlackSender_Send_Retry exercises the retry policy directly on the sender,
+// which owns the HTTP path since the delivery machinery moved off SlackHandler.
+func TestSlackSender_Send_Retry(t *testing.T) {
+	testRequest := slackRequest{
+		message:     &SlackMessage{Text: "test"},
+		messageType: messageTypeCommandGroupSummary,
+		runID:       "test-run",
+		level:       slog.LevelInfo,
+	}
+
 	t.Run("retry on temporary failure", func(t *testing.T) {
+		var mu sync.Mutex
 		attemptCount := 0
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		server := newMockSlackServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			mu.Lock()
 			attemptCount++
-			if attemptCount < 2 {
+			count := attemptCount
+			mu.Unlock()
+			if count < 2 {
 				w.WriteHeader(http.StatusServiceUnavailable)
 			} else {
 				w.WriteHeader(http.StatusOK)
 			}
-		}))
-		defer server.Close()
+		})
 
-		handler := &SlackHandler{
-			webhookURL:    server.URL,
-			runID:         "test-run",
-			httpClient:    &http.Client{Timeout: 5 * time.Second},
-			level:         slog.LevelInfo,
-			backoffConfig: testBackoffConfig,
-		}
+		sender := newTestSlackSender(t, server)
 
-		ctx := context.Background()
-		message := SlackMessage{Text: "test"}
-
-		err := handler.sendToSlack(ctx, message)
+		err := sender.send(context.Background(), testRequest, false)
 		assert.NoError(t, err, "Expected success after retry")
+		mu.Lock()
+		defer mu.Unlock()
 		assert.GreaterOrEqual(t, attemptCount, 2, "Expected at least 2 attempts")
 	})
 
 	t.Run("no retry on client error", func(t *testing.T) {
+		var mu sync.Mutex
 		attemptCount := 0
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		server := newMockSlackServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			mu.Lock()
 			attemptCount++
+			mu.Unlock()
 			w.WriteHeader(http.StatusBadRequest)
-		}))
-		defer server.Close()
+		})
 
-		handler := &SlackHandler{
-			webhookURL:    server.URL,
-			runID:         "test-run",
-			httpClient:    &http.Client{Timeout: 5 * time.Second},
-			level:         slog.LevelInfo,
-			backoffConfig: testBackoffConfig,
-		}
+		sender := newTestSlackSender(t, server)
 
-		ctx := context.Background()
-		message := SlackMessage{Text: "test"}
-
-		err := handler.sendToSlack(ctx, message)
+		err := sender.send(context.Background(), testRequest, false)
 		assert.Error(t, err, "Expected error for client error status")
+		mu.Lock()
+		defer mu.Unlock()
 		assert.Equal(t, 1, attemptCount, "Expected exactly 1 attempt for client error")
+	})
+
+	t.Run("single attempt does not retry a retryable failure", func(t *testing.T) {
+		// This is the rule that keeps a flush from spending its whole deadline
+		// on one notification's retry sequence.
+		var mu sync.Mutex
+		attemptCount := 0
+		server := newMockSlackServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			mu.Lock()
+			attemptCount++
+			mu.Unlock()
+			w.WriteHeader(http.StatusServiceUnavailable)
+		})
+
+		sender := newTestSlackSender(t, server)
+
+		err := sender.send(context.Background(), testRequest, true)
+		assert.Error(t, err, "Expected error when the only attempt fails")
+		mu.Lock()
+		defer mu.Unlock()
+		assert.Equal(t, 1, attemptCount, "Expected exactly 1 attempt when retries are disabled")
 	})
 }
 
@@ -943,26 +1022,22 @@ func TestSlackHandler_GenerateBackoffIntervals(t *testing.T) {
 // TestSlackHandler_WithRedactingHandler tests that SlackHandler works correctly
 // when wrapped with RedactingHandler (which converts []CommandResult to []any)
 func TestSlackHandler_WithRedactingHandler(t *testing.T) {
+	var mu sync.Mutex
 	var receivedMessage SlackMessage
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newMockSlackServer(t, func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
 
+		mu.Lock()
 		err = json.Unmarshal(body, &receivedMessage)
+		mu.Unlock()
 		require.NoError(t, err)
 
 		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
+	})
 
 	// Create SlackHandler
-	slackHandler := &SlackHandler{
-		webhookURL:    server.URL,
-		runID:         "test-run",
-		httpClient:    &http.Client{Timeout: 5 * time.Second},
-		level:         slog.LevelInfo,
-		backoffConfig: testBackoffConfig,
-	}
+	slackHandler := newTestSlackHandler(t, slackOptionsFor(t, server))
 
 	// Wrap with RedactingHandler (like in production)
 	var failureLogBuffer bytes.Buffer
@@ -1005,6 +1080,13 @@ func TestSlackHandler_WithRedactingHandler(t *testing.T) {
 	// Handle the record through RedactingHandler
 	err := redactingHandler.Handle(ctx, record)
 	require.NoError(t, err)
+
+	// Sending is asynchronous now, so flush before inspecting what arrived.
+	stats := slackHandler.Flush(ctx)
+	require.Equal(t, int64(1), stats.Sent, "Expected the notification to be delivered")
+
+	mu.Lock()
+	defer mu.Unlock()
 
 	// Verify the message was sent and Command Count is correct
 	assert.Contains(t, receivedMessage.Text, "test-group")

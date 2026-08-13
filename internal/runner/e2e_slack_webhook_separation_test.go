@@ -19,8 +19,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
@@ -32,13 +32,18 @@ import (
 
 // TestE2E_SlackWebhookSeparation_SuccessOnly verifies that SUCCESS webhook receives INFO logs only.
 func TestE2E_SlackWebhookSeparation_SuccessOnly(t *testing.T) {
+	// Sending is asynchronous, so the sender workers append to these slices
+	// while the test goroutine reads them.
+	var payloadMu sync.Mutex
 	var successPayloads []string
 	var errorPayloads []string
 
 	// Create mock servers for both webhooks
 	successServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		payloadMu.Lock()
 		successPayloads = append(successPayloads, string(body))
+		payloadMu.Unlock()
 		t.Logf("SUCCESS webhook received: %s", string(body))
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -46,7 +51,9 @@ func TestE2E_SlackWebhookSeparation_SuccessOnly(t *testing.T) {
 
 	errorServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		payloadMu.Lock()
 		errorPayloads = append(errorPayloads, string(body))
+		payloadMu.Unlock()
 		t.Logf("ERROR webhook received: %s", string(body))
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -62,6 +69,7 @@ func TestE2E_SlackWebhookSeparation_SuccessOnly(t *testing.T) {
 		IsDryRun:    false,
 	})
 	require.NoError(t, err)
+	defer successHandler.Close()
 
 	errorHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
 		WebhookURL:  errorServer.URL,
@@ -72,6 +80,7 @@ func TestE2E_SlackWebhookSeparation_SuccessOnly(t *testing.T) {
 		IsDryRun:    false,
 	})
 	require.NoError(t, err)
+	defer errorHandler.Close()
 
 	// Create multi-handler with both webhooks
 	multiHandler, err := logging.NewMultiHandler(successHandler, errorHandler)
@@ -121,8 +130,14 @@ func TestE2E_SlackWebhookSeparation_SuccessOnly(t *testing.T) {
 	err = runner.Execute(ctx, nil)
 	require.NoError(t, err)
 
-	// Wait for async Slack notifications
-	time.Sleep(500 * time.Millisecond)
+	// Flush instead of sleeping: sending is asynchronous, and Flush is the
+	// synchronisation point that guarantees every notification issued above has
+	// been attempted.
+	successHandler.Flush(context.Background())
+	errorHandler.Flush(context.Background())
+
+	payloadMu.Lock()
+	defer payloadMu.Unlock()
 
 	// Verify: SUCCESS webhook should receive INFO logs
 	require.NotEmpty(t, successPayloads, "SUCCESS webhook should receive notifications")
@@ -138,12 +153,17 @@ func TestE2E_SlackWebhookSeparation_SuccessOnly(t *testing.T) {
 
 // TestE2E_SlackWebhookSeparation_ErrorOnly verifies that ERROR webhook receives ERROR logs only.
 func TestE2E_SlackWebhookSeparation_ErrorOnly(t *testing.T) {
+	// Sending is asynchronous, so the sender workers append to these slices
+	// while the test goroutine reads them.
+	var payloadMu sync.Mutex
 	var successPayloads []string
 	var errorPayloads []string
 
 	successServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		payloadMu.Lock()
 		successPayloads = append(successPayloads, string(body))
+		payloadMu.Unlock()
 		t.Logf("SUCCESS webhook received: %s", string(body))
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -151,7 +171,9 @@ func TestE2E_SlackWebhookSeparation_ErrorOnly(t *testing.T) {
 
 	errorServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		payloadMu.Lock()
 		errorPayloads = append(errorPayloads, string(body))
+		payloadMu.Unlock()
 		t.Logf("ERROR webhook received: %s", string(body))
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -166,6 +188,7 @@ func TestE2E_SlackWebhookSeparation_ErrorOnly(t *testing.T) {
 		IsDryRun:    false,
 	})
 	require.NoError(t, err)
+	defer successHandler.Close()
 
 	errorHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
 		WebhookURL:  errorServer.URL,
@@ -176,6 +199,7 @@ func TestE2E_SlackWebhookSeparation_ErrorOnly(t *testing.T) {
 		IsDryRun:    false,
 	})
 	require.NoError(t, err)
+	defer errorHandler.Close()
 
 	multiHandler, err := logging.NewMultiHandler(successHandler, errorHandler)
 	require.NoError(t, err)
@@ -222,8 +246,14 @@ func TestE2E_SlackWebhookSeparation_ErrorOnly(t *testing.T) {
 	ctx := context.Background()
 	_ = runner.Execute(ctx, nil) // Expect error, don't check
 
-	// Wait for async Slack notifications
-	time.Sleep(500 * time.Millisecond)
+	// Flush instead of sleeping: sending is asynchronous, and Flush is the
+	// synchronisation point that guarantees every notification issued above has
+	// been attempted.
+	successHandler.Flush(context.Background())
+	errorHandler.Flush(context.Background())
+
+	payloadMu.Lock()
+	defer payloadMu.Unlock()
 
 	// Verify: ERROR webhook should receive ERROR logs
 	assert.Empty(t, successPayloads, "SUCCESS webhook should NOT receive notifications for failed execution")
@@ -237,19 +267,26 @@ func TestE2E_SlackWebhookSeparation_ErrorOnly(t *testing.T) {
 
 // TestE2E_SlackWebhookSeparation_WarnToError verifies that WARN logs go to ERROR webhook.
 func TestE2E_SlackWebhookSeparation_WarnToError(t *testing.T) {
+	// Sending is asynchronous, so the sender workers append to these slices
+	// while the test goroutine reads them.
+	var payloadMu sync.Mutex
 	var successPayloads []string
 	var errorPayloads []string
 
 	successServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		payloadMu.Lock()
 		successPayloads = append(successPayloads, string(body))
+		payloadMu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer successServer.Close()
 
 	errorServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		payloadMu.Lock()
 		errorPayloads = append(errorPayloads, string(body))
+		payloadMu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer errorServer.Close()
@@ -263,6 +300,7 @@ func TestE2E_SlackWebhookSeparation_WarnToError(t *testing.T) {
 		IsDryRun:    false,
 	})
 	require.NoError(t, err)
+	defer successHandler.Close()
 
 	errorHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
 		WebhookURL:  errorServer.URL,
@@ -273,6 +311,7 @@ func TestE2E_SlackWebhookSeparation_WarnToError(t *testing.T) {
 		IsDryRun:    false,
 	})
 	require.NoError(t, err)
+	defer errorHandler.Close()
 
 	multiHandler, err := logging.NewMultiHandler(successHandler, errorHandler)
 	require.NoError(t, err)
@@ -289,8 +328,14 @@ func TestE2E_SlackWebhookSeparation_WarnToError(t *testing.T) {
 	// Log a WARN message directly
 	slog.Warn("Test warning message", "slack_notify", true, "message_type", "test_warning")
 
-	// Wait for async Slack notifications
-	time.Sleep(500 * time.Millisecond)
+	// Flush instead of sleeping: sending is asynchronous, and Flush is the
+	// synchronisation point that guarantees every notification issued above has
+	// been attempted.
+	successHandler.Flush(context.Background())
+	errorHandler.Flush(context.Background())
+
+	payloadMu.Lock()
+	defer payloadMu.Unlock()
 
 	// Verify: ERROR webhook should receive WARN logs
 	assert.Empty(t, successPayloads, "SUCCESS webhook should NOT receive WARN logs")
@@ -304,11 +349,16 @@ func TestE2E_SlackWebhookSeparation_WarnToError(t *testing.T) {
 
 // TestE2E_SlackWebhookSeparation_ErrorOnlyConfig verifies that ERROR-only configuration works correctly.
 func TestE2E_SlackWebhookSeparation_ErrorOnlyConfig(t *testing.T) {
+	// Sending is asynchronous, so the sender worker appends to this slice
+	// while the test goroutine reads it.
+	var payloadMu sync.Mutex
 	var errorPayloads []string
 
 	errorServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		payloadMu.Lock()
 		errorPayloads = append(errorPayloads, string(body))
+		payloadMu.Unlock()
 		t.Logf("ERROR webhook received: %s", string(body))
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -324,6 +374,7 @@ func TestE2E_SlackWebhookSeparation_ErrorOnlyConfig(t *testing.T) {
 		IsDryRun:    false,
 	})
 	require.NoError(t, err)
+	defer errorHandler.Close()
 
 	var failureLogBuffer bytes.Buffer
 	failureHandler := slog.NewJSONHandler(&failureLogBuffer, &slog.HandlerOptions{
@@ -338,8 +389,13 @@ func TestE2E_SlackWebhookSeparation_ErrorOnlyConfig(t *testing.T) {
 	slog.Info("Success message", "slack_notify", true)
 	slog.Error("Error message", "slack_notify", true)
 
-	// Wait for async Slack notifications
-	time.Sleep(500 * time.Millisecond)
+	// Flush instead of sleeping: sending is asynchronous, and Flush is the
+	// synchronisation point that guarantees every notification issued above has
+	// been attempted.
+	errorHandler.Flush(context.Background())
+
+	payloadMu.Lock()
+	defer payloadMu.Unlock()
 
 	// Verify: ERROR webhook should only receive ERROR logs, not INFO
 	require.NotEmpty(t, errorPayloads, "ERROR webhook should receive notifications")
@@ -353,12 +409,17 @@ func TestE2E_SlackWebhookSeparation_ErrorOnlyConfig(t *testing.T) {
 
 // TestE2E_SlackWebhookSeparation_DryRunMode verifies that dry-run mode disables both webhooks.
 func TestE2E_SlackWebhookSeparation_DryRunMode(t *testing.T) {
+	// Sending is asynchronous, so the sender workers append to these slices
+	// while the test goroutine reads them.
+	var payloadMu sync.Mutex
 	var successPayloads []string
 	var errorPayloads []string
 
 	successServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		payloadMu.Lock()
 		successPayloads = append(successPayloads, string(body))
+		payloadMu.Unlock()
 		t.Logf("SUCCESS webhook received (should not happen): %s", string(body))
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -366,7 +427,9 @@ func TestE2E_SlackWebhookSeparation_DryRunMode(t *testing.T) {
 
 	errorServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		payloadMu.Lock()
 		errorPayloads = append(errorPayloads, string(body))
+		payloadMu.Unlock()
 		t.Logf("ERROR webhook received (should not happen): %s", string(body))
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -382,6 +445,7 @@ func TestE2E_SlackWebhookSeparation_DryRunMode(t *testing.T) {
 		IsDryRun:    true, // Dry-run mode
 	})
 	require.NoError(t, err)
+	defer successHandler.Close()
 
 	errorHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
 		WebhookURL:  errorServer.URL,
@@ -392,6 +456,7 @@ func TestE2E_SlackWebhookSeparation_DryRunMode(t *testing.T) {
 		IsDryRun:    true, // Dry-run mode
 	})
 	require.NoError(t, err)
+	defer errorHandler.Close()
 
 	multiHandler, err := logging.NewMultiHandler(successHandler, errorHandler)
 	require.NoError(t, err)
@@ -409,8 +474,14 @@ func TestE2E_SlackWebhookSeparation_DryRunMode(t *testing.T) {
 	slog.Info("Dry-run success", "slack_notify", true)
 	slog.Error("Dry-run error", "slack_notify", true)
 
-	// Wait for async processing
-	time.Sleep(500 * time.Millisecond)
+	// Flush instead of sleeping: sending is asynchronous, and Flush is the
+	// synchronisation point that guarantees every notification issued above has
+	// been attempted.
+	successHandler.Flush(context.Background())
+	errorHandler.Flush(context.Background())
+
+	payloadMu.Lock()
+	defer payloadMu.Unlock()
 
 	// Verify: Neither webhook should receive notifications in dry-run mode
 	assert.Empty(t, successPayloads, "SUCCESS webhook should NOT receive notifications in dry-run")
@@ -421,13 +492,18 @@ func TestE2E_SlackWebhookSeparation_DryRunMode(t *testing.T) {
 
 // TestE2E_SlackWebhookSeparation_MessageFormat tests message formatting
 func TestE2E_SlackWebhookSeparation_MessageFormat(t *testing.T) {
+	// Sending is asynchronous, so the sender worker appends to this slice
+	// while the test goroutine reads it.
+	var payloadMu sync.Mutex
 	var successPayloads []map[string]any
 
 	successServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var payload map[string]any
 		if err := json.Unmarshal(body, &payload); err == nil {
+			payloadMu.Lock()
 			successPayloads = append(successPayloads, payload)
+			payloadMu.Unlock()
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -442,6 +518,7 @@ func TestE2E_SlackWebhookSeparation_MessageFormat(t *testing.T) {
 		IsDryRun:    false,
 	})
 	require.NoError(t, err)
+	defer successHandler.Close()
 
 	var failureLogBuffer bytes.Buffer
 	failureHandler := slog.NewJSONHandler(&failureLogBuffer, &slog.HandlerOptions{
@@ -486,8 +563,13 @@ func TestE2E_SlackWebhookSeparation_MessageFormat(t *testing.T) {
 	err = runner.Execute(ctx, nil)
 	require.NoError(t, err)
 
-	// Wait for async Slack notifications
-	time.Sleep(500 * time.Millisecond)
+	// Flush instead of sleeping: sending is asynchronous, and Flush is the
+	// synchronisation point that guarantees every notification issued above has
+	// been attempted.
+	successHandler.Flush(ctx)
+
+	payloadMu.Lock()
+	defer payloadMu.Unlock()
 
 	// Verify message format
 	require.NotEmpty(t, successPayloads, "should receive at least one notification")

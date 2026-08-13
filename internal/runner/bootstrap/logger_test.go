@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -519,4 +520,76 @@ func TestAddSlackHandlers_RedactsConfiguredWebhookHost(t *testing.T) {
 	assert.NotContains(t, output, "abcdefghijklmnopqrstuvwxyz",
 		"the webhook path must not reach the log output")
 	assert.Contains(t, output, "https://mattermost.example.com/[REDACTED]")
+}
+
+// TestAddSlackHandlers_UsesSynchronousModeUntilFlushPathExists pins the interim
+// production default. An asynchronous sender is only safe once the process-exit
+// flush exists; until then a queue left behind at exit would lose notifications
+// that synchronous sending delivered. Replaced by
+// TestAddSlackHandlers_PropagatesEnvSettings in the change that adds
+// FlushSlackNotifications.
+func TestAddSlackHandlers_UsesSynchronousModeUntilFlushPathExists(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	require.NoError(t, SetupLoggerWithConfig(LoggerConfig{
+		Level: slog.LevelInfo,
+		RunID: "test-sync-default-001",
+	}, false, true))
+
+	var capturedOpts []logging.SlackHandlerOptions
+	newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
+		capturedOpts = append(capturedOpts, opts)
+		return &logging.SlackHandler{}, nil
+	}
+
+	_, err := AddSlackHandlers(SlackLoggerConfig{
+		WebhookURLSuccess: "https://hooks.slack.com/services/success",
+		WebhookURLError:   "https://hooks.slack.com/services/error",
+		AllowedHost:       "hooks.slack.com",
+		RunID:             "test-sync-default-001",
+	})
+	require.NoError(t, err)
+
+	require.Len(t, capturedOpts, 2, "both the success and the error webhook should be configured")
+	for i, opts := range capturedOpts {
+		assert.True(t, opts.Synchronous, "handler %d should be built in synchronous mode", i)
+		assert.Equal(t, phase1BaseHandlers, opts.FailureHandlers,
+			"handler %d should record send failures through the Phase 1 handlers", i)
+	}
+}
+
+// TestAddSlackHandlers_AcceptsInteractivePhase1Handlers pins that the real
+// interactive Phase 1 composition passes NewSlackHandler's Slack-free check.
+// The check fails closed, and go test's default environment is not interactive,
+// so without forcing it the *InteractiveHandler branch would only ever be
+// exercised in production -- where being rejected means the process cannot
+// start.
+func TestAddSlackHandlers_AcceptsInteractivePhase1Handlers(t *testing.T) {
+	saveAndRestoreGlobals(t)
+
+	logDir := t.TempDir()
+	require.NoError(t, SetupLoggerWithConfig(LoggerConfig{
+		Level:  slog.LevelInfo,
+		RunID:  "test-interactive-001",
+		LogDir: logDir,
+	}, true, false))
+
+	require.Contains(t, handlerTypeNames(phase1BaseHandlers), "*logging.InteractiveHandler",
+		"forceInteractive should have put an InteractiveHandler in the Phase 1 handlers")
+
+	_, err := AddSlackHandlers(SlackLoggerConfig{
+		WebhookURLError: "https://hooks.slack.com/services/error",
+		AllowedHost:     "hooks.slack.com",
+		RunID:           "test-interactive-001",
+	})
+	require.NoError(t, err)
+}
+
+// handlerTypeNames lists the concrete type of each handler, for assertions
+// about the Phase 1 composition.
+func handlerTypeNames(handlers []slog.Handler) []string {
+	names := make([]string, len(handlers))
+	for i, h := range handlers {
+		names[i] = fmt.Sprintf("%T", h)
+	}
+	return names
 }

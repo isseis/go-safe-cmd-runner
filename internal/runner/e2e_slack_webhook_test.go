@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -49,6 +50,9 @@ import (
 // Run with: go test -tags 'e2e test' -v ./internal/runner -run TestE2E_SlackWebhookWithMockServer
 func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 	// Setup: Mock Slack webhook endpoint (HTTPS for URL validation)
+	// Sending is asynchronous, so the payload slice is written by the sender
+	// worker goroutines and read by this test: it needs a mutex.
+	var payloadMu sync.Mutex
 	var receivedPayloads []string
 	mockServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -58,7 +62,9 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 			return
 		}
 
+		payloadMu.Lock()
 		receivedPayloads = append(receivedPayloads, string(body))
+		payloadMu.Unlock()
 		t.Logf("Received payload: %s", string(body))
 
 		w.WriteHeader(http.StatusOK)
@@ -81,6 +87,7 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 		LevelMode:     logging.LevelModeExactInfo, // SUCCESS webhook: INFO only
 	})
 	require.NoError(t, err, "Failed to create SUCCESS Slack handler")
+	defer successSlackHandler.Close()
 
 	errorSlackHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
 		WebhookURL:    mockServer.URL,
@@ -92,6 +99,7 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 		LevelMode:     logging.LevelModeWarnAndAbove, // ERROR webhook: WARN and above
 	})
 	require.NoError(t, err, "Failed to create ERROR Slack handler")
+	defer errorSlackHandler.Close()
 
 	// Create failure logger (stderr only, no Slack)
 	var failureLogBuffer bytes.Buffer
@@ -147,7 +155,14 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 
 	require.NoError(t, err, "command should succeed")
 
+	// Notifications are queued rather than sent inline, so flush both handlers
+	// to establish the synchronisation point the assertions below need.
+	successSlackHandler.Flush(ctx)
+	errorSlackHandler.Flush(ctx)
+
 	// Verify: Check payloads received by mock HTTP server
+	payloadMu.Lock()
+	defer payloadMu.Unlock()
 	require.NotEmpty(t, receivedPayloads, "should have sent HTTP requests to mock Slack endpoint")
 
 	var allPayloads strings.Builder

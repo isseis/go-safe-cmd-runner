@@ -1,9 +1,7 @@
 package logging
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -80,15 +78,17 @@ const (
 
 // SlackHandler is a slog.Handler that sends notifications to Slack
 type SlackHandler struct {
-	webhookURL    string
-	runID         string
-	httpClient    *http.Client
-	level         slog.Level
-	attrs         []slog.Attr // Accumulated attributes from WithAttrs calls
-	groups        []string    // Accumulated group names from WithGroup calls
-	backoffConfig BackoffConfig
-	isDryRun      bool                  // Whether running in dry-run mode (suppresses actual notifications)
-	levelMode     SlackHandlerLevelMode // Level filtering mode
+	runID     string
+	level     slog.Level
+	attrs     []slog.Attr           // Accumulated attributes from WithAttrs calls
+	groups    []string              // Accumulated group names from WithGroup calls
+	isDryRun  bool                  // Whether running in dry-run mode (suppresses actual notifications)
+	levelMode SlackHandlerLevelMode // Level filtering mode
+	// sender owns the delivery machinery. Handlers derived via WithAttrs /
+	// WithGroup share it by pointer, so one webhook configuration has one
+	// worker no matter how many derived handlers exist. It is nil for a
+	// handler built as a struct literal and in dry-run mode; see Handle.
+	sender *slackSender
 }
 
 // SlackMessage represents the structure of a Slack webhook message
@@ -135,6 +135,28 @@ type SlackHandlerOptions struct {
 	// AllowedHost is the permitted hostname used to validate the webhook URL.
 	// An empty string causes all URLs to be rejected.
 	AllowedHost string
+
+	// FailureHandlers are the leaf handlers that receive send failures and
+	// drops. NewSlackHandler builds the failure logger over them itself, so the
+	// failure path cannot be an arbitrary *slog.Logger whose chain would have to
+	// be inferred by a scan. Every element must be verifiably Slack-free:
+	// a stdlib leaf handler, one of this package's leaf handlers, a MultiHandler
+	// over such handlers, or a handler that opts in via SlackFreeHandler.
+	// NewSlackHandler rejects anything else. When empty, a stderr-only logger is
+	// used.
+	FailureHandlers []slog.Handler
+	// SendTimeout bounds one notification's delivery including retries
+	// (optional, defaults to DefaultSendTimeout).
+	SendTimeout time.Duration
+	// HighPriorityQueueSize and NormalQueueSize override the two send queues'
+	// capacities. They exist as test seams for exercising overflow behaviour
+	// without enqueueing the full production capacity; production code leaves
+	// both zero and gets defaultHighPriorityQueueSize / defaultNormalQueueSize.
+	HighPriorityQueueSize int
+	NormalQueueSize       int
+	// Synchronous disables the worker and sends inline. It is a debugging
+	// escape hatch selected by GSCR_SLACK_SYNC, not a supported mode.
+	Synchronous bool
 }
 
 // validateWebhookURL validates that the webhook URL is a valid HTTPS URL with allowed host.
@@ -189,6 +211,15 @@ func NewSlackHandler(opts SlackHandlerOptions) (*SlackHandler, error) {
 		backoffConfig = DefaultBackoffConfig
 	}
 
+	if err := verifySlackFreeHandlers(opts.FailureHandlers); err != nil {
+		return nil, fmt.Errorf("invalid failure handlers: %w", err)
+	}
+
+	failureLogger, err := newFailureLogger(opts.FailureHandlers)
+	if err != nil {
+		return nil, err
+	}
+
 	slog.Debug("Creating Slack handler",
 		slog.Bool("webhook_configured", opts.WebhookURL != ""),
 		slog.String("run_id", opts.RunID),
@@ -198,15 +229,47 @@ func NewSlackHandler(opts SlackHandlerOptions) (*SlackHandler, error) {
 		slog.Bool("dry_run", opts.IsDryRun),
 		slog.Int("level_mode", int(opts.LevelMode)))
 
-	return &SlackHandler{
-		webhookURL:    opts.WebhookURL,
-		runID:         opts.RunID,
-		httpClient:    httpClient,
-		level:         slog.LevelInfo, // Only handle info level and above
-		backoffConfig: backoffConfig,
-		isDryRun:      opts.IsDryRun,
-		levelMode:     opts.LevelMode,
-	}, nil
+	handler := &SlackHandler{
+		runID:     opts.RunID,
+		level:     slog.LevelInfo, // Only handle info level and above
+		isDryRun:  opts.IsDryRun,
+		levelMode: opts.LevelMode,
+	}
+
+	// Dry-run is defined as having no external side effects, so it gets no
+	// sender at all: no queues, no worker, nothing to flush.
+	if !opts.IsDryRun {
+		handler.sender = newSlackSender(opts, httpClient, backoffConfig, failureLogger)
+	}
+
+	return handler, nil
+}
+
+// Flush stops accepting new notifications, drains what is already queued under
+// ctx, and waits for the worker to terminate. A send already in flight is
+// re-bounded to the drain budget rather than cancelled, so it still counts as
+// Sent if it completes. Notifications still undelivered when Flush returns are
+// reported as Pending. It is safe to call concurrently and
+// repeatedly; calls after the first return the same accounting without
+// re-draining. A handler with no sender (dry-run, or built as a struct
+// literal) returns the zero value.
+func (s *SlackHandler) Flush(ctx context.Context) FlushStats {
+	if s.sender == nil {
+		return FlushStats{}
+	}
+	return s.sender.flush(ctx)
+}
+
+// Close stops accepting notifications and terminates the worker without
+// draining. It exists for teardown paths that have no notifications worth
+// delivering, such as AddSlackHandlers unwinding after a partial failure. When
+// Flush already requested a drain, Close does not override it; it waits for the
+// worker and returns the same accounting.
+func (s *SlackHandler) Close() FlushStats {
+	if s.sender == nil {
+		return FlushStats{}
+	}
+	return s.sender.close()
 }
 
 // Enabled reports whether the handler handles records at the given level
@@ -248,30 +311,59 @@ func (s *SlackHandler) Handle(ctx context.Context, r slog.Record) error {
 		return nil
 	}
 
-	// Skip actual Slack notifications in dry-run mode
-	if s.isDryRun {
-		slog.Debug("Skipping Slack notification in dry-run mode", slog.String("message_type", messageType))
+	// No sender means no delivery: dry-run mode, or a handler built as a struct
+	// literal. Building the message would be wasted work, and panicking inside
+	// a log path is the worst possible failure mode, so this returns quietly.
+	if s.sender == nil {
+		if s.isDryRun {
+			slog.Debug("Skipping Slack notification in dry-run mode", slog.String("message_type", messageType))
+		}
+		return nil
+	}
+
+	// A closed sender drops every request it receives (see enqueue/sendSync),
+	// so building the message here -- e.g. buildCommandGroupSummary iterating
+	// every command result -- would only be discarded work on the shutdown
+	// path where the process wants to exit quickly.
+	if s.sender.isClosed() {
+		req := slackRequest{messageType: messageType, runID: s.runID, level: r.Level}
+		if s.sender.synchronous {
+			return s.sender.sendSync(ctx, req)
+		}
+		s.sender.enqueue(req)
 		return nil
 	}
 
 	var message SlackMessage
 	switch messageType {
-	case "command_group_summary":
+	case messageTypeCommandGroupSummary:
 		message = s.buildCommandGroupSummary(r)
-	case "pre_execution_error":
+	case messageTypePreExecutionError:
 		message = s.buildPreExecutionError(r)
-	case "security_alert":
+	case messageTypeSecurityAlert:
 		message = s.buildSecurityAlert(r)
-	case "privileged_command_failure":
+	case messageTypePrivilegedCommandFailure:
 		message = s.buildPrivilegedCommandFailure(r)
-	case "privilege_escalation_failure":
+	case messageTypePrivilegeEscalationFail:
 		message = s.buildPrivilegeEscalationFailure(r)
 	default:
 		// Generic message
 		message = s.buildGenericMessage(r)
 	}
 
-	return s.sendToSlack(ctx, message)
+	req := slackRequest{
+		message:     &message,
+		messageType: messageType,
+		runID:       s.runID,
+		level:       r.Level,
+	}
+
+	if s.sender.synchronous {
+		return s.sender.sendSync(ctx, req)
+	}
+
+	s.sender.enqueue(req)
+	return nil
 }
 
 // WithAttrs returns a new SlackHandler with the given attributes
@@ -286,15 +378,13 @@ func (s *SlackHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	copy(newAttrs[len(s.attrs):], attrs)
 
 	return &SlackHandler{
-		webhookURL:    s.webhookURL,
-		runID:         s.runID,
-		httpClient:    s.httpClient,
-		level:         s.level,
-		attrs:         newAttrs,
-		groups:        s.groups, // Copy existing groups
-		backoffConfig: s.backoffConfig,
-		isDryRun:      s.isDryRun,
-		levelMode:     s.levelMode, // Preserve levelMode
+		runID:     s.runID,
+		level:     s.level,
+		attrs:     newAttrs,
+		groups:    s.groups, // Copy existing groups
+		isDryRun:  s.isDryRun,
+		levelMode: s.levelMode, // Preserve levelMode
+		sender:    s.sender,    // Shared by pointer: one worker per webhook
 	}
 }
 
@@ -310,15 +400,13 @@ func (s *SlackHandler) WithGroup(name string) slog.Handler {
 	newGroups[len(s.groups)] = name
 
 	return &SlackHandler{
-		webhookURL:    s.webhookURL,
-		runID:         s.runID,
-		httpClient:    s.httpClient,
-		level:         s.level,
-		attrs:         s.attrs, // Copy existing attributes
-		groups:        newGroups,
-		backoffConfig: s.backoffConfig,
-		isDryRun:      s.isDryRun,
-		levelMode:     s.levelMode, // Preserve levelMode
+		runID:     s.runID,
+		level:     s.level,
+		attrs:     s.attrs, // Copy existing attributes
+		groups:    newGroups,
+		isDryRun:  s.isDryRun,
+		levelMode: s.levelMode, // Preserve levelMode
+		sender:    s.sender,    // Shared by pointer: one worker per webhook
 	}
 }
 
@@ -856,72 +944,6 @@ func sanitizeErrorForLog(err error) string {
 		return "url error: " + urlErr.Op + " without URL"
 	}
 	return err.Error()
-}
-
-// sendToSlack sends a message to Slack with retry logic
-func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) error {
-	payload, err := json.Marshal(message)
-	if err != nil {
-		slog.Error("Failed to marshal Slack message", slog.String("error", sanitizeErrorForLog(err)), slog.String("run_id", s.runID))
-		return fmt.Errorf("failed to marshal Slack message: %w", err)
-	}
-
-	slog.Debug("Sending Slack notification", slog.String("run_id", s.runID), slog.String("message_text", message.Text))
-
-	var lastErr error
-
-	backoffIntervals := generateBackoffIntervals(s.backoffConfig.Base, s.backoffConfig.RetryCount)
-	for attempt := 0; attempt <= s.backoffConfig.RetryCount; attempt++ {
-		if attempt > 0 {
-			// Get backoff interval from predefined list
-			backoff := backoffIntervals[attempt-1]
-			slog.Debug("Retrying Slack notification", slog.Int("attempt", attempt+1), slog.Float64("backoff_seconds", backoff.Seconds()), slog.String("run_id", s.runID))
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(backoff):
-			}
-		}
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.webhookURL, bytes.NewBuffer(payload))
-		if err != nil {
-			lastErr = fmt.Errorf("failed to create request: %w", err)
-			slog.Warn("Failed to create Slack request", slog.String("error", sanitizeErrorForLog(err)), slog.Int("attempt", attempt+1), slog.String("run_id", s.runID))
-			continue
-		}
-
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := s.httpClient.Do(req) //nolint:gosec // G704: URL is a configured Slack webhook, not user-controlled
-		if err != nil {
-			lastErr = fmt.Errorf("failed to send request: %w", err)
-			slog.Warn("Failed to send Slack request", slog.String("error", sanitizeErrorForLog(err)), slog.Int("attempt", attempt+1), slog.String("run_id", s.runID)) //nolint:gosec // G706: error is sanitized via sanitizeErrorForLog, run_id is an internal identifier
-			continue
-		}
-
-		statusCode := resp.StatusCode
-		if err := resp.Body.Close(); err != nil {
-			slog.Warn("Failed to close response body", slog.String("error", sanitizeErrorForLog(err))) //nolint:gosec // G706: error is sanitized via sanitizeErrorForLog
-		}
-
-		if statusCode >= 200 && statusCode < 300 {
-			slog.Info("Slack notification sent successfully", slog.Int("status_code", statusCode), slog.String("run_id", s.runID)) //nolint:gosec // G706: run_id is an internal identifier, not user input
-			return nil                                                                                                             // Success
-		}
-
-		if statusCode == 429 || statusCode >= 500 {
-			lastErr = fmt.Errorf("%w: %d", ErrServerError, statusCode)
-			slog.Warn("Slack server error, retrying", slog.Int("status_code", statusCode), slog.Int("attempt", attempt+1), slog.String("run_id", s.runID)) //nolint:gosec // G706: run_id is an internal identifier, not user input
-			continue                                                                                                                                       // Retry for rate limiting and server errors
-		}
-
-		// Client error (4xx except 429) - don't retry
-		slog.Error("Slack client error", slog.Int("status_code", statusCode), slog.String("run_id", s.runID)) //nolint:gosec // G706: run_id is an internal identifier, not user input
-		return fmt.Errorf("%w: %d", ErrClientError, statusCode)
-	}
-
-	slog.Error("Failed to send Slack notification after all retries", slog.Int("attempts", len(backoffIntervals)+1), slog.String("last_error", sanitizeErrorForLog(lastErr)), slog.String("run_id", s.runID)) //nolint:gosec // G706: error is sanitized via sanitizeErrorForLog, run_id is an internal identifier
-	return fmt.Errorf("failed to send to Slack after %d attempts: %w", len(backoffIntervals)+1, lastErr)
 }
 
 // applyAccumulatedContext applies accumulated attributes and groups to the record
