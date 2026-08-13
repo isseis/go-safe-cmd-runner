@@ -29,10 +29,10 @@ flowchart TD
     class Dispatch1,Dispatch2 enhanced
 ```
 
-- **1段目(非ブロッキング)**: `highPriority` にリクエストがあれば無条件で取り出し、処理してループ先頭に戻る。`normal` や `shutdown` は一切見ない。
-- **2段目(ブロッキング)**: 1段目が `default` に落ちた(=その瞬間 `highPriority` が空だった)場合のみ到達する。ここでは `highPriority` / `normal` / `shutdown` の3方向を同時に待つ。
+- 1段目(非ブロッキング): `highPriority` にリクエストがあれば無条件で取り出し、処理してループ先頭に戻る。`normal` や `shutdown` は一切見ない。
+- 2段目(ブロッキング): 1段目が `default` に落ちた(=その瞬間 `highPriority` が空だった)場合のみ到達する。ここでは `highPriority` / `normal` / `shutdown` の3方向を同時に待つ。
 
-Go の `select` は準備できているケースが複数あれば**ランダムに1つ**を選ぶ仕様のため、もし1段構成で `highPriority` と `normal` を同じ `select` に並べると、`normal` に大量のリクエストがある間 `highPriority`(セキュリティアラート等)が待たされる可能性がある。1段目を分離することで「`highPriority` が空になるまで `normal` には絶対に手を付けない」という優先度を保証している。
+Go の `select` は準備できているケースが複数あればランダムに1つを選ぶ仕様のため、もし1段構成で `highPriority` と `normal` を同じ `select` に並べると、`normal` に大量のリクエストがある間 `highPriority`(セキュリティアラート等)が待たされる可能性がある。1段目を分離することで「`highPriority` が空になるまで `normal` には絶対に手を付けない」という優先度を保証している。
 
 2段目でも `highPriority` を含めているのは、1段目の `default` を通過してから2段目に入るまでの間に、別ゴルーチンが `highPriority` へ新規投入する可能性があるため(TOCTOU)。3方向まとめて待つことで、その投入を取りこぼさない。
 
@@ -53,7 +53,7 @@ if first {
 sd.mu.Unlock()
 ```
 
-一方 `serve()` は、リクエストがどちらのキューから取り出されたかに関わらず、送信前に必ずこの `sd.closed`/`sd.shutdownState` をロック越しに**その場で再読み込み**する。
+一方 `serve()` は、リクエストがどちらのキューから取り出されたかに関わらず、送信前に必ずこの `sd.closed`/`sd.shutdownState` をロック越しにその場で再読み込みする。
 
 ```go
 sd.mu.Lock()
@@ -63,11 +63,11 @@ draining := sd.closed && !state.abandon
 
 つまり `sd.shutdown` チャンネルの受信(2段目の `select` でのみ発生する)は、シャットダウンを知る唯一の手段ではない。`highPriority` に大量の残件があり1段目のタイトループが回り続けていても、その中で呼ばれる `dispatch → serve` は毎回この状態をチェックしているため、`terminate()` が `closed = true` をセットした直後の1リクエスト目で気づく。`sd.shutdown` チャンネルは、両キューが空でワーカーが完全にアイドルな時にスリープ状態から起こすためのものであり(`run()` のコメント参照)、ワーカーが忙しい間の主たる通知経路ではない。
 
-`draining == true` と判定された瞬間、`serve()` は `(state.ctx, false)` を返し、`dispatch()` は即座に残りのキューを `drain()` に丸ごと引き渡す。`drain()` は各送信を**1回きり・短いタイムアウト(`perSendTimeout`)**で行い、flush 全体の締切(`ctx.Err()`)に達したら残りを `reportUndelivered(reasonFlushDeadline)` として記録して打ち切る。したがって、`highPriority`/`normal` に大量の残件があっても、フルリトライ(最大約34秒)で1件ずつ律儀に処理され続けることはない。
+`draining == true` と判定された瞬間、`serve()` は `(state.ctx, false)` を返し、`dispatch()` は即座に残りのキューを `drain()` に丸ごと引き渡す。`drain()` は各送信を1回きり・短いタイムアウト(`perSendTimeout`)で行い、flush 全体の締切(`ctx.Err()`)に達したら残りを `reportUndelivered(reasonFlushDeadline)` として記録して打ち切る。したがって、`highPriority`/`normal` に大量の残件があっても、フルリトライ(最大約34秒)で1件ずつ律儀に処理され続けることはない。
 
 ### in-flight 送信の短縮
 
-`terminate()` が呼ばれた瞬間にちょうど送信中(HTTP 待ち)だったリクエストが**最大1件**だけ存在し得る。これは `boundInFlightLocked` が `sd.inFlightCancel`(送信開始時に `serve()` が登録する)を使って処理する。
+`terminate()` が呼ばれた瞬間にちょうど送信中(HTTP 待ち)だったリクエストが最大1件だけ存在し得る。これは `boundInFlightLocked` が `sd.inFlightCancel`(送信開始時に `serve()` が登録する)を使って処理する。
 
 ```mermaid
 flowchart TD
@@ -83,8 +83,8 @@ flowchart TD
     class D problem
 ```
 
-- **abandon(`Close()`)**: 配送先が失われた以上、待つ理由がないので即座にキャンセルする。
-- **drain(`Flush()`)**: プロセス終了直前に発行されたばかりの通知はミリ秒単位で完了間近であることが多く、まさに flush が届けたい対象なので、打ち切るのではなく flush 予算まで再バウンドする。
+- abandon(`Close()`): 配送先が失われた以上、待つ理由がないので即座にキャンセルする。
+- drain(`Flush()`): プロセス終了直前に発行されたばかりの通知はミリ秒単位で完了間近であることが多く、まさに flush が届けたい対象なので、打ち切るのではなく flush 予算まで再バウンドする。
 
 この短縮はテスト用の同期点 `afterDequeue`(本番では未設定)で、`serve()` の登録区間とシャットダウンのタイミングを制御して検証している。
 
@@ -130,9 +130,9 @@ if sd.hasWorker() {
 
 ## 設計判断の根拠
 
-- **ロック駆動のシャットダウン伝播**: チャンネル駆動だけに頼ると、忙しいワーカーがシャットダウンに気づくのが「キューが空になるまで」遅れてしまう。`sd.closed`/`sd.shutdownState` を `serve()` が毎回再読み込みする設計にすることで、忙しい時も暇な時も一貫して即座に気づける。
-- **1回きり送信での drain**: flush 中の残りキューにフルリトライを適用すると、締切の意味が失われる。`draining` を検出した時点で単一試行・短縮タイムアウトに切り替えることで、締切を実効的に守る。
-- **`syncInFlight` による同期モードの待ち合わせ**: 同期モードは元々ワーカーを持たない設計だったため、`Close()`/`Flush()` が完了を待つ相手が存在しなかった。これが「進行中の送信が完了する前に `FlushStats` がキャッシュされ、以後永久に古い値を返す」というバグの原因だった(Pending が実際には配送済み/失敗済みであるにも関わらず、いつまでも残ってしまう)。`WaitGroup` を使った待ち合わせは、非同期モードの `<-sd.done` と対称な最小限の追加である。
+- ロック駆動のシャットダウン伝播: チャンネル駆動だけに頼ると、忙しいワーカーがシャットダウンに気づくのが「キューが空になるまで」遅れてしまう。`sd.closed`/`sd.shutdownState` を `serve()` が毎回再読み込みする設計にすることで、忙しい時も暇な時も一貫して即座に気づける。
+- 1回きり送信での drain: flush 中の残りキューにフルリトライを適用すると、締切の意味が失われる。`draining` を検出した時点で単一試行・短縮タイムアウトに切り替えることで、締切を実効的に守る。
+- `syncInFlight` による同期モードの待ち合わせ: 同期モードは元々ワーカーを持たない設計だったため、`Close()`/`Flush()` が完了を待つ相手が存在しなかった。これが「進行中の送信が完了する前に `FlushStats` がキャッシュされ、以後永久に古い値を返す」というバグの原因だった(Pending が実際には配送済み/失敗済みであるにも関わらず、いつまでも残ってしまう)。`WaitGroup` を使った待ち合わせは、非同期モードの `<-sd.done` と対称な最小限の追加である。
 
 ## テスト
 

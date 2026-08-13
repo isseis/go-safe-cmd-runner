@@ -29,10 +29,10 @@ flowchart TD
     class Dispatch1,Dispatch2 enhanced
 ```
 
-- **Stage 1 (non-blocking)**: if `highPriority` has a request, take it unconditionally, process it, and go back to the top of the loop. `normal` and `shutdown` are never looked at.
-- **Stage 2 (blocking)**: reached only when stage 1 fell through to `default` (meaning `highPriority` was empty at that instant). Here it waits on all three directions at once: `highPriority` / `normal` / `shutdown`.
+- Stage 1 (non-blocking): if `highPriority` has a request, take it unconditionally, process it, and go back to the top of the loop. `normal` and `shutdown` are never looked at.
+- Stage 2 (blocking): reached only when stage 1 fell through to `default` (meaning `highPriority` was empty at that instant). Here it waits on all three directions at once: `highPriority` / `normal` / `shutdown`.
 
-Because Go's `select` picks **one ready case at random** when multiple are ready, putting `highPriority` and `normal` in the same single-stage `select` would risk `highPriority` (security alerts, etc.) being kept waiting while `normal` has a large backlog. Splitting stage 1 out guarantees the priority rule "never touch `normal` while `highPriority` is non-empty."
+Because Go's `select` picks one ready case at random when multiple are ready, putting `highPriority` and `normal` in the same single-stage `select` would risk `highPriority` (security alerts, etc.) being kept waiting while `normal` has a large backlog. Splitting stage 1 out guarantees the priority rule "never touch `normal` while `highPriority` is non-empty."
 
 Stage 2 also includes `highPriority` because, between stage 1 falling through to `default` and stage 2 being entered, another goroutine could enqueue a new item into `highPriority` (a TOCTOU window). Waiting on all three together makes sure that arrival is not missed.
 
@@ -53,7 +53,7 @@ if first {
 sd.mu.Unlock()
 ```
 
-`serve()`, on the other hand, always **rereads** `sd.closed`/`sd.shutdownState` under the lock right before sending, regardless of which queue the request was taken from.
+`serve()`, on the other hand, always rereads `sd.closed`/`sd.shutdownState` under the lock right before sending, regardless of which queue the request was taken from.
 
 ```go
 sd.mu.Lock()
@@ -63,11 +63,11 @@ draining := sd.closed && !state.abandon
 
 In other words, receiving on the `sd.shutdown` channel (which only happens in stage 2's `select`) is not the only way to learn about a shutdown. Even while `highPriority` has a large backlog and stage 1's tight loop keeps spinning, the `dispatch → serve` call inside it checks this state every time, so it notices the shutdown on the very first request processed after `terminate()` sets `closed = true`. The `sd.shutdown` channel exists to wake the worker from sleep when both queues are empty and it is fully idle (see the comment on `run()`); it is not the primary notification path while the worker is busy.
 
-The instant `draining == true` is observed, `serve()` returns `(state.ctx, false)`, and `dispatch()` immediately hands the rest of the queues over to `drain()`. `drain()` sends each request with a **single attempt and a short timeout** (`perSendTimeout`), and once the overall flush deadline (`ctx.Err()`) is reached, it records the remainder as `reportUndelivered(reasonFlushDeadline)` and stops. So even with a large backlog in `highPriority`/`normal`, the worker never dutifully works through it one item at a time with full retries (up to roughly 34 seconds each).
+The instant `draining == true` is observed, `serve()` returns `(state.ctx, false)`, and `dispatch()` immediately hands the rest of the queues over to `drain()`. `drain()` sends each request with a single attempt and a short timeout (`perSendTimeout`), and once the overall flush deadline (`ctx.Err()`) is reached, it records the remainder as `reportUndelivered(reasonFlushDeadline)` and stops. So even with a large backlog in `highPriority`/`normal`, the worker never dutifully works through it one item at a time with full retries (up to roughly 34 seconds each).
 
 ### Shortening the In-Flight Send
 
-At most **one** request can be mid-send (waiting on HTTP) at the exact moment `terminate()` is called. `boundInFlightLocked` handles this using `sd.inFlightCancel`, which `serve()` registers when a send begins.
+At most one request can be mid-send (waiting on HTTP) at the exact moment `terminate()` is called. `boundInFlightLocked` handles this using `sd.inFlightCancel`, which `serve()` registers when a send begins.
 
 ```mermaid
 flowchart TD
@@ -83,8 +83,8 @@ flowchart TD
     class D problem
 ```
 
-- **abandon (`Close()`)**: with the destination already gone, there is no reason to wait, so it cancels immediately.
-- **drain (`Flush()`)**: a notification issued just before process exit is usually milliseconds from delivery and is exactly the one flush exists to deliver, so rather than cutting it off, it is re-bounded to the flush budget.
+- abandon (`Close()`): with the destination already gone, there is no reason to wait, so it cancels immediately.
+- drain (`Flush()`): a notification issued just before process exit is usually milliseconds from delivery and is exactly the one flush exists to deliver, so rather than cutting it off, it is re-bounded to the flush budget.
 
 This shortening is verified with a test-only synchronization point, `afterDequeue` (unset in production), which controls the timing between `serve()`'s registration section and the shutdown.
 
@@ -130,9 +130,9 @@ This makes `Close()`/`Flush()` correctly wait, even in synchronous mode, for an 
 
 ## Rationale for the Design
 
-- **Lock-driven shutdown propagation**: relying on the channel alone would delay a busy worker's awareness of shutdown until "the queue is empty." Having `serve()` reread `sd.closed`/`sd.shutdownState` every time makes it notice immediately and consistently, whether busy or idle.
-- **Single-attempt sends during drain**: applying full retries to the remaining queue during a flush would defeat the purpose of the deadline. Switching to a single attempt and a shortened timeout the moment `draining` is detected keeps the deadline effective.
-- **`syncInFlight` for waiting in synchronous mode**: synchronous mode was originally designed without a worker, so `Close()`/`Flush()` had nothing to wait for completion. This was the cause of a bug where `FlushStats` was cached before an in-flight send completed and then permanently returned a stale value (`Pending` staying nonzero forever even though the notification had actually been delivered or had failed). Waiting via a `WaitGroup` is the minimal addition, symmetric to asynchronous mode's `<-sd.done`.
+- Lock-driven shutdown propagation: relying on the channel alone would delay a busy worker's awareness of shutdown until "the queue is empty." Having `serve()` reread `sd.closed`/`sd.shutdownState` every time makes it notice immediately and consistently, whether busy or idle.
+- Single-attempt sends during drain: applying full retries to the remaining queue during a flush would defeat the purpose of the deadline. Switching to a single attempt and a shortened timeout the moment `draining` is detected keeps the deadline effective.
+- `syncInFlight` for waiting in synchronous mode: synchronous mode was originally designed without a worker, so `Close()`/`Flush()` had nothing to wait for completion. This was the cause of a bug where `FlushStats` was cached before an in-flight send completed and then permanently returned a stale value (`Pending` staying nonzero forever even though the notification had actually been delivered or had failed). Waiting via a `WaitGroup` is the minimal addition, symmetric to asynchronous mode's `<-sd.done`.
 
 ## Tests
 
