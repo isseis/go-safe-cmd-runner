@@ -541,11 +541,13 @@ type Manager interface {
 **一元化データ編集基盤**:
 ```go
 // 場所: internal/redaction/redactor.go
+// Config は NewConfig によってのみ構築され、パターンの検証と事前コンパイルが行われる。
+// フィールドは非公開であり、置換文字列は Placeholder() で読み出す。
 type Config struct {
-    Placeholder      string  // LogPlaceholder / TextPlaceholder は統一され単一フィールドに
-    Patterns         *SensitivePatterns
-    KeyValuePatterns []string
-    ValueDetector    *ValueDetector // AWSキー・GitHubトークン・PEM形式などの値ベース検出
+    placeholder      string
+    patterns         *SensitivePatterns
+    keyValuePatterns []KeyValuePattern // 各要素は入力中で一致させる Literal と、適用する規則（キー値／次トークン／ヘッダー値）を宣言する Kind を持つ
+    valueDetector    *ValueDetector    // AWSキー・GitHubトークン・PEM形式などの値ベース検出
 }
 
 func (c *Config) RedactText(text string) string {
@@ -595,20 +597,23 @@ logger := slog.New(redactedHandler)
 ```go
 // 場所: internal/logging/slack_handler.go の SlackHandler 型
 type SlackHandler struct {
-    webhookURL    string
-    runID         string
-    httpClient    *http.Client
-    level         slog.Level
-    attrs         []slog.Attr
-    groups        []string
-    backoffConfig BackoffConfig
-    isDryRun      bool                  // dry-run実行時はSlack通知を送信しない
-    levelMode     SlackHandlerLevelMode // ログレベルによる通知要否の制御モード
+    runID     string
+    level     slog.Level
+    attrs     []slog.Attr
+    groups    []string
+    isDryRun  bool                  // dry-run実行時はSlack通知を送信しない
+    levelMode SlackHandlerLevelMode // ログレベルによる通知要否の制御モード
+    // sender は送信機構（送信キュー・ワーカー goroutine・カウンタ）を所有する。
+    // WithAttrs / WithGroup で派生したハンドラはこれをポインタで共有するため、
+    // 1 つの webhook 設定に対するワーカー数は派生インスタンスの数によらず 1 本である。
+    // 構造体リテラルで構築したハンドラとドライラン時は nil になる。
+    sender *slackSender
 }
 ```
 - RedactingHandlerによってラップされているため、第2層の編集が適用される
 - 第1層（CommandResult作成時）の編集により、コマンド出力は格納前に編集済み
 - コマンド出力の長さ制限（stdout: 1000文字、stderr: 500文字）
+- 通知は非同期で配送される。`Handle` はメッセージを送信キューへ投入して即座に戻り、HTTP 送信は webhook ごとのワーカー goroutine がリトライを伴って行う。`WithAttrs` / `WithGroup` で派生したハンドラは送信機構をポインタで共有するため、1 つの webhook 設定に対するワーカー数は有界である。プロセス終了時には `FlushSlackNotifications` が期限内に残件を flush し、送信失敗・破棄は送信失敗ロガーへ記録される。
 
 **ログセキュリティ設定**:
 ```go
@@ -858,23 +863,22 @@ func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error)
 ```go
 // 場所: internal/logging/slack_handler.go
 type SlackHandler struct {
-    webhookURL    string
-    runID         string
-    httpClient    *http.Client
-    level         slog.Level
-    attrs         []slog.Attr
-    groups        []string
-    backoffConfig BackoffConfig
-    isDryRun      bool                  // dry-run実行時はSlack通知を送信しない
-    levelMode     SlackHandlerLevelMode // ログレベルによる通知要否の制御モード
+    runID     string
+    level     slog.Level
+    attrs     []slog.Attr
+    groups    []string
+    isDryRun  bool                  // dry-run実行時はSlack通知を送信しない
+    levelMode SlackHandlerLevelMode // ログレベルによる通知要否の制御モード
+    sender    *slackSender          // 共有される送信機構。internal/logging/slack_sender.go を参照
 }
 ```
 
 **安全な通知処理**:
+- 通知は非同期で配送される。`Handle` はメッセージを送信キューへ投入して即座に戻り、HTTP 送信は webhook ごとのワーカー goroutine がリトライを伴って行う。`WithAttrs` / `WithGroup` で派生したハンドラは送信機構をポインタで共有するため、ワーカー数は有界に保たれる。
 - RedactingHandlerによるラップで機密データを自動編集（第2層）
 - CommandResult格納時点での事前編集により、コマンド出力は通知前に編集済み（第1層）
+- 送信失敗・破棄は送信失敗ロガー（Slack を含まないハンドラ列）へ記録され、Slack へは戻らない
 - 設定可能な通知チャンネル
-- レート制限とエラー処理
 - 安全なWebhook URL管理
 
 #### セキュリティ保証
