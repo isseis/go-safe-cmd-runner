@@ -18,31 +18,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// slowEndpointDelay is how long the mock endpoint takes to answer. It is long
-// enough that the send cannot complete before the assertion by chance, and
-// short enough to stay well inside the default flush deadline.
+// slowEndpointDelay makes the assertion below about the flush rather than about
+// timing: the worker cannot finish the send on its own before the test reaches
+// it, and the delay still fits well inside the default flush deadline.
 const slowEndpointDelay = 300 * time.Millisecond
 
 // TestIntegration_RunnerFlushesSlackOnNormalExit covers the exit path this task
 // adds: notifications are queued during the run, so a notification issued at
 // the very end of a run only reaches Slack because main flushes before exiting.
 //
-// The test drives that sequence in-process -- SetupLoggerWithConfig,
-// AddSlackHandlers, emit, FlushSlackNotifications -- rather than starting the
-// binary with `go run .` the way integration_pre_execution_error_test.go does.
-// The production send path verifies the server's certificate, and a separate
-// process gives no place to hand it the mock server's client, so a real run
-// against httptest would fail on `x509: certificate signed by unknown
-// authority` before reaching what is under test. Replacing the Slack handler
-// factory is the one seam where that client can be injected, because
-// AddSlackHandlers builds the handler options itself.
+// It drives that sequence in-process rather than starting the binary with
+// `go run .` as integration_pre_execution_error_test.go does: the production
+// send path verifies the server's certificate, and a separate process offers
+// nowhere to hand it the mock server's client, so the run would fail on
+// `x509: certificate signed by unknown authority` before reaching what is under
+// test. The handler factory is that seam, since AddSlackHandlers builds the
+// handler options itself.
 func TestIntegration_RunnerFlushesSlackOnNormalExit(t *testing.T) {
 	received := &receivedNotifications{}
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// The delay is what makes the assertion below about the flush rather
-		// than about timing: the worker cannot have finished this send on its
-		// own before the assertion, so a non-zero count means the flush waited
-		// for the drain.
 		time.Sleep(slowEndpointDelay)
 		received.add()
 		w.WriteHeader(http.StatusOK)
@@ -76,8 +70,7 @@ func TestIntegration_RunnerFlushesSlackOnNormalExit(t *testing.T) {
 		RunID:           "test-flush-on-exit-001",
 	})
 	require.NoError(t, err)
-	// The flush below is what stops the worker; this cleanup covers the paths
-	// where an assertion fails before it runs.
+	// For the paths where an assertion fails before the flush below runs.
 	t.Cleanup(bootstrap.FlushSlackNotifications)
 
 	// The last thing a failing run does before returning to main.
@@ -91,8 +84,8 @@ func TestIntegration_RunnerFlushesSlackOnNormalExit(t *testing.T) {
 		"the notification issued during the run should have been delivered by the exit flush")
 }
 
-// receivedNotifications counts the requests the mock endpoint served. The
-// worker sends from its own goroutine, so the counter needs a lock.
+// receivedNotifications is locked because the worker sends from its own
+// goroutine.
 type receivedNotifications struct {
 	mu sync.Mutex
 	n  int
