@@ -61,7 +61,7 @@ state := sd.shutdownState
 draining := sd.closed && !state.abandon
 ```
 
-つまり `sd.shutdown` チャンネルの受信(2段目の `select` でのみ発生する)は、シャットダウンを知る唯一の手段ではない。`highPriority` に大量の残件があり1段目のタイトループが回り続けていても、その中で呼ばれる `dispatch → serve` は毎回この状態をチェックしているため、`terminate()` が `closed = true` をセットした直後の1リクエスト目で気づく。`sd.shutdown` チャンネルは、両キューが空でワーカーが完全にアイドルな時に眠りから起こすためのものであり(`run()` のコメント参照)、ワーカーが忙しい間の主たる通知経路ではない。
+つまり `sd.shutdown` チャンネルの受信(2段目の `select` でのみ発生する)は、シャットダウンを知る唯一の手段ではない。`highPriority` に大量の残件があり1段目のタイトループが回り続けていても、その中で呼ばれる `dispatch → serve` は毎回この状態をチェックしているため、`terminate()` が `closed = true` をセットした直後の1リクエスト目で気づく。`sd.shutdown` チャンネルは、両キューが空でワーカーが完全にアイドルな時にスリープ状態から起こすためのものであり(`run()` のコメント参照)、ワーカーが忙しい間の主たる通知経路ではない。
 
 `draining == true` と判定された瞬間、`serve()` は `(state.ctx, false)` を返し、`dispatch()` は即座に残りのキューを `drain()` に丸ごと引き渡す。`drain()` は各送信を**1回きり・短いタイムアウト(`perSendTimeout`)**で行い、flush 全体の締切(`ctx.Err()`)に達したら残りを `reportUndelivered(reasonFlushDeadline)` として記録して打ち切る。したがって、`highPriority`/`normal` に大量の残件があっても、フルリトライ(最大約34秒)で1件ずつ律儀に処理され続けることはない。
 
