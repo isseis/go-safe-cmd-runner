@@ -548,7 +548,10 @@ Prevents sensitive information such as passwords, API keys, and tokens from bein
 type Config struct {
     Placeholder      string  // LogPlaceholder / TextPlaceholder were unified into a single field
     Patterns         *SensitivePatterns
-    KeyValuePatterns []string
+    // KeyValuePatterns holds the key-name-based patterns; each element has a
+    // Literal to match in the input and a Kind that declares the rule to apply
+    // (key-value / next token / header value).
+    KeyValuePatterns []KeyValuePattern
     ValueDetector    *ValueDetector // value-based detection of AWS keys, GitHub tokens, PEM format, etc.
 }
 
@@ -598,20 +601,24 @@ logger := slog.New(redactedHandler)
 ```go
 // Location: internal/logging/slack_handler.go, the SlackHandler type
 type SlackHandler struct {
-    webhookURL    string
-    runID         string
-    httpClient    *http.Client
-    level         slog.Level
-    attrs         []slog.Attr
-    groups        []string
-    backoffConfig BackoffConfig
-    isDryRun      bool                  // suppresses Slack notifications during dry-run execution
-    levelMode     SlackHandlerLevelMode // controls whether notification is required based on log level
+    runID     string
+    level     slog.Level
+    attrs     []slog.Attr
+    groups    []string
+    isDryRun  bool                  // suppresses Slack notifications during dry-run execution
+    levelMode SlackHandlerLevelMode // controls whether notification is required based on log level
+    // sender owns the delivery machinery (send queues, worker goroutine,
+    // counters). Handlers derived via WithAttrs / WithGroup share it by
+    // pointer, so one webhook configuration has one worker no matter how many
+    // derived handlers exist. It is nil for a handler built as a struct
+    // literal and in dry-run mode.
+    sender *slackSender
 }
 ```
 - Wrapped by RedactingHandler, so Layer 2 redaction is applied
 - Command output is already redacted before storage via Layer 1 (CommandResult creation time), so it is redacted before notification
 - Length limits on command output (stdout: 1000 characters, stderr: 500 characters)
+- Notifications are delivered asynchronously: `Handle` only enqueues a message and returns without waiting for the HTTP send. A per-webhook worker goroutine performs the send with retries. `WithAttrs` / `WithGroup` derived handlers share the sender by pointer, so one webhook configuration has one worker no matter how many derived handlers exist. On process exit, `FlushSlackNotifications` flushes remaining notifications within a configurable deadline; send failures and drops are recorded to the failure logger.
 
 **Log Security Configuration**:
 ```go
@@ -861,23 +868,22 @@ Provides secure notification functionality for critical security events while pr
 ```go
 // Location: internal/logging/slack_handler.go
 type SlackHandler struct {
-    webhookURL    string
-    runID         string
-    httpClient    *http.Client
-    level         slog.Level
-    attrs         []slog.Attr
-    groups        []string
-    backoffConfig BackoffConfig
-    isDryRun      bool                  // suppresses Slack notifications during dry-run execution
-    levelMode     SlackHandlerLevelMode // controls whether notification is required based on log level
+    runID     string
+    level     slog.Level
+    attrs     []slog.Attr
+    groups    []string
+    isDryRun  bool                  // suppresses Slack notifications during dry-run execution
+    levelMode SlackHandlerLevelMode // controls whether notification is required based on log level
+    sender    *slackSender          // shared delivery machinery; see internal/logging/slack_sender.go
 }
 ```
 
 **Secure Notification Handling**:
+- Notifications are delivered asynchronously: `Handle` only enqueues a message and returns, and a per-webhook worker goroutine performs the HTTP send with retries. The worker is shared by all handlers derived via `WithAttrs` / `WithGroup`, keeping the goroutine count bounded.
 - Wrapped by RedactingHandler, so sensitive data is automatically redacted (Layer 2)
 - Command output is pre-redacted at CommandResult creation time, so it is already redacted before notification (Layer 1)
 - Configurable notification channels
-- Rate limiting and error handling
+- Send failures and drops are written to the failure logger (a Slack-free handler chain), never back to Slack
 - Secure webhook URL management
 
 #### Security Guarantees

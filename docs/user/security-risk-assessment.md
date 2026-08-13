@@ -236,8 +236,8 @@ type RedactingHandler struct {
 
 func (c *Config) RedactText(text string) string {
     // Apply redaction for key=value patterns
-    for _, key := range c.KeyValuePatterns {
-        result = c.performKeyValueRedaction(result, key, c.TextPlaceholder)
+    for i := range c.compiled {
+        result = c.compiled[i].apply(result)
     }
     return result
 }
@@ -248,15 +248,25 @@ In addition to key-name-based redaction, the system detects and masks secrets by
 
 - AWS access key IDs (`AKIA`/`ASIA` prefix)
 - GitHub tokens (`ghp_`/`gho_`/`ghs_` prefix)
+- GitHub fine-grained PATs (`github_pat_` prefix)
 - Slack tokens (`xoxb-`/`xoxp-`/`xoxa-` prefix)
+- Slack tokens with the additional prefixes (`xapp-`/`xoxe-`/`xoxs-`)
 - GCP service account private key IDs
 - PEM private key blocks (`-----BEGIN ... PRIVATE KEY-----`)
 - OAuth `Bearer` tokens (standard JWT and opaque format)
+- JWTs (three-segment Base64URL strings starting with `eyJ`)
 - URL-embedded credentials (`scheme://user:pass@host`)
+- Slack webhook URLs (paths under `https://hooks.slack.com/services/`, and all paths under the host configured in `slack_allowed_host`)
 
 **Scope**: Value-based detection is applied to command arguments, stdout, stderr, and environment variable values through the unified `RedactText` function. This single integration point covers all output destinations — file logs, syslog, and Slack notifications — ensuring no path bypasses masking.
 
 **Limitations**: Detection is limited to the known formats listed above. Unknown credential formats, custom token schemes, and high-entropy strings are not detected. Secrets split across log fields or stream chunk boundaries may also be missed. Unlike the other formats, the GCP entry is not a self-identifying value format: a service-account key ID is an opaque hex string indistinguishable from any other hash by value alone, so it is only recognized next to its JSON field name (`"private_key_id"`). The actual GCP credential material — the `private_key` PEM block — is still masked independent of key name by the PEM detector above. **Configuring jobs to send full command output to Slack is strongly discouraged**; the masking layer is a defense-in-depth measure, not a substitute for avoiding unnecessary exposure.
+
+The key-name-based layer has its own limitations. When a value that is not enclosed in quotes contains spaces (`password=my secret phrase`), there is no mechanical way to determine where the value ends, so the second and subsequent words remain in plain text. Adding a common English word to `KeyValuePatterns` can cause prose to be redacted. Group B keys (`key` / `token` / `secret`) are redacted even for non-sensitive values when they appear as a field name of quoted structured data, or when they follow an identifier-internal boundary (`-` / `.`) — for example `"key": "us-east-1"` or `Public-key: not supported`. Also, if an added key matches the common-word key list (`key` / `token` / `secret`), it is treated as group B (strict leading boundary) regardless of who added it, and never gets the loose boundary. Group B keys are not captured in unquoted YAML: forms appearing at the start of a line, right after an indentation, or right after a space (such as `token: ghp_xxx`) are not redacted. For the same reason, a form with spaces around `=` (such as `secret = abc`) is not redacted either (`secret=abc` and `secret = "abc"` are captured). Group A keys (`password`, `api_key`, etc.) do not have this restriction. As a workaround, a more specific key name that contains the key in question (such as `auth_token`) can be added to `KeyValuePatterns`.
+
+Value-format detection of Slack webhook URLs replaces the whole path of URLs under the host configured in `slack_allowed_host` (including Slack-compatible services). This detection is only active on paths that go through the `RedactingHandler` with the configured host wired in. Components constructed before the configuration file is read (the Phase 1 logger and the verification manager's `security.Validator`) use the default redaction config, so value-format detection of webhook URLs does not work on those paths and only the other fixed patterns apply.
+
+**Slack notification delivery**: Slack notifications are sent asynchronously; writing a log record does not wait for Slack to respond. At process exit, undelivered notifications are flushed within a default deadline of 15 seconds (configurable via `GSCR_SLACK_FLUSH_TIMEOUT`). Notifications can be lost when Slack is unreachable or when the process is forcibly terminated (SIGKILL, power loss, OOM kill, etc.). The notification content itself is written synchronously to the JSON log file (0600) before delivery to Slack, so a complete record identifiable by `run_id` remains. A normal restart (SIGTERM / SIGINT) is flushed. Notifications are sent serially by a single worker, so if Slack keeps failing to respond, subsequent notifications can be delayed by up to `queue length × send deadline (default 40 seconds)`. The send queue has two priorities: the high-priority queue (security alerts, etc.) holds 32 notifications and the normal queue holds 128. Setting `GSCR_SLACK_SYNC=1` reverts to synchronous sending, but it is a debugging escape hatch for incident investigation, not for normal operation.
 
 ### 2. Risk-Based Command Control (`internal/runner/base/risk/`)
 

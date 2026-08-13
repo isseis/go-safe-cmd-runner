@@ -230,8 +230,8 @@ type RedactingHandler struct {
 
 func (c *Config) RedactText(text string) string {
     // key=value パターンのリダクションを適用
-    for _, key := range c.KeyValuePatterns {
-        result = c.performKeyValueRedaction(result, key, c.TextPlaceholder)
+    for i := range c.compiled {
+        result = c.compiled[i].apply(result)
     }
     return result
 }
@@ -242,15 +242,25 @@ func (c *Config) RedactText(text string) string {
 
 - AWS アクセスキーID（`AKIA`/`ASIA`プレフィックス）
 - GitHub トークン（`ghp_`/`gho_`/`ghs_`プレフィックス）
+- GitHub fine-grained PAT（`github_pat_`プレフィックス）
 - Slack トークン（`xoxb-`/`xoxp-`/`xoxa-`プレフィックス）
+- Slack の追加プレフィックストークン（`xapp-`/`xoxe-`/`xoxs-`）
 - GCP サービスアカウントのプライベートキーID
 - PEM 秘密鍵ブロック（`-----BEGIN ... PRIVATE KEY-----`）
 - OAuth `Bearer` トークン（標準JWTおよびopaque形式）
+- JWT（`eyJ` で始まる 3 セグメントの Base64URL 文字列）
 - URL埋め込み credential（`scheme://user:pass@host`）
+- Slack webhook URL（`https://hooks.slack.com/services/` 以降のパス、および `slack_allowed_host` に設定したホスト配下の全パス）
 
 **適用範囲**: 値ベース検出は `RedactText` 関数を介してコマンド引数、stdout、stderr、環境変数値に適用され、全出力先（ファイルログ、syslog、Slack通知）を一括でカバーします。
 
 **限界**: 検出は上記の既知フォーマットに限られます。未知の credential 形式、独自トークンスキーム、高エントロピー文字列は検出されません。ログフィールドやストリームチャンク境界を跨いで分割された秘密値も取りこぼす可能性があります。GCP の項目のみ他と性質が異なり、値そのものに識別可能なフォーマットがありません（サービスアカウントのキーIDは単なる16進文字列であり、値だけでは他のハッシュ値と区別できません）。そのため JSON のフィールド名（`"private_key_id"`）と隣接する場合のみ検出されます。実際の GCP 資格情報本体である `private_key` の PEM ブロックは、上記の PEM 検出によりキー名に依存せずマスクされます。**Slackにコマンド全体の出力を載せる設定は避けるべきです**。マスキング層は多層防御の一環であり、不必要な露出の代替手段ではありません。
+
+キー名ベースの層にも限界があります。引用符で囲まれていない値に空白が含まれる場合（`password=my secret phrase`）、値の終端を機械的に判定する手段がないため、2 語目以降が平文で残ります。一般的な英単語を `KeyValuePatterns` に追加すると、散文の一部が置換される可能性があります。群 B のキー（`key` / `token` / `secret`）が引用符付きの構造化データのフィールド名として現れる場合、または識別子内境界（`-` / `.`）に続いて現れる場合は、値が非機密でも置換されます（例: `"key": "us-east-1"`、`Public-key: not supported`）。また、追加したキーが一般語キー一覧（`key` / `token` / `secret`）に一致する場合は、利用者が明示的に追加しても群 B（厳しい先頭境界）として扱われ、緩い境界にはなりません。群 B のキーは引用符のない YAML では捕捉されません（`token: ghp_xxx` のように行頭・インデント直後・空白の直後に現れる形は置換されません）。同じ原因により、`secret = abc` のように `=` の前後に空白がある形も置換されません（`secret=abc` と `secret = "abc"` は捕捉されます）。群 A のキー（`password`、`api_key` など）にはこの制限はありません。回避策として、当該キーを含むより特定的なキー名（`auth_token` など）を `KeyValuePatterns` に追加できます。
+
+Slack webhook URL の値形式検出は、`slack_allowed_host` に設定したホスト配下の URL のパス全体を置換します（Slack 互換サービスを含む）。この検出は、設定されたホストが配線された `RedactingHandler` を経由する経路でのみ有効です。設定ファイルの読み込み前に構築される構成（Phase 1 のログ出力、検証マネージャの `security.Validator`）は既定の redaction 設定を使うため、これらの経路では webhook URL の値形式検出が働かず、他の固定パターンのみが適用されます。
+
+**Slack 通知の配送方式**: Slack 通知は非同期に送信されます。ログの書き込みは Slack の応答を待ちません。プロセス終了時には、未送信の通知が既定 15 秒の期限（`GSCR_SLACK_FLUSH_TIMEOUT` で変更可能）の内で flush されます。Slack が到達不能な場合やプロセスが強制終了された場合（SIGKILL、電源断、OOM kill など）には、送信キューに残った通知が失われる可能性があります。ただし通知の内容自体は、Slack への配送前に JSON ログファイル（0600）へ同期的に書き込まれているため、`run_id` で特定できる完全な記録が残ります。通常の再起動（SIGTERM / SIGINT）では flush が行われます。通知はワーカー 1 本の直列処理で送信されるため、Slack が応答しない状態が続くと、後続の通知の到達が最大で「送信キュー長 × 送信デッドライン（既定 40 秒）」遅延し得ます。送信キューは優先度 2 段で、高優先度キュー（セキュリティアラート等）は容量 32、通常キューは容量 128 です。`GSCR_SLACK_SYNC=1` を設定すると同期送信に戻せますが、これは障害調査用のデバッグ手段であり、通常運用向けではありません。
 
 ### 2. リスクベースコマンド制御 (`internal/runner/base/risk/`)
 

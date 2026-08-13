@@ -659,21 +659,21 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 #### ステップ 6-1: 利用者向け文書
 
-- [ ] `docs/user/security-risk-assessment.ja.md` の「値ベース検出」の一覧（241〜249 行目付近）に 4 項目を追加する: GitHub fine-grained PAT（`github_pat_` プレフィックス）、Slack の追加プレフィックストークン（`xapp-`/`xoxe-`/`xoxs-`）、JWT（`eyJ` で始まる 3 セグメントの Base64URL 文字列）、Slack webhook URL（`https://hooks.slack.com/services/` 以降、および `slack_allowed_host` に設定したホスト配下の全パス）。
-- [ ] 同ファイルの「限界」の段落に、引用符で囲まれていない値に空白が含まれる場合は 2 語目以降が平文で残ること（02_architecture.md 3.2.2）を追記する。あわせて webhook URL の検出について、`slack_allowed_host` に設定したホスト配下の URL はパス全体が置換されること（Slack 互換サービスを含む）、その一方で `audit` パッケージと `security.Validator` が持つ既定の redaction 設定にはこのホストが配線されておらず、`RedactingHandler` を経由しないロガーへ直接書く経路では固定パターンのみが働くことを記す（02_architecture.md 3.3.3「残る限界」）。
-- [ ] 同ファイルに、一般的な英単語を `KeyValuePatterns` へ追加すると散文が置換されうること、および群 B のキーが引用符付きの構造化データのフィールド名として現れる場合、または識別子内境界（`-` / `.`）に続いて現れる場合は、非機密でも置換されること（`"key": "us-east-1"`、`Public-key: not supported`）を追記する。あわせて、追加したキーが一般語キー一覧（`key` / `token` / `secret`）に一致する場合は、利用者が明示的に追加しても群 B（厳しい先頭境界）になり、緩い境界にはならないことを記す（02_architecture.md 3.2.4）。
-- [ ] `docs/user/security-risk-assessment.ja.md` の `RedactText` の抜粋（233 行目付近）を現行の実装に合わせる。ループ変数が `KeyValuePattern` になったこと、および `c.TextPlaceholder` が `c.Placeholder` に統一済みであること（抜粋が古いまま残っている）を直す。
-- [ ] 同ファイルの「限界」の段落に、**群 B のキー（`key` / `token` / `secret`）は引用符のない YAML では捕捉されない**ことを追記する（02_architecture.md 3.2.6 の残存リスク）。`token: ghp_xxx` のように行頭・インデント直後・空白の直後に現れる形は、厳しい先頭境界を満たさないため置換されない。JSON のように引用符が付く形（`"token": "..."`）、および `_` / `-` / `.` に続く形（`api_key:`、`Public-key:`）は捕捉される。**同じ原因により `secret = abc` のように `=` の前後に空白がある形も置換されない**ことを併記する（`secret=abc` と `secret = "abc"` は捕捉される）。群 A のキー（`password`、`api_key` など）にはこの制限はない。回避策として、当該キーを含むより特定的なキー名（`auth_token` など）を `KeyValuePatterns` に追加できることを併記する。
-- [ ] 同ファイルに Slack 通知の配送方式の節を追加する: 非同期に送信されること、プロセス終了時に既定 15 秒の期限で flush されること、到達不能時や強制終了時には通知が失われうること（02_architecture.md 2.4 の表の要約）、通知内容自体はログファイルに残ること、ワーカー 1 本の直列処理による最悪遅延の目安、`GSCR_SLACK_SYNC=1` が通常運用向けではないデバッグ用の退避手段であること。
-- [ ] 追加した記述の裏付けを取る: 既定値（flush 期限 15 秒、送信デッドライン 40 秒、キュー容量 32 / 128）を `internal/logging/slack_sender.go` の定数と 1 件ずつ照合し、`GSCR_SLACK_SYNC` の判定条件を `bootstrap.parseSlackEnvSettings` の実装と照合する。
-- [ ] `/mktrans` で `docs/user/security-risk-assessment.md` に反映する。
+- [x] `docs/user/security-risk-assessment.ja.md` の「値ベース検出」の一覧（241〜249 行目付近）に 4 項目を追加する: GitHub fine-grained PAT（`github_pat_` プレフィックス）、Slack の追加プレフィックストークン（`xapp-`/`xoxe-`/`xoxs-`）、JWT（`eyJ` で始まる 3 セグメントの Base64URL 文字列）、Slack webhook URL（`https://hooks.slack.com/services/` 以降、および `slack_allowed_host` に設定したホスト配下の全パス）。
+- [x] 同ファイルの「限界」の段落に、引用符で囲まれていない値に空白が含まれる場合は 2 語目以降が平文で残ること（02_architecture.md 3.2.2）を追記する。あわせて webhook URL の検出について、`slack_allowed_host` に設定したホスト配下の URL はパス全体が置換されること（Slack 互換サービスを含む）、その一方で TOML 読み込み前に構築される構成（Phase 1 のロガーと `bootstrap.NewVerificationManager` の `security.Validator`）はホスト未配線の既定 redaction 設定を使うため、`RedactingHandler` を経由しないロガーへ直接書く経路では webhook URL の値形式検出が働かず、他の固定パターンのみが働くことを記す（02_architecture.md 3.3.3「残る限界」。`audit` パッケージと runner 側の `security.Validator` は PR-3 で `WithRedactionConfig` により配線済みであるため限界に含めない）。
+- [x] 同ファイルに、一般的な英単語を `KeyValuePatterns` へ追加すると散文が置換されうること、および群 B のキーが引用符付きの構造化データのフィールド名として現れる場合、または識別子内境界（`-` / `.`）に続いて現れる場合は、非機密でも置換されること（`"key": "us-east-1"`、`Public-key: not supported`）を追記する。あわせて、追加したキーが一般語キー一覧（`key` / `token` / `secret`）に一致する場合は、利用者が明示的に追加しても群 B（厳しい先頭境界）になり、緩い境界にはならないことを記す（02_architecture.md 3.2.4）。
+- [x] `docs/user/security-risk-assessment.ja.md` の `RedactText` の抜粋（233 行目付近）を現行の実装に合わせる。**本計画からの変更**: 現行実装は `NewConfig` が事前コンパイルした `compiled` パターンの並びを走査する（`for i := range c.compiled { result = c.compiled[i].apply(result) }`）ため、抜粋をこの形へ更新した。`c.TextPlaceholder` は `c.Placeholder` に統一済みであり抜粋から消えた。
+- [x] 同ファイルの「限界」の段落に、**群 B のキー（`key` / `token` / `secret`）は引用符のない YAML では捕捉されない**ことを追記する（02_architecture.md 3.2.6 の残存リスク）。`token: ghp_xxx` のように行頭・インデント直後・空白の直後に現れる形は、厳しい先頭境界を満たさないため置換されない。JSON のように引用符が付く形（`"token": "..."`）、および `_` / `-` / `.` に続く形（`api_key:`、`Public-key:`）は捕捉される。**同じ原因により `secret = abc` のように `=` の前後に空白がある形も置換されない**ことを併記する（`secret=abc` と `secret = "abc"` は捕捉される）。群 A のキー（`password`、`api_key` など）にはこの制限はない。回避策として、当該キーを含むより特定的なキー名（`auth_token` など）を `KeyValuePatterns` に追加できることを併記する。
+- [x] 同ファイルに Slack 通知の配送方式の節を追加する: 非同期に送信されること、プロセス終了時に既定 15 秒の期限で flush されること、到達不能時や強制終了時には通知が失われうること（02_architecture.md 2.4 の表の要約）、通知内容自体はログファイルに残ること、ワーカー 1 本の直列処理による最悪遅延の目安、`GSCR_SLACK_SYNC=1` が通常運用向けではないデバッグ用の退避手段であること。
+- [x] 追加した記述の裏付けを取る: 既定値（flush 期限 15 秒、送信デッドライン 40 秒、キュー容量 32 / 128）を `internal/logging/slack_sender.go` の定数と 1 件ずつ照合し、`GSCR_SLACK_SYNC` の判定条件を `bootstrap.parseSlackEnvSettings` の実装と照合する。
+- [x] `/mktrans` で `docs/user/security-risk-assessment.md` に反映する。
 
 #### ステップ 6-2: 開発者向け文書と用語集
 
-- [ ] `docs/dev/architecture_design/security-architecture.md` の 600 行目と 863 行目の `SlackHandler` 構造体定義を、`webhookURL` / `httpClient` / `backoffConfig` を除き `sender *slackSender` を加えた形へ更新する。周辺の説明文にも非同期配送になった旨を追記する。
-- [ ] `docs/dev/architecture_design/security-architecture.ja.md` の 597 行目と 860 行目に同じ更新を行う。
-- [ ] 同 2 ファイルの `redaction.Config` 構造体の抜粋（`security-architecture.md` 551 行目、`security-architecture.ja.md` 547 行目）の `KeyValuePatterns []string` を `KeyValuePatterns []KeyValuePattern` へ更新し、各要素が `Literal` と `Kind` を持つこと、`Kind` が適用規則（キー／接頭辞／ヘッダー）を宣言することを 1 文で添える（02_architecture.md 3.2.1）。
-- [ ] `docs/translation_glossary.md` に未登録の用語を追加する: 値形式検出（value-format detection）、キー名ベース redaction（key-name-based redaction）、区切り（separator）、キー名の先頭境界（leading boundary）、送信キュー（send queue）、ワーカー（worker）、受付停止（stop accepting）、破棄（drop）、flush 期限（flush deadline）、終了要求（shutdown request）、drain / abandon。用語の表記は 02_architecture.md 冒頭の用語表と一字一句一致させる。既登録の 4 語（送信失敗ロガー・flush・送信機構・終了要求チャネル）は重複させない。
+- [x] `docs/dev/architecture_design/security-architecture.md` の 600 行目と 863 行目の `SlackHandler` 構造体定義を、`webhookURL` / `httpClient` / `backoffConfig` を除き `sender *slackSender` を加えた形へ更新する。周辺の説明文にも非同期配送になった旨を追記する。
+- [x] `docs/dev/architecture_design/security-architecture.ja.md` の 597 行目と 860 行目に同じ更新を行う。
+- [x] 同 2 ファイルの `redaction.Config` 構造体の抜粋（`security-architecture.md` 551 行目、`security-architecture.ja.md` 547 行目）の `KeyValuePatterns []string` を `KeyValuePatterns []KeyValuePattern` へ更新し、各要素が `Literal` と `Kind` を持つこと、`Kind` が適用規則（キー／接頭辞／ヘッダー）を宣言することを 1 文で添える（02_architecture.md 3.2.1）。
+- [x] `docs/translation_glossary.md` に未登録の用語を追加する: 値形式検出（value-format detection）、キー名ベース redaction（key-name-based redaction）、区切り（separator）、キー名の先頭境界（leading boundary）、送信キュー（send queue）、ワーカー（worker）、受付停止（stop accepting）、破棄（drop）、flush 期限（flush deadline）、終了要求（shutdown request）、drain / abandon。用語の表記は 02_architecture.md 冒頭の用語表と一字一句一致させる。既登録の 4 語（送信失敗ロガー・flush・送信機構・終了要求チャネル）は重複させない。
 
 **完了条件**: `make verify-docs` が通り、8 章の受け入れ基準検証がすべて期待どおりの結果を返すこと。
 
@@ -786,13 +786,13 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 作業の進捗は各ステップのチェックボックスで追跡する。ここでは PR 単位のマージ完了だけを記録する。PR の区切りと根拠は 3.2 を参照。
 
-- [ ] PR-1 マージ済み（対象ステップ: 1-1 / 1-2）
-- [ ] PR-2 マージ済み（対象ステップ: 2-1 / 2-2）
-- [ ] PR-3 マージ済み（対象ステップ: 3-1 / 3-2）
-- [ ] PR-4 マージ済み（対象ステップ: 4-1 / 4-2）
-- [ ] PR-5 マージ済み（対象ステップ: 4-3）
-- [ ] PR-6 マージ済み（対象ステップ: 4-4 / 4-5 / 4-6 / 4-7）
-- [ ] PR-7 マージ済み（対象ステップ: 5-1 / 5-2）— 非同期を本番の既定にする PR
+- [x] PR-1 マージ済み（対象ステップ: 1-1 / 1-2）
+- [x] PR-2 マージ済み（対象ステップ: 2-1 / 2-2）
+- [x] PR-3 マージ済み（対象ステップ: 3-1 / 3-2）
+- [x] PR-4 マージ済み（対象ステップ: 4-1 / 4-2）
+- [x] PR-5 マージ済み（対象ステップ: 4-3）
+- [x] PR-6 マージ済み（対象ステップ: 4-4 / 4-5 / 4-6 / 4-7）
+- [x] PR-7 マージ済み（対象ステップ: 5-1 / 5-2）— 非同期を本番の既定にする PR
 - [ ] PR-8 マージ済み（対象ステップ: 6-1 / 6-2）
 
 ### 6.2 テストヘルパー
