@@ -201,6 +201,12 @@ func main() {
 	// Run main logic and capture exit code
 	exitCode := mainWithExitCode(runID)
 
+	// Slack notifications are queued, not sent inline, so the records issued
+	// during the run are delivered here before the process goes away. This
+	// comes first because ReportRedactionFailures writes only to the failure
+	// logger and stderr, never to Slack, so it cannot add to what needs sending.
+	bootstrap.FlushSlackNotifications()
+
 	// Ensure redaction failures are reported before exit
 	bootstrap.ReportRedactionFailures()
 

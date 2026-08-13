@@ -2,15 +2,24 @@ package bootstrap
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,7 +36,13 @@ func saveAndRestoreGlobals(t *testing.T) {
 	origRedactionErrorCollector := redactionErrorCollector
 	origRedactionReporter := redactionReporter
 	origNewSlackHandlerFunc := newSlackHandlerFunc
+	origSlackHandlers := slackHandlers
 	t.Cleanup(func() {
+		// Close before restoring: any handler this test registered owns a
+		// worker goroutine, and once the global is overwritten nothing can
+		// reach it to stop it (rule R2).
+		closeSlackHandlers(slackHandlers)
+		slackHandlers = origSlackHandlers
 		slog.SetDefault(origLogger)
 		phase1BaseHandlers = origHandlers
 		phase1FailureLogger = origFailureLogger
@@ -522,39 +537,497 @@ func TestAddSlackHandlers_RedactsConfiguredWebhookHost(t *testing.T) {
 	assert.Contains(t, output, "https://mattermost.example.com/[REDACTED]")
 }
 
-// TestAddSlackHandlers_UsesSynchronousModeUntilFlushPathExists pins the interim
-// production default. An asynchronous sender is only safe once the process-exit
-// flush exists; until then a queue left behind at exit would lose notifications
-// that synchronous sending delivered. Replaced by
-// TestAddSlackHandlers_PropagatesEnvSettings in the change that adds
-// FlushSlackNotifications.
-func TestAddSlackHandlers_UsesSynchronousModeUntilFlushPathExists(t *testing.T) {
+func TestParseSlackEnvSettings(t *testing.T) {
+	tests := []struct {
+		name            string
+		env             map[string]string
+		wantSend        time.Duration
+		wantFlush       time.Duration
+		wantSynchronous bool
+		wantInvalid     []string
+	}{
+		{
+			name:      "unset falls back to the package defaults",
+			env:       nil,
+			wantSend:  logging.DefaultSendTimeout,
+			wantFlush: logging.DefaultFlushTimeout,
+		},
+		{
+			name: "valid durations are taken as given",
+			env: map[string]string{
+				logging.SlackSendTimeoutEnvVar:  "5s",
+				logging.SlackFlushTimeoutEnvVar: "1m30s",
+			},
+			wantSend:  5 * time.Second,
+			wantFlush: 90 * time.Second,
+		},
+		{
+			name:        "unparsable duration falls back and is reported",
+			env:         map[string]string{logging.SlackSendTimeoutEnvVar: "30 seconds"},
+			wantSend:    logging.DefaultSendTimeout,
+			wantFlush:   logging.DefaultFlushTimeout,
+			wantInvalid: []string{logging.SlackSendTimeoutEnvVar},
+		},
+		{
+			name: "zero and negative durations are refused",
+			env: map[string]string{
+				logging.SlackSendTimeoutEnvVar:  "0s",
+				logging.SlackFlushTimeoutEnvVar: "-5s",
+			},
+			wantSend:    logging.DefaultSendTimeout,
+			wantFlush:   logging.DefaultFlushTimeout,
+			wantInvalid: []string{logging.SlackSendTimeoutEnvVar, logging.SlackFlushTimeoutEnvVar},
+		},
+		{
+			name:            "GSCR_SLACK_SYNC=1 selects synchronous sending",
+			env:             map[string]string{logging.SlackSyncEnvVar: "1"},
+			wantSend:        logging.DefaultSendTimeout,
+			wantFlush:       logging.DefaultFlushTimeout,
+			wantSynchronous: true,
+		},
+		{
+			name:      "GSCR_SLACK_SYNC=true is not an accepted spelling",
+			env:       map[string]string{logging.SlackSyncEnvVar: "true"},
+			wantSend:  logging.DefaultSendTimeout,
+			wantFlush: logging.DefaultFlushTimeout,
+		},
+		{
+			name:      "GSCR_SLACK_SYNC=0 leaves asynchronous sending in place",
+			env:       map[string]string{logging.SlackSyncEnvVar: "0"},
+			wantSend:  logging.DefaultSendTimeout,
+			wantFlush: logging.DefaultFlushTimeout,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseSlackEnvSettings(func(name string) string { return tt.env[name] })
+
+			assert.Equal(t, tt.wantSend, got.SendTimeout)
+			assert.Equal(t, tt.wantFlush, got.FlushTimeout)
+			assert.Equal(t, tt.wantSynchronous, got.Synchronous)
+			assert.Equal(t, tt.wantInvalid, got.invalidVars)
+		})
+	}
+}
+
+// TestParseSlackEnvSettings_ReportedNameCarriesNoValue pins that a mistyped
+// value stays out of the report. The send-failure logger does not pass through
+// the redaction layer, so whatever an operator put in the variable must not be
+// carried along with the variable's name.
+func TestParseSlackEnvSettings_ReportedNameCarriesNoValue(t *testing.T) {
+	const secretish = "not-a-duration-s3cr3t"
+
 	saveAndRestoreGlobals(t)
+	var consoleBuffer bytes.Buffer
 	require.NoError(t, SetupLoggerWithConfig(LoggerConfig{
-		Level: slog.LevelInfo,
-		RunID: "test-sync-default-001",
+		Level:         slog.LevelInfo,
+		RunID:         "test-env-report-001",
+		ConsoleWriter: &consoleBuffer,
 	}, false, true))
 
-	var capturedOpts []logging.SlackHandlerOptions
-	newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
-		capturedOpts = append(capturedOpts, opts)
+	settings := parseSlackEnvSettings(func(name string) string {
+		if name == logging.SlackSendTimeoutEnvVar {
+			return secretish
+		}
+		return ""
+	})
+	require.Equal(t, []string{logging.SlackSendTimeoutEnvVar}, settings.invalidVars)
+
+	reportInvalidEnvSettings(settings)
+
+	output := consoleBuffer.String()
+	assert.Contains(t, output, logging.SlackSendTimeoutEnvVar,
+		"the operator needs to know which variable was ignored")
+	assert.NotContains(t, output, secretish,
+		"the rejected value must not reach the log output")
+}
+
+// TestAddSlackHandlers_PropagatesEnvSettings verifies that the delivery
+// settings read from the environment reach NewSlackHandler, and that the send
+// path's own records are routed to the Phase 1 handlers.
+func TestAddSlackHandlers_PropagatesEnvSettings(t *testing.T) {
+	tests := []struct {
+		name            string
+		env             map[string]string
+		wantSend        time.Duration
+		wantSynchronous bool
+	}{
+		{
+			name:     "defaults: asynchronous with the default send timeout",
+			env:      nil,
+			wantSend: logging.DefaultSendTimeout,
+		},
+		{
+			name: "overrides reach the handler options",
+			env: map[string]string{
+				logging.SlackSendTimeoutEnvVar: "7s",
+				logging.SlackSyncEnvVar:        "1",
+			},
+			wantSend:        7 * time.Second,
+			wantSynchronous: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			saveAndRestoreGlobals(t)
+			for name, value := range tt.env {
+				t.Setenv(name, value)
+			}
+			require.NoError(t, SetupLoggerWithConfig(LoggerConfig{
+				Level: slog.LevelInfo,
+				RunID: "test-env-settings-001",
+			}, false, true))
+
+			var capturedOpts []logging.SlackHandlerOptions
+			newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
+				capturedOpts = append(capturedOpts, opts)
+				return &logging.SlackHandler{}, nil
+			}
+
+			_, err := AddSlackHandlers(SlackLoggerConfig{
+				WebhookURLSuccess: "https://hooks.slack.com/services/success",
+				WebhookURLError:   "https://hooks.slack.com/services/error",
+				AllowedHost:       "hooks.slack.com",
+				RunID:             "test-env-settings-001",
+			})
+			require.NoError(t, err)
+
+			require.Len(t, capturedOpts, 2, "both the success and the error webhook should be configured")
+			for i, opts := range capturedOpts {
+				assert.Equal(t, tt.wantSend, opts.SendTimeout, "handler %d send timeout", i)
+				assert.Equal(t, tt.wantSynchronous, opts.Synchronous, "handler %d send mode", i)
+				assert.Equal(t, phase1BaseHandlers, opts.FailureHandlers,
+					"handler %d should record send failures through the Phase 1 handlers", i)
+			}
+		})
+	}
+}
+
+// TestAddSlackHandlers_SlackHandlersComeAfterPhase1Handlers pins the ordering
+// the asynchronous design depends on: because MultiHandler calls its handlers
+// in order, a record is written to the log file before it is queued for Slack,
+// so a notification lost at exit still has a complete record on disk.
+func TestAddSlackHandlers_SlackHandlersComeAfterPhase1Handlers(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	require.NoError(t, SetupLoggerWithConfig(LoggerConfig{
+		Level:  slog.LevelInfo,
+		RunID:  "test-handler-order-001",
+		LogDir: t.TempDir(),
+	}, false, true))
+
+	newSlackHandlerFunc = func(_ logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
 		return &logging.SlackHandler{}, nil
+	}
+
+	basePhase1 := slices.Clone(phase1BaseHandlers)
+	require.NotEmpty(t, basePhase1, "Phase 1 should have created at least one handler")
+
+	_, err := AddSlackHandlers(SlackLoggerConfig{
+		WebhookURLSuccess: "https://hooks.slack.com/services/success",
+		WebhookURLError:   "https://hooks.slack.com/services/error",
+		AllowedHost:       "hooks.slack.com",
+		RunID:             "test-handler-order-001",
+	})
+	require.NoError(t, err)
+
+	redactingHandler, ok := slog.Default().Handler().(*redaction.RedactingHandler)
+	require.True(t, ok, "AddSlackHandlers should install a RedactingHandler")
+	multiHandler, ok := redactingHandler.Handler().(*logging.MultiHandler)
+	require.True(t, ok, "the RedactingHandler should wrap a MultiHandler")
+
+	handlers := multiHandler.Handlers()
+	require.Len(t, handlers, len(basePhase1)+2, "two Slack handlers should have been appended")
+	assert.Equal(t, basePhase1, handlers[:len(basePhase1)],
+		"the Phase 1 handlers should keep their positions at the front")
+	for i, h := range handlers[len(basePhase1):] {
+		assert.IsType(t, &logging.SlackHandler{}, h,
+			"handler %d after the Phase 1 handlers should be a Slack handler", i)
+	}
+}
+
+// TestAddSlackHandlers_ClosesFirstHandlerOnSecondFailure verifies the
+// partial-failure rule: a handler created before the failure owns a worker that
+// this call is the only owner of, so it must not be left running.
+//
+// Closure is observed the way rule R3 prescribes for this package: a
+// notification submitted to a closed handler is dropped, and the drop is
+// recorded with the sender_closed reason on the Phase 1 handlers.
+func TestAddSlackHandlers_ClosesFirstHandlerOnSecondFailure(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	consoleBuffer := &syncBuffer{}
+	require.NoError(t, SetupLoggerWithConfig(LoggerConfig{
+		Level:         slog.LevelInfo,
+		RunID:         "test-partial-failure-001",
+		ConsoleWriter: consoleBuffer,
+	}, false, true))
+
+	server, requests := newRecordingSlackServer(t)
+	errSecondHandler := errors.New("second handler unavailable")
+
+	var first *logging.SlackHandler
+	newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
+		if first != nil {
+			return nil, errSecondHandler
+		}
+		handler, err := logging.NewSlackHandler(withMockServer(t, opts, server))
+		if err != nil {
+			return nil, err
+		}
+		t.Cleanup(func() { handler.Close() })
+		first = handler
+		return handler, nil
 	}
 
 	_, err := AddSlackHandlers(SlackLoggerConfig{
 		WebhookURLSuccess: "https://hooks.slack.com/services/success",
 		WebhookURLError:   "https://hooks.slack.com/services/error",
 		AllowedHost:       "hooks.slack.com",
-		RunID:             "test-sync-default-001",
+		RunID:             "test-partial-failure-001",
 	})
+	require.ErrorIs(t, err, errSecondHandler)
+	require.NotNil(t, first, "the success handler should have been created before the failure")
+	assert.Empty(t, slackHandlers, "a failed rebuild must register no handlers")
+
+	consoleBuffer.Reset()
+	submitSlackNotification(t, first)
+
+	assert.Contains(t, consoleBuffer.String(), "sender_closed",
+		"a notification submitted to the closed handler should be recorded as dropped")
+	assert.Empty(t, requests.paths(), "the closed handler must not send anything")
+}
+
+// TestAddSlackHandlers_ClosesPreviousHandlersOnReinvocation verifies the
+// re-invocation rule: the second call replaces the default logger, after which
+// nothing could reach the first call's workers to stop them.
+func TestAddSlackHandlers_ClosesPreviousHandlersOnReinvocation(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	consoleBuffer := &syncBuffer{}
+	require.NoError(t, SetupLoggerWithConfig(LoggerConfig{
+		Level:         slog.LevelInfo,
+		RunID:         "test-reinvocation-001",
+		ConsoleWriter: consoleBuffer,
+	}, false, true))
+
+	server, requests := newRecordingSlackServer(t)
+	var created []*logging.SlackHandler
+	newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
+		handler, err := logging.NewSlackHandler(withMockServer(t, opts, server))
+		if err != nil {
+			return nil, err
+		}
+		t.Cleanup(func() { handler.Close() })
+		created = append(created, handler)
+		return handler, nil
+	}
+
+	config := SlackLoggerConfig{
+		WebhookURLError: "https://hooks.slack.com/services/error",
+		AllowedHost:     "hooks.slack.com",
+		RunID:           "test-reinvocation-001",
+	}
+	_, err := AddSlackHandlers(config)
+	require.NoError(t, err)
+	_, err = AddSlackHandlers(config)
 	require.NoError(t, err)
 
-	require.Len(t, capturedOpts, 2, "both the success and the error webhook should be configured")
-	for i, opts := range capturedOpts {
-		assert.True(t, opts.Synchronous, "handler %d should be built in synchronous mode", i)
-		assert.Equal(t, phase1BaseHandlers, opts.FailureHandlers,
-			"handler %d should record send failures through the Phase 1 handlers", i)
+	require.Len(t, created, 2, "each call should have created its own handler")
+	require.Len(t, slackHandlers, 1, "only the second call's handler should stay registered")
+	assert.Same(t, created[1], slackHandlers[0].handler)
+
+	consoleBuffer.Reset()
+	submitSlackNotification(t, created[0])
+	assert.Contains(t, consoleBuffer.String(), "sender_closed",
+		"the first call's handler should have been closed by the second call")
+
+	consoleBuffer.Reset()
+	submitSlackNotification(t, created[1])
+	assert.NotContains(t, consoleBuffer.String(), "sender_closed",
+		"the second call's handler should still be accepting")
+	FlushSlackNotifications()
+	assert.Len(t, requests.paths(), 1,
+		"exactly the notification submitted to the live handler should have been delivered")
+}
+
+// TestFlushSlackNotifications_FlushesAllHandlers verifies that every registered
+// webhook is drained at exit and that each one gets its own summary.
+func TestFlushSlackNotifications_FlushesAllHandlers(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	consoleBuffer := &syncBuffer{}
+	require.NoError(t, SetupLoggerWithConfig(LoggerConfig{
+		Level:         slog.LevelInfo,
+		RunID:         "test-flush-all-001",
+		ConsoleWriter: consoleBuffer,
+	}, false, true))
+
+	successServer, successRequests := newRecordingSlackServer(t)
+	errorServer, errorRequests := newRecordingSlackServer(t)
+
+	newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
+		server := successServer
+		if opts.LevelMode == logging.LevelModeWarnAndAbove {
+			server = errorServer
+		}
+		handler, err := logging.NewSlackHandler(withMockServer(t, opts, server))
+		if err != nil {
+			return nil, err
+		}
+		t.Cleanup(func() { handler.Close() })
+		return handler, nil
 	}
+
+	_, err := AddSlackHandlers(SlackLoggerConfig{
+		WebhookURLSuccess: "https://hooks.slack.com/services/success",
+		WebhookURLError:   "https://hooks.slack.com/services/error",
+		AllowedHost:       "hooks.slack.com",
+		RunID:             "test-flush-all-001",
+	})
+	require.NoError(t, err)
+	require.Len(t, slackHandlers, 2)
+
+	// Through the default logger, so the level routing that decides which
+	// webhook each record reaches is exercised as it is in production.
+	slog.Info("run finished", "slack_notify", true, "message_type", "command_group_summary")
+	slog.Error("run failed", "slack_notify", true, "message_type", "pre_execution_error")
+
+	consoleBuffer.Reset()
+	FlushSlackNotifications()
+
+	assert.Len(t, successRequests.paths(), 1, "the success webhook should have received its notification")
+	assert.Len(t, errorRequests.paths(), 1, "the error webhook should have received its notification")
+
+	// The counts are part of the assertion, not just the webhook names: a
+	// handler that was never flushed still gets a summary line, but it carries
+	// the zero accounting, so only the counts show that each webhook was
+	// actually drained.
+	output := consoleBuffer.String()
+	assert.Contains(t, output, "Slack delivery summary")
+	for _, role := range []string{slackRoleSuccess, slackRoleError} {
+		assert.Contains(t, output,
+			fmt.Sprintf("webhook=%s submitted=1 sent=1 failed=0 dropped=0 pending=0", role),
+			"the %s webhook should report its own notification as delivered", role)
+	}
+}
+
+// TestFlushSlackNotifications_NoSlackConfigured pins that a run without Slack
+// configured -- the common case -- neither panics, nor waits at exit, nor
+// reports a delivery summary about webhooks that do not exist.
+func TestFlushSlackNotifications_NoSlackConfigured(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	consoleBuffer := &syncBuffer{}
+	require.NoError(t, SetupLoggerWithConfig(LoggerConfig{
+		Level:         slog.LevelInfo,
+		RunID:         "test-flush-none-001",
+		ConsoleWriter: consoleBuffer,
+	}, false, true))
+	require.Empty(t, slackHandlers)
+	consoleBuffer.Reset()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		FlushSlackNotifications()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("FlushSlackNotifications should return immediately when no Slack handler is registered")
+	}
+
+	assert.Empty(t, consoleBuffer.String(),
+		"a run with no Slack handler should produce no delivery summary")
+}
+
+// syncBuffer is a console writer that the test goroutine can read while the
+// Slack worker goroutine writes the send path's records to it.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func (b *syncBuffer) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf.Reset()
+}
+
+// newRecordingSlackServer starts a TLS mock Slack endpoint (rule R1) and
+// returns the paths it was asked for.
+func newRecordingSlackServer(t *testing.T) (*httptest.Server, *requestLog) {
+	t.Helper()
+	requests := &requestLog{}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.add(r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+	return server, requests
+}
+
+// requestLog collects the paths a mock server received. The worker sends from
+// its own goroutine, so the slice needs a lock.
+type requestLog struct {
+	mu   sync.Mutex
+	seen []string
+}
+
+func (l *requestLog) add(path string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.seen = append(l.seen, path)
+}
+
+func (l *requestLog) paths() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return slices.Clone(l.seen)
+}
+
+// withMockServer points handler options at a mock server (rule R1).
+// AddSlackHandlers builds the options itself and sets no HTTP client, so a test
+// that wants a real handler talking to httptest has to inject the client here,
+// in the newSlackHandlerFunc replacement, rather than in the config it passes.
+func withMockServer(t *testing.T, opts logging.SlackHandlerOptions, server *httptest.Server) logging.SlackHandlerOptions {
+	t.Helper()
+	parsed, err := url.Parse(server.URL)
+	require.NoError(t, err, "mock server URL should parse")
+
+	// The path is kept so that two webhooks pointing at the same server stay
+	// distinguishable in the request log.
+	requested, err := url.Parse(opts.WebhookURL)
+	require.NoError(t, err, "webhook URL should parse")
+	opts.WebhookURL = server.URL + requested.Path
+
+	opts.AllowedHost = parsed.Hostname()
+	opts.HTTPClient = server.Client()
+	return opts
+}
+
+// submitSlackNotification hands one notification straight to a handler,
+// bypassing the default logger so that the test controls which handler
+// receives it.
+func submitSlackNotification(t *testing.T, handler *logging.SlackHandler) {
+	t.Helper()
+	record := slog.NewRecord(time.Now(), slog.LevelError, "notification", 0)
+	record.AddAttrs(
+		slog.Bool("slack_notify", true),
+		slog.String("message_type", "pre_execution_error"),
+	)
+	require.NoError(t, handler.Handle(context.Background(), record))
 }
 
 // TestAddSlackHandlers_AcceptsInteractivePhase1Handlers pins that the real

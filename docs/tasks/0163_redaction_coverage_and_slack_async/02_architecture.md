@@ -1033,7 +1033,7 @@ flush では高優先度キューを先に処理する。期限内に送り切�
 
 #### 3.4.9 ライフサイクルと flush の呼び出し経路
 
-`bootstrap` は `AddSlackHandlers` で生成した `*logging.SlackHandler` をパッケージレベルの変数に保持し、`FlushSlackNotifications` から各ハンドラの `Flush` を呼ぶ。ワーカーは送信機構の生成時（`NewSlackHandler` の中）に起動し、`Flush` または `Close` で終了する。
+`bootstrap` は `AddSlackHandlers` で生成した `*logging.SlackHandler` をパッケージレベルの変数に保持し、`FlushSlackNotifications` から各ハンドラの `Flush` を呼ぶ。保持するのはハンドラ単体ではなく、ハンドラと webhook の役割（成功用／エラー用）の組である。webhook URL はハンドラから読み出せず、2 つのハンドラは同じ `run_id` を持つため、役割を添えないと集計がどちらの webhook のものか言えないからである。ワーカーは送信機構の生成時（`NewSlackHandler` の中）に起動し、`Flush` または `Close` で終了する。
 
 ワーカーが所有者を失う経路を塞ぐため、`AddSlackHandlers` に次の 2 つの規則を課す。
 
