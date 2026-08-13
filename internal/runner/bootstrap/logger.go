@@ -62,29 +62,25 @@ var phase1FailureLogger *slog.Logger
 // Replacing it in tests allows inspection of SlackHandlerOptions (AC-L2-19).
 var newSlackHandlerFunc = logging.NewSlackHandler
 
-// Webhook roles, used to say which webhook a delivery summary belongs to.
-// Both handlers of a run carry the same run ID, so the role is the only thing
-// that tells their summaries apart.
+// Webhook roles, passed to the handlers as SlackHandlerOptions.WebhookLabel.
 const (
 	slackRoleSuccess = "success"
 	slackRoleError   = "error"
 )
 
 // slackHandlerEntry is one Slack handler together with the webhook role it
-// serves. The role is kept alongside the handler rather than derived from it
-// because the webhook URL is not readable from the handler, and a summary that
-// cannot name its webhook is not actionable.
+// serves. The role is stored rather than read back from the handler, which
+// does not expose it.
 type slackHandlerEntry struct {
 	role    string
 	handler *logging.SlackHandler
 }
 
 // slackHandlers holds the Slack handlers created by the last successful
-// AddSlackHandlers call. FlushSlackNotifications delivers their queued
-// notifications at process exit; without an owner here, the worker goroutines
-// started by NewSlackHandler would have nobody to flush or stop them.
-// It is written only by AddSlackHandlers and FlushSlackNotifications, both of
-// which run on the single-threaded bootstrap and shutdown paths.
+// AddSlackHandlers call. Without an owner here, the worker goroutines started
+// by NewSlackHandler would have nobody to flush or stop them. It is written
+// only by AddSlackHandlers and FlushSlackNotifications, both of which run on
+// the single-threaded bootstrap and shutdown paths.
 var slackHandlers []slackHandlerEntry
 
 // slackEnvSettings holds the Slack delivery settings taken from the
@@ -94,8 +90,7 @@ type slackEnvSettings struct {
 	// flush at process exit.
 	SendTimeout  time.Duration
 	FlushTimeout time.Duration
-	// Synchronous sends inline instead of through the worker.
-	Synchronous bool
+	Synchronous  bool
 	// invalidVars names the variables whose value could not be used; each fell
 	// back to its default. Only the names are kept: these are reported through
 	// the send-failure logger, which does not pass through the redaction layer,
@@ -105,14 +100,12 @@ type slackEnvSettings struct {
 }
 
 // parseSlackEnvSettings interprets the three Slack delivery environment
-// variables. getenv is injected and nothing is logged here, so the result
-// depends on the environment alone and a caller can parse without emitting
-// records; reportInvalidEnvSettings does the reporting.
+// variables. It logs nothing and takes getenv as an argument, so a caller can
+// parse without emitting records; reportInvalidEnvSettings does the reporting.
 func parseSlackEnvSettings(getenv func(string) string) slackEnvSettings {
 	settings := slackEnvSettings{
-		// Only the exact value "1" selects synchronous sending, so an
-		// abbreviation nobody defined ("true", "yes") leaves the supported
-		// asynchronous path in place rather than silently switching modes.
+		// Only the exact "1" switches modes, so a spelling nobody defined
+		// ("true", "yes") leaves the supported asynchronous path in place.
 		Synchronous: getenv(logging.SlackSyncEnvVar) == "1",
 	}
 
@@ -330,11 +323,10 @@ func AddSlackHandlers(config SlackLoggerConfig) (*redaction.Config, error) {
 		return nil, errPhase1NotInitialized
 	}
 
-	// Handlers registered by an earlier call own worker goroutines that
-	// nothing would flush or stop once this call replaces the default logger.
-	// They are closed at the end rather than here: if the rebuild fails, the
-	// default logger still routes to them, and closing them up front would
-	// leave every later notification dropped with no owner able to flush it.
+	// Closed once the rebuild has committed, not here: on a failed rebuild the
+	// default logger still routes to these handlers, and closing them up front
+	// would leave every later notification dropped with no owner able to flush
+	// it.
 	previous := slackHandlers
 
 	settings := parseSlackEnvSettings(os.Getenv)
@@ -343,10 +335,8 @@ func AddSlackHandlers(config SlackLoggerConfig) (*redaction.Config, error) {
 	allHandlers := make([]slog.Handler, len(phase1BaseHandlers))
 	copy(allHandlers, phase1BaseHandlers)
 
-	// Every handler created below owns a worker. Until the whole rebuild has
-	// succeeded and the handlers are registered for flushing, this call is
-	// their only owner: any early return has to close them, or their workers
-	// outlive the failed setup with no way to reach them.
+	// Until the rebuild commits, this call is the only owner of the workers the
+	// handlers below start, so every early return has to close them.
 	var created []slackHandlerEntry
 	committed := false
 	defer func() {
@@ -419,10 +409,9 @@ func AddSlackHandlers(config SlackLoggerConfig) (*redaction.Config, error) {
 
 	slog.SetDefault(slog.New(redactedHandler))
 
-	// The rebuild is complete: the new handlers are reachable through the
-	// default logger, and registering them here makes them reachable for the
-	// flush at process exit as well. Only now is the previous registration
-	// unreachable, so only now is it safe to close.
+	// The rebuild has committed: the new handlers are reachable both through
+	// the default logger and, from here, through the exit flush -- and the
+	// previous registration is finally unreachable.
 	committed = true
 	slackHandlers = created
 	closeSlackHandlers(previous)
@@ -436,31 +425,30 @@ func AddSlackHandlers(config SlackLoggerConfig) (*redaction.Config, error) {
 // run are sent before the process exits.
 //
 // All webhooks are flushed concurrently under one shared deadline, so adding a
-// second webhook does not double the time the process spends exiting. Anything
-// still undelivered when the deadline expires is reported and then given up on:
-// this returns no error and does not influence the exit code, because whether a
+// second webhook does not double the time the process spends exiting. Whatever
+// the deadline leaves undelivered is reported and then given up on: this
+// returns no error and does not influence the exit code, because whether a
 // notification got out is independent of whether the commands succeeded.
 //
-// The handlers are deregistered as they are flushed, so a second call is a
-// no-op. Like AddSlackHandlers it touches package-level state unsynchronised
-// and belongs to the single-threaded shutdown path.
+// Flushing deregisters the handlers, so a second call is a no-op. Like
+// AddSlackHandlers it touches package-level state unsynchronised and belongs to
+// the single-threaded shutdown path.
 func FlushSlackNotifications() {
 	if len(slackHandlers) == 0 {
 		return
 	}
 
-	// The environment is re-read rather than remembered from AddSlackHandlers
-	// so that this function stays usable on its own; unusable values were
-	// already reported there, so they are not reported a second time here.
+	// Re-read rather than remembered from AddSlackHandlers, which has already
+	// reported anything unusable, so nothing is reported twice.
 	settings := parseSlackEnvSettings(os.Getenv)
 
 	ctx, cancel := context.WithTimeout(context.Background(), settings.FlushTimeout)
 	defer cancel()
 
 	entries := slackHandlers
-	// Deregister before reporting: the handlers are terminated by the flush, so
-	// a second call has nothing left to do, and repeating the warning below
-	// would report the same lost notifications twice.
+	// The flush terminates these handlers, so a second call has nothing left to
+	// do -- and repeating the warning below would report the same lost
+	// notifications twice.
 	slackHandlers = nil
 
 	stats := make([]logging.FlushStats, len(entries))
@@ -476,10 +464,9 @@ func FlushSlackNotifications() {
 }
 
 // reportUndeliveredNotifications writes one stderr line per webhook that lost
-// notifications. The structured delivery summary is not repeated here: each
-// sender writes its own, complete with the per-message-type breakdown and the
-// webhook label this package gave it. Stderr stays quiet unless something was
-// actually lost, which is what an operator needs to see without reading the log.
+// notifications, and nothing at all otherwise. The structured summary is not
+// repeated here: each sender writes its own, complete with the per-message-type
+// breakdown and the webhook label this package gave it.
 func reportUndeliveredNotifications(entries []slackHandlerEntry, stats []logging.FlushStats) {
 	for i, entry := range entries {
 		s := stats[i]

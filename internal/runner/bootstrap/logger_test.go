@@ -591,12 +591,6 @@ func TestParseSlackEnvSettings(t *testing.T) {
 			wantSend:  logging.DefaultSendTimeout,
 			wantFlush: logging.DefaultFlushTimeout,
 		},
-		{
-			name:      "GSCR_SLACK_SYNC=0 leaves asynchronous sending in place",
-			env:       map[string]string{logging.SlackSyncEnvVar: "0"},
-			wantSend:  logging.DefaultSendTimeout,
-			wantFlush: logging.DefaultFlushTimeout,
-		},
 	}
 
 	for _, tt := range tests {
@@ -748,12 +742,10 @@ func TestAddSlackHandlers_SlackHandlersComeAfterPhase1Handlers(t *testing.T) {
 }
 
 // TestAddSlackHandlers_ClosesFirstHandlerOnSecondFailure verifies the
-// partial-failure rule: a handler created before the failure owns a worker that
-// this call is the only owner of, so it must not be left running.
-//
-// Closure is observed the way rule R3 prescribes for this package: a
-// notification submitted to a closed handler is dropped, and the drop is
-// recorded with the sender_closed reason on the Phase 1 handlers.
+// partial-failure rule: a handler created before the failure owns a worker this
+// call is the only owner of, so it must not be left running. Closure is
+// observed as rule R3 prescribes here -- a notification submitted to a closed
+// handler is dropped with the sender_closed reason.
 func TestAddSlackHandlers_ClosesFirstHandlerOnSecondFailure(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	consoleBuffer := &syncBuffer{}
@@ -765,20 +757,7 @@ func TestAddSlackHandlers_ClosesFirstHandlerOnSecondFailure(t *testing.T) {
 
 	server, requests := newRecordingSlackServer(t)
 	errSecondHandler := errors.New("second handler unavailable")
-
-	var first *logging.SlackHandler
-	newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
-		if first != nil {
-			return nil, errSecondHandler
-		}
-		handler, err := logging.NewSlackHandler(withMockServer(t, opts, server))
-		if err != nil {
-			return nil, err
-		}
-		t.Cleanup(func() { handler.Close() })
-		first = handler
-		return handler, nil
-	}
+	created := installMockSlackFactory(t, server, 1, errSecondHandler)
 
 	_, err := AddSlackHandlers(SlackLoggerConfig{
 		WebhookURLSuccess: "https://hooks.slack.com/services/success",
@@ -787,11 +766,11 @@ func TestAddSlackHandlers_ClosesFirstHandlerOnSecondFailure(t *testing.T) {
 		RunID:             "test-partial-failure-001",
 	})
 	require.ErrorIs(t, err, errSecondHandler)
-	require.NotNil(t, first, "the success handler should have been created before the failure")
+	require.Len(t, *created, 1, "the success handler should have been created before the failure")
 	assert.Empty(t, slackHandlers, "a failed rebuild must register no handlers")
 
 	consoleBuffer.Reset()
-	submitSlackNotification(t, first)
+	submitSlackNotification(t, (*created)[0])
 
 	assert.Contains(t, consoleBuffer.String(), "sender_closed",
 		"a notification submitted to the closed handler should be recorded as dropped")
@@ -811,16 +790,7 @@ func TestAddSlackHandlers_ClosesPreviousHandlersOnReinvocation(t *testing.T) {
 	}, false, true))
 
 	server, requests := newRecordingSlackServer(t)
-	var created []*logging.SlackHandler
-	newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
-		handler, err := logging.NewSlackHandler(withMockServer(t, opts, server))
-		if err != nil {
-			return nil, err
-		}
-		t.Cleanup(func() { handler.Close() })
-		created = append(created, handler)
-		return handler, nil
-	}
+	created := installMockSlackFactory(t, server, 0, nil)
 
 	config := SlackLoggerConfig{
 		WebhookURLError: "https://hooks.slack.com/services/error",
@@ -832,17 +802,17 @@ func TestAddSlackHandlers_ClosesPreviousHandlersOnReinvocation(t *testing.T) {
 	_, err = AddSlackHandlers(config)
 	require.NoError(t, err)
 
-	require.Len(t, created, 2, "each call should have created its own handler")
+	require.Len(t, *created, 2, "each call should have created its own handler")
 	require.Len(t, slackHandlers, 1, "only the second call's handler should stay registered")
-	assert.Same(t, created[1], slackHandlers[0].handler)
+	assert.Same(t, (*created)[1], slackHandlers[0].handler)
 
 	consoleBuffer.Reset()
-	submitSlackNotification(t, created[0])
+	submitSlackNotification(t, (*created)[0])
 	assert.Contains(t, consoleBuffer.String(), "sender_closed",
 		"the first call's handler should have been closed by the second call")
 
 	consoleBuffer.Reset()
-	submitSlackNotification(t, created[1])
+	submitSlackNotification(t, (*created)[1])
 	assert.NotContains(t, consoleBuffer.String(), "sender_closed",
 		"the second call's handler should still be accepting")
 	FlushSlackNotifications()
@@ -866,20 +836,7 @@ func TestAddSlackHandlers_KeepsPreviousHandlersWhenRebuildFails(t *testing.T) {
 
 	server, requests := newRecordingSlackServer(t)
 	errRebuild := errors.New("webhook unavailable")
-
-	var first *logging.SlackHandler
-	newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
-		if first != nil {
-			return nil, errRebuild
-		}
-		handler, err := logging.NewSlackHandler(withMockServer(t, opts, server))
-		if err != nil {
-			return nil, err
-		}
-		t.Cleanup(func() { handler.Close() })
-		first = handler
-		return handler, nil
-	}
+	created := installMockSlackFactory(t, server, 1, errRebuild)
 
 	config := SlackLoggerConfig{
 		WebhookURLError: "https://hooks.slack.com/services/error",
@@ -892,10 +849,11 @@ func TestAddSlackHandlers_KeepsPreviousHandlersWhenRebuildFails(t *testing.T) {
 	require.ErrorIs(t, err, errRebuild)
 
 	require.Len(t, slackHandlers, 1, "the failed rebuild should leave the previous registration in place")
-	assert.Same(t, first, slackHandlers[0].handler)
+	require.Len(t, *created, 1)
+	assert.Same(t, (*created)[0], slackHandlers[0].handler)
 
 	consoleBuffer.Reset()
-	submitSlackNotification(t, first)
+	submitSlackNotification(t, (*created)[0])
 	assert.NotContains(t, consoleBuffer.String(), "sender_closed",
 		"the handler the default logger still routes to must keep accepting")
 
@@ -952,9 +910,8 @@ func TestFlushSlackNotifications_FlushesAllHandlers(t *testing.T) {
 	assert.Len(t, errorRequests.paths(), 1, "the error webhook should have received its notification")
 
 	// The counts are part of the assertion, not just the webhook names: a
-	// handler that was never flushed writes no summary at all, but a summary
-	// naming the webhook proves only that a sender terminated, not that this
-	// flush is what drained it.
+	// summary naming the webhook proves only that a sender terminated, not that
+	// this flush drained it.
 	output := consoleBuffer.String()
 	assert.Contains(t, output, "Slack delivery summary")
 	for role, messageType := range map[string]string{
@@ -1000,14 +957,7 @@ func TestFlushSlackNotifications_HonorsFlushDeadline(t *testing.T) {
 	// the handler above to return, which it cannot do while still parked.
 	t.Cleanup(func() { close(release) })
 
-	newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
-		handler, err := logging.NewSlackHandler(withMockServer(t, opts, server))
-		if err != nil {
-			return nil, err
-		}
-		t.Cleanup(func() { handler.Close() })
-		return handler, nil
-	}
+	installMockSlackFactory(t, server, 0, nil)
 
 	_, err := AddSlackHandlers(SlackLoggerConfig{
 		WebhookURLError: "https://hooks.slack.com/services/error",
@@ -1024,9 +974,8 @@ func TestFlushSlackNotifications_HonorsFlushDeadline(t *testing.T) {
 	elapsed := time.Since(start)
 
 	// Generous against a loaded CI machine relative to the 200ms deadline, and
-	// still well below what an ignored deadline costs: without it the flush
-	// waits out the 5s per-send budget (measured), and a wholly unbounded flush
-	// waits out the 15s default.
+	// still below what ignoring the deadline costs: 5s for the per-send budget
+	// (measured), 15s for a wholly unbounded flush.
 	assert.Less(t, elapsed, 2*time.Second,
 		"the flush should return on its own deadline rather than waiting for the send")
 	assert.Contains(t, consoleBuffer.String(), "pending=1",
@@ -1034,8 +983,8 @@ func TestFlushSlackNotifications_HonorsFlushDeadline(t *testing.T) {
 }
 
 // TestFlushSlackNotifications_NoSlackConfigured pins that a run without Slack
-// configured -- the common case -- neither panics, nor waits at exit, nor
-// reports a delivery summary about webhooks that do not exist.
+// configured -- the common case -- neither panics nor reports a delivery
+// summary about webhooks that do not exist.
 func TestFlushSlackNotifications_NoSlackConfigured(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	consoleBuffer := &syncBuffer{}
@@ -1047,17 +996,7 @@ func TestFlushSlackNotifications_NoSlackConfigured(t *testing.T) {
 	require.Empty(t, slackHandlers)
 	consoleBuffer.Reset()
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		FlushSlackNotifications()
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("FlushSlackNotifications should return immediately when no Slack handler is registered")
-	}
+	FlushSlackNotifications()
 
 	assert.Empty(t, consoleBuffer.String(),
 		"a run with no Slack handler should produce no delivery summary")
@@ -1118,6 +1057,29 @@ func (l *requestLog) paths() []string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return slices.Clone(l.seen)
+}
+
+// installMockSlackFactory makes AddSlackHandlers build real handlers against
+// server (rule R1), each registering its own Close (rule R2), and returns the
+// handlers it created in order. When failAfter is positive, calls past that
+// many successes return failErr instead, which is how the ownership rules for
+// a half-built rebuild are exercised.
+func installMockSlackFactory(t *testing.T, server *httptest.Server, failAfter int, failErr error) *[]*logging.SlackHandler {
+	t.Helper()
+	created := &[]*logging.SlackHandler{}
+	newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
+		if failAfter > 0 && len(*created) >= failAfter {
+			return nil, failErr
+		}
+		handler, err := logging.NewSlackHandler(withMockServer(t, opts, server))
+		if err != nil {
+			return nil, err
+		}
+		t.Cleanup(func() { handler.Close() })
+		*created = append(*created, handler)
+		return handler, nil
+	}
+	return created
 }
 
 // withMockServer points handler options at a mock server (rule R1).

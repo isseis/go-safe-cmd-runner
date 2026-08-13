@@ -39,10 +39,10 @@ const slowEndpointDelay = 300 * time.Millisecond
 func TestIntegration_RunnerFlushesSlackOnNormalExit(t *testing.T) {
 	received := &receivedNotifications{}
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// A slow endpoint is what makes the assertion below about the flush
-		// rather than about timing: the worker cannot have finished this send
-		// on its own by the time the test reaches the assertion, so the count
-		// is only non-zero because the flush waited for the drain.
+		// The delay is what makes the assertion below about the flush rather
+		// than about timing: the worker cannot have finished this send on its
+		// own before the assertion, so a non-zero count means the flush waited
+		// for the drain.
 		time.Sleep(slowEndpointDelay)
 		received.add()
 		w.WriteHeader(http.StatusOK)

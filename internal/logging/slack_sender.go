@@ -84,8 +84,7 @@ type slackSender struct {
 	backoffConfig BackoffConfig
 	failureLogger *slog.Logger
 	sendTimeout   time.Duration
-	// webhookLabel names this webhook's role in the aggregate record. Empty
-	// when the caller did not name it.
+	// webhookLabel is SlackHandlerOptions.WebhookLabel, empty when unset.
 	webhookLabel string
 	// runID is copied from SlackHandlerOptions.RunID at construction.
 	// Per-request records take the run ID from slackRequest, but the aggregate
@@ -756,10 +755,10 @@ func (sd *slackSender) recordUndelivered(req slackRequest, reason string) {
 
 // logAggregate emits the one per-sender summary of the flush, with the
 // per-message_type breakdown. Its run_id comes from the sender rather than any
-// single request, so it lines up with the individual records above. This is the
-// only place a delivery summary is written: a caller that flushes several
-// senders reports nothing of its own, or the run would carry two summaries per
-// webhook and neither would be complete.
+// single request, so it lines up with the individual records above. It is the
+// only place a delivery summary is written: a caller flushing several senders
+// adds none of its own, or a run would carry two per webhook, each missing what
+// the other has.
 func (sd *slackSender) logAggregate(stats FlushStats) {
 	sd.mu.RLock()
 	sent := maps.Clone(sd.sentByType)
