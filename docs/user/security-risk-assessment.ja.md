@@ -237,7 +237,7 @@ func (c *Config) RedactText(text string) string {
 }
 ```
 
-**値ベース検出**:
+**値形式検出**:
 キー名ベースのリダクションに加えて、キー名が認識できない形で出現した秘密値も **値のフォーマット**のみから検出・マスクします。`ValueDetector`は以下の既知フォーマットを検出対象とします：
 
 - AWS アクセスキーID（`AKIA`/`ASIA`プレフィックス）
@@ -250,9 +250,9 @@ func (c *Config) RedactText(text string) string {
 - OAuth `Bearer` トークン（標準JWTおよびopaque形式）
 - JWT（`eyJ` で始まる 3 セグメントの Base64URL 文字列）
 - URL埋め込み credential（`scheme://user:pass@host`）
-- Slack webhook URL（`https://hooks.slack.com/services/` 以降のパス、および `slack_allowed_host` に設定したホスト配下の全パス）
+- Slack webhook URL（`slack_allowed_host` に設定したホスト配下の全パス。Slack 標準構成で `hooks.slack.com` を設定した場合は `https://hooks.slack.com/services/...` が対象になる。固定の検出パターンは持たない）
 
-**適用範囲**: 値ベース検出は `RedactText` 関数を介してコマンド引数、stdout、stderr、環境変数値に適用され、全出力先（ファイルログ、syslog、Slack通知）を一括でカバーします。
+**適用範囲**: 値形式検出は `RedactText` 関数を介してコマンド引数、stdout、stderr、環境変数値に適用され、全出力先（ファイルログ、syslog、Slack通知）を一括でカバーします。
 
 **限界**: 検出は上記の既知フォーマットに限られます。未知の credential 形式、独自トークンスキーム、高エントロピー文字列は検出されません。ログフィールドやストリームチャンク境界を跨いで分割された秘密値も取りこぼす可能性があります。GCP の項目のみ他と性質が異なり、値そのものに識別可能なフォーマットがありません（サービスアカウントのキーIDは単なる16進文字列であり、値だけでは他のハッシュ値と区別できません）。そのため JSON のフィールド名（`"private_key_id"`）と隣接する場合のみ検出されます。実際の GCP 資格情報本体である `private_key` の PEM ブロックは、上記の PEM 検出によりキー名に依存せずマスクされます。**Slackにコマンド全体の出力を載せる設定は避けるべきです**。マスキング層は多層防御の一環であり、不必要な露出の代替手段ではありません。
 

@@ -243,7 +243,7 @@ func (c *Config) RedactText(text string) string {
 }
 ```
 
-**Value-Based Detection**:
+**Value-Format Detection**:
 In addition to key-name-based redaction, the system detects and masks secrets by their **value format** alone, even when no recognizable key name is present. The `ValueDetector` covers the following known formats:
 
 - AWS access key IDs (`AKIA`/`ASIA` prefix)
@@ -256,9 +256,9 @@ In addition to key-name-based redaction, the system detects and masks secrets by
 - OAuth `Bearer` tokens (standard JWT and opaque format)
 - JWTs (three-segment Base64URL strings starting with `eyJ`)
 - URL-embedded credentials (`scheme://user:pass@host`)
-- Slack webhook URLs (paths under `https://hooks.slack.com/services/`, and all paths under the host configured in `slack_allowed_host`)
+- Slack webhook URLs (all paths under the host configured in `slack_allowed_host`; with the standard Slack host `hooks.slack.com` configured, `https://hooks.slack.com/services/...` is covered; no fixed detection pattern is held)
 
-**Scope**: Value-based detection is applied to command arguments, stdout, stderr, and environment variable values through the unified `RedactText` function. This single integration point covers all output destinations — file logs, syslog, and Slack notifications — ensuring no path bypasses masking.
+**Scope**: Value-format detection is applied to command arguments, stdout, stderr, and environment variable values through the unified `RedactText` function. This single integration point covers all output destinations — file logs, syslog, and Slack notifications — ensuring no path bypasses masking.
 
 **Limitations**: Detection is limited to the known formats listed above. Unknown credential formats, custom token schemes, and high-entropy strings are not detected. Secrets split across log fields or stream chunk boundaries may also be missed. Unlike the other formats, the GCP entry is not a self-identifying value format: a service-account key ID is an opaque hex string indistinguishable from any other hash by value alone, so it is only recognized next to its JSON field name (`"private_key_id"`). The actual GCP credential material — the `private_key` PEM block — is still masked independent of key name by the PEM detector above. **Configuring jobs to send full command output to Slack is strongly discouraged**; the masking layer is a defense-in-depth measure, not a substitute for avoiding unnecessary exposure.
 

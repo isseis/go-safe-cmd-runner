@@ -541,13 +541,13 @@ type Manager interface {
 **一元化データ編集基盤**:
 ```go
 // 場所: internal/redaction/redactor.go
+// Config は NewConfig によってのみ構築され、パターンの検証と事前コンパイルが行われる。
+// フィールドは非公開であり、置換文字列は Placeholder() で読み出す。
 type Config struct {
-    Placeholder      string  // LogPlaceholder / TextPlaceholder は統一され単一フィールドに
-    Patterns         *SensitivePatterns
-    // KeyValuePatterns はキー名ベースのパターンを保持する。各要素は入力中で一致させる
-    // Literal と、適用する規則（キー値／次トークン／ヘッダー値）を宣言する Kind を持つ。
-    KeyValuePatterns []KeyValuePattern
-    ValueDetector    *ValueDetector // AWSキー・GitHubトークン・PEM形式などの値ベース検出
+    placeholder      string
+    patterns         *SensitivePatterns
+    keyValuePatterns []KeyValuePattern // 各要素は入力中で一致させる Literal と、適用する規則（キー値／次トークン／ヘッダー値）を宣言する Kind を持つ
+    valueDetector    *ValueDetector    // AWSキー・GitHubトークン・PEM形式などの値ベース検出
 }
 
 func (c *Config) RedactText(text string) string {

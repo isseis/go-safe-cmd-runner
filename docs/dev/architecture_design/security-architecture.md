@@ -545,14 +545,14 @@ Prevents sensitive information such as passwords, API keys, and tokens from bein
 **Centralized Data Redaction Foundation**:
 ```go
 // Location: internal/redaction/redactor.go
+// Config is constructed exclusively via NewConfig, which validates and
+// pre-compiles the patterns; its fields are unexported. Placeholder() exposes
+// the substitution text.
 type Config struct {
-    Placeholder      string  // LogPlaceholder / TextPlaceholder were unified into a single field
-    Patterns         *SensitivePatterns
-    // KeyValuePatterns holds the key-name-based patterns; each element has a
-    // Literal to match in the input and a Kind that declares the rule to apply
-    // (key-value / next token / header value).
-    KeyValuePatterns []KeyValuePattern
-    ValueDetector    *ValueDetector // value-based detection of AWS keys, GitHub tokens, PEM format, etc.
+    placeholder      string
+    patterns         *SensitivePatterns
+    keyValuePatterns []KeyValuePattern // each element has a Literal to match in the input and a Kind that declares the rule (key-value / next token / header value)
+    valueDetector    *ValueDetector    // value-based detection of AWS keys, GitHub tokens, PEM format, etc.
 }
 
 func (c *Config) RedactText(text string) string {

@@ -276,7 +276,7 @@
 |--------|---------|------|
 | キー | key | |
 | キー名ベース redaction | key-name-based redaction | `password` のようなキー名を手掛かりに、その直後の値を置換する層。`Config.RedactText` が `KeyValuePatterns` の各キーについて適用する（Task 0163） |
-| キー名の先頭境界 | leading boundary | キー名の直前に許される文字の条件。`monkey` の中の `key` のような部分一致を防ぐために課す（Task 0163） |
+| キー名の先頭境界 | leading boundary | キー名の直前に許される文字の条件。`monkey` の中の `key` のような部分一致を防ぐために課す。0154 が定義した「境界 redaction」（呼び出し境界で `RedactText` を適用すること）とは別の概念である（Task 0163） |
 | 起動時特権降格 | startup privilege drop | プロセス起動直後に実効ユーザーID・実効グループID を実ID へ降格すること（Task 0162） |
 
 ### L
@@ -484,12 +484,12 @@
 | safe-zone | safe-zone | run 専用の作業/出力ディレクトリ・専用 temp（run が所有する安全領域）。判断軸2 で Low（信頼要件 AC-04 充足時。`$HOME`・共有 `/tmp` は含めない）。パス信頼区分の値の一つ |
 | 正規化済み解析結果 | normalized analysis result | 保存前に整形・選別された解析結果 |
 | 正規化済み特徴量 | normalized feature | runner 向けに整形された特徴量 |
-| 区切り | separator | キー名と値の間に置かれる文字列。`=` または `:` と、その前後に置かれてもよい空白からなる（Task 0163） |
+| 区切り | separator | キー名と値の間に置かれる文字列。`=` または `:` と、その前後に置かれてもよい空白（半角スペースと水平タブ）からなる（Task 0163） |
 | 送信キュー | send queue | Slack 送信要求を貯めるバッファ付きチャネル。`SlackHandler.Handle` が投入し、ワーカー goroutine が取り出す（Task 0163） |
 | 送信機構 | sender | Slack 通知の送信キューとワーカー goroutine を所有する内部構造（`slackSender`）。直訳の「送信器」は使わない（Task 0163） |
 | 関心の分離 | separation of concerns | 設計パターンの文脈 |
 | 受付停止 | stop accepting | `Flush` または `Close` の呼び出しにより、送信機構が新しい通知の受け入れをやめた状態。以降に到着した通知は破棄される（Task 0163） |
-| 終了要求 | shutdown request | 待機中のワーカーを起こして終了させるために送る制御メッセージ。終了モード（drain / abandon）と flush 期限を運ぶ（Task 0163） |
+| 終了要求 | shutdown request | 待機中のワーカーを起こして終了させるために送る制御メッセージ。終了モード（`drain` / `abandon`）と flush 期限を運ぶ（Task 0163） |
 | 終了要求チャネル | shutdown request channel | 待機中のワーカーに終了モード（drain / abandon）と flush 期限を伝える制御チャネル（Task 0163） |
 | 唯一の判定基準 | single authority | ファイル操作コマンドのリスクを判断軸2 の結果だけで決め、既存の High 判定群を置き換える方式（0142 F-005）。直訳「単一権威」は使わない |
 | 符号拡張 | sign extension | 上位ビットを符号ビットで埋める操作 |

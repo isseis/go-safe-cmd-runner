@@ -119,7 +119,7 @@
 
 | 対象 | 現状 | 必要な対応 |
 |---|---|---|
-| `docs/user/security-risk-assessment.ja.md` 240〜253 行目 | 「値ベース検出」の一覧が 7 項目、「限界」に空白入り値と非同期配送の記述なし | 4 項目の追加と、限界・配送方式の追記（AC-33, AC-34） |
+| `docs/user/security-risk-assessment.ja.md` 240〜253 行目 | 「値形式検出」の一覧が 7 項目、「限界」に空白入り値と非同期配送の記述なし | 4 項目の追加と、限界・配送方式の追記（AC-33, AC-34） |
 | `docs/user/security-risk-assessment.md` | 上記の英語版 | `/mktrans` で反映 |
 | `docs/dev/architecture_design/security-architecture.md` 600 行目・863 行目 | `SlackHandler` の構造体定義を 2 箇所で再掲 | `webhookURL` / `httpClient` / `backoffConfig` の移動を反映 |
 | `docs/dev/architecture_design/security-architecture.ja.md` 597 行目・860 行目 | 同上の日本語版（02_architecture.md 3.1 の一覧に追加済み） | 英語版と同じ 2 箇所を更新する |
@@ -659,7 +659,7 @@ Phase 1 のキャッシュは「`Config` がコンストラクタを通った保
 
 #### ステップ 6-1: 利用者向け文書
 
-- [x] `docs/user/security-risk-assessment.ja.md` の「値ベース検出」の一覧（241〜249 行目付近）に 4 項目を追加する: GitHub fine-grained PAT（`github_pat_` プレフィックス）、Slack の追加プレフィックストークン（`xapp-`/`xoxe-`/`xoxs-`）、JWT（`eyJ` で始まる 3 セグメントの Base64URL 文字列）、Slack webhook URL（`https://hooks.slack.com/services/` 以降、および `slack_allowed_host` に設定したホスト配下の全パス）。
+- [x] `docs/user/security-risk-assessment.ja.md` の「値形式検出」の一覧（241〜249 行目付近）に 4 項目を追加する: GitHub fine-grained PAT（`github_pat_` プレフィックス）、Slack の追加プレフィックストークン（`xapp-`/`xoxe-`/`xoxs-`）、JWT（`eyJ` で始まる 3 セグメントの Base64URL 文字列）、Slack webhook URL（`slack_allowed_host` に設定したホスト配下の全パス。Slack 標準構成で `hooks.slack.com` を設定した場合は `https://hooks.slack.com/services/...` が対象になる。**本計画からの変更**: 当初の記述「`https://hooks.slack.com/services/` 以降、および `slack_allowed_host` に設定したホスト配下の全パス」は固定の `hooks.slack.com` パターンが存在するかのような誤った含意であり、02_architecture.md 3.3.3（「固定パターンは持たない」）と実装に反する。レビューで指摘され、誤りを排除する形へ修正した。あわせて節の見出しを用語集の表記に合わせ「値形式検出」へ改名した）。
 - [x] 同ファイルの「限界」の段落に、引用符で囲まれていない値に空白が含まれる場合は 2 語目以降が平文で残ること（02_architecture.md 3.2.2）を追記する。あわせて webhook URL の検出について、`slack_allowed_host` に設定したホスト配下の URL はパス全体が置換されること（Slack 互換サービスを含む）、その一方で TOML 読み込み前に構築される構成（Phase 1 のロガーと `bootstrap.NewVerificationManager` の `security.Validator`）はホスト未配線の既定 redaction 設定を使うため、`RedactingHandler` を経由しないロガーへ直接書く経路では webhook URL の値形式検出が働かず、他の固定パターンのみが働くことを記す（02_architecture.md 3.3.3「残る限界」。`audit` パッケージと runner 側の `security.Validator` は PR-3 で `WithRedactionConfig` により配線済みであるため限界に含めない）。
 - [x] 同ファイルに、一般的な英単語を `KeyValuePatterns` へ追加すると散文が置換されうること、および群 B のキーが引用符付きの構造化データのフィールド名として現れる場合、または識別子内境界（`-` / `.`）に続いて現れる場合は、非機密でも置換されること（`"key": "us-east-1"`、`Public-key: not supported`）を追記する。あわせて、追加したキーが一般語キー一覧（`key` / `token` / `secret`）に一致する場合は、利用者が明示的に追加しても群 B（厳しい先頭境界）になり、緩い境界にはならないことを記す（02_architecture.md 3.2.4）。
 - [x] `docs/user/security-risk-assessment.ja.md` の `RedactText` の抜粋（233 行目付近）を現行の実装に合わせる。**本計画からの変更**: 現行実装は `NewConfig` が事前コンパイルした `compiled` パターンの並びを走査する（`for i := range c.compiled { result = c.compiled[i].apply(result) }`）ため、抜粋をこの形へ更新した。`c.TextPlaceholder` は `c.Placeholder` に統一済みであり抜粋から消えた。
@@ -904,7 +904,7 @@ awk '/^## 用語/{f=1;next} f&&/^## /{exit} f' \
 | AC-32 | test | `internal/logging/slack_sender_test.go::TestSlackHandler_ConcurrentHandleAndFlush`、`internal/logging/slack_sender_test.go::TestSlackSender_CounterInvariants`、`internal/redaction/redactor_test.go::TestRedactText_ConcurrentUse`（ステップ 2-6 で `regex_cache_test.go` ごと削除した `TestRegexCache_ConcurrentAccess` の後継）。いずれも `make test`（`-race` を含む）で実行する |
 | AC-33 | static | `rg -n -e "github_pat_" -e "xapp-" -e "JWT" -e "hooks\.slack\.com/services/" docs/user/security-risk-assessment.ja.md` → 4 つのパターンそれぞれが 1 件以上一致すること（現状は `JWT` の 1 パターンのみ一致する）。かつ `rg -n "引用符で囲まれていない" docs/user/security-risk-assessment.ja.md` → 1 件以上一致すること |
 | AC-33 | static | 英語版: `rg -n -e "github_pat_" -e "xapp-" -e "JWT" -e "hooks\.slack\.com/services/" docs/user/security-risk-assessment.md` → 4 つのパターンそれぞれが 1 件以上一致すること |
-| AC-33 | manual | 上記の一致行が「値ベース検出」の一覧内（日本語版は 241 行目付近の箇条書き）にあり、限界の記述が「限界」の段落にあることを目視で確認する。`rg` は出現位置までは保証しない |
+| AC-33 | manual | 上記の一致行が「値形式検出」の一覧内（日本語版は 241 行目付近の箇条書き）にあり、限界の記述が「限界」の段落にあることを目視で確認する。`rg` は出現位置までは保証しない |
 | AC-34 | static | `rg -n -e "非同期" -e "GSCR_SLACK_SYNC" -e "GSCR_SLACK_FLUSH_TIMEOUT" docs/user/security-risk-assessment.ja.md` → 3 件すべてが一致すること。かつ `rg -n -e "asynchronous" -e "GSCR_SLACK_SYNC" docs/user/security-risk-assessment.md` → 英語版にも対応する記述があること |
 | AC-34 | manual | 上記の一致行が Slack 通知の配送方式の節にまとまっていることを目視で確認する。加えて、追記した既定値（flush 期限 15 秒、送信デッドライン 40 秒、キュー容量 32 / 128）を `internal/logging/slack_sender.go` の定数と 1 件ずつ突き合わせ、一致することを確認する |
 | AC-33, AC-34 | static | `make verify-docs` → 成功すること（`docs/user` の `*.ja.md` と `*.md` の構造が一致すること） |
