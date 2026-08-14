@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-08-14 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-08-14 |
+| Reviewer | isseis |
 | Comments | AC-31 の解釈は §1.5 で決定済み。残る二重出力は [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) へ分離した。レビュー指摘により、AC-31 の選別条件（`level=ERROR` → `error_message=`）、AC-27 の検索式（`isec` 別名）、ステップ 4-3 の除外範囲、`deps.resolvePathForCheck` の宣言、AC-01・AC-15 の現状件数を修正済み。さらに PR レビュー指摘により、権限チェッカの注入口を引数無しのファクトリ `newPermChecker func() (security.DirectoryPermChecker, error)` に一本化し、`toctouChecker` を廃止した |
 
 ## 関連文書
