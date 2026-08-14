@@ -198,9 +198,29 @@ resolvePathForCheck func(path string) (string, error)
 
 #### 1.4.5 `os.Getwd` の差し替え口
 
-**決定: `internal/security` にパッケージレベルの関数値 `var getwd = os.Getwd` を置き、`ResolvePathForCheck` はこれを呼ぶ**。02_architecture.md §7.2 が挙げるパス解決の4経路目（絶対パス化の失敗）は `os.Getwd` が失敗しないと通らず、実運用では作業ディレクトリが削除された場合などに限られる。差し替え口が無ければこの分岐は1本も検証できない。
+02_architecture.md §7.2 が挙げるパス解決の4経路目（絶対パス化の失敗）は `os.Getwd` が失敗しないと通らず、実運用では作業ディレクトリが削除された場合などに限られる。差し替え口が無ければこの分岐は1本も検証できない。
 
-`deps.resolvePathForCheck`（§1.4.4）と同じ理由づけであり、関数値の宣言はステップ 1-1（本番コード）で、差し替えはステップ 1-3（テスト）で行う。テストは `t.Cleanup` で元の値に戻す。
+**決定: 差し替え口は `//go:build test` を付けたファイルにのみ置き、本番ビルドには差し替えられる値を残さない**。パッケージレベルに `var getwd = os.Getwd` を1つ置く形は採らない。その形では本番ビルドにも書き換え可能な変数が残り、パス解決という権限チェックの前提を、テスト以外の場所から差し替えられる状態になるためである。代わりに、`internal/security` に同名の `getwd` をビルドタグで排他的に定義する2ファイルを置く。
+
+```go
+// getwd.go — //go:build !test
+// 本番ビルド。差し替え口は無い。
+func getwd() (string, error) { return os.Getwd() }
+```
+
+```go
+// test_helpers_getwd.go — //go:build test
+// テストビルドのみ。ResolvePathForCheck の絶対パス化失敗の分岐へ到達するための差し替え口。
+var getwdHook = os.Getwd
+
+func getwd() (string, error) { return getwdHook() }
+```
+
+`ResolvePathForCheck` はどちらのビルドでも `getwd()` を呼ぶだけであり、本番コードには関数値そのものが存在しない。テストは `getwdHook` に失敗する実装を代入し、`t.Cleanup` で元へ戻す。テスト用ファイルの名前と `//go:build test` の付与は、テストヘルパー配置規約（`test_helpers_<category>.go`）に従う。
+
+この形は「テストのときだけ差し替えられる」ことをビルドタグで保証する点で、`deps.resolvePathForCheck`（§1.4.4）が構造体フィールドで保証しているのと同じ考え方である。両者を使い分ける理由は次のとおり。`verify` の `deps` は既に存在する差し替え口の集合であり、フィールドを1つ足すだけで済む。一方 `ResolvePathForCheck` は3コマンドが共有するパッケージ関数で、引数や構造体を持たないため、同じ手はそのままでは使えない。
+
+**本番ビルドの確認**: `make lint` は `--build-tags test` で走るため、`//go:build !test` 側のファイルは lint されない。`make build`（本番バイナリのビルド）がこのファイルを唯一コンパイルする経路なので、フェーズ1の完了ゲートに `make build` を入れる。
 
 ### 1.5 AC-31 の「1回だけ」の範囲
 
@@ -233,11 +253,11 @@ resolvePathForCheck func(path string) (string, error)
 
 #### ステップ 1-1: `internal/security` にパス解決と除外判定を追加
 
-**変更ファイル**: `internal/security/toctou.go`
+**変更ファイル**: `internal/security/toctou.go`、`internal/security/getwd.go`（新規）、`internal/security/test_helpers_getwd.go`（新規）
 
 - [ ] `ErrPathResolution` 番兵エラーを追加する（02_architecture.md §4.1 の宣言どおり）。
 - [ ] `DeepestExistingAncestor(path string) (string, error)` を追加する。与えられた絶対パスから上へ辿り、実在する最深の祖先を返す。`ResolvePathForCheck` はこれを内部で使い、`cmd/record` のステップ 2-5 の判定もこれを使う（同じ探索を2箇所に書かないため）。
-- [ ] `var getwd = os.Getwd` をパッケージレベルに置く（§1.4.5）。テストから差し替えるためであり、その理由を英語のコメントで添える。
+- [ ] §1.4.5 の `getwd` を、ビルドタグで排他的な2ファイルとして追加する。`getwd.go`（`//go:build !test`）は `os.Getwd` を呼ぶだけの関数で、差し替え口を持たない。`test_helpers_getwd.go`（`//go:build test`）は `var getwdHook = os.Getwd` と、それを呼ぶ同名の関数を持つ。どちらのファイルにも、なぜ2つに分かれているのか（本番ビルドに差し替え可能な値を残さないため）を英語のコメントで書く。
 - [ ] `ResolvePathForCheck(path string) (string, error)` を追加する。相対パスは `getwd` 基準で絶対パス化し、`DeepestExistingAncestor` まで `filepath.EvalSymlinks` で解決したうえで残りを字句的に連結する。祖先を辿る途中の `ENOENT` は失敗として扱わない。
 - [ ] `ResolveAllForCheck(paths []string, logger *slog.Logger) (resolved []string, failures int)` を追加する。失敗ごとに `WARN` を1件記録し、失敗した要素にも検査可能なパス（字句的に正規化した絶対パス）を入れる。
 - [ ] `CheckSkipReason` 列挙型（`CheckSkipNone`・`CheckSkipVariableReference`・`CheckSkipRelative`）と `ClassifyCheckTarget(path string) CheckSkipReason` を追加する。
@@ -271,7 +291,7 @@ resolvePathForCheck func(path string) (string, error)
 - [ ] `TestResolvePathForCheck_SymlinkedAncestorOfMissingPath`: 祖先がシンボリックリンクである未作成パスで、返るパスがリンク先の実体側になる（AC-03）。
 - [ ] `TestResolvePathForCheck_UnreadableAncestorReturnsErrPathResolution`: 読み取り権限のない祖先を経由するパスで、字句的な絶対パスが返り、`errors.Is(err, ErrPathResolution)` が真になる。root スキップと権限復帰を入れる。
 - [ ] `TestResolvePathForCheck_RelativePathUsesWorkingDirectory`: 相対パスがプロセスの作業ディレクトリ基準で絶対パス化される（AC-06）。作業ディレクトリの変更には `t.Chdir` を使う（自動で復元され、`t.Parallel` との併用を Go 側が拒否する）。
-- [ ] `TestResolvePathForCheck_AbsConversionFailure`: `os.Getwd` の失敗経路（02_architecture.md §7.2 が挙げる4経路目）。§1.4.5 の `getwd` を必ず失敗する実装に差し替え（`t.Cleanup` で復元）、`ErrPathResolution` が返ることと、返るパスが入力そのままであることを検証する。
+- [ ] `TestResolvePathForCheck_AbsConversionFailure`: `os.Getwd` の失敗経路（02_architecture.md §7.2 が挙げる4経路目）。§1.4.5 の `getwdHook` を必ず失敗する実装に差し替え（`t.Cleanup` で復元）、`ErrPathResolution` が返ることと、返るパスが入力そのままであることを検証する。
 - [ ] `TestResolveAllForCheck_WarnsOncePerFailure`: 失敗パス2件・成功パス1件を渡し、`failures == 2`、`WARN` 記録が2件、返る要素数が3であること（AC-04）。**あわせて、失敗した2要素が期待どおりの字句的絶対パスであることを表明する**（02_architecture.md §3.1 の「失敗した要素にも検査可能なパスが入る」が fail-closed の根拠であり、件数だけでは検証できないため）。root スキップと権限復帰を入れる。
 - [ ] `TestResolveAllForCheck_NoWarnOnSuccessfulResolution`: 全件成功時に `failures == 0` かつ `WARN` 記録が0件であること（AC-04 の後半）。
 - [ ] `TestClassifyCheckTarget`: 表形式で `CheckSkipNone`（絶対パス）・`CheckSkipVariableReference`（`%{` を含む）・`CheckSkipRelative`（相対パス）の3値を検証する。`%{` を含む相対パスは `CheckSkipVariableReference` を返すことも1行として含める。
@@ -288,7 +308,7 @@ resolvePathForCheck func(path string) (string, error)
 
 **推奨タイトル**: `feat(0164)!: add path resolution helpers and return check counts from RunTOCTOUPermissionCheck`
 
-**レビュー観点**: `ResolvePathForCheck` が実在する最深の祖先まで解決し残りを字句的に連結する規則 / 解決失敗時に検査可能な字句的絶対パスを返す fail-closed 挙動 / `TOCTOUCheckResult` への戻り値変更が5つの呼び出し元とテスト4箇所へ機械的に追随できているか / 相対パスが `getwd`（§1.4.5）経由で絶対パス化され、その失敗経路がテストで到達できること
+**レビュー観点**: `ResolvePathForCheck` が実在する最深の祖先まで解決し残りを字句的に連結する規則 / 解決失敗時に検査可能な字句的絶対パスを返す fail-closed 挙動 / `TOCTOUCheckResult` への戻り値変更が5つの呼び出し元とテスト4箇所へ機械的に追随できているか / 相対パスの絶対パス化が `getwd`（§1.4.5）経由になっており、差し替え口が `//go:build test` 側にしか無いこと（本番ビルドに書き換え可能な関数値が残っていないこと）
 
 **実装モデル要件**: frontier-recommended
 
@@ -341,6 +361,7 @@ resolvePathForCheck func(path string) (string, error)
 #### フェーズ1 完了ゲート
 
 - [ ] `make fmt` → `make test` → `make lint` が緑。
+- [ ] `make build` が通る。`make lint` は `--build-tags test` で走るため、`getwd.go`（`//go:build !test`）をコンパイルするのはこの経路だけである（§1.4.5）。
 - [ ] `make deadcode` を実行する。`ClassifyCheckTarget`・`DeepestExistingAncestor`・`CreateReadOnlyValidator`・`cmdcommon.NewDirectoryPermChecker` は、利用側の移行が済むフェーズ2〜4まで呼び出し元を持たないため、未到達として報告される。これは想定内であり、他に新しい未到達シンボルが出ていないことだけを確認する。
 
 ### PR-2 作成ポイント: read-only validator helpers and hash-directory permission
@@ -824,7 +845,7 @@ PR-1 と PR-2 はフェーズ1（`internal/`）で、これを利用する PR-3�
 
 ### 4.7 テストヘルパー
 
-新しいクロスパッケージのテストヘルパーやモックは必要としない。`cmd/record`・`cmd/verify` の `fakeDirPermChecker` は互いに別の `main` パッケージの非公開型であり、`testutil/` へ移せない（既存コメントが述べているとおり）。ステップ 2-6・3-5 で各パッケージに追加するチェッカ生成失敗のスタブも同じ制約を受けるため、`fakeDirPermChecker` と同様に「意図的な重複である」旨のコメントを英語で添える。`test_helpers.go` の追加は行わない。
+クロスパッケージのテストヘルパーやモックは必要としない。パッケージ内には `internal/security/test_helpers_getwd.go` を1つだけ追加する（§1.4.5 の `getwdHook`）。テストヘルパー配置規約の分類 B に当たり、ファイル名と `//go:build test` の付与はその規約に従う。`cmd/record`・`cmd/verify` の `fakeDirPermChecker` は互いに別の `main` パッケージの非公開型であり、`testutil/` へ移せない（既存コメントが述べているとおり）。ステップ 2-6・3-5 で各パッケージに追加するチェッカ生成失敗のスタブも同じ制約を受けるため、`fakeDirPermChecker` と同様に「意図的な重複である」旨のコメントを英語で添える。上記以外に `test_helpers.go` の追加は行わない。
 
 ---
 
