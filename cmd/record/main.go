@@ -135,7 +135,7 @@ func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) bool {
 	// RunTOCTOUPermissionCheck already logs each violation at WARN; the ERROR log
 	// below is intentionally in addition to it, since record (unlike other callers
 	// of this shared check) escalates violations to a fail-closed, non-zero exit.
-	violations := security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, logger)
+	violations := security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, logger).Violations
 	if len(violations) == 0 {
 		return true
 	}

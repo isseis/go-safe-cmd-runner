@@ -457,7 +457,7 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 	// (e.g. directory not yet created), so the check is still performed.
 	resolvedHashDir, _ := isec.ResolveAbsPathForTOCTOU(cmdcommon.DefaultHashDirectory)
 	toctouDirs := isec.CollectTOCTOUCheckDirs(verifyFilePaths, commandPaths, resolvedHashDir)
-	violations := isec.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
+	violations := isec.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default()).Violations
 	if len(violations) > 0 {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,

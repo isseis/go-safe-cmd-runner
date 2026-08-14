@@ -11,4 +11,9 @@ var (
 
 	// ErrInvalidPath is returned for path structural issues.
 	ErrInvalidPath = errors.New("invalid path")
+
+	// ErrPathResolution is returned when a path could not be fully resolved for a
+	// permission check. A checkable path is still returned alongside it, so callers
+	// use this to record the failure rather than to skip the check.
+	ErrPathResolution = errors.New("failed to resolve path for permission check")
 )

@@ -253,14 +253,14 @@ func getwd() (string, error) { return getwdHook() }
 
 #### ステップ 1-1: `internal/security` にパス解決と除外判定を追加
 
-**変更ファイル**: `internal/security/toctou.go`、`internal/security/getwd.go`（新規）、`internal/security/test_helpers_getwd.go`（新規）
+**変更ファイル**: `internal/security/toctou.go`、`internal/security/errors.go`、`internal/security/getwd.go`（新規）、`internal/security/test_helpers_getwd.go`（新規）
 
-- [ ] `ErrPathResolution` 番兵エラーを追加する（02_architecture.md §4.1 の宣言どおり）。
-- [ ] `DeepestExistingAncestor(path string) (string, error)` を追加する。与えられた絶対パスから上へ辿り、実在する最深の祖先を返す。`ResolvePathForCheck` はこれを内部で使い、`cmd/record` のステップ 2-5 の判定もこれを使う（同じ探索を2箇所に書かないため）。
-- [ ] §1.4.5 の `getwd` を、ビルドタグで排他的な2ファイルとして追加する。`getwd.go`（`//go:build !test`）は `os.Getwd` を呼ぶだけの関数で、差し替え口を持たない。`test_helpers_getwd.go`（`//go:build test`）は `var getwdHook = os.Getwd` と、それを呼ぶ同名の関数を持つ。どちらのファイルにも、なぜ2つに分かれているのか（本番ビルドに差し替え可能な値を残さないため）を英語のコメントで書く。
-- [ ] `ResolvePathForCheck(path string) (string, error)` を追加する。相対パスは `getwd` 基準で絶対パス化し、`DeepestExistingAncestor` まで `filepath.EvalSymlinks` で解決したうえで残りを字句的に連結する。祖先を辿る途中の `ENOENT` は失敗として扱わない。
-- [ ] `ResolveAllForCheck(paths []string, logger *slog.Logger) (resolved []string, failures int)` を追加する。失敗ごとに `WARN` を1件記録し、失敗した要素にも検査可能なパス（字句的に正規化した絶対パス）を入れる。
-- [ ] `CheckSkipReason` 列挙型（`CheckSkipNone`・`CheckSkipVariableReference`・`CheckSkipRelative`）と `ClassifyCheckTarget(path string) CheckSkipReason` を追加する。
+- [x] `ErrPathResolution` 番兵エラーを追加する（02_architecture.md §4.1 の宣言どおり）。**実装時の変更**: 置き場所は `toctou.go` ではなく `internal/security/errors.go` とした。同パッケージの番兵エラー（`ErrInvalidDirPermissions`・`ErrInsecurePathComponent`・`ErrInvalidPath`）はすべてこのファイルにまとまっており、1つだけ別ファイルに置く理由が無いため。
+- [x] `DeepestExistingAncestor(path string) (string, error)` を追加する。与えられた絶対パスから上へ辿り、実在する最深の祖先を返す。`ResolvePathForCheck` はこれを内部で使い、`cmd/record` のステップ 2-5 の判定もこれを使う（同じ探索を2箇所に書かないため）。存在判定には `os.Lstat` を使う（リンク切れのシンボリックリンクを「実在する」側に数え、リンクが置かれている木を黙って検査してしまうより、解決失敗として表面化させるため）。
+- [x] §1.4.5 の `getwd` を、ビルドタグで排他的な2ファイルとして追加する。`getwd.go`（`//go:build !test`）は `os.Getwd` を呼ぶだけの関数で、差し替え口を持たない。`test_helpers_getwd.go`（`//go:build test`）は `var getwdHook = os.Getwd` と、それを呼ぶ同名の関数を持つ。どちらのファイルにも、なぜ2つに分かれているのか（本番ビルドに差し替え可能な値を残さないため）を英語のコメントで書く。
+- [x] `ResolvePathForCheck(path string) (string, error)` を追加する。相対パスは `getwd` 基準で絶対パス化し、`DeepestExistingAncestor` まで `filepath.EvalSymlinks` で解決したうえで残りを字句的に連結する。祖先を辿る途中の `ENOENT` は失敗として扱わない。
+- [x] `ResolveAllForCheck(paths []string, logger *slog.Logger) (resolved []string, failures int)` を追加する。失敗ごとに `WARN` を1件記録し、失敗した要素にも検査可能なパス（字句的に正規化した絶対パス）を入れる。
+- [x] `CheckSkipReason` 列挙型（`CheckSkipNone`・`CheckSkipVariableReference`・`CheckSkipRelative`）と `ClassifyCheckTarget(path string) CheckSkipReason` を追加する。
 
 `ResolveAbsPathForTOCTOU` の削除はステップ 4-4 で行う（本フェーズの時点ではまだ呼び出し元が残っているため）。
 
@@ -270,13 +270,13 @@ func getwd() (string, error) { return getwdHook() }
 
 **変更ファイル**: `internal/security/toctou.go`、および §1.4.2 に挙げた呼び出し元5箇所とテスト4箇所
 
-- [ ] `TOCTOUCheckResult` 型を追加し、`RunTOCTOUPermissionCheck` の戻り値を `[]TOCTOUViolation` から `TOCTOUCheckResult` に変える。計数規則は §1.4.2 のとおり。
-- [ ] `cmd/record/main.go:138` を `result := ...; result.Violations` の形に追随させる。
-- [ ] `cmd/verify/main.go:105` を追随させる。
-- [ ] `cmd/verify/main.go:150`（対象ファイル側、戻り値を捨てている）を追随させる。
-- [ ] `cmd/runner/main.go:460` を追随させる。
-- [ ] `internal/runner/group_executor.go:372` を追随させる。
-- [ ] `internal/security/toctou_test.go` の4箇所（`TestRunTOCTOUPermissionCheck_NoViolations`・`_ViolationDetected`・`_MultipleViolations`・`_EmptyDirs`）を追随させる。
+- [x] `TOCTOUCheckResult` 型を追加し、`RunTOCTOUPermissionCheck` の戻り値を `[]TOCTOUViolation` から `TOCTOUCheckResult` に変える。計数規則は §1.4.2 のとおり。
+- [x] `cmd/record/main.go:138` を `result := ...; result.Violations` の形に追随させる。
+- [x] `cmd/verify/main.go:105` を追随させる。
+- [x] `cmd/verify/main.go:150`（対象ファイル側、戻り値を捨てている）を追随させる。
+- [x] `cmd/runner/main.go:460` を追随させる。
+- [x] `internal/runner/group_executor.go:372` を追随させる。
+- [x] `internal/security/toctou_test.go` の4箇所（`TestRunTOCTOUPermissionCheck_NoViolations`・`_ViolationDetected`・`_MultipleViolations`・`_EmptyDirs`）を追随させる。
 
 **完了条件**: `make test` が通る。既存4テストは元の観点（違反の有無と件数）を引き続き検証している。
 
@@ -286,17 +286,17 @@ func getwd() (string, error) { return getwdHook() }
 
 以下のうち権限不足を再現するテストは、§4.6 のとおり root スキップと `t.Cleanup` での権限復帰を必ず入れる。
 
-- [ ] `TestResolvePathForCheck_FullyExistingPathResolvesSymlinks`: パス全体が実在し、途中にシンボリックリンクがある場合に実体パスが返る。
-- [ ] `TestResolvePathForCheck_PartiallyExistingPath`: 末尾2階層が未作成のパスで、実在する最深の祖先まで解決され、残りが字句的に連結される（AC-02）。
-- [ ] `TestResolvePathForCheck_SymlinkedAncestorOfMissingPath`: 祖先がシンボリックリンクである未作成パスで、返るパスがリンク先の実体側になる（AC-03）。
-- [ ] `TestResolvePathForCheck_UnreadableAncestorReturnsErrPathResolution`: 読み取り権限のない祖先を経由するパスで、字句的な絶対パスが返り、`errors.Is(err, ErrPathResolution)` が真になる。root スキップと権限復帰を入れる。
-- [ ] `TestResolvePathForCheck_RelativePathUsesWorkingDirectory`: 相対パスがプロセスの作業ディレクトリ基準で絶対パス化される（AC-06）。作業ディレクトリの変更には `t.Chdir` を使う（自動で復元され、`t.Parallel` との併用を Go 側が拒否する）。
-- [ ] `TestResolvePathForCheck_AbsConversionFailure`: `os.Getwd` の失敗経路（02_architecture.md §7.2 が挙げる4経路目）。§1.4.5 の `getwdHook` を必ず失敗する実装に差し替え（`t.Cleanup` で復元）、`ErrPathResolution` が返ることと、返るパスが入力そのままであることを検証する。
-- [ ] `TestResolveAllForCheck_WarnsOncePerFailure`: 失敗パス2件・成功パス1件を渡し、`failures == 2`、`WARN` 記録が2件、返る要素数が3であること（AC-04）。**あわせて、失敗した2要素が期待どおりの字句的絶対パスであることを表明する**（02_architecture.md §3.1 の「失敗した要素にも検査可能なパスが入る」が fail-closed の根拠であり、件数だけでは検証できないため）。root スキップと権限復帰を入れる。
-- [ ] `TestResolveAllForCheck_NoWarnOnSuccessfulResolution`: 全件成功時に `failures == 0` かつ `WARN` 記録が0件であること（AC-04 の後半）。
-- [ ] `TestClassifyCheckTarget`: 表形式で `CheckSkipNone`（絶対パス）・`CheckSkipVariableReference`（`%{` を含む）・`CheckSkipRelative`（相対パス）の3値を検証する。`%{` を含む相対パスは `CheckSkipVariableReference` を返すことも1行として含める。
-- [ ] `TestRunTOCTOUPermissionCheck_CountsCheckedAndSkipped`: 実在ディレクトリ1件・不在ディレクトリ1件・違反ディレクトリ1件を渡し、`Checked == 2`・`Skipped == 1`・`len(Violations) == 1` になること（§1.4.2 の計数規則を固定する）。
-- [ ] `TestDeepestExistingAncestor`: 全体が実在する場合はパス自身、途中まで実在する場合はその最深の祖先が返ること。
+- [x] `TestResolvePathForCheck_FullyExistingPathResolvesSymlinks`: パス全体が実在し、途中にシンボリックリンクがある場合に実体パスが返る。
+- [x] `TestResolvePathForCheck_PartiallyExistingPath`: 末尾2階層が未作成のパスで、実在する最深の祖先まで解決され、残りが字句的に連結される（AC-02）。
+- [x] `TestResolvePathForCheck_SymlinkedAncestorOfMissingPath`: 祖先がシンボリックリンクである未作成パスで、返るパスがリンク先の実体側になる（AC-03）。
+- [x] `TestResolvePathForCheck_UnreadableAncestorReturnsErrPathResolution`: 読み取り権限のない祖先を経由するパスで、字句的な絶対パスが返り、`errors.Is(err, ErrPathResolution)` が真になる。root スキップと権限復帰を入れる。
+- [x] `TestResolvePathForCheck_RelativePathUsesWorkingDirectory`: 相対パスがプロセスの作業ディレクトリ基準で絶対パス化される（AC-06）。作業ディレクトリの変更には `t.Chdir` を使う（自動で復元され、`t.Parallel` との併用を Go 側が拒否する）。
+- [x] `TestResolvePathForCheck_AbsConversionFailure`: `os.Getwd` の失敗経路（02_architecture.md §7.2 が挙げる4経路目）。§1.4.5 の `getwdHook` を必ず失敗する実装に差し替え（`t.Cleanup` で復元）、`ErrPathResolution` が返ることと、返るパスが入力そのままであることを検証する。
+- [x] `TestResolveAllForCheck_WarnsOncePerFailure`: 失敗パス2件・成功パス1件を渡し、`failures == 2`、`WARN` 記録が2件、返る要素数が3であること（AC-04）。**あわせて、失敗した2要素が期待どおりの字句的絶対パスであることを表明する**（02_architecture.md §3.1 の「失敗した要素にも検査可能なパスが入る」が fail-closed の根拠であり、件数だけでは検証できないため）。root スキップと権限復帰を入れる。
+- [x] `TestResolveAllForCheck_NoWarnOnSuccessfulResolution`: 全件成功時に `failures == 0` かつ `WARN` 記録が0件であること（AC-04 の後半）。
+- [x] `TestClassifyCheckTarget`: 表形式で `CheckSkipNone`（絶対パス）・`CheckSkipVariableReference`（`%{` を含む）・`CheckSkipRelative`（相対パス）の3値を検証する。`%{` を含む相対パスは `CheckSkipVariableReference` を返すことも1行として含める。
+- [x] `TestRunTOCTOUPermissionCheck_CountsCheckedAndSkipped`: 実在ディレクトリ1件・不在ディレクトリ1件・違反ディレクトリ1件を渡し、`Checked == 2`・`Skipped == 1`・`len(Violations) == 1` になること（§1.4.2 の計数規則を固定する）。
+- [x] `TestDeepestExistingAncestor`: 全体が実在する場合はパス自身、途中まで実在する場合はその最深の祖先が返ること。
 
 **根拠テストの自己検証**: 各テストを追加したあと、検証対象の分岐（最深祖先への遡り、`WARN` の記録、`Skipped` の加算）を一時的に無効化して失敗することを確認し、その旨をコミットメッセージに記す。
 
@@ -362,7 +362,7 @@ func getwd() (string, error) { return getwdHook() }
 
 - [ ] `make fmt` → `make test` → `make lint` が緑。
 - [ ] `make build` が通る。`make lint` は `--build-tags test` で走るため、`getwd.go`（`//go:build !test`）をコンパイルするのはこの経路だけである（§1.4.5）。
-- [ ] `make deadcode` を実行する。`ClassifyCheckTarget`・`DeepestExistingAncestor`・`CreateReadOnlyValidator`・`cmdcommon.NewDirectoryPermChecker` は、利用側の移行が済むフェーズ2〜4まで呼び出し元を持たないため、未到達として報告される。これは想定内であり、他に新しい未到達シンボルが出ていないことだけを確認する。
+- [ ] `make deadcode` を実行する。`ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget`・`DeepestExistingAncestor`・`security.getwd`（`ResolvePathForCheck` からのみ呼ばれる）・`CreateReadOnlyValidator`・`cmdcommon.NewDirectoryPermChecker` は、利用側の移行が済むフェーズ2〜4まで呼び出し元を持たないため、未到達として報告される。これは想定内であり、他に新しい未到達シンボルが出ていないことだけを確認する。
 
 ### PR-2 作成ポイント: read-only validator helpers and hash-directory permission
 

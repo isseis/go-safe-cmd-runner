@@ -102,7 +102,7 @@ func checkDirPermissions(cfg *verifyConfig, stderr io.Writer) bool {
 	// The ERROR below is in addition to the WARN RunTOCTOUPermissionCheck already
 	// logs, so the level distinguishes a violation that stopped the run from one
 	// that did not.
-	if violations := security.RunTOCTOUPermissionCheck(secValidator, hashDirs, logger); len(violations) > 0 {
+	if violations := security.RunTOCTOUPermissionCheck(secValidator, hashDirs, logger).Violations; len(violations) > 0 {
 		// The remediation names neither a directory nor a command: v.Path is the
 		// directory that was checked, not necessarily the one at fault (the checker
 		// walks from the root down), and ErrInvalidDirPermissions covers causes
@@ -147,6 +147,7 @@ func checkDirPermissions(cfg *verifyConfig, stderr io.Writer) bool {
 			targetDirs = append(targetDirs, dir)
 		}
 	}
+	// Violations on the target files are warnings only; the run continues.
 	security.RunTOCTOUPermissionCheck(secValidator, targetDirs, logger)
 	return true
 }

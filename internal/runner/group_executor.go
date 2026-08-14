@@ -369,7 +369,7 @@ func (ge *DefaultGroupExecutor) runGroupTOCTOUCheck(runtimeGroup *runnertypes.Ru
 
 	// hashDir is already checked at startup; pass empty string to skip re-traversal.
 	dirs := isec.CollectTOCTOUCheckDirs(verifyPaths, cmdPaths, "")
-	violations := isec.RunTOCTOUPermissionCheck(ge.toctouValidator, dirs, slog.Default())
+	violations := isec.RunTOCTOUPermissionCheck(ge.toctouValidator, dirs, slog.Default()).Violations
 	if len(violations) > 0 {
 		return fmt.Errorf("%w for group[%s]: %d directory violation(s) detected; review directory permissions",
 			ErrTOCTOUViolation, runnertypes.ExtractGroupName(runtimeGroup), len(violations))
