@@ -123,8 +123,10 @@ func TestCreateReadOnlyValidator_ExistingHashDirectoryHasNoDeferredError(t *test
 	assert.NoError(t, validator.HashDirError())
 }
 
-// walkEntries returns the sorted relative paths and modes under root, so two
-// runs can be compared to prove no filesystem entry was added or changed.
+// walkEntries returns the sorted relative paths, entry types, and modes under
+// root, so two runs can be compared to prove no filesystem entry was added or
+// had its type or mode changed. The entry type comes from DirEntry.Type so a
+// symlink is reported as one even when d.Info would follow it.
 func walkEntries(t *testing.T, root string) []string {
 	t.Helper()
 	var entries []string
@@ -140,7 +142,7 @@ func walkEntries(t *testing.T, root string) []string {
 		if infoErr != nil {
 			return infoErr
 		}
-		entries = append(entries, rel+"/"+info.Mode().String())
+		entries = append(entries, rel+"/"+d.Type().String()+"/"+info.Mode().String())
 		return nil
 	})
 	require.NoError(t, err, "failed to walk parent subtree")
