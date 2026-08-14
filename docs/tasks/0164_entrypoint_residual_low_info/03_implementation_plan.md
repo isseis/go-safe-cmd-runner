@@ -8,7 +8,7 @@
 | Created | 2026-08-14 |
 | Review date | - |
 | Reviewer | - |
-| Comments | §1.5 に、承認前に決定が必要な事項が1件ある |
+| Comments | AC-31 の解釈は §1.5 で決定済み。残る二重出力は [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) へ分離した |
 
 ## 関連文書
 
@@ -91,7 +91,7 @@
 | `cmd/runner/main.go:572-578` | `resource.Formatter` を選ぶ `switch` に `default` が無い |
 | `cmd/runner/main.go:166` | `dropStartupPrivileges(syscall.Getuid(), syscall.Getgid())` の呼び出し（AC-42 のコメント追記先） |
 
-`ValidateSlackWebhookEnv`（`internal/runner/bootstrap/environment.go:49`）がエラーを返すのは `GSCR_SLACK_WEBHOOK_URL_SUCCESS` のみが設定されている場合だけで、返るのは複数行の `SuccessWithoutErrorError`（同 28-40 行）である。既存の E2E テスト `TestE2E_PreExecutionError_MissingSlackAllowedHost` は `GSCR_SLACK_WEBHOOK_URL_ERROR` のみを設定しており、この検証を通過してから設定側で失敗する別経路なので、AC-31 の根拠にはならない。この経路には §1.5 の未決事項がある。
+`ValidateSlackWebhookEnv`（`internal/runner/bootstrap/environment.go:49`）がエラーを返すのは `GSCR_SLACK_WEBHOOK_URL_SUCCESS` のみが設定されている場合だけで、返るのは複数行の `SuccessWithoutErrorError`（同 28-40 行）である。既存の E2E テスト `TestE2E_PreExecutionError_MissingSlackAllowedHost` は `GSCR_SLACK_WEBHOOK_URL_ERROR` のみを設定しており、この検証を通過してから設定側で失敗する別経路なので、AC-31 の根拠にはならない。この経路の出力回数については §1.5 を参照。
 
 #### 1.3.7 文書
 
@@ -183,9 +183,9 @@ newPermChecker func(override security.DirectoryPermChecker) (security.DirectoryP
 
 この追加は 02_architecture.md §3.4 の構造体定義を1フィールド拡張する。設計の意図（§7.1）とは整合しているため、本計画のレビュー時に §3.4 の記載を追補する。
 
-### 1.5 レビューで決定が必要な事項（承認前）
+### 1.5 AC-31 の「1回だけ」の範囲
 
-**AC-31 の「1回だけ」の範囲**。02_architecture.md §6.5 は、`cmd/runner/main.go:284` の直接出力を消せば出力が1回になるとしている。しかし実測すると、そうはならない。
+**決定: 人間向けブロックに1回とする**。02_architecture.md §6.5 は、`cmd/runner/main.go:284` の直接出力を消せば出力が1回になるとしている。しかし実測すると、そうはならない。
 
 `logging.handleErrorCommon`（`internal/logging/pre_execution_error.go:99-122`）は、同じ `errorMsg` を2回標準エラー出力へ書く。
 
@@ -194,14 +194,13 @@ newPermChecker func(override security.DirectoryPermChecker) (security.DirectoryP
 
 `ValidateSlackWebhookEnv` は `bootstrap.SetupLogging`（`cmd/runner/main.go:293`）より前の `cmd/runner/main.go:282` で呼ばれるため、2 の時点で既定ロガーは Go 標準のハンドラであり、出力先は標準エラー出力である。`SuccessWithoutErrorError` は複数行だが、`GSCR_SLACK_WEBHOOK_URL_SUCCESS is set but GSCR_SLACK_WEBHOOK_URL_ERROR is not.` という一文は改行を含まないため、構造化ログ行の中にも連続した部分文字列として現れる。
 
-したがって現状の出現回数は3回、ステップ 4-5 だけを行うと2回であり、AC-31 を文字どおり満たさない。取り得る道は次の2つで、いずれを採るかを決めないと実装できない。
+したがって現状の出現回数は3回、ステップ 4-5 を行うと2回になる。
 
-| 案 | 内容 | 影響 |
-|---|---|---|
-| A（推奨） | `internal/logging` に、人間向けの `Details:` に載せる本文と構造化ログに載せる要約を分ける口を設ける。`ValidateSlackWebhookEnv` のエラーは、`Details:` には複数行の案内を、構造化ログには1行の要約を載せる | `internal/logging/pre_execution_error.go` を変更する。本タスクのスコープ（エントリポイント3バイナリの起動処理）を1パッケージ分はみ出すため、02_architecture.md の改訂が要る |
-| B | AC-31 の「標準エラー出力に1回」を「人間向けブロックに1回」と解釈し、構造化ログ行は数えない | 実装は 02_architecture.md §6.5 のままでよいが、利用者から見た重複は残る。所見 I-3 が問題にした「同じ案内が2回表示される」は解消しない |
+**本タスクは AC-31 の「標準エラー出力に1回」を「人間向けブロックに1回」と解釈する**。ステップ 4-5 は 02_architecture.md §6.5 のとおり直接出力の削除にとどめ、`internal/logging` には手を入れない。同パッケージは起動前エラーと実行時エラーの両方が通る共有経路であり、そこへの変更は本タスクのスコープ（エントリポイント3バイナリの起動処理）から外れるためである。
 
-本書は案 A を前提に §7 の AC-31 検証を書いている。案 B を採る場合、ステップ 4-5 と §7 の AC-31 行を差し替える。
+構造化ログ行に本文がもう一度現れる点は、[#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) として分離した。同 issue が解消すれば、構造化ログ行を含めても1回になる。
+
+この解釈のもとで AC-31 が検証可能であるためには、人間向けブロックと構造化ログ行を機械的に分けられる必要がある。両者は次の点で区別できる。`slog` の `TextHandler` は複数行のメッセージを引用符で囲んだ1行として出力するため、案内文の全体が `level=ERROR` を含む1行の中に収まる。一方 `Details:` 側は案内文を改行そのままで出すため、対象の一文は `level=ERROR` を含まない行に単独で現れる。したがって「`level=ERROR` を含む行を除いたうえで対象の一文を数える」という手順で、人間向けブロックの出現回数だけを取り出せる（§7 の AC-31 行）。
 
 ---
 
@@ -484,17 +483,14 @@ newPermChecker func(override security.DirectoryPermChecker) (security.DirectoryP
 - [ ] `newDryRunFormatter(format resource.OutputFormat) (resource.Formatter, error)` を追加し、`default` で未知の形式に対するエラーを返す。
 - [ ] 572-578 行の `switch` を `newDryRunFormatter` の呼び出しに置き換え、エラー時はそれを返す。
 
-#### ステップ 4-5: Slack 環境変数エラーの単一出力
+#### ステップ 4-5: Slack 環境変数エラーの二重出力を解消
 
-§1.5 の案 A を前提とする。案 B に決まった場合は本ステップを1つ目のチェックボックスのみに縮める。
+§1.5 の決定に従い、直接出力の削除のみを行う。`internal/logging` には手を入れない。
 
-**変更ファイル**: `cmd/runner/main.go`、`internal/logging/pre_execution_error.go`、`internal/runner/bootstrap/environment.go`
+**変更ファイル**: `cmd/runner/main.go`
 
-- [ ] `cmd/runner/main.go:284` の `fmt.Fprintln(os.Stderr, err.Error())` を削除する。
-- [ ] `SuccessWithoutErrorError` に、1行の要約を返すメソッドを追加する（`Error()` の複数行本文はそのまま維持し、AC-32 が求める案内を失わない）。
-- [ ] `logging.PreExecutionError` と `errorHandlingParams` に、構造化ログ側へ載せる要約を人間向け本文と別に指定する口を追加する。指定が無い場合は従来どおり本文をそのまま使い、既存の呼び出し元の挙動を変えない。
-- [ ] `cmd/runner/main.go` の Slack 検証失敗経路で、人間向け本文に複数行の案内を、構造化ログ側に1行の要約を載せる。
-- [ ] 02_architecture.md §6.5 に、この経路が `internal/logging` に及ぶことを追補する（本計画の承認と同時に行う）。
+- [ ] `cmd/runner/main.go:284` の `fmt.Fprintln(os.Stderr, err.Error())` を削除する。`PreExecutionError` の返却はそのまま残す。
+- [ ] 同箇所に、構造化ログ行にも本文が現れるため人間向けブロックとしては1回になる旨と、残る重複を [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) で扱う旨を、英語のコメントで残す。次に読む者が「まだ2回出ている」と見て直接出力を戻すことを防ぐためである。
 
 #### ステップ 4-6: ログファイル名タイムスタンプを UTC に
 
@@ -527,7 +523,7 @@ newPermChecker func(override security.DirectoryPermChecker) (security.DirectoryP
 - [ ] `TestRunTOCTOUCheck_CheckerInitFailureReturnsPreExecutionError` を追加する（AC-24・AC-25）。失敗する生成関数を渡し、panic せず `*logging.PreExecutionError` が返ることを `errors.AsType` で検証する。
 - [ ] `TestNewDryRunFormatter_KnownFormats` を追加する（AC-30）。`resource.OutputFormatText` と `resource.OutputFormatJSON` に対して期待する型のフォーマッタが返り、エラーが無いこと。
 - [ ] `TestNewDryRunFormatter_UnknownFormatReturnsError` を追加する（AC-29）。`cli.ParseDryRunOutputFormat` を経由せず不正な `resource.OutputFormat` 値を直接渡し、nil でないエラーが返ること。
-- [ ] `TestE2E_SlackWebhookEnvErrorPrintedOnce` を `cmd/runner/integration_pre_execution_error_test.go` に追加する（AC-31〜AC-33）。**子プロセスの環境を明示的に組み立てる**: `os.Environ()` から `GSCR_SLACK_` で始まる変数をすべて取り除いたうえで `GSCR_SLACK_WEBHOOK_URL_SUCCESS` のみを設定する。既存の兄弟テストのように `append(os.Environ(), ...)` とすると、開発者や CI が `GSCR_SLACK_WEBHOOK_URL_ERROR` を export している環境で `ValidateSlackWebhookEnv` が成功してしまい、3つの表明がいずれも別の失敗を見ることになる。実行は `go run . -config <valid.toml> -dry-run`（webhook 未設定のまま起動検証を通すため、既存の E2E テストと同様に `-dry-run` を付ける）。まず終了コードが `1` であることを表明し（AC-33）、そのうえで標準エラー出力中の `GSCR_SLACK_WEBHOOK_URL_SUCCESS is set but GSCR_SLACK_WEBHOOK_URL_ERROR is not.` の出現回数がちょうど1であること（AC-31）、`export GSCR_SLACK_WEBHOOK_URL_ERROR=` を含むこと（AC-32）を検証する。終了コードを先に見るのは、環境が漏れて別経路に入った場合に静かに通らないようにするためである。
+- [ ] `TestE2E_SlackWebhookEnvErrorPrintedOnce` を `cmd/runner/integration_pre_execution_error_test.go` に追加する（AC-31〜AC-33）。**子プロセスの環境を明示的に組み立てる**: `os.Environ()` から `GSCR_SLACK_` で始まる変数をすべて取り除いたうえで `GSCR_SLACK_WEBHOOK_URL_SUCCESS` のみを設定する。既存の兄弟テストのように `append(os.Environ(), ...)` とすると、開発者や CI が `GSCR_SLACK_WEBHOOK_URL_ERROR` を export している環境で `ValidateSlackWebhookEnv` が成功してしまい、3つの表明がいずれも別の失敗を見ることになる。実行は `go run . -config <valid.toml> -dry-run`（webhook 未設定のまま起動検証を通すため、既存の E2E テストと同様に `-dry-run` を付ける）。まず終了コードが `1` であることを表明する（AC-33）。環境が漏れて別経路に入った場合に静かに通らないよう、これを最初に見る。次に、§1.5 のとおり**標準エラー出力から `level=ERROR` を含む行を除いたうえで**、`GSCR_SLACK_WEBHOOK_URL_SUCCESS is set but GSCR_SLACK_WEBHOOK_URL_ERROR is not.` の出現回数がちょうど1であることを検証する（AC-31）。除外した構造化ログ行に同じ本文が残ることは既知であり、[#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) で扱う。この表明は、直接出力が戻された場合に2になって失敗する。最後に、除外前の標準エラー出力全体が `export GSCR_SLACK_WEBHOOK_URL_ERROR=` を含むことを検証する（AC-32）。除外の意図と #1020 との関係を、テストの doc コメントに英語で記す。
 - [ ] `TestSetupLoggerWithConfig_LogFileNameTimestampIsUTC` を `internal/runner/bootstrap/logger_test.go` に追加する（AC-21〜AC-23）。`time.Local` を UTC+9 相当のロケーションに差し替えたうえで（`t.Cleanup` で復元）、ログディレクトリに作られたファイル名を読み、`<hostname>_<timestamp>_<runID>.json` の3要素構成であること、タイムスタンプ部が `20060102T150405Z` の書式に合致し 16 文字であること、その値を UTC としてパースした結果が実行時刻と 1 分以内で一致することを検証する。`time.Local` はプロセス全体の状態なので `t.Parallel()` を呼ばない。
 - [ ] `internal/runner/bootstrap/config_test.go: TestNormalizeSlackAllowedHost` の表に、`[2001:DB8::1]` → `2001:db8::1` と `[2001:db8::1]` → `2001:db8::1` の2行を追加する（AC-34）。
 - [ ] `TestNormalizeSlackAllowedHost_UppercaseIPv6PassesWebhookURLValidation` を追加する（AC-35）。大文字 IPv6 を正規化した値を許可ホストとして `internal/logging` の webhook URL 検証に渡し、同じアドレスを含む URL が許可されること。
@@ -640,7 +636,7 @@ newPermChecker func(override security.DirectoryPermChecker) (security.DirectoryP
 
 | リスク | 影響 | 対処 |
 |---|---|---|
-| §1.5 の未決事項が承認前に決まらない | ステップ 4-5 と AC-31 の検証が確定しない | レビューで案 A / 案 B を決める。案 A なら 02_architecture.md §6.5 を同時に追補する |
+| 構造化ログ行に本文が残ることを、後から見た者が退行と誤認して直接出力を戻す | 二重出力が復活する | ステップ 4-5 で削除箇所に英語のコメントを残し、[#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) を参照させる。AC-31 のテストは直接出力が戻ると失敗する |
 | `RunTOCTOUPermissionCheck` の戻り値変更が5つの呼び出し元とテスト4箇所に波及する | コンパイルエラーの取りこぼし | ステップ 1-2 を単独のコミットにし、`make test` が緑になるまで次へ進まない |
 | `cmd/verify/main_test.go` の全面書き換えで、既存の観点が落ちる | 退行の見落とし | §7 のトレーサビリティ表で書き換え前後の観点を対応付ける。書き換え前後で `go test -tags test -coverprofile=... ./cmd/verify/... && go tool cover -func=...` を比較する |
 | sticky world-writable の判定（ステップ 2-4）が正常な運用を拒否する | `record` が使えなくなる環境が出る | 本番既定のハッシュディレクトリ（`/usr/local/etc/go-safe-cmd-runner/hashes`）は該当しない。対の2テスト（拒否と通過）で判定範囲を固定し、CHANGELOG と `record_command.ja.md` に回避手順を記す |
@@ -686,7 +682,7 @@ newPermChecker func(override security.DirectoryPermChecker) (security.DirectoryP
 - [ ] ステップ 4-2: `runner` の権限チェッカ生成から panic を無くす
 - [ ] ステップ 4-3: グループ実行時チェックを共有処理へ差し替え
 - [ ] ステップ 4-4: dry-run 出力形式の分岐に `default` を入れる
-- [ ] ステップ 4-5: Slack 環境変数エラーの単一出力
+- [ ] ステップ 4-5: Slack 環境変数エラーの二重出力を解消
 - [ ] ステップ 4-6: ログファイル名タイムスタンプを UTC に
 - [ ] ステップ 4-7: 許可 Slack ホストの IPv6 正規化を揃える
 - [ ] ステップ 4-8: 特権降格のコメント追記と `ResolveAbsPathForTOCTOU` の削除
@@ -752,8 +748,8 @@ newPermChecker func(override security.DirectoryPermChecker) (security.DirectoryP
 | AC-29 | test | `cmd/runner/main_test.go::TestNewDryRunFormatter_UnknownFormatReturnsError` | — |
 | AC-30 | test | `cmd/runner/main_test.go::TestNewDryRunFormatter_KnownFormats` | — |
 | AC-30 | test | `cmd/runner/dry_run_integration_test.go::TestDryRunTextOutput_Unchanged`、`::TestDryRunJSONOutput_DetailLevels` | 通過 |
-| AC-31 | test | `cmd/runner/integration_pre_execution_error_test.go::TestE2E_SlackWebhookEnvErrorPrintedOnce`（案内文の出現回数がちょうど1） | — |
-| AC-32 | test | 同上（`export GSCR_SLACK_WEBHOOK_URL_ERROR=` を含むことを検証） | — |
+| AC-31 | test | `cmd/runner/integration_pre_execution_error_test.go::TestE2E_SlackWebhookEnvErrorPrintedOnce`（`level=ERROR` を含む行を除いた標準エラー出力で、案内文の出現回数がちょうど1。§1.5 の解釈による） | — |
+| AC-32 | test | 同上（除外前の標準エラー出力全体が `export GSCR_SLACK_WEBHOOK_URL_ERROR=` を含むことを検証） | — |
 | AC-33 | test | 同上（終了コード `1`） | — |
 | AC-34 | test | `internal/runner/bootstrap/config_test.go::TestNormalizeSlackAllowedHost`（大文字・小文字の IPv6 が同一結果になる2行） | — |
 | AC-35 | test | `internal/runner/bootstrap/config_test.go::TestNormalizeSlackAllowedHost_UppercaseIPv6PassesWebhookURLValidation` | — |
@@ -799,7 +795,6 @@ newPermChecker func(override security.DirectoryPermChecker) (security.DirectoryP
 
 ## 9. 成功基準
 
-- [ ] §1.5 の未決事項が決定され、決定内容が 02_architecture.md に反映されている。
 - [ ] §7 のすべての AC 検証が期待結果どおりである。
 - [ ] `make test` と `make lint` が緑である。
 - [ ] `make deadcode` が本タスクに由来する未使用シンボルを報告しない。
@@ -811,8 +806,7 @@ newPermChecker func(override security.DirectoryPermChecker) (security.DirectoryP
 
 ## 10. 次のステップ
 
-- [ ] §1.5 の未決事項について決定を得る。
-- [ ] 本書のレビューと `approved` への更新（レビュアー作業）。あわせて 02_architecture.md の §3.4（`deps` への `newPermChecker` 追加）と、案 A を採る場合の §6.5 を追補する。
+- [ ] 本書のレビューと `approved` への更新（レビュアー作業）。あわせて 02_architecture.md §3.4 に `deps` の `newPermChecker` を追補する（§1.4.4）。
 - [ ] 承認後、フェーズ1から順に実装する。フェーズごとに PR を分ける。
 - [ ] 実装完了後、`docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の §2・§3 から、本タスクで解消した 11 件を消し込む。
 - [ ] issue [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) をクローズする。対象外とした L-6（[#1018](https://github.com/isseis/go-safe-cmd-runner/issues/1018)）と I-6（[#1019](https://github.com/isseis/go-safe-cmd-runner/issues/1019)）が別 issue として残ることを、クローズコメントに記す。
