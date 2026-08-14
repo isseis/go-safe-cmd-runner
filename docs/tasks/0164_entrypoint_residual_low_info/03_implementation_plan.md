@@ -8,7 +8,7 @@
 | Created | 2026-08-14 |
 | Review date | - |
 | Reviewer | - |
-| Comments | AC-31 の解釈は §1.5 で決定済み。残る二重出力は [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) へ分離した。レビュー指摘により、AC-31 の選別条件（`level=ERROR` → `error_message=`）、AC-27 の検索式（`isec` 別名）、ステップ 4-3 の除外範囲、`deps.resolvePathForCheck` の宣言、AC-01・AC-15 の現状件数を修正済み |
+| Comments | AC-31 の解釈は §1.5 で決定済み。残る二重出力は [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) へ分離した。レビュー指摘により、AC-31 の選別条件（`level=ERROR` → `error_message=`）、AC-27 の検索式（`isec` 別名）、ステップ 4-3 の除外範囲、`deps.resolvePathForCheck` の宣言、AC-01・AC-15 の現状件数を修正済み。さらに PR レビュー指摘により、権限チェッカの注入口を引数無しのファクトリ `newPermChecker func() (security.DirectoryPermChecker, error)` に一本化し、`toctouChecker` を廃止した |
 
 ## 関連文書
 
@@ -170,16 +170,18 @@ func RunTOCTOUPermissionCheck(checker DirectoryPermChecker, dirs []string, logge
 
 #### 1.4.4 権限チェッカ生成とパス解決の注入口
 
-`security.NewDirectoryPermChecker()` が常に成功する以上（§1.3.2）、AC-24〜AC-26 は生成関数そのものを差し替えなければ検証できない。02_architecture.md §7.1 はこれを求めているが、同 §3.4 の `deps` 構造体の記載には該当フィールドが無い。本計画では §7.1 に従い、次のフィールドを追加する。
+`security.NewDirectoryPermChecker()` が常に成功する以上（§1.3.2）、AC-24〜AC-26 は生成関数そのものを差し替えなければ検証できない。02_architecture.md §7.1 はこれを求めており、同 §3.4 の `deps` 構造体にも次のフィールドを置く。
 
 ```go
 // cmd/record and cmd/verify: added to deps
 // newPermChecker builds the directory permission checker.
 // nil means cmdcommon.NewDirectoryPermChecker.
-newPermChecker func(override security.DirectoryPermChecker) (security.DirectoryPermChecker, error)
+newPermChecker func() (security.DirectoryPermChecker, error)
 ```
 
-`runner` は `deps` を持たないため、02_architecture.md §3.3 のとおり `runTOCTOUCheck` の引数として受け取る。`runner` には差し替え対象のチェッカが無いので、引数の型は `cmdcommon.NewDirectoryPermChecker` と同じシグネチャとし、呼び出し元（`cmd/runner/main.go:401`）が `cmdcommon.NewDirectoryPermChecker` をそのまま渡して `runTOCTOUCheck` の内部で `nil` を与える。3コマンドが同一の生成ヘルパーを共有する状態を保ち、AC-27 を弱めないためである。
+このフィールドは、`verify` のパッケージレベル可変変数 `toctouChecker`（および `deps` に同名のフィールドを置く案）を置き換えるものであり、両者は併存させない。チェッカの実体を差し替える口と生成関数を差し替える口は同じ目的を果たすうえ、実体だけを差し替えると本番の生成経路を迂回してしまうためである。テストは `d.newPermChecker` に偽のチェッカを返す実装を与えることで差し替える。
+
+`runner` は `deps` を持たないため、02_architecture.md §3.3 のとおり `runTOCTOUCheck` の引数として同じシグネチャの関数を受け取る。呼び出し元（`cmd/runner/main.go:401`）は `cmdcommon.NewDirectoryPermChecker` をそのまま渡し、`runTOCTOUCheck` は引数無しでそれを呼ぶ（nil を渡す必要はもう無い）。3コマンドが同一の生成ヘルパーを共有する状態を保ち、AC-27 を弱めないためである。
 
 同じ理由で、`verify` の `deps` にはパス解決関数も持たせる。AC-05（fail-closed 終了時にパス解決の失敗を出力する）の根拠のうち、実際に権限を落とす `TestRunFailsClosedReportsPathResolutionFailure` は root 実行時にスキップされるため、権限に依存しない根拠として `ErrPathResolution` を確実に返す実装を注入する必要がある（ステップ 3-4 の `TestRunFailsClosedReportsInjectedPathResolutionFailure`）。差し替え口が無ければ、この経路は root で1本も検証されない。
 
@@ -192,7 +194,7 @@ resolvePathForCheck func(path string) (string, error)
 
 `checkHashDirPermissions` と `checkTargetFilePermissions` は `security.ResolvePathForCheck` を直接呼ばず、このフィールド経由で呼ぶ（`nil` の場合の既定を `defaultDeps()` で与える）。`record` と `runner` には対応する AC が無いので追加しない（YAGNI）。
 
-これらの追加は 02_architecture.md §3.4 の構造体定義を2フィールド拡張する。設計の意図（§7.1）とは整合しているため、本計画のレビュー時に §3.4 の記載を追補する。
+これらの追加は 02_architecture.md §3.4 の構造体定義を2フィールド拡張する。設計の意図（§7.1）とは整合しており、§3.4 の記載は追補済みである。
 
 ### 1.5 AC-31 の「1回だけ」の範囲
 
@@ -291,10 +293,9 @@ resolvePathForCheck func(path string) (string, error)
 
 **変更ファイル**: `internal/cmdcommon/common.go`、`internal/cmdcommon/common_test.go`
 
-- [ ] `NewDirectoryPermChecker(override security.DirectoryPermChecker) (security.DirectoryPermChecker, error)` を追加する。`override` が非 nil ならそれを返し、nil なら `security.NewDirectoryPermChecker()` に委譲する。panic はしない。
+- [ ] `NewDirectoryPermChecker() (security.DirectoryPermChecker, error)` を追加する。`security.NewDirectoryPermChecker()` に委譲するだけで、panic はしない。テストからの差し替えはこのヘルパーではなく各コマンドの注入口（`deps.newPermChecker`・`runTOCTOUCheck` の引数）で行うため、引数は持たない。
 - [ ] `CreateReadOnlyValidator(hashDir string) (*filevalidator.Validator, error)` を追加する。`filevalidator.NewReadOnly(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})` に委譲する。
-- [ ] `TestNewDirectoryPermChecker_ReturnsOverride`: 渡した実装がそのまま返る。
-- [ ] `TestNewDirectoryPermChecker_ConstructsDefaultWhenNil`: `nil` を渡すと非 nil のチェッカとエラー無しが返る。
+- [ ] `TestNewDirectoryPermChecker_ConstructsChecker`: 非 nil のチェッカとエラー無しが返る。
 - [ ] `TestCreateReadOnlyValidator_DoesNotCreateHashDirectory`: 存在しないハッシュディレクトリを渡しても、構築は成功し、親ディレクトリを `filepath.WalkDir` で走査した結果が実行前後で一致すること。
 - [ ] `TestCreateReadOnlyValidator_ExistingHashDirectoryHasNoDeferredError`: 実在するハッシュディレクトリでは `HashDirError()` が nil を返すこと（ステップ 1-3 で追加済み）。
 
@@ -333,9 +334,9 @@ resolvePathForCheck func(path string) (string, error)
 
 **変更ファイル**: `cmd/record/main.go`
 
-- [ ] `deps` に §1.4.4 の `newPermChecker` フィールドを追加し、`defaultDeps()` で `cmdcommon.NewDirectoryPermChecker` を設定する。
-- [ ] `checkDirPermissions` の 105-112 行を `d.newPermChecker(d.toctouChecker)` の呼び出しに置き換え、エラー時は `panic` せず `fmt.Fprintf(stderr, ...)` でエラーを出して `false` を返す。
-- [ ] `deps.toctouChecker` のコメント（53 行）の `nil means use NewDirectoryPermChecker` を、新しい委譲先に合わせて更新する。
+- [ ] `deps` の `toctouChecker` フィールド（52 行）を §1.4.4 の `newPermChecker` フィールドで置き換え（併存させない）、`defaultDeps()` で `cmdcommon.NewDirectoryPermChecker` を設定する。
+- [ ] `checkDirPermissions` の 105-112 行を `d.newPermChecker()` の呼び出しに置き換え、エラー時は `panic` せず `fmt.Fprintf(stderr, ...)` でエラーを出して `false` を返す。
+- [ ] `toctouChecker` に偽のチェッカを代入していた既存テストを、`d.newPermChecker` が偽のチェッカを返す形へ書き換える。
 
 #### ステップ 2-3: ハッシュディレクトリの作成を権限チェック通過後へ移す
 
@@ -417,7 +418,7 @@ resolvePathForCheck func(path string) (string, error)
 - [ ] 段階 4 で `HashDirError()` を判定し、`ErrHashDirNotExist` なら `hash_dir_not_found`、`os.ErrPermission` なら `hash_dir_unreadable` のトークンを含むメッセージを標準エラー出力へ出して `exitUntrustedEnvironment` を返す。
 - [ ] `ErrHashPathNotDir` は `NewReadOnly` が構築エラーとして返すため、既存のバリデータ生成失敗経路で `exitVerificationFailed`（`1`）になる。この対応を doc コメントに明記する。
 - [ ] §1.4.1 の4トークンを名前付き定数として定義し、既存の権限違反メッセージ（120 行）にも `hash_dir_permission_violation` を追加する。
-- [ ] チェッカ生成を `d.newPermChecker(d.toctouChecker)`（§1.4.4）に置き換え、失敗時は `permission_checker_init_failed` トークン付きのエラーを標準エラー出力へ出す。この場合の終了コードは `exitUntrustedEnvironment`（`3`）とする。
+- [ ] チェッカ生成を `d.newPermChecker()`（§1.4.4）に置き換え、失敗時は `permission_checker_init_failed` トークン付きのエラーを標準エラー出力へ出す。この場合の終了コードは `exitUntrustedEnvironment`（`3`）とする。
 - [ ] ハッシュディレクトリの解決に失敗した場合、fail-closed 終了時の標準エラー出力にその旨と対象パスを1行追記する（AC-05）。この判定点で解決済みなのはハッシュディレクトリ1件のみ（対象ファイル群は段階 5 で解決する）なので、件数ではなく「ハッシュディレクトリのパス解決に失敗した」という事実と当該パスを示す形にする。
 - [ ] 21-25 行の終了コード説明コメントを更新する。変更前は `(the policy declaration in init and the checker initialisation in checkDirPermissions)`、変更後は `(the policy declaration in init)` とし、残る panic が1点のみであることを示す（AC-28）。
 
@@ -425,8 +426,8 @@ resolvePathForCheck func(path string) (string, error)
 
 **変更ファイル**: `cmd/verify/main.go`
 
-- [ ] 02_architecture.md §3.4 の `deps` 構造体に §1.4.4 の `newPermChecker` と `resolvePathForCheck` を加えた形で定義し、`defaultDeps()` で既定値（`cmdcommon.NewDirectoryPermChecker`・`security.ResolvePathForCheck`）を与える。
-- [ ] パッケージレベル変数 `validatorFactory`・`mkdirAll`・`ensurePermissionCheckUID`・`toctouChecker`（39-48 行）をすべて削除する。`errNoFilesProvided` は不変の番兵エラーなので残す。
+- [ ] 02_architecture.md §3.4 の `deps` 構造体（`validatorFactory`・`newPermChecker`・`resolvePathForCheck`・`ensurePermissionCheckUID`）を定義し、`defaultDeps()` で既定値（`cmdcommon.NewDirectoryPermChecker`・`security.ResolvePathForCheck`）を与える。
+- [ ] パッケージレベル変数 `validatorFactory`・`mkdirAll`・`ensurePermissionCheckUID`・`toctouChecker`（39-48 行）をすべて削除する。`toctouChecker` は `deps` のフィールドとしても復活させず、§1.4.4 の `newPermChecker` が唯一の差し替え口になる。`errNoFilesProvided` は不変の番兵エラーなので残す。
 - [ ] `run`・`checkHashDirPermissions`・`checkTargetFilePermissions` のシグネチャに必要な `deps` を渡す。
 - [ ] `main()` を `os.Exit(run(os.Args[1:], defaultDeps(), os.Stdout, os.Stderr))` に変える。
 - [ ] `parseArgs` は `deps` を必要としなくなるため、`d` を渡さない（`record` の `parseArgs` は `mkdirAll` のために受け取っていたが、`verify` にはその必要が無い）。
@@ -476,8 +477,8 @@ resolvePathForCheck func(path string) (string, error)
 
 **変更ファイル**: `cmd/runner/main.go`
 
-- [ ] `runTOCTOUCheck` に `newPermChecker func(override isec.DirectoryPermChecker) (isec.DirectoryPermChecker, error)` を引数として追加する（§1.4.4）。型を `cmdcommon.NewDirectoryPermChecker` と同一にすることで、呼び出し元がアダプタを挟まずに渡せる。
-- [ ] `runTOCTOUCheck` の内部では差し替え対象のチェッカが無いため `newPermChecker(nil)` を呼ぶ。
+- [ ] `runTOCTOUCheck` に `newPermChecker func() (isec.DirectoryPermChecker, error)` を引数として追加する（§1.4.4）。型を `cmdcommon.NewDirectoryPermChecker` と同一にすることで、呼び出し元がアダプタを挟まずに渡せる。
+- [ ] `runTOCTOUCheck` の内部では `newPermChecker()` を呼ぶ。
 - [ ] 447-452 行の panic を削除し、生成失敗時は `logging.PreExecutionError`（`Type: logging.ErrorTypeFileAccess`、`Component: string(resource.ComponentVerification)`、`RunID: runID`）を返す。
 - [ ] 呼び出し元（401 行）が `cmdcommon.NewDirectoryPermChecker` をそのまま渡すようにする。
 
@@ -610,7 +611,7 @@ resolvePathForCheck func(path string) (string, error)
 02_architecture.md §7.2 の方針に従い、以下を対象とする。
 
 - `internal/security`: `ResolvePathForCheck` の4経路（全体が実在・途中まで実在・`ENOENT` 以外の失敗・`os.Getwd` の失敗）と相対パスの絶対化、`ResolveAllForCheck` の失敗件数と `WARN` 記録と返却パス、`ClassifyCheckTarget` の3値、`TOCTOUCheckResult` の件数、`DeepestExistingAncestor`。
-- `internal/cmdcommon`: `NewDirectoryPermChecker` の override 経路と既定経路、`CreateReadOnlyValidator` の非作成性。
+- `internal/cmdcommon`: `NewDirectoryPermChecker` が非 nil のチェッカとエラー無しを返すこと、`CreateReadOnlyValidator` の非作成性。
 - `internal/fileanalysis`: 新規作成ディレクトリのパーミッション。
 - `internal/filevalidator`: `HashDirError()` の3状態。
 - `internal/runner/bootstrap`: ログファイル名の UTC 化と構成の不変、IPv6 正規化。
@@ -776,7 +777,7 @@ resolvePathForCheck func(path string) (string, error)
 | AC-35 | test | `internal/runner/bootstrap/config_test.go::TestNormalizeSlackAllowedHost_UppercaseIPv6PassesWebhookURLValidation` | — |
 | AC-36 | test | `internal/runner/bootstrap/config_test.go::TestNormalizeSlackAllowedHost_UppercaseIPv6IsRedacted` | — |
 | AC-37 | test | `internal/runner/bootstrap/config_test.go::TestNormalizeSlackAllowedHost`（既存のホスト名・不正値の行） | 通過 |
-| AC-38 | static | `rg -n -e validatorFactory -e mkdirAll -e ensurePermissionCheckUID -e toctouChecker cmd/verify/main.go` | パッケージレベル変数としての宣言が0件（`deps` のフィールド名としての一致のみ。目視で切り分ける） |
+| AC-38 | static | `rg -n -e validatorFactory -e mkdirAll -e ensurePermissionCheckUID -e toctouChecker cmd/verify/main.go` | `toctouChecker` と `mkdirAll` は一致0件（`deps` のフィールドとしても残さない）。`validatorFactory` と `ensurePermissionCheckUID` は `deps` のフィールド名としての一致のみで、パッケージレベル変数としての宣言は0件（目視で切り分ける） |
 | AC-38 | test | `cmd/verify/main_test.go::TestRunProcessesMultipleFiles`（`deps` 経由で差し替える形になっている） | — |
 | AC-39 | static | `rg -n -e overrideValidatorFactory -e overrideTOCTOUChecker cmd/verify/main_test.go` | 一致0件 |
 | AC-40 | static | `rg -c -e libcCacheSubDir cmd/record/main.go` | 一致2件（定数定義と `filepath.Join` 1箇所のみ。現状は3件） |
@@ -827,7 +828,7 @@ resolvePathForCheck func(path string) (string, error)
 
 ## 10. 次のステップ
 
-- [ ] 本書のレビューと `approved` への更新（レビュアー作業）。あわせて 02_architecture.md §3.4 に `deps` の `newPermChecker` と `resolvePathForCheck` を追補する（§1.4.4）。
+- [ ] 本書のレビューと `approved` への更新（レビュアー作業）。02_architecture.md §3.4 への `deps` の `newPermChecker`・`resolvePathForCheck` の追補（§1.4.4）は反映済み。
 - [ ] 承認後、フェーズ1から順に実装する。フェーズごとに PR を分ける。
 - [ ] 実装完了後、`docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の §2・§3 から、本タスクで解消した 11 件を消し込む。
 - [ ] issue [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) をクローズする。対象外とした L-6（[#1018](https://github.com/isseis/go-safe-cmd-runner/issues/1018)）と I-6（[#1019](https://github.com/isseis/go-safe-cmd-runner/issues/1019)）が別 issue として残ることを、クローズコメントに記す。

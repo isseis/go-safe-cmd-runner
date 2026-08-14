@@ -8,7 +8,7 @@
 | Created | 2026-08-14 |
 | Review date | 2026-08-14 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | 承認後の修正: PR レビューを受けて、権限チェッカの注入口を引数無しのファクトリに一本化した（§3.3・§3.4・§7）。 |
 
 ## 関連文書
 
@@ -341,11 +341,12 @@ func ClassifyCheckTarget(path string) CheckSkipReason
 // Package cmdcommon
 
 // NewDirectoryPermChecker はディレクトリ権限チェッカを返す。
-// override が非 nil の場合はそれをそのまま返す（テストからの差し替え口）。
 // 生成に失敗した場合はエラーを返す。呼び出し側は panic せず、
 // 各コマンドのエラー報告経路へ載せる。
-func NewDirectoryPermChecker(override security.DirectoryPermChecker) (security.DirectoryPermChecker, error)
+func NewDirectoryPermChecker() (security.DirectoryPermChecker, error)
 ```
+
+このヘルパーは差し替え用の引数を持たない。テストからチェッカを差し替える必要がある場合は、このヘルパー自体を呼ばない関数を注入口へ与える（`record`・`verify` は `deps.newPermChecker`、`runner` は `runTOCTOUCheck` の引数）。生成そのものを差し替えるため、失敗経路も含めて検証できる。
 
 現行実装では `security.NewDirectoryPermChecker()` は常に nil エラーを返す（`internal/security/dir_permissions_unix.go`）。したがって現行の panic は到達不能である。それでもエラー経路を用意するのは、(1) 戻り値の型がエラーを許しており、実装が将来失敗し得ること、(2) 到達不能な panic を残すと「失敗したらスタックトレースで止まる」という誤った運用前提が残ること、の2点による。この事実は AC-24 のテスト方針にも影響する（§7.1）。
 
@@ -391,9 +392,14 @@ func (v *Validator) HashDirError() error
 // deps は verify コマンドの差し替え可能な依存をまとめる。
 // 呼び出し箇所から依存関係が見え、テストがグローバル状態に触れずに済む。
 type deps struct {
-    validatorFactory         func(hashDir string) (hashValidator, error)
-    toctouChecker            security.DirectoryPermChecker // nil なら生成する
-    ensurePermissionCheckUID func() error                  // nil なら既定実装
+    validatorFactory func(hashDir string) (hashValidator, error)
+    // newPermChecker はディレクトリ権限チェッカを生成する。
+    // 既定値は cmdcommon.NewDirectoryPermChecker。
+    newPermChecker func() (security.DirectoryPermChecker, error)
+    // resolvePathForCheck は権限チェック対象のパスを解決する。
+    // 既定値は security.ResolvePathForCheck。
+    resolvePathForCheck      func(path string) (string, error)
+    ensurePermissionCheckUID func() error // nil なら既定実装
 }
 
 // hashValidator は verify が必要とするバリデータの最小の口。
@@ -735,7 +741,7 @@ func newDryRunFormatter(format resource.OutputFormat) (resource.Formatter, error
 
 | 受け入れ基準 | 注意点 | 方針 |
 |---|---|---|
-| AC-24（panic しない） | 現行の `security.NewDirectoryPermChecker` は常に成功するため、そのままでは失敗経路を再現できない | チェッカ生成関数を明示的な引数（`record`・`verify` は `deps`、`runner` は `runTOCTOUCheck` の引数）として渡し、失敗を返す実装を注入して検証する |
+| AC-24（panic しない） | 現行の `security.NewDirectoryPermChecker` は常に成功するため、そのままでは失敗経路を再現できない | チェッカ生成関数そのものを明示的な注入口（`record`・`verify` は `deps.newPermChecker`、`runner` は `runTOCTOUCheck` の引数）として渡し、失敗を返す実装を注入して検証する |
 | AC-29（未知の出力形式） | `cli.ParseDryRunOutputFormat` が先に弾くため、コマンドライン入力では `default` に到達できない | §6.6 の `newDryRunFormatter` に不正な `resource.OutputFormat` 値を直接渡す単体テストとする |
 | AC-35・AC-36 | 下流が大文字小文字を区別しないため、変更前でもテストが通ってしまう | 正規化関数の戻り値そのものを検証する AC-34 のテストを主とし、AC-35・AC-36 は退行防止（現行挙動の固定）と位置づけて実装計画に明記する |
 | AC-03（シンボリックリンク解決） | 解決前後の両方のディレクトリが同じ権限だと、どちらを検査したのか判別できない | リンク先の祖先だけが違反状態になるよう配置し、違反が検出されることで解決が働いたと言えるテストにする |
@@ -746,7 +752,7 @@ func newDryRunFormatter(format resource.OutputFormat) (resource.Formatter, error
 ### 7.2 単体テスト
 
 - `internal/security`: `ResolvePathForCheck` の4経路（全体が実在、途中まで実在、`ENOENT` 以外の失敗、絶対パス化の失敗）と、相対パスの絶対パス化。`ResolveAllForCheck` の失敗件数と WARN 記録。`ClassifyCheckTarget` の3つの戻り値。
-- `internal/cmdcommon`: `NewDirectoryPermChecker` の override 経路と失敗経路。
+- `internal/cmdcommon`: `NewDirectoryPermChecker` が非 nil のチェッカとエラー無しを返すこと。失敗経路は各コマンドの注入口（`deps.newPermChecker`・`runTOCTOUCheck` の引数）に失敗を返す実装を与えて検証する。
 - `internal/runner/bootstrap`: ログファイル名が UTC であること（プロセスのタイムゾーンを変えて確認、AC-21・AC-22）とファイル名の構成が変わらないこと（AC-23）。`normalizeSlackAllowedHost` の IPv6 大文字入力（AC-34）。
 - `internal/filevalidator`: `HashDirError()` が不在時に `ErrHashDirNotExist` を、読み取り不能時に権限エラーを返し、正常時に nil を返すこと。
 - `internal/fileanalysis`: 新規作成したディレクトリのパーミッションが `HashDirPerm` であること。
