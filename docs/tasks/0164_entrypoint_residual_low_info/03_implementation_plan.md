@@ -299,6 +299,7 @@ func getwd() (string, error) { return getwdHook() }
 - [x] `TestDeepestExistingAncestor`: 全体が実在する場合はパス自身、途中まで実在する場合はその最深の祖先が返ること。相対パスを渡した場合に `ErrInvalidPath` が返ること。
 - [x] `TestResolvePathForCheck_DotDotAfterSymlinkFollowsTheLink`（レビュー指摘により追加）: シンボリックリンクの後ろに `..` が続くパスで、リンク先側が検査対象になること。遡る前に字句的な正規化を行う実装では、リンクが置かれている側の木が返って失敗する。
 - [x] `TestResolvePathForCheck_DanglingSymlinkAncestorFails`（レビュー指摘により追加）: 実在判定に `os.Stat` ではなく `os.Lstat` を使う選択を固定する。リンク切れのシンボリックリンクを祖先に持つパスで `ErrPathResolution` が返ること。
+- [x] `TestResolvePathForCheck_DotDotAfterSymlinkInRelativePath`（レビュー指摘により追加）: 相対パスの絶対パス化でも `..` が字句的に畳まれないこと。前2件の絶対パス版と対になる。
 
 **根拠テストの自己検証**: 各テストを追加したあと、検証対象の分岐（最深祖先への遡り、`WARN` の記録、`Skipped` の加算）を一時的に無効化して失敗することを確認し、その旨をコミットメッセージに記す。
 

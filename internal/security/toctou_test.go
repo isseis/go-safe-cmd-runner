@@ -417,3 +417,21 @@ func TestResolvePathForCheck_DanglingSymlinkAncestorFails(t *testing.T) {
 	require.ErrorIs(t, err, ErrPathResolution)
 	assert.Equal(t, filepath.Join(dangling, "child"), got, "a checkable path is still returned")
 }
+
+// TestResolvePathForCheck_DotDotAfterSymlinkInRelativePath is the relative-path
+// counterpart of TestResolvePathForCheck_DotDotAfterSymlinkFollowsTheLink. Making
+// the path absolute must not clean it either, or the ".." is collapsed before the
+// walk ever sees it.
+func TestResolvePathForCheck_DotDotAfterSymlinkInRelativePath(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	linkTarget := filepath.Join(tmpDir, "a", "real")
+	require.NoError(t, os.MkdirAll(linkTarget, 0o700))
+	require.NoError(t, os.Mkdir(filepath.Join(tmpDir, "b"), 0o700))
+	require.NoError(t, os.Symlink(linkTarget, filepath.Join(tmpDir, "b", "link")))
+	t.Chdir(tmpDir)
+
+	got, err := ResolvePathForCheck("b/link/../sibling")
+
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(tmpDir, "a", "sibling"), got)
+}

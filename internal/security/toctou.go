@@ -104,9 +104,11 @@ func ResolvePathForCheck(path string) (string, error) {
 		if err != nil {
 			return path, fmt.Errorf("%w: %s: %w", ErrPathResolution, path, err)
 		}
-		// os.Getwd reports a symlink-free path, so the cleaning that Join does
-		// resolves a leading ".." the way the kernel would.
-		abs = filepath.Join(wd, path)
+		// Concatenated rather than joined: filepath.Join cleans the whole result,
+		// which would collapse a ".." inside path itself and reintroduce the
+		// confusion the raw walk below exists to avoid.
+		root := string(filepath.Separator)
+		abs = strings.TrimSuffix(wd, root) + root + path
 	}
 
 	ancestor, err := DeepestExistingAncestor(abs)
