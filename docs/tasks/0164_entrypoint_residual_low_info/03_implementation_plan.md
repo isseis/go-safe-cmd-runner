@@ -382,7 +382,7 @@ func getwd() (string, error) { return getwdHook() }
 **判定理由**: 委譲だけのヘルパー追加と定数1件の変更であり、未決の実装方式・パネルモードのトリガ・孤立した高リスク段階のいずれにも該当しない。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（[#1024](https://github.com/isseis/go-safe-cmd-runner/pull/1024)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
