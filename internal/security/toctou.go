@@ -84,20 +84,38 @@ func DeepestExistingAncestor(path string) (string, error) {
 	}
 }
 
+// hasDotDotComponent reports whether p has ".." as one of its components.
+func hasDotDotComponent(p string) bool {
+	for component := range strings.SplitSeq(p, string(filepath.Separator)) {
+		if component == ".." {
+			return true
+		}
+	}
+	return false
+}
+
 // ResolvePathForCheck returns the path to hand to the directory permission
 // check. A relative path is made absolute against the process working
 // directory. When the target does not exist yet, symlinks are resolved as far as
-// the deepest existing ancestor and the remainder is joined lexically, so the
+// the deepest existing ancestor and the remainder is appended, so the
 // directories that will actually contain the target are the ones checked.
 //
-// The absolute path is deliberately not cleaned before the walk, since cleaning
-// collapses ".." textually and would send the check to the tree a symlink sits
-// in rather than the one it points at.
+// The path is deliberately never cleaned, since cleaning collapses ".."
+// textually and would send the check to the tree a symlink sits in rather than
+// the one it points at. For the same reason a ".." inside the not-yet-existing
+// remainder is rejected rather than collapsed: it can pop back above the missing
+// components onto a symlink that no walk has resolved.
 //
-// A checkable path is returned even on failure, together with an error wrapping
-// ErrPathResolution. Dropping the path instead would let a path that is a
-// fail-closed premise go silently unchecked.
+// An empty path names nothing to check and is rejected with ErrInvalidPath;
+// callers that use "" to mean "skip" must not reach here. Every other failure
+// returns a checkable path together with an error wrapping ErrPathResolution.
+// Dropping the path instead would let a path that is a fail-closed premise go
+// silently unchecked.
 func ResolvePathForCheck(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("%w: empty path has nothing to check", ErrInvalidPath)
+	}
+
 	abs := path
 	if !filepath.IsAbs(path) {
 		wd, err := getwd()
@@ -113,19 +131,25 @@ func ResolvePathForCheck(path string) (string, error) {
 
 	ancestor, err := DeepestExistingAncestor(abs)
 	if err != nil {
-		return filepath.Clean(abs), fmt.Errorf("%w: %s: %w", ErrPathResolution, path, err)
+		return abs, fmt.Errorf("%w: %s: %w", ErrPathResolution, path, err)
 	}
 	resolvedAncestor, err := filepath.EvalSymlinks(ancestor)
 	if err != nil {
-		return filepath.Clean(abs), fmt.Errorf("%w: %s: %w", ErrPathResolution, path, err)
+		return abs, fmt.Errorf("%w: %s: %w", ErrPathResolution, path, err)
 	}
 	// The ancestor is a literal prefix of abs, so the remainder is the tail after
-	// it. Joining that lexically is safe: none of its components exist, so none of
-	// them can be a symlink.
+	// it. None of its components exist, so none of them can be a symlink — unless
+	// a ".." leaves the missing part of the path altogether, which no lexical join
+	// can resolve. Reject that rather than repair it, and hand back the existing
+	// ancestor, which is a tree the target really is under.
 	rest := strings.TrimLeft(abs[len(ancestor):], string(filepath.Separator))
 	if rest == "" {
 		return resolvedAncestor, nil
 	}
+	if hasDotDotComponent(rest) {
+		return resolvedAncestor, fmt.Errorf("%w: %s: %w: %q escapes the missing part of the path", ErrPathResolution, path, ErrInvalidPath, rest)
+	}
+	// Safe now that ".." is gone: joining can only drop "." and repeated separators.
 	return filepath.Join(resolvedAncestor, rest), nil
 }
 

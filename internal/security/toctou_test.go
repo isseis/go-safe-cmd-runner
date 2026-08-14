@@ -248,12 +248,44 @@ func TestResolvePathForCheck_UnreadableAncestorReturnsErrPathResolution(t *testi
 	tmpDir := tu.SafeTempDir(t)
 	target := blockedPathUnder(t, tmpDir, "blocked")
 
-	// The redundant separator makes the "lexically normalized" half of the contract
-	// observable: an implementation that returned the input unchanged would fail.
-	got, err := ResolvePathForCheck(strings.Replace(target, "/inner/", "/inner//", 1))
+	// The redundant separator is carried through untouched: the failure path must not
+	// clean the path either, since cleaning is what collapses ".." onto the wrong tree.
+	raw := strings.Replace(target, "/inner/", "/inner//", 1)
+
+	got, err := ResolvePathForCheck(raw)
 
 	require.ErrorIs(t, err, ErrPathResolution)
-	assert.Equal(t, target, got, "the lexical absolute path must still be returned")
+	assert.Equal(t, raw, got, "the absolute path must still be returned, uncleaned")
+}
+
+// TestResolvePathForCheck_DotDotEscapingMissingComponentsIsRejected pins the one case
+// a lexical join cannot handle: a ".." inside the not-yet-existing remainder pops back
+// above the missing components onto a symlink no walk has resolved. Joining it would
+// hand the check a path through that unresolved link and report success.
+func TestResolvePathForCheck_DotDotEscapingMissingComponentsIsRejected(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	realDir := filepath.Join(tmpDir, "real")
+	require.NoError(t, os.Mkdir(realDir, 0o700))
+	require.NoError(t, os.Symlink(realDir, filepath.Join(tmpDir, "link")))
+
+	// tmpDir/missing does not exist, so the walk stops at tmpDir and "missing/../link/x"
+	// is the remainder. filepath.Join would collapse it to tmpDir/link/x.
+	got, err := ResolvePathForCheck(tmpDir + "/missing/../link/x")
+
+	require.ErrorIs(t, err, ErrPathResolution)
+	assert.ErrorIs(t, err, ErrInvalidPath)
+	assert.Equal(t, tmpDir, got, "the deepest existing ancestor is still checkable")
+	assert.NotContains(t, got, "link", "the unresolved symlink must not appear in the checkable path")
+}
+
+// TestResolvePathForCheck_EmptyPathIsRejected verifies that "" is rejected rather than
+// silently resolving to the process working directory. Callers use "" to mean "no path
+// configured"; resolving it would turn a skip into a full check of an unrelated tree.
+func TestResolvePathForCheck_EmptyPathIsRejected(t *testing.T) {
+	got, err := ResolvePathForCheck("")
+
+	require.ErrorIs(t, err, ErrInvalidPath)
+	assert.Empty(t, got)
 }
 
 // TestResolvePathForCheck_RelativePathUsesWorkingDirectory verifies that a relative
