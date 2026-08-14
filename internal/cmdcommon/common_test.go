@@ -5,6 +5,7 @@ package cmdcommon
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -81,4 +82,68 @@ func TestDefaultHashDirectory_IsSet(t *testing.T) {
 	// Verify that DefaultHashDirectory is set to a non-empty value
 	assert.NotEmpty(t, DefaultHashDirectory, "DefaultHashDirectory should be set")
 	assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", DefaultHashDirectory)
+}
+
+func TestNewDirectoryPermChecker_ConstructsChecker(t *testing.T) {
+	checker, err := NewDirectoryPermChecker()
+	require.NoError(t, err, "NewDirectoryPermChecker should succeed")
+	require.NotNil(t, checker, "NewDirectoryPermChecker should return a non-nil checker")
+}
+
+// TestCreateReadOnlyValidator_DoesNotCreateHashDirectory tests that
+// CreateReadOnlyValidator builds successfully for a hash directory that does
+// not exist yet, without creating it: the whole parent subtree, compared by
+// path and mode, must be identical before and after construction.
+func TestCreateReadOnlyValidator_DoesNotCreateHashDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	hashDir := filepath.Join(tmpDir, "nested", "hashes")
+
+	before := walkEntries(t, tmpDir)
+
+	validator, err := CreateReadOnlyValidator(hashDir)
+	require.NoError(t, err, "CreateReadOnlyValidator should succeed for a missing hash directory")
+	require.NotNil(t, validator)
+
+	after := walkEntries(t, tmpDir)
+	assert.Equal(t, before, after, "parent subtree must be unchanged by CreateReadOnlyValidator")
+}
+
+// TestCreateReadOnlyValidator_ExistingHashDirectoryHasNoDeferredError tests
+// that a validator built for an existing hash directory carries no deferred
+// hash-directory error.
+func TestCreateReadOnlyValidator_ExistingHashDirectoryHasNoDeferredError(t *testing.T) {
+	tmpDir := t.TempDir()
+	hashDir := filepath.Join(tmpDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	validator, err := CreateReadOnlyValidator(hashDir)
+	require.NoError(t, err)
+	require.NotNil(t, validator)
+
+	assert.NoError(t, validator.HashDirError())
+}
+
+// walkEntries returns the sorted relative paths and modes under root, so two
+// runs can be compared to prove no filesystem entry was added or changed.
+func walkEntries(t *testing.T, root string) []string {
+	t.Helper()
+	var entries []string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			return infoErr
+		}
+		entries = append(entries, rel+"/"+info.Mode().String())
+		return nil
+	})
+	require.NoError(t, err, "failed to walk parent subtree")
+	slices.Sort(entries)
+	return entries
 }
