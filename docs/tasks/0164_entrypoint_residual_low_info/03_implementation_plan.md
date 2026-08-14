@@ -318,7 +318,7 @@ func getwd() (string, error) { return getwdHook() }
 **判定理由**: `ResolvePathForCheck` の解決規則が本タスクの移行リスクの中心にあるため。02_architecture.md §9 のとおり、実在する最深の祖先まで解決する変更によってアップグレード後に新たな権限違反が検出され得る。あわせてステップ 1-2 が5つの呼び出し元へ波及するシグネチャ変更（PR タイトルの `!`）を含む。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（[#1023](https://github.com/isseis/go-safe-cmd-runner/pull/1023)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
