@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -714,6 +715,59 @@ func TestNewReadOnly_NilAlgorithm(t *testing.T) {
 	validator, err := NewReadOnly(nil, safeTempDir(t), ValidatorConfig{})
 	assert.ErrorIs(t, err, ErrNilAlgorithm)
 	assert.Nil(t, validator)
+}
+
+// TestHashDirError_MissingDirectoryReturnsErrHashDirNotExist tests that
+// HashDirError distinguishes a missing hash directory from a usable one.
+func TestHashDirError_MissingDirectoryReturnsErrHashDirNotExist(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "nonexistent_subdir")
+
+	validator, err := NewReadOnly(&SHA256{}, hashDir, ValidatorConfig{})
+	require.NoError(t, err)
+	require.NotNil(t, validator)
+
+	assert.ErrorIs(t, validator.HashDirError(), ErrHashDirNotExist)
+}
+
+// TestHashDirError_UnreadableDirectoryReturnsPermissionError tests that
+// HashDirError surfaces the raw permission error for a hash directory that
+// exists but cannot be reached (an unsearchable ancestor), so callers can
+// distinguish "missing" from "inaccessible".
+func TestHashDirError_UnreadableDirectoryReturnsPermissionError(t *testing.T) {
+	if syscall.Geteuid() == 0 {
+		t.Skip("Skipping privilege test when running as root")
+	}
+
+	tempDir := safeTempDir(t)
+	restrictedDir := filepath.Join(tempDir, "restricted")
+	require.NoError(t, os.Mkdir(restrictedDir, 0o755))
+	hashDir := filepath.Join(restrictedDir, "hashes")
+	require.NoError(t, os.Mkdir(hashDir, 0o755))
+
+	require.NoError(t, os.Chmod(restrictedDir, 0o000))
+	// Restore permissions before the deferred temp-dir removal so cleanup does not fail.
+	t.Cleanup(func() { _ = os.Chmod(restrictedDir, 0o755) })
+
+	validator, err := NewReadOnly(&SHA256{}, hashDir, ValidatorConfig{})
+	require.NoError(t, err)
+	require.NotNil(t, validator)
+
+	assert.ErrorIs(t, validator.HashDirError(), os.ErrPermission)
+}
+
+// TestHashDirError_UsableDirectoryReturnsNil tests that HashDirError is nil
+// for an existing, readable hash directory.
+func TestHashDirError_UsableDirectoryReturnsNil(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.Mkdir(hashDir, 0o700))
+
+	validator, err := NewReadOnly(&SHA256{}, hashDir, ValidatorConfig{})
+	require.NoError(t, err)
+	require.NotNil(t, validator)
+
+	assert.NoError(t, validator.HashDirError())
 }
 
 // collidingHashFilePathGetter always maps every file path to the same
