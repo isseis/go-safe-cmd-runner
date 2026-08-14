@@ -892,3 +892,49 @@ func TestExpandGroup_SetsEnvAllowlistInheritanceMode(t *testing.T) {
 		})
 	}
 }
+
+// TestHasVariableReference covers the question security.ClassifyCheckTarget delegates
+// here. The escaped rows are the reason the function exists: they are the inputs a
+// substring search for "%{" gets wrong, in the direction that silently exempts a real
+// path from the startup permission check.
+func TestHasVariableReference(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{name: "plain path", input: "/usr/bin/echo", want: false},
+		{name: "reference", input: "/opt/%{APP}/bin", want: true},
+		{name: "escaped reference is literal text", input: "/opt/\\%{LITERAL}/bin", want: false},
+		{name: "escaped backslash before a real reference", input: "/opt/\\\\%{APP}/bin", want: true},
+		{name: "reference alongside an escaped one", input: "/opt/\\%{LITERAL}/%{APP}", want: true},
+		{name: "lone percent", input: "/opt/100%/bin", want: false},
+		{name: "unparsable input is reported as literal", input: "/opt/%{UNCLOSED/bin", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, config.HasVariableReference(tt.input))
+		})
+	}
+}
+
+// TestHasVariableReference_MustBeAskedOfTheTemplate pins why the answer has to be
+// carried alongside the expanded value rather than recomputed from it: expansion is
+// not idempotent. "\\%{X}" expands to the literal "%{X}", and that output, read back
+// as a template, is a reference again. Only the pre-expansion template can answer the
+// question, so whoever expands must record the answer.
+func TestHasVariableReference_MustBeAskedOfTheTemplate(t *testing.T) {
+	const template = "/opt/\\%{LITERAL}/bin"
+
+	assert.False(t, config.HasVariableReference(template), "an escaped reference was never a reference")
+
+	expanded, err := config.ExpandString(template, map[string]string{}, "test", "field")
+	require.NoError(t, err)
+	require.Equal(t, "/opt/%{LITERAL}/bin", expanded)
+
+	// Asking the expanded value gives the opposite, wrong answer. Recording that here
+	// makes the failure loud if someone later moves the call to the expanded value.
+	assert.True(t, config.HasVariableReference(expanded),
+		"the expanded value cannot answer the question; it must not be the thing asked")
+}

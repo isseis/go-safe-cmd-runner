@@ -287,11 +287,14 @@ func ResolveAllForCheck(paths []string, logger *slog.Logger) (resolved []string,
 | 失敗の種類 | 返すパス | 実際に起きる条件 |
 |---|---|---|
 | 絶対パス化に失敗 | 入力パスをそのまま返す | `os.Getwd` の失敗のみ（作業ディレクトリが削除された場合など）。通常運用では起きない |
-| 祖先を辿る途中で `ENOENT` 以外のエラー（`EACCES` など） | 字句的に正規化した絶対パス | 読み取り権限のない祖先ディレクトリを経由するパス |
+| 祖先を辿る途中で `ENOENT` 以外のエラー（`EACCES`・`ENOTDIR` など） | 字句的に正規化した絶対パス | 読み取り権限のない祖先ディレクトリを経由するパス。通常ファイルを祖先に持つパス（`/etc/passwd/sub` など）も同じ経路に入る |
+| 実在する最深の祖先のリンク解決に失敗 | 字句的に正規化した絶対パス | リンク切れのシンボリックリンク、リンクのループ（`ELOOP`）、および祖先の判定とリンク解決の間に対象が消えた場合 |
 
 いずれの場合も後段の `ValidateDirectoryPermissions` が違反を報告する（相対パスは `ErrInvalidPath`、読み取れないディレクトリは stat 失敗）。したがって解決失敗は結果として fail-closed に倒れ、その理由が WARN ログと `verify` の標準エラー出力（AC-05）から分かる、という構図になる。
 
 祖先を辿る途中の `ENOENT` は失敗ではない。これは「対象がまだ存在しない」という通常の状態であり、実在する最深の祖先まで遡って解決を続ける（AC-02）。
+
+**遡る前にパスを字句的に正規化しない**。`filepath.Clean` は `..` を字句的に畳むため、シンボリックリンクの後ろに `..` が続くパス（`/b/link/../sibling`）で、リンク先ではなくリンクが置かれている側の木を検査対象にしてしまう。これは AC-03 が防ごうとしている取り違えそのものである。したがって遡りは生のパスを1要素ずつ削る形で行い、各候補の解決はカーネル（`os.Lstat`）に任せる。相対パスの絶対パス化も同じ理由で `filepath.Join` を使わない。`Join` は連結結果の全体を正規化するため、相対パス側に含まれる `..` が同じように畳まれてしまうためである。作業ディレクトリは `os.Getwd` が返す実体パス（シンボリックリンクを含まない）なので、単純な連結で足りる。未作成の残り部分については、その要素が実在しない以上シンボリックリンクでもあり得ないため、字句的な連結で差し支えない。
 
 #### 相対パスの扱い（AC-06 の解釈）
 
@@ -324,10 +327,46 @@ const (
     CheckSkipRelative          // 相対パス
 )
 
+// PathExpansionState は、変数参照について呼び出し元が知っている事実を宣言する。
+// ゼロ値は入力について最も少ししか仮定しない側、すなわち検査する側である。
+type PathExpansionState int
+
+const (
+    PathExpanded               PathExpansionState = iota // 未展開の参照を含まない
+    PathHasUnexpandedReference                           // 未展開の参照を含む
+)
+
 // ClassifyCheckTarget は、設定ファイル由来のパスを起動時チェックの対象に
 // できるかどうかを判定する。対象にできない場合はその理由を返す。
-func ClassifyCheckTarget(path string) CheckSkipReason
+func ClassifyCheckTarget(path string, state PathExpansionState) CheckSkipReason
 ```
+
+#### 未展開参照は文字列から推論せず、宣言として受け取る
+
+`security` パッケージはパスの文字列から未展開参照の有無を判定できない。展開の構文には
+エスケープがあり（`\%{` は文字としての `%{` に展開される、[expansion.go](../../../internal/runner/config/expansion.go) 参照）、
+`%{` を含むことは未展開である証拠にならないためである。`%{` の有無で除外すると、
+エスケープを使った実在しうる絶対パスが権限チェックから静かに外れる（fail-open）。
+
+判定に必要な事実を知っているのは設定層だけなので、設定層が宣言する。
+
+```go
+// Package config
+
+// HasVariableReference は、展開が解決する変数参照が残っているかを報告する。
+// 展開自身と同じパーサを使うため、エスケープ規則が二重管理にならない。
+func HasVariableReference(input string) bool
+```
+
+**この判定は展開前のテンプレートに対してのみ行う。** 展開は冪等ではなく、`\%{X}` の
+展開結果である文字としての `%{X}` を再びテンプレートとして読めば参照に見える。
+したがって展開後の値から事実を復元することはできず、展開する側が答えを記録して
+持ち回る必要がある。起動時チェックにおける呼び出し元の対応は次のとおり。
+
+| パスの出所 | 起動時点の状態 | 宣言する値 |
+|---|---|---|
+| `runtimeGlobal.ExpandedVerifyFiles` | 展開済み | `PathExpanded`（構成上必ず展開済みであるため判定不要） |
+| `g.VerifyFiles`・`cmd.Cmd` | 未展開のテンプレート | `HasVariableReference` の結果に対応する値 |
 
 この関数は `cmd/runner/main.go` の起動時チェックと `internal/runner/group_executor.go` のグループ実行時チェックの両方が使う。理由が列挙型で返るため、F-004 の内訳カウントはこの戻り値をそのまま数えるだけでよい。
 
