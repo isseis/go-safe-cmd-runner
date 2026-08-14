@@ -356,6 +356,25 @@ func TestNewStore_CreatesDirectory(t *testing.T) {
 	assert.True(t, info.IsDir())
 }
 
+// TestNewStore_CreatesDirectoryWithHashDirPerm tests that a directory newly
+// created by NewStore carries the hash-directory permission. The comparison is
+// against the 0o700 literal rather than HashDirPerm, because a constant tested
+// against itself cannot fail.
+func TestNewStore_CreatesDirectoryWithHashDirPerm(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	analysisDir := filepath.Join(tmpDir, "new", "nested", "dir")
+
+	_, err := os.Stat(analysisDir)
+	assert.True(t, os.IsNotExist(err))
+
+	_, err = NewStore(analysisDir, &mockPathGetter{})
+	require.NoError(t, err)
+
+	info, err := os.Stat(analysisDir)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+}
+
 func TestNewStore_ExistingDirectory(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 
