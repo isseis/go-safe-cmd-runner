@@ -258,9 +258,9 @@ func getwd() (string, error) { return getwdHook() }
 - [x] `ErrPathResolution` 番兵エラーを追加する（02_architecture.md §4.1 の宣言どおり）。**実装時の変更**: 置き場所は `toctou.go` ではなく `internal/security/errors.go` とした。同パッケージの番兵エラー（`ErrInvalidDirPermissions`・`ErrInsecurePathComponent`・`ErrInvalidPath`）はすべてこのファイルにまとまっており、1つだけ別ファイルに置く理由が無いため。
 - [x] `DeepestExistingAncestor(path string) (string, error)` を追加する。与えられた絶対パスから上へ辿り、実在する最深の祖先を返す。`ResolvePathForCheck` はこれを内部で使い、`cmd/record` のステップ 2-5 の判定もこれを使う（同じ探索を2箇所に書かないため）。存在判定には `os.Lstat` を使う（リンク切れのシンボリックリンクを「実在する」側に数え、リンクが置かれている木を黙って検査してしまうより、解決失敗として表面化させるため）。
 - [x] §1.4.5 の `getwd` を、ビルドタグで排他的な2ファイルとして追加する。`getwd.go`（`//go:build !test`）は `os.Getwd` を呼ぶだけの関数で、差し替え口を持たない。`test_helpers_getwd.go`（`//go:build test`）は `var getwdHook = os.Getwd` と、それを呼ぶ同名の関数を持つ。どちらのファイルにも、なぜ2つに分かれているのか（本番ビルドに差し替え可能な値を残さないため）を英語のコメントで書く。
-- [x] `ResolvePathForCheck(path string) (string, error)` を追加する。相対パスは `getwd` 基準で絶対パス化し、`DeepestExistingAncestor` まで `filepath.EvalSymlinks` で解決したうえで残りを字句的に連結する。祖先を辿る途中の `ENOENT` は失敗として扱わない。
+- [x] `ResolvePathForCheck(path string) (string, error)` を追加する。相対パスは `getwd` 基準で絶対パス化し、`DeepestExistingAncestor` まで `filepath.EvalSymlinks` で解決したうえで残りを字句的に連結する。祖先を辿る途中の `ENOENT` は失敗として扱わない。**レビュー指摘による修正**: 空パスは `ErrInvalidPath` で拒否する（作業ディレクトリに解決すると、呼び出し元が「未設定」の意味で渡す `""` が無関係な木の検査に化けるため）。未実在部分に `..` が含まれる場合も拒否する（`..` は未実在部分を抜けて未解決のシンボリックリンクに戻りうるため、字句的な連結では扱えない）。失敗時に返すパスは `filepath.Clean` しない（`..` の字句的な畳み込みは、生のまま辿る設計が避けている当のものであるため）。
 - [x] `ResolveAllForCheck(paths []string, logger *slog.Logger) (resolved []string, failures int)` を追加する。失敗ごとに `WARN` を1件記録し、失敗した要素にも検査可能なパス（字句的に正規化した絶対パス）を入れる。
-- [x] `CheckSkipReason` 列挙型（`CheckSkipNone`・`CheckSkipVariableReference`・`CheckSkipRelative`）と `ClassifyCheckTarget(path string) CheckSkipReason` を追加する。
+- [x] `CheckSkipReason` 列挙型（`CheckSkipNone`・`CheckSkipVariableReference`・`CheckSkipRelative`）と `ClassifyCheckTarget(path string, state PathExpansionState) CheckSkipReason` を追加する。**レビュー指摘による修正**: 未展開参照の有無はパス文字列から推論せず、`PathExpansionState`（`PathExpanded`・`PathHasUnexpandedReference`）として呼び出し元が宣言する。理由と、判定を展開前のテンプレートに対して行わなければならない理由は 02_architecture.md §3.2 を参照。あわせて `config.HasVariableReference(input string) bool` を `internal/runner/config` に追加する（展開の構文を知っている層に判定を置き、エスケープ規則を二重管理にしないため）。
 
 `ResolveAbsPathForTOCTOU` の削除はステップ 4-4 で行う（本フェーズの時点ではまだ呼び出し元が残っているため）。
 
@@ -294,7 +294,9 @@ func getwd() (string, error) { return getwdHook() }
 - [x] `TestResolvePathForCheck_AbsConversionFailure`: `os.Getwd` の失敗経路（02_architecture.md §7.2 が挙げる4経路目）。§1.4.5 の `getwdHook` を必ず失敗する実装に差し替え（`t.Cleanup` で復元）、`ErrPathResolution` が返ることと、返るパスが入力そのままであることを検証する。
 - [x] `TestResolveAllForCheck_WarnsOncePerFailure`: 失敗パス2件・成功パス1件を渡し、`failures == 2`、`WARN` 記録が2件、返る要素数が3であること（AC-04）。**あわせて、失敗した2要素が期待どおりの字句的絶対パスであることを表明する**（02_architecture.md §3.1 の「失敗した要素にも検査可能なパスが入る」が fail-closed の根拠であり、件数だけでは検証できないため）。root スキップと権限復帰を入れる。
 - [x] `TestResolveAllForCheck_NoWarnOnSuccessfulResolution`: 全件成功時に `failures == 0` かつ `WARN` 記録が0件であること（AC-04 の後半）。
-- [x] `TestClassifyCheckTarget`: 表形式で `CheckSkipNone`（絶対パス）・`CheckSkipVariableReference`（`%{` を含む）・`CheckSkipRelative`（相対パス）の3値を検証する。`%{` を含む相対パスは `CheckSkipVariableReference` を返すことも1行として含める。
+- [x] `TestClassifyCheckTarget`: 表形式で `CheckSkipNone`（絶対パス）・`CheckSkipVariableReference`（`PathHasUnexpandedReference` を宣言）・`CheckSkipRelative`（相対パス）の3値を検証する。未展開参照の宣言が相対パスより優先されることも1行として含める。**あわせて、`%{` を含むパスに `PathExpanded` を宣言した場合は検査対象になる行を含める**（判定しているのが文字列ではなく宣言であることは、この行だけが表明できる）。
+- [x] `TestClassifyCheckTarget_UnknownStatePanics`: 未知の `PathExpansionState` で panic すること（`switch` の `default` が安全側に倒れることの固定）。
+- [x] `TestHasVariableReference`・`TestHasVariableReference_MustBeAskedOfTheTemplate`（`internal/runner/config`）: エスケープされた `\%{` が参照として数えられないこと、および展開後の値に同じ問いを立てると逆の答えになること（＝事実は展開時に記録して持ち回るほかないこと）。
 - [x] `TestRunTOCTOUPermissionCheck_CountsCheckedAndSkipped`: 実在ディレクトリ1件・不在ディレクトリ1件・違反ディレクトリ1件を渡し、`Checked == 2`・`Skipped == 1`・`len(Violations) == 1` になること（§1.4.2 の計数規則を固定する）。
 - [x] `TestDeepestExistingAncestor`: 全体が実在する場合はパス自身、途中まで実在する場合はその最深の祖先が返ること。相対パスを渡した場合に `ErrInvalidPath` が返ること。
 - [x] `TestResolvePathForCheck_DotDotAfterSymlinkFollowsTheLink`（レビュー指摘により追加）: シンボリックリンクの後ろに `..` が続くパスで、リンク先側が検査対象になること。遡る前に字句的な正規化を行う実装では、リンクが置かれている側の木が返って失敗する。
@@ -591,7 +593,8 @@ func getwd() (string, error) { return getwdHook() }
 
 - [ ] `resolveStaticAbsPath`（410-419 行）を削除する。
 - [ ] `runTOCTOUCheck` のパス収集ループ（426-446 行）で、`security.ClassifyCheckTarget` の戻り値を理由ごとに数え、`CheckSkipNone` のパスだけを `security.ResolvePathForCheck` に渡す。
-- [ ] 429 行のコメント `Variables are already expanded so no %{ filter is needed here` を、除外判定が `ClassifyCheckTarget` に一本化されたことに合わせて書き換える。
+- [ ] **`PathExpansionState` を出所ごとに宣言する**（02_architecture.md §3.2 の表）。`runtimeGlobal.ExpandedVerifyFiles` は構成上必ず展開済みなので `security.PathExpanded` を渡す。`g.VerifyFiles`・`cmd.Cmd` は未展開のテンプレートなので `config.HasVariableReference` の結果で `PathHasUnexpandedReference` と `PathExpanded` を選ぶ。判定は展開前のテンプレートに対してのみ行う（展開は冪等ではないため、展開後の値からは復元できない）。
+- [ ] 429 行のコメント `Variables are already expanded so no %{ filter is needed here` を、この出所ごとの宣言が何を根拠にしているかを述べる文へ書き換える。
 - [ ] ハッシュディレクトリの解決（458 行）を `security.ResolvePathForCheck` に置き換える。
 - [ ] 452-457 行のコメント（`ResolveAbsPathForTOCTOU preserves the original path when EvalSymlinks fails`）を、`ResolvePathForCheck` の実際の挙動（実在する最深の祖先まで解決し、残りを字句的に連結する）を述べる文へ書き換える。
 - [ ] チェック実行後に、§1.4.3 の5属性を持つ `INFO` を1件記録する。除外が0件の実行でも同じ記録を出す。
@@ -611,13 +614,11 @@ func getwd() (string, error) { return getwdHook() }
 **変更ファイル**: `internal/runner/group_executor.go`、`internal/runner/group_executor_test.go`
 
 - [ ] 357 行と 365 行の `isec.ResolveAbsPathForTOCTOU` 呼び出しを、`isec.ClassifyCheckTarget` による分類と `isec.ResolvePathForCheck` による解決に置き換える。件数の記録は入れない（02_architecture.md §6.3）。
-- [ ] **除外の範囲を現行と同一に保つ**。現行の `ResolveAbsPathForTOCTOU` は「相対パスなら読み飛ばす」だけであり、`%{` を含むパスは（絶対パスであれば）検査対象に入る。分類の戻り値は次のように扱う。
+- [ ] **`isec.PathExpanded` を宣言する**。グループ実行時のパスは `preExpandCommands` による展開後であり、展開済みであることは呼び出し元が構成上知っている事実である。したがって `CheckSkipVariableReference` はこの経路では返らず、除外の範囲は現行（相対パスのみ読み飛ばす）と同一に保たれる。分類の戻り値は次のように扱う。
   - `CheckSkipRelative` — 読み飛ばす（現行と同じ）。
-  - `CheckSkipVariableReference` — **読み飛ばさない**。相対パスであれば `CheckSkipRelative` と同じく読み飛ばし、絶対パスであれば `ResolvePathForCheck` に渡して検査する。
   - `CheckSkipNone` — `ResolvePathForCheck` に渡して検査する。
-- [ ] 起動時チェック（ステップ 4-1）と扱いが分かれる理由を、英語のコメントで当該箇所に残す。グループ実行時のパスは `preExpandCommands` による展開後であり、この時点で `%{` が残っているのは設定の書き方ではなく展開側の欠陥である。除外すれば fail-closed のチェックが黙って狭まり、しかも §6.3 によりグループ側には件数記録が無いため、判定にも記録にも現れない。
-- [ ] 展開後のパスに `%{` が残っていた場合は `WARN` を1件記録する（件数ではなく異常の通知であり、§6.3 が禁じる件数記録には当たらない）。検査自体は続ける。
-- [ ] `TestRunGroupTOCTOUCheck_AbsolutePathWithVariableReferenceIsStillChecked` を追加する。`%{VAR}` を含む絶対パスを1件渡し、フェイクチェッカが当該パスの祖先について呼ばれること（＝読み飛ばされていないこと）を表明する。除外範囲が将来広げられたときに失敗する唯一の表明である。
+- [ ] 起動時チェック（ステップ 4-1）と宣言が分かれる理由を、英語のコメントで当該箇所に残す。展開後の値に `%{` が残っていても、それはエスケープ由来の文字である可能性があり、除外の根拠にならない。除外すれば fail-closed のチェックが黙って狭まり、しかも §6.3 によりグループ側には件数記録が無いため、判定にも記録にも現れない。
+- [ ] `TestRunGroupTOCTOUCheck_AbsolutePathContainingBraceIsStillChecked` を追加する。`%{` を含む絶対パスを1件渡し、フェイクチェッカが当該パスの祖先について呼ばれること（＝読み飛ばされていないこと）を表明する。除外範囲が将来広げられたときに失敗する唯一の表明である。
 - [ ] `TestRunGroupTOCTOUCheck_RelativePathsSkipped`（`group_executor_test.go:3691-3703`）を書き換える。現行は実チェッカを使って `require.NoError` するだけであり、相対パスが「除外された」場合も「解決されて健全なディレクトリが検査された」場合も通るため、除外を検証できていない。**呼ばれたパスを記録するフェイクチェッカに差し替え、チェッカが1件も呼ばれないことを表明する**。これが除外と検査済みを区別できる唯一の表明である。
 - [ ] 同テストのコメント `Relative paths only → CollectTOCTOUCheckDirs collects nothing → no violations.` を、除外の担い手が `ClassifyCheckTarget` に移ったことを述べる文へ書き換える。
 

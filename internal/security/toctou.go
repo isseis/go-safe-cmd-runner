@@ -10,9 +10,6 @@ import (
 	"strings"
 )
 
-// variableReferencePrefix opens an unexpanded configuration variable reference.
-const variableReferencePrefix = "%{"
-
 // TOCTOUViolation contains information about a TOCTOU permission check violation.
 type TOCTOUViolation struct {
 	Path string
@@ -195,14 +192,42 @@ const (
 	CheckSkipRelative
 )
 
+// PathExpansionState declares what the caller knows about variable references in
+// a configured path. This package cannot work it out from the path itself: the
+// configuration syntax has an escape ("\%{" expands to a literal "%{"), so the
+// presence of "%{" is not evidence of an unexpanded reference, and the caller's
+// own position in the pipeline — before or after expansion — is not visible
+// here either. Only the configuration layer knows, so it says so.
+//
+// The zero value declares the least it can about its input: that the path is
+// whatever it appears to be, and is therefore checked.
+type PathExpansionState int
+
+const (
+	// PathExpanded declares that the path holds no unexpanded variable
+	// reference, so its final location is the one written.
+	PathExpanded PathExpansionState = iota
+	// PathHasUnexpandedReference declares that the path still holds a variable
+	// reference, so where it will finally point is not yet known.
+	PathHasUnexpandedReference
+)
+
 // ClassifyCheckTarget reports whether a configured path can be used as a
 // permission check target, and if not, why.
-func ClassifyCheckTarget(path string) CheckSkipReason {
-	// Checked before the absolute test: an unexpanded reference is unusable
-	// whether or not the surrounding text happens to start with a separator.
-	if strings.Contains(path, variableReferencePrefix) {
+func ClassifyCheckTarget(path string, state PathExpansionState) CheckSkipReason {
+	switch state {
+	case PathHasUnexpandedReference:
+		// Reported before the absolute test: an unexpanded reference is unusable
+		// whether or not the surrounding text happens to start with a separator.
 		return CheckSkipVariableReference
+	case PathExpanded:
+		// Fall through to the tests on the path itself.
+	default:
+		// A state added without a case here would otherwise land silently in one
+		// of the branches above; refusing to run is the only safe reading.
+		panic(fmt.Sprintf("ClassifyCheckTarget: unhandled PathExpansionState %d", state))
 	}
+
 	if !filepath.IsAbs(path) {
 		return CheckSkipRelative
 	}

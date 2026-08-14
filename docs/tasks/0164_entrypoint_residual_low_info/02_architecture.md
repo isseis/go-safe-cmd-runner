@@ -327,10 +327,46 @@ const (
     CheckSkipRelative          // 相対パス
 )
 
+// PathExpansionState は、変数参照について呼び出し元が知っている事実を宣言する。
+// ゼロ値は入力について最も少ししか仮定しない側、すなわち検査する側である。
+type PathExpansionState int
+
+const (
+    PathExpanded               PathExpansionState = iota // 未展開の参照を含まない
+    PathHasUnexpandedReference                           // 未展開の参照を含む
+)
+
 // ClassifyCheckTarget は、設定ファイル由来のパスを起動時チェックの対象に
 // できるかどうかを判定する。対象にできない場合はその理由を返す。
-func ClassifyCheckTarget(path string) CheckSkipReason
+func ClassifyCheckTarget(path string, state PathExpansionState) CheckSkipReason
 ```
+
+#### 未展開参照は文字列から推論せず、宣言として受け取る
+
+`security` パッケージはパスの文字列から未展開参照の有無を判定できない。展開の構文には
+エスケープがあり（`\%{` は文字としての `%{` に展開される、[expansion.go](../../../internal/runner/config/expansion.go) 参照）、
+`%{` を含むことは未展開である証拠にならないためである。`%{` の有無で除外すると、
+エスケープを使った実在しうる絶対パスが権限チェックから静かに外れる（fail-open）。
+
+判定に必要な事実を知っているのは設定層だけなので、設定層が宣言する。
+
+```go
+// Package config
+
+// HasVariableReference は、展開が解決する変数参照が残っているかを報告する。
+// 展開自身と同じパーサを使うため、エスケープ規則が二重管理にならない。
+func HasVariableReference(input string) bool
+```
+
+**この判定は展開前のテンプレートに対してのみ行う。** 展開は冪等ではなく、`\%{X}` の
+展開結果である文字としての `%{X}` を再びテンプレートとして読めば参照に見える。
+したがって展開後の値から事実を復元することはできず、展開する側が答えを記録して
+持ち回る必要がある。起動時チェックにおける呼び出し元の対応は次のとおり。
+
+| パスの出所 | 起動時点の状態 | 宣言する値 |
+|---|---|---|
+| `runtimeGlobal.ExpandedVerifyFiles` | 展開済み | `PathExpanded`（構成上必ず展開済みであるため判定不要） |
+| `g.VerifyFiles`・`cmd.Cmd` | 未展開のテンプレート | `HasVariableReference` の結果に対応する値 |
 
 この関数は `cmd/runner/main.go` の起動時チェックと `internal/runner/group_executor.go` のグループ実行時チェックの両方が使う。理由が列挙型で返るため、F-004 の内訳カウントはこの戻り値をそのまま数えるだけでよい。
 
