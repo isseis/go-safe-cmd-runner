@@ -330,11 +330,11 @@ func getwd() (string, error) { return getwdHook() }
 
 **変更ファイル**: `internal/filevalidator/validator.go`、`internal/filevalidator/validator_test.go`
 
-- [ ] `func (v *Validator) HashDirError() error { return v.deferredErr }` を追加し、doc コメントに「`New` で構築した `Validator` では常に nil」を含める。
-- [ ] `HashDirAvailable()` の実装を `return v.HashDirError() == nil` に書き換える（doc コメントは維持する）。
-- [ ] `TestHashDirError_MissingDirectoryReturnsErrHashDirNotExist`: `NewReadOnly` に不在ディレクトリを渡し、`errors.Is(err, ErrHashDirNotExist)` が真。
-- [ ] `TestHashDirError_UnreadableDirectoryReturnsPermissionError`: 読み取れないディレクトリで `errors.Is(err, os.ErrPermission)` が真。**root では `chmod 0o000` が `EACCES` を生まないため、`syscall.Geteuid() == 0` なら `t.Skip` する**（`internal/logging/safeopen_test.go`・`internal/verification/manager_permission_test.go`・`internal/safefileio/safe_file_linux_test.go` に同じ形の先例がある）。**権限を落とした直後に `t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })` を登録する**（`t.TempDir` の自動削除が失敗しないようにするため）。
-- [ ] `TestHashDirError_UsableDirectoryReturnsNil`: 実在する読み取り可能なディレクトリで nil。
+- [x] `func (v *Validator) HashDirError() error { return v.deferredErr }` を追加し、doc コメントに「`New` で構築した `Validator` では常に nil」を含める。
+- [x] `HashDirAvailable()` の実装を `return v.HashDirError() == nil` に書き換える（doc コメントは維持する）。
+- [x] `TestHashDirError_MissingDirectoryReturnsErrHashDirNotExist`: `NewReadOnly` に不在ディレクトリを渡し、`errors.Is(err, ErrHashDirNotExist)` が真。
+- [x] `TestHashDirError_UnreadableDirectoryReturnsPermissionError`: 読み取れないディレクトリで `errors.Is(err, os.ErrPermission)` が真。**root では `chmod 0o000` が `EACCES` を生まないため、`syscall.Geteuid() == 0` なら `t.Skip` する**（`internal/logging/safeopen_test.go`・`internal/verification/manager_permission_test.go`・`internal/safefileio/safe_file_linux_test.go` に同じ形の先例がある）。**権限を落とした直後に `t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })` を登録する**（`t.TempDir` の自動削除が失敗しないようにするため）。
+- [x] `TestHashDirError_UsableDirectoryReturnsNil`: 実在する読み取り可能なディレクトリで nil。
 
 **完了条件**: `go test -tags test ./internal/filevalidator/...` が通り、`internal/verification` のテストも通る。
 
@@ -342,11 +342,11 @@ func getwd() (string, error) { return getwdHook() }
 
 **変更ファイル**: `internal/cmdcommon/common.go`、`internal/cmdcommon/common_test.go`
 
-- [ ] `NewDirectoryPermChecker() (security.DirectoryPermChecker, error)` を追加する。`security.NewDirectoryPermChecker()` に委譲するだけで、panic はしない。テストからの差し替えはこのヘルパーではなく各コマンドの注入口（`deps.newPermChecker`・`runTOCTOUCheck` の引数）で行うため、引数は持たない。
-- [ ] `CreateReadOnlyValidator(hashDir string) (*filevalidator.Validator, error)` を追加する。`filevalidator.NewReadOnly(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})` に委譲する。
-- [ ] `TestNewDirectoryPermChecker_ConstructsChecker`: 非 nil のチェッカとエラー無しが返る。
-- [ ] `TestCreateReadOnlyValidator_DoesNotCreateHashDirectory`: 存在しないハッシュディレクトリを渡しても、構築は成功し、親ディレクトリを `filepath.WalkDir` で走査した結果が実行前後で一致すること。
-- [ ] `TestCreateReadOnlyValidator_ExistingHashDirectoryHasNoDeferredError`: 実在するハッシュディレクトリでは `HashDirError()` が nil を返すこと（ステップ 1-4 で追加済み）。
+- [x] `NewDirectoryPermChecker() (security.DirectoryPermChecker, error)` を追加する。`security.NewDirectoryPermChecker()` に委譲するだけで、panic はしない。テストからの差し替えはこのヘルパーではなく各コマンドの注入口（`deps.newPermChecker`・`runTOCTOUCheck` の引数）で行うため、引数は持たない。
+- [x] `CreateReadOnlyValidator(hashDir string) (*filevalidator.Validator, error)` を追加する。`filevalidator.NewReadOnly(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})` に委譲する。
+- [x] `TestNewDirectoryPermChecker_ConstructsChecker`: 非 nil のチェッカとエラー無しが返る。
+- [x] `TestCreateReadOnlyValidator_DoesNotCreateHashDirectory`: 存在しないハッシュディレクトリを渡しても、構築は成功し、親ディレクトリを `filepath.WalkDir` で走査した結果が実行前後で一致すること。
+- [x] `TestCreateReadOnlyValidator_ExistingHashDirectoryHasNoDeferredError`: 実在するハッシュディレクトリでは `HashDirError()` が nil を返すこと（ステップ 1-4 で追加済み）。
 
 **注**: `CreateValidator` の削除はステップ 3-1（`verify` の移行完了後）に行う。
 
@@ -356,18 +356,18 @@ func getwd() (string, error) { return getwdHook() }
 
 **変更ファイル**: `internal/fileanalysis/file_analysis_store.go`、`internal/fileanalysis/file_analysis_store_test.go`
 
-- [ ] `dirPermission = 0o750` を `HashDirPerm os.FileMode = 0o700` として公開する（18-19 行）。付随するコメントを、02_architecture.md §3.5 の理由（所有者以外に内容を見せる必要がない）に沿った英文へ書き換える。
-- [ ] 32 行目の doc コメント `If analysisDir does not exist, it will be created with mode 0o750.` を `... with mode HashDirPerm (0o700).` に変える。
-- [ ] 48 行目の `os.MkdirAll(analysisDir, dirPermission)` を `HashDirPerm` に変える。
-- [ ] `TestNewStore_CreatesDirectoryWithHashDirPerm` を追加する。不在ディレクトリを指定して `NewStore` を呼び、`os.Stat` の `Mode().Perm()` が `0o700` であること。比較対象は `HashDirPerm` ではなく `0o700` リテラルとする（定数が自分自身と等しいことを確かめても何も検証したことにならないため）。所有者ビットは umask に削られないため、この表明は通常の umask 設定（022・027・077）で成立する。
+- [x] `dirPermission = 0o750` を `HashDirPerm os.FileMode = 0o700` として公開する（18-19 行）。付随するコメントを、02_architecture.md §3.5 の理由（所有者以外に内容を見せる必要がない）に沿った英文へ書き換える。
+- [x] 32 行目の doc コメント `If analysisDir does not exist, it will be created with mode 0o750.` を `... with mode HashDirPerm (0o700).` に変える。
+- [x] 48 行目の `os.MkdirAll(analysisDir, dirPermission)` を `HashDirPerm` に変える。
+- [x] `TestNewStore_CreatesDirectoryWithHashDirPerm` を追加する。不在ディレクトリを指定して `NewStore` を呼び、`os.Stat` の `Mode().Perm()` が `0o700` であること。比較対象は `HashDirPerm` ではなく `0o700` リテラルとする（定数が自分自身と等しいことを確かめても何も検証したことにならないため）。所有者ビットは umask に削られないため、この表明は通常の umask 設定（022・027・077）で成立する。
 
 **完了条件**: `go test -tags test ./internal/fileanalysis/...` が通る。
 
 #### フェーズ1 完了ゲート
 
-- [ ] `make fmt` → `make test` → `make lint` が緑。
-- [ ] `make build` が通る。`make lint` は `--build-tags test` で走るため、`getwd.go`（`//go:build !test`）をコンパイルするのはこの経路だけである（§1.4.5）。
-- [ ] `make deadcode` を実行する。`ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget`・`DeepestExistingAncestor`・`security.getwd`（`ResolvePathForCheck` からのみ呼ばれる）・`CreateReadOnlyValidator`・`cmdcommon.NewDirectoryPermChecker` は、利用側の移行が済むフェーズ2〜4まで呼び出し元を持たないため、未到達として報告される。これは想定内であり、他に新しい未到達シンボルが出ていないことだけを確認する。
+- [x] `make fmt` → `make test` → `make lint` が緑。
+- [x] `make build` が通る。`make lint` は `--build-tags test` で走るため、`getwd.go`（`//go:build !test`）をコンパイルするのはこの経路だけである（§1.4.5）。
+- [x] `make deadcode` を実行する。`ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget`・`DeepestExistingAncestor`・`security.getwd`（`ResolvePathForCheck` からのみ呼ばれる）・`CreateReadOnlyValidator`・`cmdcommon.NewDirectoryPermChecker` は、利用側の移行が済むフェーズ2〜4まで呼び出し元を持たないため、未到達として報告される。これは想定内であり、他に新しい未到達シンボルが出ていないことだけを確認する。
 
 ### PR-2 作成ポイント: read-only validator helpers and hash-directory permission
 
