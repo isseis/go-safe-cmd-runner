@@ -31,11 +31,33 @@ func ResolveAbsPathForTOCTOU(p string) (string, bool) {
 	return p, true
 }
 
+// trimLastPathComponent drops the final component of p without cleaning it, and
+// reports whether there was anything left to drop.
+//
+// filepath.Dir is unusable here because it cleans: it would collapse ".."
+// textually, which is exactly what walking the raw path avoids.
+func trimLastPathComponent(p string) (string, bool) {
+	root := string(filepath.Separator)
+	i := strings.LastIndexByte(p, filepath.Separator)
+	switch {
+	case i < 0 || p == root:
+		return "", false
+	case i == 0:
+		return root, true
+	default:
+		return p[:i], true
+	}
+}
+
 // DeepestExistingAncestor returns the deepest existing entry at or above path,
-// which must be absolute. Existence is tested with os.Lstat, so a dangling
-// symlink counts as existing: reporting it as unresolvable is preferable to
-// silently checking the directory tree the link sits in rather than the one it
-// points at.
+// which must be absolute. The result is a literal prefix of path and is not
+// cleaned: the walk trims one component at a time and lets os.Lstat resolve each
+// candidate, so a ".." that follows a symlink is resolved the way the kernel
+// resolves it rather than collapsed textually.
+//
+// Existence is tested with os.Lstat, so a dangling symlink counts as existing:
+// reporting it as unresolvable is preferable to silently checking the directory
+// tree the link sits in rather than the one it points at.
 //
 // A component that cannot be stat'ed for a reason other than "does not exist"
 // (an unsearchable ancestor, say) is returned as an error; the walk never
@@ -44,7 +66,7 @@ func DeepestExistingAncestor(path string) (string, error) {
 	if !filepath.IsAbs(path) {
 		return "", fmt.Errorf("%w: %s is not absolute", ErrInvalidPath, path)
 	}
-	cur := filepath.Clean(path)
+	cur := path
 	for {
 		_, err := os.Lstat(cur)
 		if err == nil {
@@ -53,8 +75,8 @@ func DeepestExistingAncestor(path string) (string, error) {
 		if !errors.Is(err, fs.ErrNotExist) {
 			return "", err
 		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
+		parent, ok := trimLastPathComponent(cur)
+		if !ok {
 			// The root itself is missing; there is nothing left to walk up to.
 			return "", err
 		}
@@ -68,6 +90,10 @@ func DeepestExistingAncestor(path string) (string, error) {
 // the deepest existing ancestor and the remainder is joined lexically, so the
 // directories that will actually contain the target are the ones checked.
 //
+// The absolute path is deliberately not cleaned before the walk, since cleaning
+// collapses ".." textually and would send the check to the tree a symlink sits
+// in rather than the one it points at.
+//
 // A checkable path is returned even on failure, together with an error wrapping
 // ErrPathResolution. Dropping the path instead would let a path that is a
 // fail-closed premise go silently unchecked.
@@ -78,23 +104,24 @@ func ResolvePathForCheck(path string) (string, error) {
 		if err != nil {
 			return path, fmt.Errorf("%w: %s: %w", ErrPathResolution, path, err)
 		}
+		// os.Getwd reports a symlink-free path, so the cleaning that Join does
+		// resolves a leading ".." the way the kernel would.
 		abs = filepath.Join(wd, path)
 	}
-	abs = filepath.Clean(abs)
 
 	ancestor, err := DeepestExistingAncestor(abs)
 	if err != nil {
-		return abs, fmt.Errorf("%w: %s: %w", ErrPathResolution, path, err)
+		return filepath.Clean(abs), fmt.Errorf("%w: %s: %w", ErrPathResolution, path, err)
 	}
 	resolvedAncestor, err := filepath.EvalSymlinks(ancestor)
 	if err != nil {
-		return abs, fmt.Errorf("%w: %s: %w", ErrPathResolution, path, err)
+		return filepath.Clean(abs), fmt.Errorf("%w: %s: %w", ErrPathResolution, path, err)
 	}
-	rest, err := filepath.Rel(ancestor, abs)
-	if err != nil {
-		return abs, fmt.Errorf("%w: %s: %w", ErrPathResolution, path, err)
-	}
-	if rest == "." {
+	// The ancestor is a literal prefix of abs, so the remainder is the tail after
+	// it. Joining that lexically is safe: none of its components exist, so none of
+	// them can be a symlink.
+	rest := strings.TrimLeft(abs[len(ancestor):], string(filepath.Separator))
+	if rest == "" {
 		return resolvedAncestor, nil
 	}
 	return filepath.Join(resolvedAncestor, rest), nil
@@ -212,8 +239,12 @@ func CollectTOCTOUCheckDirs(verifyFilePaths []string, commandPaths []string, has
 // actually inspected, which "no violations" on its own does not say.
 type TOCTOUCheckResult struct {
 	Violations []TOCTOUViolation
-	Checked    int // directories that existed and were inspected
-	Skipped    int // directories that did not exist and were skipped
+	// Checked counts the directories the checker reached a verdict on, whether it
+	// passed or was a violation. A directory it could not stat for a reason other
+	// than absence counts here too: that is a verdict of "not trustworthy", not a
+	// directory left uninspected.
+	Checked int
+	Skipped int // directories that did not exist and were skipped
 }
 
 // RunTOCTOUPermissionCheck checks all collected directories for TOCTOU-exploitable

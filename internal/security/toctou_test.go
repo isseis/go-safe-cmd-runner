@@ -248,7 +248,9 @@ func TestResolvePathForCheck_UnreadableAncestorReturnsErrPathResolution(t *testi
 	tmpDir := tu.SafeTempDir(t)
 	target := blockedPathUnder(t, tmpDir, "blocked")
 
-	got, err := ResolvePathForCheck(target)
+	// The redundant separator makes the "lexically normalized" half of the contract
+	// observable: an implementation that returned the input unchanged would fail.
+	got, err := ResolvePathForCheck(strings.Replace(target, "/inner/", "/inner//", 1))
 
 	require.ErrorIs(t, err, ErrPathResolution)
 	assert.Equal(t, target, got, "the lexical absolute path must still be returned")
@@ -374,4 +376,44 @@ func TestDeepestExistingAncestor(t *testing.T) {
 	got, err = DeepestExistingAncestor(filepath.Join(existing, "not", "created"))
 	require.NoError(t, err)
 	assert.Equal(t, existing, got)
+
+	got, err = DeepestExistingAncestor("relative/path")
+	require.ErrorIs(t, err, ErrInvalidPath, "a relative path has no ancestor to walk")
+	assert.Empty(t, got)
+}
+
+// TestResolvePathForCheck_DotDotAfterSymlinkFollowsTheLink verifies that a ".."
+// following a symlink component is resolved the way the kernel resolves it. Cleaning
+// the path lexically first would collapse it to the tree the link sits in, and the
+// permission check would then inspect directories the target is not under.
+func TestResolvePathForCheck_DotDotAfterSymlinkFollowsTheLink(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	linkTarget := filepath.Join(tmpDir, "a", "real")
+	require.NoError(t, os.MkdirAll(linkTarget, 0o700))
+	require.NoError(t, os.Mkdir(filepath.Join(tmpDir, "b"), 0o700))
+	require.NoError(t, os.Symlink(linkTarget, filepath.Join(tmpDir, "b", "link")))
+
+	// Built by concatenation, not filepath.Join: Join cleans, which would collapse
+	// the ".." before the function under test ever sees it.
+	// b/link/.. is a/, not b/.
+	got, err := ResolvePathForCheck(tmpDir + "/b/link/../sibling")
+
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(tmpDir, "a", "sibling"), got)
+}
+
+// TestResolvePathForCheck_DanglingSymlinkAncestorFails pins the choice of os.Lstat
+// over os.Stat when looking for the deepest existing ancestor. With os.Stat the
+// broken link would count as absent, resolution would succeed against its parent,
+// and the check would silently inspect the tree the link sits in instead of the one
+// it points at.
+func TestResolvePathForCheck_DanglingSymlinkAncestorFails(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	dangling := filepath.Join(tmpDir, "dangling")
+	require.NoError(t, os.Symlink(filepath.Join(tmpDir, "nowhere"), dangling))
+
+	got, err := ResolvePathForCheck(filepath.Join(dangling, "child"))
+
+	require.ErrorIs(t, err, ErrPathResolution)
+	assert.Equal(t, filepath.Join(dangling, "child"), got, "a checkable path is still returned")
 }

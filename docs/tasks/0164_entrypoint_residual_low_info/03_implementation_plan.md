@@ -273,7 +273,7 @@ func getwd() (string, error) { return getwdHook() }
 - [x] `TOCTOUCheckResult` 型を追加し、`RunTOCTOUPermissionCheck` の戻り値を `[]TOCTOUViolation` から `TOCTOUCheckResult` に変える。計数規則は §1.4.2 のとおり。
 - [x] `cmd/record/main.go:138` を `result := ...; result.Violations` の形に追随させる。
 - [x] `cmd/verify/main.go:105` を追随させる。
-- [x] `cmd/verify/main.go:150`（対象ファイル側、戻り値を捨てている）を追随させる。
+- [x] `cmd/verify/main.go:150`（対象ファイル側、戻り値を捨てている）を追随させる。**実装時の確認**: この呼び出しは戻り値を使わないため、コンパイル上も意味上も変更は不要だった。捨てているのが意図的であることを示すコメントのみ添えた。
 - [x] `cmd/runner/main.go:460` を追随させる。
 - [x] `internal/runner/group_executor.go:372` を追随させる。
 - [x] `internal/security/toctou_test.go` の4箇所（`TestRunTOCTOUPermissionCheck_NoViolations`・`_ViolationDetected`・`_MultipleViolations`・`_EmptyDirs`）を追随させる。
@@ -296,7 +296,9 @@ func getwd() (string, error) { return getwdHook() }
 - [x] `TestResolveAllForCheck_NoWarnOnSuccessfulResolution`: 全件成功時に `failures == 0` かつ `WARN` 記録が0件であること（AC-04 の後半）。
 - [x] `TestClassifyCheckTarget`: 表形式で `CheckSkipNone`（絶対パス）・`CheckSkipVariableReference`（`%{` を含む）・`CheckSkipRelative`（相対パス）の3値を検証する。`%{` を含む相対パスは `CheckSkipVariableReference` を返すことも1行として含める。
 - [x] `TestRunTOCTOUPermissionCheck_CountsCheckedAndSkipped`: 実在ディレクトリ1件・不在ディレクトリ1件・違反ディレクトリ1件を渡し、`Checked == 2`・`Skipped == 1`・`len(Violations) == 1` になること（§1.4.2 の計数規則を固定する）。
-- [x] `TestDeepestExistingAncestor`: 全体が実在する場合はパス自身、途中まで実在する場合はその最深の祖先が返ること。
+- [x] `TestDeepestExistingAncestor`: 全体が実在する場合はパス自身、途中まで実在する場合はその最深の祖先が返ること。相対パスを渡した場合に `ErrInvalidPath` が返ること。
+- [x] `TestResolvePathForCheck_DotDotAfterSymlinkFollowsTheLink`（レビュー指摘により追加）: シンボリックリンクの後ろに `..` が続くパスで、リンク先側が検査対象になること。遡る前に字句的な正規化を行う実装では、リンクが置かれている側の木が返って失敗する。
+- [x] `TestResolvePathForCheck_DanglingSymlinkAncestorFails`（レビュー指摘により追加）: 実在判定に `os.Stat` ではなく `os.Lstat` を使う選択を固定する。リンク切れのシンボリックリンクを祖先に持つパスで `ErrPathResolution` が返ること。
 
 **根拠テストの自己検証**: 各テストを追加したあと、検証対象の分岐（最深祖先への遡り、`WARN` の記録、`Skipped` の加算）を一時的に無効化して失敗することを確認し、その旨をコミットメッセージに記す。
 
