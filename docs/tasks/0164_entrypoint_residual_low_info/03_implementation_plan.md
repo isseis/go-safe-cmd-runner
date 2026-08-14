@@ -8,7 +8,7 @@
 | Created | 2026-08-14 |
 | Review date | 2026-08-14 |
 | Reviewer | isseis |
-| Comments | AC-31 の解釈は §1.5 で決定済み。残る二重出力は [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) へ分離した。レビュー指摘により、AC-31 の選別条件（`level=ERROR` → `error_message=`）、AC-27 の検索式（`isec` 別名）、ステップ 4-3 の除外範囲、`deps.resolvePathForCheck` の宣言、AC-01・AC-15 の現状件数を修正済み。さらに PR レビュー指摘により、権限チェッカの注入口を引数無しのファクトリ `newPermChecker func() (security.DirectoryPermChecker, error)` に一本化し、`toctouChecker` を廃止した |
+| Comments | AC-31 の解釈は §1.5 で決定済み。残る二重出力は [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) へ分離した。レビュー指摘により、AC-31 の選別条件（`level=ERROR` → `error_message=`）、AC-27 の検索式（`isec` 別名）、ステップ 4-3 の除外範囲、`deps.resolvePathForCheck` の宣言、AC-01・AC-15 の現状件数を修正済み。さらに PR レビュー指摘により、権限チェッカの注入口を引数無しのファクトリ `newPermChecker func() (security.DirectoryPermChecker, error)` に一本化し、`toctouChecker` を廃止した。承認後に PR 境界（§3.2、全7件）を追加し、フェーズ1とフェーズ4のステップ順を PR 単位に整理した |
 
 ## 関連文書
 
@@ -53,7 +53,7 @@
 
 #### 1.3.2 権限チェッカ生成（F-006）
 
-`security.NewDirectoryPermChecker()` の失敗時に同一内容の panic を持つ箇所は3件（`cmd/runner/main.go:447-452`・`cmd/record/main.go:105-112`・`cmd/verify/main.go:81-90`）。`internal/security/dir_permissions_unix.go:34` の現行実装は常に `nil` エラーを返すため、この panic は到達不能である。したがって AC-24・AC-26 を検証するには、チェッカ生成そのものを差し替えられる注入口が本番コード側に要る（ステップ 2-2・3-3・4-2 でこれを追加する）。
+`security.NewDirectoryPermChecker()` の失敗時に同一内容の panic を持つ箇所は3件（`cmd/runner/main.go:447-452`・`cmd/record/main.go:105-112`・`cmd/verify/main.go:81-90`）。`internal/security/dir_permissions_unix.go:34` の現行実装は常に `nil` エラーを返すため、この panic は到達不能である。したがって AC-24・AC-26 を検証するには、チェッカ生成そのものを差し替えられる注入口が本番コード側に要る（ステップ 2-2・3-2・4-2 でこれを追加する）。
 
 #### 1.3.3 `verify` の書き込み副作用と依存注入（F-003・F-010）
 
@@ -62,7 +62,7 @@
 - `filevalidator.NewReadOnly`（`internal/filevalidator/validator.go:285`）は既に用途に合致する。不在時は `ErrHashDirNotExist` を、権限不足時は生の `os.ErrPermission` 系エラーを `deferredErr` に載せて構築に成功する。
 - `Validator.HashDirAvailable()`（同 361 行）は `v.deferredErr == nil` を返すだけなので、`HashDirError()` を追加して `HashDirAvailable()` をその上に再定義できる。`HashDirAvailable` の呼び出し元は `internal/verification/manager.go` の1件と、`internal/filevalidator/validator_test.go`・`validator_error_test.go` の計4件で、いずれも挙動が変わらないため修正不要。
 - `cmd/verify` のパッケージレベル可変変数は `validatorFactory`・`mkdirAll`・`ensurePermissionCheckUID`・`toctouChecker` の4つ。テストはこれらを差し替えるヘルパー（`overrideValidatorFactory`・`overrideTOCTOUChecker`）と直接代入（`cmd/verify/main_test.go:186-190,372-374,469-471`）に依存しており、`cmd/verify/main_test.go` の全 15 テストが書き換え対象になる。
-- `cmd/verify/main.go:80-152` の `checkDirPermissions` は、02_architecture.md §6.2 の段階 3（ハッシュディレクトリ側）と段階 5（対象ファイル側）を1つの関数で行っている。§6.2 の順序を実現するには両者を分ける必要がある（ステップ 3-2）。
+- `cmd/verify/main.go:80-152` の `checkDirPermissions` は、02_architecture.md §6.2 の段階 3（ハッシュディレクトリ側）と段階 5（対象ファイル側）を1つの関数で行っている。§6.2 の順序を実現するには両者を分ける必要がある（ステップ 3-4）。
 
 #### 1.3.4 ハッシュディレクトリのパーミッション（F-003）
 
@@ -101,7 +101,7 @@
 | 同上 | 208 行 | 「ハッシュディレクトリが存在しない場合はエラーになります」（実装が未追随）。終了コードとトークンを補う |
 | 同上 | 641-680 行付近 | `robust-verification.sh` 例。終了コード 3 を権限違反と決め打ち。改訂する |
 | `docs/user/runner_command.ja.md` | 849・854 行 | 命名規則と例。例は `myhost_20260805140000_...` で、実際の `T` 区切り・`Z` 付き書式と一致していない。修正する |
-| `docs/user/record_command.ja.md` | 199-206 行 | 「指定したディレクトリが存在しない場合、自動的に作成されます（権限: 0700）」。作成時期がステップ 2-3 で変わり、ステップ 2-4 で拒否条件が増えるため、条件付きの記述に改める |
+| `docs/user/record_command.ja.md` | 199-206 行 | 「指定したディレクトリが存在しない場合、自動的に作成されます（権限: 0700）」。作成時期がステップ 2-3 で変わり、ステップ 2-5 で拒否条件が増えるため、条件付きの記述に改める |
 | 同上 | 211 行・531 行 | `0700` 記載と 0146 由来の `0o750` からの是正手順。いずれも本タスクでは変更しない（531 行は §8 の `0o750` 検索で意図的な残存として扱う） |
 | `docs/user/*.md`（英語版） | 上記の対応箇所 | `/mktrans` で反映する |
 | `CHANGELOG.ja.md` / `CHANGELOG.md` | `## [未リリース]` 節 | 0162 由来の記述あり。本タスク分を追記する |
@@ -183,7 +183,7 @@ newPermChecker func() (security.DirectoryPermChecker, error)
 
 `runner` は `deps` を持たないため、02_architecture.md §3.3 のとおり `runTOCTOUCheck` の引数として同じシグネチャの関数を受け取る。呼び出し元（`cmd/runner/main.go:401`）は `cmdcommon.NewDirectoryPermChecker` をそのまま渡し、`runTOCTOUCheck` は引数無しでそれを呼ぶ（nil を渡す必要はもう無い）。3コマンドが同一の生成ヘルパーを共有する状態を保ち、AC-27 を弱めないためである。
 
-同じ理由で、`verify` の `deps` にはパス解決関数も持たせる。AC-05（fail-closed 終了時にパス解決の失敗を出力する）の根拠のうち、実際に権限を落とす `TestRunFailsClosedReportsPathResolutionFailure` は root 実行時にスキップされるため、権限に依存しない根拠として `ErrPathResolution` を確実に返す実装を注入する必要がある（ステップ 3-4 の `TestRunFailsClosedReportsInjectedPathResolutionFailure`）。差し替え口が無ければ、この経路は root で1本も検証されない。
+同じ理由で、`verify` の `deps` にはパス解決関数も持たせる。AC-05（fail-closed 終了時にパス解決の失敗を出力する）の根拠のうち、実際に権限を落とす `TestRunFailsClosedReportsPathResolutionFailure` は root 実行時にスキップされるため、権限に依存しない根拠として `ErrPathResolution` を確実に返す実装を注入する必要がある（ステップ 3-5 の `TestRunFailsClosedReportsInjectedPathResolutionFailure`）。差し替え口が無ければ、この経路は root で1本も検証されない。
 
 ```go
 // cmd/verify: added to deps
@@ -196,6 +196,12 @@ resolvePathForCheck func(path string) (string, error)
 
 これらの追加は 02_architecture.md §3.4 の構造体定義を2フィールド拡張する。設計の意図（§7.1）とは整合しており、§3.4 の記載は追補済みである。
 
+#### 1.4.5 `os.Getwd` の差し替え口
+
+**決定: `internal/security` にパッケージレベルの関数値 `var getwd = os.Getwd` を置き、`ResolvePathForCheck` はこれを呼ぶ**。02_architecture.md §7.2 が挙げるパス解決の4経路目（絶対パス化の失敗）は `os.Getwd` が失敗しないと通らず、実運用では作業ディレクトリが削除された場合などに限られる。差し替え口が無ければこの分岐は1本も検証できない。
+
+`deps.resolvePathForCheck`（§1.4.4）と同じ理由づけであり、関数値の宣言はステップ 1-1（本番コード）で、差し替えはステップ 1-3（テスト）で行う。テストは `t.Cleanup` で元の値に戻す。
+
 ### 1.5 AC-31 の「1回だけ」の範囲
 
 **決定: 人間向けブロックに1回とする**。02_architecture.md §6.5 は、`cmd/runner/main.go:284` の直接出力を消せば出力が1回になるとしている。しかし実測すると、そうはならない。
@@ -207,9 +213,9 @@ resolvePathForCheck func(path string) (string, error)
 
 `ValidateSlackWebhookEnv` は `bootstrap.SetupLogging`（`cmd/runner/main.go:293`）より前の `cmd/runner/main.go:282` で呼ばれるため、2 の時点で既定ロガーは Go 標準のハンドラであり、出力先は標準エラー出力である。`SuccessWithoutErrorError` は複数行だが、`GSCR_SLACK_WEBHOOK_URL_SUCCESS is set but GSCR_SLACK_WEBHOOK_URL_ERROR is not.` という一文は改行を含まないため、構造化ログ行の中にも連続した部分文字列として現れる。
 
-したがって現状の出現回数は3回、ステップ 4-5 を行うと2回になる。
+したがって現状の出現回数は3回、ステップ 4-7 を行うと2回になる。
 
-**本タスクは AC-31 の「標準エラー出力に1回」を「人間向けブロックに1回」と解釈する**。ステップ 4-5 は 02_architecture.md §6.5 のとおり直接出力の削除にとどめ、`internal/logging` には手を入れない。同パッケージは起動前エラーと実行時エラーの両方が通る共有経路であり、そこへの変更は本タスクのスコープ（エントリポイント3バイナリの起動処理）から外れるためである。
+**本タスクは AC-31 の「標準エラー出力に1回」を「人間向けブロックに1回」と解釈する**。ステップ 4-7 は 02_architecture.md §6.5 のとおり直接出力の削除にとどめ、`internal/logging` には手を入れない。同パッケージは起動前エラーと実行時エラーの両方が通る共有経路であり、そこへの変更は本タスクのスコープ（エントリポイント3バイナリの起動処理）から外れるためである。
 
 構造化ログ行に本文がもう一度現れる点は、[#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) として分離した。同 issue が解消すれば、構造化ログ行を含めても1回になる。
 
@@ -230,12 +236,13 @@ resolvePathForCheck func(path string) (string, error)
 **変更ファイル**: `internal/security/toctou.go`
 
 - [ ] `ErrPathResolution` 番兵エラーを追加する（02_architecture.md §4.1 の宣言どおり）。
-- [ ] `DeepestExistingAncestor(path string) (string, error)` を追加する。与えられた絶対パスから上へ辿り、実在する最深の祖先を返す。`ResolvePathForCheck` はこれを内部で使い、`cmd/record` のステップ 2-4 の判定もこれを使う（同じ探索を2箇所に書かないため）。
-- [ ] `ResolvePathForCheck(path string) (string, error)` を追加する。相対パスは `os.Getwd` 基準で絶対パス化し、`DeepestExistingAncestor` まで `filepath.EvalSymlinks` で解決したうえで残りを字句的に連結する。祖先を辿る途中の `ENOENT` は失敗として扱わない。
+- [ ] `DeepestExistingAncestor(path string) (string, error)` を追加する。与えられた絶対パスから上へ辿り、実在する最深の祖先を返す。`ResolvePathForCheck` はこれを内部で使い、`cmd/record` のステップ 2-5 の判定もこれを使う（同じ探索を2箇所に書かないため）。
+- [ ] `var getwd = os.Getwd` をパッケージレベルに置く（§1.4.5）。テストから差し替えるためであり、その理由を英語のコメントで添える。
+- [ ] `ResolvePathForCheck(path string) (string, error)` を追加する。相対パスは `getwd` 基準で絶対パス化し、`DeepestExistingAncestor` まで `filepath.EvalSymlinks` で解決したうえで残りを字句的に連結する。祖先を辿る途中の `ENOENT` は失敗として扱わない。
 - [ ] `ResolveAllForCheck(paths []string, logger *slog.Logger) (resolved []string, failures int)` を追加する。失敗ごとに `WARN` を1件記録し、失敗した要素にも検査可能なパス（字句的に正規化した絶対パス）を入れる。
 - [ ] `CheckSkipReason` 列挙型（`CheckSkipNone`・`CheckSkipVariableReference`・`CheckSkipRelative`）と `ClassifyCheckTarget(path string) CheckSkipReason` を追加する。
 
-`ResolveAbsPathForTOCTOU` の削除はステップ 4-8 で行う（本フェーズの時点ではまだ呼び出し元が残っているため）。
+`ResolveAbsPathForTOCTOU` の削除はステップ 4-4 で行う（本フェーズの時点ではまだ呼び出し元が残っているため）。
 
 **完了条件**: `go test -tags test ./internal/security/...` が通る。
 
@@ -253,7 +260,46 @@ resolvePathForCheck func(path string) (string, error)
 
 **完了条件**: `make test` が通る。既存4テストは元の観点（違反の有無と件数）を引き続き検証している。
 
-#### ステップ 1-3: `filevalidator.HashDirError` を追加
+#### ステップ 1-3: `internal/security` の新規 API に単体テストを追加
+
+**変更ファイル**: `internal/security/toctou_test.go`
+
+以下のうち権限不足を再現するテストは、§4.6 のとおり root スキップと `t.Cleanup` での権限復帰を必ず入れる。
+
+- [ ] `TestResolvePathForCheck_FullyExistingPathResolvesSymlinks`: パス全体が実在し、途中にシンボリックリンクがある場合に実体パスが返る。
+- [ ] `TestResolvePathForCheck_PartiallyExistingPath`: 末尾2階層が未作成のパスで、実在する最深の祖先まで解決され、残りが字句的に連結される（AC-02）。
+- [ ] `TestResolvePathForCheck_SymlinkedAncestorOfMissingPath`: 祖先がシンボリックリンクである未作成パスで、返るパスがリンク先の実体側になる（AC-03）。
+- [ ] `TestResolvePathForCheck_UnreadableAncestorReturnsErrPathResolution`: 読み取り権限のない祖先を経由するパスで、字句的な絶対パスが返り、`errors.Is(err, ErrPathResolution)` が真になる。root スキップと権限復帰を入れる。
+- [ ] `TestResolvePathForCheck_RelativePathUsesWorkingDirectory`: 相対パスがプロセスの作業ディレクトリ基準で絶対パス化される（AC-06）。作業ディレクトリの変更には `t.Chdir` を使う（自動で復元され、`t.Parallel` との併用を Go 側が拒否する）。
+- [ ] `TestResolvePathForCheck_AbsConversionFailure`: `os.Getwd` の失敗経路（02_architecture.md §7.2 が挙げる4経路目）。§1.4.5 の `getwd` を必ず失敗する実装に差し替え（`t.Cleanup` で復元）、`ErrPathResolution` が返ることと、返るパスが入力そのままであることを検証する。
+- [ ] `TestResolveAllForCheck_WarnsOncePerFailure`: 失敗パス2件・成功パス1件を渡し、`failures == 2`、`WARN` 記録が2件、返る要素数が3であること（AC-04）。**あわせて、失敗した2要素が期待どおりの字句的絶対パスであることを表明する**（02_architecture.md §3.1 の「失敗した要素にも検査可能なパスが入る」が fail-closed の根拠であり、件数だけでは検証できないため）。root スキップと権限復帰を入れる。
+- [ ] `TestResolveAllForCheck_NoWarnOnSuccessfulResolution`: 全件成功時に `failures == 0` かつ `WARN` 記録が0件であること（AC-04 の後半）。
+- [ ] `TestClassifyCheckTarget`: 表形式で `CheckSkipNone`（絶対パス）・`CheckSkipVariableReference`（`%{` を含む）・`CheckSkipRelative`（相対パス）の3値を検証する。`%{` を含む相対パスは `CheckSkipVariableReference` を返すことも1行として含める。
+- [ ] `TestRunTOCTOUPermissionCheck_CountsCheckedAndSkipped`: 実在ディレクトリ1件・不在ディレクトリ1件・違反ディレクトリ1件を渡し、`Checked == 2`・`Skipped == 1`・`len(Violations) == 1` になること（§1.4.2 の計数規則を固定する）。
+- [ ] `TestDeepestExistingAncestor`: 全体が実在する場合はパス自身、途中まで実在する場合はその最深の祖先が返ること。
+
+**根拠テストの自己検証**: 各テストを追加したあと、検証対象の分岐（最深祖先への遡り、`WARN` の記録、`Skipped` の加算）を一時的に無効化して失敗することを確認し、その旨をコミットメッセージに記す。
+
+**完了条件**: 上記テストが通り、無効化時に失敗することを確認済み。
+
+### PR-1 作成ポイント: internal/security path resolution and check-result shape
+
+**対象ステップ**: 1-1 / 1-2 / 1-3
+
+**推奨タイトル**: `feat(0164)!: add path resolution helpers and return check counts from RunTOCTOUPermissionCheck`
+
+**レビュー観点**: `ResolvePathForCheck` が実在する最深の祖先まで解決し残りを字句的に連結する規則 / 解決失敗時に検査可能な字句的絶対パスを返す fail-closed 挙動 / `TOCTOUCheckResult` への戻り値変更が5つの呼び出し元とテスト4箇所へ機械的に追随できているか / 相対パスが `getwd`（§1.4.5）経由で絶対パス化され、その失敗経路がテストで到達できること
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: `ResolvePathForCheck` の解決規則が本タスクの移行リスクの中心にあるため。02_architecture.md §9 のとおり、実在する最深の祖先まで解決する変更によってアップグレード後に新たな権限違反が検出され得る。あわせてステップ 1-2 が5つの呼び出し元へ波及するシグネチャ変更（PR タイトルの `!`）を含む。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+#### ステップ 1-4: `filevalidator.HashDirError` を追加
 
 `internal/cmdcommon` の新しいテスト（ステップ 1-5）がこのアクセサを使うため、`cmdcommon` より先に置く。
 
@@ -267,28 +313,6 @@ resolvePathForCheck func(path string) (string, error)
 
 **完了条件**: `go test -tags test ./internal/filevalidator/...` が通り、`internal/verification` のテストも通る。
 
-#### ステップ 1-4: `internal/security` の新規 API に単体テストを追加
-
-**変更ファイル**: `internal/security/toctou_test.go`
-
-以下のうち権限不足を再現するテストは、ステップ 1-3 と同じ root スキップと `t.Cleanup` での権限復帰を必ず入れる。
-
-- [ ] `TestResolvePathForCheck_FullyExistingPathResolvesSymlinks`: パス全体が実在し、途中にシンボリックリンクがある場合に実体パスが返る。
-- [ ] `TestResolvePathForCheck_PartiallyExistingPath`: 末尾2階層が未作成のパスで、実在する最深の祖先まで解決され、残りが字句的に連結される（AC-02）。
-- [ ] `TestResolvePathForCheck_SymlinkedAncestorOfMissingPath`: 祖先がシンボリックリンクである未作成パスで、返るパスがリンク先の実体側になる（AC-03）。
-- [ ] `TestResolvePathForCheck_UnreadableAncestorReturnsErrPathResolution`: 読み取り権限のない祖先を経由するパスで、字句的な絶対パスが返り、`errors.Is(err, ErrPathResolution)` が真になる。root スキップと権限復帰を入れる。
-- [ ] `TestResolvePathForCheck_RelativePathUsesWorkingDirectory`: 相対パスがプロセスの作業ディレクトリ基準で絶対パス化される（AC-06）。作業ディレクトリの変更には `t.Chdir` を使う（自動で復元され、`t.Parallel` との併用を Go 側が拒否する）。
-- [ ] `TestResolvePathForCheck_AbsConversionFailure`: `os.Getwd` の失敗経路（02_architecture.md §7.2 が挙げる4経路目）。この分岐は `os.Getwd` を差し替えないと到達できないため、`ResolvePathForCheck` の内部で使う `getwd` を関数値としてパッケージ内に持ち、テストから差し替える。差し替え口を設けない選択をする場合は、到達不能である旨と理由をテストファイルのコメントに英語で残し、本チェックボックスをその旨に書き換える。
-- [ ] `TestResolveAllForCheck_WarnsOncePerFailure`: 失敗パス2件・成功パス1件を渡し、`failures == 2`、`WARN` 記録が2件、返る要素数が3であること（AC-04）。**あわせて、失敗した2要素が期待どおりの字句的絶対パスであることを表明する**（02_architecture.md §3.1 の「失敗した要素にも検査可能なパスが入る」が fail-closed の根拠であり、件数だけでは検証できないため）。root スキップと権限復帰を入れる。
-- [ ] `TestResolveAllForCheck_NoWarnOnSuccessfulResolution`: 全件成功時に `failures == 0` かつ `WARN` 記録が0件であること（AC-04 の後半）。
-- [ ] `TestClassifyCheckTarget`: 表形式で `CheckSkipNone`（絶対パス）・`CheckSkipVariableReference`（`%{` を含む）・`CheckSkipRelative`（相対パス）の3値を検証する。`%{` を含む相対パスは `CheckSkipVariableReference` を返すことも1行として含める。
-- [ ] `TestRunTOCTOUPermissionCheck_CountsCheckedAndSkipped`: 実在ディレクトリ1件・不在ディレクトリ1件・違反ディレクトリ1件を渡し、`Checked == 2`・`Skipped == 1`・`len(Violations) == 1` になること（§1.4.2 の計数規則を固定する）。
-- [ ] `TestDeepestExistingAncestor`: 全体が実在する場合はパス自身、途中まで実在する場合はその最深の祖先が返ること。
-
-**根拠テストの自己検証**: 各テストを追加したあと、検証対象の分岐（最深祖先への遡り、`WARN` の記録、`Skipped` の加算）を一時的に無効化して失敗することを確認し、その旨をコミットメッセージに記す。
-
-**完了条件**: 上記テストが通り、無効化時に失敗することを確認済み。
-
 #### ステップ 1-5: `internal/cmdcommon` に共有ヘルパーを追加
 
 **変更ファイル**: `internal/cmdcommon/common.go`、`internal/cmdcommon/common_test.go`
@@ -297,7 +321,7 @@ resolvePathForCheck func(path string) (string, error)
 - [ ] `CreateReadOnlyValidator(hashDir string) (*filevalidator.Validator, error)` を追加する。`filevalidator.NewReadOnly(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})` に委譲する。
 - [ ] `TestNewDirectoryPermChecker_ConstructsChecker`: 非 nil のチェッカとエラー無しが返る。
 - [ ] `TestCreateReadOnlyValidator_DoesNotCreateHashDirectory`: 存在しないハッシュディレクトリを渡しても、構築は成功し、親ディレクトリを `filepath.WalkDir` で走査した結果が実行前後で一致すること。
-- [ ] `TestCreateReadOnlyValidator_ExistingHashDirectoryHasNoDeferredError`: 実在するハッシュディレクトリでは `HashDirError()` が nil を返すこと（ステップ 1-3 で追加済み）。
+- [ ] `TestCreateReadOnlyValidator_ExistingHashDirectoryHasNoDeferredError`: 実在するハッシュディレクトリでは `HashDirError()` が nil を返すこと（ステップ 1-4 で追加済み）。
 
 **注**: `CreateValidator` の削除はステップ 3-1（`verify` の移行完了後）に行う。
 
@@ -318,6 +342,23 @@ resolvePathForCheck func(path string) (string, error)
 
 - [ ] `make fmt` → `make test` → `make lint` が緑。
 - [ ] `make deadcode` を実行する。`ClassifyCheckTarget`・`DeepestExistingAncestor`・`CreateReadOnlyValidator`・`cmdcommon.NewDirectoryPermChecker` は、利用側の移行が済むフェーズ2〜4まで呼び出し元を持たないため、未到達として報告される。これは想定内であり、他に新しい未到達シンボルが出ていないことだけを確認する。
+
+### PR-2 作成ポイント: read-only validator helpers and hash-directory permission
+
+**対象ステップ**: 1-4 / 1-5 / 1-6
+
+**推奨タイトル**: `feat(0164): add read-only validator helpers and tighten hash directory permission`
+
+**レビュー観点**: `HashDirError()` が `NewReadOnly` の3状態（不在・読み取り不能・正常）を区別できること / `CreateReadOnlyValidator` がハッシュディレクトリを作らないことを部分木の走査で示せているか / `HashDirPerm` を `0o700` に変えても `fileanalysis` の既存利用が壊れないこと / パーミッションの表明が定数ではなく `0o700` リテラルと比較されているか
+
+**実装モデル要件**: standard
+
+**判定理由**: 委譲だけのヘルパー追加と定数1件の変更であり、未決の実装方式・パネルモードのトリガ・孤立した高リスク段階のいずれにも該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -347,7 +388,13 @@ resolvePathForCheck func(path string) (string, error)
 - [ ] `hashDirPermissions` 定数（37 行）を削除し、`internal/fileanalysis` を import して `fileanalysis.HashDirPerm` を使う。
 - [ ] この作成が `libccache.NewLibcCacheManager`（192-198 行）・`NewMachoLibSystemCacheManager`（201-206 行）・`dynamicanalysis.New`（229-234 行）・`d.validatorFactory`（223 行）より前にあることを、コードの並び順とコメントで示す。とくに `validatorFactory` は `filevalidator.New` 経由でハッシュディレクトリを暗黙に作る（§1.3.4）ため、権限チェックがこれより前にある順序が AC-08 の成立条件である。この依存関係を英語のコメントで明記する。
 
-#### ステップ 2-4: 作成が必要な場合に sticky ビットの例外を適用しない
+#### ステップ 2-4: `record` の重複計算を解消
+
+**変更ファイル**: `cmd/record/main.go`
+
+- [ ] 201 行の `machoCacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)` を削除し、192 行の `cacheDir` を `NewMachoLibSystemCacheManager` に渡す。
+
+#### ステップ 2-5: 作成が必要な場合に sticky ビットの例外を適用しない
 
 **変更ファイル**: `cmd/record/main.go`
 
@@ -355,12 +402,6 @@ resolvePathForCheck func(path string) (string, error)
 - [ ] 求めた作成先を `os.Stat` し、`Mode().Perm()&0o002 != 0` であれば、sticky ビットの有無にかかわらず違反として扱い、`false` を返す。
 - [ ] 判定は `cmd/record` 側に置き、`security.ValidateDirectoryPermissions` の規則は変更しない。
 - [ ] 拒否時の標準エラー出力に、先に利用者自身がディレクトリを作れば通ることを含める。
-
-#### ステップ 2-5: `record` の重複計算を解消
-
-**変更ファイル**: `cmd/record/main.go`
-
-- [ ] 201 行の `machoCacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)` を削除し、192 行の `cacheDir` を `NewMachoLibSystemCacheManager` に渡す。
 
 #### ステップ 2-6: `record` のテストを追加・更新
 
@@ -382,6 +423,23 @@ resolvePathForCheck func(path string) (string, error)
 
 - [ ] `make fmt` → `make test` → `make lint` が緑。
 
+### PR-3 作成ポイント: record write-ordering and creation guard
+
+**対象ステップ**: 2-1 / 2-2 / 2-3 / 2-4 / 2-5 / 2-6
+
+**推奨タイトル**: `feat(0164)!: create the record hash directory only after the permission check passes`
+
+**レビュー観点**: ハッシュディレクトリの作成が `validatorFactory`・`libccache`・`dynamicanalysis` のどれよりも前かつ権限チェック通過後に置かれているか（AC-08 の成立条件） / sticky world-writable な作成先を拒否する判定が「作成が必要な場合」だけに効き、既存ディレクトリの通過を妨げないか / 拒否時の標準エラー出力が回避手順を示しているか / 偽チェッカの注入が `d.newPermChecker` 経由に統一され、`toctouChecker` が残っていないか
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: `mkplan.md` step 8 のパネルモード・トリガのうち「セキュリティゲート/移行」に該当する。書き込みを権限チェックの後ろへ移す変更に、world-writable な作成先を拒否する新しい規則（ステップ 2-5）とハッシュディレクトリのパーミッション変更が重なり、§5 のリスク表が「正常な運用を拒否して `record` が使えなくなる環境が出る」可能性を挙げている。PR-5（`verify` の終了コード契約）と同じ種類の変更であり、同じ段階に置く。ステップ 2-5 はこの PR の実装ステップの最後（テストの直前）に置き、独立した修正（ステップ 2-4）がその後ろに残らないようにした。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ---
 
 ### フェーズ3: `verify` の移行
@@ -393,7 +451,7 @@ resolvePathForCheck func(path string) (string, error)
 - [ ] 削除の前に `go test -tags test -coverprofile=/tmp/cmdcommon-before.out ./internal/cmdcommon/... && go tool cover -func=/tmp/cmdcommon-before.out` を実行し、結果を保存する。
 - [ ] `parseArgs` から `mkdirAll(dir, hashDirPermissions)`（221-223 行）を削除する。
 - [ ] `hashDirPermissions` 定数（19 行）を削除する。
-- [ ] `errEnsureHashDir`（38 行）を削除する。参照している `cmd/verify/main_test.go:176`（`TestParseArgsInvalidHashDir`）も、作成しなくなったことで存在意義が無くなるため削除する。ハッシュディレクトリが使えない場合の検証はステップ 3-4 の新規テストが引き継ぐ。
+- [ ] `errEnsureHashDir`（38 行）を削除する。参照している `cmd/verify/main_test.go:176`（`TestParseArgsInvalidHashDir`）も、作成しなくなったことで存在意義が無くなるため削除する。ハッシュディレクトリが使えない場合の検証はステップ 3-5 の新規テストが引き継ぐ。
 - [ ] バリデータ生成を `cmdcommon.CreateReadOnlyValidator` に切り替える。
 - [ ] `internal/cmdcommon/common.go` から `CreateValidator` を削除する。
 - [ ] `internal/cmdcommon/common_test.go` の `TestCreateValidator_ValidHashDirectory` を削除する。
@@ -404,8 +462,48 @@ resolvePathForCheck func(path string) (string, error)
 - [ ] `TestCreateReadOnlyValidator_RelativePath` を追加して相対パスの観点を引き継ぐ。作業ディレクトリの移動には `t.Chdir`、ハッシュディレクトリには `t.TempDir` を使う（削除元のテストはパッケージのソースディレクトリ内に `./test_hashes` を作り `defer os.RemoveAll` していた。この形は panic 時に残骸を残すため引き継がない）。
 - [ ] `TestCreateReadOnlyValidator_EmptyPath` を追加して空パスの観点を引き継ぐ。
 - [ ] 削除後に同じ手順でカバレッジを取得（`/tmp/cmdcommon-after.out`）し、関数単位で低下していないことを確認する。低下した関数があれば補うテストを追加する。
+- [ ] `make deadcode` を実行し、`CreateReadOnlyValidator` への切り替えによって `internal/cmdcommon` に新たな未到達の公開シンボルが生じていないことを確認する。
 
-#### ステップ 3-2: `verify` の起動判定を組み替える
+#### ステップ 3-2: `verify` を `deps` 様式へ移行
+
+**変更ファイル**: `cmd/verify/main.go`
+
+- [ ] 02_architecture.md §3.4 の `deps` 構造体（`validatorFactory`・`newPermChecker`・`resolvePathForCheck`・`ensurePermissionCheckUID`）を定義し、`defaultDeps()` で既定値（`cmdcommon.NewDirectoryPermChecker`・`security.ResolvePathForCheck`）を与える。
+- [ ] パッケージレベル変数 `validatorFactory`・`mkdirAll`・`ensurePermissionCheckUID`・`toctouChecker`（39-48 行）をすべて削除する。`toctouChecker` は `deps` のフィールドとしても復活させず、§1.4.4 の `newPermChecker` が唯一の差し替え口になる。`errNoFilesProvided` は不変の番兵エラーなので残す。
+- [ ] `run` と `checkDirPermissions` のシグネチャに `deps` を渡す。ステップ 3-4 で `checkDirPermissions` を2つに分けるときは、両方へ引き継ぐ。
+- [ ] `main()` を `os.Exit(run(os.Args[1:], defaultDeps(), os.Stdout, os.Stderr))` に変える。
+- [ ] `parseArgs` は `deps` を必要としなくなるため、`d` を渡さない（`record` の `parseArgs` は `mkdirAll` のために受け取っていたが、`verify` にはその必要が無い）。
+
+#### ステップ 3-3: `verify` のテストを `deps` 経由へ移す
+
+**変更ファイル**: `cmd/verify/main_test.go`
+
+- [ ] ファイル冒頭の「パッケージレベル変数を差し替えるので `t.Parallel()` を呼んではならない」旨のコメントを、`slog` の既定ロガーのみが対象である旨に書き換える。
+- [ ] `overrideValidatorFactory` と `overrideTOCTOUChecker` を削除し、`deps` を組み立てるヘルパー `testDeps(...)` に置き換える（`cmd/record/main_test.go` の `testRunDeps` と同じ形）。
+- [ ] 既存 15 テスト（`TestRunRequiresAtLeastOneFile`・`TestRunProcessesMultipleFiles`・`TestRunReportsFailuresAndContinues`・`TestRunWarnsWhenDeprecatedFlagUsed`・`TestRunUsesDefaultHashDirectoryWhenNotSpecified`・`TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates`・`TestRunFailsClosedOnHashDirViolation_ExplicitHashDir`・`TestRunProceedsWithRealCheckerOnCleanDirs`・`TestRunFailsClosedOnHashDirViolation_AncestorViolation`・`TestRunFailsClosedOnHashDirViolation_DefaultHashDir`・`TestRunFailsClosedOnHashDirViolation_LogsErrorLevel`・`TestRunSkipsTargetSetCheckWhenHashDirViolates`・`TestRunFailsClosedWhenPermissionCheckUIDUnresolvable`・`TestVerifyDeclaresSudoUIDAwarePolicy`）を `deps` 経由に書き換える。`TestParseArgsInvalidHashDir` はステップ 3-1 で削除する。
+- [ ] `TestRunCreatesNoFilesystemEntries` を追加する（AC-14）。ハッシュディレクトリの**親を起点に `filepath.WalkDir` でパスとモードの集合を実行前後で取得し、完全に一致すること**を検証する。親の直下だけを見る方式では、既存のハッシュディレクトリの内部に作られた残骸を見落とすため使わない。存在するハッシュディレクトリを指定した場合と不在の場合の両方を対象にする。
+
+**完了条件**: 書き換え前後で `go test -tags test -coverprofile=... ./cmd/verify/... && go tool cover -func=...` を比較し、関数単位で低下がないこと（§5 のリスク表）。この比較は挙動が変わらないこの段階でのみ意味を持つ。
+
+### PR-4 作成ポイント: verify read-only migration and deps wiring
+
+**対象ステップ**: 3-1 / 3-2 / 3-3
+
+**推奨タイトル**: `refactor(0164)!: stop verify from writing and move it to deps-style injection`
+
+**レビュー観点**: `verify` がいかなる引数でもファイルシステムに書き込まないこと（部分木の走査による確認） / `CreateValidator` の削除で `internal/cmdcommon` のカバレッジが関数単位で低下していないこと / パッケージレベル可変変数が4つとも消え、`toctouChecker` が `deps` にも復活していないこと / 既存 15 テストの書き換えで元の観点が落ちていないこと（この段階では挙動が変わらないため、カバレッジ比較が根拠として成立する）
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: 書き込み副作用の停止（AC-14）は利用者から見える挙動変更でありながら、同時に `cmd/verify/main_test.go` の全 15 テストの差し替え口の移行を伴うため、退行が埋もれやすい。終了コードの契約変更は次の PR-5 に分離した。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+
+#### ステップ 3-4: `verify` の起動判定を組み替える
 
 **変更ファイル**: `cmd/verify/main.go`
 
@@ -422,28 +520,14 @@ resolvePathForCheck func(path string) (string, error)
 - [ ] ハッシュディレクトリの解決に失敗した場合、fail-closed 終了時の標準エラー出力にその旨と対象パスを1行追記する（AC-05）。この判定点で解決済みなのはハッシュディレクトリ1件のみ（対象ファイル群は段階 5 で解決する）なので、件数ではなく「ハッシュディレクトリのパス解決に失敗した」という事実と当該パスを示す形にする。
 - [ ] 21-25 行の終了コード説明コメントを更新する。変更前は `(the policy declaration in init and the checker initialisation in checkDirPermissions)`、変更後は `(the policy declaration in init)` とし、残る panic が1点のみであることを示す（AC-28）。
 
-#### ステップ 3-3: `verify` を `deps` 様式へ移行
-
-**変更ファイル**: `cmd/verify/main.go`
-
-- [ ] 02_architecture.md §3.4 の `deps` 構造体（`validatorFactory`・`newPermChecker`・`resolvePathForCheck`・`ensurePermissionCheckUID`）を定義し、`defaultDeps()` で既定値（`cmdcommon.NewDirectoryPermChecker`・`security.ResolvePathForCheck`）を与える。
-- [ ] パッケージレベル変数 `validatorFactory`・`mkdirAll`・`ensurePermissionCheckUID`・`toctouChecker`（39-48 行）をすべて削除する。`toctouChecker` は `deps` のフィールドとしても復活させず、§1.4.4 の `newPermChecker` が唯一の差し替え口になる。`errNoFilesProvided` は不変の番兵エラーなので残す。
-- [ ] `run`・`checkHashDirPermissions`・`checkTargetFilePermissions` のシグネチャに必要な `deps` を渡す。
-- [ ] `main()` を `os.Exit(run(os.Args[1:], defaultDeps(), os.Stdout, os.Stderr))` に変える。
-- [ ] `parseArgs` は `deps` を必要としなくなるため、`d` を渡さない（`record` の `parseArgs` は `mkdirAll` のために受け取っていたが、`verify` にはその必要が無い）。
-
-#### ステップ 3-4: `verify` のテストを書き換え
+#### ステップ 3-5: 終了コードと識別トークンのテストを追加
 
 **変更ファイル**: `cmd/verify/main_test.go`
 
-- [ ] ファイル冒頭の「パッケージレベル変数を差し替えるので `t.Parallel()` を呼んではならない」旨のコメントを、`slog` の既定ロガーのみが対象である旨に書き換える。
-- [ ] `overrideValidatorFactory` と `overrideTOCTOUChecker` を削除し、`deps` を組み立てるヘルパー `testDeps(...)` に置き換える（`cmd/record/main_test.go` の `testRunDeps` と同じ形）。
 - [ ] `fakeValidator` に `HashDirError() error` を実装する。
-- [ ] 既存 15 テスト（`TestRunRequiresAtLeastOneFile`・`TestRunProcessesMultipleFiles`・`TestRunReportsFailuresAndContinues`・`TestRunWarnsWhenDeprecatedFlagUsed`・`TestRunUsesDefaultHashDirectoryWhenNotSpecified`・`TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates`・`TestRunFailsClosedOnHashDirViolation_ExplicitHashDir`・`TestRunProceedsWithRealCheckerOnCleanDirs`・`TestRunFailsClosedOnHashDirViolation_AncestorViolation`・`TestRunFailsClosedOnHashDirViolation_DefaultHashDir`・`TestRunFailsClosedOnHashDirViolation_LogsErrorLevel`・`TestRunSkipsTargetSetCheckWhenHashDirViolates`・`TestRunFailsClosedWhenPermissionCheckUIDUnresolvable`・`TestVerifyDeclaresSudoUIDAwarePolicy`）を `deps` 経由に書き換える。`TestParseArgsInvalidHashDir` はステップ 3-1 で削除する。
-- [ ] `TestRunSkipsTargetSetCheckWhenHashDirViolates` が、ステップ 3-2 の関数分割後も「ハッシュディレクトリ側で止まったとき対象ファイル側のチェックが走らない」ことを検証していることを確認する。
+- [ ] `TestRunSkipsTargetSetCheckWhenHashDirViolates` が、ステップ 3-4 の関数分割後も「ハッシュディレクトリ側で止まったとき対象ファイル側のチェックが走らない」ことを検証していることを確認する。
 - [ ] `TestRunMissingHashDirExitsUntrustedEnvironment` を追加する（AC-12）。不在のハッシュディレクトリを指定し、終了コードが `3` であること、実行後もディレクトリが不在であることを検証する。
 - [ ] `TestRunMissingHashDirMessageIdentifiesCause` を追加する（AC-13）。標準エラー出力が `hash_dir_not_found` トークンとハッシュディレクトリのパスを含み、かつハッシュ照合の失敗を示す文言 `file content does not match the recorded hash`（`internal/filevalidator/errors.go` の実文言）を含まないことを検証する。
-- [ ] `TestRunCreatesNoFilesystemEntries` を追加する（AC-14）。ハッシュディレクトリの**親を起点に `filepath.WalkDir` でパスとモードの集合を実行前後で取得し、完全に一致すること**を検証する。親の直下だけを見る方式では、既存のハッシュディレクトリの内部に作られた残骸を見落とすため使わない。存在するハッシュディレクトリを指定した場合と不在の場合の両方を対象にする。
 - [ ] `TestRunFailsClosedReportsPathResolutionFailure` を追加する（AC-05）。読み取り権限のない祖先を持つハッシュディレクトリを指定し、fail-closed 終了時の標準エラー出力に解決失敗の旨と当該パスが出ることを検証する。root スキップと `t.Cleanup` での権限復帰を入れる。
 - [ ] `TestRunFailsClosedReportsInjectedPathResolutionFailure` を追加する（AC-05 の第二経路）。§1.4.4 の `deps.resolvePathForCheck` に、確実に `ErrPathResolution` を返す実装を注入して同じ出力を検証する。前項は root 実行時にスキップされるため、権限に依存しない根拠をもう1本用意する。
 - [ ] `TestRunExitsWithoutPanicWhenCheckerInitFails` を追加する（AC-24・AC-26）。`d.newPermChecker` に失敗を返す実装を注入し、終了コードが `3`、標準エラー出力に `permission_checker_init_failed` が出ることを検証する。ステップ 2-6 と同じ理由で、`goroutine ` の非包含は補助的な表明である旨をテストの doc コメントに英語で記す。
@@ -455,7 +539,23 @@ resolvePathForCheck func(path string) (string, error)
 #### フェーズ3 完了ゲート
 
 - [ ] `make fmt` → `make test` → `make lint` が緑。
-- [ ] `make deadcode` を実行し、`CreateReadOnlyValidator` への切り替えによって `internal/cmdcommon` に新たな未到達の公開シンボルが生じていないことを確認する。
+
+### PR-5 作成ポイント: verify exit-code contract and cause tokens
+
+**対象ステップ**: 3-4 / 3-5
+
+**推奨タイトル**: `feat(0164)!: report the cause of verify fail-closed exits with identification tokens`
+
+**レビュー観点**: §6.2 の6段階の順序と、ハッシュディレクトリ側で止まったとき対象ファイル側のチェックが走らないこと / 4つの識別トークンと終了コード（`3` と `1`）の対応が文書・定数・テストで一致しているか / 不在・読み取り不能・ディレクトリでない場合の3経路が別々のトークンと終了コードに落ちること / パス解決失敗の第二経路（注入）が root 実行でも動くこと
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: `mkplan.md` step 8 のパネルモード・トリガのうち「セキュリティゲート/移行」に該当する。不在のハッシュディレクトリが終了コード `3` になる契約変更は「終了コード 3 = 改ざんの可能性」として警報を上げている監視ルールに影響し、CHANGELOG の移行注記を伴うため。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -497,14 +597,49 @@ resolvePathForCheck func(path string) (string, error)
 - [ ] `TestRunGroupTOCTOUCheck_RelativePathsSkipped`（`group_executor_test.go:3691-3703`）を書き換える。現行は実チェッカを使って `require.NoError` するだけであり、相対パスが「除外された」場合も「解決されて健全なディレクトリが検査された」場合も通るため、除外を検証できていない。**呼ばれたパスを記録するフェイクチェッカに差し替え、チェッカが1件も呼ばれないことを表明する**。これが除外と検査済みを区別できる唯一の表明である。
 - [ ] 同テストのコメント `Relative paths only → CollectTOCTOUCheckDirs collects nothing → no violations.` を、除外の担い手が `ClassifyCheckTarget` に移ったことを述べる文へ書き換える。
 
-#### ステップ 4-4: dry-run 出力形式の分岐に `default` を入れる
+#### ステップ 4-4: 特権降格のコメント追記と `ResolveAbsPathForTOCTOU` の削除
+
+**変更ファイル**: `cmd/runner/main.go`、`internal/security/toctou.go`
+
+- [ ] `main()` の `dropStartupPrivileges` 呼び出し（163-168 行）のコメントに、saved-set-uid が変更されないこと、それにより privilege manager が必要時に再昇格できること、したがってこれが恒久降格ではないことを英語で追記する（AC-42）。
+- [ ] `internal/security/toctou.go` から `ResolveAbsPathForTOCTOU` を削除する（この時点で呼び出し元が無くなる）。
+
+#### ステップ 4-5: TOCTOU チェック周辺のテストを追加・更新
+
+**変更ファイル**: `cmd/runner/main_test.go`、`cmd/runner/startup_order_guard_test.go`
+
+- [ ] `cmd/runner/main_test.go` に `captureLogs` ヘルパーを追加する（`cmd/verify/main_test.go:85` と同じ形）。`runTOCTOUCheck` は `slog.Default()` に記録するため、以下のログ検証テストにはこれが要る。既定ロガーはプロセス全体の状態なので、これらのテストは `t.Parallel()` を呼ばない。その制約をファイル冒頭のコメントに英語で記す。
+- [ ] `TestRunTOCTOUCheck_LogsZeroSkipCounts` を追加する（AC-18）。除外が発生しない設定でチェックを実行し、`INFO` 記録が `skipped_variable_reference_paths=0` と `skipped_relative_paths=0` を含むことを検証する。
+- [ ] `TestRunTOCTOUCheck_LogsSkipBreakdownByReason` を追加する（AC-17）。`%{VAR}` を含むパス1件と相対パス1件を含む設定で、`skipped_variable_reference_paths=1` と `skipped_relative_paths=1` が記録されることを検証する。
+- [ ] `TestRunTOCTOUCheck_SkipDoesNotAffectVerdict` を追加する（AC-19）。除外対象のみを含む設定で違反が返らないこと、および除外対象と違反ディレクトリを併せ持つ設定で違反件数が違反ディレクトリの数と一致することを検証する。
+- [ ] `TestRunTOCTOUCheck_CheckerInitFailureReturnsPreExecutionError` を追加する（AC-24・AC-25）。失敗する生成関数を渡し、panic せず `*logging.PreExecutionError` が返ることを `errors.AsType` で検証する。
+- [ ] `cmd/runner/startup_order_guard_test.go` を再実行する。同テストは `cmd/runner/main.go` のソースを解析して `main` 内の呼び出し順を表明しており、ステップ 4-2（`runTOCTOUCheck` のシグネチャ変更）とステップ 4-4（`dropStartupPrivileges` 周辺のコメント追記）が同じ領域に触れる。追随が必要かを確認し、必要なら書き換える。不要だった場合もその旨を確認済みとして記録する。
+
+### PR-6 作成ポイント: runner TOCTOU check migration
+
+**対象ステップ**: 4-1 / 4-2 / 4-3 / 4-4 / 4-5
+
+**推奨タイトル**: `feat(0164): move the runner TOCTOU checks onto the shared path resolution`
+
+**レビュー観点**: 起動時（除外あり・件数記録あり）とグループ実行時（除外は相対パスのみ・件数記録なし）で除外規則が意図どおり分かれ、その理由がコメントに残っているか / 除外が違反判定に影響しないこと / 生成失敗が panic ではなく `*logging.PreExecutionError` になること / `ResolveAbsPathForTOCTOU` の削除時点で呼び出し元が残っていないこと
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: ステップ 4-3 が fail-closed な権限チェックの除外範囲を扱う高リスク段階であり、起動時とグループ実行時で規則が異なるうえ、グループ側には件数記録が無く誤りが判定にも記録にも現れないため。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+#### ステップ 4-6: dry-run 出力形式の分岐に `default` を入れる
 
 **変更ファイル**: `cmd/runner/main.go`
 
 - [ ] `newDryRunFormatter(format resource.OutputFormat) (resource.Formatter, error)` を追加し、`default` で未知の形式に対するエラーを返す。
 - [ ] 572-578 行の `switch` を `newDryRunFormatter` の呼び出しに置き換え、エラー時はそれを返す。
 
-#### ステップ 4-5: Slack 環境変数エラーの二重出力を解消
+#### ステップ 4-7: Slack 環境変数エラーの二重出力を解消
 
 §1.5 の決定に従い、直接出力の削除のみを行う。`internal/logging` には手を入れない。
 
@@ -513,35 +648,23 @@ resolvePathForCheck func(path string) (string, error)
 - [ ] `cmd/runner/main.go:284` の `fmt.Fprintln(os.Stderr, err.Error())` を削除する。`PreExecutionError` の返却はそのまま残す。
 - [ ] 同箇所に、構造化ログ行にも本文が現れるため人間向けブロックとしては1回になる旨と、残る重複を [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) で扱う旨を、英語のコメントで残す。次に読む者が「まだ2回出ている」と見て直接出力を戻すことを防ぐためである。
 
-#### ステップ 4-6: ログファイル名タイムスタンプを UTC に
+#### ステップ 4-8: ログファイル名タイムスタンプを UTC に
 
 **変更ファイル**: `internal/runner/bootstrap/logger.go`
 
 - [ ] 181 行を `timestamp := time.Now().UTC().Format("20060102T150405Z")` に変える。書式文字列は変更しない（AC-23）。
 
-#### ステップ 4-7: 許可 Slack ホストの IPv6 正規化を揃える
+#### ステップ 4-9: 許可 Slack ホストの IPv6 正規化を揃える
 
 **変更ファイル**: `internal/runner/bootstrap/config.go`
 
 - [ ] 42 行を `bareHost = strings.ToLower(u.Hostname())` に変える。
 - [ ] 22-29 行の doc コメントに、IPv6 リテラルも小文字化することを追記する。
 
-#### ステップ 4-8: 特権降格のコメント追記と `ResolveAbsPathForTOCTOU` の削除
+#### ステップ 4-10: dry-run・Slack・`bootstrap` のテストを追加・更新
 
-**変更ファイル**: `cmd/runner/main.go`、`internal/security/toctou.go`
+**変更ファイル**: `cmd/runner/main_test.go`、`cmd/runner/integration_pre_execution_error_test.go`、`internal/runner/bootstrap/logger_test.go`、`internal/runner/bootstrap/config_test.go`
 
-- [ ] `main()` の `dropStartupPrivileges` 呼び出し（163-168 行）のコメントに、saved-set-uid が変更されないこと、それにより privilege manager が必要時に再昇格できること、したがってこれが恒久降格ではないことを英語で追記する（AC-42）。
-- [ ] `internal/security/toctou.go` から `ResolveAbsPathForTOCTOU` を削除する（この時点で呼び出し元が無くなる）。
-
-#### ステップ 4-9: `runner`・`bootstrap` のテストを追加・更新
-
-**変更ファイル**: `cmd/runner/main_test.go`、`cmd/runner/integration_pre_execution_error_test.go`、`cmd/runner/startup_order_guard_test.go`、`internal/runner/bootstrap/logger_test.go`、`internal/runner/bootstrap/config_test.go`
-
-- [ ] `cmd/runner/main_test.go` に `captureLogs` ヘルパーを追加する（`cmd/verify/main_test.go:85` と同じ形）。`runTOCTOUCheck` は `slog.Default()` に記録するため、以下のログ検証テストにはこれが要る。既定ロガーはプロセス全体の状態なので、これらのテストは `t.Parallel()` を呼ばない。その制約をファイル冒頭のコメントに英語で記す。
-- [ ] `TestRunTOCTOUCheck_LogsZeroSkipCounts` を追加する（AC-18）。除外が発生しない設定でチェックを実行し、`INFO` 記録が `skipped_variable_reference_paths=0` と `skipped_relative_paths=0` を含むことを検証する。
-- [ ] `TestRunTOCTOUCheck_LogsSkipBreakdownByReason` を追加する（AC-17）。`%{VAR}` を含むパス1件と相対パス1件を含む設定で、`skipped_variable_reference_paths=1` と `skipped_relative_paths=1` が記録されることを検証する。
-- [ ] `TestRunTOCTOUCheck_SkipDoesNotAffectVerdict` を追加する（AC-19）。除外対象のみを含む設定で違反が返らないこと、および除外対象と違反ディレクトリを併せ持つ設定で違反件数が違反ディレクトリの数と一致することを検証する。
-- [ ] `TestRunTOCTOUCheck_CheckerInitFailureReturnsPreExecutionError` を追加する（AC-24・AC-25）。失敗する生成関数を渡し、panic せず `*logging.PreExecutionError` が返ることを `errors.AsType` で検証する。
 - [ ] `TestNewDryRunFormatter_KnownFormats` を追加する（AC-30）。`resource.OutputFormatText` と `resource.OutputFormatJSON` に対して期待する型のフォーマッタが返り、エラーが無いこと。
 - [ ] `TestNewDryRunFormatter_UnknownFormatReturnsError` を追加する（AC-29）。`cli.ParseDryRunOutputFormat` を経由せず不正な `resource.OutputFormat` 値を直接渡し、nil でないエラーが返ること。
 - [ ] `TestE2E_SlackWebhookEnvErrorPrintedOnce` を `cmd/runner/integration_pre_execution_error_test.go` に追加する（AC-31〜AC-33）。**子プロセスの環境を明示的に組み立てる**: `os.Environ()` から `GSCR_SLACK_` で始まる変数をすべて取り除いたうえで `GSCR_SLACK_WEBHOOK_URL_SUCCESS` のみを設定する。既存の兄弟テストのように `append(os.Environ(), ...)` とすると、開発者や CI が `GSCR_SLACK_WEBHOOK_URL_ERROR` を export している環境で `ValidateSlackWebhookEnv` が成功してしまい、3つの表明がいずれも別の失敗を見ることになる。実行は `go run . -config <valid.toml> -dry-run`（webhook 未設定のまま起動検証を通すため、既存の E2E テストと同様に `-dry-run` を付ける）。まず終了コードが `1` であることを表明する（AC-33）。環境が漏れて別経路に入った場合に静かに通らないよう、これを最初に見る。次に、§1.5 のとおり**標準エラー出力から `common.PreExecErrorAttrs.ErrorMessage` の属性キー（`error_message=`）を含む行を除いたうえで**、`GSCR_SLACK_WEBHOOK_URL_SUCCESS is set but GSCR_SLACK_WEBHOOK_URL_ERROR is not.` の出現回数がちょうど1であることを検証する（AC-31）。**選別条件を `level=ERROR` にしてはならない**: この出力は `SetupLogging` 前の組み込み既定ハンドラによるもので `level=` 表記を持たないため、1行も除外されず、実装が正しくてもこの表明は失敗する（§1.5）。除外の効きめを自己点検するため、除外前の行数と除外後の行数が異なることも併せて表明する。除外した構造化ログ行に同じ本文が残ることは既知であり、[#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) で扱う。この表明は、直接出力が戻された場合に2になって失敗する。最後に、除外前の標準エラー出力全体が `export GSCR_SLACK_WEBHOOK_URL_ERROR=` を含むことを検証する（AC-32）。除外の意図と #1020 との関係を、テストの doc コメントに英語で記す。
@@ -550,9 +673,30 @@ resolvePathForCheck func(path string) (string, error)
 - [ ] `TestNormalizeSlackAllowedHost_UppercaseIPv6PassesWebhookURLValidation` を追加する（AC-35）。大文字 IPv6 を正規化した値を許可ホストとして `internal/logging` の webhook URL 検証に渡し、同じアドレスを含む URL が許可されること。
 - [ ] `TestNormalizeSlackAllowedHost_UppercaseIPv6IsRedacted` を追加する（AC-36）。同じ正規化結果から秘匿パターンを組み立て、当該 host を含む webhook URL が秘匿されること。
 - [ ] AC-35・AC-36 の2テストは、下流が大文字小文字を区別しないため変更前でも通る（02_architecture.md §6.7）。退行防止の位置づけであることを、各テストの doc コメントに英語で明記する。
-- [ ] `cmd/runner/startup_order_guard_test.go` を再実行する。同テストは `cmd/runner/main.go` のソースを解析して `main` 内の呼び出し順を表明しており、ステップ 4-2（`runTOCTOUCheck` のシグネチャ変更）とステップ 4-8（`dropStartupPrivileges` 周辺のコメント追記）が同じ領域に触れる。追随が必要かを確認し、必要なら書き換える。不要だった場合もその旨を確認済みとして記録する。
 
-#### ステップ 4-10: 利用者向け文書の更新
+#### フェーズ4 完了ゲート
+
+- [ ] `make fmt` → `make test` → `make lint` が緑。
+- [ ] `make deadcode` が新たな未使用シンボルを報告しない（フェーズ1で想定内としたシンボルも、この時点ではすべて呼び出し元を持つ）。
+
+### PR-7 作成ポイント: dry-run, Slack output and bootstrap fixes
+
+**対象ステップ**: 4-6 / 4-7 / 4-8 / 4-9 / 4-10
+
+**推奨タイトル**: `fix(0164): harden dry-run format selection and startup output`
+
+**レビュー観点**: `newDryRunFormatter` の `default` が未知の形式でエラーを返し、既知の2形式の出力が変わらないこと / Slack 案内文が人間向けブロックに1回だけ出ること（選別条件が `error_message=` であること） / ログファイル名の書式文字列と3要素構成が変わらないこと / IPv6 リテラルの小文字化が下流の検証と秘匿の双方で効くこと
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: 本番コードの修正はいずれも数行だが、ステップ 4-10 が本タスク唯一の新規 E2E テスト（子プロセスの環境を組み立て、標準エラー出力を行単位で選別する）と、`time.Local` をプロセス全体で差し替えるテストを含み、統合テストの面が大きいため。§1.5 が記録しているとおり、この選別条件は一度取り違えている。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+#### ステップ 4-11: 利用者向け文書の更新
 
 **変更ファイル**: `docs/user/verify_command.ja.md`、`docs/user/runner_command.ja.md`、`docs/user/record_command.ja.md`
 
@@ -568,7 +712,7 @@ resolvePathForCheck func(path string) (string, error)
 - [ ] **地の確認**: 一時ディレクトリに対して `record`・`verify` を実行し、終了コードと標準エラー出力のトークンが文書の記述と一致することを確認する。ログファイル名については、`internal/runner/bootstrap` のテストが生成した実ファイル名が文書の例と同じ形であることを確認する。
 - [ ] 英語版 `docs/user/verify_command.md`・`docs/user/runner_command.md`・`docs/user/record_command.md` を `/mktrans` で反映する。
 
-#### ステップ 4-11: CHANGELOG と用語集
+#### ステップ 4-12: CHANGELOG と用語集
 
 **変更ファイル**: `CHANGELOG.ja.md`、`docs/translation_glossary.md`
 
@@ -583,15 +727,32 @@ resolvePathForCheck func(path string) (string, error)
 - [ ] `docs/translation_glossary.md` に「識別トークン / identification token」を追加する。§1.4.1 で導入した概念であり、`verify` の利用者向け文書と CHANGELOG の両方に現れるため、訳語を固定する必要がある。既存項目に同義のものが無いことを確認したうえで追加する。
 - [ ] 「読み取り専用バリデータ / read-only validator」「除外理由 / skip reason」についても、既存項目で足りるかを判断する。追加した場合はそれを、追加不要と判断した場合はその理由を、Document Status の Comments に記録する。
 - [ ] 英語版 `CHANGELOG.md` を `/mktrans` で反映する。
+- [ ] `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の §2・§3 から、本タスクで解消した 11 件（L-1〜L-5・L-7・I-1〜I-5）を消し込む。追跡文書の更新も本タスクの成果物であり、どの PR にも属さないまま残さない。
 
-#### フェーズ4 完了ゲート
+### PR-8 作成ポイント: user documentation and CHANGELOG
 
-- [ ] `make fmt` → `make test` → `make lint` が緑。
-- [ ] `make deadcode` が新たな未使用シンボルを報告しない（フェーズ1で想定内としたシンボルも、この時点ではすべて呼び出し元を持つ）。
+**対象ステップ**: 4-11 / 4-12
+
+**推奨タイトル**: `docs(0164): document the verify exit codes, UTC log timestamps and hash directory changes`
+
+**レビュー観点**: 終了コード表と識別トークン一覧が実装と一致していること（実行による地の確認が済んでいるか） / `robust-verification.sh` を実際に走らせて分岐を確認したか / CHANGELOG の5見出しが §7 の検索文言どおりか / 日本語版と英語版が同じ節に反映されているか
+
+**実装モデル要件**: standard
+
+**判定理由**: 実装済みの挙動を文書へ反映する作業であり、未決の方式・パネルモードのトリガ・孤立した高リスク段階のいずれにも該当しない。
+
+**マージ後の作業**: issue [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) をクローズする（§10）。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
 ## 3. 実装順序とマイルストーン
+
+### 3.1 マイルストーン
 
 | マイルストーン | 内容 | 成果物 | 対応フェーズ |
 |---|---|---|---|
@@ -602,6 +763,20 @@ resolvePathForCheck func(path string) (string, error)
 
 フェーズ2とフェーズ3は互いに独立しており、順序を入れ替えてもよい（02_architecture.md §8）。`internal/runner/group_executor.go` の移行（ステップ 4-3）は起動時チェックの移行（ステップ 4-1）と同じリリースに含める。
 
+### 3.2 PR 構成
+
+| PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | 1-1 / 1-2 / 1-3 | `internal/security` にパス解決・除外分類・`TOCTOUCheckResult` を追加し、既存の呼び出し元5箇所を追随させる | frontier-recommended |
+| PR-2 | 1-4 / 1-5 / 1-6 | `filevalidator.HashDirError`、`cmdcommon` の共有ヘルパー、`fileanalysis.HashDirPerm`（`0o700`） | standard |
+| PR-3 | 2-1 / 2-2 / 2-3 / 2-4 / 2-5 / 2-6 | `record` を共有処理へ移し、ハッシュディレクトリの作成を権限チェック通過後に限り、sticky world-writable な作成先を拒否する | frontier-required |
+| PR-4 | 3-1 / 3-2 / 3-3 | `verify` の書き込み副作用を断ち、`deps` 様式へ移行する（挙動は非作成化のみ） | frontier-recommended |
+| PR-5 | 3-4 / 3-5 | `verify` の起動判定を6段階へ組み替え、終了コードと識別トークンで fail-closed の原因を分ける | frontier-required |
+| PR-6 | 4-1 / 4-2 / 4-3 / 4-4 / 4-5 | `runner` の起動時チェックとグループ実行時チェックを共有処理へ移し、panic を排し、`ResolveAbsPathForTOCTOU` を削除する | frontier-recommended |
+| PR-7 | 4-6 / 4-7 / 4-8 / 4-9 / 4-10 | dry-run 形式の `default`、Slack 二重出力の解消、ログファイル名の UTC 化、IPv6 正規化 | frontier-recommended |
+| PR-8 | 4-11 / 4-12 | 利用者向け文書・CHANGELOG・用語集の更新と、0149 の残件一覧の消し込み | standard |
+
+PR-1 と PR-2 はフェーズ1（`internal/`）で、これを利用する PR-3〜PR-7（`cmd/` と `internal/runner`）より先にマージする。PR-3（`record`）と PR-4・PR-5（`verify`）は互いに独立しており、順序を入れ替えてよい。PR-4 は挙動を変えない移行、PR-5 は終了コードの契約変更であり、後者だけを差し戻せるように分けている。PR-8 は挙動を確定させる PR-3〜PR-7 のあとに置く。
 ---
 
 ## 4. テスト戦略
@@ -645,11 +820,11 @@ resolvePathForCheck func(path string) (string, error)
 
 読み取り不能ディレクトリを使うテストは、root で実行すると `chmod 0o000` が `EACCES` を生まないため、そのままでは失敗する。該当するテストはすべて `syscall.Geteuid() == 0` で `t.Skip` し、権限を落とした直後に `t.Cleanup` で権限を戻す（`t.TempDir` の自動削除が失敗しないようにするため）。対象は `TestHashDirError_UnreadableDirectoryReturnsPermissionError`・`TestResolvePathForCheck_UnreadableAncestorReturnsErrPathResolution`・`TestResolveAllForCheck_WarnsOncePerFailure`・`TestRunFailsClosedReportsPathResolutionFailure`・`TestRunUnreadableHashDirExitsUntrustedEnvironment` の5件。
 
-スキップによって根拠が消える受け入れ基準は AC-05 のみである。これに対しては、権限に依存しない第二の根拠（解決関数を注入する `TestRunFailsClosedReportsInjectedPathResolutionFailure`）を用意する（ステップ 3-4）。
+スキップによって根拠が消える受け入れ基準は AC-05 のみである。これに対しては、権限に依存しない第二の根拠（解決関数を注入する `TestRunFailsClosedReportsInjectedPathResolutionFailure`）を用意する（ステップ 3-5）。
 
 ### 4.7 テストヘルパー
 
-新しいクロスパッケージのテストヘルパーやモックは必要としない。`cmd/record`・`cmd/verify` の `fakeDirPermChecker` は互いに別の `main` パッケージの非公開型であり、`testutil/` へ移せない（既存コメントが述べているとおり）。ステップ 2-6・3-4 で各パッケージに追加するチェッカ生成失敗のスタブも同じ制約を受けるため、`fakeDirPermChecker` と同様に「意図的な重複である」旨のコメントを英語で添える。`test_helpers.go` の追加は行わない。
+新しいクロスパッケージのテストヘルパーやモックは必要としない。`cmd/record`・`cmd/verify` の `fakeDirPermChecker` は互いに別の `main` パッケージの非公開型であり、`testutil/` へ移せない（既存コメントが述べているとおり）。ステップ 2-6・3-5 で各パッケージに追加するチェッカ生成失敗のスタブも同じ制約を受けるため、`fakeDirPermChecker` と同様に「意図的な重複である」旨のコメントを英語で添える。`test_helpers.go` の追加は行わない。
 
 ---
 
@@ -657,10 +832,10 @@ resolvePathForCheck func(path string) (string, error)
 
 | リスク | 影響 | 対処 |
 |---|---|---|
-| 構造化ログ行に本文が残ることを、後から見た者が退行と誤認して直接出力を戻す | 二重出力が復活する | ステップ 4-5 で削除箇所に英語のコメントを残し、[#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) を参照させる。AC-31 のテストは直接出力が戻ると失敗する |
+| 構造化ログ行に本文が残ることを、後から見た者が退行と誤認して直接出力を戻す | 二重出力が復活する | ステップ 4-7 で削除箇所に英語のコメントを残し、[#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) を参照させる。AC-31 のテストは直接出力が戻ると失敗する |
 | `RunTOCTOUPermissionCheck` の戻り値変更が5つの呼び出し元とテスト4箇所に波及する | コンパイルエラーの取りこぼし | ステップ 1-2 を単独のコミットにし、`make test` が緑になるまで次へ進まない |
 | `cmd/verify/main_test.go` の全面書き換えで、既存の観点が落ちる | 退行の見落とし | §7 のトレーサビリティ表で書き換え前後の観点を対応付ける。書き換え前後で `go test -tags test -coverprofile=... ./cmd/verify/... && go tool cover -func=...` を比較する |
-| sticky world-writable の判定（ステップ 2-4）が正常な運用を拒否する | `record` が使えなくなる環境が出る | 本番既定のハッシュディレクトリ（`/usr/local/etc/go-safe-cmd-runner/hashes`）は該当しない。対の2テスト（拒否と通過）で判定範囲を固定し、CHANGELOG と `record_command.ja.md` に回避手順を記す |
+| sticky world-writable の判定（ステップ 2-5）が正常な運用を拒否する | `record` が使えなくなる環境が出る | 本番既定のハッシュディレクトリ（`/usr/local/etc/go-safe-cmd-runner/hashes`）は該当しない。対の2テスト（拒否と通過）で判定範囲を固定し、CHANGELOG と `record_command.ja.md` に回避手順を記す |
 | ログファイル名の UTC 化が収集スクリプトを壊す | 移行直後に最新ファイルの誤認 | 書式文字列と桁数を変えない。CHANGELOG に移行時の注意を記す |
 | 識別トークンの文字列が文書とコードで食い違う | 呼び出し元スクリプトが原因を分けられない | トークンを Go の名前付き定数として定義し、テストがその定数を参照する。文書との一致は §8 の横断検索で確認する |
 | root 実行の CI で権限依存テストが一斉にスキップされる | 気づかないまま根拠が失われる | §4.6 のとおり、スキップで根拠が消える AC-05 にのみ権限非依存の第二経路を用意する |
@@ -669,49 +844,16 @@ resolvePathForCheck func(path string) (string, error)
 
 ## 6. 実装チェックリスト
 
-### フェーズ1
+PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3.2 の表と、各ステップ群の末尾にある「PR-N 作成ポイント」節を参照する。
 
-- [ ] ステップ 1-1: `internal/security` にパス解決と除外判定を追加
-- [ ] ステップ 1-2: `RunTOCTOUPermissionCheck` の戻り値を構造体に変える
-- [ ] ステップ 1-3: `filevalidator.HashDirError` を追加
-- [ ] ステップ 1-4: `internal/security` の新規 API に単体テストを追加
-- [ ] ステップ 1-5: `internal/cmdcommon` に共有ヘルパーを追加
-- [ ] ステップ 1-6: `internal/fileanalysis` のパーミッション定数を公開し `0o700` に変える
-- [ ] フェーズ1 完了ゲート
-
-### フェーズ2
-
-- [ ] ステップ 2-1: `record` のパス解決を共有処理に置き換える
-- [ ] ステップ 2-2: `record` の権限チェッカ生成から panic を無くす
-- [ ] ステップ 2-3: ハッシュディレクトリの作成を権限チェック通過後へ移す
-- [ ] ステップ 2-4: 作成が必要な場合に sticky ビットの例外を適用しない
-- [ ] ステップ 2-5: `record` の重複計算を解消
-- [ ] ステップ 2-6: `record` のテストを追加・更新
-- [ ] フェーズ2 完了ゲート
-
-### フェーズ3
-
-- [ ] ステップ 3-1: `verify` の書き込み副作用を断つ
-- [ ] ステップ 3-2: `verify` の起動判定を組み替える
-- [ ] ステップ 3-3: `verify` を `deps` 様式へ移行
-- [ ] ステップ 3-4: `verify` のテストを書き換え
-- [ ] フェーズ3 完了ゲート
-
-### フェーズ4
-
-- [ ] ステップ 4-1: 起動時 TOCTOU チェックの除外判定と件数記録
-- [ ] ステップ 4-2: `runner` の権限チェッカ生成から panic を無くす
-- [ ] ステップ 4-3: グループ実行時チェックを共有処理へ差し替え
-- [ ] ステップ 4-4: dry-run 出力形式の分岐に `default` を入れる
-- [ ] ステップ 4-5: Slack 環境変数エラーの二重出力を解消
-- [ ] ステップ 4-6: ログファイル名タイムスタンプを UTC に
-- [ ] ステップ 4-7: 許可 Slack ホストの IPv6 正規化を揃える
-- [ ] ステップ 4-8: 特権降格のコメント追記と `ResolveAbsPathForTOCTOU` の削除
-- [ ] ステップ 4-9: `runner`・`bootstrap` のテストを追加・更新
-- [ ] ステップ 4-10: 利用者向け文書の更新
-- [ ] ステップ 4-11: CHANGELOG と用語集
-- [ ] フェーズ4 完了ゲート
-
+- [ ] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3）
+- [ ] PR-2 マージ済み（対象ステップ: 1-4 / 1-5 / 1-6、フェーズ1 完了ゲートを含む）
+- [ ] PR-3 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3 / 2-4 / 2-5 / 2-6、フェーズ2 完了ゲートを含む）
+- [ ] PR-4 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3）
+- [ ] PR-5 マージ済み（対象ステップ: 3-4 / 3-5、フェーズ3 完了ゲートを含む）
+- [ ] PR-6 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3 / 4-4 / 4-5）
+- [ ] PR-7 マージ済み（対象ステップ: 4-6 / 4-7 / 4-8 / 4-9 / 4-10、フェーズ4 完了ゲートを含む）
+- [ ] PR-8 マージ済み（対象ステップ: 4-11 / 4-12）
 ---
 
 ## 7. 受け入れ基準の検証
@@ -784,7 +926,7 @@ resolvePathForCheck func(path string) (string, error)
 | AC-41 | test | `cmd/verify/main_test.go::TestRunWarnsWhenDeprecatedFlagUsed`、`cmd/record/main_test.go::TestRunWarnsWhenDeprecatedFlagUsed`、`::TestRun_DebugInfoFlag_ControlsDebugFieldOmitEmpty` | 通過 |
 | AC-42 | static | `rg -n -e 'saved-set-uid' cmd/runner/main.go` | 一致1件以上 |
 | AC-42 | manual | 上記の一致が `main()` 内の `dropStartupPrivileges` 呼び出しに隣接していることを PR 差分で確認する | 隣接している |
-| AC-43 | static | `rg -n -e ハッシュディレクトリを作成しません docs/user/verify_command.ja.md`（ステップ 4-10 が固定した文言） | 一致1件 |
+| AC-43 | static | `rg -n -e ハッシュディレクトリを作成しません docs/user/verify_command.ja.md`（ステップ 4-11 が固定した文言） | 一致1件 |
 | AC-43 | static | `rg -c -e hash_dir_not_found -e hash_dir_unreadable -e hash_dir_permission_violation -e permission_checker_init_failed docs/user/verify_command.ja.md docs/user/verify_command.md` | 両ファイルとも4件以上 |
 | AC-43 | manual | 一時ディレクトリに不在ハッシュディレクトリを指定して `verify` を実行し、終了コードと標準エラー出力のトークンが文書の記述と一致することを確認する | 終了コード `3`、`hash_dir_not_found` を含む |
 | AC-43 | manual | 書き換えた `robust-verification.sh` を、不在と権限違反の2条件で実行し、意図した分岐に入ることを確認する | 両条件とも意図どおり |
@@ -829,6 +971,6 @@ resolvePathForCheck func(path string) (string, error)
 ## 10. 次のステップ
 
 - [ ] 本書のレビューと `approved` への更新（レビュアー作業）。02_architecture.md §3.4 への `deps` の `newPermChecker`・`resolvePathForCheck` の追補（§1.4.4）は反映済み。
-- [ ] 承認後、フェーズ1から順に実装する。フェーズごとに PR を分ける。
-- [ ] 実装完了後、`docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の §2・§3 から、本タスクで解消した 11 件を消し込む。
+- [ ] 承認後、§3.2 の PR-1 から順に実装する。PR の区切りは各ステップ群の末尾にある「PR-N 作成ポイント」に従い、1つの PR をマージしてから次のブランチへ移る。
+- [ ] `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の消し込みはステップ 4-12（PR-8）で行う。
 - [ ] issue [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) をクローズする。対象外とした L-6（[#1018](https://github.com/isseis/go-safe-cmd-runner/issues/1018)）と I-6（[#1019](https://github.com/isseis/go-safe-cmd-runner/issues/1019)）が別 issue として残ることを、クローズコメントに記す。
