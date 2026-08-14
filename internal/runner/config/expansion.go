@@ -79,25 +79,15 @@ func ExpandString(
 	return resolveAndExpand(input, expandedVars, level, field, visited, nil, 0)
 }
 
-// HasVariableReference reports whether input still holds a variable reference
-// that expansion would resolve. It is the answer to "is this string's final
-// value already known?", which callers outside this package cannot work out for
-// themselves: "%{" is not evidence of a reference, because "\%{" expands to a
-// literal "%{" and so may legitimately appear in a fully expanded value.
+// HasVariableReference reports whether input holds a variable reference that
+// expansion would resolve.
 //
-// The question is answered with the parser expansion itself uses, so the escape
-// rules cannot drift apart from it.
+// Ask this of the pre-expansion template, never of an expanded value: "\%{X}"
+// expands to the literal "%{X}", which read back as a template is a reference
+// again. Whoever expands a value must record the answer and carry it forward.
 //
-// Ask this of the pre-expansion template, never of an expanded value. Expansion
-// is not idempotent: "\%{X}" expands to the literal "%{X}", which read back as a
-// template is a reference again. Whoever expands a value must record the answer
-// and carry it forward; it cannot be recovered afterwards.
-//
-// A string that does not parse (an unclosed reference, say) is reported as
-// holding no reference. Malformed input is rejected by configuration
-// validation, and of the two answers available here, "no reference" is the one
-// that leaves the value in the hands of callers that treat a reference as a
-// reason to stop looking at it.
+// Input that does not parse (an unclosed reference, say) is reported as holding
+// no reference; malformed input is rejected by configuration validation.
 func HasVariableReference(input string) bool {
 	found := false
 	detector := func(_ string, _ string, _ map[string]struct{}, _ []string, _ int) (string, error) {
