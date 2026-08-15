@@ -354,12 +354,21 @@ func newDeferredValidator(algorithm HashAlgorithm, hashFilePathGetter common.Has
 	}
 }
 
+// HashDirError returns the deferred hash-directory access error detected at
+// read-only construction time (see NewReadOnly): missing or inaccessible
+// directory, permission denied, and so on. It is nil when the directory was
+// usable. For Validators built via New it is always nil, since New either
+// creates the directory or fails construction.
+func (v *Validator) HashDirError() error {
+	return v.deferredErr
+}
+
 // HashDirAvailable reports whether the hash directory was usable at
 // construction time. It returns false when NewReadOnly deferred an error
 // (missing or inaccessible directory), and true otherwise (including for
 // Validators built via New, which always succeed with a usable directory).
 func (v *Validator) HashDirAvailable() bool {
-	return v.deferredErr == nil
+	return v.HashDirError() == nil
 }
 
 // SaveRecord calculates the hash of the file at filePath and saves it to the hash directory.

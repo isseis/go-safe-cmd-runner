@@ -14,3 +14,10 @@ var (
 func CreateValidator(hashDir string) (filevalidator.FileValidator, error) {
 	return filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
 }
+
+// CreateReadOnlyValidator creates a validator that never creates the hash
+// directory. A missing or inaccessible directory is reported through
+// *filevalidator.Validator.HashDirError rather than failing construction.
+func CreateReadOnlyValidator(hashDir string) (*filevalidator.Validator, error) {
+	return filevalidator.NewReadOnly(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
+}

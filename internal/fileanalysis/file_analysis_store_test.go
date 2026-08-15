@@ -354,6 +354,19 @@ func TestNewStore_CreatesDirectory(t *testing.T) {
 	info, err := os.Stat(analysisDir)
 	require.NoError(t, err)
 	assert.True(t, info.IsDir())
+
+	// Every directory created along the way carries the hash-directory
+	// permission. The comparison is against the 0o700 literal rather than
+	// HashDirPerm, because a constant tested against itself cannot fail. The
+	// owner bits are not stripped by any of the usual umask settings
+	// (022/027/077), so this holds regardless of the caller's umask.
+	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm(),
+		"the created leaf directory must use the hash-directory permission")
+
+	intermediateInfo, err := os.Stat(filepath.Join(tmpDir, "new"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), intermediateInfo.Mode().Perm(),
+		"intermediate directories created by MkdirAll must use it too")
 }
 
 func TestNewStore_ExistingDirectory(t *testing.T) {

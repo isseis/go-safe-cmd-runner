@@ -14,9 +14,10 @@ const (
 	// filePermission is the permission mode for analysis record files.
 	filePermission = 0o600
 
-	// dirPermission is the permission mode for analysis result directory.
-	// 0o750 allows owner full access, group read/execute, others no access.
-	dirPermission = 0o750
+	// HashDirPerm is the permission mode used when creating the hash
+	// directory. 0o700 keeps its contents visible only to its owner: a hash
+	// directory is a root of trust, and no one else needs to see inside it.
+	HashDirPerm os.FileMode = 0o700
 )
 
 // Store manages unified file analysis record files containing both
@@ -29,7 +30,7 @@ type Store struct {
 }
 
 // NewStore creates a new Store.
-// If analysisDir does not exist, it will be created with mode 0o750.
+// If analysisDir does not exist, it will be created with mode HashDirPerm (0o700).
 // This simplifies operational workflows by eliminating the need for
 // manual directory creation before running the record command.
 //
@@ -45,7 +46,7 @@ func NewStore(analysisDir string, pathGetter common.HashFilePathGetter) (*Store,
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Create directory if it doesn't exist
-			if err := os.MkdirAll(analysisDir, dirPermission); err != nil {
+			if err := os.MkdirAll(analysisDir, HashDirPerm); err != nil {
 				return nil, fmt.Errorf("failed to create analysis result directory: %w", err)
 			}
 		} else {

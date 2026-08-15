@@ -43,6 +43,7 @@
 | バックアップ | backup | |
 | ブロックリスト | blocklist | "blacklist" は使用しない。セキュリティの文脈 |
 | 分岐収束 | branch convergence | CFG上で複数の分岐が同一点で合流すること |
+| 分離運用 | split-role deployment | record を実行する管理者と runner を実行するユーザーが異なる構成。ハッシュディレクトリにグループ読み取り（`chgrp` + `0750`）が必要になる（Task 0164） |
 | 幅優先探索 | breadth-first search (BFS) | グラフ探索アルゴリズム |
 | ブートストラップ | bootstrap | システム初期化処理の文脈 |
 | バッチ処理 | batch processing | |

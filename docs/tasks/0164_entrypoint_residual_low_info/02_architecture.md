@@ -8,7 +8,7 @@
 | Created | 2026-08-14 |
 | Review date | 2026-08-14 |
 | Reviewer | isseis |
-| Comments | 承認後の修正: PR レビューを受けて、権限チェッカの注入口を引数無しのファクトリに一本化した（§3.3・§3.4・§7）。 |
+| Comments | - |
 
 ## 関連文書
 
@@ -35,7 +35,7 @@
 | 原則 | 本設計での現れ方 |
 |---|---|
 | 検証の前に書き込まない | ハッシュディレクトリの作成は、TOCTOU 権限チェックを通過した後にのみ行う（F-002）。`verify` は読み取り専用に徹する（F-003） |
-| DRY | パス解決、除外判定、権限チェッカ生成を共有処理に集約し、3コマンドの重複を消す（F-001・F-004・F-006） |
+| DRY | パス解決と除外判定を共有処理に集約し、3コマンドの重複を消す（F-001・F-004）。権限チェッカ初期化失敗の panic は、各コマンドのエラー報告経路へ置き換える（F-006・§3.3） |
 | 宣言し、推測しない | チェック対象から除外する理由を列挙型で表し、除外の判定を1箇所に持つ（§3.2） |
 | 拒否し、丸めない | `verify` はハッシュディレクトリが存在しなければ作成せずエラーにする（F-003） |
 | 沈黙しない | 解決失敗と除外は、件数としてログに残る（F-001・F-004） |
@@ -136,7 +136,6 @@ flowchart LR
     VERIFY --> SEC
     VERIFY --> CMDCOMMON
     RUNNERPKG --> SEC
-    CMDCOMMON --> SEC
     CMDCOMMON --> FILEVALIDATOR
     FILEVALIDATOR --> FILEANALYSIS
 
@@ -159,7 +158,7 @@ flowchart LR
 配置の理由は次のとおり。
 
 - **パス解決と除外判定は `internal/security`**。同パッケージには既に `ResolveAbsPathForTOCTOU`・`CollectTOCTOUCheckDirs`・`RunTOCTOUPermissionCheck` があり、解決と除外はその前段にあたる同じ関心事である。`internal/cmdcommon` に置くこともできる（`internal/verification` が既に `cmdcommon` を import しており、依存の循環は生じない）が、`cmdcommon` は3つの CLI コマンドのための層であり、`internal/runner`（グループ実行時の権限チェック）からそこへ依存させると層の向きが逆流する。
-- **権限チェッカの生成は `internal/cmdcommon`**。3つのエントリポイントだけが持つ重複であり、`internal/security` に置くとチェッカの実装パッケージが自分自身の生成方針を抱えることになる。
+- 権限チェッカの生成は `internal/security` のまま動かさない。3コマンドが共有すべきものは生成関数そのものであり、それは既に同パッケージに1つだけある。`internal/cmdcommon` に委譲だけのラッパーを置いても何も束ねられない（§3.3）。
 - **ハッシュディレクトリの期待パーミッション定数は `internal/fileanalysis`**。同パッケージの `NewStore` がこのディレクトリを実際に作成する（`os.MkdirAll`）ため、定数は作成処理と同じ場所に置く。`cmd/record` から `internal/fileanalysis` への import は循環しない（`fileanalysis` は `internal/common` と `internal/safefileio` にのみ依存する）。
 
 ### 2.2 変更前後の対比（パス解決）
@@ -372,20 +371,15 @@ func HasVariableReference(input string) bool
 
 `record`・`verify` はこの判定を使わない。これらのパスは利用者がコマンドラインで与えたものであり、作業ディレクトリ基準の絶対化に意味があるためである。
 
-### 3.3 権限チェッカ生成の共通化（F-006）
+### 3.3 権限チェッカ初期化失敗のエラー化（F-006）
 
-3コマンドは `security.NewDirectoryPermChecker()` の失敗時に、同一のコメントと同一の panic を持っている。これを共有ヘルパーに置き換える。
+3コマンドは `security.NewDirectoryPermChecker()` の失敗時に、同一のコメントと同一の panic を持っている。重複しているのはこの panic ブロックであって、生成の呼び出しそのものではない。生成関数は `internal/security` に既に1つしかなく、3コマンドはそれを呼んでいるだけである。
 
-```go
-// Package cmdcommon
+したがって解消の方向は、生成を包む新しいヘルパーを足すことではなく、panic を各コマンドのエラー報告経路へ置き換えることである（ステップ 2-2・3-2・4-2）。置き換え後に残る処理は、`runner` なら起動前エラーとして機械可読サマリ行を出す、`record`・`verify` なら標準エラー出力へ出して固有の終了コードで終わる、というコマンドごとに異なるものになる。ここは共通化の対象ではない。
 
-// NewDirectoryPermChecker はディレクトリ権限チェッカを返す。
-// 生成に失敗した場合はエラーを返す。呼び出し側は panic せず、
-// 各コマンドのエラー報告経路へ載せる。
-func NewDirectoryPermChecker() (security.DirectoryPermChecker, error)
-```
+`internal/cmdcommon` に委譲だけのラッパー（`func NewDirectoryPermChecker() (security.DirectoryPermChecker, error) { return security.NewDirectoryPermChecker() }`）を置く案は採らない。シグネチャが委譲先と同一であるため、注入口の既定値には `security.NewDirectoryPermChecker` をそのまま代入でき、ラッパーは何も束ねない。置いた場合に増えるのは `cmdcommon → security` の import 辺と、読む者が「ここで何かが足されている」と探す手間だけである（YAGNI）。
 
-このヘルパーは差し替え用の引数を持たない。テストからチェッカを差し替える必要がある場合は、このヘルパー自体を呼ばない関数を注入口へ与える（`record`・`verify` は `deps.newPermChecker`、`runner` は `runTOCTOUCheck` の引数）。生成そのものを差し替えるため、失敗経路も含めて検証できる。
+テストからチェッカを差し替える必要がある場合は、生成関数を呼ばない関数を注入口へ与える（`record`・`verify` は `deps.newPermChecker`、`runner` は `runTOCTOUCheck` の引数）。既定値は3コマンドとも `security.NewDirectoryPermChecker` である。生成そのものを差し替えるため、失敗経路も含めて検証できる。
 
 現行実装では `security.NewDirectoryPermChecker()` は常に nil エラーを返す（`internal/security/dir_permissions_unix.go`）。したがって現行の panic は到達不能である。それでもエラー経路を用意するのは、(1) 戻り値の型がエラーを許しており、実装が将来失敗し得ること、(2) 到達不能な panic を残すと「失敗したらスタックトレースで止まる」という誤った運用前提が残ること、の2点による。この事実は AC-24 のテスト方針にも影響する（§7.1）。
 
@@ -433,7 +427,7 @@ func (v *Validator) HashDirError() error
 type deps struct {
     validatorFactory func(hashDir string) (hashValidator, error)
     // newPermChecker はディレクトリ権限チェッカを生成する。
-    // 既定値は cmdcommon.NewDirectoryPermChecker。
+    // 既定値は security.NewDirectoryPermChecker。
     newPermChecker func() (security.DirectoryPermChecker, error)
     // resolvePathForCheck は権限チェック対象のパスを解決する。
     // 既定値は security.ResolvePathForCheck。
@@ -459,6 +453,16 @@ type hashValidator interface {
 | `internal/fileanalysis/file_analysis_store.go: dirPermission` | `0o750` | `HashDirPerm` として公開し、これを唯一の定義とする |
 
 統一する値は `0o700` とする。ハッシュディレクトリは信頼の起点であり、所有者以外に内容を見せる必要が無いためである。3つの値のうち最も狭いものを選ぶことで、統一によって権限が広がる環境が生まれない。
+
+#### この値が塞がないもの（分離運用）
+
+`record` の実行者と `runner` の実行者が異なる構成（管理者が記録し、より権限を限ったユーザーが実行する）では、`runner` 実行者がハッシュを読める必要がある。`runner` は起動直後に実効 UID を実 UID へ降格し（`cmd/runner/main.go`）、以後のハッシュ照合はそのユーザーの権限で行うためである。
+
+この構成を `0o700` は塞がない。`HashDirPerm` が決めるのは新規作成時の値だけで、その後の権限を強制しないためである。権限チェッカ（`internal/security/dir_permissions_unix.go`）が拒否するのは書き込みビットのみ（sticky 無しの world-writable、および trusted group 以外への group-writable）であり、グループへの読み取り許可は拒否しない。したがって `chgrp` + `0o750` は起動時チェックを通る。
+
+`0o750` を既定にしても、この構成が自動的に成立するわけでもない。`record` は通常 sudo 実行であり、作られるディレクトリのグループは root になるため、グループを付け替える明示操作はどちらの既定値でも必要である。すなわち既定値の選択はこの構成の成否を決めない。決めるのは運用者の `chgrp` であり、その操作が「誰に読ませるか」の意思の記録になる。
+
+以上から、既定は最も狭い `0o700` とし、広げる場合の手順を利用者向け文書に記す（AC-47）。
 
 ```go
 // Package fileanalysis
@@ -486,7 +490,7 @@ const HashDirPerm os.FileMode = 0o700
 | ファイル | 区分 | 責務と変更内容 | 更新が必要な既存テスト |
 |---|---|---|---|
 | `internal/security/toctou.go` | 変更 | `ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget` を追加し、`ResolveAbsPathForTOCTOU` を置き換える（F-001・F-004） | `internal/security/toctou_test.go`（`ResolveAbsPathForTOCTOU` のテスト） |
-| `internal/cmdcommon/common.go` | 変更 | `NewDirectoryPermChecker`・`CreateReadOnlyValidator` を追加し、`CreateValidator` を削除（F-003・F-006） | `internal/cmdcommon/common_test.go` |
+| `internal/cmdcommon/common.go` | 変更 | `CreateReadOnlyValidator` を追加し、`CreateValidator` を削除（F-003） | `internal/cmdcommon/common_test.go` |
 | `internal/fileanalysis/file_analysis_store.go` | 変更 | `dirPermission` を `HashDirPerm` として公開し、値を `0o700` に（F-003） | `internal/fileanalysis` のディレクトリ作成・パーミッションのテスト |
 | `internal/filevalidator/validator.go` | 変更 | `HashDirError()` を追加し、`HashDirAvailable()` をその上に再定義（F-003） | なし |
 | `cmd/record/main.go` | 変更 | ディレクトリ作成を権限チェック後へ移動し、作成が必要な場合は sticky ビットの例外を適用しない（F-002）、共有パス解決の利用（F-001）、panic 廃止（F-006）、`cacheDir` の重複計算の解消（F-010） | `TestHashDirPermissions_0o700`、`TestRunUsesDefaultHashDirectoryWhenNotSpecified`、`TestRunTOCTOU_*` |
@@ -791,7 +795,7 @@ func newDryRunFormatter(format resource.OutputFormat) (resource.Formatter, error
 ### 7.2 単体テスト
 
 - `internal/security`: `ResolvePathForCheck` の4経路（全体が実在、途中まで実在、`ENOENT` 以外の失敗、絶対パス化の失敗）と、相対パスの絶対パス化。`ResolveAllForCheck` の失敗件数と WARN 記録。`ClassifyCheckTarget` の3つの戻り値。
-- `internal/cmdcommon`: `NewDirectoryPermChecker` が非 nil のチェッカとエラー無しを返すこと。失敗経路は各コマンドの注入口（`deps.newPermChecker`・`runTOCTOUCheck` の引数）に失敗を返す実装を与えて検証する。
+- `internal/cmdcommon`: `CreateReadOnlyValidator` がハッシュディレクトリを作成しないこと。権限チェッカ生成の失敗経路は各コマンドの注入口（`deps.newPermChecker`・`runTOCTOUCheck` の引数）に失敗を返す実装を与えて検証する（§3.3 のとおり `cmdcommon` にラッパーは置かない）。
 - `internal/runner/bootstrap`: ログファイル名が UTC であること（プロセスのタイムゾーンを変えて確認、AC-21・AC-22）とファイル名の構成が変わらないこと（AC-23）。`normalizeSlackAllowedHost` の IPv6 大文字入力（AC-34）。
 - `internal/filevalidator`: `HashDirError()` が不在時に `ErrHashDirNotExist` を、読み取り不能時に権限エラーを返し、正常時に nil を返すこと。
 - `internal/fileanalysis`: 新規作成したディレクトリのパーミッションが `HashDirPerm` であること。
@@ -822,7 +826,7 @@ func newDryRunFormatter(format resource.OutputFormat) (resource.Formatter, error
 
 | フェーズ | 内容 | 対応する機能要件 |
 |---|---|---|
-| 1 | 共有処理の追加（`ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget`・`cmdcommon.NewDirectoryPermChecker`・`CreateReadOnlyValidator`・`fileanalysis.HashDirPerm`・`Validator.HashDirError`） | F-001・F-003・F-004・F-006 の基盤 |
+| 1 | 共有処理の追加（`ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget`・`CreateReadOnlyValidator`・`fileanalysis.HashDirPerm`・`Validator.HashDirError`） | F-001・F-003・F-004・F-006 の基盤 |
 | 2 | `record` の移行（パス解決・作成順序と作成先の判定・panic 廃止・重複計算の解消） | F-001・F-002・F-006・F-010 |
 | 3 | `verify` の移行（パス解決・作成廃止・`deps` 様式・panic 廃止・終了コード） | F-001・F-003・F-006・F-010 |
 | 4 | `runner`・`internal/runner`・`bootstrap`（除外判定と件数記録・panic 廃止・二重出力・分岐の防御・タイムスタンプ・IPv6 正規化・コメント）と文書 | F-004・F-005・F-007・F-008・F-009・F-011・F-012 |
