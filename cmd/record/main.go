@@ -16,6 +16,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/dynamicanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
@@ -33,10 +34,7 @@ func init() {
 	}
 }
 
-const (
-	hashDirPermissions = 0o700
-	libcCacheSubDir    = "lib-cache"
-)
+const libcCacheSubDir = "lib-cache"
 
 var (
 	errNoFilesProvided = errors.New("at least one file path must be provided as a positional argument or via -file (deprecated)")
@@ -50,7 +48,11 @@ type deps struct {
 	elfDynlibAnalyzerFactory   func() *elfdynlib.DynLibAnalyzer       // nil means dynlib analysis is disabled
 	machoDynlibAnalyzerFactory func() *machodylib.MachODynLibAnalyzer // nil means Mach-O dynlib analysis is disabled
 	mkdirAll                   func(path string, perm os.FileMode) error
-	toctouChecker              security.DirectoryPermChecker // nil means use NewDirectoryPermChecker
+	// newPermChecker builds the directory permission checker.
+	// nil means security.NewDirectoryPermChecker. The checker is injected through
+	// its constructor rather than as a ready-made value so that tests exercise the
+	// same construction path production uses, including its failure.
+	newPermChecker func() (security.DirectoryPermChecker, error)
 	// nil means use groupmembership.New().EnsurePermissionCheckUID.
 	ensurePermissionCheckUID func() error
 }
@@ -66,7 +68,8 @@ func defaultDeps() deps {
 		machoDynlibAnalyzerFactory: func() *machodylib.MachODynLibAnalyzer {
 			return machodylib.NewMachODynLibAnalyzer(safefileio.NewFileSystem(safefileio.FileSystemConfig{}))
 		},
-		mkdirAll: os.MkdirAll,
+		mkdirAll:       os.MkdirAll,
+		newPermChecker: security.NewDirectoryPermChecker,
 	}
 }
 
@@ -100,44 +103,38 @@ func main() {
 // On a violation it logs the details of each one and writes the reason to
 // stderr before returning false.
 func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) bool {
-	secValidator := d.toctouChecker
-	var secErr error
-	if secValidator == nil {
-		secValidator, secErr = security.NewDirectoryPermChecker()
-		if secErr != nil {
-			// NewDirectoryPermChecker only fails when standalone checker setup fails,
-			// which is not recoverable in this startup path.
-			panic(fmt.Sprintf("security validator initialisation failed: %v", secErr))
-		}
+	newChecker := d.newPermChecker
+	if newChecker == nil {
+		newChecker = security.NewDirectoryPermChecker
 	}
-	absFiles := make([]string, 0, len(cfg.files))
-	for _, f := range cfg.files {
-		abs, err := filepath.Abs(f)
-		if err != nil {
-			abs = f
-		}
-		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-			absFiles = append(absFiles, resolved)
-		} else {
-			absFiles = append(absFiles, abs)
-		}
+	checker, err := newChecker()
+	if err != nil {
+		// Reported rather than panicked: a checker that cannot be built means the
+		// run has no way to establish trust, which is an ordinary fail-closed exit
+		// and not a programming error worth a stack trace.
+		fmt.Fprintf(stderr, "Error: failed to initialise the directory permission checker: %v\n", err) //nolint:errcheck
+		return false
 	}
-	absHashDir := cfg.hashDir
-	if abs, err := filepath.Abs(cfg.hashDir); err == nil {
-		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-			absHashDir = resolved
-		} else {
-			absHashDir = abs
-		}
-	}
+
 	logger := slog.Default()
+	absFiles, _ := security.ResolveAllForCheck(cfg.files, logger)
+	// Resolution failures still return a checkable path, so the check continues on
+	// it; the reason is recorded rather than swallowed.
+	absHashDir, resolveErr := security.ResolvePathForCheck(cfg.hashDir)
+	if resolveErr != nil {
+		logger.Warn("failed to resolve the hash directory for the permission check",
+			slog.String("path", cfg.hashDir),
+			slog.String("checked_path", absHashDir),
+			slog.String("error", resolveErr.Error()),
+		)
+	}
 	toctouDirs := security.CollectTOCTOUCheckDirs(absFiles, nil, absHashDir)
 	// RunTOCTOUPermissionCheck already logs each violation at WARN; the ERROR log
 	// below is intentionally in addition to it, since record (unlike other callers
 	// of this shared check) escalates violations to a fail-closed, non-zero exit.
-	violations := security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, logger).Violations
+	violations := security.RunTOCTOUPermissionCheck(checker, toctouDirs, logger).Violations
 	if len(violations) == 0 {
-		return true
+		return checkHashDirCreationSite(absHashDir, logger, stderr)
 	}
 	for _, v := range violations {
 		remediation := fmt.Sprintf("fix directory permissions/ownership and re-run record (reported violation: %v)", v.Err)
@@ -155,8 +152,71 @@ func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) bool {
 	return false
 }
 
+// checkHashDirCreationSite reports whether the hash directory may be created.
+// It only has an effect when the hash directory does not exist yet: an existing
+// directory has already been inspected by the check above, and the sticky bit
+// does protect a name that is already taken.
+//
+// The shared check accepts a sticky world-writable directory such as /tmp,
+// which is right for entries that are already in it and wrong for a name nobody
+// has claimed: between the check passing and os.MkdirAll running, anyone able to
+// write there could create that name as a symlink into a tree they own, and
+// MkdirAll would happily follow it. So a creation site that anyone can write to
+// is a violation here, sticky bit or not. The rule lives in record rather than
+// in security.ValidateDirectoryPermissions because it depends on record being
+// about to create the directory, which the shared check knows nothing about.
+//
+// Anything that leaves the creation site unknown (an unreadable ancestor, a
+// path that never became absolute) is a violation too: this runs immediately
+// before a write to a place whose safety could not be established.
+func checkHashDirCreationSite(absHashDir string, logger *slog.Logger, stderr io.Writer) bool {
+	// #nosec G703 -- the path comes from this command's own -hash-dir argument, and
+	// inspecting it is the point: nothing is opened or written here.
+	if _, err := os.Lstat(absHashDir); err == nil {
+		return true
+	} else if !errors.Is(err, os.ErrNotExist) {
+		logger.Error("cannot determine whether the hash directory exists — refusing to record",
+			slog.String("path", absHashDir),
+			slog.String("error", err.Error()),
+		)
+		fmt.Fprintf(stderr, "Error: cannot determine whether hash directory %s exists: %v — refusing to generate hash records.\n", absHashDir, err) //nolint:errcheck
+		return false
+	}
+
+	site, err := security.DeepestExistingAncestor(absHashDir)
+	if err != nil {
+		logger.Error("cannot determine where the hash directory would be created — refusing to record",
+			slog.String("path", absHashDir),
+			slog.String("error", err.Error()),
+		)
+		fmt.Fprintf(stderr, "Error: cannot determine where hash directory %s would be created: %v — refusing to generate hash records.\n", absHashDir, err) //nolint:errcheck
+		return false
+	}
+	info, err := os.Stat(site) // #nosec G703 -- same as above: a stat of the caller-named creation site
+	if err != nil {
+		logger.Error("cannot inspect the directory the hash directory would be created in — refusing to record",
+			slog.String("path", site),
+			slog.String("error", err.Error()),
+		)
+		fmt.Fprintf(stderr, "Error: cannot inspect directory %s: %v — refusing to generate hash records.\n", site, err) //nolint:errcheck
+		return false
+	}
+	if info.Mode().Perm()&0o002 == 0 {
+		return true
+	}
+
+	remediation := fmt.Sprintf("create %s yourself (for example with mkdir -m 700 -p) before running record, or move the hash directory somewhere only you can write", absHashDir)
+	logger.Error("hash directory would be created in a world-writable directory — refusing to record",
+		slog.String("path", absHashDir),
+		slog.String("creation_site", site),
+		slog.String("remediation", remediation),
+	)
+	fmt.Fprintf(stderr, "Error: hash directory %s does not exist and would be created in world-writable directory %s — refusing to generate hash records. %s.\n", absHashDir, site, remediation) //nolint:errcheck
+	return false
+}
+
 func run(args []string, d deps, stdout, stderr io.Writer) int {
-	cfg, fs, err := parseArgs(args, d, stderr)
+	cfg, fs, err := parseArgs(args, stderr)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -187,6 +247,18 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	// Nothing above this line writes to the filesystem: the hash directory is the
+	// root of trust, so it is created only once the permission check has passed.
+	// It must also be created here, before anything below it, because everything
+	// that follows -- the libc caches, the dynamic analysis store, and
+	// validatorFactory by way of filevalidator.New -- reaches the hash directory
+	// through os.MkdirAll on a path underneath it, and would otherwise create it
+	// with their own, wider mode.
+	if err := d.mkdirAll(cfg.hashDir, fileanalysis.HashDirPerm); err != nil {
+		fmt.Fprintf(stderr, "Error: %v: %v\n", errEnsureHashDir, err) //nolint:errcheck
+		return 1
+	}
+
 	safeFS := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
 	cacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
@@ -198,8 +270,8 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	}
 
 	// Inject MachoLibSystemAdapter for Mach-O libSystem import-symbol matching.
-	machoCacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
-	machoCacheMgr, machoCacheErr := libccache.NewMachoLibSystemCacheManager(machoCacheDir)
+	// It shares the libc cache directory computed above.
+	machoCacheMgr, machoCacheErr := libccache.NewMachoLibSystemCacheManager(cacheDir)
 	if machoCacheErr != nil {
 		fmt.Fprintf(stderr, "Error: Failed to initialize machoLibSystem cache: %v\n", machoCacheErr) //nolint:errcheck
 		return 1
@@ -237,7 +309,9 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	return processFiles(validator, cfg, stdout, stderr)
 }
 
-func parseArgs(args []string, d deps, stderr io.Writer) (*recordConfig, *flag.FlagSet, error) {
+// parseArgs turns the command line into a recordConfig. It has no side effects:
+// the hash directory it names is created in run, after the permission check.
+func parseArgs(args []string, stderr io.Writer) (*recordConfig, *flag.FlagSet, error) {
 	options := struct {
 		deprecatedFile string
 		hashDir        string
@@ -269,10 +343,6 @@ func parseArgs(args []string, d deps, stderr io.Writer) (*recordConfig, *flag.Fl
 	dir := options.hashDir
 	if dir == "" {
 		dir = cmdcommon.DefaultHashDirectory
-	}
-
-	if err := d.mkdirAll(dir, hashDirPermissions); err != nil {
-		return nil, fs, fmt.Errorf("%w: %w", errEnsureHashDir, err)
 	}
 
 	return &recordConfig{

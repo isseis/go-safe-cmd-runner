@@ -17,6 +17,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
+	"github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer/testutil"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -41,27 +42,20 @@ func (f *fakeRecorder) SaveRecord(filePath string, force bool) (string, string, 
 	return fmt.Sprintf("/hash/%s.json", filepath.Base(filePath)), "sha256:fakehash", nil
 }
 
-// testDeps returns a deps suitable for tests that need to exercise run() setup
-// (arg parsing, TOCTOU check, deprecated warning). The validatorFactory creates
-// a real Validator rooted at the given hashDir; callers that only need to test
-// processFiles() behavior should call processFiles() directly instead.
-func testRunDeps(hashDir string) deps {
-	d := defaultDeps()
-	d.mkdirAll = func(path string, perm os.FileMode) error {
-		if path == hashDir {
-			return nil // already created by the test
-		}
-		return os.MkdirAll(path, perm)
-	}
-	return d
+// newFailingPermChecker returns a newPermChecker that never produces a checker.
+// cmd/record and cmd/verify each need this stub in their own main package, so
+// the duplication between them is intentional and cannot be lifted into
+// testutil/.
+func newFailingPermChecker(err error) func() (security.DirectoryPermChecker, error) {
+	return func() (security.DirectoryPermChecker, error) { return nil, err }
 }
 
 func TestRunRequiresAtLeastOneFile(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	// validatorFactory is never called when arg parsing fails, so it can be nil.
-	exitCode := run([]string{}, deps{mkdirAll: os.MkdirAll}, stdout, stderr)
+	// Nothing beyond arg parsing runs when parsing fails, so an empty deps is enough.
+	exitCode := run([]string{}, deps{}, stdout, stderr)
 
 	require.Equal(t, 1, exitCode)
 	assert.Contains(t, stderr.String(), "at least one file path")
@@ -115,21 +109,18 @@ func TestRunWarnsWhenDeprecatedFlagUsed(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-hash-dir", hashDir, "-file", legacyFile, newFile}, testRunDeps(hashDir), stdout, stderr)
+	exitCode := run([]string{"-hash-dir", hashDir, "-file", legacyFile, newFile}, defaultDeps(), stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 	assert.Contains(t, stderr.String(), "deprecated")
 }
 
 func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
-	// Pass a no-op mkdirAll to avoid filesystem access to the default hash directory in CI.
-	d := deps{
-		mkdirAll: func(_ string, _ os.FileMode) error { return nil },
-	}
-
+	// parseArgs no longer touches the filesystem, so the default hash directory
+	// can be exercised directly even where it does not exist (as in CI).
 	stderr := &bytes.Buffer{}
 
-	cfg, _, err := parseArgs([]string{"file1.txt"}, d, stderr)
+	cfg, _, err := parseArgs([]string{"file1.txt"}, stderr)
 
 	require.NoError(t, err)
 	assert.Equal(t, cmdcommon.DefaultHashDirectory, cfg.hashDir)
@@ -199,7 +190,7 @@ func TestRunTOCTOU_FailsClosedOnWorldWritableDir(t *testing.T) {
 	stderr := &bytes.Buffer{}
 
 	// record must fail closed on TOCTOU violations — no hash generated, non-zero exit
-	exitCode := run([]string{"-d", hashDir, targetFile}, testRunDeps(hashDir), stdout, stderr)
+	exitCode := run([]string{"-d", hashDir, targetFile}, defaultDeps(), stdout, stderr)
 
 	assert.NotEqual(t, 0, exitCode, "record must fail closed (non-zero exit) on world-writable directory")
 	assert.Contains(t, stderr.String(), "permission violation", "stderr must report permission violation")
@@ -305,6 +296,11 @@ func (f *fakeDirPermChecker) ValidateDirectoryPermissions(path string) error {
 	return f.validateDirFn(path)
 }
 
+// fixedPermChecker returns a newPermChecker that always yields checker.
+func fixedPermChecker(checker security.DirectoryPermChecker) func() (security.DirectoryPermChecker, error) {
+	return func() (security.DirectoryPermChecker, error) { return checker, nil }
+}
+
 // TestRunTOCTOU_NoViolation_Continues verifies that record continues with hash
 // generation when no TOCTOU violations are detected in the hash directory.
 func TestRunTOCTOU_NoViolation_Continues(t *testing.T) {
@@ -312,8 +308,8 @@ func TestRunTOCTOU_NoViolation_Continues(t *testing.T) {
 	targetFile := filepath.Join(hashDir, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
 
-	d := testRunDeps(hashDir)
-	d.toctouChecker = &fakeDirPermChecker{validateDirFn: func(_ string) error { return nil }}
+	d := defaultDeps()
+	d.newPermChecker = fixedPermChecker(&fakeDirPermChecker{validateDirFn: func(_ string) error { return nil }})
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -333,10 +329,10 @@ func TestRunTOCTOU_ViolationLogsErrorAndExits(t *testing.T) {
 	targetFile := filepath.Join(hashDir, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
 
-	d := testRunDeps(hashDir)
-	d.toctouChecker = &fakeDirPermChecker{validateDirFn: func(_ string) error {
+	d := defaultDeps()
+	d.newPermChecker = fixedPermChecker(&fakeDirPermChecker{validateDirFn: func(_ string) error {
 		return errors.New("world-writable directory")
-	}}
+	}})
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -356,10 +352,10 @@ func TestRunTOCTOU_ForceFlagDoesNotBypassViolation(t *testing.T) {
 	targetFile := filepath.Join(hashDir, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
 
-	d := testRunDeps(hashDir)
-	d.toctouChecker = &fakeDirPermChecker{validateDirFn: func(_ string) error {
+	d := defaultDeps()
+	d.newPermChecker = fixedPermChecker(&fakeDirPermChecker{validateDirFn: func(_ string) error {
 		return errors.New("world-writable directory")
-	}}
+	}})
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -372,20 +368,18 @@ func TestRunTOCTOU_ForceFlagDoesNotBypassViolation(t *testing.T) {
 }
 
 // TestHashDirPermissions_0o700 verifies that newly created hash directories use
-// 0o700 permissions (owner rwx only, no group/other access).
+// 0o700 permissions (owner rwx only, no group/other access). The directory is
+// now created by run, after the permission check, rather than by parseArgs.
 func TestHashDirPermissions_0o700(t *testing.T) {
-	hashDir := tu.SafeTempDir(t)
-	// Remove the hashDir so parseArgs creates it fresh
-	require.NoError(t, os.Remove(hashDir))
+	base := tu.SafeTempDir(t)
+	hashDir := filepath.Join(base, "hashes")
+	targetFile := filepath.Join(base, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
 
-	d := testRunDeps(hashDir)
-	// Restore real mkdirAll so we test actual permissions
-	d.mkdirAll = os.MkdirAll
-
+	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
-	cfg, _, err := parseArgs([]string{"-d", hashDir, "dummy.txt"}, d, stderr)
-	require.NoError(t, err)
-	require.NotNil(t, cfg)
+	exitCode := run([]string{"-d", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+	require.Equal(t, 0, exitCode, "stderr: %s", stderr.String())
 
 	info, err := os.Stat(hashDir)
 	require.NoError(t, err)
@@ -401,10 +395,10 @@ func TestRunTOCTOU_ViolationLogsRemediationWithActualPath(t *testing.T) {
 	targetFile := filepath.Join(hashDir, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
 
-	d := testRunDeps(hashDir)
-	d.toctouChecker = &fakeDirPermChecker{validateDirFn: func(path string) error {
+	d := defaultDeps()
+	d.newPermChecker = fixedPermChecker(&fakeDirPermChecker{validateDirFn: func(path string) error {
 		return fmt.Errorf("world-writable directory: %s", path)
-	}}
+	}})
 
 	var logBuf bytes.Buffer
 	prevLogger := slog.Default()
@@ -432,7 +426,7 @@ func TestRunFailsClosedWhenPermissionCheckUIDUnresolvable(t *testing.T) {
 	targetFile := filepath.Join(hashDir, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("target content"), 0o644))
 
-	d := testRunDeps(hashDir)
+	d := defaultDeps()
 	d.ensurePermissionCheckUID = func() error { return groupmembership.ErrSudoUIDUserNotFound }
 
 	stdout := &bytes.Buffer{}
@@ -470,4 +464,237 @@ func TestRecordDeclaresSudoUIDAwarePolicy(t *testing.T) {
 		groupmembership.ProcessPermissionCheckUIDPolicy(), 0, deps)
 	require.NoError(t, err)
 	assert.Equal(t, 1000, uid)
+}
+
+// TestRunTOCTOU_HashDirNotCreatedOnViolation verifies that a permission
+// violation leaves the filesystem untouched: a hash directory that did not
+// exist before the run does not exist after it. The directory's absence
+// alone would not distinguish this from a failed creation, so the exit code is
+// asserted too.
+func TestRunTOCTOU_HashDirNotCreatedOnViolation(t *testing.T) {
+	base := tu.SafeTempDir(t)
+	hashDir := filepath.Join(base, "hashes")
+	targetFile := filepath.Join(base, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+	require.NoDirExists(t, hashDir, "the hash directory must be absent before the run")
+
+	d := defaultDeps()
+	d.newPermChecker = fixedPermChecker(&fakeDirPermChecker{validateDirFn: func(_ string) error {
+		return errors.New("world-writable directory")
+	}})
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-d", hashDir, targetFile}, d, stdout, stderr)
+
+	require.Equal(t, 1, exitCode)
+	assert.Contains(t, stderr.String(), "permission violation")
+	assert.NoDirExists(t, hashDir, "no hash directory must be created when the check fails")
+}
+
+// TestRun_CreatesHashDirAfterPermissionCheckPasses verifies that a clean check
+// lets the run create the hash directory and record hashes as before.
+func TestRun_CreatesHashDirAfterPermissionCheckPasses(t *testing.T) {
+	base := tu.SafeTempDir(t)
+	hashDir := filepath.Join(base, "hashes")
+	targetFile := filepath.Join(base, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	d := defaultDeps()
+	d.newPermChecker = fixedPermChecker(&fakeDirPermChecker{validateDirFn: func(_ string) error { return nil }})
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-d", hashDir, targetFile}, d, stdout, stderr)
+
+	require.Equal(t, 0, exitCode, "stderr: %s", stderr.String())
+	assert.DirExists(t, hashDir)
+	assert.Contains(t, stdout.String(), "OK", "a hash record must still be generated")
+
+	recordPath := extractHashFilePathFromStdout(t, stdout.String())
+	assert.FileExists(t, recordPath)
+}
+
+// TestRunTOCTOU_ChecksAncestorsWhenHashDirMissing verifies that a hash
+// directory that does not exist yet does not cause the permission check to be
+// skipped: the ancestors it would be created under are checked instead.
+func TestRunTOCTOU_ChecksAncestorsWhenHashDirMissing(t *testing.T) {
+	base := tu.SafeTempDir(t)
+	hashDir := filepath.Join(base, "hashes")
+	targetFile := filepath.Join(base, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	var checked []string
+	d := defaultDeps()
+	d.newPermChecker = fixedPermChecker(&fakeDirPermChecker{validateDirFn: func(path string) error {
+		checked = append(checked, path)
+		return nil
+	}})
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-d", hashDir, targetFile}, d, stdout, stderr)
+
+	require.Equal(t, 0, exitCode, "stderr: %s", stderr.String())
+	assert.Contains(t, checked, hashDir, "the missing hash directory itself is collected")
+	assert.Contains(t, checked, base, "the existing ancestor the hash directory would be created under must be checked")
+}
+
+// TestRunTOCTOU_ReportsViolationBehindSymlinkedAncestor verifies that the
+// directories checked for a not-yet-existing hash directory are the ones on the
+// far side of a symlinked ancestor, not the ones the link sits in. The fake
+// checker only rejects the real path, so an implementation
+// that appended the missing components lexically would never see it and the run
+// would succeed.
+func TestRunTOCTOU_ReportsViolationBehindSymlinkedAncestor(t *testing.T) {
+	base := tu.SafeTempDir(t)
+	realDir := filepath.Join(base, "real")
+	nested := filepath.Join(realDir, "nested")
+	require.NoError(t, os.MkdirAll(nested, 0o700))
+	link := filepath.Join(base, "link")
+	require.NoError(t, os.Symlink(realDir, link))
+
+	targetFile := filepath.Join(base, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	hashDir := filepath.Join(link, "nested", "hashes")
+
+	d := defaultDeps()
+	d.newPermChecker = fixedPermChecker(&fakeDirPermChecker{validateDirFn: func(path string) error {
+		if path == nested {
+			return fmt.Errorf("%w: world-writable directory: %s", security.ErrInvalidDirPermissions, path)
+		}
+		return nil
+	}})
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-d", hashDir, targetFile}, d, stdout, stderr)
+
+	require.Equal(t, 1, exitCode)
+	assert.Contains(t, stderr.String(), "permission violation")
+	assert.NoDirExists(t, filepath.Join(nested, "hashes"))
+}
+
+// TestRun_ReportsHashDirCreationFailure verifies that a failure to create the
+// hash directory exits non-zero and says so on stderr.
+func TestRun_ReportsHashDirCreationFailure(t *testing.T) {
+	base := tu.SafeTempDir(t)
+	hashDir := filepath.Join(base, "hashes")
+	targetFile := filepath.Join(base, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	d := defaultDeps()
+	d.mkdirAll = func(_ string, _ os.FileMode) error { return errors.New("disk is full") }
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-d", hashDir, targetFile}, d, stdout, stderr)
+
+	require.Equal(t, 1, exitCode)
+	assert.Contains(t, stderr.String(), errEnsureHashDir.Error())
+	assert.Contains(t, stderr.String(), "disk is full")
+	assert.NotContains(t, stdout.String(), "OK", "no hash record must be generated")
+}
+
+// TestRun_RejectsHashDirCreationUnderStickyWorldWritableParent verifies that a
+// hash directory that would be created in a sticky world-writable directory is
+// refused. The sticky bit protects entries that already exist, not a name
+// nobody has claimed, so the shared check's sticky exception must not carry
+// over to a directory record is about to create.
+func TestRun_RejectsHashDirCreationUnderStickyWorldWritableParent(t *testing.T) {
+	base := tu.SafeTempDir(t)
+	// t.TempDir is 0o700, so the sticky world-writable directory has to be made
+	// here; without it the creation site would be safe and the test would pass
+	// for the wrong reason.
+	parent := filepath.Join(base, "shared")
+	require.NoError(t, os.Mkdir(parent, 0o700))
+	require.NoError(t, os.Chmod(parent, os.ModeSticky|0o777))
+
+	hashDir := filepath.Join(parent, "hashes")
+	targetFile := filepath.Join(base, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-d", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+
+	require.Equal(t, 1, exitCode)
+	assert.Contains(t, stderr.String(), "world-writable")
+	assert.Contains(t, stderr.String(), "before running record", "stderr must say how to proceed")
+	assert.NoDirExists(t, hashDir)
+	assert.NotContains(t, stdout.String(), "OK")
+}
+
+// TestRun_AllowsExistingHashDirUnderStickyWorldWritableParent is the pair of the
+// test above: the same layout passes once the hash directory exists, which is
+// what confines the rule to the case where record would create it.
+func TestRun_AllowsExistingHashDirUnderStickyWorldWritableParent(t *testing.T) {
+	base := tu.SafeTempDir(t)
+	parent := filepath.Join(base, "shared")
+	require.NoError(t, os.Mkdir(parent, 0o700))
+	require.NoError(t, os.Chmod(parent, os.ModeSticky|0o777))
+
+	hashDir := filepath.Join(parent, "hashes")
+	require.NoError(t, os.Mkdir(hashDir, 0o700))
+	targetFile := filepath.Join(base, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-d", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+
+	require.Equal(t, 0, exitCode, "stderr: %s", stderr.String())
+	assert.Contains(t, stdout.String(), "OK")
+}
+
+// TestRun_CreatesHashDirBeforeSubdirectories verifies the ordering the hash
+// directory's mode depends on: the subdirectories built underneath it are
+// created with wider modes of their own, so had one of them been built first,
+// its os.MkdirAll would have created the hash directory along the way and left
+// it at 0o755.
+func TestRun_CreatesHashDirBeforeSubdirectories(t *testing.T) {
+	base := tu.SafeTempDir(t)
+	hashDir := filepath.Join(base, "hashes")
+	targetFile := filepath.Join(base, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-d", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+	require.Equal(t, 0, exitCode, "stderr: %s", stderr.String())
+
+	cacheDir := filepath.Join(hashDir, libcCacheSubDir)
+	require.DirExists(t, cacheDir, "the libc cache subdirectory must have been built under the hash directory")
+
+	info, err := os.Stat(hashDir)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm(), "the hash directory must keep its own mode, not inherit a subdirectory's")
+}
+
+// TestRun_ExitsWithoutPanicWhenCheckerInitFails verifies that a permission
+// checker that cannot be built ends the run with exit code 1 and an error on
+// stderr rather than a panic.
+//
+// run is called in this process, so a panic would take the test binary down
+// with it: the substantive evidence that none happened is that run returned a
+// value at all. The assertion on "goroutine " is a secondary check that no
+// stack trace reached the user's stderr.
+func TestRun_ExitsWithoutPanicWhenCheckerInitFails(t *testing.T) {
+	base := tu.SafeTempDir(t)
+	hashDir := filepath.Join(base, "hashes")
+	targetFile := filepath.Join(base, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	d := defaultDeps()
+	d.newPermChecker = newFailingPermChecker(errors.New("checker setup failed"))
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-d", hashDir, targetFile}, d, stdout, stderr)
+
+	require.Equal(t, 1, exitCode)
+	assert.Contains(t, stderr.String(), "checker setup failed")
+	assert.NotContains(t, stderr.String(), "goroutine ", "no stack trace must reach stderr")
+	assert.NoDirExists(t, hashDir, "nothing must be created once the checker cannot be built")
 }
