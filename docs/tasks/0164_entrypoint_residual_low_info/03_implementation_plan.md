@@ -175,13 +175,13 @@ func RunTOCTOUPermissionCheck(checker DirectoryPermChecker, dirs []string, logge
 ```go
 // cmd/record and cmd/verify: added to deps
 // newPermChecker builds the directory permission checker.
-// nil means cmdcommon.NewDirectoryPermChecker.
+// nil means security.NewDirectoryPermChecker.
 newPermChecker func() (security.DirectoryPermChecker, error)
 ```
 
 このフィールドは、`verify` のパッケージレベル可変変数 `toctouChecker`（および `deps` に同名のフィールドを置く案）を置き換えるものであり、両者は併存させない。チェッカの実体を差し替える口と生成関数を差し替える口は同じ目的を果たすうえ、実体だけを差し替えると本番の生成経路を迂回してしまうためである。テストは `d.newPermChecker` に偽のチェッカを返す実装を与えることで差し替える。
 
-`runner` は `deps` を持たないため、02_architecture.md §3.3 のとおり `runTOCTOUCheck` の引数として同じシグネチャの関数を受け取る。呼び出し元（`cmd/runner/main.go:401`）は `cmdcommon.NewDirectoryPermChecker` をそのまま渡し、`runTOCTOUCheck` は引数無しでそれを呼ぶ（nil を渡す必要はもう無い）。3コマンドが同一の生成ヘルパーを共有する状態を保ち、AC-27 を弱めないためである。
+`runner` は `deps` を持たないため、02_architecture.md §3.3 のとおり `runTOCTOUCheck` の引数として同じシグネチャの関数を受け取る。呼び出し元（`cmd/runner/main.go:401`）は `security.NewDirectoryPermChecker` をそのまま渡し、`runTOCTOUCheck` は引数無しでそれを呼ぶ（nil を渡す必要はもう無い）。3コマンドとも既定値が同一の生成関数を指す状態を保ち、AC-27 を弱めないためである。
 
 同じ理由で、`verify` の `deps` にはパス解決関数も持たせる。AC-05（fail-closed 終了時にパス解決の失敗を出力する）の根拠のうち、実際に権限を落とす `TestRunFailsClosedReportsPathResolutionFailure` は root 実行時にスキップされるため、権限に依存しない根拠として `ErrPathResolution` を確実に返す実装を注入する必要がある（ステップ 3-5 の `TestRunFailsClosedReportsInjectedPathResolutionFailure`）。差し替え口が無ければ、この経路は root で1本も検証されない。
 
@@ -338,13 +338,12 @@ func getwd() (string, error) { return getwdHook() }
 
 **完了条件**: `go test -tags test ./internal/filevalidator/...` が通り、`internal/verification` のテストも通る。
 
-#### ステップ 1-5: `internal/cmdcommon` に共有ヘルパーを追加
+#### ステップ 1-5: `internal/cmdcommon` に読み取り専用バリデータ生成を追加
 
 **変更ファイル**: `internal/cmdcommon/common.go`、`internal/cmdcommon/common_test.go`
 
-- [x] `NewDirectoryPermChecker() (security.DirectoryPermChecker, error)` を追加する。`security.NewDirectoryPermChecker()` に委譲するだけで、panic はしない。テストからの差し替えはこのヘルパーではなく各コマンドの注入口（`deps.newPermChecker`・`runTOCTOUCheck` の引数）で行うため、引数は持たない。
+- [x] **`NewDirectoryPermChecker` のラッパーは置かない**（02_architecture.md §3.3）。委譲先とシグネチャが同一のため、注入口の既定値には `security.NewDirectoryPermChecker` をそのまま代入でき、ラッパーは何も束ねない。重複しているのは生成の呼び出しではなく panic ブロックであり、その解消はステップ 2-2・3-2・4-2 が行う。
 - [x] `CreateReadOnlyValidator(hashDir string) (*filevalidator.Validator, error)` を追加する。`filevalidator.NewReadOnly(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})` に委譲する。
-- [x] `TestNewDirectoryPermChecker_ReturnsWorkingChecker`: 返ったチェッカが `0o700` のディレクトリを受理し、world-writable なディレクトリを拒否すること。**「非 nil のチェッカとエラー無しが返る」だけを見る形にはしない**: `security.NewDirectoryPermChecker` は複合リテラルと無条件の `nil` を返すため（02_architecture.md §3.4 が到達不能と記録している）、その表明は落ちようがない。root では world-writable の拒否が成立しないため `syscall.Geteuid() == 0` で `t.Skip` する。
 - [x] `TestCreateReadOnlyValidator_DoesNotCreateHashDirectory`: 存在しないハッシュディレクトリを渡しても、構築は成功し、親ディレクトリを `filepath.WalkDir` で走査した結果が実行前後で一致すること。走査ヘルパーは `internal/testutil` の `tu.WalkEntries` とする（ステップ 3-4 の `TestRunCreatesNoFilesystemEntries` が同じ比較を要するため、パッケージ内に置くと複製になる）。この比較は部分木の形（パスとモード）のみを見るもので、既存ファイルへの書き込みは検出しない。
 - [x] `TestCreateReadOnlyValidator_ExistingHashDirectoryHasNoDeferredError`: 実在するハッシュディレクトリでは `HashDirError()` が nil を返すこと（ステップ 1-4 で追加済み）。
 
@@ -367,7 +366,7 @@ func getwd() (string, error) { return getwdHook() }
 
 - [x] `make fmt` → `make test` → `make lint` が緑。
 - [x] `make build` が通る。`make lint` は `--build-tags test` で走るため、`getwd.go`（`//go:build !test`）をコンパイルするのはこの経路だけである（§1.4.5）。
-- [x] `make deadcode` を実行する。`ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget`・`DeepestExistingAncestor`・`security.getwd`（`ResolvePathForCheck` からのみ呼ばれる）・`HasVariableReference`・`trimLastPathComponent`・`hasDotDotComponent`（後2者は上記関数の非公開ヘルパー）・`CreateReadOnlyValidator`・`cmdcommon.NewDirectoryPermChecker` は、利用側の移行が済むフェーズ2〜4まで呼び出し元を持たないため、未到達として報告される。これは想定内であり、他に新しい未到達シンボルが出ていないことだけを確認する。
+- [x] `make deadcode` を実行する。`ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget`・`DeepestExistingAncestor`・`security.getwd`（`ResolvePathForCheck` からのみ呼ばれる）・`HasVariableReference`・`trimLastPathComponent`・`hasDotDotComponent`（後2者は上記関数の非公開ヘルパー）・`CreateReadOnlyValidator` は、利用側の移行が済むフェーズ2〜4まで呼び出し元を持たないため、未到達として報告される。これは想定内であり、他に新しい未到達シンボルが出ていないことだけを確認する。
 
 ### PR-2 作成ポイント: read-only validator helpers and hash-directory permission
 
@@ -401,7 +400,7 @@ func getwd() (string, error) { return getwdHook() }
 
 **変更ファイル**: `cmd/record/main.go`
 
-- [ ] `deps` の `toctouChecker` フィールド（52 行）を §1.4.4 の `newPermChecker` フィールドで置き換え（併存させない）、`defaultDeps()` で `cmdcommon.NewDirectoryPermChecker` を設定する。
+- [ ] `deps` の `toctouChecker` フィールド（52 行）を §1.4.4 の `newPermChecker` フィールドで置き換え（併存させない）、`defaultDeps()` で `security.NewDirectoryPermChecker` を設定する。
 - [ ] `checkDirPermissions` の 105-112 行を `d.newPermChecker()` の呼び出しに置き換え、エラー時は `panic` せず `fmt.Fprintf(stderr, ...)` でエラーを出して `false` を返す。
 - [ ] `toctouChecker` に偽のチェッカを代入していた既存テストを、`d.newPermChecker` が偽のチェッカを返す形へ書き換える。
 
@@ -494,7 +493,7 @@ func getwd() (string, error) { return getwdHook() }
 
 **変更ファイル**: `cmd/verify/main.go`
 
-- [ ] 02_architecture.md §3.4 の `deps` 構造体（`validatorFactory`・`newPermChecker`・`resolvePathForCheck`・`ensurePermissionCheckUID`）を定義し、`defaultDeps()` で既定値（`cmdcommon.NewDirectoryPermChecker`・`security.ResolvePathForCheck`）を与える。
+- [ ] 02_architecture.md §3.4 の `deps` 構造体（`validatorFactory`・`newPermChecker`・`resolvePathForCheck`・`ensurePermissionCheckUID`）を定義し、`defaultDeps()` で既定値（`security.NewDirectoryPermChecker`・`security.ResolvePathForCheck`）を与える。
 - [ ] パッケージレベル変数 `validatorFactory`・`mkdirAll`・`ensurePermissionCheckUID`・`toctouChecker`（39-48 行）をすべて削除する。`toctouChecker` は `deps` のフィールドとしても復活させず、§1.4.4 の `newPermChecker` が唯一の差し替え口になる。`errNoFilesProvided` は不変の番兵エラーなので残す。
 - [ ] `run` と `checkDirPermissions` のシグネチャに `deps` を渡す。ステップ 3-4 で `checkDirPermissions` を2つに分けるときは、両方へ引き継ぐ。
 - [ ] `main()` を `os.Exit(run(os.Args[1:], defaultDeps(), os.Stdout, os.Stderr))` に変える。
@@ -604,10 +603,10 @@ func getwd() (string, error) { return getwdHook() }
 
 **変更ファイル**: `cmd/runner/main.go`
 
-- [ ] `runTOCTOUCheck` に `newPermChecker func() (isec.DirectoryPermChecker, error)` を引数として追加する（§1.4.4）。型を `cmdcommon.NewDirectoryPermChecker` と同一にすることで、呼び出し元がアダプタを挟まずに渡せる。
+- [ ] `runTOCTOUCheck` に `newPermChecker func() (isec.DirectoryPermChecker, error)` を引数として追加する（§1.4.4）。型を `security.NewDirectoryPermChecker` と同一にすることで、呼び出し元がアダプタを挟まずに渡せる。
 - [ ] `runTOCTOUCheck` の内部では `newPermChecker()` を呼ぶ。
 - [ ] 447-452 行の panic を削除し、生成失敗時は `logging.PreExecutionError`（`Type: logging.ErrorTypeFileAccess`、`Component: string(resource.ComponentVerification)`、`RunID: runID`）を返す。
-- [ ] 呼び出し元（401 行）が `cmdcommon.NewDirectoryPermChecker` をそのまま渡すようにする。
+- [ ] 呼び出し元（401 行）が `isec.NewDirectoryPermChecker` をそのまま渡すようにする。
 
 #### ステップ 4-3: グループ実行時チェックを共有処理へ差し替え
 
@@ -781,7 +780,7 @@ func getwd() (string, error) { return getwdHook() }
 
 | マイルストーン | 内容 | 成果物 | 対応フェーズ |
 |---|---|---|---|
-| M1 | 共有処理が揃い、既存の呼び出し元が新しい戻り値に追随している | `ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget`・`DeepestExistingAncestor`・`TOCTOUCheckResult`・`cmdcommon.NewDirectoryPermChecker`・`CreateReadOnlyValidator`・`fileanalysis.HashDirPerm`・`Validator.HashDirError` | フェーズ1 |
+| M1 | 共有処理が揃い、既存の呼び出し元が新しい戻り値に追随している | `ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget`・`DeepestExistingAncestor`・`TOCTOUCheckResult`・`CreateReadOnlyValidator`・`fileanalysis.HashDirPerm`・`Validator.HashDirError` | フェーズ1 |
 | M2 | `record` が共有処理を使い、書き込みが権限チェック通過後に限られる | `cmd/record/main.go` と対応テスト | フェーズ2 |
 | M3 | `verify` が読み取り専用になり、`deps` 様式へ移行している | `cmd/verify/main.go` と書き換え済みテスト、`CreateValidator` の削除 | フェーズ3 |
 | M4 | `runner`・`bootstrap` の残項目と文書が揃っている | `cmd/runner/main.go`・`internal/runner/group_executor.go`・`bootstrap` と文書一式 | フェーズ4 |
@@ -811,7 +810,7 @@ PR-1 と PR-2 はフェーズ1（`internal/`）で、これを利用する PR-3�
 02_architecture.md §7.2 の方針に従い、以下を対象とする。
 
 - `internal/security`: `ResolvePathForCheck` の4経路（全体が実在・途中まで実在・`ENOENT` 以外の失敗・`os.Getwd` の失敗）と相対パスの絶対化、`ResolveAllForCheck` の失敗件数と `WARN` 記録と返却パス、`ClassifyCheckTarget` の3値、`TOCTOUCheckResult` の件数、`DeepestExistingAncestor`。
-- `internal/cmdcommon`: `NewDirectoryPermChecker` が非 nil のチェッカとエラー無しを返すこと、`CreateReadOnlyValidator` の非作成性。
+- `internal/cmdcommon`: `CreateReadOnlyValidator` の非作成性。権限チェッカ生成にラッパーを置かないため、`cmdcommon` 側にその単体テストは無い（失敗経路は各コマンドの注入口で検証する）。
 - `internal/fileanalysis`: 新規作成ディレクトリのパーミッション。
 - `internal/filevalidator`: `HashDirError()` の3状態。
 - `internal/runner/bootstrap`: ログファイル名の UTC 化と構成の不変、IPv6 正規化。
@@ -835,7 +834,7 @@ PR-1 と PR-2 はフェーズ1（`internal/`）で、これを利用する PR-3�
 
 ### 4.4 退行防止
 
-表に載らないテストのうち、`internal/cmdcommon/common_test.go::TestNewDirectoryPermChecker_ReturnsWorkingChecker`・`::TestCreateReadOnlyValidator_ExistingHashDirectoryHasNoDeferredError`、および `internal/filevalidator/validator_test.go::TestHashDirError_*` の3本は、特定の AC に直接対応しない下支え API のテストである。これらが確かめるのはフェーズ1で足した API 自身の契約であり、その API を使う側の挙動が AC-12・AC-13・AC-14・AC-24 の各行で検証される。
+表に載らないテストのうち、`internal/cmdcommon/common_test.go::TestCreateReadOnlyValidator_ExistingHashDirectoryHasNoDeferredError`、および `internal/filevalidator/validator_test.go::TestHashDirError_*` の3本は、特定の AC に直接対応しない下支え API のテストである。これらが確かめるのはフェーズ1で足した API 自身の契約であり、その API を使う側の挙動が AC-12・AC-13・AC-14・AC-24 の各行で検証される。
 
 要件定義書が「既存テストが通過する」と定める AC-07・AC-16・AC-20・AC-30・AC-37・AC-41 は、既存テストの通過をもって確認する。ただし §1.3 で挙げた書き換え対象テストについては、書き換え後も元の観点を検証していることを §7 の表で明示する。AC-20 については、既存の `TestRunGroupTOCTOUCheck_RelativePathsSkipped` が除外を検証できていないため、ステップ 4-3 で表明を入れ替える。
 
@@ -933,7 +932,8 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 | AC-25 | test | `cmd/runner/main_test.go::TestRunTOCTOUCheck_CheckerInitFailureReturnsPreExecutionError`（`*logging.PreExecutionError` が返ることを `errors.AsType` で検証） | — |
 | AC-26 | test | `cmd/record/main_test.go::TestRun_ExitsWithoutPanicWhenCheckerInitFails`、`cmd/verify/main_test.go::TestRunExitsWithoutPanicWhenCheckerInitFails`（標準エラー出力にエラーが出ること） | — |
 | AC-27 | static | `rg -n -e 'security validator initialisation failed' cmd internal` | 一致0件（現状は3件） |
-| AC-27 | static | `rg -n -e 'security\.NewDirectoryPermChecker\(' -e 'isec\.NewDirectoryPermChecker\(' cmd` | 一致0件（3コマンドはすべて `cmdcommon` 経由になる。`cmd/runner` は `internal/security` を `isec` として取り込むため、`security\.` だけの検索では 447 行を捕らえられず、ステップ 4-2 の退行を見逃す） |
+| AC-27 | static | `rg -n -A6 -e 'NewDirectoryPermChecker\(\)' cmd \| rg -n 'panic\('` | 一致0件（重複していたのは生成の呼び出しではなく panic ブロックである。生成関数は `internal/security` に1つしかなく、3コマンドはその同一の関数を注入口の既定値として指す） |
+| AC-27 | static | `rg -n -e 'newPermChecker' cmd` | `cmd/record`・`cmd/verify` の `defaultDeps()` と `cmd/runner` の `runTOCTOUCheck` 呼び出しが、いずれも既定値として `security.NewDirectoryPermChecker`（`cmd/runner` は `isec.` 別名）を渡していること。`cmd/runner` は `internal/security` を `isec` として取り込むため、`security\.` だけの検索では 447 行を捕らえられない |
 | AC-28 | static | `rg -n -e 'the policy declaration in init' cmd/verify/main.go` | 一致1件 |
 | AC-28 | static | `rg -n -e 'checker initialisation in checkDirPermissions' cmd/verify/main.go` | 一致0件 |
 | AC-29 | test | `cmd/runner/main_test.go::TestNewDryRunFormatter_UnknownFormatReturnsError` | — |

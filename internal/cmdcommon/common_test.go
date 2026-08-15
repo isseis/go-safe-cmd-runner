@@ -5,7 +5,6 @@ package cmdcommon
 import (
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -84,36 +83,6 @@ func TestDefaultHashDirectory_IsSet(t *testing.T) {
 	// Verify that DefaultHashDirectory is set to a non-empty value
 	assert.NotEmpty(t, DefaultHashDirectory, "DefaultHashDirectory should be set")
 	assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", DefaultHashDirectory)
-}
-
-// TestNewDirectoryPermChecker_ReturnsWorkingChecker tests that the returned
-// checker actually validates directory permissions. Asserting only that the
-// call returns a non-nil checker and a nil error would not be able to fail:
-// security.NewDirectoryPermChecker returns a composite literal and an
-// unconditional nil (02_architecture.md records that its error path is
-// unreachable today). So the checker is exercised instead: it must accept a
-// 0o700 directory and reject a world-writable one.
-func TestNewDirectoryPermChecker_ReturnsWorkingChecker(t *testing.T) {
-	if syscall.Geteuid() == 0 {
-		t.Skip("Skipping permission test when running as root")
-	}
-
-	checker, err := NewDirectoryPermChecker()
-	require.NoError(t, err, "NewDirectoryPermChecker should succeed")
-	require.NotNil(t, checker, "NewDirectoryPermChecker should return a non-nil checker")
-
-	tmpDir := tu.SafeTempDir(t)
-
-	safeDir := filepath.Join(tmpDir, "safe")
-	require.NoError(t, os.Mkdir(safeDir, 0o700))
-	assert.NoError(t, checker.ValidateDirectoryPermissions(safeDir),
-		"a 0o700 directory must be accepted")
-
-	worldWritableDir := filepath.Join(tmpDir, "world-writable")
-	require.NoError(t, os.Mkdir(worldWritableDir, 0o700))
-	require.NoError(t, os.Chmod(worldWritableDir, 0o777))
-	assert.Error(t, checker.ValidateDirectoryPermissions(worldWritableDir),
-		"a world-writable directory must be rejected")
 }
 
 // TestCreateReadOnlyValidator_DoesNotCreateHashDirectory tests that

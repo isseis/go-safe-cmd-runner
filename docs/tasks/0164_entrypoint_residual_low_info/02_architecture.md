@@ -8,7 +8,7 @@
 | Created | 2026-08-14 |
 | Review date | 2026-08-14 |
 | Reviewer | isseis |
-| Comments | 承認後の修正: PR レビューを受けて、権限チェッカの注入口を引数無しのファクトリに一本化した（§3.3・§3.4・§7）。 |
+| Comments | 承認後の修正: PR レビューを受けて、権限チェッカの注入口を引数無しのファクトリに一本化した（§3.3・§3.4・§7）。さらに PR-2 のレビューを受けて、`cmdcommon.NewDirectoryPermChecker`（`security.NewDirectoryPermChecker` への委譲のみのラッパー）を設計から取り下げた。重複していたのは生成の呼び出しではなく panic ブロックであり、ラッパーは何も束ねていなかったため（§3.3）。**再レビュー対象**。 |
 
 ## 関連文書
 
@@ -374,18 +374,13 @@ func HasVariableReference(input string) bool
 
 ### 3.3 権限チェッカ生成の共通化（F-006）
 
-3コマンドは `security.NewDirectoryPermChecker()` の失敗時に、同一のコメントと同一の panic を持っている。これを共有ヘルパーに置き換える。
+3コマンドは `security.NewDirectoryPermChecker()` の失敗時に、同一のコメントと同一の panic を持っている。**重複しているのはこの panic ブロックであって、生成の呼び出しそのものではない**。生成関数は `internal/security` に既に1つしかなく、3コマンドはそれを呼んでいるだけである。
 
-```go
-// Package cmdcommon
+したがって解消の方向は、生成を包む新しいヘルパーを足すことではなく、**panic を各コマンドのエラー報告経路へ置き換えること**である（ステップ 2-2・3-2・4-2）。置き換え後に残る処理は、`runner` なら起動前エラーとして機械可読サマリ行を出す、`record`・`verify` なら標準エラー出力へ出して固有の終了コードで終わる、という**コマンドごとに異なる**ものになる。ここは共通化の対象ではない。
 
-// NewDirectoryPermChecker はディレクトリ権限チェッカを返す。
-// 生成に失敗した場合はエラーを返す。呼び出し側は panic せず、
-// 各コマンドのエラー報告経路へ載せる。
-func NewDirectoryPermChecker() (security.DirectoryPermChecker, error)
-```
+`internal/cmdcommon` に委譲だけのラッパー（`func NewDirectoryPermChecker() (security.DirectoryPermChecker, error) { return security.NewDirectoryPermChecker() }`）を置く案は採らない。シグネチャが委譲先と同一であるため、注入口の既定値には `security.NewDirectoryPermChecker` をそのまま代入でき、ラッパーは何も束ねない。置いた場合に増えるのは `cmdcommon → security` の import 辺と、読む者が「ここで何かが足されている」と探す手間だけである（YAGNI）。
 
-このヘルパーは差し替え用の引数を持たない。テストからチェッカを差し替える必要がある場合は、このヘルパー自体を呼ばない関数を注入口へ与える（`record`・`verify` は `deps.newPermChecker`、`runner` は `runTOCTOUCheck` の引数）。生成そのものを差し替えるため、失敗経路も含めて検証できる。
+テストからチェッカを差し替える必要がある場合は、生成関数を呼ばない関数を注入口へ与える（`record`・`verify` は `deps.newPermChecker`、`runner` は `runTOCTOUCheck` の引数）。既定値は3コマンドとも `security.NewDirectoryPermChecker` である。生成そのものを差し替えるため、失敗経路も含めて検証できる。
 
 現行実装では `security.NewDirectoryPermChecker()` は常に nil エラーを返す（`internal/security/dir_permissions_unix.go`）。したがって現行の panic は到達不能である。それでもエラー経路を用意するのは、(1) 戻り値の型がエラーを許しており、実装が将来失敗し得ること、(2) 到達不能な panic を残すと「失敗したらスタックトレースで止まる」という誤った運用前提が残ること、の2点による。この事実は AC-24 のテスト方針にも影響する（§7.1）。
 
@@ -433,7 +428,7 @@ func (v *Validator) HashDirError() error
 type deps struct {
     validatorFactory func(hashDir string) (hashValidator, error)
     // newPermChecker はディレクトリ権限チェッカを生成する。
-    // 既定値は cmdcommon.NewDirectoryPermChecker。
+    // 既定値は security.NewDirectoryPermChecker。
     newPermChecker func() (security.DirectoryPermChecker, error)
     // resolvePathForCheck は権限チェック対象のパスを解決する。
     // 既定値は security.ResolvePathForCheck。
@@ -486,7 +481,7 @@ const HashDirPerm os.FileMode = 0o700
 | ファイル | 区分 | 責務と変更内容 | 更新が必要な既存テスト |
 |---|---|---|---|
 | `internal/security/toctou.go` | 変更 | `ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget` を追加し、`ResolveAbsPathForTOCTOU` を置き換える（F-001・F-004） | `internal/security/toctou_test.go`（`ResolveAbsPathForTOCTOU` のテスト） |
-| `internal/cmdcommon/common.go` | 変更 | `NewDirectoryPermChecker`・`CreateReadOnlyValidator` を追加し、`CreateValidator` を削除（F-003・F-006） | `internal/cmdcommon/common_test.go` |
+| `internal/cmdcommon/common.go` | 変更 | `CreateReadOnlyValidator` を追加し、`CreateValidator` を削除（F-003） | `internal/cmdcommon/common_test.go` |
 | `internal/fileanalysis/file_analysis_store.go` | 変更 | `dirPermission` を `HashDirPerm` として公開し、値を `0o700` に（F-003） | `internal/fileanalysis` のディレクトリ作成・パーミッションのテスト |
 | `internal/filevalidator/validator.go` | 変更 | `HashDirError()` を追加し、`HashDirAvailable()` をその上に再定義（F-003） | なし |
 | `cmd/record/main.go` | 変更 | ディレクトリ作成を権限チェック後へ移動し、作成が必要な場合は sticky ビットの例外を適用しない（F-002）、共有パス解決の利用（F-001）、panic 廃止（F-006）、`cacheDir` の重複計算の解消（F-010） | `TestHashDirPermissions_0o700`、`TestRunUsesDefaultHashDirectoryWhenNotSpecified`、`TestRunTOCTOU_*` |
@@ -791,7 +786,7 @@ func newDryRunFormatter(format resource.OutputFormat) (resource.Formatter, error
 ### 7.2 単体テスト
 
 - `internal/security`: `ResolvePathForCheck` の4経路（全体が実在、途中まで実在、`ENOENT` 以外の失敗、絶対パス化の失敗）と、相対パスの絶対パス化。`ResolveAllForCheck` の失敗件数と WARN 記録。`ClassifyCheckTarget` の3つの戻り値。
-- `internal/cmdcommon`: `NewDirectoryPermChecker` が非 nil のチェッカとエラー無しを返すこと。失敗経路は各コマンドの注入口（`deps.newPermChecker`・`runTOCTOUCheck` の引数）に失敗を返す実装を与えて検証する。
+- `internal/cmdcommon`: `CreateReadOnlyValidator` がハッシュディレクトリを作成しないこと。権限チェッカ生成の失敗経路は各コマンドの注入口（`deps.newPermChecker`・`runTOCTOUCheck` の引数）に失敗を返す実装を与えて検証する（§3.3 のとおり `cmdcommon` にラッパーは置かない）。
 - `internal/runner/bootstrap`: ログファイル名が UTC であること（プロセスのタイムゾーンを変えて確認、AC-21・AC-22）とファイル名の構成が変わらないこと（AC-23）。`normalizeSlackAllowedHost` の IPv6 大文字入力（AC-34）。
 - `internal/filevalidator`: `HashDirError()` が不在時に `ErrHashDirNotExist` を、読み取り不能時に権限エラーを返し、正常時に nil を返すこと。
 - `internal/fileanalysis`: 新規作成したディレクトリのパーミッションが `HashDirPerm` であること。
@@ -822,7 +817,7 @@ func newDryRunFormatter(format resource.OutputFormat) (resource.Formatter, error
 
 | フェーズ | 内容 | 対応する機能要件 |
 |---|---|---|
-| 1 | 共有処理の追加（`ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget`・`cmdcommon.NewDirectoryPermChecker`・`CreateReadOnlyValidator`・`fileanalysis.HashDirPerm`・`Validator.HashDirError`） | F-001・F-003・F-004・F-006 の基盤 |
+| 1 | 共有処理の追加（`ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget`・`CreateReadOnlyValidator`・`fileanalysis.HashDirPerm`・`Validator.HashDirError`） | F-001・F-003・F-004・F-006 の基盤 |
 | 2 | `record` の移行（パス解決・作成順序と作成先の判定・panic 廃止・重複計算の解消） | F-001・F-002・F-006・F-010 |
 | 3 | `verify` の移行（パス解決・作成廃止・`deps` 様式・panic 廃止・終了コード） | F-001・F-003・F-006・F-010 |
 | 4 | `runner`・`internal/runner`・`bootstrap`（除外判定と件数記録・panic 廃止・二重出力・分岐の防御・タイムスタンプ・IPv6 正規化・コメント）と文書 | F-004・F-005・F-007・F-008・F-009・F-011・F-012 |
