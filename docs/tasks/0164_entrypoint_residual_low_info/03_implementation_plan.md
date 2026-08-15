@@ -394,7 +394,7 @@ func getwd() (string, error) { return getwdHook() }
 **変更ファイル**: `cmd/record/main.go`
 
 - [x] `checkDirPermissions` 内の対象ファイル群の絶対パス化・リンク解決ループ（113-124 行）を `security.ResolveAllForCheck(cfg.files, logger)` に置き換える。
-- [x] ハッシュディレクトリの解決（125-132 行）を `security.ResolvePathForCheck(cfg.hashDir)` に置き換える。解決エラーは無視せず、`WARN` として記録する。
+- [x] ハッシュディレクトリの解決（125-132 行）を `security.ResolvePathForCheck(cfg.hashDir)` に置き換える。解決エラーは無視せず記録する。**レビュー指摘による修正**: `WARN` を出して続行する形では fail-open になるため、`ERROR` を記録したうえで標準エラー出力に理由を書き、`false` を返す（非ゼロ終了）形にした。理由は 02_architecture.md §3.1 の失敗表の最終行にあり、未実在部分に `..` を含むパスでは解決が入力より短い健全な祖先を返すため、それを検査して通過したうえで別の木にハッシュディレクトリを作ってしまう（`-d <sticky world-writable>/x/../hashes` が現に通っていた）。対象ファイル群の解決失敗は従来どおり `WARN` のみ。
 
 #### ステップ 2-2: `record` の権限チェッカ生成から panic を無くす
 
@@ -409,7 +409,7 @@ func getwd() (string, error) { return getwdHook() }
 **変更ファイル**: `cmd/record/main.go`
 
 - [x] `parseArgs` から `d.mkdirAll(dir, hashDirPermissions)`（274-276 行）を削除する。**実装時の変更**: これにより `parseArgs` が `deps` を一切使わなくなったため、引数 `d` も落として `parseArgs(args []string, stderr io.Writer)` とした（`verify` 側のステップ 3-2 が同じ形にすると述べているのと揃う）。呼び出し元は `run` と2件のテストのみ。
-- [x] `run` の `checkDirPermissions` 成功直後（186-189 行の後）に、`d.mkdirAll(cfg.hashDir, fileanalysis.HashDirPerm)` を置く。失敗時は `errEnsureHashDir` で包んだエラーを標準エラー出力に書き、`1` を返す。
+- [x] `run` の `checkDirPermissions` 成功直後（186-189 行の後）に、`d.mkdirAll(cfg.hashDir, fileanalysis.HashDirPerm)` を置く。失敗時は `errEnsureHashDir` で包んだエラーを標準エラー出力に書き、`1` を返す。**レビュー指摘による修正**: `checkDirPermissions` が解決済みのハッシュディレクトリを返すようにし、`run` は以降その値を `cfg.hashDir` に入れて使う。検査した対象と作成・利用する対象が別々に計算される状態を残さないため。
 - [x] `hashDirPermissions` 定数（37 行）を削除し、`internal/fileanalysis` を import して `fileanalysis.HashDirPerm` を使う。
 - [x] この作成が `libccache.NewLibcCacheManager`（192-198 行）・`NewMachoLibSystemCacheManager`（201-206 行）・`dynamicanalysis.New`（229-234 行）・`d.validatorFactory`（223 行）より前にあることを、コードの並び順とコメントで示す。とくに `validatorFactory` は `filevalidator.New` 経由でハッシュディレクトリを暗黙に作る（§1.3.4）ため、権限チェックがこれより前にある順序が AC-08 の成立条件である。この依存関係を英語のコメントで明記する。
 
@@ -424,7 +424,7 @@ func getwd() (string, error) { return getwdHook() }
 **変更ファイル**: `cmd/record/main.go`
 
 - [x] `checkDirPermissions` に、ハッシュディレクトリが実行時点で存在しない場合のみ働く追加判定を入れる（02_architecture.md §5.2）。作成先は `security.DeepestExistingAncestor`（ステップ 1-1）で求める。同じ探索を `cmd/record` に書き直さない。**実装時の変更**: 判定本体は `cmd/record/main.go` の `checkHashDirCreationSite` として切り出し、`checkDirPermissions` が違反0件のときに呼ぶ形にした（判定条件と失敗時の案内が既存の違反報告と混ざらないようにするため）。
-- [x] 求めた作成先を `os.Stat` し、`Mode().Perm()&0o002 != 0` であれば、sticky ビットの有無にかかわらず違反として扱い、`false` を返す。あわせて、作成先が求まらない場合（絶対パスでない・祖先を stat できない）も `false` を返す（書き込み直前に安全性を確認できない状態であるため）。
+- [x] 求めた作成先を `os.Stat` し、`Mode().Perm()&0o002 != 0` であれば、sticky ビットの有無にかかわらず違反として扱い、`false` を返す。**実装時の追加**: 作成先が求まらない場合（絶対パスでない・祖先を stat できない）も `false` を返す（書き込み直前に安全性を確認できない状態であるため）。**レビュー指摘による修正**: 作成先の検査は `os.Stat` ではなく `os.Lstat` で行い、ディレクトリでなければ拒否する（作成先がシンボリックリンクだった場合、見るべきモードはリンク先のものになり、その祖先は検査されていないため）。
 - [x] 判定は `cmd/record` 側に置き、`security.ValidateDirectoryPermissions` の規則は変更しない。
 - [x] 拒否時の標準エラー出力に、先に利用者自身がディレクトリを作れば通ることを含める。
 
@@ -440,7 +440,9 @@ func getwd() (string, error) { return getwdHook() }
 - [x] `TestRun_ReportsHashDirCreationFailure` を追加する（AC-11）。常に失敗する `d.mkdirAll` を注入し、終了コードが `1` かつ標準エラー出力に理由が出ることを検証する。
 - [x] `TestRun_RejectsHashDirCreationUnderStickyWorldWritableParent` を追加する（02_architecture.md §5.2）。**`t.TempDir()` の直下に中間ディレクトリを自分で作り、`chmod 1777` を掛けたうえで、その下の未作成パスをハッシュディレクトリに指定する**（`t.TempDir()` 自体は `0o700` なので、これを作らないと作成先が world-writable にならず、テストが誤った理由で通る）。非ゼロ終了かつディレクトリが作られないことを検証する。非 root ユーザーでも自分の所有ディレクトリに sticky ビットは立てられるため、CI で root スキップは不要である。
 - [x] `TestRun_AllowsExistingHashDirUnderStickyWorldWritableParent` を追加する。同じ配置で、ハッシュディレクトリが既に存在する場合は通ること。判定が「作成が必要な場合」に限られることを示す対の検証である。
-- [x] `TestRun_CreatesHashDirBeforeSubdirectories` を追加する（02_architecture.md §3.5）。不在状態から `run` を実行し、実行後のハッシュディレクトリ自身のパーミッションが `0o700`（`libccache` の `0o755` ではない）であることを検証する。
+- [x] `TestRun_CreatesHashDirBeforeSubdirectories` を追加する（02_architecture.md §3.5）。不在状態から `run` を実行し、実行後のハッシュディレクトリ自身のパーミッションが `0o700`（`libccache` の `0o755` ではない）であることを検証する。**レビュー指摘による修正**: モードの比較だけでは umask 077 の環境で `libccache` の `0o755` も `0o700` に落ちて表明が効かなくなるため、`d.mkdirAll` を差し替えて、ハッシュディレクトリを作る時点で `lib-cache` がまだ存在しないことを順序として直接表明する。
+- [x] `TestRun_RefusesUnresolvableHashDirPath` を追加する（レビュー指摘により追加）。未実在部分に `..` を含むハッシュディレクトリパスを、world-writable な親（sticky 有無の両方）の下に指定し、非ゼロ終了かつ何も作られないことを検証する。解決失敗を `WARN` で流す実装では、健全な祖先が検査されて通過し、別の木にハッシュディレクトリが作られる。
+- [x] `TestCheckHashDirCreationSite_RefusesWhenSiteIsUnusable` を追加する（レビュー指摘により追加）。作成先が求まらない・使えない3経路（相対パス、リンク切れの祖先、読み取り不能な祖先）を `checkHashDirCreationSite` に直接与えて拒否を確認する。本番でこれらに入るのは解決直後の競合のみであり、`run` 経由では到達させられない。リンク切れの経路は `os.Lstat` と `IsDir` の選択を固定する。読み取り不能の経路は root スキップと権限復帰を入れる。
 - [x] `TestRun_ExitsWithoutPanicWhenCheckerInitFails` を追加する（AC-24・AC-26）。`d.newPermChecker`（§1.4.4）に失敗を返す実装を注入し、終了コードが `1`、標準エラー出力にエラーが出ることを検証する。`run` を同一プロセス内で呼ぶため panic はテストバイナリごと落ちる。したがって「panic しない」の実質的な根拠は「`run` が値を返して来ること」であり、出力に `goroutine ` が無いことの表明は補助にとどまる旨を、テストの doc コメントに英語で記す。
 - [x] 既存の `TestRunTOCTOU_FailsClosedOnWorldWritableDir`・`TestRunTOCTOU_NoViolation_Continues`・`TestRunTOCTOU_ViolationLogsErrorAndExits`・`TestRunTOCTOU_ForceFlagDoesNotBypassViolation`・`TestRunTOCTOU_ViolationLogsRemediationWithActualPath`・`TestRunUsesDefaultHashDirectoryWhenNotSpecified` を、作成位置の移動と `deps` の変更に追随させる。各テストが元の観点を引き続き検証していることを §7 のトレーサビリティ表で示す。**実装時の変更**: ハッシュディレクトリを作らせないためだけに存在したヘルパー `testRunDeps(hashDir)` は、作成位置が `run` に移って不要になったため削除し、呼び出しを `defaultDeps()` に置き換えた。
 

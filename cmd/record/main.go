@@ -43,6 +43,8 @@ var (
 
 // deps holds injectable dependencies for the record command.
 // This makes the dependency graph visible at call sites and simplifies testing.
+// Only the fields whose comment says so may be left nil; the rest are required
+// and are set by defaultDeps.
 type deps struct {
 	validatorFactory           func(hashDir string, cfg filevalidator.ValidatorConfig) (*filevalidator.Validator, error)
 	elfDynlibAnalyzerFactory   func() *elfdynlib.DynLibAnalyzer       // nil means dynlib analysis is disabled
@@ -100,9 +102,14 @@ func main() {
 // means no hash record is generated. No bypass flag is provided; fix the
 // directory permissions with chmod and re-run.
 //
+// On success it returns the resolved hash directory, which is the path the check
+// was actually performed on. The caller must create and use that path rather
+// than the one on the command line, so that the directory recorded into is the
+// directory whose permissions were established.
+//
 // On a violation it logs the details of each one and writes the reason to
 // stderr before returning false.
-func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) bool {
+func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) (resolvedHashDir string, ok bool) {
 	newChecker := d.newPermChecker
 	if newChecker == nil {
 		newChecker = security.NewDirectoryPermChecker
@@ -113,20 +120,27 @@ func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) bool {
 		// run has no way to establish trust, which is an ordinary fail-closed exit
 		// and not a programming error worth a stack trace.
 		fmt.Fprintf(stderr, "Error: failed to initialise the directory permission checker: %v\n", err) //nolint:errcheck
-		return false
+		return "", false
 	}
 
 	logger := slog.Default()
+	// A target file that cannot be resolved is still checked, on the lexical path
+	// resolution hands back, and the reason is recorded rather than swallowed.
 	absFiles, _ := security.ResolveAllForCheck(cfg.files, logger)
-	// Resolution failures still return a checkable path, so the check continues on
-	// it; the reason is recorded rather than swallowed.
+	// The hash directory is different: it is the root of trust, and a path that
+	// could not be resolved does not reliably name the tree the directory would
+	// end up in. Resolution rejects a ".." that sits in the not-yet-existing part
+	// of the path, for instance, and hands back the deepest existing ancestor --
+	// checking that would establish the permissions of one directory and then
+	// create the hash directory somewhere else entirely. So refuse instead.
 	absHashDir, resolveErr := security.ResolvePathForCheck(cfg.hashDir)
 	if resolveErr != nil {
-		logger.Warn("failed to resolve the hash directory for the permission check",
+		logger.Error("cannot resolve the hash directory for the permission check — refusing to record",
 			slog.String("path", cfg.hashDir),
-			slog.String("checked_path", absHashDir),
 			slog.String("error", resolveErr.Error()),
 		)
+		fmt.Fprintf(stderr, "Error: cannot resolve hash directory %s for the permission check: %v — refusing to generate hash records. Specify a hash directory whose existing ancestors are readable and whose remaining path components are plain names.\n", cfg.hashDir, resolveErr) //nolint:errcheck
+		return "", false
 	}
 	toctouDirs := security.CollectTOCTOUCheckDirs(absFiles, nil, absHashDir)
 	// RunTOCTOUPermissionCheck already logs each violation at WARN; the ERROR log
@@ -134,7 +148,7 @@ func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) bool {
 	// of this shared check) escalates violations to a fail-closed, non-zero exit.
 	violations := security.RunTOCTOUPermissionCheck(checker, toctouDirs, logger).Violations
 	if len(violations) == 0 {
-		return checkHashDirCreationSite(absHashDir, logger, stderr)
+		return absHashDir, checkHashDirCreationSite(absHashDir, logger, stderr)
 	}
 	for _, v := range violations {
 		remediation := fmt.Sprintf("fix directory permissions/ownership and re-run record (reported violation: %v)", v.Err)
@@ -149,7 +163,7 @@ func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) bool {
 		)
 	}
 	fmt.Fprintln(stderr, "Error: permission violation in hash directory or its ancestor directories — refusing to generate hash records. Fix directory permissions and re-run.") //nolint:errcheck
-	return false
+	return "", false
 }
 
 // checkHashDirCreationSite reports whether the hash directory may be created.
@@ -192,13 +206,25 @@ func checkHashDirCreationSite(absHashDir string, logger *slog.Logger, stderr io.
 		fmt.Fprintf(stderr, "Error: cannot determine where hash directory %s would be created: %v — refusing to generate hash records.\n", absHashDir, err) //nolint:errcheck
 		return false
 	}
-	info, err := os.Stat(site) // #nosec G703 -- same as above: a stat of the caller-named creation site
+	// Lstat, not Stat, and the entry must be a directory in its own right: were
+	// the creation site a symlink, its mode would be the target's, whose ancestors
+	// were never checked, while os.MkdirAll would follow the link there.
+	info, err := os.Lstat(site) // #nosec G703 -- same as above: a stat of the caller-named creation site
 	if err != nil {
 		logger.Error("cannot inspect the directory the hash directory would be created in — refusing to record",
 			slog.String("path", site),
 			slog.String("error", err.Error()),
 		)
 		fmt.Fprintf(stderr, "Error: cannot inspect directory %s: %v — refusing to generate hash records.\n", site, err) //nolint:errcheck
+		return false
+	}
+	if !info.IsDir() {
+		logger.Error("the hash directory would be created under something that is not a directory — refusing to record",
+			slog.String("path", absHashDir),
+			slog.String("creation_site", site),
+			slog.String("mode", info.Mode().String()),
+		)
+		fmt.Fprintf(stderr, "Error: hash directory %s would be created under %s, which is not a directory — refusing to generate hash records.\n", absHashDir, site) //nolint:errcheck
 		return false
 	}
 	if info.Mode().Perm()&0o002 == 0 {
@@ -243,9 +269,15 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	if !checkDirPermissions(cfg, d, stderr) {
+	resolvedHashDir, ok := checkDirPermissions(cfg, d, stderr)
+	if !ok {
 		return 1
 	}
+	// From here on the hash directory is the path the check was performed on, so
+	// that what gets created -- and everything built underneath it below -- is
+	// what was established to be safe, rather than a path that merely resolves to
+	// it today.
+	cfg.hashDir = resolvedHashDir
 
 	// Nothing above this line writes to the filesystem: the hash directory is the
 	// root of trust, so it is created only once the permission check has passed.
@@ -255,7 +287,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	// through os.MkdirAll on a path underneath it, and would otherwise create it
 	// with their own, wider mode.
 	if err := d.mkdirAll(cfg.hashDir, fileanalysis.HashDirPerm); err != nil {
-		fmt.Fprintf(stderr, "Error: %v: %v\n", errEnsureHashDir, err) //nolint:errcheck
+		fmt.Fprintf(stderr, "Error: %v\n", fmt.Errorf("%w: %w", errEnsureHashDir, err)) //nolint:errcheck
 		return 1
 	}
 

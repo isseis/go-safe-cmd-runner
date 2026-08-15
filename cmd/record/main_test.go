@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
@@ -649,27 +650,131 @@ func TestRun_AllowsExistingHashDirUnderStickyWorldWritableParent(t *testing.T) {
 }
 
 // TestRun_CreatesHashDirBeforeSubdirectories verifies the ordering the hash
-// directory's mode depends on: the subdirectories built underneath it are
-// created with wider modes of their own, so had one of them been built first,
-// its os.MkdirAll would have created the hash directory along the way and left
-// it at 0o755.
+// directory's mode depends on: everything built underneath it uses os.MkdirAll
+// with a wider mode of its own, so had one of those run first it would have
+// created the hash directory on the way and left it at 0o755.
+//
+// The ordering is asserted at the moment of creation rather than by reading the
+// resulting mode alone, because a restrictive umask would mask a subdirectory
+// builder's 0o755 down to 0o700 and quietly disarm that check.
 func TestRun_CreatesHashDirBeforeSubdirectories(t *testing.T) {
 	base := tu.SafeTempDir(t)
 	hashDir := filepath.Join(base, "hashes")
+	cacheDir := filepath.Join(hashDir, libcCacheSubDir)
 	targetFile := filepath.Join(base, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
 
+	sawHashDirCreation := false
+	d := defaultDeps()
+	d.mkdirAll = func(path string, perm os.FileMode) error {
+		if path == hashDir {
+			sawHashDirCreation = true
+			assert.NoDirExists(t, cacheDir, "the hash directory must be created before anything underneath it")
+		}
+		return os.MkdirAll(path, perm)
+	}
+
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
-	exitCode := run([]string{"-d", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+	exitCode := run([]string{"-d", hashDir, targetFile}, d, stdout, stderr)
 	require.Equal(t, 0, exitCode, "stderr: %s", stderr.String())
 
-	cacheDir := filepath.Join(hashDir, libcCacheSubDir)
+	require.True(t, sawHashDirCreation, "run must create the hash directory itself")
 	require.DirExists(t, cacheDir, "the libc cache subdirectory must have been built under the hash directory")
 
 	info, err := os.Stat(hashDir)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm(), "the hash directory must keep its own mode, not inherit a subdirectory's")
+}
+
+// TestRun_RefusesUnresolvableHashDirPath covers a hash directory path that
+// resolution refuses: a ".." in the part of the path that does not exist yet.
+// Resolution hands back the deepest existing ancestor for that failure, so
+// treating it as a warning would check one directory's permissions and then
+// create the hash directory in a completely different tree -- including trees
+// the check would have rejected outright.
+func TestRun_RefusesUnresolvableHashDirPath(t *testing.T) {
+	tests := []struct {
+		name string
+		mode os.FileMode
+	}{
+		{name: "world_writable_parent", mode: 0o777},
+		{name: "sticky_world_writable_parent", mode: os.ModeSticky | 0o777},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			base := tu.SafeTempDir(t)
+			elsewhere := filepath.Join(base, "elsewhere")
+			require.NoError(t, os.Mkdir(elsewhere, 0o700))
+			require.NoError(t, os.Chmod(elsewhere, tc.mode))
+
+			targetFile := filepath.Join(base, "target.txt")
+			require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+			// Written literally rather than with filepath.Join, which would clean the
+			// ".." away before record ever sees it.
+			hashDir := base + "/gone/../elsewhere/hashes"
+
+			stdout := &bytes.Buffer{}
+			stderr := &bytes.Buffer{}
+			exitCode := run([]string{"-d", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+
+			require.Equal(t, 1, exitCode)
+			assert.Contains(t, stderr.String(), "cannot resolve hash directory")
+			assert.NoDirExists(t, filepath.Join(elsewhere, "hashes"), "nothing must be created when the path could not be resolved")
+			assert.NotContains(t, stdout.String(), "OK")
+		})
+	}
+}
+
+// TestCheckHashDirCreationSite_RefusesWhenSiteIsUnusable covers the refusals
+// that guard the write itself. Each is reachable in production only through a
+// race against the resolution done moments earlier, so they are driven directly
+// here rather than through run.
+func TestCheckHashDirCreationSite_RefusesWhenSiteIsUnusable(t *testing.T) {
+	newLogger := func(buf *bytes.Buffer) *slog.Logger {
+		return slog.New(slog.NewTextHandler(buf, nil))
+	}
+
+	t.Run("relative path has no determinable creation site", func(t *testing.T) {
+		logs := &bytes.Buffer{}
+		stderr := &bytes.Buffer{}
+
+		assert.False(t, checkHashDirCreationSite("relative/hashes", newLogger(logs), stderr))
+		assert.Contains(t, stderr.String(), "cannot determine where hash directory")
+	})
+
+	t.Run("dangling symlink ancestor is not a usable creation site", func(t *testing.T) {
+		// The deepest existing ancestor is the link itself, since existence is
+		// tested with Lstat so that a link to nowhere surfaces instead of the tree
+		// the link happens to sit in being checked in its place.
+		base := tu.SafeTempDir(t)
+		link := filepath.Join(base, "link")
+		require.NoError(t, os.Symlink(filepath.Join(base, "missing"), link))
+
+		logs := &bytes.Buffer{}
+		stderr := &bytes.Buffer{}
+
+		assert.False(t, checkHashDirCreationSite(filepath.Join(link, "hashes"), newLogger(logs), stderr))
+		assert.Contains(t, stderr.String(), "which is not a directory")
+	})
+
+	t.Run("unreadable ancestor leaves existence unknown", func(t *testing.T) {
+		if syscall.Geteuid() == 0 {
+			t.Skip("skipping: root is not denied by chmod 0o000")
+		}
+		base := tu.SafeTempDir(t)
+		closed := filepath.Join(base, "closed")
+		require.NoError(t, os.Mkdir(closed, 0o700))
+		require.NoError(t, os.Chmod(closed, 0o000))
+		t.Cleanup(func() { _ = os.Chmod(closed, 0o700) })
+
+		logs := &bytes.Buffer{}
+		stderr := &bytes.Buffer{}
+
+		assert.False(t, checkHashDirCreationSite(filepath.Join(closed, "hashes"), newLogger(logs), stderr))
+		assert.Contains(t, stderr.String(), "cannot determine whether hash directory")
+	})
 }
 
 // TestRun_ExitsWithoutPanicWhenCheckerInitFails verifies that a permission
