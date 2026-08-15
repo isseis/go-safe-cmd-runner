@@ -5,11 +5,13 @@ package cmdcommon
 import (
 	"os"
 	"path/filepath"
-	"slices"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 )
 
 func TestCreateValidator_ValidHashDirectory(t *testing.T) {
@@ -84,10 +86,34 @@ func TestDefaultHashDirectory_IsSet(t *testing.T) {
 	assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", DefaultHashDirectory)
 }
 
-func TestNewDirectoryPermChecker_ConstructsChecker(t *testing.T) {
+// TestNewDirectoryPermChecker_ReturnsWorkingChecker tests that the returned
+// checker actually validates directory permissions. Asserting only that the
+// call returns a non-nil checker and a nil error would not be able to fail:
+// security.NewDirectoryPermChecker returns a composite literal and an
+// unconditional nil (02_architecture.md records that its error path is
+// unreachable today). So the checker is exercised instead: it must accept a
+// 0o700 directory and reject a world-writable one.
+func TestNewDirectoryPermChecker_ReturnsWorkingChecker(t *testing.T) {
+	if syscall.Geteuid() == 0 {
+		t.Skip("Skipping permission test when running as root")
+	}
+
 	checker, err := NewDirectoryPermChecker()
 	require.NoError(t, err, "NewDirectoryPermChecker should succeed")
 	require.NotNil(t, checker, "NewDirectoryPermChecker should return a non-nil checker")
+
+	tmpDir := tu.SafeTempDir(t)
+
+	safeDir := filepath.Join(tmpDir, "safe")
+	require.NoError(t, os.Mkdir(safeDir, 0o700))
+	assert.NoError(t, checker.ValidateDirectoryPermissions(safeDir),
+		"a 0o700 directory must be accepted")
+
+	worldWritableDir := filepath.Join(tmpDir, "world-writable")
+	require.NoError(t, os.Mkdir(worldWritableDir, 0o700))
+	require.NoError(t, os.Chmod(worldWritableDir, 0o777))
+	assert.Error(t, checker.ValidateDirectoryPermissions(worldWritableDir),
+		"a world-writable directory must be rejected")
 }
 
 // TestCreateReadOnlyValidator_DoesNotCreateHashDirectory tests that
@@ -98,13 +124,13 @@ func TestCreateReadOnlyValidator_DoesNotCreateHashDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
 	hashDir := filepath.Join(tmpDir, "nested", "hashes")
 
-	before := walkEntries(t, tmpDir)
+	before := tu.WalkEntries(t, tmpDir)
 
 	validator, err := CreateReadOnlyValidator(hashDir)
 	require.NoError(t, err, "CreateReadOnlyValidator should succeed for a missing hash directory")
 	require.NotNil(t, validator)
 
-	after := walkEntries(t, tmpDir)
+	after := tu.WalkEntries(t, tmpDir)
 	assert.Equal(t, before, after, "parent subtree must be unchanged by CreateReadOnlyValidator")
 }
 
@@ -121,31 +147,4 @@ func TestCreateReadOnlyValidator_ExistingHashDirectoryHasNoDeferredError(t *test
 	require.NotNil(t, validator)
 
 	assert.NoError(t, validator.HashDirError())
-}
-
-// walkEntries returns the sorted relative paths, entry types, and modes under
-// root, so two runs can be compared to prove no filesystem entry was added or
-// had its type or mode changed. The entry type comes from DirEntry.Type so a
-// symlink is reported as one even when d.Info would follow it.
-func walkEntries(t *testing.T, root string) []string {
-	t.Helper()
-	var entries []string
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			return relErr
-		}
-		info, infoErr := d.Info()
-		if infoErr != nil {
-			return infoErr
-		}
-		entries = append(entries, rel+"/"+d.Type().String()+"/"+info.Mode().String())
-		return nil
-	})
-	require.NoError(t, err, "failed to walk parent subtree")
-	slices.Sort(entries)
-	return entries
 }

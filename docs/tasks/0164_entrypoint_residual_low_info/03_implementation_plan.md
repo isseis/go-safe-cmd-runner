@@ -344,8 +344,8 @@ func getwd() (string, error) { return getwdHook() }
 
 - [x] `NewDirectoryPermChecker() (security.DirectoryPermChecker, error)` を追加する。`security.NewDirectoryPermChecker()` に委譲するだけで、panic はしない。テストからの差し替えはこのヘルパーではなく各コマンドの注入口（`deps.newPermChecker`・`runTOCTOUCheck` の引数）で行うため、引数は持たない。
 - [x] `CreateReadOnlyValidator(hashDir string) (*filevalidator.Validator, error)` を追加する。`filevalidator.NewReadOnly(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})` に委譲する。
-- [x] `TestNewDirectoryPermChecker_ConstructsChecker`: 非 nil のチェッカとエラー無しが返る。
-- [x] `TestCreateReadOnlyValidator_DoesNotCreateHashDirectory`: 存在しないハッシュディレクトリを渡しても、構築は成功し、親ディレクトリを `filepath.WalkDir` で走査した結果が実行前後で一致すること。
+- [x] `TestNewDirectoryPermChecker_ReturnsWorkingChecker`: 返ったチェッカが `0o700` のディレクトリを受理し、world-writable なディレクトリを拒否すること。**「非 nil のチェッカとエラー無しが返る」だけを見る形にはしない**: `security.NewDirectoryPermChecker` は複合リテラルと無条件の `nil` を返すため（02_architecture.md §3.4 が到達不能と記録している）、その表明は落ちようがない。root では world-writable の拒否が成立しないため `syscall.Geteuid() == 0` で `t.Skip` する。
+- [x] `TestCreateReadOnlyValidator_DoesNotCreateHashDirectory`: 存在しないハッシュディレクトリを渡しても、構築は成功し、親ディレクトリを `filepath.WalkDir` で走査した結果が実行前後で一致すること。走査ヘルパーは `internal/testutil` の `tu.WalkEntries` とする（ステップ 3-4 の `TestRunCreatesNoFilesystemEntries` が同じ比較を要するため、パッケージ内に置くと複製になる）。この比較は部分木の形（パスとモード）のみを見るもので、既存ファイルへの書き込みは検出しない。
 - [x] `TestCreateReadOnlyValidator_ExistingHashDirectoryHasNoDeferredError`: 実在するハッシュディレクトリでは `HashDirError()` が nil を返すこと（ステップ 1-4 で追加済み）。
 
 **注**: `CreateValidator` の削除はステップ 3-1（`verify` の移行完了後）に行う。
@@ -359,7 +359,7 @@ func getwd() (string, error) { return getwdHook() }
 - [x] `dirPermission = 0o750` を `HashDirPerm os.FileMode = 0o700` として公開する（18-19 行）。付随するコメントを、02_architecture.md §3.5 の理由（所有者以外に内容を見せる必要がない）に沿った英文へ書き換える。
 - [x] 32 行目の doc コメント `If analysisDir does not exist, it will be created with mode 0o750.` を `... with mode HashDirPerm (0o700).` に変える。
 - [x] 48 行目の `os.MkdirAll(analysisDir, dirPermission)` を `HashDirPerm` に変える。
-- [x] `TestNewStore_CreatesDirectoryWithHashDirPerm` を追加する。不在ディレクトリを指定して `NewStore` を呼び、`os.Stat` の `Mode().Perm()` が `0o700` であること。比較対象は `HashDirPerm` ではなく `0o700` リテラルとする（定数が自分自身と等しいことを確かめても何も検証したことにならないため）。所有者ビットは umask に削られないため、この表明は通常の umask 設定（022・027・077）で成立する。
+- [x] 既存の `TestNewStore_CreatesDirectory` に、作られたディレクトリの `os.Stat` の `Mode().Perm()` が `0o700` であるという表明を足す。中間ディレクトリ（`MkdirAll` が途中で作るもの）についても同じ表明を置く。比較対象は `HashDirPerm` ではなく `0o700` リテラルとする（定数が自分自身と等しいことを確かめても何も検証したことにならないため）。所有者ビットは umask に削られないため、この表明は通常の umask 設定（022・027・077）で成立する。**専用のテスト関数を別に立てない**: 同じ一時ディレクトリ・同じパスリテラル・同じ事前確認を繰り返し、最後の表明だけが異なる複製になるため。
 
 **完了条件**: `go test -tags test ./internal/fileanalysis/...` が通る。
 
@@ -367,7 +367,7 @@ func getwd() (string, error) { return getwdHook() }
 
 - [x] `make fmt` → `make test` → `make lint` が緑。
 - [x] `make build` が通る。`make lint` は `--build-tags test` で走るため、`getwd.go`（`//go:build !test`）をコンパイルするのはこの経路だけである（§1.4.5）。
-- [x] `make deadcode` を実行する。`ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget`・`DeepestExistingAncestor`・`security.getwd`（`ResolvePathForCheck` からのみ呼ばれる）・`CreateReadOnlyValidator`・`cmdcommon.NewDirectoryPermChecker` は、利用側の移行が済むフェーズ2〜4まで呼び出し元を持たないため、未到達として報告される。これは想定内であり、他に新しい未到達シンボルが出ていないことだけを確認する。
+- [x] `make deadcode` を実行する。`ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget`・`DeepestExistingAncestor`・`security.getwd`（`ResolvePathForCheck` からのみ呼ばれる）・`HasVariableReference`・`trimLastPathComponent`・`hasDotDotComponent`（後2者は上記関数の非公開ヘルパー）・`CreateReadOnlyValidator`・`cmdcommon.NewDirectoryPermChecker` は、利用側の移行が済むフェーズ2〜4まで呼び出し元を持たないため、未到達として報告される。これは想定内であり、他に新しい未到達シンボルが出ていないことだけを確認する。
 
 ### PR-2 作成ポイント: read-only validator helpers and hash-directory permission
 
@@ -835,6 +835,8 @@ PR-1 と PR-2 はフェーズ1（`internal/`）で、これを利用する PR-3�
 
 ### 4.4 退行防止
 
+表に載らないテストのうち、`internal/cmdcommon/common_test.go::TestNewDirectoryPermChecker_ReturnsWorkingChecker`・`::TestCreateReadOnlyValidator_ExistingHashDirectoryHasNoDeferredError`、および `internal/filevalidator/validator_test.go::TestHashDirError_*` の3本は、特定の AC に直接対応しない下支え API のテストである。これらが確かめるのはフェーズ1で足した API 自身の契約であり、その API を使う側の挙動が AC-12・AC-13・AC-14・AC-24 の各行で検証される。
+
 要件定義書が「既存テストが通過する」と定める AC-07・AC-16・AC-20・AC-30・AC-37・AC-41 は、既存テストの通過をもって確認する。ただし §1.3 で挙げた書き換え対象テストについては、書き換え後も元の観点を検証していることを §7 の表で明示する。AC-20 については、既存の `TestRunGroupTOCTOUCheck_RelativePathsSkipped` が除外を検証できていないため、ステップ 4-3 で表明を入れ替える。
 
 ### 4.5 テストの自己検証
@@ -911,7 +913,7 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 | AC-13 | test | `cmd/verify/main_test.go::TestRunMissingHashDirMessageIdentifiesCause` | — |
 | AC-14 | test | `cmd/verify/main_test.go::TestRunCreatesNoFilesystemEntries`（`filepath.WalkDir` による部分木全体の比較） | — |
 | AC-14 | test | `internal/cmdcommon/common_test.go::TestCreateReadOnlyValidator_DoesNotCreateHashDirectory` | — |
-| AC-15 | test | `internal/fileanalysis/file_analysis_store_test.go::TestNewStore_CreatesDirectoryWithHashDirPerm` | — |
+| AC-15 | test | `internal/fileanalysis/file_analysis_store_test.go::TestNewStore_CreatesDirectory`（葉と中間ディレクトリの双方が `0o700` であることを表明する。専用テストを別に立てず既存テストへ表明を足したのは、同一のリテラルと手順を繰り返すだけの複製になるため） | — |
 | AC-15 | static | `rg -n -e hashDirPermissions -e dirPermission cmd internal` | 一致0件（現状は `cmd/record/main.go` 2件・`cmd/verify/main.go` 2件・`internal/fileanalysis/file_analysis_store.go` 3件〈17 行の doc コメント・19 行の定義・48 行の使用〉の計7件） |
 | AC-15 | static | `rg -n -e 'HashDirPerm\s+os\.FileMode\s*=' --glob '!*_test.go' internal` | 一致1件（`internal/fileanalysis/file_analysis_store.go`） |
 | AC-15 | static | `rg -n -e 'MkdirAll\(' --glob '!*_test.go' cmd internal` を目視し、ハッシュディレクトリ自身を作る呼び出しがステップ 2-3 の1箇所と `fileanalysis.NewStore` のみであることを確認する。`libccache`・`dynamicanalysis` の3件は配下のサブディレクトリで対象外 | 別名の重複定数が無いこと |
