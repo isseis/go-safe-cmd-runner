@@ -53,7 +53,8 @@ type deps struct {
 	// newPermChecker builds the directory permission checker.
 	// nil means security.NewDirectoryPermChecker. The checker is injected through
 	// its constructor rather than as a ready-made value so that tests exercise the
-	// same construction path production uses, including its failure.
+	// same construction path production uses, including the error return -- which
+	// no current implementation of that constructor produces.
 	newPermChecker func() (security.DirectoryPermChecker, error)
 	// nil means use groupmembership.New().EnsurePermissionCheckUID.
 	ensurePermissionCheckUID func() error
@@ -148,7 +149,10 @@ func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) (resolvedH
 	// of this shared check) escalates violations to a fail-closed, non-zero exit.
 	violations := security.RunTOCTOUPermissionCheck(checker, toctouDirs, logger).Violations
 	if len(violations) == 0 {
-		return absHashDir, checkHashDirCreationSite(absHashDir, logger, stderr)
+		if !checkHashDirWriteSafety(absHashDir, logger, stderr) {
+			return "", false
+		}
+		return absHashDir, true
 	}
 	for _, v := range violations {
 		remediation := fmt.Sprintf("fix directory permissions/ownership and re-run record (reported violation: %v)", v.Err)
@@ -166,29 +170,42 @@ func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) (resolvedH
 	return "", false
 }
 
-// checkHashDirCreationSite reports whether the hash directory may be created.
-// It only has an effect when the hash directory does not exist yet: an existing
-// directory has already been inspected by the check above, and the sticky bit
-// does protect a name that is already taken.
+// checkHashDirWriteSafety reports whether hash records may be written under the
+// hash directory. It adds one rule the shared permission check does not have: a
+// world-writable directory is a violation here even when the sticky bit is set.
 //
-// The shared check accepts a sticky world-writable directory such as /tmp,
-// which is right for entries that are already in it and wrong for a name nobody
-// has claimed: between the check passing and os.MkdirAll running, anyone able to
-// write there could create that name as a symlink into a tree they own, and
-// MkdirAll would happily follow it. So a creation site that anyone can write to
-// is a violation here, sticky bit or not. The rule lives in record rather than
-// in security.ValidateDirectoryPermissions because it depends on record being
-// about to create the directory, which the shared check knows nothing about.
+// The shared check accepts a sticky world-writable directory such as /tmp.
+// That is right for an entry which is already in it — the sticky bit stops
+// anyone but the owner from deleting or renaming it — and wrong for any name
+// nobody has claimed yet, which the sticky bit says nothing about. Both of the
+// names this command is about to claim fall in the second group:
 //
-// Anything that leaves the creation site unknown (an unreadable ancestor, a
-// path that never became absolute) is a violation too: this runs immediately
-// before a write to a place whose safety could not be established.
-func checkHashDirCreationSite(absHashDir string, logger *slog.Logger, stderr io.Writer) bool {
+//   - the hash directory itself, when it does not exist yet. Between the check
+//     passing and os.MkdirAll running, anyone able to write to the creation site
+//     could create that name as a symlink into a tree they own, and MkdirAll
+//     would follow it.
+//   - the hash record files inside it, always. A hash record for a file record
+//     has not processed yet is a name nobody has claimed, so anyone able to
+//     write to the hash directory can pre-plant one and have verify trust it.
+//
+// So neither the hash directory nor its creation site may be world-writable,
+// sticky bit or not. The rule lives in record rather than in
+// security.ValidateDirectoryPermissions because it depends on record being about
+// to write names that do not exist yet, which the shared check knows nothing
+// about. Users who need a hash directory under a world-writable parent create it
+// themselves beforehand with a mode only they can write.
+//
+// Anything that leaves the directory or its creation site unknown (an unreadable
+// ancestor, a path that never became absolute) is a violation too: this runs
+// immediately before a write to a place whose safety could not be established.
+func checkHashDirWriteSafety(absHashDir string, logger *slog.Logger, stderr io.Writer) bool {
 	// #nosec G703 -- the path comes from this command's own -hash-dir argument, and
 	// inspecting it is the point: nothing is opened or written here.
-	if _, err := os.Lstat(absHashDir); err == nil {
-		return true
-	} else if !errors.Is(err, os.ErrNotExist) {
+	info, err := os.Lstat(absHashDir)
+	if err == nil {
+		return checkExistingHashDirMode(absHashDir, info, logger, stderr)
+	}
+	if !errors.Is(err, os.ErrNotExist) {
 		logger.Error("cannot determine whether the hash directory exists — refusing to record",
 			slog.String("path", absHashDir),
 			slog.String("error", err.Error()),
@@ -196,7 +213,30 @@ func checkHashDirCreationSite(absHashDir string, logger *slog.Logger, stderr io.
 		fmt.Fprintf(stderr, "Error: cannot determine whether hash directory %s exists: %v — refusing to generate hash records.\n", absHashDir, err) //nolint:errcheck
 		return false
 	}
+	return checkHashDirCreationSite(absHashDir, logger, stderr)
+}
 
+// checkExistingHashDirMode applies the world-writable rule to a hash directory
+// that already exists. The shared check has established that it is a directory
+// with a permitted owner; what it let through, and what is refused here, is the
+// sticky world-writable case.
+func checkExistingHashDirMode(absHashDir string, info os.FileInfo, logger *slog.Logger, stderr io.Writer) bool {
+	if info.Mode().Perm()&0o002 == 0 {
+		return true
+	}
+	remediation := fmt.Sprintf("restrict the hash directory with chmod (for example chmod go-w %s) and re-run record, or move it somewhere only you can write", absHashDir)
+	logger.Error("hash directory is world-writable — refusing to record",
+		slog.String("path", absHashDir),
+		slog.String("mode", info.Mode().String()),
+		slog.String("remediation", remediation),
+	)
+	fmt.Fprintf(stderr, "Error: hash directory %s is world-writable — refusing to generate hash records, because anyone could pre-plant a hash record there for a file that record has not processed yet. %s.\n", absHashDir, remediation) //nolint:errcheck
+	return false
+}
+
+// checkHashDirCreationSite applies the world-writable rule to the directory the
+// hash directory would be created in, for the case where it does not exist yet.
+func checkHashDirCreationSite(absHashDir string, logger *slog.Logger, stderr io.Writer) bool {
 	site, err := security.DeepestExistingAncestor(absHashDir)
 	if err != nil {
 		logger.Error("cannot determine where the hash directory would be created — refusing to record",

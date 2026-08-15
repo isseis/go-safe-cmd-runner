@@ -44,9 +44,9 @@ func (f *fakeRecorder) SaveRecord(filePath string, force bool) (string, string, 
 }
 
 // newFailingPermChecker returns a newPermChecker that never produces a checker.
-// cmd/record and cmd/verify each need this stub in their own main package, so
-// the duplication between them is intentional and cannot be lifted into
-// testutil/.
+// cmd/verify gains the same stub in its own main package once it grows a
+// newPermChecker field of its own, at which point the duplication between the
+// two is intentional rather than something to lift into testutil/.
 func newFailingPermChecker(err error) func() (security.DirectoryPermChecker, error) {
 	return func() (security.DirectoryPermChecker, error) { return nil, err }
 }
@@ -649,6 +649,50 @@ func TestRun_AllowsExistingHashDirUnderStickyWorldWritableParent(t *testing.T) {
 	assert.Contains(t, stdout.String(), "OK")
 }
 
+// TestRun_RejectsExistingStickyWorldWritableHashDir verifies that the same rule
+// applies to the hash directory itself, not only to the directory it would be
+// created in: a hash record for a file that record has not processed yet is a name
+// nobody has claimed, so anyone able to write to the hash directory can
+// pre-plant one and have verify trust it. The sticky bit protects the entries
+// already in the directory and says nothing about that name.
+//
+// The directory is made sticky deliberately. Without the sticky bit the shared
+// permission check rejects a world-writable directory on its own, and the test
+// would pass without record's rule existing at all; with it, the shared check
+// passes the directory (asserted below) and only record's own rule can produce
+// the refusal, which is what the message assertions pin.
+func TestRun_RejectsExistingStickyWorldWritableHashDir(t *testing.T) {
+	base := tu.SafeTempDir(t)
+	hashDir := filepath.Join(base, "hashes")
+	require.NoError(t, os.Mkdir(hashDir, 0o700))
+	require.NoError(t, os.Chmod(hashDir, os.ModeSticky|0o777))
+	t.Cleanup(func() { _ = os.Chmod(hashDir, 0o700) })
+
+	targetFile := filepath.Join(base, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	// The other layer, alone, leaves this directory untouched.
+	checker, err := security.NewDirectoryPermChecker()
+	require.NoError(t, err)
+	require.NoError(t, checker.ValidateDirectoryPermissions(hashDir),
+		"the shared check must accept this directory, or the refusal below proves nothing about record's own rule")
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-d", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+
+	require.Equal(t, 1, exitCode)
+	assert.Contains(t, stderr.String(), "is world-writable")
+	assert.Contains(t, stderr.String(), "pre-plant")
+	assert.NotContains(t, stderr.String(), "permission violation in hash directory",
+		"the refusal must come from record's rule, not from the shared check")
+	assert.NotContains(t, stdout.String(), "OK")
+
+	entries, err := os.ReadDir(hashDir)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "no hash record must be written into a world-writable hash directory")
+}
+
 // TestRun_CreatesHashDirBeforeSubdirectories verifies the ordering the hash
 // directory's mode depends on: everything built underneath it uses os.MkdirAll
 // with a wider mode of its own, so had one of those run first it would have
@@ -727,11 +771,11 @@ func TestRun_RefusesUnresolvableHashDirPath(t *testing.T) {
 	}
 }
 
-// TestCheckHashDirCreationSite_RefusesWhenSiteIsUnusable covers the refusals
+// TestCheckHashDirWriteSafety_RefusesWhenSiteIsUnusable covers the refusals
 // that guard the write itself. Each is reachable in production only through a
 // race against the resolution done moments earlier, so they are driven directly
 // here rather than through run.
-func TestCheckHashDirCreationSite_RefusesWhenSiteIsUnusable(t *testing.T) {
+func TestCheckHashDirWriteSafety_RefusesWhenSiteIsUnusable(t *testing.T) {
 	newLogger := func(buf *bytes.Buffer) *slog.Logger {
 		return slog.New(slog.NewTextHandler(buf, nil))
 	}
@@ -740,7 +784,7 @@ func TestCheckHashDirCreationSite_RefusesWhenSiteIsUnusable(t *testing.T) {
 		logs := &bytes.Buffer{}
 		stderr := &bytes.Buffer{}
 
-		assert.False(t, checkHashDirCreationSite("relative/hashes", newLogger(logs), stderr))
+		assert.False(t, checkHashDirWriteSafety("relative/hashes", newLogger(logs), stderr))
 		assert.Contains(t, stderr.String(), "cannot determine where hash directory")
 	})
 
@@ -755,7 +799,7 @@ func TestCheckHashDirCreationSite_RefusesWhenSiteIsUnusable(t *testing.T) {
 		logs := &bytes.Buffer{}
 		stderr := &bytes.Buffer{}
 
-		assert.False(t, checkHashDirCreationSite(filepath.Join(link, "hashes"), newLogger(logs), stderr))
+		assert.False(t, checkHashDirWriteSafety(filepath.Join(link, "hashes"), newLogger(logs), stderr))
 		assert.Contains(t, stderr.String(), "which is not a directory")
 	})
 
@@ -772,7 +816,7 @@ func TestCheckHashDirCreationSite_RefusesWhenSiteIsUnusable(t *testing.T) {
 		logs := &bytes.Buffer{}
 		stderr := &bytes.Buffer{}
 
-		assert.False(t, checkHashDirCreationSite(filepath.Join(closed, "hashes"), newLogger(logs), stderr))
+		assert.False(t, checkHashDirWriteSafety(filepath.Join(closed, "hashes"), newLogger(logs), stderr))
 		assert.Contains(t, stderr.String(), "cannot determine whether hash directory")
 	})
 }
