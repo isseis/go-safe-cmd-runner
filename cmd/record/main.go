@@ -51,10 +51,9 @@ type deps struct {
 	machoDynlibAnalyzerFactory func() *machodylib.MachODynLibAnalyzer // nil means Mach-O dynlib analysis is disabled
 	mkdirAll                   func(path string, perm os.FileMode) error
 	// newPermChecker builds the directory permission checker.
-	// nil means security.NewDirectoryPermChecker. The checker is injected through
-	// its constructor rather than as a ready-made value so that tests exercise the
-	// same construction path production uses, including the error return -- which
-	// no current implementation of that constructor produces.
+	// nil means security.NewDirectoryPermChecker. Injected as a constructor rather
+	// than a ready-made checker so tests can exercise its error return, which no
+	// current implementation produces.
 	newPermChecker func() (security.DirectoryPermChecker, error)
 	// nil means use groupmembership.New().EnsurePermissionCheckUID.
 	ensurePermissionCheckUID func() error
@@ -98,18 +97,14 @@ func main() {
 
 // checkDirPermissions runs the TOCTOU permission check on the directories this
 // operation touches, and reports whether recording may proceed. The hash DB is
-// the root of trust — any permission violation in its ancestor directories
-// means an attacker could replace hash records. It fails closed: a violation
-// means no hash record is generated. No bypass flag is provided; fix the
-// directory permissions with chmod and re-run.
+// the root of trust — a permission violation in its ancestor directories means
+// an attacker could replace hash records — so a violation fails closed, and no
+// bypass flag is provided.
 //
-// On success it returns the resolved hash directory, which is the path the check
-// was actually performed on. The caller must create and use that path rather
-// than the one on the command line, so that the directory recorded into is the
-// directory whose permissions were established.
-//
-// On a violation it logs the details of each one and writes the reason to
-// stderr before returning false.
+// On success it returns the resolved hash directory, the path the check was
+// actually performed on. The caller must create and use that path rather than
+// the one on the command line, so that the directory recorded into is the one
+// whose permissions were established.
 func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) (resolvedHashDir string, ok bool) {
 	newChecker := d.newPermChecker
 	if newChecker == nil {
@@ -128,12 +123,11 @@ func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) (resolvedH
 	// A target file that cannot be resolved is still checked, on the lexical path
 	// resolution hands back, and the reason is recorded rather than swallowed.
 	absFiles, _ := security.ResolveAllForCheck(cfg.files, logger)
-	// The hash directory is different: it is the root of trust, and a path that
-	// could not be resolved does not reliably name the tree the directory would
-	// end up in. Resolution rejects a ".." that sits in the not-yet-existing part
-	// of the path, for instance, and hands back the deepest existing ancestor --
-	// checking that would establish the permissions of one directory and then
-	// create the hash directory somewhere else entirely. So refuse instead.
+	// The hash directory is different: it is the root of trust, and an unresolvable
+	// path does not reliably name the tree it would end up in. Resolution rejects a
+	// ".." in the not-yet-existing part of the path, for instance, and hands back
+	// the deepest existing ancestor -- checking that would establish one
+	// directory's permissions and then create the hash directory somewhere else.
 	absHashDir, resolveErr := security.ResolvePathForCheck(cfg.hashDir)
 	if resolveErr != nil {
 		logger.Error("cannot resolve the hash directory for the permission check — refusing to record",
@@ -171,33 +165,22 @@ func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) (resolvedH
 }
 
 // checkHashDirWriteSafety reports whether hash records may be written under the
-// hash directory. It adds one rule the shared permission check does not have: a
-// world-writable directory is a violation here even when the sticky bit is set.
+// hash directory. It refuses a world-writable directory even when the sticky bit
+// is set, which the shared permission check allows.
 //
-// The shared check accepts a sticky world-writable directory such as /tmp.
-// That is right for an entry which is already in it — the sticky bit stops
-// anyone but the owner from deleting or renaming it — and wrong for any name
-// nobody has claimed yet, which the sticky bit says nothing about. Both of the
-// names this command is about to claim fall in the second group:
+// The sticky bit stops anyone but the owner from removing an entry already in
+// the directory; it says nothing about a name nobody has claimed yet. Both names
+// this command is about to claim are of that kind: the hash directory itself,
+// which an attacker can pre-create as a symlink for os.MkdirAll to follow, and
+// every hash record for a file record has not processed, which an attacker can
+// pre-plant for verify to trust. So neither the directory nor its creation site
+// may be world-writable.
 //
-//   - the hash directory itself, when it does not exist yet. Between the check
-//     passing and os.MkdirAll running, anyone able to write to the creation site
-//     could create that name as a symlink into a tree they own, and MkdirAll
-//     would follow it.
-//   - the hash record files inside it, always. A hash record for a file record
-//     has not processed yet is a name nobody has claimed, so anyone able to
-//     write to the hash directory can pre-plant one and have verify trust it.
-//
-// So neither the hash directory nor its creation site may be world-writable,
-// sticky bit or not. The rule lives in record rather than in
-// security.ValidateDirectoryPermissions because it depends on record being about
-// to write names that do not exist yet, which the shared check knows nothing
-// about. Users who need a hash directory under a world-writable parent create it
-// themselves beforehand with a mode only they can write.
-//
-// Anything that leaves the directory or its creation site unknown (an unreadable
-// ancestor, a path that never became absolute) is a violation too: this runs
-// immediately before a write to a place whose safety could not be established.
+// The rule lives in record rather than in security.ValidateDirectoryPermissions
+// because it depends on record being about to write those names, which the
+// shared check knows nothing about. A directory or creation site whose safety
+// cannot be established at all is refused for the same reason: this runs
+// immediately before the write.
 func checkHashDirWriteSafety(absHashDir string, logger *slog.Logger, stderr io.Writer) bool {
 	// #nosec G703 -- the path comes from this command's own -hash-dir argument, and
 	// inspecting it is the point: nothing is opened or written here.
@@ -216,10 +199,9 @@ func checkHashDirWriteSafety(absHashDir string, logger *slog.Logger, stderr io.W
 	return checkHashDirCreationSite(absHashDir, logger, stderr)
 }
 
-// checkExistingHashDirMode applies the world-writable rule to a hash directory
-// that already exists. The shared check has established that it is a directory
-// with a permitted owner; what it let through, and what is refused here, is the
-// sticky world-writable case.
+// checkExistingHashDirMode is the already-exists half of the rule above. The
+// shared check has established that this is a directory with a permitted owner,
+// so the sticky world-writable case is all that is left to refuse.
 func checkExistingHashDirMode(absHashDir string, info os.FileInfo, logger *slog.Logger, stderr io.Writer) bool {
 	if info.Mode().Perm()&0o002 == 0 {
 		return true
@@ -234,8 +216,8 @@ func checkExistingHashDirMode(absHashDir string, info os.FileInfo, logger *slog.
 	return false
 }
 
-// checkHashDirCreationSite applies the world-writable rule to the directory the
-// hash directory would be created in, for the case where it does not exist yet.
+// checkHashDirCreationSite is the not-yet-created half of the rule above,
+// applied to the directory the hash directory would be created in.
 func checkHashDirCreationSite(absHashDir string, logger *slog.Logger, stderr io.Writer) bool {
 	site, err := security.DeepestExistingAncestor(absHashDir)
 	if err != nil {
@@ -313,19 +295,14 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	if !ok {
 		return 1
 	}
-	// From here on the hash directory is the path the check was performed on, so
-	// that what gets created -- and everything built underneath it below -- is
-	// what was established to be safe, rather than a path that merely resolves to
-	// it today.
+	// Everything below uses the checked path, not the command-line one; see
+	// checkDirPermissions.
 	cfg.hashDir = resolvedHashDir
 
-	// Nothing above this line writes to the filesystem: the hash directory is the
-	// root of trust, so it is created only once the permission check has passed.
-	// It must also be created here, before anything below it, because everything
-	// that follows -- the libc caches, the dynamic analysis store, and
-	// validatorFactory by way of filevalidator.New -- reaches the hash directory
-	// through os.MkdirAll on a path underneath it, and would otherwise create it
-	// with their own, wider mode.
+	// The first write of the run, and it must stay first: the libc caches, the
+	// dynamic analysis store, and validatorFactory by way of filevalidator.New all
+	// reach the hash directory through os.MkdirAll on a path underneath it, and
+	// would otherwise create it with their own, wider mode.
 	if err := d.mkdirAll(cfg.hashDir, fileanalysis.HashDirPerm); err != nil {
 		fmt.Fprintf(stderr, "Error: %v\n", fmt.Errorf("%w: %w", errEnsureHashDir, err)) //nolint:errcheck
 		return 1
@@ -342,7 +319,6 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	}
 
 	// Inject MachoLibSystemAdapter for Mach-O libSystem import-symbol matching.
-	// It shares the libc cache directory computed above.
 	machoCacheMgr, machoCacheErr := libccache.NewMachoLibSystemCacheManager(cacheDir)
 	if machoCacheErr != nil {
 		fmt.Fprintf(stderr, "Error: Failed to initialize machoLibSystem cache: %v\n", machoCacheErr) //nolint:errcheck
