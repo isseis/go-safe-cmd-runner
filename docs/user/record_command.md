@@ -225,9 +225,9 @@ sudo record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 
 **When the user who runs record differs from the user who runs runner (split-role deployment)**
 
-The 0700 above assumes that the administrator who runs record also runs runner. In a configuration where the administrator records hashes with record and **a different, less privileged user runs runner**, runner will not work with this setting.
+The 0700 above assumes that the administrator who runs record also runs runner. In a configuration where the administrator records hashes with record and a different, less privileged user runs runner, runner will not work with this setting.
 
-Immediately after startup, runner drops its effective UID to the real UID of the user running it, and performs all subsequent hash verification with that user's permissions. Therefore **the user who runs runner must be able to read the hash directory and hash files**. With root ownership and 0700 left as is, they cannot be read and every verification fails.
+Immediately after startup, runner drops its effective UID to the real UID of the user running it, and performs all subsequent hash verification with that user's permissions. Therefore the user who runs runner must be able to read the hash directory and hash files. With root ownership and 0700 left as is, they cannot be read and every verification fails.
 
 For this configuration, create a group that includes the users who run runner, and grant read permission to that group.
 
@@ -241,11 +241,11 @@ sudo chgrp gscr-runners /usr/local/etc/go-safe-cmd-runner/hashes
 sudo chmod 750 /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
-This 0750 passes the startup permission check. What the check rejects are settings that permit **writing** (world-writable without a sticky bit, and group-writable for a group not determined to be safe); it does not reject granting **read** permission to a group.
+This 0750 passes the startup permission check. What the check rejects are settings that permit writing (world-writable without a sticky bit, and group-writable for a group not determined to be safe); it does not reject granting read permission to a group.
 
-Do not grant **write** permission to the group (`chmod 770` and the like). Writing to the hash DB is tampering itself. The permission check rejects granting write permission to a group that has members other than the owner (a split-role deployment's group is exactly this, so setting `770` makes runner stop at startup).
+Do not grant write permission to the group (`chmod 770` and the like). Writing to the hash DB is tampering itself. The permission check rejects granting write permission to a group that has members other than the owner (a split-role deployment's group is exactly this, so setting `770` makes runner stop at startup).
 
-Note also that what you change is not the owner but the **group**. Making the user who runs runner the owner would let that user rewrite the hashes themselves, defeating the purpose of the split.
+Note also that what you change is not the owner but the group. Making the user who runs runner the owner would let that user rewrite the hashes themselves, defeating the purpose of the split.
 
 ### 3.3 `-force` (Optional)
 
@@ -552,7 +552,7 @@ Record is the root of trust for hash-based file integrity verification. The hash
 - **Ensure the hash directory and all of its parent directories have secure permissions** (owner-only write access, no group or world writability). Record enforces this on every run — if it detects a non-sticky world-writable or unsafe group-writable directory in the hash directory's ancestor chain, it will refuse to generate hashes (fail closed, non-zero exit).
 - **Do not run record in untrusted directories** (e.g., `/tmp`, shared volumes accessible to non-administrators).
 - **There is no bypass flag for permission violations.** The `--force` flag only controls overwriting of existing hash files, not security checks.
-- **If you are upgrading from a deployment with `0o750` hash directories:** `os.MkdirAll` does not change permissions of existing directories. Manually correct existing hash directories with `chmod 0700 <hash-dir>`. **However, do not tighten them in a split-role deployment where the user who runs record differs from the user who runs runner (see §3.2).** In that configuration the user who runs runner would no longer be able to read the hashes, and every verification would fail. Leave them at 0750, and confirm that the group is the group of the users who run runner and that the group has no write permission.
+- **If you are upgrading from a deployment with `0o750` hash directories:** `os.MkdirAll` does not change permissions of existing directories. Manually correct existing hash directories with `chmod 0700 <hash-dir>`. However, do not tighten them in a split-role deployment where the user who runs record differs from the user who runs runner (see §3.2). In that configuration the user who runs runner would no longer be able to read the hashes, and every verification would fail. Leave them at 0750, and confirm that the group is the group of the users who run runner and that the group has no write permission.
 
 ## 5. Troubleshooting
 

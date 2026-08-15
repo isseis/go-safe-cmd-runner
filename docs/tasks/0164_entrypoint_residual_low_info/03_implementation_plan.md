@@ -342,7 +342,7 @@ func getwd() (string, error) { return getwdHook() }
 
 **変更ファイル**: `internal/cmdcommon/common.go`、`internal/cmdcommon/common_test.go`
 
-- [x] **`NewDirectoryPermChecker` のラッパーは置かない**（02_architecture.md §3.3）。委譲先とシグネチャが同一のため、注入口の既定値には `security.NewDirectoryPermChecker` をそのまま代入でき、ラッパーは何も束ねない。重複しているのは生成の呼び出しではなく panic ブロックであり、その解消はステップ 2-2・3-2・4-2 が行う。
+- [x] `NewDirectoryPermChecker` のラッパーは置かない（02_architecture.md §3.3）。委譲先とシグネチャが同一のため、注入口の既定値には `security.NewDirectoryPermChecker` をそのまま代入でき、ラッパーは何も束ねない。重複しているのは生成の呼び出しではなく panic ブロックであり、その解消はステップ 2-2・3-2・4-2 が行う。
 - [x] `CreateReadOnlyValidator(hashDir string) (*filevalidator.Validator, error)` を追加する。`filevalidator.NewReadOnly(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})` に委譲する。
 - [x] `TestCreateReadOnlyValidator_DoesNotCreateHashDirectory`: 存在しないハッシュディレクトリを渡しても、構築は成功し、親ディレクトリを `filepath.WalkDir` で走査した結果が実行前後で一致すること。走査ヘルパーは `internal/testutil` の `tu.WalkEntries` とする（ステップ 3-4 の `TestRunCreatesNoFilesystemEntries` が同じ比較を要するため、パッケージ内に置くと複製になる）。この比較は部分木の形（パスとモード）のみを見るもので、既存ファイルへの書き込みは検出しない。
 - [x] `TestCreateReadOnlyValidator_ExistingHashDirectoryHasNoDeferredError`: 実在するハッシュディレクトリでは `HashDirError()` が nil を返すこと（ステップ 1-4 で追加済み）。
@@ -358,7 +358,7 @@ func getwd() (string, error) { return getwdHook() }
 - [x] `dirPermission = 0o750` を `HashDirPerm os.FileMode = 0o700` として公開する（18-19 行）。付随するコメントを、02_architecture.md §3.5 の理由（所有者以外に内容を見せる必要がない）に沿った英文へ書き換える。
 - [x] 32 行目の doc コメント `If analysisDir does not exist, it will be created with mode 0o750.` を `... with mode HashDirPerm (0o700).` に変える。
 - [x] 48 行目の `os.MkdirAll(analysisDir, dirPermission)` を `HashDirPerm` に変える。
-- [x] 既存の `TestNewStore_CreatesDirectory` に、作られたディレクトリの `os.Stat` の `Mode().Perm()` が `0o700` であるという表明を足す。中間ディレクトリ（`MkdirAll` が途中で作るもの）についても同じ表明を置く。比較対象は `HashDirPerm` ではなく `0o700` リテラルとする（定数が自分自身と等しいことを確かめても何も検証したことにならないため）。所有者ビットは umask に削られないため、この表明は通常の umask 設定（022・027・077）で成立する。**専用のテスト関数を別に立てない**: 同じ一時ディレクトリ・同じパスリテラル・同じ事前確認を繰り返し、最後の表明だけが異なる複製になるため。
+- [x] 既存の `TestNewStore_CreatesDirectory` に、作られたディレクトリの `os.Stat` の `Mode().Perm()` が `0o700` であるという表明を足す。中間ディレクトリ（`MkdirAll` が途中で作るもの）についても同じ表明を置く。比較対象は `HashDirPerm` ではなく `0o700` リテラルとする（定数が自分自身と等しいことを確かめても何も検証したことにならないため）。所有者ビットは umask に削られないため、この表明は通常の umask 設定（022・027・077）で成立する。専用のテスト関数を別に立てない: 同じ一時ディレクトリ・同じパスリテラル・同じ事前確認を繰り返し、最後の表明だけが異なる複製になるため。
 
 **完了条件**: `go test -tags test ./internal/fileanalysis/...` が通る。
 

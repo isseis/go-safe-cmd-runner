@@ -35,7 +35,7 @@
 | 原則 | 本設計での現れ方 |
 |---|---|
 | 検証の前に書き込まない | ハッシュディレクトリの作成は、TOCTOU 権限チェックを通過した後にのみ行う（F-002）。`verify` は読み取り専用に徹する（F-003） |
-| DRY | パス解決、除外判定、権限チェッカ生成を共有処理に集約し、3コマンドの重複を消す（F-001・F-004・F-006） |
+| DRY | パス解決と除外判定を共有処理に集約し、3コマンドの重複を消す（F-001・F-004）。権限チェッカ初期化失敗の panic は、各コマンドのエラー報告経路へ置き換える（F-006・§3.3） |
 | 宣言し、推測しない | チェック対象から除外する理由を列挙型で表し、除外の判定を1箇所に持つ（§3.2） |
 | 拒否し、丸めない | `verify` はハッシュディレクトリが存在しなければ作成せずエラーにする（F-003） |
 | 沈黙しない | 解決失敗と除外は、件数としてログに残る（F-001・F-004） |
@@ -136,7 +136,6 @@ flowchart LR
     VERIFY --> SEC
     VERIFY --> CMDCOMMON
     RUNNERPKG --> SEC
-    CMDCOMMON --> SEC
     CMDCOMMON --> FILEVALIDATOR
     FILEVALIDATOR --> FILEANALYSIS
 
@@ -159,7 +158,7 @@ flowchart LR
 配置の理由は次のとおり。
 
 - **パス解決と除外判定は `internal/security`**。同パッケージには既に `ResolveAbsPathForTOCTOU`・`CollectTOCTOUCheckDirs`・`RunTOCTOUPermissionCheck` があり、解決と除外はその前段にあたる同じ関心事である。`internal/cmdcommon` に置くこともできる（`internal/verification` が既に `cmdcommon` を import しており、依存の循環は生じない）が、`cmdcommon` は3つの CLI コマンドのための層であり、`internal/runner`（グループ実行時の権限チェック）からそこへ依存させると層の向きが逆流する。
-- **権限チェッカの生成は `internal/cmdcommon`**。3つのエントリポイントだけが持つ重複であり、`internal/security` に置くとチェッカの実装パッケージが自分自身の生成方針を抱えることになる。
+- 権限チェッカの生成は `internal/security` のまま動かさない。3コマンドが共有すべきものは生成関数そのものであり、それは既に同パッケージに1つだけある。`internal/cmdcommon` に委譲だけのラッパーを置いても何も束ねられない（§3.3）。
 - **ハッシュディレクトリの期待パーミッション定数は `internal/fileanalysis`**。同パッケージの `NewStore` がこのディレクトリを実際に作成する（`os.MkdirAll`）ため、定数は作成処理と同じ場所に置く。`cmd/record` から `internal/fileanalysis` への import は循環しない（`fileanalysis` は `internal/common` と `internal/safefileio` にのみ依存する）。
 
 ### 2.2 変更前後の対比（パス解決）
@@ -372,11 +371,11 @@ func HasVariableReference(input string) bool
 
 `record`・`verify` はこの判定を使わない。これらのパスは利用者がコマンドラインで与えたものであり、作業ディレクトリ基準の絶対化に意味があるためである。
 
-### 3.3 権限チェッカ生成の共通化（F-006）
+### 3.3 権限チェッカ初期化失敗のエラー化（F-006）
 
-3コマンドは `security.NewDirectoryPermChecker()` の失敗時に、同一のコメントと同一の panic を持っている。**重複しているのはこの panic ブロックであって、生成の呼び出しそのものではない**。生成関数は `internal/security` に既に1つしかなく、3コマンドはそれを呼んでいるだけである。
+3コマンドは `security.NewDirectoryPermChecker()` の失敗時に、同一のコメントと同一の panic を持っている。重複しているのはこの panic ブロックであって、生成の呼び出しそのものではない。生成関数は `internal/security` に既に1つしかなく、3コマンドはそれを呼んでいるだけである。
 
-したがって解消の方向は、生成を包む新しいヘルパーを足すことではなく、**panic を各コマンドのエラー報告経路へ置き換えること**である（ステップ 2-2・3-2・4-2）。置き換え後に残る処理は、`runner` なら起動前エラーとして機械可読サマリ行を出す、`record`・`verify` なら標準エラー出力へ出して固有の終了コードで終わる、という**コマンドごとに異なる**ものになる。ここは共通化の対象ではない。
+したがって解消の方向は、生成を包む新しいヘルパーを足すことではなく、panic を各コマンドのエラー報告経路へ置き換えることである（ステップ 2-2・3-2・4-2）。置き換え後に残る処理は、`runner` なら起動前エラーとして機械可読サマリ行を出す、`record`・`verify` なら標準エラー出力へ出して固有の終了コードで終わる、というコマンドごとに異なるものになる。ここは共通化の対象ではない。
 
 `internal/cmdcommon` に委譲だけのラッパー（`func NewDirectoryPermChecker() (security.DirectoryPermChecker, error) { return security.NewDirectoryPermChecker() }`）を置く案は採らない。シグネチャが委譲先と同一であるため、注入口の既定値には `security.NewDirectoryPermChecker` をそのまま代入でき、ラッパーは何も束ねない。置いた場合に増えるのは `cmdcommon → security` の import 辺と、読む者が「ここで何かが足されている」と探す手間だけである（YAGNI）。
 
@@ -459,7 +458,7 @@ type hashValidator interface {
 
 `record` の実行者と `runner` の実行者が異なる構成（管理者が記録し、より権限を限ったユーザーが実行する）では、`runner` 実行者がハッシュを読める必要がある。`runner` は起動直後に実効 UID を実 UID へ降格し（`cmd/runner/main.go`）、以後のハッシュ照合はそのユーザーの権限で行うためである。
 
-この構成を `0o700` は塞がない。**`HashDirPerm` が決めるのは新規作成時の値だけで、その後の権限を強制しないためである。** 権限チェッカ（`internal/security/dir_permissions_unix.go`）が拒否するのは書き込みビットのみ（sticky 無しの world-writable、および trusted group 以外への group-writable）であり、グループへの読み取り許可は拒否しない。したがって `chgrp` + `0o750` は起動時チェックを通る。
+この構成を `0o700` は塞がない。`HashDirPerm` が決めるのは新規作成時の値だけで、その後の権限を強制しないためである。権限チェッカ（`internal/security/dir_permissions_unix.go`）が拒否するのは書き込みビットのみ（sticky 無しの world-writable、および trusted group 以外への group-writable）であり、グループへの読み取り許可は拒否しない。したがって `chgrp` + `0o750` は起動時チェックを通る。
 
 `0o750` を既定にしても、この構成が自動的に成立するわけでもない。`record` は通常 sudo 実行であり、作られるディレクトリのグループは root になるため、グループを付け替える明示操作はどちらの既定値でも必要である。すなわち既定値の選択はこの構成の成否を決めない。決めるのは運用者の `chgrp` であり、その操作が「誰に読ませるか」の意思の記録になる。
 
