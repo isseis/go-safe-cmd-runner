@@ -8,7 +8,7 @@
 | Created | 2026-08-14 |
 | Review date | 2026-08-14 |
 | Reviewer | isseis |
-| Comments | 承認後の修正: PR レビューを受けて、権限チェッカの注入口を引数無しのファクトリに一本化した（§3.3・§3.4・§7）。さらに PR-2 のレビューを受けて、`cmdcommon.NewDirectoryPermChecker`（`security.NewDirectoryPermChecker` への委譲のみのラッパー）を設計から取り下げた。重複していたのは生成の呼び出しではなく panic ブロックであり、ラッパーは何も束ねていなかったため（§3.3）。**再レビュー対象**。 |
+| Comments | - |
 
 ## 関連文書
 
