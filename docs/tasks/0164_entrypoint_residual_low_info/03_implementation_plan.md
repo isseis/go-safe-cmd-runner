@@ -477,42 +477,44 @@ func getwd() (string, error) { return getwdHook() }
 
 **変更ファイル**: `cmd/verify/main.go`、`internal/cmdcommon/common.go`、`internal/cmdcommon/common_test.go`
 
-- [ ] 削除の前に `go test -tags test -coverprofile=/tmp/cmdcommon-before.out ./internal/cmdcommon/... && go tool cover -func=/tmp/cmdcommon-before.out` を実行し、結果を保存する。
-- [ ] `parseArgs` から `mkdirAll(dir, hashDirPermissions)`（221-223 行）を削除する。
-- [ ] `hashDirPermissions` 定数（19 行）を削除する。
-- [ ] `errEnsureHashDir`（38 行）を削除する。参照している `cmd/verify/main_test.go:176`（`TestParseArgsInvalidHashDir`）も、作成しなくなったことで存在意義が無くなるため削除する。ハッシュディレクトリが使えない場合の検証はステップ 3-5 の新規テストが引き継ぐ。
-- [ ] バリデータ生成を `cmdcommon.CreateReadOnlyValidator` に切り替える。
-- [ ] `internal/cmdcommon/common.go` から `CreateValidator` を削除する。
-- [ ] `internal/cmdcommon/common_test.go` の `TestCreateValidator_ValidHashDirectory` を削除する。
-- [ ] 同 `TestCreateValidator_DefaultHashDirectory` を削除する。
-- [ ] 同 `TestCreateValidator_NonExistentDirectory` を削除する（「自動作成される」ことを主張するテストであり、廃止する挙動そのものを固定している）。
-- [ ] 同 `TestCreateValidator_RelativePath` を削除する。
-- [ ] 同 `TestCreateValidator_EmptyPath` を削除する。
-- [ ] `TestCreateReadOnlyValidator_RelativePath` を追加して相対パスの観点を引き継ぐ。作業ディレクトリの移動には `t.Chdir`、ハッシュディレクトリには `t.TempDir` を使う（削除元のテストはパッケージのソースディレクトリ内に `./test_hashes` を作り `defer os.RemoveAll` していた。この形は panic 時に残骸を残すため引き継がない）。
-- [ ] `TestCreateReadOnlyValidator_EmptyPath` を追加して空パスの観点を引き継ぐ。
-- [ ] 削除後に同じ手順でカバレッジを取得（`/tmp/cmdcommon-after.out`）し、関数単位で低下していないことを確認する。低下した関数があれば補うテストを追加する。
-- [ ] `make deadcode` を実行し、`CreateReadOnlyValidator` への切り替えによって `internal/cmdcommon` に新たな未到達の公開シンボルが生じていないことを確認する。
+- [x] 削除の前に `go test -tags test -coverprofile=/tmp/cmdcommon-before.out ./internal/cmdcommon/... && go tool cover -func=/tmp/cmdcommon-before.out` を実行し、結果を保存する。
+- [x] `parseArgs` から `mkdirAll(dir, hashDirPermissions)`（221-223 行）を削除する。
+- [x] `hashDirPermissions` 定数（19 行）を削除する。
+- [x] `errEnsureHashDir`（38 行）を削除する。参照している `cmd/verify/main_test.go:176`（`TestParseArgsInvalidHashDir`）も、作成しなくなったことで存在意義が無くなるため削除する。ハッシュディレクトリが使えない場合の検証はステップ 3-5 の新規テストが引き継ぐ。
+- [x] バリデータ生成を `cmdcommon.CreateReadOnlyValidator` に切り替える。
+- [x] `internal/cmdcommon/common.go` から `CreateValidator` を削除する。
+- [x] `internal/cmdcommon/common_test.go` の `TestCreateValidator_ValidHashDirectory` を削除する。
+- [x] 同 `TestCreateValidator_DefaultHashDirectory` を削除する。
+- [x] 同 `TestCreateValidator_NonExistentDirectory` を削除する（「自動作成される」ことを主張するテストであり、廃止する挙動そのものを固定している）。
+- [x] 同 `TestCreateValidator_RelativePath` を削除する。
+- [x] 同 `TestCreateValidator_EmptyPath` を削除する。
+- [x] `TestCreateReadOnlyValidator_RelativePath` を追加して相対パスの観点を引き継ぐ。作業ディレクトリの移動には `t.Chdir`、ハッシュディレクトリには `t.TempDir` を使う（削除元のテストはパッケージのソースディレクトリ内に `./test_hashes` を作り `defer os.RemoveAll` していた。この形は panic 時に残骸を残すため引き継がない）。
+- [x] `TestCreateReadOnlyValidator_EmptyPath` を追加して空パスの観点を引き継ぐ。**実装時の確認**: 削除元の `TestCreateValidator_EmptyPath` は構築エラーを表明していたが、`NewReadOnly` では `os.Lstat("")` が `ENOENT` を返すため構築は成功し、`HashDirError()` が `ErrHashDirNotExist` を返す。空パスが使えないハッシュディレクトリとして報告されるという観点は同じなので、新テストはこの形で表明する。
+- [x] 削除後に同じ手順でカバレッジを取得（`/tmp/cmdcommon-after.out`）し、関数単位で低下していないことを確認する。低下した関数があれば補うテストを追加する。**確認結果**: 削除前後とも 100.0%（残る `CreateReadOnlyValidator` も 100.0%）。
+- [x] `make deadcode` を実行し、`CreateReadOnlyValidator` への切り替えによって `internal/cmdcommon` に新たな未到達の公開シンボルが生じていないことを確認する。
 
 #### ステップ 3-2: `verify` を `deps` 様式へ移行
 
 **変更ファイル**: `cmd/verify/main.go`
 
-- [ ] 02_architecture.md §3.4 の `deps` 構造体（`validatorFactory`・`newPermChecker`・`resolvePathForCheck`・`ensurePermissionCheckUID`）を定義し、`defaultDeps()` で既定値（`security.NewDirectoryPermChecker`・`security.ResolvePathForCheck`）を与える。
-- [ ] パッケージレベル変数 `validatorFactory`・`mkdirAll`・`ensurePermissionCheckUID`・`toctouChecker`（39-48 行）をすべて削除する。`toctouChecker` は `deps` のフィールドとしても復活させず、§1.4.4 の `newPermChecker` が唯一の差し替え口になる。`errNoFilesProvided` は不変の番兵エラーなので残す。
-- [ ] `run` と `checkDirPermissions` のシグネチャに `deps` を渡す。ステップ 3-4 で `checkDirPermissions` を2つに分けるときは、両方へ引き継ぐ。
-- [ ] `main()` を `os.Exit(run(os.Args[1:], defaultDeps(), os.Stdout, os.Stderr))` に変える。
-- [ ] `parseArgs` は `deps` を必要としなくなるため、`d` を渡さない（`record` の `parseArgs` は `mkdirAll` のために受け取っていたが、`verify` にはその必要が無い）。
+- [x] 02_architecture.md §3.4 の `deps` 構造体（`validatorFactory`・`newPermChecker`・`resolvePathForCheck`・`ensurePermissionCheckUID`）を定義し、`defaultDeps()` で既定値（`security.NewDirectoryPermChecker`・`security.ResolvePathForCheck`）を与える。
+- [x] パッケージレベル変数 `validatorFactory`・`mkdirAll`・`ensurePermissionCheckUID`・`toctouChecker`（39-48 行）をすべて削除する。`toctouChecker` は `deps` のフィールドとしても復活させず、§1.4.4 の `newPermChecker` が唯一の差し替え口になる。`errNoFilesProvided` は不変の番兵エラーなので残す。
+- [x] `run` と `checkDirPermissions` のシグネチャに `deps` を渡す。ステップ 3-4 で `checkDirPermissions` を2つに分けるときは、両方へ引き継ぐ。
+- [x] `main()` を `os.Exit(run(os.Args[1:], defaultDeps(), os.Stdout, os.Stderr))` に変える。
+- [x] `parseArgs` は `deps` を必要としなくなるため、`d` を渡さない（`record` の `parseArgs` は `mkdirAll` のために受け取っていたが、`verify` にはその必要が無い）。
 
 #### ステップ 3-3: `verify` のテストを `deps` 経由へ移す
 
 **変更ファイル**: `cmd/verify/main_test.go`
 
-- [ ] ファイル冒頭の「パッケージレベル変数を差し替えるので `t.Parallel()` を呼んではならない」旨のコメントを、`slog` の既定ロガーのみが対象である旨に書き換える。
-- [ ] `overrideValidatorFactory` と `overrideTOCTOUChecker` を削除し、`deps` を組み立てるヘルパー `testDeps(...)` に置き換える（`cmd/record/main_test.go` の `testRunDeps` と同じ形）。
-- [ ] 既存 15 テスト（`TestRunRequiresAtLeastOneFile`・`TestRunProcessesMultipleFiles`・`TestRunReportsFailuresAndContinues`・`TestRunWarnsWhenDeprecatedFlagUsed`・`TestRunUsesDefaultHashDirectoryWhenNotSpecified`・`TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates`・`TestRunFailsClosedOnHashDirViolation_ExplicitHashDir`・`TestRunProceedsWithRealCheckerOnCleanDirs`・`TestRunFailsClosedOnHashDirViolation_AncestorViolation`・`TestRunFailsClosedOnHashDirViolation_DefaultHashDir`・`TestRunFailsClosedOnHashDirViolation_LogsErrorLevel`・`TestRunSkipsTargetSetCheckWhenHashDirViolates`・`TestRunFailsClosedWhenPermissionCheckUIDUnresolvable`・`TestVerifyDeclaresSudoUIDAwarePolicy`）を `deps` 経由に書き換える。`TestParseArgsInvalidHashDir` はステップ 3-1 で削除する。
-- [ ] `TestRunCreatesNoFilesystemEntries` を追加する（AC-14）。ハッシュディレクトリの**親を起点に `filepath.WalkDir` でパスとモードの集合を実行前後で取得し、完全に一致すること**を検証する。親の直下だけを見る方式では、既存のハッシュディレクトリの内部に作られた残骸を見落とすため使わない。存在するハッシュディレクトリを指定した場合と不在の場合の両方を対象にする。
+- [x] ファイル冒頭の「パッケージレベル変数を差し替えるので `t.Parallel()` を呼んではならない」旨のコメントを、`slog` の既定ロガーのみが対象である旨に書き換える。
+- [x] `overrideValidatorFactory` と `overrideTOCTOUChecker` を削除し、`deps` を組み立てるヘルパー `testDeps(...)` に置き換える（`cmd/record/main_test.go` の `testRunDeps` と同じ形）。
+- [x] 既存 15 テスト（`TestRunRequiresAtLeastOneFile`・`TestRunProcessesMultipleFiles`・`TestRunReportsFailuresAndContinues`・`TestRunWarnsWhenDeprecatedFlagUsed`・`TestRunUsesDefaultHashDirectoryWhenNotSpecified`・`TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates`・`TestRunFailsClosedOnHashDirViolation_ExplicitHashDir`・`TestRunProceedsWithRealCheckerOnCleanDirs`・`TestRunFailsClosedOnHashDirViolation_AncestorViolation`・`TestRunFailsClosedOnHashDirViolation_DefaultHashDir`・`TestRunFailsClosedOnHashDirViolation_LogsErrorLevel`・`TestRunSkipsTargetSetCheckWhenHashDirViolates`・`TestRunFailsClosedWhenPermissionCheckUIDUnresolvable`・`TestVerifyDeclaresSudoUIDAwarePolicy`）を `deps` 経由に書き換える。`TestParseArgsInvalidHashDir` はステップ 3-1 で削除する。
+- [x] `TestRunCreatesNoFilesystemEntries` を追加する（AC-14）。ハッシュディレクトリの**親を起点に `filepath.WalkDir` でパスとモードの集合を実行前後で取得し、完全に一致すること**を検証する。親の直下だけを見る方式では、既存のハッシュディレクトリの内部に作られた残骸を見落とすため使わない。存在するハッシュディレクトリを指定した場合と不在の場合の両方を対象にする。
 
 **完了条件**: 書き換え前後で `go test -tags test -coverprofile=... ./cmd/verify/... && go tool cover -func=...` を比較し、関数単位で低下がないこと（§5 のリスク表）。この比較は挙動が変わらないこの段階でのみ意味を持つ。
+
+**確認結果**: 未到達ブロックは書き換え前 11 件から 9 件へ減り、増えた関数は無い。`parseArgs` の百分率だけが 90.5% → 89.5% と動くが、これは削除した `mkdirAll` 呼び出しの2文（いずれも到達済み）が母数から抜けたためで、未到達ブロックは3件のまま変わらない。`checkDirPermissions` は `EvalSymlinks` 失敗分岐と `validatorFactory` 既定値が `TestRunCreatesNoFilesystemEntries` により到達し、91.7% → 93.9% に上がった。
 
 ### PR-4 作成ポイント: verify read-only migration and deps wiring
 

@@ -1,7 +1,7 @@
-// Tests in this file replace package-level variables (validatorFactory,
-// mkdirAll, ensurePermissionCheckUID, toctouChecker) and the slog default
-// logger, all of which are process-wide state. None of them may call
-// t.Parallel().
+// Dependencies are injected per call through deps, so tests do not touch
+// process-wide state for those. The slog default logger is the exception: it is
+// process-wide, and tests that capture it (captureLogs) or assert on what was
+// logged must not call t.Parallel().
 package main
 
 import (
@@ -40,16 +40,22 @@ func (f *fakeValidator) Verify(filePath string) error {
 	return nil
 }
 
-func overrideValidatorFactory(t *testing.T, validator *fakeValidator) func() {
-	t.Helper()
-	originalFactory := validatorFactory
-	validatorFactory = func(hashDir string) (hashValidator, error) {
+// testDeps returns the production dependencies with validator installed in place
+// of the real one, recording the hash directory it was asked to build for. Tests
+// needing a stub permission checker overwrite newPermChecker on the result.
+func testDeps(validator *fakeValidator) deps {
+	d := defaultDeps()
+	d.validatorFactory = func(hashDir string) (hashValidator, error) {
 		validator.hashDir = hashDir
 		return validator, nil
 	}
-	return func() {
-		validatorFactory = originalFactory
-	}
+	return d
+}
+
+// fixedPermChecker adapts a ready-made checker to the constructor seam deps
+// exposes, so that tests inject through the same field production uses.
+func fixedPermChecker(checker security.DirectoryPermChecker) func() (security.DirectoryPermChecker, error) {
+	return func() (security.DirectoryPermChecker, error) { return checker, nil }
 }
 
 // fakeDirPermChecker implements security.DirectoryPermChecker for testing.
@@ -62,15 +68,6 @@ type fakeDirPermChecker struct {
 
 func (f *fakeDirPermChecker) ValidateDirectoryPermissions(path string) error {
 	return f.validateDirFn(path)
-}
-
-// overrideTOCTOUChecker installs checker as the directory permission checker for
-// the duration of the test, restoring the previous value afterwards.
-func overrideTOCTOUChecker(t *testing.T, checker security.DirectoryPermChecker) {
-	t.Helper()
-	original := toctouChecker
-	toctouChecker = checker
-	t.Cleanup(func() { toctouChecker = original })
 }
 
 // allowAllDirs returns a checker that reports no violation for any directory, so
@@ -95,23 +92,22 @@ func TestRunRequiresAtLeastOneFile(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{}, stdout, stderr)
+	exitCode := run([]string{}, defaultDeps(), stdout, stderr)
 
 	require.Equal(t, 1, exitCode)
 	assert.Contains(t, stderr.String(), "at least one file path")
 }
 
 func TestRunProcessesMultipleFiles(t *testing.T) {
-	overrideTOCTOUChecker(t, allowAllDirs())
 	tempDir := t.TempDir()
 	validator := &fakeValidator{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, validator)
-	defer cleanup()
+	d := testDeps(validator)
+	d.newPermChecker = fixedPermChecker(allowAllDirs())
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-d", tempDir, "file1.txt", "file2.txt"}, stdout, stderr)
+	exitCode := run([]string{"-d", tempDir, "file1.txt", "file2.txt"}, d, stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 	assert.Equal(t, tempDir, validator.hashDir)
@@ -123,18 +119,17 @@ func TestRunProcessesMultipleFiles(t *testing.T) {
 }
 
 func TestRunReportsFailuresAndContinues(t *testing.T) {
-	overrideTOCTOUChecker(t, allowAllDirs())
 	tempDir := t.TempDir()
 	validator := &fakeValidator{responses: map[string]error{
 		"bad.txt": errors.New("hash mismatch"),
 	}}
-	cleanup := overrideValidatorFactory(t, validator)
-	defer cleanup()
+	d := testDeps(validator)
+	d.newPermChecker = fixedPermChecker(allowAllDirs())
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-hash-dir", tempDir, "good.txt", "bad.txt", "later.txt"}, stdout, stderr)
+	exitCode := run([]string{"-hash-dir", tempDir, "good.txt", "bad.txt", "later.txt"}, d, stdout, stderr)
 
 	require.Equal(t, 1, exitCode)
 	require.Len(t, validator.calls, 3)
@@ -144,16 +139,15 @@ func TestRunReportsFailuresAndContinues(t *testing.T) {
 }
 
 func TestRunWarnsWhenDeprecatedFlagUsed(t *testing.T) {
-	overrideTOCTOUChecker(t, allowAllDirs())
 	tempDir := t.TempDir()
 	validator := &fakeValidator{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, validator)
-	defer cleanup()
+	d := testDeps(validator)
+	d.newPermChecker = fixedPermChecker(allowAllDirs())
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-hash-dir", tempDir, "-file", "legacy.txt", "new.txt"}, stdout, stderr)
+	exitCode := run([]string{"-hash-dir", tempDir, "-file", "legacy.txt", "new.txt"}, d, stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 	require.Len(t, validator.calls, 2)
@@ -161,38 +155,15 @@ func TestRunWarnsWhenDeprecatedFlagUsed(t *testing.T) {
 	assert.Contains(t, stderr.String(), "deprecated")
 }
 
-func TestParseArgsInvalidHashDir(t *testing.T) {
-	tempDir := t.TempDir()
-	noWriteDir := filepath.Join(tempDir, "no_write")
-	require.NoError(t, os.Mkdir(noWriteDir, 0o400))
-	defer os.Chmod(noWriteDir, 0o755)
-
-	invalidHashDir := filepath.Join(noWriteDir, "hashes")
-
-	cfg, _, err := parseArgs([]string{"-hash-dir", invalidHashDir, "file.txt"}, bytes.NewBuffer(nil))
-
-	assert.Nil(t, cfg)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, errEnsureHashDir)
-}
-
 func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
-	overrideTOCTOUChecker(t, allowAllDirs())
 	validator := &fakeValidator{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, validator)
-	defer cleanup()
-
-	// Override mkdirAll to avoid permission issues in CI
-	originalMkdirAll := mkdirAll
-	mkdirAll = func(_ string, _ os.FileMode) error {
-		return nil
-	}
-	defer func() { mkdirAll = originalMkdirAll }()
+	d := testDeps(validator)
+	d.newPermChecker = fixedPermChecker(allowAllDirs())
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"file1.txt"}, stdout, stderr)
+	exitCode := run([]string{"file1.txt"}, d, stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 	assert.Equal(t, cmdcommon.DefaultHashDirectory, validator.hashDir)
@@ -219,25 +190,24 @@ func TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates(t *testing.T) {
 	require.NoError(t, err)
 
 	hashDir := tu.SafeTempDir(t)
+
+	validator := &fakeValidator{responses: map[string]error{}}
+	d := testDeps(validator)
 	// Report a violation only for the target file's own parent directory. The
 	// hash directory and every ancestor stay clean regardless of how the host's
 	// filesystem is configured.
-	overrideTOCTOUChecker(t, &fakeDirPermChecker{validateDirFn: func(path string) error {
+	d.newPermChecker = fixedPermChecker(&fakeDirPermChecker{validateDirFn: func(path string) error {
 		if path == worldWritableDir {
 			return fmt.Errorf("%w: directory %s is writable by others", security.ErrInvalidDirPermissions, path)
 		}
 		return nil
 	}})
 
-	validator := &fakeValidator{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, validator)
-	defer cleanup()
-
 	logs := captureLogs(t)
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, stdout, stderr)
+	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, d, stdout, stderr)
 
 	assert.Equal(t, exitOK, exitCode, "verify should continue (exit 0) despite world-writable target directory")
 	assert.NotEqual(t, exitUntrustedEnvironment, exitCode, "a target-side violation must not be fail-closed")
@@ -252,10 +222,6 @@ func TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates(t *testing.T) {
 // world-writable itself, so the assertion does not depend on the permissions of
 // any pre-existing host directory.
 func TestRunFailsClosedOnHashDirViolation_ExplicitHashDir(t *testing.T) {
-	// Stated explicitly rather than relying on no other test having leaked a
-	// stub: this test is only meaningful against the real checker.
-	overrideTOCTOUChecker(t, nil)
-
 	hashDir := tu.SafeTempDir(t)
 	require.NoError(t, os.Chmod(hashDir, 0o777))
 	t.Cleanup(func() {
@@ -263,13 +229,13 @@ func TestRunFailsClosedOnHashDirViolation_ExplicitHashDir(t *testing.T) {
 	})
 
 	validator := &fakeValidator{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, validator)
-	defer cleanup()
+	// The real checker, from defaultDeps: this test is only meaningful against it.
+	d := testDeps(validator)
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, stdout, stderr)
+	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, d, stdout, stderr)
 
 	require.Equal(t, exitUntrustedEnvironment, exitCode)
 	assert.Empty(t, validator.calls, "no file must be verified once the hash directory cannot be trusted")
@@ -286,22 +252,19 @@ func TestRunFailsClosedOnHashDirViolation_ExplicitHashDir(t *testing.T) {
 // exit 3 with nothing verified, and the suite would stay green. Both directories
 // are created by this test, so it does not depend on the host's layout.
 func TestRunProceedsWithRealCheckerOnCleanDirs(t *testing.T) {
-	overrideTOCTOUChecker(t, nil)
-
 	hashDir := tu.SafeTempDir(t)
 	targetDir := tu.SafeTempDir(t)
 	targetFile := filepath.Join(targetDir, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
 
 	validator := &fakeValidator{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, validator)
-	defer cleanup()
+	d := testDeps(validator)
 
 	logs := captureLogs(t)
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, stdout, stderr)
+	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, d, stdout, stderr)
 
 	require.Equal(t, exitOK, exitCode, "logs: %s", logs.String())
 	require.Len(t, validator.calls, 1)
@@ -316,8 +279,6 @@ func TestRunProceedsWithRealCheckerOnCleanDirs(t *testing.T) {
 // remediation points at the directory named in the violation rather than at the
 // checked path, which would send the operator to chmod a correct directory.
 func TestRunFailsClosedOnHashDirViolation_AncestorViolation(t *testing.T) {
-	overrideTOCTOUChecker(t, nil)
-
 	badAncestor := tu.SafeTempDir(t)
 	hashDir := filepath.Join(badAncestor, "a", "b", "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o755))
@@ -327,14 +288,13 @@ func TestRunFailsClosedOnHashDirViolation_AncestorViolation(t *testing.T) {
 	})
 
 	validator := &fakeValidator{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, validator)
-	defer cleanup()
+	d := testDeps(validator)
 
 	logs := captureLogs(t)
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, stdout, stderr)
+	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, d, stdout, stderr)
 
 	require.Equal(t, exitUntrustedEnvironment, exitCode)
 	assert.Empty(t, validator.calls)
@@ -361,22 +321,16 @@ func TestRunFailsClosedOnHashDirViolation_AncestorViolation(t *testing.T) {
 // fail-closed decision is reached when the hash directory comes from the default
 // rather than from -hash-dir.
 func TestRunFailsClosedOnHashDirViolation_DefaultHashDir(t *testing.T) {
-	overrideTOCTOUChecker(t, &fakeDirPermChecker{validateDirFn: func(path string) error {
+	validator := &fakeValidator{responses: map[string]error{}}
+	d := testDeps(validator)
+	d.newPermChecker = fixedPermChecker(&fakeDirPermChecker{validateDirFn: func(path string) error {
 		return fmt.Errorf("%w: directory %s is writable by others", security.ErrInvalidDirPermissions, path)
 	}})
-
-	validator := &fakeValidator{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, validator)
-	defer cleanup()
-
-	originalMkdirAll := mkdirAll
-	mkdirAll = func(string, os.FileMode) error { return nil }
-	t.Cleanup(func() { mkdirAll = originalMkdirAll })
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"file1.txt"}, stdout, stderr)
+	exitCode := run([]string{"file1.txt"}, d, stdout, stderr)
 
 	require.Equal(t, exitUntrustedEnvironment, exitCode)
 	assert.Empty(t, validator.calls, "no file must be verified once the hash directory cannot be trusted")
@@ -388,22 +342,21 @@ func TestRunFailsClosedOnHashDirViolation_DefaultHashDir(t *testing.T) {
 // emits.
 func TestRunFailsClosedOnHashDirViolation_LogsErrorLevel(t *testing.T) {
 	hashDir := tu.SafeTempDir(t)
-	overrideTOCTOUChecker(t, &fakeDirPermChecker{validateDirFn: func(path string) error {
+
+	validator := &fakeValidator{responses: map[string]error{}}
+	d := testDeps(validator)
+	d.newPermChecker = fixedPermChecker(&fakeDirPermChecker{validateDirFn: func(path string) error {
 		if path == hashDir {
 			return fmt.Errorf("%w: directory %s is writable by others", security.ErrInvalidDirPermissions, path)
 		}
 		return nil
 	}})
 
-	validator := &fakeValidator{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, validator)
-	defer cleanup()
-
 	logs := captureLogs(t)
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, stdout, stderr)
+	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, d, stdout, stderr)
 	require.Equal(t, exitUntrustedEnvironment, exitCode)
 
 	var errorLines, warnLines []string
@@ -433,23 +386,21 @@ func TestRunSkipsTargetSetCheckWhenHashDirViolates(t *testing.T) {
 	targetFile := filepath.Join(targetDir, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
 
+	validator := &fakeValidator{responses: map[string]error{}}
+	d := testDeps(validator)
 	// Violations on both sides: only the hash directory side may be reported.
-	overrideTOCTOUChecker(t, &fakeDirPermChecker{validateDirFn: func(path string) error {
+	d.newPermChecker = fixedPermChecker(&fakeDirPermChecker{validateDirFn: func(path string) error {
 		if path == hashDir || path == targetDir {
 			return fmt.Errorf("%w: directory %s is writable by others", security.ErrInvalidDirPermissions, path)
 		}
 		return nil
 	}})
 
-	validator := &fakeValidator{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, validator)
-	defer cleanup()
-
 	logs := captureLogs(t)
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, stdout, stderr)
+	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, d, stdout, stderr)
 
 	require.Equal(t, exitUntrustedEnvironment, exitCode)
 	assert.NotContains(t, logs.String(), targetDir, "the target file set must not be checked once the hash directory side fails closed")
@@ -463,22 +414,56 @@ func TestRunSkipsTargetSetCheckWhenHashDirViolates(t *testing.T) {
 func TestRunFailsClosedWhenPermissionCheckUIDUnresolvable(t *testing.T) {
 	tempDir := t.TempDir()
 	validator := &fakeValidator{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, validator)
-	defer cleanup()
-
-	original := ensurePermissionCheckUID
-	ensurePermissionCheckUID = func() error { return groupmembership.ErrSudoUIDUserLookupFailed }
-	t.Cleanup(func() { ensurePermissionCheckUID = original })
+	d := testDeps(validator)
+	d.ensurePermissionCheckUID = func() error { return groupmembership.ErrSudoUIDUserLookupFailed }
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-d", tempDir, "file1.txt", "file2.txt"}, stdout, stderr)
+	exitCode := run([]string{"-d", tempDir, "file1.txt", "file2.txt"}, d, stdout, stderr)
 
 	require.Equal(t, 1, exitCode)
 	assert.Contains(t, stderr.String(), groupmembership.ErrSudoUIDUserLookupFailed.Error())
 	assert.Empty(t, validator.calls, "no file must be verified once the UID cannot be resolved")
 	assert.Empty(t, stdout.String())
+}
+
+// TestRunCreatesNoFilesystemEntries verifies that verify creates nothing on
+// disk, whether the hash directory it is given exists or not. The production
+// dependencies are used unchanged — a stub validator would hide the creation
+// that happens inside the validator itself, which is the half a deleted mkdirAll
+// call does not cover. The parent subtree, not just its top level, is compared:
+// an entry planted inside an existing hash directory would otherwise go unseen.
+func TestRunCreatesNoFilesystemEntries(t *testing.T) {
+	tests := []struct {
+		name          string
+		hashDirExists bool
+	}{
+		{name: "existing_hash_dir", hashDirExists: true},
+		{name: "missing_hash_dir", hashDirExists: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			parent := tu.SafeTempDir(t)
+			hashDir := filepath.Join(parent, "hashes")
+			if tc.hashDirExists {
+				require.NoError(t, os.Mkdir(hashDir, 0o700))
+			}
+			targetDir := tu.SafeTempDir(t)
+			targetFile := filepath.Join(targetDir, "target.txt")
+			require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+			before := tu.WalkEntries(t, parent)
+
+			stdout := &bytes.Buffer{}
+			stderr := &bytes.Buffer{}
+			run([]string{"-hash-dir", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+
+			after := tu.WalkEntries(t, parent)
+			assert.Equal(t, before, after, "verify must not create anything under the hash directory's parent")
+		})
+	}
 }
 
 // TestVerifyDeclaresSudoUIDAwarePolicy verifies that this binary's init()

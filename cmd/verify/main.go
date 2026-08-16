@@ -16,8 +16,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/security"
 )
 
-const hashDirPermissions = 0o750
-
 // Exit codes returned by run(). 2 is deliberately unused: the Go runtime exits
 // with status 2 on an uncaught panic, and this command has reachable panics
 // (the policy declaration in init and the checker initialisation in
@@ -33,19 +31,34 @@ const (
 	exitUntrustedEnvironment = 3
 )
 
-var (
-	errNoFilesProvided = errors.New("at least one file path must be provided as a positional argument or via -file (deprecated)")
-	errEnsureHashDir   = errors.New("error creating/accessing hash directory")
-	validatorFactory   = func(hashDir string) (hashValidator, error) {
-		return cmdcommon.CreateValidator(hashDir)
+var errNoFilesProvided = errors.New("at least one file path must be provided as a positional argument or via -file (deprecated)")
+
+// deps holds injectable dependencies for the verify command.
+// This makes the dependency graph visible at call sites and keeps tests off
+// process-wide mutable state. Only the fields whose comment says so may be left
+// nil; the rest are required and are set by defaultDeps.
+type deps struct {
+	validatorFactory func(hashDir string) (hashValidator, error)
+	// newPermChecker builds the directory permission checker. Injected as a
+	// constructor rather than a ready-made checker so tests can exercise its error
+	// return, which no current implementation produces, and so no test can bypass
+	// the production construction path.
+	newPermChecker func() (security.DirectoryPermChecker, error)
+	// resolvePathForCheck resolves a path for the directory permission check.
+	resolvePathForCheck func(path string) (string, error)
+	// nil means use groupmembership.New().EnsurePermissionCheckUID.
+	ensurePermissionCheckUID func() error
+}
+
+func defaultDeps() deps {
+	return deps{
+		validatorFactory: func(hashDir string) (hashValidator, error) {
+			return cmdcommon.CreateReadOnlyValidator(hashDir)
+		},
+		newPermChecker:      security.NewDirectoryPermChecker,
+		resolvePathForCheck: security.ResolvePathForCheck,
 	}
-	mkdirAll                 = os.MkdirAll
-	ensurePermissionCheckUID = groupmembership.New().EnsurePermissionCheckUID
-	// toctouChecker is the directory permission checker used by
-	// checkDirPermissions. nil means construct one via
-	// security.NewDirectoryPermChecker; tests replace it.
-	toctouChecker security.DirectoryPermChecker
-)
+}
 
 func init() {
 	// verify is invoked as `sudo verify ...`; the read-safety check must judge
@@ -67,7 +80,7 @@ type verifyConfig struct {
 }
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], defaultDeps(), os.Stdout, os.Stderr))
 }
 
 // checkDirPermissions reports whether verification may proceed.
@@ -77,16 +90,12 @@ func main() {
 // any verdict this command produces is meaningless. A violation confined to a
 // target file's ancestors is the opposite case — that is what verify exists to
 // inspect — so it stays a warning and verification continues.
-func checkDirPermissions(cfg *verifyConfig, stderr io.Writer) bool {
-	secValidator := toctouChecker
-	if secValidator == nil {
-		var secErr error
-		secValidator, secErr = security.NewDirectoryPermChecker()
-		if secErr != nil {
-			// NewDirectoryPermChecker only fails when standalone checker setup fails,
-			// which is not recoverable in this startup path.
-			panic(fmt.Sprintf("security validator initialisation failed: %v", secErr))
-		}
+func checkDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) bool {
+	secValidator, secErr := d.newPermChecker()
+	if secErr != nil {
+		// NewDirectoryPermChecker only fails when standalone checker setup fails,
+		// which is not recoverable in this startup path.
+		panic(fmt.Sprintf("security validator initialisation failed: %v", secErr))
 	}
 	absHashDir := cfg.hashDir
 	if abs, err := filepath.Abs(cfg.hashDir); err == nil {
@@ -152,7 +161,7 @@ func checkDirPermissions(cfg *verifyConfig, stderr io.Writer) bool {
 	return true
 }
 
-func run(args []string, stdout, stderr io.Writer) int {
+func run(args []string, d deps, stdout, stderr io.Writer) int {
 	cfg, fs, err := parseArgs(args, stderr)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -171,16 +180,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// SUDO_UID fails the run and where the adoption record is emitted. verify's
 	// per-file reads would also reach it, but resolving here makes the failure
 	// arrive once, before the first file, rather than once per file.
-	if err := ensurePermissionCheckUID(); err != nil {
+	ensureUID := d.ensurePermissionCheckUID
+	if ensureUID == nil {
+		ensureUID = groupmembership.New().EnsurePermissionCheckUID
+	}
+	if err := ensureUID(); err != nil {
 		fmt.Fprintf(stderr, "Error: %v\n", err) //nolint:errcheck
 		return exitVerificationFailed
 	}
 
-	if !checkDirPermissions(cfg, stderr) {
+	if !checkDirPermissions(cfg, d, stderr) {
 		return exitUntrustedEnvironment
 	}
 
-	validator, err := validatorFactory(cfg.hashDir)
+	validator, err := d.validatorFactory(cfg.hashDir)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error creating validator: %v\n", err) //nolint:errcheck
 		return exitVerificationFailed
@@ -189,6 +202,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return processFiles(validator, cfg.files, stdout, stderr)
 }
 
+// parseArgs turns the command line into a verifyConfig. It has no side effects:
+// verify never creates the hash directory it names, so a missing one is reported
+// later rather than filled in here.
 func parseArgs(args []string, stderr io.Writer) (*verifyConfig, *flag.FlagSet, error) {
 	options := struct {
 		deprecatedFile string
@@ -217,10 +233,6 @@ func parseArgs(args []string, stderr io.Writer) (*verifyConfig, *flag.FlagSet, e
 	dir := options.hashDir
 	if dir == "" {
 		dir = cmdcommon.DefaultHashDirectory
-	}
-
-	if err := mkdirAll(dir, hashDirPermissions); err != nil {
-		return nil, fs, fmt.Errorf("%w: %w", errEnsureHashDir, err)
 	}
 
 	return &verifyConfig{
