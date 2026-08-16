@@ -406,6 +406,37 @@ func TestRunTOCTOUPermissionCheck_CountsCheckedAndSkipped(t *testing.T) {
 	assert.Len(t, result.Violations, 1)
 }
 
+// TestRunTOCTOUPermissionCheck_MissingDirIsNotLoggedAsAnError pins the log level
+// of the skipped case against the verdict it produces. A directory that does not
+// exist is counted as skipped, so reporting it at ERROR would tell log-based
+// alerting that a routine run — record before the hash directory is created,
+// verify against a host that has none — needs attention. A directory that exists
+// but cannot be stat'ed is the opposite case and keeps ERROR. The checker logs
+// through the default logger, not the one handed to RunTOCTOUPermissionCheck, so
+// this test replaces the process-wide default and must not run in parallel.
+func TestRunTOCTOUPermissionCheck_MissingDirIsNotLoggedAsAnError(t *testing.T) {
+	skipIfRoot(t)
+	cleanDir := tu.SafeTempDir(t)
+	missingDir := filepath.Join(cleanDir, "missing")
+	unreadable := blockedPathUnder(t, cleanDir, "blocked")
+
+	v, err := NewDirectoryPermChecker()
+	require.NoError(t, err)
+
+	logger, buf := newBufferLogger()
+	original := slog.Default()
+	slog.SetDefault(logger)
+	t.Cleanup(func() { slog.SetDefault(original) })
+
+	result := RunTOCTOUPermissionCheck(v, []string{missingDir}, logger)
+	require.Equal(t, 1, result.Skipped)
+	assert.NotContains(t, buf.String(), "level=ERROR", "a directory that is merely absent is not a fault: %s", buf.String())
+
+	buf.Reset()
+	RunTOCTOUPermissionCheck(v, []string{unreadable}, logger)
+	assert.Contains(t, buf.String(), "level=ERROR", "a directory that cannot be inspected still is one")
+}
+
 // TestDeepestExistingAncestor verifies that the walk stops at the path itself when it
 // exists, and at its deepest existing ancestor otherwise.
 func TestDeepestExistingAncestor(t *testing.T) {

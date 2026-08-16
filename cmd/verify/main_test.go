@@ -54,6 +54,9 @@ func testDeps(validator *fakeValidator) deps {
 
 // fixedPermChecker adapts a ready-made checker to the constructor seam deps
 // exposes, so that tests inject through the same field production uses.
+// cmd/record/main_test.go defines an identical helper; as with
+// fakeDirPermChecker above, it is unexported in a different main package and so
+// cannot be shared.
 func fixedPermChecker(checker security.DirectoryPermChecker) func() (security.DirectoryPermChecker, error) {
 	return func() (security.DirectoryPermChecker, error) { return checker, nil }
 }
@@ -458,7 +461,14 @@ func TestRunCreatesNoFilesystemEntries(t *testing.T) {
 
 			stdout := &bytes.Buffer{}
 			stderr := &bytes.Buffer{}
-			run([]string{"-hash-dir", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+			exitCode := run([]string{"-hash-dir", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+
+			// Every early return of run also creates nothing, so the subtree
+			// assertion below proves nothing on its own. These two say the run
+			// reached the validator and verified the file, which is where the
+			// creation this test denies would have happened.
+			require.Equal(t, exitVerificationFailed, exitCode, "no hash record exists, so verification must fail: %s", stderr.String())
+			assert.Contains(t, stdout.String(), "[1/1] "+targetFile, "the run must have reached per-file verification")
 
 			after := tu.WalkEntries(t, parent)
 			assert.Equal(t, before, after, "verify must not create anything under the hash directory's parent")
@@ -476,11 +486,11 @@ func TestRunCreatesNoFilesystemEntries(t *testing.T) {
 func TestVerifyDeclaresSudoUIDAwarePolicy(t *testing.T) {
 	require.Equal(t, groupmembership.SudoUIDAware, groupmembership.ProcessPermissionCheckUIDPolicy())
 
-	deps := groupmembership.NewPermissionCheckUIDDepsForTesting()
-	deps.Getenv = func(string) string { return "1000" }
+	uidDeps := groupmembership.NewPermissionCheckUIDDepsForTesting()
+	uidDeps.Getenv = func(string) string { return "1000" }
 
 	uid, err := groupmembership.ResolvePermissionCheckUID(
-		groupmembership.ProcessPermissionCheckUIDPolicy(), 0, deps)
+		groupmembership.ProcessPermissionCheckUIDPolicy(), 0, uidDeps)
 	require.NoError(t, err)
 	assert.Equal(t, 1000, uid)
 }

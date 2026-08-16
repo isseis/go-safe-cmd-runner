@@ -492,6 +492,7 @@ func getwd() (string, error) { return getwdHook() }
 - [x] `TestCreateReadOnlyValidator_EmptyPath` を追加して空パスの観点を引き継ぐ。**実装時の確認**: 削除元の `TestCreateValidator_EmptyPath` は構築エラーを表明していたが、`NewReadOnly` では `os.Lstat("")` が `ENOENT` を返すため構築は成功し、`HashDirError()` が `ErrHashDirNotExist` を返す。空パスが使えないハッシュディレクトリとして報告されるという観点は同じなので、新テストはこの形で表明する。
 - [x] 削除後に同じ手順でカバレッジを取得（`/tmp/cmdcommon-after.out`）し、関数単位で低下していないことを確認する。低下した関数があれば補うテストを追加する。**確認結果**: 削除前後とも 100.0%（残る `CreateReadOnlyValidator` も 100.0%）。
 - [x] `make deadcode` を実行し、`CreateReadOnlyValidator` への切り替えによって `internal/cmdcommon` に新たな未到達の公開シンボルが生じていないことを確認する。
+- [x] （レビュー指摘により追加）`internal/security/dir_permissions_unix.go` の `Lstat` 失敗ログを、`fs.ErrNotExist` の場合のみ `DEBUG` に下げる。作成をやめた結果、ハッシュディレクトリ不在は `verify` の通常経路になったが、`ValidateDirectoryPermissions` はこれを `ERROR` で記録していた。`RunTOCTOUPermissionCheck` は同じ状態を「読み飛ばし（`Skipped`）」に数えるため、記録と判定が食い違い、未整備のホストでの通常実行がログ監視に警報として見える。エラー自体は従来どおり返るので情報は失われない。それ以外の stat 失敗（検査できない＝下流で回復不能）は `ERROR` のまま。判定規則は変えていないため、要件定義書がスコープ外とする「TOCTOU 権限チェック処理そのものの挙動変更」には当たらない。根拠テストは `internal/security/toctou_test.go` の `TestRunTOCTOUPermissionCheck_MissingDirIsNotLoggedAsAnError`（不在は `ERROR` を出さず、stat できない祖先では出ることを対で表明）。
 
 #### ステップ 3-2: `verify` を `deps` 様式へ移行
 
