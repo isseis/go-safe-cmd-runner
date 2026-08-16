@@ -614,7 +614,10 @@ type ErrInvalidVariableScopeDetail struct {
 	Level        string
 	Field        string
 	VariableName string
-	Reason       string
+	// Err is the underlying scope-validation failure. It is kept as an error
+	// rather than flattened into text so callers can tell the reasons apart
+	// with errors.Is/As instead of matching the rendered message.
+	Err error
 }
 
 func (e *ErrInvalidVariableScopeDetail) Error() string {
@@ -623,9 +626,12 @@ func (e *ErrInvalidVariableScopeDetail) Error() string {
 		e.Level,
 		e.Field,
 		e.VariableName,
-		e.Reason,
+		e.Err,
 	)
 }
+
+// Unwrap returns the underlying scope-validation failure.
+func (e *ErrInvalidVariableScopeDetail) Unwrap() error { return e.Err }
 
 // ErrIncludedFileNotFound is returned when an included file does not exist.
 type ErrIncludedFileNotFound struct {

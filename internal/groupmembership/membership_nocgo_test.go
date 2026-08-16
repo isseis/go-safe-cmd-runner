@@ -4,6 +4,7 @@ package groupmembership
 
 import (
 	"bufio"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -359,8 +360,7 @@ func TestFileReadingErrors(t *testing.T) {
 		}
 
 		_, err := testFindGroupByGID("/nonexistent/group", 0)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "no such file or directory")
+		require.ErrorIs(t, err, fs.ErrNotExist)
 	})
 
 	t.Run("passwd file not found", func(t *testing.T) {
@@ -374,7 +374,6 @@ func TestFileReadingErrors(t *testing.T) {
 		}
 
 		_, err := testFindUsersWithPrimaryGID("/nonexistent/passwd", 0)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "no such file or directory")
+		require.ErrorIs(t, err, fs.ErrNotExist)
 	})
 }

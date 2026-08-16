@@ -132,7 +132,7 @@ func TestAnalyze_ChildParseFailure(t *testing.T) {
 
 	_, _, err := a.Analyze(rootPath)
 	require.Error(t, err, "should return error when child parse fails")
-	assert.Contains(t, err.Error(), lib2Path, "error should include the failing child library path")
+	assert.ErrorContains(t, err, lib2Path, "error should include the failing child library path")
 }
 
 // TestExtractDylibName verifies that dylibName correctly parses the
@@ -674,9 +674,8 @@ func TestHasDynamicLibDeps_SeekError(t *testing.T) {
 	}
 
 	hasDeps, err := HasDynamicLibDeps(path, mockFS)
-	require.Error(t, err)
+	require.ErrorIs(t, err, errSimulatedSeek)
 	assert.False(t, hasDeps)
-	assert.Contains(t, err.Error(), "failed to seek to start of file")
 }
 
 // TestHasDynamicLibDeps_ReadFullError verifies that HasDynamicLibDeps returns
@@ -698,9 +697,8 @@ func TestHasDynamicLibDeps_ReadFullError(t *testing.T) {
 	}
 
 	hasDeps, err := HasDynamicLibDeps(path, mockFS)
-	require.Error(t, err)
+	require.ErrorIs(t, err, errSimulatedRead)
 	assert.False(t, hasDeps)
-	assert.Contains(t, err.Error(), "failed to read Mach-O magic")
 }
 
 // TestHasDynamicLibDeps_ReadFullEOF verifies that HasDynamicLibDeps returns

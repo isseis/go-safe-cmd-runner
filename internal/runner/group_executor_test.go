@@ -369,9 +369,7 @@ func TestExecuteGroup_CreateTempDirFailure(t *testing.T) {
 	ctx := context.Background()
 	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to create temp directory")
-	assert.ErrorIs(t, err, expectedErr)
+	require.ErrorIs(t, err, expectedErr)
 }
 
 // TestExecuteGroup_CommandExecutionFailure tests error handling when command execution fails
@@ -661,10 +659,8 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 	ctx := context.Background()
 	result, err := ge.executeCommandInGroup(ctx, cmd, groupSpec, runtimeGroup, runtimeGlobal)
 
-	require.Error(t, err)
+	require.ErrorIs(t, err, expectedErr)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "output path validation failed")
-	assert.ErrorIs(t, err, expectedErr)
 }
 
 // TestExecuteGroup_MultipleCommands tests execution of multiple commands in sequence
@@ -818,7 +814,7 @@ func TestResolveGroupWorkDir(t *testing.T) {
 		expectTempDir   bool
 		expectError     bool
 		expectedWorkDir string // For fixed workdir cases
-		errMsg          string // For error cases
+		wantErr         error  // For error cases
 	}{
 		{
 			name:            "fixed workdir specified",
@@ -860,7 +856,7 @@ func TestResolveGroupWorkDir(t *testing.T) {
 			groupVars:    map[string]string{},
 			isDryRun:     false,
 			expectError:  true,
-			errMsg:       "relative paths are not allowed",
+			wantErr:      config.ErrInvalidWorkDir,
 		},
 		{
 			name:         "variable expansion resulting in relative path rejected",
@@ -868,7 +864,7 @@ func TestResolveGroupWorkDir(t *testing.T) {
 			groupVars:    map[string]string{"relative": "not/absolute"},
 			isDryRun:     false,
 			expectError:  true,
-			errMsg:       "relative paths are not allowed",
+			wantErr:      config.ErrInvalidWorkDir,
 		},
 	}
 
@@ -894,8 +890,8 @@ func TestResolveGroupWorkDir(t *testing.T) {
 
 			if tt.expectError {
 				require.Error(t, err)
-				if tt.errMsg != "" {
-					assert.Contains(t, err.Error(), tt.errMsg)
+				if tt.wantErr != nil {
+					require.ErrorIs(t, err, tt.wantErr)
 				}
 				return
 			}
@@ -1296,10 +1292,8 @@ func TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure(t *testing.T) {
 	result, err := ge.executeCommandInGroup(ctx, cmd, groupSpec, runtimeGroup, runtimeGlobal)
 
 	// Assert
-	require.Error(t, err)
+	require.ErrorIs(t, err, expectedErr)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "environment variables security validation failed")
-	assert.ErrorIs(t, err, expectedErr)
 
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
 	mockValidator.AssertExpectations(t)
@@ -1362,9 +1356,7 @@ func TestVerifyGroupFiles_ResolvePathFailure(t *testing.T) {
 	err = ge.verifyGroupFiles(runtimeGroup, runtimeGlobal)
 
 	// Assert
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "command path resolution failed")
-	assert.ErrorIs(t, err, expectedErr)
+	require.ErrorIs(t, err, expectedErr)
 
 	// Verify mocks
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
@@ -2054,9 +2046,9 @@ func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	// Verify error type using errors.Is instead of fragile string matching
-	assert.ErrorIs(t, err, config.ErrUndefinedVariable)
+	require.ErrorIs(t, err, config.ErrUndefinedVariable)
 	// Command name appears in the outer wrapper error message
-	assert.Contains(t, err.Error(), "test-cmd", "Error should mention the failing command")
+	assert.ErrorContains(t, err, "test-cmd", "Error should mention the failing command")
 
 	// Verify that ExecuteCommand was not called due to early error
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
@@ -2109,10 +2101,9 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	// Verify error type using errors.Is instead of fragile string matching
-	assert.ErrorIs(t, err, config.ErrUndefinedVariable)
-	// Verify error message mentions both workdir resolution and command name
-	assert.Contains(t, err.Error(), "failed to resolve workdir", "Error should mention workdir resolution failure")
-	assert.Contains(t, err.Error(), "test-cmd", "Error should mention the failing command")
+	require.ErrorIs(t, err, config.ErrUndefinedVariable)
+	// The command name is the context the operator needs to locate the failure.
+	assert.ErrorContains(t, err, "test-cmd", "Error should mention the failing command")
 
 	// Verify that ExecuteCommand was not called due to early error
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
@@ -3093,14 +3084,10 @@ func TestPreExpandCommands_Error(t *testing.T) {
 
 			err := ge.preExpandCommands(tt.groupSpec, runtimeGroup, runtimeGlobal)
 
-			require.Error(t, err)
-			// Verify error type using errors.Is instead of fragile string matching
-			if tt.wantErrIs != nil {
-				assert.True(t, errors.Is(err, tt.wantErrIs), "Error should be %v", tt.wantErrIs)
-			}
+			require.ErrorIs(t, err, tt.wantErrIs)
 			// If specific context is expected in error message, verify it
 			if tt.wantErrContains != "" {
-				assert.Contains(t, err.Error(), tt.wantErrContains)
+				assert.ErrorContains(t, err, tt.wantErrContains)
 			}
 		})
 	}
@@ -3230,8 +3217,7 @@ func TestVerifyGroupFiles_DynLibResolvePathFailure(t *testing.T) {
 
 	ctx := context.Background()
 	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "command path resolution failed")
+	require.ErrorIs(t, err, resolveErr)
 
 	mockVerificationManager.AssertNotCalled(t, "VerifyCommandDynLibDeps", mock.Anything)
 	mockVerificationManager.AssertNotCalled(t, "VerifyCommandShebangInterpreter", mock.Anything, mock.Anything)

@@ -4,6 +4,7 @@ package elfdynlib
 
 import (
 	"bytes"
+	"debug/elf"
 	"encoding/binary"
 	"errors"
 	"os"
@@ -270,9 +271,9 @@ func TestAnalyze_ELFMagicMatchButParseFailure(t *testing.T) {
 
 	a := newTestAnalyzer(t)
 	result, err := a.Analyze(path)
-	assert.Error(t, err)
+	var formatErr *elf.FormatError
+	require.ErrorAs(t, err, &formatErr, "a truncated ELF must be reported as a format error")
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "failed to parse ELF binary")
 }
 
 // TestAnalyze_ELFMagicMatchButDynStringError verifies that Analyze returns an error
@@ -300,10 +301,13 @@ func TestAnalyze_ELFMagicMatchButDynStringError(t *testing.T) {
 
 	a := newTestAnalyzer(t)
 	result, err := a.Analyze(corruptedPath)
-	assert.Error(t, err)
+	require.Error(t, err, "a dynamic section pointing at a non-existent string table must be rejected")
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "failed to read DT_NEEDED")
+	assert.ErrorContains(t, err, "DT_NEEDED", "the message must name the section that could not be read")
 }
+
+// errSimulatedRead is the failure injected into the file-read seam.
+var errSimulatedRead = errors.New("simulated read error")
 
 // readErrorFile wraps a safefileio.File and returns an error on Read.
 type readErrorFile struct {
@@ -311,14 +315,14 @@ type readErrorFile struct {
 }
 
 func (f *readErrorFile) Read(_ []byte) (int, error) {
-	return 0, errors.New("simulated read error")
+	return 0, errSimulatedRead
 }
 
 // ReadAt is overridden too: ELF magic detection reads via io.ReaderAt (not
 // the sequential Reader) so that it does not depend on, or disturb, a
 // file's current read offset when the file is shared across analyses.
 func (f *readErrorFile) ReadAt(_ []byte, _ int64) (int, error) {
-	return 0, errors.New("simulated read error")
+	return 0, errSimulatedRead
 }
 
 // TestAnalyze_ReadMagicError verifies that Analyze returns an error when
@@ -341,9 +345,8 @@ func TestAnalyze_ReadMagicError(t *testing.T) {
 
 	a := &DynLibAnalyzer{fs: mockFS, cache: nil}
 	result, err := a.Analyze(path)
-	assert.Error(t, err)
+	require.ErrorIs(t, err, errSimulatedRead)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "failed to read ELF magic")
 }
 
 // TestAnalyze_DynamicELF verifies that Analyze returns non-nil for a native

@@ -3,6 +3,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -390,9 +391,10 @@ name = "test"
 		cfg, err := loader.LoadConfig(symlinkPath, realConfigContent)
 
 		// This should fail because templates.toml is not in link_dir
-		require.Error(t, err)
+		notFound, ok := errors.AsType[*ErrIncludedFileNotFound](err)
+		require.True(t, ok, "an include missing from the symlink's directory must be reported as not found, got: %v", err)
+		assert.Equal(t, "templates.toml", notFound.IncludePath)
 		assert.Nil(t, cfg)
-		assert.Contains(t, err.Error(), "templates.toml")
 	})
 
 	t.Run("symlink with working relative path", func(t *testing.T) {

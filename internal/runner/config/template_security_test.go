@@ -55,7 +55,6 @@ func TestValidateTemplateDefinition(t *testing.T) {
 		template runnertypes.CommandTemplate
 		wantErr  bool
 		errType  error
-		errMsg   string // For workdir validation errors
 	}{
 		{
 			name:     "valid template",
@@ -174,9 +173,6 @@ func TestValidateTemplateDefinition(t *testing.T) {
 				require.Error(t, err)
 				if tt.errType != nil {
 					assert.ErrorAs(t, err, &tt.errType)
-				}
-				if tt.errMsg != "" {
-					assert.Contains(t, err.Error(), tt.errMsg)
 				}
 			} else {
 				assert.NoError(t, err)

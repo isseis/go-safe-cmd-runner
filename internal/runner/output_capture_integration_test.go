@@ -4,6 +4,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -124,31 +124,36 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 // 1. Invalid output paths are rejected during validation phase
 // 2. ExecuteCommand is never called for invalid paths
 // 3. Only valid paths proceed to command execution
+// errPathRejected is the rejection injected into the output-path validation seam.
+var errPathRejected = errors.New("output path rejected by security validation")
+
 func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 	setupSafeTestEnv(t)
 
 	tests := []struct {
-		name        string
-		outputPath  string
-		expectError string
+		name       string
+		outputPath string
+		// injectErr is what the resource manager reports for this path; nil means
+		// validation passes and the command runs.
+		injectErr   error
 		description string
 	}{
 		{
 			name:        "PathTraversalAttempt",
 			outputPath:  "../../../etc/passwd",
-			expectError: "security validation failed",
+			injectErr:   errPathRejected,
 			description: "Path traversal attempts should fail validation before command execution",
 		},
 		{
 			name:        "AbsolutePathBlocked",
 			outputPath:  "/etc/shadow",
-			expectError: "security validation failed",
+			injectErr:   errPathRejected,
 			description: "Absolute paths should fail validation before command execution",
 		},
 		{
 			name:        "ValidOutputPath",
 			outputPath:  "valid-output.txt",
-			expectError: "",
+			injectErr:   nil,
 			description: "Valid output paths should pass validation and execute commands",
 		},
 	}
@@ -181,7 +186,7 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 			mockRM := &MockResourceManager{}
 
 			// Setup mock expectations: validation always occurs first
-			if tt.expectError == "" {
+			if tt.injectErr == nil {
 				// Success case: validation passes, then command executes
 				mockRM.On("ValidateOutputPath", tt.outputPath, mock.Anything).Return(nil)
 
@@ -196,7 +201,7 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 			} else {
 				// Failure case: validation fails, ExecuteCommand never gets called
 				mockRM.On("ValidateOutputPath", tt.outputPath, mock.Anything).
-					Return(fmt.Errorf("path validation failed: %s", tt.expectError))
+					Return(fmt.Errorf("path validation failed: %w", tt.injectErr))
 
 				// Note: No ExecuteCommand expectation set - it should never be called
 				// The mock will panic if ExecuteCommand is unexpectedly invoked
@@ -224,11 +229,10 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 			ctx := context.Background()
 			err = runner.ExecuteGroup(ctx, &cfg.Groups[0])
 
-			if tt.expectError != "" {
-				require.Error(t, err, "Security validation should prevent execution for %s", tt.description)
-				assert.Contains(t, err.Error(), tt.expectError)
-				assert.Contains(t, err.Error(), "output path validation failed",
-					"Error should indicate validation occurred before command execution")
+			if tt.injectErr != nil {
+				// The rejection reaches the caller unchanged, and ExecuteCommand is
+				// never reached — the mock has no expectation for it.
+				require.ErrorIs(t, err, tt.injectErr, "Security validation should prevent execution for %s", tt.description)
 			} else {
 				require.NoError(t, err, "Valid paths should pass validation and execute successfully: %s", tt.description)
 			}

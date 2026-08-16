@@ -220,15 +220,13 @@ args = ["third"]
 	err := r.Execute(ctx, nil)
 	require.Error(t, err, "Group execution should fail")
 
-	// Verify error type using errors.Is instead of fragile string matching
-	assert.ErrorIs(t, err, config.ErrUndefinedVariable)
+	require.ErrorIs(t, err, config.ErrUndefinedVariable)
 
-	// Verify detailed error contains variable name and command name in error message
-	if detailErr, ok := errors.AsType[*config.ErrUndefinedVariableDetail](err); ok {
-		assert.Equal(t, "undefined_var", detailErr.VariableName, "Error should mention undefined variable name")
-	}
+	detailErr, ok := errors.AsType[*config.ErrUndefinedVariableDetail](err)
+	require.True(t, ok, "the rejection must carry the variable it could not resolve, got: %v", err)
+	assert.Equal(t, "undefined_var", detailErr.VariableName, "Error should mention undefined variable name")
 	// Command name appears in the outer wrapper error message
-	assert.Contains(t, err.Error(), "first_cmd", "Error should mention the failing command")
+	assert.ErrorContains(t, err, "first_cmd", "Error should mention the failing command")
 }
 
 // TestIntegration_PreExpand_CommandVarsInArgs tests that command-level

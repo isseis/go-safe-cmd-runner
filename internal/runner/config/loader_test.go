@@ -2,12 +2,14 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"log"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -630,9 +632,11 @@ cmd = "echo"
 			cfg, err := loader.LoadConfigForTest([]byte(tt.toml))
 
 			if tt.wantErr {
-				require.Error(t, err, "expected error but got none")
-				assert.Contains(t, err.Error(), "strict mode",
-					"error message should indicate strict mode rejection")
+				// Every row above rejects an unknown field, which go-toml reports
+				// with its own type; matching on the type says the field was
+				// rejected by strict decoding rather than by a later validation.
+				_, ok := errors.AsType[*toml.StrictMissingError](err)
+				require.True(t, ok, "unknown fields must be rejected by strict decoding, got: %v", err)
 				assert.Nil(t, cfg, "config should be nil when validation fails")
 			} else {
 				require.NoError(t, err, "expected no error but got: %v", err)

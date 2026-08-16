@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,24 +15,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// errRenameFailed is the failure injected into the atomic-move seam.
+var errRenameFailed = errors.New("rename failed")
+
 func TestSafeFileManager_CreateTempFile(t *testing.T) {
 	tests := []struct {
-		name       string
-		dir        string
-		pattern    string
-		wantErr    bool
-		errMessage string
+		name    string
+		dir     string
+		pattern string
+		wantErr error
 	}{
 		{
 			name:    "valid_temp_file_creation",
 			dir:     "", // Will use default temp dir
 			pattern: "output_*.tmp",
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name:    "valid_temp_file_with_specific_dir",
 			pattern: "test_*.tmp",
-			wantErr: false,
+			wantErr: nil,
 		},
 	}
 
@@ -48,11 +51,8 @@ func TestSafeFileManager_CreateTempFile(t *testing.T) {
 
 			file, err := manager.CreateTempFile(tt.dir, tt.pattern)
 
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errMessage != "" {
-					assert.Contains(t, err.Error(), tt.errMessage)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 				if file != nil {
 					file.Close()
 					os.Remove(file.Name())
@@ -88,29 +88,28 @@ func TestSafeFileManager_WriteToTemp(t *testing.T) {
 	}()
 
 	tests := []struct {
-		name       string
-		data       []byte
-		wantN      int
-		wantErr    bool
-		errMessage string
+		name    string
+		data    []byte
+		wantN   int
+		wantErr error
 	}{
 		{
 			name:    "write_valid_data",
 			data:    []byte("test data\n"),
 			wantN:   10,
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name:    "write_empty_data",
 			data:    []byte{},
 			wantN:   0,
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name:    "write_binary_data",
 			data:    []byte{0x00, 0x01, 0x02, 0xFF},
 			wantN:   4,
-			wantErr: false,
+			wantErr: nil,
 		},
 	}
 
@@ -118,11 +117,8 @@ func TestSafeFileManager_WriteToTemp(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			n, err := manager.WriteToTemp(tempFile, tt.data)
 
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errMessage != "" {
-					assert.Contains(t, err.Error(), tt.errMessage)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.wantN, n)
@@ -135,8 +131,7 @@ func TestSafeFileManager_EnsureDirectory(t *testing.T) {
 	tests := []struct {
 		name                string
 		setupPath           func(t *testing.T) string
-		wantErr             bool
-		errMessage          string
+		wantErr             error
 		skipPermissionCheck bool
 	}{
 		{
@@ -145,7 +140,7 @@ func TestSafeFileManager_EnsureDirectory(t *testing.T) {
 				tempDir := tu.SafeTempDir(t)
 				return filepath.Join(tempDir, "new_dir")
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name: "existing_directory",
@@ -156,7 +151,7 @@ func TestSafeFileManager_EnsureDirectory(t *testing.T) {
 				require.NoError(t, err)
 				return newDir
 			},
-			wantErr:             false,
+			wantErr:             nil,
 			skipPermissionCheck: true, // Existing directory has different permissions
 		},
 		{
@@ -165,7 +160,7 @@ func TestSafeFileManager_EnsureDirectory(t *testing.T) {
 				tempDir := tu.SafeTempDir(t)
 				return filepath.Join(tempDir, "level1", "level2", "level3")
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name: "path_on_existing_file",
@@ -177,8 +172,7 @@ func TestSafeFileManager_EnsureDirectory(t *testing.T) {
 				file.Close()
 				return filePath
 			},
-			wantErr:    true,
-			errMessage: "not a directory",
+			wantErr: ErrNotDirectory,
 		},
 	}
 
@@ -189,11 +183,8 @@ func TestSafeFileManager_EnsureDirectory(t *testing.T) {
 			path := tt.setupPath(t)
 			err := manager.EnsureDirectory(path)
 
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errMessage != "" {
-					assert.Contains(t, err.Error(), tt.errMessage)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 			} else {
 				assert.NoError(t, err)
 
@@ -217,9 +208,7 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 	tests := []struct {
 		name       string
 		setupFiles func(t *testing.T) (tempPath, finalPath string)
-		wantErr    bool
-		errMessage string
-		errCheck   func(t *testing.T, err error)
+		wantErr    error
 	}{
 		{
 			name: "move_existing_temp_file",
@@ -239,7 +228,7 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 				finalPath := filepath.Join(tempDir, "final_output.txt")
 				return tempFile.Name(), finalPath
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name: "move_to_existing_file_overwrite",
@@ -261,7 +250,7 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 
 				return tempFile.Name(), finalPath
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name: "move_nonexistent_temp_file",
@@ -271,11 +260,7 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 				finalPath := filepath.Join(tempDir, "final.txt")
 				return tempPath, finalPath
 			},
-			wantErr: true,
-			errCheck: func(t *testing.T, err error) {
-				t.Helper()
-				assert.True(t, errors.Is(err, os.ErrNotExist), "expected ErrNotExist, got: %v", err)
-			},
+			wantErr: os.ErrNotExist,
 		},
 		{
 			name: "move_to_directory_instead_of_file",
@@ -294,8 +279,10 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 
 				return tempFile.Name(), finalPath
 			},
-			wantErr:    true,
-			errMessage: "directory",
+			// The rename fails because the destination already exists as a
+			// directory. Matching "directory" in the message would also have been
+			// satisfied by the temp path, which carries the test name.
+			wantErr: fs.ErrExist,
 		},
 	}
 
@@ -313,14 +300,8 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 			const testPerm = os.FileMode(0o600)
 			err := manager.MoveToFinal(tempPath, finalPath, testPerm)
 
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errMessage != "" {
-					assert.Contains(t, err.Error(), tt.errMessage)
-				}
-				if tt.errCheck != nil {
-					tt.errCheck(t, err)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 			} else {
 				assert.NoError(t, err)
 
@@ -346,10 +327,9 @@ func TestSafeFileManager_RemoveTemp(t *testing.T) {
 	manager := NewSafeFileManager()
 
 	tests := []struct {
-		name       string
-		setupPath  func(t *testing.T) string
-		wantErr    bool
-		errMessage string
+		name      string
+		setupPath func(t *testing.T) string
+		wantErr   error
 	}{
 		{
 			name: "remove_existing_temp_file",
@@ -359,7 +339,7 @@ func TestSafeFileManager_RemoveTemp(t *testing.T) {
 				tempFile.Close()
 				return tempFile.Name()
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name: "remove_nonexistent_file",
@@ -367,7 +347,7 @@ func TestSafeFileManager_RemoveTemp(t *testing.T) {
 				tempDir := tu.SafeTempDir(t)
 				return filepath.Join(tempDir, "nonexistent.tmp")
 			},
-			wantErr: false, // RemoveTemp should be idempotent
+			wantErr: nil, // RemoveTemp should be idempotent
 		},
 		{
 			name: "remove_directory_instead_of_file",
@@ -378,8 +358,7 @@ func TestSafeFileManager_RemoveTemp(t *testing.T) {
 				require.NoError(t, err)
 				return dirPath
 			},
-			wantErr:    true,
-			errMessage: "directory",
+			wantErr: ErrNotFile,
 		},
 	}
 
@@ -388,11 +367,8 @@ func TestSafeFileManager_RemoveTemp(t *testing.T) {
 			path := tt.setupPath(t)
 			err := manager.RemoveTemp(path)
 
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errMessage != "" {
-					assert.Contains(t, err.Error(), tt.errMessage)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 			} else {
 				assert.NoError(t, err)
 
@@ -524,8 +500,7 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 		perm                 os.FileMode
 		setupMock            func(*commontestutil.MockFileSystem)
 		atomicMoveError      error
-		wantErr              bool
-		errContains          string
+		wantErr              error
 		wantAtomicMoveCalled bool
 	}{
 		{
@@ -538,7 +513,7 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 				require.NoError(t, mock.AddDir("/output", 0o750))
 			},
 			atomicMoveError:      nil,
-			wantErr:              false,
+			wantErr:              nil,
 			wantAtomicMoveCalled: true,
 		},
 		{
@@ -550,9 +525,10 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 				// Pre-add directory so EnsureDirectory succeeds
 				require.NoError(t, mock.AddDir("/output", 0o750))
 			},
-			atomicMoveError:      errors.New("rename failed"),
-			wantErr:              true,
-			errContains:          "failed to move to final path",
+			atomicMoveError: errRenameFailed,
+			// Asserting on the injected error also pins that MoveToFinal wraps it
+			// rather than replacing it with one of its own.
+			wantErr:              errRenameFailed,
 			wantAtomicMoveCalled: true,
 		},
 		{
@@ -564,8 +540,7 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 				// Add a file at the path where we expect a directory
 				require.NoError(t, mock.AddFile("/existing_file", 0o644, []byte("content")))
 			},
-			wantErr:              true,
-			errContains:          "not a directory",
+			wantErr:              ErrNotDirectory,
 			wantAtomicMoveCalled: false,
 		},
 	}
@@ -591,11 +566,8 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 			err := manager.MoveToFinal(tt.tempPath, tt.finalPath, tt.perm)
 
 			// Verify error handling
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 			} else {
 				assert.NoError(t, err)
 			}
@@ -619,11 +591,10 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 
 func TestSafeFileManager_EnsureDirectory_WithMock(t *testing.T) {
 	tests := []struct {
-		name        string
-		path        string
-		setupMock   func(*commontestutil.MockFileSystem)
-		wantErr     bool
-		errContains string
+		name      string
+		path      string
+		setupMock func(*commontestutil.MockFileSystem)
+		wantErr   error
 	}{
 		{
 			name: "directory_already_exists",
@@ -631,7 +602,7 @@ func TestSafeFileManager_EnsureDirectory_WithMock(t *testing.T) {
 			setupMock: func(mock *commontestutil.MockFileSystem) {
 				require.NoError(t, mock.AddDir("/existing/dir", 0o755))
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name: "create_new_directory",
@@ -639,7 +610,7 @@ func TestSafeFileManager_EnsureDirectory_WithMock(t *testing.T) {
 			setupMock: func(_ *commontestutil.MockFileSystem) {
 				// Directory doesn't exist, MkdirAll should be called
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name: "path_is_file_not_directory",
@@ -647,8 +618,7 @@ func TestSafeFileManager_EnsureDirectory_WithMock(t *testing.T) {
 			setupMock: func(mock *commontestutil.MockFileSystem) {
 				require.NoError(t, mock.AddFile("/path/to/file", 0o644, []byte("content")))
 			},
-			wantErr:     true,
-			errContains: "not a directory",
+			wantErr: ErrNotDirectory,
 		},
 	}
 
@@ -670,11 +640,8 @@ func TestSafeFileManager_EnsureDirectory_WithMock(t *testing.T) {
 			err := manager.EnsureDirectory(tt.path)
 
 			// Verify
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 			} else {
 				assert.NoError(t, err)
 			}
@@ -684,11 +651,10 @@ func TestSafeFileManager_EnsureDirectory_WithMock(t *testing.T) {
 
 func TestSafeFileManager_RemoveTemp_WithMock(t *testing.T) {
 	tests := []struct {
-		name        string
-		path        string
-		setupMock   func(*commontestutil.MockFileSystem)
-		wantErr     bool
-		errContains string
+		name      string
+		path      string
+		setupMock func(*commontestutil.MockFileSystem)
+		wantErr   error
 	}{
 		{
 			name: "file_exists_and_removed",
@@ -696,7 +662,7 @@ func TestSafeFileManager_RemoveTemp_WithMock(t *testing.T) {
 			setupMock: func(mock *commontestutil.MockFileSystem) {
 				require.NoError(t, mock.AddFile("/tmp/test.tmp", 0o600, []byte("content")))
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name: "file_does_not_exist_idempotent",
@@ -704,7 +670,7 @@ func TestSafeFileManager_RemoveTemp_WithMock(t *testing.T) {
 			setupMock: func(_ *commontestutil.MockFileSystem) {
 				// File doesn't exist
 			},
-			wantErr: false, // RemoveTemp should be idempotent
+			wantErr: nil, // RemoveTemp should be idempotent
 		},
 		{
 			name: "path_is_directory_error",
@@ -712,8 +678,7 @@ func TestSafeFileManager_RemoveTemp_WithMock(t *testing.T) {
 			setupMock: func(mock *commontestutil.MockFileSystem) {
 				require.NoError(t, mock.AddDir("/tmp/dir", 0o755))
 			},
-			wantErr:     true,
-			errContains: "not a file",
+			wantErr: ErrNotFile,
 		},
 	}
 
@@ -735,11 +700,8 @@ func TestSafeFileManager_RemoveTemp_WithMock(t *testing.T) {
 			err := manager.RemoveTemp(tt.path)
 
 			// Verify
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 			} else {
 				assert.NoError(t, err)
 			}
@@ -749,12 +711,11 @@ func TestSafeFileManager_RemoveTemp_WithMock(t *testing.T) {
 
 func TestSafeFileManager_CreateTempFile_WithMock(t *testing.T) {
 	tests := []struct {
-		name        string
-		dir         string
-		pattern     string
-		setupMock   func(*commontestutil.MockFileSystem)
-		wantErr     bool
-		errContains string
+		name      string
+		dir       string
+		pattern   string
+		setupMock func(*commontestutil.MockFileSystem)
+		wantErr   error
 	}{
 		{
 			name:    "create_temp_file_in_default_dir",
@@ -763,7 +724,7 @@ func TestSafeFileManager_CreateTempFile_WithMock(t *testing.T) {
 			setupMock: func(_ *commontestutil.MockFileSystem) {
 				// MockFileSystem.CreateTemp handles temp file creation
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name:    "create_temp_file_in_specific_dir",
@@ -772,7 +733,7 @@ func TestSafeFileManager_CreateTempFile_WithMock(t *testing.T) {
 			setupMock: func(mock *commontestutil.MockFileSystem) {
 				require.NoError(t, mock.AddDir("/custom/dir", 0o755))
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 	}
 
@@ -794,11 +755,8 @@ func TestSafeFileManager_CreateTempFile_WithMock(t *testing.T) {
 			file, err := manager.CreateTempFile(tt.dir, tt.pattern)
 
 			// Verify
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, file)

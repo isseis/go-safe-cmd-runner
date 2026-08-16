@@ -117,9 +117,8 @@ func TestDryRun_DenyVsHardError(t *testing.T) {
 		require.NoError(t, err)
 		cmd := executortestutil.CreateRuntimeCommand("missing-cmd", nil, executortestutil.WithName("missing"))
 		_, result, err := mgr.ExecuteCommand(context.Background(), cmd, previewTestGroup(), map[string]string{})
-		require.Error(t, err)
+		require.ErrorIs(t, err, assert.AnError, "the resolver's failure must reach the caller")
 		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "command analysis failed")
 	})
 }
 

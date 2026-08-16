@@ -5,16 +5,20 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDefaultExecutor_validatePrivilegedCommand(t *testing.T) {
 	exec := &DefaultExecutor{}
 
 	tests := []struct {
-		name        string
-		cmd         *runnertypes.RuntimeCommand
-		wantErr     bool
-		errContains string
+		name    string
+		cmd     *runnertypes.RuntimeCommand
+		wantErr error // nil when the command is expected to pass validation
+		// wantErrDetail is the offending value the message must name. Both
+		// rejections below share one sentinel, so the value is what says which
+		// of the two — command path or working directory — was rejected.
+		wantErrDetail string
 	}{
 		{
 			name: "valid privileged command with absolute path",
@@ -23,7 +27,7 @@ func TestDefaultExecutor_validatePrivilegedCommand(t *testing.T) {
 				ExpandedArgs:     []string{"start", "nginx"},
 				EffectiveWorkDir: "/tmp",
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name: "invalid - empty command",
@@ -32,8 +36,7 @@ func TestDefaultExecutor_validatePrivilegedCommand(t *testing.T) {
 				ExpandedArgs:     []string{"arg1"},
 				EffectiveWorkDir: "/tmp",
 			},
-			wantErr:     true,
-			errContains: "command cannot be empty",
+			wantErr: ErrEmptyCommand,
 		},
 		{
 			name: "invalid - relative command path",
@@ -42,8 +45,8 @@ func TestDefaultExecutor_validatePrivilegedCommand(t *testing.T) {
 				ExpandedArgs:     []string{"start", "nginx"},
 				EffectiveWorkDir: "/tmp",
 			},
-			wantErr:     true,
-			errContains: "privileged commands must use absolute paths",
+			wantErr:       ErrPrivilegedCmdSecurity,
+			wantErrDetail: "systemctl",
 		},
 		{
 			name: "invalid - relative working directory",
@@ -52,8 +55,8 @@ func TestDefaultExecutor_validatePrivilegedCommand(t *testing.T) {
 				ExpandedArgs:     []string{"start", "nginx"},
 				EffectiveWorkDir: "relative/path",
 			},
-			wantErr:     true,
-			errContains: "privileged commands must use absolute working directory paths",
+			wantErr:       ErrPrivilegedCmdSecurity,
+			wantErrDetail: "relative/path",
 		},
 		{
 			name: "valid - no working directory specified",
@@ -62,7 +65,7 @@ func TestDefaultExecutor_validatePrivilegedCommand(t *testing.T) {
 				ExpandedArgs:     []string{"restart", "apache2"},
 				EffectiveWorkDir: "",
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name: "valid - absolute paths for both command and workdir",
@@ -71,7 +74,7 @@ func TestDefaultExecutor_validatePrivilegedCommand(t *testing.T) {
 				ExpandedArgs:     []string{"-la", "/etc"},
 				EffectiveWorkDir: "/var/log",
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name: "invalid - command with . prefix (relative)",
@@ -80,8 +83,8 @@ func TestDefaultExecutor_validatePrivilegedCommand(t *testing.T) {
 				ExpandedArgs:     []string{},
 				EffectiveWorkDir: "/tmp",
 			},
-			wantErr:     true,
-			errContains: "privileged commands must use absolute paths",
+			wantErr:       ErrPrivilegedCmdSecurity,
+			wantErrDetail: "./script.sh",
 		},
 		{
 			name: "invalid - workdir with . prefix",
@@ -90,8 +93,8 @@ func TestDefaultExecutor_validatePrivilegedCommand(t *testing.T) {
 				ExpandedArgs:     []string{"install"},
 				EffectiveWorkDir: "./build",
 			},
-			wantErr:     true,
-			errContains: "privileged commands must use absolute working directory paths",
+			wantErr:       ErrPrivilegedCmdSecurity,
+			wantErrDetail: "./build",
 		},
 	}
 
@@ -99,13 +102,13 @@ func TestDefaultExecutor_validatePrivilegedCommand(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := exec.validatePrivilegedCommand(tt.cmd)
 
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				if tt.wantErrDetail != "" {
+					assert.ErrorContains(t, err, tt.wantErrDetail, "the message must name the value it rejected")
 				}
 			} else {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			}
 		})
 	}

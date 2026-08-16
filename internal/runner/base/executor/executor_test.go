@@ -3,8 +3,12 @@ package executor_test
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io/fs"
 	"log/slog"
 	"os"
+	"os/exec"
+	"syscall"
 	"testing"
 	"time"
 
@@ -129,36 +133,36 @@ func TestExecute_Failure(t *testing.T) {
 		cmd     *runnertypes.RuntimeCommand
 		env     map[string]string
 		timeout time.Duration
-		wantErr bool
-		errMsg  string
+		wantErr error // nil when the command is expected to succeed
+		// wantExitErr marks the failures the operating system reports as a
+		// non-zero exit rather than as a distinguishable error value; there is
+		// no sentinel to match, so the type is what the test can pin.
+		wantExitErr bool
 	}{
 		{
 			name:    "non-existent command",
 			cmd:     executortestutil.CreateRuntimeCommand("/nonexistent/command12345", []string{}, executortestutil.WithWorkDir("")),
 			env:     map[string]string{},
-			wantErr: true,
-			errMsg:  "no such file or directory",
+			wantErr: fs.ErrNotExist,
 		},
 		{
-			name:    "command with non-zero exit status",
-			cmd:     executortestutil.CreateRuntimeCommand(shCmd, []string{"-c", "exit 1"}, executortestutil.WithWorkDir("")),
-			env:     map[string]string{},
-			wantErr: true,
-			errMsg:  "command execution failed",
+			name:        "command with non-zero exit status",
+			cmd:         executortestutil.CreateRuntimeCommand(shCmd, []string{"-c", "exit 1"}, executortestutil.WithWorkDir("")),
+			env:         map[string]string{},
+			wantExitErr: true,
 		},
 		{
 			name:    "command writing to stderr",
 			cmd:     executortestutil.CreateRuntimeCommand(shCmd, []string{"-c", "echo 'error message' >&2; exit 0"}, executortestutil.WithWorkDir("")),
 			env:     map[string]string{},
-			wantErr: false, // This should succeed but capture stderr
+			wantErr: nil, // This should succeed but capture stderr
 		},
 		{
-			name:    "command that takes time (for timeout test)",
-			cmd:     executortestutil.CreateRuntimeCommand(sleepCmd, []string{"2"}, executortestutil.WithWorkDir("")),
-			env:     map[string]string{},
-			timeout: 100 * time.Millisecond,
-			wantErr: true,
-			errMsg:  "signal: killed",
+			name:        "command that takes time (for timeout test)",
+			cmd:         executortestutil.CreateRuntimeCommand(sleepCmd, []string{"2"}, executortestutil.WithWorkDir("")),
+			env:         map[string]string{},
+			timeout:     100 * time.Millisecond,
+			wantExitErr: true,
 		},
 	}
 
@@ -188,12 +192,13 @@ func TestExecute_Failure(t *testing.T) {
 
 			result, err := e.Execute(ctx, nil, tt.cmd, tt.env, outputWriter)
 
-			if tt.wantErr {
-				assert.Error(t, err, "Expected error but got none")
-				if tt.errMsg != "" {
-					assert.Contains(t, err.Error(), tt.errMsg, "Error message should contain expected text")
-				}
-			} else {
+			switch {
+			case tt.wantErr != nil:
+				require.ErrorIs(t, err, tt.wantErr)
+			case tt.wantExitErr:
+				_, ok := errors.AsType[*exec.ExitError](err)
+				require.True(t, ok, "expected the command's non-zero exit to surface as *exec.ExitError, got: %v", err)
+			default:
 				require.NoError(t, err, "Unexpected error")
 				require.NotNil(t, result, "Result should not be nil")
 
@@ -343,7 +348,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		assert.Error(t, err)
 		assert.NotNil(t, result)
 		assert.Equal(t, -1, result.ExitCode)
-		assert.Contains(t, err.Error(), "operation not permitted")
+		require.ErrorIs(t, err, syscall.EPERM)
 
 		// Verify that user/group privilege escalation was called
 		assert.Contains(t, mockPriv.ElevationCalls, "user_group_change:testuser:testgroup")
@@ -361,7 +366,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "no privilege manager available")
+		require.ErrorIs(t, err, executor.ErrNoPrivilegeManager)
 	})
 
 	t.Run("user_group_not_supported", func(t *testing.T) {
@@ -377,7 +382,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "user/group privilege changes are not supported")
+		require.ErrorIs(t, err, executor.ErrUserGroupPrivilegeUnsupported)
 	})
 
 	t.Run("user_group_privilege_execution_fails", func(t *testing.T) {
@@ -394,7 +399,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "user/group privilege execution failed")
+		require.ErrorIs(t, err, privilegetestutil.ErrMockPrivilegeElevationFailed)
 	})
 
 	t.Run("only_user_specified_fails_without_cap_setuid", func(t *testing.T) {
@@ -419,7 +424,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		assert.Error(t, err)
 		assert.NotNil(t, result)
 		assert.Equal(t, -1, result.ExitCode)
-		assert.Contains(t, err.Error(), "operation not permitted")
+		require.ErrorIs(t, err, syscall.EPERM)
 
 		// Verify that user/group privilege escalation was called with empty group
 		assert.Contains(t, mockPriv.ElevationCalls, "user_group_change:testuser:")
@@ -447,7 +452,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		assert.Error(t, err)
 		assert.NotNil(t, result)
 		assert.Equal(t, -1, result.ExitCode)
-		assert.Contains(t, err.Error(), "operation not permitted")
+		require.ErrorIs(t, err, syscall.EPERM)
 
 		// Verify that user/group privilege escalation was called with empty user
 		assert.Contains(t, mockPriv.ElevationCalls, "user_group_change::testgroup")
@@ -478,7 +483,7 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 		// The mock privilege manager doesn't actually set CAP_SETUID/CAP_SETGID.
 		assert.Error(t, err)
 		assert.NotNil(t, result)
-		assert.Contains(t, err.Error(), "operation not permitted")
+		require.ErrorIs(t, err, syscall.EPERM)
 
 		// Should use user/group execution, not privileged execution
 		assert.Contains(t, mockPriv.ElevationCalls, "user_group_change:testuser:testgroup")
@@ -509,34 +514,29 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 // TestUserGroupCommandValidation_PathRequirements tests the basic validation for user/group commands
 func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 	tests := []struct {
-		name          string
-		cmd           *runnertypes.RuntimeCommand
-		expectError   bool
-		errorContains string
+		name    string
+		cmd     *runnertypes.RuntimeCommand
+		wantErr error // nil when the command is expected to succeed
 	}{
 		{
-			name:          "valid absolute path fails with operation not permitted",
-			cmd:           executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup")),
-			expectError:   true,
-			errorContains: "operation not permitted",
+			name:    "valid absolute path fails with operation not permitted",
+			cmd:     executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup")),
+			wantErr: syscall.EPERM,
 		},
 		{
-			name:          "relative working directory fails for user/group command",
-			cmd:           executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir("tmp"), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup")),
-			expectError:   true,
-			errorContains: "does not exist", // Basic validation fails first (directory existence check)
+			name:    "relative working directory fails for user/group command",
+			cmd:     executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir("tmp"), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup")),
+			wantErr: executor.ErrDirNotExists, // Basic validation fails first (directory existence check)
 		},
 		{
-			name:          "absolute working directory fails with operation not permitted",
-			cmd:           executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir("/tmp"), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup")),
-			expectError:   true,
-			errorContains: "operation not permitted",
+			name:    "absolute working directory fails with operation not permitted",
+			cmd:     executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir("/tmp"), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup")),
+			wantErr: syscall.EPERM,
 		},
 		{
-			name:          "path with relative components fails in standard validation",
-			cmd:           executortestutil.CreateRuntimeCommand("/bin/../bin/echo", []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup")),
-			expectError:   true,
-			errorContains: "command path contains relative path components",
+			name:    "path with relative components fails in standard validation",
+			cmd:     executortestutil.CreateRuntimeCommand("/bin/../bin/echo", []string{"test"}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup")),
+			wantErr: executor.ErrInvalidPath,
 		},
 	}
 
@@ -546,7 +546,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			// root: with CAP_SETUID/CAP_SETGID (e.g. root in some Docker CI setups),
 			// the credential change would succeed instead of failing with EPERM,
 			// invalidating the assertion.
-			if tt.errorContains == "operation not permitted" && os.Getuid() == 0 {
+			if errors.Is(tt.wantErr, syscall.EPERM) && os.Getuid() == 0 {
 				t.Skip("Skipping EPERM assertion when running as root")
 			}
 
@@ -568,13 +568,10 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 
 			_, err := exec.Execute(ctx, nil, tt.cmd, envVars, nil)
 
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 			} else {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			}
 		})
 	}
@@ -692,7 +689,7 @@ func TestDefaultExecutor_UserGroupPrivileges_StderrCapture(t *testing.T) {
 		expectedStdout string
 		expectedStderr string
 		expectedExit   int
-		errContains    []string
+		wantErr        error // nil when the failure has no distinguishable error value
 	}{
 		{
 			name: "privileged command failure captures stderr",
@@ -707,7 +704,7 @@ func TestDefaultExecutor_UserGroupPrivileges_StderrCapture(t *testing.T) {
 			expectedStdout: "",
 			expectedStderr: "",
 			expectedExit:   -1,
-			errContains:    []string{"user/group privilege execution failed", "operation not permitted"},
+			wantErr:        syscall.EPERM,
 		},
 		{
 			name: "normal command failure captures stderr",
@@ -720,7 +717,9 @@ func TestDefaultExecutor_UserGroupPrivileges_StderrCapture(t *testing.T) {
 			expectedStdout: "",
 			expectedStderr: "normal error",
 			expectedExit:   1,
-			errContains:    []string{"command execution failed", "exit status 1"},
+			// A plain non-zero exit carries no sentinel; the exit code below is
+			// what distinguishes it.
+			wantErr: nil,
 		},
 		{
 			name: "privileged command failure captures both stdout and stderr",
@@ -734,7 +733,7 @@ func TestDefaultExecutor_UserGroupPrivileges_StderrCapture(t *testing.T) {
 			expectedStdout: "",
 			expectedStderr: "",
 			expectedExit:   -1,
-			errContains:    []string{"user/group privilege execution failed", "operation not permitted"},
+			wantErr:        syscall.EPERM,
 		},
 	}
 
@@ -760,9 +759,9 @@ func TestDefaultExecutor_UserGroupPrivileges_StderrCapture(t *testing.T) {
 
 			result, err := exec.Execute(context.Background(), nil, tc.cmd, map[string]string{}, nil)
 
-			assert.Error(t, err)
-			for _, msg := range tc.errContains {
-				assert.Contains(t, err.Error(), msg)
+			require.Error(t, err)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
 			}
 
 			require.NotNil(t, result, "Result should not be nil even on failure")
@@ -790,9 +789,7 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 		name               string
 		cmd                *runnertypes.RuntimeCommand
 		privilegeSupported bool
-		expectError        bool
-		errorMessage       string
-		expectedErrorType  error
+		wantErr            error // nil when the command is expected to succeed
 		noPrivilegeManager bool
 		expectElevations   []string
 	}{
@@ -800,8 +797,8 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 			name:               "root user command fails without real elevation",
 			cmd:                executortestutil.CreateRuntimeCommand(whoamiCmd, []string{}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("root")),
 			privilegeSupported: true,
-			expectError:        true,
-			errorMessage:       "user/group privilege execution failed",
+			// The mock does not really change identity, so execve fails with EPERM.
+			wantErr:            syscall.EPERM,
 			noPrivilegeManager: false,
 			expectElevations:   []string{"user_group_change:root:"},
 		},
@@ -809,25 +806,21 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 			name:               "root user command fails when not supported",
 			cmd:                executortestutil.CreateRuntimeCommand(whoamiCmd, []string{}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("root")),
 			privilegeSupported: false,
-			expectError:        true,
-			errorMessage:       "user/group privilege changes are not supported",
-			expectedErrorType:  executor.ErrUserGroupPrivilegeUnsupported,
+			wantErr:            executor.ErrUserGroupPrivilegeUnsupported,
 			noPrivilegeManager: false,
 		},
 		{
 			name:               "root user command fails with no manager",
 			cmd:                executortestutil.CreateRuntimeCommand(whoamiCmd, []string{}, executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("root")),
 			privilegeSupported: true,
-			expectError:        true,
-			errorMessage:       "no privilege manager available",
-			expectedErrorType:  executor.ErrNoPrivilegeManager,
+			wantErr:            executor.ErrNoPrivilegeManager,
 			noPrivilegeManager: true,
 		},
 		{
 			name:               "normal command bypasses privilege manager",
 			cmd:                executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithWorkDir("")),
 			privilegeSupported: false,
-			expectError:        false,
+			wantErr:            nil,
 			noPrivilegeManager: false,
 			expectElevations:   []string{},
 		},
@@ -841,9 +834,7 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 			// setups run as root with CAP_SETUID/CAP_SETGID), the credential change
 			// to uid=0/gid=0 succeeds instead, so the command succeeds too.
 			if tt.name == "root user command fails without real elevation" && os.Getuid() == 0 {
-				tt.expectError = false
-				tt.errorMessage = ""
-				tt.expectedErrorType = nil
+				tt.wantErr = nil
 			}
 
 			mockPrivMgr := privilegetestutil.NewMockPrivilegeManager(tt.privilegeSupported)
@@ -866,15 +857,10 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 
 			result, err := exec.Execute(ctx, nil, tt.cmd, envVars, nil)
 
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.expectedErrorType != nil {
-					assert.ErrorIs(t, err, tt.expectedErrorType)
-				} else if tt.errorMessage != "" {
-					assert.Contains(t, err.Error(), tt.errorMessage)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 			} else {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				assert.NotNil(t, result)
 			}
 

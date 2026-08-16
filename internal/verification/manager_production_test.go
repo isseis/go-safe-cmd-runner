@@ -74,9 +74,9 @@ func TestProductionNewManager(t *testing.T) {
 		manager, err := NewManagerForProduction(stubDirectoryValidator{})
 
 		// Verify that validation fails appropriately
-		assert.Error(t, err, "NewManagerForProduction should return an error for non-existent hash directory")
+		require.ErrorIs(t, err, ErrHashDirectoryInvalid, "a hash directory that does not exist must be reported as such")
 		assert.Nil(t, manager, "Manager should be nil on error")
-		assert.Contains(t, err.Error(), "hash directory", "Error should mention hash directory")
+		assert.ErrorContains(t, err, cmdcommon.DefaultHashDirectory, "the message must name the directory it rejected")
 	})
 
 	t.Run("security_audit_logging", func(t *testing.T) {

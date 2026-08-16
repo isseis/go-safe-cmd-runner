@@ -151,9 +151,7 @@ func TestOutputSizeLimit(t *testing.T) {
 	_, _, err = manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 	// Should get an error due to size limit being exceeded
-	require.Error(t, err, "Expected error when output size limit is exceeded")
-	require.Contains(t, err.Error(), "output size limit exceeded",
-		"Expected error message to contain 'output size limit exceeded', got: %v", err)
+	require.ErrorIs(t, err, output.ErrOutputSizeExceeded, "Expected error when output size limit is exceeded")
 
 	// Verify output file was cleaned up and does not exist
 	_, statErr := os.Stat(outputPath)

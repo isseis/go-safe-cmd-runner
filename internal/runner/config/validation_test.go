@@ -375,8 +375,8 @@ func TestValidateGroupNames(t *testing.T) {
 					assert.ErrorIs(t, err, tt.expectedError)
 				}
 				for _, substr := range tt.errorContains {
-					assert.Contains(t, err.Error(), substr,
-						"error message should contain %q", substr)
+					assert.ErrorContains(t, err, substr,
+						"error message should name %q", substr)
 				}
 			} else {
 				require.NoError(t, err, "expected no error but got: %v", err)
@@ -574,8 +574,8 @@ func TestValidateTimeouts(t *testing.T) {
 				require.Error(t, err, "expected error but got none")
 				assert.ErrorIs(t, err, tt.expectedErr)
 				for _, mustContain := range tt.errorMustContain {
-					assert.Contains(t, err.Error(), mustContain,
-						"error message should contain %q", mustContain)
+					assert.ErrorContains(t, err, mustContain,
+						"error message should name %q", mustContain)
 				}
 			} else {
 				require.NoError(t, err, "expected no error but got: %v", err)

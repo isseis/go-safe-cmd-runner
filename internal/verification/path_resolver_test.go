@@ -139,10 +139,9 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 
 		path, err := resolver.validateAndCacheCommand(nonExecPath, "non_exec")
 
-		assert.Error(t, err)
 		assert.Empty(t, path)
-		assert.ErrorIs(t, err, ErrCommandNotFound)
-		assert.Contains(t, err.Error(), "is not executable")
+		require.ErrorIs(t, err, ErrCommandNotFound)
+		require.ErrorIs(t, err, ErrCommandNotExecutable)
 	})
 
 	t.Run("directory_instead_of_command", func(t *testing.T) {
@@ -155,10 +154,9 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 
 		path, err := resolver.validateAndCacheCommand(dirPath, "test_dir")
 
-		assert.Error(t, err)
 		assert.Empty(t, path)
-		assert.ErrorIs(t, err, ErrCommandNotFound)
-		assert.Contains(t, err.Error(), "is a directory")
+		require.ErrorIs(t, err, ErrCommandNotFound)
+		require.ErrorIs(t, err, ErrCommandIsDirectory)
 	})
 
 	// EvalSymlinks must run before validation, and validation/caching must both
@@ -207,9 +205,8 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 
 		path, err := resolver.validateAndCacheCommand(link, "link_to_non_exec")
 
-		assert.Error(t, err)
 		assert.Empty(t, path)
-		assert.ErrorIs(t, err, ErrCommandNotFound)
-		assert.Contains(t, err.Error(), "is not executable")
+		require.ErrorIs(t, err, ErrCommandNotFound)
+		require.ErrorIs(t, err, ErrCommandNotExecutable)
 	})
 }

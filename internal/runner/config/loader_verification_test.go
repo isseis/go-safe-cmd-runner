@@ -92,9 +92,9 @@ args = ["hello"]
 		content, err := verificationMgr.VerifyAndReadConfigFile(configPath)
 
 		// Should fail because hash is not recorded
-		require.Error(t, err)
+		require.ErrorIs(t, err, filevalidator.ErrHashFileNotFound)
 		assert.Nil(t, content)
-		assert.Contains(t, err.Error(), configPath)
+		assert.ErrorContains(t, err, configPath, "the message must name the file that failed verification")
 	})
 
 	t.Run("verification succeeds when hash is recorded", func(t *testing.T) {
@@ -147,8 +147,8 @@ args = ["hello"]
 		_, err = loader.LoadConfig(configPath, configContent)
 
 		// Should fail because template file hash is not recorded
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), templatePath)
+		require.ErrorIs(t, err, filevalidator.ErrHashFileNotFound)
+		assert.ErrorContains(t, err, templatePath, "the message must name the file that failed verification")
 	})
 
 	t.Run("verification succeeds when hash is recorded", func(t *testing.T) {
@@ -203,8 +203,8 @@ includes = ["backup.toml", "restore.toml"]
 
 		// Loading should fail because second template file hash is not recorded
 		_, err = loader.LoadConfig(configPath, configContent)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), template2Path)
+		require.ErrorIs(t, err, filevalidator.ErrHashFileNotFound)
+		assert.ErrorContains(t, err, template2Path, "the message must name the file that failed verification")
 	})
 
 	t.Run("verification succeeds when all include files have hashes", func(t *testing.T) {
@@ -247,8 +247,8 @@ includes = ["templates.toml"]
 
 	// Loading should fail because hash verification fails
 	_, err = loader.LoadConfig(configPath, configContent)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), templatePath)
+	require.ErrorIs(t, err, filevalidator.ErrMismatch)
+	assert.ErrorContains(t, err, templatePath, "the message must name the file that failed verification")
 }
 
 // TestLoadConfig_MissingHashReturnsError tests that missing hash records
@@ -277,8 +277,8 @@ includes = ["templates.toml"]
 
 	// Loading should fail because hash is not recorded
 	_, err = loader.LoadConfig(configPath, configContent)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), templatePath)
+	require.ErrorIs(t, err, filevalidator.ErrHashFileNotFound)
+	assert.ErrorContains(t, err, templatePath, "the message must name the file that failed verification")
 }
 
 // TestLoadConfig_TamperedFileDetection tests that tampering with a template file
@@ -317,8 +317,8 @@ includes = ["templates.toml"]
 
 	// Loading should fail because file was tampered with
 	_, err = loader.LoadConfig(configPath, configContent)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), templatePath)
+	require.ErrorIs(t, err, filevalidator.ErrMismatch)
+	assert.ErrorContains(t, err, templatePath, "the message must name the file that failed verification")
 }
 
 // =============================================================================
@@ -442,6 +442,6 @@ includes = ["new_templates.toml"]
 
 	// Loading should fail because new template lacks hash
 	_, err = loader.LoadConfig(newConfigPath, newConfigContent)
-	require.Error(t, err, "should fail when template file lacks hash verification")
-	assert.Contains(t, err.Error(), newTemplatePath)
+	require.ErrorIs(t, err, filevalidator.ErrHashFileNotFound, "should fail when template file lacks hash verification")
+	assert.ErrorContains(t, err, newTemplatePath, "the message must name the file that failed verification")
 }

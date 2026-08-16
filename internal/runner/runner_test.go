@@ -19,6 +19,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	configpkg "github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
@@ -76,9 +77,8 @@ func TestNewRunner(t *testing.T) {
 
 	t.Run("fails without runID", func(t *testing.T) {
 		runner, err := NewRunner(config)
-		require.Error(t, err, "NewRunner should return an error without runID")
+		require.ErrorIs(t, err, ErrRunIDRequired, "NewRunner should return an error without runID")
 		assert.Nil(t, runner)
-		assert.Contains(t, err.Error(), "runID is required")
 	})
 
 	t.Run("with multiple options", func(t *testing.T) {
@@ -1154,7 +1154,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 		name         string
 		commands     []runnertypes.CommandSpec
 		globalConfig runnertypes.GlobalSpec
-		expectError  string
+		wantErr      error
 		description  string
 	}{
 		{
@@ -1171,7 +1171,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 				Timeout:         new(int32(30)),
 				OutputSizeLimit: new(int64(1024)),
 			},
-			expectError: "path traversal",
+			wantErr:     output.ErrPathTraversal,
 			description: "Path traversal attempts should be rejected",
 		},
 		{
@@ -1188,7 +1188,9 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 				Timeout:         new(int32(30)),
 				OutputSizeLimit: new(int64(1024)),
 			},
-			expectError: "directory",
+			// The write-permission check on the resolved parent directory is what
+			// rejects it; "directory" also matched the group name in the message.
+			wantErr:     security.ErrInvalidFilePermissions,
 			description: "Non-existent directories should cause error",
 		},
 		{
@@ -1205,7 +1207,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 				Timeout:         new(int32(30)),
 				OutputSizeLimit: new(int64(1024)),
 			},
-			expectError: "permission",
+			wantErr:     security.ErrInvalidFilePermissions,
 			description: "Permission denied should cause error",
 		},
 	}
@@ -1233,9 +1235,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 			ctx := context.Background()
 			err = runner.ExecuteGroup(ctx, &config.Groups[0])
 
-			// Verify error occurred and contains expected message
-			assert.Error(t, err, tt.description)
-			assert.Contains(t, strings.ToLower(err.Error()), strings.ToLower(tt.expectError), "Error should contain expected message: %s", tt.expectError)
+			require.ErrorIs(t, err, tt.wantErr, tt.description)
 		})
 	}
 }
@@ -1507,38 +1507,15 @@ func TestRunner_OutputCaptureErrorTypes(t *testing.T) {
 	setupSafeTestEnv(t)
 
 	tests := []struct {
-		name        string
-		setupMock   func(*MockResourceManager)
-		expectError string
+		name string
+		// injectErr is the failure the resource manager reports; the runner must
+		// carry it to the caller rather than replacing it with one of its own.
+		injectErr error
 	}{
-		{
-			name: "InvalidFormat",
-			setupMock: func(mockRM *MockResourceManager) {
-				setupFailedMockExecution(mockRM, errors.New("invalid output format"))
-			},
-			expectError: "invalid output format",
-		},
-		{
-			name: "SecurityViolation",
-			setupMock: func(mockRM *MockResourceManager) {
-				setupFailedMockExecution(mockRM, errors.New("security violation: path traversal detected"))
-			},
-			expectError: "security violation",
-		},
-		{
-			name: "DiskFull",
-			setupMock: func(mockRM *MockResourceManager) {
-				setupFailedMockExecution(mockRM, errors.New("disk full: cannot write output"))
-			},
-			expectError: "disk full",
-		},
-		{
-			name: "Unknown",
-			setupMock: func(mockRM *MockResourceManager) {
-				setupFailedMockExecution(mockRM, errors.New("unknown error occurred"))
-			},
-			expectError: "unknown error",
-		},
+		{name: "InvalidFormat", injectErr: errors.New("invalid output format")},
+		{name: "SecurityViolation", injectErr: errors.New("security violation: path traversal detected")},
+		{name: "DiskFull", injectErr: errors.New("disk full: cannot write output")},
+		{name: "Unknown", injectErr: errors.New("unknown error occurred")},
 	}
 
 	for _, tt := range tests {
@@ -1567,7 +1544,7 @@ func TestRunner_OutputCaptureErrorTypes(t *testing.T) {
 
 			// Create mock resource manager
 			mockRM := &MockResourceManager{}
-			tt.setupMock(mockRM)
+			setupFailedMockExecution(mockRM, tt.injectErr)
 
 			// Create runner with proper options
 			options := []Option{
@@ -1583,9 +1560,7 @@ func TestRunner_OutputCaptureErrorTypes(t *testing.T) {
 			ctx := context.Background()
 			err = runner.ExecuteGroup(ctx, &cfg.Groups[0])
 
-			// Verify error contains expected message
-			require.Error(t, err, "Should return error for %s", tt.name)
-			assert.Contains(t, err.Error(), tt.expectError)
+			require.ErrorIs(t, err, tt.injectErr, "Should carry the resource manager's failure for %s", tt.name)
 
 			// Verify mock expectations
 			mockRM.AssertExpectations(t)

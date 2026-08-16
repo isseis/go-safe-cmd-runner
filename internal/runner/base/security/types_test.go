@@ -7,6 +7,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // NewPermissiveTestConfig creates a config with relaxed permissions for specific tests
@@ -225,11 +226,12 @@ func TestGenerateAllowedCommandsFromPath(t *testing.T) {
 			result, err := GenerateAllowedCommandsFromPath(tt.pathEnv)
 
 			if tt.expectError {
-				assert.Error(t, err)
-				assert.ErrorIs(t, err, ErrInvalidSecurePathEnv,
+				require.ErrorIs(t, err, ErrInvalidSecurePathEnv,
 					"error should wrap ErrInvalidSecurePathEnv")
+				// Every row shares that sentinel, so the detail is what says which
+				// component was rejected and why.
 				if tt.errorMsg != "" {
-					assert.Contains(t, err.Error(), tt.errorMsg)
+					assert.ErrorContains(t, err, tt.errorMsg)
 				}
 				assert.Nil(t, result)
 			} else {

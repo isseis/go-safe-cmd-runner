@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -434,11 +435,18 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 // invalidHashDirManager returns a Manager configured with a non-existent
 // hash directory to exercise hash directory validation failure paths in
 // tests.
+// errInjectedIO is the failure injected into the file-open seam.
+var errInjectedIO = errors.New("injected I/O error")
+
+// errHashDirNotFound is the failure the stub validator injects for a hash
+// directory that cannot be validated.
+var errHashDirNotFound = errors.New("directory not found")
+
 func invalidHashDirManager() *Manager {
 	return &Manager{
 		hashDir:  "/non/existent/hash/directory",
 		fs:       common.NewDefaultFileSystem(),
-		security: stubDirectoryValidator{err: errors.New("directory not found")},
+		security: stubDirectoryValidator{err: errHashDirNotFound},
 	}
 }
 
@@ -484,9 +492,9 @@ func TestVerifyAndReadConfigFile(t *testing.T) {
 		content, err := manager.VerifyAndReadConfigFile(nonExistentConfig)
 
 		// Should fail for non-existent file
-		assert.Error(t, err)
+		require.ErrorIs(t, err, fs.ErrNotExist)
 		assert.Nil(t, content)
-		assert.Contains(t, err.Error(), nonExistentConfig)
+		assert.ErrorContains(t, err, nonExistentConfig, "the message must name the file that is missing")
 	})
 
 	t.Run("hash_directory_validation_failure", func(t *testing.T) {
@@ -498,9 +506,8 @@ func TestVerifyAndReadConfigFile(t *testing.T) {
 		content, err := manager.VerifyAndReadConfigFile(configPath)
 
 		// Should fail hash directory validation
-		assert.Error(t, err)
+		require.ErrorIs(t, err, errHashDirNotFound)
 		assert.Nil(t, content)
-		assert.Contains(t, err.Error(), "hash directory validation failed")
 	})
 }
 
@@ -550,9 +557,8 @@ func TestVerifyGlobalFiles(t *testing.T) {
 		result, err := manager.VerifyGlobalFiles(runtimeGlobal)
 
 		// Should fail hash directory validation
-		assert.Error(t, err)
+		require.ErrorIs(t, err, errHashDirNotFound)
 		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "hash directory validation failed")
 	})
 }
 
@@ -602,9 +608,8 @@ func TestVerifyGroupFiles(t *testing.T) {
 		result, err := manager.VerifyGroupFiles(runtimeGroup)
 
 		// Should fail hash directory validation
-		assert.Error(t, err)
+		require.ErrorIs(t, err, errHashDirNotFound)
 		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "hash directory validation failed")
 	})
 }
 
@@ -653,10 +658,8 @@ func TestResolvePath(t *testing.T) {
 		resolvedPath, err := manager.ResolvePath("nonexistent_command_12345")
 
 		// Should fail with command not found
-		assert.Error(t, err)
+		require.ErrorIs(t, err, ErrCommandNotFound)
 		assert.Empty(t, resolvedPath)
-		// The error should contain command not found message
-		assert.Contains(t, err.Error(), "command not found")
 	})
 }
 
@@ -851,8 +854,7 @@ func TestVerifyFile(t *testing.T) {
 
 		// Test verification (should fail because no hash file exists)
 		err = manager.verifyFile(testFile, "test")
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "hash")
+		require.ErrorIs(t, err, filevalidator.ErrHashFileNotFound)
 	})
 }
 
@@ -1098,8 +1100,8 @@ func TestValidateSecurityConstraints(t *testing.T) {
 
 		// Production mode enforces specific constraints
 		err := validateSecurityConstraints("/custom/hash/dir", opts)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "security violation")
+		_, ok := errors.AsType[*HashDirectorySecurityError](err)
+		require.True(t, ok, "production mode must reject a custom hash directory with the security-violation type, got: %v", err)
 	})
 }
 
@@ -1232,8 +1234,10 @@ func TestSecurityIntegration(t *testing.T) {
 		// Create manager without skipping hash directory validation
 		manager, err := NewManagerForTest(tmpDir)
 		if err != nil {
-			// This might fail due to directory permissions, which is expected
-			assert.Contains(t, err.Error(), "hash directory validation failed")
+			// This might fail due to directory permissions, which is expected.
+			// The cause is host-dependent, so only the directory it names can be
+			// asserted on.
+			assert.ErrorContains(t, err, tmpDir)
 			return
 		}
 
@@ -1246,7 +1250,7 @@ func TestSecurityIntegration(t *testing.T) {
 		// This might succeed or fail depending on the temp directory permissions
 		// The key is that it exercises the security validator integration
 		if err != nil {
-			assert.Contains(t, err.Error(), "hash directory")
+			assert.ErrorContains(t, err, tmpDir)
 		}
 	})
 
@@ -2100,15 +2104,14 @@ func TestHasMachODynamicLibraryDeps_ErrorPropagation(t *testing.T) {
 
 	mockFS := &safefileiotestutil.MockFileSystem{
 		SafeOpenFileFunc: func(_ string, _ int, _ os.FileMode) (safefileio.File, error) {
-			return nil, errors.New("injected I/O error")
+			return nil, errInjectedIO
 		},
 	}
 	m.safeFS = mockFS
 
 	hasDeps, err := m.hasMachODynamicLibraryDeps("/some/path")
-	require.Error(t, err)
+	require.ErrorIs(t, err, errInjectedIO)
 	assert.False(t, hasDeps)
-	assert.Contains(t, err.Error(), "injected I/O error")
 }
 
 // TestIsDeferredHashDirUnavailable_GatedByDryRun verifies that

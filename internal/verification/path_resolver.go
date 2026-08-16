@@ -51,10 +51,10 @@ func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, 
 		return "", fmt.Errorf("%w: %s", ErrCommandNotFound, cacheKey)
 	}
 	if info.IsDir() {
-		return "", fmt.Errorf("%w: %s is a directory", ErrCommandNotFound, cacheKey)
+		return "", fmt.Errorf("%w: %w: %s", ErrCommandNotFound, ErrCommandIsDirectory, cacheKey)
 	}
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
-		return "", fmt.Errorf("%w: %s is not executable", ErrCommandNotFound, cacheKey)
+		return "", fmt.Errorf("%w: %w: %s", ErrCommandNotFound, ErrCommandNotExecutable, cacheKey)
 	}
 
 	pr.mu.Lock()

@@ -24,6 +24,12 @@ var (
 	ErrPathResolverNotInitialized = errors.New("path resolver not initialized")
 	// ErrCommandNotFound is returned when command is not found in PATH
 	ErrCommandNotFound = errors.New("command not found in PATH")
+	// ErrCommandIsDirectory is returned, wrapped alongside ErrCommandNotFound,
+	// when the resolved command path is a directory.
+	ErrCommandIsDirectory = errors.New("path is a directory")
+	// ErrCommandNotExecutable is returned, wrapped alongside ErrCommandNotFound,
+	// when the resolved command path is not a regular executable file.
+	ErrCommandNotExecutable = errors.New("path is not executable")
 	// ErrShebangChainEmptyPath is returned when a shebang_chain entry has an empty path,
 	// indicating a corrupted or malformed record.
 	ErrShebangChainEmptyPath = errors.New("shebang_chain entry has empty path: record may be corrupt")

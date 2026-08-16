@@ -111,8 +111,7 @@ func TestOutputCaptureIntegration_SizeLimitEnforcement(t *testing.T) {
 	// Try to write data that would exceed limit
 	largeData := []byte("This data chunk is large enough to exceed the size limit")
 	err = manager.WriteOutput(capture, largeData)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "output size limit exceeded")
+	require.ErrorIs(t, err, ErrOutputSizeLimitExceeded)
 
 	// Verify current size hasn't changed after failed write
 	assert.Equal(t, int64(len(smallData)), capture.CurrentSize)
@@ -124,31 +123,28 @@ func TestOutputCaptureIntegration_SizeLimitEnforcement(t *testing.T) {
 
 func TestOutputCaptureIntegration_ErrorHandling(t *testing.T) {
 	tests := []struct {
-		name           string
-		outputPath     string
-		workDir        string
-		expectError    bool
-		expectedErrMsg string
+		name       string
+		outputPath string
+		workDir    string
+		wantErr    error
 	}{
 		{
-			name:           "path_traversal_attack",
-			outputPath:     "../../../etc/passwd",
-			workDir:        "/tmp",
-			expectError:    true,
-			expectedErrMsg: "path traversal detected",
+			name:       "path_traversal_attack",
+			outputPath: "../../../etc/passwd",
+			workDir:    "/tmp",
+			wantErr:    ErrPathTraversal,
 		},
 		{
-			name:           "dangerous_characters_in_path",
-			outputPath:     "/tmp/output$().txt",
-			workDir:        "/tmp",
-			expectError:    true,
-			expectedErrMsg: "dangerous characters detected",
+			name:       "dangerous_characters_in_path",
+			outputPath: "/tmp/output$().txt",
+			workDir:    "/tmp",
+			wantErr:    ErrDangerousCharactersInPath,
 		},
 		{
-			name:        "nonexistent_directory_creation",
-			outputPath:  "/tmp/nonexistent/deep/nested/output.txt",
-			workDir:     "/tmp",
-			expectError: false, // Should succeed as directory will be created
+			name:       "nonexistent_directory_creation",
+			outputPath: "/tmp/nonexistent/deep/nested/output.txt",
+			workDir:    "/tmp",
+			wantErr:    nil, // Should succeed as directory will be created
 		},
 	}
 
@@ -162,11 +158,8 @@ func TestOutputCaptureIntegration_ErrorHandling(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			capture, err := manager.PrepareOutput(tt.outputPath, tt.workDir, 1024)
 
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.expectedErrMsg != "" {
-					assert.Contains(t, err.Error(), tt.expectedErrMsg)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 				assert.Nil(t, capture)
 			} else {
 				assert.NoError(t, err)
