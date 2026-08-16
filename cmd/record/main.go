@@ -1,5 +1,5 @@
 // Package main provides the record command for the go-safe-cmd-runner.
-// It records file hashes for later verification and now supports multiple files.
+// It records the hashes of one or more files for later verification.
 package main
 
 import (
@@ -70,10 +70,10 @@ func defaultDeps() deps {
 	}
 }
 
-// hashRecorder records the hash of a file and returns the hash file path,
-// the content hash in prefixed format (e.g., "sha256:<hex>"), and any error.
-// Implementations must return the content hash in "<algorithm>:<hex>" format,
-// as it is passed directly to syscall analysis storage.
+// hashRecorder records the hash of a file and returns the hash file path, the
+// content hash, and any error. Implementations must return the content hash in
+// "<algorithm>:<hex>" form (e.g. "sha256:abc..."), as it is passed directly to
+// syscall analysis storage.
 type hashRecorder interface {
 	SaveRecord(filePath string, force bool) (string, string, error)
 }
