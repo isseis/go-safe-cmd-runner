@@ -3,8 +3,6 @@
 package security
 
 import (
-	"bytes"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -32,10 +30,4 @@ func blockedPathUnder(t *testing.T, dir, name string) string {
 	// Restore access so t.TempDir cleanup can remove the tree.
 	t.Cleanup(func() { _ = os.Chmod(blocked, 0o700) })
 	return filepath.Join(blocked, "inner", "target")
-}
-
-// newBufferLogger returns a logger writing to the returned buffer.
-func newBufferLogger() (*slog.Logger, *bytes.Buffer) {
-	buf := &bytes.Buffer{}
-	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})), buf
 }

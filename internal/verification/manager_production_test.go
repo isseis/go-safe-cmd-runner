@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
@@ -93,10 +92,7 @@ func TestProductionNewManager(t *testing.T) {
 		cmdcommon.DefaultHashDirectory = hashDir
 
 		// Capture log output
-		var logBuffer strings.Builder
-		logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		}))
+		logger, rec := tu.NewRecordingLogger()
 		slog.SetDefault(logger)
 
 		// Create manager
@@ -106,11 +102,12 @@ func TestProductionNewManager(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, manager)
 
-		logOutput := logBuffer.String()
-		assert.Contains(t, logOutput, "Production verification manager created")
-		assert.Contains(t, logOutput, "api=NewManagerForProduction")
-		assert.Contains(t, logOutput, hashDir)
-		assert.Contains(t, logOutput, "security_level=strict")
+		rec.RequireRecord(t, slog.LevelInfo, "Production verification manager created").
+			AssertAttrs(t, map[string]any{
+				"api":            "NewManagerForProduction",
+				"hash_directory": hashDir,
+				"security_level": "strict",
+			})
 	})
 }
 
@@ -156,10 +153,7 @@ func TestProductionNewManagerForDryRun(t *testing.T) {
 
 	t.Run("dry_run_security_audit_logging", func(t *testing.T) {
 		// Capture log output
-		var logBuffer strings.Builder
-		logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		}))
+		logger, rec := tu.NewRecordingLogger()
 		slog.SetDefault(logger)
 
 		// Create dry-run manager
@@ -169,13 +163,14 @@ func TestProductionNewManagerForDryRun(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, manager)
 
-		logOutput := logBuffer.String()
-		assert.Contains(t, logOutput, "Dry-run verification manager created")
-		assert.Contains(t, logOutput, "api=NewManagerForDryRun")
-		assert.Contains(t, logOutput, "mode=dry-run")
-		assert.Contains(t, logOutput, "skip_hash_directory_validation=true")
-		assert.Contains(t, logOutput, "file_validator_enabled=true")
-		assert.Contains(t, logOutput, "construction_mode=read_only")
+		rec.RequireRecord(t, slog.LevelInfo, "Dry-run verification manager created").
+			AssertAttrs(t, map[string]any{
+				"api":                            "NewManagerForDryRun",
+				"mode":                           "dry-run",
+				"skip_hash_directory_validation": true,
+				"file_validator_enabled":         true,
+				"construction_mode":              "read_only",
+			})
 	})
 
 	t.Run("basic_functionality_difference", func(t *testing.T) {
@@ -209,22 +204,21 @@ func TestProductionNewManagerForDryRun(t *testing.T) {
 func TestProductionManagerLogging(t *testing.T) {
 	t.Run("logging_includes_required_fields", func(t *testing.T) {
 		// Capture log output
-		var logBuffer strings.Builder
-		logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		}))
+		logger, rec := tu.NewRecordingLogger()
 		slog.SetDefault(logger)
 
 		// Call logging function
 		logProductionManagerCreation()
 
 		// Verify log content
-		logOutput := logBuffer.String()
-		assert.Contains(t, logOutput, "Production verification manager created")
-		assert.Contains(t, logOutput, "api=NewManagerForProduction")
-		assert.Contains(t, logOutput, "security_level=strict")
-		assert.Contains(t, logOutput, "caller_file=")
-		assert.Contains(t, logOutput, "caller_line=")
+		record := rec.RequireRecord(t, slog.LevelInfo, "Production verification manager created")
+		record.AssertAttrs(t, map[string]any{
+			"api":            "NewManagerForProduction",
+			"security_level": "strict",
+		})
+		// The caller position is whatever line called the logger, so only its
+		// presence can be asserted.
+		record.AssertHasAttrs(t, "caller_file", "caller_line")
 	})
 }
 
@@ -232,24 +226,21 @@ func TestProductionManagerLogging(t *testing.T) {
 func TestDryRunManagerLogging(t *testing.T) {
 	t.Run("logging_includes_dry_run_fields", func(t *testing.T) {
 		// Capture log output
-		var logBuffer strings.Builder
-		logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		}))
+		logger, rec := tu.NewRecordingLogger()
 		slog.SetDefault(logger)
 
 		// Call logging function
 		logDryRunManagerCreation()
 
 		// Verify log content
-		logOutput := logBuffer.String()
-		assert.Contains(t, logOutput, "Dry-run verification manager created")
-		assert.Contains(t, logOutput, "api=NewManagerForDryRun")
-		assert.Contains(t, logOutput, "mode=dry-run")
-		assert.Contains(t, logOutput, "skip_hash_directory_validation=true")
-		assert.Contains(t, logOutput, "file_validator_enabled=true")
-		assert.Contains(t, logOutput, "construction_mode=read_only")
-		assert.Contains(t, logOutput, "caller_file=")
-		assert.Contains(t, logOutput, "caller_line=")
+		record := rec.RequireRecord(t, slog.LevelInfo, "Dry-run verification manager created")
+		record.AssertAttrs(t, map[string]any{
+			"api":                            "NewManagerForDryRun",
+			"mode":                           "dry-run",
+			"skip_hash_directory_validation": true,
+			"file_validator_enabled":         true,
+			"construction_mode":              "read_only",
+		})
+		record.AssertHasAttrs(t, "caller_file", "caller_line")
 	})
 }

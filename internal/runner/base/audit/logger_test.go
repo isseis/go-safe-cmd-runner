@@ -14,6 +14,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,11 +45,13 @@ func TestNewAuditLoggerWithCustom(t *testing.T) {
 
 func TestLogger_LogUserGroupExecution(t *testing.T) {
 	tests := []struct {
-		name     string
-		cmd      *runnertypes.RuntimeCommand
-		result   *audit.ExecutionResult
-		duration time.Duration
-		metrics  audit.PrivilegeMetrics
+		name        string
+		cmd         *runnertypes.RuntimeCommand
+		result      *audit.ExecutionResult
+		duration    time.Duration
+		metrics     audit.PrivilegeMetrics
+		wantLevel   slog.Level
+		wantMessage string
 	}{
 		{
 			name: "successful user/group command",
@@ -66,6 +69,8 @@ func TestLogger_LogUserGroupExecution(t *testing.T) {
 				ElevationCount: 1,
 				TotalDuration:  50 * time.Millisecond,
 			},
+			wantLevel:   slog.LevelInfo,
+			wantMessage: "User/group command executed successfully",
 		},
 		{
 			name: "failed user/group command",
@@ -83,6 +88,9 @@ func TestLogger_LogUserGroupExecution(t *testing.T) {
 				ElevationCount: 1,
 				TotalDuration:  75 * time.Millisecond,
 			},
+			// A non-zero exit code is logged at ERROR under a different message.
+			wantLevel:   slog.LevelError,
+			wantMessage: "User/group command failed",
 		},
 		{
 			name: "user only command",
@@ -99,35 +107,43 @@ func TestLogger_LogUserGroupExecution(t *testing.T) {
 				ElevationCount: 1,
 				TotalDuration:  25 * time.Millisecond,
 			},
+			wantLevel:   slog.LevelInfo,
+			wantMessage: "User/group command executed successfully",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			logger := slog.New(slog.NewJSONHandler(&buf, nil))
+			logger, rec := tu.NewRecordingLogger()
 			auditLogger := audit.NewAuditLoggerWithCustom(logger)
 
 			ctx := context.Background()
 			auditLogger.LogUserGroupExecution(ctx, tt.cmd, tt.result, tt.duration, tt.metrics)
 
-			logOutput := buf.String()
-			assert.Contains(t, logOutput, "user_group_execution")
-			assert.Contains(t, logOutput, tt.cmd.Name())
-			assert.Contains(t, logOutput, tt.cmd.ExpandedCmd)
+			record := rec.RequireRecord(t, tt.wantLevel, tt.wantMessage)
+			record.AssertAttrs(t, map[string]any{
+				"audit_type":            "user_group_execution",
+				"command_name":          tt.cmd.Name(),
+				"expanded_command_path": tt.cmd.ExpandedCmd,
+			})
+			// The identity attributes are written only when the command declares
+			// one, so their absence is as much a part of the contract as their value.
 			if tt.cmd.RunAsUser() != "" {
-				assert.Contains(t, logOutput, tt.cmd.RunAsUser())
+				record.AssertAttrs(t, map[string]any{"run_as_user": tt.cmd.RunAsUser()})
+			} else {
+				assert.NotContains(t, record.Attrs, "run_as_user")
 			}
 			if tt.cmd.RunAsGroup() != "" {
-				assert.Contains(t, logOutput, tt.cmd.RunAsGroup())
+				record.AssertAttrs(t, map[string]any{"run_as_group": tt.cmd.RunAsGroup()})
+			} else {
+				assert.NotContains(t, record.Attrs, "run_as_group")
 			}
 		})
 	}
 }
 
 func TestLogger_LogPrivilegeEscalation(t *testing.T) {
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	logger, rec := tu.NewRecordingLogger()
 	auditLogger := audit.NewAuditLoggerWithCustom(logger)
 
 	ctx := context.Background()
@@ -140,12 +156,15 @@ func TestLogger_LogPrivilegeEscalation(t *testing.T) {
 
 	auditLogger.LogPrivilegeEscalation(ctx, operation, commandName, originalUID, targetUID, success, duration)
 
-	logOutput := buf.String()
-	assert.Contains(t, logOutput, "Privilege escalation successful")
-	assert.Contains(t, logOutput, "audit_type")
-	assert.Contains(t, logOutput, "privilege_escalation")
-	assert.Contains(t, logOutput, operation)
-	assert.Contains(t, logOutput, commandName)
+	rec.RequireRecord(t, slog.LevelInfo, "Privilege escalation successful").
+		AssertAttrs(t, map[string]any{
+			"audit_type":   "privilege_escalation",
+			"operation":    operation,
+			"command_name": commandName,
+			"original_uid": originalUID,
+			"target_uid":   targetUID,
+			"success":      true,
+		})
 }
 
 func TestLogger_LogSecurityEvent(t *testing.T) {
@@ -156,6 +175,7 @@ func TestLogger_LogSecurityEvent(t *testing.T) {
 		message   string
 		details   map[string]any
 		expectLog string
+		wantLevel slog.Level
 	}{
 		{
 			name:      "critical security event",
@@ -168,6 +188,8 @@ func TestLogger_LogSecurityEvent(t *testing.T) {
 				"command":    "/bin/su",
 			},
 			expectLog: "Security event",
+			// critical maps to ERROR, everything below "medium" to INFO.
+			wantLevel: slog.LevelError,
 		},
 		{
 			name:      "info security event",
@@ -176,25 +198,25 @@ func TestLogger_LogSecurityEvent(t *testing.T) {
 			message:   "Regular security audit",
 			details:   map[string]any{},
 			expectLog: "Security event",
+			wantLevel: slog.LevelInfo,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			logger := slog.New(slog.NewJSONHandler(&buf, nil))
+			logger, rec := tu.NewRecordingLogger()
 			auditLogger := audit.NewAuditLoggerWithCustom(logger)
 
 			ctx := context.Background()
 			auditLogger.LogSecurityEvent(ctx, tt.eventType, tt.severity, tt.message, tt.details)
 
-			logOutput := buf.String()
-			assert.Contains(t, logOutput, tt.expectLog)
-			assert.Contains(t, logOutput, "audit_type")
-			assert.Contains(t, logOutput, "security_event")
-			assert.Contains(t, logOutput, tt.eventType)
-			assert.Contains(t, logOutput, tt.severity)
-			assert.Contains(t, logOutput, tt.message)
+			rec.RequireRecord(t, tt.wantLevel, tt.expectLog).
+				AssertAttrs(t, map[string]any{
+					"audit_type": "security_event",
+					"event_type": tt.eventType,
+					"severity":   tt.severity,
+					"message":    tt.message,
+				})
 		})
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -63,12 +64,7 @@ func TestShutdownReporter_WithLogger(t *testing.T) {
 	collector.RecordFailure("test_key", errors.New("test error"))
 
 	var buf bytes.Buffer
-	var logBuf bytes.Buffer
-
-	// Create a logger that writes to a buffer
-	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{
-		Level: slog.LevelWarn,
-	}))
+	logger, rec := tu.NewRecordingLogger()
 
 	reporter := NewShutdownReporter(collector, &buf, logger)
 
@@ -77,9 +73,12 @@ func TestShutdownReporter_WithLogger(t *testing.T) {
 
 	// Check that both output and log were written
 	assert.NotEmpty(t, buf.String())
-	logOutput := logBuf.String()
-	assert.Contains(t, logOutput, "Redaction failures summary")
-	assert.Contains(t, logOutput, "total_failures=1")
+	rec.RequireRecord(t, slog.LevelWarn, "Redaction failures summary").
+		AssertAttrs(t, map[string]any{
+			"total_failures":    1,
+			"first_failure_key": "test_key",
+			"last_failure_key":  "test_key",
+		})
 }
 
 func TestShutdownReporter_GroupsByKey(t *testing.T) {
@@ -162,10 +161,7 @@ func TestShutdownReporter_NilWriter(t *testing.T) {
 	collector := NewInMemoryErrorCollector(0)
 	collector.RecordFailure("test", errors.New("error"))
 
-	var logBuf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{
-		Level: slog.LevelWarn,
-	}))
+	logger, rec := tu.NewRecordingLogger()
 
 	// Create reporter with nil writer
 	reporter := NewShutdownReporter(collector, nil, logger)
@@ -174,8 +170,7 @@ func TestShutdownReporter_NilWriter(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should still log to logger
-	logOutput := logBuf.String()
-	assert.Contains(t, logOutput, "Redaction failures summary")
+	rec.RequireRecord(t, slog.LevelWarn, "Redaction failures summary")
 }
 
 func TestShutdownReporter_NilLogger(t *testing.T) {
