@@ -85,12 +85,15 @@ func ValidateDirectoryPermissionsWithOptions(dirPath string, opts DirectoryPermC
 
 	fileInfo, err := opts.Lstat(cleanPath)
 	if err != nil {
-		// A directory that is not there yet is an ordinary state, not a fault:
-		// RunTOCTOUPermissionCheck counts it as skipped rather than checked, and
-		// record and verify diagnose it themselves. Reporting it at ERROR would
-		// make every run against a host with no hash directory look actionable to
-		// log-based alerting. Every other stat failure keeps ERROR: it means the
-		// directory could not be inspected, which nothing downstream can recover.
+		// Whether an absent directory is a fault is the caller's call, not this
+		// function's, and every caller makes it: RunTOCTOUPermissionCheck counts it
+		// as skipped and logs that, while verification.Manager and the runner's file
+		// validator turn the error returned below into a failure they report
+		// themselves. Logging it at ERROR here would state a verdict none of them
+		// asked for, and would make every run against a host that has no hash
+		// directory yet look actionable to log-based alerting. Every other stat
+		// failure keeps ERROR: it means the directory could not be inspected at all,
+		// which no caller can classify away.
 		level := slog.LevelError
 		if errors.Is(err, fs.ErrNotExist) {
 			level = slog.LevelDebug

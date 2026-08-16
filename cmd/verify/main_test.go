@@ -435,8 +435,13 @@ func TestRunFailsClosedWhenPermissionCheckUIDUnresolvable(t *testing.T) {
 // disk, whether the hash directory it is given exists or not. The production
 // dependencies are used unchanged — a stub validator would hide the creation
 // that happens inside the validator itself, which is the half a deleted mkdirAll
-// call does not cover. The parent subtree, not just its top level, is compared:
-// an entry planted inside an existing hash directory would otherwise go unseen.
+// call does not cover.
+//
+// Only the missing_hash_dir case can fail today: both creation paths this
+// commit removed created the hash directory itself, so restoring either leaves
+// an existing one untouched. The existing_hash_dir case is a standing guard for
+// a write placed inside a hash directory that is already there, which is why the
+// whole parent subtree is compared rather than only its top level.
 func TestRunCreatesNoFilesystemEntries(t *testing.T) {
 	tests := []struct {
 		name          string

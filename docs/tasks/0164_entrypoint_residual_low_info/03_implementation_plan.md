@@ -175,9 +175,10 @@ func RunTOCTOUPermissionCheck(checker DirectoryPermChecker, dirs []string, logge
 ```go
 // cmd/record and cmd/verify: added to deps
 // newPermChecker builds the directory permission checker.
-// nil means security.NewDirectoryPermChecker.
 newPermChecker func() (security.DirectoryPermChecker, error)
 ```
+
+**実装時の決定（レビュー指摘による）**: `verify` ではこのフィールドと `resolvePathForCheck` を必須とし、`nil` の場合の既定へ倒す分岐は置かない。`defaultDeps()` が常に値を入れ、テストもそこから組み立てるため、その分岐はどのテストからも到達できない死んだコードになる（同じ構造体の `validatorFactory` にも既定へ倒す分岐は無い）。`record` の同名フィールドは既存テストが `deps{}` を渡すため既定へ倒す分岐が生きており、そちらは変更しない。
 
 このフィールドは、`verify` のパッケージレベル可変変数 `toctouChecker`（および `deps` に同名のフィールドを置く案）を置き換えるものであり、両者は併存させない。チェッカの実体を差し替える口と生成関数を差し替える口は同じ目的を果たすうえ、実体だけを差し替えると本番の生成経路を迂回してしまうためである。テストは `d.newPermChecker` に偽のチェッカを返す実装を与えることで差し替える。
 
@@ -188,11 +189,10 @@ newPermChecker func() (security.DirectoryPermChecker, error)
 ```go
 // cmd/verify: added to deps
 // resolvePathForCheck resolves a path for the TOCTOU permission check.
-// nil means security.ResolvePathForCheck.
 resolvePathForCheck func(path string) (string, error)
 ```
 
-`checkHashDirPermissions` と `checkTargetFilePermissions` は `security.ResolvePathForCheck` を直接呼ばず、このフィールド経由で呼ぶ（`nil` の場合の既定を `defaultDeps()` で与える）。`record` と `runner` には対応する AC が無いので追加しない（YAGNI）。
+`checkHashDirPermissions` と `checkTargetFilePermissions` は `security.ResolvePathForCheck` を直接呼ばず、このフィールド経由で呼ぶ（既定値は `defaultDeps()` が与える）。`record` と `runner` には対応する AC が無いので追加しない（YAGNI）。
 
 これらの追加は 02_architecture.md §3.4 の構造体定義を2フィールド拡張する。設計の意図（§7.1）とは整合しており、§3.4 の記載は追補済みである。
 
@@ -475,7 +475,7 @@ func getwd() (string, error) { return getwdHook() }
 
 #### ステップ 3-1: `verify` の書き込み副作用を断つ
 
-**変更ファイル**: `cmd/verify/main.go`、`internal/cmdcommon/common.go`、`internal/cmdcommon/common_test.go`
+**変更ファイル**: `cmd/verify/main.go`、`internal/cmdcommon/common.go`、`internal/cmdcommon/common_test.go`、`internal/security/dir_permissions_unix.go`、`internal/security/toctou.go`、`internal/security/toctou_test.go`（後3者はレビュー指摘による追加分。下の最終項目を参照）
 
 - [x] 削除の前に `go test -tags test -coverprofile=/tmp/cmdcommon-before.out ./internal/cmdcommon/... && go tool cover -func=/tmp/cmdcommon-before.out` を実行し、結果を保存する。
 - [x] `parseArgs` から `mkdirAll(dir, hashDirPermissions)`（221-223 行）を削除する。
@@ -493,6 +493,7 @@ func getwd() (string, error) { return getwdHook() }
 - [x] 削除後に同じ手順でカバレッジを取得（`/tmp/cmdcommon-after.out`）し、関数単位で低下していないことを確認する。低下した関数があれば補うテストを追加する。**確認結果**: 削除前後とも 100.0%（残る `CreateReadOnlyValidator` も 100.0%）。
 - [x] `make deadcode` を実行し、`CreateReadOnlyValidator` への切り替えによって `internal/cmdcommon` に新たな未到達の公開シンボルが生じていないことを確認する。
 - [x] （レビュー指摘により追加）`internal/security/dir_permissions_unix.go` の `Lstat` 失敗ログを、`fs.ErrNotExist` の場合のみ `DEBUG` に下げる。作成をやめた結果、ハッシュディレクトリ不在は `verify` の通常経路になったが、`ValidateDirectoryPermissions` はこれを `ERROR` で記録していた。`RunTOCTOUPermissionCheck` は同じ状態を「読み飛ばし（`Skipped`）」に数えるため、記録と判定が食い違い、未整備のホストでの通常実行がログ監視に警報として見える。エラー自体は従来どおり返るので情報は失われない。それ以外の stat 失敗（検査できない＝下流で回復不能）は `ERROR` のまま。判定規則は変えていないため、要件定義書がスコープ外とする「TOCTOU 権限チェック処理そのものの挙動変更」には当たらない。根拠テストは `internal/security/toctou_test.go` の `TestRunTOCTOUPermissionCheck_MissingDirIsNotLoggedAsAnError`（不在は `ERROR` を出さず、stat できない祖先では出ることを対で表明）。
+  - **レビュー指摘による補足**: `ValidateDirectoryPermissions` は共有関数であり、呼び出し元は `RunTOCTOUPermissionCheck` のほかに `internal/verification/manager.go`（ハッシュディレクトリ検証）と `internal/runner/base/security/file_validation.go`（出力先検証）がある。後2者は不在を含む全エラーを失敗として返すため、記録は各呼び出し元のエラー経路に残り、この変更で消えるのは共有関数側の重複した1行だけである。「不在かどうかをどう扱うか」は呼び出し元の判断であるという理由をコメントに書き直した。記録が完全に消えるわけではない点も根拠テストで固定した。下げた先の `DEBUG` 行が当該パスを含むことを表明しており、レベル変更が「記録の削除」に化けた場合は失敗する。読み飛ばしの件数は `TOCTOUCheckResult.Skipped` が持ち、起動時チェックではフェーズ4で `INFO` に出る。
 
 #### ステップ 3-2: `verify` を `deps` 様式へ移行
 
@@ -515,7 +516,7 @@ func getwd() (string, error) { return getwdHook() }
 
 **完了条件**: 書き換え前後で `go test -tags test -coverprofile=... ./cmd/verify/... && go tool cover -func=...` を比較し、関数単位で低下がないこと（§5 のリスク表）。この比較は挙動が変わらないこの段階でのみ意味を持つ。
 
-**確認結果**: 未到達ブロックは書き換え前 11 件から 9 件へ減り、増えた関数は無い。`parseArgs` の百分率だけが 90.5% → 89.5% と動くが、これは削除した `mkdirAll` 呼び出しの2文（いずれも到達済み）が母数から抜けたためで、未到達ブロックは3件のまま変わらない。`checkDirPermissions` は `EvalSymlinks` 失敗分岐と `validatorFactory` 既定値が `TestRunCreatesNoFilesystemEntries` により到達し、91.7% → 93.9% に上がった。
+**確認結果**（PR-4 の最終状態で再測定）: 未到達ブロックは書き換え前 11 件から 9 件へ減り、増えた関数は無い。`parseArgs` の百分率だけが 90.5% → 89.5% と動くが、これは削除した `mkdirAll` 呼び出しの2文（いずれも到達済み）が母数から抜けたためで、未到達ブロックは2件のまま変わらない。`checkDirPermissions` は `EvalSymlinks` 失敗分岐と `validatorFactory` 既定値が `TestRunCreatesNoFilesystemEntries` により到達し、91.7% → 93.9% に上がった。`internal/cmdcommon` は前後とも 100.0%。
 
 ### PR-4 作成ポイント: verify read-only migration and deps wiring
 

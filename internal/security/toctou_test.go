@@ -431,6 +431,10 @@ func TestRunTOCTOUPermissionCheck_MissingDirIsNotLoggedAsAnError(t *testing.T) {
 	result := RunTOCTOUPermissionCheck(v, []string{missingDir}, logger)
 	require.Equal(t, 1, result.Skipped)
 	assert.NotContains(t, buf.String(), "level=ERROR", "a directory that is merely absent is not a fault: %s", buf.String())
+	// Not a fault is not the same as not worth recording: the skip narrows what
+	// the check established, so the path must stay traceable at debug level
+	// rather than disappearing along with the ERROR line.
+	assert.Contains(t, buf.String(), `level=DEBUG msg="Failed to get directory info" path=`+missingDir)
 
 	buf.Reset()
 	RunTOCTOUPermissionCheck(v, []string{unreadable}, logger)

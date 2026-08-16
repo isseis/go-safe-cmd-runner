@@ -39,15 +39,13 @@ var errNoFilesProvided = errors.New("at least one file path must be provided as 
 // nil; the rest are required and are set by defaultDeps.
 type deps struct {
 	validatorFactory func(hashDir string) (hashValidator, error)
-	// newPermChecker builds the directory permission checker.
-	// nil means security.NewDirectoryPermChecker. Injected as a constructor rather
-	// than a ready-made checker so that no test can bypass the production
-	// construction path, and so that its error return -- which no current
-	// implementation produces -- becomes exercisable once this command reports
-	// that failure instead of panicking on it.
+	// newPermChecker builds the directory permission checker. Injected as a
+	// constructor rather than a ready-made checker so that no test can bypass the
+	// production construction path, and so that its error return -- which no
+	// current implementation produces -- becomes exercisable once this command
+	// reports that failure instead of panicking on it.
 	newPermChecker func() (security.DirectoryPermChecker, error)
 	// resolvePathForCheck resolves a path for the directory permission check.
-	// nil means security.ResolvePathForCheck.
 	resolvePathForCheck func(path string) (string, error)
 	// nil means use groupmembership.New().EnsurePermissionCheckUID.
 	ensurePermissionCheckUID func() error
@@ -94,11 +92,7 @@ func main() {
 // target file's ancestors is the opposite case — that is what verify exists to
 // inspect — so it stays a warning and verification continues.
 func checkDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) bool {
-	newChecker := d.newPermChecker
-	if newChecker == nil {
-		newChecker = security.NewDirectoryPermChecker
-	}
-	secValidator, secErr := newChecker()
+	secValidator, secErr := d.newPermChecker()
 	if secErr != nil {
 		// NewDirectoryPermChecker only fails when standalone checker setup fails,
 		// which is not recoverable in this startup path.
