@@ -98,14 +98,15 @@ func checkDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) bool {
 		// which is not recoverable in this startup path.
 		panic(fmt.Sprintf("security validator initialisation failed: %v", secErr))
 	}
-	absHashDir := cfg.hashDir
-	if abs, err := filepath.Abs(cfg.hashDir); err == nil {
-		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-			absHashDir = resolved
-		} else {
-			absHashDir = abs
-		}
-	}
+	// Resolving with filepath.EvalSymlinks alone only worked while parseArgs
+	// created the hash directory first: an absent directory makes it fail, and
+	// the unresolved path that was left behind turns a symlinked ancestor into a
+	// "not a directory" violation. Now that this command creates nothing, an
+	// absent hash directory is an ordinary run, so resolution goes through the
+	// shared helper, which resolves the deepest existing ancestor and appends the
+	// missing tail. It returns a usable path even on error, so the check proceeds
+	// exactly as before; giving that failure its own exit code is PR-5's job.
+	absHashDir, _ := d.resolvePathForCheck(cfg.hashDir)
 
 	logger := slog.Default()
 	hashDirs := security.CollectTOCTOUCheckDirs(nil, nil, absHashDir)

@@ -504,6 +504,7 @@ func getwd() (string, error) { return getwdHook() }
 - [x] `run` と `checkDirPermissions` のシグネチャに `deps` を渡す。ステップ 3-4 で `checkDirPermissions` を2つに分けるときは、両方へ引き継ぐ。
 - [x] `main()` を `os.Exit(run(os.Args[1:], defaultDeps(), os.Stdout, os.Stderr))` に変える。
 - [x] `parseArgs` は `deps` を必要としなくなるため、`d` を渡さない（`record` の `parseArgs` は `mkdirAll` のために受け取っていたが、`verify` にはその必要が無い）。
+- [x] （レビュー指摘により追加、ステップ 3-4 から前倒し）ハッシュディレクトリのパス解決を `filepath.Abs` + `filepath.EvalSymlinks` から `d.resolvePathForCheck` へ移す。この形は `parseArgs` が先にディレクトリを作っていたから成立していたもので、作成をやめた本 PR では不在ディレクトリで `EvalSymlinks` が失敗し、残る未解決パスの祖先にシンボリックリンクがあると `Lstat` 判定が「ディレクトリではない」＝違反と見なして fail-closed（終了コード `3`）になる。これは PR-5 が担当する終了コードの契約変更が PR-4 に漏れる形であり、PR-5 だけを差し戻せるようにした §3.2 の分離も崩れる。エラー時の戻り値（存在する最深祖先）をそのまま使うため、終了コードの挙動自体はこの PR では変えない（`ErrPathResolution` に固有の終了コードを与えるのはステップ 3-4）。根拠テストは `cmd/verify/main_test.go` の `TestRunResolvesMissingHashDirUnderSymlinkedAncestor`（`tu.SafeTempDir` はシンボリックリンクを解決するため、既存の `TestRunCreatesNoFilesystemEntries` ではこの経路に到達できない）。
 
 #### ステップ 3-3: `verify` のテストを `deps` 経由へ移す
 
@@ -542,7 +543,7 @@ func getwd() (string, error) { return getwdHook() }
 
 現行の `checkDirPermissions`（80-152 行）は 02_architecture.md §6.2 の段階 3 と段階 5 を1つの関数で行っている。§6.2 の順序（3 → 4 → 5）を実現するため、次のように分割する。
 
-- [ ] `checkHashDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) (checker security.DirectoryPermChecker, hashDirs []string, ok bool)` を新設し、現行 81-122 行（チェッカ生成、ハッシュディレクトリの解決、段階 3 のチェックと fail-closed 判定）を移す。構築したチェッカと `hashDirs` を戻り値で返す。パス解決は `d.resolvePathForCheck`（§1.4.4）経由で呼ぶ。
+- [ ] `checkHashDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) (checker security.DirectoryPermChecker, hashDirs []string, ok bool)` を新設し、現行 81-122 行（チェッカ生成、ハッシュディレクトリの解決、段階 3 のチェックと fail-closed 判定）を移す。構築したチェッカと `hashDirs` を戻り値で返す。パス解決の `d.resolvePathForCheck`（§1.4.4）への移行はステップ 3-2 で済んでいるので、ここでは移設のみを行い、返るエラーに固有の終了コード（`path_resolution_failed`）を与える。
 - [ ] `checkTargetFilePermissions(cfg *verifyConfig, d deps, checker security.DirectoryPermChecker, hashDirs []string, logger *slog.Logger)` を新設し、現行 124-151 行（対象ファイルの解決と段階 5 のチェック）を移す。**現行 140-149 行の重複除去（`checked map[string]struct{}` により、ハッシュディレクトリ側で既に検査したディレクトリを二重に警告しない）を、分割後も維持する**。これが `hashDirs` を戻り値として渡す理由である。
 - [ ] `run` を §6.2 の6段階の順に並べ替える。段階 4（読み取り専用バリデータの構築と `HashDirError()` の判定）を、`checkHashDirPermissions` と `checkTargetFilePermissions` の間に置く。
 - [ ] `hashValidator` インターフェースに `HashDirError() error` を追加する。

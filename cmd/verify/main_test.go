@@ -481,6 +481,40 @@ func TestRunCreatesNoFilesystemEntries(t *testing.T) {
 	}
 }
 
+// TestRunResolvesMissingHashDirUnderSymlinkedAncestor covers the combination
+// that stopping the hash directory creation made reachable: the directory does
+// not exist and one of its ancestors is a symlink. Resolving with
+// filepath.EvalSymlinks fails outright on an absent path, and the unresolved
+// path left behind makes the Lstat-based hierarchy check reject the symlinked
+// ancestor as "not a directory" — a fail-closed exit whose remediation tells
+// the operator to fix permissions on a directory that is fine.
+//
+// The hash directory is reached through the symlink deliberately; tu.SafeTempDir
+// resolves symlinks, so the other tests in this file cannot reach this path.
+func TestRunResolvesMissingHashDirUnderSymlinkedAncestor(t *testing.T) {
+	root := tu.SafeTempDir(t)
+	realDir := filepath.Join(root, "real")
+	require.NoError(t, os.Mkdir(realDir, 0o700))
+	link := filepath.Join(root, "link")
+	require.NoError(t, os.Symlink(realDir, link))
+	// Absent, and named through the symlink.
+	hashDir := filepath.Join(link, "hashes")
+
+	targetDir := tu.SafeTempDir(t)
+	targetFile := filepath.Join(targetDir, "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+
+	require.Equal(t, exitVerificationFailed, exitCode,
+		"a missing hash directory is an ordinary verification failure, not an untrusted environment: %s", stderr.String())
+	assert.NotContains(t, stderr.String(), "permission violation in hash directory",
+		"the symlinked ancestor must not be reported as a permission violation")
+	assert.Contains(t, stdout.String(), "[1/1] "+targetFile, "the run must have reached per-file verification")
+}
+
 // TestVerifyDeclaresSudoUIDAwarePolicy verifies that this binary's init()
 // declared SudoUIDAware as the process-wide permission check UID policy, and
 // that under that policy a valid SUDO_UID is adopted when the real UID is 0,
