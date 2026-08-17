@@ -169,11 +169,9 @@ func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
 	validator := &fakeValidator{responses: map[string]error{}}
 	d := testDeps(validator)
 	d.newPermChecker = fixedPermChecker(allowAllDirs())
-	// The subject is which directory the validator is built on, not whether that
-	// directory is usable, and the default one exists only where the command has
-	// been installed. Both environment probes are stubbed so the answer does not
-	// depend on the host; the real probe keeps its own coverage in
-	// TestRunUnsearchableHashDirExitsUntrustedEnvironment.
+	// Stubbed because the default hash directory exists only on a machine where
+	// the command has been installed, and the subject here is which directory the
+	// validator is built on rather than whether it is usable.
 	d.hashDirSearchable = func(string) error { return nil }
 
 	stdout := &bytes.Buffer{}

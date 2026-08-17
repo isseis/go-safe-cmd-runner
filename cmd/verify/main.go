@@ -70,12 +70,7 @@ type deps struct {
 	// the production construction path.
 	newPermChecker      func() (security.DirectoryPermChecker, error)
 	resolvePathForCheck func(path string) (string, error)
-	// hashDirSearchable is the probe below. It is injected for the same reason the
-	// permission checker is: a test whose subject is something else must not
-	// depend on the state of a real directory on the host -- the default hash
-	// directory exists on a machine where the command has been installed and not
-	// on a CI runner.
-	hashDirSearchable func(dir string) error
+	hashDirSearchable   func(dir string) error
 	// nil means use groupmembership.New().EnsurePermissionCheckUID.
 	ensurePermissionCheckUID func() error
 }
