@@ -33,19 +33,14 @@ const (
 
 var errNoFilesProvided = errors.New("at least one file path must be provided as a positional argument or via -file (deprecated)")
 
-// deps holds injectable dependencies for the verify command.
-// This makes the dependency graph visible at call sites and keeps tests off
-// process-wide mutable state. Only the fields whose comment says so may be left
-// nil; the rest are required and are set by defaultDeps.
+// deps holds injectable dependencies for the verify command, keeping tests off
+// process-wide mutable state. defaultDeps sets every field; only the ones whose
+// comment says so may be left nil.
 type deps struct {
 	validatorFactory func(hashDir string) (hashValidator, error)
-	// newPermChecker builds the directory permission checker. Injected as a
-	// constructor rather than a ready-made checker so that no test can bypass the
-	// production construction path, and so that its error return -- which no
-	// current implementation produces -- becomes exercisable once this command
-	// reports that failure instead of panicking on it.
-	newPermChecker func() (security.DirectoryPermChecker, error)
-	// resolvePathForCheck resolves a path for the directory permission check.
+	// A constructor rather than a ready-made checker, so that no test can bypass
+	// the production construction path.
+	newPermChecker      func() (security.DirectoryPermChecker, error)
 	resolvePathForCheck func(path string) (string, error)
 	// nil means use groupmembership.New().EnsurePermissionCheckUID.
 	ensurePermissionCheckUID func() error
@@ -98,14 +93,12 @@ func checkDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) bool {
 		// which is not recoverable in this startup path.
 		panic(fmt.Sprintf("security validator initialisation failed: %v", secErr))
 	}
-	// Resolving with filepath.EvalSymlinks alone only worked while parseArgs
-	// created the hash directory first: an absent directory makes it fail, and
-	// the unresolved path that was left behind turns a symlinked ancestor into a
-	// "not a directory" violation. Now that this command creates nothing, an
-	// absent hash directory is an ordinary run, so resolution goes through the
-	// shared helper, which resolves the deepest existing ancestor and appends the
-	// missing tail. It returns a usable path even on error, so the check proceeds
-	// exactly as before; giving that failure its own exit code is PR-5's job.
+	// An absent hash directory is an ordinary run now that this command creates
+	// nothing, and filepath.EvalSymlinks cannot resolve one: the unresolved path
+	// it leaves behind makes a symlinked ancestor look like a "not a directory"
+	// violation. The shared helper resolves the deepest existing ancestor
+	// instead, and returns a usable path even when it errors, so the error is
+	// ignored here and the check proceeds.
 	absHashDir, _ := d.resolvePathForCheck(cfg.hashDir)
 
 	logger := slog.Default()
@@ -204,9 +197,8 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	return processFiles(validator, cfg.files, stdout, stderr)
 }
 
-// parseArgs turns the command line into a verifyConfig. It has no side effects:
-// verify never creates the hash directory it names, so a missing one is reported
-// later rather than filled in here.
+// parseArgs has no side effects: verify never creates the hash directory it
+// names, so a missing one is reported later rather than filled in here.
 func parseArgs(args []string, stderr io.Writer) (*verifyConfig, *flag.FlagSet, error) {
 	options := struct {
 		deprecatedFile string
