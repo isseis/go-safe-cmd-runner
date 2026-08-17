@@ -702,7 +702,7 @@ func getwd() (string, error) { return getwdHook() }
 **判定理由**: ステップ 4-3 が fail-closed な権限チェックの除外範囲を扱う高リスク段階であり、起動時とグループ実行時で規則が異なるうえ、グループ側には件数記録が無く誤りが判定にも記録にも現れないため。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（[#1031](https://github.com/isseis/go-safe-cmd-runner/pull/1031)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
