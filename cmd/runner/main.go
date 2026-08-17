@@ -425,6 +425,12 @@ type checkCandidate struct {
 // startupExpansionState judges a raw configuration template with the same parser
 // expansion itself uses, so the escape rules are not maintained twice. It must be
 // given the template, never a value expansion has already produced.
+//
+// A template that holds no reference is audited under its own text, which for one
+// using the escape ("\%{X}") is not the text the path will finally have. That
+// costs accuracy in the coverage figures rather than safety: auditing the wrong
+// leaf is what the old rule did to every such path by dropping it, and the real
+// path is audited before use by the per-group check.
 func startupExpansionState(template string) isec.PathExpansionState {
 	if config.HasVariableReference(template) {
 		return isec.PathHasUnexpandedReference
@@ -445,7 +451,7 @@ func startupExpansionState(template string) isec.PathExpansionState {
 func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, runID string, newPermChecker func() (isec.DirectoryPermChecker, error)) (isec.DirectoryPermChecker, error) {
 	logger := slog.Default()
 
-	candidates := make([]checkCandidate, 0, len(runtimeGlobal.ExpandedVerifyFiles))
+	candidates := make([]checkCandidate, 0, len(runtimeGlobal.ExpandedVerifyFiles)+len(cfg.Groups))
 	for _, f := range runtimeGlobal.ExpandedVerifyFiles {
 		// This list is the output of expansion, so it holds no reference by
 		// construction; there is nothing here to judge.
@@ -473,8 +479,9 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 		case isec.CheckSkipRelative:
 			skippedRelative++
 		default:
-			// A reason added without a case here would otherwise be counted as
-			// nothing and silently audited or silently dropped. Refuse to start.
+			// Unreachable today: ClassifyCheckTarget's codomain is the three cases
+			// above. A reason added without a case here would otherwise be counted
+			// as nothing and silently audited or silently dropped. Refuse to start.
 			return nil, &logging.PreExecutionError{
 				Type:      logging.ErrorTypeFileAccess,
 				Message:   fmt.Sprintf("unhandled check skip reason %d for path %s", reason, c.path),

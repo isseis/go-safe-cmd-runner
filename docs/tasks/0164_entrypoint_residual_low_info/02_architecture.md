@@ -67,7 +67,7 @@ flowchart TD
     CONF[("設定ファイル<br>（verify_files・コマンドパス）")]
 
     CLASSIFY["除外判定<br>ClassifyCheckTarget"]
-    RESOLVE["パス解決<br>ResolvePathForCheck"]
+    RESOLVE["パス解決<br>ResolvePathForCheck<br>ResolveAllForCheck"]
     COLLECT["対象ディレクトリ収集<br>CollectPermissionCheckDirs"]
     CHECK["ディレクトリ権限チェック<br>RunTOCTOUPermissionCheck"]
     VERDICT["コマンドごとの判定<br>（fail-closed / 警告して継続）"]
@@ -186,7 +186,7 @@ flowchart TD
         A2["cmd/verify"]
         A3["cmd/runner・internal/runner"]
         A6["ClassifyCheckTarget"]
-        A4["ResolvePathForCheck"]
+        A4["ResolvePathForCheck /<br>ResolveAllForCheck"]
         A5["CollectPermissionCheckDirs"]
         A1 --> A4
         A2 --> A4

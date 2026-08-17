@@ -45,10 +45,12 @@ func (e *CommandExecutionError) Unwrap() error {
 // directory permission violations.
 var ErrTOCTOUViolation = errors.New("TOCTOU permission check failed")
 
-// ErrUnhandledCheckSkipReason is returned when path classification reports a
+// errUnhandledCheckSkipReason is returned when path classification reports a
 // reason this package has no case for. Refusing to run is the only safe reading:
-// an unknown reason says neither "check this" nor "leave it out".
-var ErrUnhandledCheckSkipReason = errors.New("unhandled permission check skip reason")
+// an unknown reason says neither "check this" nor "leave it out". Nothing can
+// produce it today -- ClassifyCheckTarget's codomain is the cases handled above
+// -- so it is unexported and exists for the case that changes.
+var errUnhandledCheckSkipReason = errors.New("unhandled permission check skip reason")
 
 // GroupExecutor defines the interface for executing command groups
 type GroupExecutor interface {
@@ -380,9 +382,9 @@ func (ge *DefaultGroupExecutor) runGroupTOCTOUCheck(runtimeGroup *runnertypes.Ru
 			// tree to check. Unchanged from before this check shared the
 			// classification.
 		default:
-			// PathExpanded cannot produce any other reason today. One added later
-			// would otherwise be silently checked or silently dropped.
-			return fmt.Errorf("%w: %d for path %s", ErrUnhandledCheckSkipReason, reason, p)
+			// Unreachable today; see errUnhandledCheckSkipReason. A reason added
+			// later would otherwise be silently checked or silently dropped.
+			return fmt.Errorf("%w: %d for path %s", errUnhandledCheckSkipReason, reason, p)
 		}
 	}
 

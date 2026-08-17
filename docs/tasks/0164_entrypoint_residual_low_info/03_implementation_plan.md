@@ -663,7 +663,7 @@ func getwd() (string, error) { return getwdHook() }
 - [x] 357 行と 364 行の `isec.ResolveAbsPathForCheck` 呼び出しを、`isec.ClassifyCheckTarget` による分類と共有処理による解決に置き換える。件数の記録は入れない（02_architecture.md §6.3）。**実装時の決定**: 解決はステップ 4-1 と同じ理由で `isec.ResolveAllForCheck` を使う。分類の `switch` には fail-secure な `default` を置き、`ErrUnhandledCheckSkipReason`（`internal/runner`）を返す。
 - [x] **`isec.PathExpanded` を宣言する**。グループ実行時のパスは `preExpandCommands` による展開後であり、展開済みであることは呼び出し元が構成上知っている事実である。したがって `CheckSkipVariableReference` はこの経路では返らず、除外の範囲は現行（相対パスのみ読み飛ばす）と同一に保たれる。分類の戻り値は次のように扱う。
   - `CheckSkipRelative` — 読み飛ばす（現行と同じ）。
-  - `CheckSkipNone` — `ResolvePathForCheck` に渡して検査する。
+  - `CheckSkipNone` — `ResolveAllForCheck` に渡して検査する。
 - [x] 起動時チェック（ステップ 4-1）と宣言が分かれる理由を、英語のコメントで当該箇所に残す。展開後の値に `%{` が残っていても、それはエスケープ由来の文字である可能性があり、除外の根拠にならない。除外すれば fail-closed のチェックが黙って狭まり、しかも §6.3 によりグループ側には件数記録が無いため、判定にも記録にも現れない。
 - [x] `TestRunGroupTOCTOUCheck_AbsolutePathContainingBraceIsStillChecked` を追加する。`%{` を含む絶対パスを1件渡し、フェイクチェッカが当該パスの祖先について呼ばれること（＝読み飛ばされていないこと）を表明する。除外範囲が将来広げられたときに失敗する唯一の表明である。
 - [x] `TestRunGroupTOCTOUCheck_RelativePathsSkipped`（`group_executor_test.go:3691-3703`）を書き換える。現行は実チェッカを使って `require.NoError` するだけであり、相対パスが「除外された」場合も「解決されて健全なディレクトリが検査された」場合も通るため、除外を検証できていない。**呼ばれたパスを記録するフェイクチェッカに差し替え、チェッカが1件も呼ばれないことを表明する**。これが除外と検査済みを区別できる唯一の表明である。
@@ -1008,7 +1008,7 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 | AC-39 | static | `rg -n -e overrideValidatorFactory -e overrideTOCTOUChecker cmd/verify/main_test.go` | 一致0件 |
 | AC-40 | static | `rg -c -e libcCacheSubDir cmd/record/main.go` | 一致2件（定数定義と `filepath.Join` 1箇所のみ。現状は3件） |
 | AC-41 | test | `cmd/verify/main_test.go::TestRunWarnsWhenDeprecatedFlagUsed`、`cmd/record/main_test.go::TestRunWarnsWhenDeprecatedFlagUsed`、`::TestRun_DebugInfoFlag_ControlsDebugFieldOmitEmpty` | 通過。本フェーズ群は不在ハッシュディレクトリの終了コードを `1` から `3` へ、ディレクトリでないパスの提示を意図的に変えている（02_architecture.md §4.3）。AC-41 が対象とするのは、存在するハッシュディレクトリを指定する通常の検証経路である |
-| AC-42 | static | `rg -n -e 'saved-set-uid' cmd/runner/main.go` | 一致1件以上 |
+| AC-42 | static | `rg -n -e 'saved set-user-ID' cmd/runner/main.go` | 一致1件以上 |
 | AC-42 | manual | 上記の一致が `main()` 内の `dropStartupPrivileges` 呼び出しに隣接していることを PR 差分で確認する | 隣接している |
 | AC-43 | static | `rg -n -e ハッシュディレクトリを作成しません docs/user/verify_command.ja.md`（ステップ 4-11 が固定した文言） | 一致1件 |
 | AC-43 | static | `rg -c -e hash_dir_not_found -e hash_dir_unreadable -e hash_dir_permission_violation -e permission_checker_init_failed docs/user/verify_command.ja.md docs/user/verify_command.md` | 両ファイルとも4件以上 |
