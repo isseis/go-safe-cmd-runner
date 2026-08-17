@@ -112,16 +112,19 @@
 
 #### 1.4.1 `verify` の識別トークン（02_architecture.md §4.2）
 
-終了コード `3` の原因を機械的に判別できるよう、標準エラー出力の各メッセージに `verify-error=<token>` の形で固定トークンを含める。トークンは以下の4種類とする。
+終了コード `3` の原因を機械的に判別できるよう、標準エラー出力の各メッセージに `verify-error=<token>` の形で固定トークンを含める。トークンは以下の5種類とする。
 
 | トークン | 原因 | 終了コード |
 |---|---|---|
 | `hash_dir_permission_violation` | ハッシュディレクトリ側の TOCTOU 権限違反 | 3 |
+| `path_resolution_failed` | ハッシュディレクトリのパス解決に失敗 | 3 |
 | `hash_dir_not_found` | ハッシュディレクトリが存在しない | 3 |
-| `hash_dir_unreadable` | 存在するが読み取れない（権限不足など） | 3 |
+| `hash_dir_unreadable` | 存在するが開けない（権限不足など） | 3 |
 | `permission_checker_init_failed` | 権限チェッカの初期化に失敗 | 3 |
 
-トークンは `cmd/verify/main.go` に名前付き定数として定義し、テストと利用者向け文書がその定数と同じ文字列を参照する。テスト側でリテラルを二重定義しない。
+**実装時の追加（ステップ 3-4）**: `path_resolution_failed` を5番目として追加した。ステップ 3-4 が「返るエラーに固有の識別を与える」としていた対象であり、AC-05 の2本のテスト（実権限による経路と注入による経路）が同じ出力を根拠にできるのは、パス解決の失敗それ自体が fail-closed の原因として独立している場合に限られるためである。理由は 02_architecture.md §3.1 の失敗表の最終行と同じで、未実在部分に `..` を含むパスでは解決結果が入力とは別の木の健全な祖先になり得るため、それを検査して通過させると fail-open になる。
+
+トークンは `cmd/verify/main.go` に名前付き定数として定義し、テストと利用者向け文書がその定数と同じ文字列を参照する。テスト側でリテラルを二重定義しない。**実装時の変更**: 定数名は `token...` ではなく `cause...`（`causeHashDirNotFound` など）とした。`gosec` の G101 が識別子名に `token` を含む文字列定数を「ハードコードされた資格情報の疑い」として報告し、`make lint` が通らないためである。
 
 #### 1.4.2 `RunTOCTOUPermissionCheck` の戻り値（02_architecture.md §6.3）
 
@@ -543,36 +546,39 @@ func getwd() (string, error) { return getwdHook() }
 
 現行の `checkDirPermissions`（80-152 行）は 02_architecture.md §6.2 の段階 3 と段階 5 を1つの関数で行っている。§6.2 の順序（3 → 4 → 5）を実現するため、次のように分割する。
 
-- [ ] `checkHashDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) (checker security.DirectoryPermChecker, hashDirs []string, ok bool)` を新設し、現行 81-122 行（チェッカ生成、ハッシュディレクトリの解決、段階 3 のチェックと fail-closed 判定）を移す。構築したチェッカと `hashDirs` を戻り値で返す。パス解決の `d.resolvePathForCheck`（§1.4.4）への移行はステップ 3-2 で済んでいるので、ここでは移設のみを行い、返るエラーに固有の終了コード（`path_resolution_failed`）を与える。
-- [ ] `checkTargetFilePermissions(cfg *verifyConfig, d deps, checker security.DirectoryPermChecker, hashDirs []string, logger *slog.Logger)` を新設し、現行 124-151 行（対象ファイルの解決と段階 5 のチェック）を移す。**現行 140-149 行の重複除去（`checked map[string]struct{}` により、ハッシュディレクトリ側で既に検査したディレクトリを二重に警告しない）を、分割後も維持する**。これが `hashDirs` を戻り値として渡す理由である。
-- [ ] `run` を §6.2 の6段階の順に並べ替える。段階 4（読み取り専用バリデータの構築と `HashDirError()` の判定）を、`checkHashDirPermissions` と `checkTargetFilePermissions` の間に置く。
-- [ ] `hashValidator` インターフェースに `HashDirError() error` を追加する。
-- [ ] 段階 4 で `HashDirError()` を判定し、`ErrHashDirNotExist` なら `hash_dir_not_found`、`os.ErrPermission` なら `hash_dir_unreadable` のトークンを含むメッセージを標準エラー出力へ出して `exitUntrustedEnvironment` を返す。
-- [ ] `ErrHashPathNotDir` は `NewReadOnly` が構築エラーとして返すため、既存のバリデータ生成失敗経路で `exitVerificationFailed`（`1`）になる。この対応を doc コメントに明記する。
-- [ ] §1.4.1 の4トークンを名前付き定数として定義し、既存の権限違反メッセージ（120 行）にも `hash_dir_permission_violation` を追加する。
-- [ ] チェッカ生成を `d.newPermChecker()`（§1.4.4）に置き換え、失敗時は `permission_checker_init_failed` トークン付きのエラーを標準エラー出力へ出す。この場合の終了コードは `exitUntrustedEnvironment`（`3`）とする。
-- [ ] ハッシュディレクトリの解決に失敗した場合、fail-closed 終了時の標準エラー出力にその旨と対象パスを1行追記する（AC-05）。この判定点で解決済みなのはハッシュディレクトリ1件のみ（対象ファイル群は段階 5 で解決する）なので、件数ではなく「ハッシュディレクトリのパス解決に失敗した」という事実と当該パスを示す形にする。
-- [ ] 21-25 行の終了コード説明コメントを更新する。変更前は `(the policy declaration in init and the checker initialisation in checkDirPermissions)`、変更後は `(the policy declaration in init)` とし、残る panic が1点のみであることを示す（AC-28）。
+- [x] `checkHashDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) (checker security.DirectoryPermChecker, hashDirs []string, exitCode int)` を新設し、現行 81-122 行（チェッカ生成、ハッシュディレクトリの解決、段階 3 のチェックと fail-closed 判定）を移す。構築したチェッカと `hashDirs` を戻り値で返す。パス解決の `d.resolvePathForCheck`（§1.4.4）への移行はステップ 3-2 で済んでいるので、ここでは移設のみを行い、返るエラーに固有の識別トークン（`path_resolution_failed`、§1.4.1）を与えて fail-closed で終了する。**実装時の変更**: 3番目の戻り値は `ok bool` ではなく終了コードとした。下の「ディレクトリでない場合」の項目により、この関数は `3` と `1` の2つの終了コードを返し分ける必要があるためである。`exitOK` が「続行してよい」を表す。
+- [x] `checkTargetFilePermissions(cfg *verifyConfig, checker security.DirectoryPermChecker, hashDirs []string, logger *slog.Logger)` を新設し、現行 124-151 行（対象ファイルの解決と段階 5 のチェック）を移す。**現行 140-149 行の重複除去（`checked map[string]struct{}` により、ハッシュディレクトリ側で既に検査したディレクトリを二重に警告しない）を、分割後も維持する**。これが `hashDirs` を戻り値として渡す理由である。**実装時の変更**: (1) 対象ファイルの `filepath.Abs` + `EvalSymlinks` ループを `security.ResolveAllForCheck` に置き換えた（§1.3.1 の表がこの置き換えを挙げており、AC-01 の「同等の処理が各コマンドに重複して残らない」もこれを求める）。(2) その結果この関数は `deps` を使わなくなったため、引数 `d` を落とした。
+- [x] （実装時の追加）ハッシュディレクトリのパスが実在してディレクトリでない場合を、段階 3 の権限チェックより前に `os.Lstat` で判定し、`exitVerificationFailed`（`1`）を返す。02_architecture.md §4.3 はこの場合を「バリデータ生成失敗（`ErrHashPathNotDir`）として終了コード `1`」としているが、実際には段階 3 の `ValidateDirectoryPermissions` が先に到達し、`ErrInvalidDirPermissions`（`... is not a directory`）として違反を報告するため、バリデータ生成まで届かない。放置すると設定ミス（`-d` の指定先がファイル）が終了コード `3`（改ざんの疑い）として警報になり、しかも案内は「平文ファイルのパーミッションを直せ」という無意味なものになる。判定は誤りの余地が無い（`Lstat` してモードを見るだけで、エラー文字列の照合を伴わない）。`Lstat` の失敗は無視する。不在は段階 4 が、stat できない場合は段階 3 の権限チェックが、それぞれ担当するためである。
+- [x] `run` を §6.2 の6段階の順に並べ替える。段階 4（読み取り専用バリデータの構築と `HashDirError()` の判定）を、`checkHashDirPermissions` と `checkTargetFilePermissions` の間に置く。
+- [x] `hashValidator` インターフェースに `HashDirError() error` を追加する。
+- [x] 段階 4 で `HashDirError()` を判定し、`ErrHashDirNotExist` なら `hash_dir_not_found`、それ以外なら `hash_dir_unreadable` のトークンを含むメッセージを標準エラー出力へ出して `exitUntrustedEnvironment` を返す。**実装時の変更**: 後者の条件を `os.ErrPermission` の判定から「不在以外のすべて」に広げた。`NewReadOnly` の遅延エラーには `ENOTDIR`・`ELOOP` など生の `Lstat` エラーも載るため、`os.ErrPermission` だけを分けると残りが無言で素通りする。いずれも「存在するが開けなかった」であり、利用者への案内は同じである。
+- [x] `ErrHashPathNotDir` は `NewReadOnly` が構築エラーとして返すため、既存のバリデータ生成失敗経路で `exitVerificationFailed`（`1`）になる。この対応を doc コメントに明記する。**実装時の確認**: この経路は段階 3 が先に到達するため実際には使われない（上の「実装時の追加」を参照）。doc コメントは、同じ事象を段階 3 側で判定していることを述べる形にした。
+- [x] §1.4.1 のトークンを名前付き定数として定義し、既存の権限違反メッセージ（120 行）にも `hash_dir_permission_violation` を追加する。
+- [x] チェッカ生成を `d.newPermChecker()`（§1.4.4）に置き換え、失敗時は `permission_checker_init_failed` トークン付きのエラーを標準エラー出力へ出す。この場合の終了コードは `exitUntrustedEnvironment`（`3`）とする。
+- [x] ハッシュディレクトリの解決に失敗した場合、fail-closed 終了時の標準エラー出力にその旨と対象パスを1行追記する（AC-05）。この判定点で解決済みなのはハッシュディレクトリ1件のみ（対象ファイル群は段階 5 で解決する）なので、件数ではなく「ハッシュディレクトリのパス解決に失敗した」という事実と当該パスを示す形にする。
+- [x] 21-25 行の終了コード説明コメントを更新する。変更前は `(the policy declaration in init and the checker initialisation in checkDirPermissions)`、変更後は `(the policy declaration in init)` とし、残る panic が1点のみであることを示す（AC-28）。
 
 #### ステップ 3-5: 終了コードと識別トークンのテストを追加
 
 **変更ファイル**: `cmd/verify/main_test.go`
 
-- [ ] `fakeValidator` に `HashDirError() error` を実装する。
-- [ ] `TestRunSkipsTargetSetCheckWhenHashDirViolates` が、ステップ 3-4 の関数分割後も「ハッシュディレクトリ側で止まったとき対象ファイル側のチェックが走らない」ことを検証していることを確認する。
-- [ ] `TestRunMissingHashDirExitsUntrustedEnvironment` を追加する（AC-12）。不在のハッシュディレクトリを指定し、終了コードが `3` であること、実行後もディレクトリが不在であることを検証する。
-- [ ] `TestRunMissingHashDirMessageIdentifiesCause` を追加する（AC-13）。標準エラー出力が `hash_dir_not_found` トークンとハッシュディレクトリのパスを含み、かつハッシュ照合の失敗を示す文言 `file content does not match the recorded hash`（`internal/filevalidator/errors.go` の実文言）を含まないことを検証する。
-- [ ] `TestRunFailsClosedReportsPathResolutionFailure` を追加する（AC-05）。読み取り権限のない祖先を持つハッシュディレクトリを指定し、fail-closed 終了時の標準エラー出力に解決失敗の旨と当該パスが出ることを検証する。root スキップと `t.Cleanup` での権限復帰を入れる。
-- [ ] `TestRunFailsClosedReportsInjectedPathResolutionFailure` を追加する（AC-05 の第二経路）。§1.4.4 の `deps.resolvePathForCheck` に、確実に `ErrPathResolution` を返す実装を注入して同じ出力を検証する。前項は root 実行時にスキップされるため、権限に依存しない根拠をもう1本用意する。
-- [ ] `TestRunExitsWithoutPanicWhenCheckerInitFails` を追加する（AC-24・AC-26）。`d.newPermChecker` に失敗を返す実装を注入し、終了コードが `3`、標準エラー出力に `permission_checker_init_failed` が出ることを検証する。ステップ 2-6 と同じ理由で、`goroutine ` の非包含は補助的な表明である旨をテストの doc コメントに英語で記す。
-- [ ] `TestRunUnreadableHashDirExitsUntrustedEnvironment` を追加する。読み取れないハッシュディレクトリで終了コード `3` と `hash_dir_unreadable` トークンが出ること。root スキップと権限復帰を入れる。
-- [ ] `TestRunHashDirIsNotADirectoryExitsVerificationFailed` を追加する。ハッシュディレクトリのパスが通常ファイルの場合、終了コードが `1` になること（02_architecture.md §4.3）。
+- [x] `fakeValidator` に `HashDirError() error` を実装する。
+- [x] `TestRunSkipsTargetSetCheckWhenHashDirViolates` が、ステップ 3-4 の関数分割後も「ハッシュディレクトリ側で止まったとき対象ファイル側のチェックが走らない」ことを検証していることを確認する。**確認結果**: 無変更で通る。同テストは対象ファイル側のディレクトリがログに現れないことを表明しており、分割後も `checkTargetFilePermissions` が呼ばれないことの根拠になっている。
+- [x] `TestRunMissingHashDirExitsUntrustedEnvironment` を追加する（AC-12）。不在のハッシュディレクトリを指定し、終了コードが `3` であること、実行後もディレクトリが不在であることを検証する。
+- [x] `TestRunMissingHashDirMessageIdentifiesCause` を追加する（AC-13）。標準エラー出力が `hash_dir_not_found` トークンとハッシュディレクトリのパスを含み、かつハッシュ照合の失敗を示す文言を含まないことを検証する。**実装時の変更**: 照合失敗の文言はリテラルではなく `filevalidator.ErrMismatch.Error()` を参照する（同じ文字列を2箇所に持たないため）。
+- [x] `TestRunFailsClosedReportsPathResolutionFailure` を追加する（AC-05）。読み取り権限のない祖先を持つハッシュディレクトリを指定し、fail-closed 終了時の標準エラー出力に解決失敗の旨と当該パスが出ることを検証する。root スキップと `t.Cleanup` での権限復帰を入れる。
+- [x] `TestRunFailsClosedReportsInjectedPathResolutionFailure` を追加する（AC-05 の第二経路）。§1.4.4 の `deps.resolvePathForCheck` に、確実に `ErrPathResolution` を返す実装を注入して同じ出力を検証する。前項は root 実行時にスキップされるため、権限に依存しない根拠をもう1本用意する。**実装時の追加**: 注入する実装はエラーと併せて健全な既存ディレクトリを返す。これが「返り値を検査して続行する」実装では通ってしまう配置であり、失敗それ自体を拒否していることの根拠になる。
+- [x] `TestRunExitsWithoutPanicWhenCheckerInitFails` を追加する（AC-24・AC-26）。`d.newPermChecker` に失敗を返す実装を注入し、終了コードが `3`、標準エラー出力に `permission_checker_init_failed` が出ることを検証する。ステップ 2-6 と同じ理由で、`goroutine ` の非包含は補助的な表明である旨をテストの doc コメントに英語で記す。
+- [x] `TestRunUnreadableHashDirExitsUntrustedEnvironment` を追加する。読み取れないハッシュディレクトリで終了コード `3` と `hash_dir_unreadable` トークンが出ること。**実装時の変更**: 実ディレクトリの `chmod 0o000` では到達できないため（`Lstat` は成功し `NewReadOnly` も遅延エラーを持たない。読み取り失敗はファイル単位で表面化する）、また祖先を読めなくする配置は先にパス解決が拒否するため、`HashDirError()` が権限エラーを返す `fakeValidator` を注入する形にした。本番でこの遅延エラーが載るのは、パス解決とバリデータ構築の間にアクセスが失われた場合である。同じ理由づけで `cmd/record` の `TestCheckHashDirWriteSafety_RefusesWhenSiteIsUnusable` も直接呼び出しで検証している。root スキップは不要になった。
+- [x] `TestRunHashDirIsNotADirectoryExitsVerificationFailed` を追加する。ハッシュディレクトリのパスが通常ファイルの場合、終了コードが `1` になること（02_architecture.md §4.3）。**実装時の追加**: 識別トークン（`verify-error=`）が出ないことも表明する。終了コード `1` は通常の失敗であり、トークンは `3` の原因を分けるためのものであるという区別を固定する。
+
+- [x] （実装時の追加）ステップ 3-4 の終了コード契約の変更に、既存の2テストを追随させる。`TestRunCreatesNoFilesystemEntries` の不在ケースは `1` から `3` になり、ファイル単位の検証まで届かなくなるため、「バリデータ構築まで到達した」ことの根拠をケースごとに分ける（不在ケースは `hash_dir_not_found` の出力、既存ケースは従来どおり `[1/1] <file>` の出力）。`TestRunResolvesMissingHashDirUnderSymlinkedAncestor` も `3` になるため、表明を「終了コードが `1`」から「原因トークンが `hash_dir_not_found` であって `hash_dir_permission_violation` ではない」へ移す。同テストが本来固定しているのはシンボリックリンクの祖先が違反として報告されないことであり、その観点は保たれる。
 
 **根拠テストの自己検証**: 上記の新規テストについて、対応する実装分岐を一時的に無効化して失敗することを確認し、その旨をコミットメッセージに記す。
 
 #### フェーズ3 完了ゲート
 
-- [ ] `make fmt` → `make test` → `make lint` が緑。
+- [x] `make fmt` → `make test` → `make lint` が緑。
 
 ### PR-5 作成ポイント: verify exit-code contract and cause tokens
 
@@ -859,7 +865,7 @@ PR-1 と PR-2 はフェーズ1（`internal/`）で、これを利用する PR-3�
 
 ### 4.6 権限に依存するテストの扱い
 
-読み取り不能ディレクトリを使うテストは、root で実行すると `chmod 0o000` が `EACCES` を生まないため、そのままでは失敗する。該当するテストはすべて `syscall.Geteuid() == 0` で `t.Skip` し、権限を落とした直後に `t.Cleanup` で権限を戻す（`t.TempDir` の自動削除が失敗しないようにするため）。対象は `TestHashDirError_UnreadableDirectoryReturnsPermissionError`・`TestResolvePathForCheck_UnreadableAncestorReturnsErrPathResolution`・`TestResolveAllForCheck_WarnsOncePerFailure`・`TestRunFailsClosedReportsPathResolutionFailure`・`TestRunUnreadableHashDirExitsUntrustedEnvironment` の5件。
+読み取り不能ディレクトリを使うテストは、root で実行すると `chmod 0o000` が `EACCES` を生まないため、そのままでは失敗する。該当するテストはすべて `syscall.Geteuid() == 0` で `t.Skip` し、権限を落とした直後に `t.Cleanup` で権限を戻す（`t.TempDir` の自動削除が失敗しないようにするため）。対象は `TestHashDirError_UnreadableDirectoryReturnsPermissionError`・`TestResolvePathForCheck_UnreadableAncestorReturnsErrPathResolution`・`TestResolveAllForCheck_WarnsOncePerFailure`・`TestRunFailsClosedReportsPathResolutionFailure` の4件。**実装時の変更**: `TestRunUnreadableHashDirExitsUntrustedEnvironment` は当初この一覧に含めていたが、実ディレクトリの権限では当該分岐に到達できないことが分かり、遅延エラーを注入する形にした（ステップ 3-5）。権限に依存しないため、この一覧から外した。
 
 スキップによって根拠が消える受け入れ基準は AC-05 のみである。これに対しては、権限に依存しない第二の根拠（解決関数を注入する `TestRunFailsClosedReportsInjectedPathResolutionFailure`）を用意する（ステップ 3-5）。
 

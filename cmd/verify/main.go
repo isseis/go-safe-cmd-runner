@@ -12,23 +12,45 @@ import (
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/security"
 )
 
 // Exit codes returned by run(). 2 is deliberately unused: the Go runtime exits
-// with status 2 on an uncaught panic, and this command has reachable panics
-// (the policy declaration in init and the checker initialisation in
-// checkDirPermissions). Reusing 2 would make "violation detected" and "verify
-// crashed" indistinguishable.
+// with status 2 on an uncaught panic, and this command has a reachable panic
+// (the policy declaration in init). Reusing 2 would make "violation detected"
+// and "verify crashed" indistinguishable.
 const (
 	exitOK = 0
 	// exitVerificationFailed covers every ordinary failure, not only a failed
 	// hash comparison: an argument error, an unresolvable permission-check UID,
 	// a validator that could not be built, or one or more files failing
 	// verification.
-	exitVerificationFailed   = 1
+	exitVerificationFailed = 1
+	// exitUntrustedEnvironment means no file was verified at all because the
+	// environment could not be trusted. Its causes are told apart by the
+	// identification tokens below, not by this code.
 	exitUntrustedEnvironment = 3
+)
+
+// Identification tokens. Every message that ends the run with
+// exitUntrustedEnvironment carries one, spelled "verify-error=<cause>", so a
+// calling script can tell the causes of that one exit code apart without
+// matching on prose. docs/user/verify_command.md lists them; tests refer to
+// these constants rather than repeating the strings.
+const (
+	// The hash directory or an ancestor is writable by someone else.
+	causeHashDirPermissionViolation = "hash_dir_permission_violation"
+	// The hash directory path could not be resolved, so the directory whose
+	// permissions were checked is not reliably the one that would be read.
+	causePathResolutionFailed = "path_resolution_failed"
+	// The hash directory does not exist. There is nothing to verify against.
+	causeHashDirNotFound = "hash_dir_not_found"
+	// The hash directory exists but could not be opened.
+	causeHashDirUnreadable = "hash_dir_unreadable"
+	// The directory permission checker could not be built.
+	causePermissionCheckerInitFailed = "permission_checker_init_failed"
 )
 
 var errNoFilesProvided = errors.New("at least one file path must be provided as a positional argument or via -file (deprecated)")
@@ -65,8 +87,12 @@ func init() {
 	}
 }
 
+// hashValidator is the smallest surface verify needs from a validator.
 type hashValidator interface {
 	Verify(filePath string) error
+	// HashDirError reports a hash directory that could not be used, detected when
+	// the validator was built. Nil means it was usable.
+	HashDirError() error
 }
 
 type verifyConfig struct {
@@ -79,30 +105,68 @@ func main() {
 	os.Exit(run(os.Args[1:], defaultDeps(), os.Stdout, os.Stderr))
 }
 
-// checkDirPermissions reports whether verification may proceed.
+// checkHashDirPermissions reports whether verification may proceed, judged on
+// the hash directory alone. It returns exitOK to proceed, along with the checker
+// it built and the directories it checked, both of which the target file side
+// reuses; any other exit code is run's result.
 //
 // Only the hash directory side is fail-closed. It is the root of trust: if it
 // or an ancestor is writable by someone else, hash records can be replaced and
 // any verdict this command produces is meaningless. A violation confined to a
 // target file's ancestors is the opposite case — that is what verify exists to
-// inspect — so it stays a warning and verification continues.
-func checkDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) bool {
-	secValidator, secErr := d.newPermChecker()
-	if secErr != nil {
-		// NewDirectoryPermChecker only fails when standalone checker setup fails,
-		// which is not recoverable in this startup path.
-		panic(fmt.Sprintf("security validator initialisation failed: %v", secErr))
+// inspect — so it stays a warning and verification continues (see
+// checkTargetFilePermissions).
+func checkHashDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) (checker security.DirectoryPermChecker, hashDirs []string, exitCode int) {
+	checker, err := d.newPermChecker()
+	if err != nil {
+		// Reported rather than panicked: a checker that cannot be built means this
+		// run has no way to establish trust, which is an ordinary fail-closed exit
+		// and not a programming error worth a stack trace.
+		fmt.Fprintf(stderr, "Error: failed to initialise the directory permission checker: %v — no file was verified (verify-error=%s)\n", err, causePermissionCheckerInitFailed) //nolint:errcheck
+		return nil, nil, exitUntrustedEnvironment
 	}
+
+	logger := slog.Default()
 	// The hash directory need not exist, which rules out filepath.EvalSymlinks:
 	// it fails on an absent path, and the unresolved path left behind makes a
 	// symlinked ancestor look like a "not a directory" violation. The shared
-	// helper resolves the deepest existing ancestor, and returns a usable path
-	// even when it errors, so the error is ignored here.
-	absHashDir, _ := d.resolvePathForCheck(cfg.hashDir)
+	// helper resolves as far as the deepest existing ancestor instead.
+	absHashDir, resolveErr := d.resolvePathForCheck(cfg.hashDir)
+	if resolveErr != nil {
+		// Fail closed rather than check the path resolution handed back. For most
+		// failures that path is one the checker would reject anyway, so stopping
+		// here only names the cause more precisely. But when the not-yet-existing
+		// part holds a "..", resolution returns the deepest existing ancestor --
+		// a shorter, possibly healthy directory that is not the one this run would
+		// read from. Checking that would establish the permissions of one
+		// directory and then trust another.
+		logger.Error("cannot resolve the hash directory for the permission check — refusing to verify",
+			slog.String("path", cfg.hashDir),
+			slog.String("error", resolveErr.Error()),
+		)
+		fmt.Fprintf(stderr, "Error: cannot resolve hash directory %s for the permission check: %v — verification results cannot be trusted; no file was verified (verify-error=%s)\n", cfg.hashDir, resolveErr, causePathResolutionFailed) //nolint:errcheck
+		return nil, nil, exitUntrustedEnvironment
+	}
 
-	logger := slog.Default()
-	hashDirs := security.CollectPermissionCheckDirs(nil, []string{absHashDir})
-	if violations := security.RunTOCTOUPermissionCheck(secValidator, hashDirs, logger).Violations; len(violations) > 0 {
+	// A hash path that exists but is not a directory is a misconfiguration, not
+	// an untrusted environment: nothing can be read from it, so there is no trust
+	// to establish. It is diagnosed here because the permission check below would
+	// otherwise reach it first and report it as a directory permission violation,
+	// telling the operator to fix the permissions of a plain file.
+	// filevalidator.NewReadOnly names the same case ErrHashPathNotDir, but the
+	// validator is not built until the hash directory has been judged.
+	// A failing Lstat is left alone: a missing directory is diagnosed after the
+	// validator is built, and one that cannot be stat'ed is a violation the check
+	// below reports.
+	// #nosec G703 -- the path comes from this command's own -hash-dir argument, and
+	// inspecting it is the point: nothing is opened or read here.
+	if info, err := os.Lstat(absHashDir); err == nil && !info.Mode().IsDir() {
+		fmt.Fprintf(stderr, "Error: hash directory %s is not a directory — no file was verified\n", cfg.hashDir) //nolint:errcheck
+		return nil, nil, exitVerificationFailed
+	}
+
+	hashDirs = security.CollectPermissionCheckDirs(nil, []string{absHashDir})
+	if violations := security.RunTOCTOUPermissionCheck(checker, hashDirs, logger).Violations; len(violations) > 0 {
 		// The remediation names neither a directory nor a command: v.Path is the
 		// directory that was checked, not necessarily the one at fault (the checker
 		// walks from the root down), and ErrInvalidDirPermissions covers causes
@@ -120,26 +184,26 @@ func checkDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) bool {
 				slog.String("remediation", remediation),
 			)
 		}
-		fmt.Fprintln(stderr, "Error: permission violation in hash directory or its ancestor directories — verification results cannot be trusted; no file was verified. Fix directory permissions and re-run.") //nolint:errcheck
-		return false
+		fmt.Fprintf(stderr, "Error: permission violation in hash directory or its ancestor directories — verification results cannot be trusted; no file was verified. Fix directory permissions and re-run. (verify-error=%s)\n", causeHashDirPermissionViolation) //nolint:errcheck
+		return nil, nil, exitUntrustedEnvironment
 	}
 
+	return checker, hashDirs, exitOK
+}
+
+// checkTargetFilePermissions warns about permission violations around the files
+// being verified. Unlike the hash directory side it never stops the run: a
+// target file sitting in a writable directory is what verify exists to inspect.
+//
+// hashDirs is what checkHashDirPermissions already checked; passing it in keeps
+// a shared ancestor from being warned about twice.
+func checkTargetFilePermissions(cfg *verifyConfig, checker security.DirectoryPermChecker, hashDirs []string, logger *slog.Logger) {
 	// Resolved here rather than alongside the hash directory: a run that fails
-	// closed does not touch the target files at all.
-	absFiles := make([]string, 0, len(cfg.files))
-	for _, f := range cfg.files {
-		abs, err := filepath.Abs(f)
-		if err != nil {
-			abs = f
-		}
-		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-			absFiles = append(absFiles, resolved)
-		} else {
-			absFiles = append(absFiles, abs)
-		}
-	}
-	// Directories already covered above are skipped so a shared ancestor is not
-	// warned about twice.
+	// closed does not touch the target files at all. A file that cannot be
+	// resolved is still checked, on the lexical path resolution hands back, and
+	// the reason is recorded rather than swallowed.
+	absFiles, _ := security.ResolveAllForCheck(cfg.files, logger)
+
 	checked := make(map[string]struct{}, len(hashDirs))
 	for _, dir := range hashDirs {
 		checked[dir] = struct{}{}
@@ -150,8 +214,9 @@ func checkDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) bool {
 			targetDirs = append(targetDirs, dir)
 		}
 	}
-	security.RunTOCTOUPermissionCheck(secValidator, targetDirs, logger)
-	return true
+	// The result is deliberately dropped: each violation is already logged at
+	// WARN by the shared check, and none of them changes the verdict here.
+	security.RunTOCTOUPermissionCheck(checker, targetDirs, logger)
 }
 
 func run(args []string, d deps, stdout, stderr io.Writer) int {
@@ -182,15 +247,35 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		return exitVerificationFailed
 	}
 
-	if !checkDirPermissions(cfg, d, stderr) {
-		return exitUntrustedEnvironment
+	// The hash directory is judged before anything is read from it: an untrusted
+	// directory stops the run before this command asks what is inside it.
+	checker, hashDirs, exitCode := checkHashDirPermissions(cfg, d, stderr)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	validator, err := d.validatorFactory(cfg.hashDir)
 	if err != nil {
+		// filevalidator.ErrHashPathNotDir arrives here: a hash path that exists but
+		// is not a directory is a construction error, so it stays an ordinary
+		// verification failure rather than an untrusted environment.
 		fmt.Fprintf(stderr, "Error creating validator: %v\n", err) //nolint:errcheck
 		return exitVerificationFailed
 	}
+	// Diagnosed once, here, rather than left to the per-file deferred error. A
+	// missing hash directory is not a property of any one file, and reporting it
+	// as the first file's FAILED line reads as if that file had been tampered
+	// with.
+	if err := validator.HashDirError(); err != nil {
+		if errors.Is(err, filevalidator.ErrHashDirNotExist) {
+			fmt.Fprintf(stderr, "Error: hash directory %s does not exist, so there is nothing to verify against — record hashes first with the record command; no file was verified (verify-error=%s)\n", cfg.hashDir, causeHashDirNotFound) //nolint:errcheck
+		} else {
+			fmt.Fprintf(stderr, "Error: hash directory %s exists but could not be opened: %v — check its permissions; no file was verified (verify-error=%s)\n", cfg.hashDir, err, causeHashDirUnreadable) //nolint:errcheck
+		}
+		return exitUntrustedEnvironment
+	}
+
+	checkTargetFilePermissions(cfg, checker, hashDirs, slog.Default())
 
 	return processFiles(validator, cfg.files, stdout, stderr)
 }

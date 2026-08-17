@@ -12,9 +12,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/security"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -30,7 +32,12 @@ type fakeValidator struct {
 	responses map[string]error
 	calls     []verifyCall
 	hashDir   string
+	// hashDirErr is what HashDirError reports; the zero value stands for a hash
+	// directory that was usable, which is what most tests want.
+	hashDirErr error
 }
+
+func (f *fakeValidator) HashDirError() error { return f.hashDirErr }
 
 func (f *fakeValidator) Verify(filePath string) error {
 	f.calls = append(f.calls, verifyCall{file: filePath})
@@ -248,7 +255,7 @@ func TestRunFailsClosedOnHashDirViolation_ExplicitHashDir(t *testing.T) {
 }
 
 // TestRunProceedsWithRealCheckerOnCleanDirs is the canary for the real checker's
-// happy path. Every other test that reaches checkDirPermissions either injects a
+// happy path. Every other test that reaches checkHashDirPermissions either injects a
 // stub or asserts the fail-closed outcome, so without this one a regression that
 // made the real check report spurious violations — an unresolvable path falling
 // back to a relative one, say — would turn every real invocation of verify into
@@ -437,18 +444,40 @@ func TestRunFailsClosedWhenPermissionCheckUIDUnresolvable(t *testing.T) {
 // that happens inside the validator itself, which is the half a deleted mkdirAll
 // call does not cover.
 //
-// Only the missing_hash_dir case can fail today: both creation paths this
-// commit removed created the hash directory itself, so restoring either leaves
-// an existing one untouched. The existing_hash_dir case is a standing guard for
-// a write placed inside a hash directory that is already there, which is why the
-// whole parent subtree is compared rather than only its top level.
+// Only the missing_hash_dir case can fail today: both creation paths removed
+// earlier in this task created the hash directory itself, so restoring either
+// leaves an existing one untouched. The existing_hash_dir case is a standing
+// guard for a write placed inside a hash directory that is already there, which
+// is why the whole parent subtree is compared rather than only its top level.
+//
+// The two cases stop at different points, so each needs its own evidence that
+// run got as far as the validator: an existing directory reaches per-file
+// verification, a missing one is diagnosed right after the validator is built.
 func TestRunCreatesNoFilesystemEntries(t *testing.T) {
 	tests := []struct {
 		name          string
 		hashDirExists bool
+		wantExitCode  int
+		// assertReachedValidator states what proves construction happened, which
+		// is where a creation this test denies would have occurred.
+		assertReachedValidator func(t *testing.T, targetFile, stdout, stderr string)
 	}{
-		{name: "existing_hash_dir", hashDirExists: true},
-		{name: "missing_hash_dir", hashDirExists: false},
+		{
+			name:          "existing_hash_dir",
+			hashDirExists: true,
+			wantExitCode:  exitVerificationFailed,
+			assertReachedValidator: func(t *testing.T, targetFile, stdout, _ string) {
+				assert.Contains(t, stdout, "[1/1] "+targetFile, "the run must have reached per-file verification")
+			},
+		},
+		{
+			name:          "missing_hash_dir",
+			hashDirExists: false,
+			wantExitCode:  exitUntrustedEnvironment,
+			assertReachedValidator: func(t *testing.T, _, _, stderr string) {
+				assert.Contains(t, stderr, causeHashDirNotFound, "the run must have reached the built validator's hash directory diagnosis")
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -469,11 +498,9 @@ func TestRunCreatesNoFilesystemEntries(t *testing.T) {
 			exitCode := run([]string{"-hash-dir", hashDir, targetFile}, defaultDeps(), stdout, stderr)
 
 			// Every early return of run also creates nothing, so the subtree
-			// assertion below proves nothing on its own. These two say the run
-			// reached the validator and verified the file, which is where the
-			// creation this test denies would have happened.
-			require.Equal(t, exitVerificationFailed, exitCode, "no hash record exists, so verification must fail: %s", stderr.String())
-			assert.Contains(t, stdout.String(), "[1/1] "+targetFile, "the run must have reached per-file verification")
+			// assertion below proves nothing on its own.
+			require.Equal(t, tc.wantExitCode, exitCode, "stderr: %s", stderr.String())
+			tc.assertReachedValidator(t, targetFile, stdout.String(), stderr.String())
 
 			after := tu.WalkEntries(t, parent)
 			assert.Equal(t, before, after, "verify must not create anything under the hash directory's parent")
@@ -486,8 +513,12 @@ func TestRunCreatesNoFilesystemEntries(t *testing.T) {
 // not exist and one of its ancestors is a symlink. Resolving with
 // filepath.EvalSymlinks fails outright on an absent path, and the unresolved
 // path left behind makes the Lstat-based hierarchy check reject the symlinked
-// ancestor as "not a directory" — a fail-closed exit whose remediation tells
-// the operator to fix permissions on a directory that is fine.
+// ancestor as "not a directory" — a permission violation reported against a
+// directory that is fine.
+//
+// A missing hash directory is still a fail-closed exit, but for its own reason:
+// what this test pins is which reason, since the permission violation and the
+// missing directory now share exit code 3 and are told apart by their tokens.
 //
 // The hash directory is reached through the symlink deliberately; tu.SafeTempDir
 // resolves symlinks, so the other tests in this file cannot reach this path.
@@ -508,11 +539,12 @@ func TestRunResolvesMissingHashDirUnderSymlinkedAncestor(t *testing.T) {
 	stderr := &bytes.Buffer{}
 	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, defaultDeps(), stdout, stderr)
 
-	require.Equal(t, exitVerificationFailed, exitCode,
-		"a missing hash directory is an ordinary verification failure, not an untrusted environment: %s", stderr.String())
-	assert.NotContains(t, stderr.String(), "permission violation in hash directory",
+	require.Equal(t, exitUntrustedEnvironment, exitCode, "stderr: %s", stderr.String())
+	assert.Contains(t, stderr.String(), causeHashDirNotFound,
+		"the cause must be the missing directory, not the symlinked ancestor")
+	assert.NotContains(t, stderr.String(), causeHashDirPermissionViolation,
 		"the symlinked ancestor must not be reported as a permission violation")
-	assert.Contains(t, stdout.String(), "[1/1] "+targetFile, "the run must have reached per-file verification")
+	assert.Empty(t, stdout.String(), "verification must not start")
 }
 
 // TestVerifyDeclaresSudoUIDAwarePolicy verifies that this binary's init()
@@ -532,4 +564,181 @@ func TestVerifyDeclaresSudoUIDAwarePolicy(t *testing.T) {
 		groupmembership.ProcessPermissionCheckUIDPolicy(), 0, uidDeps)
 	require.NoError(t, err)
 	assert.Equal(t, 1000, uid)
+}
+
+// TestRunMissingHashDirExitsUntrustedEnvironment verifies that a hash directory
+// that does not exist ends the run without verifying anything and without
+// creating the directory. Nothing can be verified against records that are not
+// there, and the absence is a property of the environment rather than of any
+// file, so it takes the untrusted-environment exit code.
+func TestRunMissingHashDirExitsUntrustedEnvironment(t *testing.T) {
+	parent := tu.SafeTempDir(t)
+	hashDir := filepath.Join(parent, "hashes")
+	targetFile := filepath.Join(tu.SafeTempDir(t), "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+
+	require.Equal(t, exitUntrustedEnvironment, exitCode, "stderr: %s", stderr.String())
+	assert.Empty(t, stdout.String(), "verification must not start")
+	_, err := os.Stat(hashDir)
+	assert.ErrorIs(t, err, os.ErrNotExist, "the hash directory must still be absent")
+}
+
+// TestRunMissingHashDirMessageIdentifiesCause verifies that the message names
+// the missing directory as the cause. Reading it as a hash mismatch would turn
+// an unprepared host into a suspected tampering incident, so the wording of the
+// mismatch error must not appear.
+func TestRunMissingHashDirMessageIdentifiesCause(t *testing.T) {
+	parent := tu.SafeTempDir(t)
+	hashDir := filepath.Join(parent, "hashes")
+	targetFile := filepath.Join(tu.SafeTempDir(t), "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+
+	require.Equal(t, exitUntrustedEnvironment, exitCode)
+	assert.Contains(t, stderr.String(), "verify-error="+causeHashDirNotFound)
+	assert.Contains(t, stderr.String(), hashDir, "the message must name the directory it looked for")
+	assert.NotContains(t, stderr.String(), filevalidator.ErrMismatch.Error(),
+		"a missing hash directory must not read as a detected modification")
+}
+
+// TestRunFailsClosedReportsPathResolutionFailure verifies that a hash directory
+// whose ancestor cannot be traversed ends the run with the resolution failure
+// named on stderr, rather than as a permission violation whose remediation
+// points at the wrong directory.
+//
+// This is the path-resolution evidence that uses a real permission failure; it
+// is skipped as root. TestRunFailsClosedReportsInjectedPathResolutionFailure
+// covers the same output without depending on privileges.
+func TestRunFailsClosedReportsPathResolutionFailure(t *testing.T) {
+	if syscall.Geteuid() == 0 {
+		t.Skip("skipping: root is not denied by chmod 0o000")
+	}
+	base := tu.SafeTempDir(t)
+	closed := filepath.Join(base, "closed")
+	require.NoError(t, os.Mkdir(closed, 0o700))
+	require.NoError(t, os.Chmod(closed, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(closed, 0o700) })
+	hashDir := filepath.Join(closed, "hashes")
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, defaultDeps(), stdout, stderr)
+
+	require.Equal(t, exitUntrustedEnvironment, exitCode, "stderr: %s", stderr.String())
+	assert.Contains(t, stderr.String(), "verify-error="+causePathResolutionFailed)
+	assert.Contains(t, stderr.String(), hashDir, "the message must name the path that could not be resolved")
+	assert.Empty(t, stdout.String(), "verification must not start")
+}
+
+// TestRunFailsClosedReportsInjectedPathResolutionFailure covers the same output
+// as TestRunFailsClosedReportsPathResolutionFailure by injecting a resolver that
+// fails, so that the evidence for it survives a run as root, where making a
+// directory untraversable is impossible.
+func TestRunFailsClosedReportsInjectedPathResolutionFailure(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	validator := &fakeValidator{responses: map[string]error{}}
+	d := testDeps(validator)
+	d.newPermChecker = fixedPermChecker(allowAllDirs())
+	// A healthy path alongside the error, which is what resolution returns for
+	// the case that must not be checked: a ".." in the not-yet-existing part
+	// resolves to an existing ancestor that is not the directory verify would
+	// read from. Checking it would pass and the run would continue.
+	d.resolvePathForCheck = func(path string) (string, error) {
+		return hashDir, fmt.Errorf("%w: %s: injected", security.ErrPathResolution, path)
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, d, stdout, stderr)
+
+	require.Equal(t, exitUntrustedEnvironment, exitCode, "stderr: %s", stderr.String())
+	assert.Contains(t, stderr.String(), "verify-error="+causePathResolutionFailed)
+	assert.Contains(t, stderr.String(), hashDir)
+	assert.Empty(t, validator.calls, "no file may be verified when the hash directory path is unresolved")
+}
+
+// TestRunExitsWithoutPanicWhenCheckerInitFails verifies that a permission
+// checker that cannot be built ends the run with the untrusted-environment exit
+// code and an error on stderr rather than a panic.
+//
+// run is called in this process, so a panic would take the test binary down
+// with it: the substantive evidence that none happened is that run returned a
+// value at all. The assertion on "goroutine " is a secondary check that no
+// stack trace was written to stderr.
+func TestRunExitsWithoutPanicWhenCheckerInitFails(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	validator := &fakeValidator{responses: map[string]error{}}
+	d := testDeps(validator)
+	initErr := errors.New("checker unavailable")
+	d.newPermChecker = func() (security.DirectoryPermChecker, error) { return nil, initErr }
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, d, stdout, stderr)
+
+	require.Equal(t, exitUntrustedEnvironment, exitCode)
+	assert.Contains(t, stderr.String(), "verify-error="+causePermissionCheckerInitFailed)
+	assert.Contains(t, stderr.String(), initErr.Error())
+	assert.NotContains(t, stderr.String(), "goroutine ", "no stack trace may be printed")
+	assert.Empty(t, validator.calls, "no file may be verified without a permission checker")
+}
+
+// TestRunUnreadableHashDirExitsUntrustedEnvironment verifies that a hash
+// directory the validator could not open is reported as its own cause, distinct
+// from a missing one: the operator's next step is to look at its permissions,
+// not to record hashes.
+//
+// The inaccessible directory is injected rather than built on disk. A directory
+// whose permissions deny access is refused earlier, by path resolution, which
+// walks the same components; the deferred error filevalidator.NewReadOnly
+// carries here arrives in production only when access is lost between that
+// resolution and the validator's construction. This test drives that window
+// directly, the same way cmd/record covers its own post-resolution guard.
+func TestRunUnreadableHashDirExitsUntrustedEnvironment(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	validator := &fakeValidator{
+		responses:  map[string]error{},
+		hashDirErr: fmt.Errorf("stat %s: %w", hashDir, os.ErrPermission),
+	}
+	d := testDeps(validator)
+	d.newPermChecker = fixedPermChecker(allowAllDirs())
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, d, stdout, stderr)
+
+	require.Equal(t, exitUntrustedEnvironment, exitCode, "stderr: %s", stderr.String())
+	assert.Empty(t, validator.calls, "no file may be verified against a hash directory that could not be opened")
+	assert.Contains(t, stderr.String(), "verify-error="+causeHashDirUnreadable)
+	assert.NotContains(t, stderr.String(), "verify-error="+causeHashDirNotFound,
+		"an unreadable directory must not be reported as a missing one")
+	assert.Empty(t, stdout.String(), "verification must not start")
+}
+
+// TestRunHashDirIsNotADirectoryExitsVerificationFailed verifies that a hash path
+// pointing at a plain file is an ordinary failure rather than an untrusted
+// environment. Nothing can be read from it, so there is no trust question to
+// answer, and reporting it as one would raise a tampering alert for a typo.
+func TestRunHashDirIsNotADirectoryExitsVerificationFailed(t *testing.T) {
+	hashDir := filepath.Join(tu.SafeTempDir(t), "not-a-dir")
+	require.NoError(t, os.WriteFile(hashDir, []byte("hello"), 0o600))
+	targetFile := filepath.Join(tu.SafeTempDir(t), "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+
+	require.Equal(t, exitVerificationFailed, exitCode, "stderr: %s", stderr.String())
+	assert.Contains(t, stderr.String(), "is not a directory")
+	assert.NotContains(t, stderr.String(), "verify-error=",
+		"an ordinary failure carries no untrusted-environment token")
+	assert.Empty(t, stdout.String(), "verification must not start")
 }
