@@ -570,20 +570,37 @@ func TestStartupDirPermAudit_LogsCoverageCounts(t *testing.T) {
 	dir := tu.SafeTempDir(t)
 	logs := captureLogs(t)
 
-	// One path under a directory that exists and one under a chain that does not,
-	// so the two counts differ and transposing them fails this test.
+	// The two tallies have to differ, or reporting checked as skipped and skipped
+	// as checked would still satisfy the assertions below. How many directories
+	// exist above a temporary directory -- and how much of the default hash
+	// directory is installed -- is the host's choice, so measure it rather than
+	// assume it: a probe run over a single existing path counts exactly the
+	// existing directories this host contributes.
+	probe := &countingPermChecker{}
+	_, err := runTOCTOUCheck(auditConfig(filepath.Join(dir, "present.txt")),
+		&runnertypes.RuntimeGlobal{}, "test-run", permCheckerReturning(probe))
+	require.NoError(t, err)
+	require.NotZero(t, probe.existing, "the audit must reach at least one existing directory")
+	logs.Reset()
+
+	// One path under a directory that exists and one under a chain of absent
+	// directories longer than everything the probe found, so missing exceeds
+	// existing on any host and transposing the two fails this test.
+	absent := filepath.Join(dir, "absent")
+	for range probe.existing + 1 {
+		absent = filepath.Join(absent, "deeper")
+	}
 	cfg := auditConfig(
 		filepath.Join(dir, "present.txt"),
-		filepath.Join(dir, "absent", "deeper", "still-absent.txt"),
+		filepath.Join(absent, "still-absent.txt"),
 	)
 	checker := &countingPermChecker{}
 
-	_, err := runTOCTOUCheck(cfg, &runnertypes.RuntimeGlobal{}, "test-run", permCheckerReturning(checker))
+	_, err = runTOCTOUCheck(cfg, &runnertypes.RuntimeGlobal{}, "test-run", permCheckerReturning(checker))
 	require.NoError(t, err)
 
 	require.NotZero(t, checker.existing, "the tally must distinguish two non-empty groups")
-	require.NotZero(t, checker.missing)
-	require.NotEqual(t, checker.existing, checker.missing,
+	require.Greater(t, checker.missing, checker.existing,
 		"equal tallies would let checked and skipped be reported the wrong way round")
 
 	out := logs.String()
