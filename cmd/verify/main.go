@@ -55,9 +55,10 @@ const (
 	causeHashDirUnreadable = "hash_dir_unreadable"
 	// The directory permission checker could not be built.
 	causePermissionCheckerInitFailed = "permission_checker_init_failed"
-	// The hash directory path names something other than a directory. Unlike the
-	// causes above this is a misconfiguration, so it exits with
-	// exitVerificationFailed, as do the three below.
+	// The hash directory path names something other than a directory: unlike the
+	// causes above, nothing can be read from it either way, so it is a
+	// misconfiguration rather than an untrusted environment and exits with
+	// exitVerificationFailed.
 	causeHashDirNotADirectory = "hash_dir_not_a_directory"
 	// The command line named no file to verify, or the flag set rejected it.
 	causeInvalidArguments = "invalid_arguments"
@@ -176,9 +177,7 @@ func checkHashDirPermissions(cfg *verifyConfig, d deps, logger *slog.Logger, std
 		return hashDirCheck{}, exitUntrustedEnvironment
 	}
 
-	// A hash path that exists but is not a directory is a misconfiguration, not
-	// an untrusted environment: nothing can be read from it, so there is no trust
-	// to establish. It is diagnosed here because the permission check below would
+	// Diagnosed here, before the permission check below, because that check would
 	// otherwise reach it first and report it as a directory permission violation,
 	// telling the operator to fix the permissions of a plain file.
 	// filevalidator.NewReadOnly names the same case ErrHashPathNotDir, but the
