@@ -3,7 +3,10 @@
 package security
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -82,7 +85,20 @@ func ValidateDirectoryPermissionsWithOptions(dirPath string, opts DirectoryPermC
 
 	fileInfo, err := opts.Lstat(cleanPath)
 	if err != nil {
-		slog.Error("Failed to get directory info", slog.String("path", cleanPath), slog.Any("error", err))
+		// Whether an absent directory is a fault is the caller's call, not this
+		// function's, and every caller makes it: RunTOCTOUPermissionCheck counts it
+		// as skipped and leaves reporting that count to its own caller, while
+		// verification.Manager and the runner's file validator turn the error
+		// returned below into a failure they report themselves. Logging it at ERROR here would state a verdict none of them
+		// asked for, and would make every run against a host that has no hash
+		// directory yet look actionable to log-based alerting. Every other stat
+		// failure keeps ERROR: it means the directory could not be inspected at all,
+		// which no caller can classify away.
+		level := slog.LevelError
+		if errors.Is(err, fs.ErrNotExist) {
+			level = slog.LevelDebug
+		}
+		slog.Log(context.Background(), level, "Failed to get directory info", slog.String("path", cleanPath), slog.Any("error", err))
 		return fmt.Errorf("failed to stat %s: %w", cleanPath, err)
 	}
 	if !fileInfo.Mode().IsDir() {

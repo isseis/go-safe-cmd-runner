@@ -10,11 +10,6 @@ var (
 	DefaultHashDirectory = "/usr/local/etc/go-safe-cmd-runner/hashes" // fallback default
 )
 
-// CreateValidator creates a new file validator with the hybrid hash path getter.
-func CreateValidator(hashDir string) (filevalidator.FileValidator, error) {
-	return filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
-}
-
 // CreateReadOnlyValidator creates a validator that never creates the hash
 // directory. A missing or inaccessible directory is reported through
 // *filevalidator.Validator.HashDirError rather than failing construction.

@@ -68,7 +68,7 @@ flowchart TD
 
     CLASSIFY["除外判定<br>ClassifyCheckTarget"]
     RESOLVE["パス解決<br>ResolvePathForCheck"]
-    COLLECT["対象ディレクトリ収集<br>CollectTOCTOUCheckDirs"]
+    COLLECT["対象ディレクトリ収集<br>CollectPermissionCheckDirs"]
     CHECK["ディレクトリ権限チェック<br>RunTOCTOUPermissionCheck"]
     VERDICT["コマンドごとの判定<br>（fail-closed / 警告して継続）"]
 
@@ -157,7 +157,7 @@ flowchart LR
 
 配置の理由は次のとおり。
 
-- **パス解決と除外判定は `internal/security`**。同パッケージには既に `ResolveAbsPathForTOCTOU`・`CollectTOCTOUCheckDirs`・`RunTOCTOUPermissionCheck` があり、解決と除外はその前段にあたる同じ関心事である。`internal/cmdcommon` に置くこともできる（`internal/verification` が既に `cmdcommon` を import しており、依存の循環は生じない）が、`cmdcommon` は3つの CLI コマンドのための層であり、`internal/runner`（グループ実行時の権限チェック）からそこへ依存させると層の向きが逆流する。
+- **パス解決と除外判定は `internal/security`**。同パッケージには既に `ResolveAbsPathForCheck`・`CollectPermissionCheckDirs`・`RunTOCTOUPermissionCheck` があり、解決と除外はその前段にあたる同じ関心事である。`internal/cmdcommon` に置くこともできる（`internal/verification` が既に `cmdcommon` を import しており、依存の循環は生じない）が、`cmdcommon` は3つの CLI コマンドのための層であり、`internal/runner`（グループ実行時の権限チェック）からそこへ依存させると層の向きが逆流する。
 - 権限チェッカの生成は `internal/security` のまま動かさない。3コマンドが共有すべきものは生成関数そのものであり、それは既に同パッケージに1つだけある。`internal/cmdcommon` に委譲だけのラッパーを置いても何も束ねられない（§3.3）。
 - **ハッシュディレクトリの期待パーミッション定数は `internal/fileanalysis`**。同パッケージの `NewStore` がこのディレクトリを実際に作成する（`os.MkdirAll`）ため、定数は作成処理と同じ場所に置く。`cmd/record` から `internal/fileanalysis` への import は循環しない（`fileanalysis` は `internal/common` と `internal/safefileio` にのみ依存する）。
 
@@ -172,8 +172,8 @@ flowchart TD
     subgraph Before["変更前"]
         B1["cmd/record<br>絶対パス化とリンク解決（約20行）"]
         B2["cmd/verify<br>同等の処理（重複）"]
-        B3["cmd/runner・internal/runner<br>ResolveAbsPathForTOCTOU"]
-        B4["CollectTOCTOUCheckDirs"]
+        B3["cmd/runner・internal/runner<br>ResolveAbsPathForCheck"]
+        B4["CollectPermissionCheckDirs"]
         B1 --> B4
         B2 --> B4
         B3 --> B4
@@ -187,7 +187,7 @@ flowchart TD
         A3["cmd/runner・internal/runner"]
         A6["ClassifyCheckTarget"]
         A4["ResolvePathForCheck"]
-        A5["CollectTOCTOUCheckDirs"]
+        A5["CollectPermissionCheckDirs"]
         A1 --> A4
         A2 --> A4
         A3 --> A6
@@ -254,7 +254,7 @@ sequenceDiagram
 
 ### 3.1 共有パス解決（F-001）
 
-現行の `security.ResolveAbsPathForTOCTOU` は、絶対パスでなければ「対象外」を返し、`filepath.EvalSymlinks` が失敗すれば入力パスをそのまま返す。対象がまだ存在しない場合、`EvalSymlinks` は必ず失敗するため、祖先にシンボリックリンクを含む未作成パスでは、リンクを辿る前の見かけ上のディレクトリだけが検査される。
+現行の `security.ResolveAbsPathForCheck` は、絶対パスでなければ「対象外」を返し、`filepath.EvalSymlinks` が失敗すれば入力パスをそのまま返す。対象がまだ存在しない場合、`EvalSymlinks` は必ず失敗するため、祖先にシンボリックリンクを含む未作成パスでは、リンクを辿る前の見かけ上のディレクトリだけが検査される。
 
 本設計では、この関数を次の共有処理で置き換える。
 
@@ -312,7 +312,7 @@ AC-06 の「3コマンドで一致する」は、「共有処理に到達した�
 
 ### 3.2 チェック対象の除外判定（F-004）
 
-現行では、除外は2つの形で表現されている。`cmd/runner/main.go` の `resolveStaticAbsPath` が `%{` を含むパスを弾き、相対パスは `ResolveAbsPathForTOCTOU` が `false` を返すことで結果的に弾かれる。`internal/runner/group_executor.go` も後者に依存している。
+現行では、除外は2つの形で表現されている。`cmd/runner/main.go` の `resolveStaticAbsPath` が `%{` を含むパスを弾き、相対パスは `ResolveAbsPathForCheck` が `false` を返すことで結果的に弾かれる。`internal/runner/group_executor.go` も後者に依存している。
 
 `ResolvePathForCheck` は相対パスを弾かなくなるため、この2箇所には新たに明示的な除外判定が必要になる。判定を各所に書けば AC-01・AC-27 が求める「同一ロジックの重複を残さない」に反するため、判定自体を共有処理として1箇所に置く。
 
@@ -492,7 +492,7 @@ const HashDirPerm os.FileMode = 0o700
 
 | ファイル | 区分 | 責務と変更内容 | 更新が必要な既存テスト |
 |---|---|---|---|
-| `internal/security/toctou.go` | 変更 | `ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget` を追加し、`ResolveAbsPathForTOCTOU` を置き換える（F-001・F-004） | `internal/security/toctou_test.go`（`ResolveAbsPathForTOCTOU` のテスト） |
+| `internal/security/path_resolution.go`・`internal/security/check_targets.go` | 変更 | `ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget` を追加し、`ResolveAbsPathForCheck` を置き換える（F-001・F-004） | `internal/security/path_resolution_test.go`・`internal/security/check_targets_test.go` |
 | `internal/cmdcommon/common.go` | 変更 | `CreateReadOnlyValidator` を追加し、`CreateValidator` を削除（F-003） | `internal/cmdcommon/common_test.go` |
 | `internal/fileanalysis/file_analysis_store.go` | 変更 | `dirPermission` を `HashDirPerm` として公開し、値を `0o700` に（F-003） | `internal/fileanalysis` のディレクトリ作成・パーミッションのテスト |
 | `internal/filevalidator/validator.go` | 変更 | `HashDirError()` を追加し、`HashDirAvailable()` をその上に再定義（F-003） | なし |
@@ -740,7 +740,7 @@ flowchart LR
 
 | 属性 | 意味 |
 |---|---|
-| 収集したディレクトリ数 | `CollectTOCTOUCheckDirs` が返した数 |
+| 収集したディレクトリ数 | `CollectPermissionCheckDirs` が返した数 |
 | 実際に検査した数 | 上記のうち、存在して検査が行われた数 |
 | 存在せず読み飛ばした数 | 存在しないため検査されなかった数 |
 | 変数参照による除外件数 | `CheckSkipVariableReference` の数 |
@@ -749,6 +749,12 @@ flowchart LR
 「存在せず読み飛ばした数」を含めるのは、これが F-004 の目的（起動時チェックが保証している範囲を観測可能にする）に直接効くためである。`RunTOCTOUPermissionCheck` は存在しないディレクトリを黙って読み飛ばす。さらに §6.1 の解決は、まだ存在しない末尾部分を字句的に連結するため、存在しないディレクトリが収集対象に入る場面はむしろ増える。「収集 N 件・除外 0 件」だけを見た運用者が「N 件すべてが検査された」と読むことを防ぐ必要がある。
 
 除外は違反として扱わず、チェックの合否には影響しない（AC-19）。
+
+#### 存在しないディレクトリの記録レベル
+
+`ValidateDirectoryPermissions` は `Lstat` の失敗を `ERROR` で記録していたが、これは不在（`ENOENT`）にも及んでいた。`verify` がハッシュディレクトリを作らなくなり（F-003）、`record` が作成を権限チェックの後ろへ移した（F-002）結果、不在は両コマンドの通常経路になる。同関数の呼び出し元はいずれも不在の扱いを自分で決めている（`RunTOCTOUPermissionCheck` は読み飛ばしとして数え、`internal/verification` と `internal/runner/base/security` は返るエラーを失敗として報告する）ため、共有関数が `ERROR` を出すことは、どの呼び出し元も求めていない判定を先に述べることにあたる。
+
+そこで、不在の場合のみ記録レベルを `DEBUG` に下げ、それ以外の stat 失敗（＝検査そのものができない）は `ERROR` のまま残す。返すエラーは変えないので、失敗として扱う呼び出し元の挙動は変わらない。記録自体は `DEBUG` に残るため、`DEBUG` を有効にすればどのディレクトリが検査対象から外れたかは追える。ただし各コマンドの既定は `INFO` であり、そこでは何も現れない。既定レベルで見える形にするのは呼び出し元の役目で、件数を持つ `TOCTOUCheckResult.Skipped` を起動時チェックが §6.3 の `INFO` に出す（フェーズ4）。それまでの間、既定レベルには不在の記録が残らない。判定規則そのものは変更していない。
 
 グループ実行時のチェック（`internal/runner/group_executor.go`）も同じ除外判定を使うが、件数の記録は起動時チェックにのみ入れる。F-004 の要件は起動時チェックの保証範囲を対象としており、グループ実行時のチェックは実行の直前に fail-closed で働く別の層だからである。グループ側の可観測化は本タスクの対象外とし、必要になった時点で同じ属性を足せばよい。
 
