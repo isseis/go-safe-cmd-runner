@@ -87,9 +87,9 @@ func ValidateDirectoryPermissionsWithOptions(dirPath string, opts DirectoryPermC
 	if err != nil {
 		// Whether an absent directory is a fault is the caller's call, not this
 		// function's, and every caller makes it: RunTOCTOUPermissionCheck counts it
-		// as skipped and logs that, while verification.Manager and the runner's file
-		// validator turn the error returned below into a failure they report
-		// themselves. Logging it at ERROR here would state a verdict none of them
+		// as skipped and leaves reporting that count to its own caller, while
+		// verification.Manager and the runner's file validator turn the error
+		// returned below into a failure they report themselves. Logging it at ERROR here would state a verdict none of them
 		// asked for, and would make every run against a host that has no hash
 		// directory yet look actionable to log-based alerting. Every other stat
 		// failure keeps ERROR: it means the directory could not be inspected at all,

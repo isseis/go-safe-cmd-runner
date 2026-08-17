@@ -316,9 +316,11 @@ func RunTOCTOUPermissionCheck(checker DirectoryPermChecker, dirs []string, logge
 			continue
 		}
 		if errors.Is(err, fs.ErrNotExist) {
-			// Counted, not reported: the checker has already recorded the absent
-			// path at debug level, and Skipped is what tells a reader how much of
-			// the collected set this run actually established.
+			// Counted, not reported: absence is not a verdict this function can
+			// report as a fault, and Skipped is what tells a reader how much of the
+			// collected set this run actually established. The checker records the
+			// path itself, but at debug level, so nothing surfaces at the info level
+			// the entry points run at -- reporting Skipped is the caller's job.
 			result.Skipped++
 			continue
 		}
