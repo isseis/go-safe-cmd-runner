@@ -16,9 +16,9 @@ type TOCTOUViolation struct {
 	Err  error
 }
 
-// ResolveAbsPathForTOCTOU normalizes an already-absolute path for TOCTOU
-// directory collection.
-func ResolveAbsPathForTOCTOU(p string) (string, bool) {
+// ResolveAbsPathForCheck normalizes an already-absolute path for directory
+// collection.
+func ResolveAbsPathForCheck(p string) (string, bool) {
 	if !filepath.IsAbs(p) {
 		return "", false
 	}
@@ -234,12 +234,17 @@ func ClassifyCheckTarget(path string, state PathExpansionState) CheckSkipReason 
 	return CheckSkipNone
 }
 
-// CollectTOCTOUCheckDirs collects directories to check for TOCTOU prevention.
-// Returns a deduplicated list of directories covering the parent and all ancestor
-// directories up to root for each entry, because an attacker with write access to
-// any ancestor can rename an intermediate directory to bypass protection on the
-// immediate parent.
-func CollectTOCTOUCheckDirs(verifyFilePaths []string, commandPaths []string, hashDir string) []string {
+// CollectPermissionCheckDirs collects the directories to hand to a directory
+// permission check. Each entry of filePaths contributes its parent directory,
+// each entry of dirs contributes itself, and every ancestor up to the root is
+// added as well, because an attacker with write access to any ancestor can
+// rename an intermediate directory to bypass protection on the immediate parent.
+// The result is cleaned and deduplicated, in first-seen order. Empty strings are
+// ignored, which is how callers say "nothing to add here".
+//
+// Nothing is stat'ed and no permission is inspected: this is path arithmetic
+// only.
+func CollectPermissionCheckDirs(filePaths []string, dirs []string) []string {
 	seen := make(map[string]struct{})
 	var result []string
 
@@ -272,15 +277,16 @@ func CollectTOCTOUCheckDirs(verifyFilePaths []string, commandPaths []string, has
 		}
 	}
 
-	for _, p := range verifyFilePaths {
+	for _, p := range filePaths {
+		if p == "" {
+			continue
+		}
 		addWithAncestors(filepath.Dir(p))
 	}
 
-	for _, p := range commandPaths {
-		addWithAncestors(filepath.Dir(p))
+	for _, d := range dirs {
+		addWithAncestors(d)
 	}
-
-	addWithAncestors(hashDir)
 
 	return result
 }

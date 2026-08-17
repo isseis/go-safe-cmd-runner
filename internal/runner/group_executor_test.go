@@ -3697,7 +3697,7 @@ func TestRunGroupTOCTOUCheck_RelativePathsSkipped(t *testing.T) {
 		Spec:                &runnertypes.GroupSpec{Name: "test"},
 		ExpandedVerifyFiles: []string{"relative/path/file.txt", "./another.txt"},
 	}
-	// Relative paths only → CollectTOCTOUCheckDirs collects nothing → no violations.
+	// Relative paths only → CollectPermissionCheckDirs collects nothing → no violations.
 	err = ge.runGroupTOCTOUCheck(rg)
 	require.NoError(t, err)
 }

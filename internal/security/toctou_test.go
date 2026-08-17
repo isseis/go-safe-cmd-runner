@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"syscall"
 	"testing"
@@ -20,79 +19,61 @@ import (
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 )
 
-// TestCollectTOCTOUCheckDirs verifies that directory collection covers all required
-// sources and performs deduplication.
-func TestCollectTOCTOUCheckDirs(t *testing.T) {
+// TestCollectPermissionCheckDirs verifies that directory collection covers both
+// kinds of source, walks up to the root, and deduplicates. The assertion is an
+// exact multiset comparison, so an extra or repeated directory fails too.
+func TestCollectPermissionCheckDirs(t *testing.T) {
 	tests := []struct {
-		name         string
-		verifyFiles  []string
-		commandPaths []string
-		hashDir      string
-		wantDirs     []string // sorted expected set (subset check)
-		wantNotEmpty bool
+		name      string
+		filePaths []string
+		dirs      []string
+		wantDirs  []string
 	}{
 		{
-			name:         "empty inputs returns empty",
-			verifyFiles:  []string{},
-			commandPaths: []string{},
-			hashDir:      "",
-			wantDirs:     []string{},
+			name:      "empty inputs returns empty",
+			filePaths: []string{},
+			dirs:      []string{},
+			wantDirs:  []string{},
 		},
 		{
-			name:         "verify_files parent directories and all ancestors are included",
-			verifyFiles:  []string{"/usr/bin/python3", "/etc/hosts"},
-			commandPaths: []string{},
-			hashDir:      "",
-			wantDirs:     []string{"/", "/etc", "/usr", "/usr/bin"},
+			name:      "file parent directories and all ancestors are included",
+			filePaths: []string{"/usr/bin/python3", "/etc/hosts"},
+			wantDirs:  []string{"/usr/bin", "/usr", "/", "/etc"},
 		},
 		{
-			name:         "command paths parent directories and all ancestors are included",
-			verifyFiles:  []string{},
-			commandPaths: []string{"/usr/bin/echo", "/usr/local/bin/tool"},
-			hashDir:      "",
-			wantDirs:     []string{"/", "/usr", "/usr/bin", "/usr/local", "/usr/local/bin"},
+			name:     "a directory itself is included with its ancestors",
+			dirs:     []string{"/var/lib/hashes"},
+			wantDirs: []string{"/var/lib/hashes", "/var/lib", "/var", "/"},
 		},
 		{
-			name:         "hashDir itself is included with ancestors",
-			verifyFiles:  []string{},
-			commandPaths: []string{},
-			hashDir:      "/var/lib/hashes",
-			wantDirs:     []string{"/", "/var", "/var/lib", "/var/lib/hashes"},
+			name:      "empty strings are ignored",
+			filePaths: []string{""},
+			dirs:      []string{""},
+			wantDirs:  []string{},
 		},
 		{
-			name:         "duplicates are removed",
-			verifyFiles:  []string{"/usr/bin/python3", "/usr/bin/python2"},
-			commandPaths: []string{"/usr/bin/echo"},
-			hashDir:      "",
-			wantDirs:     []string{"/", "/usr", "/usr/bin"},
+			name:      "duplicates are removed",
+			filePaths: []string{"/usr/bin/python3", "/usr/bin/python2", "/usr/bin/echo"},
+			wantDirs:  []string{"/usr/bin", "/usr", "/"},
 		},
 		{
-			name:         "combined sources without duplicates",
-			verifyFiles:  []string{"/usr/bin/python3"},
-			commandPaths: []string{"/usr/bin/echo"},
-			hashDir:      "/var/hashes",
-			wantDirs:     []string{"/", "/usr", "/usr/bin", "/var", "/var/hashes"},
+			name:      "combined sources without duplicates",
+			filePaths: []string{"/usr/bin/python3", "/usr/local/bin/tool"},
+			dirs:      []string{"/var/hashes", "/usr/bin"},
+			wantDirs:  []string{"/usr/bin", "/usr", "/", "/usr/local/bin", "/usr/local", "/var/hashes", "/var"},
+		},
+		{
+			name:      "paths are cleaned before collection",
+			filePaths: []string{"/usr//bin/./python3"},
+			dirs:      []string{"/usr/bin/"},
+			wantDirs:  []string{"/usr/bin", "/usr", "/"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CollectTOCTOUCheckDirs(tt.verifyFiles, tt.commandPaths, tt.hashDir)
-
-			// Sort both slices for comparison
-			gotSet := make(map[string]struct{}, len(got))
-			for _, d := range got {
-				gotSet[d] = struct{}{}
-			}
-
-			// Verify all expected dirs are present
-			sort.Strings(tt.wantDirs)
-			for _, expected := range tt.wantDirs {
-				assert.Contains(t, gotSet, expected, "expected directory %q not found in result", expected)
-			}
-
-			// Verify no duplicates
-			assert.Equal(t, len(got), len(gotSet), "result should contain no duplicate directories")
+			got := CollectPermissionCheckDirs(tt.filePaths, tt.dirs)
+			assert.ElementsMatch(t, tt.wantDirs, got)
 		})
 	}
 }

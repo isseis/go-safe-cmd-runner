@@ -415,7 +415,7 @@ func resolveStaticAbsPath(p string) (string, bool) {
 	if strings.Contains(p, "%{") {
 		return "", false
 	}
-	return isec.ResolveAbsPathForTOCTOU(p)
+	return isec.ResolveAbsPathForCheck(p)
 }
 
 // runTOCTOUCheck collects directory paths referenced by the configuration and runs a
@@ -424,23 +424,22 @@ func resolveStaticAbsPath(p string) (string, bool) {
 // Paths containing variable references or relative paths are skipped because they
 // cannot be safely resolved before per-group expansion.
 func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, runID string) (isec.DirectoryPermChecker, error) {
-	verifyFilePaths := make([]string, 0, len(runtimeGlobal.ExpandedVerifyFiles))
+	filePaths := make([]string, 0, len(runtimeGlobal.ExpandedVerifyFiles))
 	for _, f := range runtimeGlobal.ExpandedVerifyFiles {
 		// Variables are already expanded so no %{ filter is needed here.
 		if resolved, ok := resolveStaticAbsPath(f); ok {
-			verifyFilePaths = append(verifyFilePaths, resolved)
+			filePaths = append(filePaths, resolved)
 		}
 	}
-	var commandPaths []string
 	for _, g := range cfg.Groups {
 		for _, f := range g.VerifyFiles {
 			if resolved, ok := resolveStaticAbsPath(f); ok {
-				verifyFilePaths = append(verifyFilePaths, resolved)
+				filePaths = append(filePaths, resolved)
 			}
 		}
 		for _, cmd := range g.Commands {
 			if resolved, ok := resolveStaticAbsPath(cmd.Cmd); ok {
-				commandPaths = append(commandPaths, resolved)
+				filePaths = append(filePaths, resolved)
 			}
 		}
 	}
@@ -453,10 +452,10 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 	// Resolve symlinks in the hash directory so ValidateDirectoryPermissions evaluates
 	// the real path rather than rejecting symlink path components.
 	// DefaultHashDirectory is already validated to be absolute; the fallback in
-	// ResolveAbsPathForTOCTOU preserves the original path when EvalSymlinks fails
+	// ResolveAbsPathForCheck preserves the original path when EvalSymlinks fails
 	// (e.g. directory not yet created), so the check is still performed.
-	resolvedHashDir, _ := isec.ResolveAbsPathForTOCTOU(cmdcommon.DefaultHashDirectory)
-	toctouDirs := isec.CollectTOCTOUCheckDirs(verifyFilePaths, commandPaths, resolvedHashDir)
+	resolvedHashDir, _ := isec.ResolveAbsPathForCheck(cmdcommon.DefaultHashDirectory)
+	toctouDirs := isec.CollectPermissionCheckDirs(filePaths, []string{resolvedHashDir})
 	violations := isec.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default()).Violations
 	if len(violations) > 0 {
 		return nil, &logging.PreExecutionError{

@@ -352,23 +352,22 @@ func (ge *DefaultGroupExecutor) runGroupTOCTOUCheck(runtimeGroup *runnertypes.Ru
 	// Collect verify_files paths (already variable-expanded; keep only absolute
 	// paths and apply EvalSymlinks for the same symlink normalisation used for
 	// CLI paths in record/verify).
-	verifyPaths := make([]string, 0, len(runtimeGroup.ExpandedVerifyFiles))
+	filePaths := make([]string, 0, len(runtimeGroup.ExpandedVerifyFiles)+len(runtimeGroup.Commands))
 	for _, f := range runtimeGroup.ExpandedVerifyFiles {
-		if resolved, ok := isec.ResolveAbsPathForTOCTOU(f); ok {
-			verifyPaths = append(verifyPaths, resolved)
+		if resolved, ok := isec.ResolveAbsPathForCheck(f); ok {
+			filePaths = append(filePaths, resolved)
 		}
 	}
 
 	// Collect command paths (expanded by preExpandCommands).
-	cmdPaths := make([]string, 0, len(runtimeGroup.Commands))
 	for _, cmd := range runtimeGroup.Commands {
-		if resolved, ok := isec.ResolveAbsPathForTOCTOU(cmd.Cmd()); ok {
-			cmdPaths = append(cmdPaths, resolved)
+		if resolved, ok := isec.ResolveAbsPathForCheck(cmd.Cmd()); ok {
+			filePaths = append(filePaths, resolved)
 		}
 	}
 
-	// hashDir is already checked at startup; pass empty string to skip re-traversal.
-	dirs := isec.CollectTOCTOUCheckDirs(verifyPaths, cmdPaths, "")
+	// hashDir is already checked at startup; pass no directories to skip re-traversal.
+	dirs := isec.CollectPermissionCheckDirs(filePaths, nil)
 	violations := isec.RunTOCTOUPermissionCheck(ge.toctouValidator, dirs, slog.Default()).Violations
 	if len(violations) > 0 {
 		return fmt.Errorf("%w for group[%s]: %d directory violation(s) detected; review directory permissions",

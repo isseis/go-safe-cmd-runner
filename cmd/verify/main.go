@@ -101,7 +101,7 @@ func checkDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) bool {
 	absHashDir, _ := d.resolvePathForCheck(cfg.hashDir)
 
 	logger := slog.Default()
-	hashDirs := security.CollectTOCTOUCheckDirs(nil, nil, absHashDir)
+	hashDirs := security.CollectPermissionCheckDirs(nil, []string{absHashDir})
 	if violations := security.RunTOCTOUPermissionCheck(secValidator, hashDirs, logger).Violations; len(violations) > 0 {
 		// The remediation names neither a directory nor a command: v.Path is the
 		// directory that was checked, not necessarily the one at fault (the checker
@@ -145,7 +145,7 @@ func checkDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) bool {
 		checked[dir] = struct{}{}
 	}
 	var targetDirs []string
-	for _, dir := range security.CollectTOCTOUCheckDirs(absFiles, nil, "") {
+	for _, dir := range security.CollectPermissionCheckDirs(absFiles, nil) {
 		if _, ok := checked[dir]; !ok {
 			targetDirs = append(targetDirs, dir)
 		}

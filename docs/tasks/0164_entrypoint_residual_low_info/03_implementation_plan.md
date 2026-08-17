@@ -40,20 +40,20 @@
 
 | 対象 | 現状 | 変更内容 |
 |---|---|---|
-| `internal/security/toctou.go:18` `ResolveAbsPathForTOCTOU` | 絶対パスでなければ `("", false)`、`EvalSymlinks` 失敗時は入力パスをそのまま返す | 削除し、`ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget` に置き換える |
-| `cmd/runner/main.go:414` `resolveStaticAbsPath` | `%{` を含むパスを弾き、`ResolveAbsPathForTOCTOU` に委譲 | 削除し、`ClassifyCheckTarget` + `ResolvePathForCheck` に置き換える |
-| `cmd/runner/main.go:458` | `ResolveAbsPathForTOCTOU(cmdcommon.DefaultHashDirectory)` | `ResolvePathForCheck` に置き換える |
-| `internal/runner/group_executor.go:357,365` | `ResolveAbsPathForTOCTOU` を直接呼ぶ | `ClassifyCheckTarget` + `ResolvePathForCheck` に置き換える |
+| `internal/security/toctou.go:21` `ResolveAbsPathForCheck` | 絶対パスでなければ `("", false)`、`EvalSymlinks` 失敗時は入力パスをそのまま返す | 削除し、`ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget` に置き換える |
+| `cmd/runner/main.go:414` `resolveStaticAbsPath` | `%{` を含むパスを弾き、`ResolveAbsPathForCheck` に委譲 | 削除し、`ClassifyCheckTarget` + `ResolvePathForCheck` に置き換える |
+| `cmd/runner/main.go:457` | `ResolveAbsPathForCheck(cmdcommon.DefaultHashDirectory)` | `ResolvePathForCheck` に置き換える |
+| `internal/runner/group_executor.go:357,364` | `ResolveAbsPathForCheck` を直接呼ぶ | `ClassifyCheckTarget` + `ResolvePathForCheck` に置き換える |
 | `cmd/record/main.go:113-132` | 対象ファイル群とハッシュディレクトリを個別に `filepath.Abs` + `EvalSymlinks`（約20行） | `ResolveAllForCheck`（ファイル群）と `ResolvePathForCheck`（ハッシュディレクトリ）に置き換える |
 | `cmd/verify/main.go:91-98,126-137` | 同上の重複 | 同上 |
 
 本番コードで `filepath.EvalSymlinks` を呼ぶのは上記4ブロック（`cmd/record/main.go:119,127`・`cmd/verify/main.go:93,132`）のみである。`cmd/runner` の一致はテストファイル6件（`integration_workdir_test.go:333,339`・`integration_cmd_allowed_security_test.go:68,135`・`integration_workdir_unix_test.go:21,24`）とコメント1件（`cmd/runner/main.go:456`）で、テスト側は本タスクの対象外である。
 
-`ResolveAbsPathForTOCTOU` の単体テストは `internal/security/toctou_test.go` に存在しない（`rg -n -e ResolveAbsPathForTOCTOU internal/security/toctou_test.go` が無出力）。02_architecture.md §3.6 の責務表は同テストの更新を挙げているが、実体は無いため、削除ではなく新規追加のみを行う。
+`ResolveAbsPathForCheck` の単体テストは `internal/security/toctou_test.go` に存在しない（`rg -n -e ResolveAbsPathForCheck internal/security/toctou_test.go` が無出力）。02_architecture.md §3.6 の責務表は同テストの更新を挙げているが、実体は無いため、削除ではなく新規追加のみを行う。
 
 #### 1.3.2 権限チェッカ生成（F-006）
 
-`security.NewDirectoryPermChecker()` の失敗時に同一内容の panic を持つ箇所は3件（`cmd/runner/main.go:447-452`・`cmd/record/main.go:105-112`・`cmd/verify/main.go:81-90`）。`internal/security/dir_permissions_unix.go:34` の現行実装は常に `nil` エラーを返すため、この panic は到達不能である。したがって AC-24・AC-26 を検証するには、チェッカ生成そのものを差し替えられる注入口が本番コード側に要る（ステップ 2-2・3-2・4-2 でこれを追加する）。
+`security.NewDirectoryPermChecker()` の失敗時に同一内容の panic を持つ箇所は3件（`cmd/runner/main.go:446-451`・`cmd/record/main.go:105-112`・`cmd/verify/main.go:81-90`）。`internal/security/dir_permissions_unix.go:34` の現行実装は常に `nil` エラーを返すため、この panic は到達不能である。したがって AC-24・AC-26 を検証するには、チェッカ生成そのものを差し替えられる注入口が本番コード側に要る（ステップ 2-2・3-2・4-2 でこれを追加する）。
 
 #### 1.3.3 `verify` の書き込み副作用と依存注入（F-003・F-010）
 
@@ -158,13 +158,13 @@ func RunTOCTOUPermissionCheck(checker DirectoryPermChecker, dirs []string, logge
 
 | 属性名 | 数える単位 | 意味 |
 |---|---|---|
-| `collected_dirs` | ディレクトリ | `CollectTOCTOUCheckDirs` が返した数 |
+| `collected_dirs` | ディレクトリ | `CollectPermissionCheckDirs` が返した数 |
 | `checked_dirs` | ディレクトリ | 実際に検査された数 |
 | `skipped_missing_dirs` | ディレクトリ | 存在せず読み飛ばされた数 |
 | `skipped_variable_reference_paths` | 設定パス | `CheckSkipVariableReference` による除外件数 |
 | `skipped_relative_paths` | 設定パス | `CheckSkipRelative` による除外件数 |
 
-前3つと後2つは数える単位が異なる。`CollectTOCTOUCheckDirs` は各パスをその祖先すべてに展開して重複を除く（`internal/security/toctou.go:48-64`）ため、`collected_dirs` は設定に書かれたパスの数ではない。一方、除外は展開より前の設定パスに対して起きる。`collected_dirs = checked_dirs + skipped_missing_dirs` は成り立つが、除外件数はこの等式に加わらない。属性名の `_paths` 接尾辞はこの違いを示すためのものであり、利用者向けの説明を書く場合も同じ区別を明記する。
+前3つと後2つは数える単位が異なる。`CollectPermissionCheckDirs` は各パスをその祖先すべてに展開して重複を除く（`internal/security/toctou.go:247-291`）ため、`collected_dirs` は設定に書かれたパスの数ではない。一方、除外は展開より前の設定パスに対して起きる。`collected_dirs = checked_dirs + skipped_missing_dirs` は成り立つが、除外件数はこの等式に加わらない。属性名の `_paths` 接尾辞はこの違いを示すためのものであり、利用者向けの説明を書く場合も同じ区別を明記する。
 
 メッセージは `"startup TOCTOU permission check completed"` とする。
 
@@ -262,7 +262,7 @@ func getwd() (string, error) { return getwdHook() }
 - [x] `ResolveAllForCheck(paths []string, logger *slog.Logger) (resolved []string, failures int)` を追加する。失敗ごとに `WARN` を1件記録し、失敗した要素にも検査可能なパス（字句的に正規化した絶対パス）を入れる。
 - [x] `CheckSkipReason` 列挙型（`CheckSkipNone`・`CheckSkipVariableReference`・`CheckSkipRelative`）と `ClassifyCheckTarget(path string, state PathExpansionState) CheckSkipReason` を追加する。**レビュー指摘による修正**: 未展開参照の有無はパス文字列から推論せず、`PathExpansionState`（`PathExpanded`・`PathHasUnexpandedReference`）として呼び出し元が宣言する。理由と、判定を展開前のテンプレートに対して行わなければならない理由は 02_architecture.md §3.2 を参照。あわせて `config.HasVariableReference(input string) bool` を `internal/runner/config` に追加する（展開の構文を知っている層に判定を置き、エスケープ規則を二重管理にしないため）。
 
-`ResolveAbsPathForTOCTOU` の削除はステップ 4-4 で行う（本フェーズの時点ではまだ呼び出し元が残っているため）。
+`ResolveAbsPathForCheck` の削除はステップ 4-4 で行う（本フェーズの時点ではまだ呼び出し元が残っているため）。
 
 **完了条件**: `go test -tags test ./internal/security/...` が通る。
 
@@ -600,13 +600,13 @@ func getwd() (string, error) { return getwdHook() }
 **変更ファイル**: `cmd/runner/main.go`
 
 - [ ] `resolveStaticAbsPath`（410-419 行）を削除する。
-- [ ] `runTOCTOUCheck` のパス収集ループ（426-446 行）で、`security.ClassifyCheckTarget` の戻り値を理由ごとに数え、`CheckSkipNone` のパスだけを `security.ResolvePathForCheck` に渡す。
+- [ ] `runTOCTOUCheck` のパス収集ループ（427-445 行）で、`security.ClassifyCheckTarget` の戻り値を理由ごとに数え、`CheckSkipNone` のパスだけを `security.ResolvePathForCheck` に渡す。
 - [ ] **`PathExpansionState` を出所ごとに宣言する**（02_architecture.md §3.2 の表）。`runtimeGlobal.ExpandedVerifyFiles` は構成上必ず展開済みなので `security.PathExpanded` を渡す。`g.VerifyFiles`・`cmd.Cmd` は未展開のテンプレートなので `config.HasVariableReference` の結果で `PathHasUnexpandedReference` と `PathExpanded` を選ぶ。判定は展開前のテンプレートに対してのみ行う（展開は冪等ではないため、展開後の値からは復元できない）。
 - [ ] 429 行のコメント `Variables are already expanded so no %{ filter is needed here` を、この出所ごとの宣言が何を根拠にしているかを述べる文へ書き換える。
-- [ ] ハッシュディレクトリの解決（458 行）を `security.ResolvePathForCheck` に置き換える。
-- [ ] 452-457 行のコメント（`ResolveAbsPathForTOCTOU preserves the original path when EvalSymlinks fails`）を、`ResolvePathForCheck` の実際の挙動（実在する最深の祖先まで解決し、残りを字句的に連結する）を述べる文へ書き換える。
+- [ ] ハッシュディレクトリの解決（457 行）を `security.ResolvePathForCheck` に置き換える。
+- [ ] 452-456 行のコメント（`ResolveAbsPathForCheck preserves the original path when EvalSymlinks fails`）を、`ResolvePathForCheck` の実際の挙動（実在する最深の祖先まで解決し、残りを字句的に連結する）を述べる文へ書き換える。
 - [ ] チェック実行後に、§1.4.3 の5属性を持つ `INFO` を1件記録する。除外が0件の実行でも同じ記録を出す。
-- [ ] 除外は違反として扱わず、合否判定（461-469 行）は変更しない。
+- [ ] 除外は違反として扱わず、合否判定（460-468 行）は変更しない。
 
 #### ステップ 4-2: `runner` の権限チェッカ生成から panic を無くす
 
@@ -614,28 +614,28 @@ func getwd() (string, error) { return getwdHook() }
 
 - [ ] `runTOCTOUCheck` に `newPermChecker func() (isec.DirectoryPermChecker, error)` を引数として追加する（§1.4.4）。型を `security.NewDirectoryPermChecker` と同一にすることで、呼び出し元がアダプタを挟まずに渡せる。
 - [ ] `runTOCTOUCheck` の内部では `newPermChecker()` を呼ぶ。
-- [ ] 447-452 行の panic を削除し、生成失敗時は `logging.PreExecutionError`（`Type: logging.ErrorTypeFileAccess`、`Component: string(resource.ComponentVerification)`、`RunID: runID`）を返す。
+- [ ] 446-451 行の panic を削除し、生成失敗時は `logging.PreExecutionError`（`Type: logging.ErrorTypeFileAccess`、`Component: string(resource.ComponentVerification)`、`RunID: runID`）を返す。
 - [ ] 呼び出し元（401 行）が `isec.NewDirectoryPermChecker` をそのまま渡すようにする。
 
 #### ステップ 4-3: グループ実行時チェックを共有処理へ差し替え
 
 **変更ファイル**: `internal/runner/group_executor.go`、`internal/runner/group_executor_test.go`
 
-- [ ] 357 行と 365 行の `isec.ResolveAbsPathForTOCTOU` 呼び出しを、`isec.ClassifyCheckTarget` による分類と `isec.ResolvePathForCheck` による解決に置き換える。件数の記録は入れない（02_architecture.md §6.3）。
+- [ ] 357 行と 364 行の `isec.ResolveAbsPathForCheck` 呼び出しを、`isec.ClassifyCheckTarget` による分類と `isec.ResolvePathForCheck` による解決に置き換える。件数の記録は入れない（02_architecture.md §6.3）。
 - [ ] **`isec.PathExpanded` を宣言する**。グループ実行時のパスは `preExpandCommands` による展開後であり、展開済みであることは呼び出し元が構成上知っている事実である。したがって `CheckSkipVariableReference` はこの経路では返らず、除外の範囲は現行（相対パスのみ読み飛ばす）と同一に保たれる。分類の戻り値は次のように扱う。
   - `CheckSkipRelative` — 読み飛ばす（現行と同じ）。
   - `CheckSkipNone` — `ResolvePathForCheck` に渡して検査する。
 - [ ] 起動時チェック（ステップ 4-1）と宣言が分かれる理由を、英語のコメントで当該箇所に残す。展開後の値に `%{` が残っていても、それはエスケープ由来の文字である可能性があり、除外の根拠にならない。除外すれば fail-closed のチェックが黙って狭まり、しかも §6.3 によりグループ側には件数記録が無いため、判定にも記録にも現れない。
 - [ ] `TestRunGroupTOCTOUCheck_AbsolutePathContainingBraceIsStillChecked` を追加する。`%{` を含む絶対パスを1件渡し、フェイクチェッカが当該パスの祖先について呼ばれること（＝読み飛ばされていないこと）を表明する。除外範囲が将来広げられたときに失敗する唯一の表明である。
 - [ ] `TestRunGroupTOCTOUCheck_RelativePathsSkipped`（`group_executor_test.go:3691-3703`）を書き換える。現行は実チェッカを使って `require.NoError` するだけであり、相対パスが「除外された」場合も「解決されて健全なディレクトリが検査された」場合も通るため、除外を検証できていない。**呼ばれたパスを記録するフェイクチェッカに差し替え、チェッカが1件も呼ばれないことを表明する**。これが除外と検査済みを区別できる唯一の表明である。
-- [ ] 同テストのコメント `Relative paths only → CollectTOCTOUCheckDirs collects nothing → no violations.` を、除外の担い手が `ClassifyCheckTarget` に移ったことを述べる文へ書き換える。
+- [ ] 同テストのコメント `Relative paths only → CollectPermissionCheckDirs collects nothing → no violations.` を、除外の担い手が `ClassifyCheckTarget` に移ったことを述べる文へ書き換える。
 
-#### ステップ 4-4: 特権降格のコメント追記と `ResolveAbsPathForTOCTOU` の削除
+#### ステップ 4-4: 特権降格のコメント追記と `ResolveAbsPathForCheck` の削除
 
 **変更ファイル**: `cmd/runner/main.go`、`internal/security/toctou.go`
 
 - [ ] `main()` の `dropStartupPrivileges` 呼び出し（163-168 行）のコメントに、saved-set-uid が変更されないこと、それにより privilege manager が必要時に再昇格できること、したがってこれが恒久降格ではないことを英語で追記する（AC-42）。
-- [ ] `internal/security/toctou.go` から `ResolveAbsPathForTOCTOU` を削除する（この時点で呼び出し元が無くなる）。
+- [ ] `internal/security/toctou.go` から `ResolveAbsPathForCheck` を削除する（この時点で呼び出し元が無くなる）。
 
 #### ステップ 4-5: TOCTOU チェック周辺のテストを追加・更新
 
@@ -654,7 +654,7 @@ func getwd() (string, error) { return getwdHook() }
 
 **推奨タイトル**: `feat(0164): move the runner TOCTOU checks onto the shared path resolution`
 
-**レビュー観点**: 起動時（除外あり・件数記録あり）とグループ実行時（除外は相対パスのみ・件数記録なし）で除外規則が意図どおり分かれ、その理由がコメントに残っているか / 除外が違反判定に影響しないこと / 生成失敗が panic ではなく `*logging.PreExecutionError` になること / `ResolveAbsPathForTOCTOU` の削除時点で呼び出し元が残っていないこと
+**レビュー観点**: 起動時（除外あり・件数記録あり）とグループ実行時（除外は相対パスのみ・件数記録なし）で除外規則が意図どおり分かれ、その理由がコメントに残っているか / 除外が違反判定に影響しないこと / 生成失敗が panic ではなく `*logging.PreExecutionError` になること / `ResolveAbsPathForCheck` の削除時点で呼び出し元が残っていないこと
 
 **実装モデル要件**: frontier-recommended
 
@@ -807,7 +807,7 @@ func getwd() (string, error) { return getwdHook() }
 | PR-3 | 2-1 / 2-2 / 2-3 / 2-4 / 2-5 / 2-6 | `record` を共有処理へ移し、ハッシュディレクトリの作成を権限チェック通過後に限り、sticky world-writable な作成先を拒否する | frontier-required |
 | PR-4 | 3-1 / 3-2 / 3-3 | `verify` の書き込み副作用を断ち、`deps` 様式へ移行する（挙動は非作成化のみ） | frontier-recommended |
 | PR-5 | 3-4 / 3-5 | `verify` の起動判定を6段階へ組み替え、終了コードと識別トークンで fail-closed の原因を分ける | frontier-required |
-| PR-6 | 4-1 / 4-2 / 4-3 / 4-4 / 4-5 | `runner` の起動時チェックとグループ実行時チェックを共有処理へ移し、panic を排し、`ResolveAbsPathForTOCTOU` を削除する | frontier-recommended |
+| PR-6 | 4-1 / 4-2 / 4-3 / 4-4 / 4-5 | `runner` の起動時チェックとグループ実行時チェックを共有処理へ移し、panic を排し、`ResolveAbsPathForCheck` を削除する | frontier-recommended |
 | PR-7 | 4-6 / 4-7 / 4-8 / 4-9 / 4-10 | dry-run 形式の `default`、Slack 二重出力の解消、ログファイル名の UTC 化、IPv6 正規化 | frontier-recommended |
 | PR-8 | 4-11 / 4-12 | 利用者向け文書・CHANGELOG・用語集の更新と、0149 の残件一覧の消し込み | standard |
 
@@ -905,8 +905,8 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 
 | AC | 種別 | 検証手段 | 期待結果 |
 |---|---|---|---|
-| AC-01 | static | `rg -n -e ResolveAbsPathForTOCTOU -e resolveStaticAbsPath --glob '*.go' .` | 一致0件 |
-| AC-01 | static | `rg -n -e EvalSymlinks --glob '!*_test.go' cmd/record cmd/verify cmd/runner` | 一致0件（本番コードでの解決は共有処理のみが行う。現状は5件＝`cmd/record/main.go` 2件・`cmd/verify/main.go` 2件と、`cmd/runner/main.go:456` のコメント1件。コメントはステップ 4-1 で書き換える） |
+| AC-01 | static | `rg -n -e ResolveAbsPathForCheck -e resolveStaticAbsPath --glob '*.go' .` | 一致0件 |
+| AC-01 | static | `rg -n -e EvalSymlinks --glob '!*_test.go' cmd/record cmd/verify cmd/runner` | 一致0件（本番コードでの解決は共有処理のみが行う。現状は5件＝`cmd/record/main.go` 2件・`cmd/verify/main.go` 2件と、`cmd/runner/main.go:455` のコメント1件。コメントはステップ 4-1 で書き換える） |
 | AC-01 | static | `rg -c -e ResolvePathForCheck -e ResolveAllForCheck cmd/record/main.go cmd/verify/main.go cmd/runner/main.go` | 3ファイルすべてが1件以上で報告される |
 | AC-02 | test | `internal/security/toctou_test.go::TestResolvePathForCheck_PartiallyExistingPath` | — |
 | AC-03 | test | `internal/security/toctou_test.go::TestResolvePathForCheck_SymlinkedAncestorOfMissingPath` | — |
@@ -948,7 +948,7 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 | AC-26 | test | `cmd/record/main_test.go::TestRun_ExitsWithoutPanicWhenCheckerInitFails`、`cmd/verify/main_test.go::TestRunExitsWithoutPanicWhenCheckerInitFails`（標準エラー出力にエラーが出ること） | — |
 | AC-27 | static | `rg -n -e 'security validator initialisation failed' cmd internal` | 一致0件（現状は3件） |
 | AC-27 | static | `rg -n -A6 -e 'NewDirectoryPermChecker\(\)' cmd \| rg -n 'panic\('` | 一致0件（重複していたのは生成の呼び出しではなく panic ブロックである。生成関数は `internal/security` に1つしかなく、3コマンドはその同一の関数を注入口の既定値として指す） |
-| AC-27 | static | `rg -n -e 'newPermChecker' cmd` | `cmd/record`・`cmd/verify` の `defaultDeps()` と `cmd/runner` の `runTOCTOUCheck` 呼び出しが、いずれも既定値として `security.NewDirectoryPermChecker`（`cmd/runner` は `isec.` 別名）を渡していること。`cmd/runner` は `internal/security` を `isec` として取り込むため、`security\.` だけの検索では 447 行を捕らえられない |
+| AC-27 | static | `rg -n -e 'newPermChecker' cmd` | `cmd/record`・`cmd/verify` の `defaultDeps()` と `cmd/runner` の `runTOCTOUCheck` 呼び出しが、いずれも既定値として `security.NewDirectoryPermChecker`（`cmd/runner` は `isec.` 別名）を渡していること。`cmd/runner` は `internal/security` を `isec` として取り込むため、`security\.` だけの検索では 446 行を捕らえられない |
 | AC-28 | static | `rg -n -e 'the policy declaration in init' cmd/verify/main.go` | 一致1件 |
 | AC-28 | static | `rg -n -e 'checker initialisation in checkDirPermissions' cmd/verify/main.go` | 一致0件 |
 | AC-29 | test | `cmd/runner/main_test.go::TestNewDryRunFormatter_UnknownFormatReturnsError` | — |
@@ -992,10 +992,10 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 
 `make lint` と `make test` では検出できない残存参照・整合性のみを挙げる（§7 の AC 検証表と重複する検索はここに再掲しない）。
 
-- [ ] `rg -n -e ResolveAbsPathForTOCTOU -e resolveStaticAbsPath --glob '*.md' docs/user CHANGELOG.ja.md CHANGELOG.md` — 利用者向け文書に旧関数名が残っていないこと（`docs/tasks/0149_*` の監査所見と残件一覧は当時の記録なので対象外）。
+- [ ] `rg -n -e ResolveAbsPathForCheck -e resolveStaticAbsPath --glob '*.md' docs/user CHANGELOG.ja.md CHANGELOG.md` — 利用者向け文書に旧関数名が残っていないこと（`docs/tasks/0149_*` の監査所見と残件一覧は当時の記録なので対象外）。
 - [ ] `rg -n -e CreateValidator --glob '*.go' --glob '*.md' .` — 削除した関数への参照が残っていないこと。`CreateReadOnlyValidator` が部分一致するので、一致行を目視で切り分ける。
 - [ ] `rg -n -e 0o750 internal/fileanalysis cmd docs/user` — 旧パーミッション値への言及が残っていないこと。ただし `docs/user/record_command.ja.md:531` と `docs/user/record_command.md:531` は 0146 由来の是正手順で、残すのが正しい。この2件のみが一致する状態を期待値とする。
-- [ ] `rg -n -e 'CollectTOCTOUCheckDirs collects nothing' internal/runner` — ステップ 4-3 で書き換えるコメントが残っていないこと。
+- [ ] `rg -n -e 'CollectPermissionCheckDirs collects nothing' internal/runner` — ステップ 4-3 で書き換えるコメントが残っていないこと。
 - [ ] `rg -n -e hash_dir_not_found -e hash_dir_unreadable -e hash_dir_permission_violation -e permission_checker_init_failed --glob '*.go' .` — トークン文字列が `cmd/verify/main.go` に定数として1箇所ずつ定義され、テストがリテラルを二重定義していないこと。
 - [ ] `rg -n -e CheckSkipReason -e CheckSkipNone -e CheckSkipVariableReference -e CheckSkipRelative --glob '*.go' .` — `internal/security` 以外に同名の識別子が生まれていないこと。
 - [ ] `docs/user/verify_command.ja.md` と `docs/user/verify_command.md`、`docs/user/runner_command.ja.md` と `docs/user/runner_command.md`、`docs/user/record_command.ja.md` と `docs/user/record_command.md`、`CHANGELOG.ja.md` と `CHANGELOG.md` の各対で、本タスクの変更が同じ節に反映されていること。

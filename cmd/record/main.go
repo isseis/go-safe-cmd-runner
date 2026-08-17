@@ -137,7 +137,7 @@ func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) (resolvedH
 		fmt.Fprintf(stderr, "Error: cannot resolve hash directory %s for the permission check: %v — refusing to generate hash records. Specify a hash directory whose existing ancestors are readable and whose remaining path components are plain names.\n", cfg.hashDir, resolveErr) //nolint:errcheck
 		return "", false
 	}
-	toctouDirs := security.CollectTOCTOUCheckDirs(absFiles, nil, absHashDir)
+	toctouDirs := security.CollectPermissionCheckDirs(absFiles, []string{absHashDir})
 	// RunTOCTOUPermissionCheck already logs each violation at WARN; the ERROR log
 	// below is intentionally in addition to it, since record (unlike other callers
 	// of this shared check) escalates violations to a fail-closed, non-zero exit.
