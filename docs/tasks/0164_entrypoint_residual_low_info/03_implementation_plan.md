@@ -8,7 +8,7 @@
 | Created | 2026-08-14 |
 | Review date | 2026-08-14 |
 | Reviewer | isseis |
-| Comments | AC-31 の解釈は §1.5 で決定済み。残る二重出力は [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) へ分離した。レビュー指摘により、AC-31 の選別条件（`level=ERROR` → `error_message=`）、AC-27 の検索式（`isec` 別名）、ステップ 4-3 の除外範囲、`deps.resolvePathForCheck` の宣言、AC-01・AC-15 の現状件数を修正済み。さらに PR レビュー指摘により、権限チェッカの注入口を引数無しのファクトリ `newPermChecker func() (security.DirectoryPermChecker, error)` に一本化し、`toctouChecker` を廃止した。承認後に PR 境界（§3.2、全7件）を追加し、フェーズ1とフェーズ4のステップ順を PR 単位に整理した |
+| Comments | AC-31 の解釈は §1.5 で決定済み。残る二重出力は [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) へ分離した。レビュー指摘により、AC-31 の選別条件（`level=ERROR` → `error_message=`）、AC-27 の検索式（`isec` 別名）、ステップ 4-3 の除外範囲、`deps.resolvePathForCheck` の宣言、AC-01・AC-15 の現状件数を修正済み。さらに PR レビュー指摘により、権限チェッカの注入口を引数無しのファクトリ `newPermChecker func() (security.DirectoryPermChecker, error)` に一本化し、`toctouChecker` を廃止した。承認後に PR 境界（§3.2、全7件）を追加し、フェーズ1とフェーズ4のステップ順を PR 単位に整理した。フェーズ4 着手前のレビューで、当該チェックが静的なディレクトリ権限監査であって TOCTOU チェックではないことを確認し、§1.4.6 として決定を追記した（本タスクで新規に増やす文字列・テスト名・利用者向け文書は中立名を用いる。既存識別子の改名は後続タスクとし §10 に記載） |
 
 ## 関連文書
 
@@ -97,7 +97,7 @@
 
 | 文書 | 該当箇所 | 現状と対応 |
 |---|---|---|
-| `docs/user/verify_command.ja.md` | 97-104 行 | 終了コード表。`3` は TOCTOU 権限違反のみ。改訂する |
+| `docs/user/verify_command.ja.md` | 97-104 行 | 終了コード表。`3` はディレクトリ権限違反のみ。改訂する |
 | 同上 | 208 行 | 「ハッシュディレクトリが存在しない場合はエラーになります」（実装が未追随）。終了コードとトークンを補う |
 | 同上 | 641-680 行付近 | `robust-verification.sh` 例。終了コード 3 を権限違反と決め打ち。改訂する |
 | `docs/user/runner_command.ja.md` | 849・854 行 | 命名規則と例。例は `myhost_20260805140000_...` で、実際の `T` 区切り・`Z` 付き書式と一致していない。修正する |
@@ -116,7 +116,7 @@
 
 | トークン | 原因 | 終了コード |
 |---|---|---|
-| `hash_dir_permission_violation` | ハッシュディレクトリ側の TOCTOU 権限違反 | 3 |
+| `hash_dir_permission_violation` | ハッシュディレクトリ側のディレクトリ権限違反 | 3 |
 | `path_resolution_failed` | ハッシュディレクトリのパス解決に失敗 | 3 |
 | `hash_dir_not_found` | ハッシュディレクトリが存在しない | 3 |
 | `hash_dir_unreadable` | 存在するが開けない（権限不足など） | 3 |
@@ -177,7 +177,7 @@ func RunTOCTOUPermissionCheck(checker DirectoryPermChecker, dirs []string, logge
 
 前3つと後2つは数える単位が異なる。`CollectPermissionCheckDirs` は各パスをその祖先すべてに展開して重複を除く（`internal/security/check_targets.go:77-122`）ため、`collected_dirs` は設定に書かれたパスの数ではない。一方、除外は展開より前の設定パスに対して起きる。`collected_dirs = checked_dirs + skipped_missing_dirs` は成り立つが、除外件数はこの等式に加わらない。属性名の `_paths` 接尾辞はこの違いを示すためのものであり、利用者向けの説明を書く場合も同じ区別を明記する。
 
-メッセージは `"startup TOCTOU permission check completed"` とする。
+メッセージは `"startup directory permission audit completed"` とする。この処理は収集したディレクトリを1回ずつ検査する静的な権限監査であり、check 時と use 時の観測を突き合わせる TOCTOU チェックではない（§1.4.6）。本タスクで新規に増やす文字列には TOCTOU を用いない。
 
 #### 1.4.4 権限チェッカ生成とパス解決の注入口
 
@@ -232,6 +232,25 @@ func getwd() (string, error) { return getwdHook() }
 この形は「テストのときだけ差し替えられる」ことをビルドタグで保証する点で、`deps.resolvePathForCheck`（§1.4.4）が構造体フィールドで保証しているのと同じ考え方である。両者を使い分ける理由は次のとおり。`verify` の `deps` は既に存在する差し替え口の集合であり、フィールドを1つ足すだけで済む。一方 `ResolvePathForCheck` は3コマンドが共有するパッケージ関数で、引数や構造体を持たないため、同じ手はそのままでは使えない。
 
 **本番ビルドの確認**: `make lint` は `--build-tags test` で走るため、`//go:build !test` 側のファイルは lint されない。`make build`（本番バイナリのビルド）がこのファイルを唯一コンパイルする経路なので、フェーズ1の完了ゲートに `make build` を入れる。
+
+#### 1.4.6 「TOCTOU」という名称の扱い
+
+`RunTOCTOUPermissionCheck` とその呼び出し側が行うのは、収集したディレクトリを1回ずつ `lstat` して、他人による書き込みが許されていないか・所有者が root か実行ユーザーか・パス構成要素にシンボリックリンクが無いかを判定する静的な監査である。検査した時点の観測を保存して利用時に突き合わせる処理は無く、ファイル記述子によるパスの固定も行わない。起動時とグループ実行の直前に2回走るが、後者は前者の再検証ではない（対象パスの集合が異なり、重なる分についても前回結果との比較をしない）。
+
+つまりこれは、TOCTOU 攻撃が成立する前提（書き込み可能な祖先ディレクトリ）を実行前に取り除く事前のハードニングであって、TOCTOU チェックそのものではない。本来の TOCTOU 対策はこのリポジトリの別の場所にあり、`internal/safefileio` の `O_NOFOLLOW` 経由の open と、`internal/runner/base/executor` のファイル記述子経由の実行がそれにあたる。同じ語が両方に使われていることが、名前から中身を読み違える原因になっている。
+
+**決定**: 既存の識別子・既存のテスト名・`runTOCTOUCheck` の関数名の改名は本タスクの対象外とし、後続タスクで扱う（§10）。要件定義書がスコープ外とする「TOCTOU 権限チェック処理そのものの挙動変更」とは別の理由である。改名は挙動の変更ではないが、PR-6 は fail-closed な権限チェックの除外範囲を扱う高リスクの段階であり、そこへリスクの性質が異なる広範囲の改名を同居させないためである。
+
+**ただし本タスクで新規に増やすものには TOCTOU を使わない**。対象は次の4つ。
+
+- §1.4.3 の `INFO` メッセージ。
+- ステップ 4-5 で追加する起動時チェックのテスト名（`TestStartupDirPermAudit_*`）。
+- ステップ 4-11 の利用者向け文書。利用者に TOCTOU という語を教える必要はなく、トークン名 `hash_dir_permission_violation` とも語が揃わない。
+- ステップ 4-12 の用語集。
+
+本書のステップ見出しと PR タイトル（ステップ 4-1・PR-6）は、この制限の対象外とする。いずれも改名前のコードを指しており、そこだけ新しい語を使うと、触る対象が本書から追えなくなるためである。PR-6 のレビュー観点にある「新規に追加した文字列」は、成果物のコードとテストに入る文字列を指す。
+
+ステップ 4-3 で追加する `TestRunGroupTOCTOUCheck_AbsolutePathContainingBraceIsStillChecked` だけは例外とし、現行の名前のままにする。同じ節で書き換える既存の `TestRunGroupTOCTOUCheck_RelativePathsSkipped` と並ぶ位置にあり、ここだけ命名が割れると読み手が別系統のテストと誤読するためである。グループ実行時のテスト名は後続タスクで一括して改名する。
 
 ### 1.5 AC-31 の「1回だけ」の範囲
 
@@ -657,15 +676,17 @@ func getwd() (string, error) { return getwdHook() }
 - [ ] `main()` の `dropStartupPrivileges` 呼び出し（163-168 行）のコメントに、saved-set-uid が変更されないこと、それにより privilege manager が必要時に再昇格できること、したがってこれが恒久降格ではないことを英語で追記する（AC-42）。
 - [ ] `internal/security/path_resolution.go` から `ResolveAbsPathForCheck` を削除する（この時点で呼び出し元が無くなる）。
 
-#### ステップ 4-5: TOCTOU チェック周辺のテストを追加・更新
+#### ステップ 4-5: 起動時チェック周辺のテストを追加・更新
+
+新規に追加する4件は、§1.4.6 の決定に従い `TestStartupDirPermAudit_` を接頭辞とする。同ファイルの既存 `TestRunTOCTOU_*` は本タスクでは改名しない。
 
 **変更ファイル**: `cmd/runner/main_test.go`、`cmd/runner/startup_order_guard_test.go`
 
 - [ ] `cmd/runner/main_test.go` に `captureLogs` ヘルパーを追加する（`cmd/verify/main_test.go:85` と同じ形）。`runTOCTOUCheck` は `slog.Default()` に記録するため、以下のログ検証テストにはこれが要る。既定ロガーはプロセス全体の状態なので、これらのテストは `t.Parallel()` を呼ばない。その制約をファイル冒頭のコメントに英語で記す。
-- [ ] `TestRunTOCTOUCheck_LogsZeroSkipCounts` を追加する（AC-18）。除外が発生しない設定でチェックを実行し、`INFO` 記録が `skipped_variable_reference_paths=0` と `skipped_relative_paths=0` を含むことを検証する。
-- [ ] `TestRunTOCTOUCheck_LogsSkipBreakdownByReason` を追加する（AC-17）。`%{VAR}` を含むパス1件と相対パス1件を含む設定で、`skipped_variable_reference_paths=1` と `skipped_relative_paths=1` が記録されることを検証する。
-- [ ] `TestRunTOCTOUCheck_SkipDoesNotAffectVerdict` を追加する（AC-19）。除外対象のみを含む設定で違反が返らないこと、および除外対象と違反ディレクトリを併せ持つ設定で違反件数が違反ディレクトリの数と一致することを検証する。
-- [ ] `TestRunTOCTOUCheck_CheckerInitFailureReturnsPreExecutionError` を追加する（AC-24・AC-25）。失敗する生成関数を渡し、panic せず `*logging.PreExecutionError` が返ることを `errors.AsType` で検証する。
+- [ ] `TestStartupDirPermAudit_LogsZeroSkipCounts` を追加する（AC-18）。除外が発生しない設定でチェックを実行し、`INFO` 記録が `skipped_variable_reference_paths=0` と `skipped_relative_paths=0` を含むことを検証する。
+- [ ] `TestStartupDirPermAudit_LogsSkipBreakdownByReason` を追加する（AC-17）。`%{VAR}` を含むパス1件と相対パス1件を含む設定で、`skipped_variable_reference_paths=1` と `skipped_relative_paths=1` が記録されることを検証する。
+- [ ] `TestStartupDirPermAudit_SkipDoesNotAffectVerdict` を追加する（AC-19）。除外対象のみを含む設定で違反が返らないこと、および除外対象と違反ディレクトリを併せ持つ設定で違反件数が違反ディレクトリの数と一致することを検証する。
+- [ ] `TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError` を追加する（AC-24・AC-25）。失敗する生成関数を渡し、panic せず `*logging.PreExecutionError` が返ることを `errors.AsType` で検証する。
 - [ ] `cmd/runner/startup_order_guard_test.go` を再実行する。同テストは `cmd/runner/main.go` のソースを解析して `main` 内の呼び出し順を表明しており、ステップ 4-2（`runTOCTOUCheck` のシグネチャ変更）とステップ 4-4（`dropStartupPrivileges` 周辺のコメント追記）が同じ領域に触れる。追随が必要かを確認し、必要なら書き換える。不要だった場合もその旨を確認済みとして記録する。
 
 ### PR-6 作成ポイント: runner TOCTOU check migration
@@ -674,7 +695,7 @@ func getwd() (string, error) { return getwdHook() }
 
 **推奨タイトル**: `feat(0164): move the runner TOCTOU checks onto the shared path resolution`
 
-**レビュー観点**: 起動時（除外あり・件数記録あり）とグループ実行時（除外は相対パスのみ・件数記録なし）で除外規則が意図どおり分かれ、その理由がコメントに残っているか / 除外が違反判定に影響しないこと / 生成失敗が panic ではなく `*logging.PreExecutionError` になること / `ResolveAbsPathForCheck` の削除時点で呼び出し元が残っていないこと
+**レビュー観点**: 起動時（除外あり・件数記録あり）とグループ実行時（除外は相対パスのみ・件数記録なし）で除外規則が意図どおり分かれ、その理由がコメントに残っているか / 除外が違反判定に影響しないこと / 生成失敗が panic ではなく `*logging.PreExecutionError` になること / `ResolveAbsPathForCheck` の削除時点で呼び出し元が残っていないこと / 新規に追加した文字列・テスト名に `TOCTOU` が含まれていないこと（§1.4.6）
 
 **実装モデル要件**: frontier-recommended
 
@@ -753,7 +774,7 @@ func getwd() (string, error) { return getwdHook() }
 
 **変更ファイル**: `docs/user/verify_command.ja.md`、`docs/user/runner_command.ja.md`、`docs/user/record_command.ja.md`
 
-- [ ] `verify_command.ja.md` の終了コード表（97-104 行）で、`3` の意味を「(a) ハッシュディレクトリ側の TOCTOU 権限違反、(b) ハッシュディレクトリの不在または読み取り不能、(c) 権限チェッカの初期化失敗。いずれも検証を1件も実施していない」に改める。`1` の意味に「ハッシュディレクトリのパスがディレクトリでない場合」を追記する。
+- [ ] `verify_command.ja.md` の終了コード表（97-104 行）で、`3` の意味を「(a) ハッシュディレクトリまたはその祖先のディレクトリ権限違反、(b) ハッシュディレクトリの不在または読み取り不能、(c) 権限チェッカの初期化失敗。いずれも検証を1件も実施していない」に改める。`1` の意味に「ハッシュディレクトリのパスがディレクトリでない場合」を追記する。
 - [ ] 同表の直後に、§1.4.1 の識別トークン一覧（トークン・原因・対処）を表として追加する。
 - [ ] 104 行の段落に、**「`verify` はハッシュディレクトリを作成しません。」という文をそのまま**追記する（§7 の AC-43 の検索がこの文言を根拠にするため、表記を先に固定する）。
 - [ ] 208 行付近の「注意事項」に、ハッシュディレクトリが存在しない場合の終了コードが `3` であること、`record` で記録を作る必要があることを追記する。
@@ -780,6 +801,7 @@ func getwd() (string, error) { return getwdHook() }
 - [ ] 見出し「`record`: world-writable な場所への新規ハッシュディレクトリ作成を拒否します」 — 本番既定のハッシュディレクトリは該当しないこと、先に利用者自身がディレクトリを作れば通ることを添える。
 - [ ] **地の確認**: CHANGELOG に記した `readlink -f` を用いた判定手順を実際に実行し、記載どおりの出力になることを確認する。
 - [ ] `docs/translation_glossary.md` に「識別トークン / identification token」を追加する。§1.4.1 で導入した概念であり、`verify` の利用者向け文書と CHANGELOG の両方に現れるため、訳語を固定する必要がある。既存項目に同義のものが無いことを確認したうえで追加する。
+- [ ] `docs/translation_glossary.md` に「ディレクトリ権限監査 / directory permission audit」を追加する。§1.4.6 の決定により、本タスクで新規に増やす文字列と利用者向け文書はこの語を用いるため、訳語を固定する必要がある。
 - [ ] 「読み取り専用バリデータ / read-only validator」「除外理由 / skip reason」についても、既存項目で足りるかを判断する。追加した場合はそれを、追加不要と判断した場合はその理由を、Document Status の Comments に記録する。
 - [ ] 英語版 `CHANGELOG.md` を `/mktrans` で反映する。
 - [ ] `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の §2・§3 から、本タスクで解消した 11 件（L-1〜L-5・L-7・I-1〜I-5）を消し込む。追跡文書の更新も本タスクの成果物であり、どの PR にも属さないまま残さない。
@@ -952,19 +974,19 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 | AC-15 | static | `rg -n -e 'HashDirPerm\s+os\.FileMode\s*=' --glob '!*_test.go' internal` | 一致1件（`internal/fileanalysis/file_analysis_store.go`） |
 | AC-15 | static | `rg -n -e 'MkdirAll\(' --glob '!*_test.go' cmd internal` を目視し、ハッシュディレクトリ自身を作る呼び出しがステップ 2-3 の1箇所と `fileanalysis.NewStore` のみであることを確認する。`libccache`・`dynamicanalysis` の3件は配下のサブディレクトリで対象外 | 別名の重複定数が無いこと |
 | AC-16 | test | `cmd/verify/main_test.go::TestRunProcessesMultipleFiles`、`::TestRunReportsFailuresAndContinues` | 書き換え後も通過 |
-| AC-17 | test | `cmd/runner/main_test.go::TestRunTOCTOUCheck_LogsSkipBreakdownByReason` | — |
-| AC-18 | test | `cmd/runner/main_test.go::TestRunTOCTOUCheck_LogsZeroSkipCounts` | — |
-| AC-19 | test | `cmd/runner/main_test.go::TestRunTOCTOUCheck_SkipDoesNotAffectVerdict` | — |
+| AC-17 | test | `cmd/runner/main_test.go::TestStartupDirPermAudit_LogsSkipBreakdownByReason` | — |
+| AC-18 | test | `cmd/runner/main_test.go::TestStartupDirPermAudit_LogsZeroSkipCounts` | — |
+| AC-19 | test | `cmd/runner/main_test.go::TestStartupDirPermAudit_SkipDoesNotAffectVerdict` | — |
 | AC-20 | test | `internal/runner/group_executor_test.go::TestRunGroupTOCTOUCheck_RelativePathsSkipped`（ステップ 4-3 で、チェッカが1件も呼ばれないことを表明する形に入れ替えたもの） | — |
-| AC-20 | test | `internal/runner/group_executor_test.go::TestRunGroupTOCTOUCheck_AbsolutePathWithVariableReferenceIsStillChecked`（除外範囲が現行より広がっていないこと。ステップ 4-3） | — |
+| AC-20 | test | `internal/runner/group_executor_test.go::TestRunGroupTOCTOUCheck_AbsolutePathContainingBraceIsStillChecked`（除外範囲が現行より広がっていないこと。ステップ 4-3） | — |
 | AC-20 | test | `cmd/runner/integration_toctou_test.go::TestE2E_TOCTOU_RunnerFailsOnWorldWritableVerifyFilesDir`、`internal/runner/group_executor_test.go::TestRunGroupTOCTOUCheck_ViolationReturnsError` | 通過 |
 | AC-21 | test | `internal/runner/bootstrap/logger_test.go::TestSetupLoggerWithConfig_LogFileNameTimestampIsUTC` | — |
 | AC-22 | test | 同上（`time.Local` を UTC+9 に差し替えた状態で検証する） | — |
 | AC-23 | test | 同上（3要素構成・区切り文字 `_`・タイムスタンプ 16 文字を検証する） | — |
 | AC-24 | test | `cmd/record/main_test.go::TestRun_ExitsWithoutPanicWhenCheckerInitFails` | — |
 | AC-24 | test | `cmd/verify/main_test.go::TestRunExitsWithoutPanicWhenCheckerInitFails` | — |
-| AC-24 | test | `cmd/runner/main_test.go::TestRunTOCTOUCheck_CheckerInitFailureReturnsPreExecutionError` | — |
-| AC-25 | test | `cmd/runner/main_test.go::TestRunTOCTOUCheck_CheckerInitFailureReturnsPreExecutionError`（`*logging.PreExecutionError` が返ることを `errors.AsType` で検証） | — |
+| AC-24 | test | `cmd/runner/main_test.go::TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError` | — |
+| AC-25 | test | `cmd/runner/main_test.go::TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError`（`*logging.PreExecutionError` が返ることを `errors.AsType` で検証） | — |
 | AC-26 | test | `cmd/record/main_test.go::TestRun_ExitsWithoutPanicWhenCheckerInitFails`、`cmd/verify/main_test.go::TestRunExitsWithoutPanicWhenCheckerInitFails`（標準エラー出力にエラーが出ること） | — |
 | AC-27 | static | `rg -n -e 'security validator initialisation failed' cmd internal` | 一致0件（現状は3件） |
 | AC-27 | static | `rg -n -A6 -e 'NewDirectoryPermChecker\(\)' cmd \| rg -n 'panic\('` | 一致0件（重複していたのは生成の呼び出しではなく panic ブロックである。生成関数は `internal/security` に1つしかなく、3コマンドはその同一の関数を注入口の既定値として指す） |
@@ -1038,4 +1060,71 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 - [ ] 本書のレビューと `approved` への更新（レビュアー作業）。02_architecture.md §3.4 への `deps` の `newPermChecker`・`resolvePathForCheck` の追補（§1.4.4）は反映済み。
 - [ ] 承認後、§3.2 の PR-1 から順に実装する。PR の区切りは各ステップ群の末尾にある「PR-N 作成ポイント」に従い、1つの PR をマージしてから次のブランチへ移る。
 - [ ] `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の消し込みはステップ 4-12（PR-8）で行う。
-- [ ] issue [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) をクローズする。対象外とした L-6（[#1018](https://github.com/isseis/go-safe-cmd-runner/issues/1018)）と I-6（[#1019](https://github.com/isseis/go-safe-cmd-runner/issues/1019)）が別 issue として残ることを、クローズコメントに記す。
+- [ ] issue [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) をクローズする。対象外とした L-6（[#1018](https://github.com/isseis/go-safe-cmd-runner/issues/1018)）・I-6（[#1019](https://github.com/isseis/go-safe-cmd-runner/issues/1019)）と、下の項目で登録する §11 の改名が、別 issue として残ることをクローズコメントに記す。
+- [ ] §11 のディレクトリ権限監査の改名を issue として登録する（L-6・I-6 と同じ扱い）。本文には §11 への参照と、着手が**フェーズ4 の完了後**（PR-8 のマージ後）であることを記す。登録した issue 番号を §11 の冒頭に追記する。この登録は PR-8 より前に済ませる。本書は PR-8 で役目を終えるため、それまでに追跡先を作らないと §11 が完了済みタスクの文書に埋もれる。
+
+---
+
+## 11. 後続タスク: ディレクトリ権限監査の改名
+
+§1.4.6 の決定により、既存識別子の改名は本タスクの範囲外とした。ここに作業内容を残す。**着手はフェーズ4 の完了後**とする。同じ箇所に触れるため、PR-6〜PR-8 と並行させない。
+
+**追跡先**: 本節は引き継ぎ仕様であり、進捗欄を持たない。ここに進捗を置くと、対象外と決めたはずの作業が本タスクの完了判定に混ざるためである。追跡は §10 で登録する issue と、着手時に作る新しいタスク文書（`docs/tasks/NNNN_.../03_implementation_plan.md`）が担う。着手時の最初の作業は、本節を出発点としてその計画書を起こすことであり、§11.2〜§11.6 の各項目はそこでチェックボックスに展開する。issue 番号: 未登録（§10 の登録後にここへ記す）。
+
+### 11.1 目的
+
+`TOCTOU` という語を、静的なディレクトリ権限監査を指す識別子から取り除き、本来の TOCTOU 対策（`internal/safefileio` の `O_NOFOLLOW` 経由の open、`internal/runner/base/executor` のファイル記述子経由の実行、ハッシュの再検証）と語のうえで区別する。挙動は変えない。判定規則・ログレベル・終了コード・エラーの型と包み方・関数の引数と戻り値の意味は、いずれも現状のままとする。
+
+### 11.2 改名の対象
+
+| 現在 | 変更後 | 場所 |
+|---|---|---|
+| `RunTOCTOUPermissionCheck` | `AuditDirectoryPermissions` | `internal/security` |
+| `TOCTOUViolation` | `DirPermViolation` | 同上 |
+| `TOCTOUCheckResult` | `DirPermAuditResult` | 同上 |
+| `toctou.go` / `toctou_test.go` | `dir_permissions_audit.go` / `dir_permissions_audit_test.go` | 同上 |
+| `runTOCTOUCheck` | `auditConfiguredDirPermissions` | `cmd/runner/main.go` |
+| `WithTOCTOUValidator` | `WithDirPermAuditor` | `internal/runner/runner.go` |
+| `WithGroupTOCTOUValidator` | `WithGroupDirPermAuditor` | `internal/runner/group_executor_options.go` |
+| `toctouValidator`（フィールド） | `dirPermAuditor` | `internal/runner` の3ファイル |
+| `runGroupTOCTOUCheck` | `auditGroupDirPermissions` | `internal/runner/group_executor.go` |
+| `ErrTOCTOUViolation` | `ErrDirPermViolation` | `internal/runner` |
+
+識別子ではないが、`cmd/verify` の `deps.resolvePathForCheck` に付いている `// resolvePathForCheck resolves a path for the TOCTOU permission check.` も同じ機会に直す（§1.4.4 に引用されている文言なので、本書の該当箇所も追随させる）。
+
+`AuditDirectoryPermissions` の doc コメントを書き直し、これが事前の権限監査であって time-of-check/time-of-use のチェックではないこと、本来の TOCTOU 対策は別の場所にあることを英語で明記する。`DirPermAuditResult` の `Checked`・`Skipped` に付いている計数規則の説明は内容を保つ。
+
+### 11.3 文字列の変更
+
+- WARN ログ `"TOCTOU permission check violation"` → `"insecure directory permissions"`。`path`・`violation` の属性名と値は変えない。
+- `cmd/runner` の ERROR メッセージ `"TOCTOU permission check failed: ..."` → `"directory permission audit failed: ..."`。
+- `internal/runner` のグループ側エラー文言も同じ語に揃える。
+
+WARN の文言は運用者が検索の手がかりにしている可能性があるため、CHANGELOG への記載を必須とする。
+
+### 11.4 テスト
+
+既存テスト名を改名する。`cmd/record/main_test.go` の `TestRunTOCTOU_*`、`cmd/verify/main_test.go` の `TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates`、`internal/runner/group_executor_test.go` の `TestRunGroupTOCTOUCheck_*`、`cmd/runner/integration_toctou_test.go`（ファイル名も含む）。
+
+**ログ本文を照合している2箇所は必ず追随させる**。
+
+- `cmd/verify/main_test.go` の `assert.Contains(t, warnLines[0], "TOCTOU permission check violation")`。
+- `cmd/runner/integration_toctou_test.go` の `strings.Contains(combined, "TOCTOU") || strings.Contains(combined, "permission") || ...`。ここは後続の項が独立に一致するため、**文字列を変え忘れてもテストが通ってしまう**。置き換え後に `permission` 側の項を一時的に外し、意図した語で実際に一致することを確かめる。確かめたことを PR に書く。
+
+`cmd/runner/startup_order_guard_test.go` は `cmd/runner/main.go` のソースを解析して `main` 内の呼び出し順を表明しており、関数名を含む可能性が高い。追随の要否を確認する。
+
+### 11.5 一括置換をしない
+
+`TOCTOU` はリポジトリ内の 30 以上のファイルに現れるが、その大半は本来の TOCTOU 対策を指しており対象外である（`internal/safefileio`・`internal/runner/base/executor`・`internal/filevalidator`・`internal/dynlib`・`internal/shebang`・`internal/dynamicanalysis`・`internal/security/elfanalyzer`・`internal/security/binaryanalyzer`・`internal/fileanalysis`・`internal/verification`）。`docs/` 配下も同様で、`0090_toctou_fexecve` や `0162_entrypoint_runid_privilege_toctou_hardening` は別機能の設計文書である。**§11.2〜§11.4 に挙げたものだけを、1つずつ確認しながら変える**。判断に迷った箇所は変更せず、レビューで諮る。
+
+### 11.6 完了条件とコミットの分け方
+
+- `make fmt` → `make test` → `make lint` がすべて緑。
+- `rg -n 'TOCTOU' --type go` の残存が本来の TOCTOU 対策を指すものだけになっており、残した各ファイルについて理由を1行で説明できる。
+- 改名の前後で `go tool cover -func` を比較し、関数単位で低下がないこと（挙動を変えていないので一致するはず。関数名が変わるため対応をとって比較する）。
+
+コミットは3つに分け、各コミットで `make test` が緑であること。
+
+1. 識別子の改名のみ（機械的でレビューしやすい単位にする）。
+2. ログとエラーの文言、およびそれに依存するテストの更新。
+3. 文書と CHANGELOG（`CHANGELOG.ja.md` を先に書き、`CHANGELOG.md` は `/mktrans` で反映する）。判定規則と終了コードは変わらないことを明記する。
