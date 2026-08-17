@@ -10,18 +10,6 @@ import (
 	"strings"
 )
 
-// ResolveAbsPathForCheck normalizes an already-absolute path for directory
-// collection.
-func ResolveAbsPathForCheck(p string) (string, bool) {
-	if !filepath.IsAbs(p) {
-		return "", false
-	}
-	if resolved, err := filepath.EvalSymlinks(p); err == nil {
-		return resolved, true
-	}
-	return p, true
-}
-
 // trimLastPathComponent drops the final component of p without cleaning it, and
 // reports whether there was anything left to drop.
 //

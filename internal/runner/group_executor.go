@@ -45,6 +45,11 @@ func (e *CommandExecutionError) Unwrap() error {
 // directory permission violations.
 var ErrTOCTOUViolation = errors.New("TOCTOU permission check failed")
 
+// ErrUnhandledCheckSkipReason is returned when path classification reports a
+// reason this package has no case for. Refusing to run is the only safe reading:
+// an unknown reason says neither "check this" nor "leave it out".
+var ErrUnhandledCheckSkipReason = errors.New("unhandled permission check skip reason")
+
 // GroupExecutor defines the interface for executing command groups
 type GroupExecutor interface {
 	// ExecuteGroup executes all commands in a group sequentially
@@ -349,25 +354,45 @@ func (ge *DefaultGroupExecutor) runGroupTOCTOUCheck(runtimeGroup *runnertypes.Ru
 		return nil
 	}
 
-	// Collect verify_files paths (already variable-expanded; keep only absolute
-	// paths and apply EvalSymlinks for the same symlink normalisation used for
-	// CLI paths in record/verify).
-	filePaths := make([]string, 0, len(runtimeGroup.ExpandedVerifyFiles)+len(runtimeGroup.Commands))
-	for _, f := range runtimeGroup.ExpandedVerifyFiles {
-		if resolved, ok := isec.ResolveAbsPathForCheck(f); ok {
-			filePaths = append(filePaths, resolved)
+	// verify_files and command paths alike have been through preExpandCommands by
+	// the time they get here, so PathExpanded is a fact about this call site
+	// rather than a guess -- unlike the startup check, which also sees raw
+	// templates and so declares per path origin.
+	//
+	// Declaring it matters: a "%{" surviving expansion is a literal one an escape
+	// produced, not a reference, so it is no reason to leave a path out. Leaving
+	// it out would quietly narrow a check that exists to fail closed, and this
+	// path keeps no exclusion counts, so it would show up neither in the verdict
+	// nor in the log.
+	candidates := make([]string, 0, len(runtimeGroup.ExpandedVerifyFiles)+len(runtimeGroup.Commands))
+	candidates = append(candidates, runtimeGroup.ExpandedVerifyFiles...)
+	for _, cmd := range runtimeGroup.Commands {
+		candidates = append(candidates, cmd.Cmd())
+	}
+
+	filePaths := make([]string, 0, len(candidates))
+	for _, p := range candidates {
+		switch reason := isec.ClassifyCheckTarget(p, isec.PathExpanded); reason {
+		case isec.CheckSkipNone:
+			filePaths = append(filePaths, p)
+		case isec.CheckSkipRelative:
+			// Not anchored to this process's working directory, so there is no
+			// tree to check. Unchanged from before this check shared the
+			// classification.
+		default:
+			// PathExpanded cannot produce any other reason today. One added later
+			// would otherwise be silently checked or silently dropped.
+			return fmt.Errorf("%w: %d for path %s", ErrUnhandledCheckSkipReason, reason, p)
 		}
 	}
 
-	// Collect command paths (expanded by preExpandCommands).
-	for _, cmd := range runtimeGroup.Commands {
-		if resolved, ok := isec.ResolveAbsPathForCheck(cmd.Cmd()); ok {
-			filePaths = append(filePaths, resolved)
-		}
-	}
+	// Resolution walks to the deepest existing ancestor and appends the rest, and
+	// logs a WARN for a path it cannot resolve while still handing back something
+	// checkable, so no path leaves the check without a trace.
+	resolved, _ := isec.ResolveAllForCheck(filePaths, slog.Default())
 
 	// hashDir is already checked at startup; pass no directories to skip re-traversal.
-	dirs := isec.CollectPermissionCheckDirs(filePaths, nil)
+	dirs := isec.CollectPermissionCheckDirs(resolved, nil)
 	violations := isec.RunTOCTOUPermissionCheck(ge.toctouValidator, dirs, slog.Default()).Violations
 	if len(violations) > 0 {
 		return fmt.Errorf("%w for group[%s]: %d directory violation(s) detected; review directory permissions",

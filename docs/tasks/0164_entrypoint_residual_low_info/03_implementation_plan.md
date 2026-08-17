@@ -638,43 +638,43 @@ func getwd() (string, error) { return getwdHook() }
 
 **変更ファイル**: `cmd/runner/main.go`
 
-- [ ] `resolveStaticAbsPath`（410-419 行）を削除する。
-- [ ] `runTOCTOUCheck` のパス収集ループ（427-445 行）で、`security.ClassifyCheckTarget` の戻り値を理由ごとに数え、`CheckSkipNone` のパスだけを `security.ResolvePathForCheck` に渡す。
-- [ ] **`PathExpansionState` を出所ごとに宣言する**（02_architecture.md §3.2 の表）。`runtimeGlobal.ExpandedVerifyFiles` は構成上必ず展開済みなので `security.PathExpanded` を渡す。`g.VerifyFiles`・`cmd.Cmd` は未展開のテンプレートなので `config.HasVariableReference` の結果で `PathHasUnexpandedReference` と `PathExpanded` を選ぶ。判定は展開前のテンプレートに対してのみ行う（展開は冪等ではないため、展開後の値からは復元できない）。
-- [ ] 429 行のコメント `Variables are already expanded so no %{ filter is needed here` を、この出所ごとの宣言が何を根拠にしているかを述べる文へ書き換える。
-- [ ] ハッシュディレクトリの解決（457 行）を `security.ResolvePathForCheck` に置き換える。
-- [ ] 452-456 行のコメント（`ResolveAbsPathForCheck preserves the original path when EvalSymlinks fails`）を、`ResolvePathForCheck` の実際の挙動（実在する最深の祖先まで解決し、残りを字句的に連結する）を述べる文へ書き換える。
-- [ ] チェック実行後に、§1.4.3 の5属性を持つ `INFO` を1件記録する。除外が0件の実行でも同じ記録を出す。
-- [ ] 除外は違反として扱わず、合否判定（460-468 行）は変更しない。
+- [x] `resolveStaticAbsPath`（410-419 行）を削除する。
+- [x] `runTOCTOUCheck` のパス収集ループ（427-445 行）で、`security.ClassifyCheckTarget` の戻り値を理由ごとに数え、`CheckSkipNone` のパスだけを解決へ渡す。**実装時の決定**: 解決は `security.ResolveAllForCheck` で行う（02_architecture.md §3.1 の追記）。解決失敗の WARN 記録（AC-04）が共有処理の側にあり、`ResolvePathForCheck` を直接呼ぶと同じ記録処理を呼び出し側へ書き写すことになるためである。あわせて `switch` に fail-secure な `default` を置き、将来 `CheckSkipReason` が増えたときに黙って検査／読み飛ばしのどちらかへ倒れないよう `PreExecutionError` を返す。
+- [x] **`PathExpansionState` を出所ごとに宣言する**（02_architecture.md §3.2 の表）。`runtimeGlobal.ExpandedVerifyFiles` は構成上必ず展開済みなので `security.PathExpanded` を渡す。`g.VerifyFiles`・`cmd.Cmd` は未展開のテンプレートなので `config.HasVariableReference` の結果で `PathHasUnexpandedReference` と `PathExpanded` を選ぶ。判定は展開前のテンプレートに対してのみ行う（展開は冪等ではないため、展開後の値からは復元できない）。
+- [x] 429 行のコメント `Variables are already expanded so no %{ filter is needed here` を、この出所ごとの宣言が何を根拠にしているかを述べる文へ書き換える。
+- [x] ハッシュディレクトリの解決（457 行）を共有処理に置き換える。**実装時の決定**: ここも `ResolveAllForCheck` に1要素の列として渡す。`runner` はハッシュディレクトリの解決失敗を拒否の根拠にせず記録のみ行うので、対象ファイル群と同じ扱いでよく、`CollectPermissionCheckDirs` の第2引数がもともと列であるため変換も要らない。
+- [x] 452-456 行のコメント（`ResolveAbsPathForCheck preserves the original path when EvalSymlinks fails`）を、`ResolvePathForCheck` の実際の挙動（実在する最深の祖先まで解決し、残りを字句的に連結する）を述べる文へ書き換える。
+- [x] チェック実行後に、§1.4.3 の5属性を持つ `INFO` を1件記録する。除外が0件の実行でも同じ記録を出す。合否判定より前に記録するので、違反で中断する実行でも監査範囲が残る。
+- [x] 除外は違反として扱わず、合否判定（460-468 行）は変更しない。
 
 #### ステップ 4-2: `runner` の権限チェッカ生成から panic を無くす
 
 **変更ファイル**: `cmd/runner/main.go`
 
-- [ ] `runTOCTOUCheck` に `newPermChecker func() (isec.DirectoryPermChecker, error)` を引数として追加する（§1.4.4）。型を `security.NewDirectoryPermChecker` と同一にすることで、呼び出し元がアダプタを挟まずに渡せる。
-- [ ] `runTOCTOUCheck` の内部では `newPermChecker()` を呼ぶ。
-- [ ] 446-451 行の panic を削除し、生成失敗時は `logging.PreExecutionError`（`Type: logging.ErrorTypeFileAccess`、`Component: string(resource.ComponentVerification)`、`RunID: runID`）を返す。
-- [ ] 呼び出し元（401 行）が `isec.NewDirectoryPermChecker` をそのまま渡すようにする。
+- [x] `runTOCTOUCheck` に `newPermChecker func() (isec.DirectoryPermChecker, error)` を引数として追加する（§1.4.4）。型を `security.NewDirectoryPermChecker` と同一にすることで、呼び出し元がアダプタを挟まずに渡せる。
+- [x] `runTOCTOUCheck` の内部では `newPermChecker()` を呼ぶ。
+- [x] 446-451 行の panic を削除し、生成失敗時は `logging.PreExecutionError`（`Type: logging.ErrorTypeFileAccess`、`Component: string(resource.ComponentVerification)`、`RunID: runID`）を返す。
+- [x] 呼び出し元（401 行）が `isec.NewDirectoryPermChecker` をそのまま渡すようにする。
 
 #### ステップ 4-3: グループ実行時チェックを共有処理へ差し替え
 
 **変更ファイル**: `internal/runner/group_executor.go`、`internal/runner/group_executor_test.go`
 
-- [ ] 357 行と 364 行の `isec.ResolveAbsPathForCheck` 呼び出しを、`isec.ClassifyCheckTarget` による分類と `isec.ResolvePathForCheck` による解決に置き換える。件数の記録は入れない（02_architecture.md §6.3）。
-- [ ] **`isec.PathExpanded` を宣言する**。グループ実行時のパスは `preExpandCommands` による展開後であり、展開済みであることは呼び出し元が構成上知っている事実である。したがって `CheckSkipVariableReference` はこの経路では返らず、除外の範囲は現行（相対パスのみ読み飛ばす）と同一に保たれる。分類の戻り値は次のように扱う。
+- [x] 357 行と 364 行の `isec.ResolveAbsPathForCheck` 呼び出しを、`isec.ClassifyCheckTarget` による分類と共有処理による解決に置き換える。件数の記録は入れない（02_architecture.md §6.3）。**実装時の決定**: 解決はステップ 4-1 と同じ理由で `isec.ResolveAllForCheck` を使う。分類の `switch` には fail-secure な `default` を置き、`ErrUnhandledCheckSkipReason`（`internal/runner`）を返す。
+- [x] **`isec.PathExpanded` を宣言する**。グループ実行時のパスは `preExpandCommands` による展開後であり、展開済みであることは呼び出し元が構成上知っている事実である。したがって `CheckSkipVariableReference` はこの経路では返らず、除外の範囲は現行（相対パスのみ読み飛ばす）と同一に保たれる。分類の戻り値は次のように扱う。
   - `CheckSkipRelative` — 読み飛ばす（現行と同じ）。
   - `CheckSkipNone` — `ResolvePathForCheck` に渡して検査する。
-- [ ] 起動時チェック（ステップ 4-1）と宣言が分かれる理由を、英語のコメントで当該箇所に残す。展開後の値に `%{` が残っていても、それはエスケープ由来の文字である可能性があり、除外の根拠にならない。除外すれば fail-closed のチェックが黙って狭まり、しかも §6.3 によりグループ側には件数記録が無いため、判定にも記録にも現れない。
-- [ ] `TestRunGroupTOCTOUCheck_AbsolutePathContainingBraceIsStillChecked` を追加する。`%{` を含む絶対パスを1件渡し、フェイクチェッカが当該パスの祖先について呼ばれること（＝読み飛ばされていないこと）を表明する。除外範囲が将来広げられたときに失敗する唯一の表明である。
-- [ ] `TestRunGroupTOCTOUCheck_RelativePathsSkipped`（`group_executor_test.go:3691-3703`）を書き換える。現行は実チェッカを使って `require.NoError` するだけであり、相対パスが「除外された」場合も「解決されて健全なディレクトリが検査された」場合も通るため、除外を検証できていない。**呼ばれたパスを記録するフェイクチェッカに差し替え、チェッカが1件も呼ばれないことを表明する**。これが除外と検査済みを区別できる唯一の表明である。
-- [ ] 同テストのコメント `Relative paths only → CollectPermissionCheckDirs collects nothing → no violations.` を、除外の担い手が `ClassifyCheckTarget` に移ったことを述べる文へ書き換える。
+- [x] 起動時チェック（ステップ 4-1）と宣言が分かれる理由を、英語のコメントで当該箇所に残す。展開後の値に `%{` が残っていても、それはエスケープ由来の文字である可能性があり、除外の根拠にならない。除外すれば fail-closed のチェックが黙って狭まり、しかも §6.3 によりグループ側には件数記録が無いため、判定にも記録にも現れない。
+- [x] `TestRunGroupTOCTOUCheck_AbsolutePathContainingBraceIsStillChecked` を追加する。`%{` を含む絶対パスを1件渡し、フェイクチェッカが当該パスの祖先について呼ばれること（＝読み飛ばされていないこと）を表明する。除外範囲が将来広げられたときに失敗する唯一の表明である。
+- [x] `TestRunGroupTOCTOUCheck_RelativePathsSkipped`（`group_executor_test.go:3691-3703`）を書き換える。現行は実チェッカを使って `require.NoError` するだけであり、相対パスが「除外された」場合も「解決されて健全なディレクトリが検査された」場合も通るため、除外を検証できていない。**呼ばれたパスを記録するフェイクチェッカに差し替え、チェッカが1件も呼ばれないことを表明する**。これが除外と検査済みを区別できる唯一の表明である。
+- [x] 同テストのコメント `Relative paths only → CollectPermissionCheckDirs collects nothing → no violations.` を、除外の担い手が `ClassifyCheckTarget` に移ったことを述べる文へ書き換える。
 
 #### ステップ 4-4: 特権降格のコメント追記と `ResolveAbsPathForCheck` の削除
 
 **変更ファイル**: `cmd/runner/main.go`、`internal/security/path_resolution.go`
 
-- [ ] `main()` の `dropStartupPrivileges` 呼び出し（163-168 行）のコメントに、saved-set-uid が変更されないこと、それにより privilege manager が必要時に再昇格できること、したがってこれが恒久降格ではないことを英語で追記する（AC-42）。
-- [ ] `internal/security/path_resolution.go` から `ResolveAbsPathForCheck` を削除する（この時点で呼び出し元が無くなる）。
+- [x] `main()` の `dropStartupPrivileges` 呼び出し（163-168 行）のコメントに、saved-set-uid が変更されないこと、それにより privilege manager が必要時に再昇格できること、したがってこれが恒久降格ではないことを英語で追記する（AC-42）。
+- [x] `internal/security/path_resolution.go` から `ResolveAbsPathForCheck` を削除する（この時点で呼び出し元が無くなる）。
 
 #### ステップ 4-5: 起動時チェック周辺のテストを追加・更新
 
@@ -682,12 +682,12 @@ func getwd() (string, error) { return getwdHook() }
 
 **変更ファイル**: `cmd/runner/main_test.go`、`cmd/runner/startup_order_guard_test.go`
 
-- [ ] `cmd/runner/main_test.go` に `captureLogs` ヘルパーを追加する（`cmd/verify/main_test.go:85` と同じ形）。`runTOCTOUCheck` は `slog.Default()` に記録するため、以下のログ検証テストにはこれが要る。既定ロガーはプロセス全体の状態なので、これらのテストは `t.Parallel()` を呼ばない。その制約をファイル冒頭のコメントに英語で記す。
-- [ ] `TestStartupDirPermAudit_LogsZeroSkipCounts` を追加する（AC-18）。除外が発生しない設定でチェックを実行し、`INFO` 記録が `skipped_variable_reference_paths=0` と `skipped_relative_paths=0` を含むことを検証する。
-- [ ] `TestStartupDirPermAudit_LogsSkipBreakdownByReason` を追加する（AC-17）。`%{VAR}` を含むパス1件と相対パス1件を含む設定で、`skipped_variable_reference_paths=1` と `skipped_relative_paths=1` が記録されることを検証する。
-- [ ] `TestStartupDirPermAudit_SkipDoesNotAffectVerdict` を追加する（AC-19）。除外対象のみを含む設定で違反が返らないこと、および除外対象と違反ディレクトリを併せ持つ設定で違反件数が違反ディレクトリの数と一致することを検証する。
-- [ ] `TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError` を追加する（AC-24・AC-25）。失敗する生成関数を渡し、panic せず `*logging.PreExecutionError` が返ることを `errors.AsType` で検証する。
-- [ ] `cmd/runner/startup_order_guard_test.go` を再実行する。同テストは `cmd/runner/main.go` のソースを解析して `main` 内の呼び出し順を表明しており、ステップ 4-2（`runTOCTOUCheck` のシグネチャ変更）とステップ 4-4（`dropStartupPrivileges` 周辺のコメント追記）が同じ領域に触れる。追随が必要かを確認し、必要なら書き換える。不要だった場合もその旨を確認済みとして記録する。
+- [x] `cmd/runner/main_test.go` に `captureLogs` ヘルパーを追加する（`cmd/verify/main_test.go:85` と同じ形）。`runTOCTOUCheck` は `slog.Default()` に記録するため、以下のログ検証テストにはこれが要る。既定ロガーはプロセス全体の状態なので、これらのテストは `t.Parallel()` を呼ばない。その制約をファイル冒頭のコメントに英語で記す。
+- [x] `TestStartupDirPermAudit_LogsZeroSkipCounts` を追加する（AC-18）。除外が発生しない設定でチェックを実行し、`INFO` 記録が `skipped_variable_reference_paths=0` と `skipped_relative_paths=0` を含むことを検証する。
+- [x] `TestStartupDirPermAudit_LogsSkipBreakdownByReason` を追加する（AC-17）。`%{VAR}` を含むパス1件と相対パス1件を含む設定で、`skipped_variable_reference_paths=1` と `skipped_relative_paths=1` が記録されることを検証する。
+- [x] `TestStartupDirPermAudit_SkipDoesNotAffectVerdict` を追加する（AC-19）。除外対象のみを含む設定で違反が返らないこと、および除外対象と違反ディレクトリを併せ持つ設定で違反件数が違反ディレクトリの数と一致することを検証する。
+- [x] `TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError` を追加する（AC-24・AC-25）。失敗する生成関数を渡し、panic せず `*logging.PreExecutionError` が返ることを `errors.AsType` で検証する。
+- [x] `cmd/runner/startup_order_guard_test.go` を再実行する。同テストは `cmd/runner/main.go` のソースを解析して `main` 内の呼び出し順を表明しており、ステップ 4-2（`runTOCTOUCheck` のシグネチャ変更）とステップ 4-4（`dropStartupPrivileges` 周辺のコメント追記）が同じ領域に触れる。追随が必要かを確認し、必要なら書き換える。**確認結果**: 書き換えは不要だった。同テストが表明するのは `dropStartupPrivileges` が `main` の先頭文であること・`setegid` が `seteuid` に先行すること・識別情報変更呼び出しの所在・`init` が1つであることであり、いずれも `runTOCTOUCheck` のシグネチャにも `dropStartupPrivileges` 前後のコメントにも依存しない。`make test` で全サブテストの通過を確認済み。
 
 ### PR-6 作成ポイント: runner TOCTOU check migration
 

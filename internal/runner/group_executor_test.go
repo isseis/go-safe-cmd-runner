@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -3685,19 +3686,58 @@ func TestVerifyCommandCallOrder_DynLibBeforeShebang(t *testing.T) {
 	}
 }
 
-// TestRunGroupTOCTOUCheck_RelativePathsSkipped verifies that relative paths in
-// ExpandedVerifyFiles are not passed to the TOCTOU check (they would produce a
-// meaningless or erroneous result).
-func TestRunGroupTOCTOUCheck_RelativePathsSkipped(t *testing.T) {
-	v, err := isec.NewDirectoryPermChecker()
-	require.NoError(t, err)
+// recordingPermChecker records every directory it is asked about and reports no
+// violation. Recording is what separates "left out of the check" from "checked
+// and found sound": a checker that only returns nil cannot tell the two apart.
+type recordingPermChecker struct {
+	paths []string
+}
 
-	ge := &DefaultGroupExecutor{toctouValidator: v}
+func (c *recordingPermChecker) ValidateDirectoryPermissions(path string) error {
+	c.paths = append(c.paths, path)
+	return nil
+}
+
+// TestRunGroupTOCTOUCheck_RelativePathsSkipped verifies that relative paths in
+// ExpandedVerifyFiles are left out of the permission check. A relative path is
+// not anchored to this process's working directory, so resolving it here would
+// check an unrelated directory tree.
+func TestRunGroupTOCTOUCheck_RelativePathsSkipped(t *testing.T) {
+	checker := &recordingPermChecker{}
+
+	ge := &DefaultGroupExecutor{toctouValidator: checker}
 	rg := &runnertypes.RuntimeGroup{
 		Spec:                &runnertypes.GroupSpec{Name: "test"},
 		ExpandedVerifyFiles: []string{"relative/path/file.txt", "./another.txt"},
 	}
-	// Relative paths only → CollectPermissionCheckDirs collects nothing → no violations.
-	err = ge.runGroupTOCTOUCheck(rg)
+	// ClassifyCheckTarget is what drops these now; resolution no longer rejects a
+	// relative path on its own.
+	err := ge.runGroupTOCTOUCheck(rg)
 	require.NoError(t, err)
+	assert.Empty(t, checker.paths,
+		"a relative path must reach no directory check at all; returning no violation is also what a resolved, sound directory would do")
+}
+
+// TestRunGroupTOCTOUCheck_AbsolutePathContainingBraceIsStillChecked pins the
+// exclusion range for group-level paths. These paths are already expanded, so a
+// "%{" left in one is a literal produced by an escape, not a reference, and is no
+// reason to leave the path out. This assertion fails if the exclusion is ever
+// widened to match on the text of the path.
+func TestRunGroupTOCTOUCheck_AbsolutePathContainingBraceIsStillChecked(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	require.NoError(t, os.Chmod(tmpDir, 0o755))
+
+	braceDir := filepath.Join(tmpDir, "%{NOT_A_REFERENCE}")
+	require.NoError(t, os.Mkdir(braceDir, 0o755))
+
+	checker := &recordingPermChecker{}
+	ge := &DefaultGroupExecutor{toctouValidator: checker}
+	rg := &runnertypes.RuntimeGroup{
+		Spec:                &runnertypes.GroupSpec{Name: "test"},
+		ExpandedVerifyFiles: []string{filepath.Join(braceDir, "file.txt")},
+	}
+
+	require.NoError(t, ge.runGroupTOCTOUCheck(rg))
+	assert.Contains(t, checker.paths, braceDir,
+		"an absolute path containing %%{ must still be checked; it is a literal, not an unexpanded reference")
 }

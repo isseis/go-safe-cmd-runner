@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
@@ -163,6 +162,12 @@ func main() {
 	// Drop privileges before anything else in main's body, so that no input is
 	// processed while the process still holds the privileges it was started
 	// with.
+	//
+	// This is not a permanent drop. Only the effective IDs are lowered; the
+	// saved set-user-ID is left as it was, which is what lets the privilege
+	// manager raise them again for the individual commands configured to need
+	// it. The intent is that elevation happens only where it is asked for, not
+	// that it becomes impossible.
 	if err := dropStartupPrivileges(syscall.Getuid(), syscall.Getgid()); err != nil {
 		os.Exit(reportStartupPrivilegeFailure(err))
 	}
@@ -398,7 +403,7 @@ func run(runID string) error {
 	// Run TOCTOU permission check on directories referenced by the configuration.
 	// The returned validator is reused for per-group checks at execution time so that
 	// group-level paths with %{GROUP_VAR} references are also checked.
-	secValidator, err := runTOCTOUCheck(cfg, runtimeGlobal, runID)
+	secValidator, err := runTOCTOUCheck(cfg, runtimeGlobal, runID, isec.NewDirectoryPermChecker)
 	if err != nil {
 		return err
 	}
@@ -407,60 +412,117 @@ func run(runID string) error {
 	return executeRunner(ctx, cfg, runtimeGlobal, verificationManager, runID, secValidator, redactionConfig)
 }
 
-// resolveStaticAbsPath returns the real path for p when p is an absolute path
-// that contains no unexpanded variable references ("%{").  The second return
-// value is false when the path should be skipped entirely (relative or still
-// contains variables).
-func resolveStaticAbsPath(p string) (string, bool) {
-	if strings.Contains(p, "%{") {
-		return "", false
-	}
-	return isec.ResolveAbsPathForCheck(p)
+// checkCandidate pairs a configured path with what the caller knows about
+// variable references in it. The knowledge has to travel with the path: the
+// security package cannot read it off the text, because expansion has an escape
+// and is not idempotent, so a "%{" in a value may be a literal one an escape
+// produced rather than a reference still waiting to be expanded.
+type checkCandidate struct {
+	path  string
+	state isec.PathExpansionState
 }
 
-// runTOCTOUCheck collects directory paths referenced by the configuration and runs a
-// TOCTOU permission check. Returns the validator used (for reuse in per-group checks)
-// and a PreExecutionError if any violation is detected.
-// Paths containing variable references or relative paths are skipped because they
-// cannot be safely resolved before per-group expansion.
-func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, runID string) (isec.DirectoryPermChecker, error) {
-	filePaths := make([]string, 0, len(runtimeGlobal.ExpandedVerifyFiles))
+// startupExpansionState judges a raw configuration template with the same parser
+// expansion itself uses, so the escape rules are not maintained twice. It must be
+// given the template, never a value expansion has already produced.
+func startupExpansionState(template string) isec.PathExpansionState {
+	if config.HasVariableReference(template) {
+		return isec.PathHasUnexpandedReference
+	}
+	return isec.PathExpanded
+}
+
+// runTOCTOUCheck collects directory paths referenced by the configuration, audits
+// their permissions and returns the checker used, so that per-group checks at
+// execution time reuse it. A violation is reported as a PreExecutionError.
+//
+// Paths that cannot be pointed at a real location yet are left out of the audit:
+// one still holding a variable reference has no location until its group is
+// expanded, and a relative one is not anchored to this process's working
+// directory, so making it absolute here would audit an unrelated tree. Both are
+// counted by reason and reported in the summary logged at the end, so the range
+// the audit actually covers is visible.
+func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, runID string, newPermChecker func() (isec.DirectoryPermChecker, error)) (isec.DirectoryPermChecker, error) {
+	logger := slog.Default()
+
+	candidates := make([]checkCandidate, 0, len(runtimeGlobal.ExpandedVerifyFiles))
 	for _, f := range runtimeGlobal.ExpandedVerifyFiles {
-		// Variables are already expanded so no %{ filter is needed here.
-		if resolved, ok := resolveStaticAbsPath(f); ok {
-			filePaths = append(filePaths, resolved)
-		}
+		// This list is the output of expansion, so it holds no reference by
+		// construction; there is nothing here to judge.
+		candidates = append(candidates, checkCandidate{path: f, state: isec.PathExpanded})
 	}
 	for _, g := range cfg.Groups {
+		// Group-level paths are still raw templates at startup, so each is judged
+		// individually.
 		for _, f := range g.VerifyFiles {
-			if resolved, ok := resolveStaticAbsPath(f); ok {
-				filePaths = append(filePaths, resolved)
-			}
+			candidates = append(candidates, checkCandidate{path: f, state: startupExpansionState(f)})
 		}
 		for _, cmd := range g.Commands {
-			if resolved, ok := resolveStaticAbsPath(cmd.Cmd); ok {
-				filePaths = append(filePaths, resolved)
+			candidates = append(candidates, checkCandidate{path: cmd.Cmd, state: startupExpansionState(cmd.Cmd)})
+		}
+	}
+
+	filePaths := make([]string, 0, len(candidates))
+	var skippedVariableReference, skippedRelative int
+	for _, c := range candidates {
+		switch reason := isec.ClassifyCheckTarget(c.path, c.state); reason {
+		case isec.CheckSkipNone:
+			filePaths = append(filePaths, c.path)
+		case isec.CheckSkipVariableReference:
+			skippedVariableReference++
+		case isec.CheckSkipRelative:
+			skippedRelative++
+		default:
+			// A reason added without a case here would otherwise be counted as
+			// nothing and silently audited or silently dropped. Refuse to start.
+			return nil, &logging.PreExecutionError{
+				Type:      logging.ErrorTypeFileAccess,
+				Message:   fmt.Sprintf("unhandled check skip reason %d for path %s", reason, c.path),
+				Component: string(resource.ComponentVerification),
+				RunID:     runID,
 			}
 		}
 	}
-	secValidator, secErr := isec.NewDirectoryPermChecker()
+
+	secValidator, secErr := newPermChecker()
 	if secErr != nil {
-		// NewDirectoryPermChecker only fails when checker setup itself fails,
-		// which is not recoverable in this startup path.
-		panic(fmt.Sprintf("security validator initialisation failed: %v", secErr))
-	}
-	// Resolve symlinks in the hash directory so ValidateDirectoryPermissions evaluates
-	// the real path rather than rejecting symlink path components.
-	// DefaultHashDirectory is already validated to be absolute; the fallback in
-	// ResolveAbsPathForCheck preserves the original path when EvalSymlinks fails
-	// (e.g. directory not yet created), so the check is still performed.
-	resolvedHashDir, _ := isec.ResolveAbsPathForCheck(cmdcommon.DefaultHashDirectory)
-	toctouDirs := isec.CollectPermissionCheckDirs(filePaths, []string{resolvedHashDir})
-	violations := isec.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default()).Violations
-	if len(violations) > 0 {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
-			Message:   fmt.Sprintf("TOCTOU permission check failed: %d directory violation(s) detected; review directory permissions", len(violations)),
+			Message:   fmt.Sprintf("directory permission checker initialisation failed: %v", secErr),
+			Component: string(resource.ComponentVerification),
+			RunID:     runID,
+		}
+	}
+
+	// The shared resolver walks to the deepest existing ancestor, resolves
+	// symlinks there and appends the remainder lexically, so a directory that does
+	// not exist yet is audited in the tree it will really be created under rather
+	// than in the one its unresolved path appears to name. A path it cannot
+	// resolve is logged at WARN and still handed back in a checkable form, so
+	// nothing leaves the audit without a trace.
+	resolvedFiles, _ := isec.ResolveAllForCheck(filePaths, logger)
+	resolvedHashDirs, _ := isec.ResolveAllForCheck([]string{cmdcommon.DefaultHashDirectory}, logger)
+
+	toctouDirs := isec.CollectPermissionCheckDirs(resolvedFiles, resolvedHashDirs)
+	result := isec.RunTOCTOUPermissionCheck(secValidator, toctouDirs, logger)
+	// Recorded before the verdict, so a run that aborts still says how much it
+	// covered, and on every run rather than only when something was left out: a
+	// missing record cannot be told apart from "nothing was left out". The first
+	// three attributes count directories, since collection expands each path into
+	// all of its ancestors; the last two count configured paths, which is what
+	// exclusion happens to, before that expansion.
+	logger.Info("startup directory permission audit completed",
+		"collected_dirs", len(toctouDirs),
+		"checked_dirs", result.Checked,
+		"skipped_missing_dirs", result.Skipped,
+		"skipped_variable_reference_paths", skippedVariableReference,
+		"skipped_relative_paths", skippedRelative,
+	)
+
+	if len(result.Violations) > 0 {
+		return nil, &logging.PreExecutionError{
+			Type:      logging.ErrorTypeFileAccess,
+			Message:   fmt.Sprintf("TOCTOU permission check failed: %d directory violation(s) detected; review directory permissions", len(result.Violations)),
 			Component: string(resource.ComponentVerification),
 			RunID:     runID,
 		}
