@@ -533,8 +533,8 @@ func getwd() (string, error) { return getwdHook() }
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（[#1028](https://github.com/isseis/go-safe-cmd-runner/pull/1028)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 
 #### ステップ 3-4: `verify` の起動判定を組み替える
