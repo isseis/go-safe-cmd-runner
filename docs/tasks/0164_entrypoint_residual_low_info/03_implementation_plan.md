@@ -40,7 +40,7 @@
 
 | 対象 | 現状 | 変更内容 |
 |---|---|---|
-| `internal/security/toctou.go:21` `ResolveAbsPathForCheck` | 絶対パスでなければ `("", false)`、`EvalSymlinks` 失敗時は入力パスをそのまま返す | 削除し、`ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget` に置き換える |
+| `internal/security/path_resolution.go:15` `ResolveAbsPathForCheck` | 絶対パスでなければ `("", false)`、`EvalSymlinks` 失敗時は入力パスをそのまま返す | 削除し、`ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget` に置き換える |
 | `cmd/runner/main.go:414` `resolveStaticAbsPath` | `%{` を含むパスを弾き、`ResolveAbsPathForCheck` に委譲 | 削除し、`ClassifyCheckTarget` + `ResolvePathForCheck` に置き換える |
 | `cmd/runner/main.go:457` | `ResolveAbsPathForCheck(cmdcommon.DefaultHashDirectory)` | `ResolvePathForCheck` に置き換える |
 | `internal/runner/group_executor.go:357,364` | `ResolveAbsPathForCheck` を直接呼ぶ | `ClassifyCheckTarget` + `ResolvePathForCheck` に置き換える |
@@ -49,7 +49,7 @@
 
 本番コードで `filepath.EvalSymlinks` を呼ぶのは上記4ブロック（`cmd/record/main.go:119,127`・`cmd/verify/main.go:93,132`）のみである。`cmd/runner` の一致はテストファイル6件（`integration_workdir_test.go:333,339`・`integration_cmd_allowed_security_test.go:68,135`・`integration_workdir_unix_test.go:21,24`）とコメント1件（`cmd/runner/main.go:456`）で、テスト側は本タスクの対象外である。
 
-`ResolveAbsPathForCheck` の単体テストは `internal/security/toctou_test.go` に存在しない（`rg -n -e ResolveAbsPathForCheck internal/security/toctou_test.go` が無出力）。02_architecture.md §3.6 の責務表は同テストの更新を挙げているが、実体は無いため、削除ではなく新規追加のみを行う。
+`ResolveAbsPathForCheck` の単体テストは `internal/security/path_resolution_test.go` に存在しない（`rg -n -e ResolveAbsPathForCheck internal/security/path_resolution_test.go` が無出力）。02_architecture.md §3.6 の責務表は同テストの更新を挙げているが、実体は無いため、削除ではなく新規追加のみを行う。
 
 #### 1.3.2 権限チェッカ生成（F-006）
 
@@ -142,7 +142,7 @@ type TOCTOUCheckResult struct {
 func RunTOCTOUPermissionCheck(checker DirectoryPermChecker, dirs []string, logger *slog.Logger) TOCTOUCheckResult
 ```
 
-計数規則を次のとおり定める。現行の `internal/security/toctou.go:89-100` は正常経路に分岐を持たないため、規則を明示しないと実装が割れる。
+計数規則を次のとおり定める。現行の `internal/security/toctou.go:32-63` は正常経路に分岐を持たないため、規則を明示しないと実装が割れる。
 
 - `ValidateDirectoryPermissions` が `nil` を返した場合: `Checked` を 1 増やす。
 - `fs.ErrNotExist` を返した場合: `Skipped` を 1 増やす（`Checked` は増やさない）。
@@ -150,7 +150,7 @@ func RunTOCTOUPermissionCheck(checker DirectoryPermChecker, dirs []string, logge
 
 呼び出し側で件数を数え直す案（収集したディレクトリを個別に `os.Stat` する）は採らない。チェック本体と別に存在判定を行うことになり、両者が食い違い得るためである。これは戻り値の形の変更であって判定規則の変更ではないので、要件定義書がスコープ外とする「TOCTOU 権限チェック処理そのものの挙動変更」には当たらない。
 
-呼び出し元は `cmd/record/main.go:138`・`cmd/verify/main.go:105,150`・`cmd/runner/main.go:460`・`internal/runner/group_executor.go:372` の5箇所、テストは `internal/security/toctou_test.go:106,126,150,160` の4箇所。
+呼び出し元は `cmd/record/main.go:144`・`cmd/verify/main.go:105,153`・`cmd/runner/main.go:459`・`internal/runner/group_executor.go:371` の5箇所、テストは `internal/security/toctou_test.go:28,48,72,82` の4箇所。
 
 #### 1.4.3 起動時チェックのログ属性名（02_architecture.md §6.3）
 
@@ -164,7 +164,7 @@ func RunTOCTOUPermissionCheck(checker DirectoryPermChecker, dirs []string, logge
 | `skipped_variable_reference_paths` | 設定パス | `CheckSkipVariableReference` による除外件数 |
 | `skipped_relative_paths` | 設定パス | `CheckSkipRelative` による除外件数 |
 
-前3つと後2つは数える単位が異なる。`CollectPermissionCheckDirs` は各パスをその祖先すべてに展開して重複を除く（`internal/security/toctou.go:247-291`）ため、`collected_dirs` は設定に書かれたパスの数ではない。一方、除外は展開より前の設定パスに対して起きる。`collected_dirs = checked_dirs + skipped_missing_dirs` は成り立つが、除外件数はこの等式に加わらない。属性名の `_paths` 接尾辞はこの違いを示すためのものであり、利用者向けの説明を書く場合も同じ区別を明記する。
+前3つと後2つは数える単位が異なる。`CollectPermissionCheckDirs` は各パスをその祖先すべてに展開して重複を除く（`internal/security/check_targets.go:77-122`）ため、`collected_dirs` は設定に書かれたパスの数ではない。一方、除外は展開より前の設定パスに対して起きる。`collected_dirs = checked_dirs + skipped_missing_dirs` は成り立つが、除外件数はこの等式に加わらない。属性名の `_paths` 接尾辞はこの違いを示すためのものであり、利用者向けの説明を書く場合も同じ区別を明記する。
 
 メッセージは `"startup TOCTOU permission check completed"` とする。
 
@@ -632,10 +632,10 @@ func getwd() (string, error) { return getwdHook() }
 
 #### ステップ 4-4: 特権降格のコメント追記と `ResolveAbsPathForCheck` の削除
 
-**変更ファイル**: `cmd/runner/main.go`、`internal/security/toctou.go`
+**変更ファイル**: `cmd/runner/main.go`、`internal/security/path_resolution.go`
 
 - [ ] `main()` の `dropStartupPrivileges` 呼び出し（163-168 行）のコメントに、saved-set-uid が変更されないこと、それにより privilege manager が必要時に再昇格できること、したがってこれが恒久降格ではないことを英語で追記する（AC-42）。
-- [ ] `internal/security/toctou.go` から `ResolveAbsPathForCheck` を削除する（この時点で呼び出し元が無くなる）。
+- [ ] `internal/security/path_resolution.go` から `ResolveAbsPathForCheck` を削除する（この時点で呼び出し元が無くなる）。
 
 #### ステップ 4-5: TOCTOU チェック周辺のテストを追加・更新
 
@@ -908,14 +908,14 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 | AC-01 | static | `rg -n -e ResolveAbsPathForCheck -e resolveStaticAbsPath --glob '*.go' .` | 一致0件 |
 | AC-01 | static | `rg -n -e EvalSymlinks --glob '!*_test.go' cmd/record cmd/verify cmd/runner` | 一致0件（本番コードでの解決は共有処理のみが行う。現状は5件＝`cmd/record/main.go` 2件・`cmd/verify/main.go` 2件と、`cmd/runner/main.go:455` のコメント1件。コメントはステップ 4-1 で書き換える） |
 | AC-01 | static | `rg -c -e ResolvePathForCheck -e ResolveAllForCheck cmd/record/main.go cmd/verify/main.go cmd/runner/main.go` | 3ファイルすべてが1件以上で報告される |
-| AC-02 | test | `internal/security/toctou_test.go::TestResolvePathForCheck_PartiallyExistingPath` | — |
-| AC-03 | test | `internal/security/toctou_test.go::TestResolvePathForCheck_SymlinkedAncestorOfMissingPath` | — |
+| AC-02 | test | `internal/security/path_resolution_test.go::TestResolvePathForCheck_PartiallyExistingPath` | — |
+| AC-03 | test | `internal/security/path_resolution_test.go::TestResolvePathForCheck_SymlinkedAncestorOfMissingPath` | — |
 | AC-03 | test | `cmd/record/main_test.go::TestRunTOCTOU_ReportsViolationBehindSymlinkedAncestor` | — |
-| AC-04 | test | `internal/security/toctou_test.go::TestResolveAllForCheck_WarnsOncePerFailure` | — |
-| AC-04 | test | `internal/security/toctou_test.go::TestResolveAllForCheck_NoWarnOnSuccessfulResolution` | — |
+| AC-04 | test | `internal/security/path_resolution_test.go::TestResolveAllForCheck_WarnsOncePerFailure` | — |
+| AC-04 | test | `internal/security/path_resolution_test.go::TestResolveAllForCheck_NoWarnOnSuccessfulResolution` | — |
 | AC-05 | test | `cmd/verify/main_test.go::TestRunFailsClosedReportsInjectedPathResolutionFailure`（権限に依存しない主たる根拠） | — |
 | AC-05 | test | `cmd/verify/main_test.go::TestRunFailsClosedReportsPathResolutionFailure`（実際の権限不足による確認。root ではスキップ） | — |
-| AC-06 | test | `internal/security/toctou_test.go::TestResolvePathForCheck_RelativePathUsesWorkingDirectory` | — |
+| AC-06 | test | `internal/security/path_resolution_test.go::TestResolvePathForCheck_RelativePathUsesWorkingDirectory` | — |
 | AC-06 | static | AC-01 の3行目と同じ（3コマンドが同一関数を使う） | 3ファイルすべてが1件以上 |
 | AC-07 | test | `cmd/record/main_test.go::TestRunTOCTOU_ReportsViolationBehindSymlinkedAncestor`（リンク経由でも同じ形で報告される） | — |
 | AC-07 | test | `cmd/record/main_test.go::TestRunTOCTOU_FailsClosedOnWorldWritableDir`、`cmd/verify/main_test.go::TestRunFailsClosedOnHashDirViolation_AncestorViolation`（リンクを含まない場合。書き換え後も通過） | — |

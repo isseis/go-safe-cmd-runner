@@ -492,7 +492,7 @@ const HashDirPerm os.FileMode = 0o700
 
 | ファイル | 区分 | 責務と変更内容 | 更新が必要な既存テスト |
 |---|---|---|---|
-| `internal/security/toctou.go` | 変更 | `ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget` を追加し、`ResolveAbsPathForCheck` を置き換える（F-001・F-004） | `internal/security/toctou_test.go`（`ResolveAbsPathForCheck` のテスト） |
+| `internal/security/path_resolution.go`・`internal/security/check_targets.go` | 変更 | `ResolvePathForCheck`・`ResolveAllForCheck`・`ClassifyCheckTarget` を追加し、`ResolveAbsPathForCheck` を置き換える（F-001・F-004） | `internal/security/path_resolution_test.go`・`internal/security/check_targets_test.go` |
 | `internal/cmdcommon/common.go` | 変更 | `CreateReadOnlyValidator` を追加し、`CreateValidator` を削除（F-003） | `internal/cmdcommon/common_test.go` |
 | `internal/fileanalysis/file_analysis_store.go` | 変更 | `dirPermission` を `HashDirPerm` として公開し、値を `0o700` に（F-003） | `internal/fileanalysis` のディレクトリ作成・パーミッションのテスト |
 | `internal/filevalidator/validator.go` | 変更 | `HashDirError()` を追加し、`HashDirAvailable()` をその上に再定義（F-003） | なし |
