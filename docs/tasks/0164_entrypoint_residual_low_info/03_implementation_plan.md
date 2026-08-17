@@ -112,7 +112,7 @@
 
 #### 1.4.1 `verify` の識別トークン（02_architecture.md §4.2）
 
-検証を1件も行わずに終わった理由を機械的に判別できるよう、標準エラー出力の各メッセージに `verify-error=<token>` の形で固定トークンを含める。大半は終了コード `3` の原因を分けるためのものだが、最後の1件は終了コード `1` に付く（表の右列と、表の下の実装時の追加を参照）。トークンは以下の6種類とする。
+検証を1件も行わずに終わった理由を機械的に判別できるよう、標準エラー出力の各メッセージに `verify-error=<token>` の形で固定トークンを含める。前半5件は終了コード `3` の原因を分けるためのもので、後半4件は終了コード `1` に付く（表の右列と、表の下の実装時の追加を参照）。トークンは以下の9種類とする。
 
 | トークン | 原因 | 終了コード |
 |---|---|---|
@@ -122,6 +122,11 @@
 | `hash_dir_unreadable` | 存在するが開けない（権限不足など） | 3 |
 | `permission_checker_init_failed` | 権限チェッカの初期化に失敗 | 3 |
 | `hash_dir_not_a_directory` | ハッシュディレクトリのパスがディレクトリでない | 1 |
+| `invalid_arguments` | 検証対象のファイルが指定されていない、または引数の解析に失敗 | 1 |
+| `permission_check_uid_unresolved` | 権限チェックの判定主体となる UID を確定できない | 1 |
+| `validator_init_failed` | バリデータを構築できない（解析ストアを開けないなど） | 1 |
+
+**実装時の追加（レビュー指摘、PR-5）**: 終了コード `1` で終わる残り3件（`invalid_arguments`・`permission_check_uid_unresolved`・`validator_init_failed`）を追加した。いずれも検証を1件も行わずに終わる経路であり、トークンが無ければ「検証を1件も行わずに終わった理由には必ずトークンが付く」という上記の位置づけが成り立たず、呼び出し元は環境の不備を改ざんの検出と読み違える。
 
 **実装時の追加（レビュー指摘、ステップ 3-4）**: `hash_dir_not_a_directory` を6番目として追加した。終了コード `1` は通常の検証失敗（＝改ざんの検出）と同じ値であり、トークンが無ければ呼び出し元は設定ミスとの区別を地の文の照合でしか行えない。トークンを地の文の照合の代わりに置くのが本 PR の目的であるから、終了コードが `1` であることを理由にトークンを省く合理性は無い。したがってトークンは「終了コード 3 の原因を分ける印」ではなく「検証を1件も行わずに終わった理由の印」と位置づける。
 
@@ -575,11 +580,12 @@ func getwd() (string, error) { return getwdHook() }
 - [x] `TestRunFailsClosedReportsInjectedPathResolutionFailure` を追加する（AC-05 の第二経路）。§1.4.4 の `deps.resolvePathForCheck` に、確実に `ErrPathResolution` を返す実装を注入して同じ出力を検証する。前項は root 実行時にスキップされるため、権限に依存しない根拠をもう1本用意する。**実装時の追加**: 注入する実装はエラーと併せて健全な既存ディレクトリを返す。これが「返り値を検査して続行する」実装では通ってしまう配置であり、失敗それ自体を拒否していることの根拠になる。
 - [x] `TestRunExitsWithoutPanicWhenCheckerInitFails` を追加する（AC-24・AC-26）。`d.newPermChecker` に失敗を返す実装を注入し、終了コードが `3`、標準エラー出力に `permission_checker_init_failed` が出ることを検証する。ステップ 2-6 と同じ理由で、`goroutine ` の非包含は補助的な表明である旨をテストの doc コメントに英語で記す。
 - [x] `TestRunUnreadableHashDirExitsUntrustedEnvironment` を追加する。読み取れないハッシュディレクトリで終了コード `3` と `hash_dir_unreadable` トークンが出ること。**実装時の変更**: 実ディレクトリの `chmod 0o000` では到達できないため（`Lstat` は成功し `NewReadOnly` も遅延エラーを持たない。読み取り失敗はファイル単位で表面化する）、また祖先を読めなくする配置は先にパス解決が拒否するため、`HashDirError()` が権限エラーを返す `fakeValidator` を注入する形にした。本番でこの遅延エラーが載るのは、パス解決とバリデータ構築の間にアクセスが失われた場合である。同じ理由づけで `cmd/record` の `TestCheckHashDirWriteSafety_RefusesWhenSiteIsUnusable` も直接呼び出しで検証している。root スキップは不要になった。
-- [x] `TestRunHashDirIsNotADirectoryExitsVerificationFailed` を追加する。ハッシュディレクトリのパスが通常ファイルの場合、終了コードが `1` になること（02_architecture.md §4.3）。**実装時の追加**: 識別トークン（`verify-error=`）が出ないことも表明する。終了コード `1` は通常の失敗であり、トークンは `3` の原因を分けるためのものであるという区別を固定する。
+- [x] `TestRunHashDirIsNotADirectoryExitsVerificationFailed` を追加する。ハッシュディレクトリのパスが通常ファイルの場合、終了コードが `1` になること（02_architecture.md §4.3）。**実装時の変更**: §1.4.1 のとおりトークンは終了コード `3` 専用ではないため、`hash_dir_not_a_directory` が出ることを表明する（当初はトークンが出ないことを表明する予定だった）。あわせて、バリデータ構築前にこの事象が名指しされること（`Error creating validator` が出ないこと）も表明する。
 
 - [x] （レビュー指摘による追加）`TestRunVerifiesThroughSymlinkedHashDir`: ハッシュディレクトリ自身がシンボリックリンクの場合に、拒否されずファイル単位の検証まで進むこと。解決済みパスでバリデータを構築する選択を固定する（コマンドラインのパスを渡す実装では `ErrHashPathNotDir` で終了コード `1` になる）。
 - [x] （レビュー指摘による追加）`TestRunUnsearchableHashDirExitsUntrustedEnvironment`: `0o000` のハッシュディレクトリで終了コード `3` と `hash_dir_unreadable` が出ること。root スキップと権限復帰を入れる。
 - [x] （レビュー指摘による追加）`TestRunAcceptsSearchOnlyHashDir`: `0o100`（検索可・一覧不可）のハッシュディレクトリが拒否されず、ファイル単位の検証まで進むこと。検索権限の確認が一覧権限を要求していないことを固定する対のテストである。root スキップと権限復帰を入れる。
+- [x] （レビュー指摘による追加、PR-5）§1.4.1 で追加した終了コード `1` の3トークンの根拠テスト。`TestRunRequiresAtLeastOneFile` に `invalid_arguments` の表明を足し、`TestRunUnresolvableCheckUIDIdentifiesCause`（`deps.ensurePermissionCheckUID` に失敗を注入）と `TestRunValidatorInitFailureIdentifiesCause`（`deps.validatorFactory` に失敗を注入）を追加する。いずれも検証が1件も始まらないこと（標準出力が空）も表明する。
 - [x] （実装時の追加）ステップ 3-4 の終了コード契約の変更に、既存の2テストを追随させる。`TestRunCreatesNoFilesystemEntries` の不在ケースは `1` から `3` になり、ファイル単位の検証まで届かなくなるため、「バリデータ構築まで到達した」ことの根拠をケースごとに分ける（不在ケースは `hash_dir_not_found` の出力、既存ケースは従来どおり `[1/1] <file>` の出力）。`TestRunResolvesMissingHashDirUnderSymlinkedAncestor` も `3` になるため、表明を「終了コードが `1`」から「原因トークンが `hash_dir_not_found` であって `hash_dir_permission_violation` ではない」へ移す。同テストが本来固定しているのはシンボリックリンクの祖先が違反として報告されないことであり、その観点は保たれる。
 
 **根拠テストの自己検証**: 上記の新規テストについて、対応する実装分岐を一時的に無効化して失敗することを確認し、その旨をコミットメッセージに記す。

@@ -106,6 +106,8 @@ func TestRunRequiresAtLeastOneFile(t *testing.T) {
 
 	require.Equal(t, 1, exitCode)
 	assert.Contains(t, stderr.String(), "at least one file path")
+	assert.Contains(t, stderr.String(), "verify-error="+causeInvalidArguments,
+		"an exit that verified nothing must name its cause, exit code 1 or not")
 }
 
 func TestRunProcessesMultipleFiles(t *testing.T) {
@@ -797,6 +799,52 @@ func TestRunUnsearchableHashDirExitsUntrustedEnvironment(t *testing.T) {
 
 	require.Equal(t, exitUntrustedEnvironment, exitCode, "stderr: %s", stderr.String())
 	assert.Contains(t, stderr.String(), "verify-error="+causeHashDirUnreadable)
+	assert.Empty(t, stdout.String(), "verification must not start")
+}
+
+// TestRunUnresolvableCheckUIDIdentifiesCause covers the run that stops before
+// the hash directory is even looked at, because the UID the permission checks
+// must judge access from could not be established. It exits 1, the same code a
+// file failing its hash comparison produces, so the token is the only thing that
+// keeps a broken SUDO_UID from being read as detected tampering.
+func TestRunUnresolvableCheckUIDIdentifiesCause(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	validator := &fakeValidator{responses: map[string]error{}}
+	d := testDeps(validator)
+	d.newPermChecker = fixedPermChecker(allowAllDirs())
+	uidErr := errors.New("SUDO_UID is not a number")
+	d.ensurePermissionCheckUID = func() error { return uidErr }
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, d, stdout, stderr)
+
+	require.Equal(t, exitVerificationFailed, exitCode, "stderr: %s", stderr.String())
+	assert.Contains(t, stderr.String(), "verify-error="+causePermissionCheckUIDUnresolved)
+	assert.Contains(t, stderr.String(), uidErr.Error())
+	assert.Empty(t, validator.calls, "no file may be verified without a UID to judge access from")
+	assert.Empty(t, stdout.String(), "verification must not start")
+}
+
+// TestRunValidatorInitFailureIdentifiesCause covers the same class one stage
+// later: the hash directory has passed its checks and the validator still cannot
+// be built (filevalidator.NewReadOnly fails on its analysis store or on
+// resolving the directory). Nothing is verified, and the exit code alone does
+// not say so.
+func TestRunValidatorInitFailureIdentifiesCause(t *testing.T) {
+	hashDir := tu.SafeTempDir(t)
+	d := defaultDeps()
+	d.newPermChecker = fixedPermChecker(allowAllDirs())
+	buildErr := errors.New("failed to open analysis store")
+	d.validatorFactory = func(string) (hashValidator, error) { return nil, buildErr }
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, d, stdout, stderr)
+
+	require.Equal(t, exitVerificationFailed, exitCode, "stderr: %s", stderr.String())
+	assert.Contains(t, stderr.String(), "verify-error="+causeValidatorInitFailed)
+	assert.Contains(t, stderr.String(), buildErr.Error())
 	assert.Empty(t, stdout.String(), "verification must not start")
 }
 

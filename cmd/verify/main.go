@@ -37,10 +37,12 @@ const (
 
 // Identification tokens. Every message that ends the run without verifying a
 // single file carries one, spelled "verify-error=<cause>", so a calling script
-// can tell the causes apart without matching on prose -- exit code 3 has four of
-// them, and the misconfiguration below shares exit code 1 with an ordinary
-// verification failure. The user documentation lists them (task 0164 step 4-11);
-// tests refer to these constants rather than repeating the strings.
+// can tell the causes apart without matching on prose. Exit code 3 needs them to
+// separate its causes; the causes that exit with 1 need them just as much, since
+// that code is also what a file failing its hash comparison returns, and an
+// environment problem must not read as detected tampering. The user
+// documentation lists them (task 0164 step 4-11); tests refer to these constants
+// rather than repeating the strings.
 const (
 	// The hash directory or an ancestor is writable by someone else.
 	causeHashDirPermissionViolation = "hash_dir_permission_violation"
@@ -55,8 +57,17 @@ const (
 	causePermissionCheckerInitFailed = "permission_checker_init_failed"
 	// The hash directory path names something other than a directory. Unlike the
 	// causes above this is a misconfiguration, so it exits with
-	// exitVerificationFailed.
+	// exitVerificationFailed, as do the three below.
 	causeHashDirNotADirectory = "hash_dir_not_a_directory"
+	// The command line named no file to verify, or the flag set rejected it.
+	causeInvalidArguments = "invalid_arguments"
+	// The UID the permission checks must judge access from could not be
+	// established, so no check they perform would mean anything.
+	causePermissionCheckUIDUnresolved = "permission_check_uid_unresolved"
+	// The validator could not be built, so no hash record can be read. The hash
+	// directory itself has already been judged usable at this point, so what
+	// remains are environment failures (the analysis store, path resolution).
+	causeValidatorInitFailed = "validator_init_failed"
 )
 
 var errNoFilesProvided = errors.New("at least one file path must be provided as a positional argument or via -file (deprecated)")
@@ -262,7 +273,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 			return exitOK
 		}
 		printUsage(fs, stderr)
-		fmt.Fprintf(stderr, "Error: %v\n", err) //nolint:errcheck
+		fmt.Fprintf(stderr, "Error: %v — no file was verified (verify-error=%s)\n", err, causeInvalidArguments) //nolint:errcheck
 		return exitVerificationFailed
 	}
 
@@ -279,7 +290,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		ensureUID = groupmembership.New().EnsurePermissionCheckUID
 	}
 	if err := ensureUID(); err != nil {
-		fmt.Fprintf(stderr, "Error: %v\n", err) //nolint:errcheck
+		fmt.Fprintf(stderr, "Error: %v — the permission checks cannot be judged from the invoking user; no file was verified (verify-error=%s)\n", err, causePermissionCheckUIDUnresolved) //nolint:errcheck
 		return exitVerificationFailed
 	}
 
@@ -298,7 +309,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	// directory".
 	validator, err := d.validatorFactory(check.resolved)
 	if err != nil {
-		fmt.Fprintf(stderr, "Error creating validator: %v\n", err) //nolint:errcheck
+		fmt.Fprintf(stderr, "Error creating validator: %v — no file was verified (verify-error=%s)\n", err, causeValidatorInitFailed) //nolint:errcheck
 		return exitVerificationFailed
 	}
 	// The hash directory's usability is diagnosed once, here, rather than left to
