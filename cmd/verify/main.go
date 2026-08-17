@@ -70,6 +70,12 @@ type deps struct {
 	// the production construction path.
 	newPermChecker      func() (security.DirectoryPermChecker, error)
 	resolvePathForCheck func(path string) (string, error)
+	// hashDirSearchable is the probe below. It is injected for the same reason the
+	// permission checker is: a test whose subject is something else must not
+	// depend on the state of a real directory on the host -- the default hash
+	// directory exists on a machine where the command has been installed and not
+	// on a CI runner.
+	hashDirSearchable func(dir string) error
 	// nil means use groupmembership.New().EnsurePermissionCheckUID.
 	ensurePermissionCheckUID func() error
 }
@@ -81,6 +87,7 @@ func defaultDeps() deps {
 		},
 		newPermChecker:      security.NewDirectoryPermChecker,
 		resolvePathForCheck: security.ResolvePathForCheck,
+		hashDirSearchable:   hashDirSearchable,
 	}
 }
 
@@ -311,7 +318,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		}
 		return exitUntrustedEnvironment
 	}
-	if err := hashDirSearchable(check.resolved); err != nil {
+	if err := d.hashDirSearchable(check.resolved); err != nil {
 		fmt.Fprintf(stderr, "Error: hash directory %s exists but its records cannot be reached: %v — check its permissions; no file was verified (verify-error=%s)\n", cfg.hashDir, err, causeHashDirUnreadable) //nolint:errcheck
 		return exitUntrustedEnvironment
 	}
