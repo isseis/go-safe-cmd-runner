@@ -93,19 +93,15 @@ func checkDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) bool {
 		// which is not recoverable in this startup path.
 		panic(fmt.Sprintf("security validator initialisation failed: %v", secErr))
 	}
-	// An absent hash directory is an ordinary run now that this command creates
-	// nothing, and filepath.EvalSymlinks cannot resolve one: the unresolved path
-	// it leaves behind makes a symlinked ancestor look like a "not a directory"
-	// violation. The shared helper resolves the deepest existing ancestor
-	// instead, and returns a usable path even when it errors, so the error is
-	// ignored here and the check proceeds.
+	// The hash directory need not exist, which rules out filepath.EvalSymlinks:
+	// it fails on an absent path, and the unresolved path left behind makes a
+	// symlinked ancestor look like a "not a directory" violation. The shared
+	// helper resolves the deepest existing ancestor, and returns a usable path
+	// even when it errors, so the error is ignored here.
 	absHashDir, _ := d.resolvePathForCheck(cfg.hashDir)
 
 	logger := slog.Default()
 	hashDirs := security.CollectTOCTOUCheckDirs(nil, nil, absHashDir)
-	// The ERROR below is in addition to the WARN RunTOCTOUPermissionCheck already
-	// logs, so the level distinguishes a violation that stopped the run from one
-	// that did not.
 	if violations := security.RunTOCTOUPermissionCheck(secValidator, hashDirs, logger).Violations; len(violations) > 0 {
 		// The remediation names neither a directory nor a command: v.Path is the
 		// directory that was checked, not necessarily the one at fault (the checker
@@ -113,6 +109,9 @@ func checkDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) bool {
 		// needing chmod go-w, chown or chmod g-w, which cannot be told apart without
 		// matching on the error text. The violation attribute carries both.
 		const remediation = "fix the permissions and ownership of the directory named in the violation, or move the hash directory to a properly permissioned path, then re-run verify"
+		// ERROR, on top of the WARN RunTOCTOUPermissionCheck already logged: the
+		// level is what separates a violation that stopped the run from one that
+		// did not.
 		for _, v := range violations {
 			logger.Error(
 				"hash directory permission violation detected — refusing to verify",
@@ -151,7 +150,6 @@ func checkDirPermissions(cfg *verifyConfig, d deps, stderr io.Writer) bool {
 			targetDirs = append(targetDirs, dir)
 		}
 	}
-	// Violations on the target files are warnings only; the run continues.
 	security.RunTOCTOUPermissionCheck(secValidator, targetDirs, logger)
 	return true
 }
