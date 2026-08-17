@@ -601,7 +601,7 @@ func getwd() (string, error) { return getwdHook() }
 **判定理由**: `mkplan.md` step 8 のパネルモード・トリガのうち「セキュリティゲート/移行」に該当する。不在のハッシュディレクトリが終了コード `3` になる契約変更は「終了コード 3 = 改ざんの可能性」として警報を上げている監視ルールに影響し、CHANGELOG の移行注記を伴うため。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（[#1029](https://github.com/isseis/go-safe-cmd-runner/pull/1029)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
