@@ -737,8 +737,85 @@ func TestRunHashDirIsNotADirectoryExitsVerificationFailed(t *testing.T) {
 	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, defaultDeps(), stdout, stderr)
 
 	require.Equal(t, exitVerificationFailed, exitCode, "stderr: %s", stderr.String())
-	assert.Contains(t, stderr.String(), "is not a directory")
-	assert.NotContains(t, stderr.String(), "verify-error=",
-		"an ordinary failure carries no untrusted-environment token")
+	assert.Contains(t, stderr.String(), "verify-error="+causeHashDirNotADirectory,
+		"the cause must be machine-readable even though the exit code is the ordinary one")
+	assert.NotContains(t, stderr.String(), "Error creating validator",
+		"the case must be named before the validator is built, whose wording for it says nothing about -hash-dir")
 	assert.Empty(t, stdout.String(), "verification must not start")
+}
+
+// TestRunVerifiesThroughSymlinkedHashDir pins that a hash directory reached
+// through a symlink still verifies. It is the positive counterpart to the
+// not-a-directory case above: filevalidator.NewReadOnly stats the path without
+// following it, so a symlink would be rejected as "hash path is not a directory"
+// if run built the validator on the command-line path instead of the resolved
+// one.
+func TestRunVerifiesThroughSymlinkedHashDir(t *testing.T) {
+	root := tu.SafeTempDir(t)
+	realDir := filepath.Join(root, "real")
+	require.NoError(t, os.Mkdir(realDir, 0o700))
+	link := filepath.Join(root, "link")
+	require.NoError(t, os.Symlink(realDir, link))
+
+	targetFile := filepath.Join(tu.SafeTempDir(t), "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-hash-dir", link, targetFile}, defaultDeps(), stdout, stderr)
+
+	// No hash record exists, so the file itself fails: what matters is that the
+	// run got that far rather than refusing the directory.
+	require.Equal(t, exitVerificationFailed, exitCode, "stderr: %s", stderr.String())
+	assert.Contains(t, stdout.String(), "[1/1] "+targetFile, "the run must have reached per-file verification")
+	assert.NotContains(t, stderr.String(), "verify-error=", "the hash directory itself must be accepted")
+}
+
+// TestRunUnsearchableHashDirExitsUntrustedEnvironment covers the hash directory
+// that exists, is a directory, and still cannot yield a record: without search
+// permission every read inside it fails. filevalidator.NewReadOnly does not
+// notice — it only stats the directory, which needs permission on the parent —
+// so without the explicit probe each file would be reported as FAILED, reading
+// exactly like the tampering this command exists to detect.
+func TestRunUnsearchableHashDirExitsUntrustedEnvironment(t *testing.T) {
+	if syscall.Geteuid() == 0 {
+		t.Skip("skipping: root is not denied by chmod 0o000")
+	}
+	hashDir := tu.SafeTempDir(t)
+	require.NoError(t, os.Chmod(hashDir, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(hashDir, 0o700) })
+	targetFile := filepath.Join(tu.SafeTempDir(t), "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+
+	require.Equal(t, exitUntrustedEnvironment, exitCode, "stderr: %s", stderr.String())
+	assert.Contains(t, stderr.String(), "verify-error="+causeHashDirUnreadable)
+	assert.Empty(t, stdout.String(), "verification must not start")
+}
+
+// TestRunAcceptsSearchOnlyHashDir is the boundary case of the probe above: a
+// directory that cannot be listed but can be searched is usable, because a
+// record is opened by name. A probe that opened the directory itself would
+// demand read permission and refuse this configuration.
+func TestRunAcceptsSearchOnlyHashDir(t *testing.T) {
+	if syscall.Geteuid() == 0 {
+		t.Skip("skipping: root may read a directory regardless of its mode")
+	}
+	hashDir := tu.SafeTempDir(t)
+	require.NoError(t, os.Chmod(hashDir, 0o100))
+	t.Cleanup(func() { _ = os.Chmod(hashDir, 0o700) })
+	targetFile := filepath.Join(tu.SafeTempDir(t), "target.txt")
+	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, defaultDeps(), stdout, stderr)
+
+	require.Equal(t, exitVerificationFailed, exitCode, "stderr: %s", stderr.String())
+	assert.NotContains(t, stderr.String(), "verify-error="+causeHashDirUnreadable,
+		"a searchable directory must not be refused for being unlistable")
+	assert.Contains(t, stdout.String(), "[1/1] "+targetFile, "the run must have reached per-file verification")
 }
