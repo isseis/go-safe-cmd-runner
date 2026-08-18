@@ -75,13 +75,21 @@ var webhookHostLabelRE = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-
 // single definition of "valid webhook host" shared by compileWebhookHostPattern
 // and normalizeSlackAllowedHost (internal/runner/bootstrap), so the two callers
 // cannot drift into disagreeing about what a valid host looks like.
+//
+// An IPv6 zone identifier ("fe80::1%eth0") is rejected rather than accepted or
+// stripped. A URL carries the zone percent-encoded ("[fe80::1%25eth0]") while
+// the configured value carries it bare, so the two forms are different strings:
+// a host-comparison caller would decode and accept the URL while the pattern
+// built from the bare form would not match the encoded text, leaving the
+// webhook path - the credential - unmasked. A link-local address with a zone is
+// not a plausible webhook host, so rejecting it costs nothing.
 func ValidateWebhookHost(host string) error {
 	if strings.Contains(host, ":") {
 		// The only way a bare (unbracketed) host carries a colon is an IPv6
 		// literal; anything else with a colon (host:port, a scheme) is rejected
 		// by ParseAddr failing.
 		addr, err := netip.ParseAddr(host)
-		if err != nil || !addr.Is6() {
+		if err != nil || !addr.Is6() || addr.Zone() != "" {
 			return fmt.Errorf("%w (got %q)", ErrInvalidWebhookHost, host)
 		}
 		return nil

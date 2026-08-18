@@ -701,7 +701,9 @@ func TestCompileWebhookHostPattern_RejectsMalformedHost(t *testing.T) {
 		".*",
 		"hooks.slack.com:443",
 		"127.0.0.1:8080",
-		"a:b:c", // two colons but not a valid IPv6 literal
+		"a:b:c",          // two colons but not a valid IPv6 literal
+		"fe80::1%eth0",   // zone identifier: a URL spells it percent-encoded
+		"fe80::1%25eth0", // and the encoded spelling is not a bare host either
 	}
 
 	for _, host := range hosts {

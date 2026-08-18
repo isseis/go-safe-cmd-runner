@@ -123,6 +123,19 @@ func TestNormalizeSlackAllowedHost(t *testing.T) {
 			wantHost: "192.0.2.1",
 			wantErr:  false,
 		},
+		{
+			// url.Hostname() percent-decodes the zone, so accepting this would
+			// hand the redaction pattern "fe80::1%eth0" while the raw log text
+			// carries "[fe80::1%25eth0]" - the webhook path would stay in clear.
+			name:    "IPv6 literal with a percent-encoded zone identifier rejected",
+			input:   "[fe80::1%25eth0]",
+			wantErr: true,
+		},
+		{
+			name:    "IPv6 literal with a bare zone identifier rejected",
+			input:   "[fe80::1%eth0]",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
