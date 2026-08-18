@@ -16,14 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestE2E_PreExecutionError_TOMLParseError tests that TOML parse errors
-// result in HandlePreExecutionError being called (which outputs to stderr/stdout).
-// This verifies the complete error path from main.go through to the user-visible output.
-//
-// Note: We use dry-run mode to skip hash verification, allowing us to test the TOML
-// parsing error path specifically.
+// TestE2E_PreExecutionError_TOMLParseError verifies that a TOML parse error
+// reaches the user through HandlePreExecutionError. Dry-run mode skips hash
+// verification, so the parse error is what fails the run.
 func TestE2E_PreExecutionError_TOMLParseError(t *testing.T) {
-	// Create a config file with invalid TOML syntax
 	tmpDir := tu.SafeTempDir(t)
 	configFile := filepath.Join(tmpDir, "invalid.toml")
 
@@ -39,8 +35,6 @@ cmd = "/bin/echo"
 	err := os.WriteFile(configFile, []byte(invalidTOML), 0o644)
 	require.NoError(t, err)
 
-	// Run the runner with the invalid config in dry-run mode
-	// Dry-run mode skips hash verification, allowing us to test TOML parsing errors
 	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run")
 	cmd.Dir = "."
 
@@ -50,34 +44,26 @@ cmd = "/bin/echo"
 
 	err = cmd.Run()
 
-	// Command should fail with exit code 1
 	require.Error(t, err, "runner should fail with invalid TOML")
 
 	exitErr, ok := err.(*exec.ExitError)
 	require.True(t, ok, "error should be ExitError")
 	assert.Equal(t, 1, exitErr.ExitCode(), "exit code should be 1")
 
-	// Verify stderr contains error information from HandlePreExecutionError
 	stderrOutput := stderr.String()
 	assert.Contains(t, stderrOutput, "Error:", "stderr should contain 'Error:' prefix")
 	assert.Contains(t, stderrOutput, "config_parsing_failed", "stderr should indicate config parsing failure")
 
-	// Verify stdout contains RUN_SUMMARY (from HandlePreExecutionError)
 	stdoutOutput := stdout.String()
 	assert.Contains(t, stdoutOutput, "RUN_SUMMARY", "stdout should contain RUN_SUMMARY")
 	assert.Contains(t, stdoutOutput, "status=pre_execution_error", "stdout should indicate pre_execution_error status")
 }
 
-// TestE2E_PreExecutionError_HashNotFound tests that hash file not found errors
-// result in HandlePreExecutionError being called.
-// This verifies the complete error path from main.go through to the user-visible output.
-//
-// Note: The runner uses cmdcommon.DefaultHashDirectory (a fixed path like /usr/local/etc/...)
-// for hash verification. This test creates a config file in a temp directory, which won't
-// have a corresponding hash file in the default hash directory, causing a "hash file not found" error.
+// TestE2E_PreExecutionError_HashNotFound verifies that a failed hash
+// verification reaches the user through HandlePreExecutionError. Hashes are
+// looked up in cmdcommon.DefaultHashDirectory, so a config in a temp directory
+// has none and verification fails.
 func TestE2E_PreExecutionError_HashNotFound(t *testing.T) {
-	// Create a valid config file in a temp directory
-	// This file won't have a corresponding hash in the default hash directory
 	tmpDir := tu.SafeTempDir(t)
 	configFile := filepath.Join(tmpDir, "config.toml")
 
@@ -93,9 +79,7 @@ args = ["hello"]
 	err := os.WriteFile(configFile, []byte(validTOML), 0o644)
 	require.NoError(t, err)
 
-	// Run the runner in non-dry-run mode (requires hash verification)
-	// Since the config file is in a temp directory, there's no hash file for it
-	// in the default hash directory, causing verification to fail
+	// No -dry-run: hash verification only runs on a real execution.
 	cmd := exec.Command("go", "run", ".", "-config", configFile)
 	cmd.Dir = "."
 
@@ -105,33 +89,29 @@ args = ["hello"]
 
 	err = cmd.Run()
 
-	// Command should fail with exit code 1 due to hash file not found
 	require.Error(t, err, "runner should fail when config file hash is not found")
 
 	exitErr, ok := err.(*exec.ExitError)
 	require.True(t, ok, "error should be ExitError")
 	assert.Equal(t, 1, exitErr.ExitCode(), "exit code should be 1")
 
-	// Verify stderr contains error information from HandlePreExecutionError
 	stderrOutput := stderr.String()
 	assert.Contains(t, stderrOutput, "Error:", "stderr should contain 'Error:' prefix")
-	// The error could be file_access_failed (hash not found) or similar
+	// The wording depends on which verification step rejects it first.
 	assert.True(t,
 		strings.Contains(stderrOutput, "file_access_failed") ||
 			strings.Contains(stderrOutput, "verification") ||
 			strings.Contains(stderrOutput, "hash"),
 		"stderr should indicate file access or verification failure: %s", stderrOutput)
 
-	// Verify stdout contains RUN_SUMMARY (from HandlePreExecutionError)
 	stdoutOutput := stdout.String()
 	assert.Contains(t, stdoutOutput, "RUN_SUMMARY", "stdout should contain RUN_SUMMARY")
 	assert.Contains(t, stdoutOutput, "status=pre_execution_error", "stdout should indicate pre_execution_error status")
 }
 
-// TestE2E_PreExecutionError_MissingConfigFile tests that missing config file errors
-// result in HandlePreExecutionError being called.
+// TestE2E_PreExecutionError_MissingConfigFile verifies that omitting -config
+// reaches the user through HandlePreExecutionError.
 func TestE2E_PreExecutionError_MissingConfigFile(t *testing.T) {
-	// Run the runner without -config flag
 	cmd := exec.Command("go", "run", ".")
 	cmd.Dir = "."
 
@@ -141,28 +121,24 @@ func TestE2E_PreExecutionError_MissingConfigFile(t *testing.T) {
 
 	err := cmd.Run()
 
-	// Command should fail with exit code 1
 	require.Error(t, err, "runner should fail without config file")
 
 	exitErr, ok := err.(*exec.ExitError)
 	require.True(t, ok, "error should be ExitError")
 	assert.Equal(t, 1, exitErr.ExitCode(), "exit code should be 1")
 
-	// Verify stderr contains error information from HandlePreExecutionError
 	stderrOutput := stderr.String()
 	assert.Contains(t, stderrOutput, "Error:", "stderr should contain 'Error:' prefix")
 	assert.Contains(t, stderrOutput, "required_argument_missing", "stderr should indicate required argument missing")
 
-	// Verify stdout contains RUN_SUMMARY (from HandlePreExecutionError)
 	stdoutOutput := stdout.String()
 	assert.Contains(t, stdoutOutput, "RUN_SUMMARY", "stdout should contain RUN_SUMMARY")
 	assert.Contains(t, stdoutOutput, "status=pre_execution_error", "stdout should indicate pre_execution_error status")
 }
 
-// TestE2E_PreExecutionError_NonExistentConfigFile tests that non-existent config file errors
-// result in HandlePreExecutionError being called.
+// TestE2E_PreExecutionError_NonExistentConfigFile verifies that a config path
+// that does not exist reaches the user through HandlePreExecutionError.
 func TestE2E_PreExecutionError_NonExistentConfigFile(t *testing.T) {
-	// Run the runner with a non-existent config file
 	cmd := exec.Command("go", "run", ".", "-config", "/nonexistent/path/to/config.toml")
 	cmd.Dir = "."
 
@@ -172,23 +148,20 @@ func TestE2E_PreExecutionError_NonExistentConfigFile(t *testing.T) {
 
 	err := cmd.Run()
 
-	// Command should fail with exit code 1
 	require.Error(t, err, "runner should fail with non-existent config file")
 
 	exitErr, ok := err.(*exec.ExitError)
 	require.True(t, ok, "error should be ExitError")
 	assert.Equal(t, 1, exitErr.ExitCode(), "exit code should be 1")
 
-	// Verify stderr contains error information from HandlePreExecutionError
 	stderrOutput := stderr.String()
 	assert.Contains(t, stderrOutput, "Error:", "stderr should contain 'Error:' prefix")
-	// Could be file_access_failed or similar
+	// The wording depends on which verification step rejects it first.
 	assert.True(t,
 		strings.Contains(stderrOutput, "file_access_failed") ||
 			strings.Contains(stderrOutput, "verification"),
 		"stderr should indicate file access failure: %s", stderrOutput)
 
-	// Verify stdout contains RUN_SUMMARY (from HandlePreExecutionError)
 	stdoutOutput := stdout.String()
 	assert.Contains(t, stdoutOutput, "RUN_SUMMARY", "stdout should contain RUN_SUMMARY")
 	assert.Contains(t, stdoutOutput, "status=pre_execution_error", "stdout should indicate pre_execution_error status")
@@ -281,20 +254,16 @@ func TestE2E_PreExecutionError_InvalidRunIDPathTraversal(t *testing.T) {
 	stderrOutput := stderr.String()
 
 	// The filesystem assertions come first: they are the ones that fail if the
-	// boundary check is removed, and a later helper that aborts the test must
-	// not be able to skip them.
-	//
-	// The log directory must be untouched, because the rejection happens before
-	// logging is set up at all.
+	// boundary check is removed, so no earlier helper may abort the test before
+	// them. The rejection happens before logging is set up, so nothing is written.
 	entries, err := os.ReadDir(logDir)
 	require.NoError(t, err)
 	assert.Empty(t, entries, "no file should be created in the log directory")
 
-	// Without the boundary check, the constructed path would be
-	// filepath.Join(logDir, "<hostname>_<timestamp>_../../etc/cron.d/evil.json").
-	// filepath.Join collapses "<hostname>_<timestamp>_.." against the following
-	// "..", so the escape lands at <logDir>/etc/cron.d/evil.json — inside the
-	// log directory, which is why this checks logDir itself rather than its parent.
+	// Without the boundary check the path is filepath.Join(logDir,
+	// "<hostname>_<timestamp>_../../etc/cron.d/evil.json"); Join collapses the
+	// "<hostname>_<timestamp>_.." segment against the following "..", so the
+	// escape lands inside logDir — hence checking logDir, not its parent.
 	_, err = os.Stat(filepath.Join(logDir, "etc"))
 	assert.True(t, os.IsNotExist(err), "no 'etc' entry should be created in the log directory")
 
@@ -303,8 +272,8 @@ func TestE2E_PreExecutionError_InvalidRunIDPathTraversal(t *testing.T) {
 	assert.Contains(t, stderrOutput, logging.RunIDFormatDescription(),
 		"stderr should tell the user which format is accepted")
 
-	// The console log stream is stderr, so stderr is where the rejected value
-	// would surface; stdout is checked too because RUN_SUMMARY goes there.
+	// The rejected value would surface on stderr (the console log stream); stdout
+	// is checked too because RUN_SUMMARY goes there.
 	assert.NotContains(t, stderrOutput, maliciousRunID, "stderr must not echo the rejected value")
 	assert.NotContains(t, stdoutOutput, maliciousRunID, "stdout must not echo the rejected value")
 
@@ -361,20 +330,15 @@ func TestE2E_PreExecutionError_InvalidRunIDTooLong(t *testing.T) {
 		"stderr should identify the error as an invalid run ID")
 }
 
-// slackEnvVarPrefix is the prefix every Slack-related environment variable the
-// runner reads currently carries (the webhook URLs, the send and flush timeouts,
-// and the sync switch, all declared in internal/logging). Stripping by prefix
-// rather than by an enumerated list is deliberate: it also removes a Slack
-// variable added later, which an enumerated list would silently miss. A future
-// Slack variable named outside this prefix would defeat it -- keep new ones
-// under GSCR_SLACK_.
+// slackEnvVarPrefix covers every Slack variable the runner reads (declared in
+// internal/logging). Stripping by prefix rather than by an enumerated list also
+// removes variables added later, so keep new ones under this prefix.
 const slackEnvVarPrefix = "GSCR_SLACK_"
 
-// envWithoutSlackVars returns the current environment with every Slack-related
-// variable removed. Tests that depend on a specific Slack configuration must
-// start from this rather than os.Environ(), because a developer or CI machine
-// that exports GSCR_SLACK_WEBHOOK_URL_ERROR would otherwise make the validation
-// under test succeed and send the run down a different failure path.
+// envWithoutSlackVars returns the environment with every Slack variable removed.
+// Tests that set up a specific Slack configuration must start from this: a
+// machine that exports GSCR_SLACK_WEBHOOK_URL_ERROR would otherwise satisfy the
+// validation under test and send the run down a different failure path.
 func envWithoutSlackVars() []string {
 	env := os.Environ()
 	kept := make([]string, 0, len(env))
@@ -388,23 +352,19 @@ func envWithoutSlackVars() []string {
 }
 
 // TestE2E_SlackWebhookEnvErrorPrintedOnce verifies that the Slack webhook
-// configuration error reaches the user exactly once as human-readable text, and
-// that folding the direct print into the pre-execution error path did not lose
-// the remediation instructions or change the exit code.
+// configuration error reaches the user exactly once as human-readable text,
+// with its remediation instructions intact.
 //
-// The message also appears a second time inside the structured log line that
-// the same path emits (as the value of the error_message attribute), so the
-// count is taken over the lines that do not carry that attribute key. That
-// remaining duplication is tracked in
-// https://github.com/isseis/go-safe-cmd-runner/issues/1020; when it is fixed the
-// filter becomes a no-op rather than wrong. The filter must key on the
-// attribute name and not on "level=ERROR": this output is produced by slog's
-// built-in default handler, before SetupLogging installs a TextHandler, and
-// that handler writes the level as a bare word with no "level=" prefix.
+// The same message also appears as the error_message attribute of a structured
+// log line, so the count is taken over the lines without that attribute key
+// (duplication tracked in
+// https://github.com/isseis/go-safe-cmd-runner/issues/1020). The filter cannot
+// key on "level=ERROR" instead: this line comes from slog's default handler,
+// before SetupLogging installs a TextHandler, and it writes the level as a bare
+// word.
 func TestE2E_SlackWebhookEnvErrorPrintedOnce(t *testing.T) {
-	// The config file and -dry-run are here only for parity with the sibling
-	// tests: ValidateSlackWebhookEnv runs before the config path is even looked
-	// at, so this run fails before anything reads them.
+	// ValidateSlackWebhookEnv runs before the config path is read; the config
+	// file and -dry-run are here only for parity with the sibling tests.
 	configFile := setupTempConfig(t, validRunIDTestConfig)
 
 	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run")
@@ -417,9 +377,8 @@ func TestE2E_SlackWebhookEnvErrorPrintedOnce(t *testing.T) {
 
 	err := cmd.Run()
 	require.Error(t, err, "runner should fail when only the success webhook is set")
-	// Checked first: if a stray Slack variable leaked into the child, the run
-	// fails somewhere else entirely and the assertions below would be reading
-	// output from a different code path.
+	// Checked first: a stray Slack variable in the child would fail the run
+	// elsewhere, leaving the assertions below reading another path's output.
 	requireExitCode(t, cmd, 1)
 
 	stderrOutput := stderr.String()
@@ -434,9 +393,8 @@ func TestE2E_SlackWebhookEnvErrorPrintedOnce(t *testing.T) {
 		}
 		humanLines = append(humanLines, line)
 	}
-	// Self-check on the filter: if it stopped matching the structured line, the
-	// count below would silently include it and this test would no longer be
-	// measuring the human-readable block.
+	// Self-check: if the filter stopped matching the structured line, the count
+	// below would include it and no longer measure the human-readable block.
 	require.NotEqual(t, len(allLines), len(humanLines),
 		"expected at least one structured log line carrying %q, got:\n%s", structuredAttrKey, stderrOutput)
 
@@ -447,12 +405,10 @@ func TestE2E_SlackWebhookEnvErrorPrintedOnce(t *testing.T) {
 	assert.Equal(t, 1, occurrences,
 		"the guidance should reach the user exactly once outside the structured log line, got:\n%s", stderrOutput)
 
-	// The remediation lines are checked over the filtered block for the same
-	// reason as the count: the structured log line carries the whole message as
-	// an escaped attribute value, so asserting over the raw stderr would still
-	// pass if the human-readable block were truncated to its first line - which
-	// is exactly the loss this assertion exists to catch. More than one line is
-	// checked because the guidance is multi-line.
+	// Also checked over the filtered block: the structured line carries the whole
+	// message as an attribute value, so asserting over raw stderr would pass even
+	// if the human-readable block were truncated to its first line — the very
+	// loss these assertions exist to catch.
 	humanOutput := strings.Join(humanLines, "\n")
 	assert.Contains(t, humanOutput, "  export "+logging.SlackWebhookURLErrorEnvVar+`="<your_webhook_url>"`,
 		"the human-readable block should keep the remediation command")
