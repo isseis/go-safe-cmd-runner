@@ -1,17 +1,28 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"flag"
+	"fmt"
+	"io/fs"
+	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
@@ -425,4 +436,295 @@ func TestResolveRunID(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, bootstrapID, got)
 	})
+}
+
+// The startup directory permission audit records its summary through the
+// default slog logger, which is process-wide state. Every test below replaces
+// it, so none of them may call t.Parallel.
+
+// captureLogs redirects the default slog logger into a buffer for the duration
+// of the test and returns the buffer.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	buf := &bytes.Buffer{}
+	original := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(original) })
+	return buf
+}
+
+// fakeDirPermChecker reports a violation for exactly the directories named in
+// violating and passes everything else, so a test can fix the verdict without
+// depending on the permissions of the host's real directories.
+type fakeDirPermChecker struct {
+	violating map[string]struct{}
+}
+
+func (f *fakeDirPermChecker) ValidateDirectoryPermissions(path string) error {
+	if _, ok := f.violating[path]; ok {
+		return errFakeDirViolation
+	}
+	return nil
+}
+
+var (
+	errFakeDirViolation   = errors.New("fake directory permission violation")
+	errCheckerUnavailable = errors.New("checker construction failed")
+)
+
+// countingPermChecker answers from the file system -- absent for a directory
+// that does not exist, sound for one that does -- and keeps its own tally of
+// each answer, so a test can state the expected coverage figures without
+// depending on how deep the host's temporary directories sit or on what the
+// default hash directory's ancestors look like.
+type countingPermChecker struct {
+	asked    []string
+	existing int
+	missing  int
+}
+
+func (c *countingPermChecker) ValidateDirectoryPermissions(path string) error {
+	c.asked = append(c.asked, path)
+	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
+		c.missing++
+		return fmt.Errorf("%s: %w", path, fs.ErrNotExist)
+	}
+	c.existing++
+	return nil
+}
+
+// auditSummaryMessage is the message the startup audit logs its coverage under.
+const auditSummaryMessage = "startup directory permission audit completed"
+
+// auditAttr returns the value logged for key in the audit summary line. Whole
+// key=value tokens are matched, so a lookup is not satisfied by a longer value
+// that merely starts with the expected one.
+func auditAttr(t *testing.T, logs, key string) string {
+	t.Helper()
+	for line := range strings.SplitSeq(logs, "\n") {
+		if !strings.Contains(line, auditSummaryMessage) {
+			continue
+		}
+		for field := range strings.FieldsSeq(line) {
+			if name, value, ok := strings.Cut(field, "="); ok && name == key {
+				return value
+			}
+		}
+		t.Fatalf("audit summary line carries no %s attribute: %s", key, line)
+	}
+	t.Fatalf("no audit summary line was logged; got: %s", logs)
+	return ""
+}
+
+// permCheckerReturning adapts a ready-made checker to the constructor seam
+// runTOCTOUCheck takes, so tests inject through the same parameter production
+// passes security.NewDirectoryPermChecker to.
+func permCheckerReturning(checker isec.DirectoryPermChecker) func() (isec.DirectoryPermChecker, error) {
+	return func() (isec.DirectoryPermChecker, error) { return checker, nil }
+}
+
+// allowAllDirs returns a checker that reports no violation anywhere.
+func allowAllDirs() isec.DirectoryPermChecker {
+	return &fakeDirPermChecker{}
+}
+
+// auditConfig builds a configuration whose group-level verify_files are the
+// given raw templates. They are deliberately left unexpanded: the startup audit
+// is what decides whether each one can be resolved yet.
+func auditConfig(groupVerifyFiles ...string) *runnertypes.ConfigSpec {
+	return &runnertypes.ConfigSpec{
+		Groups: []runnertypes.GroupSpec{{
+			Name:        "audited",
+			VerifyFiles: groupVerifyFiles,
+		}},
+	}
+}
+
+// TestStartupDirPermAudit_LogsZeroSkipCounts verifies that a run that leaves
+// nothing out still records both skip counts. Recording only when something was
+// excluded would make "nothing excluded" indistinguishable from "the audit never
+// got as far as reporting".
+func TestStartupDirPermAudit_LogsZeroSkipCounts(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	logs := captureLogs(t)
+
+	cfg := auditConfig(filepath.Join(dir, "group-verify.txt"))
+	cfg.Groups[0].Commands = []runnertypes.CommandSpec{{Name: "c", Cmd: filepath.Join(dir, "tool")}}
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		ExpandedVerifyFiles: []string{filepath.Join(dir, "global-verify.txt")},
+	}
+
+	_, err := runTOCTOUCheck(cfg, runtimeGlobal, "test-run", permCheckerReturning(allowAllDirs()))
+	require.NoError(t, err)
+
+	out := logs.String()
+	assert.Equal(t, "0", auditAttr(t, out, "skipped_variable_reference_paths"))
+	assert.Equal(t, "0", auditAttr(t, out, "skipped_relative_paths"))
+}
+
+// TestStartupDirPermAudit_LogsCoverageCounts verifies the three directory counts
+// against a checker that answers from the file system and tallies its own
+// answers. Reporting "no violations" says nothing about how much of what was
+// collected the audit actually reached, which is the gap these three close.
+func TestStartupDirPermAudit_LogsCoverageCounts(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	logs := captureLogs(t)
+
+	// The two tallies have to differ, or reporting checked as skipped and skipped
+	// as checked would still satisfy the assertions below. How many directories
+	// exist above a temporary directory -- and how much of the default hash
+	// directory is installed -- is the host's choice, so measure it rather than
+	// assume it: a probe run over a single existing path counts exactly the
+	// existing directories this host contributes.
+	probe := &countingPermChecker{}
+	_, err := runTOCTOUCheck(auditConfig(filepath.Join(dir, "present.txt")),
+		&runnertypes.RuntimeGlobal{}, "test-run", permCheckerReturning(probe))
+	require.NoError(t, err)
+	require.NotZero(t, probe.existing, "the audit must reach at least one existing directory")
+	logs.Reset()
+
+	// One path under a directory that exists and one under a chain of absent
+	// directories longer than everything the probe found, so missing exceeds
+	// existing on any host and transposing the two fails this test.
+	absent := filepath.Join(dir, "absent")
+	for range probe.existing + 1 {
+		absent = filepath.Join(absent, "deeper")
+	}
+	cfg := auditConfig(
+		filepath.Join(dir, "present.txt"),
+		filepath.Join(absent, "still-absent.txt"),
+	)
+	checker := &countingPermChecker{}
+
+	_, err = runTOCTOUCheck(cfg, &runnertypes.RuntimeGlobal{}, "test-run", permCheckerReturning(checker))
+	require.NoError(t, err)
+
+	require.NotZero(t, checker.existing, "the tally must distinguish two non-empty groups")
+	require.Greater(t, checker.missing, checker.existing,
+		"equal tallies would let checked and skipped be reported the wrong way round")
+
+	out := logs.String()
+	assert.Equal(t, strconv.Itoa(len(checker.asked)), auditAttr(t, out, "collected_dirs"))
+	assert.Equal(t, strconv.Itoa(checker.existing), auditAttr(t, out, "checked_dirs"))
+	assert.Equal(t, strconv.Itoa(checker.missing), auditAttr(t, out, "skipped_missing_dirs"))
+}
+
+// TestStartupDirPermAudit_LogsSkipBreakdownByReason verifies that the two
+// exclusion reasons are counted separately, so a reader can tell a path awaiting
+// group expansion from one that was never anchored to anything.
+func TestStartupDirPermAudit_LogsSkipBreakdownByReason(t *testing.T) {
+	logs := captureLogs(t)
+
+	cfg := auditConfig("/opt/%{TOOLCHAIN}/bin/cc", "relative/tool.sh")
+	runtimeGlobal := &runnertypes.RuntimeGlobal{}
+
+	_, err := runTOCTOUCheck(cfg, runtimeGlobal, "test-run", permCheckerReturning(allowAllDirs()))
+	require.NoError(t, err)
+
+	out := logs.String()
+	assert.Equal(t, "1", auditAttr(t, out, "skipped_variable_reference_paths"))
+	assert.Equal(t, "1", auditAttr(t, out, "skipped_relative_paths"))
+}
+
+// TestStartupDirPermAudit_EscapedBraceTemplateIsStillAudited pins which layer
+// decides that a group template holds a reference. The configuration escape
+// "\\%{X}" produces a literal "%{X}", so this template holds none and must be
+// audited -- only the expansion parser can tell it from a real reference, and
+// this assertion fails if the decision reverts to a substring test on "%{".
+func TestStartupDirPermAudit_EscapedBraceTemplateIsStillAudited(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	logs := captureLogs(t)
+
+	template := filepath.Join(dir, `\%{NOT_A_REFERENCE}`, "tool")
+	checker := &countingPermChecker{}
+
+	_, err := runTOCTOUCheck(auditConfig(template), &runnertypes.RuntimeGlobal{}, "test-run",
+		permCheckerReturning(checker))
+	require.NoError(t, err)
+
+	assert.Equal(t, "0", auditAttr(t, logs.String(), "skipped_variable_reference_paths"),
+		"an escaped brace is a literal, so nothing here is awaiting expansion")
+	assert.Contains(t, checker.asked, filepath.Dir(template),
+		"the template's own directory must reach the checker, not merely fail to raise a violation")
+}
+
+// TestStartupDirPermAudit_ExpandedGlobalPathWithBraceIsAudited pins the other
+// half of the per-origin declaration. Global verify files are the output of
+// expansion, so a "%{" surviving in one is a literal an escape produced and the
+// path is audited as written. This assertion fails if the loop is ever
+// "tidied up" into judging those paths the way group templates are judged.
+func TestStartupDirPermAudit_ExpandedGlobalPathWithBraceIsAudited(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	braceDir := filepath.Join(dir, "%{NOT_A_REFERENCE}")
+	require.NoError(t, os.Mkdir(braceDir, 0o755))
+
+	logs := captureLogs(t)
+	checker := &countingPermChecker{}
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		ExpandedVerifyFiles: []string{filepath.Join(braceDir, "file.txt")},
+	}
+
+	_, err := runTOCTOUCheck(auditConfig(), runtimeGlobal, "test-run", permCheckerReturning(checker))
+	require.NoError(t, err)
+
+	assert.Equal(t, "0", auditAttr(t, logs.String(), "skipped_variable_reference_paths"),
+		"an already-expanded path holds no reference, whatever its text looks like")
+	assert.Contains(t, checker.asked, braceDir)
+}
+
+// TestStartupDirPermAudit_SkipDoesNotAffectVerdict verifies that leaving a path
+// out is not itself a fault, and that it neither adds to nor masks the
+// violations found among the paths that were audited.
+func TestStartupDirPermAudit_SkipDoesNotAffectVerdict(t *testing.T) {
+	skipped := []string{"/opt/%{TOOLCHAIN}/bin/cc", "relative/tool.sh"}
+
+	t.Run("skipped_paths_alone_are_not_violations", func(t *testing.T) {
+		captureLogs(t)
+
+		checker, err := runTOCTOUCheck(auditConfig(skipped...), &runnertypes.RuntimeGlobal{}, "test-run",
+			permCheckerReturning(allowAllDirs()))
+		require.NoError(t, err)
+		assert.NotNil(t, checker, "a clean audit returns the checker for reuse by per-group checks")
+	})
+
+	t.Run("violation_count_matches_the_violating_directories", func(t *testing.T) {
+		captureLogs(t)
+
+		firstDir := tu.SafeTempDir(t)
+		secondDir := tu.SafeTempDir(t)
+		checker := &fakeDirPermChecker{violating: map[string]struct{}{
+			firstDir:  {},
+			secondDir: {},
+		}}
+
+		cfg := auditConfig(append(slices.Clone(skipped),
+			filepath.Join(firstDir, "a.txt"),
+			filepath.Join(secondDir, "b.txt"))...)
+
+		_, err := runTOCTOUCheck(cfg, &runnertypes.RuntimeGlobal{}, "test-run", permCheckerReturning(checker))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "2 directory violation(s)",
+			"only the two violating directories count; the excluded paths must not inflate or mask the total")
+	})
+}
+
+// TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError verifies
+// that a checker that cannot be built is reported through the ordinary
+// pre-execution error path instead of terminating the process with a stack
+// trace. The real constructor never fails today, so the failure has to be
+// injected through the same seam production passes it to.
+func TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError(t *testing.T) {
+	captureLogs(t)
+
+	failing := func() (isec.DirectoryPermChecker, error) { return nil, errCheckerUnavailable }
+
+	_, err := runTOCTOUCheck(auditConfig(), &runnertypes.RuntimeGlobal{}, "test-run", failing)
+	require.Error(t, err)
+
+	preExec, ok := errors.AsType[*logging.PreExecutionError](err)
+	require.True(t, ok, "checker construction failure must reach the pre-execution error path")
+	assert.Equal(t, logging.ErrorTypeFileAccess, preExec.Type)
+	assert.Equal(t, string(resource.ComponentVerification), preExec.Component)
+	assert.Equal(t, "test-run", preExec.RunID)
+	assert.Contains(t, preExec.Message, errCheckerUnavailable.Error())
 }

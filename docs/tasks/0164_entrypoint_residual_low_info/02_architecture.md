@@ -67,7 +67,7 @@ flowchart TD
     CONF[("設定ファイル<br>（verify_files・コマンドパス）")]
 
     CLASSIFY["除外判定<br>ClassifyCheckTarget"]
-    RESOLVE["パス解決<br>ResolvePathForCheck"]
+    RESOLVE["パス解決<br>ResolvePathForCheck<br>ResolveAllForCheck"]
     COLLECT["対象ディレクトリ収集<br>CollectPermissionCheckDirs"]
     CHECK["ディレクトリ権限チェック<br>RunTOCTOUPermissionCheck"]
     VERDICT["コマンドごとの判定<br>（fail-closed / 警告して継続）"]
@@ -186,7 +186,7 @@ flowchart TD
         A2["cmd/verify"]
         A3["cmd/runner・internal/runner"]
         A6["ClassifyCheckTarget"]
-        A4["ResolvePathForCheck"]
+        A4["ResolvePathForCheck /<br>ResolveAllForCheck"]
         A5["CollectPermissionCheckDirs"]
         A1 --> A4
         A2 --> A4
@@ -308,7 +308,9 @@ AC-06 の「3コマンドで一致する」は、「共有処理に到達した�
 
 #### 2つの関数を用意する理由
 
-`ResolvePathForCheck` は単発の解決（`record`・`verify` のハッシュディレクトリ、`runner` の各パス）に、`ResolveAllForCheck` は列の解決（`record`・`verify` の対象ファイル群）に使う。`record` と `verify` はハッシュディレクトリと対象ファイル群で失敗時の扱いが異なる（前者は fail-closed の根拠、後者は警告のみ）ため、両者をまとめて1回で解決する形にはできない。WARN の記録を共有処理の内部に置くのは、`RunTOCTOUPermissionCheck` が違反を内部で記録するのと同じ様式に揃え、3コマンドが個別に記録処理を書かないようにするためである。
+`ResolvePathForCheck` は単発の解決（`record`・`verify` のハッシュディレクトリ）に、`ResolveAllForCheck` は列の解決（`record`・`verify` の対象ファイル群、`runner` の起動時チェックとグループ実行時チェックが集めたパス列）に使う。`record` と `verify` はハッシュディレクトリと対象ファイル群で失敗時の扱いが異なる（前者は fail-closed の根拠、後者は警告のみ）ため、両者をまとめて1回で解決する形にはできない。WARN の記録を共有処理の内部に置くのは、`RunTOCTOUPermissionCheck` が違反を内部で記録するのと同じ様式に揃え、3コマンドが個別に記録処理を書かないようにするためである。
+
+`runner` の2経路が列側を使うのは、解決失敗の WARN 記録（AC-04）を呼び出し側に書き写さないためである。`runner` はハッシュディレクトリについても解決失敗を拒否の根拠にはせず（`record` と異なり、ここでの不在は通常経路である）記録のみを行うので、1要素の列として同じ関数に渡す。`CollectPermissionCheckDirs` の第2引数がもともと列であるため、受け渡しにも変換が要らない。
 
 ### 3.2 チェック対象の除外判定（F-004）
 
