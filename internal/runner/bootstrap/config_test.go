@@ -325,11 +325,21 @@ func TestNormalizeSlackAllowedHost_UppercaseIPv6IsRedacted(t *testing.T) {
 	allowedHost, err := normalizeSlackAllowedHost(uppercaseIPv6AllowedHost)
 	require.NoError(t, err)
 
+	const secretPath = "/services/T000/B000/XXXX"
+	webhookURL := "https://" + uppercaseIPv6AllowedHost + secretPath
+
+	// Self-policing baseline: redaction is layered (key names, value formats,
+	// webhook host), so masking alone would not say which layer acted. Assert
+	// first that without the configured host no other layer touches this URL;
+	// the masking below is then attributable to the webhook-host pattern.
+	baseline, err := redaction.NewConfig()
+	require.NoError(t, err)
+	require.Equal(t, webhookURL, baseline.RedactText(webhookURL),
+		"without the configured webhook host, no other redaction layer should match this URL")
+
 	cfg, err := redaction.NewConfig(redaction.WithWebhookHost(allowedHost))
 	require.NoError(t, err)
 
-	const secretPath = "/services/T000/B000/XXXX"
-	webhookURL := "https://" + uppercaseIPv6AllowedHost + secretPath
 	redacted := cfg.RedactText(webhookURL)
 	assert.NotContains(t, redacted, secretPath,
 		"the webhook path is the credential and must not survive redaction")

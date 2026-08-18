@@ -217,7 +217,10 @@ args = ["hello"]
 
 	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run")
 	cmd.Dir = "."
-	cmd.Env = append(os.Environ(), "GSCR_SLACK_WEBHOOK_URL_ERROR=https://hooks.slack.com/services/T000/B000/ERROR")
+	// Same isolation as TestE2E_SlackWebhookEnvErrorPrintedOnce: a machine that
+	// exports another GSCR_SLACK_ variable would otherwise send this run down a
+	// different failure path.
+	cmd.Env = append(envWithoutSlackVars(), logging.SlackWebhookURLErrorEnvVar+"=https://hooks.slack.com/services/T000/B000/ERROR")
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -358,8 +361,13 @@ func TestE2E_PreExecutionError_InvalidRunIDTooLong(t *testing.T) {
 		"stderr should identify the error as an invalid run ID")
 }
 
-// slackEnvVarPrefix is the prefix shared by every Slack-related environment
-// variable the runner reads.
+// slackEnvVarPrefix is the prefix every Slack-related environment variable the
+// runner reads currently carries (the webhook URLs, the send and flush timeouts,
+// and the sync switch, all declared in internal/logging). Stripping by prefix
+// rather than by an enumerated list is deliberate: it also removes a Slack
+// variable added later, which an enumerated list would silently miss. A future
+// Slack variable named outside this prefix would defeat it -- keep new ones
+// under GSCR_SLACK_.
 const slackEnvVarPrefix = "GSCR_SLACK_"
 
 // envWithoutSlackVars returns the current environment with every Slack-related

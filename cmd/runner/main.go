@@ -505,9 +505,9 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 	return secValidator, nil
 }
 
-// ErrUnknownDryRunOutputFormat indicates that no formatter exists for the
+// errUnknownDryRunOutputFormat indicates that no formatter exists for the
 // requested dry-run output format.
-var ErrUnknownDryRunOutputFormat = errors.New("unknown dry-run output format")
+var errUnknownDryRunOutputFormat = errors.New("unknown dry-run output format")
 
 // newDryRunFormatter returns the formatter for the given dry-run output format.
 // Unknown formats yield an error rather than a nil formatter: command-line input
@@ -523,7 +523,7 @@ func newDryRunFormatter(format resource.OutputFormat) (resource.Formatter, error
 	default:
 		// Reported as the underlying number: String() collapses every unknown
 		// value to "unknown", which would hide which one arrived.
-		return nil, fmt.Errorf("%w: %d", ErrUnknownDryRunOutputFormat, int(format))
+		return nil, fmt.Errorf("%w: %d", errUnknownDryRunOutputFormat, int(format))
 	}
 }
 
@@ -619,7 +619,10 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		if result != nil {
 			formatter, err := newDryRunFormatter(outputFormat)
 			if err != nil {
-				return err
+				// Wrapped so the summary line names the preview stage: execution
+				// has already completed by this point, and a bare return would be
+				// reported as a pre-execution system error.
+				return fmt.Errorf("dry-run preview: %w", err)
 			}
 
 			output, err := formatter.FormatResult(result, resource.FormatterOptions{

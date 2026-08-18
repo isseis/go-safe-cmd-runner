@@ -26,7 +26,11 @@ var ErrInvalidSlackAllowedHost = errors.New("slack_allowed_host must be a valid 
 // redaction.ValidateWebhookHost - the same validator compileWebhookHostPattern
 // uses, so the two never drift into disagreeing about what a valid host is.
 // Both branches lower-case the result, so IPv6 literals such as "[2001:DB8::1]"
-// normalize to "2001:db8::1" instead of keeping their original case.
+// normalize to "2001:db8::1" instead of keeping their original case. This also
+// folds an IPv6 zone identifier ("[FE80::1%25Eth0]" becomes "fe80::1%eth0"),
+// which is safe here only because the normalized value is the single string fed
+// to both the webhook URL check and the redaction pattern, so the two cannot
+// disagree about it.
 // Length limits (63 chars per label, 253 chars total) are not enforced.
 // Returns an error for any other value (port, scheme, path, query, fragment, whitespace, etc.).
 func normalizeSlackAllowedHost(host string) (string, error) {

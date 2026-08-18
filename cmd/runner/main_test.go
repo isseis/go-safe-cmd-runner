@@ -761,6 +761,6 @@ func TestNewDryRunFormatter_UnknownFormatReturnsError(t *testing.T) {
 	t.Parallel()
 
 	formatter, err := newDryRunFormatter(resource.OutputFormatJSON + 1)
-	require.ErrorIs(t, err, ErrUnknownDryRunOutputFormat)
+	require.ErrorIs(t, err, errUnknownDryRunOutputFormat)
 	assert.Nil(t, formatter)
 }

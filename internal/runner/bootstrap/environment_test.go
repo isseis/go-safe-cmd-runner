@@ -289,3 +289,20 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 		})
 	}
 }
+
+// TestSuccessWithoutErrorErrorLeaksNoWebhookValue pins the constraint recorded
+// on SuccessWithoutErrorError.Error: this guidance is produced before the
+// redaction config exists, so nothing downstream can mask it. The message may
+// name the environment variables and show a placeholder, but it must never
+// carry a real webhook value.
+func TestSuccessWithoutErrorErrorLeaksNoWebhookValue(t *testing.T) {
+	msg := (&SuccessWithoutErrorError{}).Error()
+
+	// The placeholder is what the message is allowed to show in place of a URL;
+	// require it first so this test fails loudly if the guidance is rewritten
+	// into a shape where the assertion below passes vacuously.
+	require.Contains(t, msg, "<your_webhook_url>",
+		"the guidance should show a placeholder, not a real URL")
+	assert.NotContains(t, msg, "https://",
+		"the message is emitted before redaction is initialized, so it must not interpolate a webhook value")
+}
