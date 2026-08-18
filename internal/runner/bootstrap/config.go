@@ -42,7 +42,13 @@ func normalizeSlackAllowedHost(host string) (string, error) {
 	// IPv6 literal: "[<addr>]" — delegate bracket-stripping to url.Parse.
 	if strings.HasPrefix(host, "[") {
 		u, err := url.Parse("https://" + host + "/")
-		if err != nil || u.Hostname() == "" || u.Port() != "" {
+		// Every component beyond the host must be empty. url.Parse happily
+		// splits "[::1]/path?q#f" into a host plus a path, query and fragment,
+		// so checking only Hostname and Port would strip them and accept the
+		// value — while the unbracketed branch rejects the same shapes.
+		// Path is "/" rather than "" because of the slash appended above.
+		if err != nil || u.Hostname() == "" || u.Port() != "" ||
+			u.Path != "/" || u.RawQuery != "" || u.Fragment != "" || u.User != nil || u.Opaque != "" {
 			return "", fmt.Errorf("%w (got %q)", ErrInvalidSlackAllowedHost, host)
 		}
 		bareHost = strings.ToLower(u.Hostname()) // bare address e.g. "::1"

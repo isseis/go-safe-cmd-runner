@@ -136,6 +136,38 @@ func TestNormalizeSlackAllowedHost(t *testing.T) {
 			input:   "[fe80::1%eth0]",
 			wantErr: true,
 		},
+		{
+			// url.Parse splits these into a host plus a path/query/fragment, so
+			// a check on Hostname and Port alone would strip them and accept.
+			name:    "IPv6 literal with a path rejected",
+			input:   "[::1]/path",
+			wantErr: true,
+		},
+		{
+			name:    "IPv6 literal with a query string rejected",
+			input:   "[::1]?q=1",
+			wantErr: true,
+		},
+		{
+			name:    "IPv6 literal with a fragment rejected",
+			input:   "[::1]#frag",
+			wantErr: true,
+		},
+		{
+			name:    "IPv6 literal with a path, query and fragment rejected",
+			input:   "[::1]/path?query#frag",
+			wantErr: true,
+		},
+		{
+			name:    "IPv6 literal with a trailing slash rejected",
+			input:   "[::1]/",
+			wantErr: true,
+		},
+		{
+			name:    "IPv6 literal with a port rejected",
+			input:   "[::1]:443",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
