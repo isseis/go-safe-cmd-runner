@@ -728,3 +728,39 @@ func TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError(t *testi
 	assert.Equal(t, "test-run", preExec.RunID)
 	assert.Contains(t, preExec.Message, errCheckerUnavailable.Error())
 }
+
+// TestNewDryRunFormatter_KnownFormats verifies that the two formats the CLI
+// accepts still map to the formatters that produced the previous output.
+func TestNewDryRunFormatter_KnownFormats(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		format resource.OutputFormat
+		want   resource.Formatter
+	}{
+		{name: "text", format: resource.OutputFormatText, want: resource.NewTextFormatter()},
+		{name: "json", format: resource.OutputFormatJSON, want: resource.NewJSONFormatter()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := newDryRunFormatter(tt.format)
+			require.NoError(t, err)
+			assert.IsType(t, tt.want, got)
+		})
+	}
+}
+
+// TestNewDryRunFormatter_UnknownFormatReturnsError verifies the fail-secure
+// default. cli.ParseDryRunOutputFormat rejects unknown strings, so the value is
+// constructed directly here; without the default branch the caller would be
+// handed a nil formatter and panic on the next call.
+func TestNewDryRunFormatter_UnknownFormatReturnsError(t *testing.T) {
+	t.Parallel()
+
+	formatter, err := newDryRunFormatter(resource.OutputFormatJSON + 1)
+	require.ErrorIs(t, err, ErrUnknownDryRunOutputFormat)
+	assert.Nil(t, formatter)
+}

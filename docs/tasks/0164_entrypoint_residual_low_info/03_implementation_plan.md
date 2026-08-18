@@ -710,8 +710,8 @@ func getwd() (string, error) { return getwdHook() }
 
 **変更ファイル**: `cmd/runner/main.go`
 
-- [ ] `newDryRunFormatter(format resource.OutputFormat) (resource.Formatter, error)` を追加し、`default` で未知の形式に対するエラーを返す。
-- [ ] 572-578 行の `switch` を `newDryRunFormatter` の呼び出しに置き換え、エラー時はそれを返す。
+- [x] `newDryRunFormatter(format resource.OutputFormat) (resource.Formatter, error)` を追加し、`default` で未知の形式に対するエラーを返す。
+- [x] 572-578 行の `switch` を `newDryRunFormatter` の呼び出しに置き換え、エラー時はそれを返す。
 
 #### ステップ 4-7: Slack 環境変数エラーの二重出力を解消
 
@@ -719,39 +719,39 @@ func getwd() (string, error) { return getwdHook() }
 
 **変更ファイル**: `cmd/runner/main.go`
 
-- [ ] `cmd/runner/main.go:284` の `fmt.Fprintln(os.Stderr, err.Error())` を削除する。`PreExecutionError` の返却はそのまま残す。
-- [ ] 同箇所に、構造化ログ行にも本文が現れるため人間向けブロックとしては1回になる旨と、残る重複を [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) で扱う旨を、英語のコメントで残す。次に読む者が「まだ2回出ている」と見て直接出力を戻すことを防ぐためである。
+- [x] `cmd/runner/main.go:284` の `fmt.Fprintln(os.Stderr, err.Error())` を削除する。`PreExecutionError` の返却はそのまま残す。
+- [x] 同箇所に、構造化ログ行にも本文が現れるため人間向けブロックとしては1回になる旨と、残る重複を [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) で扱う旨を、英語のコメントで残す。次に読む者が「まだ2回出ている」と見て直接出力を戻すことを防ぐためである。
 
 #### ステップ 4-8: ログファイル名タイムスタンプを UTC に
 
 **変更ファイル**: `internal/runner/bootstrap/logger.go`
 
-- [ ] 181 行を `timestamp := time.Now().UTC().Format("20060102T150405Z")` に変える。書式文字列は変更しない（AC-23）。
+- [x] 181 行を `timestamp := time.Now().UTC().Format("20060102T150405Z")` に変える。書式文字列は変更しない（AC-23）。
 
 #### ステップ 4-9: 許可 Slack ホストの IPv6 正規化を揃える
 
 **変更ファイル**: `internal/runner/bootstrap/config.go`
 
-- [ ] 42 行を `bareHost = strings.ToLower(u.Hostname())` に変える。
-- [ ] 22-29 行の doc コメントに、IPv6 リテラルも小文字化することを追記する。
+- [x] 42 行を `bareHost = strings.ToLower(u.Hostname())` に変える。
+- [x] 22-29 行の doc コメントに、IPv6 リテラルも小文字化することを追記する。
 
 #### ステップ 4-10: dry-run・Slack・`bootstrap` のテストを追加・更新
 
 **変更ファイル**: `cmd/runner/main_test.go`、`cmd/runner/integration_pre_execution_error_test.go`、`internal/runner/bootstrap/logger_test.go`、`internal/runner/bootstrap/config_test.go`
 
-- [ ] `TestNewDryRunFormatter_KnownFormats` を追加する（AC-30）。`resource.OutputFormatText` と `resource.OutputFormatJSON` に対して期待する型のフォーマッタが返り、エラーが無いこと。
-- [ ] `TestNewDryRunFormatter_UnknownFormatReturnsError` を追加する（AC-29）。`cli.ParseDryRunOutputFormat` を経由せず不正な `resource.OutputFormat` 値を直接渡し、nil でないエラーが返ること。
-- [ ] `TestE2E_SlackWebhookEnvErrorPrintedOnce` を `cmd/runner/integration_pre_execution_error_test.go` に追加する（AC-31〜AC-33）。**子プロセスの環境を明示的に組み立てる**: `os.Environ()` から `GSCR_SLACK_` で始まる変数をすべて取り除いたうえで `GSCR_SLACK_WEBHOOK_URL_SUCCESS` のみを設定する。既存の兄弟テストのように `append(os.Environ(), ...)` とすると、開発者や CI が `GSCR_SLACK_WEBHOOK_URL_ERROR` を export している環境で `ValidateSlackWebhookEnv` が成功してしまい、3つの表明がいずれも別の失敗を見ることになる。実行は `go run . -config <valid.toml> -dry-run`（webhook 未設定のまま起動検証を通すため、既存の E2E テストと同様に `-dry-run` を付ける）。まず終了コードが `1` であることを表明する（AC-33）。環境が漏れて別経路に入った場合に静かに通らないよう、これを最初に見る。次に、§1.5 のとおり**標準エラー出力から `common.PreExecErrorAttrs.ErrorMessage` の属性キー（`error_message=`）を含む行を除いたうえで**、`GSCR_SLACK_WEBHOOK_URL_SUCCESS is set but GSCR_SLACK_WEBHOOK_URL_ERROR is not.` の出現回数がちょうど1であることを検証する（AC-31）。**選別条件を `level=ERROR` にしてはならない**: この出力は `SetupLogging` 前の組み込み既定ハンドラによるもので `level=` 表記を持たないため、1行も除外されず、実装が正しくてもこの表明は失敗する（§1.5）。除外の効きめを自己点検するため、除外前の行数と除外後の行数が異なることも併せて表明する。除外した構造化ログ行に同じ本文が残ることは既知であり、[#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) で扱う。この表明は、直接出力が戻された場合に2になって失敗する。最後に、除外前の標準エラー出力全体が `export GSCR_SLACK_WEBHOOK_URL_ERROR=` を含むことを検証する（AC-32）。除外の意図と #1020 との関係を、テストの doc コメントに英語で記す。
-- [ ] `TestSetupLoggerWithConfig_LogFileNameTimestampIsUTC` を `internal/runner/bootstrap/logger_test.go` に追加する（AC-21〜AC-23）。`time.Local` を UTC+9 相当のロケーションに差し替えたうえで（`t.Cleanup` で復元）、ログディレクトリに作られたファイル名を読み、`<hostname>_<timestamp>_<runID>.json` の3要素構成であること、タイムスタンプ部が `20060102T150405Z` の書式に合致し 16 文字であること、その値を UTC としてパースした結果が実行時刻と 1 分以内で一致することを検証する。`time.Local` はプロセス全体の状態なので `t.Parallel()` を呼ばない。
-- [ ] `internal/runner/bootstrap/config_test.go: TestNormalizeSlackAllowedHost` の表に、`[2001:DB8::1]` → `2001:db8::1` と `[2001:db8::1]` → `2001:db8::1` の2行を追加する（AC-34）。
-- [ ] `TestNormalizeSlackAllowedHost_UppercaseIPv6PassesWebhookURLValidation` を追加する（AC-35）。大文字 IPv6 を正規化した値を許可ホストとして `internal/logging` の webhook URL 検証に渡し、同じアドレスを含む URL が許可されること。
-- [ ] `TestNormalizeSlackAllowedHost_UppercaseIPv6IsRedacted` を追加する（AC-36）。同じ正規化結果から秘匿パターンを組み立て、当該 host を含む webhook URL が秘匿されること。
-- [ ] AC-35・AC-36 の2テストは、下流が大文字小文字を区別しないため変更前でも通る（02_architecture.md §6.7）。退行防止の位置づけであることを、各テストの doc コメントに英語で明記する。
+- [x] `TestNewDryRunFormatter_KnownFormats` を追加する（AC-30）。`resource.OutputFormatText` と `resource.OutputFormatJSON` に対して期待する型のフォーマッタが返り、エラーが無いこと。
+- [x] `TestNewDryRunFormatter_UnknownFormatReturnsError` を追加する（AC-29）。`cli.ParseDryRunOutputFormat` を経由せず不正な `resource.OutputFormat` 値を直接渡し、nil でないエラーが返ること。
+- [x] `TestE2E_SlackWebhookEnvErrorPrintedOnce` を `cmd/runner/integration_pre_execution_error_test.go` に追加する（AC-31〜AC-33）。**子プロセスの環境を明示的に組み立てる**: `os.Environ()` から `GSCR_SLACK_` で始まる変数をすべて取り除いたうえで `GSCR_SLACK_WEBHOOK_URL_SUCCESS` のみを設定する。既存の兄弟テストのように `append(os.Environ(), ...)` とすると、開発者や CI が `GSCR_SLACK_WEBHOOK_URL_ERROR` を export している環境で `ValidateSlackWebhookEnv` が成功してしまい、3つの表明がいずれも別の失敗を見ることになる。実行は `-config <valid.toml> -dry-run`（webhook 未設定のまま起動検証を通すため、既存の E2E テストと同様に `-dry-run` を付ける）。**実装時の変更**: 起動は `go run .` ではなく同ファイルの兄弟テストが使う `newGoRunCmd`（`cmd/runner/testutil_ldflags_test.go`）とした。`go run` は子プロセスの終了コードを常に 1 に潰すため、終了コードの表明（AC-33）が「1 であること」を実際には確かめられないうえ、同ファイル内で起動手段が割れる。まず終了コードが `1` であることを表明する（AC-33）。環境が漏れて別経路に入った場合に静かに通らないよう、これを最初に見る。次に、§1.5 のとおり**標準エラー出力から `common.PreExecErrorAttrs.ErrorMessage` の属性キー（`error_message=`）を含む行を除いたうえで**、`GSCR_SLACK_WEBHOOK_URL_SUCCESS is set but GSCR_SLACK_WEBHOOK_URL_ERROR is not.` の出現回数がちょうど1であることを検証する（AC-31）。**選別条件を `level=ERROR` にしてはならない**: この出力は `SetupLogging` 前の組み込み既定ハンドラによるもので `level=` 表記を持たないため、1行も除外されず、実装が正しくてもこの表明は失敗する（§1.5）。除外の効きめを自己点検するため、除外前の行数と除外後の行数が異なることも併せて表明する。除外した構造化ログ行に同じ本文が残ることは既知であり、[#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) で扱う。この表明は、直接出力が戻された場合に2になって失敗する。最後に、除外前の標準エラー出力全体が `export GSCR_SLACK_WEBHOOK_URL_ERROR=` を含むことを検証する（AC-32）。除外の意図と #1020 との関係を、テストの doc コメントに英語で記す。
+- [x] `TestSetupLoggerWithConfig_LogFileNameTimestampIsUTC` を `internal/runner/bootstrap/logger_test.go` に追加する（AC-21〜AC-23）。`time.Local` を UTC+9 相当のロケーションに差し替えたうえで（`t.Cleanup` で復元）、ログディレクトリに作られたファイル名を読み、`<hostname>_<timestamp>_<runID>.json` の3要素構成であること、タイムスタンプ部が `20060102T150405Z` の書式に合致し 16 文字であること、その値を UTC としてパースした結果が実行時刻と 1 分以内で一致することを検証する。`time.Local` はプロセス全体の状態なので `t.Parallel()` を呼ばない。
+- [x] `internal/runner/bootstrap/config_test.go: TestNormalizeSlackAllowedHost` の表に、`[2001:DB8::1]` → `2001:db8::1` と `[2001:db8::1]` → `2001:db8::1` の2行を追加する（AC-34）。
+- [x] `TestNormalizeSlackAllowedHost_UppercaseIPv6PassesWebhookURLValidation` を追加する（AC-35）。大文字 IPv6 を正規化した値を許可ホストとして `internal/logging` の webhook URL 検証に渡し、同じアドレスを含む URL が許可されること。
+- [x] `TestNormalizeSlackAllowedHost_UppercaseIPv6IsRedacted` を追加する（AC-36）。同じ正規化結果から秘匿パターンを組み立て、当該 host を含む webhook URL が秘匿されること。
+- [x] AC-35・AC-36 の2テストは、下流が大文字小文字を区別しないため変更前でも通る（02_architecture.md §6.7）。退行防止の位置づけであることを、各テストの doc コメントに英語で明記する。
 
 #### フェーズ4 完了ゲート
 
-- [ ] `make fmt` → `make test` → `make lint` が緑。
-- [ ] `make deadcode` が新たな未使用シンボルを報告しない（フェーズ1で想定内としたシンボルも、この時点ではすべて呼び出し元を持つ）。
+- [x] `make fmt` → `make test` → `make lint` が緑。
+- [x] `make deadcode` が新たな未使用シンボルを報告しない（フェーズ1で想定内としたシンボルも、この時点ではすべて呼び出し元を持つ）。
 
 ### PR-7 作成ポイント: dry-run, Slack output and bootstrap fixes
 

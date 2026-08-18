@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -355,4 +356,86 @@ func TestE2E_PreExecutionError_InvalidRunIDTooLong(t *testing.T) {
 
 	assert.Contains(t, stderr.String(), string(logging.ErrorTypeInvalidRunID),
 		"stderr should identify the error as an invalid run ID")
+}
+
+// slackEnvVarPrefix is the prefix shared by every Slack-related environment
+// variable the runner reads.
+const slackEnvVarPrefix = "GSCR_SLACK_"
+
+// envWithoutSlackVars returns the current environment with every Slack-related
+// variable removed. Tests that depend on a specific Slack configuration must
+// start from this rather than os.Environ(), because a developer or CI machine
+// that exports GSCR_SLACK_WEBHOOK_URL_ERROR would otherwise make the validation
+// under test succeed and send the run down a different failure path.
+func envWithoutSlackVars() []string {
+	env := os.Environ()
+	kept := make([]string, 0, len(env))
+	for _, kv := range env {
+		if strings.HasPrefix(kv, slackEnvVarPrefix) {
+			continue
+		}
+		kept = append(kept, kv)
+	}
+	return kept
+}
+
+// TestE2E_SlackWebhookEnvErrorPrintedOnce verifies that the Slack webhook
+// configuration error reaches the user exactly once as human-readable text, and
+// that folding the direct print into the pre-execution error path did not lose
+// the remediation instructions or change the exit code.
+//
+// The message also appears a second time inside the structured log line that
+// the same path emits (as the value of the error_message attribute), so the
+// count is taken over the lines that do not carry that attribute key. That
+// remaining duplication is tracked in
+// https://github.com/isseis/go-safe-cmd-runner/issues/1020; when it is fixed the
+// filter becomes a no-op rather than wrong. The filter must key on the
+// attribute name and not on "level=ERROR": this output is produced by slog's
+// built-in default handler, before SetupLogging installs a TextHandler, and
+// that handler writes the level as a bare word with no "level=" prefix.
+func TestE2E_SlackWebhookEnvErrorPrintedOnce(t *testing.T) {
+	configFile := setupTempConfig(t, validRunIDTestConfig)
+
+	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run")
+	cmd.Env = append(envWithoutSlackVars(),
+		logging.SlackWebhookURLSuccessEnvVar+"=https://hooks.slack.com/services/T000/B000/SUCCESS")
+
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	require.Error(t, err, "runner should fail when only the success webhook is set")
+	// Checked first: if a stray Slack variable leaked into the child, the run
+	// fails somewhere else entirely and the assertions below would be reading
+	// output from a different code path.
+	requireExitCode(t, cmd, 1)
+
+	stderrOutput := stderr.String()
+	const humanMessage = "GSCR_SLACK_WEBHOOK_URL_SUCCESS is set but GSCR_SLACK_WEBHOOK_URL_ERROR is not."
+	structuredAttrKey := common.PreExecErrorAttrs.ErrorMessage + "="
+
+	allLines := strings.Split(stderrOutput, "\n")
+	humanLines := make([]string, 0, len(allLines))
+	for _, line := range allLines {
+		if strings.Contains(line, structuredAttrKey) {
+			continue
+		}
+		humanLines = append(humanLines, line)
+	}
+	// Self-check on the filter: if it stopped matching the structured line, the
+	// count below would silently include it and this test would no longer be
+	// measuring the human-readable block.
+	require.NotEqual(t, len(allLines), len(humanLines),
+		"expected at least one structured log line carrying %q, got:\n%s", structuredAttrKey, stderrOutput)
+
+	occurrences := 0
+	for _, line := range humanLines {
+		occurrences += strings.Count(line, humanMessage)
+	}
+	assert.Equal(t, 1, occurrences,
+		"the guidance should reach the user exactly once outside the structured log line, got:\n%s", stderrOutput)
+
+	assert.Contains(t, stderrOutput, "export "+logging.SlackWebhookURLErrorEnvVar+"=",
+		"stderr should keep the remediation instructions")
 }

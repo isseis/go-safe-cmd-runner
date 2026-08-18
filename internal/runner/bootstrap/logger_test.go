@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -1150,4 +1151,50 @@ func handlerTypeNames(handlers []slog.Handler) []string {
 		names[i] = fmt.Sprintf("%T", h)
 	}
 	return names
+}
+
+// TestSetupLoggerWithConfig_LogFileNameTimestampIsUTC verifies that the "Z" in
+// the log file name is honest: the timestamp is UTC regardless of the host time
+// zone. It also pins the three-element name composition, which collection
+// scripts slice by position, so a future change cannot switch to UTC by
+// dropping the suffix instead.
+//
+// time.Local is process-wide state, so this test must not run in parallel.
+func TestSetupLoggerWithConfig_LogFileNameTimestampIsUTC(t *testing.T) {
+	saveAndRestoreGlobals(t)
+
+	origLocal := time.Local
+	t.Cleanup(func() { time.Local = origLocal })
+	// Ahead of UTC, so a local-time implementation produces a visibly different
+	// timestamp instead of an accidentally matching one.
+	time.Local = time.FixedZone("TEST+09", 9*60*60)
+
+	logDir := tu.SafeTempDir(t)
+	const runID = "test-utf-timestamp-001"
+	before := time.Now().UTC()
+	require.NoError(t, SetupLoggerWithConfig(LoggerConfig{
+		Level:  slog.LevelInfo,
+		LogDir: logDir,
+		RunID:  runID,
+	}, false, true))
+
+	entries, err := os.ReadDir(logDir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "exactly one log file should have been created")
+	name := entries[0].Name()
+
+	hostname := common.GetHostname()
+	prefix := hostname + "_"
+	suffix := "_" + runID + ".json"
+	require.True(t, strings.HasPrefix(name, prefix) && strings.HasSuffix(name, suffix),
+		"log file name %q should be <hostname>_<timestamp>_<runID>.json", name)
+
+	timestamp := name[len(prefix) : len(name)-len(suffix)]
+	require.Len(t, timestamp, len("20060102T150405Z"),
+		"timestamp %q should keep its fixed width", timestamp)
+
+	parsed, err := time.ParseInLocation("20060102T150405Z", timestamp, time.UTC)
+	require.NoError(t, err, "timestamp %q should match the documented layout", timestamp)
+	assert.WithinDuration(t, before, parsed, time.Minute,
+		"timestamp %q should be the current UTC time, not the local time", timestamp)
 }
