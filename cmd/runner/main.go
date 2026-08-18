@@ -1,6 +1,4 @@
 // Package main provides the entry point for the command runner application.
-// It handles command-line arguments, configuration loading, and orchestrates
-// the execution of commands based on the provided configuration.
 package main
 
 import (
@@ -71,7 +69,6 @@ func init() {
 	flag.BoolVar(&forceQuiet, "quiet", false, "force non-interactive mode (disables colored output)")
 	flag.BoolVar(&forceQuiet, "q", false, "force non-interactive mode (short form)")
 
-	// Other flags without short forms
 	flag.StringVar(&logDir, "log-dir", "", "directory to place per-run JSON log (auto-named). Overrides TOML/env if set.")
 	flag.StringVar(&dryRunFormat, "dry-run-format", "text", "dry-run output format (text, json)")
 	flag.StringVar(&dryRunDetail, "dry-run-detail", "detailed", "dry-run detail level (summary, detailed, full)")
@@ -112,14 +109,12 @@ func (e *startupPrivilegeError) Unwrap() error {
 	return e.Err
 }
 
-// dropStartupPrivileges drops the effective GID to targetGID and then the
-// effective UID to targetUID.
+// dropStartupPrivileges lowers the effective GID and UID to the given targets.
 //
-// Invariant: the effective UID is only dropped once the effective GID drop has
-// succeeded, so a failure never leaves the process holding a privileged group
-// while running as an unprivileged user. Production calls
-// dropStartupPrivileges(syscall.Getuid(), syscall.Getgid()); tests pass a
-// target the process cannot reach in order to exercise the failure path.
+// The GID is dropped first so that a failure never leaves the process holding a
+// privileged group while running as an unprivileged user. The targets are
+// parameters only so tests can pass one the process cannot reach; production
+// passes the real UID and GID.
 func dropStartupPrivileges(targetUID, targetGID int) error {
 	if err := syscall.Setegid(targetGID); err != nil {
 		return &startupPrivilegeError{Stage: stageSetegid, Err: err}
@@ -131,23 +126,20 @@ func dropStartupPrivileges(targetUID, targetGID int) error {
 }
 
 // reportStartupPrivilegeFailure reports err and returns the process exit code.
-// The privilege drop runs before the run ID for this execution exists, so this
-// path generates its own: the report must never carry an empty run ID.
+// It generates its own run ID because the drop runs before this execution's run
+// ID exists, and a report must never carry an empty one.
 func reportStartupPrivilegeFailure(err error) int {
 	logging.HandlePreExecutionError(logging.ErrorTypePrivilegeDrop,
 		fmt.Sprintf("Failed to drop startup privileges: %v", err), "main", logging.GenerateRunID())
 	return 1
 }
 
-// resolveRunID returns the run ID to use for this execution.
+// resolveRunID returns the run ID to use for this execution, falling back to
+// bootstrapID when --run-id was not supplied.
 //
-// Invariant: given a bootstrapID that satisfies logging.ValidateRunID (which
-// logging.GenerateRunID always produces), the returned run ID satisfies it too,
-// so no caller downstream has to re-check the value the user supplied. An empty
-// flagValue yields bootstrapID; Go's flag package cannot distinguish an unset
-// --run-id from an explicitly empty one, so both are treated as "not supplied".
-// Any other value must satisfy logging.ValidateRunID; otherwise the returned
-// error wraps logging.ErrInvalidRunID and the returned run ID is empty.
+// Invariant: given a valid bootstrapID the returned run ID is valid too, so no
+// downstream caller has to re-check it. An empty flagValue counts as "not
+// supplied" because Go's flag package cannot distinguish it from an unset flag.
 func resolveRunID(flagValue, bootstrapID string) (string, error) {
 	if flagValue == "" {
 		return bootstrapID, nil
@@ -159,31 +151,23 @@ func resolveRunID(flagValue, bootstrapID string) (string, error) {
 }
 
 func main() {
-	// Drop privileges before anything else in main's body, so that no input is
-	// processed while the process still holds the privileges it was started
-	// with.
-	//
-	// This is not a permanent drop. Only the effective IDs are lowered; the
-	// saved set-user-ID is left as it was, which is what lets the privilege
-	// manager raise them again for the individual commands configured to need
-	// it. The intent is that elevation happens only where it is asked for, not
-	// that it becomes impossible.
+	// First in main's body so that no input is processed at the privileges the
+	// process was started with. Only the effective IDs are lowered, so the
+	// privilege manager can still raise them for the commands configured to
+	// need it.
 	if err := dropStartupPrivileges(syscall.Getuid(), syscall.Getgid()); err != nil {
 		os.Exit(reportStartupPrivilegeFailure(err))
 	}
 
-	// Generate the run ID used when no valid one is supplied. It is produced
-	// before flag parsing so that rejecting --run-id never has to fall back on
-	// the rejected value to identify the run.
+	// Produced before flag parsing so that rejecting --run-id never has to fall
+	// back on the rejected value to identify the run.
 	bootstrapID := logging.GenerateRunID()
 
-	// Parse command line flags early to get runID
 	flag.Parse()
 
-	// Validate --run-id at the boundary. Everything downstream (log file names,
-	// RUN_SUMMARY lines, structured log attributes, Slack notifications) reads
-	// the package-level runID, so the validated value is assigned back to it and
-	// the raw flag value never travels further.
+	// Everything downstream (log file names, RUN_SUMMARY lines, log attributes,
+	// Slack notifications) reads the package-level runID, so the validated value
+	// is assigned back to it and the raw flag value never travels further.
 	resolvedRunID, err := resolveRunID(runID, bootstrapID)
 	if err != nil {
 		// The rejected value is deliberately absent from both the message and
@@ -196,32 +180,25 @@ func main() {
 	}
 	runID = resolvedRunID
 
-	// Validate DefaultHashDirectory early - this should never fail in production
-	// but helps catch build-time configuration errors
+	// Should never fail in production; catches build-time misconfiguration.
 	if !filepath.IsAbs(cmdcommon.DefaultHashDirectory) {
 		logging.HandlePreExecutionError(logging.ErrorTypeBuildConfig, fmt.Sprintf("Invalid default hash directory: must be absolute path, got: %s", cmdcommon.DefaultHashDirectory), "main", runID)
 		os.Exit(1)
 	}
 
-	// Run main logic and capture exit code
 	exitCode := mainWithExitCode(runID)
 
-	// Slack notifications are queued, not sent inline, so the records issued
-	// during the run are delivered here before the process goes away. Nothing
-	// below it writes to Slack, so this is the last point at which the queue
-	// can be complete.
+	// Slack notifications are queued, not sent inline. Nothing below writes to
+	// Slack, so this is the last point at which the queue can be complete.
 	bootstrap.FlushSlackNotifications()
 
-	// Ensure redaction failures are reported before exit
 	bootstrap.ReportRedactionFailures()
 
-	// Exit with captured code
 	os.Exit(exitCode)
 }
 
 // mainWithExitCode runs the main logic and returns the exit code
 func mainWithExitCode(runID string) int {
-	// Wrap main logic in a separate function to properly handle errors and defer
 	if err := run(runID); err != nil {
 		var silentErr SilentExitError
 		var preExecErr *logging.PreExecutionError
@@ -229,17 +206,15 @@ func mainWithExitCode(runID string) int {
 		var previewExit dryRunPreviewExit
 		switch {
 		case errors.As(err, &previewExit):
-			// Dry-run deny preview: the preview was already printed; exit with its
-			// recommended code without logging an error.
+			// The preview was already printed, so exit with its recommended code
+			// without logging an error.
 			return previewExit.code
 		case errors.As(err, &silentErr):
-			// Check for silent exit error first (validation failure with report already printed)
+			// The validation report was already printed.
 			// revive:disable:empty-block This empty block is intentional to handle specific cases
 		case errors.As(err, &preExecErr):
-			// Check if this is a pre-execution error using errors.As for safe type checking
 			logging.HandlePreExecutionError(preExecErr.Type, preExecErr.Message, preExecErr.Component, runID)
 		case errors.As(err, &execErr):
-			// Check if this is an execution error (error during command execution)
 			logging.HandleExecutionError(execErr)
 		default:
 			logging.HandlePreExecutionError(logging.ErrorTypeSystemError, err.Error(), "main", runID)
@@ -265,25 +240,21 @@ func parseLogLevel(logLevelStr string, runID string) (slog.Level, error) {
 }
 
 func run(runID string) error {
-	// Set up context with cancellation
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Setup logging early (using command-line log level only)
-	// This allows verification manager creation logs to use custom formatters
-	// Parse log level string to slog.Level type
+	// Logging is set up from the command-line level alone, before the config is
+	// read, so that verification manager logs already use the custom formatters.
 	logLevelValue, err := parseLogLevel(logLevel, runID)
 	if err != nil {
 		return err
 	}
-	// Determine console output destination based on dry-run mode
-	// In dry-run mode, send logs to stderr to keep stdout clean for dry-run output
+	// In dry-run mode logs go to stderr to keep stdout clean for the preview.
 	consoleWriter := os.Stdout
 	if dryRun {
 		consoleWriter = os.Stderr
 	}
 
-	// Validate Slack webhook environment variables
 	slackConfig, err := bootstrap.ValidateSlackWebhookEnv()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
@@ -307,8 +278,8 @@ func run(runID string) error {
 		return err
 	}
 
-	// Validate required arguments before initializing verification manager
-	// This ensures proper error messages for missing arguments even if hash directory doesn't exist
+	// Checked before the verification manager exists, so a missing argument is
+	// reported as such even when the hash directory is also unusable.
 	if configPath == "" {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeRequiredArgumentMissing,
@@ -318,8 +289,7 @@ func run(runID string) error {
 		}
 	}
 
-	// Initialize verification manager with secure default hash directory
-	// For dry-run mode, skip hash directory validation since no actual file verification is needed
+	// Dry-run skips hash directory validation: no file is actually verified.
 	var verificationManager *verification.Manager
 	if dryRun {
 		verificationManager, err = verification.NewManagerForDryRun()
@@ -335,13 +305,12 @@ func run(runID string) error {
 		}
 	}
 
-	// Load and prepare configuration (verify, parse, and expand variables)
 	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, runID)
 	if err != nil {
 		return err
 	}
 
-	// Phase 2: Add Slack handlers (AllowedHost is read from TOML)
+	// Slack handlers are added only now because AllowedHost comes from the TOML.
 	redactionConfig, err := bootstrap.SetupSlackLogging(slackConfig, bootstrap.SetupLoggingOptions{
 		SlackAllowedHost: cfg.Global.SlackAllowedHost,
 		RunID:            runID,
@@ -351,13 +320,11 @@ func run(runID string) error {
 		return err
 	}
 
-	// Log verification and configuration summary after config is loaded
 	slog.Info("Verification and configuration completed",
 		"config_path", configPath,
 		"hash_directory", cmdcommon.DefaultHashDirectory,
 		"dry_run", dryRun)
 
-	// Expand global configuration
 	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
 	if err != nil {
 		return &logging.PreExecutionError{
@@ -368,8 +335,7 @@ func run(runID string) error {
 		}
 	}
 
-	// Validate template variable references after global expansion
-	// Templates can only reference global variables, which are now expanded
+	// Runs after global expansion: templates can only reference global variables.
 	if err := config.ValidateAllTemplates(cfg.CommandTemplates, runtimeGlobal.ExpandedVars); err != nil {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
@@ -379,7 +345,6 @@ func run(runID string) error {
 		}
 	}
 
-	// Perform global file verification (using verification manager directly)
 	result, err := verificationManager.VerifyGlobalFiles(&verification.GlobalVerificationInput{
 		ExpandedVerifyFiles: runtimeGlobal.ExpandedVerifyFiles,
 	})
@@ -392,7 +357,6 @@ func run(runID string) error {
 		}
 	}
 
-	// Log global verification results
 	if result.TotalFiles > 0 {
 		slog.Info("Global files verification completed successfully",
 			"verified", result.VerifiedFiles,
@@ -400,15 +364,13 @@ func run(runID string) error {
 			"run_id", runID)
 	}
 
-	// Run TOCTOU permission check on directories referenced by the configuration.
-	// The returned validator is reused for per-group checks at execution time so that
-	// group-level paths with %{GROUP_VAR} references are also checked.
+	// The returned validator is reused for per-group checks at execution time, so
+	// that group-level paths with %{GROUP_VAR} references are also checked.
 	secValidator, err := runTOCTOUCheck(cfg, runtimeGlobal, runID, isec.NewDirectoryPermChecker)
 	if err != nil {
 		return err
 	}
 
-	// Initialize and execute runner with all verified data
 	return executeRunner(ctx, cfg, runtimeGlobal, verificationManager, runID, secValidator, redactionConfig)
 }
 
@@ -539,11 +501,9 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 
 // executeRunner initializes and executes the runner with proper cleanup
 func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, verificationManager *verification.Manager, runID string, secValidator isec.DirectoryPermChecker, redactionConfig *redaction.Config) error {
-	// Initialize privilege manager
 	logger := slog.Default()
 	privMgr := privilege.NewManager(logger)
 
-	// Initialize Runner with privilege support and run ID
 	runnerOptions := []runner.Option{
 		runner.WithVerificationManager(verificationManager),
 		runner.WithPrivilegeManager(privMgr),
@@ -556,20 +516,18 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		runnerOptions = append(runnerOptions, runner.WithTOCTOUValidator(secValidator))
 	}
 
-	// Parse dry-run options once for the entire function
+	// Parsed here rather than at the formatting site below, so an invalid option
+	// is rejected before anything is executed.
 	var detailLevel resource.DryRunDetailLevel
 	var outputFormat resource.OutputFormat
 
-	// Add dry-run mode if requested
 	if dryRun {
-		// Parse detail level
 		var err error
 		detailLevel, err = cli.ParseDryRunDetailLevel(dryRunDetail)
 		if err != nil {
 			return fmt.Errorf("invalid detail level %q: %w", dryRunDetail, err)
 		}
 
-		// Parse output format
 		outputFormat, err = cli.ParseDryRunOutputFormat(dryRunFormat)
 		if err != nil {
 			return fmt.Errorf("invalid output format %q: %w", dryRunFormat, err)
@@ -580,7 +538,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 			OutputFormat:  outputFormat,
 			ShowSensitive: showSensitive,
 			VerifyFiles:   true,
-			HashDir:       cmdcommon.DefaultHashDirectory, // Use secure default hash directory
+			HashDir:       cmdcommon.DefaultHashDirectory,
 		}
 		runnerOptions = append(runnerOptions, runner.WithDryRun(dryRunOpts))
 	}
@@ -590,14 +548,12 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		return fmt.Errorf("failed to initialize runner: %w", err)
 	}
 
-	// Ensure cleanup of all resources on exit
 	defer func() {
 		if err := r.CleanupAllResources(); err != nil {
 			slog.Warn("Failed to cleanup resources", slog.Any("error", err), slog.String("run_id", runID))
 		}
 	}()
 
-	// Resolve and filter groups based on the --groups flag (executes all groups if not specified)
 	groupNames, err := cli.FilterGroups(
 		cli.ParseGroupNames(groups),
 		cfg,
@@ -611,20 +567,17 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		}
 	}
 
-	// Execute filtered or all groups (works for both normal and dry-run modes)
-	// Execute handles both cases: nil/empty groupNamesMap executes all groups
+	// An empty groupNames executes all groups.
 	execErr := r.Execute(ctx, groupNames)
 
-	// dryRunPreviewCode carries the dry-run preview's recommended exit code so a
-	// deny preview surfaces as a non-zero process exit even when execution itself
-	// did not error.
+	// Carries the preview's recommended exit code, so a deny preview surfaces as
+	// a non-zero process exit even when execution itself did not error.
 	var dryRunPreviewCode int
 
-	// Handle dry-run output (always output, even on error)
+	// The preview is printed even when execution failed, with the failure folded
+	// into the result.
 	if dryRun {
-		// If an execution error occurred, set error status before getting results
 		if execErr != nil {
-			// Set execution error in the resource manager
 			r.SetDryRunExecutionError(
 				string(resource.ErrorTypeExecutionError),
 				execErr.Error(),
@@ -636,7 +589,6 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 
 		result := r.GetDryRunResults()
 		if result != nil {
-			// Create appropriate formatter using pre-parsed values
 			var formatter resource.Formatter
 			switch outputFormat {
 			case resource.OutputFormatText:
@@ -658,9 +610,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		}
 	}
 
-	// Return execution error after outputting results (if any)
 	if execErr != nil {
-		// Extract group and command context from error chain if available
 		var groupName, commandName string
 		if cmdExecErr, ok := errors.AsType[*runner.CommandExecutionError](execErr); ok {
 			groupName = cmdExecErr.GroupName
@@ -677,9 +627,8 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		}
 	}
 
-	// A dry-run deny preview exits non-zero (the preview output was already
-	// printed); the distinct code lets CI tell a verification-unavailable deny
-	// apart from a policy deny.
+	// The distinct code lets CI tell a verification-unavailable deny apart from a
+	// policy deny.
 	if dryRunPreviewCode != 0 {
 		return dryRunPreviewExit{code: dryRunPreviewCode}
 	}
@@ -688,7 +637,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 }
 
 // dryRunPreviewExit signals that the process should exit with a specific code from
-// the dry-run preview. The preview output was already printed, so this carries no
+// the dry-run preview. The preview output was already printed, so it carries no
 // message to log; mainWithExitCode maps it directly to the exit code.
 type dryRunPreviewExit struct{ code int }
 
