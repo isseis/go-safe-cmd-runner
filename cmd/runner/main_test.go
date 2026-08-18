@@ -735,12 +735,12 @@ func TestNewDryRunFormatter_KnownFormats(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name   string
-		format resource.OutputFormat
-		want   resource.Formatter
+		name     string
+		format   resource.OutputFormat
+		wantType resource.Formatter // compared by dynamic type only, never by value
 	}{
-		{name: "text", format: resource.OutputFormatText, want: resource.NewTextFormatter()},
-		{name: "json", format: resource.OutputFormatJSON, want: resource.NewJSONFormatter()},
+		{name: "text", format: resource.OutputFormatText, wantType: (*resource.TextFormatter)(nil)},
+		{name: "json", format: resource.OutputFormatJSON, wantType: (*resource.JSONFormatter)(nil)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -748,7 +748,7 @@ func TestNewDryRunFormatter_KnownFormats(t *testing.T) {
 
 			got, err := newDryRunFormatter(tt.format)
 			require.NoError(t, err)
-			assert.IsType(t, tt.want, got)
+			assert.IsType(t, tt.wantType, got)
 		})
 	}
 }

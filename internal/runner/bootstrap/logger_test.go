@@ -1170,7 +1170,7 @@ func TestSetupLoggerWithConfig_LogFileNameTimestampIsUTC(t *testing.T) {
 	time.Local = time.FixedZone("TEST+09", 9*60*60)
 
 	logDir := tu.SafeTempDir(t)
-	const runID = "test-utf-timestamp-001"
+	const runID = "test-utc-timestamp-001"
 	before := time.Now().UTC()
 	require.NoError(t, SetupLoggerWithConfig(LoggerConfig{
 		Level:  slog.LevelInfo,

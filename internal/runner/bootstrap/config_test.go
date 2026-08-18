@@ -306,6 +306,9 @@ func TestNormalizeSlackAllowedHost_UppercaseIPv6PassesWebhookURLValidation(t *te
 		WebhookURL:  "https://" + uppercaseIPv6AllowedHost + "/services/T000/B000/XXXX",
 		RunID:       "test-ipv6-allowed-host-001",
 		AllowedHost: allowedHost,
+		// The URL validation under test runs before the sender is built, so
+		// there is no reason to start a worker goroutine and an HTTP client.
+		IsDryRun: true,
 	})
 	require.NoError(t, err, "a webhook URL on the configured IPv6 host must be accepted")
 	t.Cleanup(func() { handler.Close() })

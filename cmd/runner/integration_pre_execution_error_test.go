@@ -394,6 +394,9 @@ func envWithoutSlackVars() []string {
 // built-in default handler, before SetupLogging installs a TextHandler, and
 // that handler writes the level as a bare word with no "level=" prefix.
 func TestE2E_SlackWebhookEnvErrorPrintedOnce(t *testing.T) {
+	// The config file and -dry-run are here only for parity with the sibling
+	// tests: ValidateSlackWebhookEnv runs before the config path is even looked
+	// at, so this run fails before anything reads them.
 	configFile := setupTempConfig(t, validRunIDTestConfig)
 
 	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run")
@@ -436,6 +439,15 @@ func TestE2E_SlackWebhookEnvErrorPrintedOnce(t *testing.T) {
 	assert.Equal(t, 1, occurrences,
 		"the guidance should reach the user exactly once outside the structured log line, got:\n%s", stderrOutput)
 
-	assert.Contains(t, stderrOutput, "export "+logging.SlackWebhookURLErrorEnvVar+"=",
-		"stderr should keep the remediation instructions")
+	// The remediation lines are checked over the filtered block for the same
+	// reason as the count: the structured log line carries the whole message as
+	// an escaped attribute value, so asserting over the raw stderr would still
+	// pass if the human-readable block were truncated to its first line - which
+	// is exactly the loss this assertion exists to catch. More than one line is
+	// checked because the guidance is multi-line.
+	humanOutput := strings.Join(humanLines, "\n")
+	assert.Contains(t, humanOutput, "  export "+logging.SlackWebhookURLErrorEnvVar+`="<your_webhook_url>"`,
+		"the human-readable block should keep the remediation command")
+	assert.Contains(t, humanOutput, "To use the same webhook for both success and error notifications:",
+		"the human-readable block should keep the whole guidance, not just its first line")
 }
