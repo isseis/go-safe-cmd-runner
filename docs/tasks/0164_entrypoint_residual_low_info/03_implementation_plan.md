@@ -703,8 +703,8 @@ func getwd() (string, error) { return getwdHook() }
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（[#1031](https://github.com/isseis/go-safe-cmd-runner/pull/1031)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 #### ステップ 4-6: dry-run 出力形式の分岐に `default` を入れる
 
