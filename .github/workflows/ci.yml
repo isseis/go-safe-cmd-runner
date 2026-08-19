@@ -197,7 +197,7 @@ jobs:
       - name: Upload coverage to Codecov
         if: matrix.cgo == 1
         continue-on-error: true
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           file: ./coverage.out
           flags: ci-tests
