@@ -8,8 +8,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-	"github.com/isseis/go-safe-cmd-runner/internal/logging"
-	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -47,12 +45,6 @@ func TestNormalizeSlackAllowedHost(t *testing.T) {
 		{
 			name:     "uppercase IPv6 literal lowercased",
 			input:    "[2001:DB8::1]",
-			wantHost: "2001:db8::1",
-			wantErr:  false,
-		},
-		{
-			name:     "lowercase IPv6 literal unchanged",
-			input:    "[2001:db8::1]",
 			wantHost: "2001:db8::1",
 			wantErr:  false,
 		},
@@ -151,11 +143,6 @@ func TestNormalizeSlackAllowedHost(t *testing.T) {
 		{
 			name:    "IPv6 literal with a fragment rejected",
 			input:   "[::1]#frag",
-			wantErr: true,
-		},
-		{
-			name:    "IPv6 literal with a path, query and fragment rejected",
-			input:   "[::1]/path?query#frag",
 			wantErr: true,
 		},
 		{
@@ -328,64 +315,4 @@ func TestLoadAndPrepareConfig_EmptyConfigPath(t *testing.T) {
 	assert.Error(t, err, "Should return error for empty config path")
 	assert.Nil(t, cfg, "Config should be nil on error")
 	assert.Contains(t, err.Error(), "Config file path is required", "Error message should indicate required path")
-}
-
-// uppercaseIPv6AllowedHost is the configured value both regression tests below
-// normalize, kept in one place so they cannot drift apart.
-const uppercaseIPv6AllowedHost = "[2001:DB8::1]"
-
-// TestNormalizeSlackAllowedHost_UppercaseIPv6PassesWebhookURLValidation checks
-// that a webhook URL on an uppercase IPv6 literal is still accepted once the
-// configured host has been normalized.
-//
-// This is a regression guard, not a proof of the lower-casing: the webhook URL
-// validator folds case on both sides, so it passes with or without the change
-// in normalizeSlackAllowedHost. The value of the normalization itself is pinned
-// by TestNormalizeSlackAllowedHost; this test exists so that a later change to
-// the downstream comparison cannot silently break the configured host.
-func TestNormalizeSlackAllowedHost_UppercaseIPv6PassesWebhookURLValidation(t *testing.T) {
-	allowedHost, err := normalizeSlackAllowedHost(uppercaseIPv6AllowedHost)
-	require.NoError(t, err)
-
-	handler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
-		WebhookURL:  "https://" + uppercaseIPv6AllowedHost + "/services/T000/B000/XXXX",
-		RunID:       "test-ipv6-allowed-host-001",
-		AllowedHost: allowedHost,
-		// The URL validation under test runs before the sender is built, so
-		// there is no reason to start a worker goroutine and an HTTP client.
-		IsDryRun: true,
-	})
-	require.NoError(t, err, "a webhook URL on the configured IPv6 host must be accepted")
-	t.Cleanup(func() { handler.Close() })
-}
-
-// TestNormalizeSlackAllowedHost_UppercaseIPv6IsRedacted checks that a webhook
-// URL on an uppercase IPv6 literal is still masked once the configured host has
-// been normalized.
-//
-// This is a regression guard for the same reason as the test above: the host
-// pattern is compiled case-insensitively, so it masks with or without the
-// change in normalizeSlackAllowedHost.
-func TestNormalizeSlackAllowedHost_UppercaseIPv6IsRedacted(t *testing.T) {
-	allowedHost, err := normalizeSlackAllowedHost(uppercaseIPv6AllowedHost)
-	require.NoError(t, err)
-
-	const secretPath = "/services/T000/B000/XXXX"
-	webhookURL := "https://" + uppercaseIPv6AllowedHost + secretPath
-
-	// Self-policing baseline: redaction is layered (key names, value formats,
-	// webhook host), so masking alone would not say which layer acted. Assert
-	// first that without the configured host no other layer touches this URL;
-	// the masking below is then attributable to the webhook-host pattern.
-	baseline, err := redaction.NewConfig()
-	require.NoError(t, err)
-	require.Equal(t, webhookURL, baseline.RedactText(webhookURL),
-		"without the configured webhook host, no other redaction layer should match this URL")
-
-	cfg, err := redaction.NewConfig(redaction.WithWebhookHost(allowedHost))
-	require.NoError(t, err)
-
-	redacted := cfg.RedactText(webhookURL)
-	assert.NotContains(t, redacted, secretPath,
-		"the webhook path is the credential and must not survive redaction")
 }

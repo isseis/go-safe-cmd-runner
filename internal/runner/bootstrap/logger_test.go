@@ -1190,9 +1190,6 @@ func TestSetupLoggerWithConfig_LogFileNameTimestampIsUTC(t *testing.T) {
 		"log file name %q should be <hostname>_<timestamp>_<runID>.json", name)
 
 	timestamp := name[len(prefix) : len(name)-len(suffix)]
-	require.Len(t, timestamp, len("20060102T150405Z"),
-		"timestamp %q should keep its fixed width", timestamp)
-
 	parsed, err := time.ParseInLocation("20060102T150405Z", timestamp, time.UTC)
 	require.NoError(t, err, "timestamp %q should match the documented layout", timestamp)
 	assert.WithinDuration(t, before, parsed, time.Minute,

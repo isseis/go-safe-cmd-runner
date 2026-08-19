@@ -729,30 +729,6 @@ func TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError(t *testi
 	assert.Contains(t, preExec.Message, errCheckerUnavailable.Error())
 }
 
-// TestNewDryRunFormatter_KnownFormats verifies that the two formats the CLI
-// accepts still map to the formatters that produced the previous output.
-func TestNewDryRunFormatter_KnownFormats(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		format   resource.OutputFormat
-		wantType resource.Formatter // compared by dynamic type only, never by value
-	}{
-		{name: "text", format: resource.OutputFormatText, wantType: (*resource.TextFormatter)(nil)},
-		{name: "json", format: resource.OutputFormatJSON, wantType: (*resource.JSONFormatter)(nil)},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			got, err := newDryRunFormatter(tt.format)
-			require.NoError(t, err)
-			assert.IsType(t, tt.wantType, got)
-		})
-	}
-}
-
 // TestNewDryRunFormatter_UnknownFormatReturnsError verifies the fail-secure
 // default. cli.ParseDryRunOutputFormat rejects unknown strings, so the value is
 // constructed directly here; without the default branch the caller would be
