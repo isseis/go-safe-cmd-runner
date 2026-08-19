@@ -97,7 +97,7 @@ verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 | 終了コード | 意味 |
 |---|---|
 | 0 | 全ファイルの検証が成功 |
-| 1 | 引数エラー、バリデータ生成失敗、ハッシュディレクトリのパスがディレクトリでない、または1件以上のファイルで検証が失敗 |
+| 1 | 引数エラー、バリデータ生成失敗、権限チェックの基準UIDの確定失敗、ハッシュディレクトリのパスがディレクトリでない、または1件以上のファイルで検証が失敗 |
 | 2 | 予期しない異常終了（Goランタイムが未捕捉panicに対して使用）。`verify` が明示的に返すことはない |
 | 3 | 次のいずれかにより、検証結果が信頼できない状態で起動した。(a) ハッシュディレクトリまたはその祖先のディレクトリ権限違反、(b) ハッシュディレクトリの不在または読み取り不能、(c) 権限チェッカの初期化失敗、(d) ハッシュディレクトリのパス解決の失敗。いずれの場合も対象ファイルを1件も検証していない |
 
@@ -111,7 +111,7 @@ verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 
 | トークン | 原因 | 対処 | 終了コード |
 |---|---|---|---|
-| `hash_dir_permission_violation` | ハッシュディレクトリまたはその祖先に、他者から書き込める権限が設定されている | 該当ディレクトリの権限を修正するか、権限の適切なパスへハッシュディレクトリを移動する | 3 |
+| `hash_dir_permission_violation` | ハッシュディレクトリまたはその祖先に、所有者以外から書き込める権限が設定されている、あるいは所有者やグループが安全でない | 標準エラー出力の `violation` 属性が示すディレクトリの権限と所有者を修正するか、権限の適切なパスへハッシュディレクトリを移動する | 3 |
 | `path_resolution_failed` | ハッシュディレクトリのパスを解決できず、権限を検査したディレクトリが実際に読むディレクトリと一致すると保証できない | 指定したパスと、その途中にあるシンボリックリンクを確認する | 3 |
 | `hash_dir_not_found` | ハッシュディレクトリが存在しない | `record` コマンドでハッシュを記録するか、正しいハッシュディレクトリを `-hash-dir` で指定する | 3 |
 | `hash_dir_unreadable` | ハッシュディレクトリは存在するが、記録を読み取れない | ディレクトリの権限と実行ユーザーを確認する | 3 |
@@ -702,15 +702,15 @@ else
     # エラーの種類に応じた処理
     if grep -q "verify-error=hash_dir_not_a_directory" /tmp/verify-output.txt; then
         echo "Error: The hash directory path is not a directory"
-    elif grep -q "file not found" /tmp/verify-output.txt; then
-        echo "Error: File does not exist"
     elif grep -q "hash file not found" /tmp/verify-output.txt; then
         echo "Error: Hash has not been recorded"
         echo "Run: record -d $HASH_DIR $FILE"
-    elif grep -q "hash mismatch" /tmp/verify-output.txt; then
+    elif grep -q "file content does not match the recorded hash" /tmp/verify-output.txt; then
         echo "Error: File has been modified"
         echo "Current hash:"
         sha256sum "$FILE"
+    elif grep -q "no such file or directory" /tmp/verify-output.txt; then
+        echo "Error: File does not exist"
     fi
 
     exit 1

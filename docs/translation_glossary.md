@@ -103,7 +103,7 @@
 | データ持ち出し | data exfiltration | 機密データの外部送信（セキュリティの文脈） |
 | データ送信（外部送信） | egress | 信頼境界を越える外部へのデータ送信（セキュリティの文脈）。一般的な「送信」と区別。リスクレベル分類の文脈で使用 |
 | データフロー解析 | dataflow analysis | CFGを用いたデータの流れの解析 |
-| ディレクトリ権限監査 | directory permission audit | 起動時とグループ実行の直前に、収集したディレクトリの権限・所有者・経路要素を1回ずつ検査する静的な監査。TOCTOU チェックではないため、新規に追加する文字列と利用者向け文書では「TOCTOU」を用いない（Task 0164） |
+| ディレクトリ権限監査 | directory permission audit | 起動時とグループ実行の直前に、収集したディレクトリの権限・所有者・経路要素を1回ずつ検査する静的な監査。TOCTOU チェックではないため、新規に追加する文字列と利用者向け文書では「TOCTOU」を用いない（Task 0164）。既存の識別子とログ文言（`RunTOCTOUPermissionCheck`、警告 `TOCTOU permission check violation` など）の改名は後続タスクとしたため、当面は両方の語が併存する |
 | 依存 / 依存解析 | dependency / dependency analysis | 動的ライブラリ依存解析の文脈 |
 | 判定メソッド | determination method | syscall番号の決定手段を示す文字列 |
 | デバッグ | debug / debugging | |

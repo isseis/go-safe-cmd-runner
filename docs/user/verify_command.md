@@ -97,7 +97,7 @@ verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 | Exit Code | Meaning |
 |---|---|
 | 0 | All files verified successfully |
-| 1 | Argument error, validator creation failure, the hash directory path is not a directory, or verification failure for one or more files |
+| 1 | Argument error, validator creation failure, failure to determine the base UID for the permission checks, the hash directory path is not a directory, or verification failure for one or more files |
 | 2 | Unexpected abnormal termination (used by the Go runtime for uncaught panics). `verify` never explicitly returns this code |
 | 3 | The run started in a state where verification results cannot be trusted, for one of the following reasons: (a) a directory permission violation on the hash directory or its ancestors, (b) the hash directory is missing or unreadable, (c) failure to initialize the permission checker, (d) the hash directory path could not be resolved. In every case, no target file has been verified |
 
@@ -111,7 +111,7 @@ When the run ends without verifying a single file, the message on standard error
 
 | Token | Cause | Remedy | Exit Code |
 |---|---|---|---|
-| `hash_dir_permission_violation` | The hash directory or one of its ancestors is writable by others | Fix the permissions of that directory, or move the hash directory to a path with appropriate permissions | 3 |
+| `hash_dir_permission_violation` | The hash directory or one of its ancestors is writable by someone other than the owner, or its owner or group is unsafe | Fix the permissions and ownership of the directory named by the `violation` attribute on standard error, or move the hash directory to a path with appropriate permissions | 3 |
 | `path_resolution_failed` | The hash directory path could not be resolved, so the directory whose permissions were inspected cannot be guaranteed to be the one that is actually read | Check the specified path and any symlinks along it | 3 |
 | `hash_dir_not_found` | The hash directory does not exist | Record hashes with the `record` command, or specify the correct hash directory with `-hash-dir` | 3 |
 | `hash_dir_unreadable` | The hash directory exists, but its records cannot be read | Check the directory permissions and the invoking user | 3 |
@@ -702,15 +702,15 @@ else
     # Process based on error type
     if grep -q "verify-error=hash_dir_not_a_directory" /tmp/verify-output.txt; then
         echo "Error: The hash directory path is not a directory"
-    elif grep -q "file not found" /tmp/verify-output.txt; then
-        echo "Error: File does not exist"
     elif grep -q "hash file not found" /tmp/verify-output.txt; then
         echo "Error: Hash has not been recorded"
         echo "Run: record -d $HASH_DIR $FILE"
-    elif grep -q "hash mismatch" /tmp/verify-output.txt; then
+    elif grep -q "file content does not match the recorded hash" /tmp/verify-output.txt; then
         echo "Error: File has been modified"
         echo "Current hash:"
         sha256sum "$FILE"
+    elif grep -q "no such file or directory" /tmp/verify-output.txt; then
+        echo "Error: File does not exist"
     fi
 
     exit 1
