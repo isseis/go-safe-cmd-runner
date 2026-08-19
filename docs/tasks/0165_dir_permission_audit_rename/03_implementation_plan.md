@@ -89,21 +89,23 @@
 - `cmd/record/main_test.go`
 - `cmd/verify/main_test.go`
 - `internal/runner/group_executor_test.go`
+- `internal/security/dir_permissions_audit_test.go`（テスト関数名。実装時に追加）
 - `cmd/runner/integration_toctou_test.go`（ファイル名含む）
 
 **作業内容**:
-- [ ] WARN ログ `"TOCTOU permission check violation"` → `"insecure directory permissions"`。`path`・`violation` の属性名と値は変えない
-- [ ] `cmd/runner` の ERROR メッセージ `"TOCTOU permission check failed: ..."` → `"directory permission audit failed: ..."`
-- [ ] `internal/runner` のグループ側エラー文言も同じ語に揃える
-- [ ] `cmd/record/main_test.go`: `TestRunTOCTOU_*` を改名する
-- [ ] `cmd/verify/main_test.go`: `TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates` を改名する
-- [ ] `internal/runner/group_executor_test.go`: `TestRunGroupTOCTOUCheck_*` を改名する
-- [ ] `cmd/runner/integration_toctou_test.go` を改名し（ファイル名含む）、`TestE2E_TOCTOU_RunnerFailsOnWorldWritableVerifyFilesDir` を改名する
-- [ ] `cmd/verify/main_test.go:392` の `assert.Contains(t, warnLines[0], "TOCTOU permission check violation")` を新しい文言に追随させる
-- [ ] `cmd/runner/integration_toctou_test.go:74` の `strings.Contains(combined, "TOCTOU") || strings.Contains(combined, "permission") || strings.Contains(combined, "file_access_error")` を新しい文言に置き換える。**このテストは他の項が独立に一致するため、文字列を変え忘れてもテストが通ってしまう**。置き換え後に `permission` 側の項を一時的にコメントアウトし、意図した語（`"insecure directory permissions"` 由来の文言）で実際に一致することを確認してから元に戻す。確認したことを PR に書く
-- [ ] `make fmt && make test && make lint` が緑であることを確認する
+- [x] WARN ログ `"TOCTOU permission check violation"` → `"insecure directory permissions"`。`path`・`violation` の属性名と値は変えない
+- [x] `cmd/runner` の ERROR メッセージ `"TOCTOU permission check failed: ..."` → `"directory permission audit failed: ..."`
+- [x] `internal/runner` のグループ側エラー文言も同じ語に揃える（`ErrDirPermViolation` の文言を `"directory permission audit failed"` に）
+- [x] `cmd/record/main_test.go`: `TestRunTOCTOU_*` を `TestCheckDirPermissions_*` に改名する（被テスト関数 `checkDirPermissions` に合わせた）
+- [x] `cmd/verify/main_test.go`: `TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates` を `TestDirPermAudit_ContinuesWhenOnlyTargetDirViolates` に改名する
+- [x] `internal/runner/group_executor_test.go`: `TestRunGroupTOCTOUCheck_*` を `TestAuditGroupDirPermissions_*` に改名する
+- [x] `internal/security/dir_permissions_audit_test.go`: `TestRunTOCTOUPermissionCheck_*` を `TestAuditDirectoryPermissions_*` に改名する（コミット1 の識別子改名に伴い必要になったため実装時に追加）
+- [x] `cmd/runner/integration_toctou_test.go` を `integration_dir_permissions_test.go` に改名し、`TestE2E_TOCTOU_RunnerFailsOnWorldWritableVerifyFilesDir` を `TestE2E_DirPermAudit_RunnerFailsOnWorldWritableVerifyFilesDir` に改名する
+- [x] `cmd/verify/main_test.go` の WARN 文言を照合している2箇所（`FindRecords(slog.LevelWarn, ...)` と `assert.Equal(..., warnRecords[0].Message)`。計画時に想定した `assert.Contains` ではなく、実際にはこの2箇所だった）を新しい文言に追随させる
+- [x] `cmd/runner/integration_toctou_test.go:74` の `strings.Contains(combined, "TOCTOU") || strings.Contains(combined, "permission") || strings.Contains(combined, "file_access_error")` を置き換える。**このテストは他の項が独立に一致するため、文字列を変え忘れてもテストが通ってしまう**。計画では一時コメントアウトによる確認を予定していたが、**選言そのものを廃し** `assert.Contains(combined, "directory permission audit failed")` の単一条件にした（他の項が独立に一致する構造自体を取り除いたため、以後この確認手順は不要になる）。期待文字列を誤った値に一時変更して当該テストが実際に失敗することを確認済み（`make fmt && make test && make lint` 緑）
+- [x] `make fmt && make test && make lint` が緑であることを確認する
 
-**成功基準**: 新しい文言・テスト名でテストが通り、上記の「変え忘れても通ってしまう」テストについては一時的な無効化で実際に新文言に一致することを確認済みである。
+**成功基準**: 新しい文言・テスト名でテストが通り、上記の「変え忘れても通ってしまう」テストについては、選言の除去によりその構造自体が解消され、期待文字列を壊すと実際に失敗することを確認済みである。
 
 ### コミット3: 文書と CHANGELOG
 

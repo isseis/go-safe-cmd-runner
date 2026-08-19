@@ -60,7 +60,7 @@ func AuditDirectoryPermissions(checker DirectoryPermChecker, dirs []string, logg
 			continue
 		}
 		result.Checked++
-		logger.Warn("TOCTOU permission check violation",
+		logger.Warn("insecure directory permissions",
 			slog.String("path", dir),
 			slog.String("violation", err.Error()),
 		)

@@ -41,7 +41,7 @@ func (e *CommandExecutionError) Unwrap() error {
 
 // ErrDirPermViolation is returned when the group-level directory permission audit
 // detects violations.
-var ErrDirPermViolation = errors.New("TOCTOU permission check failed")
+var ErrDirPermViolation = errors.New("directory permission audit failed")
 
 // errUnhandledCheckSkipReason is returned when path classification reports a
 // reason this package has no case for: an unknown reason says neither "check

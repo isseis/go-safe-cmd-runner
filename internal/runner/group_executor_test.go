@@ -3483,9 +3483,9 @@ func TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH(t *testing.T) 
 	mockVM.AssertExpectations(t)
 }
 
-// TestRunGroupTOCTOUCheck_NoValidator verifies that auditGroupDirPermissions is a
+// TestAuditGroupDirPermissions_NoValidator verifies that auditGroupDirPermissions is a
 // no-op when no dirPermAuditor is configured.
-func TestRunGroupTOCTOUCheck_NoValidator(t *testing.T) {
+func TestAuditGroupDirPermissions_NoValidator(t *testing.T) {
 	ge := &DefaultGroupExecutor{dirPermAuditor: nil}
 	rg := &runnertypes.RuntimeGroup{
 		Spec:                &runnertypes.GroupSpec{Name: "test"},
@@ -3495,9 +3495,9 @@ func TestRunGroupTOCTOUCheck_NoValidator(t *testing.T) {
 	require.NoError(t, err, "auditGroupDirPermissions must be a no-op when dirPermAuditor is nil")
 }
 
-// TestRunGroupTOCTOUCheck_SecureDir verifies that auditGroupDirPermissions returns
+// TestAuditGroupDirPermissions_SecureDir verifies that auditGroupDirPermissions returns
 // no error when all referenced directories satisfy the permission policy.
-func TestRunGroupTOCTOUCheck_SecureDir(t *testing.T) {
+func TestAuditGroupDirPermissions_SecureDir(t *testing.T) {
 	v, err := isec.NewDirectoryPermChecker()
 	require.NoError(t, err)
 
@@ -3514,9 +3514,9 @@ func TestRunGroupTOCTOUCheck_SecureDir(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestRunGroupTOCTOUCheck_ViolationReturnsError verifies that auditGroupDirPermissions
+// TestAuditGroupDirPermissions_ViolationReturnsError verifies that auditGroupDirPermissions
 // returns an error when a referenced directory violates the permission policy.
-func TestRunGroupTOCTOUCheck_ViolationReturnsError(t *testing.T) {
+func TestAuditGroupDirPermissions_ViolationReturnsError(t *testing.T) {
 	v, err := isec.NewDirectoryPermChecker()
 	require.NoError(t, err)
 
@@ -3636,11 +3636,11 @@ func (c *recordingPermChecker) ValidateDirectoryPermissions(path string) error {
 	return nil
 }
 
-// TestRunGroupTOCTOUCheck_RelativePathsSkipped verifies that relative paths in
+// TestAuditGroupDirPermissions_RelativePathsSkipped verifies that relative paths in
 // ExpandedVerifyFiles are left out of the permission check. A relative path is
 // not anchored to this process's working directory, so resolving it here would
 // check an unrelated directory tree.
-func TestRunGroupTOCTOUCheck_RelativePathsSkipped(t *testing.T) {
+func TestAuditGroupDirPermissions_RelativePathsSkipped(t *testing.T) {
 	checker := &recordingPermChecker{}
 
 	ge := &DefaultGroupExecutor{dirPermAuditor: checker}
@@ -3656,12 +3656,12 @@ func TestRunGroupTOCTOUCheck_RelativePathsSkipped(t *testing.T) {
 		"a relative path must reach no directory check at all; returning no violation is also what a resolved, sound directory would do")
 }
 
-// TestRunGroupTOCTOUCheck_AbsolutePathContainingBraceIsStillChecked pins the
+// TestAuditGroupDirPermissions_AbsolutePathContainingBraceIsStillChecked pins the
 // exclusion range for group-level paths. These paths are already expanded, so a
 // "%{" left in one is a literal produced by an escape, not a reference, and is no
 // reason to leave the path out. This assertion fails if the exclusion is ever
 // widened to match on the text of the path.
-func TestRunGroupTOCTOUCheck_AbsolutePathContainingBraceIsStillChecked(t *testing.T) {
+func TestAuditGroupDirPermissions_AbsolutePathContainingBraceIsStillChecked(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	require.NoError(t, os.Chmod(tmpDir, 0o755))
 

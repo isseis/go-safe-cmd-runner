@@ -498,7 +498,7 @@ func auditConfiguredDirPermissions(cfg *runnertypes.ConfigSpec, runtimeGlobal *r
 	if len(result.Violations) > 0 {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
-			Message:   fmt.Sprintf("TOCTOU permission check failed: %d directory violation(s) detected; review directory permissions", len(result.Violations)),
+			Message:   fmt.Sprintf("directory permission audit failed: %d directory violation(s) detected; review directory permissions", len(result.Violations)),
 			Component: string(resource.ComponentVerification),
 			RunID:     runID,
 		}

@@ -14,12 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestE2E_TOCTOU_RunnerFailsOnWorldWritableVerifyFilesDir tests that the runner
-// exits with an error when verify_files references a file in a world-writable directory.
-// This validates AC-M2S-7: runner aborts on TOCTOU permission violations.
-func TestE2E_TOCTOU_RunnerFailsOnWorldWritableVerifyFilesDir(t *testing.T) {
+// TestE2E_DirPermAudit_RunnerFailsOnWorldWritableVerifyFilesDir tests that the
+// runner exits with an error when verify_files references a file in a
+// world-writable directory.
+func TestE2E_DirPermAudit_RunnerFailsOnWorldWritableVerifyFilesDir(t *testing.T) {
 	// Create a world-writable directory with a file inside it.
-	// The TOCTOU check inspects the parent directory of verify_files entries.
+	// The audit inspects the parent directory of verify_files entries.
 	tmpDir := tu.SafeTempDir(t)
 	err := os.Chmod(tmpDir, 0o777)
 	require.NoError(t, err)
@@ -61,17 +61,18 @@ args = ["hello"]
 
 	err = cmd.Run()
 
-	// The runner should fail because of the TOCTOU violation
+	// The runner should fail because of the permission violation
 	require.Error(t, err, "runner should fail when verify_files dir is world-writable")
 
 	exitErr, ok := err.(*exec.ExitError)
 	require.True(t, ok, "error should be ExitError")
 	assert.Equal(t, 1, exitErr.ExitCode(), "exit code should be 1")
 
-	// Verify that the output mentions the TOCTOU failure
+	// Assert on the audit's own message rather than on a disjunction of loosely
+	// related terms: "permission" or "file_access_error" alone would match output
+	// the audit did not produce, so the assertion would keep passing if the audit
+	// stopped reporting the violation at all.
 	combined := stdout.String() + stderr.String()
-	assert.True(t,
-		strings.Contains(combined, "TOCTOU") || strings.Contains(combined, "permission") || strings.Contains(combined, "file_access_error"),
-		"output should mention the permission check failure: %s", combined,
-	)
+	assert.Contains(t, combined, "directory permission audit failed",
+		"output should report the directory permission audit failure")
 }
