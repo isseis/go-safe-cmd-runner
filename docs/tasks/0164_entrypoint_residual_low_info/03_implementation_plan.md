@@ -821,7 +821,7 @@ func getwd() (string, error) { return getwdHook() }
 **マージ後の作業**: issue [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) をクローズする（§10）。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（[#1034](https://github.com/isseis/go-safe-cmd-runner/pull/1034)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
