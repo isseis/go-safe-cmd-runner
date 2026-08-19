@@ -4,11 +4,12 @@
 
 | Item | Value |
 |---|---|
-| Status | `approved` |
+| Status | `completed` |
 | Created | 2026-08-14 |
 | Review date | 2026-08-14 |
 | Reviewer | isseis |
-| Comments | AC-31 の解釈は §1.5 で決定済み。残る二重出力は [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) へ分離した。レビュー指摘により、AC-31 の選別条件（`level=ERROR` → `error_message=`）、AC-27 の検索式（`isec` 別名）、ステップ 4-3 の除外範囲、`deps.resolvePathForCheck` の宣言、AC-01・AC-15 の現状件数を修正済み。ステップ 4-12 の用語集判断: 「読み取り専用バリデータ」「除外理由」はいずれも追加不要とした。前者は `CreateReadOnlyValidator`、後者は `CheckSkipReason` に対応する内部実装上の概念であり、利用者向け文書にも CHANGELOG にも現れないため、訳語を固定する必要が生じていない（現れた時点で追加する）。さらに PR レビュー指摘により、権限チェッカの注入口を引数無しのファクトリ `newPermChecker func() (security.DirectoryPermChecker, error)` に一本化し、`toctouChecker` を廃止した。承認後に PR 境界（§3.2、全7件）を追加し、フェーズ1とフェーズ4のステップ順を PR 単位に整理した。フェーズ4 着手前のレビューで、当該チェックが静的なディレクトリ権限監査であって TOCTOU チェックではないことを確認し、§1.4.6 として決定を追記した（本タスクで新規に増やす文字列・テスト名・利用者向け文書は中立名を用いる。既存識別子の改名は後続タスクとし §10 に記載） |
+| Verified | 2026-08-19 |
+| Comments | **2026-08-19 に §9 の成功基準を全件検証し完了とした**（結果は §9、初回検証で外れた 5 件の処理は §9.1、意図的に削除されたテストの確認は §9.2）。検証中に AC-42 のコメント補完と、§7・ステップ 4-12 における AC-45 の見出し文言の修正を行った。AC-31 の解釈は §1.5 で決定済み。残る二重出力は [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) へ分離した。レビュー指摘により、AC-31 の選別条件（`level=ERROR` → `error_message=`）、AC-27 の検索式（`isec` 別名）、ステップ 4-3 の除外範囲、`deps.resolvePathForCheck` の宣言、AC-01・AC-15 の現状件数を修正済み。ステップ 4-12 の用語集判断: 「読み取り専用バリデータ」「除外理由」はいずれも追加不要とした。前者は `CreateReadOnlyValidator`、後者は `CheckSkipReason` に対応する内部実装上の概念であり、利用者向け文書にも CHANGELOG にも現れないため、訳語を固定する必要が生じていない（現れた時点で追加する）。さらに PR レビュー指摘により、権限チェッカの注入口を引数無しのファクトリ `newPermChecker func() (security.DirectoryPermChecker, error)` に一本化し、`toctouChecker` を廃止した。承認後に PR 境界（§3.2、全7件）を追加し、フェーズ1とフェーズ4のステップ順を PR 単位に整理した。フェーズ4 着手前のレビューで、当該チェックが静的なディレクトリ権限監査であって TOCTOU チェックではないことを確認し、§1.4.6 として決定を追記した（本タスクで新規に増やす文字列・テスト名・利用者向け文書は中立名を用いる。既存識別子の改名は後続タスクとし §10 に記載） |
 
 ## 関連文書
 
@@ -739,14 +740,14 @@ func getwd() (string, error) { return getwdHook() }
 
 **変更ファイル**: `cmd/runner/main_test.go`、`cmd/runner/integration_pre_execution_error_test.go`、`internal/runner/bootstrap/logger_test.go`、`internal/runner/bootstrap/config_test.go`
 
-- [x] `TestNewDryRunFormatter_KnownFormats` を追加する（AC-30）。`resource.OutputFormatText` と `resource.OutputFormatJSON` に対して期待する型のフォーマッタが返り、エラーが無いこと。
+- [-] `TestNewDryRunFormatter_KnownFormats` を追加する（AC-30）。`resource.OutputFormatText` と `resource.OutputFormatJSON` に対して期待する型のフォーマッタが返り、エラーが無いこと。→ **一度追加したのち [c8bd32d1](https://github.com/isseis/go-safe-cmd-runner/commit/c8bd32d1) で削除**。`switch` の `case` が構築した formatter をそのまま返すことの表明にとどまり、対応付けを取り違えた場合は `-dry-run-format` の text/json 統合テストが端から端まで検出する。未知形式の `TestNewDryRunFormatter_UnknownFormatReturnsError` は、fail-secure な `default` が CLI から到達できず統合テストで代替できないため残した。
 - [x] `TestNewDryRunFormatter_UnknownFormatReturnsError` を追加する（AC-29）。`cli.ParseDryRunOutputFormat` を経由せず不正な `resource.OutputFormat` 値を直接渡し、nil でないエラーが返ること。
 - [x] `TestE2E_SlackWebhookEnvErrorPrintedOnce` を `cmd/runner/integration_pre_execution_error_test.go` に追加する（AC-31〜AC-33）。**子プロセスの環境を明示的に組み立てる**: `os.Environ()` から `GSCR_SLACK_` で始まる変数をすべて取り除いたうえで `GSCR_SLACK_WEBHOOK_URL_SUCCESS` のみを設定する。既存の兄弟テストのように `append(os.Environ(), ...)` とすると、開発者や CI が `GSCR_SLACK_WEBHOOK_URL_ERROR` を export している環境で `ValidateSlackWebhookEnv` が成功してしまい、3つの表明がいずれも別の失敗を見ることになる。実行は `-config <valid.toml> -dry-run`（webhook 未設定のまま起動検証を通すため、既存の E2E テストと同様に `-dry-run` を付ける）。**実装時の変更**: 起動は `go run .` ではなく同ファイルの兄弟テストが使う `newGoRunCmd`（`cmd/runner/testutil_ldflags_test.go`）とした。`go run` は子プロセスの終了コードを常に 1 に潰すため、終了コードの表明（AC-33）が「1 であること」を実際には確かめられないからである（同ファイル内の起動手段は元から `go run` と `newGoRunCmd` に分かれており、統一が理由ではない）。まず終了コードが `1` であることを表明する（AC-33）。環境が漏れて別経路に入った場合に静かに通らないよう、これを最初に見る。次に、§1.5 のとおり**標準エラー出力から `common.PreExecErrorAttrs.ErrorMessage` の属性キー（`error_message=`）を含む行を除いたうえで**、`GSCR_SLACK_WEBHOOK_URL_SUCCESS is set but GSCR_SLACK_WEBHOOK_URL_ERROR is not.` の出現回数がちょうど1であることを検証する（AC-31）。**選別条件を `level=ERROR` にしてはならない**: この出力は `SetupLogging` 前の組み込み既定ハンドラによるもので `level=` 表記を持たないため、1行も除外されず、実装が正しくてもこの表明は失敗する（§1.5）。除外の効きめを自己点検するため、除外前の行数と除外後の行数が異なることも併せて表明する。除外した構造化ログ行に同じ本文が残ることは既知であり、[#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) で扱う。この表明は、直接出力が戻された場合に2になって失敗する。最後に、案内文が失われていないことを検証する（AC-32）。**レビュー指摘による修正**: この表明も**除外後**の行に対して行う。除外前の標準エラー出力に対して行うと、構造化ログ行が案内文全体を属性値として抱えているため、人間向けブロックが1行目だけに切り詰められても表明が通ってしまい、AC-32 が捉えるべき欠落をまさに見逃す。あわせて案内文は複数行なので、`export GSCR_SLACK_WEBHOOK_URL_ERROR=` の行と、その後段の見出し行の2箇所を確認する。除外の意図と #1020 との関係を、テストの doc コメントに英語で記す。
 - [x] `TestSetupLoggerWithConfig_LogFileNameTimestampIsUTC` を `internal/runner/bootstrap/logger_test.go` に追加する（AC-21〜AC-23）。`time.Local` を UTC+9 相当のロケーションに差し替えたうえで（`t.Cleanup` で復元）、ログディレクトリに作られたファイル名を読み、`<hostname>_<timestamp>_<runID>.json` の3要素構成であること、タイムスタンプ部が `20060102T150405Z` の書式に合致し 16 文字であること、その値を UTC としてパースした結果が実行時刻と 1 分以内で一致することを検証する。`time.Local` はプロセス全体の状態なので `t.Parallel()` を呼ばない。
 - [x] `internal/runner/bootstrap/config_test.go: TestNormalizeSlackAllowedHost` の表に、`[2001:DB8::1]` → `2001:db8::1` と `[2001:db8::1]` → `2001:db8::1` の2行を追加する（AC-34）。
-- [x] `TestNormalizeSlackAllowedHost_UppercaseIPv6PassesWebhookURLValidation` を追加する（AC-35）。大文字 IPv6 を正規化した値を許可ホストとして `internal/logging` の webhook URL 検証に渡し、同じアドレスを含む URL が許可されること。
-- [x] `TestNormalizeSlackAllowedHost_UppercaseIPv6IsRedacted` を追加する（AC-36）。同じ正規化結果から秘匿パターンを組み立て、当該 host を含む webhook URL が秘匿されること。
-- [x] AC-35・AC-36 の2テストは、下流が大文字小文字を区別しないため変更前でも通る（02_architecture.md §6.7）。退行防止の位置づけであることを、各テストの doc コメントに英語で明記する。
+- [-] `TestNormalizeSlackAllowedHost_UppercaseIPv6PassesWebhookURLValidation` を追加する（AC-35）。大文字 IPv6 を正規化した値を許可ホストとして `internal/logging` の webhook URL 検証に渡し、同じアドレスを含む URL が許可されること。→ **一度追加したのち [c8bd32d1](https://github.com/isseis/go-safe-cmd-runner/commit/c8bd32d1) で削除**。下の項目のとおり小文字化の有無で結果が変わらず、正規化の証拠になっていなかった。`validateWebhookURL` が両側の大文字小文字を畳む点は `internal/logging/slack_handler_test.go` の AC-L2-16 が、正規化自体は AC-34 の表が担保する。
+- [-] `TestNormalizeSlackAllowedHost_UppercaseIPv6IsRedacted` を追加する（AC-36）。同じ正規化結果から秘匿パターンを組み立て、当該 host を含む webhook URL が秘匿されること。→ **一度追加したのち [c8bd32d1](https://github.com/isseis/go-safe-cmd-runner/commit/c8bd32d1) で削除**。同じ理由に加え、同一アドレス・同一 URL 形状・同一の自己検証基準で `internal/redaction/value_detector_test.go::TestValueDetector_ConfiguredWebhookHost_IPv6` と重複していた。
+- [-] AC-35・AC-36 の2テストは、下流が大文字小文字を区別しないため変更前でも通る（02_architecture.md §6.7）。退行防止の位置づけであることを、各テストの doc コメントに英語で明記する。→ **この性質そのものが削除の理由になった**。変更前でも通るテストは「あらゆるテストは、掲げた理由で失敗し得なければならない」という CLAUDE.md の規約を満たさない。退行防止の担保は、正規化を固定する AC-34 の表と、下流の大文字小文字の畳み込みを固定する AC-L2-16 の組み合わせに委ねた。
 
 #### フェーズ4 完了ゲート
 
@@ -798,7 +799,7 @@ func getwd() (string, error) { return getwdHook() }
 - [x] 見出し「ログファイル名のタイムスタンプが UTC になりました」 — 02_architecture.md §6.4 の移行時の注意（UTC より進んだタイムゾーンのホストで、移行直後に辞書順と時系列が一致しない期間が生じる）を含める。
 - [x] 見出し「パス解決の変更により新たに権限違反が検出されることがあります」 — アップグレード前の判定手順として、ハッシュディレクトリと検証対象のパスに `readlink` を適用し、その実体の祖先の権限を確認する手順を示す（02_architecture.md §9）。**実装時の変更**: `-f` ではなく `-m` を用いた。`-f` はパスの途中が実在しないと失敗して空文字列を返し、祖先を辿るループが終わらない。ハッシュディレクトリの未作成は本タスクが `verify` の終了コード 3 として案内する状態そのものであり、手順が最初に踏む可能性が高いため。
 - [x] 見出し「新規作成するハッシュディレクトリのパーミッションが 0700 になりました」 — 既存ディレクトリは変わらないことを添える。
-- [x] 見出し「`record`: world-writable な場所への新規ハッシュディレクトリ作成を拒否します」 — 本番既定のハッシュディレクトリは該当しないこと、先に利用者自身がディレクトリを作れば通ることを添える。
+- [x] 見出し「`record`: world-writable な場所のハッシュディレクトリを拒否します」 — 本番既定のハッシュディレクトリは該当しないこと、先に利用者自身がディレクトリを作れば通ることを添える。**実装時の変更**: 見出し案は「world-writable な場所への新規ハッシュディレクトリ作成を拒否します」だったが、拒否の対象は新規作成先だけでなく既存のハッシュディレクトリ自身も含むため、両方を含む文言に改めた。§7 の AC-45 の検索式も合わせてある。
 - [x] **地の確認**: CHANGELOG に記した `readlink -m` を用いた判定手順を、シンボリックリンク経由のハッシュディレクトリ、および途中が実在しないパス（`/nonexistent/a/b/c`）に対して実行し、実体パスの解決と祖先の権限一覧が記載どおりに出ること、後者でもループが根で終わることを確認した。
 - [x] `docs/translation_glossary.md` に「識別トークン / identification token」を追加する。§1.4.1 で導入した概念であり、`verify` の利用者向け文書と CHANGELOG の両方に現れるため、訳語を固定する必要がある。既存項目に同義のものが無いことを確認したうえで追加する。
 - [x] `docs/translation_glossary.md` に「ディレクトリ権限監査 / directory permission audit」を追加する。§1.4.6 の決定により、本タスクで新規に増やす文字列と利用者向け文書はこの語を用いるため、訳語を固定する必要がある。
@@ -822,8 +823,8 @@ func getwd() (string, error) { return getwdHook() }
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（[#1034](https://github.com/isseis/go-safe-cmd-runner/pull/1034)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -936,7 +937,7 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 - [x] PR-5 マージ済み（対象ステップ: 3-4 / 3-5、フェーズ3 完了ゲートを含む）
 - [x] PR-6 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3 / 4-4 / 4-5）
 - [x] PR-7 マージ済み（対象ステップ: 4-6 / 4-7 / 4-8 / 4-9 / 4-10、フェーズ4 完了ゲートを含む）
-- [ ] PR-8 マージ済み（対象ステップ: 4-11 / 4-12）
+- [x] PR-8 マージ済み（対象ステップ: 4-11 / 4-12）
 ---
 
 ## 7. 受け入れ基準の検証
@@ -994,14 +995,13 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 | AC-28 | static | `rg -n -e 'the policy declaration in init' cmd/verify/main.go` | 一致1件 |
 | AC-28 | static | `rg -n -e 'checker initialisation in checkDirPermissions' cmd/verify/main.go` | 一致0件 |
 | AC-29 | test | `cmd/runner/main_test.go::TestNewDryRunFormatter_UnknownFormatReturnsError` | — |
-| AC-30 | test | `cmd/runner/main_test.go::TestNewDryRunFormatter_KnownFormats` | — |
-| AC-30 | test | `cmd/runner/dry_run_integration_test.go::TestDryRunTextOutput_Unchanged`、`::TestDryRunJSONOutput_DetailLevels` | 通過 |
+| AC-30 | test | `cmd/runner/dry_run_integration_test.go::TestDryRunTextOutput_Unchanged`、`::TestDryRunJSONOutput_DetailLevels`（既知2形式の対応付けを端から端まで確認する。当初挙げていた `cmd/runner/main_test.go::TestNewDryRunFormatter_KnownFormats` は `switch` の `case` が構築した formatter をそのまま返すことの表明にすぎず、[c8bd32d1](https://github.com/isseis/go-safe-cmd-runner/commit/c8bd32d1) で削除した） | 通過 |
 | AC-31 | test | `cmd/runner/integration_pre_execution_error_test.go::TestE2E_SlackWebhookEnvErrorPrintedOnce`（`error_message=` を含む行を除いた標準エラー出力で、案内文の出現回数がちょうど1。§1.5 の解釈による） | — |
 | AC-32 | test | 同上（除外**後**の標準エラー出力が、`  export GSCR_SLACK_WEBHOOK_URL_ERROR="<your_webhook_url>"` の行と、その後段の見出し行 `To use the same webhook for both success and error notifications:` の2箇所を含むことを検証。除外前に対して行うと、構造化ログ行が案内文全体を属性値として抱えているため人間向けブロックが1行目に切り詰められても通ってしまう） | — |
 | AC-33 | test | 同上（終了コード `1`） | — |
 | AC-34 | test | `internal/runner/bootstrap/config_test.go::TestNormalizeSlackAllowedHost`（大文字・小文字の IPv6 が同一結果になる2行） | — |
-| AC-35 | test | `internal/runner/bootstrap/config_test.go::TestNormalizeSlackAllowedHost_UppercaseIPv6PassesWebhookURLValidation` | — |
-| AC-36 | test | `internal/runner/bootstrap/config_test.go::TestNormalizeSlackAllowedHost_UppercaseIPv6IsRedacted` | — |
+| AC-35 | test | `internal/logging/slack_handler_test.go::TestValidateWebhookURL`（AC-L2-16 の行。`validateWebhookURL` が URL 側の大文字ホストを小文字の `allowedHost` に一致させる）と、AC-34 の表による正規化の固定との組み合わせ。専用テスト `TestNormalizeSlackAllowedHost_UppercaseIPv6PassesWebhookURLValidation` は、自身のコメントが「小文字化の有無にかかわらず通過する」と述べており正規化の証拠になっていなかったため [c8bd32d1](https://github.com/isseis/go-safe-cmd-runner/commit/c8bd32d1) で削除した | 通過 |
+| AC-36 | test | `internal/redaction/value_detector_test.go::TestValueDetector_ConfiguredWebhookHost_IPv6`（正規化後のホストで webhook URL が秘匿される）と、AC-34 の表による正規化の固定との組み合わせ。専用テスト `TestNormalizeSlackAllowedHost_UppercaseIPv6IsRedacted` は AC-35 のものと同じ理由（同一アドレス・同一 URL 形状の重複であり、小文字化の有無で結果が変わらない）で [c8bd32d1](https://github.com/isseis/go-safe-cmd-runner/commit/c8bd32d1) で削除した | 通過 |
 | AC-37 | test | `internal/runner/bootstrap/config_test.go::TestNormalizeSlackAllowedHost`（既存のホスト名・不正値の行） | 通過 |
 | AC-38 | static | `rg -n -e validatorFactory -e mkdirAll -e ensurePermissionCheckUID -e toctouChecker cmd/verify/main.go` | `toctouChecker` と `mkdirAll` は一致0件（`deps` のフィールドとしても残さない）。`validatorFactory` と `ensurePermissionCheckUID` は `deps` のフィールド名としての一致のみで、パッケージレベル変数としての宣言は0件（目視で切り分ける） |
 | AC-38 | test | `cmd/verify/main_test.go::TestRunProcessesMultipleFiles`（`deps` 経由で差し替える形になっている） | — |
@@ -1020,7 +1020,7 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 | AC-45 | static | `rg -n -e 'ログファイル名のタイムスタンプが UTC になりました' CHANGELOG.ja.md` | 一致1件 |
 | AC-45 | static | `rg -n -e パス解決の変更により新たに権限違反が検出されることがあります CHANGELOG.ja.md` | 一致1件 |
 | AC-45 | static | `rg -n -e '新規作成するハッシュディレクトリのパーミッションが 0700 になりました' CHANGELOG.ja.md` | 一致1件 |
-| AC-45 | static | `rg -n -e 'world-writable な場所への新規ハッシュディレクトリ作成を拒否します' CHANGELOG.ja.md` | 一致1件 |
+| AC-45 | static | `rg -n -e 'world-writable な場所のハッシュディレクトリを拒否します' CHANGELOG.ja.md` | 一致1件。計画時の見出し案は「world-writable な場所への**新規**ハッシュディレクトリ作成を拒否します」だったが、実装した拒否は新規作成先だけでなく既に存在するハッシュディレクトリ自身も対象とする（`CHANGELOG.ja.md:45-48` の2項目）。見出しを両方を含む文言に改め、検索式もそれに合わせた |
 | AC-45 | manual | CHANGELOG に記した `readlink -m` の判定手順を実行し、記載どおりの出力になることを確認する（`-f` から変更した理由はステップ 4-12 を参照） | 記載と一致 |
 | AC-47 | static | `rg -n -e 'chgrp' docs/user/record_command.ja.md docs/user/record_command.md` | 両ファイルとも1件以上（分離運用の手順） |
 | AC-47 | static | `rg -n -e '0o750' -A3 docs/user/record_command.ja.md \| rg -e 分離運用` | 一致1件（移行案内が例外に言及している） |
@@ -1046,21 +1046,44 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 
 ## 9. 成功基準
 
-- [ ] §7 のすべての AC 検証が期待結果どおりである。
-- [ ] `make test` と `make lint` が緑である。
-- [ ] `make deadcode` が本タスクに由来する未使用シンボルを報告しない。
-- [ ] 権限違反もパス解決失敗も起きない通常運用において、`runner`・`record` の外部から観測できる挙動が 0162 完了時点から変わらない。`verify` については、存在するハッシュディレクトリを指定する通常運用で挙動が変わらない。
-- [ ] `verify` が fail-closed で終了した場合、原因が権限違反・ディレクトリ不在・読み取り不能・チェッカ初期化失敗のいずれであるかを、標準エラー出力の識別トークンのみから判別できる。
-- [ ] 対象 11 件（L-1〜L-5・L-7・I-1〜I-5）それぞれについて、所見が指摘した挙動が現行コードに残っていないことを、§7 の `test` または `static` の項目で示せる。
+検証日: 2026-08-19（ブランチ `issei/0164-entrypoint-residual-low-info-impl-0b`）。§7 の `test` 項目は 1 本ずつ `go test -run` で、`static` 項目は記載の `rg` で、`manual` 項目は実機で確認した。**すべて達成**。
 
+- [x] §7 のすべての AC 検証が期待結果どおりである。初回の検証で外れた 5 件は §9.1 のとおり処理した（実質の不足は AC-42 の 1 件のみで、コメントを補って解消した）。
+- [x] `make test` と `make lint` が緑である。`make test` 終了コード 0、`make lint` は `0 issues.`。
+- [x] `make deadcode` が本タスクに由来する未使用シンボルを報告しない。報告された 9 件はいずれも `internal/redaction`・`internal/runner`・`internal/security/elfanalyzer` の既存シンボルで、本タスクが追加した `ResolvePathForCheck`・`ResolveAllForCheck`・`CreateReadOnlyValidator`・`CheckSkipReason` 系は 1 件も現れない。
+- [x] 権限違反もパス解決失敗も起きない通常運用において、`runner`・`record` の外部から観測できる挙動が 0162 完了時点から変わらない。`verify` については、存在するハッシュディレクトリを指定する通常運用で挙動が変わらない。AC-16・AC-30・AC-41 が挙げる既存テスト（`TestRunProcessesMultipleFiles`・`TestRunReportsFailuresAndContinues`・`TestDryRunTextOutput_Unchanged`・`TestDryRunJSONOutput_DetailLevels`・両コマンドの `TestRunWarnsWhenDeprecatedFlagUsed`・`TestRun_DebugInfoFlag_ControlsDebugFieldOmitEmpty`）が書き換え後も通過。
+- [x] `verify` が fail-closed で終了した場合、原因が権限違反・ディレクトリ不在・読み取り不能・チェッカ初期化失敗のいずれであるかを、標準エラー出力の識別トークンのみから判別できる。AC-43 の manual 2 件（不在 → 終了コード 3・`verify-error=hash_dir_not_found`、world-writable な祖先 → `verify-error=hash_dir_permission_violation`）を実機で確認し、`robust-verification.sh` が両条件で意図した分岐に入ることを確認した。読み取り不能とチェッカ初期化失敗は AC-13・AC-24 のテストで確認。
+- [x] 対象 11 件（L-1〜L-5・L-7・I-1〜I-5）それぞれについて、所見が指摘した挙動が現行コードに残っていないことを、§7 の `test` または `static` の項目で示せる。
+
+### 9.1 初回検証で外れた項目とその処理
+
+| AC | 初回の結果 | 処理 |
+|---|---|---|
+| AC-42 | `rg -e 'saved set-user-ID' cmd/runner/main.go` が一致0件。コメントは再昇格可能であることと恒久降格でないことは述べていたが、saved-set-uid に明示的に触れていなかった | **コードを修正**。`cmd/runner/main.go` の `main()` 冒頭のコメントに「leaving the saved set-user-ID untouched」を加え、AC-42 が求める3点をすべて満たした。検索語が折り返しで分断されないよう1行に収めてある |
+| AC-45 | `rg -e 'world-writable な場所への新規ハッシュディレクトリ作成を拒否します'` が一致0件 | **計画の検索式を修正**。実装した拒否は新規作成先だけでなく既存のハッシュディレクトリ自身も対象とするため、見出しを両方を含む「`record`: world-writable な場所のハッシュディレクトリを拒否します」としてある。§7 の検索式とステップ 4-12 の見出し案を実際の文言に合わせた |
+| AC-30・AC-35・AC-36 | 挙げられたテストが存在しない | **削除が正当であることを確認し、§7 を実際の担保先へ更新**。詳細は §9.2 |
+
+### 9.2 削除されたテストの確認
+
+§7 が当初挙げていた `TestNewDryRunFormatter_KnownFormats`・`TestNormalizeSlackAllowedHost_UppercaseIPv6PassesWebhookURLValidation`・`TestNormalizeSlackAllowedHost_UppercaseIPv6IsRedacted` は実装漏れではなく、[c8bd32d1](https://github.com/isseis/go-safe-cmd-runner/commit/c8bd32d1)（`test(0164): drop the duplicate and self-evident tests added in this PR`）が重複・自明として意図的に削除したものである。代替の担保先が実在し通過することを確認したうえで、§7 の該当行とステップ 4-6・4-8 の該当項目を更新した。
+
+| 削除されたテスト | 削除理由 | 代替の担保 | 確認 |
+|---|---|---|---|
+| `TestNewDryRunFormatter_KnownFormats` | `switch` の `case` が構築した formatter をそのまま返すことの表明にすぎない | `cmd/runner/dry_run_integration_test.go` の2本（対応付けの取り違えは端から端まで検出される） | 通過。未知形式の `TestNewDryRunFormatter_UnknownFormatReturnsError` は、fail-secure な `default` が CLI から到達できず統合テストで代替できないため残されている |
+| `..._UppercaseIPv6PassesWebhookURLValidation` | 自身の doc コメントが「小文字化の有無にかかわらず通過する」と述べており、正規化の証拠になっていなかった。変更前でも通るテストは「あらゆるテストは、掲げた理由で失敗し得なければならない」を満たさない | `internal/logging/slack_handler_test.go:334` の AC-L2-16 行（URL 側の大文字ホストが小文字 `allowedHost` に一致する）と、AC-34 の表による正規化の固定 | 該当行の実在を確認 |
+| `..._UppercaseIPv6IsRedacted` | 同上の理由に加え、同一アドレス・同一 URL 形状・同一の自己検証基準で `TestValueDetector_ConfiguredWebhookHost_IPv6` と重複 | `internal/redaction/value_detector_test.go:680` と、AC-34 の表による正規化の固定 | 実在・通過を確認 |
+
+同じコミットはログファイル名タイムスタンプの `require.Len`（AC-23 の「16 文字」）も削除しているが、`time.ParseInLocation("20060102T150405Z", ...)` が短すぎる値も長すぎる値も拒否するため AC-23 は依然として担保されている。3要素構成と区切り文字 `_` は同テストの `HasPrefix`/`HasSuffix` が確認している。
+
+なお同コミットは `normalizeSlackAllowedHost` の表から小文字 `"[2001:db8::1]"` の行を削除しているが、AC-34 が依拠する「uppercase IPv6 literal lowercased」（入力 `[2001:DB8::1]`）の行と `[::1]` の行はいずれも残っており、AC-34 の担保は失われていない。
 ---
 
 ## 10. 次のステップ
 
-- [ ] 本書のレビューと `approved` への更新（レビュアー作業）。02_architecture.md §3.4 への `deps` の `newPermChecker`・`resolvePathForCheck` の追補（§1.4.4）は反映済み。
-- [ ] 承認後、§3.2 の PR-1 から順に実装する。PR の区切りは各ステップ群の末尾にある「PR-N 作成ポイント」に従い、1つの PR をマージしてから次のブランチへ移る。
-- [ ] `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の消し込みはステップ 4-12（PR-8）で行う。
-- [ ] issue [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) をクローズする。対象外とした L-6（[#1018](https://github.com/isseis/go-safe-cmd-runner/issues/1018)）・I-6（[#1019](https://github.com/isseis/go-safe-cmd-runner/issues/1019)）と、下の項目で登録する §11 の改名が、別 issue として残ることをクローズコメントに記す。
+- [x] 本書のレビューと `approved` への更新（レビュアー作業）。02_architecture.md §3.4 への `deps` の `newPermChecker`・`resolvePathForCheck` の追補（§1.4.4）は反映済み。
+- [x] 承認後、§3.2 の PR-1 から順に実装する。PR-8 まで全てマージ済み（§6）。PR の区切りは各ステップ群の末尾にある「PR-N 作成ポイント」に従い、1つの PR をマージしてから次のブランチへ移る。
+- [x] `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の消し込みはステップ 4-12（PR-8）で行う。
+- [x] issue [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) をクローズする。対象外とした L-6（[#1018](https://github.com/isseis/go-safe-cmd-runner/issues/1018)）・I-6（[#1019](https://github.com/isseis/go-safe-cmd-runner/issues/1019)）と、下の項目で登録する §11 の改名が、別 issue として残ることをクローズコメントに記す。
 - [x] §11 のディレクトリ権限監査の改名を issue として登録する（L-6・I-6 と同じ扱い）。本文には §11 への参照と、着手が**フェーズ4 の完了後**（PR-8 のマージ後）であることを記す。登録した issue 番号を §11 の冒頭に追記する。この登録は PR-8 より前に済ませる（[#1033](https://github.com/isseis/go-safe-cmd-runner/issues/1033) として登録済み）。本書は PR-8 で役目を終えるため、それまでに追跡先を作らないと §11 が完了済みタスクの文書に埋もれる。
 
 ---
