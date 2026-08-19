@@ -214,7 +214,7 @@ func mainWithExitCode(runID string) int {
 			// The validation report was already printed.
 			// revive:disable:empty-block This empty block is intentional to handle specific cases
 		case errors.As(err, &preExecErr):
-			logging.HandlePreExecutionError(preExecErr.Type, preExecErr.Message, preExecErr.Component, runID)
+			logging.HandlePreExecutionError(preExecErr.Type, preExecErr.Detail(), preExecErr.Component, runID)
 		case errors.As(err, &execErr):
 			logging.HandleExecutionError(execErr)
 		default:

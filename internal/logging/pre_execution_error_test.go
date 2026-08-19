@@ -36,6 +36,53 @@ func TestPreExecutionError_ErrorMessage(t *testing.T) {
 	assert.Equal(t, expected, err.Error())
 }
 
+// friendlyTestError is a UserFriendlyError whose UserMessage differs from its
+// Error text, so a test can tell which of the two Detail picked.
+type friendlyTestError struct{}
+
+func (friendlyTestError) Error() string       { return "raw text" }
+func (friendlyTestError) UserMessage() string { return "friendly text" }
+
+func TestPreExecutionError_Detail(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "no wrapped error",
+			err:  nil,
+			want: "Failed to load the configuration",
+		},
+		{
+			// The regression this guards: reporting Message alone dropped the
+			// cause (a TOML syntax error, a hash mismatch) from stderr, the
+			// structured log and the Slack alert.
+			name: "wrapped error appended",
+			err:  fmt.Errorf("toml: line 3: expected key separator: %w", errStandardError),
+			want: "Failed to load the configuration: toml: line 3: expected key separator: standard error",
+		},
+		{
+			name: "user-friendly message preferred",
+			err:  friendlyTestError{},
+			want: "Failed to load the configuration: friendly text",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			preExecErr := &PreExecutionError{
+				Type:      ErrorTypeConfigParsing,
+				Message:   "Failed to load the configuration",
+				Component: "config",
+				RunID:     "test-run-id",
+				Err:       tt.err,
+			}
+			assert.Equal(t, tt.want, preExecErr.Detail())
+		})
+	}
+}
+
 func TestPreExecutionError_Is(t *testing.T) {
 	err := &PreExecutionError{
 		Type:      ErrorTypeConfigParsing,
