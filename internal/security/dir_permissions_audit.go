@@ -26,17 +26,20 @@ type DirPermAuditResult struct {
 }
 
 // AuditDirectoryPermissions inspects all collected directories for insecure
-// permissions, ownership, and path components. Non-existent directories are
-// silently skipped (they cannot be exploited) and counted in Skipped. Violations
-// are logged as warnings; a directory that violates the policy was still
-// inspected, so it counts towards Checked too.
+// permissions, ownership, and path components. A directory that does not exist is
+// skipped and counted in Skipped; its existing ancestors are still audited, since
+// that is what the collected set expands to. Violations are logged as warnings; a
+// directory that violates the policy was still inspected, so it counts towards
+// Checked too.
 //
 // This is a static, one-shot audit performed ahead of use: each directory is
 // examined once and a verdict is recorded. It is not a time-of-check/time-of-use
 // comparison, and it establishes nothing about the directory at the moment a file
 // under it is later opened or executed. Defence against that race lives elsewhere:
-// safefileio opens with O_NOFOLLOW, and runner/base/executor executes through a
-// file descriptor rather than re-resolving the path.
+// safefileio opens without following symlinks (openat2 with RESOLVE_NO_SYMLINKS on
+// Linux, O_NOFOLLOW plus parent checks in the portable fallback),
+// runner/base/executor executes through a file descriptor rather than re-resolving
+// the path, and filevalidator re-verifies the hash against the same read.
 func AuditDirectoryPermissions(checker DirectoryPermChecker, dirs []string, logger *slog.Logger) DirPermAuditResult {
 	if logger == nil {
 		panic("AuditDirectoryPermissions: logger must not be nil")

@@ -15,9 +15,9 @@ The `--run-id` flag now only accepts values consisting of uppercase letters (`A-
 
 **Affected scenarios:** CI and operational scripts that pass non-auto-generated values to `--run-id`. Check whether the value you pass fits the above format. Auto-generated ULIDs (26-character Crockford Base32) and the values recommended in the user documentation (`my-custom-run-001`, `gh-<GitHub Actions Run ID>`, `jenkins-<build number>`, `backup-<timestamp>`) all match the accepted format.
 
-#### `verify`: fail-closed on hash directory TOCTOU permission violations
+#### `verify`: fail-closed on hash directory permission violations
 
-When a TOCTOU permission violation is detected on the hash directory or its ancestor directories, `verify` now exits with code 3 without verifying any target files. Violations confined to a target file's ancestor directories are still recorded as warnings and verification continues as before (exit code unchanged). No bypass flag is provided.
+When a permission violation is detected on the hash directory or its ancestor directories, `verify` now exits with code 3 without verifying any target files. Violations confined to a target file's ancestor directories are still recorded as warnings and verification continues as before (exit code unchanged). No bypass flag is provided.
 
 **Assessing impact before upgrading:**
 
@@ -99,7 +99,7 @@ The term `TOCTOU` has been removed from the text that reports the result of insp
 
 The rules that determine a violation, the log levels, and the exit codes are unchanged. What is inspected and the results are unchanged as well; only the text has changed.
 
-**Affected scenarios:** Monitoring rules and scripts that search or match logs by the above text are affected. Update them to the new text. Note that the procedure for assessing impact before upgrading, described in "`verify`: fail-closed on hash directory TOCTOU permission violations" in this release, is run on the version **before** the upgrade, so it works correctly with the old text written there.
+**Affected scenarios:** Monitoring rules and scripts that search or match logs by the above text are affected. Update them to the new text. Note that the procedure for assessing impact before upgrading, described in "`verify`: fail-closed on hash directory permission violations" in this release, is run on the version **before** the upgrade, so it works correctly with the old text written there.
 
 ## [1.1.1] - 2026-08-03
 
