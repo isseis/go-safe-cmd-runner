@@ -19,7 +19,7 @@ jobs:
       has-devcontainer-changes: ${{ steps.check.outputs.has-devcontainer-changes }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -62,12 +62,12 @@ jobs:
     if: needs.check-changes.outputs.has-code-changes == 'true'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -120,10 +120,10 @@ jobs:
         cgo: [0, 1]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -149,7 +149,7 @@ jobs:
 
       - name: Upload production artifacts
         if: matrix.cgo == 1
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: production-binaries-cgo${{ matrix.cgo }}
           path: |
@@ -168,10 +168,10 @@ jobs:
         cgo: [1, 0]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -197,7 +197,7 @@ jobs:
       - name: Upload coverage to Codecov
         if: matrix.cgo == 1
         continue-on-error: true
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
           file: ./coverage.out
           flags: ci-tests
@@ -243,10 +243,10 @@ jobs:
     if: needs.check-changes.outputs.has-code-changes == 'true'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download production artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: production-binaries-cgo1
           path: ./artifacts
@@ -289,7 +289,7 @@ jobs:
           cat security-report.md
 
       - name: Upload security report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: security-validation-report
           path: security-report.md
@@ -300,7 +300,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Check devcontainer.json files are in sync
         run: python3 scripts/check_devcontainer_sync.py
@@ -312,7 +312,7 @@ jobs:
     if: needs.check-changes.outputs.has-devcontainer-changes == 'true'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Create stub mounts required by docker-compose.yml
         run: |
