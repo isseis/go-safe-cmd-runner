@@ -152,9 +152,10 @@ func resolveRunID(flagValue, bootstrapID string) (string, error) {
 
 func main() {
 	// First in main's body so that no input is processed at the privileges the
-	// process was started with. Only the effective IDs are lowered, so the
-	// privilege manager can still raise them for the commands configured to
-	// need it.
+	// process was started with. Only the effective IDs are lowered, leaving the
+	// saved set-user-ID untouched, so the privilege manager can raise the
+	// effective UID again for the commands configured to need it. The drop is
+	// therefore not a permanent one.
 	if err := dropStartupPrivileges(syscall.Getuid(), syscall.Getgid()); err != nil {
 		os.Exit(reportStartupPrivilegeFailure(err))
 	}
