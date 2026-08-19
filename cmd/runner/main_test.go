@@ -517,7 +517,7 @@ func auditAttr(t *testing.T, logs, key string) string {
 }
 
 // permCheckerReturning adapts a ready-made checker to the constructor seam
-// runTOCTOUCheck takes, so tests inject through the same parameter production
+// auditConfiguredDirPermissions takes, so tests inject through the same parameter production
 // passes security.NewDirectoryPermChecker to.
 func permCheckerReturning(checker isec.DirectoryPermChecker) func() (isec.DirectoryPermChecker, error) {
 	return func() (isec.DirectoryPermChecker, error) { return checker, nil }
@@ -554,7 +554,7 @@ func TestStartupDirPermAudit_LogsZeroSkipCounts(t *testing.T) {
 		ExpandedVerifyFiles: []string{filepath.Join(dir, "global-verify.txt")},
 	}
 
-	_, err := runTOCTOUCheck(cfg, runtimeGlobal, "test-run", permCheckerReturning(allowAllDirs()))
+	_, err := auditConfiguredDirPermissions(cfg, runtimeGlobal, "test-run", permCheckerReturning(allowAllDirs()))
 	require.NoError(t, err)
 
 	out := logs.String()
@@ -577,7 +577,7 @@ func TestStartupDirPermAudit_LogsCoverageCounts(t *testing.T) {
 	// assume it: a probe run over a single existing path counts exactly the
 	// existing directories this host contributes.
 	probe := &countingPermChecker{}
-	_, err := runTOCTOUCheck(auditConfig(filepath.Join(dir, "present.txt")),
+	_, err := auditConfiguredDirPermissions(auditConfig(filepath.Join(dir, "present.txt")),
 		&runnertypes.RuntimeGlobal{}, "test-run", permCheckerReturning(probe))
 	require.NoError(t, err)
 	require.NotZero(t, probe.existing, "the audit must reach at least one existing directory")
@@ -596,7 +596,7 @@ func TestStartupDirPermAudit_LogsCoverageCounts(t *testing.T) {
 	)
 	checker := &countingPermChecker{}
 
-	_, err = runTOCTOUCheck(cfg, &runnertypes.RuntimeGlobal{}, "test-run", permCheckerReturning(checker))
+	_, err = auditConfiguredDirPermissions(cfg, &runnertypes.RuntimeGlobal{}, "test-run", permCheckerReturning(checker))
 	require.NoError(t, err)
 
 	require.NotZero(t, checker.existing, "the tally must distinguish two non-empty groups")
@@ -618,7 +618,7 @@ func TestStartupDirPermAudit_LogsSkipBreakdownByReason(t *testing.T) {
 	cfg := auditConfig("/opt/%{TOOLCHAIN}/bin/cc", "relative/tool.sh")
 	runtimeGlobal := &runnertypes.RuntimeGlobal{}
 
-	_, err := runTOCTOUCheck(cfg, runtimeGlobal, "test-run", permCheckerReturning(allowAllDirs()))
+	_, err := auditConfiguredDirPermissions(cfg, runtimeGlobal, "test-run", permCheckerReturning(allowAllDirs()))
 	require.NoError(t, err)
 
 	out := logs.String()
@@ -638,7 +638,7 @@ func TestStartupDirPermAudit_EscapedBraceTemplateIsStillAudited(t *testing.T) {
 	template := filepath.Join(dir, `\%{NOT_A_REFERENCE}`, "tool")
 	checker := &countingPermChecker{}
 
-	_, err := runTOCTOUCheck(auditConfig(template), &runnertypes.RuntimeGlobal{}, "test-run",
+	_, err := auditConfiguredDirPermissions(auditConfig(template), &runnertypes.RuntimeGlobal{}, "test-run",
 		permCheckerReturning(checker))
 	require.NoError(t, err)
 
@@ -664,7 +664,7 @@ func TestStartupDirPermAudit_ExpandedGlobalPathWithBraceIsAudited(t *testing.T) 
 		ExpandedVerifyFiles: []string{filepath.Join(braceDir, "file.txt")},
 	}
 
-	_, err := runTOCTOUCheck(auditConfig(), runtimeGlobal, "test-run", permCheckerReturning(checker))
+	_, err := auditConfiguredDirPermissions(auditConfig(), runtimeGlobal, "test-run", permCheckerReturning(checker))
 	require.NoError(t, err)
 
 	assert.Equal(t, "0", auditAttr(t, logs.String(), "skipped_variable_reference_paths"),
@@ -681,7 +681,7 @@ func TestStartupDirPermAudit_SkipDoesNotAffectVerdict(t *testing.T) {
 	t.Run("skipped_paths_alone_are_not_violations", func(t *testing.T) {
 		captureLogs(t)
 
-		checker, err := runTOCTOUCheck(auditConfig(skipped...), &runnertypes.RuntimeGlobal{}, "test-run",
+		checker, err := auditConfiguredDirPermissions(auditConfig(skipped...), &runnertypes.RuntimeGlobal{}, "test-run",
 			permCheckerReturning(allowAllDirs()))
 		require.NoError(t, err)
 		assert.NotNil(t, checker, "a clean audit returns the checker for reuse by per-group checks")
@@ -701,7 +701,7 @@ func TestStartupDirPermAudit_SkipDoesNotAffectVerdict(t *testing.T) {
 			filepath.Join(firstDir, "a.txt"),
 			filepath.Join(secondDir, "b.txt"))...)
 
-		_, err := runTOCTOUCheck(cfg, &runnertypes.RuntimeGlobal{}, "test-run", permCheckerReturning(checker))
+		_, err := auditConfiguredDirPermissions(cfg, &runnertypes.RuntimeGlobal{}, "test-run", permCheckerReturning(checker))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "2 directory violation(s)",
 			"only the two violating directories count; the excluded paths must not inflate or mask the total")
@@ -718,7 +718,7 @@ func TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError(t *testi
 
 	failing := func() (isec.DirectoryPermChecker, error) { return nil, errCheckerUnavailable }
 
-	_, err := runTOCTOUCheck(auditConfig(), &runnertypes.RuntimeGlobal{}, "test-run", failing)
+	_, err := auditConfiguredDirPermissions(auditConfig(), &runnertypes.RuntimeGlobal{}, "test-run", failing)
 	require.Error(t, err)
 
 	preExec, ok := errors.AsType[*logging.PreExecutionError](err)

@@ -95,7 +95,7 @@ func main() {
 	os.Exit(run(os.Args[1:], defaultDeps(), os.Stdout, os.Stderr))
 }
 
-// checkDirPermissions runs the TOCTOU permission check on the directories this
+// checkDirPermissions audits the permissions of the directories this
 // operation touches, and reports whether recording may proceed. The hash DB is
 // the root of trust — a permission violation in its ancestor directories means
 // an attacker could replace hash records — so a violation fails closed, and no
@@ -137,11 +137,11 @@ func checkDirPermissions(cfg *recordConfig, d deps, stderr io.Writer) (resolvedH
 		fmt.Fprintf(stderr, "Error: cannot resolve hash directory %s for the permission check: %v — refusing to generate hash records. Specify a hash directory whose existing ancestors are readable and whose remaining path components are plain names.\n", cfg.hashDir, resolveErr) //nolint:errcheck
 		return "", false
 	}
-	toctouDirs := security.CollectPermissionCheckDirs(absFiles, []string{absHashDir})
-	// RunTOCTOUPermissionCheck already logs each violation at WARN; the ERROR log
+	auditDirs := security.CollectPermissionCheckDirs(absFiles, []string{absHashDir})
+	// AuditDirectoryPermissions already logs each violation at WARN; the ERROR log
 	// below is intentionally in addition to it, since record (unlike other callers
 	// of this shared check) escalates violations to a fail-closed, non-zero exit.
-	violations := security.RunTOCTOUPermissionCheck(checker, toctouDirs, logger).Violations
+	violations := security.AuditDirectoryPermissions(checker, auditDirs, logger).Violations
 	if len(violations) == 0 {
 		if !checkHashDirWriteSafety(absHashDir, logger, stderr) {
 			return "", false

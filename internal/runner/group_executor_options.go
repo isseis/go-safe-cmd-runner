@@ -16,7 +16,7 @@ type groupExecutorOptions struct {
 	keepTempDirs     bool
 	securityLogger   *logging.SecurityLogger
 	currentUser      string
-	toctouValidator  isec.DirectoryPermChecker
+	dirPermAuditor   isec.DirectoryPermChecker
 }
 
 // defaultGroupExecutorOptions returns a new groupExecutorOptions with default values.
@@ -27,7 +27,7 @@ func defaultGroupExecutorOptions() *groupExecutorOptions {
 		keepTempDirs:     false,
 		securityLogger:   nil,
 		currentUser:      "unknown",
-		toctouValidator:  nil,
+		dirPermAuditor:   nil,
 	}
 }
 
@@ -63,12 +63,12 @@ func WithCurrentUser(username string) GroupExecutorOption {
 	}
 }
 
-// WithGroupTOCTOUValidator enables per-group TOCTOU directory permission checks.
-// When set, ExecuteGroup runs a TOCTOU check after variable expansion so that
-// group-level paths containing %{GROUP_VAR} references are checked with their
-// resolved values. Violations cause ExecuteGroup to return an error.
-func WithGroupTOCTOUValidator(v isec.DirectoryPermChecker) GroupExecutorOption {
+// WithGroupDirPermAuditor enables the per-group directory permission audit.
+// When set, ExecuteGroup audits the group's directories after variable expansion
+// so that group-level paths containing %{GROUP_VAR} references are audited with
+// their resolved values. Violations cause ExecuteGroup to return an error.
+func WithGroupDirPermAuditor(v isec.DirectoryPermChecker) GroupExecutorOption {
 	return func(opts *groupExecutorOptions) {
-		opts.toctouValidator = v
+		opts.dirPermAuditor = v
 	}
 }

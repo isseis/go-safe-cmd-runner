@@ -39,9 +39,9 @@ func (e *CommandExecutionError) Unwrap() error {
 	return e.Err
 }
 
-// ErrTOCTOUViolation is returned when a group-level TOCTOU permission check detects
-// directory permission violations.
-var ErrTOCTOUViolation = errors.New("TOCTOU permission check failed")
+// ErrDirPermViolation is returned when the group-level directory permission audit
+// detects violations.
+var ErrDirPermViolation = errors.New("directory permission audit failed")
 
 // errUnhandledCheckSkipReason is returned when path classification reports a
 // reason this package has no case for: an unknown reason says neither "check
@@ -72,7 +72,7 @@ type DefaultGroupExecutor struct {
 	keepTempDirs        bool
 	securityLogger      *logging.SecurityLogger
 	currentUser         string
-	toctouValidator     isec.DirectoryPermChecker
+	dirPermAuditor      isec.DirectoryPermChecker
 }
 
 // groupNotificationFunc is a function type for sending group notifications
@@ -137,7 +137,7 @@ func NewDefaultGroupExecutor(
 		keepTempDirs:        opts.keepTempDirs,
 		securityLogger:      secLogger,
 		currentUser:         opts.currentUser,
-		toctouValidator:     opts.toctouValidator,
+		dirPermAuditor:      opts.dirPermAuditor,
 	}
 }
 
@@ -195,7 +195,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 
 	// Runs after expansion: group-level verify_files and command paths may hold
 	// %{GROUP_VAR} references that the startup check could not resolve.
-	if err := ge.runGroupTOCTOUCheck(runtimeGroup); err != nil {
+	if err := ge.auditGroupDirPermissions(runtimeGroup); err != nil {
 		return err
 	}
 
@@ -307,11 +307,11 @@ func (ge *DefaultGroupExecutor) preExpandCommands(
 	return nil
 }
 
-// runGroupTOCTOUCheck performs a TOCTOU directory permission check using the
-// fully-expanded group paths. It is a no-op when toctouValidator is nil.
+// auditGroupDirPermissions audits directory permissions using the fully-expanded
+// group paths. It is a no-op when dirPermAuditor is nil.
 // Returns an error if any violation is detected.
-func (ge *DefaultGroupExecutor) runGroupTOCTOUCheck(runtimeGroup *runnertypes.RuntimeGroup) error {
-	if ge.toctouValidator == nil {
+func (ge *DefaultGroupExecutor) auditGroupDirPermissions(runtimeGroup *runnertypes.RuntimeGroup) error {
+	if ge.dirPermAuditor == nil {
 		return nil
 	}
 
@@ -346,10 +346,10 @@ func (ge *DefaultGroupExecutor) runGroupTOCTOUCheck(runtimeGroup *runnertypes.Ru
 
 	// hashDir is already checked at startup; pass none to skip re-traversal.
 	dirs := isec.CollectPermissionCheckDirs(resolved, nil)
-	violations := isec.RunTOCTOUPermissionCheck(ge.toctouValidator, dirs, slog.Default()).Violations
+	violations := isec.AuditDirectoryPermissions(ge.dirPermAuditor, dirs, slog.Default()).Violations
 	if len(violations) > 0 {
 		return fmt.Errorf("%w for group[%s]: %d directory violation(s) detected; review directory permissions",
-			ErrTOCTOUViolation, runnertypes.ExtractGroupName(runtimeGroup), len(violations))
+			ErrDirPermViolation, runnertypes.ExtractGroupName(runtimeGroup), len(violations))
 	}
 	return nil
 }

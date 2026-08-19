@@ -15,6 +15,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
+	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
@@ -2414,4 +2415,54 @@ func TestCreateNormalResourceManager_FailsWithNilVM(t *testing.T) {
 	err := createNormalResourceManager(opts, &runnertypes.ConfigSpec{}, nil, nil, nil)
 	require.Error(t, err)
 	assert.Equal(t, ErrVerificationManagerRequiredNormal, err)
+}
+
+// TestWithDirPermAuditor_ReachesGroupExecution pins the wiring, not the audit:
+// an auditor handed to NewRunner must reach the group executor and be consulted
+// during ExecuteGroup. NewRunner forwards it through two option layers
+// (WithDirPermAuditor -> WithGroupDirPermAuditor), and every other test in this
+// package constructs DefaultGroupExecutor directly with the field already set,
+// so a break in that forwarding would silently turn the per-group audit -- the
+// only audit that sees %{GROUP_VAR}-expanded paths -- into a permanent no-op
+// with nothing failing. Asserting through ExecuteGroup rather than reading the
+// field keeps the test on the behaviour the wiring exists to produce.
+func TestWithDirPermAuditor_ReachesGroupExecution(t *testing.T) {
+	setupSafeTestEnv(t)
+
+	auditor, err := isec.NewDirectoryPermChecker()
+	require.NoError(t, err)
+
+	// A world-writable directory the group references, so the audit has a
+	// violation to find. Restored on cleanup so the temp dir can be removed.
+	worldWritable := tu.SafeTempDir(t)
+	require.NoError(t, os.Chmod(worldWritable, 0o777))
+	t.Cleanup(func() { _ = os.Chmod(worldWritable, 0o755) })
+
+	config := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global:  runnertypes.GlobalSpec{Timeout: new(int32(3600))},
+		Groups: []runnertypes.GroupSpec{{
+			Name:        "test-group",
+			VerifyFiles: []string{filepath.Join(worldWritable, "target.txt")},
+			Commands: []runnertypes.CommandSpec{{
+				Name: "test-cmd",
+				Cmd:  "echo",
+				Args: []string{"hello"},
+			}},
+		}},
+	}
+
+	// No mock expectations are set: the audit runs before file verification and
+	// before any command, so reaching the resource manager would itself be a
+	// failure of the contract under test.
+	runner, err := NewRunner(config,
+		WithResourceManager(new(MockResourceManager)),
+		WithVerificationManager(setupDryRunVerification(t)),
+		WithRunID("test-run-123"),
+		WithDirPermAuditor(auditor))
+	require.NoError(t, err)
+
+	err = runner.ExecuteGroup(context.Background(), &config.Groups[0])
+	require.Error(t, err, "the configured auditor must be consulted during group execution")
+	assert.ErrorIs(t, err, ErrDirPermViolation)
 }

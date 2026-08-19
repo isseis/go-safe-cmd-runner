@@ -168,11 +168,11 @@ func TestProcessFiles_SkipsNonELF(t *testing.T) {
 	assert.NotContains(t, stderr.String(), "Syscall analysis failed")
 }
 
-// TestRunTOCTOU_FailsClosedOnWorldWritableDir verifies that the record command
+// TestCheckDirPermissions_FailsClosedOnWorldWritableDir verifies that the record command
 // fails closed (non-zero exit, no hash generated) when the file's parent directory
 // is world-writable. The hash DB is the root of trust — permission violations
 // in ancestor directories must prevent hash record generation.
-func TestRunTOCTOU_FailsClosedOnWorldWritableDir(t *testing.T) {
+func TestCheckDirPermissions_FailsClosedOnWorldWritableDir(t *testing.T) {
 	// Create a world-writable directory with a target file
 	worldWritableDir := tu.SafeTempDir(t)
 	err := os.Chmod(worldWritableDir, 0o777)
@@ -190,7 +190,7 @@ func TestRunTOCTOU_FailsClosedOnWorldWritableDir(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	// record must fail closed on TOCTOU violations — no hash generated, non-zero exit
+	// record must fail closed on permission violations — no hash generated, non-zero exit
 	exitCode := run([]string{"-d", hashDir, targetFile}, defaultDeps(), stdout, stderr)
 
 	assert.NotEqual(t, 0, exitCode, "record must fail closed (non-zero exit) on world-writable directory")
@@ -302,9 +302,9 @@ func fixedPermChecker(checker security.DirectoryPermChecker) func() (security.Di
 	return func() (security.DirectoryPermChecker, error) { return checker, nil }
 }
 
-// TestRunTOCTOU_NoViolation_Continues verifies that record continues with hash
-// generation when no TOCTOU violations are detected in the hash directory.
-func TestRunTOCTOU_NoViolation_Continues(t *testing.T) {
+// TestCheckDirPermissions_NoViolation_Continues verifies that record continues with hash
+// generation when no permission violations are detected in the hash directory.
+func TestCheckDirPermissions_NoViolation_Continues(t *testing.T) {
 	hashDir := tu.SafeTempDir(t)
 	targetFile := filepath.Join(hashDir, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
@@ -318,14 +318,14 @@ func TestRunTOCTOU_NoViolation_Continues(t *testing.T) {
 	exitCode := run([]string{"-d", hashDir, targetFile}, d, stdout, stderr)
 
 	require.Equal(t, 0, exitCode, "stderr: %s", stderr.String())
-	assert.Contains(t, stdout.String(), "OK", "hash generation should proceed without TOCTOU violations")
+	assert.Contains(t, stdout.String(), "OK", "hash generation should proceed without permission violations")
 }
 
-// TestRunTOCTOU_ViolationLogsErrorAndExits verifies that when a TOCTOU violation
+// TestCheckDirPermissions_ViolationLogsErrorAndExits verifies that when a permission violation
 // is detected, record logs ERROR (not WARN) with per-path violation details via
 // slog, prints a generic permission-violation summary to stderr, and exits
 // non-zero without generating hashes.
-func TestRunTOCTOU_ViolationLogsErrorAndExits(t *testing.T) {
+func TestCheckDirPermissions_ViolationLogsErrorAndExits(t *testing.T) {
 	hashDir := tu.SafeTempDir(t)
 	targetFile := filepath.Join(hashDir, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
@@ -340,15 +340,15 @@ func TestRunTOCTOU_ViolationLogsErrorAndExits(t *testing.T) {
 
 	exitCode := run([]string{"-d", hashDir, targetFile}, d, stdout, stderr)
 
-	assert.NotEqual(t, 0, exitCode, "record must exit non-zero on TOCTOU violation")
+	assert.NotEqual(t, 0, exitCode, "record must exit non-zero on a permission violation")
 	assert.Contains(t, stderr.String(), "permission violation", "stderr must report permission violation")
 	assert.NotContains(t, stdout.String(), "OK", "no hash should be generated on violation")
 }
 
-// TestRunTOCTOU_ForceFlagDoesNotBypassViolation verifies that --force does NOT
-// bypass TOCTOU permission violations. --force is for overwriting existing hash
+// TestCheckDirPermissions_ForceFlagDoesNotBypassViolation verifies that --force does NOT
+// bypass directory permission violations. --force is for overwriting existing hash
 // files only, not for overriding security checks.
-func TestRunTOCTOU_ForceFlagDoesNotBypassViolation(t *testing.T) {
+func TestCheckDirPermissions_ForceFlagDoesNotBypassViolation(t *testing.T) {
 	hashDir := tu.SafeTempDir(t)
 	targetFile := filepath.Join(hashDir, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
@@ -363,7 +363,7 @@ func TestRunTOCTOU_ForceFlagDoesNotBypassViolation(t *testing.T) {
 
 	exitCode := run([]string{"-force", "-d", hashDir, targetFile}, d, stdout, stderr)
 
-	assert.NotEqual(t, 0, exitCode, "record must exit non-zero even with --force on TOCTOU violation")
+	assert.NotEqual(t, 0, exitCode, "record must exit non-zero even with --force on a permission violation")
 	assert.Contains(t, stderr.String(), "permission violation", "stderr must report permission violation despite --force")
 	assert.NotContains(t, stdout.String(), "OK", "no hash should be generated even with --force")
 }
@@ -388,10 +388,10 @@ func TestHashDirPermissions_0o700(t *testing.T) {
 	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm(), "hash directory must be created with 0o700")
 }
 
-// TestRunTOCTOU_ViolationLogsRemediationWithActualPath verifies that the ERROR
+// TestCheckDirPermissions_ViolationLogsRemediationWithActualPath verifies that the ERROR
 // log's remediation hint contains the actual violating path, not an unresolved
 // string-concatenation template.
-func TestRunTOCTOU_ViolationLogsRemediationWithActualPath(t *testing.T) {
+func TestCheckDirPermissions_ViolationLogsRemediationWithActualPath(t *testing.T) {
 	hashDir := tu.SafeTempDir(t)
 	targetFile := filepath.Join(hashDir, "target.txt")
 	require.NoError(t, os.WriteFile(targetFile, []byte("hello"), 0o644))
@@ -476,12 +476,12 @@ func TestRecordDeclaresSudoUIDAwarePolicy(t *testing.T) {
 	assert.Equal(t, 1000, uid)
 }
 
-// TestRunTOCTOU_HashDirNotCreatedOnViolation verifies that a permission
+// TestCheckDirPermissions_HashDirNotCreatedOnViolation verifies that a permission
 // violation leaves the filesystem untouched: a hash directory that did not
 // exist before the run does not exist after it. The directory's absence
 // alone would not distinguish this from a failed creation, so the exit code is
 // asserted too.
-func TestRunTOCTOU_HashDirNotCreatedOnViolation(t *testing.T) {
+func TestCheckDirPermissions_HashDirNotCreatedOnViolation(t *testing.T) {
 	base := tu.SafeTempDir(t)
 	hashDir := filepath.Join(base, "hashes")
 	targetFile := filepath.Join(base, "target.txt")
@@ -525,10 +525,10 @@ func TestRun_CreatesHashDirAfterPermissionCheckPasses(t *testing.T) {
 	assert.FileExists(t, recordPath)
 }
 
-// TestRunTOCTOU_ChecksAncestorsWhenHashDirMissing verifies that a hash
+// TestCheckDirPermissions_ChecksAncestorsWhenHashDirMissing verifies that a hash
 // directory that does not exist yet does not cause the permission check to be
 // skipped: the ancestors it would be created under are checked instead.
-func TestRunTOCTOU_ChecksAncestorsWhenHashDirMissing(t *testing.T) {
+func TestCheckDirPermissions_ChecksAncestorsWhenHashDirMissing(t *testing.T) {
 	base := tu.SafeTempDir(t)
 	hashDir := filepath.Join(base, "hashes")
 	targetFile := filepath.Join(base, "target.txt")
@@ -550,13 +550,13 @@ func TestRunTOCTOU_ChecksAncestorsWhenHashDirMissing(t *testing.T) {
 	assert.Contains(t, checked, base, "the existing ancestor the hash directory would be created under must be checked")
 }
 
-// TestRunTOCTOU_ReportsViolationBehindSymlinkedAncestor verifies that the
+// TestCheckDirPermissions_ReportsViolationBehindSymlinkedAncestor verifies that the
 // directories checked for a not-yet-existing hash directory are the ones on the
 // far side of a symlinked ancestor, not the ones the link sits in. The fake
 // checker only rejects the real path, so an implementation
 // that appended the missing components lexically would never see it and the run
 // would succeed.
-func TestRunTOCTOU_ReportsViolationBehindSymlinkedAncestor(t *testing.T) {
+func TestCheckDirPermissions_ReportsViolationBehindSymlinkedAncestor(t *testing.T) {
 	base := tu.SafeTempDir(t)
 	realDir := filepath.Join(base, "real")
 	nested := filepath.Join(realDir, "nested")

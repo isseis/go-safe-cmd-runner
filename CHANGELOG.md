@@ -15,9 +15,9 @@ The `--run-id` flag now only accepts values consisting of uppercase letters (`A-
 
 **Affected scenarios:** CI and operational scripts that pass non-auto-generated values to `--run-id`. Check whether the value you pass fits the above format. Auto-generated ULIDs (26-character Crockford Base32) and the values recommended in the user documentation (`my-custom-run-001`, `gh-<GitHub Actions Run ID>`, `jenkins-<build number>`, `backup-<timestamp>`) all match the accepted format.
 
-#### `verify`: fail-closed on hash directory TOCTOU permission violations
+#### `verify`: fail-closed on hash directory permission violations
 
-When a TOCTOU permission violation is detected on the hash directory or its ancestor directories, `verify` now exits with code 3 without verifying any target files. Violations confined to a target file's ancestor directories are still recorded as warnings and verification continues as before (exit code unchanged). No bypass flag is provided.
+When a permission violation is detected on the hash directory or its ancestor directories, `verify` now exits with code 3 without verifying any target files. Violations confined to a target file's ancestor directories are still recorded as warnings and verification continues as before (exit code unchanged). No bypass flag is provided.
 
 **Assessing impact before upgrading:**
 
@@ -89,6 +89,17 @@ The timestamp in the log file names that `runner` creates under `-log-dir` (`<ho
 Newly created hash directories now have `0700` permissions regardless of the path that creates them. `record` already created them with `0700`, but `verify` created them with `0750` (in this release `verify` no longer creates them at all), and the analysis store (`internal/fileanalysis`) also created directories with `0750`.
 
 **Affected scenarios:** The permissions of existing hash directories are not changed. Directories created with `0750` remain as they are, so correct them manually with `chmod 0700 <hash-directory>` if needed. However, in a split-role deployment where the user who runs `record` differs from the user who runs `runner`, tightening them to `0700` would make `runner` unable to read the hashes. See the [record command user guide](docs/user/record_command.md) for how to configure that deployment.
+
+#### The log text for directory permission violations has changed
+
+The term `TOCTOU` has been removed from the text that reports the result of inspecting a directory's permissions, ownership, and path components. This inspection is a static audit that examines each directory once before execution; it is not a TOCTOU defense that compares an observation at the time of check against one at the time of use. The TOCTOU defense itself is provided by file opens that do not follow symlinks and by execution through a file descriptor without re-resolving the path, and that is unchanged.
+
+- The WARN that `runner`, `verify`, and `record` emit per violation: `TOCTOU permission check violation` → `insecure directory permissions`. The `path` and `violation` attribute names and values are unchanged.
+- The ERROR that `runner` emits when it aborts execution: `TOCTOU permission check failed: ...` → `directory permission audit failed: ...`.
+
+The rules that determine a violation, the log levels, and the exit codes are unchanged. What is inspected and the results are unchanged as well; only the text has changed.
+
+**Affected scenarios:** Monitoring rules and scripts that search or match logs by the above text are affected. Update them to the new text. Note that the procedure for assessing impact before upgrading, described in "`verify`: fail-closed on hash directory permission violations" in this release, is run on the version **before** the upgrade, so it works correctly with the old text written there.
 
 ## [1.1.1] - 2026-08-03
 

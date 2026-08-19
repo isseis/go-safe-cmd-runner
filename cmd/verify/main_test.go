@@ -195,12 +195,12 @@ func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
 	assert.Equal(t, "file1.txt", validator.calls[0].file)
 }
 
-// TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates verifies that a violation
+// TestDirPermAudit_ContinuesWhenOnlyTargetDirViolates verifies that a violation
 // confined to a target file's ancestor directories is not fail-closed. Only the
 // hash directory is the root of trust; a target file sitting in a writable
 // directory is precisely what verify exists to inspect, so verification
 // continues and the violation stays a warning.
-func TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates(t *testing.T) {
+func TestDirPermAudit_ContinuesWhenOnlyTargetDirViolates(t *testing.T) {
 	// Create a world-writable directory with a target file
 	worldWritableDir := tu.SafeTempDir(t)
 	err := os.Chmod(worldWritableDir, 0o777)
@@ -236,7 +236,7 @@ func TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates(t *testing.T) {
 	assert.Equal(t, exitOK, exitCode, "verify should continue (exit 0) despite world-writable target directory")
 	assert.NotEqual(t, exitUntrustedEnvironment, exitCode, "a target-side violation must not be fail-closed")
 	require.Len(t, validator.calls, 1, "file should have been processed")
-	warnings := logs.FindRecords(slog.LevelWarn, "TOCTOU permission check violation")
+	warnings := logs.FindRecords(slog.LevelWarn, "insecure directory permissions")
 	require.NotEmpty(t, warnings, "the target-side violation stays a warning")
 	assert.Equal(t, worldWritableDir, warnings[0].Attrs["path"])
 	assert.Empty(t, logs.RecordsAtLevel(slog.LevelError))
@@ -388,7 +388,7 @@ func TestRunFailsClosedOnHashDirViolation_LogsErrorLevel(t *testing.T) {
 
 	warnRecords := logs.RecordsAtLevel(slog.LevelWarn)
 	require.Len(t, warnRecords, 1, "the shared check's WARN record must remain alongside the ERROR record")
-	assert.Equal(t, "TOCTOU permission check violation", warnRecords[0].Message)
+	assert.Equal(t, "insecure directory permissions", warnRecords[0].Message)
 }
 
 // TestRunSkipsTargetSetCheckWhenHashDirViolates verifies the side-effect
