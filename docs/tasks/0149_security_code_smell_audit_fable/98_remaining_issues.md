@@ -108,14 +108,10 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
 
 ### E1（entrypoints）
 
-- **L-1**: record が TOCTOU チェック前にハッシュディレクトリを `mkdirAll` する。未対応。`cmd/record/main.go` の `parseArgs`（:274）が `mkdirAll` を実行し、`run`（:159）がその後で `checkDirPermissions`（:185）を呼ぶ順序は変わっていない。
-- **L-2**: `filepath.Abs`/`EvalSymlinks` 失敗時の無警告フォールバック。未対応。`cmd/record/main.go`・`cmd/verify/main.go` とも失敗時に元のパスへ黙ってフォールバックする同一パターンのコードが残る（ログ出力なし、共通化もされていない）。
-- **L-3**: verify のハッシュディレクトリ作成副作用 + パーミッション不一致。未対応。`cmd/verify/main.go` は `hashDirPermissions = 0o750` のまま無条件に `mkdirAll` を実行し、`cmd/record/main.go` の `0o700` との不一致も残る。
-- **L-4**: `runTOCTOUCheck` の変数参照・相対パスのサイレントスキップ。未対応。`resolveStaticAbsPath`（`cmd/runner/main.go:320`）は `%{` を含むパス・相対パスを無音でスキップする実装のままで、スキップ件数のログ出力は追加されていない。
-- **L-5**: ログファイル名のタイムスタンプが実際はローカル時刻なのに `Z`（UTC）表記。未対応。`internal/runner/bootstrap/logger.go:77` は `time.Now().Format("20060102T150405Z")` のままで `.UTC()` 変換はない。
+> **L-1〜L-5・L-7 について**: [0164](../0164_entrypoint_residual_low_info/03_implementation_plan.md) で解消済み。ハッシュディレクトリの作成をディレクトリ権限チェックの通過後へ移し（L-1）、パス解決の失敗を `security.ResolvePathForCheck` に集約して警告と fail-closed に置き換え（L-2）、`verify` からハッシュディレクトリの作成を取り除いてパーミッションを `0700` に揃え（L-3）、除外件数を起動時チェックのログに出し（L-4）、ログファイル名のタイムスタンプを UTC に直し（L-5）、権限チェッカの初期化失敗を panic からエラー終了に変えた（L-7）。
+
 - **L-6**: Phase 1/Phase 2 間のエラー（設定改ざん検出含む）が Slack 未通知。未対応。`cmd/runner/main.go` の `SetupLogging` → `LoadAndPrepareConfig` → `SetupSlackLogging` の順序は変わらず、設定ロード失敗時点では Slack ハンドラが未登録のまま。
-- **L-7**: `DirectoryPermChecker` 初期化失敗時に3箇所とも panic。未対応。`cmd/runner/main.go`・`cmd/record/main.go`・`cmd/verify/main.go` のいずれも `NewDirectoryPermChecker` 失敗時に同一の `panic(fmt.Sprintf(...))` を実行する実装のまま。
-- → [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) を作成済み（Info I-1〜I-6 含む）。
+- → [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) を作成済み（Info I-1〜I-6 含む）。0164 で解消した所見を除く残件は L-6 と I-6。
 
 ---
 
@@ -125,11 +121,7 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
 - **A7**: I-1〜I-5（0154 の対象外）。
 - **D2**: Low-1〜L-6, Info-1〜Info-6（0154 の対象外）。
 - **E1**:
-  - **I-1**: 起動時降格後も saved-uid が root のままである設計意図が未記載。未対応。`cmd/runner/main.go:109` 付近に privilege manager との関係を説明するコメントは追加されていない。
-  - **I-2**: dry-run formatter の switch に `default` 節がない。未対応。`cmd/runner/main.go:478` の `switch outputFormat` は `OutputFormatText`/`OutputFormatJSON` の2ケースのみで `default` 節はない。
-  - **I-3**: Slack env 検証エラーの stderr 二重出力。未対応。`cmd/runner/main.go:191` の `fmt.Fprintln(os.Stderr, err.Error())` は残っており、`HandlePreExecutionError` 経由の出力と重複する構造は変わっていない。
-  - **I-4**: `normalizeSlackAllowedHost` の IPv6 分岐で大文字小文字未統一。未対応。`internal/runner/bootstrap/config.go` の IPv6 分岐は引き続き `u.Hostname()` を無変換で返し、ホスト名分岐のみ `strings.ToLower`（:54）を適用する非対称が残る。
-  - **I-5**: verify のパッケージレベル変数注入と record の `deps` 構造体注入の様式乖離。未対応。`cmd/verify/main.go` は依然 `validatorFactory`/`mkdirAll` をパッケージレベル変数で注入し、`cmd/record/main.go` の `deps` 構造体方式と乖離したまま。付随する `cacheDir`/`machoCacheDir` の重複計算（`cmd/record/main.go`）も解消されていない。
+  - **I-1〜I-5**: [0164](../0164_entrypoint_residual_low_info/03_implementation_plan.md) で解消済み。起動時降格が恒久降格でない理由をコメントに明記し（I-1）、dry-run formatter の `switch` に fail-secure な `default` を足し（I-2）、Slack env 検証エラーの直接出力を取り除いて人間向けブロックへの出力を1回にし（I-3。構造化ログ行にも本文が現れる点は [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) へ分離）、`normalizeSlackAllowedHost` の IPv6 分岐を小文字化し（I-4）、`verify` のパッケージレベル変数注入を `deps` 構造体へ揃えて `cacheDir` の重複計算も解消した（I-5）。
   - **I-6**: bootstrap/logger のグローバル可変状態。未対応。`redactionErrorCollector`/`phase1BaseHandlers` 等のパッケージグローバル変数によるフェーズ間受け渡しは変わらず、`LoggerBootstrap` 相当の構造体化は行われていない。
   - → [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) を作成済み。
 - 上記以外の各コンポーネントの Info 所見全般（A5, D2 の Info 群など。※A7 の Info 群は #985 に含む）は個別 issue 化していない。詳細は各 `findings/*.md` を参照。
@@ -138,6 +130,6 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
 
 ## 4. 今後の扱いについて
 
-- 🔴High・大半の 🟡Medium（横断パターン P1〜P5 の「該当箇所」）は解消済み。残るのは各パターンの対象外節に明示された同系統の所見と、🟠Low/🔵Info の大半、および E1 全件である。E1 は他コンポーネントと異なり横断パターン経由の部分対応も一度もなく、個別タスク化が未着手のまま残っている。
+- 🔴High・大半の 🟡Medium（横断パターン P1〜P5 の「該当箇所」）は解消済み。残るのは各パターンの対象外節に明示された同系統の所見と、🟠Low/🔵Info の大半である。E1 は 0162 と 0164 で個別タスク化され、残るのは L-6 と I-6 の2件のみとなった。
 - 上記はいずれも「直接の侵入経路ではない」「前提条件（group-writable 権限、fail-open の悪用条件等）が必要」と評価されたものであり、緊急対応は不要と判断されている（各所見の詳細評価は `findings/*.md` を参照）。
 - 個別タスク化する際は、本ドキュメントの該当節と `findings/*.md` の該当所見 ID を起点に、0150〜0161 と同様の要件定義プロセス（[requirements_process.md](../../dev/developer_guide/requirements_process.md)）に従うこと。

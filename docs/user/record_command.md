@@ -198,10 +198,12 @@ record -d ../hashes /etc/config.toml
 
 **Automatic Directory Creation**
 
-If the specified directory does not exist, it will be created automatically (permissions: 0700).
+If the specified directory does not exist, it will be created automatically (permissions: 0700). The creation happens after the directory permission check has passed. If the check finds a violation, `record` exits with an error without creating the directory.
+
+In addition, `record` exits with an error, regardless of whether the sticky bit is set, when the specified hash directory already exists and is itself a directory that anyone can write to (world-writable), and when it does not exist and its creation site (the deepest existing ancestor of the specified path) is world-writable. In the latter case the directory is not created. This is because when others can pre-place hash records at the position where the directory would be created, records for files that `record` has not processed could be mixed in. If it already exists, correct it with `chmod go-w <hash-directory>` or move it somewhere only you can write. If it does not exist and its creation site has the sticky bit (`/tmp` and the like), you can create the directory yourself first (with an appropriate owner and permissions) and run `record` again. If the creation site does not have the sticky bit, creating the directory is not enough: the ancestor permission check rejects it all the same, so correct that ancestor with `chmod go-w` or choose a hash directory somewhere only you can write.
 
 ```bash
-# Works even if directory doesn't exist
+# Works even if directory doesn't exist (created unless the creation site is world-writable)
 record -d /new/hash/directory /usr/bin/backup.sh
 # /new/hash/directory will be created automatically
 ```
@@ -549,7 +551,7 @@ echo "Test setup completed!"
 Record is the root of trust for hash-based file integrity verification. The hash database it generates is the foundation that the `runner` and `verify` commands rely on to detect tampering. To maintain this trust:
 
 - **Run record as root or a dedicated administrator account** with exclusive access to the hash directory.
-- **Ensure the hash directory and all of its parent directories have secure permissions** (owner-only write access, no group or world writability). Record enforces this on every run — if it detects a non-sticky world-writable or unsafe group-writable directory in the hash directory's ancestor chain, it will refuse to generate hashes (fail closed, non-zero exit).
+- **Ensure the hash directory and all of its parent directories have secure permissions** (owner-only write access, no group or world writability). Record enforces this on every run — if it detects a non-sticky world-writable or unsafe group-writable directory in the hash directory's ancestor chain, it will refuse to generate hashes (fail closed, non-zero exit). The hash directory itself and its creation site are refused whenever they are world-writable, whether or not the sticky bit is set (see §3.2).
 - **Do not run record in untrusted directories** (e.g., `/tmp`, shared volumes accessible to non-administrators).
 - **There is no bypass flag for permission violations.** The `--force` flag only controls overwriting of existing hash files, not security checks.
 - **If you are upgrading from a deployment with `0o750` hash directories:** `os.MkdirAll` does not change permissions of existing directories. Manually correct existing hash directories with `chmod 0700 <hash-dir>`. However, do not tighten them in a split-role deployment where the user who runs record differs from the user who runs runner (see §3.2). In that configuration the user who runs runner would no longer be able to read the hashes, and every verification would fail. Leave them at 0750, and confirm that the group is the group of the users who run runner and that the group has no write permission.

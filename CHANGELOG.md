@@ -32,6 +32,64 @@ verify -d <hash-directory> <target-files> 2>&1 | grep "TOCTOU permission check v
 
 If this output is empty, the upgrade will have no impact. If there is output, check whether the `path` in the warning points to the hash directory or one of its ancestors. If a hash-directory-side violation exists, fix the hash directory permissions or move the hash directory to a path with appropriate permissions before upgrading. If the violation is on the target file side only, verification continues after upgrade.
 
+#### `verify`: no longer creates the hash directory
+
+`verify` no longer creates the specified hash directory when it does not exist. When it does not exist, `verify` exits with code 3 without verifying a single target file. Create hash records with the `record` command.
+
+When the run ends without verifying a single file, the message on standard error contains an identification token indicating the cause, spelled `verify-error=<token>`. It distinguishes `hash_dir_not_found` (missing), `hash_dir_unreadable` (unreadable), `hash_dir_permission_violation` (permission violation), `path_resolution_failed` (path resolution failure), and `permission_checker_init_failed` (permission checker initialization failure). See the [verify command user guide](docs/user/verify_command.md) for the full list of tokens.
+
+**Affected scenarios:** On hosts with monitoring rules that alert on "exit code 3 = possible tampering", the alert now fires even when the hash directory has merely not been created yet. Either split the monitoring rules by identification token, or create the hash records with `record` beforehand.
+
+#### `record`: rejects a hash directory in a world-writable location
+
+`record` now exits with an error when the hash directory is writable by anyone (world-writable). It refuses even when the sticky bit is set. Two cases are covered.
+
+- **The hash directory already exists and is itself world-writable.** To correct this, run `chmod go-w <hash-directory>` or move the hash directory somewhere only you can write.
+- **The hash directory does not exist and its creation site (the deepest existing ancestor of the specified path) is world-writable.** In this case the directory is not created. Once the directory exists, the world-writable refusal above no longer applies and only the ordinary ancestor permission check runs, which does treat the sticky bit as safe. So if that creation site has the sticky bit (`/tmp` and the like), you can still run `record` as before by creating the directory yourself first with `mkdir -m 700 -p <hash-directory>`. If it does not, creating the directory is not enough: the ancestor permission check rejects it all the same, so correct that ancestor with `chmod go-w` or choose a hash directory somewhere only you can write.
+
+In both cases the reason is the same: while others can claim a name there, hash records for files that `record` has not processed could be pre-planted.
+
+**Affected scenarios:** The default hash directory in production (`/usr/local/etc/go-safe-cmd-runner/hashes`) is not affected. Paths under `/tmp` or similar are.
+
+#### Path resolution changes may surface new permission violations
+
+The directory permission check now resolves the specified path to its real path (following symlinks) before performing the check. As a result, for hash directories and target files that were specified through a link, the ancestor directories on the real path, which were not inspected before, are now inspected.
+
+**Assessing impact before upgrading:**
+
+Apply `readlink -m` to the hash directory and the target files, and check the permissions of the ancestor directories of the resolved paths.
+
+```bash
+# Resolve the hash directory and the target file to their real paths (-m resolves paths that do not exist yet)
+readlink -m "$HASH_DIR"
+readlink -m "$TARGET_FILE"
+
+# Walk the ancestors of the real path up to the root and check write permissions for others and the group
+# readlink -f fails and returns empty when part of the path does not exist, so use -m
+p=$(readlink -m "$HASH_DIR")
+while [ -n "$p" ]; do
+    ls -ld "$p" 2>/dev/null || echo "(not created yet) $p"
+    [ "$p" = / ] && break
+    p=$(dirname "$p")
+done
+```
+
+If the real path is the same as the specified path, there is no impact. If it differs, check whether any of the listed ancestor directories grant write permission to others (`o+w`) or to a group that has members other than the owner (`g+w`), and if so, correct them with `chmod go-w`.
+
+### Changed
+
+#### Log file name timestamps are now UTC
+
+The timestamp in the log file names that `runner` creates under `-log-dir` (`<hostname>_<timestamp>_<run-id>.json`) now reads in UTC instead of the host local time. The format is unchanged (`YYYYMMDDThhmmssZ`), so old and new names are indistinguishable by shape.
+
+**Affected scenarios:** On hosts in a timezone ahead of UTC, immediately after the migration the existing file names created in local time and the new file names created in UTC coexist, producing a period (lasting as long as the time offset) in which the lexicographic order of the file names does not match the actual chronological order. If you have scripts that process logs sorted by name, note that the order can come out wrong during that period.
+
+#### Newly created hash directories now have 0700 permissions
+
+Newly created hash directories now have `0700` permissions regardless of the path that creates them. `record` already created them with `0700`, but `verify` created them with `0750` (in this release `verify` no longer creates them at all), and the analysis store (`internal/fileanalysis`) also created directories with `0750`.
+
+**Affected scenarios:** The permissions of existing hash directories are not changed. Directories created with `0750` remain as they are, so correct them manually with `chmod 0700 <hash-directory>` if needed. However, in a split-role deployment where the user who runs `record` differs from the user who runs `runner`, tightening them to `0700` would make `runner` unable to read the hashes. See the [record command user guide](docs/user/record_command.md) for how to configure that deployment.
+
 ## [1.1.1] - 2026-08-03
 
 ### Breaking Changes

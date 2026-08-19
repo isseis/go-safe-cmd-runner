@@ -65,7 +65,7 @@ Summary: 1 succeeded, 0 failed
 ```
 Verifying 1 file...
 [1/1] /usr/bin/backup.sh: FAILED
-Verification failed for /usr/bin/backup.sh: hash mismatch
+Verification failed for /usr/bin/backup.sh: file content does not match the recorded hash
 
 Summary: 0 succeeded, 1 failed
 ```
@@ -97,11 +97,29 @@ verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 | 終了コード | 意味 |
 |---|---|
 | 0 | 全ファイルの検証が成功 |
-| 1 | 引数エラー、バリデータ生成失敗、または1件以上のファイルで検証が失敗 |
+| 1 | 引数エラー、バリデータ生成失敗、権限チェックの基準UIDの確定失敗、ハッシュディレクトリのパスがディレクトリでない、または1件以上のファイルで検証が失敗 |
 | 2 | 予期しない異常終了（Goランタイムが未捕捉panicに対して使用）。`verify` が明示的に返すことはない |
-| 3 | ハッシュディレクトリまたはその祖先ディレクトリのTOCTOU権限チェックで違反を検出。検証結果が信頼できないため、全対象ファイルを1件も検証せずに終了 |
+| 3 | 次のいずれかにより、検証結果が信頼できない状態で起動した。(a) ハッシュディレクトリまたはその祖先のディレクトリ権限違反、(b) ハッシュディレクトリの不在または読み取り不能、(c) 権限チェッカの初期化失敗、(d) ハッシュディレクトリのパス解決の失敗。いずれの場合も対象ファイルを1件も検証していない |
 
 対象ファイルの祖先ディレクトリのみに違反が検出され、ハッシュディレクトリ側に違反がない場合、`verify` は終了コード 3 を返しません。この違反は警告として記録され、検証は継続します（終了コードは各ファイルの検証結果に依存します）。バイパス手段は用意されていません。ハッシュディレクトリ側の違反が検出された場合は、ハッシュディレクトリの権限を修正するか、権限の適切なパスへハッシュディレクトリを移動してください。
+
+`verify` はハッシュディレクトリを作成しません。ハッシュディレクトリが存在しない場合は終了コード 3（`hash_dir_not_found`）で終了するため、先に `record` コマンドでハッシュを記録してください。
+
+#### 識別トークン
+
+検証を1件も実施せずに終了した場合、標準エラー出力のメッセージに `verify-error=<トークン>` の形で原因を表す固定文字列が含まれます。終了コードだけでは原因を分けられないため、スクリプトから原因を判別する場合はメッセージの地の文ではなくこのトークンを参照してください。
+
+| トークン | 原因 | 対処 | 終了コード |
+|---|---|---|---|
+| `hash_dir_permission_violation` | ハッシュディレクトリまたはその祖先に、所有者以外から書き込める権限が設定されている、あるいは所有者やグループが安全でない | 標準エラー出力の `violation` 属性が示すディレクトリの権限と所有者を修正するか、権限の適切なパスへハッシュディレクトリを移動する | 3 |
+| `path_resolution_failed` | ハッシュディレクトリのパスを解決できず、権限を検査したディレクトリが実際に読むディレクトリと一致すると保証できない | 指定したパスと、その途中にあるシンボリックリンクを確認する | 3 |
+| `hash_dir_not_found` | ハッシュディレクトリが存在しない | `record` コマンドでハッシュを記録するか、正しいハッシュディレクトリを `-hash-dir` で指定する | 3 |
+| `hash_dir_unreadable` | ハッシュディレクトリは存在するが、記録を読み取れない | ディレクトリの権限と実行ユーザーを確認する | 3 |
+| `permission_checker_init_failed` | ディレクトリ権限監査に用いるチェッカを初期化できない | 標準エラー出力に併記される原因を確認する | 3 |
+| `hash_dir_not_a_directory` | `-hash-dir` に指定したパスがディレクトリではない | 指定したパスを確認する | 1 |
+| `invalid_arguments` | 検証対象のファイルが指定されていない、または引数を解析できない | コマンドラインを確認する | 1 |
+| `permission_check_uid_unresolved` | 権限チェックの基準UIDを確定できない | `SUDO_UID` の値を確認する（5.7 節を参照） | 1 |
+| `validator_init_failed` | バリデータを構築できない | 標準エラー出力に併記される原因を確認する | 1 |
 
 ```bash
 # 終了コードで検証結果を判定
@@ -205,7 +223,7 @@ verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 
 **注意事項**
 
-- ハッシュディレクトリが存在しない場合はエラーになります
+- ハッシュディレクトリが存在しない場合は終了コード 3（`hash_dir_not_found`）で終了します。`verify` はハッシュディレクトリを作成しないため、先に `record` コマンドでハッシュを記録してください
 - 対応するハッシュファイルが見つからない場合もエラーになります
 - `record` コマンドと同じハッシュディレクトリを指定してください
 
@@ -488,7 +506,7 @@ fi
 ```
 Verifying 1 file...
 [1/1] /usr/bin/backup.sh: FAILED
-Verification failed for /usr/bin/backup.sh: file not found
+Verification failed for /usr/bin/backup.sh: lstat /usr/bin/backup.sh: no such file or directory
 ```
 
 **対処法**
@@ -548,7 +566,7 @@ ls -la /usr/local/etc/go-safe-cmd-runner/hashes/
 ```
 Verifying 1 file...
 [1/1] /usr/bin/backup.sh: FAILED
-Verification failed for /usr/bin/backup.sh: hash mismatch
+Verification failed for /usr/bin/backup.sh: file content does not match the recorded hash
 ```
 
 **原因と対処法**
@@ -653,28 +671,56 @@ EXIT_CODE=${PIPESTATUS[0]}
 if [[ $EXIT_CODE -eq 0 ]]; then
     echo "Verification passed: $FILE"
 elif [[ $EXIT_CODE -eq 3 ]]; then
-    echo "Verification result is untrusted: $FILE"
-    echo "The hash directory or its ancestor directories have permission violations."
-    echo "Fix directory permissions and re-run."
+    echo "No file was verified: $FILE"
+    # 原因は識別トークンで分ける。メッセージの地の文には依存しない。
+    if grep -q "verify-error=hash_dir_not_found" /tmp/verify-output.txt; then
+        echo "Error: The hash directory does not exist."
+        echo "Record hashes first: record -d $HASH_DIR $FILE"
+    elif grep -q "verify-error=hash_dir_unreadable" /tmp/verify-output.txt; then
+        echo "Error: The hash directory exists but its records cannot be read."
+        echo "Check its permissions and the invoking user."
+    elif grep -q "verify-error=hash_dir_permission_violation" /tmp/verify-output.txt; then
+        echo "Error: The hash directory or its ancestor directories are writable by others."
+        echo "Fix directory permissions and re-run."
+    elif grep -q "verify-error=path_resolution_failed" /tmp/verify-output.txt; then
+        echo "Error: The hash directory path could not be resolved."
+        echo "Check the path and any symlinks along it."
+    elif grep -q "verify-error=permission_checker_init_failed" /tmp/verify-output.txt; then
+        echo "Error: The directory permission checker could not be initialized."
+    else
+        echo "Error: Unrecognized cause."
+    fi
     echo "Output:"
     cat /tmp/verify-output.txt
     exit 3
 else
-    echo "Verification failed: $FILE"
     echo "Exit code: $EXIT_CODE"
     echo "Output:"
     cat /tmp/verify-output.txt
 
-    # エラーの種類に応じた処理
-    if grep -q "file not found" /tmp/verify-output.txt; then
-        echo "Error: File does not exist"
+    # 終了コード 1 はハッシュ不一致だけでなく環境側の問題も含む。まず識別トークンで
+    # 判定し、いずれにも該当しない場合にのみファイル自体が拒否されたとみなす。
+    if grep -q "verify-error=hash_dir_not_a_directory" /tmp/verify-output.txt; then
+        echo "Error: The hash directory path is not a directory"
+    elif grep -q "verify-error=permission_check_uid_unresolved" /tmp/verify-output.txt; then
+        echo "Error: The UID the permission checks judge access from could not be established."
+        echo "Check SUDO_UID and the invoking user."
+    elif grep -q "verify-error=invalid_arguments" /tmp/verify-output.txt; then
+        echo "Error: No file to verify was named, or an argument was rejected."
+    elif grep -q "verify-error=validator_init_failed" /tmp/verify-output.txt; then
+        echo "Error: The validator could not be built, so no hash record could be read."
     elif grep -q "hash file not found" /tmp/verify-output.txt; then
         echo "Error: Hash has not been recorded"
         echo "Run: record -d $HASH_DIR $FILE"
-    elif grep -q "hash mismatch" /tmp/verify-output.txt; then
+    elif grep -q "file content does not match the recorded hash" /tmp/verify-output.txt; then
+        echo "Verification failed: $FILE"
         echo "Error: File has been modified"
         echo "Current hash:"
         sha256sum "$FILE"
+    elif grep -q "no such file or directory" /tmp/verify-output.txt; then
+        echo "Error: File does not exist"
+    else
+        echo "Error: Unrecognized cause."
     fi
 
     exit 1

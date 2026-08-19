@@ -8,7 +8,7 @@
 | Created | 2026-08-14 |
 | Review date | 2026-08-14 |
 | Reviewer | isseis |
-| Comments | AC-31 の解釈は §1.5 で決定済み。残る二重出力は [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) へ分離した。レビュー指摘により、AC-31 の選別条件（`level=ERROR` → `error_message=`）、AC-27 の検索式（`isec` 別名）、ステップ 4-3 の除外範囲、`deps.resolvePathForCheck` の宣言、AC-01・AC-15 の現状件数を修正済み。さらに PR レビュー指摘により、権限チェッカの注入口を引数無しのファクトリ `newPermChecker func() (security.DirectoryPermChecker, error)` に一本化し、`toctouChecker` を廃止した。承認後に PR 境界（§3.2、全7件）を追加し、フェーズ1とフェーズ4のステップ順を PR 単位に整理した。フェーズ4 着手前のレビューで、当該チェックが静的なディレクトリ権限監査であって TOCTOU チェックではないことを確認し、§1.4.6 として決定を追記した（本タスクで新規に増やす文字列・テスト名・利用者向け文書は中立名を用いる。既存識別子の改名は後続タスクとし §10 に記載） |
+| Comments | AC-31 の解釈は §1.5 で決定済み。残る二重出力は [#1020](https://github.com/isseis/go-safe-cmd-runner/issues/1020) へ分離した。レビュー指摘により、AC-31 の選別条件（`level=ERROR` → `error_message=`）、AC-27 の検索式（`isec` 別名）、ステップ 4-3 の除外範囲、`deps.resolvePathForCheck` の宣言、AC-01・AC-15 の現状件数を修正済み。ステップ 4-12 の用語集判断: 「読み取り専用バリデータ」「除外理由」はいずれも追加不要とした。前者は `CreateReadOnlyValidator`、後者は `CheckSkipReason` に対応する内部実装上の概念であり、利用者向け文書にも CHANGELOG にも現れないため、訳語を固定する必要が生じていない（現れた時点で追加する）。さらに PR レビュー指摘により、権限チェッカの注入口を引数無しのファクトリ `newPermChecker func() (security.DirectoryPermChecker, error)` に一本化し、`toctouChecker` を廃止した。承認後に PR 境界（§3.2、全7件）を追加し、フェーズ1とフェーズ4のステップ順を PR 単位に整理した。フェーズ4 着手前のレビューで、当該チェックが静的なディレクトリ権限監査であって TOCTOU チェックではないことを確認し、§1.4.6 として決定を追記した（本タスクで新規に増やす文字列・テスト名・利用者向け文書は中立名を用いる。既存識別子の改名は後続タスクとし §10 に記載） |
 
 ## 関連文書
 
@@ -767,26 +767,26 @@ func getwd() (string, error) { return getwdHook() }
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（[#1032](https://github.com/isseis/go-safe-cmd-runner/pull/1032)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 #### ステップ 4-11: 利用者向け文書の更新
 
 **変更ファイル**: `docs/user/verify_command.ja.md`、`docs/user/runner_command.ja.md`、`docs/user/record_command.ja.md`
 
-- [ ] `verify_command.ja.md` の終了コード表（97-104 行）で、`3` の意味を「(a) ハッシュディレクトリまたはその祖先のディレクトリ権限違反、(b) ハッシュディレクトリの不在または読み取り不能、(c) 権限チェッカの初期化失敗。いずれも検証を1件も実施していない」に改める。`1` の意味に「ハッシュディレクトリのパスがディレクトリでない場合」を追記する。
-- [ ] 同表の直後に、§1.4.1 の識別トークン一覧（トークン・原因・対処）を表として追加する。
-- [ ] 104 行の段落に、**「`verify` はハッシュディレクトリを作成しません。」という文をそのまま**追記する（§7 の AC-43 の検索がこの文言を根拠にするため、表記を先に固定する）。
-- [ ] 208 行付近の「注意事項」に、ハッシュディレクトリが存在しない場合の終了コードが `3` であること、`record` で記録を作る必要があることを追記する。
-- [ ] 641-680 行の `robust-verification.sh` 例で、`EXIT_CODE -eq 3` の分岐を識別トークンによる原因分けに書き換える。
-- [ ] **書き換えた `robust-verification.sh` を実際に走らせて確認する**。少なくとも「ハッシュディレクトリ不在」と「ハッシュディレクトリ側の権限違反」の2条件を一時ディレクトリで作り、スクリプトが意図した分岐に入ることを確かめる。分岐が増えた手順書を、実行せずに載せない。
-- [ ] `runner_command.ja.md` の 854 行の例を、実際の書式（`T` 区切り・末尾 `Z`・UTC）に合わせて `myhost_20260805T140000Z_01K2YK812JA735M4TWZ6BK0JH9.json` に修正する。
-- [ ] 849 行の命名規則の直後に、タイムスタンプが UTC であることを1文で追記する。
-- [ ] `record_command.ja.md` の 199-206 行「指定したディレクトリが存在しない場合、自動的に作成されます（権限: 0700）」を、本タスク後の挙動に合わせて改める。作成が権限チェックの通過後に行われること、作成先（実在する最深の祖先）が world-writable な場合は作成せずエラー終了すること、その場合は利用者が先にディレクトリを作れば通ることを記す。211 行は変更しない。
+- [x] `verify_command.ja.md` の終了コード表で、`3` の意味を「(a) ハッシュディレクトリまたはその祖先のディレクトリ権限違反、(b) ハッシュディレクトリの不在または読み取り不能、(c) 権限チェッカの初期化失敗、(d) ハッシュディレクトリのパス解決の失敗。いずれも検証を1件も実施していない」に改める。`1` の意味に「ハッシュディレクトリのパスがディレクトリでない場合」を追記する。**実装時の変更**: (d) を加えた。`path_resolution_failed` はステップ 3-4 で終了コード `3` の原因として追加した（§1.4.1）ものであり、本ステップの記述はそれ以前に書かれていた。直後の識別トークン一覧が同トークンを載せる以上、表側だけ3原因のままでは食い違う。
+- [x] 同表の直後に、§1.4.1 の識別トークン一覧（トークン・原因・対処）を表として追加する。**実装時の変更**: 挿入位置は、終了コード表の直後ではなく、表に続く「対象ファイルの祖先ディレクトリのみに違反が検出され…」の段落の後とした。この段落は終了コード `3` の適用範囲を補足するもので、表との間に9行の表を挟むと読み手が表と補足を結び付けられないため。
+- [x] 同じ段落の直後に、**「`verify` はハッシュディレクトリを作成しません。」という文をそのまま**追記する（§7 の AC-43 の検索がこの文言を根拠にするため、表記を先に固定する）。
+- [x] 「注意事項」に、ハッシュディレクトリが存在しない場合の終了コードが `3` であること、`record` で記録を作る必要があることを追記する。
+- [x] `robust-verification.sh` 例で、`EXIT_CODE -eq 3` の分岐を識別トークンによる原因分けに書き換える。**実装時の追加**: 終了コード `1` 側の分岐の先頭にも `hash_dir_not_a_directory` の判定を足した。同コードは通常の検証失敗と共通であり、地の文での切り分けを置き換えるのが本タスクの目的であるため、`3` 側だけをトークン化すると同じ例の中で方針が割れる。
+- [x] **書き換えた `robust-verification.sh` を実際に走らせて確認する**。「ハッシュディレクトリ不在」「ハッシュディレクトリ側の権限違反」に加え、追加した「ディレクトリでないパス」の3条件を一時ディレクトリで作り、終了コードがそれぞれ 3 / 3 / 1、入った分岐が `hash_dir_not_found` / `hash_dir_permission_violation` / `hash_dir_not_a_directory` であることを確認した。
+- [x] `runner_command.ja.md` の例を、実際の書式（`T` 区切り・末尾 `Z`・UTC）に合わせて `myhost_20260805T140000Z_01K2YK812JA735M4TWZ6BK0JH9.json` に修正する。
+- [x] 命名規則の直後に、タイムスタンプが UTC であることを1文で追記する。
+- [x] `record_command.ja.md` の「指定したディレクトリが存在しない場合、自動的に作成されます（権限: 0700）」を、本タスク後の挙動に合わせて改める。作成が権限チェックの通過後に行われること、作成先（実在する最深の祖先）が world-writable な場合は作成せずエラー終了すること、その場合は利用者が先にディレクトリを作れば通ることを記す。211 行は変更しない。
 - [x] `record_command.ja.md` の「権限について」節に、分離運用（`record` 実行者と `runner` 実行者が異なる構成）の設定手順を追加する（AC-47）。`runner` が実行者の権限でハッシュを読むこと、`chgrp` + `0750` が必要であること、それが起動時チェックを通ること（拒否されるのは書き込み許可のみ）、グループへの書き込みと所有者の付け替えは行わないことを記す。
 - [x] 同ファイルの移行案内（`0o750` からのアップグレード）に、分離運用では狭めない旨を併記する（AC-47・AC-45）。
-- [ ] **地の確認**: 一時ディレクトリに対して `record`・`verify` を実行し、終了コードと標準エラー出力のトークンが文書の記述と一致することを確認する。ログファイル名については、`internal/runner/bootstrap` のテストが生成した実ファイル名が文書の例と同じ形であることを確認する。
-- [ ] 英語版 `docs/user/verify_command.md`・`docs/user/runner_command.md`・`docs/user/record_command.md` を `/mktrans` で反映する。
+- [x] **地の確認**: 一時ディレクトリに対して `record`・`verify` を実行し、終了コードと標準エラー出力のトークンが文書の記述と一致することを確認した（通常作成は `0700`、world-writable な作成先は非 sticky・sticky のいずれも作成せずに終了コード `1`、先に `mkdir -m 700 -p` で作れば通過、作成後の `verify` は終了コード `0`）。ログファイル名は `TestSetupLoggerWithConfig_LogFileNameTimestampIsUTC` が生成した実ファイル名で `<hostname>_YYYYMMDDThhmmssZ_<run-id>.json` の形を確認した。
+- [x] 英語版 `docs/user/verify_command.md`・`docs/user/runner_command.md`・`docs/user/record_command.md` を `/mktrans` で反映する。
 
 #### ステップ 4-12: CHANGELOG と用語集
 
@@ -794,17 +794,17 @@ func getwd() (string, error) { return getwdHook() }
 
 `## [未リリース]` 節に、以下の見出しをこの文言で立てる（§7 の AC-45 の検索がこの見出しを根拠にする）。
 
-- [ ] 見出し「`verify`: ハッシュディレクトリを作成しなくなりました」 — 不在時は終了コード `3` で終了すること、識別トークンで原因を分けられること、「終了コード 3 = 改ざんの可能性」として警報を上げている監視ルールが未整備のホストで発報するようになることを記す。
-- [ ] 見出し「ログファイル名のタイムスタンプが UTC になりました」 — 02_architecture.md §6.4 の移行時の注意（UTC より進んだタイムゾーンのホストで、移行直後に辞書順と時系列が一致しない期間が生じる）を含める。
-- [ ] 見出し「パス解決の変更により新たに権限違反が検出されることがあります」 — アップグレード前の判定手順として、ハッシュディレクトリと検証対象のパスに `readlink -f` を適用し、その実体の祖先の権限を確認する手順を示す（02_architecture.md §9）。
-- [ ] 見出し「新規作成するハッシュディレクトリのパーミッションが 0700 になりました」 — 既存ディレクトリは変わらないことを添える。
-- [ ] 見出し「`record`: world-writable な場所への新規ハッシュディレクトリ作成を拒否します」 — 本番既定のハッシュディレクトリは該当しないこと、先に利用者自身がディレクトリを作れば通ることを添える。
-- [ ] **地の確認**: CHANGELOG に記した `readlink -f` を用いた判定手順を実際に実行し、記載どおりの出力になることを確認する。
-- [ ] `docs/translation_glossary.md` に「識別トークン / identification token」を追加する。§1.4.1 で導入した概念であり、`verify` の利用者向け文書と CHANGELOG の両方に現れるため、訳語を固定する必要がある。既存項目に同義のものが無いことを確認したうえで追加する。
-- [ ] `docs/translation_glossary.md` に「ディレクトリ権限監査 / directory permission audit」を追加する。§1.4.6 の決定により、本タスクで新規に増やす文字列と利用者向け文書はこの語を用いるため、訳語を固定する必要がある。
-- [ ] 「読み取り専用バリデータ / read-only validator」「除外理由 / skip reason」についても、既存項目で足りるかを判断する。追加した場合はそれを、追加不要と判断した場合はその理由を、Document Status の Comments に記録する。
-- [ ] 英語版 `CHANGELOG.md` を `/mktrans` で反映する。
-- [ ] `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の §2・§3 から、本タスクで解消した 11 件（L-1〜L-5・L-7・I-1〜I-5）を消し込む。追跡文書の更新も本タスクの成果物であり、どの PR にも属さないまま残さない。
+- [x] 見出し「`verify`: ハッシュディレクトリを作成しなくなりました」 — 不在時は終了コード `3` で終了すること、識別トークンで原因を分けられること、「終了コード 3 = 改ざんの可能性」として警報を上げている監視ルールが未整備のホストで発報するようになることを記す。
+- [x] 見出し「ログファイル名のタイムスタンプが UTC になりました」 — 02_architecture.md §6.4 の移行時の注意（UTC より進んだタイムゾーンのホストで、移行直後に辞書順と時系列が一致しない期間が生じる）を含める。
+- [x] 見出し「パス解決の変更により新たに権限違反が検出されることがあります」 — アップグレード前の判定手順として、ハッシュディレクトリと検証対象のパスに `readlink` を適用し、その実体の祖先の権限を確認する手順を示す（02_architecture.md §9）。**実装時の変更**: `-f` ではなく `-m` を用いた。`-f` はパスの途中が実在しないと失敗して空文字列を返し、祖先を辿るループが終わらない。ハッシュディレクトリの未作成は本タスクが `verify` の終了コード 3 として案内する状態そのものであり、手順が最初に踏む可能性が高いため。
+- [x] 見出し「新規作成するハッシュディレクトリのパーミッションが 0700 になりました」 — 既存ディレクトリは変わらないことを添える。
+- [x] 見出し「`record`: world-writable な場所への新規ハッシュディレクトリ作成を拒否します」 — 本番既定のハッシュディレクトリは該当しないこと、先に利用者自身がディレクトリを作れば通ることを添える。
+- [x] **地の確認**: CHANGELOG に記した `readlink -m` を用いた判定手順を、シンボリックリンク経由のハッシュディレクトリ、および途中が実在しないパス（`/nonexistent/a/b/c`）に対して実行し、実体パスの解決と祖先の権限一覧が記載どおりに出ること、後者でもループが根で終わることを確認した。
+- [x] `docs/translation_glossary.md` に「識別トークン / identification token」を追加する。§1.4.1 で導入した概念であり、`verify` の利用者向け文書と CHANGELOG の両方に現れるため、訳語を固定する必要がある。既存項目に同義のものが無いことを確認したうえで追加する。
+- [x] `docs/translation_glossary.md` に「ディレクトリ権限監査 / directory permission audit」を追加する。§1.4.6 の決定により、本タスクで新規に増やす文字列と利用者向け文書はこの語を用いるため、訳語を固定する必要がある。
+- [-] 「読み取り専用バリデータ / read-only validator」「除外理由 / skip reason」についても、既存項目で足りるかを判断する。追加した場合はそれを、追加不要と判断した場合はその理由を、Document Status の Comments に記録する。→ **追加不要と判断**（理由は Document Status の Comments に記録）。
+- [x] 英語版 `CHANGELOG.md` を `/mktrans` で反映する。
+- [x] `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の §2・§3 から、本タスクで解消した 11 件（L-1〜L-5・L-7・I-1〜I-5）を消し込む。追跡文書の更新も本タスクの成果物であり、どの PR にも属さないまま残さない。
 
 ### PR-8 作成ポイント: user documentation and CHANGELOG
 
@@ -820,8 +820,8 @@ func getwd() (string, error) { return getwdHook() }
 
 **マージ後の作業**: issue [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) をクローズする（§10）。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（[#1034](https://github.com/isseis/go-safe-cmd-runner/pull/1034)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -929,13 +929,13 @@ PR-1 と PR-2 はフェーズ1（`internal/`）で、これを利用する PR-3�
 
 PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3.2 の表と、各ステップ群の末尾にある「PR-N 作成ポイント」節を参照する。
 
-- [ ] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3）
-- [ ] PR-2 マージ済み（対象ステップ: 1-4 / 1-5 / 1-6、フェーズ1 完了ゲートを含む）
-- [ ] PR-3 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3 / 2-4 / 2-5 / 2-6、フェーズ2 完了ゲートを含む）
-- [ ] PR-4 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3）
-- [ ] PR-5 マージ済み（対象ステップ: 3-4 / 3-5、フェーズ3 完了ゲートを含む）
-- [ ] PR-6 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3 / 4-4 / 4-5）
-- [ ] PR-7 マージ済み（対象ステップ: 4-6 / 4-7 / 4-8 / 4-9 / 4-10、フェーズ4 完了ゲートを含む）
+- [x] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3）
+- [x] PR-2 マージ済み（対象ステップ: 1-4 / 1-5 / 1-6、フェーズ1 完了ゲートを含む）
+- [x] PR-3 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3 / 2-4 / 2-5 / 2-6、フェーズ2 完了ゲートを含む）
+- [x] PR-4 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3）
+- [x] PR-5 マージ済み（対象ステップ: 3-4 / 3-5、フェーズ3 完了ゲートを含む）
+- [x] PR-6 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3 / 4-4 / 4-5）
+- [x] PR-7 マージ済み（対象ステップ: 4-6 / 4-7 / 4-8 / 4-9 / 4-10、フェーズ4 完了ゲートを含む）
 - [ ] PR-8 マージ済み（対象ステップ: 4-11 / 4-12）
 ---
 
@@ -1021,7 +1021,7 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 | AC-45 | static | `rg -n -e パス解決の変更により新たに権限違反が検出されることがあります CHANGELOG.ja.md` | 一致1件 |
 | AC-45 | static | `rg -n -e '新規作成するハッシュディレクトリのパーミッションが 0700 になりました' CHANGELOG.ja.md` | 一致1件 |
 | AC-45 | static | `rg -n -e 'world-writable な場所への新規ハッシュディレクトリ作成を拒否します' CHANGELOG.ja.md` | 一致1件 |
-| AC-45 | manual | CHANGELOG に記した `readlink -f` の判定手順を実行し、記載どおりの出力になることを確認する | 記載と一致 |
+| AC-45 | manual | CHANGELOG に記した `readlink -m` の判定手順を実行し、記載どおりの出力になることを確認する（`-f` から変更した理由はステップ 4-12 を参照） | 記載と一致 |
 | AC-47 | static | `rg -n -e 'chgrp' docs/user/record_command.ja.md docs/user/record_command.md` | 両ファイルとも1件以上（分離運用の手順） |
 | AC-47 | static | `rg -n -e '0o750' -A3 docs/user/record_command.ja.md \| rg -e 分離運用` | 一致1件（移行案内が例外に言及している） |
 | AC-47 | manual | 分離運用の構成（`chgrp` + `0750`、グループ書き込み無し）を一時ディレクトリで作り、権限チェックが通ることを確認する | 違反として拒否されない |
@@ -1034,13 +1034,13 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 
 `make lint` と `make test` では検出できない残存参照・整合性のみを挙げる（§7 の AC 検証表と重複する検索はここに再掲しない）。
 
-- [ ] `rg -n -e ResolveAbsPathForCheck -e resolveStaticAbsPath --glob '*.md' docs/user CHANGELOG.ja.md CHANGELOG.md` — 利用者向け文書に旧関数名が残っていないこと（`docs/tasks/0149_*` の監査所見と残件一覧は当時の記録なので対象外）。
-- [ ] `rg -n -e CreateValidator --glob '*.go' --glob '*.md' .` — 削除した関数への参照が残っていないこと。`CreateReadOnlyValidator` が部分一致するので、一致行を目視で切り分ける。
-- [ ] `rg -n -e 0o750 internal/fileanalysis cmd docs/user` — 旧パーミッション値への言及が残っていないこと。ただし `docs/user/record_command.ja.md:531` と `docs/user/record_command.md:531` は 0146 由来の是正手順で、残すのが正しい。この2件のみが一致する状態を期待値とする。
-- [ ] `rg -n -e 'CollectPermissionCheckDirs collects nothing' internal/runner` — ステップ 4-3 で書き換えるコメントが残っていないこと。
-- [ ] `rg -n -e hash_dir_not_found -e hash_dir_unreadable -e hash_dir_permission_violation -e permission_checker_init_failed --glob '*.go' .` — トークン文字列が `cmd/verify/main.go` に定数として1箇所ずつ定義され、テストがリテラルを二重定義していないこと。
-- [ ] `rg -n -e CheckSkipReason -e CheckSkipNone -e CheckSkipVariableReference -e CheckSkipRelative --glob '*.go' .` — `internal/security` 以外に同名の識別子が生まれていないこと。
-- [ ] `docs/user/verify_command.ja.md` と `docs/user/verify_command.md`、`docs/user/runner_command.ja.md` と `docs/user/runner_command.md`、`docs/user/record_command.ja.md` と `docs/user/record_command.md`、`CHANGELOG.ja.md` と `CHANGELOG.md` の各対で、本タスクの変更が同じ節に反映されていること。
+- [x] `rg -n -e ResolveAbsPathForCheck -e resolveStaticAbsPath --glob '*.md' docs/user CHANGELOG.ja.md CHANGELOG.md` — 利用者向け文書に旧関数名が残っていないこと（`docs/tasks/0149_*` の監査所見と残件一覧は当時の記録なので対象外）。
+- [x] `rg -n -e CreateValidator --glob '*.go' --glob '*.md' .` — 削除した関数への参照が残っていないこと。`CreateReadOnlyValidator` が部分一致するので、一致行を目視で切り分ける。**確認結果**: `.go` の一致は0件。`.md` の一致はいずれも 0023・0040・0071・0162 および本タスクの計画・設計文書で、当時の記録または削除の記述であり残すのが正しい。
+- [x] `rg -n -e 0o750 internal/fileanalysis cmd docs/user` — 旧パーミッション値への言及が残っていないこと。ただし `docs/user/record_command.ja.md:531` と `docs/user/record_command.md:531` は 0146 由来の是正手順で、残すのが正しい。この2件のみが一致する状態を期待値とする。**確認結果**: 一致は当該2件のみ（本タスクでの加筆により行番号は 531 から 557 へ移動）。
+- [x] `rg -n -e 'CollectPermissionCheckDirs collects nothing' internal/runner` — ステップ 4-3 で書き換えるコメントが残っていないこと。
+- [x] `rg -n -e hash_dir_not_found -e hash_dir_unreadable -e hash_dir_permission_violation -e permission_checker_init_failed --glob '*.go' .` — トークン文字列が `cmd/verify/main.go` に定数として1箇所ずつ定義され、テストがリテラルを二重定義していないこと。**確認結果**: 4件とも `cmd/verify/main.go` の定数定義のみが一致。
+- [x] `rg -n -e CheckSkipReason -e CheckSkipNone -e CheckSkipVariableReference -e CheckSkipRelative --glob '*.go' .` — `internal/security` 以外に同名の識別子が生まれていないこと。**確認結果**: `cmd/runner/main.go`・`internal/runner/group_executor.go` の一致はいずれも `isec.` 修飾の参照であり、新たな同名識別子は無い。
+- [x] `docs/user/verify_command.ja.md` と `docs/user/verify_command.md`、`docs/user/runner_command.ja.md` と `docs/user/runner_command.md`、`docs/user/record_command.ja.md` と `docs/user/record_command.md`、`CHANGELOG.ja.md` と `CHANGELOG.md` の各対で、本タスクの変更が同じ節に反映されていること。
 
 ---
 
@@ -1061,7 +1061,7 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 - [ ] 承認後、§3.2 の PR-1 から順に実装する。PR の区切りは各ステップ群の末尾にある「PR-N 作成ポイント」に従い、1つの PR をマージしてから次のブランチへ移る。
 - [ ] `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の消し込みはステップ 4-12（PR-8）で行う。
 - [ ] issue [#986](https://github.com/isseis/go-safe-cmd-runner/issues/986) をクローズする。対象外とした L-6（[#1018](https://github.com/isseis/go-safe-cmd-runner/issues/1018)）・I-6（[#1019](https://github.com/isseis/go-safe-cmd-runner/issues/1019)）と、下の項目で登録する §11 の改名が、別 issue として残ることをクローズコメントに記す。
-- [ ] §11 のディレクトリ権限監査の改名を issue として登録する（L-6・I-6 と同じ扱い）。本文には §11 への参照と、着手が**フェーズ4 の完了後**（PR-8 のマージ後）であることを記す。登録した issue 番号を §11 の冒頭に追記する。この登録は PR-8 より前に済ませる。本書は PR-8 で役目を終えるため、それまでに追跡先を作らないと §11 が完了済みタスクの文書に埋もれる。
+- [x] §11 のディレクトリ権限監査の改名を issue として登録する（L-6・I-6 と同じ扱い）。本文には §11 への参照と、着手が**フェーズ4 の完了後**（PR-8 のマージ後）であることを記す。登録した issue 番号を §11 の冒頭に追記する。この登録は PR-8 より前に済ませる（[#1033](https://github.com/isseis/go-safe-cmd-runner/issues/1033) として登録済み）。本書は PR-8 で役目を終えるため、それまでに追跡先を作らないと §11 が完了済みタスクの文書に埋もれる。
 
 ---
 
@@ -1069,7 +1069,7 @@ PR 単位で進捗を追う。各 PR の対象ステップと作業内容は §3
 
 §1.4.6 の決定により、既存識別子の改名は本タスクの範囲外とした。ここに作業内容を残す。**着手はフェーズ4 の完了後**とする。同じ箇所に触れるため、PR-6〜PR-8 と並行させない。
 
-**追跡先**: 本節は引き継ぎ仕様であり、進捗欄を持たない。ここに進捗を置くと、対象外と決めたはずの作業が本タスクの完了判定に混ざるためである。追跡は §10 で登録する issue と、着手時に作る新しいタスク文書（`docs/tasks/NNNN_.../03_implementation_plan.md`）が担う。着手時の最初の作業は、本節を出発点としてその計画書を起こすことであり、§11.2〜§11.6 の各項目はそこでチェックボックスに展開する。issue 番号: 未登録（§10 の登録後にここへ記す）。
+**追跡先**: 本節は引き継ぎ仕様であり、進捗欄を持たない。ここに進捗を置くと、対象外と決めたはずの作業が本タスクの完了判定に混ざるためである。追跡は §10 で登録する issue と、着手時に作る新しいタスク文書（`docs/tasks/NNNN_.../03_implementation_plan.md`）が担う。着手時の最初の作業は、本節を出発点としてその計画書を起こすことであり、§11.2〜§11.6 の各項目はそこでチェックボックスに展開する。issue 番号: [#1033](https://github.com/isseis/go-safe-cmd-runner/issues/1033)。
 
 ### 11.1 目的
 

@@ -65,7 +65,7 @@ Output on failure:
 ```
 Verifying 1 file...
 [1/1] /usr/bin/backup.sh: FAILED
-Verification failed for /usr/bin/backup.sh: hash mismatch
+Verification failed for /usr/bin/backup.sh: file content does not match the recorded hash
 
 Summary: 0 succeeded, 1 failed
 ```
@@ -97,11 +97,29 @@ verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 | Exit Code | Meaning |
 |---|---|
 | 0 | All files verified successfully |
-| 1 | Argument error, validator creation failure, or verification failure for one or more files |
+| 1 | Argument error, validator creation failure, failure to determine the base UID for the permission checks, the hash directory path is not a directory, or verification failure for one or more files |
 | 2 | Unexpected abnormal termination (used by the Go runtime for uncaught panics). `verify` never explicitly returns this code |
-| 3 | TOCTOU permission check violation detected on the hash directory or its ancestor directories. Verification results cannot be trusted; no target files are verified |
+| 3 | The run started in a state where verification results cannot be trusted, for one of the following reasons: (a) a directory permission violation on the hash directory or its ancestors, (b) the hash directory is missing or unreadable, (c) failure to initialize the permission checker, (d) the hash directory path could not be resolved. In every case, no target file has been verified |
 
 If a violation is detected only on a target file's ancestor directories and not on the hash directory side, `verify` does not return exit code 3. The violation is recorded as a warning and verification continues (the exit code depends on each file's verification result). No bypass flag is provided. If a hash-directory-side violation is detected, fix the hash directory permissions or move the hash directory to a path with appropriate permissions.
+
+`verify` does not create the hash directory. If the hash directory does not exist, `verify` exits with exit code 3 (`hash_dir_not_found`), so record hashes with the `record` command first.
+
+#### Identification Tokens
+
+When the run ends without verifying a single file, the message on standard error contains a fixed string that indicates the cause, spelled `verify-error=<token>`. The exit code alone cannot tell the causes apart, so a script that needs to distinguish them should refer to this token rather than to the prose of the message.
+
+| Token | Cause | Remedy | Exit Code |
+|---|---|---|---|
+| `hash_dir_permission_violation` | The hash directory or one of its ancestors is writable by someone other than the owner, or its owner or group is unsafe | Fix the permissions and ownership of the directory named by the `violation` attribute on standard error, or move the hash directory to a path with appropriate permissions | 3 |
+| `path_resolution_failed` | The hash directory path could not be resolved, so the directory whose permissions were inspected cannot be guaranteed to be the one that is actually read | Check the specified path and any symlinks along it | 3 |
+| `hash_dir_not_found` | The hash directory does not exist | Record hashes with the `record` command, or specify the correct hash directory with `-hash-dir` | 3 |
+| `hash_dir_unreadable` | The hash directory exists, but its records cannot be read | Check the directory permissions and the invoking user | 3 |
+| `permission_checker_init_failed` | The checker used for the directory permission audit could not be initialized | Check the cause reported alongside it on standard error | 3 |
+| `hash_dir_not_a_directory` | The path given to `-hash-dir` is not a directory | Check the specified path | 1 |
+| `invalid_arguments` | No file to verify was specified, or the arguments could not be parsed | Check the command line | 1 |
+| `permission_check_uid_unresolved` | The base UID for the permission checks could not be determined | Check the value of `SUDO_UID` (see section 5.7) | 1 |
+| `validator_init_failed` | The validator could not be built | Check the cause reported alongside it on standard error | 1 |
 
 ```bash
 # Determine verification results by exit code
@@ -205,7 +223,7 @@ verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 
 **Notes**
 
-- Error occurs if the hash directory does not exist
+- If the hash directory does not exist, `verify` exits with exit code 3 (`hash_dir_not_found`). `verify` does not create the hash directory, so record hashes with the `record` command first
 - Error also occurs if the corresponding hash file is not found
 - Specify the same hash directory as used with the `record` command
 
@@ -488,7 +506,7 @@ fi
 ```
 Verifying 1 file...
 [1/1] /usr/bin/backup.sh: FAILED
-Verification failed for /usr/bin/backup.sh: file not found
+Verification failed for /usr/bin/backup.sh: lstat /usr/bin/backup.sh: no such file or directory
 ```
 
 **Solutions**
@@ -548,7 +566,7 @@ ls -la /usr/local/etc/go-safe-cmd-runner/hashes/
 ```
 Verifying 1 file...
 [1/1] /usr/bin/backup.sh: FAILED
-Verification failed for /usr/bin/backup.sh: hash mismatch
+Verification failed for /usr/bin/backup.sh: file content does not match the recorded hash
 ```
 
 **Causes and Solutions**
@@ -653,28 +671,57 @@ EXIT_CODE=${PIPESTATUS[0]}
 if [[ $EXIT_CODE -eq 0 ]]; then
     echo "Verification passed: $FILE"
 elif [[ $EXIT_CODE -eq 3 ]]; then
-    echo "Verification result is untrusted: $FILE"
-    echo "The hash directory or its ancestor directories have permission violations."
-    echo "Fix directory permissions and re-run."
+    echo "No file was verified: $FILE"
+    # Tell the causes apart by identification token; do not depend on the prose of the message.
+    if grep -q "verify-error=hash_dir_not_found" /tmp/verify-output.txt; then
+        echo "Error: The hash directory does not exist."
+        echo "Record hashes first: record -d $HASH_DIR $FILE"
+    elif grep -q "verify-error=hash_dir_unreadable" /tmp/verify-output.txt; then
+        echo "Error: The hash directory exists but its records cannot be read."
+        echo "Check its permissions and the invoking user."
+    elif grep -q "verify-error=hash_dir_permission_violation" /tmp/verify-output.txt; then
+        echo "Error: The hash directory or its ancestor directories are writable by others."
+        echo "Fix directory permissions and re-run."
+    elif grep -q "verify-error=path_resolution_failed" /tmp/verify-output.txt; then
+        echo "Error: The hash directory path could not be resolved."
+        echo "Check the path and any symlinks along it."
+    elif grep -q "verify-error=permission_checker_init_failed" /tmp/verify-output.txt; then
+        echo "Error: The directory permission checker could not be initialized."
+    else
+        echo "Error: Unrecognized cause."
+    fi
     echo "Output:"
     cat /tmp/verify-output.txt
     exit 3
 else
-    echo "Verification failed: $FILE"
     echo "Exit code: $EXIT_CODE"
     echo "Output:"
     cat /tmp/verify-output.txt
 
-    # Process based on error type
-    if grep -q "file not found" /tmp/verify-output.txt; then
-        echo "Error: File does not exist"
+    # Exit code 1 covers environment problems as well as a failed hash comparison,
+    # so check the identification tokens first: only when none of them is present
+    # was the file itself rejected.
+    if grep -q "verify-error=hash_dir_not_a_directory" /tmp/verify-output.txt; then
+        echo "Error: The hash directory path is not a directory"
+    elif grep -q "verify-error=permission_check_uid_unresolved" /tmp/verify-output.txt; then
+        echo "Error: The UID the permission checks judge access from could not be established."
+        echo "Check SUDO_UID and the invoking user."
+    elif grep -q "verify-error=invalid_arguments" /tmp/verify-output.txt; then
+        echo "Error: No file to verify was named, or an argument was rejected."
+    elif grep -q "verify-error=validator_init_failed" /tmp/verify-output.txt; then
+        echo "Error: The validator could not be built, so no hash record could be read."
     elif grep -q "hash file not found" /tmp/verify-output.txt; then
         echo "Error: Hash has not been recorded"
         echo "Run: record -d $HASH_DIR $FILE"
-    elif grep -q "hash mismatch" /tmp/verify-output.txt; then
+    elif grep -q "file content does not match the recorded hash" /tmp/verify-output.txt; then
+        echo "Verification failed: $FILE"
         echo "Error: File has been modified"
         echo "Current hash:"
         sha256sum "$FILE"
+    elif grep -q "no such file or directory" /tmp/verify-output.txt; then
+        echo "Error: File does not exist"
+    else
+        echo "Error: Unrecognized cause."
     fi
 
     exit 1
