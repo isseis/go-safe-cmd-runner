@@ -103,6 +103,7 @@
 | データ持ち出し | data exfiltration | 機密データの外部送信（セキュリティの文脈） |
 | データ送信（外部送信） | egress | 信頼境界を越える外部へのデータ送信（セキュリティの文脈）。一般的な「送信」と区別。リスクレベル分類の文脈で使用 |
 | データフロー解析 | dataflow analysis | CFGを用いたデータの流れの解析 |
+| ディレクトリ権限監査 | directory permission audit | 起動時とグループ実行の直前に、収集したディレクトリの権限・所有者・経路要素を1回ずつ検査する静的な監査。TOCTOU チェックではないため、新規に追加する文字列と利用者向け文書では「TOCTOU」を用いない（Task 0164） |
 | 依存 / 依存解析 | dependency / dependency analysis | 動的ライブラリ依存解析の文脈 |
 | 判定メソッド | determination method | syscall番号の決定手段を示す文字列 |
 | デバッグ | debug / debugging | |
@@ -244,6 +245,7 @@
 | 命令境界 | instruction boundary | x86_64可変長命令の正しい境界位置 |
 | インジェクション | injection | コマンドインジェクションの文脈では "injection" |
 | 整合性 | integrity | ファイルの整合性検証の文脈 |
+| 識別トークン | identification token | `verify` が検証を1件も実施せずに終了した理由を機械的に判別するために、標準エラー出力へ `verify-error=<token>` の形で出力する固定文字列（Task 0164） |
 | インターフェース | interface | |
 | 即時展開 | immediate expansion | 変数展開の文脈 |
 | インタプリタ起動時コード注入変数 | interpreter startup code-injection variable | 検証済みインタプリタ（シェル/Python/Perl 等）の起動時に任意コードを実行させ得る環境変数（BASH_ENV、PYTHONPATH、NODE_OPTIONS 等） |
@@ -785,6 +787,7 @@
 | 2026-08-02 | SUDO_UID 実在確認関連の用語を追加 (existence check, adoption, adoption record, sentinel error, user database source) |
 | 2026-08-07 | run ID 検証・特権降格・TOCTOU fail-closed 化（Task 0162）関連の用語を追加 (startup privilege drop, accepted format, root of trust, defense in depth) |
 | 2026-08-13 | redaction カバレッジ拡張と Slack 送信の非同期化（Task 0163 Phase 6）関連の用語を追加 (key-name-based redaction, value-format detection, separator, leading boundary, send queue, worker, stop accepting, drop, flush deadline, shutdown request, drain / abandon) |
+| 2026-08-19 | entrypoints の残 Low/Info 所見（Task 0164）関連の用語を追加 (identification token, directory permission audit) |
 
 ---
 

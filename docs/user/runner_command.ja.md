@@ -849,9 +849,11 @@ runner -config config.toml -log-dir ./logs
 <log-dir>/<hostname>_<timestamp>_<run-id>.json
 ```
 
+`<timestamp>` は `YYYYMMDDThhmmssZ` 形式の UTC です（ホストのタイムゾーンには従いません）。
+
 例：
 ```
-/var/log/go-safe-cmd-runner/myhost_20260805140000_01K2YK812JA735M4TWZ6BK0JH9.json
+/var/log/go-safe-cmd-runner/myhost_20260805T140000Z_01K2YK812JA735M4TWZ6BK0JH9.json
 ```
 
 **ログファイルの内容（JSON形式）**
