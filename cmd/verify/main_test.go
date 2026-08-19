@@ -421,7 +421,15 @@ func TestRunSkipsTargetSetCheckWhenHashDirViolates(t *testing.T) {
 	// No record may name the target directory: reaching the target-side check at
 	// all would report a violation for it, at any level.
 	for _, r := range logs.Records() {
-		assert.NotContains(t, r.Attrs["path"], targetDir,
+		// Records without a path attribute say nothing here; NotContains on the
+		// missing key's nil value would fail on len(nil) rather than skip it.
+		v, ok := r.Attrs["path"]
+		if !ok {
+			continue
+		}
+		path, ok := v.(string)
+		require.True(t, ok, "record %q has a non-string path attribute %v", r.Message, v)
+		assert.NotContains(t, path, targetDir,
 			"the target file set must not be checked once the hash directory side fails closed")
 	}
 	require.NotEmpty(t, violationRecords(logs))

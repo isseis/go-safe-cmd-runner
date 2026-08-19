@@ -132,7 +132,6 @@ func TestExpandCmdAllowed_Errors(t *testing.T) {
 		vars := make(map[string]string)
 
 		_, err := expandCmdAllowed(paths, vars, "testgroup")
-		require.ErrorIs(t, err, ErrEmptyPath)
 		assert.ErrorIs(t, err, ErrEmptyPath)
 	})
 

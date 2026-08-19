@@ -21,6 +21,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	safefileiotestutil "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testutil"
+	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1230,28 +1231,28 @@ func TestManagerCreationWithFileValidator(t *testing.T) {
 func TestSecurityIntegration(t *testing.T) {
 	t.Run("hash_directory_validation_integration", func(t *testing.T) {
 		tmpDir := tu.SafeTempDir(t)
+		// World-writable without the sticky bit is the one verdict the walk reaches
+		// on every host, so the assertion below is unconditional rather than
+		// "if err != nil".
+		hashDir := filepath.Join(tmpDir, "world-writable")
+		require.NoError(t, os.Mkdir(hashDir, 0o755))
+		require.NoError(t, os.Chmod(hashDir, 0o777)) //nolint:gosec // the permissive mode is what this test is about
 
-		// Create manager without skipping hash directory validation
-		manager, err := NewManagerForTest(tmpDir)
-		if err != nil {
-			// This might fail due to directory permissions, which is expected.
-			// The cause is host-dependent, so only the directory it names can be
-			// asserted on.
-			assert.ErrorContains(t, err, tmpDir)
-			return
-		}
+		// Built without withSkipHashDirectoryValidationInternal so the walk really
+		// runs: NewManagerForTest skips it unconditionally.
+		manager, err := newManagerInternal(hashDir,
+			withCreationMode(CreationModeTesting),
+			withSecurityLevel(SecurityLevelRelaxed),
+		)
+		require.NoError(t, err)
 
 		directoryValidator, err := security.NewValidator(security.DefaultConfig())
 		require.NoError(t, err)
 		manager.security = directoryValidator
 
-		// If creation succeeded, test hash directory validation
-		err = manager.ValidateHashDirectory()
-		// This might succeed or fail depending on the temp directory permissions
-		// The key is that it exercises the security validator integration
-		if err != nil {
-			assert.ErrorContains(t, err, tmpDir)
-		}
+		// By identity, not by message: the walk names the offending component,
+		// which on a permissive host may be an ancestor rather than hashDir.
+		assert.ErrorIs(t, manager.ValidateHashDirectory(), isec.ErrInvalidDirPermissions)
 	})
 
 	t.Run("path_resolver_security_integration", func(t *testing.T) {
