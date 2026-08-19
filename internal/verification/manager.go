@@ -149,7 +149,7 @@ func (m *Manager) VerifyGlobalFiles(input *GlobalVerificationInput) (*Result, er
 
 	for _, filePath := range input.ExpandedVerifyFiles {
 		// Verify file hash. Verification runs at the caller's effective UID:
-		// there is no privilege escalation here (removed in 0f512bd7).
+		// there is no privilege escalation here.
 		if err := m.verifyFile(filePath, "global"); err != nil {
 			result.FailedFiles = append(result.FailedFiles, filePath)
 			slog.Error("Global file verification failed",
