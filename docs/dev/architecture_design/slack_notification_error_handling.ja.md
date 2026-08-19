@@ -95,7 +95,7 @@ Slack ハンドラ登録は設定ファイルから許可 Slack ホストを読�
 [Service]
 Restart=on-failure
 RestartSec=10s
-OnFailure=notify-admin@%n.service
+OnFailure=notify-admin@%N.service
 ```
 
 起動失敗ユニットの監視：
@@ -176,16 +176,16 @@ Fluentd:
 ```bash
 #!/bin/bash
 # 最後の実行ログ日時が期待通りか
-LAST_RUN=$(grep "process started" /var/log/go-safe-cmd-runner/runner.log | tail -1 | cut -d' ' -f1-2)
-CURRENT_TIME=$(date +"%Y-%m-%d %H")
-if [[ "$LAST_RUN" != "$CURRENT_TIME"* ]]; then
+LAST_RUN=$(grep "process started" /var/log/go-safe-cmd-runner/runner.log | tail -1 | jq -r '.time // empty')
+CURRENT_TIME=$(date +"%Y-%m-%dT%H")
+if [[ -z "$LAST_RUN" || "$LAST_RUN" != "$CURRENT_TIME"* ]]; then
     echo "WARNING: Last run was not in the current hour"
     # Slack 通知を送信（別途設定）
 fi
 
-# 最近のログにハッシュ検証エラーがないか
-if grep -i "hash verification failed" /var/log/go-safe-cmd-runner/runner.log | tail -24h > /dev/null; then
-    echo "ALERT: Hash verification failures detected in past 24 hours"
+# 最近のログにハッシュ検証エラーがないか（直近1000行を検査する例）
+if tail -n 1000 /var/log/go-safe-cmd-runner/runner.log | grep -q -i "hash verification failed"; then
+    echo "ALERT: Hash verification failures detected"
     # Slack 通知を送信（別途設定）
 fi
 ```
@@ -258,4 +258,4 @@ func (e *Executor) Run(...) error
 ---
 
 **関連課題**: [Issue #1018](https://github.com/isseis/go-safe-cmd-runner/issues/1018)
-**実装参考**: [internal/logging/slack_async_delivery.ja.md](slack_async_delivery.ja.md)
+**実装参考**: [slack_async_delivery.ja.md](slack_async_delivery.ja.md)

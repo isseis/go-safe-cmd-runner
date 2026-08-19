@@ -95,7 +95,7 @@ To **reliably detect** configuration file hash verification errors, the followin
 [Service]
 Restart=on-failure
 RestartSec=10s
-OnFailure=notify-admin@%n.service
+OnFailure=notify-admin@%N.service
 ```
 
 Monitor startup failures:
@@ -175,17 +175,17 @@ Verify that periodic execution schedules are working as expected:
 
 ```bash
 #!/bin/bash
-# Check if last run timestamp is recent
-LAST_RUN=$(grep "process started" /var/log/go-safe-cmd-runner/runner.log | tail -1 | cut -d' ' -f1-2)
-CURRENT_TIME=$(date +"%Y-%m-%d %H")
-if [[ "$LAST_RUN" != "$CURRENT_TIME"* ]]; then
+# Check if last run timestamp is recent (example parsing JSON log with jq)
+LAST_RUN=$(grep "process started" /var/log/go-safe-cmd-runner/runner.log | tail -1 | jq -r '.time // empty')
+CURRENT_TIME=$(date +"%Y-%m-%dT%H")
+if [[ -z "$LAST_RUN" || "$LAST_RUN" != "$CURRENT_TIME"* ]]; then
     echo "WARNING: Last run was not in the current hour"
     # Send Slack notification (configured separately)
 fi
 
-# Check for recent hash verification errors
-if grep -i "hash verification failed" /var/log/go-safe-cmd-runner/runner.log | tail -24h > /dev/null; then
-    echo "ALERT: Hash verification failures detected in past 24 hours"
+# Check for recent hash verification errors (example checking last 1000 lines)
+if tail -n 1000 /var/log/go-safe-cmd-runner/runner.log | grep -q -i "hash verification failed"; then
+    echo "ALERT: Hash verification failures detected"
     # Send Slack notification (configured separately)
 fi
 ```
