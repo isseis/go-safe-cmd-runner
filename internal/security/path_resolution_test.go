@@ -5,6 +5,7 @@ package security
 import (
 	"errors"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -149,12 +150,15 @@ func TestResolveAllForCheck_WarnsOncePerFailure(t *testing.T) {
 	good := filepath.Join(tmpDir, "good")
 	require.NoError(t, os.Mkdir(good, 0o700))
 
-	logger, buf := newBufferLogger()
+	logger, rec := tu.NewRecordingLogger()
 	resolved, failures := ResolveAllForCheck([]string{firstBad, good, secondBad}, logger)
 
 	assert.Equal(t, 2, failures)
 	require.Len(t, resolved, 3)
-	assert.Equal(t, 2, strings.Count(buf.String(), "level=WARN"))
+	warnings := rec.RecordsAtLevel(slog.LevelWarn)
+	require.Len(t, warnings, 2)
+	assert.Equal(t, []any{firstBad, secondBad}, []any{warnings[0].Attrs["path"], warnings[1].Attrs["path"]},
+		"each warning names the path it is about, and the good path produces none")
 	// The failed entries must still carry a checkable path; a dropped path would be
 	// silently exempted from the permission check.
 	assert.Equal(t, []string{firstBad, good, secondBad}, resolved)
@@ -166,12 +170,12 @@ func TestResolveAllForCheck_NoWarnOnSuccessfulResolution(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	require.NoError(t, os.Mkdir(filepath.Join(tmpDir, "a"), 0o700))
 
-	logger, buf := newBufferLogger()
+	logger, rec := tu.NewRecordingLogger()
 	resolved, failures := ResolveAllForCheck([]string{filepath.Join(tmpDir, "a"), filepath.Join(tmpDir, "b")}, logger)
 
 	assert.Zero(t, failures)
 	assert.Len(t, resolved, 2)
-	assert.Empty(t, buf.String())
+	assert.Empty(t, rec.Records())
 }
 
 // TestDeepestExistingAncestor verifies that the walk stops at the path itself when it

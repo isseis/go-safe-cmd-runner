@@ -123,20 +123,22 @@ func TestRunTOCTOUPermissionCheck_MissingDirIsNotLoggedAsAnError(t *testing.T) {
 	v, err := NewDirectoryPermChecker()
 	require.NoError(t, err)
 
-	logger, buf := newBufferLogger()
+	logger, rec := tu.NewRecordingLogger()
 	original := slog.Default()
 	slog.SetDefault(logger)
 	t.Cleanup(func() { slog.SetDefault(original) })
 
 	result := RunTOCTOUPermissionCheck(v, []string{missingDir}, logger)
 	require.Equal(t, 1, result.Skipped)
-	assert.NotContains(t, buf.String(), "level=ERROR", "a directory that is merely absent is not a fault: %s", buf.String())
+	assert.Empty(t, rec.RecordsAtLevel(slog.LevelError), "a directory that is merely absent is not a fault")
 	// Not a fault is not the same as not worth recording: the skip narrows what
 	// the check established, so the path must stay traceable at debug level
 	// rather than disappearing along with the ERROR line.
-	assert.Contains(t, buf.String(), `level=DEBUG msg="Failed to get directory info" path=`+missingDir)
+	skipped := rec.RequireRecord(t, slog.LevelDebug, "Failed to get directory info")
+	assert.Equal(t, missingDir, skipped.Attrs["path"])
 
-	buf.Reset()
+	logger, rec = tu.NewRecordingLogger()
+	slog.SetDefault(logger)
 	RunTOCTOUPermissionCheck(v, []string{unreadable}, logger)
-	assert.Contains(t, buf.String(), "level=ERROR", "a directory that cannot be inspected still is one")
+	assert.NotEmpty(t, rec.RecordsAtLevel(slog.LevelError), "a directory that cannot be inspected still is one")
 }

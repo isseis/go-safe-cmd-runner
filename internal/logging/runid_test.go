@@ -151,9 +151,11 @@ func TestValidateRunID_ErrorIdentifiesFirstViolatingByte(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateRunID(tt.value)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.wantIndex)
-			assert.Contains(t, err.Error(), tt.wantByte)
+			require.ErrorIs(t, err, ErrInvalidRunID)
+			// The position and the byte are the diagnostic detail an operator
+			// needs to find the offending character.
+			assert.ErrorContains(t, err, tt.wantIndex)
+			assert.ErrorContains(t, err, tt.wantByte)
 		})
 	}
 }

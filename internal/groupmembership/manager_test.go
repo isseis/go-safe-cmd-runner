@@ -69,8 +69,8 @@ func TestGroupMembership(t *testing.T) {
 
 		// Test with non-existent user UID
 		_, err := gm.IsUserInGroup(99999, 0)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to lookup user")
+		_, ok := errors.AsType[user.UnknownUserIdError](err)
+		require.True(t, ok, "a UID with no passwd entry must surface as an unknown-user lookup failure, got: %v", err)
 	})
 
 	t.Run("cache behavior", func(t *testing.T) {
@@ -682,23 +682,22 @@ func TestGetPermissionCheckUID(t *testing.T) {
 	t.Run("malicious SUDO_UID values - out of bounds", func(t *testing.T) {
 		// Test parseSudoUID directly with malicious values - this doesn't require root privileges
 		maliciousValues := []struct {
-			name         string
-			value        string
-			expectsError string
+			name    string
+			value   string
+			wantErr error
 		}{
-			{"negative value", "-1", "SUDO_UID value out of range"},
-			{"large overflow", "999999999999999999999", "failed to parse SUDO_UID"}, // Way beyond int, fails to parse
-			{"max uint32 + 1", "4294967296", "SUDO_UID value out of range"},         // 2^32, parses but exceeds bounds
-			{"max uint64 + 1", "18446744073709551616", "failed to parse SUDO_UID"},  // 2^64, fails to parse
-			{"scientific notation", "1e10", "failed to parse SUDO_UID"},
+			{"negative value", "-1", ErrSudoUIDOutOfRange},
+			{"large overflow", "999999999999999999999", strconv.ErrRange}, // Way beyond int, fails to parse
+			{"max uint32 + 1", "4294967296", ErrSudoUIDOutOfRange},        // 2^32, parses but exceeds bounds
+			{"max uint64 + 1", "18446744073709551616", strconv.ErrRange},  // 2^64, fails to parse
+			{"scientific notation", "1e10", strconv.ErrSyntax},
 		}
 
 		for _, test := range maliciousValues {
 			t.Run(test.name, func(t *testing.T) {
 				_, err := parseSudoUID(test.value)
 				// All malicious values should return an error
-				assert.Error(t, err, "parseSudoUID(%s) should be rejected", test.value)
-				assert.Contains(t, err.Error(), test.expectsError)
+				require.ErrorIs(t, err, test.wantErr, "parseSudoUID(%s) should be rejected", test.value)
 			})
 		}
 	})

@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -312,7 +314,8 @@ func TestLoadAndPrepareConfig_EmptyConfigPath(t *testing.T) {
 	cfg, err := LoadAndPrepareConfig(verificationManager, "", "test-run-003")
 
 	// Should return error
-	assert.Error(t, err, "Should return error for empty config path")
+	preExecErr, ok := errors.AsType[*logging.PreExecutionError](err)
+	require.True(t, ok, "an empty config path must be reported as a pre-execution error, got: %v", err)
+	assert.Equal(t, logging.ErrorTypeRequiredArgumentMissing, preExecErr.Type)
 	assert.Nil(t, cfg, "Config should be nil on error")
-	assert.Contains(t, err.Error(), "Config file path is required", "Error message should indicate required path")
 }

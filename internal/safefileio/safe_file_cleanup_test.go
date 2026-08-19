@@ -72,6 +72,16 @@ func (m *mockFile) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
+// Failures the mock file reports, named so tests can match them with errors.Is
+// instead of matching the text they render.
+var (
+	errInvalidWhence    = errors.New("invalid whence")
+	errNegativePosition = errors.New("negative position")
+	errNegativeOffset   = errors.New("negative offset")
+	errDiskFull         = errors.New("disk full")
+	errTruncateFailed   = errors.New("truncate failed")
+)
+
 func (m *mockFile) Seek(offset int64, whence int) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -84,10 +94,10 @@ func (m *mockFile) Seek(offset int64, whence int) (int64, error) {
 	case io.SeekEnd:
 		newPos = int64(len(m.data)) + offset
 	default:
-		return 0, fmt.Errorf("invalid whence: %d", whence)
+		return 0, fmt.Errorf("%w: %d", errInvalidWhence, whence)
 	}
 	if newPos < 0 {
-		return 0, fmt.Errorf("negative position: %d", newPos)
+		return 0, fmt.Errorf("%w: %d", errNegativePosition, newPos)
 	}
 	m.pos = newPos
 	return m.pos, nil
@@ -95,7 +105,7 @@ func (m *mockFile) Seek(offset int64, whence int) (int64, error) {
 
 func (m *mockFile) ReadAt(p []byte, off int64) (n int, err error) {
 	if off < 0 {
-		return 0, fmt.Errorf("negative offset: %d", off)
+		return 0, fmt.Errorf("%w: %d", errNegativeOffset, off)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -284,7 +294,7 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 				gid:  currentGID,
 			}
 			mockFile := newMockFile([]byte("old content"), fileInfo)
-			mockFile.writeErr = errors.New("disk full")
+			mockFile.writeErr = errDiskFull
 			return mockFile, nil
 		}
 
@@ -296,8 +306,7 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 		err := safeWriteFileOverwriteWithFS(rp, content, 0o644, mockFS)
 
 		// Verify
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to write")
+		require.ErrorIs(t, err, errDiskFull)
 
 		// Verify: File was NOT removed
 		assert.Equal(t, 0, mockFS.getRemoveCallCount(),
@@ -324,7 +333,7 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 				gid:  currentGID,
 			}
 			mockFile := newMockFile([]byte("old content"), fileInfo)
-			mockFile.truncateErr = errors.New("truncate failed")
+			mockFile.truncateErr = errTruncateFailed
 			return mockFile, nil
 		}
 
@@ -336,8 +345,7 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 		err := safeWriteFileOverwriteWithFS(rp, content, 0o644, mockFS)
 
 		// Verify
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to truncate")
+		require.ErrorIs(t, err, errTruncateFailed)
 
 		// Verify: File was NOT removed (truncate failure should not trigger cleanup)
 		assert.Equal(t, 0, mockFS.getRemoveCallCount(),
@@ -517,30 +525,26 @@ func TestMockFileSeek(t *testing.T) {
 	t.Run("seek_negative_position_from_start", func(t *testing.T) {
 		mf := newMockFile([]byte("hello"), &mockFileInfo{name: "test.txt", size: 5})
 		_, err := mf.Seek(-1, io.SeekStart)
-		assert.Error(t, err, "Negative position should return error")
-		assert.Contains(t, err.Error(), "negative position")
+		require.ErrorIs(t, err, errNegativePosition)
 	})
 
 	t.Run("seek_negative_position_from_current", func(t *testing.T) {
 		mf := newMockFile([]byte("hello"), &mockFileInfo{name: "test.txt", size: 5})
 		mf.pos = 2
 		_, err := mf.Seek(-5, io.SeekCurrent)
-		assert.Error(t, err, "Resulting negative position should return error")
-		assert.Contains(t, err.Error(), "negative position")
+		require.ErrorIs(t, err, errNegativePosition)
 	})
 
 	t.Run("seek_negative_position_from_end", func(t *testing.T) {
 		mf := newMockFile([]byte("hello"), &mockFileInfo{name: "test.txt", size: 5})
 		_, err := mf.Seek(-10, io.SeekEnd)
-		assert.Error(t, err, "Resulting negative position should return error")
-		assert.Contains(t, err.Error(), "negative position")
+		require.ErrorIs(t, err, errNegativePosition)
 	})
 
 	t.Run("seek_invalid_whence", func(t *testing.T) {
 		mf := newMockFile([]byte("hello"), &mockFileInfo{name: "test.txt", size: 5})
 		_, err := mf.Seek(0, 99)
-		assert.Error(t, err, "Invalid whence should return error")
-		assert.Contains(t, err.Error(), "invalid whence")
+		require.ErrorIs(t, err, errInvalidWhence)
 	})
 
 	t.Run("seek_then_read", func(t *testing.T) {
@@ -606,8 +610,7 @@ func TestMockFileReadAt(t *testing.T) {
 		mf := newMockFile([]byte("hello"), &mockFileInfo{name: "test.txt", size: 5})
 		buf := make([]byte, 5)
 		_, err := mf.ReadAt(buf, -1)
-		assert.Error(t, err, "Negative offset should return error")
-		assert.Contains(t, err.Error(), "negative offset")
+		require.ErrorIs(t, err, errNegativeOffset)
 	})
 
 	t.Run("read_at_does_not_modify_position", func(t *testing.T) {

@@ -100,8 +100,7 @@ env_allowed = ["SAFE_VAR"]
 			},
 			expectError: true,
 			errorCheck: func(t *testing.T, err error) {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), "not in allowlist")
+				require.ErrorIs(t, err, config.ErrVariableNotInAllowlist)
 			},
 		},
 		{

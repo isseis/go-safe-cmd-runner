@@ -4,6 +4,7 @@ package fileanalysis
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -292,8 +293,9 @@ func TestStore_Update_SchemaVersionMismatch(t *testing.T) {
 		record.ContentHash = "sha256:newvalue"
 		return nil
 	})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "schema version mismatch")
+	mismatch, ok := errors.AsType[*SchemaVersionMismatchError](err)
+	require.True(t, ok, "a record written with another schema version must be rejected as such, got: %v", err)
+	assert.Equal(t, CurrentSchemaVersion, mismatch.Expected)
 
 	// Original record should be preserved
 	data, err = os.ReadFile(recordPath)
@@ -388,8 +390,7 @@ func TestNewStore_NotADirectory(t *testing.T) {
 
 	// Should fail because path is not a directory
 	_, err = NewStore(notADir, &mockPathGetter{})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not a directory")
+	require.ErrorIs(t, err, ErrAnalysisDirNotDirectory)
 }
 
 func TestNewStoreReadOnly_MissingDirectory_ReturnsErrorWithoutCreating(t *testing.T) {

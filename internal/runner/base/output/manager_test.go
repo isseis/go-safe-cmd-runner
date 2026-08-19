@@ -92,8 +92,7 @@ func TestDefaultOutputCaptureManager_PrepareOutput(t *testing.T) {
 		workDir         string
 		maxSize         int64
 		setupMocks      func(*MockPathValidator, *MockFileManager, *MockSecurityValidator)
-		wantErr         bool
-		errMessage      string
+		wantErr         error
 		validateCapture func(t *testing.T, capture *Capture)
 	}{
 		{
@@ -109,7 +108,7 @@ func TestDefaultOutputCaptureManager_PrepareOutput(t *testing.T) {
 				tempFile, _ := createRealTempFile(t)
 				fm.On("CreateTempFile", "/tmp", "output_*.tmp").Return(tempFile, nil)
 			},
-			wantErr: false,
+			wantErr: nil,
 			validateCapture: func(t *testing.T, capture *Capture) {
 				assert.Equal(t, "/tmp/output.txt", capture.OutputPath)
 				assert.NotNil(t, capture.FileHandle)
@@ -132,7 +131,7 @@ func TestDefaultOutputCaptureManager_PrepareOutput(t *testing.T) {
 				tempFile, _ := createRealTempFile(t)
 				fm.On("CreateTempFile", "/home/user/project/output", "output_*.tmp").Return(tempFile, nil)
 			},
-			wantErr: false,
+			wantErr: nil,
 			validateCapture: func(t *testing.T, capture *Capture) {
 				assert.Equal(t, "/home/user/project/output/result.txt", capture.OutputPath)
 				assert.NotNil(t, capture.FileHandle)
@@ -148,8 +147,7 @@ func TestDefaultOutputCaptureManager_PrepareOutput(t *testing.T) {
 			setupMocks: func(pv *MockPathValidator, _ *MockFileManager, _ *MockSecurityValidator) {
 				pv.On("ValidateAndResolvePath", "../../../etc/passwd", "/home/user").Return("", ErrTestPathTraversalDetected)
 			},
-			wantErr:    true,
-			errMessage: "path traversal detected",
+			wantErr: ErrTestPathTraversalDetected,
 		},
 		{
 			name:       "permission_validation_error",
@@ -160,8 +158,7 @@ func TestDefaultOutputCaptureManager_PrepareOutput(t *testing.T) {
 				pv.On("ValidateAndResolvePath", "/etc/sensitive", "/home/user").Return("/etc/sensitive", nil)
 				sv.On("ValidateOutputWritePermission", "/etc/sensitive", mock.AnythingOfType("int")).Return(security.ErrInvalidFilePermissions)
 			},
-			wantErr:    true,
-			errMessage: "invalid file permissions",
+			wantErr: security.ErrInvalidFilePermissions,
 		},
 		{
 			name:       "directory_creation_error",
@@ -173,8 +170,7 @@ func TestDefaultOutputCaptureManager_PrepareOutput(t *testing.T) {
 				sv.On("ValidateOutputWritePermission", "/tmp/nonexistent/deeply/nested/output.txt", mock.AnythingOfType("int")).Return(nil)
 				fm.On("EnsureDirectory", "/tmp/nonexistent/deeply/nested").Return(ErrTestPermissionDenied)
 			},
-			wantErr:    true,
-			errMessage: "permission denied",
+			wantErr: ErrTestPermissionDenied,
 		},
 	}
 
@@ -200,11 +196,8 @@ func TestDefaultOutputCaptureManager_PrepareOutput(t *testing.T) {
 			capture, err := manager.PrepareOutput(tt.outputPath, tt.workDir, tt.maxSize)
 
 			// Validate results
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errMessage != "" {
-					assert.Contains(t, err.Error(), tt.errMessage)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 				assert.Nil(t, capture)
 			} else {
 				require.NoError(t, err)
@@ -228,8 +221,7 @@ func TestDefaultOutputCaptureManager_WriteOutput(t *testing.T) {
 		initialSize    int64
 		maxSize        int64
 		writeData      []byte
-		wantErr        bool
-		errMessage     string
+		wantErr        error
 		expectedSize   int64
 		expectedBuffer []byte
 	}{
@@ -238,7 +230,7 @@ func TestDefaultOutputCaptureManager_WriteOutput(t *testing.T) {
 			initialSize:    0,
 			maxSize:        1024,
 			writeData:      []byte("test data\n"),
-			wantErr:        false,
+			wantErr:        nil,
 			expectedSize:   10,
 			expectedBuffer: []byte("test data\n"),
 		},
@@ -247,7 +239,7 @@ func TestDefaultOutputCaptureManager_WriteOutput(t *testing.T) {
 			initialSize:    5,
 			maxSize:        1024,
 			writeData:      []byte{0x00, 0x01, 0x02, 0xFF},
-			wantErr:        false,
+			wantErr:        nil,
 			expectedSize:   9,
 			expectedBuffer: []byte{0x00, 0x01, 0x02, 0xFF},
 		},
@@ -256,7 +248,7 @@ func TestDefaultOutputCaptureManager_WriteOutput(t *testing.T) {
 			initialSize:    10,
 			maxSize:        1024,
 			writeData:      []byte{},
-			wantErr:        false,
+			wantErr:        nil,
 			expectedSize:   10,
 			expectedBuffer: []byte{},
 		},
@@ -265,15 +257,14 @@ func TestDefaultOutputCaptureManager_WriteOutput(t *testing.T) {
 			initialSize: 1020,
 			maxSize:     1024,
 			writeData:   []byte("this data exceeds limit"),
-			wantErr:     true,
-			errMessage:  "output size limit exceeded",
+			wantErr:     ErrOutputSizeLimitExceeded,
 		},
 		{
 			name:           "write_at_exact_limit",
 			initialSize:    1020,
 			maxSize:        1024,
 			writeData:      []byte("1234"),
-			wantErr:        false,
+			wantErr:        nil,
 			expectedSize:   1024,
 			expectedBuffer: []byte("1234"),
 		},
@@ -282,7 +273,7 @@ func TestDefaultOutputCaptureManager_WriteOutput(t *testing.T) {
 			initialSize:    1000000,
 			maxSize:        0, // No limit
 			writeData:      []byte("large data can be written"),
-			wantErr:        false,
+			wantErr:        nil,
 			expectedSize:   1000025,
 			expectedBuffer: []byte("large data can be written"),
 		},
@@ -317,11 +308,8 @@ func TestDefaultOutputCaptureManager_WriteOutput(t *testing.T) {
 			err := manager.WriteOutput(capture, tt.writeData)
 
 			// Validate results
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errMessage != "" {
-					assert.Contains(t, err.Error(), tt.errMessage)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedSize, capture.CurrentSize)
@@ -349,8 +337,7 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 		name          string
 		bufferContent []byte
 		setupMocks    func(*MockFileManager)
-		wantErr       bool
-		errMessage    string
+		wantErr       error
 	}{
 		{
 			name:          "successful_finalization",
@@ -358,7 +345,7 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 			setupMocks: func(fm *MockFileManager) {
 				fm.On("MoveToFinal", mock.AnythingOfType("string"), "/tmp/final.txt", os.FileMode(0o600)).Return(nil)
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name:          "empty_buffer_finalization",
@@ -366,7 +353,7 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 			setupMocks: func(fm *MockFileManager) {
 				fm.On("MoveToFinal", mock.AnythingOfType("string"), "/tmp/empty.txt", os.FileMode(0o600)).Return(nil)
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name:          "file_move_error",
@@ -374,8 +361,7 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 			setupMocks: func(fm *MockFileManager) {
 				fm.On("MoveToFinal", mock.AnythingOfType("string"), "/tmp/error.txt", os.FileMode(0o600)).Return(ErrTestPermissionDenied)
 			},
-			wantErr:    true,
-			errMessage: "permission denied",
+			wantErr: ErrTestPermissionDenied,
 		},
 	}
 
@@ -423,11 +409,8 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 			err := manager.FinalizeOutput(capture)
 
 			// Validate results
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errMessage != "" {
-					assert.Contains(t, err.Error(), tt.errMessage)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 			} else {
 				assert.NoError(t, err)
 			}
@@ -490,8 +473,7 @@ func TestDefaultOutputCaptureManager_AnalyzeOutput(t *testing.T) {
 		outputPath       string
 		workDir          string
 		setupMocks       func(*MockPathValidator, *MockSecurityValidator)
-		wantErr          bool
-		errMessage       string
+		wantErr          error
 		validateAnalysis func(t *testing.T, analysis *Analysis)
 	}{
 		{
@@ -502,7 +484,7 @@ func TestDefaultOutputCaptureManager_AnalyzeOutput(t *testing.T) {
 				pv.On("ValidateAndResolvePath", "/tmp/output.txt", "/home/user").Return("/tmp/output.txt", nil)
 				sv.On("ValidateOutputWritePermission", "/tmp/output.txt", mock.AnythingOfType("int")).Return(nil)
 			},
-			wantErr: false,
+			wantErr: nil,
 			validateAnalysis: func(t *testing.T, analysis *Analysis) {
 				assert.Equal(t, "/tmp/output.txt", analysis.OutputPath)
 				assert.Equal(t, "/tmp/output.txt", analysis.ResolvedPath)
@@ -517,7 +499,7 @@ func TestDefaultOutputCaptureManager_AnalyzeOutput(t *testing.T) {
 			setupMocks: func(pv *MockPathValidator, _ *MockSecurityValidator) {
 				pv.On("ValidateAndResolvePath", "../../../etc/passwd", "/home/user").Return("", ErrTestPathTraversalDetected)
 			},
-			wantErr: false, // AnalyzeOutput doesn't fail, it reports the problem
+			wantErr: nil, // AnalyzeOutput doesn't fail, it reports the problem
 			validateAnalysis: func(t *testing.T, analysis *Analysis) {
 				assert.Equal(t, "../../../etc/passwd", analysis.OutputPath)
 				assert.Equal(t, "", analysis.ResolvedPath)
@@ -534,7 +516,7 @@ func TestDefaultOutputCaptureManager_AnalyzeOutput(t *testing.T) {
 				pv.On("ValidateAndResolvePath", "/etc/sensitive", "/home/user").Return("/etc/sensitive", nil)
 				sv.On("ValidateOutputWritePermission", "/etc/sensitive", mock.AnythingOfType("int")).Return(ErrTestPermissionDenied)
 			},
-			wantErr: false,
+			wantErr: nil,
 			validateAnalysis: func(t *testing.T, analysis *Analysis) {
 				assert.Equal(t, "/etc/sensitive", analysis.OutputPath)
 				assert.Equal(t, "/etc/sensitive", analysis.ResolvedPath)
@@ -565,11 +547,8 @@ func TestDefaultOutputCaptureManager_AnalyzeOutput(t *testing.T) {
 			analysis, err := manager.AnalyzeOutput(tt.outputPath, tt.workDir)
 
 			// Validate results
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errMessage != "" {
-					assert.Contains(t, err.Error(), tt.errMessage)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 			} else {
 				assert.NoError(t, err)
 				require.NotNil(t, analysis)

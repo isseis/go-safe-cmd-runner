@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -122,9 +123,8 @@ func TestVerifyFilesExpansion_ErrorHandling(t *testing.T) {
 		}
 
 		_, err := config.ExpandGlobal(spec)
-		require.Error(t, err, "Should fail when verify_files references undefined variable")
-		assert.Contains(t, err.Error(), "UndefinedVar", "Error should mention the undefined variable name")
-		assert.Contains(t, err.Error(), "undefined variable", "Error should indicate it's an undefined variable error")
+		require.ErrorIs(t, err, config.ErrUndefinedVariable)
+		assert.ErrorContains(t, err, "UndefinedVar", "Error should mention the undefined variable name")
 	})
 
 	t.Run("EmptyVariableName", func(t *testing.T) {
@@ -133,8 +133,10 @@ func TestVerifyFilesExpansion_ErrorHandling(t *testing.T) {
 		}
 
 		_, err := config.ExpandGlobal(spec)
-		require.Error(t, err, "Should fail when verify_files has empty variable name")
-		assert.Contains(t, err.Error(), "variable name cannot be empty", "Error should mention empty variable name")
+		require.ErrorIs(t, err, config.ErrInvalidVariableName)
+		detail, ok := errors.AsType[*config.ErrInvalidVariableNameDetail](err)
+		require.True(t, ok, "the rejection must carry the offending name, got: %v", err)
+		assert.Empty(t, detail.VariableName, "the empty name is what was rejected")
 	})
 
 	t.Run("MultipleVerifyFilesWithMixedErrors", func(t *testing.T) {
@@ -147,8 +149,8 @@ func TestVerifyFilesExpansion_ErrorHandling(t *testing.T) {
 		}
 
 		_, err := config.ExpandGlobal(spec)
-		require.Error(t, err, "Should fail on first invalid verify_files entry")
-		assert.Contains(t, err.Error(), "InvalidVar", "Error should mention the first invalid variable")
+		require.ErrorIs(t, err, config.ErrUndefinedVariable, "Should fail on first invalid verify_files entry")
+		assert.ErrorContains(t, err, "InvalidVar", "Error should mention the first invalid variable")
 	})
 
 	t.Run("GroupVerifyFiles_UndefinedVariable", func(t *testing.T) {
@@ -164,8 +166,8 @@ func TestVerifyFilesExpansion_ErrorHandling(t *testing.T) {
 		}
 
 		_, err = config.ExpandGroup(groupSpec, globalRuntime)
-		require.Error(t, err, "Should fail when group verify_files references undefined variable")
-		assert.Contains(t, err.Error(), "undefined_group_var")
+		require.ErrorIs(t, err, config.ErrUndefinedVariable)
+		assert.ErrorContains(t, err, "undefined_group_var")
 	})
 }
 

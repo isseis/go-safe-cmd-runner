@@ -3,7 +3,6 @@
 package elfanalyzer
 
 import (
-	"bytes"
 	"errors"
 	"io"
 	"log/slog"
@@ -451,9 +450,9 @@ func TestStandardELFAnalyzer_SyscallLookup_StoreIOError(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "static.elf")
 	elfanalyzertestutil.CreateStaticELFFile(t, testFile)
 
-	var buf bytes.Buffer
+	logger, rec := tu.NewRecordingLogger()
 	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	slog.SetDefault(logger)
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
 	mockStore := &mockSyscallAnalysisStore{
@@ -469,9 +468,11 @@ func TestStandardELFAnalyzer_SyscallLookup_StoreIOError(t *testing.T) {
 		"ErrSyscallStoreIOError must be distinguishable from ErrSyscallAnalysisHighRisk")
 	assert.ErrorContains(t, output.Error, testFile)
 
-	logOutput := buf.String()
-	assert.Contains(t, logOutput, "level=WARN", "expected WARN-level log, got: %s", logOutput)
-	assert.Contains(t, logOutput, "reason=store_io_error", "expected reason=store_io_error in log, got: %s", logOutput)
+	rec.RequireRecord(t, slog.LevelWarn, "Syscall analysis lookup error").
+		AssertAttrs(t, map[string]any{
+			"path":   testFile,
+			"reason": "store_io_error",
+		})
 }
 
 func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {

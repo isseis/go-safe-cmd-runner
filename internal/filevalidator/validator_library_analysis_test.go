@@ -7,6 +7,7 @@ import (
 	"debug/elf"
 	"encoding/hex"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -229,8 +230,8 @@ func TestAnalyzeOneLibrary_missingFileReturnsError(t *testing.T) {
 		SOName: "libmissing.so.1",
 		Path:   filepath.Join(safeTempDir(t), "missing.so"),
 	}, nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to open library file")
+	require.ErrorIs(t, err, fs.ErrNotExist)
+	assert.ErrorContains(t, err, "libmissing.so.1", "the message must name the library it could not open")
 }
 
 func TestAnalyzeOneLibrary_nonELFLibrarySkipsSyscallScan(t *testing.T) {
@@ -529,8 +530,7 @@ func TestValidatorLibraryAnalyzer_Analyze_FileTooLargeReturnsError(t *testing.T)
 		Path:   requireWithSocketELF(t),
 	}
 	_, err := v.analyzeOneLibrary(lib, nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "library file too large")
+	require.ErrorIs(t, err, errLibraryFileTooLarge)
 }
 
 // oversizeFileSystem is a safefileio.FileSystem wrapper that reports oversized files.

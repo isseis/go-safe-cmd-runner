@@ -113,7 +113,7 @@ func validateVariableName(varName, level, field string) error {
 			Level:        level,
 			Field:        field,
 			VariableName: varName,
-			Reason:       err.Error(),
+			Err:          err,
 		}
 	}
 

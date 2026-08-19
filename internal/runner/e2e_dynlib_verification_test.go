@@ -90,7 +90,9 @@ func TestGroupExecutor_F001_HashMismatchBlocksExecution(t *testing.T) {
 
 	err = r.Execute(context.Background(), nil)
 	require.Error(t, err, "execution must fail: the later command's binary was replaced after group verification but before its own execution")
-	assert.Contains(t, err.Error(), string(risktypes.ReasonIdentityHashMismatch),
+	// The reason code is an identifier, not prose: it travels to the audit log
+	// and is what an operator greps for.
+	assert.ErrorContains(t, err, string(risktypes.ReasonIdentityHashMismatch),
 		"error should identify the identity hash mismatch reason")
 }
 
@@ -159,6 +161,7 @@ func TestGroupExecutor_F004_LibraryShadowingBlocksExecution(t *testing.T) {
 	require.NoError(t, err)
 
 	err = r.Execute(context.Background(), nil)
-	require.Error(t, err, "execution must fail: live dependency resolution no longer matches the recorded snapshot")
-	assert.Contains(t, err.Error(), "dynamic library dependency resolution changed since record")
+	changed, ok := errors.AsType[*verification.ErrDynLibDepsResolutionChanged](err)
+	require.True(t, ok, "execution must fail with the resolution-changed error: live dependency resolution no longer matches the recorded snapshot, got: %v", err)
+	assert.NotEmpty(t, changed.SOName, "the report must name the library whose resolution changed")
 }

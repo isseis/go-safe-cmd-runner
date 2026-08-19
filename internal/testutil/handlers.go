@@ -6,6 +6,10 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // RecordSnapshot is a captured log record.
@@ -145,6 +149,74 @@ func deepCopyAttrs(m map[string]any) map[string]any {
 		}
 	}
 	return cp
+}
+
+// NewRecordingLogger returns a logger and the recorder capturing what it logs.
+// Prefer it over a slog.TextHandler writing into a bytes.Buffer: assertions then
+// name the level, message and attribute they mean, instead of matching rendered
+// text that changes whenever the wording or the handler's format does.
+func NewRecordingLogger() (*slog.Logger, *LogRecorder) {
+	lr := NewLogRecorder(nil)
+	return slog.New(lr), lr
+}
+
+// RecordsAtLevel returns the captured records logged at level.
+func (lr *LogRecorder) RecordsAtLevel(level slog.Level) []RecordSnapshot {
+	var got []RecordSnapshot
+	for _, r := range lr.Records() {
+		if r.Level == level {
+			got = append(got, r)
+		}
+	}
+	return got
+}
+
+// FindRecords returns the captured records logged at level with message msg.
+func (lr *LogRecorder) FindRecords(level slog.Level, msg string) []RecordSnapshot {
+	var got []RecordSnapshot
+	for _, r := range lr.RecordsAtLevel(level) {
+		if r.Message == msg {
+			got = append(got, r)
+		}
+	}
+	return got
+}
+
+// RequireRecord returns the single record logged at level with message msg,
+// failing the test if there is not exactly one.
+func (lr *LogRecorder) RequireRecord(t *testing.T, level slog.Level, msg string) RecordSnapshot {
+	t.Helper()
+	got := lr.FindRecords(level, msg)
+	require.Len(t, got, 1, "expected exactly one %s record %q; captured: %v", level, msg, lr.Records())
+	return got[0]
+}
+
+// AssertAttrs asserts that the record carries each wanted attribute with the
+// wanted value. Attributes not named in want are ignored, so a test pins the
+// fields it is about without breaking when an unrelated one is added.
+//
+// Values are compared with EqualValues because slog widens every signed integer
+// to int64 on the way in: an attribute logged as an int32 comes back as int64,
+// and a test should not have to encode that detail to say which number it wants.
+func (r RecordSnapshot) AssertAttrs(t *testing.T, want map[string]any) {
+	t.Helper()
+	for key, wantValue := range want {
+		got, ok := r.Attrs[key]
+		if !assert.True(t, ok, "record %q has no attribute %q; attributes: %v", r.Message, key, r.Attrs) {
+			continue
+		}
+		assert.EqualValues(t, wantValue, got, "attribute %q of record %q", key, r.Message)
+	}
+}
+
+// AssertHasAttrs asserts that the record carries each named attribute, whatever
+// its value. Use it for values a test cannot predict, such as a caller line.
+func (r RecordSnapshot) AssertHasAttrs(t *testing.T, keys ...string) {
+	t.Helper()
+	for _, key := range keys {
+		_, ok := r.Attrs[key]
+		assert.True(t, ok, "record %q has no attribute %q; attributes: %v", r.Message, key, r.Attrs)
+	}
 }
 
 // CallbackHandler calls a function for each handled record without capturing.

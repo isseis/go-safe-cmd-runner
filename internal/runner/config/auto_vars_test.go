@@ -60,9 +60,8 @@ func TestExpandGlobal_AutoVarsReservedPrefix(t *testing.T) {
 
 	// Should fail because __runner_ prefix is reserved
 	_, err := ExpandGlobal(spec)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "reserved variable prefix")
-	assert.Contains(t, err.Error(), "__runner_datetime")
+	require.ErrorIs(t, err, ErrReservedVariablePrefix)
+	assert.ErrorContains(t, err, "__runner_datetime", "the message must name the rejected variable")
 }
 
 func TestExpandGlobal_AutoVarsAvailableForVarsExpansion(t *testing.T) {

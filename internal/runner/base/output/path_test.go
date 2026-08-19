@@ -11,153 +11,136 @@ import (
 
 func TestDefaultPathValidator_ValidateAndResolvePath(t *testing.T) {
 	tests := []struct {
-		name        string
-		outputPath  string
-		workDir     string
-		wantErr     bool
-		errContains string
+		name       string
+		outputPath string
+		workDir    string
+		wantErr    error
 	}{
 		{
 			name:       "valid_absolute_path",
 			outputPath: "/tmp/output.txt",
 			workDir:    "/home/user",
-			wantErr:    false,
+			wantErr:    nil,
 		},
 		{
 			name:       "valid_relative_path",
 			outputPath: "output/result.txt",
 			workDir:    "/home/user/project",
-			wantErr:    false,
+			wantErr:    nil,
 		},
 		{
-			name:        "path_traversal_absolute",
-			outputPath:  "/tmp/../etc/passwd",
-			workDir:     "/home/user",
-			wantErr:     true,
-			errContains: "path traversal detected",
+			name:       "path_traversal_absolute",
+			outputPath: "/tmp/../etc/passwd",
+			workDir:    "/home/user",
+			wantErr:    ErrPathTraversal,
 		},
 		{
-			name:        "path_traversal_relative",
-			outputPath:  "../../../etc/passwd",
-			workDir:     "/home/user/project",
-			wantErr:     true,
-			errContains: "path traversal detected",
+			name:       "path_traversal_relative",
+			outputPath: "../../../etc/passwd",
+			workDir:    "/home/user/project",
+			wantErr:    ErrPathTraversal,
 		},
 		{
-			name:        "double_dot_in_middle_absolute",
-			outputPath:  "/home/../etc/passwd",
-			workDir:     "/home/user",
-			wantErr:     true,
-			errContains: "path traversal detected",
+			name:       "double_dot_in_middle_absolute",
+			outputPath: "/home/../etc/passwd",
+			workDir:    "/home/user",
+			wantErr:    ErrPathTraversal,
 		},
 		{
-			name:        "double_dot_in_middle_relative",
-			outputPath:  "safe/../../../unsafe",
-			workDir:     "/home/user/project",
-			wantErr:     true,
-			errContains: "path traversal detected",
+			name:       "double_dot_in_middle_relative",
+			outputPath: "safe/../../../unsafe",
+			workDir:    "/home/user/project",
+			wantErr:    ErrPathTraversal,
 		},
 		{
-			name:        "empty_path",
-			outputPath:  "",
-			workDir:     "/home/user",
-			wantErr:     true,
-			errContains: "output path is empty",
+			name:       "empty_path",
+			outputPath: "",
+			workDir:    "/home/user",
+			wantErr:    ErrEmptyPath,
 		},
 		{
-			name:        "dangerous_chars_semicolon",
-			outputPath:  "/tmp/file;rm.txt",
-			workDir:     "/home/user",
-			wantErr:     true,
-			errContains: "dangerous characters detected",
+			name:       "dangerous_chars_semicolon",
+			outputPath: "/tmp/file;rm.txt",
+			workDir:    "/home/user",
+			wantErr:    ErrDangerousCharactersInPath,
 		},
 		{
-			name:        "dangerous_chars_pipe",
-			outputPath:  "/tmp/file|evil.txt",
-			workDir:     "/home/user",
-			wantErr:     true,
-			errContains: "dangerous characters detected",
+			name:       "dangerous_chars_pipe",
+			outputPath: "/tmp/file|evil.txt",
+			workDir:    "/home/user",
+			wantErr:    ErrDangerousCharactersInPath,
 		},
 		{
-			name:        "dangerous_chars_space",
-			outputPath:  "/tmp/my file.txt",
-			workDir:     "/home/user",
-			wantErr:     true,
-			errContains: "dangerous characters detected",
+			name:       "dangerous_chars_space",
+			outputPath: "/tmp/my file.txt",
+			workDir:    "/home/user",
+			wantErr:    ErrDangerousCharactersInPath,
 		},
 		{
-			name:        "dangerous_chars_wildcard",
-			outputPath:  "/tmp/file*.txt",
-			workDir:     "/home/user",
-			wantErr:     true,
-			errContains: "dangerous characters detected",
+			name:       "dangerous_chars_wildcard",
+			outputPath: "/tmp/file*.txt",
+			workDir:    "/home/user",
+			wantErr:    ErrDangerousCharactersInPath,
 		},
 		{
-			name:        "dangerous_chars_dollar",
-			outputPath:  "/tmp/file$var.txt",
-			workDir:     "/home/user",
-			wantErr:     true,
-			errContains: "dangerous characters detected",
+			name:       "dangerous_chars_dollar",
+			outputPath: "/tmp/file$var.txt",
+			workDir:    "/home/user",
+			wantErr:    ErrDangerousCharactersInPath,
 		},
 		{
-			name:        "dangerous_chars_backtick",
-			outputPath:  "/tmp/file`cmd`.txt",
-			workDir:     "/home/user",
-			wantErr:     true,
-			errContains: "dangerous characters detected",
+			name:       "dangerous_chars_backtick",
+			outputPath: "/tmp/file`cmd`.txt",
+			workDir:    "/home/user",
+			wantErr:    ErrDangerousCharactersInPath,
 		},
 		{
-			name:        "dangerous_chars_newline",
-			outputPath:  "/tmp/file\ntest.txt",
-			workDir:     "/home/user",
-			wantErr:     true,
-			errContains: "dangerous characters detected",
+			name:       "dangerous_chars_newline",
+			outputPath: "/tmp/file\ntest.txt",
+			workDir:    "/home/user",
+			wantErr:    ErrDangerousCharactersInPath,
 		},
 		{
-			name:        "dangerous_chars_unicode_space",
-			outputPath:  "/tmp/file\u00a0test.txt", // Non-breaking space
-			workDir:     "/home/user",
-			wantErr:     true,
-			errContains: "dangerous characters detected",
+			name:       "dangerous_chars_unicode_space",
+			outputPath: "/tmp/file\u00a0test.txt", // Non-breaking space
+			workDir:    "/home/user",
+			wantErr:    ErrDangerousCharactersInPath,
 		},
 		{
-			name:        "dangerous_chars_currency_symbol",
-			outputPath:  "/tmp/file€test.txt",
-			workDir:     "/home/user",
-			wantErr:     true,
-			errContains: "dangerous characters detected",
+			name:       "dangerous_chars_currency_symbol",
+			outputPath: "/tmp/file€test.txt",
+			workDir:    "/home/user",
+			wantErr:    ErrDangerousCharactersInPath,
 		},
 		{
 			name:       "safe_symbols_copyright",
 			outputPath: "/tmp/file©test.txt", // Copyright symbol should be safe
 			workDir:    "/home/user",
-			wantErr:    false,
+			wantErr:    nil,
 		},
 		{
-			name:        "relative_path_without_workdir",
-			outputPath:  "output.txt",
-			workDir:     "",
-			wantErr:     true,
-			errContains: "work directory is required",
+			name:       "relative_path_without_workdir",
+			outputPath: "output.txt",
+			workDir:    "",
+			wantErr:    ErrWorkDirRequired,
 		},
 		{
-			name:        "relative_path_escapes_workdir",
-			outputPath:  "../../../../etc/passwd",
-			workDir:     "/home/user/project",
-			wantErr:     true,
-			errContains: "path traversal detected",
+			name:       "relative_path_escapes_workdir",
+			outputPath: "../../../../etc/passwd",
+			workDir:    "/home/user/project",
+			wantErr:    ErrPathTraversal,
 		},
 		{
 			name:       "valid_relative_path_with_subdirs",
 			outputPath: "logs/output/result.txt",
 			workDir:    "/home/user/project",
-			wantErr:    false,
+			wantErr:    nil,
 		},
 		{
 			name:       "valid_absolute_path_with_subdirs",
 			outputPath: "/tmp/safe/output/result.txt",
 			workDir:    "/home/user",
-			wantErr:    false,
+			wantErr:    nil,
 		},
 	}
 
@@ -167,11 +150,8 @@ func TestDefaultPathValidator_ValidateAndResolvePath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := validator.ValidateAndResolvePath(tt.outputPath, tt.workDir)
 
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 				assert.Empty(t, result)
 			} else {
 				assert.NoError(t, err)
@@ -195,20 +175,19 @@ func TestDefaultPathValidator_validateAbsolutePath(t *testing.T) {
 	validator := NewDefaultPathValidator()
 
 	tests := []struct {
-		name        string
-		path        string
-		wantErr     bool
-		errContains string
+		name    string
+		path    string
+		wantErr error
 	}{
 		{
 			name:    "valid_absolute_path",
 			path:    "/tmp/output.txt",
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name:    "path_with_single_dot",
 			path:    "/tmp/./output.txt",
-			wantErr: false,
+			wantErr: nil,
 		},
 	}
 
@@ -216,11 +195,8 @@ func TestDefaultPathValidator_validateAbsolutePath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := validator.validateAbsolutePath(tt.path)
 
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 				assert.Empty(t, result)
 			} else {
 				assert.NoError(t, err)
@@ -235,36 +211,34 @@ func TestDefaultPathValidator_validateRelativePath(t *testing.T) {
 	validator := NewDefaultPathValidator()
 
 	tests := []struct {
-		name        string
-		path        string
-		workDir     string
-		wantErr     bool
-		errContains string
+		name    string
+		path    string
+		workDir string
+		wantErr error
 	}{
 		{
 			name:    "valid_relative_path",
 			path:    "output.txt",
 			workDir: "/home/user",
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name:    "valid_relative_path_with_subdirs",
 			path:    "logs/output.txt",
 			workDir: "/home/user/project",
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
-			name:        "empty_workdir",
-			path:        "output.txt",
-			workDir:     "",
-			wantErr:     true,
-			errContains: "work directory is required",
+			name:    "empty_workdir",
+			path:    "output.txt",
+			workDir: "",
+			wantErr: ErrWorkDirRequired,
 		},
 		{
 			name:    "relative_path_with_current_dir",
 			path:    "./output.txt",
 			workDir: "/home/user",
-			wantErr: false,
+			wantErr: nil,
 		},
 	}
 
@@ -272,11 +246,8 @@ func TestDefaultPathValidator_validateRelativePath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := validator.validateRelativePath(tt.path, tt.workDir)
 
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
 				assert.Empty(t, result)
 			} else {
 				assert.NoError(t, err)

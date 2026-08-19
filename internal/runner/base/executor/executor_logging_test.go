@@ -3,7 +3,6 @@
 package executor
 
 import (
-	"bytes"
 	"context"
 	"log/slog"
 	"os/exec"
@@ -12,7 +11,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
-	"github.com/stretchr/testify/assert"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,11 +35,7 @@ func createTestCommand(cmd string, args []string) *runnertypes.RuntimeCommand {
 }
 
 func TestExecutor_DebugLogging(t *testing.T) {
-	// Create a buffer to capture log output
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
+	logger, rec := tu.NewRecordingLogger()
 
 	executor := NewDefaultExecutor(WithLogger(logger))
 
@@ -49,18 +44,13 @@ func TestExecutor_DebugLogging(t *testing.T) {
 	_, err := executor.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 	require.NoError(t, err)
 
-	// Check that the debug log contains the command
-	logOutput := buf.String()
-	assert.Contains(t, logOutput, "Executing command")
-	assert.Contains(t, logOutput, "/bin/echo hello 'world with spaces'")
+	// The command attribute carries the shell-quoted line, ready for copy-paste.
+	rec.RequireRecord(t, slog.LevelDebug, "Executing command").
+		AssertAttrs(t, map[string]any{"command": "/bin/echo hello 'world with spaces'"})
 }
 
 func TestExecutor_ErrorLogging_CommandNotFound(t *testing.T) {
-	// Create a buffer to capture log output
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
-		Level: slog.LevelError,
-	}))
+	logger, rec := tu.NewRecordingLogger()
 
 	executor := NewDefaultExecutor(WithLogger(logger))
 
@@ -69,19 +59,13 @@ func TestExecutor_ErrorLogging_CommandNotFound(t *testing.T) {
 	_, err := executor.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 	require.Error(t, err)
 
-	// Check that the error log contains the failure reason
 	// The command path is absolute and non-existent, so it fails at execution time
-	logOutput := buf.String()
-	assert.Contains(t, logOutput, "Command execution failed")
-	assert.Contains(t, logOutput, "/nonexistent/command")
+	rec.RequireRecord(t, slog.LevelError, "Command execution failed").
+		AssertAttrs(t, map[string]any{"command": "/nonexistent/command"})
 }
 
 func TestExecutor_ErrorLogging_CommandExecutionFailure(t *testing.T) {
-	// Create a buffer to capture log output
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
-		Level: slog.LevelError,
-	}))
+	logger, rec := tu.NewRecordingLogger()
 
 	executor := NewDefaultExecutor(WithLogger(logger))
 
@@ -93,19 +77,15 @@ func TestExecutor_ErrorLogging_CommandExecutionFailure(t *testing.T) {
 	_, err = executor.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 	require.Error(t, err)
 
-	// Check that the error log contains the failure information
-	logOutput := buf.String()
-	assert.Contains(t, logOutput, "Command execution failed")
-	assert.Contains(t, logOutput, falsePath)
-	assert.Contains(t, logOutput, "exit_code=1")
+	rec.RequireRecord(t, slog.LevelError, "Command execution failed").
+		AssertAttrs(t, map[string]any{
+			"command":   falsePath,
+			"exit_code": 1,
+		})
 }
 
 func TestExecutor_ErrorLogging_ValidationFailure(t *testing.T) {
-	// Create a buffer to capture log output
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
-		Level: slog.LevelError,
-	}))
+	logger, rec := tu.NewRecordingLogger()
 
 	executor := NewDefaultExecutor(WithLogger(logger))
 
@@ -115,9 +95,8 @@ func TestExecutor_ErrorLogging_ValidationFailure(t *testing.T) {
 	_, err := executor.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 	require.Error(t, err)
 
-	// Check that the error log contains the validation failure
-	logOutput := buf.String()
-	assert.Contains(t, logOutput, "Command validation failed")
+	rec.RequireRecord(t, slog.LevelError, "Command validation failed").
+		AssertAttrs(t, map[string]any{"command": "../invalid/path"})
 }
 
 func TestExecutor_DefaultLogger_UsesSlogDefault(t *testing.T) {
@@ -136,11 +115,7 @@ func TestExecutor_DefaultLogger_UsesSlogDefault(t *testing.T) {
 }
 
 func TestExecutor_ShellEscapingInLogs(t *testing.T) {
-	// Create a buffer to capture log output
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
+	logger, rec := tu.NewRecordingLogger()
 
 	executor := NewDefaultExecutor(WithLogger(logger))
 
@@ -156,24 +131,17 @@ func TestExecutor_ShellEscapingInLogs(t *testing.T) {
 	_, err := executor.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 	require.NoError(t, err)
 
-	logOutput := buf.String()
-
-	// Verify the command is properly escaped for copy-paste
-	// Note: In the log output, backslashes are escaped (doubled)
-	assert.Contains(t, logOutput, "simple")
-	assert.Contains(t, logOutput, "'with spaces'")
-	// In log output, \ becomes \\ (escaped), so 'with'\''quote' appears as 'with'\\''quote'
-	assert.Contains(t, logOutput, "'with'\\\\''quote'")
-	assert.Contains(t, logOutput, "'with$variable'")
-	assert.Contains(t, logOutput, "'with;semicolon'")
+	// Verify the command is properly escaped for copy-paste. Asserting on the
+	// attribute value rather than the rendered line keeps the expectation in
+	// shell-quoting terms, without the handler's own backslash escaping on top.
+	rec.RequireRecord(t, slog.LevelDebug, "Executing command").
+		AssertAttrs(t, map[string]any{
+			"command": `/bin/echo simple 'with spaces' 'with'\''quote' 'with$variable' 'with;semicolon'`,
+		})
 }
 
 func TestExecutor_ErrorLogging_WithStderr(t *testing.T) {
-	// Create a buffer to capture log output
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
-		Level: slog.LevelError,
-	}))
+	logger, rec := tu.NewRecordingLogger()
 
 	executor := NewDefaultExecutor(WithLogger(logger))
 
@@ -184,9 +152,7 @@ func TestExecutor_ErrorLogging_WithStderr(t *testing.T) {
 	_, err := executor.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 	require.Error(t, err)
 
-	// Check that the error log includes stderr output
-	logOutput := buf.String()
-	assert.Contains(t, logOutput, "Command execution failed")
-	assert.Contains(t, logOutput, "stderr")
-	// Note: stderr content appears in the log structured output
+	// The stderr the command wrote is carried in its own attribute.
+	rec.RequireRecord(t, slog.LevelError, "Command execution failed").
+		AssertAttrs(t, map[string]any{"stderr": "error message\n"})
 }

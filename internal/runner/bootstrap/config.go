@@ -72,9 +72,12 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	if err != nil {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
-			Message:   err.Error(),
+			Message:   "Failed to verify and read the configuration file",
 			Component: string(resource.ComponentVerification),
 			RunID:     runID,
+			// Carried as an error, not flattened into Message, so callers can tell
+			// the cause apart with errors.Is/As.
+			Err: err,
 		}
 	}
 
@@ -88,9 +91,10 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	if err != nil {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
-			Message:   err.Error(),
+			Message:   "Failed to load the configuration",
 			Component: string(resource.ComponentConfig),
 			RunID:     runID,
+			Err:       err,
 		}
 	}
 
@@ -98,9 +102,10 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	if err != nil {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
-			Message:   err.Error(),
+			Message:   "Invalid slack_allowed_host",
 			Component: string(resource.ComponentConfig),
 			RunID:     runID,
+			Err:       err,
 		}
 	}
 	cfg.Global.SlackAllowedHost = normalizedHost

@@ -62,6 +62,20 @@ func (e *PreExecutionError) Error() string {
 	return fmt.Sprintf("%s: %s (component: %s, run_id: %s)", e.Type, e.Message, e.Component, e.RunID)
 }
 
+// Detail returns the user-facing description of the failure: Message followed by
+// the cause carried in Err. Reporting paths that render a single string (stderr,
+// the structured log, the Slack alert) must use this rather than Message alone,
+// or the cause — a TOML syntax error, a hash mismatch — never reaches the user.
+func (e *PreExecutionError) Detail() string {
+	if e.Err == nil {
+		return e.Message
+	}
+	if userMsg := GetUserFriendlyMessage(e.Err); userMsg != "" {
+		return fmt.Sprintf("%s: %s", e.Message, userMsg)
+	}
+	return fmt.Sprintf("%s: %v", e.Message, e.Err)
+}
+
 // Is implements error wrapping for errors.Is
 func (e *PreExecutionError) Is(target error) bool {
 	_, ok := target.(*PreExecutionError)

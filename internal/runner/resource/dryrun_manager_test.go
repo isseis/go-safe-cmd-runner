@@ -157,8 +157,7 @@ func TestDryRunResourceManager_PathResolverRequired(t *testing.T) {
 
 	// Test that providing nil PathResolver returns an error
 	_, err := NewDryRunResourceManager(mockExec, mockPriv, nil, opts, permissiveTestEvaluator{}, nil)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "PathResolver is required")
+	require.ErrorIs(t, err, ErrPathResolverRequired)
 }
 
 func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
@@ -187,10 +186,8 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 
 	_, result, err := manager.ExecuteCommand(ctx, cmd, group, env)
 
-	assert.Error(t, err)
+	require.ErrorIs(t, err, assert.AnError, "the resolver's failure must reach the caller")
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "command analysis failed")
-	assert.Contains(t, err.Error(), "failed to resolve command path")
 }
 
 func TestDryRunResourceManager_ValidateOutputPath(t *testing.T) {
@@ -335,7 +332,7 @@ func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 		debugInfo       *DebugInfo
 		useInvalidToken bool
 		expectError     bool
-		errorContains   string
+		wantErr         error
 		validateResult  func(*testing.T, *DryRunResourceManager)
 	}{
 		{
@@ -391,8 +388,8 @@ func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 					Variables: map[string]EnvironmentVariable{},
 				},
 			},
-			expectError:   true,
-			errorContains: "invalid command token",
+			expectError: true,
+			wantErr:     ErrInvalidCommandToken,
 		},
 		{
 			name: "Update with complete debug info including both fields",
@@ -470,8 +467,8 @@ func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 					},
 				},
 			},
-			expectError:   true,
-			errorContains: "called multiple times",
+			expectError: true,
+			wantErr:     ErrDuplicateDebugInfoUpdate,
 		},
 	}
 
@@ -488,9 +485,9 @@ func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 			err := manager.UpdateCommandDebugInfo(token, tt.debugInfo)
 
 			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
+				require.Error(t, err)
+				if tt.wantErr != nil {
+					require.ErrorIs(t, err, tt.wantErr)
 				}
 			} else {
 				assert.NoError(t, err)

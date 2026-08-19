@@ -2,6 +2,7 @@ package redaction
 
 import (
 	"regexp"
+	"regexp/syntax"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -114,9 +115,9 @@ func TestNewSensitivePatterns_ErrorHandling(t *testing.T) {
 	allowedEnvVars := make(map[string]struct{})
 
 	patterns, err := NewSensitivePatterns(invalidCredentialPatterns, envVarPatterns, allowedEnvVars)
-	assert.Error(t, err, "NewSensitivePatterns should fail with invalid regex")
+	var syntaxErr *syntax.Error
+	require.ErrorAs(t, err, &syntaxErr, "an unparsable pattern must be reported as a regexp syntax error")
 	assert.Nil(t, patterns, "patterns should be nil on error")
-	assert.Contains(t, err.Error(), "failed to build combined patterns")
 }
 
 func TestNewSensitivePatterns_EmptyPatterns(t *testing.T) {

@@ -1,8 +1,10 @@
 package variable
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -189,7 +191,7 @@ func TestValidateVariableNameForScope(t *testing.T) {
 		expectedScope Scope
 		location      string
 		expectError   bool
-		errorContains string
+		wantErr       func(t *testing.T, err error)
 	}{
 		// Global scope valid names
 		{
@@ -237,7 +239,7 @@ func TestValidateVariableNameForScope(t *testing.T) {
 			expectedScope: ScopeGlobal,
 			location:      "[global.vars]",
 			expectError:   true,
-			errorContains: "must be global",
+			wantErr:       wantScopeMismatch(ScopeGlobal),
 		},
 		{
 			name:          "global_mismatch_underscore",
@@ -245,7 +247,7 @@ func TestValidateVariableNameForScope(t *testing.T) {
 			expectedScope: ScopeGlobal,
 			location:      "[global.vars]",
 			expectError:   true,
-			errorContains: "must be global",
+			wantErr:       wantScopeMismatch(ScopeGlobal),
 		},
 
 		// Scope mismatch errors (local with uppercase)
@@ -255,7 +257,7 @@ func TestValidateVariableNameForScope(t *testing.T) {
 			expectedScope: ScopeLocal,
 			location:      "[groups.vars]",
 			expectError:   true,
-			errorContains: "must be local",
+			wantErr:       wantScopeMismatch(ScopeLocal),
 		},
 		{
 			name:          "local_mismatch_uppercase_snake",
@@ -263,7 +265,7 @@ func TestValidateVariableNameForScope(t *testing.T) {
 			expectedScope: ScopeLocal,
 			location:      "[groups.commands.vars]",
 			expectError:   true,
-			errorContains: "must be local",
+			wantErr:       wantScopeMismatch(ScopeLocal),
 		},
 
 		// Reserved variable errors
@@ -273,7 +275,7 @@ func TestValidateVariableNameForScope(t *testing.T) {
 			expectedScope: ScopeGlobal,
 			location:      "[global.vars]",
 			expectError:   true,
-			errorContains: "is reserved",
+			wantErr:       wantReservedName,
 		},
 		{
 			name:          "reserved_local_scope",
@@ -281,7 +283,7 @@ func TestValidateVariableNameForScope(t *testing.T) {
 			expectedScope: ScopeLocal,
 			location:      "[groups.vars]",
 			expectError:   true,
-			errorContains: "is reserved",
+			wantErr:       wantReservedName,
 		},
 
 		// Invalid characters (caught by security.ValidateVariableName)
@@ -291,7 +293,7 @@ func TestValidateVariableNameForScope(t *testing.T) {
 			expectedScope: ScopeLocal,
 			location:      "[groups.vars]",
 			expectError:   true,
-			errorContains: "invalid",
+			wantErr:       wantInvalidName,
 		},
 		{
 			name:          "invalid_char_dot",
@@ -299,7 +301,7 @@ func TestValidateVariableNameForScope(t *testing.T) {
 			expectedScope: ScopeLocal,
 			location:      "[groups.vars]",
 			expectError:   true,
-			errorContains: "invalid",
+			wantErr:       wantInvalidName,
 		},
 	}
 
@@ -309,8 +311,8 @@ func TestValidateVariableNameForScope(t *testing.T) {
 
 			if tt.expectError {
 				require.Error(t, err, "expected error for variable name: %q in scope: %s", tt.variableName, tt.expectedScope)
-				assert.Contains(t, err.Error(), tt.errorContains, "error message should contain expected text")
-				assert.Contains(t, err.Error(), tt.location, "error message should contain location")
+				tt.wantErr(t, err)
+				assert.ErrorContains(t, err, tt.location, "error message should name the location")
 			} else {
 				require.NoError(t, err, "unexpected error for variable name: %q in scope: %s", tt.variableName, tt.expectedScope)
 			}
@@ -370,4 +372,30 @@ func TestScopeString(t *testing.T) {
 			assert.Equal(t, tt.expected, tt.scope.String())
 		})
 	}
+}
+
+// wantScopeMismatch returns a check that the failure is a scope mismatch which
+// expected the given scope. The expected scope is what tells the two mismatch
+// directions apart; both render the same shape of message.
+func wantScopeMismatch(scope Scope) func(t *testing.T, err error) {
+	return func(t *testing.T, err error) {
+		t.Helper()
+		mismatch, ok := errors.AsType[*ErrScopeMismatch](err)
+		require.True(t, ok, "expected a scope mismatch, got: %v", err)
+		assert.Equal(t, scope, mismatch.ExpectedScope)
+	}
+}
+
+// wantReservedName checks that the name was rejected for using the reserved prefix.
+func wantReservedName(t *testing.T, err error) {
+	t.Helper()
+	_, ok := errors.AsType[*ErrReservedVariableName](err)
+	require.True(t, ok, "expected a reserved-name rejection, got: %v", err)
+}
+
+// wantInvalidName checks that the name was rejected as invalid, whatever the
+// character at fault.
+func wantInvalidName(t *testing.T, err error) {
+	t.Helper()
+	require.ErrorIs(t, err, security.ErrVariableNameInvalidChar, "expected an invalid-character rejection, got: %v", err)
 }

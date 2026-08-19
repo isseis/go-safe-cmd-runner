@@ -369,9 +369,7 @@ func TestExecuteGroup_CreateTempDirFailure(t *testing.T) {
 	ctx := context.Background()
 	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to create temp directory")
-	assert.ErrorIs(t, err, expectedErr)
+	require.ErrorIs(t, err, expectedErr)
 }
 
 // TestExecuteGroup_CommandExecutionFailure tests error handling when command execution fails
@@ -661,10 +659,8 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 	ctx := context.Background()
 	result, err := ge.executeCommandInGroup(ctx, cmd, groupSpec, runtimeGroup, runtimeGlobal)
 
-	require.Error(t, err)
+	require.ErrorIs(t, err, expectedErr)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "output path validation failed")
-	assert.ErrorIs(t, err, expectedErr)
 }
 
 // TestExecuteGroup_MultipleCommands tests execution of multiple commands in sequence
@@ -818,7 +814,7 @@ func TestResolveGroupWorkDir(t *testing.T) {
 		expectTempDir   bool
 		expectError     bool
 		expectedWorkDir string // For fixed workdir cases
-		errMsg          string // For error cases
+		wantErr         error  // For error cases
 	}{
 		{
 			name:            "fixed workdir specified",
@@ -860,7 +856,7 @@ func TestResolveGroupWorkDir(t *testing.T) {
 			groupVars:    map[string]string{},
 			isDryRun:     false,
 			expectError:  true,
-			errMsg:       "relative paths are not allowed",
+			wantErr:      config.ErrInvalidWorkDir,
 		},
 		{
 			name:         "variable expansion resulting in relative path rejected",
@@ -868,7 +864,7 @@ func TestResolveGroupWorkDir(t *testing.T) {
 			groupVars:    map[string]string{"relative": "not/absolute"},
 			isDryRun:     false,
 			expectError:  true,
-			errMsg:       "relative paths are not allowed",
+			wantErr:      config.ErrInvalidWorkDir,
 		},
 	}
 
@@ -894,8 +890,8 @@ func TestResolveGroupWorkDir(t *testing.T) {
 
 			if tt.expectError {
 				require.Error(t, err)
-				if tt.errMsg != "" {
-					assert.Contains(t, err.Error(), tt.errMsg)
+				if tt.wantErr != nil {
+					require.ErrorIs(t, err, tt.wantErr)
 				}
 				return
 			}
@@ -1296,10 +1292,8 @@ func TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure(t *testing.T) {
 	result, err := ge.executeCommandInGroup(ctx, cmd, groupSpec, runtimeGroup, runtimeGlobal)
 
 	// Assert
-	require.Error(t, err)
+	require.ErrorIs(t, err, expectedErr)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "environment variables security validation failed")
-	assert.ErrorIs(t, err, expectedErr)
 
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
 	mockValidator.AssertExpectations(t)
@@ -1362,9 +1356,7 @@ func TestVerifyGroupFiles_ResolvePathFailure(t *testing.T) {
 	err = ge.verifyGroupFiles(runtimeGroup, runtimeGlobal)
 
 	// Assert
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "command path resolution failed")
-	assert.ErrorIs(t, err, expectedErr)
+	require.ErrorIs(t, err, expectedErr)
 
 	// Verify mocks
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
@@ -2054,9 +2046,9 @@ func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	// Verify error type using errors.Is instead of fragile string matching
-	assert.ErrorIs(t, err, config.ErrUndefinedVariable)
+	require.ErrorIs(t, err, config.ErrUndefinedVariable)
 	// Command name appears in the outer wrapper error message
-	assert.Contains(t, err.Error(), "test-cmd", "Error should mention the failing command")
+	assert.ErrorContains(t, err, "test-cmd", "Error should mention the failing command")
 
 	// Verify that ExecuteCommand was not called due to early error
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
@@ -2109,10 +2101,9 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	// Verify error type using errors.Is instead of fragile string matching
-	assert.ErrorIs(t, err, config.ErrUndefinedVariable)
-	// Verify error message mentions both workdir resolution and command name
-	assert.Contains(t, err.Error(), "failed to resolve workdir", "Error should mention workdir resolution failure")
-	assert.Contains(t, err.Error(), "test-cmd", "Error should mention the failing command")
+	require.ErrorIs(t, err, config.ErrUndefinedVariable)
+	// The command name is the context the operator needs to locate the failure.
+	assert.ErrorContains(t, err, "test-cmd", "Error should mention the failing command")
 
 	// Verify that ExecuteCommand was not called due to early error
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
@@ -2509,11 +2500,7 @@ func TestCreateCommandContext_UnlimitedTimeout_SecurityLogging(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a buffer to capture log output
-			var logBuffer bytes.Buffer
-			testLogger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{
-				Level: slog.LevelDebug,
-			}))
+			testLogger, rec := tu.NewRecordingLogger()
 
 			// Create SecurityLogger with test logger
 			secLogger := logging.NewSecurityLoggerWithLogger(testLogger)
@@ -2545,19 +2532,10 @@ func TestCreateCommandContext_UnlimitedTimeout_SecurityLogging(t *testing.T) {
 			assert.False(t, ok, "context should not have a deadline for unlimited timeout")
 
 			if tt.expectLog {
-				// Verify log output contains expected fields
-				logOutput := logBuffer.String()
-				assert.NotEmpty(t, logOutput, "log output should not be empty")
-
-				// Verify all expected fields are present in the log
-				for key, expectedValue := range tt.expectedFields {
-					assert.Contains(t, logOutput, fmt.Sprintf(`"%s":"%s"`, key, expectedValue),
-						"log should contain %s=%s", key, expectedValue)
-				}
-
-				// Verify it's a WARN level log
-				assert.Contains(t, logOutput, `"level":"WARN"`)
-				assert.Contains(t, logOutput, "Command starting with unlimited timeout")
+				rec.RequireRecord(t, slog.LevelWarn, "Command starting with unlimited timeout").
+					AssertAttrs(t, tt.expectedFields)
+			} else {
+				assert.Empty(t, rec.Records())
 			}
 		})
 	}
@@ -2565,11 +2543,7 @@ func TestCreateCommandContext_UnlimitedTimeout_SecurityLogging(t *testing.T) {
 
 // TestExecuteGroup_TimeoutExceeded_SecurityLogging tests that timeout exceeded triggers security logging
 func TestExecuteGroup_TimeoutExceeded_SecurityLogging(t *testing.T) {
-	// Create a buffer to capture log output
-	var logBuffer bytes.Buffer
-	testLogger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
+	testLogger, rec := tu.NewRecordingLogger()
 
 	// Create SecurityLogger with test logger
 	secLogger := logging.NewSecurityLoggerWithLogger(testLogger)
@@ -2626,15 +2600,12 @@ func TestExecuteGroup_TimeoutExceeded_SecurityLogging(t *testing.T) {
 	require.Error(t, err)
 
 	// Verify security log contains timeout exceeded event
-	logOutput := logBuffer.String()
-	assert.NotEmpty(t, logOutput, "log output should not be empty")
-
-	// Verify expected fields in log
-	assert.Contains(t, logOutput, `"level":"ERROR"`, "should be ERROR level")
-	assert.Contains(t, logOutput, "Command exceeded timeout")
-	assert.Contains(t, logOutput, `"command":"timeout-cmd"`)
-	assert.Contains(t, logOutput, `"timeout_seconds":1`)
-	assert.Contains(t, logOutput, `"security_event":"timeout_exceeded"`)
+	rec.RequireRecord(t, slog.LevelError, "Command exceeded timeout").
+		AssertAttrs(t, map[string]any{
+			"command":         "timeout-cmd",
+			"timeout_seconds": 1,
+			"security_event":  "timeout_exceeded",
+		})
 
 	mockRM.AssertExpectations(t)
 	mockValidator.AssertExpectations(t)
@@ -2643,11 +2614,7 @@ func TestExecuteGroup_TimeoutExceeded_SecurityLogging(t *testing.T) {
 
 // TestExecuteGroup_MultipleCommands_TimeoutLogging tests timeout logging with multiple commands
 func TestExecuteGroup_MultipleCommands_TimeoutLogging(t *testing.T) {
-	// Create a buffer to capture log output
-	var logBuffer bytes.Buffer
-	testLogger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
+	testLogger, rec := tu.NewRecordingLogger()
 
 	// Create SecurityLogger with test logger
 	secLogger := logging.NewSecurityLoggerWithLogger(testLogger)
@@ -2706,19 +2673,15 @@ func TestExecuteGroup_MultipleCommands_TimeoutLogging(t *testing.T) {
 
 	require.NoError(t, err)
 
-	// Verify security log contains unlimited execution event for first command
-	logOutput := logBuffer.String()
-	assert.NotEmpty(t, logOutput, "log output should not be empty")
-
-	// Verify unlimited execution log for unlimited-cmd
-	assert.Contains(t, logOutput, `"command":"unlimited-cmd"`)
-	assert.Contains(t, logOutput, `"user":"testuser"`)
-	assert.Contains(t, logOutput, `"security_event":"unlimited_execution_start"`)
-
-	// Verify normal-cmd does NOT trigger unlimited execution log
-	// (by checking that there's only one occurrence of unlimited_execution_start)
-	unlimitedCount := strings.Count(logOutput, `"security_event":"unlimited_execution_start"`)
-	assert.Equal(t, 1, unlimitedCount, "should have exactly one unlimited execution log")
+	// Only the command declaring an unlimited timeout is reported, so the record
+	// count is what separates this from "every command logs the event".
+	unlimited := rec.FindRecords(slog.LevelWarn, "Command starting with unlimited timeout")
+	require.Len(t, unlimited, 1, "normal-cmd must not report an unlimited execution")
+	unlimited[0].AssertAttrs(t, map[string]any{
+		"command":        "unlimited-cmd",
+		"user":           "testuser",
+		"security_event": "unlimited_execution_start",
+	})
 
 	mockRM.AssertExpectations(t)
 	mockValidator.AssertExpectations(t)
@@ -2731,56 +2694,44 @@ func TestExecuteGroup_MultipleCommands_TimeoutLogging(t *testing.T) {
 // 3. sensitive information in stderr is redacted
 func TestCommandFailureLogging_StderrInErrorLog(t *testing.T) {
 	tests := []struct {
-		name                       string
-		stdout                     string
-		stderr                     string
-		shouldContainInErrorLog    string
-		shouldNotContainInErrorLog string
-		sensitivePattern           string // Pattern that should be redacted
+		name                    string
+		stdout                  string
+		stderr                  string
+		shouldContainInErrorLog string
+		sensitivePattern        string // Pattern that should be redacted
 	}{
 		{
-			name:                       "stderr only in ERROR log",
-			stdout:                     "normal output",
-			stderr:                     "command not found",
-			shouldContainInErrorLog:    "command not found",
-			shouldNotContainInErrorLog: "normal output",
+			name:                    "stderr only in ERROR log",
+			stdout:                  "normal output",
+			stderr:                  "command not found",
+			shouldContainInErrorLog: "command not found",
 		},
 		{
-			name:                       "stderr with password should be redacted",
-			stdout:                     "processing...",
-			stderr:                     "authentication failed: password=secret123",
-			shouldContainInErrorLog:    "authentication failed",
-			shouldNotContainInErrorLog: "secret123",
-			sensitivePattern:           "secret123",
+			name:                    "stderr with password should be redacted",
+			stdout:                  "processing...",
+			stderr:                  "authentication failed: password=secret123",
+			shouldContainInErrorLog: "authentication failed",
+			sensitivePattern:        "secret123",
 		},
 		{
-			name:                       "stderr with token should be redacted",
-			stdout:                     "API call",
-			stderr:                     "API error: token=abc123xyz",
-			shouldContainInErrorLog:    "API error",
-			shouldNotContainInErrorLog: "abc123xyz",
-			sensitivePattern:           "abc123xyz",
+			name:                    "stderr with token should be redacted",
+			stdout:                  "API call",
+			stderr:                  "API error: token=abc123xyz",
+			shouldContainInErrorLog: "API error",
+			sensitivePattern:        "abc123xyz",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a buffer to capture log output
-			var logBuffer bytes.Buffer
-			handler := slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{
-				Level: slog.LevelDebug,
-			})
+			rec := tu.NewLogRecorder(nil)
 
 			// Create a separate failure logger without RedactingHandler
 			// This is required to prevent circular dependencies during panic recovery
-			var failureLogBuffer bytes.Buffer
-			failureHandler := slog.NewJSONHandler(&failureLogBuffer, &slog.HandlerOptions{
-				Level: slog.LevelDebug,
-			})
-			failureLogger := slog.New(failureHandler)
+			failureLogger := slog.New(tu.NewLogRecorder(nil))
 
 			// Wrap with redacting handler to simulate real behavior
-			redactingHandler := redaction.NewRedactingHandler(handler, nil, failureLogger) // nil uses default config
+			redactingHandler := redaction.NewRedactingHandler(rec, nil, failureLogger) // nil uses default config
 			logger := slog.New(redactingHandler)
 			slog.SetDefault(logger)
 
@@ -2840,31 +2791,23 @@ func TestCommandFailureLogging_StderrInErrorLog(t *testing.T) {
 
 			require.Error(t, err)
 
-			// Verify log output
-			logOutput := logBuffer.String()
-			assert.NotEmpty(t, logOutput, "log output should not be empty")
+			// The failure is reported once, at ERROR, carrying stderr only.
+			failure := rec.RequireRecord(t, slog.LevelError, "Command failed")
 
-			// Extract ERROR level logs
-			errorLogs := []string{}
-			for line := range strings.SplitSeq(logOutput, "\n") {
-				if strings.Contains(line, `"level":"ERROR"`) {
-					errorLogs = append(errorLogs, line)
-				}
+			loggedStderr, ok := failure.Attrs["stderr"].(string)
+			require.True(t, ok, "the failure record must carry stderr; attributes: %v", failure.Attrs)
+			assert.Contains(t, loggedStderr, tt.shouldContainInErrorLog)
+
+			// stdout is excluded from the ERROR record entirely, rather than merely
+			// not matching: asserting the key is absent cannot be satisfied by a
+			// stdout value that happens to differ from the one the command produced.
+			for _, r := range rec.RecordsAtLevel(slog.LevelError) {
+				assert.NotContains(t, r.Attrs, "stdout", "stdout must not reach an ERROR record")
 			}
-
-			// Verify at least one ERROR log exists
-			require.NotEmpty(t, errorLogs, "should have at least one ERROR log")
-
-			// Verify stderr content in ERROR logs
-			errorLogStr := strings.Join(errorLogs, "\n")
-			assert.Contains(t, errorLogStr, tt.shouldContainInErrorLog)
-
-			// Verify stdout is NOT in ERROR logs
-			assert.NotContains(t, errorLogStr, tt.shouldNotContainInErrorLog)
 
 			// Verify sensitive information is redacted
 			if tt.sensitivePattern != "" {
-				assert.NotContains(t, errorLogStr, tt.sensitivePattern,
+				assert.NotContains(t, loggedStderr, tt.sensitivePattern,
 					"sensitive pattern should be redacted from ERROR log")
 			}
 
@@ -3141,14 +3084,10 @@ func TestPreExpandCommands_Error(t *testing.T) {
 
 			err := ge.preExpandCommands(tt.groupSpec, runtimeGroup, runtimeGlobal)
 
-			require.Error(t, err)
-			// Verify error type using errors.Is instead of fragile string matching
-			if tt.wantErrIs != nil {
-				assert.True(t, errors.Is(err, tt.wantErrIs), "Error should be %v", tt.wantErrIs)
-			}
+			require.ErrorIs(t, err, tt.wantErrIs)
 			// If specific context is expected in error message, verify it
 			if tt.wantErrContains != "" {
-				assert.Contains(t, err.Error(), tt.wantErrContains)
+				assert.ErrorContains(t, err, tt.wantErrContains)
 			}
 		})
 	}
@@ -3278,8 +3217,7 @@ func TestVerifyGroupFiles_DynLibResolvePathFailure(t *testing.T) {
 
 	ctx := context.Background()
 	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "command path resolution failed")
+	require.ErrorIs(t, err, resolveErr)
 
 	mockVerificationManager.AssertNotCalled(t, "VerifyCommandDynLibDeps", mock.Anything)
 	mockVerificationManager.AssertNotCalled(t, "VerifyCommandShebangInterpreter", mock.Anything, mock.Anything)

@@ -1,6 +1,7 @@
 package pathencoding_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -139,9 +140,9 @@ func TestSubstitutionHashEscape_Decode_FallbackError(t *testing.T) {
 	for _, encoded := range fallbackStrings {
 		t.Run("fallback_"+encoded, func(t *testing.T) {
 			result, err := encoder.Decode(encoded)
-			assert.Error(t, err)
+			_, ok := errors.AsType[pathencoding.ErrFallbackNotReversible](err)
+			require.True(t, ok, "a fallback encoding must be reported as not reversible, got: %v", err)
 			assert.Empty(t, result)
-			assert.Contains(t, err.Error(), "fallback")
 		})
 	}
 }

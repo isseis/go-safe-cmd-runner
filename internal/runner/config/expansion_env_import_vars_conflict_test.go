@@ -48,8 +48,8 @@ func TestExpandGroup_EnvImportVarsConflict(t *testing.T) {
 
 	_, err = config.ExpandGroup(groupSpec, globalRuntime)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, config.ErrEnvImportVarsConflict)
-	assert.Contains(t, err.Error(), "my_var")
+	require.ErrorIs(t, err, config.ErrEnvImportVarsConflict)
+	assert.ErrorContains(t, err, "my_var", "the message must name the conflicting variable")
 }
 
 // TestExpandGroup_SameLevelConflict tests conflict at same group level
@@ -73,8 +73,8 @@ func TestExpandGroup_SameLevelConflict(t *testing.T) {
 
 	_, err = config.ExpandGroup(groupSpec, globalRuntime)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, config.ErrEnvImportVarsConflict)
-	assert.Contains(t, err.Error(), "my_user")
+	require.ErrorIs(t, err, config.ErrEnvImportVarsConflict)
+	assert.ErrorContains(t, err, "my_user", "the message must name the conflicting variable")
 }
 
 // TestExpandGlobal_NoConflict tests that different variable names don't conflict

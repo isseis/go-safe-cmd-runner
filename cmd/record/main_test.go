@@ -401,9 +401,9 @@ func TestRunTOCTOU_ViolationLogsRemediationWithActualPath(t *testing.T) {
 		return fmt.Errorf("world-writable directory: %s", path)
 	}})
 
-	var logBuf bytes.Buffer
+	logger, rec := tu.NewRecordingLogger()
 	prevLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, nil)))
+	slog.SetDefault(logger)
 	t.Cleanup(func() { slog.SetDefault(prevLogger) })
 
 	stdout := &bytes.Buffer{}
@@ -411,10 +411,19 @@ func TestRunTOCTOU_ViolationLogsRemediationWithActualPath(t *testing.T) {
 	exitCode := run([]string{"-d", hashDir, targetFile}, d, stdout, stderr)
 
 	assert.NotEqual(t, 0, exitCode)
-	logOutput := logBuf.String()
-	assert.Contains(t, logOutput, "remediation=", "log must include a remediation hint")
-	assert.Contains(t, logOutput, hashDir, "remediation hint must contain the actual violating path")
-	assert.NotContains(t, logOutput, "'+v.Path+'", "remediation hint must not contain unresolved template syntax")
+	// One record is emitted per violating directory (the hash directory and each
+	// of its ancestors); the one under test is the hash directory's own.
+	var remediation string
+	var ok bool
+	for _, r := range rec.FindRecords(slog.LevelError, "hash directory permission violation detected — refusing to record") {
+		if r.Attrs["path"] == hashDir {
+			remediation, ok = r.Attrs["remediation"].(string)
+			break
+		}
+	}
+	require.True(t, ok, "log must include a remediation hint for %s; records: %v", hashDir, rec.Records())
+	assert.Contains(t, remediation, hashDir, "remediation hint must contain the actual violating path")
+	assert.NotContains(t, remediation, "'+v.Path+'", "remediation hint must not contain unresolved template syntax")
 }
 
 // TestRunFailsClosedWhenPermissionCheckUIDUnresolvable verifies that record

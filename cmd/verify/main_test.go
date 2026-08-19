@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"testing"
 
@@ -89,13 +88,22 @@ func allowAllDirs() security.DirectoryPermChecker {
 
 // captureLogs redirects the default slog logger into a buffer for the duration
 // of the test and returns the buffer.
-func captureLogs(t *testing.T) *bytes.Buffer {
+// captureLogs redirects the default logger into a recorder for the duration of
+// the test. Assertions then name the level, message and attribute they mean
+// rather than matching the handler's rendered text.
+func captureLogs(t *testing.T) *tu.LogRecorder {
 	t.Helper()
-	buf := &bytes.Buffer{}
+	logger, rec := tu.NewRecordingLogger()
 	original := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	slog.SetDefault(logger)
 	t.Cleanup(func() { slog.SetDefault(original) })
-	return buf
+	return rec
+}
+
+// violationRecords returns the fail-closed ERROR records verify emits for a
+// hash-directory permission violation.
+func violationRecords(rec *tu.LogRecorder) []tu.RecordSnapshot {
+	return rec.FindRecords(slog.LevelError, "hash directory permission violation detected — refusing to verify")
 }
 
 func TestRunRequiresAtLeastOneFile(t *testing.T) {
@@ -228,9 +236,10 @@ func TestRunTOCTOU_ContinuesWhenOnlyTargetDirViolates(t *testing.T) {
 	assert.Equal(t, exitOK, exitCode, "verify should continue (exit 0) despite world-writable target directory")
 	assert.NotEqual(t, exitUntrustedEnvironment, exitCode, "a target-side violation must not be fail-closed")
 	require.Len(t, validator.calls, 1, "file should have been processed")
-	assert.Contains(t, logs.String(), "level=WARN", "the target-side violation stays a warning")
-	assert.Contains(t, logs.String(), worldWritableDir)
-	assert.NotContains(t, logs.String(), "level=ERROR")
+	warnings := logs.FindRecords(slog.LevelWarn, "TOCTOU permission check violation")
+	require.NotEmpty(t, warnings, "the target-side violation stays a warning")
+	assert.Equal(t, worldWritableDir, warnings[0].Attrs["path"])
+	assert.Empty(t, logs.RecordsAtLevel(slog.LevelError))
 }
 
 // TestRunFailsClosedOnHashDirViolation_ExplicitHashDir verifies the fail-closed
@@ -282,9 +291,9 @@ func TestRunProceedsWithRealCheckerOnCleanDirs(t *testing.T) {
 
 	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, d, stdout, stderr)
 
-	require.Equal(t, exitOK, exitCode, "logs: %s", logs.String())
+	require.Equal(t, exitOK, exitCode, "logs: %v", logs.Records())
 	require.Len(t, validator.calls, 1)
-	assert.NotContains(t, logs.String(), "level=ERROR")
+	assert.Empty(t, logs.RecordsAtLevel(slog.LevelError))
 	assert.NotContains(t, stderr.String(), "cannot be trusted")
 }
 
@@ -314,23 +323,20 @@ func TestRunFailsClosedOnHashDirViolation_AncestorViolation(t *testing.T) {
 
 	require.Equal(t, exitUntrustedEnvironment, exitCode)
 	assert.Empty(t, validator.calls)
-	assert.Contains(t, logs.String(), badAncestor, "the violation must name the directory that is actually world-writable")
+	records := violationRecords(logs)
+	require.NotEmpty(t, records, "at least one fail-closed ERROR record must have been logged")
+	assert.Contains(t, records[0].Attrs["violation"], badAncestor,
+		"the violation must name the directory that is actually world-writable")
 
 	// The remediation must not name the checked path: hashDir's own permissions
 	// are correct, so any instruction naming it sends the operator to fix a
 	// directory that is already fine.
-	var remediations int
-	for line := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
-		if !strings.Contains(line, "level=ERROR") {
-			continue
-		}
-		_, remediation, found := strings.Cut(line, "remediation=")
-		require.True(t, found, "every fail-closed ERROR line carries a remediation: %s", line)
+	for _, r := range records {
+		remediation, ok := r.Attrs["remediation"].(string)
+		require.True(t, ok, "every fail-closed ERROR record carries a remediation: %v", r.Attrs)
 		assert.NotContains(t, remediation, hashDir,
 			"the remediation must point at the directory named in the violation, not at the checked path")
-		remediations++
 	}
-	require.NotZero(t, remediations, "at least one fail-closed ERROR line must have been logged")
 }
 
 // TestRunFailsClosedOnHashDirViolation_DefaultHashDir verifies that the same
@@ -375,21 +381,14 @@ func TestRunFailsClosedOnHashDirViolation_LogsErrorLevel(t *testing.T) {
 	exitCode := run([]string{"-hash-dir", hashDir, "file1.txt"}, d, stdout, stderr)
 	require.Equal(t, exitUntrustedEnvironment, exitCode)
 
-	var errorLines, warnLines []string
-	for line := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
-		switch {
-		case strings.Contains(line, "level=ERROR"):
-			errorLines = append(errorLines, line)
-		case strings.Contains(line, "level=WARN"):
-			warnLines = append(warnLines, line)
-		}
-	}
+	errorRecords := logs.RecordsAtLevel(slog.LevelError)
+	require.Len(t, errorRecords, 1, "one ERROR record per fail-closed violation")
+	assert.Equal(t, hashDir, errorRecords[0].Attrs["path"])
+	errorRecords[0].AssertHasAttrs(t, "remediation")
 
-	require.Len(t, errorLines, 1, "one ERROR line per fail-closed violation")
-	assert.Contains(t, errorLines[0], "path="+hashDir)
-	assert.Contains(t, errorLines[0], "remediation=")
-	require.Len(t, warnLines, 1, "the shared check's WARN line must remain alongside the ERROR line")
-	assert.Contains(t, warnLines[0], "TOCTOU permission check violation")
+	warnRecords := logs.RecordsAtLevel(slog.LevelWarn)
+	require.Len(t, warnRecords, 1, "the shared check's WARN record must remain alongside the ERROR record")
+	assert.Equal(t, "TOCTOU permission check violation", warnRecords[0].Message)
 }
 
 // TestRunSkipsTargetSetCheckWhenHashDirViolates verifies the side-effect
@@ -419,8 +418,22 @@ func TestRunSkipsTargetSetCheckWhenHashDirViolates(t *testing.T) {
 	exitCode := run([]string{"-hash-dir", hashDir, targetFile}, d, stdout, stderr)
 
 	require.Equal(t, exitUntrustedEnvironment, exitCode)
-	assert.NotContains(t, logs.String(), targetDir, "the target file set must not be checked once the hash directory side fails closed")
-	assert.Contains(t, logs.String(), hashDir)
+	// No record may name the target directory: reaching the target-side check at
+	// all would report a violation for it, at any level.
+	for _, r := range logs.Records() {
+		// Records without a path attribute say nothing here; NotContains on the
+		// missing key's nil value would fail on len(nil) rather than skip it.
+		v, ok := r.Attrs["path"]
+		if !ok {
+			continue
+		}
+		path, ok := v.(string)
+		require.True(t, ok, "record %q has a non-string path attribute %v", r.Message, v)
+		assert.NotContains(t, path, targetDir,
+			"the target file set must not be checked once the hash directory side fails closed")
+	}
+	require.NotEmpty(t, violationRecords(logs))
+	assert.Equal(t, hashDir, violationRecords(logs)[0].Attrs["path"])
 }
 
 // TestRunFailsClosedWhenPermissionCheckUIDUnresolvable verifies that verify

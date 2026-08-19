@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -222,9 +223,9 @@ cmd = "echo"
 
 	// Load config should fail with duplicate error
 	_, err = bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-004")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicate command template name")
-	assert.Contains(t, err.Error(), "test")
+	duplicate, ok := errors.AsType[*config.ErrDuplicateTemplateName](err)
+	require.True(t, ok, "a template defined twice must be reported as a duplicate, got: %v", err)
+	assert.Equal(t, "test", duplicate.Name)
 }
 
 // TestIntegration_IncludesFeature_IncludeNotFound tests error handling for missing include files
@@ -251,9 +252,9 @@ timeout = 60
 
 	// Load config should fail with file not found error
 	_, err = bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-005")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "included file not found")
-	assert.Contains(t, err.Error(), "nonexistent.toml")
+	notFound, ok := errors.AsType[*config.ErrIncludedFileNotFound](err)
+	require.True(t, ok, "a missing include must be reported as not found, got: %v", err)
+	assert.Equal(t, "nonexistent.toml", notFound.IncludePath)
 }
 
 // TestIntegration_IncludesFeature_InvalidTemplateFile tests error handling for invalid template files
@@ -293,9 +294,9 @@ timeout = 60
 
 	// Load config should fail with invalid format error
 	_, err = bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-006")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "template file contains invalid fields")
-	assert.Contains(t, err.Error(), "invalid.toml")
+	invalidFormat, ok := errors.AsType[*config.ErrTemplateFileInvalidFormat](err)
+	require.True(t, ok, "a template file with disallowed sections must be reported as invalid, got: %v", err)
+	assert.Equal(t, templatePath, invalidFormat.TemplateFile)
 }
 
 // TestIntegration_IncludesFeature_BackwardCompatibility tests that configs without includes still work

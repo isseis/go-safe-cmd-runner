@@ -3,11 +3,13 @@
 package config_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/variable"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -143,8 +145,10 @@ func TestEndToEndExpansion_ScopeMismatchErrors(t *testing.T) {
 		}
 
 		_, err := config.ExpandGlobal(spec)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "must be global")
+		mismatch, ok := errors.AsType[*variable.ErrScopeMismatch](err)
+		require.True(t, ok, "a lowercase name in [global.vars] must be rejected as a scope mismatch, got: %v", err)
+		assert.Equal(t, variable.ScopeGlobal, mismatch.ExpectedScope)
+		assert.Equal(t, "aws_path", mismatch.Name)
 	})
 
 	t.Run("uppercase in groups.vars", func(t *testing.T) {
@@ -160,8 +164,10 @@ func TestEndToEndExpansion_ScopeMismatchErrors(t *testing.T) {
 		}
 
 		_, err = config.ExpandGroup(groupSpec, globalRuntime)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "must be local")
+		mismatch, ok := errors.AsType[*variable.ErrScopeMismatch](err)
+		require.True(t, ok, "an uppercase name in [[groups]].vars must be rejected as a scope mismatch, got: %v", err)
+		assert.Equal(t, variable.ScopeLocal, mismatch.ExpectedScope)
+		assert.Equal(t, "DataDir", mismatch.Name)
 	})
 }
 
@@ -184,8 +190,9 @@ func TestEndToEndExpansion_TemplateValidationErrors(t *testing.T) {
 		}
 
 		err = config.ValidateAllTemplates(templates, globalRuntime.ExpandedVars)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "local_var")
+		local, ok := errors.AsType[*config.ErrLocalVariableInTemplate](err)
+		require.True(t, ok, "a local variable in a template must be rejected as such, got: %v", err)
+		assert.Equal(t, "local_var", local.VariableName)
 	})
 
 	t.Run("undefined global variable in template", func(t *testing.T) {
@@ -206,8 +213,9 @@ func TestEndToEndExpansion_TemplateValidationErrors(t *testing.T) {
 		}
 
 		err = config.ValidateAllTemplates(templates, globalRuntime.ExpandedVars)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "UndefinedVar")
+		undefined, ok := errors.AsType[*config.ErrUndefinedGlobalVariableInTemplate](err)
+		require.True(t, ok, "a template referencing an undefined global must be rejected as such, got: %v", err)
+		assert.Equal(t, "UndefinedVar", undefined.VariableName)
 	})
 
 	t.Run("local variable in template args", func(t *testing.T) {
@@ -223,8 +231,9 @@ func TestEndToEndExpansion_TemplateValidationErrors(t *testing.T) {
 		}
 
 		err = config.ValidateAllTemplates(templates, globalRuntime.ExpandedVars)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "local_var")
+		local, ok := errors.AsType[*config.ErrLocalVariableInTemplate](err)
+		require.True(t, ok, "a local variable in a template must be rejected as such, got: %v", err)
+		assert.Equal(t, "local_var", local.VariableName)
 	})
 
 	t.Run("local variable in template workdir", func(t *testing.T) {
@@ -240,7 +249,8 @@ func TestEndToEndExpansion_TemplateValidationErrors(t *testing.T) {
 		}
 
 		err = config.ValidateAllTemplates(templates, globalRuntime.ExpandedVars)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "local_dir")
+		local, ok := errors.AsType[*config.ErrLocalVariableInTemplate](err)
+		require.True(t, ok, "a local variable in a template workdir must be rejected as such, got: %v", err)
+		assert.Equal(t, "local_dir", local.VariableName)
 	})
 }
