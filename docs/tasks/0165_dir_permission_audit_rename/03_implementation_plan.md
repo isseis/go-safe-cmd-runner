@@ -53,27 +53,30 @@
 - `internal/security/toctou.go` → `internal/security/dir_permissions_audit.go`
 - `internal/security/toctou_test.go` → `internal/security/dir_permissions_audit_test.go`
 - `internal/security/dir_permissions_unix.go`
+- `internal/security/dir_permissions.go`（`DirectoryPermChecker` の doc コメント。実装時に追加）
 - `cmd/runner/main.go`
+- `cmd/runner/main_test.go`（`runTOCTOUCheck` の呼び出し箇所。実装時に追加）
 - `cmd/verify/main.go`
 - `cmd/record/main.go`
 - `internal/runner/runner.go`
 - `internal/runner/group_executor_options.go`
 - `internal/runner/group_executor.go`
+- `internal/runner/group_executor_test.go`（フィールド名・メソッド名・`ErrDirPermViolation` の呼び出し箇所。テスト関数名の改名はコミット2。実装時に追加）
 
 **作業内容**:
-- [ ] `internal/security`: `RunTOCTOUPermissionCheck` → `AuditDirectoryPermissions`
-- [ ] `internal/security`: `TOCTOUViolation` → `DirPermViolation`
-- [ ] `internal/security`: `TOCTOUCheckResult` → `DirPermAuditResult`
-- [ ] `internal/security`: `toctou.go` を `dir_permissions_audit.go` に、`toctou_test.go` を `dir_permissions_audit_test.go` に `git mv` する
-- [ ] `internal/security`: `ErrTOCTOUViolation` → `ErrDirPermViolation`
-- [ ] `internal/security`: `AuditDirectoryPermissions` の doc コメントを書き直し、これが事前の静的な権限監査であって time-of-check/time-of-use のチェックではないこと、本来の TOCTOU 対策（`internal/safefileio` の `O_NOFOLLOW` 経由 open、`internal/runner/base/executor` のファイル記述子経由の実行）は別の場所にあることを英語で明記する。`DirPermAuditResult` の `Checked`・`Skipped` に付いている計数規則の説明（`internal/security/toctou.go:16-51` 付近）は内容を保ったまま移す
-- [ ] `cmd/runner/main.go`: `runTOCTOUCheck` → `auditConfiguredDirPermissions`
-- [ ] `internal/runner/runner.go`: `WithTOCTOUValidator` → `WithDirPermAuditor`
-- [ ] `internal/runner/group_executor_options.go`: `WithGroupTOCTOUValidator` → `WithGroupDirPermAuditor`
-- [ ] `internal/runner/runner.go`・`internal/runner/group_executor.go`・`internal/runner/group_executor_options.go`: フィールド `toctouValidator` → `dirPermAuditor`
-- [ ] `internal/runner/group_executor.go`: `runGroupTOCTOUCheck` → `auditGroupDirPermissions`
-- [ ] 上記改名に追随して `cmd/verify/main.go`・`cmd/record/main.go` の呼び出し箇所を更新する
-- [ ] `make fmt && make test && make lint` が緑であることを確認する
+- [x] `internal/security`: `RunTOCTOUPermissionCheck` → `AuditDirectoryPermissions`
+- [x] `internal/security`: `TOCTOUViolation` → `DirPermViolation`
+- [x] `internal/security`: `TOCTOUCheckResult` → `DirPermAuditResult`
+- [x] `internal/security`: `toctou.go` を `dir_permissions_audit.go` に、`toctou_test.go` を `dir_permissions_audit_test.go` に `git mv` する
+- [x] `internal/security`: `ErrTOCTOUViolation` → `ErrDirPermViolation`
+- [x] `internal/security`: `AuditDirectoryPermissions` の doc コメントを書き直し、これが事前の静的な権限監査であって time-of-check/time-of-use のチェックではないこと、本来の TOCTOU 対策（`internal/safefileio` の `O_NOFOLLOW` 経由 open、`internal/runner/base/executor` のファイル記述子経由の実行）は別の場所にあることを英語で明記する。`DirPermAuditResult` の `Checked`・`Skipped` に付いている計数規則の説明（`internal/security/toctou.go:16-51` 付近）は内容を保ったまま移す
+- [x] `cmd/runner/main.go`: `runTOCTOUCheck` → `auditConfiguredDirPermissions`
+- [x] `internal/runner/runner.go`: `WithTOCTOUValidator` → `WithDirPermAuditor`
+- [x] `internal/runner/group_executor_options.go`: `WithGroupTOCTOUValidator` → `WithGroupDirPermAuditor`
+- [x] `internal/runner/runner.go`・`internal/runner/group_executor.go`・`internal/runner/group_executor_options.go`: フィールド `toctouValidator` → `dirPermAuditor`
+- [x] `internal/runner/group_executor.go`: `runGroupTOCTOUCheck` → `auditGroupDirPermissions`
+- [x] 上記改名に追随して `cmd/verify/main.go`・`cmd/record/main.go` の呼び出し箇所を更新する
+- [x] `make fmt && make test && make lint` が緑であることを確認する
 
 **成功基準**: 識別子の改名のみで、ログ文言・エラー文言・テスト名は未変更のままビルドとテストが通る。
 

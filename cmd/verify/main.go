@@ -194,14 +194,14 @@ func checkHashDirPermissions(cfg *verifyConfig, d deps, logger *slog.Logger, std
 	}
 
 	hashDirs := security.CollectPermissionCheckDirs(nil, []string{absHashDir})
-	if violations := security.RunTOCTOUPermissionCheck(checker, hashDirs, logger).Violations; len(violations) > 0 {
+	if violations := security.AuditDirectoryPermissions(checker, hashDirs, logger).Violations; len(violations) > 0 {
 		// The remediation names neither a directory nor a command: v.Path is the
 		// directory that was checked, not necessarily the one at fault (the checker
 		// walks from the root down), and ErrInvalidDirPermissions covers causes
 		// needing chmod go-w, chown or chmod g-w, which cannot be told apart without
 		// matching on the error text. The violation attribute carries both.
 		const remediation = "fix the permissions and ownership of the directory named in the violation, or move the hash directory to a properly permissioned path, then re-run verify"
-		// ERROR, on top of the WARN RunTOCTOUPermissionCheck already logged: the
+		// ERROR, on top of the WARN AuditDirectoryPermissions already logged: the
 		// level is what separates a violation that stopped the run from one that
 		// did not.
 		for _, v := range violations {
@@ -262,7 +262,7 @@ func checkTargetFilePermissions(cfg *verifyConfig, checker security.DirectoryPer
 	}
 	// The result is deliberately dropped: each violation is already logged at
 	// WARN by the shared check, and none of them changes the verdict here.
-	security.RunTOCTOUPermissionCheck(checker, targetDirs, logger)
+	security.AuditDirectoryPermissions(checker, targetDirs, logger)
 }
 
 func run(args []string, d deps, stdout, stderr io.Writer) int {

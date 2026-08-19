@@ -373,7 +373,7 @@ func run(runID string) error {
 
 	// The returned validator is reused for per-group checks at execution time, so
 	// that group-level paths with %{GROUP_VAR} references are also checked.
-	secValidator, err := runTOCTOUCheck(cfg, runtimeGlobal, runID, isec.NewDirectoryPermChecker)
+	secValidator, err := auditConfiguredDirPermissions(cfg, runtimeGlobal, runID, isec.NewDirectoryPermChecker)
 	if err != nil {
 		return err
 	}
@@ -407,7 +407,7 @@ func startupExpansionState(template string) isec.PathExpansionState {
 	return isec.PathExpanded
 }
 
-// runTOCTOUCheck collects directory paths referenced by the configuration, audits
+// auditConfiguredDirPermissions collects directory paths referenced by the configuration, audits
 // their permissions and returns the checker used, so that per-group checks at
 // execution time reuse it. A violation is reported as a PreExecutionError.
 //
@@ -417,7 +417,7 @@ func startupExpansionState(template string) isec.PathExpansionState {
 // directory, so making it absolute here would audit an unrelated tree. Both are
 // counted by reason and reported in the summary logged at the end, so the range
 // the audit actually covers is visible.
-func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, runID string, newPermChecker func() (isec.DirectoryPermChecker, error)) (isec.DirectoryPermChecker, error) {
+func auditConfiguredDirPermissions(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, runID string, newPermChecker func() (isec.DirectoryPermChecker, error)) (isec.DirectoryPermChecker, error) {
 	logger := slog.Default()
 
 	candidates := make([]checkCandidate, 0, len(runtimeGlobal.ExpandedVerifyFiles)+len(cfg.Groups))
@@ -479,8 +479,8 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 	resolvedFiles, _ := isec.ResolveAllForCheck(filePaths, logger)
 	resolvedHashDirs, _ := isec.ResolveAllForCheck([]string{cmdcommon.DefaultHashDirectory}, logger)
 
-	toctouDirs := isec.CollectPermissionCheckDirs(resolvedFiles, resolvedHashDirs)
-	result := isec.RunTOCTOUPermissionCheck(secValidator, toctouDirs, logger)
+	auditDirs := isec.CollectPermissionCheckDirs(resolvedFiles, resolvedHashDirs)
+	result := isec.AuditDirectoryPermissions(secValidator, auditDirs, logger)
 	// Recorded before the verdict, so a run that aborts still says how much it
 	// covered, and on every run rather than only when something was left out: a
 	// missing record cannot be told apart from "nothing was left out". The first
@@ -488,7 +488,7 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 	// all of its ancestors; the last two count configured paths, which is what
 	// exclusion happens to, before that expansion.
 	logger.Info("startup directory permission audit completed",
-		"collected_dirs", len(toctouDirs),
+		"collected_dirs", len(auditDirs),
 		"checked_dirs", result.Checked,
 		"skipped_missing_dirs", result.Skipped,
 		"skipped_variable_reference_paths", skippedVariableReference,
@@ -542,7 +542,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		runner.WithRedactionConfig(redactionConfig),
 	}
 	if secValidator != nil {
-		runnerOptions = append(runnerOptions, runner.WithTOCTOUValidator(secValidator))
+		runnerOptions = append(runnerOptions, runner.WithDirPermAuditor(secValidator))
 	}
 
 	// Parsed here rather than at the formatting site below, so an invalid option

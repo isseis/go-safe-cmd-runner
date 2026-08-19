@@ -25,7 +25,7 @@ func TestRunTOCTOUPermissionCheck_NoViolations(t *testing.T) {
 	v, err := NewDirectoryPermChecker()
 	require.NoError(t, err)
 
-	result := RunTOCTOUPermissionCheck(v, []string{tmpDir}, slog.Default())
+	result := AuditDirectoryPermissions(v, []string{tmpDir}, slog.Default())
 	assert.Empty(t, result.Violations, "no violations expected for secure directory")
 }
 
@@ -45,7 +45,7 @@ func TestRunTOCTOUPermissionCheck_ViolationDetected(t *testing.T) {
 	v, err := NewDirectoryPermChecker()
 	require.NoError(t, err)
 
-	result := RunTOCTOUPermissionCheck(v, []string{tmpDir}, slog.Default())
+	result := AuditDirectoryPermissions(v, []string{tmpDir}, slog.Default())
 	require.Len(t, result.Violations, 1, "expected exactly one violation for world-writable directory")
 	assert.Equal(t, filepath.Clean(tmpDir), result.Violations[0].Path)
 	assert.True(t, errors.Is(result.Violations[0].Err, ErrInvalidDirPermissions), "violation error should be about directory permissions")
@@ -69,7 +69,7 @@ func TestRunTOCTOUPermissionCheck_MultipleViolations(t *testing.T) {
 	v, err := NewDirectoryPermChecker()
 	require.NoError(t, err)
 
-	result := RunTOCTOUPermissionCheck(v, []string{dir1, dir2}, slog.Default())
+	result := AuditDirectoryPermissions(v, []string{dir1, dir2}, slog.Default())
 	assert.Len(t, result.Violations, 2, "expected two violations")
 }
 
@@ -79,7 +79,7 @@ func TestRunTOCTOUPermissionCheck_EmptyDirs(t *testing.T) {
 	v, err := NewDirectoryPermChecker()
 	require.NoError(t, err)
 
-	result := RunTOCTOUPermissionCheck(v, []string{}, slog.Default())
+	result := AuditDirectoryPermissions(v, []string{}, slog.Default())
 	assert.Empty(t, result.Violations)
 }
 
@@ -99,7 +99,7 @@ func TestRunTOCTOUPermissionCheck_CountsCheckedAndSkipped(t *testing.T) {
 	v, err := NewDirectoryPermChecker()
 	require.NoError(t, err)
 
-	result := RunTOCTOUPermissionCheck(v, []string{cleanDir, missingDir, violatingDir}, slog.Default())
+	result := AuditDirectoryPermissions(v, []string{cleanDir, missingDir, violatingDir}, slog.Default())
 
 	assert.Equal(t, 2, result.Checked)
 	assert.Equal(t, 1, result.Skipped)
@@ -112,7 +112,7 @@ func TestRunTOCTOUPermissionCheck_CountsCheckedAndSkipped(t *testing.T) {
 // alerting that a routine run — record before the hash directory is created,
 // verify against a host that has none — needs attention. A directory that exists
 // but cannot be stat'ed is the opposite case and keeps ERROR. The checker logs
-// through the default logger, not the one handed to RunTOCTOUPermissionCheck, so
+// through the default logger, not the one handed to AuditDirectoryPermissions, so
 // this test replaces the process-wide default and must not run in parallel.
 func TestRunTOCTOUPermissionCheck_MissingDirIsNotLoggedAsAnError(t *testing.T) {
 	skipIfRoot(t)
@@ -128,7 +128,7 @@ func TestRunTOCTOUPermissionCheck_MissingDirIsNotLoggedAsAnError(t *testing.T) {
 	slog.SetDefault(logger)
 	t.Cleanup(func() { slog.SetDefault(original) })
 
-	result := RunTOCTOUPermissionCheck(v, []string{missingDir}, logger)
+	result := AuditDirectoryPermissions(v, []string{missingDir}, logger)
 	require.Equal(t, 1, result.Skipped)
 	assert.Empty(t, rec.RecordsAtLevel(slog.LevelError), "a directory that is merely absent is not a fault")
 	// Not a fault is not the same as not worth recording: the skip narrows what
@@ -139,6 +139,6 @@ func TestRunTOCTOUPermissionCheck_MissingDirIsNotLoggedAsAnError(t *testing.T) {
 
 	logger, rec = tu.NewRecordingLogger()
 	slog.SetDefault(logger)
-	RunTOCTOUPermissionCheck(v, []string{unreadable}, logger)
+	AuditDirectoryPermissions(v, []string{unreadable}, logger)
 	assert.NotEmpty(t, rec.RecordsAtLevel(slog.LevelError), "a directory that cannot be inspected still is one")
 }

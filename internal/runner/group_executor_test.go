@@ -3483,19 +3483,19 @@ func TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH(t *testing.T) 
 	mockVM.AssertExpectations(t)
 }
 
-// TestRunGroupTOCTOUCheck_NoValidator verifies that runGroupTOCTOUCheck is a
-// no-op when no toctouValidator is configured.
+// TestRunGroupTOCTOUCheck_NoValidator verifies that auditGroupDirPermissions is a
+// no-op when no dirPermAuditor is configured.
 func TestRunGroupTOCTOUCheck_NoValidator(t *testing.T) {
-	ge := &DefaultGroupExecutor{toctouValidator: nil}
+	ge := &DefaultGroupExecutor{dirPermAuditor: nil}
 	rg := &runnertypes.RuntimeGroup{
 		Spec:                &runnertypes.GroupSpec{Name: "test"},
 		ExpandedVerifyFiles: []string{"/nonexistent/file"},
 	}
-	err := ge.runGroupTOCTOUCheck(rg)
-	require.NoError(t, err, "runGroupTOCTOUCheck must be a no-op when toctouValidator is nil")
+	err := ge.auditGroupDirPermissions(rg)
+	require.NoError(t, err, "auditGroupDirPermissions must be a no-op when dirPermAuditor is nil")
 }
 
-// TestRunGroupTOCTOUCheck_SecureDir verifies that runGroupTOCTOUCheck returns
+// TestRunGroupTOCTOUCheck_SecureDir verifies that auditGroupDirPermissions returns
 // no error when all referenced directories satisfy the permission policy.
 func TestRunGroupTOCTOUCheck_SecureDir(t *testing.T) {
 	v, err := isec.NewDirectoryPermChecker()
@@ -3505,16 +3505,16 @@ func TestRunGroupTOCTOUCheck_SecureDir(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	require.NoError(t, os.Chmod(tmpDir, 0o755))
 
-	ge := &DefaultGroupExecutor{toctouValidator: v}
+	ge := &DefaultGroupExecutor{dirPermAuditor: v}
 	rg := &runnertypes.RuntimeGroup{
 		Spec:                &runnertypes.GroupSpec{Name: "test"},
 		ExpandedVerifyFiles: []string{tmpDir + "/file.txt"},
 	}
-	err = ge.runGroupTOCTOUCheck(rg)
+	err = ge.auditGroupDirPermissions(rg)
 	require.NoError(t, err)
 }
 
-// TestRunGroupTOCTOUCheck_ViolationReturnsError verifies that runGroupTOCTOUCheck
+// TestRunGroupTOCTOUCheck_ViolationReturnsError verifies that auditGroupDirPermissions
 // returns an error when a referenced directory violates the permission policy.
 func TestRunGroupTOCTOUCheck_ViolationReturnsError(t *testing.T) {
 	v, err := isec.NewDirectoryPermChecker()
@@ -3525,14 +3525,14 @@ func TestRunGroupTOCTOUCheck_ViolationReturnsError(t *testing.T) {
 	require.NoError(t, os.Chmod(tmpDir, 0o777))
 	t.Cleanup(func() { _ = os.Chmod(tmpDir, 0o755) })
 
-	ge := &DefaultGroupExecutor{toctouValidator: v}
+	ge := &DefaultGroupExecutor{dirPermAuditor: v}
 	rg := &runnertypes.RuntimeGroup{
 		Spec:                &runnertypes.GroupSpec{Name: "test"},
 		ExpandedVerifyFiles: []string{tmpDir + "/file.txt"},
 	}
-	err = ge.runGroupTOCTOUCheck(rg)
+	err = ge.auditGroupDirPermissions(rg)
 	require.Error(t, err, "expected error when verify_files parent dir is world-writable")
-	assert.ErrorIs(t, err, ErrTOCTOUViolation)
+	assert.ErrorIs(t, err, ErrDirPermViolation)
 }
 
 // TestVerifyCommandCallOrder_DynLibBeforeShebang verifies that
@@ -3643,14 +3643,14 @@ func (c *recordingPermChecker) ValidateDirectoryPermissions(path string) error {
 func TestRunGroupTOCTOUCheck_RelativePathsSkipped(t *testing.T) {
 	checker := &recordingPermChecker{}
 
-	ge := &DefaultGroupExecutor{toctouValidator: checker}
+	ge := &DefaultGroupExecutor{dirPermAuditor: checker}
 	rg := &runnertypes.RuntimeGroup{
 		Spec:                &runnertypes.GroupSpec{Name: "test"},
 		ExpandedVerifyFiles: []string{"relative/path/file.txt", "./another.txt"},
 	}
 	// ClassifyCheckTarget is what drops these now; resolution no longer rejects a
 	// relative path on its own.
-	err := ge.runGroupTOCTOUCheck(rg)
+	err := ge.auditGroupDirPermissions(rg)
 	require.NoError(t, err)
 	assert.Empty(t, checker.paths,
 		"a relative path must reach no directory check at all; returning no violation is also what a resolved, sound directory would do")
@@ -3669,13 +3669,13 @@ func TestRunGroupTOCTOUCheck_AbsolutePathContainingBraceIsStillChecked(t *testin
 	require.NoError(t, os.Mkdir(braceDir, 0o755))
 
 	checker := &recordingPermChecker{}
-	ge := &DefaultGroupExecutor{toctouValidator: checker}
+	ge := &DefaultGroupExecutor{dirPermAuditor: checker}
 	rg := &runnertypes.RuntimeGroup{
 		Spec:                &runnertypes.GroupSpec{Name: "test"},
 		ExpandedVerifyFiles: []string{filepath.Join(braceDir, "file.txt")},
 	}
 
-	require.NoError(t, ge.runGroupTOCTOUCheck(rg))
+	require.NoError(t, ge.auditGroupDirPermissions(rg))
 	assert.Contains(t, checker.paths, braceDir,
 		"an absolute path containing %%{ must still be checked; it is a literal, not an unexpanded reference")
 }

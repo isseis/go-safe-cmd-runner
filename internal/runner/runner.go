@@ -87,7 +87,7 @@ type runnerOptions struct {
 	runtimeGlobal           *runnertypes.RuntimeGlobal
 	keepTempDirs            bool
 	groupMembershipProvider *groupmembership.GroupMembership
-	toctouValidator         isec.DirectoryPermChecker
+	dirPermAuditor          isec.DirectoryPermChecker
 	riskEvaluator           risk.Evaluator
 	redactionConfig         *redaction.Config
 }
@@ -145,13 +145,13 @@ func WithRiskEvaluator(ev risk.Evaluator) Option {
 	}
 }
 
-// WithTOCTOUValidator enables per-group TOCTOU directory permission checks.
-// When set, each group execution runs a TOCTOU check after variable expansion
-// so that paths containing %{GROUP_VAR} references are checked with their
+// WithDirPermAuditor enables the per-group directory permission audit.
+// When set, each group execution audits its directories after variable expansion
+// so that paths containing %{GROUP_VAR} references are audited with their
 // resolved values. Violations cause group execution to return an error.
-func WithTOCTOUValidator(v isec.DirectoryPermChecker) Option {
+func WithDirPermAuditor(v isec.DirectoryPermChecker) Option {
 	return func(opts *runnerOptions) {
-		opts.toctouValidator = v
+		opts.dirPermAuditor = v
 	}
 }
 
@@ -382,8 +382,8 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 	currentUser := getCurrentUser()
 	groupOptions = append(groupOptions, WithCurrentUser(currentUser))
 
-	if opts.toctouValidator != nil {
-		groupOptions = append(groupOptions, WithGroupTOCTOUValidator(opts.toctouValidator))
+	if opts.dirPermAuditor != nil {
+		groupOptions = append(groupOptions, WithGroupDirPermAuditor(opts.dirPermAuditor))
 	}
 
 	runner.groupExecutor = NewDefaultGroupExecutor(

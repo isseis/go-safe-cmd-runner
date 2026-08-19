@@ -9,7 +9,8 @@ const (
 	GIDRoot = 0
 )
 
-// DirectoryPermChecker validates directory permissions for TOCTOU safety.
+// DirectoryPermChecker validates that a directory's permissions, ownership, and
+// path components are safe.
 type DirectoryPermChecker interface {
 	ValidateDirectoryPermissions(path string) error
 }
