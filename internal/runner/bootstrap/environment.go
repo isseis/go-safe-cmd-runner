@@ -25,6 +25,13 @@ var ErrSuccessWithoutError = &SuccessWithoutErrorError{}
 // but GSCR_SLACK_WEBHOOK_URL_ERROR is not.
 type SuccessWithoutErrorError struct{}
 
+// Error returns the guidance shown when only the success webhook is configured.
+//
+// This message is emitted before the redaction config exists (cmd/runner/main.go
+// validates the Slack environment ahead of SetupLogging), so nothing downstream
+// can mask it. Never interpolate an environment variable *value* here -- naming
+// the variables is safe, echoing a webhook URL would write the credential to a
+// log line unredacted. TestSuccessWithoutErrorErrorLeaksNoWebhookValue pins this.
 func (e *SuccessWithoutErrorError) Error() string {
 	return `Error: Invalid Slack webhook configuration.
 

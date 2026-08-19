@@ -43,6 +43,12 @@ func TestNormalizeSlackAllowedHost(t *testing.T) {
 			wantErr:  false,
 		},
 		{
+			name:     "uppercase IPv6 literal lowercased",
+			input:    "[2001:DB8::1]",
+			wantHost: "2001:db8::1",
+			wantErr:  false,
+		},
+		{
 			name:    "port number rejected",
 			input:   "hooks.slack.com:443",
 			wantErr: true,
@@ -108,6 +114,46 @@ func TestNormalizeSlackAllowedHost(t *testing.T) {
 			input:    "192.0.2.1",
 			wantHost: "192.0.2.1",
 			wantErr:  false,
+		},
+		{
+			// url.Hostname() percent-decodes the zone, so accepting this would
+			// hand the redaction pattern "fe80::1%eth0" while the raw log text
+			// carries "[fe80::1%25eth0]" - the webhook path would stay in clear.
+			name:    "IPv6 literal with a percent-encoded zone identifier rejected",
+			input:   "[fe80::1%25eth0]",
+			wantErr: true,
+		},
+		{
+			name:    "IPv6 literal with a bare zone identifier rejected",
+			input:   "[fe80::1%eth0]",
+			wantErr: true,
+		},
+		{
+			// url.Parse splits these into a host plus a path/query/fragment, so
+			// a check on Hostname and Port alone would strip them and accept.
+			name:    "IPv6 literal with a path rejected",
+			input:   "[::1]/path",
+			wantErr: true,
+		},
+		{
+			name:    "IPv6 literal with a query string rejected",
+			input:   "[::1]?q=1",
+			wantErr: true,
+		},
+		{
+			name:    "IPv6 literal with a fragment rejected",
+			input:   "[::1]#frag",
+			wantErr: true,
+		},
+		{
+			name:    "IPv6 literal with a trailing slash rejected",
+			input:   "[::1]/",
+			wantErr: true,
+		},
+		{
+			name:    "IPv6 literal with a port rejected",
+			input:   "[::1]:443",
+			wantErr: true,
 		},
 	}
 

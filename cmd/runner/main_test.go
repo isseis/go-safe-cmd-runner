@@ -728,3 +728,15 @@ func TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError(t *testi
 	assert.Equal(t, "test-run", preExec.RunID)
 	assert.Contains(t, preExec.Message, errCheckerUnavailable.Error())
 }
+
+// TestNewDryRunFormatter_UnknownFormatReturnsError verifies the fail-secure
+// default. cli.ParseDryRunOutputFormat rejects unknown strings, so the value is
+// constructed directly here; without the default branch the caller would be
+// handed a nil formatter and panic on the next call.
+func TestNewDryRunFormatter_UnknownFormatReturnsError(t *testing.T) {
+	t.Parallel()
+
+	formatter, err := newDryRunFormatter(resource.OutputFormatJSON + 1)
+	require.ErrorIs(t, err, errUnknownDryRunOutputFormat)
+	assert.Nil(t, formatter)
+}

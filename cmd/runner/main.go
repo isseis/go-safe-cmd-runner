@@ -257,7 +257,13 @@ func run(runID string) error {
 
 	slackConfig, err := bootstrap.ValidateSlackWebhookEnv()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+		// Do not print here. The returned PreExecutionError is reported by the
+		// pre-execution error path, which writes the full message to stderr, so
+		// printing it again would duplicate the human-readable block.
+		// The message still appears a second time inside the structured log line
+		// that the same path emits; that remaining duplication is tracked in
+		// https://github.com/isseis/go-safe-cmd-runner/issues/1020 and is not a
+		// reason to restore the direct print.
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
 			Message:   err.Error(),
@@ -499,6 +505,28 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 	return secValidator, nil
 }
 
+// errUnknownDryRunOutputFormat indicates that no formatter exists for the
+// requested dry-run output format.
+var errUnknownDryRunOutputFormat = errors.New("unknown dry-run output format")
+
+// newDryRunFormatter returns the formatter for the given dry-run output format.
+// Unknown formats yield an error rather than a nil formatter: command-line input
+// cannot reach this branch because cli.ParseDryRunOutputFormat rejects unknown
+// strings first, so a value arriving here comes from a caller that bypassed
+// parsing, and using an uninitialized formatter would panic at format time.
+func newDryRunFormatter(format resource.OutputFormat) (resource.Formatter, error) {
+	switch format {
+	case resource.OutputFormatText:
+		return resource.NewTextFormatter(), nil
+	case resource.OutputFormatJSON:
+		return resource.NewJSONFormatter(), nil
+	default:
+		// Reported as the underlying number: String() collapses every unknown
+		// value to "unknown", which would hide which one arrived.
+		return nil, fmt.Errorf("%w: %d", errUnknownDryRunOutputFormat, int(format))
+	}
+}
+
 // executeRunner initializes and executes the runner with proper cleanup
 func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, verificationManager *verification.Manager, runID string, secValidator isec.DirectoryPermChecker, redactionConfig *redaction.Config) error {
 	logger := slog.Default()
@@ -589,12 +617,12 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 
 		result := r.GetDryRunResults()
 		if result != nil {
-			var formatter resource.Formatter
-			switch outputFormat {
-			case resource.OutputFormatText:
-				formatter = resource.NewTextFormatter()
-			case resource.OutputFormatJSON:
-				formatter = resource.NewJSONFormatter()
+			formatter, err := newDryRunFormatter(outputFormat)
+			if err != nil {
+				// Wrapped so the summary line names the preview stage: execution
+				// has already completed by this point, and a bare return would be
+				// reported as a pre-execution system error.
+				return fmt.Errorf("dry-run preview: %w", err)
 			}
 
 			output, err := formatter.FormatResult(result, resource.FormatterOptions{

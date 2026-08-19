@@ -19,14 +19,13 @@ import (
 // ErrInvalidSlackAllowedHost is a sentinel error returned when the slack_allowed_host value is invalid.
 var ErrInvalidSlackAllowedHost = errors.New("slack_allowed_host must be a valid hostname or IP address without port or whitespace")
 
-// normalizeSlackAllowedHost converts host to a normalized allowed host value.
-// Returns ("", nil) when host is empty (Slack disabled).
-// Accepts hostnames and IPv4 literals whose dot-separated labels match the RFC 1123
-// character pattern, and IPv6 literals in brackets (e.g. "[::1]"), validated by
-// redaction.ValidateWebhookHost - the same validator compileWebhookHostPattern
-// uses, so the two never drift into disagreeing about what a valid host is.
-// Length limits (63 chars per label, 253 chars total) are not enforced.
-// Returns an error for any other value (port, scheme, path, query, fragment, whitespace, etc.).
+// normalizeSlackAllowedHost lower-cases host and strips the brackets from an
+// IPv6 literal ("[2001:DB8::1]" becomes "2001:db8::1"), returning ("", nil) for
+// an empty host (Slack disabled).
+//
+// What counts as a valid host is redaction.ValidateWebhookHost's decision, which
+// compileWebhookHostPattern also uses, so the accepted value and the pattern
+// built from it cannot drift apart. Label length limits are not enforced.
 func normalizeSlackAllowedHost(host string) (string, error) {
 	if host == "" {
 		return "", nil
@@ -36,10 +35,14 @@ func normalizeSlackAllowedHost(host string) (string, error) {
 	// IPv6 literal: "[<addr>]" — delegate bracket-stripping to url.Parse.
 	if strings.HasPrefix(host, "[") {
 		u, err := url.Parse("https://" + host + "/")
-		if err != nil || u.Hostname() == "" || u.Port() != "" {
+		// url.Parse splits "[::1]/path?q#f" into a host plus a path, query and
+		// fragment, so checking Hostname alone would silently drop them and
+		// accept the value. Path is "/" because of the slash appended above.
+		if err != nil || u.Hostname() == "" || u.Port() != "" ||
+			u.Path != "/" || u.RawQuery != "" || u.Fragment != "" || u.User != nil || u.Opaque != "" {
 			return "", fmt.Errorf("%w (got %q)", ErrInvalidSlackAllowedHost, host)
 		}
-		bareHost = u.Hostname() // bare address e.g. "::1"
+		bareHost = strings.ToLower(u.Hostname()) // bare address e.g. "::1"
 	} else {
 		bareHost = strings.ToLower(host)
 	}
@@ -50,26 +53,9 @@ func normalizeSlackAllowedHost(host string) (string, error) {
 	return bareHost, nil
 }
 
-// LoadAndPrepareConfig loads and verifies a configuration file.
-//
-// This function performs the following steps:
-//  1. Verifies the configuration file's hash (TOCTOU protection)
-//  2. Loads the configuration using config.Loader
-//
-// Note: All variable expansion (Global.EnvVars, Group.EnvVars, Command.EnvVars, Cmd, Args)
-// is now performed inside config.Loader.LoadConfig(). This function only handles
-// verification and loading.
-//
-// The returned Config is ready for execution with all variables expanded.
-//
-// Parameters:
-//   - verificationManager: Manager for secure file verification
-//   - configPath: Path to the configuration file
-//   - runID: Unique identifier for this execution run
-//
-// Returns:
-//   - *ConfigSpec: Prepared configuration ready for command execution
-//   - error: Any error during verification, loading, or parsing
+// LoadAndPrepareConfig verifies the configuration file's hash and loads it,
+// returning a ConfigSpec ready for execution. Variable expansion (EnvVars, Cmd,
+// Args) happens inside config.Loader.LoadConfig, not here.
 func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath, runID string) (*runnertypes.ConfigSpec, error) {
 	if configPath == "" {
 		return nil, &logging.PreExecutionError{
@@ -80,8 +66,8 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 		}
 	}
 
-	// Perform atomic verification and reading to prevent TOCTOU attacks
-	// The verification manager reads the file once, verifies its hash, and returns the content
+	// Read and verify in one step: a separate read would reopen the file and
+	// reintroduce the TOCTOU window.
 	content, err := verificationManager.VerifyAndReadConfigFile(configPath)
 	if err != nil {
 		return nil, &logging.PreExecutionError{
@@ -92,11 +78,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 		}
 	}
 
-	// Load config from the verified content
-	// All expansion (Global.EnvVars, Group.EnvVars, Command.EnvVars, Cmd, Args) is now
-	// performed inside config.Loader.LoadConfig()
-	// LoadConfigWithPath processes includes and merges templates from multiple files
-	// Use verified template manager to ensure included files are also verified against hashes
+	// The verification manager is passed on so included files are hash-verified too.
 	cfgLoader := config.NewLoader(
 		common.NewDefaultFileSystem(),
 		verificationManager,

@@ -178,7 +178,9 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	}
 
 	hostname := common.GetHostname()
-	timestamp := time.Now().Format("20060102T150405Z")
+	// UTC keeps the trailing "Z" honest and makes log file names sort
+	// chronologically across hosts in different time zones.
+	timestamp := time.Now().UTC().Format("20060102T150405Z")
 
 	var handlers []slog.Handler
 
