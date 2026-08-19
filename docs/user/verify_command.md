@@ -694,23 +694,34 @@ elif [[ $EXIT_CODE -eq 3 ]]; then
     cat /tmp/verify-output.txt
     exit 3
 else
-    echo "Verification failed: $FILE"
     echo "Exit code: $EXIT_CODE"
     echo "Output:"
     cat /tmp/verify-output.txt
 
-    # Process based on error type
+    # Exit code 1 covers environment problems as well as a failed hash comparison,
+    # so check the identification tokens first: only when none of them is present
+    # was the file itself rejected.
     if grep -q "verify-error=hash_dir_not_a_directory" /tmp/verify-output.txt; then
         echo "Error: The hash directory path is not a directory"
+    elif grep -q "verify-error=permission_check_uid_unresolved" /tmp/verify-output.txt; then
+        echo "Error: The UID the permission checks judge access from could not be established."
+        echo "Check SUDO_UID and the invoking user."
+    elif grep -q "verify-error=invalid_arguments" /tmp/verify-output.txt; then
+        echo "Error: No file to verify was named, or an argument was rejected."
+    elif grep -q "verify-error=validator_init_failed" /tmp/verify-output.txt; then
+        echo "Error: The validator could not be built, so no hash record could be read."
     elif grep -q "hash file not found" /tmp/verify-output.txt; then
         echo "Error: Hash has not been recorded"
         echo "Run: record -d $HASH_DIR $FILE"
     elif grep -q "file content does not match the recorded hash" /tmp/verify-output.txt; then
+        echo "Verification failed: $FILE"
         echo "Error: File has been modified"
         echo "Current hash:"
         sha256sum "$FILE"
     elif grep -q "no such file or directory" /tmp/verify-output.txt; then
         echo "Error: File does not exist"
+    else
+        echo "Error: Unrecognized cause."
     fi
 
     exit 1

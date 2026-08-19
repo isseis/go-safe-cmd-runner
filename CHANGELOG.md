@@ -40,12 +40,12 @@ When the run ends without verifying a single file, the message on standard error
 
 **Affected scenarios:** On hosts with monitoring rules that alert on "exit code 3 = possible tampering", the alert now fires even when the hash directory has merely not been created yet. Either split the monitoring rules by identification token, or create the hash records with `record` beforehand.
 
-#### `record`: refuses to create a new hash directory in a world-writable location
+#### `record`: rejects a hash directory in a world-writable location
 
 `record` now exits with an error when the hash directory is writable by anyone (world-writable). It refuses even when the sticky bit is set. Two cases are covered.
 
 - **The hash directory already exists and is itself world-writable.** To correct this, run `chmod go-w <hash-directory>` or move the hash directory somewhere only you can write.
-- **The hash directory does not exist and its creation site (the deepest existing ancestor of the specified path) is world-writable.** In this case the directory is not created. You can still run `record` as before by creating the directory yourself first with `mkdir -m 700 -p <hash-directory>`.
+- **The hash directory does not exist and its creation site (the deepest existing ancestor of the specified path) is world-writable.** In this case the directory is not created. Once the directory exists, the world-writable refusal above no longer applies and only the ordinary ancestor permission check runs, which does treat the sticky bit as safe. So if that creation site has the sticky bit (`/tmp` and the like), you can still run `record` as before by creating the directory yourself first with `mkdir -m 700 -p <hash-directory>`. If it does not, creating the directory is not enough: the ancestor permission check rejects it all the same, so correct that ancestor with `chmod go-w` or choose a hash directory somewhere only you can write.
 
 In both cases the reason is the same: while others can claim a name there, hash records for files that `record` has not processed could be pre-planted.
 
@@ -80,7 +80,7 @@ If the real path is the same as the specified path, there is no impact. If it di
 
 #### Log file name timestamps are now UTC
 
-The timestamp in the log file names that `runner` creates under `-log-dir` (`<hostname>_<timestamp>_<run-id>.json`) changed from the host local time to UTC (the `YYYYMMDDThhmmssZ` format).
+The timestamp in the log file names that `runner` creates under `-log-dir` (`<hostname>_<timestamp>_<run-id>.json`) now reads in UTC instead of the host local time. The format is unchanged (`YYYYMMDDThhmmssZ`), so old and new names are indistinguishable by shape.
 
 **Affected scenarios:** On hosts in a timezone ahead of UTC, immediately after the migration the existing file names created in local time and the new file names created in UTC coexist, producing a period (lasting as long as the time offset) in which the lexicographic order of the file names does not match the actual chronological order. If you have scripts that process logs sorted by name, note that the order can come out wrong during that period.
 
