@@ -198,10 +198,12 @@ record -d ../hashes /etc/config.toml
 
 **Automatic Directory Creation**
 
-If the specified directory does not exist, it will be created automatically (permissions: 0700).
+If the specified directory does not exist, it will be created automatically (permissions: 0700). The creation happens after the directory permission check has passed. If the check finds a violation, `record` exits with an error without creating the directory.
+
+In addition, if the creation site (the deepest existing ancestor of the specified path) is a directory that anyone can write to (world-writable), `record` exits with an error without creating the directory, regardless of whether the sticky bit is set. This is because when others can pre-place hash records at the position where the directory would be created, records for files that `record` has not processed could be mixed in. In that case, create the directory yourself first (with an appropriate owner and permissions) and run `record` again.
 
 ```bash
-# Works even if directory doesn't exist
+# Works even if directory doesn't exist (created unless the creation site is world-writable)
 record -d /new/hash/directory /usr/bin/backup.sh
 # /new/hash/directory will be created automatically
 ```

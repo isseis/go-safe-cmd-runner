@@ -118,7 +118,7 @@ verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 | `permission_checker_init_failed` | ディレクトリ権限監査に用いるチェッカを初期化できない | 標準エラー出力に併記される原因を確認する | 3 |
 | `hash_dir_not_a_directory` | `-hash-dir` に指定したパスがディレクトリではない | 指定したパスを確認する | 1 |
 | `invalid_arguments` | 検証対象のファイルが指定されていない、または引数を解析できない | コマンドラインを確認する | 1 |
-| `permission_check_uid_unresolved` | 権限チェックの判定主体となる UID を確定できない | `SUDO_UID` の値を確認する（5.7 節を参照） | 1 |
+| `permission_check_uid_unresolved` | 権限チェックの基準UIDを確定できない | `SUDO_UID` の値を確認する（5.7 節を参照） | 1 |
 | `validator_init_failed` | バリデータを構築できない | 標準エラー出力に併記される原因を確認する | 1 |
 
 ```bash
@@ -686,9 +686,9 @@ elif [[ $EXIT_CODE -eq 3 ]]; then
         echo "Error: The hash directory path could not be resolved."
         echo "Check the path and any symlinks along it."
     elif grep -q "verify-error=permission_checker_init_failed" /tmp/verify-output.txt; then
-        echo "Error: The directory permission checker could not be initialised."
+        echo "Error: The directory permission checker could not be initialized."
     else
-        echo "Error: Unrecognised cause."
+        echo "Error: Unrecognized cause."
     fi
     echo "Output:"
     cat /tmp/verify-output.txt

@@ -32,6 +32,58 @@ verify -d <hash-directory> <target-files> 2>&1 | grep "TOCTOU permission check v
 
 If this output is empty, the upgrade will have no impact. If there is output, check whether the `path` in the warning points to the hash directory or one of its ancestors. If a hash-directory-side violation exists, fix the hash directory permissions or move the hash directory to a path with appropriate permissions before upgrading. If the violation is on the target file side only, verification continues after upgrade.
 
+#### `verify`: no longer creates the hash directory
+
+`verify` no longer creates the specified hash directory when it does not exist. When it does not exist, `verify` exits with code 3 without verifying a single target file. Create hash records with the `record` command.
+
+When the run ends without verifying a single file, the message on standard error contains an identification token indicating the cause, spelled `verify-error=<token>`. It distinguishes `hash_dir_not_found` (missing), `hash_dir_unreadable` (unreadable), `hash_dir_permission_violation` (permission violation), `path_resolution_failed` (path resolution failure), and `permission_checker_init_failed` (permission checker initialization failure). See the [verify command user guide](docs/user/verify_command.md) for the full list of tokens.
+
+**Affected scenarios:** On hosts with monitoring rules that alert on "exit code 3 = possible tampering", the alert now fires even when the hash directory has merely not been created yet. Either split the monitoring rules by identification token, or create the hash records with `record` beforehand.
+
+#### `record`: refuses to create a new hash directory in a world-writable location
+
+When the specified hash directory does not exist and its creation site (the deepest existing ancestor of the specified path) is a directory that anyone can write to, `record` now exits with an error without creating the directory. It refuses even when the sticky bit is set.
+
+**Affected scenarios:** The default hash directory in production (`/usr/local/etc/go-safe-cmd-runner/hashes`) is not affected. If you specified a path under `/tmp` or similar, you can still run `record` as before by creating the directory yourself first with `mkdir -m 700 -p <hash-directory>`.
+
+#### Path resolution changes may surface new permission violations
+
+The directory permission check now resolves the specified path to its real path (following symlinks) before performing the check. As a result, for hash directories and target files that were specified through a link, the ancestor directories on the real path, which were not inspected before, are now inspected.
+
+**Assessing impact before upgrading:**
+
+Apply `readlink -f` to the hash directory and the target files, and check the permissions of the ancestor directories of the resolved paths.
+
+```bash
+# Resolve the hash directory and the target file to their real paths
+readlink -f "$HASH_DIR"
+readlink -f "$TARGET_FILE"
+
+# Walk the ancestors of the real path up to the root and check write permissions for others and the group
+p=$(readlink -f "$HASH_DIR")
+while :; do
+    ls -ld "$p"
+    [ "$p" = / ] && break
+    p=$(dirname "$p")
+done
+```
+
+If the real path is the same as the specified path, there is no impact. If it differs, check whether any of the listed ancestor directories grant write permission to others (`o+w`) or to a group that has members other than the owner (`g+w`), and if so, correct them with `chmod go-w`.
+
+### Changed
+
+#### Log file name timestamps are now UTC
+
+The timestamp in the log file names that `runner` creates under `-log-dir` (`<hostname>_<timestamp>_<run-id>.json`) changed from the host local time to UTC (the `YYYYMMDDThhmmssZ` format).
+
+**Affected scenarios:** On hosts in a timezone ahead of UTC, immediately after the migration the existing file names created in local time and the new file names created in UTC coexist, producing a period (lasting as long as the time offset) in which the lexicographic order of the file names does not match the actual chronological order. If you have scripts that process logs sorted by name, note that the order can come out wrong during that period.
+
+#### Newly created hash directories now have 0700 permissions
+
+The permissions of hash directories newly created by `record` changed from `0750` to `0700`.
+
+**Affected scenarios:** The permissions of existing hash directories are not changed. In a split-role deployment where the user who runs `record` differs from the user who runs `runner`, tightening them to `0700` would make `runner` unable to read the hashes. See the [record command user guide](docs/user/record_command.md) for how to configure that deployment.
+
 ## [1.1.1] - 2026-08-03
 
 ### Breaking Changes
