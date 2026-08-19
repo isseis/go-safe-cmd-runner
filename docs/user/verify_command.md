@@ -65,7 +65,7 @@ Output on failure:
 ```
 Verifying 1 file...
 [1/1] /usr/bin/backup.sh: FAILED
-Verification failed for /usr/bin/backup.sh: hash mismatch
+Verification failed for /usr/bin/backup.sh: file content does not match the recorded hash
 
 Summary: 0 succeeded, 1 failed
 ```
@@ -506,7 +506,7 @@ fi
 ```
 Verifying 1 file...
 [1/1] /usr/bin/backup.sh: FAILED
-Verification failed for /usr/bin/backup.sh: file not found
+Verification failed for /usr/bin/backup.sh: lstat /usr/bin/backup.sh: no such file or directory
 ```
 
 **Solutions**
@@ -566,7 +566,7 @@ ls -la /usr/local/etc/go-safe-cmd-runner/hashes/
 ```
 Verifying 1 file...
 [1/1] /usr/bin/backup.sh: FAILED
-Verification failed for /usr/bin/backup.sh: hash mismatch
+Verification failed for /usr/bin/backup.sh: file content does not match the recorded hash
 ```
 
 **Causes and Solutions**

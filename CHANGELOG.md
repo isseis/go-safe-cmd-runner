@@ -57,7 +57,7 @@ The directory permission check now resolves the specified path to its real path 
 
 **Assessing impact before upgrading:**
 
-Apply `readlink -f` to the hash directory and the target files, and check the permissions of the ancestor directories of the resolved paths.
+Apply `readlink -m` to the hash directory and the target files, and check the permissions of the ancestor directories of the resolved paths.
 
 ```bash
 # Resolve the hash directory and the target file to their real paths (-m resolves paths that do not exist yet)
