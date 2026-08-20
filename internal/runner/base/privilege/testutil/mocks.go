@@ -21,7 +21,7 @@ var (
 	ErrMockPrivilegeElevationFailed = errors.New("mock privilege elevation failure")
 )
 
-// MockPrivilegeManager provides a mock implementation of privilege.Manager for testing
+// MockPrivilegeManager provides a mock implementation of runnertypes.PrivilegeManager for testing
 type MockPrivilegeManager struct {
 	Supported      bool
 	ElevationCalls []string

@@ -83,7 +83,7 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
         return err
     }
 
-    defer m.handleCleanup(execCtx)           // クリーンアップフェーズ
+    defer m.handleCleanup(execCtx)                     // クリーンアップフェーズ
     return fn()
 }
 ```

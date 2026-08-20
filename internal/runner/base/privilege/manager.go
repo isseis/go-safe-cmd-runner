@@ -1,5 +1,3 @@
-// Package privilege manages elevation to root and restoration of the original
-// privileges for operations that require them.
 package privilege
 
 import (

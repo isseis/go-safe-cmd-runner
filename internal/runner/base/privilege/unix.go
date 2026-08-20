@@ -168,7 +168,8 @@ func (m *UnixPrivilegeManager) performElevation(execCtx *executionContext) error
 	return nil
 }
 
-// handleCleanup recovers from a panic in the callback, restores privileges, and verifies identity.
+// handleCleanup recovers from a panic in the callback, restores privileges, verifies identity,
+// and then re-raises the panic, if any.
 func (m *UnixPrivilegeManager) handleCleanup(execCtx *executionContext) {
 	var panicValue any
 	var shutdownContext string

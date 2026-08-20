@@ -216,27 +216,3 @@ func TestUnixPrivilegeManager_LockSerialization(t *testing.T) {
 	// The test passes if we don't see any race conditions and all calls complete
 	t.Logf("All %d WithPrivileges calls completed successfully", numGoroutines)
 }
-
-// TestUnixPrivilegeManager_ThreadSafety tests that the manager is thread-safe
-func TestUnixPrivilegeManager_ThreadSafety(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	manager := newPlatformManager(logger).(*UnixPrivilegeManager)
-
-	const numGoroutines = 20
-	var wg sync.WaitGroup
-
-	// Test concurrent access to read-only methods
-	for range numGoroutines {
-		wg.Go(func() {
-			// These methods should be safe to call concurrently
-			_ = manager.GetCurrentUID()
-			_ = manager.GetOriginalUID()
-			_ = manager.IsPrivilegedExecutionSupported()
-		})
-	}
-
-	wg.Wait()
-
-	// Test should complete without data races
-	t.Log("Thread safety test completed successfully")
-}

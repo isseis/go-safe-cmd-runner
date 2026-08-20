@@ -112,7 +112,7 @@ metrics 削除により**主張が消えるテスト**が4つある。いずれ�
 
 **対象ファイル**: `internal/runner/base/privilege/metrics.go`, `metrics_test.go`, `manager.go`, `unix.go`, `testutil/mocks.go`, `unix_privilege_test.go`, `identity_linux_test.go`, `identity_other_test.go`, `race_test.go`, `docs/dev/architecture_design/security-architecture{.ja,}.md`, `docs/dev/developer_guide/design-implementation-overview{.ja,}.md`, `docs/user/security-risk-assessment{.ja,}.md`
 
-- [x] **ステップ1**: `internal/runner/base/privilege/metrics.go` を削除する。package コメント `// Package privilege provides metrics collection for privilege operations.` は失われるため、`manager.go` の `package privilege` の直前に `// Package privilege manages elevation to root and restoration of the original privileges for operations that require them.` を追加する。
+- [x] **ステップ1**: `internal/runner/base/privilege/metrics.go` を削除する。~~package コメント `// Package privilege provides metrics collection for privilege operations.` は失われるため、`manager.go` の `package privilege` の直前に `// Package privilege manages elevation to root and restoration of the original privileges for operations that require them.` を追加する。~~ **実装時に前提の誤りが判明したため取りやめた**: `errors.go:1` に `// Package privilege provides secure privilege escalation functionality for command execution.` が既にあり、ファイル名順で `errors.go` が先に来るため package コメントは元からこちらが提供していた。`metrics.go` 冒頭のコメントは package コメントではなく重複であり、移設先は不要である（`manager.go` に足すと `go doc` が2つの要約を出す）。
 - [x] **ステップ2**: `internal/runner/base/privilege/metrics_test.go` を削除する。
 - [x] **ステップ3**: `unix.go` から metrics を取り除く。
   - [x] `UnixPrivilegeManager.metrics Metrics` フィールドを削除する。
@@ -125,7 +125,7 @@ metrics 削除により**主張が消えるテスト**が4つある。いずれ�
 - [x] **ステップ4**: `unix.go` の関数を改名する。`handleCleanupAndMetrics` → `handleCleanup`、`restorePrivilegesAndMetrics` → `restorePrivilegesAndVerify`。doc コメントの「and metrics recording」に相当する記述も実態に合わせて書き換える（`// handleCleanup recovers from a panic in the callback, restores privileges, and verifies identity.` / `// restorePrivilegesAndVerify restores the original privileges and verifies that no elevated identity leaked.`）。
 - [x] **ステップ5**: `manager.go` の `Manager` インターフェースから `GetMetrics() Metrics` を削除する。
 - [x] **ステップ6**: `testutil/mocks.go` から `MockPrivilegeManager.GetMetrics` とその doc コメントを削除し、未使用になる `privilege` package の import も削除する。
-- [x] **ステップ7**: `race_test.go` の `_ = manager.GetMetrics()`（:235）の行を削除する。
+- [x] **ステップ7**: `race_test.go` の `TestUnixPrivilegeManager_ThreadSafety` ごと削除する。§1 は「同じループ内に `GetCurrentUID`・`GetOriginalUID`・`IsPrivilegedExecutionSupported` の3つが残るため、当該行の削除のみでテストの主旨は保たれる」としていたが、これは誤りであった。残る3つのうち `GetCurrentUID` は `syscall.Geteuid()` を呼ぶだけ、他の2つは構築時に一度だけ書かれるフィールドを読むだけであり、`GetMetrics`（RWMutex 下の共有カウンタ）が唯一の競合しうる呼び出しだった。行だけを削ると、このテストは `-race` で何も報告しえない＝主張する理由で失敗できないテストになる（CLAUDE.md）。関数ごと削除しても `go tool cover -func` は全関数で不変であることを確認済み。
 - [x] **ステップ8**: 主張が消える既存の検証を削除する（§1「既存テストの扱い」の表の4件＋アサーション1件。それぞれ個別に確認する）。
   - [x] `TestHandleCleanupAndMetrics_Success`
   - [x] `TestRestorePrivilegesAndMetrics_Success`
