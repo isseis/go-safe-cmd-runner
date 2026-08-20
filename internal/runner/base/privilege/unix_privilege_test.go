@@ -1,5 +1,19 @@
 //go:build !windows && test
 
+// Some tests in this file (TestEscalatePrivileges/seteuid_failure and
+// TestRestorePrivilegesAndVerify_RestoreFailureTriggersShutdown) call the real
+// syscall.Seteuid and depend on the process's real/effective/saved UID being
+// unchanged by any concurrently running test. They must not call t.Parallel(),
+// and neither may any other test in this package that shares process-wide
+// identity state.
+//
+// Those two tests skip when running as root (syscall.Getuid() == 0 ||
+// syscall.Geteuid() == 0), because a root process can seteuid to any UID and
+// the failure path they exercise cannot occur. GitHub Actions' ubuntu-latest
+// runner and this project's dev container both run as a non-root user, so CI
+// does run them; if that ever changes to a root container, this coverage
+// disappears without any test failing to announce it.
+
 package privilege
 
 import (
@@ -229,6 +243,40 @@ func TestEscalatePrivileges(t *testing.T) {
 		// Should succeed without actual seteuid call
 		assert.NoError(t, err)
 	})
+
+	t.Run("seteuid_failure", func(t *testing.T) {
+		if syscall.Getuid() == 0 || syscall.Geteuid() == 0 {
+			t.Skip("running as root: seteuid(0) succeeds and the native-root path returns early, so the failure path cannot be exercised")
+		}
+
+		euidBefore := syscall.Geteuid()
+		egidBefore := syscall.Getegid()
+
+		manager := &UnixPrivilegeManager{
+			logger:             logger,
+			originalUID:        syscall.Getuid(),
+			privilegeSupported: true,
+		}
+
+		elevationCtx := runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationFileValidation,
+			CommandName: "test-command",
+		}
+
+		err := manager.escalatePrivileges(elevationCtx)
+
+		privErr, ok := errors.AsType[*Error](err)
+		require.True(t, ok, "expected a *Error, got %v", err)
+		assert.Equal(t, runnertypes.OperationFileValidation, privErr.Operation)
+		assert.Equal(t, "test-command", privErr.CommandName)
+		assert.Equal(t, syscall.Getuid(), privErr.OriginalUID)
+		assert.Equal(t, 0, privErr.TargetUID)
+		_, ok = errors.AsType[syscall.Errno](privErr.SyscallErr)
+		require.True(t, ok, "SyscallErr should be a syscall.Errno, got %v (%T)", privErr.SyscallErr, privErr.SyscallErr)
+
+		assert.Equal(t, egidBefore, syscall.Getegid(), "effective GID must be unchanged after a failed seteuid")
+		assert.Equal(t, euidBefore, syscall.Geteuid(), "effective UID must be unchanged after a failed seteuid")
+	})
 }
 
 // TestEmergencyShutdown tests emergency shutdown handling
@@ -304,6 +352,59 @@ func TestRestorePrivilegesAndVerify_IdentityLeakTriggersShutdown(t *testing.T) {
 
 	assert.True(t, exitCalled, "os.Exit should have been called")
 	assert.Equal(t, 1, exitCode, "exit code should be 1")
+}
+
+// TestRestorePrivilegesAndVerify_RestoreFailureTriggersShutdown verifies that
+// when restorePrivileges's syscall.Seteuid fails, restorePrivilegesAndVerify
+// calls emergencyShutdown (osExit) instead of proceeding to the identity
+// verification block below it.
+func TestRestorePrivilegesAndVerify_RestoreFailureTriggersShutdown(t *testing.T) {
+	if syscall.Getuid() == 0 || syscall.Geteuid() == 0 {
+		t.Skip("running as root: seteuid to an arbitrary UID succeeds, so the restoration failure path cannot be exercised")
+	}
+
+	euidBefore := syscall.Geteuid()
+	egidBefore := syscall.Getegid()
+
+	var exitCode int
+	exitCalled := false
+	testOsExit := func(code int) {
+		exitCode = code
+		exitCalled = true
+		panic("os.Exit called")
+	}
+
+	manager := &UnixPrivilegeManager{
+		logger: slog.Default(),
+		// syscall.Getuid()+1 matches none of the real/effective/saved UIDs of a
+		// non-setuid test binary (all three equal syscall.Getuid()), so Seteuid
+		// below is guaranteed to fail.
+		originalUID:        syscall.Getuid() + 1,
+		privilegeSupported: true,
+		osExit:             testOsExit,
+		identityVerifier:   func() error { return nil },
+		readSavedIDs:       func() (int, int, error) { return -1, -1, ErrSavedSetNotSupported },
+	}
+
+	execCtx := &executionContext{
+		elevationCtx: runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationFileValidation,
+			CommandName: "test-command",
+		},
+		needsPrivilegeEscalation: true,
+		originalSUID:             -1,
+		originalSGID:             -1,
+	}
+
+	assert.PanicsWithValue(t, "os.Exit called", func() {
+		manager.restorePrivilegesAndVerify(execCtx, "test")
+	}, "emergencyShutdown should be called when restorePrivileges fails")
+
+	assert.True(t, exitCalled, "os.Exit should have been called")
+	assert.Equal(t, 1, exitCode, "exit code should be 1")
+
+	assert.Equal(t, egidBefore, syscall.Getegid(), "effective GID must be unchanged after a failed seteuid")
+	assert.Equal(t, euidBefore, syscall.Geteuid(), "effective UID must be unchanged after a failed seteuid")
 }
 
 // TestRestorePrivilegesAndVerify_IdentityVerificationSkippedWithoutEscalation
