@@ -108,9 +108,9 @@ metrics 削除により**主張が消えるテスト**が4つある。いずれ�
 
 ## 2. 実装ステップ
 
-### Phase 1: `privilege.Metrics` の削除（F-001 / AC-01〜AC-06）
+### Phase 1: `privilege.Metrics` の削除と改名（F-001 / AC-01〜AC-06、F-004 のうち AC-21）
 
-**対象ファイル**: `internal/runner/base/privilege/metrics.go`, `metrics_test.go`, `manager.go`, `unix.go`, `testutil/mocks.go`, `unix_privilege_test.go`, `identity_linux_test.go`, `identity_other_test.go`, `race_test.go`
+**対象ファイル**: `internal/runner/base/privilege/metrics.go`, `metrics_test.go`, `manager.go`, `unix.go`, `testutil/mocks.go`, `unix_privilege_test.go`, `identity_linux_test.go`, `identity_other_test.go`, `race_test.go`, `docs/dev/architecture_design/security-architecture{.ja,}.md`, `docs/dev/developer_guide/design-implementation-overview{.ja,}.md`, `docs/user/security-risk-assessment{.ja,}.md`
 
 - [ ] **ステップ1**: `internal/runner/base/privilege/metrics.go` を削除する。package コメント `// Package privilege provides metrics collection for privilege operations.` は失われるため、`manager.go` の `package privilege` の直前に `// Package privilege manages elevation to root and restoration of the original privileges for operations that require them.` を追加する。
 - [ ] **ステップ2**: `internal/runner/base/privilege/metrics_test.go` を削除する。
@@ -134,82 +134,176 @@ metrics 削除により**主張が消えるテスト**が4つある。いずれ�
   - [ ] `TestPrepareExecution_Success` 内の `assert.NotZero(t, execCtx.start)`
 - [ ] **ステップ9**: テスト側の `executionContext` リテラルから `start:` を削除する（`unix_privilege_test.go` 10箇所・`identity_linux_test.go` 1箇所・`identity_other_test.go` 1箇所）。`rg -n "start:\s+time\.Now\(\)" internal/runner/base/privilege/` の全ヒットを対象とする。併せて `identity_linux_test.go`・`identity_other_test.go` の `time` import を削除する（`start` が唯一の利用箇所のため）。
 - [ ] **ステップ10**: 残るテストの呼び出しとテスト関数名を改名後の名前に合わせる。`rg -n "AndMetrics" internal/` の全ヒット（実測 45 行）を対象とし、引数から `panicValue`・`duration` を落とす。改名するテスト関数は §1 の一覧を参照する。doc コメント中の言及も同時に直す。
-- [ ] **ステップ11**: 削除前に `go test -tags test -coverprofile=/tmp/before.out ./internal/runner/base/privilege/` を、削除後に同様の `after.out` を取得し、`go tool cover -func` の差分が「削除した関数の消滅」のみであること、残存関数のカバレッジが低下していないことを確認する（CLAUDE.md「テストの削除は検証を要する主張」）。
+- [ ] **ステップ11**: 削除に着手する前（`origin/main` の状態、すなわちステップ1 の実施前）に `go test -tags test -coverprofile=/tmp/before.out ./internal/runner/base/privilege/` を取得しておき、ステップ1〜10 の完了後に同様の `after.out` を取得して、`go tool cover -func` の差分が「削除した関数の消滅」のみであること、残存関数のカバレッジが低下していないことを確認する（CLAUDE.md「テストの削除は検証を要する主張」）。
+- [ ] **ステップ12**: 改名の影響を受ける文書3対を、改名と同じ PR で更新する。§1「改名の影響を受ける文書」の表の6ファイルが対象。
+  - [ ] 日本語版3ファイル（`security-architecture.ja.md`・`design-implementation-overview.ja.md`・`security-risk-assessment.ja.md`）のコード引用と説明文を、改名後の名称に更新する。
+  - [ ] `security-architecture.ja.md:316` の「パニック回復と時間計測を担い」を、時間計測が無くなった実態に合わせて書き換える。
+  - [ ] 日本語版をコミットしたうえで、英語版3ファイルを `/mktrans` で反映する（CLAUDE.md のバイリンガル文書の編集順序）。
 
 **完了条件**:
 - `make fmt` → `make test` → `make lint` がすべて通る。
 - `GOOS=darwin GOARCH=arm64 go vet -tags test ./internal/runner/base/privilege/` が通る（Linux では未コンパイルの `identity_other_test.go` の追従漏れを検出するため。現行ツリーで exit 0 になることは確認済み）。
 - `make deadcode` が本ステップに起因する新規の未使用シンボルを報告しない。
 - `rg -n "Metrics" internal/runner/base/privilege/` が0件。
+- `rg -n "AndMetrics" docs/` のヒットが、本タスクおよび 0149・0157 の作業文書（`docs/tasks/` 配下の履歴的記述）のみになる。
+
+### PR-1 作成ポイント: metrics removal and helper rename
+
+**対象ステップ**: 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 / 10 / 11 / 12
+
+**推奨タイトル**: `refactor(0166): remove privilege.Metrics and rename cleanup helpers`
+
+**レビュー観点**: `restorePrivilegesAndVerify` の制御フロー改変（`else if` 節の除去）が復元失敗時の `emergencyShutdown` 到達条件を変えていないか / 削除したテストの不変条件が残存テストへ引き継がれているか（§1 の表とステップ11 のカバレッジ差分） / `AndMetrics` の改名が `rg` の全ヒットに及び、コンパイルで検出されないテスト関数名・doc コメント・設計文書3対を取りこぼしていないか / Linux でコンパイルされない `identity_other_test.go` の追従が `GOOS=darwin` クロス vet で確認されているか
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: ステップ3 が `restorePrivilegesAndVerify` の復元失敗 → `emergencyShutdown` という回復フローの制御構造を書き換える孤立した高リスク手順であり、加えてステップ10・12 の改名追従は CI でコンパイルも lint もされない範囲（`identity_other_test.go`・文書）に及ぶため。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] Phase 1 の完了条件（`GOOS=darwin` クロス vet・`make deadcode`・`rg` の残存ゼロ）を満たしたことを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: 昇格・復元の失敗分岐をテストで踏む（F-002 / AC-07〜AC-13）
 
 **対象ファイル**: `internal/runner/base/privilege/unix_privilege_test.go`
 
-- [ ] **ステップ12**: `unix_privilege_test.go` の冒頭に、`cmd/runner/startup_privilege_test.go:3-13` に倣ったファイルコメントを英語で追加する。内容は、本ファイルの一部のテストがプロセス全体の identity 状態に依存するため `t.Parallel()` を呼んではならないこと、および root で実行すると失敗分岐を踏めず skip されること。
-- [ ] **ステップ13**: `TestEscalatePrivileges` にサブテスト `seteuid_failure` を追加する。
+- [ ] **ステップ13**: `unix_privilege_test.go` の冒頭に、`cmd/runner/startup_privilege_test.go:3-13` に倣ったファイルコメントを英語で追加する。内容は、本ファイルの一部のテストがプロセス全体の identity 状態に依存するため `t.Parallel()` を呼んではならないこと、および root で実行すると失敗分岐を踏めず skip されること。
+- [ ] **ステップ14**: `TestEscalatePrivileges` にサブテスト `seteuid_failure` を追加する。
   - [ ] `syscall.Getuid() == 0 || syscall.Geteuid() == 0` のとき `t.Skip("running as root: seteuid(0) succeeds and the native-root path returns early, so the failure path cannot be exercised")` とする（real UID が 0 だと `escalatePrivileges` が native root の早期リターンを通り、`seteuid` に到達しないため両方を条件にする）。
   - [ ] `privilegeSupported: true`・`originalUID: syscall.Getuid()` のマネージャを構築し、`escalatePrivileges` を呼ぶ。
   - [ ] 戻り値が `*Error` であることを `errors.AsType[*Error]` で確認し、`Operation`・`CommandName`・`OriginalUID`・`TargetUID`（= 0）が渡した値と一致すること、`SyscallErr` が非 nil の `syscall.Errno` であることを検証する（環境により `EPERM` 以外になり得るため errno 値は固定しない）。
   - [ ] 実行前後で `syscall.Geteuid()`・`syscall.Getegid()` が変化していないことを検証する。
-- [ ] **ステップ14**: `TestRestorePrivilegesAndVerify_RestoreFailureTriggersShutdown` を追加する。
+- [ ] **ステップ15**: `TestRestorePrivilegesAndVerify_RestoreFailureTriggersShutdown` を追加する。
   - [ ] `syscall.Getuid() == 0 || syscall.Geteuid() == 0` のとき `t.Skip("running as root: seteuid to an arbitrary UID succeeds, so the restoration failure path cannot be exercised")` とする。
   - [ ] `originalUID: syscall.Getuid() + 1`（real・effective・saved のいずれとも異なるため `Seteuid` は必ず失敗する）、`identityVerifier` に `func() error { return nil }`、`readSavedIDs` に `func() (int, int, error) { return -1, -1, ErrSavedSetNotSupported }` を設定したマネージャを構築する。`osExit` は既存の同種テスト（`:366-371` ほか）に倣い、呼び出しを記録したうえで panic するスタブとし、`assert.PanicsWithValue` で捕捉する。これにより `emergencyShutdown` の後に後続の検証ブロックへ進まないことも同時に固定する。
   - [ ] `needsPrivilegeEscalation: true`・`originalSUID: -1`・`originalSGID: -1` の `executionContext` で `restorePrivilegesAndVerify` を呼ぶ。
   - [ ] `osExit` が終了コード 1 でちょうど1回呼ばれたことを検証する。`originalUID` の選択理由（なぜ必ず失敗するか）をコメントで説明する。
   - [ ] 実行前後で `syscall.Geteuid()`・`syscall.Getegid()` が変化していないことを検証する。
-- [ ] **ステップ15**: 両テストが主張どおりの理由で失敗できることを確認する。ステップ13 は `escalatePrivileges` の `Seteuid` 失敗時の `return &Error{...}` を `return nil` に一時変更してテストが失敗することを、ステップ14 は `restorePrivilegesAndVerify` の `m.emergencyShutdown(err, shutdownContext)` を一時的にコメントアウトしてテストが失敗することを確認し、確認した旨をコミットメッセージに記す。
+- [ ] **ステップ16**: 両テストが主張どおりの理由で失敗できることを確認する。ステップ14 は `escalatePrivileges` の `Seteuid` 失敗時の `return &Error{...}` を `return nil` に一時変更してテストが失敗することを、ステップ15 は `restorePrivilegesAndVerify` の `m.emergencyShutdown(err, shutdownContext)` を一時的にコメントアウトしてテストが失敗することを確認し、確認した旨をコミットメッセージに記す。
 
 **完了条件**:
 - `make test` が通る。
 - `go test -tags test -count=1 -run 'TestEscalatePrivileges|TestRestorePrivilegesAndVerify_RestoreFailureTriggersShutdown' -v ./internal/runner/base/privilege/` の出力に `--- PASS: TestEscalatePrivileges/seteuid_failure` と `--- PASS: TestRestorePrivilegesAndVerify_RestoreFailureTriggersShutdown` が現れる（親テストの PASS ではなくサブテスト行を確認する。`-count=1` を付けてキャッシュされた結果を避ける）。
 - `TestNoUnexpectedIdentityMutationSyscalls` が無変更のまま通る（同ガードは `_test.go` を走査対象から除外するため、新規テストが `syscall.Seteuid` を間接的に起こしてもガードには影響しない）。
 
+### PR-2 作成ポイント: syscall failure-path tests
+
+**対象ステップ**: 13 / 14 / 15 / 16
+
+**推奨タイトル**: `test(0166): cover privilege escalation and restoration syscall failures`
+
+**レビュー観点**: 渡す UID が real・effective・saved のいずれとも一致せず、`Seteuid` が必ず失敗すること（識別子の選び方とコメントの説明） / テストがプロセスの identity を実際に変えていないこと（実行前後の実効 UID・GID 比較と `t.Parallel()` 不使用） / root skip の条件が `Getuid`・`Geteuid` の両方を見ており、理由文から成立しない理由が読めること / ステップ16 の「分岐を無効化するとテストが落ちる」確認がコミットメッセージに記されていること / PR 説明に L-2 を所見の推奨とは逆方向で close した理由が書かれているか（ステップ19 が監査文書に書く文面を正とし、そこから写す）
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: ステップ15 が `emergencyShutdown` への到達（回復フロー）とプロセス全体の identity 状態に触る孤立した高リスク手順であるため。追加するのは同一 package の単体テスト2件のみで、統合テスト・CI・外部リソースの面を持たないため frontier-required には該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] Phase 2 の完了条件（サブテスト行が `--- PASS` であること・`TestNoUnexpectedIdentityMutationSyscalls` の無変更通過）を満たしたことを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 3: 再入禁止の契約の明記（F-003 / AC-14〜AC-17）
 
 **対象ファイル**: `internal/runner/base/privilege/unix.go`, `internal/runner/base/runnertypes/config.go`
 
-- [ ] **ステップ16**: `UnixPrivilegeManager.WithPrivileges` の doc コメントに、再入禁止の契約と、再入検出を実装しない理由を英語で追記する。既存の doc（`OperationUserGroupExecution` と `OperationFileValidation` の説明）は残し、その後ろに段落を足す。内容は次の3点を含める。
+- [ ] **ステップ17**: `UnixPrivilegeManager.WithPrivileges` の doc コメントに、再入禁止の契約と、再入検出を実装しない理由を英語で追記する。既存の doc（`OperationUserGroupExecution` と `OperationFileValidation` の説明）は残し、その後ろに段落を足す。内容は次の3点を含める。
   - [ ] マネージャのミューテックスは `fn` の実行中も保持され続けること。特権状態がプロセス全体に及ぶため、直列化には保持が必要であること。
   - [ ] `fn` の内側から同一マネージャの `WithPrivileges` を呼ぶと自己デッドロックすること（reentrant / deadlock の語を用いる）。再入しないことは呼び出し側の責務であること。
   - [ ] 再入を検出してエラーを返す実装を置かない理由: 保持中フラグでは自ゴルーチンの再入と他ゴルーチンの正当な待機を区別できず、`TryLock` でも同様であるため。
-- [ ] **ステップ17**: `internal/runner/base/runnertypes/config.go` の `PrivilegeManager` インターフェースの `WithPrivileges`（:194）に、再入が禁止であることを英語の doc コメントで記載する。実装の詳細（ミューテックス保持）ではなく、利用者から見た契約として書く。
+- [ ] **ステップ18**: `internal/runner/base/runnertypes/config.go` の `PrivilegeManager` インターフェースの `WithPrivileges`（:194）に、再入が禁止であることを英語の doc コメントで記載する。実装の詳細（ミューテックス保持）ではなく、利用者から見た契約として書く。
 
 **完了条件**:
 - `make lint` が通る。
 - 追加した doc がすべて英語である。
 
-### Phase 4: 文書への反映（F-004 / AC-18〜AC-21）
+### PR-3 作成ポイント: non-reentrant contract documentation
 
-**対象ファイル**: `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md`, `docs/tasks/0149_security_code_smell_audit_fable/findings/A1_privilege.md`, `docs/dev/architecture_design/security-architecture{.ja,}.md`, `docs/dev/developer_guide/design-implementation-overview{.ja,}.md`, `docs/user/security-risk-assessment{.ja,}.md`
+**対象ステップ**: 17 / 18
 
-- [ ] **ステップ18**: `98_remaining_issues.md` §2 の「### A1（privilege）」を書き換える。同節は現在 L-2・L-3・L-4 の3つの箇条書きと #977 への参照行だけで構成されており、3件すべてが本タスクで解消するため、箇条書きは残らない。同文書が D1 M-3・B3 M2 に既に用いている引用ブロック形式（`> **D1 M-3 について**: …`、:15-17）に倣い、`> **A1 L-2/L-3/L-4 について**: …` として次を記す。
+**推奨タイトル**: `docs(0166): document the non-reentrant contract of WithPrivileges`
+
+**レビュー観点**: AC-14 の3点（ミューテックス保持・自己デッドロック・呼び出し側の責務）と AC-15（`TryLock` でも区別できない理由）が doc に揃っているか / インターフェース側（`runnertypes`）が実装詳細ではなく利用者から見た契約として書かれているか / 追記した doc がすべて英語であるか
+
+**実装モデル要件**: standard
+
+**判定理由**: doc コメントの追記のみでコード挙動を変えず、`既存コード調査結果` にも競合方針がないため、いずれのトリガーにも該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] Phase 3 の完了条件（追記した doc がすべて英語であること）を満たしたことを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+### Phase 4: 0149 の監査記録への反映（F-004 / AC-18〜AC-20）
+
+**対象ファイル**: `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md`, `docs/tasks/0149_security_code_smell_audit_fable/findings/A1_privilege.md`
+
+- [ ] **ステップ19**: `98_remaining_issues.md` §2 の「### A1（privilege）」を書き換える。同節は現在 L-2・L-3・L-4 の3つの箇条書きと #977 への参照行だけで構成されており、3件すべてが本タスクで解消するため、箇条書きは残らない。同文書が D1 M-3・B3 M2 に既に用いている引用ブロック形式（`> **D1 M-3 について**: …`、:15-17）に倣い、`> **A1 L-2/L-3/L-4 について**: …` として次を記す。
   - [ ] L-3 の恒偽項は 0157 で解消済みであり、本タスクは残る2点（未昇格時の失敗計上・指標名と実態の乖離）を `Metrics` 型の削除で解消したこと。同時に L-5（一覧には未掲載）も対象物の消滅により解消したこと。
   - [ ] L-2 を所見の推奨とは逆方向で close したことと、その根拠（`identity_mutation_guard_test.go` が identity 変更関数の値参照を禁じており、注入フィールドの追加はこの不変条件を崩す。失敗分岐は実 `EPERM` を用いたテストで踏んだ）。
   - [ ] L-4 は doc への契約明記で対応し、再入検出は Go では正しく実装できないため見送ったこと。
   - [ ] 本タスク（0166）と #977 への参照。
-- [ ] **ステップ19**: ステップ18 の書き換えが A1 以外の残件に波及していないことを、`git diff` で確認する。§1・§2・§3 の D1・B1・D2・E1 ほかの記述に増減がないこと。なお A1 の M-1・L-1・I-1〜I-4 は元から同文書に掲載されていないため、本タスクでは新規追加しない（掲載範囲の見直しは本タスクの対象外）。
-- [ ] **ステップ20**: `findings/A1_privilege.md` の L-2・L-3・L-4・L-5 の各項目末尾に「**対応状況**:」で始まる1行を追記する。所見の原文（監査時点の記述）は書き換えない。この追記形式は `findings/*.md` では本タスクが最初の導入となるため、他の findings と揃えるかどうかは後続タスクの判断に委ねる。
-- [ ] **ステップ21**: 改名の影響を受ける文書3対を更新する。§1「改名の影響を受ける文書」の表の6ファイルが対象。
-  - [ ] 日本語版3ファイル（`security-architecture.ja.md`・`design-implementation-overview.ja.md`・`security-risk-assessment.ja.md`）のコード引用と説明文を、改名後の名称に更新する。
-  - [ ] `security-architecture.ja.md:316` の「パニック回復と時間計測を担い」を、時間計測が無くなった実態に合わせて書き換える。
-  - [ ] 日本語版をコミットしたうえで、英語版3ファイルを `/mktrans` で反映する（CLAUDE.md のバイリンガル文書の編集順序）。
+- [ ] **ステップ20**: ステップ19 の書き換えが A1 以外の残件に波及していないことを、`git diff` で確認する。§1・§2・§3 の D1・B1・D2・E1 ほかの記述に増減がないこと。なお A1 の M-1・L-1・I-1〜I-4 は元から同文書に掲載されていないため、本タスクでは新規追加しない（掲載範囲の見直しは本タスクの対象外）。
+- [ ] **ステップ21**: `findings/A1_privilege.md` の L-2・L-3・L-4・L-5 の各項目末尾に「**対応状況**:」で始まる1行を追記する。所見の原文（監査時点の記述）は書き換えない。この追記形式は `findings/*.md` では本タスクが最初の導入となるため、他の findings と揃えるかどうかは後続タスクの判断に委ねる。
 
 **完了条件**:
 - 日本語文書の記述スタイル（太字は構造ラベルのみ、平易な語を優先）に沿っている。
-- `rg -n "AndMetrics" docs/` のヒットが、本タスクおよび 0149・0157 の作業文書（`docs/tasks/` 配下の履歴的記述）のみになる。
+- ステップ20 の `git diff` で、A1 節の外に変更行がない。
+
+### PR-4 作成ポイント: 0149 audit record update
+
+**対象ステップ**: 19 / 20 / 21
+
+**推奨タイトル**: `docs(0166): record A1 L-2/L-3/L-4 resolution in the 0149 audit`
+
+**レビュー観点**: L-2 を所見の推奨とは逆方向で close した根拠が引用ブロックから読み取れるか（AC-18） / 書き換えが A1 節に閉じ、他の残件の記述を増減させていないか（AC-20・ステップ20 の `git diff` 確認） / findings への追記が所見の原文を書き換えず、L-2・L-3・L-4・L-5 の4件すべてに入っているか（AC-19）
+
+**実装モデル要件**: standard
+
+**判定理由**: 既存の記載形式（D1 M-3 の引用ブロック）に倣う文書更新のみで、未確定の方針・高リスク手順・panel-mode トリガーのいずれにも該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] Phase 4 の完了条件（ステップ20 の `git diff` で A1 節の外に変更行がないこと）を満たしたことを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ## 3. 実装順序とマイルストーン
+
+### 3.1 マイルストーン
 
 | マイルストーン | 内容 | 対応 Phase | 成果物 |
 |---|---|---|---|
 | M1 | metrics の削除完了 | Phase 1 | `Metrics` 型が存在せず、`make test`・`make lint`・`make deadcode`・darwin クロス vet が通る状態 |
 | M2 | 失敗分岐のテスト追加完了 | Phase 2 | 昇格・復元の syscall 失敗分岐と `emergencyShutdown` を踏むテストが非 root 環境で実行される状態 |
-| M3 | 契約と文書の整備完了 | Phase 3・4 | 再入禁止が doc に明記され、0149 の残件一覧と設計文書3対が本タスクの結果を反映した状態 |
+| M3 | 契約と監査記録の整備完了 | Phase 3・4 | 再入禁止が doc に明記され、0149 の残件一覧と findings が本タスクの結果を反映した状態 |
 
-Phase 1 → Phase 2 の順序には依存がある（Phase 2 で追加するテストは改名後の関数名を使う）。Phase 4 のステップ21（設計文書の改名追従）も Phase 1 の改名確定に依存する。Phase 3 は他と独立している。
+Phase 1 → Phase 2 の順序には依存がある（Phase 2 で追加するテストは改名後の関数名を使う）。Phase 3・Phase 4 は Phase 1・2 と独立している。
 
-PR は M1〜M3 をまとめて1本とする。変更が privilege package とその参照文書に閉じており、レビュー時に「metrics 削除で失われた検証がテスト追加で補われている」ことを一度に見せられるためである。ただしステップ21 の英語版反映は、日本語版のコミット後に `/mktrans` で行うため、同一 PR 内の別コミットとする。
+### 3.2 PR 構成
+
+PR は Phase と一対一に対応させ、4本に分ける（PR-N ≡ Phase N）。分け方の根拠は次のとおりである。
+
+- **Phase 1 を分割しない理由**: 削除と改名は技術的にはそれぞれ単独でもビルドが通るが、分けると中間状態で `AndMetrics` の名前が残り、Phase 1 の完了条件である「`rg -n "AndMetrics"` の残存ゼロ」が成立しない。改名は文書3対（ステップ12）まで含めて一度に確定させる。
+- **Phase 2 を単独にする理由**: 実 syscall でプロセス全体の identity 状態を触る唯一の変更であり、削除・改名の大量の差分と混ぜずにレビューさせる。
+- **Phase 3・Phase 4 を分ける理由**: いずれも文書のみだが、Phase 3 は Go の doc コメントに書く API の契約、Phase 4 は 0149 監査の記録であり、レビューする人と観点が異なる。
+
+なお PR-1 が既存テストを削除しても、削除対象はいずれも metrics への記録内容だけを検証していたテストであり、`restorePrivileges` の失敗分岐は元から未カバーである（§1「既存テストの扱い」）。したがって PR-2 の新規テストは PR-1 で失われた検証の穴埋めではなく、純粋な追加カバレッジである。PR-1 と PR-2 の間の状態でカバレッジが後退する分岐はない。
+
+依存関係: PR-2 は PR-1 の改名確定に依存する。PR-3・PR-4 は独立であり、PR-1 と並行に出してよい。
+
+ステップ12 の英語版反映は、日本語版のコミット後に `/mktrans` で行うため、PR-1 内の別コミットとする。
+
+| PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 / 10 / 11 / 12 | `privilege.Metrics` とその参照の削除、`handleCleanup`・`restorePrivilegesAndVerify` への改名、既存テストとカバレッジ差分の確認、改名を引用する文書3対の追従 | frontier-recommended |
+| PR-2 | 13 / 14 / 15 / 16 | 昇格・復元の syscall 失敗分岐を実 `EPERM` で踏むテストの追加と、`t.Parallel` 禁止・root skip のファイルコメント | frontier-recommended |
+| PR-3 | 17 / 18 | `WithPrivileges` と `runnertypes.PrivilegeManager` への再入禁止契約の doc 追記 | standard |
+| PR-4 | 19 / 20 / 21 | 0149 の残件一覧・findings への対応状況の反映 | standard |
 
 ## 4. テスト戦略
 
@@ -233,16 +327,16 @@ PR は M1〜M3 をまとめて1本とする。変更が privilege package とそ
 
 | リスク | 影響 | 対策 |
 |---|---|---|
-| root 環境（CI 設定の変更、コンテナでの実行）で Phase 2 のテストが常に skip され、踏んだつもりで踏めていない | 中 | 完了条件でサブテスト行が `--- PASS` であることを確認する。CI（`ubuntu-latest`、`container:` 指定なし）・開発コンテナがいずれも非 root であることは確認済み。ファイルコメントにも root CI ではこの検証が失われる旨を記す |
-| Phase 2 のテストが実際にプロセスの identity を変えてしまう | 高 | 失敗する UID のみを渡す。Go の `doAllThreadsSyscall` は起動スレッドの errno が非ゼロなら他スレッドへ伝播させずに戻るため、失敗時に identity は変化しない。加えて各テストが実行前後の実効 UID・GID の一致を検証するため、万一変化した場合はテストが失敗して検知できる |
+| root 環境（CI 設定の変更、コンテナでの実行）で PR-2 のテストが常に skip され、踏んだつもりで踏めていない | 中 | 完了条件でサブテスト行が `--- PASS` であることを確認する。CI（`ubuntu-latest`、`container:` 指定なし）・開発コンテナがいずれも非 root であることは確認済み。ファイルコメントにも root CI ではこの検証が失われる旨を記す |
+| PR-2 のテストが実際にプロセスの identity を変えてしまう | 高 | 失敗する UID のみを渡す。Go の `doAllThreadsSyscall` は起動スレッドの errno が非ゼロなら他スレッドへ伝播させずに戻るため、失敗時に identity は変化しない。加えて各テストが実行前後の実効 UID・GID の一致を検証するため、万一変化した場合はテストが失敗して検知できる |
 | 失敗時の errno が環境により `EPERM` 以外になる（uid 65534 の `+1`、user namespace の未マップ uid） | 低 | errno 値を固定せず、非 nil の `syscall.Errno` であることのみを検証する |
-| metrics 削除で、既存テストが暗黙に担保していた挙動が落ちる | 中 | §1 の表で不変条件ごとに引き受け先を明示し、ステップ11 でカバレッジの差分を確認する |
-| 改名の取りこぼしが、テスト関数名・doc コメント・設計文書に残る（いずれもコンパイルエラーにならない） | 中 | ステップ10・21 で `rg -n "AndMetrics"` の全ヒットを対象とし、AC-04・AC-21 で残存ゼロを確認する |
-| Linux でコンパイルされない `identity_other_test.go` の追従漏れ | 中 | Phase 1 完了条件の `GOOS=darwin` クロス vet |
+| metrics 削除で、既存テストが暗黙に担保していた挙動が落ちる | 中 | §1 の表で不変条件ごとに引き受け先を明示し、PR-1 のステップ11 でカバレッジの差分を確認する |
+| 改名の取りこぼしが、テスト関数名・doc コメント・設計文書に残る（いずれもコンパイルエラーにならない） | 中 | PR-1 のステップ10・12 で `rg -n "AndMetrics"` の全ヒットを対象とし、AC-04・AC-21 で残存ゼロを確認する |
+| Linux でコンパイルされない `identity_other_test.go` の追従漏れ | 中 | PR-1（Phase 1）完了条件の `GOOS=darwin` クロス vet |
 
 ## 6. 実装チェックリスト
 
-### Phase 1: metrics の削除
+### PR-1: metrics の削除と改名（Phase 1）
 - [ ] ステップ1: `metrics.go` の削除と package コメントの移設
 - [ ] ステップ2: `metrics_test.go` の削除
 - [ ] ステップ3: `unix.go` からの metrics 除去
@@ -254,22 +348,28 @@ PR は M1〜M3 をまとめて1本とする。変更が privilege package とそ
 - [ ] ステップ9: テスト側 `start:` の削除と不要 import の除去
 - [ ] ステップ10: 残存テストの改名・引数追従
 - [ ] ステップ11: カバレッジ差分の確認
+- [ ] ステップ12: 改名を引用する文書3対の追従と `/mktrans`
 
-### Phase 2: 失敗分岐をテストで踏む
-- [ ] ステップ12: ファイルコメント（`t.Parallel` 禁止・root skip）の追加
-- [ ] ステップ13: 昇格失敗テストの追加
-- [ ] ステップ14: 復元失敗テストの追加
-- [ ] ステップ15: 両テストが理由どおりに失敗できることの確認
+### PR-2: 失敗分岐をテストで踏む（Phase 2）
+- [ ] ステップ13: ファイルコメント（`t.Parallel` 禁止・root skip）の追加
+- [ ] ステップ14: 昇格失敗テストの追加
+- [ ] ステップ15: 復元失敗テストの追加
+- [ ] ステップ16: 両テストが理由どおりに失敗できることの確認
 
-### Phase 3: 再入禁止の明記
-- [ ] ステップ16: `WithPrivileges` の doc 追記
-- [ ] ステップ17: `runnertypes.PrivilegeManager` の doc 追記
+### PR-3: 再入禁止の明記（Phase 3）
+- [ ] ステップ17: `WithPrivileges` の doc 追記
+- [ ] ステップ18: `runnertypes.PrivilegeManager` の doc 追記
 
-### Phase 4: 文書への反映
-- [ ] ステップ18: `98_remaining_issues.md` §2 A1 の書き換え
-- [ ] ステップ19: 他の残件に波及していないことの確認
-- [ ] ステップ20: `findings/A1_privilege.md` への対応状況の追記
-- [ ] ステップ21: 設計文書3対の改名追従と `/mktrans`
+### PR-4: 0149 の監査記録への反映（Phase 4）
+- [ ] ステップ19: `98_remaining_issues.md` §2 A1 の書き換え
+- [ ] ステップ20: 他の残件に波及していないことの確認
+- [ ] ステップ21: `findings/A1_privilege.md` への対応状況の追記
+
+### PR のマージ状況
+- [ ] PR-1 マージ済み（対象ステップ: 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 / 10 / 11 / 12）
+- [ ] PR-2 マージ済み（対象ステップ: 13 / 14 / 15 / 16）
+- [ ] PR-3 マージ済み（対象ステップ: 17 / 18）
+- [ ] PR-4 マージ済み（対象ステップ: 19 / 20 / 21）
 
 ### 全体
 - [ ] `make fmt` → `make test` → `make lint` がすべて通る
@@ -294,7 +394,7 @@ PR は M1〜M3 をまとめて1本とする。変更が privilege package とそ
 | AC-10 | static | `rg -n -A 3 "func TestRestorePrivilegesAndVerify_RestoreFailureTriggersShutdown|seteuid_failure" internal/runner/base/privilege/unix_privilege_test.go` に `t.Skip` と root である旨の理由文が現れる。root 環境での実行確認は行わない（root では `IsPrivilegedExecutionSupported` の判定が変わり同 package の他テストの前提も崩れるため） |
 | AC-11 | static | `internal/runner/base/privilege/identity_mutation_guard_test.go::TestNoUnexpectedIdentityMutationSyscalls` が通る（identity 変更関数の値参照・フィールド代入を検出して失敗させる）。加えて `rg -n "func\(uid int\) error|func\(gid int\) error" -g '!*_test.go' internal/runner/base/privilege/` が0件 |
 | AC-12 | static | `git diff --exit-code origin/main...HEAD -- internal/runner/base/privilege/identity_mutation_guard_test.go` が差分なし、かつ `go test -tags test -count=1 -run TestNoUnexpectedIdentityMutationSyscalls ./internal/runner/base/privilege/` が PASS |
-| AC-13 | manual | ステップ15 の手順で各分岐を無効化してテストが失敗することを確認し、コミットメッセージに記載する。AC-07・AC-08 の `test` 検証を補完するものであり、単独の検証手段ではない |
+| AC-13 | manual | ステップ16 の手順で各分岐を無効化してテストが失敗することを確認し、コミットメッセージに記載する。AC-07・AC-08 の `test` 検証を補完するものであり、単独の検証手段ではない |
 | AC-14 | static | `rg -n -B 25 "func \(m \*UnixPrivilegeManager\) WithPrivileges" internal/runner/base/privilege/unix.go`（doc コメントは関数シグネチャの手前にあるため後方向に見る）に `reentr`・`deadlock`・`mutex` の各語が現れる |
 | AC-15 | static | 同じ出力に `TryLock` と、ゴルーチンを区別できない旨の記述が現れる |
 | AC-16 | static | `rg -n -B 20 "WithPrivileges\(elevationCtx ElevationContext" internal/runner/base/runnertypes/config.go` に `reentr` が現れる |
@@ -314,6 +414,5 @@ PR は M1〜M3 をまとめて1本とする。変更が privilege package とそ
 
 ## 9. 次のステップ
 
-- 本計画書のレビューと `approved` への更新（レビュー後）。
-- 実装（Phase 1 → Phase 4）と PR 作成。PR 説明に、L-2 を所見の推奨とは逆方向で close した理由を記載する。
-- マージ後に #977 を close する。#1041（`resource.Manager.WithPrivileges` の削除）は本タスクとは独立に扱う。
+- PR-1 → PR-2 の順に実装し、各 PR をマージする（PR-3・PR-4 は §3.2 のとおり独立であり、PR-1 と並行に出してよい）。PR-2 の説明に、L-2 を所見の推奨とは逆方向で close した理由（`identity_mutation_guard_test.go` の不変条件と、注入点を使わずに失敗分岐を踏んだこと）を記載する。
+- PR-4 のマージ後に #977 を close する。#1041（`resource.Manager.WithPrivileges` の削除）は本タスクとは独立に扱う。
