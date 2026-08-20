@@ -26,7 +26,7 @@
 
 ### F-2: フォールバック経路の TOCTOU は、利用者向け文書では既に明示されている
 
-`safeOpenFileFallback`（[safe_file.go:475-499](../../../internal/safefileio/safe_file.go#L475-L499)）の「親ディレクトリ確認 → `O_NOFOLLOW` で open → 再確認」という二段階方式は現行のままで、競合窓は残っている。
+`safeOpenFileFallback`（[safe_file.go:475-499](../../../internal/safefileio/safe_file.go#L475-L499)）の「親ディレクトリ確認 → `O_NOFOLLOW` で open → 再確認」という二段階方式は現行のままで、競合の隙は残っている。
 
 所見は「非 Linux でも `openat` でルートからコンポーネント単位に降りる方式（dirfd ウォーク）に置き換えれば原理的に排除できる」と述べるが、本タスクはこれを実装しない。理由は 2 つある。
 
@@ -211,7 +211,7 @@ Linux 経路は `openHow.mode` に `uint64(perm)` をそのまま渡す（[safe_
 #### F-007: 挙動を変えずに契約を明記する所見（B1 F-2・F-8）
 
 **Acceptance Criteria**:
-- **AC-29**: `safefileio` の package コメントに、openat2 が利用できる環境とフォールバック経路とで保証の強さが異なること、後者は競合窓を狭めるが排除はしない best-effort であることが記載されている。
+- **AC-29**: `safefileio` の package コメントに、openat2 が利用できる環境とフォールバック経路とで保証の強さが異なること、後者は競合の隙を狭めるが排除はしない best-effort であることが記載されている。
 - **AC-30**: `SafeOpenFile`・`SafeReadFile`・`SafeWriteFileOverwrite`・`AtomicMoveFile` の各 doc コメントから、AC-29 の限界が適用されることが読み取れる。package コメントへの参照でよい。
 - **AC-31**: AC-29 の記載と `docs/user/security-risk-assessment.ja.md`「前提と限界」節の記述に食い違いがない。本番ターゲットが Linux 5.6+ であること、非 Linux は開発・限定用途に限ることの 2 点が、両者で同じ内容になっている。
 - **AC-32**: `canSafelyReadFromFile` の doc コメントに、読み取り検査が所有者 UID を見ず `(gid, mode)` のみで判定すること、およびそれが意図的であることが記載されている。理由として次の 2 点が読み取れる。

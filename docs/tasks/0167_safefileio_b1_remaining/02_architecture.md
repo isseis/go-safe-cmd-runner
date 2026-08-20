@@ -296,7 +296,7 @@ var (
 
 **同一性の確認は既存の `verifySameFile` を使う。** 0155 が `moveFileAnchored` の中に置いたものと同じ判断なので、重複実装を避けて Linux 専用ファイル `safe_file_linux.go` から共通ファイル `safe_file.go` へ移す。同時に引数の型を `*os.File` から `File` インターフェースへ広げる。フォールバック経路と § 3.6 の書き込み経路では、対象がインターフェース値（テストではモック）として渡ってくるためである。`*os.File` は `File` を満たすので `moveFileAnchored` からの呼び出しは変わらない。なお `safe_file.go` は `syscall.Stat_t` を既に使っており（`getFileStatInfo`）、このパッケージが実質的に Unix 専用であることは本タスク以前からの前提である。移動によってその前提が新たに生じるわけではない。
 
-削除そのものは新しい内部ヘルパ `removeVerifiedFile` にまとめる。同一性の確認・`Close`・`os.Remove` の順で行う。`Close` を `os.Remove` より前に置くのは、fd を握ったままの削除に利点が無く、`Close` の失敗も併せて記録できるためである。判断と警告記録を 1 か所に集約する。`Close` と `os.Remove` の間にディレクトリエントリが差し替えられる窓は残る（§ 5.3 の R3）。
+削除そのものは新しい内部ヘルパ `removeVerifiedFile` にまとめる。同一性の確認・`Close`・`os.Remove` の順で行う。`Close` を `os.Remove` より前に置くのは、fd を握ったままの削除に利点が無く、`Close` の失敗も併せて記録できるためである。判断と警告記録を 1 か所に集約する。`Close` と `os.Remove` の間にディレクトリエントリが差し替えられる隙は残る（§ 5.3 の R3）。
 
 ### 3.4 移動処理の分割と契約（F-002）
 
@@ -309,7 +309,7 @@ var (
 | `atomicMoveFileCore` | `requiredPerm` の上限検査、ソースをパス名で開く、ソースを `FileOpRead` で検証、`moveOpenFileCore` の呼び出し |
 | `moveOpenFileCore` | fchmod、宛先の権限方針の事前検査、宛先の親ディレクトリ検査、`moveFileAnchored` による移動、移動後の宛先検証 |
 
-分割の目的は、**パス名による開き直しを書き込み経路から無くす**ことである。`safeWriteFileCommon` が公開 API の `AtomicMoveFile` を呼ぶ形にすると、`atomicMoveFileCore` が一時ファイルをパス名で開き直し、そのとき得た fd を基準に移動することになる。一時ファイル作成と開き直しの間に、宛先ディレクトリへの書き込み権限を持つ相手が別のファイルを `rename` で被せられれば、移動されるのは相手の inode である。ソース検証は `canSafelyAccessFile(FileOpRead)` を通るが、これは `CanCurrentUserSafelyReadFile(gid, mode)` であり**所有者 UID を見ない**（本タスクが F-8 で意図的なものとして文書化する非対称性そのもの）。攻撃者が所有する `0644` のファイルは検査を通る。結果として、攻撃者が用意した解析レコードが宛先に置かれ、すべての検査が成功を報告する。fd を渡す形にすればこの窓は生じない。
+分割の目的は、**パス名による開き直しを書き込み経路から無くす**ことである。`safeWriteFileCommon` が公開 API の `AtomicMoveFile` を呼ぶ形にすると、`atomicMoveFileCore` が一時ファイルをパス名で開き直し、そのとき得た fd を基準に移動することになる。一時ファイル作成と開き直しの間に、宛先ディレクトリへの書き込み権限を持つ相手が別のファイルを `rename` で被せられれば、移動されるのは相手の inode である。ソース検証は `canSafelyAccessFile(FileOpRead)` を通るが、これは `CanCurrentUserSafelyReadFile(gid, mode)` であり**所有者 UID を見ない**（本タスクが F-8 で意図的なものとして文書化する非対称性そのもの）。攻撃者が所有する `0644` のファイルは検査を通る。結果として、攻撃者が用意した解析レコードが宛先に置かれ、すべての検査が成功を報告する。fd を渡す形にすればこの隙は生じない。
 
 #### 3.4.2 検査と副作用の順序
 
@@ -405,7 +405,7 @@ var (
 
 ### 3.7 挙動を変えずに契約を明記する所見（F-007）
 
-**フォールバック経路の限界（F-2）。** package コメントに、`openat2` が使える環境とフォールバック経路とで保証の強さが異なること、後者は競合窓を狭めるが排除はしない best-effort であることを書く。公開 API 4 つ（`SafeOpenFile`・`SafeReadFile`・`SafeWriteFileOverwrite`・`AtomicMoveFile`）の doc コメントからは、package コメントへの参照でこの限界に到達できるようにする。記述内容は `docs/user/security-risk-assessment.ja.md`「前提と限界」節と揃え、本番ターゲットが Linux 5.6+ であること、非 Linux は開発・限定用途に限ることの 2 点を同じ内容にする（AC-29〜31）。所見の主推奨である非 Linux 向けの dirfd ウォーク実装は採らない。判断の根拠は `01_requirements.md`「背景」節にある。
+**フォールバック経路の限界（F-2）。** package コメントに、`openat2` が使える環境とフォールバック経路とで保証の強さが異なること、後者は競合の隙を狭めるが排除はしない best-effort であることを書く。公開 API 4 つ（`SafeOpenFile`・`SafeReadFile`・`SafeWriteFileOverwrite`・`AtomicMoveFile`）の doc コメントからは、package コメントへの参照でこの限界に到達できるようにする。記述内容は `docs/user/security-risk-assessment.ja.md`「前提と限界」節と揃え、本番ターゲットが Linux 5.6+ であること、非 Linux は開発・限定用途に限ることの 2 点を同じ内容にする（AC-29〜31）。所見の主推奨である非 Linux 向けの dirfd ウォーク実装は採らない。判断の根拠は `01_requirements.md`「背景」節にある。
 
 **読み取り検査の非対称性（F-8）。** `canSafelyReadFromFile` の doc コメントに、読み取り検査が所有者 UID を見ず `(gid, mode)` だけで判定すること、それが意図的であることを書く。理由は 2 点で、いずれも `01_requirements.md`「背景」節の F-8 に対応する（AC-32）。
 
@@ -535,9 +535,9 @@ flowchart TD
     D5["removeVerifiedFile"]
     D6["canSafelyAccessFile"]
 
-    R1["残存リスク R1: フォールバック経路の競合窓"]
-    R2["残存リスク R2: プローブから rename までの窓"]
-    R3["残存リスク R3: 確認から unlink までの窓"]
+    R1["残存リスク R1: フォールバック経路の競合の隙"]
+    R2["残存リスク R2: プローブから rename までの隙"]
+    R3["残存リスク R3: 確認から unlink までの隙"]
     R4["残存リスク R4: 非 Linux での fd アンカーの不在"]
 
     T1 --> D1
@@ -599,16 +599,16 @@ flowchart TD
 
 同じ行の「一時ファイルが残る場合がある」ため、`AtomicMoveFile` と `SafeWriteFileOverwrite` のどちらも、`ErrDestinationCommitted` を伴う失敗の後は宛先ディレクトリに `.safefileio-` で始まるエントリが残りうる。AC-21 が求める「一時ファイルが残らない」は、差し替えに到達しなかった失敗についての保証である。
 
-`FileSystemConfig.DisableOpenat2` は、経路の選択だけを変える試験用の設定であり、この表の副作用の契約は変えない。変わるのは § 5.3 の競合窓の有無だけである。
+`FileSystemConfig.DisableOpenat2` は、経路の選択だけを変える試験用の設定であり、この表の副作用の契約は変えない。変わるのは § 5.3 の競合の隙の有無だけである。
 
 ### 5.3 残存リスク
 
-| # | 窓 | 内容 | 判断 |
+| # | 隙 | 内容 | 判断 |
 |---|---|---|---|
 | R1 | フォールバック経路の二段階検証 | 1 回目の確認と open の間に親ディレクトリを差し替えられる余地が残る。`openat2` のアトミック性には及ばない。§ 3.3 の作成プローブは、この「確認と open の間」を 2 回のシステムコールへ広げるが、検査 → open → 検査という順序自体は変わらない | 本番ターゲットは Linux 5.6+ であり、この経路は開発・限定用途に限る。契約として明記して close する（F-2） |
-| R2 | 検査から `rename` まで（**本タスクで新たに生じる**） | 2 つある。(a) 宛先プローブの後にリーフがシンボリックリンクへ差し替えられると、`rename` はそれを黙って置き換える。(b) `ensureParentDirsNoSymlinks` による親ディレクトリの確認の後に構成要素がシンボリックリンクへ差し替えられると、`os.Rename` はカーネル側でそれを解決するため書き込み先が移る。従来 `SafeWriteFileOverwrite` は `openat2(RESOLVE_NO_SYMLINKS)` で宛先を 1 回だけ開いており、本番経路にこの窓は無かった | (a) はリンク先への書き込みには至らず、失われるのは拒否という通知だけである。(b) は 0155 が `moveFileAnchored` の前提として既に置いている条件（宛先の親ディレクトリが信頼できる所有者に保護されていること、[0155 の 02_architecture.md](../0155_toctou_verify_use_residual_gaps/02_architecture.md) § 5）を、解析レコードのディレクトリへ初めて広げるものである。この条件は `internal/security` のディレクトリ権限監査が別途課している。0155 の前提を書き込み経路へ拡張することの可否は、本設計の承認時に判断する必要がある |
+| R2 | 検査から `rename` まで（**本タスクで新たに生じる**） | 2 つある。(a) 宛先プローブの後にリーフがシンボリックリンクへ差し替えられると、`rename` はそれを黙って置き換える。(b) `ensureParentDirsNoSymlinks` による親ディレクトリの確認の後に構成要素がシンボリックリンクへ差し替えられると、`os.Rename` はカーネル側でそれを解決するため書き込み先が移る。従来 `SafeWriteFileOverwrite` は `openat2(RESOLVE_NO_SYMLINKS)` で宛先を 1 回だけ開いており、本番経路にこの隙は無かった | (a) はリンク先への書き込みには至らず、失われるのは拒否という通知だけである。(b) は 0155 が `moveFileAnchored` の前提として既に置いている条件（宛先の親ディレクトリが信頼できる所有者に保護されていること、[0155 の 02_architecture.md](../0155_toctou_verify_use_residual_gaps/02_architecture.md) § 5）を、解析レコードのディレクトリへ初めて広げるものである。この条件は `internal/security` のディレクトリ権限監査が別途課している。0155 の前提を書き込み経路へ拡張することの可否は、本設計の承認時に判断する必要がある |
 | R3 | 同一性確認から `unlink` まで | `removeVerifiedFile` は `Lstat` で同一性を確認してから `os.Remove` を呼ぶため、その間に差し替えられると無関係なファイルを削除しうる。フォールバック経路の後始末ではこの `Lstat` と `os.Remove` 自体も、既に信用できないと判明した親ディレクトリを通る | 影響は限定される。差し替えが成功するには、こちらが握っている inode と `Dev`・`Ino` が一致するエントリを用意する必要があり、それはこちらの inode へのハードリンクに限られる。fd をアンカーにした削除はシステムコールとして存在しない。0155 が `verifySameFile` で同じ判断を下しており、それと同じ水準である |
-| R4 | 非 Linux の移動 | `moveFileAnchored` は非 Linux では `os.Rename(absSrc, absDst)` であり、渡された `File` を使わない。したがって § 3.4.1 の fd アンカーによる保護は Linux 経路にしか無く、非 Linux では一時ファイルのパスが差し替えられても検出できない | 非 Linux は開発・限定用途に限るという F-2 と同じ判断による。`rename` の直前に `verifySameFile` を入れて窓を狭める案もあるが、`openat2` の無い環境のためだけに移動処理を分岐させることになるため採らない |
+| R4 | 非 Linux の移動 | `moveFileAnchored` は非 Linux では `os.Rename(absSrc, absDst)` であり、渡された `File` を使わない。したがって § 3.4.1 の fd アンカーによる保護は Linux 経路にしか無く、非 Linux では一時ファイルのパスが差し替えられても検出できない | 非 Linux は開発・限定用途に限るという F-2 と同じ判断による。`rename` の直前に `verifySameFile` を入れて隙を狭める案もあるが、`openat2` の無い環境のためだけに移動処理を分岐させることになるため採らない |
 
 ### 5.4 監査可能性
 
