@@ -382,8 +382,12 @@ func TestRestorePrivilegesAndVerify_RestoreFailureTriggersShutdown(t *testing.T)
 		originalUID:        syscall.Getuid() + 1,
 		privilegeSupported: true,
 		osExit:             testOsExit,
-		identityVerifier:   func() error { return nil },
-		readSavedIDs:       func() (int, int, error) { return -1, -1, ErrSavedSetNotSupported },
+		// identityVerifier and readSavedIDs are never called: restorePrivileges
+		// fails first and emergencyShutdown short-circuits via panic before the
+		// verification block below it runs. They are set only so the manager is
+		// safe to use if that ordering ever changes.
+		identityVerifier: func() error { return nil },
+		readSavedIDs:     func() (int, int, error) { return -1, -1, ErrSavedSetNotSupported },
 	}
 
 	execCtx := &executionContext{
