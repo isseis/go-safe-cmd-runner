@@ -163,26 +163,26 @@ metrics 削除により**主張が消えるテスト**が4つある。いずれ�
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] Phase 1 の完了条件（`GOOS=darwin` クロス vet・`make deadcode`・`rg` の残存ゼロ）を満たしたことを確認した
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1042）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: 昇格・復元の失敗分岐をテストで踏む（F-002 / AC-07〜AC-13）
 
 **対象ファイル**: `internal/runner/base/privilege/unix_privilege_test.go`
 
-- [ ] **ステップ13**: `unix_privilege_test.go` の冒頭に、`cmd/runner/startup_privilege_test.go:3-13` に倣ったファイルコメントを英語で追加する。内容は、本ファイルの一部のテストがプロセス全体の identity 状態に依存するため `t.Parallel()` を呼んではならないこと、および root で実行すると失敗分岐を踏めず skip されること。
-- [ ] **ステップ14**: `TestEscalatePrivileges` にサブテスト `seteuid_failure` を追加する。
-  - [ ] `syscall.Getuid() == 0 || syscall.Geteuid() == 0` のとき `t.Skip("running as root: seteuid(0) succeeds and the native-root path returns early, so the failure path cannot be exercised")` とする（real UID が 0 だと `escalatePrivileges` が native root の早期リターンを通り、`seteuid` に到達しないため両方を条件にする）。
-  - [ ] `privilegeSupported: true`・`originalUID: syscall.Getuid()` のマネージャを構築し、`escalatePrivileges` を呼ぶ。
-  - [ ] 戻り値が `*Error` であることを `errors.AsType[*Error]` で確認し、`Operation`・`CommandName`・`OriginalUID`・`TargetUID`（= 0）が渡した値と一致すること、`SyscallErr` が非 nil の `syscall.Errno` であることを検証する（環境により `EPERM` 以外になり得るため errno 値は固定しない）。
-  - [ ] 実行前後で `syscall.Geteuid()`・`syscall.Getegid()` が変化していないことを検証する。
-- [ ] **ステップ15**: `TestRestorePrivilegesAndVerify_RestoreFailureTriggersShutdown` を追加する。
-  - [ ] `syscall.Getuid() == 0 || syscall.Geteuid() == 0` のとき `t.Skip("running as root: seteuid to an arbitrary UID succeeds, so the restoration failure path cannot be exercised")` とする。
-  - [ ] `originalUID: syscall.Getuid() + 1`（real・effective・saved のいずれとも異なるため `Seteuid` は必ず失敗する）、`identityVerifier` に `func() error { return nil }`、`readSavedIDs` に `func() (int, int, error) { return -1, -1, ErrSavedSetNotSupported }` を設定したマネージャを構築する。`osExit` は既存の同種テスト（`:366-371` ほか）に倣い、呼び出しを記録したうえで panic するスタブとし、`assert.PanicsWithValue` で捕捉する。これにより `emergencyShutdown` の後に後続の検証ブロックへ進まないことも同時に固定する。
-  - [ ] `needsPrivilegeEscalation: true`・`originalSUID: -1`・`originalSGID: -1` の `executionContext` で `restorePrivilegesAndVerify` を呼ぶ。
-  - [ ] `osExit` が終了コード 1 でちょうど1回呼ばれたことを検証する。`originalUID` の選択理由（なぜ必ず失敗するか）をコメントで説明する。
-  - [ ] 実行前後で `syscall.Geteuid()`・`syscall.Getegid()` が変化していないことを検証する。
-- [ ] **ステップ16**: 両テストが主張どおりの理由で失敗できることを確認する。ステップ14 は `escalatePrivileges` の `Seteuid` 失敗時の `return &Error{...}` を `return nil` に一時変更してテストが失敗することを、ステップ15 は `restorePrivilegesAndVerify` の `m.emergencyShutdown(err, shutdownContext)` を一時的にコメントアウトしてテストが失敗することを確認し、確認した旨をコミットメッセージに記す。
+- [x] **ステップ13**: `unix_privilege_test.go` の冒頭に、`cmd/runner/startup_privilege_test.go:3-13` に倣ったファイルコメントを英語で追加する。内容は、本ファイルの一部のテストがプロセス全体の identity 状態に依存するため `t.Parallel()` を呼んではならないこと、および root で実行すると失敗分岐を踏めず skip されること。
+- [x] **ステップ14**: `TestEscalatePrivileges` にサブテスト `seteuid_failure` を追加する。
+  - [x] `syscall.Getuid() == 0 || syscall.Geteuid() == 0` のとき `t.Skip("running as root: seteuid(0) succeeds and the native-root path returns early, so the failure path cannot be exercised")` とする（real UID が 0 だと `escalatePrivileges` が native root の早期リターンを通り、`seteuid` に到達しないため両方を条件にする）。
+  - [x] `privilegeSupported: true`・`originalUID: syscall.Getuid()` のマネージャを構築し、`escalatePrivileges` を呼ぶ。
+  - [x] 戻り値が `*Error` であることを `errors.AsType[*Error]` で確認し、`Operation`・`CommandName`・`OriginalUID`・`TargetUID`（= 0）が渡した値と一致すること、`SyscallErr` が非 nil の `syscall.Errno` であることを検証する（環境により `EPERM` 以外になり得るため errno 値は固定しない）。
+  - [x] 実行前後で `syscall.Geteuid()`・`syscall.Getegid()` が変化していないことを検証する。
+- [x] **ステップ15**: `TestRestorePrivilegesAndVerify_RestoreFailureTriggersShutdown` を追加する。
+  - [x] `syscall.Getuid() == 0 || syscall.Geteuid() == 0` のとき `t.Skip("running as root: seteuid to an arbitrary UID succeeds, so the restoration failure path cannot be exercised")` とする。
+  - [x] `originalUID: syscall.Getuid() + 1`（real・effective・saved のいずれとも異なるため `Seteuid` は必ず失敗する）、`identityVerifier` に `func() error { return nil }`、`readSavedIDs` に `func() (int, int, error) { return -1, -1, ErrSavedSetNotSupported }` を設定したマネージャを構築する。`osExit` は既存の同種テスト（`:366-371` ほか）に倣い、呼び出しを記録したうえで panic するスタブとし、`assert.PanicsWithValue` で捕捉する。これにより `emergencyShutdown` の後に後続の検証ブロックへ進まないことも同時に固定する。
+  - [x] `needsPrivilegeEscalation: true`・`originalSUID: -1`・`originalSGID: -1` の `executionContext` で `restorePrivilegesAndVerify` を呼ぶ。
+  - [x] `osExit` が終了コード 1 でちょうど1回呼ばれたことを検証する。`originalUID` の選択理由（なぜ必ず失敗するか）をコメントで説明する。
+  - [x] 実行前後で `syscall.Geteuid()`・`syscall.Getegid()` が変化していないことを検証する。
+- [x] **ステップ16**: 両テストが主張どおりの理由で失敗できることを確認する。ステップ14 は `escalatePrivileges` の `Seteuid` 失敗時の `return &Error{...}` を `return nil` に一時変更してテストが失敗することを、ステップ15 は `restorePrivilegesAndVerify` の `m.emergencyShutdown(err, shutdownContext)` を一時的にコメントアウトしてテストが失敗することを確認し、確認した旨をコミットメッセージに記す。
 
 **完了条件**:
 - `make test` が通る。
@@ -201,9 +201,9 @@ metrics 削除により**主張が消えるテスト**が4つある。いずれ�
 
 **判定理由**: ステップ15 が `emergencyShutdown` への到達（回復フロー）とプロセス全体の identity 状態に触る孤立した高リスク手順であるため。追加するのは同一 package の単体テスト2件のみで、統合テスト・CI・外部リソースの面を持たないため frontier-required には該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] Phase 2 の完了条件（サブテスト行が `--- PASS` であること・`TestNoUnexpectedIdentityMutationSyscalls` の無変更通過）を満たしたことを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] Phase 2 の完了条件（サブテスト行が `--- PASS` であること・`TestNoUnexpectedIdentityMutationSyscalls` の無変更通過）を満たしたことを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1043）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -352,10 +352,10 @@ PR は Phase と一対一に対応させ、4本に分ける（PR-N ≡ Phase N�
 - [x] ステップ12: 改名を引用する文書3対の追従と `/mktrans`
 
 ### PR-2: 失敗分岐をテストで踏む（Phase 2）
-- [ ] ステップ13: ファイルコメント（`t.Parallel` 禁止・root skip）の追加
-- [ ] ステップ14: 昇格失敗テストの追加
-- [ ] ステップ15: 復元失敗テストの追加
-- [ ] ステップ16: 両テストが理由どおりに失敗できることの確認
+- [x] ステップ13: ファイルコメント（`t.Parallel` 禁止・root skip）の追加
+- [x] ステップ14: 昇格失敗テストの追加
+- [x] ステップ15: 復元失敗テストの追加
+- [x] ステップ16: 両テストが理由どおりに失敗できることの確認
 
 ### PR-3: 再入禁止の明記（Phase 3）
 - [ ] ステップ17: `WithPrivileges` の doc 追記
