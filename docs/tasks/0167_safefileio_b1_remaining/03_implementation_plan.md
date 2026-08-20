@@ -1,0 +1,976 @@
+# 実装計画書: safefileio の残所見（資源リーク・失敗時契約・書き込みのアトミック化）
+
+## Document Status
+
+| Item | Value |
+|---|---|
+| Status | `draft` |
+| Created | 2026-08-20 |
+| Review date | - |
+| Reviewer | - |
+| Comments | - |
+
+## 関連文書
+
+- 要件定義: [01_requirements.md](01_requirements.md)
+- アーキテクチャ設計: [02_architecture.md](02_architecture.md)
+- 対象 Issue: [#978](https://github.com/isseis/go-safe-cmd-runner/issues/978)
+
+---
+
+## 1. 実装の概要
+
+### 目的
+
+[01_requirements.md](01_requirements.md) の F-001〜F-008（AC-01〜AC-38）を実装する。`internal/safefileio` が
+エラーを返したときに fd・作成済みファイル・一時ファイルを残さない状態にし、原理的に取り消せない副作用は
+公開 API の契約として明記する。併せて解析レコードの書き込みをアトミックにする。設計は
+[02_architecture.md](02_architecture.md) が正であり、本書は設計を繰り返さず、作業と検証の手順のみを書く。
+
+### 実装方針
+
+- **設計文書を参照し、複製しない。** 各ステップは `02_architecture.md` の該当節を指す。判断の根拠を本書で
+  述べ直さない。
+- **段階の区切りで挙動を確かめる。** [02_architecture.md](02_architecture.md) § 8 の Phase 1〜5 をそのまま
+  用いる。各 Phase の終わりで `make fmt` → `make test` → `make lint` を通す。
+- **既存のテスト seam を踏襲する。** `openat2` の生の呼び出しと、フォールバック経路の 2 回目の親ディレクトリ
+  確認は、`linkatFunc`・`generateTempLinkName` と同じ「差し替え可能なパッケージ変数」の形にする。新しい
+  種類の注入機構は作らない。
+- **モックではなく実ファイルシステムで検証する。** 書き込み・移動の経路はディレクトリ fd を起点にするため、
+  `FileSystem` のモックからは届かなくなる（[02_architecture.md](02_architecture.md) § 7.1）。後始末と
+  アトミック性の検証は `t.TempDir` 系の実ディレクトリ上で行う。
+- **Go のソース（本番・テスト・テストヘルパのいずれも）に日本語を書かない。** コメント・識別子・
+  文字列リテラルはすべて英語にする。
+- **doc コメントは追記だけでなく、古くなった記述の書き換えも行う。** 経路が変わる関数の doc コメントは、
+  仕組みの説明が実装と食い違ったまま残らないようにする（§ 2 Phase 5）。
+- **テストは理由どおりに失敗できることを確かめる。** 後始末・検査順序・`EINTR` 再試行の 3 つについて、
+  対象処理を外すとテストが落ちることを確認し、外した方法をコミットメッセージに記す（AC-05・07・28）。
+
+### 既存コード調査結果
+
+行番号は 2026-08-20 時点（`47f0ef77`）のものである。
+
+#### `internal/safefileio/safe_file.go`（499 行・変更）
+
+- `FileSystem` インターフェース（:52-61）に `Remove(name string) error`（:57-58）があり、実装は
+  `osFS.Remove`（:95-98）の `os.Remove` 素通し。**本番の呼び出し元は 0 件**であることを再確認した
+  （`rg` の結果はインターフェース定義・`osFS` の実装・テスト用モック 3 つのみ）。
+- `File` インターフェース（:65-74）に `Sync` は無い。`Truncate` はある（:73）。
+- `atomicMoveFileCore`（:140-201）は `srcFile.Chmod`（:162）が `canSafelyAccessFile`（:167）より前にあり、
+  移動後に `fs.SafeOpenFile(absDst, …)`（:185）で宛先を開き直して `FileOpWrite` 検査（:196）を行っている。
+- `safeWriteFileCommon`（:204-247）は `O_WRONLY|O_CREATE` で開き（:220）、検査後に `Truncate(0)`（:238）→
+  `Write`（:242）。`defer` の `Close`（:225-230）は「他に失敗が無いときだけ」`Close` の失敗をエラーにする。
+- `safeOpenFileFallback`（:475-499）は 2 回目の `ensureParentDirsNoSymlinks`（:494）の失敗時に
+  `file` を Close せず返す。2 回目の呼び出しを差し替える seam は無い。
+- `ensureParentDirsNoSymlinks`（:257-307）は解決済みパスを内部で捨てている（:296 で `currentPath` に代入し、
+  戻り値は `error` のみ）。
+- `canSafelyReadFromFile`（:451-469）の doc コメント（:448-450）に UID を見ない理由の記載は無い。
+- package コメント（:1-6）はフォールバックの存在に触れるが、保証の差には触れていない。
+- **`File.Truncate` の本番の呼び出し元は `safe_file.go:238` の 1 か所だけ**である
+  （`rg -n "\.Truncate\(" --glob '*.go' internal/ cmd/` から `_test.go` を除いた結果が 1 件）。この 1 行は
+  Phase 4-2 で消えるため、`Truncate` は `Remove` と同じ「本番の呼び出し元を持たないインターフェース
+  メソッド」になる。扱いは Phase 4-3 で明示的に決める。
+
+#### `internal/safefileio/safe_file_linux.go`（298 行・変更）
+
+- `openat2`（:74-96）は `syscall.Syscall6` の直呼びで、`errno != 0` をそのまま返す。再試行は無い。
+  システムコール発行を差し替える seam が無いため新設が要る。
+- `safeOpenFileInternal`（:268-298）は `mode: uint64(perm)`（:278）をそのまま渡す。errno の対応付けは
+  :285-294（`ELOOP`→`ErrIsSymlink`、`EEXIST`→`ErrFileExists`、`ENOENT`→`os.ErrNotExist`）。
+- `isOpenat2Available`（:44-71）は**それ自身が `openat2` を呼ぶ**（:64）。したがって `openat2` に seam を
+  入れると、`NewFileSystem` の中でその seam が 1 回消費される。テストの手順はこれを踏まえる必要がある
+  （Phase 1）。
+- `moveFileAnchored`（:154-185）は `(srcFile File, absSrc, absDst string)`。内部で `os.Rename`（:172）・
+  `verifySameFile`（:176）・`os.Remove(absSrc)`（:180）をパス名で行う。冒頭（:155-158）で `srcFile` を
+  `*os.File` へ型アサートしている。
+- `linkFileToTempName`（:226-251）は `(srcFile *os.File, dstDir string) (string, error)` で、ディレクトリを
+  **パス名**で受け取り**フルパス**を返す。`moveFileAnchored` の後始末（:164-170）もそのフルパスに対する
+  `os.Remove` である。Phase 3 のディレクトリ fd 化はこの関数も対象になる。
+- `randomTempName`（:256-262）・`maxLinkatAttempts`（:102）・`tmpNameRandBytes`（:106）・
+  `generateTempLinkName`（:112）・`linkatFunc`（:122）はいずれもこのファイルにある。`randomTempName` は
+  接頭辞 `.safefileio-move-` を直書きしている（:261）。
+- :120-121 のコメントが「このパッケージのテストは `t.Parallel()` を使わない」ことを明記している。
+
+#### `internal/safefileio/safe_file_nonlinux.go`（32 行・変更）
+
+`moveFileAnchored`（:29-31）は `os.Rename(absSrc, absDst)` の 1 行で、`srcFile` を使っていない。
+`golang.org/x/sys/unix` を import していない。`unix.Openat`・`unix.Renameat`・`unix.Fstatat`・`unix.Unlinkat`
+は darwin・netbsd・freebsd のいずれにも存在することを `GOOS=<os> go doc golang.org/x/sys/unix <名前>` で
+確認した。`syscall.Stat_t` と `unix.Stat_t` の `Dev`・`Ino` のフィールド型は linux（ともに
+`uint64`/`uint64`）・darwin（ともに `int32`/`uint64`）で一致しており、fd 側（`File.Stat()` 由来の
+`*syscall.Stat_t`）と `fstatat` 側（`unix.Stat_t`）を型変換なしで比較できる。
+
+#### `internal/safefileio/errors.go`（49 行・変更）
+
+`ErrTempLinkNameExhausted`（:31-33）がある。`ErrUnsupportedFileMode`・`ErrDestinationCommitted` は無い。
+
+#### `File`・`FileSystem` の実装型の全数
+
+インターフェースの形を変えるため、手書きでメソッドを列挙している型をすべて洗い出した。
+
+| 型 | 場所 | 必要な追従 |
+|---|---|---|
+| `osFS` | `internal/safefileio/safe_file.go:28` | `Remove` を削除 |
+| `*os.File` | 標準ライブラリ | `Sync` を既に持つ。作業なし |
+| `MockFileSystem` | `internal/safefileio/testutil/mock.go:19` | `Remove`・`RemoveFunc`・`RemoveCalls` を削除 |
+| `mockFileSystem` | `internal/safefileio/safe_file_cleanup_test.go:190` | `Remove`・`removeFunc`・`removeCallCount`・`getRemoveCallCount` を削除 |
+| `largeFakeFS` | `internal/security/machoanalyzer/analyzer_test.go:234` | `Remove`（:241）を削除 |
+| `mockFile` | `internal/safefileio/safe_file_cleanup_test.go:25` | `Sync` を追加 |
+| `largeFakeFile` | `internal/security/machoanalyzer/analyzer_test.go:222` | `Sync` を追加 |
+
+`oversizeFileSystem`（`internal/filevalidator/validator_library_analysis_test.go:537`）・`countingFileSystem`
+（`internal/filevalidator/validator_test.go:1793`）・`oversizeStatFile`（同 :552）・`seekErrorFile`／
+`readErrorFile`（`internal/dynlib/machodylib/analyzer_test.go:642,650`）はいずれもインターフェースを埋め込む
+形なので追従は要らない。`MockFileSystem` の利用者 5 ファイル（`internal/verification/manager_test.go`・
+`internal/dynlib/machodylib/analyzer_test.go`・`internal/dynlib/elfdynlib/analyzer_test.go`・
+`internal/runner/base/output/file_test.go`・`internal/runner/base/output/manager_test.go`）を確認したが、
+`RemoveFunc`・`RemoveCalls` を参照している箇所は 1 件も無い。
+
+#### 挙動が変わるため書き換える既存テスト
+
+| テスト | 現在の主張 | 本タスク後の扱い |
+|---|---|---|
+| `safe_file_cleanup_test.go::TestSafeWriteFileOverwrite_NoCleanupOnError`（3 サブテスト、:240-350） | `mockFileSystem.Remove` の呼び出し回数が 0 | 検証対象が消滅する。削除し、Phase 4 の実ファイルシステム上のテストへ置き換える |
+| `safe_file_cleanup_test.go::TestFileCleanup_Integration`（:357-387） | 上書き失敗時に既存ファイルが消えない | 同じ実ディレクトリ上の検証を、宛先の内容保持と一時ファイル非残置の両方を見る新テストへ統合する |
+| `safe_file_test.go::TestSafeWriteFileOverwrite_FileCloseError`（:354-374） | `Close` の失敗がエラーとして返る／`Write` の失敗が優先される | 差し替え後の `Close` の失敗は警告になる（§ 4.2）。加えて `failingCloseFS`・`failingWriteFS` は `FileSystem.SafeOpenFile` を差し替える形であり、書き込み経路が `openFileAt` に変わると届かなくなる。テストごと削除し、`linkatFunc` を使う差し替え前失敗のテストへ置き換える |
+| `safe_file_linux_test.go::TestLinkFileToTempName_ExhaustsAttempts`（:247-270） | `require.Error(t, err)` のみで sentinel を名指ししていない | `ErrTempNameExhausted` への改名を検証できるよう `require.ErrorIs` へ強める。改名前は sentinel を主張するテストが 1 つも無い |
+
+削除に伴って参照が無くなるテストヘルパも併せて消す。`safe_file_test.go` の :162-215 の一続きのブロック
+（`failingFile`・`errSimulatedClose`・`failingCloseFS`・`failingWriteCloseFS`・`errSimulatedWrite`・
+`failingWriteFS`）が丸ごと該当する。`failingFile` は `failingCloseFS` からのみ、`failingWriteCloseFS` は
+`failingWriteFS` からのみ参照されており、両 FS 型を消すと未参照になる。`.golangci.yml` の `_test.go` 向け
+除外リスト（gocyclo・errcheck・err113・dupl・gosec・goconst）に `unused` は含まれないため、消し残すと
+`make lint` が落ちる。`safe_file_cleanup_test.go` からは `errDiskFull`・`errTruncateFailed`（:81-82）と、
+`mockFile` の `writeErr`・`statErr`・`closeErr` フィールドを消す。`truncateErr` は `TestMockFileTruncate`
+（:389 以降）が使い続けるため残す。
+
+`safe_file_test.go` の `TestValidateFilePermissions`・`TestCanSafelyWriteToFile`・
+`TestValidateFileOperationDifferences`・`TestResolvedPathModeEnforcement`・`TestEnsureParentDirsNoSymlinks` は
+無変更で通る想定である（[02_architecture.md](02_architecture.md) § 3.9 末尾）。
+
+#### 再利用できる既存の資産
+
+- **AC-25（レコードの往復）**: `internal/fileanalysis/file_analysis_store_test.go` の
+  `TestStore_SaveAndLoad`・`TestStore_PreservesExistingFields`・`TestStore_ArgEvalResultsRoundtrip`・
+  `TestStore_Load_V9DynLibDepsObjectFormat` が保存・読み戻しと既存レコードの読み取りを既に押さえている。
+  新しいテストは追加せず、これらが無変更で通ることを確認する。
+- **AC-12（`internal/common` の `Remove`）**: `internal/runner/base/output/file_test.go::TestSafeFileManager_RemoveTemp`
+  と `::TestSafeFileManager_RemoveTemp_WithMock` が `commonFS.Remove`（`file.go:137`）の唯一の本番の
+  呼び出し元を押さえている。無変更で通ることを確認する。
+- **AC-07b（`output` の移動）**: 同ファイルの `TestSafeFileManager_MoveToFinal` と
+  `::TestSafeFileManager_MoveToFinal_WithMock` を無変更で通す。
+- **AC-22**: `safe_file_test.go::TestResolvedPathModeEnforcement` を無変更で通す。
+- **警告の検証**: `internal/testutil` の `NewRecordingLogger`・`LogRecorder.RequireRecord`・
+  `RecordSnapshot.AssertHasAttrs`（`internal/testutil/handlers.go:158,187,214`）を使う。safefileio は
+  パッケージ関数の `slog.Warn` を呼ぶため、テストは `slog.SetDefault` で記録用ロガーへ差し替え、
+  `t.Cleanup` で元へ戻す。
+- **umask を避ける権限設定**: `safe_file_test.go:325-330` が「作成後に `os.Chmod` で明示的に設定する」
+  手順を確立している。新しい権限フィクスチャもこれに倣う。
+- テスト seam の書き方は `safe_file_linux_test.go::TestLinkFileToTempName_RetriesOnNameCollision`
+  （:207-245、差し替えは :228-234）が手本になる（`t.Cleanup` で元の値へ戻す）。
+- 一時ディレクトリは `internal/testutil` の `SafeTempDir(t)` を使う（既存テストと同じ）。
+
+#### 本タスクで新規に必要になる seam
+
+設計（[02_architecture.md](02_architecture.md) § 3.2・§ 7.1）が求める検証を実ファイルシステム上で決定的に
+行うには、既存の seam だけでは足りない。次の 3 つを `linkatFunc` と同じ様式（doc コメントに用途と
+`t.Parallel()` 禁止の理由を英語で書く）で追加する。他の注入点は増やさない。
+
+| 追加する変数 | 置き場所 | シグネチャ | 必要な理由 |
+|---|---|---|---|
+| `openat2Syscall` | `safe_file_linux.go` | `func(dirfd int, pathname string, how *openHow) (int, error)` | `EINTR` を返す状況を実環境で再現できない（AC-26・28）。`*openHow` を受け取る位置で切ることで、カーネルへ渡る `mode` をテストから読める（AC-15） |
+| `ensureParentDirsAfterOpen` | `safe_file.go` | `func(absPath string) error` | `safeOpenFileFallback` の 1 回目と 2 回目のあいだに介入する手段が他に無く、2 回目だけを失敗させられない（AC-01〜05） |
+| `verifyMovedFile` | `safe_file.go` | `func(file File, dirFd int, name string) error` | `rename` 成功**後**の失敗を作る手段が書き込み経路に無い。移動元と移動先が同じディレクトリのため、既存のテストが使う「親ディレクトリの権限を落とす」手法では `rename` 自体が失敗してしまう（AC-18・21 の `ErrDestinationCommitted` 側） |
+
+**`ensureParentDirsAfterOpen` と `verifyMovedFile` は、承認済みの
+[02_architecture.md](02_architecture.md) が明示していない本番コードの追加である。** § 3.2 が
+`openat2` について認めた seam の考え方をそのまま適用したものであり、§ 7.1 が求める検証を成立させるために
+必要だが、セキュリティ上重要な経路に可変のパッケージ変数を 2 つ増やすことになる。本書の承認をもって
+この追加の承認とするか、先に `02_architecture.md` § 7.1 へ追記するかを、レビューで判断していただきたい。
+
+#### 文書側の調査結果
+
+- `docs/user/security-risk-assessment.ja.md:158-172` が `safeOpenFileInternal` を引用しており、`mode:
+  uint64(perm)` の行が Phase 1 で変わる。同 :204 が `safeOpenFileFallback` の二段階チェックを説明しており、
+  Phase 2 の作成プローブで手順が増える。英語版 `docs/user/security-risk-assessment.md:161,164,210` に同じ
+  箇所がある。
+- `docs/dev/architecture_design/security-architecture.md` は**日本語版
+  `security-architecture.ja.md` を持つ**（両方に同じ 2 つの引用がある。英語版 :205-213・:216-233、
+  日本語版 :206-215・:217-233）。したがって日本語版を先に更新し、英語版は `/mktrans` で反映する。
+  `openat2()` の引用は Phase 1 の `EINTR` 再試行で変わる。`ensureParentDirsNoSymlinks()` の引用も、走査の
+  中身は変わらないが Phase 3 で本体が `ensureDirNoSymlinks` へ移るため、引用の見出し（どの関数の本体か）が
+  合わなくなる。両方とも更新が要る。
+- `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md:53-61` が B1 の残件一覧。B1 の
+  記述は §2（🟠Low）だけにあり、§1・§3 には現れない（`rg -n "B1"` の結果が :53 と :60 の 2 件）。
+  残件の箇条書きは `  - F-2:`・`  - F-3:`・`  - F-4:`・`  - F-5:`・`  - F-6〜F-9:` の 5 行（:55-59）で、
+  F-2 と F-6〜F-9 は他と形が違うため、削除確認の検索式はこの 5 行すべてを捕まえる形にする必要がある。
+  引用ブロックの書式は同文書 :15・:17・:51 の `> **… について**: …` に倣う。
+- `docs/tasks/0149_security_code_smell_audit_fable/findings/B1_safefileio.md` の F-2〜F-9 は :28-81。
+  対応結果の追記は、同ディレクトリの `A1_privilege.md:48,57,64,71` が採っている「所見の最後に箇条書きを
+  1 つ足す」形に倣う。ただし箇条書きのラベルは B1 の地の文に合わせて `- 対応状況:`（太字なし）とする。
+  `A1_privilege.md` は `- **該当箇所**:` と太字を使うが、`B1_safefileio.md` は `- 該当箇所:` と太字を
+  使わないためである。F-1 には 0155 による追記が無いが、本タスクの対象外なので触れない。
+
+#### ビルド検査の前提
+
+`GOOS=darwin go vet ./internal/safefileio/` は**変更前の時点で既に失敗する**（exit 1）。テスト側が
+`//go:build test` の `internal/testutil` を import しているためである。`-tags test` を付けると通る
+（`GOOS=darwin go vet -tags test ./internal/safefileio/` が exit 0）。本書の完了条件はすべて `-tags test`
+付きの形で書く。
+
+---
+
+## 2. 実装ステップ
+
+### Phase 1: mode の検証・正規化と `openat2` の `EINTR` 再試行（F-004・F-006 / AC-14〜17・AC-26〜28）
+
+対応する設計: [02_architecture.md](02_architecture.md) § 3.1・§ 3.2。
+
+**変更するファイル**: `internal/safefileio/errors.go`・`safe_file.go`・`safe_file_linux.go`・
+`safe_file_test.go`・`safe_file_linux_test.go`
+
+- [ ] `errors.go` に `ErrUnsupportedFileMode` を追加する（宣言と doc コメントは
+      [02_architecture.md](02_architecture.md) § 3.1 のコードブロックのとおり）。`ErrDestinationCommitted` は
+      Phase 4 で追加するため、ここでは入れない。
+- [ ] `safe_file.go` に `validateOpenPerm(perm os.FileMode) error` を追加する。`perm &^ os.ModePerm` が
+      0 でなければ `ErrUnsupportedFileMode` を返す。doc コメントに、`groupmembership.MaxAllowedReadPerms`
+      が setuid・setgid を許すこととは対象が違う（あちらはディスク上のファイルの POSIX 権限、こちらは
+      `open(2)` へ渡す `os.FileMode`）ことを 1 文で書く。
+- [ ] `osFS.SafeOpenFile`（`safe_file.go:86-93`）の `filepath.Abs` の直後、`safeOpenFileInternal` を呼ぶ前に
+      `validateOpenPerm` の呼び出しを足す。Phase 4 で書き込み・移動の経路が `SafeOpenFile` を通らなくなる
+      ため、それらの入口にも同じ検査を足す（Phase 4-2 の該当ステップ）。
+- [ ] `safe_file_linux.go` に `openat2Mode(flag int, perm os.FileMode) uint64` を追加する。`flag&os.O_CREATE`
+      が 0 なら 0 を、そうでなければ `uint64(perm.Perm())` を返す。
+- [ ] `safeOpenFileInternal`（`safe_file_linux.go:275-280`）の `mode: uint64(perm)` を
+      `mode: openat2Mode(flag, perm)` に置き換える。
+- [ ] `safe_file_linux.go` の `openat2` を、`EINTR` のあいだ再試行するラッパにする。生のシステムコール発行を
+      `var openat2Syscall = rawOpenat2`（シグネチャは § 1 の seam 表のとおり `*openHow` を受け取る形）へ
+      切り出し、`unsafe.Pointer` の取り回しは `rawOpenat2` の中に閉じる。doc コメント（英語）に、テストが
+      差し替えるための seam であることと、そのためこのパッケージのテストが `t.Parallel()` を使えないことを
+      書く。再試行に上限は設けない（[02_architecture.md](02_architecture.md) § 3.2）。`EINTR` 以外の errno は
+      現在と同じ形でそのまま返し、`safeOpenFileInternal` の errno 対応付け（:285-294）は変更しない。
+- [ ] `safe_file_test.go` に `TestSafeOpenFile_RejectsNonPermissionModeBits` を追加する。`os.ModeSetuid`・
+      `os.ModeSetgid`・`os.ModeSticky`・`os.ModeDir`・`os.ModeAppend` を含む `perm` について、
+      `FileSystemConfig{}` と `FileSystemConfig{DisableOpenat2: true}` の両方で `ErrUnsupportedFileMode` が
+      返ることを表で確認する。
+- [ ] `safe_file_test.go` に `TestSafeOpenFile_ReadOpenPermIgnoredOnBothPaths` を追加する。`O_CREATE` を
+      伴わない `O_RDONLY` の open に非ゼロの `perm`（例: `0o644`）を渡し、両経路とも同じく成功することを
+      確認する。本タスクの前は Linux 経路だけが `EINVAL` で失敗していた分岐である。
+- [ ] `safe_file_test.go` に `TestSafeOpenFile_CreatePermUnchanged` を追加する。テスト内で `syscall.Umask`
+      を固定し（`t.Cleanup` で必ず元へ戻す。`Umask` はプロセス全体に効き、このパッケージは `t.Parallel()` を
+      使わないため、戻し忘れると後続のテストが静かに壊れる）、`O_CREATE|O_WRONLY|O_EXCL` と `perm=0o640` で
+      作ったファイルの権限が両経路とも `0o640 &^ umask` と一致することを確認する。両経路の一致だけを見る
+      形にはしない（同じ壊れ方をすると通ってしまうため）。
+- [ ] **上の 3 つのテストで `FileSystemConfig{}` を使う行に、`fs.(*osFS).IsOpenat2Available()` が true で
+      あることの `require` を入れる**（false なら理由を明記して `t.Skip`）。openat2 が使えない環境
+      （Linux 5.5 以下、古い既定 seccomp プロファイルのコンテナ）では `NewFileSystem(FileSystemConfig{})` が
+      静かにフォールバック経路になり、「両経路を通した」はずのテストが同じ経路を 2 回通るだけになる。
+- [ ] `safe_file_linux_test.go` に `TestOpenat2_RetriesOnEINTR` を追加する。`openat2Syscall` を差し替えて
+      1 回目に `syscall.EINTR`、2 回目に本物へ委譲させ、`SafeOpenFile` が成功し呼び出し回数が 2 であることを
+      確認する。**`FileSystem` は差し替えの前に構築する**（`isOpenat2Available` が `openat2` を呼ぶため、
+      構築が seam を 1 回消費する）。さらにスタブは対象のパス名に一致する呼び出しだけを数える。`t.Cleanup`
+      で元へ戻す。
+- [ ] `safe_file_linux_test.go` に `TestOpenat2_NonEINTRErrnoMapping` を追加する。`openat2Syscall` を
+      `ELOOP`・`EEXIST`・`ENOENT` を返すよう差し替え、`ErrIsSymlink`・`ErrFileExists`・`os.ErrNotExist` が
+      `errors.Is` で判定できることを表で確認する。ここでも `FileSystem` を差し替えの前に構築する。構築後に
+      差し替えないと、可用性判定が false になってフォールバック経路の errno 対応付けを検証してしまう。
+- [ ] `safe_file_linux_test.go` に `TestOpenat2_ReadOpenPassesZeroMode` を追加する。`openat2Syscall` を
+      差し替えて `how.mode` を記録し、`O_CREATE` を伴わない open では 0、`O_CREATE` を伴う open では
+      `uint64(perm.Perm())` であることを確認する（AC-15 のカーネル側の主張）。
+- [ ] 再試行のループを外すと `TestOpenat2_RetriesOnEINTR` が落ちることを確認し、外し方をコミット
+      メッセージに記す。
+
+**完了条件**: `make fmt` → `make test` → `make lint` が通る。
+`GOOS=darwin go vet -tags test ./internal/safefileio/` が通る。
+
+### Phase 2: 共通ヘルパの整理とフォールバック経路の後始末（F-001 / AC-01〜05）
+
+対応する設計: [02_architecture.md](02_architecture.md) § 3.3・§ 6.2。
+
+**変更するファイル**: `internal/safefileio/errors.go`・`safe_file.go`・`safe_file_linux.go`・
+`safe_file_cleanup_test.go`・`safe_file_linux_test.go`
+
+- [ ] `verifySameFile` を `safe_file_linux.go:200-220` から `safe_file.go` へ移す。第 1 引数の型を
+      `*os.File` から `File` インターフェースへ広げ、fd 側の `syscall.Stat_t` は `getFileStatInfo` と同じく
+      `Stat().Sys()` から取り出す。
+- [ ] `verifySameFile` の doc コメント（現 :186-199）を書き換える。現在の文面は「パス名による確認とパス名に
+      よる unlink のあいだの隙」「`rename` と unlink のあいだに `absSrc` を差し替えられる」という
+      `moveFileAnchored` 専用の説明になっている。Phase 3 で Linux 経路が `fstatat`／`unlinkat` に変わり、
+      さらにフォールバック経路の後始末という第 2 の呼び出し元が加わるため、そのまま持っていくと実装と
+      食い違う。新しい文面は、（a）確認と操作が別のシステムコールである以上どちらの呼び出し元でも隙は
+      狭まるだけで閉じないこと、（b）ディレクトリ fd 相対の呼び出し元では差し替えの対象が名前だけに
+      限られること、の 2 点を英語で書く（[02_architecture.md](02_architecture.md) § 5.3 の R3）。
+- [ ] `randomTempName` を `safe_file_linux.go:256-262` から `safe_file.go` へ移し、接頭辞を引数に取る
+      `randomTempName(prefix string) (string, error)` にする。`tmpNameRandBytes` も併せて移す。
+- [ ] `generateTempLinkName`（`safe_file_linux.go:112`）を、接頭辞を受け取る形の seam として維持する
+      （`var generateTempLinkName = randomTempName`）。`linkFileToTempName`（:230）の呼び出しを
+      `generateTempLinkName(".safefileio-move-")` に直す。
+- [ ] `maxLinkatAttempts`（`safe_file_linux.go:102`）を `maxTempNameAttempts` へ改名して `safe_file.go` へ
+      移す。doc コメントを、ハードリンク名と一時ファイル名の双方に使う旨へ書き換える。
+- [ ] `errors.go` の `ErrTempLinkNameExhausted` を `ErrTempNameExhausted` へ改名する。エラー文字列を
+      `"failed to allocate a unique temporary link name"` から
+      `"failed to allocate a unique temporary name"` へ変える。doc コメントも「ハードリンク名・一時ファイル名の
+      いずれか」を指す表現へ書き換える。
+- [ ] `safe_file_linux_test.go::TestLinkFileToTempName_ExhaustsAttempts`（:247-270）の
+      `require.Error(t, err)` を `require.ErrorIs(t, err, ErrTempNameExhausted)` へ強める。現状この sentinel を
+      名指しするテストは 1 つも無く、改名が無検証のまま入ってしまうため。CLAUDE.md の
+      「`errors.Is` で判定し、文字列一致に頼らない」にも沿う。
+- [ ] `safe_file.go` に `removeVerifiedFileByPath(file File, path string) error` を追加する。
+      `verifySameFile` で同一性を確認し、一致した場合のみ `Close` → `os.Remove` の順に実行する。一致しない、
+      または確認自体が失敗した場合は削除せず、`slog.Warn` に対象パスと理由を記録する
+      （[02_architecture.md](02_architecture.md) § 5.4）。`Close` の失敗も同じ警告に含める。
+- [ ] `safe_file.go` に、2 回目の親ディレクトリ確認のための seam
+      `var ensureParentDirsAfterOpen = ensureParentDirsNoSymlinks` を追加し、`safeOpenFileFallback:494` の
+      呼び出しをこの変数経由にする。doc コメント（英語）に、テストが 2 回目の確認だけを失敗させるための
+      seam であることと `t.Parallel()` を使えない旨を書く。
+- [ ] `safeOpenFileFallback`（`safe_file.go:475-499`）に作成プローブを実装する。分岐は
+      [02_architecture.md](02_architecture.md) § 6.2 の判断フロー図が正であり、そのとおりに実装する。
+      再試行の上限には `maxTempNameAttempts` を使う。
+- [ ] 内部由来の `EEXIST` を `ErrFileExists` へ変換しないようにする。`ErrFileExists` を返すのは、呼び出し元
+      自身が `O_EXCL` を指定していた場合だけである。
+- [ ] 2 回目の親ディレクトリ確認が失敗した場合の後始末を実装する。作成していない場合は `Close` して元の
+      エラーを返す。作成していた場合は `removeVerifiedFileByPath` を呼ぶ。いずれの場合も 2 回目の確認の失敗
+      そのものを `slog.Warn` に記録する（[02_architecture.md](02_architecture.md) § 5.4）。**呼び出し元へ
+      返るのは常に 2 回目の確認が返したエラーであり、後始末の失敗（同一性の不一致を含む）を返さない**
+      （§ 4.2）。
+- [ ] `safe_file_linux_test.go` に `TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails` を追加する
+      （fd の観察に `/proc/self/fd` を使うため Linux 専用ファイルに置く。対象の
+      `safeOpenFileFallback` 自体は `DisableOpenat2: true` で Linux からも通る）。
+      `ensureParentDirsAfterOpen` を差し替えて 2 回目だけ失敗させ、エラーが返ること・戻り値の `File` が
+      nil であることを確認したうえで、**`/proc/self/fd/*` のリンク先のうちテストの一時ディレクトリ配下を
+      指すものの集合**が呼び出しの前後で変わらないことを確認する。エントリ数の差分では、Go ランタイムが
+      開閉する fd や `os.ReadDir` 自身の fd が混ざって不安定になるため使わない。負の対照（後始末を外すと
+      落ちること）を確認するときは `GOGC=off` で実行し、`os.File` のファイナライザが漏れた fd を閉じて
+      しまってテストが誤って通ることを防ぐ。この点をコミットメッセージにも記す。
+- [ ] `safe_file_cleanup_test.go` に `TestSafeOpenFileFallback_RemovesCreatedFileWhenPostCheckFails` を
+      追加する。サブテストを 3 つ置く。
+      - `created`: `O_CREATE` で新規作成した場合にファイルが残らないこと。
+      - `pre_existing`: 既存ファイルを開いただけの場合は削除されず内容が保たれること。
+      - `identity_mismatch`: 作成後・2 回目の確認の失敗の前に対象を別ファイルへ差し替え、差し替えた
+        ファイルが削除されないこと、返るエラーが 2 回目の確認のエラーであり
+        `ErrSourceIdentityMismatch` **ではない**こと、および `slog.Warn` に対象パスを含む記録が
+        残ることを確認する（AC-03 の「削除せず、警告し、元のエラーを返す」の 3 点すべて）。
+- [ ] `safe_file_cleanup_test.go` に `TestRemoveVerifiedFileByPath_SkipsRemovalOnInodeMismatch` を追加する。
+      ヘルパ単体の検証として、実在するファイルのパスと `mockFile`（`Stat()` が返す `syscall.Stat_t` の
+      `Dev`・`Ino` が 0 で実在のパスとは決して一致しない）を渡し、`ErrSourceIdentityMismatch` が返ること、
+      対象ファイルが残っていることを確認する。
+- [ ] `safe_file_linux_test.go` の `generateTempLinkName` 差し替え（:228-234・:262-264）を、接頭辞つきの
+      新しいシグネチャへ追従させる。
+- [ ] 後始末（`Close` と `removeVerifiedFileByPath` の呼び出し）を外すと上記のテストが落ちることを
+      確認し、外し方をコミットメッセージに記す（AC-05）。
+
+**完了条件**: `make fmt` → `make test` → `make lint` が通る。
+`GOOS=darwin go vet -tags test ./internal/safefileio/` が通る。
+
+### Phase 3: ディレクトリ fd プリミティブと `moveFileAnchored` の書き換え（F-002・F-005 の前提）
+
+対応する設計: [02_architecture.md](02_architecture.md) § 3.4.1・§ 3.4.5。
+
+この Phase は **Linux の外部挙動を変えない**。非 Linux では、`moveFileAnchored` に移動直前の同一性確認が
+加わるため `ErrSourceIdentityMismatch` が新たに返りうる（現在は `os.Rename` 一発で確認が無い）。これは
+[02_architecture.md](02_architecture.md) § 5.3 の R4 が意図した変化で、隙が狭まる方向である。
+`01_requirements.md` Success Criteria が挙げる挙動の変化 6 点には含まれていないため、レビューで
+7 点目として追記するか、既存の項目に含まれると判断するかを確認していただきたい。挙動の組み替えは
+Phase 4 で行う。
+
+**変更するファイル**: `internal/safefileio/safe_file.go`・`safe_file_linux.go`・`safe_file_nonlinux.go`・
+`safe_file_linux_test.go`
+
+- [ ] `ensureParentDirsNoSymlinks`（`safe_file.go:257-307`）から
+      `ensureDirNoSymlinks(dir string) (string, error)` を切り出す。走査は現行のまま（allowlist に載る
+      OS 管理シンボリックリンクは `EvalSymlinks` で解決して続行）で、**解決済みのディレクトリパスを返す**点だけが
+      異なる。`ensureParentDirsNoSymlinks` は `ensureDirNoSymlinks(filepath.Dir(absPath))` を呼んで解決済み
+      パスを捨てるラッパとして残す。
+- [ ] `safe_file_linux.go` に `openDirNoSymlinks` の openat2 版を実装する。
+      `openat2(AtFdcwd, dir, &openHow{flags: O_DIRECTORY|O_RDONLY, resolve: ResolveNoSymlinks})` の 1 回の
+      呼び出しで開く。`openat2` が使えない場合はフォールバック版へ委譲する。
+- [ ] `safe_file.go`（両経路共通）にフォールバック版の `openDirNoSymlinks` を実装する。`ensureDirNoSymlinks`
+      が返した**解決済みパス**を `O_DIRECTORY|O_NOFOLLOW` で開く。元のパスを開くと、開こうとしている
+      ディレクトリ自身が allowlist の OS 管理シンボリックリンクである場合に `ELOOP` になる
+      （[02_architecture.md](02_architecture.md) § 3.4.1）。
+- [ ] `safe_file_linux.go` と `safe_file_nonlinux.go` に `openFileAt` を実装する。Linux（openat2 が使える
+      場合）は `openat2(dirfd, name, …)`、それ以外は `unix.Openat(dirfd, name, flag|O_NOFOLLOW, mode)`。
+      **戻り値の型は `*os.File` とする**（`os.NewFile` で包む）。`linkFileToTempName` が `/proc/self/fd/<n>`
+      のために `Fd()` を必要とし、`moveFileAnchored` も現在 `*os.File` への型アサート（`safe_file_linux.go:155`）に
+      依存しているため、インターフェース値のままでは書き込み経路の一時ファイル fd をハードリンクに使えない。
+      両者とも `ELOOP`（フォールバックでは `isNoFollowError` の判定）を `ErrIsSymlink` に、`EEXIST` を
+      `ErrFileExists` に、`ENOENT` を `os.ErrNotExist` に対応付ける。mode は Phase 1 の `openat2Mode` と
+      同じ規則（`O_CREATE` が無ければ 0）で決める。
+- [ ] `linkFileToTempName`（`safe_file_linux.go:226-251`）を、ディレクトリのパス名ではなく
+      **宛先ディレクトリ fd** を受け取り、フルパスではなく**作った名前**を返す形へ変える。`linkat` の
+      呼び出しを `linkatFunc(unix.AT_FDCWD, procPath, dstDirFd, name, unix.AT_SYMLINK_FOLLOW)` にする。
+- [ ] `moveFileAnchored` の後始末（`safe_file_linux.go:164-170`）の `os.Remove(tmpPath)` を
+      `unix.Unlinkat(dstDirFd, tmpName, 0)` に変える。上の変更で一時ハードリンクの参照がフルパスから
+      「ディレクトリ fd と名前」に変わるため、後始末も同じ指し方に揃える。
+- [ ] `moveFileAnchored` のシグネチャを
+      `moveFileAnchored(srcFile File, srcDirFd int, srcName string, dstDirFd int, dstName string) error`
+      へ変える。Linux 版は `rename` を宛先ディレクトリ fd 相対（`unix.Renameat`）に、移動元の削除を
+      `unix.Unlinkat(srcDirFd, srcName, 0)` にする。`verifySameFile` の呼び出しは
+      `fstatat(srcDirFd, srcName, AT_SYMLINK_NOFOLLOW)` を使う形にする。
+- [ ] `moveFileAnchored` の doc コメント（現 :124-153）を書き換える。現在の文面は `absSrc`／`absDst` という
+      消えるパラメータを十数か所で参照し、不変条件を「`absSrc` をパス名で解決し直さない」と述べている。
+      新しい文面では、（a）0155 が確立した「宛先へ現れるのは必ず `srcFile` が指す inode であり、それを
+      示せないときは何も動かさず失敗する」という不変条件、（b）`may_linkat` によって差し替えられたソースが
+      宛先へ到達できない理由、（c）`rename` 成功後の失敗は巻き戻さないこと、の 3 点を保ちつつ、
+      ディレクトリ fd と名前を受け取る新しい形に合わせて書き直す（英語）。
+- [ ] 非 Linux 版（`safe_file_nonlinux.go:29-31`）を、`fstatat(srcDirFd, srcName, AT_SYMLINK_NOFOLLOW)` に
+      よる同一性確認のうえで `unix.Renameat(srcDirFd, srcName, dstDirFd, dstName)` を実行する形にする。
+      doc コメントを、ディレクトリは固定されるが inode への固定はできない旨
+      （[02_architecture.md](02_architecture.md) § 5.3 の R4）に更新する。
+- [ ] `atomicMoveFileCore`（`safe_file.go:140-201`）を、移動元・移動先のディレクトリ fd を
+      `openDirNoSymlinks` で取得し、ソースを `openFileAt` で開き、新シグネチャの `moveFileAnchored` を呼ぶ
+      形に組み替える。この Phase では検査の順序（chmod と検証）と移動後の検証はまだ変えない。取得した
+      ディレクトリ fd は取得の直後に `defer` で閉じる登録を行い、以降の分岐がどこで失敗しても漏れないように
+      する。
+- [ ] `atomicMoveFileCore` の doc コメント（現 :137-139）から、`SafeOpenFile`／`ensureParentDirsNoSymlinks`
+      で検査すると書いている部分を、`openDirNoSymlinks`／`openFileAt` による検査へ書き換える。
+- [ ] `safe_file_linux_test.go` の `moveFileAnchored` を直接呼ぶ 5 つのテスト
+      （`TestMoveFileAnchored_RegressionSuccessfulMove`・`_SourceReplacementFailsClosed`・
+      `_RenameFailureCleansUpTemporaryLink`・`_UnlinkSourceFailureReturnsErrorAfterSuccessfulRename`・
+      `TestAtomicMoveFileCore_EndToEndUsesFDAnchoredMove`）を新しいシグネチャへ追従させる。検証内容は
+      変えない。
+- [ ] `safe_file_linux_test.go` の `linkFileToTempName` を直接呼ぶ 3 つのテスト
+      （`TestLinkFileToTempName_RetriesOnNameCollision`・`_ExhaustsAttempts`・
+      `_NonEEXISTErrorIsNotRetried`）を、ディレクトリ fd を渡し名前を受け取る新しいシグネチャへ
+      追従させる。検証内容は変えない（`_ExhaustsAttempts` の主張の強化は Phase 2 で済んでいる）。
+- [ ] `verifySameFile` を、fd とパス名で比較する形と、fd とディレクトリ fd＋名前で比較する形の両方から
+      使えるようにする（比較そのものは 1 か所に置く）。
+
+**完了条件**: `make fmt` → `make test` → `make lint` が通り、既存テストが検証内容を変えずに通る。
+`GOOS=darwin go vet -tags test ./internal/safefileio/` と
+`GOOS=netbsd go vet -tags test ./internal/safefileio/` が通る（非 Linux 版のビルドを両方の系統で確かめる）。
+
+### Phase 4: 移動経路の分割・書き込みのアトミック化・`Remove` の削除（F-002・F-003・F-005 / AC-06〜13・AC-18〜25）
+
+対応する設計: [02_architecture.md](02_architecture.md) § 3.4.2〜§ 3.4.4・§ 3.5・§ 3.6・§ 6.1。
+
+**変更するファイル**: `internal/safefileio/errors.go`・`safe_file.go`・`safe_file_linux.go`・
+`safe_file_nonlinux.go`・`testutil/mock.go`・`safe_file_test.go`・`safe_file_cleanup_test.go`・
+`safe_file_linux_test.go`・`internal/security/machoanalyzer/analyzer_test.go`
+
+#### 4-1. 移動経路の分割と順序の変更
+
+- [ ] `errors.go` に `ErrDestinationCommitted` を追加する（宣言と doc コメントは
+      [02_architecture.md](02_architecture.md) § 3.1 のコードブロックのとおり）。
+- [ ] `atomicMoveFileCore` から `moveOpenFileCore` を切り出す。責務の分担は
+      [02_architecture.md](02_architecture.md) § 3.4.1 の表のとおりとする。
+- [ ] `moveOpenFileCore` の中で、fchmod を `canSafelyAccessFile(FileOpRead)` によるソース検証の**後**に置く
+      （AC-06）。
+- [ ] fchmod の直後・`rename` の前に、同じ fd に対して `canSafelyAccessFile(FileOpWrite)` を実行する
+      （[02_architecture.md](02_architecture.md) § 3.4.3）。移動後の宛先を開き直す検査（現行
+      `safe_file.go:185-198`）はここへ移す。
+- [ ] 移動後に残す検証を、宛先ディレクトリ fd と宛先名に対する `verifySameFile` による同一性確認へ変える。
+      呼び出しは seam `verifyMovedFile`（§ 1 の表）を経由させ、宛先をパス名で開き直さない。
+- [ ] `rename` に到達した後のすべての失敗を `ErrDestinationCommitted` で包む。包む場所は `moveOpenFileCore`
+      とし、移動そのものの成否は `moveFileAnchored` の戻り値で判断する
+      （[02_architecture.md](02_architecture.md) § 3.9 の責務表）。
+- [ ] `slog.Warn` に、宛先が置き換わったうえで失敗した事象を記録する。宛先のパスと失敗した検証の内容を
+      含める（[02_architecture.md](02_architecture.md) § 5.4 の最重要項目）。
+- [ ] 権限検査による拒否の記録に、対象の `mode`・`uid`・`gid` と、判定を下した規則（world-writable・
+      グループ非所属・上限超過のいずれか）を含める（同 § 5.4）。
+
+#### 4-2. 書き込みのアトミック化
+
+- [ ] `File` インターフェース（`safe_file.go:65-74`）に `Sync() error` を追加する。
+- [ ] `safe_file.go` に `createTempFileInDir` を追加する。`randomTempName(".safefileio-write-")` で名前を
+      作り、`openFileAt(dirFd, name, O_WRONLY|O_CREATE|O_EXCL, 0o600)` で作る。`ErrFileExists` の場合は
+      `maxTempNameAttempts` まで名前を変えて再試行し、超えたら `ErrTempNameExhausted` を返す。権限は
+      `perm` ではなく固定の `0o600` とする。
+- [ ] `safe_file.go` に `removeVerifiedFileAt(file File, dirFd int, name string) error` を追加する。同一性の
+      確認は `fstatat`、削除は `unlinkat` で、どちらもディレクトリ fd 相対に行う。比較そのものは
+      `verifySameFile` に委ねる。
+- [ ] `safeWriteFileCommon`（`safe_file.go:204-247`）を、[02_architecture.md](02_architecture.md) § 3.6.2 の
+      7 手順と § 6.1 の判断フローのとおりに書き換える。§ 2.3 の概略図と § 6.1 が食い違う場合は § 6.1 に従う。
+      `moveOpenFileCore` へ渡す `requiredPerm` は呼び出し元の `perm` である（§ 2.3 のシーケンス図。
+      AC-19 の「宛先の権限が `perm` と一致する」はこの受け渡しで成立する）。
+- [ ] `safeWriteFileCommon` と `atomicMoveFileCore` の入口に `validateOpenPerm`（Phase 1）の呼び出しを足す。
+      両者は書き換え後 `SafeOpenFile` を通らなくなるため、Phase 1 で入れた特殊ビットの拒否がこの 2 経路から
+      抜け落ちる。既存の `ValidateRequestedPermissions` は `perm & 0o7777` で判定するため
+      `os.ModeSetuid`（`1<<23`）を捕まえられず、代わりにならない
+      （[02_architecture.md](02_architecture.md) § 3.1）。
+- [ ] 宛先プローブで `ErrIsSymlink` を受け取った場合、一時ファイルを作る前に拒否する（AC-20）。
+- [ ] 一時ファイルの段階で失敗した場合に呼び出し元へ返るエラーを、一時ファイル名ではなく宛先のパスを
+      名指しする形で包む（[02_architecture.md](02_architecture.md) § 3.6.2 末尾）。
+- [ ] 差し替え後の `Close` の失敗は `slog.Warn` に記録し、エラーとしては返さない（§ 4.2）。
+- [ ] `ErrDestinationCommitted` を含む失敗では一時ファイルの削除を試みず、一時ファイルのパスを含む警告を
+      記録する（[02_architecture.md](02_architecture.md) § 5.4）。
+
+#### 4-3. `FileSystem.Remove` の削除とインターフェース追従
+
+- [ ] `safe_file.go` の `FileSystem` インターフェースから `Remove`（:57-58）を削除する。
+- [ ] `safe_file.go` の `osFS.Remove`（:95-98）を削除する。
+- [ ] `testutil/mock.go` の `MockFileSystem.Remove`（:54-61）・`RemoveFunc`（:24-25）・`RemoveCalls`（:35）を
+      削除する。
+- [ ] `safe_file_cleanup_test.go` の `mockFileSystem.Remove`（:212-220）・`removeFunc`（:191）・
+      `removeCallCount`（:195）・`getRemoveCallCount`（:233-237）を削除する。
+- [ ] `internal/security/machoanalyzer/analyzer_test.go` の `largeFakeFS.Remove`（:241）を削除し、
+      `largeFakeFile` に `Sync`（`func (largeFakeFile) Sync() error { return nil }`）を追加する。
+- [ ] `safe_file_cleanup_test.go` の `mockFile` に `Sync` を追加する。
+- [ ] **`File.Truncate` の扱いを決める。** Phase 4-2 で `safe_file.go:238` の `file.Truncate(0)` が消えると、
+      `Truncate` は本番の呼び出し元を 1 つも持たなくなる。これは `01_requirements.md` の F-5 が
+      `Remove` の削除を正当化した基準（0157・0166 と同じ）に当てはまる。`Truncate` を `File` から削除する
+      （併せて `mockFile.Truncate`・`largeFakeFile.Truncate`・`TestMockFileTruncate`・`truncateErr` を消す）か、
+      残す理由を本書に記録するかのどちらかを選ぶ。`make deadcode` はインターフェースのメソッドを報告
+      しないため、この判断を自動検査に委ねることはできない。
+- [ ] `make deadcode` を実行し、本タスクの削除に起因する新たな未使用シンボルが出ないことを確認する
+      （AC-13）。実行前の出力を控えておき、差分で判断する。
+- [ ] `go tool cover -func` を `Remove` 関連テストの整理の前後で取得し、関数単位で失われるカバレッジが
+      無いことを確認する。確認した旨をコミットメッセージに記す（AC-11）。
+
+#### 4-4. テストの入れ替えと追加
+
+- [ ] `safe_file_cleanup_test.go::TestSafeWriteFileOverwrite_NoCleanupOnError` を削除する（3 サブテストとも
+      検証対象の `Remove` が消滅するため）。
+- [ ] `safe_file_cleanup_test.go::TestFileCleanup_Integration` を削除する（次に足す新テストへ統合する）。
+- [ ] `safe_file_test.go::TestSafeWriteFileOverwrite_FileCloseError` を削除する（差し替え後の `Close` は
+      エラーを返さなくなり、`FileSystem` 差し替えによる注入も届かなくなるため）。
+- [ ] 参照が無くなるヘルパを削除する: `safe_file_test.go` の :162-215 の一続きのブロック
+      （`failingFile`・`errSimulatedClose`・`failingCloseFS`・`failingWriteCloseFS`・`errSimulatedWrite`・
+      `failingWriteFS`）と、`safe_file_cleanup_test.go` の `errDiskFull`・`errTruncateFailed`（:81-82）、
+      `mockFile` の `writeErr`・`statErr`・`closeErr` フィールド。
+- [ ] `safe_file_test.go` に `TestAtomicMoveFile_ValidatesSourceBeforeChmod` を追加する。ソース検証を
+      失敗させ（作成後に `os.Chmod` で `0o1644` を明示的に設定したソースを使う。`MaxAllowedReadPerms`
+      `0o6775` を超えるため読み取り検査が拒否する）、`AtomicMoveFile` がエラーを返すこと、およびソースの
+      権限が呼び出し前の `0o1644` のままであることを確認する（AC-06・07）。
+- [ ] `safe_file_test.go` に `TestAtomicMoveFile_RejectsUnsafeSourcePermissions` を追加する（AC-07a）。
+      権限は**いずれも作成後に `os.Chmod` で明示的に設定する**（`os.WriteFile` の perm は umask に削られ、
+      `0o666` が `0o644` になって拒否条件が成立しなくなる。既存の `TestValidateFilePermissions`
+      〈`safe_file_test.go:325-330`〉と同じ手順）。サブテストは 3 つとする。
+      - `world_writable`: `0o666` のソース。`requiredPerm=0o600` でも拒否されること。
+      - `perms_exceed_maximum`: `0o1644`（sticky。`MaxAllowedReadPerms=0o6775` を超える）のソース。
+      - `group_writable_non_member`: `os.Getgroups()` に含まれない GID へ `os.Chown(path, -1, gid)` した
+        `0o660` のソース。`chown` が `EPERM` で失敗する環境では理由を明記して `t.Skip` する。他の 2 つの
+        サブテストは権限を要さず常に実行されるため、拒否経路そのものは無条件に踏まれる。
+- [ ] `safe_file_test.go` に `TestAtomicMoveFile_SafeSourceStillMoves` を追加する。`0600` のソースを
+      `requiredPerm=0o644` で移動し、成功すること・宛先の権限が `0o644` になること・内容が保たれることを
+      確認する（AC-07b）。実行者が属するグループから書き込み可能なソース（`0o660`、グループは
+      `os.Getgid()`）が従来どおり受け入れられるサブテストも併せて置く。
+- [ ] `safe_file_test.go` に `TestSafeWriteFileOverwrite_SucceedsWithPermApplied` を追加する。書き込みが
+      成功すること、内容が一致すること、宛先の権限が `perm` と一致すること（新規作成・既存の上書きの
+      両方）を確認する（AC-19）。`syscall.Umask` をテスト内で固定し、`t.Cleanup` で必ず元へ戻す。
+- [ ] `safe_file_test.go` に `TestSafeWriteFileOverwrite_RejectsSymlinkDestination` を追加する（AC-20・24）。
+      宛先がシンボリックリンクのとき、`ErrIsSymlink` が返ること、**リンク先のファイルの内容が変わって
+      いないこと**、および**宛先のパスが依然としてシンボリックリンクであること**（`os.Lstat` の
+      `Mode()&os.ModeSymlink != 0` と `os.Readlink` の戻り値）の 3 つを確認する。
+- [ ] `safe_file_test.go` に `TestSafeWriteFileOverwrite_ExistingDestinationRejectedLeavesItIntact` を
+      追加する（AC-18・21・23 の可搬な経路）。宛先を用意したうえで `os.Chmod` で `0o666` を明示的に設定し
+      （`FileOpWrite` の検査に落ちる権限。umask に削られると検査を通ってしまう）、書き込みが失敗すること、
+      返るエラーが `ErrDestinationCommitted` を**含まない**こと、宛先の内容が元のままであること、宛先
+      ディレクトリに `.safefileio-` で始まるエントリが 1 つも残っていないことを確認する。
+- [ ] `safe_file_linux_test.go` に `TestSafeWriteFileOverwrite_PreCommitFailureLeavesDestinationIntact` を
+      追加する（AC-18・21・23 の、一時ファイルへ書き終えた後に失敗する経路）。既存の `linkatFunc` を
+      差し替えて `rename` の手前で失敗させ、返るエラーが `ErrDestinationCommitted` を**含まない**こと、
+      宛先の内容が元のままであること、宛先ディレクトリに `.safefileio-` で始まるエントリが残らないことを
+      確認する。`linkatFunc` は Linux 専用の seam なので、この経路の検証は Linux に限られる。可搬な経路の
+      検証は上の `ExistingDestinationRejected…` が担う。
+- [ ] `safe_file_test.go` に `TestSafeWriteFileOverwrite_PostCommitFailureIsDestinationCommitted` を
+      追加する（AC-18・21 の差し替え**後**の側。現在この分岐を主張するテストが 1 つも無い）。
+      seam `verifyMovedFile` を差し替えて `rename` 成功後に失敗させ、次の 4 点を確認する。
+      - 返るエラーが `errors.Is(err, ErrDestinationCommitted)` を満たす。
+      - 宛先の内容が**新しい内容**になっている。
+      - 一時ファイルの削除を試みていない（一時ファイル名の inode が消されていない）。
+      - `slog.Warn` に宛先のパスと一時ファイルのパスを含む記録が残る
+        （[02_architecture.md](02_architecture.md) § 5.4）。
+- [ ] `safe_file_test.go` に `TestMoveOpenFileCore_RejectsRequiredPermBeforeRename` を追加する
+      （[02_architecture.md](02_architecture.md) § 3.4.3）。`moveOpenFileCore` は可搬なので Linux 専用
+      ファイルには置かない。入力は次のとおり具体化する。`requiredPerm=0o660`（`MaxAllowedWritePerms=0o664`
+      以下なので入口の `ValidateRequestedPermissions` は通る）とし、ソースの GID を、実行者が属していて
+      **かつ他にも構成員がいる**グループへ `os.Chgrp` 相当（`os.Chown(path, -1, gid)`）で設定する。
+      `CanCurrentUserSafelyWriteFile` は group 書き込み可のファイルに「所有者本人かつそのグループの唯一の
+      構成員であること」を求めるため（`internal/groupmembership/manager.go:243-251`）、この条件で
+      `rename` の前に拒否される。該当するグループが `os.Getgroups()` の中に見つからない場合は理由を
+      明記して `t.Skip` する。エラーが `ErrDestinationCommitted` を含まないこと、宛先が変化していないことを
+      確認する。
+- [ ] `safe_file_test.go` に `TestEnsureDirNoSymlinks_ReturnsResolvedPath` を追加する。`ensureDirNoSymlinks`
+      が **allowlist に載る OS 管理シンボリックリンクを解決した後のパスを返す**ことを、戻り値そのものに
+      対して確認する。`common.IsAllowedOSManagedSymlink` は Linux では常に false を返すため
+      （`internal/common/osmanaged_symlink_other.go:8-10`）、`/tmp` を使う形の検証は Linux では必ず skip に
+      なり、§ 3.4.1 が新たに課した「解決済みパスを開く」という義務が本番環境で一度も検証されない。
+      allowlist に依存しない形（allowlist 判定を差し替え可能にし、`t.TempDir` 配下に作った
+      シンボリックリンクを許可する）で Linux からも踏めるようにする。allowlist 判定の差し替えが
+      `internal/common` の変更を要する場合は、その要否と方法をレビューで確認する。
+- [ ] 上のテストに加えて、`common.IsAllowedOSManagedSymlink("/tmp")` が true の環境でだけ実行する
+      `TestOpenDirNoSymlinks_WritesUnderOSManagedSymlink` を置く（false なら `t.Skip`）。判定に
+      `runtime.GOOS` を使わない。`/tmp` は `t.TempDir` の外なので、ファイル名は
+      `.safefileio-test-<ランダム>` の形で実行ごとに一意にし、作成の直後に `t.Cleanup` で削除を登録する。
+- [ ] `internal/fileanalysis` の既存テスト（`TestStore_SaveAndLoad`・`TestStore_PreservesExistingFields`・
+      `TestStore_ArgEvalResultsRoundtrip`・`TestStore_Load_V9DynLibDepsObjectFormat`）が無変更で通ることを
+      確認する（AC-25）。
+- [ ] `internal/runner/base/output` の既存テスト（`TestSafeFileManager_MoveToFinal`・
+      `TestSafeFileManager_MoveToFinal_WithMock`・`TestSafeFileManager_RemoveTemp`・
+      `TestSafeFileManager_RemoveTemp_WithMock`）が無変更で通ることを確認する（AC-07b・12）。
+- [ ] 検査順序の入れ替えを元に戻すと `TestAtomicMoveFile_ValidatesSourceBeforeChmod` が落ちることを
+      確認し、戻し方をコミットメッセージに記す（AC-07）。
+
+#### 4-5. 性能の実測
+
+[02_architecture.md](02_architecture.md) § 3.6.4 と `01_requirements.md` の F-7 が、`record` 実行の wall time を
+変更の前後で実測して絶対値を本書に記録することを求めている。
+
+- [ ] 変更前後の 2 つのバイナリを用意する。作業ツリーを退避せずに済むよう、変更前は
+      `git worktree add ../0167-base origin/main` で別ツリーを作り、そこで `make build` する
+      （`build/prod/record` が生成物）。計測後に `git worktree remove` する。
+- [ ] 計測用のハッシュディレクトリを `dir=$(mktemp -d)` で作り、`chmod 700 "$dir"` する。固定パスは
+      同時に走る別のセッションと衝突するため使わない。
+- [ ] 対象ファイルの一覧をファイルに固定し（`/usr/bin` 配下の先頭 200 件など）、両リビジョンで同じ一覧を
+      使う。
+- [ ] 各リビジョンについて、まず計測しない**ウォームアップ実行**を 1 回行う（対象 200 件をページ
+      キャッシュへ載せ、初回だけ遅くなる分を計測から外す）。その後
+      `time <record> -force -d "$dir" $(cat <一覧>)` を 3 回実行し、中央値を採る。各回の前に
+      `rm -rf "$dir"/*` でレコードを消して条件を揃える。
+- [ ] 次の表を実測値で埋める。相対比ではなく絶対値（秒）と 1 件あたりの増分（ミリ秒）を記す。
+
+| 対象件数 | 変更前（秒） | 変更後（秒） | 差（秒） | 1 件あたりの増分（ms） |
+|---|---|---|---|---|
+| 200 | 実装時に記入 | 実装時に記入 | 実装時に記入 | 実装時に記入 |
+
+**完了条件**: `make fmt` → `make test` → `make lint` が通る。`make deadcode` に新規項目が出ない。
+`GOOS=darwin go vet -tags test ./...` と `GOOS=netbsd go vet -tags test ./internal/safefileio/` が通る。
+上の性能表が埋まっている。
+
+### Phase 5: 契約の明記と監査文書への反映（F-007・F-008 / AC-29〜38）
+
+対応する設計: [02_architecture.md](02_architecture.md) § 3.7・§ 3.9・§ 7.3。
+
+**変更するファイル**: `internal/safefileio/safe_file.go`・`safe_file_nonlinux.go`・
+`docs/user/security-risk-assessment.ja.md`・`docs/user/security-risk-assessment.md`・
+`docs/dev/architecture_design/security-architecture.ja.md`・
+`docs/dev/architecture_design/security-architecture.md`・
+`docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md`・
+`docs/tasks/0149_security_code_smell_audit_fable/findings/B1_safefileio.md`
+
+- [ ] `safe_file.go` の package コメント（:1-6）に、`openat2` が使える環境とフォールバック経路とで保証の
+      強さが異なること、後者は競合の隙を狭めるが排除はしない best-effort であること、本番ターゲットは
+      Linux 5.6+ であり非 Linux は開発・限定用途に限ることを英語で追記する（AC-29・31・33）。
+- [ ] `safe_file_nonlinux.go` の package コメント（:3-7）の表現を、上の package コメントと矛盾しない
+      共通の言い回しに揃える。
+- [ ] `SafeOpenFile`・`SafeReadFile`・`SafeWriteFileOverwrite`・`AtomicMoveFile` の各 doc コメントに、
+      package コメントの限界の記述への参照（`See the package documentation …`）を英語で足す（AC-30・33）。
+- [ ] **古くなった仕組みの説明を書き換える。** `AtomicMoveFile` の doc コメント（`safe_file.go:100-104`）は
+      「`SafeOpenFile` via openat2 RESOLVE_NO_SYMLINKS for the source、`ensureParentDirsNoSymlinks` for the
+      destination parent」と、Phase 3 で置き換わる仕組みを名指ししている。`SafeWriteFileOverwrite` の
+      doc コメント（:117-127）も「falls back to path verification before opening the file」と、一時ファイル
+      方式になる前の手順を説明している。両方を新しい仕組み（`openDirNoSymlinks`／`openFileAt`、および
+      一時ファイルへ書いて差し替える手順）に合わせて書き直す。
+- [ ] `AtomicMoveFile` の doc コメントに [02_architecture.md](02_architecture.md) § 3.4.4 が挙げる 4 点を
+      英語で追記する（AC-08・09）。
+- [ ] `SafeWriteFileOverwrite` の doc コメントに、差し替えに到達する前の失敗では宛先が書き込み前の内容の
+      ままであること、到達後の失敗は `ErrDestinationCommitted` を含み `errors.Is` で判別できることを英語で
+      追記する（[02_architecture.md](02_architecture.md) § 5.2）。
+- [ ] `canSafelyReadFromFile` の doc コメント（`safe_file.go:448-450`）に、読み取り検査が所有者 UID を見ず
+      `(gid, mode)` だけで判定すること、それが意図的であること、および AC-32 が挙げる 2 つの理由
+      （ディレクトリ権限監査との役割分担、分離運用の成立条件）を英語で書く。あわせて、この非対称性が
+      「ソースをパス名で開き直してはならない」理由でもあることを 1 文で書く
+      （[02_architecture.md](02_architecture.md) § 3.7 末尾）。
+- [ ] `docs/user/security-risk-assessment.ja.md:158-172` の `safeOpenFileInternal` の引用を、Phase 1 の
+      変更後の実装（`mode: openat2Mode(flag, perm)` と `EINTR` 再試行を含む形）に合わせる（AC-38）。
+- [ ] 同 :204 付近の `safeOpenFileFallback` の説明を、Phase 2 の作成プローブを含む手順に合わせる（AC-38）。
+- [ ] 同文書「前提と限界」節（:180-211）の本番ターゲット（Linux 5.6+）と非 Linux の位置づけの記述が、
+      package コメントの追記と同じ内容であることを読み合わせて確認する（AC-31）。食い違いがあれば
+      package コメント側を文書に合わせる。
+- [ ] `docs/dev/architecture_design/security-architecture.ja.md:206-215` の `openat2()` の引用を、`EINTR`
+      再試行後の形に更新する。
+- [ ] 同 :217-233 の `ensureParentDirsNoSymlinks()` の引用の見出しと関数名を `ensureDirNoSymlinks()` へ
+      変える。走査のループそのものは変わらないが、Phase 3 で本体がこの関数へ移るため、引用が「どの関数の
+      本体か」を誤って示すことになる。
+- [ ] 日本語版（`security-risk-assessment.ja.md`・`security-architecture.ja.md`）をコミットしたうえで、
+      `/mktrans` で英語版（`security-risk-assessment.md`・`security-architecture.md`）へ反映する。
+      日英を直接両方編集しない。
+- [ ] `98_remaining_issues.md` §2 の「B1（safefileio）」（:53-61）から F-2〜F-9 の箇条書き 5 行（:55-59）を
+      取り除き、同文書が :15・:17・:51 で用いている `> **B1 F-2〜F-9 について**: …` の引用ブロック形式で、
+      本タスクと #978 への参照を含む解消済みの記述に置き換える（AC-34）。
+- [ ] 同じ引用ブロックに、F-2・F-4-2・F-8 を所見の主推奨とは異なる形で close したことと、その根拠
+      （本番ターゲットの限定、0155 の既存の設計決定、読み取り側のポリシーの所在）を書く（AC-35）。
+- [ ] `findings/B1_safefileio.md` の F-2〜F-9 の各節に `- 対応状況: …` の箇条書きを 1 つずつ足す
+      （計 8 箇所）。所見の原文（該当箇所・問題・悪用シナリオ・推奨対応）は書き換えない（AC-36）。
+- [ ] `98_remaining_issues.md` の B1 以外の節に変更行が出ていないことを差分で確認する（AC-37）。
+
+**完了条件**: `make test` と `make lint` が通る。§7 の AC 検証をすべて実施済みである。
+
+---
+
+## 3. 実装順序とマイルストーン
+
+| マイルストーン | Phase | 成果物 | 完了の判定 |
+|---|---|---|---|
+| M1 | Phase 1: mode の検証・正規化と `openat2` の `EINTR` 再試行 | `ErrUnsupportedFileMode`・`validateOpenPerm`・`openat2Mode`・`EINTR` 再試行 | AC-14〜17・AC-26〜28 が検証済み |
+| M2 | Phase 2: 共通ヘルパの整理とフォールバック経路の後始末 | `verifySameFile` の共通化、`removeVerifiedFileByPath`、作成プローブ | AC-01〜05 が検証済み |
+| M3 | Phase 3: ディレクトリ fd プリミティブと `moveFileAnchored` の書き換え | `ensureDirNoSymlinks`・`openDirNoSymlinks`・`openFileAt`・新シグネチャの `moveFileAnchored`／`linkFileToTempName` | 既存テストが検証内容を変えずに通り、Linux の外部挙動が変わっていない |
+| M4 | Phase 4: 移動経路の分割・書き込みのアトミック化・`Remove` の削除 | `ErrDestinationCommitted`・`moveOpenFileCore`・一時ファイル方式の `safeWriteFileCommon`・`Remove` の削除 | AC-06〜13・AC-18〜25 が検証済み。性能表が埋まっている |
+| M5 | Phase 5: 契約の明記と監査文書への反映 | doc コメント、利用者向け文書、0149 の監査記録 | AC-29〜38 が検証済み |
+
+Phase の名前・順序・先行条件は [02_architecture.md](02_architecture.md) § 8 の表に従う。Phase 3 を独立させる
+理由と、Phase 4 で `Remove` の削除と一時ファイルの後始末を同じ段階に置く理由も同節にある。
+
+---
+
+## 4. テスト戦略
+
+### 4.1 単体テスト
+
+- 対象は `internal/safefileio` の新規・変更関数。方針は [02_architecture.md](02_architecture.md) § 7.1 に従う。
+- 権限に関するテストは、**観測する側**（作成されたファイルの権限を見る）では `syscall.Umask` を固定し、
+  **フィクスチャを作る側**（拒否されるべき権限のファイルを用意する）では作成後に `os.Chmod` で明示的に
+  設定する。`os.WriteFile` の perm 引数は umask に削られるため、`0o666` のつもりが `0o644` になって
+  拒否条件が成立しない。`Umask` を触った場合は `t.Cleanup` で必ず元へ戻す（プロセス全体に効くため）。
+- グループの条件は「実行者が属さないグループ」「実行者が属していて他にも構成員がいるグループ」を
+  明示的に用意して作る。用意できない環境では理由を明記して `t.Skip` する。実行者の主グループに依存した
+  期待値を置かない。
+- 経路の切り替えは `FileSystemConfig{DisableOpenat2: true}` で行い、mode の検証（AC-14〜17）は両経路で
+  同じ表を流す。openat2 経路を通すつもりの行では `IsOpenat2Available()` が true であることを `require` し、
+  false の環境では skip する。openat2 が使えない環境では `FileSystemConfig{}` が静かにフォールバック
+  経路になり、両経路を通したつもりのテストが同じ経路を 2 回通ってしまうためである。
+- このパッケージのテストは `t.Parallel()` を使わない（`safe_file_linux.go:120-121` の既存の制約。本タスクで
+  seam が 3 つ増えるため、この制約は新しいテストにも等しく当てはまる）。
+- 差し替えたパッケージ変数は必ず `t.Cleanup` で元へ戻す（既存の
+  `TestLinkFileToTempName_RetriesOnNameCollision` と同じ形）。`openat2Syscall` を差し替えるテストは、
+  `NewFileSystem` が `isOpenat2Available` 経由でこの seam を 1 回消費することを踏まえ、`FileSystem` を
+  差し替えの前に構築する。
+
+### 4.2 統合テスト
+
+- 後始末・アトミック性・シンボリックリンクの拒否は、モックではなく実ディレクトリ（`SafeTempDir`）上で
+  検証する（[02_architecture.md](02_architecture.md) § 7.2）。モックの `File` は `Dev`・`Ino` を持たないため
+  同一性が一致する分岐を作れず、`removeVerifiedFileByPath`／`removeVerifiedFileAt` の**一致しない**分岐の
+  検証にのみ使う。
+- 「一時ファイルが残らない」の検証は、宛先ディレクトリを列挙して `.safefileio-` で始まるエントリが 0 件で
+  あることで行う。特定の一時ファイル名を仮定しない。
+- `t.TempDir` の外へ書くテスト（`/tmp` 直下の OS 管理シンボリックリンクの検証）は、名前を実行ごとに一意に
+  し、作成の直後に `t.Cleanup` で削除を登録する。
+- 警告（`slog.Warn`）の検証は、`internal/testutil` の `NewRecordingLogger` で作った記録用ロガーを
+  `slog.SetDefault` で既定に据え、`t.Cleanup` で元へ戻したうえで `LogRecorder.RequireRecord` を使う。
+- `internal/fileanalysis` と `internal/runner/base/output` の既存テストを、書き換えずに回帰として使う。
+
+### 4.3 後方互換性の確認
+
+- `SafeWriteFileOverwrite` が成功したときに書き込まれる内容と、`AtomicMoveFile` が成功したときの宛先が
+  本タスクの前後で変わらないことを、上記の既存テストで確認する。
+- 既存の解析レコードファイルが変更なしに読めることは、`TestStore_Load_V9DynLibDepsObjectFormat` などの
+  固定入力を読むテストが担う。
+- 意図した挙動の変化は `01_requirements.md` Success Criteria の 6 点と、Phase 3 が非 Linux にもたらす
+  `ErrSourceIdentityMismatch`（§ 2 Phase 3 の前書き）に限る。これを超える差分が見つかった場合は実装では
+  なく設計の問題として扱い、`02_architecture.md` の改訂から行う。
+
+### 4.4 テストが理由どおりに失敗できることの確認
+
+後始末（Phase 2）・検査順序の入れ替え（Phase 4-1）・`EINTR` 再試行（Phase 1）のそれぞれについて、対象の
+処理を取り除いた状態でテストが失敗することを確認し、取り除いた方法と結果をコミットメッセージに記す
+（AC-05・07・28）。fd リークの確認は `GOGC=off` で行い、ファイナライザが漏れた fd を閉じてテストが誤って
+通ることを防ぐ。
+
+### 4.5 外部サービスへの依存
+
+本タスクは Slack その他の外部サービスを新たに使用しない。対象クライアント環境での検証は該当しない（N/A）。
+
+---
+
+## 5. リスク管理
+
+| # | リスク | 影響 | 対応 |
+|---|---|---|---|
+| R-1 | ディレクトリ fd 起点への変更（Phase 3）が広範で、非 Linux 版のコンパイルエラーに CI で気づけない | 非 Linux のビルドが壊れたまま進む | 各 Phase の完了条件に `GOOS=darwin go vet -tags test` と `GOOS=netbsd go vet -tags test` を含める。`-tags test` が必要なのは、テスト側が `//go:build test` の `internal/testutil` を import しているためで、この形が変更前のツリーで通ることは確認済み（§ 1「ビルド検査の前提」）。`unix.Openat`・`unix.Renameat`・`unix.Fstatat`・`unix.Unlinkat` の存在は各 GOOS で `go doc` により確認済み |
+| R-2 | `FileSystem` のモックが書き込み・移動の経路に届かなくなり、既存テストの注入点が消える | 既存の失敗経路の検証が失われる | § 1 の表で失われる主張を 1 件ずつ洗い出し、実ファイルシステム上のテストまたは `linkatFunc`／`verifyMovedFile` の seam へ置き換える。`go tool cover -func` の前後比較で漏れを確認する |
+| R-3 | AC-07a の「実行者が属さないグループから書き込み可能なソース」と、差し替え前拒否テストの「他にも構成員がいるグループ」を、非特権環境で用意できない | 3 つの拒否条件のうち 1 つ、および § 3.4.3 の前倒し検査が skip になる | どちらも `t.Skip` の条件と理由をテスト内に明記する。AC-07a の他の 2 条件（world-writable・上限超過）は権限を要さず常に実行され、拒否経路そのものは無条件に踏まれる |
+| R-4 | `fsync` の追加により `record` の実行時間が延びる | 対象が数百件のとき 0.1〜数秒の増加 | Phase 4-5 で絶対値を実測して記録する。相対比では判断しない（CLAUDE.md の性能方針）。受け入れる根拠は [02_architecture.md](02_architecture.md) § 3.6.4 にある |
+| R-5 | 作成プローブにより、`O_CREATE` を `O_EXCL` なしで使う呼び出しが `ENOENT` で失敗しうる | `internal/runner/bootstrap/logger.go:246` のログファイル open が、フォールバック経路でのみ失敗しうる | 本番ターゲット（Linux 5.6+）では `openat2` 経路が使われプローブは動かない。上限つき再試行で通常の競合は吸収する。`01_requirements.md` Success Criteria に既に記載済みの変化である |
+| R-6 | `98_remaining_issues.md` の書き換えが B1 以外の節に及ぶ | 監査記録の他の残件が失われる | AC-37 の差分確認を Phase 5 の完了条件に含める |
+| R-7 | 承認済みの `02_architecture.md` に無い本番の seam（`ensureParentDirsAfterOpen`・`verifyMovedFile`）を、セキュリティ上重要な経路へ増やす | 可変のパッケージ変数が攻撃面になりうるという指摘を後から受ける可能性がある | § 1「本タスクで新規に必要になる seam」に必要性と代替の不在を明記した。本書の承認をもって認めるか、`02_architecture.md` § 7.1 へ先に追記するかをレビューで決める |
+
+---
+
+## 6. 実装チェックリスト
+
+### Phase 1: mode の検証・正規化と `openat2` の `EINTR` 再試行
+
+- [ ] `ErrUnsupportedFileMode` の追加
+- [ ] `validateOpenPerm` の追加と `SafeOpenFile` からの呼び出し
+- [ ] `openat2Mode` の追加と `safeOpenFileInternal` の書き換え
+- [ ] `openat2` の `EINTR` 再試行ラッパと `openat2Syscall` seam（`*openHow` を受け取る形）
+- [ ] AC-14〜16 のテスト追加（openat2 可用性の `require` を含む）
+- [ ] `TestOpenat2_RetriesOnEINTR`・`TestOpenat2_NonEINTRErrnoMapping`・`TestOpenat2_ReadOpenPassesZeroMode` の追加
+- [ ] 再試行を外すとテストが落ちることの確認（AC-28）
+- [ ] `make fmt` / `make test` / `make lint` / `GOOS=darwin go vet -tags test`
+
+### Phase 2: 共通ヘルパの整理とフォールバック経路の後始末
+
+- [ ] `verifySameFile` の移動・`File` への一般化・doc コメントの書き換え
+- [ ] `randomTempName`（接頭辞対応）・`tmpNameRandBytes`・`maxTempNameAttempts` の移動
+- [ ] `ErrTempLinkNameExhausted` → `ErrTempNameExhausted` の改名
+- [ ] `TestLinkFileToTempName_ExhaustsAttempts` の `require.ErrorIs` への強化
+- [ ] `removeVerifiedFileByPath` の追加
+- [ ] `ensureParentDirsAfterOpen` seam の追加
+- [ ] 作成プローブと開き直しの実装（内部由来 `EEXIST` を外へ出さない）
+- [ ] 2 回目の確認失敗時の `Close` と削除の実装、警告の記録、元のエラーの保持
+- [ ] AC-01〜03 のテスト追加（fd の集合比較、`identity_mismatch` サブテストを含む）
+- [ ] 既存の Linux テストの seam シグネチャへの追従
+- [ ] 後始末を外すとテストが落ちることの確認（AC-05、`GOGC=off`）
+- [ ] `make fmt` / `make test` / `make lint` / `GOOS=darwin go vet -tags test`
+
+### Phase 3: ディレクトリ fd プリミティブと `moveFileAnchored` の書き換え
+
+- [ ] `ensureDirNoSymlinks` の切り出しと解決済みパスの返却
+- [ ] `openDirNoSymlinks` の両経路分の実装
+- [ ] `openFileAt` の両経路分の実装（`*os.File` を返す）と sentinel エラーの対応付け
+- [ ] `linkFileToTempName` のディレクトリ fd 対応と、一時ハードリンクの後始末の `unlinkat` 化
+- [ ] `moveFileAnchored` のディレクトリ fd 対応（Linux・非 Linux）と doc コメントの書き換え
+- [ ] `atomicMoveFileCore` のディレクトリ fd 起点への組み替え、fd の後始末、doc コメントの書き換え
+- [ ] 既存の `moveFileAnchored` 系テスト 5 件と `linkFileToTempName` 系テスト 3 件の追従
+- [ ] `make fmt` / `make test` / `make lint` / `GOOS=darwin go vet -tags test` / `GOOS=netbsd go vet -tags test`
+
+### Phase 4: 移動経路の分割・書き込みのアトミック化・`Remove` の削除
+
+- [ ] `ErrDestinationCommitted` の追加
+- [ ] `moveOpenFileCore` の分割と検査順序の変更（AC-06）
+- [ ] 宛先の権限方針の検査を `rename` より前へ移動
+- [ ] 移動後の検証を `verifyMovedFile` 経由の同一性確認へ変更
+- [ ] `rename` 到達後の失敗への `ErrDestinationCommitted` の付与と警告の記録
+- [ ] `File` への `Sync` の追加
+- [ ] `createTempFileInDir`・`removeVerifiedFileAt` の追加
+- [ ] `safeWriteFileCommon` の一時ファイル方式への書き換え
+- [ ] `safeWriteFileCommon`・`atomicMoveFileCore` の入口への `validateOpenPerm` の追加
+- [ ] 差し替え後の `Close` 失敗を警告に留める
+- [ ] `FileSystem.Remove` と実装 4 箇所の削除
+- [ ] `File.Truncate` の扱いの決定（削除するか、残す理由を記録するか）
+- [ ] `largeFakeFile`・`mockFile` への `Sync` の追加
+- [ ] 挙動が変わる既存テスト 3 件の削除と、不要になったヘルパ（`safe_file_test.go:162-215` ほか）の削除
+- [ ] AC-07・07a・07b・18〜21・23・24 のテスト追加（差し替え後の `ErrDestinationCommitted` を含む）
+- [ ] `TestMoveOpenFileCore_RejectsRequiredPermBeforeRename` の追加
+- [ ] `TestEnsureDirNoSymlinks_ReturnsResolvedPath` と `TestOpenDirNoSymlinks_WritesUnderOSManagedSymlink` の追加
+- [ ] `internal/fileanalysis`・`internal/runner/base/output` の既存テストが無変更で通ることの確認
+- [ ] `make deadcode` の前後比較（AC-13）
+- [ ] `go tool cover -func` の前後比較（AC-11）
+- [ ] 性能の実測と § 2 Phase 4-5 の表の記入
+- [ ] 検査順序を戻すとテストが落ちることの確認（AC-07）
+- [ ] `make fmt` / `make test` / `make lint` / `GOOS=darwin go vet -tags test ./...` / `GOOS=netbsd go vet -tags test`
+
+### Phase 5: 契約の明記と監査文書への反映
+
+- [ ] package コメントへのフォールバック経路の限界の追記
+- [ ] 公開 API 4 つの doc コメントからの参照
+- [ ] `AtomicMoveFile`・`SafeWriteFileOverwrite` の古い仕組みの説明の書き換え
+- [ ] `AtomicMoveFile` の失敗時契約の追記（4 点）
+- [ ] `SafeWriteFileOverwrite` の差し替え境界の追記
+- [ ] `canSafelyReadFromFile` の非対称性の追記
+- [ ] `security-risk-assessment.ja.md` のコード片 2 箇所の更新と読み合わせ
+- [ ] `security-architecture.ja.md` の `openat2()` 引用の更新と `ensureDirNoSymlinks()` への再アンカー
+- [ ] `/mktrans` による英語版 2 ファイルへの反映
+- [ ] `98_remaining_issues.md` §2 B1 の引用ブロックへの置き換え
+- [ ] `findings/B1_safefileio.md` の 8 箇所への対応状況の追記
+- [ ] B1 以外の節に差分が無いことの確認（AC-37）
+- [ ] `make test` / `make lint`
+
+### 全体
+
+- [ ] すべての AC が §7 の方法で検証済み
+- [ ] `make test` と `make lint` が警告なく通る
+- [ ] `make deadcode` に本タスク由来の新規項目が無い
+
+---
+
+## 7. Acceptance Criteria 検証
+
+`git diff` を用いる検証は、コミット後でも意味を持つよう `origin/main...HEAD`（マージベースからの差分）を
+対象とする。「種別」の意味は `test`（実行して挙動が違えば落ちる）、`static`（`rg`／コンパイル／`make` の
+出力で判定する）、`manual`（人の読み合わせ）である。
+
+`rg` の検索式は Rust の正規表現構文であり、選択は `|` と書く（`\|` はリテラルのパイプ文字にマッチする
+別物で、意図した検索にならない）。「0 件であること」を主張する検索式は、実装前に一度、意図した対象が
+現に見つかることを確かめてから使う。
+
+| AC | 種別 | 検証方法 |
+|---|---|---|
+| AC-01 | test | `internal/safefileio/safe_file_linux_test.go::TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails`（一時ディレクトリ配下を指す `/proc/self/fd` エントリの集合が呼び出しの前後で不変であること） |
+| AC-02 | test | `internal/safefileio/safe_file_cleanup_test.go::TestSafeOpenFileFallback_RemovesCreatedFileWhenPostCheckFails` の `created`／`pre_existing` サブテスト |
+| AC-03 | test | 同テストの `identity_mismatch` サブテスト（差し替えたファイルが削除されないこと、返るエラーが 2 回目の確認のエラーで `ErrSourceIdentityMismatch` ではないこと、警告が記録されること）。ヘルパ単体は `internal/safefileio/safe_file_cleanup_test.go::TestRemoveVerifiedFileByPath_SkipsRemovalOnInodeMismatch` |
+| AC-04 | test | AC-01〜AC-03 の各テストが、それぞれ「2 回目の確認の失敗 → Close のみ」「同 → 作成済みファイルの削除」「同 → 既存ファイルの保持」「同 → 同一性不一致で削除せず警告」の 4 分岐を 1 つずつ踏む。`go test -tags test -run 'TestSafeOpenFileFallback_|TestRemoveVerifiedFileByPath_' -v ./internal/safefileio/` の出力で各分岐名の PASS を確認する |
+| AC-05 | test + manual | AC-01〜03 の 3 テストが `test` の主体である。加えて Phase 2 の最終ステップで後始末（`Close` と `removeVerifiedFileByPath` の呼び出し）を外し、`GOGC=off` の下でそれらが落ちることを確認してコミットメッセージに記す |
+| AC-06 | test | `internal/safefileio/safe_file_test.go::TestAtomicMoveFile_ValidatesSourceBeforeChmod` |
+| AC-07 | test + manual | 同上のテストがソースの権限の不変を検証する。加えて Phase 4 の最終ステップで順序を元に戻すと落ちることを確認し、コミットメッセージに記す |
+| AC-07a | test | `internal/safefileio/safe_file_test.go::TestAtomicMoveFile_RejectsUnsafeSourcePermissions`（`world_writable`・`perms_exceed_maximum`・`group_writable_non_member` の 3 サブテスト。3 番目は `os.Chown` が `EPERM` の環境で `t.Skip`） |
+| AC-07b | test | `internal/safefileio/safe_file_test.go::TestAtomicMoveFile_SafeSourceStillMoves`、および `internal/runner/base/output/file_test.go::TestSafeFileManager_MoveToFinal` が無変更で通る |
+| AC-08 | static | `rg -n -B 30 "func \(fs \*osFS\) AtomicMoveFile" internal/safefileio/safe_file.go`（doc コメントはシグネチャの手前にあるため後方向に見る）の出力に `ErrDestinationCommitted`、宛先にファイルが残る旨、移動前の内容が復元されない旨の 3 点が現れる |
+| AC-09 | static | 同じ出力を `rg -i "rollback"` に通して 1 件以上ヒットし、その文がロールバックしない理由（上書き時に元の内容を復元できないこと）を述べている |
+| AC-10 | static | `rg -n "^\s*Remove\(name string\) error" internal/safefileio/safe_file.go` が 0 件、`rg -n "func \(fs \*osFS\) Remove" internal/safefileio/safe_file.go` が 0 件、`rg -n "func \(m \*MockFileSystem\) Remove" internal/safefileio/testutil/mock.go` が 0 件。`rg -n "Remove"` 全体を 0 件にする形では検査できない（`removeVerifiedFileByPath` が `os.Remove` を呼ぶため） |
+| AC-11 | static | `rg -n "getRemoveCallCount|removeCallCount|removeFunc|RemoveCalls|RemoveFunc" internal/ cmd/` が 0 件（変更前は 5 件以上ヒットすることを実施前に確認する）。加えて `go tool cover -func` の出力を変更の前後で比較し、`internal/safefileio` の関数単位のカバレッジが低下していないことを確認してコミットメッセージに記す |
+| AC-12 | test | `internal/runner/base/output/file_test.go::TestSafeFileManager_RemoveTemp` と `::TestSafeFileManager_RemoveTemp_WithMock` が無変更で通る。加えて `git diff --exit-code origin/main...HEAD -- internal/common/filesystem.go internal/runner/base/output/file.go` が差分なし |
+| AC-13 | static | `make deadcode` の出力を変更の前後で比較し、`internal/safefileio` 由来の新規項目が 0 件であること |
+| AC-14 | test | `internal/safefileio/safe_file_test.go::TestSafeOpenFile_RejectsNonPermissionModeBits`（setuid・setgid・sticky・`os.ModeDir`・`os.ModeAppend` × 両経路の表。すべて `errors.Is(err, ErrUnsupportedFileMode)`） |
+| AC-15 | test | `internal/safefileio/safe_file_test.go::TestSafeOpenFile_ReadOpenPermIgnoredOnBothPaths`（`O_CREATE` なし・非ゼロ `perm` で両経路とも成功）と `internal/safefileio/safe_file_linux_test.go::TestOpenat2_ReadOpenPassesZeroMode`（`openHow.mode` が 0） |
+| AC-16 | test | `internal/safefileio/safe_file_test.go::TestSafeOpenFile_CreatePermUnchanged`（umask を固定し、作成されたファイルの権限が両経路とも `0o640 &^ umask` と一致すること） |
+| AC-17 | test | AC-14〜16 の 3 テストがいずれも `FileSystemConfig{}` と `FileSystemConfig{DisableOpenat2: true}` の両方を表の行として持ち、前者の行が `IsOpenat2Available()` の true を `require` する |
+| AC-18 | test | 差し替え前: `internal/safefileio/safe_file_test.go::TestSafeWriteFileOverwrite_ExistingDestinationRejectedLeavesItIntact` と `internal/safefileio/safe_file_linux_test.go::TestSafeWriteFileOverwrite_PreCommitFailureLeavesDestinationIntact`（いずれもエラーが `ErrDestinationCommitted` を含まないことを併せて検証）。差し替え後: `internal/safefileio/safe_file_test.go::TestSafeWriteFileOverwrite_PostCommitFailureIsDestinationCommitted`（`errors.Is` で `ErrDestinationCommitted` を満たし、宛先が新しい内容であること） |
+| AC-19 | test | `internal/safefileio/safe_file_test.go::TestSafeWriteFileOverwrite_SucceedsWithPermApplied`（内容の一致と、新規作成・既存上書きの両方で宛先の権限が `perm` と一致すること） |
+| AC-20 | test | `internal/safefileio/safe_file_test.go::TestSafeWriteFileOverwrite_RejectsSymlinkDestination` |
+| AC-21 | test | 差し替え前: AC-18 の 2 テストが、宛先ディレクトリに `.safefileio-` で始まるエントリが 0 件であることを併せて検証する。差し替え後: `::TestSafeWriteFileOverwrite_PostCommitFailureIsDestinationCommitted` が、一時ファイルの削除を試みていないことと警告が記録されることを検証する |
+| AC-22 | test | `internal/safefileio/safe_file_test.go::TestResolvedPathModeEnforcement` が無変更で通る |
+| AC-23 | test | AC-18 の差し替え前の 2 テストが、失敗後の宛先の内容と宛先ディレクトリの残存エントリの両方を検証する |
+| AC-24 | test | AC-20 のテストが、リンク先の内容が不変であることと、宛先が依然としてシンボリックリンクであること（`os.Lstat` の `ModeSymlink` と `os.Readlink` の戻り値）の両方を検証する |
+| AC-25 | test | `internal/fileanalysis/file_analysis_store_test.go::TestStore_SaveAndLoad`・`::TestStore_PreservesExistingFields`・`::TestStore_ArgEvalResultsRoundtrip`・`::TestStore_Load_V9DynLibDepsObjectFormat` が無変更で通る |
+| AC-26 | test | `internal/safefileio/safe_file_linux_test.go::TestOpenat2_RetriesOnEINTR` |
+| AC-27 | test | `internal/safefileio/safe_file_linux_test.go::TestOpenat2_NonEINTRErrnoMapping`（`ELOOP`→`ErrIsSymlink`、`EEXIST`→`ErrFileExists`、`ENOENT`→`os.ErrNotExist`） |
+| AC-28 | test + manual | AC-26 のテストが呼び出し回数 2 を検証する。加えて Phase 1 の最終ステップで再試行ループを外すと落ちることを確認し、コミットメッセージに記す |
+| AC-29 | static | `rg -n -m 1 -A 25 "^// Package safefileio" internal/safefileio/safe_file.go` の出力に `openat2`・`best-effort`・`5.6` の 3 語がすべて現れる |
+| AC-30 | static | `rg -n -B 20 -e "^func \(fs \*osFS\) SafeOpenFile\(" -e "^func SafeReadFile\(" -e "^func SafeWriteFileOverwrite\(" -e "^func \(fs \*osFS\) AtomicMoveFile\(" internal/safefileio/safe_file.go` の出力に、4 つのシグネチャそれぞれの直前 doc コメントで package コメントを指す語（`See the package documentation`）が現れる。末尾の `\(` を省くと内部ラッパの `SafeReadFileWithFS` も拾って 5 件になるため、括弧まで含めて指定する |
+| AC-31 | static + manual | `rg -n "5\.6" internal/safefileio/safe_file.go docs/user/security-risk-assessment.ja.md` が両ファイルでヒットする。そのうえで package コメントの追記と同文書「前提と限界」節（:180-211）を読み合わせ、本番ターゲットが Linux 5.6+ であること、非 Linux は開発・限定用途に限ることの 2 点が同じ内容であることを確認する |
+| AC-32 | static | `rg -n -B 20 "^func canSafelyReadFromFile" internal/safefileio/safe_file.go` の出力に、`(gid, mode)` のみで判定する旨、意図的である旨、ディレクトリ権限監査への言及、および所有者と読み手が異なる運用への言及がすべて現れる |
+| AC-33 | static | `rg -n "[\x{3000}-\x{303F}\x{3040}-\x{30FF}\x{4E00}-\x{9FFF}\x{FF00}-\x{FFEF}]" internal/safefileio/ internal/security/machoanalyzer/analyzer_test.go` が 0 件（`_test.go` と `testutil/` を含む。ひらがな・カタカナ・漢字に加えて長音符・全角記号も捕まえる。現行ツリーで 0 件であることを確認済み） |
+| AC-34 | static | `rg -n "F-2〜F-9" docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` が引用ブロック内の 1 件のみヒットし、その行を含むブロックに `0167`・`#978`・`解消` の語が含まれる。加えて `rg -n "^\s+- F-[0-9]" docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` が 0 件（残件としての 5 行がすべて消えていること。変更前は 5 件ヒットする） |
+| AC-35 | static | 同じ引用ブロックに `F-2`・`F-4-2`・`F-8` の 3 つと、`0155`・`5.6`・`ディレクトリ権限監査` に相当する根拠の語が現れる |
+| AC-36 | static | `rg -c "^- 対応状況:" docs/tasks/0149_security_code_smell_audit_fable/findings/B1_safefileio.md` が 8。加えて `git diff --numstat origin/main...HEAD -- docs/tasks/0149_security_code_smell_audit_fable/findings/B1_safefileio.md` の削除行数が 0（所見の原文を書き換えていないこと） |
+| AC-37 | static | `git diff origin/main...HEAD -- docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の変更行が `### B1（safefileio）` 節の範囲内に収まっている（他節への変更行が 0 件） |
+| AC-38 | static | `docs/user/security-risk-assessment.ja.md` の 2 つのコード片を実装と 1 行ずつ突き合わせる。裏づけとして `rg -n "uint64\(perm\)" docs/user/security-risk-assessment.ja.md docs/user/security-risk-assessment.md` が 0 件（Phase 1 で消える式が文書に残っていないこと。変更前は 2 件ヒットする）、かつ `rg -n "openat2Mode" docs/user/security-risk-assessment.ja.md docs/user/security-risk-assessment.md` が両ファイルで 1 件以上ヒットすること |
+
+---
+
+## 8. 横断検索チェックリスト
+
+`make lint` と `make test` では気づけない残存参照だけを挙げる。§7 の AC 検証と重複する項目はここに置かない。
+`rg` の選択は `|` で書く（§7 冒頭の注記と同じ）。
+
+- [ ] `rg -n "ErrTempLinkNameExhausted" .` が 0 件（改名の取りこぼし。コード側はコンパイルが捕まえるが、
+      コメントと文書は捕まえない）
+- [ ] `rg -n "randomTempName\(\)" .` が 0 件（接頭辞を取らない旧シグネチャへの言及がコメントに残っていない）
+- [ ] `rg -n "maxLinkatAttempts" .` が 0 件（`maxTempNameAttempts` への改名の取りこぼし）
+- [ ] `rg -n "ensureParentDirsNoSymlinks" internal/safefileio/ docs/` の各ヒットが、ラッパとして残る関数を
+      正しく指している（`openDirNoSymlinks`／`ensureDirNoSymlinks` が担うようになった役割を、この関数の
+      ものとして説明している箇所が残っていない）
+- [ ] `rg -n "safefileio.*Remove|FileSystem.*Remove" docs/` の結果に、削除した `safefileio.FileSystem.Remove`
+      を現存するものとして説明している箇所が無い（`internal/common` の `Remove` への言及は残ってよい）
+- [ ] `rg -n "Truncate\(0\)" docs/ internal/safefileio/` の結果に、`safeWriteFileCommon` が宛先を切り詰める
+      という説明が残っていない
+- [ ] `git diff origin/main...HEAD -- '*.go' | rg -n "^\+.*(AC-[0-9]|F-00[0-9])"` が 0 件（本タスクが Go
+      ソースへ AC 番号を持ち込んでいないこと。`runplan` のコミット前検査が拒否する。ツリー全体を対象に
+      すると本タスクと無関係な既存のヒットが出るため、追加行だけを見る）
+
+---
+
+## 9. Success Criteria
+
+- §7 のすべての AC が、そこに書いた方法で検証済みである。
+- `make test` と `make lint` が警告なく通る。`GOOS=darwin` と `GOOS=netbsd` の `go vet -tags test` も通る。
+- `make deadcode` に本タスク由来の新規項目が無い。
+- 本タスクの前後で、`safefileio` の公開 API が成功したときに書き込まれる内容と移動先のファイルが
+  変わらない。挙動の変化は `01_requirements.md` Success Criteria が挙げる 6 点と、非 Linux の
+  `ErrSourceIdentityMismatch`（§ 2 Phase 3）に限られる。
+- リーフのシンボリックリンクを検知して拒否するという ADR の設計前提が、すべての公開 API について
+  維持されている。
+- Phase 4-5 の性能表が実測値で埋まっている。
+- #978 が挙げる 8 件それぞれについて、解消したのか所見の推奨とは異なる形で close したのかが、コードと
+  監査文書の双方から追える。
+
+---
+
+## 10. 次のステップ
+
+- 本書のレビューと `approved` への更新を待つ。承認前に実装コードを書かない
+  （[requirements_process.md](../../dev/developer_guide/requirements_process.md) § 0）。レビューでは、
+  § 1 の seam 2 つ（`ensureParentDirsAfterOpen`・`verifyMovedFile`）を本書の承認で認めるか
+  `02_architecture.md` へ先に追記するか、および Phase 3 が非 Linux にもたらす挙動の変化を
+  `01_requirements.md` Success Criteria の 7 点目として追記するかの 2 点を、併せて判断していただきたい。
+- 承認後、Phase 1 から順に実装する。Phase 3 は外部挙動をほぼ変えないため、Phase 4 と分けてレビューを
+  受ける。
+- Phase 5 のマージ後に #978 を close する。
+- [02_architecture.md](02_architecture.md) § 9 が挙げる将来の候補（非 Linux の dirfd ウォーク、
+  `internal/dynamicanalysis` と `internal/libccache` の `writeFileAtomic` の統合、ディレクトリの `fsync`）は
+  本タスクでは扱わない。統合の候補については、4 つ目の同一実装を増やさないよう、新しい書き込み処理を
+  足す際に本書と § 3.6.1 を参照する。
