@@ -319,7 +319,11 @@ var (
 
 `openFileAt` は、両経路とも既存の `SafeOpenFile` と同じ sentinel エラーへ対応付ける。`ELOOP`（フォールバック経路では `isNoFollowError` が判定するもの）は `ErrIsSymlink`、`EEXIST` は `ErrFileExists`、`ENOENT` は `os.ErrNotExist` である。§ 3.6.2 の分岐はこの対応付けに依存する。
 
-`ensureDirNoSymlinks` は既存の `ensureParentDirsNoSymlinks` から本体を切り出したものだが、**解決済みのディレクトリパスも返す**点が異なる。現在の実装は、allowlist に載る OS 管理のシンボリックリンク（macOS の `/tmp` → `/private/tmp` 等）を辿って走査を続けるが、その解決結果を内部で捨てている。`openDirNoSymlinks` が元のパスをそのまま `O_NOFOLLOW` で開くと、ディレクトリ自身がこの種のシンボリックリンクである場合に `ELOOP` となり、`/tmp` 配下への書き込みが `ErrIsSymlink` で失敗してしまう。現在の `os.OpenFile(absPath, flag|O_NOFOLLOW)` は `O_NOFOLLOW` がリーフにしか効かないためこの問題を起こさない。解決済みのパスを返して、それを開く。
+`ensureDirNoSymlinks` は既存の `ensureParentDirsNoSymlinks` から本体を切り出したものだが、**解決済みのディレクトリパスも返す**点が異なる。現在の実装は、allowlist に載る OS 管理のシンボリックリンクを辿って走査を続けるが、その解決結果を内部で捨てている。`openDirNoSymlinks` が元のパスをそのまま `O_NOFOLLOW` で開くと、**開こうとしているディレクトリ自身がその種のシンボリックリンクである場合**に `ELOOP` となり、`ErrIsSymlink` で失敗してしまう。解決済みのパスを返して、それを開く。
+
+影響する範囲は狭い。allowlist は macOS の `/tmp`・`/var`・`/etc` の 3 つだけで（`IsAllowedOSManagedSymlink` は macOS 以外では常に false を返す）、`O_NOFOLLOW` はパスの最後の構成要素にしか効かない。したがって壊れるのは `/tmp/foo.json` のように**これらの直下**へ書く場合に限られ、`/tmp/sub/foo.json` は `tmp` が途中の構成要素なので通常どおり辿られて問題にならない。Linux では allowlist が一致しないため、解決済みのパスは入力と同じになり、この変更は何も変えない。
+
+現在の実装がこの問題を起こさないのは、`os.OpenFile(absPath, flag|O_NOFOLLOW)` の `O_NOFOLLOW` がファイルのリーフにしか効かず、親ディレクトリの解決はカーネルに任せているためである。
 
 `ensureParentDirsNoSymlinks(absPath)` は `ensureDirNoSymlinks(filepath.Dir(absPath))` を呼んで解決済みパスを捨てるラッパとして残るので、この関数を使う他の経路は変わらない。
 
@@ -785,6 +789,7 @@ flowchart TD
 - **mode の検証と正規化（AC-14〜17）**: `perm` に setuid・setgid・sticky を含めた `SafeOpenFile` が両経路で `ErrUnsupportedFileMode` を返すこと。`O_CREATE` を伴わない呼び出しの成否が両経路で一致すること。`O_CREATE` を伴う呼び出しで作成されるファイルの権限が本タスクの前後で変わらないこと。経路の切り替えは `FileSystemConfig.DisableOpenat2` で行う。
 - **`EINTR` 再試行（AC-26〜28）**: システムコール発行のパッケージ変数を差し替えて、1 回目に `EINTR`、2 回目に成功を返させる。`EINTR` 以外の `errno` の対応付けが変わらないことも併せて確認する。
 - **フォールバック経路の後始末（AC-01〜05）**: 実ファイルシステム上で 2 回目の親ディレクトリ確認を失敗させ、fd が Close されていること、`O_CREATE` で作成した場合はファイルが残らないこと、既存ファイルを開いただけの場合は削除されないことを分岐ごとに確認する。inode が一致しない分岐は、`removeVerifiedFile` にモックの `File` を渡す形でも検証できる。モックの `Stat` が返す `syscall.Stat_t` は `Dev`・`Ino` を持たないため実在のパスとは決して一致せず、モック経由では一致する分岐を作れない。この制約を踏まえ、削除が実際に行われることの検証は § 7.2 に置く。
+- **OS 管理シンボリックリンクの直下への書き込み**: `openDirNoSymlinks` が解決前のパスを開いていないことを確認する。`SafeTempDir` は `EvalSymlinks` でパスを解決してから返すため、既存のテストはこの条件を作れない。テストは allowlist に載るディレクトリ（macOS の `/tmp`）の直下へ直接書き、成功することを確かめる。実行するかどうかは `runtime.GOOS` ではなく `common.IsAllowedOSManagedSymlink("/tmp")` が true かどうかで判定し、前提が成り立たない環境では自動的に skip する。CI が Linux だけであってもこのテストは無害であり、macOS で開発する場合にだけ意味を持つ。
 - **モックの seam について**: `atomicMoveFileCore` のソース open が `fs.SafeOpenFile` からパッケージ内の `openFileAt` へ変わるため、`FileSystem` のモックでソースの open を差し替えることができなくなる。移動経路のテストは実ファイルシステム上で行う（§ 7.2）。`FileSystem` インターフェースにディレクトリ操作を足してモック可能性を保つ案は採らない。読み取り専用の 10 パッケージに、実装する必要のないメソッドを増やすことになるためである。
 - **移動処理の順序（AC-06・07・07a・07b）**: ソース検証を失敗させ、ソースの権限が呼び出し前から変化していないこと。world-writable のソースが拒否されること。実行者が属さないグループに対して group 書き込み可のソースが拒否されること。`0600` のソースが従来どおり移動できること。
 - **差し替え前の拒否（§ 3.4.3）**: `requiredPerm` が移動後の宛先検査を通らない値のとき、`rename` の前にエラーになり宛先が変化しないこと。
