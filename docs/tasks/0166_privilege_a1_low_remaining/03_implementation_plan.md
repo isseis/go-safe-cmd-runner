@@ -112,33 +112,34 @@ metrics 削除により**主張が消えるテスト**が4つある。いずれ�
 
 **対象ファイル**: `internal/runner/base/privilege/metrics.go`, `metrics_test.go`, `manager.go`, `unix.go`, `testutil/mocks.go`, `unix_privilege_test.go`, `identity_linux_test.go`, `identity_other_test.go`, `race_test.go`, `docs/dev/architecture_design/security-architecture{.ja,}.md`, `docs/dev/developer_guide/design-implementation-overview{.ja,}.md`, `docs/user/security-risk-assessment{.ja,}.md`
 
-- [ ] **ステップ1**: `internal/runner/base/privilege/metrics.go` を削除する。package コメント `// Package privilege provides metrics collection for privilege operations.` は失われるため、`manager.go` の `package privilege` の直前に `// Package privilege manages elevation to root and restoration of the original privileges for operations that require them.` を追加する。
-- [ ] **ステップ2**: `internal/runner/base/privilege/metrics_test.go` を削除する。
-- [ ] **ステップ3**: `unix.go` から metrics を取り除く。
-  - [ ] `UnixPrivilegeManager.metrics Metrics` フィールドを削除する。
-  - [ ] `WithPrivileges` の `m.metrics.RecordElevationFailure(err)` 2箇所を削除する。
-  - [ ] `restorePrivilegesAndMetrics` の `m.metrics.RecordElevationSuccess(duration)` を削除する。これにより `if err := m.restorePrivileges(); err != nil { m.emergencyShutdown(...) }` の `else if` 節がなくなる。`needsPrivilegeEscalation` を条件とする2つのブロックは統合せずそのまま残す（§1 の調査結果を参照）。
-  - [ ] `GetMetrics` メソッドを削除する。
-  - [ ] `executionContext.start` フィールドと、`handleCleanupAndMetrics` 内の `duration` の宣言・計算を削除する。
-  - [ ] `restorePrivilegesAndMetrics` のシグネチャから `duration time.Duration` と `panicValue any` を削除し、`(execCtx *executionContext, shutdownContext string)` にする。
-  - [ ] `prepareExecution` の `start: time.Now()` の設定を削除する。`time` の import は `Error{Timestamp: time.Now()}` で引き続き使うため残す。
-- [ ] **ステップ4**: `unix.go` の関数を改名する。`handleCleanupAndMetrics` → `handleCleanup`、`restorePrivilegesAndMetrics` → `restorePrivilegesAndVerify`。doc コメントの「and metrics recording」に相当する記述も実態に合わせて書き換える（`// handleCleanup recovers from a panic in the callback, restores privileges, and verifies identity.` / `// restorePrivilegesAndVerify restores the original privileges and verifies that no elevated identity leaked.`）。
-- [ ] **ステップ5**: `manager.go` の `Manager` インターフェースから `GetMetrics() Metrics` を削除する。
-- [ ] **ステップ6**: `testutil/mocks.go` から `MockPrivilegeManager.GetMetrics` とその doc コメントを削除し、未使用になる `privilege` package の import も削除する。
-- [ ] **ステップ7**: `race_test.go` の `_ = manager.GetMetrics()`（:235）の行を削除する。
-- [ ] **ステップ8**: 主張が消える既存の検証を削除する（§1「既存テストの扱い」の表の4件＋アサーション1件。それぞれ個別に確認する）。
-  - [ ] `TestHandleCleanupAndMetrics_Success`
-  - [ ] `TestRestorePrivilegesAndMetrics_Success`
-  - [ ] `TestRestorePrivilegesAndMetrics_NoSuccessWithoutEscalation`
-  - [ ] `TestRestorePrivilegesAndMetrics_Failure`
-  - [ ] `TestPrepareExecution_Success` 内の `assert.NotZero(t, execCtx.start)`
-- [ ] **ステップ9**: テスト側の `executionContext` リテラルから `start:` を削除する（`unix_privilege_test.go` 10箇所・`identity_linux_test.go` 1箇所・`identity_other_test.go` 1箇所）。`rg -n "start:\s+time\.Now\(\)" internal/runner/base/privilege/` の全ヒットを対象とする。併せて `identity_linux_test.go`・`identity_other_test.go` の `time` import を削除する（`start` が唯一の利用箇所のため）。
-- [ ] **ステップ10**: 残るテストの呼び出しとテスト関数名を改名後の名前に合わせる。`rg -n "AndMetrics" internal/` の全ヒット（実測 45 行）を対象とし、引数から `panicValue`・`duration` を落とす。改名するテスト関数は §1 の一覧を参照する。doc コメント中の言及も同時に直す。
-- [ ] **ステップ11**: 削除に着手する前（`origin/main` の状態、すなわちステップ1 の実施前）に `go test -tags test -coverprofile=/tmp/before.out ./internal/runner/base/privilege/` を取得しておき、ステップ1〜10 の完了後に同様の `after.out` を取得して、`go tool cover -func` の差分が「削除した関数の消滅」のみであること、残存関数のカバレッジが低下していないことを確認する（CLAUDE.md「テストの削除は検証を要する主張」）。
-- [ ] **ステップ12**: 改名の影響を受ける文書3対を、改名と同じ PR で更新する。§1「改名の影響を受ける文書」の表の6ファイルが対象。
-  - [ ] 日本語版3ファイル（`security-architecture.ja.md`・`design-implementation-overview.ja.md`・`security-risk-assessment.ja.md`）のコード引用と説明文を、改名後の名称に更新する。
-  - [ ] `security-architecture.ja.md:316` の「パニック回復と時間計測を担い」を、時間計測が無くなった実態に合わせて書き換える。
-  - [ ] 日本語版をコミットしたうえで、英語版3ファイルを `/mktrans` で反映する（CLAUDE.md のバイリンガル文書の編集順序）。
+- [x] **ステップ1**: `internal/runner/base/privilege/metrics.go` を削除する。package コメント `// Package privilege provides metrics collection for privilege operations.` は失われるため、`manager.go` の `package privilege` の直前に `// Package privilege manages elevation to root and restoration of the original privileges for operations that require them.` を追加する。
+- [x] **ステップ2**: `internal/runner/base/privilege/metrics_test.go` を削除する。
+- [x] **ステップ3**: `unix.go` から metrics を取り除く。
+  - [x] `UnixPrivilegeManager.metrics Metrics` フィールドを削除する。
+  - [x] `WithPrivileges` の `m.metrics.RecordElevationFailure(err)` 2箇所を削除する。
+  - [x] `restorePrivilegesAndMetrics` の `m.metrics.RecordElevationSuccess(duration)` を削除する。これにより `if err := m.restorePrivileges(); err != nil { m.emergencyShutdown(...) }` の `else if` 節がなくなる。`needsPrivilegeEscalation` を条件とする2つのブロックは統合せずそのまま残す（§1 の調査結果を参照）。
+  - [x] `GetMetrics` メソッドを削除する。
+  - [x] `executionContext.start` フィールドと、`handleCleanupAndMetrics` 内の `duration` の宣言・計算を削除する。
+  - [x] `restorePrivilegesAndMetrics` のシグネチャから `duration time.Duration` と `panicValue any` を削除し、`(execCtx *executionContext, shutdownContext string)` にする。
+  - [x] `prepareExecution` の `start: time.Now()` の設定を削除する。`time` の import は `Error{Timestamp: time.Now()}` で引き続き使うため残す。
+- [x] **ステップ4**: `unix.go` の関数を改名する。`handleCleanupAndMetrics` → `handleCleanup`、`restorePrivilegesAndMetrics` → `restorePrivilegesAndVerify`。doc コメントの「and metrics recording」に相当する記述も実態に合わせて書き換える（`// handleCleanup recovers from a panic in the callback, restores privileges, and verifies identity.` / `// restorePrivilegesAndVerify restores the original privileges and verifies that no elevated identity leaked.`）。
+- [x] **ステップ5**: `manager.go` の `Manager` インターフェースから `GetMetrics() Metrics` を削除する。
+- [x] **ステップ6**: `testutil/mocks.go` から `MockPrivilegeManager.GetMetrics` とその doc コメントを削除し、未使用になる `privilege` package の import も削除する。
+- [x] **ステップ7**: `race_test.go` の `_ = manager.GetMetrics()`（:235）の行を削除する。
+- [x] **ステップ8**: 主張が消える既存の検証を削除する（§1「既存テストの扱い」の表の4件＋アサーション1件。それぞれ個別に確認する）。
+  - [x] `TestHandleCleanupAndMetrics_Success`
+  - [x] `TestRestorePrivilegesAndMetrics_Success`
+  - [x] `TestRestorePrivilegesAndMetrics_NoSuccessWithoutEscalation`
+  - [x] `TestRestorePrivilegesAndMetrics_Failure`
+  - [x] `TestPrepareExecution_Success` 内の `assert.NotZero(t, execCtx.start)`
+- [x] **ステップ9**: テスト側の `executionContext` リテラルから `start:` を削除する（`unix_privilege_test.go` 10箇所・`identity_linux_test.go` 1箇所・`identity_other_test.go` 1箇所）。`rg -n "start:\s+time\.Now\(\)" internal/runner/base/privilege/` の全ヒットを対象とする。併せて `identity_linux_test.go`・`identity_other_test.go` の `time` import を削除する（`start` が唯一の利用箇所のため）。
+- [x] **ステップ10**: 残るテストの呼び出しとテスト関数名を改名後の名前に合わせる。`rg -n "AndMetrics" internal/` の全ヒット（実測 45 行）を対象とし、引数から `panicValue`・`duration` を落とす。改名するテスト関数は §1 の一覧を参照する。doc コメント中の言及も同時に直す。
+- [x] **ステップ11**: 削除に着手する前（`origin/main` の状態、すなわちステップ1 の実施前）に `go test -tags test -coverprofile=/tmp/before.out ./internal/runner/base/privilege/` を取得しておき、ステップ1〜10 の完了後に同様の `after.out` を取得して、`go tool cover -func` の差分が「削除した関数の消滅」のみであること、残存関数のカバレッジが低下していないことを確認する（CLAUDE.md「テストの削除は検証を要する主張」）。
+- [x] **ステップ12**: 改名の影響を受ける文書3対を、改名と同じ PR で更新する。§1「改名の影響を受ける文書」の表の6ファイルが対象。
+  - [x] 日本語版3ファイル（`security-architecture.ja.md`・`design-implementation-overview.ja.md`・`security-risk-assessment.ja.md`）のコード引用と説明文を、改名後の名称に更新する。
+  - [x] `security-architecture.ja.md:316` の「パニック回復と時間計測を担い」を、時間計測が無くなった実態に合わせて書き換える。
+  - [x] （計画から追加）`security-architecture.ja.md:269` は `UnixPrivilegeManager` の構造体定義を逐語引用しており、削除した `metrics Metrics` フィールドが残っていたため、同行を削除する。同節の他のフィールドが現行コードと一致することも確認する。
+  - [x] 日本語版をコミットしたうえで、英語版3ファイルを `/mktrans` で反映する（CLAUDE.md のバイリンガル文書の編集順序）。
 
 **完了条件**:
 - `make fmt` → `make test` → `make lint` がすべて通る。
@@ -337,18 +338,18 @@ PR は Phase と一対一に対応させ、4本に分ける（PR-N ≡ Phase N�
 ## 6. 実装チェックリスト
 
 ### PR-1: metrics の削除と改名（Phase 1）
-- [ ] ステップ1: `metrics.go` の削除と package コメントの移設
-- [ ] ステップ2: `metrics_test.go` の削除
-- [ ] ステップ3: `unix.go` からの metrics 除去
-- [ ] ステップ4: `unix.go` の関数改名
-- [ ] ステップ5: `manager.go` の `GetMetrics` 削除
-- [ ] ステップ6: `testutil/mocks.go` の `GetMetrics` と import の削除
-- [ ] ステップ7: `race_test.go` の該当行削除
-- [ ] ステップ8: 主張が消える4テストとアサーション1件の削除
-- [ ] ステップ9: テスト側 `start:` の削除と不要 import の除去
-- [ ] ステップ10: 残存テストの改名・引数追従
-- [ ] ステップ11: カバレッジ差分の確認
-- [ ] ステップ12: 改名を引用する文書3対の追従と `/mktrans`
+- [x] ステップ1: `metrics.go` の削除と package コメントの移設
+- [x] ステップ2: `metrics_test.go` の削除
+- [x] ステップ3: `unix.go` からの metrics 除去
+- [x] ステップ4: `unix.go` の関数改名
+- [x] ステップ5: `manager.go` の `GetMetrics` 削除
+- [x] ステップ6: `testutil/mocks.go` の `GetMetrics` と import の削除
+- [x] ステップ7: `race_test.go` の該当行削除
+- [x] ステップ8: 主張が消える4テストとアサーション1件の削除
+- [x] ステップ9: テスト側 `start:` の削除と不要 import の除去
+- [x] ステップ10: 残存テストの改名・引数追従
+- [x] ステップ11: カバレッジ差分の確認
+- [x] ステップ12: 改名を引用する文書3対の追従と `/mktrans`
 
 ### PR-2: 失敗分岐をテストで踏む（Phase 2）
 - [ ] ステップ13: ファイルコメント（`t.Parallel` 禁止・root skip）の追加
