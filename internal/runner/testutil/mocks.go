@@ -80,12 +80,6 @@ func (m *MockResourceManager) CleanupAllTempDirs() error {
 	return args.Error(0)
 }
 
-// WithPrivileges executes a function with elevated privileges
-func (m *MockResourceManager) WithPrivileges(ctx context.Context, fn func() error) error {
-	args := m.Called(ctx, fn)
-	return args.Error(0)
-}
-
 // SendNotification sends a notification message with optional details
 func (m *MockResourceManager) SendNotification(message string, details map[string]any) error {
 	args := m.Called(message, details)

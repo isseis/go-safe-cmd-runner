@@ -17,9 +17,8 @@ const (
 
 // Static errors for better error handling
 var (
-	ErrPrivilegeManagerNotAvailable = errors.New("privilege manager not available")
-	ErrTempDirCleanupFailed         = errors.New("failed to cleanup some temp directories")
-	ErrNilResult                    = errors.New("result cannot be nil")
+	ErrTempDirCleanupFailed = errors.New("failed to cleanup some temp directories")
+	ErrNilResult            = errors.New("result cannot be nil")
 	// Validation errors for consistent behavior across execution modes
 	ErrEmptyCommand     = errors.New("command cannot be empty")
 	ErrEmptyCommandName = errors.New("command name cannot be empty")
@@ -65,9 +64,6 @@ type Manager interface {
 	CreateTempDir(groupName string) (string, error)
 	CleanupTempDir(tempDirPath string) error
 	CleanupAllTempDirs() error
-
-	// Privilege management
-	WithPrivileges(ctx context.Context, fn func() error) error
 
 	// Network operations
 	SendNotification(message string, details map[string]any) error

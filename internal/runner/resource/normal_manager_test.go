@@ -418,30 +418,6 @@ func TestNormalResourceManager_CleanupTempDir(t *testing.T) {
 	f.MockFS.AssertExpectations(t)
 }
 
-func TestNormalResourceManager_WithPrivileges(t *testing.T) {
-	f := createTestNormalResourceManager()
-	ctx := context.Background()
-
-	called := false
-	fn := func() error {
-		called = true
-		return nil
-	}
-
-	f.MockPriv.On("WithPrivileges", mock.AnythingOfType("runnertypes.ElevationContext"), mock.AnythingOfType("func() error")).Return(nil).Run(func(args mock.Arguments) {
-		// Call the provided function
-		fnArg := args.Get(1).(func() error)
-		fnArg()
-	})
-
-	err := f.Manager.WithPrivileges(ctx, fn)
-
-	assert.NoError(t, err)
-	assert.True(t, called)
-
-	f.MockPriv.AssertExpectations(t)
-}
-
 func TestNormalResourceManager_SendNotification(t *testing.T) {
 	f := createTestNormalResourceManager()
 	message := "Test notification"
