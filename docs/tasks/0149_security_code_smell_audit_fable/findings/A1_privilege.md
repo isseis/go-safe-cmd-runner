@@ -45,6 +45,7 @@
 - **該当箇所**: `internal/runner/base/privilege/unix.go:294`, `unix.go:324`（対比: `unix.go:570,574,576` は注入フィールドを使用）
 - **問題**: テスト注入用フィールド (`syscallSeteuid`/`syscallSetegid`) が定義されているにもかかわらず、最も重要な昇格・復元パスは直接 syscall を呼ぶため、この経路（特に復元失敗→`emergencyShutdown`）を単体テストで網羅するには root/setuid 環境が必要になる。失敗時分岐のテストカバレッジ不足に繋がる。
 - **推奨対応**: 昇格・復元でも注入フィールドを使用し、復元失敗時の emergencyShutdown 経路をモックでテストする。
+- **対応状況**: [0166](../../0166_privilege_a1_low_remaining/03_implementation_plan.md) で、推奨とは逆方向に close した。`identity_mutation_guard_test.go` の `TestNoUnexpectedIdentityMutationSyscalls` が identity 変更 syscall を呼ぶ関数を値として参照すること（注入フィールドへの代入を含む）を禁じており、推奨対応はこの不変条件と衝突するため。かわりに、非特権プロセスで実際に `EPERM` を起こすテストで昇格・復元の失敗分岐を踏んだ。
 
 ### 🟠 L-3: `restorePrivilegesAndMetrics` の metrics 条件に恒偽の項が含まれ、記録セマンティクスが不明瞭
 
@@ -53,18 +54,21 @@
   - `prepareExecution` の失敗（operation 不正・saved-set 読み取り失敗）も `RecordElevationFailure` として計上され（unix.go:95）、実際に昇格を試行していないのに「昇格失敗」となる。
   - `duration = time.Since(execCtx.start)` は `fn()`（コマンド全実行）を含むため、`AverageElevationTime` 等の指標名と実態（操作全体の時間）が乖離している。
 - **推奨対応**: 恒偽項の削除、metrics の対象範囲（昇格 syscall のみか操作全体か）の明確化と命名修正。
+- **対応状況**: 恒偽項自体は 0157 で解消済み。[0166](../../0166_privilege_a1_low_remaining/03_implementation_plan.md) で残る2点（未昇格時の失敗計上、指標名と実態の乖離）を、読み手のいない `Metrics` 型ごと削除することで解消した。
 
 ### 🟠 L-4: `fn()` 実行中も `m.mu` を保持し続けるため、再入で自己デッドロックする
 
 - **該当箇所**: `internal/runner/base/privilege/unix.go:90-91, 106`
 - **問題**: `WithPrivileges` はコールバック実行中もミューテックスを保持する。fn 内（またはそこから呼ばれるコード）が同一マネージャの `WithPrivileges`/`WithUserGroup` を呼ぶと即デッドロックする。特権直列化のためには保持が必要な設計だが、再入禁止がコメント・doc に明示されていない。
 - **推奨対応**: doc コメントに再入禁止を明記する。必要なら再入検出（保持中フラグ）でエラー返却にする。
+- **対応状況**: [0166](../../0166_privilege_a1_low_remaining/03_implementation_plan.md) で `WithPrivileges` の doc コメントに再入禁止の契約を明記した。再入検出は、保持中フラグでは自ゴルーチンの再入と他ゴルーチンの正当な待機をゴルーチン識別なしに区別できず（`TryLock` でも同様）、Go では正しく実装できないため見送った。
 
 ### 🟠 L-5: `Metrics` 構造体が `sync.RWMutex` を含んだまま値として返却される（copylocks フットガン）
 
 - **該当箇所**: `internal/runner/base/privilege/metrics.go:10-21`, `metrics.go:63-79` (`GetSnapshot`), `unix.go:455-457` (`GetMetrics`)
 - **問題**: `GetSnapshot`/`GetMetrics` は `Metrics` を値で返す。実装はフィールドを個別コピーしているため mu はゼロ値になり動作上は安全だが、ロックを含む型を値渡しする API は `go vet` の copylocks 警告対象であり、将来 `snapshot := *m` のような変更が入ると競合検知不能なバグになる。スナップショット用に mutex を含まない別型（例: `MetricsSnapshot`）を分けるのが安全。
 - **推奨対応**: mutex を持つ内部型と、返却用の POD スナップショット型を分離する。
+- **対応状況**: [0166](../../0166_privilege_a1_low_remaining/03_implementation_plan.md) で対象物の `Metrics` 型ごと削除し、解消した。
 
 ### 🔵 I-1: `GetCurrentUID` は実際には effective UID を返す（命名と実装の乖離）
 
