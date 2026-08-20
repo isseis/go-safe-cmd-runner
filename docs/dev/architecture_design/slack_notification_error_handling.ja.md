@@ -4,17 +4,19 @@
 
 go-safe-cmd-runner の実行は2つのフェーズに分かれています：
 
-**フェーズ1（検証とログシステム初期化）**
-- ファイルハッシュ検証（`internal/verification/manager.go`）
-- TOML 設定解析（`internal/runner/config.go`）
-- ログシステムのセットアップ
+**フェーズ1（ログシステム初期化と設定ファイル検証）**
+- ログシステムのセットアップ（`bootstrap.SetupLogging`）
+- 設定ファイルのハッシュ検証と読み込み（`verification.Manager.VerifyAndReadConfigFile`）
+- TOML 解析とスキーマ検証（`bootstrap.LoadAndPrepareConfig`）
 
-**フェーズ2（Slack ハンドラ登録）**
-- 許可 Slack ウェブフックホストの読み込み
-- Slack ハンドラの初期化（`internal/logging/slack_handler.go`）
+**フェーズ2（Slack ハンドラ登録以降）**
+- 設定から許可 Slack ウェブフックホストを読み込み、Slack ハンドラを登録（`bootstrap.SetupSlackLogging`）
+- グローバル／グループ対象ファイルのハッシュ検証（`verification.Manager.VerifyGlobalFiles`）
 - コマンド実行開始
 
-この設計により、**フェーズ1で発生するエラー（設定ファイルハッシュ検証失敗、TOML 解析エラー）は Slack 通知チャネルに到達しません**。本ドキュメントはこの制限が生じる理由、代替案の検討、そして推奨される監視戦略を説明します。
+この設計により、**フェーズ1で発生するエラー（設定ファイルのハッシュ検証失敗、TOML 解析エラー）は Slack 通知チャネルに到達しません**。本ドキュメントはこの制限が生じる理由、代替案の検討、そして推奨される監視戦略を説明します。
+
+なお、到達しないのは**設定ファイル自体の検証エラーに限られます**。グローバル／グループ対象ファイルのハッシュ検証はフェーズ2で実行されるため、その失敗は通常どおり Slack に通知されます。
 
 ## 問題の本質
 
@@ -90,13 +92,17 @@ Slack ハンドラ登録は設定ファイルから許可 Slack ホストを読�
 ### 1. プロセス起動失敗の監視
 
 **systemd を使用する場合:**
-```bash
-# サービスユニットで restart ポリシーを設定
+```ini
+# サービスユニットで失敗時の通知ユニットを起動する
 [Service]
-Restart=on-failure
-RestartSec=10s
+Type=oneshot
 OnFailure=notify-admin@%N.service
 ```
+
+`OnFailure=` はユニットが failed 状態に入ったときにのみ起動します。`Restart=on-failure`
+を併用すると、起動制限（`StartLimitBurst`）に達するまでユニットは再起動を繰り返して
+failed 状態にならず、通知が発火しません。バッチ実行では `Restart=` を設定せず、
+1回の失敗をそのまま failed として扱うのが確実です。
 
 起動失敗ユニットの監視：
 ```bash
@@ -114,39 +120,54 @@ MAILTO=admin@example.com
 
 ### 2. ログファイル監視
 
+**ログファイルの形式（前提）**
+
+ログファイルは実行ごとに新しいファイルとして作成され、名前は
+`<ログディレクトリ>/<ホスト名>_<UTC タイムスタンプ>_<run_id>.json` です
+（`internal/runner/bootstrap/logger.go`）。追記される単一の `runner.log` は存在しない
+ため、監視は**ディレクトリ内のファイル群**を対象にします。中身は1行1レコードの JSON
+（slog の `JSONHandler`）で、`time` / `level` / `msg` に加えて `hostname` / `pid` /
+`run_id` / `schema_version` が付与されます。
+
 **即座の検出:**
 ```bash
-# ハッシュ検証エラーの即座の検出
-tail -f /var/log/go-safe-cmd-runner/runner.log | grep -i "hash verification failed"
+# 検証エラーの即座の検出（ログディレクトリ内の新規ファイルを追跡）
+tail -F /var/log/go-safe-cmd-runner/*.json | grep -i "verification failed"
 ```
+
+対象とする `msg` の実値は `Global file verification failed` および
+`CRITICAL: Global file verification failed - program will terminate`
+（`internal/verification/manager.go`）です。設定ファイル自体の検証・解析失敗は
+`Failed to verify and read the configuration file` / `Failed to load the configuration`
+（`internal/runner/bootstrap/config.go`）として記録されます。
 
 **ログ監視ツールの活用:**
 
-Filebeat:
+Filebeat（出力は1つだけ有効にできます。Elasticsearch と Logstash を同時に指定すると
+起動時にエラーになります）:
 ```yaml
 filebeat.inputs:
-- type: log
+- type: filestream
+  id: go-safe-cmd-runner
   enabled: true
   paths:
-    - /var/log/go-safe-cmd-runner/runner.log
+    - /var/log/go-safe-cmd-runner/*.json
+  parsers:
+    - ndjson:
+        target: ""
   fields:
     module: go-safe-cmd-runner
-  processors:
-    - add_kubernetes_metadata: ~
 
 output.elasticsearch:
   hosts: ["elasticsearch:9200"]
-
-output.logstash:
-  hosts: ["logstash:5000"]
 ```
 
-Fluentd:
+Fluentd（`@type slack` には `fluent-plugin-slack` が必要です）:
 ```xml
 <source>
   @type tail
-  path /var/log/go-safe-cmd-runner/runner.log
-  pos_file /var/log/runner.log.pos
+  path /var/log/go-safe-cmd-runner/*.json
+  pos_file /var/log/go-safe-cmd-runner.pos
   tag go-safe-cmd-runner
   <parse>
     @type json
@@ -175,43 +196,59 @@ Fluentd:
 
 ```bash
 #!/bin/bash
-# 最後の実行ログ日時が期待通りか
-LAST_RUN=$(grep "process started" /var/log/go-safe-cmd-runner/runner.log | tail -1 | jq -r '.time // empty')
-CURRENT_TIME=$(date +"%Y-%m-%dT%H")
+set -euo pipefail
+LOG_DIR=/var/log/go-safe-cmd-runner
+
+# 最後の実行ログ日時が期待通りか。
+# 実行開始のマーカーは logger 初期化時に出力される "Logger initialized"
+# (internal/runner/bootstrap/logger.go)。ログは実行ごとに別ファイルなので、
+# 最新のファイルを対象にする。
+LATEST=$(ls -1t "$LOG_DIR"/*.json 2>/dev/null | head -1)
+LAST_RUN=$(
+    [[ -n "$LATEST" ]] &&
+    jq -r 'select(.msg == "Logger initialized") | .time' "$LATEST" | tail -1
+)
+CURRENT_TIME=$(date -u +"%Y-%m-%dT%H")
 if [[ -z "$LAST_RUN" || "$LAST_RUN" != "$CURRENT_TIME"* ]]; then
     echo "WARNING: Last run was not in the current hour"
     # Slack 通知を送信（別途設定）
 fi
 
-# 最近のログにハッシュ検証エラーがないか（直近1000行を検査する例）
-if tail -n 1000 /var/log/go-safe-cmd-runner/runner.log | grep -q -i "hash verification failed"; then
-    echo "ALERT: Hash verification failures detected"
+# 直近の実行に検証エラーがないか
+if [[ -n "$LATEST" ]] && jq -e 'select(.level == "ERROR" and (.msg | test("verification failed"; "i")))' \
+        "$LATEST" >/dev/null; then
+    echo "ALERT: Verification failures detected"
     # Slack 通知を送信（別途設定）
 fi
 ```
 
+`.time` はログ出力時刻（UTC）なので、比較する現在時刻も `date -u` で揃えます。
+
 ## 実装の現状
 
-フェーズ1の各エラーは必ずログに記録されます：
+ログシステムはフェーズ1の先頭（`bootstrap.SetupLogging`）で初期化されるため、
+その後に発生する設定ファイル検証・解析エラーは必ずログファイルに記録されます。
+Slack ハンドラだけが後から追加されます。
 
 **`internal/verification/manager.go`**
 ```go
-func (m *Manager) Verify(...) error
-// ハッシュ検証失敗時はエラーを返す
-// 呼び出し側がログ記録（エラーの痕跡は失われない）
+func (m *Manager) VerifyAndReadConfigFile(configPath string) ([]byte, error)
+// 設定ファイルのハッシュ検証と読み込みを1ステップで行う（TOCTOU 回避）
+// 検証失敗時はエラーを返す
 ```
 
-**`internal/runner/config.go`**
+**`internal/runner/bootstrap/config.go`**
 ```go
-func (c *Config) Load(...) error
-// TOML 解析失敗時はエラーを返す
-// ログシステムが初期化される前なため、標準エラー出力にも記録
+func LoadAndPrepareConfig(...) (*runnertypes.ConfigSpec, error)
+// 検証失敗・TOML 解析失敗を PreExecutionError として返す
+// 原因は Err に保持されるため errors.Is/As で判別できる
 ```
 
-**`internal/runner/executor.go`**
+**`cmd/runner/main.go`**
 ```go
-func (e *Executor) Run(...) error
-// フェーズ1の各エラーをログに記録
+// SetupLogging → LoadAndPrepareConfig → SetupSlackLogging の順に実行する。
+// LoadAndPrepareConfig のエラーは Slack ハンドラ登録前に返るため、
+// ログファイルには残るが Slack には届かない。
 // 設定ファイル改ざん検出 → プロセス起動失敗 → 強力なシグナル
 ```
 
