@@ -27,7 +27,7 @@
 
 #### `internal/runner/base/privilege/metrics.go`（削除対象）
 
-`Metrics` 型と5つのメソッド（`RecordElevationSuccess`・`RecordElevationFailure`・`updateSuccessRate`・`GetSnapshot`・`Reset`）のみを含む。他の型はない。ファイル冒頭の `// Package privilege provides metrics collection for privilege operations.` が本 package の package コメントになっているため、削除時に package コメントの行き先を決める必要がある（`manager.go` へ移す）。
+`Metrics` 型と5つのメソッド（`RecordElevationSuccess`・`RecordElevationFailure`・`updateSuccessRate`・`GetSnapshot`・`Reset`）のみを含む。他の型はない。~~ファイル冒頭の `// Package privilege provides metrics collection for privilege operations.` が本 package の package コメントになっているため、削除時に package コメントの行き先を決める必要がある（`manager.go` へ移す）。~~ **実装時に訂正**: package コメントは `errors.go:1` の `// Package privilege provides secure privilege escalation functionality for command execution.` が提供しており（ファイル名順で `errors.go` が先）、`metrics.go` 冒頭のものは重複である。移設は不要で、`metrics.go` ごと削除すれば足りる。
 
 #### `internal/runner/base/privilege/unix.go`（変更）
 
@@ -61,7 +61,7 @@ metrics 削除により**主張が消えるテスト**が4つある。いずれ�
 
 `metrics_test.go` は全体を削除する。同ファイルが定義する `ErrTestPrivilegeElevationFailure`・`ErrTestFailure`・`ErrTestError` は同ファイル内でのみ参照されており、他への影響はない（確認済み）。
 
-`race_test.go:235` の `_ = manager.GetMetrics()` は、並行読み取りの対象の1つとして呼ばれている。同じループ内に `GetCurrentUID`・`GetOriginalUID`・`IsPrivilegedExecutionSupported` の3つが残るため、当該行の削除のみでテストの主旨は保たれる。
+`race_test.go:235` の `_ = manager.GetMetrics()` は、並行読み取りの対象の1つとして呼ばれている。~~同じループ内に `GetCurrentUID`・`GetOriginalUID`・`IsPrivilegedExecutionSupported` の3つが残るため、当該行の削除のみでテストの主旨は保たれる。~~ **実装時に訂正**: 残る3つは競合しえない（`GetCurrentUID` は `syscall.Geteuid()` を呼ぶだけ、他の2つは構築時に一度だけ書かれるフィールドの読み取り）。`GetMetrics` は RWMutex 下の共有カウンタに触れる唯一の呼び出しであり、これを外すと `TestUnixPrivilegeManager_ThreadSafety` は `-race` で何も報告しえない。したがって当該テストは関数ごと削除する（ステップ7）。
 
 #### 改名・フィールド削除に追従する箇所（実測値）
 
@@ -160,8 +160,8 @@ metrics 削除により**主張が消えるテスト**が4つある。いずれ�
 
 **判定理由**: ステップ3 が `restorePrivilegesAndVerify` の復元失敗 → `emergencyShutdown` という回復フローの制御構造を書き換える孤立した高リスク手順であり、加えてステップ10・12 の改名追従は CI でコンパイルも lint もされない範囲（`identity_other_test.go`・文書）に及ぶため。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] Phase 1 の完了条件（`GOOS=darwin` クロス vet・`make deadcode`・`rg` の残存ゼロ）を満たしたことを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] Phase 1 の完了条件（`GOOS=darwin` クロス vet・`make deadcode`・`rg` の残存ゼロ）を満たしたことを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
