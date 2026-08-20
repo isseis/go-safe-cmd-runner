@@ -88,6 +88,14 @@ func defaultIdentityVerifier() error {
 // involves escalating to root.
 //
 // For OperationFileValidation this package escalates to root and restores afterwards.
+//
+// WithPrivileges is not reentrant: it holds m's mutex for the duration of fn, so
+// calling WithPrivileges on the same manager from within fn deadlocks. Avoiding
+// that is the caller's responsibility.
+//
+// This is not detected at runtime: neither a "currently held" flag nor TryLock
+// can tell a goroutine's own reentrant call apart from another goroutine's
+// legitimate wait for the lock.
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
