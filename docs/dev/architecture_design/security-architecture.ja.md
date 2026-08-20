@@ -266,7 +266,6 @@ type UnixPrivilegeManager struct {
     logger             *slog.Logger
     originalUID        int
     privilegeSupported bool
-    metrics            Metrics
     mu                 sync.Mutex  // 競合状態を防止
     osExit             func(code int)                      // テスト用に注入可能なos.Exit
     identityVerifier   func() error                         // EUID==UID / EGID==GID の検証（テスト用に注入可能）
