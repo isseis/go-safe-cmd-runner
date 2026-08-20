@@ -8,7 +8,7 @@
 | Created | 2026-08-20 |
 | Review date | 2026-08-20 |
 | Reviewer | isseis |
-| Comments | 2026-08-20: `02_architecture.md` § 10 の指摘を受け、AC-07a・AC-18・AC-19・AC-21・F-7 の性能見積もり・Success Criteria を実装可能な記述へ修正（挙動の方針は変更なし） |
+| Comments | 2026-08-20: `02_architecture.md` § 10 の指摘を受け、AC-07a・AC-18・AC-19・AC-21・F-7 の性能見積もり・Success Criteria を実装可能な記述へ修正（挙動の方針は変更なし）。同日、スコープ対象 6 にディレクトリ fd 起点への変更を追加（`02_architecture.md` § 10.1） |
 
 ## 関連 Issue
 
@@ -117,7 +117,7 @@ Linux 経路は `openHow.mode` に `uint64(perm)` をそのまま渡す（[safe_
 3. `AtomicMoveFile` の doc コメントへの、失敗時に宛先が残りうることの明記（F-4-2）。
 4. `FileSystem.Remove` の削除、またはそれに代わる契約の確定（F-5）。
 5. openat2 に渡す `mode` の正規化と、不正な `perm` の拒否（F-6）。
-6. `safeWriteFileCommon` の一時ファイル＋アトミックな差し替えへの変更（F-7）。
+6. `safeWriteFileCommon` の一時ファイル＋アトミックな差し替えへの変更（F-7）。併せて、移動と書き込みの経路をディレクトリ fd 起点に変える（`moveFileAnchored` の書き換えを含む）。パスの二度目の解決を無くし、確認したディレクトリと書き込むディレクトリが食い違う余地を仕組みとして消すためである。2026-08-20 承認。
 7. openat2 の `EINTR` リトライ（F-9）。
 8. 公開 API と package コメントへの、フォールバック経路が best-effort であることの明記（F-2）。
 9. `canSafelyReadFromFile` への、読み取り検査が UID を見ない理由の明記（F-8）。
@@ -232,7 +232,7 @@ Linux 経路は `openHow.mode` に `uint64(perm)` をそのまま渡す（[safe_
 
 - 上記すべての Acceptance Criteria が実装され、対応するテストが `make test` で成功する。
 - `make lint` が警告なく通過する。
-- 本タスクの前後で、`safefileio` の公開 API が成功したときに書き込まれる内容と移動先のファイルが変わらない。挙動の変化は次の 5 つに限られ、いずれも意図したものである。
+- 本タスクの前後で、`safefileio` の公開 API が成功したときに書き込まれる内容と移動先のファイルが変わらない。挙動の変化は次の 6 つに限られ、いずれも意図したものである。
   - 失敗したときに何が残るか（fd・作成済みファイル・一時ファイルを残さなくなる）。
   - 安全でない権限のソースを `AtomicMoveFile` に渡したときの結果（権限を狭めて受け入れるのをやめ、拒否する。AC-07a）。
   - `SafeWriteFileOverwrite` の宛先の権限が `perm` と一致するようになる（AC-19）。
