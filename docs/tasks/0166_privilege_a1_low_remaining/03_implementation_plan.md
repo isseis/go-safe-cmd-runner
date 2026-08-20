@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-08-20 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-08-20 |
+| Reviewer | isseis |
 | Comments | 変更範囲が privilege package に閉じ新規の設計要素を持たないため、`02_architecture.md` を省略して本書を作成した。設計上の選択は `01_requirements.md` の「決定事項」節にある |
 
 ## 1. 実装の概要
