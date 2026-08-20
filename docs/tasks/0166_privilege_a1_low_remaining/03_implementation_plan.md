@@ -204,18 +204,18 @@ metrics 削除により**主張が消えるテスト**が4つある。いずれ�
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] Phase 2 の完了条件（サブテスト行が `--- PASS` であること・`TestNoUnexpectedIdentityMutationSyscalls` の無変更通過）を満たしたことを確認した
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1043）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: 再入禁止の契約の明記（F-003 / AC-14〜AC-17）
 
 **対象ファイル**: `internal/runner/base/privilege/unix.go`, `internal/runner/base/runnertypes/config.go`
 
-- [ ] **ステップ17**: `UnixPrivilegeManager.WithPrivileges` の doc コメントに、再入禁止の契約と、再入検出を実装しない理由を英語で追記する。既存の doc（`OperationUserGroupExecution` と `OperationFileValidation` の説明）は残し、その後ろに段落を足す。内容は次の3点を含める。
-  - [ ] マネージャのミューテックスは `fn` の実行中も保持され続けること。特権状態がプロセス全体に及ぶため、直列化には保持が必要であること。
-  - [ ] `fn` の内側から同一マネージャの `WithPrivileges` を呼ぶと自己デッドロックすること（reentrant / deadlock の語を用いる）。再入しないことは呼び出し側の責務であること。
-  - [ ] 再入を検出してエラーを返す実装を置かない理由: 保持中フラグでは自ゴルーチンの再入と他ゴルーチンの正当な待機を区別できず、`TryLock` でも同様であるため。
-- [ ] **ステップ18**: `internal/runner/base/runnertypes/config.go` の `PrivilegeManager` インターフェースの `WithPrivileges`（:194）に、再入が禁止であることを英語の doc コメントで記載する。実装の詳細（ミューテックス保持）ではなく、利用者から見た契約として書く。
+- [x] **ステップ17**: `UnixPrivilegeManager.WithPrivileges` の doc コメントに、再入禁止の契約と、再入検出を実装しない理由を英語で追記する。既存の doc（`OperationUserGroupExecution` と `OperationFileValidation` の説明）は残し、その後ろに段落を足す。内容は次の3点を含める。
+  - [x] マネージャのミューテックスは `fn` の実行中も保持され続けること。特権状態がプロセス全体に及ぶため、直列化には保持が必要であること。
+  - [x] `fn` の内側から同一マネージャの `WithPrivileges` を呼ぶと自己デッドロックすること（reentrant / deadlock の語を用いる）。再入しないことは呼び出し側の責務であること。
+  - [x] 再入を検出してエラーを返す実装を置かない理由: 保持中フラグでは自ゴルーチンの再入と他ゴルーチンの正当な待機を区別できず、`TryLock` でも同様であるため。
+- [x] **ステップ18**: `internal/runner/base/runnertypes/config.go` の `PrivilegeManager` インターフェースの `WithPrivileges`（:194）に、再入が禁止であることを英語の doc コメントで記載する。実装の詳細（ミューテックス保持）ではなく、利用者から見た契約として書く。
 
 **完了条件**:
 - `make lint` が通る。
@@ -233,9 +233,9 @@ metrics 削除により**主張が消えるテスト**が4つある。いずれ�
 
 **判定理由**: doc コメントの追記のみでコード挙動を変えず、`既存コード調査結果` にも競合方針がないため、いずれのトリガーにも該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] Phase 3 の完了条件（追記した doc がすべて英語であること）を満たしたことを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] Phase 3 の完了条件（追記した doc がすべて英語であること）を満たしたことを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1044）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -358,8 +358,8 @@ PR は Phase と一対一に対応させ、4本に分ける（PR-N ≡ Phase N�
 - [x] ステップ16: 両テストが理由どおりに失敗できることの確認
 
 ### PR-3: 再入禁止の明記（Phase 3）
-- [ ] ステップ17: `WithPrivileges` の doc 追記
-- [ ] ステップ18: `runnertypes.PrivilegeManager` の doc 追記
+- [x] ステップ17: `WithPrivileges` の doc 追記
+- [x] ステップ18: `runnertypes.PrivilegeManager` の doc 追記
 
 ### PR-4: 0149 の監査記録への反映（Phase 4）
 - [ ] ステップ19: `98_remaining_issues.md` §2 A1 の書き換え
