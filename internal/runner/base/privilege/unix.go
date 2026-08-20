@@ -33,7 +33,6 @@ type UnixPrivilegeManager struct {
 	logger             *slog.Logger
 	originalUID        int
 	privilegeSupported bool
-	metrics            Metrics
 	mu                 sync.Mutex
 	// osExit is a function for os.Exit to enable testing of emergencyShutdown
 	osExit func(code int)
@@ -95,16 +94,14 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 
 	execCtx, err := m.prepareExecution(elevationCtx)
 	if err != nil {
-		m.metrics.RecordElevationFailure(err)
 		return err
 	}
 
 	if err := m.performElevation(execCtx); err != nil {
-		m.metrics.RecordElevationFailure(err)
 		return err
 	}
 
-	defer m.handleCleanupAndMetrics(execCtx)
+	defer m.handleCleanup(execCtx)
 	m.logger.Debug("Executing privileged operation callback", "operation", execCtx.elevationCtx.Operation, "command", execCtx.elevationCtx.CommandName)
 	fnErr := fn()
 	m.logger.Debug("Privileged operation callback completed", "operation", execCtx.elevationCtx.Operation, "command", execCtx.elevationCtx.CommandName, "error", fnErr)
@@ -121,7 +118,6 @@ type executionContext struct {
 	needsPrivilegeEscalation bool
 	originalSUID             int
 	originalSGID             int
-	start                    time.Time
 }
 
 // prepareExecution validates and prepares the execution context
@@ -142,7 +138,6 @@ func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.Elevati
 		elevationCtx: elevationCtx,
 		originalSUID: suid,
 		originalSGID: sgid,
-		start:        time.Now(),
 	}
 
 	switch elevationCtx.Operation {
@@ -173,8 +168,8 @@ func (m *UnixPrivilegeManager) performElevation(execCtx *executionContext) error
 	return nil
 }
 
-// handleCleanupAndMetrics handles panic recovery, cleanup, and metrics recording
-func (m *UnixPrivilegeManager) handleCleanupAndMetrics(execCtx *executionContext) {
+// handleCleanup recovers from a panic in the callback, restores privileges, and verifies identity.
+func (m *UnixPrivilegeManager) handleCleanup(execCtx *executionContext) {
 	var panicValue any
 	var shutdownContext string
 
@@ -187,27 +182,20 @@ func (m *UnixPrivilegeManager) handleCleanupAndMetrics(execCtx *executionContext
 		shutdownContext = "normal execution"
 	}
 
-	var duration time.Duration
-	if panicValue == nil {
-		duration = time.Since(execCtx.start)
-	}
-
-	m.restorePrivilegesAndMetrics(execCtx, panicValue, shutdownContext, duration)
+	m.restorePrivilegesAndVerify(execCtx, shutdownContext)
 
 	if panicValue != nil {
 		panic(panicValue)
 	}
 }
 
-// restorePrivilegesAndMetrics handles privilege restoration and metrics recording
-func (m *UnixPrivilegeManager) restorePrivilegesAndMetrics(execCtx *executionContext, panicValue any, shutdownContext string, duration time.Duration) {
+// restorePrivilegesAndVerify restores the original privileges and verifies that no elevated identity leaked.
+func (m *UnixPrivilegeManager) restorePrivilegesAndVerify(execCtx *executionContext, shutdownContext string) {
 	// Note: no branch restores the effective group ID here. This package only escalates
 	// and restores the effective UID, so there is nothing else to restore.
 	if execCtx.needsPrivilegeEscalation {
 		if err := m.restorePrivileges(); err != nil {
 			m.emergencyShutdown(err, shutdownContext)
-		} else if panicValue == nil {
-			m.metrics.RecordElevationSuccess(duration)
 		}
 	}
 
@@ -425,9 +413,4 @@ func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
 // GetOriginalUID returns the original user ID before any privilege elevation
 func (m *UnixPrivilegeManager) GetOriginalUID() int {
 	return m.originalUID
-}
-
-// GetMetrics returns a snapshot of current privilege operation metrics
-func (m *UnixPrivilegeManager) GetMetrics() Metrics {
-	return m.metrics.GetSnapshot()
 }

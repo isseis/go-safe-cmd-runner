@@ -1,3 +1,5 @@
+// Package privilege manages elevation to root and restoration of the original
+// privileges for operations that require them.
 package privilege
 
 import (
@@ -13,7 +15,6 @@ type Manager interface {
 	// Additional methods specific to privilege package
 	GetCurrentUID() int
 	GetOriginalUID() int
-	GetMetrics() Metrics
 }
 
 // NewManager creates a platform-appropriate privilege manager

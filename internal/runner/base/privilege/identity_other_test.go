@@ -5,7 +5,6 @@ package privilege
 import (
 	"log/slog"
 	"testing"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
@@ -24,13 +23,13 @@ func TestReadSavedIDs_ReturnsSentinelErrorOnNonLinux(t *testing.T) {
 	assert.Equal(t, 0, sgid, "saved-set-gid is 0 on non-Linux")
 }
 
-// TestRestorePrivilegesAndMetrics_SkipsSavedSetCheckOnNonLinux verifies that the
-// saved-set invariant check in restorePrivilegesAndMetrics is structurally skipped
+// TestRestorePrivilegesAndVerify_SkipsSavedSetCheckOnNonLinux verifies that the
+// saved-set invariant check in restorePrivilegesAndVerify is structurally skipped
 // when originalSUID/originalSGID carry the -1 sentinel that prepareExecution assigns
 // on platforms returning ErrSavedSetNotSupported. Without the originalSUID >= 0 gate,
 // the post-restore readSavedIDs() call would return ErrSavedSetNotSupported and trigger
 // emergencyShutdown; this test asserts that path is never taken (osExit is not invoked).
-func TestRestorePrivilegesAndMetrics_SkipsSavedSetCheckOnNonLinux(t *testing.T) {
+func TestRestorePrivilegesAndVerify_SkipsSavedSetCheckOnNonLinux(t *testing.T) {
 	manager := &UnixPrivilegeManager{
 		logger:             slog.Default(),
 		privilegeSupported: false,
@@ -48,10 +47,9 @@ func TestRestorePrivilegesAndMetrics_SkipsSavedSetCheckOnNonLinux(t *testing.T) 
 		// ErrSavedSetNotSupported; the saved-set check must be skipped structurally.
 		originalSUID: -1,
 		originalSGID: -1,
-		start:        time.Now(),
 	}
 
 	// Should complete without invoking emergencyShutdown (osExit). If the skip-gate
 	// were absent, the non-Linux readSavedIDs() would error and force a shutdown.
-	manager.restorePrivilegesAndMetrics(execCtx, nil, "test", 0)
+	manager.restorePrivilegesAndVerify(execCtx, "test")
 }

@@ -294,8 +294,8 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
         return err
     }
 
-    // 3. deferで復元・検証・メトリクス記録をまとめて実行
-    defer m.handleCleanupAndMetrics(execCtx)
+    // 3. deferで復元と検証をまとめて実行
+    defer m.handleCleanup(execCtx)
     return fn()
 }
 ```
@@ -313,10 +313,10 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
    - 操作後の自動特権復元
 
 **復元後の防御的検証**:
-`handleCleanupAndMetrics`はパニック回復と時間計測を担い、実際の特権復元と2段階の不変条件チェックは内部で呼び出す`restorePrivilegesAndMetrics`が行います。いずれかのチェックが失敗すると`emergencyShutdown`が呼ばれます。
+`handleCleanup`はパニック回復を担い、実際の特権復元と2段階の不変条件チェックは内部で呼び出す`restorePrivilegesAndVerify`が行います。いずれかのチェックが失敗すると`emergencyShutdown`が呼ばれます。
 
 ```go
-// 場所: internal/runner/base/privilege/unix.go の restorePrivilegesAndMetrics() 関数
+// 場所: internal/runner/base/privilege/unix.go の restorePrivilegesAndVerify() 関数
 // 1. EUID==UID / EGID==GID を検証する（復元処理自体のバグを検出する独立したチェック）
 if err := m.identityVerifier(); err != nil {
     m.emergencyShutdown(err, fmt.Sprintf("identity_verification_failure_%s", shutdownContext))

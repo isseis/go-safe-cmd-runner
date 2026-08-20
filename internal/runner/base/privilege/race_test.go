@@ -232,7 +232,6 @@ func TestUnixPrivilegeManager_ThreadSafety(t *testing.T) {
 			_ = manager.GetCurrentUID()
 			_ = manager.GetOriginalUID()
 			_ = manager.IsPrivilegedExecutionSupported()
-			_ = manager.GetMetrics()
 		})
 	}
 
