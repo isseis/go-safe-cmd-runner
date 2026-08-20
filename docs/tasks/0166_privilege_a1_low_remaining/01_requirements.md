@@ -1,4 +1,4 @@
-# 要件定義書: privilege の残 Low 所見（metrics 削除・失敗経路の被覆・再入契約の明記）
+# 要件定義書: privilege の残 Low 所見（metrics 削除・失敗経路のテスト追加・再入契約の明記）
 
 ## Document Status
 
@@ -35,7 +35,7 @@
 
 一方で、L-2 が指摘した実害そのもの——昇格・復元の syscall 失敗分岐と、そこから到達する `emergencyShutdown` が単体テストで踏まれていない——は現存する。現行テストは `escalatePrivileges` について `not_supported`（`privilegeSupported: false`）と `native_root`（`originalUID == 0`）しか通しておらず、`syscall.Seteuid` が実際に失敗する分岐には入らない。`restorePrivileges` の失敗から `emergencyShutdown` に至る経路も同様である。
 
-ただしこれは注入点を作らなくても被覆できる。非特権プロセスでは `Seteuid` に自分の real／effective／saved のいずれとも異なる UID を渡せば `EPERM` で失敗し、そのとき identity は変化しない。0162 が `cmd/runner/startup_privilege_test.go` で採っているのと同じ手法であり、同ファイルは root 実行時に `t.Skip` するガードも備えている。CI（`ubuntu-latest`）も開発コンテナも非 root で動くため、この skip は保険であって通常経路ではない。
+ただしこれは注入点を作らなくてもテストで踏める。非特権プロセスでは `Seteuid` に自分の real／effective／saved のいずれとも異なる UID を渡せば `EPERM` で失敗し、そのとき identity は変化しない。0162 が `cmd/runner/startup_privilege_test.go` で採っているのと同じ手法であり、同ファイルは root 実行時に `t.Skip` するガードも備えている。CI（`ubuntu-latest`）も開発コンテナも非 root で動くため、この skip は保険であって通常経路ではない。
 
 ### L-3: 恒偽項そのものは 0157 で解消済み。残るのは metrics の意味論と、型の存在価値
 
@@ -47,7 +47,7 @@
 
 読み手のいない指標の意味論を整えても得るものがないため、本タスクは `privilege.Metrics` 自体を削除する方向を採る。0157 が「本番呼び出し元を持たない `WithUserGroup`／`IsUserGroupSupported` をインターフェースごと削除する」と判断したのと同じ基準であり、CLAUDE.md の YAGNI 原則にも従う。
 
-この削除により、A1 の別の所見 **L-5**（`sync.RWMutex` を含む `Metrics` を値で返す `GetSnapshot`／`GetMetrics` の copylocks フットガン）も同時に解消される。L-5 は #977 の対象には含まれていないが、対象物が消えるため残件一覧から落とせる。
+この削除により、A1 の別の所見 **L-5**（`sync.RWMutex` を含む `Metrics` を値で返す `GetSnapshot`／`GetMetrics` の copylocks フットガン）も同時に解消される。L-5 は #977 の対象にも `98_remaining_issues.md` §2 の一覧にも含まれていない（同節の A1 は L-2・L-3・L-4 の3件のみを挙げる）が、対象物が消えるため findings 側に解消を記録する。
 
 ### L-4: 現存する。ただし現在の本番コードに再入経路は存在しない
 
@@ -69,9 +69,9 @@
 
 1. `privilege.Metrics` 型と、`privilege.Manager` インターフェースの `GetMetrics` の削除（L-3・L-5）。
 2. 削除に伴って意味を失う `executionContext.start`、および metrics 記録を前提とした関数名の整理（L-3）。
-3. `escalatePrivileges`・`restorePrivileges` の syscall 失敗分岐と `emergencyShutdown` 到達の、注入点を追加しないテスト被覆（L-2）。
+3. `escalatePrivileges`・`restorePrivileges` の syscall 失敗分岐と `emergencyShutdown` 到達を、注入点を追加せずにテストで踏むこと（L-2）。
 4. `WithPrivileges` および `runnertypes.PrivilegeManager` の doc への再入禁止の明記（L-4）。
-5. 0149 残件一覧（`98_remaining_issues.md` §2 A1）と findings（`A1_privilege.md`）の対応状況の反映。
+5. 0149 残件一覧（`98_remaining_issues.md` §2 A1）と findings（`A1_privilege.md`）への対応状況の反映、および改名した関数を引用している設計文書3対の更新。
 
 ### 対象外
 
@@ -80,7 +80,7 @@
 - **再入検出の実装**（L-4）。上記「背景」のとおり、Go では正しく実装できない。doc 明記にとどめる。
 - **A1 M-1（昇格ウィンドウがプロセス全体・コマンド全実行時間に及ぶ）**。設計そのものの見直しを伴い、L-2〜L-4 とは規模が異なる。残件一覧に残す。
 - **A1 L-1（`user.Lookup` の二重呼び出し）**。0157 が該当関数を削除したかどうかを含め、現行コードでの現存確認が別途必要であり、本タスクでは扱わない。
-- **A1 I-1（`GetCurrentUID` が effective UID を返す命名の乖離）**。ただし後述の「未決事項」で `GetCurrentUID` 自体を削除すると決まった場合は、副次的に解消される。その場合も本タスクの AC には含めず、残件一覧の更新でのみ扱う。
+- **A1 I-1（`GetCurrentUID` が effective UID を返す命名の乖離）**。後述の「決定事項」のとおり `GetCurrentUID` 自体は残すため、本タスクでは解消しない。
 - **`resource.Manager.WithPrivileges` の削除**（#1041）。resource 層の API 整理であり、privilege package に閉じた本タスクとは影響範囲が異なる。
 - **executor 側の `audit.PrivilegeMetrics` の変更**。本タスクは privilege package の内部勘定を削除するだけで、監査ログに出る指標は変更しない。
 
@@ -91,7 +91,7 @@
 - **`privilege.Manager` インターフェースの整理範囲**: 本タスクでは `GetMetrics` のみを削除する。`GetCurrentUID`・`GetOriginalUID` も本番の呼び出し元を持たないが、削除は I-1（命名の乖離）の扱いと一体で判断すべき別件であり、スコープを広げない。
 - **metrics 削除後の関数名**: `handleCleanupAndMetrics` を `handleCleanup` に、`restorePrivilegesAndMetrics` を `restorePrivilegesAndVerify` に改名する。
 - **L-2 のテストの配置**: 既存の `unix_privilege_test.go` に追加する。skip 条件と理由文は `cmd/runner/startup_privilege_test.go` の既存パターンに揃える。
-- **`restorePrivileges` を失敗させる UID**: `originalUID` に `syscall.Getuid() + 1` を用いる。非 root・非 setuid のテストバイナリでは real・effective・saved のいずれもが `syscall.Getuid()` に等しいため、この値は3つのどれとも一致せず、`Seteuid` は確実に `EPERM` で失敗する。
+- **`restorePrivileges` を失敗させる UID**: `originalUID` に `syscall.Getuid() + 1` を用いる。非 root・非 setuid のテストバイナリでは real・effective・saved のいずれもが `syscall.Getuid()` に等しいため、この値は3つのどれとも一致せず、`Seteuid` は必ず失敗する。実 UID が 65534 の場合や user namespace で `uid+1` が未マップの場合は errno が `EPERM` ではなく `EINVAL` になるため、テストでは errno の値を固定せず、失敗したことのみを検証する。
 
 ## Acceptance Criteria
 
@@ -107,7 +107,7 @@
 - **AC-05**: 監査ログに出力される特権関連の指標（`elevation_count`・`total_privilege_duration_ms`）が本タスク前と同一である。これらは executor 側の `audit.PrivilegeMetrics` に由来し、本タスクの削除対象ではない。
 - **AC-06**: `make deadcode` が、本タスクの削除に起因する新たな未使用シンボルを報告しない。
 
-#### F-002: 昇格・復元の syscall 失敗分岐のテスト被覆
+#### F-002: 昇格・復元の syscall 失敗分岐をテストで踏む
 
 新たな注入点を導入せずに、実際に `EPERM` を起こして失敗分岐を踏む。
 
@@ -128,12 +128,13 @@
 - **AC-16**: `runnertypes.PrivilegeManager` インターフェースの `WithPrivileges` の doc コメントにも、再入が禁止であることが記載されている。インターフェースの利用者が実装を読まずに契約を知れる。
 - **AC-17**: 上記の doc はすべて英語で記述される。
 
-#### F-004: 監査文書への反映
+#### F-004: 文書への反映
 
 **Acceptance Criteria**:
-- **AC-18**: `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` §2 の A1 の項目から、本タスクで解消した所見（L-2・L-3・L-4、および対象物の消滅により解消される L-5）が除かれ、除かれた理由が本タスクへの参照とともに記載されている。L-2 については、所見の推奨とは逆方向で close したことと、その根拠（`identity_mutation_guard_test.go` の存在）が読み取れる。
+- **AC-18**: `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` §2 の「A1（privilege）」から、本タスクで解消した L-2・L-3・L-4 の3件が残件として除かれ、解消したことと本タスク・#977 への参照が、同文書が既に D1 M-3・B3 M2 に用いている引用ブロック（`> **… について**`）の形式で記載されている。L-2 については、所見の推奨とは逆方向で close したことと、その根拠（`identity_mutation_guard_test.go` の存在）が読み取れる。
 - **AC-19**: `docs/tasks/0149_security_code_smell_audit_fable/findings/A1_privilege.md` の L-2・L-3・L-4・L-5 に、本タスクでの対応結果が追記されている。所見の原文は書き換えず、監査時点の記述として残す。
-- **AC-20**: 残件一覧に残る A1 の所見（M-1・L-1・I-1〜I-4 のうち現存するもの）が、本タスクの対象外である旨とともに一覧に残っている。誤って解消済みとして落とされていない。
+- **AC-20**: `98_remaining_issues.md` の A1 以外の残件（D1・B1・D2・E1 ほか）の記述が、本タスクの書き換えによって増減していない。
+- **AC-21**: `handleCleanupAndMetrics`・`restorePrivilegesAndMetrics` を引用・説明している利用者向け／開発者向け文書が、改名後の名称と実態に更新されている。対象は `docs/dev/architecture_design/security-architecture{.ja,}.md`、`docs/dev/developer_guide/design-implementation-overview{.ja,}.md`、`docs/user/security-risk-assessment{.ja,}.md` の3対である。とくに「パニック回復と時間計測を担う」旨の記述は、時間計測が無くなるため実態に合わせて修正する。日本語版を先に更新し、英語版は `/mktrans` で反映する。
 
 ## Success Criteria（要件レベル）
 
