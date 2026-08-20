@@ -311,6 +311,13 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 - **キャッシュ機能**: パフォーマンス向上と一貫性確保
 - **クロスプラットフォーム**: 統一されたユーザー・グループ管理
 
+**既知の制限（`CGO_ENABLED=0` ビルド）**: 非 CGO ビルドはグループメンバー・プライマリグループの列挙を
+`/etc/group` と `/etc/passwd` の直接パースのみで行い、LDAP/SSSD 等の NSS（Name Service Switch）
+ディレクトリサービスは参照しない。プロジェクトが配布する公式バイナリは `CGO_ENABLED=0` でビルドされて
+いるため、NSS でのみ管理されているグループメンバーは列挙結果に現れず、group-writable なファイルに
+対する書き込み安全性判定が実際より緩く（許可寄りに）評価される場合がある。NSS 経由のグループ管理に
+依存する環境（LDAP/SSSD 等）でこのツールを使う場合は、`CGO_ENABLED=1` でのセルフビルドを検討すること。
+
 ### 4. 安全な端末出力制御 (`internal/terminal/`, `internal/ansicolor/`)
 
 **出力セキュリティ**:
