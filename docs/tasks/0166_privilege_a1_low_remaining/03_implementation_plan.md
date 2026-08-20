@@ -204,8 +204,8 @@ metrics 削除により**主張が消えるテスト**が4つある。いずれ�
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] Phase 2 の完了条件（サブテスト行が `--- PASS` であること・`TestNoUnexpectedIdentityMutationSyscalls` の無変更通過）を満たしたことを確認した
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1043）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: 再入禁止の契約の明記（F-003 / AC-14〜AC-17）
 
