@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
@@ -56,7 +55,6 @@ func TestPrepareExecution_Success(t *testing.T) {
 			assert.Equal(t, tt.expectedPrivEscalation, execCtx.needsPrivilegeEscalation,
 				"needsPrivilegeEscalation mismatch")
 			assert.Equal(t, tt.elevationCtx, execCtx.elevationCtx)
-			assert.NotZero(t, execCtx.start)
 		})
 	}
 }
@@ -147,43 +145,8 @@ func TestPerformElevation_Failure(t *testing.T) {
 	})
 }
 
-// TestHandleCleanupAndMetrics_Success tests successful cleanup and the
-// handleCleanupAndMetrics-specific behavior of accounting duration (and passing
-// a non-zero duration to restorePrivilegesAndMetrics) when there is no panic.
-// TestRestorePrivilegesAndMetrics_Success covers restorePrivilegesAndMetrics
-// itself, so this test does not re-check its internals beyond the duration
-// that only handleCleanupAndMetrics computes.
-func TestHandleCleanupAndMetrics_Success(t *testing.T) {
-	manager := &UnixPrivilegeManager{
-		logger:             slog.Default(),
-		privilegeSupported: true,
-		originalUID:        0,
-		identityVerifier:   func() error { return nil },
-		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
-	}
-
-	execCtx := &executionContext{
-		elevationCtx: runnertypes.ElevationContext{
-			Operation:   runnertypes.OperationFileValidation,
-			CommandName: "test-command",
-		},
-		needsPrivilegeEscalation: true,
-		originalSUID:             -1,
-		originalSGID:             -1,
-		start:                    time.Now().Add(-time.Millisecond),
-	}
-
-	// This should not panic
-	manager.handleCleanupAndMetrics(execCtx)
-
-	snapshot := manager.GetMetrics()
-	assert.Equal(t, int64(1), snapshot.ElevationSuccesses)
-	assert.Positive(t, snapshot.TotalElevationTime,
-		"handleCleanupAndMetrics must compute a non-zero duration and pass it to restorePrivilegesAndMetrics when there is no panic")
-}
-
-// TestHandleCleanupAndMetrics_WithError tests cleanup with errors
-func TestHandleCleanupAndMetrics_WithError(t *testing.T) {
+// TestHandleCleanup_WithError tests cleanup with errors
+func TestHandleCleanup_WithError(t *testing.T) {
 	logger := slog.Default()
 	manager := &UnixPrivilegeManager{
 		logger:             logger,
@@ -196,7 +159,6 @@ func TestHandleCleanupAndMetrics_WithError(t *testing.T) {
 			CommandName: "test-command",
 		},
 		needsPrivilegeEscalation: false,
-		start:                    time.Now(),
 	}
 
 	// Test with simulated panic recovery
@@ -208,97 +170,10 @@ func TestHandleCleanupAndMetrics_WithError(t *testing.T) {
 			}
 		}()
 
-		// This will panic but handleCleanupAndMetrics should handle it
-		defer manager.handleCleanupAndMetrics(execCtx)
+		// This will panic but handleCleanup should handle it
+		defer manager.handleCleanup(execCtx)
 		panic("test panic")
 	}()
-}
-
-// TestRestorePrivilegesAndMetrics_Success tests successful privilege restoration
-func TestRestorePrivilegesAndMetrics_Success(t *testing.T) {
-	manager := &UnixPrivilegeManager{
-		logger:             slog.Default(),
-		privilegeSupported: true,
-		originalUID:        0,
-		identityVerifier:   func() error { return nil },
-		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
-	}
-
-	execCtx := &executionContext{
-		elevationCtx: runnertypes.ElevationContext{
-			Operation:   runnertypes.OperationFileValidation,
-			CommandName: "test-command",
-		},
-		needsPrivilegeEscalation: true,
-		originalSUID:             -1,
-		originalSGID:             -1,
-		start:                    time.Now(),
-	}
-
-	// Test successful restoration
-	duration := 10 * time.Millisecond
-	manager.restorePrivilegesAndMetrics(execCtx, nil, "normal execution", duration)
-
-	snapshot := manager.GetMetrics()
-	assert.Equal(t, int64(1), snapshot.ElevationSuccesses)
-}
-
-// TestRestorePrivilegesAndMetrics_NoSuccessWithoutEscalation pins the negative
-// half of the metrics condition: with no escalation, success is never
-// recorded. Without this, dropping the escalation check from that condition
-// would leave the suite green.
-func TestRestorePrivilegesAndMetrics_NoSuccessWithoutEscalation(t *testing.T) {
-	manager := &UnixPrivilegeManager{
-		logger:             slog.Default(),
-		privilegeSupported: false,
-		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
-	}
-
-	execCtx := &executionContext{
-		elevationCtx: runnertypes.ElevationContext{
-			Operation:   runnertypes.OperationFileValidation,
-			CommandName: "test-command",
-		},
-		needsPrivilegeEscalation: false,
-		start:                    time.Now(),
-	}
-
-	manager.restorePrivilegesAndMetrics(execCtx, nil, "normal execution", 10*time.Millisecond)
-
-	assert.Equal(t, int64(0), manager.GetMetrics().ElevationSuccesses,
-		"an operation that did not escalate must not record an elevation success")
-}
-
-// TestRestorePrivilegesAndMetrics_Failure tests privilege restoration failures
-func TestRestorePrivilegesAndMetrics_Failure(t *testing.T) {
-	manager := &UnixPrivilegeManager{
-		logger:             slog.Default(),
-		privilegeSupported: true,
-		originalUID:        0,
-		identityVerifier:   func() error { return nil },
-		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
-	}
-
-	execCtx := &executionContext{
-		elevationCtx: runnertypes.ElevationContext{
-			Operation:   runnertypes.OperationFileValidation,
-			CommandName: "test-command",
-		},
-		needsPrivilegeEscalation: true,
-		originalSUID:             -1,
-		originalSGID:             -1,
-		start:                    time.Now(),
-	}
-
-	// Test with panic value (simulating error during execution)
-	testErr := errors.New("test error")
-	duration := 5 * time.Millisecond
-	manager.restorePrivilegesAndMetrics(execCtx, testErr, "after panic", duration)
-
-	// Metrics should not record success when there's a panic
-	snapshot := manager.GetMetrics()
-	// When panicValue is not nil, success should not be recorded
-	assert.Equal(t, int64(0), snapshot.ElevationSuccesses)
 }
 
 // TestIsPrivilegedExecutionSupported tests privileged execution support detection
@@ -394,10 +269,10 @@ func TestDefaultIdentityVerifier(t *testing.T) {
 	assert.NoError(t, err, "defaultIdentityVerifier should pass when EUID==UID and EGID==GID")
 }
 
-// TestRestorePrivilegesAndMetrics_IdentityLeakTriggersShutdown verifies that when
+// TestRestorePrivilegesAndVerify_IdentityLeakTriggersShutdown verifies that when
 // identityVerifier detects a mismatch after privilege restoration, emergencyShutdown
 // (osExit) is called immediately.
-func TestRestorePrivilegesAndMetrics_IdentityLeakTriggersShutdown(t *testing.T) {
+func TestRestorePrivilegesAndVerify_IdentityLeakTriggersShutdown(t *testing.T) {
 	var exitCode int
 	exitCalled := false
 	testOsExit := func(code int) {
@@ -421,22 +296,21 @@ func TestRestorePrivilegesAndMetrics_IdentityLeakTriggersShutdown(t *testing.T) 
 			CommandName: "test-command",
 		},
 		needsPrivilegeEscalation: true,
-		start:                    time.Now(),
 	}
 
 	assert.PanicsWithValue(t, "os.Exit called", func() {
-		manager.restorePrivilegesAndMetrics(execCtx, nil, "test", 0)
+		manager.restorePrivilegesAndVerify(execCtx, "test")
 	}, "emergencyShutdown should be called when identity verification fails")
 
 	assert.True(t, exitCalled, "os.Exit should have been called")
 	assert.Equal(t, 1, exitCode, "exit code should be 1")
 }
 
-// TestRestorePrivilegesAndMetrics_IdentityVerificationSkippedWithoutEscalation
+// TestRestorePrivilegesAndVerify_IdentityVerificationSkippedWithoutEscalation
 // verifies that the identity check is NOT performed for operations that did
 // not escalate (which never change UID/GID). Verification is gated on
 // escalation, not on any specific operation type.
-func TestRestorePrivilegesAndMetrics_IdentityVerificationSkippedWithoutEscalation(t *testing.T) {
+func TestRestorePrivilegesAndVerify_IdentityVerificationSkippedWithoutEscalation(t *testing.T) {
 	verifierCalled := false
 
 	manager := &UnixPrivilegeManager{
@@ -455,20 +329,19 @@ func TestRestorePrivilegesAndMetrics_IdentityVerificationSkippedWithoutEscalatio
 			CommandName: "test-command",
 		},
 		needsPrivilegeEscalation: false,
-		start:                    time.Now(),
 	}
 
-	manager.restorePrivilegesAndMetrics(execCtx, nil, "test", 0)
+	manager.restorePrivilegesAndVerify(execCtx, "test")
 
 	assert.False(t, verifierCalled, "identityVerifier should not be called when there was no escalation")
 }
 
-// TestRestorePrivilegesAndMetrics_SavedSetUnchanged_Passes verifies the
+// TestRestorePrivilegesAndVerify_SavedSetUnchanged_Passes verifies the
 // setuid-root scenario: the saved-set-uid/gid captured before the operation
 // (suid=0, the setuid-root binary's saved set) is still 0 after restore, and
 // this must be compared against the captured value -- not against the real
 // UID -- so a legitimately root-owned saved-set does not trip the invariant.
-func TestRestorePrivilegesAndMetrics_SavedSetUnchanged_Passes(t *testing.T) {
+func TestRestorePrivilegesAndVerify_SavedSetUnchanged_Passes(t *testing.T) {
 	manager := &UnixPrivilegeManager{
 		logger:             slog.Default(),
 		privilegeSupported: true,
@@ -485,20 +358,19 @@ func TestRestorePrivilegesAndMetrics_SavedSetUnchanged_Passes(t *testing.T) {
 		needsPrivilegeEscalation: true,
 		originalSUID:             0,
 		originalSGID:             0,
-		start:                    time.Now(),
 	}
 
-	manager.restorePrivilegesAndMetrics(execCtx, nil, "test", 0)
+	manager.restorePrivilegesAndVerify(execCtx, "test")
 	// No assertion beyond "did not panic/exit": osExit fails the test if called.
 }
 
-// TestRestorePrivilegesAndMetrics_SavedSetChanged_TriggersShutdown verifies
+// TestRestorePrivilegesAndVerify_SavedSetChanged_TriggersShutdown verifies
 // that when the saved-set-uid/gid read after restoration differs from the
 // value captured at operation start, emergencyShutdown fires even though the
 // EUID==UID/EGID==GID check (identityVerifier) alone reports success -- the
 // saved-set check is a strictly stronger invariant than the real/effective
 // check.
-func TestRestorePrivilegesAndMetrics_SavedSetChanged_TriggersShutdown(t *testing.T) {
+func TestRestorePrivilegesAndVerify_SavedSetChanged_TriggersShutdown(t *testing.T) {
 	var exitCode int
 	exitCalled := false
 	testOsExit := func(code int) {
@@ -523,25 +395,24 @@ func TestRestorePrivilegesAndMetrics_SavedSetChanged_TriggersShutdown(t *testing
 		needsPrivilegeEscalation: true,
 		originalSUID:             0,
 		originalSGID:             0,
-		start:                    time.Now(),
 	}
 
 	assert.PanicsWithValue(t, "os.Exit called", func() {
-		manager.restorePrivilegesAndMetrics(execCtx, nil, "test", 0)
+		manager.restorePrivilegesAndVerify(execCtx, "test")
 	}, "emergencyShutdown should be called when saved-set-uid/gid changed since capture")
 
 	assert.True(t, exitCalled, "os.Exit should have been called")
 	assert.Equal(t, 1, exitCode, "exit code should be 1")
 }
 
-// TestRestorePrivilegesAndMetrics_SavedSetCheckSkipped_NonLinux verifies that
+// TestRestorePrivilegesAndVerify_SavedSetCheckSkipped_NonLinux verifies that
 // the saved-set invariant check is structurally skipped (not merely
 // coincidentally passing) on platforms where it cannot be read: a captured
 // sentinel of -1 (what prepareExecution stores when readSavedIDs reports
 // ErrSavedSetNotSupported) must prevent readSavedIDs from being consulted
 // again during restore, even though the injected mock is preconfigured to
 // report a "changed" value that would otherwise trigger emergencyShutdown.
-func TestRestorePrivilegesAndMetrics_SavedSetCheckSkipped_NonLinux(t *testing.T) {
+func TestRestorePrivilegesAndVerify_SavedSetCheckSkipped_NonLinux(t *testing.T) {
 	readSavedIDsCalled := false
 	manager := &UnixPrivilegeManager{
 		logger:             slog.Default(),
@@ -562,10 +433,9 @@ func TestRestorePrivilegesAndMetrics_SavedSetCheckSkipped_NonLinux(t *testing.T)
 		needsPrivilegeEscalation: true,
 		originalSUID:             -1,
 		originalSGID:             -1,
-		start:                    time.Now(),
 	}
 
-	manager.restorePrivilegesAndMetrics(execCtx, nil, "test", 0)
+	manager.restorePrivilegesAndVerify(execCtx, "test")
 
 	assert.False(t, readSavedIDsCalled, "readSavedIDs must not be consulted during restore when the saved-set is not supported")
 }

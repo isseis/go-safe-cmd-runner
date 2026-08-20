@@ -266,7 +266,6 @@ type UnixPrivilegeManager struct {
     logger             *slog.Logger
     originalUID        int
     privilegeSupported bool
-    metrics            Metrics
     mu                 sync.Mutex  // Prevents race conditions
     osExit             func(code int)                      // Injectable os.Exit for testing
     identityVerifier   func() error                         // Verifies EUID==UID / EGID==GID (injectable for testing)
@@ -294,8 +293,8 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
         return err
     }
 
-    // 3. Run restoration, verification, and metrics recording together via defer
-    defer m.handleCleanupAndMetrics(execCtx)
+    // 3. Run restoration and verification together via defer
+    defer m.handleCleanup(execCtx)
     return fn()
 }
 ```
@@ -313,10 +312,10 @@ Whether escalation is needed is determined by `elevationCtx.Operation`: only `Op
    - Automatic privilege restoration after operation
 
 **Defensive Verification After Restoration**:
-`handleCleanupAndMetrics` handles panic recovery and timing, while the actual privilege restoration and two-stage invariant check are performed by `restorePrivilegesAndMetrics`, which it calls internally. If either check fails, `emergencyShutdown` is called.
+`handleCleanup` handles panic recovery, while the actual privilege restoration and two-stage invariant check are performed by `restorePrivilegesAndVerify`, which it calls internally. If either check fails, `emergencyShutdown` is called.
 
 ```go
-// Location: internal/runner/base/privilege/unix.go, the restorePrivilegesAndMetrics() function
+// Location: internal/runner/base/privilege/unix.go, the restorePrivilegesAndVerify() function
 // 1. Verify EUID==UID / EGID==GID (an independent check that detects bugs in the restoration logic itself)
 if err := m.identityVerifier(); err != nil {
     m.emergencyShutdown(err, fmt.Sprintf("identity_verification_failure_%s", shutdownContext))

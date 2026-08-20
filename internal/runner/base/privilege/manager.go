@@ -13,7 +13,6 @@ type Manager interface {
 	// Additional methods specific to privilege package
 	GetCurrentUID() int
 	GetOriginalUID() int
-	GetMetrics() Metrics
 }
 
 // NewManager creates a platform-appropriate privilege manager

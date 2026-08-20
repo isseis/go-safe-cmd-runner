@@ -83,7 +83,7 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
         return err
     }
 
-    defer m.handleCleanupAndMetrics(execCtx)           // Cleanup phase
+    defer m.handleCleanup(execCtx)                     // Cleanup phase
     return fn()
 }
 ```

@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -22,7 +21,7 @@ var (
 	ErrMockPrivilegeElevationFailed = errors.New("mock privilege elevation failure")
 )
 
-// MockPrivilegeManager provides a mock implementation of privilege.Manager for testing
+// MockPrivilegeManager provides a mock implementation of runnertypes.PrivilegeManager for testing
 type MockPrivilegeManager struct {
 	Supported      bool
 	ElevationCalls []string
@@ -71,11 +70,6 @@ func (m *MockPrivilegeManager) HealthCheck(_ context.Context) error {
 		return runnertypes.ErrPrivilegedExecutionNotAvailable
 	}
 	return nil
-}
-
-// GetMetrics returns metrics for the privilege manager
-func (m *MockPrivilegeManager) GetMetrics() privilege.Metrics {
-	return privilege.Metrics{}
 }
 
 // NewMockPrivilegeManager creates a new MockPrivilegeManager with the given support status
