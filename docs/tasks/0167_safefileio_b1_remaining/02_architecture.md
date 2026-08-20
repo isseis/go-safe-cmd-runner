@@ -471,6 +471,7 @@ classDiagram
 | `internal/safefileio/safe_file_test.go` | 変更 | mode の検証・拒否のテスト（AC-14〜17）、アトミック書き込みのテスト（AC-18〜24）を追加。`TestSafeWriteFileOverwrite_FileCloseError` は § 4.2 の新しい `Close` の扱いに合わせて見直す |
 | `internal/safefileio/safe_file_cleanup_test.go` | 変更 | `mockFileSystem` から `Remove`・`removeFunc`・`removeCallCount`・`getRemoveCallCount` を削除。`mockFile` に `Sync` を追加。§ 7 のとおり、後始末の検証は実ファイルシステム上のテストへ移し、モックを使うテストは同一性を確認できない分岐の検証に限る |
 | `internal/safefileio/safe_file_linux_test.go` | 変更 | `EINTR` 再試行のテスト（AC-26〜28）を追加。`verifySameFile`・`randomTempName` の移動と改名に伴う参照の更新 |
+| `internal/security/dir_permissions_audit.go` | 変更 | `AuditDirectoryPermissions` の doc コメントに、解析レコードの書き込み経路が「使用時点の防御は safefileio が担う」という列挙の例外であり、この監査自身がその経路の前提になっていることを追記する（§ 5.3.1）。コメントのみの変更で、監査の挙動は変えない |
 | `docs/user/security-risk-assessment.ja.md` | 変更 | 引用している `safeOpenFileInternal` と `safeOpenFileFallback` のコード片を変更後の実装に合わせる（AC-38）。英語版は `/mktrans` で反映 |
 | `docs/dev/architecture_design/security-architecture.md` | 変更 | § 4 が引用する `openat2()` の本体を `EINTR` 再試行後の形に更新する。同節の `ensureParentDirsNoSymlinks()` の引用は変更不要。この文書は英語のみで対訳を持たない |
 | `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` | 変更 | § 2 B1 の残件を解消済みとして整理（AC-34・35・37） |
@@ -606,9 +607,15 @@ flowchart TD
 | # | 隙 | 内容 | 判断 |
 |---|---|---|---|
 | R1 | フォールバック経路の二段階検証 | 1 回目の確認と open の間に親ディレクトリを差し替えられる余地が残る。`openat2` のアトミック性には及ばない。§ 3.3 の作成プローブは、この「確認と open の間」を 2 回のシステムコールへ広げるが、検査 → open → 検査という順序自体は変わらない | 本番ターゲットは Linux 5.6+ であり、この経路は開発・限定用途に限る。契約として明記して close する（F-2） |
-| R2 | 検査から `rename` まで（**本タスクで新たに生じる**） | 2 つある。(a) 宛先プローブの後にリーフがシンボリックリンクへ差し替えられると、`rename` はそれを黙って置き換える。(b) `ensureParentDirsNoSymlinks` による親ディレクトリの確認の後に構成要素がシンボリックリンクへ差し替えられると、`os.Rename` はカーネル側でそれを解決するため書き込み先が移る。従来 `SafeWriteFileOverwrite` は `openat2(RESOLVE_NO_SYMLINKS)` で宛先を 1 回だけ開いており、本番経路にこの隙は無かった | (a) はリンク先への書き込みには至らず、失われるのは拒否という通知だけである。(b) は 0155 が `moveFileAnchored` の前提として既に置いている条件（宛先の親ディレクトリが信頼できる所有者に保護されていること、[0155 の 02_architecture.md](../0155_toctou_verify_use_residual_gaps/02_architecture.md) § 5）を、解析レコードのディレクトリへ初めて広げるものである。この条件は `internal/security` のディレクトリ権限監査が別途課している。0155 の前提を書き込み経路へ拡張することの可否は、本設計の承認時に判断する必要がある |
+| R2 | 検査から `rename` まで（**本タスクで新たに生じる**） | 2 つある。(a) 宛先プローブの後にリーフがシンボリックリンクへ差し替えられると、`rename` はそれを黙って置き換える。(b) `ensureParentDirsNoSymlinks` による親ディレクトリの確認の後に構成要素がシンボリックリンクへ差し替えられると、`os.Rename` はカーネル側でそれを解決するため書き込み先が移る。従来 `SafeWriteFileOverwrite` は `openat2(RESOLVE_NO_SYMLINKS)` で宛先を 1 回だけ開いており、本番経路にこの隙は無かった | (a) はリンク先への書き込みには至らず、失われるのは拒否という通知だけである。(b) は、想定する攻撃者（ローカルの一般ユーザー）には成立しない。構成要素を差し替えるにはその親ディレクトリへの書き込み権限が要るが、`ValidateDirectoryPermissions` はルートから対象までのすべての構成要素を歩き、symlink・other 書き込み可・信頼できないグループからの書き込み可・root でも実行者本人でもない所有者を拒否する。解析レコードを書く本番の経路は `record` だけであり（`runner` はレコードを読むだけで書かない）、`record` はハッシュディレクトリをこの監査にかけ、違反があれば記録せずに終了する。監査から `rename` までのあいだに権限が変わるには root か所有者の関与が必要で、それは脅威モデルの外である。**ただし依存が循環している点に注意が要る**（§ 5.3.1） |
 | R3 | 同一性確認から `unlink` まで | `removeVerifiedFile` は `Lstat` で同一性を確認してから `os.Remove` を呼ぶため、その間に差し替えられると無関係なファイルを削除しうる。フォールバック経路の後始末ではこの `Lstat` と `os.Remove` 自体も、既に信用できないと判明した親ディレクトリを通る | 影響は限定される。差し替えが成功するには、こちらが握っている inode と `Dev`・`Ino` が一致するエントリを用意する必要があり、それはこちらの inode へのハードリンクに限られる。fd をアンカーにした削除はシステムコールとして存在しない。0155 が `verifySameFile` で同じ判断を下しており、それと同じ水準である |
 | R4 | 非 Linux の移動 | `moveFileAnchored` は非 Linux では `os.Rename(absSrc, absDst)` であり、渡された `File` を使わない。したがって § 3.4.1 の fd アンカーによる保護は Linux 経路にしか無く、非 Linux では一時ファイルのパスが差し替えられても検出できない | 非 Linux は開発・限定用途に限るという F-2 と同じ判断による。`rename` の直前に `verifySameFile` を入れて隙を狭める案もあるが、`openat2` の無い環境のためだけに移動処理を分岐させることになるため採らない |
+
+### 5.3.1 R2(b) をめぐる依存の循環
+
+R2(b) が成立しない根拠はディレクトリ権限監査だが、その監査自身の doc コメント（`internal/security/dir_permissions_audit.go` の `AuditDirectoryPermissions`）は、自分が使用時点について何も保証しないことを明記したうえで、「その競合に対する防御は別の場所にある」として `safefileio` の `openat2(RESOLVE_NO_SYMLINKS)` を名指ししている。本タスクは、解析レコードの書き込み経路からその `openat2` の保護を外す。したがって「監査があるから安全」と「`safefileio` があるから安全」が互いを指す状態になる。
+
+現時点でこれは実害を生まない。監査は `record` の中で fail-closed に働き、書き込みは同じプロセスの数秒後に起きるので、両者のあいだに攻撃者が介入する余地がないためである。しかし将来どちらか一方を外す判断をするとき、もう一方が引き受けていると誤読される危険がある。これを防ぐため、`AuditDirectoryPermissions` の doc コメントに、解析レコードの書き込み経路はこの列挙の例外であり、監査自身がその経路の前提になっていることを追記する。
 
 ### 5.4 監査可能性
 
