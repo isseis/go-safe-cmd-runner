@@ -4,17 +4,19 @@
 
 go-safe-cmd-runner execution is divided into two phases:
 
-**Phase 1 (Verification and Log System Initialization)**
-- File hash verification (`internal/verification/manager.go`)
-- TOML configuration parsing (`internal/runner/config.go`)
-- Log system setup
+**Phase 1 (Log System Initialization and Configuration File Verification)**
+- Log system setup (`bootstrap.SetupLogging`)
+- Configuration file hash verification and reading (`verification.Manager.VerifyAndReadConfigFile`)
+- TOML parsing and schema validation (`bootstrap.LoadAndPrepareConfig`)
 
-**Phase 2 (Slack Handler Registration)**
-- Reading allowed Slack webhook hosts
-- Slack handler initialization (`internal/logging/slack_handler.go`)
+**Phase 2 (Slack Handler Registration and Beyond)**
+- Reading allowed Slack webhook hosts from the configuration and registering the Slack handlers (`bootstrap.SetupSlackLogging`)
+- Hash verification of global/group target files (`verification.Manager.VerifyGlobalFiles`)
 - Command execution start
 
 This design creates a limitation: **errors occurring in Phase 1 (configuration file hash verification failure, TOML parsing errors) do not reach the Slack notification channel**. This document explains why this limitation exists, examines alternative approaches, and describes recommended monitoring strategies.
+
+Note that what fails to reach Slack is **limited to verification errors on the configuration file itself**. Hash verification of global/group target files runs in Phase 2, so those failures are notified to Slack as usual.
 
 ## The Core Issue
 
@@ -90,13 +92,18 @@ To **reliably detect** configuration file hash verification errors, the followin
 ### 1. Monitor Process Startup Failures
 
 **With systemd:**
-```bash
-# Set restart policy in service unit
+```ini
+# Start a notification unit when the service unit fails
 [Service]
-Restart=on-failure
-RestartSec=10s
+Type=oneshot
 OnFailure=notify-admin@%N.service
 ```
+
+`OnFailure=` starts only when the unit enters the failed state. If `Restart=on-failure`
+is used together with it, the unit keeps restarting until the start limit
+(`StartLimitBurst`) is reached and therefore does not enter the failed state, so the
+notification does not fire. For batch execution, it is more reliable not to set
+`Restart=` and to treat a single failure as failed as it is.
 
 Monitor startup failures:
 ```bash
@@ -114,39 +121,55 @@ MAILTO=admin@example.com
 
 ### 2. Monitor Log Files
 
+**Log file format (prerequisite)**
+
+The log file is created as a new file for each execution, named
+`<log directory>/<hostname>_<UTC timestamp>_<run_id>.json`
+(`internal/runner/bootstrap/logger.go`). There is no single appended `runner.log`, so
+monitoring targets **the set of files in the directory**. The content is one JSON
+record per line (slog's `JSONHandler`), with `hostname` / `pid` / `run_id` /
+`schema_version` attached in addition to `time` / `level` / `msg`.
+
 **Immediate detection:**
 ```bash
-# Immediately detect hash verification errors
-tail -f /var/log/go-safe-cmd-runner/runner.log | grep -i "hash verification failed"
+# Immediately detect verification errors (follow new files in the log directory)
+tail -F /var/log/go-safe-cmd-runner/*.json | grep -i "verification failed"
 ```
+
+The actual `msg` values to target are `Global file verification failed` and
+`CRITICAL: Global file verification failed - program will terminate`
+(`internal/verification/manager.go`). Verification and parsing failures of the
+configuration file itself are recorded as
+`Failed to verify and read the configuration file` / `Failed to load the configuration`
+(`internal/runner/bootstrap/config.go`).
 
 **Using log monitoring tools:**
 
-Filebeat:
+Filebeat (only one output can be enabled; specifying Elasticsearch and Logstash at the
+same time causes an error at startup):
 ```yaml
 filebeat.inputs:
-- type: log
+- type: filestream
+  id: go-safe-cmd-runner
   enabled: true
   paths:
-    - /var/log/go-safe-cmd-runner/runner.log
+    - /var/log/go-safe-cmd-runner/*.json
+  parsers:
+    - ndjson:
+        target: ""
   fields:
     module: go-safe-cmd-runner
-  processors:
-    - add_kubernetes_metadata: ~
 
 output.elasticsearch:
   hosts: ["elasticsearch:9200"]
-
-output.logstash:
-  hosts: ["logstash:5000"]
 ```
 
-Fluentd:
+Fluentd (`@type slack` requires `fluent-plugin-slack`):
 ```xml
 <source>
   @type tail
-  path /var/log/go-safe-cmd-runner/runner.log
-  pos_file /var/log/runner.log.pos
+  path /var/log/go-safe-cmd-runner/*.json
+  pos_file /var/log/go-safe-cmd-runner.pos
   tag go-safe-cmd-runner
   <parse>
     @type json
@@ -175,43 +198,60 @@ Verify that periodic execution schedules are working as expected:
 
 ```bash
 #!/bin/bash
-# Check if last run timestamp is recent (example parsing JSON log with jq)
-LAST_RUN=$(grep "process started" /var/log/go-safe-cmd-runner/runner.log | tail -1 | jq -r '.time // empty')
-CURRENT_TIME=$(date +"%Y-%m-%dT%H")
+set -euo pipefail
+LOG_DIR=/var/log/go-safe-cmd-runner
+
+# Check if last run timestamp is recent.
+# The execution start marker is "Logger initialized", emitted when the logger is
+# initialized (internal/runner/bootstrap/logger.go). Logs are a separate file per
+# execution, so target the newest file.
+LATEST=$(ls -1t "$LOG_DIR"/*.json 2>/dev/null | head -1)
+LAST_RUN=$(
+    [[ -n "$LATEST" ]] &&
+    jq -r 'select(.msg == "Logger initialized") | .time' "$LATEST" | tail -1
+)
+CURRENT_TIME=$(date -u +"%Y-%m-%dT%H")
 if [[ -z "$LAST_RUN" || "$LAST_RUN" != "$CURRENT_TIME"* ]]; then
     echo "WARNING: Last run was not in the current hour"
     # Send Slack notification (configured separately)
 fi
 
-# Check for recent hash verification errors (example checking last 1000 lines)
-if tail -n 1000 /var/log/go-safe-cmd-runner/runner.log | grep -q -i "hash verification failed"; then
-    echo "ALERT: Hash verification failures detected"
+# Check whether the most recent execution has verification errors
+if [[ -n "$LATEST" ]] && jq -e 'select(.level == "ERROR" and (.msg | test("verification failed"; "i")))' \
+        "$LATEST" >/dev/null; then
+    echo "ALERT: Verification failures detected"
     # Send Slack notification (configured separately)
 fi
 ```
 
+`.time` is the log output time (UTC), so the current time being compared is also
+aligned with `date -u`.
+
 ## Current Implementation Status
 
-All Phase 1 errors are guaranteed to be logged:
+The log system is initialized at the beginning of Phase 1 (`bootstrap.SetupLogging`), so
+configuration file verification and parsing errors occurring after that are guaranteed
+to be recorded in the log file. Only the Slack handlers are added later.
 
 **`internal/verification/manager.go`**
 ```go
-func (m *Manager) Verify(...) error
-// Returns error on hash verification failure
-// Caller logs it (error evidence is not lost)
+func (m *Manager) VerifyAndReadConfigFile(configPath string) ([]byte, error)
+// Performs hash verification and reading of the configuration file in one step (avoids TOCTOU)
+// Returns error on verification failure
 ```
 
-**`internal/runner/config.go`**
+**`internal/runner/bootstrap/config.go`**
 ```go
-func (c *Config) Load(...) error
-// Returns error on TOML parsing failure
-// Also logged to standard error before log system is initialized
+func LoadAndPrepareConfig(...) (*runnertypes.ConfigSpec, error)
+// Returns verification failures and TOML parsing failures as PreExecutionError
+// The cause is held in Err, so it can be distinguished with errors.Is/As
 ```
 
-**`internal/runner/executor.go`**
+**`cmd/runner/main.go`**
 ```go
-func (e *Executor) Run(...) error
-// Logs all Phase 1 errors
+// Executes in the order SetupLogging → LoadAndPrepareConfig → SetupSlackLogging.
+// Errors from LoadAndPrepareConfig return before Slack handler registration, so
+// they remain in the log file but do not reach Slack.
 // Configuration tampering detection → process startup failure → strong signal
 ```
 
