@@ -111,47 +111,28 @@ func TestDefaultResourceManager_TempDirDelegation(t *testing.T) {
 	})
 }
 
-func TestDefaultResourceManager_PrivilegesAndNotifications(t *testing.T) {
+func TestDefaultResourceManager_Notifications(t *testing.T) {
 	mocks := setupTestMocks()
 
 	mgr, err := NewDefaultResourceManagerForTest(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
 	require.NoError(t, err)
-
-	// WithPrivileges should call provided fn in dry-run
-	called := false
-	err = mgr.WithPrivileges(context.Background(), func() error { called = true; return nil })
-	assert.NoError(t, err)
-	assert.True(t, called)
-
-	// After WithPrivileges, a privilege analysis should be recorded
-	res := mgr.GetDryRunResults()
-	if assert.NotNil(t, res) {
-		if assert.GreaterOrEqual(t, len(res.ResourceAnalyses), 1) {
-			last := res.ResourceAnalyses[len(res.ResourceAnalyses)-1]
-			assert.Equal(t, TypePrivilege, last.Type)
-			assert.Equal(t, OperationEscalate, last.Operation)
-			assert.Equal(t, "system_privileges", last.Target)
-			// Parameters should include context of escalation
-			assert.Equal(t, "privilege_escalation", last.Parameters["context"].Value())
-		}
-	}
-	prevLen := len(res.ResourceAnalyses)
 
 	// SendNotification should be no-op in normal and analysis in dry-run
 	err = mgr.SendNotification("msg", map[string]any{"k": "v"})
 	assert.NoError(t, err)
 
 	// After SendNotification, a network analysis should be recorded
-	res2 := mgr.GetDryRunResults()
-	if assert.NotNil(t, res2) {
-		assert.Equal(t, prevLen+1, len(res2.ResourceAnalyses))
-		last := res2.ResourceAnalyses[len(res2.ResourceAnalyses)-1]
-		assert.Equal(t, TypeNetwork, last.Type)
-		assert.Equal(t, OperationSend, last.Operation)
-		assert.Equal(t, "notification_service", last.Target)
-		// Parameters should include message and details
-		assert.Equal(t, "msg", last.Parameters["message"].Value())
-		assert.Equal(t, map[string]any{"k": "v"}, last.Parameters["details"].Value())
+	res := mgr.GetDryRunResults()
+	if assert.NotNil(t, res) {
+		if assert.GreaterOrEqual(t, len(res.ResourceAnalyses), 1) {
+			last := res.ResourceAnalyses[len(res.ResourceAnalyses)-1]
+			assert.Equal(t, TypeNetwork, last.Type)
+			assert.Equal(t, OperationSend, last.Operation)
+			assert.Equal(t, "notification_service", last.Target)
+			// Parameters should include message and details
+			assert.Equal(t, "msg", last.Parameters["message"].Value())
+			assert.Equal(t, map[string]any{"k": "v"}, last.Parameters["details"].Value())
+		}
 	}
 }
 

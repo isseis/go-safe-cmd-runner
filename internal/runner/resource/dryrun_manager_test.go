@@ -7,7 +7,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,7 +19,6 @@ func createTestDryRunResourceManager() *DryRunResourceManager {
 
 	// Add default expectations for privilege manager
 	mockPriv.On("IsPrivilegedExecutionSupported").Return(true)
-	mockPriv.On("WithPrivileges", mock.Anything, mock.Anything).Return(nil)
 
 	// Add default expectation for path resolver
 	setupStandardCommandPaths(mockPathResolver) // fallback
@@ -96,30 +94,6 @@ func TestDryRunResourceManager_CleanupTempDir(t *testing.T) {
 	assert.Equal(t, tempPath, analysis.Target)
 }
 
-func TestDryRunResourceManager_WithPrivileges(t *testing.T) {
-	manager := createTestDryRunResourceManager()
-	ctx := context.Background()
-
-	called := false
-	fn := func() error {
-		called = true
-		return nil
-	}
-
-	err := manager.WithPrivileges(ctx, fn)
-
-	assert.NoError(t, err)
-	assert.True(t, called) // Function should still be called in dry-run
-
-	// Check that analysis was recorded
-	result := manager.GetDryRunResults()
-	assert.NotNil(t, result)
-	assert.Len(t, result.ResourceAnalyses, 1)
-	analysis := result.ResourceAnalyses[0]
-	assert.Equal(t, TypePrivilege, analysis.Type)
-	assert.Equal(t, OperationEscalate, analysis.Operation)
-}
-
 func TestDryRunResourceManager_SendNotification(t *testing.T) {
 	manager := createTestDryRunResourceManager()
 	message := "Test notification"
@@ -166,7 +140,6 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 	mockPathResolver := &MockPathResolver{}
 
 	mockPriv.On("IsPrivilegedExecutionSupported").Return(true)
-	mockPriv.On("WithPrivileges", mock.Anything, mock.Anything).Return(nil)
 
 	// Mock path resolution failure
 	mockPathResolver.On("ResolvePath", "nonexistent-cmd").Return("", assert.AnError)

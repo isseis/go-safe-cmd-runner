@@ -699,33 +699,6 @@ func (d *DryRunResourceManager) CleanupAllTempDirs() error {
 	return nil
 }
 
-// WithPrivileges simulates executing a function with elevated privileges in dry-run mode
-func (d *DryRunResourceManager) WithPrivileges(_ context.Context, fn func() error) error {
-	// Record the analysis
-	analysis := Analysis{
-		Type:      TypePrivilege,
-		Operation: OperationEscalate,
-		Target:    "system_privileges",
-		Status:    StatusSuccess, // Default to success in dry-run mode
-		Parameters: map[string]ParameterValue{
-			"context": NewStringValue("privilege_escalation"),
-		},
-		Impact: Impact{
-			Reversible:   true,
-			Persistent:   false,
-			SecurityRisk: riskLevelHigh,
-			Description:  "Execute function with elevated privileges",
-		},
-		Timestamp: time.Now(),
-	}
-
-	d.RecordAnalysis(&analysis)
-
-	// In dry-run mode, we simulate the privilege escalation by just calling the function
-	// This maintains the same execution path without actually escalating privileges
-	return fn()
-}
-
 // SendNotification simulates sending a notification in dry-run mode
 func (d *DryRunResourceManager) SendNotification(message string, details map[string]any) error {
 	// Record the analysis

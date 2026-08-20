@@ -293,7 +293,7 @@ func TestTextFormatterResourceCounts(t *testing.T) {
 			{Type: TypeCommand, Impact: Impact{Description: "cmd1"}},
 			{Type: TypeCommand, Impact: Impact{Description: "cmd2"}},
 			{Type: TypeFilesystem, Impact: Impact{Description: "fs1"}},
-			{Type: TypePrivilege, Impact: Impact{Description: "priv1"}},
+			{Type: TypeNetwork, Impact: Impact{Description: "net1"}},
 		},
 	}
 	opts := FormatterOptions{
@@ -304,7 +304,7 @@ func TestTextFormatterResourceCounts(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, output, "command: 2")
 	assert.Contains(t, output, "filesystem: 1")
-	assert.Contains(t, output, "privilege: 1")
+	assert.Contains(t, output, "network: 1")
 }
 
 // TestTextFormatterRiskCounts tests risk level counting

@@ -111,11 +111,6 @@ func (d *DefaultResourceManager) CleanupAllTempDirs() error {
 	return d.activeManager().CleanupAllTempDirs()
 }
 
-// WithPrivileges delegates to the active manager.
-func (d *DefaultResourceManager) WithPrivileges(ctx context.Context, fn func() error) error {
-	return d.activeManager().WithPrivileges(ctx, fn)
-}
-
 // SendNotification delegates to the active manager.
 func (d *DefaultResourceManager) SendNotification(message string, details map[string]any) error {
 	return d.activeManager().SendNotification(message, details)

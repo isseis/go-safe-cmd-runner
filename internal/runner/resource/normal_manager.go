@@ -26,10 +26,9 @@ var (
 // NormalResourceManager implements Manager for normal execution mode
 type NormalResourceManager struct {
 	// Core dependencies
-	executor         executor.CommandExecutor
-	fileSystem       executor.FileSystem
-	privilegeManager runnertypes.PrivilegeManager
-	riskEvaluator    risk.Evaluator
+	executor      executor.CommandExecutor
+	fileSystem    executor.FileSystem
+	riskEvaluator risk.Evaluator
 
 	// Output capture dependencies
 	outputManager output.CaptureManager
@@ -49,12 +48,11 @@ type NormalResourceManager struct {
 // when cfg.OutputManager is nil.
 func newNormalManager(cfg Config, outputMgr output.CaptureManager) *NormalResourceManager {
 	return &NormalResourceManager{
-		executor:         cfg.Executor,
-		fileSystem:       cfg.FileSystem,
-		privilegeManager: cfg.PrivilegeManager,
-		riskEvaluator:    cfg.RiskEvaluator,
-		outputManager:    outputMgr,
-		maxOutputSize:    cfg.MaxOutputSize,
+		executor:      cfg.Executor,
+		fileSystem:    cfg.FileSystem,
+		riskEvaluator: cfg.RiskEvaluator,
+		outputManager: outputMgr,
+		maxOutputSize: cfg.MaxOutputSize,
 		// Fall back to the default logger so a nil cfg.Logger cannot cause a nil
 		// pointer dereference in the later n.logger.Error/Warn calls.
 		logger:      cmp.Or(cfg.Logger, slog.Default()),
@@ -374,17 +372,6 @@ func (n *NormalResourceManager) CleanupAllTempDirs() error {
 	}
 
 	return nil
-}
-
-// WithPrivileges executes a function with elevated privileges in normal mode
-func (n *NormalResourceManager) WithPrivileges(_ context.Context, fn func() error) error {
-	if n.privilegeManager == nil {
-		return ErrPrivilegeManagerNotAvailable
-	}
-	elevationCtx := runnertypes.ElevationContext{
-		// TODO: Add appropriate fields when needed
-	}
-	return n.privilegeManager.WithPrivileges(elevationCtx, fn)
 }
 
 // SendNotification sends a notification in normal mode

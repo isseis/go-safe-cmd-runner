@@ -33,8 +33,6 @@ const (
 	TypeGroup Type = "group"
 	// TypeFilesystem represents filesystem operations
 	TypeFilesystem Type = "filesystem"
-	// TypePrivilege represents privilege management
-	TypePrivilege Type = "privilege"
 	// TypeNetwork represents network operations
 	TypeNetwork Type = "network"
 )
@@ -56,8 +54,6 @@ const (
 	OperationDelete Operation = "delete"
 	// OperationExecute represents an execute operation
 	OperationExecute Operation = "execute"
-	// OperationEscalate represents a privilege escalation operation
-	OperationEscalate Operation = "escalate"
 	// OperationSend represents a send operation (e.g., notifications)
 	OperationSend Operation = "send"
 )

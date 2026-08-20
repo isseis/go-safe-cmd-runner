@@ -17,7 +17,6 @@ func TestTypeString(t *testing.T) {
 		{TypeCommand, "command"},
 		{TypeGroup, "group"},
 		{TypeFilesystem, "filesystem"},
-		{TypePrivilege, "privilege"},
 		{TypeNetwork, "network"},
 	}
 
@@ -34,7 +33,6 @@ func TestOperationString(t *testing.T) {
 		{OperationCreate, "create"},
 		{OperationDelete, "delete"},
 		{OperationExecute, "execute"},
-		{OperationEscalate, "escalate"},
 		{OperationSend, "send"},
 	}
 
