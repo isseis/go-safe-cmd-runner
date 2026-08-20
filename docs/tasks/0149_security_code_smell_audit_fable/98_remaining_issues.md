@@ -48,10 +48,7 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
 
 ### A1（privilege）
 
-- **L-2**: 昇格・復元処理でテスト注入フィールド（`syscallSeteuid`/`syscallSetegid` 相当）を使わない構造。0157 はむしろ当該フィールドを削除する方向で対応しており、L-2 の推奨（注入フィールドを実経路でも使う）とは方向が逆。0157 に着手する時点で「必要な注入点を改めて設計する方が健全」と判断し見送られた。
-- **L-3**: metrics の恒偽項（常に真になる記録項目）。いずれのタスクの対象にもなっていない。
-- **L-4**: 再入デッドロックの可能性。いずれのタスクの対象にもなっていない。
-- → [#977](https://github.com/isseis/go-safe-cmd-runner/issues/977) を作成済み。
+> **A1 L-2/L-3/L-4 について**: [0166](../0166_privilege_a1_low_remaining/03_implementation_plan.md) で解消済み（[#977](https://github.com/isseis/go-safe-cmd-runner/issues/977)）。L-3 は、恒偽項そのものは 0157 で既に解消していたが、残る2点（未昇格時の失敗計上、指標名と実態の乖離）を `Metrics` 型ごと削除することで解消した。あわせて `Metrics` を値で返す copylocks フットガンだった L-5（本一覧には未掲載）も、対象物の消滅により解消した。L-2 は所見の推奨とは逆方向で close した——`identity_mutation_guard_test.go` が identity 変更 syscall を呼ぶ関数を値として参照すること（構造体フィールドへの注入を含む）を禁じており、注入フィールドを昇格・復元経路に追加するとこの不変条件を崩すため。かわりに昇格・復元の syscall 失敗分岐は、非特権プロセスで実際に `EPERM` を起こすテストで踏んだ。L-4 は `WithPrivileges` の doc コメントに再入禁止の契約を明記して対応した。再入検出（保持中フラグ等）は、自ゴルーチンの再入と他ゴルーチンの正当な待機をゴルーチン識別なしに区別できず Go では正しく実装できないため、見送った。
 
 ### B1（safefileio）
 
