@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-08-20 |
-| Review date | - |
-| Reviewer | - |
-| Comments | § 10 に挙げた `01_requirements.md` との差分 4 件は 2026-08-20 に判断済みで、要件定義書は修正済み。§ 10.1 のスコープ拡張（`moveFileAnchored` のディレクトリ fd 対応）も同日に承認済み |
+| Review date | 2026-08-21 |
+| Reviewer | isseis |
+| Comments | - |
 
 ## 関連文書
 
