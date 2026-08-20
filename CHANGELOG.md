@@ -101,6 +101,16 @@ The rules that determine a violation, the log levels, and the exit codes are unc
 
 **Affected scenarios:** Monitoring rules and scripts that search or match logs by the above text are affected. Update them to the new text. Note that the procedure for assessing impact before upgrading, described in "`verify`: fail-closed on hash directory permission violations" in this release, is run on the version **before** the upgrade, so it works correctly with the old text written there.
 
+### Security
+
+#### `groupmembership`: malformed `/etc/group` / `/etc/passwd` lines are now logged
+
+The non-CGO fallback implementation (`internal/groupmembership`) previously skipped malformed lines in `/etc/group` and `/etc/passwd` silently. It now emits a `slog.Warn` with the file name and line number attached, so a corrupted or hand-edited entry that hides group members can be detected in the logs (previously it silently degraded to a "zero members" verdict).
+
+#### Known limitation: official binaries (`CGO_ENABLED=0`) do not consult NSS for group membership
+
+The official release binaries are built with `CGO_ENABLED=0` (see `.github/workflows/release.yml`), so `internal/groupmembership` enumerates group members and primary-group users only by directly parsing `/etc/group` and `/etc/passwd`. It does not consult NSS (Name Service Switch) directory services such as LDAP or SSSD. In environments where group membership is managed only through NSS, members not present in the local files are not counted, and the group-writable-file write-safety check (`CanUserSafelyWriteFile`) can be evaluated more permissively than the actual membership. In environments that depend on NSS-managed group membership, consider building with `CGO_ENABLED=1` yourself. See [security-risk-assessment.md](docs/user/security-risk-assessment.md) for details.
+
 ## [1.1.1] - 2026-08-03
 
 ### Breaking Changes

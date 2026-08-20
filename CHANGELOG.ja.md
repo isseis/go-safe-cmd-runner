@@ -101,6 +101,16 @@ done
 
 **影響範囲:** 上記の文言でログを検索・照合している監視ルールやスクリプトが影響を受けます。新しい文言に更新してください。なお、本リリースの「`verify`: ハッシュディレクトリの権限違反をfail-closed化」に記載したアップグレード前の判定手順は、アップグレード**前**のバージョンで実行するものなので、そこに書かれた古い文言のままで正しく動作します。
 
+### セキュリティ
+
+#### `groupmembership`: `/etc/group`・`/etc/passwd` の不正形式行をログに記録
+
+非 CGO フォールバック実装（`internal/groupmembership`）は、これまで `/etc/group`・`/etc/passwd` の不正形式行を黙って読み飛ばしていました。現在はファイル名と行番号を添えて `slog.Warn` を出力するため、グループメンバーを隠してしまう破損・手編集ミスのエントリがログで検知できるようになりました（以前は「メンバー 0 人」判定に静かに縮退していました）。
+
+#### 既知の制限: 公式バイナリ（`CGO_ENABLED=0`）はグループメンバーシップで NSS を参照しない
+
+公式リリースバイナリは `CGO_ENABLED=0` でビルドされているため（`.github/workflows/release.yml` 参照）、`internal/groupmembership` はグループメンバーとプライマリグループのユーザーを `/etc/group`・`/etc/passwd` の直接パースのみで列挙します。LDAP や SSSD などの NSS（Name Service Switch）ディレクトリサービスは参照しません。グループメンバーシップを NSS のみで管理している環境では、ローカルファイルに現れないメンバーがカウントされず、group-writable なファイルの書き込み安全性判定（`CanUserSafelyWriteFile`）が実際より緩く評価されることがあります。NSS 管理のグループメンバーシップに依存する環境では、`CGO_ENABLED=1` でのセルフビルドを検討してください。詳細は [security-risk-assessment.ja.md](docs/user/security-risk-assessment.ja.md) を参照してください。
+
 ## [1.1.1] - 2026-08-03
 
 ### 破壊的変更

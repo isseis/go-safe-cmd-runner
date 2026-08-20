@@ -5,6 +5,7 @@ package groupmembership
 import (
 	"bufio"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -26,7 +27,9 @@ func findGroupByGID(gid uint32) (*groupEntry, error) {
 	defer file.Close() //nolint:errcheck
 
 	scanner := bufio.NewScanner(file)
+	lineNum := 0
 	for scanner.Scan() {
+		lineNum++
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue // Skip empty lines and comments
@@ -34,6 +37,11 @@ func findGroupByGID(gid uint32) (*groupEntry, error) {
 
 		entry, err := parseGroupLine(line)
 		if err != nil {
+			slog.Warn("skipping malformed line while searching /etc/group for group membership",
+				slog.String("file", "/etc/group"),
+				slog.Int("line", lineNum),
+				slog.Any("error", err),
+			)
 			continue // Skip malformed lines
 		}
 
@@ -80,7 +88,9 @@ func findUsersWithPrimaryGID(gid uint32) ([]string, error) {
 
 	var users []string
 	scanner := bufio.NewScanner(file)
+	lineNum := 0
 	for scanner.Scan() {
+		lineNum++
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue // Skip empty lines and comments
@@ -88,6 +98,11 @@ func findUsersWithPrimaryGID(gid uint32) ([]string, error) {
 
 		user, userGID, err := parsePasswdLine(line)
 		if err != nil {
+			slog.Warn("skipping malformed line while searching /etc/passwd for primary group members",
+				slog.String("file", "/etc/passwd"),
+				slog.Int("line", lineNum),
+				slog.Any("error", err),
+			)
 			continue // Skip malformed lines
 		}
 

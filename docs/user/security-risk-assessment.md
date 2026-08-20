@@ -318,6 +318,15 @@ execution time while still detecting dangerous behavior.
 - **Cache Functionality**: Performance improvement and consistency assurance
 - **Cross-Platform**: Unified user and group management
 
+**Known limitation (`CGO_ENABLED=0` builds)**: The non-CGO build enumerates group members and
+primary-group membership only by directly parsing `/etc/group` and `/etc/passwd`; it does not
+consult NSS (Name Service Switch) directory services such as LDAP/SSSD. Because the official
+binaries the project distributes are built with `CGO_ENABLED=0`, group members managed only
+through NSS do not appear in the enumeration result, and the write-safety check for
+group-writable files can be evaluated more permissively (leaning toward allow) than it actually
+is. If you use this tool in an environment that depends on NSS-based group management
+(LDAP/SSSD, etc.), consider building it yourself with `CGO_ENABLED=1`.
+
 ### 4. Safe Terminal Output Control (`internal/terminal/`, `internal/ansicolor/`)
 
 **Output Security**:
