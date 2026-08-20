@@ -201,8 +201,8 @@ metrics 削除により**主張が消えるテスト**が4つある。いずれ�
 
 **判定理由**: ステップ15 が `emergencyShutdown` への到達（回復フロー）とプロセス全体の identity 状態に触る孤立した高リスク手順であるため。追加するのは同一 package の単体テスト2件のみで、統合テスト・CI・外部リソースの面を持たないため frontier-required には該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] Phase 2 の完了条件（サブテスト行が `--- PASS` であること・`TestNoUnexpectedIdentityMutationSyscalls` の無変更通過）を満たしたことを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] Phase 2 の完了条件（サブテスト行が `--- PASS` であること・`TestNoUnexpectedIdentityMutationSyscalls` の無変更通過）を満たしたことを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
