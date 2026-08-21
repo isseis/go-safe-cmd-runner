@@ -2,6 +2,20 @@
 
 package safefileio
 
+import "github.com/isseis/go-safe-cmd-runner/internal/common"
+
+// isAllowedOSManagedSymlink reports whether a symlink found while walking a
+// directory path is one of the OS-managed ones this package follows instead of
+// rejecting.
+//
+// This file and test_helpers_overrides.go define isAllowedOSManagedSymlink
+// exclusively by build tag. The production build deliberately has no function
+// value to swap: the allowlist is the one place where a symlink is followed
+// rather than refused, so nothing outside a test build may widen it.
+func isAllowedOSManagedSymlink(path string) bool {
+	return common.IsAllowedOSManagedSymlink(path)
+}
+
 // ensureParentDirsAfterOpen runs the second parent-directory check of
 // safeOpenFileFallback, the one that detects a component swapped in while the
 // file was being opened.

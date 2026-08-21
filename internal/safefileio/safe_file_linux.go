@@ -89,14 +89,53 @@ func mayCreateFile(flag int) bool {
 // does not reject a zero mode there, it creates a 0000 file, so treating
 // O_TMPFILE as non-creating would silently reintroduce the divergence from the
 // other side. Verified against Linux 6.12.
-//
-// Callers have already passed validateOpenPerm, so perm.Perm() is a plain copy
-// rather than a lossy narrowing.
 func openat2Mode(flag int, perm os.FileMode) uint64 {
-	if !mayCreateFile(flag) {
-		return 0
+	return uint64(openPermBits(flag, perm))
+}
+
+// openDirNoSymlinks opens dir as a directory fd, refusing to follow a symlink
+// at any component. With openat2 that is a single system call, so unlike the
+// fallback there is no window between checking the path and opening it.
+//
+// The caller owns the returned fd and must close it.
+func (fs *osFS) openDirNoSymlinks(dir string) (int, error) {
+	if !fs.openat2Available {
+		return openDirNoSymlinksFallback(dir)
 	}
-	return uint64(perm.Perm())
+
+	how := openHow{
+		flags:   uint64(unix.O_DIRECTORY | unix.O_RDONLY | unix.O_CLOEXEC),
+		resolve: ResolveNoSymlinks,
+	}
+	fd, err := openat2(AtFdcwd, dir, &how)
+	if err != nil {
+		return -1, fmt.Errorf("failed to open directory %s: %w", dir, mapOpenErrno(err))
+	}
+	return fd, nil
+}
+
+// openFileAt opens a single name relative to an already-open directory fd. The
+// directory is pinned to an inode by the fd, and name is one component, so the
+// only thing an open can reach is an entry of the directory the caller checked.
+func (fs *osFS) openFileAt(dirFd int, name string, flag int, perm os.FileMode) (*os.File, error) {
+	if !fs.openat2Available {
+		return openFileAtFallback(dirFd, name, flag, perm)
+	}
+	if err := validateOpenAtName(name); err != nil {
+		return nil, err
+	}
+
+	how := openHow{
+		// #nosec G115 - flag conversion is intentional and safe within valid flag range
+		flags:   uint64(flag | unix.O_CLOEXEC),
+		mode:    openat2Mode(flag, perm),
+		resolve: ResolveNoSymlinks,
+	}
+	fd, err := openat2(dirFd, name, &how)
+	if err != nil {
+		return nil, mapOpenErrno(err)
+	}
+	return os.NewFile(uintptr(fd), name), nil //nolint:gosec // G115: fd is a valid file descriptor returned by the kernel
 }
 
 // openat2 wraps the openat2 system call, retrying while the kernel reports
@@ -163,74 +202,86 @@ var generateTempLinkName = randomTempName
 // generateTempLinkName) is mutated by tests and shared package-wide.
 var linkatFunc = unix.Linkat
 
-// moveFileAnchored moves the inode referenced by srcFile to absDst without
-// resolving absSrc by path name at move time. Invariant: whenever a file
-// ends up at absDst, it is always the exact inode that srcFile refers to; if
-// that identity cannot be established, the function fails closed instead of
-// moving anything.
+// moveFileAnchored moves the inode referenced by srcFile to dstName in the
+// directory dstDirFd is open on. Invariant: whenever a file ends up at the
+// destination, it is always the exact inode that srcFile refers to; if that
+// identity cannot be established, the function fails closed instead of moving
+// anything.
 //
-// It hard-links the fd's inode (via /proc/self/fd, which requires
+// Neither side is named by a path here. Each directory is pinned to an inode by
+// its fd and each file by a single name within it, so nothing this function does
+// re-resolves a path the caller had checked. The source additionally never
+// depends on its name: the move goes through the fd's own inode.
+//
+// It hard-links that inode (via /proc/self/fd, which requires
 // AT_SYMLINK_FOLLOW to dereference the magic symlink to the real inode) into
-// absDst's directory under a random temporary name, renames the temporary
-// name to absDst within the same directory (atomic replace), and then
-// unlinks absSrc.
+// the destination directory under a random temporary name, renames the
+// temporary name to dstName within that same directory (atomic replace), and
+// then unlinks the source entry.
 //
-// Note on what happens if absSrc is replaced between SafeOpenFile and this
-// call: the Linux kernel refuses to give a new name via /proc/self/fd to a
+// Note on what happens if the source entry is replaced between the open and
+// this call: the Linux kernel refuses to give a new name via /proc/self/fd to a
 // regular (non-O_TMPFILE) file once its last directory entry has been
-// removed (nlink reaches 0) -- see may_linkat in the kernel. Replacing
-// absSrc's directory entry (unlink+recreate, or renaming another file over
+// removed (nlink reaches 0) -- see may_linkat in the kernel. Replacing the
+// source's directory entry (unlink+recreate, or renaming another file over
 // it) drops the originally verified inode's nlink to 0, so the hard-link
 // step below fails with ENOENT before any rename or unlink runs. The
 // practical effect is fail-closed by construction: a replaced source can
-// never reach absDst, but the mechanism does not recover the pre-replacement
-// content either -- it errors out. See the design document's rationale on
-// this kernel constraint for the full explanation.
+// never reach the destination, but the mechanism does not recover the
+// pre-replacement content either -- it errors out. See the design document's
+// rationale on this kernel constraint for the full explanation.
 //
-// On any failure before the rename below succeeds, no file is left at
-// absDst and any temporary hard link created along the way is removed
+// On any failure before the rename below succeeds, no file is left at the
+// destination and any temporary hard link created along the way is removed
 // (fail-closed, no partial move). Once the rename has succeeded, a
-// subsequent failure (verifySameFile mismatch, or absSrc removal failure)
-// intentionally leaves absDst populated with the moved content rather than
-// undoing the rename.
-func moveFileAnchored(srcFile File, absSrc, absDst string) (err error) {
+// subsequent failure (verifySameFileAt mismatch, or source removal failure)
+// intentionally leaves the destination populated with the moved content rather
+// than undoing the rename.
+func moveFileAnchored(srcFile File, srcDirFd int, srcName string, dstDirFd int, dstName string) (err error) {
 	osFile, ok := srcFile.(*os.File)
 	if !ok || osFile == nil {
 		return fmt.Errorf("%w: source file handle does not support fd-anchored move", ErrUnsupportedFileHandle)
 	}
+	if err := validateOpenAtName(dstName); err != nil {
+		return err
+	}
 
-	tmpPath, err := linkFileToTempName(osFile, filepath.Dir(absDst))
+	tmpName, err := linkFileToTempName(osFile, dstDirFd)
 	if err != nil {
 		return fmt.Errorf("failed to hard-link source inode into destination directory: %w", err)
 	}
 	defer func() {
 		if err != nil {
-			if rmErr := os.Remove(tmpPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
-				slog.Warn("failed to remove leaked temporary hard link", slog.Any("error", rmErr), slog.String("path", tmpPath))
+			if rmErr := unix.Unlinkat(dstDirFd, tmpName, 0); rmErr != nil && !errors.Is(rmErr, unix.ENOENT) {
+				slog.Warn("failed to remove leaked temporary hard link", slog.Any("error", rmErr), slog.String("name", tmpName))
 			}
 		}
 	}()
 
-	if err = os.Rename(tmpPath, absDst); err != nil {
-		return fmt.Errorf("failed to rename temporary hard link to destination: %w", err)
+	if err = unix.Renameat(dstDirFd, tmpName, dstDirFd, dstName); err != nil {
+		return fmt.Errorf("failed to rename temporary hard link to destination: %w", mapRenameErrno(err))
 	}
 
-	if err = verifySameFile(osFile, absSrc); err != nil {
+	// The source entry is removed by name, so confirm it still names the inode
+	// that was moved before removing it.
+	if err = verifySameFileAt(osFile, srcDirFd, srcName); err != nil {
 		return fmt.Errorf("refusing to remove source path after move: %w", err)
 	}
 
-	if err = os.Remove(absSrc); err != nil {
+	if err = unix.Unlinkat(srcDirFd, srcName, 0); err != nil {
 		return fmt.Errorf("failed to remove original source path after move: %w", err)
 	}
 
 	return nil
 }
 
-// linkFileToTempName hard-links the inode referenced by srcFile into dstDir
-// under a random, previously-unused name and returns the full path of the new
-// link. Using /proc/self/fd/<n> as the link source (with AT_SYMLINK_FOLLOW)
-// binds the link to the fd's inode rather than to any path name.
-func linkFileToTempName(srcFile *os.File, dstDir string) (string, error) {
+// linkFileToTempName hard-links the inode referenced by srcFile into the
+// directory dstDirFd is open on, under a random, previously-unused name, and
+// returns that name. Using /proc/self/fd/<n> as the link source (with
+// AT_SYMLINK_FOLLOW) binds the link to the fd's inode rather than to any path
+// name, and the destination side is a name under a directory fd, so no path is
+// resolved on either side.
+func linkFileToTempName(srcFile *os.File, dstDirFd int) (string, error) {
 	procPath := fmt.Sprintf("/proc/self/fd/%d", srcFile.Fd())
 
 	for range maxTempNameAttempts {
@@ -238,15 +289,14 @@ func linkFileToTempName(srcFile *os.File, dstDir string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if name != filepath.Base(name) || name == "." || name == ".." {
-			return "", fmt.Errorf("%w: temporary link name %q is not a plain basename", ErrInvalidFilePath, name)
+		if err := validateOpenAtName(name); err != nil {
+			return "", err
 		}
-		tmpPath := filepath.Join(dstDir, name)
 
-		err = linkatFunc(unix.AT_FDCWD, procPath, unix.AT_FDCWD, tmpPath, unix.AT_SYMLINK_FOLLOW)
+		err = linkatFunc(unix.AT_FDCWD, procPath, dstDirFd, name, unix.AT_SYMLINK_FOLLOW)
 		switch {
 		case err == nil:
-			return tmpPath, nil
+			return name, nil
 		case errors.Is(err, unix.EEXIST):
 			continue
 		default:
@@ -277,19 +327,7 @@ func (fs *osFS) safeOpenFileInternal(absPath string, flag int, perm os.FileMode)
 
 	fd, err := openat2(AtFdcwd, absPath, &how)
 	if err != nil {
-		// Unwrap rather than type-assert, so the mapping stays correct for
-		// any error the retry wrapper hands back.
-		if errno, ok := errors.AsType[syscall.Errno](err); ok {
-			switch errno {
-			case syscall.ELOOP:
-				return nil, ErrIsSymlink
-			case syscall.EEXIST:
-				return nil, ErrFileExists
-			case syscall.ENOENT:
-				return nil, os.ErrNotExist // Return standard not exist error
-			}
-		}
-		return nil, err
+		return nil, mapOpenErrno(err)
 	}
 	return os.NewFile(uintptr(fd), absPath), nil //nolint:gosec // G115: fd is a valid file descriptor, conversion is safe
 }

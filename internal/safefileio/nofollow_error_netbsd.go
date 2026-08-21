@@ -14,5 +14,11 @@ func isNoFollowError(err error) bool {
 	if !ok {
 		return false
 	}
-	return errors.Is(e.Err, syscall.EFTYPE)
+	return isNoFollowErrno(e.Err)
+}
+
+// isNoFollowErrno is isNoFollowError for a caller holding the bare errno, as a
+// direct syscall wrapper does rather than os.OpenFile.
+func isNoFollowErrno(err error) bool {
+	return errors.Is(err, syscall.EFTYPE)
 }

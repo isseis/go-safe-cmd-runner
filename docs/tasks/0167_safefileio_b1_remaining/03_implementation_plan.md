@@ -203,6 +203,13 @@
 | `ensureParentDirsAfterOpen`・`verifyMovedFile` | `internal/safefileio/overrides.go`（`//go:build !test`） | `internal/safefileio/test_helpers_overrides.go`（`//go:build test`） |
 | `openat2Syscall` | `internal/safefileio/overrides_linux.go`（`//go:build !test`） | `internal/safefileio/test_helpers_overrides_linux.go`（`//go:build test`） |
 
+**4 つ目の差し替え点 `isAllowedOSManagedSymlink` を Phase 3 で追加した（実装時の決定）。** 上の表を書いた時点では
+差し替え点は 3 つに限る予定だったが、3-4 が求める「`ensureDirNoSymlinks` が解決済みパスを返すことを Linux でも
+検証する」は、`common.IsAllowedOSManagedSymlink` が Linux で常に false を返すため、allowlist 判定を差し替え
+られなければ成立しない（前掲の 3 つはどれもこの分岐に届かない）。`internal/common` は変更せず、
+safefileio 側に他の 3 つと同じ 2 ファイル方式（`overrides.go`／`test_helpers_overrides.go`）で置いた。
+本番ビルドに可変のパッケージ変数を残さない形は変わらない。
+
 **本番側（`//go:build !test`）のファイルは `make lint` の対象外である。** `make lint` は `golangci-lint run --build-tags test` を実行するため、`overrides.go`・`overrides_linux.go` は コンパイル対象にならない。コンパイル自体は `make build`／`go build`（タグ無し）が確認するため、各 Phase の完了条件に `go build ./internal/safefileio/` を入れてある。既存の `internal/security/getwd.go` も同じ状態であり、リンタ設定の見直しは本タスクの対象外とする。
 
 `_linux.go` の接尾辞が GOOS を表すため、Linux 用の 2 ファイルのビルドタグに `linux` を書く必要はない。ただし同じ
@@ -488,85 +495,124 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 
 #### 3-1. ディレクトリ fd プリミティブの実装
 
-- [ ] `ensureParentDirsNoSymlinks`（`safe_file.go:257-307`）から
+- [x] `ensureParentDirsNoSymlinks`（`safe_file.go:257-307`）から
       `ensureDirNoSymlinks(dir string) (string, error)` を切り出す。走査は現行のまま（allowlist に載る
       OS 管理シンボリックリンクは `EvalSymlinks` で解決して続行）で、**解決済みのディレクトリパスを返す**点だけが
       異なる。`ensureParentDirsNoSymlinks` は `ensureDirNoSymlinks(filepath.Dir(absPath))` を呼んで解決済み
-      パスを捨てるラッパとして残す。
-- [ ] `safe_file_linux.go` に `openDirNoSymlinks` の openat2 版を実装する。
+      パスを捨てるラッパとして残す。allowlist 判定の呼び出しは、3-4 のテストのために差し替え点
+      `isAllowedOSManagedSymlink` 経由へ変える（§ 1 の 4 つ目の差し替え点）。
+- [x] `safe_file_linux.go` に `openDirNoSymlinks` の openat2 版を実装する。
       `openat2(AtFdcwd, dir, &openHow{flags: O_DIRECTORY|O_RDONLY, resolve: ResolveNoSymlinks})` の 1 回の
-      呼び出しで開く。`openat2` が使えない場合はフォールバック版へ委譲する。
-- [ ] `safe_file.go`（両経路共通）にフォールバック版の `openDirNoSymlinks` を実装する。`ensureDirNoSymlinks`
+      呼び出しで開く。`openat2` が使えない場合はフォールバック版へ委譲する。**openat2 の可用性は `osFS` の
+      フィールドにしか無いため、`openDirNoSymlinks`・`openFileAt` は自由関数ではなく `*osFS` のメソッドと
+      した**（フォールバック版は自由関数 `openDirNoSymlinksFallback`・`openFileAtFallback`）。併せて
+      `atomicMoveFileCore` の第 4 引数を `FileSystem` から `*osFS` へ変える。本番・テストとも呼び出し元は
+      `(*osFS).AtomicMoveFile` の 1 か所だけであり、モックは渡らない。
+- [x] `safe_file.go`（両経路共通）にフォールバック版の `openDirNoSymlinks` を実装する。`ensureDirNoSymlinks`
       が返した**解決済みパス**を `O_DIRECTORY|O_NOFOLLOW` で開く。元のパスを開くと、開こうとしている
-      ディレクトリ自身が allowlist の OS 管理シンボリックリンクである場合に `ELOOP` になる
-      （[02_architecture.md](02_architecture.md) § 3.4.1）。
-- [ ] `safe_file_linux.go` と `safe_file_nonlinux.go` に `openFileAt` を実装する。Linux（openat2 が使える
+      ディレクトリ自身が allowlist の OS 管理シンボリックリンクである場合に失敗する
+      （[02_architecture.md](02_architecture.md) § 3.4.1。errno は Linux では `ENOTDIR`、`O_DIRECTORY` を
+      伴わない場合の `ELOOP` ではない。3-4 のテストはこの差を踏まえて errno を主張しない）。
+- [x] `safe_file_linux.go` と `safe_file_nonlinux.go` に `openFileAt` を実装する。Linux（openat2 が使える
       場合）は `openat2(dirfd, name, …)`、それ以外は `unix.Openat(dirfd, name, flag|O_NOFOLLOW, mode)`。
       **戻り値の型は `*os.File` とする**（`os.NewFile` で包む）。`linkFileToTempName` が `/proc/self/fd/<n>`
       のために `Fd()` を必要とし、`moveFileAnchored` も現在 `*os.File` への型アサート（`safe_file_linux.go:155`）に
       依存しているため、インターフェース値のままでは書き込み経路の一時ファイル fd をハードリンクに使えない。
       両者とも `ELOOP`（フォールバックでは `isNoFollowError` の判定）を `ErrIsSymlink` に、`EEXIST` を
       `ErrFileExists` に、`ENOENT` を `os.ErrNotExist` に対応付ける。mode は Phase 1 の `openat2Mode` と
-      同じ規則（`O_CREATE` が無ければ 0）で決める。
-- [ ] `verifySameFile` を、fd とパス名で比較する形と、fd とディレクトリ fd＋名前で比較する形の両方から
-      使えるようにする（比較そのものは 1 か所に置く）。
+      同じ規則（`O_CREATE` が無ければ 0）で決める。**実装時の確定が 3 点ある。**
+      （a）errno の対応付けは新設の `mapOpenErrno` 1 か所に集約し、`safeOpenFileInternal` の既存の
+      switch もこれに置き換えた。netbsd の `EFTYPE` を扱うため判定には `isNoFollowErrno`（`isNoFollowError`
+      から切り出した errno 版）を使う。副作用として openat2 経路でも `EMLINK` が `ErrIsSymlink` になるが、
+      Linux のフォールバック経路は元からそう扱っており、経路間の一致は強まる方向である。
+      （b）mode の規則は `openPermBits` として `safe_file.go` へ移し、`openat2Mode` はその薄いラッパにした。
+      `mayCreateFile` は `O_TMPFILE` が Linux にしか無いためプラットフォーム別の定義に分けた。
+      （c）自分で開く fd には `O_CLOEXEC` を付ける。フォールバック経路が使っていた `os.OpenFile` は
+      常に `O_CLOEXEC` を付けるため、`unix.Openat` へ移ることで子プロセスへの fd 漏れが生じないようにする。
+      ディレクトリ fd も同じ扱いにする。
+- [x] `verifySameFile` を、fd とパス名で比較する形と、fd とディレクトリ fd＋名前で比較する形の両方から
+      使えるようにする（比較そのものは 1 か所に置く）。実装は `verifySameFile`（`lstat`）と
+      `verifySameFileAt`（`fstatat` + `AT_SYMLINK_NOFOLLOW`）の 2 つが、`fdStatOf` と `compareInode` を
+      共有する形とした。パス側の型は両者を揃えるため `syscall.Stat_t` から `unix.Stat_t` へ変えた。
 
 #### 3-2. `moveFileAnchored`・`atomicMoveFileCore` のディレクトリ fd 対応
 
-- [ ] `linkFileToTempName`（`safe_file_linux.go:226-251`）を、ディレクトリのパス名ではなく
+- [x] `linkFileToTempName`（`safe_file_linux.go:226-251`）を、ディレクトリのパス名ではなく
       **宛先ディレクトリ fd** を受け取り、フルパスではなく**作った名前**を返す形へ変える。`linkat` の
       呼び出しを `linkatFunc(unix.AT_FDCWD, procPath, dstDirFd, name, unix.AT_SYMLINK_FOLLOW)` にする。
-- [ ] `moveFileAnchored` の後始末（`safe_file_linux.go:164-170`）の `os.Remove(tmpPath)` を
+      名前が単一の構成要素であることの確認は、この関数が持っていた個別の判定をやめ、新設の
+      `validateOpenAtName` に寄せる（`openFileAt`・`verifySameFileAt`・`moveFileAnchored` と同じ判定）。
+- [x] `moveFileAnchored` の後始末（`safe_file_linux.go:164-170`）の `os.Remove(tmpPath)` を
       `unix.Unlinkat(dstDirFd, tmpName, 0)` に変える。上の変更で一時ハードリンクの参照がフルパスから
       「ディレクトリ fd と名前」に変わるため、後始末も同じ指し方に揃える。
-- [ ] `moveFileAnchored` のシグネチャを
+- [x] `moveFileAnchored` のシグネチャを
       `moveFileAnchored(srcFile File, srcDirFd int, srcName string, dstDirFd int, dstName string) error`
       へ変える。Linux 版は `rename` を宛先ディレクトリ fd 相対（`unix.Renameat`）に、移動元の削除を
       `unix.Unlinkat(srcDirFd, srcName, 0)` にする。`verifySameFile` の呼び出しは
       `fstatat(srcDirFd, srcName, AT_SYMLINK_NOFOLLOW)` を使う形にする。
-- [ ] `moveFileAnchored` の doc コメント（現 :124-153）を書き換える。現在の文面は `absSrc`／`absDst` という
+- [x] **`rename` の errno を `mapRenameErrno` で 1 か所補正する（実装時の追加）。** 宛先が既存の
+      ディレクトリである場合、カーネルは `EISDIR` を返すが、`os.Rename` は宛先を `lstat` してから
+      `EEXIST` に差し替えていた（Go の `os.rename`）。`internal/runner/base/output` の
+      `TestSafeFileManager_MoveToFinal` が `fs.ErrExist` を主張しており、素の `unix.Renameat` に
+      置き換えるとこの契約が黙って変わる。`EISDIR` の場合だけ `EEXIST` と元の errno の両方を包んで返し、
+      呼び出し元から見た挙動を変えない。Linux・非 Linux の両方に適用する。
+- [x] `moveFileAnchored` の doc コメント（現 :124-153）を書き換える。現在の文面は `absSrc`／`absDst` という
       消えるパラメータを十数か所で参照し、不変条件を「`absSrc` をパス名で解決し直さない」と述べている。
       新しい文面では、（a）0155 が確立した「宛先へ現れるのは必ず `srcFile` が指す inode であり、それを
       示せないときは何も動かさず失敗する」という不変条件、（b）`may_linkat` によって差し替えられたソースが
       宛先へ到達できない理由、（c）`rename` 成功後の失敗は巻き戻さないこと、の 3 点を保ちつつ、
       ディレクトリ fd と名前を受け取る新しい形に合わせて書き直す（英語）。
-- [ ] 非 Linux 版（`safe_file_nonlinux.go:29-31`）を、`fstatat(srcDirFd, srcName, AT_SYMLINK_NOFOLLOW)` に
+- [x] 非 Linux 版（`safe_file_nonlinux.go:29-31`）を、`fstatat(srcDirFd, srcName, AT_SYMLINK_NOFOLLOW)` に
       よる同一性確認のうえで `unix.Renameat(srcDirFd, srcName, dstDirFd, dstName)` を実行する形にする。
       doc コメントを、ディレクトリは固定されるが inode への固定はできない旨
       （[02_architecture.md](02_architecture.md) § 5.3 の R4）に更新する。
-- [ ] `atomicMoveFileCore`（`safe_file.go:140-201`）を、移動元・移動先のディレクトリ fd を
+- [x] `atomicMoveFileCore`（`safe_file.go:140-201`）を、移動元・移動先のディレクトリ fd を
       `openDirNoSymlinks` で取得し、ソースを `openFileAt` で開き、新シグネチャの `moveFileAnchored` を呼ぶ
       形に組み替える。この Phase では検査の順序（chmod と検証）と移動後の検証はまだ変えない。取得した
       ディレクトリ fd は取得の直後に `defer` で閉じる登録を行い、以降の分岐がどこで失敗しても漏れないように
       する。
-- [ ] `atomicMoveFileCore` の doc コメント（現 :137-139）から、`SafeOpenFile`／`ensureParentDirsNoSymlinks`
+- [x] `atomicMoveFileCore` の doc コメント（現 :137-139）から、`SafeOpenFile`／`ensureParentDirsNoSymlinks`
       で検査すると書いている部分を、`openDirNoSymlinks`／`openFileAt` による検査へ書き換える。
 #### 3-3. 既存テストの新シグネチャへの追従
 
-- [ ] `safe_file_linux_test.go` の `moveFileAnchored` を直接呼ぶ 5 つのテスト
+- [x] `safe_file_linux_test.go` の `moveFileAnchored` を直接呼ぶ 5 つのテスト
       （`TestMoveFileAnchored_RegressionSuccessfulMove`・`_SourceReplacementFailsClosed`・
       `_RenameFailureCleansUpTemporaryLink`・`_UnlinkSourceFailureReturnsErrorAfterSuccessfulRename`・
       `TestAtomicMoveFileCore_EndToEndUsesFDAnchoredMove`）を新しいシグネチャへ追従させる。検証内容は
       変えない。
-- [ ] `safe_file_linux_test.go` の `linkFileToTempName` を直接呼ぶ 3 つのテスト
+- [x] `safe_file_linux_test.go` の `linkFileToTempName` を直接呼ぶ 3 つのテスト
       （`TestLinkFileToTempName_RetriesOnNameCollision`・`_ExhaustsAttempts`・
       `_NonEEXISTErrorIsNotRetried`）を、ディレクトリ fd を渡し名前を受け取る新しいシグネチャへ
       追従させる。検証内容は変えない（`_ExhaustsAttempts` の主張の強化は Phase 2 で済んでいる）。
 
 #### 3-4. ディレクトリ fd プリミティブのテスト
 
-- [ ] `safe_file_test.go` に `TestEnsureDirNoSymlinks_ReturnsResolvedPath` を追加する。`ensureDirNoSymlinks`
+- [x] `safe_file_test.go` に `TestEnsureDirNoSymlinks_ReturnsResolvedPath` を追加する。`ensureDirNoSymlinks`
       が **allowlist に載る OS 管理シンボリックリンクを解決した後のパスを返す**ことを、戻り値そのものに
       対して確認する。`common.IsAllowedOSManagedSymlink` は Linux では常に false を返すため
       （`internal/common/osmanaged_symlink_other.go:8-10`）、`/tmp` を使う形の検証は Linux では必ず skip に
       なり、§ 3.4.1 が新たに課した「解決済みパスを開く」という義務が本番環境で一度も検証されない。
       allowlist に依存しない形（allowlist 判定を差し替え可能にし、`t.TempDir` 配下に作った
-      シンボリックリンクを許可する）で Linux からも踏めるようにする。allowlist 判定の差し替えが
-      `internal/common` の変更を要する場合は、その要否と方法をレビューで確認する。
-- [ ] 上のテストに加えて、`common.IsAllowedOSManagedSymlink("/tmp")` が true の環境でだけ実行する
-      `TestOpenDirNoSymlinks_WritesUnderOSManagedSymlink` を置く（false なら `t.Skip`）。判定に
+      シンボリックリンクを許可する）で Linux からも踏めるようにする。**`internal/common` の変更は要らな
+      かった。** safefileio 側に差し替え点 `isAllowedOSManagedSymlink` を § 1 の 2 ファイル方式で置き、
+      テストヘルパ `allowOSManagedSymlink(t, path)` から使う。テストは 2 つのサブテストを持ち、1 つ目
+      （allowlist を差し替えない）でシンボリックリンクが拒否されることを先に押さえる。これが無いと、
+      2 つ目の主張が差し替えの結果なのか元から通るのかを言えない。
+- [x] **`openDirNoSymlinks` のフォールバック版が解決済みパスを開いていることを直接押さえる
+      `TestOpenDirNoSymlinksFallback_OpensResolvedPath` を追加する（実装時の追加）。** 上のテストは
+      `ensureDirNoSymlinks` の戻り値までしか見ないため、それを使う側が元のパスを開いていても落ちない。
+      同じ差し替えを使い、（a）解決前のパスを `O_NOFOLLOW` で開くと実際に失敗すること（前提の確認）、
+      （b）`openDirNoSymlinksFallback` が成功すること、（c）得られた fd の inode がリンク先の
+      ディレクトリと一致することの 3 点を確認する。
+- [x] 上のテストに加えて、`common.IsAllowedOSManagedSymlink("/tmp")` が true の環境でだけ実行する
+      テストを置く（false なら `t.Skip`）。判定に
       `runtime.GOOS` を使わない。`/tmp` は `t.TempDir` の外なので、ファイル名は
       `.safefileio-test-<ランダム>` の形で実行ごとに一意にし、作成の直後に `t.Cleanup` で削除を登録する。
+      本 Phase では書き込み経路がまだ `openDirNoSymlinks` を通らないため、名前は
+      `TestAtomicMoveFile_WritesUnderOSManagedSymlink` とし、`/tmp` 直下への `AtomicMoveFile` で踏む。
+- [x] 上の 2 つのテストが理由どおりに落ちることを確認した（`ensureDirNoSymlinks` の戻り値を解決前の
+      `dir` に戻すと 1 つ目が、`openDirNoSymlinksFallback` が開く対象を解決前のパスに戻すと 2 つ目が
+      落ちる）。
 
 **完了条件**: `make fmt` → `make test` → `make lint` が通り、既存テストが検証内容を変えずに通る。
 `GOOS=darwin go vet -tags test ./internal/safefileio/` と

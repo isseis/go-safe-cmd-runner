@@ -44,7 +44,8 @@ func TestMoveFileAnchored_RegressionSuccessfulMove(t *testing.T) {
 
 	srcDev, srcIno := inodeOf(t, srcPath)
 
-	require.NoError(t, moveFileAnchored(srcFile, srcPath, dstPath))
+	dirFd := dirFdForTest(t, fs, dir)
+	require.NoError(t, moveFileAnchored(srcFile, dirFd, "src.txt", dirFd, "dst.txt"))
 
 	got, err := os.ReadFile(dstPath)
 	require.NoError(t, err)
@@ -84,6 +85,7 @@ func TestMoveFileAnchored_SourceReplacementFailsClosed(t *testing.T) {
 	srcFile, err := fs.SafeOpenFile(srcPath, os.O_RDONLY, 0)
 	require.NoError(t, err)
 	defer func() { _ = srcFile.Close() }()
+	dirFd := dirFdForTest(t, fs, dir)
 
 	// Simulate an attacker replacing the source path with a different inode
 	// after the fd was obtained but before the move happens. This drops the
@@ -92,7 +94,7 @@ func TestMoveFileAnchored_SourceReplacementFailsClosed(t *testing.T) {
 	replacedContent := []byte("attacker-controlled content")
 	require.NoError(t, os.WriteFile(srcPath, replacedContent, 0o600))
 
-	err = moveFileAnchored(srcFile, srcPath, dstPath)
+	err = moveFileAnchored(srcFile, dirFd, "src.txt", dirFd, "dst.txt")
 	require.Error(t, err, "move must fail closed when the source was replaced after verification")
 
 	_, statErr := os.Stat(dstPath)
@@ -118,13 +120,14 @@ func TestMoveFileAnchored_RenameFailureCleansUpTemporaryLink(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = srcFile.Close() }()
 
-	// Use a destination that is itself a non-empty directory so os.Rename
-	// (temp name -> dstPath) fails deterministically.
+	// Use a destination that is itself a non-empty directory so the rename
+	// (temp name -> destination) fails deterministically.
 	dstPath := filepath.Join(dir, "dst_is_dir")
 	require.NoError(t, os.Mkdir(dstPath, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(dstPath, "keep.txt"), []byte("x"), 0o600))
 
-	err = moveFileAnchored(srcFile, srcPath, dstPath)
+	dirFd := dirFdForTest(t, fs, dir)
+	err = moveFileAnchored(srcFile, dirFd, "src.txt", dirFd, "dst_is_dir")
 	require.Error(t, err)
 
 	// No leaked temporary link should remain in the destination directory.
@@ -189,14 +192,18 @@ func TestMoveFileAnchored_UnlinkSourceFailureReturnsErrorAfterSuccessfulRename(t
 	srcFile, err := fs.SafeOpenFile(srcPath, os.O_RDONLY, 0)
 	require.NoError(t, err)
 	defer func() { _ = srcFile.Close() }()
+	srcDirFd := dirFdForTest(t, fs, srcParent)
+	dstDirFd := dirFdForTest(t, fs, dir)
 
-	// Remove write+execute permission on srcPath's parent directory so the
-	// trailing os.Remove(absSrc) fails with EACCES, after linkat and rename
-	// have already succeeded.
+	// Remove write permission on srcPath's parent directory so the trailing
+	// unlink of the source fails with EACCES, after linkat and rename have
+	// already succeeded. The directory fd was opened before this, exactly as the
+	// production path opens it up front; a held fd does not exempt the unlink
+	// from the permission check.
 	require.NoError(t, os.Chmod(srcParent, 0o555))
 	t.Cleanup(func() { _ = os.Chmod(srcParent, 0o755) })
 
-	err = moveFileAnchored(srcFile, srcPath, dstPath)
+	err = moveFileAnchored(srcFile, srcDirFd, "src.txt", dstDirFd, "dst.txt")
 	require.Error(t, err, "unlink(absSrc) failure must be surfaced as an error, not a silent success")
 
 	// The destination is already populated with the moved content: rename
@@ -240,14 +247,14 @@ func TestLinkFileToTempName_RetriesOnNameCollision(t *testing.T) {
 	}
 	t.Cleanup(func() { generateTempLinkName = origFunc })
 
-	tmpPath, err := linkFileToTempName(osFile, dir)
+	tmpName, err := linkFileToTempName(osFile, dirFdForTest(t, fs, dir))
 	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(dir, names[1]), tmpPath)
+	assert.Equal(t, names[1], tmpName)
 	assert.Equal(t, 2, call, "expected exactly one retry after the collision")
 	assert.Equal(t, []string{tempLinkNamePrefix, tempLinkNamePrefix}, gotPrefixes)
 
 	// Clean up the created hard link.
-	_ = os.Remove(tmpPath)
+	_ = os.Remove(filepath.Join(dir, tmpName))
 }
 
 // TestLinkFileToTempName_ExhaustsAttempts verifies that persistent name
@@ -271,7 +278,7 @@ func TestLinkFileToTempName_ExhaustsAttempts(t *testing.T) {
 	generateTempLinkName = func(_ string) (string, error) { return collidingName, nil }
 	t.Cleanup(func() { generateTempLinkName = origFunc })
 
-	_, err = linkFileToTempName(osFile, dir)
+	_, err = linkFileToTempName(osFile, dirFdForTest(t, fs, dir))
 	require.ErrorIs(t, err, ErrTempNameExhausted)
 }
 
@@ -301,7 +308,7 @@ func TestLinkFileToTempName_NonEEXISTErrorIsNotRetried(t *testing.T) {
 	}
 	t.Cleanup(func() { linkatFunc = origLinkat })
 
-	_, err = linkFileToTempName(osFile, dir)
+	_, err = linkFileToTempName(osFile, dirFdForTest(t, fs, dir))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, unix.EPERM)
 	assert.Equal(t, 1, calls, "a non-EEXIST linkat error must not be retried")

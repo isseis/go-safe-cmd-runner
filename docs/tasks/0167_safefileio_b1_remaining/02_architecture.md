@@ -317,6 +317,8 @@ var (
 | `openDirNoSymlinks` | ディレクトリをシンボリックリンクを辿らずに開いて fd を返す。openat2 が使える場合は `openat2(AT_FDCWD, dir, O_DIRECTORY, RESOLVE_NO_SYMLINKS)` の 1 回の呼び出しで済み、パスの走査そのものが無い。それ以外では `ensureDirNoSymlinks` で構成要素を確認し、**そこで返る解決済みのパス**を `O_DIRECTORY` と `O_NOFOLLOW` で開く |
 | `openFileAt` | 開いたディレクトリ fd を起点に、単一のファイル名でファイルを開く。openat2 経路では `openat2(dirfd, name, …)`、フォールバック経路では `unix.Openat(dirfd, name, …, O_NOFOLLOW)` を使う |
 
+どちらの経路を採るかは `osFS.openat2Available` にしか無いため、この 2 つは `*osFS` のメソッドとして実装し、フォールバック版だけを自由関数（`openDirNoSymlinksFallback`・`openFileAtFallback`）として共通ファイルに置く。これに伴い `atomicMoveFileCore` は `FileSystem` ではなく `*osFS` を受け取る（呼び出し元は `(*osFS).AtomicMoveFile` の 1 か所だけであり、モックは渡らない）。単一の構成要素であることの確認は `validateOpenAtName` に 1 か所化し、ディレクトリ fd 相対に名前を扱うすべての関数（`openFileAt`・`verifySameFileAt`・`moveFileAnchored`・`linkFileToTempName`）が自分で呼ぶ。
+
 `openFileAt` は、両経路とも既存の `SafeOpenFile` と同じ sentinel エラーへ対応付ける。`ELOOP`（フォールバック経路では `isNoFollowError` が判定するもの）は `ErrIsSymlink`、`EEXIST` は `ErrFileExists`、`ENOENT` は `os.ErrNotExist` である。§ 3.6.2 の分岐はこの対応付けに依存する。
 
 `ensureDirNoSymlinks` は既存の `ensureParentDirsNoSymlinks` から本体を切り出したものだが、**解決済みのディレクトリパスも返す**点が異なる。現在の実装は、allowlist に載る OS 管理のシンボリックリンクを辿って走査を続けるが、その解決結果を内部で捨てている。`openDirNoSymlinks` が元のパスをそのまま `O_NOFOLLOW` で開くと、**開こうとしているディレクトリ自身がその種のシンボリックリンクである場合**に `ELOOP` となり、`ErrIsSymlink` で失敗してしまう。解決済みのパスを返して、それを開く。
@@ -378,6 +380,8 @@ var (
 
 - **Linux**: 手順は 0155 のままである。`/proc/self/fd` 経由の `linkat` で inode をハードリンクし、`rename` で宛先へ被せ、移動元を削除する。変えるのは、リンクと rename の対象を宛先ディレクトリ fd 相対にすること、移動元の削除を `unlinkat(srcDirFd, srcName, 0)` にすることの 2 点である。inode に固定するという 0155 の不変条件はそのまま保たれ、そこにディレクトリの固定が加わる。
 - **非 Linux**: 現在の `os.Rename(absSrc, absDst)` を `unix.Renameat(srcDirFd, srcName, dstDirFd, dstName)` に置き換える。`renameat` はディレクトリ fd 相対なので、パスの再解決が無くなる。ただし inode への固定は依然としてできない（`/proc/self/fd` に相当する仕組みが無いため）。直前に `fstatat(srcDirFd, srcName, AT_SYMLINK_NOFOLLOW)` で開いている fd との同一性を確認して隙を狭めるにとどまる（§ 5.3 の R4）。
+
+`os.Rename` から生の `renameat` へ移ることで、宛先が既存のディレクトリである場合に呼び出し元が受け取る errno が変わる。`os.Rename` は宛先を `lstat` してからカーネルの `EISDIR` を `EEXIST` に差し替えており（Go の `os.rename`）、`internal/runner/base/output` はその `fs.ErrExist` を見て「最終パスが既に使われている」と判断する。両経路とも `EISDIR` の場合だけ `EEXIST` と元の errno の両方を包んで返し、この契約を保つ。
 
 書き込み経路では移動元と移動先が同じディレクトリになるため、両方の引数に同じ fd を渡す。Linux 経路ではそのぶん一時ハードリンクを 1 つ余計に作ることになるが、同一ディレクトリを特別扱いして分岐を増やすより、inode に固定するという不変条件を 1 つの手順で保つ方を採る。
 
