@@ -165,8 +165,10 @@ func safeWriteFileOverwriteWithFS(filePath common.ResolvedPath, content []byte, 
 // and rejected here by openDirNoSymlinks, which pins each parent directory to an
 // inode, and by openFileAt, which rejects a symlink at the leaf.
 //
-// Once both directory fds are held, no path in this function is resolved a
-// second time: the move works from the fds and a single name on each side.
+// Once both directory fds are held, the move itself resolves no path a second
+// time: it works from the fds and a single name on each side. The post-move
+// destination validation below is the one exception, and Phase 4a of the design
+// document replaces it with an fd-anchored identity check.
 func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs *osFS) error {
 	// Pre-validate requested permissions
 	if err := fs.GetGroupMembership().ValidateRequestedPermissions(requiredPerm, groupmembership.FileOpWrite); err != nil {
@@ -376,11 +378,25 @@ func openDirNoSymlinksFallback(dir string) (int, error) {
 		return -1, err
 	}
 
-	fd, err := unix.Open(resolvedDir, unix.O_DIRECTORY|unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	fd, err := unix.Open(resolvedDir, unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC|dirAccessFlag, 0)
 	if err != nil {
-		return -1, fmt.Errorf("failed to open directory %s: %w", resolvedDir, mapOpenErrno(err))
+		return -1, fmt.Errorf("failed to open directory %s: %w", resolvedDir, mapDirOpenErrno(err, resolvedDir))
 	}
 	return fd, nil
+}
+
+// mapDirOpenErrno is mapOpenErrno for a directory open. O_DIRECTORY changes what
+// the kernel reports for a symlink -- ENOTDIR on Linux, where the leaf being a
+// symlink means it is not the directory that was asked for -- so that case is
+// re-examined here rather than passed through as a bare errno, keeping the
+// sentinel the same as on the openat2 route.
+func mapDirOpenErrno(err error, dir string) error {
+	if errors.Is(err, unix.ENOTDIR) {
+		if fi, statErr := os.Lstat(dir); statErr == nil && fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%w: %s", ErrIsSymlink, dir)
+		}
+	}
+	return mapOpenErrno(err)
 }
 
 // openFileAtFallback opens a single name relative to an already-open directory
@@ -389,6 +405,9 @@ func openDirNoSymlinksFallback(dir string) (int, error) {
 // component, so no path resolution beyond it takes place.
 func openFileAtFallback(dirFd int, name string, flag int, perm os.FileMode) (*os.File, error) {
 	if err := validateOpenAtName(name); err != nil {
+		return nil, err
+	}
+	if err := validateOpenPerm(perm); err != nil {
 		return nil, err
 	}
 
@@ -403,8 +422,8 @@ func openFileAtFallback(dirFd int, name string, flag int, perm os.FileMode) (*os
 
 // openPermBits returns the mode to hand open(2), applying the same rule on
 // every route: a mode only for an open that can bring an inode into existence,
-// zero otherwise. Callers have already passed validateOpenPerm, so perm.Perm()
-// is a plain copy rather than a lossy narrowing.
+// zero otherwise. Its callers reject a perm outside os.ModePerm first, so
+// perm.Perm() here is a plain copy rather than a lossy narrowing.
 func openPermBits(flag int, perm os.FileMode) os.FileMode {
 	if !mayCreateFile(flag) {
 		return 0
@@ -415,9 +434,12 @@ func openPermBits(flag int, perm os.FileMode) os.FileMode {
 // validateOpenAtName rejects anything that is not a single path component.
 // Every operation anchored to a directory fd depends on the name naming an
 // entry in that directory and nowhere else; a name carrying a separator, or
-// "..", would resolve a path the caller never had checked.
+// "..", would resolve a path the caller never had checked, and an absolute name
+// makes the *at family ignore the directory fd altogether.
+//
+// filepath.Base is not sufficient on its own: it maps "/" to itself.
 func validateOpenAtName(name string) error {
-	if name == "" || name == "." || name == ".." || name != filepath.Base(name) {
+	if name == "" || name == "." || name == ".." || filepath.IsAbs(name) || name != filepath.Base(name) {
 		return fmt.Errorf("%w: %q is not a plain file name", ErrInvalidFilePath, name)
 	}
 	return nil

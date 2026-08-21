@@ -65,7 +65,7 @@ func (f *SafeFileManager) MoveToFinal(tempPath, finalPath string, perm os.FileMo
 
 	// Use safeFS.AtomicMoveFile for secure atomic file moving.
 	// AtomicMoveFile validates parent-directory components via
-	// ensureParentDirsNoSymlinks, which rejects user-owned symlinks while
+	// openDirNoSymlinks, which rejects user-owned symlinks while
 	// allowing root-owned OS-managed symlinks (e.g. /tmp -> /private/tmp on
 	// macOS).  Do NOT pre-resolve symlinks here: doing so would bypass that
 	// check and allow a user-owned symlink in a parent directory to redirect

@@ -484,7 +484,19 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 
 対応する設計: [02_architecture.md](02_architecture.md) § 3.4.1・§ 3.4.5。
 
-この Phase は **Linux の外部挙動を変えない**。非 Linux では、`moveFileAnchored` に移動直前の同一性確認が
+この Phase は **Linux の外部挙動を変えない**。ただし実装時のレビューで、変わってしまう箇所が 2 つ見つかった
+（いずれも修正済み・記録済み）。
+
+1. ディレクトリ fd を `O_RDONLY` で開くと、パス名で操作していたときには要らなかった読み取り権限を親
+   ディレクトリに要求してしまう（投函用ディレクトリ `0o733` などが拒否される）。Linux では `O_PATH` で
+   開くことで元の権限要件に戻し、`TestAtomicMoveFile_MovesIntoUnreadableDirectory` で両経路を押さえた
+   （[02_architecture.md](02_architecture.md) § 3.4.1 に追記）。非 Linux には `O_PATH` が無いため読み取り
+   権限を要する制限が残る。
+2. 宛先の親ディレクトリの確認が fchmod より前に移るため、宛先の親が不正な場合にソースの権限が変わらなく
+   なる。これは AC-06 が Phase 4a で意図している変化が 1 段階早く現れたもので、方向は同じ（副作用が減る）
+   である。
+
+非 Linux では、`moveFileAnchored` に移動直前の同一性確認が
 加わるため `ErrSourceIdentityMismatch` が新たに返りうる（現在は `os.Rename` 一発で確認が無い）。これは
 [02_architecture.md](02_architecture.md) § 5.3 の R4 が意図した変化で、隙が狭まる方向である。
 `01_requirements.md` Success Criteria が挙げる挙動の変化には含まれていなかったため、2026-08-21 に
@@ -529,7 +541,14 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
       `mayCreateFile` は `O_TMPFILE` が Linux にしか無いためプラットフォーム別の定義に分けた。
       （c）自分で開く fd には `O_CLOEXEC` を付ける。フォールバック経路が使っていた `os.OpenFile` は
       常に `O_CLOEXEC` を付けるため、`unix.Openat` へ移ることで子プロセスへの fd 漏れが生じないようにする。
-      ディレクトリ fd も同じ扱いにする。
+      ディレクトリ fd も同じ扱いにする。ディレクトリ fd のアクセスモードは Linux では `O_PATH`、
+      非 Linux では `O_RDONLY` とする（本節冒頭の 1 番。定数 `dirAccessFlag` をプラットフォーム別に置く）。
+      （d）`perm` の検査（`validateOpenPerm`）は `openFileAt` の両経路の入口でも行う。この 2 つは
+      `SafeOpenFile` を通らない呼び出し元（`atomicMoveFileCore`、Phase 4b の `safeWriteFileCommon`）から
+      直接呼ばれるため、`openPermBits` が `perm.Perm()` で黙って落とす形になってはならない。
+      （e）フォールバック版のディレクトリ open は、`O_DIRECTORY` によりシンボリックリンクが Linux では
+      `ENOTDIR` になる。`mapDirOpenErrno` が対象を `Lstat` し直して `ErrIsSymlink` へ寄せ、openat2 経路と
+      同じ sentinel を返す。
 - [x] `verifySameFile` を、fd とパス名で比較する形と、fd とディレクトリ fd＋名前で比較する形の両方から
       使えるようにする（比較そのものは 1 か所に置く）。実装は `verifySameFile`（`lstat`）と
       `verifySameFileAt`（`fstatat` + `AT_SYMLINK_NOFOLLOW`）の 2 つが、`fdStatOf` と `compareInode` を
@@ -612,7 +631,22 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
       `TestAtomicMoveFile_WritesUnderOSManagedSymlink` とし、`/tmp` 直下への `AtomicMoveFile` で踏む。
 - [x] 上の 2 つのテストが理由どおりに落ちることを確認した（`ensureDirNoSymlinks` の戻り値を解決前の
       `dir` に戻すと 1 つ目が、`openDirNoSymlinksFallback` が開く対象を解決前のパスに戻すと 2 つ目が
-      落ちる）。
+      落ちる）。なお `/tmp` を使うテストは macOS 専用であり、Linux の CI では常に skip になる。
+      § 3.4.1 の義務を実際に押さえているのは `TestOpenDirNoSymlinksFallback_OpensResolvedPath` である。
+- [x] **プリミティブ単体のテストを追加した（レビュー指摘による実装時の追加）。**
+      - `TestValidateOpenAtName`: 単一構成要素の判定（`""`・`.`・`..`・`/`・`//`・絶対パス・`a/b`・
+        `sub/` を拒否）。`filepath.Base("/")` が `"/"` を返すため、`Base` との比較だけでは `/` を
+        取りこぼす。絶対パスはディレクトリ fd を無視させるため、この漏れは塞ぐ必要がある。
+      - `TestVerifySameFileAt`: 一致・別 inode への差し替え・**同じ inode を指すシンボリックリンクへの
+        差し替え**・不正な名前・対象消滅の 5 分岐。3 つ目は `AT_SYMLINK_NOFOLLOW` を外すと落ちることを
+        確認した。この関数は非 Linux の `moveFileAnchored` が `ErrSourceIdentityMismatch` を返す唯一の
+        根拠だが、Linux の `moveFileAnchored` では `may_linkat` により先に失敗するため、この直接の
+        テストが無いと不一致の分岐がどちらのプラットフォームでも一度も踏まれない。
+      - `TestAtomicMoveFileCore_EndToEndUsesFDAnchoredMove` を `openRoutes` の両経路で実行するように
+        した。従来は openat2 経路しか通らず、`openFileAtFallback`・`openDirNoSymlinksFallback` が
+        Linux の CI で一度も実行されていなかった。検証内容は変えていない。
+      - 非 Linux 版の `moveFileAnchored` 自体は Linux の CI では実行できない（リスク管理表 R-1）。
+        `GOOS=darwin`／`GOOS=netbsd` の `go vet -tags test` でビルドを確認するにとどまる。
 
 **完了条件**: `make fmt` → `make test` → `make lint` が通り、既存テストが検証内容を変えずに通る。
 `GOOS=darwin go vet -tags test ./internal/safefileio/` と

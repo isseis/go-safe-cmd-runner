@@ -93,6 +93,16 @@ func openat2Mode(flag int, perm os.FileMode) uint64 {
 	return uint64(openPermBits(flag, perm))
 }
 
+// dirAccessFlag is the access mode this package opens a directory with when it
+// only means to anchor later operations to it.
+//
+// O_PATH asks for no access to the directory's contents, which is what the
+// openat/renameat/linkat/unlinkat/fstatat calls anchored to the fd need. Opening
+// it O_RDONLY instead would demand read permission and so refuse a write-only
+// drop directory (mode 0733 and the like) that the path-based code this replaces
+// moved into without complaint.
+const dirAccessFlag = unix.O_PATH
+
 // openDirNoSymlinks opens dir as a directory fd, refusing to follow a symlink
 // at any component. With openat2 that is a single system call, so unlike the
 // fallback there is no window between checking the path and opening it.
@@ -104,7 +114,7 @@ func (fs *osFS) openDirNoSymlinks(dir string) (int, error) {
 	}
 
 	how := openHow{
-		flags:   uint64(unix.O_DIRECTORY | unix.O_RDONLY | unix.O_CLOEXEC),
+		flags:   uint64(unix.O_DIRECTORY | unix.O_CLOEXEC | dirAccessFlag),
 		resolve: ResolveNoSymlinks,
 	}
 	fd, err := openat2(AtFdcwd, dir, &how)
@@ -122,6 +132,9 @@ func (fs *osFS) openFileAt(dirFd int, name string, flag int, perm os.FileMode) (
 		return openFileAtFallback(dirFd, name, flag, perm)
 	}
 	if err := validateOpenAtName(name); err != nil {
+		return nil, err
+	}
+	if err := validateOpenPerm(perm); err != nil {
 		return nil, err
 	}
 

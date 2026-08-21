@@ -146,28 +146,76 @@ func TestMoveFileAnchored_RenameFailureCleansUpTemporaryLink(t *testing.T) {
 // entry point (osFS.AtomicMoveFile -> atomicMoveFileCore), not just the lower
 // level moveFileAnchored, so that fchmod/permission validation and the final
 // destination validation that wrap the fd-anchored move are also covered.
+//
+// It runs on both routes because the fd acquisition differs between them:
+// openDirNoSymlinks and openFileAt reach openat2 on one and the openat-based
+// fallback on the other, and the fallback is production code wherever openat2 is
+// missing (Linux 5.5 and older, restrictive seccomp profiles, every non-Linux
+// platform).
 func TestAtomicMoveFileCore_EndToEndUsesFDAnchoredMove(t *testing.T) {
-	dir := tu.SafeTempDir(t)
-	srcPath := filepath.Join(dir, "src.txt")
-	dstPath := filepath.Join(dir, "dst.txt")
-	content := []byte("full pipeline content")
-	require.NoError(t, os.WriteFile(srcPath, content, 0o644))
+	for _, route := range openRoutes {
+		t.Run(route.name, func(t *testing.T) {
+			dir := tu.SafeTempDir(t)
+			srcPath := filepath.Join(dir, "src.txt")
+			dstPath := filepath.Join(dir, "dst.txt")
+			content := []byte("full pipeline content")
+			require.NoError(t, os.WriteFile(srcPath, content, 0o644))
 
-	srcDev, srcIno := inodeOf(t, srcPath)
+			srcDev, srcIno := inodeOf(t, srcPath)
 
-	fs := NewFileSystem(FileSystemConfig{})
-	require.NoError(t, fs.AtomicMoveFile(srcPath, dstPath, 0o644))
+			fs := newFileSystemForRoute(t, route)
+			require.NoError(t, fs.AtomicMoveFile(srcPath, dstPath, 0o644))
 
-	got, err := os.ReadFile(dstPath)
-	require.NoError(t, err)
-	assert.Equal(t, content, got)
+			got, err := os.ReadFile(dstPath)
+			require.NoError(t, err)
+			assert.Equal(t, content, got)
 
-	dstDev, dstIno := inodeOf(t, dstPath)
-	assert.Equal(t, srcDev, dstDev)
-	assert.Equal(t, srcIno, dstIno, "destination must be the same inode fchmod/validation ran against")
+			dstDev, dstIno := inodeOf(t, dstPath)
+			assert.Equal(t, srcDev, dstDev)
+			assert.Equal(t, srcIno, dstIno, "destination must be the same inode fchmod/validation ran against")
 
-	_, err = os.Stat(srcPath)
-	assert.True(t, os.IsNotExist(err), "source path should be removed after a successful move")
+			_, err = os.Stat(srcPath)
+			assert.True(t, os.IsNotExist(err), "source path should be removed after a successful move")
+		})
+	}
+}
+
+// TestAtomicMoveFile_MovesIntoUnreadableDirectory pins the permission a
+// directory fd costs. The path-based code this replaced only ever needed search
+// permission on the parent directories, so a write-only drop directory worked;
+// anchoring the move to an fd must not quietly turn that into a read
+// requirement. On Linux that is what O_PATH buys.
+func TestAtomicMoveFile_MovesIntoUnreadableDirectory(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses directory permission checks, so this cannot fail here")
+	}
+
+	for _, route := range openRoutes {
+		t.Run(route.name, func(t *testing.T) {
+			dir := tu.SafeTempDir(t)
+			srcPath := filepath.Join(dir, "src.txt")
+			content := []byte("dropped content")
+			require.NoError(t, os.WriteFile(srcPath, content, 0o600))
+
+			// Write and search, no read: entries can be created and looked up by
+			// name, but the directory cannot be listed or opened for reading.
+			dropDir := filepath.Join(dir, "drop")
+			require.NoError(t, os.Mkdir(dropDir, 0o700))
+			require.NoError(t, os.Chmod(dropDir, 0o300))
+			t.Cleanup(func() { _ = os.Chmod(dropDir, 0o700) })
+
+			fs := newFileSystemForRoute(t, route)
+			dstPath := filepath.Join(dropDir, "dst.txt")
+			require.NoError(t, fs.AtomicMoveFile(srcPath, dstPath, 0o600))
+
+			// Reading back needs the permission the move did not: restore it
+			// first, so this assertion cannot be confused with the one above.
+			require.NoError(t, os.Chmod(dropDir, 0o700))
+			got, err := os.ReadFile(dstPath)
+			require.NoError(t, err)
+			assert.Equal(t, content, got)
+		})
+	}
 }
 
 // TestMoveFileAnchored_UnlinkSourceFailureReturnsErrorAfterSuccessfulRename
@@ -253,8 +301,10 @@ func TestLinkFileToTempName_RetriesOnNameCollision(t *testing.T) {
 	assert.Equal(t, 2, call, "expected exactly one retry after the collision")
 	assert.Equal(t, []string{tempLinkNamePrefix, tempLinkNamePrefix}, gotPrefixes)
 
-	// Clean up the created hard link.
-	_ = os.Remove(filepath.Join(dir, tmpName))
+	// Removing it also asserts where it was created: the link must be an entry
+	// of the directory the fd names, which is the whole point of passing a
+	// directory fd rather than a path.
+	require.NoError(t, os.Remove(filepath.Join(dir, tmpName)))
 }
 
 // TestLinkFileToTempName_ExhaustsAttempts verifies that persistent name

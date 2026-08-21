@@ -868,6 +868,100 @@ func TestResolvedPathModeEnforcement(t *testing.T) {
 	})
 }
 
+// TestValidateOpenAtName covers the guard every directory-fd-anchored operation
+// depends on. Anything but a single component either escapes the directory the
+// caller checked or, when absolute, makes the *at call ignore the fd entirely.
+func TestValidateOpenAtName(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "plain name", input: "file.txt"},
+		{name: "dotfile", input: ".safefileio-move-abc"},
+		{name: "empty", input: "", wantErr: true},
+		{name: "dot", input: ".", wantErr: true},
+		{name: "dotdot", input: "..", wantErr: true},
+		{name: "root", input: "/", wantErr: true},
+		{name: "double slash", input: "//", wantErr: true},
+		{name: "absolute path", input: "/etc/passwd", wantErr: true},
+		{name: "relative path", input: "sub/file.txt", wantErr: true},
+		{name: "parent traversal", input: "../file.txt", wantErr: true},
+		{name: "trailing separator", input: "sub/", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateOpenAtName(tt.input)
+			if tt.wantErr {
+				assert.ErrorIs(t, err, ErrInvalidFilePath)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
+}
+
+// TestVerifySameFileAt covers the check that stands between a name and the
+// operation about to be applied to it -- on Linux the removal of the source
+// after a move, and on other platforms the rename itself, which is the only
+// thing keeping a substituted source from being moved there.
+func TestVerifySameFileAt(t *testing.T) {
+	setup := func(t *testing.T) (dirFd int, file File, dir string) {
+		t.Helper()
+		dir = tu.SafeTempDir(t)
+		path := filepath.Join(dir, "target.txt")
+		require.NoError(t, os.WriteFile(path, []byte("content"), 0o600))
+
+		fs := NewFileSystem(FileSystemConfig{})
+		file, err := fs.SafeOpenFile(path, os.O_RDONLY, 0)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = file.Close() })
+
+		return dirFdForTest(t, fs, dir), file, dir
+	}
+
+	t.Run("accepts the entry the fd was opened from", func(t *testing.T) {
+		dirFd, file, _ := setup(t)
+		assert.NoError(t, verifySameFileAt(file, dirFd, "target.txt"))
+	})
+
+	t.Run("rejects an entry replaced by another file", func(t *testing.T) {
+		dirFd, file, dir := setup(t)
+		path := filepath.Join(dir, "target.txt")
+		require.NoError(t, os.Remove(path))
+		require.NoError(t, os.WriteFile(path, []byte("replacement"), 0o600))
+
+		assert.ErrorIs(t, verifySameFileAt(file, dirFd, "target.txt"), ErrSourceIdentityMismatch)
+	})
+
+	t.Run("rejects an entry replaced by a symlink to it", func(t *testing.T) {
+		dirFd, file, dir := setup(t)
+		path := filepath.Join(dir, "target.txt")
+		moved := filepath.Join(dir, "moved.txt")
+		require.NoError(t, os.Rename(path, moved))
+		// The symlink resolves to the very inode the fd holds, so only a stat
+		// that refuses to follow it reports a mismatch.
+		require.NoError(t, os.Symlink(moved, path))
+
+		assert.ErrorIs(t, verifySameFileAt(file, dirFd, "target.txt"), ErrSourceIdentityMismatch)
+	})
+
+	t.Run("rejects an entry that is not a plain name", func(t *testing.T) {
+		dirFd, file, _ := setup(t)
+		assert.ErrorIs(t, verifySameFileAt(file, dirFd, "sub/target.txt"), ErrInvalidFilePath)
+	})
+
+	t.Run("reports a missing entry as an error, not a match", func(t *testing.T) {
+		dirFd, file, dir := setup(t)
+		require.NoError(t, os.Remove(filepath.Join(dir, "target.txt")))
+
+		err := verifySameFileAt(file, dirFd, "target.txt")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, os.ErrNotExist)
+	})
+}
+
 // allowOSManagedSymlink adds path to the OS-managed symlink allowlist for the
 // duration of the test.
 //

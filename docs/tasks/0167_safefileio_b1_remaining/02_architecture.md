@@ -317,6 +317,13 @@ var (
 | `openDirNoSymlinks` | ディレクトリをシンボリックリンクを辿らずに開いて fd を返す。openat2 が使える場合は `openat2(AT_FDCWD, dir, O_DIRECTORY, RESOLVE_NO_SYMLINKS)` の 1 回の呼び出しで済み、パスの走査そのものが無い。それ以外では `ensureDirNoSymlinks` で構成要素を確認し、**そこで返る解決済みのパス**を `O_DIRECTORY` と `O_NOFOLLOW` で開く |
 | `openFileAt` | 開いたディレクトリ fd を起点に、単一のファイル名でファイルを開く。openat2 経路では `openat2(dirfd, name, …)`、フォールバック経路では `unix.Openat(dirfd, name, …, O_NOFOLLOW)` を使う |
 
+**ディレクトリ fd を開くときのアクセスモードは Linux では `O_PATH` とする。** `O_RDONLY` で開くと、以降の
+`openat`／`renameat`／`linkat`／`unlinkat`／`fstatat` には要らない**読み取り権限**をディレクトリに要求する
+ことになり、書き込みと検索だけを許す投函用ディレクトリ（`0o733` など）への移動が、本タスクの前は通っていた
+のに拒否されるようになる。`O_PATH` は中身へのアクセスを一切求めないため、パス名で操作していたときと同じ
+権限で足りる。非 Linux には `O_PATH` に相当する手段が無いので `O_RDONLY` のままとし、読み取り権限を要する
+制限が残る（非 Linux は開発・限定用途に限るという F-2 と同じ判断による）。
+
 どちらの経路を採るかは `osFS.openat2Available` にしか無いため、この 2 つは `*osFS` のメソッドとして実装し、フォールバック版だけを自由関数（`openDirNoSymlinksFallback`・`openFileAtFallback`）として共通ファイルに置く。これに伴い `atomicMoveFileCore` は `FileSystem` ではなく `*osFS` を受け取る（呼び出し元は `(*osFS).AtomicMoveFile` の 1 か所だけであり、モックは渡らない）。単一の構成要素であることの確認は `validateOpenAtName` に 1 か所化し、ディレクトリ fd 相対に名前を扱うすべての関数（`openFileAt`・`verifySameFileAt`・`moveFileAnchored`・`linkFileToTempName`）が自分で呼ぶ。
 
 `openFileAt` は、両経路とも既存の `SafeOpenFile` と同じ sentinel エラーへ対応付ける。`ELOOP`（フォールバック経路では `isNoFollowError` が判定するもの）は `ErrIsSymlink`、`EEXIST` は `ErrFileExists`、`ENOENT` は `os.ErrNotExist` である。§ 3.6.2 の分岐はこの対応付けに依存する。
@@ -502,7 +509,7 @@ classDiagram
 
 | ファイル | 区分 | 責務と変更内容 |
 |---|---|---|
-| `internal/safefileio/safe_file.go` | 変更 | `ErrDestinationCommitted` を `rename` 到達後の失敗に付ける（`moveOpenFileCore` が担う。移動そのものの成否は `moveFileAnchored` から返る）。`FileSystem` から `Remove` を削除。`File` に `Sync` を追加。`SafeOpenFile` に `validateOpenPerm` の呼び出しを追加。`atomicMoveFileCore` から `moveOpenFileCore` を分割し、検証と fchmod の順序を入れ替え、宛先の権限方針の検査を `rename` より前へ移す。`safeWriteFileCommon` を一時ファイル方式へ変更。`safeOpenFileFallback` に作成プローブと後始末を追加。`verifySameFile` をここへ移動し引数を `File` に一般化。`ensureParentDirsNoSymlinks` から `ensureDirNoSymlinks` を切り出す。`openDirNoSymlinks`・`openFileAt`・`removeVerifiedFileByPath`・`removeVerifiedFileAt`・`createTempFileInDir`・`randomTempName`（接頭辞対応）・`validateOpenPerm`・`maxTempNameAttempts` を追加。移動後の宛先検証をパス名での開き直しから `verifySameFile` による同一性確認へ変更。`AtomicMoveFile`・`SafeWriteFileOverwrite`・`SafeReadFile`・`canSafelyReadFromFile` および package コメントに契約を追記 |
+| `internal/safefileio/safe_file.go` | 変更 | `ErrDestinationCommitted` を `rename` 到達後の失敗に付ける（`moveOpenFileCore` が担う。移動そのものの成否は `moveFileAnchored` から返る）。`FileSystem` から `Remove` を削除。`File` に `Sync` を追加。`SafeOpenFile` に `validateOpenPerm` の呼び出しを追加。`atomicMoveFileCore` から `moveOpenFileCore` を分割し、検証と fchmod の順序を入れ替え、宛先の権限方針の検査を `rename` より前へ移す。`safeWriteFileCommon` を一時ファイル方式へ変更。`safeOpenFileFallback` に作成プローブと後始末を追加。`verifySameFile` をここへ移動し引数を `File` に一般化。`ensureParentDirsNoSymlinks` から `ensureDirNoSymlinks` を切り出す。`openDirNoSymlinksFallback`・`openFileAtFallback`・`removeVerifiedFileByPath`・`removeVerifiedFileAt`・`createTempFileInDir`・`randomTempName`（接頭辞対応）・`validateOpenPerm`・`maxTempNameAttempts` を追加。併せて経路をまたいで共有する補助を追加する（`verifySameFileAt`・`fdStatOf`・`compareInode`・`validateOpenAtName`・`openPermBits`・`mapOpenErrno`・`mapDirOpenErrno`・`mapRenameErrno`・`closeDirFd`）。`openDirNoSymlinks`・`openFileAt` 自体は経路の選択を持つため `*osFS` のメソッドとしてプラットフォーム別ファイルに置く。移動後の宛先検証をパス名での開き直しから `verifySameFile` による同一性確認へ変更。`AtomicMoveFile`・`SafeWriteFileOverwrite`・`SafeReadFile`・`canSafelyReadFromFile` および package コメントに契約を追記 |
 | `internal/safefileio/safe_file_linux.go` | 変更 | `openat2` を `EINTR` 再試行ラッパにし、システムコール発行を `rawOpenat2` へ切り出して差し替え点 `openat2Syscall`（ビルドタグで排他的に定義する 2 ファイル方式）経由で呼ぶ。`openat2Mode` を追加し `safeOpenFileInternal` から使う。`moveFileAnchored` をディレクトリ fd と名前を受け取る形へ変え、`linkat` と `rename` を宛先ディレクトリ fd 相対に、`unlinkat` を移動元ディレクトリ fd 相対にする（§ 3.4.5）。`verifySameFile` も `fstatat` によるディレクトリ fd 相対の参照に対応させる。`openDirNoSymlinks`・`openFileAt` の openat2 版を実装する。`rename` 到達後の失敗に `ErrDestinationCommitted` を付ける。`verifySameFile`・`randomTempName`・`maxLinkatAttempts` の移動と改名に伴う参照の更新 |
 | `internal/safefileio/safe_file_nonlinux.go` | 変更 | package コメントのフォールバック経路の限界に関する記述を共通の表現に揃える。`moveFileAnchored` を `unix.Renameat` によるディレクトリ fd 相対の移動へ変え、直前に `fstatat` で同一性を確認する（§ 3.4.5）。`openDirNoSymlinks`・`openFileAt` のフォールバック版を実装する |
 | `internal/safefileio/overrides_linux.go` | 新規 | 本番ビルド（`//go:build linux && !test`）の `openat2Syscall`。`rawOpenat2` を直接呼ぶだけの関数で、差し替え可能な値を持たない |
