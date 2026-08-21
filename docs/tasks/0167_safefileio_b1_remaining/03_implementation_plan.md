@@ -467,7 +467,7 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 **判定理由**: 2-2 が失敗時の復旧処理（fd の Close・作成済みファイルの削除・同一性不一致時の保持）そのものであり、`mkplan2.md` step 4 の「isolated high-risk/complex step（recovery flows）」に該当する。作成プローブが `internal/runner/bootstrap/logger.go` へ `ENOENT` を新たに返しうる点（§ 5 の R-1〜R-7 のうち R-5）は「拒否の追加と削除の同時実施」に見えるが、この変化はフォールバック経路にのみ生じ、本番ターゲット（Linux 5.6+）では `openat2` 経路が使われてプローブが動かないため、`frontier-required` のトリガとしては数えない。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（[#1051](https://github.com/isseis/go-safe-cmd-runner/pull/1051)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
