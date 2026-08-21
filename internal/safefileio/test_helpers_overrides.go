@@ -42,3 +42,22 @@ var ensureParentDirsAfterOpenOverride = ensureParentDirsNoSymlinks
 func ensureParentDirsAfterOpen(absPath string) error {
 	return ensureParentDirsAfterOpenOverride(absPath)
 }
+
+// ensureDirAfterOpenOverride is the test override for the second directory
+// check of openDirNoSymlinksFallback. Like the one above, it reaches a branch a
+// test cannot otherwise produce: the two checks run over the same path, so
+// acting between them -- failing the second, or replacing the directory the fd
+// already holds -- requires a hook at that point and nowhere else.
+//
+// It lives here, not next to the production definition, so that the production
+// build keeps no swappable function value; see overrides.go.
+//
+// Like linkatFunc, it is shared package-wide, so tests must not call
+// t.Parallel() and must restore it with t.Cleanup.
+var ensureDirAfterOpenOverride = ensureDirNoSymlinks
+
+// ensureDirAfterOpen runs the second directory check of
+// openDirNoSymlinksFallback, via the test override above.
+func ensureDirAfterOpen(dir string) (string, error) {
+	return ensureDirAfterOpenOverride(dir)
+}

@@ -445,6 +445,31 @@ func TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails(t *testing.T) {
 	}
 }
 
+// TestOpenDirNoSymlinksFallback_ClosesFDWhenPostCheckFails is the directory
+// counterpart of the test above, and lives here for the same reason: it observes
+// descriptors through /proc/self/fd, while the function it covers is portable
+// and is reached here by calling it directly.
+//
+// A directory fd that outlived its failed check would be worse than a leak. The
+// move path anchors renameat and openat to it, so a descriptor handed on after
+// the check said the directory had changed would defeat the check entirely.
+func TestOpenDirNoSymlinksFallback_ClosesFDWhenPostCheckFails(t *testing.T) {
+	parent := tu.SafeTempDir(t)
+	dir := filepath.Join(parent, "target")
+	require.NoError(t, os.Mkdir(dir, 0o750))
+
+	before := openFDTargetsUnder(t, parent)
+
+	stubEnsureDirAfterOpen(t, func(string) (string, error) { return "", errPostCheckFailed })
+
+	fd, err := openDirNoSymlinksFallback(dir)
+	require.ErrorIs(t, err, errPostCheckFailed)
+	assert.Equal(t, -1, fd, "no descriptor may be returned alongside an error")
+
+	assert.Equal(t, before, openFDTargetsUnder(t, parent),
+		"the directory descriptor opened before the failed check must not be left open")
+}
+
 type openat2SyscallFunc func(dirfd int, pathname string, how *openHow) (int, error)
 
 // stubOpenat2 installs an openat2 stub for the duration of the test. The stub

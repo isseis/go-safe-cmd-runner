@@ -27,3 +27,15 @@ func isAllowedOSManagedSymlink(path string) bool {
 func ensureParentDirsAfterOpen(absPath string) error {
 	return ensureParentDirsNoSymlinks(absPath)
 }
+
+// ensureDirAfterOpen runs the second directory check of
+// openDirNoSymlinksFallback, the one that detects a component swapped in while
+// the directory was being opened.
+//
+// This file and test_helpers_overrides.go define ensureDirAfterOpen exclusively
+// by build tag, for the reason given above: this check is what makes the
+// fallback directory open symlink-safe, so nothing outside a test build may
+// redirect it.
+func ensureDirAfterOpen(dir string) (string, error) {
+	return ensureDirNoSymlinks(dir)
+}

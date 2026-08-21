@@ -45,6 +45,13 @@ var (
 	// the path itself rather than with the type of the file handle.
 	ErrUnsupportedFileHandle = errors.New("unsupported file handle type")
 
+	// ErrDirChangedDuringOpen indicates that a directory passed the symlink
+	// walk, but the directory the subsequent open landed on is no longer the
+	// one that walk verified. It is the signature of a component being
+	// replaced between the two steps, which is the window the fallback route
+	// cannot close by construction; see verifyDirAfterOpen.
+	ErrDirChangedDuringOpen = errors.New("directory changed while it was being opened")
+
 	// ErrSourceIdentityMismatch indicates that the directory entry at a source
 	// path no longer refers to the inode that was previously verified (e.g. an
 	// fd was opened and validated, then the path was replaced before a later

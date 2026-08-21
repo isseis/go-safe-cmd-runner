@@ -1048,6 +1048,89 @@ func TestOpenDirNoSymlinksFallback_OpensResolvedPath(t *testing.T) {
 	assert.Equal(t, realStat.Dev, fdStat.Dev)
 }
 
+// stubEnsureDirAfterOpen replaces the second directory check for the duration of
+// the test. Only that second call goes through the override, so the walk and the
+// open that precede it still run unmodified against the real path.
+func stubEnsureDirAfterOpen(t *testing.T, stub func(dir string) (string, error)) {
+	t.Helper()
+	orig := ensureDirAfterOpenOverride
+	t.Cleanup(func() { ensureDirAfterOpenOverride = orig })
+	ensureDirAfterOpenOverride = stub
+}
+
+// TestOpenDirNoSymlinksFallback_AbandonsOpenWhenDirChanges covers the second
+// phase of the fallback directory open, which is what keeps this route as
+// symlink-safe as the file open next to it: the walk and the open are separate
+// system calls, and unix.Open refuses a symlink only at the leaf, so a component
+// replaced in between is invisible to everything else here.
+//
+// The three subtests are the three ways that shows up: the re-walk refuses the
+// path, the re-walk resolves it somewhere else, and the re-walk is perfectly
+// happy because the directory was replaced by another real directory -- which
+// only the inode comparison can see.
+func TestOpenDirNoSymlinksFallback_AbandonsOpenWhenDirChanges(t *testing.T) {
+	t.Run("second walk rejects the path", func(t *testing.T) {
+		dir := tu.SafeTempDir(t)
+		recorder := captureWarnings(t)
+
+		stubEnsureDirAfterOpen(t, func(string) (string, error) { return "", errPostCheckFailed })
+
+		fd, err := openDirNoSymlinksFallback(dir)
+		require.ErrorIs(t, err, errPostCheckFailed)
+		assert.Equal(t, -1, fd)
+
+		record := recorder.RequireRecord(t, slog.LevelWarn, dirPostOpenCheckFailedMsg)
+		record.AssertAttrs(t, map[string]any{"dir": dir})
+	})
+
+	t.Run("second walk resolves elsewhere", func(t *testing.T) {
+		tmpDir := tu.SafeTempDir(t)
+		dir := filepath.Join(tmpDir, "target")
+		elsewhere := filepath.Join(tmpDir, "elsewhere")
+		require.NoError(t, os.Mkdir(dir, 0o750))
+		require.NoError(t, os.Mkdir(elsewhere, 0o750))
+
+		// A component of dir turned into an allowlisted symlink after the first
+		// walk: the path is still accepted, but it now leads somewhere else.
+		stubEnsureDirAfterOpen(t, func(string) (string, error) { return elsewhere, nil })
+
+		fd, err := openDirNoSymlinksFallback(dir)
+		require.ErrorIs(t, err, ErrDirChangedDuringOpen)
+		assert.Equal(t, -1, fd)
+	})
+
+	t.Run("directory replaced by another directory", func(t *testing.T) {
+		tmpDir := tu.SafeTempDir(t)
+		dir := filepath.Join(tmpDir, "target")
+		attacker := filepath.Join(tmpDir, "attacker")
+		require.NoError(t, os.Mkdir(dir, 0o750))
+		require.NoError(t, os.Mkdir(attacker, 0o750))
+
+		// Swap a different real directory into the path between the open and the
+		// check, then run the genuine walk over it. No symlink is involved at any
+		// point, so the walk has nothing to report and the path it returns is
+		// unchanged: the mismatch is only visible in the inode.
+		var walkResult string
+		var walkErr error
+		stubEnsureDirAfterOpen(t, func(d string) (string, error) {
+			require.NoError(t, os.Rename(dir, filepath.Join(tmpDir, "displaced")))
+			require.NoError(t, os.Rename(attacker, dir))
+			walkResult, walkErr = ensureDirNoSymlinks(d)
+			return walkResult, walkErr
+		})
+
+		fd, err := openDirNoSymlinksFallback(dir)
+		require.ErrorIs(t, err, ErrDirChangedDuringOpen)
+		assert.Equal(t, -1, fd)
+
+		// The negative control for the assertion above: the walk alone accepted
+		// the swapped-in directory, so the failure came from the inode comparison
+		// and from nothing else.
+		require.NoError(t, walkErr)
+		assert.Equal(t, dir, walkResult)
+	})
+}
+
 // TestAtomicMoveFile_WritesUnderOSManagedSymlink is the same obligation seen
 // from the public API, on a real OS-managed symlink rather than an allowlisted
 // stand-in. It runs only where /tmp is one, which is decided by asking the

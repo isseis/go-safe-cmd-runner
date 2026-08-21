@@ -369,9 +369,12 @@ func ensureDirNoSymlinks(dir string) (string, error) {
 // would reject.
 //
 // The check and the open are two steps, so a component can still be replaced in
-// between; see the design document's residual-risk table. Everything done
-// relative to the returned fd is free of that window, the parent being pinned to
-// an inode from here on.
+// between; see the design document's residual-risk table. That window cannot be
+// closed without openat2, but it can be detected: verifyDirAfterOpen re-runs the
+// walk once the fd is held and abandons the open when the directory it landed on
+// is not the one the first walk verified. This is the same two-phase shape
+// safeOpenFileFallback uses for a file. Everything done relative to a returned
+// fd is free of the window, the parent being pinned to an inode from here on.
 func openDirNoSymlinksFallback(dir string) (int, error) {
 	resolvedDir, err := ensureDirNoSymlinks(dir)
 	if err != nil {
@@ -382,7 +385,53 @@ func openDirNoSymlinksFallback(dir string) (int, error) {
 	if err != nil {
 		return -1, fmt.Errorf("failed to open directory %s: %w", resolvedDir, mapDirOpenErrno(err, resolvedDir))
 	}
+
+	if err := verifyDirAfterOpen(fd, dir, resolvedDir); err != nil {
+		// Recorded independently of how the close below turns out: a component
+		// of the path changed while the directory was being opened, which is the
+		// signature of an attack in progress.
+		slog.Warn(dirPostOpenCheckFailedMsg,
+			slog.String("dir", dir),
+			slog.Any("error", err))
+		closeDirFd(fd, resolvedDir)
+		return -1, err
+	}
 	return fd, nil
+}
+
+// dirPostOpenCheckFailedMsg marks the event that must be recorded whenever the
+// second directory check fails, whether or not the close that follows succeeds.
+const dirPostOpenCheckFailedMsg = "directory check failed after opening it; abandoning the open"
+
+// verifyDirAfterOpen is the second phase of openDirNoSymlinksFallback: it
+// confirms that the directory fd refers to what the first walk verified.
+//
+// Two things must hold. The walk must still find no symlink and resolve dir to
+// the same path -- an intermediate component turned into a symlink is followed
+// by unix.Open, which only refuses one at the leaf, so nothing else would notice
+// it. And that path must still name the inode the fd holds, since the entry
+// could have been replaced by another real directory, which no walk can see.
+func verifyDirAfterOpen(fd int, dir, resolvedDir string) error {
+	recheckedDir, err := ensureDirAfterOpen(dir)
+	if err != nil {
+		return err
+	}
+	if recheckedDir != resolvedDir {
+		return fmt.Errorf("%w: %s resolved to %s, now to %s", ErrDirChangedDuringOpen, dir, resolvedDir, recheckedDir)
+	}
+
+	var fdStat unix.Stat_t
+	if err := unix.Fstat(fd, &fdStat); err != nil {
+		return fmt.Errorf("failed to fstat directory file descriptor for %s: %w", resolvedDir, err)
+	}
+	var pathStat unix.Stat_t
+	if err := unix.Lstat(resolvedDir, &pathStat); err != nil {
+		return fmt.Errorf("failed to lstat %s: %w", resolvedDir, err)
+	}
+	if fdStat.Dev != pathStat.Dev || fdStat.Ino != pathStat.Ino {
+		return fmt.Errorf("%w: %s no longer refers to the opened directory", ErrDirChangedDuringOpen, resolvedDir)
+	}
+	return nil
 }
 
 // mapDirOpenErrno is mapOpenErrno for a directory open. O_DIRECTORY changes what
