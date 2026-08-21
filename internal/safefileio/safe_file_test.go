@@ -58,8 +58,6 @@ func newFileSystemForRoute(t *testing.T, route openRoute) FileSystem {
 	return fs
 }
 
-// dirFdForTest opens dir as a directory fd through the same primitive the
-// production paths use, and releases it when the test ends.
 func dirFdForTest(t *testing.T, fs FileSystem, dir string) int {
 	t.Helper()
 	osfs, ok := fs.(*osFS)

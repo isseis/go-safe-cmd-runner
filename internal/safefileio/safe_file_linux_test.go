@@ -446,7 +446,6 @@ func TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails(t *testing.T) {
 	}
 }
 
-// assertCloseOnExec fails unless the descriptor carries FD_CLOEXEC.
 func assertCloseOnExec(t *testing.T, fd int, what string) {
 	t.Helper()
 	flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)

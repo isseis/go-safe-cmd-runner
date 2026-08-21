@@ -880,7 +880,6 @@ func safeOpenFileFallback(absPath string, flag int, perm os.FileMode) (*os.File,
 		return nil, err
 	}
 
-	// Detect symlink attack after ensureParentDirNoSymlinks call above.
 	if err := ensureParentDirsAfterOpen(absPath); err != nil {
 		slog.Warn(postOpenCheckFailedMsg,
 			slog.String("path", absPath),
