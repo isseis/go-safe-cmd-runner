@@ -70,20 +70,36 @@ func isOpenat2Available() bool {
 	return err == nil
 }
 
+// mayCreateFile reports whether an open with these flags can bring a new inode
+// into existence, which is exactly when open(2) reads the mode argument.
+//
+// O_TMPFILE must be tested for equality, not for a non-zero intersection: the
+// constant is a bit pattern that includes O_DIRECTORY, so a plain directory
+// open would match an intersection test and be misread as creating.
+func mayCreateFile(flag int) bool {
+	return flag&os.O_CREATE != 0 || flag&unix.O_TMPFILE == unix.O_TMPFILE
+}
+
 // openat2Mode returns the value to place in openHow.mode for the given open
 // flags. Contract: the mode is zero unless the call may create a file, and
 // otherwise carries exactly the nine POSIX permission bits of perm.
 //
-// open(2) only defines mode for calls that can create a file, and openat2(2)
-// enforces that by returning EINVAL when mode is non-zero without O_CREAT or
-// O_TMPFILE. os.OpenFile, which the fallback path uses, ignores the mode in
-// the same situation, so zeroing it here is what makes the two paths agree.
+// open(2) reads the mode only for a call that can create a file, and openat2(2)
+// enforces that by returning EINVAL when mode is non-zero and neither O_CREAT
+// nor O_TMPFILE is set. On the fallback path os.OpenFile always hands the mode
+// to the kernel, which then ignores it in that same situation, so zeroing it
+// here is what makes the two paths agree on a non-creating open.
+//
+// The converse matters just as much: for a creating open the kernel does apply
+// the mode, O_TMPFILE included. Zeroing it for O_TMPFILE would not raise EINVAL
+// -- it would quietly create a mode 0000 file while the fallback path created
+// one with perm, reintroducing the very divergence this function exists to
+// remove. Verified against Linux 6.12.
+//
 // Callers have already passed validateOpenPerm, so nothing outside os.ModePerm
-// can reach this point and the conversion is a plain copy. O_TMPFILE is not
-// used anywhere in this repository; should that change, the kernel surfaces it
-// as EINVAL rather than silently creating a file with mode 0.
+// can reach this point and the conversion is a plain copy.
 func openat2Mode(flag int, perm os.FileMode) uint64 {
-	if flag&os.O_CREATE == 0 {
+	if !mayCreateFile(flag) {
 		return 0
 	}
 	return uint64(perm.Perm())
@@ -322,8 +338,9 @@ func (fs *osFS) safeOpenFileInternal(absPath string, flag int, perm os.FileMode)
 
 	fd, err := openat2(AtFdcwd, absPath, &how)
 	if err != nil {
-		// Check for specific errors
-		if errno, ok := err.(syscall.Errno); ok {
+		// Check for specific errors. Unwrap rather than type-assert, so the
+		// mapping stays correct for any error the retry wrapper hands back.
+		if errno, ok := errors.AsType[syscall.Errno](err); ok {
 			switch errno {
 			case syscall.ELOOP:
 				return nil, ErrIsSymlink

@@ -203,7 +203,9 @@
 | `ensureParentDirsAfterOpen`・`verifyMovedFile` | `internal/safefileio/overrides.go`（`//go:build !test`） | `internal/safefileio/test_helpers_overrides.go`（`//go:build test`） |
 | `openat2Syscall` | `internal/safefileio/overrides_linux.go`（`//go:build !test`） | `internal/safefileio/test_helpers_overrides_linux.go`（`//go:build test`） |
 
-`_linux.go` の接尾辞が GOOS を表すため、Linux 用の 2 ファイルのビルドタグに `linux` を書く必要はない。
+`_linux.go` の接尾辞が GOOS を表すため、Linux 用の 2 ファイルのビルドタグに `linux` を書く必要はない。ただし同じ
+パッケージの `safe_file_linux.go` が冗長に `//go:build linux` を書いており、実装ではそれに合わせて
+`//go:build linux && !test`・`//go:build linux && test` と書いた（Phase 1 の step 1-2 の記述どおり）。
 
 doc コメントは両側に置き、本番側には「本番ビルドには差し替えられる値を置かない」理由を、テスト側には
 差し替え点の用途と、このパッケージのテストが `t.Parallel()` を使えない理由を、いずれも英語で書く
@@ -263,8 +265,11 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 - [x] `osFS.SafeOpenFile`（`safe_file.go:86-93`）の `filepath.Abs` の直後、`safeOpenFileInternal` を呼ぶ前に
       `validateOpenPerm` の呼び出しを足す。Phase 4a・4b で書き込み・移動の経路が `SafeOpenFile` を通らなくなる
       ため、それらの入口にも同じ検査を足す（Phase 4-3 の該当ステップ）。
-- [x] `safe_file_linux.go` に `openat2Mode(flag int, perm os.FileMode) uint64` を追加する。`flag&os.O_CREATE`
-      が 0 なら 0 を、そうでなければ `uint64(perm.Perm())` を返す。
+- [x] `safe_file_linux.go` に `openat2Mode(flag int, perm os.FileMode) uint64` を追加する。ファイルを作りうる
+      呼び出し（`O_CREATE` または `O_TMPFILE`）でのみ `uint64(perm.Perm())` を返し、それ以外では 0 を返す。
+      判定は補助関数 `mayCreateFile(flag int) bool` に置く。`O_TMPFILE` を含めるのは実装時の訂正であり、
+      根拠は [02_architecture.md](02_architecture.md) § 3.1 に記録した（`O_TMPFILE` で mode 0 は `EINVAL`
+      にならず、権限 `0000` のファイルが黙って作られる）。
 - [x] `safeOpenFileInternal`（`safe_file_linux.go:275-280`）の `mode: uint64(perm)` を
       `mode: openat2Mode(flag, perm)` に置き換える。
 #### 1-2. `openat2` の `EINTR` 再試行と差し替え点の新設

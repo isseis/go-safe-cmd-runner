@@ -300,48 +300,53 @@ func TestLinkFileToTempName_NonEEXISTErrorIsNotRetried(t *testing.T) {
 	assert.Equal(t, 1, calls, "a non-EEXIST linkat error must not be retried")
 }
 
-// newOpenat2FileSystem builds a FileSystem on the openat2 route, or skips.
-// It must be called before installing an openat2SyscallOverride: NewFileSystem
-// probes availability by issuing a real openat2, which would otherwise consume
-// one stubbed call.
-func newOpenat2FileSystem(t *testing.T) FileSystem {
+// openat2SyscallFunc is the shape of the raw openat2 system call, used to type
+// the test stubs installed below.
+type openat2SyscallFunc func(dirfd int, pathname string, how *openHow) (int, error)
+
+// stubOpenat2 installs an openat2 stub and restores the previous value when
+// the test ends. It returns the value it displaced so a stub can delegate the
+// opens it does not care about to the real system call.
+func stubOpenat2(t *testing.T, stub func(realCall openat2SyscallFunc) openat2SyscallFunc) {
 	t.Helper()
-	fs := NewFileSystem(FileSystemConfig{})
-	osfs, ok := fs.(*osFS)
-	require.True(t, ok, "NewFileSystem must return *osFS")
-	if !osfs.IsOpenat2Available() {
-		t.Skip("openat2 is unavailable here, so the openat2 route cannot be exercised")
-	}
-	return fs
+	realCall := openat2SyscallFunc(openat2SyscallOverride)
+	t.Cleanup(func() { openat2SyscallOverride = realCall })
+	openat2SyscallOverride = stub(realCall)
 }
 
-// TestOpenat2_RetriesOnEINTR verifies that an EINTR from the kernel is retried
-// rather than surfaced to the caller. EINTR arrives from the Go runtime's
-// asynchronous preemption signal, which a test cannot provoke on demand, so
-// the raw system call is stubbed to produce it once.
+// TestOpenat2_RetriesOnEINTR verifies that EINTR from the kernel is retried
+// until the call goes through, rather than surfacing to the caller. EINTR
+// arrives from the Go runtime's asynchronous preemption signal, which a test
+// cannot provoke on demand, so the raw system call is stubbed to produce it.
+//
+// The stub returns EINTR more than once on purpose: a "retry exactly once"
+// implementation would satisfy a single-EINTR test while still leaking EINTR
+// under the repeated signals the unbounded loop exists to absorb.
 func TestOpenat2_RetriesOnEINTR(t *testing.T) {
+	const interruptions = 3
+
 	dir := tu.SafeTempDir(t)
 	filePath := filepath.Join(dir, "target.txt")
 	const content = "eintr-retry-content"
 	require.NoError(t, os.WriteFile(filePath, []byte(content), 0o600))
 
-	fs := newOpenat2FileSystem(t)
+	fs := newFileSystemForRoute(t, openRoutes[0])
 
 	calls := 0
-	realSyscall := openat2SyscallOverride
-	t.Cleanup(func() { openat2SyscallOverride = realSyscall })
-	openat2SyscallOverride = func(dirfd int, pathname string, how *openHow) (int, error) {
-		// Count only opens of the file under test: unrelated opens elsewhere
-		// in the process would make the expected call count unstable.
-		if pathname != filePath {
-			return realSyscall(dirfd, pathname, how)
+	stubOpenat2(t, func(realCall openat2SyscallFunc) openat2SyscallFunc {
+		return func(dirfd int, pathname string, how *openHow) (int, error) {
+			// Count only opens of the file under test: unrelated opens
+			// elsewhere in the process would make the count unstable.
+			if pathname != filePath {
+				return realCall(dirfd, pathname, how)
+			}
+			calls++
+			if calls <= interruptions {
+				return -1, syscall.EINTR
+			}
+			return realCall(dirfd, pathname, how)
 		}
-		calls++
-		if calls == 1 {
-			return -1, syscall.EINTR
-		}
-		return realSyscall(dirfd, pathname, how)
-	}
+	})
 
 	file, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
 	require.NoError(t, err, "EINTR must not reach the caller")
@@ -350,12 +355,12 @@ func TestOpenat2_RetriesOnEINTR(t *testing.T) {
 	got, err := io.ReadAll(file)
 	require.NoError(t, err)
 	assert.Equal(t, content, string(got))
-	assert.Equal(t, 2, calls, "expected exactly one retry after EINTR")
+	assert.Equal(t, interruptions+1, calls, "every EINTR must be retried, not just the first")
 }
 
 // TestOpenat2_NonEINTRErrnoMapping verifies that adding the EINTR retry left
-// the existing errno mapping intact: every other errno is still passed through
-// unchanged for safeOpenFileInternal to translate.
+// the existing errno mapping intact: every other errno is still translated to
+// the sentinel it was translated to before.
 func TestOpenat2_NonEINTRErrnoMapping(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -367,60 +372,105 @@ func TestOpenat2_NonEINTRErrnoMapping(t *testing.T) {
 		{name: "ENOENT", errno: syscall.ENOENT, want: os.ErrNotExist},
 	}
 
-	fs := newOpenat2FileSystem(t)
+	fs := newFileSystemForRoute(t, openRoutes[0])
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dir := tu.SafeTempDir(t)
-			filePath := filepath.Join(dir, "target.txt")
-			require.NoError(t, os.WriteFile(filePath, []byte("content"), 0o600))
+			// The target need not exist: the stub answers for it before the
+			// kernel is reached.
+			filePath := filepath.Join(tu.SafeTempDir(t), "target.txt")
 
-			realSyscall := openat2SyscallOverride
-			t.Cleanup(func() { openat2SyscallOverride = realSyscall })
-			openat2SyscallOverride = func(dirfd int, pathname string, how *openHow) (int, error) {
-				if pathname != filePath {
-					return realSyscall(dirfd, pathname, how)
+			calls := 0
+			stubOpenat2(t, func(realCall openat2SyscallFunc) openat2SyscallFunc {
+				return func(dirfd int, pathname string, how *openHow) (int, error) {
+					if pathname != filePath {
+						return realCall(dirfd, pathname, how)
+					}
+					calls++
+					return -1, tt.errno
 				}
-				return -1, tt.errno
-			}
+			})
 
 			_, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
 			require.Error(t, err)
 			assert.ErrorIs(t, err, tt.want)
+			assert.Equal(t, 1, calls, "an errno other than EINTR must not be retried")
 		})
 	}
 }
 
-// TestOpenat2_ReadOpenPassesZeroMode verifies the kernel-side half of the mode
-// contract by reading openHow.mode as it is handed to the system call: zero
-// unless the open may create a file.
-func TestOpenat2_ReadOpenPassesZeroMode(t *testing.T) {
+// TestOpenat2Mode pins the rule that decides openHow.mode. The O_DIRECTORY row
+// is the one a caller-level test cannot reach cheaply: O_TMPFILE's constant
+// includes O_DIRECTORY, so an intersection test rather than an equality test
+// would misread a plain directory open as creating and leak perm into a mode
+// the kernel would reject.
+func TestOpenat2Mode(t *testing.T) {
+	const perm = os.FileMode(0o640)
+
+	tests := []struct {
+		name string
+		flag int
+		want uint64
+	}{
+		{name: "read_only", flag: os.O_RDONLY, want: 0},
+		{name: "write_only_no_create", flag: os.O_WRONLY, want: 0},
+		{name: "directory", flag: os.O_RDONLY | unix.O_DIRECTORY, want: 0},
+		{name: "create", flag: os.O_CREATE | os.O_WRONLY, want: uint64(perm)},
+		{name: "create_excl", flag: os.O_CREATE | os.O_EXCL | os.O_WRONLY, want: uint64(perm)},
+		{name: "tmpfile", flag: unix.O_TMPFILE | os.O_RDWR, want: uint64(perm)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, openat2Mode(tt.flag, perm))
+		})
+	}
+}
+
+// TestOpenat2_PassesModeOnlyForCreatingOpens verifies the kernel-side half of
+// the mode contract by reading openHow.mode as it is handed to the system
+// call: zero unless the open may create a file.
+//
+// The O_TMPFILE row matters because the kernel does NOT reject a zero mode
+// there -- it creates a mode 0000 file -- so a wrong rule would diverge from
+// the fallback path silently rather than failing.
+func TestOpenat2_PassesModeOnlyForCreatingOpens(t *testing.T) {
+	const perm = os.FileMode(0o640)
+
 	dir := tu.SafeTempDir(t)
 	existingPath := filepath.Join(dir, "existing.txt")
 	require.NoError(t, os.WriteFile(existingPath, []byte("content"), 0o600))
 	createdPath := filepath.Join(dir, "created.txt")
 
-	fs := newOpenat2FileSystem(t)
+	fs := newFileSystemForRoute(t, openRoutes[0])
 
-	modes := map[string]uint64{}
-	realSyscall := openat2SyscallOverride
-	t.Cleanup(func() { openat2SyscallOverride = realSyscall })
-	openat2SyscallOverride = func(dirfd int, pathname string, how *openHow) (int, error) {
-		if pathname == existingPath || pathname == createdPath {
-			modes[pathname] = how.mode
+	modes := map[string][]uint64{}
+	stubOpenat2(t, func(realCall openat2SyscallFunc) openat2SyscallFunc {
+		return func(dirfd int, pathname string, how *openHow) (int, error) {
+			switch pathname {
+			case existingPath, createdPath, dir:
+				modes[pathname] = append(modes[pathname], how.mode)
+			}
+			return realCall(dirfd, pathname, how)
 		}
-		return realSyscall(dirfd, pathname, how)
-	}
+	})
 
-	readFile, err := fs.SafeOpenFile(existingPath, os.O_RDONLY, 0o644)
+	readFile, err := fs.SafeOpenFile(existingPath, os.O_RDONLY, perm)
 	require.NoError(t, err)
 	require.NoError(t, readFile.Close())
 
-	const createPerm = os.FileMode(0o640)
-	createdFile, err := fs.SafeOpenFile(createdPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, createPerm)
+	createdFile, err := fs.SafeOpenFile(createdPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, perm)
 	require.NoError(t, err)
 	require.NoError(t, createdFile.Close())
 
-	assert.Equal(t, uint64(0), modes[existingPath], "an open without O_CREATE must pass mode 0")
-	assert.Equal(t, uint64(createPerm.Perm()), modes[createdPath], "a creating open must pass the requested permission bits")
+	tmpFile, err := fs.SafeOpenFile(dir, unix.O_TMPFILE|os.O_RDWR, perm)
+	require.NoError(t, err)
+	require.NoError(t, tmpFile.Close())
+
+	// Assert the stub actually saw each open before asserting its mode: a
+	// missing key would otherwise read back as the zero value and let the
+	// "mode is 0" assertions pass without observing anything.
+	require.Equal(t, []uint64{0}, modes[existingPath], "an open without O_CREATE must pass mode 0")
+	require.Equal(t, []uint64{uint64(perm)}, modes[createdPath], "a creating open must pass the requested permission bits")
+	require.Equal(t, []uint64{uint64(perm)}, modes[dir], "an O_TMPFILE open creates a file and must pass the requested permission bits")
 }

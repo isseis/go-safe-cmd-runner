@@ -86,6 +86,22 @@ func TestSafeOpenFile_RejectsNonPermissionModeBits(t *testing.T) {
 	}
 }
 
+// TestSafeWriteFileOverwrite_RejectsNonPermissionModeBits verifies that the
+// public write entry point rejects the same mode bits SafeOpenFile does.
+//
+// It reaches validateOpenPerm through SafeOpenFile today, and the existing
+// ValidateRequestedPermissions cannot stand in for it: that check masks with
+// 0o7777, so os.ModeSetuid (1<<23) is invisible to it and 0o600 is all it
+// sees. This test therefore fails loudly if a later change reroutes the write
+// path around SafeOpenFile without carrying the check across.
+func TestSafeWriteFileOverwrite_RejectsNonPermissionModeBits(t *testing.T) {
+	filePath := filepath.Join(tu.SafeTempDir(t), "target.txt")
+
+	err := SafeWriteFileOverwrite(mustResolvedPath(t, filePath), []byte("content"), os.ModeSetuid|0o600)
+	require.ErrorIs(t, err, ErrUnsupportedFileMode)
+	assert.NoFileExists(t, filePath, "rejection must happen before anything is written")
+}
+
 // TestSafeOpenFile_ReadOpenPermIgnoredOnBothPaths verifies that a non-zero
 // perm on an open without O_CREATE is ignored rather than rejected, and that
 // both routes agree. Before this task the openat2 route failed such a call
@@ -115,10 +131,12 @@ func TestSafeOpenFile_ReadOpenPermIgnoredOnBothPaths(t *testing.T) {
 // The umask is chosen so that it actually removes a bit of the requested
 // perm; an implementation that applied perm verbatim would fail here.
 func TestSafeOpenFile_CreatePermUnchanged(t *testing.T) {
-	// 0o047 drops the group-read bit that 0o640 asks for, so the expected
-	// result differs from the requested perm.
-	const fixedUmask = 0o047
-	const requestedPerm = os.FileMode(0o640)
+	// The umask must actually remove a bit of the requested perm, and the
+	// expected result must not be a value the package uses as a default
+	// anywhere -- otherwise an implementation that ignored perm and hardcoded
+	// 0o600 would pass. 0o646 &^ 0o002 == 0o644 satisfies both.
+	const fixedUmask = 0o002
+	const requestedPerm = os.FileMode(0o646)
 	wantPerm := requestedPerm &^ os.FileMode(fixedUmask)
 
 	// Umask is process-wide and this package's tests never call t.Parallel();
