@@ -70,8 +70,58 @@ func isOpenat2Available() bool {
 	return err == nil
 }
 
-// openat2 wraps the openat2 system call
+// mayCreateFile reports whether an open with these flags can bring a new inode
+// into existence, which is exactly when open(2) reads the mode argument.
+//
+// O_TMPFILE must be tested for equality, not for a non-zero intersection: the
+// constant is a bit pattern that includes O_DIRECTORY, so a plain directory
+// open would match an intersection test and be misread as creating.
+func mayCreateFile(flag int) bool {
+	return flag&os.O_CREATE != 0 || flag&unix.O_TMPFILE == unix.O_TMPFILE
+}
+
+// openat2Mode returns the value to place in openHow.mode. It exists to keep
+// the openat2 and fallback paths in agreement, in both directions:
+//
+// For a non-creating open, openat2(2) rejects a non-zero mode with EINVAL,
+// while os.OpenFile hands the same value to a kernel that ignores it. Zeroing
+// it here is what removes that divergence.
+//
+// For a creating open the kernel does apply the mode, O_TMPFILE included -- it
+// does not reject a zero mode there, it creates a 0000 file, so treating
+// O_TMPFILE as non-creating would silently reintroduce the divergence from the
+// other side. Verified against Linux 6.12.
+//
+// Callers have already passed validateOpenPerm, so perm.Perm() is a plain copy
+// rather than a lossy narrowing.
+func openat2Mode(flag int, perm os.FileMode) uint64 {
+	if !mayCreateFile(flag) {
+		return 0
+	}
+	return uint64(perm.Perm())
+}
+
+// openat2 wraps the openat2 system call, retrying while the kernel reports
+// EINTR. Every other errno is passed through untouched, leaving the mapping in
+// safeOpenFileInternal to interpret it.
+//
+// The retry count is deliberately unbounded. EINTR means the open was
+// interrupted before it took effect, so retrying is a redo rather than a
+// repeated operation; the Go standard library retries open the same way. In
+// this package the interruption comes from the runtime's asynchronous
+// preemption signal (SIGURG) rather than from anything an attacker controls.
 func openat2(dirfd int, pathname string, how *openHow) (int, error) {
+	for {
+		fd, err := openat2Syscall(dirfd, pathname, how)
+		if errors.Is(err, syscall.EINTR) {
+			continue
+		}
+		return fd, err
+	}
+}
+
+// rawOpenat2 issues exactly one openat2 system call, with no retry handling.
+func rawOpenat2(dirfd int, pathname string, how *openHow) (int, error) {
 	pathBytes, err := syscall.BytePtrFromString(pathname)
 	if err != nil {
 		return -1, err
@@ -275,14 +325,15 @@ func (fs *osFS) safeOpenFileInternal(absPath string, flag int, perm os.FileMode)
 	how := openHow{
 		// #nosec G115 - flag conversion is intentional and safe within valid flag range
 		flags:   uint64(flag),
-		mode:    uint64(perm),
+		mode:    openat2Mode(flag, perm),
 		resolve: ResolveNoSymlinks,
 	}
 
 	fd, err := openat2(AtFdcwd, absPath, &how)
 	if err != nil {
-		// Check for specific errors
-		if errno, ok := err.(syscall.Errno); ok {
+		// Unwrap rather than type-assert, so the mapping stays correct for
+		// any error the retry wrapper hands back.
+		if errno, ok := errors.AsType[syscall.Errno](err); ok {
 			switch errno {
 			case syscall.ELOOP:
 				return nil, ErrIsSymlink

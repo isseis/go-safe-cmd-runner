@@ -89,7 +89,30 @@ func (fs *osFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, err
 		return nil, fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
 	}
 
+	if err := validateOpenPerm(perm); err != nil {
+		return nil, err
+	}
+
 	return fs.safeOpenFileInternal(absPath, flag, perm)
+}
+
+// validateOpenPerm rejects a permission value that carries bits outside
+// os.ModePerm, so that every mode SafeOpenFile hands to open(2) is nine POSIX
+// permission bits and nothing else, on both routes.
+//
+// Go's os.FileMode encodes setuid, setgid, sticky and the file-type bits in
+// its own high bits (1<<19 and above) rather than at the POSIX ones, so such a
+// value delivers a mode the caller did not mean. Discarding those bits with
+// perm.Perm() would hide the caller's mistake instead of surfacing it.
+//
+// This does not contradict groupmembership.MaxAllowedReadPerms permitting
+// setuid and setgid: that limit constrains a file already on disk, this one
+// constrains the value handed to open(2).
+func validateOpenPerm(perm os.FileMode) error {
+	if perm&^os.ModePerm != 0 {
+		return fmt.Errorf("%w: %v", ErrUnsupportedFileMode, perm)
+	}
+	return nil
 }
 
 // Remove removes the named file or (empty) directory

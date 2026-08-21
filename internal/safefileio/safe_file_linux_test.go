@@ -3,6 +3,7 @@
 package safefileio
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -297,4 +298,169 @@ func TestLinkFileToTempName_NonEEXISTErrorIsNotRetried(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, unix.EPERM)
 	assert.Equal(t, 1, calls, "a non-EEXIST linkat error must not be retried")
+}
+
+type openat2SyscallFunc func(dirfd int, pathname string, how *openHow) (int, error)
+
+// stubOpenat2 installs an openat2 stub for the duration of the test. The stub
+// is built from the value it displaces, so it can delegate the opens it does
+// not care about instead of reimplementing them.
+func stubOpenat2(t *testing.T, stub func(realCall openat2SyscallFunc) openat2SyscallFunc) {
+	t.Helper()
+	realCall := openat2SyscallFunc(openat2SyscallOverride)
+	t.Cleanup(func() { openat2SyscallOverride = realCall })
+	openat2SyscallOverride = stub(realCall)
+}
+
+// TestOpenat2_RetriesOnEINTR stubs the raw system call because EINTR arrives
+// from the Go runtime's preemption signal, which a test cannot provoke on
+// demand.
+//
+// The stub interrupts more than once on purpose: a "retry exactly once"
+// implementation would satisfy a single-EINTR test while still leaking EINTR
+// under the repeated signals the unbounded loop exists to absorb.
+func TestOpenat2_RetriesOnEINTR(t *testing.T) {
+	const interruptions = 3
+
+	dir := tu.SafeTempDir(t)
+	filePath := filepath.Join(dir, "target.txt")
+	const content = "eintr-retry-content"
+	require.NoError(t, os.WriteFile(filePath, []byte(content), 0o600))
+
+	fs := newFileSystemForRoute(t, openRoutes[0])
+
+	calls := 0
+	stubOpenat2(t, func(realCall openat2SyscallFunc) openat2SyscallFunc {
+		return func(dirfd int, pathname string, how *openHow) (int, error) {
+			// Count only opens of the file under test: unrelated opens
+			// elsewhere in the process would make the count unstable.
+			if pathname != filePath {
+				return realCall(dirfd, pathname, how)
+			}
+			calls++
+			if calls <= interruptions {
+				return -1, syscall.EINTR
+			}
+			return realCall(dirfd, pathname, how)
+		}
+	})
+
+	file, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
+	require.NoError(t, err, "EINTR must not reach the caller")
+	t.Cleanup(func() { _ = file.Close() })
+
+	got, err := io.ReadAll(file)
+	require.NoError(t, err)
+	assert.Equal(t, content, string(got))
+	assert.Equal(t, interruptions+1, calls, "every EINTR must be retried, not just the first")
+}
+
+// TestOpenat2_NonEINTRErrnoMapping guards the errno mapping that predates the
+// EINTR retry, including that these errnos are not swept into the retry loop.
+func TestOpenat2_NonEINTRErrnoMapping(t *testing.T) {
+	tests := []struct {
+		name  string
+		errno syscall.Errno
+		want  error
+	}{
+		{name: "ELOOP", errno: syscall.ELOOP, want: ErrIsSymlink},
+		{name: "EEXIST", errno: syscall.EEXIST, want: ErrFileExists},
+		{name: "ENOENT", errno: syscall.ENOENT, want: os.ErrNotExist},
+	}
+
+	fs := newFileSystemForRoute(t, openRoutes[0])
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// The target need not exist: the stub answers for it before the
+			// kernel is reached.
+			filePath := filepath.Join(tu.SafeTempDir(t), "target.txt")
+
+			calls := 0
+			stubOpenat2(t, func(realCall openat2SyscallFunc) openat2SyscallFunc {
+				return func(dirfd int, pathname string, how *openHow) (int, error) {
+					if pathname != filePath {
+						return realCall(dirfd, pathname, how)
+					}
+					calls++
+					return -1, tt.errno
+				}
+			})
+
+			_, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, tt.want)
+			assert.Equal(t, 1, calls, "an errno other than EINTR must not be retried")
+		})
+	}
+}
+
+// TestOpenat2Mode pins the rule that decides openHow.mode. The directory row
+// is here because a caller-level test cannot reach it cheaply; see
+// mayCreateFile for why a directory open is at risk of being misread.
+func TestOpenat2Mode(t *testing.T) {
+	const perm = os.FileMode(0o640)
+
+	tests := []struct {
+		name string
+		flag int
+		want uint64
+	}{
+		{name: "read_only", flag: os.O_RDONLY, want: 0},
+		{name: "write_only_no_create", flag: os.O_WRONLY, want: 0},
+		{name: "directory", flag: os.O_RDONLY | unix.O_DIRECTORY, want: 0},
+		{name: "create", flag: os.O_CREATE | os.O_WRONLY, want: uint64(perm)},
+		{name: "create_excl", flag: os.O_CREATE | os.O_EXCL | os.O_WRONLY, want: uint64(perm)},
+		{name: "tmpfile", flag: unix.O_TMPFILE | os.O_RDWR, want: uint64(perm)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, openat2Mode(tt.flag, perm))
+		})
+	}
+}
+
+// TestOpenat2_PassesModeOnlyForCreatingOpens reads openHow.mode as it is
+// handed to the system call, so the rule is checked against the kernel
+// interface rather than only against openat2Mode's return value.
+func TestOpenat2_PassesModeOnlyForCreatingOpens(t *testing.T) {
+	const perm = os.FileMode(0o640)
+
+	dir := tu.SafeTempDir(t)
+	existingPath := filepath.Join(dir, "existing.txt")
+	require.NoError(t, os.WriteFile(existingPath, []byte("content"), 0o600))
+	createdPath := filepath.Join(dir, "created.txt")
+
+	fs := newFileSystemForRoute(t, openRoutes[0])
+
+	modes := map[string][]uint64{}
+	stubOpenat2(t, func(realCall openat2SyscallFunc) openat2SyscallFunc {
+		return func(dirfd int, pathname string, how *openHow) (int, error) {
+			switch pathname {
+			case existingPath, createdPath, dir:
+				modes[pathname] = append(modes[pathname], how.mode)
+			}
+			return realCall(dirfd, pathname, how)
+		}
+	})
+
+	readFile, err := fs.SafeOpenFile(existingPath, os.O_RDONLY, perm)
+	require.NoError(t, err)
+	require.NoError(t, readFile.Close())
+
+	createdFile, err := fs.SafeOpenFile(createdPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, perm)
+	require.NoError(t, err)
+	require.NoError(t, createdFile.Close())
+
+	tmpFile, err := fs.SafeOpenFile(dir, unix.O_TMPFILE|os.O_RDWR, perm)
+	require.NoError(t, err)
+	require.NoError(t, tmpFile.Close())
+
+	// Assert the recorded call sequence, not just the mode: an absent key
+	// would read back as the zero value and let "mode is 0" pass without the
+	// stub having observed anything.
+	require.Equal(t, []uint64{0}, modes[existingPath], "an open without O_CREATE must pass mode 0")
+	require.Equal(t, []uint64{uint64(perm)}, modes[createdPath], "a creating open must pass the requested permission bits")
+	require.Equal(t, []uint64{uint64(perm)}, modes[dir], "an O_TMPFILE open creates a file and must pass the requested permission bits")
 }

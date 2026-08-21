@@ -32,6 +32,11 @@ var (
 	// could not be allocated after repeated EEXIST collisions.
 	ErrTempLinkNameExhausted = errors.New("failed to allocate a unique temporary link name")
 
+	// ErrUnsupportedFileMode indicates that the requested file mode contains
+	// bits outside os.ModePerm, which this package does not pass through to
+	// the kernel.
+	ErrUnsupportedFileMode = errors.New("unsupported file mode bits")
+
 	// ErrUnsupportedFileHandle indicates that the provided File implementation
 	// does not support the operation being requested (e.g. it is not backed by
 	// an *os.File and therefore cannot be used for fd-anchored operations).

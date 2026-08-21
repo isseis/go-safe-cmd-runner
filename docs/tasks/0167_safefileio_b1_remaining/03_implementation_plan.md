@@ -203,7 +203,9 @@
 | `ensureParentDirsAfterOpen`・`verifyMovedFile` | `internal/safefileio/overrides.go`（`//go:build !test`） | `internal/safefileio/test_helpers_overrides.go`（`//go:build test`） |
 | `openat2Syscall` | `internal/safefileio/overrides_linux.go`（`//go:build !test`） | `internal/safefileio/test_helpers_overrides_linux.go`（`//go:build test`） |
 
-`_linux.go` の接尾辞が GOOS を表すため、Linux 用の 2 ファイルのビルドタグに `linux` を書く必要はない。
+`_linux.go` の接尾辞が GOOS を表すため、Linux 用の 2 ファイルのビルドタグに `linux` を書く必要はない。ただし同じ
+パッケージの `safe_file_linux.go` が冗長に `//go:build linux` を書いており、実装ではそれに合わせて
+`//go:build linux && !test`・`//go:build linux && test` と書いた（Phase 1 の step 1-2 の記述どおり）。
 
 doc コメントは両側に置き、本番側には「本番ビルドには差し替えられる値を置かない」理由を、テスト側には
 差し替え点の用途と、このパッケージのテストが `t.Parallel()` を使えない理由を、いずれも英語で書く
@@ -253,63 +255,66 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 
 #### 1-1. mode の検証と正規化
 
-- [ ] `errors.go` に `ErrUnsupportedFileMode` を追加する（宣言と doc コメントは
+- [x] `errors.go` に `ErrUnsupportedFileMode` を追加する（宣言と doc コメントは
       [02_architecture.md](02_architecture.md) § 3.1 のコードブロックのとおり）。`ErrDestinationCommitted` は
       Phase 4a で追加するため、ここでは入れない。
-- [ ] `safe_file.go` に `validateOpenPerm(perm os.FileMode) error` を追加する。`perm &^ os.ModePerm` が
+- [x] `safe_file.go` に `validateOpenPerm(perm os.FileMode) error` を追加する。`perm &^ os.ModePerm` が
       0 でなければ `ErrUnsupportedFileMode` を返す。doc コメントに、`groupmembership.MaxAllowedReadPerms`
       が setuid・setgid を許すこととは対象が違う（あちらはディスク上のファイルの POSIX 権限、こちらは
       `open(2)` へ渡す `os.FileMode`）ことを 1 文で書く。
-- [ ] `osFS.SafeOpenFile`（`safe_file.go:86-93`）の `filepath.Abs` の直後、`safeOpenFileInternal` を呼ぶ前に
+- [x] `osFS.SafeOpenFile`（`safe_file.go:86-93`）の `filepath.Abs` の直後、`safeOpenFileInternal` を呼ぶ前に
       `validateOpenPerm` の呼び出しを足す。Phase 4a・4b で書き込み・移動の経路が `SafeOpenFile` を通らなくなる
       ため、それらの入口にも同じ検査を足す（Phase 4-3 の該当ステップ）。
-- [ ] `safe_file_linux.go` に `openat2Mode(flag int, perm os.FileMode) uint64` を追加する。`flag&os.O_CREATE`
-      が 0 なら 0 を、そうでなければ `uint64(perm.Perm())` を返す。
-- [ ] `safeOpenFileInternal`（`safe_file_linux.go:275-280`）の `mode: uint64(perm)` を
+- [x] `safe_file_linux.go` に `openat2Mode(flag int, perm os.FileMode) uint64` を追加する。ファイルを作りうる
+      呼び出し（`O_CREATE` または `O_TMPFILE`）でのみ `uint64(perm.Perm())` を返し、それ以外では 0 を返す。
+      判定は補助関数 `mayCreateFile(flag int) bool` に置く。`O_TMPFILE` を含めるのは実装時の訂正であり、
+      根拠は [02_architecture.md](02_architecture.md) § 3.1 に記録した（`O_TMPFILE` で mode 0 は `EINVAL`
+      にならず、権限 `0000` のファイルが黙って作られる）。
+- [x] `safeOpenFileInternal`（`safe_file_linux.go:275-280`）の `mode: uint64(perm)` を
       `mode: openat2Mode(flag, perm)` に置き換える。
 #### 1-2. `openat2` の `EINTR` 再試行と差し替え点の新設
 
-- [ ] `safe_file_linux.go` の `openat2` を、`EINTR` のあいだ再試行するラッパにする。生のシステムコール発行を
+- [x] `safe_file_linux.go` の `openat2` を、`EINTR` のあいだ再試行するラッパにする。生のシステムコール発行を
       `rawOpenat2`（シグネチャは § 1 の差し替え点表のとおり `*openHow` を受け取る形）へ切り出し、
       `unsafe.Pointer` の取り回しはその中に閉じる。再試行に上限は設けない
       （[02_architecture.md](02_architecture.md) § 3.2）。`EINTR` 以外の errno は現在と同じ形でそのまま
       返し、`safeOpenFileInternal` の errno 対応付け（:285-294）は変更しない。
-- [ ] `openat2Syscall` を § 1 の 2 ファイル方式で用意する。`overrides_linux.go`（`//go:build linux && !test`）に
+- [x] `openat2Syscall` を § 1 の 2 ファイル方式で用意する。`overrides_linux.go`（`//go:build linux && !test`）に
       `func openat2Syscall(dirfd int, pathname string, how *openHow) (int, error) { return rawOpenat2(…) }` を、
       `test_helpers_overrides_linux.go`（`//go:build linux && test`）に `var openat2SyscallOverride = rawOpenat2` と、
       それを呼ぶ同名の `openat2Syscall` を置く。本番ビルドに差し替え可能な値を残さない
       （`internal/security/getwd.go` と `test_helpers_getwd.go` と同じ形）。
 #### 1-3. mode と `EINTR` のテスト
 
-- [ ] `safe_file_test.go` に `TestSafeOpenFile_RejectsNonPermissionModeBits` を追加する。`os.ModeSetuid`・
+- [x] `safe_file_test.go` に `TestSafeOpenFile_RejectsNonPermissionModeBits` を追加する。`os.ModeSetuid`・
       `os.ModeSetgid`・`os.ModeSticky`・`os.ModeDir`・`os.ModeAppend` を含む `perm` について、
       `FileSystemConfig{}` と `FileSystemConfig{DisableOpenat2: true}` の両方で `ErrUnsupportedFileMode` が
       返ることを表で確認する。
-- [ ] `safe_file_test.go` に `TestSafeOpenFile_ReadOpenPermIgnoredOnBothPaths` を追加する。`O_CREATE` を
+- [x] `safe_file_test.go` に `TestSafeOpenFile_ReadOpenPermIgnoredOnBothPaths` を追加する。`O_CREATE` を
       伴わない `O_RDONLY` の open に非ゼロの `perm`（例: `0o644`）を渡し、両経路とも同じく成功することを
       確認する。本タスクの前は Linux 経路だけが `EINVAL` で失敗していた分岐である。
-- [ ] `safe_file_test.go` に `TestSafeOpenFile_CreatePermUnchanged` を追加する。テスト内で `syscall.Umask`
+- [x] `safe_file_test.go` に `TestSafeOpenFile_CreatePermUnchanged` を追加する。テスト内で `syscall.Umask`
       を固定し（`t.Cleanup` で必ず元へ戻す。`Umask` はプロセス全体に効き、このパッケージは `t.Parallel()` を
       使わないため、戻し忘れると後続のテストが静かに壊れる）、`O_CREATE|O_WRONLY|O_EXCL` と `perm=0o640` で
       作ったファイルの権限が両経路とも `0o640 &^ umask` と一致することを確認する。両経路の一致だけを見る
       形にはしない（同じ壊れ方をすると通ってしまうため）。
-- [ ] **上の 3 つのテストで `FileSystemConfig{}` を使う行に、`fs.(*osFS).IsOpenat2Available()` が true で
+- [x] **上の 3 つのテストで `FileSystemConfig{}` を使う行に、`fs.(*osFS).IsOpenat2Available()` が true で
       あることの `require` を入れる**（false なら理由を明記して `t.Skip`）。openat2 が使えない環境
       （Linux 5.5 以下、古い既定 seccomp プロファイルのコンテナ）では `NewFileSystem(FileSystemConfig{})` が
       静かにフォールバック経路になり、「両経路を通した」はずのテストが同じ経路を 2 回通るだけになる。
-- [ ] `safe_file_linux_test.go` に `TestOpenat2_RetriesOnEINTR` を追加する。`openat2Syscall` を差し替えて
+- [x] `safe_file_linux_test.go` に `TestOpenat2_RetriesOnEINTR` を追加する。`openat2Syscall` を差し替えて
       1 回目に `syscall.EINTR`、2 回目に本物へ委譲させ、`SafeOpenFile` が成功し呼び出し回数が 2 であることを
       確認する。**`FileSystem` は差し替えの前に構築する**（`isOpenat2Available` が `openat2` を呼ぶため、
       構築が差し替え点を 1 回消費する）。さらにスタブは対象のパス名に一致する呼び出しだけを数える。`t.Cleanup`
       で元へ戻す。
-- [ ] `safe_file_linux_test.go` に `TestOpenat2_NonEINTRErrnoMapping` を追加する。`openat2Syscall` を
+- [x] `safe_file_linux_test.go` に `TestOpenat2_NonEINTRErrnoMapping` を追加する。`openat2Syscall` を
       `ELOOP`・`EEXIST`・`ENOENT` を返すよう差し替え、`ErrIsSymlink`・`ErrFileExists`・`os.ErrNotExist` が
       `errors.Is` で判定できることを表で確認する。ここでも `FileSystem` を差し替えの前に構築する。構築後に
       差し替えないと、可用性判定が false になってフォールバック経路の errno 対応付けを検証してしまう。
-- [ ] `safe_file_linux_test.go` に `TestOpenat2_ReadOpenPassesZeroMode` を追加する。`openat2Syscall` を
+- [x] `safe_file_linux_test.go` に `TestOpenat2_ReadOpenPassesZeroMode` を追加する。`openat2Syscall` を
       差し替えて `how.mode` を記録し、`O_CREATE` を伴わない open では 0、`O_CREATE` を伴う open では
       `uint64(perm.Perm())` であることを確認する（AC-15 のカーネル側の主張）。
-- [ ] 再試行のループを外すと `TestOpenat2_RetriesOnEINTR` が落ちることを確認し、外し方をコミット
+- [x] 再試行のループを外すと `TestOpenat2_RetriesOnEINTR` が落ちることを確認し、外し方をコミット
       メッセージに記す。
 
 **完了条件**: `make fmt` → `make test` → `make lint` が通る。
@@ -331,8 +336,8 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 
 **判定理由**: 1-1 が `open` というセキュリティゲート上で拒否の追加と削除を同時に行う（`validateOpenPerm` が `os.ModePerm` 外のビットを新たに拒否する一方、`openat2Mode` により `O_CREATE` を伴わない非ゼロ `perm` の open が Linux 経路で `EINVAL` にならなくなる）。これは `mkplan.md` step 8 のパネルモード・トリガ「simultaneous behavior raises and lowers」そのものである。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（[#1050](https://github.com/isseis/go-safe-cmd-runner/pull/1050)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -1045,8 +1050,9 @@ Phase ごとの作業内容は § 2 に、PR の区切りは § 3.2 にある。
 § 3.2 の 6 つの PR に分けて出すため、比較の基点に `origin/main` を使うと PR がマージされるたびに基点が
 進み、AC-12・AC-36・AC-37 と § 8 の追加行検査が「直前の PR の差分しか見ていない」状態で通ってしまう。
 そこで**タスク全体で固定した基点** `$BASE` を使う。`$BASE` は PR-1 のブランチを切った時点の
-`origin/main` のコミット（本書の作成時点では `5bcc2be8`）とし、最初の PR の作業開始時に確定させて
-以降動かさない。以下の表の `$BASE...HEAD` はすべてこの意味である。`go tool cover -func`（AC-11）と
+`origin/main` のコミットとし、最初の PR の作業開始時に確定させて以降動かさない。**実際の `$BASE` は
+`a01a45e8`（PR #1049 のマージコミット）である**（2026-08-21 確定。本書の作成時点の見込みは `5bcc2be8`
+だったが、その後 PR #1049 がマージされたため実際の分岐点は先に進んだ）。以下の表の `$BASE...HEAD` はすべてこの意味である。`go tool cover -func`（AC-11）と
 `make deadcode`（AC-13）の「変更前」も同じ基点の作業ツリーを指す。「種別」の意味は `test`（実行して挙動が違えば落ちる）、`static`（`rg`／コンパイル／`make` の
 出力で判定する）、`manual`（人の読み合わせ）である。
 
