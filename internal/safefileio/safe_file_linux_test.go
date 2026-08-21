@@ -445,6 +445,50 @@ func TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails(t *testing.T) {
 	}
 }
 
+// assertCloseOnExec fails unless the descriptor carries FD_CLOEXEC.
+func assertCloseOnExec(t *testing.T, fd int, what string) {
+	t.Helper()
+	flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
+	require.NoError(t, err)
+	assert.NotZero(t, flags&unix.FD_CLOEXEC, "%s must be opened close-on-exec", what)
+}
+
+// TestOpenPrimitives_SetCloseOnExec covers every descriptor this package hands
+// out, on both routes, because the flag is set in a different place on each:
+// openat2's how.flags, the fallback's unix.Open/unix.Openat, and os.OpenFile,
+// which supplies it on its own.
+//
+// The runner forks and execs commands, so a descriptor of a file the runner
+// validated -- or of a directory it holds only to anchor a move -- that survives
+// into a child hands that child access nothing gave it.
+func TestOpenPrimitives_SetCloseOnExec(t *testing.T) {
+	for _, route := range openRoutes {
+		t.Run(route.name, func(t *testing.T) {
+			fs := newFileSystemForRoute(t, route)
+			dir := tu.SafeTempDir(t)
+			filePath := filepath.Join(dir, "target.txt")
+			require.NoError(t, os.WriteFile(filePath, []byte("content"), 0o600))
+
+			file, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = file.Close() })
+			osFile, ok := file.(*os.File)
+			require.True(t, ok, "SafeOpenFile must return an *os.File")
+			assertCloseOnExec(t, int(osFile.Fd()), "SafeOpenFile")
+
+			dirFd := dirFdForTest(t, fs, dir)
+			assertCloseOnExec(t, dirFd, "openDirNoSymlinks")
+
+			osfs, ok := fs.(*osFS)
+			require.True(t, ok, "NewFileSystem must return *osFS")
+			atFile, err := osfs.openFileAt(dirFd, "target.txt", os.O_RDONLY, 0)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = atFile.Close() })
+			assertCloseOnExec(t, int(atFile.Fd()), "openFileAt")
+		})
+	}
+}
+
 // TestOpenDirNoSymlinksFallback_ClosesFDWhenPostCheckFails is the directory
 // counterpart of the test above, and lives here for the same reason: it observes
 // descriptors through /proc/self/fd, while the function it covers is portable

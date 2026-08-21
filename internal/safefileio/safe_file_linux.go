@@ -332,8 +332,12 @@ func (fs *osFS) safeOpenFileInternal(absPath string, flag int, perm os.FileMode)
 
 	// Use openat2 with RESOLVE_NO_SYMLINKS for atomic operation
 	how := openHow{
+		// O_CLOEXEC matches every other open in this package, including the
+		// os.OpenFile the fallback route below reaches: the runner forks and
+		// execs, and a descriptor this package opened must not be inherited by a
+		// command it runs.
 		// #nosec G115 - flag conversion is intentional and safe within valid flag range
-		flags:   uint64(flag),
+		flags:   uint64(flag | unix.O_CLOEXEC),
 		mode:    openat2Mode(flag, perm),
 		resolve: ResolveNoSymlinks,
 	}
